@@ -10,6 +10,9 @@ app.commandLine.appendSwitch('lang', 'zh-CN,en-US')
 const DIST_ELECTRON = __dirname
 const DIST = path.join(DIST_ELECTRON, '../dist')
 const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL']
+const ICON_PATH = VITE_DEV_SERVER_URL
+  ? path.join(DIST_ELECTRON, '../public/icon.ico')
+  : path.join(DIST, 'icon.ico')
 
 // 注册自定义协议用于加载本地文件 (必须在 app.whenReady 之前调用)
 protocol.registerSchemesAsPrivileged([
@@ -25,14 +28,23 @@ protocol.registerSchemesAsPrivileged([
 ])
 
 function createWindow() {
+  const t0 = Date.now()
   const win = new BrowserWindow({
     width: 1200,
     height: 800,
+    icon: ICON_PATH,
+    show: false, // 先隐藏，等页面加载完成再显示
     webPreferences: {
       preload: path.join(DIST_ELECTRON, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
     },
+  })
+
+  // 页面加载完成后再显示窗口，避免空白窗口
+  win.once('ready-to-show', () => {
+    console.log(`[main] 页面加载完成: ${Date.now() - t0}ms`)
+    win.show()
   })
 
   if (VITE_DEV_SERVER_URL) {

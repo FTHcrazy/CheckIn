@@ -1,16 +1,16 @@
 {
   "name": "checkin",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "CheckIn Desktop Application",
   "main": "dist-electron/main.js",
   "author": "FTH",
   "scripts": {
-    "dev": "vite",
+    "dev": "concurrently -k \"vite\" \"wait-on tcp:5173 && node scripts/start-electron.js\"",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "electron:dev": "vite",
+    "electron:dev": "concurrently -k \"vite\" \"wait-on tcp:5173 && node scripts/start-electron.js\"",
     "electron:build": "tsc -b && vite build && cross-env ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ electron-builder",
     "electron:build:dir": "tsc -b && vite build && cross-env ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ electron-builder --dir",
     "electron:preview": "vite build && electron .",
@@ -47,6 +47,7 @@
   "build": {
     "appId": "com.checkin.app",
     "productName": "CheckIn",
+    "icon": "public/icon.png",
     "npmRebuild": false,
     "electronDist": "node_modules/electron/dist",
     "compression": "maximum",
@@ -75,6 +76,7 @@
     ],
     "win": {
       "target": "nsis",
+      "icon": "public/icon.png",
       "signAndEditExecutable": false
     },
     "nsis": {
