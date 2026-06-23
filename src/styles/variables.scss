@@ -1,0 +1,16 @@
+// 全局变量
+$primary-color: #1677ff;
+$bg-color: #f5f5f5;
+$text-color: #333;
+$border-radius: 8px;
+
+// Mixins
+@mixin flex-center {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+@mixin card-shadow {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}

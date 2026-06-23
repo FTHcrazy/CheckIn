@@ -1,0 +1,80 @@
+@use './variables' as *;
+
+.app-container {
+  min-height: 100vh;
+  background-color: $bg-color;
+
+  .app-header {
+    @include flex-center;
+    justify-content: flex-start;
+    padding: 0 24px;
+    background: #fff;
+    @include card-shadow;
+    height: 64px;
+
+    .logo {
+      font-size: 20px;
+      font-weight: 600;
+      color: $primary-color;
+    }
+  }
+
+  .app-content {
+    padding: 24px;
+    max-width: 1200px;
+    margin: 0 auto;
+
+    .welcome-card {
+      @include card-shadow;
+      border-radius: $border-radius;
+      margin-bottom: 24px;
+
+      .welcome-title {
+        font-size: 24px;
+        font-weight: 600;
+        color: $text-color;
+        margin-bottom: 16px;
+      }
+
+      .welcome-desc {
+        font-size: 14px;
+        color: #666;
+        line-height: 1.8;
+      }
+    }
+
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 16px;
+
+      .feature-card {
+        @include card-shadow;
+        border-radius: $border-radius;
+        transition: transform 0.3s ease;
+
+        &:hover {
+          transform: translateY(-4px);
+        }
+
+        .feature-icon {
+          font-size: 32px;
+          color: $primary-color;
+          margin-bottom: 12px;
+        }
+
+        .feature-title {
+          font-size: 16px;
+          font-weight: 600;
+          color: $text-color;
+          margin-bottom: 8px;
+        }
+
+        .feature-desc {
+          font-size: 13px;
+          color: #999;
+        }
+      }
+    }
+  }
+}

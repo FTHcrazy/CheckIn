@@ -1,0 +1,85 @@
+{
+  "name": "checkin",
+  "private": true,
+  "version": "1.0.0",
+  "description": "CheckIn Desktop Application",
+  "main": "dist-electron/main.js",
+  "author": "FTH",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "eslint .",
+    "preview": "vite preview",
+    "electron:dev": "vite",
+    "electron:build": "tsc -b && vite build && cross-env ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ electron-builder",
+    "electron:build:dir": "tsc -b && vite build && cross-env ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ electron-builder --dir",
+    "electron:preview": "vite build && electron .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ant-design/icons": "^6.2.5",
+    "antd": "^6.4.5",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^24.13.2",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "concurrently": "^10.0.3",
+    "cross-env": "^10.1.0",
+    "electron": "^42.4.1",
+    "electron-builder": "^25.1.8",
+    "eslint": "^10.3.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "globals": "^17.6.0",
+    "sass": "^1.101.0",
+    "typescript": "~6.0.2",
+    "typescript-eslint": "^8.59.2",
+    "vite": "^8.0.12",
+    "vite-plugin-electron": "^1.0.4",
+    "vite-plugin-electron-renderer": "^1.0.0",
+    "wait-on": "^9.0.10"
+  },
+  "build": {
+    "appId": "com.checkin.app",
+    "productName": "CheckIn",
+    "npmRebuild": false,
+    "electronDist": "node_modules/electron/dist",
+    "compression": "maximum",
+    "afterPack": "./scripts/after-pack.js",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "package.json",
+      {
+        "from": "dist",
+        "to": "dist",
+        "filter": [
+          "**/*",
+          "!**/*.map"
+        ]
+      },
+      {
+        "from": "dist-electron",
+        "to": "dist-electron",
+        "filter": ["**/*"]
+      }
+    ],
+    "asarUnpack": [
+      "node_modules/**/*.node"
+    ],
+    "win": {
+      "target": "nsis",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}
