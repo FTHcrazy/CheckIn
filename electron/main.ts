@@ -1,6 +1,7 @@
-import { app, BrowserWindow, protocol } from 'electron'
+import { app, BrowserWindow, ipcMain, protocol } from 'electron'
 import path from 'path'
 import fs from 'fs'
+import https from 'https'
 
 // 只保留中英文 locale，减少内存占用
 app.commandLine.appendSwitch('lang', 'zh-CN,en-US')
@@ -66,6 +67,40 @@ app.whenReady().then(() => {
       headers: {
         'Content-Type': getMimeType(filePath),
       },
+    })
+  })
+
+  // 注册 HTTP 请求 IPC handler，支持设置 Cookie 等禁止请求头
+  ipcMain.handle('http-request', async (_event, options: {
+    url: string
+    method?: string
+    headers?: Record<string, string>
+    body?: string
+  }) => {
+    return new Promise((resolve, reject) => {
+      const url = new URL(options.url)
+      const req = https.request(
+        {
+          hostname: url.hostname,
+          path: url.pathname + url.search,
+          method: options.method || 'GET',
+          headers: options.headers || {},
+        },
+        (res) => {
+          let data = ''
+          res.on('data', (chunk) => { data += chunk })
+          res.on('end', () => {
+            try {
+              resolve({ status: res.statusCode, data: JSON.parse(data) })
+            } catch {
+              resolve({ status: res.statusCode, data })
+            }
+          })
+        },
+      )
+      req.on('error', (err) => reject(err.message))
+      if (options.body) req.write(options.body)
+      req.end()
     })
   })
 

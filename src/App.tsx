@@ -4,8 +4,8 @@ import { ThunderboltOutlined, RocketOutlined } from "@ant-design/icons";
 import zhCN from "antd/locale/zh_CN";
 import "./styles/App.scss";
 
-import DailyPage from "./pages/DailyPage";
-import CodePage from "./pages/CodePage";
+import DailyPage from "./pages/DailyPage/DailyPage";
+import CodePage from "./pages/CodePage/CodePage";
 
 const { Title, Text } = Typography;
 

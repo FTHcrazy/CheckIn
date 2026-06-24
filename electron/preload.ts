@@ -2,7 +2,14 @@ import { contextBridge, ipcRenderer } from 'electron'
 
 // 通过 contextBridge 暴露安全的 API 给渲染进程
 contextBridge.exposeInMainWorld('electronAPI', {
-  // 示例：暴露 ipcRenderer 方法
+  // 通用 HTTP 请求（支持 Cookie 等禁止请求头）
+  httpRequest: (options: {
+    url: string
+    method?: string
+    headers?: Record<string, string>
+    body?: string
+  }) => ipcRenderer.invoke('http-request', options),
+
   send: (channel: string, data: unknown) => {
     const validChannels = ['toMain']
     if (validChannels.includes(channel)) {
