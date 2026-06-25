@@ -6,6 +6,7 @@ import "./styles/App.scss";
 
 import DailyPage from "./pages/DailyPage/DailyPage";
 import CodePage from "./pages/CodePage/CodePage";
+import NotifPage from "./pages/NotifPage/NotifPage";
 
 const { Title, Text } = Typography;
 
@@ -78,6 +79,7 @@ export default function App() {
         <Route path="/" element={<Home />} />
         <Route path="/daily" element={<DailyPage />} />
         <Route path="/code" element={<CodePage />} />
+        <Route path="/notif" element={<NotifPage />} />
       </Routes>
     </ConfigProvider>
   );
