@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, protocol } from 'electron'
+import { app, BrowserWindow, ipcMain, protocol, Tray, Menu } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import https from 'https'
@@ -42,7 +42,14 @@ function createWindow() {
     },
   })
 
-  // 页面加载完成后再显示窗口，避免空白窗口
+  // 点击关闭按钮时隐藏窗口而非退出
+  win.on('close', (e) => {
+    if (!isQuitting) {
+      e.preventDefault()
+      win.hide()
+    }
+  })
+
   win.once('ready-to-show', () => {
     console.log(`[main] 页面加载完成: ${Date.now() - t0}ms`)
     win.show()
@@ -55,7 +62,11 @@ function createWindow() {
     // 使用自定义协议加载本地文件，避免 file:// 安全限制
     win.loadURL(`app://./index.html`)
   }
+
+  return win
 }
+
+let isQuitting = false
 
 app.whenReady().then(() => {
   // 注册协议处理器，将 app:// 请求映射到本地文件
@@ -104,13 +115,26 @@ app.whenReady().then(() => {
     })
   })
 
-  createWindow()
+  const win = createWindow()
+
+  // 系统托盘图标，点击可重新显示窗口
+  const tray = new Tray(ICON_PATH)
+  tray.setToolTip('CheckIn')
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: '显示窗口', click: () => win?.show() },
+    { label: '退出', click: () => { isQuitting = true; app.quit() } },
+  ]))
+  tray.on('click', () => win?.show())
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow()
     }
   })
+})
+
+app.on('before-quit', () => {
+  isQuitting = true
 })
 
 app.on('window-all-closed', () => {
