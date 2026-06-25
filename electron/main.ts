@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, protocol, Tray, Menu } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import https from 'https'
+import { initDb, closeDb, dbAll, dbGet, dbRun, dbExec } from './db'
 
 // 只保留中英文 locale，减少内存占用
 app.commandLine.appendSwitch('lang', 'zh-CN,en-US')
@@ -85,6 +86,15 @@ app.on('second-instance', () => {
 })
 
 app.whenReady().then(() => {
+  // 初始化本地数据库
+  initDb()
+
+  // 注册数据库 IPC handlers
+  ipcMain.handle('db-all', (_event, sql: string, params?: unknown[]) => dbAll(sql, params))
+  ipcMain.handle('db-get', (_event, sql: string, params?: unknown[]) => dbGet(sql, params))
+  ipcMain.handle('db-run', (_event, sql: string, params?: unknown[]) => dbRun(sql, params))
+  ipcMain.handle('db-exec', (_event, sql: string) => { dbExec(sql); return true })
+
   // 注册协议处理器，将 app:// 请求映射到本地文件
   protocol.handle('app', (request) => {
     const url = request.url.replace('app://./', '')
@@ -152,6 +162,7 @@ app.whenReady().then(() => {
 
 app.on('before-quit', () => {
   isQuitting = true
+  closeDb()
 })
 
 app.on('window-all-closed', () => {

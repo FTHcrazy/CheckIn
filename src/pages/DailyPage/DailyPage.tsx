@@ -48,11 +48,16 @@ export default function DailyPage() {
   const selectedDateStr = selectedDate.format('YYYY-MM-DD')
 
   // 加载活动数据
-  const refreshData = () => {
-    setActivities(getActivitiesByDate(selectedDateStr))
-    const start = currentMonth.startOf('month').subtract(7, 'day').format('YYYY-MM-DD')
-    const end = currentMonth.endOf('month').add(7, 'day').format('YYYY-MM-DD')
-    setActiveDates(getActiveDates(start, end))
+  const refreshData = async () => {
+    const [acts, dates] = await Promise.all([
+      getActivitiesByDate(selectedDateStr),
+      getActiveDates(
+        currentMonth.startOf('month').subtract(7, 'day').format('YYYY-MM-DD'),
+        currentMonth.endOf('month').add(7, 'day').format('YYYY-MM-DD'),
+      ),
+    ])
+    setActivities(acts)
+    setActiveDates(dates)
   }
 
   useEffect(() => { refreshData() }, [selectedDateStr, currentMonth])
@@ -85,27 +90,32 @@ export default function DailyPage() {
   // 打开添加活动弹窗
   const openAddModal = (startTime?: string) => {
     setEditingActivity(null)
-    form.resetFields()
-    form.setFieldsValue({
-      startTime: startTime ? dayjs(`2000-01-01 ${startTime}`) : dayjs().startOf('hour'),
-      endTime: startTime
-        ? dayjs(`2000-01-01 ${startTime}`).add(1, 'hour')
-        : dayjs().startOf('hour').add(1, 'hour'),
-      color: ACTIVITY_COLORS[Math.floor(Math.random() * ACTIVITY_COLORS.length)],
-    })
     setModalOpen(true)
+    // Form 在 Modal 打开后才渲染，需异步设值
+    setTimeout(() => {
+      form.resetFields()
+      form.setFieldsValue({
+        startTime: startTime ? dayjs(`2000-01-01 ${startTime}`) : dayjs().startOf('hour'),
+        endTime: startTime
+          ? dayjs(`2000-01-01 ${startTime}`).add(1, 'hour')
+          : dayjs().startOf('hour').add(1, 'hour'),
+        color: ACTIVITY_COLORS[Math.floor(Math.random() * ACTIVITY_COLORS.length)],
+      })
+    }, 0)
   }
 
   // 打开编辑活动弹窗
   const openEditModal = (activity: Activity) => {
     setEditingActivity(activity)
-    form.setFieldsValue({
-      name: activity.name,
-      startTime: dayjs(`2000-01-01 ${activity.startTime}`),
-      endTime: dayjs(`2000-01-01 ${activity.endTime}`),
-      color: activity.color || ACTIVITY_COLORS[0],
-    })
     setModalOpen(true)
+    setTimeout(() => {
+      form.setFieldsValue({
+        name: activity.name,
+        startTime: dayjs(`2000-01-01 ${activity.startTime}`),
+        endTime: dayjs(`2000-01-01 ${activity.endTime}`),
+        color: activity.color || ACTIVITY_COLORS[0],
+      })
+    }, 0)
   }
 
   // 保存活动
@@ -115,26 +125,26 @@ export default function DailyPage() {
       const startTime = values.startTime.format('HH:mm')
       const endTime = values.endTime.format('HH:mm')
       if (editingActivity) {
-        updateActivity(editingActivity.id, {
+        await updateActivity(editingActivity.id, {
           name: values.name,
           startTime,
           endTime,
           color: values.color,
         })
       } else {
-        addActivity(selectedDateStr, startTime, endTime, values.name, values.color)
+        await addActivity(selectedDateStr, startTime, endTime, values.name, values.color)
       }
       setModalOpen(false)
-      refreshData()
+      await refreshData()
     } catch {
       // validation failed
     }
   }
 
   // 删除活动
-  const handleDelete = (id: string) => {
-    deleteActivity(id)
-    refreshData()
+  const handleDelete = async (id: string) => {
+    await deleteActivity(id)
+    await refreshData()
   }
 
   // 时间带上活动块的位置计算
@@ -281,7 +291,7 @@ export default function DailyPage() {
           open={modalOpen}
           onOk={handleSave}
           onCancel={() => setModalOpen(false)}
-          destroyOnClose
+          destroyOnHidden
         >
           <Form form={form} layout="vertical">
             <Form.Item name="name" label="活动名称" rules={[{ required: true, message: '请输入活动名称' }]}>

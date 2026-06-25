@@ -6,6 +6,18 @@ export interface ElectronAPI {
     headers?: Record<string, string>
     body?: string
   }) => Promise<{ status: number; data: unknown }>
+
+  db: {
+    /** SELECT 查询，返回结果数组 */
+    all: (sql: string, params?: unknown[]) => Promise<unknown[]>
+    /** SELECT 查询，返回单条结果 */
+    get: (sql: string, params?: unknown[]) => Promise<unknown>
+    /** INSERT/UPDATE/DELETE，返回 { changes, lastInsertRowid } */
+    run: (sql: string, params?: unknown[]) => Promise<{ changes: number; lastInsertRowid: number }>
+    /** 批量执行 SQL */
+    exec: (sql: string) => Promise<boolean>
+  }
+
   send: (channel: string, data: unknown) => void
   receive: (channel: string, func: (...args: unknown[]) => void) => void
 }

@@ -14,11 +14,13 @@
     "electron:build": "tsc -b && vite build && cross-env ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ electron-builder",
     "electron:build:dir": "tsc -b && vite build && cross-env ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ electron-builder --dir",
     "electron:preview": "vite build && electron .",
+    "electron:rebuild": "npx @electron/rebuild -f -w better-sqlite3",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@ant-design/icons": "^6.2.5",
     "antd": "^6.4.5",
+    "better-sqlite3": "^12.11.1",
     "dayjs": "^1.11.21",
     "lunar-typescript": "^1.8.6",
     "react": "^19.2.6",
@@ -26,7 +28,9 @@
     "react-router-dom": "^7.18.0"
   },
   "devDependencies": {
+    "@electron/rebuild": "^4.0.4",
     "@eslint/js": "^10.0.1",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^24.13.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",

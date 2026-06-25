@@ -10,6 +10,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     body?: string
   }) => ipcRenderer.invoke('http-request', options),
 
+  // 数据库操作
+  db: {
+    all: (sql: string, params?: unknown[]) => ipcRenderer.invoke('db-all', sql, params),
+    get: (sql: string, params?: unknown[]) => ipcRenderer.invoke('db-get', sql, params),
+    run: (sql: string, params?: unknown[]) => ipcRenderer.invoke('db-run', sql, params),
+    exec: (sql: string) => ipcRenderer.invoke('db-exec', sql),
+  },
+
   send: (channel: string, data: unknown) => {
     const validChannels = ['toMain']
     if (validChannels.includes(channel)) {
