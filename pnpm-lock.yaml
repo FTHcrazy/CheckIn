@@ -17,6 +17,9 @@ importers:
       dayjs:
         specifier: ^1.11.21
         version: 1.11.21
+      lunar-typescript:
+        specifier: ^1.8.6
+        version: 1.8.6
       react:
         specifier: ^19.2.6
         version: 19.2.7
@@ -2015,6 +2018,9 @@ packages:
     resolution: {integrity: sha512-nX1x4qUrKqwbIAhv4s9et4FIUVzNOpeY07bsjGUy8gwJrXH/wScImSQqXErmo/b2jZY2r0mohbLA9zVj7u1cNw==}
     engines: {node: '>=12'}
     deprecated: Please update to latest patch version to fix memory leak https://github.com/isaacs/node-lru-cache/issues/227
+
+  lunar-typescript@1.8.6:
+    resolution: {integrity: sha512-5Eo4T/cnuXfrgO4k5LCpOGHIUOuz5hCF/IfNv0T29WY2shR36Hiz+ecN9WjnUuxUKhql9gbOkPaQoqLFKtPRNA==}
 
   make-fetch-happen@10.0.3:
     resolution: {integrity: sha512-CzarPHynPpHjhF5in/YapnO44rSZeYX5VCMfdXa99+gLwpbfFLh20CWa6dP/taV9Net9PWJwXNKtp/4ZTCQnag==}
@@ -4951,6 +4957,8 @@ snapshots:
       yallist: 4.0.0
 
   lru-cache@7.3.1: {}
+
+  lunar-typescript@1.8.6: {}
 
   make-fetch-happen@10.0.3:
     dependencies:

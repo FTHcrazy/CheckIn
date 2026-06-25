@@ -67,6 +67,22 @@ function createWindow() {
 }
 
 let isQuitting = false
+let mainWindow: BrowserWindow | null = null
+
+// 单实例锁定：防止多个应用和托盘同时存在
+const gotLock = app.requestSingleInstanceLock()
+if (!gotLock) {
+  app.quit()
+}
+
+app.on('second-instance', () => {
+  // 第二个实例启动时，聚焦已有窗口
+  if (mainWindow) {
+    if (!mainWindow.isVisible()) mainWindow.show()
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.focus()
+  }
+})
 
 app.whenReady().then(() => {
   // 注册协议处理器，将 app:// 请求映射到本地文件
@@ -116,6 +132,7 @@ app.whenReady().then(() => {
   })
 
   const win = createWindow()
+  mainWindow = win
 
   // 系统托盘图标，点击可重新显示窗口
   const tray = new Tray(ICON_PATH)
@@ -128,7 +145,7 @@ app.whenReady().then(() => {
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow()
+      mainWindow = createWindow()
     }
   })
 })
