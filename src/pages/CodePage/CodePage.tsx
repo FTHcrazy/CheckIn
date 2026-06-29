@@ -1,6 +1,28 @@
 import { useEffect, useState, useMemo } from "react";
-import { Table, DatePicker, Button, Space, Tag, message, Card, Tooltip, Typography, Statistic, Row, Col, InputNumber, Input } from "antd";
-import { ReloadOutlined, SearchOutlined, PlusOutlined, MinusOutlined, FileOutlined } from "@ant-design/icons";
+import {
+  Table,
+  DatePicker,
+  Button,
+  Space,
+  Tag,
+  message,
+  Card,
+  Tooltip,
+  Typography,
+  Statistic,
+  Row,
+  Col,
+  InputNumber,
+  Input,
+} from "antd";
+import {
+  ReloadOutlined,
+  SearchOutlined,
+  PlusOutlined,
+  MinusOutlined,
+  FileOutlined,
+  AimOutlined,
+} from "@ant-design/icons";
 import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
 import Page from "../../components/Page";
@@ -14,47 +36,96 @@ const { Text } = Typography;
 /** 法定节假日（放假日期，含调休放假） */
 const HOLIDAYS = new Set([
   // 2026 年
-  '2026-01-01', '2026-01-02', '2026-01-03', // 元旦
-  '2026-02-16', '2026-02-17', '2026-02-18', '2026-02-19', '2026-02-20', '2026-02-21', '2026-02-22', // 春节
-  '2026-04-05', '2026-04-06', '2026-04-07', // 清明
-  '2026-05-01', '2026-05-02', '2026-05-03', '2026-05-04', '2026-05-05', // 劳动节
-  '2026-06-19', '2026-06-20', '2026-06-21', // 端午
-  '2026-09-25', '2026-09-26', '2026-09-27', // 中秋
-  '2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04', '2026-10-05', '2026-10-06', '2026-10-07', // 国庆
+  "2026-01-01",
+  "2026-01-02",
+  "2026-01-03",
+  "2026-02-16",
+  "2026-02-17",
+  "2026-02-18",
+  "2026-02-19",
+  "2026-02-20",
+  "2026-02-21",
+  "2026-02-22",
+  "2026-04-05",
+  "2026-04-06",
+  "2026-04-07",
+  "2026-05-01",
+  "2026-05-02",
+  "2026-05-03",
+  "2026-05-04",
+  "2026-05-05",
+  "2026-06-19",
+  "2026-06-20",
+  "2026-06-21",
+  "2026-09-25",
+  "2026-09-26",
+  "2026-09-27",
+  "2026-10-01",
+  "2026-10-02",
+  "2026-10-03",
+  "2026-10-04",
+  "2026-10-05",
+  "2026-10-06",
+  "2026-10-07",
   // 2025 年
-  '2025-01-01', '2025-01-28', '2025-01-29', '2025-01-30', '2025-01-31', '2025-02-01', '2025-02-02', '2025-02-03', '2025-02-04',
-  '2025-04-04', '2025-04-05', '2025-04-06',
-  '2025-05-01', '2025-05-02', '2025-05-03', '2025-05-04', '2025-05-05',
-  '2025-05-31', '2025-06-01', '2025-06-02',
-  '2025-10-01', '2025-10-02', '2025-10-03', '2025-10-04', '2025-10-05', '2025-10-06', '2025-10-07', '2025-10-08',
+  "2025-01-01",
+  "2025-01-28",
+  "2025-01-29",
+  "2025-01-30",
+  "2025-01-31",
+  "2025-02-01",
+  "2025-02-02",
+  "2025-02-03",
+  "2025-02-04",
+  "2025-04-04",
+  "2025-04-05",
+  "2025-04-06",
+  "2025-05-01",
+  "2025-05-02",
+  "2025-05-03",
+  "2025-05-04",
+  "2025-05-05",
+  "2025-05-31",
+  "2025-06-01",
+  "2025-06-02",
+  "2025-10-01",
+  "2025-10-02",
+  "2025-10-03",
+  "2025-10-04",
+  "2025-10-05",
+  "2025-10-06",
+  "2025-10-07",
+  "2025-10-08",
 ]);
 
 /** 调休补班日（周末上班） */
 const MAKEUP_WORKDAYS = new Set([
   // 2026 年
-  '2026-02-14', '2026-02-28', // 春节补班
-  '2026-04-26', // 劳动节补班
-  '2026-09-28', // 国庆补班
+  "2026-02-14",
+  "2026-02-28",
+  "2026-04-26",
+  "2026-09-28",
   // 2025 年
-  '2025-01-26', '2025-02-08', // 春节补班
-  '2025-04-27', // 劳动节补班
-  '2025-09-28', '2025-10-11', // 国庆补班
+  "2025-01-26",
+  "2025-02-08",
+  "2025-04-27",
+  "2025-09-28",
+  "2025-10-11",
 ]);
 
-/** 计算日期区间内的法定工作日 */
 function calcWorkdays(from: Dayjs, to: Dayjs): number {
   let count = 0;
-  let cur = from.startOf('day');
-  const end = to.startOf('day');
+  let cur = from.startOf("day");
+  const end = to.startOf("day");
   while (cur.isBefore(end) || cur.isSame(end)) {
-    const key = cur.format('YYYY-MM-DD');
-    const dow = cur.day(); // 0=Sun, 6=Sat
+    const key = cur.format("YYYY-MM-DD");
+    const dow = cur.day();
     if (MAKEUP_WORKDAYS.has(key)) {
-      count++; // 调休补班，周末也算工作日
+      count++;
     } else if (!HOLIDAYS.has(key) && dow >= 1 && dow <= 5) {
-      count++; // 普通工作日（周一~周五且非节假日）
+      count++;
     }
-    cur = cur.add(1, 'day');
+    cur = cur.add(1, "day");
   }
   return count;
 }
@@ -95,13 +166,11 @@ export default function CodePage() {
     loadData();
   }, []);
 
-  // 日期区间变化时自动计算工作日
   useEffect(() => {
     const [from, to] = dateRange;
     setWorkdays(calcWorkdays(from, to) || 1);
   }, [dateRange]);
 
-  // 汇总统计
   const summaryStats = data.reduce(
     (acc, item) => ({
       commits: acc.commits + 1,
@@ -118,6 +187,20 @@ export default function CodePage() {
     return (summaryStats.insertions + summaryStats.deletions * 0.3) / workdays;
   }, [summaryStats.insertions, summaryStats.deletions, workdays]);
 
+  /**
+   * 预计明天需要新增多少行才能达成 200行/天
+   * 公式: (当前产出 + X) / (工作日 + 1) >= 200
+   * => X >= 200 * (工作日 + 1) - 当前产出
+   */
+  const neededTomorrow = useMemo(() => {
+    const TARGET = 200;
+    const currentOutput =
+      summaryStats.insertions + summaryStats.deletions * 0.3;
+    const nextWorkdays = workdays + 1;
+    const required = TARGET * nextWorkdays - currentOutput;
+    return Math.max(0, Math.ceil(required));
+  }, [summaryStats.insertions, summaryStats.deletions, workdays]);
+
   const columns = [
     {
       title: "提交时间",
@@ -125,43 +208,49 @@ export default function CodePage() {
       key: "commitTime",
       width: 160,
       fixed: "left" as const,
-      render: (v: string) => v ? dayjs(v).format("YYYY-MM-DD HH:mm") : "-",
+      render: (v: string) => (v ? dayjs(v).format("YYYY-MM-DD HH:mm") : "-"),
     },
     {
       title: "项目",
       dataIndex: "projectName",
       key: "projectName",
       width: 130,
-      render: (v: string) => v ? <Tag color="geekblue">{v}</Tag> : "-",
+      render: (v: string) => (v ? <Tag color="geekblue">{v}</Tag> : "-"),
     },
     {
       title: "仓库",
       dataIndex: "repositoryName",
       key: "repositoryName",
       width: 150,
-      render: (v: string) => v ? <Tag color="blue">{v}</Tag> : "-",
+      render: (v: string) => (v ? <Tag color="blue">{v}</Tag> : "-"),
     },
     {
       title: "分支",
       dataIndex: "branch",
       key: "branch",
       width: 200,
-      render: (v: string) => v ? (
-        <Tooltip title={v}>
-          <Tag className="branch-tag">{v}</Tag>
-        </Tooltip>
-      ) : "-",
+      render: (v: string) =>
+        v ? (
+          <Tooltip title={v}>
+            <Tag className="branch-tag">{v}</Tag>
+          </Tooltip>
+        ) : (
+          "-"
+        ),
     },
     {
       title: "提交信息",
       dataIndex: "comments",
       key: "comments",
       ellipsis: true,
-      render: (v: string) => v ? (
-        <Tooltip title={v}>
-          <span>{v.trim()}</span>
-        </Tooltip>
-      ) : "-",
+      render: (v: string) =>
+        v ? (
+          <Tooltip title={v}>
+            <span>{v.trim()}</span>
+          </Tooltip>
+        ) : (
+          "-"
+        ),
     },
     {
       title: "变更",
@@ -170,11 +259,17 @@ export default function CodePage() {
       render: (_: unknown, record: GitWebhookLogItem) => (
         <Space size={4}>
           <FileOutlined style={{ color: "#666" }} />
-          <Text type="secondary" style={{ fontSize: 12 }}>{record.fileChanges}</Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            {record.fileChanges}
+          </Text>
           <PlusOutlined style={{ color: "#52c41a", fontSize: 11 }} />
-          <Text style={{ color: "#52c41a", fontSize: 12 }}>{record.insertions}</Text>
+          <Text style={{ color: "#52c41a", fontSize: 12 }}>
+            {record.insertions}
+          </Text>
           <MinusOutlined style={{ color: "#ff4d4f", fontSize: 11 }} />
-          <Text style={{ color: "#ff4d4f", fontSize: 12 }}>{record.deletions}</Text>
+          <Text style={{ color: "#ff4d4f", fontSize: 12 }}>
+            {record.deletions}
+          </Text>
         </Space>
       ),
     },
@@ -183,7 +278,7 @@ export default function CodePage() {
       dataIndex: "teamName",
       key: "teamName",
       width: 100,
-      render: (v: string) => v ? <Tag color="cyan">{v}</Tag> : "-",
+      render: (v: string) => (v ? <Tag color="cyan">{v}</Tag> : "-"),
     },
   ];
 
@@ -222,55 +317,107 @@ export default function CodePage() {
             >
               刷新
             </Button>
-            <Text type="secondary">共 <Text strong>{total}</Text> 条提交</Text>
+            <Text type="secondary">
+              共 <Text strong>{total}</Text> 条提交
+            </Text>
           </Space>
         </Card>
-        <Row gutter={16} className="stats-row">
-          <Col span={4}>
+
+        {/* 统计卡片区域：新增第7个卡片，使用 flex 布局或调整 span */}
+        <Row gutter={[16, 16]} className="stats-row">
+          <Col xs={12} sm={8} md={6} lg={4} xl={3}>
             <Card size="small">
-              <Statistic title="提交次数" value={summaryStats.commits} suffix="次" />
-            </Card>
-          </Col>
-          <Col span={4}>
-            <Card size="small">
-              <Statistic title="修改文件数" value={summaryStats.files} suffix="个" />
-            </Card>
-          </Col>
-          <Col span={4}>
-            <Card size="small">
-              <Statistic title="增加行数" value={summaryStats.insertions} suffix="行" valueStyle={{ color: "#52c41a" }} />
-            </Card>
-          </Col>
-          <Col span={4}>
-            <Card size="small">
-              <Statistic title="删除行数" value={summaryStats.deletions} suffix="行" valueStyle={{ color: "#ff4d4f" }} />
-            </Card>
-          </Col>
-          <Col span={4}>
-            <Card size="small">
-              <div className="stat-label">工作日</div>
-              <InputNumber
-                min={1}
-                max={365}
-                value={workdays}
-                onChange={(v) => v && setWorkdays(v)}
-                addonAfter="天"
-                style={{ width: '100%' }}
+              <Statistic
+                title="提交次数"
+                value={summaryStats.commits}
+                suffix="次"
               />
             </Card>
           </Col>
-          <Col span={4}>
+          <Col xs={12} sm={8} md={6} lg={4} xl={3}>
+            <Card size="small">
+              <Statistic
+                title="修改文件数"
+                value={summaryStats.files}
+                suffix="个"
+              />
+            </Card>
+          </Col>
+          <Col xs={12} sm={8} md={6} lg={4} xl={3}>
+            <Card size="small">
+              <Statistic
+                title="增加行数"
+                value={summaryStats.insertions}
+                suffix="行"
+                styles={{ content: { color: "#52c41a" } }}
+              />
+            </Card>
+          </Col>
+          <Col xs={12} sm={8} md={6} lg={4} xl={3}>
+            <Card size="small">
+              <Statistic
+                title="删除行数"
+                value={summaryStats.deletions}
+                suffix="行"
+                styles={{ content: { color: "#ff4d4f" } }}
+              />
+            </Card>
+          </Col>
+
+          {/* ✅ 修复: addonAfter → Space.Compact */}
+          <Col xs={12} sm={8} md={6} lg={4} xl={3}>
+            <Card size="small">
+              <div className="stat-label">工作日</div>
+              <Space.Compact style={{ width: "100%" }}>
+                <InputNumber
+                  min={1}
+                  max={365}
+                  value={workdays}
+                  onChange={(v) => v && setWorkdays(v)}
+                  style={{ flex: 1 }}
+                />
+                <Button disabled style={{ cursor: "default" }}>
+                  天
+                </Button>
+              </Space.Compact>
+            </Card>
+          </Col>
+
+          <Col xs={12} sm={8} md={6} lg={4} xl={3}>
             <Card size="small">
               <Statistic
                 title="日均代码产出"
                 value={dailyOutput}
                 precision={1}
                 suffix="行/天"
-                valueStyle={{ color: "#1677ff", fontWeight: 700 }}
+                styles={{ content: { color: "#1677ff", fontWeight: 700 } }}
+              />
+            </Card>
+          </Col>
+
+          <Col xs={12} sm={8} md={6} lg={4} xl={3}>
+            <Card size="small">
+              <Statistic
+                title={
+                  <Tooltip title="假设明天为工作日，为达成日均200行产出目标，明日需新增的有效代码行数">
+                    <span style={{ cursor: "help" }}>
+                      明日达标需增 <AimOutlined />
+                    </span>
+                  </Tooltip>
+                }
+                value={neededTomorrow}
+                suffix="行"
+                styles={{
+                  content: {
+                    color: neededTomorrow === 0 ? "#52c41a" : "#fa8c16",
+                    fontWeight: 700,
+                  },
+                }}
               />
             </Card>
           </Col>
         </Row>
+
         <Table
           className="commit-table"
           columns={columns}

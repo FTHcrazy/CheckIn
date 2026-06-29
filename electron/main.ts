@@ -3,7 +3,7 @@ import path from "path";
 import fs from "fs";
 import https from "https";
 import { initDb, closeDb, dbAll, dbGet, dbRun, dbExec } from './db'
-import { startActivityPolling, stopActivityPolling, registerNotifIpc } from './activitiesTask'
+import { startActivityPolling, stopActivityPolling } from './activitiesTask'
 
 // Windows 下通知必须设置 AppUserModelId
 // 开发环境用 process.execPath（electron.exe 路径），生产环境用固定 ID
@@ -97,12 +97,6 @@ app.on("second-instance", () => {
 app.whenReady().then(() => {
   // 初始化本地数据库
   initDb()
-
-  // 注册通知 IPC handlers（尽早注册，不依赖窗口）
-  registerNotifIpc({
-    devServerUrl: VITE_DEV_SERVER_URL || '',
-    distElectron: DIST_ELECTRON,
-  });
 
   // 注册数据库 IPC handlers
   ipcMain.handle("db-all", (_event, sql: string, params?: unknown[]) =>
