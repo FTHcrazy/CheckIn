@@ -141,6 +141,47 @@ export default function CodePage() {
   const [email, setEmail] = useState("e-tiehan.fang@smart.com");
   const [workdays, setWorkdays] = useState(1);
 
+  // ✅ 新增：本月累计有效产出（独立于表格查询区间）
+  const [monthOutput, setMonthOutput] = useState(0);
+
+  const loadMonthOutput = async () => {
+    try {
+      const today = dayjs().startOf("day");
+      const monthStart = today.startOf("month");
+
+      // 仅当邮箱有效时发起请求
+      if (!email) {
+        setMonthOutput(0);
+        return;
+      }
+
+      const res = await fetchGitWebhookLogs(
+        email,
+        monthStart.format("YYYY/M/D HH:mm:ss"),
+        today.endOf("day").format("YYYY/M/D HH:mm:ss"),
+      );
+
+      const list = res.gitwebhooklog?.pageInfo?.list ?? [];
+      const output = list.reduce(
+        (acc, item) =>
+          acc +
+          (parseInt(item.insertions) || 0) +
+          (parseInt(item.deletions) || 0) * 0.3,
+        0,
+      );
+
+      setMonthOutput(output);
+    } catch {
+      // 月度统计请求失败不影响主流程，静默处理或置零
+      setMonthOutput(0);
+    }
+  };
+
+  // ✅ 页面加载及邮箱变更时重新拉取本月数据
+  useEffect(() => {
+    loadMonthOutput();
+  }, [email]);
+
   const loadData = async () => {
     setLoading(true);
     try {
@@ -181,6 +222,27 @@ export default function CodePage() {
     { commits: 0, files: 0, insertions: 0, deletions: 0 },
   );
 
+  /**
+   * 本月剩余工作日（含今日）平均每天需要多少行才能达成 200行/天
+   * 基于【本月1号至今日】的真实累计产出计算，不受表格筛选区间影响
+   */
+  const monthlyDailyNeeded = useMemo(() => {
+    const TARGET = 200;
+    const today = dayjs().startOf("day");
+    const monthEnd = today.endOf("month").startOf("day");
+    const monthStart = today.startOf("month");
+
+    const totalMonthWorkdays = calcWorkdays(monthStart, monthEnd);
+    const remainingWorkdays = calcWorkdays(today, monthEnd);
+
+    if (remainingWorkdays <= 0 || totalMonthWorkdays <= 0) return 0;
+
+    // ✅ 使用独立请求的 monthOutput，而非 summaryStats
+    const required =
+      (TARGET * totalMonthWorkdays - monthOutput) / remainingWorkdays;
+    return Math.max(0, Math.ceil(required));
+  }, [monthOutput]);
+
   // 日均代码产出 = (总增加行 + 总删除行 * 0.3) / 工作日
   const dailyOutput = useMemo(() => {
     if (!workdays || workdays <= 0) return 0;
@@ -188,18 +250,56 @@ export default function CodePage() {
   }, [summaryStats.insertions, summaryStats.deletions, workdays]);
 
   /**
-   * 预计明天需要新增多少行才能达成 200行/天
-   * 公式: (当前产出 + X) / (工作日 + 1) >= 200
-   * => X >= 200 * (工作日 + 1) - 当前产出
+   * 选中区间剩余日均所需产出
+   *
+   * 计算规则：
+   *   总目标 = 200 × [选中起始日 ~ 本月底最后工作日] 的工作日数
+   *   已产出 = dateRange 整个区间的累计代码产出
+   *   剩余工作日 = [选中截止日 ~ 本月底最后工作日] 的工作日数
+   *              （包含截止日当天，因其产出已在"已产出"中被部分扣减，
+   *               若当日不足200行则仍需继续补足）
+   *   结果 = max(0, ceil((总目标 - 已产出) / 剩余工作日))
    */
-  const neededTomorrow = useMemo(() => {
+  const selectedRangeDailyNeeded = useMemo(() => {
     const TARGET = 200;
-    const currentOutput =
-      summaryStats.insertions + summaryStats.deletions * 0.3;
-    const nextWorkdays = workdays + 1;
-    const required = TARGET * nextWorkdays - currentOutput;
-    return Math.max(0, Math.ceil(required));
-  }, [summaryStats.insertions, summaryStats.deletions, workdays]);
+    const [rangeFrom, rangeTo] = dateRange;
+    const startDate = rangeFrom.startOf("day");
+    const monthEnd = dayjs().endOf("month").startOf("day");
+
+    // 选中起始日超出本月 → 无意义
+    if (startDate.isAfter(monthEnd)) return null;
+
+    // 有效截止日 = min(选中截止日, 本月底)
+    const effectiveEnd = rangeTo.isBefore(monthEnd)
+      ? rangeTo.startOf("day")
+      : monthEnd;
+
+    // 起始日晚于有效截止日 → 无效区间
+    if (startDate.isAfter(effectiveEnd)) return null;
+
+    // ✅ 总工作日：选中起始日 → 本月底最后工作日
+    const totalWorkdays = calcWorkdays(startDate, monthEnd);
+    if (totalWorkdays <= 0) return 0;
+
+    // ✅ 剩余工作日：选中截止日 → 本月底最后工作日（含截止日当天）
+    const remainingWorkdays = calcWorkdays(effectiveEnd, monthEnd);
+    if (remainingWorkdays <= 0) return 0;
+
+    // ✅ 核心修正：直接从原始 data 中聚合选中区间的累计有效产出
+    // 有效产出 = insertions + deletions × 0.3
+    const rangeOutput = data.reduce((sum, item) => {
+      const ins = parseInt(item.insertions) || 0;
+      const del = parseInt(item.deletions) || 0;
+      return sum + ins + del * 0.3;
+    }, 0);
+
+    const totalTarget = TARGET * totalWorkdays;
+    const gap = totalTarget - rangeOutput;
+
+    if (gap <= 0) return 0; // 已超额完成
+
+    return Math.ceil(gap / remainingWorkdays);
+  }, [dateRange, data]);
 
   const columns = [
     {
@@ -294,6 +394,9 @@ export default function CodePage() {
                   setDateRange([dates[0], dates[1]]);
                 }
               }}
+              disabledDate={(current) =>
+                current && current.isAfter(dayjs().endOf("day"))
+              }
             />
             <Input
               placeholder="邮箱"
@@ -397,23 +500,95 @@ export default function CodePage() {
 
           <Col xs={12} sm={8} md={6} lg={4} xl={3}>
             <Card size="small">
-              <Statistic
-                title={
-                  <Tooltip title="假设明天为工作日，为达成日均200行产出目标，明日需新增的有效代码行数">
-                    <span style={{ cursor: "help" }}>
-                      明日达标需增 <AimOutlined />
-                    </span>
-                  </Tooltip>
-                }
-                value={neededTomorrow}
-                suffix="行"
-                styles={{
-                  content: {
-                    color: neededTomorrow === 0 ? "#52c41a" : "#fa8c16",
-                    fontWeight: 700,
-                  },
-                }}
-              />
+              {monthlyDailyNeeded !== null ? (
+                <Statistic
+                  title={
+                    <Tooltip title="以200行/天为月度目标，从今日起到本月底每个工作日平均需产出的有效代码行数">
+                      <span style={{ cursor: "help" }}>
+                        本月剩余日均 <AimOutlined />
+                      </span>
+                    </Tooltip>
+                  }
+                  value={monthlyDailyNeeded}
+                  suffix="行/天"
+                  styles={{
+                    content: {
+                      color: monthlyDailyNeeded === 0 ? "#52c41a" : "#fa8c16",
+                      fontWeight: 700,
+                    },
+                  }}
+                />
+              ) : (
+                <Statistic
+                  title="本月剩余日均"
+                  value="-"
+                  styles={{
+                    content: { color: "#999" },
+                  }}
+                />
+              )}
+            </Card>
+          </Col>
+
+          <Col xs={12} sm={8} md={6} lg={4} xl={3}>
+            <Card size="small">
+              {selectedRangeDailyNeeded !== null ? (
+                <Statistic
+                  title={
+                    <Tooltip
+                      title={(() => {
+                        const totalWd = calcWorkdays(
+                          dateRange[0].startOf("day"),
+                          dayjs().endOf("month").startOf("day"),
+                        );
+                        const remainWd = calcWorkdays(
+                          dateRange[1].isBefore(dayjs().endOf("month"))
+                            ? dateRange[1].startOf("day")
+                            : dayjs().endOf("month").startOf("day"),
+                          dayjs().endOf("month").startOf("day"),
+                        );
+                        const output = data.reduce(
+                          (s, i) =>
+                            s +
+                            (parseInt(i.insertions) || 0) +
+                            (parseInt(i.deletions) || 0) * 0.3,
+                          0,
+                        );
+                        return `目标: 200×${totalWd}=${200 * totalWd}行 | 已产出: ${Math.round(output)}行 | 剩余${remainWd}个工作日均摊缺口`;
+                      })()}
+                    >
+                      <span style={{ cursor: "help" }}>
+                        选中区间剩余日均 <AimOutlined />
+                      </span>
+                    </Tooltip>
+                  }
+                  value={selectedRangeDailyNeeded}
+                  suffix="行/天"
+                  styles={{
+                    content: {
+                      color:
+                        selectedRangeDailyNeeded === 0 ? "#52c41a" : "#722ed1",
+                      fontWeight: 700,
+                    },
+                  }}
+                />
+              ) : (
+                <div>
+                  <Text type="secondary" style={{ fontSize: 14 }}>
+                    选中区间剩余日均
+                  </Text>
+                  <div
+                    style={{
+                      fontSize: 24,
+                      fontWeight: 600,
+                      color: "#999",
+                      marginTop: 4,
+                    }}
+                  >
+                    -
+                  </div>
+                </div>
+              )}
             </Card>
           </Col>
         </Row>

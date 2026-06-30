@@ -7,7 +7,6 @@ import "./styles/App.scss"
 
 import DailyPage from "./pages/DailyPage/DailyPage"
 import CodePage from "./pages/CodePage/CodePage"
-import CanvansPage from "./pages/CanvansPage/index"
 
 
 const { Title, Text } = Typography
@@ -37,12 +36,6 @@ function Home() {
       title: "代码记录查看",
       desc: "计算日代码行",
       path: "/code",
-    },
-    {
-      icon: <ClockCircleOutlined />,
-      title: "画布",
-      desc: "画布示例",
-      path: "/canvans",
     },
   ]
 
@@ -129,7 +122,6 @@ export default function App() {
         <Route path="/" element={<Home />} />
         <Route path="/daily" element={<DailyPage />} />
         <Route path="/code" element={<CodePage />} />
-        <Route path="/canvans" element={<CanvansPage />} />
       </Routes>
     </ConfigProvider>
   )
