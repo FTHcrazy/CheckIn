@@ -138,8 +138,10 @@ export default function CodePage() {
     dayjs().startOf("day"),
     dayjs().endOf("day"),
   ]);
-  const [email, setEmail] = useState("e-tiehan.fang@smart.com");
+  const [email, setEmail] = useState("");
   const [workdays, setWorkdays] = useState(1);
+  const [emailInitialized, setEmailInitialized] = useState(false);
+  const [autoFetched, setAutoFetched] = useState(false);
 
   // ✅ 新增：本月累计有效产出（独立于表格查询区间）
   const [monthOutput, setMonthOutput] = useState(0);
@@ -177,17 +179,50 @@ export default function CodePage() {
     }
   };
 
+  useEffect(() => {
+    const loadDefaultEmail = async () => {
+      try {
+        const user = (await window.electronAPI?.db.get(
+          "SELECT email FROM user WHERE id = 1 LIMIT 1",
+        )) as { email?: string } | undefined;
+
+        if (user?.email) {
+          setEmail(user.email.trim());
+        }
+      } catch {
+        // 忽略读取失败，留空由用户手动输入
+      } finally {
+        setEmailInitialized(true);
+      }
+    };
+
+    void loadDefaultEmail();
+  }, []);
+
   // ✅ 页面加载及邮箱变更时重新拉取本月数据
   useEffect(() => {
+    if (!email) {
+      setMonthOutput(0);
+      return;
+    }
+
     loadMonthOutput();
   }, [email]);
 
   const loadData = async () => {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      setData([]);
+      setTotal(0);
+      message.warning("请输入邮箱后再查询");
+      return;
+    }
+
     setLoading(true);
     try {
       const [from, to] = dateRange;
       const res = await fetchGitWebhookLogs(
-        email,
+        trimmedEmail,
         from.startOf("day").format("YYYY/M/D HH:mm:ss"),
         to.endOf("day").format("YYYY/M/D HH:mm:ss"),
       );
@@ -204,8 +239,13 @@ export default function CodePage() {
   };
 
   useEffect(() => {
-    loadData();
-  }, []);
+    if (!emailInitialized || !email.trim() || autoFetched) {
+      return;
+    }
+
+    setAutoFetched(true);
+    void loadData();
+  }, [emailInitialized, email, autoFetched]);
 
   useEffect(() => {
     const [from, to] = dateRange;
@@ -274,7 +314,6 @@ export default function CodePage() {
       ? rangeTo.startOf("day")
       : monthEnd;
 
-    // 起始日晚于有效截止日 → 无效区间
     if (startDate.isAfter(effectiveEnd)) return null;
 
     // ✅ 总工作日：选中起始日 → 本月底最后工作日
@@ -285,19 +324,27 @@ export default function CodePage() {
     const remainingWorkdays = calcWorkdays(effectiveEnd, monthEnd);
     if (remainingWorkdays <= 0) return 0;
 
-    // ✅ 核心修正：直接从原始 data 中聚合选中区间的累计有效产出
-    // 有效产出 = insertions + deletions × 0.3
-    const rangeOutput = data.reduce((sum, item) => {
-      const ins = parseInt(item.insertions) || 0;
-      const del = parseInt(item.deletions) || 0;
-      return sum + ins + del * 0.3;
-    }, 0);
+    // ✅ 关键修复1: 只聚合 [startDate, effectiveEnd前一天] 的产出
+    // 因为截止日当天计入剩余工作日，其产出不应被提前扣减
+    const outputEndDate = effectiveEnd.subtract(1, "day");
+    const rangeOutput = data
+      .filter((item) => {
+        const d = dayjs(item.commitTime).startOf("day");
+        return (
+          (d.isSame(startDate) || d.isAfter(startDate)) &&
+          (d.isSame(outputEndDate) || d.isBefore(outputEndDate))
+        );
+      })
+      .reduce((sum, item) => {
+        const ins = parseInt(item.insertions) || 0;
+        const del = parseInt(item.deletions) || 0;
+        return sum + ins + del * 0.3;
+      }, 0);
 
     const totalTarget = TARGET * totalWorkdays;
     const gap = totalTarget - rangeOutput;
 
-    if (gap <= 0) return 0; // 已超额完成
-
+    if (gap <= 0) return 0;
     return Math.ceil(gap / remainingWorkdays);
   }, [dateRange, data]);
 
@@ -537,24 +584,34 @@ export default function CodePage() {
                   title={
                     <Tooltip
                       title={(() => {
+                        const mEnd = dayjs().endOf("month").startOf("day");
+                        const effEnd = dateRange[1].isBefore(mEnd)
+                          ? dateRange[1].startOf("day")
+                          : mEnd;
                         const totalWd = calcWorkdays(
                           dateRange[0].startOf("day"),
-                          dayjs().endOf("month").startOf("day"),
+                          mEnd,
                         );
-                        const remainWd = calcWorkdays(
-                          dateRange[1].isBefore(dayjs().endOf("month"))
-                            ? dateRange[1].startOf("day")
-                            : dayjs().endOf("month").startOf("day"),
-                          dayjs().endOf("month").startOf("day"),
-                        );
-                        const output = data.reduce(
-                          (s, i) =>
-                            s +
-                            (parseInt(i.insertions) || 0) +
-                            (parseInt(i.deletions) || 0) * 0.3,
-                          0,
-                        );
-                        return `目标: 200×${totalWd}=${200 * totalWd}行 | 已产出: ${Math.round(output)}行 | 剩余${remainWd}个工作日均摊缺口`;
+                        const remainWd = calcWorkdays(effEnd, mEnd);
+                        const outEnd = effEnd.subtract(1, "day");
+                        const output = data
+                          .filter((i) => {
+                            const d = dayjs(i.commitTime).startOf("day");
+                            return (
+                              (d.isSame(dateRange[0], "day") ||
+                                d.isAfter(dateRange[0], "day")) &&
+                              (d.isSame(outEnd, "day") ||
+                                d.isBefore(outEnd, "day"))
+                            );
+                          })
+                          .reduce(
+                            (s, i) =>
+                              s +
+                              (parseInt(i.insertions) || 0) +
+                              (parseInt(i.deletions) || 0) * 0.3,
+                            0,
+                          );
+                        return `目标: 200×${totalWd}=${200 * totalWd}行 | 已产出(不含截止日): ${Math.round(output)}行 | 剩余${remainWd}个工作日均摊缺口`;
                       })()}
                     >
                       <span style={{ cursor: "help" }}>

@@ -1,12 +1,13 @@
 import { useEffect, useRef } from 'react'
 import { Routes, Route, useNavigate } from "react-router-dom"
 import { Card, ConfigProvider, theme, Typography, Space, Tag, notification } from "antd"
-import { ThunderboltOutlined, RocketOutlined, ClockCircleOutlined } from "@ant-design/icons"
+import { ThunderboltOutlined, RocketOutlined, ClockCircleOutlined, UserOutlined } from "@ant-design/icons"
 import zhCN from "antd/locale/zh_CN"
 import "./styles/App.scss"
 
 import DailyPage from "./pages/DailyPage/DailyPage"
 import CodePage from "./pages/CodePage/CodePage"
+import UserPage from "./pages/UserPage"
 
 
 const { Title, Text } = Typography
@@ -36,6 +37,12 @@ function Home() {
       title: "代码记录查看",
       desc: "计算日代码行",
       path: "/code",
+    },
+    {
+      icon: <UserOutlined />,
+      title: "修改用户信息",
+      desc: "修改邮箱并同步到本地",
+      path: "/user",
     },
   ]
 
@@ -122,6 +129,7 @@ export default function App() {
         <Route path="/" element={<Home />} />
         <Route path="/daily" element={<DailyPage />} />
         <Route path="/code" element={<CodePage />} />
+        <Route path="/user" element={<UserPage />} />
       </Routes>
     </ConfigProvider>
   )

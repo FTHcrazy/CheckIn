@@ -2,13 +2,20 @@ import { app, BrowserWindow, ipcMain, protocol, Tray, Menu } from "electron";
 import path from "path";
 import fs from "fs";
 import https from "https";
-import { initDb, closeDb, dbAll, dbGet, dbRun, dbExec } from './db'
-import { startActivityPolling, stopActivityPolling } from './activitiesTask'
+import { initDb, closeDb, dbAll, dbGet, dbRun, dbExec } from "./db";
+import { startActivityPolling, stopActivityPolling } from "./activitiesTask";
+
+type UserCache = {
+  id: number;
+  email: string;
+};
 
 // Windows 下通知必须设置 AppUserModelId
 // 开发环境用 process.execPath（electron.exe 路径），生产环境用固定 ID
-if (process.platform === 'win32') {
-  app.setAppUserModelId(process.env['VITE_DEV_SERVER_URL'] ? process.execPath : 'com.checkin.app');
+if (process.platform === "win32") {
+  app.setAppUserModelId(
+    process.env["VITE_DEV_SERVER_URL"] ? process.execPath : "com.checkin.app",
+  );
 }
 
 // 只保留中英文 locale，减少内存占用
@@ -38,11 +45,13 @@ protocol.registerSchemesAsPrivileged([
 
 function createWindow() {
   const t0 = Date.now();
+  isMainWindowReady = false;
+
   const win = new BrowserWindow({
     width: 1200,
     height: 800,
     icon: ICON_PATH,
-    show: false, // 先隐藏，等页面加载完成再显示
+    show: false,
     webPreferences: {
       preload: path.join(DIST_ELECTRON, "preload.js"),
       contextIsolation: true,
@@ -50,7 +59,6 @@ function createWindow() {
     },
   });
 
-  // 点击关闭按钮时隐藏窗口而非退出
   win.on("close", (e) => {
     if (!isQuitting) {
       e.preventDefault();
@@ -58,18 +66,18 @@ function createWindow() {
     }
   });
 
-  win.once("ready-to-show", () => {
+  win.webContents.once("did-finish-load", () => {
     console.log(`[main] 页面加载完成: ${Date.now() - t0}ms`);
-    win.show();
-    // 窗口加载完毕后再启动活动轮询
-    startActivityPolling(win);
+    isMainWindowReady = true;
+    if (canShowMainWindow) {
+      showMainWindow();
+    }
   });
 
   if (VITE_DEV_SERVER_URL) {
     win.loadURL(VITE_DEV_SERVER_URL);
     win.webContents.openDevTools();
   } else {
-    // 使用自定义协议加载本地文件，避免 file:// 安全限制
     win.loadURL(`app://./index.html`);
   }
 
@@ -78,6 +86,139 @@ function createWindow() {
 
 let isQuitting = false;
 let mainWindow: BrowserWindow | null = null;
+let loginWindow: BrowserWindow | null = null;
+let canShowMainWindow = false;
+let isMainWindowReady = false;
+let hasStartedActivityPolling = false;
+const LOGIN_WINDOW_MIN_DISPLAY_MS = 5000;
+let loginWindowVisibleAt: number | null = null;
+let loginWindowHasShown = false;
+
+function ensureUserTable() {
+  dbExec(`
+    CREATE TABLE IF NOT EXISTS user (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      email TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now', 'localtime')),
+      updated_at TEXT DEFAULT (datetime('now', 'localtime'))
+    )
+  `);
+}
+
+function getCachedUser(): UserCache | null {
+  const user = dbGet("SELECT id, email FROM user WHERE id = 1 LIMIT 1") as
+    | UserCache
+    | undefined;
+  return user?.email ? user : null;
+}
+
+function ensureMainWindow() {
+  if (!mainWindow) {
+    mainWindow = createWindow();
+  }
+  return mainWindow;
+}
+
+function allowAndShowMainWindow() {
+  canShowMainWindow = true;
+  ensureMainWindow();
+
+  const delay =
+    loginWindowHasShown && loginWindowVisibleAt
+      ? Math.max(
+          0,
+          LOGIN_WINDOW_MIN_DISPLAY_MS - (Date.now() - loginWindowVisibleAt),
+        )
+      : 0;
+
+  const closeLoginWindow = () => {
+    if (loginWindow && !loginWindow.isDestroyed()) {
+      loginWindow.close();
+    }
+  };
+
+  if (delay > 0) {
+    setTimeout(() => {
+      closeLoginWindow();
+      showMainWindow();
+    }, delay);
+  } else {
+    closeLoginWindow();
+    showMainWindow();
+  }
+}
+
+function showMainWindow() {
+  if (!canShowMainWindow) {
+    if (loginWindow?.isMinimized()) loginWindow.restore();
+    loginWindow?.show();
+    loginWindow?.focus();
+    return;
+  }
+
+  if (!mainWindow || !isMainWindowReady) return;
+
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+
+  if (!hasStartedActivityPolling) {
+    hasStartedActivityPolling = true;
+    startActivityPolling(mainWindow);
+  }
+}
+
+function createLoginWindow(user?: UserCache | null) {
+  loginWindow = new BrowserWindow({
+    width: 520,
+    height: user ? 320 : 420,
+    icon: ICON_PATH,
+    resizable: false,
+    maximizable: false,
+    minimizable: false,
+    titleBarStyle: "hiddenInset",
+    titleBarOverlay: false,
+    frame: false,
+    show: false,
+    webPreferences: {
+      preload: path.join(DIST_ELECTRON, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  loginWindow.removeMenu();
+  loginWindow.webContents.once("did-finish-load", () => {
+    const currentLoginWindow = loginWindow;
+    if (currentLoginWindow && !currentLoginWindow.isDestroyed()) {
+      loginWindowHasShown = true;
+      loginWindowVisibleAt = Date.now();
+      currentLoginWindow.show();
+      currentLoginWindow.focus();
+    }
+  });
+  loginWindow.on("closed", () => {
+    loginWindow = null;
+  });
+
+  loginWindow.loadURL(getLoginWindowUrl(user?.email));
+}
+
+function getLoginWindowUrl(email?: string) {
+  const params = new URLSearchParams();
+  if (email) {
+    params.set("email", email);
+  }
+
+  const query = params.toString();
+  const suffix = query ? `?${query}` : "";
+
+  if (VITE_DEV_SERVER_URL) {
+    return `app://./login.html${suffix}`;
+  }
+
+  return `app://./login.html${suffix}`;
+}
 
 // 单实例锁定：防止多个应用和托盘同时存在
 const gotLock = app.requestSingleInstanceLock();
@@ -86,17 +227,14 @@ if (!gotLock) {
 }
 
 app.on("second-instance", () => {
-  // 第二个实例启动时，聚焦已有窗口
-  if (mainWindow) {
-    if (!mainWindow.isVisible()) mainWindow.show();
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.focus();
-  }
+  // 第二个实例启动时，聚焦已有窗口或登录窗口
+  showMainWindow();
 });
 
 app.whenReady().then(() => {
   // 初始化本地数据库
-  initDb()
+  initDb();
+  ensureUserTable();
 
   // 注册数据库 IPC handlers
   ipcMain.handle("db-all", (_event, sql: string, params?: unknown[]) =>
@@ -116,7 +254,8 @@ app.whenReady().then(() => {
   // 注册协议处理器，将 app:// 请求映射到本地文件
   protocol.handle("app", (request) => {
     const url = request.url.replace("app://./", "");
-    const filePath = path.join(DIST, decodeURIComponent(url));
+    const cleanUrl = url.split("?")[0];
+    const filePath = path.join(DIST, decodeURIComponent(cleanUrl));
     const content = fs.readFileSync(filePath);
     return new Response(content, {
       headers: {
@@ -167,15 +306,27 @@ app.whenReady().then(() => {
     },
   );
 
-  const win = createWindow();
-  mainWindow = win;
+  ipcMain.on("toMain", (_event, data: unknown) => {
+    if (
+      data &&
+      typeof data === "object" &&
+      "type" in data &&
+      data.type === "user-login-confirmed"
+    ) {
+      allowAndShowMainWindow();
+    }
+  });
+
+  const cachedUser = getCachedUser();
+  createLoginWindow(cachedUser);
+  ensureMainWindow();
 
   // 系统托盘图标，点击可重新显示窗口
   const tray = new Tray(ICON_PATH);
   tray.setToolTip("CheckIn");
   tray.setContextMenu(
     Menu.buildFromTemplate([
-      { label: "显示窗口", click: () => win?.show() },
+      { label: "显示窗口", click: () => showMainWindow() },
       {
         label: "退出",
         click: () => {
@@ -186,25 +337,26 @@ app.whenReady().then(() => {
     ]),
   );
   tray.on("click", () => {
-    if (win?.isVisible()) {
-      win?.hide();
+    if (mainWindow?.isVisible()) {
+      mainWindow.hide();
     } else {
-      win?.show();
+      showMainWindow();
     }
   });
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      mainWindow = createWindow();
+      createLoginWindow(getCachedUser());
     }
+    showMainWindow();
   });
 });
 
-app.on('before-quit', () => {
-  isQuitting = true
-  stopActivityPolling()
-  closeDb()
-})
+app.on("before-quit", () => {
+  isQuitting = true;
+  stopActivityPolling();
+  closeDb();
+});
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
