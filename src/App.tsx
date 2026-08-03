@@ -1,13 +1,14 @@
 import { useEffect, useRef } from 'react'
 import { Routes, Route, useNavigate } from "react-router-dom"
-import { Card, ConfigProvider, theme, Typography, Space, Tag, notification } from "antd"
-import { ThunderboltOutlined, RocketOutlined, ClockCircleOutlined, UserOutlined } from "@ant-design/icons"
+import { Card, ConfigProvider, theme, Typography, Space, Tag, notification, App as AntdApp } from "antd"
+import { ThunderboltOutlined, RocketOutlined, ClockCircleOutlined, UserOutlined, EditOutlined } from "@ant-design/icons"
 import zhCN from "antd/locale/zh_CN"
 import "./styles/App.scss"
 
 import DailyPage from "./pages/DailyPage/DailyPage"
 import CodePage from "./pages/CodePage/CodePage"
 import UserPage from "./pages/UserPage"
+import MemoPage from "./pages/MemoPage/MemoPage"
 
 
 const { Title, Text } = Typography
@@ -43,6 +44,12 @@ function Home() {
       title: "修改用户信息",
       desc: "修改邮箱并同步到本地",
       path: "/user",
+    },
+    {
+      icon: <EditOutlined />,
+      title: "备忘列表",
+      desc: "新增和编辑 Markdown 备忘文件",
+      path: "/memo",
     },
   ]
 
@@ -124,13 +131,16 @@ export default function App() {
         },
       }}
     >
-      <ActivityNotifier />
-      <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/daily" element={<DailyPage />} />
-        <Route path="/code" element={<CodePage />} />
-        <Route path="/user" element={<UserPage />} />
-      </Routes>
+      <AntdApp>
+        <ActivityNotifier />
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/daily" element={<DailyPage />} />
+          <Route path="/code" element={<CodePage />} />
+          <Route path="/user" element={<UserPage />} />
+          <Route path="/memo" element={<MemoPage />} />
+        </Routes>
+      </AntdApp>
     </ConfigProvider>
   )
 }

@@ -20,6 +20,14 @@ export interface ElectronAPI {
 
   send: (channel: string, data: unknown) => void
   receive: (channel: string, func: (...args: unknown[]) => void) => void
+
+  memo: {
+    list: () => Promise<{ name: string; updatedAt: string }[]>
+    read: (filename: string) => Promise<string>
+    write: (filename: string, content: string) => Promise<boolean>
+    delete: (filename: string) => Promise<boolean>
+    openInExplorer: (filename: string) => Promise<boolean>
+  }
 }
 
 declare global {

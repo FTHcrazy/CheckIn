@@ -28,4 +28,90 @@
       font-size: 13px;
     }
   }
+
+  .trend-card {
+    margin-bottom: 16px;
+
+    .ant-card-body {
+      overflow-x: auto;
+    }
+  }
+
+  .trend-chart {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-width: max-content;
+    height: 190px;
+    padding: 24px 8px 4px;
+    box-sizing: border-box;
+    border-bottom: 1px solid #d9d9d9;
+  }
+
+  .trend-values,
+  .trend-bars,
+  .trend-dates {
+    display: flex;
+    gap: 12px;
+  }
+
+  .trend-values,
+  .trend-dates {
+    flex: 0 0 auto;
+  }
+
+  .trend-bars {
+    position: relative;
+    flex: 1;
+    align-items: flex-end;
+    min-height: 0;
+  }
+
+  .trend-target-line {
+    position: absolute;
+    right: 0;
+    left: 0;
+    z-index: 0;
+    border-top: 1px dashed #fa8c16;
+    pointer-events: none;
+  }
+
+  .trend-value {
+    flex: 0 0 34px;
+    height: 18px;
+    color: rgba(0, 0, 0, 0.65);
+    font-size: 11px;
+    line-height: 18px;
+    text-align: center;
+  }
+
+  .trend-bar-area {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: flex-end;
+    flex: 0 0 34px;
+    height: 100%;
+    width: 100%;
+  }
+
+  .trend-bar {
+    width: 100%;
+    min-height: 3px;
+    border-radius: 3px 3px 0 0;
+    background: #1677ff;
+  }
+
+  .trend-bar-weekend {
+    background: #bfbfbf;
+  }
+
+  .trend-date {
+    flex: 0 0 34px;
+    margin-top: 6px;
+    color: rgba(0, 0, 0, 0.45);
+    font-size: 11px;
+    text-align: center;
+    white-space: nowrap;
+  }
 }

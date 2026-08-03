@@ -348,6 +348,39 @@ export default function CodePage() {
     return Math.ceil(gap / remainingWorkdays);
   }, [dateRange, data]);
 
+  const dailyOutputTrend = useMemo(() => {
+    const [rangeFrom, rangeTo] = dateRange;
+    const outputByDate = new Map<string, number>();
+    data.forEach((item) => {
+      const date = dayjs(item.commitTime).format("YYYY-MM-DD");
+      const output =
+        (parseInt(item.insertions) || 0) +
+        (parseInt(item.deletions) || 0) * 0.3;
+      outputByDate.set(date, (outputByDate.get(date) ?? 0) + output);
+    });
+
+    const trend: { date: string; output: number; isWorkday: boolean }[] = [];
+    let current = rangeFrom.startOf("day");
+    const end = rangeTo.startOf("day");
+    while (current.isBefore(end) || current.isSame(end)) {
+      const date = current.format("YYYY-MM-DD");
+      trend.push({
+        date,
+        output: outputByDate.get(date) ?? 0,
+        isWorkday:
+          MAKEUP_WORKDAYS.has(date) ||
+          (!HOLIDAYS.has(date) && current.day() >= 1 && current.day() <= 5),
+      });
+      current = current.add(1, "day");
+    }
+    return trend;
+  }, [dateRange, data]);
+
+  const trendMax = Math.max(
+    200,
+    ...dailyOutputTrend.map((item) => item.output),
+  );
+
   const columns = [
     {
       title: "提交时间",
@@ -649,6 +682,45 @@ export default function CodePage() {
             </Card>
           </Col>
         </Row>
+
+        <Card
+          size="small"
+          className="trend-card"
+          title="选中日期日均代码产出趋势"
+          extra={<Text type="secondary">目标 200 行/天</Text>}
+        >
+          <div className="trend-chart" aria-label="选中日期日均代码产出趋势">
+            <div className="trend-values">
+              {dailyOutputTrend.map((item) => (
+                <div className="trend-value" key={item.date}>
+                  {Math.round(item.output)}
+                </div>
+              ))}
+            </div>
+            <div className="trend-bars">
+              <div
+                className="trend-target-line"
+                style={{ bottom: `${(200 / trendMax) * 100}%` }}
+              />
+              {dailyOutputTrend.map((item) => (
+                <div className="trend-bar-area" key={item.date}>
+                  <div
+                    className={`trend-bar${item.isWorkday ? "" : " trend-bar-weekend"}`}
+                    style={{ height: `${Math.max((item.output / trendMax) * 100, 2)}%` }}
+                    title={`${item.date}: ${item.output.toFixed(1)} 行`}
+                  />
+                </div>
+              ))}
+            </div>
+            <div className="trend-dates">
+              {dailyOutputTrend.map((item) => (
+                <div className="trend-date" key={item.date}>
+                  {dayjs(item.date).format("MM-DD")}
+                </div>
+              ))}
+            </div>
+          </div>
+        </Card>
 
         <Table
           className="commit-table"

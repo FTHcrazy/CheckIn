@@ -1,4 +1,12 @@
-import { app, BrowserWindow, ipcMain, protocol, Tray, Menu } from "electron";
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  protocol,
+  Tray,
+  Menu,
+  shell,
+} from "electron";
 import path from "path";
 import fs from "fs";
 import https from "https";
@@ -305,6 +313,49 @@ app.whenReady().then(() => {
       });
     },
   );
+
+  // ── 备忘文件 IPC handlers ──
+  const MEMOS_DIR = path.join(app.getPath("userData"), "memos");
+  if (!fs.existsSync(MEMOS_DIR)) fs.mkdirSync(MEMOS_DIR, { recursive: true });
+
+  ipcMain.handle("memo-list", () => {
+    if (!fs.existsSync(MEMOS_DIR)) return [];
+    const files = fs.readdirSync(MEMOS_DIR).filter((f) => f.endsWith(".md"));
+    return files
+      .map((name) => {
+        const stat = fs.statSync(path.join(MEMOS_DIR, name));
+        return { name, updatedAt: stat.mtime.toISOString() };
+      })
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  });
+
+  ipcMain.handle("memo-read", (_event, filename: string) => {
+    const safe = path.basename(filename);
+    const filePath = path.join(MEMOS_DIR, safe);
+    if (!fs.existsSync(filePath)) throw new Error("文件不存在");
+    return fs.readFileSync(filePath, "utf-8");
+  });
+
+  ipcMain.handle("memo-write", (_event, filename: string, content: string) => {
+    const safe = path.basename(filename);
+    const filePath = path.join(MEMOS_DIR, safe);
+    fs.writeFileSync(filePath, content, "utf-8");
+    return true;
+  });
+
+  ipcMain.handle("memo-delete", (_event, filename: string) => {
+    const safe = path.basename(filename);
+    const filePath = path.join(MEMOS_DIR, safe);
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    return true;
+  });
+
+  ipcMain.handle("memo-open-in-explorer", (_event, filename: string) => {
+    const safe = path.basename(filename);
+    const filePath = path.join(MEMOS_DIR, safe);
+    shell.showItemInFolder(filePath);
+    return true;
+  });
 
   ipcMain.on("toMain", (_event, data: unknown) => {
     if (
