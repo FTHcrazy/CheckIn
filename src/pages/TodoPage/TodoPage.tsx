@@ -1,6 +1,21 @@
 import { useEffect, useState, useCallback } from "react";
-import { App, Button, Checkbox, Empty, Input, Popconfirm, Space, Typography } from "antd";
-import { PlusOutlined, DeleteOutlined, CheckCircleOutlined, ClockCircleOutlined, UndoOutlined } from "@ant-design/icons";
+import {
+  App,
+  Button,
+  Checkbox,
+  Empty,
+  Input,
+  Popconfirm,
+  Space,
+  Typography,
+} from "antd";
+import {
+  PlusOutlined,
+  DeleteOutlined,
+  CheckCircleOutlined,
+  ClockCircleOutlined,
+  UndoOutlined,
+} from "@ant-design/icons";
 import dayjs from "dayjs";
 import Page from "../../components/Page";
 import "./index.scss";
@@ -17,9 +32,13 @@ interface TodoItem {
 }
 
 const db = {
-  all: (sql: string, params?: unknown[]) => window.electronAPI?.db.all(sql, params) ?? Promise.resolve([]),
-  run: (sql: string, params?: unknown[]) => window.electronAPI?.db.run(sql, params) ?? Promise.resolve({ changes: 0, lastInsertRowid: 0 }),
-  exec: (sql: string) => window.electronAPI?.db.exec(sql) ?? Promise.resolve(false),
+  all: (sql: string, params?: unknown[]) =>
+    window.electronAPI?.db.all(sql, params) ?? Promise.resolve([]),
+  run: (sql: string, params?: unknown[]) =>
+    window.electronAPI?.db.run(sql, params) ??
+    Promise.resolve({ changes: 0, lastInsertRowid: 0 }),
+  exec: (sql: string) =>
+    window.electronAPI?.db.exec(sql) ?? Promise.resolve(false),
 };
 
 // 初始化表
@@ -48,7 +67,9 @@ function TodoPage() {
 
   const loadItems = useCallback(async () => {
     try {
-      const rows = (await db.all("SELECT * FROM todos ORDER BY created_at DESC")) as TodoItem[];
+      const rows = (await db.all(
+        "SELECT * FROM todos ORDER BY created_at DESC",
+      )) as TodoItem[];
       setItems(rows);
     } catch (err) {
       message.error("加载 TODO 列表失败");
@@ -62,7 +83,10 @@ function TodoPage() {
 
   const handleAdd = async () => {
     const text = newContent.trim();
-    if (!text) { message.warning("请输入内容"); return; }
+    if (!text) {
+      message.warning("请输入内容");
+      return;
+    }
     try {
       await db.run("INSERT INTO todos (content) VALUES (?)", [text]);
       setNewContent("");
@@ -76,9 +100,15 @@ function TodoPage() {
 
   const handleAddChild = async (parentId: number) => {
     const text = childContent.trim();
-    if (!text) { message.warning("请输入子项内容"); return; }
+    if (!text) {
+      message.warning("请输入子项内容");
+      return;
+    }
     try {
-      await db.run("INSERT INTO todos (parent_id, content) VALUES (?, ?)", [parentId, text]);
+      await db.run("INSERT INTO todos (parent_id, content) VALUES (?, ?)", [
+        parentId,
+        text,
+      ]);
       setChildInputFor(null);
       setChildContent("");
       message.success("子项已添加");
@@ -105,7 +135,10 @@ function TodoPage() {
     try {
       const doneVal = checked ? 1 : 0;
       const doneAt = checked ? "datetime('now', 'localtime')" : "NULL";
-      await db.run(`UPDATE todos SET done = ?, done_at = ${doneAt} WHERE id = ?`, [doneVal, id]);
+      await db.run(
+        `UPDATE todos SET done = ?, done_at = ${doneAt} WHERE id = ?`,
+        [doneVal, id],
+      );
       void loadItems();
     } catch (err) {
       message.error("操作失败");
@@ -118,21 +151,36 @@ function TodoPage() {
     try {
       const doneVal = checked ? 1 : 0;
       const doneAt = checked ? "datetime('now', 'localtime')" : "NULL";
-      await db.run(`UPDATE todos SET done = ?, done_at = ${doneAt} WHERE id = ?`, [doneVal, id]);
+      await db.run(
+        `UPDATE todos SET done = ?, done_at = ${doneAt} WHERE id = ?`,
+        [doneVal, id],
+      );
 
       // 获取该子项的 parent_id
-      const child = (await db.all("SELECT parent_id FROM todos WHERE id = ?", [id])) as TodoItem[];
+      const child = (await db.all("SELECT parent_id FROM todos WHERE id = ?", [
+        id,
+      ])) as TodoItem[];
       if (child.length > 0 && child[0].parent_id !== null) {
         const parentId = child[0].parent_id;
         // 检查该父项的所有子项是否都已完成
-        const siblings = (await db.all("SELECT done FROM todos WHERE parent_id = ?", [parentId])) as TodoItem[];
-        const allDone = siblings.length > 0 && siblings.every(s => s.done === 1);
+        const siblings = (await db.all(
+          "SELECT done FROM todos WHERE parent_id = ?",
+          [parentId],
+        )) as TodoItem[];
+        const allDone =
+          siblings.length > 0 && siblings.every((s) => s.done === 1);
         if (allDone) {
-          await db.run(`UPDATE todos SET done = 1, done_at = datetime('now', 'localtime') WHERE id = ?`, [parentId]);
+          await db.run(
+            `UPDATE todos SET done = 1, done_at = datetime('now', 'localtime') WHERE id = ?`,
+            [parentId],
+          );
         } else {
           // 如果取消勾选子项，父项也应取消
           if (!checked) {
-            await db.run(`UPDATE todos SET done = 0, done_at = NULL WHERE id = ?`, [parentId]);
+            await db.run(
+              `UPDATE todos SET done = 0, done_at = NULL WHERE id = ?`,
+              [parentId],
+            );
           }
         }
       }
@@ -148,10 +196,16 @@ function TodoPage() {
     try {
       const doneVal = checked ? 1 : 0;
       const doneAt = checked ? "datetime('now', 'localtime')" : "NULL";
-      await db.run(`UPDATE todos SET done = ?, done_at = ${doneAt} WHERE id = ?`, [doneVal, id]);
+      await db.run(
+        `UPDATE todos SET done = ?, done_at = ${doneAt} WHERE id = ?`,
+        [doneVal, id],
+      );
       if (!checked) {
         // 取消父项时，子项也取消
-        await db.run(`UPDATE todos SET done = 0, done_at = NULL WHERE parent_id = ?`, [id]);
+        await db.run(
+          `UPDATE todos SET done = 0, done_at = NULL WHERE parent_id = ?`,
+          [id],
+        );
       }
       void loadItems();
     } catch (err) {
@@ -161,11 +215,12 @@ function TodoPage() {
   };
 
   // 分离顶级项
-  const topLevel = items.filter(i => i.parent_id === null);
-  const getChildren = (parentId: number) => items.filter(i => i.parent_id === parentId);
+  const topLevel = items.filter((i) => i.parent_id === null);
+  const getChildren = (parentId: number) =>
+    items.filter((i) => i.parent_id === parentId);
 
-  const todoItems = topLevel.filter(i => i.done === 0);
-  const doneItems = topLevel.filter(i => i.done === 1);
+  const todoItems = topLevel.filter((i) => i.done === 0);
+  const doneItems = topLevel.filter((i) => i.done === 1);
 
   const renderItem = (item: TodoItem, isChild = false) => {
     const children = isChild ? [] : getChildren(item.id);
@@ -173,7 +228,10 @@ function TodoPage() {
     const isDone = item.done === 1;
 
     return (
-      <div key={item.id} className={`todo-item ${isDone ? "todo-item--done" : ""} ${isChild ? "todo-item--child" : ""}`}>
+      <div
+        key={item.id}
+        className={`todo-item ${isDone ? "todo-item--done" : ""} ${isChild ? "todo-item--child" : ""}`}
+      >
         <div className="todo-item-row">
           <div className="todo-item-checkbox">
             <Checkbox
@@ -191,7 +249,9 @@ function TodoPage() {
             />
           </div>
           <div className="todo-item-content">
-            <Text className={isDone ? "todo-item-text--done" : ""}>{item.content}</Text>
+            <Text className={isDone ? "todo-item-text--done" : ""}>
+              {item.content}
+            </Text>
             <Text type="secondary" className="todo-item-time">
               <ClockCircleOutlined style={{ fontSize: 12, marginRight: 4 }} />
               {dayjs(item.created_at).format("MM-DD HH:mm")}
@@ -222,7 +282,11 @@ function TodoPage() {
                     type="text"
                     size="small"
                     icon={<PlusOutlined />}
-                    onClick={() => setChildInputFor(childInputFor === item.id ? null : item.id)}
+                    onClick={() =>
+                      setChildInputFor(
+                        childInputFor === item.id ? null : item.id,
+                      )
+                    }
                   />
                 )}
               </>
@@ -231,7 +295,12 @@ function TodoPage() {
               title="确定删除？"
               onConfirm={() => void handleDelete(item.id)}
             >
-              <Button type="text" size="small" danger icon={<DeleteOutlined />} />
+              <Button
+                type="text"
+                size="small"
+                danger
+                icon={<DeleteOutlined />}
+              />
             </Popconfirm>
           </div>
         </div>
@@ -247,14 +316,19 @@ function TodoPage() {
               onPressEnter={() => void handleAddChild(item.id)}
               autoFocus
             />
-            <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => void handleAddChild(item.id)} />
+            <Button
+              size="small"
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={() => void handleAddChild(item.id)}
+            />
           </div>
         )}
 
         {/* 子项列表 */}
         {hasChildren && (
           <div className="todo-children">
-            {children.map(child => renderItem(child, true))}
+            {children.map((child) => renderItem(child, true))}
           </div>
         )}
       </div>
@@ -274,45 +348,57 @@ function TodoPage() {
             size="large"
             spellCheck={false}
           />
-          <Button type="primary" size="large" icon={<PlusOutlined />} onClick={() => void handleAdd()}>
+          <Button
+            type="primary"
+            size="large"
+            icon={<PlusOutlined />}
+            onClick={() => void handleAdd()}
+          >
             添加
           </Button>
         </div>
-
-        {/* TODO 分区 */}
-        <div className="todo-section">
-          <div className="todo-section-header">
-            <Space>
-              <CheckCircleOutlined style={{ color: "#1677ff" }} />
-              <Text strong>TODO</Text>
-              <Text type="secondary">({todoItems.length})</Text>
-            </Space>
-          </div>
-          {todoItems.length === 0 ? (
-            <Empty description="暂无待办事项" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-          ) : (
-            <div className="todo-list">
-              {todoItems.map(item => renderItem(item))}
+        <div className="todo-list-container">
+          {/* TODO 分区 */}
+          <div className="todo-section">
+            <div className="todo-section-header">
+              <Space>
+                <CheckCircleOutlined style={{ color: "#1677ff" }} />
+                <Text strong>TODO</Text>
+                <Text type="secondary">({todoItems.length})</Text>
+              </Space>
             </div>
-          )}
-        </div>
-
-        {/* DONE 分区 */}
-        <div className="todo-section todo-section--done">
-          <div className="todo-section-header">
-            <Space>
-              <CheckCircleOutlined style={{ color: "#52c41a" }} />
-              <Text strong>DONE</Text>
-              <Text type="secondary">({doneItems.length})</Text>
-            </Space>
+            {todoItems.length === 0 ? (
+              <Empty
+                description="暂无待办事项"
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+              />
+            ) : (
+              <div className="todo-list">
+                {todoItems.map((item) => renderItem(item))}
+              </div>
+            )}
           </div>
-          {doneItems.length === 0 ? (
-            <Empty description="暂无已完成事项" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-          ) : (
-            <div className="todo-list">
-              {doneItems.map(item => renderItem(item))}
+
+          {/* DONE 分区 */}
+          <div className="todo-section todo-section--done">
+            <div className="todo-section-header">
+              <Space>
+                <CheckCircleOutlined style={{ color: "#52c41a" }} />
+                <Text strong>DONE</Text>
+                <Text type="secondary">({doneItems.length})</Text>
+              </Space>
             </div>
-          )}
+            {doneItems.length === 0 ? (
+              <Empty
+                description="暂无已完成事项"
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+              />
+            ) : (
+              <div className="todo-list">
+                {doneItems.map((item) => renderItem(item))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </Page>

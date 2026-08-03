@@ -67,6 +67,8 @@ function createWindow() {
     },
   });
 
+  win.removeMenu();
+
   win.on("close", (e) => {
     if (!isQuitting) {
       e.preventDefault();
