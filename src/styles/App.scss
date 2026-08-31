@@ -1,4 +1,4 @@
-@use './variables' as *;
+@use "./variables" as *;
 
 .app-container {
   min-height: 100vh;
@@ -53,8 +53,19 @@
         border-radius: $border-radius;
         transition: transform 0.3s ease;
 
+        .ant-border-beam {
+          opacity: 0;
+          transition: opacity var(--ant-motion-duration-mid);
+        }
+
         &:hover {
           transform: translateY(-4px);
+          .ant-border-beam {
+            opacity: 1;
+            &::before {
+              animation-play-state: running;
+            }
+          }
         }
 
         .feature-icon {

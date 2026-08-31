@@ -3,11 +3,14 @@ import {
   App,
   Button,
   Checkbox,
+  Dropdown,
   Empty,
   Input,
+  Modal,
   Popconfirm,
   Space,
   Typography,
+  type MenuProps,
 } from "antd";
 import {
   PlusOutlined,
@@ -15,6 +18,7 @@ import {
   CheckCircleOutlined,
   ClockCircleOutlined,
   UndoOutlined,
+  StarFilled,
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 import Page from "../../components/Page";
@@ -27,6 +31,8 @@ interface TodoItem {
   parent_id: number | null;
   content: string;
   done: number; // 0 or 1
+  note: string | null;
+  important: number; // 0 or 1
   created_at: string;
   done_at: string | null;
 }
@@ -51,10 +57,21 @@ async function ensureTable() {
       parent_id INTEGER DEFAULT NULL,
       content TEXT NOT NULL,
       done INTEGER DEFAULT 0,
+      note TEXT DEFAULT NULL,
+      important INTEGER DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now', 'localtime')),
       done_at TEXT DEFAULT NULL
     )
   `);
+
+  await db.exec(`
+    ALTER TABLE todos ADD COLUMN note TEXT DEFAULT NULL
+  `).catch(() => undefined);
+
+  await db.exec(`
+    ALTER TABLE todos ADD COLUMN important INTEGER DEFAULT 0
+  `).catch(() => undefined);
+
   tableInited = true;
 }
 
@@ -64,6 +81,8 @@ function TodoPage() {
   const [newContent, setNewContent] = useState("");
   const [childInputFor, setChildInputFor] = useState<number | null>(null);
   const [childContent, setChildContent] = useState("");
+  const [noteModalFor, setNoteModalFor] = useState<number | null>(null);
+  const [noteDraft, setNoteDraft] = useState("");
 
   const loadItems = useCallback(async () => {
     try {
@@ -75,7 +94,7 @@ function TodoPage() {
       message.error("加载 TODO 列表失败");
       console.error(err);
     }
-  }, []);
+  }, [message]);
 
   useEffect(() => {
     void ensureTable().then(() => void loadItems());
@@ -127,6 +146,44 @@ function TodoPage() {
       void loadItems();
     } catch (err) {
       message.error("删除失败");
+      console.error(err);
+    }
+  };
+
+  const handleUpdateNote = async (id: number, nextNote: string) => {
+    try {
+      const content = nextNote.trim();
+      await db.run("UPDATE todos SET note = ? WHERE id = ?", [content || null, id]);
+      setNoteModalFor(null);
+      setNoteDraft("");
+      message.success("备注已更新");
+      void loadItems();
+    } catch (err) {
+      message.error("备注更新失败");
+      console.error(err);
+    }
+  };
+
+  const handleDeleteNote = async (id: number) => {
+    try {
+      await db.run("UPDATE todos SET note = NULL WHERE id = ?", [id]);
+      message.success("备注已删除");
+      void loadItems();
+    } catch (err) {
+      message.error("删除备注失败");
+      console.error(err);
+    }
+  };
+
+  const handleToggleImportant = async (id: number) => {
+    try {
+      const item = items.find((entry) => entry.id === id);
+      const nextImportant = item?.important === 1 ? 0 : 1;
+      await db.run("UPDATE todos SET important = ? WHERE id = ?", [nextImportant, id]);
+      message.success(nextImportant === 1 ? "已设为特别关注" : "已取消特别关注");
+      void loadItems();
+    } catch (err) {
+      message.error("操作失败");
       console.error(err);
     }
   };
@@ -226,84 +283,134 @@ function TodoPage() {
     const children = isChild ? [] : getChildren(item.id);
     const hasChildren = children.length > 0;
     const isDone = item.done === 1;
+    const isImportant = item.important === 1;
+
+    const contextMenuItems: MenuProps = {
+      items: [
+        {
+          key: "note",
+          label: item.note ? "修改备注" : "添加备注",
+        },
+        ...(item.note
+          ? [
+              {
+                key: "delete-note",
+                label: "删除备注",
+              },
+            ]
+          : []),
+        {
+          key: "important",
+          label: isImportant ? "取消特别关注" : "设为特别关注",
+        },
+      ],
+      onClick: ({ key }) => {
+        if (key === "note") {
+          setNoteModalFor(item.id);
+          setNoteDraft(item.note ?? "");
+          return;
+        }
+        if (key === "delete-note") {
+          void handleDeleteNote(item.id);
+          return;
+        }
+        if (key === "important") {
+          void handleToggleImportant(item.id);
+        }
+      },
+    };
 
     return (
       <div
         key={item.id}
-        className={`todo-item ${isDone ? "todo-item--done" : ""} ${isChild ? "todo-item--child" : ""}`}
+        className={`todo-item ${isDone ? "todo-item--done" : ""} ${isChild ? "todo-item--child" : ""} ${isImportant ? "todo-item--important" : ""}`}
       >
-        <div className="todo-item-row">
-          <div className="todo-item-checkbox">
-            <Checkbox
-              checked={isDone}
-              onChange={(e) => {
-                const checked = e.target.checked;
-                if (isChild) {
-                  void handleToggleChild(item.id, checked);
-                } else if (hasChildren) {
-                  void handleToggleParent(item.id, checked);
-                } else {
-                  void handleToggle(item.id, checked);
-                }
-              }}
-            />
-          </div>
-          <div className="todo-item-content">
-            <Text className={isDone ? "todo-item-text--done" : ""}>
-              {item.content}
-            </Text>
-            <Text type="secondary" className="todo-item-time">
-              <ClockCircleOutlined style={{ fontSize: 12, marginRight: 4 }} />
-              {dayjs(item.created_at).format("MM-DD HH:mm")}
-            </Text>
-          </div>
-          <div className="todo-item-actions">
-            {isDone ? (
-              <Button
-                type="text"
-                size="small"
-                icon={<UndoOutlined />}
-                onClick={() => {
+        <Dropdown
+          menu={contextMenuItems}
+          trigger={["contextMenu"]}
+          placement="bottomLeft"
+        >
+          <div className="todo-item-row">
+            <div className="todo-item-checkbox">
+              <Checkbox
+                checked={isDone}
+                onChange={(e) => {
+                  const checked = e.target.checked;
                   if (isChild) {
-                    void handleToggleChild(item.id, false);
+                    void handleToggleChild(item.id, checked);
                   } else if (hasChildren) {
-                    void handleToggleParent(item.id, false);
+                    void handleToggleParent(item.id, checked);
                   } else {
-                    void handleToggle(item.id, false);
+                    void handleToggle(item.id, checked);
                   }
                 }}
-              >
-                撤回
-              </Button>
-            ) : (
-              <>
-                {!isChild && (
-                  <Button
-                    type="text"
-                    size="small"
-                    icon={<PlusOutlined />}
-                    onClick={() =>
-                      setChildInputFor(
-                        childInputFor === item.id ? null : item.id,
-                      )
-                    }
-                  />
-                )}
-              </>
-            )}
-            <Popconfirm
-              title="确定删除？"
-              onConfirm={() => void handleDelete(item.id)}
-            >
-              <Button
-                type="text"
-                size="small"
-                danger
-                icon={<DeleteOutlined />}
               />
-            </Popconfirm>
+            </div>
+            <div className="todo-item-main">
+              <div className="todo-item-content">
+                {isImportant && <StarFilled className="todo-item-important" />}
+                <Text className={isDone ? "todo-item-text--done" : ""}>
+                  {item.content}
+                </Text>
+              </div>
+              {item.note && (
+                <Text className="todo-item-note" ellipsis={{ tooltip: item.note }}>
+                  {item.note}
+                </Text>
+              )}
+              <Text type="secondary" className="todo-item-time">
+                <ClockCircleOutlined style={{ fontSize: 12, marginRight: 4 }} />
+                {dayjs(item.created_at).format("MM-DD HH:mm")}
+              </Text>
+            </div>
+            <div className="todo-item-actions">
+              {isDone ? (
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<UndoOutlined />}
+                  onClick={() => {
+                    if (isChild) {
+                      void handleToggleChild(item.id, false);
+                    } else if (hasChildren) {
+                      void handleToggleParent(item.id, false);
+                    } else {
+                      void handleToggle(item.id, false);
+                    }
+                  }}
+                >
+                  撤回
+                </Button>
+              ) : (
+                <>
+                  {!isChild && (
+                    <Button
+                      type="text"
+                      size="small"
+                      icon={<PlusOutlined />}
+                      onClick={() =>
+                        setChildInputFor(
+                          childInputFor === item.id ? null : item.id,
+                        )
+                      }
+                    />
+                  )}
+                </>
+              )}
+              <Popconfirm
+                title="确定删除？"
+                onConfirm={() => void handleDelete(item.id)}
+              >
+                <Button
+                  type="text"
+                  size="small"
+                  danger
+                  icon={<DeleteOutlined />}
+                />
+              </Popconfirm>
+            </div>
           </div>
-        </div>
+        </Dropdown>
 
         {/* 子项输入框 */}
         {childInputFor === item.id && (
@@ -400,6 +507,30 @@ function TodoPage() {
             )}
           </div>
         </div>
+
+        <Modal
+          title="添加备注"
+          open={noteModalFor !== null}
+          onCancel={() => {
+            setNoteModalFor(null);
+            setNoteDraft("");
+          }}
+          onOk={() => {
+            if (noteModalFor !== null) {
+              void handleUpdateNote(noteModalFor, noteDraft);
+            }
+          }}
+          okText="确定"
+          cancelText="取消"
+        >
+          <Input.TextArea
+            value={noteDraft}
+            onChange={(e) => setNoteDraft(e.target.value)}
+            placeholder="请输入备注内容"
+            autoSize={{ minRows: 3, maxRows: 6 }}
+            spellCheck={false}
+          />
+        </Modal>
       </div>
     </Page>
   );

@@ -7,6 +7,7 @@ import {
   Input,
   Modal,
   Popconfirm,
+  Segmented,
   Space,
   Spin,
   Typography,
@@ -62,7 +63,7 @@ function MemoPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [message]);
 
   useEffect(() => {
     void loadFiles();
@@ -149,6 +150,45 @@ function MemoPage() {
     }
   };
 
+  const copyCode = useCallback(
+    async (code: string) => {
+      try {
+        await navigator.clipboard.writeText(code);
+        message.success("代码已复制");
+      } catch (err) {
+        message.error("复制失败");
+        console.error(err);
+      }
+    },
+    [message],
+  );
+
+  useEffect(() => {
+    if (!document) return;
+
+    const codeBlocks = document.querySelectorAll(".memo-preview pre code");
+    codeBlocks.forEach((block) => {
+      const code = block.textContent ?? "";
+      const wrapper = block.parentElement;
+      if (!wrapper || wrapper.querySelector(".memo-code-copy")) return;
+
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "memo-code-copy";
+      button.textContent = "复制";
+      button.addEventListener("click", () => {
+        void copyCode(code);
+      });
+
+      wrapper.style.position = "relative";
+      wrapper.appendChild(button);
+    });
+
+    return () => {
+      document.querySelectorAll(".memo-code-copy").forEach((node) => node.remove());
+    };
+  }, [copyCode, renderedHtml]);
+
   return (
     <Page>
       <div className="memo-page">
@@ -233,55 +273,71 @@ function MemoPage() {
 
         <div className="memo-editor">
           {selected ? (
-            <Card
-              title={
+            <>
+              <div className="memo-editor-toolbar">
+                <div className="memo-editor-mode">
+                  <Segmented
+                    value={isEditing ? "edit" : "preview"}
+                    onChange={(value) => setIsEditing(value === "edit")}
+                    options={[
+                      { label: "预览", value: "preview" },
+                      { label: "编辑", value: "edit" },
+                    ]}
+                  />
+                </div>
+
                 <Space>
-                  <FileMarkdownOutlined />
-                  <span>{selected}</span>
-                  {isEditing && (
-                    <Text type="secondary" style={{ fontSize: 12 }}>
-                      (编辑中)
-                    </Text>
+                  {isEditing ? (
+                    <Button
+                      type="primary"
+                      icon={<SaveOutlined />}
+                      loading={saving}
+                      onClick={() => void handleSave()}
+                    >
+                      保存
+                    </Button>
+                  ) : (
+                    <Button
+                      icon={<EditOutlined />}
+                      onClick={() => setIsEditing(true)}
+                    >
+                      编辑
+                    </Button>
                   )}
                 </Space>
-              }
-              extra={
-                isEditing ? (
-                  <Button
-                    type="primary"
-                    icon={<SaveOutlined />}
-                    loading={saving}
-                    onClick={() => void handleSave()}
-                  >
-                    保存
-                  </Button>
+              </div>
+
+              <Card
+                title={
+                  <Space>
+                    <FileMarkdownOutlined />
+                    <span>{selected}</span>
+                    {isEditing && (
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        (编辑中)
+                      </Text>
+                    )}
+                  </Space>
+                }
+                className="memo-editor-card"
+              >
+                {isEditing ? (
+                  <TextArea
+                    value={content}
+                    onChange={(e) => setContent(e.target.value)}
+                    placeholder="在此编辑 Markdown 内容..."
+                    autoSize={{ minRows: 20 }}
+                    spellCheck={false}
+                    className="memo-textarea"
+                  />
                 ) : (
-                  <Button
-                    icon={<EditOutlined />}
-                    onClick={() => setIsEditing(true)}
-                  >
-                    编辑
-                  </Button>
-                )
-              }
-              className="memo-editor-card"
-            >
-              {isEditing ? (
-                <TextArea
-                  value={content}
-                  onChange={(e) => setContent(e.target.value)}
-                  placeholder="在此编辑 Markdown 内容..."
-                  autoSize={{ minRows: 20 }}
-                  spellCheck={false}
-                  className="memo-textarea"
-                />
-              ) : (
-                <div
-                  className="memo-preview"
-                  dangerouslySetInnerHTML={{ __html: renderedHtml }}
-                />
-              )}
-            </Card>
+                  <div
+                    className="memo-preview"
+                    dangerouslySetInnerHTML={{ __html: renderedHtml }}
+                  />
+                )}
+              </Card>
+            </>
           ) : (
             <div className="memo-editor-empty">
               <Empty description="选择左侧文件或新建一个备忘" />

@@ -19,7 +19,7 @@
   },
   "dependencies": {
     "@ant-design/icons": "^6.2.5",
-    "antd": "^6.4.5",
+    "antd": "^6.6.2",
     "better-sqlite3": "^12.11.1",
     "dayjs": "^1.11.21",
     "lunar-typescript": "^1.8.6",

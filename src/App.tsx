@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { Routes, Route, useNavigate } from "react-router-dom";
 import {
+  BorderBeam,
   Card,
   ConfigProvider,
   theme,
@@ -94,20 +95,30 @@ function Home() {
       <main className="app-content">
         <div className="feature-grid">
           {features.map((feature) => (
-            <Card
+            <BorderBeam
               key={feature.path}
-              className="feature-card"
-              hoverable
-              onClick={() => navigate(feature.path)}
+              count={2}
+              lineWidth={2}
+              color={[
+                { color: "#2f54eb", percent: 0 },
+                { color: "#722ed1", percent: 44 },
+                { color: "#ff85c0", percent: 100 },
+              ]}
             >
-              <div className="feature-icon">{feature.icon}</div>
-              <Title level={4} className="feature-title">
-                {feature.title}
-              </Title>
-              <Text type="secondary" className="feature-desc">
-                {feature.desc}
-              </Text>
-            </Card>
+              <Card
+                className="feature-card"
+                hoverable
+                onClick={() => navigate(feature.path)}
+              >
+                <div className="feature-icon">{feature.icon}</div>
+                <Title level={4} className="feature-title">
+                  {feature.title}
+                </Title>
+                <Text type="secondary" className="feature-desc">
+                  {feature.desc}
+                </Text>
+              </Card>
+            </BorderBeam>
           ))}
         </div>
       </main>
@@ -121,8 +132,11 @@ function ActivityNotifier() {
   const [api, contextHolder] = notification.useNotification();
   const apiRef = useRef(api);
   const navRef = useRef(navigate);
-  apiRef.current = api;
-  navRef.current = navigate;
+
+  useEffect(() => {
+    apiRef.current = api;
+    navRef.current = navigate;
+  }, [api, navigate]);
 
   useEffect(() => {
     const handler = (e: Event) => {
