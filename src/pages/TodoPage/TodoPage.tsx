@@ -64,13 +64,22 @@ async function ensureTable() {
     )
   `);
 
-  await db.exec(`
-    ALTER TABLE todos ADD COLUMN note TEXT DEFAULT NULL
-  `).catch(() => undefined);
+  const columns = (await db.all("PRAGMA table_info(todos)")) as Array<{
+    name: string;
+  }>;
+  const existingColumns = new Set(columns.map((column) => column.name));
 
-  await db.exec(`
-    ALTER TABLE todos ADD COLUMN important INTEGER DEFAULT 0
-  `).catch(() => undefined);
+  if (!existingColumns.has("note")) {
+    await db.exec(`
+      ALTER TABLE todos ADD COLUMN note TEXT DEFAULT NULL
+    `);
+  }
+
+  if (!existingColumns.has("important")) {
+    await db.exec(`
+      ALTER TABLE todos ADD COLUMN important INTEGER DEFAULT 0
+    `);
+  }
 
   tableInited = true;
 }
@@ -83,6 +92,8 @@ function TodoPage() {
   const [childContent, setChildContent] = useState("");
   const [noteModalFor, setNoteModalFor] = useState<number | null>(null);
   const [noteDraft, setNoteDraft] = useState("");
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingContent, setEditingContent] = useState("");
 
   const loadItems = useCallback(async () => {
     try {
@@ -188,6 +199,24 @@ function TodoPage() {
     }
   };
 
+  const handleUpdateContent = async (id: number, nextContent: string) => {
+    const content = nextContent.trim();
+    if (!content) {
+      message.warning("内容不能为空");
+      return;
+    }
+
+    try {
+      await db.run("UPDATE todos SET content = ? WHERE id = ?", [content, id]);
+      setEditingId(null);
+      setEditingContent("");
+      void loadItems();
+    } catch (err) {
+      message.error("内容更新失败");
+      console.error(err);
+    }
+  };
+
   const handleToggle = async (id: number, checked: boolean) => {
     try {
       const doneVal = checked ? 1 : 0;
@@ -284,6 +313,7 @@ function TodoPage() {
     const hasChildren = children.length > 0;
     const isDone = item.done === 1;
     const isImportant = item.important === 1;
+    const isEditing = editingId === item.id;
 
     const contextMenuItems: MenuProps = {
       items: [
@@ -349,9 +379,33 @@ function TodoPage() {
             <div className="todo-item-main">
               <div className="todo-item-content">
                 {isImportant && <StarFilled className="todo-item-important" />}
-                <Text className={isDone ? "todo-item-text--done" : ""}>
-                  {item.content}
-                </Text>
+                {isEditing ? (
+                  <Input
+                    className="todo-item-edit-input"
+                    value={editingContent}
+                    size="small"
+                    autoFocus
+                    spellCheck={false}
+                    onChange={(e) => setEditingContent(e.target.value)}
+                    onPressEnter={() => {
+                      void handleUpdateContent(item.id, editingContent);
+                    }}
+                    onBlur={() => {
+                      void handleUpdateContent(item.id, editingContent);
+                    }}
+                  />
+                ) : (
+                  <Text
+                    className={isDone ? "todo-item-text--done" : ""}
+                    style={{ cursor: "pointer" }}
+                    onClick={() => {
+                      setEditingId(item.id);
+                      setEditingContent(item.content);
+                    }}
+                  >
+                    {item.content}
+                  </Text>
+                )}
               </div>
               {item.note && (
                 <Text className="todo-item-note" ellipsis={{ tooltip: item.note }}>
