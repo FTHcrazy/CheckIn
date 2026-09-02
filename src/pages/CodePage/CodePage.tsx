@@ -508,7 +508,7 @@ export default function CodePage() {
 
         {/* 统计卡片区域：新增第7个卡片，使用 flex 布局或调整 span */}
         <Row gutter={[16, 16]} className="stats-row">
-          <Col xs={12} sm={8} md={6} lg={4} xl={3}>
+          <Col xs={12} sm={12} md={8} lg={6} xl={6}>
             <Card size="small">
               <Statistic
                 title="提交次数"
@@ -517,7 +517,7 @@ export default function CodePage() {
               />
             </Card>
           </Col>
-          <Col xs={12} sm={8} md={6} lg={4} xl={3}>
+          <Col xs={12} sm={12} md={8} lg={6} xl={6}>
             <Card size="small">
               <Statistic
                 title="修改文件数"
@@ -526,7 +526,7 @@ export default function CodePage() {
               />
             </Card>
           </Col>
-          <Col xs={12} sm={8} md={6} lg={4} xl={3}>
+          <Col xs={12} sm={12} md={8} lg={6} xl={6}>
             <Card size="small">
               <Statistic
                 title="增加行数"
@@ -536,7 +536,7 @@ export default function CodePage() {
               />
             </Card>
           </Col>
-          <Col xs={12} sm={8} md={6} lg={4} xl={3}>
+          <Col xs={12} sm={12} md={8} lg={6} xl={6}>
             <Card size="small">
               <Statistic
                 title="删除行数"
@@ -547,8 +547,7 @@ export default function CodePage() {
             </Card>
           </Col>
 
-          {/* ✅ 修复: addonAfter → Space.Compact */}
-          <Col xs={12} sm={8} md={6} lg={4} xl={3}>
+          <Col xs={12} sm={12} md={8} lg={6} xl={6}>
             <Card size="small">
               <div className="stat-label">工作日</div>
               <Space.Compact style={{ width: "100%" }}>
@@ -566,7 +565,7 @@ export default function CodePage() {
             </Card>
           </Col>
 
-          <Col xs={12} sm={8} md={6} lg={4} xl={3}>
+          <Col xs={12} sm={12} md={8} lg={6} xl={6}>
             <Card size="small">
               <Statistic
                 title="日均代码产出"
@@ -578,7 +577,7 @@ export default function CodePage() {
             </Card>
           </Col>
 
-          <Col xs={12} sm={8} md={6} lg={4} xl={3}>
+          <Col xs={12} sm={12} md={8} lg={6} xl={6}>
             <Card size="small">
               {monthlyDailyNeeded !== null ? (
                 <Statistic
@@ -610,7 +609,7 @@ export default function CodePage() {
             </Card>
           </Col>
 
-          <Col xs={12} sm={8} md={6} lg={4} xl={3}>
+          <Col xs={12} sm={12} md={8} lg={6} xl={6}>
             <Card size="small">
               {selectedRangeDailyNeeded !== null ? (
                 <Statistic

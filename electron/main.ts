@@ -100,7 +100,7 @@ let loginWindow: BrowserWindow | null = null;
 let canShowMainWindow = false;
 let isMainWindowReady = false;
 let hasStartedActivityPolling = false;
-const LOGIN_WINDOW_MIN_DISPLAY_MS = 5000;
+const LOGIN_WINDOW_MIN_DISPLAY_MS = 3000;
 let loginWindowVisibleAt: number | null = null;
 let loginWindowHasShown = false;
 
