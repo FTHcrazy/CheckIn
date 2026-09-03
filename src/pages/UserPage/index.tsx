@@ -56,8 +56,8 @@ function UserPage() {
   return (
     <Page>
       <div style={{ padding: 24, maxWidth: 640, margin: "0 auto" }}>
-        <Card title="修改用户信息" bordered={false}>
-          <Space direction="vertical" size="large" style={{ width: "100%" }}>
+        <Card title="修改用户信息" variant="borderless">
+          <Space orientation="vertical" size="large" style={{ width: "100%" }}>
             <Typography.Paragraph type="secondary">
               这里可以修改当前用户的邮箱信息，保存后会同步到本地的 user 表。
             </Typography.Paragraph>

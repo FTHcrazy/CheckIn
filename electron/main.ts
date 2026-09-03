@@ -359,6 +359,20 @@ app.whenReady().then(() => {
     return true;
   });
 
+  ipcMain.handle("find-in-page", (event, value?: string) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return false;
+
+    const query = value?.trim();
+    if (!query) return false;
+    win.webContents.findInPage(query, {
+      findNext: false,
+      forward: true,
+      matchCase: false,
+    });
+    return true;
+  });
+
   ipcMain.on("toMain", (_event, data: unknown) => {
     if (
       data &&

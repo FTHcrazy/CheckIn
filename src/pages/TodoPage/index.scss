@@ -21,9 +21,19 @@
 
 .todo-list-container {
   padding-top: 12px;
-  height: calc(100vh - 72px);
+  height: calc(100vh - 116px);
   overflow-y: auto;
   margin-top: 40px;
+
+  &::-webkit-scrollbar-button,
+  &::-webkit-scrollbar-button:vertical:decrement,
+  &::-webkit-scrollbar-button:vertical:increment {
+    display: none !important;
+    height: 0 !important;
+    width: 0 !important;
+    -webkit-appearance: none !important;
+    appearance: none !important;
+  }
 }
 
 .todo-section {

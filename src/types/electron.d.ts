@@ -28,6 +28,8 @@ export interface ElectronAPI {
     delete: (filename: string) => Promise<boolean>
     openInExplorer: (filename: string) => Promise<boolean>
   }
+
+  findInPage: (value?: string) => Promise<boolean>
 }
 
 declare global {

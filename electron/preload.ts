@@ -39,4 +39,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     delete: (filename: string) => ipcRenderer.invoke('memo-delete', filename) as Promise<boolean>,
     openInExplorer: (filename: string) => ipcRenderer.invoke('memo-open-in-explorer', filename) as Promise<boolean>,
   },
+
+  findInPage: (value?: string) =>
+    ipcRenderer.invoke('find-in-page', value) as Promise<boolean>,
 })

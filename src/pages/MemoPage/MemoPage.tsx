@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import {
   App,
   Button,
@@ -13,6 +13,7 @@ import {
   Typography,
   Tooltip,
 } from "antd";
+import type { InputRef } from "antd";
 import {
   PlusOutlined,
   DeleteOutlined,
@@ -20,6 +21,8 @@ import {
   EditOutlined,
   FolderOpenOutlined,
   FileMarkdownOutlined,
+  SearchOutlined,
+  CloseOutlined,
 } from "@ant-design/icons";
 import { marked } from "marked";
 import dayjs from "dayjs";
@@ -34,6 +37,15 @@ interface MemoFile {
   updatedAt: string;
 }
 
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 function MemoPage() {
   const { message } = App.useApp();
   const [files, setFiles] = useState<MemoFile[]>([]);
@@ -45,12 +57,63 @@ function MemoPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [newFileName, setNewFileName] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [activeSearchQuery, setActiveSearchQuery] = useState("");
+  const [activeSearchIndex, setActiveSearchIndex] = useState(0);
+  const searchInputRef = useRef<InputRef>(null);
 
   // 将 Markdown 转为 HTML
   const renderedHtml = useMemo(() => {
     if (!originalContent) return "";
     return marked.parse(originalContent, { async: false }) as string;
   }, [originalContent]);
+
+  const highlightedHtml = useMemo(() => {
+    if (!activeSearchQuery) return renderedHtml;
+
+    const escapedQuery = activeSearchQuery.replace(
+      /[.*+?^${}()|[\]\\]/g,
+      "\\$&",
+    );
+    const highlightPattern = new RegExp(`(${escapedQuery})`, "gi");
+    let matchIndex = 0;
+    return renderedHtml.replace(
+      />([^<]+)</g,
+      (match, text: string) =>
+        `>${text.replace(
+          highlightPattern,
+          (_fullMatch: string, found: string) => {
+            const className =
+              matchIndex++ === activeSearchIndex
+                ? "memo-search-highlight memo-search-highlight--active"
+                : "memo-search-highlight";
+            return `<mark class="${className}">${found}</mark>`;
+          },
+        )}<`,
+    );
+  }, [activeSearchIndex, activeSearchQuery, renderedHtml]);
+
+  const highlightedEditorHtml = useMemo(() => {
+    if (!activeSearchQuery) return escapeHtml(content);
+
+    const escapedQuery = activeSearchQuery.replace(
+      /[.*+?^${}()|[\]\\]/g,
+      "\\$&",
+    );
+    const highlightPattern = new RegExp(`(${escapedQuery})`, "gi");
+    let matchIndex = 0;
+    return escapeHtml(content).replace(
+      highlightPattern,
+      (_fullMatch, found: string) => {
+        const className =
+          matchIndex++ === activeSearchIndex
+            ? "memo-search-highlight memo-search-highlight--active"
+            : "memo-search-highlight";
+        return `<mark class="${className}">${found}</mark>`;
+      },
+    );
+  }, [activeSearchIndex, activeSearchQuery, content]);
 
   const loadFiles = useCallback(async () => {
     setLoading(true);
@@ -76,7 +139,7 @@ function MemoPage() {
       setSelected(filename);
       setContent(data ?? "");
       setOriginalContent(data ?? "");
-      setIsEditing(false); // 切换到预览模式
+      setIsEditing(false); // 切换文件后保持预览态
     } catch (err) {
       message.error("读取文件失败");
       console.error(err);
@@ -85,6 +148,11 @@ function MemoPage() {
 
   const handleSave = async () => {
     if (!selected) return;
+    const trimmed = content.trim();
+    if (!trimmed) {
+      message.warning("内容不能为空");
+      return;
+    }
     setSaving(true);
     try {
       await window.electronAPI?.memo.write(selected, content);
@@ -118,12 +186,66 @@ function MemoPage() {
       setSelected(filename);
       setContent(initContent);
       setOriginalContent(initContent);
-      setIsEditing(true); // 新建后直接进入编辑模式
+      setIsEditing(true); // 新建后直接进入编辑态
     } catch (err) {
       message.error("创建失败");
       console.error(err);
     }
   };
+
+  const handleTextAreaBlur = () => {
+    if (selected && content !== originalContent) {
+      const trimmed = content.trim();
+      if (!trimmed) {
+        message.warning("内容不能为空");
+        return;
+      }
+      void handleSave();
+    }
+  };
+
+  const handleFind = () => {
+    const query = searchQuery.trim();
+    if (!query) return;
+    const source = isEditing ? content : originalContent;
+    const matches = source.match(
+      new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"),
+    );
+    if (!matches?.length) {
+      message.info("未找到匹配内容");
+      return;
+    }
+
+    const nextIndex =
+      query === activeSearchQuery
+        ? (activeSearchIndex + 1) % matches.length
+        : 0;
+    setActiveSearchQuery(query);
+    setActiveSearchIndex(nextIndex);
+  };
+
+  useEffect(() => {
+    if (!activeSearchQuery) return;
+    requestAnimationFrame(() => {
+      const activeMark = document.querySelector<HTMLElement>(
+        ".memo-search-highlight--active",
+      );
+      if (!activeMark) return;
+
+      const textArea = document.querySelector<HTMLTextAreaElement>(
+        ".memo-editor-input-wrap textarea",
+      );
+      if (textArea && isEditing) {
+        textArea.scrollTo({
+          top: Math.max(0, activeMark.offsetTop - textArea.clientHeight / 2),
+          behavior: "smooth",
+        });
+        return;
+      }
+
+      activeMark.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }, [activeSearchIndex, activeSearchQuery, isEditing]);
 
   const handleDelete = async (filename: string) => {
     try {
@@ -185,9 +307,36 @@ function MemoPage() {
     });
 
     return () => {
-      document.querySelectorAll(".memo-code-copy").forEach((node) => node.remove());
+      document
+        .querySelectorAll(".memo-code-copy")
+        .forEach((node) => node.remove());
     };
   }, [copyCode, renderedHtml]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const isModifier = event.ctrlKey || event.metaKey;
+      if (!isModifier || event.key.toLowerCase() !== "f") return;
+
+      event.preventDefault();
+      const activeElement = document.activeElement;
+      const selectedText =
+        activeElement instanceof HTMLTextAreaElement
+          ? activeElement.value
+              .slice(activeElement.selectionStart, activeElement.selectionEnd)
+              .trim()
+          : (window.getSelection()?.toString().trim() ?? "");
+      setSearchQuery(selectedText);
+      setSearchOpen(true);
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  useEffect(() => {
+    if (searchOpen) searchInputRef.current?.focus();
+  }, [searchOpen]);
 
   return (
     <Page>
@@ -215,7 +364,10 @@ function MemoPage() {
                 <Spin size="small" />
               </div>
             ) : files.length === 0 ? (
-              <Empty description="暂无备忘文件" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              <Empty
+                description="暂无备忘文件"
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+              />
             ) : (
               files.map((item) => (
                 <div
@@ -225,7 +377,9 @@ function MemoPage() {
                 >
                   <div className="memo-list-item-content">
                     <div className="memo-list-item-icon">
-                      <FileMarkdownOutlined style={{ fontSize: 20, color: "#1677ff" }} />
+                      <FileMarkdownOutlined
+                        style={{ fontSize: 20, color: "#1677ff" }}
+                      />
                     </div>
                     <div className="memo-list-item-info">
                       <Text ellipsis className="memo-list-item-title">
@@ -287,6 +441,29 @@ function MemoPage() {
                 </div>
 
                 <Space>
+                  {searchOpen && (
+                    <Input
+                      ref={searchInputRef}
+                      value={searchQuery}
+                      prefix={<SearchOutlined />}
+                      placeholder="搜索内容"
+                      allowClear
+                      onChange={(event) => setSearchQuery(event.target.value)}
+                      onPressEnter={handleFind}
+                      style={{ width: 220 }}
+                    />
+                  )}
+                  <Tooltip title={searchOpen ? "关闭搜索" : "搜索（Ctrl + F）"}>
+                    <Button
+                      type={searchOpen ? "primary" : "text"}
+                      icon={searchOpen ? <CloseOutlined /> : <SearchOutlined />}
+                      onClick={() => {
+                        setSearchOpen((open) => !open);
+                        setActiveSearchQuery("");
+                        setActiveSearchIndex(0);
+                      }}
+                    />
+                  </Tooltip>
                   {isEditing ? (
                     <Button
                       type="primary"
@@ -322,18 +499,43 @@ function MemoPage() {
                 className="memo-editor-card"
               >
                 {isEditing ? (
-                  <TextArea
-                    value={content}
-                    onChange={(e) => setContent(e.target.value)}
-                    placeholder="在此编辑 Markdown 内容..."
-                    autoSize={{ minRows: 20 }}
-                    spellCheck={false}
-                    className="memo-textarea"
-                  />
+                  <div className="memo-editor-input-wrap">
+                    <div
+                      className="memo-textarea-highlight"
+                      aria-hidden="true"
+                      dangerouslySetInnerHTML={{
+                        __html: highlightedEditorHtml || "&nbsp;",
+                      }}
+                    />
+                    <TextArea
+                      value={content}
+                      onChange={(e) => setContent(e.target.value)}
+                      placeholder="在此编辑 Markdown 内容..."
+                      spellCheck={false}
+                      className="memo-textarea"
+                      onScroll={(event) => {
+                        const highlight =
+                          event.currentTarget.parentElement?.querySelector<HTMLElement>(
+                            ".memo-textarea-highlight",
+                          );
+                        if (highlight) {
+                          highlight.scrollTop = event.currentTarget.scrollTop;
+                          highlight.scrollLeft = event.currentTarget.scrollLeft;
+                        }
+                      }}
+                      onPressEnter={(event) => {
+                        if (!event.shiftKey) {
+                          event.preventDefault();
+                          void handleSave();
+                        }
+                      }}
+                      onBlur={handleTextAreaBlur}
+                    />
+                  </div>
                 ) : (
                   <div
                     className="memo-preview"
-                    dangerouslySetInnerHTML={{ __html: renderedHtml }}
+                    dangerouslySetInnerHTML={{ __html: highlightedHtml }}
                   />
                 )}
               </Card>
