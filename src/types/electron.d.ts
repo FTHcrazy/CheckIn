@@ -27,6 +27,7 @@ export interface ElectronAPI {
     write: (filename: string, content: string) => Promise<boolean>
     delete: (filename: string) => Promise<boolean>
     openInExplorer: (filename: string) => Promise<boolean>
+    import: () => Promise<string[]>
   }
 
   findInPage: (value?: string) => Promise<boolean>

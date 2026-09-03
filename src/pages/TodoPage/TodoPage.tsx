@@ -232,6 +232,12 @@ function TodoPage() {
               value={childContent}
               onChange={(e) => setChildContent(e.target.value)}
               onPressEnter={() => void handleAddChild(item.id)}
+              onBlur={() => {
+                if (!childContent.trim()) {
+                  setChildInputFor(null);
+                  setChildContent("");
+                }
+              }}
               autoFocus
             />
             <Button

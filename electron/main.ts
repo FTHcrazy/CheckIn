@@ -6,6 +6,7 @@ import {
   Tray,
   Menu,
   shell,
+  dialog,
 } from "electron";
 import path from "path";
 import fs from "fs";
@@ -357,6 +358,24 @@ app.whenReady().then(() => {
     const filePath = path.join(MEMOS_DIR, safe);
     shell.showItemInFolder(filePath);
     return true;
+  });
+
+  ipcMain.handle("memo-import", async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const result = await dialog.showOpenDialog(win ?? undefined, {
+      properties: ["openFile", "multiSelections"],
+      filters: [{ name: "Markdown 文件", extensions: ["md"] }],
+    });
+    if (result.canceled) return [];
+
+    const importedFiles: string[] = [];
+    for (const sourcePath of result.filePaths) {
+      const filename = path.basename(sourcePath);
+      const destinationPath = path.join(MEMOS_DIR, filename);
+      fs.copyFileSync(sourcePath, destinationPath);
+      importedFiles.push(filename);
+    }
+    return importedFiles;
   });
 
   ipcMain.handle("find-in-page", (event, value?: string) => {

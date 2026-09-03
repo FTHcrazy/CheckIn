@@ -9,9 +9,11 @@ import {
 } from "antd";
 import {
   DeleteOutlined,
+  ImportOutlined,
   FileMarkdownOutlined,
   FolderOpenOutlined,
   PlusOutlined,
+  ReloadOutlined,
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 
@@ -27,6 +29,8 @@ interface MemoSidebarProps {
   selected: string | null;
   loading: boolean;
   onCreate: () => void;
+  onImport: () => void;
+  onRefresh: () => void;
   onSelect: (filename: string) => void;
   onDelete: (filename: string) => void;
   onOpenInExplorer: (filename: string) => void;
@@ -37,6 +41,8 @@ export default function MemoSidebar({
   selected,
   loading,
   onCreate,
+  onImport,
+  onRefresh,
   onSelect,
   onDelete,
   onOpenInExplorer,
@@ -50,14 +56,33 @@ export default function MemoSidebar({
           </Title>
           <Text type="secondary">({files.length})</Text>
         </Space>
-        <Button
-          type="primary"
-          size="small"
-          icon={<PlusOutlined />}
-          onClick={onCreate}
-        >
-          新建
-        </Button>
+        <Space size={4}>
+          <Tooltip title="导入 Markdown 文件">
+            <Button
+              type="text"
+              size="small"
+              icon={<ImportOutlined />}
+              onClick={onImport}
+            />
+          </Tooltip>
+          <Tooltip title="刷新列表">
+            <Button
+              type="text"
+              size="small"
+              icon={<ReloadOutlined spin={loading} />}
+              onClick={onRefresh}
+              disabled={loading}
+            />
+          </Tooltip>
+          <Button
+            type="primary"
+            size="small"
+            icon={<PlusOutlined />}
+            onClick={onCreate}
+          >
+            新建
+          </Button>
+        </Space>
       </div>
       <div className="memo-sidebar-list">
         {loading ? (

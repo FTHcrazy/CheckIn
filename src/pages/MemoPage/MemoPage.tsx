@@ -26,6 +26,7 @@ function MemoPage() {
   const [content, setContent] = useState("");
   const [originalContent, setOriginalContent] = useState("");
   const [loading, setLoading] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -53,7 +54,7 @@ function MemoPage() {
     let matchIndex = 0;
     return renderedHtml.replace(
       />([^<]+)</g,
-      (match, text: string) =>
+      (_match, text: string) =>
         `>${text.replace(
           highlightPattern,
           (_fullMatch: string, found: string) => {
@@ -163,6 +164,23 @@ function MemoPage() {
     } catch (err) {
       message.error("创建失败");
       console.error(err);
+    }
+  };
+
+  const handleImport = async () => {
+    try {
+      const importedFiles = await window.electronAPI?.memo.import();
+      if (!importedFiles?.length) return;
+
+      setImporting(true);
+      message.success(`已导入 ${importedFiles.length} 个备忘文件`);
+      await loadFiles();
+      await handleSelectFile(importedFiles[0]);
+    } catch (err) {
+      message.error("导入失败");
+      console.error(err);
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -289,8 +307,10 @@ function MemoPage() {
         <MemoSidebar
           files={files}
           selected={selected}
-          loading={loading}
+          loading={loading || importing}
           onCreate={() => setCreateModalOpen(true)}
+          onImport={() => void handleImport()}
+          onRefresh={() => void loadFiles()}
           onSelect={(filename) => void handleSelectFile(filename)}
           onDelete={(filename) => void handleDelete(filename)}
           onOpenInExplorer={(filename) => void handleOpenInExplorer(filename)}
