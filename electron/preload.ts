@@ -18,6 +18,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     exec: (sql: string) => ipcRenderer.invoke('db-exec', sql),
   },
 
+  user: {
+    get: () => ipcRenderer.invoke('user-get'),
+    login: (email: string) => ipcRenderer.invoke('user-login', email),
+    update: (email: string) => ipcRenderer.invoke('user-update', email),
+  },
+
   send: (channel: string, data: unknown) => {
     const validChannels = ['toMain']
     if (validChannels.includes(channel)) {

@@ -37,14 +37,11 @@ export function LoginWindowApp() {
     setError('');
 
     try {
-      if (!window.electronAPI?.db.run) {
+      if (!window.electronAPI?.user.login) {
         throw new Error('当前环境不可用，请稍后重试');
       }
 
-      await window.electronAPI.db.run(
-        "INSERT INTO user (id, email, updated_at) VALUES (1, ?, datetime('now', 'localtime')) ON CONFLICT(id) DO UPDATE SET email = excluded.email, updated_at = datetime('now', 'localtime')",
-        [email],
-      );
+      await window.electronAPI.user.login(email);
 
       window.electronAPI.send('toMain', { type: 'user-login-confirmed', email });
     } catch (err) {

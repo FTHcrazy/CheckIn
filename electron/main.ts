@@ -11,7 +11,17 @@ import {
 import path from "path";
 import fs from "fs";
 import https from "https";
-import { initDb, closeDb, dbAll, dbGet, dbRun, dbExec } from "./db";
+import {
+  initDb,
+  closeDb,
+  dbAll,
+  dbGet,
+  dbRun,
+  dbExec,
+  getAuthDb,
+  getUserDataDir,
+  switchUserDb,
+} from "./db";
 import { startActivityPolling, stopActivityPolling } from "./activitiesTask";
 
 type UserCache = {
@@ -106,7 +116,7 @@ let loginWindowVisibleAt: number | null = null;
 let loginWindowHasShown = false;
 
 function ensureUserTable() {
-  dbExec(`
+  getAuthDb().exec(`
     CREATE TABLE IF NOT EXISTS user (
       id INTEGER PRIMARY KEY CHECK (id = 1),
       email TEXT NOT NULL,
@@ -117,7 +127,7 @@ function ensureUserTable() {
 }
 
 function getCachedUser(): UserCache | null {
-  const user = dbGet("SELECT id, email FROM user WHERE id = 1 LIMIT 1") as
+  const user = getAuthDb().prepare("SELECT id, email FROM user WHERE id = 1 LIMIT 1").get() as
     | UserCache
     | undefined;
   return user?.email ? user : null;
@@ -246,6 +256,32 @@ app.whenReady().then(() => {
   // 初始化本地数据库
   initDb();
   ensureUserTable();
+  const cachedUser = getCachedUser();
+  if (cachedUser) switchUserDb(cachedUser.email, true);
+
+  let currentUserEmail = cachedUser?.email ?? "";
+
+  ipcMain.handle("user-get", () => getCachedUser());
+  ipcMain.handle("user-login", (_event, email: string) => {
+    const normalizedEmail = email.trim();
+    getAuthDb()
+      .prepare(
+        "INSERT INTO user (id, email, updated_at) VALUES (1, ?, datetime('now', 'localtime')) ON CONFLICT(id) DO UPDATE SET email = excluded.email, updated_at = datetime('now', 'localtime')",
+      )
+      .run(normalizedEmail);
+    switchUserDb(normalizedEmail);
+    currentUserEmail = normalizedEmail;
+    return true;
+  });
+  ipcMain.handle("user-update", (_event, email: string) => {
+    const normalizedEmail = email.trim();
+    getAuthDb()
+      .prepare("UPDATE user SET email = ?, updated_at = datetime('now', 'localtime') WHERE id = 1")
+      .run(normalizedEmail);
+    switchUserDb(normalizedEmail);
+    currentUserEmail = normalizedEmail;
+    return true;
+  });
 
   // 注册数据库 IPC handlers
   ipcMain.handle("db-all", (_event, sql: string, params?: unknown[]) =>
@@ -318,15 +354,19 @@ app.whenReady().then(() => {
   );
 
   // ── 备忘文件 IPC handlers ──
-  const MEMOS_DIR = path.join(app.getPath("userData"), "memos");
-  if (!fs.existsSync(MEMOS_DIR)) fs.mkdirSync(MEMOS_DIR, { recursive: true });
+  const getMemosDir = () => path.join(getUserDataDir(currentUserEmail), "memos");
+  const ensureMemosDir = () => {
+    const memosDir = getMemosDir();
+    if (!fs.existsSync(memosDir)) fs.mkdirSync(memosDir, { recursive: true });
+    return memosDir;
+  };
 
   ipcMain.handle("memo-list", () => {
-    if (!fs.existsSync(MEMOS_DIR)) return [];
-    const files = fs.readdirSync(MEMOS_DIR).filter((f) => f.endsWith(".md"));
+    const memosDir = ensureMemosDir();
+    const files = fs.readdirSync(memosDir).filter((f) => f.endsWith(".md"));
     return files
       .map((name) => {
-        const stat = fs.statSync(path.join(MEMOS_DIR, name));
+        const stat = fs.statSync(path.join(memosDir, name));
         return { name, updatedAt: stat.mtime.toISOString() };
       })
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
@@ -334,44 +374,47 @@ app.whenReady().then(() => {
 
   ipcMain.handle("memo-read", (_event, filename: string) => {
     const safe = path.basename(filename);
-    const filePath = path.join(MEMOS_DIR, safe);
+    const filePath = path.join(ensureMemosDir(), safe);
     if (!fs.existsSync(filePath)) throw new Error("文件不存在");
     return fs.readFileSync(filePath, "utf-8");
   });
 
   ipcMain.handle("memo-write", (_event, filename: string, content: string) => {
     const safe = path.basename(filename);
-    const filePath = path.join(MEMOS_DIR, safe);
+    const filePath = path.join(ensureMemosDir(), safe);
     fs.writeFileSync(filePath, content, "utf-8");
     return true;
   });
 
   ipcMain.handle("memo-delete", (_event, filename: string) => {
     const safe = path.basename(filename);
-    const filePath = path.join(MEMOS_DIR, safe);
+    const filePath = path.join(ensureMemosDir(), safe);
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
     return true;
   });
 
   ipcMain.handle("memo-open-in-explorer", (_event, filename: string) => {
     const safe = path.basename(filename);
-    const filePath = path.join(MEMOS_DIR, safe);
+    const filePath = path.join(ensureMemosDir(), safe);
     shell.showItemInFolder(filePath);
     return true;
   });
 
   ipcMain.handle("memo-import", async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
-    const result = await dialog.showOpenDialog(win ?? undefined, {
-      properties: ["openFile", "multiSelections"],
+    const options = {
+      properties: ["openFile", "multiSelections"] as Array<"openFile" | "multiSelections">,
       filters: [{ name: "Markdown 文件", extensions: ["md"] }],
-    });
+    };
+    const result = win
+      ? await dialog.showOpenDialog(win, options)
+      : await dialog.showOpenDialog(options);
     if (result.canceled) return [];
 
     const importedFiles: string[] = [];
     for (const sourcePath of result.filePaths) {
       const filename = path.basename(sourcePath);
-      const destinationPath = path.join(MEMOS_DIR, filename);
+      const destinationPath = path.join(ensureMemosDir(), filename);
       fs.copyFileSync(sourcePath, destinationPath);
       importedFiles.push(filename);
     }
@@ -399,11 +442,15 @@ app.whenReady().then(() => {
       "type" in data &&
       data.type === "user-login-confirmed"
     ) {
+      const email = "email" in data && typeof data.email === "string" ? data.email : "";
+      if (email) {
+        switchUserDb(email);
+        currentUserEmail = email;
+      }
       allowAndShowMainWindow();
     }
   });
 
-  const cachedUser = getCachedUser();
   createLoginWindow(cachedUser);
   ensureMainWindow();
 

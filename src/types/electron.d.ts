@@ -18,6 +18,12 @@ export interface ElectronAPI {
     exec: (sql: string) => Promise<boolean>
   }
 
+  user: {
+    get: () => Promise<{ id: number; email: string } | null>
+    login: (email: string) => Promise<boolean>
+    update: (email: string) => Promise<boolean>
+  }
+
   send: (channel: string, data: unknown) => void
   receive: (channel: string, func: (...args: unknown[]) => void) => void
 

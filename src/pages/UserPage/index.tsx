@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Alert, Button, Card, Form, Input, Space, Typography, message } from "antd";
+import { Alert, App, Button, Card, Form, Input, Space, Typography } from "antd";
 import Page from "../../components/Page";
 
 interface UserRecord {
@@ -7,6 +7,7 @@ interface UserRecord {
 }
 
 function UserPage() {
+  const { message } = App.useApp();
   const [form] = Form.useForm<{ email: string }>();
   const [loading, setLoading] = useState(false);
   const [initializing, setInitializing] = useState(true);
@@ -15,9 +16,7 @@ function UserPage() {
   useEffect(() => {
     const loadUser = async () => {
       try {
-        const user = (await window.electronAPI?.db.get(
-          "SELECT email FROM user WHERE id = 1 LIMIT 1",
-        )) as UserRecord | undefined;
+        const user = (await window.electronAPI?.user.get()) as UserRecord | null;
 
         form.setFieldsValue({ email: user?.email ?? "" });
       } catch (err) {
@@ -36,14 +35,11 @@ function UserPage() {
     setError("");
 
     try {
-      if (!window.electronAPI?.db.run) {
+      if (!window.electronAPI?.user.update) {
         throw new Error("当前环境不可用，请稍后重试");
       }
 
-      await window.electronAPI.db.run(
-        "UPDATE user SET email = ?, updated_at = datetime('now', 'localtime') WHERE id = 1",
-        [email],
-      );
+      await window.electronAPI.user.update(email);
 
       message.success("用户信息已保存");
     } catch (err) {

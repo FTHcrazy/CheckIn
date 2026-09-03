@@ -182,9 +182,7 @@ export default function CodePage() {
   useEffect(() => {
     const loadDefaultEmail = async () => {
       try {
-        const user = (await window.electronAPI?.db.get(
-          "SELECT email FROM user WHERE id = 1 LIMIT 1",
-        )) as { email?: string } | undefined;
+        const user = await window.electronAPI?.user.get();
 
         if (user?.email) {
           setEmail(user.email.trim());
