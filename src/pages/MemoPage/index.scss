@@ -150,15 +150,32 @@
 .memo-textarea {
   flex: 1;
   min-height: 0;
-  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-  font-size: 14px;
-  line-height: 1.7;
+  font-family: var(--memo-editor-font-family);
+  font-size: var(--memo-editor-font-size);
+  font-weight: var(--memo-editor-font-weight);
+  line-height: var(--memo-editor-line-height);
+  letter-spacing: var(--memo-editor-letter-spacing);
+  text-align: left;
+  text-indent: 0;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  tab-size: 4;
+  padding: var(--memo-editor-padding);
+  margin: 0;
+  box-sizing: border-box;
   resize: none !important;
   border-radius: 8px;
   background: #fdfdfd;
 }
 
 .memo-editor-input-wrap {
+  --memo-editor-font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  --memo-editor-font-size: 14px;
+  --memo-editor-font-weight: 400;
+  --memo-editor-line-height: 1.7;
+  --memo-editor-letter-spacing: normal;
+  --memo-editor-padding: 11px 12px;
   position: relative;
   flex: 1;
   min-height: 0;
@@ -172,16 +189,36 @@
 
 .memo-textarea-highlight {
   position: absolute;
-  inset: 0;
+  inset: 1px;
   overflow: hidden;
-  padding: 11px 12px;
+  padding: var(--memo-editor-padding);
   white-space: pre-wrap;
   overflow-wrap: break-word;
-  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-  font-size: 14px;
-  line-height: 1.7;
+  word-break: break-word;
+  tab-size: 4;
+  font-family: var(--memo-editor-font-family);
+  font-size: var(--memo-editor-font-size);
+  font-weight: var(--memo-editor-font-weight);
+  line-height: 23.8px;
+  letter-spacing: var(--memo-editor-letter-spacing);
+  text-align: left;
+  text-indent: 0;
+  margin: 0;
+  box-sizing: border-box;
   color: #1f2329;
   pointer-events: none;
+
+  .memo-search-highlight {
+    background: #ffe58f;
+    color: #262626;
+    padding: 0;
+    border-radius: 2px;
+  }
+
+  .memo-search-highlight--active {
+    background: #ff9c6e;
+    outline: 1px solid #fa541c;
+  }
 }
 
 .memo-editor-input-wrap .memo-textarea {
@@ -191,9 +228,24 @@
   width: 100%;
   height: 100%;
   overflow-y: auto !important;
+  font-family: var(--memo-editor-font-family) !important;
+  font-size: var(--memo-editor-font-size) !important;
+  font-weight: var(--memo-editor-font-weight) !important;
+  line-height: 23.8px !important;
+  letter-spacing: var(--memo-editor-letter-spacing) !important;
+  text-align: left !important;
+  text-indent: 0 !important;
+  white-space: pre-wrap !important;
+  overflow-wrap: break-word !important;
+  word-break: break-word !important;
+  tab-size: 4 !important;
+  padding: var(--memo-editor-padding) !important;
+  margin: 0 !important;
+  box-sizing: border-box !important;
   background: transparent;
   color: transparent;
   caret-color: #1f2329;
+  border-color: transparent;
 }
 
 .memo-preview {
@@ -209,7 +261,7 @@
   .memo-search-highlight {
     background: #ffe58f;
     color: #262626;
-    padding: 0 2px;
+    padding: 0;
     border-radius: 2px;
   }
 

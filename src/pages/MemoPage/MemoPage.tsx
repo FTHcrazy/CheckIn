@@ -1,41 +1,14 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
-import {
-  App,
-  Button,
-  Card,
-  Empty,
-  Input,
-  Modal,
-  Popconfirm,
-  Segmented,
-  Space,
-  Spin,
-  Typography,
-  Tooltip,
-} from "antd";
+import { App, Card, Input, Modal, Empty } from "antd";
 import type { InputRef } from "antd";
-import {
-  PlusOutlined,
-  DeleteOutlined,
-  SaveOutlined,
-  EditOutlined,
-  FolderOpenOutlined,
-  FileMarkdownOutlined,
-  SearchOutlined,
-  CloseOutlined,
-} from "@ant-design/icons";
 import { marked } from "marked";
-import dayjs from "dayjs";
 import Page from "../../components/Page";
+import MemoEditor from "./components/MemoEditor";
+import MemoHeader, { MemoCardTitle } from "./components/MemoHeader";
+import MemoPreview from "./components/MemoPreview";
+import MemoSidebar from "./components/MemoSidebar";
+import type { MemoFile } from "./components/MemoSidebar";
 import "./index.scss";
-
-const { TextArea } = Input;
-const { Text, Title } = Typography;
-
-interface MemoFile {
-  name: string;
-  updatedAt: string;
-}
 
 function escapeHtml(value: string) {
   return value
@@ -238,12 +211,12 @@ function MemoPage() {
       if (textArea && isEditing) {
         textArea.scrollTo({
           top: Math.max(0, activeMark.offsetTop - textArea.clientHeight / 2),
-          behavior: "smooth",
+          behavior: "instant",
         });
         return;
       }
 
-      activeMark.scrollIntoView({ behavior: "smooth", block: "center" });
+      activeMark.scrollIntoView({ behavior: "instant", block: "center" });
     });
   }, [activeSearchIndex, activeSearchQuery, isEditing]);
 
@@ -286,34 +259,6 @@ function MemoPage() {
   );
 
   useEffect(() => {
-    if (!document) return;
-
-    const codeBlocks = document.querySelectorAll(".memo-preview pre code");
-    codeBlocks.forEach((block) => {
-      const code = block.textContent ?? "";
-      const wrapper = block.parentElement;
-      if (!wrapper || wrapper.querySelector(".memo-code-copy")) return;
-
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "memo-code-copy";
-      button.textContent = "复制";
-      button.addEventListener("click", () => {
-        void copyCode(code);
-      });
-
-      wrapper.style.position = "relative";
-      wrapper.appendChild(button);
-    });
-
-    return () => {
-      document
-        .querySelectorAll(".memo-code-copy")
-        .forEach((node) => node.remove());
-    };
-  }, [copyCode, renderedHtml]);
-
-  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const isModifier = event.ctrlKey || event.metaKey;
       if (!isModifier || event.key.toLowerCase() !== "f") return;
@@ -341,201 +286,54 @@ function MemoPage() {
   return (
     <Page>
       <div className="memo-page">
-        <div className="memo-sidebar">
-          <div className="memo-sidebar-header">
-            <Space>
-              <Title level={5} style={{ margin: 0 }}>
-                备忘列表
-              </Title>
-              <Text type="secondary">({files.length})</Text>
-            </Space>
-            <Button
-              type="primary"
-              size="small"
-              icon={<PlusOutlined />}
-              onClick={() => setCreateModalOpen(true)}
-            >
-              新建
-            </Button>
-          </div>
-          <div className="memo-sidebar-list">
-            {loading ? (
-              <div className="memo-sidebar-loading">
-                <Spin size="small" />
-              </div>
-            ) : files.length === 0 ? (
-              <Empty
-                description="暂无备忘文件"
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-              />
-            ) : (
-              files.map((item) => (
-                <div
-                  key={item.name}
-                  className={`memo-list-item ${selected === item.name ? "memo-list-item--active" : ""}`}
-                  onClick={() => void handleSelectFile(item.name)}
-                >
-                  <div className="memo-list-item-content">
-                    <div className="memo-list-item-icon">
-                      <FileMarkdownOutlined
-                        style={{ fontSize: 20, color: "#1677ff" }}
-                      />
-                    </div>
-                    <div className="memo-list-item-info">
-                      <Text ellipsis className="memo-list-item-title">
-                        {item.name.replace(/\.md$/, "")}
-                      </Text>
-                      <Text type="secondary" style={{ fontSize: 12 }}>
-                        {dayjs(item.updatedAt).format("MM-DD HH:mm")}
-                      </Text>
-                    </div>
-                    <div className="memo-list-item-actions">
-                      <Tooltip title="在文件夹中显示">
-                        <Button
-                          type="text"
-                          size="small"
-                          icon={<FolderOpenOutlined />}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            void handleOpenInExplorer(item.name);
-                          }}
-                        />
-                      </Tooltip>
-                      <Popconfirm
-                        title="确定删除此文件？"
-                        onConfirm={(e) => {
-                          e?.stopPropagation();
-                          void handleDelete(item.name);
-                        }}
-                        onCancel={(e) => e?.stopPropagation()}
-                      >
-                        <Button
-                          type="text"
-                          size="small"
-                          danger
-                          icon={<DeleteOutlined />}
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                      </Popconfirm>
-                    </div>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
+        <MemoSidebar
+          files={files}
+          selected={selected}
+          loading={loading}
+          onCreate={() => setCreateModalOpen(true)}
+          onSelect={(filename) => void handleSelectFile(filename)}
+          onDelete={(filename) => void handleDelete(filename)}
+          onOpenInExplorer={(filename) => void handleOpenInExplorer(filename)}
+        />
 
         <div className="memo-editor">
           {selected ? (
             <>
-              <div className="memo-editor-toolbar">
-                <div className="memo-editor-mode">
-                  <Segmented
-                    value={isEditing ? "edit" : "preview"}
-                    onChange={(value) => setIsEditing(value === "edit")}
-                    options={[
-                      { label: "预览", value: "preview" },
-                      { label: "编辑", value: "edit" },
-                    ]}
-                  />
-                </div>
-
-                <Space>
-                  {searchOpen && (
-                    <Input
-                      ref={searchInputRef}
-                      value={searchQuery}
-                      prefix={<SearchOutlined />}
-                      placeholder="搜索内容"
-                      allowClear
-                      onChange={(event) => setSearchQuery(event.target.value)}
-                      onPressEnter={handleFind}
-                      style={{ width: 220 }}
-                    />
-                  )}
-                  <Tooltip title={searchOpen ? "关闭搜索" : "搜索（Ctrl + F）"}>
-                    <Button
-                      type={searchOpen ? "primary" : "text"}
-                      icon={searchOpen ? <CloseOutlined /> : <SearchOutlined />}
-                      onClick={() => {
-                        setSearchOpen((open) => !open);
-                        setActiveSearchQuery("");
-                        setActiveSearchIndex(0);
-                      }}
-                    />
-                  </Tooltip>
-                  {isEditing ? (
-                    <Button
-                      type="primary"
-                      icon={<SaveOutlined />}
-                      loading={saving}
-                      onClick={() => void handleSave()}
-                    >
-                      保存
-                    </Button>
-                  ) : (
-                    <Button
-                      icon={<EditOutlined />}
-                      onClick={() => setIsEditing(true)}
-                    >
-                      编辑
-                    </Button>
-                  )}
-                </Space>
-              </div>
+              <MemoHeader
+                selected={selected}
+                isEditing={isEditing}
+                searchOpen={searchOpen}
+                searchQuery={searchQuery}
+                saving={saving}
+                searchInputRef={searchInputRef}
+                onModeChange={setIsEditing}
+                onSearchQueryChange={setSearchQuery}
+                onFind={handleFind}
+                onToggleSearch={() => {
+                  setSearchOpen((open) => !open);
+                  setActiveSearchQuery("");
+                  setActiveSearchIndex(0);
+                }}
+                onSave={() => void handleSave()}
+              />
 
               <Card
                 title={
-                  <Space>
-                    <FileMarkdownOutlined />
-                    <span>{selected}</span>
-                    {isEditing && (
-                      <Text type="secondary" style={{ fontSize: 12 }}>
-                        (编辑中)
-                      </Text>
-                    )}
-                  </Space>
+                  <MemoCardTitle selected={selected} isEditing={isEditing} />
                 }
                 className="memo-editor-card"
               >
                 {isEditing ? (
-                  <div className="memo-editor-input-wrap">
-                    <div
-                      className="memo-textarea-highlight"
-                      aria-hidden="true"
-                      dangerouslySetInnerHTML={{
-                        __html: highlightedEditorHtml || "&nbsp;",
-                      }}
-                    />
-                    <TextArea
-                      value={content}
-                      onChange={(e) => setContent(e.target.value)}
-                      placeholder="在此编辑 Markdown 内容..."
-                      spellCheck={false}
-                      className="memo-textarea"
-                      onScroll={(event) => {
-                        const highlight =
-                          event.currentTarget.parentElement?.querySelector<HTMLElement>(
-                            ".memo-textarea-highlight",
-                          );
-                        if (highlight) {
-                          highlight.scrollTop = event.currentTarget.scrollTop;
-                          highlight.scrollLeft = event.currentTarget.scrollLeft;
-                        }
-                      }}
-                      onPressEnter={(event) => {
-                        if (!event.shiftKey) {
-                          event.preventDefault();
-                          void handleSave();
-                        }
-                      }}
-                      onBlur={handleTextAreaBlur}
-                    />
-                  </div>
+                  <MemoEditor
+                    content={content}
+                    highlightedHtml={highlightedEditorHtml}
+                    onChange={setContent}
+                    onBlur={handleTextAreaBlur}
+                  />
                 ) : (
-                  <div
-                    className="memo-preview"
-                    dangerouslySetInnerHTML={{ __html: highlightedHtml }}
+                  <MemoPreview
+                    html={highlightedHtml}
+                    onCopyCode={(code) => void copyCode(code)}
                   />
                 )}
               </Card>
