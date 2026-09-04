@@ -235,7 +235,7 @@ function getLoginWindowUrl(email?: string) {
   const suffix = query ? `?${query}` : "";
 
   if (VITE_DEV_SERVER_URL) {
-    return `app://./login.html${suffix}`;
+    return `${VITE_DEV_SERVER_URL}/login.html${suffix}`;
   }
 
   return `app://./login.html${suffix}`;

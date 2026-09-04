@@ -14,7 +14,8 @@
     "electron:build": "tsc -b && vite build && cross-env ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ electron-builder",
     "electron:build:dir": "tsc -b && vite build && cross-env ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ electron-builder --dir",
     "electron:preview": "vite build && electron .",
-    "electron:rebuild": "npx @electron/rebuild -f -w better-sqlite3",
+    "electron:rebuild": "electron-rebuild -f -w better-sqlite3",
+    "electron:setup": "pnpm install && pnpm electron:rebuild",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

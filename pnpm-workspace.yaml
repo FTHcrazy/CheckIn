@@ -11,4 +11,3 @@ allowBuilds:
   "@parcel/watcher": true
   better-sqlite3: true
   electron-winstaller: true
-  lzma-native: set this to true or false
