@@ -45,6 +45,7 @@ app.commandLine.appendSwitch("lang", "zh-CN,en-US");
 const DIST_ELECTRON = __dirname;
 const DIST = path.join(DIST_ELECTRON, "../dist");
 const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
+let tray: Tray | null = null;
 const ICON_PATH = VITE_DEV_SERVER_URL
   ? path.join(DIST_ELECTRON, "../public/icon.ico")
   : path.join(DIST, "icon.ico");
@@ -84,6 +85,13 @@ function createWindow() {
     if (!isQuitting) {
       e.preventDefault();
       win.hide();
+    }
+  });
+
+  win.on("closed", () => {
+    if (mainWindow === win) {
+      mainWindow = null;
+      isMainWindowReady = false;
     }
   });
 
@@ -455,7 +463,7 @@ app.whenReady().then(() => {
   ensureMainWindow();
 
   // 系统托盘图标，点击可重新显示窗口
-  const tray = new Tray(ICON_PATH);
+  tray = new Tray(ICON_PATH);
   tray.setToolTip("CheckIn");
   tray.setContextMenu(
     Menu.buildFromTemplate([
@@ -476,6 +484,9 @@ app.whenReady().then(() => {
       showMainWindow();
     }
   });
+  tray.on("right-click", () => {
+    tray?.popUpContextMenu();
+  });
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -488,6 +499,8 @@ app.whenReady().then(() => {
 app.on("before-quit", () => {
   isQuitting = true;
   stopActivityPolling();
+  tray?.destroy();
+  tray = null;
   closeDb();
 });
 
