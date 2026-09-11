@@ -20,8 +20,8 @@ import {
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 import Page from "../../components/Page";
-import NoteModal from "./NoteModal";
-import WorkHourModal from "./WorkHourModal";
+import NoteModal from "./components/NoteModal";
+import WorkHourModal from "./components/WorkHourModal";
 import { useTodoPage } from "./hooks/useTodoPage";
 import type { TodoItem } from "./todo-db";
 import "./index.scss";

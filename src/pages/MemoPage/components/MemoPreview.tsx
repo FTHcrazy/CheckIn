@@ -7,6 +7,19 @@ interface MemoPreviewProps {
 
 export default function MemoPreview({ html, onCopyCode }: MemoPreviewProps) {
   useEffect(() => {
+    const preview = document.querySelector(".memo-preview");
+    if (!preview) return;
+
+    const handleAnchorClick = (event: Event) => {
+      const anchor = event.target instanceof Element ? event.target.closest("a") : null;
+      if (!anchor) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+    };
+
+    preview.addEventListener("click", handleAnchorClick, true);
+
     const codeBlocks = document.querySelectorAll(".memo-preview pre code");
     codeBlocks.forEach((block) => {
       const code = block.textContent ?? "";
@@ -24,6 +37,7 @@ export default function MemoPreview({ html, onCopyCode }: MemoPreviewProps) {
     });
 
     return () => {
+      preview.removeEventListener("click", handleAnchorClick, true);
       document
         .querySelectorAll(".memo-code-copy")
         .forEach((node) => node.remove());
