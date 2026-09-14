@@ -192,7 +192,6 @@
   // TODO 组头
   &--todo &__toggle {
     background: linear-gradient(135deg, #e8f4ff 0%, #f0f7ff 100%);
-    border-left: 3px solid #1677ff;
 
     &:hover {
       background: linear-gradient(135deg, #d6ebff 0%, #e8f4ff 100%);
@@ -206,7 +205,6 @@
   // DONE 组头
   &--done &__toggle {
     background: linear-gradient(135deg, #f0fae8 0%, #f6fff0 100%);
-    border-left: 3px solid #52c41a;
 
     &:hover {
       background: linear-gradient(135deg, #e4f7d6 0%, #f0fae8 100%);
