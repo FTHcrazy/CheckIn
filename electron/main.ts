@@ -45,6 +45,11 @@ app.commandLine.appendSwitch("lang", "zh-CN,en-US");
 const DIST_ELECTRON = __dirname;
 const DIST = path.join(DIST_ELECTRON, "../dist");
 const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
+// 渲染层窗口入口清单，与 vite.config.ts 的 rollupOptions.input 对应
+const RENDERER_ENTRIES = {
+  base: "src/windows/BaseWindow/index.html",
+  login: "src/windows/LoginWindow/index.html",
+} as const;
 let tray: Tray | null = null;
 const ICON_PATH = VITE_DEV_SERVER_URL
   ? path.join(DIST_ELECTRON, "../public/icon.ico")
@@ -106,10 +111,10 @@ function createWindow() {
   });
 
   if (VITE_DEV_SERVER_URL) {
-    win.loadURL(VITE_DEV_SERVER_URL);
+    win.loadURL(`${VITE_DEV_SERVER_URL}/${RENDERER_ENTRIES.base}`);
     win.webContents.openDevTools();
   } else {
-    win.loadURL(`app://./index.html`);
+    win.loadURL(`app://./${RENDERER_ENTRIES.base}`);
   }
 
   return win;
@@ -245,10 +250,10 @@ function getLoginWindowUrl(email?: string) {
   const suffix = query ? `?${query}` : "";
 
   if (VITE_DEV_SERVER_URL) {
-    return `${VITE_DEV_SERVER_URL}/login.html${suffix}`;
+    return `${VITE_DEV_SERVER_URL}/${RENDERER_ENTRIES.login}${suffix}`;
   }
 
-  return `app://./login.html${suffix}`;
+  return `app://./${RENDERER_ENTRIES.login}${suffix}`;
 }
 
 // 单实例锁定：防止多个应用和托盘同时存在
@@ -445,7 +450,7 @@ app.whenReady().then(() => {
     return true;
   });
 
-  ipcMain.on("toMain", (_event, data: unknown) => {
+  ipcMain.on("login-confirm", (_event, data: unknown) => {
     if (
       data &&
       typeof data === "object" &&

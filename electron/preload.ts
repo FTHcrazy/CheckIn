@@ -25,13 +25,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   send: (channel: string, data: unknown) => {
-    const validChannels = ['toMain']
+    const validChannels = ['login-confirm']
     if (validChannels.includes(channel)) {
       ipcRenderer.send(channel, data)
     }
   },
   receive: (channel: string, func: (...args: unknown[]) => void) => {
-    const validChannels = ['fromMain', 'activity-notify']
+    const validChannels = ['activity-notify']
     if (validChannels.includes(channel)) {
       ipcRenderer.on(channel, (_event, ...args) => func(...args))
     }

@@ -14,8 +14,13 @@ CheckIn 采用 Electron 双进程架构，渲染进程（React）与主进程（
 ┌─────────────────────────────────────────────────────────────┐
 │                     渲染进程 (Renderer)                      │
 ├─────────────────────────────────────────────────────────────┤
-│  Pages (UI Layer)                                           │
-│  └─ TodoPage / MemoPage / DailyPage / CodePage / UserPage   │
+│  Windows (窗口层：一个子目录 = 一个独立窗口)                  │
+│  ├─ BaseWindow (主窗口)                                      │
+│  │  └─ pages: Todo / Memo / Daily / Code / User / Home      │
+│  └─ LoginWindow (登录窗口)                                   │
+├─────────────────────────────────────────────────────────────┤
+│  Shared (跨窗口共享层)                                       │
+│  ├─ components / services / ipc / types / styles            │
 ├─────────────────────────────────────────────────────────────┤
 │  Hooks (Business Logic Layer)                               │
 │  └─ useTodoPage / useXxxPage                                │
@@ -43,8 +48,9 @@ CheckIn 采用 Electron 双进程架构，渲染进程（React）与主进程（
 
 1. **进程隔离**：渲染进程不直接访问系统资源，所有操作通过主进程暴露的 API
 2. **用户数据隔离**：每个用户独立 SQLite 数据库，存储在 `user-data/{email-hash}/`
-3. **模块自治**：每个页面模块拥有独立的组件、样式、业务逻辑，避免跨页面耦合
-4. **样式就近**：子组件样式与组件文件同级，严禁样式上移至父组件
+3. **窗口隔离**：一个独立窗口一个目录（`src/windows/XxxWindow/`），窗口之间禁止互相导入；窗口内自带入口 HTML、入口 TSX 与私有页面
+4. **模块自治**：每个页面模块拥有独立的组件、样式、业务逻辑，避免跨页面耦合
+5. **样式就近**：子组件样式与组件文件同级，严禁样式上移至父组件
 
 ---
 
@@ -66,17 +72,47 @@ CheckIn 采用 Electron 双进程架构，渲染进程（React）与主进程（
 
 ### 2.2 渲染进程模块 (`src/`)
 
-#### 2.2.1 全局层
+#### 2.2.0 窗口层 (`windows/`)
 
-| 模块 | 路径 | 职责 | 依赖 |
-|------|------|------|------|
-| **App** | `App.tsx` | 路由配置、全局 Provider（Antd ConfigProvider）、Home 页 | 依赖所有 Pages |
-| **Page** | `components/Page/` | 页面容器（NavHeader + children） | 依赖 NavHeader |
-| **NavHeader** | `components/NavHeader/` | 顶部导航栏（返回按钮） | 无依赖 |
+**一个独立窗口 = `src/windows/` 下的一个子目录**，目录内自包含该窗口的全部入口资源：
+
+```text
+src/windows/XxxWindow/
+├── index.html      # 窗口入口 HTML（vite rollupOptions.input 登记）
+├── main.tsx        # 入口：组装 Provider / Router，注册本窗口级 IPC 桥接
+├── App.tsx         # 窗口根组件
+└── (私有资源：pages/、index.scss 等)
+```
+
+| 窗口 | 路径 | 入口 HTML | 职责 |
+|------|------|----------|------|
+| **BaseWindow** | `windows/BaseWindow/` | `src/windows/BaseWindow/index.html` | 主窗口，承载全部业务页面（路由在 `App.tsx`） |
+| **LoginWindow** | `windows/LoginWindow/` | `src/windows/LoginWindow/index.html` | 登录/欢迎窗口 |
+
+**窗口边界规则**：
+- 窗口之间**禁止互相导入**（如 `LoginWindow` 不得导入 `BaseWindow/pages` 的任何内容）
+- 新增窗口时：在 `src/windows/` 建目录 → `vite.config.ts` 的 `rollupOptions.input` 登记 HTML → `electron/main.ts` 的 `RENDERER_ENTRIES` 登记加载路径
+- 仅需某窗口处理的 IPC 推送，封装在 `shared/ipc/` 的显式注册函数中，由该窗口入口调用一次（如 `registerActivityNotifyBridge()`），避免模块加载副作用扩散
+
+#### 2.2.1 共享层 (`shared/`)
+
+`src/shared/` 存放**跨窗口/跨页面复用**的代码，窗口私有代码禁止放入：
+
+| 模块 | 路径 | 职责 |
+|------|------|------|
+| **components** | `shared/components/` | 跨窗口共享 UI：Page（页面容器）、NavHeader（导航栏） |
+| **services** | `shared/services/` | 数据访问：daily.ts、code.ts |
+| **ipc** | `shared/ipc/` | 窗口级 IPC 桥接注册（显式调用，带防重复守卫） |
+| **types** | `shared/types/` | 全局类型：electron.d.ts（window.electronAPI） |
+| **styles** | `shared/styles/` | variables.scss（SCSS 变量）、antd-theme.ts（统一 ConfigProvider theme/locale） |
+
+**边界规则**：
+- 只有两个以上窗口/页面需要时才允许放入 `shared/`；只有一个使用方的代码留在使用方目录内
+- 各窗口的 ConfigProvider 统一从 `shared/styles/antd-theme.ts` 引入 `antdProviderProps`，禁止各窗口重复定义 theme
 
 #### 2.2.1.1 组件分层规范：全局组件 vs 当前模块组件
 
-- **全局组件**：放置于 `src/components/`，用于跨页面复用的通用 UI，如 `Page`、`NavHeader`、通用 `EmptyState` 等。
+- **全局组件**：放置于 `src/shared/components/`，用于跨窗口/跨页面复用的通用 UI，如 `Page`、`NavHeader`、通用 `EmptyState` 等。
 - **当前模块组件**：放置于各页面目录内的 `components/`，仅供该页面或该模块内部使用，如 `TodoPage/components/NoteModal/`。
 - **组件必须以文件夹形式存在**：每个组件都应为独立目录，目录内统一管理其逻辑、样式和入口，禁止出现“单文件组件 + 兄弟样式文件”的散乱结构。
 - **样式统一命名**：组件目录中的样式文件必须统一命名为 `index.scss`，并在组件入口文件中统一引入。
@@ -95,7 +131,9 @@ CheckIn 采用 Electron 双进程架构，渲染进程（React）与主进程（
 - Service 层不包含 UI 逻辑，不导入 React
 - Pages 通过 Service 层访问数据，不直接调用 `window.electronAPI.db`
 
-#### 2.2.3 页面模块 (`pages/`)
+#### 2.2.3 页面模块 (`windows/BaseWindow/pages/`)
+
+页面模块只属于 BaseWindow 主窗口，路径为 `src/windows/BaseWindow/pages/`：
 
 | 页面 | 核心组件 | 业务逻辑 | 数据源 | 私有子组件 |
 |------|---------|---------|--------|-----------|
@@ -108,41 +146,49 @@ CheckIn 采用 Electron 双进程架构，渲染进程（React）与主进程（
 **页面模块边界**：
 - 页面之间**无直接依赖**，通过路由跳转
 - 页面私有子组件**禁止**被其他页面导入
-- 共享组件（Page, NavHeader）放在 `components/`，所有页面可用
+- 共享组件（Page, NavHeader）放在 `shared/components/`，所有页面可用
 
 ---
 
 ## 3. 组件依赖关系图
 
 ```text
-App.tsx
-├─ ConfigProvider (Antd)
-├─ ActivityNotifier (全局 IPC 监听)
-└─ Routes
-   ├─ Home (内联在 App.tsx)
-   ├─ TodoPage
-   │  ├─ Page (全局共享)
-   │  ├─ TodoOutlineSidebar (私有)
-   │  ├─ NoteModal (私有)
-   │  └─ WorkHourModal (私有)
-   ├─ MemoPage
-   │  ├─ Page
-   │  ├─ MemoSidebar (私有)
-   │  ├─ MemoHeader (私有)
-   │  ├─ MemoEditor (私有)
-   │  └─ MemoPreview (私有)
-   ├─ DailyPage
-   │  └─ Page
-   ├─ CodePage
-   │  └─ Page
-   └─ UserPage
-      └─ Page
+windows/BaseWindow/
+├─ main.tsx (入口：注册 IPC 桥接)
+├─ App.tsx
+│  ├─ ConfigProvider (Antd，theme 来自 shared/styles/antd-theme)
+│  ├─ ActivityNotifier (全局 IPC 监听)
+│  └─ Routes
+│     ├─ HomePage
+│     ├─ TodoPage
+│     │  ├─ Page (共享)
+│     │  ├─ TodoOutlineSidebar (私有)
+│     │  ├─ NoteModal (私有)
+│     │  └─ WorkHourModal (私有)
+│     ├─ MemoPage
+│     │  ├─ Page
+│     │  ├─ MemoSidebar (私有)
+│     │  ├─ MemoHeader (私有)
+│     │  ├─ MemoEditor (私有)
+│     │  └─ MemoPreview (私有)
+│     ├─ DailyPage
+│     │  └─ Page
+│     ├─ CodePage
+│     │  └─ Page
+│     └─ UserPage
+│        └─ Page
+└─ pages/ (仅属于 BaseWindow)
+
+windows/LoginWindow/
+├─ main.tsx (入口)
+└─ App.tsx (登录/欢迎表单)
 ```
 
 **依赖规则**：
 - **单向依赖**：Pages → Services → IPC → Main，禁止反向调用
+- **窗口隔离**：`LoginWindow` 与 `BaseWindow` 之间禁止互相导入，共享代码只能经由 `shared/`
 - **平级禁止**：`TodoPage` 不导入 `MemoPage` 的任何内容
-- **私有保护**：`pages/TodoPage/components/NoteModal.tsx` 仅被 `TodoPage.tsx` 使用
+- **私有保护**：`pages/TodoPage/components/NoteModal` 仅被 `TodoPage` 使用
 
 ---
 
@@ -212,55 +258,55 @@ File System
 
 ```text
 CheckIn/
-├── electron/                    # 主进程代码
-│   ├── main.ts                  # 入口 + IPC 注册
-│   ├── preload.ts               # API 暴露
-│   ├── db.ts                    # 数据库管理
-│   └── activitiesTask.ts        # 后台任务
+├── electron/                              # 主进程代码
+│   ├── main.ts                            # 入口 + IPC 注册 + 窗口加载（RENDERER_ENTRIES）
+│   ├── preload.ts                         # API 暴露
+│   ├── db.ts                              # 数据库管理
+│   └── activitiesTask.ts                  # 后台任务
 ├── src/
-│   ├── main.tsx                 # 渲染进程入口
-│   ├── App.tsx                  # 路由 + 全局 Provider
-│   ├── index.scss               # 全局样式重置
-│   ├── styles/
-│   │   ├── variables.scss       # SCSS 变量
-│   │   └── App.scss             # Home 页样式
-│   ├── types/
-│   │   └── electron.d.ts        # window.electronAPI 类型
-│   ├── components/              # 全局共享组件
-│   │   ├── Page/
-│   │   │   ├── index.tsx
-│   │   │   └── index.scss
-│   │   └── NavHeader/
-│   │       ├── index.tsx
+│   ├── windows/                           # 窗口层：一个子目录 = 一个独立窗口
+│   │   ├── BaseWindow/                    # 主窗口
+│   │   │   ├── index.html                 # 窗口入口 HTML
+│   │   │   ├── main.tsx                   # 入口（Provider/Router + IPC 桥接注册）
+│   │   │   ├── App.tsx                    # 路由 + 全局 Provider + ActivityNotifier
+│   │   │   ├── index.scss                 # 窗口级全局样式重置
+│   │   │   └── pages/                     # 仅属于主窗口的页面模块
+│   │   │       ├── HomePage/
+│   │   │       │   ├── index.tsx
+│   │   │       │   └── index.scss
+│   │   │       ├── TodoPage/
+│   │   │       │   ├── TodoPage.tsx
+│   │   │       │   ├── index.scss
+│   │   │       │   ├── todo-db.ts
+│   │   │       │   ├── todo-utils.ts
+│   │   │       │   ├── hooks/
+│   │   │       │   │   └── useTodoPage.ts
+│   │   │       │   └── components/
+│   │   │       │       ├── NoteModal/
+│   │   │       │       │   ├── index.tsx
+│   │   │       │       │   └── index.scss
+│   │   │       │       ├── WorkHourModal/
+│   │   │       │       │   ├── index.tsx
+│   │   │       │       │   └── index.scss
+│   │   │       │       └── TodoOutlineSidebar/
+│   │   │       │           ├── index.tsx
+│   │   │       │           └── index.scss
+│   │   │       ├── MemoPage/
+│   │   │       ├── DailyPage/
+│   │   │       ├── CodePage/
+│   │   │       └── UserPage/
+│   │   └── LoginWindow/                   # 登录窗口
+│   │       ├── index.html
+│   │       ├── main.tsx
+│   │       ├── App.tsx
 │   │       └── index.scss
-│   ├── services/                # 数据服务层
-│   │   ├── daily.ts
-│   │   └── code.ts
-│   ├── pages/                   # 页面模块
-│   │   ├── TodoPage/
-│   │   │   ├── TodoPage.tsx
-│   │   │   ├── index.scss
-│   │   │   ├── todo-db.ts
-│   │   │   ├── todo-utils.ts
-│   │   │   ├── hooks/
-│   │   │   │   └── useTodoPage.ts
-│   │   │   └── components/
-│   │   │       ├── NoteModal/
-│   │   │       │   ├── index.tsx
-│   │   │       │   └── index.scss
-│   │   │       ├── WorkHourModal/
-│   │   │       │   ├── index.tsx
-│   │   │       │   └── index.scss
-│   │   │       └── TodoOutlineSidebar/
-│   │   │           ├── index.tsx
-│   │   │           └── index.scss
-│   │   ├── MemoPage/
-│   │   ├── DailyPage/
-│   │   ├── CodePage/
-│   │   └── UserPage/
-│   └── windows/                 # 独立窗口
-│       └── LoginWindow/
-├── vite.config.ts
+│   └── shared/                            # 跨窗口共享层
+│       ├── components/                    # 共享 UI（Page、NavHeader…）
+│       ├── services/                      # 数据服务（daily.ts、code.ts）
+│       ├── ipc/                           # 窗口级 IPC 桥接（activityNotifyBridge.ts）
+│       ├── types/                         # 全局类型（electron.d.ts）
+│       └── styles/                        # variables.scss、antd-theme.ts
+├── vite.config.ts                         # rollupOptions.input 与 windows/* 一一对应
 ├── tsconfig.json
 └── package.json
 ```
@@ -270,7 +316,7 @@ CheckIn/
 复杂页面（逻辑 >100 行）必须遵循以下结构：
 
 ```text
-pages/XxxPage/
+windows/BaseWindow/pages/XxxPage/
 ├── XxxPage.tsx           # 主组件（UI 渲染）
 ├── index.scss            # 页面级布局样式
 ├── xxx-db.ts             # (可选) 页面专属数据库操作
@@ -292,7 +338,7 @@ pages/XxxPage/
 - 组件必须以目录形式存在，目录名即组件名。
 - 每个组件目录内统一放置 `index.tsx` 与 `index.scss`，禁止使用 `Component.tsx + Component.scss` 这类命名方式。
 - 组件目录仅管理该组件自身的样式、逻辑和导出；不允许把多个无关组件的样式堆积到同一父级 `index.scss` 中。
-- 只有全局共享的 UI 才允许放在 `src/components/`，页面私有组件必须保持在对应页面的 `components/` 中。
+- 只有全局共享的 UI 才允许放在 `src/shared/components/`，页面私有组件必须保持在对应页面的 `components/` 中。
 
 ---
 
@@ -402,7 +448,7 @@ function TodoPage() {
 
 1. **主进程** (`electron/main.ts`)：注册 `ipcMain.handle()`
 2. **预加载** (`electron/preload.ts`)：暴露到 `window.electronAPI`
-3. **类型声明** (`src/types/electron.d.ts`)：更新接口定义
+3. **类型声明** (`src/shared/types/electron.d.ts`)：更新接口定义
 
 **命名规范**：`模块-操作`
 
@@ -456,8 +502,8 @@ function initializeDataDb(db: Database) {
   `);
 
   // 增量迁移：添加 work_hour 列
-  const columns = db.prepare("PRAGMA table_info(todos)").all();
-  if (!columns.some((col: any) => col.name === 'work_hour')) {
+  const columns = db.prepare("PRAGMA table_info(todos)").all() as Array<{ name: string }>;
+  if (!columns.some((col) => col.name === 'work_hour')) {
     db.exec('ALTER TABLE todos ADD COLUMN work_hour REAL');
   }
 }
@@ -481,7 +527,7 @@ function initializeDataDb(db: Database) {
 |------|------|---------|
 | **重复建表逻辑** | `todo-db.ts` 和 `db.ts` 都创建 todos 表 | 统一到 `db.ts` 的 `initializeDataDb()` |
 | **无路由懒加载** | 首屏加载所有页面代码 | 使用 `React.lazy()` + `Suspense` |
-| **类型分散** | 接口定义散落在各文件 | 建立 `src/types/` 统一管理 |
+| **类型分散** | 接口定义散落在各文件 | 统一收敛到 `src/shared/types/` 管理 |
 
 ### 7.3 低优先级
 
@@ -495,35 +541,43 @@ function initializeDataDb(db: Database) {
 
 ## 8. 新增功能检查清单
 
-### 8.1 新增页面
+### 8.1 新增独立窗口
 
-- [ ] 在 `src/pages/` 创建目录（如 `NewPage/`）
+- [ ] 在 `src/windows/` 创建 `XxxWindow/` 目录（`index.html` + `main.tsx` + `App.tsx`）
+- [ ] 在 `vite.config.ts` 的 `rollupOptions.input` 登记入口 HTML
+- [ ] 在 `electron/main.ts` 的 `RENDERER_ENTRIES` 登记窗口加载路径
+- [ ] ConfigProvider 使用 `shared/styles/antd-theme.ts` 的统一配置
+- [ ] 窗口私有页面/组件放在窗口目录内，禁止其他窗口导入
+
+### 8.2 新增页面（BaseWindow）
+
+- [ ] 在 `src/windows/BaseWindow/pages/` 创建目录（如 `NewPage/`）
 - [ ] 创建 `NewPage.tsx`（主组件）
 - [ ] 创建 `index.scss`（页面样式）
-- [ ] 在 `App.tsx` 添加路由
-- [ ] 在 `App.tsx` Home 页添加导航卡片
+- [ ] 在 `BaseWindow/App.tsx` 添加路由
+- [ ] 在 `HomePage/index.tsx` 添加导航卡片
 - [ ] 如果逻辑复杂（>100行），抽取 `hooks/useNewPage.ts`
 
-### 8.2 新增子组件
+### 8.3 新增子组件
 
-- [ ] 在 `pages/XxxPage/components/` 创建 `SubComponent.tsx`
-- [ ] 创建同名的 `SubComponent.scss`（⚠️ 必须同级）
-- [ ] 在 `SubComponent.tsx` 中 `import './SubComponent.scss'`
+- [ ] 在 `windows/BaseWindow/pages/XxxPage/components/` 创建 `SubComponent/index.tsx`
+- [ ] 创建 `SubComponent/index.scss`（样式就近，入口文件引入）
+- [ ] 在 `SubComponent/index.tsx` 中 `import './index.scss'`
 - [ ] 从父组件 `index.scss` 中移除该组件的样式
 
-### 8.3 新增数据表
+### 8.4 新增数据表
 
 - [ ] 在 `electron/db.ts` 的 `initializeDataDb()` 中创建表
 - [ ] 编写增量迁移逻辑（检查列是否存在）
-- [ ] 在 `services/` 或 `xxx-db.ts` 中封装 CRUD 函数
+- [ ] 在 `shared/services/` 或 `xxx-db.ts` 中封装 CRUD 函数
 - [ ] 定义 TypeScript 接口（如 `XxxItem`）
 
-### 8.4 新增 IPC 通道
+### 8.5 新增 IPC 通道
 
 - [ ] 在 `electron/main.ts` 注册 `ipcMain.handle('模块-操作', ...)`
 - [ ] 在 `electron/preload.ts` 暴露到 `window.electronAPI`
-- [ ] 在 `src/types/electron.d.ts` 更新 `ElectronAPI` 接口
-- [ ] 在 Service 层封装调用（如 `services/xxx.ts`）
+- [ ] 在 `src/shared/types/electron.d.ts` 更新 `ElectronAPI` 接口
+- [ ] 在 Service 层封装调用（如 `shared/services/xxx.ts`）
 
 ---
 
@@ -549,9 +603,10 @@ function initializeDataDb(db: Database) {
 | 主进程入口 | `electron/main.ts` | 窗口管理、IPC 注册 |
 | 数据库初始化 | `electron/db.ts` | 双库管理、表结构迁移 |
 | API 暴露 | `electron/preload.ts` | contextBridge 白名单 |
-| 路由配置 | `src/App.tsx` | HashRouter + Routes |
-| 全局类型 | `src/types/electron.d.ts` | window.electronAPI 接口 |
-| 样式变量 | `src/styles/variables.scss` | SCSS 变量与 mixins |
+| 路由配置 | `src/windows/BaseWindow/App.tsx` | HashRouter + Routes |
+| 全局类型 | `src/shared/types/electron.d.ts` | window.electronAPI 接口 |
+| 样式变量 | `src/shared/styles/variables.scss` | SCSS 变量与 mixins |
+| 窗口入口清单 | `electron/main.ts` 的 `RENDERER_ENTRIES` | 窗口 URL 映射，与 vite input 对应 |
 
 ---
 
