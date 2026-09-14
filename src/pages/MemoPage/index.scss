@@ -27,8 +27,13 @@
 
 .memo-sidebar-list {
   flex: 1;
-  overflow-y: auto;
+  min-height: 0;
+  overflow: hidden;
   padding: 8px;
+}
+
+.memo-sidebar-virtuoso {
+  height: 100%;
 }
 
 .memo-sidebar-loading {

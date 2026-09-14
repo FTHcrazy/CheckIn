@@ -32,24 +32,27 @@ export function useTodoPage() {
     void ensureTable().then(() => void loadItems());
   }, [loadItems]);
 
-  const handleAdd = async () => {
+  const handleAdd = async (): Promise<number | null> => {
     const parsed = parseWorkHourTag(newContent);
     if (!parsed.content) {
       message.warning("请输入内容");
-      return;
+      return null;
     }
 
     try {
-      await db.run("INSERT INTO todos (content, work_hour) VALUES (?, ?)", [
-        parsed.content,
-        parsed.workHour,
-      ]);
+      const result = await db.run(
+        "INSERT INTO todos (content, work_hour) VALUES (?, ?)",
+        [parsed.content, parsed.workHour],
+      );
       setNewContent("");
-      message.success(parsed.workHour !== null ? "已添加，工时已记录" : "已添加");
+      // 高频操作不弹 toast，列表即时刷新即为反馈
       void loadItems();
+      // 返回新任务 id，供调用方滚动定位
+      return Number(result.lastInsertRowid);
     } catch (err) {
       message.error("添加失败");
       console.error(err);
+      return null;
     }
   };
 
@@ -65,9 +68,9 @@ export function useTodoPage() {
         "INSERT INTO todos (parent_id, content, work_hour) VALUES (?, ?, ?)",
         [parentId, parsed.content, parsed.workHour],
       );
-      setChildInputFor(null);
+      // 连续录入：回车提交后保留输入框并清空内容，点击外部或 Esc 才关闭
       setChildContent("");
-      message.success(parsed.workHour !== null ? "子项已添加，工时已记录" : "子项已添加");
+      // 高频操作不弹 toast，列表即时刷新即为反馈
       void loadItems();
     } catch (err) {
       message.error("添加失败");
@@ -243,7 +246,13 @@ export function useTodoPage() {
         `UPDATE todos SET done = ?, done_at = ${doneAt} WHERE id = ?`,
         [doneVal, id],
       );
-      if (!checked) {
+      // 对称联动：勾选父项时同步完成所有未完成子项，取消时同步取消所有子项
+      if (checked) {
+        await db.run(
+          `UPDATE todos SET done = 1, done_at = datetime('now', 'localtime') WHERE parent_id = ? AND done = 0`,
+          [id],
+        );
+      } else {
         await db.run(
           `UPDATE todos SET done = 0, done_at = NULL WHERE parent_id = ?`,
           [id],
@@ -259,8 +268,18 @@ export function useTodoPage() {
   const topLevel = items.filter((i) => i.parent_id === null);
   const getChildren = (parentId: number) =>
     items.filter((i) => i.parent_id === parentId);
-  const todoItems = topLevel.filter((i) => i.done === 0);
-  const doneItems = topLevel.filter((i) => i.done === 1);
+  const todoItems = topLevel
+    .filter((i) => i.done === 0)
+    // 特别关注置顶，其余按创建时间倒序
+    .sort(
+      (a, b) =>
+        b.important - a.important ||
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    );
+  const doneItems = topLevel
+    .filter((i) => i.done === 1)
+    // done_at 为 YYYY-MM-DD HH:MM:SS 格式字符串，字典序即时间序；null（历史数据）视为最早
+    .sort((a, b) => (b.done_at ?? "").localeCompare(a.done_at ?? ""));
 
   const getWorkHourLabel = (value: number | null | undefined) =>
     formatWorkHour(value);

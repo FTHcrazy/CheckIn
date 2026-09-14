@@ -1,62 +1,155 @@
 .todo-page {
-  max-width: 800px;
-  margin: 0 auto;
-  padding: 0 24px;
-  height: calc(100vh - 32px);
+  display: grid;
+  grid-template-columns: minmax(220px, 320px) minmax(0, 1fr);
+  gap: 16px;
+  width: calc(100% - 32px);
+  height: calc(100vh - 90px);
+  margin: 0 16px;
+  padding: 0;
   overflow: hidden;
+  box-sizing: border-box;
+  transition: grid-template-columns 0.3s ease;
+
+  // ✅ 大纲收起时：单列布局，列表居中
+  &--outline-collapsed {
+    grid-template-columns: minmax(0, 1fr);
+
+    .todo-main {
+      max-width: 800px;
+      margin: 0 auto;
+      width: 100%;
+    }
+  }
+}
+
+// ✅ 大纲收起/展开按钮已合并至筛选栏（.todo-filter-bar）
+
+.todo-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
+  // ✅ 居中过渡
+  transition:
+    max-width 0.3s ease,
+    margin 0.3s ease;
 }
 
 .todo-input-bar {
   display: flex;
   gap: 8px;
-  margin-bottom: 24px;
-
-  position: fixed;
+  margin-bottom: 12px;
+  flex-shrink: 0;
+  z-index: 1;
   width: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  max-width: 800px;
-  z-index: 9;
+  box-sizing: border-box;
+}
+
+// ✅ 搜索/筛选栏
+.todo-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-shrink: 0;
+
+  .todo-filter-bar__search {
+    flex: 1;
+    max-width: 360px;
+  }
+}
+
+.todo-input-bar .ant-input,
+.todo-input-bar .ant-input-affix-wrapper {
+  flex: 1;
 }
 
 .todo-list-container {
-  padding-top: 12px;
-  height: calc(100vh - 116px);
-  overflow-y: auto;
-  margin-top: 40px;
-
-  &::-webkit-scrollbar-button,
-  &::-webkit-scrollbar-button:vertical:decrement,
-  &::-webkit-scrollbar-button:vertical:increment {
-    display: none !important;
-    height: 0 !important;
-    width: 0 !important;
-    -webkit-appearance: none !important;
-    appearance: none !important;
-  }
-}
-
-.todo-section {
-  margin-bottom: 24px;
-
-  &--done {
-    border-top: 1px solid #f0f0f0;
-    padding-top: 16px;
-  }
-}
-
-.todo-section-header {
-  margin-bottom: 12px;
-}
-
-.todo-list {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
+.todo-section {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  // ✅ 默认两者均分时各占一半
+  flex: 1;
+  min-height: 0;
+  transition:
+    flex 0.3s ease,
+    min-height 0.3s ease,
+    padding 0.3s ease;
+
+  &--done {
+    border-top: 1px solid #f0f0f0;
+    padding-top: 16px;
+  }
+
+  // ✅ 折叠态：只保留 header 高度，不参与弹性分配
+  &--collapsed {
+    flex: 0 0 auto !important;
+    min-height: auto !important;
+
+    .todo-virtuoso,
+    .ant-empty {
+      display: none;
+    }
+  }
+
+  // ✅ 展开态（对方折叠时）：独占全部剩余空间
+  &--expanded {
+    flex: 1 1 0% !important;
+    min-height: 0 !important;
+  }
+}
+
+.todo-section-header {
+  flex-shrink: 0;
+  margin-bottom: 12px;
+}
+
+.todo-section-header__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: inherit;
+  text-align: left;
+}
+
+// ✅ Virtuoso 每一项的外层包裹：用 padding-bottom 做间距（不会被虚拟化吞掉）
+.todo-virtuoso-item {
+  padding-bottom: 8px;
+}
+
+.todo-virtuoso {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+
+  // 命中 Virtuoso 内部的滚动容器
+  > div:first-child {
+    // 右侧 padding：内容不贴边 + 滚动条不遮挡内容
+    padding-right: 12px;
+    // 预留滚动条位置，避免滚动条出现/消失时布局跳动
+    scrollbar-gutter: stable;
+  }
+}
+
 .todo-item {
-  min-width: 500px;
+  display: block;
+  box-sizing: border-box;
   padding: 12px 16px;
   border-radius: 8px;
   background: #fafafa;
@@ -70,6 +163,8 @@
     border-color: #e8e8e8;
   }
 
+  // &:last-child { margin-bottom: 0; }  ← 删除这行，不再需要
+
   &--done {
     opacity: 0.6;
     background: #f9f9f9;
@@ -78,6 +173,7 @@
   &--child {
     margin-left: 32px;
     margin-top: 6px;
+    margin-bottom: 6px; // 子项之间的间距保留（子项不走 Virtuoso）
     padding: 8px 12px;
     background: #fff;
     border: 1px dashed #e8e8e8;
@@ -96,19 +192,20 @@
 
 .todo-item-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
 }
 
 .todo-item-checkbox {
   flex-shrink: 0;
+  padding-top: 2px;
 }
 
 .todo-item-main {
   flex: 1;
   min-width: 0;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
 }
 
@@ -199,8 +296,10 @@
 .todo-item-actions {
   flex-shrink: 0;
   display: flex;
+  align-items: center;
   gap: 2px;
   opacity: 0;
+  margin-left: 8px;
   transition: opacity 0.2s;
 
   .todo-item:hover & {
@@ -217,6 +316,57 @@
   background: #fffaf0;
 }
 
+// ✅ 空状态引导文案
+.todo-empty-hint {
+  font-size: 12px !important;
+  margin-top: 4px;
+}
+
+// ✅ 父任务子项完成进度徽标
+.todo-item-progress {
+  flex-shrink: 0;
+  font-size: 12px !important;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #f6ffed;
+  border: 1px solid #b7eb8f;
+  color: #389e0d;
+}
+
+// ✅ 新增任务入场动画（短暂 class，不随虚拟化重挂载重复播放）
+.todo-item--enter {
+  animation: todo-enter 0.6s ease;
+}
+
+@keyframes todo-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+// ✅ 完成瞬间的高亮闪烁反馈
+.todo-item--flash {
+  animation: todo-flash 0.9s ease;
+}
+
+@keyframes todo-flash {
+  0% {
+    background: #d9f7be;
+    border-color: #52c41a;
+  }
+
+  100% {
+    background: #fafafa;
+    border-color: #f0f0f0;
+  }
+}
+
 .todo-child-input {
   display: flex;
   gap: 8px;
@@ -228,4 +378,125 @@
   margin-top: 8px;
   padding-left: 4px;
   border-left: 2px solid #e8e8e8;
+}
+
+// 大纲侧边栏样式（保持原有）
+.todo-outline {
+  width: 100%;
+  height: 100%;
+  padding: 16px 12px;
+  border-radius: 12px;
+  background: #fafafa;
+  border: 1px solid #f0f0f0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+.todo-outline__virtuoso {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
+
+.todo-outline__header {
+  margin-bottom: 12px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #262626;
+}
+
+.todo-outline__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.todo-outline__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #262626;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  &:hover,
+  &.is-active {
+    background: #e6f4ff;
+    border-color: #91d5ff;
+    color: #1677ff;
+  }
+}
+
+.todo-outline__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+.todo-outline__label {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 13px;
+}
+
+.todo-outline__empty {
+  color: #8c8c8c;
+  font-size: 12px;
+}
+
+// ✅ 条目间距：放在包裹层上用 padding 实现（Virtuoso 能正确测量高度）
+.todo-outline__item-wrap {
+  padding-bottom: 6px;
+
+  &:last-child {
+    padding-bottom: 0;
+  }
+}
+
+// ✅ 组头：吸顶时必须不透明，否则会透底看到滚过的条目
+.todo-outline__group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: #fafafa; // 与 .todo-outline 背景一致
+  border-bottom: 1px solid #f0f0f0;
+  box-sizing: border-box;
+}
+
+.todo-outline__group-title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.todo-outline__group-count {
+  font-size: 12px;
+  color: #8c8c8c;
+}
+
+// ✅ DONE 组条目：删除线 + 弱化，与主列表视觉一致
+.todo-outline__item--done {
+  .todo-outline__label {
+    text-decoration: line-through;
+    color: rgba(0, 0, 0, 0.45);
+  }
+
+  // hover / 选中时恢复高亮色，保证可读性
+  &:hover .todo-outline__label,
+  &.is-active .todo-outline__label {
+    color: inherit;
+  }
 }
