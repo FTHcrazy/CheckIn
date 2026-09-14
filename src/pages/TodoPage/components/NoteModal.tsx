@@ -1,5 +1,6 @@
+import { useEffect, useRef } from "react";
 import { Input, Modal } from "antd";
-
+import type { InputRef } from "antd";
 export interface NoteModalProps {
   open: boolean;
   value: string;
@@ -9,6 +10,16 @@ export interface NoteModalProps {
 }
 
 function NoteModal({ open, value, onChange, onCancel, onOk }: NoteModalProps) {
+  const inputRef = useRef<InputRef>(null);
+
+  useEffect(() => {
+    if (open) {
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 0);
+    }
+  }, [open]);
+
   return (
     <Modal
       title="添加备注"
@@ -23,6 +34,7 @@ function NoteModal({ open, value, onChange, onCancel, onOk }: NoteModalProps) {
         onChange={(e) => onChange(e.target.value)}
         placeholder="请输入备注内容"
         autoSize={{ minRows: 3, maxRows: 6 }}
+        ref={inputRef}
         spellCheck={false}
       />
     </Modal>

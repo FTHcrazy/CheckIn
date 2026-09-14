@@ -1,7 +1,7 @@
 // ── 页面整体布局 ──
 .todo-page {
   display: grid;
-  grid-template-columns: minmax(200px, 260px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
   gap: 12px;
   width: calc(100% - 24px);
   height: calc(100vh - 80px);
@@ -9,16 +9,20 @@
   padding: 0;
   overflow: hidden;
   box-sizing: border-box;
-  transition: grid-template-columns 0.3s ease;
+}
 
-  &--outline-collapsed {
-    grid-template-columns: minmax(0, 1fr);
+// ── 大纲包裹层（动画容器） ──
+.todo-outline-wrap {
+  width: 260px;
+  opacity: 1;
+  overflow: hidden;
+  transition:
+    width 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 0.25s ease;
 
-    .todo-main {
-      max-width: 860px;
-      margin: 0 auto;
-      width: 100%;
-    }
+  &--collapsed {
+    width: 0;
+    opacity: 0;
   }
 }
 
@@ -29,9 +33,6 @@
   height: 100%;
   overflow: hidden;
   box-sizing: border-box;
-  transition:
-    max-width 0.3s ease,
-    margin 0.3s ease;
 }
 
 // ── 合并工具栏（一行） ──

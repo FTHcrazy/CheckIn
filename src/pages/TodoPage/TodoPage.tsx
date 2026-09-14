@@ -5,7 +5,6 @@ import {
   Empty,
   Input,
   Popconfirm,
-  Space,
   Tooltip,
   Typography,
   type MenuProps,
@@ -17,7 +16,6 @@ import type { VirtuosoHandle } from "react-virtuoso";
 import {
   PlusOutlined,
   DeleteOutlined,
-  CheckCircleOutlined,
   ClockCircleOutlined,
   FieldTimeOutlined,
   UndoOutlined,
@@ -27,6 +25,8 @@ import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   SearchOutlined,
+  FileDoneOutlined,
+  UnorderedListOutlined,
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 import Page from "../../components/Page";
@@ -95,10 +95,7 @@ function TodoPage() {
   const hasFilter = filterText.trim() !== "" || onlyImportant;
 
   useEffect(() => {
-    localStorage.setItem(
-      "todo.outlineCollapsed",
-      outlineCollapsed ? "1" : "0",
-    );
+    localStorage.setItem("todo.outlineCollapsed", outlineCollapsed ? "1" : "0");
   }, [outlineCollapsed]);
 
   useEffect(() => {
@@ -368,10 +365,7 @@ function TodoPage() {
               </Text>
             </div>
             {!isDone && hasChildren && (
-              <Text
-                type="secondary"
-                className="todo-item-progress"
-              >
+              <Text type="secondary" className="todo-item-progress">
                 {children.filter((child) => child.done === 1).length}/
                 {children.length}
               </Text>
@@ -498,13 +492,15 @@ function TodoPage() {
       <div
         className={`todo-page ${outlineCollapsed ? "todo-page--outline-collapsed" : ""}`}
       >
-        {!outlineCollapsed && (
+        <div
+          className={`todo-outline-wrap ${outlineCollapsed ? "todo-outline-wrap--collapsed" : ""}`}
+        >
           <TodoOutlineSidebar
             items={todoOutlineItems}
             activeId={activeOutlineId}
             onSelect={handleScrollToItem}
           />
-        )}
+        </div>
 
         <div className="todo-main">
           {/* 合并工具栏：输入框 + 筛选 一行搞定 */}
@@ -544,7 +540,13 @@ function TodoPage() {
               <Button
                 type="text"
                 size="small"
-                icon={outlineCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+                icon={
+                  outlineCollapsed ? (
+                    <MenuUnfoldOutlined />
+                  ) : (
+                    <MenuFoldOutlined />
+                  )
+                }
                 onClick={() => setOutlineCollapsed((prev) => !prev)}
               />
             </Tooltip>
@@ -562,13 +564,17 @@ function TodoPage() {
                   onClick={() => toggleSection("todo")}
                 >
                   <span className="todo-section-header__left">
-                    <CheckCircleOutlined className="todo-section-header__icon" />
+                    <UnorderedListOutlined className="todo-section-header__icon" />
                     <span className="todo-section-header__title">待办</span>
                     <span className="todo-section-header__badge todo-section-header__badge--todo">
                       {filteredTodoItems.length}
                     </span>
                   </span>
-                  {isTodoCollapsed ? <RightOutlined className="todo-section-header__arrow" /> : <DownOutlined className="todo-section-header__arrow" />}
+                  {isTodoCollapsed ? (
+                    <RightOutlined className="todo-section-header__arrow" />
+                  ) : (
+                    <DownOutlined className="todo-section-header__arrow" />
+                  )}
                 </button>
               </div>
               {!isTodoCollapsed &&
@@ -586,7 +592,8 @@ function TodoPage() {
                     >
                       {!hasFilter && (
                         <Text type="secondary" className="todo-empty-hint">
-                          在上方输入任务，后缀加 #2h 可快捷记录工时；双击任务名可编辑
+                          在上方输入任务，后缀加 #2h
+                          可快捷记录工时；双击任务名可编辑
                         </Text>
                       )}
                     </Empty>
@@ -618,13 +625,17 @@ function TodoPage() {
                   onClick={() => toggleSection("done")}
                 >
                   <span className="todo-section-header__left">
-                    <CheckCircleOutlined className="todo-section-header__icon" />
+                    <FileDoneOutlined className="todo-section-header__icon" />
                     <span className="todo-section-header__title">已完成</span>
                     <span className="todo-section-header__badge todo-section-header__badge--done">
                       {filteredDoneItems.length}
                     </span>
                   </span>
-                  {isDoneCollapsed ? <RightOutlined className="todo-section-header__arrow" /> : <DownOutlined className="todo-section-header__arrow" />}
+                  {isDoneCollapsed ? (
+                    <RightOutlined className="todo-section-header__arrow" />
+                  ) : (
+                    <DownOutlined className="todo-section-header__arrow" />
+                  )}
                 </button>
               </div>
               {!isDoneCollapsed &&
