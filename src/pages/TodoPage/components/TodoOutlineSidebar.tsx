@@ -2,6 +2,7 @@ import { CheckCircleOutlined } from "@ant-design/icons";
 import { useMemo } from "react";
 import { GroupedVirtuoso } from "react-virtuoso";
 import type { TodoItem } from "../todo-db";
+import "./TodoOutlineSidebar.scss";
 
 interface OutlineGroup {
   key: "todo" | "done";

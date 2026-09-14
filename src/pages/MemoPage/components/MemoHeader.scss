@@ -1,0 +1,30 @@
+.memo-editor-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--ant-color-border-secondary, #f0f0f0);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+}
+
+.memo-editor-mode {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px;
+  border-radius: 8px;
+  background: #f5f7fa;
+  border: 1px solid #eceef2;
+
+  .ant-segmented {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+  }
+
+  .ant-segmented-item {
+    border-radius: 6px;
+  }
+}

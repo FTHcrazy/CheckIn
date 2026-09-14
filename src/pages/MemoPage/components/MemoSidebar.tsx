@@ -17,6 +17,7 @@ import {
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { Virtuoso } from "react-virtuoso";
+import "./MemoSidebar.scss";
 
 const { Text, Title } = Typography;
 

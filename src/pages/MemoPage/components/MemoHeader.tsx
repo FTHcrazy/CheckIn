@@ -8,6 +8,7 @@ import {
   SearchOutlined,
 } from "@ant-design/icons";
 import type { RefObject } from "react";
+import "./MemoHeader.scss";
 
 interface MemoHeaderProps {
   selected: string;

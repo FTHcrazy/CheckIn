@@ -80,11 +80,9 @@ function TodoPage() {
   } = useTodoPage();
 
   const [activeOutlineId, setActiveOutlineId] = useState<number | null>(null);
-  // ✅ 大纲收起状态：持久化到 localStorage，重启后保留
   const [outlineCollapsed, setOutlineCollapsed] = useState(
     () => localStorage.getItem("todo.outlineCollapsed") === "1",
   );
-  // ✅ 互斥折叠：'todo' | 'done' | null，null 表示两者都展开；同样持久化
   const [collapsedSection, setCollapsedSection] = useState<
     "todo" | "done" | null
   >(() => {
@@ -92,7 +90,6 @@ function TodoPage() {
     return stored === "todo" || stored === "done" ? stored : null;
   });
 
-  // 搜索/筛选
   const [filterText, setFilterText] = useState("");
   const [onlyImportant, setOnlyImportant] = useState(false);
   const hasFilter = filterText.trim() !== "" || onlyImportant;
@@ -112,7 +109,6 @@ function TodoPage() {
     }
   }, [collapsedSection]);
 
-  // 搜索/筛选：父任务匹配关键词或任一子项匹配即保留；特别关注开关只作用于父任务
   const filterParents = (parents: TodoItem[]) => {
     const keyword = filterText.trim().toLowerCase();
     return parents.filter((item) => {
@@ -133,7 +129,6 @@ function TodoPage() {
     const parentItems = [...filteredTodoItems, ...filteredDoneItems]
       .filter((item) => item.parent_id === null)
       .sort((a, b) => {
-        // 与主列表一致：特别关注置顶，其余按创建时间倒序
         if (a.important !== b.important) return b.important - a.important;
         const aTime = new Date(a.created_at).getTime();
         const bTime = new Date(b.created_at).getTime();
@@ -144,16 +139,12 @@ function TodoPage() {
 
   const todoVirtuosoRef = useRef<VirtuosoHandle>(null);
   const doneVirtuosoRef = useRef<VirtuosoHandle>(null);
-  // 编辑框因 Enter 保存或 Esc 取消即将卸载时置 true，避免随后触发的 blur 再次保存
   const editingSkipBlurRef = useRef(false);
 
-  // 完成时的高亮反馈：追踪 items 中从未完成变为完成的项目，闪烁约 0.9s
   const prevDoneRef = useRef<Map<number, number>>(new Map());
   const [flashIds, setFlashIds] = useState<Set<number>>(() => new Set());
 
-  // 待滚动定位的任务 id：等目标分区展开、Virtuoso 挂载后由副作用统一执行滚动
   const [pendingScrollId, setPendingScrollId] = useState<number | null>(null);
-  // 新增任务的入场动画 id 集合
   const [enterIds, setEnterIds] = useState<Set<number>>(() => new Set());
 
   useEffect(() => {
@@ -170,7 +161,6 @@ function TodoPage() {
     return () => clearTimeout(timer);
   }, [items]);
 
-  // 点击大纲定位：若目标所在分区被折叠，先展开，再由 pendingScroll 副作用执行滚动
   const handleScrollToItem = (id: number) => {
     setActiveOutlineId(id);
     const inTodo = filteredTodoItems.some((item) => item.id === id);
@@ -183,14 +173,11 @@ function TodoPage() {
     setPendingScrollId(id);
   };
 
-  // ✅ 互斥折叠切换逻辑
   const toggleSection = useCallback((key: "todo" | "done") => {
     setCollapsedSection((prev) => {
       if (prev === key) {
-        // 当前已折叠 → 展开（回到两者都展开的状态）
         return null;
       }
-      // 折叠指定区域，另一个自动占据剩余空间
       return key;
     });
   }, []);
@@ -198,14 +185,13 @@ function TodoPage() {
   const isTodoCollapsed = collapsedSection === "todo";
   const isDoneCollapsed = collapsedSection === "done";
 
-  // 定位副作用：等目标出现在已展开的分区后再滚动（新增任务、大纲点击共用）
   useEffect(() => {
     if (pendingScrollId === null) return;
     const todoIndex = filteredTodoItems.findIndex(
       (i) => i.id === pendingScrollId,
     );
     if (todoIndex !== -1) {
-      if (isTodoCollapsed) return; // 分区未展开，等下一次渲染再滚动
+      if (isTodoCollapsed) return;
       todoVirtuosoRef.current?.scrollToIndex({
         index: todoIndex,
         align: "start",
@@ -234,20 +220,16 @@ function TodoPage() {
     isDoneCollapsed,
   ]);
 
-  // 新增任务：成功后定位到列表顶端并播放入场动画
   const handleAddAndScroll = async () => {
     const newId = await handleAdd();
     if (newId === null) return;
-    if (collapsedSection === "todo") setCollapsedSection(null); // todo 区被折叠时先展开
+    if (collapsedSection === "todo") setCollapsedSection(null);
     setPendingScrollId(newId);
     setEnterIds(new Set([newId]));
     setTimeout(() => setEnterIds(new Set()), 700);
   };
 
-  // ✅ renderItem 保持不变，此处省略以节省篇幅，实际使用时保留原有完整实现
   const renderItem = (item: TodoItem, isChild = false) => {
-    /* ... 保持原有 renderItem 完整实现不变 ... */
-    // ⚠️ 注意：请保留你原有的完整 renderItem 函数体，这里仅做标记
     const children = isChild ? [] : getChildren(item.id);
     const hasChildren = children.length > 0;
     const isDone = item.done === 1;
@@ -348,7 +330,6 @@ function TodoPage() {
                     }}
                     onBlur={() => {
                       if (editingSkipBlurRef.current) return;
-                      // 内容未变更时直接退出编辑，不写库
                       if (editingContent === item.content) {
                         setEditingId(null);
                         return;
@@ -380,7 +361,6 @@ function TodoPage() {
               )}
               <Text type="secondary" className="todo-item-time">
                 <ClockCircleOutlined style={{ fontSize: 12, marginRight: 4 }} />
-                {/* 完成项显示完成时间，未完成显示创建时间 */}
                 {(isDone && item.done_at
                   ? dayjs(item.done_at)
                   : dayjs(item.created_at)
@@ -518,7 +498,6 @@ function TodoPage() {
       <div
         className={`todo-page ${outlineCollapsed ? "todo-page--outline-collapsed" : ""}`}
       >
-        {/* ✅ 左侧大纲：支持收起 */}
         {!outlineCollapsed && (
           <TodoOutlineSidebar
             items={todoOutlineItems}
@@ -528,43 +507,30 @@ function TodoPage() {
         )}
 
         <div className="todo-main">
-          <div className="todo-input-bar">
+          {/* 合并工具栏：输入框 + 筛选 一行搞定 */}
+          <div className="todo-toolbar">
             <Input
-              placeholder="输入新任务，回车添加，后缀加 #{n}h，快捷添加工时"
+              className="todo-toolbar__input"
+              placeholder="输入新任务，回车添加；后缀加 #2h 记录工时"
               value={newContent}
               onChange={(e) => setNewContent(e.target.value)}
               onPressEnter={() => void handleAddAndScroll()}
-              size="large"
+              allowClear
               spellCheck={false}
             />
             <Button
               type="primary"
-              size="large"
               icon={<PlusOutlined />}
               onClick={() => void handleAddAndScroll()}
             >
               添加
             </Button>
-          </div>
-
-          {/* 大纲切换按钮与搜索、筛选合并为一行，减少垂直占用 */}
-          <div className="todo-filter-bar">
-            <Button
-              type="text"
-              size="small"
-              icon={
-                outlineCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />
-              }
-              onClick={() => setOutlineCollapsed((prev) => !prev)}
-              title={outlineCollapsed ? "展开大纲" : "收起大纲"}
-            />
+            <span className="todo-toolbar__divider" />
             <Input
-              className="todo-filter-bar__search"
-              placeholder="搜索任务"
+              className="todo-toolbar__search"
+              placeholder="搜索"
               allowClear
-              prefix={
-                <SearchOutlined style={{ color: "rgba(0, 0, 0, 0.25)" }} />
-              }
+              prefix={<SearchOutlined style={{ color: "rgba(0,0,0,0.25)" }} />}
               value={filterText}
               onChange={(e) => setFilterText(e.target.value)}
             />
@@ -572,27 +538,37 @@ function TodoPage() {
               checked={onlyImportant}
               onChange={(e) => setOnlyImportant(e.target.checked)}
             >
-              只看特别关注
+              特别关注
             </Checkbox>
+            <Tooltip title={outlineCollapsed ? "展开大纲" : "收起大纲"}>
+              <Button
+                type="text"
+                size="small"
+                icon={outlineCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+                onClick={() => setOutlineCollapsed((prev) => !prev)}
+              />
+            </Tooltip>
           </div>
 
           <div className="todo-list-container">
-            {/* ✅ TODO 区域 */}
+            {/* TODO 区域 */}
             <div
               className={`todo-section ${isTodoCollapsed ? "todo-section--collapsed" : ""} ${isDoneCollapsed ? "todo-section--expanded" : ""}`}
             >
-              <div className="todo-section-header">
+              <div className="todo-section-header todo-section-header--todo">
                 <button
                   type="button"
                   className="todo-section-header__toggle"
                   onClick={() => toggleSection("todo")}
                 >
-                  <Space>
-                    <CheckCircleOutlined style={{ color: "#1677ff" }} />
-                    <Text strong>TODO</Text>
-                    <Text type="secondary">({filteredTodoItems.length})</Text>
-                  </Space>
-                  {isTodoCollapsed ? <RightOutlined /> : <DownOutlined />}
+                  <span className="todo-section-header__left">
+                    <CheckCircleOutlined className="todo-section-header__icon" />
+                    <span className="todo-section-header__title">待办</span>
+                    <span className="todo-section-header__badge todo-section-header__badge--todo">
+                      {filteredTodoItems.length}
+                    </span>
+                  </span>
+                  {isTodoCollapsed ? <RightOutlined className="todo-section-header__arrow" /> : <DownOutlined className="todo-section-header__arrow" />}
                 </button>
               </div>
               {!isTodoCollapsed &&
@@ -631,22 +607,24 @@ function TodoPage() {
                 ))}
             </div>
 
-            {/* ✅ DONE 区域 */}
+            {/* DONE 区域 */}
             <div
               className={`todo-section todo-section--done ${isDoneCollapsed ? "todo-section--collapsed" : ""} ${isTodoCollapsed ? "todo-section--expanded" : ""}`}
             >
-              <div className="todo-section-header">
+              <div className="todo-section-header todo-section-header--done">
                 <button
                   type="button"
                   className="todo-section-header__toggle"
                   onClick={() => toggleSection("done")}
                 >
-                  <Space>
-                    <CheckCircleOutlined style={{ color: "#52c41a" }} />
-                    <Text strong>DONE</Text>
-                    <Text type="secondary">({filteredDoneItems.length})</Text>
-                  </Space>
-                  {isDoneCollapsed ? <RightOutlined /> : <DownOutlined />}
+                  <span className="todo-section-header__left">
+                    <CheckCircleOutlined className="todo-section-header__icon" />
+                    <span className="todo-section-header__title">已完成</span>
+                    <span className="todo-section-header__badge todo-section-header__badge--done">
+                      {filteredDoneItems.length}
+                    </span>
+                  </span>
+                  {isDoneCollapsed ? <RightOutlined className="todo-section-header__arrow" /> : <DownOutlined className="todo-section-header__arrow" />}
                 </button>
               </div>
               {!isDoneCollapsed &&

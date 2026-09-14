@@ -1,4 +1,5 @@
 import { Input } from "antd";
+import "./MemoEditor.scss";
 
 const { TextArea } = Input;
 
