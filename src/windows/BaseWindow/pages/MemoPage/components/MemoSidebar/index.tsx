@@ -17,14 +17,10 @@ import {
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { Virtuoso } from "react-virtuoso";
+import type { MemoFile } from "../../types";
 import "./index.scss";
 
 const { Text, Title } = Typography;
-
-export interface MemoFile {
-  name: string;
-  updatedAt: string;
-}
 
 interface MemoSidebarProps {
   files: MemoFile[];

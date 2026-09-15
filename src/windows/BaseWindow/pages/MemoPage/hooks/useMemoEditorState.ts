@@ -1,0 +1,120 @@
+import { useState } from "react";
+import { App } from "antd";
+
+interface MemoEditorActions {
+  loadFiles: () => Promise<void>;
+  readFile: (filename: string) => Promise<string | null>;
+  writeFile: (filename: string, content: string) => Promise<boolean>;
+  deleteFile: (filename: string) => Promise<boolean>;
+  importFiles: () => Promise<string[]>;
+}
+
+export function useMemoEditorState(actions: MemoEditorActions) {
+  const { message } = App.useApp();
+  const [selected, setSelected] = useState<string | null>(null);
+  const [content, setContent] = useState("");
+  const [originalContent, setOriginalContent] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [newFileName, setNewFileName] = useState("");
+
+  const handleSelectFile = async (filename: string): Promise<void> => {
+    if (selected === filename) return;
+    const nextContent = await actions.readFile(filename);
+    if (nextContent === null) return;
+    setSelected(filename);
+    setContent(nextContent);
+    setOriginalContent(nextContent);
+    setIsEditing(false);
+  };
+
+  const handleSave = async (): Promise<void> => {
+    if (!selected) return;
+    if (!content.trim()) {
+      message.warning("内容不能为空");
+      return;
+    }
+
+    setSaving(true);
+    const saved = await actions.writeFile(selected, content);
+    if (saved) {
+      setOriginalContent(content);
+      setIsEditing(false);
+      message.success("保存成功");
+      void actions.loadFiles();
+    }
+    setSaving(false);
+  };
+
+  const handleCreate = async (): Promise<void> => {
+    const name = newFileName.trim();
+    if (!name) {
+      message.warning("请输入文件名");
+      return;
+    }
+
+    const filename = name.endsWith(".md") ? name : `${name}.md`;
+    const initContent = `# ${name.replace(/\.md$/, "")}\n\n`;
+    const created = await actions.writeFile(filename, initContent);
+    if (!created) return;
+
+    message.success("创建成功");
+    setCreateModalOpen(false);
+    setNewFileName("");
+    await actions.loadFiles();
+    setSelected(filename);
+    setContent(initContent);
+    setOriginalContent(initContent);
+    setIsEditing(true);
+  };
+
+  const handleImport = async (): Promise<void> => {
+    const importedFiles = await actions.importFiles();
+    if (!importedFiles.length) return;
+    message.success(`已导入 ${importedFiles.length} 个备忘文件`);
+    await actions.loadFiles();
+    await handleSelectFile(importedFiles[0]);
+  };
+
+  const handleDelete = async (filename: string): Promise<void> => {
+    if (!(await actions.deleteFile(filename))) return;
+    message.success("删除成功");
+    if (selected === filename) {
+      setSelected(null);
+      setContent("");
+      setOriginalContent("");
+      setIsEditing(false);
+    }
+    void actions.loadFiles();
+  };
+
+  const handleTextAreaBlur = (): void => {
+    if (!selected || content === originalContent) return;
+    if (!content.trim()) {
+      message.warning("内容不能为空");
+      return;
+    }
+    void handleSave();
+  };
+
+  return {
+    selected,
+    content,
+    originalContent,
+    saving,
+    isEditing,
+    createModalOpen,
+    newFileName,
+    setContent,
+    setIsEditing,
+    setCreateModalOpen,
+    setNewFileName,
+    handleSelectFile,
+    handleSave,
+    handleCreate,
+    handleImport,
+    handleDelete,
+    handleTextAreaBlur,
+  };
+}
