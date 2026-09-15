@@ -6,54 +6,62 @@ import NoteModal from "./components/NoteModal";
 import TodoSection from "./components/TodoSection";
 import TodoToolbar from "./components/TodoToolbar";
 import WorkHourModal from "./components/WorkHourModal";
-import { useTodoPage } from "./hooks/useTodoPage";
+import { useTodoData } from "./hooks/useTodoData";
+import { useTodoEditorState } from "./hooks/useTodoEditorState";
 import { useTodoViewState } from "./hooks/useTodoViewState";
 import type { TodoItem } from "./types";
 import "./index.scss";
 
 function TodoPage() {
-  const data = useTodoPage();
+  const data = useTodoData();
+  const editor = useTodoEditorState({
+    handleUpdateContent: data.handleUpdateContent,
+    handleUpdateNote: data.handleUpdateNote,
+    handleUpdateWorkHour: data.handleUpdateWorkHour,
+  });
   const view = useTodoViewState(
     data.items,
     data.todoItems,
     data.doneItems,
     data.getChildren,
   );
-  const handleAdd = async (): Promise<void> => {
-    const id = await data.handleAdd();
-    if (id !== null) view.markAdded(id);
+  const handleAdd = async (content: string): Promise<boolean> => {
+    const id = await data.handleAdd(content);
+    if (id === null) return false;
+    view.markAdded(id);
+    return true;
   };
 
   const handleSaveEdit = useCallback(
     (id: number, value: string) => {
-      void data.saveContent(id, value);
+      void editor.saveContent(id, value);
     },
-    [data],
+    [editor],
   );
 
   const renderItem = useCallback(
     (item: TodoItem) => (
       <TodoListItem
         item={item}
-        editingId={data.editingId}
-        childInputFor={data.childInputFor}
+        editingId={editor.editingId}
+        childInputFor={editor.childInputFor}
         flashIds={view.flashIds}
         enterIds={view.enterIds}
         getChildren={data.getChildren}
         getRemainingWorkHour={data.getRemainingWorkHour}
         getWorkHourLabel={data.getWorkHourLabel}
-        onSetEditingId={data.setEditingId}
+        onSetEditingId={editor.setEditingId}
         onToggleChildInput={(id) =>
-          data.setChildInputFor(data.childInputFor === id ? null : id)
+          editor.setChildInputFor(editor.childInputFor === id ? null : id)
         }
-        onCloseChildInput={() => data.setChildInputFor(null)}
+        onCloseChildInput={() => editor.setChildInputFor(null)}
         onOpenNote={(id, note) => {
-          data.setNoteModalFor(id);
-          data.setNoteDraft(note ?? "");
+          editor.setNoteModalFor(id);
+          editor.setNoteDraft(note ?? "");
         }}
         onOpenWorkHour={(id, workHour) => {
-          data.setWorkHourModalFor(id);
-          data.setWorkHourDraft(workHour);
+          editor.setWorkHourModalFor(id);
+          editor.setWorkHourDraft(workHour);
         }}
         onAddChild={data.handleAddChild}
         onDelete={data.handleDelete}
@@ -61,13 +69,13 @@ function TodoPage() {
         onDeleteWorkHour={data.handleDeleteWorkHour}
         onToggleImportant={data.handleToggleImportant}
         onSaveEdit={handleSaveEdit}
-        onCancelEdit={() => data.setEditingId(null)}
+        onCancelEdit={() => editor.setEditingId(null)}
         onToggle={data.handleToggle}
         onToggleChild={data.handleToggleChild}
         onToggleParent={data.handleToggleParent}
       />
     ),
-    [data, handleSaveEdit, view.enterIds, view.flashIds],
+    [data, editor, handleSaveEdit, view.enterIds, view.flashIds],
   );
 
   return (
@@ -87,14 +95,12 @@ function TodoPage() {
 
         <div className="todo-main">
           <TodoToolbar
-            newContent={data.newContent}
             filterText={view.filterText}
             onlyImportant={view.onlyImportant}
             outlineCollapsed={view.outlineCollapsed}
-            onNewContentChange={data.setNewContent}
             onFilterTextChange={view.setFilterText}
             onOnlyImportantChange={view.setOnlyImportant}
-            onAdd={() => void handleAdd()}
+            onAdd={handleAdd}
             onToggleOutline={() => view.setOutlineCollapsed((value) => !value)}
           />
 
@@ -123,24 +129,24 @@ function TodoPage() {
         </div>
 
         <NoteModal
-          open={data.noteModalFor !== null}
-          value={data.noteDraft}
-          onChange={data.setNoteDraft}
+          open={editor.noteModalFor !== null}
+          value={editor.noteDraft}
+          onChange={editor.setNoteDraft}
           onCancel={() => {
-            data.setNoteModalFor(null);
-            data.setNoteDraft("");
+            editor.setNoteModalFor(null);
+            editor.setNoteDraft("");
           }}
-          onOk={() => void data.saveNote()}
+          onOk={() => void editor.saveNote()}
         />
         <WorkHourModal
-          open={data.workHourModalFor !== null}
-          value={data.workHourDraft}
-          onChange={data.setWorkHourDraft}
+          open={editor.workHourModalFor !== null}
+          value={editor.workHourDraft}
+          onChange={editor.setWorkHourDraft}
           onCancel={() => {
-            data.setWorkHourModalFor(null);
-            data.setWorkHourDraft(null);
+            editor.setWorkHourModalFor(null);
+            editor.setWorkHourDraft(null);
           }}
-          onSave={(value) => void data.saveWorkHour(value)}
+          onSave={(value) => void editor.saveWorkHour(value)}
         />
       </div>
     </Page>

@@ -87,6 +87,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     list: () => ipcRenderer.invoke('memo-list') as Promise<{ name: string; updatedAt: string }[]>,
     read: (filename: string) => ipcRenderer.invoke('memo-read', filename) as Promise<string>,
     write: (filename: string, content: string) => ipcRenderer.invoke('memo-write', filename, content) as Promise<boolean>,
+    rename: (oldFilename: string, newFilename: string) => ipcRenderer.invoke('memo-rename', oldFilename, newFilename) as Promise<boolean>,
     delete: (filename: string) => ipcRenderer.invoke('memo-delete', filename) as Promise<boolean>,
     openInExplorer: (filename: string) => ipcRenderer.invoke('memo-open-in-explorer', filename) as Promise<boolean>,
     import: () => ipcRenderer.invoke('memo-import') as Promise<string[]>,

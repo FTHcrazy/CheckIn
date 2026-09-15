@@ -3,6 +3,9 @@
 ## [1.1.0] - 2026-09-15
 
 ### Changed
+- Memo 文件列表支持双击文件名进入输入框并重命名文件。
+- **状态管理规范落地**：TodoPage 和 MemoPage 直接组合分层 Hook，并将页面局部交互状态与复制逻辑下沉到直接使用组件。
+- **开发规范**：补充状态管理约束，要求 Hook 状态优先在直接使用组件中消费，减少不必要的父组件状态透传。
 - **架构重构**：将所有数据库操作从渲染进程迁移至主进程，消除 SQL 注入风险
   - 新增语义化 IPC 通道：`activity-list/add/update/delete`、`todo-list/add/update/toggle` 等
   - 移除通用 `db-all/get/run/exec` 通道，渲染进程不再直接传递 SQL
@@ -16,9 +19,13 @@
 ### Removed
 - 删除 `src/windows/BaseWindow/pages/TodoPage/todo-db.ts`（类型已迁移至 `types.ts`，初始化逻辑已在主进程完成）
 
+### Added
+- 新增 Memo 页面左侧文件列表名称支持双击修改
+- Todo 备注支持点击复制，并在复制成功后显示短暂提示。
+- 优化 Todo 标题和备注的长文本展示，超过可配置字数后省略，并可通过悬停查看全文。
+
 ### Fixed
 - 修复编辑 Todo 标题时未输入工时标签会清空原工时的问题，并确保备注、完成状态和特别关注等附属信息保持不变。
-- 优化 Todo 标题和备注的长文本展示，超过可配置字数后省略，并可通过悬停查看全文。
 - 修复 Markdown 预览中单个 Enter 换行被合并为同一行的问题。
 - 将 Todo 单项递归渲染逻辑抽离为独立的 `TodoListItem` 组件。
 - 拆分 Todo 页面数据、编辑状态和视图状态，降低 `useTodoPage` 与页面组件的职责耦合。

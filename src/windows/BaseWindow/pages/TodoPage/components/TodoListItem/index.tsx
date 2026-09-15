@@ -1,4 +1,5 @@
 import {
+  App,
   Button,
   Checkbox,
   Dropdown,
@@ -15,6 +16,7 @@ import {
   PlusOutlined,
   StarFilled,
   UndoOutlined,
+  CopyFilled,
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 import EditableText from "../EditableText";
@@ -83,6 +85,7 @@ export default function TodoListItem({
   onToggleChild,
   onToggleParent,
 }: TodoListItemProps) {
+  const { message } = App.useApp();
   const children = isChild ? [] : getChildren(item.id);
   const hasChildren = children.length > 0;
   const isDone = item.done === 1;
@@ -92,6 +95,18 @@ export default function TodoListItem({
   const containsWorkHour = remainingWorkHour > 0;
   const displayContent = truncateTodoText(item.content);
   const displayNote = item.note ? truncateTodoText(item.note) : null;
+
+  const handleCopyNote = async (): Promise<void> => {
+    if (!item.note) return;
+
+    try {
+      await navigator.clipboard.writeText(item.note);
+      message.success("备注已复制");
+    } catch (error) {
+      message.error("复制失败");
+      console.error(error);
+    }
+  };
 
   const contextMenuItems: MenuProps = {
     items: [
@@ -187,8 +202,13 @@ export default function TodoListItem({
               <Tooltip
                 title={displayNote === item.note ? undefined : item.note}
               >
-                <Text className="todo-item-note" ellipsis={false}>
-                  {displayNote}
+                <Text
+                  className="todo-item-note"
+                  ellipsis={false}
+                  style={{ cursor: "pointer" }}
+                  onClick={() => void handleCopyNote()}
+                >
+                  {displayNote}&nbsp;|&nbsp;<CopyFilled />
                 </Text>
               </Tooltip>
             )}

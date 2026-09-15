@@ -1,4 +1,5 @@
 import { Button, Checkbox, Input, Tooltip } from "antd";
+import { useState } from "react";
 import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
@@ -8,29 +9,30 @@ import {
 import { useImeGuard } from "../../hooks/useImeGuard";
 
 interface TodoToolbarProps {
-  newContent: string;
   filterText: string;
   onlyImportant: boolean;
   outlineCollapsed: boolean;
-  onNewContentChange: (value: string) => void;
   onFilterTextChange: (value: string) => void;
   onOnlyImportantChange: (value: boolean) => void;
-  onAdd: () => void;
+  onAdd: (content: string) => Promise<boolean>;
   onToggleOutline: () => void;
 }
 
 export default function TodoToolbar({
-  newContent,
   filterText,
   onlyImportant,
   outlineCollapsed,
-  onNewContentChange,
   onFilterTextChange,
   onOnlyImportantChange,
   onAdd,
   onToggleOutline,
 }: TodoToolbarProps) {
+  const [newContent, setNewContent] = useState("");
   const ime = useImeGuard();
+
+  const handleAdd = async (): Promise<void> => {
+    if (await onAdd(newContent)) setNewContent("");
+  };
 
   return (
     <div className="todo-toolbar">
@@ -38,17 +40,17 @@ export default function TodoToolbar({
         className="todo-toolbar__input"
         placeholder="输入新任务，回车添加；后缀加 #2h 记录工时"
         value={newContent}
-        onChange={(event) => onNewContentChange(event.target.value)}
+        onChange={(event) => setNewContent(event.target.value)}
         onCompositionStart={ime.onCompositionStart}
         onCompositionEnd={ime.onCompositionEnd}
         onPressEnter={(event) => {
           if (ime.isComposing(event)) return;
-          onAdd();
+          void handleAdd();
         }}
         allowClear
         spellCheck={false}
       />
-      <Button type="primary" icon={<PlusOutlined />} onClick={onAdd}>
+      <Button type="primary" icon={<PlusOutlined />} onClick={() => void handleAdd()}>
         添加
       </Button>
       <span className="todo-toolbar__divider" />

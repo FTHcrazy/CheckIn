@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useTodoData } from "./useTodoData";
 import { useTodoEditorState } from "./useTodoEditorState";
 
@@ -6,6 +7,7 @@ import { useTodoEditorState } from "./useTodoEditorState";
  * 新代码应优先直接使用 useTodoData 和 useTodoEditorState。
  */
 export function useTodoPage() {
+  const [newContent, setNewContent] = useState("");
   const data = useTodoData();
   const editor = useTodoEditorState({
     handleUpdateContent: data.handleUpdateContent,
@@ -14,7 +16,7 @@ export function useTodoPage() {
   });
 
   const handleAdd = async (): Promise<number | null> => {
-    const result = await data.handleAdd(editor.newContent);
+    const result = await data.handleAdd(newContent);
     if (result !== null) editor.setNewContent("");
     return result;
   };
@@ -22,6 +24,8 @@ export function useTodoPage() {
   return {
     ...data,
     ...editor,
+    newContent,
+    setNewContent,
     handleAdd,
   };
 }

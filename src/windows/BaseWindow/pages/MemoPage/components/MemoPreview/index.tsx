@@ -1,12 +1,26 @@
-import { useEffect } from "react";
+import { App } from "antd";
+import { useCallback, useEffect } from "react";
 import "./index.scss";
 
 interface MemoPreviewProps {
   html: string;
-  onCopyCode: (code: string) => void;
 }
 
-export default function MemoPreview({ html, onCopyCode }: MemoPreviewProps) {
+export default function MemoPreview({ html }: MemoPreviewProps) {
+  const { message } = App.useApp();
+  const onCopyCode = useCallback(
+    async (code: string): Promise<void> => {
+      try {
+        await navigator.clipboard.writeText(code);
+        message.success("代码已复制");
+      } catch (error) {
+        message.error("复制失败");
+        console.error(error);
+      }
+    },
+    [message],
+  );
+
   useEffect(() => {
     const preview = document.querySelector(".memo-preview");
     if (!preview) return;

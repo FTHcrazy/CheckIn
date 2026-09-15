@@ -1,22 +1,18 @@
 import {
   Button,
   Empty,
-  Popconfirm,
   Space,
   Spin,
   Tooltip,
   Typography,
 } from "antd";
 import {
-  DeleteOutlined,
   ImportOutlined,
-  FileMarkdownOutlined,
-  FolderOpenOutlined,
   PlusOutlined,
   ReloadOutlined,
 } from "@ant-design/icons";
-import dayjs from "dayjs";
 import { Virtuoso } from "react-virtuoso";
+import MemoListItem from "../MemoListItem";
 import type { MemoFile } from "../../types";
 import "./index.scss";
 
@@ -30,6 +26,7 @@ interface MemoSidebarProps {
   onImport: () => void;
   onRefresh: () => void;
   onSelect: (filename: string) => void;
+  onRename: (filename: string, name: string) => Promise<boolean>;
   onDelete: (filename: string) => void;
   onOpenInExplorer: (filename: string) => void;
 }
@@ -42,6 +39,7 @@ export default function MemoSidebar({
   onImport,
   onRefresh,
   onSelect,
+  onRename,
   onDelete,
   onOpenInExplorer,
 }: MemoSidebarProps) {
@@ -99,56 +97,15 @@ export default function MemoSidebar({
             data={files}
             overscan={10}
             itemContent={(_, item) => (
-              <div
+              <MemoListItem
                 key={item.name}
-                className={`memo-list-item ${selected === item.name ? "memo-list-item--active" : ""}`}
-                onClick={() => onSelect(item.name)}
-              >
-                <div className="memo-list-item-content">
-                  <div className="memo-list-item-icon">
-                    <FileMarkdownOutlined
-                      style={{ fontSize: 20, color: "#1677ff" }}
-                    />
-                  </div>
-                  <div className="memo-list-item-info">
-                    <Text ellipsis className="memo-list-item-title">
-                      {item.name.replace(/\.md$/, "")}
-                    </Text>
-                    <Text type="secondary" style={{ fontSize: 12 }}>
-                      {dayjs(item.updatedAt).format("MM-DD HH:mm")}
-                    </Text>
-                  </div>
-                  <div className="memo-list-item-actions">
-                    <Tooltip title="在文件夹中显示">
-                      <Button
-                        type="text"
-                        size="small"
-                        icon={<FolderOpenOutlined />}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          onOpenInExplorer(item.name);
-                        }}
-                      />
-                    </Tooltip>
-                    <Popconfirm
-                      title="确定删除此文件？"
-                      onConfirm={(event) => {
-                        event?.stopPropagation();
-                        onDelete(item.name);
-                      }}
-                      onCancel={(event) => event?.stopPropagation()}
-                    >
-                      <Button
-                        type="text"
-                        size="small"
-                        danger
-                        icon={<DeleteOutlined />}
-                        onClick={(event) => event.stopPropagation()}
-                      />
-                    </Popconfirm>
-                  </div>
-                </div>
-              </div>
+                item={item}
+                selected={selected}
+                onSelect={onSelect}
+                onRename={onRename}
+                onDelete={onDelete}
+                onOpenInExplorer={onOpenInExplorer}
+              />
             )}
           />
         )}

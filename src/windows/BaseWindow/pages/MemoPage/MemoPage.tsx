@@ -4,44 +4,58 @@ import MemoEditor from "./components/MemoEditor";
 import MemoHeader, { MemoCardTitle } from "./components/MemoHeader";
 import MemoPreview from "./components/MemoPreview";
 import MemoSidebar from "./components/MemoSidebar";
-import { useMemoPage } from "./hooks/useMemoPage";
+import { useMemoData } from "./hooks/useMemoData";
+import { useMemoEditorState } from "./hooks/useMemoEditorState";
+import { useMemoViewState } from "./hooks/useMemoViewState";
 import "./index.scss";
 
 function MemoPage() {
+  const data = useMemoData();
+  const editor = useMemoEditorState(data);
+  const view = useMemoViewState(
+    editor.content,
+    editor.originalContent,
+    editor.isEditing,
+  );
+
   const {
     files,
-    selected,
-    content,
     loading,
     importing,
+    loadFiles,
+    openInExplorer,
+  } = data;
+  const {
+    selected,
+    content,
     saving,
     isEditing,
-    searchOpen,
-    searchQuery,
     createModalOpen,
     newFileName,
-    searchInputRef,
-    highlightedHtml,
-    highlightedEditorHtml,
     setIsEditing,
-    setSearchQuery,
-    setSearchOpen,
     setCreateModalOpen,
     setNewFileName,
     setContent,
-    setActiveSearchQuery,
-    setActiveSearchIndex,
-    loadFiles,
     handleSelectFile,
+    handleRename,
     handleSave,
     handleCreate,
     handleImport,
     handleTextAreaBlur,
-    handleFind,
     handleDelete,
-    handleOpenInExplorer,
-    copyCode,
-  } = useMemoPage();
+  } = editor;
+  const {
+    searchOpen,
+    searchQuery,
+    searchInputRef,
+    highlightedHtml,
+    highlightedEditorHtml,
+    setSearchQuery,
+    setSearchOpen,
+    setActiveSearchQuery,
+    setActiveSearchIndex,
+    handleFind,
+  } = view;
 
   return (
     <Page>
@@ -54,8 +68,9 @@ function MemoPage() {
           onImport={() => void handleImport()}
           onRefresh={() => void loadFiles()}
           onSelect={(filename) => void handleSelectFile(filename)}
+          onRename={handleRename}
           onDelete={(filename) => void handleDelete(filename)}
-          onOpenInExplorer={(filename) => void handleOpenInExplorer(filename)}
+          onOpenInExplorer={(filename) => void openInExplorer(filename)}
         />
 
         <div className="memo-editor">
@@ -93,10 +108,7 @@ function MemoPage() {
                     onBlur={handleTextAreaBlur}
                   />
                 ) : (
-                  <MemoPreview
-                    html={highlightedHtml}
-                    onCopyCode={(code) => void copyCode(code)}
-                  />
+                  <MemoPreview html={highlightedHtml} />
                 )}
               </Card>
             </>

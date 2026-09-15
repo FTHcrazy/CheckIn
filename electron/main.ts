@@ -401,6 +401,25 @@ app.whenReady().then(() => {
     return true;
   });
 
+  ipcMain.handle(
+    "memo-rename",
+    (_event, oldFilename: string, newFilename: string) => {
+      const oldSafe = path.basename(oldFilename);
+      const newSafe = path.basename(newFilename);
+      const memosDir = ensureMemosDir();
+      const oldPath = path.join(memosDir, oldSafe);
+      const newPath = path.join(memosDir, newSafe);
+
+      if (!fs.existsSync(oldPath)) throw new Error("文件不存在");
+      if (oldSafe !== newSafe && fs.existsSync(newPath)) {
+        throw new Error("目标文件已存在");
+      }
+
+      fs.renameSync(oldPath, newPath);
+      return true;
+    },
+  );
+
   ipcMain.handle("memo-delete", (_event, filename: string) => {
     const safe = path.basename(filename);
     const filePath = path.join(ensureMemosDir(), safe);

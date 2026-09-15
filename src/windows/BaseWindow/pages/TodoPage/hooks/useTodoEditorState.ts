@@ -7,7 +7,6 @@ interface TodoEditorActions {
 }
 
 export function useTodoEditorState(actions: TodoEditorActions) {
-  const [newContent, setNewContent] = useState("");
   const [childInputFor, setChildInputFor] = useState<number | null>(null);
   const [noteModalFor, setNoteModalFor] = useState<number | null>(null);
   const [noteDraft, setNoteDraft] = useState("");
@@ -35,8 +34,6 @@ export function useTodoEditorState(actions: TodoEditorActions) {
   };
 
   return {
-    newContent,
-    setNewContent,
     childInputFor,
     setChildInputFor,
     noteModalFor,

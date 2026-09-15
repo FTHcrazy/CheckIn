@@ -94,6 +94,7 @@ export interface ElectronAPI {
     list: () => Promise<{ name: string; updatedAt: string }[]>
     read: (filename: string) => Promise<string>
     write: (filename: string, content: string) => Promise<boolean>
+    rename: (oldFilename: string, newFilename: string) => Promise<boolean>
     delete: (filename: string) => Promise<boolean>
     openInExplorer: (filename: string) => Promise<boolean>
     import: () => Promise<string[]>

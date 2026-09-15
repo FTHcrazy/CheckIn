@@ -5,6 +5,7 @@ interface MemoEditorActions {
   loadFiles: () => Promise<void>;
   readFile: (filename: string) => Promise<string | null>;
   writeFile: (filename: string, content: string) => Promise<boolean>;
+  renameFile: (oldFilename: string, newFilename: string) => Promise<boolean>;
   deleteFile: (filename: string) => Promise<boolean>;
   importFiles: () => Promise<string[]>;
 }
@@ -69,6 +70,30 @@ export function useMemoEditorState(actions: MemoEditorActions) {
     setIsEditing(true);
   };
 
+  const handleRename = async (
+    oldFilename: string,
+    name: string,
+  ): Promise<boolean> => {
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      message.warning("请输入文件名");
+      return false;
+    }
+
+    const newFilename = trimmedName.endsWith(".md")
+      ? trimmedName
+      : `${trimmedName}.md`;
+    if (oldFilename === newFilename) return true;
+
+    const renamed = await actions.renameFile(oldFilename, newFilename);
+    if (!renamed) return false;
+
+    if (selected === oldFilename) setSelected(newFilename);
+    message.success("重命名成功");
+    await actions.loadFiles();
+    return true;
+  };
+
   const handleImport = async (): Promise<void> => {
     const importedFiles = await actions.importFiles();
     if (!importedFiles.length) return;
@@ -113,6 +138,7 @@ export function useMemoEditorState(actions: MemoEditorActions) {
     handleSelectFile,
     handleSave,
     handleCreate,
+    handleRename,
     handleImport,
     handleDelete,
     handleTextAreaBlur,

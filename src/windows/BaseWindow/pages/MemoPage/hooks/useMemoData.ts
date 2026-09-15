@@ -45,6 +45,19 @@ export function useMemoData() {
     }
   };
 
+  const renameFile = async (
+    oldFilename: string,
+    newFilename: string,
+  ): Promise<boolean> => {
+    try {
+      return (await window.electronAPI?.memo.rename(oldFilename, newFilename)) ?? false;
+    } catch (error) {
+      message.error("重命名失败");
+      console.error(error);
+      return false;
+    }
+  };
+
   const deleteFile = async (filename: string): Promise<boolean> => {
     try {
       return (await window.electronAPI?.memo.delete(filename)) ?? false;
@@ -84,6 +97,7 @@ export function useMemoData() {
     loadFiles,
     readFile,
     writeFile,
+    renameFile,
     deleteFile,
     importFiles,
     openInExplorer,
