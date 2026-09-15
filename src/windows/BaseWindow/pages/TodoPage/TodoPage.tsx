@@ -35,6 +35,9 @@ import WorkHourModal from "./components/WorkHourModal";
 import TodoOutlineSidebar from "./components/TodoOutlineSidebar";
 import { useTodoPage } from "./hooks/useTodoPage";
 import type { TodoItem } from "./todo-db";
+import { useImeGuard } from "./hooks/useImeGuard";
+import EditableText from "./components/EditableText";
+import ChildInput from "./components/ChildInput";
 import "./index.scss";
 
 const { Text } = Typography;
@@ -51,8 +54,6 @@ function TodoPage() {
     setNewContent,
     childInputFor,
     setChildInputFor,
-    childContent,
-    setChildContent,
     noteModalFor,
     setNoteModalFor,
     noteDraft,
@@ -63,8 +64,6 @@ function TodoPage() {
     setWorkHourDraft,
     editingId,
     setEditingId,
-    editingContent,
-    setEditingContent,
     handleAdd,
     handleAddChild,
     handleDelete,
@@ -94,6 +93,9 @@ function TodoPage() {
   const [onlyImportant, setOnlyImportant] = useState(false);
   const hasFilter = filterText.trim() !== "" || onlyImportant;
 
+  // 顶部新任务输入框的 IME 守卫（子项输入框的守卫在 ChildInput 内部）
+  const toolbarIme = useImeGuard();
+
   useEffect(() => {
     localStorage.setItem("todo.outlineCollapsed", outlineCollapsed ? "1" : "0");
   }, [outlineCollapsed]);
@@ -119,8 +121,18 @@ function TodoPage() {
       );
     });
   };
-  const filteredTodoItems = filterParents(todoItems);
-  const filteredDoneItems = filterParents(doneItems);
+
+  // 记忆化过滤结果，避免每次渲染都生成新数组导致 Virtuoso 抖动
+  const filteredTodoItems = useMemo(
+    () => filterParents(todoItems),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [todoItems, filterText, onlyImportant, getChildren],
+  );
+  const filteredDoneItems = useMemo(
+    () => filterParents(doneItems),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [doneItems, filterText, onlyImportant, getChildren],
+  );
 
   const todoOutlineItems = useMemo(() => {
     const parentItems = [...filteredTodoItems, ...filteredDoneItems]
@@ -136,7 +148,6 @@ function TodoPage() {
 
   const todoVirtuosoRef = useRef<VirtuosoHandle>(null);
   const doneVirtuosoRef = useRef<VirtuosoHandle>(null);
-  const editingSkipBlurRef = useRef(false);
 
   const prevDoneRef = useRef<Map<number, number>>(new Map());
   const [flashIds, setFlashIds] = useState<Set<number>>(() => new Set());
@@ -226,6 +237,19 @@ function TodoPage() {
     setTimeout(() => setEnterIds(new Set()), 700);
   };
 
+  /* 编辑保存 / 取消：稳定回调，保证 EditableText 的 memo 生效 */
+  const handleSaveEdit = useCallback(
+    (id: number, value: string) => {
+      setEditingId(null);
+      void handleUpdateContent(id, value);
+    },
+    [handleUpdateContent, setEditingId],
+  );
+
+  const handleCancelEdit = useCallback(() => {
+    setEditingId(null);
+  }, [setEditingId]);
+
   const renderItem = (item: TodoItem, isChild = false) => {
     const children = isChild ? [] : getChildren(item.id);
     const hasChildren = children.length > 0;
@@ -307,41 +331,18 @@ function TodoPage() {
               <div className="todo-item-content">
                 {isImportant && <StarFilled className="todo-item-important" />}
                 {isEditing ? (
-                  <Input
-                    className="todo-item-edit-input"
-                    value={editingContent}
-                    size="small"
-                    autoFocus
-                    spellCheck={false}
-                    onChange={(e) => setEditingContent(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Escape") {
-                        editingSkipBlurRef.current = true;
-                        setEditingId(null);
-                        setEditingContent("");
-                      }
-                    }}
-                    onPressEnter={() => {
-                      editingSkipBlurRef.current = true;
-                      void handleUpdateContent(item.id, editingContent);
-                    }}
-                    onBlur={() => {
-                      if (editingSkipBlurRef.current) return;
-                      if (editingContent === item.content) {
-                        setEditingId(null);
-                        return;
-                      }
-                      void handleUpdateContent(item.id, editingContent);
-                    }}
+                  <EditableText
+                    itemId={item.id}
+                    initialValue={item.content}
+                    onSave={handleSaveEdit}
+                    onCancel={handleCancelEdit}
                   />
                 ) : (
                   <Text
                     className={isDone ? "todo-item-text--done" : ""}
                     style={{ cursor: "pointer" }}
                     onDoubleClick={() => {
-                      editingSkipBlurRef.current = false;
                       setEditingId(item.id);
-                      setEditingContent(item.content);
                     }}
                   >
                     {item.content}
@@ -439,34 +440,10 @@ function TodoPage() {
               transition={{ duration: 0.18, ease: "easeOut" }}
               style={{ overflow: "hidden" }}
             >
-              <div className="todo-child-input">
-                <Input
-                  size="small"
-                  placeholder="输入子项内容，回车添加"
-                  value={childContent}
-                  onChange={(e) => setChildContent(e.target.value)}
-                  onPressEnter={() => void handleAddChild(item.id)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Escape") {
-                      setChildInputFor(null);
-                      setChildContent("");
-                    }
-                  }}
-                  onBlur={() => {
-                    if (!childContent.trim()) {
-                      setChildInputFor(null);
-                      setChildContent("");
-                    }
-                  }}
-                  autoFocus
-                />
-                <Button
-                  size="small"
-                  type="primary"
-                  icon={<PlusOutlined />}
-                  onClick={() => void handleAddChild(item.id)}
-                />
-              </div>
+              <ChildInput
+                onSubmit={(content) => handleAddChild(item.id, content)}
+                onClose={() => setChildInputFor(null)}
+              />
             </motion.div>
           )}
         </AnimatePresence>
@@ -510,7 +487,13 @@ function TodoPage() {
               placeholder="输入新任务，回车添加；后缀加 #2h 记录工时"
               value={newContent}
               onChange={(e) => setNewContent(e.target.value)}
-              onPressEnter={() => void handleAddAndScroll()}
+              onCompositionStart={toolbarIme.onCompositionStart}
+              onCompositionEnd={toolbarIme.onCompositionEnd}
+              onPressEnter={(e) => {
+                // 拼写中的回车不提交
+                if (toolbarIme.isComposing(e)) return;
+                void handleAddAndScroll();
+              }}
               allowClear
               spellCheck={false}
             />

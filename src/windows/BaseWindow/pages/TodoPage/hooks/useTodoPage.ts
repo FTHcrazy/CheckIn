@@ -8,7 +8,6 @@ export function useTodoPage() {
   const [items, setItems] = useState<TodoItem[]>([]);
   const [newContent, setNewContent] = useState("");
   const [childInputFor, setChildInputFor] = useState<number | null>(null);
-  const [childContent, setChildContent] = useState("");
   const [noteModalFor, setNoteModalFor] = useState<number | null>(null);
   const [noteDraft, setNoteDraft] = useState("");
   const [workHourModalFor, setWorkHourModalFor] = useState<number | null>(null);
@@ -56,11 +55,14 @@ export function useTodoPage() {
     }
   };
 
-  const handleAddChild = async (parentId: number) => {
-    const parsed = parseWorkHourTag(childContent);
+  const handleAddChild = async (
+    parentId: number,
+    content: string,
+  ): Promise<boolean> => {
+    const parsed = parseWorkHourTag(content);
     if (!parsed.content) {
       message.warning("请输入子项内容");
-      return;
+      return false;
     }
 
     try {
@@ -68,13 +70,13 @@ export function useTodoPage() {
         "INSERT INTO todos (parent_id, content, work_hour) VALUES (?, ?, ?)",
         [parentId, parsed.content, parsed.workHour],
       );
-      // 连续录入：回车提交后保留输入框并清空内容，点击外部或 Esc 才关闭
-      setChildContent("");
       // 高频操作不弹 toast，列表即时刷新即为反馈
       void loadItems();
+      return true;
     } catch (err) {
       message.error("添加失败");
       console.error(err);
+      return false;
     }
   };
 
@@ -293,8 +295,6 @@ export function useTodoPage() {
     setNewContent,
     childInputFor,
     setChildInputFor,
-    childContent,
-    setChildContent,
     noteModalFor,
     setNoteModalFor,
     noteDraft,
