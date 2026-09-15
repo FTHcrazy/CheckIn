@@ -137,6 +137,7 @@ function TodoPage() {
   const todoVirtuosoRef = useRef<VirtuosoHandle>(null);
   const doneVirtuosoRef = useRef<VirtuosoHandle>(null);
   const editingSkipBlurRef = useRef(false);
+  const isComposingRef = useRef(false);
 
   const prevDoneRef = useRef<Map<number, number>>(new Map());
   const [flashIds, setFlashIds] = useState<Set<number>>(() => new Set());
@@ -445,7 +446,16 @@ function TodoPage() {
                   placeholder="输入子项内容，回车添加"
                   value={childContent}
                   onChange={(e) => setChildContent(e.target.value)}
-                  onPressEnter={() => void handleAddChild(item.id)}
+                  onCompositionStart={() => {
+                    isComposingRef.current = true;
+                  }}
+                  onCompositionEnd={() => {
+                    isComposingRef.current = false;
+                  }}
+                  onPressEnter={(e) => {
+                    if (e.nativeEvent.isComposing || isComposingRef.current) return;
+                    void handleAddChild(item.id);
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === "Escape") {
                       setChildInputFor(null);
@@ -453,6 +463,7 @@ function TodoPage() {
                     }
                   }}
                   onBlur={() => {
+                    if (isComposingRef.current) return;
                     if (!childContent.trim()) {
                       setChildInputFor(null);
                       setChildContent("");
@@ -510,7 +521,16 @@ function TodoPage() {
               placeholder="输入新任务，回车添加；后缀加 #2h 记录工时"
               value={newContent}
               onChange={(e) => setNewContent(e.target.value)}
-              onPressEnter={() => void handleAddAndScroll()}
+              onCompositionStart={() => {
+                isComposingRef.current = true;
+              }}
+              onCompositionEnd={() => {
+                isComposingRef.current = false;
+              }}
+              onPressEnter={(e) => {
+                if (e.nativeEvent.isComposing || isComposingRef.current) return;
+                void handleAddAndScroll();
+              }}
               allowClear
               spellCheck={false}
             />
