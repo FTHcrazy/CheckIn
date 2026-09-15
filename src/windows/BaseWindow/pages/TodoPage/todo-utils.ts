@@ -1,4 +1,4 @@
-import type { TodoItem } from "./todo-db";
+import type { TodoItem } from "./types";
 
 export const formatWorkHour = (value: number | null | undefined) => {
   if (value === null || value === undefined) return "";

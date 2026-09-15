@@ -10,14 +10,45 @@ contextBridge.exposeInMainWorld('electronAPI', {
     body?: string
   }) => ipcRenderer.invoke('http-request', options),
 
-  // 数据库操作
-  db: {
-    all: (sql: string, params?: unknown[]) => ipcRenderer.invoke('db-all', sql, params),
-    get: (sql: string, params?: unknown[]) => ipcRenderer.invoke('db-get', sql, params),
-    run: (sql: string, params?: unknown[]) => ipcRenderer.invoke('db-run', sql, params),
-    exec: (sql: string) => ipcRenderer.invoke('db-exec', sql),
+  // ── 活动管理（语义化 IPC） ──
+  activity: {
+    list: () => ipcRenderer.invoke('activity-list'),
+    listByDate: (date: string) => ipcRenderer.invoke('activity-list-by-date', date),
+    activeDates: (start: string, end: string) => ipcRenderer.invoke('activity-active-dates', start, end),
+    add: (params: { id: string; date: string; startTime: string; endTime: string; name: string; color: string }) =>
+      ipcRenderer.invoke('activity-add', params),
+    update: (params: { id: string; updates: Partial<{ date: string; startTime: string; endTime: string; name: string; color: string }> }) =>
+      ipcRenderer.invoke('activity-update', params),
+    delete: (id: string) => ipcRenderer.invoke('activity-delete', id),
   },
 
+  // ── Todo 管理（语义化 IPC） ──
+  todo: {
+    list: () => ipcRenderer.invoke('todo-list'),
+    add: (content: string, workHour: number | null) =>
+      ipcRenderer.invoke('todo-add', { content, workHour }),
+    addChild: (parentId: number, content: string, workHour: number | null) =>
+      ipcRenderer.invoke('todo-add-child', { parentId, content, workHour }),
+    delete: (id: number) => ipcRenderer.invoke('todo-delete', id),
+    updateContent: (id: number, content: string, workHour: number | null) =>
+      ipcRenderer.invoke('todo-update-content', { id, content, workHour }),
+    updateNote: (id: number, note: string | null) =>
+      ipcRenderer.invoke('todo-update-note', id, note),
+    deleteNote: (id: number) => ipcRenderer.invoke('todo-delete-note', id),
+    updateWorkHour: (id: number, workHour: number | null) =>
+      ipcRenderer.invoke('todo-update-work-hour', id, workHour),
+    deleteWorkHour: (id: number) => ipcRenderer.invoke('todo-delete-work-hour', id),
+    toggleImportant: (id: number, important: number) =>
+      ipcRenderer.invoke('todo-toggle-important', id, important),
+    toggle: (id: number, checked: boolean) =>
+      ipcRenderer.invoke('todo-toggle', id, checked),
+    toggleChild: (id: number, checked: boolean) =>
+      ipcRenderer.invoke('todo-toggle-child', id, checked),
+    toggleParent: (id: number, checked: boolean) =>
+      ipcRenderer.invoke('todo-toggle-parent', id, checked),
+  },
+
+  // ── 用户管理 ──
   user: {
     get: () => ipcRenderer.invoke('user-get'),
     login: (email: string) => ipcRenderer.invoke('user-login', email),
@@ -37,7 +68,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }
   },
 
-  // 备忘文件操作
+  // ── 跨窗口通信 ──
+  windowAPI: {
+    broadcast: (event: string, data?: unknown) =>
+      ipcRenderer.invoke('window-broadcast', event, data),
+    sendTo: (target: string, event: string, data?: unknown) =>
+      ipcRenderer.invoke('window-send-to', target, event, data),
+    on: (event: string, handler: (...args: unknown[]) => void) => {
+      ipcRenderer.on(event, (_event, ...args) => handler(...args))
+    },
+    off: (event: string, handler: (...args: unknown[]) => void) => {
+      ipcRenderer.removeListener(event, handler)
+    },
+  },
+
+  // ── 备忘文件操作 ──
   memo: {
     list: () => ipcRenderer.invoke('memo-list') as Promise<{ name: string; updatedAt: string }[]>,
     read: (filename: string) => ipcRenderer.invoke('memo-read', filename) as Promise<string>,

@@ -1,6 +1,6 @@
 /**
  * 日常活动管理服务
- * 使用 SQLite 数据库持久化
+ * 通过语义化 IPC 与主进程通信
  */
 
 /** 活动定义 */
@@ -52,28 +52,20 @@ function genId(): string {
 
 /** 获取所有活动 */
 export async function getAllActivities(): Promise<Activity[]> {
-  const rows = await window.electronAPI!.db.all(
-    'SELECT * FROM activities ORDER BY date DESC, start_time ASC',
-  ) as ActivityRow[]
+  const rows = await window.electronAPI!.activity.list()
   return rows.map(rowToActivity)
 }
 
 /** 获取指定日期的活动 */
 export async function getActivitiesByDate(date: string): Promise<Activity[]> {
-  const rows = await window.electronAPI!.db.all(
-    'SELECT * FROM activities WHERE date = ? ORDER BY start_time ASC',
-    [date],
-  ) as ActivityRow[]
+  const rows = await window.electronAPI!.activity.listByDate(date)
   return rows.map(rowToActivity)
 }
 
 /** 获取日期区间内有活动的日期列表 */
 export async function getActiveDates(start: string, end: string): Promise<Set<string>> {
-  const rows = await window.electronAPI!.db.all(
-    'SELECT DISTINCT date FROM activities WHERE date >= ? AND date <= ?',
-    [start, end],
-  ) as { date: string }[]
-  return new Set(rows.map((r) => r.date))
+  const dates = await window.electronAPI!.activity.activeDates(start, end)
+  return new Set(dates)
 }
 
 /** 添加活动 */
@@ -92,38 +84,38 @@ export async function addActivity(
     name,
     color: color || ACTIVITY_COLORS[Math.floor(Math.random() * ACTIVITY_COLORS.length)],
   }
-  await window.electronAPI!.db.run(
-    'INSERT INTO activities (id, date, start_time, end_time, name, color) VALUES (?, ?, ?, ?, ?, ?)',
-    [activity.id, activity.date, activity.startTime, activity.endTime, activity.name, activity.color],
-  )
+  await window.electronAPI!.activity.add({
+    id: activity.id,
+    date: activity.date,
+    startTime: activity.startTime,
+    endTime: activity.endTime,
+    name: activity.name,
+    color: activity.color!,
+  })
   return activity
 }
 
 /** 更新活动 */
 export async function updateActivity(id: string, updates: Partial<Omit<Activity, 'id'>>): Promise<void> {
-  const sets: string[] = []
-  const values: unknown[] = []
+  const mappedUpdates: Record<string, unknown> = {}
 
-  if (updates.date !== undefined) { sets.push('date = ?'); values.push(updates.date) }
-  if (updates.startTime !== undefined) { sets.push('start_time = ?'); values.push(updates.startTime) }
-  if (updates.endTime !== undefined) { sets.push('end_time = ?'); values.push(updates.endTime) }
-  if (updates.name !== undefined) { sets.push('name = ?'); values.push(updates.name) }
-  if (updates.color !== undefined) { sets.push('color = ?'); values.push(updates.color) }
+  if (updates.date !== undefined) mappedUpdates.date = updates.date
+  if (updates.startTime !== undefined) mappedUpdates.startTime = updates.startTime
+  if (updates.endTime !== undefined) mappedUpdates.endTime = updates.endTime
+  if (updates.name !== undefined) mappedUpdates.name = updates.name
+  if (updates.color !== undefined) mappedUpdates.color = updates.color
 
-  if (sets.length === 0) return
+  if (Object.keys(mappedUpdates).length === 0) return
 
-  sets.push("updated_at = datetime('now', 'localtime')")
-  values.push(id)
-
-  await window.electronAPI!.db.run(
-    `UPDATE activities SET ${sets.join(', ')} WHERE id = ?`,
-    values,
-  )
+  await window.electronAPI!.activity.update({
+    id,
+    updates: mappedUpdates as { date?: string; startTime?: string; endTime?: string; name?: string; color?: string },
+  })
 }
 
 /** 删除活动 */
 export async function deleteActivity(id: string): Promise<void> {
-  await window.electronAPI!.db.run('DELETE FROM activities WHERE id = ?', [id])
+  await window.electronAPI!.activity.delete(id)
 }
 
 /** 时间字符串转分钟数 "HH:mm" → number */

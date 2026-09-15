@@ -1,12 +1,13 @@
 /**
  * 活动提醒轮询器
- * 每10秒检查当前时间是否落在某个活动的时间段内
- * 匹配时通过 IPC 通知主窗口，由渲染进程弹出 antd Notification
+ * 每 10 秒检查当前时间是否落在某个活动的时间段内
+ * 匹配时通过 WindowManager 广播通知所有窗口
  *
  * 系统睡眠/锁屏时暂停轮询，激活后恢复
  */
-import { BrowserWindow, powerMonitor } from 'electron'
+import { powerMonitor } from 'electron'
 import { dbAll } from './db'
+import { windowManager } from './windowManager'
 
 interface ActivityRow {
   id: string
@@ -22,9 +23,6 @@ const notified = new Set<string>()
 
 /** 轮询定时器 */
 let timer: ReturnType<typeof setInterval> | null = null
-
-/** 主窗口引用 */
-let mainWindow: BrowserWindow | null = null
 
 /** 获取当前时间的 HH:mm 格式 */
 function nowHHmm(): string {
@@ -75,32 +73,39 @@ function check(): void {
       }
     }
 
-    // 只通知最近更新的那一个
-    if (latest && mainWindow && !mainWindow.isDestroyed()) {
+    // 通知最近更新的那一个
+    if (latest) {
       notified.add(latest.id)
       const start = normalizeTime(latest.start_time)
       const end = normalizeTime(latest.end_time)
-      console.log(`[activitiesTask] 触发通知: ${latest.name}`)
-      mainWindow.webContents.send('activity-notify', {
+      const notifyData = {
         name: latest.name,
         start,
         end,
         color: latest.color || '#1677ff',
-      })
-      // 唤起主窗口（Windows 下 focus 可能被系统拒绝，用短暂置顶强制抢前台）
-      if (!mainWindow.isVisible()) mainWindow.show()
-      if (mainWindow.isMinimized()) mainWindow.restore()
-      mainWindow.setAlwaysOnTop(true, 'screen-saver')
-      mainWindow.show()
-      mainWindow.focus()
-      // 2秒后取消置顶，让用户可以正常切换窗口
-      setTimeout(() => {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.setAlwaysOnTop(false)
-        }
-      }, 2000)
-      // 任务栏闪烁作为保底
-      mainWindow.flashFrame(true)
+      }
+      console.log(`[activitiesTask] 触发通知: ${latest.name}`)
+
+      // 通过 windowManager 广播通知所有窗口
+      windowManager.broadcast('activity-notify', notifyData)
+
+      // 唤醒主窗口
+      const mainWin = windowManager.get('main')
+      if (mainWin) {
+        if (!mainWin.isVisible()) mainWin.show()
+        if (mainWin.isMinimized()) mainWin.restore()
+        mainWin.setAlwaysOnTop(true, 'screen-saver')
+        mainWin.show()
+        mainWin.focus()
+        // 2秒后取消置顶，让用户可以正常切换窗口
+        setTimeout(() => {
+          if (!mainWin.isDestroyed()) {
+            mainWin.setAlwaysOnTop(false)
+          }
+        }, 2000)
+        // 任务栏闪烁作为保底
+        mainWin.flashFrame(true)
+      }
     }
   } catch (err) {
     console.error('[activitiesTask] check 执行出错:', err)
@@ -125,10 +130,9 @@ function resumePolling(): void {
   }
 }
 
-/** 启动轮询（每10秒检查一次，需要主窗口引用） */
-export function startActivityPolling(window: BrowserWindow): void {
+/** 启动轮询（每30秒检查一次） */
+export function startActivityPolling(): void {
   if (timer) return
-  mainWindow = window
   console.log('[activitiesTask] 启动活动轮询 (30s)')
   check()
   timer = setInterval(check, 30_000)
@@ -145,7 +149,6 @@ export function stopActivityPolling(): void {
   if (timer) {
     clearInterval(timer)
     timer = null
-    mainWindow = null
     console.log('[activitiesTask] 活动轮询已停止')
   }
   // 清理电源监听

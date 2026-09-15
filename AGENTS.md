@@ -202,17 +202,14 @@ User Input
 TodoPage.tsx (UI)
     ↓ 调用 handleAdd()
 useTodoPage.ts (Hook)
-    ↓ 调用 addTodo()
-todo-db.ts (Service)
-    ↓ window.electronAPI.db.run('INSERT...')
+    ↓ window.electronAPI.todo.add(content, workHour)
 preload.ts (Bridge)
-    ↓ ipcRenderer.invoke('db-run', sql, params)
-main.ts (IPC Handler)
-    ↓ dbRun(sql, params)
-db.ts (Database)
-    ↓ userDb.prepare(sql).run(params)
+    ↓ ipcRenderer.invoke('todo-add', { content, workHour })
+main.ts (IPC Handler 注册)
+    ↓ todo-handlers.ts (handle)
+db.ts → dbRun(sql, params)
 SQLite
-    ↓ 返回 { lastID }
+    ↓ 返回 { lastInsertRowid }
     ↑ 逐层返回
 useTodoPage.ts
     ↓ setItems([...items, newTodo])

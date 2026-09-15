@@ -1,4 +1,43 @@
 // Electron API 类型声明
+
+interface ActivityAddParams {
+  id: string
+  date: string
+  startTime: string
+  endTime: string
+  name: string
+  color: string
+}
+
+interface ActivityUpdateParams {
+  date?: string
+  startTime?: string
+  endTime?: string
+  name?: string
+  color?: string
+}
+
+interface ActivityRow {
+  id: string
+  date: string
+  start_time: string
+  end_time: string
+  name: string
+  color: string
+}
+
+interface TodoRow {
+  id: number
+  parent_id: number | null
+  content: string
+  done: number
+  note: string | null
+  important: number
+  work_hour: number | null
+  created_at: string
+  done_at: string | null
+}
+
 export interface ElectronAPI {
   httpRequest: (options: {
     url: string
@@ -7,15 +46,31 @@ export interface ElectronAPI {
     body?: string
   }) => Promise<{ status: number; data: unknown }>
 
-  db: {
-    /** SELECT 查询，返回结果数组 */
-    all: (sql: string, params?: unknown[]) => Promise<unknown[]>
-    /** SELECT 查询，返回单条结果 */
-    get: (sql: string, params?: unknown[]) => Promise<unknown>
-    /** INSERT/UPDATE/DELETE，返回 { changes, lastInsertRowid } */
-    run: (sql: string, params?: unknown[]) => Promise<{ changes: number; lastInsertRowid: number }>
-    /** 批量执行 SQL */
-    exec: (sql: string) => Promise<boolean>
+  // ── 活动管理 ──
+  activity: {
+    list: () => Promise<ActivityRow[]>
+    listByDate: (date: string) => Promise<ActivityRow[]>
+    activeDates: (start: string, end: string) => Promise<string[]>
+    add: (params: ActivityAddParams) => Promise<ActivityAddParams>
+    update: (params: { id: string; updates: ActivityUpdateParams }) => Promise<void>
+    delete: (id: string) => Promise<void>
+  }
+
+  // ── Todo 管理 ──
+  todo: {
+    list: () => Promise<TodoRow[]>
+    add: (content: string, workHour: number | null) => Promise<{ lastInsertRowid: number }>
+    addChild: (parentId: number, content: string, workHour: number | null) => Promise<void>
+    delete: (id: number) => Promise<void>
+    updateContent: (id: number, content: string, workHour: number | null) => Promise<void>
+    updateNote: (id: number, note: string | null) => Promise<void>
+    deleteNote: (id: number) => Promise<void>
+    updateWorkHour: (id: number, workHour: number | null) => Promise<void>
+    deleteWorkHour: (id: number) => Promise<void>
+    toggleImportant: (id: number, important: number) => Promise<void>
+    toggle: (id: number, checked: boolean) => Promise<void>
+    toggleChild: (id: number, checked: boolean) => Promise<void>
+    toggleParent: (id: number, checked: boolean) => Promise<void>
   }
 
   user: {
@@ -26,6 +81,14 @@ export interface ElectronAPI {
 
   send: (channel: string, data: unknown) => void
   receive: (channel: string, func: (...args: unknown[]) => void) => void
+
+  // ── 跨窗口通信 ──
+  windowAPI: {
+    broadcast: (event: string, data?: unknown) => Promise<void>
+    sendTo: (target: string, event: string, data?: unknown) => Promise<void>
+    on: (event: string, handler: (...args: unknown[]) => void) => void
+    off: (event: string, handler: (...args: unknown[]) => void) => void
+  }
 
   memo: {
     list: () => Promise<{ name: string; updatedAt: string }[]>

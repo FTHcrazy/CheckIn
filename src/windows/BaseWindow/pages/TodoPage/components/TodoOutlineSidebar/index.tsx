@@ -1,7 +1,7 @@
 import { CheckCircleOutlined } from "@ant-design/icons";
 import { useMemo } from "react";
 import { GroupedVirtuoso } from "react-virtuoso";
-import type { TodoItem } from "../../todo-db";
+import type { TodoItem } from "../../types";
 import "./index.scss";
 
 interface OutlineGroup {

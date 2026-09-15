@@ -1,7 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
 import { App } from "antd";
-import { db, ensureTable, type TodoItem } from "../todo-db";
 import { formatWorkHour, getTotalRemainingWorkHour, parseWorkHourTag } from "../todo-utils";
+
+interface TodoItem {
+  id: number;
+  parent_id: number | null;
+  content: string;
+  done: number;
+  note: string | null;
+  important: number;
+  work_hour: number | null;
+  created_at: string;
+  done_at: string | null;
+}
 
 export function useTodoPage() {
   const { message } = App.useApp();
@@ -15,20 +26,20 @@ export function useTodoPage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editingContent, setEditingContent] = useState("");
 
+  const api = window.electronAPI!.todo;
+
   const loadItems = useCallback(async () => {
     try {
-      const rows = (await db.all(
-        "SELECT * FROM todos ORDER BY created_at DESC",
-      )) as TodoItem[];
+      const rows = await api.list() as TodoItem[];
       setItems(rows);
     } catch (err) {
       message.error("加载 TODO 列表失败");
       console.error(err);
     }
-  }, [message]);
+  }, [message, api]);
 
   useEffect(() => {
-    void ensureTable().then(() => void loadItems());
+    void loadItems();
   }, [loadItems]);
 
   const handleAdd = async (): Promise<number | null> => {
@@ -39,14 +50,9 @@ export function useTodoPage() {
     }
 
     try {
-      const result = await db.run(
-        "INSERT INTO todos (content, work_hour) VALUES (?, ?)",
-        [parsed.content, parsed.workHour],
-      );
+      const result = await api.add(parsed.content, parsed.workHour);
       setNewContent("");
-      // 高频操作不弹 toast，列表即时刷新即为反馈
       void loadItems();
-      // 返回新任务 id，供调用方滚动定位
       return Number(result.lastInsertRowid);
     } catch (err) {
       message.error("添加失败");
@@ -66,11 +72,7 @@ export function useTodoPage() {
     }
 
     try {
-      await db.run(
-        "INSERT INTO todos (parent_id, content, work_hour) VALUES (?, ?, ?)",
-        [parentId, parsed.content, parsed.workHour],
-      );
-      // 高频操作不弹 toast，列表即时刷新即为反馈
+      await api.addChild(parentId, parsed.content, parsed.workHour);
       void loadItems();
       return true;
     } catch (err) {
@@ -82,7 +84,7 @@ export function useTodoPage() {
 
   const handleDelete = async (id: number) => {
     try {
-      await db.run("DELETE FROM todos WHERE id = ? OR parent_id = ?", [id, id]);
+      await api.delete(id);
       message.success("已删除");
       void loadItems();
     } catch (err) {
@@ -94,7 +96,7 @@ export function useTodoPage() {
   const handleUpdateNote = async (id: number, nextNote: string) => {
     try {
       const content = nextNote.trim();
-      await db.run("UPDATE todos SET note = ? WHERE id = ?", [content || null, id]);
+      await api.updateNote(id, content || null);
       setNoteModalFor(null);
       setNoteDraft("");
       message.success("备注已更新");
@@ -116,10 +118,7 @@ export function useTodoPage() {
         return;
       }
 
-      await db.run("UPDATE todos SET work_hour = ? WHERE id = ?", [
-        normalized,
-        id,
-      ]);
+      await api.updateWorkHour(id, normalized);
       setWorkHourModalFor(null);
       setWorkHourDraft(null);
       void loadItems();
@@ -131,7 +130,7 @@ export function useTodoPage() {
 
   const handleDeleteNote = async (id: number) => {
     try {
-      await db.run("UPDATE todos SET note = NULL WHERE id = ?", [id]);
+      await api.deleteNote(id);
       message.success("备注已删除");
       void loadItems();
     } catch (err) {
@@ -142,8 +141,8 @@ export function useTodoPage() {
 
   const handleDeleteWorkHour = async (id: number) => {
     try {
-      await db.run("UPDATE todos SET work_hour = NULL WHERE id = ?", [id]);
-      message.success("工时已删除");
+      await api.deleteWorkHour(id);
+      message.success("工时应删除");
       void loadItems();
     } catch (err) {
       message.error("删除工时失败");
@@ -155,7 +154,7 @@ export function useTodoPage() {
     try {
       const item = items.find((entry) => entry.id === id);
       const nextImportant = item?.important === 1 ? 0 : 1;
-      await db.run("UPDATE todos SET important = ? WHERE id = ?", [nextImportant, id]);
+      await api.toggleImportant(id, nextImportant);
       message.success(nextImportant === 1 ? "已设为特别关注" : "已取消特别关注");
       void loadItems();
     } catch (err) {
@@ -172,11 +171,13 @@ export function useTodoPage() {
     }
 
     try {
-      await db.run("UPDATE todos SET content = ?, work_hour = ? WHERE id = ?", [
-        parsed.content,
-        parsed.workHour,
+      // 编辑标题时未输入工时标签，应保留原有工时；只有明确输入标签时才修改工时。
+      const currentWorkHour = items.find((item) => item.id === id)?.work_hour ?? null;
+      await api.updateContent(
         id,
-      ]);
+        parsed.content,
+        parsed.workHour ?? currentWorkHour,
+      );
       setEditingId(null);
       setEditingContent("");
       void loadItems();
@@ -188,12 +189,7 @@ export function useTodoPage() {
 
   const handleToggle = async (id: number, checked: boolean) => {
     try {
-      const doneVal = checked ? 1 : 0;
-      const doneAt = checked ? "datetime('now', 'localtime')" : "NULL";
-      await db.run(
-        `UPDATE todos SET done = ?, done_at = ${doneAt} WHERE id = ?`,
-        [doneVal, id],
-      );
+      await api.toggle(id, checked);
       void loadItems();
     } catch (err) {
       message.error("操作失败");
@@ -203,36 +199,7 @@ export function useTodoPage() {
 
   const handleToggleChild = async (id: number, checked: boolean) => {
     try {
-      const doneVal = checked ? 1 : 0;
-      const doneAt = checked ? "datetime('now', 'localtime')" : "NULL";
-      await db.run(
-        `UPDATE todos SET done = ?, done_at = ${doneAt} WHERE id = ?`,
-        [doneVal, id],
-      );
-
-      const child = (await db.all("SELECT parent_id FROM todos WHERE id = ?", [
-        id,
-      ])) as TodoItem[];
-      if (child.length > 0 && child[0].parent_id !== null) {
-        const parentId = child[0].parent_id;
-        const siblings = (await db.all(
-          "SELECT done FROM todos WHERE parent_id = ?",
-          [parentId],
-        )) as TodoItem[];
-        const allDone =
-          siblings.length > 0 && siblings.every((s) => s.done === 1);
-        if (allDone) {
-          await db.run(
-            `UPDATE todos SET done = 1, done_at = datetime('now', 'localtime') WHERE id = ?`,
-            [parentId],
-          );
-        } else if (!checked) {
-          await db.run(
-            `UPDATE todos SET done = 0, done_at = NULL WHERE id = ?`,
-            [parentId],
-          );
-        }
-      }
+      await api.toggleChild(id, checked);
       void loadItems();
     } catch (err) {
       message.error("操作失败");
@@ -242,24 +209,7 @@ export function useTodoPage() {
 
   const handleToggleParent = async (id: number, checked: boolean) => {
     try {
-      const doneVal = checked ? 1 : 0;
-      const doneAt = checked ? "datetime('now', 'localtime')" : "NULL";
-      await db.run(
-        `UPDATE todos SET done = ?, done_at = ${doneAt} WHERE id = ?`,
-        [doneVal, id],
-      );
-      // 对称联动：勾选父项时同步完成所有未完成子项，取消时同步取消所有子项
-      if (checked) {
-        await db.run(
-          `UPDATE todos SET done = 1, done_at = datetime('now', 'localtime') WHERE parent_id = ? AND done = 0`,
-          [id],
-        );
-      } else {
-        await db.run(
-          `UPDATE todos SET done = 0, done_at = NULL WHERE parent_id = ?`,
-          [id],
-        );
-      }
+      await api.toggleParent(id, checked);
       void loadItems();
     } catch (err) {
       message.error("操作失败");
@@ -272,7 +222,6 @@ export function useTodoPage() {
     items.filter((i) => i.parent_id === parentId);
   const todoItems = topLevel
     .filter((i) => i.done === 0)
-    // 特别关注置顶，其余按创建时间倒序
     .sort(
       (a, b) =>
         b.important - a.important ||
@@ -280,7 +229,6 @@ export function useTodoPage() {
     );
   const doneItems = topLevel
     .filter((i) => i.done === 1)
-    // done_at 为 YYYY-MM-DD HH:MM:SS 格式字符串，字典序即时间序；null（历史数据）视为最早
     .sort((a, b) => (b.done_at ?? "").localeCompare(a.done_at ?? ""));
 
   const getWorkHourLabel = (value: number | null | undefined) =>

@@ -55,7 +55,7 @@ export function useMemoPage() {
   // 将 Markdown 转为 HTML
   const renderedHtml = useMemo(() => {
     if (!originalContent) return "";
-    return marked.parse(originalContent, { async: false }) as string;
+    return marked.parse(originalContent, { async: false, breaks: true }) as string;
   }, [originalContent]);
 
   const highlightedHtml = useMemo(() => {

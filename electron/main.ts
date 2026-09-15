@@ -14,15 +14,14 @@ import https from "https";
 import {
   initDb,
   closeDb,
-  dbAll,
-  dbGet,
-  dbRun,
-  dbExec,
   getAuthDb,
   getUserDataDir,
   switchUserDb,
 } from "./db";
 import { startActivityPolling, stopActivityPolling } from "./activitiesTask";
+import { windowManager } from "./windowManager";
+import { registerActivityHandlers } from "./handlers/activity-handlers";
+import { registerTodoHandlers } from "./handlers/todo-handlers";
 
 type UserCache = {
   id: number;
@@ -68,7 +67,15 @@ protocol.registerSchemesAsPrivileged([
   },
 ]);
 
-function createWindow() {
+let isQuitting = false;
+let canShowMainWindow = false;
+let isMainWindowReady = false;
+let hasStartedActivityPolling = false;
+const LOGIN_WINDOW_MIN_DISPLAY_MS = 3000;
+let loginWindowVisibleAt: number | null = null;
+let loginWindowHasShown = false;
+
+function createWindow(): BrowserWindow {
   const t0 = Date.now();
   isMainWindowReady = false;
 
@@ -96,10 +103,7 @@ function createWindow() {
   });
 
   win.on("closed", () => {
-    if (mainWindow === win) {
-      mainWindow = null;
-      isMainWindowReady = false;
-    }
+    isMainWindowReady = false;
   });
 
   win.webContents.once("did-finish-load", () => {
@@ -117,18 +121,11 @@ function createWindow() {
     win.loadURL(`app://./${RENDERER_ENTRIES.base}`);
   }
 
+  // 注册到窗口管理池
+  windowManager.register("main", win);
+
   return win;
 }
-
-let isQuitting = false;
-let mainWindow: BrowserWindow | null = null;
-let loginWindow: BrowserWindow | null = null;
-let canShowMainWindow = false;
-let isMainWindowReady = false;
-let hasStartedActivityPolling = false;
-const LOGIN_WINDOW_MIN_DISPLAY_MS = 3000;
-let loginWindowVisibleAt: number | null = null;
-let loginWindowHasShown = false;
 
 function ensureUserTable() {
   getAuthDb().exec(`
@@ -148,11 +145,12 @@ function getCachedUser(): UserCache | null {
   return user?.email ? user : null;
 }
 
-function ensureMainWindow() {
-  if (!mainWindow) {
-    mainWindow = createWindow();
+function ensureMainWindow(): BrowserWindow {
+  let win = windowManager.get("main");
+  if (!win) {
+    win = createWindow();
   }
-  return mainWindow;
+  return win;
 }
 
 function allowAndShowMainWindow() {
@@ -168,8 +166,9 @@ function allowAndShowMainWindow() {
       : 0;
 
   const closeLoginWindow = () => {
-    if (loginWindow && !loginWindow.isDestroyed()) {
-      loginWindow.close();
+    const loginWin = windowManager.get("login");
+    if (loginWin && !loginWin.isDestroyed()) {
+      loginWin.close();
     }
   };
 
@@ -186,26 +185,28 @@ function allowAndShowMainWindow() {
 
 function showMainWindow() {
   if (!canShowMainWindow) {
-    if (loginWindow?.isMinimized()) loginWindow.restore();
-    loginWindow?.show();
-    loginWindow?.focus();
+    const loginWin = windowManager.get("login");
+    if (loginWin?.isMinimized()) loginWin.restore();
+    loginWin?.show();
+    loginWin?.focus();
     return;
   }
 
-  if (!mainWindow || !isMainWindowReady) return;
+  const mainWin = windowManager.get("main");
+  if (!mainWin || !isMainWindowReady) return;
 
-  if (mainWindow.isMinimized()) mainWindow.restore();
-  mainWindow.show();
-  mainWindow.focus();
+  if (mainWin.isMinimized()) mainWin.restore();
+  mainWin.show();
+  mainWin.focus();
 
   if (!hasStartedActivityPolling) {
     hasStartedActivityPolling = true;
-    startActivityPolling(mainWindow);
+    startActivityPolling();
   }
 }
 
 function createLoginWindow(user?: UserCache | null) {
-  loginWindow = new BrowserWindow({
+  const loginWin = new BrowserWindow({
     width: 520,
     height: user ? 320 : 420,
     icon: ICON_PATH,
@@ -223,21 +224,20 @@ function createLoginWindow(user?: UserCache | null) {
     },
   });
 
-  loginWindow.removeMenu();
-  loginWindow.webContents.once("did-finish-load", () => {
-    const currentLoginWindow = loginWindow;
-    if (currentLoginWindow && !currentLoginWindow.isDestroyed()) {
+  loginWin.removeMenu();
+  loginWin.webContents.once("did-finish-load", () => {
+    if (loginWin && !loginWin.isDestroyed()) {
       loginWindowHasShown = true;
       loginWindowVisibleAt = Date.now();
-      currentLoginWindow.show();
-      currentLoginWindow.focus();
+      loginWin.show();
+      loginWin.focus();
     }
   });
-  loginWindow.on("closed", () => {
-    loginWindow = null;
-  });
 
-  loginWindow.loadURL(getLoginWindowUrl(user?.email));
+  // 注册到窗口管理池（自动处理 closed 事件清理）
+  windowManager.register("login", loginWin);
+
+  loginWin.loadURL(getLoginWindowUrl(user?.email));
 }
 
 function getLoginWindowUrl(email?: string) {
@@ -276,6 +276,10 @@ app.whenReady().then(() => {
 
   let currentUserEmail = cachedUser?.email ?? "";
 
+  // 注册语义化 IPC handlers
+  registerActivityHandlers();
+  registerTodoHandlers();
+
   ipcMain.handle("user-get", () => getCachedUser());
   ipcMain.handle("user-login", (_event, email: string) => {
     const normalizedEmail = email.trim();
@@ -298,19 +302,15 @@ app.whenReady().then(() => {
     return true;
   });
 
-  // 注册数据库 IPC handlers
-  ipcMain.handle("db-all", (_event, sql: string, params?: unknown[]) =>
-    dbAll(sql, params),
-  );
-  ipcMain.handle("db-get", (_event, sql: string, params?: unknown[]) =>
-    dbGet(sql, params),
-  );
-  ipcMain.handle("db-run", (_event, sql: string, params?: unknown[]) =>
-    dbRun(sql, params),
-  );
-  ipcMain.handle("db-exec", (_event, sql: string) => {
-    dbExec(sql);
-    return true;
+  // 注册跨窗口通信 IPC handler
+  ipcMain.handle("window-broadcast", (_event, event: string, data?: unknown) => {
+    const sender = BrowserWindow.fromWebContents(_event.sender);
+    const senderName = sender === windowManager.get("main") ? "main" : sender === windowManager.get("login") ? "login" : undefined;
+    windowManager.broadcast(event, data, senderName);
+  });
+
+  ipcMain.handle("window-send-to", (_event, target: string, event: string, data?: unknown) => {
+    windowManager.sendTo(target, event, data);
   });
 
   // 注册协议处理器，将 app:// 请求映射到本地文件
@@ -485,8 +485,9 @@ app.whenReady().then(() => {
     ]),
   );
   tray.on("click", () => {
-    if (mainWindow?.isVisible()) {
-      mainWindow.hide();
+    const mainWin = windowManager.get("main");
+    if (mainWin?.isVisible()) {
+      mainWin.hide();
     } else {
       showMainWindow();
     }
@@ -496,7 +497,7 @@ app.whenReady().then(() => {
   });
 
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
+    if (!windowManager.has("main") && !windowManager.has("login")) {
       createLoginWindow(getCachedUser());
     }
     showMainWindow();

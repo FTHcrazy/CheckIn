@@ -1,25 +1,17 @@
 import {
   Button,
   Checkbox,
-  Dropdown,
   Empty,
   Input,
-  Popconfirm,
   Tooltip,
   Typography,
-  type MenuProps,
 } from "antd";
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import { Virtuoso } from "react-virtuoso";
 import type { VirtuosoHandle } from "react-virtuoso";
 import {
   PlusOutlined,
-  DeleteOutlined,
-  ClockCircleOutlined,
-  FieldTimeOutlined,
-  UndoOutlined,
-  StarFilled,
   DownOutlined,
   RightOutlined,
   MenuFoldOutlined,
@@ -28,16 +20,14 @@ import {
   FileDoneOutlined,
   UnorderedListOutlined,
 } from "@ant-design/icons";
-import dayjs from "dayjs";
 import Page from "@/shared/components/Page";
 import NoteModal from "./components/NoteModal";
 import WorkHourModal from "./components/WorkHourModal";
 import TodoOutlineSidebar from "./components/TodoOutlineSidebar";
 import { useTodoPage } from "./hooks/useTodoPage";
-import type { TodoItem } from "./todo-db";
+import type { TodoItem } from "./types";
 import { useImeGuard } from "./hooks/useImeGuard";
-import EditableText from "./components/EditableText";
-import ChildInput from "./components/ChildInput";
+import TodoListItem from "./components/TodoListItem";
 import "./index.scss";
 
 const { Text } = Typography;
@@ -250,219 +240,41 @@ function TodoPage() {
     setEditingId(null);
   }, [setEditingId]);
 
-  const renderItem = (item: TodoItem, isChild = false) => {
-    const children = isChild ? [] : getChildren(item.id);
-    const hasChildren = children.length > 0;
-    const isDone = item.done === 1;
-    const isImportant = item.important === 1;
-    const isEditing = editingId === item.id;
-    const remainingWorkHour = getRemainingWorkHour(item.id);
-    const containsWorkHour = remainingWorkHour > 0;
-
-    const contextMenuItems: MenuProps = {
-      items: [
-        { key: "note", label: item.note ? "修改备注" : "添加备注" },
-        ...(item.note ? [{ key: "delete-note", label: "删除备注" }] : []),
-        {
-          key: "work-hour",
-          label: item.work_hour !== null ? "修改工时" : "添加工时",
-        },
-        ...(item.work_hour !== null
-          ? [{ key: "delete-work-hour", label: "删除工时" }]
-          : []),
-        {
-          key: "important",
-          label: isImportant ? "取消特别关注" : "设为特别关注",
-        },
-      ],
-      onClick: ({ key }) => {
-        if (key === "note") {
-          setNoteModalFor(item.id);
-          setNoteDraft(item.note ?? "");
-          return;
-        }
-        if (key === "delete-note") {
-          void handleDeleteNote(item.id);
-          return;
-        }
-        if (key === "work-hour") {
-          setWorkHourModalFor(item.id);
-          setWorkHourDraft(item.work_hour ?? null);
-          return;
-        }
-        if (key === "delete-work-hour") {
-          void handleDeleteWorkHour(item.id);
-          return;
-        }
-        if (key === "important") {
-          void handleToggleImportant(item.id);
-        }
-      },
-    };
-
-    return (
-      <div
-        key={item.id}
-        className={`todo-item ${isDone ? "todo-item--done" : ""} ${isChild ? "todo-item--child" : ""} ${isImportant ? "todo-item--important" : ""} ${flashIds.has(item.id) ? "todo-item--flash" : ""} ${enterIds.has(item.id) ? "todo-item--enter" : ""}`}
-      >
-        <Dropdown
-          menu={contextMenuItems}
-          trigger={["contextMenu"]}
-          placement="bottomLeft"
-        >
-          <div className="todo-item-row">
-            <div className="todo-item-checkbox">
-              <Tooltip
-                title={hasChildren && !isDone ? "完成后将同步完成所有子项" : ""}
-              >
-                <Checkbox
-                  checked={isDone}
-                  onChange={(e) => {
-                    const checked = e.target.checked;
-                    if (isChild) void handleToggleChild(item.id, checked);
-                    else if (hasChildren)
-                      void handleToggleParent(item.id, checked);
-                    else void handleToggle(item.id, checked);
-                  }}
-                />
-              </Tooltip>
-            </div>
-            <div className="todo-item-main">
-              <div className="todo-item-content">
-                {isImportant && <StarFilled className="todo-item-important" />}
-                {isEditing ? (
-                  <EditableText
-                    itemId={item.id}
-                    initialValue={item.content}
-                    onSave={handleSaveEdit}
-                    onCancel={handleCancelEdit}
-                  />
-                ) : (
-                  <Text
-                    className={isDone ? "todo-item-text--done" : ""}
-                    style={{ cursor: "pointer" }}
-                    onDoubleClick={() => {
-                      setEditingId(item.id);
-                    }}
-                  >
-                    {item.content}
-                  </Text>
-                )}
-              </div>
-              {item.note && (
-                <Text
-                  className="todo-item-note"
-                  ellipsis={{ tooltip: item.note }}
-                >
-                  {item.note}
-                </Text>
-              )}
-              <Text type="secondary" className="todo-item-time">
-                <ClockCircleOutlined style={{ fontSize: 12, marginRight: 4 }} />
-                {(isDone && item.done_at
-                  ? dayjs(item.done_at)
-                  : dayjs(item.created_at)
-                ).format("MM-DD HH:mm")}
-              </Text>
-            </div>
-            {!isDone && hasChildren && (
-              <Text type="secondary" className="todo-item-progress">
-                {children.filter((child) => child.done === 1).length}/
-                {children.length}
-              </Text>
-            )}
-            {item.work_hour !== null && item.work_hour !== undefined && (
-              <Text
-                className="todo-item-work-hour"
-                onClick={() => {
-                  setWorkHourModalFor(item.id);
-                  setWorkHourDraft(item.work_hour ?? null);
-                }}
-              >
-                <FieldTimeOutlined className="todo-item-work-hour-icon" />
-                <span>{getWorkHourLabel(item.work_hour)}</span>
-              </Text>
-            )}
-            <div className="todo-item-actions">
-              {isDone ? (
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<UndoOutlined />}
-                  onClick={() => {
-                    if (isChild) void handleToggleChild(item.id, false);
-                    else if (hasChildren)
-                      void handleToggleParent(item.id, false);
-                    else void handleToggle(item.id, false);
-                  }}
-                >
-                  撤回
-                </Button>
-              ) : (
-                !isChild && (
-                  <Button
-                    type="text"
-                    size="small"
-                    icon={<PlusOutlined />}
-                    onClick={() =>
-                      setChildInputFor(
-                        childInputFor === item.id ? null : item.id,
-                      )
-                    }
-                  />
-                )
-              )}
-              <Popconfirm
-                title={
-                  hasChildren
-                    ? `确定删除？将同时删除 ${children.length} 个子项`
-                    : "确定删除？"
-                }
-                onConfirm={() => void handleDelete(item.id)}
-              >
-                <Button
-                  type="text"
-                  size="small"
-                  danger
-                  icon={<DeleteOutlined />}
-                />
-              </Popconfirm>
-            </div>
-          </div>
-        </Dropdown>
-        <AnimatePresence initial={false}>
-          {childInputFor === item.id && (
-            <motion.div
-              key="child-input"
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: "auto", opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.18, ease: "easeOut" }}
-              style={{ overflow: "hidden" }}
-            >
-              <ChildInput
-                onSubmit={(content) => handleAddChild(item.id, content)}
-                onClose={() => setChildInputFor(null)}
-              />
-            </motion.div>
-          )}
-        </AnimatePresence>
-        {hasChildren && (
-          <div className="todo-children">
-            {children.map((child) => renderItem(child, true))}
-            {containsWorkHour && (
-              <div className="todo-item-summary">
-                <Text type="secondary">剩余总工时：</Text>
-                <Text className="todo-item-work-hour todo-item-work-hour--summary">
-                  {getWorkHourLabel(remainingWorkHour)}
-                </Text>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    );
-  };
+  const renderTodoListItem = (item: TodoItem) => (
+    <TodoListItem
+      item={item}
+      editingId={editingId}
+      childInputFor={childInputFor}
+      flashIds={flashIds}
+      enterIds={enterIds}
+      getChildren={getChildren}
+      getRemainingWorkHour={getRemainingWorkHour}
+      getWorkHourLabel={getWorkHourLabel}
+      onSetEditingId={setEditingId}
+      onToggleChildInput={(id) =>
+        setChildInputFor(childInputFor === id ? null : id)
+      }
+      onCloseChildInput={() => setChildInputFor(null)}
+      onOpenNote={(id, note) => {
+        setNoteModalFor(id);
+        setNoteDraft(note ?? "");
+      }}
+      onOpenWorkHour={(id, workHour) => {
+        setWorkHourModalFor(id);
+        setWorkHourDraft(workHour);
+      }}
+      onAddChild={handleAddChild}
+      onDelete={handleDelete}
+      onDeleteNote={handleDeleteNote}
+      onDeleteWorkHour={handleDeleteWorkHour}
+      onToggleImportant={handleToggleImportant}
+      onSaveEdit={handleSaveEdit}
+      onCancelEdit={handleCancelEdit}
+      onToggle={handleToggle}
+      onToggleChild={handleToggleChild}
+      onToggleParent={handleToggleParent}
+    />
+  );
 
   return (
     <Page>
@@ -590,7 +402,7 @@ function TodoPage() {
                     overscan={5}
                     itemContent={(_, item) => (
                       <div className="todo-virtuoso-item">
-                        {renderItem(item)}
+                        {renderTodoListItem(item)}
                       </div>
                     )}
                   />
@@ -650,7 +462,7 @@ function TodoPage() {
                     overscan={5}
                     itemContent={(_, item) => (
                       <div className="todo-virtuoso-item">
-                        {renderItem(item)}
+                        {renderTodoListItem(item)}
                       </div>
                     )}
                   />
