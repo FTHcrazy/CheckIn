@@ -1,0 +1,152 @@
+// ── 分区（TODO / DONE） ──
+// 同理：flex / min-height / max-height 的过渡会每帧触发布局计算，
+// 折叠动画只保留 opacity，高度切换直接生效（视觉上几乎无差别，但流畅度差异很大）。
+.todo-section {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex: 1;
+  min-height: 0;
+
+  &--done {
+    padding-top: 4px;
+  }
+
+  &--collapsed {
+    flex: 0 0 auto !important;
+    min-height: auto !important;
+
+    .todo-section__content {
+      flex: 0 0 0;
+      max-height: 0;
+      opacity: 0;
+      pointer-events: none;
+    }
+  }
+
+  &--expanded {
+    flex: 1 1 0% !important;
+    min-height: 0 !important;
+  }
+}
+
+.todo-section__content {
+  flex: 1 1 0%;
+  min-height: 0;
+  max-height: 100%;
+  overflow: hidden;
+  opacity: 1;
+  transition: opacity 0.2s ease;
+}
+
+// ── 组头（重点强化） ──
+.todo-section-header {
+  flex-shrink: 0;
+  margin-bottom: 8px;
+
+  &__toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 8px 12px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    color: inherit;
+    text-align: left;
+    transition: background 0.2s;
+  }
+
+  &__left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  &__icon {
+    font-size: 16px;
+  }
+
+  &__title {
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+  }
+
+  &__badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
+
+    &--todo {
+      background: #e6f4ff;
+      color: #1677ff;
+    }
+
+    &--done {
+      background: #f6ffed;
+      color: #52c41a;
+    }
+  }
+
+  &__arrow {
+    font-size: 11px;
+    color: #bfbfbf;
+    transition: transform 0.2s;
+  }
+
+  // TODO 组头
+  &--todo &__toggle {
+    background: linear-gradient(135deg, #e8f4ff 0%, #f0f7ff 100%);
+
+    &:hover {
+      background: linear-gradient(135deg, #d6ebff 0%, #e8f4ff 100%);
+    }
+  }
+
+  &--todo &__icon {
+    color: #1677ff;
+  }
+
+  // DONE 组头
+  &--done &__toggle {
+    background: linear-gradient(135deg, #f0fae8 0%, #f6fff0 100%);
+
+    &:hover {
+      background: linear-gradient(135deg, #e4f7d6 0%, #f0fae8 100%);
+    }
+  }
+
+  &--done &__icon {
+    color: #52c41a;
+  }
+}
+
+.todo-empty-hint {
+  font-size: 12px !important;
+  margin-top: 4px;
+}
+
+// ── Virtuoso ──
+.todo-virtuoso-item {
+  padding-bottom: 4px;
+}
+
+.todo-virtuoso {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+
+  > div:first-child {
+    padding-right: 8px;
+    scrollbar-gutter: stable;
+  }
+}

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Button, Input } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import { useImeGuard } from "../../hooks/useImeGuard";
+import "./index.scss";
 
 type ChildInputProps = {
   /** 提交子项内容，父级负责写库与刷新；返回 true 表示已入库 */

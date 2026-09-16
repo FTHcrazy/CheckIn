@@ -1,6 +1,7 @@
 import { Input, type InputRef } from "antd";
 import { memo, useCallback, useEffect, useRef } from "react";
 import type { CompositionEvent, KeyboardEvent } from "react";
+import "./index.scss";
 
 type EditableTextProps = {
   itemId: number;

@@ -24,6 +24,7 @@ import EditableText from "../EditableText";
 import ChildInput from "../ChildInput";
 import type { TodoItem } from "../../types";
 import { todoDisplayConfig } from "../../todo-config";
+import "./index.scss"
 
 const { Text } = Typography;
 

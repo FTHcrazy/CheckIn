@@ -7,6 +7,7 @@ import {
   SearchOutlined,
 } from "@ant-design/icons";
 import { useImeGuard } from "../../hooks/useImeGuard";
+import "./index.scss";
 
 interface TodoToolbarProps {
   filterText: string;
@@ -50,7 +51,11 @@ export default function TodoToolbar({
         allowClear
         spellCheck={false}
       />
-      <Button type="primary" icon={<PlusOutlined />} onClick={() => void handleAdd()}>
+      <Button
+        type="primary"
+        icon={<PlusOutlined />}
+        onClick={() => void handleAdd()}
+      >
         添加
       </Button>
       <span className="todo-toolbar__divider" />
@@ -72,7 +77,9 @@ export default function TodoToolbar({
         <Button
           type="text"
           size="small"
-          icon={outlineCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+          icon={
+            outlineCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />
+          }
           onClick={onToggleOutline}
         />
       </Tooltip>

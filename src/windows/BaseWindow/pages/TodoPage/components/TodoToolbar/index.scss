@@ -1,0 +1,47 @@
+// ── 合并工具栏（一行） ──
+.todo-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  flex-shrink: 0;
+  padding: 6px 8px;
+  background: #fff;
+  border: 1px solid #f0f0f0;
+  border-radius: 10px;
+
+  &__input {
+    flex: 1;
+    min-width: 0;
+
+    .ant-input {
+      border: none;
+      box-shadow: none;
+      padding: 4px 0;
+      font-size: 14px;
+    }
+
+    .ant-input-affix-wrapper {
+      border: none;
+      box-shadow: none;
+      padding: 2px 0;
+    }
+  }
+
+  &__divider {
+    width: 1px;
+    height: 20px;
+    background: #e8e8e8;
+    flex-shrink: 0;
+  }
+
+  &__search {
+    width: 160px;
+    flex-shrink: 0;
+
+    .ant-input-affix-wrapper {
+      border-radius: 6px;
+      background: #fafafa;
+    }
+  }
+}

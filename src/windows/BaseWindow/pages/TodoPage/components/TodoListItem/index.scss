@@ -1,0 +1,208 @@
+@keyframes todo-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes todo-flash {
+  0% {
+    box-shadow: 0 0 0 2px #52c41a inset;
+  }
+  100% {
+    box-shadow: 0 0 0 2px transparent inset;
+  }
+}
+
+// ── 任务卡片 ──
+.todo-item {
+  display: block;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #fff;
+  border: 1px solid #f0f0f0;
+  // 只对合成属性做过渡；background/border-color 由 hover 直接切换，
+  // 避免鼠标移动时每帧重绘整行
+  transition:
+    box-shadow 0.15s ease,
+    border-color 0.15s ease;
+
+  &:hover {
+    background: #fafbff;
+    border-color: #e0e0e0;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+  }
+
+  &--done {
+    opacity: 0.55;
+    background: #fafafa;
+  }
+
+  &--child {
+    margin-left: 28px;
+    margin-top: 4px;
+    margin-bottom: 4px;
+    padding: 8px 10px;
+    background: #fff;
+    border: 1px dashed #e8e8e8;
+
+    &:hover {
+      background: #fafafa;
+      border-color: #d9d9d9;
+    }
+
+    .todo-item-content .todo-item-text--done {
+      text-decoration: line-through;
+      color: rgba(0, 0, 0, 0.45);
+    }
+  }
+}
+
+.todo-item-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.todo-item-checkbox {
+  flex-shrink: 0;
+  padding-top: 1px;
+}
+
+.todo-item-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.todo-item-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+}
+
+.todo-item-important {
+  color: #fa8c16;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.todo-item-work-hour {
+  min-width: 48px;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  gap: 3px;
+  text-align: center;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #e6f7ff;
+  border: 1px solid #91d5ff;
+  color: #1677ff;
+  font-size: 11px !important;
+  font-weight: 600;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.todo-item-work-hour-icon {
+  font-size: 10px;
+  line-height: 1;
+}
+
+.todo-item-work-hour--summary {
+  background: #fff7e6;
+  border-color: #ffd591;
+  color: #d46b08;
+}
+
+.todo-item-summary {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  padding-top: 4px;
+  border-top: 1px dashed #f0f0f0;
+}
+
+.todo-item-text--done {
+  text-decoration: line-through;
+  color: rgba(0, 0, 0, 0.45) !important;
+}
+
+.todo-item-time {
+  font-size: 11px !important;
+  flex-shrink: 0;
+  white-space: nowrap;
+  color: #bfbfbf !important;
+}
+
+.todo-item-actions {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  opacity: 0;
+  margin-left: 4px;
+  transition: opacity 0.2s;
+
+  .todo-item:hover & {
+    opacity: 1;
+  }
+
+  .todo-item--done & {
+    opacity: 1;
+  }
+}
+
+.todo-item--important {
+  border-left: 3px solid #fa8c16;
+  background: #fffaf0;
+}
+
+.todo-item-note {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #fff7e6;
+  border: 1px solid #ffd591;
+  color: #d46b08;
+  font-size: 11px !important;
+  flex-shrink: 0;
+}
+
+.todo-item-progress {
+  flex-shrink: 0;
+  font-size: 11px !important;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #f6ffed;
+  border: 1px solid #b7eb8f;
+  color: #389e0d;
+}
+
+// ── 动画 ──
+// 均只使用 transform / opacity / box-shadow，全部可在合成层完成，不触发 reflow
+.todo-item--enter {
+  animation: todo-enter 0.28s ease-out;
+}
+
+.todo-item--flash {
+  animation: todo-flash 0.8s ease-out;
+}
+
+.todo-children {
+  margin-top: 6px;
+  padding-left: 4px;
+  border-left: 2px solid #e8e8e8;
+}
