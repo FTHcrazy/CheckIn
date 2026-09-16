@@ -1,7 +1,8 @@
 @use "../../../../shared/styles/variables" as *;
 
 .app-container {
-  min-height: 100vh;
+  // 相对 .window-shell__body 取高（视口 100vh 含 WindowHeader 的 34px，会溢出裁剪）
+  min-height: 100%;
   background-color: $bg-color;
 
   .app-header {

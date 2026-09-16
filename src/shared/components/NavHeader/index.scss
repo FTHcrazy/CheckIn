@@ -3,6 +3,7 @@
   padding: 12px 24px 0;
   box-sizing: border-box;
   margin-bottom: 12px;
+  // 页面级头部：窗口拖动与控制已上移至 BaseWindow 的 WindowHeader，这里不再承担
 }
 
 .nav-header-inner {

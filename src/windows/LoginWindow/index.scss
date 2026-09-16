@@ -1,3 +1,5 @@
+@use "../../shared/styles/window-shell";
+
 html,
 body,
 #root {
@@ -7,7 +9,8 @@ body,
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  background: linear-gradient(135deg, #f6f8fa 0%, #eef4ff 100%);
+  // 圆角窗口：背景交给 .window-shell，dom 层保持透明
+  background: transparent;
   color: #1f2328;
 }
 
@@ -19,6 +22,10 @@ body {
   padding: 24px;
   box-sizing: border-box;
   overflow: hidden;
+  // 无系统标题栏：整窗作为拖动区，保证窗口可移动
+  -webkit-app-region: drag;
+  background: linear-gradient(135deg, #f6f8fa 0%, #eef4ff 100%);
+  border-radius: inherit;
 }
 
 .login-card {
@@ -26,6 +33,8 @@ body {
   border-radius: 16px;
   box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
   padding: 12px;
+  // 表单内所有可交互元素必须排除拖动区
+  -webkit-app-region: no-drag;
 }
 
 .login-header {

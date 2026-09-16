@@ -40,6 +40,14 @@ if (process.platform === "win32") {
 // 只保留中英文 locale，减少内存占用
 app.commandLine.appendSwitch("lang", "zh-CN,en-US");
 
+// 关闭 Windows 的窗口管理器动画：透明窗口（transparent: true）在
+// hide() → show() 切换时（如托盘点击恢复），Chromium 会重放窗口动画
+// 导致可见的闪烁。这是 Electron/Chromium 的知名渲染问题，
+// 禁用该动画后托盘恢复窗口不再闪白（必须在 app ready 之前设置）。
+if (process.platform === "win32") {
+  app.commandLine.appendSwitch("wm-window-animations-disabled");
+}
+
 // 处理打包后的路径
 // __dirname 在 CJS 输出中可用 (vite-plugin-electron 默认输出 CJS)
 const DIST_ELECTRON = __dirname;
@@ -113,6 +121,44 @@ function registerDevToolsShortcuts(win: BrowserWindow): void {
   });
 }
 
+// ── 圆角窗口公共配置 ──
+// 三个窗口统一为「无系统边框 + 透明底 + CSS 圆角」的实现方式：
+// - frame: false 去掉系统方角边框
+// - transparent: true 让圆角外的区域可以真正透明
+// - backgroundColor 必须是全透明（#00000000），否则圆角外会残留方角底色
+// - hasShadow: false 交给 CSS 画阴影，避免系统阴影沿方形边界绘制
+const ROUNDED_WINDOW_OPTIONS = {
+  frame: false,
+  transparent: true,
+  backgroundColor: "#00000000",
+  hasShadow: false,
+  roundedCorners: true,
+} as const;
+
+/** 统一的 webPreferences，三个窗口保持一致的安全设置 */
+function createWebPreferences() {
+  return {
+    preload: path.join(DIST_ELECTRON, "preload.js"),
+    contextIsolation: true,
+    nodeIntegration: false,
+  };
+}
+
+/**
+ * 把窗口的 maximize / unmaximize 事件转发给渲染层，
+ * 供 WindowHeader 切换最大化/还原图标并同步方角样式。
+ * 所有使用 WindowHeader 的窗口（main / worker）都需要注册。
+ */
+function forwardMaximizeState(win: BrowserWindow): void {
+  const send = () => {
+    if (!win.isDestroyed()) {
+      win.webContents.send("window-maximize-state", win.isMaximized());
+    }
+  };
+  win.on("maximize", send);
+  win.on("unmaximize", send);
+}
+
 function createWindow(): BrowserWindow {
   const t0 = Date.now();
   isMainWindowReady = false;
@@ -124,11 +170,8 @@ function createWindow(): BrowserWindow {
     minHeight: 600,
     icon: ICON_PATH,
     show: false,
-    webPreferences: {
-      preload: path.join(DIST_ELECTRON, "preload.js"),
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
+    ...ROUNDED_WINDOW_OPTIONS,
+    webPreferences: createWebPreferences(),
   });
 
   win.removeMenu();
@@ -143,6 +186,9 @@ function createWindow(): BrowserWindow {
   win.on("closed", () => {
     isMainWindowReady = false;
   });
+
+  // 最大化状态变化时同步给渲染层，WindowHeader 据此切换最大化/还原图标
+  forwardMaximizeState(win);
 
   win.webContents.once("did-finish-load", () => {
     console.log(`[main] 页面加载完成: ${Date.now() - t0}ms`);
@@ -254,15 +300,11 @@ function createLoginWindow(user?: UserCache | null) {
     resizable: false,
     maximizable: false,
     minimizable: false,
-    titleBarStyle: "hiddenInset",
-    titleBarOverlay: false,
-    frame: false,
     show: false,
-    webPreferences: {
-      preload: path.join(DIST_ELECTRON, "preload.js"),
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
+    ...ROUNDED_WINDOW_OPTIONS,
+    // 圆角窗口不需要系统标题栏（frame 已为 false，这里保持无边框语义）
+    titleBarStyle: "hidden",
+    webPreferences: createWebPreferences(),
   });
 
   loginWin.removeMenu();
@@ -288,11 +330,11 @@ function createLoginWindow(user?: UserCache | null) {
 }
 
 /**
- * WorkerWindow —— 即关即销的临时工作窗口。
+ * WorkerWindow —— 普通临时工作窗口。
  *
- * 「即关即销」的实现要点：
- * - 关闭时不拦截 close（不像主窗口那样隐藏），直接销毁实例、释放内存
- * - 每次打开都新建，不复用旧实例；windowManager 的 closed 钩子负责注销
+ * 特性：
+ * - 标准窗口行为：出现在任务栏、可最小化/最大化/关闭（由通用 WindowHeader 提供）
+ * - 不拦截 close 事件，关闭即随实例销毁；重新打开即全新实例
  * - 若窗口已存在（例如快捷键重复触发），先聚焦而不是重复创建
  */
 function createWorkerWindow(): BrowserWindow {
@@ -311,16 +353,9 @@ function createWorkerWindow(): BrowserWindow {
     minHeight: 320,
     icon: ICON_PATH,
     show: false,
-    frame: false,
+    ...ROUNDED_WINDOW_OPTIONS,
     titleBarStyle: "hidden",
-    // 临时窗口不参与任务栏，避免污染用户的任务栏
-    skipTaskbar: true,
-    backgroundColor: "#ffffff",
-    webPreferences: {
-      preload: path.join(DIST_ELECTRON, "preload.js"),
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
+    webPreferences: createWebPreferences(),
   });
 
   workerWin.removeMenu();
@@ -337,12 +372,15 @@ function createWorkerWindow(): BrowserWindow {
     if (OPEN_DEVTOOLS) workerWin.webContents.openDevTools({ mode: DEVTOOLS_MODE });
   }
 
+  // 标题栏的最小化/最大化按钮需要最大化状态推送
+  forwardMaximizeState(workerWin);
+
   // 注册到窗口管理池（自动处理 closed 事件清理）
   windowManager.register("worker", workerWin);
 
-  // 关闭即销毁：不拦截 close 事件，窗口关闭后即从内存中释放
+  // 不拦截 close 事件：正常关闭，窗口随实例销毁
   workerWin.on("closed", () => {
-    console.log("[main] Worker 窗口已销毁");
+    console.log("[main] Worker 窗口已关闭");
   });
 
   const url = IS_DEV
@@ -587,12 +625,42 @@ app.whenReady().then(() => {
     createWorkerWindow();
   });
 
-  ipcMain.on("worker-window-close", () => {
-    const workerWin = windowManager.get("worker");
-    if (workerWin && !workerWin.isDestroyed()) {
-      // 即关即销：直接 destroy，不触发 close 拦截，也不隐藏驻留
-      workerWin.destroy();
+  // ── 窗口控制 IPC（WindowHeader 的最小化/最大化/关闭按钮） ──
+  // 约定：payload 是动作字符串本身（"minimize" | "maximize-toggle" | "close"）。
+  // close 走 win.close()：由各窗口自己的 close 语义决定行为
+  // （主窗口隐藏到托盘、worker/login 直接关闭）
+  ipcMain.on("window-control", (event, payload: unknown) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win || win.isDestroyed()) return;
+    // 兼容字符串与 { action } 对象两种形式，避免两端约定不一致时静默失效
+    const action =
+      typeof payload === "string"
+        ? payload
+        : payload && typeof payload === "object" && "action" in payload
+          ? String((payload as { action: unknown }).action)
+          : "";
+    switch (action) {
+      case "minimize":
+        win.minimize();
+        break;
+      case "maximize-toggle":
+        if (win.isMaximized()) {
+          win.unmaximize();
+        } else {
+          win.maximize();
+        }
+        break;
+      case "close":
+        win.close();
+        break;
     }
+  });
+
+  // 渲染层挂载时查询一次当前最大化状态（覆盖窗口在最大化状态下刷新的场景）
+  ipcMain.on("window-maximize-query", (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win || win.isDestroyed()) return;
+    event.sender.send("window-maximize-state", win.isMaximized());
   });
 
   ipcMain.on("login-confirm", (_event, data: unknown) => {

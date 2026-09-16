@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { BorderBeam, Card, Space, Tag, Typography } from "antd";
+import WorkerFloatButton from "@/shared/components/WorkerFloatButton";
 import {
   ThunderboltOutlined,
   RocketOutlined,
@@ -114,6 +115,9 @@ export default function HomePage() {
           ))}
         </div>
       </main>
+
+      {/* 悬浮入口仅属于主页：切换到子页面后不再展示 */}
+      <WorkerFloatButton />
     </div>
   );
 }

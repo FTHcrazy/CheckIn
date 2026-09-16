@@ -1,7 +1,9 @@
 .page {
     position: relative;
     width: 100%;
-    height: 100vh;
+    // 相对 .window-shell__body（已扣除 WindowHeader 高度），不要用 100vh——
+    // 视口含标题栏，用 100vh 会比可用空间高出 34px，页面底部被裁剪
+    height: 100%;
     display: flex;
     flex-direction: column;
     overflow: hidden;

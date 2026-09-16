@@ -4,7 +4,7 @@ import { ConfigProvider, notification, App as AntdApp, Spin } from "antd";
 import { ClockCircleOutlined } from "@ant-design/icons";
 import { antdProviderProps } from "@/shared/styles/antd-theme";
 import type { ActivityNotifyData } from "@/shared/ipc/activityNotifyBridge";
-import WorkerFloatButton from "@/shared/components/WorkerFloatButton";
+import WindowHeader from "@/shared/components/WindowHeader";
 import HomePage from "./pages/HomePage";
 import "./app-routes.scss";
 
@@ -61,19 +61,24 @@ export default function App() {
   return (
     <ConfigProvider {...antdProviderProps}>
       <AntdApp>
-        <ActivityNotifier />
-        <Suspense fallback={<RouteFallback />}>
-          <Routes>
-            <Route path="/" element={<HomePage />} />
-            <Route path="/daily" element={<DailyPage />} />
-            <Route path="/code" element={<CodePage />} />
-            <Route path="/user" element={<UserPage />} />
-            <Route path="/memo" element={<MemoPage />} />
-            <Route path="/todo" element={<TodoPage />} />
-          </Routes>
-        </Suspense>
-        {/* 全局悬浮入口：主界面右下角，点击打开 Worker 临时窗口 */}
-        <WorkerFloatButton />
+        {/* 圆角窗口外壳：负责圆角裁剪与描边，内容全部装在其中 */}
+        <div className="window-shell">
+          {/* 窗口级标题栏：拖动区 + 最小化/最大化/关闭，替代 NavHeader 的窗口职责 */}
+          <WindowHeader />
+          <div className="window-shell__body">
+            <ActivityNotifier />
+            <Suspense fallback={<RouteFallback />}>
+              <Routes>
+                <Route path="/" element={<HomePage />} />
+                <Route path="/daily" element={<DailyPage />} />
+                <Route path="/code" element={<CodePage />} />
+                <Route path="/user" element={<UserPage />} />
+                <Route path="/memo" element={<MemoPage />} />
+                <Route path="/todo" element={<TodoPage />} />
+              </Routes>
+            </Suspense>
+          </div>
+        </div>
       </AntdApp>
     </ConfigProvider>
   );

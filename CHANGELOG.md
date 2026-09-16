@@ -3,17 +3,22 @@
 ## [1.2.0] - 2026-09-16
 
 ### Added
-- 新增 `WorkerWindow` 即关即销的临时工作窗口
+- 新增 `WorkerWindow` 临时工作窗口
   - 独立窗口目录 `src/windows/WorkerWindow/`，与其他窗口保持隔离，互不导入
-  - `frame: false` 无边框设计，自带可拖动标题栏与关闭按钮，支持 `Esc` 快捷关闭
-  - 关闭即销毁（`destroy()`），不驻留内存、不占用任务栏（`skipTaskbar: true`）
+  - 标准窗口行为：显示在任务栏，标题栏由通用 `WindowHeader` 提供（拖动 + 最小化/最大化/关闭），支持 `Esc` 快捷关闭
+  - 不拦截 close 事件，关闭即随实例销毁，重新打开即全新实例
   - 重复触发打开时聚焦已有实例，避免重复创建
 - 主页右下角新增 `WorkerFloatButton` 悬浮按钮，点击打开 Worker 窗口
-  - 作为全局组件挂载于 `BaseWindow/App.tsx`，在所有业务页面均可见
+  - 挂载于 `HomePage` 内，仅主页展示，切换到子页面后不再出现
   - 悬浮按钮沿用项目性能规范，仅过渡 `transform` / `box-shadow` / `background-color`
-- 新增 `src/shared/ipc/workerWindowBridge.ts` 窗口级 IPC 桥接
-  - 沿用显式注册 + 防重复守卫模式，避免模块副作用扩散
-  - 提供 `worker-window-open` / `worker-window-close` 两个 IPC 通道
+- 新增通用 `WindowHeader` 窗口级标题栏组件（`shared/components/WindowHeader/`）
+  - 整条标题栏为拖动区，右侧提供最小化 / 最大化(还原) / 关闭三个控制按钮，支持可选 `title` / `icon` 标题
+  - 主窗口与 Worker 窗口均已接入：BaseWindow 不传标题（页面有自己的头部），Worker 传 `title="Worker"`
+  - 最大化状态由主进程推送（`window-maximize-state`），挂载时主动查询一次，图标随状态切换
+  - 最大化时 `<html>` 挂 `is-window-maximized` 类，`.window-shell` 自动切换为方角（避免屏幕四角露出透明缺口）
+  - 双击标题栏可直接切换最大化（Electron 拖动区的系统行为）
+  - 新增 `window-control` / `window-maximize-query` IPC 通道；`window-control` 的 payload 为动作字符串本身；`close` 走 `win.close()`，由各窗口自身 close 语义决定行为（主窗口隐藏到托盘）
+  - `preload.receive` 现返回取消订阅函数，组件卸载时可移除监听，避免重复注册
 - 新增本地调试便捷入口
   - `Ctrl+Shift+I` / `F12` 可随时切换 DevTools（主窗口、登录窗口、Worker 窗口均支持）
   - 应用级 `globalShortcut` 兜底，窗口失焦时仍可唤出调试面板
@@ -42,11 +47,32 @@
 - **性能优化**：Memo 编辑器输入路径优化
   - `highlightText` 在无搜索词时短路返回，避免每次按键对全文执行 `escapeHtml`
   - `MemoPreview` 代码块按钮重构 effect 依赖收窄至 `html`
+- **窗口外观**：三个窗口（BaseWindow / LoginWindow / WorkerWindow）统一改为圆角窗口
+  - 主进程侧抽出 `ROUNDED_WINDOW_OPTIONS`，统一应用 `frame: false` + `transparent: true` + `backgroundColor: "#00000000"` + `hasShadow: false` + `roundedCorners: true`
+  - 抽出 `createWebPreferences()`，避免三处 `webPreferences` 重复定义
+  - 新增共享样式 `src/shared/styles/window-shell.scss`（`$window-radius: 12px`），提供 `.window-shell` / `.window-shell__body` 外壳，负责圆角、边框与投影
+  - 三个窗口的 `index.html` 根节点统一加 `class="has-window-shell"`，`body` / `#root` 背景改为 `transparent`，圆角交由外壳绘制
+  - 拖动区适配：`NavHeader`（主窗口）、`.login-window`（登录窗口）、`.worker-titlebar`（Worker 窗口）声明 `-webkit-app-region: drag`，内部可点击元素补 `no-drag`；窗口整体圆角继承自外壳（`border-radius: inherit`）
 - `CodePage` 表格 `columns` 提升为模块级常量，避免每次渲染重建
 - `scripts/start-electron.js` 显式透传 `VITE_OPEN_DEVTOOLS` 与 `VITE_DEVTOOLS_MODE`
 - `activitiesTask` 高频日志收敛至 `debugLog()`，由 `CHECKIN_ACTIVITY_DEBUG=1` 控制
 
 ### Fixed
+- 修复 WindowHeader 控制按钮在不带标题的窗口（BaseWindow）下显示在左侧的问题
+  - `space-between` 布局在唯一子元素时落在起点，`.window-header__controls` 补 `margin-left: auto` 保证始终靠右
+- 修复主窗口从托盘恢复时闪烁的问题
+  - 透明窗口（`transparent: true`）在 `hide()` → `show()` 切换时 Chromium 重放窗口动画导致可见闪烁（Electron/Chromium 已知渲染问题）
+  - Windows 下禁用窗口管理器动画：`app.commandLine.appendSwitch("wm-window-animations-disabled")`
+- 修复 WindowHeader 三个控制按钮点击无效的问题
+  - 渲染层发送 `{ action }` 对象，主进程 `switch` 按字符串匹配导致永远不命中
+  - 统一约定：`window-control` 的 payload 为动作字符串本身，主进程同时兼容两种形式
+- 修复主窗口主页无法拖动的问题
+  - 根因：HomePage 自带头部不含拖动区，NavHeader 仅存在于子页面，主页没有任何可拖动区域
+  - `NavHeader` 回归纯页面级头部（移除 `-webkit-app-region` 拖动声明），窗口拖动职责上移至 `WindowHeader`
+- 修复引入窗口标题栏后页面高度溢出的问题
+  - WindowHeader 占用 34px 后 `.window-shell__body` 不再等于视口高度，
+    `Page`、HomePage、`app-route-fallback` 由 `100vh` 改为 `100%`，
+    DailyPage / TodoPage 的 `calc(100vh - Xpx)` 同步改为 `calc(100% - Xpx)`，避免页面底部被裁剪 34px
 - 修复在渲染期写 ref 的隐患（`TodoPage`、`useTodoData`、`MemoPreview` 三处）
   - React 19 并发渲染下，被丢弃的渲染可能将 ref 写入过期数据，导致难复现的状态不一致
   - 统一改为在 `useEffect` 中同步 ref
@@ -56,6 +82,7 @@
 
 ### Verified
 - `npx tsc --noEmit`、`npx eslint src electron scripts`、`npm run build` 均通过
+- 构建产物确认三个 HTML 入口齐全：`BaseWindow/index.html`、`LoginWindow/index.html`、`WorkerWindow/index.html`
 
 ## [1.1.0] - 2026-09-15
 

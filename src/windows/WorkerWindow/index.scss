@@ -1,4 +1,5 @@
 @use "../../shared/styles/variables" as *;
+@use "../../shared/styles/window-shell";
 
 html,
 body,
@@ -9,67 +10,13 @@ body,
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background: #fff;
+  // 圆角窗口：背景交给 .window-shell，dom 层保持透明
+  background: transparent;
   color: $text-color;
 }
 
-.worker-window {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  overflow: hidden;
-  border: 1px solid #e8e8e8;
-  border-radius: 8px;
-  box-sizing: border-box;
-  background: #fff;
-}
-
-// ── 无边框窗口的标题栏（拖动区） ──
-.worker-titlebar {
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-  height: 38px;
-  padding: 0 6px 0 12px;
-  background: #fafbfc;
-  border-bottom: 1px solid #f0f0f0;
-  // 整条标题栏可拖动
-  -webkit-app-region: drag;
-
-  &__drag {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    flex: 1;
-    min-width: 0;
-  }
-
-  &__icon {
-    font-size: 13px;
-    color: $primary-color;
-  }
-
-  &__title {
-    font-size: 13px;
-    font-weight: 600;
-    color: #595959;
-    letter-spacing: 0.5px;
-  }
-
-  // 按钮必须排除拖动区，否则点击会被系统当作拖动
-  &__close {
-    -webkit-app-region: no-drag;
-    flex-shrink: 0;
-    color: #8c8c8c;
-
-    &:hover {
-      color: #ff4d4f !important;
-      background: #fff1f0 !important;
-    }
-  }
-}
-
 // ── 内容区 ──
+// 标题栏由通用 WindowHeader 提供（挂在 .window-shell 内），这里只负责主体内容
 .worker-body {
   flex: 1;
   min-height: 0;

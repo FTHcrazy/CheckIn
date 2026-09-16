@@ -1,0 +1,84 @@
+/**
+ * 窗口级标题栏（通用组件）：整条都是拖动区，右侧三个控制按钮排除拖动。
+ *
+ * 注意：
+ * - 背景保持透明，由外层 .window-shell 提供白底，视觉上与页面头部连为一体
+ * - 双击拖动区默认即可切换最大化（Electron 对 drag 区域的系统行为）
+ * - 悬停背景色过渡只作用于 46x34 的小按钮，开销可忽略
+ */
+.window-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  height: 34px;
+  user-select: none;
+  // 整条标题栏都是拖动区：无论页面自身是否有头部，窗口都可拖动
+  -webkit-app-region: drag;
+}
+
+.window-header__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding-left: 12px;
+}
+
+.window-header__title-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: #595959;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.window-header__controls {
+  display: flex;
+  align-items: stretch;
+  height: 100%;
+  // 不传 title 时（如 BaseWindow）controls 是唯一子元素，
+  // space-between 会让它落在左侧；margin-left: auto 保证始终靠右
+  margin-left: auto;
+  // 按钮必须排除拖动区，否则点击会被系统当作拖动窗口
+  -webkit-app-region: no-drag;
+}
+
+.window-header__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #5f5e5a;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+
+  &:hover {
+    background: rgba(15, 23, 42, 0.08);
+    color: #1f2d3d;
+  }
+
+  &:active {
+    background: rgba(15, 23, 42, 0.14);
+  }
+}
+
+.window-header__btn--close {
+  // Windows 风格：关闭按钮悬停红底白叉
+  &:hover {
+    background: #e81123;
+    color: #fff;
+  }
+
+  &:active {
+    background: #c50f1f;
+    color: #fff;
+  }
+}

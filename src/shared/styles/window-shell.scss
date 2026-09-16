@@ -1,0 +1,58 @@
+/**
+ * 窗口外壳（圆角窗口）统一样式
+ *
+ * 三个窗口（BaseWindow / LoginWindow / WorkerWindow）共用同一套圆角实现：
+ * - 主进程侧开启 `transparent: true` + `frame: false`，窗口本体不带系统边框
+ * - 渲染层用 `.window-shell` 画圆角、裁剪内容，圆角外区域透明
+ *
+ * 使用方式（各窗口 index.scss）：
+ *   @use "../../shared/styles/window-shell";
+ * 并在根节点挂上 class：
+ *   <html class="has-window-shell"> ... <div class="window-shell">…</div>
+ *
+ * 注意：圆角由 CSS 负责裁剪，所以 html/body/#root 必须保持透明背景，
+ * 否则窗口四角会露出方形的白底。
+ */
+
+// 圆角半径：与 antd 的 borderRadius 基准保持协调
+$window-radius: 12px;
+
+html.has-window-shell,
+html.has-window-shell body,
+html.has-window-shell #root {
+  // 圆角外的区域必须是透明的，窗口的方角才不会露出来
+  background: transparent !important;
+  overflow: hidden;
+}
+
+.window-shell {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+  box-sizing: border-box;
+  border-radius: $window-radius;
+  // 裁剪内部内容到圆角内（含滚动条、标题栏）
+  background: #fff;
+  // 细边框 + 阴影勾勒圆角轮廓，避免圆角在浅色桌面下不可见
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 8px 32px rgba(15, 23, 42, 0.12);
+}
+
+// 窗口最大化时贴满工作区：去掉圆角/描边/投影，
+// 否则屏幕四角会露出透明缺口（border-color 透明只隐视觉，保持 1px 占位避免布局跳动）
+html.is-window-maximized .window-shell {
+  border-radius: 0;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+// 窗口内容区：撑满外壳剩余高度
+.window-shell__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}

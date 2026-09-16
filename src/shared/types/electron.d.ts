@@ -80,7 +80,8 @@ export interface ElectronAPI {
   }
 
   send: (channel: string, data: unknown) => void
-  receive: (channel: string, func: (...args: unknown[]) => void) => void
+  /** 返回取消订阅函数，用于组件卸载时移除监听 */
+  receive: (channel: string, func: (...args: unknown[]) => void) => () => void
 
   // ── 跨窗口通信 ──
   windowAPI: {

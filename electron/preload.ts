@@ -56,16 +56,28 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   send: (channel: string, data: unknown) => {
-    const validChannels = ['login-confirm', 'worker-window-open', 'worker-window-close']
+    const validChannels = [
+      'login-confirm',
+      'worker-window-open',
+      // WindowHeader 窗口控制（最小化/最大化/关闭）与最大化状态查询
+      'window-control',
+      'window-maximize-query',
+    ]
     if (validChannels.includes(channel)) {
       ipcRenderer.send(channel, data)
     }
   },
+  // 返回取消订阅函数，组件卸载时可移除监听，避免重复注册
   receive: (channel: string, func: (...args: unknown[]) => void) => {
-    const validChannels = ['activity-notify', 'worker-window-close']
+    const validChannels = ['activity-notify', 'window-maximize-state']
     if (validChannels.includes(channel)) {
-      ipcRenderer.on(channel, (_event, ...args) => func(...args))
+      const listener = (_event: Electron.IpcRendererEvent, ...args: unknown[]) => func(...args)
+      ipcRenderer.on(channel, listener)
+      return () => {
+        ipcRenderer.removeListener(channel, listener)
+      }
     }
+    return () => {}
   },
 
   // ── 跨窗口通信 ──

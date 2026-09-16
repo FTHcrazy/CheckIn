@@ -12,7 +12,8 @@ body {
     'Noto Color Emoji';
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: $bg-color;
+  // 圆角窗口：body 必须透明，圆角外区域才不会露出方角底色（背景色由 .window-shell 提供）
+  background-color: transparent;
   color: $text-color;
 }
 
@@ -50,4 +51,6 @@ code {
 #root {
   height: 100vh;
   min-height: 100vh;
+  // 圆角窗口：根节点保持透明，由 .window-shell 负责背景与圆角裁剪
+  background: transparent;
 }

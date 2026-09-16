@@ -2,6 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { HashRouter } from 'react-router-dom'
 import { registerActivityNotifyBridge } from '@/shared/ipc/activityNotifyBridge'
+import '@/shared/styles/window-shell.scss'
 import './index.scss'
 import App from './App'
 

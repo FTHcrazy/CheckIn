@@ -51,45 +51,49 @@ export default function LoginWindowApp() {
   };
 
   return (
-    <div className="login-window">
-      <Card className="login-card" bordered={false}>
-        <Space direction="vertical" size="large" style={{ width: '100%' }}>
-          <div className="login-header">
-            <Typography.Title level={3} className="login-title">
-              {isWelcomeMode ? '欢迎回来' : '登录 CheckIn'}
-            </Typography.Title>
-            <Typography.Text type="secondary">
-              {isWelcomeMode ? '已登录账号' : '请输入用户邮箱，确认后将进入主窗口。'}
-            </Typography.Text>
-          </div>
+    <div className="window-shell">
+      <div className="window-shell__body">
+        <div className="login-window">
+          <Card className="login-card" bordered={false}>
+            <Space direction="vertical" size="large" style={{ width: '100%' }}>
+              <div className="login-header">
+                <Typography.Title level={3} className="login-title">
+                  {isWelcomeMode ? '欢迎回来' : '登录 CheckIn'}
+                </Typography.Title>
+                <Typography.Text type="secondary">
+                  {isWelcomeMode ? '已登录账号' : '请输入用户邮箱，确认后将进入主窗口。'}
+                </Typography.Text>
+              </div>
 
-          {isWelcomeMode ? (
-            <div className="welcome-state">
-              <MailOutlined className="welcome-icon" />
-              <Typography.Text className="welcome-email">{initialEmail}</Typography.Text>
-            </div>
-          ) : (
-            <Form form={form} layout="vertical" onFinish={handleSubmit} size="large">
-              <Form.Item
-                label="邮箱"
-                name="email"
-                rules={[
-                  { required: true, message: '请输入邮箱' },
-                  { type: 'email', message: '请输入有效的邮箱地址' },
-                ]}
-              >
-                <Input autoFocus allowClear placeholder="name@example.com" />
-              </Form.Item>
-              <Form.Item>
-                <Button type="primary" htmlType="submit" block loading={loading}>
-                  确认
-                </Button>
-              </Form.Item>
-              {error ? <Alert type="error" showIcon message={error} /> : null}
-            </Form>
-          )}
-        </Space>
-      </Card>
+              {isWelcomeMode ? (
+                <div className="welcome-state">
+                  <MailOutlined className="welcome-icon" />
+                  <Typography.Text className="welcome-email">{initialEmail}</Typography.Text>
+                </div>
+              ) : (
+                <Form form={form} layout="vertical" onFinish={handleSubmit} size="large">
+                  <Form.Item
+                    label="邮箱"
+                    name="email"
+                    rules={[
+                      { required: true, message: '请输入邮箱' },
+                      { type: 'email', message: '请输入有效的邮箱地址' },
+                    ]}
+                  >
+                    <Input autoFocus allowClear placeholder="name@example.com" />
+                  </Form.Item>
+                  <Form.Item>
+                    <Button type="primary" htmlType="submit" block loading={loading}>
+                      确认
+                    </Button>
+                  </Form.Item>
+                  {error ? <Alert type="error" showIcon message={error} /> : null}
+                </Form>
+              )}
+            </Space>
+          </Card>
+        </div>
+      </div>
     </div>
   );
 }

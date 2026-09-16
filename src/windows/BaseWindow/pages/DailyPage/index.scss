@@ -2,7 +2,8 @@
   display: flex;
   gap: 16px;
   padding: 16px;
-  height: calc(100vh - 48px);
+  // 相对 .page（.page 已扣除 WindowHeader 高度），不用 100vh
+  height: calc(100% - 48px);
   overflow: hidden;
 }
 
