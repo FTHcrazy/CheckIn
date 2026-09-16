@@ -51,20 +51,23 @@
       .feature-card {
         @include card-shadow;
         border-radius: $border-radius;
-        transition: transform 0.3s ease;
+        // 只过渡 transform，走合成层
+        transition: transform 0.2s ease;
+        will-change: transform;
 
+        // 默认暂停光束动画：JS 在指针进入时才置 running，离开即暂停，
+        // 避免 5 张卡片的光束在空闲时持续消耗合成线程
         .ant-border-beam {
           opacity: 0;
+          animation-play-state: paused;
           transition: opacity var(--ant-motion-duration-mid);
         }
 
         &:hover {
           transform: translateY(-4px);
+
           .ant-border-beam {
             opacity: 1;
-            &::before {
-              animation-play-state: running;
-            }
           }
         }
 

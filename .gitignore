@@ -16,6 +16,7 @@ dist-ssr
 dist-electron
 release
 *.local
+.workbuddy
 
 # Editor directories and files
 .vscode/*

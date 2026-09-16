@@ -1,19 +1,28 @@
-import { useEffect, useRef } from "react";
+import { lazy, Suspense, useEffect, useRef } from "react";
 import { Routes, Route, useNavigate } from "react-router-dom";
-import {
-  ConfigProvider,
-  notification,
-  App as AntdApp,
-} from "antd";
+import { ConfigProvider, notification, App as AntdApp, Spin } from "antd";
 import { ClockCircleOutlined } from "@ant-design/icons";
 import { antdProviderProps } from "@/shared/styles/antd-theme";
 import type { ActivityNotifyData } from "@/shared/ipc/activityNotifyBridge";
 import HomePage from "./pages/HomePage";
-import DailyPage from "./pages/DailyPage/DailyPage";
-import CodePage from "./pages/CodePage/CodePage";
-import UserPage from "./pages/UserPage/UserPage";
-import MemoPage from "./pages/MemoPage/MemoPage";
-import TodoPage from "./pages/TodoPage/TodoPage";
+import "./app-routes.scss";
+
+// 路由级懒加载：首屏只加载 HomePage，其余页面在跳转时按需拉取，
+// 避免开发模式下全量模块预转换/生产模式首屏 chunk 过大导致的卡顿。
+const DailyPage = lazy(() => import("./pages/DailyPage/DailyPage"));
+const CodePage = lazy(() => import("./pages/CodePage/CodePage"));
+const UserPage = lazy(() => import("./pages/UserPage/UserPage"));
+const MemoPage = lazy(() => import("./pages/MemoPage/MemoPage"));
+const TodoPage = lazy(() => import("./pages/TodoPage/TodoPage"));
+
+/** 懒加载路由的占位，保持与页面一致的高度避免布局跳动 */
+function RouteFallback() {
+  return (
+    <div className="app-route-fallback">
+      <Spin size="large" />
+    </div>
+  );
+}
 
 /** 全局活动通知监听 */
 function ActivityNotifier() {
@@ -31,7 +40,6 @@ function ActivityNotifier() {
     const handler = (e: Event) => {
       const { name, start, end, color } =
         (e as CustomEvent).detail as ActivityNotifyData;
-      console.log("[App] 收到活动通知:", name);
       navRef.current("/daily");
       apiRef.current.info({
         message: "活动提醒",
@@ -53,14 +61,16 @@ export default function App() {
     <ConfigProvider {...antdProviderProps}>
       <AntdApp>
         <ActivityNotifier />
-        <Routes>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/daily" element={<DailyPage />} />
-          <Route path="/code" element={<CodePage />} />
-          <Route path="/user" element={<UserPage />} />
-          <Route path="/memo" element={<MemoPage />} />
-          <Route path="/todo" element={<TodoPage />} />
-        </Routes>
+        <Suspense fallback={<RouteFallback />}>
+          <Routes>
+            <Route path="/" element={<HomePage />} />
+            <Route path="/daily" element={<DailyPage />} />
+            <Route path="/code" element={<CodePage />} />
+            <Route path="/user" element={<UserPage />} />
+            <Route path="/memo" element={<MemoPage />} />
+            <Route path="/todo" element={<TodoPage />} />
+          </Routes>
+        </Suspense>
       </AntdApp>
     </ConfigProvider>
   );

@@ -1,3 +1,4 @@
+import { memo, useCallback } from "react";
 import { Empty, Typography } from "antd";
 import { DownOutlined, RightOutlined } from "@ant-design/icons";
 import { motion } from "framer-motion";
@@ -18,7 +19,7 @@ type TodoSectionProps = {
   onToggle: () => void;
 };
 
-export default function TodoSection({
+function TodoSectionInner({
   kind,
   items,
   collapsed,
@@ -29,6 +30,16 @@ export default function TodoSection({
   onToggle,
 }: TodoSectionProps) {
   const isTodo = kind === "todo";
+
+  // Virtuoso 的 itemContent 若每次渲染换新引用，会让内部行组件反复重建；
+  // 用 useCallback 固定引用，只让 renderItem 的变化驱动更新。
+  const itemContent = useCallback(
+    (_index: number, item: TodoItem) => (
+      <div className="todo-virtuoso-item">{renderItem(item)}</div>
+    ),
+    [renderItem],
+  );
+
   return (
     <div
       className={`todo-section ${collapsed ? "todo-section--collapsed" : ""} ${otherCollapsed ? "todo-section--expanded" : ""} ${isTodo ? "" : "todo-section--done"}`}
@@ -44,15 +55,26 @@ export default function TodoSection({
           {collapsed ? <RightOutlined className="todo-section-header__arrow" /> : <DownOutlined className="todo-section-header__arrow" />}
         </button>
       </div>
-      {!collapsed && (items.length === 0 ? (
-        <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
-          <Empty description={hasFilter ? "没有匹配的任务" : isTodo ? "暂无待办事项" : "暂无已完成事项"} image={Empty.PRESENTED_IMAGE_SIMPLE}>
-            {!hasFilter && <Text type="secondary" className="todo-empty-hint">{isTodo ? "在上方输入任务，后缀加 #2h 可快捷记录工时；双击任务名可编辑" : "勾选左侧任务后，完成事项会汇总在这里"}</Text>}
-          </Empty>
-        </motion.div>
-      ) : (
-        <Virtuoso ref={virtuosoRef} className="todo-virtuoso" style={{ height: "100%" }} data={items} overscan={5} itemContent={(_, item) => <div className="todo-virtuoso-item">{renderItem(item)}</div>} />
-      ))}
+      <div className="todo-section__content">
+        {items.length === 0 ? (
+          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
+            <Empty description={hasFilter ? "没有匹配的任务" : isTodo ? "暂无待办事项" : "暂无已完成事项"} image={Empty.PRESENTED_IMAGE_SIMPLE}>
+              {!hasFilter && <Text type="secondary" className="todo-empty-hint">{isTodo ? "在上方输入任务，后缀加 #2h 可快捷记录工时；双击任务名可编辑" : "勾选左侧任务后，完成事项会汇总在这里"}</Text>}
+            </Empty>
+          </motion.div>
+        ) : (
+          <Virtuoso
+            ref={virtuosoRef}
+            className="todo-virtuoso"
+            style={{ height: "100%" }}
+            data={items}
+            overscan={5}
+            itemContent={itemContent}
+          />
+        )}
+      </div>
     </div>
   );
 }
+
+export default memo(TodoSectionInner);

@@ -55,6 +55,22 @@ const features: Feature[] = [
 export default function HomePage() {
   const navigate = useNavigate();
 
+  // BorderBeam 是持续运行的 CSS 动画，5 张卡片常驻会让页面一直占用合成线程。
+  // 改为指针进入卡片时才挂载，指针离开即卸载，空闲时页面零动画开销。
+  const handlePointerEnter = (event: React.PointerEvent<HTMLDivElement>) => {
+    const beam = event.currentTarget.querySelector<HTMLElement>(".ant-border-beam");
+    if (!beam) return;
+    beam.style.animationPlayState = "running";
+    beam.style.opacity = "1";
+  };
+
+  const handlePointerLeave = (event: React.PointerEvent<HTMLDivElement>) => {
+    const beam = event.currentTarget.querySelector<HTMLElement>(".ant-border-beam");
+    if (!beam) return;
+    beam.style.animationPlayState = "paused";
+    beam.style.opacity = "0";
+  };
+
   return (
     <div className="app-container">
       <header className="app-header">
@@ -83,6 +99,8 @@ export default function HomePage() {
                 className="feature-card"
                 hoverable
                 onClick={() => navigate(feature.path)}
+                onPointerEnter={handlePointerEnter}
+                onPointerLeave={handlePointerLeave}
               >
                 <div className="feature-icon">{feature.icon}</div>
                 <Title level={4} className="feature-title">

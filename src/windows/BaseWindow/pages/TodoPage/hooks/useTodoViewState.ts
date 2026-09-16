@@ -76,8 +76,8 @@ export function useTodoViewState(
     const newlyDone = items
       .filter((item) => item.done === 1 && previous.get(item.id) === 0)
       .map((item) => item.id);
+    // 原地更新复用同一个 Map，避免每次刷新都重建整张表
     items.forEach((item) => previous.set(item.id, item.done));
-    previousDoneRef.current = new Map(items.map((item) => [item.id, item.done]));
     if (newlyDone.length === 0) return;
     setFlashIds(new Set(newlyDone));
     const timer = setTimeout(() => setFlashIds(new Set()), 900);
@@ -116,14 +116,28 @@ export function useTodoViewState(
     }
   }, [filteredDoneItems, filteredTodoItems, isDoneCollapsed, isTodoCollapsed, pendingScrollId]);
 
+  const enterTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 卸载时清掉入场动画的延时器，避免卸载后 setState
+  useEffect(
+    () => () => {
+      if (enterTimerRef.current) clearTimeout(enterTimerRef.current);
+    },
+    [],
+  );
+
   const markAdded = useCallback((id: number) => {
     if (collapsedSection === "todo") setCollapsedSection(null);
     setPendingScrollId(id);
     setEnterIds(new Set([id]));
-    setTimeout(() => setEnterIds(new Set()), 700);
+    if (enterTimerRef.current) clearTimeout(enterTimerRef.current);
+    enterTimerRef.current = setTimeout(() => {
+      setEnterIds(new Set());
+      enterTimerRef.current = null;
+    }, 700);
   }, [collapsedSection]);
 
-  return {
+  return useMemo(() => ({
     activeOutlineId,
     outlineCollapsed,
     setOutlineCollapsed,
@@ -145,5 +159,22 @@ export function useTodoViewState(
     flashIds,
     enterIds,
     markAdded,
-  };
+  }), [
+    activeOutlineId,
+    collapsedSection,
+    enterIds,
+    filteredDoneItems,
+    filteredTodoItems,
+    filterText,
+    flashIds,
+    handleScrollToItem,
+    hasFilter,
+    isDoneCollapsed,
+    isTodoCollapsed,
+    markAdded,
+    onlyImportant,
+    outlineCollapsed,
+    todoOutlineItems,
+    toggleSection,
+  ]);
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Form } from 'antd'
 import dayjs from 'dayjs'
 import type { Dayjs } from 'dayjs'
@@ -20,8 +20,8 @@ export function useDailyPage() {
 
   const selectedDateStr = selectedDate.format('YYYY-MM-DD')
 
-  // 加载活动数据
-  const refreshData = async () => {
+  // 加载活动数据（用 useCallback 稳定引用，避免每次渲染都触发下面 effect 重新拉数据）
+  const refreshData = useCallback(async () => {
     const [acts, dates] = await Promise.all([
       getActivitiesByDate(selectedDateStr),
       getActiveDates(
@@ -31,9 +31,11 @@ export function useDailyPage() {
     ])
     setActivities(acts)
     setActiveDates(dates)
-  }
+  }, [currentMonth, selectedDateStr])
 
-  useEffect(() => { refreshData() }, [selectedDateStr, currentMonth])
+  useEffect(() => {
+    void refreshData()
+  }, [refreshData])
 
   // 日历网格数据
   const calendarDays = useMemo(() => {

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 interface TodoEditorActions {
   handleUpdateContent: (id: number, content: string) => Promise<boolean>;
@@ -14,26 +14,26 @@ export function useTodoEditorState(actions: TodoEditorActions) {
   const [workHourDraft, setWorkHourDraft] = useState<number | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
 
-  const saveContent = async (id: number, content: string): Promise<void> => {
+  const saveContent = useCallback(async (id: number, content: string): Promise<void> => {
     if (await actions.handleUpdateContent(id, content)) setEditingId(null);
-  };
+  }, [actions.handleUpdateContent]);
 
-  const saveNote = async (): Promise<void> => {
+  const saveNote = useCallback(async (): Promise<void> => {
     if (noteModalFor === null) return;
     await actions.handleUpdateNote(noteModalFor, noteDraft);
     setNoteModalFor(null);
     setNoteDraft("");
-  };
+  }, [actions.handleUpdateNote, noteDraft, noteModalFor]);
 
-  const saveWorkHour = async (value: number | null): Promise<void> => {
+  const saveWorkHour = useCallback(async (value: number | null): Promise<void> => {
     if (workHourModalFor === null) return;
     if (await actions.handleUpdateWorkHour(workHourModalFor, value)) {
       setWorkHourModalFor(null);
       setWorkHourDraft(null);
     }
-  };
+  }, [actions.handleUpdateWorkHour, workHourModalFor]);
 
-  return {
+  return useMemo(() => ({
     childInputFor,
     setChildInputFor,
     noteModalFor,
@@ -49,5 +49,15 @@ export function useTodoEditorState(actions: TodoEditorActions) {
     saveContent,
     saveNote,
     saveWorkHour,
-  };
+  }), [
+    childInputFor,
+    editingId,
+    noteDraft,
+    noteModalFor,
+    saveContent,
+    saveNote,
+    saveWorkHour,
+    workHourDraft,
+    workHourModalFor,
+  ]);
 }

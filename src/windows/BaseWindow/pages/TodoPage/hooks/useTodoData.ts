@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { App } from "antd";
 import {
   formatWorkHour,
-  getTotalRemainingWorkHour,
   parseWorkHourTag,
 } from "../todo-utils";
 import type { TodoItem } from "../types";
@@ -11,6 +10,10 @@ export function useTodoData() {
   const { message } = App.useApp();
   const [items, setItems] = useState<TodoItem[]>([]);
   const api = window.electronAPI!.todo;
+  // 用 ref 持有最新 items，让写操作回调不再依赖 items 数组本身，
+  // 从而保持回调引用稳定，避免每次列表刷新都让下游组件全部重新渲染。
+  const itemsRef = useRef<TodoItem[]>(items);
+  itemsRef.current = items;
 
   const loadItems = useCallback(async (): Promise<void> => {
     try {
@@ -26,7 +29,7 @@ export function useTodoData() {
     void loadItems();
   }, [loadItems]);
 
-  const handleAdd = async (rawContent: string): Promise<number | null> => {
+  const handleAdd = useCallback(async (rawContent: string): Promise<number | null> => {
     const parsed = parseWorkHourTag(rawContent);
     if (!parsed.content) {
       message.warning("请输入内容");
@@ -42,9 +45,9 @@ export function useTodoData() {
       console.error(error);
       return null;
     }
-  };
+  }, [api, loadItems, message]);
 
-  const handleAddChild = async (
+  const handleAddChild = useCallback(async (
     parentId: number,
     rawContent: string,
   ): Promise<boolean> => {
@@ -63,9 +66,9 @@ export function useTodoData() {
       console.error(error);
       return false;
     }
-  };
+  }, [api, loadItems, message]);
 
-  const handleDelete = async (id: number): Promise<void> => {
+  const handleDelete = useCallback(async (id: number): Promise<void> => {
     try {
       await api.delete(id);
       message.success("已删除");
@@ -74,9 +77,9 @@ export function useTodoData() {
       message.error("删除失败");
       console.error(error);
     }
-  };
+  }, [api, loadItems, message]);
 
-  const handleUpdateContent = async (
+  const handleUpdateContent = useCallback(async (
     id: number,
     nextContent: string,
   ): Promise<boolean> => {
@@ -87,7 +90,7 @@ export function useTodoData() {
     }
 
     try {
-      const currentWorkHour = items.find((item) => item.id === id)?.work_hour ?? null;
+      const currentWorkHour = itemsRef.current.find((item) => item.id === id)?.work_hour ?? null;
       await api.updateContent(
         id,
         parsed.content,
@@ -100,9 +103,9 @@ export function useTodoData() {
       console.error(error);
       return false;
     }
-  };
+  }, [api, loadItems, message]);
 
-  const handleUpdateNote = async (id: number, nextNote: string): Promise<void> => {
+  const handleUpdateNote = useCallback(async (id: number, nextNote: string): Promise<void> => {
     try {
       await api.updateNote(id, nextNote.trim() || null);
       message.success("备注已更新");
@@ -111,9 +114,9 @@ export function useTodoData() {
       message.error("备注更新失败");
       console.error(error);
     }
-  };
+  }, [api, loadItems, message]);
 
-  const handleUpdateWorkHour = async (
+  const handleUpdateWorkHour = useCallback(async (
     id: number,
     nextValue: number | null,
   ): Promise<boolean> => {
@@ -135,9 +138,9 @@ export function useTodoData() {
       console.error(error);
       return false;
     }
-  };
+  }, [api, loadItems, message]);
 
-  const handleDeleteNote = async (id: number): Promise<void> => {
+  const handleDeleteNote = useCallback(async (id: number): Promise<void> => {
     try {
       await api.deleteNote(id);
       message.success("备注已删除");
@@ -146,9 +149,9 @@ export function useTodoData() {
       message.error("删除备注失败");
       console.error(error);
     }
-  };
+  }, [api, loadItems, message]);
 
-  const handleDeleteWorkHour = async (id: number): Promise<void> => {
+  const handleDeleteWorkHour = useCallback(async (id: number): Promise<void> => {
     try {
       await api.deleteWorkHour(id);
       message.success("工时已删除");
@@ -157,20 +160,20 @@ export function useTodoData() {
       message.error("删除工时失败");
       console.error(error);
     }
-  };
+  }, [api, loadItems, message]);
 
-  const handleToggleImportant = async (id: number): Promise<void> => {
+  const handleToggleImportant = useCallback(async (id: number): Promise<void> => {
     try {
-      const item = items.find((entry) => entry.id === id);
+      const item = itemsRef.current.find((entry) => entry.id === id);
       await api.toggleImportant(id, item?.important === 1 ? 0 : 1);
       void loadItems();
     } catch (error) {
       message.error("操作失败");
       console.error(error);
     }
-  };
+  }, [api, loadItems, message]);
 
-  const handleToggle = async (id: number, checked: boolean): Promise<void> => {
+  const handleToggle = useCallback(async (id: number, checked: boolean): Promise<void> => {
     try {
       await api.toggle(id, checked);
       void loadItems();
@@ -178,9 +181,9 @@ export function useTodoData() {
       message.error("操作失败");
       console.error(error);
     }
-  };
+  }, [api, loadItems, message]);
 
-  const handleToggleChild = async (
+  const handleToggleChild = useCallback(async (
     id: number,
     checked: boolean,
   ): Promise<void> => {
@@ -191,9 +194,9 @@ export function useTodoData() {
       message.error("操作失败");
       console.error(error);
     }
-  };
+  }, [api, loadItems, message]);
 
-  const handleToggleParent = async (
+  const handleToggleParent = useCallback(async (
     id: number,
     checked: boolean,
   ): Promise<void> => {
@@ -204,33 +207,79 @@ export function useTodoData() {
       message.error("操作失败");
       console.error(error);
     }
-  };
+  }, [api, loadItems, message]);
+
+  const childrenByParent = useMemo(() => {
+    const result = new Map<number, TodoItem[]>();
+    items.forEach((item) => {
+      if (item.parent_id === null) return;
+      const children = result.get(item.parent_id) ?? [];
+      children.push(item);
+      result.set(item.parent_id, children);
+    });
+    return result;
+  }, [items]);
 
   const getChildren = useCallback(
-    (parentId: number): TodoItem[] =>
-      items.filter((item) => item.parent_id === parentId),
-    [items],
+    (parentId: number): TodoItem[] => childrenByParent.get(parentId) ?? [],
+    [childrenByParent],
   );
 
-  const topLevel = items.filter((item) => item.parent_id === null);
-  const todoItems = topLevel
-    .filter((item) => item.done === 0)
-    .sort(
-      (a, b) =>
-        b.important - a.important ||
-        new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-    );
-  const doneItems = topLevel
-    .filter((item) => item.done === 1)
-    .sort((a, b) => (b.done_at ?? "").localeCompare(a.done_at ?? ""));
+  const { todoItems, doneItems, remainingWorkHours } = useMemo(() => {
+    const topLevel = items.filter((item) => item.parent_id === null);
+    const todoItems = topLevel
+      .filter((item) => item.done === 0)
+      .sort(
+        (a, b) =>
+          b.important - a.important ||
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+      );
+    const doneItems = topLevel
+      .filter((item) => item.done === 1)
+      .sort((a, b) => (b.done_at ?? "").localeCompare(a.done_at ?? ""));
 
-  return {
+    // 先把 items 建成 id -> item 的索引，避免递归里对每个节点做 O(n) 的 find（整体 O(n²)）
+    const itemById = new Map<number, TodoItem>();
+    items.forEach((item) => itemById.set(item.id, item));
+
+    const remainingWorkHours = new Map<number, number>();
+    const calculateRemaining = (id: number): number => {
+      const cached = remainingWorkHours.get(id);
+      if (cached !== undefined) return cached;
+
+      const item = itemById.get(id);
+      const currentValue =
+        item && item.done === 0 && item.work_hour !== null
+          ? Number(item.work_hour)
+          : 0;
+      const childrenValue = (childrenByParent.get(id) ?? []).reduce(
+        (sum, child) => sum + calculateRemaining(child.id),
+        0,
+      );
+      const total = currentValue + childrenValue;
+      remainingWorkHours.set(id, total);
+      return total;
+    };
+    topLevel.forEach((item) => calculateRemaining(item.id));
+    return { todoItems, doneItems, remainingWorkHours };
+  }, [childrenByParent, items]);
+
+  const getRemainingWorkHour = useCallback(
+    (id: number): number => remainingWorkHours.get(id) ?? 0,
+    [remainingWorkHours],
+  );
+  const getWorkHourLabel = useCallback(
+    (value: number | null | undefined): string => formatWorkHour(value),
+    [],
+  );
+
+  return useMemo(() => ({
     items,
     todoItems,
     doneItems,
     getChildren,
-    getRemainingWorkHour: (id: number) => getTotalRemainingWorkHour(id, items),
-    getWorkHourLabel: (value: number | null | undefined) => formatWorkHour(value),
+    getRemainingWorkHour,
+    getWorkHourLabel,
     handleAdd,
     handleAddChild,
     handleDelete,
@@ -243,5 +292,24 @@ export function useTodoData() {
     handleToggle,
     handleToggleChild,
     handleToggleParent,
-  };
+  }), [
+    doneItems,
+    getChildren,
+    getRemainingWorkHour,
+    getWorkHourLabel,
+    handleAdd,
+    handleAddChild,
+    handleDelete,
+    handleDeleteNote,
+    handleDeleteWorkHour,
+    handleToggle,
+    handleToggleChild,
+    handleToggleImportant,
+    handleToggleParent,
+    handleUpdateContent,
+    handleUpdateNote,
+    handleUpdateWorkHour,
+    items,
+    todoItems,
+  ]);
 }

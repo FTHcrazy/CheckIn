@@ -7,6 +7,7 @@ import {
   Menu,
   shell,
   dialog,
+  globalShortcut,
 } from "electron";
 import path from "path";
 import fs from "fs";
@@ -44,6 +45,14 @@ app.commandLine.appendSwitch("lang", "zh-CN,en-US");
 const DIST_ELECTRON = __dirname;
 const DIST = path.join(DIST_ELECTRON, "../dist");
 const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
+const IS_DEV = Boolean(VITE_DEV_SERVER_URL);
+const OPEN_DEVTOOLS = process.env["VITE_OPEN_DEVTOOLS"] === "1";
+/** DevTools 打开方式：detach = 独立调试窗口，right/bottom/undocked = 停靠 */
+const DEVTOOLS_MODE = (process.env["VITE_DEVTOOLS_MODE"] ?? "detach") as
+  | "right"
+  | "bottom"
+  | "undocked"
+  | "detach";
 // 渲染层窗口入口清单，与 vite.config.ts 的 rollupOptions.input 对应
 const RENDERER_ENTRIES = {
   base: "src/windows/BaseWindow/index.html",
@@ -74,6 +83,34 @@ let hasStartedActivityPolling = false;
 const LOGIN_WINDOW_MIN_DISPLAY_MS = 3000;
 let loginWindowVisibleAt: number | null = null;
 let loginWindowHasShown = false;
+
+/**
+ * 切换指定窗口的 DevTools。
+ * 本地调试便捷入口：无需重启进程即可随时查看渲染层日志/性能面板。
+ */
+function toggleDevTools(win: BrowserWindow | null | undefined): void {
+  if (!win || win.isDestroyed()) return;
+  const wc = win.webContents;
+  if (wc.isDevToolsOpened()) {
+    wc.closeDevTools();
+    return;
+  }
+  wc.openDevTools({ mode: DEVTOOLS_MODE });
+}
+
+/** 为窗口注册 DevTools 快捷键（Ctrl+Shift+I / F12，与 Chrome 一致） */
+function registerDevToolsShortcuts(win: BrowserWindow): void {
+  win.webContents.on("before-input-event", (event, input) => {
+    if (input.type !== "keyDown") return;
+
+    const isToggleKey =
+      input.key === "F12" || (input.control && input.shift && input.key.toLowerCase() === "i");
+    if (!isToggleKey) return;
+
+    event.preventDefault();
+    toggleDevTools(win);
+  });
+}
 
 function createWindow(): BrowserWindow {
   const t0 = Date.now();
@@ -116,10 +153,13 @@ function createWindow(): BrowserWindow {
 
   if (VITE_DEV_SERVER_URL) {
     win.loadURL(`${VITE_DEV_SERVER_URL}/${RENDERER_ENTRIES.base}`);
-    win.webContents.openDevTools();
+    if (OPEN_DEVTOOLS) win.webContents.openDevTools({ mode: DEVTOOLS_MODE });
   } else {
     win.loadURL(`app://./${RENDERER_ENTRIES.base}`);
   }
+
+  // 开发模式下随时可用 Ctrl+Shift+I / F12 开关调试窗口
+  if (IS_DEV) registerDevToolsShortcuts(win);
 
   // 注册到窗口管理池
   windowManager.register("main", win);
@@ -233,6 +273,12 @@ function createLoginWindow(user?: UserCache | null) {
       loginWin.focus();
     }
   });
+
+  // 登录窗口同样支持调试快捷键（frame:false 无菜单栏，更需要显式注册）
+  if (IS_DEV) {
+    registerDevToolsShortcuts(loginWin);
+    if (OPEN_DEVTOOLS) loginWin.webContents.openDevTools({ mode: DEVTOOLS_MODE });
+  }
 
   // 注册到窗口管理池（自动处理 closed 事件清理）
   windowManager.register("login", loginWin);
@@ -488,6 +534,18 @@ app.whenReady().then(() => {
   createLoginWindow(cachedUser);
   ensureMainWindow();
 
+  // 应用级 DevTools 快捷键：即使没有窗口焦点（例如无边框登录窗）也能唤出调试窗口。
+  // before-input-event 处理有焦点时的按键，globalShortcut 作为兜底。
+  if (IS_DEV) {
+    const toggleFocused = () => {
+      const focused = BrowserWindow.getFocusedWindow();
+      toggleDevTools(focused ?? windowManager.get("main") ?? windowManager.get("login"));
+    };
+    globalShortcut.register("CommandOrControl+Shift+I", toggleFocused);
+    globalShortcut.register("F12", toggleFocused);
+    console.log("[main] 调试快捷键已注册：Ctrl+Shift+I / F12 切换 DevTools");
+  }
+
   // 系统托盘图标，点击可重新显示窗口
   tray = new Tray(ICON_PATH);
   tray.setToolTip("CheckIn");
@@ -525,6 +583,7 @@ app.whenReady().then(() => {
 
 app.on("before-quit", () => {
   isQuitting = true;
+  globalShortcut.unregisterAll();
   stopActivityPolling();
   tray?.destroy();
   tray = null;

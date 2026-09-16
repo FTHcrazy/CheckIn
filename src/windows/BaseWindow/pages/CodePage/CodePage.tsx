@@ -31,6 +31,89 @@ import "./index.scss";
 const { RangePicker } = DatePicker;
 const { Text } = Typography;
 
+// 列定义与组件状态无关，提升到模块作用域：
+// 避免每次渲染都新建数组导致 Table 内部列配置全量重算
+const COMMIT_COLUMNS = [
+  {
+    title: "提交时间",
+    dataIndex: "commitTime",
+    key: "commitTime",
+    width: 160,
+    fixed: "left" as const,
+    render: (v: string) => (v ? dayjs(v).format("YYYY-MM-DD HH:mm") : "-"),
+  },
+  {
+    title: "项目",
+    dataIndex: "projectName",
+    key: "projectName",
+    width: 130,
+    render: (v: string) => (v ? <Tag color="geekblue">{v}</Tag> : "-"),
+  },
+  {
+    title: "仓库",
+    dataIndex: "repositoryName",
+    key: "repositoryName",
+    width: 150,
+    render: (v: string) => (v ? <Tag color="blue">{v}</Tag> : "-"),
+  },
+  {
+    title: "分支",
+    dataIndex: "branch",
+    key: "branch",
+    width: 200,
+    render: (v: string) =>
+      v ? (
+        <Tooltip title={v}>
+          <Tag className="branch-tag">{v}</Tag>
+        </Tooltip>
+      ) : (
+        "-"
+      ),
+  },
+  {
+    title: "提交信息",
+    dataIndex: "comments",
+    key: "comments",
+    ellipsis: true,
+    render: (v: string) =>
+      v ? (
+        <Tooltip title={v}>
+          <span>{v.trim()}</span>
+        </Tooltip>
+      ) : (
+        "-"
+      ),
+  },
+  {
+    title: "变更",
+    key: "changes",
+    width: 130,
+    render: (_: unknown, record: GitWebhookLogItem) => (
+      <Space size={4}>
+        <FileOutlined style={{ color: "#666" }} />
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          {record.fileChanges}
+        </Text>
+        <PlusOutlined style={{ color: "#52c41a", fontSize: 11 }} />
+        <Text style={{ color: "#52c41a", fontSize: 12 }}>
+          {record.insertions}
+        </Text>
+        <MinusOutlined style={{ color: "#ff4d4f", fontSize: 11 }} />
+        <Text style={{ color: "#ff4d4f", fontSize: 12 }}>
+          {record.deletions}
+        </Text>
+      </Space>
+    ),
+  },
+  {
+    title: "团队",
+    dataIndex: "teamName",
+    key: "teamName",
+    width: 100,
+    render: (v: string) => (v ? <Tag color="cyan">{v}</Tag> : "-"),
+  },
+];
+
 export default function CodePage() {
   const {
     loading,
@@ -50,87 +133,6 @@ export default function CodePage() {
     dailyOutputTrend,
     trendMax,
   } = useCodePage();
-
-  const columns = [
-    {
-      title: "提交时间",
-      dataIndex: "commitTime",
-      key: "commitTime",
-      width: 160,
-      fixed: "left" as const,
-      render: (v: string) => (v ? dayjs(v).format("YYYY-MM-DD HH:mm") : "-"),
-    },
-    {
-      title: "项目",
-      dataIndex: "projectName",
-      key: "projectName",
-      width: 130,
-      render: (v: string) => (v ? <Tag color="geekblue">{v}</Tag> : "-"),
-    },
-    {
-      title: "仓库",
-      dataIndex: "repositoryName",
-      key: "repositoryName",
-      width: 150,
-      render: (v: string) => (v ? <Tag color="blue">{v}</Tag> : "-"),
-    },
-    {
-      title: "分支",
-      dataIndex: "branch",
-      key: "branch",
-      width: 200,
-      render: (v: string) =>
-        v ? (
-          <Tooltip title={v}>
-            <Tag className="branch-tag">{v}</Tag>
-          </Tooltip>
-        ) : (
-          "-"
-        ),
-    },
-    {
-      title: "提交信息",
-      dataIndex: "comments",
-      key: "comments",
-      ellipsis: true,
-      render: (v: string) =>
-        v ? (
-          <Tooltip title={v}>
-            <span>{v.trim()}</span>
-          </Tooltip>
-        ) : (
-          "-"
-        ),
-    },
-    {
-      title: "变更",
-      key: "changes",
-      width: 130,
-      render: (_: unknown, record: GitWebhookLogItem) => (
-        <Space size={4}>
-          <FileOutlined style={{ color: "#666" }} />
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            {record.fileChanges}
-          </Text>
-          <PlusOutlined style={{ color: "#52c41a", fontSize: 11 }} />
-          <Text style={{ color: "#52c41a", fontSize: 12 }}>
-            {record.insertions}
-          </Text>
-          <MinusOutlined style={{ color: "#ff4d4f", fontSize: 11 }} />
-          <Text style={{ color: "#ff4d4f", fontSize: 12 }}>
-            {record.deletions}
-          </Text>
-        </Space>
-      ),
-    },
-    {
-      title: "团队",
-      dataIndex: "teamName",
-      key: "teamName",
-      width: 100,
-      render: (v: string) => (v ? <Tag color="cyan">{v}</Tag> : "-"),
-    },
-  ];
 
   return (
     <Page>
@@ -387,7 +389,7 @@ export default function CodePage() {
 
         <Table
           className="commit-table"
-          columns={columns}
+          columns={COMMIT_COLUMNS}
           dataSource={data}
           rowKey="id"
           loading={loading}

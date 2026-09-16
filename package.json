@@ -7,6 +7,8 @@
   "author": "FTH",
   "scripts": {
     "dev": "concurrently -k \"vite\" \"wait-on tcp:5173 && node scripts/start-electron.js\"",
+    "dev:debug": "concurrently -k \"vite\" \"wait-on tcp:5173 && cross-env VITE_OPEN_DEVTOOLS=1 node scripts/start-electron.js\"",
+    "dev:debug:log": "concurrently -k \"vite\" \"wait-on tcp:5173 && cross-env VITE_OPEN_DEVTOOLS=1 CHECKIN_ACTIVITY_DEBUG=1 node scripts/start-electron.js\"",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",

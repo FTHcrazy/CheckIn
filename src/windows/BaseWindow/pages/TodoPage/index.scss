@@ -12,17 +12,26 @@
 }
 
 // ── 大纲包裹层（动画容器） ──
+// 注意：不要对 width 做过渡——宽度变化会触发整页 reflow + Virtuoso 重测量，
+// 这是展开/收起卡顿的主因。改用 transform: translateX + opacity（走合成层，不触发布局）。
 .todo-outline-wrap {
   width: 260px;
   opacity: 1;
   overflow: hidden;
+  transform: translateX(0);
+  will-change: transform, opacity;
   transition:
-    width 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
     opacity 0.25s ease;
 
   &--collapsed {
-    width: 0;
+    transform: translateX(-100%);
     opacity: 0;
+
+    // 收起后彻底从栅格中移除占位（无过渡，避免参与布局动画）
+    &.todo-outline-wrap--collapsed {
+      margin-right: -260px;
+    }
   }
 }
 
@@ -94,16 +103,14 @@
 }
 
 // ── 分区（TODO / DONE） ──
+// 同理：flex / min-height / max-height 的过渡会每帧触发布局计算，
+// 折叠动画只保留 opacity，高度切换直接生效（视觉上几乎无差别，但流畅度差异很大）。
 .todo-section {
   display: flex;
   flex-direction: column;
   overflow: hidden;
   flex: 1;
   min-height: 0;
-  transition:
-    flex 0.3s ease,
-    min-height 0.3s ease,
-    padding 0.3s ease;
 
   &--done {
     padding-top: 4px;
@@ -113,9 +120,11 @@
     flex: 0 0 auto !important;
     min-height: auto !important;
 
-    .todo-virtuoso,
-    .ant-empty {
-      display: none;
+    .todo-section__content {
+      flex: 0 0 0;
+      max-height: 0;
+      opacity: 0;
+      pointer-events: none;
     }
   }
 
@@ -123,6 +132,15 @@
     flex: 1 1 0% !important;
     min-height: 0 !important;
   }
+}
+
+.todo-section__content {
+  flex: 1 1 0%;
+  min-height: 0;
+  max-height: 100%;
+  overflow: hidden;
+  opacity: 1;
+  transition: opacity 0.2s ease;
 }
 
 // ── 组头（重点强化） ──
@@ -240,10 +258,11 @@
   border-radius: 8px;
   background: #fff;
   border: 1px solid #f0f0f0;
+  // 只对合成属性做过渡；background/border-color 由 hover 直接切换，
+  // 避免鼠标移动时每帧重绘整行
   transition:
-    background-color 0.2s,
-    border-color 0.2s,
-    box-shadow 0.2s;
+    box-shadow 0.15s ease,
+    border-color 0.15s ease;
 
   &:hover {
     background: #fafbff;
@@ -419,8 +438,9 @@
 }
 
 // ── 动画 ──
+// 均只使用 transform / opacity / box-shadow，全部可在合成层完成，不触发 reflow
 .todo-item--enter {
-  animation: todo-enter 0.5s ease;
+  animation: todo-enter 0.28s ease-out;
 }
 
 @keyframes todo-enter {
@@ -435,17 +455,15 @@
 }
 
 .todo-item--flash {
-  animation: todo-flash 0.8s ease;
+  animation: todo-flash 0.8s ease-out;
 }
 
 @keyframes todo-flash {
   0% {
-    background: #d9f7be;
-    border-color: #52c41a;
+    box-shadow: 0 0 0 2px #52c41a inset;
   }
   100% {
-    background: #fff;
-    border-color: #f0f0f0;
+    box-shadow: 0 0 0 2px transparent inset;
   }
 }
 

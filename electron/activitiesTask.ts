@@ -42,12 +42,19 @@ function normalizeTime(t: string): string {
   return `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}`
 }
 
+/** 开发模式下的调试日志开关（默认关闭，避免高频轮询刷屏拖慢终端） */
+const DEBUG = process.env['CHECKIN_ACTIVITY_DEBUG'] === '1'
+
+function debugLog(...args: unknown[]): void {
+  if (DEBUG) console.log(...args)
+}
+
 /** 检查活动并通知渲染进程 */
 function check(): void {
   const today = todayStr()
   const now = nowHHmm()
 
-  console.log(`[activitiesTask] 检查: date=${today}, now=${now}`)
+  debugLog(`[activitiesTask] 检查: date=${today}, now=${now}`)
 
   try {
     const allRows = dbAll(
@@ -55,7 +62,7 @@ function check(): void {
       [today],
     ) as ActivityRow[]
 
-    console.log(`[activitiesTask] 今日活动数: ${allRows.length}`)
+    debugLog(`[activitiesTask] 今日活动数: ${allRows.length}`)
 
     // 找到最近更新的、尚未通知过的、当前时间匹配的活动
     let latest: ActivityRow | null = null
@@ -64,7 +71,7 @@ function check(): void {
       const start = normalizeTime(row.start_time)
       const end = normalizeTime(row.end_time)
 
-      console.log(`[activitiesTask] 活动 "${row.name}": ${start} ~ ${end}, notified=${notified.has(row.id)}`)
+      debugLog(`[activitiesTask] 活动 "${row.name}": ${start} ~ ${end}, notified=${notified.has(row.id)}`)
 
       if (now >= start && now <= end && !notified.has(row.id)) {
         if (!latest || row.updated_at > latest.updated_at) {
@@ -84,7 +91,7 @@ function check(): void {
         end,
         color: latest.color || '#1677ff',
       }
-      console.log(`[activitiesTask] 触发通知: ${latest.name}`)
+      debugLog(`[activitiesTask] 触发通知: ${latest.name}`)
 
       // 通过 windowManager 广播通知所有窗口
       windowManager.broadcast('activity-notify', notifyData)
@@ -117,14 +124,14 @@ function pausePolling(): void {
   if (timer) {
     clearInterval(timer)
     timer = null
-    console.log('[activitiesTask] 系统睡眠/锁屏，轮询已暂停')
+    debugLog('[activitiesTask] 系统睡眠/锁屏，轮询已暂停')
   }
 }
 
 /** 恢复轮询 */
 function resumePolling(): void {
   if (!timer) {
-    console.log('[activitiesTask] 系统激活，轮询已恢复')
+    debugLog('[activitiesTask] 系统激活，轮询已恢复')
     check()
     timer = setInterval(check, 10_000)
   }
@@ -133,7 +140,7 @@ function resumePolling(): void {
 /** 启动轮询（每30秒检查一次） */
 export function startActivityPolling(): void {
   if (timer) return
-  console.log('[activitiesTask] 启动活动轮询 (30s)')
+  debugLog('[activitiesTask] 启动活动轮询 (30s)')
   check()
   timer = setInterval(check, 30_000)
 
@@ -149,7 +156,7 @@ export function stopActivityPolling(): void {
   if (timer) {
     clearInterval(timer)
     timer = null
-    console.log('[activitiesTask] 活动轮询已停止')
+    debugLog('[activitiesTask] 活动轮询已停止')
   }
   // 清理电源监听
   powerMonitor.removeListener('suspend', pausePolling)

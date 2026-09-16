@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import Page from "@/shared/components/Page";
 import TodoOutlineSidebar from "./components/TodoOutlineSidebar";
 import TodoListItem from "./components/TodoListItem";
@@ -25,58 +25,131 @@ function TodoPage() {
     data.doneItems,
     data.getChildren,
   );
-  const handleAdd = async (content: string): Promise<boolean> => {
-    const id = await data.handleAdd(content);
-    if (id === null) return false;
-    view.markAdded(id);
-    return true;
-  };
 
-  const handleSaveEdit = useCallback(
-    (id: number, value: string) => {
-      void editor.saveContent(id, value);
+  // 把每次渲染都变化的 data/editor/view 放进 ref：
+  // renderItem 因此可以保持稳定引用，让 Virtuoso 只在数据真正变化时重算可见行。
+  const dataRef = useRef(data);
+  const editorRef = useRef(editor);
+  const viewRef = useRef(view);
+  dataRef.current = data;
+  editorRef.current = editor;
+  viewRef.current = view;
+
+  const handleAdd = useCallback(async (content: string): Promise<boolean> => {
+    const id = await dataRef.current.handleAdd(content);
+    if (id === null) return false;
+    viewRef.current.markAdded(id);
+    return true;
+  }, []);
+
+  const handleSaveEdit = useCallback((id: number, value: string) => {
+    void editorRef.current.saveContent(id, value);
+  }, []);
+
+  const handleToggleChildInput = useCallback((id: number) => {
+    const current = editorRef.current;
+    current.setChildInputFor(current.childInputFor === id ? null : id);
+  }, []);
+
+  const handleCloseChildInput = useCallback(() => {
+    editorRef.current.setChildInputFor(null);
+  }, []);
+
+  const handleOpenNote = useCallback((id: number, note: string | null) => {
+    const current = editorRef.current;
+    current.setNoteModalFor(id);
+    current.setNoteDraft(note ?? "");
+  }, []);
+
+  const handleOpenWorkHour = useCallback(
+    (id: number, workHour: number | null) => {
+      const current = editorRef.current;
+      current.setWorkHourModalFor(id);
+      current.setWorkHourDraft(workHour);
     },
-    [editor],
+    [],
   );
 
-  const renderItem = useCallback(
-    (item: TodoItem) => (
+  const handleSetEditingId = useCallback((id: number | null) => {
+    editorRef.current.setEditingId(id);
+  }, []);
+
+  const handleCancelEdit = useCallback(() => {
+    editorRef.current.setEditingId(null);
+  }, []);
+
+  const handleToggleOutline = useCallback(() => {
+    viewRef.current.setOutlineCollapsed((value) => !value);
+  }, []);
+
+  const handleToggleTodoSection = useCallback(() => {
+    viewRef.current.toggleSection("todo");
+  }, []);
+
+  const handleToggleDoneSection = useCallback(() => {
+    viewRef.current.toggleSection("done");
+  }, []);
+
+  const handleCancelNote = useCallback(() => {
+    const current = editorRef.current;
+    current.setNoteModalFor(null);
+    current.setNoteDraft("");
+  }, []);
+
+  const handleOkNote = useCallback(() => {
+    void editorRef.current.saveNote();
+  }, []);
+
+  const handleCancelWorkHour = useCallback(() => {
+    const current = editorRef.current;
+    current.setWorkHourModalFor(null);
+    current.setWorkHourDraft(null);
+  }, []);
+
+  const handleSaveWorkHour = useCallback((value: number | null) => {
+    void editorRef.current.saveWorkHour(value);
+  }, []);
+
+  const renderItem = useCallback((item: TodoItem) => {
+    const currentData = dataRef.current;
+    const currentEditor = editorRef.current;
+    const currentView = viewRef.current;
+    return (
       <TodoListItem
         item={item}
-        editingId={editor.editingId}
-        childInputFor={editor.childInputFor}
-        flashIds={view.flashIds}
-        enterIds={view.enterIds}
-        getChildren={data.getChildren}
-        getRemainingWorkHour={data.getRemainingWorkHour}
-        getWorkHourLabel={data.getWorkHourLabel}
-        onSetEditingId={editor.setEditingId}
-        onToggleChildInput={(id) =>
-          editor.setChildInputFor(editor.childInputFor === id ? null : id)
-        }
-        onCloseChildInput={() => editor.setChildInputFor(null)}
-        onOpenNote={(id, note) => {
-          editor.setNoteModalFor(id);
-          editor.setNoteDraft(note ?? "");
-        }}
-        onOpenWorkHour={(id, workHour) => {
-          editor.setWorkHourModalFor(id);
-          editor.setWorkHourDraft(workHour);
-        }}
-        onAddChild={data.handleAddChild}
-        onDelete={data.handleDelete}
-        onDeleteNote={data.handleDeleteNote}
-        onDeleteWorkHour={data.handleDeleteWorkHour}
-        onToggleImportant={data.handleToggleImportant}
+        editingId={currentEditor.editingId}
+        childInputFor={currentEditor.childInputFor}
+        flashIds={currentView.flashIds}
+        enterIds={currentView.enterIds}
+        getChildren={currentData.getChildren}
+        getRemainingWorkHour={currentData.getRemainingWorkHour}
+        getWorkHourLabel={currentData.getWorkHourLabel}
+        onSetEditingId={handleSetEditingId}
+        onToggleChildInput={handleToggleChildInput}
+        onCloseChildInput={handleCloseChildInput}
+        onOpenNote={handleOpenNote}
+        onOpenWorkHour={handleOpenWorkHour}
+        onAddChild={currentData.handleAddChild}
+        onDelete={currentData.handleDelete}
+        onDeleteNote={currentData.handleDeleteNote}
+        onDeleteWorkHour={currentData.handleDeleteWorkHour}
+        onToggleImportant={currentData.handleToggleImportant}
         onSaveEdit={handleSaveEdit}
-        onCancelEdit={() => editor.setEditingId(null)}
-        onToggle={data.handleToggle}
-        onToggleChild={data.handleToggleChild}
-        onToggleParent={data.handleToggleParent}
+        onCancelEdit={handleCancelEdit}
+        onToggle={currentData.handleToggle}
+        onToggleChild={currentData.handleToggleChild}
+        onToggleParent={currentData.handleToggleParent}
       />
-    ),
-    [data, editor, handleSaveEdit, view.enterIds, view.flashIds],
-  );
+    );
+  }, [
+    handleCancelEdit,
+    handleCloseChildInput,
+    handleOpenNote,
+    handleOpenWorkHour,
+    handleSaveEdit,
+    handleSetEditingId,
+    handleToggleChildInput,
+  ]);
 
   return (
     <Page>
@@ -101,7 +174,7 @@ function TodoPage() {
             onFilterTextChange={view.setFilterText}
             onOnlyImportantChange={view.setOnlyImportant}
             onAdd={handleAdd}
-            onToggleOutline={() => view.setOutlineCollapsed((value) => !value)}
+            onToggleOutline={handleToggleOutline}
           />
 
           <div className="todo-list-container">
@@ -113,7 +186,7 @@ function TodoPage() {
               hasFilter={view.hasFilter}
               virtuosoRef={view.todoVirtuosoRef}
               renderItem={renderItem}
-              onToggle={() => view.toggleSection("todo")}
+              onToggle={handleToggleTodoSection}
             />
             <TodoSection
               kind="done"
@@ -123,7 +196,7 @@ function TodoPage() {
               hasFilter={view.hasFilter}
               virtuosoRef={view.doneVirtuosoRef}
               renderItem={renderItem}
-              onToggle={() => view.toggleSection("done")}
+              onToggle={handleToggleDoneSection}
             />
           </div>
         </div>
@@ -132,21 +205,15 @@ function TodoPage() {
           open={editor.noteModalFor !== null}
           value={editor.noteDraft}
           onChange={editor.setNoteDraft}
-          onCancel={() => {
-            editor.setNoteModalFor(null);
-            editor.setNoteDraft("");
-          }}
-          onOk={() => void editor.saveNote()}
+          onCancel={handleCancelNote}
+          onOk={handleOkNote}
         />
         <WorkHourModal
           open={editor.workHourModalFor !== null}
           value={editor.workHourDraft}
           onChange={editor.setWorkHourDraft}
-          onCancel={() => {
-            editor.setWorkHourModalFor(null);
-            editor.setWorkHourDraft(null);
-          }}
-          onSave={(value) => void editor.saveWorkHour(value)}
+          onCancel={handleCancelWorkHour}
+          onSave={handleSaveWorkHour}
         />
       </div>
     </Page>

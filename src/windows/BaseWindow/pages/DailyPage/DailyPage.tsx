@@ -15,22 +15,39 @@ import './index.scss'
 
 const { Text } = Typography
 
+/**
+ * 农历/节日结果缓存
+ * 日历一次渲染要处理 42+ 个格子，而农历与节日计算（Lunar.fromDate / Solar.fromDate）
+ * 都是纯函数且结果只取决于日期，用模块级 Map 缓存后，翻月/选中日期时可直接命中。
+ */
+const lunarStrCache = new Map<string, string>()
+const solarFestivalCache = new Map<string, string | null>()
+
 /** 获取农历日期字符串 */
 function getLunarStr(d: Dayjs): string {
+  const key = d.format('YYYY-MM-DD')
+  const cached = lunarStrCache.get(key)
+  if (cached !== undefined) return cached
+
   const lunar = Lunar.fromDate(d.toDate())
   const day = lunar.getDayInChinese()
   // 初一显示月份，其他显示日
-  if (day === '初一') {
-    return lunar.getMonthInChinese() + '月'
-  }
-  return day
+  const result = day === '初一' ? lunar.getMonthInChinese() + '月' : day
+  lunarStrCache.set(key, result)
+  return result
 }
 
 /** 获取公历节日 */
 function getSolarFestival(d: Dayjs): string | null {
+  const key = d.format('YYYY-MM-DD')
+  const cached = solarFestivalCache.get(key)
+  if (cached !== undefined) return cached
+
   const solar = Solar.fromDate(d.toDate())
   const f = solar.getFestivals()
-  return f.length > 0 ? f[0] : null
+  const result = f.length > 0 ? f[0] : null
+  solarFestivalCache.set(key, result)
+  return result
 }
 
 /** 时间带上活动块的位置计算 */

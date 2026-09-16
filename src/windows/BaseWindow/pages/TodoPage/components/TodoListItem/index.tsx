@@ -1,3 +1,4 @@
+import { memo, useCallback, useMemo } from "react";
 import {
   App,
   Button,
@@ -59,7 +60,7 @@ function truncateTodoText(text: string): string {
   return `${characters.slice(0, todoDisplayConfig.maxTextLength).join("")}...`;
 }
 
-export default function TodoListItem({
+const TodoListItemInner = function TodoListItem({
   item,
   isChild = false,
   editingId,
@@ -96,7 +97,7 @@ export default function TodoListItem({
   const displayContent = truncateTodoText(item.content);
   const displayNote = item.note ? truncateTodoText(item.note) : null;
 
-  const handleCopyNote = async (): Promise<void> => {
+  const handleCopyNote = useCallback(async (): Promise<void> => {
     if (!item.note) return;
 
     try {
@@ -106,46 +107,60 @@ export default function TodoListItem({
       message.error("复制失败");
       console.error(error);
     }
-  };
+  }, [item.note, message]);
 
-  const contextMenuItems: MenuProps = {
-    items: [
-      { key: "note", label: item.note ? "修改备注" : "添加备注" },
-      ...(item.note ? [{ key: "delete-note", label: "删除备注" }] : []),
-      {
-        key: "work-hour",
-        label: item.work_hour !== null ? "修改工时" : "添加工时",
+  // 右键菜单每次渲染重建会带来大量闭包分配，收敛到 useMemo
+  const contextMenuItems: MenuProps = useMemo(
+    () => ({
+      items: [
+        { key: "note", label: item.note ? "修改备注" : "添加备注" },
+        ...(item.note ? [{ key: "delete-note", label: "删除备注" }] : []),
+        {
+          key: "work-hour",
+          label: item.work_hour !== null ? "修改工时" : "添加工时",
+        },
+        ...(item.work_hour !== null
+          ? [{ key: "delete-work-hour", label: "删除工时" }]
+          : []),
+        {
+          key: "important",
+          label: isImportant ? "取消特别关注" : "设为特别关注",
+        },
+      ],
+      onClick: ({ key }) => {
+        if (key === "note") {
+          onOpenNote(item.id, item.note);
+          return;
+        }
+        if (key === "delete-note") {
+          onDeleteNote(item.id);
+          return;
+        }
+        if (key === "work-hour") {
+          onOpenWorkHour(item.id, item.work_hour);
+          return;
+        }
+        if (key === "delete-work-hour") {
+          onDeleteWorkHour(item.id);
+          return;
+        }
+        if (key === "important") {
+          onToggleImportant(item.id);
+        }
       },
-      ...(item.work_hour !== null
-        ? [{ key: "delete-work-hour", label: "删除工时" }]
-        : []),
-      {
-        key: "important",
-        label: isImportant ? "取消特别关注" : "设为特别关注",
-      },
+    }),
+    [
+      isImportant,
+      item.id,
+      item.note,
+      item.work_hour,
+      onDeleteNote,
+      onDeleteWorkHour,
+      onOpenNote,
+      onOpenWorkHour,
+      onToggleImportant,
     ],
-    onClick: ({ key }) => {
-      if (key === "note") {
-        onOpenNote(item.id, item.note);
-        return;
-      }
-      if (key === "delete-note") {
-        onDeleteNote(item.id);
-        return;
-      }
-      if (key === "work-hour") {
-        onOpenWorkHour(item.id, item.work_hour);
-        return;
-      }
-      if (key === "delete-work-hour") {
-        onDeleteWorkHour(item.id);
-        return;
-      }
-      if (key === "important") {
-        onToggleImportant(item.id);
-      }
-    },
-  };
+  );
 
   return (
     <div
@@ -297,7 +312,7 @@ export default function TodoListItem({
       {hasChildren && (
         <div className="todo-children">
           {children.map((child) => (
-            <TodoListItem
+            <TodoListItemInner
               key={child.id}
               item={child}
               isChild
@@ -337,4 +352,9 @@ export default function TodoListItem({
       )}
     </div>
   );
-}
+};
+
+// 列表行数量多、父级状态变更频繁，memo 化后可跳过无关行的重渲染
+const TodoListItem = memo(TodoListItemInner);
+
+export default TodoListItem;

@@ -1,5 +1,5 @@
 import { CheckCircleOutlined } from "@ant-design/icons";
-import { useMemo } from "react";
+import { memo, useCallback, useMemo } from "react";
 import { GroupedVirtuoso } from "react-virtuoso";
 import type { TodoItem } from "../../types";
 import "./index.scss";
@@ -17,7 +17,7 @@ interface TodoOutlineSidebarProps {
   onSelect: (id: number) => void;
 }
 
-export default function TodoOutlineSidebar({
+function TodoOutlineSidebar({
   items,
   activeId,
   onSelect,
@@ -52,11 +52,71 @@ export default function TodoOutlineSidebar({
     [groups],
   );
 
-  // itemContent 的 index 是全部条目的全局索引（不含组头），需减去前面各组的条目数得到组内索引
-  const groupOffset = (groupIndex: number) =>
-    groups
-      .slice(0, groupIndex)
-      .reduce((sum, g) => sum + g.items.length, 0);
+  // itemContent 的 index 是全部条目的全局索引（不含组头），需减去前面各组的条目数得到组内索引。
+  // 预计算前缀和，避免每次调用都做一次 slice+reduce（原本是 O(n²)）。
+  const groupOffsets = useMemo(() => {
+    const offsets: number[] = [];
+    let sum = 0;
+    groups.forEach((g) => {
+      offsets.push(sum);
+      sum += g.items.length;
+    });
+    return offsets;
+  }, [groups]);
+
+  const groupContent = useCallback(
+    (groupIndex: number) => {
+      const group = groups[groupIndex];
+      return (
+        <div className="todo-outline__group-header">
+          <CheckCircleOutlined style={{ color: group.color }} />
+          <span
+            className="todo-outline__group-title"
+            style={{ color: group.color }}
+          >
+            {group.label}
+          </span>
+          <span className="todo-outline__group-count">
+            ({group.items.length})
+          </span>
+        </div>
+      );
+    },
+    [groups],
+  );
+
+  const itemContent = useCallback(
+    (index: number, groupIndex: number) => {
+      const group = groups[groupIndex];
+      const item = group.items[index - groupOffsets[groupIndex]];
+      if (!item) return null;
+      const isDone = group.key === "done";
+
+      return (
+        // 用包裹层做间距：margin 不会被 Virtuoso 计入测量高度
+        <div className="todo-outline__item-wrap" key={item.id}>
+          <button
+            type="button"
+            className={[
+              "todo-outline__item",
+              isDone ? "todo-outline__item--done" : "",
+              activeId === item.id ? "is-active" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            onClick={() => onSelect(item.id)}
+          >
+            <span
+              className="todo-outline__dot"
+              style={{ background: group.color }}
+            />
+            <span className="todo-outline__label">{item.content}</span>
+          </button>
+        </div>
+      );
+    },
+    [activeId, groupOffsets, groups, onSelect],
+  );
 
   return (
     <aside className="todo-outline">
@@ -71,54 +131,12 @@ export default function TodoOutlineSidebar({
           groupCounts={groupCounts}
           overscan={5}
           // ✅ 吸顶组头
-          groupContent={(groupIndex) => {
-            const group = groups[groupIndex];
-            return (
-              <div className="todo-outline__group-header">
-                <CheckCircleOutlined style={{ color: group.color }} />
-                <span
-                  className="todo-outline__group-title"
-                  style={{ color: group.color }}
-                >
-                  {group.label}
-                </span>
-                <span className="todo-outline__group-count">
-                  ({group.items.length})
-                </span>
-              </div>
-            );
-          }}
-          itemContent={(index, groupIndex) => {
-            const group = groups[groupIndex];
-
-            const item = group.items[index - groupOffset(groupIndex)];
-            const isDone = group.key === "done";
-
-            return (
-              // 用包裹层做间距：margin 不会被 Virtuoso 计入测量高度
-              <div className="todo-outline__item-wrap" key={item.id}>
-                <button
-                  type="button"
-                  className={[
-                    "todo-outline__item",
-                    isDone ? "todo-outline__item--done" : "",
-                    activeId === item.id ? "is-active" : "",
-                  ]
-                    .filter(Boolean)
-                    .join(" ")}
-                  onClick={() => onSelect(item.id)}
-                >
-                  <span
-                    className="todo-outline__dot"
-                    style={{ background: group.color }}
-                  />
-                  <span className="todo-outline__label">{item.content}</span>
-                </button>
-              </div>
-            );
-          }}
+          groupContent={groupContent}
+          itemContent={itemContent}
         />
       )}
     </aside>
   );
 }
+
+export default memo(TodoOutlineSidebar);
