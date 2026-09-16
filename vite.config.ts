@@ -61,6 +61,7 @@ export default defineConfig({
         // 每个独立窗口一个 HTML 入口，与 src/windows/* 一一对应
         base: path.resolve(__dirname, 'src/windows/BaseWindow/index.html'),
         login: path.resolve(__dirname, 'src/windows/LoginWindow/index.html'),
+        worker: path.resolve(__dirname, 'src/windows/WorkerWindow/index.html'),
       },
       output: {
         manualChunks(id: string) {

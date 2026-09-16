@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import Page from "@/shared/components/Page";
 import TodoOutlineSidebar from "./components/TodoOutlineSidebar";
 import TodoListItem from "./components/TodoListItem";
@@ -28,12 +28,15 @@ function TodoPage() {
 
   // 把每次渲染都变化的 data/editor/view 放进 ref：
   // renderItem 因此可以保持稳定引用，让 Virtuoso 只在数据真正变化时重算可见行。
+  // 注意：在 effect 中同步而非渲染期赋值，避免并发渲染丢弃的那次渲染写入过期值。
   const dataRef = useRef(data);
   const editorRef = useRef(editor);
   const viewRef = useRef(view);
-  dataRef.current = data;
-  editorRef.current = editor;
-  viewRef.current = view;
+  useEffect(() => {
+    dataRef.current = data;
+    editorRef.current = editor;
+    viewRef.current = view;
+  });
 
   const handleAdd = useCallback(async (content: string): Promise<boolean> => {
     const id = await dataRef.current.handleAdd(content);

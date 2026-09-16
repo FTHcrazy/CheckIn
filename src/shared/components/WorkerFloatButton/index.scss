@@ -1,0 +1,48 @@
+@use "../../styles/variables" as *;
+
+// ── 主界面右下角悬浮按钮 ──
+.worker-float-btn {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 1000;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+
+  color: #fff;
+  background: $primary-color;
+  box-shadow: 0 4px 14px rgba(22, 119, 255, 0.35);
+
+  // 只过渡合成属性，避免 hover 触发布局/重绘
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    background-color 0.18s ease;
+
+  &:hover {
+    transform: translateY(-2px) scale(1.04);
+    box-shadow: 0 6px 20px rgba(22, 119, 255, 0.45);
+  }
+
+  &:active {
+    transform: translateY(0) scale(0.97);
+  }
+
+  &:focus-visible {
+    outline: 2px solid rgba(22, 119, 255, 0.45);
+    outline-offset: 2px;
+  }
+
+  &__icon {
+    font-size: 20px;
+    line-height: 1;
+  }
+}

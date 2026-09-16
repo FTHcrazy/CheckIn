@@ -56,13 +56,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   send: (channel: string, data: unknown) => {
-    const validChannels = ['login-confirm']
+    const validChannels = ['login-confirm', 'worker-window-open', 'worker-window-close']
     if (validChannels.includes(channel)) {
       ipcRenderer.send(channel, data)
     }
   },
   receive: (channel: string, func: (...args: unknown[]) => void) => {
-    const validChannels = ['activity-notify']
+    const validChannels = ['activity-notify', 'worker-window-close']
     if (validChannels.includes(channel)) {
       ipcRenderer.on(channel, (_event, ...args) => func(...args))
     }

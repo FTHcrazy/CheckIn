@@ -1,5 +1,62 @@
 # Changelog
 
+## [1.2.0] - 2026-09-16
+
+### Added
+- 新增 `WorkerWindow` 即关即销的临时工作窗口
+  - 独立窗口目录 `src/windows/WorkerWindow/`，与其他窗口保持隔离，互不导入
+  - `frame: false` 无边框设计，自带可拖动标题栏与关闭按钮，支持 `Esc` 快捷关闭
+  - 关闭即销毁（`destroy()`），不驻留内存、不占用任务栏（`skipTaskbar: true`）
+  - 重复触发打开时聚焦已有实例，避免重复创建
+- 主页右下角新增 `WorkerFloatButton` 悬浮按钮，点击打开 Worker 窗口
+  - 作为全局组件挂载于 `BaseWindow/App.tsx`，在所有业务页面均可见
+  - 悬浮按钮沿用项目性能规范，仅过渡 `transform` / `box-shadow` / `background-color`
+- 新增 `src/shared/ipc/workerWindowBridge.ts` 窗口级 IPC 桥接
+  - 沿用显式注册 + 防重复守卫模式，避免模块副作用扩散
+  - 提供 `worker-window-open` / `worker-window-close` 两个 IPC 通道
+- 新增本地调试便捷入口
+  - `Ctrl+Shift+I` / `F12` 可随时切换 DevTools（主窗口、登录窗口、Worker 窗口均支持）
+  - 应用级 `globalShortcut` 兜底，窗口失焦时仍可唤出调试面板
+  - 新增 `pnpm dev:debug`（启动即开 DevTools）与 `pnpm dev:debug:log`（附带主进程轮询日志）
+  - 支持 `VITE_DEVTOOLS_MODE` 控制 DevTools 打开方式（默认 `detach` 独立窗口）
+
+### Changed
+- **性能优化**：路由级懒加载，`BaseWindow/App.tsx` 六个页面改为 `lazy()` + `Suspense`
+  - 入口 chunk 由整体体积降至 46KB，`DailyPage`(307KB)、`TodoPage`(148KB) 转为按需加载
+- **性能优化**：antd 主题开启 `cssVar` 变量模式并关闭 `hashed`
+  - antd 样式表体积从数百 KB 降至约 3KB
+- **性能优化**：列表渲染链路优化
+  - `TodoListItem`、`TodoSection`、`TodoOutlineSidebar` 增加 `memo()`，稳定回调引用
+  - `TodoPage` 将 `data`/`editor`/`view` 收敛至 ref，避免 Virtuoso 全量重渲染
+  - `renderItem`、`itemContent`、`groupContent` 全部改用 `useCallback` 固定引用
+- **性能优化**：数据计算去重与索引化
+  - `useTodoData` 剩余工时递归由 `Array.find` 改为 `Map` 索引，消除 O(n²)
+  - `TodoOutlineSidebar` 组偏移量由 `slice + reduce` 改为预计算前缀和
+  - `useTodoViewState` 复用 `previousDoneRef` Map，不再每次重建
+  - `DailyPage` 农历与节日结果增加模块级缓存，避免每次渲染重复计算 42+ 次
+- **性能优化**：动画属性改为仅使用合成层属性
+  - 大纲收起由过渡 `width` 改为 `transform: translateX()`，消除布局抖动
+  - Todo 分区折叠移除 `flex` / `max-height` 过渡，仅保留 `opacity`
+  - `todo-flash` 由 `background` 改为 `box-shadow`，`todo-enter` 时长收紧
+  - 首页 `BorderBeam` 默认暂停动画，指针进入才播放，空闲时零动画开销
+- **性能优化**：Memo 编辑器输入路径优化
+  - `highlightText` 在无搜索词时短路返回，避免每次按键对全文执行 `escapeHtml`
+  - `MemoPreview` 代码块按钮重构 effect 依赖收窄至 `html`
+- `CodePage` 表格 `columns` 提升为模块级常量，避免每次渲染重建
+- `scripts/start-electron.js` 显式透传 `VITE_OPEN_DEVTOOLS` 与 `VITE_DEVTOOLS_MODE`
+- `activitiesTask` 高频日志收敛至 `debugLog()`，由 `CHECKIN_ACTIVITY_DEBUG=1` 控制
+
+### Fixed
+- 修复在渲染期写 ref 的隐患（`TodoPage`、`useTodoData`、`MemoPreview` 三处）
+  - React 19 并发渲染下，被丢弃的渲染可能将 ref 写入过期数据，导致难复现的状态不一致
+  - 统一改为在 `useEffect` 中同步 ref
+- 修复新增任务的入场动画定时器未清理导致的卸载后 setState 问题
+- 修复 `useDailyPage` 的 `refreshData` 未记忆化导致每次渲染重复拉取数据的问题
+- 修复 `TodoOutlineSidebar` 在大纲条目缺失时可能读取空对象属性的问题
+
+### Verified
+- `npx tsc --noEmit`、`npx eslint src electron scripts`、`npm run build` 均通过
+
 ## [1.1.0] - 2026-09-15
 
 ### Changed

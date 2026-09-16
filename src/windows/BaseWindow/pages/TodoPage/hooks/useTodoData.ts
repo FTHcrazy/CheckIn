@@ -10,10 +10,14 @@ export function useTodoData() {
   const { message } = App.useApp();
   const [items, setItems] = useState<TodoItem[]>([]);
   const api = window.electronAPI!.todo;
+  const itemsRef = useRef<TodoItem[]>(items);
   // 用 ref 持有最新 items，让写操作回调不再依赖 items 数组本身，
   // 从而保持回调引用稳定，避免每次列表刷新都让下游组件全部重新渲染。
-  const itemsRef = useRef<TodoItem[]>(items);
-  itemsRef.current = items;
+  // 注意：必须在 effect 里同步（而非渲染期直接赋值），否则并发渲染下
+  // 被丢弃的那次渲染会把 ref 写成过期数据。
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
 
   const loadItems = useCallback(async (): Promise<void> => {
     try {

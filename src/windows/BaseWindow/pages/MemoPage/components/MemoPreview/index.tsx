@@ -10,8 +10,9 @@ export default function MemoPreview({ html }: MemoPreviewProps) {
   const { message } = App.useApp();
   // 用 ref 持有最新回调，让下面这个重构 DOM 的 effect 只依赖 html，
   // 不再因 message 实例变化而清空并重建全部代码块按钮。
+  // 注意：在 effect 中同步，避免渲染期写 ref 在并发渲染下写入过期函数。
   const onCopyCodeRef = useRef<(code: string) => void>(() => {});
-  onCopyCodeRef.current = useCallback(
+  const onCopyCode = useCallback(
     async (code: string): Promise<void> => {
       try {
         await navigator.clipboard.writeText(code);
@@ -23,6 +24,10 @@ export default function MemoPreview({ html }: MemoPreviewProps) {
     },
     [message],
   );
+
+  useEffect(() => {
+    onCopyCodeRef.current = onCopyCode;
+  }, [onCopyCode]);
 
   useEffect(() => {
     const preview = document.querySelector(".memo-preview");

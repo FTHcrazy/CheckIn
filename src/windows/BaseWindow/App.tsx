@@ -4,6 +4,7 @@ import { ConfigProvider, notification, App as AntdApp, Spin } from "antd";
 import { ClockCircleOutlined } from "@ant-design/icons";
 import { antdProviderProps } from "@/shared/styles/antd-theme";
 import type { ActivityNotifyData } from "@/shared/ipc/activityNotifyBridge";
+import WorkerFloatButton from "@/shared/components/WorkerFloatButton";
 import HomePage from "./pages/HomePage";
 import "./app-routes.scss";
 
@@ -71,6 +72,8 @@ export default function App() {
             <Route path="/todo" element={<TodoPage />} />
           </Routes>
         </Suspense>
+        {/* 全局悬浮入口：主界面右下角，点击打开 Worker 临时窗口 */}
+        <WorkerFloatButton />
       </AntdApp>
     </ConfigProvider>
   );

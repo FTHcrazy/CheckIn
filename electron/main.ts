@@ -57,6 +57,7 @@ const DEVTOOLS_MODE = (process.env["VITE_DEVTOOLS_MODE"] ?? "detach") as
 const RENDERER_ENTRIES = {
   base: "src/windows/BaseWindow/index.html",
   login: "src/windows/LoginWindow/index.html",
+  worker: "src/windows/WorkerWindow/index.html",
 } as const;
 let tray: Tray | null = null;
 const ICON_PATH = VITE_DEV_SERVER_URL
@@ -286,6 +287,72 @@ function createLoginWindow(user?: UserCache | null) {
   loginWin.loadURL(getLoginWindowUrl(user?.email));
 }
 
+/**
+ * WorkerWindow —— 即关即销的临时工作窗口。
+ *
+ * 「即关即销」的实现要点：
+ * - 关闭时不拦截 close（不像主窗口那样隐藏），直接销毁实例、释放内存
+ * - 每次打开都新建，不复用旧实例；windowManager 的 closed 钩子负责注销
+ * - 若窗口已存在（例如快捷键重复触发），先聚焦而不是重复创建
+ */
+function createWorkerWindow(): BrowserWindow {
+  const existing = windowManager.get("worker");
+  if (existing) {
+    if (existing.isMinimized()) existing.restore();
+    existing.show();
+    existing.focus();
+    return existing;
+  }
+
+  const workerWin = new BrowserWindow({
+    width: 720,
+    height: 520,
+    minWidth: 420,
+    minHeight: 320,
+    icon: ICON_PATH,
+    show: false,
+    frame: false,
+    titleBarStyle: "hidden",
+    // 临时窗口不参与任务栏，避免污染用户的任务栏
+    skipTaskbar: true,
+    backgroundColor: "#ffffff",
+    webPreferences: {
+      preload: path.join(DIST_ELECTRON, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  workerWin.removeMenu();
+
+  workerWin.webContents.once("did-finish-load", () => {
+    if (workerWin && !workerWin.isDestroyed()) {
+      workerWin.show();
+      workerWin.focus();
+    }
+  });
+
+  if (IS_DEV) {
+    registerDevToolsShortcuts(workerWin);
+    if (OPEN_DEVTOOLS) workerWin.webContents.openDevTools({ mode: DEVTOOLS_MODE });
+  }
+
+  // 注册到窗口管理池（自动处理 closed 事件清理）
+  windowManager.register("worker", workerWin);
+
+  // 关闭即销毁：不拦截 close 事件，窗口关闭后即从内存中释放
+  workerWin.on("closed", () => {
+    console.log("[main] Worker 窗口已销毁");
+  });
+
+  const url = IS_DEV
+    ? `${VITE_DEV_SERVER_URL}/${RENDERER_ENTRIES.worker}`
+    : `app://./${RENDERER_ENTRIES.worker}`;
+  workerWin.loadURL(url);
+
+  return workerWin;
+}
+
 function getLoginWindowUrl(email?: string) {
   const params = new URLSearchParams();
   if (email) {
@@ -513,6 +580,19 @@ app.whenReady().then(() => {
       matchCase: false,
     });
     return true;
+  });
+
+  // ── WorkerWindow 开关 IPC ──
+  ipcMain.on("worker-window-open", () => {
+    createWorkerWindow();
+  });
+
+  ipcMain.on("worker-window-close", () => {
+    const workerWin = windowManager.get("worker");
+    if (workerWin && !workerWin.isDestroyed()) {
+      // 即关即销：直接 destroy，不触发 close 拦截，也不隐藏驻留
+      workerWin.destroy();
+    }
   });
 
   ipcMain.on("login-confirm", (_event, data: unknown) => {
