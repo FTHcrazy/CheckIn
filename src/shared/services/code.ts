@@ -90,7 +90,11 @@ export async function fetchGitWebhookLogs(
     },
   };
 
-  const res = await fetch(`${BASE_URL}/gitwebhooklog`, {
+  // Cookie 是浏览器的 forbidden request header：渲染进程直接 fetch 时
+  // 设置会被静默忽略，请求不带认证直接失败。改走主进程 httpRequest
+  // （Node https.request 可正常携带 Cookie 等受限请求头）。
+  const res = await window.electronAPI?.httpRequest({
+    url: `${BASE_URL}/gitwebhooklog`,
     method: "POST",
     headers: {
       "Content-Type": "application/json; charset=UTF-8",
@@ -101,9 +105,9 @@ export async function fetchGitWebhookLogs(
     body: JSON.stringify(body),
   });
 
-  if (!res.ok) {
-    throw new Error(`请求失败: ${res.status}`);
+  if (!res || res.status < 200 || res.status >= 300) {
+    throw new Error(`请求失败: ${res ? res.status : "网络不可用"}`);
   }
 
-  return res.json() as Promise<GitWebhookLogResponse>;
+  return res.data as GitWebhookLogResponse;
 }

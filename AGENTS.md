@@ -17,7 +17,8 @@ CheckIn 采用 Electron 双进程架构，渲染进程（React）与主进程（
 │  Windows (窗口层：一个子目录 = 一个独立窗口)                  │
 │  ├─ BaseWindow (主窗口)                                      │
 │  │  └─ pages: Todo / Memo / Daily / Code / User / Home      │
-│  └─ LoginWindow (登录窗口)                                   │
+│  ├─ LoginWindow (登录窗口)                                   │
+│  └─ WorkerWindow (临时工作窗口，即关即销)                    │
 ├─────────────────────────────────────────────────────────────┤
 │  Shared (跨窗口共享层)                                       │
 │  ├─ components / services / ipc / types / styles            │
@@ -34,7 +35,7 @@ CheckIn 采用 Electron 双进程架构，渲染进程（React）与主进程（
 ┌─────────────────────────────────────────────────────────────┐
 │                      主进程 (Main)                           │
 ├─────────────────────────────────────────────────────────────┤
-│  IPC Handlers (electron/main.ts)                            │
+│  IPC Handlers (electron/main.ts + electron/handlers/)       │
 ├─────────────────────────────────────────────────────────────┤
 │  Database Layer (electron/db.ts)                            │
 │  └─ authDb (应用级) + userDb (用户级)                        │
@@ -61,9 +62,11 @@ CheckIn 采用 Electron 双进程架构，渲染进程（React）与主进程（
 | 模块 | 职责 | 边界 |
 |------|------|------|
 | **main.ts** | 窗口生命周期管理、IPC 通道注册、托盘图标、应用启动流程 | 仅处理窗口和系统级操作，不包含业务逻辑 |
+| **handlers/** | 语义化 IPC handler 按模块注册（`todo-handlers.ts`、`activity-handlers.ts`），持有预定义 SQL | 每个 handler 文件只负责一个业务模块；SQL 只出现在 handlers 与 db.ts，禁止出现在渲染进程 |
 | **preload.ts** | 通过 `contextBridge` 暴露安全的 API 给渲染进程 | 仅做 API 转发，不实现业务逻辑 |
 | **db.ts** | SQLite 数据库初始化、双库管理（authDb/userDb）、通用 CRUD 封装 | 提供底层数据库操作，不感知上层业务 |
 | **activitiesTask.ts** | 后台活动提醒轮询、系统事件监听（睡眠/锁屏） | 独立后台任务，通过 IPC 通知渲染进程 |
+| **windowManager.ts** | 窗口管理池：注册/注销/广播/定点发送 | 只管理 BrowserWindow 实例，不感知业务 |
 
 **模块边界规则**：
 - `db.ts` 不导入 `main.ts` 的任何内容
@@ -88,6 +91,7 @@ src/windows/XxxWindow/
 |------|------|----------|------|
 | **BaseWindow** | `windows/BaseWindow/` | `src/windows/BaseWindow/index.html` | 主窗口，承载全部业务页面（路由在 `App.tsx`） |
 | **LoginWindow** | `windows/LoginWindow/` | `src/windows/LoginWindow/index.html` | 登录/欢迎窗口 |
+| **WorkerWindow** | `windows/WorkerWindow/` | `src/windows/WorkerWindow/index.html` | 临时工作窗口：即关即销，重新打开即全新实例 |
 
 **窗口边界规则**：
 - 窗口之间**禁止互相导入**（如 `LoginWindow` 不得导入 `BaseWindow/pages` 的任何内容）
@@ -137,11 +141,11 @@ src/windows/XxxWindow/
 
 | 页面 | 核心组件 | 业务逻辑 | 数据源 | 私有子组件 |
 |------|---------|---------|--------|-----------|
-| **TodoPage** | TodoPage.tsx | hooks/useTodoPage.ts | todo-db.ts (SQLite) | NoteModal, WorkHourModal, TodoOutlineSidebar |
-| **MemoPage** | MemoPage.tsx | 内联 useState | 文件系统 (via IPC) | MemoEditor, MemoPreview, MemoSidebar, MemoHeader |
-| **DailyPage** | DailyPage.tsx | 内联 useState | daily.ts (SQLite) | 无（待重构） |
-| **CodePage** | CodePage.tsx | 内联 useState | code.ts (HTTP API) | 无（待重构） |
-| **UserPage** | UserPage.tsx | 内联 Form | userDb (SQLite) | 无 |
+| **TodoPage** | TodoPage.tsx | hooks/useTodoData + useTodoEditorState + useTodoViewState | 语义化 todo IPC | TodoOutlineSidebar, TodoListItem, TodoToolbar, TodoSection, NoteModal, WorkHourModal, ChildInput, EditableText |
+| **MemoPage** | MemoPage.tsx | hooks/useMemoData + useMemoEditorState + useMemoViewState | memo IPC（文件系统） | MemoSidebar, MemoHeader, MemoEditor, MemoPreview, MemoListItem |
+| **DailyPage** | DailyPage.tsx | hooks/useDailyPage.ts | daily.ts (语义化 activity IPC) | 无 |
+| **CodePage** | CodePage.tsx | hooks/useCodePage.ts | code.ts (HTTP via 主进程) | 无 |
+| **UserPage** | UserPage.tsx | 内联 Form | user IPC (SQLite) | 无 |
 
 **页面模块边界**：
 - 页面之间**无直接依赖**，通过路由跳转
@@ -182,6 +186,10 @@ windows/BaseWindow/
 windows/LoginWindow/
 ├─ main.tsx (入口)
 └─ App.tsx (登录/欢迎表单)
+
+windows/WorkerWindow/
+├─ main.tsx (入口)
+└─ App.tsx (临时工作窗口，Esc 快捷关闭)
 ```
 
 **依赖规则**：
@@ -256,9 +264,13 @@ File System
 ```text
 CheckIn/
 ├── electron/                              # 主进程代码
-│   ├── main.ts                            # 入口 + IPC 注册 + 窗口加载（RENDERER_ENTRIES）
+│   ├── main.ts                            # 入口 + 窗口加载（RENDERER_ENTRIES）+ 系统级 IPC
+│   ├── handlers/                          # 语义化 IPC handler（按模块拆分）
+│   │   ├── todo-handlers.ts               # Todo CRUD + 父子级联
+│   │   └── activity-handlers.ts           # 日程活动 CRUD
 │   ├── preload.ts                         # API 暴露
 │   ├── db.ts                              # 数据库管理
+│   ├── windowManager.ts                   # 窗口管理池
 │   └── activitiesTask.ts                  # 后台任务
 ├── src/
 │   ├── windows/                           # 窗口层：一个子目录 = 一个独立窗口
@@ -292,7 +304,12 @@ CheckIn/
 │   │   │       ├── DailyPage/
 │   │   │       ├── CodePage/
 │   │   │       └── UserPage/
-│   │   └── LoginWindow/                   # 登录窗口
+│   │   ├── LoginWindow/                   # 登录窗口
+│   │   │   ├── index.html
+│   │   │   ├── main.tsx
+│   │   │   ├── App.tsx
+│   │   │   └── index.scss
+│   │   └── WorkerWindow/                  # 临时工作窗口（即关即销）
 │   │       ├── index.html
 │   │       ├── main.tsx
 │   │       ├── App.tsx
@@ -523,6 +540,28 @@ ipcMain.handle('memo-read', async (event, filename: string) => { ... });
 }
 ```
 
+### 6.6 单元测试规范
+
+**核心原则：修改任何功能前后必须运行该功能的单元测试，防止修复引入回归。**
+
+技术栈：`vitest` + `@testing-library/react` + `jsdom`（配置见 `vitest.config.ts`，测试环境初始化见 `vitest.setup.ts`）。
+
+**强制要求**：
+
+1. **修改前先跑基线**：修复 bug 或重构前，先运行对应模块的单测确认当前为绿色基线；若没有测试，先为该行为补充测试再动手修改（红 → 绿流程）。
+2. **修改后必须重跑**：每次修改完成后，运行被改模块的单测验证行为未回归，再提交。全量回归在交付前执行 `pnpm test`。
+3. **测试文件就近存放**：与被测代码同目录，统一命名 `*.test.ts` / `*.test.tsx`（如 `todo-utils.test.ts` 与 `todo-utils.ts` 同级）。禁止集中放到独立的 `tests/` 目录。
+4. **纯函数必须有单测**：页面内的 `xxx-utils.ts`、`shared/services/` 中的工具函数（时间换算、解析、格式化、转义等）是单测的最低覆盖对象；新增或修改这些函数时必须同步新增/更新测试。
+5. **可测性优先**：新增逻辑优先设计为不依赖 `window.electronAPI` / DOM 的纯函数（参数进、结果出），IPC 与文件访问留在 hooks/handlers 层，便于测试。
+6. **测试只断言行为**：断言函数的输入输出与副作用语义，不断言实现细节（如内部调用了哪个私有函数），避免重构时大面积误伤。
+
+**常用命令**：
+
+```bash
+pnpm test        # 全量运行一次（CI / 交付前）
+pnpm test:watch  # watch 模式，开发时增量运行
+```
+
 ### 6.5 数据库迁移规范
 
 **表结构变更必须使用增量迁移**：
@@ -550,20 +589,18 @@ function initializeDataDb(db: Database) {
 
 ## 7. 技术债务与改进方向
 
+> 以下为当前仍存在的债务。已解决项（SQL 注入语义化改造、CodePage/DailyPage 抽取 Hook、路由懒加载、`exhaustive-deps` 重新开启、strict 模式、单元测试框架落地）不再列出，历史见 CHANGELOG。
+
 ### 7.1 高优先级
 
 | 问题 | 影响 | 改进方案 |
 |------|------|---------|
-| **SQL 注入风险** | 渲染进程可构造任意 SQL | 改为语义化 IPC（如 `todo-add`），主进程执行预定义 SQL |
-| **硬编码 Token** | `services/code.ts` JWT Cookie 过期需改代码 | 改为登录时动态获取，存储在 keytar 或加密配置 |
-| **页面逻辑耦合** | CodePage (740行)、DailyPage (322行) 逻辑与 UI 混合 | 参考 TodoPage 模式，抽取 Hook + Service + 子组件 |
+| **硬编码 Token** | `services/code.ts` 的认证 Cookie 为硬编码，过期需改代码（现已改走主进程 `httpRequest` 使 Cookie 生效） | 改为登录时动态获取，存储在 keytar 或加密配置 |
 
 ### 7.2 中优先级
 
 | 问题 | 影响 | 改进方案 |
 |------|------|---------|
-| **重复建表逻辑** | `todo-db.ts` 和 `db.ts` 都创建 todos 表 | 统一到 `db.ts` 的 `initializeDataDb()` |
-| **无路由懒加载** | 首屏加载所有页面代码 | 使用 `React.lazy()` + `Suspense` |
 | **类型分散** | 接口定义散落在各文件 | 统一收敛到 `src/shared/types/` 管理 |
 
 ### 7.3 低优先级
@@ -571,8 +608,7 @@ function initializeDataDb(db: Database) {
 | 问题 | 影响 | 改进方案 |
 |------|------|---------|
 | **SCSS 变量不足** | 大量颜色硬编码 | 扩展 `variables.scss`，与 Antd theme token 对齐 |
-| **无测试覆盖** | 无法保证代码质量 | 为 `todo-utils.ts`、`daily.ts` 添加单元测试 |
-| **ESLint 规则宽松** | `exhaustive-deps` 关闭，可能导致 stale closure | 重新开启并修复警告 |
+| **Hook/组件级测试待补充** | 目前单测覆盖工具函数与服务层，hooks 与组件交互尚无测试 | 用 `@testing-library/react` 为关键 hook 补充渲染测试 |
 
 ---
 
@@ -666,6 +702,6 @@ function initializeDataDb(db: Database) {
 
 ---
 
-**文档版本**: 2.0  
-**最后更新**: 2026-09-14  
+**文档版本**: 2.1  
+**最后更新**: 2026-09-17  
 **维护者**: CheckIn 开发团队

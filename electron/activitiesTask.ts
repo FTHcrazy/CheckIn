@@ -119,6 +119,9 @@ function check(): void {
   }
 }
 
+/** 轮询间隔：启动与睡眠唤醒恢复后保持一致（恢复时会立即检查一次，不丢通知） */
+const POLL_INTERVAL_MS = 30_000
+
 /** 暂停轮询 */
 function pausePolling(): void {
   if (timer) {
@@ -133,16 +136,16 @@ function resumePolling(): void {
   if (!timer) {
     debugLog('[activitiesTask] 系统激活，轮询已恢复')
     check()
-    timer = setInterval(check, 10_000)
+    timer = setInterval(check, POLL_INTERVAL_MS)
   }
 }
 
-/** 启动轮询（每30秒检查一次） */
+/** 启动轮询 */
 export function startActivityPolling(): void {
   if (timer) return
-  debugLog('[activitiesTask] 启动活动轮询 (30s)')
+  debugLog(`[activitiesTask] 启动活动轮询 (${POLL_INTERVAL_MS / 1000}s)`)
   check()
-  timer = setInterval(check, 30_000)
+  timer = setInterval(check, POLL_INTERVAL_MS)
 
   // 监听系统睡眠/锁屏，暂停轮询；激活后恢复
   powerMonitor.on('suspend', pausePolling)

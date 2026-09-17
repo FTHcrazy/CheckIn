@@ -456,7 +456,8 @@ app.whenReady().then(() => {
   // 注册跨窗口通信 IPC handler
   ipcMain.handle("window-broadcast", (_event, event: string, data?: unknown) => {
     const sender = BrowserWindow.fromWebContents(_event.sender);
-    const senderName = sender === windowManager.get("main") ? "main" : sender === windowManager.get("login") ? "login" : undefined;
+    // 广播时排除发送者自己（按窗口实例反查注册名，覆盖 main/login/worker 全部窗口）
+    const senderName = sender ? windowManager.getNameOf(sender) : undefined;
     windowManager.broadcast(event, data, senderName);
   });
 

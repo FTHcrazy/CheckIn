@@ -55,6 +55,16 @@ class WindowManager {
   }
 
   /**
+   * 获取窗口实例对应的注册名（未注册返回 undefined）
+   */
+  getNameOf(win: BrowserWindow): string | undefined {
+    for (const [name, w] of this.windows) {
+      if (w === win) return name;
+    }
+    return undefined;
+  }
+
+  /**
    * 向所有窗口广播消息
    * @param exclude 排除的窗口名称（可选）
    */

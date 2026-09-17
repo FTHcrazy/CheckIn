@@ -1,5 +1,37 @@
 # Changelog
 
+## [1.3.0] - 2026-09-17
+
+### Added
+- 新增单元测试能力（vitest 4 + @testing-library/react + jsdom）
+  - 新增 `vitest.config.ts`（独立于 `vite.config.ts`，测试环境不引入 Electron 插件）与 `vitest.setup.ts`
+  - 新增 `pnpm test`（全量运行）与 `pnpm test:watch`（watch 模式）
+  - 新增 41 个单元测试：`todo-utils`（工时标签解析/格式化）、`memo-utils`（HTML 转义/搜索高亮）、`code-utils`（工作日/节假日/调休计算）、`daily`（时间换算），测试文件与被测代码同目录就近存放
+  - `AGENTS.md` 新增「6.6 单元测试规范」与「8.7 修改与交付检查」：修改功能前后必须运行对应单测，防止修复引入回归
+- `tsconfig.app.json` / `tsconfig.node.json` 开启 `strict` 模式，全量代码零错误通过
+
+### Changed
+- `shared/services/code.ts` 的 Git Webhook 请求由渲染进程 `fetch` 改走主进程 `httpRequest`
+  - `Cookie` 是浏览器 forbidden request header，渲染进程设置会被静默忽略导致请求未认证；主进程 `https.request` 可正常携带
+- `typecheck` 脚本由 `tsc --noEmit` 修正为 `tsc -b`：根 tsconfig 为 solution-style（`files: []`），原命令实际未检查任何文件
+- `AGENTS.md` 同步现状：登记 `WorkerWindow` 窗口与 `electron/handlers/` 拆分；页面表更新为分层 hooks（Todo/Memo/Daily/Code）；技术债务表移除已解决项
+- ESLint 重新开启 `react-hooks/exhaustive-deps` 并修复全部 5 处警告（`useCodePage` 的 `loadMonthOutput`/`loadData` useCallback 化、`useTodoEditorState` 解构稳定引用）
+- **性能优化**：`useCodePage` 的 `summaryStats` 统计由每次渲染重算改为 `useMemo`（数据最多 9999 条，此前每次 Table 渲染都全量 reduce）
+
+### Fixed
+- 修复 Memo 搜索高亮破坏 HTML 实体的问题：搜索词含 `&` / `<` 等字符时会命中转义实体（如 `&amp;`）的中间片段，把 `&amp;` 切断为 `&` + `amp;`；现在搜索词先做 HTML 转义再匹配，`<mark>` 始终包裹完整实体
+- 修复 `window-broadcast` 不识别 Worker 窗口的问题：发送者名称只匹配 main/login，Worker 窗口广播时不会排除自己；改为 `windowManager.getNameOf()` 按实例反查
+- 统一 `activitiesTask` 轮询间隔：启动 30s、睡眠唤醒恢复后 10s 且注释互相矛盾，收敛为常量 `POLL_INTERVAL_MS = 30s`（恢复时立即检查一次，不丢通知）
+- `LoginWindow/main.tsx` 导入路径统一为 `@/` 别名（原为相对路径，与其他窗口不一致）
+
+### Removed
+- 移除 `todo-utils.ts` 中无任何使用方的 `getTotalRemainingWorkHour`（O(n²) 递归实现，`useTodoData` 已有 Map 索引版同逻辑）
+
+### Verified
+- `pnpm test`：41/41 通过（4 个测试文件）
+- `pnpm typecheck`（tsc -b，strict 开启）：0 错误
+- `pnpm lint`：0 错误、0 警告
+
 ## [1.2.0] - 2026-09-16
 
 ### Added
@@ -58,6 +90,12 @@
 - `activitiesTask` 高频日志收敛至 `debugLog()`，由 `CHECKIN_ACTIVITY_DEBUG=1` 控制
 
 ### Fixed
+- 修复上一轮性能优化引入的 Todo 交互失效问题
+  - `renderItem` 把 `editingId` / `childInputFor` / `flashIds` / `enterIds` 等显示状态藏进 ref，
+    依赖里只剩稳定 handler，导致点击「新增子项」、双击编辑等纯 UI 状态变化不产生任何新 props，
+    Virtuoso 不重渲染可见行——按钮看似无效，直到下一次数据变化（如保存备注）才把滞留状态一次性吐出
+  - 修复：显示状态改为 `renderItem` 的真实依赖（基础类型/Set 引用，仅状态变化时重建），
+    数据 handler 仍走 ref 保持稳定；Esc 关闭输入框等交互随之恢复正常
 - 修复 WindowHeader 控制按钮在不带标题的窗口（BaseWindow）下显示在左侧的问题
   - `space-between` 布局在唯一子元素时落在起点，`.window-header__controls` 补 `margin-left: auto` 保证始终靠右
 - 修复主窗口从托盘恢复时闪烁的问题

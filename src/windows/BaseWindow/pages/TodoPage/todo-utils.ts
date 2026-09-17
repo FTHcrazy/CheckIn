@@ -1,26 +1,7 @@
-import type { TodoItem } from "./types";
-
 export const formatWorkHour = (value: number | null | undefined) => {
   if (value === null || value === undefined) return "";
   return `${Number(value).toFixed(1).replace(/\.0$/, "")}h`;
 };
-
-export function getTotalRemainingWorkHour(
-  id: number,
-  list: TodoItem[],
-): number {
-  const current = list.find((item) => item.id === id);
-  const children = list.filter((item) => item.parent_id === id);
-  const currentValue =
-    current && current.done === 0 && current.work_hour !== null
-      ? Number(current.work_hour)
-      : 0;
-  const childrenValue = children.reduce(
-    (sum, child) => sum + getTotalRemainingWorkHour(child.id, list),
-    0,
-  );
-  return currentValue + childrenValue;
-}
 
 export const parseWorkHourTag = (rawText: string) => {
   const trimmed = rawText.trim();

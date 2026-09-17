@@ -1,7 +1,7 @@
 {
   "name": "checkin",
   "private": true,
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "CheckIn Desktop Application",
   "main": "dist-electron/main.js",
   "author": "FTH",
@@ -12,13 +12,15 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "electron:dev": "concurrently -k \"vite\" \"wait-on tcp:5173 && node scripts/start-electron.js\"",
     "electron:build": "tsc -b && vite build && cross-env ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ electron-builder",
     "electron:build:dir": "tsc -b && vite build && cross-env ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ electron-builder --dir",
     "electron:preview": "vite build && electron .",
     "electron:rebuild": "electron-rebuild -f -w better-sqlite3",
     "electron:setup": "pnpm install && pnpm electron:rebuild",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc -b"
   },
   "dependencies": {
     "@ant-design/icons": "^6.2.5",
@@ -36,6 +38,8 @@
   "devDependencies": {
     "@electron/rebuild": "^4.0.4",
     "@eslint/js": "^10.0.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^24.13.2",
     "@types/react": "^19.2.14",
@@ -49,12 +53,14 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.6.0",
+    "jsdom": "^27.1.0",
     "sass": "^1.101.0",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.59.2",
     "vite": "^8.0.12",
     "vite-plugin-electron": "^1.0.4",
     "vite-plugin-electron-renderer": "^1.0.0",
+    "vitest": "^4.0.16",
     "wait-on": "^9.0.10"
   },
   "build": {

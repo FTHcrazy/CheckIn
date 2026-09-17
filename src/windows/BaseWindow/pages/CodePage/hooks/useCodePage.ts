@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { App } from "antd";
 import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
@@ -24,7 +24,7 @@ export function useCodePage() {
   // 本月累计有效产出（独立于表格查询区间）
   const [monthOutput, setMonthOutput] = useState(0);
 
-  const loadMonthOutput = async () => {
+  const loadMonthOutput = useCallback(async () => {
     try {
       const today = dayjs().startOf("day");
       const monthStart = today.startOf("month");
@@ -49,7 +49,7 @@ export function useCodePage() {
       // 月度统计请求失败不影响主流程，静默处理或置零
       setMonthOutput(0);
     }
-  };
+  }, [email]);
 
   useEffect(() => {
     const loadDefaultEmail = async () => {
@@ -76,10 +76,10 @@ export function useCodePage() {
       return;
     }
 
-    loadMonthOutput();
-  }, [email]);
+    void loadMonthOutput();
+  }, [loadMonthOutput]);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     const trimmedEmail = email.trim();
     if (!trimmedEmail) {
       setData([]);
@@ -106,7 +106,7 @@ export function useCodePage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [dateRange, email, message]);
 
   useEffect(() => {
     if (!emailInitialized || !email.trim() || autoFetched) {
@@ -115,21 +115,26 @@ export function useCodePage() {
 
     setAutoFetched(true);
     void loadData();
-  }, [emailInitialized, email, autoFetched]);
+  }, [emailInitialized, email, autoFetched, loadData]);
 
   useEffect(() => {
     const [from, to] = dateRange;
     setWorkdays(calcWorkdays(from, to) || 1);
   }, [dateRange]);
 
-  const summaryStats = data.reduce(
-    (acc, item) => ({
-      commits: acc.commits + 1,
-      files: acc.files + (parseInt(item.fileChanges) || 0),
-      insertions: acc.insertions + (parseInt(item.insertions) || 0),
-      deletions: acc.deletions + (parseInt(item.deletions) || 0),
-    }),
-    { commits: 0, files: 0, insertions: 0, deletions: 0 },
+  // 数据未变化时避免每次渲染都对最多 9999 条记录重新 reduce
+  const summaryStats = useMemo(
+    () =>
+      data.reduce(
+        (acc, item) => ({
+          commits: acc.commits + 1,
+          files: acc.files + (parseInt(item.fileChanges) || 0),
+          insertions: acc.insertions + (parseInt(item.insertions) || 0),
+          deletions: acc.deletions + (parseInt(item.deletions) || 0),
+        }),
+        { commits: 0, files: 0, insertions: 0, deletions: 0 },
+      ),
+    [data],
   );
 
   /**

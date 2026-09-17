@@ -113,17 +113,21 @@ function TodoPage() {
     void editorRef.current.saveWorkHour(value);
   }, []);
 
+  // ⚠️ 显示状态（editingId / childInputFor / flashIds / enterIds）必须作为 renderItem
+  // 的真实依赖：renderItem 变化 → TodoSection 重渲染 → Virtuoso 的 itemContent 变化
+  // → 可见行重渲染。若把这些状态藏进 ref（依赖里只有稳定 handler），点击「新增子项」
+  // / 双击编辑只会改 state 而不产生任何新的 props，Virtuoso 不会重渲染行——
+  // 按钮看起来「无效」，直到下一次数据变化才把滞留的 UI 状态一次性吐出来。
+  // 数据 handler 仍然走 dataRef：它们在 useTodoData 里是稳定引用，无需进入依赖。
   const renderItem = useCallback((item: TodoItem) => {
     const currentData = dataRef.current;
-    const currentEditor = editorRef.current;
-    const currentView = viewRef.current;
     return (
       <TodoListItem
         item={item}
-        editingId={currentEditor.editingId}
-        childInputFor={currentEditor.childInputFor}
-        flashIds={currentView.flashIds}
-        enterIds={currentView.enterIds}
+        editingId={editor.editingId}
+        childInputFor={editor.childInputFor}
+        flashIds={view.flashIds}
+        enterIds={view.enterIds}
         getChildren={currentData.getChildren}
         getRemainingWorkHour={currentData.getRemainingWorkHour}
         getWorkHourLabel={currentData.getWorkHourLabel}
@@ -145,6 +149,10 @@ function TodoPage() {
       />
     );
   }, [
+    editor.editingId,
+    editor.childInputFor,
+    view.flashIds,
+    view.enterIds,
     handleCancelEdit,
     handleCloseChildInput,
     handleOpenNote,
