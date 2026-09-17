@@ -1,7 +1,11 @@
 .home-page {
   display: flex;
+  gap: 12px;
   height: 100%;
   min-height: 0;
+  // 四周留白：让侧栏与内容区都浮在 --app-bg 上，而不是贴着窗口边缘
+  padding: 12px;
+  box-sizing: border-box;
   background: var(--app-bg);
   color: var(--app-text);
 
@@ -11,7 +15,8 @@
     gap: 16px;
     flex: 1;
     min-width: 0;
-    padding: 20px 24px 24px;
+    // 外层已有 12px 留白，这里补足内容内边距（总留白与改版前一致）
+    padding: 8px 12px 12px;
     box-sizing: border-box;
     overflow: auto;
   }
@@ -95,6 +100,28 @@
     }
   }
 
+  // 快捷新建待办弹窗内的工时语法提示
+  &__quick-hint {
+    margin: 8px 0 0;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--app-text-muted);
+
+    code {
+      padding: 1px 5px;
+      border-radius: 4px;
+      background: var(--app-surface-alt);
+      border: 1px solid var(--app-border);
+      color: var(--app-primary);
+      font-size: 11px;
+    }
+
+    b {
+      margin: 0 2px;
+      color: var(--app-primary);
+    }
+  }
+
   // ── 功能卡网格 ──
   &__section {
     display: flex;
@@ -120,69 +147,5 @@
     padding: 24px 0;
     background: var(--app-surface);
     border-radius: var(--app-radius-panel);
-  }
-
-  // ── 用户信息横条 ──
-  &__user {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-top: auto;
-    padding: 12px 14px;
-    width: 100%;
-    border: 1px solid var(--app-border);
-    border-radius: var(--app-radius-panel);
-    background: var(--app-surface);
-    box-shadow: var(--app-shadow-card);
-    text-align: left;
-    cursor: pointer;
-    transition: transform 0.18s ease, border-color 0.18s ease;
-
-    &:hover {
-      transform: translateY(-1px);
-      border-color: var(--app-primary-weak);
-    }
-  }
-
-  &__avatar {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex: 0 0 auto;
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
-    background: var(--app-primary-gradient);
-    color: var(--app-text-inverse);
-    font-size: 15px;
-    font-weight: 700;
-  }
-
-  &__user-text {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    min-width: 0;
-    flex: 1;
-  }
-
-  &__user-email {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--app-text);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  &__user-hint {
-    font-size: 12px;
-    color: var(--app-text-muted);
-  }
-
-  &__user-action {
-    flex: 0 0 auto;
-    font-size: 12px;
-    color: var(--app-primary);
   }
 }

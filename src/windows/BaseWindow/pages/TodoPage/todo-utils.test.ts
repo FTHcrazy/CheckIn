@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatWorkHour, parseWorkHourTag } from "./todo-utils";
+import { formatWorkHour, parseWorkHourTag, sortChildrenByDone } from "./todo-utils";
 
 describe("formatWorkHour", () => {
   it("null / undefined 返回空字符串", () => {
@@ -90,5 +90,60 @@ describe("parseWorkHourTag", () => {
       content: "任务 中段",
       workHour: 1,
     });
+  });
+});
+
+describe("sortChildrenByDone", () => {
+  const make = (id: number, done: 0 | 1) => ({ id, done });
+
+  it("已完成子项沉底，未完成排前面", () => {
+    const result = sortChildrenByDone([
+      make(1, 1),
+      make(2, 0),
+      make(3, 1),
+      make(4, 0),
+    ]);
+    expect(result.map((item) => item.id)).toEqual([2, 4, 1, 3]);
+  });
+
+  it("同组内保持原有相对顺序（稳定）", () => {
+    const result = sortChildrenByDone([
+      make(1, 1),
+      make(2, 0),
+      make(3, 1),
+      make(4, 0),
+      make(5, 1),
+    ]);
+    // 未完成组：2、4 保持输入顺序；已完成组：1、3、5 保持输入顺序
+    expect(result.map((item) => item.id)).toEqual([2, 4, 1, 3, 5]);
+  });
+
+  it("全部未完成时原样返回（复用原数组引用）", () => {
+    const input = [make(1, 0), make(2, 0)];
+    const result = sortChildrenByDone(input);
+    expect(result).toBe(input);
+  });
+
+  it("全部已完成时原样返回（复用原数组引用）", () => {
+    const input = [make(1, 1), make(2, 1)];
+    const result = sortChildrenByDone(input);
+    expect(result).toBe(input);
+  });
+
+  it("空数组返回空数组", () => {
+    expect(sortChildrenByDone([])).toEqual([]);
+  });
+
+  it("单个未完成或单个已完成均原样返回", () => {
+    const pending = [make(1, 0)];
+    const finished = [make(2, 1)];
+    expect(sortChildrenByDone(pending)).toBe(pending);
+    expect(sortChildrenByDone(finished)).toBe(finished);
+  });
+
+  it("不修改传入的数组（纯函数）", () => {
+    const input = [make(1, 1), make(2, 0)];
+    sortChildrenByDone(input);
+    expect(input.map((item) => item.id)).toEqual([1, 2]);
   });
 });

@@ -1,5 +1,75 @@
 # Changelog
 
+## [1.4.3] - 2026-09-17
+
+### Added
+- 首页「新建待办」支持快捷建立工时：输入内容后追加 `#2h` 即可同时写入工时
+  （支持小数 `#1.5h`、大小写 `#2H`、`# 2 h` 等写法）。
+  - 复用待办页的 `parseWorkHourTag`，两个入口行为完全一致，不新增第二套语法
+  - 弹窗内实时预览解析结果（将记录工时 `2h` + 清洗后的内容），未输入标签时给出语法提示
+- Todo 子项排序：**未完成子项排前面、已完成子项沉底**，同组内保持原有顺序
+  - 新增纯函数 `sortChildrenByDone`（`todo-utils.ts`），全未完成 / 全已完成时短路复用原数组引用，避免无谓重渲染
+  - 补齐 7 条单测覆盖沉底、稳定性、短路与不可变性
+
+### Fixed
+- 修复日程页**窗口拖拽 resize 时日期组件高度不变导致变形**（格子被拉成扁矩形）：
+  - 根因是循环依赖：`.calendar-panel` 是 flex 容器，`.calendar-grid` 的 `flex: 1`
+    只是 `flex-basis: 0`，其高度取决于内容；而内容高度又由格子宽度经
+    `aspect-ratio: 1` 反推。窗口纵向拖拽时这条链不会重算，格子高度被冻结在旧值
+  - 改为 grid 行高 `1fr`（`grid-auto-rows: 1fr`）平分面板高度，格子本身不再设宽高，
+    彻底移除 `aspect-ratio` —— 高度由 grid 直接算出，resize 时必然跟随
+  - 日历区新增 `.calendar-scroll` 滚动容器 + `min-height: 264px` 下限：
+    窗口压得过矮时改为滚动，而不是把格子继续压扁到不可读
+- 修复**窗口边缘残留直角阴影**（截图红框处四角与边缘的淡色直角）：
+  - 根因：`.window-shell` 满视口，其常规（非 inset）`box-shadow` 全部落在元素矩形之外，
+    被窗口的方形边界裁掉，只剩沿直角边缘的一圈残影
+  - 改为 `inset` 内阴影：投影画进窗口内部，圆角处自然跟随 `border-radius` 收边
+  - `--app-shadow-window` 同步从 `0 8px 32px rgba(...)` 改为 inset 形式，四套主题各自校准深浅
+- 日程页高度不再使用 `calc(100% - 48px)` 魔法数，改为 `flex: 1` 吃满 `.page` 剩余高度，
+  与 `Page` 的 flex 列布局对齐（此前该值在导航头部高度变化时即失配）
+
+### Removed
+- 移除首页底部的**账号管理卡片条**（头像 + 邮箱 + 「修改」入口）：
+  账号信息统一从侧边栏「我的」进入，避免首页出现第二个冗余入口。
+  同时清理 `.home-page__user*` / `__avatar` 共 5 组样式
+
+### Verified
+- `pnpm test`：63/63 通过（6 个测试文件，新增 `sortChildrenByDone` 7 条用例）
+- `pnpm typecheck`（tsc -b，strict 开启）：0 错误
+- `pnpm lint`：0 错误（仅剩 CodePage 既有 exhaustive-deps 警告）
+- `vite build` 通过
+
+## [1.4.2] - 2026-09-17
+
+### Changed
+- 首页侧边栏改为方案二的**圆角浮动**形态（此前是贴左边缘 + 右边框的实心栏）：
+  - 去掉 `border-right`，改为 20px 圆角 + 软投影 + 主题描边
+  - `.home-page` 四周留白 12px、栏间距 12px，让侧栏与内容区都浮在 `--app-bg` 之上
+  - 内容区内边距由 20/24 拆为「外层 12 + 内层补 8/12」，总留白与改版前一致
+  - 侧栏宽度 76 → 72px，导航项 60 → 56px
+- WorkerWindow 入口从右下角悬浮按钮**集成进侧边栏底部**（主题切换器上方，中间用分隔线隔开）：
+  - `WorkerFloatButton` 新增 `variant`：`float`（右下角悬浮圆钮，默认）/ `inline`（36px 圆角图标钮，不脱离文档流）
+  - 类名由 `worker-float-btn` 统一为 `worker-btn` + `--float` / `--inline`
+  - 首页不再有两个悬浮入口
+
+### Fixed
+- 修复窗口圆角在桌面底色接近时**显示为方角**（两处根因，先后修复）：
+  - `roundedCorners: true` 在 Windows 上让 DWM 按**固定 8px** 系统圆角裁剪窗口，
+    把 CSS 画的 12px 圆角和描边的四角切掉，四角只剩一段弧度很小、接近直角的边缘，
+    叠加透明区透出的桌面浅色，表现为「圆角外还有一圈淡淡的直角底」→ 改为 `roundedCorners: false`，
+    圆角完全交给 CSS
+  - 根因是圆角外为透明（露出桌面壁纸），而描边用的是主题色 `--app-border`
+    （如 aurora 的 `#e2e6f4`），在浅色桌面上几乎不可见
+  - `.window-shell` 描边改为**刻意不跟随主题**的中性双层描边：
+    外层 `rgba(0,0,0,0.12)`（浅色桌面）+ 内层 inset `rgba(255,255,255,0.1)`（深色桌面），
+    保证四种「桌面深浅 × 主题深浅」组合下圆角轮廓都可见
+
+### Verified
+- `pnpm test`：56/56 通过
+- `pnpm typecheck`（tsc -b，strict 开启）：0 错误
+- `pnpm lint`：0 错误（仅剩 CodePage 既有 exhaustive-deps 警告）
+- `vite build` 通过
+
 ## [1.4.1] - 2026-09-17
 
 ### Changed

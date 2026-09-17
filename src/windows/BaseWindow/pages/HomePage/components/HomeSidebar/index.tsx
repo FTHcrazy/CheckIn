@@ -9,6 +9,7 @@ import {
   UserOutlined,
 } from "@ant-design/icons";
 import ThemeSwitcher from "@/shared/components/ThemeSwitcher";
+import WorkerFloatButton from "@/shared/components/WorkerFloatButton";
 import "./index.scss";
 
 interface NavItem {
@@ -30,6 +31,7 @@ const NAV_ITEMS: NavItem[] = [
 /**
  * 首页专用图标导航栏（方案二布局）。
  *
+ * 圆角浮动形态：不贴窗口边缘、自带大圆角与投影，浮在 --app-bg 之上。
  * 只负责主窗口内的模块跳转，窗口拖动与最小化/关闭仍由 WindowHeader 承担。
  */
 export default function HomeSidebar() {
@@ -63,8 +65,10 @@ export default function HomeSidebar() {
         })}
       </nav>
 
-      <div className="home-sidebar__footer" title="切换主题">
-        <ThemeSwitcher placement="bottomRight" />
+      <div className="home-sidebar__footer">
+        <WorkerFloatButton variant="inline" />
+        <span className="home-sidebar__divider" aria-hidden="true" />
+        <ThemeSwitcher placement="right" />
       </div>
     </aside>
   );

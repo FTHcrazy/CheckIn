@@ -1,13 +1,19 @@
+// 方案二 · 圆角浮动侧栏
+//
+// 形态要点：不贴窗口边缘（外边距由 .home-page 提供）、大圆角、软投影，
+// 浮在 --app-bg 之上；因此这里不写 border-right，也不做全高拉伸。
 .home-sidebar {
   display: flex;
   flex-direction: column;
   align-items: center;
   flex: 0 0 auto;
-  width: 76px;
-  padding: 14px 0 12px;
+  width: 72px;
+  padding: 16px 0 14px;
   box-sizing: border-box;
   background: var(--app-surface);
-  border-right: 1px solid var(--app-border);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-card);
+  box-shadow: var(--app-shadow-card);
 
   &__logo {
     display: inline-flex;
@@ -39,7 +45,7 @@
     align-items: center;
     justify-content: center;
     gap: 2px;
-    width: 60px;
+    width: 56px;
     padding: 7px 0;
     border: none;
     border-radius: var(--app-radius-chip);
@@ -70,8 +76,21 @@
     line-height: 1.2;
   }
 
+  // ── 底部工具区：Worker 窗口入口 + 主题切换 ──
+  // margin-top: auto 把整块推到卡片底部
   &__footer {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
     margin-top: auto;
-    padding-top: 10px;
+    padding-top: 14px;
+  }
+
+  &__divider {
+    display: block;
+    width: 24px;
+    height: 1px;
+    background: var(--app-border);
   }
 }

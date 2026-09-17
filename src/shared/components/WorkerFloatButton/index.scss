@@ -1,38 +1,30 @@
-// ── 主界面右下角悬浮按钮 ──
-// 颜色全部走主题变量，跟随当前 data-theme
-.worker-float-btn {
-  position: fixed;
-  right: 24px;
-  bottom: 24px;
-  z-index: 1000;
-
+// WorkerWindow 入口按钮：颜色全部走主题变量，跟随当前 data-theme
+//
+// 两种形态：
+//   --float  窗口右下角悬浮圆钮（默认）
+//   --inline 侧边栏内嵌图标钮（不脱离文档流、无投影）
+.worker-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 48px;
-  height: 48px;
   padding: 0;
   border: none;
-  border-radius: 50%;
   cursor: pointer;
 
   color: var(--app-primary-contrast);
   background: var(--app-primary);
-  box-shadow: var(--app-shadow-card);
 
   // 只过渡合成属性，避免 hover 触发布局/重绘
   transition:
     transform 0.18s ease,
-    box-shadow 0.18s ease,
-    background-color 0.18s ease;
+    box-shadow 0.18s ease;
 
   &:hover {
-    transform: translateY(-2px) scale(1.04);
-    box-shadow: var(--app-shadow-pop);
+    background: var(--app-primary-strong);
   }
 
   &:active {
-    transform: translateY(0) scale(0.97);
+    transform: scale(0.96);
   }
 
   &:focus-visible {
@@ -41,7 +33,46 @@
   }
 
   &__icon {
-    font-size: 20px;
     line-height: 1;
+  }
+
+  // ── 右下角悬浮 ──
+  &--float {
+    position: fixed;
+    right: 24px;
+    bottom: 24px;
+    z-index: 1000;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    box-shadow: var(--app-shadow-card);
+
+    .worker-btn__icon {
+      font-size: 20px;
+    }
+
+    &:hover {
+      transform: translateY(-2px) scale(1.04);
+      box-shadow: var(--app-shadow-pop);
+    }
+  }
+
+  // ── 侧边栏内嵌 ──
+  &--inline {
+    position: relative;
+    flex: 0 0 auto;
+    width: 36px;
+    height: 36px;
+    border-radius: var(--app-radius-chip);
+    box-shadow: none;
+
+    .worker-btn__icon {
+      font-size: 16px;
+    }
+
+    &:hover {
+      transform: translateY(-1px);
+      box-shadow: var(--app-shadow-card);
+    }
   }
 }

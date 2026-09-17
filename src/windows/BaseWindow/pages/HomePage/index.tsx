@@ -8,7 +8,6 @@ import {
   EditOutlined,
   SearchOutlined,
 } from "@ant-design/icons";
-import WorkerFloatButton from "@/shared/components/WorkerFloatButton";
 import HomeSidebar from "./components/HomeSidebar";
 import HomeStats from "./components/HomeStats";
 import type { HomeStatItem } from "./components/HomeStats";
@@ -16,6 +15,7 @@ import FeatureCard from "./components/FeatureCard";
 import type { FeatureTone } from "./components/FeatureCard";
 import { useHomeOverview } from "./hooks/useHomeOverview";
 import { useHomeActions } from "./hooks/useHomeActions";
+import { parseWorkHourTag } from "../TodoPage/todo-utils";
 import "./index.scss";
 
 interface HomeFeature {
@@ -109,6 +109,12 @@ export default function HomePage() {
 
   const displayName = displayNameFromEmail(overview.email);
 
+  // 实时解析快捷工时语法，给用户即时反馈（真正写入仍以 submitQuickAdd 内的解析为准）
+  const quickAddPreview = useMemo(
+    () => parseWorkHourTag(quickAddValue),
+    [quickAddValue],
+  );
+
   return (
     <div className="home-page">
       <HomeSidebar />
@@ -184,23 +190,6 @@ export default function HomePage() {
             />
           )}
         </section>
-
-        <button
-          type="button"
-          className="home-page__user"
-          onClick={() => navigate("/user")}
-        >
-          <span className="home-page__avatar">
-            {displayName ? displayName.charAt(0) : "?"}
-          </span>
-          <span className="home-page__user-text">
-            <span className="home-page__user-email">
-              {overview.email || "未设置邮箱"}
-            </span>
-            <span className="home-page__user-hint">管理账号信息</span>
-          </span>
-          <span className="home-page__user-action">修改</span>
-        </button>
       </div>
 
       <Modal
@@ -218,13 +207,21 @@ export default function HomePage() {
           value={quickAddValue}
           onChange={(event) => setQuickAddValue(event.target.value)}
           onPressEnter={submitQuickAdd}
-          placeholder="要做什么？回车即可添加"
+          placeholder="要做什么？回车即可添加；后缀加 #2h 记录工时"
           maxLength={200}
         />
+        <p className="home-page__quick-hint">
+          {quickAddPreview.workHour !== null ? (
+            <>
+              将记录工时
+              <b>{quickAddPreview.workHour}h</b>
+              {quickAddPreview.content ? `，内容「${quickAddPreview.content}」` : ""}
+            </>
+          ) : (
+            <>在内容后加 <code>#2h</code>（支持小数如 <code>#1.5h</code>）即可同时建立工时</>
+          )}
+        </p>
       </Modal>
-
-      {/* 悬浮入口仅属于主页：切换到子页面后不再展示 */}
-      <WorkerFloatButton />
     </div>
   );
 }

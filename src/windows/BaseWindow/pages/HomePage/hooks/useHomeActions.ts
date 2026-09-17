@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { App } from "antd";
 import dayjs from "dayjs";
+import { parseWorkHourTag } from "../../TodoPage/todo-utils";
 
 const WEEK_LABELS = [
   "星期日",
@@ -53,16 +54,22 @@ export function useHomeActions(onTodoAdded?: () => void) {
   }, []);
 
   const submitQuickAdd = useCallback(async () => {
-    const content = quickAddValue.trim();
-    if (!content) {
+    // 复用待办页的同一套语法解析：`写周报 #2h` → 内容「写周报」+ 工时 2
+    // 两个入口共用 parseWorkHourTag，避免快捷语法在两处行为不一致
+    const parsed = parseWorkHourTag(quickAddValue);
+    if (!parsed.content) {
       message.warning("请输入待办内容");
       return;
     }
 
     setSubmitting(true);
     try {
-      await window.electronAPI!.todo.add(content, null);
-      message.success("已添加待办");
+      await window.electronAPI!.todo.add(parsed.content, parsed.workHour);
+      message.success(
+        parsed.workHour !== null
+          ? `已添加待办（工时 ${parsed.workHour}h）`
+          : "已添加待办",
+      );
       setQuickAddOpen(false);
       onTodoAdded?.();
     } catch {

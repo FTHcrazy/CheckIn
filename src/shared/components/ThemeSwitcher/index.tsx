@@ -7,8 +7,8 @@ import "./index.scss";
 interface ThemeSwitcherProps {
   /** icon：圆形图标按钮（侧边栏用）；button：带文字的按钮（设置区用） */
   variant?: "icon" | "button";
-  /** 气泡弹出方位 */
-  placement?: "bottomRight" | "bottom" | "topRight" | "top";
+  /** 气泡弹出方位，默认 bottomRight */
+  placement?: "bottomRight" | "bottom" | "topRight" | "top" | "right" | "left";
 }
 
 /** 当前主题色板（用于图标按钮内的主色圆点） */
@@ -60,9 +60,17 @@ export default function ThemeSwitcher({
                 setOpen(false);
               }}
             >
-              <span className="theme-switcher__swatch" style={{ background: item.swatch }}>
+              <span
+                className="theme-switcher__swatch"
+                style={{ background: item.swatch }}
+              >
                 {active && (
-                  <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 14 14"
+                    aria-hidden="true"
+                  >
                     <path
                       d="M2.5 7.5l3 3 6-6"
                       fill="none"
@@ -92,6 +100,7 @@ export default function ThemeSwitcher({
       placement={placement}
       trigger="click"
       arrow={false}
+      align={{ offset: [20, -20] }}
       overlayClassName="theme-switcher__popover"
       content={panel}
     >
@@ -105,11 +114,22 @@ export default function ThemeSwitcher({
           <SwatchGlyph meta={activeMeta} />
         </button>
       ) : (
-        <button type="button" className="theme-switcher__trigger theme-switcher__trigger--button">
+        <button
+          type="button"
+          className="theme-switcher__trigger theme-switcher__trigger--button"
+        >
           <SwatchGlyph meta={activeMeta} />
-          <span className="theme-switcher__trigger-text">{activeMeta.label}</span>
+          <span className="theme-switcher__trigger-text">
+            {activeMeta.label}
+          </span>
           <svg width="10" height="6" viewBox="0 0 10 6" aria-hidden="true">
-            <path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+            <path
+              d="M1 1l4 4 4-4"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.4"
+              strokeLinecap="round"
+            />
           </svg>
         </button>
       )}

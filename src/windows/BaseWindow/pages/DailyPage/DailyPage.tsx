@@ -109,30 +109,32 @@ export default function DailyPage() {
               <div key={d} className="weekday">{d}</div>
             ))}
           </div>
-          <div className="calendar-grid">
-            {calendarDays.map((d, i) => {
-              const dateStr = d.format('YYYY-MM-DD')
-              const isCurrentMonth = d.month() === currentMonth.month()
-              const isSelected = d.isSame(selectedDate, 'day')
-              const isToday = d.isSame(today, 'day')
-              const hasActivity = activeDates.has(dateStr)
-              const festival = getSolarFestival(d)
-              const lunarStr = festival || getLunarStr(d)
+          <div className="calendar-scroll">
+            <div className="calendar-grid">
+              {calendarDays.map((d, i) => {
+                const dateStr = d.format('YYYY-MM-DD')
+                const isCurrentMonth = d.month() === currentMonth.month()
+                const isSelected = d.isSame(selectedDate, 'day')
+                const isToday = d.isSame(today, 'day')
+                const hasActivity = activeDates.has(dateStr)
+                const festival = getSolarFestival(d)
+                const lunarStr = festival || getLunarStr(d)
 
-              return (
-                <div
-                  key={i}
-                  className={`calendar-cell ${!isCurrentMonth ? 'other-month' : ''} ${isSelected ? 'selected' : ''} ${isToday ? 'today' : ''}`}
-                  onClick={() => setSelectedDate(d)}
-                >
-                  <div className="cell-top">
-                    <span className="solar-day">{d.date()}</span>
-                    {hasActivity && <span className="activity-dot" />}
+                return (
+                  <div
+                    key={i}
+                    className={`calendar-cell ${!isCurrentMonth ? 'other-month' : ''} ${isSelected ? 'selected' : ''} ${isToday ? 'today' : ''}`}
+                    onClick={() => setSelectedDate(d)}
+                  >
+                    <div className="cell-top">
+                      <span className="solar-day">{d.date()}</span>
+                      {hasActivity && <span className="activity-dot" />}
+                    </div>
+                    <div className="lunar-day">{lunarStr}</div>
                   </div>
-                  <div className="lunar-day">{lunarStr}</div>
-                </div>
-              )
-            })}
+                )
+              })}
+            </div>
           </div>
         </div>
 

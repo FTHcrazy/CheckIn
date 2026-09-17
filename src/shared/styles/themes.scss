@@ -95,7 +95,9 @@
   /* ── 阴影（软投影，避免生硬黑边）── */
   --app-shadow-card: 0 6px 16px rgba(53, 64, 101, 0.07);
   --app-shadow-pop: 0 10px 30px rgba(53, 64, 101, 0.14);
-  --app-shadow-window: 0 8px 32px rgba(15, 23, 42, 0.12);
+  // 窗口投影：必须是 inset（画在圆角内侧）。常规外阴影会被窗口方形边界裁掉，
+  // 只剩直角残影，详见 shared/styles/window-shell.scss
+  --app-shadow-window: inset 0 1px 2px rgba(15, 23, 42, 0.06), inset 0 -2px 6px rgba(15, 23, 42, 0.05);
 
   /* ── 滚动条 ── */
   --app-scrollbar: #c9cff5;
@@ -171,7 +173,7 @@
   /* ── 阴影 ── */
   --app-shadow-card: 0 6px 16px rgba(120, 95, 60, 0.07);
   --app-shadow-pop: 0 10px 30px rgba(120, 95, 60, 0.14);
-  --app-shadow-window: 0 8px 32px rgba(92, 72, 44, 0.12);
+  --app-shadow-window: inset 0 1px 2px rgba(92, 72, 44, 0.08), inset 0 -2px 6px rgba(92, 72, 44, 0.07);
 
   /* ── 滚动条 ── */
   --app-scrollbar: #ddd2bf;
@@ -247,7 +249,7 @@
   /* ── 阴影 ── */
   --app-shadow-card: 0 6px 16px rgba(30, 90, 66, 0.07);
   --app-shadow-pop: 0 10px 30px rgba(30, 90, 66, 0.14);
-  --app-shadow-window: 0 8px 32px rgba(18, 62, 46, 0.12);
+  --app-shadow-window: inset 0 1px 2px rgba(18, 62, 46, 0.07), inset 0 -2px 6px rgba(18, 62, 46, 0.06);
 
   /* ── 滚动条 ── */
   --app-scrollbar: #c5ded2;
@@ -323,7 +325,7 @@
   /* ── 阴影 ── */
   --app-shadow-card: 0 6px 18px rgba(0, 0, 0, 0.32);
   --app-shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.45);
-  --app-shadow-window: 0 10px 34px rgba(0, 0, 0, 0.5);
+  --app-shadow-window: inset 0 1px 2px rgba(0, 0, 0, 0.45), inset 0 -2px 6px rgba(0, 0, 0, 0.35);
 
   /* ── 滚动条 ── */
   --app-scrollbar: #3a4152;

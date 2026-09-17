@@ -3,6 +3,7 @@ import { App } from "antd";
 import {
   formatWorkHour,
   parseWorkHourTag,
+  sortChildrenByDone,
 } from "../todo-utils";
 import type { TodoItem } from "../types";
 
@@ -220,6 +221,10 @@ export function useTodoData() {
       const children = result.get(item.parent_id) ?? [];
       children.push(item);
       result.set(item.parent_id, children);
+    });
+    // 子项排序：未完成的排前面，已完成的沉底（各自保持原有插入顺序）
+    result.forEach((children, parentId) => {
+      result.set(parentId, sortChildrenByDone(children));
     });
     return result;
   }, [items]);

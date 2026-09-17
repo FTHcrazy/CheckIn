@@ -127,12 +127,15 @@ function registerDevToolsShortcuts(win: BrowserWindow): void {
 // - transparent: true 让圆角外的区域可以真正透明
 // - backgroundColor 必须是全透明（#00000000），否则圆角外会残留方角底色
 // - hasShadow: false 交给 CSS 画阴影，避免系统阴影沿方形边界绘制
+// - roundedCorners 必须关掉：Windows 上它让 DWM 按【固定 8px】系统圆角裁剪窗口，
+//   会把 CSS 画的 12px 圆角和描边的四角切掉，窗口四角只剩一段弧度很小、
+//   接近直角的边缘 —— 表现为「圆角外还有一圈淡淡的直角底」。圆角全部交给 CSS。
 const ROUNDED_WINDOW_OPTIONS = {
   frame: false,
   transparent: true,
   backgroundColor: "#00000000",
   hasShadow: false,
-  roundedCorners: true,
+  roundedCorners: false,
 } as const;
 
 /** 统一的 webPreferences，三个窗口保持一致的安全设置 */

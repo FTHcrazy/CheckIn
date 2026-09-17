@@ -1,21 +1,32 @@
+// 布局说明（拖拽不变形的关键）：
+// 日历用 grid 平分面板高度（每行 1fr），格子本身不设宽高，靠 grid 拉伸。
+// 此前用 `aspect-ratio: 1` 逐个格子定高，而 .calendar-panel 是 flex 容器：
+// grid 的 `flex: 1` 只是 flex-basis:0，其高度取决于内容（内容高度又由格子宽度
+// 经 aspect-ratio 反推），窗口纵向拖拽 resize 时这条循环依赖不会重算，
+// 结果格子被横向拉成扁矩形 —— 即“日期组件高度不变导致变形”。
 .daily-page {
   display: flex;
   gap: 16px;
-  padding: 16px;
-  // 相对 .page（.page 已扣除 WindowHeader 高度），不用 100vh
-  height: calc(100% - 48px);
+  padding: 0 16px 16px;
+  box-sizing: border-box;
+  // .page 是 flex 列（NavHeader 高度自适应），本页作为其子项用 flex:1 吃满剩余高度。
+  // 不要写 calc(100% - 48px) 这类魔法数，也不要写 100vh（视口含窗口标题栏会溢出）。
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
 }
 
 // ── 左侧日历 ──
 .calendar-panel {
   flex: 1;
+  min-height: 0;
   min-width: 320px;
   background: var(--app-surface);
   border-radius: 8px;
   padding: 16px;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .calendar-header {
@@ -38,16 +49,30 @@
   }
 }
 
+// 日历区滚动容器：窗口压得很矮时（行高低于可读下限）改为滚动，
+// 而不是把格子继续压扁。overflow-y 滚动条只在真的放不下时出现。
+.calendar-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
 .calendar-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
+  // 行高 1fr 平分剩余高度 → 格子高度始终 = 面板可用高度 / 行数，
+  // 窗口 resize 时由 grid 自动重算，不再依赖格子自身的 aspect-ratio。
+  grid-auto-rows: 1fr;
+  // 行高被压到 44px 以下时改为滚动，保证日期仍可读（6 行 × 44px）
+  min-height: 264px;
   gap: 2px;
   flex: 1;
-  align-content: start;
 }
 
 .calendar-cell {
-  aspect-ratio: 1;
   padding: 4px 6px;
   border-radius: 6px;
   cursor: pointer;
@@ -55,15 +80,13 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  transition: background-color 0.15s;
+  // 注意：不要用 background-color 做过渡，它属重绘属性（项目性能规范）
+  transition: box-shadow 0.15s;
   position: relative;
+  overflow: hidden;
 
   &:hover {
     background: var(--app-surface-hover);
-  }
-
-  &.other-month {
-    opacity: 0.3;
   }
 
   &.selected {

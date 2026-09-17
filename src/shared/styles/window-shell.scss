@@ -35,9 +35,23 @@ html.has-window-shell #root {
   border-radius: $window-radius;
   // 裁剪内部内容到圆角内（含滚动条、标题栏）
   background: var(--app-bg);
-  // 细边框 + 阴影勾勒圆角轮廓，避免圆角在浅色桌面下不可见
-  border: 1px solid var(--app-border);
-  box-shadow: var(--app-shadow-window);
+  //
+  // 圆角轮廓：双层描边，且【刻意不跟随主题变量】。
+  // 圆角外是透明的（露出桌面壁纸），所以描边的对比对象是桌面而非窗口内容：
+  //   - 外层半透明黑：浅色桌面上勾出深色轮廓（深色主题窗口同样适用）
+  //   - 内层半透明白：深色桌面上勾出亮色轮廓（浅色主题窗口的暗背景同理）
+  // 若改用 --app-border 这类主题色，窗口底色与桌面接近时圆角就会"消失"成方角。
+  //
+  // ⚠️ 投影必须走【内阴影】而不是常规 box-shadow：
+  // 窗口边界即元素边界，常规（非 inset）的 box-shadow 全部落在元素矩形之外，
+  // 会被窗口的方形边界裁掉 —— 表现就是「圆角外只剩一圈淡淡的直角阴影残留」，
+  // 即使圆角/描边都正确，边缘仍会显出一个发虚的方框。
+  // 用 inset 阴影把「投影」画进窗口内部，圆角处自然跟随 border-radius 收边。
+  // --app-shadow-window 已同步改为 inset 形式（四套主题各自定义深浅）。
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1),
+    var(--app-shadow-window);
 }
 
 // 窗口最大化时贴满工作区：去掉圆角/描边/投影，
