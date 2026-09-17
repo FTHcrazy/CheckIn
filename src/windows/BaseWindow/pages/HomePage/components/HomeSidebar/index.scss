@@ -1,0 +1,77 @@
+.home-sidebar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 0 0 auto;
+  width: 76px;
+  padding: 14px 0 12px;
+  box-sizing: border-box;
+  background: var(--app-surface);
+  border-right: 1px solid var(--app-border);
+
+  &__logo {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    flex: 0 0 auto;
+    border-radius: var(--app-radius-chip);
+    background: var(--app-primary-gradient);
+    color: var(--app-text-inverse);
+    font-size: 18px;
+    font-weight: 700;
+    box-shadow: var(--app-shadow-card);
+  }
+
+  &__nav {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    margin-top: 18px;
+  }
+
+  &__item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    width: 60px;
+    padding: 7px 0;
+    border: none;
+    border-radius: var(--app-radius-chip);
+    background: transparent;
+    color: var(--app-text-muted);
+    cursor: pointer;
+    // 只过渡合成层属性，避免 hover 时触发布局
+    transition: transform 0.18s ease, color 0.18s ease, background-color 0.18s ease;
+
+    &:hover {
+      background: var(--app-surface-hover);
+      color: var(--app-text-secondary);
+    }
+
+    &.is-active {
+      background: var(--app-primary-weak);
+      color: var(--app-primary-strong);
+    }
+  }
+
+  &__icon {
+    font-size: 18px;
+    line-height: 1;
+  }
+
+  &__label {
+    font-size: 11px;
+    line-height: 1.2;
+  }
+
+  &__footer {
+    margin-top: auto;
+    padding-top: 10px;
+  }
+}

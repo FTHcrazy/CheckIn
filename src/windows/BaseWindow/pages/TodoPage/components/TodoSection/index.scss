@@ -87,46 +87,46 @@
     line-height: 1;
 
     &--todo {
-      background: #e6f4ff;
-      color: #1677ff;
+      background: var(--app-info-weak);
+      color: var(--app-info);
     }
 
     &--done {
-      background: #f6ffed;
-      color: #52c41a;
+      background: var(--app-success-weak);
+      color: var(--app-success);
     }
   }
 
   &__arrow {
     font-size: 11px;
-    color: #bfbfbf;
+    color: var(--app-text-disabled);
     transition: transform 0.2s;
   }
 
   // TODO 组头
   &--todo &__toggle {
-    background: linear-gradient(135deg, #e8f4ff 0%, #f0f7ff 100%);
+    background: linear-gradient(135deg, var(--app-primary-weak) 0%, var(--app-surface-alt) 100%);
 
     &:hover {
-      background: linear-gradient(135deg, #d6ebff 0%, #e8f4ff 100%);
+      background: var(--app-primary-weak);
     }
   }
 
   &--todo &__icon {
-    color: #1677ff;
+    color: var(--app-primary);
   }
 
   // DONE 组头
   &--done &__toggle {
-    background: linear-gradient(135deg, #f0fae8 0%, #f6fff0 100%);
+    background: linear-gradient(135deg, var(--app-success-weak) 0%, var(--app-surface-alt) 100%);
 
     &:hover {
-      background: linear-gradient(135deg, #e4f7d6 0%, #f0fae8 100%);
+      background: var(--app-success-weak);
     }
   }
 
   &--done &__icon {
-    color: #52c41a;
+    color: var(--app-success);
   }
 }
 

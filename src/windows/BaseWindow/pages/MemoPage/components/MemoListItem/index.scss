@@ -6,11 +6,11 @@
   transition: background-color 0.2s;
 
   &:hover {
-    background: var(--ant-color-fill-quaternary, #fafafa);
+    background: var(--app-surface-hover);
   }
 
   &--active {
-    background: var(--ant-color-primary-bg, #e6f4ff) !important;
+    background: var(--app-primary-weak) !important;
   }
 }
 

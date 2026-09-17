@@ -3,8 +3,8 @@
   height: 100%;
   padding: 12px 10px;
   border-radius: 10px;
-  background: #fafbfc;
-  border: 1px solid #f0f0f0;
+  background: var(--app-surface-alt);
+  border: 1px solid var(--app-border);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -16,7 +16,7 @@
   margin-bottom: 10px;
   font-size: 13px;
   font-weight: 700;
-  color: #595959;
+  color: var(--app-text-secondary);
   letter-spacing: 1px;
   text-transform: uppercase;
   padding: 0 4px;
@@ -29,7 +29,7 @@
 }
 
 .todo-outline__empty {
-  color: #bfbfbf;
+  color: var(--app-text-disabled);
   font-size: 12px;
   text-align: center;
   padding: 24px 0;
@@ -41,8 +41,8 @@
   align-items: center;
   gap: 6px;
   padding: 6px 8px;
-  background: #fafbfc;
-  border-bottom: 1px solid #f0f0f0;
+  background: var(--app-surface-alt);
+  border-bottom: 1px solid var(--app-border);
   box-sizing: border-box;
 }
 
@@ -54,7 +54,7 @@
 
 .todo-outline__group-count {
   font-size: 11px;
-  color: #bfbfbf;
+  color: var(--app-text-disabled);
   font-weight: 500;
 }
 
@@ -76,20 +76,20 @@
   border: 1px solid transparent;
   border-radius: 6px;
   background: transparent;
-  color: #434343;
+  color: var(--app-text-secondary);
   text-align: left;
   cursor: pointer;
   transition: all 0.15s ease;
 
   &:hover {
-    background: #f0f5ff;
-    border-color: #d6e4ff;
+    background: var(--app-primary-weak);
+    border-color: var(--app-border-strong);
   }
 
   &.is-active {
-    background: #e6f4ff;
-    border-color: #91caff;
-    color: #1677ff;
+    background: var(--app-primary-weak);
+    border-color: var(--app-primary);
+    color: var(--app-primary);
   }
 }
 
@@ -113,7 +113,7 @@
 .todo-outline__item--done {
   .todo-outline__label {
     text-decoration: line-through;
-    color: rgba(0, 0, 0, 0.35);
+    color: var(--app-text-disabled);
   }
 
   &:hover .todo-outline__label,

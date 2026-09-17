@@ -63,7 +63,9 @@ export default function TodoToolbar({
         className="todo-toolbar__search"
         placeholder="搜索"
         allowClear
-        prefix={<SearchOutlined style={{ color: "rgba(0,0,0,0.25)" }} />}
+        prefix={
+          <SearchOutlined style={{ color: "var(--app-text-disabled)" }} />
+        }
         value={filterText}
         onChange={(event) => onFilterTextChange(event.target.value)}
       />

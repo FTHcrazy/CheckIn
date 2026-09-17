@@ -90,16 +90,16 @@ const COMMIT_COLUMNS = [
     width: 130,
     render: (_: unknown, record: GitWebhookLogItem) => (
       <Space size={4}>
-        <FileOutlined style={{ color: "#666" }} />
+        <FileOutlined style={{ color: "var(--app-text-muted)" }} />
         <Text type="secondary" style={{ fontSize: 12 }}>
           {record.fileChanges}
         </Text>
-        <PlusOutlined style={{ color: "#52c41a", fontSize: 11 }} />
-        <Text style={{ color: "#52c41a", fontSize: 12 }}>
+        <PlusOutlined style={{ color: "var(--app-success)", fontSize: 11 }} />
+        <Text style={{ color: "var(--app-success)", fontSize: 12 }}>
           {record.insertions}
         </Text>
-        <MinusOutlined style={{ color: "#ff4d4f", fontSize: 11 }} />
-        <Text style={{ color: "#ff4d4f", fontSize: 12 }}>
+        <MinusOutlined style={{ color: "var(--app-error)", fontSize: 11 }} />
+        <Text style={{ color: "var(--app-error)", fontSize: 12 }}>
           {record.deletions}
         </Text>
       </Space>
@@ -204,7 +204,7 @@ export default function CodePage() {
                 title="增加行数"
                 value={summaryStats.insertions}
                 suffix="行"
-                styles={{ content: { color: "#52c41a" } }}
+                styles={{ content: { color: "var(--app-success)" } }}
               />
             </Card>
           </Col>
@@ -214,7 +214,7 @@ export default function CodePage() {
                 title="删除行数"
                 value={summaryStats.deletions}
                 suffix="行"
-                styles={{ content: { color: "#ff4d4f" } }}
+                styles={{ content: { color: "var(--app-error)" } }}
               />
             </Card>
           </Col>
@@ -244,7 +244,12 @@ export default function CodePage() {
                 value={dailyOutput}
                 precision={1}
                 suffix="行/天"
-                styles={{ content: { color: "#1677ff", fontWeight: 700 } }}
+                styles={{
+                  content: {
+                    color: "var(--app-primary)",
+                    fontWeight: 700,
+                  },
+                }}
               />
             </Card>
           </Col>
@@ -264,7 +269,10 @@ export default function CodePage() {
                   suffix="行/天"
                   styles={{
                     content: {
-                      color: monthlyDailyNeeded === 0 ? "#52c41a" : "#fa8c16",
+                      color:
+                        monthlyDailyNeeded === 0
+                          ? "var(--app-success)"
+                          : "var(--app-warning)",
                       fontWeight: 700,
                     },
                   }}
@@ -274,7 +282,7 @@ export default function CodePage() {
                   title="本月剩余日均"
                   value="-"
                   styles={{
-                    content: { color: "#999" },
+                    content: { color: "var(--app-text-disabled)" },
                   }}
                 />
               )}
@@ -322,7 +330,9 @@ export default function CodePage() {
                   styles={{
                     content: {
                       color:
-                        selectedRangeDailyNeeded === 0 ? "#52c41a" : "#722ed1",
+                        selectedRangeDailyNeeded === 0
+                          ? "var(--app-success)"
+                          : "var(--app-accent-purple)",
                       fontWeight: 700,
                     },
                   }}
@@ -336,7 +346,7 @@ export default function CodePage() {
                     style={{
                       fontSize: 24,
                       fontWeight: 600,
-                      color: "#999",
+                      color: "var(--app-text-disabled)",
                       marginTop: 4,
                     }}
                   >

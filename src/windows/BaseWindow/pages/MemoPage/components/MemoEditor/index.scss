@@ -35,7 +35,7 @@
   box-sizing: border-box;
   resize: none !important;
   border-radius: 8px;
-  background: #fdfdfd;
+  background: var(--app-input-bg);
 }
 
 .memo-textarea-highlight {
@@ -56,19 +56,20 @@
   text-indent: 0;
   margin: 0;
   box-sizing: border-box;
-  color: #1f2329;
+  color: var(--app-text);
   pointer-events: none;
 
   .memo-search-highlight {
-    background: #ffe58f;
-    color: #262626;
+    background: var(--app-warning-weak);
+    color: var(--app-warning);
     padding: 0;
     border-radius: 2px;
   }
 
   .memo-search-highlight--active {
-    background: #ff9c6e;
-    outline: 1px solid #fa541c;
+    background: var(--app-warning);
+    outline: 1px solid var(--app-warning);
+    color: var(--app-primary-contrast);
   }
 }
 
@@ -95,6 +96,6 @@
   box-sizing: border-box !important;
   background: transparent;
   color: transparent;
-  caret-color: #1f2329;
+  caret-color: var(--app-text);
   border-color: transparent;
 }

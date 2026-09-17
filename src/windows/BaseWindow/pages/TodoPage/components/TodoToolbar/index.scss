@@ -6,8 +6,8 @@
   margin-bottom: 10px;
   flex-shrink: 0;
   padding: 6px 8px;
-  background: #fff;
-  border: 1px solid #f0f0f0;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
   border-radius: 10px;
 
   &__input {
@@ -31,7 +31,7 @@
   &__divider {
     width: 1px;
     height: 20px;
-    background: #e8e8e8;
+    background: var(--app-splitter);
     flex-shrink: 0;
   }
 
@@ -41,7 +41,7 @@
 
     .ant-input-affix-wrapper {
       border-radius: 6px;
-      background: #fafafa;
+      background: var(--app-surface-alt);
     }
   }
 }

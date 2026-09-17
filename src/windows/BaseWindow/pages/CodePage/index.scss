@@ -12,7 +12,7 @@
     margin-bottom: 16px;
 
     .stat-label {
-      color: rgba(0, 0, 0, 0.45);
+      color: var(--app-text-muted);
       font-size: 14px;
       margin-bottom: 8px;
     }
@@ -48,7 +48,7 @@
     height: 190px;
     padding: 24px 8px 4px;
     box-sizing: border-box;
-    border-bottom: 1px solid #d9d9d9;
+    border-bottom: 1px solid var(--app-border);
   }
 
   .trend-values,
@@ -75,14 +75,14 @@
     right: 0;
     left: 0;
     z-index: 0;
-    border-top: 1px dashed #fa8c16;
+    border-top: 1px dashed var(--app-warning);
     pointer-events: none;
   }
 
   .trend-value {
     flex: 0 0 34px;
     height: 18px;
-    color: rgba(0, 0, 0, 0.65);
+    color: var(--app-text-secondary);
     font-size: 11px;
     line-height: 18px;
     text-align: center;
@@ -102,17 +102,17 @@
     width: 100%;
     min-height: 3px;
     border-radius: 3px 3px 0 0;
-    background: #1677ff;
+    background: var(--app-primary);
   }
 
   .trend-bar-weekend {
-    background: #bfbfbf;
+    background: var(--app-text-disabled);
   }
 
   .trend-date {
     flex: 0 0 34px;
     margin-top: 6px;
-    color: rgba(0, 0, 0, 0.45);
+    color: var(--app-text-muted);
     font-size: 11px;
     text-align: center;
     white-space: nowrap;

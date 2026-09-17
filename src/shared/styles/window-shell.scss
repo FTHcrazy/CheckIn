@@ -34,10 +34,10 @@ html.has-window-shell #root {
   box-sizing: border-box;
   border-radius: $window-radius;
   // 裁剪内部内容到圆角内（含滚动条、标题栏）
-  background: #fff;
+  background: var(--app-bg);
   // 细边框 + 阴影勾勒圆角轮廓，避免圆角在浅色桌面下不可见
-  border: 1px solid rgba(0, 0, 0, 0.06);
-  box-shadow: 0 8px 32px rgba(15, 23, 42, 0.12);
+  border: 1px solid var(--app-border);
+  box-shadow: var(--app-shadow-window);
 }
 
 // 窗口最大化时贴满工作区：去掉圆角/描边/投影，

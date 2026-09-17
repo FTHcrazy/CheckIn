@@ -11,7 +11,7 @@
 .calendar-panel {
   flex: 1;
   min-width: 320px;
-  background: #fff;
+  background: var(--app-surface);
   border-radius: 8px;
   padding: 16px;
   display: flex;
@@ -30,7 +30,7 @@
   grid-template-columns: repeat(7, 1fr);
   text-align: center;
   font-size: 12px;
-  color: #999;
+  color: var(--app-text-muted);
   margin-bottom: 4px;
 
   .weekday {
@@ -59,7 +59,7 @@
   position: relative;
 
   &:hover {
-    background: #f0f5ff;
+    background: var(--app-surface-hover);
   }
 
   &.other-month {
@@ -67,16 +67,17 @@
   }
 
   &.selected {
-    background: #1677ff;
-    color: #fff;
+    background: var(--app-primary);
+    color: var(--app-primary-contrast);
 
     .lunar-day {
-      color: rgba(255, 255, 255, 0.7);
+      color: var(--app-primary-contrast);
+      opacity: 0.75;
     }
   }
 
   &.today:not(.selected) {
-    border: 1px solid #1677ff;
+    border: 1px solid var(--app-primary);
   }
 
   .cell-top {
@@ -94,13 +95,13 @@
     width: 5px;
     height: 5px;
     border-radius: 50%;
-    background: #52c41a;
+    background: var(--app-success);
     flex-shrink: 0;
   }
 
   .lunar-day {
     font-size: 10px;
-    color: #999;
+    color: var(--app-text-muted);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -112,7 +113,7 @@
 .timeline-panel {
   width: 380px;
   flex-shrink: 0;
-  background: #fff;
+  background: var(--app-surface);
   border-radius: 8px;
   padding: 16px;
   display: flex;
@@ -140,7 +141,7 @@
   padding: 6px 8px;
   border-radius: 6px;
   margin-bottom: 4px;
-  background: #fafafa;
+  background: var(--app-surface-alt);
 
   .activity-color {
     width: 4px;
@@ -160,7 +161,7 @@
 .timeline-scroll {
   flex: 1;
   overflow-y: auto;
-  border: 1px solid #f0f0f0;
+  border: 1px solid var(--app-border);
   border-radius: 6px;
 }
 
@@ -173,16 +174,16 @@
 
 .time-slot {
   height: 28px;
-  border-bottom: 1px solid #fafafa;
+  border-bottom: 1px solid var(--app-splitter);
   position: relative;
   cursor: pointer;
 
   &.has-label {
-    border-bottom: 1px solid #e8e8e8;
+    border-bottom: 1px solid var(--app-border);
   }
 
   &:hover {
-    background: #f0f5ff;
+    background: var(--app-surface-hover);
   }
 
   .time-label {
@@ -190,8 +191,8 @@
     left: 8px;
     top: -8px;
     font-size: 11px;
-    color: #999;
-    background: #fff;
+    color: var(--app-text-muted);
+    background: var(--app-surface);
     padding: 0 4px;
   }
 }
@@ -214,6 +215,7 @@
   }
 
   .block-name {
+    // 文字压在用户自定义的活动色块上，与主题无关，固定用白色保证对比度
     color: #fff;
     font-size: 12px;
     white-space: nowrap;

@@ -1,6 +1,5 @@
-@use "../../styles/variables" as *;
-
 // ── 主界面右下角悬浮按钮 ──
+// 颜色全部走主题变量，跟随当前 data-theme
 .worker-float-btn {
   position: fixed;
   right: 24px;
@@ -17,9 +16,9 @@
   border-radius: 50%;
   cursor: pointer;
 
-  color: #fff;
-  background: $primary-color;
-  box-shadow: 0 4px 14px rgba(22, 119, 255, 0.35);
+  color: var(--app-primary-contrast);
+  background: var(--app-primary);
+  box-shadow: var(--app-shadow-card);
 
   // 只过渡合成属性，避免 hover 触发布局/重绘
   transition:
@@ -29,7 +28,7 @@
 
   &:hover {
     transform: translateY(-2px) scale(1.04);
-    box-shadow: 0 6px 20px rgba(22, 119, 255, 0.45);
+    box-shadow: var(--app-shadow-pop);
   }
 
   &:active {
@@ -37,7 +36,7 @@
   }
 
   &:focus-visible {
-    outline: 2px solid rgba(22, 119, 255, 0.45);
+    outline: 2px solid var(--app-primary);
     outline-offset: 2px;
   }
 

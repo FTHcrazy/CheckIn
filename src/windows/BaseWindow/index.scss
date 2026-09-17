@@ -14,7 +14,7 @@ body {
   -moz-osx-font-smoothing: grayscale;
   // 圆角窗口：body 必须透明，圆角外区域才不会露出方角底色（背景色由 .window-shell 提供）
   background-color: transparent;
-  color: $text-color;
+  color: var(--app-text);
 }
 
 code {
@@ -34,13 +34,13 @@ code {
 
 /* 滑块 */
 ::-webkit-scrollbar-thumb {
-  background: #c1c1c1;
+  background: var(--app-scrollbar);
   border-radius: 4px;
 }
 
 /* 滑块悬停效果 */
 ::-webkit-scrollbar-thumb:hover {
-  background: #a8a8a8;
+  background: var(--app-scrollbar-hover);
 }
 
 /* 关键：隐藏上下箭头 */

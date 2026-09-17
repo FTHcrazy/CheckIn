@@ -1,0 +1,68 @@
+.feature-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  padding: 16px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-card);
+  background: var(--app-surface);
+  box-shadow: var(--app-shadow-card);
+  text-align: left;
+  cursor: pointer;
+  // 只过渡合成层属性 + 阴影，避免触发布局与重绘
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+
+  &:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--app-shadow-pop);
+
+    .feature-card__enter {
+      color: var(--app-primary);
+      opacity: 1;
+    }
+  }
+
+  &__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: 40px;
+    height: 40px;
+    border-radius: var(--app-radius-chip);
+    font-size: 20px;
+  }
+
+  &__body {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+    flex: 1;
+  }
+
+  &__title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--app-text);
+  }
+
+  &__desc {
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--app-text-muted);
+  }
+
+  &__enter {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex: 0 0 auto;
+    align-self: center;
+    font-size: 12px;
+    color: var(--app-text-muted);
+    opacity: 0.7;
+    transition: color 0.2s ease, opacity 0.2s ease;
+  }
+}

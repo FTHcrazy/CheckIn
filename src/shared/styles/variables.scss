@@ -1,4 +1,8 @@
 // 全局变量
+//
+// ⚠️ 颜色已统一收敛到 themes.scss 的 --app-* CSS 变量（四套主题可切换）。
+// 新代码不要再用下面的颜色 SCSS 变量，否则暗色主题下会保留浅色硬编码导致割裂；
+// 这里仅保留供历史样式引用，非颜色变量（$border-radius / mixins）可继续使用。
 $primary-color: #1677ff;
 $bg-color: #f5f5f5;
 $text-color: #333;

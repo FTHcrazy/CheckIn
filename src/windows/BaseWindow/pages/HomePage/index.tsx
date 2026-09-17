@@ -1,120 +1,227 @@
 import type { ReactNode } from "react";
-import { useNavigate } from "react-router-dom";
-import { BorderBeam, Card, Space, Tag, Typography } from "antd";
-import WorkerFloatButton from "@/shared/components/WorkerFloatButton";
+import { useMemo, useState } from "react";
+import { Empty, Input, Modal } from "antd";
 import {
-  ThunderboltOutlined,
-  RocketOutlined,
-  UserOutlined,
-  EditOutlined,
+  CalendarOutlined,
   CheckSquareOutlined,
+  CodeOutlined,
+  EditOutlined,
+  SearchOutlined,
 } from "@ant-design/icons";
+import WorkerFloatButton from "@/shared/components/WorkerFloatButton";
+import HomeSidebar from "./components/HomeSidebar";
+import HomeStats from "./components/HomeStats";
+import type { HomeStatItem } from "./components/HomeStats";
+import FeatureCard from "./components/FeatureCard";
+import type { FeatureTone } from "./components/FeatureCard";
+import { useHomeOverview } from "./hooks/useHomeOverview";
+import { useHomeActions } from "./hooks/useHomeActions";
 import "./index.scss";
 
-const { Title, Text } = Typography;
-
-interface Feature {
+interface HomeFeature {
+  key: string;
   icon: ReactNode;
   title: string;
   desc: string;
   path: string;
+  tone: FeatureTone;
 }
 
-const features: Feature[] = [
+// 模块级常量：功能入口与顺序固定，避免每次渲染重建数组
+const FEATURES: HomeFeature[] = [
   {
-    icon: <ThunderboltOutlined />,
-    title: "日期活动",
-    desc: "记得打卡",
-    path: "/daily",
-  },
-  {
-    icon: <RocketOutlined />,
-    title: "代码记录查看",
-    desc: "计算日代码行",
-    path: "/code",
-  },
-  {
-    icon: <EditOutlined />,
-    title: "备忘列表",
-    desc: "新增和编辑 Markdown 备忘文件",
-    path: "/memo",
-  },
-  {
+    key: "todo",
     icon: <CheckSquareOutlined />,
-    title: "TODO LIST",
-    desc: "待办事项管理，支持子任务",
+    title: "待办清单",
+    desc: "子任务、工时与备注，支持大纲式拆解",
     path: "/todo",
+    tone: "blue",
   },
   {
-    icon: <UserOutlined />,
-    title: "修改用户信息",
-    desc: "修改邮箱并同步到本地",
-    path: "/user",
+    key: "daily",
+    icon: <CalendarOutlined />,
+    title: "日期活动",
+    desc: "日程排布与到点提醒，别忘打卡",
+    path: "/daily",
+    tone: "amber",
+  },
+  {
+    key: "memo",
+    icon: <EditOutlined />,
+    title: "备忘笔记",
+    desc: "Markdown 文件本地留存，支持导入导出",
+    path: "/memo",
+    tone: "purple",
+  },
+  {
+    key: "code",
+    icon: <CodeOutlined />,
+    title: "代码记录",
+    desc: "按日统计提交产出，追踪日均行数",
+    path: "/code",
+    tone: "teal",
   },
 ];
 
+/** 邮箱前缀 → 展示名：e-tiehan.fang@x.com → Fang */
+function displayNameFromEmail(email: string): string {
+  const local = email.split("@")[0] ?? "";
+  const segment = local.includes(".") ? local.split(".").pop() : local;
+  if (!segment) return "";
+  return segment.charAt(0).toUpperCase() + segment.slice(1);
+}
+
 export default function HomePage() {
-  const navigate = useNavigate();
+  const { overview, reload } = useHomeOverview();
+  const {
+    greeting,
+    todayText,
+    navigate,
+    quickAddOpen,
+    quickAddValue,
+    submitting,
+    openQuickAdd,
+    closeQuickAdd,
+    setQuickAddValue,
+    submitQuickAdd,
+  } = useHomeActions(reload);
 
-  // BorderBeam 是持续运行的 CSS 动画，5 张卡片常驻会让页面一直占用合成线程。
-  // 改为指针进入卡片时才挂载，指针离开即卸载，空闲时页面零动画开销。
-  const handlePointerEnter = (event: React.PointerEvent<HTMLDivElement>) => {
-    const beam = event.currentTarget.querySelector<HTMLElement>(".ant-border-beam");
-    if (!beam) return;
-    beam.style.animationPlayState = "running";
-    beam.style.opacity = "1";
-  };
+  const [keyword, setKeyword] = useState("");
 
-  const handlePointerLeave = (event: React.PointerEvent<HTMLDivElement>) => {
-    const beam = event.currentTarget.querySelector<HTMLElement>(".ant-border-beam");
-    if (!beam) return;
-    beam.style.animationPlayState = "paused";
-    beam.style.opacity = "0";
-  };
+  const visibleFeatures = useMemo(() => {
+    const trimmed = keyword.trim();
+    if (!trimmed) return FEATURES;
+    return FEATURES.filter(
+      (item) =>
+        item.title.includes(trimmed) || item.desc.includes(trimmed),
+    );
+  }, [keyword]);
+
+  const statItems = useMemo<HomeStatItem[]>(
+    () => [
+      { key: "todo", label: "待办未完成", value: overview.todoCount, unit: "项", tone: "blue" },
+      { key: "code", label: "今日代码", value: overview.codeLines, unit: "行", tone: "amber" },
+      { key: "memo", label: "备忘文件", value: overview.memoCount, unit: "篇", tone: "purple" },
+      { key: "daily", label: "本月打卡", value: overview.checkinDays, unit: "天", tone: "teal" },
+    ],
+    [overview.checkinDays, overview.codeLines, overview.memoCount, overview.todoCount],
+  );
+
+  const displayName = displayNameFromEmail(overview.email);
 
   return (
-    <div className="app-container">
-      <header className="app-header">
-        <Space size="middle">
-          <span className="logo">CheckIn</span>
-          <Tag color="blue">Electron</Tag>
-          <Tag color="green">React</Tag>
-          <Tag color="purple">TypeScript</Tag>
-        </Space>
-      </header>
+    <div className="home-page">
+      <HomeSidebar />
 
-      <main className="app-content">
-        <div className="feature-grid">
-          {features.map((feature) => (
-            <BorderBeam
-              key={feature.path}
-              count={2}
-              lineWidth={2}
-              color={[
-                { color: "#2f54eb", percent: 0 },
-                { color: "#722ed1", percent: 44 },
-                { color: "#ff85c0", percent: 100 },
-              ]}
-            >
-              <Card
-                className="feature-card"
-                hoverable
-                onClick={() => navigate(feature.path)}
-                onPointerEnter={handlePointerEnter}
-                onPointerLeave={handlePointerLeave}
-              >
-                <div className="feature-icon">{feature.icon}</div>
-                <Title level={4} className="feature-title">
-                  {feature.title}
-                </Title>
-                <Text type="secondary" className="feature-desc">
-                  {feature.desc}
-                </Text>
-              </Card>
-            </BorderBeam>
-          ))}
+      <div className="home-page__main">
+        <header className="home-page__top">
+          <div className="home-page__greeting-group">
+            <h1 className="home-page__greeting">
+              {greeting}
+              {displayName ? `，${displayName}` : ""}
+            </h1>
+            <p className="home-page__date">{todayText}</p>
+          </div>
+          <Input
+            className="home-page__search"
+            allowClear
+            value={keyword}
+            onChange={(event) => setKeyword(event.target.value)}
+            prefix={<SearchOutlined className="home-page__search-icon" />}
+            placeholder="搜索功能"
+          />
+        </header>
+
+        <div className="home-page__quick">
+          <button
+            type="button"
+            className="home-page__quick-btn is-primary"
+            onClick={() => navigate("/daily")}
+          >
+            开始今日打卡
+          </button>
+          <button type="button" className="home-page__quick-btn" onClick={openQuickAdd}>
+            + 新建待办
+          </button>
+          <button
+            type="button"
+            className="home-page__quick-btn"
+            onClick={() => navigate("/memo")}
+          >
+            + 新建备忘
+          </button>
+          <button
+            type="button"
+            className="home-page__quick-btn"
+            onClick={() => navigate("/code")}
+          >
+            + 记录代码
+          </button>
         </div>
-      </main>
+
+        <HomeStats items={statItems} />
+
+        <section className="home-page__section">
+          <h2 className="home-page__section-title">功能</h2>
+          {visibleFeatures.length > 0 ? (
+            <div className="home-page__grid">
+              {visibleFeatures.map((feature) => (
+                <FeatureCard
+                  key={feature.key}
+                  icon={feature.icon}
+                  title={feature.title}
+                  desc={feature.desc}
+                  tone={feature.tone}
+                  onClick={() => navigate(feature.path)}
+                />
+              ))}
+            </div>
+          ) : (
+            <Empty
+              className="home-page__empty"
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description={`没有匹配「${keyword.trim()}」的功能`}
+            />
+          )}
+        </section>
+
+        <button
+          type="button"
+          className="home-page__user"
+          onClick={() => navigate("/user")}
+        >
+          <span className="home-page__avatar">
+            {displayName ? displayName.charAt(0) : "?"}
+          </span>
+          <span className="home-page__user-text">
+            <span className="home-page__user-email">
+              {overview.email || "未设置邮箱"}
+            </span>
+            <span className="home-page__user-hint">管理账号信息</span>
+          </span>
+          <span className="home-page__user-action">修改</span>
+        </button>
+      </div>
+
+      <Modal
+        title="新建待办"
+        open={quickAddOpen}
+        onCancel={closeQuickAdd}
+        onOk={submitQuickAdd}
+        okText="添加"
+        cancelText="取消"
+        confirmLoading={submitting}
+        destroyOnHidden
+      >
+        <Input
+          autoFocus
+          value={quickAddValue}
+          onChange={(event) => setQuickAddValue(event.target.value)}
+          onPressEnter={submitQuickAdd}
+          placeholder="要做什么？回车即可添加"
+          maxLength={200}
+        />
+      </Modal>
 
       {/* 悬浮入口仅属于主页：切换到子页面后不再展示 */}
       <WorkerFloatButton />

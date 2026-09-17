@@ -1,0 +1,331 @@
+/**
+ * 全局主题变量（CSS Custom Properties）
+ *
+ * 四套主题共用同一组变量名，业务样式只允许写 var(--app-*)，
+ * 不得再硬编码颜色，切换 `data-theme` 即整体换肤。
+ *
+ * 主题清单见 src/shared/theme/themes.ts：
+ *   - aurora    柔雾紫蓝（默认）
+ *   - cream     奶油暖橘
+ *   - mint      薄荷清新
+ *   - midnight  月夜暗色
+ *
+ * 变量分组（新增变量时四套主题必须同步补齐，themes.test.ts 会校验一致性）：
+ *   底色面板 11 项：bg / surface / surface-alt / surface-hover / surface-active /
+ *                  surface-elevated / header-bg / sidebar-bg / input-bg / splitter / mask
+ *   描边     2 项：border / border-strong
+ *   文本     5 项：text / text-secondary / text-muted / text-disabled / text-inverse
+ *   主色     6 项：primary / primary-strong(hover) / primary-active(按下) /
+ *                  primary-weak(弱底) / primary-contrast(主色上的文字) / primary-gradient
+ *   语义色   8 项：success / warning / error / info 各配一个 -weak 弱底
+ *   强调色  14 项：7 个 accent 及其 -weak（图标底 / 数据卡 / 标签）
+ *   圆角     4 项 / 阴影 3 项 / 滚动条 2 项
+ *
+ * 使用方式：
+ *   1. 窗口入口 `import "@/shared/styles/themes.scss"`（三个窗口都要引）
+ *   2. ThemeProvider 在 <html> 上写 data-theme="aurora|cream|mint|midnight"
+ */
+
+:root,
+[data-theme="aurora"] {
+  /* ── 底色与面板 ── */
+  --app-bg: #f3f5fc;
+  --app-surface: #ffffff;
+  --app-surface-alt: #f7f8fe;
+  --app-surface-hover: #eef1fc;
+  --app-surface-active: #e4e9fa;
+  --app-surface-elevated: #ffffff;
+  --app-header-bg: #ffffff;
+  --app-sidebar-bg: #ffffff;
+  --app-input-bg: #ffffff;
+  --app-splitter: #edf0fa;
+  --app-mask: rgba(43, 47, 74, 0.35);
+
+  /* ── 描边 ── */
+  --app-border: #e2e6f4;
+  --app-border-strong: #d3d9ee;
+
+  /* ── 文本 ── */
+  --app-text: #2b2f4a;
+  --app-text-secondary: #5a5f7a;
+  --app-text-muted: #8a90ac;
+  --app-text-disabled: #b6bbd0;
+  --app-text-inverse: #ffffff;
+
+  /* ── 主色（strong=hover / active=按下 / weak=弱底 / contrast=主色上的文字）── */
+  --app-primary: #5b6cf9;
+  --app-primary-strong: #4a5ae0;
+  --app-primary-active: #3e4dc9;
+  --app-primary-weak: #eaf0ff;
+  --app-primary-contrast: #ffffff;
+  --app-primary-gradient: linear-gradient(90deg, #7b8cff 0%, #a5b0ff 100%);
+
+  /* ── 语义色（成功 / 警告 / 错误 / 信息，各配弱底）── */
+  --app-success: #34b37e;
+  --app-success-weak: #e6f7ee;
+  --app-warning: #f5a623;
+  --app-warning-weak: #fff3e0;
+  --app-error: #e5484d;
+  --app-error-weak: #ffecee;
+  --app-info: #5b8def;
+  --app-info-weak: #eaf0ff;
+
+  /* ── 强调色（图标底 / 文字）：数据卡与功能卡的彩色标识 ── */
+  --app-accent-blue: #5b8def;
+  --app-accent-blue-weak: #eaf0ff;
+  --app-accent-purple: #8b77f0;
+  --app-accent-purple-weak: #f1edff;
+  --app-accent-green: #34b37e;
+  --app-accent-green-weak: #e6f7ee;
+  --app-accent-amber: #f5a623;
+  --app-accent-amber-weak: #fff3e0;
+  --app-accent-rose: #e8618c;
+  --app-accent-rose-weak: #ffeef2;
+  --app-accent-teal: #2fa57e;
+  --app-accent-teal-weak: #dcf2e8;
+  --app-accent-orange: #e8935e;
+  --app-accent-orange-weak: #fdeedf;
+
+  /* ── 圆角 ── */
+  --app-radius-card: 20px;
+  --app-radius-panel: 16px;
+  --app-radius-chip: 14px;
+  --app-radius-pill: 999px;
+
+  /* ── 阴影（软投影，避免生硬黑边）── */
+  --app-shadow-card: 0 6px 16px rgba(53, 64, 101, 0.07);
+  --app-shadow-pop: 0 10px 30px rgba(53, 64, 101, 0.14);
+  --app-shadow-window: 0 8px 32px rgba(15, 23, 42, 0.12);
+
+  /* ── 滚动条 ── */
+  --app-scrollbar: #c9cff5;
+  --app-scrollbar-hover: #b3bbee;
+}
+
+/* ── 奶油暖橘 ── */
+[data-theme="cream"] {
+  /* ── 底色与面板 ── */
+  --app-bg: #faf6ef;
+  --app-surface: #ffffff;
+  --app-surface-alt: #fcf9f4;
+  --app-surface-hover: #f6f0e6;
+  --app-surface-active: #f0e6d4;
+  --app-surface-elevated: #ffffff;
+  --app-header-bg: #ffffff;
+  --app-sidebar-bg: #fffdf9;
+  --app-input-bg: #ffffff;
+  --app-splitter: #f3ebdc;
+  --app-mask: rgba(61, 54, 41, 0.35);
+
+  /* ── 描边 ── */
+  --app-border: #efe5d6;
+  --app-border-strong: #e3d6c2;
+
+  /* ── 文本 ── */
+  --app-text: #3d3629;
+  --app-text-secondary: #6b6355;
+  --app-text-muted: #9a9080;
+  --app-text-disabled: #c5bba8;
+  --app-text-inverse: #ffffff;
+
+  /* ── 主色 ── */
+  --app-primary: #e8834a;
+  --app-primary-strong: #d06e38;
+  --app-primary-active: #b85e2e;
+  --app-primary-weak: #ffe9dc;
+  --app-primary-contrast: #ffffff;
+  --app-primary-gradient: linear-gradient(90deg, #ffb27a 0%, #ff8e5e 100%);
+
+  /* ── 语义色 ── */
+  --app-success: #7ba05b;
+  --app-success-weak: #e8f2e4;
+  --app-warning: #d9a514;
+  --app-warning-weak: #fff6d9;
+  --app-error: #d95c5c;
+  --app-error-weak: #fde9e9;
+  --app-info: #5b9bc9;
+  --app-info-weak: #e5f0f7;
+
+  /* ── 强调色 ── */
+  --app-accent-blue: #5b9bc9;
+  --app-accent-blue-weak: #e5f0f7;
+  --app-accent-purple: #a98bd8;
+  --app-accent-purple-weak: #f2ecfa;
+  --app-accent-green: #7ba05b;
+  --app-accent-green-weak: #e8f2e4;
+  --app-accent-amber: #d9a514;
+  --app-accent-amber-weak: #fff6d9;
+  --app-accent-rose: #d96a8b;
+  --app-accent-rose-weak: #fbe4e9;
+  --app-accent-teal: #4fa88c;
+  --app-accent-teal-weak: #e2f2ec;
+  --app-accent-orange: #e8834a;
+  --app-accent-orange-weak: #ffe9dc;
+
+  /* ── 圆角 ── */
+  --app-radius-card: 20px;
+  --app-radius-panel: 16px;
+  --app-radius-chip: 14px;
+  --app-radius-pill: 999px;
+
+  /* ── 阴影 ── */
+  --app-shadow-card: 0 6px 16px rgba(120, 95, 60, 0.07);
+  --app-shadow-pop: 0 10px 30px rgba(120, 95, 60, 0.14);
+  --app-shadow-window: 0 8px 32px rgba(92, 72, 44, 0.12);
+
+  /* ── 滚动条 ── */
+  --app-scrollbar: #ddd2bf;
+  --app-scrollbar-hover: #c9bda6;
+}
+
+/* ── 薄荷清新 ── */
+[data-theme="mint"] {
+  /* ── 底色与面板 ── */
+  --app-bg: #f2f8f4;
+  --app-surface: #ffffff;
+  --app-surface-alt: #f5faf7;
+  --app-surface-hover: #e9f4ee;
+  --app-surface-active: #dcf0e5;
+  --app-surface-elevated: #ffffff;
+  --app-header-bg: #ffffff;
+  --app-sidebar-bg: #fbfefc;
+  --app-input-bg: #ffffff;
+  --app-splitter: #e6f2eb;
+  --app-mask: rgba(36, 53, 45, 0.35);
+
+  /* ── 描边 ── */
+  --app-border: #dfeee5;
+  --app-border-strong: #cbe3d6;
+
+  /* ── 文本 ── */
+  --app-text: #24352d;
+  --app-text-secondary: #4a5c52;
+  --app-text-muted: #8ca096;
+  --app-text-disabled: #b7c7bd;
+  --app-text-inverse: #ffffff;
+
+  /* ── 主色 ── */
+  --app-primary: #2fa57e;
+  --app-primary-strong: #218a67;
+  --app-primary-active: #1a7155;
+  --app-primary-weak: #dcf2e8;
+  --app-primary-contrast: #ffffff;
+  --app-primary-gradient: linear-gradient(90deg, #3fbf92 0%, #7ed4b4 100%);
+
+  /* ── 语义色 ── */
+  --app-success: #2fa57e;
+  --app-success-weak: #dcf2e8;
+  --app-warning: #d9a514;
+  --app-warning-weak: #fbf3dc;
+  --app-error: #d95c5c;
+  --app-error-weak: #fce9e9;
+  --app-info: #4a90c4;
+  --app-info-weak: #eaf3fb;
+
+  /* ── 强调色 ── */
+  --app-accent-blue: #4a90c4;
+  --app-accent-blue-weak: #eaf3fb;
+  --app-accent-purple: #8b77e0;
+  --app-accent-purple-weak: #efecfa;
+  --app-accent-green: #5fb87f;
+  --app-accent-green-weak: #e6f5ec;
+  --app-accent-amber: #d9a514;
+  --app-accent-amber-weak: #fbf3dc;
+  --app-accent-rose: #d96a8b;
+  --app-accent-rose-weak: #fbe9ef;
+  --app-accent-teal: #2fa57e;
+  --app-accent-teal-weak: #dcf2e8;
+  --app-accent-orange: #e8935e;
+  --app-accent-orange-weak: #fdeedf;
+
+  /* ── 圆角 ── */
+  --app-radius-card: 20px;
+  --app-radius-panel: 16px;
+  --app-radius-chip: 14px;
+  --app-radius-pill: 999px;
+
+  /* ── 阴影 ── */
+  --app-shadow-card: 0 6px 16px rgba(30, 90, 66, 0.07);
+  --app-shadow-pop: 0 10px 30px rgba(30, 90, 66, 0.14);
+  --app-shadow-window: 0 8px 32px rgba(18, 62, 46, 0.12);
+
+  /* ── 滚动条 ── */
+  --app-scrollbar: #c5ded2;
+  --app-scrollbar-hover: #adc9bb;
+}
+
+/* ── 月夜暗色 ── */
+[data-theme="midnight"] {
+  /* ── 底色与面板：bg(最深) < sidebar < surface(卡片) < alt/hover < active ── */
+  --app-bg: #15171f;
+  --app-surface: #1d2029;
+  --app-surface-alt: #232733;
+  --app-surface-hover: #2a2f3c;
+  --app-surface-active: #323848;
+  --app-surface-elevated: #262b38;
+  --app-header-bg: #1d2029;
+  --app-sidebar-bg: #191c26;
+  --app-input-bg: #232733;
+  --app-splitter: #262b36;
+  --app-mask: rgba(0, 0, 0, 0.5);
+
+  /* ── 描边 ── */
+  --app-border: #2c313e;
+  --app-border-strong: #3a4152;
+
+  /* ── 文本 ── */
+  --app-text: #e8eaf2;
+  --app-text-secondary: #aeb4c4;
+  --app-text-muted: #7e8595;
+  --app-text-disabled: #5c6273;
+  --app-text-inverse: #15171f;
+
+  /* ── 主色（暗色下 hover 提亮、按下压暗）── */
+  --app-primary: #7b8cff;
+  --app-primary-strong: #93a0ff;
+  --app-primary-active: #6573e6;
+  --app-primary-weak: #232842;
+  --app-primary-contrast: #10131f;
+  --app-primary-gradient: linear-gradient(90deg, #6a7cf5 0%, #8f9dff 100%);
+
+  /* ── 语义色（暗色下用亮色文字 + 半透明弱底，避免大块高饱和）── */
+  --app-success: #4fc98d;
+  --app-success-weak: rgba(79, 201, 141, 0.14);
+  --app-warning: #e8b334;
+  --app-warning-weak: rgba(232, 179, 52, 0.14);
+  --app-error: #f26d6d;
+  --app-error-weak: rgba(242, 109, 109, 0.16);
+  --app-info: #7fa6ff;
+  --app-info-weak: rgba(127, 166, 255, 0.14);
+
+  /* ── 强调色 ── */
+  --app-accent-blue: #7fa6ff;
+  --app-accent-blue-weak: rgba(127, 166, 255, 0.14);
+  --app-accent-purple: #a58cf5;
+  --app-accent-purple-weak: rgba(165, 140, 245, 0.14);
+  --app-accent-green: #4fc98d;
+  --app-accent-green-weak: rgba(79, 201, 141, 0.14);
+  --app-accent-amber: #e8b334;
+  --app-accent-amber-weak: rgba(232, 179, 52, 0.14);
+  --app-accent-rose: #f07fa4;
+  --app-accent-rose-weak: rgba(240, 127, 164, 0.14);
+  --app-accent-teal: #4fd0a5;
+  --app-accent-teal-weak: rgba(79, 208, 165, 0.14);
+  --app-accent-orange: #f0a06a;
+  --app-accent-orange-weak: rgba(240, 160, 106, 0.14);
+
+  /* ── 圆角 ── */
+  --app-radius-card: 20px;
+  --app-radius-panel: 16px;
+  --app-radius-chip: 14px;
+  --app-radius-pill: 999px;
+
+  /* ── 阴影 ── */
+  --app-shadow-card: 0 6px 18px rgba(0, 0, 0, 0.32);
+  --app-shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.45);
+  --app-shadow-window: 0 10px 34px rgba(0, 0, 0, 0.5);
+
+  /* ── 滚动条 ── */
+  --app-scrollbar: #3a4152;
+  --app-scrollbar-hover: #4a5265;
+}

@@ -11,7 +11,7 @@
 
 @keyframes todo-flash {
   0% {
-    box-shadow: 0 0 0 2px #52c41a inset;
+    box-shadow: 0 0 0 2px var(--app-success) inset;
   }
   100% {
     box-shadow: 0 0 0 2px transparent inset;
@@ -24,8 +24,8 @@
   box-sizing: border-box;
   padding: 10px 12px;
   border-radius: 8px;
-  background: #fff;
-  border: 1px solid #f0f0f0;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
   // 只对合成属性做过渡；background/border-color 由 hover 直接切换，
   // 避免鼠标移动时每帧重绘整行
   transition:
@@ -33,14 +33,14 @@
     border-color 0.15s ease;
 
   &:hover {
-    background: #fafbff;
-    border-color: #e0e0e0;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+    background: var(--app-surface-alt);
+    border-color: var(--app-border-strong);
+    box-shadow: var(--app-shadow-card);
   }
 
   &--done {
     opacity: 0.55;
-    background: #fafafa;
+    background: var(--app-surface-alt);
   }
 
   &--child {
@@ -48,17 +48,17 @@
     margin-top: 4px;
     margin-bottom: 4px;
     padding: 8px 10px;
-    background: #fff;
-    border: 1px dashed #e8e8e8;
+    background: var(--app-surface);
+    border: 1px dashed var(--app-border);
 
     &:hover {
-      background: #fafafa;
-      border-color: #d9d9d9;
+      background: var(--app-surface-alt);
+      border-color: var(--app-border-strong);
     }
 
     .todo-item-content .todo-item-text--done {
       text-decoration: line-through;
-      color: rgba(0, 0, 0, 0.45);
+      color: var(--app-text-muted);
     }
   }
 }
@@ -92,7 +92,7 @@
 }
 
 .todo-item-important {
-  color: #fa8c16;
+  color: var(--app-warning);
   font-size: 13px;
   flex-shrink: 0;
 }
@@ -106,9 +106,9 @@
   text-align: center;
   padding: 1px 6px;
   border-radius: 999px;
-  background: #e6f7ff;
-  border: 1px solid #91d5ff;
-  color: #1677ff;
+  background: var(--app-info-weak);
+  border: 1px solid var(--app-info);
+  color: var(--app-info);
   font-size: 11px !important;
   font-weight: 600;
   flex-shrink: 0;
@@ -121,9 +121,9 @@
 }
 
 .todo-item-work-hour--summary {
-  background: #fff7e6;
-  border-color: #ffd591;
-  color: #d46b08;
+  background: var(--app-warning-weak);
+  border-color: var(--app-warning);
+  color: var(--app-warning);
 }
 
 .todo-item-summary {
@@ -133,19 +133,19 @@
   gap: 8px;
   margin-top: 6px;
   padding-top: 4px;
-  border-top: 1px dashed #f0f0f0;
+  border-top: 1px dashed var(--app-splitter);
 }
 
 .todo-item-text--done {
   text-decoration: line-through;
-  color: rgba(0, 0, 0, 0.45) !important;
+  color: var(--app-text-muted) !important;
 }
 
 .todo-item-time {
   font-size: 11px !important;
   flex-shrink: 0;
   white-space: nowrap;
-  color: #bfbfbf !important;
+  color: var(--app-text-disabled) !important;
 }
 
 .todo-item-actions {
@@ -167,16 +167,16 @@
 }
 
 .todo-item--important {
-  border-left: 3px solid #fa8c16;
-  background: #fffaf0;
+  border-left: 3px solid var(--app-warning);
+  background: var(--app-warning-weak);
 }
 
 .todo-item-note {
   padding: 1px 7px;
   border-radius: 999px;
-  background: #fff7e6;
-  border: 1px solid #ffd591;
-  color: #d46b08;
+  background: var(--app-warning-weak);
+  border: 1px solid var(--app-warning);
+  color: var(--app-warning);
   font-size: 11px !important;
   flex-shrink: 0;
 }
@@ -186,9 +186,9 @@
   font-size: 11px !important;
   padding: 1px 7px;
   border-radius: 999px;
-  background: #f6ffed;
-  border: 1px solid #b7eb8f;
-  color: #389e0d;
+  background: var(--app-success-weak);
+  border: 1px solid var(--app-success);
+  color: var(--app-success);
 }
 
 // ── 动画 ──
@@ -204,5 +204,5 @@
 .todo-children {
   margin-top: 6px;
   padding-left: 4px;
-  border-left: 2px solid #e8e8e8;
+  border-left: 2px solid var(--app-border);
 }

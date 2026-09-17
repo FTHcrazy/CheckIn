@@ -77,7 +77,7 @@ export default function MemoListItem({
       <div className="memo-list-item-content">
         <div className="memo-list-item-icon">
           <FileMarkdownOutlined
-            style={{ fontSize: 20, color: "#1677ff" }}
+            style={{ fontSize: 20, color: "var(--app-primary)" }}
           />
         </div>
         <div className="memo-list-item-info">

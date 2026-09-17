@@ -1,8 +1,8 @@
 import { lazy, Suspense, useEffect, useRef } from "react";
 import { Routes, Route, useNavigate } from "react-router-dom";
-import { ConfigProvider, notification, App as AntdApp, Spin } from "antd";
+import { notification, App as AntdApp, Spin } from "antd";
 import { ClockCircleOutlined } from "@ant-design/icons";
-import { antdProviderProps } from "@/shared/styles/antd-theme";
+import { ThemeProvider } from "@/shared/theme";
 import type { ActivityNotifyData } from "@/shared/ipc/activityNotifyBridge";
 import WindowHeader from "@/shared/components/WindowHeader";
 import HomePage from "./pages/HomePage";
@@ -45,7 +45,11 @@ function ActivityNotifier() {
       apiRef.current.info({
         message: "活动提醒",
         description: `${name} (${start} - ${end})`,
-        icon: <ClockCircleOutlined style={{ color: color || "#1677ff" }} />,
+        icon: (
+          <ClockCircleOutlined
+            style={{ color: color || "var(--app-primary)" }}
+          />
+        ),
         placement: "topRight",
         duration: 30,
       });
@@ -59,7 +63,8 @@ function ActivityNotifier() {
 
 export default function App() {
   return (
-    <ConfigProvider {...antdProviderProps}>
+    // ThemeProvider 内部已包含 ConfigProvider，并额外负责 data-theme 落盘与跨窗口同步
+    <ThemeProvider>
       <AntdApp>
         {/* 圆角窗口外壳：负责圆角裁剪与描边，内容全部装在其中 */}
         <div className="window-shell">
@@ -80,6 +85,6 @@ export default function App() {
           </div>
         </div>
       </AntdApp>
-    </ConfigProvider>
+    </ThemeProvider>
   );
 }

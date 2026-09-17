@@ -1,0 +1,51 @@
+.home-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+
+  &__item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: var(--app-radius-panel);
+    background: var(--app-surface);
+    border: 1px solid var(--app-border);
+    box-shadow: var(--app-shadow-card);
+  }
+
+  &__dot {
+    width: 8px;
+    height: 8px;
+    flex: 0 0 auto;
+    // 圆点本色与外圈底色由行内 style 指定（取自主题变量），保证换肤跟随
+    border-radius: 50%;
+  }
+
+  &__text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  &__value {
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.2;
+    color: var(--app-text);
+  }
+
+  &__unit {
+    margin-left: 3px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--app-text-muted);
+  }
+
+  &__label {
+    font-size: 12px;
+    color: var(--app-text-secondary);
+    white-space: nowrap;
+  }
+}

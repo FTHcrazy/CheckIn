@@ -1,5 +1,67 @@
 # Changelog
 
+## [1.4.1] - 2026-09-17
+
+### Changed
+- 主题色值枚举扩充至 55 项（较 1.4.0 增加 14 项），四套主题保持同一变量集合：
+  - 新增底色 `surface-active`（按下态）、`sidebar-bg`、`input-bg`、`splitter`（分隔线）
+  - 新增文本 `text-disabled`；主色新增 `primary-active`（按下态）
+  - 新增语义色 8 项：`success` / `warning` / `error` / `info` 及各自的 `-weak` 弱底
+  - antd token 同步补齐 `colorTextDisabled` / `colorSplit` / `colorSuccess` / `colorWarning` /
+    `colorError` / `colorInfo` / `colorLink`，弹层与表单不再沿用 antd 默认蓝
+- 全量页面样式变量化，消除暗色主题下的割裂（此前仅共享层接入主题，业务页仍为浅色硬编码）：
+  - Todo：`TodoListItem` / `TodoOutlineSidebar` / `TodoSection` / `TodoToolbar`
+  - Memo：`MemoPage` / `MemoSidebar` / `MemoListItem` / `MemoHeader` / `MemoEditor` / `MemoPreview`
+  - Daily：`index.scss` 日历面板与时间带的白底、分割线、选中态全部改为主题变量
+  - Code：趋势图基线、柱体、数值与日期文字改为主题变量
+  - 共享：`WorkerFloatButton` 改用 `--app-primary` 系列与主题阴影；`ThemeSwitcher` 色块描边改用 `--app-border-strong`
+  - TSX 内联色一并收敛（`CodePage` 增减行/统计值、`TodoOutlineSidebar` 分组色、
+    `MemoListItem` 图标色、`TodoToolbar` 搜索图标、活动提醒默认色）
+- `shared/styles/variables.scss` 标注颜色变量已废弃：新样式一律用 `--app-*`，避免暗色下残留浅色
+
+### Removed
+- 移除 `WindowHeader` 与 `LoginWindow` 的主题切换器：主题切换入口统一收敛到首页侧边栏底部，
+  避免同一功能在多处出现且与窗口标题栏职责混淆
+
+### Verified
+- `pnpm test`：56/56 通过（6 个测试文件，含四套主题变量集合一致性校验）
+- `pnpm typecheck`（tsc -b，strict 开启）：0 错误
+- `pnpm lint`：0 错误（仅剩 CodePage 既有 exhaustive-deps 警告）
+- `vite build` 通过
+
+## [1.4.0] - 2026-09-17
+
+### Added
+- 新增四套主题（柔雾紫蓝 aurora / 奶油暖橘 cream / 薄荷清新 mint / 月夜暗色 midnight）
+  - `shared/styles/themes.scss` 统一 `--app-*` CSS 变量（底色、描边、文本、主色、强调色、圆角、阴影、滚动条），
+    业务样式一律写 `var(--app-*)`，切换 `<html data-theme>` 即整体换肤
+  - `shared/theme/` 主题模块：`themes.ts`（主题清单与 antd 色板）、`theme-storage.ts`（读写/落盘/首帧初始化）、
+    `ThemeProvider.tsx`（内聚 ConfigProvider，暗色走 `darkAlgorithm`）、`theme-context.ts`（`useTheme`）
+- 新增 `shared/components/ThemeSwitcher/`：色块式主题切换器，切换后写 localStorage 并通过
+  `windowAPI.broadcast('theme-changed')` 广播，三个窗口实时同步
+  - 主窗口 / Worker 窗口挂在 `WindowHeader` 右侧；登录窗口无标题栏，固定在右上角
+- 首页改造为侧边导航布局：图标导航栏 + 问候/搜索 + 快捷操作行（含首页直建待办）+ 数据概览 + 功能卡网格 + 用户信息横条
+  - 数据概览取真实数据：待办未完成数、今日代码产出、备忘篇数、本月打卡天数（任一项失败只该项显示「—」）
+- 新增 15 个主题单测（`themes.test.ts` / `theme-storage.test.ts`），其中一项校验
+  `THEME_LIST` 与 `themes.scss` 的变量集合完全一致，防止新增主题漏写变量导致换肤后局部掉色
+
+### Changed
+- 三个窗口入口统一接入 `ThemeProvider`（内部已含 ConfigProvider），并在 `createRoot` 前调用
+  `initThemeFromStorage()`，避免暗色主题首帧白闪
+- 共享样式变量化：`window-shell.scss`、`NavHeader`、`WindowHeader`、Login/Worker/Base 的 `index.scss`
+  全部改用主题变量，移除硬编码色值
+- `HomePage` 业务逻辑下沉到 `hooks/useHomeOverview.ts`（数据）与 `hooks/useHomeActions.ts`（交互），
+  卡片拆为 `components/HomeSidebar` / `components/HomeStats` / `components/FeatureCard`
+
+### Removed
+- 移除 `shared/styles/antd-theme.ts`：其职责已由 `ThemeProvider` 接管，避免两套 ConfigProvider 配置并存
+
+### Verified
+- `pnpm test`：56/56 通过（6 个测试文件）
+- `pnpm typecheck`（tsc -b，strict 开启）：0 错误
+- `pnpm lint`：0 错误（仅剩 CodePage 既有 exhaustive-deps 警告）
+- `vite build` 通过，主题样式随各窗口 chunk 正确产出
+
 ## [1.3.0] - 2026-09-17
 
 ### Added

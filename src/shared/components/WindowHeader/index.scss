@@ -28,7 +28,7 @@
 .window-header__title-text {
   font-size: 13px;
   font-weight: 600;
-  color: #595959;
+  color: var(--app-text-secondary);
   letter-spacing: 0.5px;
   white-space: nowrap;
   overflow: hidden;
@@ -54,19 +54,19 @@
   padding: 0;
   border: none;
   background: transparent;
-  color: #5f5e5a;
+  color: var(--app-text-secondary);
   cursor: pointer;
   transition:
     background-color 0.15s ease,
     color 0.15s ease;
 
   &:hover {
-    background: rgba(15, 23, 42, 0.08);
-    color: #1f2d3d;
+    background: var(--app-surface-hover);
+    color: var(--app-text);
   }
 
   &:active {
-    background: rgba(15, 23, 42, 0.14);
+    background: var(--app-border);
   }
 }
 

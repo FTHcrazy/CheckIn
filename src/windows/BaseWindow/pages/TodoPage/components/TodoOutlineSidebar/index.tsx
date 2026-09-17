@@ -32,7 +32,7 @@ function TodoOutlineSidebar({
       result.push({
         key: "todo",
         label: "TODO",
-        color: "#1677ff",
+        color: "var(--app-primary)",
         items: todo,
       });
     }
@@ -40,7 +40,7 @@ function TodoOutlineSidebar({
       result.push({
         key: "done",
         label: "DONE",
-        color: "#52c41a",
+        color: "var(--app-success)",
         items: done,
       });
     }

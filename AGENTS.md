@@ -422,6 +422,72 @@ function normalizeTodo(item: Partial<TodoItem> | null): TodoItem | null {
 .memo-sidebar-header { }
 ```
 
+### 6.1.1 主题与换肤规范
+
+**原则：业务样式只写 `var(--app-*)`，禁止硬编码色值**
+
+四套主题共用同一组 CSS 变量（见 `shared/styles/themes.scss`），由 `<html data-theme>` 切换：
+
+| 主题 id | 名称 | 说明 |
+|---------|------|------|
+| `aurora` | 柔雾紫蓝 | 默认主题 |
+| `cream` | 奶油暖橘 | 暖阳奶油 |
+| `mint` | 薄荷清新 | 薄荷新绿 |
+| `midnight` | 月夜暗色 | 暗色，antd 走 `darkAlgorithm` |
+
+```scss
+// ❌ 错误：硬编码色值，换肤后不跟随
+.card { background: #fff; border: 1px solid #eee; color: #333; }
+
+// ✅ 正确：全部走主题变量
+.card {
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  color: var(--app-text);
+}
+```
+
+**接入要求（三个窗口都要遵守，保证「所有窗口同一套主题色」）**：
+
+1. 窗口入口 `import "@/shared/styles/themes.scss"`，并在 `createRoot` **之前**调用
+   `initThemeFromStorage()`（首帧就带上正确主题，避免暗色白闪）
+2. 用 `ThemeProvider` 包裹 App —— 它内部已含 `ConfigProvider`，**窗口入口不要再各包一层**
+3. 需要读取/切换主题时用 `useTheme()`（`shared/theme`），不要在组件里直接读 `data-theme`
+
+**新增主题时同步 4 处**（漏一处就会换肤后局部掉色）：
+
+| # | 文件 | 改动 |
+|---|------|------|
+| 1 | `shared/styles/themes.scss` | 新增 `[data-theme="xxx"]` 变量块，变量集合须与默认主题完全一致 |
+| 2 | `shared/theme/themes.ts` | `ThemeId` 联合类型 + `THEME_LIST` 追加一项（含 antd 色板具体色值） |
+| 3 | `ThemeProvider.tsx` | 暗色主题确认走 `darkAlgorithm`（`meta.isDark` 为 true 即可，无需改码） |
+| 4 | 单测 | `themes.test.ts` 会自动校验变量集合一致性，跑 `pnpm test` 确认 |
+
+> 注意：antd 的 `token` 必须传**具体色值**，不能传 `var(--app-*)` —— antd 要基于它们做派生色运算。
+
+**覆盖范围：样式文件 + TSX 内联样式，两侧都禁止硬编码色值**
+
+```tsx
+// ❌ 错误：内联色同样会在暗色主题下变成浅色斑块
+<PlusOutlined style={{ color: "#52c41a" }} />
+
+// ✅ 正确：内联样式里 var() 也是合法的
+<PlusOutlined style={{ color: "var(--app-success)" }} />
+```
+
+**主题切换入口唯一**：全局只在首页侧边栏底部（`HomeSidebar`）挂 `ThemeSwitcher`。
+`WindowHeader`、登录窗口等标题栏位置**不要再放切换器**，避免同一功能多处出现。
+
+**允许保留的硬编码（不要"顺手优化"掉）**：
+
+| 位置 | 保留原因 |
+|------|---------|
+| `WindowHeader` 关闭按钮 `#e81123` / `#c50f1f` | Windows 标题栏惯例色，跟随主题反而违和 |
+| `MemoPreview` 代码块 `pre` 深色底 | 明暗主题统一用深色，代码可读性优先 |
+| `DailyPage` `.block-name` 白字、`.activity-color` / `.color-option` | 压在**用户自定义**的活动配色上，与主题无关 |
+| `shared/services/daily.ts` 的 `ACTIVITY_COLORS` | 供用户挑选的调色板，属业务数据 |
+| `shared/styles/variables.scss` 的 `$primary-color` 等 | 已废弃，仅供历史样式引用；新样式一律用 `--app-*` |
+
 ### 6.2 状态管理规范
 
 **逻辑抽取标准**：
@@ -619,8 +685,10 @@ function initializeDataDb(db: Database) {
 - [ ] 在 `src/windows/` 创建 `XxxWindow/` 目录（`index.html` + `main.tsx` + `App.tsx`）
 - [ ] 在 `vite.config.ts` 的 `rollupOptions.input` 登记入口 HTML
 - [ ] 在 `electron/main.ts` 的 `RENDERER_ENTRIES` 登记窗口加载路径
-- [ ] ConfigProvider 使用 `shared/styles/antd-theme.ts` 的统一配置
+- [ ] 入口引入 `@/shared/styles/themes.scss` + `createRoot` 前调用 `initThemeFromStorage()`
+- [ ] 用 `ThemeProvider` 包裹 App（内部已含 ConfigProvider，不要再包 `ConfigProvider`）
 - [ ] 窗口私有页面/组件放在窗口目录内，禁止其他窗口导入
+- [ ] 样式一律使用 `var(--app-*)` 主题变量，禁止硬编码色值（见 6.1.1）
 
 ### 8.2 新增页面（BaseWindow）
 
@@ -697,7 +765,10 @@ function initializeDataDb(db: Database) {
 | API 暴露 | `electron/preload.ts` | contextBridge 白名单 |
 | 路由配置 | `src/windows/BaseWindow/App.tsx` | HashRouter + Routes |
 | 全局类型 | `src/shared/types/electron.d.ts` | window.electronAPI 接口 |
-| 样式变量 | `src/shared/styles/variables.scss` | SCSS 变量与 mixins |
+| 样式变量 | `src/shared/styles/variables.scss` | SCSS 变量与 mixins（**颜色变量已废弃**，仅供历史样式引用） |
+| 主题变量 | `src/shared/styles/themes.scss` | 四套主题的 `--app-*` CSS 变量 |
+| 主题模块 | `src/shared/theme/` | 主题清单、存储、Provider 与 `useTheme` |
+| 主题切换器 | `src/shared/components/ThemeSwitcher/` | 切换 UI，切换后广播到所有窗口 |
 | 窗口入口清单 | `electron/main.ts` 的 `RENDERER_ENTRIES` | 窗口 URL 映射，与 vite input 对应 |
 
 ---
