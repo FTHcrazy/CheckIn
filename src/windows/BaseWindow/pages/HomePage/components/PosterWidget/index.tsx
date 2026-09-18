@@ -4,6 +4,11 @@ import { resolvePosterColors } from "./posterArtwork";
 import { createPosterEngine, type PosterEngine } from "./posterEngine";
 import "./index.scss";
 
+interface PosterWidgetProps {
+  /** 点击海报：跳转今日资讯页（不传则纯装饰，无点击行为） */
+  onOpen?: () => void;
+}
+
 /**
  * 主页右下角的海报装饰件：WebGL 柔性卷曲纸张，悬停舒展、离开回卷。
  *
@@ -11,7 +16,7 @@ import "./index.scss";
  * - WebGL 不可用时整体隐藏（纯装饰件，无降级占位）
  * - rAF 仅在弹簧动画期间运行，静止即停
  */
-export default function PosterWidget() {
+export default function PosterWidget({ onOpen }: PosterWidgetProps) {
   const { meta } = useTheme();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const engineRef = useRef<PosterEngine | null>(null);
@@ -54,6 +59,21 @@ export default function PosterWidget() {
 
   if (!available) return null;
   return (
-    <canvas ref={canvasRef} className="poster-widget" aria-hidden="true" />
+    <canvas
+      ref={canvasRef}
+      className="poster-widget"
+      aria-hidden={onOpen ? undefined : "true"}
+      role={onOpen ? "button" : undefined}
+      title={onOpen ? "打开今日资讯" : undefined}
+      onClick={onOpen}
+      onKeyDown={
+        onOpen
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") onOpen();
+            }
+          : undefined
+      }
+      tabIndex={onOpen ? 0 : undefined}
+    />
   );
 }

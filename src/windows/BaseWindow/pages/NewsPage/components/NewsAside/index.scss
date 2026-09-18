@@ -1,0 +1,232 @@
+// 右栏：摸鱼日报风格栏目
+.news-aside {
+  width: 300px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+  padding-right: 2px;
+
+  &__card {
+    background: var(--app-surface);
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-panel);
+    padding: 16px 18px;
+  }
+
+  &__card-title {
+    margin: 0 0 12px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--app-text);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    letter-spacing: 1px;
+  }
+
+  &__card-icon {
+    color: var(--app-primary);
+    font-size: 14px;
+  }
+
+  /* 日期卡：主题主色渐变，右栏视觉锚点 */
+  &__date {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--app-primary-gradient);
+    border: none;
+    color: var(--app-primary-contrast);
+  }
+
+  &__date-main {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--app-primary-contrast);
+  }
+
+  &__date-week {
+    margin: 2px 0 0;
+    font-size: 12px;
+    opacity: 0.85;
+    color: var(--app-primary-contrast);
+  }
+
+  &__lunar {
+    background: rgba(255, 255, 255, 0.22);
+    border-radius: var(--app-radius-pill);
+    padding: 4px 12px;
+    font-size: 12px;
+    color: var(--app-primary-contrast);
+  }
+
+  /* 打鱼状态 */
+  &__status {
+    margin: 0 0 8px;
+    font-size: 20px;
+    font-weight: 800;
+    color: var(--app-text);
+  }
+
+  &__workday {
+    display: inline-block;
+    margin-bottom: 8px;
+    padding: 2px 10px;
+    border-radius: var(--app-radius-pill);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--app-primary);
+    background: var(--app-primary-weak);
+  }
+
+  &__status-tip {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--app-text-secondary);
+  }
+
+  /* 周 / 月 / 年进度条（60s 摸鱼日报） */
+  &__progress {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--app-border);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  &__progress-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+  }
+
+  &__progress-label {
+    flex: none;
+    width: 52px;
+    color: var(--app-text-muted);
+  }
+
+  &__progress-bar {
+    flex: 1;
+    height: 6px;
+    border-radius: var(--app-radius-pill);
+    background: var(--app-primary-weak);
+    overflow: hidden;
+  }
+
+  &__progress-fill {
+    height: 100%;
+    border-radius: inherit;
+    background: var(--app-primary-gradient);
+  }
+
+  &__progress-value {
+    flex: none;
+    width: 34px;
+    text-align: right;
+    color: var(--app-text-secondary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* 假期倒计时 */
+  &__holidays {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  &__holiday {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  &__holiday-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--app-text);
+  }
+
+  &__holiday-date {
+    font-size: 12px;
+    color: var(--app-text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__holiday-days {
+    margin-left: auto;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--app-text-secondary);
+    font-variant-numeric: tabular-nums;
+
+    &.is-imminent {
+      color: var(--app-error);
+    }
+  }
+
+  /* 摸鱼计划表 */
+  &__plan {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  &__plan-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 8px;
+    border-radius: var(--app-radius-chip);
+    font-size: 13px;
+
+    &.is-active {
+      background: var(--app-primary-weak);
+
+      .news-aside__plan-time {
+        color: var(--app-primary);
+      }
+    }
+  }
+
+  &__plan-time {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--app-text-muted);
+    font-variant-numeric: tabular-nums;
+    min-width: 38px;
+  }
+
+  &__plan-thing {
+    color: var(--app-text);
+    min-width: 0;
+    // 强制单行：超出省略，避免行内容换行破坏计划表节奏
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* 语录卡 */
+  &__quote-text {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--app-text-secondary);
+  }
+
+  &__quote-mark {
+    color: var(--app-accent-amber);
+    margin-right: 6px;
+  }
+}

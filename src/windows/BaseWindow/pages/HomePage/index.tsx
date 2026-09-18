@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Empty, Input, Modal } from "antd";
 import {
   CalendarOutlined,
@@ -8,6 +8,7 @@ import {
   EditOutlined,
   SearchOutlined,
 } from "@ant-design/icons";
+import { fetchDailyNews } from "@/shared/services/news";
 import HomeSidebar from "./components/HomeSidebar";
 import HomeStats from "./components/HomeStats";
 import type { HomeStatItem } from "./components/HomeStats";
@@ -72,6 +73,11 @@ function displayNameFromEmail(email: string): string {
   return segment.charAt(0).toUpperCase() + segment.slice(1);
 }
 
+// 窗口生命周期标记（模块级，路由切换不重置）：
+// 新闻接口只在首次进入首页时探测一次；海报点击跳转后整个窗口内不再展示
+let newsProbed = false;
+let posterDismissed = false;
+
 export default function HomePage() {
   const { overview, reload } = useHomeOverview();
   const {
@@ -88,6 +94,25 @@ export default function HomePage() {
   } = useHomeActions(reload);
 
   const [keyword, setKeyword] = useState("");
+
+  // 首次进入首页探测一次新闻接口：成功才展示右下角报纸（接口失败静默不展示）
+  const [showPoster, setShowPoster] = useState(false);
+
+  useEffect(() => {
+    if (newsProbed || posterDismissed) return;
+    newsProbed = true;
+    let mounted = true;
+    fetchDailyNews()
+      .then((payload) => {
+        if (mounted && payload.live) setShowPoster(true);
+      })
+      .catch(() => {
+        // 探测失败保持隐藏，不打扰首页
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const visibleFeatures = useMemo(() => {
     const trimmed = keyword.trim();
@@ -116,12 +141,19 @@ export default function HomePage() {
     [quickAddValue],
   );
 
+  // 点击报纸：进入今日资讯，且本窗口内不再展示（避免返回首页时重复出现）
+  const handlePosterOpen = () => {
+    posterDismissed = true;
+    setShowPoster(false);
+    navigate("/news");
+  };
+
   return (
     <div className="home-page">
       <HomeSidebar />
 
-      {/* 右下角海报装饰件：固定于视口右下，不随内容滚动 */}
-      <PosterWidget />
+      {/* 右下角海报装饰件：新闻接口探测成功才展示，点击进入今日资讯后消失（窗口生命周期一次） */}
+      {showPoster && <PosterWidget onOpen={handlePosterOpen} />}
 
       <div className="home-page__main">
         <header className="home-page__top">

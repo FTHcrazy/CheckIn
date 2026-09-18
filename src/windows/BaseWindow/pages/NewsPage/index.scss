@@ -1,0 +1,9 @@
+// 今日资讯页：左热点列表 + 右摸鱼日报栏目
+.news-page {
+  display: flex;
+  gap: 20px;
+  flex: 1;
+  min-height: 0;
+  padding: 18px 24px 20px;
+  background: var(--app-bg);
+}

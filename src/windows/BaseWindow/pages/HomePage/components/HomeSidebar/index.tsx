@@ -6,6 +6,7 @@ import {
   CodeOutlined,
   EditOutlined,
   HomeOutlined,
+  ReadOutlined,
   UserOutlined,
 } from "@ant-design/icons";
 import ThemeSwitcher from "@/shared/components/ThemeSwitcher";
@@ -26,6 +27,8 @@ const NAV_ITEMS: NavItem[] = [
   { path: "/daily", label: "日程", icon: <CalendarOutlined /> },
   { path: "/code", label: "代码", icon: <CodeOutlined /> },
   { path: "/user", label: "我的", icon: <UserOutlined /> },
+  // 导航最下方的资讯入口（今日热点 + 摸鱼日报）
+  { path: "/news", label: "资讯", icon: <ReadOutlined /> },
 ];
 
 /**
