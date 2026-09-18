@@ -1,5 +1,49 @@
 # Changelog
 
+## [1.4.8] - 2026-09-18
+
+### Fixed
+- 修复主进程 `http-request` 转发响应的中文/emoji 乱码：逐块 `data += chunk`
+  隐式 utf8 解码会把跨 chunk 边界的多字节字符截成 U+FFFD（资讯标题
+  "AI 🤖占比超九成" 的 emoji 被截成两个问号）。改为 Buffer 收集后
+  `Buffer.concat(...).toString("utf8")` 统一解码
+
+### Changed
+- pnpm ≥10 兼容加固补全：`scripts/start-electron.js` 新增 fail-fast 守卫，
+  electron 二进制缺失时直接输出修复指引（`pnpm install` / `pnpm rebuild
+  electron`），不再以晦涩报错或静默卡住呈现；AGENTS.md 8.7 同步补充
+  rebuild 修复路径与 http-request 编码契约
+
+## [1.4.7] - 2026-09-18
+
+### Fixed
+- 修复 dev（StrictMode）下首页海报永不出现：探测标记在首次挂载即置位，StrictMode
+  重挂载跳过订阅而首个挂载的回调又因 cleanup 判死，接口结果永远无法落到
+  `setShowPoster`。改为模块级 Promise 缓存（同窗口仍只探测一次，每次挂载
+  独立订阅），与 PosterWidget 的 loseContext 修复同属 StrictMode 双执行陷阱
+
+### Changed
+- 依赖管理加固：`package.json` 新增 `pnpm.onlyBuiltDependencies`
+  （electron / better-sqlite3 / esbuild）——pnpm ≥10 默认拦截依赖构建脚本，
+  新机器装完依赖 electron 二进制不会下载（dev 启动报缺二进制）；`.npmrc` 补
+  `electron_builder_binaries_mirror`；AGENTS.md 新增 8.7「新机器环境搭建与依赖管理」
+  （标准安装流程与 electron 二进制校验方法）
+
+## [1.4.6] - 2026-09-18
+
+### Added
+- 代码记录页新增「查询当月」按钮（位于「查询」按钮后）：点击将日期范围自动选为
+  本月 1 号至今日并立即查询，省去手动调整起止日期
+  - 新增纯函数 `getThisMonthRange`（`code-utils.ts`）并补 3 条单测
+    （月中 / 月初当天 / 跨年月切换）
+  - `loadData` 支持显式传入日期区间（`setDateRange` 后同轮闭包读不到新 state，
+    编程式查询必须带参）
+
+### Verified
+- `pnpm test`：91/91 通过（9 个测试文件）
+- `pnpm typecheck`（tsc strict）：0 错误
+- `pnpm lint`：0 错误（仅剩 CodePage 既有 exhaustive-deps 警告）
+
 ## [1.4.5] - 2026-09-18
 
 ### Added

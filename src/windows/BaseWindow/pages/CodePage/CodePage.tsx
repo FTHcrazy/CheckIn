@@ -20,6 +20,7 @@ import {
   MinusOutlined,
   FileOutlined,
   AimOutlined,
+  CalendarOutlined,
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 import Page from "@/shared/components/Page";
@@ -126,6 +127,7 @@ export default function CodePage() {
     workdays,
     setWorkdays,
     loadData,
+    loadThisMonth,
     summaryStats,
     monthlyDailyNeeded,
     dailyOutput,
@@ -160,14 +162,22 @@ export default function CodePage() {
             <Button
               type="primary"
               icon={<SearchOutlined />}
-              onClick={loadData}
+              onClick={() => void loadData()}
               loading={loading}
             >
               查询
             </Button>
             <Button
+              icon={<CalendarOutlined />}
+              onClick={loadThisMonth}
+              loading={loading}
+              title="将日期范围选为本月 1 号至今日并查询"
+            >
+              查询当月
+            </Button>
+            <Button
               icon={<ReloadOutlined />}
-              onClick={loadData}
+              onClick={() => void loadData()}
               loading={loading}
             >
               刷新

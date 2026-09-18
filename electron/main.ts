@@ -503,15 +503,18 @@ app.whenReady().then(() => {
             headers: options.headers || {},
           },
           (res) => {
-            let data = "";
-            res.on("data", (chunk) => {
-              data += chunk;
+            // 以 Buffer 收集后统一 utf8 解码：若逐块隐式 toString，跨 chunk
+            // 边界的多字节字符（emoji 4 字节 / 汉字 3 字节）会被截成 U+FFFD 乱码
+            const chunks: Buffer[] = [];
+            res.on("data", (chunk: Buffer) => {
+              chunks.push(chunk);
             });
             res.on("end", () => {
+              const body = Buffer.concat(chunks).toString("utf8");
               try {
-                resolve({ status: res.statusCode, data: JSON.parse(data) });
+                resolve({ status: res.statusCode, data: JSON.parse(body) });
               } catch {
-                resolve({ status: res.statusCode, data });
+                resolve({ status: res.statusCode, data: body });
               }
             });
           },

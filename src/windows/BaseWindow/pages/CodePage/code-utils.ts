@@ -104,3 +104,9 @@ export function calcWorkdays(from: Dayjs, to: Dayjs): number {
 export function getCommitOutput(item: { insertions: string; deletions: string }): number {
   return (parseInt(item.insertions) || 0) + (parseInt(item.deletions) || 0) * 0.3;
 }
+
+/** 「查询当月」区间：本月 1 号 ~ 今天（含今天）；月初当天时两端为同一天 */
+export function getThisMonthRange(now: Dayjs): [Dayjs, Dayjs] {
+  const today = now.startOf("day");
+  return [today.startOf("month"), today];
+}

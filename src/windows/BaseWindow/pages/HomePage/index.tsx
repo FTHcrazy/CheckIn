@@ -9,6 +9,7 @@ import {
   SearchOutlined,
 } from "@ant-design/icons";
 import { fetchDailyNews } from "@/shared/services/news";
+import type { DailyNewsPayload } from "@/shared/services/news";
 import HomeSidebar from "./components/HomeSidebar";
 import HomeStats from "./components/HomeStats";
 import type { HomeStatItem } from "./components/HomeStats";
@@ -74,8 +75,11 @@ function displayNameFromEmail(email: string): string {
 }
 
 // 窗口生命周期标记（模块级，路由切换不重置）：
-// 新闻接口只在首次进入首页时探测一次；海报点击跳转后整个窗口内不再展示
-let newsProbed = false;
+// 新闻接口只在首次进入首页时探测一次；海报点击跳转后整个窗口内不再展示。
+// 探测用 Promise 缓存而非布尔标记：BaseWindow 开发态是 StrictMode 双挂载——
+// 若第一次挂载就把标记置位，重挂载会跳过订阅，而第一次的回调又因 cleanup 被
+// 判死（mounted=false），探测结果永远落不了 setShowPoster（海报永不出现）。
+let newsProbePromise: Promise<DailyNewsPayload> | null = null;
 let posterDismissed = false;
 
 export default function HomePage() {
@@ -99,10 +103,10 @@ export default function HomePage() {
   const [showPoster, setShowPoster] = useState(false);
 
   useEffect(() => {
-    if (newsProbed || posterDismissed) return;
-    newsProbed = true;
+    if (posterDismissed) return;
+    if (!newsProbePromise) newsProbePromise = fetchDailyNews();
     let mounted = true;
-    fetchDailyNews()
+    newsProbePromise
       .then((payload) => {
         if (mounted && payload.live) setShowPoster(true);
       })

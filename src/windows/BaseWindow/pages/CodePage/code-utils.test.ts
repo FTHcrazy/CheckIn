@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import dayjs from "dayjs";
-import { calcWorkdays, getCommitOutput, isWorkday } from "./code-utils";
+import {
+  calcWorkdays,
+  getCommitOutput,
+  getThisMonthRange,
+  isWorkday,
+} from "./code-utils";
 
 const d = (date: string) => dayjs(date);
 
@@ -69,5 +74,25 @@ describe("getCommitOutput", () => {
 
   it("删除行取整数字符串前缀", () => {
     expect(getCommitOutput({ insertions: "10", deletions: "20px" })).toBe(16);
+  });
+});
+
+describe("getThisMonthRange", () => {
+  it("月中日期：区间为本月 1 号 ~ 今天（含今天）", () => {
+    const [from, to] = getThisMonthRange(dayjs("2026-09-18 15:30:00"));
+    expect(from.format("YYYY-MM-DD HH:mm:ss")).toBe("2026-09-01 00:00:00");
+    expect(to.format("YYYY-MM-DD HH:mm:ss")).toBe("2026-09-18 00:00:00");
+  });
+
+  it("月初当天：两端为同一天（查询当天全天）", () => {
+    const [from, to] = getThisMonthRange(dayjs("2026-09-01 08:00:00"));
+    expect(from.isSame(to, "day")).toBe(true);
+    expect(from.format("YYYY-MM-DD")).toBe("2026-09-01");
+  });
+
+  it("跨年月切换：1 月 1 号视角区间正确", () => {
+    const [from, to] = getThisMonthRange(dayjs("2027-01-01 23:00:00"));
+    expect(from.format("YYYY-MM-DD")).toBe("2027-01-01");
+    expect(to.format("YYYY-MM-DD")).toBe("2027-01-01");
   });
 });

@@ -4,7 +4,12 @@ import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
 import { fetchGitWebhookLogs } from "@/shared/services/code";
 import type { GitWebhookLogItem } from "@/shared/services/code";
-import { calcWorkdays, getCommitOutput, isWorkday } from "../code-utils";
+import {
+  calcWorkdays,
+  getCommitOutput,
+  getThisMonthRange,
+  isWorkday,
+} from "../code-utils";
 
 /** CodePage 业务逻辑：Git 提交数据查询、工作日统计与产出趋势计算 */
 export function useCodePage() {
@@ -79,7 +84,9 @@ export function useCodePage() {
     void loadMonthOutput();
   }, [loadMonthOutput]);
 
-  const loadData = useCallback(async () => {
+  // overrideRange：编程式查询入口（如「查询当月」）——
+  // setState 后同轮闭包里的 dateRange 仍是旧值，必须显式传入新区间
+  const loadData = useCallback(async (overrideRange?: [Dayjs, Dayjs]) => {
     const trimmedEmail = email.trim();
     if (!trimmedEmail) {
       setData([]);
@@ -90,7 +97,7 @@ export function useCodePage() {
 
     setLoading(true);
     try {
-      const [from, to] = dateRange;
+      const [from, to] = overrideRange ?? dateRange;
       const res = await fetchGitWebhookLogs(
         trimmedEmail,
         from.startOf("day").format("YYYY/M/D HH:mm:ss"),
@@ -107,6 +114,13 @@ export function useCodePage() {
       setLoading(false);
     }
   }, [dateRange, email, message]);
+
+  /** 查询当月：日期区间置为本月 1 号 ~ 今天并立即查询 */
+  const loadThisMonth = useCallback(() => {
+    const range = getThisMonthRange(dayjs());
+    setDateRange(range);
+    void loadData(range);
+  }, [loadData]);
 
   useEffect(() => {
     if (!emailInitialized || !email.trim() || autoFetched) {
@@ -258,6 +272,7 @@ export function useCodePage() {
     workdays,
     setWorkdays,
     loadData,
+    loadThisMonth,
     summaryStats,
     monthlyDailyNeeded,
     dailyOutput,

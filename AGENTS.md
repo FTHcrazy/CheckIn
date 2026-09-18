@@ -724,6 +724,9 @@ function initializeDataDb(db: Database) {
 
 - **必须维护**：每次功能上线、修复、兼容调整或配置改动，必须同步更新 `CHANGELOG.md`。
 - **版本格式**：使用语义化版本，格式为 `[X.Y.Z]`，并写明发布日期，如 `## [1.0.2] - 2026-09-15`。
+- **版本递增策略**：有架构调整、新增页面/模块/数据层时升次版本号（`X.Y.Z → X.Y+1.0`）；
+  **无架构改动的小功能与修复只升修订号**（`X.Y.Z → X.Y.Z+1`），`CHANGELOG.md` 与
+  `package.json` 的 `version` 必须同步修改。
 - **章节规范**：优先使用 `Added` / `Changed` / `Fixed` / `Removed` / `Security` 等标准小节；项目主语言为中文时，也可写成对应中文标题。
 - **内容要求**：每条记录必须简洁、可追溯，说明“修复了什么”“新增了什么”“影响范围”，禁止空泛描述，如“优化”“调整”而不写具体内容。
 - **发布同步**：功能上线前后，确保 `CHANGELOG.md` 与 `VERSION.MD` 的版本信息保持一致，避免版本号与修订记录不一致。
@@ -740,6 +743,30 @@ function initializeDataDb(db: Database) {
 ```
 
 ---
+
+### 8.7 新机器环境搭建与依赖管理
+
+- **包管理器**：项目基于 pnpm（lockfile `9.0`），本机基准 pnpm 9.x；pnpm ≥10 默认
+  **拦截所有依赖的构建脚本**，必须在 `package.json` 的 `pnpm.onlyBuiltDependencies`
+  中显式放行（当前：`electron` / `better-sqlite3` / `esbuild`）——新增带 postinstall
+  的依赖时同步补这里，否则 electron 二进制等永远装不上。
+- **镜像配置**：`.npmrc` 已随仓库提交（registry / `electron_mirror` /
+  `electron_builder_binaries_mirror` 均指向 npmmirror），新机器 clone 后无需重复配置；
+  若仍从 GitHub 下载超时，可临时导出环境变量 `ELECTRON_MIRROR` 强制覆盖。
+- **标准安装流程**：
+  1. `pnpm install`（确认安装日志中 electron 无 "Ignored build scripts" 警告）
+  2. `pnpm electron:rebuild`（better-sqlite3 重编译到 Electron ABI，或直接
+     `pnpm electron:setup` 一步到位）
+  3. `pnpm dev`
+- **electron 二进制校验**：`node_modules/electron/path.txt` 与
+  `node_modules/electron/dist/electron.exe` 必须同时存在；`scripts/start-electron.js`
+  里有 fail-fast 守卫，缺失时会直接给出修复指引而非晦涩报错。修复方式：重跑
+  `pnpm install` 或 `pnpm rebuild electron`（拉取 onlyBuiltDependencies 配置后
+  用后者最快），不要手动解压（手动解压无法覆盖后续 CI / 重装场景）。
+- **http-request 编码契约**：主进程转发 HTTP 响应必须以 Buffer 收集后
+  `Buffer.concat(chunks).toString("utf8")` 统一解码——逐块隐式 toString 会把
+  跨 chunk 边界的多字节字符（emoji 4 字节 / 汉字 3 字节）截成 U+FFFD 乱码
+  （1.4.8 修复，资讯标题 emoji 乱码即此因）。
 
 ## 9. 附录
 
