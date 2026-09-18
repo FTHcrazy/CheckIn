@@ -108,7 +108,7 @@ export const THEME_LIST: readonly ThemeMeta[] = [
     id: "midnight",
     label: "月夜暗色",
     hint: "低亮夜色，护眼专注",
-    swatch: "#7b8cff",
+    swatch: "#232842", // 之前的色值跟紫色主题的颜色相近，换一个深一点的
     isDark: true,
     antd: {
       colorPrimary: "#7b8cff",

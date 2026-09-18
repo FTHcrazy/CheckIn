@@ -1,0 +1,15 @@
+// 主页右下角的海报装饰件：canvas 内容是独立像素层，
+// 内部分辨率保持 POSTER_W/H（260×360）以保证清晰度，
+// 显示尺寸为其一半（面积 1/4），避免遮挡功能卡片区。
+.poster-widget {
+  position: absolute;
+  right: 20px;
+  bottom: 18px;
+  z-index: 10;
+  width: 130px;
+  height: 180px;
+  // 环境投影借主题化的半透明色 --app-mask（四主题各自的投影色相），不硬编码；
+  // 偏移/模糊随显示尺寸等比缩小，保持小尺寸下的视觉协调
+  filter: drop-shadow(0 10px 20px var(--app-mask));
+  cursor: pointer;
+}

@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.4.4] - 2026-09-18
+
+### Added
+- 新增首页右下角海报装饰件
+
+### Verified
+- `pnpm test`：72/72 通过（8 个测试文件，PosterWidget 新增 9 条：色板解析 4、
+  手感/贴图契约 3、引擎降级与组件卸载 2）
+- `pnpm typecheck`（tsc -b，strict 开启）：0 错误
+- `pnpm lint`：0 错误（仅剩 CodePage 既有 exhaustive-deps 警告）
+- `vite build` 通过
+
 ## [1.4.3] - 2026-09-17
 
 ### Added

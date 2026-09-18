@@ -13,6 +13,7 @@ import HomeStats from "./components/HomeStats";
 import type { HomeStatItem } from "./components/HomeStats";
 import FeatureCard from "./components/FeatureCard";
 import type { FeatureTone } from "./components/FeatureCard";
+import PosterWidget from "./components/PosterWidget";
 import { useHomeOverview } from "./hooks/useHomeOverview";
 import { useHomeActions } from "./hooks/useHomeActions";
 import { parseWorkHourTag } from "../TodoPage/todo-utils";
@@ -118,6 +119,9 @@ export default function HomePage() {
   return (
     <div className="home-page">
       <HomeSidebar />
+
+      {/* 右下角海报装饰件：固定于视口右下，不随内容滚动 */}
+      <PosterWidget />
 
       <div className="home-page__main">
         <header className="home-page__top">

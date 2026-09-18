@@ -1,4 +1,5 @@
 .home-page {
+  position: relative; // 右下角 PosterWidget 的定位上下文
   display: flex;
   gap: 12px;
   height: 100%;
