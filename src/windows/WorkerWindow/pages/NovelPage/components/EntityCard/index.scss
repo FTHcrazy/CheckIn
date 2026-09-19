@@ -1,0 +1,71 @@
+.nv-ecard {
+  width: 100%;
+  display: flex;
+  gap: 10px;
+  padding: 9px;
+  margin-bottom: 7px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-chip);
+  background: var(--app-surface);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+
+  &:hover {
+    border-color: var(--app-primary);
+    box-shadow: var(--app-shadow-card);
+    transform: translateY(-1px);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--app-primary);
+    outline-offset: 2px;
+  }
+
+  &__avatar {
+    width: 30px;
+    height: 30px;
+    flex: none;
+    border-radius: 8px;
+    display: grid;
+    place-items: center;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  &__main {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  &__name {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--app-text);
+  }
+
+  &__summary {
+    font-size: 11.5px;
+    line-height: 1.5;
+    color: var(--app-text-muted);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nv-ecard {
+    transition-duration: 0ms;
+
+    &:hover {
+      transform: none;
+    }
+  }
+}

@@ -1,47 +1,23 @@
-import { Empty, Typography } from "antd";
-import { ToolOutlined } from "@ant-design/icons";
-import { useEffect } from "react";
+import { EditOutlined } from "@ant-design/icons";
 import WindowHeader from "@/shared/components/WindowHeader";
-
-const { Text } = Typography;
+import NovelPage from "./pages/NovelPage/NovelPage";
+import "./index.scss";
 
 /**
- * WorkerWindow —— 普通临时工作窗口
+ * WorkerWindow —— CheckIn 小说编辑器窗口
  *
- * 特性：
- * - 标准窗口：出现在任务栏，标题栏（WindowHeader）提供拖动与最小化/最大化/关闭
- * - 关闭即随实例销毁，不持有任何业务状态，重新打开即全新实例
- * - 支持 Esc 快捷关闭
+ * 窗口级职责只做两件事：提供标题栏（拖动 / 最小化 / 最大化 / 关闭）与挂载主页面。
+ * 业务全部下沉到 pages/NovelPage，按 AGENTS.md 的窗口隔离与页面模块规范组织。
+ *
+ * 注意：PRD §2「零打断原则」明确移除了 Esc 关窗——编辑场景 Esc 属高频误触，
+ * Esc 现在只用于退出专注模式（实现在 useNovelShortcuts）。
  */
 export default function WorkerWindowApp() {
-  // Esc 快捷关闭，走通用窗口控制通道（与标题栏关闭按钮同一条链路）
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      window.electronAPI?.send("window-control", "close");
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
-
   return (
     <div className="window-shell">
-      <WindowHeader title="Worker" icon={<ToolOutlined />} />
+      <WindowHeader title="小说编辑器" icon={<EditOutlined />} />
       <div className="window-shell__body">
-        <main className="worker-body">
-          <Empty
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description={
-              <div className="worker-body__empty">
-                <Text>临时工作窗口</Text>
-                <Text type="secondary" className="worker-body__hint">
-                  拖动标题栏可移动窗口，按 Esc 或点击右上角关闭
-                </Text>
-              </div>
-            }
-          />
-        </main>
+        <NovelPage />
       </div>
     </div>
   );

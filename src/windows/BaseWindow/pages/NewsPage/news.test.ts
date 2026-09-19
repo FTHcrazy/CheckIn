@@ -12,8 +12,33 @@ import {
   mapDaily60s,
 } from "./news";
 
+/**
+ * 桩掉渲染进程 fetch（请求已下沉到渲染进程，不再走主进程 IPC）。
+ * client 只依赖 ok / status / headers.get / text 四个字段。
+ */
+function stubFetch(
+  handler: (url: string) => Promise<{ status: number; body: unknown }>,
+): void {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    const result = await handler(url);
+    return {
+      ok: result.status >= 200 && result.status < 300,
+      status: result.status,
+      url,
+      headers: {
+        get: (key: string) =>
+          key.toLowerCase() === "content-type" ? "application/json" : null,
+      },
+      text: async () => JSON.stringify(result.body),
+    } as unknown as Response;
+  });
+  vi.stubGlobal("fetch", fetchMock);
+}
+
 describe("今日资讯", () => {
   it("返回不超过十条且按热度降序", async () => {
+    stubFetch(() => Promise.reject(new Error("offline")));
     const payload = await fetchDailyNews();
     const news = payload.items;
     expect(news.length).toBeGreaterThan(0);
@@ -37,7 +62,8 @@ describe("今日资讯", () => {
 
 describe("60s API 接入", () => {
   beforeEach(() => {
-    delete (globalThis as { electronAPI?: unknown }).electronAPI;
+    // 默认断网，保证测试离线可跑；各用例按需覆盖
+    stubFetch(() => Promise.reject(new Error("offline")));
   });
 
   it("mapDaily60s：截取十条、提取时间、热度按序衰减", () => {
@@ -64,7 +90,7 @@ describe("60s API 接入", () => {
     expect(noTime[0].time).toBe("");
   });
 
-  it("fetchDailyNews：无 electron 桥时走本地兜底", async () => {
+  it("fetchDailyNews：接口不可用时走本地兜底", async () => {
     const result = await fetchDailyNews();
     expect(result.items.length).toBeGreaterThan(0);
     expect(result.live).toBe(false);
@@ -74,13 +100,12 @@ describe("60s API 接入", () => {
     expect(result.lunarText).toBeNull();
   });
 
-  it("fetchDailyNews：桥成功时映射真实数据，tip 优先于 moyuQuote，无效进度槽位为 null", async () => {
-    const httpRequest = vi.fn();
-    httpRequest.mockImplementation(async ({ url }: { url: string }) => {
+  it("fetchDailyNews：接口成功时映射真实数据，tip 优先于 moyuQuote，无效进度槽位为 null", async () => {
+    stubFetch(async (url) => {
       if (url.endsWith("/60s")) {
         return {
           status: 200,
-          data: {
+          body: {
             code: 200,
             data: {
               news: ["热点一条", "热点两条"],
@@ -92,7 +117,7 @@ describe("60s API 接入", () => {
       }
       return {
         status: 200,
-        data: {
+        body: {
           code: 200,
           data: {
             today: { isWorkday: true },
@@ -106,7 +131,6 @@ describe("60s API 接入", () => {
         },
       };
     });
-    (globalThis as { electronAPI?: unknown }).electronAPI = { httpRequest };
 
     const result = await fetchDailyNews();
     expect(result.items).toHaveLength(2);
@@ -122,20 +146,16 @@ describe("60s API 接入", () => {
   });
 
   it("fetchDailyNews：单端点失败不影响另一端点", async () => {
-    const httpRequest = vi.fn();
-    httpRequest.mockImplementation(async ({ url }: { url: string }) => {
-      if (url.endsWith("/60s")) {
-        throw new Error("60s down");
-      }
+    stubFetch(async (url) => {
+      if (url.endsWith("/60s")) throw new Error("60s down");
       return {
         status: 200,
-        data: {
+        body: {
           code: 200,
           data: { today: { isWorkday: false }, moyuQuote: "休息日" },
         },
       };
     });
-    (globalThis as { electronAPI?: unknown }).electronAPI = { httpRequest };
 
     const result = await fetchDailyNews();
     // 60s 失败 → 样例兜底；moyu 成功 → workday / quote 来自 API
@@ -146,9 +166,8 @@ describe("60s API 接入", () => {
     expect(result.quote).toBe("休息日");
   });
 
-  it("fetchDailyNews：桥全部失败时整体兜底", async () => {
-    const httpRequest = vi.fn().mockRejectedValue(new Error("network down"));
-    (globalThis as { electronAPI?: unknown }).electronAPI = { httpRequest };
+  it("fetchDailyNews：全部失败时整体兜底", async () => {
+    stubFetch(() => Promise.reject(new Error("network down")));
 
     const result = await fetchDailyNews();
     expect(result.items.length).toBeGreaterThan(0);

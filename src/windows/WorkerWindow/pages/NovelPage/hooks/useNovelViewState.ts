@@ -1,0 +1,117 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { TOAST_DURATION_MS } from "../novel-config";
+import type { EntityType } from "../types";
+
+export type PanelTab = "outline" | "entity" | "note" | "search";
+export type EntityFilter = EntityType | "all";
+export type ToastTone = "success" | "info" | "warning";
+
+export interface ToastPayload {
+  id: number;
+  text: string;
+  tone: ToastTone;
+}
+
+/**
+ * 小说编辑器视图状态 Hook
+ *
+ * 负责：三栏折叠、专注 / 打字机模式、右栏 Tab 与筛选、浮层与抽屉开关、
+ * 轻提示队列。全部是展示层状态，不触达数据，也不保存。
+ */
+export function useNovelViewState() {
+  const [leftOpen, setLeftOpen] = useState(true);
+  const [rightOpen, setRightOpen] = useState(false);
+  const [focusMode, setFocusMode] = useState(false);
+  const [typewriter, setTypewriter] = useState(false);
+  const [panelTab, setPanelTab] = useState<PanelTab>("entity");
+  const [entityFilter, setEntityFilter] = useState<EntityFilter>("all");
+  const [detailEntityId, setDetailEntityId] = useState<string | null>(null);
+  const [jumpOpen, setJumpOpen] = useState(false);
+  const [snapshotOpen, setSnapshotOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [toast, setToast] = useState<ToastPayload | null>(null);
+
+  // 轻提示：2.4s 自动消失，pointer-events:none 由组件保证不阻塞输入（设计方案 §06）
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(null), TOAST_DURATION_MS);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+
+  const showToast = useCallback((text: string, tone: ToastTone = "success") => {
+    setToast({ id: Date.now(), text, tone });
+  }, []);
+
+  const closeToast = useCallback(() => setToast(null), []);
+
+  const toggleLeft = useCallback(() => setLeftOpen((open) => !open), []);
+  const toggleRight = useCallback(() => setRightOpen((open) => !open), []);
+  const toggleTypewriter = useCallback(() => setTypewriter((on) => !on), []);
+
+  // 专注模式 hides 顶栏 / 状态条 / 左右栏；Esc 只退出专注，不关窗（PRD §2 零打断）
+  const toggleFocus = useCallback(() => {
+    setFocusMode((on) => !on);
+  }, []);
+
+  const exitFocus = useCallback(() => setFocusMode(false), []);
+
+  const openEntityDetail = useCallback((entityId: string) => {
+    setDetailEntityId(entityId);
+    setRightOpen(true);
+  }, []);
+
+  const closeEntityDetail = useCallback(() => setDetailEntityId(null), []);
+
+  const openSnapshot = useCallback(() => setSnapshotOpen(true), []);
+  const closeSnapshot = useCallback(() => setSnapshotOpen(false), []);
+  const openSettings = useCallback(() => setSettingsOpen(true), []);
+  const closeSettings = useCallback(() => setSettingsOpen(false), []);
+  const openJump = useCallback(() => setJumpOpen(true), []);
+  const closeJump = useCallback(() => setJumpOpen(false), []);
+
+  const selectPanelTab = useCallback((tab: PanelTab) => {
+    setPanelTab(tab);
+    setRightOpen(true);
+  }, []);
+
+  /** 打字机模式下额外让左右栏让位，避免视觉噪音 */
+  const effectiveLeftOpen = useMemo(
+    () => leftOpen && !focusMode,
+    [leftOpen, focusMode],
+  );
+  const effectiveRightOpen = useMemo(
+    () => rightOpen && !focusMode,
+    [rightOpen, focusMode],
+  );
+
+  return {
+    leftOpen: effectiveLeftOpen,
+    rightOpen: effectiveRightOpen,
+    focusMode,
+    typewriter,
+    panelTab,
+    entityFilter,
+    detailEntityId,
+    jumpOpen,
+    snapshotOpen,
+    settingsOpen,
+    toast,
+    toggleLeft,
+    toggleRight,
+    toggleFocus,
+    exitFocus,
+    toggleTypewriter,
+    selectPanelTab,
+    setEntityFilter,
+    openEntityDetail,
+    closeEntityDetail,
+    openJump,
+    closeJump,
+    openSnapshot,
+    closeSnapshot,
+    openSettings,
+    closeSettings,
+    showToast,
+    closeToast,
+  };
+}

@@ -1,0 +1,45 @@
+.nv-recbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  font-size: 12px;
+  background: var(--app-warning-weak);
+  color: var(--app-warning);
+  border-bottom: 1px solid var(--app-border);
+
+  &__icon {
+    flex: none;
+  }
+
+  &__text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__ack {
+    margin-left: auto;
+    flex: none;
+    border: none;
+    background: transparent;
+    color: var(--app-warning);
+    font-size: 11.5px;
+    text-decoration: underline;
+    opacity: 0.85;
+    cursor: pointer;
+    transition: opacity 120ms ease;
+
+    &:hover {
+      opacity: 1;
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--app-primary);
+      outline-offset: 2px;
+      border-radius: 4px;
+    }
+  }
+}

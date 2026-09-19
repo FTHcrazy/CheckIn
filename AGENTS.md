@@ -661,7 +661,7 @@ function initializeDataDb(db: Database) {
 
 | 问题 | 影响 | 改进方案 |
 |------|------|---------|
-| **硬编码 Token** | `services/code.ts` 的认证 Cookie 为硬编码，过期需改代码（现已改走主进程 `httpRequest` 使 Cookie 生效） | 改为登录时动态获取，存储在 keytar 或加密配置 |
+| **硬编码 Token** | `services/code.ts` 的认证 Cookie 为硬编码，过期需改代码（现由 `ensureSessionCookie` 播种到 session jar 生效） | 改为登录时动态获取，存储在 keytar 或加密配置 |
 
 ### 7.2 中优先级
 
@@ -750,6 +750,14 @@ function initializeDataDb(db: Database) {
   **拦截所有依赖的构建脚本**，必须在 `package.json` 的 `pnpm.onlyBuiltDependencies`
   中显式放行（当前：`electron` / `better-sqlite3` / `esbuild`）——新增带 postinstall
   的依赖时同步补这里，否则 electron 二进制等永远装不上。
+- **pnpm ≥10.26 / 11 的字段迁移（已踩坑）**：pnpm 11 **不再读取** `package.json` 的
+  `pnpm` 字段（安装时会警告 `pnpm.onlyBuiltDependencies ignored`），且
+  `pnpm-workspace.yaml` 的 `onlyBuiltDependencies` 也被移除，统一改为 `allowBuilds`
+  映射。因此 `pnpm-workspace.yaml` 中必须**同时维护两套白名单**：`onlyBuiltDependencies`
+  供 pnpm 9/10 使用，`allowBuilds` 供 pnpm ≥10.26/11 使用，两边都要包含
+  `electron` / `better-sqlite3` / `esbuild`。曾因 `allowBuilds` 漏掉 `electron` 导致
+  pnpm 11 机器上 electron postinstall 被拦、`dist/electron.exe` 永远缺失
+  （pnpm 9 的同事不受影响，问题只在本机复现）。
 - **镜像配置**：`.npmrc` 已随仓库提交（registry / `electron_mirror` /
   `electron_builder_binaries_mirror` 均指向 npmmirror），新机器 clone 后无需重复配置；
   若仍从 GitHub 下载超时，可临时导出环境变量 `ELECTRON_MIRROR` 强制覆盖。
@@ -763,10 +771,62 @@ function initializeDataDb(db: Database) {
   里有 fail-fast 守卫，缺失时会直接给出修复指引而非晦涩报错。修复方式：重跑
   `pnpm install` 或 `pnpm rebuild electron`（拉取 onlyBuiltDependencies 配置后
   用后者最快），不要手动解压（手动解压无法覆盖后续 CI / 重装场景）。
-- **http-request 编码契约**：主进程转发 HTTP 响应必须以 Buffer 收集后
-  `Buffer.concat(chunks).toString("utf8")` 统一解码——逐块隐式 toString 会把
-  跨 chunk 边界的多字节字符（emoji 4 字节 / 汉字 3 字节）截成 U+FFFD 乱码
-  （1.4.8 修复，资讯标题 emoji 乱码即此因）。
+- **已改用扁平化布局 `node-linker=hoisted`（根治方案，勿回退）**：
+  `pnpm-workspace.yaml` 中设置了 `node-linker: hoisted`，`node_modules` 是**扁平结构**，
+  不存在 `.pnpm` 虚拟存储与任何 junction / symlink。
+  - **为什么改**：本机 Windows 上 pnpm 默认的 symlinked 布局会**稳定复现**「包目录被
+    创建但内容为空」的问题——甚至**全新安装**一次就会出现约 200 个空目录（`.pnpm`
+    内成片 entries=0），进而随机报 `Cannot find module 'debug'` / react-router
+    类型缺失等错误。已排除的常见嫌疑：磁盘空间（剩余 1TB+）、Windows 长路径
+    （实测可创建 429 字符路径）、pnpm store 完整性（38377 文件、0 空目录）。
+    手写脚本补链接也不可靠：按字典序挑版本会把顶层 `typescript` 指向 5.4.3
+    （项目要 6.0.3）；补传递依赖会把 `brace-expansion` 指到不兼容版本，直接让
+    eslint 崩在 `brace_expansion_1.expand is not a function`。
+  - **代价**：允许幽灵依赖（未声明的包也能 import）。对 Electron 应用可接受，
+    但**新增依赖务必写进 `package.json`**，不要依赖 hoisting 碰巧可用。
+  - **判断当前布局**：`node_modules/.pnpm` 存在 = symlinked；不存在 = hoisted。
+- **pnpm 链接半损坏 / `.ignored` 搬迁中断（symlinked 布局下的历史坑，保留备查）**：
+  - **症状**：明明 `pnpm install` 显示 `Already up to date`，却报
+    `Cannot find module 'electron'` / `'vitest'` / `'eslint'`；或 `node_modules`
+    下某个顶层包变成**空目录**，并出现 `node_modules/.ignored/` 目录。
+  - **成因**：pnpm 判定某个条目「由其他包管理器安装」时，会把它重命名为
+    `.ignored_<原名>`（包内）或搬到 `node_modules/.ignored/<pkg>`（顶层），
+    准备删除。Windows 上这一步中断就会**只留下空壳、原内容消失**。
+    而 `node_modules/.modules.yaml` 仍记录着这些包「已安装」，于是后续
+    `pnpm install`（**包括 `--force`**）一律判定 up to date，永不自愈——
+    实测删除 `.modules.yaml` 也无效，pnpm 不会重建链接。
+  - **诱因**：跨 pnpm 大版本复用同一个 `node_modules`（pnpm 9 → 10 → 11 的
+    `layoutVersion` 不同），或在 `pnpm add` 过程中被打断 / 并发执行。
+  - **处置**（按严重程度递进；当前 hoisted 布局下不会出现，仅切回 symlinked 时适用）：
+    1. `pnpm check:deps` —— 只体检，有问题退出码 1（适合 CI）。
+       在 hoisted 布局下脚本走快速通道：只校验关键包与 electron 二进制，**不做任何改写**
+    2. `pnpm fix:deps` —— 应急修复：重建断裂的顶层链接、清理 `.ignored`
+       空壳、纠正顶层误指向 peer 变体的链接（electron 的 `dist/` 二进制
+       只存在于主变体 `electron@<ver>`，指到 `electron@<ver>_<peer>` 会
+       出现「能 import 但没有二进制」的假象）
+    3. 若仍报「找不到可用实体」——说明已处于半损坏状态，补丁不可靠，
+       彻底重建：删除 `node_modules` → `pnpm install` → `pnpm electron:rebuild`
+  - **预防**：
+    - `package.json` 已锁定 `"packageManager": "pnpm@11.25.0"`；**升级 pnpm
+      大版本后必须删除 `node_modules` 重装**，不要复用旧目录
+    - `pnpm add` 不要并发执行、不要中途打断
+    - `postinstall` 已挂 `scripts/fix-pnpm-links.mjs --warn-only`，每次安装后
+      自动体检（只告警、不阻断安装，避免误报卡住 CI）
+- **HTTP 请求架构契约（1.5.0 重构，必读）**：**网络请求一律在渲染进程发起，
+  主进程不再代理任何 HTTP**。所有窗口统一使用 `src/shared/http/` 的客户端
+  （内部 `fetch` 封装：超时 / 重试 / 中断 / 错误归一 / 响应剥壳）：
+  - 按业务划分作用域取实例：`getScopedHttpClient("news" | "git", config)`，
+    每个渲染进程（= 每个窗口）持有独立实例，请求彼此隔离，
+    页面卸载时用 `useHttpClient()` 或 `abortScope()` 中断在途请求；
+  - 主进程只做**一次性**会话配置（见 `electron/httpSession.ts`）：
+    ① `onHeadersReceived` 注入 CORS 响应头；② `http-session-set-cookie`
+    把凭据写入 session jar。**不要**新增任何逐请求转发用的 IPC 通道；
+  - `Cookie` 是 forbidden header，渲染进程无法手动设置：走
+    `ensureSessionCookie()` + `credentials: "include"`，由网络栈自动携带；
+  - 新增接口请直接复用 `createHttpClient` / `getScopedHttpClient`，
+    禁止在业务里裸调 `fetch`，以免各窗口标准不一；
+  - 编码问题已成为历史：响应由 Chromium 网络栈按 UTF-8 解码，
+    不再有主进程 `Buffer.concat` 截段乱码（原 1.4.8 契约已随架构废弃）。
 
 ## 9. 附录
 

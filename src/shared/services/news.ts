@@ -1,11 +1,14 @@
 /**
  * 60s API 数据层（shared：HomePage 探活 + NewsPage 展示共用）。
  *
- * 走主进程 httpRequest 转发防 CORS（electron/main.ts 'http-request'）。
+ * 请求在渲染进程内直接发出（统一走 shared/http 客户端），
+ * CORS 由主进程 session 级响应头注入放行（见 electron/httpSession.ts）。
  * 数据源文档：https://docs.60s-api.viki.moe（开源免费聚合 API）
  *   - GET /v2/60s  每天 60 秒读懂世界（日更要闻，纯文本标题数组）
  *   - GET /v2/moyu 摸鱼日报（进度 / 假期 / 一言 / 农历）
  */
+
+import { getScopedHttpClient, type HttpResponse } from "@/shared/http";
 
 /** 资讯条数上限（业务约束：今日热点不超过十条） */
 export const MAX_NEWS = 10;
@@ -179,18 +182,8 @@ export interface DailyNewsPayload {
   lunarText: string | null;
 }
 
-type HttpRequestFn = (options: { url: string }) => Promise<{
-  status: number;
-  data: unknown;
-}>;
-
-/** 取主进程 httpRequest 桥（jsdom / 无 electron 环境为 undefined） */
-function getHttpBridge(): HttpRequestFn | undefined {
-  const api = (
-    globalThis as { electronAPI?: { httpRequest?: HttpRequestFn } }
-  ).electronAPI;
-  return typeof api?.httpRequest === "function" ? api.httpRequest : undefined;
-}
+/** 资讯专用 client：作用域隔离，超时与重试标准同其他窗口一致 */
+const http = getScopedHttpClient("news", { timeout: 10_000, retry: 1 });
 
 /** 60s API 响应统一为 {code, data} 包裹：剥壳并校验 code，兼容裸数据 */
 function pickPayload(body: unknown): unknown {
@@ -204,7 +197,7 @@ function pickPayload(body: unknown): unknown {
 
 /** settled 结果 → 响应体数据；请求失败 / HTTP 非 2xx 均视为无效 */
 function settledToData(
-  settled: PromiseSettledResult<{ status: number; data: unknown }>,
+  settled: PromiseSettledResult<HttpResponse<unknown>>,
 ): unknown {
   if (settled.status !== "fulfilled") return undefined;
   const { status, data } = settled.value ?? {};
@@ -269,13 +262,11 @@ function buildLocalPayload(): DailyNewsPayload {
  * live 标识 60s 端点是否成功（HomePage 以此决定是否展示报纸入口）。
  */
 export async function fetchDailyNews(): Promise<DailyNewsPayload> {
-  const bridge = getHttpBridge();
-  if (!bridge) return buildLocalPayload();
-
   try {
+    // 双端点并发；任一失败不影响另一端，全部失败回退本地样例
     const [newsSettled, moyuSettled] = await Promise.allSettled([
-      bridge({ url: DAILY_60S_URL }),
-      bridge({ url: MOYU_URL }),
+      http.get<unknown>(DAILY_60S_URL),
+      http.get<unknown>(MOYU_URL),
     ]);
 
     // 60s 读懂世界：成功映射真实数据，失败回退样例

@@ -11,7 +11,6 @@ import {
 } from "electron";
 import path from "path";
 import fs from "fs";
-import https from "https";
 import {
   initDb,
   closeDb,
@@ -23,6 +22,10 @@ import { startActivityPolling, stopActivityPolling } from "./activitiesTask";
 import { windowManager } from "./windowManager";
 import { registerActivityHandlers } from "./handlers/activity-handlers";
 import { registerTodoHandlers } from "./handlers/todo-handlers";
+import {
+  registerHttpSessionHandlers,
+  setupRendererHttpSession,
+} from "./httpSession";
 
 type UserCache = {
   id: number;
@@ -333,11 +336,14 @@ function createLoginWindow(user?: UserCache | null) {
 }
 
 /**
- * WorkerWindow —— 普通临时工作窗口。
+ * WorkerWindow —— CheckIn 小说编辑器窗口（PRD v0.4 §7 窗口级改造）。
  *
  * 特性：
  * - 标准窗口行为：出现在任务栏、可最小化/最大化/关闭（由通用 WindowHeader 提供）
  * - 不拦截 close 事件，关闭即随实例销毁；重新打开即全新实例
+ *   —— 对编辑器反而是优点：无状态腐化，数据安全完全由持久化层兜底
+ * - 默认尺寸 1200×760（min 800×560）
+ * - TODO(数据层里程碑)：bounds 记忆（尺寸/位置持久化）与 R12 全局快捷键 Alt+W 一起做
  * - 若窗口已存在（例如快捷键重复触发），先聚焦而不是重复创建
  */
 function createWorkerWindow(): BrowserWindow {
@@ -350,10 +356,11 @@ function createWorkerWindow(): BrowserWindow {
   }
 
   const workerWin = new BrowserWindow({
-    width: 720,
-    height: 520,
-    minWidth: 420,
-    minHeight: 320,
+    // PRD v0.4 §7：编辑器窗口默认 1200×760，最小 800×560（三栏布局的可用下限）
+    width: 1200,
+    height: 760,
+    minWidth: 800,
+    minHeight: 560,
     icon: ICON_PATH,
     show: false,
     ...ROUNDED_WINDOW_OPTIONS,
@@ -434,6 +441,11 @@ app.whenReady().then(() => {
   registerActivityHandlers();
   registerTodoHandlers();
 
+  // 渲染进程网络会话：一次性配置 CORS 放行 + Cookie 播种通道。
+  // 请求本身全部在渲染进程发起，主进程不再代理 HTTP。
+  setupRendererHttpSession();
+  registerHttpSessionHandlers();
+
   ipcMain.handle("user-get", () => getCachedUser());
   ipcMain.handle("user-login", (_event, email: string) => {
     const normalizedEmail = email.trim();
@@ -480,51 +492,6 @@ app.whenReady().then(() => {
       },
     });
   });
-
-  // 注册 HTTP 请求 IPC handler，支持设置 Cookie 等禁止请求头
-  ipcMain.handle(
-    "http-request",
-    async (
-      _event,
-      options: {
-        url: string;
-        method?: string;
-        headers?: Record<string, string>;
-        body?: string;
-      },
-    ) => {
-      return new Promise((resolve, reject) => {
-        const url = new URL(options.url);
-        const req = https.request(
-          {
-            hostname: url.hostname,
-            path: url.pathname + url.search,
-            method: options.method || "GET",
-            headers: options.headers || {},
-          },
-          (res) => {
-            // 以 Buffer 收集后统一 utf8 解码：若逐块隐式 toString，跨 chunk
-            // 边界的多字节字符（emoji 4 字节 / 汉字 3 字节）会被截成 U+FFFD 乱码
-            const chunks: Buffer[] = [];
-            res.on("data", (chunk: Buffer) => {
-              chunks.push(chunk);
-            });
-            res.on("end", () => {
-              const body = Buffer.concat(chunks).toString("utf8");
-              try {
-                resolve({ status: res.statusCode, data: JSON.parse(body) });
-              } catch {
-                resolve({ status: res.statusCode, data: body });
-              }
-            });
-          },
-        );
-        req.on("error", (err) => reject(err.message));
-        if (options.body) req.write(options.body);
-        req.end();
-      });
-    },
-  );
 
   // ── 备忘文件 IPC handlers ──
   const getMemosDir = () => path.join(getUserDataDir(currentUserEmail), "memos");

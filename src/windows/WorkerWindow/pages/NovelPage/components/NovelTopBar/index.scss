@@ -1,0 +1,106 @@
+.nv-topbar {
+  height: 44px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--app-border);
+  background: var(--app-header-bg);
+
+  &__work {
+    width: 108px;
+    flex: none;
+    font-weight: 600;
+  }
+
+  &__crumb {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    font-size: 12px;
+    color: var(--app-text-secondary);
+  }
+
+  &__crumb-sep {
+    color: var(--app-text-muted);
+  }
+
+  &__crumb-chapter {
+    color: var(--app-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__save {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11.5px;
+    color: var(--app-text-muted);
+    white-space: nowrap;
+  }
+
+  &__save-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--app-text-disabled);
+  }
+
+  &__save--saved &__save-dot {
+    background: var(--app-success);
+  }
+
+  &__save--pending &__save-dot,
+  &__save--saving &__save-dot {
+    background: var(--app-warning);
+  }
+
+  &__save--failed &__save-dot {
+    background: var(--app-error);
+  }
+
+  &__save--failed {
+    color: var(--app-error);
+  }
+
+  &__actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex: none;
+  }
+
+  &__icon {
+    width: 28px;
+    height: 28px;
+    border-radius: var(--app-radius-chip);
+    display: grid;
+    place-items: center;
+    border: none;
+    background: transparent;
+    color: var(--app-text-secondary);
+    font-size: 14px;
+    cursor: pointer;
+    transition: background 120ms ease, color 120ms ease;
+
+    &:hover {
+      background: var(--app-surface-hover);
+      color: var(--app-text);
+    }
+
+    &.is-on {
+      background: var(--app-primary-weak);
+      color: var(--app-primary);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--app-primary);
+      outline-offset: 2px;
+    }
+  }
+}

@@ -1,0 +1,61 @@
+.nv-panel {
+  width: 322px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--app-border);
+  background: var(--app-sidebar-bg);
+  overflow: hidden;
+  transition: width 200ms ease, opacity 160ms ease;
+
+  &.is-collapsed {
+    width: 0;
+    opacity: 0;
+    border-left: none;
+  }
+
+  &__tabs {
+    flex: none;
+    display: flex;
+    border-bottom: 1px solid var(--app-border);
+  }
+
+  &__tab {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 9px 0;
+    border: none;
+    border-bottom: 2px solid transparent;
+    background: transparent;
+    color: var(--app-text-muted);
+    font-size: 12px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: color 120ms ease, border-color 120ms ease;
+
+    &:hover {
+      color: var(--app-text-secondary);
+    }
+
+    &.is-on {
+      color: var(--app-primary);
+      border-bottom-color: var(--app-primary);
+      font-weight: 500;
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--app-primary);
+      outline-offset: -2px;
+    }
+  }
+
+  &__body {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 12px;
+  }
+}

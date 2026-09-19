@@ -1,0 +1,106 @@
+.nv-search {
+  &__box {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 9px;
+    margin-bottom: 10px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-chip);
+    background: var(--app-input-bg);
+
+    input {
+      flex: 1;
+      min-width: 0;
+      border: none;
+      outline: none;
+      background: transparent;
+      color: var(--app-text);
+      font-size: 12px;
+
+      &::placeholder {
+        color: var(--app-text-muted);
+      }
+    }
+  }
+
+  &__icon {
+    color: var(--app-text-muted);
+    font-size: 12px;
+  }
+
+  &__count {
+    flex: none;
+    font-size: 10.5px;
+    color: var(--app-text-muted);
+  }
+
+  &__hint {
+    padding: 24px 8px;
+    text-align: center;
+    font-size: 12px;
+    color: var(--app-text-muted);
+  }
+
+  &__list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  &__item {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 8px 9px;
+    border: 1px solid transparent;
+    border-radius: var(--app-radius-chip);
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+    transition: background 120ms ease, border-color 120ms ease;
+
+    &:hover {
+      background: var(--app-surface-hover);
+      border-color: var(--app-border);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--app-primary);
+      outline-offset: -2px;
+    }
+  }
+
+  &__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--app-text-muted);
+  }
+
+  &__chapter {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__hit {
+    flex: none;
+  }
+
+  &__snippet {
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--app-text);
+
+    mark {
+      background: var(--app-primary-weak);
+      color: var(--app-primary);
+      border-radius: 2px;
+      padding: 0 1px;
+    }
+  }
+}

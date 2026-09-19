@@ -1,0 +1,155 @@
+.nv-editor {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--app-surface);
+  overflow: hidden;
+
+  /* 打字机模式：上下留白把当前行挤到视口中线 */
+  &--typewriter {
+    .cm-content {
+      padding-top: 40%;
+      padding-bottom: 45%;
+    }
+  }
+
+  &__title {
+    flex: none;
+    padding: 20px 0 4px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  &__title-text {
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    color: var(--app-text);
+  }
+
+  &__title-meta {
+    font-size: 11px;
+    color: var(--app-text-muted);
+  }
+
+  &__scroll {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    position: relative;
+  }
+
+  /* 正文栏宽 42em 居中（设计方案 §03） */
+  &__paper {
+    max-width: 42em;
+    margin: 0 auto;
+    padding: 8px 40px 120px;
+    color: var(--app-text);
+  }
+
+  &__host {
+    .cm-editor {
+      background: transparent;
+    }
+
+    .cm-editor.cm-focused {
+      outline: none;
+    }
+
+    .cm-content {
+      caret-color: var(--app-primary);
+    }
+
+    /* 一个 .cm-line 就是一个段落：段首缩进与段距直接作用在行元素上，不引起重排 */
+    .cm-line {
+      text-indent: var(--nv-indent, 2em);
+      margin-bottom: var(--nv-paragraph-spacing, 0.6em);
+      letter-spacing: 0.02em;
+    }
+
+    .cm-cursor,
+    .cm-dropCursor {
+      border-left-width: 2px;
+      border-left-color: var(--app-primary);
+      animation: nv-caret-blink 1.05s steps(1) infinite;
+    }
+  }
+
+  /* 标注层：底色 + inset 下划线，不改字宽、不引起重排（设计方案 §05 ③） */
+  &__host [data-entity-type] {
+    border-radius: 3px;
+    padding: 1px 0;
+    cursor: default;
+    background: color-mix(in srgb, var(--nv-mark-color) 14%, transparent);
+    box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--nv-mark-color) 55%, transparent);
+    transition: background var(--nv-t-fast, 120ms) ease;
+  }
+
+  &__host [data-entity-type="character"] {
+    --nv-mark-color: var(--app-primary);
+  }
+
+  &__host [data-entity-type="location"] {
+    --nv-mark-color: var(--app-accent-green);
+  }
+
+  &__host [data-entity-type="faction"] {
+    --nv-mark-color: var(--app-accent-purple);
+  }
+
+  &__host [data-entity-type="item"] {
+    --nv-mark-color: var(--app-accent-amber);
+  }
+
+  &__host [data-entity-type="level_system"] {
+    --nv-mark-color: var(--app-accent-blue);
+  }
+
+  &__host [data-entity-type="custom"] {
+    --nv-mark-color: var(--app-text-secondary);
+  }
+
+  &--empty {
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__create {
+    margin-top: 12px;
+    padding: 7px 16px;
+    border-radius: var(--app-radius-chip);
+    border: none;
+    background: var(--app-primary);
+    color: var(--app-primary-contrast);
+    font-size: 13px;
+    transition: background var(--nv-t-fast, 120ms) ease;
+
+    &:hover {
+      background: var(--app-primary-strong);
+    }
+  }
+}
+
+@keyframes nv-caret-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nv-editor {
+    &__host {
+      .cm-cursor,
+      .cm-dropCursor {
+        animation-duration: 0ms;
+      }
+    }
+
+    &__host [data-entity-type] {
+      transition-duration: 0ms;
+    }
+  }
+}

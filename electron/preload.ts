@@ -2,13 +2,13 @@ import { contextBridge, ipcRenderer } from 'electron'
 
 // 通过 contextBridge 暴露安全的 API 给渲染进程
 contextBridge.exposeInMainWorld('electronAPI', {
-  // 通用 HTTP 请求（支持 Cookie 等禁止请求头）
-  httpRequest: (options: {
-    url: string
-    method?: string
-    headers?: Record<string, string>
-    body?: string
-  }) => ipcRenderer.invoke('http-request', options),
+  // 网络会话配置（一次性）：把认证 Cookie 写入 session jar，
+  // 之后渲染进程 fetch 带 credentials:'include' 自动携带。
+  // 请求本身不再经由主进程转发。
+  httpSession: {
+    setCookie: (url: string, cookie: string) =>
+      ipcRenderer.invoke('http-session-set-cookie', { url, cookie }) as Promise<boolean>,
+  },
 
   // ── 活动管理（语义化 IPC） ──
   activity: {

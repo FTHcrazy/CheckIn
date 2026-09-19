@@ -1,0 +1,90 @@
+.nv-chapter {
+  position: relative;
+
+  &__row {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 8px;
+    border: none;
+    background: transparent;
+    border-radius: var(--app-radius-chip);
+    color: var(--app-text-secondary);
+    font-size: 12.5px;
+    cursor: pointer;
+    text-align: left;
+    transition: background 120ms ease;
+
+    &:hover {
+      background: var(--app-surface-hover);
+    }
+
+    &.is-active {
+      background: var(--app-primary-weak);
+      color: var(--app-primary);
+      font-weight: 500;
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--app-primary);
+      outline-offset: -2px;
+    }
+  }
+
+  &__index {
+    width: 20px;
+    flex: none;
+    font-size: 10.5px;
+    font-variant-numeric: tabular-nums;
+    color: var(--app-text-muted);
+  }
+
+  &__status {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex: none;
+  }
+
+  &__title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__words {
+    margin-left: auto;
+    flex: none;
+    font-size: 10.5px;
+    font-variant-numeric: tabular-nums;
+    color: var(--app-text-muted);
+  }
+
+  &__sorter {
+    position: absolute;
+    top: 3px;
+    right: 6px;
+    display: flex;
+    gap: 2px;
+
+    button {
+      width: 20px;
+      height: 20px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--app-border);
+      border-radius: 4px;
+      background: var(--app-surface);
+      color: var(--app-text-secondary);
+      font-size: 10px;
+      cursor: pointer;
+
+      &:hover {
+        color: var(--app-primary);
+        border-color: var(--app-primary);
+      }
+    }
+  }
+}

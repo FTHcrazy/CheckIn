@@ -1,0 +1,65 @@
+.nv-status {
+  height: 32px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 14px;
+  border-top: 1px solid var(--app-border);
+  background: var(--app-surface);
+  color: var(--app-text-secondary);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+
+  &__item b {
+    color: var(--app-text);
+    font-weight: 600;
+  }
+
+  &__positive {
+    color: var(--app-success);
+  }
+
+  &__goal {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+
+  &__goal-label {
+    color: var(--app-text-muted);
+  }
+
+  &__bar {
+    width: 96px;
+    height: 4px;
+    border-radius: var(--app-radius-pill);
+    background: var(--app-surface-active);
+    overflow: hidden;
+  }
+
+  &__fill {
+    display: block;
+    height: 100%;
+    border-radius: var(--app-radius-pill);
+    background: var(--app-primary-gradient);
+    transition: width 320ms cubic-bezier(0.4, 0, 0.2, 1);
+
+    &.is-done {
+      background: var(--app-success);
+    }
+  }
+
+  &__percent {
+    width: 32px;
+    text-align: right;
+    color: var(--app-text-muted);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nv-status__fill {
+    transition-duration: 0ms;
+  }
+}

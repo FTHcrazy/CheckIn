@@ -1,5 +1,62 @@
 # Changelog
 
+## [1.6.0] - 2026-09-19
+
+### Added
+- **WorkerWindow 改造为「CheckIn 小说编辑器」窗口**：新增窗口私有页面模块
+  `src/windows/WorkerWindow/pages/NovelPage/`，按 PRD v0.4 与 UI 设计方案
+  v0.4 落地 W1 主窗口（顶栏 44px / 左栏章节树 236px / 中央码字区 42em /
+  右栏支撑面板 322px / 状态条 32px）、D1 快照抽屉、D2 设置抽屉、
+  O1 Ctrl+P 章节跳转浮层、O2 悬浮资料卡、O3 选区标记工具条
+- 码字区内核采用 **CodeMirror 6**（新增依赖 `codemirror` /
+  `@codemirror/state` / `@codemirror/view` / `@codemirror/commands`）：
+  虚拟滚动支撑三万字章节，IME 组合输入由内核原生处理
+- 标注层扩展 `novel-editor.ts`：名称+别名白名单高亮，仅扫可视区，
+  compositionstart 期间冻结计算、compositionend 与文档变化各 300ms 防抖，
+  刷新走 `addToHistory(false)` 空事务不污染撤销栈（PRD §2 / 设计方案 §05）
+- 右栏四支撑面板：大纲（卷/章/伏笔）、要素库（类型 chips + 卡片 + 详情，
+  含自定义字段 / 关联要素 / 等级体系 / 出场章节）、灵感速记（Enter 提交 +
+  IME 守卫）、全书检索（300ms 防抖 + 片段高亮）
+- 数据层为占位实现：`pages/NovelPage/services/novel-demo-source.ts`
+  按未来 IPC 的返回形态提供本地数据，`hooks/useNovelData.ts` 只依赖其函数签名，
+  真数据接入时替换实现即可，页面与组件层无需改动
+- `novel-utils.ts` 纯函数与 25 例单测：字数统计（含标点/纯汉字双口径）、
+  词库构建、标注匹配、模糊检索、片段高亮
+- **依赖链接自愈工具 `scripts/fix-pnpm-links.mjs`**：应对 pnpm 在 Windows 上
+  把条目重命名为 `.ignored_*` 后搬迁中断、留下空壳且 `pnpm install` 不再自愈的
+  问题。可重建断裂的顶层链接、清理 `.ignored` 空壳、纠正顶层误指向 peer 变体的
+  链接（electron 的 `dist/` 二进制只在主变体，指到 peer 变体会「能 import
+  但没二进制」）。配套 `pnpm check:deps`（体检，CI 可用）与
+  `pnpm fix:deps`（应急修复），并挂在 `postinstall` 上自动体检
+
+### Changed
+- WorkerWindow 默认尺寸 720×520 → **1200×760**，最小 420×320 → **800×560**
+- 移除 WorkerWindow 的 Esc 关窗（PRD §2 零打断原则）：Esc 现在只用于
+  退出专注模式（F11 进入），关窗永不询问、由持久化兜底
+- 锁定包管理器版本：`package.json` 新增 `"packageManager": "pnpm@11.25.0"`，
+  避免跨 pnpm 大版本复用同一 `node_modules`（这是 `.ignored` 半损坏的诱因）
+
+## [1.5.0] - 2026-09-18
+
+### Changed
+- **HTTP 请求架构重构：主进程不再代理任何网络请求**。新增 `src/shared/http/`
+  统一客户端（内部 `fetch` 封装，零第三方依赖），提供超时、重试（网络错误/5xx
+  指数退避）、中断、错误归一（`HttpError`）、`{code,data}` 响应剥壳标准；
+  各窗口按 `getScopedHttpClient(scope)` 持有独立实例，请求彼此隔离，
+  页面卸载自动中断在途请求（`useHttpClient` / `abortScope`），
+  多窗口高频请求不再影响主进程稳定性
+- 移除 `http-request` IPC 通道与 `preload.httpRequest`（同步更新
+  `src/shared/types/electron.d.ts`）；资讯与 Git 接口改为渲染进程直连
+- 认证 Cookie 改为 session jar 播种：`ensureSessionCookie()` 一次性写入，
+  请求带 `credentials: "include"` 由网络栈自动携带（Cookie 是 forbidden
+  header，渲染进程无法手动设置）
+- CORS 由主进程 session 级 `onHeadersReceived` 注入响应头放行（新文件
+  `electron/httpSession.ts`），属启动期一次性注册，不参与逐请求链路
+
+### Fixed
+- 顺带消除主进程转发时代的 chunk 截断乱码隐患：响应改由 Chromium 网络栈
+  按 UTF-8 解码（原 1.4.8 Buffer 契约随架构废弃）
+
 ## [1.4.8] - 2026-09-18
 
 ### Fixed

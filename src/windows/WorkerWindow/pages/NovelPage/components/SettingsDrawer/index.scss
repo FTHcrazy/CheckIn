@@ -1,0 +1,138 @@
+.nv-setting {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 300px;
+  z-index: 46;
+  display: flex;
+  flex-direction: column;
+  background: var(--app-surface-elevated);
+  border-left: 1px solid var(--app-border);
+  box-shadow: var(--app-shadow-pop);
+  transform: translateX(100%);
+  transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  &.is-open {
+    transform: none;
+  }
+
+  &__head {
+    flex: none;
+    display: flex;
+    align-items: center;
+    padding: 11px 13px;
+    border-bottom: 1px solid var(--app-border);
+
+    b {
+      font-size: 12.5px;
+      color: var(--app-text);
+    }
+
+    button {
+      margin-left: auto;
+      width: 22px;
+      height: 22px;
+      display: grid;
+      place-items: center;
+      border: none;
+      border-radius: 4px;
+      background: transparent;
+      color: var(--app-text-muted);
+      font-size: 11px;
+      cursor: pointer;
+
+      &:hover {
+        background: var(--app-surface-hover);
+        color: var(--app-text);
+      }
+    }
+  }
+
+  &__body {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 12px 13px;
+  }
+
+  &__row {
+    display: grid;
+    grid-template-columns: 56px 1fr 48px;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+
+    label {
+      font-size: 12px;
+      color: var(--app-text-secondary);
+    }
+  }
+
+  &__value {
+    text-align: right;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    color: var(--app-text-muted);
+  }
+
+  &__block {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px dashed var(--app-border);
+  }
+
+  &__label {
+    margin: 0 0 8px;
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    color: var(--app-text-muted);
+  }
+
+  &__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+
+  &__chip {
+    padding: 3px 9px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-pill);
+    background: var(--app-surface);
+    color: var(--app-text-secondary);
+    font-size: 11px;
+    cursor: pointer;
+    transition: border-color 120ms ease, background 120ms ease;
+
+    &:hover {
+      border-color: var(--app-primary);
+    }
+
+    &.is-on {
+      background: var(--app-primary);
+      border-color: var(--app-primary);
+      color: var(--app-primary-contrast);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--app-primary);
+      outline-offset: 2px;
+    }
+  }
+
+  &__hint {
+    margin: 10px 0 0;
+    font-size: 11px;
+    line-height: 1.6;
+    color: var(--app-text-muted);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nv-setting {
+    transition-duration: 0ms;
+  }
+}

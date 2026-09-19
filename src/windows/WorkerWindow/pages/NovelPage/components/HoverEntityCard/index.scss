@@ -1,0 +1,121 @@
+.nv-pop {
+  position: absolute;
+  z-index: 40;
+  width: 296px;
+  padding: 12px;
+  transform: translate(-50%, 0);
+  background: var(--app-surface-elevated);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-chip);
+  box-shadow: var(--app-shadow-pop);
+  pointer-events: none;
+  animation: nv-pop-in 120ms ease;
+
+  &--flip {
+    transform: translate(-50%, -100%);
+  }
+
+  /* 只有卡片本体可交互，容器保持穿透以免挡住正文点击 */
+  &__head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  &__avatar {
+    width: 32px;
+    height: 32px;
+    flex: none;
+    border-radius: 9px;
+    display: grid;
+    place-items: center;
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  &__names {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  &__name {
+    font-size: 13.5px;
+    font-weight: 600;
+    line-height: 1.3;
+    color: var(--app-text);
+  }
+
+  &__alias {
+    font-size: 11px;
+    color: var(--app-text-muted);
+  }
+
+  &__summary {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.65;
+    color: var(--app-text-secondary);
+  }
+
+  &__tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin: 8px 0;
+  }
+
+  &__tag {
+    padding: 2px 8px;
+    border-radius: var(--app-radius-pill);
+    border: 1px solid var(--app-border);
+    background: var(--app-surface-hover);
+    color: var(--app-text-secondary);
+    font-size: 11px;
+  }
+
+  &__foot {
+    display: flex;
+    gap: 6px;
+    margin-top: 10px;
+    pointer-events: auto;
+
+    button {
+      flex: 1;
+      padding: 5px;
+      border: 1px solid var(--app-border);
+      border-radius: 4px;
+      background: transparent;
+      color: var(--app-text-secondary);
+      font-size: 11.5px;
+      cursor: pointer;
+      transition: border-color 120ms ease, color 120ms ease;
+
+      &:hover {
+        border-color: var(--app-primary);
+        color: var(--app-primary);
+      }
+    }
+  }
+
+  &__tip {
+    margin: 7px 0 0;
+    text-align: center;
+    font-size: 10.5px;
+    color: var(--app-text-muted);
+  }
+}
+
+@keyframes nv-pop-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nv-pop {
+    animation-duration: 0ms;
+  }
+}

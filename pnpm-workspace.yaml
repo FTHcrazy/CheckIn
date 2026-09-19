@@ -1,6 +1,13 @@
 packages:
   - "*"
 
+# 采用扁平化布局（等同 npm 的 node_modules 结构），不使用 .pnpm 虚拟存储 + junction。
+# 原因：本机 Windows 上 pnpm 的默认 symlinked 布局会稳定复现「包目录被创建但内容为空」
+# 的问题（首次全新安装即出现约 200 个空目录），导致 Cannot find module 一类随机报错，
+# 且 pnpm install 判定 up to date 后不会自愈。hoisted 布局没有 junction，从结构上规避。
+# 代价：允许幽灵依赖（未声明也能 import）——对 Electron 应用可接受。
+nodeLinker: hoisted
+
 onlyBuiltDependencies:
   - "@parcel/watcher"
   - electron-winstaller
@@ -14,3 +21,7 @@ allowBuilds:
   "@parcel/watcher": true
   better-sqlite3: true
   electron-winstaller: true
+  # pnpm >=10.26 / 11 用 allowBuilds 替代 onlyBuiltDependencies；
+  # 缺了 electron 会导致其 postinstall（下载运行时二进制）被拦截。
+  electron: true
+  esbuild: true

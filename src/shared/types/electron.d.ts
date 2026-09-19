@@ -39,12 +39,10 @@ interface TodoRow {
 }
 
 export interface ElectronAPI {
-  httpRequest: (options: {
-    url: string
-    method?: string
-    headers?: Record<string, string>
-    body?: string
-  }) => Promise<{ status: number; data: unknown }>
+  /** 网络会话配置（一次性）：写入认证 Cookie 到 session jar */
+  httpSession: {
+    setCookie: (url: string, cookie: string) => Promise<boolean>
+  }
 
   // ── 活动管理 ──
   activity: {

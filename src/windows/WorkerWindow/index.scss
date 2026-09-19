@@ -1,4 +1,3 @@
-@use "../../shared/styles/variables" as *;
 @use "../../shared/styles/window-shell";
 
 html,
@@ -9,31 +8,16 @@ body,
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Microsoft YaHei", sans-serif;
   // 圆角窗口：背景交给 .window-shell，dom 层保持透明
   background: transparent;
   color: var(--app-text);
+  -webkit-font-smoothing: antialiased;
 }
 
-// ── 内容区 ──
-// 标题栏由通用 WindowHeader 提供（挂在 .window-shell 内），这里只负责主体内容
-.worker-body {
+// 内容区：标题栏由通用 WindowHeader 提供，这里只负责主体内容铺满
+.window-shell__body {
   flex: 1;
   min-height: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: auto;
-  padding: 16px;
-  box-sizing: border-box;
-
-  &__empty {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-
-  &__hint {
-    font-size: 12px !important;
-  }
 }
