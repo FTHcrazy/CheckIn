@@ -755,9 +755,12 @@ function initializeDataDb(db: Database) {
   `pnpm-workspace.yaml` 的 `onlyBuiltDependencies` 也被移除，统一改为 `allowBuilds`
   映射。因此 `pnpm-workspace.yaml` 中必须**同时维护两套白名单**：`onlyBuiltDependencies`
   供 pnpm 9/10 使用，`allowBuilds` 供 pnpm ≥10.26/11 使用，两边都要包含
-  `electron` / `better-sqlite3` / `esbuild`。曾因 `allowBuilds` 漏掉 `electron` 导致
-  pnpm 11 机器上 electron postinstall 被拦、`dist/electron.exe` 永远缺失
-  （pnpm 9 的同事不受影响，问题只在本机复现）。
+  `electron` / `better-sqlite3` / `esbuild`。
+  > **更正（2026-09-19）**：上面「`allowBuilds` 漏掉 electron → postinstall 被拦 →
+  > `dist/electron.exe` 永远缺失」的归因对 **Electron 42 已不成立**——该版本根本
+  > 没有 postinstall 脚本，白名单加不加都不影响它。真正的卡点是无镜像 + 无超时的
+  > 懒加载下载，详见本节开头的「`pnpm dev` 卡住不动的真正原因」。白名单仍需维护，
+  > 但它保护的是 `better-sqlite3` / `esbuild` 这类**真的有构建脚本**的包。
 - **镜像配置**：`.npmrc` 已随仓库提交（registry / `electron_mirror` /
   `electron_builder_binaries_mirror` 均指向 npmmirror），新机器 clone 后无需重复配置；
   若仍从 GitHub 下载超时，可临时导出环境变量 `ELECTRON_MIRROR` 强制覆盖。
@@ -766,11 +769,51 @@ function initializeDataDb(db: Database) {
   2. `pnpm electron:rebuild`（better-sqlite3 重编译到 Electron ABI，或直接
      `pnpm electron:setup` 一步到位）
   3. `pnpm dev`
-- **electron 二进制校验**：`node_modules/electron/path.txt` 与
-  `node_modules/electron/dist/electron.exe` 必须同时存在；`scripts/start-electron.js`
-  里有 fail-fast 守卫，缺失时会直接给出修复指引而非晦涩报错。修复方式：重跑
-  `pnpm install` 或 `pnpm rebuild electron`（拉取 onlyBuiltDependencies 配置后
-  用后者最快），不要手动解压（手动解压无法覆盖后续 CI / 重装场景）。
+- **`pnpm dev` 卡住不动的真正原因（2026-09-19 定位并根治，务必先读这条）**：
+  Electron ≥41（本项目 **42.4.1**）的 `package.json` **已经没有 postinstall 脚本**
+  （实测 `pkg.scripts === undefined`，只剩 `bin.electron` / `bin.install-electron`）。
+  二进制的安装被推迟到了**首次 `require('electron')`**：
+  ```js
+  // node_modules/electron/index.js
+  没有 path.txt → 在 require 的同步调用栈里 spawnSync(node, install.js)
+                → @electron/get 下载 ~140MB → 默认直连 github.com，**无超时、无进度**
+  ```
+  于是：`node_modules` 重装 / `dist` 丢失 → `pnpm dev` → `require('electron')`
+  → **静默同步下载 → 终端毫无动静，看起来就是"卡死"**；用户 Ctrl+C 重来，
+  下次又从零开始堵，循环往复。
+  - **补充坑**：`.npmrc` 的 `electron_mirror` **只有在包管理器执行安装脚本时**
+    才会被转成环境变量 `ELECTRON_MIRROR`。手动跑 `install.js`、或被
+    `index.js` 内部 spawn 时一个环境变量都没有 → 直连 github 卡死。
+    实测对比：不带镜像 >300s 无响应；带上 `ELECTRON_MIRROR` 后**命中本地缓存 2.1s 完成**。
+  - **根治手段（已落地，勿删）**：`scripts/ensure-electron.mjs` 会自己读
+    `.npmrc` 的 `electron_mirror` 并**显式注入 `ELECTRON_MIRROR`**，再加超时上限后
+    补装二进制。它挂在 `dev`/`dev:debug`/`dev:debug:log`/`electron:dev`/`postinstall`
+    最前面（已装好时毫秒级返回，不影响启动手感）；`scripts/start-electron.js`
+    另有 fail-fast 守卫，二进制缺失时**拒绝掉进无超时下载**，直接给修复指引。
+- **不要在 `ELECTRON_RUN_AS_NODE=1` 的环境里跑 dev（2026-09-19 新增）**：该变量会让
+  `electron.exe` 退化成普通 Node，`require('electron')` 返回的是**可执行文件路径字符串**
+  而不是 API，主进程直接崩在 `Cannot read properties of undefined (reading 'app')`。
+  VS Code / WorkBuddy 等 Electron 宿主有时会把它泄漏到集成终端。`scripts/start-electron.js`
+  已显式剔除 `ELECTRON_RUN_AS_NODE` / `ELECTRON_NO_ATTACH_CONSOLE`，
+  **不要把这层清理删掉**。
+- **相关命令**：`pnpm ensure:electron`（手动补装/修复）、`pnpm dev:doctor`（完整体检）。
+- **二进制「看着齐全」但 Electron 仍在几十毫秒内 `exit(1)` 且零输出（2026-09-19 定位）**：
+  这是**解压不完整**，`dist/electron.exe` 和 `path.txt` 都可能存在**却依然炸**。
+  Electron 官方 win32 zip 有 **75 个条目**（20 个根文件 + `locales/` 55 个 pak +
+  `resources/default_app.asar`）；解压被中断时常常只剩 19 个根文件：
+  ```
+  缺失 dist/locales/*.pak              ← ICU 语言包，缺它 Chromium 浏览器进程秒退且零输出
+  缺失 dist/resources/default_app.asar
+  ```
+  **为什么不自愈**：`install.js` 开头就是 `if (isInstalled()) process.exit(0)`，
+  而此时 `path.txt` 往往已写好 → 它认定「已安装」直接返回，往后 `pnpm install`
+  永远输出 Already up to date，环境永久半残。
+  **怎么诊断**：`pnpm dev:doctor` 第 1 步已加入 `dist/locales` 与
+  `dist/resources/default_app.asar` 两项校验。
+  **怎么修**：`scripts/ensure-electron.mjs` 会识别「仅 locales/default_app.asar 残缺」
+  这一形态，**自动清空 dist 重新解压**（命中本地缓存约 2 秒），无需手工介入。
+  诱因提示：`pnpm install` / `ensure:electron` **执行到一半不要中断**——Ctrl+C、
+  工具超时、宿主杀进程都会留下半份 dist。
 - **已改用扁平化布局 `node-linker=hoisted`（根治方案，勿回退）**：
   `pnpm-workspace.yaml` 中设置了 `node-linker: hoisted`，`node_modules` 是**扁平结构**，
   不存在 `.pnpm` 虚拟存储与任何 junction / symlink。

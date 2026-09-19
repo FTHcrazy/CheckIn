@@ -36,6 +36,43 @@
 - 锁定包管理器版本：`package.json` 新增 `"packageManager": "pnpm@11.25.0"`，
   避免跨 pnpm 大版本复用同一 `node_modules`（这是 `.ignored` 半损坏的诱因）
 
+### Fixed
+- **根治 `pnpm dev` 反复卡死**（自 1.4.7 起的老问题，此前归因均不准确）：
+  根因是 Electron **42.4.1 已移除 `postinstall` 脚本**（实测 `pkg.scripts` 为
+  undefined），二进制安装被推迟到首次 `require('electron')` ——`index.js` 会在
+  require 的**同步调用栈里** spawnSync 跑 `install.js` 下载 ~140MB，且 **无超时、
+  无进度、默认直连 github.com**，终端表现就是「卡住不动」。补充坑：`.npmrc` 的
+  `electron_mirror` 只有在包管理器执行安装脚本时才会转成 `ELECTRON_MIRROR`，
+  被 `index.js` 内部 spawn 时一个环境变量都没有。
+  - 新增 `scripts/ensure-electron.mjs`：自行读取 `.npmrc` 镜像并**显式注入
+    `ELECTRON_MIRROR`**，再带超时上限补装二进制；命中本地缓存时实测 **2.1s**
+    （此前无镜像 >300s 无响应）
+  - 挂到 `dev` / `dev:debug` / `dev:debug:log` / `electron:dev` / `postinstall`
+    最前面，已装好时毫秒级返回，不影响启动手感
+  - `scripts/start-electron.js` 补上此前只写在文档里、实际并不存在的 fail-fast
+    守卫：二进制缺失时拒绝掉进无超时下载，直接输出修复指引
+  - `start-electron.js` 额外剔除继承来的 `ELECTRON_RUN_AS_NODE` /
+    `ELECTRON_NO_ATTACH_CONSOLE`：该变量会让 electron.exe 退化成普通 Node，
+    `require('electron')` 返回路径字符串而非 API，主进程直接崩在
+    `Cannot read properties of undefined (reading 'app')`（VS Code / WorkBuddy
+    等 Electron 宿主的集成终端会泄漏该变量）
+- 新增 `pnpm dev:doctor`（`scripts/dev-doctor.mjs`，**不能叫 `doctor`** —— 会被
+  pnpm 自带的 `pnpm doctor` 内置命令吞掉）：体检关键依赖 + 实测 vite 能否在 5173
+  提供服务 + 实测 wait-on 能否判定就绪 + **Electron GUI 冒烟测试**
+- 诊断「`start-electron.js exited with code 1` 且零输出」的场景：Windows 上
+  electron.exe 是 **GUI 子系统程序、不挂控制台**，连崩溃栈都看不到。改用「最小
+  Electron 应用能否写出标记文件」作判据，`dev:doctor` 第 4 步给出明确结论，
+  避免每次都靠猜
+- **修复 Electron 解压不完整导致的秒退（本轮真正的元凶）**：`dist/electron.exe`
+  与 `path.txt` 都在的情况下 Electron 仍在几十毫秒内 `exit(1)` 且零输出，原因是
+  解压被中断后只剩 19 个根文件，**缺了 `locales/*.pak`（55 个 ICU 语言包）与
+  `resources/default_app.asar`**（官方 zip 共 75 条目）。而 `install.js` 因
+  `path.txt` 已写好而认定「已安装」，`pnpm install` 永远 Already up to date，
+  不会自愈。`scripts/ensure-electron.mjs` 现在：
+  - 体检新增 `dist/locales` 与 `dist/resources/default_app.asar` 两项
+  - 识别出「仅这两项残缺」= 解压中断，**自动清空 dist 重新解压**（缓存命中约 2s）
+  - `dev:doctor` 第 1 步同步加入这两项校验
+
 ## [1.5.0] - 2026-09-18
 
 ### Changed
