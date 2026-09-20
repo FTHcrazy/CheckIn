@@ -93,7 +93,7 @@ export default function ChapterTreeItem({
   }`;
 
   return (
-    <li className="nv-chapter" role="treeitem" aria-selected={active}>
+    <div className="nv-chapter" role="treeitem" aria-selected={active}>
       {titleEditing ? (
         <div className={`${rowClass} is-editing`}>
           <span className="nv-chapter__index">{padIndex(chapterNumber)}</span>
@@ -149,6 +149,6 @@ export default function ChapterTreeItem({
           </span>
         </button>
       )}
-    </li>
+    </div>
   );
 }

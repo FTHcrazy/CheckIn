@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { SearchOutlined } from "@ant-design/icons";
+import { Virtuoso } from "react-virtuoso";
 import { splitByKeyword } from "../../novel-utils";
 import type { SearchHit } from "../../types";
 import "./index.scss";
@@ -13,6 +14,7 @@ interface SearchPanelProps {
  * 全书检索面板（R10）
  *
  * 输入 300ms 防抖后才查库；命中词在片段里高亮，结果按章节聚合处数。
+ * 命中列表用 Virtuoso 虚拟化：全书检索可能命中上千章，不允许全量挂载。
  */
 export default function SearchPanel({
   onSearch,
@@ -71,32 +73,35 @@ export default function SearchPanel({
           {keyword.trim() ? "没有命中任何片段" : "输入关键词开始检索"}
         </p>
       ) : (
-        <ul className="nv-search__list">
-          {hits.map((hit) => (
-            <li key={hit.id}>
-              <button
-                type="button"
-                className="nv-search__item"
-                onClick={() => onSelectChapter(hit.chapterId)}
-              >
-                <span className="nv-search__head">
-                  <span className="nv-search__chapter">{hit.chapterTitle}</span>
-                  <span className="nv-search__hit">{hit.count} 处</span>
-                </span>
-                <span className="nv-search__snippet">
-                  {splitByKeyword(hit.snippet, keyword.trim()).map(
-                    (segment, index) =>
-                      segment.hit ? (
-                        <mark key={index}>{segment.text}</mark>
-                      ) : (
-                        <span key={index}>{segment.text}</span>
-                      ),
-                  )}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
+        <Virtuoso
+          className="nv-search__list"
+          style={{ flex: 1, minHeight: 0 }}
+          data={hits}
+          overscan={8}
+          computeItemKey={(_, hit) => hit.id}
+          itemContent={(_, hit) => (
+            <button
+              type="button"
+              className="nv-search__item"
+              onClick={() => onSelectChapter(hit.chapterId)}
+            >
+              <span className="nv-search__head">
+                <span className="nv-search__chapter">{hit.chapterTitle}</span>
+                <span className="nv-search__hit">{hit.count} 处</span>
+              </span>
+              <span className="nv-search__snippet">
+                {splitByKeyword(hit.snippet, keyword.trim()).map(
+                  (segment, index) =>
+                    segment.hit ? (
+                      <mark key={index}>{segment.text}</mark>
+                    ) : (
+                      <span key={index}>{segment.text}</span>
+                    ),
+                )}
+              </span>
+            </button>
+          )}
+        />
       )}
     </div>
   );

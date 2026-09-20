@@ -209,11 +209,24 @@ describe("拖拽排序纯函数", () => {
   const ids = (list: Array<{ id: string }>) => list.map((item) => item.id);
   const make = (names: string[]) => names.map((name) => ({ id: name }));
 
-  it("moveItemBefore 向下拖：落到目标原位置", () => {
+  it("moveItemBefore 向下拖：落在目标之后", () => {
     expect(ids(moveItemBefore(make(["a", "b", "c"]), "a", "c"))).toEqual([
+      "b",
+      "c",
+      "a",
+    ]);
+  });
+
+  it("moveItemBefore 相邻向下拖：两章交换顺序（回归：原实现插回原位导致不动）", () => {
+    expect(ids(moveItemBefore(make(["a", "b", "c"]), "a", "b"))).toEqual([
       "b",
       "a",
       "c",
+    ]);
+    expect(ids(moveItemBefore(make(["a", "b", "c"]), "b", "c"))).toEqual([
+      "a",
+      "c",
+      "b",
     ]);
   });
 

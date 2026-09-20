@@ -249,7 +249,9 @@ function scoreSubsequence(text: string, keyword: string): number {
 }
 
 /**
- * 在列表内把 fromId 移动到 toId 原所在位置（先移除后插入）。
+ * 在列表内把 fromId 移动到 toId 的位置（先移除后插入，方向感知）。
+ * 向上拖：落在目标之前；向下拖：落在目标之后（相邻两项即交换）。
+ * 旧的「永远插到 to-1」在向下拖到相邻项时正好插回原位，导致顺序不变。
  * fromId 与 toId 相同、或任一不存在时原样返回；不修改入参。
  */
 export function moveItemBefore<T extends { id: string }>(
@@ -264,7 +266,8 @@ export function moveItemBefore<T extends { id: string }>(
 
   const next = [...items];
   const [moved] = next.splice(from, 1);
-  next.splice(to > from ? to - 1 : to, 0, moved);
+  // 移除后统一插在下标 to：向上拖=目标之前；向下拖（目标已前移一位）=目标之后
+  next.splice(to, 0, moved);
   return next;
 }
 

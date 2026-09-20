@@ -1,7 +1,17 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { NovelNote } from "../../types";
 import InspirationPanel, { type InspirationActions } from "./index";
+
+// jsdom 没有真实布局，Virtuoso 视口高度为 0 导致不渲染任何行；
+// 测试中用平铺渲染等价替身，只保留 data + itemContent 的行为契约。
+vi.mock("react-virtuoso", () => ({
+  Virtuoso: <T,>(props: {
+    data: T[];
+    itemContent: (index: number, item: T) => ReactNode;
+  }) => <>{props.data.map((item, index) => props.itemContent(index, item))}</>,
+}));
 
 const buildActions = (
   over: Partial<InspirationActions> = {},
@@ -72,7 +82,7 @@ describe("InspirationPanel 组件", () => {
     const onUpdateNote = vi.fn();
     render(<InspirationPanel notes={notes} actions={buildActions({ onUpdateNote })} />);
 
-    const [firstCard] = screen.getAllByRole("listitem");
+    const [firstCard] = screen.getAllByRole("group");
     fireEvent.click(within(firstCard).getByLabelText("编辑灵感"));
 
     const box = screen.getByLabelText("编辑灵感内容");
@@ -80,7 +90,7 @@ describe("InspirationPanel 组件", () => {
     fireEvent.keyDown(box, { key: "Escape" });
     expect(onUpdateNote).not.toHaveBeenCalled();
 
-    fireEvent.click(within(firstCard).getByLabelText("编辑灵感"));
+    fireEvent.click(within(screen.getAllByRole("group")[0]).getByLabelText("编辑灵感"));
     const box2 = screen.getByLabelText("编辑灵感内容");
     fireEvent.change(box2, { target: { value: "旧诺 = 师父的剑冢" } });
     fireEvent.keyDown(box2, { key: "Enter" });
@@ -98,7 +108,7 @@ describe("InspirationPanel 组件", () => {
       />,
     );
 
-    const items = screen.getAllByRole("listitem");
+    const items = screen.getAllByRole("group");
     fireEvent.click(within(items[0]).getByLabelText("取消置顶"));
     expect(onTogglePin).toHaveBeenCalledWith("n1", false);
 
@@ -112,7 +122,7 @@ describe("InspirationPanel 组件", () => {
   it("已转为伏笔的灵感禁用再转化并展示标记", () => {
     render(<InspirationPanel notes={notes} actions={buildActions()} />);
 
-    const items = screen.getAllByRole("listitem");
+    const items = screen.getAllByRole("group");
     expect(within(items[1]).getByLabelText("转为伏笔")).toBeDisabled();
     expect(screen.getByText("已转为伏笔")).toBeInTheDocument();
   });

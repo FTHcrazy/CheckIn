@@ -1,4 +1,10 @@
 .nv-search {
+  /* 撑满右栏面板：滚动由虚拟列表接管，不再依赖外层 body 滚动 */
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+
   &__box {
     display: flex;
     align-items: center;
@@ -46,6 +52,8 @@
     margin: 0;
     padding: 0;
     list-style: none;
+    /* Virtuoso 视口：占满剩余高度，内部自滚 */
+    min-height: 0;
   }
 
   &__item {

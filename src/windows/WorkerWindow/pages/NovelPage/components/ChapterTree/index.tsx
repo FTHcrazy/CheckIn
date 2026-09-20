@@ -1,8 +1,10 @@
 import { useMemo, useState } from "react";
 import { BookOutlined, PlusOutlined, SearchOutlined } from "@ant-design/icons";
+import { Virtuoso } from "react-virtuoso";
 import VolumeNode from "../VolumeNode";
+import ChapterTreeItem from "../ChapterTreeItem";
 import type { ChapterGroup } from "../../novel-utils";
-import type { LabelNumberStyle } from "../../types";
+import type { LabelNumberStyle, NovelChapter, NovelVolume } from "../../types";
 import "./index.scss";
 
 interface ChapterTreeProps {
@@ -29,11 +31,19 @@ interface ChapterTreeProps {
   onRenameVolume: (volumeId: string, name: string) => void;
 }
 
+/** 扁平行模型：卷头行 + 已展开的章行（Virtuoso 只接受一维列表） */
+type TreeRow =
+  | { kind: "volume"; volume: NovelVolume; chapterCount: number }
+  | { kind: "chapter"; chapter: NovelChapter };
+
 /**
  * 左栏章节树（设计方案 §05 ①：236px · 卷 → 章两级）
  *
  * 排序唯一入口是拖拽（R9）；原「排序模式 + 上下移按钮」已随拖拽下线。
  * 搜索输入由本组件自持（局部交互状态不下沉到页面），检测结果供下列表使用。
+ * 列表用 Virtuoso 虚拟化：卷章结构扁平化为一维行（卷头行 + 章行），
+ * 长篇上千章时只挂载可视区；折叠状态提升到本组件——
+ * 虚拟化后离屏行会被卸载，行内局部状态会丢失，不能留在行组件里。
  */
 export default function ChapterTree({
   collapsed,
@@ -52,6 +62,10 @@ export default function ChapterTree({
   onRenameVolume,
 }: ChapterTreeProps) {
   const [keyword, setKeyword] = useState("");
+  /** 折叠的卷 id 集合（默认全部展开） */
+  const [folded, setFolded] = useState<ReadonlySet<string>>(new Set());
+
+  const searching = keyword.trim().length > 0;
 
   const filtered = useMemo(() => {
     const trimmed = keyword.trim().toLowerCase();
@@ -66,6 +80,36 @@ export default function ChapterTree({
       .filter((group) => group.chapters.length > 0);
   }, [groups, keyword]);
 
+  const rows = useMemo<TreeRow[]>(() => {
+    const list: TreeRow[] = [];
+    for (const group of filtered) {
+      list.push({
+        kind: "volume",
+        volume: group.volume,
+        chapterCount: group.chapters.length,
+      });
+      // 搜索时强制展开：折叠中的命中章不能被藏起来
+      if (searching || !folded.has(group.volume.id)) {
+        for (const chapter of group.chapters) {
+          list.push({ kind: "chapter", chapter });
+        }
+      }
+    }
+    return list;
+  }, [filtered, folded, searching]);
+
+  const toggleVolume = (volumeId: string): void => {
+    setFolded((current) => {
+      const next = new Set(current);
+      if (next.has(volumeId)) {
+        next.delete(volumeId);
+      } else {
+        next.add(volumeId);
+      }
+      return next;
+    });
+  };
+
   return (
     <div className={`nv-tree${collapsed ? " nv-tree--collapsed" : ""}`}>
       <label className="nv-tree__search">
@@ -78,29 +122,44 @@ export default function ChapterTree({
         />
       </label>
 
-      <div className="nv-tree__list">
-        {filtered.length === 0 ? (
+      {rows.length === 0 ? (
+        <div className="nv-tree__list">
           <p className="nv-tree__empty">没有匹配的章节</p>
-        ) : (
-          filtered.map((group) => (
-            <VolumeNode
-              key={group.volume.id}
-              volume={group.volume}
-              numberStyle={numberStyle}
-              volumeSuffix={volumeSuffix}
-              chapters={group.chapters}
-              chapterNumbers={chapterNumbers}
-              activeChapterId={activeChapterId}
-              onSelect={onSelect}
-              onRenameChapter={onRenameChapter}
-              onReorderChapter={onReorderChapter}
-              onMoveChapterToVolume={onMoveChapterToVolume}
-              onReorderVolume={onReorderVolume}
-              onRenameVolume={onRenameVolume}
-            />
-          ))
-        )}
-      </div>
+        </div>
+      ) : (
+        <Virtuoso
+          className="nv-tree__list"
+          data={rows}
+          overscan={12}
+          computeItemKey={(_, row) =>
+            row.kind === "volume" ? row.volume.id : row.chapter.id
+          }
+          itemContent={(_, row) =>
+            row.kind === "volume" ? (
+              <VolumeNode
+                volume={row.volume}
+                numberStyle={numberStyle}
+                volumeSuffix={volumeSuffix}
+                chapterCount={row.chapterCount}
+                open={searching || !folded.has(row.volume.id)}
+                onToggleOpen={() => toggleVolume(row.volume.id)}
+                onMoveChapterToVolume={onMoveChapterToVolume}
+                onReorderVolume={onReorderVolume}
+                onRenameVolume={onRenameVolume}
+              />
+            ) : (
+              <ChapterTreeItem
+                chapter={row.chapter}
+                chapterNumber={chapterNumbers.get(row.chapter.id) ?? 0}
+                active={row.chapter.id === activeChapterId}
+                onSelect={onSelect}
+                onRename={onRenameChapter}
+                onReorder={onReorderChapter}
+              />
+            )
+          }
+        />
+      )}
 
       <div className="nv-tree__foot">
         <button type="button" className="nv-tree__foot-btn" onClick={onCreate}>

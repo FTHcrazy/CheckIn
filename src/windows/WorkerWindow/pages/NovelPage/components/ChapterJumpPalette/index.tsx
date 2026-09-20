@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { SearchOutlined } from "@ant-design/icons";
+import { Virtuoso } from "react-virtuoso";
+import type { VirtuosoHandle } from "react-virtuoso";
 import { fuzzyMatch, formatThousands, padIndex } from "../../novel-utils";
 import type { NovelChapter } from "../../types";
 import "./index.scss";
@@ -16,6 +18,7 @@ interface ChapterJumpPaletteProps {
  *
  * Ctrl+P 唤出的模糊搜索面板：零模态、Esc 关闭、回车直达。
  * 键盘可达性是硬要求——↑↓ 移动、Enter 跳转，鼠标不是必需。
+ * 结果列表用 Virtuoso 虚拟化：全书章节可能是上千行，空查询时不允许全量挂载。
  */
 export default function ChapterJumpPalette({
   open,
@@ -26,6 +29,7 @@ export default function ChapterJumpPalette({
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const listRef = useRef<VirtuosoHandle | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -38,6 +42,18 @@ export default function ChapterJumpPalette({
     if (!query.trim()) return chapters;
     return fuzzyMatch(chapters, query, (chapter) => chapter.title);
   }, [chapters, query]);
+
+  /** 全书序号 O(1) 查表（原先在行内 indexOf，长列表是 O(n²)） */
+  const orderIndex = useMemo(
+    () => new Map(chapters.map((chapter, index) => [chapter.id, index])),
+    [chapters],
+  );
+
+  // 键盘移动光标时同步滚动到可见区
+  useEffect(() => {
+    if (!open) return;
+    listRef.current?.scrollToIndex({ index: cursor, align: "center" });
+  }, [cursor, open]);
 
   if (!open) return null;
 
@@ -80,27 +96,34 @@ export default function ChapterJumpPalette({
         />
       </div>
 
-      <div className="nv-palette__list">
+      <div className="nv-palette__body">
         {matches.length === 0 ? (
           <p className="nv-palette__empty">没有匹配的章节</p>
         ) : (
-          matches.map((chapter, index) => (
-            <button
-              key={chapter.id}
-              type="button"
-              className={`nv-palette__row${index === cursor ? " is-on" : ""}`}
-              onMouseEnter={() => setCursor(index)}
-              onClick={() => commit(index)}
-            >
-              <span className="nv-palette__index">
-                {padIndex(chapters.indexOf(chapter) + 1)}
-              </span>
-              <span className="nv-palette__title">{chapter.title}</span>
-              <span className="nv-palette__words">
-                {formatThousands(chapter.wordCount)}
-              </span>
-            </button>
-          ))
+          <Virtuoso
+            ref={listRef}
+            className="nv-palette__list"
+            style={{ height: "auto", maxHeight: 230 }}
+            data={matches}
+            overscan={10}
+            computeItemKey={(_, chapter) => chapter.id}
+            itemContent={(index, chapter) => (
+              <button
+                type="button"
+                className={`nv-palette__row${index === cursor ? " is-on" : ""}`}
+                onMouseEnter={() => setCursor(index)}
+                onClick={() => commit(index)}
+              >
+                <span className="nv-palette__index">
+                  {padIndex((orderIndex.get(chapter.id) ?? 0) + 1)}
+                </span>
+                <span className="nv-palette__title">{chapter.title}</span>
+                <span className="nv-palette__words">
+                  {formatThousands(chapter.wordCount)}
+                </span>
+              </button>
+            )}
+          />
         )}
       </div>
 

@@ -8,6 +8,7 @@ interface MemoEditorActions {
   renameFile: (oldFilename: string, newFilename: string) => Promise<boolean>;
   deleteFile: (filename: string) => Promise<boolean>;
   importFiles: () => Promise<string[]>;
+  exportFile: (filename: string, format: "txt" | "docx") => Promise<boolean>;
 }
 
 export function useMemoEditorState(actions: MemoEditorActions) {
@@ -102,6 +103,16 @@ export function useMemoEditorState(actions: MemoEditorActions) {
     await handleSelectFile(importedFiles[0]);
   };
 
+  /** 导出当前选中的备忘（.txt / .docx）；未选中或用户取消保存对话框则静默 */
+  const handleExport = async (format: "txt" | "docx"): Promise<void> => {
+    if (!selected) {
+      message.warning("请先选择要导出的备忘");
+      return;
+    }
+    const saved = await actions.exportFile(selected, format);
+    if (saved) message.success(`已导出为 ${format.toUpperCase()}`);
+  };
+
   const handleDelete = async (filename: string): Promise<void> => {
     if (!(await actions.deleteFile(filename))) return;
     message.success("删除成功");
@@ -140,6 +151,7 @@ export function useMemoEditorState(actions: MemoEditorActions) {
     handleCreate,
     handleRename,
     handleImport,
+    handleExport,
     handleDelete,
     handleTextAreaBlur,
   };

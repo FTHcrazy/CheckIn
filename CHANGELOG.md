@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.7.1] - 2026-09-20
+
+### Added
+- **备忘文章导入导出（.txt / .docx）**：导入文件选择器扩展为
+  Markdown / TXT / DOCX 三种格式——txt 直读、docx 由主进程用 mammoth
+  抽取段落文本，全部统一转存为 .md 备忘（重名自动追加序号，不再覆盖）；
+  备忘列表头部新增导出下拉，可将当前选中的备忘导出为 TXT（markdown
+  剥离标题 / 列表 / 引用 / 行内标记的纯文本）或 DOCX（docx 包生成，
+  保留标题层级 / 无序列表 / 正文段落，保存位置由系统对话框决定）
+- **新增 IPC 通道** `memo-export`，preload 与 `ElectronAPI` 类型同步暴露
+  `memo.exportFile(filename, format)`
+- **纯函数与单测**：`electron/memo-doc-utils.ts`（stripInlineMarkdown /
+  collapseBlankLines / markdownToPlainText / markdownToDocxBlocks），
+  vitest include 纳入 `electron/**/*.test.ts`
+
+### Fixed
+- **左栏拖拽相邻两章无法交换顺序**：`moveItemBefore` 先移除后插到
+  `to-1`，当目标是被拖项的下一个相邻项时正好插回原位，顺序不变；
+  改为移除后统一插在 `to`（向上拖 = 落在目标之前，向下拖 = 落在目标
+  之后，相邻即交换），补齐相邻两方向的回归测试
+
+### Changed
+- **长列表全量虚拟化**（react-virtuoso）：左栏章节树扁平化为
+  卷头行 + 章行（折叠状态提升到 ChapterTree，离屏行可安全卸载）、
+  Ctrl+P 章节跳转面板（顺带把行内 `indexOf` O(n²) 序号改为 O(1) 查表，
+  键盘移动光标自动滚入可视区）、全书检索命中列表、灵感速记卡片列表；
+  BaseWindow 各列表此前已虚拟化，NewsList（固定 Top10）与 CodePage
+  表格（分页）为有界列表无需处理
+
 ## [1.7.0] - 2026-09-20
 
 ### Added

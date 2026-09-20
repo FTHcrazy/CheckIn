@@ -21,7 +21,7 @@ input, textarea, select { font: inherit; color: inherit; }
   --s-1: 4px;  --s-2: 8px;  --s-3: 12px; --s-4: 16px;
   --s-5: 20px; --s-6: 24px; --s-8: 32px;
 
-  --r-xs: 4px; --r-sm: 6px; --r-md: 10px; --r-lg: 14px; --r-pill: 999px;
+  --r-xs: 6px; --r-sm: 10px; --r-md: 14px; --r-lg: 20px; --r-pill: 999px;
 
   /* 动效：出场用 ease-out 弹簧感，收起用 ease 收敛 */
   --ease-out: cubic-bezier(.22, .61, .36, 1);
@@ -30,7 +30,7 @@ input, textarea, select { font: inherit; color: inherit; }
   --d-base: 180ms;
   --d-slow: 260ms;
 
-  --rail-w: 340px;
+  --rail-w: 360px;
   --left-w: 240px;
   --top-h: 44px;
   --status-h: 30px;
@@ -43,112 +43,149 @@ input, textarea, select { font: inherit; color: inherit; }
 /* ============================================================
    2. 主题令牌 —— 亮 / 暗 / 护眼
    ============================================================ */
-.app[data-theme="light"] {
-  --bg-app:      #F5F5F2;
-  --bg-rail:     #FBFAF8;
-  --bg-surface:  #FFFFFF;
-  --bg-sunken:   #F1F0EC;
-  --bg-hover:    #EDECE7;
-  --bg-active:   #E7E5DE;
-  --bg-paper:    #FFFEFB;
+/* 配色直接对齐主窗口 themes.scss 的四套主题（aurora 默认） */
+.app[data-theme="aurora"] {
+  --bg-app:      #f3f5fc;
+  --bg-rail:     #ffffff;
+  --bg-surface:  #ffffff;
+  --bg-sunken:   #f7f8fe;
+  --bg-hover:    #eef1fc;
+  --bg-active:   #e4e9fa;
+  --bg-paper:    #ffffff;
 
-  --line:        #E4E2DB;
-  --line-soft:   #EEECE6;
-  --line-strong: #D3D0C7;
+  --line:        #e2e6f4;
+  --line-soft:   #f7f8fe;
+  --line-strong: #d3d9ee;
 
-  --tx:          #1D1E22;
-  --tx-2:        #585B64;
-  --tx-3:        #8A8E97;
-  --tx-4:        #AFB3BB;
+  --tx:          #2b2f4a;
+  --tx-2:        #5a5f7a;
+  --tx-3:        #8a90ac;
+  --tx-4:        #b6bbd0;
 
-  --accent:      #4D5AD6;
-  --accent-weak: #ECEEFB;
-  --accent-soft: #DDE1F8;
-  --on-accent:   #FFFFFF;
+  --accent:      #5b6cf9;
+  --accent-weak: #eaf0ff;
+  --accent-soft: #eaf0ff;
+  --on-accent:   #ffffff;
 
-  --c-character: #6E63D8;  --c-character-weak: #EDECFA;
-  --c-location:  #12897A;  --c-location-weak:  #E2F2EF;
-  --c-faction:   #BC5F38;  --c-faction-weak:   #FAEDE5;
-  --c-item:      #A8801C;  --c-item-weak:      #FAF2DC;
-  --c-level:     #3575B8;  --c-level-weak:     #E6F0FA;
-  --c-custom:    #757C8A;  --c-custom-weak:    #EDEEF1;
+  --c-character: #8b77f0;  --c-character-weak: #f1edff;
+  --c-location:  #2fa57e;  --c-location-weak:  #dcf2e8;
+  --c-faction:   #e8935e;  --c-faction-weak:   #fdeedf;
+  --c-item:      #f5a623;  --c-item-weak:      #fff3e0;
+  --c-level:     #5b8def;  --c-level-weak:     #eaf0ff;
+  --c-custom:    #8a90ac;  --c-custom-weak:    #eef1fc;
 
-  --ok: #158A5B;  --warn: #A97512;  --danger: #C0392B;
-  --shadow-1: 0 1px 2px rgba(24,24,28,.05);
-  --shadow-2: 0 2px 8px rgba(24,24,28,.08), 0 1px 2px rgba(24,24,28,.04);
-  --shadow-3: 0 12px 32px rgba(24,24,28,.14), 0 2px 8px rgba(24,24,28,.08);
+  --ok: #34b37e;  --warn: #f5a623;  --danger: #e5484d;
+  --shadow-1: 0 6px 16px rgba(53,64,101,.07);
+  --shadow-2: 0 6px 16px rgba(53,64,101,.07);
+  --shadow-3: 0 10px 30px rgba(53,64,101,.14);
 }
 
-.app[data-theme="dark"] {
-  --bg-app:      #15161A;
-  --bg-rail:     #1A1C21;
-  --bg-surface:  #202228;
-  --bg-sunken:   #191B20;
-  --bg-hover:    #262931;
-  --bg-active:   #2D313A;
-  --bg-paper:    #1C1E23;
+.app[data-theme="midnight"] {
+  --bg-app:      #15171f;
+  --bg-rail:     #191c26;
+  --bg-surface:  #1d2029;
+  --bg-sunken:   #232733;
+  --bg-hover:    #2a2f3c;
+  --bg-active:   #323848;
+  --bg-paper:    #1d2029;
 
-  --line:        #2C2F37;
-  --line-soft:   #24262C;
-  --line-strong: #3A3E48;
+  --line:        #2c313e;
+  --line-soft:   #232733;
+  --line-strong: #3a4152;
 
-  --tx:          #E7E8EC;
-  --tx-2:        #A5AAB5;
-  --tx-3:        #767C88;
-  --tx-4:        #565C67;
+  --tx:          #e8eaf2;
+  --tx-2:        #aeb4c4;
+  --tx-3:        #7e8595;
+  --tx-4:        #5c6273;
 
-  --accent:      #8B94F2;
-  --accent-weak: #232740;
-  --accent-soft: #2E3450;
-  --on-accent:   #14151A;
+  --accent:      #7b8cff;
+  --accent-weak: #232842;
+  --accent-soft: #232842;
+  --on-accent:   #10131f;
 
-  --c-character: #9B92F0;  --c-character-weak: #262539;
-  --c-location:  #3FBFAA;  --c-location-weak:  #16292A;
-  --c-faction:   #E08A5C;  --c-faction-weak:   #2E211A;
-  --c-item:      #DCAE48;  --c-item-weak:      #2B2417;
-  --c-level:     #6FA5DE;  --c-level-weak:     #172431;
-  --c-custom:    #98A0AE;  --c-custom-weak:    #23262C;
+  --c-character: #a58cf5;  --c-character-weak: rgba(165,140,245,.14);
+  --c-location:  #4fd0a5;  --c-location-weak:  rgba(79,208,165,.14);
+  --c-faction:   #f0a06a;  --c-faction-weak:   rgba(240,160,106,.14);
+  --c-item:      #e8b334;  --c-item-weak:      rgba(232,179,52,.14);
+  --c-level:     #7fa6ff;  --c-level-weak:     rgba(127,166,255,.14);
+  --c-custom:    #7e8595;  --c-custom-weak:    #2a2f3c;
 
-  --ok: #4FBF8B;  --warn: #D9A441;  --danger: #E0685A;
-  --shadow-1: 0 1px 2px rgba(0,0,0,.3);
-  --shadow-2: 0 2px 8px rgba(0,0,0,.36);
-  --shadow-3: 0 14px 36px rgba(0,0,0,.5), 0 2px 8px rgba(0,0,0,.3);
+  --ok: #4fc98d;  --warn: #e8b334;  --danger: #f26d6d;
+  --shadow-1: 0 6px 18px rgba(0,0,0,.32);
+  --shadow-2: 0 6px 18px rgba(0,0,0,.32);
+  --shadow-3: 0 12px 32px rgba(0,0,0,.45);
 }
 
-.app[data-theme="sepia"] {
-  --bg-app:      #EDE5D3;
-  --bg-rail:     #F4EDDD;
-  --bg-surface:  #F9F3E5;
-  --bg-sunken:   #EADFC9;
-  --bg-hover:    #E6DAC1;
-  --bg-active:   #DFD2B6;
-  --bg-paper:    #F7F0DF;
+.app[data-theme="cream"] {
+  --bg-app:      #faf6ef;
+  --bg-rail:     #fffdf9;
+  --bg-surface:  #ffffff;
+  --bg-sunken:   #fcf9f4;
+  --bg-hover:    #f6f0e6;
+  --bg-active:   #f0e6d4;
+  --bg-paper:    #ffffff;
 
-  --line:        #DCCFB4;
-  --line-soft:   #E5DCC6;
-  --line-strong: #C9BA9A;
+  --line:        #efe5d6;
+  --line-soft:   #fcf9f4;
+  --line-strong: #e3d6c2;
 
-  --tx:          #3F3526;
-  --tx-2:        #6C5E48;
-  --tx-3:        #95886F;
-  --tx-4:        #B3A68C;
+  --tx:          #3d3629;
+  --tx-2:        #6b6355;
+  --tx-3:        #9a9080;
+  --tx-4:        #c5bba8;
 
-  --accent:      #8A5A2B;
-  --accent-weak: #EFE0CB;
-  --accent-soft: #E5D2B4;
-  --on-accent:   #FFF9EE;
+  --accent:      #e8834a;
+  --accent-weak: #ffe9dc;
+  --accent-soft: #ffe9dc;
+  --on-accent:   #ffffff;
 
-  --c-character: #6B4FA8;  --c-character-weak: #E7DEEE;
-  --c-location:  #1F6B58;  --c-location-weak:  #DCE9E2;
-  --c-faction:   #9C4A28;  --c-faction-weak:   #F2DFD2;
-  --c-item:      #8A6510;  --c-item-weak:      #F2E7CC;
-  --c-level:     #2F5E86;  --c-level-weak:     #DCE6EF;
-  --c-custom:    #6A6455;  --c-custom-weak:    #E9E3D3;
+  --c-character: #a98bd8;  --c-character-weak: #f2ecfa;
+  --c-location:  #4fa88c;  --c-location-weak:  #e2f2ec;
+  --c-faction:   #e8834a;  --c-faction-weak:   #ffe9dc;
+  --c-item:      #d9a514;  --c-item-weak:      #fff6d9;
+  --c-level:     #5b9bc9;  --c-level-weak:     #e5f0f7;
+  --c-custom:    #9a9080;  --c-custom-weak:    #f6f0e6;
 
-  --ok: #2C6B47;  --warn: #8A6310;  --danger: #A33A28;
-  --shadow-1: 0 1px 2px rgba(70,55,30,.08);
-  --shadow-2: 0 2px 8px rgba(70,55,30,.12);
-  --shadow-3: 0 12px 32px rgba(70,55,30,.2);
+  --ok: #7ba05b;  --warn: #d9a514;  --danger: #d95c5c;
+  --shadow-1: 0 6px 16px rgba(120,95,60,.07);
+  --shadow-2: 0 6px 16px rgba(120,95,60,.07);
+  --shadow-3: 0 10px 30px rgba(120,95,60,.14);
+}
+
+.app[data-theme="mint"] {
+  --bg-app:      #f2f8f4;
+  --bg-rail:     #fbfefc;
+  --bg-surface:  #ffffff;
+  --bg-sunken:   #f5faf7;
+  --bg-hover:    #e9f4ee;
+  --bg-active:   #dcf0e5;
+  --bg-paper:    #ffffff;
+
+  --line:        #dfeee5;
+  --line-soft:   #f5faf7;
+  --line-strong: #cbe3d6;
+
+  --tx:          #24352d;
+  --tx-2:        #4a5c52;
+  --tx-3:        #8ca096;
+  --tx-4:        #b7c7bd;
+
+  --accent:      #2fa57e;
+  --accent-weak: #dcf2e8;
+  --accent-soft: #dcf2e8;
+  --on-accent:   #ffffff;
+
+  --c-character: #8b77e0;  --c-character-weak: #efecfa;
+  --c-location:  #2fa57e;  --c-location-weak:  #dcf2e8;
+  --c-faction:   #e8935e;  --c-faction-weak:   #fdeedf;
+  --c-item:      #d9a514;  --c-item-weak:      #fbf3dc;
+  --c-level:     #4a90c4;  --c-level-weak:     #eaf3fb;
+  --c-custom:    #8ca096;  --c-custom-weak:    #e9f4ee;
+
+  --ok: #2fa57e;  --warn: #d9a514;  --danger: #d95c5c;
+  --shadow-1: 0 6px 16px rgba(30,90,66,.07);
+  --shadow-2: 0 6px 16px rgba(30,90,66,.07);
+  --shadow-3: 0 10px 30px rgba(30,90,66,.14);
 }
 
 /* ============================================================
@@ -420,7 +457,7 @@ input, textarea, select { font: inherit; color: inherit; }
   position: absolute; top: 3px; bottom: 3px; left: 3px;
   /* 4 项 = 3 个 2px gap + 左右各 3px padding，故每项宽 (100% - 12px)/4 */
   width: calc((100% - 12px) / 4);
-  background: var(--bg-surface); border-radius: 7px;
+  background: var(--bg-surface); border-radius: var(--r-sm);
   box-shadow: var(--shadow-1);
   transition: transform var(--d-slow) var(--ease-out);
   pointer-events: none;
@@ -445,7 +482,7 @@ input, textarea, select { font: inherit; color: inherit; }
 
 /* 7.3 面板体 + 分页切换 */
 .prail__scroll { flex: 1; min-height: 0; overflow: auto; position: relative; }
-.pane { display: none; padding: 0 var(--s-3) var(--s-4); animation: paneIn var(--d-slow) var(--ease-out); }
+.pane { display: none; padding: 0 var(--s-4) var(--s-4); animation: paneIn var(--d-slow) var(--ease-out); }
 .pane.is-on { display: block; }
 @keyframes paneIn { from { opacity: 0; transform: translateY(6px) } to { opacity: 1; transform: none } }
 
@@ -531,7 +568,7 @@ input, textarea, select { font: inherit; color: inherit; }
 .tchip.is-on .tchip__n { color: rgba(255,255,255,.75); }
 .tchip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
-.group { margin-bottom: var(--s-3); }
+.group { margin-bottom: var(--s-4); }
 .group__h {
   display: flex; align-items: center; gap: 6px;
   padding: 0 2px 6px; font-size: 11px; font-weight: 600;
@@ -542,8 +579,8 @@ input, textarea, select { font: inherit; color: inherit; }
 
 /* 要素卡 */
 .ecard {
-  position: relative; width: 100%; display: flex; gap: 10px;
-  padding: 9px 10px; margin-bottom: 6px;
+  position: relative; width: 100%; display: flex; gap: 12px;
+  padding: 12px; margin-bottom: 10px;
   border: 1px solid var(--line-soft); border-radius: var(--r-md);
   background: var(--bg-surface); text-align: left; cursor: pointer;
   transition: background var(--d-fast) ease, border-color var(--d-fast) ease,
@@ -554,7 +591,7 @@ input, textarea, select { font: inherit; color: inherit; }
   width: 2.5px; border-radius: 0 2px 2px 0; background: var(--dc);
   opacity: 0; transition: opacity var(--d-fast) ease;
 }
-.ecard:hover { border-color: var(--line-strong); box-shadow: var(--shadow-2); transform: translateY(-1px); }
+.ecard:hover { border-color: var(--line-strong); box-shadow: var(--shadow-2); transform: translateY(-2px); }
 .ecard:hover::before { opacity: 1; }
 .ecard:active { transform: translateY(0) scale(.995); }
 .ecard:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
@@ -905,7 +942,7 @@ input, textarea, select { font: inherit; color: inherit; }
 </head>
 <body>
 
-<div class="app" id="app" data-theme="light">
+<div class="app" id="app" data-theme="aurora">
 
   <!-- ================= 顶栏 ================= -->
   <header class="topbar">
@@ -1137,9 +1174,10 @@ input, textarea, select { font: inherit; color: inherit; }
 <!-- 原型控制条 -->
 <div class="pctrl">
   <span class="pctrl__l">原型</span>
-  <button class="pctrl__b is-on" data-theme-set="light">亮</button>
-  <button class="pctrl__b" data-theme-set="dark">暗</button>
-  <button class="pctrl__b" data-theme-set="sepia">护眼</button>
+  <button class="pctrl__b is-on" data-theme-set="aurora">柔雾</button>
+  <button class="pctrl__b" data-theme-set="cream">奶油</button>
+  <button class="pctrl__b" data-theme-set="mint">薄荷</button>
+  <button class="pctrl__b" data-theme-set="midnight">月夜</button>
   <span class="pctrl__l" style="margin-left:2px">|</span>
   <button class="pctrl__b" id="btnNotes">设计说明</button>
 </div>
@@ -1446,7 +1484,6 @@ function renderEntities() {
               <span class="ecard__n">${esc(e.name)}</span>
               ${e.alias.length ? `<span class="ecard__al">${esc(e.alias.join(' · '))}</span>` : ''}
             </span>
-            <span class="ecard__sum">${esc(e.summary)}</span>
             <span class="ecard__r3">
               <span class="met">${ICO.rel}<b>${e.rel.length}</b> 关系</span>
               <span class="met">${ICO.flag}<b>${e.appear.length}</b> 章</span>

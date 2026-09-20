@@ -20,8 +20,9 @@ export default defineConfig({
     // jsdom 模拟浏览器环境（window/document/localStorage），供 React 组件与
     // 依赖 DOM 的工具函数测试使用；纯函数测试也在该环境下运行，保持配置统一。
     environment: "jsdom",
-    // 测试文件与被测代码同目录，统一以 *.test.ts / *.test.tsx 命名（就近原则）
-    include: ["src/**/*.test.{ts,tsx}"],
+    // 测试文件与被测代码同目录，统一以 *.test.ts / *.test.tsx 命名（就近原则）。
+    // electron/ 下仅纳入纯函数模块的测试（不 import electron 模块，jsdom 可运行）。
+    include: ["src/**/*.test.{ts,tsx}", "electron/**/*.test.ts"],
     setupFiles: ["./vitest.setup.ts"],
   },
 });

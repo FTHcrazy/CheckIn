@@ -41,6 +41,7 @@ function MemoPage() {
     handleSave,
     handleCreate,
     handleImport,
+    handleExport,
     handleTextAreaBlur,
     handleDelete,
   } = editor;
@@ -66,6 +67,7 @@ function MemoPage() {
           loading={loading || importing}
           onCreate={() => setCreateModalOpen(true)}
           onImport={() => void handleImport()}
+          onExport={(format) => void handleExport(format)}
           onRefresh={() => void loadFiles()}
           onSelect={(filename) => void handleSelectFile(filename)}
           onRename={handleRename}

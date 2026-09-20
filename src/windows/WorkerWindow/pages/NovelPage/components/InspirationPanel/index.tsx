@@ -8,6 +8,7 @@ import {
   PushpinOutlined,
   SearchOutlined,
 } from "@ant-design/icons";
+import { Virtuoso } from "react-virtuoso";
 import { filterNotes, formatRelativeTime } from "../../novel-utils";
 import type { NovelNote } from "../../types";
 import "./index.scss";
@@ -153,12 +154,20 @@ export default function InspirationPanel({
       ) : visible.length === 0 ? (
         <p className="nv-note__empty">没有匹配「{keyword.trim()}」的灵感</p>
       ) : (
-        <ul className="nv-note__list">
-          {visible.map((note) => (
-            <li
-              key={note.id}
-              className={`nv-note__card${note.pinned ? " is-pinned" : ""}`}
-            >
+        <Virtuoso
+          className="nv-note__list"
+          style={{ flex: 1, minHeight: 0 }}
+          data={visible}
+          overscan={8}
+          computeItemKey={(_, note) => note.id}
+          itemContent={(_, note) => (
+            /* 包裹层做间距：margin 不会被 Virtuoso 计入测量高度 */
+            <div className="nv-note__item">
+              <div
+                className={`nv-note__card${note.pinned ? " is-pinned" : ""}`}
+                role="group"
+                aria-label={note.content}
+              >
               {editingId === note.id ? (
                 <>
                   <textarea
@@ -233,9 +242,10 @@ export default function InspirationPanel({
                   </footer>
                 </>
               )}
-            </li>
-          ))}
-        </ul>
+              </div>
+            </div>
+          )}
+        />
       )}
     </div>
   );

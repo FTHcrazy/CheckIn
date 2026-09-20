@@ -1,5 +1,6 @@
 import {
   Button,
+  Dropdown,
   Empty,
   Space,
   Spin,
@@ -7,6 +8,9 @@ import {
   Typography,
 } from "antd";
 import {
+  ExportOutlined,
+  FileTextOutlined,
+  FileWordOutlined,
   ImportOutlined,
   PlusOutlined,
   ReloadOutlined,
@@ -24,6 +28,7 @@ interface MemoSidebarProps {
   loading: boolean;
   onCreate: () => void;
   onImport: () => void;
+  onExport: (format: "txt" | "docx") => void;
   onRefresh: () => void;
   onSelect: (filename: string) => void;
   onRename: (filename: string, name: string) => Promise<boolean>;
@@ -37,12 +42,32 @@ export default function MemoSidebar({
   loading,
   onCreate,
   onImport,
+  onExport,
   onRefresh,
   onSelect,
   onRename,
   onDelete,
   onOpenInExplorer,
 }: MemoSidebarProps) {
+  const exportItems = [
+    {
+      key: "txt",
+      label: (
+        <Space size={6}>
+          <FileTextOutlined /> 导出为 TXT
+        </Space>
+      ),
+    },
+    {
+      key: "docx",
+      label: (
+        <Space size={6}>
+          <FileWordOutlined /> 导出为 DOCX
+        </Space>
+      ),
+    },
+  ];
+
   return (
     <div className="memo-sidebar">
       <div className="memo-sidebar-header">
@@ -53,7 +78,7 @@ export default function MemoSidebar({
           <Text type="secondary">({files.length})</Text>
         </Space>
         <Space size={4}>
-          <Tooltip title="导入 Markdown 文件">
+          <Tooltip title="导入文件（Markdown / TXT / DOCX）">
             <Button
               type="text"
               size="small"
@@ -61,6 +86,23 @@ export default function MemoSidebar({
               onClick={onImport}
             />
           </Tooltip>
+          <Dropdown
+            menu={{
+              items: exportItems,
+              onClick: ({ key }) =>
+                onExport(key === "docx" ? "docx" : "txt"),
+            }}
+            disabled={!selected}
+          >
+            <Tooltip title={selected ? "导出当前备忘" : "先选择要导出的备忘"}>
+              <Button
+                type="text"
+                size="small"
+                icon={<ExportOutlined />}
+                disabled={!selected}
+              />
+            </Tooltip>
+          </Dropdown>
           <Tooltip title="刷新列表">
             <Button
               type="text"

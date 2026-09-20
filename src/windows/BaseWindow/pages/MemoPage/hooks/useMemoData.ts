@@ -81,6 +81,20 @@ export function useMemoData() {
     }
   };
 
+  /** 导出当前备忘为 .txt / .docx（保存位置由主进程保存对话框决定） */
+  const exportFile = async (
+    filename: string,
+    format: "txt" | "docx",
+  ): Promise<boolean> => {
+    try {
+      return (await window.electronAPI?.memo.exportFile(filename, format)) ?? false;
+    } catch (error) {
+      message.error("导出失败");
+      console.error(error);
+      return false;
+    }
+  };
+
   const openInExplorer = async (filename: string): Promise<void> => {
     try {
       await window.electronAPI?.memo.openInExplorer(filename);
@@ -100,6 +114,7 @@ export function useMemoData() {
     renameFile,
     deleteFile,
     importFiles,
+    exportFile,
     openInExplorer,
   };
 }

@@ -40,6 +40,11 @@
     color: var(--app-text-muted);
   }
 
+  /* 虚拟滚动容器：Virtuoso 接管滚动，高度随内容收缩、封顶 230px */
+  &__body {
+    overflow: hidden;
+  }
+
   &__list {
     max-height: 230px;
     overflow: auto;
