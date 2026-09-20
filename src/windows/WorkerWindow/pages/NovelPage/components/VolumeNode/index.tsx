@@ -9,6 +9,8 @@ import "./index.scss";
 interface VolumeNodeProps {
   volume: NovelVolume;
   chapters: NovelChapter[];
+  /** 全书章节序号（拖拽重排后自动跟随的派生属性） */
+  chapterNumbers: Map<string, number>;
   activeChapterId: string | null;
   sortMode: boolean;
   onSelect: (chapterId: string) => void;
@@ -25,6 +27,7 @@ interface VolumeNodeProps {
 export default function VolumeNode({
   volume,
   chapters,
+  chapterNumbers,
   activeChapterId,
   sortMode,
   onSelect,
@@ -96,11 +99,11 @@ export default function VolumeNode({
 
       {open && (
         <ul className="nv-volume__list" role="tree">
-          {chapters.map((chapter, index) => (
+          {chapters.map((chapter) => (
             <ChapterTreeItem
               key={chapter.id}
               chapter={chapter}
-              index={index + 1}
+              chapterNumber={chapterNumbers.get(chapter.id) ?? 0}
               active={chapter.id === activeChapterId}
               sortMode={sortMode}
               onSelect={onSelect}

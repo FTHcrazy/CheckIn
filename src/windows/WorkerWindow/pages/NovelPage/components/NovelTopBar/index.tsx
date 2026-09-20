@@ -21,12 +21,13 @@ interface NovelTopBarProps {
   leftOpen: boolean;
   rightOpen: boolean;
   typewriter: boolean;
+  settingsOpen: boolean;
   onSelectWork: (workId: string) => void;
   onToggleLeft: () => void;
   onToggleRight: () => void;
   onToggleTypewriter: () => void;
+  onToggleSettings: () => void;
   onOpenHistory: () => void;
-  onOpenSettings: () => void;
 }
 
 /**
@@ -44,12 +45,13 @@ export default function NovelTopBar({
   leftOpen,
   rightOpen,
   typewriter,
+  settingsOpen,
   onSelectWork,
   onToggleLeft,
   onToggleRight,
   onToggleTypewriter,
+  onToggleSettings,
   onOpenHistory,
-  onOpenSettings,
 }: NovelTopBarProps) {
   return (
     <div className="nv-topbar">
@@ -122,8 +124,8 @@ export default function NovelTopBar({
         <Tooltip title="设置">
           <button
             type="button"
-            className="nv-topbar__icon"
-            onClick={onOpenSettings}
+            className={`nv-topbar__icon${settingsOpen ? " is-on" : ""}`}
+            onClick={onToggleSettings}
             aria-label="设置"
           >
             <SettingOutlined />

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef } from "react";
-import type { CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties, KeyboardEvent } from "react";
 import { Empty } from "antd";
 import {
   defaultKeymap,
@@ -14,6 +14,7 @@ import {
   annotationEnabledCompartment,
   annotationEnabledFacet,
   annotationLayer,
+  refreshAnnotation,
   termsCompartment,
   termsFacet,
 } from "../../novel-editor";
@@ -22,6 +23,8 @@ import "./index.scss";
 
 interface EditorPaneProps {
   chapter: NovelChapter | null;
+  /** 全书章节序号（派生属性，随拖拽重排变动；0 表示未知） */
+  chapterNumber: number;
   content: string;
   settings: EditorSettings;
   terms: EntityTerm[];
@@ -32,6 +35,7 @@ interface EditorPaneProps {
   onTermLeave: () => void;
   onTermClick: (entityId: string) => void;
   onCreateChapter: () => void;
+  onRenameChapter: (chapterId: string, title: string) => void;
 }
 
 /** 排版相关的动态样式走独立 compartment，改字号不必重建编辑器 */
@@ -65,6 +69,19 @@ const buildTheme = (settings: EditorSettings) =>
   });
 
 /**
+ * 弹层的定位基准是 .nv-page__stage（SelectionToolbar / HoverEntityCard
+ * 的绝对定位父级），不是编辑器 host——host 在滚动容器内，滚动后
+ * getBoundingClientRect 的 top 会变成负值，用它算坐标必然飘出视口。
+ */
+const stageRectOf = (host: HTMLElement): DOMRect =>
+  host.closest<HTMLElement>(".nv-page__stage")?.getBoundingClientRect() ??
+  host.getBoundingClientRect();
+
+/** 数值夹取：min > max 时以 min 为准，保证结果恒在 [min, max] */
+const clamp = (value: number, min: number, max: number): number =>
+  Math.min(Math.max(value, min), Math.max(min, max));
+
+/**
  * 中央码字区（设计方案 §05 ②）
  *
  * 内核为 CodeMirror 6 纯文本模式：虚拟滚动天然支撑三万字章节，
@@ -73,6 +90,7 @@ const buildTheme = (settings: EditorSettings) =>
  */
 export default function EditorPane({
   chapter,
+  chapterNumber,
   content,
   settings,
   terms,
@@ -83,10 +101,47 @@ export default function EditorPane({
   onTermLeave,
   onTermClick,
   onCreateChapter,
+  onRenameChapter,
 }: EditorPaneProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const lastLineRef = useRef<number>(-1);
+  /** IME 组合期标记：拼音候选期间的文档变化不上报，避免字数按拼音递增（R2） */
+  const composingRef = useRef(false);
+
+  // 章节标题编辑：点击标题进入编辑态（本组件局部交互，含 IME 守卫）
+  const [titleEditing, setTitleEditing] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
+
+  const startTitleEdit = (): void => {
+    if (!chapter) return;
+    setTitleDraft(chapter.title);
+    setTitleEditing(true);
+  };
+
+  const commitTitleEdit = (): void => {
+    setTitleEditing(false);
+    if (!chapter) return;
+    const trimmed = titleDraft.trim();
+    if (trimmed && trimmed !== chapter.title) {
+      onRenameChapter(chapter.id, trimmed);
+    }
+  };
+
+  const handleTitleKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {
+    if (event.nativeEvent.isComposing) return;
+    if (event.key === "Enter") {
+      event.preventDefault();
+      commitTitleEdit();
+    } else if (event.key === "Escape") {
+      setTitleEditing(false);
+    }
+  };
+
+  // 切章 / 回滚后退出编辑态，避免把 A 章标题草稿写进 B 章
+  useEffect(() => {
+    setTitleEditing(false);
+  }, [chapter?.id]);
 
   // 回调放进 ref，避免重建编辑器（CodeMirror 实例必须整个会话唯一）
   const handlersRef = useRef({ onChange, onSelectionChange });
@@ -116,6 +171,9 @@ export default function EditorPane({
           annotationLayer(terms, enabled),
           EditorView.updateListener.of((update) => {
             if (update.docChanged) {
+              // 拼音候选期间的中间态不上报：草稿与字数统计只看确认后的文本。
+              // compositionend 时由下方监听器统一上报最终文档
+              if (composingRef.current) return;
               handlersRef.current.onChange(update.state.doc.toString());
             }
             if (update.selectionSet) {
@@ -126,13 +184,18 @@ export default function EditorPane({
               }
               const text = update.state.sliceDoc(main.from, main.to);
               const coords = view.coordsAtPos(main.head);
-              const hostRect = host.getBoundingClientRect();
+              // 工具条相对 stage 定位：y 在选区上方（translate -100%），预留自身高度与宽度
+              const stageRect = stageRectOf(host);
               handlersRef.current.onSelectionChange({
                 text,
                 from: main.from,
                 to: main.to,
-                x: coords ? coords.left - hostRect.left : 0,
-                y: coords ? coords.top - hostRect.top : 0,
+                x: coords
+                  ? clamp(coords.left - stageRect.left, 8, stageRect.width - 292)
+                  : 0,
+                y: coords
+                  ? Math.max(coords.top - stageRect.top, 44)
+                  : 0,
               });
             }
           }),
@@ -141,7 +204,22 @@ export default function EditorPane({
     });
 
     viewRef.current = view;
+
+    // IME 组合期监听：候选期间冻结上报；确认（compositionend）后一次性
+    // 上报最终文档——此时草稿从组合前文本直接跳到确认文本，字数增量准确
+    const handleCompositionStart = (): void => {
+      composingRef.current = true;
+    };
+    const handleCompositionEnd = (): void => {
+      composingRef.current = false;
+      handlersRef.current.onChange(view.state.doc.toString());
+    };
+    view.contentDOM.addEventListener("compositionstart", handleCompositionStart);
+    view.contentDOM.addEventListener("compositionend", handleCompositionEnd);
+
     return () => {
+      view.contentDOM.removeEventListener("compositionstart", handleCompositionStart);
+      view.contentDOM.removeEventListener("compositionend", handleCompositionEnd);
       view.destroy();
       viewRef.current = null;
     };
@@ -149,12 +227,14 @@ export default function EditorPane({
   }, []);
 
   // 外部灌入的正文（切换章节 / 回滚 / 恢复）与编辑器文档不一致时同步进去。
-  // 用 isolateHistory 切断撤销栈：撤销不应跨章节回退到上一章的正文（R2 撤销可靠性）
+  // 用 isolateHistory 切断撤销栈（撤销不应跨章节回退到上一章正文）；
+  // 同时携带 refreshAnnotation 让标注层立即重建，不残留上一章的高亮
   useEffect(() => {
     const view = viewRef.current;
     if (!view || view.state.doc.toString() === content) return;
     view.dispatch({
       changes: { from: 0, to: view.state.doc.length, insert: content },
+      effects: refreshAnnotation.of(null),
       annotations: isolateHistory.of("full"),
     });
   }, [content]);
@@ -166,7 +246,9 @@ export default function EditorPane({
     });
   }, [settings]);
 
-  // 词库与标注层开关热更新：只换 facet 值，不重建插件实例（PRD §7：要素保存即刷新词库）
+  // 词库与标注层开关热更新：只换 facet 值，不重建插件实例（PRD §7：要素保存即刷新词库）。
+  // 强制刷新信号必须同事务携带：插件只在 forced/viewportChanged/docChanged 时重建，
+  // 单纯的 facet 变化不会触发 decoration 重算（新标记的词要立即高亮）
   useEffect(() => {
     viewRef.current?.dispatch({
       effects: [
@@ -174,6 +256,7 @@ export default function EditorPane({
         annotationEnabledCompartment.reconfigure(
           annotationEnabledFacet.of(enabled),
         ),
+        refreshAnnotation.of(null),
       ],
     });
   }, [terms, enabled]);
@@ -228,11 +311,16 @@ export default function EditorPane({
       if (!entityId) return;
 
       const nodeRect = node.getBoundingClientRect();
-      const hostRect = host.getBoundingClientRect();
+      // 资料卡相对 stage 定位且 translate(-50%)：左右各预留半张卡宽
+      const stageRect = stageRectOf(host);
       onTermHover(
         entityId,
-        nodeRect.left - hostRect.left + nodeRect.width / 2,
-        nodeRect.bottom - hostRect.top + 6,
+        clamp(
+          nodeRect.left - stageRect.left + nodeRect.width / 2,
+          156,
+          stageRect.width - 156,
+        ),
+        nodeRect.bottom - stageRect.top + 6,
       );
     };
 
@@ -270,10 +358,36 @@ export default function EditorPane({
     >
       {chapter && (
         <div className="nv-editor__title">
-          <span className="nv-editor__title-text">{chapter.title}</span>
-          <span className="nv-editor__title-meta">
-            {chapter.status === "done" ? "完稿" : "草稿"}
-          </span>
+          {titleEditing ? (
+            <input
+              className="nv-editor__title-input"
+              value={titleDraft}
+              autoFocus
+              maxLength={60}
+              aria-label="章节名称"
+              onChange={(event) => setTitleDraft(event.target.value)}
+              onBlur={commitTitleEdit}
+              onKeyDown={handleTitleKeyDown}
+            />
+          ) : (
+            <button
+              type="button"
+              className="nv-editor__title-text"
+              title="点击修改章节名称"
+              onClick={startTitleEdit}
+            >
+              {chapterNumber > 0 && (
+                <span className="nv-editor__title-no">
+                  第{chapterNumber}章
+                </span>
+              )}
+              {chapter.title}
+            </button>
+          )}
+          {/* 状态徽标只在完稿时出现；草稿是默认态，常驻只会变成噪音 */}
+          {chapter.status === "done" && (
+            <span className="nv-editor__title-meta">完稿</span>
+          )}
         </div>
       )}
       <div className="nv-editor__scroll">

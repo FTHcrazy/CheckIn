@@ -122,12 +122,13 @@ export default function NovelPage() {
           leftOpen={view.leftOpen}
           rightOpen={view.rightOpen}
           typewriter={view.typewriter}
+          settingsOpen={view.settingsOpen}
           onSelectWork={data.setActiveWorkId}
           onToggleLeft={view.toggleLeft}
           onToggleRight={view.toggleRight}
           onToggleTypewriter={view.toggleTypewriter}
+          onToggleSettings={view.toggleSettings}
           onOpenHistory={view.openSnapshot}
-          onOpenSettings={view.openSettings}
         />
       </div>
 
@@ -135,6 +136,7 @@ export default function NovelPage() {
         <ChapterTree
           collapsed={!view.leftOpen}
           groups={data.groups}
+          chapterNumbers={data.chapterNumbers}
           activeChapterId={data.activeChapterId}
           onSelect={handleSelectChapter}
           onCreate={handleNewChapter}
@@ -147,6 +149,11 @@ export default function NovelPage() {
         <div className="nv-page__stage">
           <EditorPane
             chapter={data.activeChapter}
+            chapterNumber={
+              data.activeChapterId
+                ? (data.chapterNumbers.get(data.activeChapterId) ?? 0)
+                : 0
+            }
             content={editor.content}
             settings={editor.settings}
             terms={terms}
@@ -157,6 +164,7 @@ export default function NovelPage() {
             onTermLeave={hover.leave}
             onTermClick={handleOpenEntity}
             onCreateChapter={handleNewChapter}
+            onRenameChapter={data.renameChapter}
           />
 
           <StatusBar stats={editor.stats} />

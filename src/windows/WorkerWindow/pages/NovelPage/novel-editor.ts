@@ -87,6 +87,12 @@ class AnnotationPlugin {
     if (this.suspended && !forced) return;
 
     if (update.docChanged) {
+      // 外部整篇替换（切章 / 回滚）会同时携带强制刷新信号：
+      // 立即重建，避免上一章的 decoration 残留一个防抖周期（闪一下）
+      if (forced) {
+        this.decorations = this.build();
+        return;
+      }
       this.schedule(300);
       return;
     }

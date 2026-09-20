@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildBreadcrumb,
   buildChapterGroups,
+  buildChapterNumbers,
   buildEntityTerms,
   buildSearchSnippet,
   buildSortOrder,
@@ -269,5 +270,34 @@ describe("卷章分组与面包屑", () => {
       volumeName: "",
       chapterName: "",
     });
+  });
+
+  it("buildChapterNumbers 跨卷连续编号", () => {
+    expect(buildChapterNumbers(volumes, chapters)).toEqual(
+      new Map([
+        ["c1", 1],
+        ["c2", 2],
+        ["c3", 3],
+      ]),
+    );
+  });
+
+  it("buildChapterNumbers 随拖拽重排自动跟随（序号是排序的派生属性）", () => {
+    // 模拟 c2 拖到卷二末尾（volumeId/sort 变更后重新派生）；
+    // 注意上方 chapters 数组定义顺序是 [c2, c1, c3]，按 id 取避免索引陷阱
+    const pick = (id: string): NovelChapter =>
+      chapters.find((chapter) => chapter.id === id)!;
+    const reordered: NovelChapter[] = [
+      pick("c1"),
+      pick("c3"),
+      { ...pick("c2"), volumeId: "v2", sort: 2 },
+    ];
+    expect(buildChapterNumbers(volumes, reordered)).toEqual(
+      new Map([
+        ["c1", 1],
+        ["c3", 2],
+        ["c2", 3],
+      ]),
+    );
   });
 });

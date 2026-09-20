@@ -9,7 +9,8 @@ import "./index.scss";
 
 interface ChapterTreeItemProps {
   chapter: NovelChapter;
-  index: number;
+  /** 全书序号（跨卷连续，随拖拽重排自动变动） */
+  chapterNumber: number;
   active: boolean;
   sortMode: boolean;
   onSelect: (chapterId: string) => void;
@@ -27,7 +28,7 @@ interface ChapterTreeItemProps {
  */
 export default function ChapterTreeItem({
   chapter,
-  index,
+  chapterNumber,
   active,
   sortMode,
   onSelect,
@@ -75,7 +76,7 @@ export default function ChapterTreeItem({
         onDragEnd={handleDragEnd}
         onClick={() => onSelect(chapter.id)}
       >
-        <span className="nv-chapter__index">{padIndex(index)}</span>
+        <span className="nv-chapter__index">{padIndex(chapterNumber)}</span>
         <Tooltip title={status.label}>
           <span
             className="nv-chapter__status"

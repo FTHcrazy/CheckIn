@@ -66,6 +66,11 @@ export function useNovelViewState() {
   const closeSnapshot = useCallback(() => setSnapshotOpen(false), []);
   const openSettings = useCallback(() => setSettingsOpen(true), []);
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
+  /** 顶栏齿轮即开关：再点一次关闭（抽屉无遮罩时这是主要关闭途径之一） */
+  const toggleSettings = useCallback(
+    () => setSettingsOpen((open) => !open),
+    [],
+  );
   const openJump = useCallback(() => setJumpOpen(true), []);
   const closeJump = useCallback(() => setJumpOpen(false), []);
 
@@ -111,6 +116,7 @@ export function useNovelViewState() {
     closeSnapshot,
     openSettings,
     closeSettings,
+    toggleSettings,
     showToast,
     closeToast,
   };

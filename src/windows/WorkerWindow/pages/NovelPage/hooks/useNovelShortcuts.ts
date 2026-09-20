@@ -9,10 +9,8 @@ export interface NovelShortcutHandlers {
   onNewChapter: () => void;
   /** F11 专注模式开关 */
   onToggleFocus: () => void;
-  /** Esc 退出专注模式（不关窗） */
-  onExitFocus: () => void;
-  /** 当前是否处于专注模式（决定 Esc 是否需要拦截） */
-  focusMode: boolean;
+  /** Esc：按优先级关闭最上层的浮层（设置 → 快照 → 专注模式） */
+  onEscape: () => void;
 }
 
 /**
@@ -26,8 +24,7 @@ export function useNovelShortcuts({
   onJump,
   onNewChapter,
   onToggleFocus,
-  onExitFocus,
-  focusMode,
+  onEscape,
 }: NovelShortcutHandlers): void {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -57,13 +54,13 @@ export function useNovelShortcuts({
         return;
       }
 
-      if (event.key === "Escape" && focusMode) {
+      if (event.key === "Escape") {
         event.preventDefault();
-        onExitFocus();
+        onEscape();
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onSave, onJump, onNewChapter, onToggleFocus, onExitFocus, focusMode]);
+  }, [onSave, onJump, onNewChapter, onToggleFocus, onEscape]);
 }

@@ -91,13 +91,27 @@ export function useNovelPage() {
     editor.dismissRecovery();
   }, [editor]);
 
+  // Esc 关闭链：设置 → 快照 → 专注模式（逐层退出，章节跳转面板自己处理 Esc）
+  const handleEscape = useCallback((): void => {
+    if (view.settingsOpen) {
+      view.closeSettings();
+      return;
+    }
+    if (view.snapshotOpen) {
+      view.closeSnapshot();
+      return;
+    }
+    if (view.focusMode) {
+      view.exitFocus();
+    }
+  }, [view]);
+
   useNovelShortcuts({
     onSave: () => void handleSaveNow(),
     onJump: () => (view.jumpOpen ? view.closeJump() : view.openJump()),
     onNewChapter: handleNewChapter,
     onToggleFocus: view.toggleFocus,
-    onExitFocus: view.exitFocus,
-    focusMode: view.focusMode,
+    onEscape: handleEscape,
   });
 
   // 目标达成只提示一次：跨过目标线的那一刻给轻提示 + 进度条填满（设计方案 §07）

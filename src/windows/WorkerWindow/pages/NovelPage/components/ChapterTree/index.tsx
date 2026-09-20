@@ -7,6 +7,8 @@ import "./index.scss";
 interface ChapterTreeProps {
   collapsed: boolean;
   groups: ChapterGroup[];
+  /** 全书章节序号（拖拽重排后自动跟随的派生属性） */
+  chapterNumbers: Map<string, number>;
   activeChapterId: string | null;
   onSelect: (chapterId: string) => void;
   onCreate: () => void;
@@ -29,6 +31,7 @@ interface ChapterTreeProps {
 export default function ChapterTree({
   collapsed,
   groups,
+  chapterNumbers,
   activeChapterId,
   onSelect,
   onCreate,
@@ -74,6 +77,7 @@ export default function ChapterTree({
               key={group.volume.id}
               volume={group.volume}
               chapters={group.chapters}
+              chapterNumbers={chapterNumbers}
               activeChapterId={activeChapterId}
               sortMode={sortMode}
               onSelect={onSelect}

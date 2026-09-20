@@ -6,7 +6,7 @@ import {
   searchAcrossBook,
   type NovelBundle,
 } from "../services/novel-demo-source";
-import { buildChapterGroups, buildSortOrder, insertItemBefore, moveItemBefore, padIndex, type ChapterGroup } from "../novel-utils";
+import { buildChapterGroups, buildChapterNumbers, buildSortOrder, insertItemBefore, moveItemBefore, type ChapterGroup } from "../novel-utils";
 import type {
   EntityRelationView,
   EntityType,
@@ -14,6 +14,7 @@ import type {
   NovelEntity,
   NovelNote,
   NovelSnapshot,
+  NovelVolume,
   SearchHit,
 } from "../types";
 
@@ -82,10 +83,28 @@ export function useNovelData() {
     [volumes, chapters],
   );
 
+  /** 全书章节序号（拖拽重排后自动跟随的派生属性） */
+  const chapterNumbers = useMemo(
+    () => buildChapterNumbers(volumes, chapters),
+    [volumes, chapters],
+  );
+
   const activeChapter = useMemo(
     () => chapters.find((chapter) => chapter.id === activeChapterId) ?? null,
     [chapters, activeChapterId],
   );
+
+  // 切换作品后旧的章节 id 不属于当前作品：重置到该作品的第一章，
+  // 否则编辑器停在空态、且 handleNewChapter 拿不到 volumeId 兜底
+  useEffect(() => {
+    if (
+      activeChapterId &&
+      chapters.length > 0 &&
+      !chapters.some((chapter) => chapter.id === activeChapterId)
+    ) {
+      setActiveChapterId(chapters[0].id);
+    }
+  }, [activeChapterId, chapters]);
 
   const selectChapter = useCallback((chapterId: string) => {
     setActiveChapterId(chapterId);
@@ -113,8 +132,25 @@ export function useNovelData() {
 
   const createChapter = useCallback(
     (volumeId?: string): string | null => {
-      const targetVolumeId = volumeId ?? volumes[volumes.length - 1]?.id;
-      if (!targetVolumeId || !bundle) return null;
+      if (!bundle) return null;
+      let targetVolumeId = volumeId ?? volumes[volumes.length - 1]?.id ?? null;
+
+      // 目标作品还没有任何卷（全新作品 / 空作品）：自动创建第一卷，
+      // 保证「写下第一章」永远可用（PRD R1：零配置开写）
+      if (!targetVolumeId) {
+        const createdVolume: NovelVolume = {
+          id: `v-${Date.now()}`,
+          workId: activeWorkId,
+          name: "第一卷",
+          sort: 1,
+        };
+        targetVolumeId = createdVolume.id;
+        setBundle((current) =>
+          current
+            ? { ...current, volumes: [...current.volumes, createdVolume] }
+            : current,
+        );
+      }
 
       const siblings = bundle.chapters.filter(
         (chapter) => chapter.volumeId === targetVolumeId,
@@ -124,7 +160,8 @@ export function useNovelData() {
         id,
         workId: activeWorkId,
         volumeId: targetVolumeId,
-        title: `第${padIndex(siblings.length + 1)}章 · 未命名`,
+        // 序号是排序的派生属性（见 chapterNumbers），标题只存章节名
+        title: "未命名",
         content: "",
         wordCount: 0,
         status: "draft",
@@ -259,6 +296,24 @@ export function useNovelData() {
     },
     [activeWorkId],
   );
+
+  /** 章节重命名（R1）：空标题与同名不落 */
+  const renameChapter = useCallback((chapterId: string, title: string) => {
+    const trimmed = title.trim();
+    if (!trimmed) return;
+    setBundle((current) =>
+      current
+        ? {
+            ...current,
+            chapters: current.chapters.map((chapter) =>
+              chapter.id === chapterId
+                ? { ...chapter, title: trimmed, updatedAt: Date.now() }
+                : chapter,
+            ),
+          }
+        : current,
+    );
+  }, []);
 
   const toggleChapterStatus = useCallback((chapterId: string) => {
     setBundle((current) =>
@@ -429,6 +484,7 @@ export function useNovelData() {
     notes,
     outline,
     groups,
+    chapterNumbers,
     activeChapter,
     activeChapterId,
     activeWorkId,
@@ -440,6 +496,7 @@ export function useNovelData() {
     updateChapterContent,
     createChapter,
     moveChapter,
+    renameChapter,
     reorderChapters,
     moveChapterToVolume,
     reorderVolumes,

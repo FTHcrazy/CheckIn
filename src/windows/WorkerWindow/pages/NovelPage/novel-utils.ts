@@ -303,6 +303,25 @@ export function buildChapterGroups(
     }));
 }
 
+/**
+ * 全书章节序号：卷按 sort、卷内章按 sort 连续编号。
+ * 序号是排序的派生属性（不写进标题字符串），拖拽重排后由调用方重新派生即自动跟随。
+ */
+export function buildChapterNumbers(
+  volumes: NovelVolume[],
+  chapters: NovelChapter[],
+): Map<string, number> {
+  const numbers = new Map<string, number>();
+  let seq = 0;
+  for (const group of buildChapterGroups(volumes, chapters)) {
+    for (const chapter of group.chapters) {
+      seq += 1;
+      numbers.set(chapter.id, seq);
+    }
+  }
+  return numbers;
+}
+
 /** 面包屑「卷名 / 章名」 */
 export function buildBreadcrumb(
   volumes: NovelVolume[],

@@ -31,7 +31,16 @@ export default function SettingsDrawer({
   onClose,
 }: SettingsDrawerProps) {
   return (
-    <aside className={`nv-setting${open ? " is-open" : ""}`}>
+    <>
+      {/* 点外部关闭：打开时铺满 stage 的透明捕获层（z-index 低于抽屉本体） */}
+      {open && (
+        <div
+          className="nv-setting__mask"
+          aria-hidden="true"
+          onClick={onClose}
+        />
+      )}
+      <aside className={`nv-setting${open ? " is-open" : ""}`}>
       <header className="nv-setting__head">
         <b>设置</b>
         <button type="button" aria-label="关闭" onClick={onClose}>
@@ -139,6 +148,7 @@ export default function SettingsDrawer({
           </p>
         </section>
       </div>
-    </aside>
+      </aside>
+    </>
   );
 }

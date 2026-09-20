@@ -1,3 +1,10 @@
+/* 点外部关闭的透明捕获层：不暗化正文（保持「零打断」），只拦一次点击 */
+.nv-setting__mask {
+  position: absolute;
+  inset: 0;
+  z-index: 45;
+}
+
 .nv-setting {
   position: absolute;
   top: 0;
