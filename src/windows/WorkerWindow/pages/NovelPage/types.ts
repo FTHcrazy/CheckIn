@@ -144,6 +144,11 @@ export interface EntityAppearance {
   label: string;
 }
 
+/** 资料卡详情页编辑保存的开放字段（R23） */
+export type EntitySavePatch = Partial<
+  Pick<NovelEntity, "name" | "type" | "aliases" | "summary" | "fields">
+>;
+
 /** 标注层命中片段 */
 export interface TermMatch {
   from: number;

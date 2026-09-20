@@ -11,10 +11,6 @@
   pointer-events: none;
   animation: nv-pop-in 120ms ease;
 
-  &--flip {
-    transform: translate(-50%, -100%);
-  }
-
   /* 只有卡片本体可交互，容器保持穿透以免挡住正文点击 */
   &__head {
     display: flex;

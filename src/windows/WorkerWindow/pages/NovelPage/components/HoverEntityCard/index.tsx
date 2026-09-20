@@ -6,31 +6,34 @@ import "./index.scss";
 interface HoverEntityCardProps {
   target: HoverTarget;
   entity: NovelEntity;
-  /** 触底时翻转到词的上方 */
-  flip: boolean;
   onOpenDetail: (entityId: string) => void;
 }
+
+/** 性格标签拆分：trim 后过滤空段（「· 」带空格的历史数据会产生空白标签） */
+const splitTags = (raw: string): string[] =>
+  raw
+    .split(/[·、,，]/)
+    .map((tag) => tag.trim())
+    .filter(Boolean);
 
 /**
  * 悬浮资料卡（O2 / R20 ②）
  *
  * 无焦点 popover：不获取焦点、不劫持滚轮、不阻断 IME 候选，
  * 只展示摘要，完整设定要点开才查库（懒加载）。
+ * 统一在文字下方展示（不再触底翻转覆盖正文）。
  */
 export default function HoverEntityCard({
   target,
   entity,
-  flip,
   onOpenDetail,
 }: HoverEntityCardProps) {
   const meta = ENTITY_TYPE_META[entity.type];
-  const tags = entity.fields["性格"]
-    ? entity.fields["性格"].split(/[·、,，]/).map((tag) => tag.trim())
-    : [];
+  const tags = entity.fields["性格"] ? splitTags(entity.fields["性格"]) : [];
 
   return (
     <div
-      className={`nv-pop${flip ? " nv-pop--flip" : ""}`}
+      className="nv-pop"
       style={{ left: target.x, top: target.y }}
     >
       <div className="nv-pop__head">

@@ -60,6 +60,25 @@
     white-space: nowrap;
   }
 
+  &__title-input {
+    flex: 1;
+    min-width: 0;
+    padding: 1px 5px;
+    border: 1px solid var(--app-primary);
+    border-radius: 4px;
+    background: var(--app-surface);
+    color: var(--app-text);
+    font-size: 12.5px;
+
+    &:focus {
+      outline: none;
+    }
+  }
+
+  &__row.is-editing {
+    cursor: default;
+  }
+
   &__words {
     margin-left: auto;
     flex: none;

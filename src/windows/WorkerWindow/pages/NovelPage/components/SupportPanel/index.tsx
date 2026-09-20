@@ -1,5 +1,5 @@
 import { AppstoreOutlined, BulbOutlined, SearchOutlined, UnorderedListOutlined } from "@ant-design/icons";
-import type { ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 import EntityPanel from "../EntityPanel";
 import type { EntitySavePatch } from "../EntityDetail";
 import InspirationPanel from "../InspirationPanel";
@@ -44,6 +44,15 @@ interface SupportPanelProps {
   onToggleHighlight: () => void;
   onExportCard: () => void;
   onSaveEntity: (entityId: string, patch: EntitySavePatch) => void;
+  onAddRelation: (
+    entityId: string,
+    entityType: EntityType,
+    targetId: string,
+    relation: string,
+  ) => void;
+  onRemoveRelation: (linkId: string, targetName: string) => void;
+  /** 点击面板内容区空白时收起面板 */
+  onCollapse: () => void;
 }
 
 const TABS: Array<{ key: PanelTab; label: string; icon: ReactNode }> = [
@@ -81,7 +90,15 @@ export default function SupportPanel({
   onToggleHighlight,
   onExportCard,
   onSaveEntity,
+  onAddRelation,
+  onRemoveRelation,
+  onCollapse,
 }: SupportPanelProps) {
+  /** 点在内容区容器自身（= 空白处）即收起面板；点内容组件不触发 */
+  const handleBodyClick = (event: MouseEvent<HTMLDivElement>): void => {
+    if (event.target === event.currentTarget) onCollapse();
+  };
+
   return (
     <aside className={`nv-panel${open ? "" : " is-collapsed"}`}>
       <div className="nv-panel__tabs" role="tablist">
@@ -100,7 +117,11 @@ export default function SupportPanel({
         ))}
       </div>
 
-      <div className="nv-panel__body">
+      <div
+        className="nv-panel__body"
+        onClick={handleBodyClick}
+        title="点击空白处收起面板"
+      >
         {activeTab === "outline" && (
           <OutlinePanel outline={outline} onSelectChapter={onSelectChapter} />
         )}
@@ -120,6 +141,8 @@ export default function SupportPanel({
             onExportCard={onExportCard}
             onSaveEntity={onSaveEntity}
             onSelectChapter={onSelectChapter}
+            onAddRelation={onAddRelation}
+            onRemoveRelation={onRemoveRelation}
           />
         )}
         {activeTab === "note" && (

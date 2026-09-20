@@ -17,9 +17,6 @@ import { findTermMatches, formatNumberedLabel } from "./novel-utils";
 import type { EntityAppearance } from "./types";
 import "./index.scss";
 
-/** 悬浮资料卡触底翻转阈值（px） */
-const POP_FLIP_THRESHOLD = 220;
-
 /**
  * 小说编辑器主页面（W1）
  *
@@ -52,6 +49,9 @@ export default function NovelPage() {
     handleCtxBind,
     handleNewVolume,
     handleSaveEntity,
+    handleRenameVolume,
+    handleAddRelation,
+    handleRemoveRelation,
   } = useNovelPage();
 
   const { loadSnapshots, activeChapterId, searchBook } = data;
@@ -163,9 +163,11 @@ export default function NovelPage() {
           onSelect={handleSelectChapter}
           onCreate={handleNewChapter}
           onCreateVolume={handleNewVolume}
+          onRenameChapter={data.renameChapter}
           onReorderChapter={handleReorderChapter}
           onMoveChapterToVolume={handleMoveChapterToVolume}
           onReorderVolume={handleReorderVolume}
+          onRenameVolume={handleRenameVolume}
         />
 
         <div className="nv-page__stage">
@@ -209,7 +211,6 @@ export default function NovelPage() {
             <HoverEntityCard
               target={hover.target}
               entity={hoverEntity}
-              flip={hover.target.y > POP_FLIP_THRESHOLD}
               onOpenDetail={handleOpenEntity}
             />
           )}
@@ -273,6 +274,9 @@ export default function NovelPage() {
           onToggleHighlight={handleToggleHighlight}
           onExportCard={handleExportCard}
           onSaveEntity={handleSaveEntity}
+          onAddRelation={handleAddRelation}
+          onRemoveRelation={handleRemoveRelation}
+          onCollapse={view.toggleRight}
         />
       </div>
     </div>

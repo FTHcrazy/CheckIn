@@ -1,24 +1,28 @@
 import { useEffect, useState } from "react";
 import type { KeyboardEvent } from "react";
-import { ArrowLeftOutlined, EditOutlined } from "@ant-design/icons";
+import {
+  ArrowLeftOutlined,
+  EditOutlined,
+  PlusOutlined,
+} from "@ant-design/icons";
 import { ENTITY_FILTER_ORDER, ENTITY_TYPE_META } from "../../novel-config";
 import TypeBadge from "../TypeBadge";
 import type {
   EntityAppearance,
   EntityRelationView,
+  EntitySavePatch,
   EntityType,
   LevelSystem,
   NovelEntity,
 } from "../../types";
 import "./index.scss";
 
-/** 资料卡编辑保存：只开放四个基础字段，正文与自定义字段不在详情页编辑 */
-export type EntitySavePatch = Partial<
-  Pick<NovelEntity, "name" | "type" | "aliases" | "summary">
->;
+export type { EntitySavePatch };
 
 interface EntityDetailProps {
   entity: NovelEntity;
+  /** 全量要素：添加关联时的目标候选 */
+  entities: NovelEntity[];
   relations: EntityRelationView[];
   appearances: EntityAppearance[];
   levelSystems: LevelSystem[];
@@ -26,6 +30,13 @@ interface EntityDetailProps {
   onToggleHighlight: () => void;
   onExportCard: () => void;
   onSaveEntity: (entityId: string, patch: EntitySavePatch) => void;
+  onAddRelation: (
+    entityId: string,
+    entityType: EntityType,
+    targetId: string,
+    relation: string,
+  ) => void;
+  onRemoveRelation: (linkId: string, targetName: string) => void;
   onSelectChapter: (chapterId: string) => void;
   onBack: () => void;
 }
@@ -36,14 +47,16 @@ interface EntityDraft {
   type: EntityType;
   aliases: string;
   summary: string;
+  personality: string;
 }
 
-/** 别名输入分隔符：展示分隔符「·」不参与拆分（避免误拆含·的名字） */
+/** 别名 / 性格输入分隔符：展示分隔符「·」不参与拆分（避免误拆含·的名字） */
 const ALIAS_SPLIT = /[,，、;；\s]+/;
 
-/** 要素详情：基础字段编辑 / 关联要素 / 等级 / 出场章节跳转（R23–R25、R21） */
+/** 要素详情：基础字段编辑 / 关联要素增删 / 等级 / 出场章节跳转（R23–R25、R21、R24） */
 export default function EntityDetail({
   entity,
+  entities,
   relations,
   appearances,
   levelSystems,
@@ -51,6 +64,8 @@ export default function EntityDetail({
   onToggleHighlight,
   onExportCard,
   onSaveEntity,
+  onAddRelation,
+  onRemoveRelation,
   onSelectChapter,
   onBack,
 }: EntityDetailProps) {
@@ -71,9 +86,15 @@ export default function EntityDetail({
   const [draft, setDraft] = useState<EntityDraft | null>(null);
   const editing = draft !== null;
 
+  // 添加关联的内联表单状态（独立于资料卡编辑态，随时可增删关联）
+  const [relAdding, setRelAdding] = useState(false);
+  const [relTargetId, setRelTargetId] = useState("");
+  const [relName, setRelName] = useState("");
+
   // 切换查看对象时退出编辑态，避免把 A 卡的草稿写进 B 卡
   useEffect(() => {
     setDraft(null);
+    setRelAdding(false);
   }, [entity.id]);
 
   const startEdit = (): void =>
@@ -82,6 +103,7 @@ export default function EntityDetail({
       type: entity.type,
       aliases: entity.aliases.join("、"),
       summary: entity.summary,
+      personality: entity.fields["性格"] ?? "",
     });
 
   const cancelEdit = (): void => setDraft(null);
@@ -106,13 +128,41 @@ export default function EntityDetail({
           .filter((alias) => alias && alias !== name),
       ),
     ];
+    // 性格写入 fields["性格"]（展示分隔符「·」）；清空即移除该键
+    const fields = { ...entity.fields };
+    const tags = draft.personality
+      .split(ALIAS_SPLIT)
+      .map((tag) => tag.trim())
+      .filter(Boolean);
+    if (tags.length > 0) fields["性格"] = tags.join("·");
+    else delete fields["性格"];
     onSaveEntity(entity.id, {
       name,
       type: draft.type,
       aliases,
       summary: draft.summary.trim(),
+      fields,
     });
     setDraft(null);
+  };
+
+  const submitRelation = (): void => {
+    if (!relTargetId) return;
+    onAddRelation(entity.id, entity.type, relTargetId, relName);
+    setRelTargetId("");
+    setRelName("");
+    setRelAdding(false);
+  };
+
+  const handleRelKeyDown = (event: KeyboardEvent<HTMLElement>): void => {
+    if (event.nativeEvent.isComposing) return;
+    if (event.key === "Enter") {
+      event.preventDefault();
+      submitRelation();
+    } else if (event.key === "Escape") {
+      event.stopPropagation();
+      setRelAdding(false);
+    }
   };
 
   return (
@@ -218,6 +268,23 @@ export default function EntityDetail({
                 onKeyDown={handleDraftKeyDown}
               />
             </div>
+            <div className="nv-edetail__form-row">
+              <span className="nv-edetail__k">性格</span>
+              <input
+                className="nv-edetail__input"
+                value={draft.personality}
+                maxLength={60}
+                placeholder="多个标签用顿号或逗号分隔"
+                onChange={(event) =>
+                  setDraft((current) =>
+                    current
+                      ? { ...current, personality: event.target.value }
+                      : current,
+                  )
+                }
+                onKeyDown={handleDraftKeyDown}
+              />
+            </div>
             <div className="nv-edetail__form-actions">
               <button
                 type="button"
@@ -253,11 +320,15 @@ export default function EntityDetail({
         )}
         {entity.fields["性格"] && (
           <div className="nv-edetail__tags">
-            {entity.fields["性格"].split(/[·、,，]/).map((tag) => (
-              <span key={tag} className="nv-edetail__tag">
-                {tag.trim()}
-              </span>
-            ))}
+            {entity.fields["性格"]
+              .split(/[·、,，]/)
+              .map((tag) => tag.trim())
+              .filter(Boolean)
+              .map((tag, index) => (
+                <span key={`${tag}-${index}`} className="nv-edetail__tag">
+                  {tag}
+                </span>
+              ))}
           </div>
         )}
       </section>
@@ -274,20 +345,89 @@ export default function EntityDetail({
         </section>
       )}
 
-      {others.length > 0 && (
-        <section className="nv-edetail__section">
-          <h6 className="nv-edetail__label">关联要素</h6>
-          {others.map((relation) => (
-            <div key={relation.id} className="nv-edetail__rel">
-              <span className="nv-edetail__arrow">
-                {relation.direction === "out" ? "→" : "←"}
-              </span>
-              <span className="nv-edetail__rel-name">{relation.targetName}</span>
-              <span className="nv-edetail__rel-tag">{relation.relation}</span>
+      <section className="nv-edetail__section">
+        <h6 className="nv-edetail__label">关联要素</h6>
+        {others.length === 0 && !relAdding && (
+          <p className="nv-edetail__rel-empty">还没有关联，试着添加一条</p>
+        )}
+        {others.map((relation) => (
+          <div key={relation.id} className="nv-edetail__rel">
+            <span className="nv-edetail__arrow">
+              {relation.direction === "out" ? "→" : "←"}
+            </span>
+            <span className="nv-edetail__rel-name">{relation.targetName}</span>
+            <span className="nv-edetail__rel-tag">{relation.relation}</span>
+            <button
+              type="button"
+              className="nv-edetail__rel-del"
+              title={`解除与「${relation.targetName}」的关联`}
+              onClick={() => onRemoveRelation(relation.id, relation.targetName)}
+            >
+              ×
+            </button>
+          </div>
+        ))}
+        {relAdding ? (
+          <div className="nv-edetail__rel-form">
+            <select
+              className="nv-edetail__rel-select"
+              value={relTargetId}
+              aria-label="选择关联要素"
+              onChange={(event) => setRelTargetId(event.target.value)}
+            >
+              <option value="">选择要素…</option>
+              {entities
+                .filter((item) => item.id !== entity.id)
+                .map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {ENTITY_TYPE_META[item.type].label} · {item.name}
+                  </option>
+                ))}
+            </select>
+            <input
+              className="nv-edetail__input"
+              value={relName}
+              maxLength={12}
+              placeholder="关系：师兄弟 / 持有…"
+              aria-label="关系名称"
+              onChange={(event) => setRelName(event.target.value)}
+              onKeyDown={handleRelKeyDown}
+            />
+            <div className="nv-edetail__form-actions">
+              <button
+                type="button"
+                className="nv-edetail__rel-confirm"
+                onClick={submitRelation}
+                disabled={!relTargetId}
+                title={relTargetId ? "添加关联" : "先选择目标要素"}
+              >
+                添加
+              </button>
+              <button
+                type="button"
+                className="nv-edetail__rel-cancel"
+                onClick={() => setRelAdding(false)}
+              >
+                取消
+              </button>
             </div>
-          ))}
-        </section>
-      )}
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="nv-edetail__rel-add"
+            onClick={() => setRelAdding(true)}
+            disabled={entities.length <= 1}
+            title={
+              entities.length <= 1
+                ? "设定库里还没有其他要素"
+                : "关联到其他资料卡"
+            }
+          >
+            <PlusOutlined /> 添加关联
+          </button>
+        )}
+      </section>
 
       {level && levelRelation && (
         <section className="nv-edetail__section">

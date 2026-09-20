@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { DragEvent } from "react";
+import type { DragEvent, KeyboardEvent } from "react";
 import { Tooltip } from "antd";
 import { CHAPTER_STATUS_META, DRAG_MIME_CHAPTER } from "../../novel-config";
 import { formatThousands, padIndex } from "../../novel-utils";
@@ -14,6 +14,8 @@ interface ChapterTreeItemProps {
   onSelect: (chapterId: string) => void;
   /** 拖拽放下：fromId 落到本章节（chapter.id）的位置，同卷重排 / 跨卷移动 */
   onReorder: (fromId: string, toId: string) => void;
+  /** 双击标题快捷重命名：空名 / 同名不落 */
+  onRename: (chapterId: string, title: string) => void;
 }
 
 /**
@@ -22,6 +24,7 @@ interface ChapterTreeItemProps {
  * 拖拽（R9）由行自己承载：dragstart 写入 MIME，dragover/drop 消费，
  * 「是否悬浮在自身上方」是本行的短生命周期状态，不提升到页面。
  * 排序的实际应用在页面层（防误触确认后），这里只发起 onReorder 请求。
+ * 双击标题快捷重命名；编辑态行渲染为 div，避免 button 嵌套 input。
  */
 export default function ChapterTreeItem({
   chapter,
@@ -29,9 +32,36 @@ export default function ChapterTreeItem({
   active,
   onSelect,
   onReorder,
+  onRename,
 }: ChapterTreeItemProps) {
   const status = CHAPTER_STATUS_META[chapter.status];
   const [dropActive, setDropActive] = useState(false);
+  const [titleEditing, setTitleEditing] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
+
+  const startTitleEdit = (): void => {
+    setTitleDraft(chapter.title);
+    setTitleEditing(true);
+  };
+
+  const commitTitleEdit = (): void => {
+    setTitleEditing(false);
+    const trimmed = titleDraft.trim();
+    if (trimmed && trimmed !== chapter.title) {
+      onRename(chapter.id, trimmed);
+    }
+  };
+
+  const handleTitleKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {
+    if (event.nativeEvent.isComposing) return;
+    if (event.key === "Enter") {
+      event.preventDefault();
+      commitTitleEdit();
+    } else if (event.key === "Escape") {
+      event.stopPropagation();
+      setTitleEditing(false);
+    }
+  };
 
   const handleDragStart = (event: DragEvent<HTMLButtonElement>): void => {
     event.dataTransfer.setData(DRAG_MIME_CHAPTER, chapter.id);
@@ -58,31 +88,67 @@ export default function ChapterTreeItem({
 
   const handleDragEnd = (): void => setDropActive(false);
 
+  const rowClass = `nv-chapter__row${active ? " is-active" : ""}${
+    dropActive ? " is-drop" : ""
+  }`;
+
   return (
     <li className="nv-chapter" role="treeitem" aria-selected={active}>
-      <button
-        type="button"
-        className={`nv-chapter__row${active ? " is-active" : ""}${dropActive ? " is-drop" : ""}`}
-        draggable
-        onDragStart={handleDragStart}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-        onDragEnd={handleDragEnd}
-        onClick={() => onSelect(chapter.id)}
-      >
-        <span className="nv-chapter__index">{padIndex(chapterNumber)}</span>
-        <Tooltip title={status.label}>
-          <span
-            className="nv-chapter__status"
-            style={{ background: status.color }}
+      {titleEditing ? (
+        <div className={`${rowClass} is-editing`}>
+          <span className="nv-chapter__index">{padIndex(chapterNumber)}</span>
+          <Tooltip title={status.label}>
+            <span
+              className="nv-chapter__status"
+              style={{ background: status.color }}
+            />
+          </Tooltip>
+          <input
+            className="nv-chapter__title-input"
+            value={titleDraft}
+            autoFocus
+            maxLength={60}
+            aria-label="章节名称"
+            onChange={(event) => setTitleDraft(event.target.value)}
+            onBlur={commitTitleEdit}
+            onKeyDown={handleTitleKeyDown}
           />
-        </Tooltip>
-        <span className="nv-chapter__title">{chapter.title}</span>
-        <span className="nv-chapter__words">
-          {formatThousands(chapter.wordCount)}
-        </span>
-      </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          className={rowClass}
+          draggable
+          onDragStart={handleDragStart}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          onDragEnd={handleDragEnd}
+          onClick={() => onSelect(chapter.id)}
+        >
+          <span className="nv-chapter__index">{padIndex(chapterNumber)}</span>
+          <Tooltip title={status.label}>
+            <span
+              className="nv-chapter__status"
+              style={{ background: status.color }}
+            />
+          </Tooltip>
+          <span
+            className="nv-chapter__title"
+            title="双击修改章节名称"
+            onDoubleClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              startTitleEdit();
+            }}
+          >
+            {chapter.title}
+          </span>
+          <span className="nv-chapter__words">
+            {formatThousands(chapter.wordCount)}
+          </span>
+        </button>
+      )}
     </li>
   );
 }

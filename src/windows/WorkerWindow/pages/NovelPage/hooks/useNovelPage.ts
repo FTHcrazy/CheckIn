@@ -10,7 +10,7 @@ import {
   previewChapterToVolume,
   previewVolumeReorder,
 } from "../novel-utils";
-import type { EntityType, NovelEntity } from "../types";
+import type { EntitySavePatch, EntityType } from "../types";
 import type { ReorderChange } from "../components/ReorderConfirmModal";
 import { useEntityHover } from "./useEntityHover";
 import { useNovelData } from "./useNovelData";
@@ -154,12 +154,50 @@ export function useNovelPage() {
     if (id) view.showToast("已新建一卷，可把章节拖到卷头归入");
   }, [data, view]);
 
-  /** 资料卡编辑保存（R23）：详情页编辑名称 / 类型 / 别名 / 一句话 */
-  const handleSaveEntity = useCallback(
+  /** 卷命名：与章节重命名一致静默生效 */
+  const handleRenameVolume = useCallback(
+    (volumeId: string, name: string): void => {
+      data.renameVolume(volumeId, name);
+    },
+    [data],
+  );
+
+  /** 添加要素关联（人物关系等）：重复关联给出提示 */
+  const handleAddRelation = useCallback(
     (
       entityId: string,
-      patch: Partial<Pick<NovelEntity, "name" | "type" | "aliases" | "summary">>,
+      entityType: EntityType,
+      targetId: string,
+      relation: string,
     ): void => {
+      const target = data.getEntityById(targetId);
+      if (!target) return;
+      const ok = data.addLink(
+        entityId,
+        entityType,
+        target.id,
+        target.type,
+        relation,
+      );
+      view.showToast(
+        ok ? `已关联「${target.name}」` : `与「${target.name}」的该关联已存在`,
+        ok ? "info" : "warning",
+      );
+    },
+    [data, view],
+  );
+
+  const handleRemoveRelation = useCallback(
+    (linkId: string, targetName: string): void => {
+      data.removeLink(linkId);
+      view.showToast(`已解除与「${targetName}」的关联`, "info");
+    },
+    [data, view],
+  );
+
+  /** 资料卡编辑保存（R23）：详情页编辑名称 / 类型 / 别名 / 一句话 / 性格 */
+  const handleSaveEntity = useCallback(
+    (entityId: string, patch: EntitySavePatch): void => {
       data.updateEntity(entityId, patch);
       view.showToast("资料卡已保存");
     },
@@ -366,5 +404,8 @@ export function useNovelPage() {
     handleCtxBind,
     handleNewVolume,
     handleSaveEntity,
+    handleRenameVolume,
+    handleAddRelation,
+    handleRemoveRelation,
   };
 }

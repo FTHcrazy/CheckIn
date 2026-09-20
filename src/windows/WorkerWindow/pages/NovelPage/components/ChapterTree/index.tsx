@@ -17,12 +17,16 @@ interface ChapterTreeProps {
   onSelect: (chapterId: string) => void;
   onCreate: () => void;
   onCreateVolume: () => void;
+  /** 双击章节标题快捷重命名 */
+  onRenameChapter: (chapterId: string, title: string) => void;
   /** 拖拽：章节落到章节位置（同卷重排 / 跨卷移动） */
   onReorderChapter: (fromId: string, toId: string) => void;
   /** 拖拽：章节落到卷头（移入该卷末尾） */
   onMoveChapterToVolume: (chapterId: string, volumeId: string) => void;
   /** 拖拽：卷落到卷头（重排卷顺序） */
   onReorderVolume: (fromId: string, toId: string) => void;
+  /** 双击卷名重命名 */
+  onRenameVolume: (volumeId: string, name: string) => void;
 }
 
 /**
@@ -41,9 +45,11 @@ export default function ChapterTree({
   onSelect,
   onCreate,
   onCreateVolume,
+  onRenameChapter,
   onReorderChapter,
   onMoveChapterToVolume,
   onReorderVolume,
+  onRenameVolume,
 }: ChapterTreeProps) {
   const [keyword, setKeyword] = useState("");
 
@@ -86,9 +92,11 @@ export default function ChapterTree({
               chapterNumbers={chapterNumbers}
               activeChapterId={activeChapterId}
               onSelect={onSelect}
+              onRenameChapter={onRenameChapter}
               onReorderChapter={onReorderChapter}
               onMoveChapterToVolume={onMoveChapterToVolume}
               onReorderVolume={onReorderVolume}
+              onRenameVolume={onRenameVolume}
             />
           ))
         )}

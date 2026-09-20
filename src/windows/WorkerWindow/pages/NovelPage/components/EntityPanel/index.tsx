@@ -30,6 +30,13 @@ interface EntityPanelProps {
   onExportCard: () => void;
   onSaveEntity: (entityId: string, patch: EntitySavePatch) => void;
   onSelectChapter: (chapterId: string) => void;
+  onAddRelation: (
+    entityId: string,
+    entityType: EntityType,
+    targetId: string,
+    relation: string,
+  ) => void;
+  onRemoveRelation: (linkId: string, targetName: string) => void;
 }
 
 /**
@@ -52,6 +59,8 @@ export default function EntityPanel({
   onExportCard,
   onSaveEntity,
   onSelectChapter,
+  onAddRelation,
+  onRemoveRelation,
 }: EntityPanelProps) {
   const filtered =
     filter === "all"
@@ -64,6 +73,7 @@ export default function EntityPanel({
     return (
       <EntityDetail
         entity={detail}
+        entities={entities}
         relations={getEntityRelations(detail.id, detail.type)}
         appearances={getAppearances(detail.id)}
         levelSystems={levelSystems}
@@ -72,6 +82,8 @@ export default function EntityPanel({
         onExportCard={onExportCard}
         onSaveEntity={onSaveEntity}
         onSelectChapter={onSelectChapter}
+        onAddRelation={onAddRelation}
+        onRemoveRelation={onRemoveRelation}
         onBack={onCloseEntity}
       />
     );

@@ -12,6 +12,7 @@ import type {
   EntityType,
   NovelChapter,
   NovelEntity,
+  NovelLink,
   NovelNote,
   NovelSnapshot,
   NovelVolume,
@@ -261,6 +262,22 @@ export function useNovelData() {
     );
   }, []);
 
+  /** 卷命名（R9 扩展）：卷头展示为「第N卷 - 名字」，序号仍由 sort 派生 */
+  const renameVolume = useCallback((volumeId: string, name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setBundle((current) =>
+      current
+        ? {
+            ...current,
+            volumes: current.volumes.map((volume) =>
+              volume.id === volumeId ? { ...volume, name: trimmed } : volume,
+            ),
+          }
+        : current,
+    );
+  }, []);
+
   const toggleChapterStatus = useCallback((chapterId: string) => {
     setBundle((current) =>
       current
@@ -383,6 +400,55 @@ export function useNovelData() {
     [bundle],
   );
 
+  /**
+   * 添加要素关联（R24）：人物关系等任意两要素互相关联。
+   * 同对要素 + 同关系名不重复建；NovelLink 多态表天然支撑后期关系网络图。
+   */
+  const addLink = useCallback(
+    (
+      fromId: string,
+      fromType: EntityType,
+      toId: string,
+      toType: EntityType,
+      relation: string,
+    ): boolean => {
+      if (!bundle) return false;
+      const trimmed = relation.trim() || "相关";
+      const duplicated = bundle.links.some(
+        (link) =>
+          ((link.fromId === fromId && link.toId === toId) ||
+            (link.fromId === toId && link.toId === fromId)) &&
+          link.relation === trimmed,
+      );
+      if (duplicated) return false;
+      const link: NovelLink = {
+        id: `l-${Date.now()}`,
+        fromType,
+        fromId,
+        toType,
+        toId,
+        relation: trimmed,
+      };
+      setBundle((current) =>
+        current ? { ...current, links: [link, ...current.links] } : current,
+      );
+      return true;
+    },
+    [bundle],
+  );
+
+  /** 解除要素关联 */
+  const removeLink = useCallback((linkId: string): void => {
+    setBundle((current) =>
+      current
+        ? {
+            ...current,
+            links: current.links.filter((link) => link.id !== linkId),
+          }
+        : current,
+    );
+  }, []);
+
   /** 要素关联的双向视图（PRD R24） */
   const getEntityRelations = useCallback(
     (entityId: string, entityType: EntityType): EntityRelationView[] => {
@@ -489,6 +555,7 @@ export function useNovelData() {
     createChapter,
     createVolume,
     renameChapter,
+    renameVolume,
     reorderChapters,
     moveChapterToVolume,
     reorderVolumes,
@@ -496,6 +563,8 @@ export function useNovelData() {
     markSelectionAsEntity,
     updateEntity,
     bindTextToEntity,
+    addLink,
+    removeLink,
     getEntityById,
     getEntityRelations,
     addNote,

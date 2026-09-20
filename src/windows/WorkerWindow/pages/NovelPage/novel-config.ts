@@ -65,7 +65,7 @@ export const DEFAULT_SETTINGS: EditorSettings = {
   dailyGoal: 3000,
   wordCountMode: "withPunctuation",
   annotationTypes: ["character", "location", "faction"],
-  numberStyle: "arabic",
+  numberStyle: "chinese",
   chapterSuffix: "章",
   volumeSuffix: "卷",
   confirmReorder: true,
