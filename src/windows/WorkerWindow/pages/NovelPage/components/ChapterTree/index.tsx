@@ -11,6 +11,12 @@ interface ChapterTreeProps {
   onSelect: (chapterId: string) => void;
   onCreate: () => void;
   onMove: (chapterId: string, direction: "up" | "down") => void;
+  /** 拖拽：章节落到章节位置（同卷重排 / 跨卷移动） */
+  onReorderChapter: (fromId: string, toId: string) => void;
+  /** 拖拽：章节落到卷头（移入该卷末尾） */
+  onMoveChapterToVolume: (chapterId: string, volumeId: string) => void;
+  /** 拖拽：卷落到卷头（重排卷顺序） */
+  onReorderVolume: (fromId: string, toId: string) => void;
 }
 
 /**
@@ -18,6 +24,7 @@ interface ChapterTreeProps {
  *
  * 底部「新章节 / 排序」常驻，不用悬浮加号遮挡正文；
  * 搜索输入由本组件自持（局部交互状态不下沉到页面），检测结果供下列表使用。
+ * 拖拽排序（R9）的交互状态都在行/卷头组件内部，这里只透传数据动作。
  */
 export default function ChapterTree({
   collapsed,
@@ -26,6 +33,9 @@ export default function ChapterTree({
   onSelect,
   onCreate,
   onMove,
+  onReorderChapter,
+  onMoveChapterToVolume,
+  onReorderVolume,
 }: ChapterTreeProps) {
   const [keyword, setKeyword] = useState("");
   const [sortMode, setSortMode] = useState(false);
@@ -68,6 +78,9 @@ export default function ChapterTree({
               sortMode={sortMode}
               onSelect={onSelect}
               onMove={onMove}
+              onReorderChapter={onReorderChapter}
+              onMoveChapterToVolume={onMoveChapterToVolume}
+              onReorderVolume={onReorderVolume}
             />
           ))
         )}

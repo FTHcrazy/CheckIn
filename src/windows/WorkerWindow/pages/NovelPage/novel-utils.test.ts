@@ -4,6 +4,7 @@ import {
   buildChapterGroups,
   buildEntityTerms,
   buildSearchSnippet,
+  buildSortOrder,
   calcGoalProgress,
   calcSpeed,
   countWords,
@@ -11,6 +12,8 @@ import {
   formatClock,
   formatThousands,
   fuzzyMatch,
+  insertItemBefore,
+  moveItemBefore,
   padIndex,
   splitByKeyword,
   truncate,
@@ -177,6 +180,62 @@ describe("fuzzyMatch", () => {
 
   it("空关键词返回原序", () => {
     expect(fuzzyMatch(["b", "a"], "", (item) => item)).toEqual(["b", "a"]);
+  });
+});
+
+describe("拖拽排序纯函数", () => {
+  const ids = (list: Array<{ id: string }>) => list.map((item) => item.id);
+  const make = (names: string[]) => names.map((name) => ({ id: name }));
+
+  it("moveItemBefore 向下拖：落到目标原位置", () => {
+    expect(ids(moveItemBefore(make(["a", "b", "c"]), "a", "c"))).toEqual([
+      "b",
+      "a",
+      "c",
+    ]);
+  });
+
+  it("moveItemBefore 向上拖：落到目标原位置", () => {
+    expect(ids(moveItemBefore(make(["a", "b", "c"]), "c", "a"))).toEqual([
+      "c",
+      "a",
+      "b",
+    ]);
+    expect(ids(moveItemBefore(make(["a", "b", "c"]), "b", "a"))).toEqual([
+      "b",
+      "a",
+      "c",
+    ]);
+  });
+
+  it("moveItemBefore 相同 id 或找不到时原样返回且不修改入参", () => {
+    const items = make(["a", "b"]);
+    expect(moveItemBefore(items, "a", "a")).toBe(items);
+    expect(moveItemBefore(items, "x", "a")).toBe(items);
+    expect(moveItemBefore(items, "a", "x")).toBe(items);
+    expect(ids(items)).toEqual(["a", "b"]);
+  });
+
+  it("insertItemBefore 插到目标之前，目标不存在则追加末尾", () => {
+    expect(ids(insertItemBefore(make(["a", "c"]), "c", { id: "b" }))).toEqual([
+      "a",
+      "b",
+      "c",
+    ]);
+    expect(ids(insertItemBefore(make(["a"]), "missing", { id: "b" }))).toEqual([
+      "a",
+      "b",
+    ]);
+  });
+
+  it("buildSortOrder 按顺序生成 1 起的 sort 映射", () => {
+    expect(buildSortOrder(make(["a", "b", "c"]))).toEqual(
+      new Map([
+        ["a", 1],
+        ["b", 2],
+        ["c", 3],
+      ]),
+    );
   });
 });
 

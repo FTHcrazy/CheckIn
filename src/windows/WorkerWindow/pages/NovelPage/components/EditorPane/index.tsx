@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useRef } from "react";
 import type { CSSProperties } from "react";
 import { Empty } from "antd";
-import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
+import {
+  defaultKeymap,
+  history,
+  historyKeymap,
+  isolateHistory,
+} from "@codemirror/commands";
 import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import type { EditorSettings, EntityTerm, NovelChapter } from "../../types";
@@ -140,15 +145,17 @@ export default function EditorPane({
       view.destroy();
       viewRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // 编辑器实例整个会话唯一：content / settings / terms 均通过 ref 或 compartment 热更新
   }, []);
 
-  // 外部灌入的正文（回滚 / 恢复）与编辑器文档不一致时同步进去
+  // 外部灌入的正文（切换章节 / 回滚 / 恢复）与编辑器文档不一致时同步进去。
+  // 用 isolateHistory 切断撤销栈：撤销不应跨章节回退到上一章的正文（R2 撤销可靠性）
   useEffect(() => {
     const view = viewRef.current;
     if (!view || view.state.doc.toString() === content) return;
     view.dispatch({
       changes: { from: 0, to: view.state.doc.length, insert: content },
+      annotations: isolateHistory.of("full"),
     });
   }, [content]);
 
@@ -248,25 +255,9 @@ export default function EditorPane({
     };
   }, [onTermHover, onTermLeave, onTermClick]);
 
-  if (!chapter) {
-    return (
-      <div className="nv-editor nv-editor--empty">
-        <Empty
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description="还没有选中章节"
-        >
-          <button
-            type="button"
-            className="nv-editor__create"
-            onClick={onCreateChapter}
-          >
-            写下第一章
-          </button>
-        </Empty>
-      </div>
-    );
-  }
-
+  // 编辑器实例常驻渲染（CodeMirror 必须整个会话唯一，见上方初始化 effect）；
+  // 未选中章节时用覆盖层遮住正文区，而不是卸载 host —— 否则初始化 effect
+  // 在首帧（章节尚未加载）跑完后 host 才出现，编辑器永远创建不出来。
   return (
     <div
       className={`nv-editor${typewriter ? " nv-editor--typewriter" : ""}`}
@@ -277,17 +268,35 @@ export default function EditorPane({
         } as CSSProperties
       }
     >
-      <div className="nv-editor__title">
-        <span className="nv-editor__title-text">{chapter.title}</span>
-        <span className="nv-editor__title-meta">
-          {chapter.status === "done" ? "完稿" : "草稿"}
-        </span>
-      </div>
+      {chapter && (
+        <div className="nv-editor__title">
+          <span className="nv-editor__title-text">{chapter.title}</span>
+          <span className="nv-editor__title-meta">
+            {chapter.status === "done" ? "完稿" : "草稿"}
+          </span>
+        </div>
+      )}
       <div className="nv-editor__scroll">
         <div className="nv-editor__paper">
           <div ref={hostRef} className="nv-editor__host" />
         </div>
       </div>
+      {!chapter && (
+        <div className="nv-editor__veil">
+          <Empty
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description="还没有选中章节"
+          >
+            <button
+              type="button"
+              className="nv-editor__create"
+              onClick={onCreateChapter}
+            >
+              写下第一章
+            </button>
+          </Empty>
+        </div>
+      )}
     </div>
   );
 }

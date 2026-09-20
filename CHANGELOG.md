@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.6.2] - 2026-09-20
+
+### Fixed
+- **修复 NovelPage 正文编辑区完全不可用**：EditorPane 的 CodeMirror 初始化
+  effect 只在首帧执行，而首帧时章节尚未加载（走空态分支、host 容器未挂载），
+  编辑器实例永远不会创建，码字区空白无法输入。改为编辑器实例常驻渲染 +
+  空态覆盖层（`__veil`），加载完成后即可正常输入
+- **章节切换 / 快照回滚时撤销栈隔离**：外部灌入正文走
+  `isolateHistory.of("full")`，避免 Ctrl+Z 跨章节回退出上一章正文（R2 撤销可靠性）
+
+### Added
+- **左栏拖拽排序（PRD R9）**：章节行与卷头均可拖拽——章节拖到章节上实现
+  卷内重排或跨卷移动（落到目标章节位置），章节拖到卷头移入该卷末尾，
+  卷拖到卷头重排卷顺序；drop 目标用 inset 阴影做指示线，颜色跟随主题变量。
+  数据层新增 `reorderChapters` / `moveChapterToVolume` / `reorderVolumes`，
+  排序算法抽为纯函数（`moveItemBefore` / `insertItemBefore` / `buildSortOrder`）
+  并补充 5 组单测；原「排序模式」上下移按钮保留
+
 ## [1.6.1] - 2026-09-20
 
 ### Added

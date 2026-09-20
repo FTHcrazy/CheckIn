@@ -47,6 +47,15 @@ export const ANNOTATION = {
 /** 轻提示自动消失时长（设计方案 §06 Toast） */
 export const TOAST_DURATION_MS = 2400;
 
+/**
+ * 左栏拖拽排序的 dataTransfer MIME 标记（R9）
+ *
+ * 用自定义 MIME 而非 text/plain，drop 目标在 dragover 阶段
+ * 仅凭 types 即可判断拖的是章节还是卷（getData 在 drop 前不可读）。
+ */
+export const DRAG_MIME_CHAPTER = "application/x-nv-chapter";
+export const DRAG_MIME_VOLUME = "application/x-nv-volume";
+
 /** 排版默认值（PRD §2 中文排版默认值） */
 export const DEFAULT_SETTINGS: EditorSettings = {
   fontSize: 17,

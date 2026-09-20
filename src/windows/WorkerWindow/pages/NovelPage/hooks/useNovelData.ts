@@ -6,7 +6,7 @@ import {
   searchAcrossBook,
   type NovelBundle,
 } from "../services/novel-demo-source";
-import { buildChapterGroups, padIndex, type ChapterGroup } from "../novel-utils";
+import { buildChapterGroups, buildSortOrder, insertItemBefore, moveItemBefore, padIndex, type ChapterGroup } from "../novel-utils";
 import type {
   EntityRelationView,
   EntityType,
@@ -172,6 +172,92 @@ export function useNovelData() {
       });
     },
     [],
+  );
+
+  /**
+   * 拖拽重排（R9）：把 fromId 章节拖到 toId 章节的位置。
+   * 同卷 = 卷内重排；跨卷 = 移入目标卷并落到目标章节的位置。
+   * 未涉及的章节 sort 保持不变（相对顺序不受影响，允许空洞）。
+   */
+  const reorderChapters = useCallback(
+    (fromId: string, toId: string) => {
+      setBundle((current) => {
+        if (!current || fromId === toId) return current;
+        const from = current.chapters.find((chapter) => chapter.id === fromId);
+        const to = current.chapters.find((chapter) => chapter.id === toId);
+        if (!from || !to) return current;
+
+        const siblings = current.chapters
+          .filter((chapter) => chapter.volumeId === to.volumeId)
+          .sort((a, b) => a.sort - b.sort);
+
+        const ordered =
+          from.volumeId === to.volumeId
+            ? moveItemBefore(siblings, fromId, toId)
+            : insertItemBefore(siblings, toId, { ...from, volumeId: to.volumeId });
+
+        const order = buildSortOrder(ordered);
+        return {
+          ...current,
+          chapters: current.chapters.map((chapter) =>
+            order.has(chapter.id)
+              ? { ...chapter, sort: order.get(chapter.id) ?? chapter.sort }
+              : chapter,
+          ),
+        };
+      });
+    },
+    [],
+  );
+
+  /** 拖拽章节到卷头：移入该卷并排到末尾 */
+  const moveChapterToVolume = useCallback(
+    (chapterId: string, volumeId: string) => {
+      setBundle((current) => {
+        if (!current) return current;
+        const target = current.chapters.find((chapter) => chapter.id === chapterId);
+        if (!target || target.volumeId === volumeId) return current;
+
+        const maxSort = current.chapters
+          .filter((chapter) => chapter.volumeId === volumeId)
+          .reduce((max, chapter) => Math.max(max, chapter.sort), 0);
+
+        return {
+          ...current,
+          chapters: current.chapters.map((chapter) =>
+            chapter.id === chapterId
+              ? { ...chapter, volumeId, sort: maxSort + 1 }
+              : chapter,
+          ),
+        };
+      });
+    },
+    [],
+  );
+
+  /** 拖拽卷头重排卷顺序 */
+  const reorderVolumes = useCallback(
+    (fromId: string, toId: string) => {
+      setBundle((current) => {
+        if (!current || fromId === toId) return current;
+        const volumes = current.volumes
+          .filter((volume) => volume.workId === activeWorkId)
+          .sort((a, b) => a.sort - b.sort);
+        const ordered = moveItemBefore(volumes, fromId, toId);
+        if (ordered === volumes) return current;
+
+        const order = buildSortOrder(ordered);
+        return {
+          ...current,
+          volumes: current.volumes.map((volume) =>
+            order.has(volume.id)
+              ? { ...volume, sort: order.get(volume.id) ?? volume.sort }
+              : volume,
+          ),
+        };
+      });
+    },
+    [activeWorkId],
   );
 
   const toggleChapterStatus = useCallback((chapterId: string) => {
@@ -354,6 +440,9 @@ export function useNovelData() {
     updateChapterContent,
     createChapter,
     moveChapter,
+    reorderChapters,
+    moveChapterToVolume,
+    reorderVolumes,
     toggleChapterStatus,
     markSelectionAsEntity,
     getEntityById,

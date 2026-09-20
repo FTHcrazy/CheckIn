@@ -5,6 +5,7 @@
   flex-direction: column;
   background: var(--app-surface);
   overflow: hidden;
+  position: relative;
 
   /* 打字机模式：上下留白把当前行挤到视口中线 */
   &--typewriter {
@@ -112,9 +113,15 @@
     --nv-mark-color: var(--app-text-secondary);
   }
 
-  &--empty {
+  /* 未选中章节时的空态覆盖层：遮住常驻编辑器而不是卸载它 */
+  &__veil {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    display: flex;
     align-items: center;
     justify-content: center;
+    background: var(--app-surface);
   }
 
   &__create {

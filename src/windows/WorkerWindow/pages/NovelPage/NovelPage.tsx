@@ -139,6 +139,9 @@ export default function NovelPage() {
           onSelect={handleSelectChapter}
           onCreate={handleNewChapter}
           onMove={data.moveChapter}
+          onReorderChapter={data.reorderChapters}
+          onMoveChapterToVolume={data.moveChapterToVolume}
+          onReorderVolume={data.reorderVolumes}
         />
 
         <div className="nv-page__stage">

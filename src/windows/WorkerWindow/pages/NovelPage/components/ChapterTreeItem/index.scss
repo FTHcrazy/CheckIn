@@ -26,6 +26,12 @@
       font-weight: 500;
     }
 
+    /* 拖拽 drop 目标高亮（R9）：inset 阴影做上缘指示线 */
+    &.is-drop {
+      background: var(--app-primary-weak);
+      box-shadow: inset 0 2px 0 var(--app-primary);
+    }
+
     &:focus-visible {
       outline: 2px solid var(--app-primary);
       outline-offset: -2px;

@@ -18,6 +18,12 @@
       background: var(--app-surface-hover);
     }
 
+    /* 拖拽 drop 目标高亮（R9）：章节移入 / 卷重排共用 */
+    &.is-drop {
+      background: var(--app-primary-weak);
+      box-shadow: inset 0 2px 0 var(--app-primary);
+    }
+
     &:focus-visible {
       outline: 2px solid var(--app-primary);
       outline-offset: 2px;

@@ -240,6 +240,49 @@ function scoreSubsequence(text: string, keyword: string): number {
   return score;
 }
 
+/**
+ * 在列表内把 fromId 移动到 toId 原所在位置（先移除后插入）。
+ * fromId 与 toId 相同、或任一不存在时原样返回；不修改入参。
+ */
+export function moveItemBefore<T extends { id: string }>(
+  items: T[],
+  fromId: string,
+  toId: string,
+): T[] {
+  if (fromId === toId) return items;
+  const from = items.findIndex((item) => item.id === fromId);
+  const to = items.findIndex((item) => item.id === toId);
+  if (from === -1 || to === -1) return items;
+
+  const next = [...items];
+  const [moved] = next.splice(from, 1);
+  next.splice(to > from ? to - 1 : to, 0, moved);
+  return next;
+}
+
+/**
+ * 把一个不在列表中的元素插入到 targetId 之前；targetId 不存在时追加到末尾。
+ */
+export function insertItemBefore<T extends { id: string }>(
+  items: T[],
+  targetId: string,
+  item: T,
+): T[] {
+  const to = items.findIndex((current) => current.id === targetId);
+  if (to === -1) return [...items, item];
+
+  const next = [...items];
+  next.splice(to, 0, item);
+  return next;
+}
+
+/** 按列表顺序生成 id → sort（从 1 起）的映射，供批量回写 sort 列 */
+export function buildSortOrder(
+  items: ReadonlyArray<{ id: string }>,
+): Map<string, number> {
+  return new Map(items.map((item, index) => [item.id, index + 1]));
+}
+
 /** 卷 → 章两级分组，卷内按 sort 排序 */
 export interface ChapterGroup {
   volume: NovelVolume;
