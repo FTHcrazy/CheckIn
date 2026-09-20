@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.6.1] - 2026-09-20
+
+### Added
+- **补建 `scripts/rebuild-native.mjs`（`pnpm electron:rebuild`）**：此前
+  `package.json` 引用的 `scripts/rebuild-native.js` 文件缺失，该命令实际不可用。
+  新脚本对 `better-sqlite3` 优先用 `prebuild-install -r electron` 下载与 Electron
+  版本匹配的预编译二进制（命中缓存秒级完成，无需 MSVC 工具链），失败自动回退
+  `@electron/rebuild` 源码编译；已端到端验证（exit 0）
+
+### Fixed
+- **修复 `pnpm dev` 主进程报 `better_sqlite3.node was compiled against
+  NODE_MODULE_VERSION 127, requires 146`**：better-sqlite3 安装时下载的是系统
+  Node ABI 的预编译包，Electron 42（ABI 146）加载即崩。执行
+  `pnpm electron:rebuild` 重装 electron-v146 预编译二进制后恢复正常；
+  以后升级 Electron 出现同类 ABI 报错直接跑该命令即可
+
+### Changed
+- **首页 news 提醒（右下角报纸）生命周期重构**：由「窗口生命周期内探测一次 +
+  点击后永久消失」改为「**应用启动后展示一次，隔天 9 点重置状态后再展示一次**」。
+  拉取成功（live）才展示，失败静默（下次进入首页或下个周期重试）；点击跳转
+  资讯页后本周期内不再展示。实现为「周期 key」状态机（9 点前属昨天周期、
+  9 点起属今天，状态随 key 翻转自动重置），抽取为
+  `HomePage/hooks/usePosterVisibility.ts`，HomePage 仅保留渲染编排。
+  新增 7 例单测：周期 key 9 点边界、live/非 live、点击后本周期静默、
+  路由往返恢复、StrictMode 双挂载探测去重、隔天 9 点翻转重探
+
 ## [1.6.0] - 2026-09-19
 
 ### Added

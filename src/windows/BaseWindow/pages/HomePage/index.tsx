@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Empty, Input, Modal } from "antd";
 import {
   CalendarOutlined,
@@ -8,8 +8,6 @@ import {
   EditOutlined,
   SearchOutlined,
 } from "@ant-design/icons";
-import { fetchDailyNews } from "@/shared/services/news";
-import type { DailyNewsPayload } from "@/shared/services/news";
 import HomeSidebar from "./components/HomeSidebar";
 import HomeStats from "./components/HomeStats";
 import type { HomeStatItem } from "./components/HomeStats";
@@ -18,6 +16,7 @@ import type { FeatureTone } from "./components/FeatureCard";
 import PosterWidget from "./components/PosterWidget";
 import { useHomeOverview } from "./hooks/useHomeOverview";
 import { useHomeActions } from "./hooks/useHomeActions";
+import { usePosterVisibility } from "./hooks/usePosterVisibility";
 import { parseWorkHourTag } from "../TodoPage/todo-utils";
 import "./index.scss";
 
@@ -74,14 +73,6 @@ function displayNameFromEmail(email: string): string {
   return segment.charAt(0).toUpperCase() + segment.slice(1);
 }
 
-// 窗口生命周期标记（模块级，路由切换不重置）：
-// 新闻接口只在首次进入首页时探测一次；海报点击跳转后整个窗口内不再展示。
-// 探测用 Promise 缓存而非布尔标记：BaseWindow 开发态是 StrictMode 双挂载——
-// 若第一次挂载就把标记置位，重挂载会跳过订阅，而第一次的回调又因 cleanup 被
-// 判死（mounted=false），探测结果永远落不了 setShowPoster（海报永不出现）。
-let newsProbePromise: Promise<DailyNewsPayload> | null = null;
-let posterDismissed = false;
-
 export default function HomePage() {
   const { overview, reload } = useHomeOverview();
   const {
@@ -99,24 +90,9 @@ export default function HomePage() {
 
   const [keyword, setKeyword] = useState("");
 
-  // 首次进入首页探测一次新闻接口：成功才展示右下角报纸（接口失败静默不展示）
-  const [showPoster, setShowPoster] = useState(false);
-
-  useEffect(() => {
-    if (posterDismissed) return;
-    if (!newsProbePromise) newsProbePromise = fetchDailyNews();
-    let mounted = true;
-    newsProbePromise
-      .then((payload) => {
-        if (mounted && payload.live) setShowPoster(true);
-      })
-      .catch(() => {
-        // 探测失败保持隐藏，不打扰首页
-      });
-    return () => {
-      mounted = false;
-    };
-  }, []);
+  // 右下角报纸展示状态机：拉取成功才展示；应用启动后展示一次，
+  // 隔天 9 点重置后再展示一次；点击跳转后本周期内不再出现
+  const { showPoster, dismissPoster } = usePosterVisibility();
 
   const visibleFeatures = useMemo(() => {
     const trimmed = keyword.trim();
@@ -145,10 +121,9 @@ export default function HomePage() {
     [quickAddValue],
   );
 
-  // 点击报纸：进入今日资讯，且本窗口内不再展示（避免返回首页时重复出现）
+  // 点击报纸：进入今日资讯，且本周期（隔天 9 点前）内不再展示
   const handlePosterOpen = () => {
-    posterDismissed = true;
-    setShowPoster(false);
+    dismissPoster();
     navigate("/news");
   };
 
@@ -156,7 +131,7 @@ export default function HomePage() {
     <div className="home-page">
       <HomeSidebar />
 
-      {/* 右下角海报装饰件：新闻接口探测成功才展示，点击进入今日资讯后消失（窗口生命周期一次） */}
+      {/* 右下角海报装饰件：新闻拉取成功才展示；启动展示一次，隔天 9 点重置后再展示一次；点击进入今日资讯后本周期内消失 */}
       {showPoster && <PosterWidget onOpen={handlePosterOpen} />}
 
       <div className="home-page__main">
