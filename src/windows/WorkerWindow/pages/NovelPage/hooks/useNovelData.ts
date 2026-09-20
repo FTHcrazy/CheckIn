@@ -1,16 +1,26 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  addChapter as addChapterRemote,
+  addLink as addLinkRemote,
+  addVolume as addVolumeRemote,
+  createNovelId,
   fetchChapterSnapshots,
   fetchNovelBundle,
+  removeLink as removeLinkRemote,
   removeNote as removeNoteRemote,
   removeOutlineEntry as removeOutlineEntryRemote,
+  renameChapter as renameChapterRemote,
+  renameVolume as renameVolumeRemote,
   saveChapterContent,
+  saveChapterOrder,
   saveChapterOutline,
+  saveEntity,
   saveNote as saveNoteRemote,
   saveOutlineEntry,
+  saveVolumeOrder,
   searchAcrossBook,
-  type NovelBundle,
-} from "../services/novel-demo-source";
+  setChapterStatus,
+} from "../services/novel-service";
 import { UNNAMED_VOLUME } from "../novel-config";
 import {
   buildChapterGroups,
@@ -29,6 +39,7 @@ import type {
   EntityType,
   ForeshadowPatch,
   NotePatch,
+  NovelBundle,
   NovelChapter,
   NovelEntity,
   NovelLink,
@@ -49,6 +60,7 @@ export type MarkResult =
  *
  * 负责：作品 / 卷 / 章节 / 要素 / 关联 / 灵感 / 大纲 / 快照的加载与 CRUD，
  * 以及由原始表派生的领域数据（卷章分组、要素关联视图）。
+ * 全部写操作先做乐观本地更新，再异步落库（novel_* 表，userDb）；
  * 不负责：输入草稿、弹窗开关、筛选折叠等视图状态（分别在另外两个 Hook）。
  */
 export function useNovelData() {
@@ -138,7 +150,7 @@ export function useNovelData() {
     setActiveChapterId(chapterId);
   }, []);
 
-  /** 保存正文并同步本地字数 / 更新时间（真数据落库时这里走 novel-chapter-save） */
+  /** 保存正文并同步本地字数 / 更新时间（novel-chapter-save，主进程同事务写快照） */
   const updateChapterContent = useCallback(
     async (chapterId: string, content: string, wordCount: number): Promise<boolean> => {
       setBundle((current) =>
@@ -153,7 +165,7 @@ export function useNovelData() {
             }
           : current,
       );
-      return saveChapterContent(chapterId, content);
+      return saveChapterContent(chapterId, content, wordCount);
     },
     [],
   );
@@ -167,7 +179,7 @@ export function useNovelData() {
       // 保证「写下第一章」永远可用（PRD R1：零配置开写）
       if (!targetVolumeId) {
         const createdVolume: NovelVolume = {
-          id: `v-${Date.now()}`,
+          id: createNovelId("v"),
           workId: activeWorkId,
           // 序号由 sort 派生，存储名保持「未命名卷」，避免卷头出现「第一卷 · 第一卷」
           name: UNNAMED_VOLUME,
@@ -179,12 +191,13 @@ export function useNovelData() {
             ? { ...current, volumes: [...current.volumes, createdVolume] }
             : current,
         );
+        void addVolumeRemote(createdVolume);
       }
 
       const siblings = bundle.chapters.filter(
         (chapter) => chapter.volumeId === targetVolumeId,
       );
-      const id = `c-${Date.now()}`;
+      const id = createNovelId("c");
       const chapter: NovelChapter = {
         id,
         workId: activeWorkId,
@@ -202,6 +215,7 @@ export function useNovelData() {
         current ? { ...current, chapters: [...current.chapters, chapter] } : current,
       );
       setActiveChapterId(id);
+      void addChapterRemote(chapter);
       return id;
     },
     [bundle, volumes, activeWorkId],
@@ -212,7 +226,7 @@ export function useNovelData() {
     if (!bundle) return null;
     const maxSort = volumes.reduce((max, volume) => Math.max(max, volume.sort), 0);
     const volume: NovelVolume = {
-      id: `v-${Date.now()}`,
+      id: createNovelId("v"),
       workId: activeWorkId,
       // 卷头展示由 sort 派生（第N卷 / 第N部…），存储名仅作兜底
       name: UNNAMED_VOLUME,
@@ -221,108 +235,136 @@ export function useNovelData() {
     setBundle((current) =>
       current ? { ...current, volumes: [...current.volumes, volume] } : current,
     );
+    void addVolumeRemote(volume);
     return volume.id;
   }, [bundle, volumes, activeWorkId]);
 
   /**
    * 拖拽重排（R9）：把 fromId 章节拖到 toId 章节的位置。
    * 同卷 = 卷内重排；跨卷 = 移入目标卷并落到目标章节的位置。
-   * 排序计算在 previewChapterReorder 纯函数中，与确认弹框的预览共用一套逻辑。
+   * 排序计算在 previewChapterReorder 纯函数中，与确认弹框的预览共用一套逻辑；
+   * 应用后把受影响章节的 {sort, volumeId} 批量落库。
    */
-  const reorderChapters = useCallback((fromId: string, toId: string) => {
-    setBundle((current) => {
-      if (!current) return current;
-      const nextChapters = previewChapterReorder(current.chapters, fromId, toId);
-      if (nextChapters === current.chapters) return current;
-      return { ...current, chapters: nextChapters };
-    });
-  }, []);
+  const reorderChapters = useCallback(
+    (fromId: string, toId: string) => {
+      if (!bundle) return;
+      const nextChapters = previewChapterReorder(bundle.chapters, fromId, toId);
+      if (nextChapters === bundle.chapters) return;
+      setBundle({ ...bundle, chapters: nextChapters });
+      void saveChapterOrder(
+        nextChapters.map((chapter) => ({
+          id: chapter.id,
+          sort: chapter.sort,
+          volumeId: chapter.volumeId,
+        })),
+      );
+    },
+    [bundle],
+  );
 
   /** 拖拽章节到卷头：移入该卷并排到末尾 */
-  const moveChapterToVolume = useCallback((chapterId: string, volumeId: string) => {
-    setBundle((current) => {
-      if (!current) return current;
-      const nextChapters = previewChapterToVolume(current.chapters, chapterId, volumeId);
-      if (nextChapters === current.chapters) return current;
-      return { ...current, chapters: nextChapters };
-    });
-  }, []);
+  const moveChapterToVolume = useCallback(
+    (chapterId: string, volumeId: string) => {
+      if (!bundle) return;
+      const nextChapters = previewChapterToVolume(bundle.chapters, chapterId, volumeId);
+      if (nextChapters === bundle.chapters) return;
+      setBundle({ ...bundle, chapters: nextChapters });
+      void saveChapterOrder(
+        nextChapters.map((chapter) => ({
+          id: chapter.id,
+          sort: chapter.sort,
+          volumeId: chapter.volumeId,
+        })),
+      );
+    },
+    [bundle],
+  );
 
   /** 拖拽卷头重排卷顺序 */
   const reorderVolumes = useCallback(
     (fromId: string, toId: string) => {
-      setBundle((current) => {
-        if (!current) return current;
-        const scoped = current.volumes.filter(
-          (volume) => volume.workId === activeWorkId,
-        );
-        const ordered = previewVolumeReorder(scoped, fromId, toId);
-        if (ordered === scoped) return current;
-        const order = new Map(ordered.map((volume) => [volume.id, volume.sort]));
-        return {
-          ...current,
-          volumes: current.volumes.map((volume) =>
-            order.has(volume.id)
-              ? { ...volume, sort: order.get(volume.id) ?? volume.sort }
-              : volume,
-          ),
-        };
-      });
+      if (!bundle) return;
+      const scoped = bundle.volumes.filter(
+        (volume) => volume.workId === activeWorkId,
+      );
+      const ordered = previewVolumeReorder(scoped, fromId, toId);
+      if (ordered === scoped) return;
+      const order = new Map(ordered.map((volume) => [volume.id, volume.sort]));
+      const nextVolumes = bundle.volumes.map((volume) =>
+        order.has(volume.id)
+          ? { ...volume, sort: order.get(volume.id) ?? volume.sort }
+          : volume,
+      );
+      setBundle({ ...bundle, volumes: nextVolumes });
+      void saveVolumeOrder(
+        ordered.map((volume) => ({ id: volume.id, sort: volume.sort })),
+      );
     },
-    [activeWorkId],
+    [bundle, activeWorkId],
   );
 
   /** 章节重命名（R1）：空标题与同名不落 */
-  const renameChapter = useCallback((chapterId: string, title: string) => {
-    const trimmed = title.trim();
-    if (!trimmed) return;
-    setBundle((current) =>
-      current
-        ? {
-            ...current,
-            chapters: current.chapters.map((chapter) =>
-              chapter.id === chapterId
-                ? { ...chapter, title: trimmed, updatedAt: Date.now() }
-                : chapter,
-            ),
-          }
-        : current,
-    );
-  }, []);
+  const renameChapter = useCallback(
+    (chapterId: string, title: string) => {
+      const trimmed = title.trim();
+      if (!trimmed) return;
+      setBundle((current) =>
+        current
+          ? {
+              ...current,
+              chapters: current.chapters.map((chapter) =>
+                chapter.id === chapterId
+                  ? { ...chapter, title: trimmed, updatedAt: Date.now() }
+                  : chapter,
+              ),
+            }
+          : current,
+      );
+      void renameChapterRemote(chapterId, trimmed);
+    },
+    [],
+  );
 
   /** 卷命名（R9 扩展）：卷头展示为「第N卷 - 名字」，序号仍由 sort 派生 */
-  const renameVolume = useCallback((volumeId: string, name: string) => {
-    const trimmed = name.trim();
-    if (!trimmed) return;
-    setBundle((current) =>
-      current
-        ? {
-            ...current,
-            volumes: current.volumes.map((volume) =>
-              volume.id === volumeId ? { ...volume, name: trimmed } : volume,
-            ),
-          }
-        : current,
-    );
-  }, []);
+  const renameVolume = useCallback(
+    (volumeId: string, name: string) => {
+      const trimmed = name.trim();
+      if (!trimmed) return;
+      setBundle((current) =>
+        current
+          ? {
+              ...current,
+              volumes: current.volumes.map((volume) =>
+                volume.id === volumeId ? { ...volume, name: trimmed } : volume,
+              ),
+            }
+          : current,
+      );
+      void renameVolumeRemote(volumeId, trimmed);
+    },
+    [],
+  );
 
-  const toggleChapterStatus = useCallback((chapterId: string) => {
-    setBundle((current) =>
-      current
-        ? {
-            ...current,
-            chapters: current.chapters.map((chapter) =>
-              chapter.id === chapterId
-                ? {
-                    ...chapter,
-                    status: chapter.status === "done" ? "draft" : "done",
-                  }
-                : chapter,
-            ),
-          }
-        : current,
-    );
-  }, []);
+  /** 章节状态切换（草稿 ⇄ 完稿） */
+  const toggleChapterStatus = useCallback(
+    (chapterId: string) => {
+      const target = chapters.find((chapter) => chapter.id === chapterId);
+      if (!target) return;
+      const nextStatus = target.status === "done" ? "draft" : "done";
+      setBundle((current) =>
+        current
+          ? {
+              ...current,
+              chapters: current.chapters.map((chapter) =>
+                chapter.id === chapterId ? { ...chapter, status: nextStatus } : chapter,
+              ),
+            }
+          : current,
+      );
+      void setChapterStatus(chapterId, nextStatus);
+    },
+    [chapters],
+  );
 
   /** 选区 → 要素：无卡秒建、有卡关联别名（PRD R20 ③） */
   const markSelectionAsEntity = useCallback(
@@ -352,11 +394,12 @@ export function useNovelData() {
               }
             : current,
         );
+        void saveEntity(linked);
         return { entity: linked, mode: "linked" };
       }
 
       const created: NovelEntity = {
-        id: `e-${Date.now()}`,
+        id: createNovelId("e"),
         workId: activeWorkId,
         type,
         name,
@@ -371,6 +414,7 @@ export function useNovelData() {
           ? { ...current, entities: [...current.entities, created] }
           : current,
       );
+      void saveEntity(created);
       return { entity: created, mode: "created" };
     },
     [bundle, activeWorkId],
@@ -385,18 +429,22 @@ export function useNovelData() {
   /** 资料卡编辑（R23）：合并保存名称 / 类型 / 别名 / 简介等字段 */
   const updateEntity = useCallback(
     (entityId: string, patch: Partial<Omit<NovelEntity, "id" | "workId">>): void => {
+      const target = entities.find((entity) => entity.id === entityId);
+      if (!target) return;
+      const merged: NovelEntity = { ...target, ...patch };
       setBundle((current) =>
         current
           ? {
               ...current,
               entities: current.entities.map((entity) =>
-                entity.id === entityId ? { ...entity, ...patch } : entity,
+                entity.id === entityId ? merged : entity,
               ),
             }
           : current,
       );
+      void saveEntity(merged);
     },
-    [],
+    [entities],
   );
 
   /** 手动绑定（R20 ③右键菜单版）：把选中文本绑定到指定资料卡（关联为别名） */
@@ -423,6 +471,7 @@ export function useNovelData() {
             }
           : current,
       );
+      void saveEntity(linked);
       return { entity: linked, mode: "linked" };
     },
     [bundle],
@@ -450,7 +499,7 @@ export function useNovelData() {
       );
       if (duplicated) return false;
       const link: NovelLink = {
-        id: `l-${Date.now()}`,
+        id: createNovelId("l"),
         fromType,
         fromId,
         toType,
@@ -460,6 +509,7 @@ export function useNovelData() {
       setBundle((current) =>
         current ? { ...current, links: [link, ...current.links] } : current,
       );
+      void addLinkRemote(link);
       return true;
     },
     [bundle],
@@ -475,6 +525,7 @@ export function useNovelData() {
           }
         : current,
     );
+    void removeLinkRemote(linkId);
   }, []);
 
   /** 要素关联的双向视图（PRD R24） */
@@ -517,7 +568,7 @@ export function useNovelData() {
       const trimmed = content.trim();
       if (!trimmed) return;
       const note: NovelNote = {
-        id: `n-${Date.now()}`,
+        id: createNovelId("n"),
         workId: activeWorkId,
         content: trimmed,
         createdAt: Date.now(),
@@ -584,7 +635,7 @@ export function useNovelData() {
         ...draft,
         title,
         note: draft.note.trim(),
-        id: `f-${Date.now()}`,
+        id: createNovelId("f"),
         createdAt: Date.now(),
       };
       setBundle((current) =>

@@ -62,14 +62,15 @@ CheckIn 采用 Electron 双进程架构，渲染进程（React）与主进程（
 | 模块 | 职责 | 边界 |
 |------|------|------|
 | **main.ts** | 窗口生命周期管理、IPC 通道注册、托盘图标、应用启动流程 | 仅处理窗口和系统级操作，不包含业务逻辑 |
-| **handlers/** | 语义化 IPC handler 按模块注册（`todo-handlers.ts`、`activity-handlers.ts`），持有预定义 SQL | 每个 handler 文件只负责一个业务模块；SQL 只出现在 handlers 与 db.ts，禁止出现在渲染进程 |
+| **handlers/** | 语义化 IPC handler 按模块注册（`activity-handlers.ts` / `todo-handlers.ts` / `novel-handlers.ts` / `user-handlers.ts` / `memo-handlers.ts`），持有预定义 SQL | 每个 handler 文件只负责一个业务模块；SQL 只出现在 handlers 与 db.ts，禁止出现在渲染进程 |
 | **preload.ts** | 通过 `contextBridge` 暴露安全的 API 给渲染进程 | 仅做 API 转发，不实现业务逻辑 |
 | **db.ts** | SQLite 数据库初始化、双库管理（authDb/userDb）、通用 CRUD 封装 | 提供底层数据库操作，不感知上层业务 |
 | **activitiesTask.ts** | 后台活动提醒轮询、系统事件监听（睡眠/锁屏） | 独立后台任务，通过 IPC 通知渲染进程 |
 | **windowManager.ts** | 窗口管理池：注册/注销/广播/定点发送 | 只管理 BrowserWindow 实例，不感知业务 |
 
 **模块边界规则**：
-- `db.ts` 不导入 `main.ts` 的任何内容
+- `main.ts` 仅承担窗口生命周期、托盘、协议、窗口级 IPC（broadcast/window-control/find-in-page 等），**一切业务 IPC（user / memo / todo / activity / novel 等）一律抽到 `handlers/` 下独立模块**，禁止在 `main.ts` 内联业务逻辑或 SQL
+- `db.ts` 不导入 `main.ts` 的任何内容；`db.ts` 维护当前用户邮箱（`getCurrentUserEmail()`），业务 handler 通过它定位用户数据目录，不依赖 `main.ts` 闭包
 - `activitiesTask.ts` 通过 `ipcMain` 注册通道，不直接调用 `main.ts` 函数
 - `preload.ts` 仅读取 `db.ts` 和 `main.ts` 暴露的 IPC 通道
 
@@ -91,7 +92,7 @@ src/windows/XxxWindow/
 |------|------|----------|------|
 | **BaseWindow** | `windows/BaseWindow/` | `src/windows/BaseWindow/index.html` | 主窗口，承载全部业务页面（路由在 `App.tsx`） |
 | **LoginWindow** | `windows/LoginWindow/` | `src/windows/LoginWindow/index.html` | 登录/欢迎窗口 |
-| **WorkerWindow** | `windows/WorkerWindow/` | `src/windows/WorkerWindow/index.html` | 临时工作窗口：即关即销，重新打开即全新实例 |
+| **WorkerWindow** | `windows/WorkerWindow/` | `src/windows/WorkerWindow/index.html` | 小说编辑器窗口（NovelPage），即关即销、重新打开即全新实例；数据由 `novel_*` 表持久化，崩溃恢复由会话标记驱动 |
 
 **窗口边界规则**：
 - 窗口之间**禁止互相导入**（如 `LoginWindow` 不得导入 `BaseWindow/pages` 的任何内容）
@@ -104,15 +105,15 @@ src/windows/XxxWindow/
 
 | 模块 | 路径 | 职责 |
 |------|------|------|
-| **components** | `shared/components/` | 跨窗口共享 UI：Page（页面容器）、NavHeader（导航栏） |
+| **components** | `shared/components/` | 跨窗口共享 UI：Page（页面容器）、NavHeader（导航栏）、WindowHeader（窗口标题栏） |
 | **services** | `shared/services/` | 数据访问：daily.ts、code.ts |
 | **ipc** | `shared/ipc/` | 窗口级 IPC 桥接注册（显式调用，带防重复守卫） |
 | **types** | `shared/types/` | 全局类型：electron.d.ts（window.electronAPI） |
-| **styles** | `shared/styles/` | variables.scss（SCSS 变量）、antd-theme.ts（统一 ConfigProvider theme/locale） |
+| **styles** | `shared/styles/` | themes.scss（四套主题 `--app-*` 变量）、variables.scss（SCSS 变量）、window-shell.scss（圆角窗口外壳） |
 
 **边界规则**：
 - 只有两个以上窗口/页面需要时才允许放入 `shared/`；只有一个使用方的代码留在使用方目录内
-- 各窗口的 ConfigProvider 统一从 `shared/styles/antd-theme.ts` 引入 `antdProviderProps`，禁止各窗口重复定义 theme
+- 各窗口统一用 `shared/theme/ThemeProvider` 包裹 App（内部已含 antd ConfigProvider，主题变量来自 `shared/styles/themes.scss`），禁止各窗口重复定义 theme
 
 #### 2.2.1.1 组件分层规范：全局组件 vs 当前模块组件
 
@@ -160,7 +161,7 @@ src/windows/XxxWindow/
 windows/BaseWindow/
 ├─ main.tsx (入口：注册 IPC 桥接)
 ├─ App.tsx
-│  ├─ ConfigProvider (Antd，theme 来自 shared/styles/antd-theme)
+│  ├─ ThemeProvider (含 antd ConfigProvider，theme/locale 来自 shared/theme + themes.scss)
 │  ├─ ActivityNotifier (全局 IPC 监听)
 │  └─ Routes
 │     ├─ HomePage
@@ -188,8 +189,14 @@ windows/LoginWindow/
 └─ App.tsx (登录/欢迎表单)
 
 windows/WorkerWindow/
-├─ main.tsx (入口)
-└─ App.tsx (临时工作窗口，Esc 快捷关闭)
+├─ main.tsx (入口：注册本窗口级 IPC 桥接)
+└─ App.tsx
+   └─ NovelPage (小说编辑器，三栏布局)
+      ├─ Page (共享)
+      ├─ ChapterTree (左栏章节树，虚拟滚动)
+      ├─ EditorPane (中央码字区，CodeMirror 6)
+      ├─ 支撑面板 (大纲 / 要素库 / 灵感速记 / 全书检索)
+      └─ hooks/useNovelData + services/novel-service (经 IPC 持久化到 novel_* 表)
 ```
 
 **依赖规则**：
@@ -197,6 +204,7 @@ windows/WorkerWindow/
 - **窗口隔离**：`LoginWindow` 与 `BaseWindow` 之间禁止互相导入，共享代码只能经由 `shared/`
 - **平级禁止**：`TodoPage` 不导入 `MemoPage` 的任何内容
 - **私有保护**：`pages/TodoPage/components/NoteModal` 仅被 `TodoPage` 使用
+- **WorkerWindow 数据层**：`NovelPage` 经 `services/novel-service` → `novel IPC` → `novel-handlers` → `novel_*` 表持久化；崩溃恢复由会话级 `running` 标记驱动（窗口正常关闭 / 应用退出时清除，异常退出下次启动触发恢复横幅）
 
 ---
 
@@ -250,7 +258,7 @@ MemoPage.tsx
     ↓ window.electronAPI.memo.write(filename, content)
 preload.ts
     ↓ ipcRenderer.invoke('memo-write', filename, content)
-main.ts
+memo-handlers.ts (handle)
     ↓ fs.writeFileSync(filePath, content)
 File System
 ```
@@ -266,8 +274,11 @@ CheckIn/
 ├── electron/                              # 主进程代码
 │   ├── main.ts                            # 入口 + 窗口加载（RENDERER_ENTRIES）+ 系统级 IPC
 │   ├── handlers/                          # 语义化 IPC handler（按模块拆分）
+│   │   ├── activity-handlers.ts           # 日程活动 CRUD
 │   │   ├── todo-handlers.ts               # Todo CRUD + 父子级联
-│   │   └── activity-handlers.ts           # 日程活动 CRUD
+│   │   ├── novel-handlers.ts              # 小说编辑器（novel_* 表 + 快照 + 崩溃恢复）
+│   │   ├── user-handlers.ts               # 用户登录 / 缓存读写
+│   │   └── memo-handlers.ts               # 备忘文件 CRUD + 导入导出
 │   ├── preload.ts                         # API 暴露
 │   ├── db.ts                              # 数据库管理
 │   ├── windowManager.ts                   # 窗口管理池
@@ -286,7 +297,6 @@ CheckIn/
 │   │   │       ├── TodoPage/
 │   │   │       │   ├── TodoPage.tsx
 │   │   │       │   ├── index.scss
-│   │   │       │   ├── todo-db.ts
 │   │   │       │   ├── todo-utils.ts
 │   │   │       │   ├── hooks/
 │   │   │       │   │   └── useTodoPage.ts
@@ -309,18 +319,32 @@ CheckIn/
 │   │   │   ├── main.tsx
 │   │   │   ├── App.tsx
 │   │   │   └── index.scss
-│   │   └── WorkerWindow/                  # 临时工作窗口（即关即销）
+│   │   └── WorkerWindow/                  # 小说编辑器窗口（NovelPage，即关即销）
 │   │       ├── index.html
 │   │       ├── main.tsx
 │   │       ├── App.tsx
-│   │       └── index.scss
+│   │       ├── index.scss
+│   │       └── pages/
+│   │           └── NovelPage/             # 小说编辑器（三栏 + 快照/设置抽屉）
+│   │               ├── NovelPage.tsx
+│   │               ├── types.ts            # 领域模型（NovelBundle / NovelRecovery）
+│   │               ├── novel-config.ts
+│   │               ├── novel-utils.ts      # 纯函数（字数/词库/检索片段）
+│   │               ├── services/
+│   │               │   └── novel-service.ts  # 封装 novel IPC
+│   │               ├── hooks/
+│   │               │   ├── useNovelPage.ts
+│   │               │   ├── useNovelData.ts          # 数据持久化
+│   │               │   └── useNovelEditorState.ts    # 编辑器状态/快照
+│   │               └── components/
+│   │                   └── RestoreBanner/  # 崩溃恢复横幅
 │   └── shared/                            # 跨窗口共享层
 │       ├── components/                    # 共享 UI（Page、NavHeader…）
 │       ├── services/                      # 数据服务（daily.ts、code.ts）
 │       ├── ipc/                           # 窗口级 IPC 桥接（activityNotifyBridge.ts）
 │       ├── types/                         # 全局类型（electron.d.ts）
-│       └── styles/                        # variables.scss、antd-theme.ts
-├── vite.config.ts                         # rollupOptions.input 与 windows/* 一一对应
+│       └── styles/                        # themes.scss、variables.scss、window-shell.scss
+├── vite.config.ts                         # rollupOptions.input 与 windows/* 一一对应；主进程 external 列 Node 运行时模块（electron/better-sqlite3/mammoth/docx）
 ├── tsconfig.json
 └── package.json
 ```
@@ -333,8 +357,9 @@ CheckIn/
 windows/BaseWindow/pages/XxxPage/
 ├── XxxPage.tsx           # 主组件（UI 渲染）
 ├── index.scss            # 页面级布局样式
-├── xxx-db.ts             # (可选) 页面专属数据库操作
 ├── xxx-utils.ts          # (可选) 纯函数工具
+├── services/             # (可选) 页面专属数据服务（封装 IPC，不内联 SQL）
+│   └── xxx-service.ts
 ├── hooks/
 │   └── useXxxPage.ts    # 业务逻辑 Hook
 ├── components/
@@ -710,15 +735,17 @@ function initializeDataDb(db: Database) {
 
 - [ ] 在 `electron/db.ts` 的 `initializeDataDb()` 中创建表
 - [ ] 编写增量迁移逻辑（检查列是否存在）
-- [ ] 在 `shared/services/` 或 `xxx-db.ts` 中封装 CRUD 函数
+- [ ] 在 `shared/services/` 或页面 `services/` 中封装 IPC 调用（渲染层不内联 SQL）
 - [ ] 定义 TypeScript 接口（如 `XxxItem`）
 
 ### 8.5 新增 IPC 通道
 
-- [ ] 在 `electron/main.ts` 注册 `ipcMain.handle('模块-操作', ...)`
+- [ ] 在 `electron/handlers/` 新建 `xxx-handlers.ts`，导出 `registerXxxHandlers()`，在其中注册 `ipcMain.handle(...)`；**禁止在 `main.ts` 内联业务 IPC**
+- [ ] 在 `electron/main.ts` 的 `app.whenReady` 中调用 `registerXxxHandlers()` 完成注册
 - [ ] 在 `electron/preload.ts` 暴露到 `window.electronAPI`
 - [ ] 在 `src/shared/types/electron.d.ts` 更新 `ElectronAPI` 接口
-- [ ] 在 Service 层封装调用（如 `shared/services/xxx.ts`）
+- [ ] 在 Service 层封装调用（如 `shared/services/xxx.ts` 或页面 `services/`）
+- [ ] 若 handler 引入新的主进程 Node 依赖，须将其加入 `vite.config.ts` 的 electron `external`（当前：`electron` / `better-sqlite3` / `mammoth` / `docx`），否则 rolldown 会尝试打包其传递依赖而失败
 
 ### 8.6 更新日志规范
 

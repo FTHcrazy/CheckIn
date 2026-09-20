@@ -5,40 +5,25 @@ import {
   protocol,
   Tray,
   Menu,
-  shell,
-  dialog,
   globalShortcut,
 } from "electron";
 import path from "path";
 import fs from "fs";
-import {
-  initDb,
-  closeDb,
-  getAuthDb,
-  getUserDataDir,
-  switchUserDb,
-} from "./db";
+import { initDb, closeDb, switchUserDb } from "./db";
 import { startActivityPolling, stopActivityPolling } from "./activitiesTask";
 import { windowManager } from "./windowManager";
 import { registerActivityHandlers } from "./handlers/activity-handlers";
 import { registerTodoHandlers } from "./handlers/todo-handlers";
 import {
+  markNovelSessionClosed,
+  registerNovelHandlers,
+} from "./handlers/novel-handlers";
+import { registerUserHandlers, getCachedUser } from "./handlers/user-handlers";
+import { registerMemoHandlers } from "./handlers/memo-handlers";
+import {
   registerHttpSessionHandlers,
   setupRendererHttpSession,
 } from "./httpSession";
-import { collapseBlankLines, markdownToDocxBlocks, markdownToPlainText } from "./memo-doc-utils";
-import mammoth from "mammoth";
-import {
-  Document,
-  HeadingLevel,
-  Packer,
-  Paragraph,
-} from "docx";
-
-type UserCache = {
-  id: number;
-  email: string;
-};
 
 // Windows 下通知必须设置 AppUserModelId
 // 开发环境用 process.execPath（electron.exe 路径），生产环境用固定 ID
@@ -228,24 +213,6 @@ function createWindow(): BrowserWindow {
   return win;
 }
 
-function ensureUserTable() {
-  getAuthDb().exec(`
-    CREATE TABLE IF NOT EXISTS user (
-      id INTEGER PRIMARY KEY CHECK (id = 1),
-      email TEXT NOT NULL,
-      created_at TEXT DEFAULT (datetime('now', 'localtime')),
-      updated_at TEXT DEFAULT (datetime('now', 'localtime'))
-    )
-  `);
-}
-
-function getCachedUser(): UserCache | null {
-  const user = getAuthDb().prepare("SELECT id, email FROM user WHERE id = 1 LIMIT 1").get() as
-    | UserCache
-    | undefined;
-  return user?.email ? user : null;
-}
-
 function ensureMainWindow(): BrowserWindow {
   let win = windowManager.get("main");
   if (!win) {
@@ -306,7 +273,7 @@ function showMainWindow() {
   }
 }
 
-function createLoginWindow(user?: UserCache | null) {
+function createLoginWindow(user?: { email: string } | null) {
   const loginWin = new BrowserWindow({
     width: 520,
     height: user ? 320 : 420,
@@ -399,6 +366,8 @@ function createWorkerWindow(): BrowserWindow {
   // 不拦截 close 事件：正常关闭，窗口随实例销毁
   workerWin.on("closed", () => {
     console.log("[main] Worker 窗口已关闭");
+    // 编辑器会话正常结束：清除崩溃恢复标记（PRD R3 ③）
+    markNovelSessionClosed();
   });
 
   const url = IS_DEV
@@ -437,44 +406,22 @@ app.on("second-instance", () => {
 });
 
 app.whenReady().then(() => {
-  // 初始化本地数据库
+  // 初始化本地数据库（authDb 内含 user 表）
   initDb();
-  ensureUserTable();
   const cachedUser = getCachedUser();
   if (cachedUser) switchUserDb(cachedUser.email, true);
-
-  let currentUserEmail = cachedUser?.email ?? "";
 
   // 注册语义化 IPC handlers
   registerActivityHandlers();
   registerTodoHandlers();
+  registerNovelHandlers();
+  registerUserHandlers();
+  registerMemoHandlers();
 
   // 渲染进程网络会话：一次性配置 CORS 放行 + Cookie 播种通道。
   // 请求本身全部在渲染进程发起，主进程不再代理 HTTP。
   setupRendererHttpSession();
   registerHttpSessionHandlers();
-
-  ipcMain.handle("user-get", () => getCachedUser());
-  ipcMain.handle("user-login", (_event, email: string) => {
-    const normalizedEmail = email.trim();
-    getAuthDb()
-      .prepare(
-        "INSERT INTO user (id, email, updated_at) VALUES (1, ?, datetime('now', 'localtime')) ON CONFLICT(id) DO UPDATE SET email = excluded.email, updated_at = datetime('now', 'localtime')",
-      )
-      .run(normalizedEmail);
-    switchUserDb(normalizedEmail);
-    currentUserEmail = normalizedEmail;
-    return true;
-  });
-  ipcMain.handle("user-update", (_event, email: string) => {
-    const normalizedEmail = email.trim();
-    getAuthDb()
-      .prepare("UPDATE user SET email = ?, updated_at = datetime('now', 'localtime') WHERE id = 1")
-      .run(normalizedEmail);
-    switchUserDb(normalizedEmail);
-    currentUserEmail = normalizedEmail;
-    return true;
-  });
 
   // 注册跨窗口通信 IPC handler
   ipcMain.handle("window-broadcast", (_event, event: string, data?: unknown) => {
@@ -500,183 +447,6 @@ app.whenReady().then(() => {
       },
     });
   });
-
-  // ── 备忘文件 IPC handlers ──
-  const getMemosDir = () => path.join(getUserDataDir(currentUserEmail), "memos");
-  const ensureMemosDir = () => {
-    const memosDir = getMemosDir();
-    if (!fs.existsSync(memosDir)) fs.mkdirSync(memosDir, { recursive: true });
-    return memosDir;
-  };
-
-  ipcMain.handle("memo-list", () => {
-    const memosDir = ensureMemosDir();
-    const files = fs.readdirSync(memosDir).filter((f) => f.endsWith(".md"));
-    return files
-      .map((name) => {
-        const stat = fs.statSync(path.join(memosDir, name));
-        return { name, updatedAt: stat.mtime.toISOString() };
-      })
-      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-  });
-
-  ipcMain.handle("memo-read", (_event, filename: string) => {
-    const safe = path.basename(filename);
-    const filePath = path.join(ensureMemosDir(), safe);
-    if (!fs.existsSync(filePath)) throw new Error("文件不存在");
-    return fs.readFileSync(filePath, "utf-8");
-  });
-
-  ipcMain.handle("memo-write", (_event, filename: string, content: string) => {
-    const safe = path.basename(filename);
-    const filePath = path.join(ensureMemosDir(), safe);
-    fs.writeFileSync(filePath, content, "utf-8");
-    return true;
-  });
-
-  ipcMain.handle(
-    "memo-rename",
-    (_event, oldFilename: string, newFilename: string) => {
-      const oldSafe = path.basename(oldFilename);
-      const newSafe = path.basename(newFilename);
-      const memosDir = ensureMemosDir();
-      const oldPath = path.join(memosDir, oldSafe);
-      const newPath = path.join(memosDir, newSafe);
-
-      if (!fs.existsSync(oldPath)) throw new Error("文件不存在");
-      if (oldSafe !== newSafe && fs.existsSync(newPath)) {
-        throw new Error("目标文件已存在");
-      }
-
-      fs.renameSync(oldPath, newPath);
-      return true;
-    },
-  );
-
-  ipcMain.handle("memo-delete", (_event, filename: string) => {
-    const safe = path.basename(filename);
-    const filePath = path.join(ensureMemosDir(), safe);
-    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-    return true;
-  });
-
-  ipcMain.handle("memo-open-in-explorer", (_event, filename: string) => {
-    const safe = path.basename(filename);
-    const filePath = path.join(ensureMemosDir(), safe);
-    shell.showItemInFolder(filePath);
-    return true;
-  });
-
-  /** 生成不重名的备忘文件名（.md 统一后缀；重名自动追加序号，避免覆盖已有备忘） */
-  const uniqueMemoName = (base: string): string => {
-    const memosDir = ensureMemosDir();
-    let candidate = `${base}.md`;
-    for (let i = 1; fs.existsSync(path.join(memosDir, candidate)); i += 1) {
-      candidate = `${base} (${i}).md`;
-    }
-    return candidate;
-  };
-
-  ipcMain.handle("memo-import", async (event) => {
-    const win = BrowserWindow.fromWebContents(event.sender);
-    const options = {
-      properties: ["openFile", "multiSelections"] as Array<"openFile" | "multiSelections">,
-      filters: [
-        { name: "文档文件", extensions: ["md", "txt", "docx"] },
-      ],
-    };
-    const result = win
-      ? await dialog.showOpenDialog(win, options)
-      : await dialog.showOpenDialog(options);
-    if (result.canceled) return [];
-
-    const importedFiles: string[] = [];
-    for (const sourcePath of result.filePaths) {
-      const ext = path.extname(sourcePath).toLowerCase();
-      const base = path.basename(sourcePath, path.extname(sourcePath));
-
-      // txt 直读；docx 用 mammoth 抽取段落纯文本；md 原样读。
-      // 全部统一转存为 .md 备忘（memo 列表只收 .md）
-      let text: string;
-      if (ext === ".docx") {
-        const { value } = await mammoth.extractRawText({ path: sourcePath });
-        text = collapseBlankLines(value);
-      } else {
-        text = fs.readFileSync(sourcePath, "utf-8");
-        if (ext === ".txt") text = collapseBlankLines(text);
-      }
-
-      const filename = uniqueMemoName(base);
-      fs.writeFileSync(path.join(ensureMemosDir(), filename), text, "utf-8");
-      importedFiles.push(filename);
-    }
-    return importedFiles;
-  });
-
-  /** markdown → docx 段落对象：纯函数返回块模型，这里映射为 docx 包 API */
-  const toDocxParagraphs = (markdown: string): Paragraph[] =>
-    markdownToDocxBlocks(markdown).map((block) => {
-      if (block.type === "heading") {
-        const headings = [
-          HeadingLevel.HEADING_1,
-          HeadingLevel.HEADING_2,
-          HeadingLevel.HEADING_3,
-          HeadingLevel.HEADING_4,
-        ];
-        return new Paragraph({
-          text: block.text,
-          heading: headings[block.level - 1],
-        });
-      }
-      if (block.type === "bullet") {
-        return new Paragraph({ text: block.text, bullet: { level: 0 } });
-      }
-      return new Paragraph({ text: block.text });
-    });
-
-  ipcMain.handle(
-    "memo-export",
-    async (
-      event,
-      filename: string,
-      format: "txt" | "docx",
-    ): Promise<boolean> => {
-      const win = BrowserWindow.fromWebContents(event.sender);
-      const safe = path.basename(filename);
-      const filePath = path.join(ensureMemosDir(), safe);
-      if (!fs.existsSync(filePath)) throw new Error("文件不存在");
-
-      const markdown = fs.readFileSync(filePath, "utf-8");
-      const base = path.basename(safe, path.extname(safe));
-      const ext = format === "docx" ? "docx" : "txt";
-      const filters =
-        ext === "docx"
-          ? [{ name: "Word 文档", extensions: ["docx"] }]
-          : [{ name: "纯文本", extensions: ["txt"] }];
-      const options = {
-        defaultPath: `${base}.${ext}`,
-        filters,
-      };
-      const result = win
-        ? await dialog.showSaveDialog(win, options)
-        : await dialog.showSaveDialog(options);
-      if (result.canceled || !result.filePath) return false;
-
-      let target = result.filePath;
-      if (!target.toLowerCase().endsWith(`.${ext}`)) target += `.${ext}`;
-
-      if (ext === "docx") {
-        const doc = new Document({
-          sections: [{ children: toDocxParagraphs(markdown) }],
-        });
-        const buffer = await Packer.toBuffer(doc);
-        fs.writeFileSync(target, buffer);
-      } else {
-        fs.writeFileSync(target, markdownToPlainText(markdown), "utf-8");
-      }
-      return true;
-    },
-  );
 
   ipcMain.handle("find-in-page", (event, value?: string) => {
     const win = BrowserWindow.fromWebContents(event.sender);
@@ -745,7 +515,6 @@ app.whenReady().then(() => {
       const email = "email" in data && typeof data.email === "string" ? data.email : "";
       if (email) {
         switchUserDb(email);
-        currentUserEmail = email;
       }
       allowAndShowMainWindow();
     }
@@ -805,6 +574,8 @@ app.on("before-quit", () => {
   isQuitting = true;
   globalShortcut.unregisterAll();
   stopActivityPolling();
+  // 编辑器会话随应用退出正常结束（worker closed 未触发时兜底）
+  markNovelSessionClosed();
   tray?.destroy();
   tray = null;
   closeDb();

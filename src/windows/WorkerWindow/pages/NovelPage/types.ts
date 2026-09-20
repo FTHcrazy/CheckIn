@@ -29,6 +29,25 @@ export type WordCountMode = "withPunctuation" | "hanOnly";
 /** 序号数字样式：阿拉伯数字（第1章）/ 中文数字（第一章） */
 export type LabelNumberStyle = "arabic" | "chinese";
 
+/** 崩溃恢复信息（PRD R3 ③：主进程会话标记 + 最近快照派生） */
+export interface NovelRecovery {
+  snapshotTime: number;
+  deltaWords: number;
+}
+
+/** 编辑器全量数据包（novel-editor-load 的返回形态） */
+export interface NovelBundle {
+  works: NovelWork[];
+  volumes: NovelVolume[];
+  chapters: NovelChapter[];
+  entities: NovelEntity[];
+  links: NovelLink[];
+  levelSystems: LevelSystem[];
+  notes: NovelNote[];
+  outlineEntries: OutlineEntry[];
+  recovery: NovelRecovery | null;
+}
+
 /** 作品 */
 export interface NovelWork {
   id: string;

@@ -1,6 +1,6 @@
 import { WarningFilled } from "@ant-design/icons";
 import { formatClock } from "../../novel-utils";
-import type { NovelRecovery } from "../../services/novel-demo-source";
+import type { NovelRecovery } from "../../types";
 import "./index.scss";
 
 interface RestoreBannerProps {

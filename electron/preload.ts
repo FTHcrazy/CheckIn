@@ -55,6 +55,41 @@ contextBridge.exposeInMainWorld('electronAPI', {
     update: (email: string) => ipcRenderer.invoke('user-update', email),
   },
 
+  // ── 小说编辑器（语义化 IPC，数据存 userDb 的 novel_* 表） ──
+  novel: {
+    editorLoad: () => ipcRenderer.invoke('novel-editor-load'),
+    saveChapter: (id: string, content: string, wordCount: number) =>
+      ipcRenderer.invoke('novel-chapter-save', id, content, wordCount) as Promise<boolean>,
+    listSnapshots: (chapterId: string) =>
+      ipcRenderer.invoke('novel-snapshot-list', chapterId),
+    addChapter: (chapter: unknown) =>
+      ipcRenderer.invoke('novel-chapter-add', chapter) as Promise<boolean>,
+    renameChapter: (id: string, title: string) =>
+      ipcRenderer.invoke('novel-chapter-rename', id, title) as Promise<boolean>,
+    setChapterStatus: (id: string, status: string) =>
+      ipcRenderer.invoke('novel-chapter-status', id, status) as Promise<boolean>,
+    saveChapterOutline: (id: string, note: string) =>
+      ipcRenderer.invoke('novel-chapter-outline', id, note) as Promise<boolean>,
+    saveChapterOrder: (updates: Array<{ id: string; sort: number; volumeId: string }>) =>
+      ipcRenderer.invoke('novel-chapter-order', updates) as Promise<boolean>,
+    addVolume: (volume: unknown) =>
+      ipcRenderer.invoke('novel-volume-add', volume) as Promise<boolean>,
+    renameVolume: (id: string, name: string) =>
+      ipcRenderer.invoke('novel-volume-rename', id, name) as Promise<boolean>,
+    saveVolumeOrder: (updates: Array<{ id: string; sort: number }>) =>
+      ipcRenderer.invoke('novel-volume-order', updates) as Promise<boolean>,
+    saveEntity: (entity: unknown) =>
+      ipcRenderer.invoke('novel-entity-save', entity) as Promise<boolean>,
+    addLink: (link: unknown) => ipcRenderer.invoke('novel-link-add', link) as Promise<boolean>,
+    removeLink: (id: string) => ipcRenderer.invoke('novel-link-remove', id) as Promise<boolean>,
+    saveNote: (note: unknown) => ipcRenderer.invoke('novel-note-save', note) as Promise<boolean>,
+    removeNote: (id: string) => ipcRenderer.invoke('novel-note-remove', id) as Promise<boolean>,
+    saveOutlineEntry: (entry: unknown) =>
+      ipcRenderer.invoke('novel-outline-entry-save', entry) as Promise<boolean>,
+    removeOutlineEntry: (id: string) =>
+      ipcRenderer.invoke('novel-outline-entry-remove', id) as Promise<boolean>,
+  },
+
   send: (channel: string, data: unknown) => {
     const validChannels = [
       'login-confirm',

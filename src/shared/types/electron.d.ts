@@ -38,6 +38,104 @@ interface TodoRow {
   done_at: string | null
 }
 
+// ── 小说编辑器 DTO（与 electron/handlers/novel-handlers.ts 的 Dto 定义保持一致） ──
+
+interface NovelWorkDTO {
+  id: string
+  name: string
+  createdAt: number
+}
+
+interface NovelVolumeDTO {
+  id: string
+  workId: string
+  name: string
+  sort: number
+}
+
+interface NovelChapterDTO {
+  id: string
+  workId: string
+  volumeId: string
+  title: string
+  content: string
+  wordCount: number
+  status: "draft" | "done"
+  sort: number
+  updatedAt: number
+  outlineNote?: string
+}
+
+interface NovelSnapshotDTO {
+  id: string
+  chapterId: string
+  content: string
+  deltaWords: number
+  createdAt: number
+}
+
+interface NovelNoteDTO {
+  id: string
+  workId: string
+  content: string
+  createdAt: number
+  pinned: boolean
+  foreshadowId?: string
+}
+
+interface NovelOutlineEntryDTO {
+  id: string
+  workId: string
+  kind: "foreshadow"
+  volumeId: string
+  chapterId?: string
+  title: string
+  note: string
+  status: "open" | "resolved"
+  createdAt: number
+}
+
+interface NovelEntityDTO {
+  id: string
+  workId: string
+  type: NovelEntityTypeDTO
+  name: string
+  aliases: string[]
+  summary: string
+  content: string
+  fields: Record<string, string>
+  sort: number
+}
+
+interface NovelLinkDTO {
+  id: string
+  fromType: NovelEntityTypeDTO
+  fromId: string
+  toType: NovelEntityTypeDTO
+  toId: string
+  relation: string
+  note?: string
+}
+
+interface NovelLevelSystemDTO {
+  id: string
+  workId: string
+  name: string
+  rungs: Array<{ id: string; name: string; rank: number; note?: string }>
+}
+
+interface NovelBundleDTO {
+  works: NovelWorkDTO[]
+  volumes: NovelVolumeDTO[]
+  chapters: NovelChapterDTO[]
+  entities: NovelEntityDTO[]
+  links: NovelLinkDTO[]
+  levelSystems: NovelLevelSystemDTO[]
+  notes: NovelNoteDTO[]
+  outlineEntries: NovelOutlineEntryDTO[]
+  recovery: { snapshotTime: number; deltaWords: number } | null
+}
+
 export interface ElectronAPI {
   /** 网络会话配置（一次性）：写入认证 Cookie 到 session jar */
   httpSession: {
@@ -75,6 +173,28 @@ export interface ElectronAPI {
     get: () => Promise<{ id: number; email: string } | null>
     login: (email: string) => Promise<boolean>
     update: (email: string) => Promise<boolean>
+  }
+
+  // ── 小说编辑器（数据存 userDb 的 novel_* 表） ──
+  novel: {
+    editorLoad: () => Promise<NovelBundleDTO>
+    saveChapter: (id: string, content: string, wordCount: number) => Promise<boolean>
+    listSnapshots: (chapterId: string) => Promise<NovelSnapshotDTO[]>
+    addChapter: (chapter: NovelChapterDTO) => Promise<boolean>
+    renameChapter: (id: string, title: string) => Promise<boolean>
+    setChapterStatus: (id: string, status: "draft" | "done") => Promise<boolean>
+    saveChapterOutline: (id: string, note: string) => Promise<boolean>
+    saveChapterOrder: (updates: Array<{ id: string; sort: number; volumeId: string }>) => Promise<boolean>
+    addVolume: (volume: NovelVolumeDTO) => Promise<boolean>
+    renameVolume: (id: string, name: string) => Promise<boolean>
+    saveVolumeOrder: (updates: Array<{ id: string; sort: number }>) => Promise<boolean>
+    saveEntity: (entity: NovelEntityDTO) => Promise<boolean>
+    addLink: (link: NovelLinkDTO) => Promise<boolean>
+    removeLink: (id: string) => Promise<boolean>
+    saveNote: (note: NovelNoteDTO) => Promise<boolean>
+    removeNote: (id: string) => Promise<boolean>
+    saveOutlineEntry: (entry: NovelOutlineEntryDTO) => Promise<boolean>
+    removeOutlineEntry: (id: string) => Promise<boolean>
   }
 
   send: (channel: string, data: unknown) => void

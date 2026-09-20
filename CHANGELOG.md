@@ -1,5 +1,45 @@
 # Changelog
 
+## [1.8.0] - 2026-09-20
+
+### Added
+- **小说编辑器数据 DB 本地化（PRD v0.4 §7 M1 落地）**：WorkerWindow/NovelPage
+  的数据源由内存演示数据（`novel-demo-source.ts`）全量替换为 SQLite 持久化。
+  `electron/db.ts` 新增 `novel_*` 全套表（works / volumes / chapters /
+  snapshots / notes / outline_entries / entities / links / level_systems /
+  levels / level_conversions），时间戳统一存毫秒整数对齐渲染层 `Date.now()`
+- **主进程 `novel-handlers.ts`**：语义化 IPC（章节增删改、快照环形保留 +
+  崩溃恢复标记、要素/关联/灵感/大纲/等级体系 CRUD、全书检索）。会话级崩溃
+  恢复——窗口正常关闭与 `before-quit` 双路径清除 `running` 标记，异常退出
+  下次启动触发恢复横幅
+- **渲染层 `novel-service.ts`**：封装 IPC 调用，提供与原演示数据源一致的
+  语义化 API；`useNovelData` 全量接线持久化，页面与组件层零改动即生效
+- **类型契约**：`electron.d.ts` 补齐 `NovelBundleDTO` / `NovelRecoveryDTO`
+  等 DTO 与 `electronAPI.novel.*` 接口
+- **主进程 `user-handlers.ts` / `memo-handlers.ts`**：将此前散落在 `main.ts`
+  的 user / memo 业务 IPC 全部抽出为独立 handler 模块，`main.ts` 回归
+  「仅窗口生命周期 + 系统级」职责
+- `db.ts` 新增 `getCurrentUserEmail()` 与 `initDb()` 内建 `user` 表，
+  handler 不再依赖 `main.ts` 闭包变量
+
+### Fixed
+- **`pnpm build` 失败**：主进程打包时 rolldown 试图打包 `mammoth` / `docx`
+  的传递依赖，撞上 pnpm 非扁平结构下 `core-util-is` 无法解析。
+  `vite.config.ts` 的 electron `external` 补入 `mammoth` / `docx`
+  （主进程 Node 运行时模块保持 require，不打入 bundle）
+
+### Changed
+- 删除 `src/windows/WorkerWindow/pages/NovelPage/services/novel-demo-source.ts`
+  （演示数据源已被 DB 本地化取代）
+- `AGENTS.md` 同步：handlers 模块表补齐 novel/user/memo 三模块；
+  新增 WorkerWindow/NovelPage 数据层约定与崩溃恢复说明
+
+### Verified
+- `pnpm typecheck`（tsc -b，strict）：0 错误
+- `pnpm lint`：0 错误（仅剩 `useHttpClient.ts` 既有 eslint-disable 警告）
+- `pnpm test`：189/189 通过（15 个测试文件）
+- `pnpm build`：渲染层 + 主进程 + preload 三段构建均通过
+
 ## [1.7.1] - 2026-09-20
 
 ### Added

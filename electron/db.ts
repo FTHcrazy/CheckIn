@@ -10,6 +10,8 @@ import { app } from 'electron'
 
 let authDb: Database.Database | null = null
 let db: Database.Database | null = null
+/** 当前登录用户 email（switchUserDb 时同步），供业务 handler 定位用户数据目录 */
+let currentEmail = ''
 
 function getLegacyDbPath(): string {
   const userDataPath = app.getPath('userData')
@@ -73,6 +75,113 @@ function initializeDataDb(database: Database.Database): void {
       created_at TEXT DEFAULT (datetime('now', 'localtime')),
       done_at TEXT DEFAULT NULL
     );
+
+    -- ── 小说编辑器（PRD v0.4 §7 数据层，M1 一次到位）──
+    -- 时间戳统一存毫秒整数（渲染层 Date.now() 口径），避免字符串时区解析
+    CREATE TABLE IF NOT EXISTS novel_works (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS novel_volumes (
+      id TEXT PRIMARY KEY,
+      work_id TEXT NOT NULL,
+      name TEXT NOT NULL DEFAULT '未命名卷',
+      sort INTEGER NOT NULL DEFAULT 1
+    );
+    CREATE TABLE IF NOT EXISTS novel_chapters (
+      id TEXT PRIMARY KEY,
+      work_id TEXT NOT NULL,
+      volume_id TEXT NOT NULL,
+      title TEXT NOT NULL DEFAULT '未命名',
+      content TEXT NOT NULL DEFAULT '',
+      word_count INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'done')),
+      sort INTEGER NOT NULL DEFAULT 1,
+      outline_note TEXT,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_novel_chapters_work
+      ON novel_chapters(work_id, volume_id, sort);
+    CREATE TABLE IF NOT EXISTS novel_snapshots (
+      id TEXT PRIMARY KEY,
+      chapter_id TEXT NOT NULL,
+      content TEXT NOT NULL,
+      word_count INTEGER NOT NULL DEFAULT 0,
+      delta_words INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_novel_snapshots_chapter
+      ON novel_snapshots(chapter_id, created_at);
+    CREATE TABLE IF NOT EXISTS novel_notes (
+      id TEXT PRIMARY KEY,
+      work_id TEXT NOT NULL,
+      content TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      pinned INTEGER NOT NULL DEFAULT 0,
+      foreshadow_id TEXT
+    );
+    CREATE TABLE IF NOT EXISTS novel_outline_entries (
+      id TEXT PRIMARY KEY,
+      work_id TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'foreshadow',
+      volume_id TEXT NOT NULL,
+      chapter_id TEXT,
+      title TEXT NOT NULL,
+      note TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'resolved')),
+      created_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS novel_entities (
+      id TEXT PRIMARY KEY,
+      work_id TEXT NOT NULL,
+      type TEXT NOT NULL DEFAULT 'custom',
+      name TEXT NOT NULL,
+      aliases TEXT NOT NULL DEFAULT '[]',
+      summary TEXT NOT NULL DEFAULT '',
+      content TEXT NOT NULL DEFAULT '',
+      fields TEXT NOT NULL DEFAULT '{}',
+      sort INTEGER NOT NULL DEFAULT 1,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS novel_links (
+      id TEXT PRIMARY KEY,
+      from_type TEXT NOT NULL,
+      from_id TEXT NOT NULL,
+      to_type TEXT NOT NULL,
+      to_id TEXT NOT NULL,
+      relation TEXT NOT NULL,
+      note TEXT
+    );
+    CREATE TABLE IF NOT EXISTS novel_level_systems (
+      id TEXT PRIMARY KEY,
+      work_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      note TEXT
+    );
+    CREATE TABLE IF NOT EXISTS novel_levels (
+      id TEXT PRIMARY KEY,
+      system_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      rank INTEGER NOT NULL,
+      note TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_novel_levels_system
+      ON novel_levels(system_id, rank);
+    CREATE TABLE IF NOT EXISTS novel_level_conversions (
+      id TEXT PRIMARY KEY,
+      from_level_id TEXT NOT NULL,
+      to_level_id TEXT NOT NULL,
+      relation TEXT NOT NULL,
+      note TEXT
+    );
+    CREATE TABLE IF NOT EXISTS usage_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event TEXT NOT NULL,
+      payload TEXT,
+      created_at INTEGER NOT NULL
+    );
   `)
 }
 
@@ -84,6 +193,16 @@ export function initDb(): Database.Database {
   console.log(`[db] 初始化数据库: ${dbPath}`)
 
   authDb = new Database(dbPath)
+
+  // 应用级用户表（单一记录，id 固定为 1）
+  authDb.exec(`
+    CREATE TABLE IF NOT EXISTS user (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      email TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now', 'localtime')),
+      updated_at TEXT DEFAULT (datetime('now', 'localtime'))
+    )
+  `)
 
   console.log('[db] 数据库初始化完成')
   return authDb
@@ -97,6 +216,7 @@ export function getDb(): Database.Database {
 
 /** 切换当前用户的数据数据库 */
 export function switchUserDb(email: string, migrateLegacy = false): void {
+  currentEmail = email.trim()
   const userDbPath = getUserDbPath(email)
   const userDataPath = path.dirname(userDbPath)
   const legacyUserDataPath = getLegacyUserDataDir(email)
@@ -151,6 +271,11 @@ export function switchUserDb(email: string, migrateLegacy = false): void {
 
 export function getAuthDb(): Database.Database {
   return authDb ?? initDb()
+}
+
+/** 获取当前登录用户 email（未登录时为空串） */
+export function getCurrentUserEmail(): string {
+  return currentEmail
 }
 
 /** 关闭数据库 */

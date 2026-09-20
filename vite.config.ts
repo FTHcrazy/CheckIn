@@ -19,7 +19,12 @@ export default defineConfig({
           build: {
             outDir: 'dist-electron',
             rollupOptions: {
-              external: ['electron', 'better-sqlite3'],
+              // 主进程运行时 Node 模块保持 require，不打入 bundle：
+              // - electron / better-sqlite3：原生模块
+              // - mammoth / docx：处理 .docx 的纯 Node 库，其传递依赖（如
+              //   jszip→readable-stream→core-util-is）在 pnpm 非扁平结构下
+              //   rolldown 无法解析，故整体 external
+              external: ['electron', 'better-sqlite3', 'mammoth', 'docx'],
             },
           },
         },
