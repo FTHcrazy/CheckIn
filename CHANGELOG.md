@@ -1,5 +1,59 @@
 # Changelog
 
+## [1.9.1] - 2026-09-20
+
+### Fixed
+- **删除作品后作品名复活**：`novel-work-delete` 事务漏删 `novel_works` 行本身
+  （只清了卷章 / 要素 / 灵感伏笔 / 快照），删光全部作品后重新装载时，
+  库里残留的作品名全部回来。已在同一事务内补上 `DELETE FROM novel_works`
+
+### Added
+- **章节删除**：`novel-chapter-delete` IPC（同事务清理该章历史快照）；
+  左栏章节行悬浮浮现删除按钮，Popconfirm 确认后删除；删除当前章节时
+  按展示顺序自动切换到后一章（无后一章则前一章）
+
+### Changed
+- **点击正文下方空白也能聚焦**：CodeMirror content 只占文档实际高度，
+  点击其下方（纸面 / 滚动容器）此前无响应；现在兜底聚焦并把光标落到
+  点击坐标对应位置（命中不到内容点时落到文档末尾）
+- **未命名卷展示统一**：新增 `volumeDisplayName` 纯函数，存储名为
+  「未命名卷」时各处一律展示按 sort 派生的「第N卷」（此前面包屑、
+  重排确认弹框裸显「未命名卷」）；VolumeNode 卷头改用同一口径
+
+### Verified
+- `pnpm typecheck`：0 错误；`pnpm lint`：0 错误；`pnpm test`：203/203 通过
+  （新增 volumeDisplayName / 未命名卷面包屑用例）；`pnpm build` 通过
+
+## [1.9.0] - 2026-09-20
+
+### Added
+- **小说编辑器 M1 收尾（PRD v0.5 §9 步骤一）**，四项缺口一次补齐：
+  - **设置持久化（R5）**：排版 / 目标 / 字数口径 / 标注类型 / 序号后缀等全部
+    `EditorSettings` 经 `novel-config-get/set` IPC 写入 userDb `config` 表，
+    启动恢复；`mergeEditorSettings` 纯函数逐字段类型守卫（区间夹取、枚举校验、
+    annotationTypes 过滤去重），损坏数据安全回退默认值
+  - **续写位置记忆（R6）**：持久化「作品 / 章节 / 光标偏移 / 滚动位置」四元组
+    （500ms 防抖 + 关窗 flush），启动时 `sanitizeRestorePosition` 校验归属后
+    原位恢复（此前只回第一个章节）
+  - **作品 CRUD（R29）**：`novel-work-add/rename/delete` 三个 IPC，删除在
+    主进程单事务级联清理（卷章快照 / 要素关联 / 灵感伏笔 / 等级体系与转换）；
+    顶栏新增「作品管理」下拉（新建 / 重命名 / 删除确认，删除弹框明示级联范围），
+    作品下拉选项展示章节数与字数；删空后自动重新播种默认作品
+  - **章节内查找替换（R10）**：接入 `@codemirror/search`（Ctrl+F 查找、
+    Ctrl+H 打开替换面板，面板跟随四套主题变量）；窗口级快捷键增加
+    `defaultPrevented` 守卫，避免编辑器已消费的 Esc / Ctrl+F 双跳
+
+### Changed
+- `useNovelShortcuts`：跳过已被编辑器消费的按键（`event.defaultPrevented`）
+- `useNovelData.load()` 启动装载改为串联读取上次位置并校验恢复
+- `package.json` 显式声明 `@codemirror/search@^6.7.2`（hoisted 布局下不得依赖幽灵依赖）
+
+### Verified
+- `pnpm typecheck`（tsc -b，strict）：0 错误
+- `pnpm lint`：0 错误（仅剩 `useHttpClient.ts` 既有 eslint-disable 警告）
+- `pnpm test`：201/201 通过（15 个测试文件；新增 mergeEditorSettings /
+  sanitizeRestorePosition / parseJsonOrNull / buildWorkMeta 用例）
+
 ## [1.8.0] - 2026-09-20
 
 ### Added

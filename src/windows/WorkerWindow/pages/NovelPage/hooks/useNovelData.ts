@@ -3,14 +3,19 @@ import {
   addChapter as addChapterRemote,
   addLink as addLinkRemote,
   addVolume as addVolumeRemote,
+  addWork as addWorkRemote,
   createNovelId,
   fetchChapterSnapshots,
+  fetchLastPosition,
   fetchNovelBundle,
   removeLink as removeLinkRemote,
   removeNote as removeNoteRemote,
   removeOutlineEntry as removeOutlineEntryRemote,
+  removeWork as removeWorkRemote,
+  removeChapter as removeChapterRemote,
   renameChapter as renameChapterRemote,
   renameVolume as renameVolumeRemote,
+  renameWork as renameWorkRemote,
   saveChapterContent,
   saveChapterOrder,
   saveChapterOutline,
@@ -28,11 +33,14 @@ import {
   patchChapterOutlineNote,
   patchNote,
   patchOutlineEntry,
+  parseJsonOrNull,
   previewChapterReorder,
   previewChapterToVolume,
   previewVolumeReorder,
+  sanitizeRestorePosition,
   sortNotes,
   type ChapterGroup,
+  type RestorePosition,
 } from "../novel-utils";
 import type {
   EntityRelationView,
@@ -46,6 +54,7 @@ import type {
   NovelNote,
   NovelSnapshot,
   NovelVolume,
+  NovelWork,
   OutlineEntry,
   OutlineEntryDraft,
   SearchHit,
@@ -69,14 +78,28 @@ export function useNovelData() {
   const [activeWorkId, setActiveWorkId] = useState("");
   const [activeChapterId, setActiveChapterId] = useState<string | null>(null);
   const [snapshots, setSnapshots] = useState<NovelSnapshot[]>([]);
+  /** 上次续写位置（R6）：仅启动恢复用，消费一次后清空 */
+  const [lastPosition, setLastPosition] = useState<RestorePosition | null>(null);
 
   const load = useCallback(async (): Promise<void> => {
     setLoading(true);
     try {
       const next = await fetchNovelBundle();
+      const saved = sanitizeRestorePosition(
+        parseJsonOrNull(await fetchLastPosition()),
+        next.works,
+        next.chapters,
+      );
       setBundle(next);
-      setActiveWorkId((current) => current || next.works[0]?.id || "");
-      setActiveChapterId((current) => current ?? next.chapters[0]?.id ?? null);
+      setActiveWorkId(
+        (current) => current || saved?.workId || next.works[0]?.id || "",
+      );
+      if (saved) {
+        setActiveChapterId((current) => current ?? saved.chapterId);
+        setLastPosition(saved);
+      } else {
+        setActiveChapterId((current) => current ?? next.chapters[0]?.id ?? null);
+      }
     } finally {
       setLoading(false);
     }
@@ -85,6 +108,9 @@ export function useNovelData() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  /** 光标 / 滚动恢复完成后由编辑器回调清空，避免切章时误用旧位置 */
+  const consumeLastPosition = useCallback((): void => setLastPosition(null), []);
 
   const allEntities = useMemo(() => bundle?.entities ?? [], [bundle]);
   const entities = useMemo(
@@ -207,7 +233,9 @@ export function useNovelData() {
         content: "",
         wordCount: 0,
         status: "draft",
-        sort: siblings.length + 1,
+        // 取卷内最大 sort + 1：删除过章节后 length+1 会撞号
+        sort:
+          siblings.reduce((max, chapter) => Math.max(max, chapter.sort), 0) + 1,
         updatedAt: Date.now(),
       };
 
@@ -345,6 +373,102 @@ export function useNovelData() {
     [],
   );
 
+  // ── 作品管理（R29） ────────────────────────────────────────────────
+
+  /** 新建作品：本地先建并切为当前作品（空作品由「写下第一章」兜底），异步落库 */
+  const createWork = useCallback(
+    (name: string): NovelWork | null => {
+      const trimmed = name.trim();
+      if (!trimmed || !bundle) return null;
+      const work: NovelWork = {
+        id: createNovelId("w"),
+        name: trimmed,
+        createdAt: Date.now(),
+      };
+      setBundle((current) =>
+        current ? { ...current, works: [...current.works, work] } : current,
+      );
+      setActiveWorkId(work.id);
+      setActiveChapterId(null);
+      void addWorkRemote(work);
+      return work;
+    },
+    [bundle],
+  );
+
+  /** 作品重命名：空名不落 */
+  const renameWork = useCallback((workId: string, name: string): boolean => {
+    const trimmed = name.trim();
+    if (!trimmed || !workId) return false;
+    setBundle((current) =>
+      current
+        ? {
+            ...current,
+            works: current.works.map((work) =>
+              work.id === workId ? { ...work, name: trimmed } : work,
+            ),
+          }
+        : current,
+    );
+    void renameWorkRemote(workId, trimmed);
+    return true;
+  }, []);
+
+  /**
+   * 删除作品（R29）：本地级联摘除 + 远端事务级联删除。
+   * 删的是当前作品 → 切到剩余第一部；全部删完 → 重新装载（主进程重新播种默认作品）。
+   */
+  const deleteWork = useCallback(
+    (workId: string): void => {
+      if (!bundle) return;
+      const remaining = bundle.works.filter((work) => work.id !== workId);
+      const entityIds = new Set(
+        bundle.entities
+          .filter((entity) => entity.workId === workId)
+          .map((entity) => entity.id),
+      );
+      setBundle((current) =>
+        current
+          ? {
+              ...current,
+              works: current.works.filter((work) => work.id !== workId),
+              volumes: current.volumes.filter((volume) => volume.workId !== workId),
+              chapters: current.chapters.filter((chapter) => chapter.workId !== workId),
+              entities: current.entities.filter((entity) => entity.workId !== workId),
+              links: current.links.filter(
+                (link) => !entityIds.has(link.fromId) && !entityIds.has(link.toId),
+              ),
+              levelSystems: current.levelSystems.filter(
+                (system) => system.workId !== workId,
+              ),
+              notes: current.notes.filter((note) => note.workId !== workId),
+              outlineEntries: current.outlineEntries.filter(
+                (entry) => entry.workId !== workId,
+              ),
+            }
+          : current,
+      );
+      void removeWorkRemote(workId);
+
+      if (remaining.length > 0) {
+        if (activeWorkId === workId) {
+          const nextWorkId = remaining[0].id;
+          setActiveWorkId(nextWorkId);
+          setActiveChapterId(
+            bundle.chapters.find((chapter) => chapter.workId === nextWorkId)?.id ?? null,
+          );
+        }
+        return;
+      }
+
+      // 最后一部也被删除：清掉活动态后重新装载，主进程会重新播种「未命名作品」
+      setActiveWorkId("");
+      setActiveChapterId(null);
+      void load();
+    },
+    [bundle, activeWorkId, load],
+  );
+
   /** 章节状态切换（草稿 ⇄ 完稿） */
   const toggleChapterStatus = useCallback(
     (chapterId: string) => {
@@ -364,6 +488,36 @@ export function useNovelData() {
       void setChapterStatus(chapterId, nextStatus);
     },
     [chapters],
+  );
+
+  /**
+   * 删除章节：本地摘除 + 远端同事务清理快照。
+   * 删的是当前章节 → 按展示顺序自动切到后一个，没有后一个切前一个；
+   * 快照由主进程随章节一并删除，本地草稿残留无害（同 id 不会复用）。
+   */
+  const deleteChapter = useCallback(
+    (chapterId: string): void => {
+      if (!bundle) return;
+      const ordered = groups.flatMap((group) => group.chapters);
+      const index = ordered.findIndex((chapter) => chapter.id === chapterId);
+      if (index < 0) return;
+      const wasActive = activeChapterId === chapterId;
+      setBundle((current) =>
+        current
+          ? {
+              ...current,
+              chapters: current.chapters.filter((chapter) => chapter.id !== chapterId),
+            }
+          : current,
+      );
+      if (wasActive) {
+        setActiveChapterId(
+          (ordered[index + 1] ?? ordered[index - 1])?.id ?? null,
+        );
+      }
+      void removeChapterRemote(chapterId);
+    },
+    [bundle, groups, activeChapterId],
   );
 
   /** 选区 → 要素：无卡秒建、有卡关联别名（PRD R20 ③） */
@@ -735,13 +889,19 @@ export function useNovelData() {
     recovery,
     snapshots,
     loading,
+    lastPosition,
     setActiveWorkId,
     selectChapter,
+    consumeLastPosition,
+    createWork,
+    renameWork,
+    deleteWork,
     updateChapterContent,
     updateChapterOutlineNote,
     createChapter,
     createVolume,
     renameChapter,
+    deleteChapter,
     renameVolume,
     reorderChapters,
     moveChapterToVolume,

@@ -1,4 +1,6 @@
 .nv-volume {
+  position: relative;
+
   &__head {
     width: 100%;
     display: flex;
@@ -67,5 +69,46 @@
     font-weight: 400;
     font-size: 11px;
     color: var(--app-text-muted);
+    transition: opacity 120ms ease;
+  }
+
+  /* 在本卷新建章节：卷头悬浮时浮现并盖住章数，避免布局抖动 */
+  &__add {
+    position: absolute;
+    right: 4px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--app-text-muted);
+    font-size: 10px;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 120ms ease, color 120ms ease, background 120ms ease;
+
+    &:hover {
+      color: var(--app-primary);
+      background: var(--app-surface-hover);
+    }
+
+    &:focus-visible {
+      opacity: 1;
+      outline: 2px solid var(--app-primary);
+      outline-offset: -1px;
+    }
+  }
+
+  &:hover &__add {
+    opacity: 1;
+  }
+
+  &:hover &__count {
+    opacity: 0;
   }
 }

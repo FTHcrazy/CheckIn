@@ -178,10 +178,17 @@ export interface ElectronAPI {
   // ── 小说编辑器（数据存 userDb 的 novel_* 表） ──
   novel: {
     editorLoad: () => Promise<NovelBundleDTO>
+    /** 读取 userDb config（R5 设置持久化 / R6 位置记忆共用；键不存在返回 null） */
+    configGet: (key: string) => Promise<string | null>
+    configSet: (key: string, value: string) => Promise<boolean>
+    addWork: (work: NovelWorkDTO) => Promise<boolean>
+    renameWork: (id: string, name: string) => Promise<boolean>
+    deleteWork: (id: string) => Promise<boolean>
     saveChapter: (id: string, content: string, wordCount: number) => Promise<boolean>
     listSnapshots: (chapterId: string) => Promise<NovelSnapshotDTO[]>
     addChapter: (chapter: NovelChapterDTO) => Promise<boolean>
     renameChapter: (id: string, title: string) => Promise<boolean>
+    deleteChapter: (id: string) => Promise<boolean>
     setChapterStatus: (id: string, status: "draft" | "done") => Promise<boolean>
     saveChapterOutline: (id: string, note: string) => Promise<boolean>
     saveChapterOrder: (updates: Array<{ id: string; sort: number; volumeId: string }>) => Promise<boolean>

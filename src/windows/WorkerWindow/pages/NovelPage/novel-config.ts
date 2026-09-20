@@ -26,6 +26,24 @@ export const LAYOUT = {
 /** 新建卷的默认存储名：展示时视为「未命名」不追加显示（左栏卷头与大纲板共用） */
 export const UNNAMED_VOLUME = "未命名卷";
 
+/**
+ * userDb config 表存储键（PRD v0.5 步骤一）
+ *
+ * 设置与续写位置都是「单用户、低频写、整读整写」的小数据，
+ * 复用既有 config 表（key-value）而不是为它们建新表。
+ */
+export const STORAGE_KEYS = {
+  /** 排版与写作设置（R5 持久化） */
+  settings: "novel_editor_settings",
+  /** 上次续写位置：作品 / 章节 / 光标 / 滚动（R6） */
+  position: "novel_editor_position",
+} as const;
+
+/** 续写位置记忆（R6）：变化后防抖落库 */
+export const POSITION = {
+  debounceMs: 500,
+} as const;
+
 /** 保存时机（PRD §2） */
 export const SAVE = {
   /** 输入停顿防抖 */

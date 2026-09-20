@@ -14,6 +14,27 @@
     font-weight: 600;
   }
 
+  /* 作品下拉选项（R29）：名称 + 章节数/字数元信息 */
+  &__work-option {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    min-width: 0;
+  }
+
+  &__work-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__work-meta {
+    flex: none;
+    font-size: 11px;
+    color: var(--app-text-muted);
+  }
+
   &__crumb {
     display: flex;
     align-items: center;

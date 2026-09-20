@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { UNNAMED_VOLUME } from "./novel-config";
+import { DEFAULT_SETTINGS, UNNAMED_VOLUME } from "./novel-config";
 import {
   buildBreadcrumb,
   buildChapterGroups,
@@ -9,6 +9,7 @@ import {
   buildOutlineTree,
   buildSearchSnippet,
   buildSortOrder,
+  buildWorkMeta,
   calcGoalProgress,
   calcSpeed,
   countWords,
@@ -20,18 +21,22 @@ import {
   formatThousands,
   fuzzyMatch,
   insertItemBefore,
+  mergeEditorSettings,
   moveItemBefore,
   padIndex,
+  parseJsonOrNull,
   patchChapterOutlineNote,
   patchNote,
   patchOutlineEntry,
   previewChapterReorder,
   previewChapterToVolume,
   previewVolumeReorder,
+  sanitizeRestorePosition,
   sortNotes,
   splitByKeyword,
   toChineseOrdinal,
   truncate,
+  volumeDisplayName,
 } from "./novel-utils";
 import type {
   NovelChapter,
@@ -52,6 +57,20 @@ const entity = (over: Partial<NovelEntity>): NovelEntity => ({
   content: "",
   fields: {},
   sort: 0,
+  ...over,
+});
+
+/** 文件级章节工厂（持久化校验用例）；内层 describe 的同名工厂按块作用域遮蔽 */
+const mkChapter = (over: Partial<NovelChapter>): NovelChapter => ({
+  id: "c1",
+  workId: "w1",
+  volumeId: "v1",
+  title: "第一章",
+  content: "",
+  wordCount: 0,
+  status: "draft",
+  sort: 1,
+  updatedAt: 0,
   ...over,
 });
 
@@ -297,6 +316,37 @@ describe("卷章分组与面包屑", () => {
       volumeName: "第二卷",
       chapterName: "第三章",
     });
+  });
+
+  it("传入序号配置时，未命名卷的面包屑展示派生的「第N卷」", () => {
+    const unnamed: NovelVolume[] = [
+      { id: "v1", workId: "w1", name: UNNAMED_VOLUME, sort: 1 },
+      { id: "v2", workId: "w1", name: "  ", sort: 2 },
+    ];
+    const cs: NovelChapter[] = [
+      { id: "c1", workId: "w1", volumeId: "v1", title: "开篇", content: "", wordCount: 0, status: "draft", sort: 1, updatedAt: 0 },
+      { id: "c2", workId: "w1", volumeId: "v9", title: "散章", content: "", wordCount: 0, status: "draft", sort: 1, updatedAt: 0 },
+    ];
+    const opts = { numberStyle: "chinese" as const, volumeSuffix: "卷" };
+    expect(buildBreadcrumb(unnamed, cs, "c1", opts)).toEqual({
+      volumeName: "第一卷",
+      chapterName: "开篇",
+    });
+    // 章节不属于任何已知卷 → 兜底「未分卷」
+    expect(buildBreadcrumb(unnamed, cs, "c2", opts).volumeName).toBe("未分卷");
+  });
+
+  it("volumeDisplayName：未命名卷派生序号，自定义名展示「第N卷 · 名字」", () => {
+    const opts = { numberStyle: "chinese" as const, volumeSuffix: "卷" };
+    expect(
+      volumeDisplayName({ id: "v1", workId: "w1", name: UNNAMED_VOLUME, sort: 1 }, opts.numberStyle, opts.volumeSuffix),
+    ).toBe("第一卷");
+    expect(
+      volumeDisplayName({ id: "v2", workId: "w1", name: "风起", sort: 3 }, opts.numberStyle, opts.volumeSuffix),
+    ).toBe("第三卷 · 风起");
+    expect(
+      volumeDisplayName({ id: "v3", workId: "w1", name: "Part A", sort: 2 }, "arabic", "部"),
+    ).toBe("第2部 · Part A");
   });
 
   it("无选中章节时面包屑为空", () => {
@@ -678,5 +728,143 @@ describe("梗概 / 伏笔 / 灵感的局部更新", () => {
     const notes: NovelNote[] = [note({ id: "n1" })];
     expect(patchNote(notes, "n1", { content: "  " })).toBe(notes);
     expect(patchNote(notes, "nope", { pinned: true })).toBe(notes);
+  });
+});
+
+describe("parseJsonOrNull", () => {
+  it("合法 JSON 解析为未知类型", () => {
+    expect(parseJsonOrNull('{"a":1}')).toEqual({ a: 1 });
+  });
+
+  it("空串 / null / 非法 JSON 一律返回 null", () => {
+    expect(parseJsonOrNull(null)).toBeNull();
+    expect(parseJsonOrNull("")).toBeNull();
+    expect(parseJsonOrNull("{oops")).toBeNull();
+  });
+});
+
+describe("mergeEditorSettings", () => {
+  it("垃圾输入整体回退默认值", () => {
+    expect(mergeEditorSettings(null)).toEqual(DEFAULT_SETTINGS);
+    expect(mergeEditorSettings("junk")).toEqual(DEFAULT_SETTINGS);
+    expect(mergeEditorSettings([1, 2])).toEqual(DEFAULT_SETTINGS);
+  });
+
+  it("合法字段覆盖默认值", () => {
+    const merged = mergeEditorSettings({
+      fontSize: 20,
+      lineHeight: 2.2,
+      indent: false,
+      dailyGoal: 6000,
+      wordCountMode: "hanOnly",
+      numberStyle: "arabic",
+      chapterSuffix: "回",
+      annotationTypes: ["character", "item"],
+      confirmReorder: false,
+    });
+    expect(merged.fontSize).toBe(20);
+    expect(merged.lineHeight).toBe(2.2);
+    expect(merged.indent).toBe(false);
+    expect(merged.dailyGoal).toBe(6000);
+    expect(merged.wordCountMode).toBe("hanOnly");
+    expect(merged.numberStyle).toBe("arabic");
+    expect(merged.chapterSuffix).toBe("回");
+    expect(merged.annotationTypes).toEqual(["character", "item"]);
+    expect(merged.confirmReorder).toBe(false);
+    // 未提供的字段保持默认
+    expect(merged.paragraphSpacing).toBe(DEFAULT_SETTINGS.paragraphSpacing);
+    expect(merged.volumeSuffix).toBe(DEFAULT_SETTINGS.volumeSuffix);
+  });
+
+  it("数值越界夹取到合法区间，非法类型回退默认", () => {
+    const merged = mergeEditorSettings({
+      fontSize: 999,
+      lineHeight: 0.1,
+      dailyGoal: "很多",
+      indent: "yes",
+    });
+    expect(merged.fontSize).toBe(24);
+    expect(merged.lineHeight).toBe(1.4);
+    expect(merged.dailyGoal).toBe(DEFAULT_SETTINGS.dailyGoal);
+    expect(merged.indent).toBe(DEFAULT_SETTINGS.indent);
+  });
+
+  it("annotationTypes 过滤非法类型并去重，空数组保留（= 关闭标注）", () => {
+    expect(
+      mergeEditorSettings({ annotationTypes: ["character", "dragon", "character"] })
+        .annotationTypes,
+    ).toEqual(["character"]);
+    expect(mergeEditorSettings({ annotationTypes: [] }).annotationTypes).toEqual([]);
+    expect(mergeEditorSettings({ annotationTypes: "all" }).annotationTypes).toEqual(
+      DEFAULT_SETTINGS.annotationTypes,
+    );
+  });
+
+  it("章节 / 卷后缀允许空串（标签退化为纯序号）", () => {
+    const merged = mergeEditorSettings({ chapterSuffix: "", volumeSuffix: "" });
+    expect(merged.chapterSuffix).toBe("");
+    expect(merged.volumeSuffix).toBe("");
+  });
+});
+
+describe("sanitizeRestorePosition", () => {
+  const works = [{ id: "w1" }, { id: "w2" }];
+  const chapters = [mkChapter({ id: "c1", workId: "w1" }), mkChapter({ id: "c2", workId: "w2" })];
+
+  it("合法四元组原样通过，负数归零", () => {
+    expect(
+      sanitizeRestorePosition(
+        { workId: "w2", chapterId: "c2", cursor: 120, scrollTop: 300 },
+        works,
+        chapters,
+      ),
+    ).toEqual({ workId: "w2", chapterId: "c2", cursor: 120, scrollTop: 300 });
+    expect(
+      sanitizeRestorePosition(
+        { workId: "w1", chapterId: "c1", cursor: -5, scrollTop: -1 },
+        works,
+        chapters,
+      ),
+    ).toEqual({ workId: "w1", chapterId: "c1", cursor: 0, scrollTop: 0 });
+  });
+
+  it("作品或章节不存在、归属不一致时返回 null", () => {
+    expect(sanitizeRestorePosition({ workId: "wX", chapterId: "c1" }, works, chapters)).toBeNull();
+    expect(sanitizeRestorePosition({ workId: "w1", chapterId: "cX" }, works, chapters)).toBeNull();
+    // 章节存在但不属于该作品
+    expect(sanitizeRestorePosition({ workId: "w1", chapterId: "c2" }, works, chapters)).toBeNull();
+  });
+
+  it("垃圾输入返回 null", () => {
+    expect(sanitizeRestorePosition(null, works, chapters)).toBeNull();
+    expect(sanitizeRestorePosition("junk", works, chapters)).toBeNull();
+    expect(sanitizeRestorePosition({}, works, chapters)).toBeNull();
+  });
+});
+
+describe("buildWorkMeta", () => {
+  it("按作品聚合卷数 / 章节数 / 总字数", () => {
+    const meta = buildWorkMeta(
+      [
+        { id: "v1", workId: "w1", name: UNNAMED_VOLUME, sort: 1 },
+        { id: "v2", workId: "w2", name: UNNAMED_VOLUME, sort: 1 },
+      ],
+      [
+        mkChapter({ id: "c1", workId: "w1", wordCount: 1000 }),
+        mkChapter({ id: "c2", workId: "w1", wordCount: 2500 }),
+        mkChapter({ id: "c3", workId: "w2", wordCount: 8 }),
+      ],
+    );
+    expect(meta.get("w1")).toEqual({ volumes: 1, chapters: 2, words: 3500 });
+    expect(meta.get("w2")).toEqual({ volumes: 1, chapters: 1, words: 8 });
+    expect(meta.get("w3")).toBeUndefined();
+  });
+
+  it("无章节的作品卷数也计入", () => {
+    const meta = buildWorkMeta(
+      [{ id: "v1", workId: "w1", name: UNNAMED_VOLUME, sort: 1 }],
+      [],
+    );
+    expect(meta.get("w1")).toEqual({ volumes: 1, chapters: 0, words: 0 });
   });
 });

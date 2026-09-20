@@ -1,17 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { POSITION } from "../novel-config";
 import {
   buildBreadcrumb,
   buildChapterNumbers,
   buildEntityTerms,
   buildForeshadowDraft,
   buildOutlineTree,
+  buildWorkMeta,
   formatClock,
   formatNumberedLabel,
   formatThousands,
   previewChapterReorder,
   previewChapterToVolume,
   previewVolumeReorder,
+  volumeDisplayName,
 } from "../novel-utils";
+import { saveLastPosition } from "../services/novel-service";
 import type { EntitySavePatch, EntityType, ForeshadowPatch } from "../types";
 import type { ReorderChange } from "../components/ReorderConfirmModal";
 import type { InspirationActions } from "../components/InspirationPanel";
@@ -56,8 +60,12 @@ export function useNovelPage() {
   );
 
   const breadcrumb = useMemo(
-    () => buildBreadcrumb(data.volumes, data.chapters, data.activeChapterId),
-    [data.volumes, data.chapters, data.activeChapterId],
+    () =>
+      buildBreadcrumb(data.volumes, data.chapters, data.activeChapterId, {
+        numberStyle: settings.numberStyle,
+        volumeSuffix: settings.volumeSuffix,
+      }),
+    [data.volumes, data.chapters, data.activeChapterId, settings],
   );
 
   /**
@@ -84,12 +92,106 @@ export function useNovelPage() {
     if (id) view.showToast("已新建章节", "info");
   }, [data, view]);
 
+  /** 在指定卷末尾新建章节（卷头 + 按钮）：空卷也能直接加章 */
+  const handleCreateChapterInVolume = useCallback(
+    (volumeId: string): void => {
+      const id = data.createChapter(volumeId);
+      if (id) view.showToast("已在本卷新建章节", "info");
+    },
+    [data, view],
+  );
+
   const handleSelectChapter = useCallback(
     (chapterId: string): void => {
       data.selectChapter(chapterId);
       hover.dismiss();
     },
     [data, hover],
+  );
+
+  // ── 续写位置记忆（R6）：光标 / 滚动变化防抖落库，启动时由 useNovelData 恢复 ──
+  const positionRef = useRef({ cursor: 0, scrollTop: 0 });
+  const positionTimerRef = useRef(0);
+
+  const savePositionNow = useCallback((): void => {
+    window.clearTimeout(positionTimerRef.current);
+    const { activeWorkId, activeChapterId } = data;
+    if (!activeWorkId || !activeChapterId) return;
+    void saveLastPosition({
+      workId: activeWorkId,
+      chapterId: activeChapterId,
+      cursor: positionRef.current.cursor,
+      scrollTop: positionRef.current.scrollTop,
+      savedAt: Date.now(),
+    });
+  }, [data.activeWorkId, data.activeChapterId]);
+
+  const schedulePositionSave = useCallback((): void => {
+    window.clearTimeout(positionTimerRef.current);
+    positionTimerRef.current = window.setTimeout(savePositionNow, POSITION.debounceMs);
+  }, [savePositionNow]);
+
+  const handleCursorChange = useCallback(
+    (head: number): void => {
+      positionRef.current.cursor = head;
+      schedulePositionSave();
+    },
+    [schedulePositionSave],
+  );
+
+  const handleScrollChange = useCallback(
+    (scrollTop: number): void => {
+      positionRef.current.scrollTop = scrollTop;
+      schedulePositionSave();
+    },
+    [schedulePositionSave],
+  );
+
+  // 换章 / 换作品后位置归零并立即记录；卸载时清掉未触发的防抖定时器
+  useEffect(() => {
+    positionRef.current = { cursor: 0, scrollTop: 0 };
+    schedulePositionSave();
+  }, [data.activeChapterId, data.activeWorkId, schedulePositionSave]);
+
+  useEffect(() => () => window.clearTimeout(positionTimerRef.current), []);
+
+  // ── 作品管理（R29）：组合层只做编排与提示，数据操作在 useNovelData ──
+  const workMeta = useMemo(
+    () => buildWorkMeta(data.volumes, data.chapters),
+    [data.volumes, data.chapters],
+  );
+
+  const handleCreateWork = useCallback(
+    (name: string): boolean => {
+      const work = data.createWork(name);
+      if (!work) return false;
+      view.showToast(`已创建「${work.name}」，写下第一章吧`);
+      return true;
+    },
+    [data, view],
+  );
+
+  const handleRenameWork = useCallback(
+    (name: string): boolean => {
+      const ok = data.renameWork(data.activeWorkId, name);
+      if (ok) view.showToast("作品已重命名");
+      return ok;
+    },
+    [data, view],
+  );
+
+  const handleDeleteWork = useCallback((): void => {
+    data.deleteWork(data.activeWorkId);
+    view.showToast("作品及其关联数据已删除", "info");
+  }, [data, view]);
+
+  /** 删除章节（行内已 Popconfirm 确认）：删当前章由数据层自动切邻居 */
+  const handleDeleteChapter = useCallback(
+    (chapterId: string): void => {
+      data.deleteChapter(chapterId);
+      view.showToast("章节及其历史快照已删除", "info");
+    },
+    [data, view],
   );
 
   const handleRollback = useCallback(
@@ -419,7 +521,15 @@ export function useNovelPage() {
       );
       const volume = data.volumes.find((item) => item.id === pendingReorder.volumeId);
       return {
-        title: `确认移入「${volume?.name ?? "目标卷"}」`,
+        title: `确认移入「${
+          volume
+            ? volumeDisplayName(
+                volume,
+                editor.settings.numberStyle,
+                editor.settings.volumeSuffix,
+              )
+            : "目标卷"
+        }」`,
         changes: chapterChanges(afterChapters),
       };
     }
@@ -438,7 +548,7 @@ export function useNovelPage() {
       .filter(({ volume, previous }) => previous !== volume.sort)
       .map(({ volume, previous }) => ({
         id: volume.id,
-        name: volume.name,
+        name: volumeDisplayName(volume, numberStyle, volumeSuffix),
         from: formatNumberedLabel(numberStyle, volumeSuffix, previous),
         to: formatNumberedLabel(numberStyle, volumeSuffix, volume.sort),
       }));
@@ -543,14 +653,16 @@ export function useNovelPage() {
     view.showToast(`今日目标达成 · ${formatThousands(stats.dailyGoal)} 字`);
   }, [stats.todayTotal, stats.dailyGoal, view]);
 
-  // 关窗前的最后一次 flush（PRD §2：关窗永不询问，数据由持久化兜底）
+  // 关窗前的最后一次 flush（PRD §2：关窗永不询问，数据由持久化兜底）；
+  // 位置记忆同步落库，下次打开原位续写（R6）
   useEffect(() => {
     const flush = () => {
       if (saveState === "pending") void editor.flushSave();
+      savePositionNow();
     };
     window.addEventListener("beforeunload", flush);
     return () => window.removeEventListener("beforeunload", flush);
-  }, [editor, saveState]);
+  }, [editor, saveState, savePositionNow]);
 
   return {
     data,
@@ -562,6 +674,7 @@ export function useNovelPage() {
     outline,
     outlineActions,
     inspirationActions,
+    workMeta,
     reorderPreview,
     handleReorderChapter,
     handleMoveChapterToVolume,
@@ -570,6 +683,7 @@ export function useNovelPage() {
     cancelReorder,
     handleSaveNow,
     handleNewChapter,
+    handleCreateChapterInVolume,
     handleSelectChapter,
     handleRollback,
     handleMark,
@@ -585,5 +699,11 @@ export function useNovelPage() {
     handleRenameVolume,
     handleAddRelation,
     handleRemoveRelation,
+    handleCursorChange,
+    handleScrollChange,
+    handleCreateWork,
+    handleRenameWork,
+    handleDeleteWork,
+    handleDeleteChapter,
   };
 }

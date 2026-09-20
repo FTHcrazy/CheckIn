@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { DragEvent, KeyboardEvent } from "react";
-import { Tooltip } from "antd";
+import { Popconfirm, Tooltip } from "antd";
+import { DeleteOutlined } from "@ant-design/icons";
 import { CHAPTER_STATUS_META, DRAG_MIME_CHAPTER } from "../../novel-config";
 import { formatThousands, padIndex } from "../../novel-utils";
 import type { NovelChapter } from "../../types";
@@ -16,6 +17,8 @@ interface ChapterTreeItemProps {
   onReorder: (fromId: string, toId: string) => void;
   /** 双击标题快捷重命名：空名 / 同名不落 */
   onRename: (chapterId: string, title: string) => void;
+  /** 删除章节（Popconfirm 确认后回调，快照级联清理） */
+  onDelete: (chapterId: string) => void;
 }
 
 /**
@@ -33,6 +36,7 @@ export default function ChapterTreeItem({
   onSelect,
   onReorder,
   onRename,
+  onDelete,
 }: ChapterTreeItemProps) {
   const status = CHAPTER_STATUS_META[chapter.status];
   const [dropActive, setDropActive] = useState(false);
@@ -148,6 +152,27 @@ export default function ChapterTreeItem({
             {formatThousands(chapter.wordCount)}
           </span>
         </button>
+      )}
+      {/* 删除按钮挂在行外（button 不能嵌 button），行悬浮时浮现盖住字数；编辑态不显示 */}
+      {!titleEditing && (
+        <Popconfirm
+          title="删除章节"
+          description={`删除「${chapter.title}」及其全部历史快照，不可恢复。`}
+          okText="删除"
+          cancelText="取消"
+          okButtonProps={{ danger: true }}
+          onConfirm={() => onDelete(chapter.id)}
+        >
+          <button
+            type="button"
+            className="nv-chapter__del"
+            aria-label={`删除章节 ${chapter.title}`}
+            title="删除章节"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <DeleteOutlined />
+          </button>
+        </Popconfirm>
       )}
     </div>
   );

@@ -1,4 +1,5 @@
 import type {
+  EditorSettings,
   EntityTerm,
   EntityType,
   ForeshadowPatch,
@@ -15,7 +16,12 @@ import type {
   TextSegment,
   WordCountMode,
 } from "./types";
-import { UNNAMED_VOLUME } from "./novel-config";
+import {
+  DEFAULT_SETTINGS,
+  ENTITY_TYPE_META,
+  SETTINGS_RANGE,
+  UNNAMED_VOLUME,
+} from "./novel-config";
 
 /**
  * 小说编辑器纯函数工具
@@ -568,16 +574,40 @@ export function formatNumberedLabel(
   return `第${numberText}${suffix}`;
 }
 
-/** 面包屑「卷名 / 章名」 */
+/**
+ * 卷展示名：存储名为「未命名卷」时不裸显兜底名，
+ * 按 sort 派生「第N卷」；有自定义名则展示「第N卷 · 名字」。
+ * 与 VolumeNode 卷头、面包屑、确认弹框共用，保证各处口径一致。
+ */
+export function volumeDisplayName(
+  volume: NovelVolume,
+  numberStyle: LabelNumberStyle,
+  volumeSuffix: string,
+): string {
+  const label = formatNumberedLabel(
+    numberStyle,
+    volumeSuffix,
+    Math.max(1, volume.sort),
+  );
+  const custom = volume.name === UNNAMED_VOLUME ? "" : volume.name.trim();
+  return custom ? `${label} · ${custom}` : label;
+}
+
+/** 面包屑「卷名 / 章名」；传入序号配置时未命名卷展示为派生的「第N卷」 */
 export function buildBreadcrumb(
   volumes: NovelVolume[],
   chapters: NovelChapter[],
   activeChapterId: string | null,
+  options?: { numberStyle: LabelNumberStyle; volumeSuffix: string },
 ): { volumeName: string; chapterName: string } {
   const chapter = chapters.find((item) => item.id === activeChapterId);
   if (!chapter) return { volumeName: "", chapterName: "" };
   const volume = volumes.find((item) => item.id === chapter.volumeId);
-  return { volumeName: volume?.name ?? "未分卷", chapterName: chapter.title };
+  if (!volume) return { volumeName: "未分卷", chapterName: chapter.title };
+  const volumeName = options
+    ? volumeDisplayName(volume, options.numberStyle, options.volumeSuffix)
+    : volume.name;
+  return { volumeName, chapterName: chapter.title };
 }
 
 /**
@@ -659,4 +689,174 @@ export function previewVolumeReorder(
       ? { ...volume, sort: order.get(volume.id) ?? volume.sort }
       : volume,
   );
+}
+
+// ── 持久化数据校验（PRD v0.5 步骤一：R5 设置持久化 / R6 位置记忆） ──
+
+/** JSON 安全解析：空串 / 非法 JSON 一律返回 null，调用方走默认值分支 */
+export function parseJsonOrNull(raw: string | null): unknown {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+const VALID_ENTITY_TYPES: ReadonlySet<string> = new Set(
+  Object.keys(ENTITY_TYPE_META),
+);
+
+/** 数值夹取到设置抽屉的合法区间；非法输入回退 fallback */
+function clampSetting(
+  value: unknown,
+  range: { min: number; max: number },
+  fallback: number,
+): number {
+  const n = typeof value === "number" && Number.isFinite(value) ? value : fallback;
+  return Math.min(range.max, Math.max(range.min, n));
+}
+
+/**
+ * 设置持久化合并（R5）：把 config 读出的未知结构合并进默认值。
+ *
+ * config 里的 JSON 可能来自旧版本、手改或损坏：逐字段类型守卫，
+ * 非法字段一律回退默认值，绝不抛错；annotationTypes 只保留合法类型并去重，
+ * 空数组是合法值（= 关闭标注层）。
+ */
+export function mergeEditorSettings(raw: unknown): EditorSettings {
+  const source =
+    raw !== null && typeof raw === "object" && !Array.isArray(raw)
+      ? (raw as Record<string, unknown>)
+      : {};
+
+  // 缺失 / 非数组回退默认；空数组是合法值（= 用户关闭了全部标注类型）
+  const annotationTypes = Array.isArray(source.annotationTypes)
+    ? Array.from(
+        new Set(
+          source.annotationTypes.filter(
+            (item): item is EntityType =>
+              typeof item === "string" && VALID_ENTITY_TYPES.has(item),
+          ),
+        ),
+      )
+    : DEFAULT_SETTINGS.annotationTypes;
+
+  const wordCountMode: WordCountMode =
+    source.wordCountMode === "hanOnly" || source.wordCountMode === "withPunctuation"
+      ? source.wordCountMode
+      : DEFAULT_SETTINGS.wordCountMode;
+  const numberStyle: LabelNumberStyle =
+    source.numberStyle === "arabic" || source.numberStyle === "chinese"
+      ? source.numberStyle
+      : DEFAULT_SETTINGS.numberStyle;
+
+  // 后缀允许空串（空 = 标签退化为纯序号），只挡非字符串
+  const chapterSuffix =
+    typeof source.chapterSuffix === "string"
+      ? source.chapterSuffix
+      : DEFAULT_SETTINGS.chapterSuffix;
+  const volumeSuffix =
+    typeof source.volumeSuffix === "string"
+      ? source.volumeSuffix
+      : DEFAULT_SETTINGS.volumeSuffix;
+
+  return {
+    fontSize: clampSetting(source.fontSize, SETTINGS_RANGE.fontSize, DEFAULT_SETTINGS.fontSize),
+    lineHeight: clampSetting(source.lineHeight, SETTINGS_RANGE.lineHeight, DEFAULT_SETTINGS.lineHeight),
+    paragraphSpacing: clampSetting(
+      source.paragraphSpacing,
+      SETTINGS_RANGE.paragraphSpacing,
+      DEFAULT_SETTINGS.paragraphSpacing,
+    ),
+    indent: typeof source.indent === "boolean" ? source.indent : DEFAULT_SETTINGS.indent,
+    dailyGoal: clampSetting(source.dailyGoal, SETTINGS_RANGE.dailyGoal, DEFAULT_SETTINGS.dailyGoal),
+    wordCountMode,
+    annotationTypes,
+    numberStyle,
+    chapterSuffix,
+    volumeSuffix,
+    confirmReorder:
+      typeof source.confirmReorder === "boolean"
+        ? source.confirmReorder
+        : DEFAULT_SETTINGS.confirmReorder,
+  };
+}
+
+/** 续写位置四元组（R6） */
+export interface RestorePosition {
+  workId: string;
+  chapterId: string;
+  /** 光标偏移（文档内字符位） */
+  cursor: number;
+  /** 正文滚动容器 scrollTop */
+  scrollTop: number;
+}
+
+/** 落库形态：四元组 + 写入时间戳 */
+export type LastPosition = RestorePosition & { savedAt: number };
+
+const nonNegativeInt = (value: unknown): number =>
+  typeof value === "number" && Number.isFinite(value)
+    ? Math.max(0, Math.floor(value))
+    : 0;
+
+/**
+ * 校验持久化的续写位置（R6）：作品 / 章节必须真实存在且归属一致，
+ * 否则返回 null（回退到「打开第一个作品的第一章」的默认行为）。
+ * 光标与滚动位置负数归零；越界（超过文档长度）由恢复方夹取。
+ */
+export function sanitizeRestorePosition(
+  raw: unknown,
+  works: ReadonlyArray<{ id: string }>,
+  chapters: ReadonlyArray<NovelChapter>,
+): RestorePosition | null {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const source = raw as Record<string, unknown>;
+
+  const workId = typeof source.workId === "string" ? source.workId : "";
+  const chapterId = typeof source.chapterId === "string" ? source.chapterId : "";
+  if (!workId || !chapterId) return null;
+  if (!works.some((work) => work.id === workId)) return null;
+
+  const chapter = chapters.find((item) => item.id === chapterId);
+  if (!chapter || chapter.workId !== workId) return null;
+
+  return {
+    workId,
+    chapterId,
+    cursor: nonNegativeInt(source.cursor),
+    scrollTop: nonNegativeInt(source.scrollTop),
+  };
+}
+
+// ── 作品元信息（PRD v0.5 R29：下拉展示章节数与字数） ──
+
+/** 单部作品的聚合信息（R29） */
+export interface WorkMeta {
+  volumes: number;
+  chapters: number;
+  words: number;
+}
+
+/** 按作品聚合卷数 / 章节数 / 总字数，供顶栏作品下拉展示 */
+export function buildWorkMeta(
+  volumes: ReadonlyArray<NovelVolume>,
+  chapters: ReadonlyArray<NovelChapter>,
+): Map<string, WorkMeta> {
+  const meta = new Map<string, WorkMeta>();
+  const ensure = (workId: string): WorkMeta => {
+    const current = meta.get(workId) ?? { volumes: 0, chapters: 0, words: 0 };
+    meta.set(workId, current);
+    return current;
+  };
+  for (const volume of volumes) {
+    ensure(volume.workId).volumes += 1;
+  }
+  for (const chapter of chapters) {
+    const current = ensure(chapter.workId);
+    current.chapters += 1;
+    current.words += chapter.wordCount;
+  }
+  return meta;
 }

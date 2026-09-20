@@ -1,7 +1,7 @@
 {
   "name": "checkin",
   "private": true,
-  "version": "1.8.0",
+  "version": "1.9.1",
   "description": "CheckIn Desktop Application",
   "main": "dist-electron/main.js",
   "author": "FTH",
@@ -31,6 +31,7 @@
   "dependencies": {
     "@ant-design/icons": "^6.2.5",
     "@codemirror/commands": "^6.11.1",
+    "@codemirror/search": "^6.7.2",
     "@codemirror/state": "^6.7.5",
     "@codemirror/view": "^6.43.12",
     "antd": "^6.6.2",

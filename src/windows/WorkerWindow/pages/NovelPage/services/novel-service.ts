@@ -1,5 +1,7 @@
-import { buildSearchSnippet } from "../novel-utils";
+import { buildSearchSnippet, type LastPosition } from "../novel-utils";
+import { STORAGE_KEYS } from "../novel-config";
 import type {
+  EditorSettings,
   NovelBundle,
   NovelChapter,
   NovelEntity,
@@ -7,6 +9,7 @@ import type {
   NovelNote,
   NovelSnapshot,
   NovelVolume,
+  NovelWork,
   OutlineEntry,
   SearchHit,
 } from "../types";
@@ -27,6 +30,45 @@ export function createNovelId(prefix: string): string {
 /** 拉取编辑器所需的全部数据（novel-editor-load） */
 export async function fetchNovelBundle(): Promise<NovelBundle> {
   return window.electronAPI!.novel.editorLoad();
+}
+
+// ── userDb config 读写（R5 设置持久化 / R6 位置记忆） ──
+
+/** 读取编辑器设置 JSON（键不存在返回 null，由上层合并默认值） */
+export async function fetchEditorSettings(): Promise<string | null> {
+  return window.electronAPI!.novel.configGet(STORAGE_KEYS.settings);
+}
+
+/** 保存编辑器设置（整读整写，低频小数据） */
+export async function saveEditorSettings(settings: EditorSettings): Promise<boolean> {
+  return window.electronAPI!.novel.configSet(STORAGE_KEYS.settings, JSON.stringify(settings));
+}
+
+/** 读取上次续写位置 JSON（键不存在返回 null） */
+export async function fetchLastPosition(): Promise<string | null> {
+  return window.electronAPI!.novel.configGet(STORAGE_KEYS.position);
+}
+
+/** 保存上次续写位置（防抖后调用） */
+export async function saveLastPosition(position: LastPosition): Promise<boolean> {
+  return window.electronAPI!.novel.configSet(STORAGE_KEYS.position, JSON.stringify(position));
+}
+
+// ── 作品管理（R29） ──
+
+/** 新建作品落库（novel-work-add；id 由渲染层生成） */
+export async function addWork(work: NovelWork): Promise<boolean> {
+  return window.electronAPI!.novel.addWork(work);
+}
+
+/** 作品重命名（novel-work-rename） */
+export async function renameWork(workId: string, name: string): Promise<boolean> {
+  return window.electronAPI!.novel.renameWork(workId, name);
+}
+
+/** 删除作品（novel-work-delete，主进程级联清理全部关联数据） */
+export async function removeWork(workId: string): Promise<boolean> {
+  return window.electronAPI!.novel.deleteWork(workId);
 }
 
 /** 保存章节正文 + 字数（novel-chapter-save，主进程同事务写增量快照） */
@@ -76,6 +118,11 @@ export async function addChapter(chapter: NovelChapter): Promise<boolean> {
 /** 章节重命名（novel-chapter-rename） */
 export async function renameChapter(chapterId: string, title: string): Promise<boolean> {
   return window.electronAPI!.novel.renameChapter(chapterId, title);
+}
+
+/** 删除章节（novel-chapter-delete，主进程同事务清理历史快照） */
+export async function removeChapter(chapterId: string): Promise<boolean> {
+  return window.electronAPI!.novel.deleteChapter(chapterId);
 }
 
 /** 章节状态切换（novel-chapter-status） */

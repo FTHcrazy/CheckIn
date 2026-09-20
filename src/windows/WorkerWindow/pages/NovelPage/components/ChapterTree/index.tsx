@@ -18,9 +18,13 @@ interface ChapterTreeProps {
   activeChapterId: string | null;
   onSelect: (chapterId: string) => void;
   onCreate: () => void;
+  /** 在指定卷末尾新建章节（卷头悬浮 + 按钮） */
+  onCreateChapterInVolume: (volumeId: string) => void;
   onCreateVolume: () => void;
   /** 双击章节标题快捷重命名 */
   onRenameChapter: (chapterId: string, title: string) => void;
+  /** 删除章节（行内 Popconfirm 确认后触发） */
+  onDeleteChapter: (chapterId: string) => void;
   /** 拖拽：章节落到章节位置（同卷重排 / 跨卷移动） */
   onReorderChapter: (fromId: string, toId: string) => void;
   /** 拖拽：章节落到卷头（移入该卷末尾） */
@@ -54,8 +58,10 @@ export default function ChapterTree({
   activeChapterId,
   onSelect,
   onCreate,
+  onCreateChapterInVolume,
   onCreateVolume,
   onRenameChapter,
+  onDeleteChapter,
   onReorderChapter,
   onMoveChapterToVolume,
   onReorderVolume,
@@ -146,6 +152,7 @@ export default function ChapterTree({
                 onMoveChapterToVolume={onMoveChapterToVolume}
                 onReorderVolume={onReorderVolume}
                 onRenameVolume={onRenameVolume}
+                onCreateChapter={onCreateChapterInVolume}
               />
             ) : (
               <ChapterTreeItem
@@ -154,6 +161,7 @@ export default function ChapterTree({
                 active={row.chapter.id === activeChapterId}
                 onSelect={onSelect}
                 onRename={onRenameChapter}
+                onDelete={onDeleteChapter}
                 onReorder={onReorderChapter}
               />
             )

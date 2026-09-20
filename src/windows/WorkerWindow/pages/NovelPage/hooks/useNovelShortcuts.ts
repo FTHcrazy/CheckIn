@@ -18,6 +18,8 @@ export interface NovelShortcutHandlers {
  *
  * 约定：IME 组合期间一律放行（event.isComposing），绝不打断中文输入；
  * Esc 只用于退出专注模式，关闭窗口的行为已按 PRD 移除。
+ * 编辑器已消费的按键（查找面板的 Esc / Ctrl+F / Ctrl+H 等）会 preventDefault，
+ * 这里跳过，避免「Esc 既关查找面板又退专注模式」的双跳。
  */
 export function useNovelShortcuts({
   onSave,
@@ -28,7 +30,7 @@ export function useNovelShortcuts({
 }: NovelShortcutHandlers): void {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.isComposing) return;
+      if (event.defaultPrevented || event.isComposing) return;
 
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
         event.preventDefault();

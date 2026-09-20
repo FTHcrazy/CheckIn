@@ -1,8 +1,8 @@
 import { useState } from "react";
 import type { DragEvent, KeyboardEvent } from "react";
-import { DownOutlined, RightOutlined } from "@ant-design/icons";
+import { DownOutlined, PlusOutlined, RightOutlined } from "@ant-design/icons";
 import { DRAG_MIME_CHAPTER, DRAG_MIME_VOLUME, UNNAMED_VOLUME } from "../../novel-config";
-import { formatNumberedLabel } from "../../novel-utils";
+import { volumeDisplayName } from "../../novel-utils";
 import type { LabelNumberStyle, NovelVolume } from "../../types";
 import "./index.scss";
 
@@ -22,6 +22,8 @@ interface VolumeNodeProps {
   onReorderVolume: (fromId: string, toId: string) => void;
   /** 双击卷名重命名（R9 扩展）：空名 / 同名不落 */
   onRenameVolume: (volumeId: string, name: string) => void;
+  /** 在本卷末尾新建章节（卷头悬浮 + 按钮） */
+  onCreateChapter: (volumeId: string) => void;
 }
 
 /**
@@ -41,6 +43,7 @@ export default function VolumeNode({
   onMoveChapterToVolume,
   onReorderVolume,
   onRenameVolume,
+  onCreateChapter,
 }: VolumeNodeProps) {
   const [dropActive, setDropActive] = useState(false);
 
@@ -72,13 +75,8 @@ export default function VolumeNode({
     }
   };
 
-  const label = formatNumberedLabel(
-    numberStyle,
-    volumeSuffix,
-    Math.max(1, volume.sort),
-  );
-  /** 存储名仅兜底：默认名「未命名卷」不追显，自定义名展示为「第N卷 - 名字」 */
-  const customName = volume.name === UNNAMED_VOLUME ? "" : volume.name;
+  /** 展示名与面包屑 / 确认弹框共用一套派生口径：未命名卷 → 第N卷 */
+  const displayName = volumeDisplayName(volume, numberStyle, volumeSuffix);
 
   const handleHeadDragStart = (event: DragEvent<HTMLButtonElement>): void => {
     event.dataTransfer.setData(DRAG_MIME_VOLUME, volume.id);
@@ -159,9 +157,24 @@ export default function VolumeNode({
               startNameEdit();
             }}
           >
-            {customName ? `${label} · ${customName}` : label}
+            {displayName}
           </span>
           <span className="nv-volume__count">{chapterCount}</span>
+        </button>
+      )}
+      {/* 新建章节入口挂在行外（button 不能嵌 button），卷头悬浮时浮现盖住章数 */}
+      {!nameEditing && (
+        <button
+          type="button"
+          className="nv-volume__add"
+          aria-label={`在${displayName}新建章节`}
+          title={`在${displayName}新建章节`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onCreateChapter(volume.id);
+          }}
+        >
+          <PlusOutlined />
         </button>
       )}
     </div>

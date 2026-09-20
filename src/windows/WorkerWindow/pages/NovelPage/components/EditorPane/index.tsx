@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, KeyboardEvent } from "react";
+import type { CSSProperties, KeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
 import { Empty } from "antd";
 import {
   defaultKeymap,
@@ -7,10 +7,12 @@ import {
   historyKeymap,
   isolateHistory,
 } from "@codemirror/commands";
+import { openSearchPanel, search, searchKeymap } from "@codemirror/search";
 import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import type { EditorSettings, EntityTerm, NovelChapter } from "../../types";
 import { formatNumberedLabel } from "../../novel-utils";
+import type { RestorePosition } from "../../novel-utils";
 import {
   annotationEnabledCompartment,
   annotationEnabledFacet,
@@ -39,6 +41,13 @@ interface EditorPaneProps {
   onTermClick: (entityId: string) => void;
   onCreateChapter: () => void;
   onRenameChapter: (chapterId: string, title: string) => void;
+  /** 续写位置恢复（R6）：与当前章节匹配时应用一次，完成后回调清空 */
+  restore: RestorePosition | null;
+  onRestoreDone: () => void;
+  /** 光标移动上报（R6 位置记忆）：head 为文档内偏移 */
+  onCursorChange: (head: number) => void;
+  /** 正文滚动上报（R6 位置记忆）：scrollTop */
+  onScrollChange: (scrollTop: number) => void;
 }
 
 /** 排版相关的动态样式走独立 compartment，改字号不必重建编辑器 */
@@ -106,6 +115,10 @@ export default function EditorPane({
   onTermClick,
   onCreateChapter,
   onRenameChapter,
+  restore,
+  onRestoreDone,
+  onCursorChange,
+  onScrollChange,
 }: EditorPaneProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -148,10 +161,20 @@ export default function EditorPane({
   }, [chapter?.id]);
 
   // 回调放进 ref，避免重建编辑器（CodeMirror 实例必须整个会话唯一）
-  const handlersRef = useRef({ onChange, onSelectionChange, onContextMenu });
+  const handlersRef = useRef({
+    onChange,
+    onSelectionChange,
+    onContextMenu,
+    onCursorChange,
+  });
   useEffect(() => {
-    handlersRef.current = { onChange, onSelectionChange, onContextMenu };
-  }, [onChange, onSelectionChange, onContextMenu]);
+    handlersRef.current = {
+      onChange,
+      onSelectionChange,
+      onContextMenu,
+      onCursorChange,
+    };
+  }, [onChange, onSelectionChange, onContextMenu, onCursorChange]);
 
   const enabled = useMemo(
     () => terms.length > 0,
@@ -169,7 +192,15 @@ export default function EditorPane({
         doc: content,
         extensions: [
           history(),
-          keymap.of([...defaultKeymap, ...historyKeymap]),
+          // 章节内查找替换（R10）：Ctrl+F 查找、Ctrl+H 打开含替换字段的面板；
+          // Mod-h 需要显式绑定（searchKeymap 默认不含），面板置于编辑器顶部
+          search({ top: true }),
+          keymap.of([
+            { key: "Mod-h", run: openSearchPanel },
+            ...searchKeymap,
+            ...defaultKeymap,
+            ...historyKeymap,
+          ]),
           EditorView.lineWrapping,
           stylingCompartment.of(buildTheme(settings)),
           annotationLayer(terms, enabled),
@@ -182,6 +213,8 @@ export default function EditorPane({
             }
             if (update.selectionSet) {
               const { main } = update.state.selection;
+              // 光标位置上报（R6）：折叠与非折叠选区都要记 head
+              handlersRef.current.onCursorChange(main.head);
               // 选区不随上报携带坐标：右键菜单位置以鼠标事件为准（见 contextmenu 监听）
               handlersRef.current.onSelectionChange(
                 main.empty
@@ -255,6 +288,26 @@ export default function EditorPane({
     });
   }, [settings]);
 
+  // 续写位置恢复（R6）：等章节正文灌入后下一帧应用光标与滚动，再向上层回收。
+  // 光标越界（章节在别处被改短）按文档长度夹取
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || !chapter || !restore || restore.chapterId !== chapter.id) {
+      return undefined;
+    }
+    const frame = window.requestAnimationFrame(() => {
+      const current = viewRef.current;
+      if (!current) return;
+      current.dispatch({
+        selection: { anchor: Math.min(restore.cursor, current.state.doc.length) },
+      });
+      const scroller = hostRef.current?.closest<HTMLElement>(".nv-editor__scroll");
+      if (scroller) scroller.scrollTop = restore.scrollTop;
+      onRestoreDone();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [chapter, restore, onRestoreDone]);
+
   // 词库与标注层开关热更新：只换 facet 值，不重建插件实例（PRD §7：要素保存即刷新词库）。
   // 强制刷新信号必须同事务携带：插件只在 forced/viewportChanged/docChanged 时重建，
   // 单纯的 facet 变化不会触发 decoration 重算（新标记的词要立即高亮）
@@ -269,6 +322,22 @@ export default function EditorPane({
       ],
     });
   }, [terms, enabled]);
+
+  // 点击正文下方的空白区（纸面 / 滚动容器）也能聚焦：CodeMirror 的 content
+  // 只占文档实际高度，点在其下方时命中的是容器本身——这里兜底把光标放上去
+  // （posAtCoords 命中不到内容点时落到文档末尾），恢复「点哪都能接着写」的手感
+  const handleScrollAreaClick = (event: ReactMouseEvent<HTMLDivElement>): void => {
+    const view = viewRef.current;
+    if (!view || !chapter) return;
+    const target = event.target;
+    if (target instanceof HTMLElement && target.closest(".cm-content, .cm-panels")) {
+      return;
+    }
+    view.focus();
+    const pos =
+      view.posAtCoords({ x: event.clientX, y: event.clientY }) ?? view.state.doc.length;
+    view.dispatch({ selection: { anchor: pos } });
+  };
 
   // 打字机模式：当前光标行垂直居中（PRD R8）
   useEffect(() => {
@@ -403,7 +472,11 @@ export default function EditorPane({
           )}
         </div>
       )}
-      <div className="nv-editor__scroll">
+      <div
+        className="nv-editor__scroll"
+        onClick={handleScrollAreaClick}
+        onScroll={(event) => onScrollChange(event.currentTarget.scrollTop)}
+      >
         <div className="nv-editor__paper">
           <div ref={hostRef} className="nv-editor__host" />
         </div>

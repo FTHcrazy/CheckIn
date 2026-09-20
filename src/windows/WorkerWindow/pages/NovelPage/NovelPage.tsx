@@ -34,6 +34,7 @@ export default function NovelPage() {
     outline,
     outlineActions,
     inspirationActions,
+    workMeta,
     reorderPreview,
     handleReorderChapter,
     handleMoveChapterToVolume,
@@ -41,6 +42,7 @@ export default function NovelPage() {
     confirmReorder,
     cancelReorder,
     handleNewChapter,
+    handleCreateChapterInVolume,
     handleSelectChapter,
     handleRollback,
     handleOpenEntity,
@@ -55,6 +57,12 @@ export default function NovelPage() {
     handleRenameVolume,
     handleAddRelation,
     handleRemoveRelation,
+    handleCursorChange,
+    handleScrollChange,
+    handleCreateWork,
+    handleRenameWork,
+    handleDeleteWork,
+    handleDeleteChapter,
   } = useNovelPage();
 
   const { loadSnapshots, activeChapterId, searchBook } = data;
@@ -138,6 +146,7 @@ export default function NovelPage() {
         <NovelTopBar
           works={data.works}
           activeWorkId={data.activeWorkId}
+          workMeta={workMeta}
           volumeName={breadcrumb.volumeName}
           chapterName={breadcrumb.chapterName}
           saveState={editor.saveState}
@@ -147,6 +156,9 @@ export default function NovelPage() {
           typewriter={view.typewriter}
           settingsOpen={view.settingsOpen}
           onSelectWork={data.setActiveWorkId}
+          onCreateWork={handleCreateWork}
+          onRenameWork={handleRenameWork}
+          onDeleteWork={handleDeleteWork}
           onToggleLeft={view.toggleLeft}
           onToggleRight={view.toggleRight}
           onToggleTypewriter={view.toggleTypewriter}
@@ -165,8 +177,10 @@ export default function NovelPage() {
           activeChapterId={data.activeChapterId}
           onSelect={handleSelectChapter}
           onCreate={handleNewChapter}
+          onCreateChapterInVolume={handleCreateChapterInVolume}
           onCreateVolume={handleNewVolume}
           onRenameChapter={data.renameChapter}
+          onDeleteChapter={handleDeleteChapter}
           onReorderChapter={handleReorderChapter}
           onMoveChapterToVolume={handleMoveChapterToVolume}
           onReorderVolume={handleReorderVolume}
@@ -193,6 +207,10 @@ export default function NovelPage() {
             onTermClick={handleOpenEntity}
             onCreateChapter={handleNewChapter}
             onRenameChapter={data.renameChapter}
+            restore={data.lastPosition}
+            onRestoreDone={data.consumeLastPosition}
+            onCursorChange={handleCursorChange}
+            onScrollChange={handleScrollChange}
           />
 
           <StatusBar stats={editor.stats} />

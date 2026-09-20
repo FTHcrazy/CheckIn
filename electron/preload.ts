@@ -58,6 +58,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ── 小说编辑器（语义化 IPC，数据存 userDb 的 novel_* 表） ──
   novel: {
     editorLoad: () => ipcRenderer.invoke('novel-editor-load'),
+    configGet: (key: string) =>
+      ipcRenderer.invoke('novel-config-get', key) as Promise<string | null>,
+    configSet: (key: string, value: string) =>
+      ipcRenderer.invoke('novel-config-set', key, value) as Promise<boolean>,
+    addWork: (work: unknown) =>
+      ipcRenderer.invoke('novel-work-add', work) as Promise<boolean>,
+    renameWork: (id: string, name: string) =>
+      ipcRenderer.invoke('novel-work-rename', id, name) as Promise<boolean>,
+    deleteWork: (id: string) =>
+      ipcRenderer.invoke('novel-work-delete', id) as Promise<boolean>,
     saveChapter: (id: string, content: string, wordCount: number) =>
       ipcRenderer.invoke('novel-chapter-save', id, content, wordCount) as Promise<boolean>,
     listSnapshots: (chapterId: string) =>
@@ -66,6 +76,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('novel-chapter-add', chapter) as Promise<boolean>,
     renameChapter: (id: string, title: string) =>
       ipcRenderer.invoke('novel-chapter-rename', id, title) as Promise<boolean>,
+    deleteChapter: (id: string) =>
+      ipcRenderer.invoke('novel-chapter-delete', id) as Promise<boolean>,
     setChapterStatus: (id: string, status: string) =>
       ipcRenderer.invoke('novel-chapter-status', id, status) as Promise<boolean>,
     saveChapterOutline: (id: string, note: string) =>

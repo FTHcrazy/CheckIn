@@ -7,13 +7,16 @@ import {
   SettingOutlined,
 } from "@ant-design/icons";
 import { SAVE_STATE_TEXT } from "../../novel-config";
-import { formatClock } from "../../novel-utils";
+import { formatClock, formatThousands, type WorkMeta } from "../../novel-utils";
+import WorkManageMenu from "../WorkManageMenu";
 import type { NovelWork, SaveState } from "../../types";
 import "./index.scss";
 
 interface NovelTopBarProps {
   works: NovelWork[];
   activeWorkId: string;
+  /** 作品聚合信息（R29）：章节数 / 字数，随下拉选项展示 */
+  workMeta: Map<string, WorkMeta>;
   volumeName: string;
   chapterName: string;
   saveState: SaveState;
@@ -23,6 +26,9 @@ interface NovelTopBarProps {
   typewriter: boolean;
   settingsOpen: boolean;
   onSelectWork: (workId: string) => void;
+  onCreateWork: (name: string) => boolean;
+  onRenameWork: (name: string) => boolean;
+  onDeleteWork: () => void;
   onToggleLeft: () => void;
   onToggleRight: () => void;
   onToggleTypewriter: () => void;
@@ -38,6 +44,7 @@ interface NovelTopBarProps {
 export default function NovelTopBar({
   works,
   activeWorkId,
+  workMeta,
   volumeName,
   chapterName,
   saveState,
@@ -47,12 +54,17 @@ export default function NovelTopBar({
   typewriter,
   settingsOpen,
   onSelectWork,
+  onCreateWork,
+  onRenameWork,
+  onDeleteWork,
   onToggleLeft,
   onToggleRight,
   onToggleTypewriter,
   onToggleSettings,
   onOpenHistory,
 }: NovelTopBarProps) {
+  const activeWork = works.find((work) => work.id === activeWorkId) ?? null;
+
   return (
     <div className="nv-topbar">
       <Select
@@ -62,7 +74,28 @@ export default function NovelTopBar({
         onChange={onSelectWork}
         variant="borderless"
         size="small"
-        popupMatchSelectWidth={140}
+        popupMatchSelectWidth={220}
+        optionRender={(option) => {
+          const meta = workMeta.get(String(option.value));
+          return (
+            <div className="nv-topbar__work-option">
+              <span className="nv-topbar__work-name">{option.label}</span>
+              {meta && (
+                <span className="nv-topbar__work-meta">
+                  {meta.chapters} 章 · {formatThousands(meta.words)} 字
+                </span>
+              )}
+            </div>
+          );
+        }}
+      />
+
+      <WorkManageMenu
+        activeWorkName={activeWork?.name ?? ""}
+        activeMeta={activeWorkId ? workMeta.get(activeWorkId) : undefined}
+        onCreate={onCreateWork}
+        onRename={onRenameWork}
+        onDelete={onDeleteWork}
       />
 
       <div className="nv-topbar__crumb">

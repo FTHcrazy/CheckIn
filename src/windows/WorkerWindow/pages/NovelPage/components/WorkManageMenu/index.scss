@@ -1,0 +1,11 @@
+.nv-work-menu {
+  &__delete-name {
+    font-weight: 600;
+    color: var(--app-text);
+  }
+
+  &__delete-warn {
+    color: var(--app-error);
+    font-size: 12px;
+  }
+}

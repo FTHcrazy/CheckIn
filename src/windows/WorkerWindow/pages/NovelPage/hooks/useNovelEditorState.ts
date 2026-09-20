@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_SETTINGS, SAVE, SAVE_STATE_TEXT } from "../novel-config";
+import { mergeEditorSettings, parseJsonOrNull } from "../novel-utils";
+import { fetchEditorSettings, saveEditorSettings } from "../services/novel-service";
 import { countWords } from "../novel-utils";
 import type {
   EditorSettings,
@@ -28,6 +30,34 @@ export function useNovelEditorState(data: NovelData) {
   const [settings, setSettings] = useState<EditorSettings>(DEFAULT_SETTINGS);
   const [selection, setSelection] = useState<EditorSelection | null>(null);
   const [recoveryDismissed, setRecoveryDismissed] = useState(false);
+
+  /**
+   * 设置持久化（R5）：启动时从 userDb config 恢复，之后每次变更即写回。
+   * loadedRef 门禁保证首帧的默认值不会先于恢复把已存设置覆盖掉。
+   */
+  const settingsLoadedRef = useRef(false);
+  useEffect(() => {
+    let cancelled = false;
+    void fetchEditorSettings()
+      .then((raw) => {
+        if (cancelled) return;
+        setSettings(mergeEditorSettings(parseJsonOrNull(raw)));
+      })
+      .catch(() => {
+        // IPC 失败：保持默认设置，持久化链路照常可用
+      })
+      .finally(() => {
+        if (!cancelled) settingsLoadedRef.current = true;
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!settingsLoadedRef.current) return;
+    void saveEditorSettings(settings);
+  }, [settings]);
 
   // 今日写作：会话级统计，作为 useNovelData 尚未接 usage_log 时的过渡实现
   const [todayAdded, setTodayAdded] = useState(0);

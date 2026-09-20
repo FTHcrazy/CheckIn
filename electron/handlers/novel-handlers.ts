@@ -360,6 +360,102 @@ function buildRecovery(): NovelRecoveryDto | null {
 }
 
 export function registerNovelHandlers(): void {
+  // ── 通用 config 读写（R5 设置持久化 / R6 位置记忆共用） ──
+  ipcMain.handle("novel-config-get", (_event, key: string) => {
+    const row = dbGet("SELECT value FROM config WHERE key = ?", [key]) as
+      | { value?: string }
+      | undefined;
+    return row?.value ?? null;
+  });
+
+  ipcMain.handle("novel-config-set", (_event, key: string, value: string) => {
+    setConfig(key, value);
+    return true;
+  });
+
+  // ── 作品管理（R29） ──
+
+  // 新建作品（id 由渲染层生成，与卷 / 章一致）
+  ipcMain.handle("novel-work-add", (_event, work: NovelWorkDto) => {
+    const name = work.name.trim();
+    if (!name) return false;
+    dbRun("INSERT INTO novel_works (id, name, created_at) VALUES (?, ?, ?)", [
+      work.id,
+      name,
+      work.createdAt,
+    ]);
+    return true;
+  });
+
+  // 作品重命名（空名不落）
+  ipcMain.handle("novel-work-rename", (_event, id: string, name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return false;
+    dbRun("UPDATE novel_works SET name = ? WHERE id = ?", [trimmed, id]);
+    return true;
+  });
+
+  // 删除作品：卷章快照 / 要素关联 / 灵感伏笔 / 等级体系级联清理，单事务
+  ipcMain.handle("novel-work-delete", (_event, id: string) => {
+    const db = getDb();
+    const apply = db.transaction(() => {
+      for (const chapter of dbAll(
+        "SELECT id FROM novel_chapters WHERE work_id = ?",
+        [id],
+      ) as Array<{ id: string }>) {
+        dbRun("DELETE FROM novel_snapshots WHERE chapter_id = ?", [chapter.id]);
+      }
+      dbRun("DELETE FROM novel_chapters WHERE work_id = ?", [id]);
+      dbRun("DELETE FROM novel_volumes WHERE work_id = ?", [id]);
+      dbRun("DELETE FROM novel_notes WHERE work_id = ?", [id]);
+      dbRun("DELETE FROM novel_outline_entries WHERE work_id = ?", [id]);
+
+      const entities = dbAll(
+        "SELECT id FROM novel_entities WHERE work_id = ?",
+        [id],
+      ) as Array<{ id: string }>;
+      dbRun("DELETE FROM novel_entities WHERE work_id = ?", [id]);
+      for (const entity of entities) {
+        dbRun("DELETE FROM novel_links WHERE from_id = ? OR to_id = ?", [
+          entity.id,
+          entity.id,
+        ]);
+      }
+
+      for (const system of dbAll(
+        "SELECT id FROM novel_level_systems WHERE work_id = ?",
+        [id],
+      ) as Array<{ id: string }>) {
+        for (const level of dbAll(
+          "SELECT id FROM novel_levels WHERE system_id = ?",
+          [system.id],
+        ) as Array<{ id: string }>) {
+          dbRun(
+            "DELETE FROM novel_level_conversions WHERE from_level_id = ? OR to_level_id = ?",
+            [level.id, level.id],
+          );
+        }
+        dbRun("DELETE FROM novel_levels WHERE system_id = ?", [system.id]);
+      }
+      dbRun("DELETE FROM novel_level_systems WHERE work_id = ?", [id]);
+      // 作品行本身也要删：漏掉会导致「删光后 reload 复活全部作品名」
+      dbRun("DELETE FROM novel_works WHERE id = ?", [id]);
+    });
+    apply();
+    return true;
+  });
+
+  // 删除章节：历史快照同事务清理
+  ipcMain.handle("novel-chapter-delete", (_event, id: string) => {
+    const db = getDb();
+    const apply = db.transaction(() => {
+      dbRun("DELETE FROM novel_snapshots WHERE chapter_id = ?", [id]);
+      dbRun("DELETE FROM novel_chapters WHERE id = ?", [id]);
+    });
+    apply();
+    return true;
+  });
+
   // 全量装载：编辑器启动一次拉取所有 novel_* 表 + 崩溃恢复信息
   ipcMain.handle("novel-editor-load", () => {
     let works = dbAll("SELECT * FROM novel_works ORDER BY created_at") as NovelWorkRow[];
