@@ -3,6 +3,8 @@ import {
   buildBreadcrumb,
   buildChapterNumbers,
   buildEntityTerms,
+  buildForeshadowDraft,
+  buildOutlineTree,
   formatClock,
   formatNumberedLabel,
   formatThousands,
@@ -10,8 +12,10 @@ import {
   previewChapterToVolume,
   previewVolumeReorder,
 } from "../novel-utils";
-import type { EntitySavePatch, EntityType } from "../types";
+import type { EntitySavePatch, EntityType, ForeshadowPatch } from "../types";
 import type { ReorderChange } from "../components/ReorderConfirmModal";
+import type { InspirationActions } from "../components/InspirationPanel";
+import type { OutlineActions } from "../components/OutlinePanel";
 import { useEntityHover } from "./useEntityHover";
 import { useNovelData } from "./useNovelData";
 import { useNovelEditorState } from "./useNovelEditorState";
@@ -54,6 +58,20 @@ export function useNovelPage() {
   const breadcrumb = useMemo(
     () => buildBreadcrumb(data.volumes, data.chapters, data.activeChapterId),
     [data.volumes, data.chapters, data.activeChapterId],
+  );
+
+  /**
+   * 大纲树：骨架取自真实卷章（大纲里点章节 = 真跳转），伏笔来自 outlineEntries。
+   * 序号标签随「数字样式 + 章节/卷后缀」配置派生，与左栏章节树严格一致。
+   */
+  const outline = useMemo(
+    () =>
+      buildOutlineTree(data.volumes, data.chapters, data.outlineEntries, {
+        numberStyle: settings.numberStyle,
+        chapterSuffix: settings.chapterSuffix,
+        volumeSuffix: settings.volumeSuffix,
+      }),
+    [data.volumes, data.chapters, data.outlineEntries, settings],
   );
 
   const handleSaveNow = useCallback(async (): Promise<void> => {
@@ -208,6 +226,123 @@ export function useNovelPage() {
     editor.dismissRecovery();
   }, [editor]);
 
+  // ── 大纲板（R7）：章节一句话梗概 + 伏笔条目 ──────────────────────────
+  const handleEditChapterNote = useCallback(
+    (chapterId: string, note: string): void => {
+      data.updateChapterOutlineNote(chapterId, note);
+      view.showToast(note.trim() ? "已保存章节梗概" : "已清除章节梗概", "info");
+    },
+    [data, view],
+  );
+
+  const handleAddForeshadow = useCallback(
+    (volumeId: string, title: string, note: string, chapterId?: string): void => {
+      const entry = data.addOutlineEntry({
+        workId: data.activeWorkId,
+        kind: "foreshadow",
+        volumeId,
+        chapterId,
+        title,
+        note,
+        status: "open",
+      });
+      if (!entry) {
+        view.showToast("伏笔标题不能为空", "warning");
+        return;
+      }
+      view.showToast(`已记录伏笔「${entry.title}」`);
+    },
+    [data, view],
+  );
+
+  const handleUpdateForeshadow = useCallback(
+    (entryId: string, patch: ForeshadowPatch): void => {
+      data.updateOutlineEntry(entryId, patch);
+      view.showToast("伏笔已更新");
+    },
+    [data, view],
+  );
+
+  const handleToggleForeshadow = useCallback(
+    (entryId: string, resolved: boolean): void => {
+      data.toggleOutlineEntryStatus(entryId);
+      view.showToast(resolved ? "伏笔已标记回收" : "伏笔已恢复待回收");
+    },
+    [data, view],
+  );
+
+  const handleRemoveForeshadow = useCallback(
+    (entryId: string, title: string): void => {
+      data.removeOutlineEntry(entryId);
+      view.showToast(`已删除伏笔「${title}」`, "info");
+    },
+    [data, view],
+  );
+
+  // ── 灵感速记（R7）：编辑 / 置顶 / 一键转伏笔 ────────────────────────
+  const handleUpdateNote = useCallback(
+    (noteId: string, content: string): void => {
+      data.updateNote(noteId, { content });
+      view.showToast("灵感已更新");
+    },
+    [data, view],
+  );
+
+  const handleTogglePinNote = useCallback(
+    (noteId: string, pinned: boolean): void => {
+      data.updateNote(noteId, { pinned });
+      view.showToast(pinned ? "已置顶该灵感" : "已取消置顶", "info");
+    },
+    [data, view],
+  );
+
+  const handleRemoveNote = useCallback(
+    (noteId: string): void => {
+      data.removeNote(noteId);
+      view.showToast("已删除灵感", "info");
+    },
+    [data, view],
+  );
+
+  /**
+   * 灵感 → 伏笔一键转化（R7 联动）
+   *
+   * 落到当前章节所在的卷（没有章节则落最后一卷，一卷都没有就顺手建一卷），
+   * 埋设章取当前章；转完把右栏切到大纲，让用户立刻看到落点。
+   */
+  const handlePromoteNote = useCallback(
+    (noteId: string): void => {
+      const note = data.notes.find((item) => item.id === noteId);
+      if (!note) return;
+      if (note.foreshadowId) {
+        view.showToast("这条灵感已经转成伏笔了", "info");
+        return;
+      }
+      const activeVolumeId = data.activeChapter?.volumeId ?? null;
+      const volumeId =
+        activeVolumeId ?? data.groups.at(-1)?.volume.id ?? data.createVolume();
+      if (!volumeId) {
+        view.showToast("还没有可挂载的卷，请先新建一卷", "warning");
+        return;
+      }
+      const entry = data.addOutlineEntry(
+        buildForeshadowDraft(
+          note,
+          volumeId,
+          activeVolumeId === volumeId ? data.activeChapter?.id : undefined,
+        ),
+      );
+      if (!entry) {
+        view.showToast("转化失败，请重试", "warning");
+        return;
+      }
+      data.updateNote(noteId, { foreshadowId: entry.id });
+      view.selectPanelTab("outline");
+      view.showToast(`已转为伏笔「${entry.title}」`);
+    },
+    [data, view],
+  );
+
   // ── 防误触排序（R9 增强）：拖拽 → 确认弹框 → 应用 ──────────────────
   // 关闭开关时直接应用；开启时先记下请求，用预览纯函数算出序号变更清单
   const [pendingReorder, setPendingReorder] = useState<PendingReorder | null>(null);
@@ -332,6 +467,46 @@ export function useNovelPage() {
     [requestReorder],
   );
 
+  /**
+   * 大纲 / 灵感面板动作组
+   *
+   * 面板只拿自己需要的动作，不直接接触数据层 Hook；跨面板联动（灵感 → 伏笔）
+   * 在这一层编排，避免两个面板互相依赖。
+   */
+  const outlineActions: OutlineActions = useMemo(
+    () => ({
+      onEditChapterNote: handleEditChapterNote,
+      onAddForeshadow: handleAddForeshadow,
+      onUpdateForeshadow: handleUpdateForeshadow,
+      onToggleForeshadow: handleToggleForeshadow,
+      onRemoveForeshadow: handleRemoveForeshadow,
+    }),
+    [
+      handleEditChapterNote,
+      handleAddForeshadow,
+      handleUpdateForeshadow,
+      handleToggleForeshadow,
+      handleRemoveForeshadow,
+    ],
+  );
+
+  const inspirationActions: InspirationActions = useMemo(
+    () => ({
+      onAddNote: data.addNote,
+      onUpdateNote: handleUpdateNote,
+      onTogglePin: handleTogglePinNote,
+      onRemoveNote: handleRemoveNote,
+      onPromoteNote: handlePromoteNote,
+    }),
+    [
+      data.addNote,
+      handleUpdateNote,
+      handleTogglePinNote,
+      handleRemoveNote,
+      handlePromoteNote,
+    ],
+  );
+
   // Esc 关闭链：设置 → 快照 → 专注模式（逐层退出，章节跳转面板自己处理 Esc）
   const handleEscape = useCallback((): void => {
     if (view.settingsOpen) {
@@ -384,6 +559,9 @@ export function useNovelPage() {
     hover,
     terms,
     breadcrumb,
+    outline,
+    outlineActions,
+    inspirationActions,
     reorderPreview,
     handleReorderChapter,
     handleMoveChapterToVolume,

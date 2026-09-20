@@ -1,15 +1,20 @@
 import { describe, expect, it } from "vitest";
+import { UNNAMED_VOLUME } from "./novel-config";
 import {
   buildBreadcrumb,
   buildChapterGroups,
   buildChapterNumbers,
   buildEntityTerms,
+  buildForeshadowDraft,
+  buildOutlineTree,
   buildSearchSnippet,
   buildSortOrder,
   calcGoalProgress,
   calcSpeed,
   countWords,
+  filterNotes,
   findTermMatches,
+  firstLineTitle,
   formatClock,
   formatNumberedLabel,
   formatThousands,
@@ -17,14 +22,25 @@ import {
   insertItemBefore,
   moveItemBefore,
   padIndex,
+  patchChapterOutlineNote,
+  patchNote,
+  patchOutlineEntry,
   previewChapterReorder,
   previewChapterToVolume,
   previewVolumeReorder,
+  sortNotes,
   splitByKeyword,
   toChineseOrdinal,
   truncate,
 } from "./novel-utils";
-import type { NovelChapter, NovelEntity, NovelVolume } from "./types";
+import type {
+  NovelChapter,
+  NovelEntity,
+  NovelNote,
+  NovelVolume,
+  OutlineEntry,
+  OutlineNode,
+} from "./types";
 
 const entity = (over: Partial<NovelEntity>): NovelEntity => ({
   id: "e1",
@@ -393,5 +409,261 @@ describe("重排预览纯函数", () => {
     expect(next.find((v) => v.id === "v1")?.sort).toBe(2);
     expect(next.find((v) => v.id === "v2")?.sort).toBe(1);
     expect(previewVolumeReorder(volumes, "v1", "v1")).toBe(volumes);
+  });
+});
+
+// ── 大纲与灵感（R7）────────────────────────────────────────────────────
+
+const asVolume = (node: OutlineNode): Extract<OutlineNode, { kind: "volume" }> => {
+  if (node.kind !== "volume") throw new Error(`期望卷节点，实际是 ${node.kind}`);
+  return node;
+};
+
+const asChapter = (
+  node: OutlineNode,
+): Extract<OutlineNode, { kind: "chapter" }> => {
+  if (node.kind !== "chapter") throw new Error(`期望章节节点，实际是 ${node.kind}`);
+  return node;
+};
+
+const asForeshadow = (
+  node: OutlineNode,
+): Extract<OutlineNode, { kind: "foreshadow" }> => {
+  if (node.kind !== "foreshadow") {
+    throw new Error(`期望伏笔节点，实际是 ${node.kind}`);
+  }
+  return node;
+};
+
+const outlineChapters: NovelChapter[] = [
+  {
+    id: "c1",
+    workId: "w1",
+    volumeId: "v1",
+    title: "雨夜叩门",
+    content: "",
+    wordCount: 3200,
+    status: "done",
+    sort: 1,
+    updatedAt: 0,
+    outlineNote: "沈砚雨夜回到山门。",
+  },
+  {
+    id: "c2",
+    workId: "w1",
+    volumeId: "v1",
+    title: "旧剑",
+    content: "",
+    wordCount: 2800,
+    status: "draft",
+    sort: 2,
+    updatedAt: 0,
+  },
+  {
+    id: "c3",
+    workId: "w1",
+    volumeId: "v2",
+    title: "渡口",
+    content: "",
+    wordCount: 0,
+    status: "draft",
+    sort: 1,
+    updatedAt: 0,
+  },
+];
+
+const outlineVolumes: NovelVolume[] = [
+  { id: "v1", workId: "w1", name: "少年游", sort: 1 },
+  { id: "v2", workId: "w1", name: UNNAMED_VOLUME, sort: 2 },
+];
+
+const entry = (over: Partial<OutlineEntry>): OutlineEntry => ({
+  id: "f1",
+  workId: "w1",
+  kind: "foreshadow",
+  volumeId: "v1",
+  title: "断伞骨",
+  note: "",
+  status: "open",
+  createdAt: 0,
+  ...over,
+});
+
+const note = (over: Partial<NovelNote>): NovelNote => ({
+  id: "n1",
+  workId: "w1",
+  content: "下一章开头：雨停。",
+  createdAt: 0,
+  pinned: false,
+  ...over,
+});
+
+describe("buildOutlineTree", () => {
+  const options = {
+    numberStyle: "chinese" as const,
+    chapterSuffix: "章",
+    volumeSuffix: "卷",
+  };
+
+  it("骨架取自真实卷章，章节节点携带真实 chapterId（可直接跳转）", () => {
+    const tree = buildOutlineTree(outlineVolumes, outlineChapters, [], options);
+    const vol1 = asVolume(tree[0]);
+
+    expect(tree).toHaveLength(2);
+    expect(vol1.title).toBe("第一卷");
+    expect(vol1.note).toBe("少年游");
+
+    const [first, second] = vol1.children.map(asChapter);
+    expect(first.chapterId).toBe("c1");
+    expect(first.label).toBe("第一章");
+    expect(first.wordCount).toBe(3200);
+    expect(first.status).toBe("done");
+    expect(second.chapterId).toBe("c2");
+  });
+
+  it("章节梗概直接带入，未填写为空串；卷内序号跨卷连续", () => {
+    const tree = buildOutlineTree(outlineVolumes, outlineChapters, [], options);
+    const [first, second] = asVolume(tree[0]).children.map(asChapter);
+    const third = asChapter(asVolume(tree[1]).children[0]);
+
+    expect(first.note).toBe("沈砚雨夜回到山门。");
+    expect(second.note).toBe("");
+    expect(third.label).toBe("第三章");
+  });
+
+  it("默认卷名不追显，自定义卷名作为副标题", () => {
+    const tree = buildOutlineTree(outlineVolumes, outlineChapters, [], options);
+    expect(asVolume(tree[0]).note).toBe("少年游");
+    expect(asVolume(tree[1]).note).toBe("");
+  });
+
+  it("伏笔挂所属卷末尾，未回收在前、同级按写入时间排序", () => {
+    const entries: OutlineEntry[] = [
+      entry({ id: "f-resolved", title: "师父临终语", status: "resolved", createdAt: 100 }),
+      entry({ id: "f-late", title: "断伞骨", createdAt: 200 }),
+      entry({ id: "f-early", title: "旧诺", createdAt: 50 }),
+    ];
+    const vol1 = asVolume(
+      buildOutlineTree(outlineVolumes, outlineChapters, entries, options)[0],
+    );
+    const tail = vol1.children.slice(2).map(asForeshadow);
+
+    expect(vol1.openForeshadows).toBe(2);
+    expect(tail.map((item) => item.title)).toEqual(["旧诺", "断伞骨", "师父临终语"]);
+    expect(tail[2].resolved).toBe(true);
+    expect(tail[0].entryId).toBe("f-early");
+  });
+
+  it("没有卷时返回空数组，不抛错", () => {
+    expect(buildOutlineTree([], [], [entry({})], options)).toEqual([]);
+  });
+});
+
+describe("灵感排序与过滤", () => {
+  it("置顶优先，同级按创建时间倒序，不改入参", () => {
+    const raw: NovelNote[] = [
+      note({ id: "a", createdAt: 100 }),
+      note({ id: "b", createdAt: 300 }),
+      note({ id: "c", createdAt: 200, pinned: true }),
+    ];
+    const sorted = sortNotes(raw);
+
+    expect(sorted.map((item) => item.id)).toEqual(["c", "b", "a"]);
+    expect(raw.map((item) => item.id)).toEqual(["a", "b", "c"]);
+  });
+
+  it("关键词过滤内容，忽略大小写与首尾空白", () => {
+    const raw: NovelNote[] = [
+      note({ id: "a", content: "断伞骨回收要修伞" }),
+      note({ id: "b", content: "下一步：雨停" }),
+    ];
+    expect(filterNotes(raw, "  伞骨 ").map((item) => item.id)).toEqual(["a"]);
+    expect(filterNotes(raw, "不存在").map((item) => item.id)).toEqual([]);
+  });
+
+  it("空关键词原样返回同一引用", () => {
+    const raw: NovelNote[] = [note({})];
+    expect(filterNotes(raw, "  ")).toBe(raw);
+  });
+
+  it("firstLineTitle 取首个非空行并字符级截断", () => {
+    expect(firstLineTitle("\n\n  雨停，山门钟声  \n第二行")).toBe("雨停，山门钟声");
+    expect(firstLineTitle("一二三四五六", 3)).toBe("一二三…");
+    expect(firstLineTitle("   ")).toBe("");
+  });
+
+  it("buildForeshadowDraft 由灵感生成伏笔草稿，正文不丢", () => {
+    const draft = buildForeshadowDraft(
+      note({ id: "n9", content: "掌门的旧诺是什么？\n必须第九章前给出答案" }),
+      "v1",
+      "c7",
+    );
+    expect(draft).toEqual({
+      workId: "w1",
+      kind: "foreshadow",
+      volumeId: "v1",
+      chapterId: "c7",
+      title: "掌门的旧诺是什么？",
+      note: "掌门的旧诺是什么？\n必须第九章前给出答案",
+      status: "open",
+    });
+  });
+
+  it("buildForeshadowDraft 不传章节时记为卷级伏笔", () => {
+    expect(buildForeshadowDraft(note({}), "v2").chapterId).toBeUndefined();
+    expect(buildForeshadowDraft(note({}), "v2", "").chapterId).toBeUndefined();
+  });
+});
+
+describe("梗概 / 伏笔 / 灵感的局部更新", () => {
+  it("patchChapterOutlineNote 写入并去首尾空白", () => {
+    const next = patchChapterOutlineNote(outlineChapters, "c2", "  旧剑出鞘  ");
+    expect(next.find((item) => item.id === "c2")?.outlineNote).toBe("旧剑出鞘");
+    expect(outlineChapters.find((item) => item.id === "c2")?.outlineNote).toBeUndefined();
+  });
+
+  it("patchChapterOutlineNote 空串清除梗概", () => {
+    const next = patchChapterOutlineNote(outlineChapters, "c1", "   ");
+    expect(next.find((item) => item.id === "c1")?.outlineNote).toBe("");
+  });
+
+  it("patchChapterOutlineNote 值未变或章节不存在时返回原引用", () => {
+    expect(patchChapterOutlineNote(outlineChapters, "c1", "沈砚雨夜回到山门。")).toBe(
+      outlineChapters,
+    );
+    expect(patchChapterOutlineNote(outlineChapters, "nope", "x")).toBe(
+      outlineChapters,
+    );
+  });
+
+  it("patchOutlineEntry 标题去空白，说明可独立更新", () => {
+    const entries: OutlineEntry[] = [entry({ id: "f1", title: "断伞骨", note: "旧" })];
+    const next = patchOutlineEntry(entries, "f1", { title: " 断伞骨 ", note: " 已回收 " });
+    expect(next[0]).toEqual({ ...entries[0], title: "断伞骨", note: "已回收" });
+    expect(next).not.toBe(entries);
+  });
+
+  it("patchOutlineEntry 空标题或条目不存在时返回原引用", () => {
+    const entries: OutlineEntry[] = [entry({ id: "f1" })];
+    expect(patchOutlineEntry(entries, "f1", { title: "   " })).toBe(entries);
+    expect(patchOutlineEntry(entries, "nope", { title: "x" })).toBe(entries);
+  });
+
+  it("patchNote 支持内容 / 置顶 / 已转伏笔标记", () => {
+    const notes: NovelNote[] = [note({ id: "n1", pinned: false })];
+    const next = patchNote(notes, "n1", { content: " 雨停 ", pinned: true, foreshadowId: "f9" });
+    expect(next[0]).toEqual({
+      ...notes[0],
+      content: "雨停",
+      pinned: true,
+      foreshadowId: "f9",
+    });
+    expect(notes[0].content).toBe("下一章开头：雨停。");
+  });
+
+  it("patchNote 空内容或灵感不存在时返回原引用", () => {
+    const notes: NovelNote[] = [note({ id: "n1" })];
+    expect(patchNote(notes, "n1", { content: "  " })).toBe(notes);
+    expect(patchNote(notes, "nope", { pinned: true })).toBe(notes);
   });
 });

@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { DragEvent, KeyboardEvent } from "react";
 import { DownOutlined, RightOutlined } from "@ant-design/icons";
 import ChapterTreeItem from "../ChapterTreeItem";
-import { DRAG_MIME_CHAPTER, DRAG_MIME_VOLUME } from "../../novel-config";
+import { DRAG_MIME_CHAPTER, DRAG_MIME_VOLUME, UNNAMED_VOLUME } from "../../novel-config";
 import { formatNumberedLabel } from "../../novel-utils";
 import type { LabelNumberStyle, NovelChapter, NovelVolume } from "../../types";
 import "./index.scss";
@@ -28,9 +28,6 @@ interface VolumeNodeProps {
   /** 双击卷名重命名（R9 扩展）：空名 / 同名不落 */
   onRenameVolume: (volumeId: string, name: string) => void;
 }
-
-/** 新建卷的默认存储名：展示序号时视为「未命名」不追加显示 */
-const UNNAMED_VOLUME = "未命名卷";
 
 /** 卷节点：默认展开，点击标题折叠，双击卷名重命名；卷名按配置由 sort 派生 */
 export default function VolumeNode({

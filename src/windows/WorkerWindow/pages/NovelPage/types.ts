@@ -55,6 +55,11 @@ export interface NovelChapter {
   status: ChapterStatus;
   sort: number;
   updatedAt: number;
+  /**
+   * 大纲梗概：一句话剧情（R7 大纲板行内编辑）。
+   * 增量迁移列，历史数据缺失时按空串处理；空串表示尚未填写。
+   */
+  outlineNote?: string;
 }
 
 /** 章节快照：每章环形保留 20 版（PRD R3） */
@@ -73,7 +78,41 @@ export interface NovelNote {
   workId: string;
   content: string;
   createdAt: number;
+  /** 置顶：重要的灵感恒定排在列表最前（排序见 sortNotes） */
+  pinned: boolean;
+  /** 由该灵感一键转出的伏笔条目 id；转出后卡片展示「已转为伏笔」 */
+  foreshadowId?: string;
 }
+
+/** 灵感可编辑字段（内容 / 置顶 / 已转伏笔标记） */
+export type NotePatch = Partial<Pick<NovelNote, "content" | "pinned" | "foreshadowId">>;
+
+/**
+ * 大纲条目（PRD R7 大纲板）
+ *
+ * 大纲骨架（卷 / 章）永远由真实卷章派生，不落库；只有用户手写的伏笔
+ * 需要独立存储，即本类型。kind 预留多态（后续「支线 / 时间线」同表扩展）。
+ */
+export interface OutlineEntry {
+  id: string;
+  workId: string;
+  kind: "foreshadow";
+  /** 归属卷：决定在大纲板哪一段下展示 */
+  volumeId: string;
+  /** 埋设章节（缺省 = 卷级伏笔，不绑定具体章） */
+  chapterId?: string;
+  title: string;
+  note: string;
+  /** 待回收 / 已回收 */
+  status: "open" | "resolved";
+  createdAt: number;
+}
+
+/** 伏笔可编辑字段（增删由专用动作承载，不放这里） */
+export type ForeshadowPatch = Partial<Pick<OutlineEntry, "title" | "note">>;
+
+/** 新建伏笔时由调用方补齐 id 与时间戳的草稿 */
+export type OutlineEntryDraft = Omit<OutlineEntry, "id" | "createdAt">;
 
 /** 要素自定义扩展字段 */
 export type EntityFields = Record<string, string>;
@@ -158,17 +197,47 @@ export interface TermMatch {
   type: EntityType;
 }
 
-/** 大纲节点：卷 → 章 → 伏笔，三级 */
-export interface OutlineNode {
-  id: string;
-  kind: "volume" | "chapter" | "foreshadow";
-  title: string;
-  /** 一句话梗概 / 伏笔说明 */
-  note?: string;
-  /** 伏笔标签 */
-  tag?: string;
-  children?: OutlineNode[];
-}
+/**
+ * 大纲节点（展示模型，判别联合）
+ *
+ * 由真实卷 / 章 + 用户手写的伏笔条目派生（见 buildOutlineTree），本身就是
+ * 骨架：卷章永远与左栏章节树一致（点章节即真跳转），伏笔来自 OutlineEntry。
+ * 判别联合而非「一堆可选字段」，保证卷才有 children、章节才有 chapterId。
+ */
+export type OutlineNode =
+  | {
+      kind: "volume";
+      id: string;
+      /** 序号标签（第一卷 / 第2部…），随序号配置派生 */
+      title: string;
+      /** 自定义卷名，未命名时为空串 */
+      note: string;
+      /** 未回收伏笔数，卷头计数点 */
+      openForeshadows: number;
+      children: OutlineNode[];
+    }
+  | {
+      kind: "chapter";
+      id: string;
+      /** 真实章节 id：点击即跳转该章 */
+      chapterId: string;
+      title: string;
+      /** 序号标签（第3章 / 第三章…） */
+      label: string;
+      /** 一句话梗概，空串表示未填 */
+      note: string;
+      wordCount: number;
+      status: ChapterStatus;
+    }
+  | {
+      kind: "foreshadow";
+      id: string;
+      /** 伏笔条目 id：编辑 / 删除 / 回收状态切换用 */
+      entryId: string;
+      title: string;
+      note: string;
+      resolved: boolean;
+    };
 
 /** 全书检索命中（PRD R10） */
 export interface SearchHit {

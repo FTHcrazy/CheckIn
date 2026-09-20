@@ -2,8 +2,8 @@ import { AppstoreOutlined, BulbOutlined, SearchOutlined, UnorderedListOutlined }
 import type { MouseEvent, ReactNode } from "react";
 import EntityPanel from "../EntityPanel";
 import type { EntitySavePatch } from "../EntityDetail";
-import InspirationPanel from "../InspirationPanel";
-import OutlinePanel from "../OutlinePanel";
+import InspirationPanel, { type InspirationActions } from "../InspirationPanel";
+import OutlinePanel, { type OutlineActions } from "../OutlinePanel";
 import SearchPanel from "../SearchPanel";
 import type { PanelTab, EntityFilter } from "../../hooks/useNovelViewState";
 import type {
@@ -23,6 +23,9 @@ interface SupportPanelProps {
   activeTab: PanelTab;
   onTabChange: (tab: PanelTab) => void;
   outline: OutlineNode[];
+  /** 当前编辑章：大纲面板同步高亮 */
+  activeChapterId: string | null;
+  outlineActions: OutlineActions;
   entities: NovelEntity[];
   filter: EntityFilter;
   onFilterChange: (filter: EntityFilter) => void;
@@ -35,8 +38,7 @@ interface SupportPanelProps {
   ) => EntityRelationView[];
   levelSystems: LevelSystem[];
   notes: NovelNote[];
-  onAddNote: (content: string) => void;
-  onRemoveNote: (noteId: string) => void;
+  inspirationActions: InspirationActions;
   onSearch: (keyword: string) => Promise<SearchHit[]>;
   onSelectChapter: (chapterId: string) => void;
   getAppearances: (entityId: string) => EntityAppearance[];
@@ -72,6 +74,8 @@ export default function SupportPanel({
   activeTab,
   onTabChange,
   outline,
+  activeChapterId,
+  outlineActions,
   entities,
   filter,
   onFilterChange,
@@ -81,8 +85,7 @@ export default function SupportPanel({
   getEntityRelations,
   levelSystems,
   notes,
-  onAddNote,
-  onRemoveNote,
+  inspirationActions,
   onSearch,
   onSelectChapter,
   getAppearances,
@@ -123,7 +126,12 @@ export default function SupportPanel({
         title="点击空白处收起面板"
       >
         {activeTab === "outline" && (
-          <OutlinePanel outline={outline} onSelectChapter={onSelectChapter} />
+          <OutlinePanel
+            outline={outline}
+            activeChapterId={activeChapterId}
+            onSelectChapter={onSelectChapter}
+            actions={outlineActions}
+          />
         )}
         {activeTab === "entity" && (
           <EntityPanel
@@ -146,11 +154,7 @@ export default function SupportPanel({
           />
         )}
         {activeTab === "note" && (
-          <InspirationPanel
-            notes={notes}
-            onAddNote={onAddNote}
-            onRemoveNote={onRemoveNote}
-          />
+          <InspirationPanel notes={notes} actions={inspirationActions} />
         )}
         {activeTab === "search" && (
           <SearchPanel onSearch={onSearch} onSelectChapter={onSelectChapter} />

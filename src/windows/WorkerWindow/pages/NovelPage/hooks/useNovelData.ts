@@ -2,20 +2,41 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   fetchChapterSnapshots,
   fetchNovelBundle,
+  removeNote as removeNoteRemote,
+  removeOutlineEntry as removeOutlineEntryRemote,
   saveChapterContent,
+  saveChapterOutline,
+  saveNote as saveNoteRemote,
+  saveOutlineEntry,
   searchAcrossBook,
   type NovelBundle,
 } from "../services/novel-demo-source";
-import { buildChapterGroups, buildChapterNumbers, previewChapterReorder, previewChapterToVolume, previewVolumeReorder, type ChapterGroup } from "../novel-utils";
+import { UNNAMED_VOLUME } from "../novel-config";
+import {
+  buildChapterGroups,
+  buildChapterNumbers,
+  patchChapterOutlineNote,
+  patchNote,
+  patchOutlineEntry,
+  previewChapterReorder,
+  previewChapterToVolume,
+  previewVolumeReorder,
+  sortNotes,
+  type ChapterGroup,
+} from "../novel-utils";
 import type {
   EntityRelationView,
   EntityType,
+  ForeshadowPatch,
+  NotePatch,
   NovelChapter,
   NovelEntity,
   NovelLink,
   NovelNote,
   NovelSnapshot,
   NovelVolume,
+  OutlineEntry,
+  OutlineEntryDraft,
   SearchHit,
 } from "../types";
 
@@ -72,10 +93,16 @@ export function useNovelData() {
     [bundle, activeWorkId],
   );
   const notes = useMemo(
-    () => (bundle?.notes ?? []).filter((note) => note.workId === activeWorkId),
+    () => sortNotes((bundle?.notes ?? []).filter((note) => note.workId === activeWorkId)),
     [bundle, activeWorkId],
   );
-  const outline = useMemo(() => bundle?.outline ?? [], [bundle]);
+  const outlineEntries = useMemo(
+    () =>
+      (bundle?.outlineEntries ?? []).filter(
+        (entry) => entry.workId === activeWorkId,
+      ),
+    [bundle, activeWorkId],
+  );
   const works = useMemo(() => bundle?.works ?? [], [bundle]);
   const recovery = useMemo(() => bundle?.recovery ?? null, [bundle]);
 
@@ -142,7 +169,8 @@ export function useNovelData() {
         const createdVolume: NovelVolume = {
           id: `v-${Date.now()}`,
           workId: activeWorkId,
-          name: "第一卷",
+          // 序号由 sort 派生，存储名保持「未命名卷」，避免卷头出现「第一卷 · 第一卷」
+          name: UNNAMED_VOLUME,
           sort: 1,
         };
         targetVolumeId = createdVolume.id;
@@ -187,7 +215,7 @@ export function useNovelData() {
       id: `v-${Date.now()}`,
       workId: activeWorkId,
       // 卷头展示由 sort 派生（第N卷 / 第N部…），存储名仅作兜底
-      name: "未命名卷",
+      name: UNNAMED_VOLUME,
       sort: maxSort + 1,
     };
     setBundle((current) =>
@@ -493,13 +521,30 @@ export function useNovelData() {
         workId: activeWorkId,
         content: trimmed,
         createdAt: Date.now(),
+        pinned: false,
       };
       setBundle((current) =>
         current ? { ...current, notes: [note, ...current.notes] } : current,
       );
+      void saveNoteRemote(note);
     },
     [activeWorkId],
   );
+
+  /**
+   * 灵感局部更新（R7）：正文 / 置顶 / 已转伏笔标记。
+   * 空正文与不存在的 id 由 patchNote 直接返回原引用，这里不做二次校验。
+   */
+  const updateNote = useCallback((noteId: string, patch: NotePatch): void => {
+    setBundle((current) => {
+      if (!current) return current;
+      const next = patchNote(current.notes, noteId, patch);
+      if (next === current.notes) return current;
+      const target = next.find((note) => note.id === noteId);
+      if (target) void saveNoteRemote(target);
+      return { ...current, notes: next };
+    });
+  }, []);
 
   const removeNote = useCallback((noteId: string): void => {
     setBundle((current) =>
@@ -510,6 +555,96 @@ export function useNovelData() {
           }
         : current,
     );
+    void removeNoteRemote(noteId);
+  }, []);
+
+  /** 章节一句话梗概（大纲板行内编辑，空串即清除） */
+  const updateChapterOutlineNote = useCallback(
+    (chapterId: string, note: string): void => {
+      setBundle((current) => {
+        if (!current) return current;
+        const next = patchChapterOutlineNote(current.chapters, chapterId, note);
+        if (next === current.chapters) return current;
+        void saveChapterOutline(chapterId, note.trim());
+        return { ...current, chapters: next };
+      });
+    },
+    [],
+  );
+
+  /**
+   * 新建伏笔条目（R7 大纲板 / 灵感一键转化共用入口）。
+   * 新条目插到列表头部，返回创建结果供调用方回填「已转为伏笔」标记。
+   */
+  const addOutlineEntry = useCallback(
+    (draft: OutlineEntryDraft): OutlineEntry | null => {
+      const title = draft.title.trim();
+      if (!title) return null;
+      const entry: OutlineEntry = {
+        ...draft,
+        title,
+        note: draft.note.trim(),
+        id: `f-${Date.now()}`,
+        createdAt: Date.now(),
+      };
+      setBundle((current) =>
+        current
+          ? { ...current, outlineEntries: [entry, ...current.outlineEntries] }
+          : current,
+      );
+      void saveOutlineEntry(entry);
+      return entry;
+    },
+    [],
+  );
+
+  /** 伏笔编辑（标题 / 说明） */
+  const updateOutlineEntry = useCallback(
+    (entryId: string, patch: ForeshadowPatch): void => {
+      setBundle((current) => {
+        if (!current) return current;
+        const next = patchOutlineEntry(current.outlineEntries, entryId, patch);
+        if (next === current.outlineEntries) return current;
+        const target = next.find((entry) => entry.id === entryId);
+        if (target) void saveOutlineEntry(target);
+        return { ...current, outlineEntries: next };
+      });
+    },
+    [],
+  );
+
+  /** 伏笔回收状态切换（待回收 ⇄ 已回收） */
+  const toggleOutlineEntryStatus = useCallback((entryId: string): void => {
+    setBundle((current) => {
+      if (!current) return current;
+      const target = current.outlineEntries.find((entry) => entry.id === entryId);
+      if (!target) return current;
+      const next: OutlineEntry = {
+        ...target,
+        status: target.status === "resolved" ? "open" : "resolved",
+      };
+      void saveOutlineEntry(next);
+      return {
+        ...current,
+        outlineEntries: current.outlineEntries.map((entry) =>
+          entry.id === entryId ? next : entry,
+        ),
+      };
+    });
+  }, []);
+
+  const removeOutlineEntry = useCallback((entryId: string): void => {
+    setBundle((current) =>
+      current
+        ? {
+            ...current,
+            outlineEntries: current.outlineEntries.filter(
+              (entry) => entry.id !== entryId,
+            ),
+          }
+        : current,
+    );
+    void removeOutlineEntryRemote(entryId);
   }, []);
 
   const loadSnapshots = useCallback(async (chapterId: string): Promise<void> => {
@@ -540,7 +675,7 @@ export function useNovelData() {
     links,
     levelSystems,
     notes,
-    outline,
+    outlineEntries,
     groups,
     chapterNumbers,
     activeChapter,
@@ -552,6 +687,7 @@ export function useNovelData() {
     setActiveWorkId,
     selectChapter,
     updateChapterContent,
+    updateChapterOutlineNote,
     createChapter,
     createVolume,
     renameChapter,
@@ -568,7 +704,12 @@ export function useNovelData() {
     getEntityById,
     getEntityRelations,
     addNote,
+    updateNote,
     removeNote,
+    addOutlineEntry,
+    updateOutlineEntry,
+    toggleOutlineEntryStatus,
+    removeOutlineEntry,
     loadSnapshots,
     rollbackSnapshot,
     searchBook,

@@ -6,6 +6,10 @@
   background: var(--app-surface);
   overflow: hidden;
   position: relative;
+  /* 正文栏宽的容器查询基准：拉伸窗口时按「码字区实际宽度」分档，
+     不是按视口宽度——左右栏开合会直接改变可用宽度 */
+  container-type: inline-size;
+  container-name: nv-editor;
 
   /* 打字机模式：上下留白把当前行挤到视口中线 */
   &--typewriter {
@@ -83,11 +87,20 @@
     position: relative;
   }
 
-  /* 正文栏宽 42em 居中（设计方案 §03） */
+  /**
+   * 正文栏：栏宽与左右留白随码字区宽度自适应（基础 42em / 边距 24px）。
+   *
+   * 42em 是中文竖排阅读的舒适栏宽，但写作用户的窗口常被拉到 1920 以上：
+   * 固定 42em 会让两侧空出 300px+ 的「白边」，视线上正文像悬在正中。
+   * 这里按容器宽度分档放宽（最多 54em ≈ 单行 54 字，仍在舒适区内），
+   * 窄窗口则收回边距、栏宽吃满，保证小屏一行仍有 25~30 字。
+   */
   &__paper {
-    max-width: 42em;
+    width: 100%;
+    max-width: var(--nv-paper-width, 42em);
     margin: 0 auto;
-    padding: 8px 40px 120px;
+    padding: 8px var(--nv-paper-gutter, 24px) 120px;
+    box-sizing: border-box;
     color: var(--app-text);
   }
 
@@ -177,6 +190,45 @@
     &:hover {
       background: var(--app-primary-strong);
     }
+  }
+}
+
+/**
+ * 正文栏宽分档（容器查询，命中 .nv-editor 自身宽度）
+ *
+ * 只能按码字区宽度分档：窗口宽 1200 时左栏开 / 关会让正文可用宽度在
+ * 964 与 642 之间跳变，用 vw 判断会把两种情况混在一起。
+ */
+@container nv-editor (max-width: 760px) {
+  .nv-editor__paper {
+    --nv-paper-width: 100%;
+    --nv-paper-gutter: 16px;
+  }
+}
+
+@container nv-editor (max-width: 520px) {
+  .nv-editor__paper {
+    --nv-paper-gutter: 10px;
+  }
+}
+
+@container nv-editor (min-width: 900px) {
+  .nv-editor__paper {
+    --nv-paper-width: 46em;
+    --nv-paper-gutter: 40px;
+  }
+}
+
+@container nv-editor (min-width: 1200px) {
+  .nv-editor__paper {
+    --nv-paper-width: 50em;
+  }
+}
+
+@container nv-editor (min-width: 1500px) {
+  .nv-editor__paper {
+    --nv-paper-width: 54em;
+    --nv-paper-gutter: 48px;
   }
 }
 

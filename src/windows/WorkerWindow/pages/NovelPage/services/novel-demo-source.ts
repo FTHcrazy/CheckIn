@@ -7,7 +7,7 @@ import type {
   NovelSnapshot,
   NovelVolume,
   NovelWork,
-  OutlineNode,
+  OutlineEntry,
   SearchHit,
 } from "../types";
 import { buildSearchSnippet, countWords } from "../novel-utils";
@@ -36,7 +36,7 @@ export interface NovelBundle {
   links: NovelLink[];
   levelSystems: LevelSystem[];
   notes: NovelNote[];
-  outline: OutlineNode[];
+  outlineEntries: OutlineEntry[];
   recovery: NovelRecovery | null;
 }
 
@@ -72,12 +72,12 @@ const VOLUMES: NovelVolume[] = [
 const rawChapters: Array<Omit<NovelChapter, "wordCount">> = [
   { id: "c1", workId: "w1", volumeId: "v1", title: "雨夜叩门", content: "山门在雨里显得更旧了。", status: "done", sort: 1, updatedAt: hoursAgo(72) },
   { id: "c2", workId: "w1", volumeId: "v1", title: "旧剑", content: "此剑出自青梧后山的矿脉，重三十七斤。", status: "done", sort: 2, updatedAt: hoursAgo(60) },
-  { id: "c3", workId: "w1", volumeId: "v1", title: "师兄的伞", content: "陆昭把伞递过来，伞骨断了一根。", status: "done", sort: 3, updatedAt: hoursAgo(48) },
+  { id: "c3", workId: "w1", volumeId: "v1", title: "师兄的伞", content: "陆昭把伞递过来，伞骨断了一根。", status: "done", sort: 3, updatedAt: hoursAgo(48), outlineNote: "陆昭冒雨送伞，伞骨断了一根——不点破的旧交情。" },
   { id: "c4", workId: "w1", volumeId: "v1", title: "不告而别", content: "他没有留下只言片语。", status: "done", sort: 4, updatedAt: hoursAgo(36) },
-  { id: "c5", workId: "w1", volumeId: "v1", title: "山下酒肆", content: "酒肆里有人说起天衍宗的旧事。", status: "done", sort: 5, updatedAt: hoursAgo(24) },
+  { id: "c5", workId: "w1", volumeId: "v1", title: "山下酒肆", content: "酒肆里有人说起天衍宗的旧事。", status: "done", sort: 5, updatedAt: hoursAgo(24), outlineNote: "借酒客之口抖出旧事，坐实师父之死另有隐情。" },
   { id: "c6", workId: "w1", volumeId: "v1", title: "青梧山道", content: "远望青梧山，雨雾里只见半截山门。", status: "done", sort: 6, updatedAt: hoursAgo(10) },
-  { id: "c7", workId: "w1", volumeId: "v1", title: "青梧山雨", content: DEMO_CONTENT, status: "draft", sort: 7, updatedAt: hoursAgo(0, 3) },
-  { id: "c8", workId: "w1", volumeId: "v1", title: "檐下对坐", content: SHORT_CONTENT, status: "draft", sort: 8, updatedAt: hoursAgo(0, 40) },
+  { id: "c7", workId: "w1", volumeId: "v1", title: "青梧山雨", content: DEMO_CONTENT, status: "draft", sort: 7, updatedAt: hoursAgo(0, 3), outlineNote: "陆昭接他回山，掌门已等了三年。" },
+  { id: "c8", workId: "w1", volumeId: "v1", title: "檐下对坐", content: SHORT_CONTENT, status: "draft", sort: 8, updatedAt: hoursAgo(0, 40), outlineNote: "掌门交出师父托付的旧信，旧诺浮出水面。" },
   { id: "c9", workId: "w1", volumeId: "v2", title: "渡口", content: "船在雾里靠岸。", status: "draft", sort: 1, updatedAt: hoursAgo(6) },
   { id: "c10", workId: "w1", volumeId: "v2", title: "借剑", content: "三年之约到期那天，玄铁重剑第一次出鞘。", status: "draft", sort: 2, updatedAt: hoursAgo(4) },
 ];
@@ -186,46 +186,48 @@ const LEVEL_SYSTEMS: LevelSystem[] = [
 ];
 
 const NOTES: NovelNote[] = [
-  { id: "n1", workId: "w1", content: "掌门的旧诺到底是什么？必须在第九章前给出答案，否则读者会觉得拖。", createdAt: hoursAgo(0, 90) },
-  { id: "n2", workId: "w1", content: "断伞骨 → 第二章旧剑。回收时让陆昭修伞，不说破。", createdAt: hoursAgo(0, 45) },
-  { id: "n3", workId: "w1", content: "下一章开头：雨停，山门内传来钟声。", createdAt: hoursAgo(0, 20) },
-  { id: "n4", workId: "w1", content: "「洗掉剑上的锈，洗不掉人心里的」——这句留着当卷末收尾。", createdAt: hoursAgo(0, 5) },
+  { id: "n1", workId: "w1", content: "掌门的旧诺到底是什么？必须在第九章前给出答案，否则读者会觉得拖。", createdAt: hoursAgo(0, 90), pinned: true },
+  { id: "n2", workId: "w1", content: "断伞骨 → 第二章旧剑。回收时让陆昭修伞，不说破。", createdAt: hoursAgo(0, 45), pinned: false },
+  { id: "n3", workId: "w1", content: "下一章开头：雨停，山门内传来钟声。", createdAt: hoursAgo(0, 20), pinned: false },
+  { id: "n4", workId: "w1", content: "「洗掉剑上的锈，洗不掉人心里的」——这句留着当卷末收尾。", createdAt: hoursAgo(0, 5), pinned: false },
 ];
 
-const OUTLINE: OutlineNode[] = [
+/**
+ * 伏笔条目（R7）：挂在真实卷 / 章上，回收状态可切换。
+ * 骨架（卷章）不落库，所以这里只有用户手写的伏笔。
+ */
+const OUTLINE_ENTRIES: OutlineEntry[] = [
   {
-    id: "o-v1",
-    kind: "volume",
-    title: "卷一",
-    note: "少年游 · 沈砚离山",
-    children: [
-      { id: "o-c7", kind: "chapter", title: "第七章 青梧山雨", note: "陆昭冒雨寻来" },
-      { id: "o-c8", kind: "chapter", title: "第八章 檐下对坐", note: "掌门的旧诺" },
-      { id: "o-c9", kind: "chapter", title: "第九章 借剑", note: "三年之约到期" },
-      {
-        id: "o-f1",
-        kind: "foreshadow",
-        title: "断伞骨",
-        tag: "伏笔",
-        note: "← 第二章旧剑",
-      },
-      {
-        id: "o-f2",
-        kind: "foreshadow",
-        title: "师父临终语",
-        tag: "伏笔",
-        note: "← 待回收",
-      },
-    ],
+    id: "f1",
+    workId: "w1",
+    kind: "foreshadow",
+    volumeId: "v1",
+    chapterId: "c3",
+    title: "断伞骨",
+    note: "第三章埋设；回收时让陆昭修伞，不说破。",
+    status: "open",
+    createdAt: hoursAgo(0, 52),
   },
   {
-    id: "o-v2",
-    kind: "volume",
-    title: "卷二",
-    note: "长夜行 · 入世",
-    children: [
-      { id: "o-c10", kind: "chapter", title: "第十三章 渡口", note: "离开北境" },
-    ],
+    id: "f2",
+    workId: "w1",
+    kind: "foreshadow",
+    volumeId: "v1",
+    chapterId: "c7",
+    title: "师父临终语",
+    note: "「青梧山的雨，能洗掉剑上的锈，洗不掉人心里的」——卷末回收。",
+    status: "open",
+    createdAt: hoursAgo(0, 30),
+  },
+  {
+    id: "f3",
+    workId: "w1",
+    kind: "foreshadow",
+    volumeId: "v2",
+    title: "三年之约",
+    note: "第十章借剑已回收，玄铁重剑第一次出鞘。",
+    status: "resolved",
+    createdAt: hoursAgo(6),
   },
 ];
 
@@ -239,7 +241,7 @@ export async function fetchNovelBundle(): Promise<NovelBundle> {
     links: LINKS.map((link) => ({ ...link })),
     levelSystems: LEVEL_SYSTEMS.map((system) => ({ ...system, rungs: system.rungs.map((rung) => ({ ...rung })) })),
     notes: NOTES.map((note) => ({ ...note })),
-    outline: structuredClone(OUTLINE),
+    outlineEntries: OUTLINE_ENTRIES.map((entry) => ({ ...entry })),
     recovery: { snapshotTime: hoursAgo(0, 8), deltaWords: 512 },
   };
 }
@@ -295,4 +297,32 @@ export async function saveChapterContent(
   content: string,
 ): Promise<boolean> {
   return chapterId.length > 0 && typeof content === "string";
+}
+
+/** 保存章节大纲梗概（对应未来的 novel-outline-save-chapter，空串即清除） */
+export async function saveChapterOutline(
+  chapterId: string,
+  note: string,
+): Promise<boolean> {
+  return chapterId.length > 0 && typeof note === "string";
+}
+
+/** 新增 / 更新伏笔条目（对应未来的 novel-outline-entry-save，upsert 语义） */
+export async function saveOutlineEntry(entry: OutlineEntry): Promise<boolean> {
+  return entry.id.length > 0 && entry.title.trim().length > 0;
+}
+
+/** 删除伏笔条目（对应未来的 novel-outline-entry-remove） */
+export async function removeOutlineEntry(entryId: string): Promise<boolean> {
+  return entryId.length > 0;
+}
+
+/** 新增 / 更新灵感速记（对应未来的 novel-note-save，upsert 语义） */
+export async function saveNote(note: NovelNote): Promise<boolean> {
+  return note.id.length > 0 && note.content.trim().length > 0;
+}
+
+/** 删除灵感速记（对应未来的 novel-note-remove） */
+export async function removeNote(noteId: string): Promise<boolean> {
+  return noteId.length > 0;
 }

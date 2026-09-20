@@ -1,14 +1,21 @@
 import type {
   EntityTerm,
   EntityType,
+  ForeshadowPatch,
   LabelNumberStyle,
+  NotePatch,
   NovelChapter,
   NovelEntity,
+  NovelNote,
   NovelVolume,
+  OutlineEntry,
+  OutlineEntryDraft,
+  OutlineNode,
   TermMatch,
   TextSegment,
   WordCountMode,
 } from "./types";
+import { UNNAMED_VOLUME } from "./novel-config";
 
 /**
  * 小说编辑器纯函数工具
@@ -282,6 +289,181 @@ export function buildSortOrder(
   items: ReadonlyArray<{ id: string }>,
 ): Map<string, number> {
   return new Map(items.map((item, index) => [item.id, index + 1]));
+}
+
+/**
+ * 大纲派生选项
+ *
+ * 卷 / 章的序号标签与左栏章节树共用同一套配置，改序号样式后大纲同步变动。
+ */
+export interface OutlineBuildOptions {
+  numberStyle: LabelNumberStyle;
+  chapterSuffix: string;
+  volumeSuffix: string;
+}
+
+/**
+ * 由真实卷 / 章 + 用户手写的伏笔派生大纲树（PRD R7）
+ *
+ * 骨架永远来自 volumes / chapters，不落库、也不允许与左栏不一致——
+ * 因此大纲里的章节节点自带真实 chapterId，点击即跳转（历史上的桩数据
+ * 用「o-c7」这类假 id，点了编辑器直接空态）。
+ * 伏笔统一挂到所属卷末尾（待回收在前、同级内按写入时间），不插进章序中间，
+ * 避免「大纲顺序 ≠ 章节顺序」的误导。
+ */
+export function buildOutlineTree(
+  volumes: NovelVolume[],
+  chapters: NovelChapter[],
+  entries: OutlineEntry[],
+  options: OutlineBuildOptions,
+): OutlineNode[] {
+  const numbers = buildChapterNumbers(volumes, chapters);
+
+  return buildChapterGroups(volumes, chapters).map((group, index) => {
+    const chapterNodes: OutlineNode[] = group.chapters.map((chapter) => ({
+      kind: "chapter",
+      id: chapter.id,
+      chapterId: chapter.id,
+      title: chapter.title,
+      label: formatNumberedLabel(
+        options.numberStyle,
+        options.chapterSuffix,
+        numbers.get(chapter.id) ?? 1,
+      ),
+      note: chapter.outlineNote ?? "",
+      wordCount: chapter.wordCount,
+      status: chapter.status,
+    }));
+
+    const owned = entries.filter((entry) => entry.volumeId === group.volume.id);
+    const foreshadowNodes: OutlineNode[] = [...owned]
+      .sort(
+        (a, b) =>
+          Number(a.status === "resolved") - Number(b.status === "resolved") ||
+          a.createdAt - b.createdAt,
+      )
+      .map((entry) => ({
+        kind: "foreshadow",
+        id: entry.id,
+        entryId: entry.id,
+        title: entry.title,
+        note: entry.note,
+        resolved: entry.status === "resolved",
+      }));
+
+    return {
+      kind: "volume",
+      id: group.volume.id,
+      title: formatNumberedLabel(
+        options.numberStyle,
+        options.volumeSuffix,
+        index + 1,
+      ),
+      note: group.volume.name === UNNAMED_VOLUME ? "" : group.volume.name,
+      openForeshadows: owned.filter((entry) => entry.status === "open").length,
+      children: [...chapterNodes, ...foreshadowNodes],
+    };
+  });
+}
+
+/** 灵感排序：置顶优先，同级按创建时间倒序；不改入参 */
+export function sortNotes(notes: NovelNote[]): NovelNote[] {
+  return [...notes].sort(
+    (a, b) => Number(b.pinned) - Number(a.pinned) || b.createdAt - a.createdAt,
+  );
+}
+
+/** 灵感关键词过滤（内容子串，忽略大小写）；空关键词原样返回 */
+export function filterNotes(notes: NovelNote[], keyword: string): NovelNote[] {
+  const trimmed = keyword.trim().toLowerCase();
+  if (!trimmed) return notes;
+  return notes.filter((note) => note.content.toLowerCase().includes(trimmed));
+}
+
+/** 取首个非空行作标题并做字符级截断（一键转化的默认标题） */
+export function firstLineTitle(text: string, max = 18): string {
+  const firstLine =
+    text
+      .split("\n")
+      .map((line) => line.trim())
+      .find((line) => line.length > 0) ?? "";
+  return truncate(firstLine, max);
+}
+
+/**
+ * 由灵感生成伏笔条目草稿（R7 联动：灵感 → 大纲）
+ *
+ * id 与 createdAt 由调用方注入，本函数保持纯函数可测；
+ * 标题取首行截断，正文原样存进伏笔说明，不丢信息。
+ */
+export function buildForeshadowDraft(
+  note: NovelNote,
+  volumeId: string,
+  chapterId?: string,
+): OutlineEntryDraft {
+  return {
+    workId: note.workId,
+    kind: "foreshadow",
+    volumeId,
+    chapterId: chapterId || undefined,
+    title: firstLineTitle(note.content),
+    note: note.content,
+    status: "open",
+  };
+}
+
+/**
+ * 写入章节一句话梗概；去首尾空白后与原文相同、或章节不存在时返回原引用，
+ * 空串表示清除梗概。不修改入参（updatedAt 属于正文保存，不在此更新）。
+ */
+export function patchChapterOutlineNote(
+  chapters: NovelChapter[],
+  chapterId: string,
+  note: string,
+): NovelChapter[] {
+  const trimmed = note.trim();
+  const target = chapters.find((chapter) => chapter.id === chapterId);
+  if (!target || (target.outlineNote ?? "") === trimmed) return chapters;
+  return chapters.map((chapter) =>
+    chapter.id === chapterId ? { ...chapter, outlineNote: trimmed } : chapter,
+  );
+}
+
+/** 伏笔条目局部更新；标题去空白后为空、或条目不存在时返回原引用 */
+export function patchOutlineEntry(
+  entries: OutlineEntry[],
+  entryId: string,
+  patch: ForeshadowPatch,
+): OutlineEntry[] {
+  const target = entries.find((entry) => entry.id === entryId);
+  if (!target) return entries;
+  const next: OutlineEntry = { ...target };
+  if (patch.title !== undefined) {
+    const trimmed = patch.title.trim();
+    if (!trimmed) return entries;
+    next.title = trimmed;
+  }
+  if (patch.note !== undefined) next.note = patch.note.trim();
+  return entries.map((entry) => (entry.id === entryId ? next : entry));
+}
+
+/** 灵感局部更新；正文去空白后为空、或灵感不存在时返回原引用 */
+export function patchNote(
+  notes: NovelNote[],
+  noteId: string,
+  patch: NotePatch,
+): NovelNote[] {
+  const target = notes.find((note) => note.id === noteId);
+  if (!target) return notes;
+  const next: NovelNote = { ...target };
+  if (patch.content !== undefined) {
+    const trimmed = patch.content.trim();
+    if (!trimmed) return notes;
+    next.content = trimmed;
+  }
+  if (patch.pinned !== undefined) next.pinned = patch.pinned;
+  if (patch.foreshadowId !== undefined) next.foreshadowId = patch.foreshadowId;
+  return notes.map((note) => (note.id === noteId ? next : note));
 }
 
 /** 卷 → 章两级分组，卷内按 sort 排序 */

@@ -1,0 +1,1866 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CheckIn 小说编辑器 · UI 改版原型 v2</title>
+<style>
+/* ============================================================
+   0. 基础重置
+   ============================================================ */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+button { font: inherit; color: inherit; }
+input, textarea, select { font: inherit; color: inherit; }
+
+/* ============================================================
+   1. 设计令牌 —— 间距 / 圆角 / 动效
+   ============================================================ */
+:root {
+  /* 4px 基准栅格 */
+  --s-1: 4px;  --s-2: 8px;  --s-3: 12px; --s-4: 16px;
+  --s-5: 20px; --s-6: 24px; --s-8: 32px;
+
+  --r-xs: 4px; --r-sm: 6px; --r-md: 10px; --r-lg: 14px; --r-pill: 999px;
+
+  /* 动效：出场用 ease-out 弹簧感，收起用 ease 收敛 */
+  --ease-out: cubic-bezier(.22, .61, .36, 1);
+  --ease-in: cubic-bezier(.4, 0, 1, 1);
+  --d-fast: 120ms;
+  --d-base: 180ms;
+  --d-slow: 260ms;
+
+  --rail-w: 340px;
+  --left-w: 240px;
+  --top-h: 44px;
+  --status-h: 30px;
+
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+             "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  --font-read: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+}
+
+/* ============================================================
+   2. 主题令牌 —— 亮 / 暗 / 护眼
+   ============================================================ */
+.app[data-theme="light"] {
+  --bg-app:      #F5F5F2;
+  --bg-rail:     #FBFAF8;
+  --bg-surface:  #FFFFFF;
+  --bg-sunken:   #F1F0EC;
+  --bg-hover:    #EDECE7;
+  --bg-active:   #E7E5DE;
+  --bg-paper:    #FFFEFB;
+
+  --line:        #E4E2DB;
+  --line-soft:   #EEECE6;
+  --line-strong: #D3D0C7;
+
+  --tx:          #1D1E22;
+  --tx-2:        #585B64;
+  --tx-3:        #8A8E97;
+  --tx-4:        #AFB3BB;
+
+  --accent:      #4D5AD6;
+  --accent-weak: #ECEEFB;
+  --accent-soft: #DDE1F8;
+  --on-accent:   #FFFFFF;
+
+  --c-character: #6E63D8;  --c-character-weak: #EDECFA;
+  --c-location:  #12897A;  --c-location-weak:  #E2F2EF;
+  --c-faction:   #BC5F38;  --c-faction-weak:   #FAEDE5;
+  --c-item:      #A8801C;  --c-item-weak:      #FAF2DC;
+  --c-level:     #3575B8;  --c-level-weak:     #E6F0FA;
+  --c-custom:    #757C8A;  --c-custom-weak:    #EDEEF1;
+
+  --ok: #158A5B;  --warn: #A97512;  --danger: #C0392B;
+  --shadow-1: 0 1px 2px rgba(24,24,28,.05);
+  --shadow-2: 0 2px 8px rgba(24,24,28,.08), 0 1px 2px rgba(24,24,28,.04);
+  --shadow-3: 0 12px 32px rgba(24,24,28,.14), 0 2px 8px rgba(24,24,28,.08);
+}
+
+.app[data-theme="dark"] {
+  --bg-app:      #15161A;
+  --bg-rail:     #1A1C21;
+  --bg-surface:  #202228;
+  --bg-sunken:   #191B20;
+  --bg-hover:    #262931;
+  --bg-active:   #2D313A;
+  --bg-paper:    #1C1E23;
+
+  --line:        #2C2F37;
+  --line-soft:   #24262C;
+  --line-strong: #3A3E48;
+
+  --tx:          #E7E8EC;
+  --tx-2:        #A5AAB5;
+  --tx-3:        #767C88;
+  --tx-4:        #565C67;
+
+  --accent:      #8B94F2;
+  --accent-weak: #232740;
+  --accent-soft: #2E3450;
+  --on-accent:   #14151A;
+
+  --c-character: #9B92F0;  --c-character-weak: #262539;
+  --c-location:  #3FBFAA;  --c-location-weak:  #16292A;
+  --c-faction:   #E08A5C;  --c-faction-weak:   #2E211A;
+  --c-item:      #DCAE48;  --c-item-weak:      #2B2417;
+  --c-level:     #6FA5DE;  --c-level-weak:     #172431;
+  --c-custom:    #98A0AE;  --c-custom-weak:    #23262C;
+
+  --ok: #4FBF8B;  --warn: #D9A441;  --danger: #E0685A;
+  --shadow-1: 0 1px 2px rgba(0,0,0,.3);
+  --shadow-2: 0 2px 8px rgba(0,0,0,.36);
+  --shadow-3: 0 14px 36px rgba(0,0,0,.5), 0 2px 8px rgba(0,0,0,.3);
+}
+
+.app[data-theme="sepia"] {
+  --bg-app:      #EDE5D3;
+  --bg-rail:     #F4EDDD;
+  --bg-surface:  #F9F3E5;
+  --bg-sunken:   #EADFC9;
+  --bg-hover:    #E6DAC1;
+  --bg-active:   #DFD2B6;
+  --bg-paper:    #F7F0DF;
+
+  --line:        #DCCFB4;
+  --line-soft:   #E5DCC6;
+  --line-strong: #C9BA9A;
+
+  --tx:          #3F3526;
+  --tx-2:        #6C5E48;
+  --tx-3:        #95886F;
+  --tx-4:        #B3A68C;
+
+  --accent:      #8A5A2B;
+  --accent-weak: #EFE0CB;
+  --accent-soft: #E5D2B4;
+  --on-accent:   #FFF9EE;
+
+  --c-character: #6B4FA8;  --c-character-weak: #E7DEEE;
+  --c-location:  #1F6B58;  --c-location-weak:  #DCE9E2;
+  --c-faction:   #9C4A28;  --c-faction-weak:   #F2DFD2;
+  --c-item:      #8A6510;  --c-item-weak:      #F2E7CC;
+  --c-level:     #2F5E86;  --c-level-weak:     #DCE6EF;
+  --c-custom:    #6A6455;  --c-custom-weak:    #E9E3D3;
+
+  --ok: #2C6B47;  --warn: #8A6310;  --danger: #A33A28;
+  --shadow-1: 0 1px 2px rgba(70,55,30,.08);
+  --shadow-2: 0 2px 8px rgba(70,55,30,.12);
+  --shadow-3: 0 12px 32px rgba(70,55,30,.2);
+}
+
+/* ============================================================
+   3. 应用外壳
+   ============================================================ */
+.app {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-app);
+  color: var(--tx);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  overflow: hidden;
+}
+
+.workspace { flex: 1; min-height: 0; display: flex; }
+
+/* ---------- 3.1 顶栏 ---------- */
+.topbar {
+  flex: none;
+  height: var(--top-h);
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: 0 var(--s-3) 0 var(--s-4);
+  background: var(--bg-rail);
+  border-bottom: 1px solid var(--line);
+  -webkit-app-region: drag;
+}
+.topbar > * { -webkit-app-region: no-drag; }
+
+.tb-left { display: flex; align-items: center; gap: var(--s-2); min-width: 0; }
+.tb-right { margin-left: auto; display: flex; align-items: center; gap: 2px; }
+.tb-sep { width: 1px; height: 18px; background: var(--line); margin: 0 var(--s-2); }
+
+/* 作品切换器 */
+.work {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 28px; padding: 0 8px 0 10px;
+  border: 1px solid transparent; border-radius: var(--r-sm);
+  background: transparent; cursor: pointer;
+  transition: background var(--d-fast) ease, border-color var(--d-fast) ease;
+}
+.work:hover { background: var(--bg-hover); border-color: var(--line); }
+.work__name { font-size: 13px; font-weight: 600; letter-spacing: .1px; }
+.work__chev { color: var(--tx-3); display: flex; }
+.work__badge {
+  padding: 1px 5px; border-radius: var(--r-xs);
+  background: var(--accent-weak); color: var(--accent);
+  font-size: 10px; font-weight: 600;
+}
+
+/* 面包屑 */
+.crumb { display: flex; align-items: baseline; gap: 6px; min-width: 0; color: var(--tx-3); font-size: 12px; }
+.crumb__sep { color: var(--tx-4); }
+.crumb__cur { color: var(--tx); font-weight: 500; }
+
+/* 保存状态 */
+.save {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 0 8px; height: 24px; border-radius: var(--r-pill);
+  font-size: 11.5px; color: var(--tx-2); white-space: nowrap;
+}
+.save__dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--tx-4); flex: none;
+  transition: background var(--d-base) ease;
+}
+.save[data-state="saved"] .save__dot { background: var(--ok); }
+.save[data-state="pending"] .save__dot { background: var(--warn); animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .3 } }
+
+/* 图标按钮 */
+.ibtn {
+  width: 28px; height: 28px; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid transparent; border-radius: var(--r-sm);
+  background: transparent; color: var(--tx-2); cursor: pointer;
+  transition: background var(--d-fast) ease, color var(--d-fast) ease, border-color var(--d-fast) ease;
+}
+.ibtn:hover { background: var(--bg-hover); color: var(--tx); }
+.ibtn.is-on { background: var(--accent-weak); color: var(--accent); border-color: var(--accent-soft); }
+.ibtn:active { transform: scale(.94); }
+.ibtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ibtn--wide { width: auto; padding: 0 9px; gap: 5px; font-size: 12px; }
+
+/* ============================================================
+   4. 侧栏（左 / 右通用）+ 折叠后的图标边栏
+   ============================================================ */
+.rail {
+  position: relative;
+  flex: none;
+  background: var(--bg-rail);
+  display: flex;
+  overflow: hidden;
+  transition: width var(--d-slow) var(--ease-out);
+}
+.rail--left { width: var(--left-w); border-right: 1px solid var(--line); }
+.rail--left.is-collapsed { width: 40px; border-right-color: var(--line); }
+.rail--right { width: var(--rail-w); border-left: 1px solid var(--line); }
+.rail--right.is-collapsed { width: 40px; }
+
+.rail__inner { flex: 1; min-width: 0; display: flex; flex-direction: column; transition: opacity var(--d-base) ease; }
+.rail.is-collapsed .rail__inner { opacity: 0; pointer-events: none; }
+
+/* 折叠态图标边栏 */
+.edge {
+  position: absolute; inset: 0; width: 40px;
+  display: flex; flex-direction: column; align-items: center;
+  gap: 2px; padding: 6px 0;
+  opacity: 0; pointer-events: none;
+  transition: opacity var(--d-base) ease;
+}
+.rail.is-collapsed .edge { opacity: 1; pointer-events: auto; }
+.edge__btn {
+  width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center;
+  border: none; border-radius: var(--r-sm); background: transparent;
+  color: var(--tx-3); cursor: pointer;
+  transition: background var(--d-fast) ease, color var(--d-fast) ease;
+}
+.edge__btn:hover { background: var(--bg-hover); color: var(--tx); }
+.edge__btn.is-on { background: var(--accent-weak); color: var(--accent); }
+.edge__sp { width: 16px; height: 1px; background: var(--line); margin: 4px 0; }
+
+/* 拖拽调宽 */
+.splitter {
+  flex: none; width: 5px; margin: 0 -2px; z-index: 5;
+  cursor: col-resize; background: transparent; position: relative;
+}
+.splitter::after {
+  content: ""; position: absolute; inset: 0 2px;
+  background: transparent; transition: background var(--d-fast) ease;
+}
+.splitter:hover::after, .splitter.is-drag::after { background: var(--accent); opacity: .5; }
+
+/* ============================================================
+   5. 左栏 · 章节树
+   ============================================================ */
+.ctree { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.ctree__head {
+  flex: none; height: 38px; display: flex; align-items: center; gap: 6px;
+  padding: 0 var(--s-2) 0 var(--s-4);
+}
+.ctree__title { font-size: 11px; font-weight: 700; letter-spacing: .8px; color: var(--tx-3); text-transform: uppercase; }
+.ctree__count { font-size: 11px; color: var(--tx-4); font-variant-numeric: tabular-nums; }
+.ctree__acts { margin-left: auto; display: flex; gap: 2px; }
+.ctree__scroll { flex: 1; min-height: 0; overflow: auto; padding: 0 var(--s-2) var(--s-4); }
+
+.vol { margin-bottom: 2px; }
+.vol__head {
+  width: 100%; display: flex; align-items: center; gap: 6px;
+  height: 28px; padding: 0 6px; border: none; border-radius: var(--r-sm);
+  background: transparent; cursor: pointer; text-align: left;
+  transition: background var(--d-fast) ease;
+}
+.vol__head:hover { background: var(--bg-hover); }
+.vol__chev { display: flex; color: var(--tx-3); transition: transform var(--d-base) var(--ease-out); }
+.vol.is-open .vol__chev { transform: rotate(90deg); }
+.vol__name { font-size: 12px; font-weight: 600; color: var(--tx); }
+.vol__meta { margin-left: auto; font-size: 10.5px; color: var(--tx-4); font-variant-numeric: tabular-nums; }
+.vol__body { overflow: hidden; display: grid; grid-template-rows: 0fr; transition: grid-template-rows var(--d-slow) var(--ease-out); }
+.vol.is-open .vol__body { grid-template-rows: 1fr; }
+.vol__body > ul { min-height: 0; margin: 0; padding: 0 0 0 6px; list-style: none; }
+
+.chap {
+  width: 100%; display: flex; align-items: center; gap: 7px;
+  height: 28px; padding: 0 8px 0 10px; margin: 1px 0;
+  border: none; border-radius: var(--r-sm); background: transparent;
+  cursor: pointer; text-align: left; position: relative;
+  transition: background var(--d-fast) ease, color var(--d-fast) ease;
+}
+.chap:hover { background: var(--bg-hover); }
+.chap.is-on { background: var(--bg-active); }
+.chap.is-on::before {
+  content: ""; position: absolute; left: 0; top: 6px; bottom: 6px;
+  width: 2.5px; border-radius: 2px; background: var(--accent);
+}
+.chap.is-on .chap__t { color: var(--tx); font-weight: 600; }
+.chap__st { width: 6px; height: 6px; border-radius: 50%; flex: none; border: 1.5px solid var(--tx-4); }
+.chap__st[data-s="done"] { background: var(--ok); border-color: var(--ok); }
+.chap__no { flex: none; font-size: 10.5px; color: var(--tx-4); font-variant-numeric: tabular-nums; min-width: 26px; }
+.chap__t { flex: 1; min-width: 0; font-size: 12.5px; color: var(--tx-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chap__w { flex: none; font-size: 10.5px; color: var(--tx-4); font-variant-numeric: tabular-nums; }
+
+/* ============================================================
+   6. 中央 · 码字区
+   ============================================================ */
+.stage { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+.stage__scroll { flex: 1; min-height: 0; overflow: auto; padding: var(--s-8) var(--s-4) 40vh; }
+.paper {
+  max-width: 42em; margin: 0 auto;
+  font-family: var(--font-read);
+  font-size: 17px; line-height: 1.9; color: var(--tx);
+}
+.paper__title {
+  font-size: 20px; font-weight: 600; letter-spacing: .5px;
+  margin: 0 0 var(--s-6); padding-bottom: var(--s-3);
+  border-bottom: 1px solid var(--line-soft);
+}
+.paper p { margin: 0 0 .6em; text-indent: 2em; }
+
+/* 正文要素标注 */
+.ent {
+  --t: var(--accent); --tw: var(--accent-weak);
+  border-radius: 3px; padding: 0 1px; cursor: help;
+  background: var(--tw);
+  box-shadow: inset 0 -1.5px 0 var(--t);
+  transition: background var(--d-fast) ease;
+}
+.ent:hover { background: var(--t); color: #fff; }
+.ent[data-type="character"]   { --t: var(--c-character); --tw: var(--c-character-weak); }
+.ent[data-type="location"]    { --t: var(--c-location);  --tw: var(--c-location-weak); }
+.ent[data-type="faction"]     { --t: var(--c-faction);   --tw: var(--c-faction-weak); }
+.ent[data-type="item"]        { --t: var(--c-item);      --tw: var(--c-item-weak); }
+.ent[data-type="level_system"]{ --t: var(--c-level);     --tw: var(--c-level-weak); }
+
+/* ---------- 悬浮资料卡 ---------- */
+.hovercard {
+  position: fixed; z-index: 90; width: 268px;
+  background: var(--bg-surface); border: 1px solid var(--line);
+  border-radius: var(--r-md); box-shadow: var(--shadow-3);
+  padding: var(--s-3); pointer-events: none;
+  opacity: 0; transform: translateY(4px) scale(.98);
+  transition: opacity var(--d-fast) ease, transform var(--d-base) var(--ease-out);
+}
+.hovercard.is-on { opacity: 1; transform: none; pointer-events: auto; }
+.hc__top { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.hc__av {
+  width: 30px; height: 30px; flex: none; border-radius: 9px;
+  display: grid; place-items: center; font-size: 13px; font-weight: 600;
+  background: var(--tw, var(--accent-weak)); color: var(--t, var(--accent));
+}
+.hc__name { font-size: 13.5px; font-weight: 600; }
+.hc__alias { font-size: 11px; color: var(--tx-3); }
+.hc__sum { font-size: 12px; line-height: 1.65; color: var(--tx-2); margin: 0 0 8px; }
+.hc__tags { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+.hc__tag {
+  padding: 1px 7px; border-radius: var(--r-pill); font-size: 10.5px;
+  background: var(--tw, var(--accent-weak)); color: var(--t, var(--accent));
+}
+.hc__foot {
+  display: flex; align-items: center; gap: 6px; padding-top: 8px;
+  border-top: 1px solid var(--line-soft); font-size: 11px; color: var(--tx-3);
+}
+.hc__link { margin-left: auto; color: var(--accent); font-size: 11px; cursor: pointer; }
+
+/* ============================================================
+   7. 右栏 · 支撑面板（本次重做重点）
+   ============================================================ */
+.prail { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; }
+
+/* 7.1 面板抬头 */
+.prail__head {
+  flex: none; height: 38px; display: flex; align-items: center; gap: 7px;
+  padding: 0 var(--s-2) 0 var(--s-4);
+}
+.prail__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex: none; }
+.prail__title { font-size: 11px; font-weight: 700; letter-spacing: .8px; color: var(--tx-3); text-transform: uppercase; }
+.prail__acts { margin-left: auto; display: flex; gap: 2px; }
+
+/* 7.2 分段控件（替代原底部下划线 Tab） */
+.seg {
+  flex: none; position: relative; display: flex; gap: 2px;
+  margin: 0 var(--s-3) var(--s-3); padding: 3px;
+  background: var(--bg-sunken); border-radius: var(--r-md);
+}
+.seg__ind {
+  position: absolute; top: 3px; bottom: 3px; left: 3px;
+  /* 4 项 = 3 个 2px gap + 左右各 3px padding，故每项宽 (100% - 12px)/4 */
+  width: calc((100% - 12px) / 4);
+  background: var(--bg-surface); border-radius: 7px;
+  box-shadow: var(--shadow-1);
+  transition: transform var(--d-slow) var(--ease-out);
+  pointer-events: none;
+}
+.seg__i {
+  position: relative; z-index: 1; flex: 1; min-width: 0;
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  height: 28px; padding: 0 4px;
+  border: none; border-radius: 7px; background: transparent;
+  color: var(--tx-3); font-size: 12px; cursor: pointer; white-space: nowrap;
+  transition: color var(--d-base) ease;
+}
+.seg__i svg { flex: none; }
+.seg__i:hover { color: var(--tx-2); }
+.seg__i.is-on { color: var(--accent); font-weight: 600; }
+.seg__i:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+.seg__n {
+  padding: 0 5px; border-radius: var(--r-pill); font-size: 10px;
+  background: var(--bg-active); color: var(--tx-3); font-variant-numeric: tabular-nums;
+}
+.seg__i.is-on .seg__n { background: var(--accent-weak); color: var(--accent); }
+
+/* 7.3 面板体 + 分页切换 */
+.prail__scroll { flex: 1; min-height: 0; overflow: auto; position: relative; }
+.pane { display: none; padding: 0 var(--s-3) var(--s-4); animation: paneIn var(--d-slow) var(--ease-out); }
+.pane.is-on { display: block; }
+@keyframes paneIn { from { opacity: 0; transform: translateY(6px) } to { opacity: 1; transform: none } }
+
+/* 7.4 面板工具条（吸顶） */
+.pbar {
+  position: sticky; top: 0; z-index: 3;
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 0 8px;
+  background: linear-gradient(var(--bg-rail) 78%, transparent);
+}
+.pbar__label { font-size: 11px; color: var(--tx-3); }
+
+/* 搜索框 */
+.fbox {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px;
+  height: 30px; padding: 0 8px;
+  border: 1px solid var(--line); border-radius: var(--r-md);
+  background: var(--bg-surface);
+  transition: border-color var(--d-fast) ease, box-shadow var(--d-fast) ease;
+}
+.fbox:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-weak); }
+.fbox svg { color: var(--tx-3); flex: none; }
+.fbox input {
+  flex: 1; min-width: 0; border: none; outline: none; background: transparent;
+  font-size: 12.5px; color: var(--tx);
+}
+.fbox input::placeholder { color: var(--tx-4); }
+.fbox__clear {
+  flex: none; width: 16px; height: 16px; display: grid; place-items: center;
+  border: none; border-radius: 50%; background: var(--bg-active);
+  color: var(--tx-3); cursor: pointer; font-size: 10px;
+}
+.fbox__clear:hover { color: var(--tx); }
+
+/* 主按钮 / 次按钮 */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  height: 30px; padding: 0 11px; flex: none;
+  border: 1px solid transparent; border-radius: var(--r-md);
+  background: var(--accent); color: var(--on-accent);
+  font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap;
+  transition: background var(--d-fast) ease, transform var(--d-fast) var(--ease-out);
+}
+.btn:hover { background: var(--accent); filter: brightness(1.08); }
+.btn:active { transform: scale(.97); }
+.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.btn--ghost { background: var(--bg-surface); border-color: var(--line); color: var(--tx-2); }
+.btn--ghost:hover { border-color: var(--accent); color: var(--accent); background: var(--bg-surface); }
+.btn--sm { height: 26px; padding: 0 9px; font-size: 11.5px; }
+
+/* 空态 */
+.empty { padding: 44px var(--s-4); text-align: center; }
+.empty__ico {
+  width: 44px; height: 44px; margin: 0 auto var(--s-3);
+  display: grid; place-items: center; border-radius: var(--r-lg);
+  background: var(--bg-sunken); color: var(--tx-4);
+}
+.empty__t { font-size: 12.5px; font-weight: 600; color: var(--tx-2); margin: 0 0 4px; }
+.empty__d { font-size: 11.5px; line-height: 1.6; color: var(--tx-3); margin: 0 0 var(--s-3); }
+
+/* ---------- 7.5 要素库 ---------- */
+.tfilter {
+  display: flex; gap: 5px; margin-bottom: var(--s-3);
+  overflow-x: auto; padding-bottom: 2px; scrollbar-width: none;
+}
+.tfilter::-webkit-scrollbar { display: none; }
+.tchip {
+  flex: none; display: inline-flex; align-items: center; gap: 5px;
+  height: 26px; padding: 0 10px;
+  border: 1px solid var(--line); border-radius: var(--r-pill);
+  background: var(--bg-surface); color: var(--tx-2);
+  font-size: 11.5px; cursor: pointer; white-space: nowrap;
+  transition: background var(--d-fast) ease, border-color var(--d-fast) ease, color var(--d-fast) ease;
+}
+.tchip:hover { border-color: var(--line-strong); }
+.tchip__d { width: 6px; height: 6px; border-radius: 50%; background: var(--dc, var(--tx-4)); flex: none; }
+.tchip__n { font-size: 10px; color: var(--tx-4); font-variant-numeric: tabular-nums; }
+.tchip.is-on {
+  background: var(--dc, var(--accent)); border-color: var(--dc, var(--accent));
+  color: #fff; font-weight: 600;
+}
+.tchip.is-on .tchip__d { background: rgba(255,255,255,.85); }
+.tchip.is-on .tchip__n { color: rgba(255,255,255,.75); }
+.tchip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.group { margin-bottom: var(--s-3); }
+.group__h {
+  display: flex; align-items: center; gap: 6px;
+  padding: 0 2px 6px; font-size: 11px; font-weight: 600;
+  color: var(--tx-3); letter-spacing: .3px;
+}
+.group__d { width: 6px; height: 6px; border-radius: 50%; background: var(--dc); }
+.group__n { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--tx-4); font-weight: 400; }
+
+/* 要素卡 */
+.ecard {
+  position: relative; width: 100%; display: flex; gap: 10px;
+  padding: 9px 10px; margin-bottom: 6px;
+  border: 1px solid var(--line-soft); border-radius: var(--r-md);
+  background: var(--bg-surface); text-align: left; cursor: pointer;
+  transition: background var(--d-fast) ease, border-color var(--d-fast) ease,
+              box-shadow var(--d-base) ease, transform var(--d-fast) var(--ease-out);
+}
+.ecard::before {
+  content: ""; position: absolute; left: 0; top: 10px; bottom: 10px;
+  width: 2.5px; border-radius: 0 2px 2px 0; background: var(--dc);
+  opacity: 0; transition: opacity var(--d-fast) ease;
+}
+.ecard:hover { border-color: var(--line-strong); box-shadow: var(--shadow-2); transform: translateY(-1px); }
+.ecard:hover::before { opacity: 1; }
+.ecard:active { transform: translateY(0) scale(.995); }
+.ecard:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.ecard__av {
+  width: 34px; height: 34px; flex: none; border-radius: 10px;
+  display: grid; place-items: center;
+  font-size: 14px; font-weight: 600;
+  background: var(--dw); color: var(--dc);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--dc) 22%, transparent);
+}
+.ecard__b { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.ecard__r1 { display: flex; align-items: center; gap: 6px; }
+.ecard__n { font-size: 13px; font-weight: 600; color: var(--tx); }
+.ecard__al { font-size: 11px; color: var(--tx-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ecard__sum {
+  font-size: 11.5px; line-height: 1.55; color: var(--tx-2);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.ecard__r3 { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+.met { display: inline-flex; align-items: center; gap: 3px; font-size: 10.5px; color: var(--tx-3); }
+.met svg { opacity: .7; }
+.met b { font-weight: 600; color: var(--tx-2); font-variant-numeric: tabular-nums; }
+
+/* ---------- 7.6 大纲 ---------- */
+.ovol { margin-bottom: var(--s-2); border: 1px solid var(--line-soft); border-radius: var(--r-md); background: var(--bg-surface); overflow: hidden; }
+.ovol__h {
+  width: 100%; display: flex; align-items: center; gap: 7px;
+  padding: 9px 10px; border: none; background: transparent; cursor: pointer; text-align: left;
+  transition: background var(--d-fast) ease;
+}
+.ovol__h:hover { background: var(--bg-hover); }
+.ovol__chev { display: flex; color: var(--tx-3); transition: transform var(--d-base) var(--ease-out); }
+.ovol.is-open .ovol__chev { transform: rotate(90deg); }
+.ovol__idx {
+  width: 20px; height: 20px; flex: none; border-radius: var(--r-xs);
+  display: grid; place-items: center; font-size: 10.5px; font-weight: 700;
+  background: var(--accent-weak); color: var(--accent);
+}
+.ovol__n { font-size: 12.5px; font-weight: 600; }
+.ovol__m { margin-left: auto; font-size: 10.5px; color: var(--tx-4); font-variant-numeric: tabular-nums; }
+.ovol__b { display: grid; grid-template-rows: 0fr; transition: grid-template-rows var(--d-slow) var(--ease-out); }
+.ovol.is-open .ovol__b { grid-template-rows: 1fr; }
+.ovol__b > div { min-height: 0; overflow: hidden; }
+.ovol__list { margin: 0; padding: 0 6px 8px; list-style: none; }
+
+.orow {
+  width: 100%; display: flex; align-items: center; gap: 8px;
+  padding: 6px 8px; margin: 1px 0;
+  border: none; border-radius: var(--r-sm); background: transparent;
+  cursor: pointer; text-align: left;
+  transition: background var(--d-fast) ease;
+}
+.orow:hover { background: var(--bg-hover); }
+.orow.is-on { background: var(--accent-weak); }
+.orow.is-on .orow__t { color: var(--accent); font-weight: 600; }
+.orow__st { width: 6px; height: 6px; border-radius: 50%; flex: none; border: 1.5px solid var(--tx-4); }
+.orow__st[data-s="done"] { background: var(--ok); border-color: var(--ok); }
+.orow__t { flex: 1; min-width: 0; font-size: 12.5px; color: var(--tx-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.orow__w { flex: none; font-size: 10.5px; color: var(--tx-4); font-variant-numeric: tabular-nums; }
+
+/* 伏笔行：不再是"点了没反应"的禁用按钮，改为明确的非交互信息行 */
+.frow {
+  display: flex; align-items: flex-start; gap: 7px;
+  padding: 6px 8px; margin: 1px 0;
+  border-left: 2px dashed var(--line-strong);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  background: var(--bg-sunken);
+}
+.frow__tag {
+  flex: none; margin-top: 1px; padding: 1px 6px; border-radius: var(--r-xs);
+  background: var(--c-item-weak); color: var(--c-item);
+  font-size: 10px; font-weight: 600;
+}
+.frow__tag[data-state="done"] { background: var(--c-location-weak); color: var(--c-location); }
+.frow__t { flex: 1; min-width: 0; font-size: 11.5px; line-height: 1.5; color: var(--tx-2); }
+
+/* ---------- 7.7 灵感速记 ---------- */
+.capture {
+  border: 1px solid var(--line); border-radius: var(--r-md);
+  background: var(--bg-surface); overflow: hidden;
+  transition: border-color var(--d-fast) ease, box-shadow var(--d-fast) ease;
+}
+.capture:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-weak); }
+.capture textarea {
+  width: 100%; min-height: 62px; resize: none; display: block;
+  padding: 10px 11px 4px; border: none; outline: none; background: transparent;
+  font-size: 12.5px; line-height: 1.7; color: var(--tx);
+}
+.capture textarea::placeholder { color: var(--tx-4); }
+.capture__bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 8px 8px 11px;
+}
+.capture__hint { font-size: 10.5px; color: var(--tx-4); }
+.capture__count { font-size: 10.5px; color: var(--tx-4); font-variant-numeric: tabular-nums; }
+.capture__go { margin-left: auto; }
+
+.note {
+  position: relative; padding: 9px 10px 8px; margin-top: 6px;
+  border: 1px solid var(--line-soft); border-radius: var(--r-md);
+  background: var(--bg-surface);
+  transition: border-color var(--d-fast) ease, box-shadow var(--d-fast) ease;
+}
+.note:hover { border-color: var(--line-strong); box-shadow: var(--shadow-1); }
+.note__t { margin: 0 0 6px; font-size: 12.5px; line-height: 1.7; color: var(--tx); white-space: pre-wrap; word-break: break-word; }
+.note__f { display: flex; align-items: center; gap: 6px; }
+.note__time { font-size: 10.5px; color: var(--tx-3); }
+.note__acts { margin-left: auto; display: flex; gap: 2px; opacity: 0; transition: opacity var(--d-fast) ease; }
+.note:hover .note__acts, .note:focus-within .note__acts { opacity: 1; }
+.note__act {
+  width: 22px; height: 22px; display: grid; place-items: center;
+  border: none; border-radius: var(--r-xs); background: transparent;
+  color: var(--tx-3); cursor: pointer;
+}
+.note__act:hover { background: var(--bg-hover); color: var(--tx); }
+.note__act--del:hover { color: var(--danger); }
+.note.is-new { animation: noteIn var(--d-slow) var(--ease-out); }
+@keyframes noteIn { from { opacity: 0; transform: translateY(-6px) } to { opacity: 1; transform: none } }
+
+.dayhd {
+  display: flex; align-items: center; gap: 8px;
+  margin: var(--s-4) 0 2px; font-size: 10.5px; font-weight: 700;
+  letter-spacing: .6px; color: var(--tx-3); text-transform: uppercase;
+}
+.dayhd::after { content: ""; flex: 1; height: 1px; background: var(--line-soft); }
+.dayhd__n { font-weight: 400; color: var(--tx-4); }
+
+/* ---------- 7.8 检索 ---------- */
+.shint { padding: var(--s-4) 2px 0; font-size: 11.5px; color: var(--tx-3); }
+.shint b { color: var(--tx); font-variant-numeric: tabular-nums; }
+.sres { margin: 6px 0 0; padding: 0; list-style: none; }
+.sitem {
+  width: 100%; display: block; padding: 9px 10px; margin-bottom: 6px;
+  border: 1px solid var(--line-soft); border-radius: var(--r-md);
+  background: var(--bg-surface); text-align: left; cursor: pointer;
+  transition: border-color var(--d-fast) ease, box-shadow var(--d-fast) ease, transform var(--d-fast) var(--ease-out);
+}
+.sitem:hover { border-color: var(--accent); box-shadow: var(--shadow-2); transform: translateY(-1px); }
+.sitem:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.sitem__h { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+.sitem__c { font-size: 11.5px; font-weight: 600; color: var(--tx); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sitem__n {
+  margin-left: auto; flex: none; padding: 1px 6px; border-radius: var(--r-pill);
+  background: var(--accent-weak); color: var(--accent);
+  font-size: 10px; font-weight: 600; font-variant-numeric: tabular-nums;
+}
+.sitem__s { font-size: 12px; line-height: 1.75; color: var(--tx-2); }
+.sitem__s mark { background: var(--c-item-weak); color: var(--c-item); border-radius: 2px; padding: 0 1px; font-weight: 600; }
+.skel { height: 62px; margin-bottom: 6px; border-radius: var(--r-md); background: linear-gradient(90deg, var(--bg-sunken) 25%, var(--bg-hover) 50%, var(--bg-sunken) 75%); background-size: 200% 100%; animation: shimmer 1.1s linear infinite; }
+@keyframes shimmer { to { background-position: -200% 0 } }
+
+/* ---------- 7.9 要素详情（覆盖层，保留列表滚动位置） ---------- */
+.edetail {
+  position: absolute; inset: 0; z-index: 8;
+  display: flex; flex-direction: column;
+  background: var(--bg-rail);
+  transform: translateX(100%);
+  transition: transform var(--d-slow) var(--ease-out);
+  box-shadow: -8px 0 24px rgba(0,0,0,.06);
+}
+.edetail.is-on { transform: none; }
+.edetail__h {
+  flex: none; height: 38px; display: flex; align-items: center; gap: 6px;
+  padding: 0 var(--s-3);
+  border-bottom: 1px solid var(--line);
+}
+.edetail__back {
+  display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 8px 0 5px;
+  border: none; border-radius: var(--r-sm); background: transparent;
+  color: var(--tx-2); font-size: 12px; cursor: pointer;
+  transition: background var(--d-fast) ease, color var(--d-fast) ease;
+}
+.edetail__back:hover { background: var(--bg-hover); color: var(--tx); }
+.edetail__acts { margin-left: auto; display: flex; gap: 2px; }
+.edetail__b { flex: 1; min-height: 0; overflow: auto; padding: var(--s-4) var(--s-3) var(--s-6); }
+
+.ehero { display: flex; flex-direction: column; align-items: center; text-align: center; margin-bottom: var(--s-4); }
+.ehero__av {
+  width: 52px; height: 52px; border-radius: 16px; display: grid; place-items: center;
+  font-size: 20px; font-weight: 700; margin-bottom: 10px;
+  background: var(--dw); color: var(--dc);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--dc) 26%, transparent);
+}
+.ehero__n { font-size: 16px; font-weight: 700; letter-spacing: .2px; }
+.ehero__al { margin-top: 3px; font-size: 11.5px; color: var(--tx-3); }
+.ehero__tp {
+  margin-top: 8px; padding: 2px 9px; border-radius: var(--r-pill);
+  background: var(--dw); color: var(--dc); font-size: 11px; font-weight: 600;
+}
+.equote {
+  margin: 0 0 var(--s-4); padding: 10px 12px;
+  border-left: 2.5px solid var(--dc, var(--accent));
+  border-radius: 0 var(--r-md) var(--r-md) 0;
+  background: var(--bg-sunken);
+  font-size: 12.5px; line-height: 1.75; color: var(--tx-2);
+}
+.etags { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: var(--s-4); justify-content: center; }
+.etag { padding: 2px 9px; border-radius: var(--r-pill); background: var(--dw); color: var(--dc); font-size: 11px; }
+
+.esec { margin-bottom: 10px; border: 1px solid var(--line-soft); border-radius: var(--r-md); background: var(--bg-surface); overflow: hidden; }
+.esec__h {
+  width: 100%; display: flex; align-items: center; gap: 7px;
+  padding: 9px 10px; border: none; background: transparent; cursor: pointer; text-align: left;
+}
+.esec__chev { display: flex; color: var(--tx-4); transition: transform var(--d-base) var(--ease-out); }
+.esec.is-open .esec__chev { transform: rotate(90deg); }
+.esec__t { font-size: 12px; font-weight: 600; color: var(--tx); }
+.esec__n { font-size: 10.5px; color: var(--tx-4); font-variant-numeric: tabular-nums; }
+.esec__add { margin-left: auto; }
+.esec__b { display: grid; grid-template-rows: 0fr; transition: grid-template-rows var(--d-slow) var(--ease-out); }
+.esec.is-open .esec__b { grid-template-rows: 1fr; }
+.esec__b > div { min-height: 0; overflow: hidden; }
+.esec__pad { padding: 0 10px 10px; }
+
+.kv { display: flex; gap: 10px; padding: 5px 0; font-size: 12px; }
+.kv + .kv { border-top: 1px solid var(--line-soft); }
+.kv__k { width: 62px; flex: none; color: var(--tx-3); }
+.kv__v { flex: 1; min-width: 0; color: var(--tx); word-break: break-word; }
+
+.rel { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 12px; }
+.rel + .rel { border-top: 1px solid var(--line-soft); }
+.rel__ar { flex: none; width: 16px; text-align: center; color: var(--tx-4); font-size: 11px; }
+.rel__n { font-weight: 600; color: var(--tx); }
+.rel__t { padding: 1px 7px; border-radius: var(--r-xs); background: var(--bg-sunken); color: var(--tx-2); font-size: 10.5px; }
+.rel__x {
+  margin-left: auto; width: 20px; height: 20px; flex: none;
+  display: grid; place-items: center; border: none; border-radius: 50%;
+  background: transparent; color: var(--tx-4); cursor: pointer; opacity: 0;
+  transition: opacity var(--d-fast) ease, color var(--d-fast) ease, background var(--d-fast) ease;
+}
+.rel:hover .rel__x, .rel__x:focus-visible { opacity: 1; }
+.rel__x:hover { color: var(--danger); background: var(--bg-hover); }
+
+.ladder { display: flex; align-items: stretch; gap: 0; padding: 4px 0 6px; }
+.rung { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; position: relative; }
+.rung::after { content: ""; position: absolute; top: 9px; left: 50%; width: 100%; height: 1.5px; background: var(--line); }
+.rung:last-child::after { display: none; }
+.rung__d { width: 10px; height: 10px; border-radius: 50%; background: var(--bg-surface); border: 2px solid var(--line-strong); z-index: 1; }
+.rung__n { font-size: 10.5px; color: var(--tx-3); text-align: center; line-height: 1.3; }
+.rung.is-past::after { background: var(--c-level); }
+.rung.is-past .rung__d { background: var(--c-level); border-color: var(--c-level); }
+.rung.is-cur .rung__d { background: var(--bg-surface); border-color: var(--c-level); box-shadow: 0 0 0 3px var(--c-level-weak); }
+.rung.is-cur .rung__n { color: var(--c-level); font-weight: 700; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 9px; border: 1px solid var(--line); border-radius: var(--r-pill);
+  background: var(--bg-surface); color: var(--tx-2); font-size: 11px; cursor: pointer;
+  transition: border-color var(--d-fast) ease, color var(--d-fast) ease, background var(--d-fast) ease;
+}
+.chip:hover { border-color: var(--accent); color: var(--accent); }
+.chip__no { color: var(--tx-4); font-size: 10px; font-variant-numeric: tabular-nums; }
+.chip:hover .chip__no { color: var(--accent); }
+
+/* ============================================================
+   8. 底部状态条
+   ============================================================ */
+.status {
+  flex: none; height: var(--status-h);
+  display: flex; align-items: center; gap: var(--s-3);
+  padding: 0 var(--s-3) 0 var(--s-4);
+  background: var(--bg-rail); border-top: 1px solid var(--line);
+  font-size: 11.5px; color: var(--tx-3);
+}
+.st__i { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.st__i b { color: var(--tx-2); font-weight: 600; font-variant-numeric: tabular-nums; }
+.st__sep { width: 1px; height: 14px; background: var(--line); }
+.goal { display: flex; align-items: center; gap: 8px; }
+.goal__bar { width: 132px; height: 4px; border-radius: var(--r-pill); background: var(--bg-active); overflow: hidden; }
+.goal__fill { height: 100%; width: 43%; border-radius: var(--r-pill); background: var(--accent); transition: width var(--d-slow) var(--ease-out); }
+.goal__txt { font-variant-numeric: tabular-nums; }
+.st__r { margin-left: auto; display: flex; align-items: center; gap: var(--s-2); }
+.toggle {
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 20px; padding: 0 8px; border: 1px solid var(--line); border-radius: var(--r-pill);
+  background: var(--bg-surface); color: var(--tx-3); font-size: 10.5px; cursor: pointer;
+  transition: color var(--d-fast) ease, border-color var(--d-fast) ease;
+}
+.toggle.is-on { color: var(--accent); border-color: var(--accent-soft); background: var(--accent-weak); }
+.toggle__d { width: 5px; height: 5px; border-radius: 50%; background: var(--tx-4); }
+.toggle.is-on .toggle__d { background: var(--accent); }
+
+/* ============================================================
+   9. 原型控制条（非产品 UI）
+   ============================================================ */
+.pctrl {
+  position: fixed; right: var(--s-4); bottom: calc(var(--status-h) + 12px); z-index: 200;
+  display: flex; align-items: center; gap: 6px; padding: 5px 6px;
+  background: var(--bg-surface); border: 1px solid var(--line-strong);
+  border-radius: var(--r-pill); box-shadow: var(--shadow-3);
+}
+.pctrl__l { font-size: 10.5px; color: var(--tx-4); padding: 0 4px; }
+.pctrl__b {
+  height: 24px; padding: 0 10px; border: 1px solid transparent; border-radius: var(--r-pill);
+  background: transparent; color: var(--tx-2); font-size: 11.5px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 5px;
+}
+.pctrl__b:hover { background: var(--bg-hover); }
+.pctrl__b.is-on { background: var(--accent); color: var(--on-accent); }
+
+/* 设计说明抽屉 */
+.dnotes {
+  position: fixed; top: 0; right: 0; bottom: 0; width: 380px; z-index: 300;
+  background: var(--bg-surface); border-left: 1px solid var(--line-strong);
+  box-shadow: var(--shadow-3); display: flex; flex-direction: column;
+  transform: translateX(100%); transition: transform var(--d-slow) var(--ease-out);
+}
+.dnotes.is-on { transform: none; }
+.dnotes__h { flex: none; display: flex; align-items: center; gap: 8px; padding: var(--s-3) var(--s-4); border-bottom: 1px solid var(--line); }
+.dnotes__t { font-size: 13px; font-weight: 700; }
+.dnotes__b { flex: 1; overflow: auto; padding: var(--s-4); }
+.dnote { margin-bottom: var(--s-4); }
+.dnote__h { display: flex; align-items: center; gap: 7px; margin-bottom: 5px; }
+.dnote__tag {
+  padding: 1px 7px; border-radius: var(--r-xs); font-size: 10px; font-weight: 700;
+  background: var(--accent-weak); color: var(--accent);
+}
+.dnote__tag[data-k="fix"] { background: var(--c-faction-weak); color: var(--c-faction); }
+.dnote__tag[data-k="new"] { background: var(--c-location-weak); color: var(--c-location); }
+.dnote__t2 { font-size: 12.5px; font-weight: 600; }
+.dnote__d { margin: 0; font-size: 12px; line-height: 1.75; color: var(--tx-2); }
+.dnote__d code { padding: 1px 4px; border-radius: 3px; background: var(--bg-sunken); font-size: 11px; }
+
+/* ============================================================
+   10. 响应式 + 无障碍
+   ============================================================ */
+@media (max-width: 1100px) {
+  .rail--right { --rail-w: 300px; }
+}
+@media (max-width: 980px) {
+  .seg__i span.lbl { display: none; }
+  .seg__i { gap: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 5px; border: 2px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background: var(--tx-4); background-clip: content-box; }
+::-webkit-scrollbar-track { background: transparent; }
+</style>
+</head>
+<body>
+
+<div class="app" id="app" data-theme="light">
+
+  <!-- ================= 顶栏 ================= -->
+  <header class="topbar">
+    <div class="tb-left">
+      <button class="work">
+        <span class="work__name">青冥剑途</span>
+        <span class="work__badge">连载中</span>
+        <span class="work__chev"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>
+      </button>
+      <div class="crumb">
+        <span class="crumb__sep">/</span>
+        <span>第一卷 · 寒渊</span>
+        <span class="crumb__sep">/</span>
+        <span class="crumb__cur">第三章 断岳</span>
+      </div>
+    </div>
+
+    <div class="tb-right">
+      <span class="save" id="saveChip" data-state="saved">
+        <span class="save__dot"></span><span id="saveTxt">已保存 · 14:32</span>
+      </span>
+      <span class="tb-sep"></span>
+      <button class="ibtn is-on" id="btnLeft" title="章节树">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M9 4v16"/></svg>
+      </button>
+      <button class="ibtn" id="btnTypewriter" title="打字机模式">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V6.5A1.5 1.5 0 015.5 5H8M16 5h2.5A1.5 1.5 0 0120 6.5V9M20 15v2.5a1.5 1.5 0 01-1.5 1.5H16M8 19H5.5A1.5 1.5 0 014 17.5V15"/><path d="M3 12h18"/></svg>
+      </button>
+      <button class="ibtn" title="历史快照">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>
+      </button>
+      <button class="ibtn" title="排版与设置">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v2.6M12 18.9v2.6M2.5 12h2.6M18.9 12h2.6M5.2 5.2l1.9 1.9M16.9 16.9l1.9 1.9M18.8 5.2l-1.9 1.9M7.1 16.9l-1.9 1.9"/></svg>
+      </button>
+      <span class="tb-sep"></span>
+      <button class="ibtn is-on" id="btnRight" title="支撑面板">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M15 4v16"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="workspace">
+
+    <!-- ================= 左栏 · 章节树 ================= -->
+    <aside class="rail rail--left" id="leftRail">
+      <div class="rail__inner">
+        <div class="ctree">
+          <div class="ctree__head">
+            <span class="ctree__title">章节</span>
+            <span class="ctree__count">24</span>
+            <span class="ctree__acts">
+              <button class="ibtn" title="新建章节">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+              </button>
+              <button class="ibtn" title="新建分卷">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg>
+              </button>
+            </span>
+          </div>
+          <div class="ctree__scroll" id="ctreeScroll"></div>
+        </div>
+      </div>
+      <div class="edge">
+        <button class="edge__btn is-on" id="edgeLeft" title="展开章节树">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M9 4v16"/></svg>
+        </button>
+      </div>
+    </aside>
+
+    <!-- ================= 中央 · 码字区 ================= -->
+    <main class="stage">
+      <div class="stage__scroll" id="stageScroll">
+        <article class="paper">
+          <h1 class="paper__title">第三章 断岳</h1>
+          <p><span class="ent" data-type="character" data-id="e1">沈砚</span>提着<span class="ent" data-type="item" data-id="e11">断岳剑</span>，站在<span class="ent" data-type="location" data-id="e6">寒渊</span>边上。风从谷底卷上来，吹得他衣袂猎猎作响，脚下碎石簌簌落进看不见底的黑暗里。</p>
+          <p>三年前，<span class="ent" data-type="character" data-id="e3">青玄真人</span>将他带回<span class="ent" data-type="faction" data-id="e9">青冥宗</span>，那时他还只是个<span class="ent" data-type="level_system" data-id="e13">练气</span>三层的少年。如今<span class="ent" data-type="level_system" data-id="e13">筑基</span>已成，他却仍记得师父在<span class="ent" data-type="location" data-id="e7">青冥殿</span>前说的那句话——「剑途无涯，心有归处。」</p>
+          <p><span class="ent" data-type="character" data-id="e2">苏晚</span>从身后走来，手中提着一盏气死风灯。灯光把她半张脸照得发白，她淡淡道：「<span class="ent" data-type="faction" data-id="e10">天煞门</span>的人已经进了谷，你还要等到什么时候？」</p>
+          <p>沈砚没有回头。他知道她在担心什么——若让<span class="ent" data-type="character" data-id="e4">慕容绝</span>先一步取走那枚<span class="ent" data-type="item" data-id="e12">玉简</span>，青冥宗百年基业便要毁于一旦。</p>
+          <p>他握紧剑柄，指节发白。断岳剑是师父临终前留给他的，剑身有一道三寸长的缺口，据说是当年斩<span class="ent" data-type="location" data-id="e8">剑冢</span>里那头老蛟时崩的。如今缺口仍在，人却已经不在了。</p>
+        </article>
+      </div>
+    </main>
+
+    <!-- ================= 右栏 · 支撑面板 ================= -->
+    <div class="splitter" id="splitter" title="拖动调整宽度"></div>
+    <aside class="rail rail--right" id="rightRail">
+      <div class="rail__inner">
+        <div class="prail">
+
+          <div class="prail__head">
+            <span class="prail__dot"></span>
+            <span class="prail__title">支撑面板</span>
+            <span class="prail__acts">
+              <button class="ibtn" id="btnCollapse" title="收起面板">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+              </button>
+            </span>
+          </div>
+
+          <div class="seg" id="seg" role="tablist">
+            <span class="seg__ind" id="segInd"></span>
+            <button class="seg__i is-on" data-tab="entity" role="tab" aria-selected="true">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></svg>
+              <span class="lbl">要素库</span><span class="seg__n">14</span>
+            </button>
+            <button class="seg__i" data-tab="outline" role="tab" aria-selected="false">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 6.5h16M4 12h16M4 17.5h10"/></svg>
+              <span class="lbl">大纲</span>
+            </button>
+            <button class="seg__i" data-tab="note" role="tab" aria-selected="false">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 18h5M10.5 21h3"/><path d="M12 3a6 6 0 00-3.6 10.8c.5.4.8 1 .8 1.7v.5h5.6v-.5c0-.7.3-1.3.8-1.7A6 6 0 0012 3z"/></svg>
+              <span class="lbl">灵感</span><span class="seg__n">6</span>
+            </button>
+            <button class="seg__i" data-tab="search" role="tab" aria-selected="false">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-3.4-3.4"/></svg>
+              <span class="lbl">检索</span>
+            </button>
+          </div>
+
+          <div class="prail__scroll" id="prailScroll">
+
+            <!-- ---------- 要素库 ---------- -->
+            <section class="pane is-on" data-pane="entity">
+              <div class="pbar">
+                <div class="fbox">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-3.4-3.4"/></svg>
+                  <input id="entSearch" placeholder="搜索要素名 / 别名 / 简介" aria-label="搜索要素" />
+                  <button class="fbox__clear" id="entClear" hidden aria-label="清空">✕</button>
+                </div>
+                <button class="btn" title="新建要素">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+                  新建
+                </button>
+              </div>
+              <div class="tfilter" id="tfilter"></div>
+              <div id="entList"></div>
+            </section>
+
+            <!-- ---------- 大纲 ---------- -->
+            <section class="pane" data-pane="outline">
+              <div class="pbar">
+                <span class="pbar__label">第一卷 · 寒渊</span>
+                <button class="btn btn--ghost btn--sm" id="btnExpandAll" style="margin-left:auto">展开全部</button>
+              </div>
+              <div id="outlineList"></div>
+            </section>
+
+            <!-- ---------- 灵感 ---------- -->
+            <section class="pane" data-pane="note">
+              <div class="capture">
+                <textarea id="noteInput" rows="2" placeholder="想到什么就甩进来…（Enter 记录，Shift+Enter 换行）" aria-label="灵感速记"></textarea>
+                <div class="capture__bar">
+                  <span class="capture__hint">⌘ 灵感不打断码字</span>
+                  <span class="capture__count" id="noteCount">0</span>
+                  <button class="btn btn--sm capture__go" id="noteAdd">记录</button>
+                </div>
+              </div>
+              <div id="noteList"></div>
+            </section>
+
+            <!-- ---------- 检索 ---------- -->
+            <section class="pane" data-pane="search">
+              <div class="pbar">
+                <div class="fbox">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-3.4-3.4"/></svg>
+                  <input id="bookSearch" placeholder="全书检索" aria-label="全书检索" />
+                  <button class="fbox__clear" id="bookClear" hidden aria-label="清空">✕</button>
+                </div>
+              </div>
+              <div id="searchBody">
+                <p class="shint">输入关键词，跨 24 章检索正文与设定卡。</p>
+              </div>
+            </section>
+
+          </div>
+
+          <!-- 要素详情覆盖层 -->
+          <div class="edetail" id="edetail" aria-hidden="true"></div>
+
+        </div>
+      </div>
+
+      <!-- 折叠后的图标边栏 -->
+      <div class="edge">
+        <button class="edge__btn" data-open="entity" title="要素库">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></svg>
+        </button>
+        <button class="edge__btn" data-open="outline" title="大纲">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 6.5h16M4 12h16M4 17.5h10"/></svg>
+        </button>
+        <button class="edge__btn" data-open="note" title="灵感">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 18h5M10.5 21h3"/><path d="M12 3a6 6 0 00-3.6 10.8c.5.4.8 1 .8 1.7v.5h5.6v-.5c0-.7.3-1.3.8-1.7A6 6 0 0012 3z"/></svg>
+        </button>
+        <button class="edge__btn" data-open="search" title="检索">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-3.4-3.4"/></svg>
+        </button>
+        <span class="edge__sp"></span>
+        <button class="edge__btn" id="edgeRight" title="展开面板">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+        </button>
+      </div>
+    </aside>
+
+  </div>
+
+  <!-- ================= 底部状态条 ================= -->
+  <footer class="status">
+    <span class="st__i">本章 <b>3,241</b> 字</span>
+    <span class="st__sep"></span>
+    <span class="st__i">今日 <b>+1,280</b></span>
+    <span class="st__sep"></span>
+    <span class="st__i"><b>62</b> 字/分</span>
+    <span class="st__sep"></span>
+    <span class="goal">
+      <span>今日目标</span>
+      <span class="goal__bar"><span class="goal__fill"></span></span>
+      <span class="goal__txt">1,280 / 3,000</span>
+    </span>
+    <span class="st__r">
+      <button class="toggle is-on" id="tgAnno"><span class="toggle__d"></span>标注层</button>
+      <span class="st__i" id="clock">14:32</span>
+    </span>
+  </footer>
+</div>
+
+<!-- 悬浮资料卡 -->
+<div class="hovercard" id="hovercard" role="tooltip"></div>
+
+<!-- 原型控制条 -->
+<div class="pctrl">
+  <span class="pctrl__l">原型</span>
+  <button class="pctrl__b is-on" data-theme-set="light">亮</button>
+  <button class="pctrl__b" data-theme-set="dark">暗</button>
+  <button class="pctrl__b" data-theme-set="sepia">护眼</button>
+  <span class="pctrl__l" style="margin-left:2px">|</span>
+  <button class="pctrl__b" id="btnNotes">设计说明</button>
+</div>
+
+<!-- 设计说明抽屉 -->
+<aside class="dnotes" id="dnotes">
+  <div class="dnotes__h">
+    <span class="dnotes__t">改版设计说明</span>
+    <button class="ibtn" id="btnNotesClose" style="margin-left:auto">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+  </div>
+  <div class="dnotes__b" id="dnotesBody"></div>
+</aside>
+
+<script>
+/* ============================================================
+   数据
+   ============================================================ */
+const TYPE = {
+  character:    { label:'角色',     c:'var(--c-character)', w:'var(--c-character-weak)' },
+  location:     { label:'地点',     c:'var(--c-location)',  w:'var(--c-location-weak)'  },
+  faction:      { label:'势力',     c:'var(--c-faction)',   w:'var(--c-faction-weak)'   },
+  item:         { label:'物品',     c:'var(--c-item)',      w:'var(--c-item-weak)'      },
+  level_system: { label:'等级体系', c:'var(--c-level)',     w:'var(--c-level-weak)'     },
+  custom:       { label:'自定义',   c:'var(--c-custom)',    w:'var(--c-custom-weak)'    },
+};
+const TYPE_ORDER = ['character','location','faction','item','level_system','custom'];
+
+const ENTITIES = [
+  { id:'e1', type:'character', name:'沈砚', alias:['明舟','沈师兄'],
+    summary:'青冥宗内门弟子，字明舟。三年前被青玄真人从寒渊边带回，筑基中期。',
+    tags:['沉稳','寡言','护短'],
+    fields:{ 身份:'青冥宗内门弟子', 金手指:'剑心通明', 战力:'筑基中期' },
+    rel:[ {t:'青玄真人', r:'师徒', d:'out'}, {t:'苏晚', r:'同门', d:'in'},
+          {t:'青冥宗', r:'所属', d:'out'}, {t:'断岳剑', r:'持有', d:'out'} ],
+    appear:['第三章 断岳','第二章 玉简','第一章 寒渊','第四章 剑鸣','第七章 老蛟','第九章 归处','第十二章 破境'] },
+  { id:'e2', type:'character', name:'苏晚', alias:['晚儿'],
+    summary:'与沈砚同入青冥宗，性情清冷，掌管宗门药庐。',
+    tags:['清冷','细心'],
+    fields:{ 身份:'青冥宗药庐执事', 战力:'练气九层' },
+    rel:[ {t:'沈砚', r:'同门', d:'out'}, {t:'青冥宗', r:'所属', d:'out'} ],
+    appear:['第三章 断岳','第五章 药庐','第八章 夜话'] },
+  { id:'e3', type:'character', name:'青玄真人', alias:['师父'],
+    summary:'沈砚之师，青冥宗长老，三年前殒于剑冢。',
+    tags:['严厉','护徒'],
+    fields:{ 身份:'青冥宗长老', 战力:'元婴后期' },
+    rel:[ {t:'沈砚', r:'师徒', d:'in'}, {t:'青冥宗', r:'所属', d:'out'} ],
+    appear:['第三章 断岳','第一章 寒渊','第六章 遗物'] },
+  { id:'e4', type:'character', name:'慕容绝', alias:['天煞少主'],
+    summary:'天煞门少主，为夺玉简潜入寒渊。',
+    tags:['狠戾','枭雄'],
+    fields:{ 身份:'天煞门少主', 战力:'筑基巅峰' },
+    rel:[ {t:'天煞门', r:'所属', d:'out'}, {t:'沈砚', r:'敌对', d:'in'} ],
+    appear:['第三章 断岳','第十章 夺简'] },
+  { id:'e5', type:'character', name:'林霜', alias:[],
+    summary:'外门弟子，抄录典籍为生，消息灵通。',
+    tags:['机灵'],
+    fields:{ 身份:'青冥宗外门弟子', 战力:'练气四层' },
+    rel:[ {t:'青冥宗', r:'所属', d:'out'} ],
+    appear:['第四章 剑鸣','第十一章 典阁'] },
+  { id:'e6', type:'location', name:'寒渊', alias:['无底谷'],
+    summary:'青冥宗后山的裂谷，终年风啸，谷底不见日光。',
+    tags:[], fields:{ 归属:'青冥宗', 险地:'中等' },
+    rel:[ {t:'青冥宗', r:'位于', d:'out'} ],
+    appear:['第三章 断岳','第一章 寒渊','第十章 夺简'] },
+  { id:'e7', type:'location', name:'青冥殿', alias:[],
+    summary:'青冥宗主殿，弟子入门宣誓之所。',
+    tags:[], fields:{ 归属:'青冥宗' },
+    rel:[ {t:'青冥宗', r:'位于', d:'out'} ],
+    appear:['第三章 断岳','第二章 玉简'] },
+  { id:'e8', type:'location', name:'剑冢', alias:['万剑冢'],
+    summary:'埋葬历代断剑之地，深处封着一头老蛟。',
+    tags:[], fields:{ 归属:'青冥宗', 险地:'极高' },
+    rel:[ {t:'青冥宗', r:'位于', d:'out'} ],
+    appear:['第三章 断岳','第七章 老蛟'] },
+  { id:'e9', type:'faction', name:'青冥宗', alias:['青冥'],
+    summary:'立足寒渊三百年的剑修宗门，镇派功法《青冥剑诀》。',
+    tags:[], fields:{ 镇派:'青冥剑诀', 立宗:'三百一十二年' },
+    rel:[ {t:'沈砚', r:'所属', d:'in'}, {t:'天煞门', r:'敌对', d:'out'} ],
+    appear:['第三章 断岳','第一章 寒渊','第二章 玉简'] },
+  { id:'e10', type:'faction', name:'天煞门', alias:[],
+    summary:'北境魔道门派，近年屡犯青冥宗边境。',
+    tags:[], fields:{ 镇派:'血煞功', 门主:'屠九幽' },
+    rel:[ {t:'青冥宗', r:'敌对', d:'in'} ],
+    appear:['第三章 断岳','第十章 夺简'] },
+  { id:'e11', type:'item', name:'断岳剑', alias:[],
+    summary:'青玄真人遗物，剑身三寸缺口，为斩老蛟所崩。',
+    tags:[], fields:{ 品阶:'玄阶上品', 持有者:'沈砚' },
+    rel:[ {t:'沈砚', r:'持有', d:'in'} ],
+    appear:['第三章 断岳','第六章 遗物'] },
+  { id:'e12', type:'item', name:'玉简', alias:['青玉简'],
+    summary:'记载《青冥剑诀》残篇，天煞门志在必得。',
+    tags:[], fields:{ 品阶:'地阶', 状态:'残' },
+    rel:[ {t:'青冥宗', r:'所属', d:'out'} ],
+    appear:['第二章 玉简','第十章 夺简'] },
+  { id:'e13', type:'level_system', name:'修真境界', alias:[],
+    summary:'青冥宗所修境界序列：练气 → 筑基 → 金丹 → 元婴 → 化神。',
+    tags:[], fields:{ 体系:'正统修真' },
+    rel:[ {t:'沈砚', r:'当前境界', d:'in'} ],
+    appear:[], rungs:[
+      { n:'练气', rank:1 }, { n:'筑基', rank:2, cur:true },
+      { n:'金丹', rank:3 }, { n:'元婴', rank:4 }, { n:'化神', rank:5 } ] },
+  { id:'e14', type:'custom', name:'剑心通明', alias:[],
+    summary:'沈砚的特殊禀赋：临战时剑意自生，可短暂窥破对手破绽。',
+    tags:[], fields:{ 类型:'天赋', 代价:'神识损耗' },
+    rel:[ {t:'沈砚', r:'拥有', d:'in'} ], appear:[] },
+];
+
+const VOLUMES = [
+  { id:'v1', name:'第一卷 · 寒渊', open:true, meta:'6 章 · 21,406 字', chaps:[
+    { n:'第一章', t:'寒渊',   w:'3,102', s:'done',  on:false },
+    { n:'第二章', t:'玉简',   w:'2,874', s:'done',  on:false },
+    { n:'第三章', t:'断岳',   w:'3,241', s:'draft', on:true  },
+    { n:'第四章', t:'剑鸣',   w:'0',     s:'draft', on:false },
+    { n:'第五章', t:'药庐',   w:'0',     s:'draft', on:false },
+  ], foreshadow:[
+    { t:'玉简的来历：应在第十章前交代它为何残破', state:'open' },
+    { t:'断岳剑缺口：与第七章老蛟呼应', state:'open' },
+  ]},
+  { id:'v2', name:'第二卷 · 剑冢', open:false, meta:'4 章 · 15,982 字', chaps:[
+    { n:'第六章', t:'遗物',   w:'4,120', s:'done',  on:false },
+    { n:'第七章', t:'老蛟',   w:'4,533', s:'done',  on:false },
+    { n:'第八章', t:'夜话',   w:'3,908', s:'draft', on:false },
+    { n:'第九章', t:'归处',   w:'3,421', s:'draft', on:false },
+  ], foreshadow:[
+    { t:'青玄真人殒落真相：第六章已回收', state:'done' },
+  ]},
+];
+
+const NOTES = [
+  { id:'n1', t:'第三章结尾让沈砚不回答苏晚的问题，改用动作——他握剑的手指发白。', time:'14:12', day:'今天' },
+  { id:'n2', t:'老蛟的鳞片应该是青黑色，逆光时才泛金。', time:'13:47', day:'今天' },
+  { id:'n3', t:'天煞门的暗号：三短一长的哨声。', time:'11:20', day:'今天' },
+  { id:'n4', t:'苏晚的药庐里常年有苦味，沈砚每次去都会皱眉。', time:'昨天 22:05', day:'更早' },
+  { id:'n5', t:'剑冢那段要写"剑是死的，握剑的手是活的"。', time:'昨天 20:31', day:'更早' },
+  { id:'n6', t:'慕容绝的名字太像反派了，考虑改成"慕容雀"。', time:'9月18日', day:'更早' },
+];
+
+const CORPUS = [
+  { c:'第三章 断岳', s:'沈砚提着断岳剑，站在寒渊边上。风从谷底卷上来，吹得他衣袂猎猎作响。' },
+  { c:'第六章 遗物', s:'青玄真人留下的只有一柄断岳剑，剑身三寸缺口，据说斩老蛟时崩的。' },
+  { c:'第七章 老蛟', s:'剑冢深处那头老蛟睁开眼，鳞片青黑，逆光处泛出一层金。' },
+  { c:'第十章 夺简', s:'慕容绝先一步取走玉简，青冥宗百年基业便要毁于一旦。' },
+  { c:'第二章 玉简', s:'那枚玉简记载着《青冥剑诀》残篇，是青冥宗镇派之物的三分之一。' },
+];
+
+const NOTES_DOC = [
+  { k:'fix', t:'删掉「点击空白处收起面板」',
+    d:'原实现把 <code>onClick</code> 挂在面板内容区容器上，点空白即整块收起。写作中误触代价极高（滚动位置、筛选、草稿全丢），与 PRD §2「零打断原则」直接冲突。改为：抬头右侧显式收起按钮 + 顶栏图标 + 快捷键，三处都是明确意图。' },
+  { k:'fix', t:'折叠态不再是"零宽度虚空"',
+    d:'原实现 <code>width:0; opacity:0</code>，收起后右栏完全消失、没有任何再入口。改为 40px 图标边栏：四个面板图标竖排，点任一图标 = 展开并直达该面板；最下方一个"展开"按钮恢复上次面板。左栏同理。' },
+  { k:'fix', t:'伏笔行不再是"点了没反应"的禁用按钮',
+    d:'大纲里的伏笔原本渲染成 <code>disabled</code> 的 button——看起来可点，点了无反应，是典型的死交互。改为带虚线左边框的信息行 + 状态标签（未回收 / 已回收），从视觉语言上就表明它不可点。' },
+  { k:'new', t:'Tab 改为分段控件 + 滑动指示器',
+    d:'原来是四个等宽文字 Tab + 2px 下划线，层级弱、无空间归属感。改为凹陷容器内的分段控件，选中态是浮起的白色药丸（带阴影）并在切换时滑动过渡，同时可挂数量角标（要素库 14 / 灵感 6）。窄栏（&lt;980px）自动退化为纯图标。' },
+  { k:'new', t:'类型筛选：从"彩虹文字"到"色点 + 药丸"',
+    d:'原实现给未选中的 chip 直接上类型色文字，7 个 chip 换行后像调色盘，选中态反而最弱。改为：中性底 + 6px 类型色圆点承担识别，选中时才整体填充类型色。横向可滚动不换行，每个 chip 带数量。' },
+  { k:'new', t:'要素卡：类型色左色条 + 关系/出场元信息',
+    d:'原来是清一色描边方块 + 首字方块头像，十四个卡片长得一模一样、无法扫读。改为：hover 时左侧浮现 2.5px 类型色条（配合上浮与阴影），头像改 34px 圆角 + 类型色内描边，卡内补「关系 N · 出场 N 章」两枚元信息，让高频使用的要素一眼可辨。' },
+  { k:'new', t:'详情改为覆盖层，不再整页替换列表',
+    d:'原实现 <code>detailEntityId</code> 一置位就把整个列表替换掉，返回后列表滚动位置丢失。改为在面板内滑入的覆盖层（<code>translateX(100%) → 0</code>），列表滚动位置与筛选状态原样保留，返回只是滑走。' },
+  { k:'new', t:'详情页建立 hero 区，不再是表单堆',
+    d:'原详情页是「小按钮 + 头像 + 名称 + 一堆虚线 KV 行」，没有视觉锚点。改为：居中 hero（52px 头像 / 16px 名 / 别称 / 类型药丸）→ 一句话引文块 → 性格标签 → 可折叠分区（基础信息 / 自定义字段 / 关联要素 / 境界阶梯 / 出场章节）。境界阶梯从竖排列表改为横排步进条，当前境界高亮。' },
+  { k:'new', t:'灵感面板：速记盒 + 按天分组',
+    d:'原实现是裸 textarea + 一个"记录"按钮，记下的条目也没有时间感。改为带聚焦态的速记盒（字数计数 + Enter 记录 + Shift+Enter 换行），列表按「今天 / 更早」分组，卡片 hover 才浮出复制与删除，避免常驻图标干扰扫读。' },
+  { k:'new', t:'检索：骨架屏 + 命中数角标',
+    d:'原加载态是一行「检索中…」灰字，无反馈层次。改为骨架屏闪烁 + 顶部「全书 · N 处 · N 章」统计行，结果卡 hover 上浮并描边强调，命中词用类型色高亮而非默认黄。' },
+  { k:'new', t:'右栏可拖拽调宽 + 面板内独立搜索',
+    d:'右栏宽度写死 322px，长条目横向挤。改为左缘 5px 拖拽把手（280–520px），hover 显色。要素库新增面板内搜索框，支持名称 / 别名 / 简介模糊匹配，不必切到检索 Tab。' },
+  { k:'new', t:'全屏一致性收敛',
+    d:'顶栏：作品切换器加连载状态徽标，保存状态改为彩色圆点 + 文案（保存中时呼吸闪烁）。左栏：卷用 grid-rows 0fr→1fr 做高度过渡展开，章节行加状态点 + 字数。状态条：今日目标改为进度条 + 「1,280 / 3,000」具体数值，右侧加标注层开关。全部圆角/阴影/动效统一到 4px 栅格与三档阴影令牌。' },
+  { k:'new', t:'三主题 + 无障碍',
+    d:'亮 / 暗 / 护眼三套令牌，类型色在每套主题下单独调过明度，保证暗色下不刺眼、护眼下不偏色。所有交互元素有 <code>:focus-visible</code> 焦点环，hover 删除按钮同时保留键盘可达（<code>:focus-visible</code> 强制显形），并整体尊重 <code>prefers-reduced-motion</code>。' },
+];
+
+/* ============================================================
+   工具
+   ============================================================ */
+const $  = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+const esc = (s) => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const ICO = {
+  chev:  '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>',
+  rel:   '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 007 0l3-3a5 5 0 00-7-7l-1 1"/><path d="M14 11a5 5 0 00-7 0l-3 3a5 5 0 007 7l1-1"/></svg>',
+  flag:  '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V4m0 0h11l-2 3.5L16 11H5"/></svg>',
+  copy:  '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2.2"/><path d="M5 15V6a2 2 0 012-2h9"/></svg>',
+  trash: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9.5 7V4.8h5V7M6.5 7l1 12.2h9L17.5 7"/></svg>',
+};
+
+/* ============================================================
+   左栏 · 章节树
+   ============================================================ */
+function renderTree() {
+  $('#ctreeScroll').innerHTML = VOLUMES.map(v => `
+    <div class="vol ${v.open ? 'is-open' : ''}" data-vol="${v.id}">
+      <button class="vol__head" data-toggle-vol="${v.id}">
+        <span class="vol__chev">${ICO.chev}</span>
+        <span class="vol__name">${esc(v.name)}</span>
+        <span class="vol__meta">${esc(v.meta)}</span>
+      </button>
+      <div class="vol__body"><ul>
+        ${v.chaps.map(c => `
+          <li><button class="chap ${c.on ? 'is-on' : ''}">
+            <span class="chap__st" data-s="${c.s}"></span>
+            <span class="chap__no">${esc(c.n)}</span>
+            <span class="chap__t">${esc(c.t)}</span>
+            <span class="chap__w">${c.w === '0' ? '—' : c.w}</span>
+          </button></li>`).join('')}
+      </ul></div>
+    </div>`).join('');
+
+  $$('[data-toggle-vol]').forEach(b =>
+    b.addEventListener('click', () => {
+      const el = b.closest('.vol');
+      const v = VOLUMES.find(x => x.id === el.dataset.vol);
+      v.open = !v.open;
+      el.classList.toggle('is-open', v.open);
+    }));
+}
+renderTree();
+
+/* ============================================================
+   右栏 · Tab 分段控件
+   ============================================================ */
+const TABS = ['entity', 'outline', 'note', 'search'];
+let curTab = 'entity';
+
+function setTab(key, silent) {
+  curTab = key;
+  const i = TABS.indexOf(key);
+  $('#segInd').style.transform = `translateX(${i * 100}%)`;
+  $$('.seg__i').forEach((b, idx) => {
+    b.classList.toggle('is-on', idx === i);
+    b.setAttribute('aria-selected', idx === i);
+  });
+  $$('.pane').forEach(p => p.classList.toggle('is-on', p.dataset.pane === key));
+  $$('.edge__btn[data-open]').forEach(b => b.classList.toggle('is-on', b.dataset.open === key));
+  if (!silent) $('#prailScroll').scrollTop = 0;
+}
+setTab('entity', true);
+
+$$('.seg__i').forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab)));
+
+/* ============================================================
+   要素库
+   ============================================================ */
+let entFilter = 'all';
+let entQuery = '';
+
+function renderTFilter() {
+  const counts = { all: ENTITIES.length };
+  TYPE_ORDER.forEach(t => counts[t] = ENTITIES.filter(e => e.type === t).length);
+  const item = (key, label, color) => `
+    <button class="tchip ${entFilter === key ? 'is-on' : ''}" data-f="${key}"
+            style="--dc:${color}">
+      ${key === 'all' ? '' : '<span class="tchip__d"></span>'}
+      <span>${label}</span><span class="tchip__n">${counts[key]}</span>
+    </button>`;
+  $('#tfilter').innerHTML =
+    item('all', '全部', 'var(--accent)') +
+    TYPE_ORDER.map(t => item(t, TYPE[t].label, TYPE[t].c)).join('');
+
+  $$('.tchip').forEach(b => b.addEventListener('click', () => {
+    entFilter = b.dataset.f; renderTFilter(); renderEntities();
+  }));
+}
+
+function renderEntities() {
+  const q = entQuery.trim().toLowerCase();
+  let list = ENTITIES.filter(e => entFilter === 'all' || e.type === entFilter);
+  if (q) list = list.filter(e =>
+    (e.name + e.alias.join('') + e.summary).toLowerCase().includes(q));
+
+  if (!list.length) {
+    $('#entList').innerHTML = `
+      <div class="empty">
+        <div class="empty__ico">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-3.4-3.4"/></svg>
+        </div>
+        <p class="empty__t">没有匹配的要素</p>
+        <p class="empty__d">换个关键词，或选中正文里的名字<br/>右键「标记为角色」秒建一张卡</p>
+        <button class="btn btn--ghost btn--sm">新建要素</button>
+      </div>`;
+    return;
+  }
+
+  const groups = entFilter === 'all'
+    ? TYPE_ORDER.map(t => ({ t, items: list.filter(e => e.type === t) })).filter(g => g.items.length)
+    : [{ t: entFilter, items: list }];
+
+  $('#entList').innerHTML = groups.map(g => `
+    <div class="group" style="--dc:${TYPE[g.t].c}">
+      <div class="group__h">
+        <span class="group__d"></span><span>${TYPE[g.t].label}</span>
+        <span class="group__n">${g.items.length}</span>
+      </div>
+      ${g.items.map(e => `
+        <button class="ecard" data-ent="${e.id}"
+                style="--dc:${TYPE[e.type].c};--dw:${TYPE[e.type].w}">
+          <span class="ecard__av">${Array.from(e.name)[0]}</span>
+          <span class="ecard__b">
+            <span class="ecard__r1">
+              <span class="ecard__n">${esc(e.name)}</span>
+              ${e.alias.length ? `<span class="ecard__al">${esc(e.alias.join(' · '))}</span>` : ''}
+            </span>
+            <span class="ecard__sum">${esc(e.summary)}</span>
+            <span class="ecard__r3">
+              <span class="met">${ICO.rel}<b>${e.rel.length}</b> 关系</span>
+              <span class="met">${ICO.flag}<b>${e.appear.length}</b> 章</span>
+            </span>
+          </span>
+        </button>`).join('')}
+    </div>`).join('');
+
+  $$('.ecard').forEach(b =>
+    b.addEventListener('click', () => openDetail(b.dataset.ent)));
+}
+
+$('#entSearch').addEventListener('input', (e) => {
+  entQuery = e.target.value;
+  $('#entClear').hidden = !entQuery;
+  renderEntities();
+});
+$('#entClear').addEventListener('click', () => {
+  entQuery = ''; $('#entSearch').value = ''; $('#entClear').hidden = true;
+  renderEntities(); $('#entSearch').focus();
+});
+
+renderTFilter();
+renderEntities();
+
+/* ============================================================
+   要素详情覆盖层
+   ============================================================ */
+function section(title, count, body, open, addBtn) {
+  return `
+  <div class="esec ${open ? 'is-open' : ''}">
+    <div class="esec__h" data-sec role="button" tabindex="0"
+         aria-expanded="${open ? 'true' : 'false'}">
+      <span class="esec__chev">${ICO.chev}</span>
+      <span class="esec__t">${title}</span>
+      ${count !== null ? `<span class="esec__n">${count}</span>` : ''}
+      ${addBtn ? `<span class="esec__add"><button class="btn btn--ghost btn--sm" data-addrel>+ 添加</button></span>` : ''}
+    </div>
+    <div class="esec__b"><div class="esec__pad">${body}</div></div>
+  </div>`;
+}
+
+function openDetail(id) {
+  const e = ENTITIES.find(x => x.id === id);
+  if (!e) return;
+  const T = TYPE[e.type];
+
+  const kv = (k, v) => `<div class="kv"><span class="kv__k">${k}</span><span class="kv__v">${esc(v)}</span></div>`;
+  const base = kv('别名', e.alias.length ? e.alias.join(' · ') : '—') +
+               Object.entries(e.fields).map(([k, v]) => kv(k, v)).join('');
+
+  const relBody = e.rel.length
+    ? e.rel.map(r => `
+        <div class="rel">
+          <span class="rel__ar">${r.d === 'out' ? '→' : '←'}</span>
+          <span class="rel__n">${esc(r.t)}</span>
+          <span class="rel__t">${esc(r.r)}</span>
+          <button class="rel__x" title="解除关联" onclick="event.stopPropagation()">✕</button>
+        </div>`).join('')
+    : '<p class="shint" style="padding:2px 0">还没有关联，试着添加一条。</p>';
+
+  const ladder = e.rungs ? `
+    <div class="ladder">
+      ${e.rungs.map((r, i) => `
+        <div class="rung ${r.cur ? 'is-cur' : (e.rungs.findIndex(x => x.cur) > i ? 'is-past' : '')}">
+          <span class="rung__d"></span><span class="rung__n">${esc(r.n)}</span>
+        </div>`).join('')}
+    </div>` : '';
+
+  const appear = e.appear.length
+    ? `<div class="chips">${e.appear.map((a, i) =>
+        `<button class="chip"><span class="chip__no">${i + 1}</span>${esc(a)}</button>`).join('')}</div>`
+    : '<p class="shint" style="padding:2px 0">还没在正文里出场。</p>';
+
+  $('#edetail').innerHTML = `
+    <div class="edetail__h">
+      <button class="edetail__back" id="edBack">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+        返回
+      </button>
+      <span class="edetail__acts">
+        <button class="ibtn" title="编辑">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L18.5 9.5a2.5 2.5 0 10-3.5-3.5L4 16.5V20z"/></svg>
+        </button>
+        <button class="ibtn" title="更多">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="5" cy="12" r="1.3" fill="currentColor"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/><circle cx="19" cy="12" r="1.3" fill="currentColor"/></svg>
+        </button>
+      </span>
+    </div>
+    <div class="edetail__b" style="--dc:${T.c};--dw:${T.w}">
+      <div class="ehero">
+        <div class="ehero__av">${Array.from(e.name)[0]}</div>
+        <div class="ehero__n">${esc(e.name)}</div>
+        ${e.alias.length ? `<div class="ehero__al">${esc(e.alias.join(' · '))}</div>` : ''}
+        <div class="ehero__tp">${T.label}</div>
+      </div>
+      <div class="equote">${esc(e.summary)}</div>
+      ${e.tags.length ? `<div class="etags">${e.tags.map(t => `<span class="etag">${esc(t)}</span>`).join('')}</div>` : ''}
+      ${section('基础信息', null, base, true)}
+      ${section('关联要素', e.rel.length, relBody, true, true)}
+      ${ladder ? section('境界阶梯', e.rungs.length, ladder, true) : ''}
+      ${section('出场章节', e.appear.length, appear, true)}
+    </div>`;
+
+  $('#edetail').classList.add('is-on');
+  $('#edetail').setAttribute('aria-hidden', 'false');
+  $('#edBack').addEventListener('click', closeDetail);
+  $$('#edetail [data-sec]').forEach(h => {
+    const toggle = () => {
+      const sec = h.closest('.esec');
+      const open = sec.classList.toggle('is-open');
+      h.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    h.addEventListener('click', (ev) => {
+      if (ev.target.closest('[data-addrel]')) return; // 分区内的按钮不触发折叠
+      toggle();
+    });
+    h.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggle(); }
+    });
+  });
+}
+function closeDetail() {
+  $('#edetail').classList.remove('is-on');
+  $('#edetail').setAttribute('aria-hidden', 'true');
+}
+
+/* ============================================================
+   大纲
+   ============================================================ */
+function renderOutline() {
+  $('#outlineList').innerHTML = VOLUMES.map(v => `
+    <div class="ovol ${v.open ? 'is-open' : ''}" data-vol="${v.id}">
+      <button class="ovol__h" data-tovol="${v.id}">
+        <span class="ovol__chev">${ICO.chev}</span>
+        <span class="ovol__idx">${v.id === 'v1' ? '一' : '二'}</span>
+        <span class="ovol__n">${esc(v.name)}</span>
+        <span class="ovol__m">${esc(v.meta)}</span>
+      </button>
+      <div class="ovol__b"><div><ul class="ovol__list">
+        ${v.chaps.map(c => `
+          <li><button class="orow ${c.on ? 'is-on' : ''}">
+            <span class="orow__st" data-s="${c.s}"></span>
+            <span class="orow__t">${esc(c.n)} ${esc(c.t)}</span>
+            <span class="orow__w">${c.w === '0' ? '未开始' : c.w + ' 字'}</span>
+          </button></li>`).join('')}
+        ${v.foreshadow.map(f => `
+          <li><div class="frow">
+            <span class="frow__tag" data-state="${f.state}">${f.state === 'done' ? '已回收' : '伏笔'}</span>
+            <span class="frow__t">${esc(f.t)}</span>
+          </div></li>`).join('')}
+      </ul></div></div>
+    </div>`).join('');
+
+  $$('[data-tovol]').forEach(b =>
+    b.addEventListener('click', () => {
+      const el = b.closest('.ovol');
+      const v = VOLUMES.find(x => x.id === el.dataset.vol);
+      v.open = !v.open;
+      el.classList.toggle('is-open', v.open);
+    }));
+}
+renderOutline();
+
+$('#btnExpandAll').addEventListener('click', (e) => {
+  const allOpen = VOLUMES.every(v => v.open);
+  VOLUMES.forEach(v => v.open = !allOpen);
+  renderOutline();
+  e.target.textContent = allOpen ? '展开全部' : '收起全部';
+});
+
+/* ============================================================
+   灵感
+   ============================================================ */
+function renderNotes(newId) {
+  const days = ['今天', '更早'];
+  $('#noteList').innerHTML = days.map(d => {
+    const items = NOTES.filter(n => n.day === d);
+    if (!items.length) return '';
+    return `<div class="dayhd">${d}<span class="dayhd__n">${items.length}</span></div>` +
+      items.map(n => `
+        <div class="note ${n.id === newId ? 'is-new' : ''}">
+          <p class="note__t">${esc(n.t)}</p>
+          <div class="note__f">
+            <span class="note__time">${esc(n.time)}</span>
+            <span class="note__acts">
+              <button class="note__act" title="复制">${ICO.copy}</button>
+              <button class="note__act note__act--del" data-del="${n.id}" title="删除">${ICO.trash}</button>
+            </span>
+          </div>
+        </div>`).join('');
+  }).join('');
+
+  $$('[data-del]').forEach(b => b.addEventListener('click', () => {
+    const i = NOTES.findIndex(n => n.id === b.dataset.del);
+    if (i > -1) NOTES.splice(i, 1);
+    renderNotes();
+  }));
+  const n = NOTES.length;
+  const badge = $$('.seg__i').find(b => b.dataset.tab === 'note').querySelector('.seg__n');
+  badge.textContent = n;
+}
+renderNotes();
+
+const noteInput = $('#noteInput');
+noteInput.addEventListener('input', () => {
+  $('#noteCount').textContent = noteInput.value.length;
+  noteInput.style.height = 'auto';
+  noteInput.style.height = Math.min(noteInput.scrollHeight, 160) + 'px';
+});
+function addNote() {
+  const v = noteInput.value.trim();
+  if (!v) return;
+  const d = new Date();
+  NOTES.unshift({ id: 'n' + Date.now(), t: v,
+    time: `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`, day: '今天' });
+  noteInput.value = ''; noteInput.style.height = 'auto'; $('#noteCount').textContent = '0';
+  renderNotes(NOTES[0].id);
+}
+$('#noteAdd').addEventListener('click', addNote);
+noteInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); addNote(); }
+});
+
+/* ============================================================
+   检索
+   ============================================================ */
+let searchTimer = null;
+$('#bookSearch').addEventListener('input', (e) => {
+  const kw = e.target.value.trim();
+  $('#bookClear').hidden = !e.target.value;
+  const body = $('#searchBody');
+  if (!kw) { body.innerHTML = '<p class="shint">输入关键词，跨 24 章检索正文与设定卡。</p>'; return; }
+
+  body.innerHTML = '<div class="skel"></div><div class="skel"></div><div class="skel"></div>';
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    const re = new RegExp(kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+    const hits = CORPUS.filter(c => c.s.includes(kw));
+    if (!hits.length) {
+      body.innerHTML = `<div class="empty">
+        <div class="empty__ico">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-3.4-3.4"/></svg>
+        </div>
+        <p class="empty__t">没有命中任何片段</p>
+        <p class="empty__d">试试更短的关键词</p></div>`;
+      return;
+    }
+    const total = hits.reduce((s, c) => s + (c.s.match(re) || []).length, 0);
+    body.innerHTML =
+      `<p class="shint">全书 · <b>${total}</b> 处命中 · <b>${hits.length}</b> 章</p>
+       <ul class="sres">${hits.map(c => `
+        <li><button class="sitem">
+          <span class="sitem__h">
+            <span class="sitem__c">${esc(c.c)}</span>
+            <span class="sitem__n">${(c.s.match(re) || []).length} 处</span>
+          </span>
+          <span class="sitem__s">${esc(c.s).replace(re, m => `<mark>${m}</mark>`)}</span>
+        </button></li>`).join('')}</ul>`;
+  }, 420);
+});
+$('#bookClear').addEventListener('click', () => {
+  $('#bookSearch').value = ''; $('#bookClear').hidden = true;
+  $('#searchBody').innerHTML = '<p class="shint">输入关键词，跨 24 章检索正文与设定卡。</p>';
+  $('#bookSearch').focus();
+});
+
+/* ============================================================
+   栏的收起 / 展开
+   ============================================================ */
+const rightRail = $('#rightRail'), leftRail = $('#leftRail');
+function setRail(which, open) {
+  const rail = which === 'right' ? rightRail : leftRail;
+  const btn  = which === 'right' ? $('#btnRight') : $('#btnLeft');
+  rail.classList.toggle('is-collapsed', !open);
+  btn.classList.toggle('is-on', open);
+}
+$('#btnRight').addEventListener('click', () => setRail('right', rightRail.classList.contains('is-collapsed')));
+$('#btnLeft').addEventListener('click',  () => setRail('left',  leftRail.classList.contains('is-collapsed')));
+$('#btnCollapse').addEventListener('click', () => setRail('right', false));
+$('#edgeRight').addEventListener('click', () => setRail('right', true));
+$('#edgeLeft').addEventListener('click',  () => setRail('left',  true));
+$$('.edge__btn[data-open]').forEach(b => b.addEventListener('click', () => {
+  setRail('right', true); setTab(b.dataset.open);
+}));
+
+/* 右栏拖拽调宽 */
+(function () {
+  const sp = $('#splitter');
+  let dragging = false;
+  sp.addEventListener('mousedown', (e) => {
+    dragging = true; sp.classList.add('is-drag');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const w = Math.min(520, Math.max(280, window.innerWidth - e.clientX));
+    document.documentElement.style.setProperty('--rail-w', w + 'px');
+  });
+  window.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false; sp.classList.remove('is-drag');
+    document.body.style.cursor = ''; document.body.style.userSelect = '';
+  });
+})();
+
+/* 打字机模式（演示） */
+$('#btnTypewriter').addEventListener('click', (e) => {
+  e.currentTarget.classList.toggle('is-on');
+  const on = e.currentTarget.classList.contains('is-on');
+  $('#stageScroll').style.paddingTop = on ? '40vh' : '';
+});
+
+/* 标注层开关 */
+$('#tgAnno').addEventListener('click', (e) => {
+  const on = e.currentTarget.classList.toggle('is-on');
+  $$('.ent').forEach(el => el.style.boxShadow = on ? '' : 'none');
+});
+
+/* ============================================================
+   悬浮资料卡（R20）
+   ============================================================ */
+const hc = $('#hovercard');
+let hcOpenT = null, hcCloseT = null;
+
+function showHoverCard(el) {
+  const id = el.dataset.id;
+  const e = ENTITIES.find(x => x.id === id);
+  if (!e) return;
+  const T = TYPE[e.type];
+  hc.style.setProperty('--t', T.c);
+  hc.style.setProperty('--tw', T.w);
+  hc.innerHTML = `
+    <div class="hc__top">
+      <span class="hc__av">${Array.from(e.name)[0]}</span>
+      <span>
+        <div class="hc__name">${esc(e.name)}</div>
+        ${e.alias.length ? `<div class="hc__alias">${esc(e.alias.join(' · '))}</div>` : ''}
+      </span>
+    </div>
+    <p class="hc__sum">${esc(e.summary)}</p>
+    ${e.tags.length ? `<div class="hc__tags">${e.tags.map(t => `<span class="hc__tag">${esc(t)}</span>`).join('')}</div>` : ''}
+    <div class="hc__foot">
+      <span>出场 ${e.appear.length} 章</span>
+      <span class="hc__link" data-goto="${e.id}">查看完整设定 →</span>
+    </div>`;
+  hc.classList.add('is-on');
+  const r = el.getBoundingClientRect();
+  const cw = 268, ch = hc.offsetHeight;
+  let left = Math.min(window.innerWidth - cw - 12, Math.max(12, r.left));
+  let top = r.bottom + 8;
+  if (top + ch > window.innerHeight - 12) top = r.top - ch - 8;
+  hc.style.left = left + 'px';
+  hc.style.top = top + 'px';
+  const link = hc.querySelector('[data-goto]');
+  if (link) link.addEventListener('click', () => {
+    setRail('right', true); setTab('entity'); openDetail(id); hideHoverCard(true);
+  });
+}
+function hideHoverCard(now) {
+  if (now) { hc.classList.remove('is-on'); return; }
+  hc.classList.remove('is-on');
+}
+$$('.ent').forEach(el => {
+  el.addEventListener('mouseenter', () => {
+    clearTimeout(hcCloseT);
+    hcOpenT = setTimeout(() => showHoverCard(el), 200);
+  });
+  el.addEventListener('mouseleave', () => {
+    clearTimeout(hcOpenT);
+    hcCloseT = setTimeout(() => hideHoverCard(), 100);
+  });
+});
+hc.addEventListener('mouseenter', () => clearTimeout(hcCloseT));
+hc.addEventListener('mouseleave', () => hcCloseT = setTimeout(() => hideHoverCard(), 100));
+window.addEventListener('keydown', () => { clearTimeout(hcOpenT); hideHoverCard(true); });
+$('#stageScroll').addEventListener('scroll', () => { clearTimeout(hcOpenT); hideHoverCard(true); });
+
+/* ============================================================
+   主题 + 设计说明
+   ============================================================ */
+$$('[data-theme-set]').forEach(b => b.addEventListener('click', () => {
+  $('#app').dataset.theme = b.dataset.themeSet;
+  $$('[data-theme-set]').forEach(x => x.classList.toggle('is-on', x === b));
+}));
+
+$('#dnotesBody').innerHTML = NOTES_DOC.map(n => `
+  <div class="dnote">
+    <div class="dnote__h">
+      <span class="dnote__tag" data-k="${n.k}">${n.k === 'fix' ? '修掉' : '新增'}</span>
+      <span class="dnote__t2">${esc(n.t)}</span>
+    </div>
+    <p class="dnote__d">${n.d}</p>
+  </div>`).join('');
+
+$('#btnNotes').addEventListener('click', () => {
+  const on = $('#dnotes').classList.toggle('is-on');
+  $('#btnNotes').classList.toggle('is-on', on);
+});
+$('#btnNotesClose').addEventListener('click', () => {
+  $('#dnotes').classList.remove('is-on');
+  $('#btnNotes').classList.remove('is-on');
+});
+
+/* 保存状态演示：点击正文切换为"输入中" */
+let saveToggle = true;
+$('#stageScroll').addEventListener('click', () => {
+  const chip = $('#saveChip');
+  saveToggle = !saveToggle;
+  chip.dataset.state = saveToggle ? 'saved' : 'pending';
+  $('#saveTxt').textContent = saveToggle ? '已保存 · 14:32' : '输入中…';
+});
+</script>
+</body>
+</html>

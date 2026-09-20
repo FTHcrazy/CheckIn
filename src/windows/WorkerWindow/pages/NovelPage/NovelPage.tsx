@@ -31,6 +31,9 @@ export default function NovelPage() {
     hover,
     terms,
     breadcrumb,
+    outline,
+    outlineActions,
+    inspirationActions,
     reorderPreview,
     handleReorderChapter,
     handleMoveChapterToVolume,
@@ -255,7 +258,9 @@ export default function NovelPage() {
           open={view.rightOpen}
           activeTab={view.panelTab}
           onTabChange={view.selectPanelTab}
-          outline={data.outline}
+          outline={outline}
+          activeChapterId={data.activeChapterId}
+          outlineActions={outlineActions}
           entities={data.entities}
           filter={view.entityFilter}
           onFilterChange={view.setEntityFilter}
@@ -266,8 +271,7 @@ export default function NovelPage() {
           getAppearances={getAppearances}
           levelSystems={data.levelSystems}
           notes={data.notes}
-          onAddNote={data.addNote}
-          onRemoveNote={data.removeNote}
+          inspirationActions={inspirationActions}
           onSearch={handleSearch}
           onSelectChapter={handleSelectChapter}
           highlighted={detailHighlighted}

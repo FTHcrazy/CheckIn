@@ -13,11 +13,18 @@ export const LAYOUT = {
   leftRailWidth: 236,
   rightRailWidth: 322,
   statusBarHeight: 32,
-  /** 窗口窄于此宽度自动收起左栏 */
-  autoCollapseWidth: 800,
+  /**
+   * 正文舞台最小可用宽度：三栏（左 236 + 右 322）挤到低于此值时，
+   * 自动收起左栏给码字区让位（右栏是用户按需打开的，不自动收）。
+   * 默认 1200 宽窗口三栏全开可留 642px，不触发；小屏 / 半屏窗口才触发。
+   */
+  minStageWidth: 560,
   /** 快照抽屉宽度（D1） */
   drawerWidth: 300,
 } as const;
+
+/** 新建卷的默认存储名：展示时视为「未命名」不追加显示（左栏卷头与大纲板共用） */
+export const UNNAMED_VOLUME = "未命名卷";
 
 /** 保存时机（PRD §2） */
 export const SAVE = {
