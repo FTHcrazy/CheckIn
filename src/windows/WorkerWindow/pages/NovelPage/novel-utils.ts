@@ -1,6 +1,7 @@
 import type {
   EntityTerm,
   EntityType,
+  LabelNumberStyle,
   NovelChapter,
   NovelEntity,
   NovelVolume,
@@ -322,6 +323,66 @@ export function buildChapterNumbers(
   return numbers;
 }
 
+/** 中文数字位权（个十百千），配合 CN_DIGITS 支持到万级 */
+const CN_DIGITS = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九"];
+const CN_UNITS = ["", "十", "百", "千"];
+
+/** 0-9999 节内转换（不做零压缩边界，由 toChineseOrdinal 编排） */
+function fourDigitToChinese(n: number): string {
+  // 10-19 规范写法省略「一」：10 → 十、12 → 十二（口语「一十二」不采用）
+  if (n >= 10 && n < 20) {
+    const tail = n % 10;
+    return tail > 0 ? `十${CN_DIGITS[tail]}` : "十";
+  }
+  let result = "";
+  let zeroPending = false;
+  for (let i = 3; i >= 0; i -= 1) {
+    const digit = Math.floor(n / 10 ** i) % 10;
+    if (digit === 0) {
+      if (result) zeroPending = true;
+    } else {
+      if (zeroPending) {
+        result += "零";
+        zeroPending = false;
+      }
+      result += CN_DIGITS[digit] + CN_UNITS[i];
+    }
+  }
+  return result;
+}
+
+/** 阿拉伯数字 → 中文序号：1→一、11→十一、123→一百二十三、10001→一万零一 */
+export function toChineseOrdinal(value: number): string {
+  const n = Math.max(1, Math.round(value));
+  if (n >= 100_000_000) return String(n); // 超出常规序号范围回退阿拉伯数字
+
+  const wan = Math.floor(n / 10_000);
+  const rest = n % 10_000;
+  if (wan === 0) return fourDigitToChinese(rest);
+
+  let result = fourDigitToChinese(wan) + "万";
+  if (rest > 0) {
+    // 万节不足一千必须补零：10500 → 一万零五百
+    result += rest < 1000 ? `零${fourDigitToChinese(rest)}` : fourDigitToChinese(rest);
+  }
+  return result;
+}
+
+/**
+ * 按数字样式与后缀格式化序号标签："章" + 12 → 第十二章 / 第12章。
+ * 数字样式与后缀是两个独立配置（numberStyle / chapterSuffix / volumeSuffix），
+ * 在此自由组合；后缀为空时退化为纯序号。
+ */
+export function formatNumberedLabel(
+  style: LabelNumberStyle,
+  suffix: string,
+  value: number,
+): string {
+  const n = Math.max(1, Math.round(value));
+  const numberText = style === "chinese" ? toChineseOrdinal(n) : String(n);
+  return `第${numberText}${suffix}`;
+}
+
 /** 面包屑「卷名 / 章名」 */
 export function buildBreadcrumb(
   volumes: NovelVolume[],
@@ -332,4 +393,85 @@ export function buildBreadcrumb(
   if (!chapter) return { volumeName: "", chapterName: "" };
   const volume = volumes.find((item) => item.id === chapter.volumeId);
   return { volumeName: volume?.name ?? "未分卷", chapterName: chapter.title };
+}
+
+/**
+ * 重排预览纯函数（R9 + 防误触确认）
+ *
+ * 三个函数都返回「更新后的新数组」，同时服务于两处：
+ * ① useNovelData 的 setBundle（应用变更）
+ * ② 确认弹框（用预览结果派生前后的序号 diff）
+ * 不修改入参；无法执行时原样返回同一引用，调用方据此跳过。
+ */
+
+/** 章节拖到章节位置：同卷重排 / 跨卷移动（落到目标章节的位置） */
+export function previewChapterReorder(
+  chapters: NovelChapter[],
+  fromId: string,
+  toId: string,
+): NovelChapter[] {
+  if (fromId === toId) return chapters;
+  const from = chapters.find((chapter) => chapter.id === fromId);
+  const to = chapters.find((chapter) => chapter.id === toId);
+  if (!from || !to) return chapters;
+
+  const siblings = chapters
+    .filter((chapter) => chapter.volumeId === to.volumeId)
+    .sort((a, b) => a.sort - b.sort);
+  const ordered =
+    from.volumeId === to.volumeId
+      ? moveItemBefore(siblings, fromId, toId)
+      : insertItemBefore(siblings, toId, { ...from, volumeId: to.volumeId });
+  const order = buildSortOrder(ordered);
+  // 跨卷时 volumeId 必须跟随迁移（buildSortOrder 只带 sort，不带卷归属）
+  const movingCrossVolume = from.volumeId !== to.volumeId ? to.volumeId : null;
+
+  return chapters.map((chapter) => {
+    if (!order.has(chapter.id)) return chapter;
+    const next = { ...chapter, sort: order.get(chapter.id) ?? chapter.sort };
+    if (chapter.id === fromId && movingCrossVolume) next.volumeId = movingCrossVolume;
+    return next;
+  });
+}
+
+/** 章节拖到卷头：移入该卷并排到末尾 */
+export function previewChapterToVolume(
+  chapters: NovelChapter[],
+  chapterId: string,
+  volumeId: string,
+): NovelChapter[] {
+  const target = chapters.find((chapter) => chapter.id === chapterId);
+  if (!target || target.volumeId === volumeId) return chapters;
+
+  const maxSort = chapters
+    .filter((chapter) => chapter.volumeId === volumeId)
+    .reduce((max, chapter) => Math.max(max, chapter.sort), 0);
+
+  return chapters.map((chapter) =>
+    chapter.id === chapterId
+      ? { ...chapter, volumeId, sort: maxSort + 1 }
+      : chapter,
+  );
+}
+
+/** 卷拖到卷头：重排卷顺序 */
+export function previewVolumeReorder(
+  volumes: NovelVolume[],
+  fromId: string,
+  toId: string,
+): NovelVolume[] {
+  if (fromId === toId) return volumes;
+  const ordered = moveItemBefore(
+    [...volumes].sort((a, b) => a.sort - b.sort),
+    fromId,
+    toId,
+  );
+  if (ordered === volumes) return volumes;
+  const order = buildSortOrder(ordered);
+
+  return volumes.map((volume) =>
+    order.has(volume.id)
+      ? { ...volume, sort: order.get(volume.id) ?? volume.sort }
+      : volume,
+  );
 }

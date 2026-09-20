@@ -11,12 +11,17 @@ import {
   countWords,
   findTermMatches,
   formatClock,
+  formatNumberedLabel,
   formatThousands,
   fuzzyMatch,
   insertItemBefore,
   moveItemBefore,
   padIndex,
+  previewChapterReorder,
+  previewChapterToVolume,
+  previewVolumeReorder,
   splitByKeyword,
+  toChineseOrdinal,
   truncate,
 } from "./novel-utils";
 import type { NovelChapter, NovelEntity, NovelVolume } from "./types";
@@ -299,5 +304,94 @@ describe("卷章分组与面包屑", () => {
         ["c2", 3],
       ]),
     );
+  });
+});
+
+describe("中文序号与标签预设", () => {
+  it("toChineseOrdinal 覆盖常规序号范围", () => {
+    expect(toChineseOrdinal(1)).toBe("一");
+    expect(toChineseOrdinal(9)).toBe("九");
+    expect(toChineseOrdinal(10)).toBe("十");
+    expect(toChineseOrdinal(11)).toBe("十一");
+    expect(toChineseOrdinal(20)).toBe("二十");
+    expect(toChineseOrdinal(21)).toBe("二十一");
+    expect(toChineseOrdinal(100)).toBe("一百");
+    expect(toChineseOrdinal(101)).toBe("一百零一");
+    expect(toChineseOrdinal(110)).toBe("一百一十");
+    expect(toChineseOrdinal(123)).toBe("一百二十三");
+    expect(toChineseOrdinal(1000)).toBe("一千");
+    expect(toChineseOrdinal(1001)).toBe("一千零一");
+    expect(toChineseOrdinal(1234)).toBe("一千二百三十四");
+    expect(toChineseOrdinal(10000)).toBe("一万");
+    expect(toChineseOrdinal(10001)).toBe("一万零一");
+    expect(toChineseOrdinal(12345)).toBe("一万二千三百四十五");
+  });
+
+  it("formatNumberedLabel 数字样式与后缀自由组合", () => {
+    expect(formatNumberedLabel("arabic", "章", 12)).toBe("第12章");
+    expect(formatNumberedLabel("chinese", "回", 12)).toBe("第十二回");
+    expect(formatNumberedLabel("arabic", "节", 3)).toBe("第3节");
+    expect(formatNumberedLabel("chinese", "部", 21)).toBe("第二十一部");
+    // 序号最小为 1，防御 0 / 负数；空后缀退化为纯序号
+    expect(formatNumberedLabel("chinese", "卷", 0)).toBe("第一卷");
+    expect(formatNumberedLabel("arabic", "", 7)).toBe("第7");
+  });
+});
+
+describe("重排预览纯函数", () => {
+  const volumes: NovelVolume[] = [
+    { id: "v1", workId: "w1", name: "第一卷", sort: 1 },
+    { id: "v2", workId: "w1", name: "第二卷", sort: 2 },
+  ];
+  const chapter = (id: string, volumeId: string, sort: number): NovelChapter => ({
+    id,
+    workId: "w1",
+    volumeId,
+    title: id,
+    content: "",
+    wordCount: 0,
+    status: "draft",
+    sort,
+    updatedAt: 0,
+  });
+  const chapters: NovelChapter[] = [
+    chapter("c1", "v1", 1),
+    chapter("c2", "v1", 2),
+    chapter("c3", "v2", 1),
+  ];
+
+  it("previewChapterReorder 同卷重排会顺延兄弟章节 sort", () => {
+    const next = previewChapterReorder(chapters, "c2", "c1");
+    expect(next.find((c) => c.id === "c1")?.sort).toBe(2);
+    expect(next.find((c) => c.id === "c2")?.sort).toBe(1);
+    expect(next.find((c) => c.id === "c3")?.sort).toBe(1);
+  });
+
+  it("previewChapterReorder 跨卷移动改 volumeId 并落入目标位置", () => {
+    const next = previewChapterReorder(chapters, "c3", "c1");
+    const c3 = next.find((c) => c.id === "c3");
+    expect(c3?.volumeId).toBe("v1");
+    expect(c3?.sort).toBe(1);
+    expect(next.find((c) => c.id === "c1")?.sort).toBe(2);
+    expect(next.find((c) => c.id === "c2")?.sort).toBe(3);
+  });
+
+  it("previewChapterReorder 自拖与找不到时原样返回", () => {
+    expect(previewChapterReorder(chapters, "c1", "c1")).toBe(chapters);
+    expect(previewChapterReorder(chapters, "x", "c1")).toBe(chapters);
+  });
+
+  it("previewChapterToVolume 移入目标卷末尾，已在卷内时原样返回", () => {
+    const next = previewChapterToVolume(chapters, "c1", "v2");
+    expect(next.find((c) => c.id === "c1")?.volumeId).toBe("v2");
+    expect(next.find((c) => c.id === "c1")?.sort).toBe(2);
+    expect(previewChapterToVolume(chapters, "c3", "v2")).toBe(chapters);
+  });
+
+  it("previewVolumeReorder 重排卷 sort，不影响章节", () => {
+    const next = previewVolumeReorder(volumes, "v2", "v1");
+    expect(next.find((v) => v.id === "v1")?.sort).toBe(2);
+    expect(next.find((v) => v.id === "v2")?.sort).toBe(1);
+    expect(previewVolumeReorder(volumes, "v1", "v1")).toBe(volumes);
   });
 });

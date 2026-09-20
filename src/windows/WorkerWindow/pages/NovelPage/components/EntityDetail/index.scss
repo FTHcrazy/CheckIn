@@ -27,6 +27,10 @@
       outline: 2px solid var(--app-primary);
       outline-offset: 2px;
     }
+
+    &--edit {
+      margin-left: auto;
+    }
   }
 
   &__title {
@@ -51,6 +55,80 @@
     font-size: 14px;
     font-weight: 600;
     color: var(--app-text);
+  }
+
+  &__name-input {
+    flex: 1;
+    min-width: 0;
+    padding: 4px 8px;
+    border: 1px solid var(--app-border);
+    border-radius: 5px;
+    background: var(--app-surface);
+    color: var(--app-text);
+    font-size: 13px;
+    font-weight: 600;
+
+    &:focus {
+      outline: none;
+      border-color: var(--app-primary);
+    }
+  }
+
+  &__form-row {
+    display: flex;
+    gap: 8px;
+    padding: 4px 0;
+    align-items: flex-start;
+  }
+
+  &__form-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  &__input {
+    flex: 1;
+    min-width: 0;
+    padding: 4px 8px;
+    border: 1px solid var(--app-border);
+    border-radius: 5px;
+    background: var(--app-surface);
+    color: var(--app-text);
+    font-size: 12px;
+
+    &::placeholder {
+      color: var(--app-text-disabled);
+    }
+
+    &:focus {
+      outline: none;
+      border-color: var(--app-primary);
+    }
+  }
+
+  &__type-row {
+    flex: 1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  &__type-chip {
+    padding: 2px 8px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-pill);
+    background: var(--app-surface);
+    color: var(--app-text-secondary);
+    font-size: 11px;
+    cursor: pointer;
+
+    &.is-on {
+      border-color: var(--app-primary);
+      background: var(--app-primary-weak);
+      color: var(--app-primary);
+      font-weight: 600;
+    }
   }
 
   &__section {
@@ -181,6 +259,29 @@
     background: var(--app-surface);
     color: var(--app-text-secondary);
     font-size: 11px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+
+    &--link {
+      cursor: pointer;
+
+      &:hover {
+        border-color: var(--app-primary);
+        color: var(--app-primary);
+      }
+
+      &:focus-visible {
+        outline: 2px solid var(--app-primary);
+        outline-offset: 2px;
+      }
+    }
+  }
+
+  &__chip-no {
+    color: var(--app-primary);
+    font-variant-numeric: tabular-nums;
+    flex: none;
   }
 
   &__btn {
@@ -197,6 +298,11 @@
 
     &:hover {
       background: var(--app-primary-strong);
+    }
+
+    &:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
     }
 
     &--ghost {

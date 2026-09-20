@@ -130,6 +130,27 @@
     }
   }
 
+  &__suffix-input {
+    width: 100%;
+    margin-top: 6px;
+    padding: 4px 8px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-chip);
+    background: var(--app-input-bg);
+    color: var(--app-text);
+    font-size: 12px;
+    outline: none;
+    transition: border-color 120ms ease;
+
+    &::placeholder {
+      color: var(--app-text-muted);
+    }
+
+    &:focus {
+      border-color: var(--app-primary);
+    }
+  }
+
   &__hint {
     margin: 10px 0 0;
     font-size: 11px;

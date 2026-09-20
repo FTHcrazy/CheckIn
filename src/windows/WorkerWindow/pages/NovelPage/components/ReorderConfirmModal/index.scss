@@ -1,0 +1,59 @@
+.nv-reorder {
+  &__hint {
+    margin: 0 0 10px;
+    font-size: 12.5px;
+    color: var(--app-text-secondary);
+  }
+
+  &__list {
+    max-height: 280px;
+    margin: 0;
+    padding: 0;
+    overflow: auto;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  &__row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-chip);
+    background: var(--app-surface);
+    font-size: 12.5px;
+  }
+
+  &__name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--app-text);
+    font-weight: 500;
+  }
+
+  &__from {
+    flex: none;
+    color: var(--app-text-muted);
+    text-decoration: line-through;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__arrow {
+    flex: none;
+    font-size: 10px;
+    color: var(--app-text-muted);
+  }
+
+  &__to {
+    flex: none;
+    color: var(--app-primary);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+}

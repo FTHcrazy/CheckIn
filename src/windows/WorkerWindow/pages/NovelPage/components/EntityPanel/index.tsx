@@ -1,8 +1,10 @@
 import EntityCard from "../EntityCard";
 import EntityDetail from "../EntityDetail";
+import type { EntitySavePatch } from "../EntityDetail";
 import { ENTITY_FILTER_ORDER, ENTITY_TYPE_META } from "../../novel-config";
 import type { EntityFilter } from "../../hooks/useNovelViewState";
 import type {
+  EntityAppearance,
   EntityRelationView,
   EntityType,
   LevelSystem,
@@ -21,11 +23,13 @@ interface EntityPanelProps {
     entityId: string,
     type: EntityType,
   ) => EntityRelationView[];
-  getAppearances: (entityId: string) => string[];
+  getAppearances: (entityId: string) => EntityAppearance[];
   levelSystems: LevelSystem[];
   highlighted: boolean;
   onToggleHighlight: () => void;
   onExportCard: () => void;
+  onSaveEntity: (entityId: string, patch: EntitySavePatch) => void;
+  onSelectChapter: (chapterId: string) => void;
 }
 
 /**
@@ -46,6 +50,8 @@ export default function EntityPanel({
   highlighted,
   onToggleHighlight,
   onExportCard,
+  onSaveEntity,
+  onSelectChapter,
 }: EntityPanelProps) {
   const filtered =
     filter === "all"
@@ -64,6 +70,8 @@ export default function EntityPanel({
         highlighted={highlighted}
         onToggleHighlight={onToggleHighlight}
         onExportCard={onExportCard}
+        onSaveEntity={onSaveEntity}
+        onSelectChapter={onSelectChapter}
         onBack={onCloseEntity}
       />
     );

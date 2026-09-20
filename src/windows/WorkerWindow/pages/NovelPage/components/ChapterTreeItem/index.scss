@@ -67,30 +67,4 @@
     font-variant-numeric: tabular-nums;
     color: var(--app-text-muted);
   }
-
-  &__sorter {
-    position: absolute;
-    top: 3px;
-    right: 6px;
-    display: flex;
-    gap: 2px;
-
-    button {
-      width: 20px;
-      height: 20px;
-      display: grid;
-      place-items: center;
-      border: 1px solid var(--app-border);
-      border-radius: 4px;
-      background: var(--app-surface);
-      color: var(--app-text-secondary);
-      font-size: 10px;
-      cursor: pointer;
-
-      &:hover {
-        color: var(--app-primary);
-        border-color: var(--app-primary);
-      }
-    }
-  }
 }

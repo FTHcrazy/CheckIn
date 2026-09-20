@@ -1,11 +1,13 @@
 import { AppstoreOutlined, BulbOutlined, SearchOutlined, UnorderedListOutlined } from "@ant-design/icons";
 import type { ReactNode } from "react";
 import EntityPanel from "../EntityPanel";
+import type { EntitySavePatch } from "../EntityDetail";
 import InspirationPanel from "../InspirationPanel";
 import OutlinePanel from "../OutlinePanel";
 import SearchPanel from "../SearchPanel";
 import type { PanelTab, EntityFilter } from "../../hooks/useNovelViewState";
 import type {
+  EntityAppearance,
   EntityRelationView,
   EntityType,
   LevelSystem,
@@ -37,10 +39,11 @@ interface SupportPanelProps {
   onRemoveNote: (noteId: string) => void;
   onSearch: (keyword: string) => Promise<SearchHit[]>;
   onSelectChapter: (chapterId: string) => void;
-  getAppearances: (entityId: string) => string[];
+  getAppearances: (entityId: string) => EntityAppearance[];
   highlighted: boolean;
   onToggleHighlight: () => void;
   onExportCard: () => void;
+  onSaveEntity: (entityId: string, patch: EntitySavePatch) => void;
 }
 
 const TABS: Array<{ key: PanelTab; label: string; icon: ReactNode }> = [
@@ -77,6 +80,7 @@ export default function SupportPanel({
   highlighted,
   onToggleHighlight,
   onExportCard,
+  onSaveEntity,
 }: SupportPanelProps) {
   return (
     <aside className={`nv-panel${open ? "" : " is-collapsed"}`}>
@@ -114,6 +118,8 @@ export default function SupportPanel({
             highlighted={highlighted}
             onToggleHighlight={onToggleHighlight}
             onExportCard={onExportCard}
+            onSaveEntity={onSaveEntity}
+            onSelectChapter={onSelectChapter}
           />
         )}
         {activeTab === "note" && (

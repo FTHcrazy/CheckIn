@@ -3,18 +3,20 @@ import type { DragEvent } from "react";
 import { DownOutlined, RightOutlined } from "@ant-design/icons";
 import ChapterTreeItem from "../ChapterTreeItem";
 import { DRAG_MIME_CHAPTER, DRAG_MIME_VOLUME } from "../../novel-config";
-import type { NovelChapter, NovelVolume } from "../../types";
+import { formatNumberedLabel } from "../../novel-utils";
+import type { LabelNumberStyle, NovelChapter, NovelVolume } from "../../types";
 import "./index.scss";
 
 interface VolumeNodeProps {
   volume: NovelVolume;
+  /** 序号标签配置：数字样式 + 卷后缀（第一卷 / 第2部 …） */
+  numberStyle: LabelNumberStyle;
+  volumeSuffix: string;
   chapters: NovelChapter[];
   /** 全书章节序号（拖拽重排后自动跟随的派生属性） */
   chapterNumbers: Map<string, number>;
   activeChapterId: string | null;
-  sortMode: boolean;
   onSelect: (chapterId: string) => void;
-  onMove: (chapterId: string, direction: "up" | "down") => void;
   /** 章节拖到章节上：同卷重排 / 跨卷移动 */
   onReorderChapter: (fromId: string, toId: string) => void;
   /** 章节拖到卷头：移入本卷并排到末尾 */
@@ -23,15 +25,15 @@ interface VolumeNodeProps {
   onReorderVolume: (fromId: string, toId: string) => void;
 }
 
-/** 卷节点：默认展开，点击标题折叠；右侧显示本章卷字数合计 / 章节数 */
+/** 卷节点：默认展开，点击标题折叠；卷名按配置由 sort 派生（第N卷 / 第N部 …） */
 export default function VolumeNode({
   volume,
+  numberStyle,
+  volumeSuffix,
   chapters,
   chapterNumbers,
   activeChapterId,
-  sortMode,
   onSelect,
-  onMove,
   onReorderChapter,
   onMoveChapterToVolume,
   onReorderVolume,
@@ -93,7 +95,13 @@ export default function VolumeNode({
         ) : (
           <RightOutlined className="nv-volume__caret" />
         )}
-        <span className="nv-volume__name">{volume.name}</span>
+        <span className="nv-volume__name">
+          {formatNumberedLabel(
+            numberStyle,
+            volumeSuffix,
+            Math.max(1, volume.sort),
+          )}
+        </span>
         <span className="nv-volume__count">{chapters.length}</span>
       </button>
 
@@ -105,9 +113,7 @@ export default function VolumeNode({
               chapter={chapter}
               chapterNumber={chapterNumbers.get(chapter.id) ?? 0}
               active={chapter.id === activeChapterId}
-              sortMode={sortMode}
               onSelect={onSelect}
-              onMove={onMove}
               onReorder={onReorderChapter}
             />
           ))}

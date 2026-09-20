@@ -182,7 +182,4 @@ export interface EditorSelection {
   text: string;
   from: number;
   to: number;
-  /** 选区起点相对码字区的坐标，供「标记为…」工具条定位 */
-  x: number;
-  y: number;
 }

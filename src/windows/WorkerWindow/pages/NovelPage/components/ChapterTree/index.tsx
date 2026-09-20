@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
-import { PlusOutlined, SearchOutlined, SortAscendingOutlined } from "@ant-design/icons";
+import { BookOutlined, PlusOutlined, SearchOutlined } from "@ant-design/icons";
 import VolumeNode from "../VolumeNode";
 import type { ChapterGroup } from "../../novel-utils";
+import type { LabelNumberStyle } from "../../types";
 import "./index.scss";
 
 interface ChapterTreeProps {
@@ -9,10 +10,13 @@ interface ChapterTreeProps {
   groups: ChapterGroup[];
   /** 全书章节序号（拖拽重排后自动跟随的派生属性） */
   chapterNumbers: Map<string, number>;
+  /** 序号标签配置：数字样式 + 卷后缀（第一卷 / 第2部 …） */
+  numberStyle: LabelNumberStyle;
+  volumeSuffix: string;
   activeChapterId: string | null;
   onSelect: (chapterId: string) => void;
   onCreate: () => void;
-  onMove: (chapterId: string, direction: "up" | "down") => void;
+  onCreateVolume: () => void;
   /** 拖拽：章节落到章节位置（同卷重排 / 跨卷移动） */
   onReorderChapter: (fromId: string, toId: string) => void;
   /** 拖拽：章节落到卷头（移入该卷末尾） */
@@ -24,24 +28,24 @@ interface ChapterTreeProps {
 /**
  * 左栏章节树（设计方案 §05 ①：236px · 卷 → 章两级）
  *
- * 底部「新章节 / 排序」常驻，不用悬浮加号遮挡正文；
+ * 排序唯一入口是拖拽（R9）；原「排序模式 + 上下移按钮」已随拖拽下线。
  * 搜索输入由本组件自持（局部交互状态不下沉到页面），检测结果供下列表使用。
- * 拖拽排序（R9）的交互状态都在行/卷头组件内部，这里只透传数据动作。
  */
 export default function ChapterTree({
   collapsed,
   groups,
   chapterNumbers,
+  numberStyle,
+  volumeSuffix,
   activeChapterId,
   onSelect,
   onCreate,
-  onMove,
+  onCreateVolume,
   onReorderChapter,
   onMoveChapterToVolume,
   onReorderVolume,
 }: ChapterTreeProps) {
   const [keyword, setKeyword] = useState("");
-  const [sortMode, setSortMode] = useState(false);
 
   const filtered = useMemo(() => {
     const trimmed = keyword.trim().toLowerCase();
@@ -76,12 +80,12 @@ export default function ChapterTree({
             <VolumeNode
               key={group.volume.id}
               volume={group.volume}
+              numberStyle={numberStyle}
+              volumeSuffix={volumeSuffix}
               chapters={group.chapters}
               chapterNumbers={chapterNumbers}
               activeChapterId={activeChapterId}
-              sortMode={sortMode}
               onSelect={onSelect}
-              onMove={onMove}
               onReorderChapter={onReorderChapter}
               onMoveChapterToVolume={onMoveChapterToVolume}
               onReorderVolume={onReorderVolume}
@@ -96,10 +100,11 @@ export default function ChapterTree({
         </button>
         <button
           type="button"
-          className={`nv-tree__foot-btn${sortMode ? " is-on" : ""}`}
-          onClick={() => setSortMode((on) => !on)}
+          className="nv-tree__foot-btn"
+          onClick={onCreateVolume}
+          title="在当前作品末尾新建一卷"
         >
-          <SortAscendingOutlined /> 排序
+          <BookOutlined /> 新卷
         </button>
       </div>
     </div>

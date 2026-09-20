@@ -9,6 +9,7 @@
   box-sizing: border-box;
   background: var(--app-bg);
   color: var(--app-text);
+  user-select: none;
 
   &__main {
     display: flex;

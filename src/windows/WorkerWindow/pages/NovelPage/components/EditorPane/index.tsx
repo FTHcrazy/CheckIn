@@ -10,6 +10,7 @@ import {
 import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import type { EditorSettings, EntityTerm, NovelChapter } from "../../types";
+import { formatNumberedLabel } from "../../novel-utils";
 import {
   annotationEnabledCompartment,
   annotationEnabledFacet,
@@ -31,6 +32,8 @@ interface EditorPaneProps {
   typewriter: boolean;
   onChange: (value: string) => void;
   onSelectionChange: (selection: EditorSelection | null) => void;
+  /** 选区非空时右键正文：坐标相对 .nv-page__stage，已按菜单尺寸 clamp */
+  onContextMenu: (x: number, y: number) => void;
   onTermHover: (entityId: string, x: number, y: number) => void;
   onTermLeave: () => void;
   onTermClick: (entityId: string) => void;
@@ -69,7 +72,7 @@ const buildTheme = (settings: EditorSettings) =>
   });
 
 /**
- * 弹层的定位基准是 .nv-page__stage（SelectionToolbar / HoverEntityCard
+ * 弹层的定位基准是 .nv-page__stage（EntityContextMenu / HoverEntityCard
  * 的绝对定位父级），不是编辑器 host——host 在滚动容器内，滚动后
  * getBoundingClientRect 的 top 会变成负值，用它算坐标必然飘出视口。
  */
@@ -97,6 +100,7 @@ export default function EditorPane({
   typewriter,
   onChange,
   onSelectionChange,
+  onContextMenu,
   onTermHover,
   onTermLeave,
   onTermClick,
@@ -144,10 +148,10 @@ export default function EditorPane({
   }, [chapter?.id]);
 
   // 回调放进 ref，避免重建编辑器（CodeMirror 实例必须整个会话唯一）
-  const handlersRef = useRef({ onChange, onSelectionChange });
+  const handlersRef = useRef({ onChange, onSelectionChange, onContextMenu });
   useEffect(() => {
-    handlersRef.current = { onChange, onSelectionChange };
-  }, [onChange, onSelectionChange]);
+    handlersRef.current = { onChange, onSelectionChange, onContextMenu };
+  }, [onChange, onSelectionChange, onContextMenu]);
 
   const enabled = useMemo(
     () => terms.length > 0,
@@ -178,25 +182,16 @@ export default function EditorPane({
             }
             if (update.selectionSet) {
               const { main } = update.state.selection;
-              if (main.empty) {
-                handlersRef.current.onSelectionChange(null);
-                return;
-              }
-              const text = update.state.sliceDoc(main.from, main.to);
-              const coords = view.coordsAtPos(main.head);
-              // 工具条相对 stage 定位：y 在选区上方（translate -100%），预留自身高度与宽度
-              const stageRect = stageRectOf(host);
-              handlersRef.current.onSelectionChange({
-                text,
-                from: main.from,
-                to: main.to,
-                x: coords
-                  ? clamp(coords.left - stageRect.left, 8, stageRect.width - 292)
-                  : 0,
-                y: coords
-                  ? Math.max(coords.top - stageRect.top, 44)
-                  : 0,
-              });
+              // 选区不随上报携带坐标：右键菜单位置以鼠标事件为准（见 contextmenu 监听）
+              handlersRef.current.onSelectionChange(
+                main.empty
+                  ? null
+                  : {
+                      text: update.state.sliceDoc(main.from, main.to),
+                      from: main.from,
+                      to: main.to,
+                    },
+              );
             }
           }),
         ],
@@ -217,9 +212,23 @@ export default function EditorPane({
     view.contentDOM.addEventListener("compositionstart", handleCompositionStart);
     view.contentDOM.addEventListener("compositionend", handleCompositionEnd);
 
+    // 选区非空时右键正文 → 弹出标注菜单：坐标以鼠标为准，按菜单尺寸
+    // （约 190×320）clamp 进 stage，交给上层渲染 EntityContextMenu
+    const handleContextMenu = (event: MouseEvent): void => {
+      if (view.state.selection.main.empty) return;
+      event.preventDefault();
+      const stageRect = stageRectOf(host);
+      handlersRef.current.onContextMenu(
+        clamp(event.clientX - stageRect.left, 8, stageRect.width - 208),
+        clamp(event.clientY - stageRect.top, 44, stageRect.height - 320),
+      );
+    };
+    view.contentDOM.addEventListener("contextmenu", handleContextMenu);
+
     return () => {
       view.contentDOM.removeEventListener("compositionstart", handleCompositionStart);
       view.contentDOM.removeEventListener("compositionend", handleCompositionEnd);
+      view.contentDOM.removeEventListener("contextmenu", handleContextMenu);
       view.destroy();
       viewRef.current = null;
     };
@@ -378,7 +387,11 @@ export default function EditorPane({
             >
               {chapterNumber > 0 && (
                 <span className="nv-editor__title-no">
-                  第{chapterNumber}章
+                  {formatNumberedLabel(
+                    settings.numberStyle,
+                    settings.chapterSuffix,
+                    chapterNumber,
+                  )}
                 </span>
               )}
               {chapter.title}

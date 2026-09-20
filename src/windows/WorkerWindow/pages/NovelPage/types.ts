@@ -26,6 +26,9 @@ export type SaveState = "idle" | "pending" | "saving" | "saved" | "failed";
 /** 字数口径：默认含标点，可在设置里切纯汉字（PRD R4） */
 export type WordCountMode = "withPunctuation" | "hanOnly";
 
+/** 序号数字样式：阿拉伯数字（第1章）/ 中文数字（第一章） */
+export type LabelNumberStyle = "arabic" | "chinese";
+
 /** 作品 */
 export interface NovelWork {
   id: string;
@@ -134,6 +137,13 @@ export interface EntityTerm {
   type: EntityType;
 }
 
+/** 资料卡出场章节引用：可点击跳转，label 为派生序号标签（第3章 / 第三章…） */
+export interface EntityAppearance {
+  chapterId: string;
+  title: string;
+  label: string;
+}
+
 /** 标注层命中片段 */
 export interface TermMatch {
   from: number;
@@ -182,6 +192,14 @@ export interface EditorSettings {
   wordCountMode: WordCountMode;
   /** 参与正文高亮的要素类型；空数组 = 关闭标注层 */
   annotationTypes: EntityType[];
+  /** 序号数字样式（阿拉伯 / 中文），与后缀解耦可自由组合 */
+  numberStyle: LabelNumberStyle;
+  /** 章节后缀（章 / 张 / 回 / 节…），支持自定义，标签形如「第{n}后缀」 */
+  chapterSuffix: string;
+  /** 卷后缀（卷 / 部 / 篇 / 集…），支持自定义 */
+  volumeSuffix: string;
+  /** 防误触排序：拖拽后先弹确认框展示序号变更，确认才应用（默认开启） */
+  confirmReorder: boolean;
 }
 
 /** 底部状态条所需的统计（PRD R4） */

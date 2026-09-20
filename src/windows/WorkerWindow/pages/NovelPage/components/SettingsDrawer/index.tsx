@@ -1,8 +1,18 @@
 import { Segmented, Slider, Switch } from "antd";
-import { SETTINGS_RANGE } from "../../novel-config";
-import { ENTITY_FILTER_ORDER, ENTITY_TYPE_META } from "../../novel-config";
-import { formatThousands } from "../../novel-utils";
-import type { EditorSettings, EntityType, WordCountMode } from "./../../types";
+import {
+  CHAPTER_SUFFIX_OPTIONS,
+  ENTITY_FILTER_ORDER,
+  ENTITY_TYPE_META,
+  SETTINGS_RANGE,
+  VOLUME_SUFFIX_OPTIONS,
+} from "../../novel-config";
+import { formatNumberedLabel, formatThousands } from "../../novel-utils";
+import type {
+  EditorSettings,
+  EntityType,
+  LabelNumberStyle,
+  WordCountMode,
+} from "./../../types";
 import "./index.scss";
 
 interface SettingsDrawerProps {
@@ -123,6 +133,86 @@ export default function SettingsDrawer({
             onChange={(value) => onUpdate("wordCountMode", value)}
           />
         </section>
+
+        <section className="nv-setting__block">
+          <h6 className="nv-setting__label">序号数字</h6>
+          <Segmented<LabelNumberStyle>
+            size="small"
+            value={settings.numberStyle}
+            options={[
+              { value: "arabic", label: "阿拉伯（第1章）" },
+              { value: "chinese", label: "中文（第一章）" },
+            ]}
+            onChange={(value) => onUpdate("numberStyle", value)}
+          />
+        </section>
+
+        <section className="nv-setting__block">
+          <h6 className="nv-setting__label">章节后缀</h6>
+          <div className="nv-setting__chips">
+            {CHAPTER_SUFFIX_OPTIONS.map((suffix) => (
+              <button
+                key={suffix}
+                type="button"
+                className={`nv-setting__chip${
+                  settings.chapterSuffix === suffix ? " is-on" : ""
+                }`}
+                onClick={() => onUpdate("chapterSuffix", suffix)}
+              >
+                {formatNumberedLabel(settings.numberStyle, suffix, 1)}
+              </button>
+            ))}
+          </div>
+          <input
+            className="nv-setting__suffix-input"
+            value={settings.chapterSuffix}
+            maxLength={4}
+            aria-label="自定义章节后缀"
+            placeholder="自定义后缀，如：话"
+            onChange={(event) =>
+              onUpdate("chapterSuffix", event.target.value.trim() || "章")
+            }
+          />
+        </section>
+
+        <section className="nv-setting__block">
+          <h6 className="nv-setting__label">卷名后缀</h6>
+          <div className="nv-setting__chips">
+            {VOLUME_SUFFIX_OPTIONS.map((suffix) => (
+              <button
+                key={suffix}
+                type="button"
+                className={`nv-setting__chip${
+                  settings.volumeSuffix === suffix ? " is-on" : ""
+                }`}
+                onClick={() => onUpdate("volumeSuffix", suffix)}
+              >
+                {formatNumberedLabel(settings.numberStyle, suffix, 1)}
+              </button>
+            ))}
+          </div>
+          <input
+            className="nv-setting__suffix-input"
+            value={settings.volumeSuffix}
+            maxLength={4}
+            aria-label="自定义卷名后缀"
+            placeholder="自定义后缀，如：册"
+            onChange={(event) =>
+              onUpdate("volumeSuffix", event.target.value.trim() || "卷")
+            }
+          />
+        </section>
+
+        <section className="nv-setting__row">
+          <label>防误触排序</label>
+          <Switch
+            checked={settings.confirmReorder}
+            onChange={(checked) => onUpdate("confirmReorder", checked)}
+          />
+        </section>
+        <p className="nv-setting__hint">
+          开启后，拖拽调整章节或卷的顺序时先弹窗确认序号变化，确认后才生效。
+        </p>
 
         <section className="nv-setting__block">
           <h6 className="nv-setting__label">正文高亮类型</h6>

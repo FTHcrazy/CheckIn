@@ -2,18 +2,19 @@ import { useCallback, useEffect, useMemo } from "react";
 import ChapterJumpPalette from "./components/ChapterJumpPalette";
 import ChapterTree from "./components/ChapterTree";
 import EditorPane from "./components/EditorPane";
+import EntityContextMenu from "./components/EntityContextMenu";
 import HoverEntityCard from "./components/HoverEntityCard";
 import NovelToast from "./components/NovelToast";
 import NovelTopBar from "./components/NovelTopBar";
+import ReorderConfirmModal from "./components/ReorderConfirmModal";
 import RestoreBanner from "./components/RestoreBanner";
-import SelectionToolbar from "./components/SelectionToolbar";
 import SettingsDrawer from "./components/SettingsDrawer";
 import SnapshotDrawer from "./components/SnapshotDrawer";
 import StatusBar from "./components/StatusBar";
 import SupportPanel from "./components/SupportPanel";
 import { useNovelPage } from "./hooks/useNovelPage";
-import { findTermMatches } from "./novel-utils";
-import type { EntityType } from "./types";
+import { findTermMatches, formatNumberedLabel } from "./novel-utils";
+import type { EntityAppearance } from "./types";
 import "./index.scss";
 
 /** 悬浮资料卡触底翻转阈值（px） */
@@ -33,12 +34,24 @@ export default function NovelPage() {
     hover,
     terms,
     breadcrumb,
+    reorderPreview,
+    handleReorderChapter,
+    handleMoveChapterToVolume,
+    handleReorderVolume,
+    confirmReorder,
+    cancelReorder,
     handleNewChapter,
     handleSelectChapter,
     handleRollback,
-    handleMark,
     handleOpenEntity,
     handleRestoreRecovery,
+    ctxMenu,
+    handleEditorContextMenu,
+    closeCtxMenu,
+    handleCtxMark,
+    handleCtxBind,
+    handleNewVolume,
+    handleSaveEntity,
   } = useNovelPage();
 
   const { loadSnapshots, activeChapterId, searchBook } = data;
@@ -54,17 +67,29 @@ export default function NovelPage() {
     [hover.target, data],
   );
 
+  /** 出场章节（R21 升级）：返回全量可跳转引用，序号标签随序号配置派生 */
   const getAppearances = useCallback(
-    (entityId: string) => {
+    (entityId: string): EntityAppearance[] => {
       const owned = terms.filter((term) => term.entityId === entityId);
       if (owned.length === 0) return [];
+      const { numberStyle, chapterSuffix } = editor.settings;
       return data.chapters
         .filter(
           (chapter) => findTermMatches(chapter.content, owned).length > 0,
         )
-        .map((chapter) => chapter.title);
+        .map((chapter) => {
+          const number = data.chapterNumbers.get(chapter.id) ?? 0;
+          return {
+            chapterId: chapter.id,
+            title: chapter.title,
+            label:
+              number > 0
+                ? formatNumberedLabel(numberStyle, chapterSuffix, number)
+                : "",
+          };
+        });
     },
-    [terms, data.chapters],
+    [terms, data.chapters, data.chapterNumbers, editor.settings],
   );
 
   const detailEntity = useMemo(
@@ -96,11 +121,6 @@ export default function NovelPage() {
   const handleSearch = useCallback(
     (keyword: string) => searchBook(keyword),
     [searchBook],
-  );
-
-  const handleMarkSelection = useCallback(
-    (type: EntityType) => handleMark(type),
-    [handleMark],
   );
 
   return (
@@ -137,13 +157,15 @@ export default function NovelPage() {
           collapsed={!view.leftOpen}
           groups={data.groups}
           chapterNumbers={data.chapterNumbers}
+          numberStyle={editor.settings.numberStyle}
+          volumeSuffix={editor.settings.volumeSuffix}
           activeChapterId={data.activeChapterId}
           onSelect={handleSelectChapter}
           onCreate={handleNewChapter}
-          onMove={data.moveChapter}
-          onReorderChapter={data.reorderChapters}
-          onMoveChapterToVolume={data.moveChapterToVolume}
-          onReorderVolume={data.reorderVolumes}
+          onCreateVolume={handleNewVolume}
+          onReorderChapter={handleReorderChapter}
+          onMoveChapterToVolume={handleMoveChapterToVolume}
+          onReorderVolume={handleReorderVolume}
         />
 
         <div className="nv-page__stage">
@@ -160,6 +182,7 @@ export default function NovelPage() {
             typewriter={view.typewriter}
             onChange={editor.handleContentChange}
             onSelectionChange={editor.setSelection}
+            onContextMenu={handleEditorContextMenu}
             onTermHover={hover.enter}
             onTermLeave={hover.leave}
             onTermClick={handleOpenEntity}
@@ -169,12 +192,16 @@ export default function NovelPage() {
 
           <StatusBar stats={editor.stats} />
 
-          {editor.selection && (
-            <SelectionToolbar
-              x={editor.selection.x}
-              y={editor.selection.y}
+          {/* 选区右键菜单：手动绑定路线的标注入口（新建 / 绑定为别名） */}
+          {editor.selection && ctxMenu && (
+            <EntityContextMenu
+              x={ctxMenu.x}
+              y={ctxMenu.y}
               text={editor.selection.text}
-              onMark={handleMarkSelection}
+              entities={data.entities}
+              onMark={handleCtxMark}
+              onBind={handleCtxBind}
+              onClose={closeCtxMenu}
             />
           )}
 
@@ -213,6 +240,14 @@ export default function NovelPage() {
           />
 
           <NovelToast toast={view.toast} />
+
+          <ReorderConfirmModal
+            open={reorderPreview !== null}
+            title={reorderPreview?.title ?? ""}
+            changes={reorderPreview?.changes ?? []}
+            onConfirm={confirmReorder}
+            onCancel={cancelReorder}
+          />
         </div>
 
         <SupportPanel
@@ -237,6 +272,7 @@ export default function NovelPage() {
           highlighted={detailHighlighted}
           onToggleHighlight={handleToggleHighlight}
           onExportCard={handleExportCard}
+          onSaveEntity={handleSaveEntity}
         />
       </div>
     </div>

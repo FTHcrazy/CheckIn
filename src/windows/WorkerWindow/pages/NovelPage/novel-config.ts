@@ -65,7 +65,20 @@ export const DEFAULT_SETTINGS: EditorSettings = {
   dailyGoal: 3000,
   wordCountMode: "withPunctuation",
   annotationTypes: ["character", "location", "faction"],
+  numberStyle: "arabic",
+  chapterSuffix: "章",
+  volumeSuffix: "卷",
+  confirmReorder: true,
 };
+
+/**
+ * 章节 / 卷后缀快捷选项（R1 序号自定义）
+ *
+ * 数字样式（numberStyle）与后缀是两个独立配置：阿拉伯/中文数字 × 任意后缀
+ * 自由组合，快捷项之外支持用户直接输入自定义后缀（见设置抽屉）。
+ */
+export const CHAPTER_SUFFIX_OPTIONS = ["章", "张", "回", "节"] as const;
+export const VOLUME_SUFFIX_OPTIONS = ["卷", "部", "篇", "集"] as const;
 
 /** 设置抽屉可调范围 */
 export const SETTINGS_RANGE = {

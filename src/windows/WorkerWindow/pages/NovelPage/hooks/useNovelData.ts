@@ -6,7 +6,7 @@ import {
   searchAcrossBook,
   type NovelBundle,
 } from "../services/novel-demo-source";
-import { buildChapterGroups, buildChapterNumbers, buildSortOrder, insertItemBefore, moveItemBefore, type ChapterGroup } from "../novel-utils";
+import { buildChapterGroups, buildChapterNumbers, previewChapterReorder, previewChapterToVolume, previewVolumeReorder, type ChapterGroup } from "../novel-utils";
 import type {
   EntityRelationView,
   EntityType,
@@ -178,112 +178,58 @@ export function useNovelData() {
     [bundle, volumes, activeWorkId],
   );
 
-  /** 同卷内上下移动，简洁实现：交换相邻两项的 sort */
-  const moveChapter = useCallback(
-    (chapterId: string, direction: "up" | "down") => {
-      setBundle((current) => {
-        if (!current) return current;
-        const target = current.chapters.find((chapter) => chapter.id === chapterId);
-        if (!target) return current;
-
-        const siblings = current.chapters
-          .filter((chapter) => chapter.volumeId === target.volumeId)
-          .sort((a, b) => a.sort - b.sort);
-        const index = siblings.findIndex((chapter) => chapter.id === chapterId);
-        const swapIndex = direction === "up" ? index - 1 : index + 1;
-        if (swapIndex < 0 || swapIndex >= siblings.length) return current;
-
-        const order = new Map<string, number>();
-        siblings.forEach((chapter, position) => order.set(chapter.id, position + 1));
-        order.set(siblings[index].id, swapIndex + 1);
-        order.set(siblings[swapIndex].id, index + 1);
-
-        return {
-          ...current,
-          chapters: current.chapters.map((chapter) =>
-            order.has(chapter.id)
-              ? { ...chapter, sort: order.get(chapter.id) ?? chapter.sort }
-              : chapter,
-          ),
-        };
-      });
-    },
-    [],
-  );
+  /** 新建卷（左栏底部入口）：排序追加到当前作品末尾 */
+  const createVolume = useCallback((): string | null => {
+    if (!bundle) return null;
+    const maxSort = volumes.reduce((max, volume) => Math.max(max, volume.sort), 0);
+    const volume: NovelVolume = {
+      id: `v-${Date.now()}`,
+      workId: activeWorkId,
+      // 卷头展示由 sort 派生（第N卷 / 第N部…），存储名仅作兜底
+      name: "未命名卷",
+      sort: maxSort + 1,
+    };
+    setBundle((current) =>
+      current ? { ...current, volumes: [...current.volumes, volume] } : current,
+    );
+    return volume.id;
+  }, [bundle, volumes, activeWorkId]);
 
   /**
    * 拖拽重排（R9）：把 fromId 章节拖到 toId 章节的位置。
    * 同卷 = 卷内重排；跨卷 = 移入目标卷并落到目标章节的位置。
-   * 未涉及的章节 sort 保持不变（相对顺序不受影响，允许空洞）。
+   * 排序计算在 previewChapterReorder 纯函数中，与确认弹框的预览共用一套逻辑。
    */
-  const reorderChapters = useCallback(
-    (fromId: string, toId: string) => {
-      setBundle((current) => {
-        if (!current || fromId === toId) return current;
-        const from = current.chapters.find((chapter) => chapter.id === fromId);
-        const to = current.chapters.find((chapter) => chapter.id === toId);
-        if (!from || !to) return current;
-
-        const siblings = current.chapters
-          .filter((chapter) => chapter.volumeId === to.volumeId)
-          .sort((a, b) => a.sort - b.sort);
-
-        const ordered =
-          from.volumeId === to.volumeId
-            ? moveItemBefore(siblings, fromId, toId)
-            : insertItemBefore(siblings, toId, { ...from, volumeId: to.volumeId });
-
-        const order = buildSortOrder(ordered);
-        return {
-          ...current,
-          chapters: current.chapters.map((chapter) =>
-            order.has(chapter.id)
-              ? { ...chapter, sort: order.get(chapter.id) ?? chapter.sort }
-              : chapter,
-          ),
-        };
-      });
-    },
-    [],
-  );
+  const reorderChapters = useCallback((fromId: string, toId: string) => {
+    setBundle((current) => {
+      if (!current) return current;
+      const nextChapters = previewChapterReorder(current.chapters, fromId, toId);
+      if (nextChapters === current.chapters) return current;
+      return { ...current, chapters: nextChapters };
+    });
+  }, []);
 
   /** 拖拽章节到卷头：移入该卷并排到末尾 */
-  const moveChapterToVolume = useCallback(
-    (chapterId: string, volumeId: string) => {
-      setBundle((current) => {
-        if (!current) return current;
-        const target = current.chapters.find((chapter) => chapter.id === chapterId);
-        if (!target || target.volumeId === volumeId) return current;
-
-        const maxSort = current.chapters
-          .filter((chapter) => chapter.volumeId === volumeId)
-          .reduce((max, chapter) => Math.max(max, chapter.sort), 0);
-
-        return {
-          ...current,
-          chapters: current.chapters.map((chapter) =>
-            chapter.id === chapterId
-              ? { ...chapter, volumeId, sort: maxSort + 1 }
-              : chapter,
-          ),
-        };
-      });
-    },
-    [],
-  );
+  const moveChapterToVolume = useCallback((chapterId: string, volumeId: string) => {
+    setBundle((current) => {
+      if (!current) return current;
+      const nextChapters = previewChapterToVolume(current.chapters, chapterId, volumeId);
+      if (nextChapters === current.chapters) return current;
+      return { ...current, chapters: nextChapters };
+    });
+  }, []);
 
   /** 拖拽卷头重排卷顺序 */
   const reorderVolumes = useCallback(
     (fromId: string, toId: string) => {
       setBundle((current) => {
-        if (!current || fromId === toId) return current;
-        const volumes = current.volumes
-          .filter((volume) => volume.workId === activeWorkId)
-          .sort((a, b) => a.sort - b.sort);
-        const ordered = moveItemBefore(volumes, fromId, toId);
-        if (ordered === volumes) return current;
-
-        const order = buildSortOrder(ordered);
+        if (!current) return current;
+        const scoped = current.volumes.filter(
+          (volume) => volume.workId === activeWorkId,
+        );
+        const ordered = previewVolumeReorder(scoped, fromId, toId);
+        if (ordered === scoped) return current;
+        const order = new Map(ordered.map((volume) => [volume.id, volume.sort]));
         return {
           ...current,
           volumes: current.volumes.map((volume) =>
@@ -391,6 +337,52 @@ export function useNovelData() {
     [entities],
   );
 
+  /** 资料卡编辑（R23）：合并保存名称 / 类型 / 别名 / 简介等字段 */
+  const updateEntity = useCallback(
+    (entityId: string, patch: Partial<Omit<NovelEntity, "id" | "workId">>): void => {
+      setBundle((current) =>
+        current
+          ? {
+              ...current,
+              entities: current.entities.map((entity) =>
+                entity.id === entityId ? { ...entity, ...patch } : entity,
+              ),
+            }
+          : current,
+      );
+    },
+    [],
+  );
+
+  /** 手动绑定（R20 ③右键菜单版）：把选中文本绑定到指定资料卡（关联为别名） */
+  const bindTextToEntity = useCallback(
+    (text: string, entityId: string): MarkResult | null => {
+      const name = text.trim();
+      const target = bundle?.entities.find((entity) => entity.id === entityId);
+      if (!name || !target) return null;
+
+      if (target.name === name || target.aliases.includes(name)) {
+        return { entity: target, mode: "existing" };
+      }
+      const linked: NovelEntity = {
+        ...target,
+        aliases: [...target.aliases, name],
+      };
+      setBundle((current) =>
+        current
+          ? {
+              ...current,
+              entities: current.entities.map((entity) =>
+                entity.id === entityId ? linked : entity,
+              ),
+            }
+          : current,
+      );
+      return { entity: linked, mode: "linked" };
+    },
+    [bundle],
+  );
+
   /** 要素关联的双向视图（PRD R24） */
   const getEntityRelations = useCallback(
     (entityId: string, entityType: EntityType): EntityRelationView[] => {
@@ -495,13 +487,15 @@ export function useNovelData() {
     selectChapter,
     updateChapterContent,
     createChapter,
-    moveChapter,
+    createVolume,
     renameChapter,
     reorderChapters,
     moveChapterToVolume,
     reorderVolumes,
     toggleChapterStatus,
     markSelectionAsEntity,
+    updateEntity,
+    bindTextToEntity,
     getEntityById,
     getEntityRelations,
     addNote,

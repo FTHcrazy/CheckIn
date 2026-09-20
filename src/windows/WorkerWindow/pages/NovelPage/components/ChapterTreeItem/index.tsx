@@ -1,7 +1,6 @@
 import { useState } from "react";
 import type { DragEvent } from "react";
 import { Tooltip } from "antd";
-import { ArrowDownOutlined, ArrowUpOutlined } from "@ant-design/icons";
 import { CHAPTER_STATUS_META, DRAG_MIME_CHAPTER } from "../../novel-config";
 import { formatThousands, padIndex } from "../../novel-utils";
 import type { NovelChapter } from "../../types";
@@ -12,9 +11,7 @@ interface ChapterTreeItemProps {
   /** 全书序号（跨卷连续，随拖拽重排自动变动） */
   chapterNumber: number;
   active: boolean;
-  sortMode: boolean;
   onSelect: (chapterId: string) => void;
-  onMove: (chapterId: string, direction: "up" | "down") => void;
   /** 拖拽放下：fromId 落到本章节（chapter.id）的位置，同卷重排 / 跨卷移动 */
   onReorder: (fromId: string, toId: string) => void;
 }
@@ -22,17 +19,15 @@ interface ChapterTreeItemProps {
 /**
  * 章节列表项（R1：标题 / 状态圆点 / 字数）
  *
- * 排序模式下的上下移动按钮属于本列表项的局部交互；
- * 拖拽（R9）同样由行自己承载：dragstart 写入 MIME，dragover/drop 消费，
+ * 拖拽（R9）由行自己承载：dragstart 写入 MIME，dragover/drop 消费，
  * 「是否悬浮在自身上方」是本行的短生命周期状态，不提升到页面。
+ * 排序的实际应用在页面层（防误触确认后），这里只发起 onReorder 请求。
  */
 export default function ChapterTreeItem({
   chapter,
   chapterNumber,
   active,
-  sortMode,
   onSelect,
-  onMove,
   onReorder,
 }: ChapterTreeItemProps) {
   const status = CHAPTER_STATUS_META[chapter.status];
@@ -84,31 +79,10 @@ export default function ChapterTreeItem({
           />
         </Tooltip>
         <span className="nv-chapter__title">{chapter.title}</span>
-        {!sortMode && (
-          <span className="nv-chapter__words">
-            {formatThousands(chapter.wordCount)}
-          </span>
-        )}
+        <span className="nv-chapter__words">
+          {formatThousands(chapter.wordCount)}
+        </span>
       </button>
-
-      {sortMode && (
-        <div className="nv-chapter__sorter">
-          <button
-            type="button"
-            aria-label="上移"
-            onClick={() => onMove(chapter.id, "up")}
-          >
-            <ArrowUpOutlined />
-          </button>
-          <button
-            type="button"
-            aria-label="下移"
-            onClick={() => onMove(chapter.id, "down")}
-          >
-            <ArrowDownOutlined />
-          </button>
-        </div>
-      )}
     </li>
   );
 }
