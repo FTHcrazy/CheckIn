@@ -32,6 +32,8 @@ interface EditorPaneProps {
   settings: EditorSettings;
   terms: EntityTerm[];
   typewriter: boolean;
+  /** 全局标注层开关（PRD §2 风险对策）：关闭时即使有词库也不渲染高亮/悬浮卡 */
+  annotationOn: boolean;
   onChange: (value: string) => void;
   onSelectionChange: (selection: EditorSelection | null) => void;
   /** 选区非空时右键正文：坐标相对 .nv-page__stage，已按菜单尺寸 clamp */
@@ -107,6 +109,7 @@ export default function EditorPane({
   settings,
   terms,
   typewriter,
+  annotationOn,
   onChange,
   onSelectionChange,
   onContextMenu,
@@ -176,9 +179,11 @@ export default function EditorPane({
     };
   }, [onChange, onSelectionChange, onContextMenu, onCursorChange]);
 
+  // 标注层总开关：有词库且用户未全局关闭时才启用（PRD §2 风险对策）。
+  // 复用 annotationEnabledCompartment 热更新通道，关闭即整层不渲染高亮/悬浮卡。
   const enabled = useMemo(
-    () => terms.length > 0,
-    [terms.length],
+    () => terms.length > 0 && annotationOn,
+    [terms.length, annotationOn],
   );
 
   // 初始化编辑器：只跑一次

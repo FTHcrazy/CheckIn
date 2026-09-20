@@ -176,6 +176,7 @@ export default function NovelPage() {
           volumeSuffix={editor.settings.volumeSuffix}
           activeChapterId={data.activeChapterId}
           onSelect={handleSelectChapter}
+          onToggleStatus={data.toggleChapterStatus}
           onCreate={handleNewChapter}
           onCreateChapterInVolume={handleCreateChapterInVolume}
           onCreateVolume={handleNewVolume}
@@ -199,6 +200,7 @@ export default function NovelPage() {
             settings={editor.settings}
             terms={terms}
             typewriter={view.typewriter}
+            annotationOn={view.annotationOn}
             onChange={editor.handleContentChange}
             onSelectionChange={editor.setSelection}
             onContextMenu={handleEditorContextMenu}
@@ -213,7 +215,11 @@ export default function NovelPage() {
             onScrollChange={handleScrollChange}
           />
 
-          <StatusBar stats={editor.stats} />
+          <StatusBar
+            stats={editor.stats}
+            annotationOn={view.annotationOn}
+            onToggleAnnotation={view.toggleAnnotation}
+          />
 
           {/* 选区右键菜单：手动绑定路线的标注入口（新建 / 绑定为别名） */}
           {editor.selection && ctxMenu && (
@@ -298,7 +304,6 @@ export default function NovelPage() {
           onSaveEntity={handleSaveEntity}
           onAddRelation={handleAddRelation}
           onRemoveRelation={handleRemoveRelation}
-          onCollapse={view.toggleRight}
         />
       </div>
     </div>

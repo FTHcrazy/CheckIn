@@ -17,6 +17,8 @@ interface ChapterTreeProps {
   volumeSuffix: string;
   activeChapterId: string | null;
   onSelect: (chapterId: string) => void;
+  /** 点击章节状态圆点：草稿 ⇄ 完稿 */
+  onToggleStatus: (chapterId: string) => void;
   onCreate: () => void;
   /** 在指定卷末尾新建章节（卷头悬浮 + 按钮） */
   onCreateChapterInVolume: (volumeId: string) => void;
@@ -57,6 +59,7 @@ export default function ChapterTree({
   volumeSuffix,
   activeChapterId,
   onSelect,
+  onToggleStatus,
   onCreate,
   onCreateChapterInVolume,
   onCreateVolume,
@@ -160,6 +163,7 @@ export default function ChapterTree({
                 chapterNumber={chapterNumbers.get(row.chapter.id) ?? 0}
                 active={row.chapter.id === activeChapterId}
                 onSelect={onSelect}
+                onToggleStatus={onToggleStatus}
                 onRename={onRenameChapter}
                 onDelete={onDeleteChapter}
                 onReorder={onReorderChapter}

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>CheckIn 小说编辑器 · UI 改版原型 v2</title>
+<title>CheckIn 小说编辑器 · UI 改版原型 v3（v0.5 修正稿）</title>
 <style>
 /* ============================================================
    0. 基础重置
@@ -455,10 +455,11 @@ input, textarea, select { font: inherit; color: inherit; }
 }
 .seg__ind {
   position: absolute; top: 3px; bottom: 3px; left: 3px;
-  /* 4 项 = 3 个 2px gap + 左右各 3px padding，故每项宽 (100% - 12px)/4 */
-  width: calc((100% - 12px) / 4);
+  /* 5 项 = 4 个 2px gap + 左右各 3px padding，故每项宽 (100% - 14px)/5 */
+  width: calc((100% - 14px) / 5);
   background: var(--bg-surface); border-radius: var(--r-sm);
   box-shadow: var(--shadow-1);
+  /* transform 由 JS 设置：translateX(calc(i * 100% + i * 2px))，2px 修正项间 gap 累积 */
   transition: transform var(--d-slow) var(--ease-out);
   pointer-events: none;
 }
@@ -918,6 +919,98 @@ input, textarea, select { font: inherit; color: inherit; }
 .dnote__d code { padding: 1px 4px; border-radius: 3px; background: var(--bg-sunken); font-size: 11px; }
 
 /* ============================================================
+   9.1 未实现占位徽标 + 工具 Tab 卡片（v0.5 新增）
+   ============================================================ */
+.wip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 1px 7px; border-radius: var(--r-xs);
+  background: var(--bg-sunken); color: var(--tx-3);
+  font-size: 9.5px; font-weight: 700; letter-spacing: .4px;
+  text-transform: uppercase; white-space: nowrap;
+  border: 1px dashed var(--line-strong);
+}
+.wip::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--warn); }
+
+/* 工具卡片：起名器 / 地图列表 / 排版与导出 三块 */
+.tcard {
+  border: 1px solid var(--line-soft); border-radius: var(--r-md);
+  background: var(--bg-surface); overflow: hidden;
+  margin-bottom: var(--s-3);
+}
+.tcard__h {
+  display: flex; align-items: center; gap: 7px;
+  padding: 9px 10px; border-bottom: 1px solid var(--line-soft);
+  background: var(--bg-sunken);
+}
+.tcard__ico {
+  width: 22px; height: 22px; flex: none; border-radius: var(--r-xs);
+  display: grid; place-items: center; color: var(--accent);
+  background: var(--accent-weak);
+}
+.tcard__t { font-size: 12.5px; font-weight: 600; color: var(--tx); }
+.tcard__b { padding: 11px 12px 13px; }
+.tcard__d { margin: 0 0 10px; font-size: 11.5px; line-height: 1.65; color: var(--tx-3); }
+.tcard__d b { color: var(--tx-2); font-weight: 600; }
+
+/* 起名器选项行 */
+.np__row { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
+.np__chip {
+  padding: 3px 9px; border: 1px solid var(--line); border-radius: var(--r-pill);
+  background: var(--bg-surface); color: var(--tx-2); font-size: 11px;
+  cursor: not-allowed; opacity: .55;
+}
+.np__chip.is-on { background: var(--accent-weak); color: var(--accent); border-color: var(--accent-soft); opacity: 1; }
+.np__label { font-size: 10.5px; color: var(--tx-4); margin-right: 4px; align-self: center; }
+.np__out {
+  margin-top: 8px; padding: 12px; border: 1px dashed var(--line-strong);
+  border-radius: var(--r-sm); background: var(--bg-sunken);
+  text-align: center; font-size: 11.5px; color: var(--tx-4);
+}
+
+/* 地图列表空态 */
+.mp__empty {
+  padding: 18px 6px; text-align: center; font-size: 11.5px;
+  color: var(--tx-4); line-height: 1.6;
+}
+.mp__btn {
+  display: inline-flex; align-items: center; gap: 5px; margin-top: 6px;
+  padding: 5px 11px; border: 1px dashed var(--line-strong); border-radius: var(--r-sm);
+  background: transparent; color: var(--tx-3); font-size: 11.5px;
+  cursor: not-allowed;
+}
+
+/* 排版与导出动作清单 */
+.ex__row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 0; font-size: 12px; color: var(--tx-2);
+}
+.ex__row + .ex__row { border-top: 1px solid var(--line-soft); }
+.ex__ico {
+  width: 22px; height: 22px; flex: none; border-radius: var(--r-xs);
+  display: grid; place-items: center; color: var(--tx-3);
+  background: var(--bg-sunken);
+}
+.ex__t { flex: 1; min-width: 0; }
+.ex__t b { color: var(--tx); font-weight: 600; }
+.ex__hint { font-size: 10.5px; color: var(--tx-4); }
+
+/* 要素库顶部「关系网络」按钮（R27） */
+.btn--ghost-soft {
+  background: transparent; border-color: var(--line); color: var(--tx-2);
+}
+.btn--ghost-soft:hover { border-color: var(--c-character); color: var(--c-character); background: var(--c-character-weak); }
+
+/* 顶栏作品管理按钮（R29）：与作品切换器并列 */
+.work-mgr {
+  width: 28px; height: 28px; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid transparent; border-radius: var(--r-sm);
+  background: transparent; color: var(--tx-3); cursor: pointer;
+  transition: background var(--d-fast) ease, color var(--d-fast) ease, border-color var(--d-fast) ease;
+}
+.work-mgr:hover { background: var(--bg-hover); color: var(--tx); border-color: var(--line); }
+
+/* ============================================================
    10. 响应式 + 无障碍
    ============================================================ */
 @media (max-width: 1100px) {
@@ -952,6 +1045,10 @@ input, textarea, select { font: inherit; color: inherit; }
         <span class="work__badge">连载中</span>
         <span class="work__chev"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>
       </button>
+      <!-- R29 作品管理：顶栏下拉内嵌「新建 / 重命名 / 删除」（带级联清理确认） -->
+      <button class="work-mgr" id="btnWorkMgr" title="作品管理（新建 / 重命名 / 删除）" aria-label="作品管理">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>
+      </button>
       <div class="crumb">
         <span class="crumb__sep">/</span>
         <span>第一卷 · 寒渊</span>
@@ -968,6 +1065,9 @@ input, textarea, select { font: inherit; color: inherit; }
       <button class="ibtn is-on" id="btnLeft" title="章节树">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M9 4v16"/></svg>
       </button>
+      <button class="ibtn is-on" id="btnRight" title="支撑面板">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M15 4v16"/></svg>
+      </button>
       <button class="ibtn" id="btnTypewriter" title="打字机模式">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V6.5A1.5 1.5 0 015.5 5H8M16 5h2.5A1.5 1.5 0 0120 6.5V9M20 15v2.5a1.5 1.5 0 01-1.5 1.5H16M8 19H5.5A1.5 1.5 0 014 17.5V15"/><path d="M3 12h18"/></svg>
       </button>
@@ -976,10 +1076,6 @@ input, textarea, select { font: inherit; color: inherit; }
       </button>
       <button class="ibtn" title="排版与设置">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v2.6M12 18.9v2.6M2.5 12h2.6M18.9 12h2.6M5.2 5.2l1.9 1.9M16.9 16.9l1.9 1.9M18.8 5.2l-1.9 1.9M7.1 16.9l-1.9 1.9"/></svg>
-      </button>
-      <span class="tb-sep"></span>
-      <button class="ibtn is-on" id="btnRight" title="支撑面板">
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M15 4v16"/></svg>
       </button>
     </div>
   </header>
@@ -1044,13 +1140,13 @@ input, textarea, select { font: inherit; color: inherit; }
 
           <div class="seg" id="seg" role="tablist">
             <span class="seg__ind" id="segInd"></span>
-            <button class="seg__i is-on" data-tab="entity" role="tab" aria-selected="true">
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></svg>
-              <span class="lbl">要素库</span><span class="seg__n">14</span>
-            </button>
-            <button class="seg__i" data-tab="outline" role="tab" aria-selected="false">
+            <button class="seg__i is-on" data-tab="outline" role="tab" aria-selected="true">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 6.5h16M4 12h16M4 17.5h10"/></svg>
               <span class="lbl">大纲</span>
+            </button>
+            <button class="seg__i" data-tab="entity" role="tab" aria-selected="false">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></svg>
+              <span class="lbl">要素库</span><span class="seg__n">14</span>
             </button>
             <button class="seg__i" data-tab="note" role="tab" aria-selected="false">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 18h5M10.5 21h3"/><path d="M12 3a6 6 0 00-3.6 10.8c.5.4.8 1 .8 1.7v.5h5.6v-.5c0-.7.3-1.3.8-1.7A6 6 0 0012 3z"/></svg>
@@ -1060,18 +1156,36 @@ input, textarea, select { font: inherit; color: inherit; }
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-3.4-3.4"/></svg>
               <span class="lbl">检索</span>
             </button>
+            <button class="seg__i" data-tab="tool" role="tab" aria-selected="false">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 00-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 005.4-5.4l-2.5 2.5-2.7-.3-.3-2.7 2.5-2.5z"/></svg>
+              <span class="lbl">工具</span>
+            </button>
           </div>
 
           <div class="prail__scroll" id="prailScroll">
 
+            <!-- ---------- 大纲 ---------- -->
+            <section class="pane is-on" data-pane="outline">
+              <div class="pbar">
+                <span class="pbar__label">第一卷 · 寒渊</span>
+                <button class="btn btn--ghost btn--sm" id="btnExpandAll" style="margin-left:auto">展开全部</button>
+              </div>
+              <div id="outlineList"></div>
+            </section>
+
             <!-- ---------- 要素库 ---------- -->
-            <section class="pane is-on" data-pane="entity">
+            <section class="pane" data-pane="entity">
               <div class="pbar">
                 <div class="fbox">
                   <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-3.4-3.4"/></svg>
                   <input id="entSearch" placeholder="搜索要素名 / 别名 / 简介" aria-label="搜索要素" />
                   <button class="fbox__clear" id="entClear" hidden aria-label="清空">✕</button>
                 </div>
+                <!-- R27 一键生成人物关系网络：复用 novel_links 数据，SVG 力导向渲染 -->
+                <button class="btn btn--ghost-soft btn--sm" id="btnRelNet" title="一键生成人物关系网络（P2 未实现）" disabled>
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M8 7.5l8 0M8.5 8.5l3 8M15.5 8.5l-3 8"/></svg>
+                  关系网络
+                </button>
                 <button class="btn" title="新建要素">
                   <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
                   新建
@@ -1079,15 +1193,6 @@ input, textarea, select { font: inherit; color: inherit; }
               </div>
               <div class="tfilter" id="tfilter"></div>
               <div id="entList"></div>
-            </section>
-
-            <!-- ---------- 大纲 ---------- -->
-            <section class="pane" data-pane="outline">
-              <div class="pbar">
-                <span class="pbar__label">第一卷 · 寒渊</span>
-                <button class="btn btn--ghost btn--sm" id="btnExpandAll" style="margin-left:auto">展开全部</button>
-              </div>
-              <div id="outlineList"></div>
             </section>
 
             <!-- ---------- 灵感 ---------- -->
@@ -1117,6 +1222,117 @@ input, textarea, select { font: inherit; color: inherit; }
               </div>
             </section>
 
+            <!-- ---------- 工具（R31 · v0.5 占位，未实现项标 P2/M3） ---------- -->
+            <section class="pane" data-pane="tool">
+              <!-- R18 随机起名器 -->
+              <div class="tcard">
+                <div class="tcard__h">
+                  <span class="tcard__ico">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l4-4 4 4-4 4-4-4z"/><path d="M13 11l4-4 4 4-4 4-4-4z"/><path d="M8 17l4 4 4-4"/></svg>
+                  </span>
+                  <span class="tcard__t">随机起名器</span>
+                  <span class="wip" title="P2 · M3 未实现">P2 未实现</span>
+                </div>
+                <div class="tcard__b">
+                  <p class="tcard__d">
+                    纯本地词库组合式起名，服务「卡名字」高频场景。词库内置
+                    <b>姓氏池 + 五风格用字池</b>（仙侠 / 武侠 / 现代都市 / 西幻 / 日式 + 外文名库），
+                    按风格 × 性别 × 单双字 × 避开本书已用名四维过滤，一次给 10 个。
+                    双出口：<b>插入正文光标处</b> / <b>一键建为角色卡</b>。
+                  </p>
+                  <div class="np__row">
+                    <span class="np__label">风格</span>
+                    <span class="np__chip is-on">仙侠</span>
+                    <span class="np__chip">武侠</span>
+                    <span class="np__chip">现代都市</span>
+                    <span class="np__chip">西幻</span>
+                    <span class="np__chip">日式</span>
+                    <span class="np__chip">外文名</span>
+                  </div>
+                  <div class="np__row">
+                    <span class="np__label">性别</span>
+                    <span class="np__chip is-on">男</span>
+                    <span class="np__chip">女</span>
+                  </div>
+                  <div class="np__row">
+                    <span class="np__label">单双字</span>
+                    <span class="np__chip is-on">单</span>
+                    <span class="np__chip is-on">双</span>
+                  </div>
+                  <div class="np__out">
+                    词库尚未内置 · 生成器待实现（M3 阶段）<br/>
+                    <span style="font-size:10.5px;color:var(--tx-4)">收藏夹按作品持久化，换一批与收藏交互待开发</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- R28 地图创建 -->
+              <div class="tcard">
+                <div class="tcard__h">
+                  <span class="tcard__ico">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4l3-2 3 2v14l-3 2-3-2V4z"/><path d="M3 7l3-1.5v12L3 19V7z"/><path d="M15 5.5L18 7v12l-3-1.5V5.5z"/></svg>
+                  </span>
+                  <span class="tcard__t">架空世界地图</span>
+                  <span class="wip" title="M3 未实现 · Non-goal：不做真实地理数据">M3 未实现</span>
+                </div>
+                <div class="tcard__b">
+                  <p class="tcard__d">
+                    轻量画布编辑器：网格底 + 四类节点（城池 / 山脉 / 河流 / 关卡）+ 连线标距离 + 缩放平移 + 撤销重做。
+                    节点可绑定 <b>location 类型要素</b>（地名双向同步）；导出 PNG / 插入灵感速记。
+                    <b>Non-goal</b>：不做真实地理数据 / 在线瓦片 / 测绘。
+                  </p>
+                  <div class="mp__empty">
+                    本书还没有地图
+                    <br/>
+                    <button class="mp__btn" disabled>
+                      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+                      新建架空地图
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 排版与导出（R11 / R13 / R19） -->
+              <div class="tcard">
+                <div class="tcard__h">
+                  <span class="tcard__ico">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8m18 0l-9 5-9-5m18 0a2 2 0 00-2-2H5a2 2 0 00-2 2"/></svg>
+                  </span>
+                  <span class="tcard__t">排版与导出</span>
+                </div>
+                <div class="tcard__b" style="padding-top:4px;padding-bottom:4px">
+                  <div class="ex__row">
+                    <span class="ex__ico">
+                      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h10M4 18h7"/></svg>
+                    </span>
+                    <span class="ex__t"><b>自动排版</b> · 段首缩进 / 全角标点统一 / 多余空行清理</span>
+                    <span class="wip">P2</span>
+                  </div>
+                  <div class="ex__row">
+                    <span class="ex__ico">
+                      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v4a1 1 0 001 1h4M5 3h9l5 5v11a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z"/></svg>
+                    </span>
+                    <span class="ex__t"><b>导出 TXT</b> · 整本 / 按卷 / 按章</span>
+                    <span class="wip">P2</span>
+                  </div>
+                  <div class="ex__row">
+                    <span class="ex__ico">
+                      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V8M3 8l9-5 9 5M8 12h8M8 16h5"/></svg>
+                    </span>
+                    <span class="ex__t"><b>导出 Markdown</b> · 章节带标题层级</span>
+                    <span class="wip">P2</span>
+                  </div>
+                  <div class="ex__row">
+                    <span class="ex__ico">
+                      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a9 9 0 100 18 9 9 0 000-18zM12 7v6l4 2"/></svg>
+                    </span>
+                    <span class="ex__t"><b>文件备份</b> · 一键全库导出 zip / 定时备份到本地目录</span>
+                    <span class="wip">P3</span>
+                  </div>
+                </div>
+              </div>
+            </section>
+
           </div>
 
           <!-- 要素详情覆盖层 -->
@@ -1127,17 +1343,20 @@ input, textarea, select { font: inherit; color: inherit; }
 
       <!-- 折叠后的图标边栏 -->
       <div class="edge">
-        <button class="edge__btn" data-open="entity" title="要素库">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></svg>
-        </button>
         <button class="edge__btn" data-open="outline" title="大纲">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 6.5h16M4 12h16M4 17.5h10"/></svg>
+        </button>
+        <button class="edge__btn" data-open="entity" title="要素库">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></svg>
         </button>
         <button class="edge__btn" data-open="note" title="灵感">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 18h5M10.5 21h3"/><path d="M12 3a6 6 0 00-3.6 10.8c.5.4.8 1 .8 1.7v.5h5.6v-.5c0-.7.3-1.3.8-1.7A6 6 0 0012 3z"/></svg>
         </button>
         <button class="edge__btn" data-open="search" title="检索">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-3.4-3.4"/></svg>
+        </button>
+        <button class="edge__btn" data-open="tool" title="工具">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 00-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 005.4-5.4l-2.5 2.5-2.7-.3-.3-2.7 2.5-2.5z"/></svg>
         </button>
         <span class="edge__sp"></span>
         <button class="edge__btn" id="edgeRight" title="展开面板">
@@ -1352,6 +1571,22 @@ const NOTES_DOC = [
     d:'顶栏：作品切换器加连载状态徽标，保存状态改为彩色圆点 + 文案（保存中时呼吸闪烁）。左栏：卷用 grid-rows 0fr→1fr 做高度过渡展开，章节行加状态点 + 字数。状态条：今日目标改为进度条 + 「1,280 / 3,000」具体数值，右侧加标注层开关。全部圆角/阴影/动效统一到 4px 栅格与三档阴影令牌。' },
   { k:'new', t:'三主题 + 无障碍',
     d:'亮 / 暗 / 护眼三套令牌，类型色在每套主题下单独调过明度，保证暗色下不刺眼、护眼下不偏色。所有交互元素有 <code>:focus-visible</code> 焦点环，hover 删除按钮同时保留键盘可达（<code>:focus-visible</code> 强制显形），并整体尊重 <code>prefers-reduced-motion</code>。' },
+
+  /* ─── v0.5 修正：对齐当前实现与 PRD §6.5 / §9 路线 ─── */
+  { k:'new', t:'R29 作品管理入口（已落地，原稿漏画，本次补回）',
+    d:'顶栏作品切换器旁补一个文件夹图标按钮（<code>.work-mgr</code>），承载「新建作品 / 重命名 / 删除当前作品」三个语义。删除走 Modal 二次确认并明示级联范围（卷章 / 要素 / 灵感伏笔 / 快照）。代码已在 <code>WorkManageMenu</code> 落地，原稿只画了切换器本身，本次让设计稿与实现对齐。' },
+  { k:'new', t:'顶栏右栏动作顺序对齐实现：左 / 右 / 打字机 / 历史 / 设置',
+    d:'原稿顺序是「左 / 打字机 / 历史 / 设置 / 右」——把右栏开关挤到最后。实际实现把左 / 右两个面板开关放在一起（视觉语义更近），再接打字机 / 历史 / 设置三个工具型按钮。本次按实现态重排，并删掉「设置 / 右」之间的分隔条（同组动作不该再分割）。' },
+  { k:'new', t:'Tab 顺序对齐 PRD §5：大纲 / 要素 / 灵感 / 检索 / 工具',
+    d:'原稿顺序是「要素 / 大纲 / 灵感 / 检索」——把要素库放第一位。但 PRD §5 明确写作 <code>大纲 ｜ 要素库 ｜ 灵感速记 ｜ 全库检索 ｜ 工具</code>，且大纲是真实卷章派生（与左栏章节树同源），作为进入面板的第一站更合理。本次按 PRD 重排并默认选大纲。' },
+  { k:'new', t:'R31 工具 Tab（v0.5 占位 · P2/M3 未实现）',
+    d:'PRD §6.5 路线步骤三：右栏新增第五个 Tab「工具」，承载 R18 起名器 + R28 地图 + R11/R13/R19 排版与导出，避免顶栏按钮 proliferation。本稿画出三张子卡片（起名器 / 架空地图 / 排版与导出），每张带 <code>P2/M3 未实现</code> 徽标（虚线边 + 黄点 + 大写标签），点击交互全部禁用。Non-goal 明确：起名不做 LLM、地图不做真实地理。' },
+  { k:'new', t:'R27 一键人物关系网络入口（P2 未实现 · 数据已就位）',
+    d:'PRD R27：复用 R24 的 <code>novel_links</code> 多态关联表 + <code>novel_entities</code>，一键渲染 SVG 力导向图。本稿在要素库面板 pbar 新增「关系网络」按钮（<code>.btn--ghost-soft</code>，类型紫色描边），disabled + title 标「P2 未实现」。数据零新增，待 M3 接入 d3-force 即可上线。' },
+  { k:'fix', t:'点空白收起 + 状态条全局标注开关：本稿是目标态',
+    d:'代码盘点确认：<code>SupportPanel</code> 仍保留 <code>handleBodyClick → onCollapse</code>（点空白即整块收起），与 PRD §2「零打断原则」冲突；<code>StatusBar</code> 没有全局标注层开关与时钟（PRD §2 要求「提供全局开关一键关闭标注」）。本稿作为目标态保留设计（已删除点空白、保留标注层开关 + 时钟），实施侧需要按本稿改 SCSS 与 SupportPanel.tsx / StatusBar.tsx 对齐——列入待修清单。' },
+  { k:'new', t:'分段指示器位移修正：5 项 + 2px gap 累积',
+    d:'<code>.seg__ind</code> 宽度从 <code>(100% - 12px)/4</code> 改为 <code>(100% - 14px)/5</code>（4 个 2px gap + 6px padding = 14px）。原 <code>translateX(i * 100%)</code> 不计项间 2px gap，5 项时累积位移达 8px，明显错位。改为 <code>translateX(calc(i * 100% + i * 2px))</code>，每项补 2px 修正。' },
 ];
 
 /* ============================================================
@@ -1403,13 +1638,14 @@ renderTree();
 /* ============================================================
    右栏 · Tab 分段控件
    ============================================================ */
-const TABS = ['entity', 'outline', 'note', 'search'];
-let curTab = 'entity';
+const TABS = ['outline', 'entity', 'note', 'search', 'tool'];
+let curTab = 'outline';
 
 function setTab(key, silent) {
   curTab = key;
   const i = TABS.indexOf(key);
-  $('#segInd').style.transform = `translateX(${i * 100}%)`;
+  // 5 项分段：translateX 在自身宽度基础上累加，再用 +i*2px 修正项间 2px gap 的累积位移
+  $('#segInd').style.transform = `translateX(calc(${i * 100}% + ${i * 2}px))`;
   $$('.seg__i').forEach((b, idx) => {
     b.classList.toggle('is-on', idx === i);
     b.setAttribute('aria-selected', idx === i);
@@ -1418,7 +1654,7 @@ function setTab(key, silent) {
   $$('.edge__btn[data-open]').forEach(b => b.classList.toggle('is-on', b.dataset.open === key));
   if (!silent) $('#prailScroll').scrollTop = 0;
 }
-setTab('entity', true);
+setTab('outline', true);
 
 $$('.seg__i').forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab)));
 

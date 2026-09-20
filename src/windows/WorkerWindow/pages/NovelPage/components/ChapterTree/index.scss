@@ -14,16 +14,22 @@
     border-right: none;
   }
 
+  /* 搜索框：填充式无描边，聚焦时才浮现主色描边（弱化框线噪音） */
   &__search {
     flex: none;
-    margin: 10px;
+    margin: 10px 10px 6px;
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 5px 8px;
-    border: 1px solid var(--app-border);
-    border-radius: var(--app-radius-chip);
+    padding: 6px 10px;
+    border: 1px solid transparent;
+    border-radius: var(--app-radius-item);
     background: var(--app-input-bg);
+    transition: border-color 120ms ease;
+
+    &:focus-within {
+      border-color: var(--app-primary);
+    }
 
     input {
       flex: 1;
@@ -43,13 +49,25 @@
   &__search-icon {
     color: var(--app-text-muted);
     font-size: 12px;
+    flex: none;
   }
 
   &__list {
     flex: 1;
     min-height: 0;
-    overflow: auto;
-    padding: 0 6px 10px;
+    overflow-y: auto;
+    /* 章行内容一律省略号截断，杜绝横向溢出滚动条 */
+    overflow-x: hidden;
+    padding-bottom: 10px;
+
+    /* Virtuoso 的 item wrapper 是绝对定位元素，width:100% 相对容器的
+       padding box 解析——根上的左右 padding 对行不生效。
+       横向留白必须打在每个 item wrapper 上；wrapper 带内联 width:100%，
+       需显式 border-box 防止 padding 把行撑出容器（同章行 box-sizing 教训） */
+    [data-item-index] {
+      box-sizing: border-box;
+      padding: 0 8px;
+    }
   }
 
   &__empty {
@@ -67,6 +85,7 @@
     border-top: 1px solid var(--app-border);
   }
 
+  /* 底部动作 ghost 化：描边按钮在左栏里存在感过强，降为浅底幽灵按钮 */
   &__foot-btn {
     flex: 1;
     display: flex;
@@ -74,28 +93,22 @@
     justify-content: center;
     gap: 4px;
     padding: 5px;
-    border: 1px solid var(--app-border);
-    border-radius: var(--app-radius-chip);
-    background: var(--app-surface);
-    color: var(--app-text-secondary);
+    border: 1px solid transparent;
+    border-radius: var(--app-radius-item);
+    background: transparent;
+    color: var(--app-text-muted);
     font-size: 11.5px;
     cursor: pointer;
-    transition: color 120ms ease, border-color 120ms ease;
+    transition: color 120ms ease, background 120ms ease;
 
     &:hover {
       color: var(--app-primary);
-      border-color: var(--app-primary);
-    }
-
-    &.is-on {
-      color: var(--app-primary);
-      border-color: var(--app-primary);
-      background: var(--app-primary-weak);
+      background: var(--app-surface-hover);
     }
 
     &:focus-visible {
       outline: 2px solid var(--app-primary);
-      outline-offset: 2px;
+      outline-offset: -1px;
     }
   }
 }

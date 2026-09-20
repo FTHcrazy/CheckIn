@@ -20,6 +20,50 @@
     color: var(--app-success);
   }
 
+  // 全局标注层开关（PRD §2 风险对策）：常驻状态条，码字途中一键关闭高亮/悬浮卡
+  &__anno {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 8px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-sm, 4px);
+    background: transparent;
+    color: var(--app-text-muted);
+    font-size: 11.5px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+
+    &:hover {
+      color: var(--app-text-secondary);
+      border-color: var(--app-text-muted);
+    }
+
+    &.is-on {
+      color: var(--app-primary);
+      border-color: var(--app-primary);
+      background: var(--app-primary-bg, transparent);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--app-primary);
+      outline-offset: 1px;
+    }
+  }
+
+  &__anno-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--app-text-muted);
+    transition: background 120ms ease;
+
+    .nv-status__anno.is-on & {
+      background: var(--app-primary);
+    }
+  }
+
   &__goal {
     margin-left: auto;
     display: flex;
@@ -55,6 +99,12 @@
     width: 32px;
     text-align: right;
     color: var(--app-text-muted);
+  }
+
+  // 实时时钟：常驻最右，tabular-nums 宽度不跳动
+  &__clock {
+    color: var(--app-text-muted);
+    letter-spacing: 0.02em;
   }
 }
 

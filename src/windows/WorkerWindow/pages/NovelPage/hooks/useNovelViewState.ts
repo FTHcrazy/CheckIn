@@ -23,6 +23,10 @@ export function useNovelViewState() {
   const [rightOpen, setRightOpen] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
   const [typewriter, setTypewriter] = useState(false);
+  // 全局标注层开关（PRD §2 风险对策：提供一键关闭标注层）。
+  // 当前为会话级视图态，未并入 R5 settings 持久化——保持最小落地；
+  // 后续若需跨会话记忆，并入 EditorSettings.annotationOn 即可。
+  const [annotationOn, setAnnotationOn] = useState(true);
   const [panelTab, setPanelTab] = useState<PanelTab>("entity");
   const [entityFilter, setEntityFilter] = useState<EntityFilter>("all");
   const [detailEntityId, setDetailEntityId] = useState<string | null>(null);
@@ -65,6 +69,7 @@ export function useNovelViewState() {
   }, []);
   const toggleRight = useCallback(() => setRightOpen((open) => !open), []);
   const toggleTypewriter = useCallback(() => setTypewriter((on) => !on), []);
+  const toggleAnnotation = useCallback(() => setAnnotationOn((on) => !on), []);
 
   /**
    * 小屏自适应：三栏放不下时自动收起左栏给码字区让位。
@@ -149,6 +154,7 @@ export function useNovelViewState() {
     rightOpen: effectiveRightOpen,
     focusMode,
     typewriter,
+    annotationOn,
     panelTab,
     entityFilter,
     detailEntityId,
@@ -161,6 +167,7 @@ export function useNovelViewState() {
     toggleFocus,
     exitFocus,
     toggleTypewriter,
+    toggleAnnotation,
     selectPanelTab,
     setEntityFilter,
     openEntityDetail,

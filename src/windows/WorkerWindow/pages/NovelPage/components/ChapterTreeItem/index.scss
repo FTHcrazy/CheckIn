@@ -1,29 +1,52 @@
 .nv-chapter {
   position: relative;
+  /* 章行相对卷头缩进（原型 .vol__body > ul 的 padding-left 6px）；
+     行距用 padding 而非 margin——margin 不计入 Virtuoso 测量高度 */
+  margin-left: 6px;
+  padding: 1px 0;
+  min-width: 0;
 
   &__row {
     width: 100%;
+    /* div 默认 content-box（button 是 border-box）：不加会把左右 padding
+       加到 100% 之外，行溢出容器 18px——高亮右侧圆角被裁、字数被推出可视区 */
+    box-sizing: border-box;
+    min-width: 0;
+    position: relative;
     display: flex;
     align-items: center;
     gap: 7px;
-    padding: 6px 8px;
+    height: 28px;
+    padding: 0 8px 0 10px;
     border: none;
     background: transparent;
-    border-radius: var(--app-radius-chip);
+    border-radius: var(--app-radius-item);
     color: var(--app-text-secondary);
     font-size: 12.5px;
     cursor: pointer;
     text-align: left;
-    transition: background 120ms ease;
+    transition: background 120ms ease, color 120ms ease;
 
     &:hover {
       background: var(--app-surface-hover);
     }
 
+    /* 选中态对齐 UI 稿（原型 .chap.is-on）：弱主色底 + 左侧 2.5px 竖条指示器，
+       文字保持正文色只加粗——不再整行蓝字 */
     &.is-active {
       background: var(--app-primary-weak);
-      color: var(--app-primary);
-      font-weight: 500;
+      color: var(--app-text);
+
+      &::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 6px;
+        bottom: 6px;
+        width: 2.5px;
+        border-radius: 2px;
+        background: var(--app-primary);
+      }
     }
 
     /* 拖拽 drop 目标高亮（R9）：inset 阴影做上缘指示线 */
@@ -38,22 +61,61 @@
     }
   }
 
+  .is-active &__title {
+    color: var(--app-text);
+    font-weight: 600;
+  }
+
+  /* 状态点（原型 .chap__st）：草稿空心描边 / 完稿实心语义色。
+     外层 16px 命中区（可点击切换草稿⇄完稿），内部 ::before 画 7px 圆点 */
+  &__status {
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+
+    &::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      border: 1.5px solid var(--app-text-muted);
+      background: transparent;
+      box-sizing: content-box;
+      transition: border-color 120ms ease, background 120ms ease,
+        transform 120ms ease;
+    }
+
+    &:hover::before {
+      border-color: var(--app-success);
+      transform: scale(1.15);
+    }
+
+    &[data-s="done"]::before {
+      background: var(--app-success);
+      border-color: var(--app-success);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--app-primary);
+      outline-offset: -1px;
+    }
+  }
+
   &__index {
-    width: 20px;
+    width: 26px;
     flex: none;
     font-size: 10.5px;
     font-variant-numeric: tabular-nums;
     color: var(--app-text-muted);
   }
 
-  &__status {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    flex: none;
-  }
-
   &__title {
+    flex: 1;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -80,40 +142,41 @@
   }
 
   &__words {
-    margin-left: auto;
     flex: none;
     font-size: 10.5px;
     font-variant-numeric: tabular-nums;
     color: var(--app-text-muted);
-    transition: opacity 120ms ease;
   }
 
-  /* 删除按钮：行悬浮时浮现并盖住字数，避免布局抖动 */
+  /* 删除按钮：行内排在字数之前，悬浮时宽度 0→18px 展开（字数只平移不被遮盖）。
+     margin -3.5px 对冲两侧 flex gap：收起时标题→字数间距恰为单个 7px，
+     与原型 .chap__t/.chap__w 的 gap 一致 */
   &__del {
-    position: absolute;
-    right: 4px;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 22px;
+    width: 0;
+    min-width: 0;
     height: 22px;
+    padding: 0;
+    flex: none;
+    overflow: hidden;
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-end;
+    margin: 0 -3.5px;
     border: none;
     border-radius: 4px;
     background: transparent;
     color: var(--app-text-muted);
-    font-size: 11px;
+    font-size: 12px;
     cursor: pointer;
     opacity: 0;
-    transition: opacity 120ms ease, color 120ms ease, background 120ms ease;
+    transition: width 140ms ease, opacity 140ms ease, color 120ms ease;
 
     &:hover {
       color: var(--app-danger, #d4380d);
-      background: var(--app-surface-hover);
     }
 
     &:focus-visible {
+      width: 18px;
       opacity: 1;
       outline: 2px solid var(--app-primary);
       outline-offset: -1px;
@@ -121,10 +184,7 @@
   }
 
   &:hover &__del {
+    width: 18px;
     opacity: 1;
-  }
-
-  &:hover &__words {
-    opacity: 0;
   }
 }
