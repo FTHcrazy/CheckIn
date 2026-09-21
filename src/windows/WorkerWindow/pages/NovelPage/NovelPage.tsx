@@ -187,6 +187,13 @@ export default function NovelPage({
     [searchBook],
   );
 
+  /** 作品 id → 书名：全局灵感搜索结果的来源标签 */
+  const workNameOf = useCallback(
+    (workId: string): string =>
+      data.works.find((work) => work.id === workId)?.name ?? "其他作品",
+    [data.works],
+  );
+
   // onExportCard 为同步签名（EntityPanel 透传链），异步导出在此收口
   const triggerExportCard = useCallback(() => {
     void handleExportCard();
@@ -233,7 +240,8 @@ export default function NovelPage({
           onToggleRight={view.toggleRight}
           onToggleTypewriter={view.toggleTypewriter}
           onToggleSettings={view.toggleSettings}
-          onOpenHistory={view.openSnapshot}
+          snapshotOpen={view.snapshotOpen}
+          onToggleHistory={view.toggleSnapshot}
         />
       </div>
 
@@ -365,6 +373,9 @@ export default function NovelPage({
           getAppearances={getAppearances}
           levelSystems={data.levelSystems}
           notes={data.notes}
+          globalNotes={data.allNotes}
+          activeWorkId={data.activeWorkId}
+          workNameOf={workNameOf}
           inspirationActions={inspirationActions}
           onSearch={handleSearch}
           onSelectChapter={handleSelectChapter}

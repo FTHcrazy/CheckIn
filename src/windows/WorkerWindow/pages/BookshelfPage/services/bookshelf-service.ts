@@ -28,7 +28,7 @@ export function createShelfId(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-/** 拉取全量数据包（novel-editor-load；空库时主进程播种「未命名作品」） */
+/** 拉取全量数据包（novel-editor-load；空库时主进程播种预设模板书籍） */
 export async function fetchShelfBundle(): Promise<NovelBundleDTO> {
   return window.electronAPI!.novel.editorLoad();
 }

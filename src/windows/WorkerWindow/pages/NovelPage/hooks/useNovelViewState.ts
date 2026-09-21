@@ -128,6 +128,11 @@ export function useNovelViewState() {
 
   const openSnapshot = useCallback(() => setSnapshotOpen(true), []);
   const closeSnapshot = useCallback(() => setSnapshotOpen(false), []);
+  /** 顶栏历史按钮即开关：再点一次收起快照抽屉 */
+  const toggleSnapshot = useCallback(
+    () => setSnapshotOpen((open) => !open),
+    [],
+  );
   const openSettings = useCallback(() => setSettingsOpen(true), []);
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
   /** 顶栏齿轮即开关：再点一次关闭（抽屉无遮罩时这是主要关闭途径之一） */
@@ -191,6 +196,7 @@ export function useNovelViewState() {
     closeTypeManager,
     openSnapshot,
     closeSnapshot,
+    toggleSnapshot,
     openSettings,
     closeSettings,
     toggleSettings,

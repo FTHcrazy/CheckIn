@@ -25,8 +25,14 @@ export interface InspirationActions {
 }
 
 interface InspirationPanelProps {
-  /** 已按「置顶优先 + 时间倒序」排好序的灵感 */
+  /** 当前作品的灵感（已按「置顶优先 + 时间倒序」排好序） */
   notes: NovelNote[];
+  /** 全部作品的灵感：搜索时的全局数据源；缺省退化为仅当前作品 */
+  globalNotes?: NovelNote[];
+  /** 当前作品 id：搜索结果里非本作品的灵感标注来源并只读展示 */
+  activeWorkId?: string;
+  /** 作品 id → 书名（外部灵感的来源标签） */
+  workNameOf?: (workId: string) => string;
   actions: InspirationActions;
 }
 
@@ -36,9 +42,13 @@ interface InspirationPanelProps {
  * 写作中一键把想法甩进来，不离开正文：新增 / 编辑都自持草稿并做 IME 守卫
  * （中文候选期间的回车不上抛）；重要灵感可置顶，卡壳时置顶的永远在最上面。
  * 与大纲的联动只有一条：灵感可以一键落成伏笔，落点由页面层决定。
+ * 搜索为全局口径：关键词命中全部书籍的灵感，其他书的灵感只读展示来源。
  */
 export default function InspirationPanel({
   notes,
+  globalNotes,
+  activeWorkId = "",
+  workNameOf,
   actions,
 }: InspirationPanelProps) {
   // 新增草稿
@@ -52,9 +62,19 @@ export default function InspirationPanel({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
 
-  const visible = useMemo(() => filterNotes(notes, keyword), [notes, keyword]);
-  const pinnedCount = notes.filter((note) => note.pinned).length;
+  // 全局搜索池：有关键词时跨全部书籍检索；无关键词展示当前作品列表
+  const searchPool = globalNotes ?? notes;
   const filtering = keyword.trim().length > 0;
+
+  const visible = useMemo(
+    () => (filtering ? filterNotes(searchPool, keyword) : notes),
+    [filtering, searchPool, keyword, notes],
+  );
+  const pinnedCount = notes.filter((note) => note.pinned).length;
+
+  /** 其他书籍的灵感：全局搜索结果中只读展示，操作留给归属作品 */
+  const isExternal = (note: NovelNote): boolean =>
+    Boolean(activeWorkId) && note.workId !== activeWorkId;
 
   const submit = (): void => {
     const value = draft.trim();
@@ -129,7 +149,7 @@ export default function InspirationPanel({
           <SearchOutlined className="nv-note__search-icon" />
           <input
             value={keyword}
-            placeholder="搜灵感…"
+            placeholder="全局搜灵感…"
             aria-label="搜索灵感"
             onChange={(event) => setKeyword(event.target.value)}
           />
@@ -144,12 +164,14 @@ export default function InspirationPanel({
           )}
         </label>
         <span className="nv-note__count">
-          {filtering ? `${visible.length} / ${notes.length}` : `${notes.length} 条`}
+          {filtering
+            ? `${visible.length} / ${searchPool.length}`
+            : `${notes.length} 条`}
           {pinnedCount > 0 && ` · 置顶 ${pinnedCount}`}
         </span>
       </div>
 
-      {notes.length === 0 ? (
+      {searchPool.length === 0 ? (
         <p className="nv-note__empty">还没有灵感记录</p>
       ) : visible.length === 0 ? (
         <p className="nv-note__empty">没有匹配「{keyword.trim()}」的灵感</p>
@@ -193,11 +215,20 @@ export default function InspirationPanel({
                     <span className="nv-note__time">
                       {formatRelativeTime(note.createdAt)}
                     </span>
+                    {isExternal(note) && (
+                      <span
+                        className="nv-note__source"
+                        title={`来自《${workNameOf?.(note.workId) ?? "其他作品"}》`}
+                      >
+                        {workNameOf?.(note.workId) ?? "其他作品"}
+                      </span>
+                    )}
                     {note.foreshadowId && (
                       <span className="nv-note__flag" title="已写入大纲为伏笔">
                         <FlagOutlined /> 已转为伏笔
                       </span>
                     )}
+                    {!isExternal(note) && (
                     <span className="nv-note__actions">
                       <button
                         type="button"
@@ -239,6 +270,7 @@ export default function InspirationPanel({
                         <CloseOutlined />
                       </button>
                     </span>
+                    )}
                   </footer>
                 </>
               )}

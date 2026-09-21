@@ -154,6 +154,8 @@ export function useNovelData() {
     () => sortNotes((bundle?.notes ?? []).filter((note) => note.workId === activeWorkId)),
     [bundle, activeWorkId],
   );
+  /** 全部作品的灵感（bundle 原始全量）：灵感面板全局搜索的数据源 */
+  const allNotes = useMemo(() => sortNotes(bundle?.notes ?? []), [bundle]);
   const outlineEntries = useMemo(
     () =>
       (bundle?.outlineEntries ?? []).filter(
@@ -436,7 +438,7 @@ export function useNovelData() {
 
   /**
    * 删除作品（R29）：本地级联摘除 + 远端事务级联删除。
-   * 删的是当前作品 → 切到剩余第一部；全部删完 → 重新装载（主进程重新播种默认作品）。
+   * 删的是当前作品 → 切到剩余第一部；全部删完 → 重新装载（主进程重新播种模板书籍）。
    */
   const deleteWork = useCallback(
     (workId: string): void => {
@@ -1178,6 +1180,7 @@ export function useNovelData() {
     links,
     levelSystems,
     notes,
+    allNotes,
     outlineEntries,
     groups,
     chapterNumbers,

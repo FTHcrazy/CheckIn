@@ -38,6 +38,12 @@ interface SupportPanelProps {
   ) => EntityRelationView[];
   levelSystems: LevelSystem[];
   notes: NovelNote[];
+  /** 全部作品灵感：灵感面板全局搜索的数据源 */
+  globalNotes: NovelNote[];
+  /** 当前作品 id：搜索结果中区分其他书籍的灵感（只读 + 来源标签） */
+  activeWorkId: string;
+  /** 作品 id → 书名（外部灵感的来源标签） */
+  workNameOf: (workId: string) => string;
   inspirationActions: InspirationActions;
   onSearch: (keyword: string) => Promise<SearchHit[]>;
   onSelectChapter: (chapterId: string) => void;
@@ -87,6 +93,9 @@ export default function SupportPanel({
   getEntityRelations,
   levelSystems,
   notes,
+  globalNotes,
+  activeWorkId,
+  workNameOf,
   inspirationActions,
   onSearch,
   onSelectChapter,
@@ -150,7 +159,13 @@ export default function SupportPanel({
           />
         )}
         {activeTab === "note" && (
-          <InspirationPanel notes={notes} actions={inspirationActions} />
+          <InspirationPanel
+            notes={notes}
+            globalNotes={globalNotes}
+            activeWorkId={activeWorkId}
+            workNameOf={workNameOf}
+            actions={inspirationActions}
+          />
         )}
         {activeTab === "search" && (
           <SearchPanel onSearch={onSearch} onSelectChapter={onSelectChapter} />

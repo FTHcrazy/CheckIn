@@ -26,6 +26,8 @@ interface NovelTopBarProps {
   rightOpen: boolean;
   typewriter: boolean;
   settingsOpen: boolean;
+  /** 历史快照抽屉开合状态：按钮呈高亮开关态 */
+  snapshotOpen: boolean;
   onSelectWork: (workId: string) => void;
   onCreateWork: (name: string) => boolean;
   onRenameWork: (name: string) => boolean;
@@ -38,7 +40,8 @@ interface NovelTopBarProps {
   onToggleRight: () => void;
   onToggleTypewriter: () => void;
   onToggleSettings: () => void;
-  onOpenHistory: () => void;
+  /** 历史快照按钮即开关：开 → 关 → 开 循环切换 */
+  onToggleHistory: () => void;
   /** 返回书架（书架主页接入后传入）；未传则不渲染返回按钮 */
   onBackToShelf?: () => void;
 }
@@ -60,6 +63,7 @@ export default function NovelTopBar({
   rightOpen,
   typewriter,
   settingsOpen,
+  snapshotOpen,
   onSelectWork,
   onCreateWork,
   onRenameWork,
@@ -72,7 +76,7 @@ export default function NovelTopBar({
   onToggleRight,
   onToggleTypewriter,
   onToggleSettings,
-  onOpenHistory,
+  onToggleHistory,
   onBackToShelf,
 }: NovelTopBarProps) {
   const activeWork = works.find((work) => work.id === activeWorkId) ?? null;
@@ -177,12 +181,13 @@ export default function NovelTopBar({
             <ColumnHeightOutlined />
           </button>
         </Tooltip>
-        <Tooltip title="历史快照">
+        <Tooltip title={snapshotOpen ? "收起历史快照" : "历史快照"}>
           <button
             type="button"
-            className="nv-topbar__icon"
-            onClick={onOpenHistory}
+            className={`nv-topbar__icon${snapshotOpen ? " is-on" : ""}`}
+            onClick={onToggleHistory}
             aria-label="历史快照"
+            aria-pressed={snapshotOpen}
           >
             <HistoryOutlined />
           </button>

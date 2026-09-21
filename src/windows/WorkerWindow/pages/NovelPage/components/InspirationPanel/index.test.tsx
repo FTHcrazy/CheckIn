@@ -126,4 +126,43 @@ describe("InspirationPanel 组件", () => {
     expect(within(items[1]).getByLabelText("转为伏笔")).toBeDisabled();
     expect(screen.getByText("已转为伏笔")).toBeInTheDocument();
   });
+
+  it("全局搜索命中其他书籍灵感：展示来源标签且只读", () => {
+    const globalNotes: NovelNote[] = [
+      ...notes,
+      {
+        id: "n9",
+        workId: "w2",
+        content: "另一本书的灵感：刀七娘的前朝暗器",
+        createdAt: now - 120_000,
+        pinned: false,
+      },
+    ];
+    render(
+      <InspirationPanel
+        notes={notes}
+        globalNotes={globalNotes}
+        activeWorkId="w1"
+        workNameOf={(workId) => (workId === "w2" ? "山河拾遗" : "当前书")}
+        actions={buildActions()}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("搜索灵感"), {
+      target: { value: "刀七娘" },
+    });
+
+    expect(screen.getByText("另一本书的灵感：刀七娘的前朝暗器")).toBeInTheDocument();
+    expect(screen.getByText("山河拾遗")).toBeInTheDocument();
+    // 计数口径为全局池：1 命中 / 3 全量
+    expect(screen.getByText("1 / 3 · 置顶 1")).toBeInTheDocument();
+    // 外部灵感只读：不渲染任何操作按钮
+    expect(screen.queryByLabelText("编辑灵感")).toBeNull();
+    expect(screen.queryByLabelText("删除灵感")).toBeNull();
+
+    // 清空关键词回到当前作品列表
+    fireEvent.click(screen.getByLabelText("清空搜索"));
+    expect(screen.getByText("2 条 · 置顶 1")).toBeInTheDocument();
+    expect(screen.queryByText("另一本书的灵感：刀七娘的前朝暗器")).toBeNull();
+  });
 });
