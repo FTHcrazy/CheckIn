@@ -1,7 +1,7 @@
 {
   "name": "checkin",
   "private": true,
-  "version": "1.9.3",
+  "version": "1.9.4",
   "description": "CheckIn Desktop Application",
   "main": "dist-electron/main.js",
   "author": "FTH",
@@ -17,6 +17,7 @@
     "electron:dev": "node scripts/ensure-electron.mjs && concurrently -k \"vite\" \"wait-on tcp:5173 && node scripts/start-electron.js\"",
     "electron:build": "tsc -b && vite build && cross-env ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ electron-builder",
     "electron:build:dir": "tsc -b && vite build && cross-env ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ electron-builder --dir",
+    "electron:build:lite": "tsc -b && cross-env CHECKIN_LITE=1 vite build && cross-env ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ electron-builder",
     "electron:preview": "vite build && electron .",
     "electron:rebuild": "node scripts/rebuild-native.mjs",
     "electron:setup": "pnpm install && pnpm ensure:electron && pnpm electron:rebuild",

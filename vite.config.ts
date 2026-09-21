@@ -4,8 +4,14 @@ import electron from 'vite-plugin-electron'
 import renderer from 'vite-plugin-electron-renderer'
 import path from 'path'
 
+// 精简构建开关：CHECKIN_LITE=1 时不打包 WorkerWindow，主窗口隐藏其入口按钮
+// （配套脚本：pnpm electron:build:lite）
+const isLite = process.env.CHECKIN_LITE === '1'
+
 // https://vite.dev/config/
 export default defineConfig({
+  // 渲染层编译期常量：精简构建为 true（HomeSidebar 据此隐藏 Worker 入口）
+  define: { __CHECKIN_LITE__: JSON.stringify(isLite) },
   plugins: [
     react(),
     electron([
@@ -16,6 +22,8 @@ export default defineConfig({
           // 不自动启动 Electron，由 concurrently 在 dev server 就绪后启动
         },
         vite: {
+          // 主进程编译期常量：精简构建时 worker-window-open 打开请求直接忽略
+          define: { __CHECKIN_LITE__: JSON.stringify(isLite) },
           build: {
             outDir: 'dist-electron',
             rollupOptions: {
@@ -37,6 +45,7 @@ export default defineConfig({
           // preload 变更后需手动重启 dev
         },
         vite: {
+          define: { __CHECKIN_LITE__: JSON.stringify(isLite) },
           build: {
             outDir: 'dist-electron',
           },
@@ -66,7 +75,10 @@ export default defineConfig({
         // 每个独立窗口一个 HTML 入口，与 src/windows/* 一一对应
         base: path.resolve(__dirname, 'src/windows/BaseWindow/index.html'),
         login: path.resolve(__dirname, 'src/windows/LoginWindow/index.html'),
-        worker: path.resolve(__dirname, 'src/windows/WorkerWindow/index.html'),
+        // 精简构建不产出 WorkerWindow 入口（dist 中不含 worker 页面产物）
+        ...(isLite
+          ? {}
+          : { worker: path.resolve(__dirname, 'src/windows/WorkerWindow/index.html') }),
       },
       output: {
         manualChunks(id: string) {

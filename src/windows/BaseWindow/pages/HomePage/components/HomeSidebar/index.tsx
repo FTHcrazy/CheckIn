@@ -69,8 +69,13 @@ export default function HomeSidebar() {
       </nav>
 
       <div className="home-sidebar__footer">
-        <WorkerFloatButton variant="inline" />
-        <span className="home-sidebar__divider" aria-hidden="true" />
+        {/* 精简构建（CHECKIN_LITE=1）不含 WorkerWindow：入口按钮与分隔线一并隐藏 */}
+        {!__CHECKIN_LITE__ && (
+          <>
+            <WorkerFloatButton variant="inline" />
+            <span className="home-sidebar__divider" aria-hidden="true" />
+          </>
+        )}
         <ThemeSwitcher placement="right" />
       </div>
     </aside>

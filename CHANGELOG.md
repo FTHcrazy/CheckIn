@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.9.4] - 2026-09-21
+
+### Added
+- **精简构建（lite）**：新增 `electron:build:lite` 脚本与 `CHECKIN_LITE=1`
+  构建开关（vite.config.ts 顶部 `isLite`）——vite 不产出 WorkerWindow 入口
+  （dist 无 worker 页面产物），主窗口侧栏隐藏 Worker 入口按钮与分隔线
+  （HomeSidebar），主进程 `worker-window-open` 打开请求被编译期常量
+  `__CHECKIN_LITE__` 屏蔽；常量声明见 `src/env.d.ts`（渲染层）与
+  `electron/globals.d.ts`（主进程），vitest.config.ts 的 define 对齐为
+  完整构建；常规构建不受影响
+
+### Verified
+- `pnpm typecheck`（app + node 两段，strict）：0 错误
+- `pnpm lint`：0 错误（仅 useHttpClient 既有警告）
+- `pnpm test`：239/239 通过（18 个测试文件）
+- `CHECKIN_LITE=1 vite build`：dist 仅产出 BaseWindow/LoginWindow 两个入口，
+  无任何 worker 产物；main.js 中 `worker-window-open` handler 被编译为空实现；
+  渲染层产物无「打开 Worker 窗口」按钮文案
+- 常规 `vite build`：三入口齐全，默认路径不受影响
+
 ## [1.9.3] - 2026-09-21
 
 ### Added

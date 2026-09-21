@@ -463,7 +463,9 @@ app.whenReady().then(() => {
   });
 
   // ── WorkerWindow 开关 IPC ──
+  // 精简构建（CHECKIN_LITE=1）不含 WorkerWindow：入口已隐藏，打开请求直接忽略
   ipcMain.on("worker-window-open", () => {
+    if (__CHECKIN_LITE__) return;
     createWorkerWindow();
   });
 
