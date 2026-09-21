@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 1000 1000" fill="none" role="img" aria-label="CheckIn">
+  <title>CheckIn</title>
+  <defs>
+    <linearGradient id="ci-plate" x1="120" y1="50" x2="880" y2="950" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8E9CFF"/>
+      <stop offset="0.44" stop-color="#5B6CF9"/>
+      <stop offset="1" stop-color="#7449E0"/>
+    </linearGradient>
+    <radialGradient id="ci-glow" cx="300" cy="160" r="440" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="ci-clip"><rect x="0" y="0" width="1000" height="1000" rx="225"/></clipPath>
+  </defs>
+  <g clip-path="url(#ci-clip)">
+    <rect x="0" y="0" width="1000" height="1000" fill="url(#ci-plate)"/>
+    <rect x="0" y="0" width="1000" height="1000" fill="url(#ci-glow)"/>
+    <!-- 勾选长臂与钢笔共用笔尖端点 N，构成单一笔势 -->
+    <path d="M419.08 635.16 L741.81 383.02" stroke="#FFFFFF" stroke-width="102.39" stroke-linecap="round"/>
+    <path d="M214.03 380.90 L322.76 577.06 L419.08 635.16 L420.84 522.69 L312.11 326.53 A56.07 56.07 0 0 0 214.03 380.90 Z" fill="#FFFFFF"/>
+    <path d="M390.71 583.99 L367.07 541.35" stroke="#5B6CF9" stroke-width="12.68" stroke-linecap="round"/>
+  </g>
+</svg>

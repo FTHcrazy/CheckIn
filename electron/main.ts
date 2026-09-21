@@ -68,6 +68,10 @@ let tray: Tray | null = null;
 const ICON_PATH = VITE_DEV_SERVER_URL
   ? path.join(DIST_ELECTRON, "../public/icon.ico")
   : path.join(DIST, "icon.ico");
+// 托盘图标独立于应用图标：16px 下做了加粗简化，笔尖缝改为实心填色（详见 public/tray/）
+const TRAY_ICON_PATH = VITE_DEV_SERVER_URL
+  ? path.join(DIST_ELECTRON, "../public/tray/tray.png")
+  : path.join(DIST, "tray/tray.png");
 
 // 注册自定义协议用于加载本地文件 (必须在 app.whenReady 之前调用)
 protocol.registerSchemesAsPrivileged([
@@ -540,7 +544,7 @@ app.whenReady().then(() => {
   }
 
   // 系统托盘图标，点击可重新显示窗口
-  tray = new Tray(ICON_PATH);
+  tray = new Tray(TRAY_ICON_PATH);
   tray.setToolTip("CheckIn");
   tray.setContextMenu(
     Menu.buildFromTemplate([

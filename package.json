@@ -69,6 +69,7 @@
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.6.0",
     "jsdom": "^27.1.0",
+    "rcedit": "^5.0.2",
     "sass": "^1.101.0",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.59.2",
@@ -81,7 +82,7 @@
   "build": {
     "appId": "com.checkin.app",
     "productName": "CheckIn",
-    "icon": "public/icon.png",
+    "icon": "public/icon.ico",
     "npmRebuild": false,
     "electronDist": "node_modules/electron/dist",
     "compression": "maximum",
@@ -112,7 +113,7 @@
     ],
     "win": {
       "target": "nsis",
-      "icon": "public/icon.png",
+      "icon": "public/icon.ico",
       "signAndEditExecutable": false
     },
     "nsis": {
