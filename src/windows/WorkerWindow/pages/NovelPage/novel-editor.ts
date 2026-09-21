@@ -51,6 +51,9 @@ const highlightDecoration = (term: EntityTerm): Decoration =>
       "data-entity-id": term.entityId,
       "data-entity-type": term.type,
     },
+    // 自定义类型（ct-*）没有静态 CSS 选择器，主色以 inline 变量注入（R23）；
+    // 内置类型仍走 EditorPane/index.scss 的 --nv-mark-color 默认定义
+    ...(term.color ? { style: `--nv-mark-color: ${term.color}` } : {}),
   });
 
 class AnnotationPlugin {

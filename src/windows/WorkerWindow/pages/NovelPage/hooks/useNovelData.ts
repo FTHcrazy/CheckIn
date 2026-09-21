@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   addChapter as addChapterRemote,
+  addLevel as addLevelRemote,
+  addLevelSystem as addLevelSystemRemote,
   addLink as addLinkRemote,
   addVolume as addVolumeRemote,
   addWork as addWorkRemote,
@@ -8,12 +10,16 @@ import {
   fetchChapterSnapshots,
   fetchLastPosition,
   fetchNovelBundle,
+  removeLevel as removeLevelRemote,
+  removeLevelSystem as removeLevelSystemRemote,
   removeLink as removeLinkRemote,
   removeNote as removeNoteRemote,
   removeOutlineEntry as removeOutlineEntryRemote,
   removeWork as removeWorkRemote,
   removeChapter as removeChapterRemote,
   renameChapter as renameChapterRemote,
+  renameLevel as renameLevelRemote,
+  renameLevelSystem as renameLevelSystemRemote,
   renameVolume as renameVolumeRemote,
   renameWork as renameWorkRemote,
   resetTemplateBook,
@@ -21,13 +27,14 @@ import {
   saveChapterOrder,
   saveChapterOutline,
   saveEntity,
+  saveLevelOrder,
   saveNote as saveNoteRemote,
   saveOutlineEntry,
   saveVolumeOrder,
   searchAcrossBook,
   setChapterStatus,
 } from "../services/novel-service";
-import { UNNAMED_VOLUME } from "../novel-config";
+import { LEVEL_RELATION, UNNAMED_VOLUME } from "../novel-config";
 import {
   buildChapterGroups,
   buildChapterNumbers,
@@ -47,6 +54,8 @@ import type {
   EntityRelationView,
   EntityType,
   ForeshadowPatch,
+  LevelRung,
+  LevelSystem,
   NotePatch,
   NovelBundle,
   NovelChapter,
@@ -123,6 +132,16 @@ export function useNovelData() {
     () => (bundle?.levelSystems ?? []).filter((item) => item.workId === activeWorkId),
     [bundle, activeWorkId],
   );
+  /** 等级项索引（R25）：关联视图与当前境界绑定把 novel_levels.id 翻译成可读名 */
+  const levelRungIndex = useMemo(() => {
+    const index = new Map<string, { name: string; systemName: string }>();
+    for (const system of bundle?.levelSystems ?? []) {
+      for (const rung of system.rungs) {
+        index.set(rung.id, { name: rung.name, systemName: system.name });
+      }
+    }
+    return index;
+  }, [bundle?.levelSystems]);
   const volumes = useMemo(
     () => (bundle?.volumes ?? []).filter((volume) => volume.workId === activeWorkId),
     [bundle, activeWorkId],
@@ -708,10 +727,262 @@ export function useNovelData() {
     void removeLinkRemote(linkId);
   }, []);
 
-  /** 要素关联的双向视图（PRD R24） */
+  // ── 等级体系管理（R25）：体系 / 等级项 CRUD + 当前境界绑定 ──────────
+
+  /** 新建体系：本地先建空体系并乐观落库，返回 null 表示名称非法 */
+  const createLevelSystem = useCallback(
+    (name: string): LevelSystem | null => {
+      const trimmed = name.trim();
+      if (!trimmed || !bundle) return null;
+      const system: LevelSystem = {
+        id: createNovelId("ls"),
+        workId: activeWorkId,
+        name: trimmed,
+        rungs: [],
+      };
+      setBundle((current) =>
+        current
+          ? { ...current, levelSystems: [...current.levelSystems, system] }
+          : current,
+      );
+      void addLevelSystemRemote({
+        id: system.id,
+        workId: system.workId,
+        name: system.name,
+      });
+      return system;
+    },
+    [bundle, activeWorkId],
+  );
+
+  /** 体系重命名：空名不落 */
+  const renameLevelSystem = useCallback((systemId: string, name: string): void => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setBundle((current) =>
+      current
+        ? {
+            ...current,
+            levelSystems: current.levelSystems.map((system) =>
+              system.id === systemId ? { ...system, name: trimmed } : system,
+            ),
+          }
+        : current,
+    );
+    void renameLevelSystemRemote(systemId, trimmed);
+  }, []);
+
+  /** 删除体系：本地级联摘除该体系全部等级项的当前境界绑定（主进程同事务级联） */
+  const deleteLevelSystem = useCallback(
+    (systemId: string): void => {
+      if (!bundle) return;
+      const system = bundle.levelSystems.find((item) => item.id === systemId);
+      if (!system) return;
+      const rungIds = new Set(system.rungs.map((rung) => rung.id));
+      setBundle((current) =>
+        current
+          ? {
+              ...current,
+              levelSystems: current.levelSystems.filter(
+                (item) => item.id !== systemId,
+              ),
+              links: current.links.filter((link) => !rungIds.has(link.toId)),
+            }
+          : current,
+      );
+      void removeLevelSystemRemote(systemId);
+    },
+    [bundle],
+  );
+
+  /** 追加等级项：rank 取该体系当前最大值 + 1，与主进程 MAX(rank)+1 同口径 */
+  const addLevel = useCallback(
+    (systemId: string, name: string): LevelRung | null => {
+      const trimmed = name.trim();
+      if (!trimmed || !bundle) return null;
+      const system = bundle.levelSystems.find((item) => item.id === systemId);
+      if (!system) return null;
+      const rung: LevelRung = {
+        id: createNovelId("lr"),
+        name: trimmed,
+        rank: system.rungs.reduce((max, rung) => Math.max(max, rung.rank), 0) + 1,
+      };
+      setBundle((current) =>
+        current
+          ? {
+              ...current,
+              levelSystems: current.levelSystems.map((item) =>
+                item.id === systemId
+                  ? { ...item, rungs: [...item.rungs, rung] }
+                  : item,
+              ),
+            }
+          : current,
+      );
+      void addLevelRemote(systemId, rung.id, trimmed);
+      return rung;
+    },
+    [bundle],
+  );
+
+  /** 等级项重命名：空名不落 */
+  const renameLevel = useCallback((rungId: string, name: string): void => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setBundle((current) =>
+      current
+        ? {
+            ...current,
+            levelSystems: current.levelSystems.map((system) => ({
+              ...system,
+              rungs: system.rungs.map((rung) =>
+                rung.id === rungId ? { ...rung, name: trimmed } : rung,
+              ),
+            })),
+          }
+        : current,
+    );
+    void renameLevelRemote(rungId, trimmed);
+  }, []);
+
+  /** 删除等级项：本地摘除 + 摘掉指向它的当前境界绑定（主进程级联） */
+  const deleteLevel = useCallback((rungId: string): void => {
+    setBundle((current) =>
+      current
+        ? {
+            ...current,
+            levelSystems: current.levelSystems.map((system) => ({
+              ...system,
+              rungs: system.rungs.filter((rung) => rung.id !== rungId),
+            })),
+            links: current.links.filter(
+              (link) => !(link.toType === "level" && link.toId === rungId),
+            ),
+          }
+        : current,
+    );
+    void removeLevelRemote(rungId);
+  }, []);
+
+  /** 等级项重排：orderedIds 为目标顺序（rank 从 1 起），本地排序 + 全量回写 */
+  const reorderLevels = useCallback(
+    (systemId: string, orderedIds: string[]): void => {
+      if (!bundle) return;
+      const rankOf = new Map(orderedIds.map((id, index) => [id, index + 1]));
+      setBundle((current) =>
+        current
+          ? {
+              ...current,
+              levelSystems: current.levelSystems.map((system) =>
+                system.id === systemId
+                  ? {
+                      ...system,
+                      rungs: system.rungs
+                        .map((rung) => ({
+                          ...rung,
+                          rank: rankOf.get(rung.id) ?? rung.rank,
+                        }))
+                        .sort((a, b) => a.rank - b.rank),
+                    }
+                  : system,
+              ),
+            }
+          : current,
+      );
+      void saveLevelOrder(
+        orderedIds.map((id, index) => ({ id, rank: index + 1 })),
+      );
+    },
+    [bundle],
+  );
+
+  /**
+   * 设定 / 替换 / 取消要素的「当前境界」（R25）。
+   * 绑定存 novel_links：toType='level'、toId=novel_levels.id、relation 固定
+   * 「当前境界」；一个要素同时只持有一条——先摘旧绑定再落新绑定。
+   * rungId 传 null 即取消绑定。
+   */
+  const setEntityLevel = useCallback(
+    (
+      entityId: string,
+      entityType: EntityType,
+      rungId: string | null,
+    ): void => {
+      if (!bundle) return;
+      const binding = bundle.links.find(
+        (link) =>
+          link.fromId === entityId &&
+          link.fromType === entityType &&
+          link.toType === "level",
+      );
+      const created: NovelLink | null =
+        rungId === null || rungId === binding?.toId
+          ? null
+          : {
+              id: createNovelId("l"),
+              fromType: entityType,
+              fromId: entityId,
+              toType: "level",
+              toId: rungId,
+              relation: LEVEL_RELATION,
+            };
+      setBundle((current) => {
+        if (!current) return current;
+        const links = binding
+          ? current.links.filter((link) => link.id !== binding.id)
+          : current.links;
+        return { ...current, links: created ? [created, ...links] : links };
+      });
+      if (binding) void removeLinkRemote(binding.id);
+      if (created) void addLinkRemote(created);
+    },
+    [bundle],
+  );
+
+  /**
+   * 自建类型删除时的实体迁移（R23）：该类型全部要素卡回退到 toType
+   * （通常是 custom 兜底），返回迁移数量供 toast 汇报。
+   */
+  const migrateEntityType = useCallback(
+    (fromType: EntityType, toType: EntityType): number => {
+      if (!bundle) return 0;
+      const affected = bundle.entities.filter(
+        (entity) => entity.type === fromType,
+      );
+      if (affected.length === 0) return 0;
+      setBundle((current) =>
+        current
+          ? {
+              ...current,
+              entities: current.entities.map((entity) =>
+                entity.type === fromType ? { ...entity, type: toType } : entity,
+              ),
+            }
+          : current,
+      );
+      for (const entity of affected) {
+        void saveEntity({ ...entity, type: toType });
+      }
+      return affected.length;
+    },
+    [bundle],
+  );
+
+  /** 要素关联的双向视图（PRD R24；R25 起目标可为等级项 toType='level'） */
   const getEntityRelations = useCallback(
     (entityId: string, entityType: EntityType): EntityRelationView[] => {
-      const nameOf = (id: string): { name: string; type: EntityType } => {
+      const nameOf = (
+        id: string,
+        type: EntityType,
+      ): { name: string; type: EntityType } => {
+        // 当前境界绑定的目标是 novel_levels.id，不在要素表里，查等级项索引
+        if (type === "level") {
+          const rung = levelRungIndex.get(id);
+          return {
+            name: rung ? `${rung.name}（${rung.systemName}）` : "未知等级",
+            type,
+          };
+        }
         const target = entities.find((entity) => entity.id === id);
         return {
           name: target?.name ?? "未知要素",
@@ -728,7 +999,8 @@ export function useNovelData() {
         .map<EntityRelationView>((link) => {
           const outgoing = link.fromId === entityId;
           const targetId = outgoing ? link.toId : link.fromId;
-          const target = nameOf(targetId);
+          const targetType = outgoing ? link.toType : link.fromType;
+          const target = nameOf(targetId, targetType);
           return {
             id: link.id,
             direction: outgoing ? "out" : "in",
@@ -740,7 +1012,7 @@ export function useNovelData() {
           };
         });
     },
-    [entities, links],
+    [entities, links, levelRungIndex],
   );
 
   const addNote = useCallback(
@@ -939,6 +1211,15 @@ export function useNovelData() {
     bindTextToEntity,
     addLink,
     removeLink,
+    createLevelSystem,
+    renameLevelSystem,
+    deleteLevelSystem,
+    addLevel,
+    renameLevel,
+    deleteLevel,
+    reorderLevels,
+    setEntityLevel,
+    migrateEntityType,
     getEntityById,
     getEntityRelations,
     addNote,

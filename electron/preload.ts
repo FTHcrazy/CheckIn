@@ -103,6 +103,28 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('novel-outline-entry-save', entry) as Promise<boolean>,
     removeOutlineEntry: (id: string) =>
       ipcRenderer.invoke('novel-outline-entry-remove', id) as Promise<boolean>,
+    // ── 等级体系管理（R25） ──
+    levelSystemAdd: (system: unknown) =>
+      ipcRenderer.invoke('novel-level-system-add', system) as Promise<boolean>,
+    levelSystemRename: (id: string, name: string) =>
+      ipcRenderer.invoke('novel-level-system-rename', id, name) as Promise<boolean>,
+    levelSystemDelete: (id: string) =>
+      ipcRenderer.invoke('novel-level-system-delete', id) as Promise<boolean>,
+    levelAdd: (systemId: string, id: string, name: string) =>
+      ipcRenderer.invoke('novel-level-add', systemId, id, name) as Promise<{ id: string; name: string; rank: number } | null>,
+    levelRename: (id: string, name: string) =>
+      ipcRenderer.invoke('novel-level-rename', id, name) as Promise<boolean>,
+    levelDelete: (id: string) =>
+      ipcRenderer.invoke('novel-level-delete', id) as Promise<boolean>,
+    levelOrder: (updates: Array<{ id: string; rank: number }>) =>
+      ipcRenderer.invoke('novel-level-order', updates) as Promise<boolean>,
+    // ── 导出（R13）与埋点（R14） ──
+    exportTxt: (defaultName: string, content: string) =>
+      ipcRenderer.invoke('novel-export-txt', defaultName, content) as Promise<{ path: string } | null>,
+    usageToday: () =>
+      ipcRenderer.invoke('novel-usage-today') as Promise<{ todayWords: number; saveCount: number }>,
+    usageLog: (event: string, payload: Record<string, unknown>) =>
+      ipcRenderer.invoke('novel-usage-log', event, payload) as Promise<boolean>,
   },
 
   send: (channel: string, data: unknown) => {

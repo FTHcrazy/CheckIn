@@ -1,4 +1,4 @@
-import { ENTITY_TYPE_META } from "../../novel-config";
+import { useEntityTypeMeta } from "../../hooks/entity-types-context";
 import TypeBadge from "../TypeBadge";
 import type { NovelEntity } from "../../types";
 import "./index.scss";
@@ -10,7 +10,8 @@ interface EntityCardProps {
 
 /** 要素卡：头像取名称首字，类型色与正文高亮同源 */
 export default function EntityCard({ entity, onOpen }: EntityCardProps) {
-  const meta = ENTITY_TYPE_META[entity.type];
+  const { metaOf } = useEntityTypeMeta();
+  const meta = metaOf(entity.type);
 
   return (
     <button

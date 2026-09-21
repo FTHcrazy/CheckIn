@@ -142,6 +142,29 @@
     letter-spacing: 0.6px;
     text-transform: uppercase;
     color: var(--app-text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  &__label-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 1px 6px;
+    border: none;
+    border-radius: var(--app-radius-chip);
+    background: transparent;
+    color: var(--app-text-muted);
+    font-size: 10.5px;
+    letter-spacing: normal;
+    text-transform: none;
+    cursor: pointer;
+
+    &:hover {
+      color: var(--app-primary);
+      background: var(--app-primary-weak);
+    }
   }
 
   &__kv {
@@ -338,6 +361,7 @@
   &__ladder {
     display: flex;
     flex-direction: column;
+    margin-top: 8px;
   }
 
   &__rung {
@@ -345,9 +369,17 @@
     align-items: center;
     gap: 8px;
     padding: 5px 8px;
+    border: none;
     border-radius: var(--app-radius-chip);
+    background: transparent;
+    text-align: left;
     font-size: 12px;
     color: var(--app-text-secondary);
+    cursor: pointer;
+
+    &:hover {
+      background: var(--app-surface-hover);
+    }
 
     &.is-on {
       background: var(--app-primary-weak);
@@ -368,6 +400,16 @@
     margin-left: auto;
     font-size: 10.5px;
     color: var(--app-text-muted);
+  }
+
+  &__rung-cur {
+    flex: none;
+    padding: 0 5px;
+    border-radius: var(--app-radius-pill);
+    background: var(--app-primary);
+    color: var(--app-surface);
+    font-size: 10px;
+    font-weight: 500;
   }
 
   &__appear {

@@ -10,7 +10,8 @@
  * 边界：SQL 只出现在本文件与 db.ts；不导入 main.ts；
  * 渲染层通过 preload 暴露的 novel 命名空间调用，禁止裸拼 SQL。
  */
-import { ipcMain } from "electron";
+import { ipcMain, dialog } from "electron";
+import { promises as fsp } from "node:fs";
 import { dbAll, dbGet, dbRun, getDb } from "../db";
 import { buildNovelTemplateBook } from "../novel-template";
 
@@ -288,6 +289,19 @@ function setConfig(key: string, value: string): void {
      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now', 'localtime')`,
     [key, value],
   );
+}
+
+/** 写入 usage_log 埋点（R14）：payload 序列化失败不影响主流程 */
+function logUsage(event: string, payload: Record<string, unknown>): void {
+  try {
+    dbRun("INSERT INTO usage_log (event, payload, created_at) VALUES (?, ?, ?)", [
+      event,
+      JSON.stringify(payload),
+      Date.now(),
+    ]);
+  } catch {
+    // 埋点失败静默：绝不能影响编辑器主链路
+  }
 }
 
 function toChapterDto(row: NovelChapterRow): NovelChapterDto {
@@ -660,6 +674,8 @@ export function registerNovelHandlers(): void {
 
     const recovery = buildRecovery();
     setConfig(SESSION_KEY, "running");
+    // R14：编辑器唤起埋点（北极星「打开→开始输入」漏斗的起点）
+    logUsage("editor_open", {});
 
     const bundle: NovelBundleDto = {
       works: works.map((row) => ({ id: row.id, name: row.name, createdAt: row.created_at })),
@@ -675,13 +691,17 @@ export function registerNovelHandlers(): void {
     return bundle;
   });
 
-  // 章节正文保存：保存 + 增量快照同事务（PRD §7）
+  // 章节正文保存：保存 + 增量快照 + 埋点同事务（PRD §7 / R14）
   ipcMain.handle(
     "novel-chapter-save",
     (_event, id: string, content: string, wordCount: number) => {
       const db = getDb();
       const now = Date.now();
       const save = db.transaction(() => {
+        const chapter = dbGet("SELECT word_count FROM novel_chapters WHERE id = ?", [
+          id,
+        ]) as { word_count?: number | null } | undefined;
+        const delta = chapter ? wordCount - (chapter.word_count ?? 0) : 0;
         const last = dbGet(
           "SELECT * FROM novel_snapshots WHERE chapter_id = ? ORDER BY created_at DESC LIMIT 1",
           [id],
@@ -703,11 +723,14 @@ export function registerNovelHandlers(): void {
              )`,
             [id, id, SNAPSHOT_KEEP],
           );
+          logUsage("snapshot", { chapterId: id, words: wordCount });
         }
         dbRun(
           "UPDATE novel_chapters SET content = ?, word_count = ?, updated_at = ? WHERE id = ?",
           [content, wordCount, now, id],
         );
+        // R14：保存事件带净增字数（负值 = 删字回退），今日新增 = 当日 delta 求和
+        logUsage("chapter_save", { chapterId: id, delta, words: wordCount });
       });
       save();
       return true;
@@ -906,6 +929,146 @@ export function registerNovelHandlers(): void {
   // 删除伏笔条目
   ipcMain.handle("novel-outline-entry-remove", (_event, id: string) => {
     dbRun("DELETE FROM novel_outline_entries WHERE id = ?", [id]);
+    return true;
+  });
+
+  // ── 等级体系管理（R25 落地：此前只有读，无 CRUD） ────────────────────
+
+  // 新建体系（渲染层生成 id）
+  ipcMain.handle("novel-level-system-add", (_event, system: NovelLevelSystemDto) => {
+    const name = system.name.trim();
+    if (!name) return false;
+    dbRun("INSERT INTO novel_level_systems (id, work_id, name) VALUES (?, ?, ?)", [
+      system.id,
+      system.workId,
+      name,
+    ]);
+    return true;
+  });
+
+  // 体系重命名
+  ipcMain.handle("novel-level-system-rename", (_event, id: string, name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return false;
+    dbRun("UPDATE novel_level_systems SET name = ? WHERE id = ?", [trimmed, id]);
+    return true;
+  });
+
+  // 删除体系：等级项 / 转换关系 / 指向等级项的关联（当前境界）同事务级联
+  ipcMain.handle("novel-level-system-delete", (_event, id: string) => {
+    const db = getDb();
+    const apply = db.transaction(() => {
+      const levels = dbAll("SELECT id FROM novel_levels WHERE system_id = ?", [
+        id,
+      ]) as Array<{ id: string }>;
+      for (const level of levels) {
+        dbRun(
+          "DELETE FROM novel_level_conversions WHERE from_level_id = ? OR to_level_id = ?",
+          [level.id, level.id],
+        );
+        dbRun("DELETE FROM novel_links WHERE to_type = 'level' AND to_id = ?", [level.id]);
+      }
+      dbRun("DELETE FROM novel_levels WHERE system_id = ?", [id]);
+      dbRun("DELETE FROM novel_level_systems WHERE id = ?", [id]);
+    });
+    apply();
+    return true;
+  });
+
+  // 新建等级项：rank 取体系内最大值 + 1（追加到阶梯末尾）
+  ipcMain.handle(
+    "novel-level-add",
+    (_event, systemId: string, id: string, name: string): NovelLevelSystemDto["rungs"][number] | null => {
+      const trimmed = name.trim();
+      if (!trimmed) return null;
+      const max = dbGet("SELECT COALESCE(MAX(rank), 0) AS max FROM novel_levels WHERE system_id = ?", [
+        systemId,
+      ]) as { max: number };
+      const rank = max.max + 1;
+      dbRun("INSERT INTO novel_levels (id, system_id, name, rank) VALUES (?, ?, ?, ?)", [
+        id,
+        systemId,
+        trimmed,
+        rank,
+      ]);
+      return { id, name: trimmed, rank };
+    },
+  );
+
+  // 等级项重命名
+  ipcMain.handle("novel-level-rename", (_event, id: string, name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return false;
+    dbRun("UPDATE novel_levels SET name = ? WHERE id = ?", [trimmed, id]);
+    return true;
+  });
+
+  // 删除等级项：转换关系与指向它的「当前境界」关联同事务清理
+  ipcMain.handle("novel-level-delete", (_event, id: string) => {
+    const db = getDb();
+    const apply = db.transaction(() => {
+      dbRun(
+        "DELETE FROM novel_level_conversions WHERE from_level_id = ? OR to_level_id = ?",
+        [id, id],
+      );
+      dbRun("DELETE FROM novel_links WHERE to_type = 'level' AND to_id = ?", [id]);
+      dbRun("DELETE FROM novel_levels WHERE id = ?", [id]);
+    });
+    apply();
+    return true;
+  });
+
+  // 等级项排序（rank 重排，单事务）
+  ipcMain.handle(
+    "novel-level-order",
+    (_event, updates: Array<{ id: string; rank: number }>) => {
+      const db = getDb();
+      const apply = db.transaction(() => {
+        const stmt = db.prepare("UPDATE novel_levels SET rank = ? WHERE id = ?");
+        for (const update of updates) stmt.run(update.rank, update.id);
+      });
+      apply();
+      return true;
+    },
+  );
+
+  // ── TXT 导出（R13）：文本组装在渲染层完成，这里只负责弹保存框 + 落盘 ──
+
+  ipcMain.handle(
+    "novel-export-txt",
+    async (_event, defaultName: string, content: string): Promise<{ path: string } | null> => {
+      const safeName = defaultName.replace(/[\\/:*?"<>|]/g, "_").trim() || "导出";
+      const result = await dialog.showSaveDialog({
+        title: "导出 TXT",
+        defaultPath: `${safeName}.txt`,
+        filters: [{ name: "文本文件", extensions: ["txt"] }],
+      });
+      if (result.canceled || !result.filePath) return null;
+      await fsp.writeFile(result.filePath, content, "utf8");
+      return { path: result.filePath };
+    },
+  );
+
+  // ── usage_log 埋点（R14）：查询今日聚合 + 通用事件上报 ──────────────
+
+  // 今日写作聚合：今日净增 = 当日 chapter_save 事件 delta 求和（删除字数扣回）
+  ipcMain.handle("novel-usage-today", () => {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const row = dbGet(
+      `SELECT
+         COALESCE(SUM(CAST(json_extract(payload, '$.delta') AS INTEGER)), 0) AS today_words,
+         COUNT(*) AS save_count
+       FROM usage_log
+       WHERE event = 'chapter_save' AND created_at >= ?`,
+      [start.getTime()],
+    ) as { today_words: number; save_count: number };
+    return { todayWords: row.today_words, saveCount: row.save_count };
+  });
+
+  // 通用事件上报（goal_reach 等由渲染层显式触发）
+  ipcMain.handle("novel-usage-log", (_event, event: string, payload: Record<string, unknown>) => {
+    logUsage(event, payload);
     return true;
   });
 }

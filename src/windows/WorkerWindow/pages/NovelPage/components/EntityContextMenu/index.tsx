@@ -1,5 +1,6 @@
 import { RightOutlined } from "@ant-design/icons";
-import { ENTITY_TYPE_META, MARK_TYPE_OPTIONS } from "../../novel-config";
+import { MARK_TYPE_OPTIONS } from "../../novel-config";
+import { useEntityTypeMeta } from "../../hooks/entity-types-context";
 import { truncate } from "../../novel-utils";
 import type { EntityType, NovelEntity } from "../../types";
 import "./index.scss";
@@ -34,6 +35,8 @@ export default function EntityContextMenu({
   onBind,
   onClose,
 }: EntityContextMenuProps) {
+  const { metaOf } = useEntityTypeMeta();
+
   return (
     <>
       {/* 点外部关闭：铺满 stage 的透明捕获层（z-index 低于菜单本体） */}
@@ -46,7 +49,7 @@ export default function EntityContextMenu({
         <p className="nv-ctxmenu__label">新建资料卡</p>
         <div className="nv-ctxmenu__types">
           {MARK_TYPE_OPTIONS.map((type) => {
-            const meta = ENTITY_TYPE_META[type];
+            const meta = metaOf(type);
             return (
               <button
                 key={type}
@@ -72,7 +75,7 @@ export default function EntityContextMenu({
         ) : (
           <div className="nv-ctxmenu__binds">
             {entities.map((entity) => {
-              const meta = ENTITY_TYPE_META[entity.type];
+              const meta = metaOf(entity.type);
               const bound =
                 entity.name === text || entity.aliases.includes(text);
               return (

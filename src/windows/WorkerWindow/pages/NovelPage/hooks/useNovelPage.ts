@@ -2,21 +2,40 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { POSITION } from "../novel-config";
 import {
   buildBreadcrumb,
+  buildBookPlainText,
   buildChapterNumbers,
+  buildChapterPlainText,
+  buildEntityCardText,
   buildEntityTerms,
   buildForeshadowDraft,
   buildOutlineTree,
+  buildVolumePlainText,
   buildWorkMeta,
   formatClock,
   formatNumberedLabel,
   formatThousands,
+  parseJsonOrNull,
   previewChapterReorder,
   previewChapterToVolume,
   previewVolumeReorder,
+  sanitizeCustomTypes,
   volumeDisplayName,
 } from "../novel-utils";
-import { saveLastPosition } from "../services/novel-service";
-import type { EntitySavePatch, EntityType, ForeshadowPatch } from "../types";
+import {
+  createNovelId,
+  exportTxtFile,
+  fetchCustomEntityTypes,
+  logUsageEvent,
+  saveCustomEntityTypes,
+  saveLastPosition,
+} from "../services/novel-service";
+import { buildEntityTypesValue, type EntityTypesContextValue } from "./entity-types-context";
+import type {
+  CustomEntityTypeDef,
+  EntitySavePatch,
+  EntityType,
+  ForeshadowPatch,
+} from "../types";
 import type { ReorderChange } from "../components/ReorderConfirmModal";
 import type { InspirationActions } from "../components/InspirationPanel";
 import type { OutlineActions } from "../components/OutlinePanel";
@@ -53,11 +72,94 @@ export function useNovelPage() {
 
   const { settings, stats, saveState } = editor;
 
-  /** 标注层词库：随要素保存即时刷新（PRD §7） */
-  const terms = useMemo(
-    () => buildEntityTerms(data.entities, settings.annotationTypes),
-    [data.entities, settings.annotationTypes],
+  // ── 自定义要素类型（R23）：config 整读整写，meta 由 EntityTypeContext 派生 ──
+  const [customTypes, setCustomTypes] = useState<CustomEntityTypeDef[]>([]);
+  const customTypesLoadedRef = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchCustomEntityTypes()
+      .then((raw) => {
+        if (cancelled) return;
+        setCustomTypes(sanitizeCustomTypes(parseJsonOrNull(raw)));
+      })
+      .catch(() => {
+        // 读取失败按空处理：内置六类照常可用
+      })
+      .finally(() => {
+        if (!cancelled) customTypesLoadedRef.current = true;
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!customTypesLoadedRef.current) return;
+    void saveCustomEntityTypes(customTypes);
+  }, [customTypes]);
+
+  /** 新建自建类型：名称去重、非法输入返回 null 由弹框提示 */
+  const handleAddCustomType = useCallback(
+    (name: string, color: string): CustomEntityTypeDef | null => {
+      const trimmed = name.trim();
+      if (!trimmed || !color) return null;
+      if (customTypes.some((def) => def.name === trimmed)) return null;
+      const def: CustomEntityTypeDef = {
+        id: createNovelId("ct"),
+        name: trimmed,
+        color,
+      };
+      setCustomTypes((current) => [...current, def]);
+      return def;
+    },
+    [customTypes],
   );
+
+  /** 自建类型重命名：空名 / 与其他类型重名时失败 */
+  const handleRenameCustomType = useCallback(
+    (typeId: string, name: string): boolean => {
+      const trimmed = name.trim();
+      if (!trimmed) return false;
+      if (customTypes.some((def) => def.id !== typeId && def.name === trimmed)) {
+        return false;
+      }
+      setCustomTypes((current) =>
+        current.map((def) => (def.id === typeId ? { ...def, name: trimmed } : def)),
+      );
+      return true;
+    },
+    [customTypes],
+  );
+
+  /**
+   * 删除自建类型：该类型要素卡先全部迁回 custom 兜底（数据不丢），返回
+   * 迁移数量供 toast 汇报；未删除任何实体时返回 0。
+   */
+  const handleRemoveCustomType = useCallback(
+    (typeId: string): number => {
+      const migrated = data.migrateEntityType(typeId, "custom");
+      setCustomTypes((current) => current.filter((def) => def.id !== typeId));
+      return migrated;
+    },
+    [data],
+  );
+
+  const entityTypesValue = useMemo<EntityTypesContextValue>(
+    () => buildEntityTypesValue(customTypes),
+    [customTypes],
+  );
+
+  /** 标注层词库：随要素保存即时刷新（PRD §7）；自建类型词条带注入色（R23） */
+  const terms = useMemo(() => {
+    const colorOf = new Map(customTypes.map((def) => [def.id, def.color]));
+    return buildEntityTerms(data.entities, settings.annotationTypes).map(
+      (term) => {
+        const color = colorOf.get(term.type);
+        return color ? { ...term, color } : term;
+      },
+    );
+  }, [data.entities, settings.annotationTypes, customTypes]);
 
   const breadcrumb = useMemo(
     () =>
@@ -197,6 +299,120 @@ export function useNovelPage() {
       "info",
     );
   }, [data, view]);
+
+  // ── TXT 导出（R13）：标题序号按 numberStyle + 后缀派生，与界面所见一致 ──
+
+  const numberingOptions = useMemo(
+    () => ({
+      numberStyle: settings.numberStyle,
+      chapterSuffix: settings.chapterSuffix,
+      volumeSuffix: settings.volumeSuffix,
+    }),
+    [settings.numberStyle, settings.chapterSuffix, settings.volumeSuffix],
+  );
+
+  const finishExport = useCallback(
+    (result: { path: string } | null, label: string): void => {
+      if (result) {
+        view.showToast(`${label}已导出：${result.path}`);
+      } else {
+        view.showToast("已取消导出", "info");
+      }
+    },
+    [view],
+  );
+
+  /** 导出整本：书名 + 逐卷逐章，章节标题带「第一章 xxx」样式序号 */
+  const handleExportBook = useCallback(async (): Promise<void> => {
+    const work = data.works.find((item) => item.id === data.activeWorkId);
+    if (data.chapters.length === 0) {
+      view.showToast("当前作品还没有章节", "warning");
+      return;
+    }
+    const content = buildBookPlainText(
+      work?.name ?? "",
+      data.volumes,
+      data.chapters,
+      numberingOptions,
+    );
+    const result = await exportTxtFile(
+      `${work?.name ?? "未命名作品"}.txt`,
+      content,
+    );
+    finishExport(result, "整本");
+  }, [data.works, data.activeWorkId, data.volumes, data.chapters, numberingOptions, view, finishExport]);
+
+  /** 导出当前章所在卷（卷序号 / 章序号与整本一致） */
+  const handleExportVolume = useCallback(async (): Promise<void> => {
+    const chapter = data.activeChapter;
+    if (!chapter) {
+      view.showToast("先选中一个章节再导出", "warning");
+      return;
+    }
+    const volume = data.volumes.find((item) => item.id === chapter.volumeId);
+    if (!volume) {
+      view.showToast("章节未归属任何卷，请先导出整本", "warning");
+      return;
+    }
+    const content = buildVolumePlainText(
+      volume,
+      data.chapters,
+      data.chapterNumbers,
+      numberingOptions,
+    );
+    const result = await exportTxtFile(
+      `${volumeDisplayName(volume, settings.numberStyle, settings.volumeSuffix).replace(/[\\/:*?"<>|]/g, "_")}.txt`,
+      content,
+    );
+    finishExport(result, "当前卷");
+  }, [data.activeChapter, data.volumes, data.chapters, data.chapterNumbers, numberingOptions, settings.numberStyle, settings.volumeSuffix, view, finishExport]);
+
+  /** 导出当前章（含「第N章 标题」标题行） */
+  const handleExportChapter = useCallback(async (): Promise<void> => {
+    const chapter = data.activeChapter;
+    if (!chapter) {
+      view.showToast("先选中一个章节再导出", "warning");
+      return;
+    }
+    const number = data.chapterNumbers.get(chapter.id) ?? 1;
+    const content = buildChapterPlainText(chapter, number, numberingOptions);
+    const result = await exportTxtFile(
+      `${chapter.title || formatNumberedLabel(settings.numberStyle, settings.chapterSuffix, number)}.txt`,
+      content,
+    );
+    finishExport(result, "当前章");
+  }, [data.activeChapter, data.chapterNumbers, numberingOptions, settings.numberStyle, settings.chapterSuffix, view, finishExport]);
+
+  /** 导出设定卡（R13 顺手项）：基础字段 + 关联 + 当前境界 */
+  const handleExportCard = useCallback(async (): Promise<void> => {
+    const entity = view.detailEntityId
+      ? data.getEntityById(view.detailEntityId)
+      : null;
+    if (!entity) return;
+    const relations = data.getEntityRelations(entity.id, entity.type);
+    const binding = relations.find(
+      (relation) => relation.targetType === "level",
+    );
+    const content = buildEntityCardText(
+      entity,
+      relations,
+      binding?.targetName,
+    );
+    const result = await exportTxtFile(`${entity.name} 设定卡.txt`, content);
+    finishExport(result, `「${entity.name}」设定卡`);
+  }, [view.detailEntityId, data, view, finishExport]);
+
+  /** 设定 / 替换 / 取消当前境界（R25）：数据层先摘旧绑定再落新绑定 */
+  const handleSetEntityLevel = useCallback(
+    (entityId: string, entityType: EntityType, rungId: string | null): void => {
+      data.setEntityLevel(entityId, entityType, rungId);
+      view.showToast(
+        rungId === null ? "已取消当前境界绑定" : "已更新当前境界",
+        "info",
+      );
+    },
+    [data, view],
+  );
 
   /** 删除章节（行内已 Popconfirm 确认）：删当前章由数据层自动切邻居 */
   const handleDeleteChapter = useCallback(
@@ -653,7 +869,8 @@ export function useNovelPage() {
     onEscape: handleEscape,
   });
 
-  // 目标达成只提示一次：跨过目标线的那一刻给轻提示 + 进度条填满（设计方案 §07）
+  // 目标达成只提示一次：跨过目标线的那一刻给轻提示 + 进度条填满（设计方案 §07），
+  // 并上报 usage_log（R14：goal_reach 是北极星指标的达成事件）
   const goalNotifiedRef = useRef(false);
   useEffect(() => {
     if (stats.dailyGoal <= 0) return;
@@ -664,6 +881,10 @@ export function useNovelPage() {
     if (goalNotifiedRef.current) return;
     goalNotifiedRef.current = true;
     view.showToast(`今日目标达成 · ${formatThousands(stats.dailyGoal)} 字`);
+    void logUsageEvent("goal_reach", {
+      goal: stats.dailyGoal,
+      words: stats.todayTotal,
+    });
   }, [stats.todayTotal, stats.dailyGoal, view]);
 
   // 关窗前的最后一次 flush（PRD §2：关窗永不询问，数据由持久化兜底）；
@@ -683,6 +904,7 @@ export function useNovelPage() {
     view,
     hover,
     terms,
+    entityTypesValue,
     breadcrumb,
     outline,
     outlineActions,
@@ -719,5 +941,13 @@ export function useNovelPage() {
     handleDeleteWork,
     handleResetTemplate,
     handleDeleteChapter,
+    handleExportBook,
+    handleExportVolume,
+    handleExportChapter,
+    handleExportCard,
+    handleSetEntityLevel,
+    handleAddCustomType,
+    handleRenameCustomType,
+    handleRemoveCustomType,
   };
 }

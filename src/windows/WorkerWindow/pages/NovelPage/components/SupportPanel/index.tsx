@@ -53,6 +53,10 @@ interface SupportPanelProps {
     relation: string,
   ) => void;
   onRemoveRelation: (linkId: string, targetName: string) => void;
+  /** 设定 / 取消当前境界（R25） */
+  onSetEntityLevel: (entityId: string, rungId: string | null) => void;
+  /** 打开等级体系管理弹框（R25） */
+  onOpenLevelManager: () => void;
 }
 
 const TABS: Array<{ key: PanelTab; label: string; icon: ReactNode }> = [
@@ -93,6 +97,8 @@ export default function SupportPanel({
   onSaveEntity,
   onAddRelation,
   onRemoveRelation,
+  onSetEntityLevel,
+  onOpenLevelManager,
 }: SupportPanelProps) {
   return (
     <aside className={`nv-panel${open ? "" : " is-collapsed"}`}>
@@ -139,6 +145,8 @@ export default function SupportPanel({
             onSelectChapter={onSelectChapter}
             onAddRelation={onAddRelation}
             onRemoveRelation={onRemoveRelation}
+            onSetEntityLevel={onSetEntityLevel}
+            onOpenLevelManager={onOpenLevelManager}
           />
         )}
         {activeTab === "note" && (

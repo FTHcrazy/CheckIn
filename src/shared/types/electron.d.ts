@@ -204,6 +204,21 @@ export interface ElectronAPI {
     removeNote: (id: string) => Promise<boolean>
     saveOutlineEntry: (entry: NovelOutlineEntryDTO) => Promise<boolean>
     removeOutlineEntry: (id: string) => Promise<boolean>
+    // ── 等级体系管理（R25） ──
+    levelSystemAdd: (system: { id: string; workId: string; name: string }) => Promise<boolean>
+    levelSystemRename: (id: string, name: string) => Promise<boolean>
+    levelSystemDelete: (id: string) => Promise<boolean>
+    /** 向体系追加等级项，rank 由主进程按 MAX(rank)+1 分配；返回新等级项 */
+    levelAdd: (systemId: string, id: string, name: string) => Promise<{ id: string; name: string; rank: number } | null>
+    levelRename: (id: string, name: string) => Promise<boolean>
+    levelDelete: (id: string) => Promise<boolean>
+    levelOrder: (updates: Array<{ id: string; rank: number }>) => Promise<boolean>
+    // ── 导出（R13）：主进程弹保存框 + 写盘；用户取消返回 null ──
+    exportTxt: (defaultName: string, content: string) => Promise<{ path: string } | null>
+    // ── 使用埋点（R14） ──
+    /** 今日新增字数（chapter_save 事件 delta 净增）与保存次数，0 点按主进程本地时间 */
+    usageToday: () => Promise<{ todayWords: number; saveCount: number }>
+    usageLog: (event: string, payload: Record<string, unknown>) => Promise<boolean>
   }
 
   send: (channel: string, data: unknown) => void

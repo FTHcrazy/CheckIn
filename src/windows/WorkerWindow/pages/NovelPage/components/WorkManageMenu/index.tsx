@@ -3,6 +3,9 @@ import { Dropdown, Input, Modal } from "antd";
 import {
   DeleteOutlined,
   EditOutlined,
+  ExportOutlined,
+  FileAddOutlined,
+  FileTextOutlined,
   FolderOpenOutlined,
   PlusOutlined,
   ReloadOutlined,
@@ -17,6 +20,8 @@ interface WorkManageMenuProps {
   activeWorkName: string;
   /** 当前作品聚合信息：删除确认的级联提示用 */
   activeMeta: WorkMeta | undefined;
+  /** 是否存在章节：导出当前卷 / 当前章的可用性 */
+  hasActiveChapter: boolean;
   /** 新建作品：返回 false 表示校验失败，弹框不关闭 */
   onCreate: (name: string) => boolean;
   /** 重命名当前作品：返回 false 表示校验失败，弹框不关闭 */
@@ -25,10 +30,16 @@ interface WorkManageMenuProps {
   onDelete: () => void;
   /** 一键重置为模板书籍（调试，确认后调用） */
   onResetTemplate: () => void;
+  /** 导出整本 TXT（R13） */
+  onExportBook: () => void;
+  /** 导出当前章所在卷 TXT（R13） */
+  onExportVolume: () => void;
+  /** 导出当前章 TXT（R13） */
+  onExportChapter: () => void;
 }
 
 /**
- * 作品管理入口（R29）：顶栏下拉内嵌「新建 / 重命名 / 删除」。
+ * 作品管理入口（R29）：顶栏下拉内嵌「新建 / 重命名 / 删除 / 导出」。
  *
  * 作品切换仍由旁边的 Select 承担，这里只放管理动作；
  * 删除必须走确认弹框并明示级联范围（卷章 / 要素 / 灵感伏笔 / 快照）。
@@ -36,10 +47,14 @@ interface WorkManageMenuProps {
 export default function WorkManageMenu({
   activeWorkName,
   activeMeta,
+  hasActiveChapter,
   onCreate,
   onRename,
   onDelete,
   onResetTemplate,
+  onExportBook,
+  onExportVolume,
+  onExportChapter,
 }: WorkManageMenuProps) {
   const [modalKind, setModalKind] = useState<WorkModalKind>(null);
   const [nameDraft, setNameDraft] = useState("");
@@ -83,6 +98,25 @@ export default function WorkManageMenu({
             },
             { type: "divider" as const },
             {
+              key: "export-book",
+              icon: <FileTextOutlined />,
+              label: "导出整本 TXT",
+              disabled: !activeWorkName || !activeMeta || activeMeta.chapters === 0,
+            },
+            {
+              key: "export-volume",
+              icon: <FileAddOutlined />,
+              label: "导出当前卷 TXT",
+              disabled: !hasActiveChapter,
+            },
+            {
+              key: "export-chapter",
+              icon: <ExportOutlined />,
+              label: "导出当前章 TXT",
+              disabled: !hasActiveChapter,
+            },
+            { type: "divider" as const },
+            {
               key: "delete",
               icon: <DeleteOutlined />,
               label: "删除当前作品",
@@ -99,6 +133,9 @@ export default function WorkManageMenu({
           onClick: ({ key }) => {
             if (key === "create") openCreate();
             else if (key === "rename") openRename();
+            else if (key === "export-book") onExportBook();
+            else if (key === "export-volume") onExportVolume();
+            else if (key === "export-chapter") onExportChapter();
             else if (key === "delete") setModalKind("delete");
             else if (key === "reset-template") setModalKind("reset-template");
           },

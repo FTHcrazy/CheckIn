@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_SETTINGS, SAVE, SAVE_STATE_TEXT } from "../novel-config";
 import { mergeEditorSettings, parseJsonOrNull } from "../novel-utils";
-import { fetchEditorSettings, saveEditorSettings } from "../services/novel-service";
+import { fetchEditorSettings, fetchUsageToday, saveEditorSettings } from "../services/novel-service";
 import { countWords } from "../novel-utils";
 import type {
   EditorSettings,
@@ -59,11 +59,28 @@ export function useNovelEditorState(data: NovelData) {
     void saveEditorSettings(settings);
   }, [settings]);
 
-  // 今日写作：会话级统计，作为 useNovelData 尚未接 usage_log 时的过渡实现
+  // 今日写作（R14）：todayTotal 启动时从 usage_log 聚合初始化（主进程对
+  // chapter_save 的 delta 净增求和，跨会话累计）；todayAdded 保持会话内
+  // 口径（本次打开编辑器起算），speed 仍按会话采样
   const [todayAdded, setTodayAdded] = useState(0);
   const [todayTotal, setTodayTotal] = useState(0);
   const [speed, setSpeed] = useState(0);
   const sessionRef = useRef<{ words: number; startedAt: number } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchUsageToday()
+      .then((summary) => {
+        if (cancelled) return;
+        setTodayTotal(summary.todayWords);
+      })
+      .catch(() => {
+        // 拉取失败从 0 起算：统计缺失可接受，不阻塞写作
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const activeChapter: NovelChapter | null = data.activeChapter;
   const content = activeChapterId

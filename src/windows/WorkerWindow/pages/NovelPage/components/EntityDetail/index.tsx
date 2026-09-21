@@ -1,11 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { KeyboardEvent } from "react";
 import {
   ArrowLeftOutlined,
   EditOutlined,
   PlusOutlined,
+  SettingOutlined,
 } from "@ant-design/icons";
-import { ENTITY_FILTER_ORDER, ENTITY_TYPE_META } from "../../novel-config";
+import { useEntityTypeMeta } from "../../hooks/entity-types-context";
 import TypeBadge from "../TypeBadge";
 import type {
   EntityAppearance,
@@ -37,6 +38,10 @@ interface EntityDetailProps {
     relation: string,
   ) => void;
   onRemoveRelation: (linkId: string, targetName: string) => void;
+  /** 设定 / 替换 / 取消当前境界（R25）：rungId 传 null 即取消 */
+  onSetEntityLevel: (rungId: string | null) => void;
+  /** 打开等级体系管理弹框（R25） */
+  onOpenLevelManager: () => void;
   onSelectChapter: (chapterId: string) => void;
   onBack: () => void;
 }
@@ -53,7 +58,7 @@ interface EntityDraft {
 /** 别名 / 性格输入分隔符：展示分隔符「·」不参与拆分（避免误拆含·的名字） */
 const ALIAS_SPLIT = /[,，、;；\s]+/;
 
-/** 要素详情：基础字段编辑 / 关联要素增删 / 等级 / 出场章节跳转（R23–R25、R21、R24） */
+/** 要素详情：基础字段编辑 / 关联要素增删 / 当前境界（R25）/ 出场章节跳转 */
 export default function EntityDetail({
   entity,
   entities,
@@ -66,17 +71,47 @@ export default function EntityDetail({
   onSaveEntity,
   onAddRelation,
   onRemoveRelation,
+  onSetEntityLevel,
+  onOpenLevelManager,
   onSelectChapter,
   onBack,
 }: EntityDetailProps) {
-  const meta = ENTITY_TYPE_META[entity.type];
-  const levelRelation = relations.find(
-    (relation) => relation.targetType === "level_system",
+  const { metaOf, filterOrder } = useEntityTypeMeta();
+  const meta = metaOf(entity.type);
+
+  // 当前境界绑定（R25）：toType='level' 的关联，精确指向 novel_levels.id；
+  // 旧版「关联到体系卡 + note 文本猜测」的含混实现已废弃
+  const levelBinding = relations.find(
+    (relation) => relation.targetType === "level",
   );
-  const level = levelSystems.find((system) => system.id === levelRelation?.targetId);
   const others = relations.filter(
-    (relation) => relation.targetType !== "level_system",
+    (relation) => relation.targetType !== "level",
   );
+
+  /** 绑定等级项 → 所属体系（用于默认选中下拉与绑定名回显） */
+  const rungSystemOf = useMemo(() => {
+    const index = new Map<string, LevelSystem>();
+    for (const system of levelSystems) {
+      for (const rung of system.rungs) index.set(rung.id, system);
+    }
+    return index;
+  }, [levelSystems]);
+
+  /** 当前展示的体系：默认绑定所在体系，否则第一个；切换查看对象时重置 */
+  const [activeSystemId, setActiveSystemId] = useState("");
+  const activeSystemIdResolved = useMemo(() => {
+    if (activeSystemId && levelSystems.some((s) => s.id === activeSystemId)) {
+      return activeSystemId;
+    }
+    const boundSystem = levelBinding
+      ? rungSystemOf.get(levelBinding.targetId)
+      : undefined;
+    return boundSystem?.id ?? levelSystems[0]?.id ?? "";
+  }, [activeSystemId, levelSystems, levelBinding, rungSystemOf]);
+  const activeSystem = levelSystems.find(
+    (system) => system.id === activeSystemIdResolved,
+  );
+  const boundRungId = levelBinding?.targetId ?? null;
 
   const BASE_KEYS = ["别名", "一句话", "性格"];
   const customEntries = Object.entries(entity.fields).filter(
@@ -91,10 +126,11 @@ export default function EntityDetail({
   const [relTargetId, setRelTargetId] = useState("");
   const [relName, setRelName] = useState("");
 
-  // 切换查看对象时退出编辑态，避免把 A 卡的草稿写进 B 卡
+  // 切换查看对象时退出编辑态，避免把 A 卡的草稿写进 B 卡；体系选择一并重置
   useEffect(() => {
     setDraft(null);
     setRelAdding(false);
+    setActiveSystemId("");
   }, [entity.id]);
 
   const startEdit = (): void =>
@@ -215,27 +251,30 @@ export default function EntityDetail({
             <div className="nv-edetail__form-row">
               <span className="nv-edetail__k">类型</span>
               <div className="nv-edetail__type-row">
-                {ENTITY_FILTER_ORDER.map((type) => (
-                  <button
-                    key={type}
-                    type="button"
-                    className={`nv-edetail__type-chip${
-                      draft.type === type ? " is-on" : ""
-                    }`}
-                    style={
-                      draft.type === type
-                        ? undefined
-                        : { color: ENTITY_TYPE_META[type].color }
-                    }
-                    onClick={() =>
-                      setDraft((current) =>
-                        current ? { ...current, type } : current,
-                      )
-                    }
-                  >
-                    {ENTITY_TYPE_META[type].label}
-                  </button>
-                ))}
+                {filterOrder.map((type) => {
+                  const typeMeta = metaOf(type);
+                  return (
+                    <button
+                      key={type}
+                      type="button"
+                      className={`nv-edetail__type-chip${
+                        draft.type === type ? " is-on" : ""
+                      }`}
+                      style={
+                        draft.type === type
+                          ? undefined
+                          : { color: typeMeta.color }
+                      }
+                      onClick={() =>
+                        setDraft((current) =>
+                          current ? { ...current, type } : current,
+                        )
+                      }
+                    >
+                      {typeMeta.label}
+                    </button>
+                  );
+                })}
               </div>
             </div>
             <div className="nv-edetail__form-row">
@@ -380,7 +419,7 @@ export default function EntityDetail({
                 .filter((item) => item.id !== entity.id)
                 .map((item) => (
                   <option key={item.id} value={item.id}>
-                    {ENTITY_TYPE_META[item.type].label} · {item.name}
+                    {metaOf(item.type).label} · {item.name}
                   </option>
                 ))}
             </select>
@@ -429,28 +468,60 @@ export default function EntityDetail({
         )}
       </section>
 
-      {level && levelRelation && (
+      {levelSystems.length > 0 && activeSystem && (
         <section className="nv-edetail__section">
           <h6 className="nv-edetail__label">
-            当前境界 · {levelRelation.targetName}
+            当前境界
+            <button
+              type="button"
+              className="nv-edetail__label-btn"
+              onClick={onOpenLevelManager}
+              title="管理体系与等级项"
+            >
+              <SettingOutlined /> 管理
+            </button>
           </h6>
-          <div className="nv-edetail__ladder">
-            {level.rungs.map((rung) => (
-              <div
-                key={rung.id}
-                className={`nv-edetail__rung${
-                  levelRelation.note?.includes(rung.name.split(" ")[0])
-                    ? " is-on"
-                    : ""
-                }`}
-              >
-                <span className="nv-edetail__rung-no">{rung.rank}</span>
-                <span>{rung.name}</span>
-                {rung.note && (
-                  <span className="nv-edetail__rung-note">{rung.note}</span>
-                )}
-              </div>
+          <select
+            className="nv-edetail__rel-select"
+            value={activeSystemIdResolved}
+            aria-label="选择等级体系"
+            onChange={(event) => setActiveSystemId(event.target.value)}
+          >
+            {levelSystems.map((system) => (
+              <option key={system.id} value={system.id}>
+                {system.name}
+              </option>
             ))}
+          </select>
+          <div className="nv-edetail__ladder">
+            {activeSystem.rungs.map((rung) => {
+              const bound = rung.id === boundRungId;
+              return (
+                <button
+                  key={rung.id}
+                  type="button"
+                  className={`nv-edetail__rung${bound ? " is-on" : ""}`}
+                  title={
+                    bound
+                      ? "点击取消当前境界绑定"
+                      : "点击设为当前境界"
+                  }
+                  onClick={() => onSetEntityLevel(bound ? null : rung.id)}
+                >
+                  <span className="nv-edetail__rung-no">{rung.rank}</span>
+                  <span>{rung.name}</span>
+                  {rung.note && (
+                    <span className="nv-edetail__rung-note">{rung.note}</span>
+                  )}
+                  {bound && <span className="nv-edetail__rung-cur">当前</span>}
+                </button>
+              );
+            })}
+            {activeSystem.rungs.length === 0 && (
+              <p className="nv-edetail__rel-empty">
+                该体系还没有等级项，点「管理」添加
+              </p>
+            )}
           </div>
         </section>
       )}

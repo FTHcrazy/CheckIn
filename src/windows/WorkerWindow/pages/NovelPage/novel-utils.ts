@@ -1,5 +1,7 @@
 import type {
+  CustomEntityTypeDef,
   EditorSettings,
+  EntityRelationView,
   EntityTerm,
   EntityType,
   ForeshadowPatch,
@@ -703,9 +705,16 @@ export function parseJsonOrNull(raw: string | null): unknown {
   }
 }
 
+/** 内置要素类型的合法集合；自建类型（ct-* 前缀）另行放行 */
 const VALID_ENTITY_TYPES: ReadonlySet<string> = new Set(
   Object.keys(ENTITY_TYPE_META),
 );
+
+/** 自建类型 id 前缀（R23）：标注校验与 config 清洗共用同一判定 */
+export const CUSTOM_TYPE_PREFIX = "ct-";
+
+const isKnownEntityType = (value: string): boolean =>
+  VALID_ENTITY_TYPES.has(value) || value.startsWith(CUSTOM_TYPE_PREFIX);
 
 /** 数值夹取到设置抽屉的合法区间；非法输入回退 fallback */
 function clampSetting(
@@ -730,13 +739,14 @@ export function mergeEditorSettings(raw: unknown): EditorSettings {
       ? (raw as Record<string, unknown>)
       : {};
 
-  // 缺失 / 非数组回退默认；空数组是合法值（= 用户关闭了全部标注类型）
+  // 缺失 / 非数组回退默认；空数组是合法值（= 用户关闭了全部标注类型）；
+  // 自建类型（ct-*）同样放行（R23），已被删除的类型在词库构建侧自然失效
   const annotationTypes = Array.isArray(source.annotationTypes)
     ? Array.from(
         new Set(
           source.annotationTypes.filter(
             (item): item is EntityType =>
-              typeof item === "string" && VALID_ENTITY_TYPES.has(item),
+              typeof item === "string" && isKnownEntityType(item),
           ),
         ),
       )
@@ -859,4 +869,144 @@ export function buildWorkMeta(
     current.words += chapter.wordCount;
   }
   return meta;
+}
+
+// ── 自定义要素类型清洗（R23：config 整读整写的结构守卫） ──
+
+/**
+ * 校验并清洗持久化的自建类型列表：id 必须 ct- 前缀、name 非空、color 为
+ * 非空字符串；id 重复只保留首个。任何异常输入静默丢弃，绝不抛错。
+ */
+export function sanitizeCustomTypes(raw: unknown): CustomEntityTypeDef[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const result: CustomEntityTypeDef[] = [];
+  for (const item of raw) {
+    if (item === null || typeof item !== "object" || Array.isArray(item)) continue;
+    const source = item as Record<string, unknown>;
+    const id = typeof source.id === "string" ? source.id : "";
+    const name = typeof source.name === "string" ? source.name.trim() : "";
+    const color = typeof source.color === "string" ? source.color.trim() : "";
+    if (!id.startsWith(CUSTOM_TYPE_PREFIX) || !name || !color) continue;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    result.push({ id, name, color });
+  }
+  return result;
+}
+
+// ── TXT 导出（R13）：文本组装纯函数，主进程只负责弹保存框 + 写盘 ──
+
+/** 导出序号选项：章节 / 卷标题按 numberStyle + 后缀派生，与界面所见一致 */
+export interface ExportNumberingOptions {
+  numberStyle: LabelNumberStyle;
+  chapterSuffix: string;
+  volumeSuffix: string;
+}
+
+/** 章节标题行：「第一章 灵潮起」；章节名为空时退化为纯序号「第一章」 */
+function buildChapterHeading(
+  chapter: NovelChapter,
+  chapterNumber: number,
+  options: ExportNumberingOptions,
+): string {
+  const label = formatNumberedLabel(
+    options.numberStyle,
+    options.chapterSuffix,
+    Math.max(1, chapterNumber),
+  );
+  const title = chapter.title.trim();
+  return title ? `${label} ${title}` : label;
+}
+
+/** 单章文本：序号标题行 + 正文（正文原样，仅去除尾部空白） */
+export function buildChapterPlainText(
+  chapter: NovelChapter,
+  chapterNumber: number,
+  options: ExportNumberingOptions,
+): string {
+  return [
+    buildChapterHeading(chapter, chapterNumber, options),
+    chapter.content.trimEnd(),
+  ].join("\n\n");
+}
+
+/**
+ * 单卷文本：卷标题行（第N卷 · 自定义名，口径同 volumeDisplayName）+ 卷内各章。
+ * chapters 传全量（内部按卷筛选 + sort 排序），chapterNumbers 为全书章序表，
+ * 保证单卷导出的章节序号与整本 / 界面完全一致。
+ */
+export function buildVolumePlainText(
+  volume: NovelVolume,
+  chapters: NovelChapter[],
+  chapterNumbers: Map<string, number>,
+  options: ExportNumberingOptions,
+): string {
+  const label = formatNumberedLabel(
+    options.numberStyle,
+    options.volumeSuffix,
+    Math.max(1, volume.sort),
+  );
+  const custom = volume.name === UNNAMED_VOLUME ? "" : volume.name.trim();
+  const heading = custom ? `${label} · ${custom}` : label;
+  const body = chapters
+    .filter((chapter) => chapter.volumeId === volume.id)
+    .sort((a, b) => a.sort - b.sort)
+    .map((chapter) =>
+      buildChapterPlainText(
+        chapter,
+        chapterNumbers.get(chapter.id) ?? 1,
+        options,
+      ),
+    );
+  return [heading, ...body].join("\n\n");
+}
+
+/** 整本文本：书名行 + 按卷序逐卷拼装 */
+export function buildBookPlainText(
+  bookTitle: string,
+  volumes: NovelVolume[],
+  chapters: NovelChapter[],
+  options: ExportNumberingOptions,
+): string {
+  const chapterNumbers = buildChapterNumbers(volumes, chapters);
+  const blocks: string[] = [`《${bookTitle.trim() || "未命名作品"}》`];
+  for (const group of buildChapterGroups(volumes, chapters)) {
+    blocks.push(
+      buildVolumePlainText(group.volume, chapters, chapterNumbers, options),
+    );
+  }
+  return blocks.join("\n\n");
+}
+
+/**
+ * 设定卡导出文本（R13）：类型标签 + 基础字段 + 关联要素 + 当前境界。
+ * relations 为该要素的关联视图，levelRungName 传入「凝丹（灵徒九境）」
+ * 形态的当前境界名（无绑定传空）。
+ */
+export function buildEntityCardText(
+  entity: NovelEntity,
+  relations: EntityRelationView[],
+  levelRungName?: string,
+): string {
+  const lines: string[] = [`【${entity.name}】`];
+  if (entity.aliases.length > 0) lines.push(`别名：${entity.aliases.join(" · ")}`);
+  if (entity.summary) lines.push(`一句话：${entity.summary}`);
+  for (const [key, value] of Object.entries(entity.fields)) {
+    if (key === "性格" && !value.trim()) continue;
+    lines.push(`${key}：${value}`);
+  }
+
+  const bindings = relations.filter(
+    (relation) => relation.targetType !== "level",
+  );
+  if (bindings.length > 0) {
+    lines.push("关联要素：");
+    for (const relation of bindings) {
+      const arrow = relation.direction === "out" ? "→" : "←";
+      lines.push(`  ${arrow} ${relation.targetName}（${relation.relation}）`);
+    }
+  }
+  if (levelRungName) lines.push(`当前境界：${levelRungName}`);
+  return lines.join("\n");
 }

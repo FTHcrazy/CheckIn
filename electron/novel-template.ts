@@ -462,6 +462,8 @@ export function buildNovelTemplateBook(minWordsPerChapter = 3200): NovelTemplate
     { id: "tpl-l-6", fromType: "item", fromId: "tpl-e-item-canjuan", toType: "character", toId: "tpl-e-char-shen", relation: "认主" },
     { id: "tpl-l-7", fromType: "faction", fromId: "tpl-e-fac-tianheng", toType: "location", toId: "tpl-e-loc-guanxing", relation: "驻地" },
     { id: "tpl-l-8", fromType: "faction", fromId: "tpl-e-fac-canglan", toType: "location", toId: "tpl-e-loc-wuyin", relation: "走私通路" },
+    // 当前境界绑定（R25）：toType='level' 指向 novel_levels.id，EntityDetail 点击等级项即设定
+    { id: "tpl-l-9", fromType: "character", fromId: "tpl-e-char-shen", toType: "level", toId: "tpl-lr-4", relation: "当前境界" },
   ];
 
   const levelSystems: TemplateLevelSystem[] = [

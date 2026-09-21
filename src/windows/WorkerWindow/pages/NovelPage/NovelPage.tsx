@@ -3,7 +3,9 @@ import ChapterJumpPalette from "./components/ChapterJumpPalette";
 import ChapterTree from "./components/ChapterTree";
 import EditorPane from "./components/EditorPane";
 import EntityContextMenu from "./components/EntityContextMenu";
+import EntityTypeManager from "./components/EntityTypeManager";
 import HoverEntityCard from "./components/HoverEntityCard";
+import LevelSystemManager from "./components/LevelSystemManager";
 import NovelToast from "./components/NovelToast";
 import NovelTopBar from "./components/NovelTopBar";
 import ReorderConfirmModal from "./components/ReorderConfirmModal";
@@ -12,6 +14,7 @@ import SettingsDrawer from "./components/SettingsDrawer";
 import SnapshotDrawer from "./components/SnapshotDrawer";
 import StatusBar from "./components/StatusBar";
 import SupportPanel from "./components/SupportPanel";
+import { EntityTypesProvider } from "./hooks/useEntityTypes";
 import { useNovelPage } from "./hooks/useNovelPage";
 import { findTermMatches, formatNumberedLabel } from "./novel-utils";
 import type { EntityAppearance } from "./types";
@@ -64,6 +67,15 @@ export default function NovelPage() {
     handleDeleteWork,
     handleResetTemplate,
     handleDeleteChapter,
+    handleExportBook,
+    handleExportVolume,
+    handleExportChapter,
+    handleExportCard,
+    handleSetEntityLevel,
+    handleAddCustomType,
+    handleRenameCustomType,
+    handleRemoveCustomType,
+    entityTypesValue,
   } = useNovelPage();
 
   const { loadSnapshots, activeChapterId, searchBook } = data;
@@ -125,18 +137,25 @@ export default function NovelPage() {
     );
   }, [detailEntity, detailHighlighted, editor, view]);
 
-  const handleExportCard = useCallback(() => {
-    if (!detailEntity) return;
-    view.showToast(`已导出「${detailEntity.name}」设定卡`, "info");
-  }, [detailEntity, view]);
-
   const handleSearch = useCallback(
     (keyword: string) => searchBook(keyword),
     [searchBook],
   );
 
+  // onExportCard 为同步签名（EntityPanel 透传链），异步导出在此收口
+  const triggerExportCard = useCallback(() => {
+    void handleExportCard();
+  }, [handleExportCard]);
+
+  /** 删除类型弹框用：该自建类型下现有多少张要素卡（当前作品口径） */
+  const usageCountOf = useCallback(
+    (typeId: string) => data.entities.filter((entity) => entity.type === typeId).length,
+    [data.entities],
+  );
+
   return (
-    <div className={`nv-page${view.focusMode ? " is-focus" : ""}`}>
+    <EntityTypesProvider value={entityTypesValue}>
+      <div className={`nv-page${view.focusMode ? " is-focus" : ""}`}>
       <div className="nv-page__head">
         {editor.recoveryVisible && data.recovery && (
           <RestoreBanner
@@ -161,6 +180,9 @@ export default function NovelPage() {
           onRenameWork={handleRenameWork}
           onDeleteWork={handleDeleteWork}
           onResetTemplate={() => void handleResetTemplate()}
+          onExportBook={() => void handleExportBook()}
+          onExportVolume={() => void handleExportVolume()}
+          onExportChapter={() => void handleExportChapter()}
           onToggleLeft={view.toggleLeft}
           onToggleRight={view.toggleRight}
           onToggleTypewriter={view.toggleTypewriter}
@@ -302,12 +324,41 @@ export default function NovelPage() {
           onSelectChapter={handleSelectChapter}
           highlighted={detailHighlighted}
           onToggleHighlight={handleToggleHighlight}
-          onExportCard={handleExportCard}
+          onExportCard={triggerExportCard}
           onSaveEntity={handleSaveEntity}
           onAddRelation={handleAddRelation}
           onRemoveRelation={handleRemoveRelation}
+          onSetEntityLevel={(entityId, rungId) => {
+            const target = data.getEntityById(entityId);
+            if (target) handleSetEntityLevel(entityId, target.type, rungId);
+          }}
+          onOpenLevelManager={view.openLevelManager}
         />
       </div>
-    </div>
+
+      {/* 等级体系管理（R25）/ 自定义类型管理（R23） */}
+      <LevelSystemManager
+        open={view.levelManagerOpen}
+        levelSystems={data.levelSystems}
+        onClose={view.closeLevelManager}
+        onCreateSystem={data.createLevelSystem}
+        onRenameSystem={data.renameLevelSystem}
+        onDeleteSystem={data.deleteLevelSystem}
+        onAddLevel={data.addLevel}
+        onRenameLevel={data.renameLevel}
+        onDeleteLevel={data.deleteLevel}
+        onReorderLevels={data.reorderLevels}
+      />
+      <EntityTypeManager
+        open={view.typeManagerOpen}
+        customTypes={entityTypesValue.customTypes}
+        usageCountOf={usageCountOf}
+        onClose={view.closeTypeManager}
+        onAdd={handleAddCustomType}
+        onRename={handleRenameCustomType}
+        onRemove={handleRemoveCustomType}
+      />
+      </div>
+    </EntityTypesProvider>
   );
 }

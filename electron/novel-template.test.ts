@@ -81,12 +81,24 @@ describe("buildNovelTemplateBook 功能覆盖", () => {
     expect(book.links.length).toBeGreaterThanOrEqual(5);
     for (const link of book.links) {
       const from = byId.get(link.fromId);
-      const to = byId.get(link.toId);
       expect(from).toBeDefined();
-      expect(to).toBeDefined();
       expect(from?.type).toBe(link.fromType);
+      // 当前境界绑定（R25）指向等级项而非要素卡，单独校验
+      if (link.toType === "level") {
+        expect(link.relation).toBe("当前境界");
+        const rungIds = new Set(
+          book.levelSystems.flatMap((s) => s.rungs.map((r) => r.id)),
+        );
+        expect(rungIds.has(link.toId)).toBe(true);
+        continue;
+      }
+      const to = byId.get(link.toId);
+      expect(to).toBeDefined();
       expect(to?.type).toBe(link.toType);
     }
+    expect(
+      book.links.some((l) => l.toType === "level" && l.toId === "tpl-lr-4"),
+    ).toBe(true);
   });
 
   it("等级体系两条且阶梯按 rank 升序", () => {

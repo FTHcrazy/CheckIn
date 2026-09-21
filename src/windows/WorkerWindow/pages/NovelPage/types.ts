@@ -8,14 +8,29 @@
  * 这一层只放类型，不放实现；渲染层与 hooks 通过它解耦。
  */
 
-/** 要素类型：预置五类 + 用户自建类型统一走 custom */
-export type EntityType =
+/** 内置要素类型：预置五类 + custom 兜底（用户自建类型删除时的迁移落点） */
+export type BuiltinEntityType =
   | "character"
   | "location"
   | "faction"
   | "item"
   | "level_system"
   | "custom";
+
+/**
+ * 要素类型（R23 开放化）：内置六类 + 用户自建类型（id 固定 ct- 前缀）。
+ * `(string & {})` 保住内置字面量的自动补全，同时放行任意自建 id；
+ * 自建类型的展示 meta 由 EntityTypeContext 派生，不要直接查 ENTITY_TYPE_META。
+ */
+export type EntityType = BuiltinEntityType | (string & {});
+
+/** 用户自建要素类型定义（R23）：整读整写存 config 键 novel_entity_types */
+export interface CustomEntityTypeDef {
+  id: string;
+  name: string;
+  /** 主色（具体色值，色板提供）；弱色由 color-mix 在使用处派生 */
+  color: string;
+}
 
 /** 章节状态：草稿 / 完稿（PRD R1） */
 export type ChapterStatus = "draft" | "done";
@@ -193,6 +208,11 @@ export interface EntityTerm {
   term: string;
   entityId: string;
   type: EntityType;
+  /**
+   * 自定义类型（ct-*）的注入主色：decoration 以 inline style 写
+   * --nv-mark-color（CSS 内置六类选择器不覆盖 ct-*，见 EditorPane/index.scss）
+   */
+  color?: string;
 }
 
 /** 资料卡出场章节引用：可点击跳转，label 为派生序号标签（第3章 / 第三章…） */

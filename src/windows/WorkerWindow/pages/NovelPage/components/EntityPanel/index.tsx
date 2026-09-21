@@ -1,7 +1,7 @@
 import EntityCard from "../EntityCard";
 import EntityDetail from "../EntityDetail";
 import type { EntitySavePatch } from "../EntityDetail";
-import { ENTITY_FILTER_ORDER, ENTITY_TYPE_META } from "../../novel-config";
+import { useEntityTypeMeta } from "../../hooks/entity-types-context";
 import type { EntityFilter } from "../../hooks/useNovelViewState";
 import type {
   EntityAppearance,
@@ -37,6 +37,10 @@ interface EntityPanelProps {
     relation: string,
   ) => void;
   onRemoveRelation: (linkId: string, targetName: string) => void;
+  /** 设定 / 取消当前境界（R25） */
+  onSetEntityLevel: (entityId: string, rungId: string | null) => void;
+  /** 打开等级体系管理弹框（R25） */
+  onOpenLevelManager: () => void;
 }
 
 /**
@@ -61,7 +65,11 @@ export default function EntityPanel({
   onSelectChapter,
   onAddRelation,
   onRemoveRelation,
+  onSetEntityLevel,
+  onOpenLevelManager,
 }: EntityPanelProps) {
+  const { metaOf, filterOrder } = useEntityTypeMeta();
+
   const filtered =
     filter === "all"
       ? entities
@@ -84,6 +92,8 @@ export default function EntityPanel({
         onSelectChapter={onSelectChapter}
         onAddRelation={onAddRelation}
         onRemoveRelation={onRemoveRelation}
+        onSetEntityLevel={(rungId) => onSetEntityLevel(detail.id, rungId)}
+        onOpenLevelManager={onOpenLevelManager}
         onBack={onCloseEntity}
       />
     );
@@ -99,21 +109,20 @@ export default function EntityPanel({
         >
           全部
         </button>
-        {ENTITY_FILTER_ORDER.map((type) => (
-          <button
-            key={type}
-            type="button"
-            className={`nv-entity__chip${filter === type ? " is-on" : ""}`}
-            onClick={() => onFilterChange(type)}
-            style={
-              filter === type
-                ? undefined
-                : { color: ENTITY_TYPE_META[type].color }
-            }
-          >
-            {ENTITY_TYPE_META[type].label}
-          </button>
-        ))}
+        {filterOrder.map((type) => {
+          const meta = metaOf(type);
+          return (
+            <button
+              key={type}
+              type="button"
+              className={`nv-entity__chip${filter === type ? " is-on" : ""}`}
+              onClick={() => onFilterChange(type)}
+              style={filter === type ? undefined : { color: meta.color }}
+            >
+              {meta.label}
+            </button>
+          );
+        })}
       </div>
 
       {filtered.length === 0 ? (

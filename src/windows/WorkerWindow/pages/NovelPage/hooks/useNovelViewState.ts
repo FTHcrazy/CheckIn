@@ -33,6 +33,10 @@ export function useNovelViewState() {
   const [jumpOpen, setJumpOpen] = useState(false);
   const [snapshotOpen, setSnapshotOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  /** 等级体系管理弹框（R25） */
+  const [levelManagerOpen, setLevelManagerOpen] = useState(false);
+  /** 自定义类型管理弹框（R23） */
+  const [typeManagerOpen, setTypeManagerOpen] = useState(false);
   const [toast, setToast] = useState<ToastPayload | null>(null);
 
   // 小屏自适应用的镜像 / 记忆 ref：effect 里读到最新值，又不把状态塞进依赖
@@ -134,6 +138,11 @@ export function useNovelViewState() {
   const openJump = useCallback(() => setJumpOpen(true), []);
   const closeJump = useCallback(() => setJumpOpen(false), []);
 
+  const openLevelManager = useCallback(() => setLevelManagerOpen(true), []);
+  const closeLevelManager = useCallback(() => setLevelManagerOpen(false), []);
+  const openTypeManager = useCallback(() => setTypeManagerOpen(true), []);
+  const closeTypeManager = useCallback(() => setTypeManagerOpen(false), []);
+
   const selectPanelTab = useCallback((tab: PanelTab) => {
     setPanelTab(tab);
     setRightOpen(true);
@@ -161,6 +170,8 @@ export function useNovelViewState() {
     jumpOpen,
     snapshotOpen,
     settingsOpen,
+    levelManagerOpen,
+    typeManagerOpen,
     toast,
     toggleLeft,
     toggleRight,
@@ -174,6 +185,10 @@ export function useNovelViewState() {
     closeEntityDetail,
     openJump,
     closeJump,
+    openLevelManager,
+    closeLevelManager,
+    openTypeManager,
+    closeTypeManager,
     openSnapshot,
     closeSnapshot,
     openSettings,

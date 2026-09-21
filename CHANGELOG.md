@@ -1,5 +1,41 @@
 # Changelog
 
+## [1.9.3] - 2026-09-21
+
+### Added
+- **等级体系管理（R25）**：`novel-level-system-add/rename/delete` 与
+  `novel-level-add/rename/delete/order` 六个 IPC（主进程事务 + 渲染层
+  乐观同步）；新增 LevelSystemManager 弹框（体系增删改、等级项增删改 /
+  上下移 / 拖序回写 rank）；EntityDetail 要素卡新增「当前境界」区块——
+  体系下拉 + 境界按钮点选绑定，绑定为一条 `novel_links` 行
+  （`toType: "level"` + `relation: "当前境界"`，一要素同时仅一条，先摘旧再落新），
+  删除体系 / 等级项时级联摘除关联；模板书籍预置沈孤舟→凝丹境示例
+- **TXT 导出（R13）**：作品管理菜单新增「导出整本 / 导出本卷 / 导出本章」；
+  渲染层纯函数组装文本（`buildBookPlainText` / `buildVolumePlainText` /
+  `buildChapterPlainText` / `buildEntityCardText`），主进程只做
+  saveDialog + 写文件。章节标题按序号设置派生（`第一章 灵潮起` /
+  `第12回 xxx`，与界面所见一致，章序号全书连续），卷标题对齐
+  volumeDisplayName 口径；整本首行 `《书名》`。EntityDetail
+  「导出设定卡」由 toast 占位做实（含当前境界单列一条）
+- **使用统计埋点（R14）**：`novel-usage-log` / `novel-usage-today` IPC +
+  `novel_usage_log` 表；editor_open / chapter_save / snapshot / goal_reach
+  四类事件，goal_reach 在今日目标达成时上报；「今日累计」改为启动时
+  从埋点表取净增字数（SUM delta）+ 会话内 delta 续加，替换原会话级内存口径
+- **自定义要素类型（R23）**：用户新建类型（命名 + 8 色板选色，id 固定
+  `ct-` 前缀），定义存 config 键 `novel_entity_types`（整读整写 +
+  sanitizeCustomTypes 校验）；新增 EntityTypesProvider Context 运行期
+  派生 meta（自建类型弱色 `color-mix` 派生），六组件改经
+  `useEntityTypeMeta()` 查 meta；CodeMirror 标注层对自建类型经
+  Decoration.mark 内联注入 `--nv-mark-color`；新增 EntityTypeManager
+  弹框（增删改 + 各类型张数统计，删除类型时该类型要素迁移回「自定义」）
+
+### Verified
+- `pnpm typecheck`（app + node 两段，strict）：0 错误
+- `pnpm lint`：0 错误（仅剩 `useHttpClient.ts` 既有 eslint-disable 警告）
+- `pnpm test`：227/227 通过（17 个测试文件；新增 novel-export 4 组用例：
+  章节标题序号派生 / 卷与整本组装 / 设定卡 / sanitizeCustomTypes）
+- `vite build` 通过
+
 ## [1.9.2] - 2026-09-21
 
 ### Added

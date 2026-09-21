@@ -30,6 +30,9 @@ interface NovelTopBarProps {
   onRenameWork: (name: string) => boolean;
   onDeleteWork: () => void;
   onResetTemplate: () => void;
+  onExportBook: () => void;
+  onExportVolume: () => void;
+  onExportChapter: () => void;
   onToggleLeft: () => void;
   onToggleRight: () => void;
   onToggleTypewriter: () => void;
@@ -59,6 +62,9 @@ export default function NovelTopBar({
   onRenameWork,
   onDeleteWork,
   onResetTemplate,
+  onExportBook,
+  onExportVolume,
+  onExportChapter,
   onToggleLeft,
   onToggleRight,
   onToggleTypewriter,
@@ -66,6 +72,8 @@ export default function NovelTopBar({
   onOpenHistory,
 }: NovelTopBarProps) {
   const activeWork = works.find((work) => work.id === activeWorkId) ?? null;
+  const activeMeta = activeWorkId ? workMeta.get(activeWorkId) : undefined;
+  const hasActiveChapter = (activeMeta?.chapters ?? 0) > 0 && Boolean(chapterName);
 
   return (
     <div className="nv-topbar">
@@ -94,11 +102,15 @@ export default function NovelTopBar({
 
       <WorkManageMenu
         activeWorkName={activeWork?.name ?? ""}
-        activeMeta={activeWorkId ? workMeta.get(activeWorkId) : undefined}
+        activeMeta={activeMeta}
+        hasActiveChapter={hasActiveChapter}
         onCreate={onCreateWork}
         onRename={onRenameWork}
         onDelete={onDeleteWork}
         onResetTemplate={onResetTemplate}
+        onExportBook={onExportBook}
+        onExportVolume={onExportVolume}
+        onExportChapter={onExportChapter}
       />
 
       <div className="nv-topbar__crumb">

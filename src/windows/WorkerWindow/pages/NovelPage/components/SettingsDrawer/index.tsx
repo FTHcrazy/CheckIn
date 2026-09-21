@@ -1,11 +1,10 @@
 import { Segmented, Slider, Switch } from "antd";
 import {
   CHAPTER_SUFFIX_OPTIONS,
-  ENTITY_FILTER_ORDER,
-  ENTITY_TYPE_META,
   SETTINGS_RANGE,
   VOLUME_SUFFIX_OPTIONS,
 } from "../../novel-config";
+import { useEntityTypeMeta } from "../../hooks/entity-types-context";
 import { formatNumberedLabel, formatThousands } from "../../novel-utils";
 import type {
   EditorSettings,
@@ -40,6 +39,8 @@ export default function SettingsDrawer({
   onToggleAnnotationType,
   onClose,
 }: SettingsDrawerProps) {
+  const { metaOf, filterOrder } = useEntityTypeMeta();
+
   return (
     <>
       {/* 点外部关闭：打开时铺满 stage 的透明捕获层（z-index 低于抽屉本体） */}
@@ -217,8 +218,8 @@ export default function SettingsDrawer({
         <section className="nv-setting__block">
           <h6 className="nv-setting__label">正文高亮类型</h6>
           <div className="nv-setting__chips">
-            {ENTITY_FILTER_ORDER.map((type) => {
-              const meta = ENTITY_TYPE_META[type];
+            {filterOrder.map((type) => {
+              const meta = metaOf(type);
               const on = settings.annotationTypes.includes(type);
               return (
                 <button

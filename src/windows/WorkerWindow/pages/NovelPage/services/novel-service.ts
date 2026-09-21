@@ -1,6 +1,7 @@
 import { buildSearchSnippet, type LastPosition } from "../novel-utils";
 import { STORAGE_KEYS } from "../novel-config";
 import type {
+  CustomEntityTypeDef,
   EditorSettings,
   NovelBundle,
   NovelChapter,
@@ -215,4 +216,105 @@ export async function saveOutlineEntry(entry: OutlineEntry): Promise<boolean> {
 /** 删除伏笔条目（novel-outline-entry-remove） */
 export async function removeOutlineEntry(entryId: string): Promise<boolean> {
   return window.electronAPI!.novel.removeOutlineEntry(entryId);
+}
+
+// ── 等级体系管理（R25） ──
+
+/** 新建等级体系（novel-level-system-add；id / workId 由渲染层生成） */
+export async function addLevelSystem(system: {
+  id: string;
+  workId: string;
+  name: string;
+}): Promise<boolean> {
+  return window.electronAPI!.novel.levelSystemAdd(system);
+}
+
+/** 体系重命名（novel-level-system-rename） */
+export async function renameLevelSystem(
+  systemId: string,
+  name: string,
+): Promise<boolean> {
+  return window.electronAPI!.novel.levelSystemRename(systemId, name);
+}
+
+/** 删除体系（novel-level-system-delete，主进程事务级联清理等级项 / 换算 / 境界绑定） */
+export async function removeLevelSystem(systemId: string): Promise<boolean> {
+  return window.electronAPI!.novel.levelSystemDelete(systemId);
+}
+
+/** 追加等级项（novel-level-add；id 渲染层生成，rank 由主进程 MAX+1 分配） */
+export async function addLevel(
+  systemId: string,
+  id: string,
+  name: string,
+): Promise<{ id: string; name: string; rank: number } | null> {
+  return window.electronAPI!.novel.levelAdd(systemId, id, name);
+}
+
+/** 等级项重命名（novel-level-rename） */
+export async function renameLevel(rungId: string, name: string): Promise<boolean> {
+  return window.electronAPI!.novel.levelRename(rungId, name);
+}
+
+/** 删除等级项（novel-level-delete，主进程级联清理换算与境界绑定） */
+export async function removeLevel(rungId: string): Promise<boolean> {
+  return window.electronAPI!.novel.levelDelete(rungId);
+}
+
+/** 等级项批量重排（novel-level-order：{id, rank} 全量回写） */
+export async function saveLevelOrder(
+  updates: Array<{ id: string; rank: number }>,
+): Promise<boolean> {
+  return window.electronAPI!.novel.levelOrder(updates);
+}
+
+// ── TXT 导出（R13） ──
+
+/** 导出 TXT（novel-export-txt）：主进程弹保存框 + 写盘；用户取消返回 null */
+export async function exportTxtFile(
+  defaultName: string,
+  content: string,
+): Promise<{ path: string } | null> {
+  return window.electronAPI!.novel.exportTxt(defaultName, content);
+}
+
+// ── 使用埋点（R14） ──
+
+/** 今日聚合（novel-usage-today）：chapter_save 事件 delta 净增 + 保存次数 */
+export interface UsageTodaySummary {
+  todayWords: number;
+  saveCount: number;
+}
+
+export async function fetchUsageToday(): Promise<UsageTodaySummary> {
+  return window.electronAPI!.novel.usageToday();
+}
+
+/** 通用事件上报（novel-usage-log）：埋点失败静默，不影响写作主流程 */
+export async function logUsageEvent(
+  event: string,
+  payload: Record<string, unknown> = {},
+): Promise<void> {
+  try {
+    await window.electronAPI!.novel.usageLog(event, payload);
+  } catch {
+    // 静默：统计缺失可接受，写作链路不可被埋点阻塞
+  }
+}
+
+// ── 自定义要素类型（R23，config 整读整写） ──
+
+/** 读取自建类型列表 JSON（键不存在返回 null） */
+export async function fetchCustomEntityTypes(): Promise<string | null> {
+  return window.electronAPI!.novel.configGet(STORAGE_KEYS.entityTypes);
+}
+
+/** 保存自建类型列表（防抖由调用方负责） */
+export async function saveCustomEntityTypes(
+  types: CustomEntityTypeDef[],
+): Promise<boolean> {
+  return window.electronAPI!.novel.configSet(
+    STORAGE_KEYS.entityTypes,
+    JSON.stringify(types),
+  );
 }

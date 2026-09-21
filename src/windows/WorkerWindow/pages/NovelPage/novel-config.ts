@@ -1,4 +1,4 @@
-import type { EditorSettings, EntityType } from "./types";
+import type { BuiltinEntityType, EditorSettings } from "./types";
 
 /**
  * 小说编辑器页面级配置与展示常量
@@ -37,6 +37,8 @@ export const STORAGE_KEYS = {
   settings: "novel_editor_settings",
   /** 上次续写位置：作品 / 章节 / 光标 / 滚动（R6） */
   position: "novel_editor_position",
+  /** 自定义要素类型（R23）：CustomEntityTypeDef[] 整读整写 */
+  entityTypes: "novel_entity_types",
 } as const;
 
 /** 续写位置记忆（R6）：变化后防抖落库 */
@@ -122,12 +124,13 @@ export interface EntityTypeMeta {
 }
 
 /**
- * 要素类型语义色
+ * 内置要素类型语义色
  *
  * 设计方案 §02 要求「类型色在正文高亮、卡片头像、筛选 chips 三处严格一致」，
  * 这里统一映射到主窗口的四套主题变量上，换肤自动跟随。
+ * 自定义类型（ct-*）的 meta 不在这里——由 EntityTypeContext 派生（R23）。
  */
-export const ENTITY_TYPE_META: Record<EntityType, EntityTypeMeta> = {
+export const ENTITY_TYPE_META: Record<BuiltinEntityType, EntityTypeMeta> = {
   character: {
     label: "角色",
     color: "var(--app-primary)",
@@ -160,8 +163,8 @@ export const ENTITY_TYPE_META: Record<EntityType, EntityTypeMeta> = {
   },
 };
 
-/** 要素库筛选顺序：全部在前，其余按语义分组 */
-export const ENTITY_FILTER_ORDER: EntityType[] = [
+/** 要素库筛选顺序（内置部分）：全部在前，其余按语义分组；自定义类型追加在末尾 */
+export const ENTITY_FILTER_ORDER: BuiltinEntityType[] = [
   "character",
   "location",
   "faction",
@@ -170,13 +173,34 @@ export const ENTITY_FILTER_ORDER: EntityType[] = [
   "custom",
 ];
 
-/** 选区标记工具条的快捷类型（O3） */
-export const MARK_TYPE_OPTIONS: EntityType[] = [
+/** 选区标记工具条的快捷类型（O3）：保持内置四类，自定义类型走资料卡编辑 */
+export const MARK_TYPE_OPTIONS: BuiltinEntityType[] = [
   "character",
   "location",
   "faction",
   "item",
 ];
+
+/**
+ * 「当前境界」关联名（R25）：绑定存 novel_links（toType='level' 指向
+ * novel_levels.id），一个要素同时只持有一条当前境界绑定。
+ */
+export const LEVEL_RELATION = "当前境界";
+
+/**
+ * 自定义类型色板（R23）：具体色值，与四套主题的 var(--app-*) 解耦。
+ * 取与内置语义色错开的中饱和色，弱色在使用处 color-mix 派生。
+ */
+export const CUSTOM_TYPE_PALETTE: readonly string[] = [
+  "#e0559a",
+  "#14b8a6",
+  "#e8722a",
+  "#8b5cf6",
+  "#3b82f6",
+  "#ca8a04",
+  "#0ea5e9",
+  "#64748b",
+] as const;
 
 /** 章节状态展示（PRD R1） */
 export const CHAPTER_STATUS_META = {

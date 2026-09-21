@@ -1,4 +1,4 @@
-import { ENTITY_TYPE_META } from "../../novel-config";
+import { useEntityTypeMeta } from "../../hooks/entity-types-context";
 import type { NovelEntity } from "../../types";
 import type { HoverTarget } from "../../hooks/useEntityHover";
 import "./index.scss";
@@ -28,7 +28,8 @@ export default function HoverEntityCard({
   entity,
   onOpenDetail,
 }: HoverEntityCardProps) {
-  const meta = ENTITY_TYPE_META[entity.type];
+  const { metaOf } = useEntityTypeMeta();
+  const meta = metaOf(entity.type);
   const tags = entity.fields["性格"] ? splitTags(entity.fields["性格"]) : [];
 
   return (
