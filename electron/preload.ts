@@ -184,4 +184,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   findInPage: (value?: string) =>
     ipcRenderer.invoke('find-in-page', value) as Promise<boolean>,
+
+  // ── 数据迁移（导出 zip / 导入 zip，范围：todo 待办 / memo 备忘） ──
+  migration: {
+    export: (scopes: string[]) =>
+      ipcRenderer.invoke('migration-export', scopes) as Promise<{
+        canceled: boolean
+        filePath: string | null
+        counts: { todo: number; memo: number }
+      }>,
+    import: () =>
+      ipcRenderer.invoke('migration-import') as Promise<{
+        canceled: boolean
+        scopes: string[]
+        counts: { todo: number; memo: number }
+        skipped: string[]
+      }>,
+  },
 })

@@ -7,6 +7,7 @@ import {
   CodeOutlined,
   EditOutlined,
   SearchOutlined,
+  SwapOutlined,
 } from "@ant-design/icons";
 import HomeSidebar from "./components/HomeSidebar";
 import HomeStats from "./components/HomeStats";
@@ -62,6 +63,14 @@ const FEATURES: HomeFeature[] = [
     desc: "按日统计提交产出，追踪日均行数",
     path: "/code",
     tone: "teal",
+  },
+  {
+    key: "migration",
+    icon: <SwapOutlined />,
+    title: "数据迁移",
+    desc: "待办与备忘勾选导出 zip，支持导入合并",
+    path: "/migration",
+    tone: "rose",
   },
 ];
 

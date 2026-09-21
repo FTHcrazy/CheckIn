@@ -32,7 +32,8 @@ export default defineConfig({
               // - mammoth / docx：处理 .docx 的纯 Node 库，其传递依赖（如
               //   jszip→readable-stream→core-util-is）在 pnpm 非扁平结构下
               //   rolldown 无法解析，故整体 external
-              external: ['electron', 'better-sqlite3', 'mammoth', 'docx'],
+              // - jszip：数据迁移的 zip 编解码，同属 Node 侧依赖
+              external: ['electron', 'better-sqlite3', 'mammoth', 'docx', 'jszip'],
             },
           },
         },

@@ -9,24 +9,12 @@ import path from "path";
 import fs from "fs";
 import mammoth from "mammoth";
 import { Document, HeadingLevel, Packer, Paragraph } from "docx";
-import { getUserDataDir, getCurrentUserEmail } from "../db";
+import { ensureMemosDir } from "../user-paths";
 import {
   collapseBlankLines,
   markdownToDocxBlocks,
   markdownToPlainText,
 } from "../memo-doc-utils";
-
-// ── 目录管理 ──
-
-function getMemosDir(): string {
-  return path.join(getUserDataDir(getCurrentUserEmail()), "memos");
-}
-
-function ensureMemosDir(): string {
-  const memosDir = getMemosDir();
-  if (!fs.existsSync(memosDir)) fs.mkdirSync(memosDir, { recursive: true });
-  return memosDir;
-}
 
 /** 生成不重名的备忘文件名（.md 统一后缀；重名自动追加序号，避免覆盖已有备忘） */
 function uniqueMemoName(base: string): string {

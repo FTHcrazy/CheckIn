@@ -138,6 +138,34 @@ export interface NovelBundleDTO {
   recovery: { snapshotTime: number; deltaWords: number } | null
 }
 
+// ── 数据迁移 DTO（导出 zip / 导入 zip，与 electron/handlers/migration-handlers.ts 一致） ──
+
+/** 可迁移的数据范围：todo 待办 / memo 备忘 */
+export type MigrationScope = "todo" | "memo";
+
+export interface MigrationCounts {
+  todo: number;
+  memo: number;
+}
+
+export interface MigrationExportResult {
+  /** 用户在保存框点取消时为 true */
+  canceled: boolean;
+  /** 取消时为 null */
+  filePath: string | null;
+  counts: MigrationCounts;
+}
+
+export interface MigrationImportResult {
+  /** 用户在打开框点取消时为 true */
+  canceled: boolean;
+  /** 实际导入的范围，取自包内清单 */
+  scopes: MigrationScope[];
+  counts: MigrationCounts;
+  /** 包内存在但未能写入的备忘条目名 */
+  skipped: string[];
+}
+
 export interface ElectronAPI {
   /** 网络会话配置（一次性）：写入认证 Cookie 到 session jar */
   httpSession: {
@@ -249,6 +277,14 @@ export interface ElectronAPI {
   }
 
   findInPage: (value?: string) => Promise<boolean>
+
+  // ── 数据迁移 ──
+  migration: {
+    /** 按勾选范围导出 zip；用户取消返回 canceled: true */
+    export: (scopes: MigrationScope[]) => Promise<MigrationExportResult>
+    /** 选择 zip 导入到本地（追加合并）；用户取消返回 canceled: true */
+    import: () => Promise<MigrationImportResult>
+  }
 }
 
 declare global {

@@ -1,7 +1,7 @@
 {
   "name": "checkin",
   "private": true,
-  "version": "1.9.5",
+  "version": "1.10.0",
   "description": "CheckIn Desktop Application",
   "main": "dist-electron/main.js",
   "author": "FTH",
@@ -41,6 +41,7 @@
     "dayjs": "^1.11.21",
     "docx": "^9.5.1",
     "framer-motion": "^12.23.12",
+    "jszip": "^3.10.2",
     "lunar-typescript": "^1.8.6",
     "mammoth": "^1.11.0",
     "marked": "^18.0.7",

@@ -20,6 +20,7 @@ import {
 } from "./handlers/novel-handlers";
 import { registerUserHandlers, getCachedUser } from "./handlers/user-handlers";
 import { registerMemoHandlers } from "./handlers/memo-handlers";
+import { registerMigrationHandlers } from "./handlers/migration-handlers";
 import {
   registerHttpSessionHandlers,
   setupRendererHttpSession,
@@ -417,6 +418,7 @@ app.whenReady().then(() => {
   registerNovelHandlers();
   registerUserHandlers();
   registerMemoHandlers();
+  registerMigrationHandlers();
 
   // 渲染进程网络会话：一次性配置 CORS 放行 + Cookie 播种通道。
   // 请求本身全部在渲染进程发起，主进程不再代理 HTTP。

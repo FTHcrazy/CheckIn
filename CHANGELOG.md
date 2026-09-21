@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.10.0] - 2026-09-21
+
+### Added
+- **数据迁移（导出 / 导入 zip）**：首页第 5 张卡片「数据迁移」进入新页面，
+  可勾选「待办清单」「备忘笔记」两部分——导出打包为一个 zip 备份包
+  （`manifest.json` + `todos.json` + `memos/*.md`，清单带应用标识与格式版本），
+  导入选择一个 zip 后按**追加合并**落到当前账号
+- 导出 / 导入全部在主进程完成（系统弹窗 + 文件 IO + zip 编解码走 jszip），
+  渲染层只传勾选范围、拿结果；入口：`registerMigrationHandlers()`
+  （`electron/handlers/migration-handlers.ts`，在 main.ts 注册）
+- 导入语义：todo 重新分配自增 id 并保持父子结构（`planTodoInserts` 先父后子 +
+  旧 id→新 id 映射修复 parent_id；父子成环或父项缺失时退化顶层，不丢数据）；
+  备忘重名自动追加序号，绝不覆盖已有文件
+- 清单校验：拒绝非 CheckIn 来源、缺失版本、版本高于当前、无有效范围的包
+- 备忘目录路径抽到 `electron/user-paths.ts`，memo-handlers 与 migration-handlers 共用
+
+### Verified
+- `pnpm typecheck`（app + node 两段，strict）：0 错误
+- `pnpm lint`：0 错误（仅 useHttpClient 既有警告）
+- `pnpm test`：275/275 通过（20 个测试文件；新增 migration-utils 27 条 +
+  useMigration 7 条）
+- `vite build`：渲染层产出 MigrationPage chunk，主进程 jszip 保持 external
+- zip 往返冒烟（node + jszip）：中文文件名与 emoji 备忘内容存取无损
+
 ## [1.9.5] - 2026-09-21
 
 ### Fixed
