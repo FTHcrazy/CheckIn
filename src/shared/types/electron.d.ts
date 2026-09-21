@@ -39,21 +39,23 @@ interface TodoRow {
 }
 
 // ── 小说编辑器 DTO（与 electron/handlers/novel-handlers.ts 的 Dto 定义保持一致） ──
+// 本文件因 export interface ElectronAPI 已是模块环境：DTO 必须显式 export，
+// 渲染进程各页面（NovelPage / BookshelfPage 等）才能 import type 共用同一契约。
 
-interface NovelWorkDTO {
+export interface NovelWorkDTO {
   id: string
   name: string
   createdAt: number
 }
 
-interface NovelVolumeDTO {
+export interface NovelVolumeDTO {
   id: string
   workId: string
   name: string
   sort: number
 }
 
-interface NovelChapterDTO {
+export interface NovelChapterDTO {
   id: string
   workId: string
   volumeId: string
@@ -66,7 +68,7 @@ interface NovelChapterDTO {
   outlineNote?: string
 }
 
-interface NovelSnapshotDTO {
+export interface NovelSnapshotDTO {
   id: string
   chapterId: string
   content: string
@@ -74,7 +76,7 @@ interface NovelSnapshotDTO {
   createdAt: number
 }
 
-interface NovelNoteDTO {
+export interface NovelNoteDTO {
   id: string
   workId: string
   content: string
@@ -83,7 +85,7 @@ interface NovelNoteDTO {
   foreshadowId?: string
 }
 
-interface NovelOutlineEntryDTO {
+export interface NovelOutlineEntryDTO {
   id: string
   workId: string
   kind: "foreshadow"
@@ -95,7 +97,7 @@ interface NovelOutlineEntryDTO {
   createdAt: number
 }
 
-interface NovelEntityDTO {
+export interface NovelEntityDTO {
   id: string
   workId: string
   type: NovelEntityTypeDTO
@@ -107,7 +109,7 @@ interface NovelEntityDTO {
   sort: number
 }
 
-interface NovelLinkDTO {
+export interface NovelLinkDTO {
   id: string
   fromType: NovelEntityTypeDTO
   fromId: string
@@ -117,14 +119,14 @@ interface NovelLinkDTO {
   note?: string
 }
 
-interface NovelLevelSystemDTO {
+export interface NovelLevelSystemDTO {
   id: string
   workId: string
   name: string
   rungs: Array<{ id: string; name: string; rank: number; note?: string }>
 }
 
-interface NovelBundleDTO {
+export interface NovelBundleDTO {
   works: NovelWorkDTO[]
   volumes: NovelVolumeDTO[]
   chapters: NovelChapterDTO[]
@@ -202,6 +204,8 @@ export interface ElectronAPI {
     removeLink: (id: string) => Promise<boolean>
     saveNote: (note: NovelNoteDTO) => Promise<boolean>
     removeNote: (id: string) => Promise<boolean>
+    /** 灵感归属迁移（书架全局灵感库）：归档到作品；workId 传 '' 退回未归属池 */
+    moveNote: (id: string, workId: string) => Promise<boolean>
     saveOutlineEntry: (entry: NovelOutlineEntryDTO) => Promise<boolean>
     removeOutlineEntry: (id: string) => Promise<boolean>
     // ── 等级体系管理（R25） ──
@@ -216,8 +220,8 @@ export interface ElectronAPI {
     // ── 导出（R13）：主进程弹保存框 + 写盘；用户取消返回 null ──
     exportTxt: (defaultName: string, content: string) => Promise<{ path: string } | null>
     // ── 使用埋点（R14） ──
-    /** 今日新增字数（chapter_save 事件 delta 净增）与保存次数，0 点按主进程本地时间 */
-    usageToday: () => Promise<{ todayWords: number; saveCount: number }>
+    /** 今日新增字数（chapter_save 事件 delta 净增）、保存次数与连续码字天数，0 点按主进程本地时间 */
+    usageToday: () => Promise<{ todayWords: number; saveCount: number; streakDays: number }>
     usageLog: (event: string, payload: Record<string, unknown>) => Promise<boolean>
   }
 

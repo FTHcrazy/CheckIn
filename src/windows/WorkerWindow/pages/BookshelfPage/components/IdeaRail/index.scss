@@ -1,0 +1,150 @@
+.bs-rail {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 320px;
+  padding: 16px 16px 16px 14px;
+  border-left: 1px solid var(--app-splitter);
+  overflow-y: auto;
+
+  &__head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  &__title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--app-text);
+  }
+
+  &__total {
+    padding: 1px 8px;
+    border-radius: var(--app-radius-pill);
+    background: var(--app-primary-weak);
+    color: var(--app-primary);
+    font-size: 11px;
+    font-weight: 500;
+  }
+
+  &__plus {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border: none;
+    border-radius: var(--app-radius-item);
+    background: transparent;
+    color: var(--app-text-muted);
+    font-size: 13px;
+    cursor: pointer;
+    transition: box-shadow 0.15s ease;
+
+    &:hover {
+      color: var(--app-primary);
+      box-shadow: 0 0 0 1px var(--app-border) inset;
+    }
+  }
+
+  &__subtitle {
+    margin: -4px 0 0;
+    font-size: 11.5px;
+    color: var(--app-text-muted);
+  }
+
+  /* ── 捕捉框 ── */
+  &__capture {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px 12px;
+    background: var(--app-surface);
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-chip);
+  }
+
+  &__input {
+    width: 100%;
+    border: none;
+    background: transparent;
+    resize: none;
+    outline: none;
+    font: inherit;
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: var(--app-text);
+
+    &::placeholder {
+      color: var(--app-text-disabled);
+    }
+  }
+
+  &__capture-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  &__owner {
+    max-width: 200px;
+    font-size: 12px;
+  }
+
+  /* ── 筛选 chips ── */
+  &__chips {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  &__chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 10px;
+    border: 1px solid transparent;
+    border-radius: var(--app-radius-pill);
+    background: var(--app-surface);
+    color: var(--app-text-secondary);
+    font-size: 11.5px;
+    cursor: pointer;
+    transition: box-shadow 0.15s ease;
+
+    &:hover {
+      box-shadow: var(--app-shadow-card);
+    }
+
+    &.is-active {
+      background: var(--app-primary);
+      color: var(--app-primary-contrast);
+      font-weight: 600;
+    }
+  }
+
+  &__chip-count {
+    font-size: 10.5px;
+    opacity: 0.75;
+  }
+
+  /* ── 灵感列表 ── */
+  &__list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  &__empty {
+    padding: 28px 12px;
+    border: 1px dashed var(--app-border);
+    border-radius: var(--app-radius-chip);
+    text-align: center;
+    font-size: 12px;
+    color: var(--app-text-disabled);
+  }
+}

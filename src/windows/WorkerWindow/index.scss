@@ -21,3 +21,43 @@ body {
   flex: 1;
   min-height: 0;
 }
+
+// ── 书架 ↔ 编辑器双视图 ─────────────────────────────────────────
+// 常驻挂载 + display 切换：切换不走卸载，编辑器未落库键入得以保留
+.worker-views {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+}
+
+.worker-view {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+
+  // 页面根（.bs-page / .nv-page）只有 height:100% 没有宽度声明——
+  // 直接挂在块级容器下时块级宽度自动铺满，成为 flex item 后主轴会
+  // shrink-to-fit（编辑器内容自然宽 < 视口 → 右侧留白），这里显式拉满
+  > * {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  &.is-hidden {
+    display: none;
+  }
+}
+
+// 窗口标题栏徽标（书架视图）：对齐设计稿头部的「书架」chip
+.worker-badge {
+  padding: 2px 10px;
+  border-radius: var(--app-radius-pill);
+  background: var(--app-primary-weak);
+  color: var(--app-primary);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  white-space: nowrap;
+}

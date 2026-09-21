@@ -374,6 +374,31 @@ function buildRecovery(): NovelRecoveryDto | null {
   };
 }
 
+/** 本地日期键（YYYY-MM-DD）：连续码字天数按主进程本地时区计算 */
+function localDayKey(date: Date): string {
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+/**
+ * 连续码字天数（书架统计 R32）：从今天（或昨天）起逐日向过去回溯，
+ * 统计有 chapter_save 事件的连续天数。今天还没写不判负——从昨天续算。
+ */
+function computeStreakDays(activeDays: ReadonlySet<string>, today: Date): number {
+  const cursor = new Date(today);
+  if (!activeDays.has(localDayKey(cursor))) {
+    cursor.setDate(cursor.getDate() - 1);
+    if (!activeDays.has(localDayKey(cursor))) return 0;
+  }
+  let streak = 0;
+  while (activeDays.has(localDayKey(cursor))) {
+    streak += 1;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  return streak;
+}
+
 export function registerNovelHandlers(): void {
   // ── 通用 config 读写（R5 设置持久化 / R6 位置记忆共用） ──
   ipcMain.handle("novel-config-get", (_event, key: string) => {
@@ -903,6 +928,12 @@ export function registerNovelHandlers(): void {
     return true;
   });
 
+  // 灵感归属迁移（书架全局灵感库 R32）：归档到作品；workId 传 '' 退回未归属池
+  ipcMain.handle("novel-note-move", (_event, id: string, workId: string) => {
+    dbRun("UPDATE novel_notes SET work_id = ? WHERE id = ?", [workId, id]);
+    return true;
+  });
+
   // 伏笔条目保存（upsert）
   ipcMain.handle("novel-outline-entry-save", (_event, entry: NovelOutlineEntryDto) => {
     dbRun(
@@ -1052,6 +1083,7 @@ export function registerNovelHandlers(): void {
   // ── usage_log 埋点（R14）：查询今日聚合 + 通用事件上报 ──────────────
 
   // 今日写作聚合：今日净增 = 当日 chapter_save 事件 delta 求和（删除字数扣回）
+  // streakDays = 连续码字天数（书架统计 R32），按 chapter_save 事件的本地日期回溯
   ipcMain.handle("novel-usage-today", () => {
     const start = new Date();
     start.setHours(0, 0, 0, 0);
@@ -1063,7 +1095,20 @@ export function registerNovelHandlers(): void {
        WHERE event = 'chapter_save' AND created_at >= ?`,
       [start.getTime()],
     ) as { today_words: number; save_count: number };
-    return { todayWords: row.today_words, saveCount: row.save_count };
+    const activeDays = new Set(
+      (dbAll(
+        `SELECT DISTINCT date(created_at / 1000, 'unixepoch', 'localtime') AS day
+         FROM usage_log
+         WHERE event = 'chapter_save'
+         ORDER BY day DESC
+         LIMIT 400`,
+      ) as Array<{ day: string }>).map((item) => item.day),
+    );
+    return {
+      todayWords: row.today_words,
+      saveCount: row.save_count,
+      streakDays: computeStreakDays(activeDays, new Date()),
+    };
   });
 
   // 通用事件上报（goal_reach 等由渲染层显式触发）

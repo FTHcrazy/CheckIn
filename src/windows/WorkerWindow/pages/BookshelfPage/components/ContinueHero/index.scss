@@ -1,0 +1,101 @@
+.bs-hero {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-panel);
+  box-shadow: var(--app-shadow-card);
+
+  &__cover {
+    position: relative;
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 54px;
+    height: 72px;
+    border-radius: var(--app-radius-item);
+    overflow: hidden;
+  }
+
+  &__cover-char {
+    font-size: 24px;
+    font-weight: 700;
+    opacity: 0.9;
+    text-shadow: 0 1px 6px rgba(0, 0, 0, 0.35);
+  }
+
+  &__info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  &__eyebrow {
+    margin: 0;
+    font-size: 12px;
+    color: var(--app-text-muted);
+  }
+
+  &__title {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--app-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__sep {
+    color: var(--app-text-muted);
+    font-weight: 400;
+  }
+
+  &__chapter {
+    color: var(--app-text);
+  }
+
+  &__progress {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 2px;
+  }
+
+  &__bar {
+    flex: 1;
+    max-width: 280px;
+    height: 6px;
+    border-radius: var(--app-radius-pill);
+    background: var(--app-surface-active);
+    overflow: hidden;
+  }
+
+  /* 只做 transform 动画：宽度参与布局，禁止 transition width */
+  &__bar-fill {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--app-primary-gradient);
+    transform-origin: left center;
+    transition: transform 0.3s ease;
+  }
+
+  &__goal {
+    flex: none;
+    font-size: 12px;
+    color: var(--app-text-secondary);
+    white-space: nowrap;
+  }
+
+  &__cta {
+    flex: none;
+  }
+}

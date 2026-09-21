@@ -208,6 +208,15 @@ export async function removeNote(noteId: string): Promise<boolean> {
   return window.electronAPI!.novel.removeNote(noteId);
 }
 
+/**
+ * 灵感归属迁移（书架全局灵感库 R32）：归档到指定作品；
+ * workId 传空串表示退回「未归属」全局池。note-save 的 upsert 不更新 work_id，
+ * 归属变更必须走这条专用通道。
+ */
+export async function moveNote(noteId: string, workId: string): Promise<boolean> {
+  return window.electronAPI!.novel.moveNote(noteId, workId);
+}
+
 /** 新增 / 更新伏笔条目（novel-outline-entry-save，upsert 语义） */
 export async function saveOutlineEntry(entry: OutlineEntry): Promise<boolean> {
   return window.electronAPI!.novel.saveOutlineEntry(entry);
@@ -280,10 +289,12 @@ export async function exportTxtFile(
 
 // ── 使用埋点（R14） ──
 
-/** 今日聚合（novel-usage-today）：chapter_save 事件 delta 净增 + 保存次数 */
+/** 今日聚合（novel-usage-today）：chapter_save 事件 delta 净增 + 保存次数 + 连续码字天数 */
 export interface UsageTodaySummary {
   todayWords: number;
   saveCount: number;
+  /** 连续码字天数：从今天（或昨天）回溯的有写作日连续数 */
+  streakDays: number;
 }
 
 export async function fetchUsageToday(): Promise<UsageTodaySummary> {

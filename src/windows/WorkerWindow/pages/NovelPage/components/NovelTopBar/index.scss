@@ -8,6 +8,36 @@
   border-bottom: 1px solid var(--app-border);
   background: var(--app-header-bg);
 
+  /* 返回书架（R32）：书架主页接入后显示在作品下拉左侧 */
+  &__back {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex: none;
+    height: 28px;
+    padding: 0 10px 0 8px;
+    border: none;
+    border-radius: var(--app-radius-chip);
+    background: transparent;
+    color: var(--app-text-secondary);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition:
+      background 120ms ease,
+      color 120ms ease;
+
+    &:hover {
+      background: var(--app-surface-hover);
+      color: var(--app-text);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--app-primary);
+      outline-offset: 2px;
+    }
+  }
+
   &__work {
     width: 108px;
     flex: none;

@@ -99,6 +99,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     removeLink: (id: string) => ipcRenderer.invoke('novel-link-remove', id) as Promise<boolean>,
     saveNote: (note: unknown) => ipcRenderer.invoke('novel-note-save', note) as Promise<boolean>,
     removeNote: (id: string) => ipcRenderer.invoke('novel-note-remove', id) as Promise<boolean>,
+    // 灵感归属迁移（书架全局灵感库）：归档到作品；workId 传 '' 退回未归属池
+    moveNote: (id: string, workId: string) =>
+      ipcRenderer.invoke('novel-note-move', id, workId) as Promise<boolean>,
     saveOutlineEntry: (entry: unknown) =>
       ipcRenderer.invoke('novel-outline-entry-save', entry) as Promise<boolean>,
     removeOutlineEntry: (id: string) =>
@@ -122,7 +125,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     exportTxt: (defaultName: string, content: string) =>
       ipcRenderer.invoke('novel-export-txt', defaultName, content) as Promise<{ path: string } | null>,
     usageToday: () =>
-      ipcRenderer.invoke('novel-usage-today') as Promise<{ todayWords: number; saveCount: number }>,
+      ipcRenderer.invoke('novel-usage-today') as Promise<{ todayWords: number; saveCount: number; streakDays: number }>,
     usageLog: (event: string, payload: Record<string, unknown>) =>
       ipcRenderer.invoke('novel-usage-log', event, payload) as Promise<boolean>,
   },

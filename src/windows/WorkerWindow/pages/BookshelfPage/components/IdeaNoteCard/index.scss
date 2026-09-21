@@ -1,0 +1,110 @@
+.bs-idea {
+  position: relative;
+  padding: 10px 12px;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-item);
+  transition: box-shadow 0.18s ease;
+
+  &:hover {
+    box-shadow: var(--app-shadow-card);
+  }
+
+  &.is-pinned {
+    border-color: var(--app-warning);
+  }
+
+  &__content {
+    margin: 0;
+    font-size: 12.5px;
+    line-height: 1.65;
+    color: var(--app-text);
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+  }
+
+  &__footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 8px;
+  }
+
+  &__source {
+    flex: none;
+    max-width: 70%;
+    padding: 1px 8px;
+    border-radius: var(--app-radius-pill);
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+
+    &--work {
+      background: var(--app-primary-weak);
+      color: var(--app-primary);
+    }
+
+    &--unassigned {
+      background: var(--app-warning-weak);
+      color: var(--app-warning);
+    }
+  }
+
+  &__time {
+    flex: none;
+    font-size: 11px;
+    color: var(--app-text-muted);
+  }
+
+  /* 悬浮操作：右上角淡入（opacity 过渡），不占布局位 */
+  &__actions {
+    position: absolute;
+    top: 6px;
+    right: 8px;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 1px 2px;
+    border-radius: var(--app-radius-item);
+    background: var(--app-surface-elevated);
+    box-shadow: var(--app-shadow-card);
+    opacity: 0;
+    transform: translateY(-2px);
+    transition: opacity 0.15s ease, transform 0.15s ease;
+  }
+
+  &:hover &__actions,
+  &__actions:focus-within {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  &__action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--app-text-muted);
+    font-size: 12px;
+    cursor: pointer;
+    transition: box-shadow 0.15s ease;
+
+    &:hover {
+      color: var(--app-primary);
+      box-shadow: 0 0 0 1px var(--app-border) inset;
+    }
+
+    &.is-on {
+      color: var(--app-warning);
+    }
+  }
+}

@@ -1,0 +1,46 @@
+.bs-topbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 52px;
+  padding: 10px 24px;
+  background: var(--app-header-bg);
+  border-bottom: 1px solid var(--app-border);
+
+  &__lead {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  &__title {
+    margin: 0;
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--app-text);
+  }
+
+  &__capsule {
+    padding: 3px 10px;
+    border-radius: var(--app-radius-pill);
+    background: var(--app-primary-weak);
+    color: var(--app-primary);
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  &__actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  &__search {
+    width: 240px;
+    border-radius: var(--app-radius-pill);
+  }
+}

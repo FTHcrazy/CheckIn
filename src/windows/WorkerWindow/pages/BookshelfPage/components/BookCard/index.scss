@@ -1,0 +1,141 @@
+.bs-card {
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-panel);
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+
+  &:hover,
+  &:focus-visible {
+    transform: translateY(-2px);
+    box-shadow: var(--app-shadow-pop);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--app-primary);
+    outline-offset: 2px;
+  }
+
+  /* ── 网格视图：竖版封面在上 ── */
+  &--grid {
+    display: flex;
+    flex-direction: column;
+
+    .bs-card__cover {
+      width: 100%;
+      aspect-ratio: 5 / 4;
+    }
+
+    .bs-card__info {
+      padding: 10px 12px 12px;
+    }
+  }
+
+  /* ── 列表视图：横排小封面 ── */
+  &--list {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px 10px 10px;
+
+    .bs-card__cover {
+      flex: none;
+      width: 46px;
+      height: 60px;
+    }
+
+    .bs-card__info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .bs-card__updated {
+      margin-top: 1px;
+    }
+  }
+
+  &__cover {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+
+    /* 装饰光斑：伪元素径向渐变，不参与布局 */
+    &::after {
+      content: "";
+      position: absolute;
+      right: -18%;
+      top: -22%;
+      width: 70%;
+      height: 70%;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(255, 255, 255, 0.28), transparent 68%);
+      pointer-events: none;
+    }
+  }
+
+  &__cover-char {
+    font-size: 30px;
+    font-weight: 800;
+    opacity: 0.92;
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+    user-select: none;
+  }
+
+  &__info {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+  }
+
+  &__name-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  &__name {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--app-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__badge {
+    flex: none;
+    padding: 1px 8px;
+    border-radius: var(--app-radius-pill);
+    font-size: 11px;
+    font-weight: 500;
+
+    &--ongoing {
+      background: var(--app-primary-weak);
+      color: var(--app-primary);
+    }
+
+    &--finished {
+      background: var(--app-success-weak);
+      color: var(--app-success);
+    }
+  }
+
+  &__meta {
+    margin: 0;
+    font-size: 12px;
+    color: var(--app-text-secondary);
+    white-space: nowrap;
+  }
+
+  &__updated {
+    margin: 0;
+    font-size: 11.5px;
+    color: var(--app-text-muted);
+    white-space: nowrap;
+  }
+}

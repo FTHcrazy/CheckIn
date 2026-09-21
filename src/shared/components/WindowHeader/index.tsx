@@ -9,6 +9,8 @@ interface WindowHeaderProps {
   title?: string;
   /** 标题左侧图标（可选），随 title 一起显示 */
   icon?: ReactNode;
+  /** 标题右侧徽标插槽（可选，如书架页的「书架」视角 chip）；不传不渲染 */
+  badge?: ReactNode;
 }
 
 /**
@@ -24,7 +26,7 @@ interface WindowHeaderProps {
  * （"minimize" | "maximize-toggle" | "close"），不是包了一层的对象。
  * close 走 win.close()，由各窗口自己的 close 语义决定行为。
  */
-export default function WindowHeader({ title, icon }: WindowHeaderProps) {
+export default function WindowHeader({ title, icon, badge }: WindowHeaderProps) {
   const [isMaximized, setIsMaximized] = useState(false);
 
   useEffect(() => {
@@ -57,6 +59,7 @@ export default function WindowHeader({ title, icon }: WindowHeaderProps) {
           {title && <span className="window-header__title-text">{title}</span>}
         </div>
       )}
+      {badge && <div className="window-header__badge">{badge}</div>}
       <div className="window-header__controls">
         <button
           type="button"

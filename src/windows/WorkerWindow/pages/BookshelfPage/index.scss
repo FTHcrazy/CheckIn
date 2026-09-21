@@ -1,0 +1,101 @@
+// 书架主页面（R32）页面级布局：顶栏 / 统计条 / 继续写作 Hero / 书架网格 /
+// 灵感库右栏 / 底部状态条。组件内部样式在各组件目录的 index.scss，此处只管骨架。
+// 根节点渲染于 .window-shell__body 内（上方有 34px WindowHeader，禁用 100vh）。
+.bs-page {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  background: var(--app-bg);
+
+  &__loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    color: var(--app-text-muted);
+    font-size: 13px;
+  }
+
+  // 主列 + 灵感库右栏
+  &__body {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+  }
+
+  // 主列纵向滚动区：宽高由 flex 决定，滚动容器自身 min-height 兜底
+  &__main {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 20px 24px 28px;
+  }
+
+  &__shelf {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  &__shelf-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  &__shelf-title {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--app-text);
+  }
+
+  &__empty {
+    padding: 32px 0;
+    text-align: center;
+    color: var(--app-text-muted);
+    font-size: 13px;
+  }
+
+  // 书卡网格：宽屏约 4 列起，随窗口宽度自动伸缩；列表视图退化为单列
+  &__grid {
+    display: grid;
+    gap: 14px;
+    align-items: start;
+
+    &--grid {
+      grid-template-columns: repeat(auto-fill, minmax(178px, 1fr));
+    }
+
+    &--list {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  &__status {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex: none;
+    min-height: 30px;
+    padding: 6px 24px;
+    border-top: 1px solid var(--app-splitter);
+    background: var(--app-header-bg);
+    color: var(--app-text-muted);
+    font-size: 12px;
+
+    span {
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+  }
+}

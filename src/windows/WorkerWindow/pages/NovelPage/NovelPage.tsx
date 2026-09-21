@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import ChapterJumpPalette from "./components/ChapterJumpPalette";
 import ChapterTree from "./components/ChapterTree";
 import EditorPane from "./components/EditorPane";
@@ -20,13 +20,33 @@ import { findTermMatches, formatNumberedLabel } from "./novel-utils";
 import type { EntityAppearance } from "./types";
 import "./index.scss";
 
+/** 书架 → 编辑器的打开请求：幂等 token 防止 StrictMode 下 effect 双消费 */
+export interface OpenWorkRequest {
+  workId: string;
+  chapterId?: string;
+  token: number;
+}
+
+interface NovelPageProps {
+  /** 书架派发的打开请求；未挂载期间请求会被暂存，挂载后由 effect 消费 */
+  openRequest?: OpenWorkRequest | null;
+  /** 请求处理完成后回调（窗口根组件据此置空请求） */
+  onOpenRequestConsumed?: () => void;
+  /** 顶栏「返回书架」回调；未传则不渲染返回按钮 */
+  onBackToShelf?: () => void;
+}
+
 /**
  * 小说编辑器主页面（W1）
  *
  * 只负责编排：把三个 Hook 暴露的状态接到对应的私有组件上。
  * 容器管辖范围对应设计方案 §03 的 W1 / D1 / D2 / O1 / O2 / O3 / P1。
  */
-export default function NovelPage() {
+export default function NovelPage({
+  openRequest = null,
+  onOpenRequestConsumed,
+  onBackToShelf,
+}: NovelPageProps = {}) {
   const {
     data,
     editor,
@@ -79,6 +99,31 @@ export default function NovelPage() {
   } = useNovelPage();
 
   const { loadSnapshots, activeChapterId, searchBook } = data;
+
+  // 书架 → 编辑器：消费打开请求（token 守卫，StrictMode 双执行只消费一次）
+  const consumedTokenRef = useRef<number | null>(null);
+  const { reload, setActiveWorkId, selectChapter, works } = data;
+  useEffect(() => {
+    if (!openRequest || consumedTokenRef.current === openRequest.token) return;
+    consumedTokenRef.current = openRequest.token;
+    void (async () => {
+      const { workId, chapterId } = openRequest;
+      // 书架新建的作品尚未进编辑器内存 → 先重载全量再选中
+      if (workId && !works.some((work) => work.id === workId)) {
+        await reload();
+      }
+      if (workId) setActiveWorkId(workId);
+      if (chapterId) selectChapter(chapterId);
+      onOpenRequestConsumed?.();
+    })();
+  }, [
+    openRequest,
+    works,
+    reload,
+    setActiveWorkId,
+    selectChapter,
+    onOpenRequestConsumed,
+  ]);
 
   // 快照抽屉按需加载：打开时才查该章的版本时间线
   useEffect(() => {
@@ -167,6 +212,7 @@ export default function NovelPage() {
           works={data.works}
           activeWorkId={data.activeWorkId}
           workMeta={workMeta}
+          onBackToShelf={onBackToShelf}
           volumeName={breadcrumb.volumeName}
           chapterName={breadcrumb.chapterName}
           saveState={editor.saveState}

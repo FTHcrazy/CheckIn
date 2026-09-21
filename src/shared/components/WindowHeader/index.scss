@@ -35,6 +35,14 @@
   text-overflow: ellipsis;
 }
 
+// 标题右侧徽标插槽：仅做对齐与间距，视觉样式由使用方传入的节点自带
+// （仍处于拖动区内——徽标是纯展示内容，不排 no-drag）
+.window-header__badge {
+  display: flex;
+  align-items: center;
+  margin-left: 8px;
+}
+
 .window-header__controls {
   display: flex;
   align-items: stretch;

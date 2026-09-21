@@ -1,5 +1,6 @@
 import { Select, Tooltip } from "antd";
 import {
+  ArrowLeftOutlined,
   ColumnHeightOutlined,
   HistoryOutlined,
   LayoutOutlined,
@@ -38,6 +39,8 @@ interface NovelTopBarProps {
   onToggleTypewriter: () => void;
   onToggleSettings: () => void;
   onOpenHistory: () => void;
+  /** 返回书架（书架主页接入后传入）；未传则不渲染返回按钮 */
+  onBackToShelf?: () => void;
 }
 
 /**
@@ -70,6 +73,7 @@ export default function NovelTopBar({
   onToggleTypewriter,
   onToggleSettings,
   onOpenHistory,
+  onBackToShelf,
 }: NovelTopBarProps) {
   const activeWork = works.find((work) => work.id === activeWorkId) ?? null;
   const activeMeta = activeWorkId ? workMeta.get(activeWorkId) : undefined;
@@ -77,6 +81,20 @@ export default function NovelTopBar({
 
   return (
     <div className="nv-topbar">
+      {onBackToShelf && (
+        <Tooltip title="返回书架">
+          <button
+            type="button"
+            className="nv-topbar__back"
+            onClick={onBackToShelf}
+            aria-label="返回书架"
+          >
+            <ArrowLeftOutlined />
+            <span>书架</span>
+          </button>
+        </Tooltip>
+      )}
+
       <Select
         className="nv-topbar__work"
         value={activeWorkId}
