@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.9.2] - 2026-09-21
+
+### Added
+- **模板书籍 + 一键重置（调试功能）**：新增 `electron/novel-template.ts`
+  确定性生成器——单作品「山海拾遗（模板示例）」3 卷 15 章，每章 ≥3200 字
+  （全书约 6 万字，压测 CodeMirror 虚拟滚动 / 全书检索 / 快照 / 标注层预算），
+  正文按 seed 伪随机织入要素名与别名（驱动高亮与悬浮卡）；覆盖全部功能面：
+  六类要素卡（含别名、自定义字段）、8 条要素关联、两条等级体系（灵徒九境 /
+  器阶七品）、灵感速记（置顶 / 已转伏笔）、伏笔（待回收 / 已回收、卷级 /
+  章级挂载）、章节梗概与草稿 / 完稿混合状态
+- **`novel-editor-reset-template` IPC**：主进程单事务清空全部 novel_* 表后
+  重新播种模板（生成器每次实时构建，改模板定义后重置即生效）；排版设置保留，
+  续写位置一并清除；preload / electron.d.ts 同步暴露 `novel.resetTemplate()`
+- **作品管理菜单新增「重置为模板书籍（调试）」**：确认弹框明示清空范围；
+  重置后渲染层清空活动作品 / 章节 id 并全量重载，toast 汇报章数与字数
+
+### Fixed
+- **mammoth / docx 幽灵依赖显式化**：1.7.1 备忘导入导出使用的两个包从未
+  进入 package.json / lockfile（换机重装后 node_modules 缺失），删除
+  tsbuildinfo 缓存后 `tsc --noEmit -p tsconfig.node.json` 暴露 TS2307。
+  已显式声明进 dependencies 并补装
+
+### Verified
+- `pnpm typecheck`（app + node 两段，strict）：0 错误
+- `pnpm lint`：0 错误（仅剩 `useHttpClient.ts` 既有 eslint-disable 警告）
+- `pnpm test`：215/215 通过（16 个测试文件；新增 novel-template 12 例：
+  结构 / 字数口径 / 类型覆盖 / 引用合法性 / 确定性幂等 / id 唯一）
+- `vite build` 通过
+
 ## [1.9.1] - 2026-09-20
 
 ### Fixed

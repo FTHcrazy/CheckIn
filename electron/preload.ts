@@ -68,6 +68,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('novel-work-rename', id, name) as Promise<boolean>,
     deleteWork: (id: string) =>
       ipcRenderer.invoke('novel-work-delete', id) as Promise<boolean>,
+    // 一键重置为模板书籍（调试）：清空全部 novel_* 表并重新播种模板数据
+    resetTemplate: () =>
+      ipcRenderer.invoke('novel-editor-reset-template') as Promise<{ volumes: number; chapters: number; words: number; entities: number }>,
     saveChapter: (id: string, content: string, wordCount: number) =>
       ipcRenderer.invoke('novel-chapter-save', id, content, wordCount) as Promise<boolean>,
     listSnapshots: (chapterId: string) =>

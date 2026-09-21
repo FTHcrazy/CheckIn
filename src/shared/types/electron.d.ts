@@ -184,6 +184,8 @@ export interface ElectronAPI {
     addWork: (work: NovelWorkDTO) => Promise<boolean>
     renameWork: (id: string, name: string) => Promise<boolean>
     deleteWork: (id: string) => Promise<boolean>
+    /** 一键重置为模板书籍（调试）：清空全部 novel_* 表并重新播种，返回摘要 */
+    resetTemplate: () => Promise<{ volumes: number; chapters: number; words: number; entities: number }>
     saveChapter: (id: string, content: string, wordCount: number) => Promise<boolean>
     listSnapshots: (chapterId: string) => Promise<NovelSnapshotDTO[]>
     addChapter: (chapter: NovelChapterDTO) => Promise<boolean>

@@ -185,6 +185,19 @@ export function useNovelPage() {
     view.showToast("作品及其关联数据已删除", "info");
   }, [data, view]);
 
+  /** 一键重置为模板书籍（调试）：重载后回到模板第一章 */
+  const handleResetTemplate = useCallback(async (): Promise<void> => {
+    const summary = await data.resetTemplate();
+    if (!summary) {
+      view.showToast("重置失败，请重试", "warning");
+      return;
+    }
+    view.showToast(
+      `已重置为模板书籍 · ${summary.chapters} 章 / 约 ${formatThousands(summary.words)} 字`,
+      "info",
+    );
+  }, [data, view]);
+
   /** 删除章节（行内已 Popconfirm 确认）：删当前章由数据层自动切邻居 */
   const handleDeleteChapter = useCallback(
     (chapterId: string): void => {
@@ -704,6 +717,7 @@ export function useNovelPage() {
     handleCreateWork,
     handleRenameWork,
     handleDeleteWork,
+    handleResetTemplate,
     handleDeleteChapter,
   };
 }

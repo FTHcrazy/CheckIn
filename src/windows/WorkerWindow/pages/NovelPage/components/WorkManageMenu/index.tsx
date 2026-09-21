@@ -5,11 +5,12 @@ import {
   EditOutlined,
   FolderOpenOutlined,
   PlusOutlined,
+  ReloadOutlined,
 } from "@ant-design/icons";
 import { formatThousands, type WorkMeta } from "../../novel-utils";
 import "./index.scss";
 
-export type WorkModalKind = "create" | "rename" | "delete" | null;
+export type WorkModalKind = "create" | "rename" | "delete" | "reset-template" | null;
 
 interface WorkManageMenuProps {
   /** 当前作品名（重命名 / 删除确认里展示） */
@@ -22,6 +23,8 @@ interface WorkManageMenuProps {
   onRename: (name: string) => boolean;
   /** 删除当前作品（确认后调用） */
   onDelete: () => void;
+  /** 一键重置为模板书籍（调试，确认后调用） */
+  onResetTemplate: () => void;
 }
 
 /**
@@ -36,6 +39,7 @@ export default function WorkManageMenu({
   onCreate,
   onRename,
   onDelete,
+  onResetTemplate,
 }: WorkManageMenuProps) {
   const [modalKind, setModalKind] = useState<WorkModalKind>(null);
   const [nameDraft, setNameDraft] = useState("");
@@ -62,6 +66,7 @@ export default function WorkManageMenu({
   }, [modalKind]);
 
   const deleting = modalKind === "delete";
+  const resetting = modalKind === "reset-template";
 
   return (
     <>
@@ -84,11 +89,18 @@ export default function WorkManageMenu({
               danger: true,
               disabled: !activeWorkName,
             },
+            { type: "divider" as const },
+            {
+              key: "reset-template",
+              icon: <ReloadOutlined />,
+              label: "重置为模板书籍（调试）",
+            },
           ],
           onClick: ({ key }) => {
             if (key === "create") openCreate();
             else if (key === "rename") openRename();
             else if (key === "delete") setModalKind("delete");
+            else if (key === "reset-template") setModalKind("reset-template");
           },
         }}
       >
@@ -145,6 +157,27 @@ export default function WorkManageMenu({
           ，以及全部要素卡、灵感、伏笔与历史快照。
         </p>
         <p className="nv-work-menu__delete-warn">此操作不可恢复，请确认。</p>
+      </Modal>
+
+      <Modal
+        open={resetting}
+        title="重置为模板书籍"
+        okText="重置"
+        cancelText="取消"
+        width={420}
+        okButtonProps={{ danger: true }}
+        onOk={() => {
+          onResetTemplate();
+          setModalKind(null);
+        }}
+        onCancel={() => setModalKind(null)}
+      >
+        <p>
+          将<strong>清空全部作品</strong>（卷章 / 要素 / 灵感伏笔 / 历史快照），
+          并重新播种模板书籍「山海拾遗」：3 卷 15 章长文本与全套要素数据，
+          用于测试编辑器各项功能。
+        </p>
+        <p className="nv-work-menu__delete-warn">所有未保存内容将丢失，此操作不可恢复。</p>
       </Modal>
     </>
   );

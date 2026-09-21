@@ -62,6 +62,7 @@ export default function NovelPage() {
     handleCreateWork,
     handleRenameWork,
     handleDeleteWork,
+    handleResetTemplate,
     handleDeleteChapter,
   } = useNovelPage();
 
@@ -159,6 +160,7 @@ export default function NovelPage() {
           onCreateWork={handleCreateWork}
           onRenameWork={handleRenameWork}
           onDeleteWork={handleDeleteWork}
+          onResetTemplate={() => void handleResetTemplate()}
           onToggleLeft={view.toggleLeft}
           onToggleRight={view.toggleRight}
           onToggleTypewriter={view.toggleTypewriter}

@@ -16,6 +16,7 @@ import {
   renameChapter as renameChapterRemote,
   renameVolume as renameVolumeRemote,
   renameWork as renameWorkRemote,
+  resetTemplateBook,
   saveChapterContent,
   saveChapterOrder,
   saveChapterOutline,
@@ -469,6 +470,31 @@ export function useNovelData() {
     [bundle, activeWorkId, load],
   );
 
+  /**
+   * 一键重置为模板书籍（调试）：主进程清库重播种后全量重载。
+   * 必须先清空活动作品 / 章节 id 再 load——load 只在 current 为空时才
+   * 接受远端首选项，残留旧 id 会让编辑器停在已不存在的作品上。
+   * 返回重置摘要（卷 / 章 / 字数 / 要素数），主进程失败时返回 null。
+   */
+  const resetTemplate = useCallback(async (): Promise<{
+    volumes: number;
+    chapters: number;
+    words: number;
+    entities: number;
+  } | null> => {
+    let summary: Awaited<ReturnType<typeof resetTemplateBook>>;
+    try {
+      summary = await resetTemplateBook();
+    } catch {
+      return null;
+    }
+    setActiveWorkId("");
+    setActiveChapterId(null);
+    setLastPosition(null);
+    await load();
+    return summary;
+  }, [load]);
+
   /** 章节状态切换（草稿 ⇄ 完稿） */
   const toggleChapterStatus = useCallback(
     (chapterId: string) => {
@@ -896,6 +922,7 @@ export function useNovelData() {
     createWork,
     renameWork,
     deleteWork,
+    resetTemplate,
     updateChapterContent,
     updateChapterOutlineNote,
     createChapter,

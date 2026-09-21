@@ -29,6 +29,7 @@ interface NovelTopBarProps {
   onCreateWork: (name: string) => boolean;
   onRenameWork: (name: string) => boolean;
   onDeleteWork: () => void;
+  onResetTemplate: () => void;
   onToggleLeft: () => void;
   onToggleRight: () => void;
   onToggleTypewriter: () => void;
@@ -57,6 +58,7 @@ export default function NovelTopBar({
   onCreateWork,
   onRenameWork,
   onDeleteWork,
+  onResetTemplate,
   onToggleLeft,
   onToggleRight,
   onToggleTypewriter,
@@ -96,6 +98,7 @@ export default function NovelTopBar({
         onCreate={onCreateWork}
         onRename={onRenameWork}
         onDelete={onDeleteWork}
+        onResetTemplate={onResetTemplate}
       />
 
       <div className="nv-topbar__crumb">

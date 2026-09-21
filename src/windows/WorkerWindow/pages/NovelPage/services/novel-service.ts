@@ -71,6 +71,23 @@ export async function removeWork(workId: string): Promise<boolean> {
   return window.electronAPI!.novel.deleteWork(workId);
 }
 
+/** 重置摘要（novel-editor-reset-template 返回，toast 汇报用） */
+export interface TemplateResetSummary {
+  volumes: number;
+  chapters: number;
+  words: number;
+  entities: number;
+}
+
+/**
+ * 一键重置为模板书籍（调试）：主进程单事务清空全部 novel_* 表后
+ * 重新播种模板数据（novel-template.ts 实时构建，改模板定义后重置即生效）。
+ * 排版设置保留，续写位置由主进程一并清除。
+ */
+export async function resetTemplateBook(): Promise<TemplateResetSummary> {
+  return window.electronAPI!.novel.resetTemplate();
+}
+
 /** 保存章节正文 + 字数（novel-chapter-save，主进程同事务写增量快照） */
 export async function saveChapterContent(
   chapterId: string,

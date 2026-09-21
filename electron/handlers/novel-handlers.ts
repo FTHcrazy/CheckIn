@@ -12,6 +12,7 @@
  */
 import { ipcMain } from "electron";
 import { dbAll, dbGet, dbRun, getDb } from "../db";
+import { buildNovelTemplateBook } from "../novel-template";
 
 // ── 行类型（snake_case，对应表结构） ──
 
@@ -454,6 +455,140 @@ export function registerNovelHandlers(): void {
     });
     apply();
     return true;
+  });
+
+  // ── 一键重置为模板书籍（调试功能） ──────────────────────────────────
+  //
+  // 单事务清空全部 novel_* 表后重新播种模板数据（electron/novel-template.ts
+  // 每次实时构建，改模板定义后重置即生效）。排版设置（novel_editor_settings）
+  // 保留，续写位置（novel_editor_position）一并清除，避免指向已不存在的章节。
+  ipcMain.handle("novel-editor-reset-template", () => {
+    const db = getDb();
+    const template = buildNovelTemplateBook();
+    const now = Date.now();
+
+    const apply = db.transaction(() => {
+      // 清库：快照先行（与章节删除同一顺序），其余表无外键约束可任意序
+      dbRun("DELETE FROM novel_snapshots");
+      dbRun("DELETE FROM novel_chapters");
+      dbRun("DELETE FROM novel_volumes");
+      dbRun("DELETE FROM novel_works");
+      dbRun("DELETE FROM novel_notes");
+      dbRun("DELETE FROM novel_outline_entries");
+      dbRun("DELETE FROM novel_links");
+      dbRun("DELETE FROM novel_entities");
+      dbRun("DELETE FROM novel_level_conversions");
+      dbRun("DELETE FROM novel_levels");
+      dbRun("DELETE FROM novel_level_systems");
+      // 位置记忆指向的章节即将不存在，直接清除
+      dbRun("DELETE FROM config WHERE key = 'novel_editor_position'");
+
+      dbRun("INSERT INTO novel_works (id, name, created_at) VALUES (?, ?, ?)", [
+        template.workId,
+        template.workName,
+        now,
+      ]);
+      for (const volume of template.volumes) {
+        dbRun("INSERT INTO novel_volumes (id, work_id, name, sort) VALUES (?, ?, ?, ?)", [
+          volume.id,
+          template.workId,
+          volume.name,
+          volume.sort,
+        ]);
+      }
+      for (const chapter of template.chapters) {
+        dbRun(
+          `INSERT INTO novel_chapters (id, work_id, volume_id, title, content, word_count, status, sort, outline_note, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            chapter.id,
+            template.workId,
+            chapter.volumeId,
+            chapter.title,
+            chapter.content,
+            chapter.wordCount,
+            chapter.status,
+            chapter.sort,
+            chapter.outlineNote,
+            now,
+          ],
+        );
+      }
+      for (const entity of template.entities) {
+        dbRun(
+          `INSERT INTO novel_entities (id, work_id, type, name, aliases, summary, content, fields, sort, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            entity.id,
+            template.workId,
+            entity.type,
+            entity.name,
+            JSON.stringify(entity.aliases),
+            entity.summary,
+            entity.content,
+            JSON.stringify(entity.fields),
+            entity.sort,
+            now,
+            now,
+          ],
+        );
+      }
+      for (const link of template.links) {
+        dbRun(
+          `INSERT INTO novel_links (id, from_type, from_id, to_type, to_id, relation, note)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [link.id, link.fromType, link.fromId, link.toType, link.toId, link.relation, null],
+        );
+      }
+      for (const system of template.levelSystems) {
+        dbRun("INSERT INTO novel_level_systems (id, work_id, name) VALUES (?, ?, ?)", [
+          system.id,
+          template.workId,
+          system.name,
+        ]);
+        for (const rung of system.rungs) {
+          dbRun("INSERT INTO novel_levels (id, system_id, name, rank, note) VALUES (?, ?, ?, ?, ?)", [
+            rung.id,
+            system.id,
+            rung.name,
+            rung.rank,
+            rung.note ?? null,
+          ]);
+        }
+      }
+      for (const note of template.notes) {
+        dbRun(
+          `INSERT INTO novel_notes (id, work_id, content, created_at, pinned, foreshadow_id)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [note.id, template.workId, note.content, now, note.pinned ? 1 : 0, note.foreshadowId],
+        );
+      }
+      for (const entry of template.outlineEntries) {
+        dbRun(
+          `INSERT INTO novel_outline_entries (id, work_id, kind, volume_id, chapter_id, title, note, status, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            entry.id,
+            template.workId,
+            entry.kind,
+            entry.volumeId,
+            entry.chapterId,
+            entry.title,
+            entry.note,
+            entry.status,
+            now,
+          ],
+        );
+      }
+    });
+    apply();
+
+    return {
+      volumes: template.volumes.length,
+      chapters: template.chapters.length,
+      words: template.chapters.reduce((sum, chapter) => sum + chapter.wordCount, 0),
+      entities: template.entities.length,
+    };
   });
 
   // 全量装载：编辑器启动一次拉取所有 novel_* 表 + 崩溃恢复信息
