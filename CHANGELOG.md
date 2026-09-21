@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.9.5] - 2026-09-21
+
+### Fixed
+- **正文选中高亮滚动后偏移**：段距用 `.cm-line { margin-bottom }` 实现，而
+  CodeMirror 6 的行高测量（heightMap）不含 margin——「文档位置估算 ↔ DOM
+  实际位置」的偏差随行数线性累积：文档开头正常，滚动到下方后选中高亮 /
+  点击落点 / 光标全部错位。段距改为 `padding-bottom`（计入 border-box
+  高度、被测量捕获；`.cm-line` 是整段一个元素，段内软折行行距与段间距
+  视觉均不变）；新增 EditorPane 样式契约单测（cm-line 禁止垂直 margin +
+  段距必须走 padding-bottom）防回归
+
+### Verified
+- `pnpm typecheck`（app）：0 错误
+- `pnpm test`：NovelPage 范围 99/99 通过（含新增 2 条样式契约）
+
 ## [1.9.4] - 2026-09-21
 
 ### Added

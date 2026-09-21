@@ -117,10 +117,16 @@
       caret-color: var(--app-primary);
     }
 
-    /* 一个 .cm-line 就是一个段落：段首缩进与段距直接作用在行元素上，不引起重排 */
+    /* 一个 .cm-line 就是一个段落：段首缩进与段距直接作用在行元素上，不引起重排。
+       段距必须用 padding-bottom，禁止 margin——CodeMirror 6 的行高测量
+       （heightMap）不含 margin，垂直 margin 会让「文档位置估算 ↔ DOM 实际
+       位置」的偏差随行数线性累积：文档开头正常，滚动到下方后选中高亮 /
+       点击落点 / 光标全部错位（1.9.4 修复的原始 bug）。padding 计入
+       border-box 高度，被测量捕获；.cm-line 是整段一个元素，段内软折行
+       的行距不受 padding-bottom 影响。 */
     .cm-line {
       text-indent: var(--nv-indent, 2em);
-      margin-bottom: var(--nv-paragraph-spacing, 0.6em);
+      padding-bottom: var(--nv-paragraph-spacing, 0.6em);
       letter-spacing: 0.02em;
     }
 
