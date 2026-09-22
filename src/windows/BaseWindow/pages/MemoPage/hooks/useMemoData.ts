@@ -3,7 +3,7 @@ import { App } from "antd";
 import type { MemoFile } from "../types";
 
 export function useMemoData() {
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const [files, setFiles] = useState<MemoFile[]>([]);
   const [loading, setLoading] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -104,6 +104,55 @@ export function useMemoData() {
     }
   };
 
+  /** 备份导出：全部备忘打包 zip（manifest + memos/*.md，主进程弹保存框） */
+  const exportBackup = useCallback(async (): Promise<void> => {
+    try {
+      const result = await window.electronAPI?.memo.exportBackup();
+      if (!result || result.canceled) {
+        message.info("已取消导出");
+        return;
+      }
+      message.success(
+        result.filePath
+          ? `已导出 ${result.count} 篇备忘，文件：${result.filePath}`
+          : `已导出 ${result.count} 篇备忘`,
+      );
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "导出失败");
+      console.error(error);
+    }
+  }, [message]);
+
+  /** 备份导入：确认后选 zip 追加合并（重名自动改写序号，不覆盖已有备忘），完成后刷新列表 */
+  const importBackup = useCallback(async (): Promise<void> => {
+    const run = async (): Promise<void> => {
+      try {
+        const result = await window.electronAPI?.memo.importBackup();
+        if (!result || result.canceled) {
+          message.info("已取消导入");
+          return;
+        }
+        message.success(
+          result.skipped.length > 0
+            ? `已导入 ${result.count} 篇备忘，跳过 ${result.skipped.length} 个异常条目`
+            : `已导入 ${result.count} 篇备忘`,
+        );
+        void loadFiles();
+      } catch (error) {
+        message.error(error instanceof Error ? error.message : "导入失败");
+        console.error(error);
+      }
+    };
+
+    modal.confirm({
+      title: "导入备忘备份包？",
+      content: "导入为追加合并：包内备忘会写入 memos 目录，重名自动追加序号，不会覆盖或删除现有备忘。",
+      okText: "选择文件导入",
+      cancelText: "取消",
+      onOk: () => run(),
+    });
+  }, [loadFiles, message, modal]);
+
   return {
     files,
     loading,
@@ -116,5 +165,7 @@ export function useMemoData() {
     importFiles,
     exportFile,
     openInExplorer,
+    exportBackup,
+    importBackup,
   };
 }

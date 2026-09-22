@@ -6,6 +6,7 @@ import {
   getActivitiesByDate, getActiveDates, addActivity, updateActivity, deleteActivity,
   ACTIVITY_COLORS,
 } from '@/shared/services/daily'
+import { getCheckinDates } from '@/shared/services/checkin'
 import type { Activity } from '@/shared/services/daily'
 
 /** DailyPage 业务逻辑：日历/时间带派生数据、活动数据加载与增删改弹窗编排 */
@@ -14,6 +15,8 @@ export function useDailyPage() {
   const [selectedDate, setSelectedDate] = useState<Dayjs>(dayjs())
   const [activities, setActivities] = useState<Activity[]>([])
   const [activeDates, setActiveDates] = useState<Set<string>>(new Set())
+  /** 已打卡的业务日集合（YYYY-MM-DD），日历格子渲染小绿点 */
+  const [checkinDates, setCheckinDates] = useState<Set<string>>(new Set())
   const [modalOpen, setModalOpen] = useState(false)
   const [editingActivity, setEditingActivity] = useState<Activity | null>(null)
   const [form] = Form.useForm()
@@ -22,15 +25,16 @@ export function useDailyPage() {
 
   // 加载活动数据（用 useCallback 稳定引用，避免每次渲染都触发下面 effect 重新拉数据）
   const refreshData = useCallback(async () => {
-    const [acts, dates] = await Promise.all([
+    const start = currentMonth.startOf('month').subtract(7, 'day').format('YYYY-MM-DD')
+    const end = currentMonth.endOf('month').add(7, 'day').format('YYYY-MM-DD')
+    const [acts, dates, checkins] = await Promise.all([
       getActivitiesByDate(selectedDateStr),
-      getActiveDates(
-        currentMonth.startOf('month').subtract(7, 'day').format('YYYY-MM-DD'),
-        currentMonth.endOf('month').add(7, 'day').format('YYYY-MM-DD'),
-      ),
+      getActiveDates(start, end),
+      getCheckinDates(start, end),
     ])
     setActivities(acts)
     setActiveDates(dates)
+    setCheckinDates(checkins)
   }, [currentMonth, selectedDateStr])
 
   useEffect(() => {
@@ -129,6 +133,7 @@ export function useDailyPage() {
     setSelectedDate,
     activities,
     activeDates,
+    checkinDates,
     modalOpen,
     setModalOpen,
     editingActivity,

@@ -100,6 +100,33 @@
         opacity: 0.92;
       }
     }
+
+    // 已打卡态：成功色描边 + 淡成功底，禁用点击直到次日 5 点业务日重置
+    &.is-checked {
+      border-color: var(--app-success);
+      background: var(--app-success-weak);
+      color: var(--app-success);
+      font-weight: 600;
+      cursor: default;
+      opacity: 0.9;
+
+      &:hover {
+        transform: none;
+        border-color: var(--app-success);
+        background: var(--app-success-weak);
+        color: var(--app-success);
+        opacity: 0.9;
+      }
+    }
+
+    &:disabled {
+      cursor: default;
+      opacity: 0.6;
+
+      &:hover {
+        transform: none;
+      }
+    }
   }
 
   // 快捷新建待办弹窗内的工时语法提示

@@ -1,0 +1,67 @@
+/**
+ * 全局滚动条交互：默认隐藏，指针 hover 到滚动容器（或容器内持有焦点）时才展示。
+ *
+ * 实现要点（特异性设计）：
+ * - 未悬停用 `:not(:hover):not(:focus-within)` 提高特异性（0,2,0），
+ *   可压过页面局部 `.foo::-webkit-scrollbar-thumb`（0,1,0）的「常显」配色；
+ * - 悬停时 `*:hover::-webkit-scrollbar-thumb`（0,1,0）与局部规则同特异性，
+ *   页面样式在共享样式之后加载 → 同分时局部胜出，各页面自定义滑块色在
+ *   hover 时依然生效；
+ * - 依赖 --app-scrollbar / --app-scrollbar-hover 主题 token，换肤自动跟随；
+ * - 按项目动画规范不使用 transition（仅允许 transform/opacity/box-shadow）。
+ */
+
+/* 滚动条本体（横向纵向统一宽度） */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+/* 轨道与拐角始终透明，视觉上只有滑块出现/消失 */
+::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* 未悬停容器：滑块透明（高特异性，压过页面局部配色） */
+*:not(:hover):not(:focus-within)::-webkit-scrollbar-thumb {
+  background: transparent;
+}
+
+/* 悬停容器：滑块浮现（主题兜底色） */
+*:hover::-webkit-scrollbar-thumb {
+  background: var(--app-scrollbar);
+  border-radius: 4px;
+}
+
+/* 悬停滑块本身：加深 */
+*:hover::-webkit-scrollbar-thumb:hover {
+  background: var(--app-scrollbar-hover);
+}
+
+/* 键盘滚动（容器内持有焦点）同样展示 */
+*:focus-within::-webkit-scrollbar-thumb {
+  background: var(--app-scrollbar);
+  border-radius: 4px;
+}
+
+/* 隐藏上下箭头 */
+::-webkit-scrollbar-button {
+  display: none;
+}
+
+/* Firefox 等支持现代滚动条属性的环境：同等交互 */
+*:not(:hover):not(:focus-within) {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+*:hover,
+*:focus-within {
+  scrollbar-width: thin;
+  scrollbar-color: var(--app-scrollbar) transparent;
+}

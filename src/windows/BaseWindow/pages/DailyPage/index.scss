@@ -103,6 +103,13 @@
     border: 1px solid var(--app-primary);
   }
 
+  // 选中格是实心主色底，主题色系圆点（活动点=primary）会直接隐形，
+  // 统一加一圈主色上的对比描边；打卡点配色已与主色区分，描边再增强辨识
+  &.selected .activity-dot,
+  &.selected .checkin-dot {
+    box-shadow: 0 0 0 1.5px var(--app-primary-contrast);
+  }
+
   .cell-top {
     display: flex;
     align-items: center;
@@ -118,7 +125,17 @@
     width: 5px;
     height: 5px;
     border-radius: 50%;
-    background: var(--app-success);
+    background: var(--app-primary);
+    flex-shrink: 0;
+  }
+
+  // 打卡提示点：配色走 --app-checkin-dot（各主题单独校准、保证与主色可区分——
+  // mint 主题 primary 与 success 同为绿色，直接用 success 会隐形）
+  .checkin-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--app-checkin-dot);
     flex-shrink: 0;
   }
 

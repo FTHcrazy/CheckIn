@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import dayjs from "dayjs";
-import { getActiveDates } from "@/shared/services/daily";
 import { fetchGitWebhookLogs } from "@/shared/services/code";
+import { getCheckinDates } from "@/shared/services/checkin";
 import { sumExpense } from "@/shared/services/ledger";
 
 export interface HomeOverview {
@@ -9,7 +9,7 @@ export interface HomeOverview {
   todoCount: number | null;
   /** 备忘文件数 */
   memoCount: number | null;
-  /** 本月打卡（有活动的）天数 */
+  /** 本月打卡（checkins 表业务日）天数 */
   checkinDays: number | null;
   /** 今日代码有效产出（新增行 + 删除行 × 0.3） */
   codeLines: number | null;
@@ -63,7 +63,7 @@ export function useHomeOverview() {
       await Promise.allSettled([
         api?.todo.list() ?? Promise.reject(new Error("todo API 不可用")),
         api?.memo.list() ?? Promise.reject(new Error("memo API 不可用")),
-        getActiveDates(
+        getCheckinDates(
           today.startOf("month").format("YYYY-MM-DD"),
           today.format("YYYY-MM-DD"),
         ),
@@ -91,7 +91,7 @@ export function useHomeOverview() {
       memoCount:
         memoResult.status === "fulfilled" ? memoResult.value.length : null,
       checkinDays:
-        checkinResult.status === "fulfilled" ? checkinResult.value.size : null,
+        checkinResult.status === "fulfilled" ? checkinResult.value.size : 0,
       codeLines: null,
       monthExpense:
         expenseResult.status === "fulfilled" ? Math.round(expenseResult.value) : null,

@@ -16,7 +16,6 @@ const UserPage = lazy(() => import("./pages/UserPage/UserPage"));
 const MemoPage = lazy(() => import("./pages/MemoPage/MemoPage"));
 const TodoPage = lazy(() => import("./pages/TodoPage/TodoPage"));
 const NewsPage = lazy(() => import("./pages/NewsPage/NewsPage"));
-const MigrationPage = lazy(() => import("./pages/MigrationPage/MigrationPage"));
 const LedgerPage = lazy(() => import("./pages/LedgerPage/LedgerPage"));
 
 /** 懒加载路由的占位，保持与页面一致的高度避免布局跳动 */
@@ -84,7 +83,6 @@ export default function App() {
                 <Route path="/memo" element={<MemoPage />} />
                 <Route path="/todo" element={<TodoPage />} />
                 <Route path="/news" element={<NewsPage />} />
-                <Route path="/migration" element={<MigrationPage />} />
                 <Route path="/ledger" element={<LedgerPage />} />
               </Routes>
             </Suspense>

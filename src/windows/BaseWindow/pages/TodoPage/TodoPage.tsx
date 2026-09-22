@@ -186,6 +186,8 @@ function TodoPage() {
             onOnlyImportantChange={view.setOnlyImportant}
             onAdd={handleAdd}
             onToggleOutline={handleToggleOutline}
+            onExportBackup={() => data.handleExportBackup()}
+            onImportBackup={() => data.handleImportBackup()}
           />
 
           <div className="todo-list-container">

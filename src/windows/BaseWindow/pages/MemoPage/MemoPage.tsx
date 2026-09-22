@@ -24,6 +24,8 @@ function MemoPage() {
     importing,
     loadFiles,
     openInExplorer,
+    exportBackup,
+    importBackup,
   } = data;
   const {
     selected,
@@ -67,7 +69,11 @@ function MemoPage() {
           loading={loading || importing}
           onCreate={() => setCreateModalOpen(true)}
           onImport={() => void handleImport()}
-          onExport={(format) => void handleExport(format)}
+          onImportBackup={() => void importBackup()}
+          onExport={(format) => {
+            if (format === "backup") void exportBackup();
+            else void handleExport(format);
+          }}
           onRefresh={() => void loadFiles()}
           onSelect={(filename) => void handleSelectFile(filename)}
           onRename={handleRename}

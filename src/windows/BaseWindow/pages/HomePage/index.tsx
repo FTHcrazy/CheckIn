@@ -8,7 +8,6 @@ import {
   CodeOutlined,
   EditOutlined,
   SearchOutlined,
-  SwapOutlined,
 } from "@ant-design/icons";
 import HomeSidebar from "./components/HomeSidebar";
 import HomeStats from "./components/HomeStats";
@@ -19,6 +18,7 @@ import PosterWidget from "./components/PosterWidget";
 import { useHomeOverview } from "./hooks/useHomeOverview";
 import { useHomeActions } from "./hooks/useHomeActions";
 import { usePosterVisibility } from "./hooks/usePosterVisibility";
+import { useCheckin } from "./hooks/useCheckin";
 import { parseWorkHourTag } from "../TodoPage/todo-utils";
 import "./index.scss";
 
@@ -47,7 +47,7 @@ const FEATURES: HomeFeature[] = [
     title: "日期活动",
     desc: "日程排布与到点提醒，别忘打卡",
     path: "/daily",
-    tone: "amber",
+    tone: "teal",
   },
   {
     key: "memo",
@@ -63,7 +63,7 @@ const FEATURES: HomeFeature[] = [
     title: "记账本",
     desc: "3 步记一笔，月度收支与分类占比",
     path: "/ledger",
-    tone: "green",
+    tone: "rose",
   },
   {
     key: "code",
@@ -71,15 +71,7 @@ const FEATURES: HomeFeature[] = [
     title: "代码记录",
     desc: "按日统计提交产出，追踪日均行数",
     path: "/code",
-    tone: "teal",
-  },
-  {
-    key: "migration",
-    icon: <SwapOutlined />,
-    title: "数据迁移",
-    desc: "待办与备忘勾选导出 zip，支持导入合并",
-    path: "/migration",
-    tone: "rose",
+    tone: "amber",
   },
 ];
 
@@ -93,6 +85,9 @@ function displayNameFromEmail(email: string): string {
 
 export default function HomePage() {
   const { overview, reload } = useHomeOverview();
+  // 打卡按钮：点击记录打卡（落库，不跳转日历页），次日 5 点业务日切换后自动恢复
+  const { status: checkinStatus, submitting: checkinSubmitting, handleCheckin } =
+    useCheckin(reload);
   const {
     greeting,
     todayText,
@@ -187,10 +182,22 @@ export default function HomePage() {
         <div className="home-page__quick">
           <button
             type="button"
-            className="home-page__quick-btn is-primary"
-            onClick={() => navigate("/daily")}
+            className={`home-page__quick-btn is-primary ${
+              checkinStatus?.checkedIn ? "is-checked" : ""
+            }`}
+            disabled={checkinStatus === null || checkinSubmitting}
+            title={
+              checkinStatus?.checkedIn
+                ? "今日已打卡，次日 5:00 重置"
+                : undefined
+            }
+            onClick={() => void handleCheckin()}
           >
-            开始今日打卡
+            {checkinStatus === null
+              ? "打卡"
+              : checkinStatus.checkedIn
+                ? "今日已打卡"
+                : "开始今日打卡"}
           </button>
           <button type="button" className="home-page__quick-btn" onClick={openQuickAdd}>
             + 新建待办

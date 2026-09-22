@@ -1,5 +1,59 @@
 # Changelog
 
+## [1.13.0] - 2026-09-22
+
+### Added
+- **每日打卡**：首页「开始今日打卡」按钮改为直接打卡——点击记录打卡落库并
+  message 反馈，**不再跳转日历页**；已打卡后按钮置为「今日已打卡」成功色态并
+  禁点，**次日 5:00 业务日切换后自动重置**（应用跨夜常开时按主进程下发的
+  `resetAt` 定时恢复），凌晨 0-5 点的打卡归属前一个业务日
+- **打卡数据层**：userDb 新增 `checkins` 表（`checkin_date` 业务日 UNIQUE，
+  `INSERT OR IGNORE` 幂等吸收重复点击）；新增 `electron/checkin-utils.ts`
+  （业务日切分 / 下次重置时刻纯函数）与 `electron/handlers/checkin-handlers.ts`
+  （`checkin-status` / `checkin-today` / `checkin-dates` 三通道）并在 main.ts 注册；
+  `preload.ts` 暴露 `electronAPI.checkin` 命名空间，渲染层语义化服务
+  `shared/services/checkin.ts`；首页按钮逻辑抽 `HomePage/hooks/useCheckin.ts`
+- **统计口径**：首页「本月打卡」改从 checkins 表取数（原为「有活动的天数」）
+- **日历打卡提示点**：日程页日历对应日期渲染打卡提示点，配色走新主题变量
+  `--app-checkin-dot`（四主题同步新增，按主题与主色校准区分度），与活动点并存
+  可区分——活动点改用主题色 `--app-primary`（原同为绿色，无法区分「已打卡」
+  与「有日程」）
+
+### Changed
+- **数据迁移模块下线，功能并入待办/备忘页**：删除 `/migration` 路由、
+  `MigrationPage/`、`electron/handlers/migration-handlers.ts` 与
+  `electron/migration-utils.ts`；备份能力按业务拆入两个 handler——
+  `todo-backup-export/import`（manifest + todos.json，导入重新分配自增 id 并修复
+  父子指向）与 `memo-backup-export/import`（manifest + memos/*.md，导入重名自动
+  追加序号）；zip 包格式与旧迁移包完全兼容（清单 `scopes` 数组保留）
+  - 待办页工具栏新增「导出备份包 / 导入备份包」按钮：导入前弹确认说明追加合并
+    语义（不覆盖现有数据），完成后刷新列表
+  - 备忘页侧栏导入/导出按钮升级为下拉：导出 TXT / DOCX / 备份包（zip 全部备忘），
+    导入文件（MD/TXT/DOCX）/ 导入备份包（zip）；备份导入同样弹确认
+  - `electron/migration-utils.ts` 重构为 `electron/backup-utils.ts`（清单按单范围
+    构造，`buildExportFilename` 带 `checkin-todo-` / `checkin-memo-` 前缀），
+    测试同步迁移；`useHomeOverview` 与 HomePage 移除迁移入口
+- 首页功能卡移除「数据迁移」（`/migration` 已删除）
+- **全局滚动条改为 hover 展示**：三个窗口统一引入新共享样式
+  `shared/styles/scrollbars.scss`——滑块默认透明，指针悬停到滚动容器（或容器内
+  持有焦点）时才浮现（主题 token `--app-scrollbar` / `--app-scrollbar-hover`
+  兜底）。实现上用 `:not(:hover):not(:focus-within)` 高特异性规则压过页面局部
+  「常显」配色，hover 时与局部规则同特异性、页面样式后加载胜出，故 HomeSidebar /
+  LedgerTimeline / LedgerCategoryPie 的局部滑块配色无需改动即自动兼容该交互
+
+### Fixed
+- **打卡提示点撞色**：mint 主题 `--app-primary` 与 `--app-success` 同为绿色，
+  打卡点在主题色日历格上无法分辨——`--app-checkin-dot` 在 mint 下改用琥珀色
+  `#d9a514`；选中格为实心主色底时，活动点 / 打卡点统一加一圈
+  `--app-primary-contrast` 对比描边，避免主色系圆点隐形
+
+### Verified
+- 单测（vitest 直调）：300/300 通过（23 个测试文件；新增 checkin-utils 10 条，
+  migration-utils → backup-utils 28 条，删除 useMigration 7 条）
+- `tsc --noEmit`：tsconfig.app.json / tsconfig.node.json 双侧 0 错误
+- 本轮样式改动（themes.scss / scrollbars.scss / DailyPage / 三窗口入口 scss）
+  经 sass compile 逐一验证无语法错误；无 TS/TSX 改动，eslint 无目标文件
+
 ## [1.12.0] - 2026-09-22
 
 ### Added

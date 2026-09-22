@@ -1,11 +1,11 @@
 /**
- * 数据迁移纯函数单测（migration-utils.ts）
+ * 备份包纯函数单测（backup-utils.ts）
  *
  * 覆盖：范围归一化 / 清单构造与校验 / todo 行归一化与父子重排 / 备忘文件名清洗去重 / 包内条目筛选。
  */
 import { describe, it, expect } from "vitest";
 import {
-  MIGRATION_FORMAT_VERSION,
+  BACKUP_FORMAT_VERSION,
   buildExportFilename,
   buildManifest,
   dedupeMemoName,
@@ -16,8 +16,8 @@ import {
   parseTodoRows,
   planTodoInserts,
   sanitizeMemoName,
-  type MigrationTodoRow,
-} from "./migration-utils";
+  type TodoBackupRow,
+} from "./backup-utils";
 
 describe("normalizeScopes", () => {
   it("过滤非法值并去重，按 todo → memo 固定顺序输出", () => {
@@ -32,26 +32,36 @@ describe("normalizeScopes", () => {
 });
 
 describe("buildManifest / parseManifest", () => {
-  it("构造的清单可被原样解析回来", () => {
+  it("单范围构造的清单可被原样解析回来", () => {
     const manifest = buildManifest({
-      scopes: ["memo", "todo"],
-      counts: { todo: 3, memo: 2 },
+      scope: "todo",
+      count: 3,
       exportedAt: "2026-09-21T14:32:05.000Z",
       email: "a@b.com",
     });
     expect(manifest.app).toBe("checkin");
-    expect(manifest.format).toBe(MIGRATION_FORMAT_VERSION);
-    expect(manifest.scopes).toEqual(["todo", "memo"]);
+    expect(manifest.format).toBe(BACKUP_FORMAT_VERSION);
+    expect(manifest.scopes).toEqual(["todo"]);
+    expect(manifest.counts).toEqual({ todo: 3, memo: 0 });
 
     const parsed = parseManifest(JSON.stringify(manifest));
     expect(parsed.ok).toBe(true);
     if (parsed.ok) expect(parsed.manifest).toEqual(manifest);
   });
 
+  it("memo 范围清单的 todo 计数恒为 0", () => {
+    const manifest = buildManifest({
+      scope: "memo",
+      count: 2,
+      exportedAt: "2026-09-21T14:32:05.000Z",
+    });
+    expect(manifest.counts).toEqual({ todo: 0, memo: 2 });
+  });
+
   it("未传邮箱时不写入 email 字段", () => {
     const manifest = buildManifest({
-      scopes: ["todo"],
-      counts: { todo: 0, memo: 0 },
+      scope: "todo",
+      count: 0,
       exportedAt: "2026-09-21T14:32:05.000Z",
     });
     expect("email" in manifest).toBe(false);
@@ -72,7 +82,7 @@ describe("buildManifest / parseManifest", () => {
     const missing = parseManifest(JSON.stringify({ app: "checkin", scopes: ["todo"] }));
     expect(missing.ok).toBe(false);
     const future = parseManifest(
-      JSON.stringify({ app: "checkin", format: MIGRATION_FORMAT_VERSION + 1, scopes: ["todo"] }),
+      JSON.stringify({ app: "checkin", format: BACKUP_FORMAT_VERSION + 1, scopes: ["todo"] }),
     );
     expect(future.ok).toBe(false);
     if (!future.ok) expect(future.error).toContain("高于当前应用支持");
@@ -147,7 +157,7 @@ describe("parseTodoRows", () => {
 
 describe("planTodoInserts", () => {
   it("子项排在父项之后（即便原数组子项在前）", () => {
-    const rows: MigrationTodoRow[] = [
+    const rows: TodoBackupRow[] = [
       { id: 2, parentId: 1, content: "child", done: 0, note: null, important: 0, workHour: null, createdAt: "t2", doneAt: null },
       { id: 1, parentId: null, content: "parent", done: 0, note: null, important: 0, workHour: null, createdAt: "t1", doneAt: null },
     ];
@@ -157,7 +167,7 @@ describe("planTodoInserts", () => {
   });
 
   it("父项缺失时退化为顶层且不丢数据", () => {
-    const rows: MigrationTodoRow[] = [
+    const rows: TodoBackupRow[] = [
       { id: 9, parentId: 404, content: "orphan", done: 0, note: null, important: 0, workHour: null, createdAt: "t", doneAt: null },
     ];
     const plan = planTodoInserts(rows);
@@ -166,7 +176,7 @@ describe("planTodoInserts", () => {
   });
 
   it("父子成环时不会死循环且两行都保留", () => {
-    const rows: MigrationTodoRow[] = [
+    const rows: TodoBackupRow[] = [
       { id: 1, parentId: 2, content: "a", done: 0, note: null, important: 0, workHour: null, createdAt: "t", doneAt: null },
       { id: 2, parentId: 1, content: "b", done: 0, note: null, important: 0, workHour: null, createdAt: "t", doneAt: null },
     ];
@@ -175,7 +185,7 @@ describe("planTodoInserts", () => {
   });
 
   it("顶层项保持原有相对顺序", () => {
-    const rows: MigrationTodoRow[] = [3, 1, 2].map((id) => ({
+    const rows: TodoBackupRow[] = [3, 1, 2].map((id) => ({
       id,
       parentId: null,
       content: `t${id}`,
@@ -241,9 +251,12 @@ describe("listMemoEntries", () => {
 });
 
 describe("buildExportFilename", () => {
-  it("按本地时间生成 zip 文件名", () => {
-    expect(buildExportFilename(new Date(2026, 8, 21, 14, 32, 5))).toBe(
-      "checkin-data-20260921-143205.zip",
+  it("按本地时间生成带范围前缀的 zip 文件名", () => {
+    expect(buildExportFilename(new Date(2026, 8, 21, 14, 32, 5), "todo")).toBe(
+      "checkin-todo-20260921-143205.zip",
+    );
+    expect(buildExportFilename(new Date(2026, 8, 21, 14, 32, 5), "memo")).toBe(
+      "checkin-memo-20260921-143205.zip",
     );
   });
 });

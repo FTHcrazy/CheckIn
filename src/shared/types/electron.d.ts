@@ -138,32 +138,43 @@ export interface NovelBundleDTO {
   recovery: { snapshotTime: number; deltaWords: number } | null
 }
 
-// ── 数据迁移 DTO（导出 zip / 导入 zip，与 electron/handlers/migration-handlers.ts 一致） ──
+// ── 备份包 DTO（todo/memo zip 备份导出导入，与 electron/backup-utils.ts 一致） ──
 
-/** 可迁移的数据范围：todo 待办 / memo 备忘 */
-export type MigrationScope = "todo" | "memo";
-
-export interface MigrationCounts {
-  todo: number;
-  memo: number;
-}
-
-export interface MigrationExportResult {
+export interface BackupExportResult {
   /** 用户在保存框点取消时为 true */
   canceled: boolean;
   /** 取消时为 null */
   filePath: string | null;
-  counts: MigrationCounts;
+  /** 实际打包的条数（待办条数 / 备忘篇数） */
+  count: number;
 }
 
-export interface MigrationImportResult {
+export interface BackupImportResult {
   /** 用户在打开框点取消时为 true */
   canceled: boolean;
-  /** 实际导入的范围，取自包内清单 */
-  scopes: MigrationScope[];
-  counts: MigrationCounts;
-  /** 包内存在但未能写入的备忘条目名 */
+  /** 实际写入的条数（追加合并） */
+  count: number;
+  /** 包内存在但未能写入的条目名（备忘重名自动改写不算跳过） */
   skipped: string[];
+}
+
+// ── 打卡 DTO（与 electron/handlers/checkin-handlers.ts 保持一致） ──
+
+/** 当前业务日打卡状态；凌晨 0-5 点归属前一个业务日，跨过 5 点自动重置 */
+export interface CheckinStatusDTO {
+  /** 当前业务日（YYYY-MM-DD） */
+  date: string;
+  /** 当前业务日是否已打卡 */
+  checkedIn: boolean;
+  /** 下一次重置时刻（本地 ISO 字符串，恒为将来某个 5:00 整） */
+  resetAt: string;
+}
+
+/** 打卡结果：created 为 false 表示当前业务日已打过（幂等） */
+export interface CheckinResultDTO {
+  /** 本次打卡归属的业务日（YYYY-MM-DD） */
+  date: string;
+  created: boolean;
 }
 
 // ── 记账 DTO（与 electron/handlers/ledger-handlers.ts 保持一致） ──
@@ -238,6 +249,9 @@ export interface ElectronAPI {
     toggle: (id: number, checked: boolean) => Promise<void>
     toggleChild: (id: number, checked: boolean) => Promise<void>
     toggleParent: (id: number, checked: boolean) => Promise<void>
+    // ── 备份包（zip：manifest + todos.json，追加合并导入） ──
+    exportBackup: () => Promise<BackupExportResult>
+    importBackup: () => Promise<BackupImportResult>
   }
 
   user: {
@@ -315,6 +329,9 @@ export interface ElectronAPI {
     openInExplorer: (filename: string) => Promise<boolean>
     import: () => Promise<string[]>
     exportFile: (filename: string, format: "txt" | "docx") => Promise<boolean>
+    // ── 备份包（zip：manifest + memos/*.md，追加合并导入、重名自动改写） ──
+    exportBackup: () => Promise<BackupExportResult>
+    importBackup: () => Promise<BackupImportResult>
   }
 
   findInPage: (value?: string) => Promise<boolean>
@@ -334,12 +351,14 @@ export interface ElectronAPI {
     deleteCategory: (id: string, fallbackId: string) => Promise<boolean>
   }
 
-  // ── 数据迁移 ──
-  migration: {
-    /** 按勾选范围导出 zip；用户取消返回 canceled: true */
-    export: (scopes: MigrationScope[]) => Promise<MigrationExportResult>
-    /** 选择 zip 导入到本地（追加合并）；用户取消返回 canceled: true */
-    import: () => Promise<MigrationImportResult>
+  // ── 打卡 ──
+  checkin: {
+    /** 查询当前业务日打卡状态（含下次重置时刻 resetAt） */
+    status: () => Promise<CheckinStatusDTO>
+    /** 为当前业务日打卡（幂等；重复打卡返回 created: false） */
+    today: () => Promise<CheckinResultDTO>
+    /** 区间内已打卡的业务日列表（闭区间，YYYY-MM-DD 升序） */
+    dates: (start: string, end: string) => Promise<string[]>
   }
 }
 

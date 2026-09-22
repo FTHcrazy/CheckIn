@@ -1,10 +1,12 @@
 import { Button, Checkbox, Input, Tooltip } from "antd";
 import { useState } from "react";
 import {
+  DownloadOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   PlusOutlined,
   SearchOutlined,
+  UploadOutlined,
 } from "@ant-design/icons";
 import { useImeGuard } from "../../hooks/useImeGuard";
 import "./index.scss";
@@ -17,6 +19,8 @@ interface TodoToolbarProps {
   onOnlyImportantChange: (value: boolean) => void;
   onAdd: (content: string) => Promise<boolean>;
   onToggleOutline: () => void;
+  onExportBackup: () => Promise<void>;
+  onImportBackup: () => Promise<void>;
 }
 
 export default function TodoToolbar({
@@ -27,6 +31,8 @@ export default function TodoToolbar({
   onOnlyImportantChange,
   onAdd,
   onToggleOutline,
+  onExportBackup,
+  onImportBackup,
 }: TodoToolbarProps) {
   const [newContent, setNewContent] = useState("");
   const ime = useImeGuard();
@@ -75,6 +81,22 @@ export default function TodoToolbar({
       >
         特别关注
       </Checkbox>
+      <Tooltip title="导出全部待办为备份包（zip）">
+        <Button
+          type="text"
+          size="small"
+          icon={<DownloadOutlined />}
+          onClick={() => void onExportBackup()}
+        />
+      </Tooltip>
+      <Tooltip title="从备份包导入待办（追加合并，不覆盖现有数据）">
+        <Button
+          type="text"
+          size="small"
+          icon={<UploadOutlined />}
+          onClick={() => void onImportBackup()}
+        />
+      </Tooltip>
       <Tooltip title={outlineCollapsed ? "展开大纲" : "收起大纲"}>
         <Button
           type="text"

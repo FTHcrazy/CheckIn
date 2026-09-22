@@ -2,9 +2,25 @@
  * Todo 管理语义化 IPC handlers
  * 将 useTodoPage.ts 中的原始 SQL 操作迁移到主进程
  * 含父子级联切换逻辑，修复 done_at SQL 注入风险
+ *
+ * 备份包（原「数据迁移」模块并入本页）：todo-backup-export 打包
+ * manifest.json + todos.json 弹保存框写盘；todo-backup-import 弹打开框
+ * 校验清单后「追加合并」——重新分配自增 id 并修复 parent_id 指向。
  */
-import { ipcMain } from 'electron';
-import { dbAll, dbRun } from '../db';
+import { ipcMain, dialog, BrowserWindow, type IpcMainInvokeEvent } from 'electron';
+import fs from 'fs';
+import JSZip from 'jszip';
+import { dbAll, dbExec, dbRun, getCurrentUserEmail } from '../db';
+import {
+  BACKUP_MANIFEST_FILE,
+  BACKUP_TODOS_FILE,
+  buildExportFilename,
+  buildManifest,
+  parseManifest,
+  parseTodoRows,
+  planTodoInserts,
+  type TodoBackupRow,
+} from '../backup-utils';
 
 interface TodoRow {
   id: number;
@@ -34,6 +50,76 @@ interface TodoUpdateContentParams {
   content: string;
   workHour: number | null;
 }
+
+export interface TodoBackupExportResult {
+  canceled: boolean;
+  /** 取消时为 null */
+  filePath: string | null;
+  count: number;
+}
+
+export interface TodoBackupImportResult {
+  canceled: boolean;
+  count: number;
+  /** 包内存在但未能解析的条目（当前 todo 解析为静默跳过，恒为空数组，保留字段与 memo 备份对齐） */
+  skipped: string[];
+}
+
+/** 表行 → 包内行（驼峰命名，与表结构解耦） */
+function toBackupRow(row: TodoRow): TodoBackupRow {
+  return {
+    id: row.id,
+    parentId: row.parent_id,
+    content: row.content,
+    done: row.done,
+    note: row.note,
+    important: row.important,
+    workHour: row.work_hour,
+    createdAt: row.created_at,
+    doneAt: row.done_at,
+  };
+}
+
+/** 按计划写入 todo：先父后子，建立旧 id → 新 id 映射后修复 parent_id */
+function insertTodos(rows: TodoBackupRow[]): number {
+  const plan = planTodoInserts(rows);
+  if (plan.length === 0) return 0;
+
+  const sourceIdToNewId = new Map<number, number>();
+  dbExec('BEGIN');
+  try {
+    for (const item of plan) {
+      // 父项尚未写入（包内父子成环）时退化为顶层项
+      const parentId =
+        item.parentSourceId === null ? null : (sourceIdToNewId.get(item.parentSourceId) ?? null);
+      const result = dbRun(
+        'INSERT INTO todos (parent_id, content, done, note, important, work_hour, created_at, done_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [
+          parentId,
+          item.content,
+          item.done,
+          item.note,
+          item.important,
+          item.workHour,
+          item.createdAt,
+          item.doneAt,
+        ],
+      );
+      sourceIdToNewId.set(item.sourceId, result.lastInsertRowid);
+    }
+    dbExec('COMMIT');
+  } catch (error) {
+    dbExec('ROLLBACK');
+    throw error;
+  }
+  return plan.length;
+}
+
+function pickWindow(event: IpcMainInvokeEvent): BrowserWindow | null {
+  return BrowserWindow.fromWebContents(event.sender);
+}
+
+const ZIP_FILTERS = [{ name: '数据备份包', extensions: ['zip'] }];
 
 // 获取当前本地时间的 ISO 字符串（SQLite datetime 格式）
 function nowLocalISO(): string {
@@ -178,4 +264,78 @@ export function registerTodoHandlers(): void {
   ipcMain.handle('todo-toggle-parent', async (_event, id: number, checked: boolean) => {
     await handleToggleParentLogic(id, checked);
   });
+
+  // 备份导出：全量 todo 打包 manifest + todos.json，弹保存框写盘
+  ipcMain.handle(
+    'todo-backup-export',
+    async (event): Promise<TodoBackupExportResult> => {
+      const rows = (dbAll('SELECT * FROM todos ORDER BY id ASC') as TodoRow[]).map(toBackupRow);
+      const zip = new JSZip();
+      zip.file(BACKUP_TODOS_FILE, JSON.stringify(rows, null, 2));
+      zip.file(
+        BACKUP_MANIFEST_FILE,
+        JSON.stringify(
+          buildManifest({
+            scope: 'todo',
+            count: rows.length,
+            exportedAt: new Date().toISOString(),
+            email: getCurrentUserEmail() || undefined,
+          }),
+          null,
+          2,
+        ),
+      );
+
+      const buffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+      const win = pickWindow(event);
+      const options = {
+        defaultPath: buildExportFilename(new Date(), 'todo'),
+        filters: ZIP_FILTERS,
+      };
+      const result = win
+        ? await dialog.showSaveDialog(win, options)
+        : await dialog.showSaveDialog(options);
+      if (result.canceled || !result.filePath) {
+        return { canceled: true, filePath: null, count: rows.length };
+      }
+
+      const target = result.filePath.toLowerCase().endsWith('.zip')
+        ? result.filePath
+        : `${result.filePath}.zip`;
+      fs.writeFileSync(target, buffer);
+      return { canceled: false, filePath: target, count: rows.length };
+    },
+  );
+
+  // 备份导入：选 zip → 校验清单 → 追加合并（重新分配 id 并修复父子指向）
+  ipcMain.handle(
+    'todo-backup-import',
+    async (event): Promise<TodoBackupImportResult> => {
+      const win = pickWindow(event);
+      const openOptions = {
+        properties: ['openFile'] as Array<'openFile'>,
+        filters: ZIP_FILTERS,
+      };
+      const picked = win
+        ? await dialog.showOpenDialog(win, openOptions)
+        : await dialog.showOpenDialog(openOptions);
+      if (picked.canceled || picked.filePaths.length === 0) {
+        return { canceled: true, count: 0, skipped: [] };
+      }
+
+      const zip = await JSZip.loadAsync(fs.readFileSync(picked.filePaths[0]));
+      const manifestFile = zip.file(BACKUP_MANIFEST_FILE);
+      if (!manifestFile) throw new Error('压缩包内缺少清单文件 manifest.json');
+      const parsed = parseManifest(await manifestFile.async('string'));
+      if (!parsed.ok) throw new Error(parsed.error);
+      if (!parsed.manifest.scopes.includes('todo')) {
+        throw new Error('该备份包不包含待办数据');
+      }
+
+      const todosFile = zip.file(BACKUP_TODOS_FILE);
+      if (!todosFile) throw new Error('压缩包内缺少待办数据文件 todos.json');
+      const count = insertTodos(parseTodoRows(await todosFile.async('string')));
+      return { canceled: false, count, skipped: [] };
+    },
+  );
 }

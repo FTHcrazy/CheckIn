@@ -1,8 +1,9 @@
 /**
  * 用户数据目录定位（跨 IPC handler 复用）
  *
- * 备忘目录 memos/ 同时被 memo-handlers（读写备忘）与 migration-handlers
- * （导出/导入 zip）使用，路径规则集中在此，避免两处各写一份。
+ * 备忘目录 memos/ 同时被 memo-handlers（读写备忘）与 memo 备份包
+ * （memo-backup-export / memo-backup-import 打包 zip）使用，
+ * 路径规则集中在此，避免两处各写一份。
  */
 import fs from "fs";
 import path from "path";

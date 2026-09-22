@@ -18,6 +18,7 @@
  *   主色     6 项：primary / primary-strong(hover) / primary-active(按下) /
  *                  primary-weak(弱底) / primary-contrast(主色上的文字) / primary-gradient
  *   语义色   8 项：success / warning / error / info 各配一个 -weak 弱底
+ *   打卡点   1 项：checkin-dot（日历打卡提示点，必须与主题主色可区分）
  *   强调色  14 项：7 个 accent 及其 -weak（图标底 / 数据卡 / 标签）
  *   圆角     4 项 / 阴影 3 项 / 滚动条 2 项
  *
@@ -69,6 +70,7 @@
   --app-error-weak: #ffecee;
   --app-info: #5b8def;
   --app-info-weak: #eaf0ff;
+  --app-checkin-dot: #34b37e;
 
   /* ── 强调色（图标底 / 文字）：数据卡与功能卡的彩色标识 ── */
   --app-accent-blue: #5b8def;
@@ -148,6 +150,7 @@
   --app-error-weak: #fde9e9;
   --app-info: #5b9bc9;
   --app-info-weak: #e5f0f7;
+  --app-checkin-dot: #7ba05b;
 
   /* ── 强调色 ── */
   --app-accent-blue: #5b9bc9;
@@ -225,6 +228,8 @@
   --app-error-weak: #fce9e9;
   --app-info: #4a90c4;
   --app-info-weak: #eaf3fb;
+  /* mint 的 primary 与 success 同为绿色，打卡点改用琥珀色避开撞色 */
+  --app-checkin-dot: #d9a514;
 
   /* ── 强调色 ── */
   --app-accent-blue: #4a90c4;
@@ -302,6 +307,7 @@
   --app-error-weak: rgba(242, 109, 109, 0.16);
   --app-info: #7fa6ff;
   --app-info-weak: rgba(127, 166, 255, 0.14);
+  --app-checkin-dot: #4fc98d;
 
   /* ── 强调色 ── */
   --app-accent-blue: #7fa6ff;

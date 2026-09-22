@@ -67,6 +67,7 @@ export default function DailyPage() {
     setSelectedDate,
     activities,
     activeDates,
+    checkinDates,
     modalOpen,
     setModalOpen,
     editingActivity,
@@ -117,6 +118,7 @@ export default function DailyPage() {
                 const isSelected = d.isSame(selectedDate, 'day')
                 const isToday = d.isSame(today, 'day')
                 const hasActivity = activeDates.has(dateStr)
+                const hasCheckin = checkinDates.has(dateStr)
                 const festival = getSolarFestival(d)
                 const lunarStr = festival || getLunarStr(d)
 
@@ -128,6 +130,8 @@ export default function DailyPage() {
                   >
                     <div className="cell-top">
                       <span className="solar-day">{d.date()}</span>
+                      {/* 打卡绿点（成功色）与活动点（主题色）可并存：一眼区分「已打卡」与「有日程」 */}
+                      {hasCheckin && <span className="checkin-dot" />}
                       {hasActivity && <span className="activity-dot" />}
                     </div>
                     <div className="lunar-day">{lunarStr}</div>

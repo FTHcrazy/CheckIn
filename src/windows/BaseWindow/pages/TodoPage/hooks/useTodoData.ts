@@ -8,7 +8,7 @@ import {
 import type { TodoItem } from "../types";
 
 export function useTodoData() {
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const [items, setItems] = useState<TodoItem[]>([]);
   const api = window.electronAPI!.todo;
   const itemsRef = useRef<TodoItem[]>(items);
@@ -214,6 +214,55 @@ export function useTodoData() {
     }
   }, [api, loadItems, message]);
 
+  /** 备份导出：全部待办打包 zip（主进程弹保存框）；结果经 message 反馈 */
+  const handleExportBackup = useCallback(async (): Promise<void> => {
+    try {
+      const result = await api.exportBackup();
+      if (result.canceled) {
+        message.info("已取消导出");
+        return;
+      }
+      message.success(
+        result.filePath
+          ? `已导出 ${result.count} 条待办，文件：${result.filePath}`
+          : `已导出 ${result.count} 条待办`,
+      );
+    } catch (error) {
+      message.error("导出失败");
+      console.error(error);
+    }
+  }, [api, message]);
+
+  /** 备份导入：确认后选 zip 追加合并（重新分配 id，不覆盖现有待办），完成后刷新列表 */
+  const handleImportBackup = useCallback(async (): Promise<void> => {
+    const run = async (): Promise<void> => {
+      try {
+        const result = await api.importBackup();
+        if (result.canceled) {
+          message.info("已取消导入");
+          return;
+        }
+        message.success(
+          result.skipped.length > 0
+            ? `已导入 ${result.count} 条待办，跳过 ${result.skipped.length} 个异常条目`
+            : `已导入 ${result.count} 条待办`,
+        );
+        void loadItems();
+      } catch (error) {
+        message.error(error instanceof Error ? error.message : "导入失败");
+        console.error(error);
+      }
+    };
+
+    modal.confirm({
+      title: "导入待办备份包？",
+      content: "导入为追加合并：待办会重新分配编号并保持父子结构，不会覆盖或删除现有数据。",
+      okText: "选择文件导入",
+      cancelText: "取消",
+      onOk: () => run(),
+    });
+  }, [api, loadItems, message, modal]);
+
   const childrenByParent = useMemo(() => {
     const result = new Map<number, TodoItem[]>();
     items.forEach((item) => {
@@ -301,6 +350,8 @@ export function useTodoData() {
     handleToggle,
     handleToggleChild,
     handleToggleParent,
+    handleExportBackup,
+    handleImportBackup,
   }), [
     doneItems,
     getChildren,
@@ -311,6 +362,8 @@ export function useTodoData() {
     handleDelete,
     handleDeleteNote,
     handleDeleteWorkHour,
+    handleExportBackup,
+    handleImportBackup,
     handleToggle,
     handleToggleChild,
     handleToggleImportant,

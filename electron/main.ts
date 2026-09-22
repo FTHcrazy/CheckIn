@@ -21,7 +21,7 @@ import {
 import { registerUserHandlers, getCachedUser } from "./handlers/user-handlers";
 import { registerMemoHandlers } from "./handlers/memo-handlers";
 import { registerLedgerHandlers } from "./handlers/ledger-handlers";
-import { registerMigrationHandlers } from "./handlers/migration-handlers";
+import { registerCheckinHandlers } from "./handlers/checkin-handlers";
 import {
   registerHttpSessionHandlers,
   setupRendererHttpSession,
@@ -91,7 +91,7 @@ let isQuitting = false;
 let canShowMainWindow = false;
 let isMainWindowReady = false;
 let hasStartedActivityPolling = false;
-const LOGIN_WINDOW_MIN_DISPLAY_MS = 3000;
+const LOGIN_WINDOW_MIN_DISPLAY_MS = 2000;
 let loginWindowVisibleAt: number | null = null;
 let loginWindowHasShown = false;
 
@@ -423,7 +423,7 @@ app.whenReady().then(() => {
   registerNovelHandlers();
   registerUserHandlers();
   registerMemoHandlers();
-  registerMigrationHandlers();
+  registerCheckinHandlers();
   registerLedgerHandlers();
 
   // 渲染进程网络会话：一次性配置 CORS 放行 + Cookie 播种通道。

@@ -221,6 +221,16 @@ function initializeDataDb(database: Database.Database): void {
       ON ledger_transactions(happened_at DESC);
     CREATE INDEX IF NOT EXISTS idx_ledger_tx_category
       ON ledger_transactions(category_id);
+
+    -- ── 每日打卡 ──
+    -- checkin_date 为「业务日」YYYY-MM-DD：凌晨 0-5 点的打卡归属前一天（次日 5 点切日），
+    -- UNIQUE 保证一个业务日只有一条打卡记录，重复点击由 INSERT OR IGNORE 幂等吸收
+    CREATE TABLE IF NOT EXISTS checkins (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      checkin_date TEXT NOT NULL UNIQUE,
+      created_at TEXT DEFAULT (datetime('now', 'localtime'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_checkins_date ON checkins(checkin_date);
     CREATE TABLE IF NOT EXISTS ledger_budgets (
       id TEXT PRIMARY KEY,
       category_id TEXT,

@@ -46,6 +46,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('todo-toggle-child', id, checked),
     toggleParent: (id: number, checked: boolean) =>
       ipcRenderer.invoke('todo-toggle-parent', id, checked),
+    // ── 备份包（zip：manifest + todos.json，追加合并导入） ──
+    exportBackup: () =>
+      ipcRenderer.invoke('todo-backup-export') as Promise<{
+        canceled: boolean
+        filePath: string | null
+        count: number
+      }>,
+    importBackup: () =>
+      ipcRenderer.invoke('todo-backup-import') as Promise<{
+        canceled: boolean
+        count: number
+        skipped: string[]
+      }>,
   },
 
   // ── 用户管理 ──
@@ -197,25 +210,35 @@ contextBridge.exposeInMainWorld('electronAPI', {
     import: () => ipcRenderer.invoke('memo-import') as Promise<string[]>,
     exportFile: (filename: string, format: 'txt' | 'docx') =>
       ipcRenderer.invoke('memo-export', filename, format) as Promise<boolean>,
+    // ── 备份包（zip：manifest + memos/*.md，追加合并导入、重名自动改写） ──
+    exportBackup: () =>
+      ipcRenderer.invoke('memo-backup-export') as Promise<{
+        canceled: boolean
+        filePath: string | null
+        count: number
+      }>,
+    importBackup: () =>
+      ipcRenderer.invoke('memo-backup-import') as Promise<{
+        canceled: boolean
+        count: number
+        skipped: string[]
+      }>,
   },
 
   findInPage: (value?: string) =>
     ipcRenderer.invoke('find-in-page', value) as Promise<boolean>,
 
-  // ── 数据迁移（导出 zip / 导入 zip，范围：todo 待办 / memo 备忘） ──
-  migration: {
-    export: (scopes: string[]) =>
-      ipcRenderer.invoke('migration-export', scopes) as Promise<{
-        canceled: boolean
-        filePath: string | null
-        counts: { todo: number; memo: number }
+  // ── 打卡（语义化 IPC，数据存 userDb 的 checkins 表） ──
+  checkin: {
+    status: () =>
+      ipcRenderer.invoke('checkin-status') as Promise<{
+        date: string
+        checkedIn: boolean
+        resetAt: string
       }>,
-    import: () =>
-      ipcRenderer.invoke('migration-import') as Promise<{
-        canceled: boolean
-        scopes: string[]
-        counts: { todo: number; memo: number }
-        skipped: string[]
-      }>,
+    today: () =>
+      ipcRenderer.invoke('checkin-today') as Promise<{ date: string; created: boolean }>,
+    dates: (start: string, end: string) =>
+      ipcRenderer.invoke('checkin-dates', start, end) as Promise<string[]>,
   },
 })

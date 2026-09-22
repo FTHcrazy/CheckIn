@@ -11,6 +11,7 @@ import {
   ExportOutlined,
   FileTextOutlined,
   FileWordOutlined,
+  FileZipOutlined,
   ImportOutlined,
   PlusOutlined,
   ReloadOutlined,
@@ -28,7 +29,8 @@ interface MemoSidebarProps {
   loading: boolean;
   onCreate: () => void;
   onImport: () => void;
-  onExport: (format: "txt" | "docx") => void;
+  onImportBackup: () => void;
+  onExport: (format: "txt" | "docx" | "backup") => void;
   onRefresh: () => void;
   onSelect: (filename: string) => void;
   onRename: (filename: string, name: string) => Promise<boolean>;
@@ -42,6 +44,7 @@ export default function MemoSidebar({
   loading,
   onCreate,
   onImport,
+  onImportBackup,
   onExport,
   onRefresh,
   onSelect,
@@ -66,6 +69,33 @@ export default function MemoSidebar({
         </Space>
       ),
     },
+    {
+      key: "backup",
+      label: (
+        <Space size={6}>
+          <FileZipOutlined /> 备份包（zip，全部备忘）
+        </Space>
+      ),
+    },
+  ];
+
+  const importItems = [
+    {
+      key: "file",
+      label: (
+        <Space size={6}>
+          <ImportOutlined /> 导入文件（MD / TXT / DOCX）
+        </Space>
+      ),
+    },
+    {
+      key: "backup",
+      label: (
+        <Space size={6}>
+          <FileZipOutlined /> 导入备份包（zip）
+        </Space>
+      ),
+    },
   ];
 
   return (
@@ -78,29 +108,31 @@ export default function MemoSidebar({
           <Text type="secondary">({files.length})</Text>
         </Space>
         <Space size={4}>
-          <Tooltip title="导入文件（Markdown / TXT / DOCX）">
-            <Button
-              type="text"
-              size="small"
-              icon={<ImportOutlined />}
-              onClick={onImport}
-            />
-          </Tooltip>
+          <Dropdown
+            menu={{
+              items: importItems,
+              onClick: ({ key }) => {
+                if (key === "backup") onImportBackup();
+                else onImport();
+              },
+            }}
+          >
+            <Tooltip title="导入（文件 / 备份包）">
+              <Button type="text" size="small" icon={<ImportOutlined />} />
+            </Tooltip>
+          </Dropdown>
           <Dropdown
             menu={{
               items: exportItems,
-              onClick: ({ key }) =>
-                onExport(key === "docx" ? "docx" : "txt"),
+              onClick: ({ key }) => {
+                if (key === "docx") onExport("docx");
+                else if (key === "backup") onExport("backup");
+                else onExport("txt");
+              },
             }}
-            disabled={!selected}
           >
-            <Tooltip title={selected ? "导出当前备忘" : "先选择要导出的备忘"}>
-              <Button
-                type="text"
-                size="small"
-                icon={<ExportOutlined />}
-                disabled={!selected}
-              />
+            <Tooltip title="导出（TXT / DOCX / 备份包）">
+              <Button type="text" size="small" icon={<ExportOutlined />} />
             </Tooltip>
           </Dropdown>
           <Tooltip title="刷新列表">
