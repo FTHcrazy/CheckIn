@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.13.1] - 2026-09-22
+
+### Fixed
+- **备忘编辑器高亮层错位**（透明 TextArea + 底层高亮 div 镜像结构），修复两个
+  独立根因，两层在任意滚动位置/任意内容下恢复逐像素对齐：
+  - **滚动条槽位宽度差（主因）**：全局自定义滚动条是 classic 布局槽（8px 常驻），
+    textarea 内容溢出时内容区比高亮层窄 8px；中文逐字断行 → 两层换行点/折行数
+    不同且随深度累计漂移（实测 20 行临界内容偏移 476px）。修复：textarea 加
+    `scrollbar-gutter: stable` 恒定预留槽位，高亮层 `padding-right: 20px` 补齐同宽
+  - **末尾换行行盒缺失（次因）**：内容以 `\n` 结尾时 pre-wrap 的高亮 div 比
+    textarea 少渲染最后一行空行盒，scrollHeight 矮一行，滚到底部时被 clamp 产生
+    一行永久偏移。修复：高亮 HTML 恒追加 `<br />`（react-simple-code-editor
+    同款手法），保证行盒数不少于 textarea
+  - 根因均经独立 Chromium 复现页对照实验证实（现状 CSS 复现偏移、修复后全场景
+    scrollHeight/底部 clamp 差值为 0）
+
 ## [1.13.0] - 2026-09-22
 
 ### Added

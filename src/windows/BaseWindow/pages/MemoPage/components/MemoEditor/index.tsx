@@ -21,7 +21,10 @@ export default function MemoEditor({
       <div
         className="memo-textarea-highlight"
         aria-hidden="true"
-        dangerouslySetInnerHTML={{ __html: highlightedHtml || "&nbsp;" }}
+        // 恒追加 <br />（react-simple-code-editor 同款手法）：内容以 \n 结尾时
+        // pre-wrap 的 div 会比 textarea 少渲染最后一行空行盒，导致高亮层
+        // scrollHeight 偏矮一行，滚动到底部时被 clamp 产生一行永久偏移。
+        dangerouslySetInnerHTML={{ __html: `${highlightedHtml || "&nbsp;"}<br />` }}
       />
       <TextArea
         value={content}

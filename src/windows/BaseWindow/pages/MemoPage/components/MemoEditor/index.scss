@@ -36,13 +36,21 @@
   resize: none !important;
   border-radius: 8px;
   background: var(--app-input-bg);
+  // 恒定预留竖向滚动条槽位：全局自定义滚动条（::-webkit-scrollbar width:8px）是
+  // classic 布局槽，内容溢出时会让 textarea 内容区比高亮层窄 8px；中文逐字断行，
+  // 8px 即每行换行点不同 → 两层折行数随深度累计漂移（选中高亮/光标越往下越歪）。
+  // stable 让槽位常驻，配合高亮层 padding-right: 20px 保持两层内容宽度恒等。
+  scrollbar-gutter: stable;
 }
 
 .memo-textarea-highlight {
   position: absolute;
   inset: 1px;
   overflow: hidden;
+  // padding-right 在 12px 基础上补 8px：对齐 textarea 的常驻滚动条槽位宽度
+  // （scrollbar-gutter: stable），保证两层内容宽度一致、换行点完全相同
   padding: var(--memo-editor-padding);
+  padding-right: 20px;
   white-space: pre-wrap;
   overflow-wrap: break-word;
   word-break: break-word;
