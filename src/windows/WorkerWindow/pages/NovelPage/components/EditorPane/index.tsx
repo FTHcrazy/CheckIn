@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, KeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import type { CSSProperties, KeyboardEvent, MouseEvent as ReactMouseEvent, Ref } from "react";
 import { Empty } from "antd";
 import {
   defaultKeymap,
@@ -50,6 +50,17 @@ interface EditorPaneProps {
   onCursorChange: (head: number) => void;
   /** 正文滚动上报（R6 位置记忆）：scrollTop */
   onScrollChange: (scrollTop: number) => void;
+}
+
+/**
+ * 命令式 API（R18 / 步骤三：起名工具「插入正文」出口）
+ *
+ * 用于在不动 EditorPane 受控 props 的情况下、向光标处插入文本
+ * （起名工具面板按名字一键插入正文）。其它面板内部动作仍走 onChange。
+ */
+export interface EditorPaneHandle {
+  /** 在当前光标处插入文本；选区非空时替换选区，插入后光标移到插入末尾 */
+  insertText: (text: string) => void;
 }
 
 /** 排版相关的动态样式走独立 compartment，改字号不必重建编辑器 */
@@ -122,12 +133,48 @@ export default function EditorPane({
   onRestoreDone,
   onCursorChange,
   onScrollChange,
-}: EditorPaneProps) {
+  ref,
+}: EditorPaneProps & { ref?: Ref<EditorPaneHandle> }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const lastLineRef = useRef<number>(-1);
   /** IME 组合期标记：拼音候选期间的文档变化不上报，避免字数按拼音递增（R2） */
   const composingRef = useRef(false);
+
+  /**
+   * 命令式 API（R18 / 步骤三）：把名字插入到正文光标处。
+   *
+   * 选区非空时替换选区；空选区时在 head 处插入；插入后光标移到插入末尾。
+   * 不走 onChange（受控回写会触发防抖保存路径）；直接 dispatch 一个
+   * userEvent.transaction 的事务，CodeMirror 自身会经 dispatch 通知
+   * updateListener → onChange 路径，与键盘输入保持一致行为。
+   */
+  useImperativeHandle(
+    ref,
+    () => ({
+      insertText: (text: string): void => {
+        const view = viewRef.current;
+        if (!view || !text) return;
+        // 章节未挂载时拒绝（与「点击正文下方空白聚焦续写」一致）
+        if (!view.state) return;
+        const selection = view.state.selection;
+        const hasSelection = selection.ranges.some(
+          (range) => range.from !== range.to,
+        );
+        view.dispatch(
+          hasSelection
+            ? view.state.replaceSelection(text)
+            : {
+                changes: { from: selection.main.head, insert: text },
+                selection: { anchor: selection.main.head + text.length },
+                userEvent: "input.insert",
+              },
+        );
+        view.focus();
+      },
+    }),
+    [],
+  );
 
   // 章节标题编辑：点击标题进入编辑态（本组件局部交互，含 IME 守卫）
   const [titleEditing, setTitleEditing] = useState(false);

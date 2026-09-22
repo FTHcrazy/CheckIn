@@ -6,6 +6,9 @@ import type {
   EntityType,
   ForeshadowPatch,
   LabelNumberStyle,
+  NameFavorite,
+  NamingKind,
+  NameStyle,
   NotePatch,
   NovelChapter,
   NovelEntity,
@@ -1009,4 +1012,57 @@ export function buildEntityCardText(
   }
   if (levelRungName) lines.push(`当前境界：${levelRungName}`);
   return lines.join("\n");
+}
+
+// ── 起名收藏夹清洗（R18）：config 读出的未知结构 → 合法 NameFavorite[] ──
+
+const VALID_NAMING_KINDS: ReadonlySet<NamingKind> = new Set<NamingKind>([
+  "person",
+  "place",
+  "faction",
+  "artifact",
+  "realm",
+  "pill",
+  "system",
+  "deity",
+]);
+
+const VALID_NAME_STYLES: ReadonlySet<NameStyle> = new Set<NameStyle>([
+  "xianxia",
+  "wuxia",
+  "urban",
+  "japanese",
+  "westernFantasy",
+  "westernModern",
+]);
+
+/**
+ * 收藏夹 config 清洗（R18）：与 sanitizeCustomTypes 同范式。
+ *
+ * config 里的 JSON 可能来自旧版本或损坏：逐字段类型守卫，非法字段一律跳过，
+ * 绝不抛错；id 去重；kind / style 不在合法集合内则丢弃该条目。
+ */
+export function sanitizeNameFavorites(raw: unknown): NameFavorite[] {
+  if (!Array.isArray(raw)) return [];
+  const seenIds = new Set<string>();
+  const result: NameFavorite[] = [];
+  for (const item of raw) {
+    if (item === null || typeof item !== "object" || Array.isArray(item)) continue;
+    const source = item as Record<string, unknown>;
+    const id = typeof source.id === "string" ? source.id : "";
+    const workId = typeof source.workId === "string" ? source.workId : "";
+    const name = typeof source.name === "string" ? source.name.trim() : "";
+    const kind = typeof source.kind === "string" ? (source.kind as NamingKind) : "person";
+    const style = typeof source.style === "string" ? (source.style as NameStyle) : "xianxia";
+    const createdAt =
+      typeof source.createdAt === "number" && Number.isFinite(source.createdAt)
+        ? source.createdAt
+        : Date.now();
+    if (!id || !name || !workId) continue;
+    if (!VALID_NAMING_KINDS.has(kind) || !VALID_NAME_STYLES.has(style)) continue;
+    if (seenIds.has(id)) continue;
+    seenIds.add(id);
+    result.push({ id, workId, name, kind, style, createdAt });
+  }
+  return result;
 }

@@ -39,6 +39,10 @@ export const STORAGE_KEYS = {
   position: "novel_editor_position",
   /** 自定义要素类型（R23）：CustomEntityTypeDef[] 整读整写 */
   entityTypes: "novel_entity_types",
+  /** 起名工具收藏夹（R18 ④）：NameFavorite[] 整读整写，按作品持久化 */
+  namingFavorites: "novel_naming_favorites",
+  /** 起名工具自定义用字池（R18 ①）：NamingCustomPool 整读整写 */
+  namingCustomPools: "novel_naming_custom_pools",
 } as const;
 
 /** 续写位置记忆（R6）：变化后防抖落库 */

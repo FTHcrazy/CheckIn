@@ -1,8 +1,9 @@
-import { AppstoreOutlined, BulbOutlined, SearchOutlined, UnorderedListOutlined } from "@ant-design/icons";
+import { AppstoreOutlined, BulbOutlined, SearchOutlined, ToolOutlined, UnorderedListOutlined } from "@ant-design/icons";
 import type { ReactNode } from "react";
 import EntityPanel from "../EntityPanel";
 import type { EntitySavePatch } from "../EntityDetail";
 import InspirationPanel, { type InspirationActions } from "../InspirationPanel";
+import NameGeneratorPanel, { type NamingActions } from "../NameGeneratorPanel";
 import OutlinePanel, { type OutlineActions } from "../OutlinePanel";
 import SearchPanel from "../SearchPanel";
 import type { PanelTab, EntityFilter } from "../../hooks/useNovelViewState";
@@ -63,6 +64,12 @@ interface SupportPanelProps {
   onSetEntityLevel: (entityId: string, rungId: string | null) => void;
   /** 打开等级体系管理弹框（R25） */
   onOpenLevelManager: () => void;
+  /** 起名工具动作组（R18 / 步骤三）：插入正文 / 建角色卡 / 收藏 / 删除收藏 */
+  namingActions: NamingActions;
+  /** 起名工具避开本书已用名时取数用：当前作品的全部要素名 + 别名 */
+  namingExclude: string[];
+  /** 起名工具收藏夹（当前作品）：按 createdAt 倒序 */
+  namingFavorites: import("../../types").NameFavorite[];
 }
 
 const TABS: Array<{ key: PanelTab; label: string; icon: ReactNode }> = [
@@ -70,6 +77,7 @@ const TABS: Array<{ key: PanelTab; label: string; icon: ReactNode }> = [
   { key: "entity", label: "要素库", icon: <AppstoreOutlined /> },
   { key: "note", label: "灵感", icon: <BulbOutlined /> },
   { key: "search", label: "检索", icon: <SearchOutlined /> },
+  { key: "tools", label: "工具", icon: <ToolOutlined /> },
 ];
 
 /**
@@ -108,6 +116,9 @@ export default function SupportPanel({
   onRemoveRelation,
   onSetEntityLevel,
   onOpenLevelManager,
+  namingActions,
+  namingExclude,
+  namingFavorites,
 }: SupportPanelProps) {
   return (
     <aside className={`nv-panel${open ? "" : " is-collapsed"}`}>
@@ -169,6 +180,13 @@ export default function SupportPanel({
         )}
         {activeTab === "search" && (
           <SearchPanel onSearch={onSearch} onSelectChapter={onSelectChapter} />
+        )}
+        {activeTab === "tools" && (
+          <NameGeneratorPanel
+            exclude={namingExclude}
+            favorites={namingFavorites}
+            actions={namingActions}
+          />
         )}
       </div>
     </aside>

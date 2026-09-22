@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LAYOUT, TOAST_DURATION_MS } from "../novel-config";
 import type { EntityType } from "../types";
 
-export type PanelTab = "outline" | "entity" | "note" | "search";
+export type PanelTab = "outline" | "entity" | "note" | "search" | "tools";
 export type EntityFilter = EntityType | "all";
 export type ToastTone = "success" | "info" | "warning";
 

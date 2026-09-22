@@ -323,3 +323,21 @@ export interface WritingStats {
   todayTotal: number;
   dailyGoal: number;
 }
+
+// ── 起名工具（R18 / 步骤三）──────────────────────────────────────────────
+// 类型定义集中在 naming/types.ts（按 AGENTS「页面私有模块」原则留在子目录），
+// 此处仅做 re-export，便于 service / hooks 沿用 ../types 统一导入路径。
+export type {
+  NameFavorite,
+  NamingCustomPool,
+  NamingKind,
+  NameStyle,
+  NameStyleFamily,
+  NameGender,
+  NamingOptions,
+  NamingResult,
+  NamingPool,
+  NamingDictionary,
+  NameStyleMeta,
+  NamingKindMeta,
+} from "./naming/types";

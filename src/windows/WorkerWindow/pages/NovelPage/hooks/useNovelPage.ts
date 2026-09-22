@@ -38,6 +38,8 @@ import type {
 } from "../types";
 import type { ReorderChange } from "../components/ReorderConfirmModal";
 import type { InspirationActions } from "../components/InspirationPanel";
+import type { NamingActions } from "../components/NameGeneratorPanel";
+import type { EditorPaneHandle } from "../components/EditorPane";
 import type { OutlineActions } from "../components/OutlinePanel";
 import { useEntityHover } from "./useEntityHover";
 import { useNovelData } from "./useNovelData";
@@ -553,6 +555,69 @@ export function useNovelPage() {
     [data, view],
   );
 
+  // ── 起名工具（R18 / 步骤三）：双出口 + 收藏夹编排 ──────────────────────────
+  /** EditorPane 命令式 ref：用于「插入正文光标处」出口 */
+  const editorPaneRef = useRef<EditorPaneHandle>(null);
+
+  /** 把名字插入正文光标处（不依赖选区；选区非空则替换） */
+  const handleInsertName = useCallback((name: string): void => {
+    editorPaneRef.current?.insertText(name);
+  }, []);
+
+  /** 把名字建为角色卡（type=character，名字带入；复用 markSelectionAsEntity 走查重 + 落库） */
+  const handleCreateEntityFromName = useCallback(
+    (name: string): void => {
+      const trimmed = name.trim();
+      if (!trimmed || !data.activeWorkId) return;
+      const result = data.markSelectionAsEntity(trimmed, "character");
+      if (!result) {
+        view.showToast("建卡失败，请重试", "warning");
+        return;
+      }
+      if (result.mode === "created") {
+        view.showToast(`已创建角色「${result.entity.name}」`);
+      } else if (result.mode === "linked") {
+        view.showToast(`已关联为「${result.entity.name}」的别名`);
+      } else {
+        view.showToast(`「${result.entity.name}」已在设定库中`, "info");
+      }
+    },
+    [data, view],
+  );
+
+  /** 起名工具动作组（透传给 NameGeneratorPanel） */
+  const namingActions = useMemo<NamingActions>(
+    () => ({
+      onInsertToEditor: handleInsertName,
+      onCreateCharacter: handleCreateEntityFromName,
+      onAddFavorite: (name, kind, style) =>
+        data.addNameFavorite(data.activeWorkId, name, kind, style),
+      onRemoveFavorite: data.removeNameFavorite,
+    }),
+    [handleInsertName, handleCreateEntityFromName, data],
+  );
+
+  /** 起名工具避开已用名：当前作品的要素 name + aliases 去重 */
+  const namingExclude = useMemo(() => {
+    const owned = data.entities.filter(
+      (entity) => entity.workId === data.activeWorkId,
+    );
+    const set = new Set<string>();
+    for (const entity of owned) {
+      if (entity.name) set.add(entity.name);
+      for (const alias of entity.aliases) {
+        if (alias) set.add(alias);
+      }
+    }
+    return Array.from(set);
+  }, [data.entities, data.activeWorkId]);
+
+  /** 当前作品收藏夹（按 createdAt 倒序，已由 useNovelData 排好） */
+  const namingFavorites = useMemo(
+    () => data.nameFavoritesOf(data.activeWorkId),
+    [data],
+  );
+
   const handleRestoreRecovery = useCallback((): void => {
     editor.dismissRecovery();
   }, [editor]);
@@ -949,5 +1014,10 @@ export function useNovelPage() {
     handleAddCustomType,
     handleRenameCustomType,
     handleRemoveCustomType,
+    // 起名工具（R18 / 步骤三）
+    editorPaneRef,
+    namingActions,
+    namingExclude,
+    namingFavorites,
   };
 }

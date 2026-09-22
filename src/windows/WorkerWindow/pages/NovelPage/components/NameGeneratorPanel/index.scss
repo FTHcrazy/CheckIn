@@ -1,0 +1,249 @@
+/**
+ * 起名工具面板样式（PRD R18 / 步骤三）
+ *
+ * 全部走 var(--app-*) 主题变量，禁止硬编码色值（AGENTS 6.1.1）。
+ * 网格 + 卡片紧凑布局，按钮小尺寸避免遮挡正文区码字。
+ */
+
+.nv-name {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  padding: 8px 8px 0;
+  gap: 8px;
+
+  &__options {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    padding: 6px;
+    border-radius: 6px;
+    background: var(--app-surface-active);
+  }
+
+  &__field {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 11px;
+    color: var(--app-text-secondary);
+
+    select {
+      width: 100%;
+      height: 26px;
+      padding: 0 6px;
+      border: 1px solid var(--app-border);
+      border-radius: 4px;
+      background: var(--app-surface);
+      color: var(--app-text);
+      font-size: 12px;
+
+      &:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      &:focus {
+        outline: none;
+        border-color: var(--app-primary);
+      }
+    }
+  }
+
+  &__field--gender,
+  &__field--count {
+    // 性别与数量用更紧凑布局
+  }
+
+  &__label {
+    user-select: none;
+  }
+
+  &__generate {
+    grid-column: 1 / -1;
+    height: 28px;
+    border: 1px solid var(--app-primary);
+    border-radius: 4px;
+    background: var(--app-primary);
+    color: var(--app-surface);
+    font-size: 12px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+
+    &:hover {
+      opacity: 0.85;
+    }
+
+    &:active {
+      transform: translateY(1px);
+    }
+  }
+
+  &__empty {
+    margin: 16px 4px;
+    color: var(--app-text-disabled);
+    font-size: 12px;
+    text-align: center;
+  }
+
+  &__grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
+    padding: 2px;
+  }
+
+  &__card {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 6px 6px;
+    border: 1px solid var(--app-border);
+    border-radius: 6px;
+    background: var(--app-surface);
+    transition: border-color 0.15s ease;
+
+    &:hover {
+      border-color: var(--app-primary);
+    }
+  }
+
+  &__text {
+    font-size: 13px;
+    color: var(--app-text);
+    font-weight: 500;
+    word-break: break-all;
+    user-select: text;
+    line-height: 1.4;
+  }
+
+  &__actions {
+    display: flex;
+    gap: 2px;
+    justify-content: flex-end;
+
+    button {
+      width: 22px;
+      height: 22px;
+      padding: 0;
+      border: none;
+      border-radius: 3px;
+      background: transparent;
+      color: var(--app-text-secondary);
+      font-size: 12px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+
+      &:hover {
+        background: var(--app-surface-active);
+        color: var(--app-primary);
+      }
+
+      &.is-on,
+      &[disabled] {
+        color: var(--app-primary);
+        cursor: default;
+      }
+    }
+  }
+
+  &__favorites {
+    border-top: 1px solid var(--app-border);
+    padding-top: 8px;
+    margin-top: 4px;
+    max-height: 35%;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  &__favorites-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 4px 4px;
+    font-size: 11px;
+    color: var(--app-text-secondary);
+    user-select: none;
+  }
+
+  &__favorites-count {
+    color: var(--app-text-disabled);
+  }
+
+  &__favorites-list {
+    list-style: none;
+    margin: 0;
+    padding: 0 2px;
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
+  }
+
+  &__favorite {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 4px;
+    border-radius: 4px;
+
+    &:hover {
+      background: var(--app-surface-active);
+
+      .nv-name__favorite-actions {
+        opacity: 1;
+      }
+    }
+  }
+
+  &__favorite-name {
+    font-size: 12px;
+    color: var(--app-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    user-select: text;
+  }
+
+  &__favorite-meta {
+    font-size: 10px;
+    color: var(--app-text-disabled);
+    white-space: nowrap;
+  }
+
+  &__favorite-actions {
+    display: flex;
+    gap: 2px;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+
+    button {
+      width: 20px;
+      height: 20px;
+      padding: 0;
+      border: none;
+      border-radius: 3px;
+      background: transparent;
+      color: var(--app-text-secondary);
+      font-size: 11px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+
+      &:hover {
+        color: var(--app-primary);
+      }
+    }
+  }
+}

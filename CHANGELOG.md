@@ -139,6 +139,31 @@
   `LedgerPage.test.tsx` 2 例冒烟覆盖有数据态与空态）
 - `tsc --noEmit -p tsconfig.app.json` 与 `tsconfig.node.json`：0 错误
 - `eslint .`：0 error（仅剩 `useHttpClient.ts` 既有 warning）
+## [1.11.1] - 2026-09-22
+
+### Added
+- **小说编辑器 · 起名工具（R18 + R31，零新表）**：右栏新增「工具」Tab，
+  承载组合式随机起名器，服务网文作者「卡名字」高频场景。
+  - **八类名称 × 东西方六风格**：人名 / 地名 / 门派名 / 法宝名 / 境界名 /
+    丹药名 / 系统名 / 神名 × 东方四风格（仙侠 / 武侠 / 现代都市 / 日式）+
+    西方两风格（西幻 · 史诗奇幻 / 西式现代）；不同 kind 用独立前缀 / 后缀
+    双桶避免「天魔丹」「天魔宗」撞名；风格元信息 `applicableKinds`
+    标注每个风格可生成的类型（如「现代都市」不产门派 / 法宝 / 境界）
+  - **生成器纯函数 + 单测**：`naming/name-generator.ts` —— `generateNames`
+    四维过滤（风格 × 类型 × 性别 × 避开本书已用名）、10 个 / 批、
+    `generateNextBatch` 换批、带 seed 可复现；`name-generator.test.ts`
+    覆盖去重 / 避开已用 / 空池降级 / 可复现性，23 例全绿
+  - **双出口**：EditorPane `forwardRef` + `useImperativeHandle` 暴露
+    `insertText(text)`，名字一键插入正文光标处；另一出口复用
+    `handleSaveEntity` 一键建为角色卡（名称带入）
+  - **收藏夹按作品持久化**：复用 `configGet / set`（零新 IPC、零新表），
+    `sanitizeNameFavorites` 纯函数清洗防 config 损坏；`useNovelData`
+    暴露 `nameFavorites` 状态与 `addNameFavorite / removeNameFavorite` 动作
+  - **内置静态词库**：`naming/data/dictionary.ts` 静态资源随应用分发
+    （姓氏池 + 男 / 女名用字 + 西方姓 / given 名 + 按风格 × kind 双桶）
+- **PRD 同步更新**：R18 描述扩展为「八类 × 东西方六风格」；§9 步骤三
+  标 ✅ 已完成；§6.5.1 M2 表 R31 状态更新；§6.5.3 从未实现清单移除
+  R18；§10 开放问题 9 起名词库来源现状更新
 
 ## [1.11.0] - 2026-09-21
 

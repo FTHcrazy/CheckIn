@@ -96,6 +96,10 @@ export default function NovelPage({
     handleRenameCustomType,
     handleRemoveCustomType,
     entityTypesValue,
+    editorPaneRef,
+    namingActions,
+    namingExclude,
+    namingFavorites,
   } = useNovelPage();
 
   const { loadSnapshots, activeChapterId, searchBook } = data;
@@ -268,6 +272,7 @@ export default function NovelPage({
 
         <div className="nv-page__stage">
           <EditorPane
+            ref={editorPaneRef}
             chapter={data.activeChapter}
             chapterNumber={
               data.activeChapterId
@@ -390,6 +395,9 @@ export default function NovelPage({
             if (target) handleSetEntityLevel(entityId, target.type, rungId);
           }}
           onOpenLevelManager={view.openLevelManager}
+          namingActions={namingActions}
+          namingExclude={namingExclude}
+          namingFavorites={namingFavorites}
         />
       </div>
 

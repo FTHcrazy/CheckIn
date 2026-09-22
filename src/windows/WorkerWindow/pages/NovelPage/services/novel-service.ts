@@ -3,6 +3,8 @@ import { STORAGE_KEYS } from "../novel-config";
 import type {
   CustomEntityTypeDef,
   EditorSettings,
+  NameFavorite,
+  NamingCustomPool,
   NovelBundle,
   NovelChapter,
   NovelEntity,
@@ -327,5 +329,37 @@ export async function saveCustomEntityTypes(
   return window.electronAPI!.novel.configSet(
     STORAGE_KEYS.entityTypes,
     JSON.stringify(types),
+  );
+}
+
+// ── 起名工具（R18 / 步骤三：复用 config 整读整写，零新表） ──
+
+/** 读取起名工具收藏夹 JSON（键不存在返回 null） */
+export async function fetchNameFavorites(): Promise<string | null> {
+  return window.electronAPI!.novel.configGet(STORAGE_KEYS.namingFavorites);
+}
+
+/** 保存起名工具收藏夹（防抖由调用方负责） */
+export async function saveNameFavorites(
+  favorites: NameFavorite[],
+): Promise<boolean> {
+  return window.electronAPI!.novel.configSet(
+    STORAGE_KEYS.namingFavorites,
+    JSON.stringify(favorites),
+  );
+}
+
+/** 读取用户自定义用字池 JSON（键不存在返回 null） */
+export async function fetchNamingCustomPools(): Promise<string | null> {
+  return window.electronAPI!.novel.configGet(STORAGE_KEYS.namingCustomPools);
+}
+
+/** 保存用户自定义用字池 */
+export async function saveNamingCustomPools(
+  pool: NamingCustomPool,
+): Promise<boolean> {
+  return window.electronAPI!.novel.configSet(
+    STORAGE_KEYS.namingCustomPools,
+    JSON.stringify(pool),
   );
 }

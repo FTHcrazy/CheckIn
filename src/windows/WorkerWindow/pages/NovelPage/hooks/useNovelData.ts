@@ -9,6 +9,7 @@ import {
   createNovelId,
   fetchChapterSnapshots,
   fetchLastPosition,
+  fetchNameFavorites,
   fetchNovelBundle,
   removeLevel as removeLevelRemote,
   removeLevelSystem as removeLevelSystemRemote,
@@ -28,6 +29,7 @@ import {
   saveChapterOutline,
   saveEntity,
   saveLevelOrder,
+  saveNameFavorites,
   saveNote as saveNoteRemote,
   saveOutlineEntry,
   saveVolumeOrder,
@@ -45,6 +47,7 @@ import {
   previewChapterReorder,
   previewChapterToVolume,
   previewVolumeReorder,
+  sanitizeNameFavorites,
   sanitizeRestorePosition,
   sortNotes,
   type ChapterGroup,
@@ -56,6 +59,9 @@ import type {
   ForeshadowPatch,
   LevelRung,
   LevelSystem,
+  NameFavorite,
+  NamingKind,
+  NameStyle,
   NotePatch,
   NovelBundle,
   NovelChapter,
@@ -90,6 +96,8 @@ export function useNovelData() {
   const [snapshots, setSnapshots] = useState<NovelSnapshot[]>([]);
   /** 上次续写位置（R6）：仅启动恢复用，消费一次后清空 */
   const [lastPosition, setLastPosition] = useState<RestorePosition | null>(null);
+  /** 起名工具收藏夹（R18 ④）：跨作品单键存储，UI 按 workId 过滤 */
+  const [nameFavorites, setNameFavorites] = useState<NameFavorite[]>([]);
 
   const load = useCallback(async (): Promise<void> => {
     setLoading(true);
@@ -110,6 +118,9 @@ export function useNovelData() {
       } else {
         setActiveChapterId((current) => current ?? next.chapters[0]?.id ?? null);
       }
+      // 起名工具收藏夹（R18 ④）：与全量 bundle 并行加载
+      const favoritesJson = await fetchNameFavorites();
+      setNameFavorites(sanitizeNameFavorites(favoritesJson));
     } finally {
       setLoading(false);
     }
@@ -970,6 +981,56 @@ export function useNovelData() {
     [bundle],
   );
 
+  // ── 起名工具收藏夹（R18 ④）：跨作品单键存储，按 workId 过滤 ────────────
+
+  /** 加入收藏夹（防抖落库；同作品同名不重复入） */
+  const addNameFavorite = useCallback(
+    (workId: string, name: string, kind: NamingKind, style: NameStyle): void => {
+      const trimmed = name.trim();
+      if (!workId || !trimmed) return;
+      setNameFavorites((current) => {
+        if (
+          current.some(
+            (f) => f.workId === workId && f.name === trimmed,
+          )
+        ) {
+          return current;
+        }
+        const next: NameFavorite[] = [
+          {
+            id: `nf-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+            workId,
+            name: trimmed,
+            kind,
+            style,
+            createdAt: Date.now(),
+          },
+          ...current,
+        ];
+        void saveNameFavorites(next);
+        return next;
+      });
+    },
+    [],
+  );
+
+  /** 移除收藏夹 */
+  const removeNameFavorite = useCallback((favoriteId: string): void => {
+    setNameFavorites((current) => {
+      const next = current.filter((f) => f.id !== favoriteId);
+      if (next.length === current.length) return current;
+      void saveNameFavorites(next);
+      return next;
+    });
+  }, []);
+
+  /** 当前作品收藏夹（按 workId 过滤；useNovelPage 透传给 SupportPanel） */
+  const nameFavoritesOf = useCallback(
+    (workId: string): NameFavorite[] =>
+      nameFavorites.filter((f) => f.workId === workId),
+    [nameFavorites],
+  );
+
   /** 要素关联的双向视图（PRD R24；R25 起目标可为等级项 toType='level'） */
   const getEntityRelations = useCallback(
     (entityId: string, entityType: EntityType): EntityRelationView[] => {
@@ -1225,6 +1286,9 @@ export function useNovelData() {
     migrateEntityType,
     getEntityById,
     getEntityRelations,
+    addNameFavorite,
+    removeNameFavorite,
+    nameFavoritesOf,
     addNote,
     updateNote,
     removeNote,
