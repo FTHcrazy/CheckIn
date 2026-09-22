@@ -43,6 +43,8 @@ interface InspirationPanelProps {
  * （中文候选期间的回车不上抛）；重要灵感可置顶，卡壳时置顶的永远在最上面。
  * 与大纲的联动只有一条：灵感可以一键落成伏笔，落点由页面层决定。
  * 搜索为全局口径：关键词命中全部书籍的灵感，其他书的灵感只读展示来源。
+ *
+ * 列表虚拟化：灵感可能积累到上千条，不允许全量挂载。
  */
 export default function InspirationPanel({
   notes,
@@ -71,6 +73,12 @@ export default function InspirationPanel({
     [filtering, searchPool, keyword, notes],
   );
   const pinnedCount = notes.filter((note) => note.pinned).length;
+
+  const countText = filtering
+    ? `${visible.length} / ${searchPool.length}${
+        pinnedCount > 0 ? ` · 置顶 ${pinnedCount}` : ""
+      }`
+    : `${notes.length} 条${pinnedCount > 0 ? ` · 置顶 ${pinnedCount}` : ""}`;
 
   /** 其他书籍的灵感：全局搜索结果中只读展示，操作留给归属作品 */
   const isExternal = (note: NovelNote): boolean =>
@@ -118,12 +126,130 @@ export default function InspirationPanel({
     commitEdit(note);
   };
 
+  const renderNote = (note: NovelNote, index: number) => {
+    const external = isExternal(note);
+    const preceding = index > 0 ? visible[index - 1] : null;
+    // 置顶分组独立成段：卡壳时一眼看到最重要的那几条
+    const pinnedHead = index === 0 && note.pinned;
+    const restHead = !note.pinned && (index === 0 || Boolean(preceding?.pinned));
+
+    return (
+      <div className="nv-note__item" key={note.id}>
+        {pinnedHead && (
+          <div className="nv-sechead">
+            置顶<em>{pinnedCount}</em>
+          </div>
+        )}
+        {restHead && (
+          <div className="nv-sechead">
+            {pinnedCount > 0 ? "最近" : "全部"}
+            <em>{visible.length - pinnedCount}</em>
+          </div>
+        )}
+        <div
+          className={`nv-note__card${note.pinned ? " is-pinned" : ""}`}
+          role="group"
+          aria-label={note.content}
+        >
+          {editingId === note.id ? (
+            <>
+              <textarea
+                className="nv-note__edit"
+                value={editDraft}
+                autoFocus
+                rows={3}
+                aria-label="编辑灵感内容"
+                onChange={(event) => setEditDraft(event.target.value)}
+                onKeyDown={(event) => handleEditKeyDown(event, note)}
+                onBlur={() => commitEdit(note)}
+              />
+              <footer className="nv-note__foot">
+                <span className="nv-note__tip">
+                  Enter 保存 · Shift+Enter 换行 · Esc 取消
+                </span>
+              </footer>
+            </>
+          ) : (
+            <>
+              <p className="nv-note__text">{note.content}</p>
+              <footer className="nv-note__foot">
+                <span className="nv-note__time">
+                  {formatRelativeTime(note.createdAt)}
+                </span>
+                {external && (
+                  <span
+                    className="nv-note__src"
+                    title={`来自《${workNameOf?.(note.workId) ?? "其他作品"}》`}
+                  >
+                    {workNameOf?.(note.workId) ?? "其他作品"}
+                  </span>
+                )}
+                {note.foreshadowId && (
+                  <span className="nv-note__flag" title="已写入大纲为伏笔">
+                    <FlagOutlined /> 已转为伏笔
+                  </span>
+                )}
+                {!external && (
+                  <span className="nv-note__acts">
+                    <button
+                      type="button"
+                      className={`nv-mini${note.pinned ? " is-on" : ""}`}
+                      aria-pressed={note.pinned}
+                      aria-label={note.pinned ? "取消置顶" : "置顶"}
+                      title={note.pinned ? "取消置顶" : "置顶"}
+                      onClick={() => actions.onTogglePin(note.id, !note.pinned)}
+                    >
+                      {note.pinned ? <PushpinFilled /> : <PushpinOutlined />}
+                    </button>
+                    <button
+                      type="button"
+                      className="nv-mini"
+                      disabled={Boolean(note.foreshadowId)}
+                      aria-label="转为伏笔"
+                      title={
+                        note.foreshadowId
+                          ? "已转为伏笔"
+                          : "转为伏笔（写入大纲）"
+                      }
+                      onClick={() => actions.onPromoteNote(note.id)}
+                    >
+                      <FlagOutlined />
+                    </button>
+                    <button
+                      type="button"
+                      className="nv-mini"
+                      aria-label="编辑灵感"
+                      title="编辑灵感"
+                      onClick={() => startEdit(note)}
+                    >
+                      <EditOutlined />
+                    </button>
+                    <button
+                      type="button"
+                      className="nv-mini nv-mini--warn"
+                      aria-label="删除灵感"
+                      title="删除灵感"
+                      onClick={() => actions.onRemoveNote(note.id)}
+                    >
+                      <CloseOutlined />
+                    </button>
+                  </span>
+                )}
+              </footer>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="nv-note">
-      <div className="nv-note__editor">
+      <div className="nv-note__composer">
         <textarea
           value={draft}
-          placeholder="甩一句灵感进来…（Enter 记录）"
+          placeholder="甩一句灵感进来…"
+          aria-label="新增灵感"
           rows={3}
           onChange={(event) => setDraft(event.target.value)}
           onCompositionStart={() => {
@@ -139,145 +265,65 @@ export default function InspirationPanel({
             submit();
           }}
         />
-        <button type="button" className="nv-note__submit" onClick={submit}>
-          记录
-        </button>
+        <div className="nv-note__composer-foot">
+          <span className="nv-note__tip">
+            <kbd>Enter</kbd> 记录 · <kbd>Shift</kbd>+<kbd>Enter</kbd> 换行
+          </span>
+          <button
+            type="button"
+            className="nv-note__send"
+            onClick={submit}
+            disabled={draft.trim().length === 0}
+          >
+            记录
+          </button>
+        </div>
       </div>
 
-      <div className="nv-note__toolbar">
-        <label className="nv-note__search">
-          <SearchOutlined className="nv-note__search-icon" />
-          <input
-            value={keyword}
-            placeholder="全局搜灵感…"
-            aria-label="搜索灵感"
-            onChange={(event) => setKeyword(event.target.value)}
-          />
-          {filtering && (
-            <button
-              type="button"
-              aria-label="清空搜索"
-              onClick={() => setKeyword("")}
-            >
-              <CloseOutlined />
-            </button>
-          )}
-        </label>
-        <span className="nv-note__count">
-          {filtering
-            ? `${visible.length} / ${searchPool.length}`
-            : `${notes.length} 条`}
-          {pinnedCount > 0 && ` · 置顶 ${pinnedCount}`}
-        </span>
+      <div className="nv-field nv-note__search">
+        <SearchOutlined />
+        <input
+          value={keyword}
+          placeholder="搜索灵感（全书口径）"
+          aria-label="搜索灵感"
+          onChange={(event) => setKeyword(event.target.value)}
+        />
+        {filtering && (
+          <button
+            type="button"
+            className="nv-field__clear"
+            aria-label="清空搜索"
+            onClick={() => setKeyword("")}
+          >
+            <CloseOutlined />
+          </button>
+        )}
       </div>
 
       {searchPool.length === 0 ? (
-        <p className="nv-note__empty">还没有灵感记录</p>
+        <div className="nv-empty">
+          <b>还没有灵感记录</b>
+          <span>想到什么先甩进来，之后再整理</span>
+        </div>
       ) : visible.length === 0 ? (
-        <p className="nv-note__empty">没有匹配「{keyword.trim()}」的灵感</p>
+        <div className="nv-empty">
+          <b>没有匹配「{keyword.trim()}」的灵感</b>
+          <span>清空关键词看看全部</span>
+        </div>
       ) : (
-        <Virtuoso
-          className="nv-note__list"
-          style={{ flex: 1, minHeight: 0 }}
-          data={visible}
-          overscan={8}
-          computeItemKey={(_, note) => note.id}
-          itemContent={(_, note) => (
-            /* 包裹层做间距：margin 不会被 Virtuoso 计入测量高度 */
-            <div className="nv-note__item">
-              <div
-                className={`nv-note__card${note.pinned ? " is-pinned" : ""}`}
-                role="group"
-                aria-label={note.content}
-              >
-              {editingId === note.id ? (
-                <>
-                  <textarea
-                    className="nv-note__edit"
-                    value={editDraft}
-                    autoFocus
-                    rows={3}
-                    aria-label="编辑灵感内容"
-                    onChange={(event) => setEditDraft(event.target.value)}
-                    onKeyDown={(event) => handleEditKeyDown(event, note)}
-                    onBlur={() => commitEdit(note)}
-                  />
-                  <footer className="nv-note__meta">
-                    <span className="nv-note__tip">
-                      Enter 保存 · Shift+Enter 换行 · Esc 取消
-                    </span>
-                  </footer>
-                </>
-              ) : (
-                <>
-                  <p className="nv-note__text">{note.content}</p>
-                  <footer className="nv-note__meta">
-                    <span className="nv-note__time">
-                      {formatRelativeTime(note.createdAt)}
-                    </span>
-                    {isExternal(note) && (
-                      <span
-                        className="nv-note__source"
-                        title={`来自《${workNameOf?.(note.workId) ?? "其他作品"}》`}
-                      >
-                        {workNameOf?.(note.workId) ?? "其他作品"}
-                      </span>
-                    )}
-                    {note.foreshadowId && (
-                      <span className="nv-note__flag" title="已写入大纲为伏笔">
-                        <FlagOutlined /> 已转为伏笔
-                      </span>
-                    )}
-                    {!isExternal(note) && (
-                    <span className="nv-note__actions">
-                      <button
-                        type="button"
-                        className={note.pinned ? "is-on" : undefined}
-                        aria-pressed={note.pinned}
-                        aria-label={note.pinned ? "取消置顶" : "置顶"}
-                        title={note.pinned ? "取消置顶" : "置顶"}
-                        onClick={() => actions.onTogglePin(note.id, !note.pinned)}
-                      >
-                        {note.pinned ? <PushpinFilled /> : <PushpinOutlined />}
-                      </button>
-                      <button
-                        type="button"
-                        disabled={Boolean(note.foreshadowId)}
-                        aria-label="转为伏笔"
-                        title={
-                          note.foreshadowId
-                            ? "已转为伏笔"
-                            : "转为伏笔（写入大纲）"
-                        }
-                        onClick={() => actions.onPromoteNote(note.id)}
-                      >
-                        <FlagOutlined />
-                      </button>
-                      <button
-                        type="button"
-                        aria-label="编辑灵感"
-                        title="编辑灵感"
-                        onClick={() => startEdit(note)}
-                      >
-                        <EditOutlined />
-                      </button>
-                      <button
-                        type="button"
-                        aria-label="删除灵感"
-                        title="删除灵感"
-                        onClick={() => actions.onRemoveNote(note.id)}
-                      >
-                        <CloseOutlined />
-                      </button>
-                    </span>
-                    )}
-                  </footer>
-                </>
-              )}
-              </div>
-            </div>
-          )}
-        />
+        <>
+          <div className="nv-sechead">
+            本作品灵感<em>{countText}</em>
+          </div>
+          <Virtuoso
+            className="nv-note__list"
+            style={{ flex: 1, minHeight: 0 }}
+            data={visible}
+            overscan={8}
+            computeItemKey={(_, note) => note.id}
+            itemContent={(index, note) => renderNote(note, index)}
+          />
+        </>
       )}
     </div>
   );

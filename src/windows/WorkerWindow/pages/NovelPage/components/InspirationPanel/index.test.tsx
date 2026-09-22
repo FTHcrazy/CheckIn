@@ -58,12 +58,32 @@ describe("InspirationPanel 组件", () => {
     const onAddNote = vi.fn();
     render(<InspirationPanel notes={[]} actions={buildActions({ onAddNote })} />);
 
-    const box = screen.getByPlaceholderText("甩一句灵感进来…（Enter 记录）");
+    const box = screen.getByPlaceholderText("甩一句灵感进来…");
     fireEvent.change(box, { target: { value: "  雨停，山门钟声  " } });
     fireEvent.keyDown(box, { key: "Enter" });
 
     expect(onAddNote).toHaveBeenCalledWith("雨停，山门钟声");
     expect(box).toHaveValue("");
+  });
+
+  it("空草稿时禁用记录按钮，避免空灵感入库", () => {
+    const onAddNote = vi.fn();
+    render(<InspirationPanel notes={[]} actions={buildActions({ onAddNote })} />);
+
+    const send = screen.getByRole("button", { name: "记录" });
+    expect(send).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText("新增灵感"), {
+      target: { value: "  " },
+    });
+    expect(send).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText("新增灵感"), {
+      target: { value: "钟声" },
+    });
+    expect(send).toBeEnabled();
+    fireEvent.click(send);
+    expect(onAddNote).toHaveBeenCalledWith("钟声");
   });
 
   it("搜索按内容过滤，计数切换为命中 / 总数", () => {

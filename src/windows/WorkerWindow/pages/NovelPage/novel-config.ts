@@ -11,7 +11,12 @@ import type { BuiltinEntityType, EditorSettings } from "./types";
 export const LAYOUT = {
   topBarHeight: 44,
   leftRailWidth: 236,
-  rightRailWidth: 322,
+  /** 右栏基准宽度（支撑面板改版：原 322 → 340） */
+  rightRailWidth: 340,
+  /** 右栏可拖拽下限：低于此值名卡 / chips 会被挤到换行 */
+  rightRailMinWidth: 280,
+  /** 右栏可拖拽上限：再宽会挤压正文最小可用宽度 */
+  rightRailMaxWidth: 460,
   statusBarHeight: 32,
   /**
    * 正文舞台最小可用宽度：三栏（左 236 + 右 322）挤到低于此值时，
@@ -43,11 +48,18 @@ export const STORAGE_KEYS = {
   namingFavorites: "novel_naming_favorites",
   /** 起名工具自定义用字池（R18 ①）：NamingCustomPool 整读整写 */
   namingCustomPools: "novel_naming_custom_pools",
+  /** 右栏宽度（支撑面板改版）：单个数字整读整写，270ms 防抖后落库 */
+  panelWidth: "novel_panel_width",
 } as const;
 
 /** 续写位置记忆（R6）：变化后防抖落库 */
 export const POSITION = {
   debounceMs: 500,
+} as const;
+
+/** 右栏宽度拖拽的持久化节奏：拖拽过程只动内存，停手才落库 */
+export const PANEL_WIDTH = {
+  debounceMs: 300,
 } as const;
 
 /** 保存时机（PRD §2） */

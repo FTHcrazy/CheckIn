@@ -24,6 +24,7 @@ import type {
 import {
   DEFAULT_SETTINGS,
   ENTITY_TYPE_META,
+  LAYOUT,
   SETTINGS_RANGE,
   UNNAMED_VOLUME,
 } from "./novel-config";
@@ -356,14 +357,22 @@ export function buildOutlineTree(
           Number(a.status === "resolved") - Number(b.status === "resolved") ||
           a.createdAt - b.createdAt,
       )
-      .map((entry) => ({
-        kind: "foreshadow",
-        id: entry.id,
-        entryId: entry.id,
-        title: entry.title,
-        note: entry.note,
-        resolved: entry.status === "resolved",
-      }));
+      .map((entry) => {
+        const bound = entry.chapterId
+          ? group.chapters.find((chapter) => chapter.id === entry.chapterId)
+          : undefined;
+        return {
+          kind: "foreshadow" as const,
+          id: entry.id,
+          entryId: entry.id,
+          title: entry.title,
+          note: entry.note,
+          resolved: entry.status === "resolved",
+          source: bound
+            ? `${formatNumberedLabel(options.numberStyle, options.chapterSuffix, numbers.get(bound.id) ?? 1)} ${bound.title}`
+            : "",
+        };
+      });
 
     return {
       kind: "volume",
@@ -706,6 +715,24 @@ export function parseJsonOrNull(raw: string | null): unknown {
   } catch {
     return null;
   }
+}
+
+/**
+ * 右栏宽度夹取到可拖拽区间（LAYOUT 的 280–460）。
+ *
+ * config 里的值可能被手改成任意东西：非数字 / NaN / 越界一律回退基准宽度，
+ * 保证窗口布局永远不会被一个坏配置撑爆。
+ */
+export function clampPanelWidth(value: unknown): number {
+  const fallback = LAYOUT.rightRailWidth;
+  const raw =
+    typeof value === "number" && Number.isFinite(value)
+      ? Math.round(value)
+      : fallback;
+  return Math.min(
+    LAYOUT.rightRailMaxWidth,
+    Math.max(LAYOUT.rightRailMinWidth, raw),
+  );
 }
 
 /** 内置要素类型的合法集合；自建类型（ct-* 前缀）另行放行 */

@@ -1,42 +1,16 @@
+/* 要素库面板（NL 设计稿 §3·要素库） */
+
 .nv-entity {
-  &__filters {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 5px;
-    margin-bottom: 10px;
+  display: flex;
+  flex-direction: column;
+
+  &__search {
+    flex: none;
   }
 
-  &__chip {
-    padding: 3px 9px;
-    border: 1px solid var(--app-border);
-    border-radius: var(--app-radius-pill);
-    background: var(--app-surface);
-    color: var(--app-text-secondary);
-    font-size: 11px;
-    cursor: pointer;
-    transition: border-color 120ms ease, background 120ms ease, color 120ms ease;
-
-    &:hover {
-      border-color: var(--app-primary);
-    }
-
-    &.is-on {
-      background: var(--app-primary);
-      border-color: var(--app-primary);
-      color: var(--app-primary-contrast);
-    }
-
-    &:focus-visible {
-      outline: 2px solid var(--app-primary);
-      outline-offset: 2px;
-    }
-  }
-
-  &__empty {
-    padding: 24px 8px;
-    text-align: center;
-    font-size: 12px;
-    color: var(--app-text-muted);
+  &__chips {
+    flex: none;
+    margin-top: 8px;
   }
 
   &__list {

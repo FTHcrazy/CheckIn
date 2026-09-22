@@ -1,0 +1,96 @@
+/* 工具箱启动器（NL 设计稿 §3·工具区） */
+
+.nv-tools {
+  display: flex;
+  flex-direction: column;
+
+  &__grid {
+    display: grid;
+    gap: 8px;
+  }
+
+  &__card {
+    display: flex;
+    gap: 11px;
+    padding: 12px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-panel);
+    background: var(--app-surface);
+    color: var(--app-text);
+    font-family: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 160ms ease, box-shadow 160ms ease,
+      transform 160ms ease;
+
+    &:hover {
+      border-color: var(--app-primary);
+      box-shadow: var(--app-shadow-card);
+      transform: translateY(-2px);
+    }
+
+    /* 规划中的工具：可看不可点，避免给用户假入口 */
+    &.is-planned {
+      cursor: default;
+      opacity: 0.68;
+
+      &:hover {
+        border-color: var(--app-border);
+        box-shadow: none;
+        transform: none;
+      }
+    }
+  }
+
+  &__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+    flex: none;
+
+    & > svg,
+    & > .anticon {
+      width: 19px;
+      height: 19px;
+      font-size: 19px;
+    }
+  }
+
+  &__body {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__name {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13.5px;
+    font-weight: 600;
+  }
+
+  &__desc {
+    display: block;
+    margin-top: 3px;
+    font-size: 12px;
+    line-height: 1.65;
+    color: var(--app-text-muted);
+  }
+
+  &__state {
+    padding: 0 7px;
+    border-radius: var(--app-radius-pill);
+    background: var(--app-surface-hover);
+    color: var(--app-text-muted);
+    font-size: 10.5px;
+    font-weight: 500;
+
+    &.is-live {
+      background: var(--app-success-weak);
+      color: var(--app-success);
+    }
+  }
+}

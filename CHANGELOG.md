@@ -1,5 +1,40 @@
 # Changelog
 
+## [1.14.0] - 2026-09-22
+
+### Added
+- **右栏支撑面板宽度可调并记忆**：新增纯函数 `clampPanelWidth()`（`novel-utils.ts`，
+  区间 280–460，非法值回退基准），`LAYOUT` 新增 `rightRailMinWidth` /
+  `rightRailMaxWidth`，基准宽度 322 → 340；`useNovelViewState` 新增 `rightWidth` /
+  `setRightWidth`，挂载时经 `novel-config-get`（键 `novel_panel_width`）恢复、
+  变更后 300ms 防抖写回（`novel-service.ts` 的 `fetchPanelWidth` / `savePanelWidth`）
+- **工具箱启动器**：新增 `components/SupportPanel/components/ToolLauncher/`，工具
+  Tab 改为二级面板——起名器可直接进入，人物关系网络（R27）/ 架空地图（R28）以
+  「规划中」占位卡呈现，避免拿不可用的入口占版面
+- **大纲伏笔来源**：`OutlineNode` 的 foreshadow 节点新增 `source` 字段，
+  `buildOutlineTree` 绑定章时拼「第三章 断碑」标签，卷级伏笔回退
+  「卷级伏笔 · 不绑定具体章」
+- **面板通用零件**：新增 `SupportPanel/panel-primitives.scss`（`.nv-field` /
+  `.nv-sub` / `.nv-chips` / `.nv-sechead` / `.nv-empty` / `.nv-mini` / `.nv-kv` /
+  `.nv-ghost`），供五个 Tab 与二级面板复用，避免各面板各写一份
+
+### Changed
+- **右栏骨架改为四段式**（面板头／分段 Tab／内容滚动区／常驻提示条）：面板头按
+  Tab 显示语境计数与主操作（大纲「＋ 伏笔」、要素库齿轮进类型管理）；Tab 改为分段
+  控件 + 白色滑块指示器（ResizeObserver 测量 + `transform` 滑动）；底部常驻快捷键
+  提示条；左边界新增拖拽把手，收起后右边缘留竖向重开把手
+- **大纲拆双视图**：章节与伏笔不再交错混排（长卷里伏笔会被章节挤到看不见），改由
+  子分段切换并各自带计数；伏笔支持待回收／已回收／全部过滤与就地编辑，卷可折叠
+- **要素卡与详情改版**：卡片显示别名／一句话／关联数／出场章数／当前境界，悬停浮出
+  「插入正文／编辑」；详情改 hero 卡 + 基础字段／关联／境界阶梯／出场章节分区
+- **要素库**：顶部搜索（名称／别名／简介）+ 带计数类型 chips（横向滚动），全部视图
+  按类型分组；出场章数由页面层 `appearanceCountOf` 聚合下发
+- **灵感面板**：速记框改为 Enter 记录 / Shift+Enter 换行且空草稿禁用「记录」，
+  置顶独立成段，行内操作悬停浮出，其他书籍的灵感只读并标注来源
+- **检索面板**：新增作用域（全书／本章／要素名），要素名作用域走内存比对零往返，
+  最近搜索 chips，检索中骨架屏，命中高亮
+- **起名器**：二维选项网格 + 结果卡 + 收藏夹，悬停浮出快捷操作
+
 ## [1.13.1] - 2026-09-22
 
 ### Fixed

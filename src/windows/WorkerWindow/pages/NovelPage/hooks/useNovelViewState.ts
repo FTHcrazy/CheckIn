@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { LAYOUT, TOAST_DURATION_MS } from "../novel-config";
+import { LAYOUT, PANEL_WIDTH, TOAST_DURATION_MS } from "../novel-config";
+import { clampPanelWidth, parseJsonOrNull } from "../novel-utils";
+import { fetchPanelWidth, savePanelWidth } from "../services/novel-service";
 import type { EntityType } from "../types";
 
 export type PanelTab = "outline" | "entity" | "note" | "search" | "tools";
@@ -39,9 +41,20 @@ export function useNovelViewState() {
   const [typeManagerOpen, setTypeManagerOpen] = useState(false);
   const [toast, setToast] = useState<ToastPayload | null>(null);
 
+  /**
+   * 右栏宽度（支撑面板改版）：基准 340，可拖拽 280–460。
+   *
+   * 属于视图状态而非排版设置，所以不并进 EditorSettings——持久化另走
+   * config 的 `novel_panel_width` 键，与其他 view 状态一样由本 Hook 自持。
+   * 拖拽过程只改内存，停手 300ms 后才落库（避免一次拖拽打出几十次 IPC）。
+   */
+  const [rightWidth, setRightWidthState] = useState<number>(LAYOUT.rightRailWidth);
+  const widthLoadedRef = useRef(false);
+
   // 小屏自适应用的镜像 / 记忆 ref：effect 里读到最新值，又不把状态塞进依赖
   const leftOpenRef = useRef(leftOpen);
   const rightOpenRef = useRef(rightOpen);
+  const rightWidthRef = useRef(rightWidth);
   const autoCollapsedRef = useRef(false);
   const mountedRef = useRef(false);
 
@@ -52,6 +65,37 @@ export function useNovelViewState() {
   useEffect(() => {
     rightOpenRef.current = rightOpen;
   }, [rightOpen]);
+
+  useEffect(() => {
+    rightWidthRef.current = rightWidth;
+  }, [rightWidth]);
+
+  // 宽度恢复：loadedRef 门禁保证首帧的基准值不会先盖掉用户上次拖出来的宽度
+  useEffect(() => {
+    let cancelled = false;
+    void fetchPanelWidth()
+      .then((raw) => {
+        if (cancelled) return;
+        setRightWidthState(clampPanelWidth(parseJsonOrNull(raw)));
+      })
+      .catch(() => {
+        // IPC 失败：保持基准宽度，拖拽链路照常可用
+      })
+      .finally(() => {
+        if (!cancelled) widthLoadedRef.current = true;
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!widthLoadedRef.current) return undefined;
+    const timer = window.setTimeout(() => {
+      void savePanelWidth(rightWidth);
+    }, PANEL_WIDTH.debounceMs);
+    return () => window.clearTimeout(timer);
+  }, [rightWidth]);
 
   // 轻提示：2.4s 自动消失，pointer-events:none 由组件保证不阻塞输入（设计方案 §06）
   useEffect(() => {
@@ -73,22 +117,26 @@ export function useNovelViewState() {
   }, []);
   const toggleRight = useCallback(() => setRightOpen((open) => !open), []);
   const toggleTypewriter = useCallback(() => setTypewriter((on) => !on), []);
+  /** 拖拽右栏边界：只更新内存宽度（夹取到 280–460），落库由上面 effect 防抖接管 */
+  const setRightWidth = useCallback((next: number) => {
+    setRightWidthState(clampPanelWidth(next));
+  }, []);
+
   const toggleAnnotation = useCallback(() => setAnnotationOn((on) => !on), []);
 
   /**
    * 小屏自适应：三栏放不下时自动收起左栏给码字区让位。
    *
    * 判据是「窗口宽 - 当前占用的栏宽 < 正文最小可用宽度」，而不是写死一个
-   * 窗口宽度阈值——右栏是用户按需打开的，它一开可用宽度立刻少 322px，
-   * 这时才收起左栏才是对的。左栏收起由本 effect 负责，右栏永不自动收
+   * 窗口宽度阈值——右栏是用户按需打开的，它一开可用宽度立刻少一个面板宽
+   * （拖宽到 460 时更挤），这时才收起左栏才是对的。左栏收起由本 effect 负责，右栏永不自动收
    * （用户刚点开的面板立刻消失会被当成 bug）。
    * 手动开合过左栏（toggleLeft）之后本机制即失效，交给用户自己决定。
    */
   useEffect(() => {
     const sync = (): void => {
       const railBudget =
-        LAYOUT.leftRailWidth +
-        (rightOpenRef.current ? LAYOUT.rightRailWidth : 0);
+        LAYOUT.leftRailWidth + (rightOpenRef.current ? rightWidthRef.current : 0);
       const tight = window.innerWidth - railBudget < LAYOUT.minStageWidth;
 
       if (tight) {
@@ -110,7 +158,7 @@ export function useNovelViewState() {
     mountedRef.current = true;
     window.addEventListener("resize", sync);
     return () => window.removeEventListener("resize", sync);
-  }, [rightOpen, showToast]);
+  }, [rightOpen, rightWidth, showToast]);
 
   // 专注模式 hides 顶栏 / 状态条 / 左右栏；Esc 只退出专注，不关窗（PRD §2 零打断）
   const toggleFocus = useCallback(() => {
@@ -166,6 +214,7 @@ export function useNovelViewState() {
   return {
     leftOpen: effectiveLeftOpen,
     rightOpen: effectiveRightOpen,
+    rightWidth,
     focusMode,
     typewriter,
     annotationOn,
@@ -180,6 +229,7 @@ export function useNovelViewState() {
     toast,
     toggleLeft,
     toggleRight,
+    setRightWidth,
     toggleFocus,
     exitFocus,
     toggleTypewriter,

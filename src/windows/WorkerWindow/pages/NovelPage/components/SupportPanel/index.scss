@@ -1,40 +1,192 @@
-.nv-panel {
-  width: 322px;
+@import "./panel-primitives.scss";
+
+/*
+ * 右栏支撑面板容器（NL 设计稿 §3）
+ *
+ * 四段式骨架：面板头（标题 + 语境计数 + 主操作）／分段 Tab（白色滑块指示器）／
+ * 内容滚动区／常驻提示条。尺寸一律走 var(--app-*)，切主题不掉色；
+ * 宽度由 JS 以 inline style 给出（280–460 可拖拽），折叠走 width/opacity 过渡。
+ */
+
+.nv-panel-region {
+  position: relative;
   flex: none;
   display: flex;
+}
+
+.nv-panel {
+  position: relative;
+  display: flex;
   flex-direction: column;
-  border-left: 1px solid var(--app-border);
-  background: var(--app-sidebar-bg);
+  width: 340px;
   overflow: hidden;
-  transition: width 200ms ease, opacity 160ms ease;
+  border-left: 1px solid var(--app-border);
+  background: var(--app-surface-alt);
+  transition: width 220ms cubic-bezier(0.4, 0, 0.2, 1), opacity 160ms ease;
 
   &.is-collapsed {
-    width: 0;
+    width: 0 !important;
     opacity: 0;
     border-left: none;
   }
 
-  &__tabs {
+  /* ── 左边界拖拽把手 ─────────────────────────────────────────── */
+  &__resizer {
+    position: absolute;
+    left: -3px;
+    top: 0;
+    z-index: 6;
+    width: 7px;
+    height: 100%;
+    cursor: col-resize;
+
+    &::after {
+      content: "";
+      position: absolute;
+      left: 3px;
+      top: 0;
+      width: 1px;
+      height: 100%;
+      background: transparent;
+      transition: background 150ms ease;
+    }
+
+    &:hover::after,
+    &.is-drag::after {
+      background: var(--app-primary);
+    }
+  }
+
+  /* ── 面板头 ─────────────────────────────────────────────────── */
+  &__head {
     flex: none;
     display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 46px;
+    padding: 0 10px 0 14px;
     border-bottom: 1px solid var(--app-border);
   }
 
-  &__tab {
-    flex: 1;
+  &__head-main {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  &__title {
+    margin: 0;
+    font-size: 13.5px;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+    white-space: nowrap;
+  }
+
+  &__meta {
+    font-size: 11px;
+    color: var(--app-text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__head-actions {
     display: flex;
     align-items: center;
-    justify-content: center;
     gap: 4px;
-    padding: 9px 0;
+    margin-left: auto;
+    flex: none;
+  }
+
+  &__btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 27px;
+    padding: 0 9px;
     border: none;
-    border-bottom: 2px solid transparent;
+    border-radius: 8px;
+    background: var(--app-primary);
+    color: var(--app-primary-contrast);
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background 150ms ease, transform 100ms ease;
+
+    &:hover {
+      background: var(--app-primary-strong);
+    }
+
+    &:active {
+      transform: scale(0.97);
+    }
+  }
+
+  &__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 27px;
+    height: 27px;
+    border: none;
+    border-radius: 8px;
     background: transparent;
     color: var(--app-text-muted);
-    font-size: 12px;
     cursor: pointer;
-    white-space: nowrap;
-    transition: color 120ms ease, border-color 120ms ease;
+    transition: background 150ms ease, color 150ms ease;
+
+    &:hover {
+      background: var(--app-surface-hover);
+      color: var(--app-text);
+    }
+  }
+
+  /* ── 分段式 Tab ─────────────────────────────────────────────── */
+  &__tabs {
+    position: relative;
+    flex: none;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 2px;
+    margin: 10px 12px 8px;
+    padding: 4px;
+    border-radius: 12px;
+    background: var(--app-surface-hover);
+  }
+
+  &__indicator {
+    position: absolute;
+    top: 4px;
+    left: 0;
+    height: calc(100% - 8px);
+    border-radius: 9px;
+    background: var(--app-surface);
+    box-shadow: var(--app-shadow-card);
+    transition:
+      transform 260ms cubic-bezier(0.34, 1.2, 0.5, 1),
+      width 260ms cubic-bezier(0.34, 1.2, 0.5, 1);
+  }
+
+  &__tab {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    height: 40px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--app-text-muted);
+    font-family: inherit;
+    font-size: 11px;
+    cursor: pointer;
+    transition: color 180ms ease;
 
     &:hover {
       color: var(--app-text-secondary);
@@ -42,20 +194,142 @@
 
     &.is-on {
       color: var(--app-primary);
-      border-bottom-color: var(--app-primary);
-      font-weight: 500;
+      font-weight: 600;
     }
 
-    &:focus-visible {
-      outline: 2px solid var(--app-primary);
-      outline-offset: -2px;
+    & > svg,
+    & > .anticon {
+      width: 16px;
+      height: 16px;
+      font-size: 16px;
     }
   }
 
-  &__body {
+  &__badge {
+    position: absolute;
+    top: 3px;
+    right: 9px;
+    min-width: 15px;
+    height: 15px;
+    padding: 0 4px;
+    border-radius: var(--app-radius-pill);
+    background: var(--app-error);
+    color: #fff;
+    font-size: 10px;
+    line-height: 15px;
+    font-weight: 600;
+    font-style: normal;
+
+    &--soft {
+      background: var(--app-primary-weak);
+      color: var(--app-primary);
+    }
+  }
+
+  /* ── 内容滚动区 ─────────────────────────────────────────────── */
+  &__scroll {
     flex: 1;
     min-height: 0;
-    overflow: auto;
-    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 2px 12px 14px;
+    scrollbar-width: thin;
+
+    &::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    &::-webkit-scrollbar-thumb {
+      border: 2px solid transparent;
+      border-radius: 8px;
+      background: var(--app-scrollbar);
+      background-clip: content-box;
+    }
+
+    &::-webkit-scrollbar-thumb:hover {
+      background: var(--app-scrollbar-hover);
+      background-clip: content-box;
+    }
+
+    /* 自带虚拟列表的 Tab（灵感 / 检索）：滚动交给列表本身 */
+    &--flat {
+      overflow: hidden;
+    }
   }
+
+  /* ── 常驻提示条 ─────────────────────────────────────────────── */
+  &__foot {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 34px;
+    padding: 0 14px;
+    border-top: 1px solid var(--app-border);
+    background: var(--app-surface);
+    font-size: 11px;
+    color: var(--app-text-muted);
+
+    & > svg,
+    & > .anticon {
+      width: 13px;
+      height: 13px;
+      flex: none;
+      font-size: 13px;
+    }
+  }
+
+  &__kbd {
+    padding: 0 4px;
+    border: 1px solid var(--app-border);
+    border-radius: 4px;
+    background: var(--app-surface-alt);
+    font-family: inherit;
+    font-size: 10px;
+    color: var(--app-text-secondary);
+  }
+
+  /* ── 收起后的重开把手 ───────────────────────────────────────── */
+  &__reopen {
+    position: absolute;
+    top: 50%;
+    right: 0;
+    z-index: 5;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    width: 26px;
+    padding: 14px 0;
+    border: 1px solid var(--app-border);
+    border-right: none;
+    border-radius: 10px 0 0 10px;
+    background: var(--app-surface);
+    color: var(--app-text-muted);
+    font-family: inherit;
+    font-size: 11px;
+    cursor: pointer;
+    transform: translateY(-50%);
+    box-shadow: var(--app-shadow-card);
+    writing-mode: vertical-rl;
+    letter-spacing: 2px;
+
+    & > svg,
+    & > .anticon {
+      writing-mode: horizontal-tb;
+      width: 12px;
+      height: 12px;
+      font-size: 12px;
+    }
+
+    &:hover {
+      color: var(--app-primary);
+    }
+  }
+}
+
+.nv-panel-region.is-collapsed .nv-panel__reopen {
+  display: flex;
 }

@@ -1,271 +1,290 @@
+/* 要素详情（NL 设计稿 §3·要素详情） */
+
 .nv-edetail {
-  &__head {
+  display: flex;
+  flex-direction: column;
+  animation: nv-edetail-slide-in 240ms cubic-bezier(0.3, 1, 0.5, 1);
+
+  &__top {
     display: flex;
     align-items: center;
-    margin-bottom: 10px;
-  }
-
-  &__back {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 2px 6px;
-    border: none;
-    border-radius: 4px;
-    background: transparent;
-    color: var(--app-text-muted);
-    font-size: 11.5px;
-    cursor: pointer;
-    transition: color 120ms ease, background 120ms ease;
-
-    &:hover {
-      color: var(--app-primary);
-      background: var(--app-surface-hover);
-    }
-
-    &:focus-visible {
-      outline: 2px solid var(--app-primary);
-      outline-offset: 2px;
-    }
-
-    &--edit {
-      margin-left: auto;
-    }
-  }
-
-  &__title {
-    display: flex;
-    align-items: center;
-    gap: 7px;
+    gap: 8px;
     margin-bottom: 12px;
   }
 
+  &__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 27px;
+    height: 27px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--app-text-muted);
+    cursor: pointer;
+    transition: background 150ms ease, color 150ms ease;
+
+    &:hover {
+      background: var(--app-surface-hover);
+      color: var(--app-text);
+    }
+  }
+
+  &__edit {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    margin-left: auto;
+    height: 27px;
+    padding: 0 9px;
+    border: none;
+    border-radius: 8px;
+    background: var(--app-primary);
+    color: var(--app-primary-contrast);
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 150ms ease;
+
+    &:hover {
+      background: var(--app-primary-strong);
+    }
+  }
+
+  &__hero {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-panel);
+    background: var(--app-surface);
+  }
+
   &__avatar {
-    width: 32px;
-    height: 32px;
-    flex: none;
-    border-radius: 9px;
-    display: grid;
-    place-items: center;
-    font-size: 13px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 13px;
+    font-size: 19px;
     font-weight: 600;
+    flex: none;
+  }
+
+  &__ident {
+    min-width: 0;
+    flex: 1;
   }
 
   &__name {
-    font-size: 14px;
+    font-size: 16px;
     font-weight: 600;
-    color: var(--app-text);
+    letter-spacing: 0.3px;
+    word-break: break-word;
+  }
+
+  &__alias {
+    margin-top: 2px;
+    font-size: 11.5px;
+    color: var(--app-text-muted);
   }
 
   &__name-input {
-    flex: 1;
-    min-width: 0;
-    padding: 4px 8px;
-    border: 1px solid var(--app-border);
-    border-radius: 5px;
-    background: var(--app-surface);
-    color: var(--app-text);
-    font-size: 13px;
+    font-size: 15px;
     font-weight: 600;
-
-    &:focus {
-      outline: none;
-      border-color: var(--app-primary);
-    }
   }
 
+  /* ── 编辑表单 ─────────────────────────────────────────────────── */
   &__form-row {
     display: flex;
+    align-items: center;
     gap: 8px;
     padding: 4px 0;
-    align-items: flex-start;
   }
 
-  &__form-actions {
-    display: flex;
-    gap: 6px;
-    margin-top: 8px;
+  &__k {
+    flex: none;
+    width: 44px;
+    font-size: 11.5px;
+    color: var(--app-text-disabled);
   }
 
-  &__input {
+  &__input,
+  &__select {
     flex: 1;
     min-width: 0;
-    padding: 4px 8px;
+    padding: 5px 7px;
     border: 1px solid var(--app-border);
-    border-radius: 5px;
-    background: var(--app-surface);
+    border-radius: 8px;
+    background: var(--app-input-bg);
     color: var(--app-text);
+    font-family: inherit;
     font-size: 12px;
-
-    &::placeholder {
-      color: var(--app-text-disabled);
-    }
+    outline: none;
+    transition: border-color 120ms ease;
 
     &:focus {
-      outline: none;
       border-color: var(--app-primary);
     }
+
+    &:disabled {
+      color: var(--app-text-disabled);
+      background: var(--app-surface-alt);
+    }
+  }
+
+  &__select {
+    width: 100%;
+    margin-bottom: 6px;
   }
 
   &__type-row {
-    flex: 1;
     display: flex;
     flex-wrap: wrap;
-    gap: 4px;
+    gap: 5px;
   }
 
   &__type-chip {
     padding: 2px 8px;
-    border: 1px solid var(--app-border);
+    border: 1px solid transparent;
     border-radius: var(--app-radius-pill);
     background: var(--app-surface);
-    color: var(--app-text-secondary);
+    font-family: inherit;
     font-size: 11px;
     cursor: pointer;
+    transition: border-color 150ms ease, background 150ms ease;
+
+    &:hover {
+      background: var(--app-surface-hover);
+    }
 
     &.is-on {
-      border-color: var(--app-primary);
-      background: var(--app-primary-weak);
+      border-color: currentColor;
       color: var(--app-primary);
       font-weight: 600;
     }
   }
 
-  &__section {
-    margin-bottom: 12px;
-  }
-
-  &__label {
-    margin: 0 0 6px;
-    font-size: 10.5px;
-    font-weight: 600;
-    letter-spacing: 0.6px;
-    text-transform: uppercase;
-    color: var(--app-text-muted);
+  &__form-actions {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-top: 8px;
   }
 
-  &__label-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 3px;
-    padding: 1px 6px;
-    border: none;
-    border-radius: var(--app-radius-chip);
-    background: transparent;
-    color: var(--app-text-muted);
-    font-size: 10.5px;
-    letter-spacing: normal;
-    text-transform: none;
+  &__save,
+  &__cancel {
+    height: 27px;
+    padding: 0 12px;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 12px;
     cursor: pointer;
+    transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
+  }
+
+  &__save {
+    border: none;
+    background: var(--app-primary);
+    color: var(--app-primary-contrast);
+
+    &:hover:not(:disabled) {
+      background: var(--app-primary-strong);
+    }
+
+    &:disabled {
+      background: var(--app-surface-active);
+      color: var(--app-text-disabled);
+      cursor: default;
+    }
+  }
+
+  &__cancel {
+    border: 1px solid var(--app-border);
+    background: transparent;
+    color: var(--app-text-secondary);
 
     &:hover {
-      color: var(--app-primary);
-      background: var(--app-primary-weak);
+      color: var(--app-text);
+      border-color: var(--app-text-muted);
     }
-  }
-
-  &__kv {
-    display: flex;
-    gap: 8px;
-    padding: 4px 0;
-    border-bottom: 1px dashed var(--app-border);
-    font-size: 12px;
-
-    &:last-child {
-      border-bottom: none;
-    }
-  }
-
-  &__k {
-    width: 74px;
-    flex: none;
-    color: var(--app-text-muted);
-  }
-
-  &__v {
-    flex: 1;
-    color: var(--app-text);
-    word-break: break-all;
   }
 
   &__tags {
     display: flex;
     flex-wrap: wrap;
     gap: 5px;
-    margin-top: 6px;
+    margin-top: 10px;
   }
 
   &__tag {
-    padding: 2px 8px;
+    padding: 1px 8px;
     border-radius: var(--app-radius-pill);
-    border: 1px solid var(--app-border);
     background: var(--app-surface-hover);
     color: var(--app-text-secondary);
     font-size: 11px;
   }
 
+  /* ── 关联要素 ─────────────────────────────────────────────────── */
   &__rel {
     display: flex;
     align-items: center;
     gap: 7px;
-    padding: 5px 0;
-    font-size: 12px;
+    padding: 6px 8px;
+    border: 1px solid var(--app-border);
+    border-radius: 8px;
+    background: var(--app-surface);
 
-    &:hover &-del {
-      opacity: 1;
+    & + & {
+      margin-top: 5px;
     }
   }
 
-  &__rel-del {
-    margin-left: auto;
-    width: 16px;
-    height: 16px;
+  &__arrow {
     flex: none;
-    display: grid;
-    place-items: center;
-    padding: 0;
-    border: none;
-    border-radius: 50%;
-    background: transparent;
-    color: var(--app-text-muted);
+    color: var(--app-text-disabled);
     font-size: 12px;
-    line-height: 1;
-    cursor: pointer;
-    opacity: 0;
-
-    &:hover {
-      color: var(--app-danger, #d4380d);
-      background: var(--app-surface-hover);
-    }
-
-    &:focus-visible {
-      opacity: 1;
-      outline: 2px solid var(--app-primary);
-      outline-offset: 1px;
-    }
   }
 
-  &__rel-empty {
-    margin: 0 0 4px;
-    font-size: 11.5px;
-    color: var(--app-text-muted);
+  &__rel-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12.5px;
+  }
+
+  &__rel-tag {
+    margin-left: auto;
+    flex: none;
+    padding: 0 7px;
+    border-radius: var(--app-radius-pill);
+    background: var(--app-primary-weak);
+    color: var(--app-primary);
+    font-size: 10.5px;
   }
 
   &__rel-add {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    margin-top: 4px;
-    padding: 3px 8px;
-    border: 1px dashed var(--app-border);
-    border-radius: var(--app-radius-chip);
+    justify-content: center;
+    gap: 5px;
+    width: 100%;
+    height: 30px;
+    margin-top: 6px;
+    border: 1px dashed var(--app-border-strong);
+    border-radius: 9px;
     background: transparent;
     color: var(--app-text-muted);
-    font-size: 11.5px;
+    font-family: inherit;
+    font-size: 12px;
     cursor: pointer;
+    transition: border-color 150ms ease, color 150ms ease;
 
     &:hover:not(:disabled) {
       border-color: var(--app-primary);
@@ -273,8 +292,8 @@
     }
 
     &:disabled {
-      cursor: not-allowed;
-      opacity: 0.55;
+      color: var(--app-text-disabled);
+      cursor: default;
     }
   }
 
@@ -282,108 +301,64 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
-    margin-top: 4px;
+    margin-top: 6px;
     padding: 8px;
-    border: 1px solid var(--app-border);
-    border-radius: var(--app-radius-chip);
+    border: 1px solid var(--app-primary);
+    border-radius: var(--app-radius-item);
     background: var(--app-surface);
   }
 
-  &__rel-select {
-    width: 100%;
-    padding: 4px 6px;
-    border: 1px solid var(--app-border);
-    border-radius: 5px;
-    background: var(--app-surface-elevated);
-    color: var(--app-text);
-    font-size: 12px;
-
-    &:focus {
-      outline: none;
-      border-color: var(--app-primary);
-    }
-  }
-
-  &__rel-confirm {
-    padding: 4px 12px;
+  /* ── 境界阶梯 ─────────────────────────────────────────────────── */
+  &__manage {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0 6px;
     border: none;
-    border-radius: var(--app-radius-chip);
-    background: var(--app-primary);
-    color: var(--app-primary-contrast);
-    font-size: 11.5px;
-    font-weight: 500;
-    cursor: pointer;
-
-    &:hover:not(:disabled) {
-      background: var(--app-primary-strong);
-    }
-
-    &:disabled {
-      opacity: 0.55;
-      cursor: not-allowed;
-    }
-  }
-
-  &__rel-cancel {
-    padding: 4px 12px;
-    border: 1px solid var(--app-border);
-    border-radius: var(--app-radius-chip);
+    border-radius: var(--app-radius-pill);
     background: transparent;
-    color: var(--app-text-secondary);
-    font-size: 11.5px;
+    color: var(--app-text-muted);
+    font-family: inherit;
+    font-size: 10.5px;
+    font-weight: 400;
+    letter-spacing: 0;
     cursor: pointer;
 
     &:hover {
-      border-color: var(--app-primary);
       color: var(--app-primary);
     }
   }
 
-  &__arrow {
-    color: var(--app-text-muted);
-    font-size: 11px;
-  }
-
-  &__rel-name {
-    font-weight: 500;
-    color: var(--app-text);
-  }
-
-  &__rel-tag {
-    padding: 1px 6px;
-    border-radius: 3px;
-    border: 1px solid var(--app-border);
-    background: var(--app-surface-hover);
-    color: var(--app-text-muted);
-    font-size: 10.5px;
-  }
-
   &__ladder {
-    display: flex;
-    flex-direction: column;
-    margin-top: 8px;
+    display: grid;
+    gap: 4px;
+    margin-top: 6px;
   }
 
   &__rung {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 5px 8px;
-    border: none;
-    border-radius: var(--app-radius-chip);
-    background: transparent;
-    text-align: left;
-    font-size: 12px;
+    width: 100%;
+    padding: 6px 9px;
+    border: 1px solid var(--app-border);
+    border-radius: 9px;
+    background: var(--app-surface);
     color: var(--app-text-secondary);
+    font-family: inherit;
+    font-size: 12.5px;
     cursor: pointer;
+    transition: border-color 150ms ease, background 150ms ease, color 150ms ease;
 
     &:hover {
       background: var(--app-surface-hover);
     }
 
     &.is-on {
-      background: var(--app-primary-weak);
-      color: var(--app-primary);
+      border-color: var(--app-accent-blue);
+      background: var(--app-accent-blue-weak);
+      color: var(--app-accent-blue);
       font-weight: 600;
     }
   }
@@ -392,26 +367,27 @@
     width: 16px;
     flex: none;
     font-size: 10.5px;
+    color: var(--app-text-disabled);
     font-variant-numeric: tabular-nums;
-    color: var(--app-text-muted);
+  }
+
+  &__rung.is-on &__rung-no {
+    color: inherit;
   }
 
   &__rung-note {
-    margin-left: auto;
     font-size: 10.5px;
-    color: var(--app-text-muted);
+    color: var(--app-text-disabled);
+    font-weight: 400;
   }
 
   &__rung-cur {
+    margin-left: auto;
     flex: none;
-    padding: 0 5px;
-    border-radius: var(--app-radius-pill);
-    background: var(--app-primary);
-    color: var(--app-surface);
-    font-size: 10px;
-    font-weight: 500;
+    font-size: 10.5px;
   }
 
+  /* ── 出场章节 ─────────────────────────────────────────────────── */
   &__appear {
     display: flex;
     flex-wrap: wrap;
@@ -419,74 +395,45 @@
   }
 
   &__chip {
-    padding: 2px 8px;
-    border-radius: var(--app-radius-pill);
-    border: 1px solid var(--app-border);
-    background: var(--app-surface);
-    color: var(--app-text-secondary);
-    font-size: 11px;
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: 4px;
+    padding: 3px 8px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-pill);
+    background: var(--app-surface);
+    color: var(--app-text-secondary);
+    font-family: inherit;
+    font-size: 11.5px;
+    cursor: pointer;
+    transition: border-color 150ms ease, color 150ms ease, background 150ms ease;
 
-    &--link {
-      cursor: pointer;
-
-      &:hover {
-        border-color: var(--app-primary);
-        color: var(--app-primary);
-      }
-
-      &:focus-visible {
-        outline: 2px solid var(--app-primary);
-        outline-offset: 2px;
-      }
+    &:hover {
+      border-color: var(--app-primary);
+      color: var(--app-primary);
+      background: var(--app-primary-weak);
     }
   }
 
   &__chip-no {
-    color: var(--app-primary);
-    font-variant-numeric: tabular-nums;
-    flex: none;
+    font-size: 10px;
+    color: var(--app-text-disabled);
   }
 
-  &__btn {
-    width: 100%;
-    padding: 7px;
-    border: none;
-    border-radius: var(--app-radius-chip);
-    background: var(--app-primary);
-    color: var(--app-primary-contrast);
-    font-size: 12px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: background 120ms ease;
+  &__acts {
+    display: grid;
+    gap: 6px;
+    margin-top: 14px;
+  }
+}
 
-    &:hover {
-      background: var(--app-primary-strong);
-    }
-
-    &:disabled {
-      opacity: 0.55;
-      cursor: not-allowed;
-    }
-
-    &--ghost {
-      margin-top: 6px;
-      background: transparent;
-      border: 1px solid var(--app-border);
-      color: var(--app-text-secondary);
-
-      &:hover {
-        border-color: var(--app-primary);
-        color: var(--app-primary);
-        background: transparent;
-      }
-    }
-
-    &:focus-visible {
-      outline: 2px solid var(--app-primary);
-      outline-offset: 2px;
-    }
+@keyframes nv-edetail-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
   }
 }

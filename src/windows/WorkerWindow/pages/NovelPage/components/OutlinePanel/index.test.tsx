@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { OutlineNode } from "../../types";
 import OutlinePanel, { type OutlineActions } from "./index";
@@ -47,18 +47,40 @@ const outline: OutlineNode[] = [
         title: "断伞骨",
         note: "回收时让陆昭修伞",
         resolved: false,
+        source: "第一章 雨夜叩门",
+      },
+      {
+        kind: "foreshadow",
+        id: "f2",
+        entryId: "f2",
+        title: "旧剑铭",
+        note: "",
+        resolved: true,
+        source: "",
       },
     ],
   },
 ];
+
+/** 子视图切换器里的按钮：大纲内多处同名文本，必须限定作用域 */
+const clickView = (container: HTMLElement, label: string): void => {
+  const switcher = container.querySelector<HTMLElement>(".nv-outline__switch");
+  expect(switcher).not.toBeNull();
+  fireEvent.click(within(switcher as HTMLElement).getByText(label));
+};
+
+const switcherButton = (container: HTMLElement, label: string): HTMLElement => {
+  const switcher = container.querySelector<HTMLElement>(".nv-outline__switch");
+  return within(switcher as HTMLElement).getByText(label);
+};
 
 describe("OutlinePanel 组件", () => {
   afterEach(() => {
     cleanup();
   });
 
-  it("汇总卷章数并高亮待回收伏笔数", () => {
-    render(
+  it("汇总卷 / 章 / 待回收伏笔", () => {
+    const { container } = render(
       <OutlinePanel
         outline={outline}
         activeChapterId="c2"
@@ -67,9 +89,23 @@ describe("OutlinePanel 组件", () => {
       />,
     );
 
-    expect(screen.getByText("1 卷 · 2 章")).toBeInTheDocument();
-    expect(screen.getByText("1 条待回收")).toBeInTheDocument();
+    const summary = container.querySelector(".nv-outline__summary");
+    expect(summary?.textContent).toBe("1卷2章1待回收伏笔");
     expect(screen.getByText("少年游")).toBeInTheDocument();
+  });
+
+  it("章节与伏笔是两个子视图，切换器带各自计数", () => {
+    const { container } = render(
+      <OutlinePanel
+        outline={outline}
+        activeChapterId={null}
+        onSelectChapter={vi.fn()}
+        actions={buildActions()}
+      />,
+    );
+
+    expect(switcherButton(container, "章节").textContent).toBe("章节2");
+    expect(switcherButton(container, "伏笔").textContent).toBe("伏笔2");
   });
 
   it("点击章节行带真实 chapterId 跳转（回归：不能再用桩 id）", () => {
@@ -151,10 +187,66 @@ describe("OutlinePanel 组件", () => {
     expect(screen.queryByLabelText("伏笔标题")).toBeNull();
   });
 
+  it("新增伏笔可选埋设章节，选了就带上 chapterId", () => {
+    const onAddForeshadow = vi.fn();
+    render(
+      <OutlinePanel
+        outline={outline}
+        activeChapterId={null}
+        onSelectChapter={vi.fn()}
+        actions={buildActions({ onAddForeshadow })}
+      />,
+    );
+
+    fireEvent.click(screen.getByTitle("在本卷添加伏笔"));
+    fireEvent.change(screen.getByLabelText("伏笔标题"), {
+      target: { value: "断碑" },
+    });
+    fireEvent.change(screen.getByLabelText("埋设章节"), { target: { value: "c2" } });
+    fireEvent.click(screen.getByText("记录"));
+
+    expect(onAddForeshadow).toHaveBeenCalledWith("v1", "断碑", "", "c2");
+  });
+
+  it("伏笔视图默认只看待回收，切到「全部」才出现已回收", () => {
+    const { container } = render(
+      <OutlinePanel
+        outline={outline}
+        activeChapterId={null}
+        onSelectChapter={vi.fn()}
+        actions={buildActions()}
+      />,
+    );
+
+    clickView(container, "伏笔");
+    expect(screen.getByText("断伞骨")).toBeInTheDocument();
+    expect(screen.queryByText("旧剑铭")).toBeNull();
+
+    fireEvent.click(screen.getByText("全部"));
+    expect(screen.getByText("旧剑铭")).toBeInTheDocument();
+  });
+
+  it("伏笔条展示埋设来源，卷级伏笔给出兜底文案", () => {
+    const { container } = render(
+      <OutlinePanel
+        outline={outline}
+        activeChapterId={null}
+        onSelectChapter={vi.fn()}
+        actions={buildActions()}
+      />,
+    );
+
+    clickView(container, "伏笔");
+    expect(screen.getByText("第一章 雨夜叩门")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("全部"));
+    expect(screen.getByText("卷级伏笔 · 不绑定具体章")).toBeInTheDocument();
+  });
+
   it("伏笔可切换回收状态与删除", () => {
     const onToggleForeshadow = vi.fn();
     const onRemoveForeshadow = vi.fn();
-    render(
+    const { container } = render(
       <OutlinePanel
         outline={outline}
         activeChapterId={null}
@@ -163,11 +255,60 @@ describe("OutlinePanel 组件", () => {
       />,
     );
 
+    clickView(container, "伏笔");
     fireEvent.click(screen.getByTitle("标记为已回收"));
     expect(onToggleForeshadow).toHaveBeenCalledWith("f1", true);
 
     fireEvent.click(screen.getByTitle("删除伏笔"));
     expect(onRemoveForeshadow).toHaveBeenCalledWith("f1", "断伞骨");
+  });
+
+  it("伏笔可就地编辑标题与说明", () => {
+    const onUpdateForeshadow = vi.fn();
+    const { container } = render(
+      <OutlinePanel
+        outline={outline}
+        activeChapterId={null}
+        onSelectChapter={vi.fn()}
+        actions={buildActions({ onUpdateForeshadow })}
+      />,
+    );
+
+    clickView(container, "伏笔");
+    fireEvent.click(screen.getByTitle("编辑伏笔"));
+    fireEvent.change(screen.getByLabelText("伏笔标题"), {
+      target: { value: "断伞骨（改）" },
+    });
+    fireEvent.click(screen.getByText("保存"));
+
+    expect(onUpdateForeshadow).toHaveBeenCalledWith("f1", {
+      title: "断伞骨（改）",
+      note: "回收时让陆昭修伞",
+    });
+  });
+
+  it("面板头「＋ 伏笔」信号：切回章节视图并在首卷展开表单", () => {
+    const { rerender } = render(
+      <OutlinePanel
+        outline={outline}
+        activeChapterId={null}
+        onSelectChapter={vi.fn()}
+        actions={buildActions()}
+        addForeshadowSignal={0}
+      />,
+    );
+    expect(screen.queryByLabelText("伏笔标题")).toBeNull();
+
+    rerender(
+      <OutlinePanel
+        outline={outline}
+        activeChapterId={null}
+        onSelectChapter={vi.fn()}
+        actions={buildActions()}
+        addForeshadowSignal={1}
+      />,
+    );
+    expect(screen.getByLabelText("伏笔标题")).toBeInTheDocument();
   });
 
   it("没有卷时给出启用引导", () => {

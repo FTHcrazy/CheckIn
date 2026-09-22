@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import {
-  CheckCircleOutlined,
+  DownOutlined,
   DeleteOutlined,
   EditOutlined,
   PlusOutlined,
@@ -34,6 +34,12 @@ interface OutlinePanelProps {
   activeChapterId: string | null;
   onSelectChapter: (chapterId: string) => void;
   actions: OutlineActions;
+  /**
+   * 面板头「＋ 伏笔」的请求计数（每次自增即触发一次）。
+   * 由 SupportPanel 持有：面板头在大纲 Tab 上提供全书级的新增入口，
+   * 而伏笔必须挂在某一卷下，所以这里落到首卷并把视图切回章节。
+   */
+  addForeshadowSignal?: number;
 }
 
 type VolumeNode = Extract<OutlineNode, { kind: "volume" }>;
@@ -44,6 +50,12 @@ const isVolume = (node: OutlineNode): node is VolumeNode => node.kind === "volum
 const isChapter = (node: OutlineNode): node is ChapterNode => node.kind === "chapter";
 const isForeshadow = (node: OutlineNode): node is ForeshadowNode =>
   node.kind === "foreshadow";
+
+/** 大纲双视图：章节骨架 / 伏笔专项，二者不再交错混排 */
+type OutlineView = "chapter" | "fs";
+
+/** 伏笔过滤 */
+type ForeshadowFilter = "open" | "resolved" | "all";
 
 /** 伏笔编辑 / 新增的当前目标（弹在哪一行） */
 type ForeshadowTarget =
@@ -64,13 +76,20 @@ const EMPTY_DRAFT: ForeshadowDraft = { title: "", note: "", chapterId: "" };
  * 骨架是真实卷 / 章（点章节即跳转，与左栏章节树严格一致），用户在大纲上写的
  * 内容只有两类：章节的一句话梗概（写进章节）+ 伏笔条目（可标记回收）。
  * 编辑态均为「本组件短生命周期状态」，提交后立即回落，不做二级弹窗。
+ *
+ * 章节与伏笔拆成两个子视图：混排会让长卷里的伏笔被章节挤到看不见。
  */
 export default function OutlinePanel({
   outline,
   activeChapterId,
   onSelectChapter,
   actions,
+  addForeshadowSignal = 0,
 }: OutlinePanelProps) {
+  const [view, setView] = useState<OutlineView>("chapter");
+  const [folded, setFolded] = useState<Record<string, boolean>>({});
+  const [fsFilter, setFsFilter] = useState<ForeshadowFilter>("open");
+
   // 章节梗概行内编辑
   const [noteEditingId, setNoteEditingId] = useState<string | null>(null);
   const [noteDraft, setNoteDraft] = useState("");
@@ -84,10 +103,27 @@ export default function OutlinePanel({
     (sum, volume) => sum + volume.children.filter(isChapter).length,
     0,
   );
+  const allForeshadows = volumeNodes.flatMap((volume) =>
+    volume.children.filter(isForeshadow),
+  );
   const openForeshadows = volumeNodes.reduce(
     (sum, volume) => sum + volume.openForeshadows,
     0,
   );
+
+  // 面板头「＋ 伏笔」：切回章节视图并在首卷展开新增表单
+  // 只在 signal 自增时响应一次，避免依赖变化时重复抢占正在编辑的表单
+  const lastSignalRef = useRef(addForeshadowSignal);
+  useEffect(() => {
+    if (addForeshadowSignal === lastSignalRef.current) return;
+    lastSignalRef.current = addForeshadowSignal;
+    const first = volumeNodes[0];
+    if (!first) return;
+    setView("chapter");
+    setFolded((current) => ({ ...current, [first.id]: false }));
+    setFsDraft(EMPTY_DRAFT);
+    setFsTarget({ mode: "add", volumeId: first.id });
+  }, [addForeshadowSignal, volumeNodes]);
 
   // ── 章节梗概 ────────────────────────────────────────────────────────
   const startNoteEdit = (node: ChapterNode): void => {
@@ -160,13 +196,18 @@ export default function OutlinePanel({
 
   if (outline.length === 0) {
     return (
-      <p className="nv-outline__empty">
-        这个作品还没有大纲
-        <br />
-        在左栏新建一卷并写下第一章，大纲会自动长出来
-      </p>
+      <div className="nv-empty">
+        <b>这个作品还没有大纲</b>
+        <span>在左栏新建一卷并写下第一章，大纲会自动长出来</span>
+      </div>
     );
   }
+
+  const filteredForeshadows = allForeshadows.filter((node) => {
+    if (fsFilter === "open") return !node.resolved;
+    if (fsFilter === "resolved") return node.resolved;
+    return true;
+  });
 
   const renderChapter = (node: ChapterNode) => {
     const active = node.chapterId === activeChapterId;
@@ -175,7 +216,7 @@ export default function OutlinePanel({
     return (
       <li
         key={node.id}
-        className={`nv-outline__item nv-outline__item--chapter${active ? " is-active" : ""}`}
+        className={`nv-outline__item${active ? " is-active" : ""}`}
       >
         <button
           type="button"
@@ -185,10 +226,10 @@ export default function OutlinePanel({
           <span className="nv-outline__no">{node.label}</span>
           <span className="nv-outline__title">{node.title}</span>
           <span className="nv-outline__words">
-            {formatThousands(node.wordCount)}
+            {node.wordCount > 0 ? formatThousands(node.wordCount) : "—"}
           </span>
           <span
-            className="nv-outline__status"
+            className="nv-outline__dot"
             style={{ background: CHAPTER_STATUS_META[node.status].color }}
             title={CHAPTER_STATUS_META[node.status].label}
           />
@@ -225,13 +266,10 @@ export default function OutlinePanel({
 
     if (editing) {
       return (
-        <li
-          key={node.id}
-          className="nv-outline__item nv-outline__item--foreshadow is-editing"
-        >
-          <div className="nv-outline__fs-form">
+        <li key={node.id} className="nv-outline__fs-item is-editing">
+          <div className="nv-outline__form">
             <input
-              className="nv-outline__fs-input"
+              className="nv-outline__input"
               value={fsDraft.title}
               autoFocus
               maxLength={30}
@@ -243,7 +281,7 @@ export default function OutlinePanel({
               onKeyDown={handleFsTitleKeyDown}
             />
             <textarea
-              className="nv-outline__fs-textarea"
+              className="nv-outline__textarea"
               value={fsDraft.note}
               rows={2}
               aria-label="伏笔说明"
@@ -252,17 +290,17 @@ export default function OutlinePanel({
                 setFsDraft((draft) => ({ ...draft, note: event.target.value }))
               }
             />
-            <div className="nv-outline__fs-actions">
+            <div className="nv-outline__form-actions">
               <button
                 type="button"
-                className="nv-outline__fs-save"
+                className="nv-outline__save"
                 onClick={commitForeshadow}
               >
                 保存
               </button>
               <button
                 type="button"
-                className="nv-outline__fs-cancel"
+                className="nv-outline__cancel"
                 onClick={cancelForeshadow}
               >
                 取消
@@ -276,17 +314,18 @@ export default function OutlinePanel({
     return (
       <li
         key={node.id}
-        className={`nv-outline__item nv-outline__item--foreshadow${node.resolved ? " is-resolved" : ""}`}
+        className={`nv-outline__fs-item${node.resolved ? " is-resolved" : ""}`}
       >
         <div className="nv-outline__fs">
           <button
             type="button"
-            className="nv-outline__fs-toggle"
+            className="nv-outline__check"
             aria-pressed={node.resolved}
+            aria-label={node.resolved ? "标记为待回收" : "标记为已回收"}
             title={node.resolved ? "已回收，点击恢复待回收" : "标记为已回收"}
             onClick={() => actions.onToggleForeshadow(node.entryId, !node.resolved)}
           >
-            <CheckCircleOutlined />
+            <span className="nv-outline__check-mark">✓</span>
           </button>
 
           <div className="nv-outline__fs-body">
@@ -294,10 +333,11 @@ export default function OutlinePanel({
               <span className="nv-outline__tag">
                 {node.resolved ? "已回收" : "伏笔"}
               </span>
-              <span className="nv-outline__title">{node.title}</span>
+              <span className="nv-outline__fs-title">{node.title}</span>
               <span className="nv-outline__fs-tools">
                 <button
                   type="button"
+                  className="nv-mini"
                   aria-label="编辑伏笔"
                   title="编辑伏笔"
                   onClick={() => startEditForeshadow(node)}
@@ -306,6 +346,7 @@ export default function OutlinePanel({
                 </button>
                 <button
                   type="button"
+                  className="nv-mini nv-mini--warn"
                   aria-label="删除伏笔"
                   title="删除伏笔"
                   onClick={() =>
@@ -317,130 +358,223 @@ export default function OutlinePanel({
               </span>
             </div>
             {node.note && <p className="nv-outline__fs-note">{node.note}</p>}
+            <span className="nv-outline__fs-src">
+              {node.source || "卷级伏笔 · 不绑定具体章"}
+            </span>
           </div>
         </div>
       </li>
     );
   };
 
+  const renderFsFilters = () => (
+    <div className="nv-sub nv-outline__filter">
+      <button
+        type="button"
+        className={`nv-sub__btn${fsFilter === "open" ? " is-on" : ""}`}
+        onClick={() => setFsFilter("open")}
+      >
+        待回收<span className="nv-sub__count">{openForeshadows}</span>
+      </button>
+      <button
+        type="button"
+        className={`nv-sub__btn${fsFilter === "resolved" ? " is-on" : ""}`}
+        onClick={() => setFsFilter("resolved")}
+      >
+        已回收
+        <span className="nv-sub__count">
+          {allForeshadows.length - openForeshadows}
+        </span>
+      </button>
+      <button
+        type="button"
+        className={`nv-sub__btn${fsFilter === "all" ? " is-on" : ""}`}
+        onClick={() => setFsFilter("all")}
+      >
+        全部<span className="nv-sub__count">{allForeshadows.length}</span>
+      </button>
+    </div>
+  );
+
   return (
     <div className="nv-outline">
       <div className="nv-outline__summary">
-        <span>
-          {volumeNodes.length} 卷 · {totalChapters} 章
-        </span>
-        <span className={openForeshadows > 0 ? "is-warn" : undefined}>
-          {openForeshadows} 条待回收
-        </span>
+        <div>
+          <b>{volumeNodes.length}</b>
+          <span>卷</span>
+        </div>
+        <div>
+          <b>{totalChapters}</b>
+          <span>章</span>
+        </div>
+        <div className={openForeshadows > 0 ? "is-warn" : undefined}>
+          <b>{openForeshadows}</b>
+          <span>待回收伏笔</span>
+        </div>
       </div>
 
-      {volumeNodes.map((volume) => {
-        const chapters = volume.children.filter(isChapter);
-        const adding = fsTarget?.mode === "add" && fsTarget.volumeId === volume.id;
+      <div className="nv-sub nv-outline__switch">
+        <button
+          type="button"
+          className={`nv-sub__btn${view === "chapter" ? " is-on" : ""}`}
+          onClick={() => setView("chapter")}
+        >
+          章节<span className="nv-sub__count">{totalChapters}</span>
+        </button>
+        <button
+          type="button"
+          className={`nv-sub__btn${view === "fs" ? " is-on" : ""}`}
+          onClick={() => setView("fs")}
+        >
+          伏笔<span className="nv-sub__count">{allForeshadows.length}</span>
+        </button>
+      </div>
 
-        return (
-          <section key={volume.id} className="nv-outline__volume">
-            <header className="nv-outline__volume-head">
-              <span className="nv-outline__volume-title">{volume.title}</span>
-              {volume.note && (
-                <span className="nv-outline__volume-note">{volume.note}</span>
-              )}
-              {volume.openForeshadows > 0 && (
-                <span
-                  className="nv-outline__badge"
-                  title={`${volume.openForeshadows} 条伏笔待回收`}
+      {view === "fs" ? (
+        <>
+          {renderFsFilters()}
+          {filteredForeshadows.length === 0 ? (
+            <div className="nv-empty">
+              <b>这里空着</b>
+              <span>切回「待回收」看看还没收的线头</span>
+            </div>
+          ) : (
+            <ul className="nv-outline__fs-list">
+              {filteredForeshadows.map(renderForeshadow)}
+            </ul>
+          )}
+        </>
+      ) : (
+        volumeNodes.map((volume) => {
+          const chapters = volume.children.filter(isChapter);
+          const adding =
+            fsTarget?.mode === "add" && fsTarget.volumeId === volume.id;
+          const isFolded = Boolean(folded[volume.id]);
+
+          return (
+            <section
+              key={volume.id}
+              className={`nv-outline__vol${isFolded ? " is-fold" : ""}`}
+            >
+              <div className="nv-outline__vol-head">
+                <button
+                  type="button"
+                  className="nv-outline__vol-toggle"
+                  onClick={() =>
+                    setFolded((current) => ({
+                      ...current,
+                      [volume.id]: !current[volume.id],
+                    }))
+                  }
+                  title={isFolded ? "展开本卷" : "收起本卷"}
                 >
-                  {volume.openForeshadows}
-                </span>
-              )}
-              <button
-                type="button"
-                className="nv-outline__add"
-                title="在本卷添加伏笔"
-                onClick={() => startAddForeshadow(volume.id)}
-              >
-                <PlusOutlined />
-              </button>
-            </header>
+                  <DownOutlined className="nv-outline__vol-chev" />
+                  <span className="nv-outline__vol-title">{volume.title}</span>
+                  {volume.note && (
+                    <span className="nv-outline__vol-note">{volume.note}</span>
+                  )}
+                  <span className="nv-outline__vol-count">
+                    {chapters.length} 章
+                  </span>
+                </button>
+                {volume.openForeshadows > 0 && (
+                  <span
+                    className="nv-outline__vol-pill"
+                    title={`${volume.openForeshadows} 条伏笔待回收`}
+                  >
+                    {volume.openForeshadows}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  className="nv-outline__vol-add"
+                  title="在本卷添加伏笔"
+                  onClick={() => startAddForeshadow(volume.id)}
+                >
+                  <PlusOutlined />
+                </button>
+              </div>
 
-            {volume.children.length === 0 ? (
-              <p className="nv-outline__hint">本卷还没有章节</p>
-            ) : (
-              <ul className="nv-outline__list">
-                {volume.children.map((child) => {
-                  if (isChapter(child)) return renderChapter(child);
-                  if (isForeshadow(child)) return renderForeshadow(child);
-                  // 卷不再嵌套卷（大纲只有两级），兜底不渲染
-                  return null;
-                })}
-              </ul>
-            )}
+              <div className="nv-outline__vol-list">
+                {chapters.length === 0 ? (
+                  <p className="nv-outline__hint">本卷还没有章节</p>
+                ) : (
+                  <ul className="nv-outline__list">{chapters.map(renderChapter)}</ul>
+                )}
+              </div>
 
-            {adding && (
-              <div className="nv-outline__fs-form">
-                <input
-                  className="nv-outline__fs-input"
-                  value={fsDraft.title}
-                  autoFocus
-                  maxLength={30}
-                  aria-label="伏笔标题"
-                  placeholder="伏笔标题（Enter 记录 / Esc 取消）"
-                  onChange={(event) =>
-                    setFsDraft((draft) => ({ ...draft, title: event.target.value }))
-                  }
-                  onKeyDown={handleFsTitleKeyDown}
-                />
-                <textarea
-                  className="nv-outline__fs-textarea"
-                  value={fsDraft.note}
-                  rows={2}
-                  aria-label="伏笔说明"
-                  placeholder="说明：埋在哪一章 / 计划怎么回收"
-                  onChange={(event) =>
-                    setFsDraft((draft) => ({ ...draft, note: event.target.value }))
-                  }
-                />
-                {chapters.length > 0 && (
-                  <select
-                    className="nv-outline__fs-select"
-                    value={fsDraft.chapterId}
-                    aria-label="埋设章节"
+              {adding && (
+                <div className="nv-outline__form">
+                  <input
+                    className="nv-outline__input"
+                    value={fsDraft.title}
+                    autoFocus
+                    maxLength={30}
+                    aria-label="伏笔标题"
+                    placeholder="伏笔标题（Enter 记录 / Esc 取消）"
                     onChange={(event) =>
                       setFsDraft((draft) => ({
                         ...draft,
-                        chapterId: event.target.value,
+                        title: event.target.value,
                       }))
                     }
-                  >
-                    <option value="">卷级伏笔（不绑具体章）</option>
-                    {chapters.map((chapter) => (
-                      <option key={chapter.chapterId} value={chapter.chapterId}>
-                        {chapter.label} {chapter.title}
-                      </option>
-                    ))}
-                  </select>
-                )}
-                <div className="nv-outline__fs-actions">
-                  <button
-                    type="button"
-                    className="nv-outline__fs-save"
-                    onClick={commitForeshadow}
-                  >
-                    记录
-                  </button>
-                  <button
-                    type="button"
-                    className="nv-outline__fs-cancel"
-                    onClick={cancelForeshadow}
-                  >
-                    取消
-                  </button>
+                    onKeyDown={handleFsTitleKeyDown}
+                  />
+                  <textarea
+                    className="nv-outline__textarea"
+                    value={fsDraft.note}
+                    rows={2}
+                    aria-label="伏笔说明"
+                    placeholder="说明：埋在哪一章 / 计划怎么回收"
+                    onChange={(event) =>
+                      setFsDraft((draft) => ({
+                        ...draft,
+                        note: event.target.value,
+                      }))
+                    }
+                  />
+                  {chapters.length > 0 && (
+                    <select
+                      className="nv-outline__select"
+                      value={fsDraft.chapterId}
+                      aria-label="埋设章节"
+                      onChange={(event) =>
+                        setFsDraft((draft) => ({
+                          ...draft,
+                          chapterId: event.target.value,
+                        }))
+                      }
+                    >
+                      <option value="">卷级伏笔（不绑具体章）</option>
+                      {chapters.map((chapter) => (
+                        <option key={chapter.chapterId} value={chapter.chapterId}>
+                          {chapter.label} {chapter.title}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  <div className="nv-outline__form-actions">
+                    <button
+                      type="button"
+                      className="nv-outline__save"
+                      onClick={commitForeshadow}
+                    >
+                      记录
+                    </button>
+                    <button
+                      type="button"
+                      className="nv-outline__cancel"
+                      onClick={cancelForeshadow}
+                    >
+                      取消
+                    </button>
+                  </div>
                 </div>
-              </div>
-            )}
-          </section>
-        );
-      })}
+              )}
+            </section>
+          );
+        })
+      )}
     </div>
   );
 }

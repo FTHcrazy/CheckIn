@@ -1,169 +1,186 @@
+/* 灵感速记面板（NL 设计稿 §3·灵感） */
+
 .nv-note {
-  /* 撑满右栏面板：滚动由虚拟列表接管 */
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
 
-  &__editor {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    margin-bottom: 8px;
+  /* ── 速记框 ───────────────────────────────────────────────────── */
+  &__composer {
+    flex: none;
+    padding: 9px 10px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-panel);
+    background: var(--app-surface);
+    transition: border-color 160ms ease, box-shadow 160ms ease;
+
+    &:focus-within {
+      border-color: var(--app-primary);
+      box-shadow: 0 0 0 3px var(--app-primary-weak);
+    }
 
     textarea {
       width: 100%;
-      resize: vertical;
-      padding: 8px 9px;
-      border: 1px solid var(--app-border);
-      border-radius: var(--app-radius-chip);
-      background: var(--app-input-bg);
+      border: none;
+      outline: none;
+      resize: none;
+      background: transparent;
       color: var(--app-text);
       font-family: inherit;
-      font-size: 12px;
-      line-height: 1.6;
-      outline: none;
-      transition: border-color 120ms ease;
-
-      &:focus {
-        border-color: var(--app-primary);
-      }
+      font-size: 13px;
+      line-height: 1.7;
 
       &::placeholder {
-        color: var(--app-text-muted);
+        color: var(--app-text-disabled);
       }
     }
   }
 
-  &__submit {
-    align-self: flex-end;
-    padding: 4px 12px;
+  &__composer-foot {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+  }
+
+  &__tip {
+    font-size: 11px;
+    color: var(--app-text-disabled);
+
+    kbd {
+      padding: 0 3px;
+      border: 1px solid var(--app-border);
+      border-radius: 3px;
+      background: var(--app-surface-alt);
+      font-family: inherit;
+      font-size: 10px;
+    }
+  }
+
+  &__send {
+    margin-left: auto;
+    height: 27px;
+    padding: 0 9px;
     border: none;
-    border-radius: var(--app-radius-chip);
+    border-radius: 8px;
     background: var(--app-primary);
     color: var(--app-primary-contrast);
+    font-family: inherit;
     font-size: 12px;
+    font-weight: 500;
     cursor: pointer;
-    transition: background 120ms ease;
+    transition: background 150ms ease, transform 100ms ease;
 
     &:hover {
       background: var(--app-primary-strong);
     }
 
-    &:focus-visible {
-      outline: 2px solid var(--app-primary);
-      outline-offset: 2px;
+    &:active {
+      transform: scale(0.97);
     }
-  }
 
-  /* 工具条：搜索 + 计数 */
-  &__toolbar {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 10px;
+    &:disabled {
+      background: var(--app-surface-active);
+      color: var(--app-text-disabled);
+      cursor: default;
+      transform: none;
+    }
   }
 
   &__search {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    padding: 4px 7px;
-    border: 1px solid var(--app-border);
-    border-radius: var(--app-radius-chip);
-    background: var(--app-input-bg);
-    transition: border-color 120ms ease;
-
-    &:focus-within {
-      border-color: var(--app-primary);
-    }
-
-    input {
-      flex: 1;
-      min-width: 0;
-      border: none;
-      outline: none;
-      background: transparent;
-      color: var(--app-text);
-      font-family: inherit;
-      font-size: 11.5px;
-
-      &::placeholder {
-        color: var(--app-text-muted);
-      }
-    }
-
-    button {
-      flex: none;
-      display: grid;
-      place-items: center;
-      width: 16px;
-      height: 16px;
-      border: none;
-      border-radius: 3px;
-      background: transparent;
-      color: var(--app-text-muted);
-      font-size: 9px;
-      cursor: pointer;
-
-      &:hover {
-        color: var(--app-text);
-      }
-    }
-  }
-
-  &__search-icon {
     flex: none;
-    color: var(--app-text-muted);
-    font-size: 11px;
+    margin-top: 10px;
   }
 
-  &__count {
-    flex: none;
-    font-size: 10.5px;
-    color: var(--app-text-muted);
-  }
-
-  &__empty {
-    padding: 24px 8px;
-    text-align: center;
-    font-size: 12px;
-    color: var(--app-text-muted);
-  }
-
+  /* ── 列表 ─────────────────────────────────────────────────────── */
   &__list {
-    /* Virtuoso 视口：占满剩余高度，内部自滚 */
+    flex: 1;
     min-height: 0;
   }
 
-  /* 行间距放在 Item 上：margin 不会被 Virtuoso 计入测量高度 */
   &__item {
-    padding-bottom: 8px;
+    padding-bottom: 6px;
   }
 
   &__card {
+    position: relative;
     padding: 9px 10px;
     border: 1px solid var(--app-border);
-    border-left: 3px solid var(--app-warning);
-    border-radius: var(--app-radius-chip);
+    border-radius: var(--app-radius-item);
     background: var(--app-surface);
+    transition: border-color 160ms ease, box-shadow 160ms ease;
 
-    /* 置顶：左侧换成主色，与普通灵感一眼区分 */
+    &:hover {
+      border-color: var(--app-border-strong);
+      box-shadow: var(--app-shadow-card);
+    }
+
     &.is-pinned {
-      border-left-color: var(--app-primary);
-      background: var(--app-surface-hover);
+      border-color: var(--app-warning);
+      background: var(--app-warning-weak);
     }
   }
 
   &__text {
     margin: 0;
-    font-size: 12px;
-    line-height: 1.6;
-    color: var(--app-text-secondary);
+    font-size: 12.5px;
+    line-height: 1.72;
+    color: var(--app-text);
     white-space: pre-wrap;
     word-break: break-word;
+  }
+
+  &__foot {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 7px;
+  }
+
+  &__time {
+    font-size: 11px;
+    color: var(--app-text-disabled);
+  }
+
+  &__flag {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 0 6px;
+    border-radius: var(--app-radius-pill);
+    background: var(--app-accent-rose-weak);
+    color: var(--app-accent-rose);
+    font-size: 10.5px;
+
+    & > svg,
+    & > .anticon {
+      width: 10px;
+      height: 10px;
+      font-size: 10px;
+    }
+  }
+
+  &__src {
+    padding: 0 6px;
+    border-radius: var(--app-radius-pill);
+    background: var(--app-surface-alt);
+    color: var(--app-text-muted);
+    font-size: 10.5px;
+  }
+
+  &__acts {
+    display: flex;
+    gap: 1px;
+    margin-left: auto;
+    opacity: 0;
+    transition: opacity 150ms ease;
+  }
+
+  &__card:hover &__acts,
+  &__acts:focus-within {
+    opacity: 1;
   }
 
   &__edit {
@@ -171,102 +188,12 @@
     resize: vertical;
     padding: 6px 7px;
     border: 1px solid var(--app-primary);
-    border-radius: var(--app-radius-chip);
+    border-radius: 8px;
     background: var(--app-input-bg);
     color: var(--app-text);
     font-family: inherit;
     font-size: 12px;
     line-height: 1.6;
     outline: none;
-  }
-
-  &__meta {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    margin-top: 5px;
-    font-size: 10.5px;
-    color: var(--app-text-muted);
-  }
-
-  &__time {
-    flex: none;
-  }
-
-  &__flag {
-    flex: none;
-    display: inline-flex;
-    align-items: center;
-    gap: 3px;
-    padding: 0 5px;
-    border-radius: 3px;
-    background: var(--app-primary-weak);
-    color: var(--app-primary);
-    font-size: 10px;
-    line-height: 15px;
-  }
-
-  /* 全局搜索命中的外部书籍灵感：来源书名标签（只读） */
-  &__source {
-    flex: none;
-    max-width: 45%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    padding: 0 5px;
-    border-radius: 3px;
-    background: var(--app-surface-hover);
-    color: var(--app-text-muted);
-    font-size: 10px;
-    line-height: 15px;
-  }
-
-  &__tip {
-    font-size: 10px;
-    color: var(--app-text-muted);
-  }
-
-  &__actions {
-    margin-left: auto;
-    display: flex;
-    gap: 2px;
-
-    button {
-      display: grid;
-      place-items: center;
-      width: 20px;
-      height: 20px;
-      border: none;
-      border-radius: 4px;
-      background: transparent;
-      color: var(--app-text-muted);
-      font-size: 10px;
-      cursor: pointer;
-      transition: color 120ms ease, background 120ms ease;
-
-      &:hover:not(:disabled) {
-        color: var(--app-primary);
-        background: var(--app-surface-hover);
-      }
-
-      &.is-on {
-        color: var(--app-primary);
-      }
-
-      &:disabled {
-        cursor: default;
-        opacity: 0.4;
-      }
-
-      &:last-child:hover:not(:disabled) {
-        color: var(--app-error);
-        background: var(--app-error-weak);
-      }
-
-      &:focus-visible {
-        outline: 2px solid var(--app-primary);
-        outline-offset: -2px;
-      }
-    }
   }
 }

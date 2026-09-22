@@ -276,6 +276,11 @@ export type OutlineNode =
       title: string;
       note: string;
       resolved: boolean;
+      /**
+       * 埋点标签：绑定了具体章时是「第三章 断碑」，卷级伏笔为空串。
+       * 由 buildOutlineTree 派生（伏笔视图的来源 chip 要用），组件不自己拼。
+       */
+      source: string;
     };
 
 /** 全书检索命中（PRD R10） */

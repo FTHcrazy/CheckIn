@@ -1,0 +1,301 @@
+/*
+ * 支撑面板内的通用零件（NL 设计稿 §3）
+ *
+ * 由 SupportPanel 统一引入一次，五个 Tab 的子面板只复用类名、不重复实现：
+ * 这些 input / chips / 空态 / 图标按钮在五个 Tab 里都需要，逐个面板各写
+ * 一份会造成同一套样式五处漂移（违反「组件与样式就近」要求的本意——就近
+ * 指的是「不承担别人不该承担的」，而不是「宁可重复」）。
+ *
+ * 作用域统一收在 .nv-panel 之下，避免影响 panel 之外的任何样式。
+ */
+
+.nv-panel {
+  /* ── 输入行（搜索 / 过滤）─────────────────────────────────────── */
+  .nv-field {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 30px;
+    padding: 0 9px;
+    border: 1px solid var(--app-border);
+    border-radius: 9px;
+    background: var(--app-input-bg);
+    transition: border-color 150ms ease, box-shadow 150ms ease;
+
+    &:focus-within {
+      border-color: var(--app-primary);
+      box-shadow: 0 0 0 3px var(--app-primary-weak);
+    }
+
+    & > svg,
+    & > .anticon {
+      width: 13px;
+      height: 13px;
+      flex: none;
+      color: var(--app-text-disabled);
+      font-size: 13px;
+    }
+
+    input {
+      flex: 1;
+      min-width: 0;
+      border: none;
+      background: transparent;
+      color: var(--app-text);
+      font-family: inherit;
+      font-size: 12.5px;
+      outline: none;
+
+      &::placeholder {
+        color: var(--app-text-disabled);
+      }
+    }
+  }
+
+  .nv-field__clear {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--app-text-disabled);
+    cursor: pointer;
+
+    &:hover {
+      color: var(--app-text-secondary);
+    }
+  }
+
+  /* ── 子分段（大纲的章节 / 伏笔、检索的作用域）──────────────────── */
+  .nv-sub {
+    display: flex;
+    gap: 2px;
+    padding: 3px;
+    border-radius: 9px;
+    background: var(--app-surface-hover);
+
+    &__btn {
+      flex: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      height: 25px;
+      padding: 0 8px;
+      border: none;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--app-text-secondary);
+      font-family: inherit;
+      font-size: 12px;
+      cursor: pointer;
+      transition: background 150ms ease, color 150ms ease;
+
+      &:hover {
+        color: var(--app-text);
+      }
+
+      &.is-on {
+        background: var(--app-surface);
+        color: var(--app-text);
+        font-weight: 600;
+        box-shadow: var(--app-shadow-card);
+      }
+    }
+
+    &__count {
+      font-style: normal;
+      font-size: 11px;
+      color: var(--app-text-muted);
+    }
+  }
+
+  /* ── 横向滚动 chips（类型筛选 / 最近搜索）──────────────────────── */
+  .nv-chips {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+
+    &::-webkit-scrollbar {
+      display: none;
+    }
+  }
+
+  .nv-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 24px;
+    padding: 0 9px;
+    border: 1px solid transparent;
+    border-radius: var(--app-radius-pill);
+    background: var(--app-surface);
+    color: var(--app-text-secondary);
+    font-family: inherit;
+    font-size: 11.5px;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background 150ms ease, color 150ms ease, border-color 150ms ease,
+      transform 100ms ease;
+
+    &:hover {
+      background: var(--app-surface-hover);
+    }
+
+    &:active {
+      transform: scale(0.96);
+    }
+
+    &.is-on {
+      border-color: currentColor;
+      font-weight: 600;
+    }
+
+    em {
+      font-style: normal;
+      font-size: 10.5px;
+      color: var(--app-text-disabled);
+    }
+
+    &.is-on em {
+      color: inherit;
+      opacity: 0.7;
+    }
+  }
+
+  /* ── 分区标题 ─────────────────────────────────────────────────── */
+  .nv-sechead {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 14px 2px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.6px;
+    color: var(--app-text-disabled);
+
+    em {
+      font-style: normal;
+      margin-left: auto;
+      letter-spacing: 0;
+      font-weight: 400;
+    }
+  }
+
+  /* ── 空态 ─────────────────────────────────────────────────────── */
+  .nv-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 34px 20px;
+    text-align: center;
+    font-size: 12.5px;
+    color: var(--app-text-disabled);
+
+    b {
+      font-size: 13px;
+      color: var(--app-text-muted);
+      font-weight: 600;
+    }
+  }
+
+  /* ── 行内图标按钮（悬停浮出的快捷操作）────────────────────────── */
+  .nv-mini {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border: none;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--app-text-disabled);
+    cursor: pointer;
+    transition: background 140ms ease, color 140ms ease;
+
+    & > svg,
+    & > .anticon {
+      width: 13px;
+      height: 13px;
+      font-size: 13px;
+    }
+
+    &:hover:not(:disabled) {
+      background: var(--app-surface-hover);
+      color: var(--app-text);
+    }
+
+    &.is-on {
+      color: var(--app-primary);
+      background: var(--app-primary-weak);
+    }
+
+    &:disabled {
+      cursor: default;
+      opacity: 0.35;
+    }
+
+    &--warn:hover:not(:disabled) {
+      background: var(--app-error-weak);
+      color: var(--app-error);
+    }
+  }
+
+  /* ── 键值行（详情字段 / 说明）──────────────────────────────────── */
+  .nv-kv {
+    display: flex;
+    gap: 10px;
+    padding: 5px 0;
+    font-size: 12.5px;
+
+    &__k {
+      flex: none;
+      width: 44px;
+      padding-top: 1px;
+      color: var(--app-text-disabled);
+      font-size: 11.5px;
+    }
+
+    &__v {
+      flex: 1;
+      min-width: 0;
+      line-height: 1.65;
+      color: var(--app-text-secondary);
+      word-break: break-word;
+    }
+  }
+
+  /* ── 幽灵按钮（详情区底部动作）────────────────────────────────── */
+  .nv-ghost {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    height: 30px;
+    padding: 0 12px;
+    border: 1px solid var(--app-border);
+    border-radius: 9px;
+    background: var(--app-surface);
+    color: var(--app-text-secondary);
+    font-family: inherit;
+    font-size: 12.5px;
+    cursor: pointer;
+    transition: border-color 150ms ease, color 150ms ease, background 150ms ease;
+
+    &:hover {
+      border-color: var(--app-primary);
+      color: var(--app-primary);
+    }
+
+    &.is-on {
+      border-color: var(--app-primary);
+      background: var(--app-primary-weak);
+      color: var(--app-primary);
+    }
+  }
+}

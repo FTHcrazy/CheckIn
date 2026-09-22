@@ -1,101 +1,165 @@
+/* 大纲面板：卷 / 章节 / 伏笔（NL 设计稿 §3·大纲） */
+
 .nv-outline {
-  &__empty {
-    padding: 24px 8px;
-    text-align: center;
-    font-size: 12px;
-    line-height: 1.8;
-    color: var(--app-text-muted);
-  }
+  display: flex;
+  flex-direction: column;
 
   &__summary {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 8px 8px;
-    font-size: 11px;
-    color: var(--app-text-muted);
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+    margin-bottom: 12px;
 
-    .is-warn {
+    div {
+      padding: 8px 10px;
+      border: 1px solid var(--app-border);
+      border-radius: var(--app-radius-item);
+      background: var(--app-surface);
+    }
+
+    b {
+      display: block;
+      font-size: 16px;
+      font-variant-numeric: tabular-nums;
+      line-height: 1.3;
+    }
+
+    span {
+      font-size: 11px;
+      color: var(--app-text-muted);
+    }
+
+    div.is-warn b {
       color: var(--app-warning);
     }
   }
 
-  &__volume {
-    margin-bottom: 14px;
+  &__switch {
+    margin-bottom: 10px;
+  }
+
+  &__filter {
+    margin-bottom: 10px;
+  }
+
+  /* ── 卷 ───────────────────────────────────────────────────────── */
+  &__vol {
+    margin-bottom: 10px;
 
     &:last-child {
       margin-bottom: 0;
     }
   }
 
-  &__volume-head {
+  &__vol-head {
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 0 4px 6px 8px;
+    padding: 2px 0 4px;
   }
 
-  &__volume-title {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--app-text);
-  }
-
-  &__volume-note {
+  &__vol-toggle {
+    flex: 1;
     min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 4px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--app-text);
+    font-family: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+    transition: background 140ms ease;
+
+    &:hover {
+      background: var(--app-surface-hover);
+    }
+  }
+
+  &__vol-chev {
+    flex: none;
+    font-size: 11px;
+    color: var(--app-text-disabled);
+    transition: transform 200ms ease;
+  }
+
+  &__vol.is-fold &__vol-chev {
+    transform: rotate(-90deg);
+  }
+
+  &__vol-title {
+    flex: none;
+  }
+
+  &__vol-note {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 11px;
+    font-weight: 400;
     color: var(--app-text-muted);
   }
 
-  /* 未回收伏笔数：卷头小红点计数 */
-  &__badge {
+  &__vol-count {
+    margin-left: auto;
     flex: none;
-    min-width: 16px;
-    padding: 0 5px;
-    border-radius: 8px;
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--app-text-disabled);
+  }
+
+  &__vol-pill {
+    flex: none;
+    padding: 0 6px;
+    border-radius: var(--app-radius-pill);
     background: var(--app-warning-weak);
     color: var(--app-warning);
-    font-size: 10px;
-    line-height: 16px;
-    text-align: center;
+    font-size: 10.5px;
   }
 
-  &__add {
+  &__vol-add {
     flex: none;
-    margin-left: auto;
-    display: grid;
-    place-items: center;
-    width: 20px;
-    height: 20px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
     border: none;
-    border-radius: 4px;
+    border-radius: 7px;
     background: transparent;
-    color: var(--app-text-muted);
-    font-size: 11px;
+    color: var(--app-text-disabled);
     cursor: pointer;
-    transition: color 120ms ease, background 120ms ease;
+    transition: background 140ms ease, color 140ms ease;
 
     &:hover {
-      color: var(--app-primary);
       background: var(--app-surface-hover);
+      color: var(--app-primary);
     }
+  }
 
-    &:focus-visible {
-      outline: 2px solid var(--app-primary);
-      outline-offset: -2px;
-    }
+  &__vol-list {
+    display: grid;
+    gap: 2px;
+    padding-left: 4px;
+  }
+
+  &__vol.is-fold &__vol-list {
+    display: none;
   }
 
   &__hint {
     margin: 0;
-    padding: 4px 8px 6px;
+    padding: 4px 6px 6px;
     font-size: 11px;
-    color: var(--app-text-muted);
+    color: var(--app-text-disabled);
   }
 
+  /* ── 章节行 ───────────────────────────────────────────────────── */
   &__list {
     margin: 0;
     padding: 0;
@@ -103,7 +167,7 @@
   }
 
   &__item {
-    margin-bottom: 4px;
+    margin-bottom: 2px;
 
     &:last-child {
       margin-bottom: 0;
@@ -111,42 +175,45 @@
   }
 
   &__row {
-    width: 100%;
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 6px 8px;
-    border: none;
-    border-radius: var(--app-radius-chip);
+    gap: 8px;
+    width: 100%;
+    padding: 7px 8px;
+    border: 1px solid transparent;
+    border-radius: 9px;
     background: transparent;
     color: var(--app-text-secondary);
-    font-size: 12.5px;
+    font-family: inherit;
+    font-size: 13px;
     text-align: left;
     cursor: pointer;
-    transition: background 120ms ease;
+    transition: background 140ms ease, border-color 140ms ease;
 
     &:hover {
       background: var(--app-surface-hover);
     }
-
-    &:focus-visible {
-      outline: 2px solid var(--app-primary);
-      outline-offset: -2px;
-    }
   }
 
-  &__item--chapter.is-active &__row {
+  &__item.is-active &__row {
     background: var(--app-primary-weak);
+    border-color: var(--app-primary);
     color: var(--app-primary);
   }
 
   &__no {
     flex: none;
     font-size: 11px;
-    color: var(--app-text-muted);
+    color: var(--app-text-disabled);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__item.is-active &__no {
+    color: var(--app-primary);
   }
 
   &__title {
+    flex: 1;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -155,99 +222,121 @@
 
   &__words {
     flex: none;
-    margin-left: auto;
-    font-size: 10.5px;
-    color: var(--app-text-muted);
+    font-size: 11px;
+    color: var(--app-text-disabled);
+    font-variant-numeric: tabular-nums;
   }
 
-  &__status {
+  &__dot {
     flex: none;
     width: 6px;
     height: 6px;
     border-radius: 50%;
   }
 
-  /* 章节一句话梗概：空态用「＋ 一句话梗概」占位提示可编辑 */
+  /* 一句话梗概：空态用「＋ 一句话梗概」提示可编辑 */
   &__note {
     display: block;
-    width: calc(100% - 12px);
-    margin: 1px 0 4px 12px;
-    padding: 2px 6px;
+    width: 100%;
+    margin: 0 0 4px;
+    padding: 4px 8px 4px 30px;
     border: none;
-    border-left: 2px solid transparent;
-    border-radius: 0 var(--app-radius-chip) var(--app-radius-chip) 0;
+    border-radius: 6px;
     background: transparent;
-    color: var(--app-text-secondary);
+    color: var(--app-text-muted);
     font-family: inherit;
-    font-size: 11px;
-    line-height: 1.6;
+    font-size: 11.5px;
     text-align: left;
     cursor: text;
-    transition: color 120ms ease, border-color 120ms ease;
+    transition: background 140ms ease, color 140ms ease;
 
     &:hover {
-      border-left-color: var(--app-border);
-      color: var(--app-text);
+      background: var(--app-surface-hover);
+      color: var(--app-text-secondary);
     }
 
     &.is-empty {
       color: var(--app-text-disabled);
     }
-
-    &:focus-visible {
-      outline: 2px solid var(--app-primary);
-      outline-offset: -2px;
-    }
   }
 
   &__note-input {
-    width: calc(100% - 12px);
-    margin: 1px 0 4px 12px;
+    width: calc(100% - 26px);
+    margin: 0 0 4px 26px;
     padding: 3px 6px;
     border: 1px solid var(--app-primary);
-    border-radius: var(--app-radius-chip);
+    border-radius: 6px;
     background: var(--app-input-bg);
     color: var(--app-text);
     font-family: inherit;
-    font-size: 11px;
+    font-size: 11.5px;
     outline: none;
   }
 
-  /* ── 伏笔条目 ───────────────────────────────────────────────────── */
-
-  &__fs {
-    display: flex;
-    align-items: flex-start;
+  /* ── 伏笔 ─────────────────────────────────────────────────────── */
+  &__fs-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
     gap: 6px;
-    padding: 7px 8px;
-    border: 1px solid var(--app-border);
-    border-radius: var(--app-radius-chip);
-    background: var(--app-surface);
   }
 
-  &__fs-toggle {
-    flex: none;
-    display: grid;
-    place-items: center;
-    width: 18px;
-    height: 18px;
-    margin-top: 1px;
-    border: none;
-    border-radius: 50%;
-    background: transparent;
-    color: var(--app-text-disabled);
-    font-size: 13px;
-    cursor: pointer;
-    transition: color 120ms ease;
+  &__fs-item {
+    &.is-resolved .nv-outline__fs {
+      opacity: 0.62;
+    }
 
-    &:hover {
+    &.is-resolved .nv-outline__check {
+      background: var(--app-success);
+      border-color: var(--app-success);
+      color: #fff;
+    }
+
+    &.is-resolved .nv-outline__tag {
+      background: var(--app-success-weak);
       color: var(--app-success);
     }
 
-    &:focus-visible {
-      outline: 2px solid var(--app-primary);
-      outline-offset: 1px;
+    &.is-resolved .nv-outline__fs-title {
+      text-decoration: line-through;
+      color: var(--app-text-muted);
     }
+  }
+
+  &__fs {
+    display: flex;
+    gap: 9px;
+    padding: 9px 10px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-item);
+    background: var(--app-surface);
+    transition: opacity 200ms ease, border-color 200ms ease;
+  }
+
+  &__check {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 17px;
+    height: 17px;
+    margin-top: 2px;
+    border: 1.6px solid var(--app-border-strong);
+    border-radius: 50%;
+    background: transparent;
+    color: transparent;
+    flex: none;
+    cursor: pointer;
+    transition: background 180ms ease, border-color 180ms ease, color 180ms ease;
+
+    &:hover {
+      border-color: var(--app-success);
+    }
+  }
+
+  &__check-mark {
+    font-size: 11px;
+    line-height: 1;
   }
 
   &__fs-body {
@@ -258,112 +347,79 @@
   &__fs-head {
     display: flex;
     align-items: center;
-    gap: 5px;
-
-    .nv-outline__title {
-      color: var(--app-text-secondary);
-      font-size: 12px;
-    }
+    gap: 6px;
   }
 
   &__tag {
     flex: none;
-    padding: 0 5px;
-    border-radius: 3px;
-    border: 1px solid var(--app-border);
-    background: var(--app-warning-weak);
-    color: var(--app-warning);
-    font-size: 10px;
-    line-height: 15px;
+    padding: 0 6px;
+    border-radius: 4px;
+    background: var(--app-accent-rose-weak);
+    color: var(--app-accent-rose);
+    font-size: 10.5px;
+  }
+
+  &__fs-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
   }
 
   &__fs-tools {
     flex: none;
-    margin-left: auto;
     display: flex;
-    gap: 2px;
+    gap: 1px;
     opacity: 0;
-    transition: opacity 120ms ease;
-
-    button {
-      display: grid;
-      place-items: center;
-      width: 18px;
-      height: 18px;
-      border: none;
-      border-radius: 4px;
-      background: transparent;
-      color: var(--app-text-muted);
-      font-size: 11px;
-      cursor: pointer;
-      transition: color 120ms ease, background 120ms ease;
-
-      &:hover {
-        color: var(--app-primary);
-        background: var(--app-surface-hover);
-      }
-
-      &:last-child:hover {
-        color: var(--app-error);
-        background: var(--app-error-weak);
-      }
-
-      &:focus-visible {
-        outline: 2px solid var(--app-primary);
-        outline-offset: -2px;
-      }
-    }
+    transition: opacity 150ms ease;
   }
 
-  &__item--foreshadow:hover &__fs-tools,
+  &__fs-item:hover &__fs-tools,
   &__fs-tools:focus-within {
     opacity: 1;
   }
 
   &__fs-note {
     margin: 4px 0 0;
-    font-size: 11px;
-    line-height: 1.6;
+    font-size: 11.5px;
+    line-height: 1.65;
     color: var(--app-text-muted);
     white-space: pre-wrap;
     word-break: break-word;
   }
 
-  /* 已回收：整条降噪，标题加删除线 */
-  &__item--foreshadow.is-resolved {
-    .nv-outline__fs {
-      background: transparent;
-      opacity: 0.62;
-    }
-
-    .nv-outline__fs-toggle {
-      color: var(--app-success);
-    }
-
-    .nv-outline__title {
-      text-decoration: line-through;
-    }
+  &__fs-src {
+    display: inline-flex;
+    align-items: center;
+    margin-top: 6px;
+    padding: 1px 7px;
+    border-radius: var(--app-radius-pill);
+    background: var(--app-surface-alt);
+    color: var(--app-text-muted);
+    font-size: 10.5px;
   }
 
-  /* ── 伏笔新增 / 编辑表单 ────────────────────────────────────────── */
-
-  &__fs-form {
+  /* ── 伏笔新增 / 编辑表单 ──────────────────────────────────────── */
+  &__form {
     display: flex;
     flex-direction: column;
     gap: 6px;
+    margin-top: 6px;
     padding: 8px;
     border: 1px solid var(--app-primary);
-    border-radius: var(--app-radius-chip);
+    border-radius: var(--app-radius-item);
     background: var(--app-surface);
   }
 
-  &__fs-input,
-  &__fs-textarea,
-  &__fs-select {
+  &__input,
+  &__textarea,
+  &__select {
     width: 100%;
     padding: 5px 7px;
     border: 1px solid var(--app-border);
-    border-radius: var(--app-radius-chip);
+    border-radius: 8px;
     background: var(--app-input-bg);
     color: var(--app-text);
     font-family: inherit;
@@ -381,27 +437,26 @@
     }
   }
 
-  &__fs-textarea {
+  &__textarea {
     resize: vertical;
   }
 
-  &__fs-actions {
+  &__form-actions {
     display: flex;
     justify-content: flex-end;
     gap: 6px;
   }
 
-  &__fs-save,
-  &__fs-cancel {
+  &__save,
+  &__cancel {
     padding: 3px 12px;
-    border-radius: var(--app-radius-chip);
+    border-radius: 8px;
     font-size: 12px;
     cursor: pointer;
-    transition: background 120ms ease, color 120ms ease,
-      border-color 120ms ease;
+    transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
   }
 
-  &__fs-save {
+  &__save {
     border: none;
     background: var(--app-primary);
     color: var(--app-primary-contrast);
@@ -411,7 +466,7 @@
     }
   }
 
-  &__fs-cancel {
+  &__cancel {
     border: 1px solid var(--app-border);
     background: transparent;
     color: var(--app-text-secondary);

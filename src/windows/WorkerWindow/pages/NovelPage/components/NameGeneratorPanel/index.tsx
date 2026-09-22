@@ -66,6 +66,7 @@ const COUNT_OPTIONS = [6, 10, 12] as const;
  * 卡名字时按风格随机起一批名并避开本书已用名：四维过滤
  * （风格 × 类型 × 性别 × 避开已用），结果一次给 10 个，支持换一批与收藏。
  * 双出口：插入正文光标处 / 一键建为角色卡（名称带入）。
+ * 入口在工具箱启动器，本面板是它的二级页面。
  */
 export default function NameGeneratorPanel({
   exclude,
@@ -188,10 +189,9 @@ export default function NameGeneratorPanel({
 
   return (
     <div className="nv-name" onFocus={handleFocus}>
-      {/* ── 选项行 ── */}
       <div className="nv-name__options">
-        <label className="nv-name__field">
-          <span className="nv-name__label">类型</span>
+        <label className="nv-name__opt">
+          <span>类型</span>
           <select
             value={effectiveKind}
             onChange={(e) => handleKindChange(e.target.value as NamingKind)}
@@ -205,8 +205,8 @@ export default function NameGeneratorPanel({
           </select>
         </label>
 
-        <label className="nv-name__field">
-          <span className="nv-name__label">风格</span>
+        <label className="nv-name__opt">
+          <span>风格</span>
           <select
             value={style}
             onChange={(e) => handleStyleChange(e.target.value as NameStyle)}
@@ -220,8 +220,8 @@ export default function NameGeneratorPanel({
           </select>
         </label>
 
-        <label className="nv-name__field nv-name__field--gender">
-          <span className="nv-name__label">性别</span>
+        <label className="nv-name__opt">
+          <span>性别</span>
           <select
             value={effectiveGender}
             disabled={effectiveKind !== "person"}
@@ -236,8 +236,8 @@ export default function NameGeneratorPanel({
           </select>
         </label>
 
-        <label className="nv-name__field nv-name__field--count">
-          <span className="nv-name__label">数量</span>
+        <label className="nv-name__opt">
+          <span>数量</span>
           <select
             value={count}
             onChange={(e) => handleCountChange(Number(e.target.value))}
@@ -250,34 +250,47 @@ export default function NameGeneratorPanel({
             ))}
           </select>
         </label>
-
-        <button
-          type="button"
-          className="nv-name__generate"
-          onClick={handleNextBatch}
-          title="换一批（避开本书已用名）"
-        >
-          <ReloadOutlined /> 换一批
-        </button>
       </div>
 
-      {/* ── 结果网格 ── */}
+      <button
+        type="button"
+        className="nv-name__regen"
+        onClick={handleNextBatch}
+        title="换一批（避开本书已用名）"
+      >
+        <ReloadOutlined /> 换一批（避开本书已用名）
+      </button>
+
+      <div className="nv-sechead">
+        结果<em>{results.length}</em>
+      </div>
+
       {results.length === 0 ? (
-        <p className="nv-name__empty">
-          {isKindSupported(style, effectiveKind)
-            ? "点击「换一批」生成名字"
-            : `当前风格不支持${NAMING_KINDS.find((k) => k.id === effectiveKind)?.label ?? "该类型"}`}
-        </p>
+        <div className="nv-empty">
+          <b>还没有生成</b>
+          <span>
+            {isKindSupported(style, effectiveKind)
+              ? "点「换一批」试试"
+              : `当前风格不支持${
+                  NAMING_KINDS.find((k) => k.id === effectiveKind)?.label ?? "该类型"
+                }`}
+          </span>
+        </div>
       ) : (
         <div className="nv-name__grid">
-          {results.map((r) => {
+          {results.map((r, index) => {
             const favorited = favoriteNameSet.has(r.name);
             return (
-              <div key={r.name} className="nv-name__card" role="group" aria-label={r.name}>
+              <div
+                key={r.name}
+                className="nv-name__card"
+                style={{ animationDelay: `${index * 18}ms` }}
+              >
                 <span className="nv-name__text">{r.name}</span>
-                <span className="nv-name__actions">
+                <span className="nv-name__acts">
                   <button
                     type="button"
+                    className="nv-mini"
                     aria-label="插入正文"
                     title="插入到正文光标处"
                     onClick={() => actions.onInsertToEditor(r.name)}
@@ -286,6 +299,7 @@ export default function NameGeneratorPanel({
                   </button>
                   <button
                     type="button"
+                    className="nv-mini"
                     aria-label="建为角色卡"
                     title="建为角色卡（名称带入）"
                     onClick={() => actions.onCreateCharacter(r.name)}
@@ -294,9 +308,9 @@ export default function NameGeneratorPanel({
                   </button>
                   <button
                     type="button"
+                    className={`nv-mini${favorited ? " is-on" : ""}`}
                     aria-label={favorited ? "已收藏" : "加入收藏"}
                     title={favorited ? "已收藏" : "加入收藏"}
-                    className={favorited ? "is-on" : undefined}
                     aria-pressed={favorited}
                     disabled={favorited}
                     onClick={() => actions.onAddFavorite(r.name, r.kind, r.style)}
@@ -305,6 +319,7 @@ export default function NameGeneratorPanel({
                   </button>
                   <button
                     type="button"
+                    className="nv-mini"
                     aria-label="复制"
                     title="复制到剪贴板"
                     onClick={() => void handleCopy(r.name)}
@@ -318,57 +333,59 @@ export default function NameGeneratorPanel({
         </div>
       )}
 
-      {/* ── 收藏夹子区 ── */}
-      <div className="nv-name__favorites">
-        <div className="nv-name__favorites-head">
-          <span>收藏夹</span>
-          <span className="nv-name__favorites-count">{favorites.length}</span>
-        </div>
-        {favorites.length === 0 ? (
-          <p className="nv-name__empty">还没有收藏的名字</p>
-        ) : (
-          <ul className="nv-name__favorites-list">
-            {favorites.map((f) => (
-              <li key={f.id} className="nv-name__favorite">
-                <span className="nv-name__favorite-name" title={f.name}>
-                  {f.name}
-                </span>
-                <span className="nv-name__favorite-meta">
-                  {NAMING_DICTIONARY.kinds.find((k) => k.id === f.kind)?.label}
-                  ·
-                  {NAMING_DICTIONARY.styles.find((s) => s.id === f.style)?.label}
-                </span>
-                <span className="nv-name__favorite-actions">
-                  <button
-                    type="button"
-                    aria-label="插入正文"
-                    title="插入到正文光标处"
-                    onClick={() => actions.onInsertToEditor(f.name)}
-                  >
-                    <ThunderboltOutlined />
-                  </button>
-                  <button
-                    type="button"
-                    aria-label="建为角色卡"
-                    title="建为角色卡"
-                    onClick={() => actions.onCreateCharacter(f.name)}
-                  >
-                    <PlusOutlined />
-                  </button>
-                  <button
-                    type="button"
-                    aria-label="移除收藏"
-                    title="移除收藏"
-                    onClick={() => actions.onRemoveFavorite(f.id)}
-                  >
-                    <StarFilled />
-                  </button>
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
+      <div className="nv-sechead">
+        收藏夹<em>{favorites.length}</em>
       </div>
+
+      {favorites.length === 0 ? (
+        <div className="nv-empty">
+          <b>还没有收藏的名字</b>
+          <span>在结果卡上点星标即可收藏（按作品持久化）</span>
+        </div>
+      ) : (
+        <ul className="nv-name__favorites">
+          {favorites.map((f) => (
+            <li key={f.id} className="nv-name__fav">
+              <span className="nv-name__fav-name" title={f.name}>
+                {f.name}
+              </span>
+              <span className="nv-name__fav-meta">
+                {NAMING_DICTIONARY.styles.find((s) => s.id === f.style)?.label} ·{" "}
+                {NAMING_DICTIONARY.kinds.find((k) => k.id === f.kind)?.label}
+              </span>
+              <span className="nv-name__fav-acts">
+                <button
+                  type="button"
+                  className="nv-mini"
+                  aria-label="插入正文"
+                  title="插入到正文光标处"
+                  onClick={() => actions.onInsertToEditor(f.name)}
+                >
+                  <ThunderboltOutlined />
+                </button>
+                <button
+                  type="button"
+                  className="nv-mini"
+                  aria-label="建为角色卡"
+                  title="建为角色卡"
+                  onClick={() => actions.onCreateCharacter(f.name)}
+                >
+                  <PlusOutlined />
+                </button>
+                <button
+                  type="button"
+                  className="nv-mini is-on"
+                  aria-label="移除收藏"
+                  title="移除收藏"
+                  onClick={() => actions.onRemoveFavorite(f.id)}
+                >
+                  <StarFilled />
+                </button>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

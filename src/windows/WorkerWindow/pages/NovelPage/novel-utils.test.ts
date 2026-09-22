@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_SETTINGS, UNNAMED_VOLUME } from "./novel-config";
+import { DEFAULT_SETTINGS, LAYOUT, UNNAMED_VOLUME } from "./novel-config";
 import {
   buildBreadcrumb,
   buildChapterGroups,
@@ -12,6 +12,7 @@ import {
   buildWorkMeta,
   calcGoalProgress,
   calcSpeed,
+  clampPanelWidth,
   countWords,
   filterNotes,
   findTermMatches,
@@ -740,6 +741,21 @@ describe("parseJsonOrNull", () => {
     expect(parseJsonOrNull(null)).toBeNull();
     expect(parseJsonOrNull("")).toBeNull();
     expect(parseJsonOrNull("{oops")).toBeNull();
+  });
+});
+
+describe("clampPanelWidth", () => {
+  it("区间内的宽度四舍五入后原样通过", () => {
+    expect(clampPanelWidth(360)).toBe(360);
+    expect(clampPanelWidth(320.6)).toBe(321);
+  });
+
+  it("越界夹取到 280–460，非法输入回退基准宽度", () => {
+    expect(clampPanelWidth(100)).toBe(LAYOUT.rightRailMinWidth);
+    expect(clampPanelWidth(9999)).toBe(LAYOUT.rightRailMaxWidth);
+    expect(clampPanelWidth("宽")).toBe(LAYOUT.rightRailWidth);
+    expect(clampPanelWidth(null)).toBe(LAYOUT.rightRailWidth);
+    expect(clampPanelWidth(Number.NaN)).toBe(LAYOUT.rightRailWidth);
   });
 });
 

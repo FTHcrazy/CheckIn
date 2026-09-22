@@ -140,6 +140,26 @@ export default function NovelPage({
     [hover.target, data],
   );
 
+  /**
+   * 出场章数（要素卡角标）：全书扫一遍按要素聚合，而不是每张卡各扫一遍——
+   * 要素几十个 × 章节上百章，逐卡扫会让右栏切一下卡一顿。
+   */
+  const appearanceCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const chapter of data.chapters) {
+      const ids = new Set(
+        findTermMatches(chapter.content, terms).map((match) => match.entityId),
+      );
+      for (const id of ids) counts.set(id, (counts.get(id) ?? 0) + 1);
+    }
+    return counts;
+  }, [data.chapters, terms]);
+
+  const appearanceCountOf = useCallback(
+    (entityId: string): number => appearanceCounts.get(entityId) ?? 0,
+    [appearanceCounts],
+  );
+
   /** 出场章节（R21 升级）：返回全量可跳转引用，序号标签随序号配置派生 */
   const getAppearances = useCallback(
     (entityId: string): EntityAppearance[] => {
@@ -365,6 +385,9 @@ export default function NovelPage({
           open={view.rightOpen}
           activeTab={view.panelTab}
           onTabChange={view.selectPanelTab}
+          width={view.rightWidth}
+          onWidthChange={view.setRightWidth}
+          onCollapse={view.toggleRight}
           outline={outline}
           activeChapterId={data.activeChapterId}
           outlineActions={outlineActions}
@@ -376,6 +399,7 @@ export default function NovelPage({
           onCloseEntity={view.closeEntityDetail}
           getEntityRelations={data.getEntityRelations}
           getAppearances={getAppearances}
+          appearanceCountOf={appearanceCountOf}
           levelSystems={data.levelSystems}
           notes={data.notes}
           globalNotes={data.allNotes}
@@ -395,6 +419,7 @@ export default function NovelPage({
             if (target) handleSetEntityLevel(entityId, target.type, rungId);
           }}
           onOpenLevelManager={view.openLevelManager}
+          onOpenTypeManager={view.openTypeManager}
           namingActions={namingActions}
           namingExclude={namingExclude}
           namingFavorites={namingFavorites}

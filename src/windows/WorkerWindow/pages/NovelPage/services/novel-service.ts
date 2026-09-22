@@ -57,6 +57,19 @@ export async function saveLastPosition(position: LastPosition): Promise<boolean>
   return window.electronAPI!.novel.configSet(STORAGE_KEYS.position, JSON.stringify(position));
 }
 
+/** 读取右栏宽度 JSON（键不存在返回 null，由上层夹取到合法区间） */
+export async function fetchPanelWidth(): Promise<string | null> {
+  return window.electronAPI!.novel.configGet(STORAGE_KEYS.panelWidth);
+}
+
+/** 保存右栏宽度（拖拽结束后防抖落库） */
+export async function savePanelWidth(width: number): Promise<boolean> {
+  return window.electronAPI!.novel.configSet(
+    STORAGE_KEYS.panelWidth,
+    JSON.stringify(width),
+  );
+}
+
 // ── 作品管理（R29） ──
 
 /** 新建作品落库（novel-work-add；id 由渲染层生成） */

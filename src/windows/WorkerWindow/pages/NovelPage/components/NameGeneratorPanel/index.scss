@@ -1,114 +1,91 @@
 /**
- * 起名工具面板样式（PRD R18 / 步骤三）
+ * 起名工具面板样式（PRD R18 / 步骤三；版式见 NL 设计稿 §3·工具·起名器）
  *
  * 全部走 var(--app-*) 主题变量，禁止硬编码色值（AGENTS 6.1.1）。
- * 网格 + 卡片紧凑布局，按钮小尺寸避免遮挡正文区码字。
  */
 
 .nv-name {
   display: flex;
   flex-direction: column;
-  height: 100%;
-  min-height: 0;
-  padding: 8px 8px 0;
-  gap: 8px;
 
   &__options {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 6px;
-    padding: 6px;
-    border-radius: 6px;
-    background: var(--app-surface-active);
+    gap: 8px;
   }
 
-  &__field {
+  &__opt {
     display: flex;
     flex-direction: column;
-    gap: 2px;
-    font-size: 11px;
-    color: var(--app-text-secondary);
+    gap: 4px;
+    min-width: 0;
+
+    span {
+      font-size: 11px;
+      color: var(--app-text-muted);
+    }
 
     select {
-      width: 100%;
-      height: 26px;
+      height: 29px;
       padding: 0 6px;
       border: 1px solid var(--app-border);
-      border-radius: 4px;
-      background: var(--app-surface);
+      border-radius: 8px;
+      background: var(--app-input-bg);
       color: var(--app-text);
-      font-size: 12px;
-
-      &:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-      }
+      font-family: inherit;
+      font-size: 12.5px;
+      outline: none;
 
       &:focus {
-        outline: none;
         border-color: var(--app-primary);
+      }
+
+      &:disabled {
+        color: var(--app-text-disabled);
+        background: var(--app-surface-alt);
       }
     }
   }
 
-  &__field--gender,
-  &__field--count {
-    // 性别与数量用更紧凑布局
-  }
-
-  &__label {
-    user-select: none;
-  }
-
-  &__generate {
-    grid-column: 1 / -1;
-    height: 28px;
-    border: 1px solid var(--app-primary);
-    border-radius: 4px;
-    background: var(--app-primary);
-    color: var(--app-surface);
-    font-size: 12px;
-    cursor: pointer;
+  &__regen {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 4px;
+    gap: 5px;
+    width: 100%;
+    height: 30px;
+    margin-top: 8px;
+    border: none;
+    border-radius: 9px;
+    background: var(--app-primary);
+    color: var(--app-primary-contrast);
+    font-family: inherit;
+    font-size: 12.5px;
+    cursor: pointer;
+    transition: background 150ms ease, transform 100ms ease;
 
     &:hover {
-      opacity: 0.85;
+      background: var(--app-primary-strong);
     }
 
     &:active {
-      transform: translateY(1px);
+      transform: scale(0.98);
     }
-  }
-
-  &__empty {
-    margin: 16px 4px;
-    color: var(--app-text-disabled);
-    font-size: 12px;
-    text-align: center;
   }
 
   &__grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(2, 1fr);
     gap: 6px;
-    overflow-y: auto;
-    flex: 1;
-    min-height: 0;
-    padding: 2px;
   }
 
   &__card {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    padding: 8px 6px 6px;
+    position: relative;
+    padding: 9px 9px 9px 10px;
     border: 1px solid var(--app-border);
-    border-radius: 6px;
+    border-radius: var(--app-radius-item);
     background: var(--app-surface);
-    transition: border-color 0.15s ease;
+    animation: nv-name-pop-in 260ms ease backwards;
 
     &:hover {
       border-color: var(--app-primary);
@@ -116,134 +93,68 @@
   }
 
   &__text {
-    font-size: 13px;
-    color: var(--app-text);
+    display: block;
+    font-size: 13.5px;
     font-weight: 500;
-    word-break: break-all;
-    user-select: text;
-    line-height: 1.4;
+    margin-right: 4px;
   }
 
-  &__actions {
+  &__acts {
     display: flex;
-    gap: 2px;
-    justify-content: flex-end;
+    gap: 1px;
+    margin-top: 4px;
+    opacity: 0.35;
+    transition: opacity 150ms ease;
+  }
 
-    button {
-      width: 22px;
-      height: 22px;
-      padding: 0;
-      border: none;
-      border-radius: 3px;
-      background: transparent;
-      color: var(--app-text-secondary);
-      font-size: 12px;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-
-      &:hover {
-        background: var(--app-surface-active);
-        color: var(--app-primary);
-      }
-
-      &.is-on,
-      &[disabled] {
-        color: var(--app-primary);
-        cursor: default;
-      }
-    }
+  &__card:hover &__acts {
+    opacity: 1;
   }
 
   &__favorites {
-    border-top: 1px solid var(--app-border);
-    padding-top: 8px;
-    margin-top: 4px;
-    max-height: 35%;
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-  }
-
-  &__favorites-head {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0 4px 4px;
-    font-size: 11px;
-    color: var(--app-text-secondary);
-    user-select: none;
-  }
-
-  &__favorites-count {
-    color: var(--app-text-disabled);
-  }
-
-  &__favorites-list {
-    list-style: none;
     margin: 0;
-    padding: 0 2px;
-    overflow-y: auto;
-    flex: 1;
-    min-height: 0;
+    padding: 0;
+    list-style: none;
   }
 
-  &__favorite {
-    display: grid;
-    grid-template-columns: 1fr auto auto;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 4px;
-    border-radius: 4px;
-
-    &:hover {
-      background: var(--app-surface-active);
-
-      .nv-name__favorite-actions {
-        opacity: 1;
-      }
-    }
-  }
-
-  &__favorite-name {
-    font-size: 12px;
-    color: var(--app-text);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    user-select: text;
-  }
-
-  &__favorite-meta {
-    font-size: 10px;
-    color: var(--app-text-disabled);
-    white-space: nowrap;
-  }
-
-  &__favorite-actions {
+  &__fav {
     display: flex;
-    gap: 2px;
-    opacity: 0;
-    transition: opacity 0.15s ease;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border: 1px solid var(--app-border);
+    border-radius: 9px;
+    background: var(--app-surface);
 
-    button {
-      width: 20px;
-      height: 20px;
-      padding: 0;
-      border: none;
-      border-radius: 3px;
-      background: transparent;
-      color: var(--app-text-secondary);
-      font-size: 11px;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-
-      &:hover {
-        color: var(--app-primary);
-      }
+    & + & {
+      margin-top: 5px;
     }
+  }
+
+  &__fav-name {
+    font-size: 12.5px;
+    font-weight: 500;
+  }
+
+  &__fav-meta {
+    font-size: 10.5px;
+    color: var(--app-text-disabled);
+  }
+
+  &__fav-acts {
+    margin-left: auto;
+    display: flex;
+    gap: 1px;
+  }
+}
+
+@keyframes nv-name-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
   }
 }
