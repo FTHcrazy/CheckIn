@@ -1,5 +1,75 @@
 # Changelog
 
+## [1.12.0] - 2026-09-22
+
+### Added
+- **记账模块（M1 + M2）**：新增 `/ledger` 页面与侧栏「记账」入口
+  （`HomeSidebar` 置于「日程」之后）、首页功能卡「记账本」
+  与首页统计「本月支出」迷你卡
+- **数据层**：`electron/db.ts` 迁移式建 `ledger_transactions /
+  ledger_categories / ledger_accounts / ledger_tags / ledger_budgets`
+  五张表（含 `happened_at` 倒序索引）；新增
+  `electron/handlers/ledger-handlers.ts` 导出 `registerLedgerHandlers()`
+  并在 `main.ts` 注册；`preload.ts` 暴露 `electronAPI.ledger` 命名空间，
+  DTO 同步进 `shared/types/electron.d.ts`
+- **服务层**：`shared/services/ledger.ts` 提供语义化 API
+  （listCategories / listTransactions / addTransaction / updateTransaction /
+  deleteTransaction / restoreTransaction / upsertCategory / deleteCategory /
+  sumExpense）与 10 类预设分类；分类预设由渲染进程持有，首次拉取为空时
+  播种到主进程，避免两处各写一份而漂移
+- **交互**：快捷记一笔走 antd `Modal` 居中弹层（⌘/Ctrl+Shift+L 唤起），
+  行内编辑走 `Modal`，周期「自选」走 `Popover` + `RangePicker`，
+  分类筛选走 `Popover`，删除走 `Popconfirm` + 5 秒可撤销 Toast；
+  全部弹层均为标准组件，未自绘 mask
+- **性能优化**：流水时间线用 `react-virtuoso` 的 `GroupedVirtuoso`
+  虚拟化（日期分组 + 扁平行数组），长账目下只挂载可视行；行组件
+  `LedgerTxRow` 用 `memo()` 且回调稳定；hover 只改 `box-shadow` 与 `opacity`
+- **图表零依赖**：分类占比环图（stroke-dasharray）与近 30 天趋势折线
+  （polyline + `vector-effect`）均为纯 SVG，未引入图表库
+- **配色合规**：支出 `--app-error`、收入 `--app-success`，金额一律带
+  `+ / −` 前缀与箭头，不依赖颜色单独传达信息；分类色板复用既有
+  `--app-accent-*`，四主题自动跟随，`themes.scss` 零改动
+
+### Fixed
+- **记账页三处视觉问题**：
+  - 快捷记一笔金额框聚焦出现「双圈」：antd 6 已废弃 `bordered={false}`（实际不生效），
+    内层输入框自带边框与聚焦光晕叠加外层容器描边；改为 `variant="borderless"`，
+    聚焦/错误态统一由外层容器表达（primary-weak / error-weak 软光圈）
+  - 流水区底部冒出默认粗横滚条：Virtuoso 滚动容器的绝对定位 viewport 按
+    padding-box 解析宽度，容器上 `padding: 0 4px` 恰好横向溢出 8px；
+    移除容器水平内边距（内边距下沉到行/分组头）并显式 `overflow-x: hidden`，
+    滚动条横竖两轴统一收细为 8px
+  - 内容比页头宽一圈：`.ledger-page` 左右留白 12px 而 NavHeader 卡片是 24px，
+    对齐为左右 24px + 底部 20px，FAB 右缘随之与内容边对齐
+  - 流水行 hover 底色通栏顶到卡片边缘：行元素自带 `margin: 0 8px` 内收
+    （水平内边距不可加回 Virtuoso 滚动容器，否则横向溢出复现横滚条），
+    分组头与筛选条内边距同步对齐 16px，三者左缘一致
+  - **最小窗口（高 600px）下左侧栏主题切换被挤出不可见**：侧栏导航 8 项在矮窗口
+    超出卡片高度，底部工具区（`margin-top:auto`）因无剩余空间而溢出被祖先
+    `overflow:hidden` 裁掉；改为导航区 `flex:1 1 auto; min-height:0; overflow-y:auto`
+    （4px 细滚条），footer 设 `flex:0 0 auto` 永不被压缩，并加
+    `@media (max-height:680px)` 压缩导航间距让最小尺寸下基本无需滚动
+  - **快捷记一笔弹窗与设计稿差距过大**：原 `Drawer` 把控件纵向堆叠且带标题栏，
+    与设计稿的「三行紧凑布局」不符；改为 antd `Modal`（`centered` 屏幕居中、
+    `width=640`、`max-width: calc(100vw - 48px)`、无标题栏/无关闭钮，
+    遮罩点击与 Esc 关闭），三行对齐设计稿：行1 支出/收入分段 + ¥ 金额胶囊 + 行内错误；
+    行2 紧凑胶囊分类（30px pill，选中态 `inset 0 0 0 1px currentColor` 描边）；
+    行3 备注 + 今天胶囊（`Popover` + `DatePicker` 可改期，今天显示「今天」否则 MM-DD）
+    + Enter/Esc 提示 + 保存按钮，保存时按所选日期落库
+
+### Changed
+- **首页统计**：`useHomeOverview` 新增 `monthExpense`（本月支出，取整），
+  与待办 / 备忘 / 打卡 / 代码并行拉取，任一项失败只置 `null` 渲染为「—」
+- **主题色板扩展**：`FeatureCard` 新增 `green` tone、`HomeStats` 新增 `rose`
+  tone，均取自既有 `--app-accent-*`，新增变量零成本
+
+### Verified
+- `pnpm test`：23 个文件 / 296 个用例全绿（新增 `ledger-utils.test.ts` 18 例
+  覆盖金额校验、周期区间、环比、日期分组、>7 类折叠、趋势补桶、筛选；
+  `LedgerPage.test.tsx` 2 例冒烟覆盖有数据态与空态）
+- `tsc --noEmit -p tsconfig.app.json` 与 `tsconfig.node.json`：0 错误
+- `eslint .`：0 error（仅剩 `useHttpClient.ts` 既有 warning）
+
 ## [1.11.0] - 2026-09-21
 
 ### Added

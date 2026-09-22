@@ -1,0 +1,1240 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="aurora">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CheckIn 记账页 · UI 设计原型 v1（对齐主窗口设计系统）</title>
+<style>
+/* ==========================================================================
+   0. 基础重置
+   ========================================================================== */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+button { font: inherit; color: inherit; border: none; background: none; cursor: pointer; }
+input { font: inherit; color: inherit; }
+ul { margin: 0; padding: 0; list-style: none; }
+
+/* ==========================================================================
+   1. 设计令牌 —— 间距 / 圆角 / 动效（与项目 4px 栅格、三档时长一致）
+   ========================================================================== */
+:root {
+  --s-1: 4px;  --s-2: 8px;  --s-3: 12px; --s-4: 16px;
+  --s-5: 20px; --s-6: 24px; --s-8: 32px;
+
+  --d-fast: 120ms;
+  --d-base: 180ms;
+  --d-slow: 260ms;
+  --ease-out: cubic-bezier(.22, .61, .36, 1);
+
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+             "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  --font-num: "SF Mono", "JetBrains Mono", "Segoe UI", var(--font-ui);
+}
+
+/* ==========================================================================
+   2. 主题令牌 —— 与 src/shared/styles/themes.scss 1:1 对齐（四套主题）
+      业务样式一律写 var(--app-*)，不硬编码颜色，切 data-theme 即整体换肤
+   ========================================================================== */
+:root,
+[data-theme="aurora"] {
+  --app-bg: #f3f5fc; --app-surface: #ffffff; --app-surface-alt: #f7f8fe;
+  --app-surface-hover: #eef1fc; --app-surface-active: #e4e9fa; --app-surface-elevated: #ffffff;
+  --app-header-bg: #ffffff; --app-sidebar-bg: #ffffff; --app-input-bg: #ffffff;
+  --app-splitter: #edf0fa; --app-mask: rgba(43, 47, 74, 0.35);
+  --app-border: #e2e6f4; --app-border-strong: #d3d9ee;
+  --app-text: #2b2f4a; --app-text-secondary: #5a5f7a; --app-text-muted: #8a90ac;
+  --app-text-disabled: #b6bbd0; --app-text-inverse: #ffffff;
+  --app-primary: #5b6cf9; --app-primary-strong: #4a5ae0; --app-primary-active: #3e4dc9;
+  --app-primary-weak: #eaf0ff; --app-primary-contrast: #ffffff;
+  --app-primary-gradient: linear-gradient(90deg, #7b8cff 0%, #a5b0ff 100%);
+  --app-success: #34b37e; --app-success-weak: #e6f7ee;
+  --app-warning: #f5a623; --app-warning-weak: #fff3e0;
+  --app-error: #e5484d; --app-error-weak: #ffecee;
+  --app-info: #5b8def; --app-info-weak: #eaf0ff;
+  --app-accent-blue: #5b8def; --app-accent-blue-weak: #eaf0ff;
+  --app-accent-purple: #8b77f0; --app-accent-purple-weak: #f1edff;
+  --app-accent-green: #34b37e; --app-accent-green-weak: #e6f7ee;
+  --app-accent-amber: #f5a623; --app-accent-amber-weak: #fff3e0;
+  --app-accent-rose: #e8618c; --app-accent-rose-weak: #ffeef2;
+  --app-accent-teal: #2fa57e; --app-accent-teal-weak: #dcf2e8;
+  --app-accent-orange: #e8935e; --app-accent-orange-weak: #fdeedf;
+  --app-radius-card: 20px; --app-radius-panel: 16px; --app-radius-chip: 14px;
+  --app-radius-item: 10px; --app-radius-pill: 999px;
+  --app-shadow-card: 0 6px 16px rgba(53, 64, 101, 0.07);
+  --app-shadow-pop: 0 10px 30px rgba(53, 64, 101, 0.14);
+  --app-shadow-window: inset 0 1px 2px rgba(15, 23, 42, 0.06), inset 0 -2px 6px rgba(15, 23, 42, 0.05);
+  --app-scrollbar: #c9cff5; --app-scrollbar-hover: #b3bbee;
+}
+[data-theme="cream"] {
+  --app-bg: #faf6ef; --app-surface: #ffffff; --app-surface-alt: #fcf9f4;
+  --app-surface-hover: #f6f0e6; --app-surface-active: #f0e6d4; --app-surface-elevated: #ffffff;
+  --app-header-bg: #ffffff; --app-sidebar-bg: #fffdf9; --app-input-bg: #ffffff;
+  --app-splitter: #f3ebdc; --app-mask: rgba(61, 54, 41, 0.35);
+  --app-border: #efe5d6; --app-border-strong: #e3d6c2;
+  --app-text: #3d3629; --app-text-secondary: #6b6355; --app-text-muted: #9a9080;
+  --app-text-disabled: #c5bba8; --app-text-inverse: #ffffff;
+  --app-primary: #e8834a; --app-primary-strong: #d06e38; --app-primary-active: #b85e2e;
+  --app-primary-weak: #ffe9dc; --app-primary-contrast: #ffffff;
+  --app-primary-gradient: linear-gradient(90deg, #ffb27a 0%, #ff8e5e 100%);
+  --app-success: #7ba05b; --app-success-weak: #e8f2e4;
+  --app-warning: #d9a514; --app-warning-weak: #fff6d9;
+  --app-error: #d95c5c; --app-error-weak: #fde9e9;
+  --app-info: #5b9bc9; --app-info-weak: #e5f0f7;
+  --app-accent-blue: #5b9bc9; --app-accent-blue-weak: #e5f0f7;
+  --app-accent-purple: #a98bd8; --app-accent-purple-weak: #f2ecfa;
+  --app-accent-green: #7ba05b; --app-accent-green-weak: #e8f2e4;
+  --app-accent-amber: #d9a514; --app-accent-amber-weak: #fff6d9;
+  --app-accent-rose: #d96a8b; --app-accent-rose-weak: #fbe4e9;
+  --app-accent-teal: #4fa88c; --app-accent-teal-weak: #e2f2ec;
+  --app-accent-orange: #e8834a; --app-accent-orange-weak: #ffe9dc;
+  --app-radius-card: 20px; --app-radius-panel: 16px; --app-radius-chip: 14px;
+  --app-radius-item: 10px; --app-radius-pill: 999px;
+  --app-shadow-card: 0 6px 16px rgba(120, 95, 60, 0.07);
+  --app-shadow-pop: 0 10px 30px rgba(120, 95, 60, 0.14);
+  --app-shadow-window: inset 0 1px 2px rgba(92, 72, 44, 0.08), inset 0 -2px 6px rgba(92, 72, 44, 0.07);
+  --app-scrollbar: #ddd2bf; --app-scrollbar-hover: #c9bda6;
+}
+[data-theme="mint"] {
+  --app-bg: #f2f8f4; --app-surface: #ffffff; --app-surface-alt: #f5faf7;
+  --app-surface-hover: #e9f4ee; --app-surface-active: #dcf0e5; --app-surface-elevated: #ffffff;
+  --app-header-bg: #ffffff; --app-sidebar-bg: #fbfefc; --app-input-bg: #ffffff;
+  --app-splitter: #e6f2eb; --app-mask: rgba(36, 53, 45, 0.35);
+  --app-border: #dfeee5; --app-border-strong: #cbe3d6;
+  --app-text: #24352d; --app-text-secondary: #4a5c52; --app-text-muted: #8ca096;
+  --app-text-disabled: #b7c7bd; --app-text-inverse: #ffffff;
+  --app-primary: #2fa57e; --app-primary-strong: #218a67; --app-primary-active: #1a7155;
+  --app-primary-weak: #dcf2e8; --app-primary-contrast: #ffffff;
+  --app-primary-gradient: linear-gradient(90deg, #3fbf92 0%, #7ed4b4 100%);
+  --app-success: #2fa57e; --app-success-weak: #dcf2e8;
+  --app-warning: #d9a514; --app-warning-weak: #fbf3dc;
+  --app-error: #d95c5c; --app-error-weak: #fce9e9;
+  --app-info: #4a90c4; --app-info-weak: #eaf3fb;
+  --app-accent-blue: #4a90c4; --app-accent-blue-weak: #eaf3fb;
+  --app-accent-purple: #8b77e0; --app-accent-purple-weak: #efecfa;
+  --app-accent-green: #5fb87f; --app-accent-green-weak: #e6f5ec;
+  --app-accent-amber: #d9a514; --app-accent-amber-weak: #fbf3dc;
+  --app-accent-rose: #d96a8b; --app-accent-rose-weak: #fbe9ef;
+  --app-accent-teal: #2fa57e; --app-accent-teal-weak: #dcf2e8;
+  --app-accent-orange: #e8935e; --app-accent-orange-weak: #fdeedf;
+  --app-radius-card: 20px; --app-radius-panel: 16px; --app-radius-chip: 14px;
+  --app-radius-item: 10px; --app-radius-pill: 999px;
+  --app-shadow-card: 0 6px 16px rgba(30, 90, 66, 0.07);
+  --app-shadow-pop: 0 10px 30px rgba(30, 90, 66, 0.14);
+  --app-shadow-window: inset 0 1px 2px rgba(18, 62, 46, 0.07), inset 0 -2px 6px rgba(18, 62, 46, 0.06);
+  --app-scrollbar: #c5ded2; --app-scrollbar-hover: #adc9bb;
+}
+[data-theme="midnight"] {
+  --app-bg: #15171f; --app-surface: #1d2029; --app-surface-alt: #232733;
+  --app-surface-hover: #2a2f3c; --app-surface-active: #323848; --app-surface-elevated: #262b38;
+  --app-header-bg: #1d2029; --app-sidebar-bg: #191c26; --app-input-bg: #232733;
+  --app-splitter: #262b36; --app-mask: rgba(0, 0, 0, 0.5);
+  --app-border: #2c313e; --app-border-strong: #3a4152;
+  --app-text: #e8eaf2; --app-text-secondary: #aeb4c4; --app-text-muted: #7e8595;
+  --app-text-disabled: #5c6273; --app-text-inverse: #15171f;
+  --app-primary: #7b8cff; --app-primary-strong: #93a0ff; --app-primary-active: #6573e6;
+  --app-primary-weak: #232842; --app-primary-contrast: #10131f;
+  --app-primary-gradient: linear-gradient(90deg, #6a7cf5 0%, #8f9dff 100%);
+  --app-success: #4fc98d; --app-success-weak: rgba(79, 201, 141, 0.14);
+  --app-warning: #e8b334; --app-warning-weak: rgba(232, 179, 52, 0.14);
+  --app-error: #f26d6d; --app-error-weak: rgba(242, 109, 109, 0.16);
+  --app-info: #7fa6ff; --app-info-weak: rgba(127, 166, 255, 0.14);
+  --app-accent-blue: #7fa6ff; --app-accent-blue-weak: rgba(127, 166, 255, 0.14);
+  --app-accent-purple: #a58cf5; --app-accent-purple-weak: rgba(165, 140, 245, 0.14);
+  --app-accent-green: #4fc98d; --app-accent-green-weak: rgba(79, 201, 141, 0.14);
+  --app-accent-amber: #e8b334; --app-accent-amber-weak: rgba(232, 179, 52, 0.14);
+  --app-accent-rose: #f07fa4; --app-accent-rose-weak: rgba(240, 127, 164, 0.14);
+  --app-accent-teal: #4fd0a5; --app-accent-teal-weak: rgba(79, 208, 165, 0.14);
+  --app-accent-orange: #f0a06a; --app-accent-orange-weak: rgba(240, 160, 106, 0.14);
+  --app-radius-card: 20px; --app-radius-panel: 16px; --app-radius-chip: 14px;
+  --app-radius-item: 10px; --app-radius-pill: 999px;
+  --app-shadow-card: 0 6px 18px rgba(0, 0, 0, 0.32);
+  --app-shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.45);
+  --app-shadow-window: inset 0 1px 2px rgba(0, 0, 0, 0.45), inset 0 -2px 6px rgba(0, 0, 0, 0.35);
+  --app-scrollbar: #3a4152; --app-scrollbar-hover: #4a5265;
+}
+
+/* ==========================================================================
+   3. 文档外壳（非设计内容，仅用于演示与审阅）
+   ========================================================================== */
+body {
+  font-family: var(--font-ui);
+  background: #eceef5;
+  color: #2b2f4a;
+  padding: var(--s-6);
+  overflow: auto;
+}
+.doc-title { font-size: 18px; font-weight: 700; margin: 0 0 2px; }
+.doc-sub { font-size: 12px; color: #6b7189; margin: 0 0 16px; }
+.docbar {
+  display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-3);
+  padding: 12px 16px; margin-bottom: 16px;
+  background: #fff; border-radius: 14px; box-shadow: 0 2px 10px rgba(20,24,40,.06);
+}
+.docbar__group { display: flex; align-items: center; gap: 6px; }
+.docbar__label { font-size: 12px; color: #7b8199; margin-right: 2px; }
+.chip {
+  padding: 5px 12px; border-radius: var(--app-radius-pill);
+  font-size: 12px; color: #4a5068; background: #f1f3f8;
+  transition: transform var(--d-fast) var(--ease-out), box-shadow var(--d-fast) var(--ease-out);
+}
+.chip:hover { transform: translateY(-1px); box-shadow: 0 3px 8px rgba(20,24,40,.10); }
+.chip.is-on { background: #3d4bd8; color: #fff; font-weight: 600; }
+.stage { display: flex; flex-direction: column; gap: 20px; align-items: flex-start; }
+.annot { font-size: 12px; color: #7b8199; margin: 0; }
+.annot b { color: #3d4260; }
+
+/* ==========================================================================
+   4. 窗口外壳（与 shared/styles/window-shell.scss 同形）
+   ========================================================================== */
+.app {
+  width: 1120px; height: 748px; border-radius: 12px; overflow: hidden;
+  background: var(--app-bg); color: var(--app-text);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1), var(--app-shadow-window),
+              0 18px 48px rgba(15, 23, 42, 0.18);
+  display: flex; flex-direction: column;
+}
+.window-header {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0; height: 34px; padding-left: 12px;
+}
+.window-header__title { font-size: 13px; font-weight: 600; color: var(--app-text-secondary); letter-spacing: .5px; }
+.window-header__controls { display: flex; align-items: stretch; height: 100%; margin-left: auto; }
+.window-header__btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 46px; color: var(--app-text-secondary);
+  transition: background-color .15s ease, color .15s ease;
+}
+.window-header__btn:hover { background: var(--app-surface-hover); color: var(--app-text); }
+.window-header__btn--close:hover { background: #e81123; color: #fff; }
+.shell-body { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+
+/* ── NavHeader（Page 容器自带） ── */
+.nav-header { width: 100%; padding: 12px 24px 0; box-sizing: border-box; margin-bottom: 12px; }
+.nav-header-inner {
+  display: flex; align-items: center; height: 52px; padding: 0 12px;
+  border-radius: var(--app-radius-panel); background: var(--app-surface);
+  border: 1px solid var(--app-border); box-shadow: var(--app-shadow-card);
+}
+.nav-header-icon {
+  display: inline-flex; align-items: center; gap: 8px; padding: 0 10px; height: 36px;
+  border-radius: var(--app-radius-chip); color: var(--app-text); font-weight: 600; font-size: 13px;
+}
+.nav-header-icon:hover { background: var(--app-primary-weak); color: var(--app-primary); }
+
+/* ==========================================================================
+   5. 记账页骨架
+   ========================================================================== */
+.ledger-page {
+  display: flex; flex-direction: column; gap: var(--s-3);
+  flex: 1; min-height: 0; padding: 0 12px 12px; box-sizing: border-box; overflow: hidden;
+}
+.card {
+  background: var(--app-surface); border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-card); box-shadow: var(--app-shadow-card);
+}
+
+/* ── 5.1 顶部条：周期切换 + 本月结余大数字 ── */
+.ledger-topbar {
+  display: flex; align-items: center; gap: var(--s-4);
+  flex: 0 0 auto; padding: 12px 18px;
+}
+.seg {
+  display: inline-flex; gap: 2px; padding: 3px;
+  background: var(--app-surface-alt); border-radius: var(--app-radius-pill);
+}
+.seg__item {
+  padding: 6px 14px; border-radius: var(--app-radius-pill);
+  font-size: 13px; color: var(--app-text-secondary);
+  transition: transform var(--d-fast) var(--ease-out), color var(--d-fast) var(--ease-out);
+}
+.seg__item:hover { color: var(--app-text); }
+.seg__item.is-on {
+  background: var(--app-surface); color: var(--app-primary-strong); font-weight: 600;
+  box-shadow: var(--app-shadow-card);
+}
+.topbar__spacer { flex: 1; }
+.balance { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.balance__label { font-size: 12px; color: var(--app-text-muted); }
+.balance__value {
+  font-family: var(--font-num); font-size: 28px; font-weight: 700; line-height: 1.15;
+  color: var(--app-success); font-variant-numeric: tabular-nums; letter-spacing: -.5px;
+}
+.balance__value.is-negative { color: var(--app-error); }
+.balance__delta {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 12px; color: var(--app-text-muted);
+}
+.balance__delta b { font-family: var(--font-num); font-weight: 600; }
+.up { color: var(--app-error); }      /* 国内习惯：涨=红 */
+.down { color: var(--app-success); }  /* 跌=绿 */
+.icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; border-radius: var(--app-radius-chip);
+  color: var(--app-text-muted);
+  transition: transform var(--d-fast) var(--ease-out), box-shadow var(--d-fast) var(--ease-out);
+}
+.icon-btn:hover { background: var(--app-surface-hover); color: var(--app-text); }
+
+/* ── 5.2 中部：总览卡 + 分类占比 ── */
+.ledger-mid {
+  display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+  gap: var(--s-3); flex: 0 0 auto;
+}
+.overview { padding: 16px 18px; display: flex; flex-direction: column; gap: 14px; }
+.overview__head { display: flex; align-items: center; justify-content: space-between; }
+.card__title { margin: 0; font-size: 14px; font-weight: 600; color: var(--app-text-secondary); }
+.card__hint { font-size: 12px; color: var(--app-text-muted); }
+.stat-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.stat {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+  border-radius: var(--app-radius-panel); background: var(--app-surface-alt);
+  border: 1px solid var(--app-border);
+}
+.stat__dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+.stat__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.stat__value {
+  font-family: var(--font-num); font-size: 18px; font-weight: 700; line-height: 1.2;
+  color: var(--app-text); font-variant-numeric: tabular-nums;
+}
+.stat__label { font-size: 12px; color: var(--app-text-secondary); }
+.stat--expense .stat__value { color: var(--app-error); }
+.stat--income .stat__value { color: var(--app-success); }
+.trend { position: relative; height: 96px; }
+.trend svg { width: 100%; height: 96px; display: block; overflow: visible; }
+.trend__tip {
+  position: absolute; transform: translate(-50%, -100%); pointer-events: none;
+  padding: 4px 8px; border-radius: 8px; font-size: 11px; white-space: nowrap;
+  background: var(--app-surface-elevated); color: var(--app-text);
+  border: 1px solid var(--app-border); box-shadow: var(--app-shadow-pop); opacity: 0;
+  transition: opacity var(--d-fast) var(--ease-out);
+}
+.trend__tip.is-on { opacity: 1; }
+
+/* 环图 */
+.pie { padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
+.pie__body { display: flex; align-items: center; gap: 14px; }
+.donut { position: relative; width: 132px; height: 132px; flex: 0 0 auto; }
+.donut svg { width: 132px; height: 132px; transform: rotate(-90deg); }
+.donut__center {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 2px; pointer-events: none;
+}
+.donut__num {
+  font-family: var(--font-num); font-size: 16px; font-weight: 700; color: var(--app-text);
+  font-variant-numeric: tabular-nums;
+}
+.donut__cap { font-size: 11px; color: var(--app-text-muted); }
+.donut__seg { transition: opacity var(--d-base) var(--ease-out); cursor: pointer; }
+.pie__legend { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.legend {
+  display: flex; align-items: center; gap: 8px; padding: 4px 6px;
+  border-radius: 8px; font-size: 12px; color: var(--app-text-secondary);
+}
+.legend:hover { background: var(--app-surface-hover); color: var(--app-text); }
+.legend__dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+.legend__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.legend__num {
+  font-family: var(--font-num); font-variant-numeric: tabular-nums; color: var(--app-text-muted);
+}
+.legend__pct {
+  font-family: var(--font-num); width: 40px; text-align: right;
+  font-variant-numeric: tabular-nums; color: var(--app-text-muted);
+}
+
+/* ── 5.3 下部：时间线流水 ── */
+.ledger-flow { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.filterbar {
+  display: flex; align-items: center; gap: var(--s-2);
+  flex: 0 0 auto; padding: 10px 14px; border-bottom: 1px solid var(--app-splitter);
+}
+.filterbar__search {
+  display: inline-flex; align-items: center; gap: 6px; flex: 1; min-width: 0; max-width: 260px;
+  height: 32px; padding: 0 12px; border-radius: var(--app-radius-pill);
+  background: var(--app-surface-alt); border: 1px solid var(--app-border); color: var(--app-text-muted);
+}
+.filterbar__search input {
+  flex: 1; min-width: 0; border: none; outline: none; background: transparent;
+  font-size: 13px; color: var(--app-text);
+}
+.filterbar__spacer { flex: 1; }
+.pill {
+  display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px;
+  border-radius: var(--app-radius-pill); background: var(--app-surface-alt);
+  border: 1px solid var(--app-border); color: var(--app-text-secondary); font-size: 13px;
+  transition: transform var(--d-fast) var(--ease-out), box-shadow var(--d-fast) var(--ease-out);
+}
+.pill:hover { transform: translateY(-1px); box-shadow: var(--app-shadow-card); color: var(--app-text); }
+.pill.is-on { background: var(--app-primary-weak); border-color: transparent; color: var(--app-primary-strong); font-weight: 600; }
+
+.timeline { flex: 1; min-height: 0; overflow-y: auto; padding: 6px 10px 14px; }
+.timeline::-webkit-scrollbar { width: 8px; }
+.timeline::-webkit-scrollbar-thumb { background: var(--app-scrollbar); border-radius: 4px; }
+.timeline::-webkit-scrollbar-thumb:hover { background: var(--app-scrollbar-hover); }
+.group__head {
+  position: sticky; top: 0; z-index: 2;
+  display: flex; align-items: baseline; gap: 8px; padding: 8px 8px 6px;
+  background: var(--app-surface); border-radius: 8px;
+}
+.group__date { font-size: 13px; font-weight: 600; color: var(--app-text); }
+.group__week { font-size: 12px; color: var(--app-text-muted); }
+.group__sum { margin-left: auto; font-size: 12px; color: var(--app-text-muted); }
+.group__sum b { font-family: var(--font-num); font-weight: 600; font-variant-numeric: tabular-nums; }
+.tx { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-radius: var(--app-radius-item); }
+.tx:hover { background: var(--app-surface-hover); box-shadow: inset 0 0 0 1px var(--app-border); }
+.tx__icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; border-radius: var(--app-radius-chip); flex: 0 0 auto; font-size: 17px;
+}
+.tx__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.tx__name { font-size: 14px; font-weight: 500; color: var(--app-text); }
+.tx__note { font-size: 12px; color: var(--app-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tx__time { font-size: 12px; color: var(--app-text-disabled); font-family: var(--font-num); }
+.tx__amount {
+  font-family: var(--font-num); font-size: 15px; font-weight: 700;
+  font-variant-numeric: tabular-nums; letter-spacing: -.2px;
+}
+.tx__amount--expense { color: var(--app-error); }
+.tx__amount--income { color: var(--app-success); }
+.tx__ops { display: flex; gap: 2px; opacity: 0; transition: opacity var(--d-fast) var(--ease-out); }
+.tx:hover .tx__ops, .tx:focus-within .tx__ops { opacity: 1; }
+.mini-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: 8px; color: var(--app-text-muted);
+}
+.mini-btn:hover { background: var(--app-surface-active); color: var(--app-text); }
+.mini-btn--danger:hover { background: var(--app-error-weak); color: var(--app-error); }
+
+/* 空状态 */
+.empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 40px 0; }
+.empty__art { color: var(--app-text-disabled); opacity: .9; }
+.empty__title { margin: 0; font-size: 14px; font-weight: 600; color: var(--app-text-secondary); }
+.empty__desc { margin: 0; font-size: 12px; color: var(--app-text-muted); }
+.btn-primary {
+  display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 18px;
+  border-radius: var(--app-radius-pill); background: var(--app-primary-gradient);
+  color: var(--app-primary-contrast); font-size: 13px; font-weight: 600;
+  box-shadow: var(--app-shadow-card);
+  transition: transform var(--d-base) var(--ease-out), box-shadow var(--d-base) var(--ease-out), opacity var(--d-base) var(--ease-out);
+}
+.btn-primary:hover { transform: translateY(-1px); box-shadow: var(--app-shadow-pop); }
+.btn-primary:active { transform: scale(.97); }
+
+/* 骨架屏 */
+.sk { background: var(--app-surface-alt); border-radius: 8px; position: relative; overflow: hidden; }
+.sk::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, var(--app-surface-hover), transparent);
+  transform: translateX(-100%); animation: sk 1.4s infinite;
+}
+@keyframes sk { to { transform: translateX(100%); } }
+
+/* ── 5.4 悬浮按钮（＋记一笔） ── */
+.ledger-fab {
+  position: absolute; right: 24px; bottom: 24px; z-index: 40;
+  display: inline-flex; align-items: center; gap: 6px; height: 48px; padding: 0 20px;
+  border-radius: var(--app-radius-pill); background: var(--app-primary);
+  color: var(--app-primary-contrast); font-size: 14px; font-weight: 600;
+  box-shadow: var(--app-shadow-pop);
+  transition: transform var(--d-base) var(--ease-out), box-shadow var(--d-base) var(--ease-out);
+}
+.ledger-fab:hover { transform: translateY(-2px) scale(1.03); background: var(--app-primary-strong); }
+.ledger-fab:active { transform: scale(.96); }
+.ledger-fab:focus-visible { outline: 2px solid var(--app-primary); outline-offset: 2px; }
+.kbd {
+  padding: 1px 5px; border-radius: 5px; font-size: 11px; font-family: var(--font-num);
+  background: rgba(255,255,255,.22);
+}
+
+/* ── 5.5 快捷记一笔：底部悬浮条（覆盖层，不离开当前页） ── */
+.quick-mask {
+  position: absolute; inset: 0; z-index: 50; background: var(--app-mask);
+  opacity: 0; pointer-events: none; transition: opacity var(--d-base) var(--ease-out);
+}
+.quick-mask.is-on { opacity: 1; pointer-events: auto; }
+.quick-bar {
+  position: absolute; left: 50%; bottom: 28px; z-index: 51;
+  width: 640px; max-width: calc(100% - 48px);
+  transform: translate(-50%, 16px); opacity: 0; pointer-events: none;
+  background: var(--app-surface-elevated); border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-card); box-shadow: var(--app-shadow-pop);
+  transition: transform var(--d-slow) var(--ease-out), opacity var(--d-base) var(--ease-out);
+}
+.quick-bar.is-on { transform: translate(-50%, 0); opacity: 1; pointer-events: auto; }
+.quick__row { display: flex; align-items: center; gap: 10px; padding: 14px 16px; }
+.quick__row + .quick__row { border-top: 1px solid var(--app-splitter); }
+.quick__amount {
+  display: flex; align-items: baseline; gap: 4px; flex: 0 0 auto;
+  padding: 4px 12px; border-radius: var(--app-radius-item);
+  background: var(--app-surface-alt); border: 1px solid var(--app-border);
+}
+.quick__amount.is-error { border-color: var(--app-error); background: var(--app-error-weak); }
+.quick__cny { font-size: 18px; font-weight: 600; color: var(--app-text-muted); }
+.quick__amount input {
+  width: 130px; border: none; outline: none; background: transparent;
+  font-family: var(--font-num); font-size: 22px; font-weight: 700; color: var(--app-text);
+  font-variant-numeric: tabular-nums;
+}
+.quick__err { font-size: 12px; color: var(--app-error); }
+.cat-grid { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; min-width: 0; }
+.cat-chip {
+  display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 10px;
+  border-radius: var(--app-radius-pill); font-size: 12px;
+  background: var(--app-surface-alt); border: 1px solid var(--app-border); color: var(--app-text-secondary);
+  transition: transform var(--d-fast) var(--ease-out), box-shadow var(--d-fast) var(--ease-out);
+}
+.cat-chip:hover { transform: translateY(-1px); box-shadow: var(--app-shadow-card); }
+.cat-chip.is-on { font-weight: 600; box-shadow: inset 0 0 0 1px currentColor; }
+.quick__note {
+  flex: 1; min-width: 0; height: 32px; padding: 0 12px; border-radius: var(--app-radius-pill);
+  border: 1px solid var(--app-border); background: var(--app-surface-alt); outline: none;
+  font-size: 13px; color: var(--app-text);
+}
+.quick__tip { font-size: 12px; color: var(--app-text-muted); }
+.quick__tip b { color: var(--app-primary); }
+.quick__save { height: 36px; padding: 0 20px; }
+
+/* 撤销 Toast */
+.toast {
+  position: absolute; left: 50%; bottom: 96px; z-index: 60; transform: translate(-50%, 8px);
+  display: none; align-items: center; gap: 12px; padding: 10px 14px;
+  border-radius: var(--app-radius-panel); background: var(--app-surface-elevated);
+  border: 1px solid var(--app-border); box-shadow: var(--app-shadow-pop);
+  font-size: 13px; color: var(--app-text);
+  opacity: 0; transition: transform var(--d-base) var(--ease-out), opacity var(--d-base) var(--ease-out);
+}
+.toast.is-on { display: flex; transform: translate(-50%, 0); opacity: 1; }
+.toast__undo { color: var(--app-primary); font-weight: 600; }
+
+/* 删除二次确认 */
+.confirm {
+  position: absolute; right: 14px; top: 50%; transform: translateY(-50%);
+  display: none; align-items: center; gap: 6px; padding: 4px 6px 4px 10px;
+  border-radius: var(--app-radius-pill); background: var(--app-surface-elevated);
+  border: 1px solid var(--app-border); box-shadow: var(--app-shadow-pop); font-size: 12px;
+}
+.confirm.is-on { display: flex; }
+.confirm__yes { color: var(--app-error); font-weight: 600; padding: 2px 8px; border-radius: var(--app-radius-pill); }
+.confirm__yes:hover { background: var(--app-error-weak); }
+.confirm__no { color: var(--app-text-muted); padding: 2px 8px; border-radius: var(--app-radius-pill); }
+.confirm__no:hover { background: var(--app-surface-hover); }
+
+/* ==========================================================================
+   6. 附：入口设计（侧栏 / 首页卡 / 首页统计迷你卡）
+   ========================================================================== */
+.entries { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+.entry-box {
+  background: #fff; border-radius: 16px; padding: 14px; box-shadow: 0 2px 10px rgba(20,24,40,.06);
+}
+.entry-box__cap { font-size: 12px; color: #7b8199; margin: 0 0 10px; }
+
+.home-sidebar {
+  display: flex; flex-direction: column; align-items: center; flex: 0 0 auto;
+  width: 72px; padding: 16px 0 14px; box-sizing: border-box;
+  background: var(--app-surface); border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-card); box-shadow: var(--app-shadow-card);
+}
+.home-sidebar__logo {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; border-radius: var(--app-radius-chip);
+  background: var(--app-primary-gradient); color: var(--app-text-inverse);
+  font-size: 18px; font-weight: 700; box-shadow: var(--app-shadow-card);
+}
+.home-sidebar__nav { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 100%; margin-top: 18px; }
+.home-sidebar__item {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  width: 56px; padding: 7px 0; border-radius: var(--app-radius-chip);
+  background: transparent; color: var(--app-text-muted);
+  transition: transform .18s ease, color .18s ease, background-color .18s ease;
+}
+.home-sidebar__item:hover { background: var(--app-surface-hover); color: var(--app-text-secondary); }
+.home-sidebar__item.is-active { background: var(--app-primary-weak); color: var(--app-primary-strong); }
+.home-sidebar__icon { font-size: 18px; line-height: 1; }
+.home-sidebar__label { font-size: 11px; line-height: 1.2; }
+.home-sidebar__new { position: relative; }
+.home-sidebar__badge {
+  position: absolute; top: 2px; right: 6px; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--app-error);
+}
+
+.feature-card {
+  display: flex; align-items: flex-start; gap: 12px; width: 236px; padding: 16px;
+  border: 1px solid var(--app-border); border-radius: var(--app-radius-card);
+  background: var(--app-surface); box-shadow: var(--app-shadow-card); text-align: left;
+  transition: transform .2s ease, box-shadow .2s ease;
+}
+.feature-card:hover { transform: translateY(-3px); box-shadow: var(--app-shadow-pop); }
+.feature-card__icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 40px; height: 40px; border-radius: var(--app-radius-chip); font-size: 20px; flex: 0 0 auto;
+}
+.feature-card__body { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
+.feature-card__title { font-size: 15px; font-weight: 600; color: var(--app-text); }
+.feature-card__desc { font-size: 12px; line-height: 1.5; color: var(--app-text-muted); }
+
+.home-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.home-stats__item {
+  display: flex; align-items: center; gap: 10px; padding: 12px 14px; width: 210px;
+  border-radius: var(--app-radius-panel); background: var(--app-surface);
+  border: 1px solid var(--app-border); box-shadow: var(--app-shadow-card);
+}
+.home-stats__dot { width: 8px; height: 8px; flex: 0 0 auto; border-radius: 50%; }
+.home-stats__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.home-stats__value { font-family: var(--font-num); font-size: 18px; font-weight: 700; line-height: 1.2; color: var(--app-text); font-variant-numeric: tabular-nums; }
+.home-stats__unit { margin-left: 3px; font-size: 12px; font-weight: 500; color: var(--app-text-muted); }
+.home-stats__label { font-size: 12px; color: var(--app-text-secondary); white-space: nowrap; }
+
+/* 通用 */
+.icon { width: 1em; height: 1em; display: inline-block; vertical-align: -.125em; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.is-hidden { display: none !important; }
+:focus-visible { outline: 2px solid var(--app-primary); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 1ms !important; animation-duration: 1ms !important; }
+}
+</style>
+</head>
+<body>
+
+<!-- 图标符号库（轻量内联 SVG，无外部依赖） -->
+<svg style="display:none" aria-hidden="true">
+  <symbol id="i-coffee" viewBox="0 0 24 24"><path d="M4 9h12v4.5A4.5 4.5 0 0 1 11.5 18h-3A4.5 4.5 0 0 1 4 13.5V9Z"/><path d="M16 10h1.6a2.4 2.4 0 0 1 0 4.8H16"/><path d="M8 5.5v1.6M11 4.8v2.3M14 5.5v1.6"/></symbol>
+  <symbol id="i-car" viewBox="0 0 24 24"><path d="M3.5 14.5 5.6 8.6A1.5 1.5 0 0 1 7 7.6h10a1.5 1.5 0 0 1 1.4.9l2.1 6"/><path d="M4.6 14.5h14.8"/><path d="M6 14.5V18M18 14.5V18"/><circle cx="8" cy="18" r="1.5"/><circle cx="16" cy="18" r="1.5"/><path d="M6.6 11.4h10.8"/></symbol>
+  <symbol id="i-shop" viewBox="0 0 24 24"><path d="M5.6 8h12.8l1 11.2A1 1 0 0 1 18.4 20H5.6a1 1 0 0 1-1-1.8L5.6 8Z"/><path d="M9 8V6.4A3 3 0 0 1 15 6.4V8"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M4 11.2 12 4.8l8 6.4V19a1 1 0 0 1-1 1h-4.5v-5.6h-5V20H5a1 1 0 0 1-1-1v-7.8Z"/></symbol>
+  <symbol id="i-gift" viewBox="0 0 24 24"><path d="M4 10.5h16V19a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-8.5Z"/><path d="M3 6.5h18v4H3z"/><path d="M12 6.5V20"/><path d="M12 6.5C10.6 6.5 9.6 5.4 9.9 4.3S11.6 3 12 6.5ZM12 6.5c1.4 0 2.4-1.1 2.1-2.2S12.4 3 12 6.5Z"/></symbol>
+  <symbol id="i-med" viewBox="0 0 24 24"><path d="M6.4 7.5h11.2V19a1 1 0 0 1-1 1H7.4a1 1 0 0 1-1-1V7.5Z"/><path d="M4.6 4.5h14.8v3H4.6z"/><path d="M12 11v6M9 14h6"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24"><path d="M5.5 4.5h7.8A2.2 2.2 0 0 1 15.5 6.7V19H7.7a2.2 2.2 0 0 1-2.2-2.2V4.5Z"/><path d="M15.5 6.7h2.8V19h-2.8"/><path d="M8.4 9h4.2"/></symbol>
+  <symbol id="i-wallet" viewBox="0 0 24 24"><path d="M3.8 7.6A2.1 2.1 0 0 1 5.9 5.5h12.2a2.1 2.1 0 0 1 2.1 2.1v8.8a2.1 2.1 0 0 1-2.1 2.1H5.9a2.1 2.1 0 0 1-2.1-2.1V7.6Z"/><path d="M3.8 7.6h16.4v3.2H3.8z"/><circle cx="16.2" cy="13.4" r="1.1"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4.5 19.5V5"/><path d="M4.5 19.5h15"/><path d="M7.5 15.5 11 11l3 2.4 4-6"/><path d="M15 7.4h3.5v3.6"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="6" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="18" cy="12" r="1.2"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 6v12M6 12h12"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M5 19.2h3.2L18.6 8.8l-3.2-3.2L5 16v3.2Z"/><path d="M14.2 6.4l3.2 3.2"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M5 7h14"/><path d="M9.5 7V4.8h5V7"/><path d="M6.8 7l1 12.2h8.4l1-12.2"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.6-4.6"/></symbol>
+  <symbol id="i-filter" viewBox="0 0 24 24"><path d="M4 6h16l-6.2 7.2v5.4L10.2 21v-7.8L4 6Z"/></symbol>
+  <symbol id="i-cal" viewBox="0 0 24 24"><path d="M4.6 6.5h14.8V19a1 1 0 0 1-1 1H5.6a1 1 0 0 1-1-1V6.5Z"/><path d="M4.6 10.4h14.8"/><path d="M8.4 3.6v3.4M15.6 3.6v3.4"/></symbol>
+  <symbol id="i-left" viewBox="0 0 24 24"><path d="M15 5.5 8.5 12l6.5 6.5"/></symbol>
+  <symbol id="i-book2" viewBox="0 0 24 24"><path d="M5 5.5A1.5 1.5 0 0 1 6.5 4H19v14.5H6.5A1.5 1.5 0 0 0 5 20V5.5Z"/><path d="M5 20a1.5 1.5 0 0 0 1.5 1.5H19"/><path d="M8.6 8.5h6.4M8.6 12h4.4"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.6l4.4 4.4L19 7.4"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M6.4 6.4l11.2 11.2M17.6 6.4 6.4 17.6"/></symbol>
+  <symbol id="i-min" viewBox="0 0 24 24"><path d="M6 12h12"/></symbol>
+  <symbol id="i-max" viewBox="0 0 24 24"><path d="M6.5 6.5h11v11h-11z"/></symbol>
+  <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="M12 19V5"/><path d="M6.5 10.5 12 5l5.5 5.5"/></symbol>
+  <symbol id="i-arrow-down" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M6.5 13.5 12 19l5.5-5.5"/></symbol>
+  <symbol id="i-empty" viewBox="0 0 96 96"><path d="M20 30h56v40a4 4 0 0 1-4 4H24a4 4 0 0 1-4-4V30Z" stroke-width="2.4"/><path d="M16 30h64" stroke-width="2.4"/><path d="M32 22v10M64 22v10" stroke-width="2.4"/><path d="M36 48h24M36 58h14" stroke-width="2.4"/></symbol>
+</svg>
+
+<h1 class="doc-title">CheckIn 记账页 · UI 设计原型 v1</h1>
+<p class="doc-sub">
+  对齐主窗口设计系统（四主题 <code>--app-*</code> / 圆角浮动 / 4px 栅格）。覆盖 F-01～F-11、F-20；
+  收支配色遵循国内习惯（支出红、收入绿、结余绿；涨红跌绿）。
+</p>
+
+<div class="docbar">
+  <div class="docbar__group">
+    <span class="docbar__label">主题</span>
+    <button class="chip is-on" data-theme-btn="aurora">柔雾紫蓝</button>
+    <button class="chip" data-theme-btn="cream">奶油暖橘</button>
+    <button class="chip" data-theme-btn="mint">薄荷清新</button>
+    <button class="chip" data-theme-btn="midnight">月夜暗色</button>
+  </div>
+  <div class="docbar__group">
+    <span class="docbar__label">状态</span>
+    <button class="chip is-on" data-state-btn="default">有数据</button>
+    <button class="chip" data-state-btn="empty">空状态</button>
+    <button class="chip" data-state-btn="loading">加载骨架</button>
+  </div>
+  <div class="docbar__group">
+    <span class="docbar__label">快捷记一笔</span>
+    <button class="chip" id="docOpenQuick">打开悬浮条</button>
+  </div>
+</div>
+
+<div class="stage">
+
+<!-- ══════════════ 主窗口 · 记账页 ══════════════ -->
+<div class="app" id="app">
+  <div class="window-header">
+    <div class="window-header__title">记账</div>
+    <div class="window-header__controls">
+      <button class="window-header__btn" aria-label="最小化"><svg class="icon"><use href="#i-min"/></svg></button>
+      <button class="window-header__btn" aria-label="最大化"><svg class="icon"><use href="#i-max"/></svg></button>
+      <button class="window-header__btn window-header__btn--close" aria-label="关闭"><svg class="icon"><use href="#i-close"/></svg></button>
+    </div>
+  </div>
+
+  <div class="shell-body">
+    <!-- Page 容器的 NavHeader -->
+    <div class="nav-header">
+      <div class="nav-header-inner">
+        <button class="nav-header-icon"><svg class="icon"><use href="#i-left"/></svg>返回</button>
+      </div>
+    </div>
+
+    <div class="ledger-page" id="ledgerPage">
+
+      <!-- ── 顶部：周期切换 + 本月结余 ── -->
+      <header class="ledger-topbar card">
+        <div class="seg" role="tablist" aria-label="统计周期">
+          <button class="seg__item is-on" role="tab" aria-selected="true">本月</button>
+          <button class="seg__item" role="tab" aria-selected="false">本季</button>
+          <button class="seg__item" role="tab" aria-selected="false">本年</button>
+          <button class="seg__item" role="tab" aria-selected="false">自选</button>
+        </div>
+        <button class="pill"><svg class="icon"><use href="#i-cal"/></svg>2026-09</button>
+
+        <div class="topbar__spacer"></div>
+
+        <div class="balance">
+          <span class="balance__label">本月结余</span>
+          <span class="balance__value" id="balanceValue">+¥4,286.50</span>
+          <span class="balance__delta">
+            较上月
+            <svg class="icon down" style="width:12px;height:12px"><use href="#i-arrow-down"/></svg>
+            <b class="down">12.4%</b>
+          </span>
+        </div>
+        <button class="icon-btn" title="分类与预算管理"><svg class="icon" style="width:18px;height:18px"><use href="#i-more"/></svg></button>
+      </header>
+
+      <!-- ── 中部：总览卡 + 分类占比 ── -->
+      <section class="ledger-mid">
+        <div class="card overview">
+          <div class="overview__head">
+            <h2 class="card__title">总览</h2>
+            <span class="card__hint">近 30 天支出趋势</span>
+          </div>
+          <div class="stat-row">
+            <div class="stat stat--income">
+              <span class="stat__dot" style="background:var(--app-success)"></span>
+              <span class="stat__text">
+                <span class="stat__value">+¥12,800.00</span>
+                <span class="stat__label">收入</span>
+              </span>
+            </div>
+            <div class="stat stat--expense">
+              <span class="stat__dot" style="background:var(--app-error)"></span>
+              <span class="stat__text">
+                <span class="stat__value">−¥8,513.50</span>
+                <span class="stat__label">支出</span>
+              </span>
+            </div>
+            <div class="stat">
+              <span class="stat__dot" style="background:var(--app-primary)"></span>
+              <span class="stat__text">
+                <span class="stat__value">+¥4,286.50</span>
+                <span class="stat__label">结余</span>
+              </span>
+            </div>
+          </div>
+          <div class="trend" id="trend"></div>
+        </div>
+
+        <div class="card pie">
+          <div class="overview__head">
+            <h2 class="card__title">分类占比</h2>
+            <span class="card__hint">本月支出</span>
+          </div>
+          <div class="pie__body">
+            <div class="donut" id="donut"></div>
+            <div class="pie__legend" id="legend"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── 下部：时间线流水 ── -->
+      <section class="card ledger-flow">
+        <div class="filterbar">
+          <label class="filterbar__search">
+            <svg class="icon" style="width:14px;height:14px"><use href="#i-search"/></svg>
+            <input placeholder="搜索备注 / 分类" />
+          </label>
+          <div class="seg" style="padding:2px">
+            <button class="seg__item is-on" style="padding:4px 12px">全部</button>
+            <button class="seg__item" style="padding:4px 12px">支出</button>
+            <button class="seg__item" style="padding:4px 12px">收入</button>
+          </div>
+          <button class="pill"><svg class="icon"><use href="#i-filter"/></svg>分类</button>
+          <div class="filterbar__spacer"></div>
+          <span class="card__hint" id="flowCount">本月 14 笔</span>
+        </div>
+
+        <div class="timeline" id="timeline"></div>
+
+        <div class="empty is-hidden" id="emptyState">
+          <svg class="empty__art" style="width:88px;height:88px"><use href="#i-empty"/></svg>
+          <h3 class="empty__title">还没有记账记录</h3>
+          <p class="empty__desc">3 步记第一笔：输入金额 → 选分类 → 回车</p>
+          <button class="btn-primary" id="emptyAdd"><svg class="icon"><use href="#i-plus"/></svg>记第一笔</button>
+        </div>
+      </section>
+
+      <!-- 悬浮按钮 -->
+      <button class="ledger-fab" id="fab">
+        <svg class="icon"><use href="#i-plus"/></svg>记一笔
+        <span class="kbd">⌘⇧L</span>
+      </button>
+
+      <!-- 快捷记一笔 -->
+      <div class="quick-mask" id="quickMask"></div>
+      <div class="quick-bar" id="quickBar" role="dialog" aria-label="快捷记一笔">
+        <div class="quick__row">
+          <div class="seg" style="padding:2px">
+            <button class="seg__item is-on" data-kind="expense" style="padding:4px 12px">支出</button>
+            <button class="seg__item" data-kind="income" style="padding:4px 12px">收入</button>
+          </div>
+          <div class="quick__amount" id="amountBox">
+            <span class="quick__cny">¥</span>
+            <input id="amountInput" inputmode="decimal" placeholder="0.00" aria-label="金额" />
+          </div>
+          <span class="quick__err is-hidden" id="amountErr">请输入大于 0 的金额</span>
+        </div>
+        <div class="quick__row">
+          <div class="cat-grid" id="catGrid"></div>
+        </div>
+        <div class="quick__row">
+          <input class="quick__note" id="noteInput" placeholder="备注（可选）" />
+          <button class="pill"><svg class="icon"><use href="#i-cal"/></svg>今天</button>
+          <span class="quick__tip"><b>Enter</b> 保存 · <b>Esc</b> 关闭</span>
+          <button class="btn-primary quick__save" id="saveBtn"><svg class="icon"><use href="#i-check"/></svg>保存</button>
+        </div>
+      </div>
+
+      <div class="toast" id="toast">
+        <span id="toastText">已删除 1 笔</span>
+        <button class="toast__undo" id="toastUndo">撤销</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ 附：入口设计 F-02 / F-20 ══════════════ -->
+<p class="annot"><b>附 1 · 入口设计（F-02）</b>：侧栏新增「记账」项（ AccountBookOutlined，位于「日程」之后）；首页功能卡网格新增记账卡（accent-green 图标底）；全局快捷键 ⌘/Ctrl + Shift + L 唤起悬浮条。</p>
+<div class="entries">
+  <div class="entry-box">
+    <p class="entry-box__cap">HomeSidebar · NAV_ITEMS</p>
+    <aside class="home-sidebar">
+      <div class="home-sidebar__logo">C</div>
+      <nav class="home-sidebar__nav">
+        <button class="home-sidebar__item"><span class="home-sidebar__icon"><svg class="icon"><use href="#i-home"/></svg></span><span class="home-sidebar__label">首页</span></button>
+        <button class="home-sidebar__item"><span class="home-sidebar__icon"><svg class="icon"><use href="#i-check"/></svg></span><span class="home-sidebar__label">待办</span></button>
+        <button class="home-sidebar__item"><span class="home-sidebar__icon"><svg class="icon"><use href="#i-edit"/></svg></span><span class="home-sidebar__label">备忘</span></button>
+        <button class="home-sidebar__item"><span class="home-sidebar__icon"><svg class="icon"><use href="#i-cal"/></svg></span><span class="home-sidebar__label">日程</span></button>
+        <button class="home-sidebar__item is-active home-sidebar__new"><span class="home-sidebar__icon"><svg class="icon"><use href="#i-book2"/></svg></span><span class="home-sidebar__label">记账</span><span class="home-sidebar__badge"></span></button>
+        <button class="home-sidebar__item"><span class="home-sidebar__icon"><svg class="icon"><use href="#i-chart"/></svg></span><span class="home-sidebar__label">代码</span></button>
+      </nav>
+    </aside>
+  </div>
+  <div class="entry-box">
+    <p class="entry-box__cap">HomePage · FeatureCard</p>
+    <div class="feature-card">
+      <span class="feature-card__icon" style="background:var(--app-accent-green-weak);color:var(--app-accent-green)">
+        <svg class="icon"><use href="#i-book2"/></svg>
+      </span>
+      <span class="feature-card__body">
+        <span class="feature-card__title">记账</span>
+        <span class="feature-card__desc">本月支出 ¥8,513.50 · 结余 ¥4,286.50</span>
+      </span>
+    </div>
+  </div>
+  <div class="entry-box">
+    <p class="entry-box__cap">HomePage · 统计区迷你卡（F-20）</p>
+    <div class="home-stats">
+      <div class="home-stats__item">
+        <span class="home-stats__dot" style="background:var(--app-error)"></span>
+        <span class="home-stats__text">
+          <span class="home-stats__value" style="color:var(--app-error)">8,513.50<span class="home-stats__unit">元</span></span>
+          <span class="home-stats__label">本月支出</span>
+        </span>
+      </div>
+      <div class="home-stats__item">
+        <span class="home-stats__dot" style="background:var(--app-primary)"></span>
+        <span class="home-stats__text">
+          <span class="home-stats__value">4,286.50<span class="home-stats__unit">元</span></span>
+          <span class="home-stats__label">本月结余</span>
+        </span>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div><!-- /stage -->
+
+<script>
+/* ============================================================
+   数据层（原型内置样例，落地时改为 shared/services/ledger.ts）
+   ============================================================ */
+const CATS = [
+  { id: "food",   name: "餐饮", icon: "i-coffee", c: "var(--app-accent-orange)", w: "var(--app-accent-orange-weak)", kind: "expense" },
+  { id: "traffic",name: "交通", icon: "i-car",    c: "var(--app-accent-blue)",   w: "var(--app-accent-blue-weak)",   kind: "expense" },
+  { id: "shop",   name: "购物", icon: "i-shop",   c: "var(--app-accent-rose)",   w: "var(--app-accent-rose-weak)",   kind: "expense" },
+  { id: "live",   name: "居住", icon: "i-home",   c: "var(--app-accent-purple)", w: "var(--app-accent-purple-weak)", kind: "expense" },
+  { id: "fun",    name: "娱乐", icon: "i-gift",   c: "var(--app-accent-amber)",  w: "var(--app-accent-amber-weak)",  kind: "expense" },
+  { id: "med",    name: "医疗", icon: "i-med",    c: "var(--app-accent-teal)",   w: "var(--app-accent-teal-weak)",   kind: "expense" },
+  { id: "edu",    name: "教育", icon: "i-book",   c: "var(--app-accent-green)",  w: "var(--app-accent-green-weak)",  kind: "expense" },
+  { id: "salary", name: "工资", icon: "i-wallet", c: "var(--app-success)",       w: "var(--app-success-weak)",       kind: "income"  },
+  { id: "invest", name: "理财", icon: "i-chart",  c: "var(--app-primary)",       w: "var(--app-primary-weak)",       kind: "income"  },
+  { id: "other",  name: "其他", icon: "i-more",   c: "var(--app-text-muted)",    w: "var(--app-surface-alt)",        kind: "both"    },
+];
+const catOf = (id) => CATS.find((x) => x.id === id) || CATS[CATS.length - 1];
+
+/** 分类聚合（本月支出）—— 环图数据源 */
+const PIE = [
+  { id: "food", v: 2380 }, { id: "live", v: 2200 }, { id: "shop", v: 1920 },
+  { id: "traffic", v: 640 }, { id: "fun", v: 560 }, { id: "edu", v: 300 },
+  { id: "med", v: 210 }, { id: "other", v: 303.5 },
+];
+
+/** 时间线流水 */
+const GROUPS = [
+  { date: "今天", week: "09-22 周二", sum: { out: 96.5, in: 0 }, items: [
+    { id: "t1", cat: "food", name: "餐饮", note: "楼下面馆", time: "12:34", amount: -28.5 },
+    { id: "t2", cat: "traffic", name: "交通", note: "地铁", time: "09:02", amount: -6 },
+    { id: "t3", cat: "fun", name: "娱乐", note: "电影票", time: "20:10", amount: -62 },
+  ]},
+  { date: "昨天", week: "09-21 周一", sum: { out: 348, in: 0 }, items: [
+    { id: "t4", cat: "food", name: "餐饮", note: "部门聚餐", time: "19:20", amount: -218 },
+    { id: "t5", cat: "shop", name: "购物", note: "日用品", time: "15:40", amount: -118 },
+    { id: "t6", cat: "traffic", name: "交通", note: "打车", time: "08:50", amount: -12 },
+  ]},
+  { date: "09-20", week: "周日", sum: { out: 0, in: 12800 }, items: [
+    { id: "t7", cat: "salary", name: "工资", note: "9 月薪资", time: "10:00", amount: 12800 },
+  ]},
+  { date: "09-19", week: "周六", sum: { out: 2260, in: 0 }, items: [
+    { id: "t8", cat: "live", name: "居住", note: "房租", time: "09:00", amount: -2200 },
+    { id: "t9", cat: "med", name: "医疗", note: "感冒药", time: "16:30", amount: -60 },
+  ]},
+];
+
+/* 近 30 天支出趋势（确定性伪随机，保证原型稳定） */
+const TREND = (() => {
+  const seed = [42, 118, 66, 205, 88, 310, 152, 74, 260, 96, 180, 55, 240, 132, 78,
+                300, 110, 65, 210, 145, 90, 275, 160, 70, 195, 120, 330, 85, 250, 138];
+  return seed;
+})();
+
+/* ============================================================
+   渲染：环图
+   ============================================================ */
+const R = 54, SW = 22, C = 2 * Math.PI * R;
+const donut = document.getElementById("donut");
+const legend = document.getElementById("legend");
+const pieTotal = PIE.reduce((s, x) => s + x.v, 0);
+
+function renderPie() {
+  let acc = 0;
+  const segs = PIE.map((p) => {
+    const frac = p.v / pieTotal;
+    const seg = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    seg.setAttribute("cx", 66); seg.setAttribute("cy", 66); seg.setAttribute("r", R);
+    seg.setAttribute("fill", "none");
+    seg.setAttribute("stroke", catOf(p.id).c);
+    seg.setAttribute("stroke-width", SW);
+    const dash = Math.max(frac * C - 2, 0.5);
+    seg.setAttribute("stroke-dasharray", dash + " " + (C - dash));
+    seg.setAttribute("stroke-dashoffset", String(-acc * C));
+    seg.setAttribute("class", "donut__seg");
+    seg.dataset.id = p.id;
+    acc += frac;
+    return seg;
+  });
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 132 132");
+  const ring = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+  ring.setAttribute("cx", 66); ring.setAttribute("cy", 66); ring.setAttribute("r", R);
+  ring.setAttribute("fill", "none"); ring.setAttribute("stroke", "var(--app-surface-alt)");
+  ring.setAttribute("stroke-width", SW);
+  svg.appendChild(ring);
+  segs.forEach((s) => svg.appendChild(s));
+  donut.innerHTML = "";
+  donut.appendChild(svg);
+  const center = document.createElement("div");
+  center.className = "donut__center";
+  center.innerHTML = '<span class="donut__num">¥' + pieTotal.toFixed(0) + '</span><span class="donut__cap">本月支出</span>';
+  donut.appendChild(center);
+
+  // 图例：按金额降序（>7 类折叠为「其他」的规则由数据层聚合，这里已是 8 类含其他）
+  legend.innerHTML = "";
+  [...PIE].sort((a, b) => b.v - a.v).forEach((p) => {
+    const c = catOf(p.id);
+    const row = document.createElement("div");
+    row.className = "legend";
+    row.dataset.id = p.id;
+    row.innerHTML =
+      '<span class="legend__dot" style="background:' + c.c + '"></span>' +
+      '<span class="legend__name">' + c.name + "</span>" +
+      '<span class="legend__num">¥' + p.v.toFixed(0) + "</span>" +
+      '<span class="legend__pct">' + ((p.v / pieTotal) * 100).toFixed(1) + "%</span>";
+    row.addEventListener("mouseenter", () => highlight(p.id));
+    row.addEventListener("mouseleave", () => highlight(null));
+    legend.appendChild(row);
+  });
+}
+function highlight(id) {
+  donut.querySelectorAll(".donut__seg").forEach((s) => {
+    s.style.opacity = !id || s.dataset.id === id ? "1" : "0.28";
+  });
+}
+
+/* ============================================================
+   渲染：趋势折线（纯 SVG，hover 显示点值）
+   ============================================================ */
+const trendBox = document.getElementById("trend");
+function renderTrend() {
+  const w = 640, h = 96, pad = 6;
+  const max = Math.max(...TREND), min = 0;
+  const x = (i) => pad + (i * (w - pad * 2)) / (TREND.length - 1);
+  const y = (v) => h - pad - ((v - min) / (max - min)) * (h - pad * 2 - 12);
+  const pts = TREND.map((v, i) => x(i) + "," + y(v)).join(" ");
+  const area = "M" + x(0) + "," + (h - pad) + " L" + TREND.map((v, i) => x(i) + "," + y(v)).join(" L") +
+               " L" + x(TREND.length - 1) + "," + (h - pad) + " Z";
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 " + w + " " + h);
+  svg.setAttribute("preserveAspectRatio", "none");
+  svg.innerHTML =
+    '<defs><linearGradient id="tg" x1="0" y1="0" x2="0" y2="1">' +
+    '<stop offset="0%" stop-color="var(--app-primary)" stop-opacity="0.22"/>' +
+    '<stop offset="100%" stop-color="var(--app-primary)" stop-opacity="0"/></linearGradient></defs>' +
+    '<path d="' + area + '" fill="url(#tg)"/>' +
+    '<polyline points="' + pts + '" fill="none" stroke="var(--app-primary)" stroke-width="2" ' +
+    'stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>' +
+    '<line x1="0" y1="' + (h - pad) + '" x2="' + w + '" y2="' + (h - pad) +
+    '" stroke="var(--app-border)" stroke-width="1" vector-effect="non-scaling-stroke"/>';
+  const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+  dot.setAttribute("r", "4"); dot.setAttribute("fill", "var(--app-surface)");
+  dot.setAttribute("stroke", "var(--app-primary)"); dot.setAttribute("stroke-width", "2");
+  dot.style.opacity = "0";
+  svg.appendChild(dot);
+  trendBox.innerHTML = "";
+  trendBox.appendChild(svg);
+
+  const tip = document.createElement("div");
+  tip.className = "trend__tip";
+  trendBox.appendChild(tip);
+
+  svg.addEventListener("mousemove", (e) => {
+    const rect = svg.getBoundingClientRect();
+    const ratio = (e.clientX - rect.left) / rect.width;
+    const i = Math.max(0, Math.min(TREND.length - 1, Math.round(ratio * (TREND.length - 1))));
+    const px = (x(i) / w) * rect.width;
+    const py = (y(TREND[i]) / h) * rect.height;
+    dot.setAttribute("cx", x(i)); dot.setAttribute("cy", y(TREND[i]));
+    dot.style.opacity = "1";
+    tip.classList.add("is-on");
+    tip.style.left = px + "px";
+    tip.style.top = py - 8 + "px";
+    tip.textContent = "09-" + String(i + 1).padStart(2, "0") + " · ¥" + TREND[i];
+  });
+  svg.addEventListener("mouseleave", () => {
+    dot.style.opacity = "0"; tip.classList.remove("is-on");
+  });
+}
+
+/* ============================================================
+   渲染：时间线流水
+   ============================================================ */
+const timeline = document.getElementById("timeline");
+const money = (v) => (v < 0 ? "−¥" : "+¥") + Math.abs(v).toLocaleString("zh-CN", { minimumFractionDigits: 2 });
+
+function txRow(item) {
+  const c = catOf(item.cat);
+  const li = document.createElement("div");
+  li.className = "tx";
+  li.dataset.id = item.id;
+  li.innerHTML =
+    '<span class="tx__icon" style="background:' + c.w + ";color:" + c.c + '">' +
+      '<svg class="icon"><use href="#' + c.icon + '"/></svg></span>' +
+    '<span class="tx__body">' +
+      '<span class="tx__name">' + item.name + "</span>" +
+      '<span class="tx__note">' + (item.note || "—") + "</span>" +
+    "</span>" +
+    '<span class="tx__time">' + item.time + "</span>" +
+    '<span class="tx__amount ' + (item.amount < 0 ? "tx__amount--expense" : "tx__amount--income") + '">' +
+      money(item.amount) + "</span>" +
+    '<span class="tx__ops">' +
+      '<button class="mini-btn" title="编辑"><svg class="icon"><use href="#i-edit"/></svg></button>' +
+      '<button class="mini-btn mini-btn--danger" title="删除"><svg class="icon"><use href="#i-trash"/></svg></button>' +
+    "</span>" +
+    '<span class="confirm">' +
+      "<span>确认删除？</span>" +
+      '<button class="confirm__yes">删除</button>' +
+      '<button class="confirm__no">取消</button>' +
+    "</span>";
+  const confirm = li.querySelector(".confirm");
+  li.querySelector(".mini-btn--danger").addEventListener("click", () => confirm.classList.add("is-on"));
+  confirm.querySelector(".confirm__no").addEventListener("click", () => confirm.classList.remove("is-on"));
+  confirm.querySelector(".confirm__yes").addEventListener("click", () => {
+    const idx = GROUPS.findIndex((g) => g.items.some((i) => i.id === item.id));
+    const pos = GROUPS[idx].items.findIndex((i) => i.id === item.id);
+    const removed = GROUPS[idx].items.splice(pos, 1)[0];
+    renderTimeline();
+    showToast("已删除 1 笔", () => { GROUPS[idx].items.splice(pos, 0, removed); renderTimeline(); });
+  });
+  return li;
+}
+
+function renderTimeline() {
+  timeline.innerHTML = "";
+  GROUPS.forEach((g) => {
+    const head = document.createElement("div");
+    head.className = "group__head";
+    head.innerHTML =
+      '<span class="group__date">' + g.date + "</span>" +
+      '<span class="group__week">' + g.week + "</span>" +
+      '<span class="group__sum">' +
+        (g.sum.out ? '支出 <b style="color:var(--app-error)">−¥' + g.sum.out.toLocaleString("zh-CN") + "</b>　" : "") +
+        (g.sum.in ? '收入 <b style="color:var(--app-success)">+¥' + g.sum.in.toLocaleString("zh-CN") + "</b>" : "") +
+      "</span>";
+    timeline.appendChild(head);
+    g.items.forEach((it) => timeline.appendChild(txRow(it)));
+  });
+  const total = GROUPS.reduce((s, g) => s + g.items.length, 0);
+  document.getElementById("flowCount").textContent = "本月 " + total + " 笔";
+}
+
+/* ============================================================
+   撤销 Toast（删除后 5s 可撤销）
+   ============================================================ */
+const toast = document.getElementById("toast");
+let toastTimer = null, toastUndo = null;
+function showToast(text, undo) {
+  document.getElementById("toastText").textContent = text;
+  toast.classList.add("is-on");
+  toastUndo = undo;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove("is-on"), 5000);
+}
+document.getElementById("toastUndo").addEventListener("click", () => {
+  if (toastUndo) toastUndo();
+  toast.classList.remove("is-on");
+});
+
+/* ============================================================
+   快捷记一笔
+   ============================================================ */
+const quickBar = document.getElementById("quickBar");
+const quickMask = document.getElementById("quickMask");
+const amountInput = document.getElementById("amountInput");
+const amountBox = document.getElementById("amountBox");
+const amountErr = document.getElementById("amountErr");
+let quickKind = "expense", quickCat = "food";
+
+function renderCatGrid() {
+  const grid = document.getElementById("catGrid");
+  grid.innerHTML = "";
+  CATS.filter((c) => c.kind === quickKind || c.kind === "both").forEach((c) => {
+    const b = document.createElement("button");
+    b.className = "cat-chip" + (c.id === quickCat ? " is-on" : "");
+    b.style.color = c.id === quickCat ? c.c : "";
+    b.style.background = c.id === quickCat ? c.w : "";
+    b.innerHTML = '<svg class="icon" style="width:14px;height:14px;color:' + c.c + '"><use href="#' + c.icon + '"/></svg>' + c.name;
+    b.addEventListener("click", () => { quickCat = c.id; renderCatGrid(); });
+    grid.appendChild(b);
+  });
+}
+function openQuick() {
+  quickBar.classList.add("is-on"); quickMask.classList.add("is-on");
+  renderCatGrid();
+  setTimeout(() => amountInput.focus(), 220);
+}
+function closeQuick() {
+  quickBar.classList.remove("is-on"); quickMask.classList.remove("is-on");
+  amountInput.value = ""; document.getElementById("noteInput").value = "";
+  amountBox.classList.remove("is-error"); amountErr.classList.add("is-hidden");
+}
+document.getElementById("fab").addEventListener("click", openQuick);
+document.getElementById("emptyAdd").addEventListener("click", openQuick);
+document.getElementById("docOpenQuick").addEventListener("click", openQuick);
+quickMask.addEventListener("click", closeQuick);
+quickBar.querySelectorAll("[data-kind]").forEach((b) => {
+  b.addEventListener("click", () => {
+    quickKind = b.dataset.kind;
+    quickBar.querySelectorAll("[data-kind]").forEach((x) => x.classList.toggle("is-on", x === b));
+    quickCat = quickKind === "income" ? "salary" : "food";
+    renderCatGrid();
+  });
+});
+amountInput.addEventListener("input", () => {
+  amountBox.classList.remove("is-error"); amountErr.classList.add("is-hidden");
+});
+function saveQuick() {
+  const raw = amountInput.value.trim();
+  const v = Number(raw);
+  if (!raw || !isFinite(v) || v <= 0) {
+    amountBox.classList.add("is-error"); amountErr.classList.remove("is-hidden");
+    amountInput.focus();
+    return;
+  }
+  const c = catOf(quickCat);
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2, "0") + ":" + String(now.getMinutes()).padStart(2, "0");
+  const item = {
+    id: "n" + Date.now(), cat: c.id, name: c.name,
+    note: document.getElementById("noteInput").value || "—",
+    time: hh, amount: quickKind === "income" ? v : -v,
+  };
+  GROUPS[0].items.unshift(item);
+  GROUPS[0].sum.out += quickKind === "income" ? 0 : v;
+  GROUPS[0].sum.in += quickKind === "income" ? v : 0;
+  setState("default");
+  renderTimeline();
+  closeQuick();
+  showToast("已记一笔 " + money(item.amount), () => {
+    GROUPS[0].items.shift(); renderTimeline();
+  });
+}
+document.getElementById("saveBtn").addEventListener("click", saveQuick);
+amountInput.addEventListener("keydown", (e) => { if (e.key === "Enter") saveQuick(); });
+document.getElementById("noteInput").addEventListener("keydown", (e) => { if (e.key === "Enter") saveQuick(); });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && quickBar.classList.contains("is-on")) closeQuick();
+  if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "l") {
+    e.preventDefault(); quickBar.classList.contains("is-on") ? closeQuick() : openQuick();
+  }
+});
+
+/* ============================================================
+   状态切换：有数据 / 空状态 / 加载骨架
+   ============================================================ */
+const emptyState = document.getElementById("emptyState");
+const flowCount = document.getElementById("flowCount");
+function setState(s) {
+  const isEmpty = s === "empty", isLoading = s === "loading";
+  emptyState.classList.toggle("is-hidden", !isEmpty);
+  timeline.classList.toggle("is-hidden", isEmpty || isLoading);
+  document.querySelector(".card.overview").classList.toggle("is-hidden", isLoading);
+  document.querySelector(".card.pie").classList.toggle("is-hidden", isLoading);
+  if (isLoading) {
+    const sk = document.createElement("div");
+    sk.className = "card";
+    sk.style.cssText = "flex:1;display:flex;flex-direction:column;gap:12px;padding:18px";
+    sk.innerHTML = '<div class="sk" style="height:64px"></div><div class="sk" style="height:110px"></div>' +
+                   '<div class="sk" style="height:44px"></div><div class="sk" style="height:44px"></div>';
+    document.getElementById("ledgerPage").querySelector(".ledger-mid").after(sk);
+    sk.dataset.skeleton = "1";
+  } else {
+    document.querySelectorAll('[data-skeleton="1"]').forEach((n) => n.remove());
+  }
+  if (isEmpty) { timeline.innerHTML = ""; flowCount.textContent = "本月 0 笔"; }
+}
+document.querySelectorAll("[data-state-btn]").forEach((b) => {
+  b.addEventListener("click", () => {
+    document.querySelectorAll("[data-state-btn]").forEach((x) => x.classList.toggle("is-on", x === b));
+    setState(b.dataset.stateBtn);
+  });
+});
+
+/* 主题切换 */
+document.querySelectorAll("[data-theme-btn]").forEach((b) => {
+  b.addEventListener("click", () => {
+    document.querySelectorAll("[data-theme-btn]").forEach((x) => x.classList.toggle("is-on", x === b));
+    document.documentElement.dataset.theme = b.dataset.themeBtn;
+    renderPie(); renderTrend();
+  });
+});
+
+/* 初始化 */
+renderPie(); renderTrend(); renderTimeline();
+</script>
+</body>
+</html>

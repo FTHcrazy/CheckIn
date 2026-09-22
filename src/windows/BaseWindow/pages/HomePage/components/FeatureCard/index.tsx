@@ -8,7 +8,8 @@ export type FeatureTone =
   | "amber"
   | "teal"
   | "rose"
-  | "orange";
+  | "orange"
+  | "green";
 
 const TONE_VARS: Record<FeatureTone, { fg: string; bg: string }> = {
   blue: { fg: "var(--app-accent-blue)", bg: "var(--app-accent-blue-weak)" },
@@ -17,6 +18,7 @@ const TONE_VARS: Record<FeatureTone, { fg: string; bg: string }> = {
   teal: { fg: "var(--app-accent-teal)", bg: "var(--app-accent-teal-weak)" },
   rose: { fg: "var(--app-accent-rose)", bg: "var(--app-accent-rose-weak)" },
   orange: { fg: "var(--app-accent-orange)", bg: "var(--app-accent-orange-weak)" },
+  green: { fg: "var(--app-accent-green)", bg: "var(--app-accent-green-weak)" },
 };
 
 interface FeatureCardProps {

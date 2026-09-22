@@ -1,6 +1,6 @@
 import "./index.scss";
 
-export type HomeStatTone = "blue" | "amber" | "purple" | "teal";
+export type HomeStatTone = "blue" | "amber" | "purple" | "teal" | "rose";
 
 export interface HomeStatItem {
   key: string;
@@ -17,13 +17,14 @@ const TONE_VARS: Record<HomeStatTone, { fg: string; bg: string }> = {
   amber: { fg: "var(--app-accent-amber)", bg: "var(--app-accent-amber-weak)" },
   purple: { fg: "var(--app-accent-purple)", bg: "var(--app-accent-purple-weak)" },
   teal: { fg: "var(--app-accent-teal)", bg: "var(--app-accent-teal-weak)" },
+  rose: { fg: "var(--app-accent-rose)", bg: "var(--app-accent-rose-weak)" },
 };
 
 interface HomeStatsProps {
   items: HomeStatItem[];
 }
 
-/** 数据概览行：待办 / 代码 / 备忘 / 打卡四项 */
+/** 数据概览行：待办 / 代码 / 备忘 / 打卡 / 本月支出 */
 export default function HomeStats({ items }: HomeStatsProps) {
   return (
     <div className="home-stats">

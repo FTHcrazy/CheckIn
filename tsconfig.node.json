@@ -13,9 +13,16 @@
     "verbatimModuleSyntax": true,
     "moduleDetection": "force",
     "noEmit": true,
+    "baseUrl": ".",
+    "ignoreDeprecations": "6.0",
 
     /* Type safety */
     "strict": true,
+
+    /* Path aliases (与 vite.config.ts / tsconfig.app.json 保持一致) */
+    "paths": {
+      "@/*": ["./src/*"]
+    },
 
     /* Linting */
     "noUnusedLocals": true,

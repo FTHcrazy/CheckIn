@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { Empty, Input, Modal } from "antd";
 import {
+  AccountBookOutlined,
   CalendarOutlined,
   CheckSquareOutlined,
   CodeOutlined,
@@ -55,6 +56,14 @@ const FEATURES: HomeFeature[] = [
     desc: "Markdown 文件本地留存，支持导入导出",
     path: "/memo",
     tone: "purple",
+  },
+  {
+    key: "ledger",
+    icon: <AccountBookOutlined />,
+    title: "记账本",
+    desc: "3 步记一笔，月度收支与分类占比",
+    path: "/ledger",
+    tone: "green",
   },
   {
     key: "code",
@@ -118,8 +127,21 @@ export default function HomePage() {
       { key: "code", label: "今日代码", value: overview.codeLines, unit: "行", tone: "amber" },
       { key: "memo", label: "备忘文件", value: overview.memoCount, unit: "篇", tone: "purple" },
       { key: "daily", label: "本月打卡", value: overview.checkinDays, unit: "天", tone: "teal" },
+      {
+        key: "ledger",
+        label: "本月支出",
+        value: overview.monthExpense,
+        unit: "元",
+        tone: "rose",
+      },
     ],
-    [overview.checkinDays, overview.codeLines, overview.memoCount, overview.todoCount],
+    [
+      overview.checkinDays,
+      overview.codeLines,
+      overview.memoCount,
+      overview.monthExpense,
+      overview.todoCount,
+    ],
   );
 
   const displayName = displayNameFromEmail(overview.email);

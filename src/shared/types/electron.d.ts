@@ -166,6 +166,47 @@ export interface MigrationImportResult {
   skipped: string[];
 }
 
+// ── 记账 DTO（与 electron/handlers/ledger-handlers.ts 保持一致） ──
+
+/** v1 仅暴露支出 / 收入；transfer 为数据模型预留，UI 不提供入口 */
+export type LedgerTxTypeDTO = "expense" | "income" | "transfer";
+
+export interface LedgerTransactionDTO {
+  id: string;
+  type: LedgerTxTypeDTO;
+  /** 金额恒为正数（元），方向由 type 决定 */
+  amount: number;
+  currency: string;
+  categoryId: string | null;
+  accountId: string | null;
+  toAccountId: string | null;
+  note: string;
+  /** 本地时间 `YYYY-MM-DD HH:mm:ss` */
+  happenedAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LedgerCategoryDTO {
+  id: string;
+  name: string;
+  /** antd 图标名，渲染进程映射为组件 */
+  icon: string;
+  /** `--app-*` 变量名，四主题自动跟随 */
+  color: string;
+  type: "expense" | "income" | "both";
+  /** 内置预设分类不可删除 */
+  builtin: boolean;
+  sort: number;
+  archived: boolean;
+}
+
+/** 周期查询区间（YYYY-MM-DD，闭区间） */
+export interface LedgerRangeDTO {
+  start?: string;
+  end?: string;
+}
+
 export interface ElectronAPI {
   /** 网络会话配置（一次性）：写入认证 Cookie 到 session jar */
   httpSession: {
@@ -277,6 +318,21 @@ export interface ElectronAPI {
   }
 
   findInPage: (value?: string) => Promise<boolean>
+
+  // ── 记账 ──
+  ledger: {
+    /** 列出流水；传区间时按发生日期过滤，倒序返回 */
+    listTransactions: (range?: LedgerRangeDTO) => Promise<LedgerTransactionDTO[]>
+    /** 记一笔，返回写库后的完整记录 */
+    addTransaction: (tx: LedgerTransactionDTO) => Promise<LedgerTransactionDTO | null>
+    /** 局部更新，键见 handler 白名单（type/amount/categoryId/note/happenedAt…） */
+    updateTransaction: (id: string, updates: Record<string, unknown>) => Promise<boolean>
+    deleteTransaction: (id: string) => Promise<boolean>
+    listCategories: () => Promise<LedgerCategoryDTO[]>
+    upsertCategory: (category: LedgerCategoryDTO) => Promise<boolean>
+    /** 删除分类，历史流水重指派到 fallbackId（「其他」） */
+    deleteCategory: (id: string, fallbackId: string) => Promise<boolean>
+  }
 
   // ── 数据迁移 ──
   migration: {

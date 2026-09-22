@@ -1,0 +1,61 @@
+.ld-timeline {
+  flex: 1;
+  min-height: 0;
+  // 滚动容器不能留水平 padding：Virtuoso 的绝对定位 viewport 宽度按
+  // padding-box 解析，容器一留 padding 就横向溢出 8px，兜出一条默认粗横滚条。
+  // 行/分组头各自带 14px 内边距，视觉不变。
+  overflow-x: hidden;
+
+  // 横竖两个轴都收细（8px），避免横向出现默认粗滚动条
+  &::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: var(--app-scrollbar);
+    border-radius: var(--app-radius-pill);
+
+    &:hover {
+      background: var(--app-scrollbar-hover);
+    }
+  }
+
+  &__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    // 16px = 行的 8px 外收 + 8px 内边距，分组头文字与行内容左缘对齐；
+    // 背景保持通栏，吸顶时才能盖住滚过的行
+    padding: 10px 16px 6px;
+    background: var(--app-surface);
+  }
+
+  &__label {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--app-text-secondary);
+  }
+
+  &__sums {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__sum {
+    color: var(--app-text-muted);
+
+    &.is-expense {
+      color: var(--app-error);
+    }
+
+    &.is-income {
+      color: var(--app-success);
+    }
+  }
+}

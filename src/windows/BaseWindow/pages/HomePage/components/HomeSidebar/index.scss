@@ -14,6 +14,8 @@
   border: 1px solid var(--app-border);
   border-radius: var(--app-radius-card);
   box-shadow: var(--app-shadow-card);
+  // 自身裁剪：导航滚动时不外溢到卡片之外
+  overflow: hidden;
 
   &__logo {
     display: inline-flex;
@@ -37,6 +39,30 @@
     gap: 6px;
     width: 100%;
     margin-top: 18px;
+    // 关键：窗口很矮时导航自身滚动，底部工具区（主题切换）永不被挤出卡片
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: thin;
+    scrollbar-color: var(--app-scrollbar) transparent;
+
+    &::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    &::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    &::-webkit-scrollbar-thumb {
+      background: var(--app-scrollbar);
+      border-radius: 999px;
+    }
+
+    &::-webkit-scrollbar-thumb:hover {
+      background: var(--app-scrollbar-hover);
+    }
   }
 
   &__item {
@@ -77,12 +103,13 @@
   }
 
   // ── 底部工具区：Worker 窗口入口 + 主题切换 ──
-  // margin-top: auto 把整块推到卡片底部
+  // margin-top: auto 把整块推到卡片底部；flex:0 0 auto 保证永不被压缩/挤出
   &__footer {
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 8px;
+    flex: 0 0 auto;
     margin-top: auto;
     padding-top: 14px;
   }
@@ -92,5 +119,34 @@
     width: 24px;
     height: 1px;
     background: var(--app-border);
+  }
+}
+
+// 窗口高度不足（接近最小高度 600px）时压缩导航，避免底部工具区被挤出
+@media (max-height: 680px) {
+  .home-sidebar {
+    padding: 12px 0 12px;
+
+    &__nav {
+      margin-top: 12px;
+      gap: 4px;
+    }
+
+    &__item {
+      padding: 5px 0;
+    }
+
+    &__icon {
+      font-size: 17px;
+    }
+
+    &__label {
+      font-size: 10px;
+    }
+
+    &__footer {
+      padding-top: 10px;
+      gap: 6px;
+    }
   }
 }

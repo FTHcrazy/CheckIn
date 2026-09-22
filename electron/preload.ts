@@ -130,6 +130,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('novel-usage-log', event, payload) as Promise<boolean>,
   },
 
+  // ── 记账（语义化 IPC，数据存 userDb 的 ledger_* 表） ──
+  ledger: {
+    listTransactions: (range?: { start?: string; end?: string }) =>
+      ipcRenderer.invoke('ledger-transaction-list', range),
+    addTransaction: (tx: unknown) =>
+      ipcRenderer.invoke('ledger-transaction-add', tx),
+    updateTransaction: (id: string, updates: Record<string, unknown>) =>
+      ipcRenderer.invoke('ledger-transaction-update', id, updates) as Promise<boolean>,
+    deleteTransaction: (id: string) =>
+      ipcRenderer.invoke('ledger-transaction-delete', id) as Promise<boolean>,
+    listCategories: () => ipcRenderer.invoke('ledger-category-list'),
+    upsertCategory: (category: unknown) =>
+      ipcRenderer.invoke('ledger-category-upsert', category) as Promise<boolean>,
+    deleteCategory: (id: string, fallbackId: string) =>
+      ipcRenderer.invoke('ledger-category-delete', id, fallbackId) as Promise<boolean>,
+  },
+
   send: (channel: string, data: unknown) => {
     const validChannels = [
       'login-confirm',
