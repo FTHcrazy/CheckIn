@@ -6,6 +6,7 @@ import {
   PlusOutlined,
   SettingOutlined,
 } from "@ant-design/icons";
+import { Select } from "antd";
 import { useEntityTypeMeta } from "../../hooks/entity-types-context";
 import type {
   EntityAppearance,
@@ -112,6 +113,12 @@ export default function EntityDetail({
   );
   const boundRungId = levelBinding?.targetId ?? null;
 
+  /** 等级体系下拉选项（组件库 Select，AGENTS 6.1.2） */
+  const levelSystemOptions = useMemo(
+    () => levelSystems.map((system) => ({ value: system.id, label: system.name })),
+    [levelSystems],
+  );
+
   const BASE_KEYS = ["别名", "一句话", "性格"];
   const customEntries = Object.entries(entity.fields).filter(
     ([key]) => !BASE_KEYS.includes(key),
@@ -124,6 +131,18 @@ export default function EntityDetail({
   const [relAdding, setRelAdding] = useState(false);
   const [relTargetId, setRelTargetId] = useState("");
   const [relName, setRelName] = useState("");
+
+  /** 关联目标下拉选项：排除自身，标签带类型前缀便于区分同名要素 */
+  const relationTargetOptions = useMemo(
+    () =>
+      entities
+        .filter((item) => item.id !== entity.id)
+        .map((item) => ({
+          value: item.id,
+          label: `${metaOf(item.type).label} · ${item.name}`,
+        })),
+    [entities, entity.id, metaOf],
+  );
 
   // 切换查看对象时退出编辑态，避免把 A 卡的草稿写进 B 卡；体系选择一并重置
   useEffect(() => {
@@ -404,21 +423,16 @@ export default function EntityDetail({
       ))}
       {relAdding ? (
         <div className="nv-edetail__rel-form">
-          <select
+          <Select
             className="nv-edetail__select"
-            value={relTargetId}
+            size="small"
+            classNames={{ popup: { root: "nv-edetail__dropdown" } }}
             aria-label="选择关联要素"
-            onChange={(event) => setRelTargetId(event.target.value)}
-          >
-            <option value="">选择要素…</option>
-            {entities
-              .filter((item) => item.id !== entity.id)
-              .map((item) => (
-                <option key={item.id} value={item.id}>
-                  {metaOf(item.type).label} · {item.name}
-                </option>
-              ))}
-          </select>
+            placeholder="选择要素…"
+            value={relTargetId || undefined}
+            options={relationTargetOptions}
+            onChange={setRelTargetId}
+          />
           <input
             className="nv-edetail__input"
             value={relName}
@@ -474,18 +488,16 @@ export default function EntityDetail({
               <SettingOutlined /> 管理
             </button>
           </div>
-          <select
+          <Select
             className="nv-edetail__select"
-            value={activeSystemIdResolved}
+            size="small"
+            classNames={{ popup: { root: "nv-edetail__dropdown" } }}
             aria-label="选择等级体系"
-            onChange={(event) => setActiveSystemId(event.target.value)}
-          >
-            {levelSystems.map((system) => (
-              <option key={system.id} value={system.id}>
-                {system.name}
-              </option>
-            ))}
-          </select>
+            placeholder="选择等级体系"
+            value={activeSystemIdResolved || undefined}
+            options={levelSystemOptions}
+            onChange={setActiveSystemId}
+          />
           <div className="nv-edetail__ladder">
             {activeSystem.rungs.map((rung) => {
               const bound = rung.id === boundRungId;

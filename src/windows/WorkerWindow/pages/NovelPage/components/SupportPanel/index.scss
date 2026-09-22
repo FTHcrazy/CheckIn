@@ -1,4 +1,4 @@
-@import "./panel-primitives.scss";
+@use "./panel-primitives.scss";
 
 /*
  * 右栏支撑面板容器（NL 设计稿 §3）
@@ -292,6 +292,8 @@
   }
 
   /* ── 收起后的重开把手 ───────────────────────────────────────── */
+  /* 按钮本体保持水平书写方向，仅文字 span 竖排——整钮 vertical-rl 时
+     anticon 的正交 span 会横向占位，把文字挤出 26px 按钮外 */
   &__reopen {
     position: absolute;
     top: 50%;
@@ -302,31 +304,31 @@
     align-items: center;
     gap: 8px;
     width: 26px;
-    padding: 14px 0;
+    padding: 12px 0;
     border: 1px solid var(--app-border);
     border-right: none;
     border-radius: 10px 0 0 10px;
     background: var(--app-surface);
     color: var(--app-text-muted);
     font-family: inherit;
-    font-size: 11px;
     cursor: pointer;
     transform: translateY(-50%);
     box-shadow: var(--app-shadow-card);
-    writing-mode: vertical-rl;
-    letter-spacing: 2px;
 
-    & > svg,
     & > .anticon {
-      writing-mode: horizontal-tb;
-      width: 12px;
-      height: 12px;
       font-size: 12px;
+      line-height: 1;
     }
 
     &:hover {
       color: var(--app-primary);
     }
+  }
+
+  &__reopen-text {
+    writing-mode: vertical-rl;
+    letter-spacing: 2px;
+    font-size: 11px;
   }
 }
 

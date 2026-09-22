@@ -71,8 +71,6 @@ export default function HoverEntityCard({
           查看完整设定
         </button>
       </div>
-
-      <p className="nv-pop__tip">输入或滚动即关闭 · 不抢焦点</p>
     </div>
   );
 }

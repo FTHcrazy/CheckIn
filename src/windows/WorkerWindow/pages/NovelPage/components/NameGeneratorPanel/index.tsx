@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { KeyboardEvent } from "react";
+import { Select } from "antd";
 import {
   CopyOutlined,
   PlusOutlined,
@@ -60,6 +60,27 @@ const GENDER_OPTIONS: Array<{ value: NameGender; label: string }> = [
 /** 一次生成的数量（PRD R18 一次给 10 个） */
 const COUNT_OPTIONS = [6, 10, 12] as const;
 
+/** 生成参数的完整集合：选项切换时必须整体显式传入，禁止从闭包里读旧值 */
+interface NamingOptionSet {
+  kind: NamingKind;
+  style: NameStyle;
+  gender: NameGender;
+  count: number;
+}
+
+/** 初始生成参数（PRD 默认：仙侠风格的人名，一次 10 个） */
+const INITIAL_OPTIONS: NamingOptionSet = {
+  kind: "person",
+  style: "xianxia",
+  gender: "any",
+  count: 10,
+};
+
+/** 风格回退：取该风格首个支持的类型 */
+function firstSupportedKind(style: NameStyle): NamingKind {
+  return NAMING_KINDS.find((k) => isKindSupported(style, k.id))?.id ?? "person";
+}
+
 /**
  * 起名工具面板（PRD R18 / 步骤三）
  *
@@ -74,10 +95,10 @@ export default function NameGeneratorPanel({
   actions,
 }: NameGeneratorPanelProps) {
   // 选项状态：组件局部短生命周期状态，不进全局（与 InspirationPanel 范式一致）
-  const [kind, setKind] = useState<NamingKind>("person");
-  const [style, setStyle] = useState<NameStyle>("xianxia");
-  const [gender, setGender] = useState<NameGender>("any");
-  const [count, setCount] = useState<number>(10);
+  const [kind, setKind] = useState<NamingKind>(INITIAL_OPTIONS.kind);
+  const [style, setStyle] = useState<NameStyle>(INITIAL_OPTIONS.style);
+  const [gender, setGender] = useState<NameGender>(INITIAL_OPTIONS.gender);
+  const [count, setCount] = useState<number>(INITIAL_OPTIONS.count);
 
   // 当前风格是否支持当前类型；不支持时回退到该风格首个支持的类型
   const supportedKinds = useMemo(() => {
@@ -99,30 +120,28 @@ export default function NameGeneratorPanel({
   const [seed, setSeed] = useState<number>(0);
   const didInitRef = useRef(false);
 
-  // 切换风格 / 类型 / 性别 / 数量时，下一批需要重新计算
-  const regenerate = useCallback(
-    (overrideSeed?: number) => {
+  /**
+   * 按「显式传入的参数」生成一批
+   *
+   * 关键点：选项切换（类型 / 风格 / 性别 / 数量）时，必须把变更后的值当参数传进来，
+   * 不能在 setTimeout 回调里读 regenerate 闭包——那会拿到切换前的旧选项，
+   * 表现为「列表动了一下，但内容还是上一个类型」。
+   */
+  const buildBatch = useCallback(
+    (options: NamingOptionSet, overrideSeed?: number) => {
       const newSeed = overrideSeed ?? (Date.now() >>> 0);
-      const r = generateNames({
-        kind: effectiveKind,
-        style,
-        gender: effectiveGender,
-        count,
-        exclude,
-        seed: newSeed,
-      });
-      setResults(r);
+      setResults(generateNames({ ...options, exclude, seed: newSeed }));
       setSeed(newSeed);
     },
-    [effectiveKind, style, effectiveGender, count, exclude],
+    [exclude],
   );
 
   // 挂载后触发首次生成（render 期禁止调用 Date.now）
   useEffect(() => {
     if (didInitRef.current) return;
     didInitRef.current = true;
-    regenerate();
-  }, [regenerate]);
+    buildBatch(INITIAL_OPTIONS);
+  }, [buildBatch]);
 
   // 换一批：基于当前 seed 派生新种子，结果不重复（同 exclude 下）
   const handleNextBatch = useCallback(() => {
@@ -149,28 +168,57 @@ export default function NameGeneratorPanel({
     }
   }, []);
 
-  // 选项变化：自动重生一批
+  // 选项变化：按变更后的值立即重生一批（走参数，不读闭包）
   const handleKindChange = (next: NamingKind) => {
     setKind(next);
-    setTimeout(() => regenerate(Date.now() >>> 0), 0);
+    buildBatch({
+      kind: next,
+      style,
+      gender: next === "person" ? gender : "any",
+      count,
+    });
   };
   const handleStyleChange = (next: NameStyle) => {
     setStyle(next);
-    setTimeout(() => regenerate(Date.now() >>> 0), 0);
+    // 新风格不支持当前类型时回退到该风格首个支持的类型（与 effectiveKind 口径一致）
+    const nextKind = isKindSupported(next, kind) ? kind : firstSupportedKind(next);
+    buildBatch({
+      kind: nextKind,
+      style: next,
+      gender: nextKind === "person" ? gender : "any",
+      count,
+    });
   };
   const handleGenderChange = (next: NameGender) => {
     setGender(next);
-    setTimeout(() => regenerate(Date.now() >>> 0), 0);
+    buildBatch({
+      kind: effectiveKind,
+      style,
+      gender: effectiveKind === "person" ? next : "any",
+      count,
+    });
   };
   const handleCountChange = (next: number) => {
     setCount(next);
-    setTimeout(() => regenerate(Date.now() >>> 0), 0);
+    buildBatch({
+      kind: effectiveKind,
+      style,
+      gender: effectiveGender,
+      count: next,
+    });
   };
 
   // 首次进入自动生成一批
   const handleFocus = useCallback(() => {
-    if (results.length === 0) regenerate();
-  }, [results.length, regenerate]);
+    if (results.length === 0) {
+      buildBatch({
+        kind: effectiveKind,
+        style,
+        gender: effectiveGender,
+        count,
+      });
+    }
+  }, [results.length, buildBatch, effectiveKind, style, effectiveGender, count]);
 
   // 收藏夹：判断是否已收藏（去重展示按钮态）
   const favoriteNameSet = useMemo(
@@ -178,78 +226,86 @@ export default function NameGeneratorPanel({
     [favorites],
   );
 
-  // Enter 在选项区不触发（避免切 Tab 时误触）
-  const stopEnter = (e: KeyboardEvent<HTMLSelectElement>) => {
-    if (e.nativeEvent.isComposing) return;
-    if (e.key === "Enter") {
-      e.preventDefault();
-      handleNextBatch();
-    }
-  };
+  // 下拉选项：全部走组件库 Select（AGENTS 6.1.2 组件库优先）
+  const kindOptions = useMemo(
+    () =>
+      NAMING_KINDS.map((k) => ({
+        value: k.id,
+        label: k.label,
+        disabled: !isKindSupported(style, k.id),
+      })),
+    [style],
+  );
+
+  const styleOptions = useMemo(
+    () =>
+      NAMING_STYLES.map((s) => ({
+        value: s.id,
+        label: `${s.label}（${s.family === "eastern" ? "东方" : "西方"}）`,
+      })),
+    [],
+  );
+
+  const countOptions = useMemo(
+    () => COUNT_OPTIONS.map((n) => ({ value: n, label: `${n} 个` })),
+    [],
+  );
 
   return (
     <div className="nv-name" onFocus={handleFocus}>
       <div className="nv-name__options">
-        <label className="nv-name__opt">
+        <div className="nv-name__opt">
           <span>类型</span>
-          <select
+          <Select
+            className="nv-name__select"
+            size="small"
+            classNames={{ popup: { root: "nv-name__dropdown" } }}
+            aria-label="名称类型"
             value={effectiveKind}
-            onChange={(e) => handleKindChange(e.target.value as NamingKind)}
-            onKeyDown={stopEnter}
-          >
-            {NAMING_KINDS.map((k) => (
-              <option key={k.id} value={k.id}>
-                {k.label}
-              </option>
-            ))}
-          </select>
-        </label>
+            options={kindOptions}
+            onChange={handleKindChange}
+          />
+        </div>
 
-        <label className="nv-name__opt">
+        <div className="nv-name__opt">
           <span>风格</span>
-          <select
+          <Select
+            className="nv-name__select"
+            size="small"
+            classNames={{ popup: { root: "nv-name__dropdown" } }}
+            aria-label="名称风格"
             value={style}
-            onChange={(e) => handleStyleChange(e.target.value as NameStyle)}
-            onKeyDown={stopEnter}
-          >
-            {NAMING_STYLES.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.label}（{s.family === "eastern" ? "东方" : "西方"}）
-              </option>
-            ))}
-          </select>
-        </label>
+            options={styleOptions}
+            onChange={handleStyleChange}
+          />
+        </div>
 
-        <label className="nv-name__opt">
+        <div className="nv-name__opt">
           <span>性别</span>
-          <select
+          <Select
+            className="nv-name__select"
+            size="small"
+            classNames={{ popup: { root: "nv-name__dropdown" } }}
+            aria-label="性别"
             value={effectiveGender}
             disabled={effectiveKind !== "person"}
-            onChange={(e) => handleGenderChange(e.target.value as NameGender)}
-            onKeyDown={stopEnter}
-          >
-            {GENDER_OPTIONS.map((g) => (
-              <option key={g.value} value={g.value}>
-                {g.label}
-              </option>
-            ))}
-          </select>
-        </label>
+            options={GENDER_OPTIONS}
+            onChange={handleGenderChange}
+          />
+        </div>
 
-        <label className="nv-name__opt">
+        <div className="nv-name__opt">
           <span>数量</span>
-          <select
+          <Select
+            className="nv-name__select"
+            size="small"
+            classNames={{ popup: { root: "nv-name__dropdown" } }}
+            aria-label="生成数量"
             value={count}
-            onChange={(e) => handleCountChange(Number(e.target.value))}
-            onKeyDown={stopEnter}
-          >
-            {COUNT_OPTIONS.map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
-            ))}
-          </select>
-        </label>
+            options={countOptions}
+            onChange={handleCountChange}
+          />
+        </div>
       </div>
 
       <button

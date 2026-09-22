@@ -1,12 +1,22 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { CloseOutlined, SearchOutlined } from "@ant-design/icons";
 import { Virtuoso } from "react-virtuoso";
 import { useEntityTypeMeta } from "../../hooks/entity-types-context";
 import { splitByKeyword } from "../../novel-utils";
+import { registerSearchRunner, useSearchStore } from "../../store/useSearchStore";
+import type { SearchScope } from "../../store/useSearchStore";
 import type { NovelEntity, SearchHit } from "../../types";
 import "./index.scss";
 
+/** 作用域按钮 */
+const SCOPES: Array<{ key: SearchScope; label: string }> = [
+  { key: "book", label: "全书" },
+  { key: "chapter", label: "本章" },
+  { key: "entity", label: "要素名" },
+];
+
 interface SearchPanelProps {
+  /** 正文检索实现（searchBook）：只用于注册进 store，不作为检索触发条件 */
   onSearch: (keyword: string) => Promise<SearchHit[]>;
   onSelectChapter: (chapterId: string) => void;
   /** 要素名作用域：在本地要素库里查名称 / 别名 / 一句话 */
@@ -19,18 +29,6 @@ interface SearchPanelProps {
   onOpenEntity: (entityId: string) => void;
 }
 
-/** 检索作用域 */
-type SearchScope = "book" | "chapter" | "entity";
-
-const SCOPES: Array<{ key: SearchScope; label: string }> = [
-  { key: "book", label: "全书" },
-  { key: "chapter", label: "本章" },
-  { key: "entity", label: "要素名" },
-];
-
-/** 最近搜索保留条数 */
-const RECENT_LIMIT = 6;
-
 /**
  * 全书检索面板（PRD R10）
  *
@@ -38,6 +36,10 @@ const RECENT_LIMIT = 6;
  * 命中列表用 Virtuoso 虚拟化：全书检索可能命中上千章，不允许全量挂载。
  * 作用域分三档：全书 / 本章 / 要素名——卡在某个人物写了什么时，
  * 「要素名」比在正文里翻片段快得多。
+ *
+ * 状态全部来自模块级 store（store/useSearchStore）：检索由状态自己调度，
+ * 不挂在 effect 依赖数组上，因此父层重渲染 / 跳章保存都不会重跑检索，
+ * 也不会闪骨架屏；切走 Tab 再回来关键词与结果仍在。
  */
 export default function SearchPanel({
   onSearch,
@@ -48,80 +50,60 @@ export default function SearchPanel({
   onOpenEntity,
 }: SearchPanelProps) {
   const { metaOf } = useEntityTypeMeta();
-  const [keyword, setKeyword] = useState("");
-  const [scope, setScope] = useState<SearchScope>("book");
-  const [hits, setHits] = useState<SearchHit[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [recent, setRecent] = useState<string[]>([]);
-  const timerRef = useRef<number | null>(null);
+
+  const keyword = useSearchStore((state) => state.keyword);
+  const scope = useSearchStore((state) => state.scope);
+  const hits = useSearchStore((state) => state.hits);
+  const loading = useSearchStore((state) => state.loading);
+  const recent = useSearchStore((state) => state.recent);
+  const setKeyword = useSearchStore((state) => state.setKeyword);
+  const setScope = useSearchStore((state) => state.setScope);
+  const clear = useSearchStore((state) => state.clear);
+
+  // 只做实现注册：identity 变化不再触发任何检索（此前这里是闪烁的根因）
+  useEffect(() => {
+    registerSearchRunner(onSearch);
+    return () => registerSearchRunner(null);
+  }, [onSearch]);
 
   const trimmed = keyword.trim();
+  const isEntityScope = scope === "entity";
 
-  useEffect(() => {
-    if (!trimmed) {
-      setHits([]);
-      setLoading(false);
-      return undefined;
+  /** 要素名作用域：内存比对，同步派生，零往返、无加载态 */
+  const entityHits = useMemo<SearchHit[]>(() => {
+    if (!trimmed || !isEntityScope) return [];
+    const needle = trimmed.toLowerCase();
+    return entities
+      .filter((entity) =>
+        `${entity.name} ${entity.aliases.join(" ")} ${entity.summary}`
+          .toLowerCase()
+          .includes(needle),
+      )
+      .map((entity) => ({
+        id: `entity-${entity.id}`,
+        chapterId: entity.id,
+        chapterTitle: entity.name,
+        count: 0,
+        snippet: entity.summary,
+      }));
+  }, [trimmed, isEntityScope, entities]);
+
+  /** 展示结果：全书直出；「本章」按当前编辑章过滤（渲染期，零往返） */
+  const visible = useMemo(() => {
+    if (isEntityScope) return entityHits;
+    if (scope === "chapter" && activeChapterId) {
+      return hits.filter((hit) => hit.chapterId === activeChapterId);
     }
+    return hits;
+  }, [isEntityScope, entityHits, scope, activeChapterId, hits]);
 
-    // 要素名作用域不走正文检索：直接在内存要素库里比对，零往返
-    if (scope === "entity") {
-      setLoading(false);
-      setHits(
-        entities
-          .filter((entity) =>
-            `${entity.name} ${entity.aliases.join(" ")} ${entity.summary}`
-              .toLowerCase()
-              .includes(trimmed.toLowerCase()),
-          )
-          .map((entity) => ({
-            id: `entity-${entity.id}`,
-            chapterId: entity.id,
-            chapterTitle: entity.name,
-            count: 0,
-            snippet: entity.summary,
-          })),
-      );
-      setRecent((current) =>
-        current.includes(trimmed)
-          ? current
-          : [trimmed, ...current].slice(0, RECENT_LIMIT),
-      );
-      return undefined;
-    }
-
-    setLoading(true);
-    if (timerRef.current !== null) window.clearTimeout(timerRef.current);
-    timerRef.current = window.setTimeout(() => {
-      void onSearch(trimmed).then((result) => {
-        const scoped =
-          scope === "chapter" && activeChapterId
-            ? result.filter((hit) => hit.chapterId === activeChapterId)
-            : result;
-        setHits(scoped);
-        setLoading(false);
-        setRecent((current) =>
-          current.includes(trimmed)
-            ? current
-            : [trimmed, ...current].slice(0, RECENT_LIMIT),
-        );
-      });
-    }, 300);
-
-    return () => {
-      if (timerRef.current !== null) window.clearTimeout(timerRef.current);
-    };
-  }, [trimmed, scope, onSearch, entities, activeChapterId]);
-
-  const total = hits.reduce((sum, hit) => sum + hit.count, 0);
+  const total = visible.reduce((sum, hit) => sum + hit.count, 0);
 
   /** 命中片段：关键词切成高亮片段 */
   const segments = useMemo(
     () => (hit: SearchHit) => splitByKeyword(hit.snippet, trimmed),
     [trimmed],
   );
-
-  const isEntityScope = scope === "entity";
 
   return (
     <div className="nv-search">
@@ -135,7 +117,7 @@ export default function SearchPanel({
         />
         {trimmed && !loading && (
           <span className="nv-search__count">
-            {isEntityScope ? `${hits.length} 个要素` : `${total} 处 · ${hits.length} 章`}
+            {isEntityScope ? `${visible.length} 个要素` : `${total} 处 · ${visible.length} 章`}
           </span>
         )}
         {keyword && (
@@ -143,7 +125,7 @@ export default function SearchPanel({
             type="button"
             className="nv-field__clear"
             aria-label="清空检索"
-            onClick={() => setKeyword("")}
+            onClick={clear}
           >
             <CloseOutlined />
           </button>
@@ -204,7 +186,7 @@ export default function SearchPanel({
             </span>
           </div>
         </>
-      ) : hits.length === 0 ? (
+      ) : visible.length === 0 ? (
         <div className="nv-empty">
           <b>没有命中任何片段</b>
           <span>换个说法再试一次</span>
@@ -215,14 +197,14 @@ export default function SearchPanel({
             {isEntityScope ? "要素" : "命中"}
             <em>
               {isEntityScope
-                ? `${hits.length} 个`
-                : `${total} 处 · ${hits.length} 章`}
+                ? `${visible.length} 个`
+                : `${total} 处 · ${visible.length} 章`}
             </em>
           </div>
           <Virtuoso
             className="nv-search__list"
             style={{ flex: 1, minHeight: 0 }}
-            data={hits}
+            data={visible}
             overscan={8}
             computeItemKey={(_, hit) => hit.id}
             itemContent={(_, hit) => {

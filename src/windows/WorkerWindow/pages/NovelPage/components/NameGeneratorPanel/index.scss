@@ -25,24 +25,32 @@
       color: var(--app-text-muted);
     }
 
-    select {
-      height: 29px;
-      padding: 0 6px;
-      border: 1px solid var(--app-border);
-      border-radius: 8px;
-      background: var(--app-input-bg);
-      color: var(--app-text);
-      font-family: inherit;
-      font-size: 12.5px;
-      outline: none;
+    // 组件库 Select（AGENTS 6.1.2），覆盖 antd 6 默认外观以贴合面板密度
+    // antd 6 的边框/背景画在根元素 .ant-select 上，经 --ant-select-* 变量联动
+    // hover/focus/disabled——只覆盖变量，禁止再给内层 .ant-select-content 加边框（会双边框）
+    .nv-name__select.ant-select {
+      width: 100%;
+      min-height: 29px;
+      --ant-select-border-radius: 8px;
+      --ant-select-border-color: var(--app-border);
+      --ant-select-background-color: var(--app-input-bg);
+      --ant-select-padding-horizontal: 8px;
+      --ant-select-font-size: 12.5px;
+      --ant-select-color: var(--app-text);
 
-      &:focus {
-        border-color: var(--app-primary);
+      .ant-select-placeholder {
+        color: var(--app-text-muted);
       }
 
-      &:disabled {
-        color: var(--app-text-disabled);
-        background: var(--app-surface-alt);
+      &:not(.ant-select-disabled):hover,
+      &.ant-select-focused {
+        --ant-select-border-color: var(--app-primary) !important;
+      }
+
+      &.ant-select-disabled {
+        --ant-select-border-color: var(--app-border) !important;
+        --ant-select-background-color: var(--app-surface-alt) !important;
+        --ant-select-color: var(--app-text-disabled) !important;
       }
     }
   }
@@ -145,6 +153,21 @@
     margin-left: auto;
     display: flex;
     gap: 1px;
+  }
+}
+
+/* Select 下拉挂在 portal 上，样式必须写在组件根选择器之外才能命中 */
+.nv-name__dropdown {
+  border-radius: 9px;
+  box-shadow: var(--app-shadow-pop);
+
+  .ant-select-item-option-selected:not(.ant-select-item-option-disabled) {
+    background: var(--app-primary-weak);
+    color: var(--app-primary);
+  }
+
+  .ant-select-item {
+    font-size: 12.5px;
   }
 }
 

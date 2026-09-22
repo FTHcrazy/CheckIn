@@ -3,7 +3,6 @@ import {
   BulbOutlined,
   KeyOutlined,
   LeftOutlined,
-  PlusOutlined,
   RightOutlined,
   SearchOutlined,
   SettingOutlined,
@@ -19,6 +18,7 @@ import NameGeneratorPanel, { type NamingActions } from "../NameGeneratorPanel";
 import OutlinePanel, { type OutlineActions } from "../OutlinePanel";
 import SearchPanel from "../SearchPanel";
 import { LAYOUT } from "../../novel-config";
+import { useSearchStore } from "../../store/useSearchStore";
 import type { PanelTab, EntityFilter } from "../../hooks/useNovelViewState";
 import type {
   EntityAppearance,
@@ -171,6 +171,12 @@ export default function SupportPanel({
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const dragCleanupRef = useRef<(() => void) | null>(null);
 
+  // 换作品时清空检索缓存（store 是模块级的，不能把上一本书的命中带过来）
+  const clearSearch = useSearchStore((state) => state.clear);
+  useEffect(() => {
+    clearSearch();
+  }, [activeWorkId, clearSearch]);
+
   // ── 派生计数（面板头的语境信息）─────────────────────────────────
   const counts = useMemo(() => {
     const volumes = outline.filter((node) => node.kind === "volume");
@@ -282,7 +288,6 @@ export default function SupportPanel({
           meta: `${counts.volumes} 卷 · ${counts.chapters} 章 · ${counts.openForeshadows} 条待回收`,
           action: {
             label: "＋ 伏笔",
-            icon: <PlusOutlined />,
             onClick: () => {
               onTabChange("outline");
               setAddForeshadowTick((tick) => tick + 1);
@@ -416,7 +421,6 @@ export default function SupportPanel({
                 className="nv-panel__btn"
                 onClick={head.action.onClick}
               >
-                {head.action.icon}
                 {head.action.label}
               </button>
             )}
@@ -558,7 +562,7 @@ export default function SupportPanel({
         onClick={onCollapse}
       >
         <LeftOutlined />
-        展开面板
+        <span className="nv-panel__reopen-text">展开面板</span>
       </button>
     </div>
   );

@@ -513,6 +513,60 @@ function normalizeTodo(item: Partial<TodoItem> | null): TodoItem | null {
 | `shared/services/daily.ts` 的 `ACTIVITY_COLORS` | 供用户挑选的调色板，属业务数据 |
 | `shared/styles/variables.scss` 的 `$primary-color` 等 | 已废弃，仅供历史样式引用；新样式一律用 `--app-*` |
 
+### 6.1.2 UI 组件库优先规范
+
+**原则：组件库（Ant Design）已提供能力的控件，一律用组件库组件，禁止用原生控件替代。**
+
+原生控件在暗色主题下不会跟随 antd 的 `darkAlgorithm`（会变成浅色斑块），且缺少
+键盘可达性、弹层定位与空态处理。新写代码按下表选型：
+
+| 场景 | 必须使用 | 禁止 |
+|------|---------|------|
+| 下拉选择（单选 / 多选 / 带禁用项） | `Select` | 原生 `<select>` + `<option>` |
+| 日期 / 时间选择 | `DatePicker` / `TimePicker` | 原生 `<input type="date">` |
+| 弹窗 / 抽屉 / 确认框 | `Modal` / `Drawer` / `Popconfirm` | 手写 `position: fixed` 遮罩 |
+| 浮层提示 / 长按说明 | `Tooltip` / `Popover` | 手写 `title` 属性外的自建浮层 |
+| 开关 / 复选 / 单选组 | `Switch` / `Checkbox` / `Radio.Group` | 原生 `<input type="checkbox">` |
+| 分段切换 / 标签页 | `Segmented` / `Tabs` | 手写按钮组再自行维护选中态 |
+
+**例外（保留原生控件不算违规）**：
+
+| 场景 | 保留原因 |
+|------|---------|
+| 码字区 / 编辑器（CodeMirror） | 深度定制的光标、输入法与滚动行为，组件库无法承载 |
+| 面板内的即时输入（检索框、速记框、一行重命名） | 需要零弹层、零延迟的受控输入，且样式已走 `var(--app-*)` |
+| 行内自增高度的输入（`textarea` 自适应） | antd `Input.TextArea` 的 autoSize 与面板密度不符 |
+
+**接入要求**：
+
+1. 组件库组件的默认外观必须覆盖为面板密度与主题变量（`height` / `border-radius` /
+   `background: var(--app-input-bg)` / `color: var(--app-text)`），**禁止**直接套用默认尺寸。
+2. 弹层类组件（`Select` / `Tooltip` / `Popover` / `DatePicker`）的下拉挂在 `body`
+   的 portal 上，**样式必须写在组件根选择器之外**，并通过 `classNames={{ popup: { root: "..." } }}` 挂类命中，
+   否则换肤后弹层掉色。（`popupClassName` 在 antd 6.6+ 已废弃，统一改用 `classNames.popup.root`）
+3. **antd 6 的 Select 边框/背景画在根元素 `.ant-select` 上**（v5 的 `.ant-select-selector`
+   已移除，`.ant-select-content` 只是根内无边框的内容子元素）。覆盖外观必须改根元素的
+   `--ant-select-*` CSS 变量（`border-color` / `background-color` / `border-radius` /
+   `padding-horizontal` / `font-size` / `color`，antd 自身的 hover/focus/disabled 联动即基于这些变量），
+   **禁止**再给内层 `.ant-select-content` 加 `border`——根内加边框会出现双边框。
+4. 组件库组件仍须遵守 6.1.1：**不得硬编码色值**，覆盖样式一律用 `var(--app-*)`。
+
+```tsx
+// ❌ 错误：原生 select，暗色主题下白底黑字
+<select value={kind} onChange={(e) => setKind(e.target.value)}>
+  <option value="person">人名</option>
+</select>
+
+// ✅ 正确：组件库 Select + popupClassName + 主题变量覆盖
+<Select
+  size="small"
+  popupClassName="nv-name__dropdown"
+  value={kind}
+  options={kindOptions}
+  onChange={setKind}
+/>
+```
+
 ### 6.2 状态管理规范
 
 **逻辑抽取标准**：
@@ -546,6 +600,18 @@ function TodoPage() {
   return <div>...</div>;
 }
 ```
+
+**跨组件共享状态优先用 Zustand（见 6.2.1 全局状态库优先级）**。出现下列任一信号时，
+不要再靠提升 props 解决，直接建模块级 `store/useXxxStore.ts`：
+
+1. 子组件状态挂在 `useEffect` 上，而依赖数组里含父层传入的**回调**（回调身份随数据变化 →
+   effect 反复重跑 → 加载态闪现 / 请求重复发出）；
+2. 父层任何一次重渲染都会清空子组件本应保留的结果（如跳章保存触发数据更新）；
+3. 面板按条件渲染卸载后，切回来希望保留上次的输入与结果（组件卸载会丢状态）。
+
+store 只存状态与调度动作，通过模块级「runner 注册」拿到数据层函数
+（不在 store 里 import hooks / service），组件挂载时注册、卸载时注销，
+**注册动作不得触发任何请求**。
 
 ### 6.2.1 页面状态与组件职责规范
 
@@ -930,6 +996,6 @@ function initializeDataDb(db: Database) {
 
 ---
 
-**文档版本**: 2.1  
-**最后更新**: 2026-09-17  
+**文档版本**: 2.2  
+**最后更新**: 2026-09-22  
 **维护者**: CheckIn 开发团队

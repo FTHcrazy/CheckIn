@@ -161,24 +161,47 @@ describe("generateNames - 东西方 family 切换", () => {
     expect(results.every((r) => !r.name.includes(" "))).toBe(true);
   });
 
-  it("西方人名：given 在前 + 空格 + 姓", () => {
+  it("西方人名：音译中文，given 在前 + 「·」+ 姓", () => {
     const results = generateNames({
       ...baseOptions,
       style: "westernFantasy",
     });
     expect(results).toHaveLength(10);
-    expect(results.every((r) => r.name.includes(" "))).toBe(true);
+    // 网文惯例：西方风格也产出中文音译名（如 索尔·史塔克），不出现英文
+    expect(
+      results.every((r) => /^[一-龥]+·[一-龥]+$/.test(r.name)),
+    ).toBe(true);
     // given 应在姓前
-    const first = results[0].name.split(" ");
+    const first = results[0].name.split("·");
     expect(first).toHaveLength(2);
   });
 
-  it("西方现代：given + surname 格式", () => {
+  it("西方现代：given + 「·」+ surname 格式", () => {
     const results = generateNames({
       ...baseOptions,
       style: "westernModern",
     });
-    expect(results.every((r) => r.name.split(" ").length === 2)).toBe(true);
+    expect(results.every((r) => r.name.split("·").length === 2)).toBe(true);
+  });
+
+  it("西方风格地名 / 门派 / 法宝 / 神名全部为中文", () => {
+    const kinds: Array<"place" | "faction" | "artifact" | "deity"> = [
+      "place",
+      "faction",
+      "artifact",
+      "deity",
+    ];
+    for (const kind of kinds) {
+      const results = generateNames({
+        ...baseOptions,
+        kind,
+        style: "westernFantasy",
+      });
+      expect(results.length).toBeGreaterThan(0);
+      expect(
+        results.every((r) => /^[一-龥]+$/.test(r.name)),
+      ).toBe(true);
+    }
   });
 });
 

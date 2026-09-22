@@ -129,7 +129,7 @@ function composeName(
         : gender;
 
     if (familyOf(style) === "western") {
-      // 西方：given + " " + surname（给定名在前）
+      // 西方：音译中文名，given + "·" + 姓（网文惯例：托尼·史密斯 / 亚瑟·潘德拉贡）
       const givenPool =
         resolved === "male"
           ? pool.westernMaleGiven
@@ -137,7 +137,7 @@ function composeName(
       const given = pickRandom(rng, givenPool ?? []);
       const sur = pickRandom(rng, pool.westernSurnames ?? []);
       if (!given || !sur) return null;
-      return `${given} ${sur}`;
+      return `${given}·${sur}`;
     }
 
     // 东方：surname + 1~2 个 given 字

@@ -1,4 +1,11 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { OutlineNode } from "../../types";
 import OutlinePanel, { type OutlineActions } from "./index";
@@ -67,6 +74,34 @@ const clickView = (container: HTMLElement, label: string): void => {
   const switcher = container.querySelector<HTMLElement>(".nv-outline__switch");
   expect(switcher).not.toBeNull();
   fireEvent.click(within(switcher as HTMLElement).getByText(label));
+};
+
+/**
+ * 组件库 Select 的选中动作：jsdom 里 fireEvent.change 对 antd Select 无效，
+ * 必须 mousedown 打开下拉、再点弹层里的选项（弹层挂在 body 的 portal 上）
+ */
+const pickSelectOption = async (
+  root: HTMLElement,
+  label: string,
+): Promise<void> => {
+  // antd 6 的可点区域是内层只读 input（v5 的 .ant-select-selector 已移除）
+  const trigger = root.querySelector<HTMLElement>("input.ant-select-input");
+  expect(trigger).not.toBeNull();
+  fireEvent.mouseDown(trigger as HTMLElement);
+
+  const options = await waitFor(() => {
+    const nodes = Array.from(
+      document.body.querySelectorAll<HTMLElement>(
+        ".ant-select-item-option-content",
+      ),
+    );
+    expect(nodes.length).toBeGreaterThan(0);
+    return nodes;
+  });
+
+  const target = options.find((node) => node.textContent === label);
+  expect(target).toBeDefined();
+  fireEvent.click(target as HTMLElement);
 };
 
 const switcherButton = (container: HTMLElement, label: string): HTMLElement => {
@@ -187,9 +222,9 @@ describe("OutlinePanel 组件", () => {
     expect(screen.queryByLabelText("伏笔标题")).toBeNull();
   });
 
-  it("新增伏笔可选埋设章节，选了就带上 chapterId", () => {
+  it("新增伏笔可选埋设章节，选了就带上 chapterId", async () => {
     const onAddForeshadow = vi.fn();
-    render(
+    const { container } = render(
       <OutlinePanel
         outline={outline}
         activeChapterId={null}
@@ -202,7 +237,14 @@ describe("OutlinePanel 组件", () => {
     fireEvent.change(screen.getByLabelText("伏笔标题"), {
       target: { value: "断碑" },
     });
-    fireEvent.change(screen.getByLabelText("埋设章节"), { target: { value: "c2" } });
+
+    // 埋设章节已改为组件库 Select：按「第二章 旧剑」选中 c2
+    const chapterSelect = container.querySelector<HTMLElement>(
+      ".nv-outline__select",
+    );
+    expect(chapterSelect).not.toBeNull();
+    await pickSelectOption(chapterSelect as HTMLElement, "第二章 旧剑");
+
     fireEvent.click(screen.getByText("记录"));
 
     expect(onAddForeshadow).toHaveBeenCalledWith("v1", "断碑", "", "c2");

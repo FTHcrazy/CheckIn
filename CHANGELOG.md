@@ -1,5 +1,46 @@
 # Changelog
 
+## [1.15.0] - 2026-09-22
+
+### Added
+- **全书检索状态抽到模块级 Zustand store**：新增 `NovelPage/store/useSearchStore.ts`
+  （依赖 `zustand ^5.0.15`），持有 keyword / scope / hits / loading / recent 与防抖
+  调度动作（300ms、请求票据丢弃过期响应、同关键词复用缓存）；检索实现由组件挂载时
+  经 `registerSearchRunner()` 注册、卸载时注销，注册本身不触发任何请求
+- **检索 store 单测**：`store/useSearchStore.test.ts` 5 例（防抖时机、过期响应丢弃、
+  同关键词切作用域零重查、要素名作用域零往返、清空作废在途请求）
+
+### Fixed
+- **检索跳章仍会闪一次**：根因不是 `activeChapterId`，而是点命中后编辑器失焦保存 →
+  bundle 更新 → `chapters` 数组重建 → `searchBook` 身份变化 → SearchPanel 检索
+  effect 重跑 → 骨架屏闪现。检索动作从 effect 依赖数组里彻底移出后，父层任何重渲染
+  都不会再发起检索；顺带修掉「切走 Tab 再回来关键词与结果丢失」
+- **起名器切换类型/风格/性别/数量后列表仍是旧类型**：四个 onChange 里用
+  `setTimeout(() => regenerate(...), 0)` 读的是上一次渲染的闭包（`effectiveKind`
+  仍是旧值）。改为 `buildBatch(显式参数)`：把变更后的值当参数传入，不再读闭包
+
+### Changed
+- **起名器四个原生 `<select>` 换成 antd `Select`**（类型／风格／性别／数量）：
+  带禁用项（当前风格不支持的类型置灰）、`popupClassName="nv-name__dropdown"`
+  单独声明弹层样式（portal 不继承组件根选择器），尺寸与配色覆盖为面板密度 +
+  `var(--app-*)`；同步移除 select 上的 Enter 拦截（组件库自带键盘交互）
+- **全部原生 `<select>` 换成 antd `Select`**（共 7 处）：起名器 4 处（类型／风格／
+  性别／数量，当前风格不支持的类型置灰）、要素详情 2 处（关联要素／等级体系）、
+  大纲 1 处（伏笔埋设章节）。均带 `popupClassName` 声明弹层样式（portal 不继承
+  组件根选择器），尺寸与配色覆盖为面板密度 + `var(--app-*)`；空值改用
+  `placeholder` 表达（「选择要素…」「卷级伏笔（不绑具体章）」）而不再是空 option
+- **测试环境补齐 jsdom 缺失 API**：`vitest.setup.ts` 增加 `ResizeObserver` 与
+  `matchMedia` 兜底——antd 6 的 Select / 虚拟列表挂载即用到，缺失会直接抛
+  `ReferenceError`；同时新增起名器组件回归测试（切换类型必须带新 kind 调用生成器，
+  锁定「旧闭包」这一回归点），大纲埋设章节用例改为走组件库 Select 交互
+- **AGENTS.md 新增 6.1.2「UI 组件库优先规范」**：下拉/日期/弹层/开关等一律用
+  Ant Design，禁止原生控件替代；列出三类例外（编辑器、面板即时输入、行内自增
+  输入）；明确弹层必须用 `popupClassName` 命中样式
+- **AGENTS.md 6.2 补充 Zustand 适用信号**：子组件 effect 依赖父层回调、父层重渲染
+  清空子状态、面板卸载丢状态——命中任一即建模块级 store，且注册动作不得触发请求
+- **换作品时清空检索缓存**：检索 store 是模块级的，`SupportPanel` 监听
+  `activeWorkId` 变化调用 `clear()`，避免把上一本书的命中带到新作品
+
 ## [1.14.0] - 2026-09-22
 
 ### Added

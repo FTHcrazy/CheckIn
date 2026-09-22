@@ -6,6 +6,7 @@ import {
   EditOutlined,
   PlusOutlined,
 } from "@ant-design/icons";
+import { Select } from "antd";
 import { CHAPTER_STATUS_META } from "../../novel-config";
 import { formatThousands } from "../../novel-utils";
 import type { ForeshadowPatch, OutlineNode } from "../../types";
@@ -447,6 +448,11 @@ export default function OutlinePanel({
       ) : (
         volumeNodes.map((volume) => {
           const chapters = volume.children.filter(isChapter);
+          // 埋设章节下拉选项（组件库 Select，AGENTS 6.1.2）
+          const chapterOptions = chapters.map((chapter) => ({
+            value: chapter.chapterId,
+            label: `${chapter.label} ${chapter.title}`,
+          }));
           const adding =
             fsTarget?.mode === "add" && fsTarget.volumeId === volume.id;
           const isFolded = Boolean(folded[volume.id]);
@@ -534,24 +540,18 @@ export default function OutlinePanel({
                     }
                   />
                   {chapters.length > 0 && (
-                    <select
+                    <Select
                       className="nv-outline__select"
-                      value={fsDraft.chapterId}
+                      size="small"
+                      classNames={{ popup: { root: "nv-outline__dropdown" } }}
                       aria-label="埋设章节"
-                      onChange={(event) =>
-                        setFsDraft((draft) => ({
-                          ...draft,
-                          chapterId: event.target.value,
-                        }))
+                      placeholder="卷级伏笔（不绑具体章）"
+                      value={fsDraft.chapterId || undefined}
+                      options={chapterOptions}
+                      onChange={(value: string) =>
+                        setFsDraft((draft) => ({ ...draft, chapterId: value }))
                       }
-                    >
-                      <option value="">卷级伏笔（不绑具体章）</option>
-                      {chapters.map((chapter) => (
-                        <option key={chapter.chapterId} value={chapter.chapterId}>
-                          {chapter.label} {chapter.title}
-                        </option>
-                      ))}
-                    </select>
+                    />
                   )}
                   <div className="nv-outline__form-actions">
                     <button

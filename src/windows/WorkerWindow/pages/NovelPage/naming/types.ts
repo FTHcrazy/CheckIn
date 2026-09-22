@@ -66,7 +66,8 @@ export interface NamingKindMeta {
  *
  * 八类名称的构词法最终都收敛到「修饰前缀 + 名词后缀」或「姓 + 名」两种形态：
  *   - person（东方）：surname + 1~2 个 maleGiven / femaleGiven
- *   - person（西方）：westernMaleGiven / westernFemaleGiven + westernSurname（中间空格）
+ *   - person（西方）：westernMaleGiven / westernFemaleGiven + westernSurname
+ *     （均为音译中文，以「·」连接，如「托尼·史密斯」）
  *   - 其它 7 类：prefixesByKind[kind] + suffixesByKind[kind]
  *
  * 把前缀/后缀按 kind 分桶，避免「九霄丹」「九霄宗」「九霄城」混在一起——
