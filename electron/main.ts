@@ -22,6 +22,7 @@ import { registerUserHandlers, getCachedUser } from "./handlers/user-handlers";
 import { registerMemoHandlers } from "./handlers/memo-handlers";
 import { registerLedgerHandlers } from "./handlers/ledger-handlers";
 import { registerCheckinHandlers } from "./handlers/checkin-handlers";
+import { registerMapHandlers } from "./handlers/map-handlers";
 import {
   registerHttpSessionHandlers,
   setupRendererHttpSession,
@@ -64,6 +65,7 @@ const RENDERER_ENTRIES = {
   base: "src/windows/BaseWindow/index.html",
   login: "src/windows/LoginWindow/index.html",
   worker: "src/windows/WorkerWindow/index.html",
+  map: "src/windows/MapWindow/index.html",
 } as const;
 let tray: Tray | null = null;
 const ICON_PATH = VITE_DEV_SERVER_URL
@@ -384,6 +386,80 @@ function createWorkerWindow(): BrowserWindow {
   return workerWin;
 }
 
+/**
+ * MapWindow —— 小说架空地图编辑器窗口（docs/novel-map-prd.md §4）。
+ *
+ * 特性：
+ * - 默认 1120×720，最小 760×480（PRD §4 产品结构）
+ * - 即关即销、单实例唤起：已开则 focus 并携带 mapId（PRD §6 窗口登记⑤）
+ * - bounds 记忆留待数据层里程碑与全局快捷键一起做
+ * - 独立窗口天然满足焦点隔离（PRD §6 渲染进程结构）
+ */
+function createMapWindow(mapId?: string): BrowserWindow {
+  const existing = windowManager.get("map");
+  if (existing) {
+    // 已开：聚焦并推送 mapId（地图窗收到后切到该地图）
+    if (existing.isMinimized()) existing.restore();
+    existing.show();
+    existing.focus();
+    if (mapId) {
+      existing.webContents.send("map-open-request", { mapId });
+    }
+    return existing;
+  }
+
+  const mapWin = new BrowserWindow({
+    // PRD §4：默认 1120×720，最小 760×480
+    width: 1120,
+    height: 720,
+    minWidth: 760,
+    minHeight: 480,
+    icon: ICON_PATH,
+    show: false,
+    ...ROUNDED_WINDOW_OPTIONS,
+    titleBarStyle: "hidden",
+    webPreferences: createWebPreferences(),
+  });
+
+  mapWin.removeMenu();
+
+  mapWin.webContents.once("did-finish-load", () => {
+    if (mapWin && !mapWin.isDestroyed()) {
+      mapWin.show();
+      mapWin.focus();
+      // 首次打开时若带 mapId，等渲染层就绪后推送
+      if (mapId) {
+        mapWin.webContents.send("map-open-request", { mapId });
+      }
+    }
+  });
+
+  if (IS_DEV) {
+    registerDevToolsShortcuts(mapWin);
+    if (OPEN_DEVTOOLS) mapWin.webContents.openDevTools({ mode: DEVTOOLS_MODE });
+  }
+
+  forwardMaximizeState(mapWin);
+  windowManager.register("map", mapWin);
+
+  // 即关即销：不拦截 close
+  mapWin.on("closed", () => {
+    console.log("[main] Map 窗口已关闭");
+  });
+
+  const params = new URLSearchParams();
+  if (mapId) params.set("mapId", mapId);
+  const query = params.toString();
+  const suffix = query ? `?${query}` : "";
+
+  const url = IS_DEV
+    ? `${VITE_DEV_SERVER_URL}/${RENDERER_ENTRIES.map}${suffix}`
+    : `app://./${RENDERER_ENTRIES.map}${suffix}`;
+  mapWin.loadURL(url);
+
+  return mapWin;
+}
+
 function getLoginWindowUrl(email?: string) {
   const params = new URLSearchParams();
   if (email) {
@@ -425,6 +501,7 @@ app.whenReady().then(() => {
   registerMemoHandlers();
   registerCheckinHandlers();
   registerLedgerHandlers();
+  registerMapHandlers();
 
   // 渲染进程网络会话：一次性配置 CORS 放行 + Cookie 播种通道。
   // 请求本身全部在渲染进程发起，主进程不再代理 HTTP。
@@ -475,6 +552,13 @@ app.whenReady().then(() => {
   ipcMain.on("worker-window-open", () => {
     if (__CHECKIN_LITE__) return;
     createWorkerWindow();
+  });
+
+  // ── MapWindow 开关 IPC（PRD novel-map §6 窗口登记⑤） ──
+  // 渲染层（WorkerWindow 右栏工具 / 编辑器顶栏快捷按钮）调用，
+  // 单实例唤起：已开则 focus + 推送 mapId，未开则创建并携带 mapId。
+  ipcMain.on("map-window-open", (_event, payload?: { mapId?: string }) => {
+    createMapWindow(payload?.mapId);
   });
 
   // ── 窗口控制 IPC（WindowHeader 的最小化/最大化/关闭按钮） ──

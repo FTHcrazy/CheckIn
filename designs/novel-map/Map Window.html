@@ -1,0 +1,4189 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CheckIn 小说地图窗 · 高保真设计稿</title>
+<style>
+/* ══════════════════════════════════════════════════════════════════════
+   CheckIn · MapWindow 小说地图窗 高保真设计稿
+   依据 docs/novel-map-prd.md v1.0
+   主题变量照抄 src/shared/styles/themes.scss（四套主题可一键切换验证 RM1）
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* ─── A. 原型外壳（不属于产品 UI） ───────────────────────────────────── */
+* { box-sizing: border-box; }
+
+html, body { margin: 0; padding: 0; }
+
+body {
+  min-height: 100vh;
+  background: #e8eaf0;
+  color: #2b2f4a;
+  font-family: "PingFang SC", "Microsoft YaHei UI", "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+.dock {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  padding: 12px 24px;
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid #d9dce6;
+}
+
+.dock__title { display: flex; flex-direction: column; margin-right: auto; }
+.dock__title b { font-size: 15px; letter-spacing: 0.2px; }
+.dock__title span { font-size: 12px; color: #6b7089; }
+
+.dock__group { display: flex; align-items: center; gap: 8px; }
+.dock__label { font-size: 12px; color: #6b7089; white-space: nowrap; }
+
+.seg { display: flex; flex-wrap: wrap; gap: 2px; padding: 3px; border-radius: 10px; background: #e6e9f1; }
+
+.seg button {
+  height: 26px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: #5a5f7a;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.seg button:hover { color: #2b2f4a; }
+
+.seg button.is-on {
+  background: #fff;
+  color: #2b2f4a;
+  box-shadow: 0 1px 4px rgba(43, 47, 74, 0.16);
+  font-weight: 600;
+}
+
+.seg--scene button { font-variant-numeric: tabular-nums; }
+
+.dock__hint { font-size: 12px; color: #6b7089; font-variant-numeric: tabular-nums; }
+
+.stage {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 36px;
+  padding: 24px 24px 8px;
+}
+
+/* 双窗场景允许横向滚动——两个 1120 窗口并排看联动才有说服力 */
+.stage.is-scroll { overflow-x: auto; justify-content: flex-start; padding-bottom: 24px; }
+
+.frame-wrap { position: relative; flex: 0 0 auto; transform-origin: top center; }
+
+.frame-note {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: #6b7089;
+  text-align: center;
+}
+
+.frame-note b { color: #2b2f4a; font-weight: 600; }
+
+.spec-strip {
+  flex: 0 0 auto;
+  width: 268px;
+}
+
+.spec {
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid #dfe2ec;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(43, 47, 74, 0.05);
+}
+
+.spec h4 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: #2b2f4a;
+  letter-spacing: 0.3px;
+}
+
+.spec p { margin: 0; font-size: 12px; line-height: 1.65; color: #656a83; }
+.spec code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: #f0f2f7;
+  font-size: 11px;
+  font-family: "SFMono-Regular", Consolas, monospace;
+}
+
+/* ─── B. 主题变量（= themes.scss，作用域收在窗口内） ─────────────────── */
+.shell,
+.shell[data-theme="aurora"] {
+  --app-bg: #f3f5fc;
+  --app-surface: #ffffff;
+  --app-surface-alt: #f7f8fe;
+  --app-surface-hover: #eef1fc;
+  --app-surface-active: #e4e9fa;
+  --app-surface-elevated: #ffffff;
+  --app-header-bg: #ffffff;
+  --app-sidebar-bg: #ffffff;
+  --app-input-bg: #ffffff;
+  --app-splitter: #edf0fa;
+  --app-mask: rgba(43, 47, 74, 0.35);
+  --app-border: #e2e6f4;
+  --app-border-strong: #d3d9ee;
+  --app-text: #2b2f4a;
+  --app-text-secondary: #5a5f7a;
+  --app-text-muted: #8a90ac;
+  --app-text-disabled: #b6bbd0;
+  --app-text-inverse: #ffffff;
+  --app-text-strong: #1d2242;
+  --app-text-secondary-strong: #434a6e;
+  --app-primary-weak-strong: #dbe4ff;
+  --app-success-weak-strong: #cfeedd;
+  --app-primary: #5b6cf9;
+  --app-primary-strong: #4a5ae0;
+  --app-primary-active: #3e4dc9;
+  --app-primary-weak: #eaf0ff;
+  --app-primary-contrast: #ffffff;
+  --app-primary-gradient: linear-gradient(90deg, #7b8cff 0%, #a5b0ff 100%);
+  --app-success: #34b37e;
+  --app-success-weak: #e6f7ee;
+  --app-warning: #f5a623;
+  --app-warning-weak: #fff3e0;
+  --app-error: #e5484d;
+  --app-error-weak: #ffecee;
+  --app-info: #5b8def;
+  --app-info-weak: #eaf0ff;
+  --app-checkin-dot: #34b37e;
+  --app-accent-blue: #5b8def;
+  --app-accent-blue-weak: #eaf0ff;
+  --app-accent-purple: #8b77f0;
+  --app-accent-purple-weak: #f1edff;
+  --app-accent-green: #34b37e;
+  --app-accent-green-weak: #e6f7ee;
+  --app-accent-amber: #f5a623;
+  --app-accent-amber-weak: #fff3e0;
+  --app-accent-rose: #e8618c;
+  --app-accent-rose-weak: #ffeef2;
+  --app-accent-teal: #2fa57e;
+  --app-accent-teal-weak: #dcf2e8;
+  --app-accent-orange: #e8935e;
+  --app-accent-orange-weak: #fdeedf;
+  --app-radius-card: 20px;
+  --app-radius-panel: 16px;
+  --app-radius-chip: 14px;
+  --app-radius-item: 10px;
+  --app-radius-pill: 999px;
+  --app-shadow-card: 0 6px 16px rgba(53, 64, 101, 0.07);
+  --app-shadow-pop: 0 10px 30px rgba(53, 64, 101, 0.14);
+  --app-shadow-window: inset 0 1px 2px rgba(15, 23, 42, 0.06), inset 0 -2px 6px rgba(15, 23, 42, 0.05);
+  --app-scrollbar: #c9cff5;
+  --app-scrollbar-hover: #b3bbee;
+}
+
+.shell[data-theme="cream"] {
+  --app-bg: #faf6ef;
+  --app-surface: #ffffff;
+  --app-surface-alt: #fcf9f4;
+  --app-surface-hover: #f6f0e6;
+  --app-surface-active: #f0e6d4;
+  --app-surface-elevated: #ffffff;
+  --app-header-bg: #ffffff;
+  --app-sidebar-bg: #fffdf9;
+  --app-input-bg: #ffffff;
+  --app-splitter: #f3ebdc;
+  --app-mask: rgba(61, 54, 41, 0.35);
+  --app-border: #efe5d6;
+  --app-border-strong: #e3d6c2;
+  --app-text: #3d3629;
+  --app-text-secondary: #6b6355;
+  --app-text-muted: #9a9080;
+  --app-text-disabled: #c5bba8;
+  --app-text-inverse: #ffffff;
+  --app-text-strong: #2a2415;
+  --app-text-secondary-strong: #524a3a;
+  --app-primary-weak-strong: #ffd8c3;
+  --app-success-weak-strong: #d4e7c9;
+  --app-primary: #e8834a;
+  --app-primary-strong: #d06e38;
+  --app-primary-active: #b85e2e;
+  --app-primary-weak: #ffe9dc;
+  --app-primary-contrast: #ffffff;
+  --app-primary-gradient: linear-gradient(90deg, #ffb27a 0%, #ff8e5e 100%);
+  --app-success: #7ba05b;
+  --app-success-weak: #e8f2e4;
+  --app-warning: #d9a514;
+  --app-warning-weak: #fff6d9;
+  --app-error: #d95c5c;
+  --app-error-weak: #fde9e9;
+  --app-info: #5b9bc9;
+  --app-info-weak: #e5f0f7;
+  --app-checkin-dot: #7ba05b;
+  --app-accent-blue: #5b9bc9;
+  --app-accent-blue-weak: #e5f0f7;
+  --app-accent-purple: #a98bd8;
+  --app-accent-purple-weak: #f2ecfa;
+  --app-accent-green: #7ba05b;
+  --app-accent-green-weak: #e8f2e4;
+  --app-accent-amber: #d9a514;
+  --app-accent-amber-weak: #fff6d9;
+  --app-accent-rose: #d96a8b;
+  --app-accent-rose-weak: #fbe4e9;
+  --app-accent-teal: #4fa88c;
+  --app-accent-teal-weak: #e2f2ec;
+  --app-accent-orange: #e8834a;
+  --app-accent-orange-weak: #ffe9dc;
+  --app-shadow-card: 0 6px 16px rgba(120, 95, 60, 0.07);
+  --app-shadow-pop: 0 10px 30px rgba(120, 95, 60, 0.14);
+  --app-shadow-window: inset 0 1px 2px rgba(92, 72, 44, 0.08), inset 0 -2px 6px rgba(92, 72, 44, 0.07);
+  --app-scrollbar: #ddd2bf;
+  --app-scrollbar-hover: #c9bda6;
+}
+
+.shell[data-theme="mint"] {
+  --app-bg: #f2f8f4;
+  --app-surface: #ffffff;
+  --app-surface-alt: #f5faf7;
+  --app-surface-hover: #e9f4ee;
+  --app-surface-active: #dcf0e5;
+  --app-surface-elevated: #ffffff;
+  --app-header-bg: #ffffff;
+  --app-sidebar-bg: #fbfefc;
+  --app-input-bg: #ffffff;
+  --app-splitter: #e6f2eb;
+  --app-mask: rgba(36, 53, 45, 0.35);
+  --app-border: #dfeee5;
+  --app-border-strong: #cbe3d6;
+  --app-text: #24352d;
+  --app-text-secondary: #4a5c52;
+  --app-text-muted: #8ca096;
+  --app-text-disabled: #b7c7bd;
+  --app-text-inverse: #ffffff;
+  --app-text-strong: #12211a;
+  --app-text-secondary-strong: #2e4036;
+  --app-primary-weak-strong: #c2e7d6;
+  --app-success-weak-strong: #cbe8c6;
+  --app-primary: #2fa57e;
+  --app-primary-strong: #218a67;
+  --app-primary-active: #1a7155;
+  --app-primary-weak: #dcf2e8;
+  --app-primary-contrast: #ffffff;
+  --app-primary-gradient: linear-gradient(90deg, #3fbf92 0%, #7ed4b4 100%);
+  --app-success: #4f9d5f;
+  --app-success-weak: #e3f3e0;
+  --app-warning: #d9a514;
+  --app-warning-weak: #fbf3dc;
+  --app-error: #d95c5c;
+  --app-error-weak: #fce9e9;
+  --app-info: #4a90c4;
+  --app-info-weak: #eaf3fb;
+  --app-checkin-dot: #d9a514;
+  --app-accent-blue: #4a90c4;
+  --app-accent-blue-weak: #eaf3fb;
+  --app-accent-purple: #8b77e0;
+  --app-accent-purple-weak: #efecfa;
+  --app-accent-green: #5fb87f;
+  --app-accent-green-weak: #e6f5ec;
+  --app-accent-amber: #d9a514;
+  --app-accent-amber-weak: #fbf3dc;
+  --app-accent-rose: #d96a8b;
+  --app-accent-rose-weak: #fbe9ef;
+  --app-accent-teal: #2fa57e;
+  --app-accent-teal-weak: #dcf2e8;
+  --app-accent-orange: #e8935e;
+  --app-accent-orange-weak: #fdeedf;
+  --app-shadow-card: 0 6px 16px rgba(30, 90, 66, 0.07);
+  --app-shadow-pop: 0 10px 30px rgba(30, 90, 66, 0.14);
+  --app-shadow-window: inset 0 1px 2px rgba(18, 62, 46, 0.07), inset 0 -2px 6px rgba(18, 62, 46, 0.06);
+  --app-scrollbar: #c5ded2;
+  --app-scrollbar-hover: #adc9bb;
+}
+
+.shell[data-theme="midnight"] {
+  --app-bg: #15171f;
+  --app-surface: #1d2029;
+  --app-surface-alt: #232733;
+  --app-surface-hover: #2a2f3c;
+  --app-surface-active: #323848;
+  --app-surface-elevated: #262b38;
+  --app-header-bg: #1d2029;
+  --app-sidebar-bg: #191c26;
+  --app-input-bg: #232733;
+  --app-splitter: #262b36;
+  --app-mask: rgba(0, 0, 0, 0.5);
+  --app-border: #2c313e;
+  --app-border-strong: #3a4152;
+  --app-text: #e8eaf2;
+  --app-text-secondary: #aeb4c4;
+  --app-text-muted: #7e8595;
+  --app-text-disabled: #5c6273;
+  --app-text-inverse: #15171f;
+  --app-text-strong: #f6f7fc;
+  --app-text-secondary-strong: #ccd2e0;
+  --app-primary-weak-strong: #2d3556;
+  --app-success-weak-strong: rgba(79, 201, 141, 0.24);
+  --app-primary: #7b8cff;
+  --app-primary-strong: #93a0ff;
+  --app-primary-active: #6573e6;
+  --app-primary-weak: #232842;
+  --app-primary-contrast: #10131f;
+  --app-primary-gradient: linear-gradient(90deg, #6a7cf5 0%, #8f9dff 100%);
+  --app-success: #4fc98d;
+  --app-success-weak: rgba(79, 201, 141, 0.14);
+  --app-warning: #e8b334;
+  --app-warning-weak: rgba(232, 179, 52, 0.14);
+  --app-error: #f26d6d;
+  --app-error-weak: rgba(242, 109, 109, 0.16);
+  --app-info: #7fa6ff;
+  --app-info-weak: rgba(127, 166, 255, 0.14);
+  --app-checkin-dot: #4fc98d;
+  --app-accent-blue: #7fa6ff;
+  --app-accent-blue-weak: rgba(127, 166, 255, 0.14);
+  --app-accent-purple: #a58cf5;
+  --app-accent-purple-weak: rgba(165, 140, 245, 0.14);
+  --app-accent-green: #4fc98d;
+  --app-accent-green-weak: rgba(79, 201, 141, 0.14);
+  --app-accent-amber: #e8b334;
+  --app-accent-amber-weak: rgba(232, 179, 52, 0.14);
+  --app-accent-rose: #f07fa4;
+  --app-accent-rose-weak: rgba(240, 127, 164, 0.14);
+  --app-accent-teal: #4fd0a5;
+  --app-accent-teal-weak: rgba(79, 208, 165, 0.14);
+  --app-accent-orange: #f0a06a;
+  --app-accent-orange-weak: rgba(240, 160, 106, 0.14);
+  --app-shadow-card: 0 6px 18px rgba(0, 0, 0, 0.32);
+  --app-shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.45);
+  --app-shadow-window: inset 0 1px 2px rgba(0, 0, 0, 0.45), inset 0 -2px 6px rgba(0, 0, 0, 0.35);
+  --app-scrollbar: #3a4152;
+  --app-scrollbar-hover: #4a5265;
+}
+/* ─── C. 窗口外壳与标题栏（= window-shell.scss + WindowHeader） ─────── */
+.shell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 1120px;
+  height: 720px;
+  overflow: hidden;
+  border-radius: 12px;
+  /* 圆角轮廓刻意不跟随主题：圆角外是桌面，描边要对的是桌面不是窗口内容 */
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1),
+    var(--app-shadow-window),
+    0 18px 48px rgba(20, 24, 40, 0.18);
+  background: var(--app-bg);
+  color: var(--app-text);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.shell button,
+.shell input,
+.shell select,
+.shell textarea { font-family: inherit; }
+
+.window-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 0 0 34px;
+  height: 34px;
+  background: var(--app-header-bg);
+  user-select: none;
+}
+
+.window-header__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding-left: 12px;
+  color: var(--app-text-secondary);
+}
+
+.window-header__title-text {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.window-header__badge { display: flex; align-items: center; margin-left: 8px; }
+
+.window-header__controls {
+  display: flex;
+  align-items: stretch;
+  height: 100%;
+  margin-left: auto;
+}
+
+.window-header__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--app-text-secondary);
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.window-header__btn:hover { background: var(--app-surface-hover); color: var(--app-text); }
+.window-header__btn--close:hover { background: #e81123; color: #fff; }
+
+/* ─── D. MapWindow 主体布局 ──────────────────────────────────────────── */
+.mw { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+
+.mw-top {
+  flex: 0 0 46px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px 0 8px;
+  background: var(--app-surface);
+  border-bottom: 1px solid var(--app-border);
+}
+
+.mw-main { flex: 1; min-height: 0; display: flex; }
+
+.mw-side {
+  flex: 0 0 232px;
+  width: 232px;
+  display: flex;
+  flex-direction: column;
+  background: var(--app-sidebar-bg);
+  border-right: 1px solid var(--app-border);
+  overflow: hidden;
+}
+
+.mw-side--hidden { display: none; }
+
+.mw-canvas {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--app-surface-alt);
+}
+
+.mw-props {
+  flex: 0 0 272px;
+  width: 272px;
+  display: flex;
+  flex-direction: column;
+  background: var(--app-surface);
+  border-left: 1px solid var(--app-border);
+  overflow: hidden;
+}
+
+.mw-props--hidden { display: none; }
+
+.mw-status {
+  flex: 0 0 28px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 12px;
+  background: var(--app-surface);
+  border-top: 1px solid var(--app-border);
+  font-size: 12px;
+  color: var(--app-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.mw-status__spacer { margin-left: auto; }
+.mw-status b { color: var(--app-text); font-weight: 600; }
+
+.mw-status__save {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--app-success);
+}
+
+.mw-status__save::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--app-success);
+}
+
+/* ─── E. 通用小部件：按钮 / chip / 输入 ─────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--app-border-strong);
+  border-radius: var(--app-radius-item);
+  background: var(--app-surface);
+  color: var(--app-text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.btn:hover { background: var(--app-surface-hover); color: var(--app-text); }
+
+.btn--primary {
+  border-color: transparent;
+  background: var(--app-primary);
+  color: var(--app-primary-contrast);
+  font-weight: 600;
+}
+
+.btn--primary:hover { background: var(--app-primary-strong); color: var(--app-primary-contrast); }
+
+.btn--ghost { border-color: transparent; background: transparent; }
+.btn--sm { height: 24px; padding: 0 8px; font-size: 12px; }
+.btn--block { width: 100%; }
+
+.btn--icon { width: 28px; padding: 0; }
+
+.btn.is-on {
+  border-color: transparent;
+  background: var(--app-primary-weak);
+  color: var(--app-primary);
+  font-weight: 600;
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--app-radius-item);
+  background: transparent;
+  color: var(--app-text-secondary);
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.icon-btn:hover { background: var(--app-surface-hover); color: var(--app-text); }
+.icon-btn.is-on { background: var(--app-primary-weak); color: var(--app-primary); }
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: var(--app-radius-chip);
+  background: var(--app-surface-alt);
+  border: 1px solid var(--app-border);
+  font-size: 12px;
+  color: var(--app-text-secondary);
+  white-space: nowrap;
+}
+
+.chip--primary { background: var(--app-primary-weak); border-color: transparent; color: var(--app-primary); }
+.chip--warning { background: var(--app-warning-weak); border-color: transparent; color: var(--app-warning); }
+.chip--success { background: var(--app-success-weak); border-color: transparent; color: var(--app-success); }
+
+.chip__dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+/* 地图选择器（顶栏） */
+.map-picker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 8px 0 10px;
+  border-radius: var(--app-radius-item);
+  background: transparent;
+  border: none;
+  color: var(--app-text);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.map-picker:hover { background: var(--app-surface-hover); }
+.map-picker__caret { color: var(--app-text-muted); }
+
+.bind-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px 0 6px;
+  border-radius: var(--app-radius-chip);
+  background: var(--app-primary-weak);
+  color: var(--app-primary);
+  font-size: 12px;
+}
+
+.bind-badge__icon { display: inline-flex; }
+
+.top-divider { width: 1px; height: 20px; background: var(--app-border); }
+.top-spacer { margin-left: auto; }
+
+/* ─── F. 侧栏 ───────────────────────────────────────────────────────── */
+.side-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 8px 0 12px;
+  border-bottom: 1px solid var(--app-border);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--app-text-secondary-strong);
+  letter-spacing: 0.4px;
+}
+
+.side-head__count { margin-left: auto; font-weight: 400; color: var(--app-text-muted); font-variant-numeric: tabular-nums; }
+
+.side-body { flex: 1; min-height: 0; overflow-y: auto; padding: 6px 0 12px; }
+
+.side-group__label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  color: var(--app-text-muted);
+}
+
+.side-group__label span { margin-left: auto; font-weight: 400; font-variant-numeric: tabular-nums; }
+
+.anno {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px 6px 12px;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.anno:hover { background: var(--app-surface-hover); }
+.anno.is-active { background: var(--app-primary-weak); }
+
+.anno__pin { flex: 0 0 auto; display: inline-flex; }
+.anno__text { min-width: 0; display: flex; flex-direction: column; }
+.anno__name {
+  font-size: 13px;
+  color: var(--app-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.anno.is-active .anno__name { color: var(--app-text-strong); font-weight: 600; }
+.anno__meta { font-size: 11px; color: var(--app-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.anno__warn { margin-left: auto; flex: 0 0 auto; }
+
+.side-empty { padding: 4px 12px 10px; font-size: 12px; color: var(--app-text-muted); }
+
+/* 地形面板 */
+.terrain-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 8px 10px; }
+
+.terrain-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 2px 5px;
+  border: 1px solid transparent;
+  border-radius: var(--app-radius-item);
+  background: transparent;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.terrain-cell:hover { background: var(--app-surface-hover); }
+.terrain-cell.is-on { background: var(--app-primary-weak); border-color: var(--app-primary); }
+.terrain-cell svg { display: block; border-radius: 5px; }
+.terrain-cell span { font-size: 11px; color: var(--app-text-secondary); line-height: 1.2; }
+.terrain-cell.is-on span { color: var(--app-primary); font-weight: 600; }
+
+.side-section-title {
+  padding: 10px 12px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  color: var(--app-text-muted);
+}
+
+.side-section-title i { font-style: normal; font-weight: 400; letter-spacing: 0; }
+
+.brush-row { display: flex; align-items: center; gap: 6px; padding: 4px 12px 2px; }
+
+/* 符号库 */
+.sym-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 8px 10px; }
+
+.sym-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 7px 2px 5px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-item);
+  background: var(--app-input-bg);
+  cursor: grab;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.sym-cell:hover { border-color: var(--app-primary); background: var(--app-primary-weak); }
+.sym-cell span { font-size: 10px; color: var(--app-text-muted); }
+
+/* ─── G. 画布 ───────────────────────────────────────────────────────── */
+.cv { position: absolute; inset: 0; overflow: hidden; }
+.cv svg { width: 100%; height: 100%; display: block; }
+.cv--grab { cursor: grab; }
+.cv--grabbing { cursor: grabbing; }
+.cv--paint { cursor: crosshair; }
+
+.tool-rail {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  border-radius: var(--app-radius-panel);
+  background: var(--app-surface-elevated);
+  border: 1px solid var(--app-border);
+  box-shadow: var(--app-shadow-card);
+}
+
+.tool-rail__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--app-text-secondary);
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.tool-rail__btn:hover { background: var(--app-surface-hover); color: var(--app-text); }
+.tool-rail__btn.is-on { background: var(--app-primary-weak); color: var(--app-primary); }
+.tool-rail__sep { height: 1px; margin: 3px 4px; background: var(--app-border); }
+
+.crumb {
+  position: absolute;
+  top: 12px;
+  left: 58px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 32px;
+  padding: 0 6px 0 10px;
+  border-radius: var(--app-radius-panel);
+  background: var(--app-surface-elevated);
+  border: 1px solid var(--app-border);
+  box-shadow: var(--app-shadow-card);
+  font-size: 13px;
+}
+
+.crumb button {
+  padding: 2px 6px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--app-text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.crumb button:hover { background: var(--app-surface-hover); color: var(--app-text); }
+.crumb button.is-current { color: var(--app-text-strong); font-weight: 600; }
+.crumb__sep { color: var(--app-text-disabled); }
+.crumb__up {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  background: var(--app-surface-hover);
+  color: var(--app-text-secondary);
+  cursor: pointer;
+}
+
+.zoom-bar {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: var(--app-radius-panel);
+  background: var(--app-surface-elevated);
+  border: 1px solid var(--app-border);
+  box-shadow: var(--app-shadow-card);
+}
+
+.zoom-bar__val {
+  min-width: 46px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--app-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.map-legend-chip {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: var(--app-radius-chip);
+  background: var(--app-surface-elevated);
+  border: 1px solid var(--app-border);
+  box-shadow: var(--app-shadow-card);
+  font-size: 12px;
+  color: var(--app-text-secondary);
+}
+
+/* 比例尺：左下角，随缩放实时换算 */
+.scale-bar {
+  position: absolute;
+  left: 12px;
+  bottom: 48px;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 9px 5px;
+  border-radius: var(--app-radius-chip);
+  background: var(--app-surface-elevated);
+  border: 1px solid var(--app-border);
+  box-shadow: var(--app-shadow-card);
+  pointer-events: none;
+}
+.scale-bar svg { display: block; overflow: visible; }
+.scale-bar__meta {
+  font-size: 10px;
+  line-height: 1.3;
+  color: var(--app-text-muted);
+  letter-spacing: .2px;
+}
+
+.map-hint {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: var(--app-radius-chip);
+  background: var(--app-surface-elevated);
+  border: 1px solid var(--app-border);
+  box-shadow: var(--app-shadow-card);
+  font-size: 12px;
+  color: var(--app-text-secondary);
+}
+
+/* 画布内联动脉冲高亮（RM10） */
+@keyframes pulse-ring {
+  0% { r: 14; opacity: 0.55; }
+  100% { r: 44; opacity: 0; }
+}
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 0.9; }
+}
+
+.pulse-ring { animation: pulse-ring 1.8s ease-out infinite; }
+
+/* ─── H. 属性面板 ───────────────────────────────────────────────────── */
+.props-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 42px;
+  padding: 0 8px 0 14px;
+  border-bottom: 1px solid var(--app-border);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--app-text-strong);
+}
+
+.props-body { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 14px 16px; }
+.props-foot { flex: 0 0 auto; display: flex; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--app-border); }
+
+.field { margin-bottom: 12px; }
+
+.field__label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 5px;
+  font-size: 12px;
+  color: var(--app-text-secondary);
+}
+
+.field__label em { font-style: normal; margin-left: auto; color: var(--app-text-muted); }
+
+.input,
+.textarea,
+.select {
+  width: 100%;
+  padding: 6px 9px;
+  border: 1px solid var(--app-border-strong);
+  border-radius: var(--app-radius-item);
+  background: var(--app-input-bg);
+  color: var(--app-text);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.input:focus,
+.textarea:focus,
+.select:focus {
+  border-color: var(--app-primary);
+  box-shadow: 0 0 0 3px var(--app-primary-weak);
+}
+
+.input[readonly] { color: var(--app-text-secondary); background: var(--app-surface-alt); }
+.textarea { min-height: 62px; resize: none; line-height: 1.7; }
+.select { height: 30px; padding: 0 8px; appearance: none; cursor: pointer; }
+
+.select-wrap { position: relative; }
+.select-wrap::after {
+  content: "";
+  position: absolute;
+  right: 10px;
+  top: 13px;
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid var(--app-text-muted);
+  border-bottom: 1.5px solid var(--app-text-muted);
+  transform: rotate(45deg);
+  pointer-events: none;
+}
+
+.field-note {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 7px 9px;
+  border-radius: var(--app-radius-item);
+  background: var(--app-warning-weak);
+  color: var(--app-text-secondary-strong);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.field-note--info { background: var(--app-info-weak); }
+.field-note--success { background: var(--app-success-weak); }
+
+.bind-row { display: flex; gap: 6px; }
+.bind-row .select-wrap { flex: 1; min-width: 0; }
+
+.child-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--app-border-strong);
+  border-radius: var(--app-radius-item);
+  background: var(--app-surface-alt);
+}
+
+.child-card__thumb {
+  flex: 0 0 44px;
+  height: 34px;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--app-border);
+  background: #cfe3f2;
+}
+
+.child-card__text { min-width: 0; display: flex; flex-direction: column; }
+.child-card__text b { font-size: 13px; color: var(--app-text); }
+.child-card__text span { font-size: 11px; color: var(--app-text-muted); }
+
+/* 变换与层级（RM13） */
+.xform-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.xform-grid .field { margin-bottom: 8px; }
+
+.layer-list { display: flex; flex-direction: column; gap: 2px; }
+
+.layer-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  background: var(--app-surface-alt);
+  font-size: 12px;
+  color: var(--app-text-secondary);
+}
+
+.layer-item.is-selected { background: var(--app-primary-weak); color: var(--app-primary); }
+.layer-item span { margin-left: auto; color: var(--app-text-muted); font-variant-numeric: tabular-nums; }
+
+/* ─── I. 设定卡 Popover（RM11） ─────────────────────────────────────── */
+.pop {
+  position: absolute;
+  z-index: 12;
+  width: 268px;
+  border-radius: var(--app-radius-panel);
+  background: var(--app-surface-elevated);
+  border: 1px solid var(--app-border);
+  box-shadow: var(--app-shadow-pop);
+  overflow: hidden;
+}
+
+.pop__head { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px 8px; }
+.pop__title { min-width: 0; display: flex; flex-direction: column; }
+.pop__title b { font-size: 14px; color: var(--app-text-strong); }
+.pop__title span { font-size: 11px; color: var(--app-text-muted); }
+.pop__body { padding: 0 12px 10px; }
+.pop__row { display: flex; gap: 8px; padding: 3px 0; font-size: 12px; }
+.pop__row em { flex: 0 0 42px; font-style: normal; color: var(--app-text-muted); }
+.pop__row span { flex: 1; color: var(--app-text-secondary); line-height: 1.65; }
+.pop__foot { display: flex; gap: 6px; padding: 8px 12px; border-top: 1px solid var(--app-border); background: var(--app-surface-alt); }
+
+.toastify {
+  position: absolute;
+  left: 50%;
+  bottom: 56px;
+  z-index: 14;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px 9px 14px;
+  border-radius: var(--app-radius-chip);
+  background: var(--app-surface-elevated);
+  border: 1px solid var(--app-border);
+  box-shadow: var(--app-shadow-pop);
+  font-size: 12.5px;
+  color: var(--app-text-secondary);
+  transform: translateX(-50%);
+}
+
+.toastify__icon { color: var(--app-warning); display: inline-flex; }
+
+/* ─── J. 模态：随机成图 / 导出 ──────────────────────────────────────── */
+.mask {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--app-mask);
+  backdrop-filter: blur(1.5px);
+}
+
+.modal {
+  display: flex;
+  flex-direction: column;
+  width: 720px;
+  max-height: 620px;
+  border-radius: var(--app-radius-card);
+  background: var(--app-surface-elevated);
+  box-shadow: var(--app-shadow-pop);
+  overflow: hidden;
+}
+
+.modal--slim { width: 520px; }
+
+.modal__head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--app-border);
+}
+
+.modal__head h3 { margin: 0; font-size: 15px; color: var(--app-text-strong); }
+.modal__head p { margin: 2px 0 0; font-size: 12px; color: var(--app-text-muted); }
+.modal__close { margin-left: auto; }
+
+.modal__body { flex: 1; min-height: 0; display: flex; overflow: hidden; }
+.modal__foot { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--app-border); }
+
+.gen-left {
+  flex: 0 0 236px;
+  padding: 12px 14px;
+  border-right: 1px solid var(--app-border);
+  background: var(--app-surface-alt);
+  overflow-y: auto;
+}
+
+.gen-right { flex: 1; min-width: 0; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+
+.tpl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 9px;
+  margin-bottom: 6px;
+  border: 1px solid var(--app-border-strong);
+  border-radius: var(--app-radius-item);
+  background: var(--app-input-bg);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.tpl:hover { border-color: var(--app-primary); }
+.tpl.is-on { border-color: var(--app-primary); background: var(--app-primary-weak); }
+
+.tpl__box {
+  flex: 0 0 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 5px;
+  border: 1.5px solid var(--app-border-strong);
+  color: transparent;
+  background: var(--app-surface);
+}
+
+.tpl.is-on .tpl__box { border-color: var(--app-primary); background: var(--app-primary); color: #fff; }
+.tpl__text { min-width: 0; display: flex; flex-direction: column; }
+.tpl__text b { font-size: 13px; color: var(--app-text); }
+.tpl.is-on .tpl__text b { color: var(--app-primary); }
+.tpl__text span { font-size: 11px; color: var(--app-text-muted); line-height: 1.4; }
+
+.gen-preview {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  border-radius: var(--app-radius-panel);
+  border: 1px solid var(--app-border);
+  background: var(--app-surface-alt);
+  overflow: hidden;
+}
+
+.gen-preview svg { width: 100%; height: 100%; display: block; }
+
+.gen-preview__tag {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: var(--app-radius-chip);
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid var(--app-border);
+  font-size: 11px;
+  color: var(--app-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.seed-row { display: flex; align-items: center; gap: 8px; }
+.seed-row .input { flex: 1; font-variant-numeric: tabular-nums; letter-spacing: 0.5px; }
+
+.thumb-row { display: flex; gap: 8px; }
+
+.thumb {
+  position: relative;
+  flex: 1;
+  height: 56px;
+  border-radius: 8px;
+  border: 1px solid var(--app-border);
+  overflow: hidden;
+  cursor: pointer;
+  background: var(--app-surface-alt);
+}
+
+.thumb.is-on { border-color: var(--app-primary); box-shadow: 0 0 0 2px var(--app-primary-weak); }
+.thumb svg { width: 100%; height: 100%; display: block; }
+.thumb em {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  font-style: normal;
+  font-size: 10px;
+  text-align: center;
+  padding: 1px 0;
+  background: rgba(255, 255, 255, 0.86);
+  color: var(--app-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.exp-grid { display: grid; grid-template-columns: 96px 1fr; gap: 10px 12px; align-items: center; padding: 4px 2px 2px; }
+.exp-grid > label { font-size: 12px; color: var(--app-text-secondary); }
+.exp-radio { display: flex; gap: 6px; }
+
+.exp-preview {
+  height: 148px;
+  border-radius: var(--app-radius-item);
+  border: 1px solid var(--app-border);
+  overflow: hidden;
+  background: repeating-conic-gradient(var(--app-surface-alt) 0% 25%, var(--app-surface) 0% 50%) 0 0 / 16px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.exp-preview img,
+.exp-preview svg { max-width: 100%; max-height: 100%; box-shadow: 0 2px 10px rgba(43, 47, 74, 0.18); }
+
+.check-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 13px; color: var(--app-text-secondary); }
+.check-row input { accent-color: var(--app-primary); width: 15px; height: 15px; }
+
+/* ─── K. 图例表（S8 · M2 美术验收基准） ─────────────────────────────── */
+.legend-page {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 20px 20px;
+  background: var(--app-bg);
+}
+
+.legend-page__head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
+.legend-page__head h3 { margin: 0; font-size: 15px; color: var(--app-text-strong); }
+.legend-page__head span { font-size: 12px; color: var(--app-text-muted); }
+
+.legend-block { margin-bottom: 16px; }
+
+.legend-block__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: var(--app-text-secondary-strong);
+}
+
+.legend-block__title i { font-style: normal; font-weight: 400; color: var(--app-text-muted); letter-spacing: 0; }
+
+.legend-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+
+.legend-card {
+  display: flex;
+  gap: 10px;
+  padding: 8px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-item);
+  background: var(--app-surface);
+}
+
+.legend-card svg { flex: 0 0 auto; border-radius: 6px; }
+.legend-card__text { min-width: 0; }
+.legend-card__text b { display: block; font-size: 13px; color: var(--app-text); }
+.legend-card__text span { font-size: 11.5px; color: var(--app-text-muted); line-height: 1.5; }
+
+/* ─── L. 双窗联动：编辑器切片 ───────────────────────────────────────── */
+.editor-frame { position: relative; }
+
+.ed { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.ed-main { flex: 1; min-height: 0; display: flex; }
+.ed-rail {
+  flex: 0 0 190px;
+  border-right: 1px solid var(--app-border);
+  background: var(--app-sidebar-bg);
+  padding: 10px 8px;
+  overflow: hidden;
+}
+.ed-paper {
+  flex: 1;
+  min-width: 0;
+  padding: 22px 30px;
+  overflow: hidden;
+  background: var(--app-surface);
+}
+.ed-paper p {
+  margin: 0 0 14px;
+  font-size: 14px;
+  line-height: 2;
+  color: var(--app-text);
+  text-indent: 2em;
+  letter-spacing: 0.2px;
+}
+.ed-paper p.ed-paper__title {
+  margin-bottom: 20px;
+  font-size: 17px;
+  font-weight: 600;
+  text-indent: 0;
+  text-align: center;
+  color: var(--app-text-strong);
+}
+.ed-support {
+  flex: 0 0 268px;
+  border-left: 1px solid var(--app-border);
+  background: var(--app-surface);
+  padding: 10px;
+  overflow: hidden;
+}
+.ed-node {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--app-text-secondary);
+}
+.ed-node.is-active { background: var(--app-primary-weak); color: var(--app-primary); }
+.ed-node i { font-style: normal; font-size: 11px; color: var(--app-text-muted); margin-left: auto; font-variant-numeric: tabular-nums; }
+.ed-node.is-active i { color: var(--app-primary); }
+
+.tool-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-item);
+  background: var(--app-surface-alt);
+}
+.tool-card__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: var(--app-accent-purple-weak);
+  color: var(--app-accent-purple);
+}
+.tool-card__text { min-width: 0; display: flex; flex-direction: column; }
+.tool-card__text b { font-size: 13px; color: var(--app-text); }
+.tool-card__text span { font-size: 11px; color: var(--app-text-muted); }
+
+.scene-field {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid var(--app-primary);
+  border-radius: var(--app-radius-item);
+  background: var(--app-primary-weak);
+}
+.scene-field__label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: var(--app-primary);
+}
+.scene-field__value {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--app-text-strong);
+}
+
+.link-arrow {
+  position: absolute;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #4b5470;
+}
+
+.link-arrow__label {
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid #cfd5e4;
+  box-shadow: 0 2px 8px rgba(43, 47, 74, 0.1);
+  white-space: nowrap;
+}
+
+/* ─── M. 场景可见性开关 ─────────────────────────────────────────────── */
+.panel-anno,
+.panel-terrain,
+.panel-symbol { display: none; }
+body[data-scene="s3"] .panel-terrain,
+body[data-scene="s4"] .panel-symbol,
+body[data-scene="s1"] .panel-anno,
+body[data-scene="s2"] .panel-anno,
+body[data-scene="s5"] .panel-anno,
+body[data-scene="s6"] .panel-anno { display: flex; }
+
+.crumb,
+.transition-strip,
+.panel-props,
+.panel-stamp,
+.mask,
+.toastify,
+.pop,
+.legend-view,
+.map-view,
+.map-hint { display: none; }
+
+body[data-scene="s1"] .map-view,
+body[data-scene="s3"] .map-view,
+body[data-scene="s4"] .map-view,
+body[data-scene="s5"] .map-view,
+body[data-scene="s6"] .map-view,
+body[data-scene="s7"] .map-view,
+body[data-scene="s2"] .map-view { display: block; }
+
+body[data-scene="s5"] .crumb { display: flex; }
+body[data-scene="s5"] .transition-strip { display: flex; }
+body[data-scene="s1"] .panel-props,
+body[data-scene="s5"] .panel-props { display: flex; }
+body[data-scene="s4"] .panel-stamp { display: flex; }
+
+.is-scene-modal { display: none; }
+body[data-scene="s2"] .modal-gen { display: flex; }
+body[data-scene="s7"] .modal-exp { display: flex; }
+
+.only-s3, .only-s4, .only-s6 { display: none; }
+body[data-scene="s3"] .only-s3 { display: flex; }
+body[data-scene="s4"] .only-s4 { display: flex; }
+body[data-scene="s6"] .only-s6 { display: flex; }
+body[data-scene="s6"] .only-s6.toastify { display: flex; }
+
+/* 双 editor 框架只在 S6 显示 */
+#editorFrame { display: none; }
+body[data-scene="s6"] #editorFrame { display: block; }
+body[data-scene="s6"] .stage-note { display: flex; }
+
+.stage-note { display: none; }
+
+/* 侧栏三态容器 */
+.panel-anno,
+.panel-terrain,
+.panel-symbol,
+.panel-props,
+.panel-stamp {
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+
+/* 图例页替换主区 */
+body[data-scene="s8"] .mw-main { display: none; }
+body[data-scene="s8"] .legend-view { display: block; }
+body[data-scene="s8"] .mw-status { border-top: 1px solid var(--app-border); }
+
+/* 设定卡弹出由 JS 控制显隐与定位 */
+
+/* RM14 过渡时序三帧 */
+.transition-strip {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 48px;
+  z-index: 7;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.ts-card {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 6px 8px;
+  border-radius: 12px;
+  background: var(--app-surface-elevated);
+  border: 1px solid var(--app-border);
+  box-shadow: var(--app-shadow-card);
+}
+
+.ts-art { height: 86px; border-radius: 8px; overflow: hidden; background: #e9eef6; }
+.ts-art svg { display: block; width: 100%; height: 100%; }
+
+.ts-card__cap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 4px 0;
+  font-size: 11.5px;
+  color: var(--app-text-secondary);
+}
+
+.ts-card__cap b { color: var(--app-text-strong); font-size: 12px; }
+.ts-card__cap em { font-style: normal; margin-left: auto; color: var(--app-text-muted); font-size: 11px; }
+.ts-card__desc { padding: 0 4px; font-size: 11.5px; color: var(--app-text-muted); }
+
+.ts-arrow { align-self: center; color: var(--app-text-disabled); display: flex; }
+
+/* 正文里的实体高亮（沿用编辑器既有心智） */
+.ed-hl {
+  padding: 0 3px;
+  border-radius: 4px;
+  background: var(--app-primary-weak);
+  color: var(--app-primary);
+  font-weight: 600;
+}
+
+/* 滚动条：窗口内统一细样式 */
+.side-body::-webkit-scrollbar,
+.props-body::-webkit-scrollbar,
+.legend-page::-webkit-scrollbar,
+.gen-left::-webkit-scrollbar,
+.modal__body::-webkit-scrollbar { width: 8px; height: 8px; }
+
+.side-body::-webkit-scrollbar-thumb,
+.props-body::-webkit-scrollbar-thumb,
+.legend-page::-webkit-scrollbar-thumb,
+.gen-left::-webkit-scrollbar-thumb,
+.modal__body::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: var(--app-scrollbar);
+}
+
+.side-body::-webkit-scrollbar-thumb:hover,
+.props-body::-webkit-scrollbar-thumb:hover,
+.legend-page::-webkit-scrollbar-thumb:hover { background: var(--app-scrollbar-hover); }
+
+.side-body::-webkit-scrollbar-track,
+.props-body::-webkit-scrollbar-track { background: transparent; }
+
+/* 说明栏跟随 */
+.spec-strip { position: sticky; top: 96px; align-self: flex-start; }
+body[data-scene="s6"] .spec-strip { position: static; }
+
+@media (max-width: 1180px) {
+  .spec-strip { display: none; }
+}
+
+</style>
+</head>
+<body>
+<div class="dock">
+  <div class="dock__title">
+    <b>CheckIn · 小说地图窗 MapWindow</b>
+    <span>依据 docs/novel-map-prd.md v1.0 · 高保真可交互原型（1120×720，四主题通用）</span>
+  </div>
+
+  <div class="dock__group">
+    <span class="dock__label">场景</span>
+    <div class="seg seg--scene" id="sceneSeg">
+      <button type="button" data-scene="s1" class="is-on">01 主画布</button>
+      <button type="button" data-scene="s2">02 随机成图</button>
+      <button type="button" data-scene="s3">03 地形画笔</button>
+      <button type="button" data-scene="s4">04 自由贴章</button>
+      <button type="button" data-scene="s5">05 嵌套下钻</button>
+      <button type="button" data-scene="s6">06 双窗联动</button>
+      <button type="button" data-scene="s7">07 导出 PNG</button>
+      <button type="button" data-scene="s8">08 地形图例</button>
+    </div>
+  </div>
+
+  <div class="dock__group">
+    <span class="dock__label">主题</span>
+    <div class="seg" id="themeSeg">
+      <button type="button" data-theme="aurora" class="is-on">柔雾紫蓝</button>
+      <button type="button" data-theme="cream">奶油暖橘</button>
+      <button type="button" data-theme="mint">薄荷清新</button>
+      <button type="button" data-theme="midnight">月夜暗色</button>
+    </div>
+  </div>
+
+  <div class="dock__group">
+    <span class="dock__label">栅格</span>
+    <div class="seg" id="resSeg">
+      <button type="button" data-res="64x40" class="is-on">64×40</button>
+      <button type="button" data-res="80x50">80×50</button>
+      <button type="button" data-res="120x75">120×75</button>
+    </div>
+  </div>
+
+  <div class="dock__group">
+    <span class="dock__label">地块模型</span>
+    <div class="seg" id="modeSeg">
+      <button type="button" data-mode="raster" class="is-on">栅格</button>
+      <button type="button" data-mode="tile">Voronoi 地块</button>
+    </div>
+  </div>
+
+  <div class="dock__group">
+    <span class="dock__label">符号风格</span>
+    <div class="seg" id="styleSeg">
+      <button type="button" data-style="A" class="is-on">A 圆润</button>
+      <button type="button" data-style="B">B 尖锐</button>
+      <button type="button" data-style="C">C 简约</button>
+    </div>
+  </div>
+
+  <div class="dock__group">
+    <span class="dock__label">视图缩放</span>
+    <div class="seg" id="frameScaleSeg">
+      <button type="button" data-scale="0.6">60%</button>
+      <button type="button" data-scale="0.75" class="is-on">75%</button>
+      <button type="button" data-scale="1">100%</button>
+    </div>
+  </div>
+</div>
+
+<div class="stage" id="stage">
+  <!-- ══ 图标与图案定义（全文档共用） ══ -->
+  <svg width="0" height="0" aria-hidden="true" style="position:absolute;left:-9999px">
+    <defs id="mapDefs"></defs>
+    <defs>
+      <symbol id="ic-select" viewBox="0 0 24 24"><path d="M5 3l14 8-6 1.5L10 19z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+      <symbol id="ic-hand" viewBox="0 0 24 24"><path d="M8 12V6.5a1.5 1.5 0 013 0V12m0-1.5V5a1.5 1.5 0 013 0v6.5m0-.5V7.5a1.5 1.5 0 013 0V14c0 3.5-2.5 6-6 6s-5.5-2-5.5-5V10a1.5 1.5 0 013 0v2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="ic-brush" viewBox="0 0 24 24"><path d="M15 4l5 5-8 8H7l-3 3v-6z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+      <symbol id="ic-stamp" viewBox="0 0 24 24"><path d="M4 20h16M6 20v-3l1-6 4-3h2l4 3 1 6v3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+      <symbol id="ic-pin" viewBox="0 0 24 24"><path d="M12 22s7-7.5 7-12.5A7 7 0 005 9.5C5 14.5 12 22 12 22z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="12" cy="9.5" r="2.4" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
+      <symbol id="ic-pin-fill" viewBox="0 0 24 24"><path d="M12 22s7-7.5 7-12.5A7 7 0 005 9.5C5 14.5 12 22 12 22z" fill="currentColor"/><circle cx="12" cy="9.5" r="2.5" fill="#fff" opacity="0.92"/></symbol>
+      <symbol id="ic-frame" viewBox="0 0 24 24"><rect x="3.5" y="5.5" width="17" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="4 3"/></symbol>
+      <symbol id="ic-tag" viewBox="0 0 24 24"><path d="M4 4h9l7 7-9 9-7-7z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="8.5" cy="8.5" r="1.3" fill="currentColor"/></symbol>
+      <symbol id="ic-link" viewBox="0 0 24 24"><path d="M9 15l6-6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M13 7l1.5-1.5a4 4 0 015.7 5.7L18.5 13M11 17l-1.5 1.5a4 4 0 01-5.7-5.7L5.5 11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+      <symbol id="ic-undo" viewBox="0 0 24 24"><path d="M4 9h10a5 5 0 010 10H9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 9l4-4M4 9l4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+      <symbol id="ic-redo" viewBox="0 0 24 24"><path d="M20 9H10a5 5 0 000 10h5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 9l-4-4M20 9l-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+      <symbol id="ic-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
+      <symbol id="ic-minus" viewBox="0 0 24 24"><path d="M5 12h14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
+      <symbol id="ic-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
+      <symbol id="ic-chevron" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="ic-chevron-up" viewBox="0 0 24 24"><path d="M7 14l5-5 5 5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="ic-plus-sm" viewBox="0 0 24 24"><path d="M12 6v12M6 12h12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+      <symbol id="ic-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 11-2.3-5.6M20 4v4h-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="ic-download" viewBox="0 0 24 24"><path d="M12 4v11m0 0l-4-4m4 4l4-4M5 19h14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="ic-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 3v2m0 14v2M4.2 7.5l1.7 1M18.1 15.5l1.7 1M4.2 16.5l1.7-1M18.1 8.5l1.7-1" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+      <symbol id="ic-map" viewBox="0 0 24 24"><path d="M9 4L3 6.5v13L9 17l6 2.5 6-2.5v-13L15 6.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9 4v13m6-10.5v13" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
+      <symbol id="ic-book" viewBox="0 0 24 24"><path d="M4 5.5A1.5 1.5 0 015.5 4H10a3 3 0 013 3v13a2.5 2.5 0 00-2.5-2.5H5.5A1.5 1.5 0 014 16zM20 5.5A1.5 1.5 0 0018.5 4H15a3 3 0 00-3 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+      <symbol id="ic-warning" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 7.5v6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="16.6" r="1.1" fill="currentColor"/></symbol>
+      <symbol id="ic-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="ic-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="9.5" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8.5 10.5V8a3.5 3.5 0 017 0v2.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+      <symbol id="ic-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="2.6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+      <symbol id="ic-magnet" viewBox="0 0 24 24"><path d="M6 4v8a6 6 0 0012 0V4h-4v8a2 2 0 01-4 0V4z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+      <symbol id="ic-group" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M11 7h3.5a2 2 0 012 2V13" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
+      <symbol id="ic-layer-up" viewBox="0 0 24 24"><path d="M12 4l8 5-8 5-8-5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M4 14l8 5 8-5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+      <symbol id="ic-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 6 12 6s9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="2.6" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
+      <symbol id="ic-arrow-right" viewBox="0 0 24 24"><path d="M4 12h15m0 0l-5-5m5 5l-5 5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="ic-ruler" viewBox="0 0 24 24"><rect x="2.5" y="8" width="19" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M7 8v3m4-3v3m4-3v3m4-3v3" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+      <symbol id="ic-rotate" viewBox="0 0 24 24"><path d="M12 6V3m0 0L9.5 5.5M12 3l2.5 2.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M19 12a7 7 0 11-3.6-6.1" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+    </defs>
+  </svg>
+
+  <!-- ══ 地图窗 MapWindow ══ -->
+  <div class="frame-wrap" id="mapFrameWrap">
+    <div class="shell" id="shell" data-theme="aurora">
+      <div class="window-header">
+        <div class="window-header__title">
+          <svg width="16" height="16"><use href="#ic-map" /></svg>
+          <span class="window-header__title-text">地图 · 云荒大陆</span>
+          <div class="window-header__badge">
+            <span class="bind-badge"><svg width="13" height="13"><use href="#ic-book" /></svg>已绑定《剑起云荒》</span>
+          </div>
+        </div>
+        <div class="window-header__controls">
+          <button type="button" class="window-header__btn" aria-label="最小化"><svg width="10" height="10"><path d="M0 5h10" stroke="currentColor" stroke-width="1" /></svg></button>
+          <button type="button" class="window-header__btn" aria-label="最大化"><svg width="10" height="10"><rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1" /></svg></button>
+          <button type="button" class="window-header__btn window-header__btn--close" aria-label="关闭"><svg width="10" height="10"><path d="M0 0l10 10M10 0L0 10" stroke="currentColor" stroke-width="1" /></svg></button>
+        </div>
+      </div>
+
+      <div class="mw">
+        <!-- 顶栏 RM1：地图切换 / 新建 / 绑定徽标 / 撤销栈 / 导出 / 设置 -->
+        <div class="mw-top">
+          <button type="button" class="icon-btn" id="sideToggle" title="收起标注栏"><svg width="16" height="16"><use href="#ic-frame" /></svg></button>
+          <button type="button" class="map-picker">
+            <svg width="15" height="15" style="color:var(--app-primary)"><use href="#ic-map" /></svg>
+            云荒大陆
+            <svg width="14" height="14" class="map-picker__caret"><use href="#ic-chevron" /></svg>
+          </button>
+          <span class="bind-badge"><svg width="13" height="13"><use href="#ic-book" /></svg>主地图</span>
+          <button type="button" class="btn btn--sm"><svg width="14" height="14"><use href="#ic-plus-sm" /></svg>新建地图</button>
+          <div class="top-spacer"></div>
+          <button type="button" class="btn btn--sm btn--icon" title="撤销 Ctrl+Z"><svg width="15" height="15"><use href="#ic-undo" /></svg></button>
+          <button type="button" class="btn btn--sm btn--icon" title="重做 Ctrl+Y"><svg width="15" height="15"><use href="#ic-redo" /></svg></button>
+          <button type="button" class="btn btn--sm btn--primary" data-goto="s7"><svg width="14" height="14"><use href="#ic-download" /></svg>导出 PNG</button>
+          <button type="button" class="icon-btn" title="设置"><svg width="16" height="16"><use href="#ic-gear" /></svg></button>
+        </div>
+
+        <div class="mw-main">
+          <!-- 左栏：三态（标注 / 地形画笔 / 符号库） -->
+          <div class="mw-side" id="mwSide">
+            <!-- ① 标注列表 RM3/RM4 -->
+            <div class="panel-anno">
+              <div class="side-head">
+                <svg width="15" height="15"><use href="#ic-pin" /></svg>
+                标注
+                <span class="side-head__count">12</span>
+              </div>
+              <div class="side-body">
+                <div class="side-group__label">未绑定要素 <span>2</span></div>
+                <button type="button" class="anno" data-anno="a10">
+                  <span class="anno__pin" style="color:var(--app-accent-rose)"><svg width="16" height="16"><use href="#ic-pin-fill" /></svg></span>
+                  <span class="anno__text"><span class="anno__name">落星镇</span><span class="anno__meta">未建卡 · 剧情第 12 章提到</span></span>
+                  <span class="anno__warn" style="color:var(--app-warning)"><svg width="14" height="14"><use href="#ic-warning" /></svg></span>
+                </button>
+                <button type="button" class="anno" data-anno="a11">
+                  <span class="anno__pin" style="color:var(--app-accent-teal)"><svg width="16" height="16"><use href="#ic-pin-fill" /></svg></span>
+                  <span class="anno__text"><span class="anno__name">断刃隘口</span><span class="anno__meta">未建卡</span></span>
+                  <span class="anno__warn" style="color:var(--app-warning)"><svg width="14" height="14"><use href="#ic-warning" /></svg></span>
+                </button>
+                <div class="side-empty">未绑定的地点不会同步显示名，建议一键建卡补齐。</div>
+                <button type="button" class="btn btn--sm btn--block" style="margin:2px 12px 8px"><svg width="14" height="14"><use href="#ic-plus-sm" /></svg>为 2 个地点一键建卡</button>
+
+                <div class="side-group__label">地点钉 <span>6</span></div>
+                <button type="button" class="anno is-active" data-anno="a1">
+                  <span class="anno__pin" style="color:var(--app-accent-purple)"><svg width="16" height="16"><use href="#ic-pin-fill" /></svg></span>
+                  <span class="anno__text"><span class="anno__name">云京城</span><span class="anno__meta">王都 · 已绑定要素卡</span></span>
+                </button>
+                <button type="button" class="anno" data-anno="a2">
+                  <span class="anno__pin" style="color:var(--app-accent-amber)"><svg width="16" height="16"><use href="#ic-pin-fill" /></svg></span>
+                  <span class="anno__text"><span class="anno__name">青峡关</span><span class="anno__meta">北境咽喉 · 关卡</span></span>
+                </button>
+                <button type="button" class="anno" data-anno="a3">
+                  <span class="anno__pin" style="color:var(--app-accent-green)"><svg width="16" height="16"><use href="#ic-pin-fill" /></svg></span>
+                  <span class="anno__text"><span class="anno__name">新手村</span><span class="anno__meta">主角起点 · 村庄</span></span>
+                </button>
+                <button type="button" class="anno" data-anno="a4">
+                  <span class="anno__pin" style="color:var(--app-accent-blue)"><svg width="16" height="16"><use href="#ic-pin-fill" /></svg></span>
+                  <span class="anno__text"><span class="anno__name">白沙港</span><span class="anno__meta">通商口岸 · 港口</span></span>
+                </button>
+                <button type="button" class="anno" data-anno="a5">
+                  <span class="anno__pin" style="color:var(--app-accent-purple)"><svg width="16" height="16"><use href="#ic-pin-fill" /></svg></span>
+                  <span class="anno__text"><span class="anno__name">赤砂城</span><span class="anno__meta">西荒王庭 · 城池</span></span>
+                </button>
+                <button type="button" class="anno" data-anno="a12">
+                  <span class="anno__pin" style="color:var(--app-accent-rose)"><svg width="16" height="16"><use href="#ic-pin-fill" /></svg></span>
+                  <span class="anno__text"><span class="anno__name">古战场</span><span class="anno__meta">遗迹</span></span>
+                </button>
+
+                <div class="side-group__label">区域框 <span>2</span></div>
+                <button type="button" class="anno" data-anno="a6">
+                  <span class="anno__pin" style="color:var(--app-accent-teal)"><svg width="16" height="16"><use href="#ic-frame" /></svg></span>
+                  <span class="anno__text"><span class="anno__name">北境</span><span class="anno__meta">已绑子图 · 新手镇</span></span>
+                </button>
+                <button type="button" class="anno" data-anno="a7">
+                  <span class="anno__pin" style="color:var(--app-accent-teal)"><svg width="16" height="16"><use href="#ic-frame" /></svg></span>
+                  <span class="anno__text"><span class="anno__name">西荒</span><span class="anno__meta">未绑子图</span></span>
+                </button>
+
+                <div class="side-group__label">自由标签 <span>2</span></div>
+                <button type="button" class="anno" data-anno="a8">
+                  <span class="anno__pin" style="color:var(--app-text-muted)"><svg width="16" height="16"><use href="#ic-tag" /></svg></span>
+                  <span class="anno__text"><span class="anno__name">云荒山脉</span><span class="anno__meta">自由标签</span></span>
+                </button>
+                <button type="button" class="anno" data-anno="a9">
+                  <span class="anno__pin" style="color:var(--app-text-muted)"><svg width="16" height="16"><use href="#ic-tag" /></svg></span>
+                  <span class="anno__text"><span class="anno__name">无尽之海</span><span class="anno__meta">自由标签 · 斜体</span></span>
+                </button>
+              </div>
+            </div>
+
+            <!-- ② 地形画笔 RM9 -->
+            <div class="panel-terrain">
+              <div class="side-head">
+                <svg width="15" height="15"><use href="#ic-brush" /></svg>
+                地形画笔
+                <span class="side-head__count">12 类</span>
+              </div>
+              <div class="side-body">
+                <div class="side-section-title">铺满型 <i>· 点选后涂刷栅格</i></div>
+                <div class="terrain-grid" id="paletteFill"></div>
+                <div class="side-section-title">叠加型 <i>· 符号层，不影响底质</i></div>
+                <div class="terrain-grid" id="paletteOver"></div>
+                <div class="side-section-title">笔刷</div>
+                <div class="brush-row">
+                  <button type="button" class="btn btn--sm is-on">1 格</button>
+                  <button type="button" class="btn btn--sm">3 格</button>
+                  <button type="button" class="btn btn--sm">5 格</button>
+                </div>
+                <div class="brush-row">
+                  <button type="button" class="btn btn--sm is-on">圆形</button>
+                  <button type="button" class="btn btn--sm">矩形填充</button>
+                </div>
+                <div class="brush-row" style="padding-top:6px">
+                  <button type="button" class="btn btn--sm" style="flex:1"><svg width="14" height="14"><use href="#ic-eye" /></svg>吸管</button>
+                  <button type="button" class="btn btn--sm" style="flex:1"><svg width="14" height="14"><use href="#ic-undo" /></svg>恢复草原</button>
+                </div>
+                <div class="field-note field-note--info" style="margin:10px 12px 0">涂刷即时渲染，局部重绘 ≤ 16ms/帧；每次落笔入撤销栈。</div>
+              </div>
+            </div>
+
+            <!-- ③ 符号库 RM13 -->
+            <div class="panel-symbol">
+              <div class="side-head">
+                <svg width="15" height="15"><use href="#ic-stamp" /></svg>
+                符号库
+                <span class="side-head__count">拖入画布</span>
+              </div>
+              <div class="side-body">
+                <div class="side-section-title">地点 <i>· 8</i></div>
+                <div class="sym-grid" id="symPlaces"></div>
+                <div class="side-section-title">地貌装饰 <i>· 8</i></div>
+                <div class="sym-grid" id="symDecor"></div>
+                <div class="side-section-title">对象 <i>· 当前 7 个 / 软上限 500</i></div>
+                <div class="layer-list" style="padding:0 12px">
+                  <div class="layer-item is-selected"><svg width="13" height="13"><use href="#ic-stamp" /></svg>神殿（选中）<span>z 12</span></div>
+                  <div class="layer-item"><svg width="13" height="13"><use href="#ic-stamp" /></svg>松树 ×3<span>z 11</span></div>
+                  <div class="layer-item"><svg width="13" height="13"><use href="#ic-group" /></svg>编组：商队<span>z 9</span></div>
+                  <div class="layer-item"><svg width="13" height="13"><use href="#ic-stamp" /></svg>帐篷<span>z 8</span></div>
+                </div>
+                <div class="check-row" style="padding:8px 12px 0"><input type="checkbox" id="magnetOn" checked /><label for="magnetOn">对齐磁吸（可在设置关闭）</label></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 中央画布 -->
+          <div class="mw-canvas">
+            <div class="cv" id="cvHost"></div>
+
+            <!-- 比例尺：世界尺度 1 格 = 25 里，随缩放实时换算 -->
+            <div class="scale-bar" id="scaleBar">
+              <svg id="scaleBarSvg" width="150" height="30"></svg>
+              <div class="scale-bar__meta" id="scaleBarMeta">1 格 = 25 里 · 全图 1600×1000 里</div>
+            </div>
+
+            <div class="tool-rail">
+              <button type="button" class="tool-rail__btn is-on" data-tool="select" title="选择 V"><svg width="17" height="17"><use href="#ic-select" /></svg></button>
+              <button type="button" class="tool-rail__btn" data-tool="pan" title="抓手 H / 空格拖拽"><svg width="17" height="17"><use href="#ic-hand" /></svg></button>
+              <div class="tool-rail__sep"></div>
+              <button type="button" class="tool-rail__btn" data-tool="brush" title="地形画笔 B"><svg width="17" height="17"><use href="#ic-brush" /></svg></button>
+              <button type="button" class="tool-rail__btn" data-tool="stamp" title="贴章 S"><svg width="17" height="17"><use href="#ic-stamp" /></svg></button>
+              <div class="tool-rail__sep"></div>
+              <button type="button" class="tool-rail__btn" data-tool="pin" title="地点钉 P"><svg width="17" height="17"><use href="#ic-pin" /></svg></button>
+              <button type="button" class="tool-rail__btn" data-tool="area" title="区域框 R"><svg width="17" height="17"><use href="#ic-frame" /></svg></button>
+              <button type="button" class="tool-rail__btn" data-tool="label" title="自由标签 T"><svg width="17" height="17"><use href="#ic-tag" /></svg></button>
+              <button type="button" class="tool-rail__btn" data-tool="line" title="连线 L"><svg width="17" height="17"><use href="#ic-link" /></svg></button>
+            </div>
+
+            <div class="crumb">
+              <button type="button" class="crumb__up" title="返回上级 Esc"><svg width="14" height="14"><use href="#ic-chevron-up" /></svg></button>
+              <button type="button">云荒大陆</button>
+              <span class="crumb__sep">›</span>
+              <button type="button">北境</button>
+              <span class="crumb__sep">›</span>
+              <button type="button" class="is-current">新手镇</button>
+            </div>
+
+            <div class="map-hint" id="mapHint">滚轮缩放 · 空格拖拽平移 · Ctrl+Z 撤销</div>
+
+            <div class="zoom-bar">
+              <button type="button" class="icon-btn" id="zoomOut"><svg width="15" height="15"><use href="#ic-minus" /></svg></button>
+              <span class="zoom-bar__val" id="zoomVal">65%</span>
+              <button type="button" class="icon-btn" id="zoomIn"><svg width="15" height="15"><use href="#ic-plus" /></svg></button>
+              <div class="tool-rail__sep" style="margin:0 2px;height:18px"></div>
+              <button type="button" class="icon-btn" id="zoomFit" title="适应画布"><svg width="15" height="15"><use href="#ic-target" /></svg></button>
+            </div>
+
+            <button type="button" class="map-legend-chip" data-goto="s8"><svg width="14" height="14"><use href="#ic-map" /></svg>地形图例</button>
+
+            <!-- RM11 设定卡 popover（内容由 JS 按选中的绑定标注动态渲染） -->
+            <div class="pop" id="entityPop" style="display:none"></div>
+
+            <!-- RM11 边界：编辑器未开的提示（不自动拉起窗口） -->
+            <div class="toastify only-s6">
+              <span class="toastify__icon"><svg width="16" height="16"><use href="#ic-warning" /></svg></span>
+              <span>编辑器当前未打开，可在作品页启动后重试</span>
+              <button type="button" class="btn btn--sm">打开编辑器</button>
+            </div>
+
+            <!-- RM8 随机初始化 -->
+            <div class="mask modal-gen is-scene-modal">
+              <div class="modal">
+                <div class="modal__head">
+                  <div>
+                    <h3>随机生成地形</h3>
+                    <p>勾选地形约束后一键出图 · 同 seed + 同约束必出同图</p>
+                  </div>
+                  <button type="button" class="icon-btn modal__close" data-goto="s1"><svg width="16" height="16"><use href="#ic-close" /></svg></button>
+                </div>
+                <div class="modal__body">
+                  <div class="gen-left">
+                    <div class="side-section-title" style="padding:0 0 6px">地形约束模板 <i>· 可多选</i></div>
+                    <button type="button" class="tpl is-on" data-tpl="threeSea"><span class="tpl__box"><svg width="11" height="11"><use href="#ic-check" /></svg></span><span class="tpl__text"><b>三面环海</b><span>三侧边缘降为海</span></span></button>
+                    <button type="button" class="tpl is-on" data-tpl="northSnow"><span class="tpl__box"><svg width="11" height="11"><use href="#ic-check" /></svg></span><span class="tpl__text"><b>北境雪原</b><span>顶部转寒冷带</span></span></button>
+                    <button type="button" class="tpl" data-tpl="westDesert"><span class="tpl__box"><svg width="11" height="11"><use href="#ic-check" /></svg></span><span class="tpl__text"><b>西面沙漠</b><span>西侧湿度骤降</span></span></button>
+                    <button type="button" class="tpl" data-tpl="centerLake"><span class="tpl__box"><svg width="11" height="11"><use href="#ic-check" /></svg></span><span class="tpl__text"><b>中央大湖</b><span>内陆下陷成湖</span></span></button>
+                    <button type="button" class="tpl" data-tpl="bigRiver"><span class="tpl__box"><svg width="11" height="11"><use href="#ic-check" /></svg></span><span class="tpl__text"><b>大河贯境</b><span>主脉穿境入海</span></span></button>
+                    <button type="button" class="tpl" data-tpl="island"><span class="tpl__box"><svg width="11" height="11"><use href="#ic-check" /></svg></span><span class="tpl__text"><b>四面环海</b><span>孤岛形态</span></span></button>
+                    <button type="button" class="tpl" data-tpl="barren"><span class="tpl__box"><svg width="11" height="11"><use href="#ic-check" /></svg></span><span class="tpl__text"><b>荒芜大陆</b><span>全域少林多荒漠</span></span></button>
+                    <div class="field-note" style="margin-top:8px">约束只管大格局，细节交给噪声 + 手改；不满意就「换一批」。</div>
+                  </div>
+                  <div class="gen-right">
+                    <div class="gen-preview" id="genPreview"><span class="gen-preview__tag" id="genTag">seed · 4F2A19</span></div>
+                    <div class="thumb-row" id="genThumbs"></div>
+                    <div class="seed-row">
+                      <span class="dock__hint">seed</span>
+                      <input class="input" id="genSeed" value="4F2A19" readonly />
+                      <button type="button" class="btn btn--sm"><svg width="14" height="14"><use href="#ic-lock" /></svg>锁定</button>
+                    </div>
+                    <div class="check-row" style="font-size:12px;color:var(--app-text-muted)">采用后仍可用地形画笔逐格手改；seed 随图存档，随时重生成同一张。</div>
+                  </div>
+                </div>
+                <div class="modal__foot">
+                  <span class="dock__hint" id="genCounter">本批已生成 5 张候选</span>
+                  <div class="top-spacer"></div>
+                  <button type="button" class="btn" data-goto="s1">取消</button>
+                  <button type="button" class="btn" id="genReroll"><svg width="14" height="14"><use href="#ic-refresh" /></svg>换一批</button>
+                  <button type="button" class="btn btn--primary" id="genAdopt"><svg width="14" height="14"><use href="#ic-check" /></svg>采用并落图</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- RM6 导出 PNG -->
+            <div class="mask modal-exp is-scene-modal">
+              <div class="modal modal--slim">
+                <div class="modal__head">
+                  <div>
+                    <h3>导出地图 PNG</h3>
+                    <p>走系统保存对话框，导出后可当插图直接放进作品</p>
+                  </div>
+                  <button type="button" class="icon-btn modal__close" data-goto="s1"><svg width="16" height="16"><use href="#ic-close" /></svg></button>
+                </div>
+                <div class="modal__body" style="display:block;padding:14px 16px;overflow-y:auto">
+                  <div class="exp-grid">
+                    <label>导出范围</label>
+                    <div class="exp-radio"><button type="button" class="btn btn--sm is-on">当前视图</button><button type="button" class="btn btn--sm">整张地图</button></div>
+                    <label>倍率</label>
+                    <div class="exp-radio"><button type="button" class="btn btn--sm">1×</button><button type="button" class="btn btn--sm is-on">2×</button><button type="button" class="btn btn--sm">4×</button></div>
+                    <label>输出尺寸</label>
+                    <div><span class="dock__hint" id="expSize">2048 × 1280 px</span></div>
+                  </div>
+                  <div style="border-top:1px solid var(--app-border);margin-top:12px;padding-top:8px">
+                    <div class="check-row"><input type="checkbox" id="expLegend" checked /><label for="expLegend">包含标注列表（图例）</label></div>
+                    <div class="check-row"><input type="checkbox" id="expAnno" checked /><label for="expAnno">包含地点标注</label></div>
+                    <div class="check-row"><input type="checkbox" id="expTerrain" checked /><label for="expTerrain">包含地形底图</label></div>
+                  </div>
+                  <div class="exp-preview" id="expPreview" style="margin-top:10px"></div>
+                </div>
+                <div class="modal__foot">
+                  <span class="dock__hint">预计 1.2 MB</span>
+                  <div class="top-spacer"></div>
+                  <button type="button" class="btn" data-goto="s1">取消</button>
+                  <button type="button" class="btn btn--primary"><svg width="14" height="14"><use href="#ic-download" /></svg>导出</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- RM14 过渡时序三帧 -->
+            <div class="transition-strip" id="transitionStrip"></div>
+          </div>
+
+          <!-- 右栏：属性面板 / 贴章面板 -->
+          <div class="mw-props" id="mwProps">
+            <div class="panel-props" id="propsPanel"></div>
+            <div class="panel-stamp" id="stampPanel">
+              <div class="props-head">
+                <svg width="15" height="15" style="color:var(--app-primary)"><use href="#ic-stamp" /></svg>
+                贴章对象
+                <div class="top-spacer"></div>
+                <span class="chip chip--primary">神殿</span>
+              </div>
+              <div class="props-body">
+                <div class="side-section-title" style="padding:0 0 6px">变换 <i>· 实时预览，Shift 吸附 15°</i></div>
+                <div class="xform-grid">
+                  <div class="field"><div class="field__label">X</div><input class="input" value="612" /></div>
+                  <div class="field"><div class="field__label">Y</div><input class="input" value="338" /></div>
+                  <div class="field"><div class="field__label">旋转<em>18°</em></div><input class="input" value="18" /></div>
+                  <div class="field"><div class="field__label">缩放<em>1.24×</em></div><input class="input" value="1.24" /></div>
+                </div>
+                <div class="side-section-title" style="padding:6px 0 6px">层级 <i>· 前后遮挡序</i></div>
+                <div style="display:flex;gap:6px">
+                  <button type="button" class="btn btn--sm" style="flex:1"><svg width="13" height="13"><use href="#ic-layer-up" /></svg>置顶</button>
+                  <button type="button" class="btn btn--sm" style="flex:1">上移</button>
+                  <button type="button" class="btn btn--sm" style="flex:1">下移</button>
+                  <button type="button" class="btn btn--sm" style="flex:1">置底</button>
+                </div>
+                <div class="side-section-title" style="padding:12px 0 6px">编组</div>
+                <div class="child-card">
+                  <span style="color:var(--app-primary);display:inline-flex"><svg width="16" height="16"><use href="#ic-group" /></svg></span>
+                  <span class="child-card__text"><b>商队编组</b><span>4 个对象 · 相对关系已锁定</span></span>
+                  <div class="top-spacer"></div>
+                  <button type="button" class="btn btn--sm">解组</button>
+                </div>
+                <div class="check-row" style="padding-top:10px"><input type="checkbox" id="flipH" /><label for="flipH">水平翻转</label></div>
+                <div class="check-row"><input type="checkbox" id="magnet2" checked /><label for="magnet2">对齐磁吸（可在设置关闭）</label></div>
+                <div class="field-note" style="margin-top:10px">贴章是预制符号对象：自由摆放 / 旋转 / 缩放 / 遮挡；不做自由笔刷塑形与路径编辑。</div>
+              </div>
+              <div class="props-foot">
+                <button type="button" class="btn btn--sm" style="flex:1"><svg width="14" height="14"><use href="#ic-group" /></svg>编组</button>
+                <button type="button" class="btn btn--sm" style="flex:1;color:var(--app-error)">删除</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="mw-status">
+          <span>格坐标 <b id="stCell">28, 17</b></span>
+          <span>缩放 <b id="stZoom">65%</b></span>
+          <span>标注 <b>12</b></span>
+          <span>贴章 <b>7</b></span>
+          <div class="mw-status__spacer"></div>
+          <span id="stScaleHint">64×40 格 · 1 格 = 25 里 · 全图 1600×1000 里</span>
+          <span class="mw-status__save">已保存 · 19:42</span>
+        </div>
+
+        <!-- RM8/§5.1 图例（M2 美术验收基准） -->
+        <div class="legend-view" id="legendView"></div>
+      </div>
+    </div>
+    <p class="frame-note" id="mapNote"></p>
+  </div>
+
+  <!-- ══ WorkerWindow 小说编辑器切片（仅双窗联动场景） ══ -->
+  <div class="frame-wrap editor-frame" id="editorFrame">
+    <div class="shell" id="editorShell" data-theme="aurora">
+      <div class="window-header">
+        <div class="window-header__title">
+          <svg width="16" height="16"><use href="#ic-book" /></svg>
+          <span class="window-header__title-text">小说 · 剑起云荒</span>
+          <div class="window-header__badge"><span class="chip">第三卷 / 第七章 雪夜出关</span></div>
+        </div>
+        <div class="window-header__controls">
+          <button type="button" class="window-header__btn" aria-label="最小化"><svg width="10" height="10"><path d="M0 5h10" stroke="currentColor" stroke-width="1" /></svg></button>
+          <button type="button" class="window-header__btn" aria-label="最大化"><svg width="10" height="10"><rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1" /></svg></button>
+          <button type="button" class="window-header__btn window-header__btn--close" aria-label="关闭"><svg width="10" height="10"><path d="M0 0l10 10M10 0L0 10" stroke="currentColor" stroke-width="1" /></svg></button>
+        </div>
+      </div>
+      <div class="ed">
+        <div class="mw-top">
+          <button type="button" class="icon-btn"><svg width="16" height="16"><use href="#ic-book" /></svg></button>
+          <span style="font-size:14px;font-weight:600">剑起云荒</span>
+          <span class="chip">第三卷</span>
+          <div class="top-spacer"></div>
+          <span class="chip chip--success"><span class="chip__dot"></span>已保存 19:42</span>
+          <button type="button" class="btn btn--sm" style="color:var(--app-primary);border-color:var(--app-primary)"><svg width="14" height="14"><use href="#ic-map" /></svg>打开地图窗</button>
+          <button type="button" class="icon-btn"><svg width="16" height="16"><use href="#ic-gear" /></svg></button>
+        </div>
+        <div class="ed-main">
+          <div class="ed-rail">
+            <div class="side-group__label" style="padding-left:4px">第三卷 <span>12 章</span></div>
+            <div class="ed-node">第六章 风雪将至<i>3,120</i></div>
+            <div class="ed-node is-active">第七章 雪夜出关<i>2,860</i></div>
+            <div class="ed-node">第八章 青峡关外<i>1,240</i></div>
+            <div class="side-group__label" style="padding-left:4px">第四卷 <span>9 章</span></div>
+            <div class="ed-node">第一章 云京来信<i>—</i></div>
+          </div>
+          <div class="ed-paper">
+            <p class="ed-paper__title">第七章 雪夜出关</p>
+            <p>北风卷着碎雪从关墙的豁口灌进来，沈昭把斗篷的兜帽又往下压了压。远处<span class="ed-hl">青峡关</span>的灯次第亮起，像一条被冻住的河。</p>
+            <p>他回头望了一眼来路——三个月前他从<span class="ed-hl">新手村</span>出发，一路向北，穿过<span class="ed-hl">云荒山脉</span>的余脉，如今终于站在了这道关口之前。</p>
+            <p>“再往前，就是北境了。”老兵把酒囊递过来，“过了关，可就没人替你收尸了。”</p>
+          </div>
+          <div class="ed-support">
+            <div class="side-group__label" style="padding-left:0">工具</div>
+            <div class="tool-card">
+              <span class="tool-card__icon"><svg width="17" height="17"><use href="#ic-map" /></svg></span>
+              <span class="tool-card__text"><b>云荒大陆</b><span>已绑定主地图 · 12 标注</span></span>
+              <div class="top-spacer"></div>
+              <button type="button" class="btn btn--sm btn--primary">打开</button>
+            </div>
+            <div class="scene-field">
+              <div class="scene-field__label"><svg width="13" height="13"><use href="#ic-pin" /></svg>当前场景地点</div>
+              <div class="scene-field__value"><span style="color:var(--app-accent-amber);display:inline-flex"><svg width="15" height="15"><use href="#ic-pin-fill" /></svg></span>青峡关</div>
+              <div class="pop__row" style="padding-top:4px"><em style="flex:0 0 auto">→</em><span style="font-size:11.5px">设置后广播至地图窗，标注自动高亮并居中</span></div>
+            </div>
+            <div class="side-group__label" style="padding-left:0">本书地点</div>
+            <div class="layer-item is-selected"><span style="color:var(--app-accent-amber);display:inline-flex"><svg width="13" height="13"><use href="#ic-pin-fill" /></svg></span>青峡关<span>当前</span></div>
+            <div class="layer-item"><span style="color:var(--app-accent-purple);display:inline-flex"><svg width="13" height="13"><use href="#ic-pin-fill" /></svg></span>云京城</div>
+            <div class="layer-item"><span style="color:var(--app-accent-green);display:inline-flex"><svg width="13" height="13"><use href="#ic-pin-fill" /></svg></span>新手村</div>
+          </div>
+        </div>
+        <div class="mw-status">
+          <span>本章 <b>2,860</b> 字</span>
+          <span>今日 <b>+1,204</b></span>
+          <div class="mw-status__spacer"></div>
+          <span>19:42</span>
+        </div>
+      </div>
+    </div>
+    <p class="frame-note">WorkerWindow 小说编辑器 · RM7 顶栏「打开地图窗」入口</p>
+  </div>
+
+  <div class="spec-strip" id="specStrip"></div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════════
+   MapWindow 高保真原型脚本
+   1) 地形符号牌库（12 类 → SVG pattern 复用，DOM 数量恒定）
+   2) 种子化地形生成（value noise + 约束掩码 + 河流下坡刻蚀）→ RM8
+   3) 画布渲染 / 缩放平移 / 标注选中 / 画笔涂刷 → RM2 RM3 RM9
+   4) 场景切换（8 幕）与联动演示 → RM5 RM10 RM11 RM13 RM14
+   ═══════════════════════════════════════════════════════════════════════ */
+(function () {
+  "use strict";
+
+  var $ = function (sel, root) { return (root || document).querySelector(sel); };
+  var $$ = function (sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); };
+  var clamp01 = function (v) { return v < 0 ? 0 : v > 1 ? 1 : v; };
+  var R = function (n, d) { return Number(n.toFixed(d === undefined ? 2 : d)); };
+
+  /* ─── 1. 随机与噪声 ───────────────────────────────────────────────── */
+  function hashSeed(str) {
+    var h = 2166136261;
+    for (var i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return h >>> 0;
+  }
+  function rnd2(x, y, seed) {
+    var h = Math.imul(x | 0, 374761393) + Math.imul(y | 0, 668265263) + Math.imul(seed | 0, 2246822519);
+    h = Math.imul(h ^ (h >>> 13), 1274126177);
+    return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+  }
+  function fade(t) { return t * t * (3 - 2 * t); }
+  function vnoise(x, y, seed) {
+    var xi = Math.floor(x), yi = Math.floor(y);
+    var xf = x - xi, yf = y - yi;
+    var a = rnd2(xi, yi, seed), b = rnd2(xi + 1, yi, seed), c = rnd2(xi, yi + 1, seed), d = rnd2(xi + 1, yi + 1, seed);
+    var u = fade(xf), v = fade(yf);
+    return a * (1 - u) * (1 - v) + b * u * (1 - v) + c * (1 - u) * v + d * u * v;
+  }
+  function fbm(x, y, seed, oct) {
+    var amp = 1, freq = 1, sum = 0, norm = 0;
+    oct = oct || 4;
+    for (var i = 0; i < oct; i++) {
+      sum += amp * vnoise(x * freq, y * freq, seed + i * 1013);
+      norm += amp; amp *= 0.5; freq *= 2;
+    }
+    return sum / norm;
+  }
+
+  /* ─── 2. 地形符号：9 铺满型 pattern + 3 叠加型 glyph ──────────────── */
+  var CELL = 16;
+  /* 世界尺度：1 格 = 25 里（与连线标注「三百二十里 / 六百里」自洽） */
+  var LI_PER_CELL = 25;
+  var WORLD_SPAN = function (w) { return { x: w.cols * LI_PER_CELL, y: w.rows * LI_PER_CELL }; };
+
+  function patSea(st) {
+    if (st === "C") {
+      return '<pattern id="pat-sea" width="28" height="16" patternUnits="userSpaceOnUse">' +
+        '<rect width="28" height="16" fill="#2f6ca8"/>' +
+        '<path d="M1 6h8M13 6h8M5 12h8M17 12h8" stroke="rgba(255,255,255,.22)" stroke-width="1.4" stroke-linecap="round"/></pattern>';
+    }
+    var amp = st === "B" ? 4.4 : 3.4;
+    return '<pattern id="pat-sea" width="40" height="20" patternUnits="userSpaceOnUse">' +
+      '<rect width="40" height="20" fill="#2f6ca8"/>' +
+      '<path d="M1 6.5q4.5 -' + amp + ' 9 0t9 0t9 0t9 0" fill="none" stroke="rgba(255,255,255,.26)" stroke-width="1.5" stroke-linecap="round"/>' +
+      '<path d="M7 14.5q4.5 -' + (amp - 0.5) + ' 9 0t9 0t9 0t9 0" fill="none" stroke="rgba(255,255,255,.17)" stroke-width="1.4" stroke-linecap="round"/></pattern>';
+  }
+
+  function patLake() {
+    return '<pattern id="pat-lake" width="20" height="20" patternUnits="userSpaceOnUse">' +
+      '<rect width="20" height="20" fill="#7cb4e0"/>' +
+      '<g stroke="rgba(255,255,255,.52)" stroke-width="1.1" stroke-linecap="round">' +
+      '<path d="M2 4h3.6"/><path d="M11 3h4.4"/><path d="M3 10h4"/><path d="M12.5 11h3.6"/>' +
+      '<path d="M6 16.5h3.6"/><path d="M14 17h4.4"/><path d="M0.5 15h2"/><path d="M16.5 7h2.4"/></g></pattern>';
+  }
+
+  function patRiver() {
+    return '<pattern id="pat-river" width="32" height="16" patternUnits="userSpaceOnUse">' +
+      '<rect width="32" height="16" fill="#4f9ad6"/>' +
+      '<path d="M-4 8 C 2 3, 10 13, 16 8 S 26 3, 36 8" fill="none" stroke="rgba(255,255,255,.34)" stroke-width="1.6"/>' +
+      '<path d="M-4 13 C 2 8, 10 18, 16 13 S 26 8, 36 13" fill="none" stroke="rgba(255,255,255,.18)" stroke-width="1.2"/></pattern>';
+  }
+
+  function patDesert() {
+    return '<pattern id="pat-desert" width="48" height="24" patternUnits="userSpaceOnUse">' +
+      '<rect width="48" height="24" fill="#e6c88b"/>' +
+      '<g fill="none" stroke="#c9a75e" stroke-width="1.6" stroke-linecap="round">' +
+      '<path d="M2 17q7 -10 14 0"/><path d="M19 17q7 -10 14 0"/><path d="M36 17q7 -10 14 0"/></g>' +
+      '<g fill="none" stroke="#dcc188" stroke-width="1.2" stroke-linecap="round" opacity=".85">' +
+      '<path d="M6 9q5 -7 10 0"/><path d="M27 9q5 -7 10 0"/></g></pattern>';
+  }
+
+  function patGrass() {
+    return '<pattern id="pat-grass" width="36" height="36" patternUnits="userSpaceOnUse">' +
+      '<rect width="36" height="36" fill="#a7cd7c"/>' +
+      '<g stroke="#86b45c" stroke-width="1.3" stroke-linecap="round">' +
+      '<path d="M7 13v-4.4"/><path d="M8.4 13l2.6 -3.6"/><path d="M5.6 13l-2.6 -3.6"/>' +
+      '<path d="M23 27v-4.4"/><path d="M24.4 27l2.6 -3.6"/><path d="M21.6 27l-2.6 -3.6"/>' +
+      '<path d="M29 10v-3.4"/><path d="M30.2 10l2.2 -3"/></g></pattern>';
+  }
+
+  function treeA(x, y, s) { return '<circle cx="' + x + '" cy="' + y + '" r="' + (5.2 * s) + '" fill="#2f6b3a"/><rect x="' + (x - 1) + '" y="' + (y + 3.6 * s) + '" width="2" height="' + (4.4 * s) + '" rx="1" fill="#3b5136"/>'; }
+  function treeB(x, y, s) { return '<path d="M' + x + ' ' + (y - 7.4 * s) + ' L' + (x + 5.2 * s) + ' ' + (y + 4 * s) + ' L' + (x - 5.2 * s) + ' ' + (y + 4 * s) + ' Z" fill="#2b5f34"/><rect x="' + (x - 1) + '" y="' + (y + 4 * s) + '" width="2" height="' + (3.4 * s) + '" fill="#4d3c29"/>'; }
+  function treeC(x, y, s) { return '<circle cx="' + x + '" cy="' + y + '" r="' + (4.2 * s) + '" fill="#2f6b3a" opacity=".9"/>'; }
+
+  function patForest(st) {
+    var t = st === "B" ? treeB : st === "C" ? treeC : treeA;
+    var g = "";
+    /* 成簇散布 + 簇间留林间空地 */
+    var pts = [[9, 10, 1], [17, 8, .82], [13, 18, .9], [30, 12, 1], [38, 9, .78], [34, 20, .88], [44, 26, .95], [22, 30, .85], [50, 17, .8]];
+    for (var i = 0; i < pts.length; i++) g += t(pts[i][0], pts[i][1], pts[i][2]);
+    return '<pattern id="pat-forest" width="56" height="42" patternUnits="userSpaceOnUse">' +
+      '<rect width="56" height="42" fill="#74a95a"/>' + g + '</pattern>';
+  }
+
+  function mtnA(x, y, s) {
+    var w = 11 * s, h = 15 * s;
+    return '<path d="M' + (x - w) + ' ' + (y + h / 2) + ' L' + x + ' ' + (y - h / 2) + ' L' + (x + w) + ' ' + (y + h / 2) + ' Z" fill="#8a7159"/>' +
+      '<path d="M' + x + ' ' + (y - h / 2) + ' L' + (x - w * 0.34) + ' ' + (y + h / 2) + '" fill="none" stroke="#c2ad91" stroke-width="1.1" stroke-linecap="round"/>';
+  }
+  function mtnB(x, y, s) {
+    var w = 10 * s, h = 17 * s;
+    return '<path d="M' + (x - w) + ' ' + (y + h / 2) + ' L' + (x - w * 0.45) + ' ' + (y - h * 0.1) + ' L' + (x - w * 0.1) + ' ' + (y + h * 0.2) + ' L' + x + ' ' + (y - h / 2) + ' L' + (x + w * 0.35) + ' ' + (y + h * 0.18) + ' L' + (x + w) + ' ' + (y + h / 2) + ' Z" fill="#8a7159"/>';
+  }
+  function mtnC(x, y, s) {
+    var w = 11 * s;
+    return '<path d="M' + (x - w) + ' ' + (y + 7 * s) + ' q' + (w) + ' -' + (15 * s) + ' ' + (2 * w) + ' 0 Z" fill="#8a7159"/>';
+  }
+
+  function patMountain(st, snow) {
+    var f = st === "B" ? mtnB : st === "C" ? mtnC : mtnA;
+    var base = snow ? "#a9b8c9" : "#a58d72";
+    var body = snow ? "#8091a8" : "#8a7159";
+    var g = "";
+    var pts = [[14, 16, 1], [34, 22, .82], [26, 9, .7], [46, 14, .9]];
+    for (var i = 0; i < pts.length; i++) g += f(pts[i][0], pts[i][1], pts[i][2]).split("#8a7159").join(body);
+    /* 山脚阴影线 */
+    g += '<path d="M8 30h40" stroke="rgba(70,52,38,.22)" stroke-width="1.2" stroke-linecap="round"/>';
+    if (snow) {
+      g = g.replace(/#8091a8/g, "#8091a8");
+      /* 峰顶覆白：在每座山尖叠加白色小三角（占符号上 1/3） */
+      var caps = "";
+      for (var j = 0; j < pts.length; j++) {
+        var x = pts[j][0], y = pts[j][1], s = pts[j][2];
+        var w = 11 * s, h = 15 * s;
+        caps += '<path d="M' + (x - w * 0.34) + ' ' + (y - h * 0.16) + ' L' + x + ' ' + (y - h / 2) + ' L' + (x + w * 0.34) + ' ' + (y - h * 0.16) + ' Z" fill="#f4f8fb"/>';
+      }
+      g += caps;
+    }
+    return '<pattern id="' + (snow ? "pat-snowmtn" : "pat-mountain") + '" width="58" height="40" patternUnits="userSpaceOnUse">' +
+      '<rect width="58" height="40" fill="' + base + '"/>' + g + '</pattern>';
+  }
+
+  function patSnowfield() {
+    return '<pattern id="pat-snowfield" width="40" height="40" patternUnits="userSpaceOnUse">' +
+      '<rect width="40" height="40" fill="#e9f0f6"/>' +
+      '<g stroke="#bcd3e6" stroke-width="1.1" stroke-linecap="round">' +
+      '<path d="M8 6l0 3M6.5 7.5h3"/><path d="M26 15l0 3M24.5 16.5h3"/><path d="M15 28l0 3M13.5 29.5h3"/>' +
+      '<path d="M33 32l0 2.6M31.7 33.3h2.6"/><path d="M4 22l0 2.4M2.8 23.2h2.4"/></g></pattern>';
+  }
+
+  function buildDefs(st) {
+    return patSea(st) + patLake() + patRiver() + patDesert() + patGrass() +
+      patForest(st) + patMountain(st, false) + patMountain(st, true) + patSnowfield() +
+      /* 叠加型：以 glyph 定义，供图例与画布共用 */
+      '<g id="lg-cliff"><path d="M-16 0 L16 0" stroke="#6b5641" stroke-width="2.6" stroke-linecap="round"/>' +
+      '<g stroke="#6b5641" stroke-width="1.6" stroke-linecap="round"><path d="M-12 0v5M-6 0v5M0 0v5M6 0v5M12 0v5"/></g></g>' +
+      '<g id="lg-island"><ellipse cx="0" cy="0" rx="13" ry="8.5" fill="#a7cd7c"/>' +
+      '<ellipse cx="0" cy="0" rx="13" ry="8.5" fill="none" stroke="#e6d5a4" stroke-width="3"/>' +
+      '<circle cx="-3" cy="-1" r="3.4" fill="#2f6b3a"/></g>' +
+      '<g id="lg-waterfall"><g stroke="#ffffff" stroke-width="2.2" stroke-linecap="round"><path d="M-3 -8v10M3 -8v10"/></g>' +
+      '<circle cx="-5" cy="6" r="1.5" fill="#ffffff"/><circle cx="0" cy="7.5" r="1.2" fill="#ffffff"/><circle cx="5" cy="6" r="1.5" fill="#ffffff"/></g>';
+  }
+
+  /* ─── 3. 地形生成（RM8 程序化纯函数） ─────────────────────────────── */
+  var T_SEA = 0, T_LAKE = 1, T_RIVER = 2, T_DESERT = 3, T_GRASS = 4, T_FOREST = 5, T_MOUNTAIN = 6, T_SNOW = 7, T_SNOWFIELD = 8;
+  var TER_KEY = ["sea", "lake", "river", "desert", "grass", "forest", "mountain", "snowmtn", "snowfield"];
+  var TER_META = [
+    { key: "sea", name: "大海", desc: "两行交错的水平短弧浪纹，远看像静态的“会动的海”" },
+    { key: "lake", name: "湖泊", desc: "细密点状涟漪，比海浪更短、更浅、更静" },
+    { key: "river", name: "河流", desc: "平滑曲线水带：上游细、下游渐宽，支流汇入，两岸留浅色岸线" },
+    { key: "desert", name: "沙漠", desc: "同向排列的新月形沙丘弧，风纹方向一致" },
+    { key: "grass", name: "草原", desc: "稀疏草叶短线，散布密度最低、视觉最空" },
+    { key: "forest", name: "森林", desc: "树木符号成簇散布，簇间留林间空地" },
+    { key: "mountain", name: "山地", desc: "折线山形符号连绵成脊，带山脚阴影线" },
+    { key: "snowmtn", name: "雪山", desc: "同山形符号，峰顶覆白，雪帽占符号上 1/3" },
+    { key: "snowfield", name: "雪原", desc: "极稀疏淡蓝冰晶点，几乎纯白" }
+  ];
+
+  /* 陆地＝高潮位以上；相对高度 + 山脉走向决定山地，湿度决定林草荒，寒冷带决定雪 */
+  /* flat = 城镇尺度子图：压平高程，不再生成山地雪峰 */
+  function pickLand(h, seaLevel, mo, cold, rg, flat) {
+    var q = clamp01((h - seaLevel) / (1 - seaLevel)) * (flat ? 0.55 : 1);
+    /* 寒冷带：大部分铺雪原，脊线凸起处才长雪山，避免整片北方糊成白雪块 */
+    if (cold > 0.52) return (rg > 0.5 || q > 0.86) ? T_SNOW : T_SNOWFIELD;
+    if (q > 0.58 && rg > 0.44) return T_MOUNTAIN;
+    if (q > 0.86) return cold > 0.26 ? T_SNOW : T_MOUNTAIN;
+    if (cold > 0.42) return T_SNOWFIELD;
+    if (mo < 0.33) return T_DESERT;
+    if (mo > 0.57) return T_FOREST;
+    return T_GRASS;
+  }
+
+  function buildWorld(opt) {
+    var cols = opt.cols, rows = opt.rows, seed = opt.seed, tpl = opt.templates || {};
+    var s = hashSeed(seed);
+    var n = cols * rows;
+    var cells = new Uint8Array(n);
+    var elev = new Float32Array(n);
+    var mo = new Float32Array(n);
+    var cold = new Float32Array(n);
+    var ridge = new Float32Array(n);
+    var aspect = rows / cols;
+    var FREQ = opt.freq || 5.0;
+    var i, c, r, nx, ny, u, v, shape, m, cd;
+
+    /* ① 高程场：噪声负责细节，大陆轮廓负责大格局 */
+    var lo = Infinity, hi = -Infinity;
+    for (r = 0; r < rows; r++) {
+      for (c = 0; c < cols; c++) {
+        i = r * cols + c;
+        nx = cols > 1 ? c / (cols - 1) : 0.5;
+        ny = rows > 1 ? r / (rows - 1) : 0.5;
+        u = nx * FREQ; v = ny * FREQ * aspect;
+
+        /* 基础大陆形状：椭圆衰减，边缘自然入海 */
+        var dRad = Math.sqrt(Math.pow((nx - 0.5) * 1.15, 2) + Math.pow(ny - 0.5, 2));
+        shape = clamp01((0.62 - dRad) / 0.44);
+
+        if (tpl.threeSea) {
+          /* 三面环海：西 / 东 / 南三侧入海，北侧保留与大陆相连的通路 */
+          var sideFade = Math.min(clamp01(nx / 0.26), clamp01((1 - nx) / 0.26));
+          var southFade = clamp01((1 - ny) / 0.34);
+          shape = Math.min(sideFade * 0.82 + 0.18, southFade * 0.88 + 0.12);
+        }
+        if (tpl.island) {
+          /* 孤岛：整体收缩为圆形 */
+          shape = clamp01((0.48 - Math.sqrt(Math.pow((nx - 0.5) * 1.28, 2) + Math.pow(ny - 0.5, 2))) / 0.3);
+        }
+
+        var h = fbm(u, v, s, 5) * 0.72 + shape * 0.62;
+        if (tpl.centerLake) {
+          var dl = Math.sqrt(Math.pow((nx - 0.48) * 1.2, 2) + Math.pow(ny - 0.52, 2));
+          if (dl < 0.2) h -= 0.52 * (1 - dl / 0.2);
+        }
+        elev[i] = h;
+        if (h < lo) lo = h;
+        if (h > hi) hi = h;
+
+        /* ② 湿度场与寒冷带 */
+        m = fbm(u * 0.85 + 7.3, v * 0.85 + 2.1, s + 311, 4);
+        if (tpl.westDesert) m = m * (0.18 + 0.82 * clamp01((nx - 0.1) / 0.44));
+        if (tpl.barren) m = m * 0.62;
+        mo[i] = m;
+
+        var cd = 0;
+        if (tpl.northSnow) {
+          cd = clamp01((0.4 - ny) / 0.36) * (0.78 + 0.44 * fbm(u * 1.5 + 3.1, v * 1.5 + 8.8, s + 977, 3));
+        }
+        /* 山脉走向场：让山地连成脊而非糊成一整块高原 */
+        var rg = fbm(u * 1.7 + 11.3, v * 1.7 + 4.9, s + 5231, 3);
+        cold[i] = cd;
+        ridge[i] = rg;
+      }
+    }
+
+    /* ③ 归一化后按目标海占比取海平面（任意 seed 都能得到稳定构图） */
+    var span = (hi - lo) || 1;
+    for (i = 0; i < n; i++) elev[i] = (elev[i] - lo) / span;
+    var sorted = Array.prototype.slice.call(elev).sort(function (a, b) { return a - b; });
+    var seaTarget = tpl.island ? 0.7 : tpl.threeSea ? 0.52 : 0.45;
+    var seaLevel = sorted[Math.floor(n * seaTarget)];
+
+    for (r = 0; r < rows; r++) {
+      for (c = 0; c < cols; c++) {
+        i = r * cols + c;
+        nx = cols > 1 ? c / (cols - 1) : 0.5;
+        ny = rows > 1 ? r / (rows - 1) : 0.5;
+        var h2 = elev[i], mo2 = mo[i], cd2 = cold[i], rg2 = ridge[i];
+        var t;
+
+        /* 中央大湖优先判定：即使低于全局海平面，也要算作内陆湖而非海 */
+        if (tpl.centerLake) {
+          var dl2 = Math.sqrt(Math.pow((nx - 0.48) * 1.2, 2) + Math.pow(ny - 0.52, 2));
+          if (dl2 < 0.15 && h2 < seaLevel + 0.07) { cells[i] = T_LAKE; continue; }
+        }
+        t = h2 < seaLevel ? T_SEA : pickLand(h2, seaLevel, mo2, cd2, rg2, opt.flat);
+        cells[i] = t;
+      }
+    }
+
+    /* ④ 中央大湖后处理：椭圆内最低的一段水域强制成湖，保证模板一定出湖 */
+    if (tpl.centerLake) {
+      var inside = [];
+      for (r = 0; r < rows; r++) {
+        for (c = 0; c < cols; c++) {
+          var inx = cols > 1 ? c / (cols - 1) : 0.5, iny = rows > 1 ? r / (rows - 1) : 0.5;
+          var din = Math.sqrt(Math.pow((inx - 0.48) * 1.2, 2) + Math.pow(iny - 0.52, 2));
+          if (din < 0.16) inside.push(r * cols + c);
+        }
+      }
+      inside.sort(function (a2, b2) { return elev[a2] - elev[b2]; });
+      var take = Math.floor(inside.length * 0.6);
+      for (var q9 = 0; q9 < take; q9++) cells[inside[q9]] = T_LAKE;
+    }
+
+    var world = {
+      cols: cols, rows: rows, cell: CELL, width: cols * CELL, height: rows * CELL,
+      cells: cells, elev: elev, seed: seed, templates: tpl, features: [], snum: s
+    };
+
+    /* 河流：自高处最陡下降入海（最多 2 条） */
+    var want = tpl.bigRiver ? 2 : 1;
+    for (var k = 0; k < want; k++) {
+      carveRiver(world, s + k * 7717, k === 0 ? 0.22 : 0.72);
+    }
+    buildFeatures(world, s);
+    return world;
+  }
+
+  /* 到海距离场：多源 BFS，保证河流寻路一定能入海且路径够长 */
+  function distToSea(world) {
+    var cols = world.cols, rows = world.rows, cells = world.cells;
+    var dist = new Int32Array(cols * rows);
+    var queue = new Int32Array(cols * rows);
+    var qh = 0, qt = 0, i;
+    for (i = 0; i < dist.length; i++) dist[i] = -1;
+    for (i = 0; i < cells.length; i++) if (cells[i] === T_SEA) { dist[i] = 0; queue[qt++] = i; }
+    var DX = [1, -1, 0, 0], DY = [0, 0, 1, -1];
+    while (qh < qt) {
+      var cur = queue[qh++];
+      var cx = cur % cols, cy = (cur - cx) / cols;
+      for (var k = 0; k < 4; k++) {
+        var ax = cx + DX[k], ay = cy + DY[k];
+        if (ax < 0 || ay < 0 || ax >= cols || ay >= rows) continue;
+        var ni = ay * cols + ax;
+        if (dist[ni] >= 0) continue;
+        dist[ni] = dist[cur] + 1;
+        queue[qt++] = ni;
+      }
+    }
+    return dist;
+  }
+
+  function carveRiver(world, sd, bias) {
+    var cols = world.cols, rows = world.rows, elev = world.elev, cells = world.cells;
+    var dist = distToSea(world);
+    var best = -1, bi = -1;
+    for (var i = 0; i < elev.length; i++) {
+      var c = i % cols, r = (i - c) / cols;
+      if (cells[i] !== T_MOUNTAIN && cells[i] !== T_SNOW) continue;
+      if (dist[i] < 0) continue;
+      /* dist 权重给足：源头尽量选内陆深处，河才够长、走向才拉得开 */
+      var score = dist[i] * 3.2 + elev[i] * 6 + rnd2(c, r, sd) * 3 - Math.abs(c / cols - bias) * 4;
+      if (score > best) { best = score; bi = i; }
+    }
+    if (bi < 0) {
+      /* 平坦子图（城镇尺度）没有山：退而取离海最远的旱地作为源头 */
+      for (i = 0; i < elev.length; i++) {
+        if (cells[i] === T_SEA || cells[i] === T_LAKE || dist[i] < 6) continue;
+        var c2 = i % cols, r2 = (i - c2) / cols;
+        var sc2 = dist[i] + rnd2(c2, r2, sd) * 3;
+        if (sc2 > best) { best = sc2; bi = i; }
+      }
+    }
+    if (bi < 0) return;
+
+    var ci = bi % cols, ri = (bi - ci) / cols;
+    var guard = 0, steps = 0;
+    var pts = [(ci + 0.5) * CELL, (ri + 0.5) * CELL];
+    while (guard++ < cols * rows) {
+      cells[ri * cols + ci] = T_RIVER;
+      if (dist[ri * cols + ci] === 0) break;
+      var bestScore = Infinity, lc = ci, lr = ri;
+      for (var dy = -1; dy <= 1; dy++) {
+        for (var dx = -1; dx <= 1; dx++) {
+          if (!dx && !dy) continue;
+          var ax = ci + dx, ay = ri + dy;
+          if (ax < 0 || ay < 0 || ax >= cols || ay >= rows) continue;
+          var ni = ay * cols + ax;
+          if (dist[ni] < 0) continue;
+          /* dist 权重别太重，配合低频摆动让水系自然蜿蜒而非直线冲刺 */
+          var wander = vnoise(ax * 0.32, ay * 0.32, sd) * 6;
+          var sc = dist[ni] * 4 + elev[ni] + wander + (dx && dy ? 0.05 : 0) + rnd2(ax, ay, sd) * 0.02;
+          if (sc < bestScore) { bestScore = sc; lc = ax; lr = ay; }
+        }
+      }
+      if (lc === ci && lr === ri) break;
+      ci = lc; ri = lr; steps++;
+      pts.push((ci + 0.5) * CELL, (ri + 0.5) * CELL);
+    }
+    if (pts.length >= 6) {
+      world.features.push({ type: "river", pts: pts });
+      addTributaries(world, pts, sd + 4099);
+    }
+  }
+
+  /* 支流：自主河道中段向高处爬升的细水脉，让水系呈树状线条而非一根直管 */
+  function addTributaries(world, mainPts, sd) {
+    var cols = world.cols, rows = world.rows;
+    var n = mainPts.length / 2;
+    if (n < 8) return;
+    var count = 2 + Math.floor(rnd2(sd, 7, sd) * 2);
+    for (var t = 0; t < count; t++) {
+      var pick = Math.floor(n * (0.22 + 0.56 * ((t + 0.5) / count)));
+      var c = Math.floor(mainPts[pick * 2] / CELL), r = Math.floor(mainPts[pick * 2 + 1] / CELL);
+      if (c < 1 || r < 1 || c >= cols - 1 || r >= rows - 1) continue;
+      var pts = [(c + 0.5) * CELL, (r + 0.5) * CELL];
+      var len = 6 + Math.floor(rnd2(c, r, sd + t * 31) * 9);
+      var cc = c, rr = r, guard = 0;
+      while (guard++ < len) {
+        var bestE = -Infinity, bc = cc, br = rr;
+        for (var dy = -1; dy <= 1; dy++) {
+          for (var dx = -1; dx <= 1; dx++) {
+            if (!dx && !dy) continue;
+            var ax = cc + dx, ay = rr + dy;
+            if (ax < 1 || ay < 1 || ax >= cols - 1 || ay >= rows - 1) continue;
+            var ni = ay * cols + ax;
+            if (world.cells[ni] === T_SEA) continue;
+            var e = world.elev[ni] + rnd2(ax, ay, sd + t * 17) * 0.03;
+            if (e > bestE) { bestE = e; bc = ax; br = ay; }
+          }
+        }
+        if (bc === cc && br === rr) break;
+        cc = bc; rr = br;
+        pts.push((cc + 0.5) * CELL, (rr + 0.5) * CELL);
+      }
+      if (pts.length >= 8) world.features.push({ type: "river", pts: pts, trib: true });
+    }
+  }
+
+  function buildFeatures(world, sd) {
+    var cols = world.cols, rows = world.rows, cells = world.cells;
+    var feats = [];
+    var r, c, i, t, right, down;
+
+    /* 悬崖：山地/雪山与低地交界处撒 crush 短线 */
+    for (r = 1; r < rows - 1; r++) {
+      for (c = 1; c < cols - 1; c++) {
+        i = r * cols + c; t = cells[i];
+        var hi = (t === T_MOUNTAIN || t === T_SNOW);
+        if (!hi) continue;
+        right = cells[i + 1]; down = cells[i + cols];
+        var lowRight = right !== T_MOUNTAIN && right !== T_SNOW && right !== T_SEA;
+        var lowDown = down !== T_MOUNTAIN && down !== T_SNOW && down !== T_SEA;
+        if ((lowRight || lowDown) && rnd2(c, r, sd + 55) > 0.72) {
+          var len = 3 + Math.floor(rnd2(c, r, sd + 91) * 3);
+          if (lowDown) feats.push({ type: "cliff", x: c * CELL, y: (r + 1) * CELL, len: len * CELL, dir: "h" });
+          else feats.push({ type: "cliff", x: (c + 1) * CELL, y: r * CELL, len: len * CELL, dir: "v" });
+        }
+      }
+    }
+    /* 岛屿：海中被孤立的小陆块自动加沙滩描边 */
+    for (r = 2; r < rows - 2; r++) {
+      for (c = 2; c < cols - 2; c++) {
+        i = r * cols + c;
+        if (cells[i] === T_SEA) continue;
+        var seaCount = 0;
+        for (var dy = -2; dy <= 2; dy++) for (var dx = -2; dx <= 2; dx++) {
+          if (cells[(r + dy) * cols + (c + dx)] === T_SEA) seaCount++;
+        }
+        if (seaCount >= 19 && rnd2(c, r, sd + 17) > 0.35) {
+          feats.push({ type: "island", x: (c + 0.5) * CELL, y: (r + 0.5) * CELL, rx: 15, ry: 10 });
+        }
+      }
+    }
+    /* 瀑布：河流紧邻山地时落一处 */
+    var placed = 0;
+    for (r = 1; r < rows - 1 && placed < 2; r++) {
+      for (c = 1; c < cols - 1 && placed < 2; c++) {
+        i = r * cols + c;
+        if (cells[i] !== T_RIVER) continue;
+        var near = [cells[i - 1], cells[i + 1], cells[i - cols], cells[i + cols]];
+        if (near.indexOf(T_MOUNTAIN) >= 0 || near.indexOf(T_SNOW) >= 0) {
+          if (rnd2(c, r, sd + 33) > 0.55) { feats.push({ type: "waterfall", x: (c + 0.5) * CELL, y: (r + 0.5) * CELL }); placed++; }
+        }
+      }
+    }
+    /* 河流/支流由 carveRiver 先入队，此处只追加地貌要素，勿覆盖 */
+    world.features = world.features.concat(feats);
+  }
+
+  /* ─── 4. 地形渲染：每类地形一个 path（DOM 数恒定 = 9） ────────────── */
+  function terrainLayer(world, step) {
+    var cols = world.cols, rows = world.rows, cells = world.cells, cs = CELL;
+    var k = step || 1;
+    var buckets = [[], [], [], [], [], [], [], [], []];
+    if (k === 1) {
+      for (var i = 0; i < cells.length; i++) {
+        var t = cells[i];
+        var c = i % cols, r = (i - c) / cols;
+        buckets[t].push("M" + (c * cs) + " " + (r * cs) + "h" + cs + "v" + cs + "h-" + cs + "z");
+      }
+    } else {
+      for (var yy = 0; yy < rows; yy += k) {
+        for (var xx = 0; xx < cols; xx += k) {
+          var idx = yy * cols + xx;
+          buckets[cells[idx]].push("M" + (xx * cs) + " " + (yy * cs) + "h" + (cs * k) + "v" + (cs * k) + "h-" + (cs * k) + "z");
+        }
+      }
+    }
+    var out = "";
+    for (var b = 0; b < buckets.length; b++) {
+      if (!buckets[b].length) continue;
+      /* 河流格不铺方块水纹，只铺一层岸色底，曲线 ribbon 覆于其上 */
+      out += '<path d="' + buckets[b].join("") + '" fill="' +
+        (b === T_RIVER ? "#e7dcbb" : 'url(#pat-' + TER_KEY[b] + ')') + '"/>';
+    }
+    return out;
+  }
+
+  /* ─── 4c. 地块模型：精确 Voronoi（半平面裁剪） ─────────────────────
+     把地形单元从「方格子」换成「不规则地块」：
+     ① 抖动网格撒点（jitter 0.34 格）
+     ② 对 5×5 邻域逐条垂直平分线做半平面裁剪（Sutherland-Hodgman）
+     ③ 半平面交必为凸多边形 → 无自交；两侧单元共享同一条边 → 端点偏差 0px，无缝
+     ④ 公共边复用同一个 Q 曲线控制点 → 填充与描边完全吻合，边界天生是曲线
+     地形值取地块中心所在格，故「栅格 / 地块」切换时地形分布完全一致。
+     代价：2560 地块约 19ms 生成，结果缓存在 world._tiles，缩放平移不重算。   */
+  var TILE_JIT = 0.34;
+
+  function clipPlane(poly, nx, ny, c, tag) {
+    var out = [], n = poly.length, i, A, B, da, db, inA, inB, t;
+    for (i = 0; i < n; i++) {
+      A = poly[i]; B = poly[(i + 1) % n];
+      da = nx * A[0] + ny * A[1] - c;
+      db = nx * B[0] + ny * B[1] - c;
+      inA = da <= 0; inB = db <= 0;
+      if (inA) out.push(A);
+      if (inA !== inB) {
+        t = da / (da - db);
+        out.push([A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t, inA ? tag : A[2]]);
+      }
+    }
+    return out;
+  }
+
+  function buildTileModel(world) {
+    if (world._tiles) return world._tiles;
+    var cols = world.cols, rows = world.rows, cs = CELL, s = world.snum;
+    var W = world.width, H = world.height, n = cols * rows;
+    var px = new Float64Array(n), py = new Float64Array(n);
+    var lx, ly, k;
+    for (ly = 0; ly < rows; ly++) {
+      for (lx = 0; lx < cols; lx++) {
+        k = ly * cols + lx;
+        px[k] = (lx + 0.5 + (rnd2(lx, ly, s) - 0.5) * 2 * TILE_JIT) * cs;
+        py[k] = (ly + 0.5 + (rnd2(lx + 7777, ly + 3331, s) - 0.5) * 2 * TILE_JIT) * cs;
+      }
+    }
+    var idOf = function (a, b) { return (a < 0 || b < 0 || a >= cols || b >= rows) ? -1 : b * cols + a; };
+    var tiles = [], byId = new Array(n), R = cs * 2.4;
+
+    for (ly = 0; ly < rows; ly++) {
+      for (lx = 0; lx < cols; lx++) {
+        var id = ly * cols + lx, cx = px[id], cy = py[id];
+        var poly = [[cx - R, cy - R, -2], [cx + R, cy - R, -2], [cx + R, cy + R, -2], [cx - R, cy + R, -2]];
+        for (var dy = -2; dy <= 2 && poly.length; dy++) {
+          for (var dx = -2; dx <= 2 && poly.length; dx++) {
+            if (!dx && !dy) continue;
+            var nb = idOf(lx + dx, ly + dy);
+            if (nb < 0) continue;
+            poly = clipPlane(poly, 2 * (px[nb] - cx), 2 * (py[nb] - cy),
+              px[nb] * px[nb] + py[nb] * py[nb] - cx * cx - cy * cy, nb);
+          }
+        }
+        if (poly.length < 3) continue;
+        poly = clipPlane(poly, -1, 0, -0.5, -2);
+        poly = clipPlane(poly, 1, 0, W - 0.5, -2);
+        poly = clipPlane(poly, 0, -1, -0.5, -2);
+        poly = clipPlane(poly, 0, 1, H - 0.5, -2);
+        if (poly.length < 3) continue;
+        var gc = Math.min(cols - 1, Math.max(0, Math.floor(cx / cs)));
+        var gr = Math.min(rows - 1, Math.max(0, Math.floor(cy / cs)));
+        var gi = gr * cols + gc;
+        var tile = { id: id, lx: lx, ly: ly, cx: cx, cy: cy, poly: poly, gi: gi, t: world.cells[gi] };
+        tiles.push(tile); byId[id] = tile;
+      }
+    }
+
+    var ctrl = {};
+    function ctrlOf(u, v, ax, ay, bx, by) {
+      var key = u * 100000 + v, c = ctrl[key];
+      if (c) return c;
+      var dx = bx - ax, dy = by - ay, len = Math.sqrt(dx * dx + dy * dy) || 1;
+      var k2 = (rnd2(u, v, s + 77) - 0.5) * 2 * cs * 0.14;
+      c = [Math.round((ax + bx) / 2 - dy / len * k2), Math.round((ay + by) / 2 + dx / len * k2)];
+      ctrl[key] = c;
+      return c;
+    }
+    function pathOf(t) {
+      var poly = t.poly, m = poly.length, id = t.id, z;
+      var d = "M" + Math.round(poly[0][0]) + " " + Math.round(poly[0][1]);
+      for (z = 0; z < m; z++) {
+        var A = poly[z], B = poly[(z + 1) % m], nb = A[2];
+        if (nb >= 0) {
+          var c = ctrlOf(Math.min(id, nb), Math.max(id, nb), A[0], A[1], B[0], B[1]);
+          d += "Q" + c[0] + " " + c[1];
+        }
+        d += " " + Math.round(B[0]) + " " + Math.round(B[1]);
+      }
+      return d + "Z";
+    }
+    world._tiles = { tiles: tiles, byId: byId, ctrlOf: ctrlOf, pathOf: pathOf, ctrl: ctrl, rev: 0 };
+    return world._tiles;
+  }
+
+  /* 涂刷后只刷新地块的地形取值（< 1ms），不重建几何；rev 递增使渲染缓存失效 */
+  function refreshTileTerrain(world) {
+    var m = world._tiles;
+    if (!m) return;
+    var cols = world.cols, rows = world.rows, cs = CELL, i, t, gc, gr;
+    for (i = 0; i < m.tiles.length; i++) {
+      t = m.tiles[i];
+      gc = Math.min(cols - 1, Math.max(0, Math.floor(t.cx / cs)));
+      gr = Math.min(rows - 1, Math.max(0, Math.floor(t.cy / cs)));
+      t.t = world.cells[gr * cols + gc];
+    }
+    m.rev++;
+  }
+
+  function isWaterT(t) { return t === T_SEA || t === T_LAKE || t === T_RIVER; }
+
+  /* 地形层：同类型地块合并为 1 个 path（DOM 恒定 = 9）；按 rev 缓存，平移/涂刷不重拼 */
+  function terrainTileLayer(world) {
+    var m = buildTileModel(world);
+    if (m._terrRev === m.rev && m._terr) return m._terr;
+    var buckets = [[], [], [], [], [], [], [], [], []];
+    var i, t;
+    for (i = 0; i < m.tiles.length; i++) {
+      t = m.tiles[i];
+      buckets[t.t].push(m.pathOf(t));
+    }
+    var out = "";
+    for (i = 0; i < 9; i++) {
+      if (!buckets[i].length) continue;
+      out += '<path d="' + buckets[i].join("") + '" fill="' +
+        (i === T_RIVER ? "#e7dcbb" : 'url(#pat-' + TER_KEY[i] + ')') + '"/>';
+    }
+    m._terrRev = m.rev; m._terr = out;
+    return out;
+  }
+
+  /* 边界层：只画「异类地块之间」的公共边，且每条边只画一次（id 小者优先） */
+  function tileBoundaryLayer(world) {
+    var m = buildTileModel(world);
+    if (m._boundRev === m.rev && m._bound) return m._bound;
+    var coast = "", inner = "", i, z, t, poly, k2, A, B, nb, o, c, seg;
+    for (i = 0; i < m.tiles.length; i++) {
+      t = m.tiles[i]; poly = t.poly; k2 = poly.length;
+      for (z = 0; z < k2; z++) {
+        A = poly[z]; B = poly[(z + 1) % k2]; nb = A[2];
+        if (nb < 0 || t.id > nb) continue;
+        o = m.byId[nb];
+        if (!o || o.t === t.t) continue;
+        c = m.ctrlOf(t.id, nb, A[0], A[1], B[0], B[1]);
+        seg = "M" + Math.round(A[0]) + " " + Math.round(A[1]) +
+          "Q" + c[0] + " " + c[1] + " " + Math.round(B[0]) + " " + Math.round(B[1]);
+        if (isWaterT(t.t) !== isWaterT(o.t)) coast += seg;
+        else inner += seg;
+      }
+    }
+    m._boundRev = m.rev;
+    m._bound = '<g fill="none" stroke-linecap="round">' +
+      (inner ? '<path d="' + inner + '" stroke="rgba(74,56,38,.34)" stroke-width="1"/>' : "") +
+      (coast ? '<path d="' + coast + '" stroke="#e7dcbb" stroke-width="3.6"/>' +
+        '<path d="' + coast + '" stroke="#6b5641" stroke-width="1.3"/>' : "") +
+      '</g>';
+    return m._bound;
+  }
+
+  /* 选中地块的高亮轮廓 */
+  function tileHighlightLayer(world, id) {
+    var m = buildTileModel(world);
+    var t = m.byId[id];
+    if (!t) return "";
+    return '<path d="' + m.pathOf(t) + '" fill="rgba(255,255,255,.16)" stroke="#7F77DD" stroke-width="2.2"/>';
+  }
+
+  /* 命中测试：找离点击位置最近的地块中心 */
+  function tileAtPoint(world, x, y) {
+    var m = buildTileModel(world);
+    var best = -1, bd = Infinity, i, t, dx, dy, d;
+    for (i = 0; i < m.tiles.length; i++) {
+      t = m.tiles[i];
+      dx = t.cx - x; dy = t.cy - y; d = dx * dx + dy * dy;
+      if (d < bd) { bd = d; best = t.id; }
+    }
+    return best;
+  }
+
+  /* ─── 4b. 线条化引擎：marching squares 等值线 ──────────────────────
+     把「格 → 方块拼贴」改成「格 → 平滑轮廓线 + 等高线」：
+     ① 格中心值升采样为格点场 ② marching squares 取线段 ③ 端点缝合成折线
+     ④ Chaikin 平滑。每类地形只输出 1 个 path，DOM 数量恒定。            */
+  function gridPointField(vals, cols, rows) {
+    var w = cols + 1, h = rows + 1;
+    var g = new Float32Array(w * h);
+    for (var y = 0; y < h; y++) {
+      for (var x = 0; x < w; x++) {
+        var sum = 0, cnt = 0;
+        for (var dy = -1; dy <= 0; dy++) {
+          for (var dx = -1; dx <= 0; dx++) {
+            var cx = x + dx, cy = y + dy;
+            if (cx < 0 || cy < 0 || cx >= cols || cy >= rows) continue;
+            sum += vals[cy * cols + cx]; cnt++;
+          }
+        }
+        g[y * w + x] = cnt ? sum / cnt : 0;
+      }
+    }
+    return g;
+  }
+
+  function maskField(world, test) {
+    var v = new Float32Array(world.cols * world.rows);
+    for (var i = 0; i < v.length; i++) v[i] = test(world.cells[i]) ? 1 : 0;
+    return gridPointField(v, world.cols, world.rows);
+  }
+
+  function edgePoint(v0, v1, t, x0, y0, x1, y1) {
+    var d = v1 - v0;
+    var u = Math.abs(d) < 1e-6 ? 0.5 : (t - v0) / d;
+    u = u < 0 ? 0 : u > 1 ? 1 : u;
+    return [x0 + (x1 - x0) * u, y0 + (y1 - y0) * u];
+  }
+
+  /* 标准 marching squares：16 case → 0/1/2 条线段 */
+  function contourSegs(g, gw, gh, cs, t) {
+    var segs = [];
+    for (var cy = 0; cy < gh - 1; cy++) {
+      for (var cx = 0; cx < gw - 1; cx++) {
+        var i0 = cy * gw + cx, i1 = i0 + 1, i2 = i0 + gw + 1, i3 = i0 + gw;
+        var tl = g[i0], tr = g[i1], br = g[i2], bl = g[i3];
+        var idx = (tl > t ? 8 : 0) | (tr > t ? 4 : 0) | (br > t ? 2 : 0) | (bl > t ? 1 : 0);
+        if (idx === 0 || idx === 15) continue;
+        /* 格点位于格心之间，故 cell 原点为 (cx-.5, cy-.5) */
+        var bx = (cx - 0.5) * cs, by = (cy - 0.5) * cs;
+        var T = edgePoint(tl, tr, t, bx, by, bx + cs, by);
+        var Rp = edgePoint(tr, br, t, bx + cs, by, bx + cs, by + cs);
+        var B = edgePoint(bl, br, t, bx, by + cs, bx + cs, by + cs);
+        var L = edgePoint(tl, bl, t, bx, by, bx, by + cs);
+        switch (idx) {
+          case 1: case 14: segs.push([L, B]); break;
+          case 2: case 13: segs.push([B, Rp]); break;
+          case 3: case 12: segs.push([L, Rp]); break;
+          case 4: case 11: segs.push([T, Rp]); break;
+          case 6: case 9: segs.push([T, B]); break;
+          case 7: case 8: segs.push([L, T]); break;
+          case 5: segs.push([L, T], [B, Rp]); break;
+          case 10: segs.push([T, Rp], [B, L]); break;
+        }
+      }
+    }
+    return segs;
+  }
+
+  /* 线段按端点缝合为折线（端点坐标由共享格边保证一致） */
+  function segsToPolylines(segs) {
+    var K = function (p) { return Math.round(p[0] * 8) + "," + Math.round(p[1] * 8); };
+    var adj = {}, edges = [], i;
+    for (i = 0; i < segs.length; i++) {
+      var ka = K(segs[i][0]), kb = K(segs[i][1]);
+      edges.push({ ka: ka, kb: kb, p0: segs[i][0], p1: segs[i][1], used: false });
+      (adj[ka] || (adj[ka] = [])).push(i);
+      (adj[kb] || (adj[kb] = [])).push(i);
+    }
+    var lines = [];
+    for (i = 0; i < edges.length; i++) {
+      if (edges[i].used) continue;
+      edges[i].used = true;
+      var line = [edges[i].p0, edges[i].p1];
+      for (var dir = 0; dir < 2; dir++) {
+        var endK = dir === 0 ? edges[i].kb : edges[i].ka;
+        var guard = 0;
+        while (guard++ < 6000) {
+          var list = adj[endK] || [], nxt = -1, j;
+          for (j = 0; j < list.length; j++) if (!edges[list[j]].used) { nxt = list[j]; break; }
+          if (nxt < 0) break;
+          var e = edges[nxt];
+          e.used = true;
+          var np = (e.ka === endK) ? e.p1 : e.p0;
+          endK = (e.ka === endK) ? e.kb : e.ka;
+          if (dir === 0) line.push(np); else line.unshift(np);
+        }
+      }
+      lines.push(line);
+    }
+    return lines;
+  }
+
+  /* Chaikin 圆角化：把剩余的台阶切成柔和曲线 */
+  function chaikin(pts, iter) {
+    var cur = pts;
+    for (var k = 0; k < (iter || 2); k++) {
+      if (cur.length < 3) break;
+      var out = [cur[0]];
+      for (var i = 0; i < cur.length - 1; i++) {
+        var a = cur[i], b = cur[i + 1];
+        out.push([a[0] * 0.75 + b[0] * 0.25, a[1] * 0.75 + b[1] * 0.25]);
+        out.push([a[0] * 0.25 + b[0] * 0.75, a[1] * 0.25 + b[1] * 0.75]);
+      }
+      out.push(cur[cur.length - 1]);
+      cur = out;
+    }
+    return cur;
+  }
+
+  function polyPath(lines, iter) {
+    var d = "";
+    for (var i = 0; i < lines.length; i++) {
+      var pts = iter ? chaikin(lines[i], iter) : lines[i];
+      if (pts.length < 2) continue;
+      d += "M" + R(pts[0][0]) + " " + R(pts[0][1]);
+      for (var j = 1; j < pts.length; j++) d += "L" + R(pts[j][0]) + " " + R(pts[j][1]);
+    }
+    return d;
+  }
+
+  function contourPath(world, field) {
+    var segs = contourSegs(field, world.cols + 1, world.rows + 1, CELL, 0.5);
+    return polyPath(segsToPolylines(segs), 2);
+  }
+
+  /* 地块矩形路径（run-length 合并，供 clip 使用） */
+  function rectPath(world, test) {
+    var d = "", cols = world.cols, rows = world.rows, cs = CELL, r, c;
+    for (r = 0; r < rows; r++) {
+      c = 0;
+      while (c < cols) {
+        if (!test(world.cells[r * cols + c])) { c++; continue; }
+        var s = c;
+        while (c < cols && test(world.cells[r * cols + c])) c++;
+        d += "M" + (s * cs) + " " + (r * cs) + "h" + ((c - s) * cs) + "v" + cs + "h-" + ((c - s) * cs) + "z";
+      }
+    }
+    return d;
+  }
+
+  var BORDER_COLOR = {
+    lake: "#3d7aa6", grass: "#7ea358", forest: "#4d7d3c", desert: "#bb9145",
+    mountain: "#6d5840", snowmtn: "#6f8298", snowfield: "#aec6da"
+  };
+
+  /* 轮廓线层：① 海岸线（沙滩 + 深岸线）② 各地块分界 —— 取代方块硬边 */
+  function outlineLayer(world) {
+    var out = "";
+    var coast = contourPath(world, maskField(world, function (t) { return t !== T_SEA && t !== T_LAKE && t !== T_RIVER; }));
+    if (coast) {
+      out += '<g fill="none" stroke-linejoin="round" stroke-linecap="round">' +
+        '<path d="' + coast + '" stroke="#e8d9ad" stroke-width="5.5"/>' +
+        '<path d="' + coast + '" stroke="#456a85" stroke-width="1.7"/></g>';
+    }
+    var keys = ["lake", "grass", "forest", "desert", "mountain", "snowmtn", "snowfield"];
+    for (var i = 0; i < keys.length; i++) {
+      var ti = TER_KEY.indexOf(keys[i]);
+      var d = contourPath(world, maskField(world, (function (tt) {
+        return function (t) { return t === tt; };
+      })(ti)));
+      if (!d) continue;
+      out += '<path d="' + d + '" fill="none" stroke="' + BORDER_COLOR[keys[i]] +
+        '" stroke-width="1.15" stroke-opacity=".72" stroke-linejoin="round"/>';
+    }
+    return out;
+  }
+
+  /* 等高线：陆地范围内每 0.1 高程一条，给地形「走向」以线条 */
+  function elevationLines(world) {
+    var g = gridPointField(world.elev, world.cols, world.rows);
+    var d = "";
+    for (var i = 1; i <= 9; i++) {
+      var segs = contourSegs(g, world.cols + 1, world.rows + 1, CELL, i / 10);
+      d += polyPath(segsToPolylines(segs), 1);
+    }
+    return d ? '<path d="' + d + '" fill="none" stroke="rgba(74,56,38,.34)" stroke-width="0.9"/>' : "";
+  }
+
+  function mapExtraLayers(world) {
+    /* 涂刷过程中复用旧轮廓（_dirty），松手后再重算，保证画笔流畅 */
+    if (world._ml && !world._dirty) return world._ml;
+    var land = rectPath(world, function (t) { return t !== T_SEA && t !== T_LAKE && t !== T_RIVER; });
+    world._ml = {
+      clip: '<clipPath id="clipLand"><path d="' + land + '"/></clipPath>',
+      elev: '<g clip-path="url(#clipLand)">' + elevationLines(world) + '</g>',
+      outline: outlineLayer(world)
+    };
+    return world._ml;
+  }
+
+  function featureLayer(world) {
+    var out = "", f, k;
+    var cliffH = "", cliffV = "", ticks = "";
+    var rivers = [];
+    for (k = 0; k < world.features.length; k++) {
+      f = world.features[k];
+      if (f.type === "river") {
+        /* 水系全部走曲线 ribbon，格子不再填方块水纹 */
+        rivers.push(f);
+        continue;
+      }
+      if (f.type === "cliff") {
+        if (f.dir === "h") {
+          cliffH += "M" + f.x + " " + f.y + "h" + f.len + " ";
+          for (var j = 0; j * 8 < f.len; j++) ticks += "M" + (f.x + j * 8 + 4) + " " + f.y + "v5";
+        } else {
+          cliffV += "M" + f.x + " " + f.y + "v" + f.len + " ";
+          for (var j2 = 0; j2 * 8 < f.len; j2++) ticks += "M" + f.x + " " + (f.y + j2 * 8 + 4) + "h5";
+        }
+      } else if (f.type === "island") {
+        out += '<ellipse cx="' + f.x + '" cy="' + f.y + '" rx="' + f.rx + '" ry="' + f.ry + '" fill="#a7cd7c"/>' +
+          '<ellipse cx="' + f.x + '" cy="' + f.y + '" rx="' + f.rx + '" ry="' + f.ry + '" fill="none" stroke="#e6d5a4" stroke-width="3"/>' +
+          '<circle cx="' + (f.x - 3) + '" cy="' + (f.y - 2) + '" r="3.4" fill="#2f6b3a"/>';
+      } else if (f.type === "waterfall") {
+        out += '<g><path d="M' + (f.x - 3) + ' ' + (f.y - 8) + 'v11M' + (f.x + 3) + ' ' + (f.y - 8) + 'v11" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round"/>' +
+          '<circle cx="' + (f.x - 5) + '" cy="' + (f.y + 5) + '" r="1.5" fill="#fff"/>' +
+          '<circle cx="' + f.x + '" cy="' + (f.y + 6.5) + '" r="1.2" fill="#fff"/>' +
+          '<circle cx="' + (f.x + 5) + '" cy="' + (f.y + 5) + '" r="1.5" fill="#fff"/></g>';
+      }
+    }
+    var cliff = cliffH || cliffV ? '<g stroke="#6b5641" stroke-linecap="round"><path d="' + (cliffH + cliffV) + '" stroke-width="2.6" fill="none"/><path d="' + ticks + '" stroke-width="1.5" fill="none"/></g>' : "";
+    var ribbon = "";
+    for (k = 0; k < rivers.length; k++) ribbon += ribbonMarkup(rivers[k]);
+    return out + ribbon + cliff;
+  }
+
+  /* 河流 ribbon：岸线打底 → 分段渐宽的水道（上游细 / 下游宽）→ 一道高光 */
+  function ribbonMarkup(f) {
+    var pts = f.pts, n = pts.length / 2;
+    if (n < 2) return "";
+    var base = f.trib ? CELL * 0.3 : CELL * 0.5;
+    var tip = f.trib ? CELL * 0.36 : CELL * 1.02;
+    var full = n >= 6 ? toSmoothPath(pts) : "M" + R(pts[0]) + " " + R(pts[1]) + "L" + R(pts[2]) + " " + R(pts[3]);
+    var segs = f.trib ? 1 : Math.max(2, Math.min(3, Math.floor(n / 6)));
+    var body = "";
+    if (segs <= 1) {
+      body = '<path d="' + full + '" stroke="#4f9ad6" stroke-width="' + R(tip) + '"/>';
+    } else {
+      var per = Math.ceil(n / segs);
+      for (var s = 0; s < segs; s++) {
+        var a = s * per, b = Math.min(n - 1, (s + 1) * per);
+        if (b - a < 1) continue;
+        var sub = [];
+        for (var i = a; i <= b; i++) sub.push(pts[i * 2], pts[i * 2 + 1]);
+        var d = sub.length >= 6 ? toSmoothPath(sub) : "M" + R(sub[0]) + " " + R(sub[1]) + "L" + R(sub[2]) + " " + R(sub[3]);
+        var w = base + (tip - base) * (segs > 1 ? s / (segs - 1) : 1);
+        body += '<path d="' + d + '" stroke="#4f9ad6" stroke-width="' + R(w) + '"/>';
+      }
+    }
+    return '<g fill="none" stroke-linecap="round" stroke-linejoin="round">' +
+      '<path d="' + full + '" stroke="#e7dcbb" stroke-width="' + R(tip + 4.5) + '"/>' +
+      body +
+      '<path d="' + full + '" stroke="rgba(255,255,255,.32)" stroke-width="1.6"/>' +
+      '</g>';
+  }
+
+  /* 折线转平滑曲线（Catmull-Rom → 三次贝塞尔） */
+  function toSmoothPath(pts) {
+    var d = "M" + R(pts[0]) + " " + R(pts[1]);
+    for (var i = 2; i < pts.length - 2; i += 2) {
+      var x0 = pts[i - 2], y0 = pts[i - 1], x1 = pts[i], y1 = pts[i + 1];
+      var x2 = pts[i + 2], y2 = pts[i + 3];
+      d += " C" + R(x0 + (x1 - x0) / 3) + " " + R(y0 + (y1 - y0) / 3) +
+        " " + R(x1 - (x2 - x0) / 6) + " " + R(y1 - (y2 - y0) / 6) + " " + R(x1) + " " + R(y1);
+    }
+    d += " L" + R(pts[pts.length - 2]) + " " + R(pts[pts.length - 1]);
+    return d;
+  }
+
+  /* ─── 5. 标注数据（RM3 / RM4 / RM5） ─────────────────────────────── */
+  var KIND_COLOR = {
+    city: "var(--app-accent-purple)", village: "var(--app-accent-green)", pass: "var(--app-accent-amber)",
+    port: "var(--app-accent-blue)", ruin: "var(--app-accent-rose)", area: "var(--app-accent-teal)",
+    label: "var(--app-text-muted)"
+  };
+
+  var ANNO_SEED = [
+    { id: "a1", type: "pin", name: "云京城", kind: "city", note: "大胤王朝帝都，内城为皇室居所，外城沿云河两岸展开。", entity: "云京城 · location", nx: 0.47, ny: 0.44, land: true,
+      card: { alias: "帝都、云京", faction: "大胤王朝 · 直隶", summary: "云荒大陆的政治中心，城高三丈，内城为皇室居所，外城沿云河两岸展开。", rel: "人物 6 · 事件 11 · 章节 34" } },
+    { id: "a2", type: "pin", name: "青峡关", kind: "pass", note: "北境唯一陆路咽喉，常驻兵三千。", entity: "青峡关 · location", nx: 0.34, ny: 0.26, land: true,
+      card: { alias: "北门锁钥", faction: "北境都护府", summary: "北境唯一陆路咽喉，关墙依青峡天险而建，常年驻兵三千。", rel: "人物 3 · 事件 5 · 章节 12" } },
+    { id: "a3", type: "pin", name: "新手村", kind: "village", note: "主角出发地，位于云河东岸。", entity: "新手村 · location", nx: 0.63, ny: 0.57, land: true },
+    { id: "a4", type: "pin", name: "白沙港", kind: "port", note: "西南通商口岸，盐与马匹集散地。", entity: "白沙港 · location", nx: 0.26, ny: 0.74, land: true },
+    { id: "a5", type: "pin", name: "赤砂城", kind: "city", note: "西荒王庭所在，城下为坎儿井水系。", entity: "赤砂城 · location", nx: 0.15, ny: 0.5, land: true },
+    { id: "a12", type: "pin", name: "古战场", kind: "ruin", note: "三百年前神陨之战遗址。", entity: "古战场 · location", nx: 0.72, ny: 0.38, land: true },
+    { id: "a10", type: "pin", name: "落星镇", kind: "ruin", note: "第 12 章提及，尚未建卡。", entity: null, nx: 0.57, ny: 0.28, land: true },
+    { id: "a11", type: "pin", name: "断刃隘口", kind: "pass", note: "第 18 章伏击地点，尚未建卡。", entity: null, nx: 0.45, ny: 0.15, land: true },
+    { id: "a6", type: "area", name: "北境", note: "雪原以北的封地，人口稀疏。", child: "新手镇", nx: 0.33, ny: 0.2, w: 0.3, h: 0.24 },
+    { id: "a7", type: "area", name: "西荒", note: "荒漠与绿洲交错，赤砂城势力范围。", child: null, nx: 0.13, ny: 0.46, w: 0.22, h: 0.26 },
+    { id: "a8", type: "label", name: "云荒山脉", nx: 0.52, ny: 0.33, italic: true },
+    { id: "a9", type: "label", name: "无尽之海", nx: 0.5, ny: 0.9, italic: true }
+  ];
+
+  var LINK_SEED = [
+    { from: "a1", to: "a3", d: "三百二十里" },
+    { from: "a1", to: "a2", d: "四百八十里 · 险" },
+    { from: "a5", to: "a1", d: "六百里" },
+    { from: "a4", to: "a3", d: "二百里" }
+  ];
+
+  /* 子图（城镇尺度）的标注：直接给地图坐标，贴近 RM5-③ 承接高亮 */
+  var CHILD_ANNOS = [
+    { id: "c1", type: "pin", name: "新手村", kind: "village", note: "主角出发地，村口有老槐树。", entity: "新手村 · location", x: 130, y: 132, highlight: true },
+    { id: "c2", type: "pin", name: "云河渡口", kind: "port", note: "摆渡至东岸。", entity: "云河渡口 · location", x: 262, y: 96 },
+    { id: "c3", type: "pin", name: "铁匠铺", kind: "village", note: "打造主角第一把刀。", entity: null, x: 84, y: 204 },
+    { id: "c4", type: "area", name: "后山猎场", note: "幼年猎兔的林子。", child: null, x: 300, y: 168, w: 110, h: 84 }
+  ];
+
+  function snapToLand(world, nx, ny) {
+    var cols = world.cols, rows = world.rows;
+    var tc = Math.round(nx * cols), tr = Math.round(ny * rows);
+    for (var rad = 0; rad < Math.max(cols, rows); rad++) {
+      for (var dy = -rad; dy <= rad; dy++) {
+        for (var dx = -rad; dx <= rad; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== rad) continue;
+          var cc = tc + dx, rr = tr + dy;
+          if (cc < 1 || rr < 1 || cc >= cols - 1 || rr >= rows - 1) continue;
+          var t = world.cells[rr * cols + cc];
+          if (t !== T_SEA) return { x: cc * CELL + CELL / 2, y: rr * CELL + CELL / 2 };
+        }
+      }
+    }
+    return { x: tc * CELL, y: tr * CELL };
+  }
+
+  function buildAnnos(world) {
+    var list = [];
+    for (var i = 0; i < ANNO_SEED.length; i++) {
+      var a = ANNO_SEED[i];
+      var p = a.type === "label" ? { x: a.nx * world.width, y: a.ny * world.height } : snapToLand(world, a.nx, a.ny);
+      var item = {};
+      for (var key in a) item[key] = a[key];
+      item.x = p.x; item.y = p.y;
+      if (item.type === "area") { item.x = a.nx * world.width; item.y = a.ny * world.height; item.w = a.w * world.width; item.h = a.h * world.height; }
+      list.push(item);
+    }
+    return list;
+  }
+
+  function annoById(list, id) {
+    for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
+    return null;
+  }
+
+  /* ─── 6. 标注渲染（屏幕坐标，保持标识尺寸恒定） ────────────────────── */
+  function pinGlyph(color, selected) {
+    return '<g><path d="M0 0 C -7.4 -9.6 -10 -13.6 -10 -17 A 10 10 0 0 1 10 -17 C 10 -13.6 7.4 -9.6 0 0 Z" fill="' + color + '" stroke="rgba(255,255,255,.92)" stroke-width="2"/>' +
+      '<circle cx="0" cy="-17" r="3.6" fill="#fff"/>' +
+      (selected ? '<circle cx="0" cy="-17" r="9.5" fill="none" stroke="' + color + '" stroke-width="2" opacity=".55"/>' : "") +
+      '</g>';
+  }
+
+  function renderAnnoLayer(w, h, view, annos, links, opts) {
+    opts = opts || {};
+    var out = "";
+    var i, a, sx, sy;
+    var pos = {};
+    for (i = 0; i < annos.length; i++) { pos[annos[i].id] = { x: view.tx + annos[i].x * view.s, y: view.ty + annos[i].y * view.s }; }
+
+    /* 连线走在最底：曲线 + 中点距离胶囊 */
+    if (links) {
+      var linkPath = "";
+      for (i = 0; i < links.length; i++) {
+        var la = pos[links[i].from], lb = pos[links[i].to];
+        if (!la || !lb) continue;
+        var mx = (la.x + lb.x) / 2, my = (la.y + lb.y) / 2;
+        var dx = lb.x - la.x, dy = lb.y - la.y;
+        var len = Math.sqrt(dx * dx + dy * dy) || 1;
+        var nx2 = -dy / len, ny2 = dx / len;
+        var bow = Math.min(46, len * 0.16);
+        var cx = mx + nx2 * bow, cy = my + ny2 * bow;
+        linkPath += "M" + R(la.x) + " " + R(la.y) + " Q" + R(cx) + " " + R(cy) + " " + R(lb.x) + " " + R(lb.y) + " ";
+        var tx = 0.25 * la.x + 0.5 * cx + 0.25 * lb.x, ty = 0.25 * la.y + 0.5 * cy + 0.25 * lb.y;
+        var label = links[i].d || "";
+        var wpx = label.length * 11 + 12;
+        out += '<g><rect x="' + R(tx - wpx / 2) + '" y="' + R(ty - 9) + '" width="' + wpx + '" height="18" rx="9" fill="rgba(255,255,255,.94)" stroke="rgba(43,47,74,.16)"/>' +
+          '<text x="' + R(tx) + '" y="' + R(ty + 4) + '" text-anchor="middle" font-size="11" fill="#4a5068">' + label + '</text></g>';
+      }
+      if (linkPath) {
+        out = '<path d="' + linkPath + '" fill="none" stroke="rgba(70,60,45,.55)" stroke-width="1.6" stroke-dasharray="7 5" stroke-linecap="round"/>' + out;
+      }
+    }
+
+    /* 区域框 */
+    for (i = 0; i < annos.length; i++) {
+      a = annos[i];
+      if (a.type !== "area") continue;
+      sx = view.tx + a.x * view.s; sy = view.ty + a.y * view.s;
+      var aw = a.w * view.s, ah = a.h * view.s;
+      if (sx > w || sy > h || sx + aw < 0 || sy + ah < 0) continue;
+      var sel = opts.selected === a.id;
+      out += '<g><rect x="' + R(sx) + '" y="' + R(sy) + '" width="' + R(aw) + '" height="' + R(ah) + '" rx="10" fill="rgba(47,166,127,.10)" stroke="' + KIND_COLOR.area + '" stroke-width="' + (sel ? 2.2 : 1.4) + '" stroke-dasharray="9 6"/>' +
+        '<rect x="' + R(sx) + '" y="' + R(sy - 11) + '" width="' + (a.name.length * 13 + 16) + '" height="22" rx="8" fill="' + KIND_COLOR.area + '" opacity="' + (sel ? 1 : .92) + '"/>' +
+        '<text x="' + R(sx + 8) + '" y="' + R(sy + 5) + '" font-size="12.5" font-weight="600" fill="#fff">' + a.name + '</text>' +
+        (a.child ? '<text x="' + R(sx + 8) + '" y="' + R(sy + ah - 8) + '" font-size="11" fill="rgba(28,92,70,.9)">▣ 已绑子图：' + a.child + '</text>' : "") +
+        '</g>';
+    }
+
+    /* 地点钉 + 自由标签 */
+    for (i = 0; i < annos.length; i++) {
+      a = annos[i];
+      sx = pos[a.id].x; sy = pos[a.id].y;
+      if (sx < -40 || sy < -40 || sx > w + 40 || sy > h + 40) continue;
+      var isSel = opts.selected === a.id;
+      if (a.type === "pin") {
+        var color = KIND_COLOR[a.kind] || KIND_COLOR.city;
+        if (a.highlight || opts.pulse === a.id) {
+          out += '<g><circle class="pulse-ring" cx="' + R(sx) + '" cy="' + R(sy - 20) + '" r="14" fill="none" stroke="' + color + '" stroke-width="2.5"/></g>';
+        }
+        out += '<g class="anno-node" data-anno="' + a.id + '" transform="translate(' + R(sx) + ',' + R(sy - 20) + ')" style="cursor:pointer">' +
+          pinGlyph(color, isSel) +
+          '<text x="0" y="16" text-anchor="middle" font-size="12.5" font-weight="' + (isSel ? 700 : 600) + '" fill="#2b2f4a" stroke="rgba(255,255,255,.9)" stroke-width="3.4" paint-order="stroke">' + a.name + '</text>' +
+          (a.entity ? "" : '<text x="13" y="-19" font-size="11" fill="var(--app-warning)">⚠</text>') +
+          '</g>';
+      } else if (a.type === "label") {
+        out += '<g class="anno-node" data-anno="' + a.id + '" style="cursor:pointer">' +
+          '<text x="' + R(sx) + '" y="' + R(sy) + '" text-anchor="middle" font-size="' + (a.name === "无尽之海" ? 17 : 15) + '" letter-spacing="4" font-style="italic" fill="rgba(60,58,52,' + (isSel ? .8 : .52) + ')" stroke="rgba(255,255,255,.75)" stroke-width="3" paint-order="stroke">' + a.name + '</text>' +
+          (isSel ? '<rect x="' + R(sx - a.name.length * 9) + '" y="' + R(sy - 16) + '" width="' + (a.name.length * 18) + '" height="24" rx="6" fill="none" stroke="var(--app-primary)" stroke-width="1.4" stroke-dasharray="4 3"/>' : "") +
+          '</g>';
+      }
+    }
+
+    /* RM13 贴章对象与选中变换手柄 */
+    if (opts.stamps) {
+      for (i = 0; i < opts.stamps.length; i++) {
+        var st = opts.stamps[i];
+        sx = opts.local ? st.x : view.tx + st.x * view.s;
+        sy = opts.local ? st.y : view.ty + st.y * view.s;
+        out += '<g transform="translate(' + R(sx) + ',' + R(sy) + ') rotate(' + (st.rot || 0) + ') scale(' + R(((st.scale || 1) * (opts.local ? 1 : view.s)), 3) + ')">' + st.svg + '</g>';
+      }
+    }
+    if (opts.handle) {
+      var hp = opts.handle;
+      out += '<g>' +
+        '<rect x="' + R(hp.x) + '" y="' + R(hp.y) + '" width="' + R(hp.w) + '" height="' + R(hp.h) + '" fill="none" stroke="var(--app-primary)" stroke-width="1.4" stroke-dasharray="5 4"/>' +
+        '<rect x="' + R(hp.x - 3.5) + '" y="' + R(hp.y - 3.5) + '" width="7" height="7" fill="#fff" stroke="var(--app-primary)" stroke-width="1.4"/>' +
+        '<rect x="' + R(hp.x + hp.w - 3.5) + '" y="' + R(hp.y - 3.5) + '" width="7" height="7" fill="#fff" stroke="var(--app-primary)" stroke-width="1.4"/>' +
+        '<rect x="' + R(hp.x - 3.5) + '" y="' + R(hp.y + hp.h - 3.5) + '" width="7" height="7" fill="#fff" stroke="var(--app-primary)" stroke-width="1.4"/>' +
+        '<rect x="' + R(hp.x + hp.w - 3.5) + '" y="' + R(hp.y + hp.h - 3.5) + '" width="7" height="7" fill="#fff" stroke="var(--app-primary)" stroke-width="1.4"/>' +
+        '<path d="M' + R(hp.x + hp.w / 2) + ' ' + R(hp.y) + ' v-18" stroke="var(--app-primary)" stroke-width="1.4" stroke-dasharray="4 3"/>' +
+        '<circle cx="' + R(hp.x + hp.w / 2) + '" cy="' + R(hp.y - 22) + '" r="6" fill="#fff" stroke="var(--app-primary)" stroke-width="1.4"/>' +
+        '</g>';
+    }
+    return out;
+  }
+
+  /* ─── 7. 状态 ─────────────────────────────────────────────────────── */
+  var state = {
+    scene: "s1", theme: "aurora", style: "A", res: "64x40",
+    mode: "raster", tileSel: -1,
+    tool: "select", selected: "a1", paint: { terrain: T_FOREST, size: 1 },
+    seed: "4F2A19", templates: { threeSea: true, northSnow: true },
+    candidates: [], activeCandidate: 0, genWorld: null, lastCell: "—"
+  };
+
+  var parentWorld = null, childWorld = null, annoList = [], stampList = [];
+  var viewParent = { tx: 0, ty: 0, s: 1 }, viewChild = { tx: 0, ty: 0, s: 1 };
+
+  function resOf(r) { var p = r.split("x"); return { cols: +p[0], rows: +p[1] }; }
+
+  function rebuildWorlds() {
+    var res = resOf(state.res);
+    parentWorld = buildWorld({ cols: res.cols, rows: res.rows, seed: state.seed, templates: state.templates });
+    annoList = buildAnnos(parentWorld);
+    childWorld = buildWorld({ cols: 30, rows: 20, seed: "9B40D2", templates: { centerLake: true }, flat: true });
+    stampList = [
+      { id: "t1", x: parentWorld.width * 0.62, y: parentWorld.height * 0.36, scale: 1.1, rot: 14, svg: '<g><path d="M-11 6h22l-3 -14h-16z" fill="#c9b28a" stroke="#8a7159" stroke-width="1.4"/><path d="M-14 6h28" stroke="#8a7159" stroke-width="1.6"/><path d="M0 -14v-6" stroke="#8a7159" stroke-width="1.6"/><circle cx="0" cy="-22" r="2.4" fill="#8a7159"/></g>' }
+    ];
+    syncOverrides();
+  }
+
+  /* 让 Bing/checkIn 场景下的「上级/子图」关系符合 RM5 描述 */
+  function syncOverrides() {
+    var north = annoById(annoList, "a6");
+    if (north) north.child = "新手镇";
+  }
+
+  function canvasSize() {
+    var host = $("#cvHost");
+    return { w: host.clientWidth || 616, h: host.clientHeight || 612 };
+  }
+
+  function fitView(world, view, pad) {
+    var cs = canvasSize();
+    var s = Math.min(cs.w / world.width, cs.h / world.height) * (pad === undefined ? 0.94 : pad);
+    view.s = s;
+    view.tx = (cs.w - world.width * s) / 2;
+    view.ty = (cs.h - world.height * s) / 2;
+  }
+
+  /* ─── 8b. 比例尺：1 格 = 25 里，档位随缩放自动切换 ────────────────── */
+  var SCALE_STEPS = [10, 20, 25, 50, 100, 150, 200, 300, 500, 800, 1000, 1500, 2000, 3000];
+
+  function renderScaleBar(view, world) {
+    var svg = $("#scaleBarSvg");
+    if (!svg) return;
+    var pxPerCell = CELL * view.s;
+    var pick = SCALE_STEPS[SCALE_STEPS.length - 1], px = 0;
+    for (var i = 0; i < SCALE_STEPS.length; i++) {
+      px = SCALE_STEPS[i] / LI_PER_CELL * pxPerCell;
+      pick = SCALE_STEPS[i];
+      if (px >= 76) break;
+    }
+    var W = Math.max(40, Math.round(px)), seg = W / 4, k;
+    var dark = "var(--app-text)", light = "var(--app-surface)";
+    var g = "";
+    for (k = 0; k < 4; k++) {
+      g += '<rect x="' + R(k * seg) + '" y="4" width="' + R(seg + 0.6) + '" height="7" fill="' + (k % 2 ? light : dark) + '"/>';
+    }
+    g += '<rect x="0" y="4" width="' + W + '" height="7" fill="none" stroke="' + dark + '" stroke-width="1"/>';
+    g += '<g fill="var(--app-text-muted)" font-size="9.5">' +
+      '<text x="0" y="25" text-anchor="start">0</text>' +
+      '<text x="' + R(W / 2) + '" y="25" text-anchor="middle">' + Math.round(pick / 2) + '</text>' +
+      '<text x="' + W + '" y="25" text-anchor="end">' + pick + ' 里</text></g>';
+    svg.setAttribute("width", Math.max(104, W + 28));
+    svg.setAttribute("height", 30);
+    svg.innerHTML = g;
+    var span = WORLD_SPAN(world);
+    $("#scaleBarMeta").textContent = "1 格 = " + LI_PER_CELL + " 里 · 全图 " + span.x + "×" + span.y + " 里";
+    $("#stScaleHint").textContent = world.cols + "×" + world.rows + " 格 · 1 格 = " + LI_PER_CELL +
+      " 里 · 全图 " + span.x + "×" + span.y + " 里";
+  }
+
+  /* ─── 8. 主画布渲染 ───────────────────────────────────────────────── */
+  function renderCanvas() {
+    var host = $("#cvHost");
+    var cs = canvasSize();
+    var useChild = state.scene === "s5";
+    var world = useChild ? childWorld : parentWorld;
+    var view = useChild ? viewChild : viewParent;
+    var annos = useChild ? CHILD_ANNOS : annoList;
+    var links = useChild ? null : LINK_SEED;
+    var selected = useChild ? "c1" : state.selected;
+
+    var opts = { selected: selected };
+    if (state.scene === "s6") opts.pulse = selected;
+    if (state.scene === "s4") {
+      opts.stamps = stampList;
+      var st = stampList[0];
+      var sw = 46 * view.s * st.scale, sh = 40 * view.s * st.scale;
+      opts.handle = { x: view.tx + st.x * view.s - sw / 2, y: view.ty + st.y * view.s - sh / 2, w: sw, h: sh };
+    }
+
+    var annoMarkup = renderAnnoLayer(cs.w, cs.h, view, annos, links, opts);
+    var cursorClass = state.tool === "pan" ? "cv--grab" : (state.tool === "brush" && state.scene === "s3") ? "cv--paint" : "";
+
+    var extra = mapExtraLayers(world);
+    var isTile = state.mode === "tile";
+    var terrainHtml = isTile ? terrainTileLayer(world) : terrainLayer(world);
+    var boundHtml = isTile ? tileBoundaryLayer(world) : extra.outline;
+    var tileSel = (isTile && state.tileSel >= 0) ? tileHighlightLayer(world, state.tileSel) : "";
+    host.className = "cv " + cursorClass;
+    host.innerHTML =
+      '<svg viewBox="0 0 ' + cs.w + ' ' + cs.h + '" preserveAspectRatio="xMidYMid meet">' +
+      '<defs>' + extra.clip +
+      '<clipPath id="clipWorld"><rect x="0" y="0" width="' + world.width + '" height="' + world.height + '"/></clipPath></defs>' +
+      '<g clip-path="url(#clipWorld)" transform="translate(' + R(view.tx) + ',' + R(view.ty) + ') scale(' + R(view.s, 4) + ')">' +
+      '<rect x="0" y="0" width="' + world.width + '" height="' + world.height + '" fill="#2f6ca8"/>' +
+      terrainHtml + extra.elev + featureLayer(world) + boundHtml + tileSel +
+      '</g>' +
+      '<g>' + annoMarkup + '</g>' +
+      '</svg>';
+
+    renderScaleBar(view, world);
+    $("#zoomVal").textContent = Math.round(view.s * 100) + "%";
+    $("#stZoom").textContent = Math.round(view.s * 100) + "%";
+    $("#stCell").textContent = state.lastCell || "—";
+    if (state.popId) placePop(state.popId);
+  }
+
+  /* ─── 9. 属性面板（RM3 选中态 / RM4 绑定 / RM5 子图） ─────────────── */
+  function propsHtml(a) {
+    if (!a) return "";
+    var head = '<div class="props-head">' +
+      '<span style="color:' + (KIND_COLOR[a.kind] || KIND_COLOR[a.type]) + ';display:inline-flex"><svg width="16" height="16"><use href="#' + (a.type === "area" ? "ic-frame" : a.type === "label" ? "ic-tag" : "ic-pin-fill") + '"/></svg></span>' +
+      (a.type === "pin" ? "地点钉" : a.type === "area" ? "区域框" : "自由标签") +
+      '<div class="top-spacer"></div><span class="chip chip--primary">' + a.name + '</span></div>';
+
+    var body = "";
+    body += '<div class="field"><div class="field__label">名称</div><input class="input" value="' + a.name + '"/></div>';
+    if (a.note !== undefined) {
+      body += '<div class="field"><div class="field__label">备注</div><textarea class="textarea">' + (a.note || "") + '</textarea></div>';
+    }
+
+    if (a.type === "pin") {
+      if (a.entity) {
+        body += '<div class="field"><div class="field__label">绑定要素<em>已绑定</em></div>' +
+          '<div class="bind-row"><div class="select-wrap"><select class="select"><option>' + a.entity + '</option><option>解除绑定</option></select></div>' +
+          '<button type="button" class="btn btn--sm" title="在编辑器查看完整卡"><svg width="14" height="14"><use href="#ic-book"/></svg></button></div>' +
+          '<div class="field-note field-note--success">名称双向同步已生效 · 以 SQLite 为唯一事实源，改地图名或改卡名均即刻同步。</div></div>';
+      } else {
+        body += '<div class="field"><div class="field__label">绑定要素<em style="color:var(--app-warning)">未绑定</em></div>' +
+          '<div class="bind-row"><div class="select-wrap"><select class="select"><option>选择 location 要素…</option></select></div>' +
+          '<button type="button" class="btn btn--sm btn--primary">快速建卡</button></div>' +
+          '<div class="field-note"><svg width="14" height="14" style="flex:0 0 auto;color:var(--app-warning)"><use href="#ic-warning"/></svg>' +
+          '<span>未绑定的地点不会同步显示名，左栏已归入「未绑定要素」分组。一键建卡后名称自动代入。</span></div></div>';
+      }
+      body += '<div class="field"><div class="field__label">图标<em>按要素类型取色</em></div>' +
+        '<div class="select-wrap"><select class="select"><option>城池</option><option>村庄</option><option>关卡</option><option>港口</option><option>遗迹</option></select></div></div>';
+    }
+
+    if (a.type === "area") {
+      if (a.child) {
+        body += '<div class="field"><div class="field__label">绑定子地图<em>已绑定</em></div>' +
+          '<div class="child-card"><span class="child-card__thumb" id="childThumb"></span>' +
+          '<span class="child-card__text"><b>' + a.child + '</b><span>30×20 格 · 5 标注</span></span>' +
+          '<div class="top-spacer"></div><button type="button" class="btn btn--sm">进入</button></div>' +
+          '<div class="field-note field-note--info">放大越过 2.5× 即无缝滑入子图，不弹气泡、不跳切；进入后子图中设为「承接入口」的标注脉冲高亮 2s 并自动居中。</div></div>';
+      } else {
+        body += '<div class="field"><div class="field__label">绑定子地图</div>' +
+          '<div class="bind-row"><div class="select-wrap"><select class="select"><option>选择子地图…</option></select></div>' +
+          '<button type="button" class="btn btn--sm">新建子图</button></div>' +
+          '<div class="field-note field-note--info">任意区域框或地点钉都可绑子图，支持 ≥3 级嵌套；保存时做环引用检测。</div></div>';
+      }
+    }
+
+    if (a.type === "label") {
+      body += '<div class="field"><div class="field__label">字样<em>斜体 · 自由标签</em></div>' +
+        '<div class="brush-row" style="padding:0"><button type="button" class="btn btn--sm is-on">斜体</button><button type="button" class="btn btn--sm">常规</button></div></div>';
+    }
+
+    var foot = '<div class="props-foot"><button type="button" class="btn btn--sm" style="flex:1"><svg width="14" height="14"><use href="#ic-target"/></svg>居中定位</button>' +
+      '<button type="button" class="btn btn--sm" style="flex:1;color:var(--app-error)">删除</button></div>';
+
+    return head + '<div class="props-body">' + body + '</div>' + foot;
+  }
+
+  /* 地块属性：地块作为一等公民，可挂别名 / 归属 / 驻军 / 物产并被章节引用 */
+  function tilePropsHtml(world, id) {
+    var m = buildTileModel(world);
+    var t = m.byId[id];
+    if (!t) return "";
+    var meta = TER_META[t.t] || { name: "未知" };
+    var area = 0, z, A, B;
+    for (z = 0; z < t.poly.length; z++) {
+      A = t.poly[z]; B = t.poly[(z + 1) % t.poly.length];
+      area += A[0] * B[1] - B[0] * A[1];
+    }
+    area = Math.abs(area) / 2;
+    var sqLi = Math.round(area * Math.pow(25 / CELL, 2));
+    var head = '<div class="props-head">' +
+      '<span style="color:var(--app-accent-purple);display:inline-flex"><svg width="16" height="16"><use href="#ic-frame"/></svg></span>' +
+      '地块<div class="top-spacer"></div><span class="chip chip--primary">#' + id + '</span></div>';
+    var body = "";
+    body += '<div class="field"><div class="field__label">地形<em>Voronoi 单元</em></div>' +
+      '<div class="bind-row"><span class="chip">' + meta.name + '</span>' +
+      '<button type="button" class="btn btn--sm">改地形</button></div></div>';
+    body += '<div class="field"><div class="field__label">栅格坐标</div>' +
+      '<div class="field-note">' + t.lx + ', ' + t.ly + ' · 中心 ' + Math.round(t.cx) + ', ' + Math.round(t.cy) + ' px</div></div>';
+    body += '<div class="field"><div class="field__label">面积<em>1 格 = 25 里</em></div>' +
+      '<div class="field-note">' + sqLi + ' 平方里 · ' + t.poly.length + ' 个顶点 · 曲线边界</div></div>';
+    body += '<div class="field"><div class="field__label">高程</div>' +
+      '<div class="field-note">' + Math.round(world.elev[t.gi] * 100) + ' / 100</div></div>';
+    body += '<div class="field"><div class="field__label">绑定要素<em style="color:var(--app-warning)">未绑定</em></div>' +
+      '<div class="bind-row"><div class="select-wrap"><select class="select"><option>选择 location 要素…</option></select></div>' +
+      '<button type="button" class="btn btn--sm btn--primary">快速建卡</button></div>' +
+      '<div class="field-note field-note--info">地块是数据模型的一等公民：可挂别名、归属势力、驻军、物产，并被章节引用。切回栅格模式后绑定仍按坐标保留。</div></div>';
+    var foot = '<div class="props-foot"><button type="button" class="btn btn--sm" style="flex:1"><svg width="14" height="14"><use href="#ic-target"/></svg>居中定位</button>' +
+      '<button type="button" class="btn btn--sm" style="flex:1">并入邻块</button></div>';
+    return head + '<div class="props-body">' + body + '</div>' + foot;
+  }
+
+  function renderProps() {
+    var panel = $("#propsPanel");
+    var tw = state.scene === "s5" ? childWorld : parentWorld;
+    if (state.mode === "tile" && state.tileSel >= 0 && tw) {
+      panel.innerHTML = tilePropsHtml(tw, state.tileSel);
+    } else {
+      var list = state.scene === "s5" ? CHILD_ANNOS : annoList;
+      var a = annoById(list, state.scene === "s5" ? "c1" : state.selected);
+      panel.innerHTML = propsHtml(a);
+    }
+    var thumb = $("#childThumb");
+    if (thumb) thumb.innerHTML = '<svg viewBox="0 0 44 34" preserveAspectRatio="none" width="44" height="34">' +
+      '<g transform="translate(1,1) scale(' + R(42 / childWorld.width, 4) + ')">' + terrainLayer(childWorld, 2) + '</g></svg>';
+  }
+
+  /* ─── 9b. 设定卡 Popover（RM11：地图侧反查要素卡） ──────────────────── */
+  function popHtml(a) {
+    var c = a.card || {};
+    var rows = "";
+    if (c.alias) rows += '<div class="pop__row"><em>别名</em><span>' + c.alias + "</span></div>";
+    if (c.faction) rows += '<div class="pop__row"><em>归属</em><span>' + c.faction + "</span></div>";
+    if (c.summary) rows += '<div class="pop__row"><em>摘要</em><span>' + c.summary + "</span></div>";
+    if (c.rel) rows += '<div class="pop__row"><em>关联</em><span>' + c.rel + "</span></div>";
+    return '<div class="pop__head">' +
+        '<span style="color:' + (KIND_COLOR[a.kind] || KIND_COLOR.city) + ';display:inline-flex"><svg width="18" height="18"><use href="#ic-pin-fill"/></svg></span>' +
+        '<span class="pop__title"><b>' + a.name + '</b><span>location · 已绑定要素卡</span></span></div>' +
+      '<div class="pop__body">' + rows + '</div>' +
+      '<div class="pop__foot"><button type="button" class="btn btn--sm btn--primary" style="flex:1"><svg width="14" height="14"><use href="#ic-book"/></svg>在编辑器查看完整卡</button></div>';
+  }
+
+  function placePop(id) {
+    var a = annoById(annoList, id);
+    var pop = $("#entityPop");
+    if (!a) { pop.style.display = "none"; state.popId = null; return; }
+    var view = activeView(), cs = canvasSize();
+    var sx = view.tx + a.x * view.s, sy = view.ty + a.y * view.s;
+    pop.style.left = Math.min(Math.max(sx + 20, 8), Math.max(8, cs.w - 284)) + "px";
+    pop.style.top = Math.min(Math.max(sy - 150, 8), Math.max(8, cs.h - 236)) + "px";
+  }
+
+  function showPop(id) {
+    var a = annoById(annoList, id);
+    var pop = $("#entityPop");
+    /* 只读卡只对已绑定要素的钉开放；未绑定的走属性面板引导建卡 */
+    if (!a || !a.entity) { pop.style.display = "none"; state.popId = null; return; }
+    pop.innerHTML = popHtml(a);
+    state.popId = id;
+    placePop(id);
+    pop.style.display = "block";
+  }
+
+  function hidePop() {
+    $("#entityPop").style.display = "none";
+    state.popId = null;
+  }
+
+  /* ─── 10. 侧栏：地形调色板 / 符号库 ───────────────────────────────── */
+  function swatch(svgInner, label) {
+    return '<button type="button" class="terrain-cell"><svg width="52" height="34" viewBox="0 0 52 34">' + svgInner + '</svg><span>' + label + '</span></button>';
+  }
+
+  function renderPalette() {
+    var fill = "", i, m;
+    for (i = 0; i < TER_META.length; i++) {
+      m = TER_META[i];
+      fill += swatch('<rect x="0" y="0" width="52" height="34" fill="url(#pat-' + m.key + ')"/>', m.name);
+    }
+    $("#paletteFill").innerHTML = fill;
+    $("#paletteOver").innerHTML =
+      swatch('<rect width="52" height="34" fill="#a58d72"/><use href="#lg-cliff" transform="translate(26,16) rotate(0) scale(1.5,1)"/>', "悬崖") +
+      swatch('<rect width="52" height="34" fill="#2f6ca8"/><use href="#lg-island" transform="translate(26,17) scale(1.1)"/>', "岛屿") +
+      swatch('<rect width="52" height="34" fill="#4f9ad6"/><use href="#lg-waterfall" transform="translate(26,16) scale(1.2)"/>', "瀑布");
+
+    var places = [["城池", "#pat-forest"], ["村庄", "#pat-grass"], ["关卡", "#pat-mountain"], ["港口", "#pat-lake"], ["遗迹", "#pat-desert"], ["营地", "#pat-grass"], ["神殿", "#pat-snowfield"], ["矿场", "#pat-mountain"]];
+    var pg = "";
+    for (i = 0; i < places.length; i++) {
+      pg += '<div class="sym-cell"><svg width="26" height="26" viewBox="-13 -13 26 26">' +
+        '<circle cx="0" cy="0" r="11" fill="var(--app-surface-alt)"/>' +
+        '<path d="M0 0 C -6 -8 -8.5 -11 -8.5 -13.6 A 8.5 8.5 0 0 1 8.5 -13.6 C 8.5 -11 6 -8 0 0 Z" fill="' + KIND_COLOR[["city", "village", "pass", "port", "ruin", "village", "city", "pass"][i]] + '" stroke="#fff" stroke-width="1.6"/>' +
+        '<circle cx="0" cy="-13.6" r="3" fill="#fff"/></svg><span>' + places[i][0] + '</span></div>';
+    }
+    $("#symPlaces").innerHTML = pg;
+
+    var decors = [["松树", "#pat-forest"], ["岩石", "#pat-mountain"], ["小船", "#pat-lake"], ["帐篷", "#pat-desert"], ["瀑布", "#pat-river"], ["雪松", "#pat-snowmtn"], ["冰原", "#pat-snowfield"], ["浪花", "#pat-sea"]];
+    var dg = "";
+    for (i = 0; i < decors.length; i++) {
+      dg += '<div class="sym-cell"><svg width="26" height="26" viewBox="-13 -13 26 26">' +
+        '<rect x="-11" y="-11" width="22" height="22" rx="5" fill="url(' + decors[i][1] + ')"/>' +
+        '</svg><span>' + decors[i][0] + '</span></div>';
+    }
+    $("#symDecor").innerHTML = dg;
+  }
+
+  /* ─── 11. 随机成图弹窗（RM8） ─────────────────────────────────────── */
+  function miniSvg(world, w, h, lod) {
+    /* 缩略图与主画布同源：地块模式下候选图 / 导出预览也用 Voronoi 渲染 */
+    var body = state.mode === "tile"
+      ? terrainTileLayer(world) + tileBoundaryLayer(world)
+      : terrainLayer(world, lod || 1);
+    return '<svg viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="xMidYMid slice" width="100%" height="100%">' +
+      '<g transform="translate(0,0) scale(' + R(w / world.width, 4) + ')">' +
+      '<rect width="' + world.width + '" height="' + world.height + '" fill="#2f6ca8"/>' +
+      body + '</g></svg>';
+  }
+
+  function renderGenPreview(world) {
+    var box = $("#genPreview");
+    box.innerHTML = '<span class="gen-preview__tag" id="genTag"></span>' + miniSvg(world, 440, 286);
+    $("#genTag").textContent = "seed · " + world.seed + " · " + activeTplNames().join(" + ");
+  }
+
+  function activeTplNames() {
+    var map = { threeSea: "三面环海", island: "四面环海", westDesert: "西面沙漠", northSnow: "北境雪原", centerLake: "中央大湖", bigRiver: "大河贯境", barren: "荒芜大陆" };
+    var out = [];
+    for (var k in state.templates) if (state.templates[k]) out.push(map[k]);
+    return out.length ? out : ["无约束"];
+  }
+
+  function seedStr(n) {
+    var s = "", chars = "0123456789ABCDEF";
+    for (var i = 0; i < 6; i++) s += chars[Math.floor(Math.random() * chars.length)];
+    return s;
+  }
+
+  function rollCandidates() {
+    var res = resOf(state.res);
+    state.candidates = [];
+    for (var i = 0; i < 4; i++) {
+      state.candidates.push(buildWorld({ cols: Math.round(res.cols * 0.6), rows: Math.round(res.rows * 0.6), seed: seedStr(6), templates: state.templates }));
+    }
+    var mainSeed = state.candidates[0].seed;
+    state.genWorld = buildWorld({ cols: res.cols, rows: res.rows, seed: mainSeed, templates: state.templates });
+    $("#genSeed").value = mainSeed;
+    $("#genCounter").textContent = "本批 " + state.candidates.length + " 张候选 · 换一批不打断当前构思";
+    renderGenPreview(state.genWorld);
+    var thumbs = "";
+    for (var j = 0; j < state.candidates.length; j++) {
+      thumbs += '<div class="thumb' + (j === 0 ? " is-on" : "") + '" data-thumb="' + j + '">' + miniSvg(state.candidates[j], 100, 56, 2) + '<em>' + state.candidates[j].seed + '</em></div>';
+    }
+    $("#genThumbs").innerHTML = thumbs;
+  }
+
+  /* ─── 12. RM14 过渡时序三帧 ──────────────────────────────────────── */
+  function renderTransitionStrip() {
+    var strip = $("#transitionStrip");
+    if (!strip.dataset.built) {
+      strip.dataset.built = "1";
+      var cards = [
+        { cap: "① t = 0ms", note: "低细节 LOD", desc: "父图切快照，不重绘全量" },
+        { cap: "② t ≈ 180ms", note: "合成器动画", desc: "双层同屏，transform 过渡" },
+        { cap: "③ t ≈ 420ms", note: "误差 ≤ 1px", desc: "子图精确落位，父图淡出" }
+      ];
+      var html = "";
+      for (var i = 0; i < cards.length; i++) {
+        html += '<div class="ts-card"><div class="ts-art" data-frame="' + i + '"></div>' +
+          '<div class="ts-card__cap"><b>' + cards[i].cap + '</b><em>' + cards[i].note + '</em></div>' +
+          '<div class="ts-card__desc">' + cards[i].desc + '</div></div>';
+        if (i < cards.length - 1) html += '<div class="ts-arrow"><svg width="16" height="16"><use href="#ic-arrow-right"/></svg></div>';
+      }
+      strip.innerHTML = html;
+    }
+    drawFrame(0); drawFrame(1); drawFrame(2);
+  }
+
+  function drawFrame(i) {
+    var art = $('.ts-art[data-frame="' + i + '"]');
+    if (!art) return;
+    var W = 150, H = 86, out = "";
+    if (i === 0) {
+      /* 父图：粗粒度 LOD + 标注外轮廓 */
+      out = '<svg viewBox="0 0 ' + W + ' ' + H + '"><g transform="scale(' + R(W / parentWorld.width, 4) + ')">' +
+        '<rect width="' + parentWorld.width + '" height="' + parentWorld.height + '" fill="#2f6ca8"/>' +
+        terrainLayer(parentWorld, 4) + '</g>' +
+        '<g transform="scale(' + R(W / parentWorld.width, 4) + ')">' +
+        '<rect x="' + R(parentWorld.width * 0.33) + '" y="' + R(parentWorld.height * 0.2) + '" width="' + R(parentWorld.width * 0.3) + '" height="' + R(parentWorld.height * 0.24) + '" fill="rgba(47,166,127,.16)" stroke="#2fa57e" stroke-width="4" stroke-dasharray="10 7"/>' +
+        '</g><rect x="0" y="0" width="' + W + '" height="' + H + '" fill="none" stroke="rgba(43,47,74,.15)"/></svg>';
+    } else if (i === 1) {
+      /* 双层同屏：父图 LOD 退到背景，子图带着它自己的内容缩小飞向区域框 */
+      var tx = W * 0.33, ty = H * 0.2, tw = W * 0.3, th = H * 0.24;
+      out = '<svg viewBox="0 0 ' + W + ' ' + H + '">' +
+        '<g opacity=".38" transform="scale(' + R(W / parentWorld.width, 4) + ')"><rect width="' + parentWorld.width + '" height="' + parentWorld.height + '" fill="#2f6ca8"/>' + terrainLayer(parentWorld, 5) + '</g>' +
+        '<g transform="translate(' + R(tx + 22) + ',' + R(ty + 16) + ') scale(' + R(tw / childWorld.width * 1.5, 4) + ')" opacity=".92">' +
+        '<rect width="' + childWorld.width + '" height="' + childWorld.height + '" fill="#a7cd7c"/>' + terrainLayer(childWorld, 2) + '</g>' +
+        '<rect x="' + R(tx) + '" y="' + R(ty) + '" width="' + R(tw) + '" height="' + R(th) + '" fill="none" stroke="#2fa57e" stroke-width="1.4" stroke-dasharray="6 4"/>' +
+        '<path d="M' + R(tx + tw) + ' ' + R(ty + th) + ' L' + R(tx + tw / 2 + 6) + ' ' + R(ty + th / 2 + 4) + '" stroke="var(--app-primary)" stroke-width="1.4" stroke-dasharray="4 3"/>' +
+        '<rect x="0" y="0" width="' + W + '" height="' + H + '" fill="none" stroke="rgba(43,47,74,.15)"/></svg>';
+    } else {
+      /* 落位：子图铺满，父图 Annotation 区域框退到左上作为面包屑的“上一级” */
+      out = '<svg viewBox="0 0 ' + W + ' ' + H + '">' +
+        '<g transform="scale(' + R(W / childWorld.width, 4) + ')">' +
+        '<rect width="' + childWorld.width + '" height="' + childWorld.height + '" fill="#a7cd7c"/>' + terrainLayer(childWorld) + '</g>' +
+        '<g transform="translate(' + R(W * 0.34) + ',' + R(H * 0.42) + ')">' +
+        '<path d="M0 0 C -7 -9.6 -9.6 -13.6 -9.6 -17 A 9.6 9.6 0 0 1 9.6 -17 C 9.6 -13.6 7 -9.6 0 0 Z" fill="#34b37e" stroke="#fff" stroke-width="2"/>' +
+        '<circle cx="0" cy="-17" r="3.4" fill="#fff"/></g>' +
+        '<circle cx="' + R(W * 0.34) + '" cy="' + R(H * 0.42 - 17) + '" r="13" fill="none" stroke="#34b37e" stroke-width="2" opacity=".5"/>' +
+        '<rect x="0" y="0" width="' + W + '" height="' + H + '" fill="none" stroke="rgba(43,47,74,.15)"/></svg>';
+    }
+    art.innerHTML = out;
+  }
+
+  /* ─── 13. 图例页（§5.1 M2 美术验收基准） ────────────────────────── */
+  function renderLegend() {
+    var view = $("#legendView");
+    if (view.dataset.built) { return; }
+    view.dataset.built = "1";
+    var html = '<div class="legend-page__head"><h3>地形图例规格</h3><span>' +
+      '§5.1 · legendVersion 随 content 存档，新增地形不破坏旧图 · 顶部「符号风格」可切换三套候选样图对比</span></div>';
+
+    html += '<div class="legend-block"><div class="legend-block__title">铺满型 <i>· 占满栅格：底色 + 专属纹理，图案为 SVG pattern 复用，seed 派生散布</i></div><div class="legend-grid">';
+    for (var i = 0; i < TER_META.length; i++) {
+      var m = TER_META[i];
+      html += '<div class="legend-card"><svg width="72" height="48" viewBox="0 0 72 48">' +
+        '<rect x="0" y="0" width="72" height="48" fill="url(#pat-' + m.key + ')"/></svg>' +
+        '<div class="legend-card__text"><b>' + m.name + '</b><span>' + m.desc + '</span></div></div>';
+    }
+    html += '</div></div>';
+
+    var overs = [
+      { name: "悬崖", desc: "沿边界绘制带短刺的粗线，短刺指向崖底；常用于山地与平原交界", art: '<rect width="72" height="48" fill="#a58d72"/><use href="#lg-cliff" transform="translate(36,24) scale(2.1,1)"/>' },
+      { name: "岛屿", desc: "海中地块 + 一圈沙滩描边 + 中央微符号；海中孤立地块会自动补描边", art: '<rect width="72" height="48" fill="#2f6ca8"/><use href="#lg-island" transform="translate(36,24) scale(1.5)"/>' },
+      { name: "瀑布", desc: "竖向双线 + 下方水花点，落在悬崖线或山地边缘，点击放置", art: '<rect width="72" height="48" fill="#6d8fa8"/><use href="#lg-waterfall" transform="translate(36,22) scale(1.9)"/>' }
+    ];
+    html += '<div class="legend-block"><div class="legend-block__title">叠加型 <i>· 不占格，画在地形层之上的符号层，可跨格绘制、删除不影响底质</i></div><div class="legend-grid">';
+    for (var j = 0; j < overs.length; j++) {
+      html += '<div class="legend-card"><svg width="72" height="48" viewBox="0 0 72 48">' + overs[j].art + '</svg>' +
+        '<div class="legend-card__text"><b>' + overs[j].name + '</b><span>' + overs[j].desc + '</span></div></div>';
+    }
+    html += '</div></div>';
+
+    html += '<div class="legend-block"><div class="legend-block__title">渲染约束 <i>· 工程验收项</i></div>' +
+      '<div class="legend-card" style="grid-column:1 / -1"><div class="legend-card__text">' +
+      '<span>① 铺满型图案用 SVG &lt;pattern&gt; 定义一次、全图复用，地形层仅 9 个 path 节点；' +
+      '② 线条层（海岸线 / 地块分界 / 等高线）由 marching squares 等值线实时生成，每类 1 个 path，全图约 20 个 path（4000 格下 DOM ≤ 200）；' +
+      '③ 符号散布位置由 seed 派生，同 seed 同约束必出同图；④ 世界尺度固定 1 格 = 25 里，比例尺随缩放自动换档（0 / 半档 / 满档三刻度）；' +
+      '⑤ 地块模型（Voronoi）：抖动网格 + 5×5 邻域半平面裁剪求精确单元，2560 地块实测 19ms，全部凸多边形、单元间端点偏差 0px 无缝，公共边共享 Q 控制点使边界天生为曲线；' +
+      '⑥ legendVersion 版本化，未来新增地形不破坏旧图回读。</span></div></div></div>';
+
+    view.innerHTML = html;
+  }
+
+  /* ─── 14. 导出预览（RM6） ─────────────────────────────────────────── */
+  function renderExportPreview() {
+    var box = $("#expPreview");
+    if (!box) return;
+    var legendStrip = "";
+    if ($("#expLegend") && $("#expLegend").checked) {
+      legendStrip = '<g transform="translate(6,' + (232) + ')">' +
+        '<rect x="0" y="0" width="292" height="30" rx="6" fill="rgba(255,255,255,.92)"/>' +
+        '<g transform="scale(0.34)">' +
+        TER_META.map(function (m, i) {
+          return '<g transform="translate(' + (i * 92 + 14) + ',12)"><rect width="74" height="52" fill="url(#pat-' + m.key + ')"/>' +
+            '<text x="37" y="70" text-anchor="middle" font-size="30" fill="#4a5068">' + m.name + '</text></g>';
+        }).join("") + '</g></g>';
+    }
+    box.innerHTML = '<svg viewBox="0 0 304 270" style="width:100%;height:100%">' +
+      '<rect x="0" y="0" width="304" height="270" fill="#fff"/>' +
+      '<g transform="translate(6,6) scale(' + R(292 / parentWorld.width, 4) + ')">' +
+      '<rect width="' + parentWorld.width + '" height="' + parentWorld.height + '" fill="#2f6ca8"/>' +
+      (state.mode === "tile" ? terrainTileLayer(parentWorld) + tileBoundaryLayer(parentWorld) : terrainLayer(parentWorld)) +
+      '</g>' + legendStrip +
+      '<rect x="0.5" y="0.5" width="303" height="269" fill="none" stroke="var(--app-border)"/></svg>';
+  }
+
+  /* ─── 15. 场景文案 ────────────────────────────────────────────────── */
+  var SCENE_INFO = {
+    s1: {
+      note: "RM1 窗口骨架 + RM2 画布 + RM3/RM4 标注与要素绑定 · 点击任一地点钉可看属性面板联动",
+      title: "01 · 主画布",
+      lines: [
+        "<b>布局</b>：地图窗 1120×720，左栏标注列表可按类型折叠；右栏为选中标注的属性面板。",
+        "<b>RM4</b>：绑定后名称双向同步，SQLite 是唯一事实源；未绑定的钉在左栏「未绑定要素」分组并带 ⚠。",
+        "<b>RM2</b>：滚轮缩放（10%–400%）、空格/右键拖拽平移、Ctrl+Z/Y 全局单栈撤销；自动保存 800ms 防抖，状态栏只显示状态不阻塞。"
+      ]
+    },
+    s2: {
+      note: "RM8 随机初始化 · 约束模板多选 + seed 可复现 + 换一批候选预览，采用后才落图",
+      title: "02 · 随机成图",
+      lines: [
+        "<b>G1 冷启动</b>：新建 → 选约束 → 随机生成 → 微调 → 落图，全程不查教程，目标 ≤ 1 分钟。",
+        "<b>可复现</b>：同 seed + 同约束必出同图（纯函数 + value noise），seed 随图存档便于回溯。",
+        "<b>换一批</b>：生成 4 张候选缩略图，点选切换预览，满意再「采用并落图」，不满意不留痕。",
+        "<b>兜底</b>：约束模板只管大格局，噪声负责细节，不满意还能用地形画笔逐格手改。"
+      ]
+    },
+    s3: {
+      note: "RM9 手动地形编辑 · 铺满型 9 类底质 + 叠加型 3 类符号，左栏即为笔刷调色板",
+      title: "03 · 地形画笔",
+      lines: [
+        "<b>两组笔刷</b>：铺满型 9 类点选涂刷栅格；叠加型 3 类作为符号描画在地形之上，删除不影响底质。",
+        "<b>笔刷档位</b>：1/3/5 格三档 + 圆形随笔 + 矩形区域填充；吸管取地形、橡皮恢复默认草原。",
+        "<b>性能</b>：涂刷即时渲染，局部重绘 ≤ 16ms/帧；每次落笔入撤销栈，可 Ctrl+Z 回退。",
+        "<b>在左侧</b>：9+3 个色板格子本身就是图例 preview，认识地形看一眼就够。"
+      ]
+    },
+    s4: {
+      note: "RM13 自由贴章 · 游戏地图编辑器级的二维对象自由：摆放 / 旋转 / 缩放 / 遮挡 / 编组",
+      title: "04 · 自由贴章",
+      lines: [
+        "<b>变换</b>：拖拽移动、手柄缩放、旋转（Shift 吸附 15°）、翻转，全程实时预览、不锁格、亚像素自由。",
+        "<b>层级</b>：对象有前后遮挡序，右键置顶/上移/下移/置底，选中对象带 8 个变换手柄 + 旋转手柄。",
+        "<b>多选与编组</b>：框选多对象后可编组，组内相对关系锁定，作为整体变换。",
+        "<b>红线</b>：贴章仍是预制符号对象——不做自由笔刷塑形与路径编辑；对象软上限 500。"
+      ]
+    },
+    s5: {
+      note: "RM5 大小图嵌套 + RM14 无缝跨尺度过渡 · 底部三帧为过渡时序规格",
+      title: "05 · 嵌套下钻",
+      lines: [
+        "<b>连续缩放为主路径</b>：越过 2.5× 不弹气泡、不跳切，直接无缝滑入子图；双击为显式快捷进入。",
+        "<b>承接高亮</b>：从父图「北境」进入后，子图中设为承接入口的标注脉冲高亮 2s 并自动居中——即「加载新手镇地图并高亮新手村」。",
+        "<b>返回</b>：缩小即无缝退回父图（子图缩成大图一角），面包屑可逐级跳转，Esc 返上级。",
+        "<b>RM14 规格</b>：单尺度 300–450ms ease-out；可中断，未过 50% 进度不提交切换；终态误差 ≤ 1px；父图过渡期走 LOD 快照；&lt;40fps 自动降级为 150ms 淡入。"
+      ]
+    },
+    s6: {
+      note: "RM10 当前场景联动 + RM11 地图侧反查设定卡 + RM12 广播实时性",
+      title: "06 · 双窗联动",
+      lines: [
+        "<b>RM10</b>：编辑器设置当前场景地点 → 广播 → 地图窗高亮该标注并居中，写作侧写到哪、看到哪。",
+        "<b>RM11</b>：地图窗点击已绑定标注弹轻量只读设定卡，「在编辑器查看完整卡」跳转定位。",
+        "<b>边界</b>：编辑器未开时不自动拉起窗口，只 toast 提示并提供「打开编辑器」按钮——守零打断。",
+        "<b>RM12</b>：SQLite 唯一事实源，任一窗保存即向其他窗广播增量变更，防抖 ≤ 300ms；窗口未开自然丢弃，不堆积队列。"
+      ]
+    },
+    s7: {
+      note: "RM6 导出 PNG · 走系统保存对话框，可勾选输出标注列表作为图例",
+      title: "07 · 导出 PNG",
+      lines: [
+        "<b>范围</b>：当前视图 / 整张地图；倍率 1×/2×/4×，右侧实时显示输出尺寸。",
+        "<b>图例</b>：勾选「包含标注列表」时导出图底部自动拼一段地形图例条，可直接当作品插图。",
+        "<b>通道</b>：主进程 saveDialog + 文件 IPC，不经渲染进程写磁盘。"
+      ]
+    },
+    s8: {
+      note: "§5.1 地形图例规格表 · M2 美术验收基准（顶部「符号风格」可切换三套候选样图）",
+      title: "08 · 地形图例",
+      lines: [
+        "<b>用途</b>：锁定「图案种类与构成方式」；具体形状通过顶部 A/B/C 三套风格样图对比拍板（开放问题 ⑦）。",
+        "<b>A 圆润</b>：圆树冠 + 圆润山脊，亲和、适合低魔奇幻。",
+        "<b>B 尖锐</b>：针叶树 + 锯齿山脊，冷峻、适合北境与硬核史诗。",
+        "<b>C 简约</b>：扁平符号 + 极简线脚，信息密度低、小尺寸下最清晰。",
+        "<b>约束</b>：符号全部内置 SVG，无外部素材依赖，规避贴图版权与 POT 约束。"
+      ]
+    }
+  };
+
+  function renderSceneMeta() {
+    var info = SCENE_INFO[state.scene];
+    $("#mapNote").innerHTML = "<b>" + info.title + "</b> · " + info.note;
+    $("#specStrip").innerHTML = info.lines.map(function (l) {
+      return '<div class="spec"><p>' + l + "</p></div>";
+    }).join("");
+    var hints = {
+      s1: state.mode === "tile" ? "Voronoi 地块模式 · 点击地块查看属性并绑定要素 · 滚轮缩放" : "点击地点钉查看属性 · 滚轮缩放 · 空格拖拽平移",
+      s2: "勾选模板后「换一批」，满意再采用",
+      s3: state.mode === "tile" ? "地块模式下涂刷即时生效，边界曲线自动重算" : "按住鼠标在画布上涂刷即可改地形（当前：森林）",
+      s4: "拖动手柄缩放 / 顶部圆点旋转（Shift 吸附 15°）",
+      s5: "已下钻至第 3 级 · Esc 返回上层",
+      s6: "当前场景：青峡关 · 已在地图窗居中高亮",
+      s7: "导出后可直接作为插图放进作品",
+      s8: "切换顶部「符号风格」对比三套样图"
+    };
+    $("#mapHint").textContent = hints[state.scene];
+  }
+
+  /* ─── 16. 场景切换 ────────────────────────────────────────────────── */
+  function setScene(scene) {
+    state.scene = scene;
+    document.body.dataset.scene = scene;
+    $$("#sceneSeg button").forEach(function (b) { b.classList.toggle("is-on", b.dataset.scene === scene); });
+
+    $("#stage").classList.toggle("is-scroll", scene === "s6");
+    $("#mwSide").classList.toggle("mw-side--hidden", scene === "s8");
+    $("#mwProps").classList.toggle("mw-props--hidden", scene === "s3" || scene === "s7" || scene === "s8");
+
+    if (scene === "s3") { state.tool = "brush"; }
+    if (scene === "s4") { state.tool = "stamp"; }
+    if (scene === "s1" || scene === "s5" || scene === "s6") { state.tool = "select"; }
+    syncToolRail();
+
+    if (scene === "s2") { rollCandidates(); }
+    if (scene === "s5") { fitView(childWorld, viewChild, 1.0); }
+    if (scene === "s7") { renderExportPreview(); }
+    if (scene === "s8") { renderLegend(); }
+
+    /* 双窗联动：以编辑器「当前场景地点」为联动锚点，高亮并居中（RM10） */
+    if (scene === "s6") {
+      state.selected = "a2";
+      syncSideActive();
+    } else {
+      hidePop();
+    }
+
+    renderCanvas();
+    renderProps();
+    renderSceneMeta();
+    if (scene === "s5") renderTransitionStrip();
+    if (scene === "s6") { focusOn("a2"); showPop("a2"); }
+  }
+
+  function setTool(tool) {
+    state.tool = tool;
+    syncToolRail();
+    renderCanvas();
+  }
+
+  function syncToolRail() {
+    $$(".tool-rail__btn").forEach(function (b) { b.classList.toggle("is-on", b.dataset.tool === state.tool); });
+  }
+
+  function setTheme(theme) {
+    state.theme = theme;
+    $("#shell").dataset.theme = theme;
+    $("#editorShell").dataset.theme = theme;
+    $$("#themeSeg button").forEach(function (b) { b.classList.toggle("is-on", b.dataset.theme === theme); });
+  }
+
+  function setStyle(style) {
+    state.style = style;
+    $("#mapDefs").innerHTML = buildDefs(style);
+    $$("#styleSeg button").forEach(function (b) { b.classList.toggle("is-on", b.dataset.style === style); });
+    renderCanvas(); renderPalette();
+    renderTransitionStrip();
+    if (state.scene === "s7") renderExportPreview();
+    if ($("#childThumb")) renderProps();
+  }
+
+  function setRes(res) {
+    state.res = res;
+    $$("#resSeg button").forEach(function (b) { b.classList.toggle("is-on", b.dataset.res === res); });
+    rebuildWorlds();
+    fitView(parentWorld, viewParent);
+    var r = resOf(res);
+    $("#stScaleHint").textContent = "默认 " + r.cols + "×" + r.rows + " = " + (r.cols * r.rows) + " 格";
+    setScene(state.scene);
+  }
+
+  function setMode(mode) {
+    state.mode = mode;
+    if (mode !== "tile") state.tileSel = -1;
+    $$("#modeSeg button").forEach(function (b) { b.classList.toggle("is-on", b.dataset.mode === mode); });
+    renderCanvas();
+    renderProps();
+    renderSceneMeta();
+    if (state.scene === "s7") renderExportPreview();
+    if (state.scene === "s8") renderLegend();
+  }
+
+  function setFrameScale(scale) {
+    $$("#frameScaleSeg button").forEach(function (b) { b.classList.toggle("is-on", +b.dataset.scale === scale); });
+    $("#mapFrameWrap").style.transform = "scale(" + scale + ")";
+    $("#mapFrameWrap").style.height = (720 * scale + 24) + "px";
+    $("#editorFrame").style.transform = "scale(" + scale + ")";
+    $("#editorFrame").style.height = (720 * scale + 24) + "px";
+  }
+
+  /* ─── 17. 交互：缩放平移 / 选择 / 涂刷 ────────────────────────────── */
+  function activeWorld() { return state.scene === "s5" ? childWorld : parentWorld; }
+  function activeView() { return state.scene === "s5" ? viewChild : viewParent; }
+
+  function applyZoom(factor, cx, cy) {
+    var view = activeView(), cs = canvasSize();
+    cx = cx === undefined ? cs.w / 2 : cx;
+    cy = cy === undefined ? cs.h / 2 : cy;
+    var next = Math.max(0.1, Math.min(4, view.s * factor));
+    var k = next / view.s;
+    view.tx = cx - (cx - view.tx) * k;
+    view.ty = cy - (cy - view.ty) * k;
+    view.s = next;
+    renderCanvas();
+  }
+
+  function localPoint(e) {
+    var host = $("#cvHost");
+    var rect = host.getBoundingClientRect();
+    var scaleX = rect.width / (host.clientWidth || 1);
+    return { x: (e.clientX - rect.left) / scaleX, y: (e.clientY - rect.top) / scaleX };
+  }
+
+  function paintAt(pt) {
+    var world = parentWorld, view = activeView();
+    var mx = (pt.x - view.tx) / view.s, my = (pt.y - view.ty) / view.s;
+    var c = Math.floor(mx / CELL), r = Math.floor(my / CELL);
+    if (c < 0 || r < 0 || c >= world.cols || r >= world.rows) return;
+    var size = state.paint.size, half = Math.floor(size / 2), changed = false;
+    for (var dy = -half; dy <= half; dy++) {
+      for (var dx = -half; dx <= half; dx++) {
+        if (size > 1 && dx * dx + dy * dy > (half + 0.3) * (half + 0.3)) continue;
+        var cc = c + dx, rr = r + dy;
+        if (cc < 0 || rr < 0 || cc >= world.cols || rr >= world.rows) continue;
+        var idx = rr * world.cols + cc;
+        if (world.cells[idx] !== state.paint.terrain) { world.cells[idx] = state.paint.terrain; changed = true; }
+      }
+    }
+    /* 涂刷时只标记脏，松手后（pointerup）才重算轮廓，画笔不掉帧 */
+    if (changed) { world._dirty = true; if (world._tiles) refreshTileTerrain(world); renderCanvas(); }
+  }
+
+  function wireCanvas() {
+    var host = $("#cvHost");
+    var dragging = false, panning = false, lastPt = null, moved = false;
+
+    host.addEventListener("wheel", function (e) {
+      e.preventDefault();
+      var pt = localPoint(e);
+      applyZoom(e.deltaY < 0 ? 1.12 : 1 / 1.12, pt.x, pt.y);
+    }, { passive: false });
+
+    host.addEventListener("pointerdown", function (e) {
+      if (e.button === 2) { return; }
+      var node = e.target.closest ? e.target.closest(".anno-node") : null;
+      if (state.tool === "select" && node) {
+        state.selected = node.dataset.anno;
+        syncSideActive();
+        renderCanvas(); renderProps();
+        if (state.scene !== "s4") showPop(state.selected);
+        return;
+      }
+      if (state.scene === "s3" && state.tool === "brush") {
+        dragging = true; moved = false;
+        paintAt(localPoint(e));
+        host.setPointerCapture(e.pointerId);
+        return;
+      }
+      panning = true; lastPt = localPoint(e); moved = false;
+      host.classList.add("cv--grabbing");
+      host.setPointerCapture(e.pointerId);
+    });
+
+    host.addEventListener("pointermove", function (e) {
+      var pt = localPoint(e);
+      /* 状态栏坐标 */
+      var view = activeView(), world = activeWorld();
+      var mx = (pt.x - view.tx) / view.s, my = (pt.y - view.ty) / view.s;
+      var c = Math.floor(mx / CELL), r = Math.floor(my / CELL);
+      if (c >= 0 && r >= 0 && c < world.cols && r < world.rows) {
+        state.lastCell = c + ", " + r;
+        $("#stCell").textContent = state.lastCell;
+      }
+      if (dragging) { moved = true; paintAt(pt); return; }
+      if (panning) {
+        moved = true;
+        view.tx += pt.x - lastPt.x; view.ty += pt.y - lastPt.y;
+        lastPt = pt;
+        renderCanvas();
+      }
+    });
+
+    host.addEventListener("pointerup", function (e) {
+      dragging = false; panning = false;
+      host.classList.remove("cv--grabbing");
+      var w = activeWorld();
+      if (w && w._dirty) { w._dirty = false; w._ml = null; renderCanvas(); }
+      /* 地块模式下「点击空白处」= 选中该地块（平移后不触发） */
+      if (!moved && state.mode === "tile" && state.tool === "select" && w) {
+        var pt = localPoint(e), v = activeView();
+        var mx = (pt.x - v.tx) / v.s, my = (pt.y - v.ty) / v.s;
+        if (mx >= 0 && my >= 0 && mx <= w.width && my <= w.height) {
+          var hit = tileAtPoint(w, mx, my);
+          state.tileSel = (state.tileSel === hit) ? -1 : hit;
+          renderCanvas(); renderProps();
+        }
+      }
+    });
+
+    host.addEventListener("contextmenu", function (e) { e.preventDefault(); });
+  }
+
+  function wirePanels() {
+    $$(".anno").forEach(function (b) {
+      b.addEventListener("click", function () {
+        state.selected = b.dataset.anno;
+        if (state.scene === "s5") return;
+        syncSideActive();
+        renderCanvas(); renderProps();
+        hidePop();
+        focusOn(state.selected);
+      });
+    });
+
+    $$("#sceneSeg button").forEach(function (b) { b.addEventListener("click", function () { setScene(b.dataset.scene); }); });
+    $$("#themeSeg button").forEach(function (b) { b.addEventListener("click", function () { setTheme(b.dataset.theme); }); });
+    $$("#styleSeg button").forEach(function (b) { b.addEventListener("click", function () { setStyle(b.dataset.style); }); });
+    $$("#resSeg button").forEach(function (b) { b.addEventListener("click", function () { setRes(b.dataset.res); }); });
+    $$("#modeSeg button").forEach(function (b) { b.addEventListener("click", function () { setMode(b.dataset.mode); }); });
+    $$("#frameScaleSeg button").forEach(function (b) { b.addEventListener("click", function () { setFrameScale(+b.dataset.scale); }); });
+
+    $$(".tool-rail__btn").forEach(function (b) { b.addEventListener("click", function () { setTool(b.dataset.tool); }); });
+    $$("[data-goto]").forEach(function (b) { b.addEventListener("click", function () { setScene(b.dataset.goto); }); });
+
+    $("#zoomIn").addEventListener("click", function () { applyZoom(1.2); });
+    $("#zoomOut").addEventListener("click", function () { applyZoom(1 / 1.2); });
+    $("#zoomFit").addEventListener("click", function () {
+      if (state.scene === "s5") fitView(childWorld, viewChild); else fitView(parentWorld, viewParent);
+      renderCanvas();
+    });
+
+    $("#sideToggle").addEventListener("click", function () {
+      $("#mwSide").classList.toggle("mw-side--hidden");
+      setTimeout(function () { renderCanvas(); }, 0);
+    });
+
+    /* 地形调色板联动画笔 */
+    document.addEventListener("click", function (e) {
+      var cell = e.target.closest && e.target.closest(".terrain-cell");
+      if (!cell) return;
+      var all = $$(".terrain-cell");
+      var idx = all.indexOf(cell);
+      var group = cell.closest("#paletteOver") ? $$("#paletteOver .terrain-cell") : $$("#paletteFill .terrain-cell");
+      group.forEach(function (c) { c.classList.remove("is-on"); });
+      all.forEach(function (c) { if (group.indexOf(c) < 0) c.classList.remove("is-on"); });
+      cell.classList.add("is-on");
+      if (group.indexOf(cell) >= 0 && idx >= 0 && idx < TER_META.length) state.paint.terrain = idx;
+    });
+
+    $("#genReroll").addEventListener("click", rollCandidates);
+    $("#genAdopt").addEventListener("click", function () {
+      state.seed = $("#genSeed").value;
+      rebuildWorlds();
+      fitView(parentWorld, viewParent);
+      setScene("s1");
+    });
+    document.addEventListener("click", function (e) {
+      var th = e.target.closest && e.target.closest(".thumb");
+      if (!th) return;
+      $$(".thumb").forEach(function (t) { t.classList.remove("is-on"); });
+      th.classList.add("is-on");
+      var w = state.candidates[+th.dataset.thumb];
+      $("#genSeed").value = w.seed;
+      state.genWorld = buildWorld({ cols: resOf(state.res).cols, rows: resOf(state.res).rows, seed: w.seed, templates: state.templates });
+      renderGenPreview(state.genWorld);
+    });
+    $$(".tpl").forEach(function (b) {
+      b.addEventListener("click", function () {
+        b.classList.toggle("is-on");
+        state.templates[b.dataset.tpl] = b.classList.contains("is-on");
+        rollCandidates();
+      });
+    });
+
+    ["expLegend", "expAnno", "expTerrain"].forEach(function (id) {
+      var el = $("#" + id);
+      if (el) el.addEventListener("change", renderExportPreview);
+    });
+  }
+
+  function syncSideActive() {
+    $$(".anno").forEach(function (b) { b.classList.toggle("is-active", b.dataset.anno === state.selected); });
+  }
+
+  function focusOn(id) {
+    var a = annoById(annoList, id);
+    if (!a) return;
+    var view = activeView(), cs = canvasSize();
+    view.tx = cs.w / 2 - a.x * view.s;
+    view.ty = cs.h / 2 - a.y * view.s;
+    renderCanvas();
+  }
+
+  /* ─── 18. 启动 ────────────────────────────────────────────────────── */
+  function init() {
+    /* 支持 ?scene=s5&theme=midnight&style=B&res=80x50&scale=1 直达某一幕（便于评审与走查） */
+    var qs = new URLSearchParams(location.search);
+    if (qs.get("theme")) state.theme = qs.get("theme");
+    if (qs.get("style")) state.style = qs.get("style");
+    if (qs.get("res")) state.res = qs.get("res");
+    if (qs.get("mode")) state.mode = qs.get("mode") === "tile" ? "tile" : "raster";
+    if (qs.get("tile")) state.tileSel = parseInt(qs.get("tile"), 10) || -1;
+    var qScene = qs.get("scene") || "s1";
+    var qScale = parseFloat(qs.get("scale"));
+
+    $("#mapDefs").innerHTML = buildDefs(state.style);
+    rebuildWorlds();
+    renderPalette();
+    wirePanels();
+    wireCanvas();
+    setTheme(state.theme);
+    setFrameScale(qScale > 0 ? Math.min(1, qScale) : 0.75);
+    fitView(parentWorld, viewParent);
+    fitView(childWorld, viewChild, 1.0);
+    setScene(qScene);
+    syncSideActive();
+    $$("#resSeg button").forEach(function (b) { b.classList.toggle("is-on", b.dataset.res === state.res); });
+    $$("#styleSeg button").forEach(function (b) { b.classList.toggle("is-on", b.dataset.style === state.style); });
+    $$("#modeSeg button").forEach(function (b) { b.classList.toggle("is-on", b.dataset.mode === state.mode); });
+    window.addEventListener("resize", function () { renderCanvas(); });
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+  else init();
+})();
+</script>
+</body>
+</html>

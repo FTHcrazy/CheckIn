@@ -97,6 +97,92 @@ export interface NovelOutlineEntryDTO {
   createdAt: number
 }
 
+// ── 小说地图（docs/novel-map-prd.md §6 数据模型，M1 落地）──
+// content 是 JSON 画布文档字符串，schema 见 PRD §6：terrain / annotations / links / viewport
+export interface MapDTO {
+  id: string
+  /** 所属作品；null = 未归属的共享世界图册（开放问题 ② 倾向方案） */
+  workId: string | null
+  name: string
+  /** 随机初始化种子，同 seed 同约束可复现（RM8） */
+  seed: string
+  /** JSON 画布文档字符串 */
+  content: string
+  createdAt: number
+  updatedAt: number
+}
+
+/** 地图列表项（不带 content，避免大文档全量传输） */
+export interface MapMetaDTO {
+  id: string
+  workId: string | null
+  name: string
+  seed: string
+  createdAt: number
+  updatedAt: number
+}
+
+/** 画布标注（RM3）：地点钉 / 区域框 / 自由标签 / 连线 */
+export interface MapAnnotation {
+  id: string
+  type: "pin" | "area" | "label" | "line"
+  x: number
+  y: number
+  w?: number
+  h?: number
+  name: string
+  note?: string
+  icon?: string
+  /** 绑定要素库 location 要素（RM4） */
+  entityId?: string
+  /** 绑定子地图（RM5 嵌套下钻） */
+  childMapId?: string | null
+  /** 子图侧承接父图入口标注 id（RM5-③） */
+  parentEntryId?: string
+  kind?: string
+  distance?: string
+  toId?: string
+}
+
+/** 自由贴章对象（RM13：对象级自由，亚像素摆放 / 旋转 / 缩放 / 遮挡 / 编组） */
+export interface MapStamp {
+  id: string
+  /** 符号库 key（见 map-symbols ALL_SYMBOLS） */
+  symbolKey: string
+  x: number
+  y: number
+  scale: number
+  /** 旋转角度（度） */
+  rotation: number
+  flip: boolean
+  /** 前后遮挡序（大 = 上） */
+  z: number
+  /** 编组 id（组内相对关系锁定，作为整体变换） */
+  groupId?: string | null
+}
+
+/** 画布文档 schema（content 字段 JSON.parse 后的结构，M2 落地） */
+export interface MapContent {
+  terrain: {
+    cols: number
+    rows: number
+    /** 铺满型地形索引数组（9 类，见 §5.1 图例表） */
+    cells: number[]
+    /** 叠加型符号数组 */
+    features?: Array<{ id: string; type: "cliff" | "island" | "waterfall"; cells?: number[]; points?: Array<{ x: number; y: number }>; seed?: string }>
+    legendVersion?: number
+  }
+  annotations: MapAnnotation[]
+  /** 自由贴章对象层（RM13） */
+  stamps?: MapStamp[]
+  links?: Array<{ fromAnnotationId: string; toAnnotationId: string; distance?: string; note?: string }>
+  viewport: { x: number; y: number; scale: number }
+  /** 地块模型：栅格（默认）/ Voronoi 地块 */
+  tileMode?: boolean
+  /** 符号风格 A 圆润 / B 尖锐 / C 简约 */
+  symbolStyle?: "A" | "B" | "C"
+}
+
 export interface NovelEntityDTO {
   id: string
   workId: string
@@ -306,6 +392,43 @@ export interface ElectronAPI {
     /** 今日新增字数（chapter_save 事件 delta 净增）、保存次数与连续码字天数，0 点按主进程本地时间 */
     usageToday: () => Promise<{ todayWords: number; saveCount: number; streakDays: number }>
     usageLog: (event: string, payload: Record<string, unknown>) => Promise<boolean>
+  }
+
+  // ── 小说地图（数据存 userDb 的 novel_maps 表，PRD novel-map §6） ──
+  map: {
+    /** 列出全部地图（按 updated_at 倒序，不带 content） */
+    list: () => Promise<MapMetaDTO[]>
+    /** 加载单图（带 content） */
+    load: (mapId: string) => Promise<MapDTO | null>
+    /** 新建地图（id / seed / content 由渲染层生成） */
+    add: (map: {
+      id: string
+      workId: string | null
+      name: string
+      seed: string
+      content: string
+    }) => Promise<boolean>
+    rename: (mapId: string, name: string) => Promise<boolean>
+    /** 删除（主进程级联清理父图对该子图的引用） */
+    delete: (mapId: string) => Promise<boolean>
+    /**
+     * 保存（整文档读写 + schema 校验 + 环引用检测 + 乐观锁）
+     * @param updatedAt 传入当前文档的 updatedAt 用于乐观锁比对；首次保存传 0 跳过冲突检测
+     * @returns ok=true 时返回新的 updatedAt；ok=false 时返回原因
+     */
+    save: (
+      mapId: string,
+      content: string,
+      updatedAt: number,
+    ) => Promise<{ ok: true; updatedAt: number } | { ok: false; reason: string }>
+    /**
+     * 导出 PNG（RM6）：渲染层已生成 dataURL，主进程弹系统保存框并写盘。
+     * 用户取消返回 { ok: false, cancelled: true }；写盘失败返回 { ok: false, reason }。
+     */
+    exportPng: (
+      dataUrl: string,
+      defaultName: string,
+    ) => Promise<{ ok: true; path: string } | { ok: false; cancelled?: boolean; reason?: string }>
   }
 
   send: (channel: string, data: unknown) => void

@@ -80,6 +80,10 @@ export default defineConfig({
         ...(isLite
           ? {}
           : { worker: path.resolve(__dirname, 'src/windows/WorkerWindow/index.html') }),
+        // MapWindow：小说架空地图编辑器（docs/novel-map-prd.md），精简构建同样不含
+        ...(isLite
+          ? {}
+          : { map: path.resolve(__dirname, 'src/windows/MapWindow/index.html') }),
       },
       output: {
         manualChunks(id: string) {

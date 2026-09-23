@@ -25,9 +25,9 @@ interface ToolItem {
 /**
  * 工具箱启动器（PRD R31：工具入口统一收在右栏，不往顶栏堆按钮）
  *
- * 起名器是可进入的二级面板；关系网络（R27）与架空地图（R28）尚在规划中，
- * 以「规划中」占位卡同构呈现——新工具接入只需在下面的清单里加一项，
- * 不必再改一次容器版式。
+ * 起名器是可进入的二级面板；架空地图（novel-map PRD）已升级为独立 MapWindow，
+ * 点击即唤起（单实例，已开则聚焦）；人物关系网络（R27）尚在规划中。
+ * 新工具接入只需在下面的清单里加一项，不必再改一次容器版式。
  */
 export default function ToolLauncher({ onOpenNaming }: ToolLauncherProps) {
   const tools: ToolItem[] = [
@@ -42,6 +42,16 @@ export default function ToolLauncher({ onOpenNaming }: ToolLauncherProps) {
       onOpen: onOpenNaming,
     },
     {
+      id: "map",
+      icon: <EnvironmentOutlined />,
+      color: "var(--app-accent-green)",
+      weak: "var(--app-accent-green-weak)",
+      name: "架空地图",
+      state: "已上线",
+      desc: "独立地图窗口：随机成图 + 约束地形 + 标注即要素 + 大小图嵌套，与编辑器联动。",
+      onOpen: () => window.electronAPI?.send("map-window-open", { type: "open" }),
+    },
+    {
       id: "relation",
       icon: <ApartmentOutlined />,
       color: "var(--app-accent-purple)",
@@ -49,15 +59,6 @@ export default function ToolLauncher({ onOpenNaming }: ToolLauncherProps) {
       name: "人物关系网络",
       state: "规划中 · R27",
       desc: "复用要素关联一键渲染力导向图，阵容与主线一眼看清。",
-    },
-    {
-      id: "map",
-      icon: <EnvironmentOutlined />,
-      color: "var(--app-accent-green)",
-      weak: "var(--app-accent-green-weak)",
-      name: "架空地图",
-      state: "规划中 · R28",
-      desc: "轻量画布：节点 + 连线标距离 + 导出 PNG，不触真实地理数据。",
     },
   ];
 

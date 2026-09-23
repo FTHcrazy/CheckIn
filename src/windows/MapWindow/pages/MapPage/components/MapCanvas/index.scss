@@ -1,0 +1,195 @@
+/* 地图画布 + 浮层控件（仅用 var(--app-*)） */
+.cv {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--app-surface-alt);
+  border-radius: var(--app-radius-panel);
+  outline: none;
+  cursor: crosshair;
+}
+.cv:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--app-primary-weak);
+}
+.cv__canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+
+/* 比例尺 */
+.scale-bar {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-item);
+  padding: 6px 10px;
+  box-shadow: var(--app-shadow-card);
+  pointer-events: none;
+}
+.scale-bar__meta {
+  font-size: 11px;
+  color: var(--app-text-secondary);
+  margin-top: 2px;
+  white-space: nowrap;
+}
+
+/* 工具轨 */
+.tool-rail {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-pill);
+  box-shadow: var(--app-shadow-pop);
+}
+.tool-rail__btn {
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--app-text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.tool-rail__btn:hover {
+  background: var(--app-surface-hover);
+  color: var(--app-text);
+}
+.tool-rail__btn.is-on {
+  background: var(--app-primary);
+  color: var(--app-primary-contrast);
+}
+.tool-rail__sep {
+  height: 1px;
+  background: var(--app-border);
+  margin: 2px 6px;
+}
+
+/* 面包屑下钻 */
+.crumb {
+  position: absolute;
+  left: 50%;
+  top: 14px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-pill);
+  box-shadow: var(--app-shadow-card);
+  font-size: 12px;
+  color: var(--app-text-secondary);
+}
+.crumb__up,
+.crumb button {
+  border: none;
+  background: transparent;
+  color: var(--app-text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: var(--app-radius-pill);
+}
+.crumb button:hover {
+  background: var(--app-surface-hover);
+  color: var(--app-text);
+}
+.crumb button.is-current {
+  color: var(--app-primary);
+  font-weight: 600;
+}
+.crumb__sep {
+  color: var(--app-text-muted);
+}
+
+/* 缩放条 */
+.zoom-bar {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 8px;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-pill);
+  box-shadow: var(--app-shadow-card);
+}
+.zoom-bar__val {
+  min-width: 42px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--app-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.icon-btn {
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--app-text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.icon-btn:hover {
+  background: var(--app-surface-hover);
+  color: var(--app-text);
+}
+
+/* 图例入口 */
+.map-legend-chip {
+  position: absolute;
+  right: 14px;
+  top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border: 1px solid var(--app-border);
+  background: var(--app-surface);
+  color: var(--app-text-secondary);
+  border-radius: var(--app-radius-pill);
+  font-size: 12px;
+  cursor: pointer;
+  box-shadow: var(--app-shadow-card);
+}
+.map-legend-chip:hover {
+  color: var(--app-primary);
+  border-color: var(--app-primary-weak-strong);
+}
+
+/* 提示 */
+.map-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  font-size: 11px;
+  color: var(--app-text-muted);
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  padding: 4px 12px;
+  border-radius: var(--app-radius-pill);
+  pointer-events: none;
+  opacity: 0.9;
+}

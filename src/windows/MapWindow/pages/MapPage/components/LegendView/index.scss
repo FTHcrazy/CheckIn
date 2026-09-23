@@ -1,0 +1,87 @@
+/* 地形图例视图（s8） */
+.legend-view {
+  position: absolute;
+  inset: 0;
+  background: var(--app-bg);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+}
+.legend-view__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--app-border);
+}
+.legend-view__head h2 {
+  margin: 0;
+  font-size: 18px;
+  color: var(--app-text-strong);
+}
+.legend-view__ver {
+  font-size: 11px;
+  font-family: ui-monospace, monospace;
+  color: var(--app-text-muted);
+  background: var(--app-surface-hover);
+  padding: 2px 8px;
+  border-radius: var(--app-radius-pill);
+}
+.legend-view__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 18px 20px;
+}
+.legend-section {
+  margin-bottom: 24px;
+}
+.legend-section h3 {
+  font-size: 14px;
+  color: var(--app-text-secondary);
+  margin: 0 0 12px;
+}
+.legend-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px;
+}
+.legend-card {
+  display: flex;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-item);
+  background: var(--app-surface);
+}
+.legend-card__sw {
+  width: 44px;
+  height: 32px;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  flex: 0 0 auto;
+}
+.legend-card__sw--overlay {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--app-surface-alt);
+  color: var(--app-text-secondary);
+}
+.legend-card__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.legend-card__text b {
+  font-size: 13px;
+  color: var(--app-text);
+}
+.legend-card__text span {
+  font-size: 12px;
+  color: var(--app-text-secondary);
+}
+.legend-card__text em {
+  font-size: 11px;
+  color: var(--app-text-muted);
+  font-style: normal;
+}

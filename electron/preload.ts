@@ -143,6 +143,38 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('novel-usage-log', event, payload) as Promise<boolean>,
   },
 
+  // ── 小说地图（语义化 IPC，数据存 userDb 的 novel_maps 表，PRD novel-map §6） ──
+  map: {
+    list: () =>
+      ipcRenderer.invoke('novel-map-list') as Promise<
+        Array<{ id: string; workId: string | null; name: string; seed: string; createdAt: number; updatedAt: number }>
+      >,
+    load: (mapId: string) =>
+      ipcRenderer.invoke('novel-map-load', mapId) as Promise<{
+        id: string
+        workId: string | null
+        name: string
+        seed: string
+        content: string
+        createdAt: number
+        updatedAt: number
+      } | null>,
+    add: (map: { id: string; workId: string | null; name: string; seed: string; content: string }) =>
+      ipcRenderer.invoke('novel-map-add', map) as Promise<boolean>,
+    rename: (mapId: string, name: string) =>
+      ipcRenderer.invoke('novel-map-rename', mapId, name) as Promise<boolean>,
+    delete: (mapId: string) =>
+      ipcRenderer.invoke('novel-map-delete', mapId) as Promise<boolean>,
+    save: (mapId: string, content: string, updatedAt: number) =>
+      ipcRenderer.invoke('novel-map-save', mapId, content, updatedAt) as Promise<
+        { ok: true; updatedAt: number } | { ok: false; reason: string }
+      >,
+    exportPng: (dataUrl: string, defaultName: string) =>
+      ipcRenderer.invoke('novel-map-export-png', dataUrl, defaultName) as Promise<
+        { ok: true; path: string } | { ok: false; cancelled?: boolean; reason?: string }
+      >,
+  },
+
   // ── 记账（语义化 IPC，数据存 userDb 的 ledger_* 表） ──
   ledger: {
     listTransactions: (range?: { start?: string; end?: string }) =>
@@ -164,6 +196,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const validChannels = [
       'login-confirm',
       'worker-window-open',
+      'map-window-open',
       // WindowHeader 窗口控制（最小化/最大化/关闭）与最大化状态查询
       'window-control',
       'window-maximize-query',
@@ -174,7 +207,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   // 返回取消订阅函数，组件卸载时可移除监听，避免重复注册
   receive: (channel: string, func: (...args: unknown[]) => void) => {
-    const validChannels = ['activity-notify', 'window-maximize-state']
+    const validChannels = [
+      'activity-notify',
+      'window-maximize-state',
+      // RM12：地图联动广播，地图窗接收后按需局部刷新
+      'novel-map-updated',
+    ]
     if (validChannels.includes(channel)) {
       const listener = (_event: Electron.IpcRendererEvent, ...args: unknown[]) => func(...args)
       ipcRenderer.on(channel, listener)

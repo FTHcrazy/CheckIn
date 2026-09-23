@@ -1,0 +1,23 @@
+/* 底部状态条 */
+.mw-status {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: var(--statusbar-h, 30px);
+  padding: 0 14px;
+  background: var(--app-header-bg);
+  border-top: 1px solid var(--app-border);
+  font-size: 12px;
+  color: var(--app-text-secondary);
+  flex: 0 0 auto;
+}
+.mw-status b {
+  color: var(--app-text);
+  font-variant-numeric: tabular-nums;
+}
+.mw-status__spacer {
+  flex: 1;
+}
+.mw-status__save {
+  color: var(--app-text-muted);
+}

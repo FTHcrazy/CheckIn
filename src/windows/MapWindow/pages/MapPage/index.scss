@@ -1,0 +1,113 @@
+.mp-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--app-bg);
+}
+
+.mp-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.mp-canvas-region {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+}
+
+.mp-props {
+  flex-shrink: 0;
+  width: 280px;
+  border-left: 1px solid var(--app-border);
+  background: var(--app-surface);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+}
+
+.mp-props__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 100%;
+  color: var(--app-text-muted);
+  font-size: 13px;
+
+  .anticon {
+    font-size: 28px;
+    opacity: 0.4;
+  }
+}
+
+.mp-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--app-text-muted);
+
+  &__icon {
+    font-size: 56px;
+    color: var(--app-accent-green);
+    opacity: 0.6;
+  }
+
+  h3 {
+    margin: 0;
+    color: var(--app-text);
+    font-size: 18px;
+    font-weight: 600;
+  }
+
+  p {
+    margin: 0;
+    font-size: 13px;
+  }
+
+  &__btn {
+    margin-top: 8px;
+    padding: 8px 20px;
+    border: none;
+    border-radius: var(--app-radius-md);
+    background: var(--app-primary);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+
+    &:hover {
+      background: var(--app-primary-hover, var(--app-primary));
+      filter: brightness(1.08);
+    }
+  }
+}
+
+// 新建对话框的「换一批」按钮
+.mp-seed-roll {
+  border: none;
+  background: transparent;
+  color: var(--app-primary);
+  font-size: 12px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 4px;
+
+  &:hover {
+    color: var(--app-primary-hover, var(--app-primary));
+  }
+}

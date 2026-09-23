@@ -1,0 +1,27 @@
+/* 贴章面板（复用 AnnotationProps 外壳样式） */
+.stamp-panel__head,
+.stamp-panel__body,
+.stamp-panel__foot {
+  /* 已在 AnnotationProps/index.scss 定义基础外壳，这里补充专属细节 */
+}
+.child-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-item);
+  background: var(--app-surface);
+}
+.child-card__text {
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+}
+.child-card__text b {
+  color: var(--app-text);
+}
+.child-card__text span {
+  color: var(--app-text-muted);
+  font-size: 11px;
+}

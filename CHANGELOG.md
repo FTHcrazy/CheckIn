@@ -1,5 +1,48 @@
 # Changelog
 
+## [1.17.0] - 2026-09-23
+
+### Added
+
+- **小说架空地图编辑器（MapWindow，PRD novel-map RM1–RM13 全量落地）**：独立窗口
+  `src/windows/MapWindow/`（默认 1120×720、即关即销、单实例唤起），由 WorkerWindow 工具箱
+  「架空地图」经 `map-window-open` IPC 唤起；与编辑器互不 import，跨窗口联动靠 SQLite +
+  主进程 `novel-map-updated` 广播（RM12 局部刷新）。
+  - **程序化地形生成 RM8**：`map-terrain.ts` 纯函数（value-noise + 约束掩码，FNV hash
+    `hashSeed` + mulberry32 PRNG），同 seed 同约束必出同图；支持三面环海/孤岛/西漠/北雪/
+    中央湖/大河/荒芜等可多选约束模板，河流自高处最陡下降入海（到海距离 BFS 保证入海 + 支流树）。
+  - **地形画笔 RM9**：9 类铺满型 + 3 类叠加型（悬崖/岛屿/瀑布）符号化编辑，圆/矩笔刷大小
+    1/3/5，松手批量提交入 `terrain.cells` 并合并进撤销栈；贴章对象层 RM13（地点 8 + 地貌装饰
+    8，Path2D 单一来源 SVG path，A/B/C 三风格，层级/编组/翻转/拖拽）。
+  - **标注 CRUD + 绑定 RM3/RM4/RM5**：地点钉/区域框/自由标签/连线四类，要素类型取色；
+    一键建卡绑定实体（`entityId`）、嵌套子图（`childMapId`）下钻面包屑；右侧属性面板内联编辑
+    （不污染撤销栈的 live 更新 + 落库更新）。
+  - **导出 PNG RM6**：`map-export.ts` 组装离屏 canvas（视图/整图、1×/2×/4×、地形/标注/图例
+    开关），主进程 `novel-map-export-png` 经 `dialog.showSaveDialog` 落盘 pictures 目录。
+  - **交互外壳**：顶栏（地图切换/撤销重做/导出/设置/侧栏收起/保存态）、左栏三态（标注/地形/
+    符号库）、画布浮层（工具轨/比例尺/面包屑下钻/缩放条/图例入口/提示）、状态条（格坐标/缩放/
+    数量/比例尺）、图例视图（9 填充 + 3 叠加说明）；键盘快捷键（Ctrl+Z/Y、V/H/B/S/P/R/T/L、Esc）。
+  - **撤销/重做**：content 快照栈（上限 60），RM9 涂刷 / RM13 贴章 / 标注编辑统一入栈。
+
+### Changed
+
+- **状态分层落地 AGENTS.md 6.2.1**：`useMapData`（CRUD/自动保存/撤销栈/贴章/广播）+
+  `useMapViewState`（视口/工具/选中/面板/下钻/图例）+ 页面仅编排；窗口级 IPC 桥接显式注册。
+- **类型契约扩展**：`electron.d.ts` 新增 `MapContent` / `MapStamp` / `MapDTO` / `MapMetaDTO` 与
+  `electronAPI.map.*`（list/load/add/rename/delete/save/exportPng），主进程 `map-handlers.ts`
+  注册全部 handler 并在 `main.ts` 登记；preload 暴露 `map` 命名空间。
+- **渲染零 DOM**：地形/纹理/等值线/河流/叠加符号/贴章全部 Canvas 2D 绘制（DOM ≤ 200），满足
+  PRD §5.1 渲染约束；主题变量仅影响 UI 外壳，地形保持地图惯例 hex 配色。
+- **孤儿代码清理**：移除未接线的 `TerrainPalette` 组件与 `useMapEditorState` / `useMapCanvas`
+  钩子（标注/贴章编辑改为 MapPage 内联更新），与 AGENTS.md 模块边界约定一致。
+
+### Verified
+
+- `pnpm typecheck`（tsc -b strict）：0 错误
+- `pnpm lint`：MapWindow/MapPage 0 error（仅存 useHttpClient 既有 warning）
+- `pnpm test`：403/403 通过（map-terrain.test.ts 10 例覆盖确定性/约束边界/空池降级）
+- `pnpm build`：渲染层 + 主进程 + preload 三段构建均通过
+
 ## [1.16.0] - 2026-09-23
 
 ### 性能优化

@@ -176,6 +176,21 @@ function initializeDataDb(database: Database.Database): void {
       relation TEXT NOT NULL,
       note TEXT
     );
+    -- ── 小说地图（docs/novel-map-prd.md §6 数据模型，M1 落地）──
+    -- work_id 允许为空 = 未归属的共享世界图册（开放问题 ② 倾向方案）
+    -- seed 保留随机初始化种子，保证同 seed 同约束可复现（RM8）
+    -- content: JSON 画布文档 { terrain, annotations, links, viewport }
+    CREATE TABLE IF NOT EXISTS novel_maps (
+      id TEXT PRIMARY KEY,
+      work_id TEXT,
+      name TEXT NOT NULL DEFAULT '未命名地图',
+      seed TEXT NOT NULL DEFAULT '',
+      content TEXT NOT NULL DEFAULT '{}',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_novel_maps_work
+      ON novel_maps(work_id, updated_at DESC);
     -- ── 记账（PRD v0.1 数据模型）──
     -- 金额统一 REAL（元），时间统一本地字符串 YYYY-MM-DD HH:mm:ss
     CREATE TABLE IF NOT EXISTS ledger_categories (

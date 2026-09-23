@@ -1,0 +1,149 @@
+/* 顶栏 */
+.mw-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--topbar-h, 46px);
+  padding: 0 12px;
+  background: var(--app-header-bg);
+  border-bottom: 1px solid var(--app-border);
+  flex: 0 0 auto;
+}
+.top-spacer {
+  flex: 1;
+}
+.mw-top__save {
+  font-size: 12px;
+  color: var(--app-text-muted);
+  margin-left: 4px;
+}
+
+.map-picker-wrap {
+  position: relative;
+}
+.map-picker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--app-border);
+  background: var(--app-surface);
+  border-radius: var(--app-radius-item);
+  color: var(--app-text);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.map-picker:hover {
+  border-color: var(--app-primary-weak-strong);
+}
+.map-picker__caret {
+  color: var(--app-text-muted);
+}
+.map-picker__menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 220px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--app-surface-elevated);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-panel);
+  box-shadow: var(--app-shadow-pop);
+  padding: 6px;
+  z-index: 30;
+}
+.map-picker__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  background: transparent;
+  border-radius: var(--app-radius-item);
+  color: var(--app-text);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+}
+.map-picker__item:hover {
+  background: var(--app-surface-hover);
+}
+.map-picker__item.is-on {
+  background: var(--app-primary-weak);
+  color: var(--app-primary-strong);
+}
+.map-picker__item span:nth-child(2) {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.map-picker__tag {
+  font-size: 10px;
+  color: var(--app-accent-teal);
+  background: var(--app-accent-teal-weak);
+  padding: 1px 6px;
+  border-radius: var(--app-radius-pill);
+}
+.map-picker__empty {
+  padding: 12px;
+  color: var(--app-text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.bind-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: var(--app-radius-pill);
+  background: var(--app-accent-teal-weak);
+  color: var(--app-accent-teal);
+  font-size: 12px;
+  font-weight: 600;
+}
+.bind-badge--muted {
+  background: var(--app-surface-hover);
+  color: var(--app-text-muted);
+}
+
+/* 通用按钮（顶栏/侧栏复用） */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border: 1px solid var(--app-border);
+  background: var(--app-surface);
+  color: var(--app-text);
+  border-radius: var(--app-radius-item);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.btn:hover {
+  background: var(--app-surface-hover);
+}
+.btn--sm {
+  padding: 5px 10px;
+  font-size: 12px;
+}
+.btn--icon {
+  padding: 5px 8px;
+}
+.btn--primary {
+  background: var(--app-primary);
+  border-color: var(--app-primary);
+  color: var(--app-primary-contrast);
+}
+.btn--primary:hover {
+  background: var(--app-primary-strong);
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

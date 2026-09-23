@@ -1,0 +1,38 @@
+/* 导出对话框（共用 .mask/.modal/.modal__* 见 GenerateDialog/index.scss，全局生效） */
+.modal--slim {
+  width: min(460px, 92%);
+}
+.exp-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px 14px;
+  align-items: center;
+}
+.exp-grid label {
+  font-size: 12px;
+  color: var(--app-text-secondary);
+}
+.exp-preview {
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-item);
+  overflow: hidden;
+  background: var(--app-surface-alt);
+  height: 220px;
+}
+.exp-preview__canvas {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--app-text-secondary);
+  padding: 4px 0;
+}
+.check-row input {
+  accent-color: var(--app-primary);
+}
