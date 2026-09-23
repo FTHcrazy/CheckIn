@@ -26,8 +26,8 @@
     border-bottom: 1px solid var(--app-border);
 
     b {
-      font-size: 12.5px;
-      color: var(--app-text);
+      font-size: 12px;
+      color: var(--app-text-strong);
     }
 
     button {
@@ -40,7 +40,7 @@
       border-radius: 4px;
       background: transparent;
       color: var(--app-text-muted);
-      font-size: 11px;
+      font-size: 12px;
       cursor: pointer;
 
       &:hover {
@@ -51,8 +51,8 @@
   }
 
   &__sub {
-    font-size: 11px;
-    color: var(--app-text-muted);
+    font-size: 12px;
+    color: var(--app-text-secondary-strong);
   }
 
   &__body {
@@ -86,14 +86,14 @@
   &__time {
     width: 42px;
     flex: none;
-    font-size: 11px;
+    font-size: 12px;
     font-variant-numeric: tabular-nums;
-    color: var(--app-text);
+    color: var(--app-text-strong);
   }
 
   &__delta {
-    font-size: 11px;
-    color: var(--app-text-muted);
+    font-size: 12px;
+    color: var(--app-text-secondary-strong);
   }
 
   &__actions {
@@ -107,7 +107,7 @@
       border-radius: 3px;
       background: transparent;
       color: var(--app-primary);
-      font-size: 10.5px;
+      font-size: 12px;
       cursor: pointer;
 
       &:hover {
@@ -119,9 +119,10 @@
   &__preview {
     flex-basis: 100%;
     margin: 4px 0 0;
-    font-size: 11px;
+    font-size: 12px;
     line-height: 1.6;
-    color: var(--app-text-muted);
+    /* 快照正文预览是抽屉里的主要阅读内容，muted 对比度不够 */
+    color: var(--app-text-secondary-strong);
     word-break: break-all;
   }
 }

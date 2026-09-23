@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { DragEvent, KeyboardEvent, MouseEvent, ReactElement } from "react";
-import { Popconfirm, Tooltip } from "antd";
+import { Input, Popconfirm, Tooltip } from "antd";
 import { DeleteOutlined } from "@ant-design/icons";
 import { CHAPTER_STATUS_META, DRAG_MIME_CHAPTER } from "../../novel-config";
 import { formatThousands, padIndex } from "../../novel-utils";
@@ -145,8 +145,9 @@ export default function ChapterTreeItem({
         <div className={`${rowClass} is-editing`}>
           {renderStatus()}
           <span className="nv-chapter__index">{padIndex(chapterNumber)}</span>
-          <input
+          <Input
             className="nv-chapter__title-input"
+            variant="borderless"
             value={titleDraft}
             autoFocus
             maxLength={60}

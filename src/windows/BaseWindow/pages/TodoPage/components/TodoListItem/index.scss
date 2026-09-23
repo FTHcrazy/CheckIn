@@ -93,7 +93,7 @@
 
 .todo-item-important {
   color: var(--app-warning);
-  font-size: 13px;
+  font-size: 14px;
   flex-shrink: 0;
 }
 
@@ -109,14 +109,14 @@
   background: var(--app-info-weak);
   border: 1px solid var(--app-info);
   color: var(--app-info);
-  font-size: 11px !important;
+  font-size: 12px !important;
   font-weight: 600;
   flex-shrink: 0;
   cursor: pointer;
 }
 
 .todo-item-work-hour-icon {
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1;
 }
 
@@ -142,7 +142,7 @@
 }
 
 .todo-item-time {
-  font-size: 11px !important;
+  font-size: 12px !important;
   flex-shrink: 0;
   white-space: nowrap;
   color: var(--app-text-disabled) !important;
@@ -177,13 +177,13 @@
   background: var(--app-warning-weak);
   border: 1px solid var(--app-warning);
   color: var(--app-warning);
-  font-size: 11px !important;
+  font-size: 12px !important;
   flex-shrink: 0;
 }
 
 .todo-item-progress {
   flex-shrink: 0;
-  font-size: 11px !important;
+  font-size: 12px !important;
   padding: 1px 7px;
   border-radius: 999px;
   background: var(--app-success-weak);

@@ -17,7 +17,7 @@
 
   &__card-title {
     margin: 0 0 12px;
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 700;
     color: var(--app-text);
     display: flex;
@@ -164,7 +164,7 @@
 
   &__holiday-days {
     margin-left: auto;
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 700;
     color: var(--app-text-secondary);
     font-variant-numeric: tabular-nums;
@@ -189,7 +189,7 @@
     gap: 10px;
     padding: 6px 8px;
     border-radius: var(--app-radius-chip);
-    font-size: 13px;
+    font-size: 14px;
 
     &.is-active {
       background: var(--app-primary-weak);
@@ -220,7 +220,7 @@
   /* 语录卡 */
   &__quote-text {
     margin: 0;
-    font-size: 13px;
+    font-size: 14px;
     line-height: 1.7;
     color: var(--app-text-secondary);
   }

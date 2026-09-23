@@ -20,9 +20,15 @@
 
 - **docs/zustand-store-review.md 同步更新**：现状由「仅 1 处 store（useSearchStore）」刷新为全项目 7+ 处落地，并在文末列出已落地清单
 - **AGENTS.md 6.2 补充「已落地 store 清单」**：登记各页面模块级 store 的路径与职责，便于后续页面沿用 runner 注册范式
+- **Worker 书页输入控件全面接入组件库（AGENTS 6.1.2）**：右栏 12 处（大纲梗概行内编辑、伏笔标题 / 说明、要素搜索框与详情页名称 / 别名 / 一句话 / 性格 / 关系名、灵感速记框 / 行内编辑 / 搜索框、检索全书检索框）+ 范围外扫尾 8 处（左栏章节 / 卷改名、章节树搜索、章节快速跳转浮层、编辑器标题改名、设置抽屉章节 / 卷后缀、书架灵感速记框）原生 `input` / `textarea` 全部换为 antd `Input` / `Input.TextArea`；统一 `variant="borderless"`，外观继续由既有面板类以 `.类名.ant-input` 复合选择器承载（与 `.ant-select` 变量覆盖同思路，规避与组件库样式加载顺序的耦合），输入法守卫、Enter / Esc / ↑↓ 快捷键、受控值与 aria 标签行为不变；要素详情页输入顺带补齐面板密度外观（原为浏览器默认样式）。编辑器内查找（Ctrl+F）为 CodeMirror search panel 自渲染 DOM，不在 React 层，维持原生
 
 ### Fixed
 
+- **字号规范全项目扫尾**：BaseWindow / LoginWindow / shared 其余 20 个 scss 完成 ≥12px、无小数、尽量双数映射（含 CodePage 两处内联 `fontSize: 11` → 12），全项目 grep 复核零残留
+- **要素库类型 chips 选中项自动居中**：chips 行是隐藏滚动条的横向容器，类型较多时选中项可能落在两侧渐隐区。`EntityPanel` 切换筛选后按视口矩形差值把选中 chip 滚动到行中间（首次挂载恢复筛选不做动画，jsdom 环境守卫跳过），无需再手动 Shift+滚轮寻找
+- **修复 useNovelEditorStore 测试用例缺步**：「flushSave 在换章后仍能落库旧章的在途草稿」用例首轮 flush 已清掉在途防抖，后续切章时并无在途可 flush（store 行为正确）；补一次 c1 真实输入制造在途，还原用例本意，14/14 通过
+- **主题系统新增「高对比辅助」变量组（四主题同步）**：`--app-text-strong` / `--app-text-secondary-strong`（比 text / secondary 深（暗色亮）一档，用于 11px 上下的侧栏 / 抽屉小字）与 `--app-primary-weak-strong` / `--app-success-weak-strong`（高饱和弱底，用于折叠面板头）。修复 mint（薄荷）主题下 TodoPage 两个折叠板头完全同色——mint 的 primary 与 success 原本同为 `#2fa57e`，弱底 `primary-weak` / `success-weak` 均为 `#dcf2e8`；现 mint success 偏移为叶绿 `#4f9d5f`（antd `colorSuccess` 同步），两板从根上可分辨。Worker 书页右栏（大纲 / 灵感 / 检索 tab、章节行、一句话梗概、字数）与历史快照抽屉的小字号文本由 `text-muted` / `text-disabled` 升到高对比档，浅色主题下对比度由约 2~3:1 提升至 8:1 以上
+- **WorkerWindow + TodoSection 字号规范化（≥12px、无小数、尽量双数）**：全窗口 35 个 scss 统一映射（9~12.5→12、13/13.5→14、15→16、19→20），消除 10.5px / 11px 级别的费眼小字；新规范已记入 AGENTS 约定，后续页面沿用
 - **NovelPage 换章丢保存与今日字数虚增**（P0-1 收尾，修复抽 store 过程引入的回归）：
   - 程序化文档同步（切章灌入正文）现携带「变更前正文」作为字数基线——此前基线退化为空串，首次切到无草稿的章节会把整章字数误计入今日新增/今日累计
   - 防抖保存记录所属章节：换章后第一次真实输入时，旧章的在途保存立即落库，不再被新章的防抖重置悄悄取消；关窗/手动 flush 同样按章节定位，不再依赖「当前活动章」

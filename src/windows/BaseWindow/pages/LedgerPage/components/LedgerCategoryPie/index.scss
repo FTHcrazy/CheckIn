@@ -15,7 +15,7 @@
   }
 
   &__title {
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 600;
     color: var(--app-text-secondary);
   }
@@ -33,14 +33,14 @@
 
   &__center-value {
     fill: var(--app-text);
-    font-size: 15px;
+    font-size: 16px;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
   }
 
   &__center-label {
     fill: var(--app-text-muted);
-    font-size: 10px;
+    font-size: 12px;
   }
 
   &__legend {

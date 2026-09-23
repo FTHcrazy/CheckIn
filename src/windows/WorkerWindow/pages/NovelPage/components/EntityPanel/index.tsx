@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CloseOutlined, SearchOutlined } from "@ant-design/icons";
+import { Input } from "antd";
 import EntityCard from "../EntityCard";
 import EntityDetail from "../EntityDetail";
 import type { EntitySavePatch } from "../EntityDetail";
@@ -102,6 +103,30 @@ export default function EntityPanel({
     return map;
   }, [entities]);
 
+  // 选中 chip 居中：chips 行是隐藏滚动条的横向容器，类型较多时选中的
+  // 可能落在两侧渐隐区里，用户不知道还能滚。切换筛选后把选中项滚到
+  // 行中间，免去手动 Shift+滚轮找；首次挂载（恢复上次筛选）不做动画
+  const chipsMountedRef = useRef(false);
+  useEffect(() => {
+    const row = chipsFade.ref.current;
+    const on = row?.querySelector<HTMLElement>(".nv-chip.is-on");
+    if (!row || !on) return;
+    // 用视口矩形差值求目标 scrollLeft：.nv-chips 不是定位元素，
+    // offsetLeft 会相对更外层的定位祖先解析，这里不能用它
+    const rowRect = row.getBoundingClientRect();
+    const onRect = on.getBoundingClientRect();
+    const target =
+      row.scrollLeft + (onRect.left + onRect.width / 2) - (rowRect.left + rowRect.width / 2);
+    if (Math.abs(row.scrollLeft - target) <= 1) return;
+    // jsdom 未实现 Element.scrollTo，守卫避免单测环境报错
+    if (typeof row.scrollTo !== "function") return;
+    row.scrollTo({
+      left: target,
+      behavior: chipsMountedRef.current ? "smooth" : "auto",
+    });
+    chipsMountedRef.current = true;
+  }, [filter, counts, chipsFade.ref]);
+
   const trimmed = keyword.trim().toLowerCase();
 
   const visible = useMemo(
@@ -179,7 +204,8 @@ export default function EntityPanel({
     <div className="nv-entity">
       <div className="nv-field nv-entity__search">
         <SearchOutlined />
-        <input
+        <Input
+          variant="borderless"
           value={keyword}
           placeholder="搜名称 / 别名 / 简介"
           aria-label="搜索要素"

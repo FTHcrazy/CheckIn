@@ -21,7 +21,7 @@
     border-radius: var(--app-radius-pill);
     background: var(--app-surface);
     color: var(--app-text-secondary);
-    font-size: 12.5px;
+    font-size: 12px;
     cursor: pointer;
     transition: box-shadow 0.15s ease, transform 0.15s ease;
 
@@ -38,7 +38,7 @@
   }
 
   &__chip-count {
-    font-size: 11px;
+    font-size: 12px;
     opacity: 0.75;
   }
 
@@ -50,7 +50,7 @@
 
   &__sort {
     min-width: 96px;
-    font-size: 12.5px;
+    font-size: 12px;
     color: var(--app-text-secondary);
   }
 
@@ -73,7 +73,7 @@
     border-radius: 7px;
     background: transparent;
     color: var(--app-text-muted);
-    font-size: 13px;
+    font-size: 14px;
     cursor: pointer;
     transition: box-shadow 0.15s ease;
 

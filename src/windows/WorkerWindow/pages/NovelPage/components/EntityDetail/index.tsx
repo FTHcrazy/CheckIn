@@ -6,7 +6,7 @@ import {
   PlusOutlined,
   SettingOutlined,
 } from "@ant-design/icons";
-import { Select } from "antd";
+import { Input, Select } from "antd";
 import { useEntityTypeMeta } from "../../hooks/entity-types-context";
 import type {
   EntityAppearance,
@@ -246,7 +246,8 @@ export default function EntityDetail({
         </span>
         <div className="nv-edetail__ident">
           {editing ? (
-            <input
+            <Input
+              variant="borderless"
               className="nv-edetail__input nv-edetail__name-input"
               value={draft.name}
               autoFocus
@@ -303,7 +304,8 @@ export default function EntityDetail({
           </div>
           <div className="nv-edetail__form-row">
             <span className="nv-edetail__k">别名</span>
-            <input
+            <Input
+              variant="borderless"
               className="nv-edetail__input"
               value={draft.aliases}
               maxLength={200}
@@ -318,7 +320,8 @@ export default function EntityDetail({
           </div>
           <div className="nv-edetail__form-row">
             <span className="nv-edetail__k">一句话</span>
-            <input
+            <Input
+              variant="borderless"
               className="nv-edetail__input"
               value={draft.summary}
               maxLength={120}
@@ -333,7 +336,8 @@ export default function EntityDetail({
           </div>
           <div className="nv-edetail__form-row">
             <span className="nv-edetail__k">性格</span>
-            <input
+            <Input
+              variant="borderless"
               className="nv-edetail__input"
               value={draft.personality}
               maxLength={60}
@@ -433,7 +437,8 @@ export default function EntityDetail({
             options={relationTargetOptions}
             onChange={setRelTargetId}
           />
-          <input
+          <Input
+            variant="borderless"
             className="nv-edetail__input"
             value={relName}
             maxLength={12}

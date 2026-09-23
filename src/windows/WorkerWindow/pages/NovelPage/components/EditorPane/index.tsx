@@ -7,7 +7,7 @@ import {
   useState,
 } from "react";
 import type { CSSProperties, KeyboardEvent, MouseEvent as ReactMouseEvent, Ref } from "react";
-import { Empty } from "antd";
+import { Empty, Input } from "antd";
 import {
   defaultKeymap,
   history,
@@ -533,8 +533,9 @@ export default function EditorPane({
       {chapter && (
         <div className="nv-editor__title">
           {titleEditing ? (
-            <input
+            <Input
               className="nv-editor__title-input"
+              variant="borderless"
               value={titleDraft}
               autoFocus
               maxLength={60}

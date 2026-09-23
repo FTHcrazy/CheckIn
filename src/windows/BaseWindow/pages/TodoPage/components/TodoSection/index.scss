@@ -72,6 +72,8 @@
     font-size: 14px;
     font-weight: 700;
     letter-spacing: 0.5px;
+    /* 面板头标题走高对比档：弱底饱和度提升后，标题也要压得住 */
+    color: var(--app-text-strong);
   }
 
   &__badge {
@@ -98,17 +100,18 @@
   }
 
   &__arrow {
-    font-size: 11px;
+    font-size: 12px;
     color: var(--app-text-disabled);
     transition: transform 0.2s;
   }
 
-  // TODO 组头
+  // TODO 组头：primary-weak-strong 是高饱和弱底——mint 下 primary 与 success
+  // 同为绿色系，若用普通 weak 底两块板头完全同色（-strong 已按主题区分色相）
   &--todo &__toggle {
-    background: linear-gradient(135deg, var(--app-primary-weak) 0%, var(--app-surface-alt) 100%);
+    background: linear-gradient(135deg, var(--app-primary-weak-strong) 0%, var(--app-surface-alt) 100%);
 
     &:hover {
-      background: var(--app-primary-weak);
+      background: var(--app-primary-weak-strong);
     }
   }
 
@@ -118,10 +121,10 @@
 
   // DONE 组头
   &--done &__toggle {
-    background: linear-gradient(135deg, var(--app-success-weak) 0%, var(--app-surface-alt) 100%);
+    background: linear-gradient(135deg, var(--app-success-weak-strong) 0%, var(--app-surface-alt) 100%);
 
     &:hover {
-      background: var(--app-success-weak);
+      background: var(--app-success-weak-strong);
     }
   }
 

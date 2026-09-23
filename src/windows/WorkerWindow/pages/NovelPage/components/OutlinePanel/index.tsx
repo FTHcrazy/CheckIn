@@ -6,11 +6,13 @@ import {
   EditOutlined,
   PlusOutlined,
 } from "@ant-design/icons";
-import { Select } from "antd";
+import { Input, Select } from "antd";
 import { CHAPTER_STATUS_META } from "../../novel-config";
 import { formatThousands } from "../../novel-utils";
 import type { ForeshadowPatch, OutlineNode } from "../../types";
 import "./index.scss";
+
+const { TextArea } = Input;
 
 /** 大纲面板动作组：由页面组合层注入，面板本身不接触数据层 Hook */
 export interface OutlineActions {
@@ -237,7 +239,8 @@ export default function OutlinePanel({
         </button>
 
         {editing ? (
-          <input
+          <Input
+            variant="borderless"
             className="nv-outline__note-input"
             value={noteDraft}
             autoFocus
@@ -269,7 +272,8 @@ export default function OutlinePanel({
       return (
         <li key={node.id} className="nv-outline__fs-item is-editing">
           <div className="nv-outline__form">
-            <input
+            <Input
+              variant="borderless"
               className="nv-outline__input"
               value={fsDraft.title}
               autoFocus
@@ -281,7 +285,8 @@ export default function OutlinePanel({
               }
               onKeyDown={handleFsTitleKeyDown}
             />
-            <textarea
+            <TextArea
+              variant="borderless"
               className="nv-outline__textarea"
               value={fsDraft.note}
               rows={2}
@@ -511,7 +516,8 @@ export default function OutlinePanel({
 
               {adding && (
                 <div className="nv-outline__form">
-                  <input
+                  <Input
+                    variant="borderless"
                     className="nv-outline__input"
                     value={fsDraft.title}
                     autoFocus
@@ -526,7 +532,8 @@ export default function OutlinePanel({
                     }
                     onKeyDown={handleFsTitleKeyDown}
                   />
-                  <textarea
+                  <TextArea
+                    variant="borderless"
                     className="nv-outline__textarea"
                     value={fsDraft.note}
                     rows={2}

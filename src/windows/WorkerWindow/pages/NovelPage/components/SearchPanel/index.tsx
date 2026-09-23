@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from "react";
 import { CloseOutlined, SearchOutlined } from "@ant-design/icons";
+import { Input } from "antd";
 import { Virtuoso } from "react-virtuoso";
 import { useEntityTypeMeta } from "../../hooks/entity-types-context";
 import { splitByKeyword } from "../../novel-utils";
@@ -112,7 +113,8 @@ export default function SearchPanel({
     <div className="nv-search">
       <div className="nv-field nv-search__box">
         <SearchOutlined />
-        <input
+        <Input
+          variant="borderless"
           value={keyword}
           onChange={(event) => setKeyword(event.target.value)}
           placeholder="全书检索"

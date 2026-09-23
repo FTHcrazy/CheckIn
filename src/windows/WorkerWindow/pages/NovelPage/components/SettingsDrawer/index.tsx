@@ -1,4 +1,4 @@
-import { Segmented, Slider, Switch } from "antd";
+import { Input, Segmented, Slider, Switch } from "antd";
 import {
   CHAPTER_SUFFIX_OPTIONS,
   SETTINGS_RANGE,
@@ -164,8 +164,9 @@ export default function SettingsDrawer({
               </button>
             ))}
           </div>
-          <input
+          <Input
             className="nv-setting__suffix-input"
+            variant="borderless"
             value={settings.chapterSuffix}
             maxLength={4}
             aria-label="自定义章节后缀"
@@ -192,8 +193,9 @@ export default function SettingsDrawer({
               </button>
             ))}
           </div>
-          <input
+          <Input
             className="nv-setting__suffix-input"
+            variant="borderless"
             value={settings.volumeSuffix}
             maxLength={4}
             aria-label="自定义卷名后缀"

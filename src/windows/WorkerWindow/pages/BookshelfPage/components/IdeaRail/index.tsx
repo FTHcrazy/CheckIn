@@ -1,6 +1,7 @@
 import { ArrowUpOutlined, PlusOutlined } from "@ant-design/icons";
 import { useRef, useState } from "react";
-import { Button, Select } from "antd";
+import { Button, Input, Select } from "antd";
+import type { InputRef } from "antd";
 import type { IdeaFilter } from "../../bookshelf-utils";
 import IdeaNoteCard from "../IdeaNoteCard";
 import type { NovelNoteDTO } from "@/shared/types/electron";
@@ -46,7 +47,7 @@ export default function IdeaRail({
 }: IdeaRailProps) {
   const [draft, setDraft] = useState("");
   const [captureWorkId, setCaptureWorkId] = useState("");
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const textareaRef = useRef<InputRef>(null);
 
   const submit = () => {
     if (!draft.trim()) return;
@@ -73,9 +74,10 @@ export default function IdeaRail({
       <p className="bs-rail__subtitle">跨作品收集，随时归纳到作品或回编辑器转为伏笔</p>
 
       <div className="bs-rail__capture">
-        <textarea
+        <Input.TextArea
           ref={textareaRef}
           className="bs-rail__input"
+          variant="borderless"
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={(event) => {

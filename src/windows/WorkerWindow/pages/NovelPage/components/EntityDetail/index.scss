@@ -71,7 +71,7 @@
     width: 44px;
     height: 44px;
     border-radius: 13px;
-    font-size: 19px;
+    font-size: 20px;
     font-weight: 600;
     flex: none;
   }
@@ -90,12 +90,12 @@
 
   &__alias {
     margin-top: 2px;
-    font-size: 11.5px;
+    font-size: 12px;
     color: var(--app-text-muted);
   }
 
   &__name-input {
-    font-size: 15px;
+    font-size: 16px;
     font-weight: 600;
   }
 
@@ -110,17 +110,46 @@
   &__k {
     flex: none;
     width: 44px;
-    font-size: 11.5px;
+    font-size: 12px;
     color: var(--app-text-disabled);
   }
 
   &__input,
+  &__input.ant-input,
   // 组件库 Select（AGENTS 6.1.2）：覆盖 antd 默认外观，贴合面板密度
   &__select {
     flex: 1;
     min-width: 0;
     width: 100%;
     margin-bottom: 6px;
+
+    // 组件库 Input（AGENTS 6.1.2）：borderless 变体，边框/底色由这里自绘，
+    // 复合选择器稳定压过 .ant-input 默认值（与上方 Select 同思路）
+    &.ant-input {
+      padding: 4px 8px;
+      border: 1px solid var(--app-border);
+      border-radius: 8px;
+      background: var(--app-input-bg);
+      color: var(--app-text);
+      font-family: inherit;
+      font-size: 12px;
+
+      &::placeholder {
+        color: var(--app-text-muted);
+      }
+
+      &:hover {
+        border-color: var(--app-primary);
+      }
+
+      // antd v6 borderless 聚焦自带 focus-visible outline，与自绘边框叠两层
+      &:focus,
+      &:focus-visible {
+        outline: none;
+        border-color: var(--app-primary);
+        box-shadow: 0 0 0 3px var(--app-primary-weak);
+      }
+    }
 
     // antd 6 的边框/背景画在根元素 .ant-select 上，经 --ant-select-* 变量联动
     // hover/focus/disabled——只覆盖变量，禁止再给内层 .ant-select-content 加边框（会双边框）
@@ -150,6 +179,12 @@
     }
   }
 
+  // 名称输入放大字号：置于上方 __input.ant-input 密度覆盖之后声明才能胜出
+  &__name-input.ant-input {
+    font-size: 16px;
+    font-weight: 600;
+  }
+
   &__type-row {
     display: flex;
     flex-wrap: wrap;
@@ -162,7 +197,7 @@
     border-radius: var(--app-radius-pill);
     background: var(--app-surface);
     font-family: inherit;
-    font-size: 11px;
+    font-size: 12px;
     cursor: pointer;
     transition: border-color 150ms ease, background 150ms ease;
 
@@ -234,7 +269,7 @@
     border-radius: var(--app-radius-pill);
     background: var(--app-surface-hover);
     color: var(--app-text-secondary);
-    font-size: 11px;
+    font-size: 12px;
   }
 
   /* ── 关联要素 ─────────────────────────────────────────────────── */
@@ -263,7 +298,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 12.5px;
+    font-size: 12px;
   }
 
   &__rel-tag {
@@ -273,7 +308,7 @@
     border-radius: var(--app-radius-pill);
     background: var(--app-primary-weak);
     color: var(--app-primary);
-    font-size: 10.5px;
+    font-size: 12px;
   }
 
   &__rel-add {
@@ -327,7 +362,7 @@
     background: transparent;
     color: var(--app-text-muted);
     font-family: inherit;
-    font-size: 10.5px;
+    font-size: 12px;
     font-weight: 400;
     letter-spacing: 0;
     cursor: pointer;
@@ -354,7 +389,7 @@
     background: var(--app-surface);
     color: var(--app-text-secondary);
     font-family: inherit;
-    font-size: 12.5px;
+    font-size: 12px;
     cursor: pointer;
     transition: border-color 150ms ease, background 150ms ease, color 150ms ease;
 
@@ -373,7 +408,7 @@
   &__rung-no {
     width: 16px;
     flex: none;
-    font-size: 10.5px;
+    font-size: 12px;
     color: var(--app-text-disabled);
     font-variant-numeric: tabular-nums;
   }
@@ -383,7 +418,7 @@
   }
 
   &__rung-note {
-    font-size: 10.5px;
+    font-size: 12px;
     color: var(--app-text-disabled);
     font-weight: 400;
   }
@@ -391,7 +426,7 @@
   &__rung-cur {
     margin-left: auto;
     flex: none;
-    font-size: 10.5px;
+    font-size: 12px;
   }
 
   /* ── 出场章节 ─────────────────────────────────────────────────── */
@@ -411,7 +446,7 @@
     background: var(--app-surface);
     color: var(--app-text-secondary);
     font-family: inherit;
-    font-size: 11.5px;
+    font-size: 12px;
     cursor: pointer;
     transition: border-color 150ms ease, color 150ms ease, background 150ms ease;
 
@@ -423,7 +458,7 @@
   }
 
   &__chip-no {
-    font-size: 10px;
+    font-size: 12px;
     color: var(--app-text-disabled);
   }
 

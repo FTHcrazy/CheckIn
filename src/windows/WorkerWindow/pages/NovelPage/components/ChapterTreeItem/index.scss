@@ -22,7 +22,7 @@
     background: transparent;
     border-radius: var(--app-radius-item);
     color: var(--app-text-secondary);
-    font-size: 12.5px;
+    font-size: 12px;
     cursor: pointer;
     text-align: left;
     transition: background 120ms ease, color 120ms ease;
@@ -109,7 +109,7 @@
   &__index {
     width: 26px;
     flex: none;
-    font-size: 10.5px;
+    font-size: 12px;
     font-variant-numeric: tabular-nums;
     color: var(--app-text-muted);
   }
@@ -130,9 +130,16 @@
     border-radius: 4px;
     background: var(--app-surface);
     color: var(--app-text);
-    font-size: 12.5px;
+    font-size: 12px;
 
-    &:focus {
+    // antd Input（AGENTS 6.1.2）：复合选择器压过组件库默认内边距
+    &.ant-input {
+      padding: 1px 5px;
+    }
+
+    // antd v6 borderless 聚焦自带 focus-visible outline，与自身边框叠两层
+    &:focus,
+    &:focus-visible {
       outline: none;
     }
   }
@@ -143,7 +150,7 @@
 
   &__words {
     flex: none;
-    font-size: 10.5px;
+    font-size: 12px;
     font-variant-numeric: tabular-nums;
     color: var(--app-text-muted);
   }

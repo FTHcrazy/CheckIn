@@ -44,24 +44,13 @@
     min-height: 0;
     overflow-y: auto;
     overflow-x: hidden;
-    scrollbar-width: thin;
-    scrollbar-color: var(--app-scrollbar) transparent;
+    // 滚动条完全隐藏（与 chips 行同一套隐藏式设计）：
+    // 导航溢出只发生在最小窗口高度下，常显滚动条反而破坏侧栏观感；
+    // 滚轮 / 触控板滚动能力保留
+    scrollbar-width: none;
 
     &::-webkit-scrollbar {
-      width: 4px;
-    }
-
-    &::-webkit-scrollbar-track {
-      background: transparent;
-    }
-
-    &::-webkit-scrollbar-thumb {
-      background: var(--app-scrollbar);
-      border-radius: 999px;
-    }
-
-    &::-webkit-scrollbar-thumb:hover {
-      background: var(--app-scrollbar-hover);
+      display: none;
     }
   }
 
@@ -98,7 +87,7 @@
   }
 
   &__label {
-    font-size: 11px;
+    font-size: 12px;
     line-height: 1.2;
   }
 
@@ -137,11 +126,11 @@
     }
 
     &__icon {
-      font-size: 17px;
+      font-size: 18px;
     }
 
     &__label {
-      font-size: 10px;
+      font-size: 12px;
     }
 
     &__footer {

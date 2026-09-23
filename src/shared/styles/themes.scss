@@ -15,6 +15,8 @@
  *                  surface-elevated / header-bg / sidebar-bg / input-bg / splitter / mask
  *   描边     2 项：border / border-strong
  *   文本     5 项：text / text-secondary / text-muted / text-disabled / text-inverse
+ *   高对比   4 项：text-strong / text-secondary-strong（小字号可读性）+
+ *                  primary-weak-strong / success-weak-strong（面板头高饱和弱底）
  *   主色     6 项：primary / primary-strong(hover) / primary-active(按下) /
  *                  primary-weak(弱底) / primary-contrast(主色上的文字) / primary-gradient
  *   语义色   8 项：success / warning / error / info 各配一个 -weak 弱底
@@ -52,6 +54,12 @@
   --app-text-muted: #8a90ac;
   --app-text-disabled: #b6bbd0;
   --app-text-inverse: #ffffff;
+
+  /* ── 高对比辅助（小字号可读性：侧栏 / 抽屉 / 折叠面板头）── */
+  --app-text-strong: #1d2242;
+  --app-text-secondary-strong: #434a6e;
+  --app-primary-weak-strong: #dbe4ff;
+  --app-success-weak-strong: #cfeedd;
 
   /* ── 主色（strong=hover / active=按下 / weak=弱底 / contrast=主色上的文字）── */
   --app-primary: #5b6cf9;
@@ -133,6 +141,12 @@
   --app-text-disabled: #c5bba8;
   --app-text-inverse: #ffffff;
 
+  /* ── 高对比辅助 ── */
+  --app-text-strong: #2a2415;
+  --app-text-secondary-strong: #524a3a;
+  --app-primary-weak-strong: #ffd8c3;
+  --app-success-weak-strong: #d4e7c9;
+
   /* ── 主色 ── */
   --app-primary: #e8834a;
   --app-primary-strong: #d06e38;
@@ -211,6 +225,12 @@
   --app-text-disabled: #b7c7bd;
   --app-text-inverse: #ffffff;
 
+  /* ── 高对比辅助 ── */
+  --app-text-strong: #12211a;
+  --app-text-secondary-strong: #2e4036;
+  --app-primary-weak-strong: #c2e7d6;
+  --app-success-weak-strong: #cbe8c6;
+
   /* ── 主色 ── */
   --app-primary: #2fa57e;
   --app-primary-strong: #218a67;
@@ -220,8 +240,10 @@
   --app-primary-gradient: linear-gradient(90deg, #3fbf92 0%, #7ed4b4 100%);
 
   /* ── 语义色 ── */
-  --app-success: #2fa57e;
-  --app-success-weak: #dcf2e8;
+  /* mint 的 primary 与 success 同为绿色系，success 偏叶绿与主色青绿区分，
+     否则弱底（primary-weak / success-weak）同色，todo 两块折叠板无法分辨 */
+  --app-success: #4f9d5f;
+  --app-success-weak: #e3f3e0;
   --app-warning: #d9a514;
   --app-warning-weak: #fbf3dc;
   --app-error: #d95c5c;
@@ -289,6 +311,12 @@
   --app-text-muted: #7e8595;
   --app-text-disabled: #5c6273;
   --app-text-inverse: #15171f;
+
+  /* ── 高对比辅助（暗色下提亮一档）── */
+  --app-text-strong: #f6f7fc;
+  --app-text-secondary-strong: #ccd2e0;
+  --app-primary-weak-strong: #2d3556;
+  --app-success-weak-strong: rgba(79, 201, 141, 0.24);
 
   /* ── 主色（暗色下 hover 提亮、按下压暗）── */
   --app-primary: #7b8cff;

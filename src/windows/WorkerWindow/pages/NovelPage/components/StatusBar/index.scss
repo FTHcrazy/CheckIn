@@ -8,7 +8,7 @@
   border-top: 1px solid var(--app-border);
   background: var(--app-surface);
   color: var(--app-text-secondary);
-  font-size: 11.5px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
 
   &__item b {
@@ -30,7 +30,7 @@
     border-radius: var(--app-radius-sm, 4px);
     background: transparent;
     color: var(--app-text-muted);
-    font-size: 11.5px;
+    font-size: 12px;
     font-family: inherit;
     cursor: pointer;
     transition: color 120ms ease, border-color 120ms ease, background 120ms ease;

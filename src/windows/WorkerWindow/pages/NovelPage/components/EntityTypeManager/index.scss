@@ -41,7 +41,7 @@
   &__name {
     flex: 1;
     min-width: 0;
-    font-size: 12.5px;
+    font-size: 12px;
     color: var(--app-text);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -50,7 +50,7 @@
 
   &__count {
     flex: none;
-    font-size: 11px;
+    font-size: 12px;
     color: var(--app-text-muted);
   }
 
@@ -71,7 +71,7 @@
 
   &__label {
     margin: 0;
-    font-size: 10.5px;
+    font-size: 12px;
     font-weight: 600;
     letter-spacing: 0.6px;
     text-transform: uppercase;
@@ -99,7 +99,7 @@
 
   &__error {
     margin: 0;
-    font-size: 11.5px;
+    font-size: 12px;
     color: #d4380d;
   }
 }

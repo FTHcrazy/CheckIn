@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { SearchOutlined } from "@ant-design/icons";
+import { Input } from "antd";
+import type { InputRef } from "antd";
 import { Virtuoso } from "react-virtuoso";
 import type { VirtuosoHandle } from "react-virtuoso";
 import { fuzzyMatch, formatThousands, padIndex } from "../../novel-utils";
@@ -28,7 +30,7 @@ export default function ChapterJumpPalette({
 }: ChapterJumpPaletteProps) {
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState(0);
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const inputRef = useRef<InputRef | null>(null);
   const listRef = useRef<VirtuosoHandle | null>(null);
 
   useEffect(() => {
@@ -68,7 +70,9 @@ export default function ChapterJumpPalette({
     <div className="nv-palette" role="dialog" aria-label="章节快速跳转">
       <div className="nv-palette__input">
         <SearchOutlined className="nv-palette__icon" />
-        <input
+        <Input
+          className="nv-palette__field"
+          variant="borderless"
           ref={inputRef}
           value={query}
           placeholder="🔍 搜索章节"

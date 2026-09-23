@@ -25,7 +25,7 @@
     border-radius: var(--app-radius-pill);
     background: var(--app-primary-weak);
     color: var(--app-primary);
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 500;
   }
 
@@ -40,7 +40,7 @@
     border-radius: var(--app-radius-item);
     background: transparent;
     color: var(--app-text-muted);
-    font-size: 13px;
+    font-size: 14px;
     cursor: pointer;
     transition: box-shadow 0.15s ease;
 
@@ -52,7 +52,7 @@
 
   &__subtitle {
     margin: -4px 0 0;
-    font-size: 11.5px;
+    font-size: 12px;
     color: var(--app-text-muted);
   }
 
@@ -74,12 +74,25 @@
     resize: none;
     outline: none;
     font: inherit;
-    font-size: 12.5px;
+    font-size: 12px;
     line-height: 1.6;
     color: var(--app-text);
 
+    // antd TextArea（AGENTS 6.1.2）：复合选择器压过组件库默认内边距与字号
+    &.ant-input {
+      padding: 2px 4px;
+      font-size: 12px;
+    }
+
     &::placeholder {
       color: var(--app-text-disabled);
+    }
+
+    // antd v6 borderless 聚焦自带 focus-visible outline，与捕捉框容器观感
+    // 不符，统一关闭
+    &:focus,
+    &:focus-visible {
+      outline: none;
     }
   }
 
@@ -112,7 +125,7 @@
     border-radius: var(--app-radius-pill);
     background: var(--app-surface);
     color: var(--app-text-secondary);
-    font-size: 11.5px;
+    font-size: 12px;
     cursor: pointer;
     transition: box-shadow 0.15s ease;
 
@@ -128,7 +141,7 @@
   }
 
   &__chip-count {
-    font-size: 10.5px;
+    font-size: 12px;
     opacity: 0.75;
   }
 

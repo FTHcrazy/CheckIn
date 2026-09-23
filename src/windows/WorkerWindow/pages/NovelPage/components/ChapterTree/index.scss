@@ -31,17 +31,29 @@
       border-color: var(--app-primary);
     }
 
+    // antd Input（AGENTS 6.1.2）：组件库承载行为，外观由容器自绘，
+    // 内边距归零贴合容器 padding（特异性 0,1,1 压过 .ant-input）
     input {
       flex: 1;
       min-width: 0;
+      padding: 0;
       border: none;
       outline: none;
       background: transparent;
       color: var(--app-text);
+      font-family: inherit;
       font-size: 12px;
 
       &::placeholder {
         color: var(--app-text-muted);
+      }
+
+      // antd v6 borderless 聚焦时自带 focus-visible outline（0,2,0），与容器
+      // focus-within 描边叠成两层框；聚焦指示由容器承担，这里须以
+      // :focus-visible 复合选择器（0,2,1）压过组件库
+      &:focus,
+      &:focus-visible {
+        outline: none;
       }
     }
   }
@@ -97,7 +109,7 @@
     border-radius: var(--app-radius-item);
     background: transparent;
     color: var(--app-text-muted);
-    font-size: 11.5px;
+    font-size: 12px;
     cursor: pointer;
     transition: color 120ms ease, background 120ms ease;
 

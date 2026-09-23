@@ -8,10 +8,13 @@ import {
   PushpinOutlined,
   SearchOutlined,
 } from "@ant-design/icons";
+import { Input } from "antd";
 import { Virtuoso } from "react-virtuoso";
 import { filterNotes, formatRelativeTime } from "../../novel-utils";
 import type { NovelNote } from "../../types";
 import "./index.scss";
+
+const { TextArea } = Input;
 
 /** 灵感面板动作组：由页面组合层注入，面板本身不接触数据层 Hook */
 export interface InspirationActions {
@@ -153,7 +156,8 @@ export default function InspirationPanel({
         >
           {editingId === note.id ? (
             <>
-              <textarea
+              <TextArea
+                variant="borderless"
                 className="nv-note__edit"
                 value={editDraft}
                 autoFocus
@@ -246,7 +250,8 @@ export default function InspirationPanel({
   return (
     <div className="nv-note">
       <div className="nv-note__composer">
-        <textarea
+        <TextArea
+          variant="borderless"
           value={draft}
           placeholder="甩一句灵感进来…"
           aria-label="新增灵感"
@@ -282,7 +287,8 @@ export default function InspirationPanel({
 
       <div className="nv-field nv-note__search">
         <SearchOutlined />
-        <input
+        <Input
+          variant="borderless"
           value={keyword}
           placeholder="搜索灵感（全书口径）"
           aria-label="搜索灵感"

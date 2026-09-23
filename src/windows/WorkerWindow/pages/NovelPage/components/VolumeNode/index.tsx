@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { DragEvent, KeyboardEvent } from "react";
 import { DownOutlined, PlusOutlined, RightOutlined } from "@ant-design/icons";
+import { Input } from "antd";
 import { DRAG_MIME_CHAPTER, DRAG_MIME_VOLUME, UNNAMED_VOLUME } from "../../novel-config";
 import { volumeDisplayName } from "../../novel-utils";
 import type { LabelNumberStyle, NovelVolume } from "../../types";
@@ -119,8 +120,9 @@ export default function VolumeNode({
         /* 编辑态不用 button：避免 button 内嵌 input 的交互嵌套 */
         <div className="nv-volume__head is-editing">
           <DownOutlined className="nv-volume__caret" />
-          <input
+          <Input
             className="nv-volume__name-input"
+            variant="borderless"
             value={nameDraft}
             autoFocus
             maxLength={30}

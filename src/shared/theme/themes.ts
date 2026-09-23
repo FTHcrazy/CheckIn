@@ -97,7 +97,7 @@ export const THEME_LIST: readonly ThemeMeta[] = [
       colorTextDisabled: "#b7c7bd",
       colorBorderSecondary: "#dfeee5",
       colorSplit: "#e6f2eb",
-      colorSuccess: "#2fa57e",
+      colorSuccess: "#4f9d5f",
       colorWarning: "#d9a514",
       colorError: "#d95c5c",
       colorInfo: "#4a90c4",

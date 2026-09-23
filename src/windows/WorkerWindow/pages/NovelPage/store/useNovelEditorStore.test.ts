@@ -161,8 +161,10 @@ describe("useNovelEditorStore（编辑器交互状态）", () => {
     await editorActions.flushSave();
     expect(saved).toEqual(["c1"]);
 
-    // c1 还在防抖在途时切到 c2：程序化灌入（previous === next）只挪活动章、
-    // 不重启防抖，此时在途保存仍属于 c1 —— flush 必须把 c1 落库而不是漏掉
+    // 再改一次 c1 制造在途防抖；随后程序化灌入 c2（previous === next）只挪
+    // 活动章、不重启防抖——在途保存仍属于 c1，flush 必须落库 c1 而不是漏掉。
+    // （首轮 flush 已清掉在途状态，不补这次真实输入的话切章后并无在途可 flush）
+    state().setContent("c1", "正文一改");
     state().setContent("c2", "第二章正文", "第二章正文");
     expect(state().activeChapterId).toBe("c2");
     await editorActions.flushSave();

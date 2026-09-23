@@ -95,11 +95,11 @@ const COMMIT_COLUMNS = [
         <Text type="secondary" style={{ fontSize: 12 }}>
           {record.fileChanges}
         </Text>
-        <PlusOutlined style={{ color: "var(--app-success)", fontSize: 11 }} />
+        <PlusOutlined style={{ color: "var(--app-success)", fontSize: 12 }} />
         <Text style={{ color: "var(--app-success)", fontSize: 12 }}>
           {record.insertions}
         </Text>
-        <MinusOutlined style={{ color: "var(--app-error)", fontSize: 11 }} />
+        <MinusOutlined style={{ color: "var(--app-error)", fontSize: 12 }} />
         <Text style={{ color: "var(--app-error)", fontSize: 12 }}>
           {record.deletions}
         </Text>

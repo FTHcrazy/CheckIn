@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { BookOutlined, PlusOutlined, SearchOutlined } from "@ant-design/icons";
+import { Input } from "antd";
 import { Virtuoso } from "react-virtuoso";
 import VolumeNode from "../VolumeNode";
 import ChapterTreeItem from "../ChapterTreeItem";
@@ -123,7 +124,8 @@ export default function ChapterTree({
     <div className={`nv-tree${collapsed ? " nv-tree--collapsed" : ""}`}>
       <label className="nv-tree__search">
         <SearchOutlined className="nv-tree__search-icon" />
-        <input
+        <Input
+          variant="borderless"
           value={keyword}
           onChange={(event) => setKeyword(event.target.value)}
           placeholder="搜索章节"
