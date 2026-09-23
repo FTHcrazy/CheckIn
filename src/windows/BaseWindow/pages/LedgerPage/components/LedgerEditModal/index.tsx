@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { DatePicker, Input, Modal, Segmented } from "antd";
 import dayjs from "dayjs";
 import type { LedgerCategoryDTO } from "@/shared/services/ledger";
@@ -26,7 +27,7 @@ interface LedgerEditModalProps {
 }
 
 /** 行内编辑弹窗：改类型 / 金额 / 分类 / 备注 / 日期 */
-export default function LedgerEditModal({
+function LedgerEditModal({
   open,
   draft,
   categories,
@@ -105,3 +106,6 @@ export default function LedgerEditModal({
     </Modal>
   );
 }
+
+// 同 QuickAddBar：常驻挂载的弹窗，不该被筛选框的每一次按键叫醒
+export default memo(LedgerEditModal);

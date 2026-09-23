@@ -1,12 +1,36 @@
 import { App } from "antd";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
+import { marked } from "marked";
+import { highlightRenderedHtml } from "../../memo-utils";
+import { useMemoOriginal } from "../../store/useMemoStore";
+import { useMemoSearchStore } from "../../store/useMemoSearchStore";
 import "./index.scss";
 
-interface MemoPreviewProps {
-  html: string;
-}
+/**
+ * 备忘预览区
+ *
+ * 渲染结果由本组件订阅「已落库原文」后自行计算：
+ * marked 渲染与高亮都只随原文 / 查找词变化，编辑中的逐字输入不会波及这里
+ * （此前由页面根算好再透传，敲一个字就要重跑一次 marked）。
+ */
+export default function MemoPreview() {
+  const originalContent = useMemoOriginal();
+  const activeSearchQuery = useMemoSearchStore(
+    (state) => state.activeSearchQuery,
+  );
+  const activeSearchIndex = useMemoSearchStore(
+    (state) => state.activeSearchIndex,
+  );
 
-export default function MemoPreview({ html }: MemoPreviewProps) {
+  const html = useMemo(() => {
+    if (!originalContent) return "";
+    const rendered = marked.parse(originalContent, {
+      async: false,
+      breaks: true,
+    }) as string;
+    return highlightRenderedHtml(rendered, activeSearchQuery, activeSearchIndex);
+  }, [originalContent, activeSearchQuery, activeSearchIndex]);
+
   const { message } = App.useApp();
   // 用 ref 持有最新回调，让下面这个重构 DOM 的 effect 只依赖 html，
   // 不再因 message 实例变化而清空并重建全部代码块按钮。

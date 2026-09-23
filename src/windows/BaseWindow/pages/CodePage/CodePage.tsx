@@ -124,6 +124,7 @@ export default function CodePage() {
     setDateRange,
     email,
     setEmail,
+    queryEmail,
     workdays,
     setWorkdays,
     loadData,
@@ -152,13 +153,22 @@ export default function CodePage() {
                 current && current.isAfter(dayjs().endOf("day"))
               }
             />
-            <Input
-              placeholder="邮箱"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              style={{ width: 240 }}
-              allowClear
-            />
+            <Tooltip
+              title={
+                email.trim() && email.trim() !== queryEmail
+                  ? `回车或点「查询」按 ${email.trim()} 重新查询`
+                  : "修改邮箱后回车 / 点查询才会发起请求"
+              }
+            >
+              <Input
+                placeholder="邮箱"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                onPressEnter={() => void loadData()}
+                style={{ width: 240 }}
+                allowClear
+              />
+            </Tooltip>
             <Button
               type="primary"
               icon={<SearchOutlined />}

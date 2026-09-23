@@ -1,10 +1,9 @@
 import { useEffect, useState } from "react";
 import { calcGoalProgress, formatThousands } from "../../novel-utils";
-import type { WritingStats } from "../../types";
+import { useWritingStats } from "../../store/useNovelEditorStore";
 import "./index.scss";
 
 interface StatusBarProps {
-  stats: WritingStats;
   /** 全局标注层是否启用（PRD §2 风险对策） */
   annotationOn: boolean;
   onToggleAnnotation: () => void;
@@ -15,12 +14,15 @@ interface StatusBarProps {
  *
  * 数字统一 tabular-nums，宽度不跳动；目标达成只靠进度条 + 轻提示表达，不弹窗。
  * 全局标注开关与时钟常驻此处，码字途中可一键关闭高亮/悬浮卡（PRD §2 风险对策）。
+ *
+ * 写作统计由本组件直接订阅 store：字数每键都在变，若由页面根持有再透传，
+ * 打字就会把整棵树推一遍。
  */
 export default function StatusBar({
-  stats,
   annotationOn,
   onToggleAnnotation,
 }: StatusBarProps) {
+  const stats = useWritingStats();
   const progress = calcGoalProgress(stats.todayTotal, stats.dailyGoal);
 
   // 实时时钟：每秒更新一次，tabular-nums 保证宽度不跳动

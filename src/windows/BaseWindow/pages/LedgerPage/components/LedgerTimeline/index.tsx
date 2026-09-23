@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { memo, useCallback, useMemo } from "react";
 import { GroupedVirtuoso } from "react-virtuoso";
 import type { LedgerCategoryDTO, LedgerTransactionDTO } from "@/shared/services/ledger";
 import type { LedgerDayGroup } from "../../ledger-utils";
@@ -18,7 +18,7 @@ interface LedgerTimelineProps {
  * 用 GroupedVirtuoso 虚拟化：长账目下只挂载可视行，
  * 分组结构以 groupCounts + 扁平行数组表达（Virtuoso 只接受一维数据）
  */
-export default function LedgerTimeline({
+function LedgerTimeline({
   groups,
   categories,
   onEdit,
@@ -81,3 +81,7 @@ export default function LedgerTimeline({
     />
   );
 }
+
+// 虚拟流水只在分组结果 / 分类表 / 回调变化时重渲染，
+// 弹层开合、加载态翻转这类无关变化不再把它推倒重来
+export default memo(LedgerTimeline);

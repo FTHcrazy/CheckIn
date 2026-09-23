@@ -54,14 +54,22 @@
   display: none;
 }
 
-/* Firefox 等支持现代滚动条属性的环境：同等交互 */
-*:not(:hover):not(:focus-within) {
+/* Firefox 等支持现代滚动条属性的环境：同等交互。
+ *
+ * 注意 scrollbar-width 只在 `*`（0,0,0）上声明一次、两种状态保持一致：
+ * 宽度恒定才不会因 hover 出现/消失滚动条占位而引发布局跳动（实测坑：
+ * 早年写在 (0,2,0) 的 :not(:hover) 规则里，会反过来压过页面级
+ * `scrollbar-width: none`（0,1,0）——横向溢出的 chips 行因此每次
+ * 指针进出都弹一次高度）。页面需要隐藏/调整宽度时，用常规选择器
+ * 覆盖即可稳定生效（同特异性下页面样式后加载，同样赢过 :hover 规则）。
+ * 颜色仍按悬停切换：未悬停滑块透明，悬停浮现主题兜底色。
+ */
+* {
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
 }
 
 *:hover,
 *:focus-within {
-  scrollbar-width: thin;
   scrollbar-color: var(--app-scrollbar) transparent;
 }

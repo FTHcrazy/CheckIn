@@ -16,6 +16,8 @@ import StatusBar from "./components/StatusBar";
 import SupportPanel from "./components/SupportPanel";
 import { EntityTypesProvider } from "./hooks/useEntityTypes";
 import { useNovelPage } from "./hooks/useNovelPage";
+import { hoverActions } from "./store/useHoverStore";
+import { syncAppearances } from "./store/useAppearanceStore";
 import { findTermMatches, formatNumberedLabel } from "./novel-utils";
 import type { EntityAppearance } from "./types";
 import "./index.scss";
@@ -51,7 +53,6 @@ export default function NovelPage({
     data,
     editor,
     view,
-    hover,
     terms,
     breadcrumb,
     outline,
@@ -135,30 +136,14 @@ export default function NovelPage({
     void loadSnapshots(activeChapterId);
   }, [view.snapshotOpen, activeChapterId, loadSnapshots]);
 
-  const hoverEntity = useMemo(
-    () => (hover.target ? data.getEntityById(hover.target.entityId) : null),
-    [hover.target, data],
-  );
-
   /**
-   * 出场章数（要素卡角标）：全书扫一遍按要素聚合，而不是每张卡各扫一遍——
-   * 要素几十个 × 章节上百章，逐卡扫会让右栏切一下卡一顿。
+   * 出场章数索引交给 store（渲染后同步）：
+   * 全书按章缓存，自动保存时只重扫「正在写的那一章」，
+   * 页面根不再持有这个索引 —— 保存正文不会再把整棵树推一遍。
    */
-  const appearanceCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const chapter of data.chapters) {
-      const ids = new Set(
-        findTermMatches(chapter.content, terms).map((match) => match.entityId),
-      );
-      for (const id of ids) counts.set(id, (counts.get(id) ?? 0) + 1);
-    }
-    return counts;
+  useEffect(() => {
+    syncAppearances(data.chapters, terms);
   }, [data.chapters, terms]);
-
-  const appearanceCountOf = useCallback(
-    (entityId: string): number => appearanceCounts.get(entityId) ?? 0,
-    [appearanceCounts],
-  );
 
   /** 出场章节（R21 升级）：返回全量可跳转引用，序号标签随序号配置派生 */
   const getAppearances = useCallback(
@@ -246,8 +231,6 @@ export default function NovelPage({
           onBackToShelf={onBackToShelf}
           volumeName={breadcrumb.volumeName}
           chapterName={breadcrumb.chapterName}
-          saveState={editor.saveState}
-          lastSavedAt={editor.lastSavedAt}
           leftOpen={view.leftOpen}
           rightOpen={view.rightOpen}
           typewriter={view.typewriter}
@@ -299,16 +282,14 @@ export default function NovelPage({
                 ? (data.chapterNumbers.get(data.activeChapterId) ?? 0)
                 : 0
             }
-            content={editor.content}
             settings={editor.settings}
             terms={terms}
             typewriter={view.typewriter}
             annotationOn={view.annotationOn}
-            onChange={editor.handleContentChange}
             onSelectionChange={editor.setSelection}
             onContextMenu={handleEditorContextMenu}
-            onTermHover={hover.enter}
-            onTermLeave={hover.leave}
+            onTermHover={hoverActions.enter}
+            onTermLeave={hoverActions.leave}
             onTermClick={handleOpenEntity}
             onCreateChapter={handleNewChapter}
             onRenameChapter={data.renameChapter}
@@ -319,7 +300,6 @@ export default function NovelPage({
           />
 
           <StatusBar
-            stats={editor.stats}
             annotationOn={view.annotationOn}
             onToggleAnnotation={view.toggleAnnotation}
           />
@@ -337,13 +317,8 @@ export default function NovelPage({
             />
           )}
 
-          {hover.target && hoverEntity && (
-            <HoverEntityCard
-              target={hover.target}
-              entity={hoverEntity}
-              onOpenDetail={handleOpenEntity}
-            />
-          )}
+          {/* 悬浮卡自己订阅 hover store：指针扫过正文不再推整棵树 */}
+          <HoverEntityCard onOpenDetail={handleOpenEntity} />
 
           <ChapterJumpPalette
             open={view.jumpOpen}
@@ -399,7 +374,6 @@ export default function NovelPage({
           onCloseEntity={view.closeEntityDetail}
           getEntityRelations={data.getEntityRelations}
           getAppearances={getAppearances}
-          appearanceCountOf={appearanceCountOf}
           levelSystems={data.levelSystems}
           notes={data.notes}
           globalNotes={data.allNotes}

@@ -9,8 +9,9 @@ import {
 } from "@ant-design/icons";
 import { SAVE_STATE_TEXT } from "../../novel-config";
 import { formatClock, formatThousands, type WorkMeta } from "../../novel-utils";
+import { useSaveState } from "../../store/useNovelEditorStore";
 import WorkManageMenu from "../WorkManageMenu";
-import type { NovelWork, SaveState } from "../../types";
+import type { NovelWork } from "../../types";
 import "./index.scss";
 
 interface NovelTopBarProps {
@@ -20,8 +21,6 @@ interface NovelTopBarProps {
   workMeta: Map<string, WorkMeta>;
   volumeName: string;
   chapterName: string;
-  saveState: SaveState;
-  lastSavedAt: number | null;
   leftOpen: boolean;
   rightOpen: boolean;
   typewriter: boolean;
@@ -50,6 +49,9 @@ interface NovelTopBarProps {
  * 编辑器顶栏（设计方案 §05：44px · 作品切换 / 面包屑 / 保存状态 / 面板开关 / 设置）
  *
  * 保存状态只占一格，不加 spinner 遮罩——这是「零打断」原则在顶栏上的体现。
+ *
+ * 保存态由本组件直接订阅 store：打字时它每键都在变，若由页面根持有再透传，
+ * 每敲一个字都要把整棵树推一遍。
  */
 export default function NovelTopBar({
   works,
@@ -57,8 +59,6 @@ export default function NovelTopBar({
   workMeta,
   volumeName,
   chapterName,
-  saveState,
-  lastSavedAt,
   leftOpen,
   rightOpen,
   typewriter,
@@ -79,6 +79,7 @@ export default function NovelTopBar({
   onToggleHistory,
   onBackToShelf,
 }: NovelTopBarProps) {
+  const { saveState, lastSavedAt } = useSaveState();
   const activeWork = works.find((work) => work.id === activeWorkId) ?? null;
   const activeMeta = activeWorkId ? workMeta.get(activeWorkId) : undefined;
   const hasActiveChapter = (activeMeta?.chapters ?? 0) > 0 && Boolean(chapterName);

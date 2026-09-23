@@ -133,15 +133,20 @@ export function useNovelData() {
   /** 光标 / 滚动恢复完成后由编辑器回调清空，避免切章时误用旧位置 */
   const consumeLastPosition = useCallback((): void => setLastPosition(null), []);
 
-  const allEntities = useMemo(() => bundle?.entities ?? [], [bundle]);
+  // ── 派生切片 ──────────────────────────────────────────────────────
+  // 依赖一律写成「这一张表的引用」而不是整个 bundle。
+  // 此前写成 [bundle, activeWorkId]，而 bundle 是「任一表写入即换引用」的整块
+  // state —— 于是存一条灵感、加一条关联，也会把卷章分组、全书序号、词库、
+  // 大纲全部重算一遍。细化后只有真正被改的那张表的下游会重算。
+  const allEntities = useMemo(() => bundle?.entities ?? [], [bundle?.entities]);
   const entities = useMemo(
     () => allEntities.filter((entity) => entity.workId === activeWorkId),
     [allEntities, activeWorkId],
   );
-  const links = useMemo(() => bundle?.links ?? [], [bundle]);
+  const links = useMemo(() => bundle?.links ?? [], [bundle?.links]);
   const levelSystems = useMemo(
     () => (bundle?.levelSystems ?? []).filter((item) => item.workId === activeWorkId),
-    [bundle, activeWorkId],
+    [bundle?.levelSystems, activeWorkId],
   );
   /** 等级项索引（R25）：关联视图与当前境界绑定把 novel_levels.id 翻译成可读名 */
   const levelRungIndex = useMemo(() => {
@@ -155,27 +160,27 @@ export function useNovelData() {
   }, [bundle?.levelSystems]);
   const volumes = useMemo(
     () => (bundle?.volumes ?? []).filter((volume) => volume.workId === activeWorkId),
-    [bundle, activeWorkId],
+    [bundle?.volumes, activeWorkId],
   );
   const chapters = useMemo(
     () => (bundle?.chapters ?? []).filter((chapter) => chapter.workId === activeWorkId),
-    [bundle, activeWorkId],
+    [bundle?.chapters, activeWorkId],
   );
   const notes = useMemo(
     () => sortNotes((bundle?.notes ?? []).filter((note) => note.workId === activeWorkId)),
-    [bundle, activeWorkId],
+    [bundle?.notes, activeWorkId],
   );
   /** 全部作品的灵感（bundle 原始全量）：灵感面板全局搜索的数据源 */
-  const allNotes = useMemo(() => sortNotes(bundle?.notes ?? []), [bundle]);
+  const allNotes = useMemo(() => sortNotes(bundle?.notes ?? []), [bundle?.notes]);
   const outlineEntries = useMemo(
     () =>
       (bundle?.outlineEntries ?? []).filter(
         (entry) => entry.workId === activeWorkId,
       ),
-    [bundle, activeWorkId],
+    [bundle?.outlineEntries, activeWorkId],
   );
-  const works = useMemo(() => bundle?.works ?? [], [bundle]);
-  const recovery = useMemo(() => bundle?.recovery ?? null, [bundle]);
+  const works = useMemo(() => bundle?.works ?? [], [bundle?.works]);
+  const recovery = useMemo(() => bundle?.recovery ?? null, [bundle?.recovery]);
 
   const groups: ChapterGroup[] = useMemo(
     () => buildChapterGroups(volumes, chapters),

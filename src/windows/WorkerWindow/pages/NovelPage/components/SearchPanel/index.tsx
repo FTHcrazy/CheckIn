@@ -4,6 +4,7 @@ import { Virtuoso } from "react-virtuoso";
 import { useEntityTypeMeta } from "../../hooks/entity-types-context";
 import { splitByKeyword } from "../../novel-utils";
 import { registerSearchRunner, useSearchStore } from "../../store/useSearchStore";
+import { useEdgeFade } from "../SupportPanel/useEdgeFade";
 import type { SearchScope } from "../../store/useSearchStore";
 import type { NovelEntity, SearchHit } from "../../types";
 import "./index.scss";
@@ -59,6 +60,8 @@ export default function SearchPanel({
   const setKeyword = useSearchStore((state) => state.setKeyword);
   const setScope = useSearchStore((state) => state.setScope);
   const clear = useSearchStore((state) => state.clear);
+  // 最近搜索 chips 行横向溢出时两端渐隐提示（滚动条为隐藏设计）
+  const chipsFade = useEdgeFade<HTMLDivElement>();
 
   // 只做实现注册：identity 变化不再触发任何检索（此前这里是闪烁的根因）
   useEffect(() => {
@@ -161,7 +164,12 @@ export default function SearchPanel({
           {recent.length > 0 && (
             <>
               <div className="nv-sechead">最近搜索</div>
-              <div className="nv-chips">
+              <div
+                ref={chipsFade.ref}
+                className={`nv-chips${chipsFade.fadeLeft ? " is-fade-left" : ""}${
+                  chipsFade.fadeRight ? " is-fade-right" : ""
+                }`}
+              >
                 {recent.map((item) => (
                   <button
                     key={item}

@@ -1,81 +1,51 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { App } from "antd";
 import type { InputRef } from "antd";
-import { marked } from "marked";
-import { highlightText } from "../memo-utils";
+import { useMemoSearchStore } from "../store/useMemoSearchStore";
 
-export function useMemoViewState(
-  content: string,
-  originalContent: string,
-  isEditing: boolean,
-) {
+/**
+ * 备忘搜索视图状态（只在持有搜索框的 MemoHeader 内调用）
+ *
+ * 状态本体在 `store/useMemoSearchStore`：输入框每敲一个字都在变，
+ * 因此**不能**由页面根订阅——否则搜索时要把侧栏和预览一起推一遍。
+ * 谁持有搜索框谁调用本 Hook。
+ *
+ * 另外挂着两个局部副作用：Ctrl/Cmd+F 唤起搜索、命中项滚动到视野中央。
+ */
+export function useMemoViewState() {
   const { message } = App.useApp();
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [activeSearchQuery, setActiveSearchQuery] = useState("");
-  const [activeSearchIndex, setActiveSearchIndex] = useState(0);
+  const searchOpen = useMemoSearchStore((state) => state.searchOpen);
+  const searchQuery = useMemoSearchStore((state) => state.searchQuery);
+  const activeSearchQuery = useMemoSearchStore(
+    (state) => state.activeSearchQuery,
+  );
+  const activeSearchIndex = useMemoSearchStore(
+    (state) => state.activeSearchIndex,
+  );
   const searchInputRef = useRef<InputRef>(null);
 
-  const renderedHtml = useMemo(() => {
-    if (!originalContent) return "";
-    return marked.parse(originalContent, { async: false, breaks: true }) as string;
-  }, [originalContent]);
+  const setSearchQuery = useMemoSearchStore((state) => state.setSearchQuery);
+  const setSearchOpen = useMemoSearchStore((state) => state.setSearchOpen);
+  const closeSearch = useMemoSearchStore((state) => state.closeSearch);
 
-  const highlightedHtml = useMemo(() => {
-    if (!activeSearchQuery) return renderedHtml;
-    const escapedQuery = activeSearchQuery.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const highlightPattern = new RegExp(`(${escapedQuery})`, "gi");
-    let matchIndex = 0;
-    return renderedHtml.replace(
-      />([^<]+)</g,
-      (_match, text: string) =>
-        `>${text.replace(highlightPattern, (_fullMatch: string, found: string) => {
-          const className =
-            matchIndex++ === activeSearchIndex
-              ? "memo-search-highlight memo-search-highlight--active"
-              : "memo-search-highlight";
-          return `<mark class="${className}">${found}</mark>`;
-        })}<`,
-    );
-  }, [activeSearchIndex, activeSearchQuery, renderedHtml]);
-
-  const highlightedEditorHtml = useMemo(
-    () => highlightText(content, activeSearchQuery, activeSearchIndex),
-    [activeSearchIndex, activeSearchQuery, content],
-  );
-
-  const handleFind = (): void => {
-    const query = searchQuery.trim();
-    if (!query) return;
-    const source = isEditing ? content : originalContent;
-    const matches = source.match(
-      new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"),
-    );
-    if (!matches?.length) {
+  const handleFind = useCallback((): void => {
+    if (!useMemoSearchStore.getState().find()) {
       message.info("未找到匹配内容");
-      return;
     }
+  }, [message]);
 
-    const nextIndex =
-      query === activeSearchQuery
-        ? (activeSearchIndex + 1) % matches.length
-        : 0;
-    setActiveSearchQuery(query);
-    setActiveSearchIndex(nextIndex);
-  };
-
+  // 命中项滚动到视野中央：编辑态滚 textarea，预览态滚页面
   useEffect(() => {
-    if (!activeSearchQuery) return;
-    requestAnimationFrame(() => {
+    if (!activeSearchQuery) return undefined;
+    const frame = requestAnimationFrame(() => {
       const activeMark = document.querySelector<HTMLElement>(
         ".memo-search-highlight--active",
       );
       if (!activeMark) return;
-
       const textArea = document.querySelector<HTMLTextAreaElement>(
         ".memo-editor-input-wrap textarea",
       );
-      if (textArea && isEditing) {
+      if (textArea) {
         textArea.scrollTo({
           top: Math.max(0, activeMark.offsetTop - textArea.clientHeight / 2),
           behavior: "instant",
@@ -84,8 +54,10 @@ export function useMemoViewState(
       }
       activeMark.scrollIntoView({ behavior: "instant", block: "center" });
     });
-  }, [activeSearchIndex, activeSearchQuery, isEditing]);
+    return () => cancelAnimationFrame(frame);
+  }, [activeSearchIndex, activeSearchQuery]);
 
+  // Ctrl/Cmd + F 唤起搜索：有选区时直接把选中文本填进搜索框
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
       const isModifier = event.ctrlKey || event.metaKey;
@@ -98,13 +70,13 @@ export function useMemoViewState(
               .slice(activeElement.selectionStart, activeElement.selectionEnd)
               .trim()
           : (window.getSelection()?.toString().trim() ?? "");
-      setSearchQuery(selectedText);
+      if (selectedText) setSearchQuery(selectedText);
       setSearchOpen(true);
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [setSearchOpen, setSearchQuery]);
 
   useEffect(() => {
     if (searchOpen) searchInputRef.current?.focus();
@@ -114,12 +86,11 @@ export function useMemoViewState(
     searchOpen,
     searchQuery,
     searchInputRef,
-    highlightedHtml,
-    highlightedEditorHtml,
+    activeSearchQuery,
+    activeSearchIndex,
     setSearchQuery,
     setSearchOpen,
-    setActiveSearchQuery,
-    setActiveSearchIndex,
+    closeSearch,
     handleFind,
   };
 }

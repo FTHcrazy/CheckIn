@@ -67,8 +67,6 @@ interface SupportPanelProps {
   onSearch: (keyword: string) => Promise<SearchHit[]>;
   onSelectChapter: (chapterId: string) => void;
   getAppearances: (entityId: string) => EntityAppearance[];
-  /** 要素在正文中被标记出场的章数：要素卡上的「出场 N 章」 */
-  appearanceCountOf: (entityId: string) => number;
   highlighted: boolean;
   onToggleHighlight: () => void;
   onExportCard: () => void;
@@ -147,7 +145,6 @@ export default function SupportPanel({
   onSearch,
   onSelectChapter,
   getAppearances,
-  appearanceCountOf,
   highlighted,
   onToggleHighlight,
   onExportCard,
@@ -507,7 +504,6 @@ export default function SupportPanel({
               onCloseEntity={onCloseEntity}
               getEntityRelations={getEntityRelations}
               getAppearances={getAppearances}
-              appearanceCountOf={appearanceCountOf}
               levelSystems={levelSystems}
               highlighted={highlighted}
               onToggleHighlight={onToggleHighlight}

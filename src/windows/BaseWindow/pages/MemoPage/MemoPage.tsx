@@ -1,3 +1,4 @@
+import { useCallback } from "react";
 import { Card, Input, Modal, Empty } from "antd";
 import Page from "@/shared/components/Page";
 import MemoEditor from "./components/MemoEditor";
@@ -6,17 +7,18 @@ import MemoPreview from "./components/MemoPreview";
 import MemoSidebar from "./components/MemoSidebar";
 import { useMemoData } from "./hooks/useMemoData";
 import { useMemoEditorState } from "./hooks/useMemoEditorState";
-import { useMemoViewState } from "./hooks/useMemoViewState";
 import "./index.scss";
 
+/**
+ * 备忘页
+ *
+ * 编排层只持有低频状态（选中文件 / 编辑态 / 弹窗 / 保存中）与稳定回调：
+ * 正文草稿由 MemoEditor 订阅、预览原文由 MemoPreview 订阅、搜索态由
+ * MemoHeader 订阅——因此「敲一个字」不再让侧栏虚拟列表陪跑。
+ */
 function MemoPage() {
   const data = useMemoData();
   const editor = useMemoEditorState(data);
-  const view = useMemoViewState(
-    editor.content,
-    editor.originalContent,
-    editor.isEditing,
-  );
 
   const {
     files,
@@ -29,36 +31,62 @@ function MemoPage() {
   } = data;
   const {
     selected,
-    content,
-    saving,
     isEditing,
     createModalOpen,
     newFileName,
-    setIsEditing,
-    setCreateModalOpen,
-    setNewFileName,
-    setContent,
+    saving,
     handleSelectFile,
     handleRename,
-    handleSave,
-    handleCreate,
     handleImport,
     handleExport,
-    handleTextAreaBlur,
     handleDelete,
+    handleTextAreaBlur,
+    handleSave,
+    handleCreate,
+    setNewFileName,
+    setCreateModalOpen,
   } = editor;
-  const {
-    searchOpen,
-    searchQuery,
-    searchInputRef,
-    highlightedHtml,
-    highlightedEditorHtml,
-    setSearchQuery,
-    setSearchOpen,
-    setActiveSearchQuery,
-    setActiveSearchIndex,
-    handleFind,
-  } = view;
+
+  // 侧栏回调收敛成稳定引用：此前这里写着 8 个内联箭头，
+  // 父层每渲染一次就换一批身份，任何 memo 都会被立刻击穿
+  const onCreate = useCallback(
+    () => setCreateModalOpen(true),
+    [setCreateModalOpen],
+  );
+  const onImport = useCallback(() => {
+    void handleImport();
+  }, [handleImport]);
+  const onImportBackup = useCallback(() => {
+    void importBackup();
+  }, [importBackup]);
+  const onExport = useCallback(
+    (format: "txt" | "docx" | "backup") => {
+      if (format === "backup") void exportBackup();
+      else void handleExport(format);
+    },
+    [exportBackup, handleExport],
+  );
+  const onRefresh = useCallback(() => {
+    void loadFiles();
+  }, [loadFiles]);
+  const onSelect = useCallback(
+    (filename: string) => {
+      void handleSelectFile(filename);
+    },
+    [handleSelectFile],
+  );
+  const onDelete = useCallback(
+    (filename: string) => {
+      void handleDelete(filename);
+    },
+    [handleDelete],
+  );
+  const onOpenInExplorer = useCallback(
+    (filename: string) => {
+      void openInExplorer(filename);
+    },
+    [openInExplorer],
+  );
 
   return (
     <Page>
@@ -67,38 +95,23 @@ function MemoPage() {
           files={files}
           selected={selected}
           loading={loading || importing}
-          onCreate={() => setCreateModalOpen(true)}
-          onImport={() => void handleImport()}
-          onImportBackup={() => void importBackup()}
-          onExport={(format) => {
-            if (format === "backup") void exportBackup();
-            else void handleExport(format);
-          }}
-          onRefresh={() => void loadFiles()}
-          onSelect={(filename) => void handleSelectFile(filename)}
+          onCreate={onCreate}
+          onImport={onImport}
+          onImportBackup={onImportBackup}
+          onExport={onExport}
+          onRefresh={onRefresh}
+          onSelect={onSelect}
           onRename={handleRename}
-          onDelete={(filename) => void handleDelete(filename)}
-          onOpenInExplorer={(filename) => void openInExplorer(filename)}
+          onDelete={onDelete}
+          onOpenInExplorer={onOpenInExplorer}
         />
 
         <div className="memo-editor">
           {selected ? (
             <>
               <MemoHeader
-                selected={selected}
                 isEditing={isEditing}
-                searchOpen={searchOpen}
-                searchQuery={searchQuery}
                 saving={saving}
-                searchInputRef={searchInputRef}
-                onModeChange={setIsEditing}
-                onSearchQueryChange={setSearchQuery}
-                onFind={handleFind}
-                onToggleSearch={() => {
-                  setSearchOpen((open) => !open);
-                  setActiveSearchQuery("");
-                  setActiveSearchIndex(0);
-                }}
                 onSave={() => void handleSave()}
               />
 
@@ -109,14 +122,9 @@ function MemoPage() {
                 className="memo-editor-card"
               >
                 {isEditing ? (
-                  <MemoEditor
-                    content={content}
-                    highlightedHtml={highlightedEditorHtml}
-                    onChange={setContent}
-                    onBlur={handleTextAreaBlur}
-                  />
+                  <MemoEditor onBlur={() => void handleTextAreaBlur()} />
                 ) : (
-                  <MemoPreview html={highlightedHtml} />
+                  <MemoPreview />
                 )}
               </Card>
             </>
@@ -143,7 +151,7 @@ function MemoPage() {
         <Input
           placeholder="输入文件名（自动添加 .md 后缀）"
           value={newFileName}
-          onChange={(e) => setNewFileName(e.target.value)}
+          onChange={(event) => setNewFileName(event.target.value)}
           onPressEnter={() => void handleCreate()}
           autoFocus
         />

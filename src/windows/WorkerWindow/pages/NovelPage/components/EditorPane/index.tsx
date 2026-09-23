@@ -1,4 +1,11 @@
-import { useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { CSSProperties, KeyboardEvent, MouseEvent as ReactMouseEvent, Ref } from "react";
 import { Empty } from "antd";
 import {
@@ -10,6 +17,7 @@ import {
 import { openSearchPanel, search, searchKeymap } from "@codemirror/search";
 import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
+import { editorActions, useChapterDraft } from "../../store/useNovelEditorStore";
 import type { EditorSettings, EntityTerm, NovelChapter } from "../../types";
 import { formatNumberedLabel } from "../../novel-utils";
 import type { RestorePosition } from "../../novel-utils";
@@ -28,13 +36,11 @@ interface EditorPaneProps {
   chapter: NovelChapter | null;
   /** 全书章节序号（派生属性，随拖拽重排变动；0 表示未知） */
   chapterNumber: number;
-  content: string;
   settings: EditorSettings;
   terms: EntityTerm[];
   typewriter: boolean;
   /** 全局标注层开关（PRD §2 风险对策）：关闭时即使有词库也不渲染高亮/悬浮卡 */
   annotationOn: boolean;
-  onChange: (value: string) => void;
   onSelectionChange: (selection: EditorSelection | null) => void;
   /** 选区非空时右键正文：坐标相对 .nv-page__stage，已按菜单尺寸 clamp */
   onContextMenu: (x: number, y: number) => void;
@@ -116,12 +122,10 @@ const clamp = (value: number, min: number, max: number): number =>
 export default function EditorPane({
   chapter,
   chapterNumber,
-  content,
   settings,
   terms,
   typewriter,
   annotationOn,
-  onChange,
   onSelectionChange,
   onContextMenu,
   onTermHover,
@@ -138,6 +142,26 @@ export default function EditorPane({
   const hostRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const lastLineRef = useRef<number>(-1);
+  /**
+   * 正文来自 store 的逐章草稿（没有草稿时回落到章节正文）。
+   * 打字只让本组件与状态条重渲染——页面根不再持有正文。
+   */
+  const draft = useChapterDraft(chapter?.id ?? null);
+  const content = draft ?? chapter?.content ?? "";
+  /** 章节 id 放 ref：正文上报回调因此可以做成模块级稳定函数 */
+  const chapterIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    chapterIdRef.current = chapter?.id ?? null;
+  }, [chapter?.id]);
+  /**
+   * 当前已知的正文放 ref：作为字数基线随上报传给 store——
+   * 程序化文档同步（切章灌入正文）到达时，基线是「灌入后的正文」本身，
+   * 于是 previous === next 提前返回，既不计字数也不重启防抖。
+   */
+  const contentRef = useRef(content);
+  useEffect(() => {
+    contentRef.current = content;
+  }, [content]);
   /** IME 组合期标记：拼音候选期间的文档变化不上报，避免字数按拼音递增（R2） */
   const composingRef = useRef(false);
 
@@ -210,21 +234,31 @@ export default function EditorPane({
     setTitleEditing(false);
   }, [chapter?.id]);
 
-  // 回调放进 ref，避免重建编辑器（CodeMirror 实例必须整个会话唯一）
+  // 正文上报走 store 动作（身份恒定），其余回调放进 ref，避免重建编辑器
+  // （CodeMirror 实例必须整个会话唯一）。previous 是变更前文档，供 store
+  // 计算字数增量——不传时 store 以草稿（再兜底空串）为基线。
+  const handleContentChange = useCallback(
+    (next: string, previous?: string): void => {
+      const chapterId = chapterIdRef.current;
+      if (chapterId) editorActions.setContent(chapterId, next, previous);
+    },
+    [],
+  );
+
   const handlersRef = useRef({
-    onChange,
+    onChange: handleContentChange,
     onSelectionChange,
     onContextMenu,
     onCursorChange,
   });
   useEffect(() => {
     handlersRef.current = {
-      onChange,
+      onChange: handleContentChange,
       onSelectionChange,
       onContextMenu,
       onCursorChange,
     };
-  }, [onChange, onSelectionChange, onContextMenu, onCursorChange]);
+  }, [handleContentChange, onSelectionChange, onContextMenu, onCursorChange]);
 
   // 标注层总开关：有词库且用户未全局关闭时才启用（PRD §2 风险对策）。
   // 复用 annotationEnabledCompartment 热更新通道，关闭即整层不渲染高亮/悬浮卡。
@@ -261,7 +295,12 @@ export default function EditorPane({
               // 拼音候选期间的中间态不上报：草稿与字数统计只看确认后的文本。
               // compositionend 时由下方监听器统一上报最终文档
               if (composingRef.current) return;
-              handlersRef.current.onChange(update.state.doc.toString());
+              handlersRef.current.onChange(
+                update.state.doc.toString(),
+                // 程序化同步（切章灌入）到达时 previous === next，
+                // store 据此提前返回，不误计字数、不打断旧章在途保存
+                update.startState.doc.toString(),
+              );
             }
             if (update.selectionSet) {
               const { main } = update.state.selection;
@@ -292,7 +331,12 @@ export default function EditorPane({
     };
     const handleCompositionEnd = (): void => {
       composingRef.current = false;
-      handlersRef.current.onChange(view.state.doc.toString());
+      // 组合期间的中间态从未上报，store 的基线仍是「组合前的已知正文」
+      // （草稿，兜底 contentRef 里的章节正文），增量即确认文本
+      handlersRef.current.onChange(
+        view.state.doc.toString(),
+        contentRef.current,
+      );
     };
     view.contentDOM.addEventListener("compositionstart", handleCompositionStart);
     view.contentDOM.addEventListener("compositionend", handleCompositionEnd);

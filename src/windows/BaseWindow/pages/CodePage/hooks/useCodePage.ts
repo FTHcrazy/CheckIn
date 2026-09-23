@@ -21,7 +21,10 @@ export function useCodePage() {
     dayjs().startOf("day"),
     dayjs().endOf("day"),
   ]);
+  /** 输入框里的即时值：只是草稿，变化不触发任何请求 */
   const [email, setEmail] = useState("");
+  /** 已提交查询的邮箱：只有显式查询（回车 / 按钮 / 首次自动查询）才更新 */
+  const [queryEmail, setQueryEmail] = useState("");
   const [workdays, setWorkdays] = useState(1);
   const [emailInitialized, setEmailInitialized] = useState(false);
   const [autoFetched, setAutoFetched] = useState(false);
@@ -29,19 +32,19 @@ export function useCodePage() {
   // 本月累计有效产出（独立于表格查询区间）
   const [monthOutput, setMonthOutput] = useState(0);
 
-  const loadMonthOutput = useCallback(async () => {
+  const loadMonthOutput = useCallback(async (target: string) => {
     try {
       const today = dayjs().startOf("day");
       const monthStart = today.startOf("month");
 
       // 仅当邮箱有效时发起请求
-      if (!email) {
+      if (!target) {
         setMonthOutput(0);
         return;
       }
 
       const res = await fetchGitWebhookLogs(
-        email,
+        target,
         monthStart.format("YYYY/M/D HH:mm:ss"),
         today.endOf("day").format("YYYY/M/D HH:mm:ss"),
       );
@@ -54,7 +57,7 @@ export function useCodePage() {
       // 月度统计请求失败不影响主流程，静默处理或置零
       setMonthOutput(0);
     }
-  }, [email]);
+  }, []);
 
   useEffect(() => {
     const loadDefaultEmail = async () => {
@@ -62,7 +65,11 @@ export function useCodePage() {
         const user = await window.electronAPI?.user.get();
 
         if (user?.email) {
-          setEmail(user.email.trim());
+          // 用户已经手打过就不覆盖：避免默认值把正在输入的内容冲掉
+          setEmail((current) => (current.trim() ? current : user.email!.trim()));
+          setQueryEmail((current) =>
+            current.trim() ? current : user.email!.trim(),
+          );
         }
       } catch {
         // 忽略读取失败，留空由用户手动输入
@@ -74,46 +81,50 @@ export function useCodePage() {
     void loadDefaultEmail();
   }, []);
 
-  // 页面加载及邮箱变更时重新拉取本月数据
-  useEffect(() => {
-    if (!email) {
-      setMonthOutput(0);
-      return;
-    }
-
-    void loadMonthOutput();
-  }, [loadMonthOutput]);
-
   // overrideRange：编程式查询入口（如「查询当月」）——
   // setState 后同轮闭包里的 dateRange 仍是旧值，必须显式传入新区间
-  const loadData = useCallback(async (overrideRange?: [Dayjs, Dayjs]) => {
-    const trimmedEmail = email.trim();
-    if (!trimmedEmail) {
-      setData([]);
-      setTotal(0);
-      message.warning("请输入邮箱后再查询");
-      return;
-    }
+  //
+  // 本函数是**唯一的请求入口**：邮箱在这里被「提交」，随后表格与本月统计
+  // 都以提交的邮箱发起。输入框里逐字打字不再打接口（此前 email 一变就
+  // 触发一次整月拉取，敲 20 个字符就是 20 个请求）。
+  const loadData = useCallback(
+    async (overrideRange?: [Dayjs, Dayjs]) => {
+      const trimmedEmail = email.trim();
+      if (!trimmedEmail) {
+        setData([]);
+        setTotal(0);
+        setMonthOutput(0);
+        message.warning("请输入邮箱后再查询");
+        return;
+      }
 
-    setLoading(true);
-    try {
-      const [from, to] = overrideRange ?? dateRange;
-      const res = await fetchGitWebhookLogs(
-        trimmedEmail,
-        from.startOf("day").format("YYYY/M/D HH:mm:ss"),
-        to.endOf("day").format("YYYY/M/D HH:mm:ss"),
-      );
-      const list = res.gitwebhooklog?.pageInfo?.list ?? [];
-      const totalCount = res.gitwebhooklog?.pageInfo?.total ?? 0;
-      setData(list);
-      setTotal(totalCount);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "请求失败";
-      message.error(msg);
-    } finally {
-      setLoading(false);
-    }
-  }, [dateRange, email, message]);
+      setLoading(true);
+      try {
+        const [from, to] = overrideRange ?? dateRange;
+        const res = await fetchGitWebhookLogs(
+          trimmedEmail,
+          from.startOf("day").format("YYYY/M/D HH:mm:ss"),
+          to.endOf("day").format("YYYY/M/D HH:mm:ss"),
+        );
+        const list = res.gitwebhooklog?.pageInfo?.list ?? [];
+        const totalCount = res.gitwebhooklog?.pageInfo?.total ?? 0;
+        setData(list);
+        setTotal(totalCount);
+        setQueryEmail(trimmedEmail);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "请求失败";
+        message.error(msg);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [dateRange, email, message],
+  );
+
+  // 提交过的邮箱变了才刷新本月统计（首次自动查询 / 换邮箱查询都会走到这里）
+  useEffect(() => {
+    void loadMonthOutput(queryEmail);
+  }, [loadMonthOutput, queryEmail]);
 
   /** 查询当月：日期区间置为本月 1 号 ~ 今天并立即查询 */
   const loadThisMonth = useCallback(() => {
@@ -122,14 +133,17 @@ export function useCodePage() {
     void loadData(range);
   }, [loadData]);
 
+  // 首次自动查询：只在「已提交邮箱」出现后跑一次。
+  // 守的是 queryEmail 而不是输入框草稿——否则用户在默认值回来前敲了半截邮箱，
+  // 就会被当成默认邮箱自动查一次
   useEffect(() => {
-    if (!emailInitialized || !email.trim() || autoFetched) {
+    if (!emailInitialized || !queryEmail || autoFetched) {
       return;
     }
 
     setAutoFetched(true);
     void loadData();
-  }, [emailInitialized, email, autoFetched, loadData]);
+  }, [emailInitialized, queryEmail, autoFetched, loadData]);
 
   useEffect(() => {
     const [from, to] = dateRange;
@@ -267,8 +281,11 @@ export function useCodePage() {
     total,
     dateRange,
     setDateRange,
+    /** 输入框草稿：只改它不会发请求，要查询请调 loadData */
     email,
     setEmail,
+    /** 最近一次实际发起查询的邮箱 */
+    queryEmail,
     workdays,
     setWorkdays,
     loadData,

@@ -1,7 +1,7 @@
-import { useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import Page from "@/shared/components/Page";
 import { useLedgerData } from "./hooks/useLedgerData";
-import { useLedgerViewState } from "./hooks/useLedgerViewState";
+import { useLedgerViewState } from "./store/useLedgerViewStore";
 import { useLedgerEditorState } from "./hooks/useLedgerEditorState";
 import LedgerPeriodBar from "./components/LedgerPeriodBar";
 import LedgerOverviewCard from "./components/LedgerOverviewCard";
@@ -25,6 +25,15 @@ import "./index.scss";
 
 /** 趋势回溯天数（设计规格：近 30 天） */
 const TREND_DAYS = 30;
+
+/** 编辑弹窗关闭时的空草稿：必须是常量，否则每次渲染都造新对象、击穿 memo */
+const EMPTY_EDIT_DRAFT = {
+  type: "expense" as const,
+  amountText: "",
+  categoryId: null,
+  note: "",
+  happenedAt: "",
+};
 
 /**
  * 记账页
@@ -69,6 +78,15 @@ export default function LedgerPage() {
     () => growthRate(summary.expense, data.previousExpense),
     [data.previousExpense, summary.expense],
   );
+
+  // 提交回调收敛成稳定引用：此前这里是两个内联箭头，
+  // 父层每渲染一次就换一批身份，弹层上的 memo 会被立刻击穿
+  const submitQuick = useCallback(() => {
+    void editor.submitQuick();
+  }, [editor.submitQuick]);
+  const submitEdit = useCallback(() => {
+    void editor.submitEdit();
+  }, [editor.submitEdit]);
 
   // 全局唤起：⌘/Ctrl + Shift + L（设计规格 D-2）
   useEffect(() => {
@@ -150,26 +168,18 @@ export default function LedgerPage() {
         error={editor.amountError}
         submitting={editor.submitting}
         onClose={editor.closeQuick}
-        onSubmit={() => void editor.submitQuick()}
+        onSubmit={submitQuick}
       />
 
       <LedgerEditModal
         open={Boolean(editor.editTarget)}
-        draft={
-          editor.editDraft ?? {
-            type: "expense",
-            amountText: "",
-            categoryId: null,
-            note: "",
-            happenedAt: "",
-          }
-        }
+        draft={editor.editDraft ?? EMPTY_EDIT_DRAFT}
         categories={data.categories}
         error={editor.editError}
         submitting={editor.submitting}
         onDraftChange={editor.patchEditDraft}
         onClose={editor.closeEdit}
-        onSubmit={() => void editor.submitEdit()}
+        onSubmit={submitEdit}
       />
     </Page>
   );

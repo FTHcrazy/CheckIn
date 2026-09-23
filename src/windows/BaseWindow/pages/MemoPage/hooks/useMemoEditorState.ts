@@ -1,5 +1,10 @@
-import { useState } from "react";
+import { useEffect } from "react";
 import { App } from "antd";
+import {
+  memoActions,
+  registerMemoRunner,
+  useMemoStore,
+} from "../store/useMemoStore";
 
 interface MemoEditorActions {
   loadFiles: () => Promise<void>;
@@ -11,148 +16,81 @@ interface MemoEditorActions {
   exportFile: (filename: string, format: "txt" | "docx") => Promise<boolean>;
 }
 
+/**
+ * 备忘编辑状态编排层
+ *
+ * 状态本体已搬到 `store/useMemoStore`：正文草稿由 `MemoEditor` 自己订阅、
+ * 原文由 `MemoPreview` 自己订阅，本 Hook **不订阅正文**——于是敲一个字
+ * 不再把页面根连同侧栏虚拟列表一起推一遍。
+ *
+ * 这里只做两件事：
+ * 1. 把文件读写与 toast 注册给 store（注册不触发任何请求）
+ * 2. 订阅页面根真正需要的低频切片：选中文件 / 编辑态 / 弹窗 / 保存中
+ */
 export function useMemoEditorState(actions: MemoEditorActions) {
   const { message } = App.useApp();
-  const [selected, setSelected] = useState<string | null>(null);
-  const [content, setContent] = useState("");
-  const [originalContent, setOriginalContent] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
-  const [createModalOpen, setCreateModalOpen] = useState(false);
-  const [newFileName, setNewFileName] = useState("");
 
-  const handleSelectFile = async (filename: string): Promise<void> => {
-    if (selected === filename) return;
-    const nextContent = await actions.readFile(filename);
-    if (nextContent === null) return;
-    setSelected(filename);
-    setContent(nextContent);
-    setOriginalContent(nextContent);
-    setIsEditing(false);
-  };
+  const {
+    loadFiles,
+    readFile,
+    writeFile,
+    renameFile,
+    deleteFile,
+    importFiles,
+    exportFile,
+  } = actions;
 
-  const handleSave = async (): Promise<void> => {
-    if (!selected) return;
-    if (!content.trim()) {
-      message.warning("内容不能为空");
-      return;
-    }
+  useEffect(() => {
+    registerMemoRunner({
+      loadFiles,
+      readFile,
+      writeFile,
+      renameFile,
+      deleteFile,
+      importFiles,
+      exportFile,
+      notify: (level, text) => {
+        if (level === "success") message.success(text);
+        else if (level === "warning") message.warning(text);
+        else message.info(text);
+      },
+    });
+    return () => registerMemoRunner(null);
+  }, [
+    loadFiles,
+    readFile,
+    writeFile,
+    renameFile,
+    deleteFile,
+    importFiles,
+    exportFile,
+    message,
+  ]);
 
-    setSaving(true);
-    const saved = await actions.writeFile(selected, content);
-    if (saved) {
-      setOriginalContent(content);
-      setIsEditing(false);
-      message.success("保存成功");
-      void actions.loadFiles();
-    }
-    setSaving(false);
-  };
-
-  const handleCreate = async (): Promise<void> => {
-    const name = newFileName.trim();
-    if (!name) {
-      message.warning("请输入文件名");
-      return;
-    }
-
-    const filename = name.endsWith(".md") ? name : `${name}.md`;
-    const initContent = `# ${name.replace(/\.md$/, "")}\n\n`;
-    const created = await actions.writeFile(filename, initContent);
-    if (!created) return;
-
-    message.success("创建成功");
-    setCreateModalOpen(false);
-    setNewFileName("");
-    await actions.loadFiles();
-    setSelected(filename);
-    setContent(initContent);
-    setOriginalContent(initContent);
-    setIsEditing(true);
-  };
-
-  const handleRename = async (
-    oldFilename: string,
-    name: string,
-  ): Promise<boolean> => {
-    const trimmedName = name.trim();
-    if (!trimmedName) {
-      message.warning("请输入文件名");
-      return false;
-    }
-
-    const newFilename = trimmedName.endsWith(".md")
-      ? trimmedName
-      : `${trimmedName}.md`;
-    if (oldFilename === newFilename) return true;
-
-    const renamed = await actions.renameFile(oldFilename, newFilename);
-    if (!renamed) return false;
-
-    if (selected === oldFilename) setSelected(newFilename);
-    message.success("重命名成功");
-    await actions.loadFiles();
-    return true;
-  };
-
-  const handleImport = async (): Promise<void> => {
-    const importedFiles = await actions.importFiles();
-    if (!importedFiles.length) return;
-    message.success(`已导入 ${importedFiles.length} 个备忘文件`);
-    await actions.loadFiles();
-    await handleSelectFile(importedFiles[0]);
-  };
-
-  /** 导出当前选中的备忘（.txt / .docx）；未选中或用户取消保存对话框则静默 */
-  const handleExport = async (format: "txt" | "docx"): Promise<void> => {
-    if (!selected) {
-      message.warning("请先选择要导出的备忘");
-      return;
-    }
-    const saved = await actions.exportFile(selected, format);
-    if (saved) message.success(`已导出为 ${format.toUpperCase()}`);
-  };
-
-  const handleDelete = async (filename: string): Promise<void> => {
-    if (!(await actions.deleteFile(filename))) return;
-    message.success("删除成功");
-    if (selected === filename) {
-      setSelected(null);
-      setContent("");
-      setOriginalContent("");
-      setIsEditing(false);
-    }
-    void actions.loadFiles();
-  };
-
-  const handleTextAreaBlur = (): void => {
-    if (!selected || content === originalContent) return;
-    if (!content.trim()) {
-      message.warning("内容不能为空");
-      return;
-    }
-    void handleSave();
-  };
+  const selected = useMemoStore((state) => state.selected);
+  const isEditing = useMemoStore((state) => state.isEditing);
+  const createModalOpen = useMemoStore((state) => state.createModalOpen);
+  const newFileName = useMemoStore((state) => state.newFileName);
+  const saving = useMemoStore((state) => state.saving);
 
   return {
     selected,
-    content,
-    originalContent,
-    saving,
     isEditing,
     createModalOpen,
     newFileName,
-    setContent,
-    setIsEditing,
-    setCreateModalOpen,
-    setNewFileName,
-    handleSelectFile,
-    handleSave,
-    handleCreate,
-    handleRename,
-    handleImport,
-    handleExport,
-    handleDelete,
-    handleTextAreaBlur,
+    saving,
+    // 动作身份恒定，可安全透传
+    handleSelectFile: memoActions.selectFile,
+    setContent: memoActions.setContent,
+    handleSave: memoActions.save,
+    handleCreate: memoActions.create,
+    handleRename: memoActions.rename,
+    handleImport: memoActions.importFiles,
+    handleExport: memoActions.exportFile,
+    handleDelete: memoActions.remove,
+    handleTextAreaBlur: memoActions.saveOnBlur,
+    setIsEditing: memoActions.setIsEditing,
+    setCreateModalOpen: memoActions.setCreateModalOpen,
+    setNewFileName: memoActions.setNewFileName,
   };
 }

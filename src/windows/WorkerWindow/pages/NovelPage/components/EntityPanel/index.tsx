@@ -4,6 +4,8 @@ import EntityCard from "../EntityCard";
 import EntityDetail from "../EntityDetail";
 import type { EntitySavePatch } from "../EntityDetail";
 import { useEntityTypeMeta } from "../../hooks/entity-types-context";
+import { useEdgeFade } from "../SupportPanel/useEdgeFade";
+import { useAppearanceStore } from "../../store/useAppearanceStore";
 import type { EntityFilter } from "../../hooks/useNovelViewState";
 import type {
   EntityAppearance,
@@ -26,8 +28,6 @@ interface EntityPanelProps {
     type: EntityType,
   ) => EntityRelationView[];
   getAppearances: (entityId: string) => EntityAppearance[];
-  /** 出场章数：页面一次性统计好，列表里不再逐卡扫全书 */
-  appearanceCountOf: (entityId: string) => number;
   levelSystems: LevelSystem[];
   highlighted: boolean;
   onToggleHighlight: () => void;
@@ -73,7 +73,6 @@ export default function EntityPanel({
   onCloseEntity,
   getEntityRelations,
   getAppearances,
-  appearanceCountOf,
   levelSystems,
   highlighted,
   onToggleHighlight,
@@ -88,6 +87,11 @@ export default function EntityPanel({
 }: EntityPanelProps) {
   const { metaOf, filterOrder } = useEntityTypeMeta();
   const [keyword, setKeyword] = useState("");
+  // 出场章数索引由 store 增量维护：本面板订阅它，角标更新时才重渲染，
+  // 页面根不再为了这个数字被保存动作推一遍
+  const appearanceCounts = useAppearanceStore((state) => state.counts);
+  // 类型 chips 行横向溢出时两端渐隐提示（滚动条为隐藏设计）
+  const chipsFade = useEdgeFade<HTMLDivElement>();
 
   // 类型计数：只在要素集合变化时重算，与筛选 / 搜索无关
   const counts = useMemo(() => {
@@ -162,7 +166,7 @@ export default function EntityPanel({
         <EntityCard
           entity={entity}
           relationCount={stats?.relations ?? 0}
-          appearanceCount={appearanceCountOf(entity.id)}
+          appearanceCount={appearanceCounts.get(entity.id) ?? 0}
           levelName={stats?.levelName ?? ""}
           onOpen={onOpenEntity}
           onInsertName={onInsertName}
@@ -193,7 +197,12 @@ export default function EntityPanel({
         )}
       </div>
 
-      <div className="nv-chips nv-entity__chips">
+      <div
+        ref={chipsFade.ref}
+        className={`nv-chips nv-entity__chips${chipsFade.fadeLeft ? " is-fade-left" : ""}${
+          chipsFade.fadeRight ? " is-fade-right" : ""
+        }`}
+      >
         <button
           type="button"
           className={`nv-chip${filter === "all" ? " is-on" : ""}`}

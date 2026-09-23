@@ -1,5 +1,4 @@
 import { Button, Input, Segmented, Space, Tooltip } from "antd";
-import type { InputRef } from "antd";
 import {
   CloseOutlined,
   EditOutlined,
@@ -7,41 +6,53 @@ import {
   SaveOutlined,
   SearchOutlined,
 } from "@ant-design/icons";
-import type { RefObject } from "react";
+import { useCallback } from "react";
+import { useMemoViewState } from "../../hooks/useMemoViewState";
+import { memoActions } from "../../store/useMemoStore";
 import "./index.scss";
 
 interface MemoHeaderProps {
-  selected: string;
   isEditing: boolean;
-  searchOpen: boolean;
-  searchQuery: string;
   saving: boolean;
-  searchInputRef: RefObject<InputRef | null>;
-  onModeChange: (isEditing: boolean) => void;
-  onSearchQueryChange: (query: string) => void;
-  onFind: () => void;
-  onToggleSearch: () => void;
   onSave: () => void;
 }
 
+/**
+ * 备忘头部（模式切换 + 搜索 + 保存）
+ *
+ * 搜索态由本组件自己调用 `useMemoViewState` 订阅：搜索框每敲一个字都在变，
+ * 若由页面根持有再透传，输入过程中侧栏与预览都会被一起推着重渲染。
+ */
 export default function MemoHeader({
   isEditing,
-  searchOpen,
-  searchQuery,
   saving,
-  searchInputRef,
-  onModeChange,
-  onSearchQueryChange,
-  onFind,
-  onToggleSearch,
   onSave,
 }: MemoHeaderProps) {
+  const {
+    searchOpen,
+    searchQuery,
+    searchInputRef,
+    setSearchQuery,
+    setSearchOpen,
+    closeSearch,
+    handleFind,
+  } = useMemoViewState();
+
+  const toggleSearch = useCallback(() => {
+    if (searchOpen) closeSearch();
+    else setSearchOpen(true);
+  }, [searchOpen, closeSearch, setSearchOpen]);
+
+  const onModeChange = useCallback((editing: boolean) => {
+    memoActions.setIsEditing(editing);
+  }, []);
+
   return (
     <div className="memo-editor-toolbar">
       <div className="memo-editor-mode">
         <Segmented
           value={isEditing ? "edit" : "preview"}
-          onChange={(value) => onModeChange(value === "edit")}
+          onChange={(value) => onModeChange(String(value) === "edit")}
           options={[
             { label: "预览", value: "preview" },
             { label: "编辑", value: "edit" },
@@ -57,8 +68,8 @@ export default function MemoHeader({
             prefix={<SearchOutlined />}
             placeholder="搜索内容"
             allowClear
-            onChange={(event) => onSearchQueryChange(event.target.value)}
-            onPressEnter={onFind}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            onPressEnter={handleFind}
             style={{ width: 220 }}
           />
         )}
@@ -66,7 +77,7 @@ export default function MemoHeader({
           <Button
             type={searchOpen ? "primary" : "text"}
             icon={searchOpen ? <CloseOutlined /> : <SearchOutlined />}
-            onClick={onToggleSearch}
+            onClick={toggleSearch}
           />
         </Tooltip>
         {isEditing ? (

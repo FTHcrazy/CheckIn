@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.16.0] - 2026-09-23
+
+### 性能优化
+
+- **性能优化**：NovelPage 编辑器草稿与打字统计抽到 `NovelPage/store/useNovelEditorStore.ts`（P0-1）：`EditorPane` 只订阅 `draft[activeId]`，`ChapterTree`／`SupportPanel`／`NovelTopBar`／各常驻抽屉不再因每次按键重渲染；打字重渲染组件数由整棵编辑器树（20–30+）降为编辑器壳 + 状态栏
+- **性能优化**：NovelPage 术语悬停状态抽到 `NovelPage/store/useHoverStore.ts`（P0-2）：仅 `HoverEntityCard` 订阅 `target`，`NovelPage` 根不再读取 `hover.target`；鼠标扫过高亮正文时由「每秒数十次 × 整树」降为仅 1 个浮层组件，`EditorPane` 的 term hover/leave/click effect 依赖比较随之简化
+- **性能优化**：NovelPage 要素出场章数索引增量缓存 `NovelPage/store/useAppearanceStore.ts`（P0-3）：原 `useMemo` 依赖 `[chapters, terms]`，自动保存每写一次就全书重扫 `findTermMatches`；改为按章内容级缓存，只重扫 `content` 引用真变的章（通常 1 章），无任何变化连 `set` 都不做；`terms` 按引用守卫（引用不变即整表复用），CodeMirror 标注层不再被无意义重建
+- **性能优化**：MemoPage 编辑与筛选状态抽到 `MemoPage/store/useMemoStore.ts` + `useMemoSearchStore.ts`（P1-1）：`content` 上提到 store，`MemoEditor` 只订阅 `content`、`MemoSidebar` 只订阅 `files/selected`；全文转义高亮改为订阅组件内按「已执行查找词」派生（逐字输入搜索词不再触发全文转义）；删去 `useMemoPage.ts`，根不再汇集高频状态，逐字输入不再带动侧栏虚拟列表与全文高亮
+- **性能优化**：LedgerPage 筛选状态抽到 `LedgerPage/store/useLedgerViewStore.ts`（P1-2）：周期/区间/关键词/类型/分类/饼图口径进 store，配合 `LedgerTimeline`/趋势/饼图组件 `memo()`（筛选结果以 props 传入、身份稳定），与关键词输入彻底解耦，逐字筛选不再重绘三张图表
+- **性能优化**：CodePage 邮箱查询改为显式「查询」动作调度（P1-3）：`useCodePage` 移除「输入 → effect → fetch」链，月度统计与列表查询统一收敛到 `loadData` 显式入口；输入 `zhangsan@example.com` 不再发 15+ 次请求，月度统计改按「已提交邮箱」而非输入框草稿刷新
+- **性能优化**：路由切换保活（P1-4）：上述 store 均为模块级单例，跨路由天然保活；MemoPage 的 `selected`/未保存 `content`、LedgerPage 的 `keyword/type/categoryId/pieType` 切走再切回不再丢失
+
+### Added
+
+- **新增 6 个模块级 Zustand store 及配套单测**：`useNovelEditorStore`（14 例）、`useHoverStore`（7 例）、`useAppearanceStore`（7 例）、`useMemoStore`（12 例）、`useMemoSearchStore`（7 例）、`useLedgerViewStore`（6 例）；覆盖增量缓存（无变化不 set）、悬停订阅隔离、筛选解耦、显式调度防抖与换章保存等回归点
+
+### Changed
+
+- **docs/zustand-store-review.md 同步更新**：现状由「仅 1 处 store（useSearchStore）」刷新为全项目 7+ 处落地，并在文末列出已落地清单
+- **AGENTS.md 6.2 补充「已落地 store 清单」**：登记各页面模块级 store 的路径与职责，便于后续页面沿用 runner 注册范式
+
+### Fixed
+
+- **NovelPage 换章丢保存与今日字数虚增**（P0-1 收尾，修复抽 store 过程引入的回归）：
+  - 程序化文档同步（切章灌入正文）现携带「变更前正文」作为字数基线——此前基线退化为空串，首次切到无草稿的章节会把整章字数误计入今日新增/今日累计
+  - 防抖保存记录所属章节：换章后第一次真实输入时，旧章的在途保存立即落库，不再被新章的防抖重置悄悄取消；关窗/手动 flush 同样按章节定位，不再依赖「当前活动章」
+- **修复右栏要素库类型 chips 行导致的列表高度跳动**：全局滚动条样式的未悬停规则（`scrollbar-width: thin`，特异性 0,2,0）会压过 `.nv-chips` 自己的 `scrollbar-width: none`（0,1,0），而悬停时页面规则又胜出——横向溢出的 chips 行（类型较多放不下时）随指针进出反复出现/消失滚动条占位，下方列表跟着频繁弹跳。现把标准属性 `scrollbar-width` 收敛为 `*` 上的一次性恒定声明（宽度永远 thin、页面覆盖两种状态下都生效），滚动条只按悬停切换颜色，不再切换占位；`SearchPanel` 最近搜索 chips 的同类隐患一并消除
+- **chips 行溢出边缘渐隐提示**：chips 行滚动条为隐藏设计，溢出内容此前只能靠 Shift+滚轮盲滚到达。新增 `SupportPanel/useEdgeFade.ts` 按滚动位置探测两端不可见内容（scroll + ResizeObserver + MutationObserver，状态不变不触发渲染），配合 `.nv-chips` 的 `mask-image` 渐变遮罩，左侧/右侧还有内容时对应边缘渐隐 18px；要素库类型筛选与最近搜索两处 chips 行均已接入
+
 ## [1.15.0] - 2026-09-22
 
 ### Added

@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { LedgerSummary, LedgerTrendPoint } from "../../ledger-utils";
 import { formatAmount } from "../../ledger-utils";
 import LedgerTrendChart from "../LedgerTrendChart";
@@ -10,7 +11,7 @@ interface LedgerOverviewCardProps {
 }
 
 /** 总览卡：收入 / 支出 / 结余 三统计 + 近 30 天趋势 */
-export default function LedgerOverviewCard({ summary, points, loading }: LedgerOverviewCardProps) {
+function LedgerOverviewCard({ summary, points, loading }: LedgerOverviewCardProps) {
   if (loading) {
     return (
       <div className="ld-overview">
@@ -46,3 +47,6 @@ export default function LedgerOverviewCard({ summary, points, loading }: LedgerO
     </div>
   );
 }
+
+// 三统计 + 趋势图只随流水变化，筛选关键词不该让它重画
+export default memo(LedgerOverviewCard);

@@ -25,50 +25,66 @@ export function useMemoData() {
     void loadFiles();
   }, [loadFiles]);
 
-  const readFile = async (filename: string): Promise<string | null> => {
-    try {
-      return (await window.electronAPI?.memo.read(filename)) ?? null;
-    } catch (error) {
-      message.error("读取文件失败");
-      console.error(error);
-      return null;
-    }
-  };
+  // 以下读写动作全部 useCallback：注册给 store 的 runner effect 以它们为依赖，
+  // 身份不稳定会让每次渲染都重新注册一遍 runner
+  const readFile = useCallback(
+    async (filename: string): Promise<string | null> => {
+      try {
+        return (await window.electronAPI?.memo.read(filename)) ?? null;
+      } catch (error) {
+        message.error("读取文件失败");
+        console.error(error);
+        return null;
+      }
+    },
+    [message],
+  );
 
-  const writeFile = async (filename: string, content: string): Promise<boolean> => {
-    try {
-      return (await window.electronAPI?.memo.write(filename, content)) ?? false;
-    } catch (error) {
-      message.error("保存文件失败");
-      console.error(error);
-      return false;
-    }
-  };
+  const writeFile = useCallback(
+    async (filename: string, content: string): Promise<boolean> => {
+      try {
+        return (
+          (await window.electronAPI?.memo.write(filename, content)) ?? false
+        );
+      } catch (error) {
+        message.error("保存文件失败");
+        console.error(error);
+        return false;
+      }
+    },
+    [message],
+  );
 
-  const renameFile = async (
-    oldFilename: string,
-    newFilename: string,
-  ): Promise<boolean> => {
-    try {
-      return (await window.electronAPI?.memo.rename(oldFilename, newFilename)) ?? false;
-    } catch (error) {
-      message.error("重命名失败");
-      console.error(error);
-      return false;
-    }
-  };
+  const renameFile = useCallback(
+    async (oldFilename: string, newFilename: string): Promise<boolean> => {
+      try {
+        return (
+          (await window.electronAPI?.memo.rename(oldFilename, newFilename)) ??
+          false
+        );
+      } catch (error) {
+        message.error("重命名失败");
+        console.error(error);
+        return false;
+      }
+    },
+    [message],
+  );
 
-  const deleteFile = async (filename: string): Promise<boolean> => {
-    try {
-      return (await window.electronAPI?.memo.delete(filename)) ?? false;
-    } catch (error) {
-      message.error("删除失败");
-      console.error(error);
-      return false;
-    }
-  };
+  const deleteFile = useCallback(
+    async (filename: string): Promise<boolean> => {
+      try {
+        return (await window.electronAPI?.memo.delete(filename)) ?? false;
+      } catch (error) {
+        message.error("删除失败");
+        console.error(error);
+        return false;
+      }
+    },
+    [message],
+  );
 
-  const importFiles = async (): Promise<string[]> => {
+  const importFiles = useCallback(async (): Promise<string[]> => {
     setImporting(true);
     try {
       return (await window.electronAPI?.memo.import()) ?? [];
@@ -79,30 +95,35 @@ export function useMemoData() {
     } finally {
       setImporting(false);
     }
-  };
+  }, [message]);
 
   /** 导出当前备忘为 .txt / .docx（保存位置由主进程保存对话框决定） */
-  const exportFile = async (
-    filename: string,
-    format: "txt" | "docx",
-  ): Promise<boolean> => {
-    try {
-      return (await window.electronAPI?.memo.exportFile(filename, format)) ?? false;
-    } catch (error) {
-      message.error("导出失败");
-      console.error(error);
-      return false;
-    }
-  };
+  const exportFile = useCallback(
+    async (filename: string, format: "txt" | "docx"): Promise<boolean> => {
+      try {
+        return (
+          (await window.electronAPI?.memo.exportFile(filename, format)) ?? false
+        );
+      } catch (error) {
+        message.error("导出失败");
+        console.error(error);
+        return false;
+      }
+    },
+    [message],
+  );
 
-  const openInExplorer = async (filename: string): Promise<void> => {
-    try {
-      await window.electronAPI?.memo.openInExplorer(filename);
-    } catch (error) {
-      message.error("打开失败");
-      console.error(error);
-    }
-  };
+  const openInExplorer = useCallback(
+    async (filename: string): Promise<void> => {
+      try {
+        await window.electronAPI?.memo.openInExplorer(filename);
+      } catch (error) {
+        message.error("打开失败");
+        console.error(error);
+      }
+    },
+    [message],
+  );
 
   /** 备份导出：全部备忘打包 zip（manifest + memos/*.md，主进程弹保存框） */
   const exportBackup = useCallback(async (): Promise<void> => {

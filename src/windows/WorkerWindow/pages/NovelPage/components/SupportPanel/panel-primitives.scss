@@ -123,6 +123,27 @@
     &::-webkit-scrollbar {
       display: none;
     }
+
+    /* 溢出边缘渐隐：滚动条是隐藏设计，两侧还有内容时用遮罩提示。
+       类名由 SupportPanel/useEdgeFade 按滚动位置开关；
+       遮罩画在容器盒上、不随内容滚动，始终覆盖可视边缘 */
+    &.is-fade-left {
+      mask-image: linear-gradient(to right, transparent, #000 18px);
+    }
+
+    &.is-fade-right {
+      mask-image: linear-gradient(to left, transparent, #000 18px);
+    }
+
+    &.is-fade-left.is-fade-right {
+      mask-image: linear-gradient(
+        to right,
+        transparent,
+        #000 18px,
+        #000 calc(100% - 18px),
+        transparent
+      );
+    }
   }
 
   .nv-chip {

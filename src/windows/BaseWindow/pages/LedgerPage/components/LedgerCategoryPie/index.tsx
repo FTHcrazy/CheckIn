@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { Segmented } from "antd";
 import type { LedgerCategorySlice } from "../../ledger-utils";
 import { formatAmount } from "../../ledger-utils";
@@ -24,7 +24,7 @@ const GAP = 2;
  * 分类占比环图（纯 SVG）+ 图例
  * hover 图例 → 对应扇区高亮，其余降到 28% 透明度
  */
-export default function LedgerCategoryPie({
+function LedgerCategoryPie({
   slices,
   total,
   pieType,
@@ -128,3 +128,6 @@ export default function LedgerCategoryPie({
     </div>
   );
 }
+
+// 环图与图例只随流水 / 口径变化，敲关键词不该让每段弧重算一遍
+export default memo(LedgerCategoryPie);

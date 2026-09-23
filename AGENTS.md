@@ -613,6 +613,21 @@ store 只存状态与调度动作，通过模块级「runner 注册」拿到数�
 （不在 store 里 import hooks / service），组件挂载时注册、卸载时注销，
 **注册动作不得触发任何请求**。
 
+已落地 store（模块级单例，跨路由保活，均遵循 runner 注册范式）：
+
+| 页面 | store 文件 | 职责 | 来源 |
+|------|-----------|------|------|
+| NovelPage | `store/useSearchStore.ts` | 全书检索 keyword/scope/hits/loading/recent + 防抖调度 | 1.15.0 |
+| NovelPage | `store/useHoverStore.ts` | 术语悬停 target，仅 `HoverEntityCard` 订阅 | P0-2 |
+| NovelPage | `store/useAppearanceStore.ts` | 要素出场章数索引，按章内容级增量缓存 | P0-3 |
+| NovelPage | `store/useNovelEditorStore.ts` | 编辑器草稿与打字统计，仅 `EditorPane`/`StatusBar`/`NovelTopBar` 订阅 | P0-1 |
+| MemoPage | `store/useMemoStore.ts` | 备忘 content/selected/编辑态（files 仍在 `useMemoData`） | P1-1 |
+| MemoPage | `store/useMemoSearchStore.ts` | 备忘搜索 keyword/index + 高亮派生防抖 | P1-1 |
+| LedgerPage | `store/useLedgerViewStore.ts` | 记账周期/区间/关键词/类型/分类/饼图口径 | P1-2 |
+
+> CodePage 的邮箱查询未单独建 store，而是把 `useCodePage` 改为显式「查询」动作调度：输入框只持有草稿，月度统计与列表查询统一收敛到 `loadData` 入口（P1-3），同样切断了「输入 → effect → fetch」链。
+> 选用信号见上方三条；命中任一即建模块级 `store/useXxxStore.ts`，不在 store 内 import hooks/service。
+
 ### 6.2.1 页面状态与组件职责规范
 
 所有复杂页面（如 Todo、Memo、Daily、Code）统一采用“页面组合 + 分层 Hook + 私有组件”的结构。页面组件只负责编排，不直接承载数据访问、复杂筛选、表单编排或列表项业务逻辑。

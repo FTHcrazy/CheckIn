@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import { DatePicker, Dropdown, Popover, Segmented } from "antd";
 import type { MenuProps } from "antd";
 import { ArrowDownOutlined, ArrowUpOutlined, EllipsisOutlined } from "@ant-design/icons";
@@ -36,7 +36,7 @@ const MORE_ITEMS: MenuProps["items"] = [
  * 顶部周期条：周期切换 + 结余大数字 + 支出环比
  * 「自选」走 Popover 弹层（RangePicker），「更多」走 Dropdown 弹层
  */
-export default function LedgerPeriodBar({
+function LedgerPeriodBar({
   period,
   range,
   balance,
@@ -132,3 +132,6 @@ export default function LedgerPeriodBar({
     </div>
   );
 }
+
+// 周期条挂着 RangePicker 弹层：筛选框每敲一个字都不该把它重渲染一遍
+export default memo(LedgerPeriodBar);

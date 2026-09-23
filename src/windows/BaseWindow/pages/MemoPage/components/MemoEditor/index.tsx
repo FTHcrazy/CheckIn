@@ -1,21 +1,42 @@
+import { useMemo } from "react";
 import { Input } from "antd";
+import { highlightText } from "../../memo-utils";
+import {
+  memoActions,
+  useMemoContent,
+} from "../../store/useMemoStore";
+import { useMemoSearchStore } from "../../store/useMemoSearchStore";
 import "./index.scss";
 
 const { TextArea } = Input;
 
 interface MemoEditorProps {
-  content: string;
-  highlightedHtml: string;
-  onChange: (content: string) => void;
   onBlur: () => void;
 }
 
-export default function MemoEditor({
-  content,
-  highlightedHtml,
-  onChange,
-  onBlur,
-}: MemoEditorProps) {
+/**
+ * 备忘编辑区（透明 textarea + 高亮 underlay）
+ *
+ * 正文与高亮都在本组件内订阅 store：
+ * - `content` 每敲一个字都在变，若由页面根持有再透传，侧栏虚拟列表、
+ *   头部、预览、Modal 都会被一起重渲染
+ * - 高亮只在「已执行查找的关键词 / 命中序号」变化时重算，
+ *   输入搜索词的过程不会触发全文 escape
+ */
+export default function MemoEditor({ onBlur }: MemoEditorProps) {
+  const content = useMemoContent();
+  const activeSearchQuery = useMemoSearchStore(
+    (state) => state.activeSearchQuery,
+  );
+  const activeSearchIndex = useMemoSearchStore(
+    (state) => state.activeSearchIndex,
+  );
+
+  const highlightedHtml = useMemo(
+    () => highlightText(content, activeSearchQuery, activeSearchIndex),
+    [content, activeSearchQuery, activeSearchIndex],
+  );
+
   return (
     <div className="memo-editor-input-wrap">
       <div
@@ -28,7 +49,7 @@ export default function MemoEditor({
       />
       <TextArea
         value={content}
-        onChange={(event) => onChange(event.target.value)}
+        onChange={(event) => memoActions.setContent(event.target.value)}
         placeholder="在此编辑 Markdown 内容..."
         spellCheck={false}
         className="memo-textarea"

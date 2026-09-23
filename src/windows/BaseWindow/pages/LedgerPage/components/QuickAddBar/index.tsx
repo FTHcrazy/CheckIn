@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import dayjs from "dayjs";
 import {
   Button,
@@ -40,7 +40,7 @@ interface QuickAddBarProps {
  *   行2 紧凑胶囊分类
  *   行3 备注 + 今天胶囊（可改期）+ 快捷键提示 + 保存
  */
-export default function QuickAddBar({
+function QuickAddBar({
   open,
   type,
   onTypeChange,
@@ -205,3 +205,6 @@ export default function QuickAddBar({
     </Modal>
   );
 }
+
+// 记一笔弹窗常驻挂载：它自己不订阅筛选态，敲关键词不该连它一起重渲染
+export default memo(QuickAddBar);

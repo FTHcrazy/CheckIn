@@ -41,6 +41,8 @@ import type { InspirationActions } from "../components/InspirationPanel";
 import type { NamingActions } from "../components/NameGeneratorPanel";
 import type { EditorPaneHandle } from "../components/EditorPane";
 import type { OutlineActions } from "../components/OutlinePanel";
+import { editorActions, useNovelEditorStore } from "../store/useNovelEditorStore";
+import { dismiss } from "../store/useHoverStore";
 import { useEntityHover } from "./useEntityHover";
 import { useNovelData } from "./useNovelData";
 import { useNovelEditorState } from "./useNovelEditorState";
@@ -70,9 +72,12 @@ export function useNovelPage() {
   const data = useNovelData();
   const editor = useNovelEditorState(data);
   const view = useNovelViewState();
-  const hover = useEntityHover();
+  // hover 只注册副作用，不返回状态（卡片自己订阅 store，页面不跟着悬停重渲染）
+  useEntityHover(data.getEntityById);
 
-  const { settings, stats, saveState } = editor;
+  // 只取低频切片：正文 / 字数 / 保存态由各自组件订阅 store，
+  // 这里一旦订阅，敲一个字就会把整棵树推一遍
+  const { settings } = editor;
 
   // ── 自定义要素类型（R23）：config 整读整写，meta 由 EntityTypeContext 派生 ──
   const [customTypes, setCustomTypes] = useState<CustomEntityTypeDef[]>([]);
@@ -208,9 +213,9 @@ export function useNovelPage() {
   const handleSelectChapter = useCallback(
     (chapterId: string): void => {
       data.selectChapter(chapterId);
-      hover.dismiss();
+      dismiss();
     },
-    [data, hover],
+    [data],
   );
 
   // ── 续写位置记忆（R6）：光标 / 滚动变化防抖落库，启动时由 useNovelData 恢复 ──
@@ -428,11 +433,12 @@ export function useNovelPage() {
   const handleRollback = useCallback(
     async (snapshotId: string, snapshotTime: number): Promise<void> => {
       const content = await data.rollbackSnapshot(snapshotId);
-      if (content === null) {
+      const chapterId = data.activeChapterId;
+      if (content === null || !chapterId) {
         view.showToast("回滚失败，请重试", "warning");
         return;
       }
-      editor.applyExternalContent(content);
+      editor.applyExternalContent(chapterId, content);
       view.showToast(`已回滚至 ${formatClock(snapshotTime)} 的快照`);
     },
     [data, editor, view],
@@ -455,10 +461,10 @@ export function useNovelPage() {
 
   const handleOpenEntity = useCallback(
     (entityId: string): void => {
-      hover.dismiss();
+      dismiss();
       view.openEntityDetail(entityId);
     },
-    [hover, view],
+    [view],
   );
 
   // ── 选区右键菜单（O3 ③右键版）：锚点 + 新建 / 绑定 ────────────────────
@@ -935,39 +941,58 @@ export function useNovelPage() {
   });
 
   // 目标达成只提示一次：跨过目标线的那一刻给轻提示 + 进度条填满（设计方案 §07），
-  // 并上报 usage_log（R14：goal_reach 是北极星指标的达成事件）
+  // 并上报 usage_log（R14：goal_reach 是北极星指标的达成事件）。
+  //
+  // 这里用 store.subscribe 而不是 useMemo 订阅：今日字数每敲一个字都在变，
+  // 若让页面根订阅它，打字又会把整棵树推一遍。subscribe 只跑副作用、不渲染。
   const goalNotifiedRef = useRef(false);
+  const showToastRef = useRef(view.showToast);
   useEffect(() => {
-    if (stats.dailyGoal <= 0) return;
-    if (stats.todayTotal < stats.dailyGoal) {
-      goalNotifiedRef.current = false;
-      return;
-    }
-    if (goalNotifiedRef.current) return;
-    goalNotifiedRef.current = true;
-    view.showToast(`今日目标达成 · ${formatThousands(stats.dailyGoal)} 字`);
-    void logUsageEvent("goal_reach", {
-      goal: stats.dailyGoal,
-      words: stats.todayTotal,
+    showToastRef.current = view.showToast;
+  }, [view.showToast]);
+
+  useEffect(() => {
+    const check = (todayTotal: number, dailyGoal: number): void => {
+      if (dailyGoal <= 0) return;
+      if (todayTotal < dailyGoal) {
+        goalNotifiedRef.current = false;
+        return;
+      }
+      if (goalNotifiedRef.current) return;
+      goalNotifiedRef.current = true;
+      showToastRef.current(`今日目标达成 · ${formatThousands(dailyGoal)} 字`);
+      void logUsageEvent("goal_reach", { goal: dailyGoal, words: todayTotal });
+    };
+
+    const unsubscribe = useNovelEditorStore.subscribe((state, previous) => {
+      if (
+        state.todayTotal === previous.todayTotal &&
+        state.settings.dailyGoal === previous.settings.dailyGoal
+      ) {
+        return;
+      }
+      check(state.todayTotal, state.settings.dailyGoal);
     });
-  }, [stats.todayTotal, stats.dailyGoal, view]);
+    return unsubscribe;
+  }, []);
 
   // 关窗前的最后一次 flush（PRD §2：关窗永不询问，数据由持久化兜底）；
   // 位置记忆同步落库，下次打开原位续写（R6）
   useEffect(() => {
     const flush = () => {
-      if (saveState === "pending") void editor.flushSave();
+      if (useNovelEditorStore.getState().saveState === "pending") {
+        void editorActions.flushSave();
+      }
       savePositionNow();
     };
     window.addEventListener("beforeunload", flush);
     return () => window.removeEventListener("beforeunload", flush);
-  }, [editor, saveState, savePositionNow]);
+  }, [savePositionNow]);
 
   return {
     data,
     editor,
     view,
-    hover,
     terms,
     entityTypesValue,
     breadcrumb,
