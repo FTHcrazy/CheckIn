@@ -346,3 +346,187 @@ export type {
   NameStyleMeta,
   NamingKindMeta,
 } from "./naming/types";
+
+// ── 主角属性面板（PRD v0.1：R1–R5，docs/novel-status-panel-prd.md）──────
+
+/** 面板条目类型：数值 / 文本 / 标签（克制在三种，防滑向表单引擎） */
+export type StatusEntryKind = "number" | "text" | "choice";
+
+/** 属性加成模式（R5）：永久（获得即生效）/ 激活时（条目 active 才计入） */
+export type StatusBonusMode = "permanent" | "while_active";
+
+/** 属性加成：目标必须是同一面板内的数值条目（按 id 引用，展示时取名称） */
+export interface StatusBonus {
+  attrId: string;
+  /** 支持负值（诅咒装备 / 走火入魔） */
+  amount: number;
+  mode: StatusBonusMode;
+}
+
+export interface StatusEntry {
+  id: string;
+  name: string;
+  kind: StatusEntryKind;
+  /** number: 当前值；text: 内容；choice: 选中项 */
+  value: string;
+  /** 仅 number：上限（空 = 无上限；上限非空展示进度条） */
+  max?: string | null;
+  /** 仅 choice：自定义选项集 */
+  options?: string[];
+  /** 关联 item 要素（novel 数据链路打通后启用联动） */
+  itemId?: string | null;
+  /** R5 激活态：装备=手持/穿戴中，技能=运功/激活中；缺省视为未激活 */
+  active?: boolean;
+  /** R5 属性加成（挂条目上，不引入外部属性注册表） */
+  bonuses?: StatusBonus[];
+  /** R4 回退点：上一次落库的值（仅 number；渲染层计算，主进程不感知） */
+  prevValue?: string | null;
+  note: string;
+}
+
+/** 自定义分组（顺序即导航顺序；预设模板只是初始骨架） */
+export interface StatusGroup {
+  id: string;
+  name: string;
+  entries: StatusEntry[];
+}
+
+export interface StatusSheetContent {
+  groups: StatusGroup[];
+}
+
+/** R5 汇总来源明细 */
+export interface StatusTotalSource {
+  entryId: string;
+  entryName: string;
+  amount: number;
+  mode: StatusBonusMode;
+  /** 永久恒生效；激活时 = 条目 active */
+  on: boolean;
+}
+
+/** R5 汇总行：总值 = 基础 + Σ永久 + Σ激活中（纯派生值，不落库） */
+export interface StatusTotalRow {
+  attrId: string;
+  attrName: string;
+  base: number;
+  bonus: number;
+  total: number;
+  sources: StatusTotalSource[];
+}
+
+/**
+ * M1 mock：系统流预设模板（对齐 designs/novel-status-panel 原型）。
+ * 持久化链路（novel_status_sheets + IPC）打通前作为面板初始数据源。
+ */
+export const STATUS_SHEET_MOCK: StatusSheetContent = {
+  groups: [
+    {
+      id: "sg-state",
+      name: "状态",
+      entries: [
+        {
+          id: "se-pool",
+          name: "未分配属性点",
+          kind: "number",
+          value: "5",
+          note: "每升一级 +5，自由分配",
+        },
+        {
+          id: "se-str",
+          name: "力量",
+          kind: "number",
+          value: "87",
+          max: "100",
+          prevValue: "74",
+          note: "点满触发「力破千钧」",
+        },
+        {
+          id: "se-agi",
+          name: "敏捷",
+          kind: "number",
+          value: "62",
+          max: "",
+          note: "",
+        },
+        {
+          id: "se-spi",
+          name: "灵力",
+          kind: "number",
+          value: "320",
+          max: "500",
+          note: "赤炎诀第二重上限",
+        },
+      ],
+    },
+    {
+      id: "sg-equip",
+      name: "装备·法宝",
+      entries: [
+        {
+          id: "se-sword",
+          name: "赤霄剑",
+          kind: "text",
+          value: "史诗 · 附「灼血」效果",
+          active: true,
+          bonuses: [{ attrId: "se-str", amount: 12, mode: "while_active" }],
+          note: "",
+        },
+        {
+          id: "se-armor",
+          name: "玄铁战甲",
+          kind: "text",
+          value: "稀有 · 已布满裂痕待修复",
+          active: true,
+          bonuses: [{ attrId: "se-agi", amount: 6, mode: "while_active" }],
+          note: "",
+        },
+        {
+          id: "se-ring",
+          name: "炎龙戒指",
+          kind: "text",
+          value: "传说 · 火系熟练度获取 +20%",
+          active: false,
+          bonuses: [{ attrId: "se-spi", amount: 8, mode: "while_active" }],
+          note: "",
+        },
+      ],
+    },
+    {
+      id: "sg-skill",
+      name: "功法技艺",
+      entries: [
+        {
+          id: "se-fireart",
+          name: "赤炎诀",
+          kind: "number",
+          value: "320",
+          max: "500",
+          active: true,
+          bonuses: [{ attrId: "se-spi", amount: 20, mode: "while_active" }],
+          note: "",
+        },
+        {
+          id: "se-fireball",
+          name: "火球术",
+          kind: "number",
+          value: "820",
+          max: "1000",
+          prevValue: "760",
+          active: false,
+          bonuses: [{ attrId: "se-str", amount: 3, mode: "while_active" }],
+          note: "",
+        },
+        {
+          id: "se-windstep",
+          name: "疾风步",
+          kind: "number",
+          value: "175",
+          max: "500",
+          bonuses: [{ attrId: "se-agi", amount: 4, mode: "permanent" }],
+          note: "被动 · 学会即永久生效",
+        },
+      ],
+    },
+  ],
+};

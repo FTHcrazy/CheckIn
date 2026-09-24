@@ -164,51 +164,58 @@ export function useMapData() {
     }
   }, []);
 
-  /** 提交内容变更：先入撤销栈，再应用，再触发自动保存 */
+  /**
+   * 提交内容变更：先入撤销栈，再应用，再触发自动保存。
+   *
+   * 注意：**历史入栈与定时器必须写在 setContent 的 updater 之外**。
+   * React StrictMode 会重复执行 updater（双调用），把副作用写进去会导致
+   * 撤销栈被重复 push、定时器被重复创建。（修正前正是这个形态）
+   */
   const updateContent = useCallback(
     (updater: (prev: MapContent) => MapContent, recordHistory = true) => {
+      if (recordHistory) {
+        past.current.push(contentRef.current);
+        if (past.current.length > HISTORY_CAP) past.current.shift();
+        future.current = [];
+        refreshUndoRedo();
+      }
       setContent((prev) => {
-        if (recordHistory) {
-          past.current.push(prev);
-          if (past.current.length > HISTORY_CAP) past.current.shift();
-          future.current = [];
-          refreshUndoRedo();
-        }
         const next = updater(prev);
-        if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
-        autosaveTimer.current = setTimeout(() => {
-          void flushSave();
-        }, AUTOSAVE_DEBOUNCE_MS);
+        // 同步维护 ref，保证同一批事件里连续两次提交也能拿到正确快照
+        contentRef.current = next;
         return next;
       });
+      refreshUndoRedo();
+      if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
+      autosaveTimer.current = setTimeout(() => {
+        void flushSave();
+      }, AUTOSAVE_DEBOUNCE_MS);
     },
-    [refreshUndoRedo],
+    [flushSave, refreshUndoRedo],
   );
 
   const undo = useCallback(() => {
-    setContent((prev) => {
-      const last = past.current.pop();
-      if (last === undefined) return prev;
-      future.current.push(prev);
-      if (future.current.length > HISTORY_CAP) future.current.shift();
-      refreshUndoRedo();
-      if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
-      autosaveTimer.current = setTimeout(() => void flushSave(), AUTOSAVE_DEBOUNCE_MS);
-      return last;
-    });
+    const last = past.current.pop();
+    if (last === undefined) return;
+    future.current.push(contentRef.current);
+    if (future.current.length > HISTORY_CAP) future.current.shift();
+    contentRef.current = last;
+    setContent(last);
+    refreshUndoRedo();
+    if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
+    autosaveTimer.current = setTimeout(() => void flushSave(), AUTOSAVE_DEBOUNCE_MS);
   }, [refreshUndoRedo, flushSave]);
 
   const redo = useCallback(() => {
-    setContent((prev) => {
-      const next = future.current.pop();
-      if (next === undefined) return prev;
-      past.current.push(prev);
-      if (past.current.length > HISTORY_CAP) past.current.shift();
-      refreshUndoRedo();
-      if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
-      autosaveTimer.current = setTimeout(() => void flushSave(), AUTOSAVE_DEBOUNCE_MS);
-      return next;
-    });
+    const next = future.current.pop();
+    if (next === undefined) return;
+    past.current.push(contentRef.current);
+    if (past.current.length > HISTORY_CAP) past.current.shift();
+    contentRef.current = next;
+    setContent(next);
+    refreshUndoRedo();
+    if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
+    autosaveTimer.current = setTimeout(() => void flushSave(), AUTOSAVE_DEBOUNCE_MS);
   }, [refreshUndoRedo, flushSave]);
 
   // ── 贴章对象层 CRUD（RM13）──

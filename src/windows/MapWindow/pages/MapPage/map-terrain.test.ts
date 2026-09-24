@@ -12,9 +12,14 @@ import {
   buildWorld,
   hashSeed,
   randomSeed,
+  pruneStaleRivers,
+  T_DESERT,
+  T_GRASS,
+  T_RIVER,
   T_SEA,
   T_SNOW,
   T_SNOWFIELD,
+  type TerrainFeature,
   type TerrainTemplates,
 } from "./map-terrain";
 
@@ -130,6 +135,57 @@ describe("map-terrain buildWorld 河流", () => {
     });
     const rivers = w.features.filter((f) => f.type === "river");
     expect(rivers.length).toBeGreaterThan(0);
+  });
+});
+
+describe("pruneStaleRivers（手改地形后的一致性校验）", () => {
+  const COLS = 4;
+  const ROWS = 3;
+  const CELL = 16;
+
+  /** 沿 (0,1)-(3,1) 铺一条水平河道，返回世界像素坐标的 pts */
+  function riverPts(): number[] {
+    const pts: number[] = [];
+    for (let c = 0; c < COLS; c++) {
+      pts.push((c + 0.5) * CELL, 1.5 * CELL);
+    }
+    return pts;
+  }
+
+  function river(): TerrainFeature {
+    return { id: "r1", type: "river", pts: riverPts() };
+  }
+
+  it("河道仍在时保留河流 feature", () => {
+    const cells = new Array(COLS * ROWS).fill(T_GRASS);
+    for (let c = 0; c < COLS; c++) cells[1 * COLS + c] = T_RIVER;
+    const out = pruneStaleRivers([river()], cells, COLS, ROWS, CELL);
+    expect(out.length).toBe(1);
+  });
+
+  it("河道被涂成沙漠后丢弃该 feature（修复「河悬在沙漠上」）", () => {
+    const cells = new Array(COLS * ROWS).fill(T_DESERT);
+    const out = pruneStaleRivers([river()], cells, COLS, ROWS, CELL);
+    expect(out.length).toBe(0);
+  });
+
+  it("非河流要素不受影响", () => {
+    const cells = new Array(COLS * ROWS).fill(T_SEA);
+    const cliff: TerrainFeature = {
+      id: "c1",
+      type: "cliff",
+      points: [{ x: 8, y: 8 }],
+    };
+    const out = pruneStaleRivers([cliff], cells, COLS, ROWS, CELL);
+    expect(out.length).toBe(1);
+    expect(out[0].id).toBe("c1");
+  });
+
+  it("异常数据（无采样点）按保留处理，不误删用户内容", () => {
+    const cells = new Array(COLS * ROWS).fill(T_DESERT);
+    const empty: TerrainFeature = { id: "r2", type: "river", pts: [] };
+    const out = pruneStaleRivers([empty], cells, COLS, ROWS, CELL);
+    expect(out.length).toBe(1);
   });
 });
 

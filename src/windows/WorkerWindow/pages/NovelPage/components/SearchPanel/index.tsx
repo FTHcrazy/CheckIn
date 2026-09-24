@@ -62,7 +62,8 @@ export default function SearchPanel({
   const setScope = useSearchStore((state) => state.setScope);
   const clear = useSearchStore((state) => state.clear);
   // 最近搜索 chips 行横向溢出时两端渐隐提示（滚动条为隐藏设计）
-  const chipsFade = useEdgeFade<HTMLDivElement>();
+  const { ref: chipsRef, fadeLeft: chipsFadeLeft, fadeRight: chipsFadeRight } =
+    useEdgeFade<HTMLDivElement>();
 
   // 只做实现注册：identity 变化不再触发任何检索（此前这里是闪烁的根因）
   useEffect(() => {
@@ -167,9 +168,9 @@ export default function SearchPanel({
             <>
               <div className="nv-sechead">最近搜索</div>
               <div
-                ref={chipsFade.ref}
-                className={`nv-chips${chipsFade.fadeLeft ? " is-fade-left" : ""}${
-                  chipsFade.fadeRight ? " is-fade-right" : ""
+                ref={chipsRef}
+                className={`nv-chips${chipsFadeLeft ? " is-fade-left" : ""}${
+                  chipsFadeRight ? " is-fade-right" : ""
                 }`}
               >
                 {recent.map((item) => (

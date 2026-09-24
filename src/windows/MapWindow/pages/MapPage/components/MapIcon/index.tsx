@@ -39,6 +39,7 @@ const PATHS: Record<string, string> = {
   group: "M3.5 3.5h7v7H3.5zM13.5 13.5h7v7h-7zM11 7h3.5a2 2 0 012 2V13",
   magnet: "M6 4v8a6 6 0 0012 0V4h-4v8a2 2 0 01-4 0V4z",
   "layer-up": "M12 4l8 5-8 5-8-5zM4 14l8 5 8-5",
+  flow: "M2.5 7.5c3 0 3-2 6-2s3 2 6 2 3-2 6-2M2.5 13c3 0 3-2 6-2s3 2 6 2 3-2 6-2M2.5 18.5c3 0 3-2 6-2s3 2 6 2 3-2 6-2",
 };
 
 export interface MapIconProps {

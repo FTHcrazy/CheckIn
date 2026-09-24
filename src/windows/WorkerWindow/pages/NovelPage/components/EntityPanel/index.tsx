@@ -92,7 +92,8 @@ export default function EntityPanel({
   // 页面根不再为了这个数字被保存动作推一遍
   const appearanceCounts = useAppearanceStore((state) => state.counts);
   // 类型 chips 行横向溢出时两端渐隐提示（滚动条为隐藏设计）
-  const chipsFade = useEdgeFade<HTMLDivElement>();
+  const { ref: chipsRef, fadeLeft: chipsFadeLeft, fadeRight: chipsFadeRight } =
+    useEdgeFade<HTMLDivElement>();
 
   // 类型计数：只在要素集合变化时重算，与筛选 / 搜索无关
   const counts = useMemo(() => {
@@ -108,7 +109,7 @@ export default function EntityPanel({
   // 行中间，免去手动 Shift+滚轮找；首次挂载（恢复上次筛选）不做动画
   const chipsMountedRef = useRef(false);
   useEffect(() => {
-    const row = chipsFade.ref.current;
+    const row = chipsRef.current;
     const on = row?.querySelector<HTMLElement>(".nv-chip.is-on");
     if (!row || !on) return;
     // 用视口矩形差值求目标 scrollLeft：.nv-chips 不是定位元素，
@@ -125,7 +126,7 @@ export default function EntityPanel({
       behavior: chipsMountedRef.current ? "smooth" : "auto",
     });
     chipsMountedRef.current = true;
-  }, [filter, counts, chipsFade.ref]);
+  }, [filter, counts, chipsRef]);
 
   const trimmed = keyword.trim().toLowerCase();
 
@@ -224,9 +225,9 @@ export default function EntityPanel({
       </div>
 
       <div
-        ref={chipsFade.ref}
-        className={`nv-chips nv-entity__chips${chipsFade.fadeLeft ? " is-fade-left" : ""}${
-          chipsFade.fadeRight ? " is-fade-right" : ""
+        ref={chipsRef}
+        className={`nv-chips nv-entity__chips${chipsFadeLeft ? " is-fade-left" : ""}${
+          chipsFadeRight ? " is-fade-right" : ""
         }`}
       >
         <button

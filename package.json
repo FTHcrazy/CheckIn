@@ -1,7 +1,7 @@
 {
   "name": "checkin",
   "private": true,
-  "version": "1.17.0",
+  "version": "1.18.1",
   "description": "CheckIn Desktop Application",
   "main": "dist-electron/main.js",
   "author": "FTH",
@@ -45,6 +45,7 @@
     "lunar-typescript": "^1.8.6",
     "mammoth": "^1.11.0",
     "marked": "^18.0.7",
+    "pixi.js": "^8.21.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "react-router-dom": "^7.18.0",

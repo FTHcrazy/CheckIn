@@ -15,9 +15,13 @@ export const LAYOUT = {
   statusBarHeight: 32,
   /** 画布默认缩放 */
   defaultScale: 0.75,
-  /** 缩放范围 */
-  minScale: 0.1,
-  maxScale: 4.0,
+  /**
+   * 缩放范围（无级缩放前提）
+   * 地形改由 WebGL 每像素采样渲染后不再受「离屏位图倍率」限制，
+   * 故上限大幅放开（可放大于 4× 看清单格纹理），下限松开便于跨尺度缩略。
+   */
+  minScale: 0.02,
+  maxScale: 16,
 } as const;
 
 /** 栅格分辨率候选（开放问题 ①） */

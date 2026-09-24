@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ChapterJumpPalette from "./components/ChapterJumpPalette";
 import ChapterTree from "./components/ChapterTree";
 import EditorPane from "./components/EditorPane";
@@ -13,7 +13,9 @@ import RestoreBanner from "./components/RestoreBanner";
 import SettingsDrawer from "./components/SettingsDrawer";
 import SnapshotDrawer from "./components/SnapshotDrawer";
 import StatusBar from "./components/StatusBar";
+import StatusPanelPopover from "./components/StatusPanelPopover";
 import SupportPanel from "./components/SupportPanel";
+import { useStatusSheet } from "./hooks/useStatusSheet";
 import { EntityTypesProvider } from "./hooks/useEntityTypes";
 import { useNovelPage } from "./hooks/useNovelPage";
 import { hoverActions } from "./store/useHoverStore";
@@ -214,6 +216,12 @@ export default function NovelPage({
     [data.entities],
   );
 
+  // ── 主角属性面板（PRD v0.1，M1：本地 mock 数据，持久化链路后续打通） ──
+  const statusSheet = useStatusSheet();
+  const [statusOpen, setStatusOpen] = useState(false);
+  const toggleStatus = useCallback(() => setStatusOpen((v) => !v), []);
+  const closeStatus = useCallback(() => setStatusOpen(false), []);
+
   return (
     <EntityTypesProvider value={entityTypesValue}>
       <div className={`nv-page${view.focusMode ? " is-focus" : ""}`}>
@@ -354,6 +362,16 @@ export default function NovelPage({
             onConfirm={confirmReorder}
             onCancel={cancelReorder}
           />
+
+          {/* 主角属性面板：编辑区右下角悬浮入口 + 贴身无遮罩浮层（专注模式隐藏） */}
+          {!view.focusMode && (
+            <StatusPanelPopover
+              open={statusOpen}
+              sheet={statusSheet}
+              onToggle={toggleStatus}
+              onClose={closeStatus}
+            />
+          )}
         </div>
 
         <SupportPanel

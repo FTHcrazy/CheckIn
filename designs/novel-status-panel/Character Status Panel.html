@@ -1,0 +1,1134 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>主角属性面板 · UI 原型（无遮罩浮层版） — CheckIn WorkerWindow</title>
+<style>
+  /* ── 主题变量：对齐 src/shared/styles/themes.scss（aurora 浅色） ── */
+  :root {
+    --app-bg: #f3f5fc;
+    --app-surface: #ffffff;
+    --app-surface-alt: #f7f8fe;
+    --app-surface-hover: #eef1fc;
+    --app-surface-active: #e4e9fa;
+    --app-header-bg: #ffffff;
+    --app-sidebar-bg: #ffffff;
+    --app-input-bg: #ffffff;
+    --app-splitter: #edf0fa;
+    --app-mask: rgba(43, 47, 74, 0.35);
+    --app-border: #e2e6f4;
+    --app-border-strong: #d3d9ee;
+    --app-text: #2b2f4a;
+    --app-text-secondary: #5a5f7a;
+    --app-text-muted: #8a90ac;
+    --app-text-strong: #1d2242;
+    --app-primary: #5b6cf9;
+    --app-primary-strong: #4a5ae0;
+    --app-primary-weak: #eaf0ff;
+    --app-primary-gradient: linear-gradient(90deg, #7b8cff 0%, #a5b0ff 100%);
+    --app-success: #34b37e;
+    --app-success-weak: #e6f7ee;
+    --app-warning: #f5a623;
+    --app-warning-weak: #fff3e0;
+    --app-accent-purple: #8b77f0;
+    --app-accent-purple-weak: #f1edff;
+    --app-accent-rose: #e8618c;
+    --app-accent-rose-weak: #ffeef2;
+    --app-accent-amber: #f5a623;
+    --app-accent-amber-weak: #fff3e0;
+    --app-accent-blue: #5b8def;
+    --app-accent-blue-weak: #eaf0ff;
+    --app-radius-card: 20px;
+    --app-radius-panel: 16px;
+    --app-radius-chip: 14px;
+    --app-radius-item: 10px;
+    --app-radius-pill: 999px;
+    --app-shadow-card: 0 6px 16px rgba(53, 64, 101, 0.07);
+    --app-shadow-pop: 0 10px 30px rgba(53, 64, 101, 0.14);
+    --nv-mark: rgba(139, 119, 240, 0.16);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+    background: #dfe4f5;
+    color: var(--app-text);
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+
+  /* ════ 窗口外壳：模拟 WorkerWindow ════ */
+  .win {
+    width: 1180px;
+    height: 760px;
+    background: var(--app-bg);
+    border-radius: 14px;
+    box-shadow: var(--app-shadow-pop), 0 0 0 1px rgba(43,47,74,.06);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .win-titlebar {
+    flex: none;
+    height: 36px;
+    background: var(--app-header-bg);
+    border-bottom: 1px solid var(--app-splitter);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 14px;
+    font-size: 12px;
+    color: var(--app-text-muted);
+  }
+  .win-titlebar .dots { display: flex; gap: 6px; }
+  .win-titlebar .dots i { width: 10px; height: 10px; border-radius: 50%; }
+  .win-titlebar .dots i:nth-child(1) { background: #ff5f57; }
+  .win-titlebar .dots i:nth-child(2) { background: #febc2e; }
+  .win-titlebar .dots i:nth-child(3) { background: #28c840; }
+
+  /* ════ 顶栏（NovelTopBar 简化） ════ */
+  .topbar {
+    flex: none;
+    height: 44px;
+    background: var(--app-header-bg);
+    border-bottom: 1px solid var(--app-splitter);
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    gap: 12px;
+  }
+  .crumb { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--app-text-secondary); }
+  .crumb b { color: var(--app-text-strong); font-weight: 600; }
+  .crumb .sep { color: var(--app-text-muted); }
+  .topbar .spacer { flex: 1; }
+  .tb-btn {
+    width: 30px; height: 30px;
+    border-radius: var(--app-radius-item);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--app-text-secondary);
+    cursor: pointer;
+    background: transparent;
+    border: none;
+    font-size: 14px;
+  }
+  .tb-btn:hover { background: var(--app-surface-hover); }
+
+  /* ════ 三栏主体 ════ */
+  .body { flex: 1; min-height: 0; display: flex; }
+
+  /* 左：章节树 */
+  .tree {
+    flex: none;
+    width: 224px;
+    background: var(--app-sidebar-bg);
+    border-right: 1px solid var(--app-splitter);
+    padding: 12px 10px;
+    font-size: 13px;
+    overflow: hidden;
+  }
+  .tree .vol { color: var(--app-text-muted); font-size: 12px; padding: 6px 8px 4px; }
+  .tree .ch {
+    padding: 7px 10px;
+    border-radius: var(--app-radius-item);
+    color: var(--app-text-secondary);
+    cursor: default;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .tree .ch:hover { background: var(--app-surface-hover); }
+  .tree .ch.active { background: var(--app-primary-weak); color: var(--app-primary-strong); font-weight: 600; }
+  .tree .ch .st { font-size: 12px; color: var(--app-success); }
+
+  /* 中：编辑区 */
+  .stage { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .paper { flex: 1; overflow: hidden; display: flex; justify-content: center; padding: 32px 40px 24px; }
+  .paper-inner { width: 620px; font-size: 15px; line-height: 2.05; color: var(--app-text); }
+  .paper-inner h3 { font-size: 17px; color: var(--app-text-strong); text-align: center; margin-bottom: 18px; font-weight: 600; }
+  .paper-inner p { text-indent: 2em; margin-bottom: 4px; }
+  .term { border-radius: 4px; padding: 1px 2px; cursor: default; }
+  .term.character { background: var(--nv-mark); color: var(--app-text); }
+  .term.item { background: var(--app-accent-amber-weak); }
+  .sys { color: var(--app-primary-strong); }
+
+  /* 底部状态条 */
+  .statusbar {
+    flex: none;
+    height: 32px;
+    border-top: 1px solid var(--app-splitter);
+    background: var(--app-surface);
+    display: flex; align-items: center; gap: 16px;
+    padding: 0 16px;
+    font-size: 12px;
+    color: var(--app-text-muted);
+  }
+  .statusbar .pill { display: flex; align-items: center; gap: 4px; }
+
+  /* 右栏收起边缘（示意 SupportPanel 折叠态，体现浮层不依附两侧栏） */
+  .right-edge {
+    flex: none; width: 34px;
+    background: var(--app-sidebar-bg);
+    border-left: 1px solid var(--app-splitter);
+    display: flex; flex-direction: column; align-items: center; gap: 8px; padding-top: 12px;
+  }
+  .right-edge i { width: 22px; height: 22px; border-radius: 7px; background: var(--app-surface-hover); }
+
+  /* ════ R1 悬浮入口（FAB） ════ */
+  .fab {
+    position: absolute;
+    right: 30px;
+    bottom: 52px;
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    border: none;
+    background: var(--app-primary-gradient);
+    color: #fff;
+    font-size: 19px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 6px 16px rgba(91, 108, 249, 0.42);
+    transition: transform .18s ease, box-shadow .18s ease;
+    z-index: 31;
+  }
+  .fab:hover { transform: translateY(-2px); box-shadow: 0 10px 22px rgba(91, 108, 249, 0.5); }
+  .fab.active { transform: translateY(-2px); box-shadow: 0 10px 22px rgba(91, 108, 249, 0.55); }
+  .fab-tip {
+    position: absolute; right: 86px; bottom: 62px;
+    background: var(--app-text-strong); color: #fff;
+    font-size: 12px; padding: 5px 10px;
+    border-radius: var(--app-radius-item);
+    opacity: 0; pointer-events: none; transition: opacity .15s;
+    white-space: nowrap;
+    z-index: 31;
+  }
+  .stage:hover .fab-tip { opacity: .96; }
+  .pop-open .fab-tip { opacity: 0 !important; }
+
+  /* ════ R2 属性面板：贴身无遮罩浮层（不阻挡正文） ════ */
+  .pop-wrap {
+    position: absolute;
+    right: 30px;
+    bottom: 106px;                    /* 锚定 FAB 上方 */
+    width: 376px;
+    max-height: 540px;
+    display: flex; flex-direction: column;
+    background: var(--app-surface);
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-panel);
+    box-shadow: var(--app-shadow-pop);
+    overflow: visible;
+    z-index: 30;
+    visibility: hidden; opacity: 0;
+    transform: translateY(8px) scale(.97);
+    transform-origin: bottom right;
+    transition: opacity .18s ease, transform .18s cubic-bezier(.2,.9,.3,1.15), visibility .18s;
+  }
+  /* 指向 FAB 的小箭头 */
+  .pop-wrap::after {
+    content: "";
+    position: absolute;
+    right: 16px; bottom: -6px;
+    width: 12px; height: 12px;
+    background: var(--app-surface);
+    border-right: 1px solid var(--app-border);
+    border-bottom: 1px solid var(--app-border);
+    transform: rotate(45deg);
+  }
+  .pop-wrap.open { visibility: visible; opacity: 1; transform: translateY(0) scale(1); }
+
+  .p-head {
+    flex: none;
+    display: flex; align-items: center; gap: 9px;
+    padding: 12px 14px 10px;
+    border-bottom: 1px solid var(--app-splitter);
+    background: var(--app-surface);
+    border-radius: var(--app-radius-panel) var(--app-radius-panel) 0 0;
+    position: relative;
+    z-index: 1;
+  }
+  .avatar {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: var(--app-primary-gradient);
+    color: #fff; font-size: 13px; font-weight: 600;
+    display: flex; align-items: center; justify-content: center;
+    flex: none;
+  }
+  .who { min-width: 0; }
+  .who .name-row { display: flex; align-items: center; gap: 6px; }
+  .who .name { font-size: 14px; font-weight: 600; color: var(--app-text-strong); }
+  .chip {
+    font-size: 12px;
+    padding: 1px 7px;
+    border-radius: var(--app-radius-pill);
+    background: var(--app-surface-alt);
+    color: var(--app-text-secondary);
+    border: 1px solid var(--app-border);
+    white-space: nowrap;
+  }
+  .chip.realm { background: var(--app-primary-weak); color: var(--app-primary-strong); border-color: transparent; cursor: pointer; }
+  .p-head .spacer { flex: 1; }
+  .save-state { font-size: 12px; color: var(--app-text-muted); display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+  .save-state .ok { color: var(--app-success); }
+  .save-state .spin { color: var(--app-primary); }
+  .icon-btn {
+    width: 26px; height: 26px; border-radius: 8px;
+    border: none; background: transparent; color: var(--app-text-muted);
+    font-size: 13px; cursor: pointer; flex: none;
+  }
+  .icon-btn:hover { background: var(--app-surface-hover); color: var(--app-text); }
+
+  /* 分段控件（窄面板用 seg 代替横向 Tab）——分组为自定义，尾部「管理」入口 */
+  .seg-wrap {
+    flex: none; padding: 10px 14px 0;
+    background: var(--app-surface);
+    position: relative; z-index: 1;
+  }
+  .seg {
+    display: flex; gap: 2px;
+    background: var(--app-surface-alt);
+    border: 1px solid var(--app-splitter);
+    border-radius: var(--app-radius-pill);
+    padding: 3px;
+  }
+  .seg button {
+    flex: 1;
+    border: none; background: transparent;
+    font-size: 12px; color: var(--app-text-secondary);
+    padding: 5px 0 6px;
+    cursor: pointer;
+    border-radius: var(--app-radius-pill);
+    white-space: nowrap;
+  }
+  .seg button:hover { color: var(--app-text); }
+  .seg button.active {
+    background: var(--app-surface);
+    color: var(--app-primary-strong);
+    font-weight: 600;
+    box-shadow: 0 1px 4px rgba(53, 64, 101, 0.12);
+  }
+  .seg button .cnt { color: var(--app-text-muted); margin-left: 2px; font-weight: 400; }
+  .seg .seg-more {
+    flex: none; width: 28px;
+    border: none; background: transparent;
+    color: var(--app-text-muted); font-size: 14px;
+    border-radius: var(--app-radius-pill); cursor: pointer;
+  }
+  .seg .seg-more:hover { background: var(--app-surface-active); color: var(--app-text); }
+  .more-menu {
+    position: absolute; top: calc(100% + 6px); right: 14px;
+    width: 208px;
+    background: var(--app-surface);
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-item);
+    box-shadow: var(--app-shadow-pop);
+    padding: 6px;
+    z-index: 40;
+  }
+  .more-menu button {
+    display: block; width: 100%; text-align: left;
+    border: none; background: transparent;
+    font-size: 13px; color: var(--app-text-secondary);
+    padding: 7px 10px; border-radius: 8px; cursor: pointer;
+  }
+  .more-menu button:hover { background: var(--app-surface-hover); color: var(--app-primary-strong); }
+  .more-menu .menu-cap { font-size: 12px; color: var(--app-text-muted); padding: 4px 10px 2px; }
+  .group-hint {
+    font-size: 12px; color: var(--app-text-muted);
+    background: var(--app-surface-alt);
+    border: 1px dashed var(--app-border);
+    border-radius: var(--app-radius-item);
+    padding: 6px 10px; margin-bottom: 10px;
+  }
+  .pool-tag {
+    font-size: 12px; padding: 1px 7px;
+    border-radius: var(--app-radius-pill);
+    background: var(--app-success-weak); color: var(--app-success);
+    flex: none; white-space: nowrap;
+  }
+
+  .p-body {
+    flex: 1; min-height: 0; overflow-y: auto; padding: 12px 14px 16px;
+    background: var(--app-surface);
+  }
+  .pane { display: none; }
+  .pane.active { display: block; }
+
+  /* ── 属性行（紧凑两行式） ── */
+  .attr { padding: 9px 10px; border-radius: var(--app-radius-item); }
+  .attr:hover { background: var(--app-surface-alt); }
+  .attr-line1 { display: flex; align-items: center; gap: 8px; }
+  .cell-input {
+    height: 28px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-item);
+    background: var(--app-input-bg);
+    color: var(--app-text);
+    font-size: 13px;
+    padding: 0 8px;
+    width: 100%;
+    outline: none;
+  }
+  .cell-input:focus { border-color: var(--app-primary); box-shadow: 0 0 0 2px var(--app-primary-weak); }
+  .attr-line1 .cell-input { flex: 1; min-width: 0; }
+  .stepper {
+    display: flex; align-items: center;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-item);
+    height: 28px;
+    background: var(--app-input-bg);
+    overflow: hidden;
+    flex: none;
+  }
+  .stepper button {
+    width: 26px; height: 100%;
+    border: none; background: transparent;
+    color: var(--app-text-secondary); font-size: 14px; cursor: pointer;
+  }
+  .stepper button:hover { background: var(--app-surface-hover); color: var(--app-primary-strong); }
+  .stepper .val {
+    min-width: 34px; text-align: center; font-size: 13px; font-weight: 600;
+    color: var(--app-text-strong); padding: 0 2px;
+    font-variant-numeric: tabular-nums;
+  }
+  .stepper.bump button { color: var(--app-primary-strong); font-weight: 700; }
+  .del {
+    width: 22px; height: 22px; border-radius: 7px; border: none;
+    background: transparent; color: var(--app-text-muted); cursor: pointer; font-size: 12px;
+    opacity: 0; flex: none;
+  }
+  .attr:hover .del, .skill:hover .del { opacity: 1; }
+  .del:hover { background: #ffecee; color: #e5484d; }
+  .attr-line2 { display: flex; align-items: center; gap: 8px; margin-top: 6px; padding-left: 2px; }
+  .mini-label { font-size: 12px; color: var(--app-text-muted); flex: none; }
+  .cell-input.max { width: 52px; height: 24px; font-size: 12px; flex: none; text-align: center; }
+  .cell-input.note {
+    flex: 1; min-width: 0; height: 24px;
+    border-color: transparent; background: transparent;
+    color: var(--app-text-secondary); font-size: 12px;
+  }
+  .attr:hover .cell-input.note { border-color: var(--app-border); background: var(--app-input-bg); }
+  .add-row {
+    margin-top: 8px;
+    width: 100%;
+    border: 1px dashed var(--app-border-strong);
+    background: transparent;
+    color: var(--app-text-muted);
+    font-size: 12px;
+    height: 30px;
+    border-radius: var(--app-radius-item);
+    cursor: pointer;
+  }
+  .add-row:hover { color: var(--app-primary-strong); border-color: var(--app-primary); background: var(--app-primary-weak); }
+
+  /* ── 装备槽（紧凑列表式） ── */
+  .slot {
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-item);
+    padding: 9px 10px;
+    margin-bottom: 8px;
+    background: var(--app-surface);
+    transition: border-color .15s;
+  }
+  .slot:hover { border-color: var(--app-border-strong); background: var(--app-surface-alt); }
+  .slot.empty { border-style: dashed; background: var(--app-surface-alt); }
+  .slot-line1 { display: flex; align-items: center; gap: 7px; }
+  .slot-ico {
+    width: 22px; height: 22px; border-radius: 7px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; flex: none;
+  }
+  .slot-name { font-size: 13px; font-weight: 600; color: var(--app-text-strong); }
+  .slot .acts { margin-left: auto; display: flex; gap: 2px; }
+  .slot .acts button {
+    border: none; background: transparent; font-size: 12px;
+    color: var(--app-text-muted); cursor: pointer; padding: 2px 7px;
+    border-radius: var(--app-radius-item);
+  }
+  .slot .acts button:hover { background: var(--app-surface-hover); color: var(--app-primary-strong); }
+  .slot-line2 { margin-top: 6px; }
+  .equip-chip {
+    display: flex; align-items: center; gap: 6px;
+    background: var(--app-surface-alt);
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-item);
+    padding: 4px 9px;
+    font-size: 12px;
+    color: var(--app-text);
+    cursor: default;
+  }
+  .equip-chip .q { font-size: 12px; padding: 0 6px; border-radius: var(--app-radius-pill); flex: none; }
+  .q.purple { background: var(--app-accent-purple-weak); color: var(--app-accent-purple); }
+  .q.amber  { background: var(--app-accent-amber-weak);  color: #b57b0e; }
+  .q.blue   { background: var(--app-accent-blue-weak);   color: var(--app-accent-blue); }
+  .slot .note-line { font-size: 12px; color: var(--app-text-muted); margin-top: 5px; }
+  .slot.empty .hint { font-size: 12px; color: var(--app-text-muted); margin-top: 4px; }
+  .slot.empty .bind-row { display: flex; gap: 6px; margin-top: 7px; }
+  .slot.empty .bind-row button {
+    flex: 1;
+    border: 1px solid var(--app-border-strong); background: var(--app-surface);
+    border-radius: var(--app-radius-pill); font-size: 12px; color: var(--app-text-secondary);
+    padding: 3px 0 4px; cursor: pointer;
+  }
+  .slot.empty .bind-row button:hover { border-color: var(--app-primary); color: var(--app-primary-strong); background: var(--app-primary-weak); }
+
+  /* ── 技能·熟练度（紧凑两行式） ── */
+  .skill { padding: 9px 10px; border-radius: var(--app-radius-item); }
+  .skill:hover { background: var(--app-surface-alt); }
+  .skill-line1 { display: flex; align-items: center; gap: 8px; }
+  .skill .sname { font-size: 13px; font-weight: 600; color: var(--app-text-strong); flex: 1; min-width: 0; display: flex; align-items: center; gap: 5px; }
+  .skill .sname .lv { font-size: 12px; color: var(--app-accent-purple); font-weight: 400; }
+  .bind-select {
+    height: 24px; border-radius: var(--app-radius-item);
+    border: 1px solid var(--app-border); background: var(--app-input-bg);
+    color: var(--app-text-secondary); font-size: 12px; padding: 0 6px;
+    width: 92px; outline: none; cursor: pointer; flex: none;
+  }
+  .bind-select:focus { border-color: var(--app-primary); }
+  .bar-nums { font-size: 12px; color: var(--app-text-secondary); font-variant-numeric: tabular-nums; flex: none; min-width: 64px; text-align: right; }
+  .skill-line2 { display: flex; align-items: center; gap: 8px; margin-top: 7px; }
+  .bar { height: 8px; border-radius: var(--app-radius-pill); background: var(--app-surface-active); overflow: hidden; flex: 1; }
+  .bar i { display: block; height: 100%; border-radius: var(--app-radius-pill); background: var(--app-primary-gradient); transition: width .3s ease; }
+
+  /* ── R5 条目激活开关（装备中 / 运功中） ── */
+  .act-toggle {
+    display: inline-flex; align-items: center; gap: 5px;
+    border: none; background: transparent; cursor: pointer;
+    font-size: 12px; color: var(--app-text-muted); flex: none; padding: 2px 4px;
+    border-radius: var(--app-radius-item);
+    white-space: nowrap;
+  }
+  .act-toggle:hover { background: var(--app-surface-hover); }
+  .act-toggle i {
+    width: 26px; height: 15px; border-radius: var(--app-radius-pill);
+    background: var(--app-surface-active); position: relative; transition: background .15s; flex: none;
+  }
+  .act-toggle i::after {
+    content: ""; position: absolute; top: 2px; left: 2px;
+    width: 11px; height: 11px; border-radius: 50%; background: #fff;
+    box-shadow: 0 1px 3px rgba(53, 64, 101, .25); transition: transform .15s;
+  }
+  .act-toggle.on { color: var(--app-success); }
+  .act-toggle.on i { background: var(--app-success); }
+  .act-toggle.on i::after { transform: translateX(11px); }
+
+  /* ── R5 属性加成 chips ── */
+  .bonus-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 6px; }
+  .bonus-chip {
+    display: inline-flex; align-items: center; gap: 3px;
+    font-size: 12px; padding: 1px 7px;
+    border-radius: var(--app-radius-pill);
+    background: var(--app-primary-weak); color: var(--app-primary-strong);
+    white-space: nowrap;
+  }
+  .bonus-chip b { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .bonus-chip .mode { opacity: .72; }
+  .bonus-chip.neg { background: #ffecee; color: #e5484d; }
+  .bonus-chip .x { cursor: pointer; opacity: .55; }
+  .bonus-chip .x:hover { opacity: 1; }
+  .bonus-add {
+    border: 1px dashed var(--app-border-strong); background: transparent;
+    color: var(--app-text-muted); font-size: 12px;
+    border-radius: var(--app-radius-pill); padding: 1px 8px 2px; cursor: pointer;
+  }
+  .bonus-add:hover { color: var(--app-primary-strong); border-color: var(--app-primary); background: var(--app-primary-weak); }
+
+  /* ── R5 状态汇总栏（派生值，实时计算，不落库） ── */
+  .sum-bar {
+    flex: none;
+    background: var(--app-surface);
+    border-bottom: 1px solid var(--app-splitter);
+    padding: 7px 14px 8px;
+  }
+  .sum-head {
+    display: flex; align-items: center; gap: 6px;
+    width: 100%; border: none; background: transparent; cursor: pointer; padding: 0;
+  }
+  .sum-head .cap {
+    font-size: 12px; font-weight: 600; color: var(--app-text-strong);
+    display: inline-flex; align-items: center; gap: 5px; flex: none;
+  }
+  .sum-head .cap .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--app-accent-purple); flex: none; }
+  .sum-chips { display: flex; gap: 4px; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .sum-chips::-webkit-scrollbar { display: none; }
+  .sum-chip {
+    font-size: 12px; padding: 1px 7px; border-radius: var(--app-radius-pill);
+    background: var(--app-success-weak); color: var(--app-success);
+    white-space: nowrap; font-variant-numeric: tabular-nums; flex: none;
+  }
+  .sum-chip.plain { background: var(--app-surface-alt); color: var(--app-text-muted); }
+  .sum-caret { flex: none; color: var(--app-text-muted); font-size: 12px; transition: transform .15s; }
+  .sum-bar.open .sum-caret { transform: rotate(180deg); }
+  .sum-detail { display: none; margin-top: 8px; border-top: 1px dashed var(--app-border); padding-top: 8px; }
+  .sum-bar.open .sum-detail { display: block; }
+  .sum-row { padding: 5px 0; }
+  .sum-row + .sum-row { border-top: 1px solid var(--app-surface-alt); }
+  .sum-row .r1 { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+  .sum-row .nm { font-weight: 600; color: var(--app-text-strong); flex: none; }
+  .sum-row .calc { color: var(--app-text-secondary); font-variant-numeric: tabular-nums; }
+  .sum-row .delta { margin-left: auto; font-size: 12px; font-weight: 600; color: var(--app-success); font-variant-numeric: tabular-nums; flex: none; }
+  .sum-row .delta.zero { color: var(--app-text-muted); font-weight: 400; }
+  .sum-srcs { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 0 2px; }
+  .sum-src {
+    font-size: 12px; padding: 1px 7px; border-radius: var(--app-radius-pill);
+    background: var(--app-surface-alt); color: var(--app-text-secondary);
+    display: inline-flex; align-items: center; gap: 3px; white-space: nowrap;
+  }
+  .sum-src .amt { font-weight: 600; color: var(--app-success); font-variant-numeric: tabular-nums; }
+  .sum-src .amt.neg { color: #e5484d; }
+  .sum-src.off { opacity: .5; }
+  .sum-src.off .amt { color: var(--app-text-muted); }
+
+  /* R4 上一次保存值 chip + 一键回退 */
+  [hidden] { display: none !important; }
+  .prev-chip {
+    display: inline-flex; align-items: center; gap: 3px;
+    border: 1px dashed var(--app-border-strong);
+    background: var(--app-surface-alt);
+    color: var(--app-text-muted);
+    font-size: 12px;
+    border-radius: var(--app-radius-pill);
+    padding: 1px 8px;
+    cursor: pointer;
+    white-space: nowrap;
+    flex: none;
+    transition: color .15s, border-color .15s, background .15s;
+  }
+  .prev-chip b { font-weight: 600; color: var(--app-text-secondary); font-variant-numeric: tabular-nums; }
+  .prev-chip:hover { color: var(--app-primary-strong); border-color: var(--app-primary); background: var(--app-primary-weak); }
+  .prev-chip:hover b { color: var(--app-primary-strong); }
+
+  .p-foot {
+    flex: none;
+    display: flex; align-items: center; gap: 6px;
+    padding: 8px 14px 10px;
+    border-top: 1px solid var(--app-splitter);
+    font-size: 12px; color: var(--app-text-muted);
+    background: var(--app-surface);
+    border-radius: 0 0 var(--app-radius-panel) var(--app-radius-panel);
+    position: relative; z-index: 1;
+  }
+  .p-foot .spacer { flex: 1; }
+  .p-foot .k { border: 1px solid var(--app-border-strong); border-radius: 6px; padding: 0 5px; font-size: 12px; background: var(--app-surface-alt); }
+  .p-foot .saved-at { color: var(--app-text-muted); white-space: nowrap; }
+
+  ::-webkit-scrollbar { width: 10px; }
+  ::-webkit-scrollbar-thumb { background: var(--app-splitter); border-radius: 8px; border: 2px solid var(--app-surface); }
+</style>
+</head>
+<body>
+
+<div class="win">
+  <div class="win-titlebar">
+    <div class="dots"><i></i><i></i><i></i></div>
+    <span>WorkerWindow · 剑来长歌（草稿）</span>
+  </div>
+
+  <!-- 顶栏 -->
+  <div class="topbar">
+    <div class="crumb">
+      <b>剑来长歌</b><span class="sep">/</span>第一卷 初入江湖<span class="sep">/</span>
+      <b>第三章 赤焰狼王</b>
+    </div>
+    <div class="spacer"></div>
+    <button class="tb-btn" title="历史版本">⏱</button>
+    <button class="tb-btn" title="导出">⇪</button>
+    <button class="tb-btn" title="设置">⚙</button>
+  </div>
+
+  <div class="body">
+    <!-- 左：章节树 -->
+    <aside class="tree">
+      <div class="vol">第一卷 · 初入江湖</div>
+      <div class="ch"><span>第一章 山村少年</span><span class="st">完稿</span></div>
+      <div class="ch"><span>第二章 神秘玉佩</span><span class="st">完稿</span></div>
+      <div class="ch active"><span>第三章 赤焰狼王</span></div>
+      <div class="ch"><span>第四章 铁匠铺的委托</span></div>
+      <div class="ch"><span>第五章 夜探黑风寨</span></div>
+      <div class="vol">第二卷 · 宗门试炼</div>
+      <div class="ch"><span>第六章 入门试炼</span></div>
+    </aside>
+
+    <!-- 中：编辑区 + 悬浮按钮 + 贴身浮层 -->
+    <main class="stage" id="stage">
+      <div class="paper">
+        <div class="paper-inner">
+          <h3>第三章 赤焰狼王</h3>
+          <p><span class="sys">【叮！击杀赤焰狼王，经验值 +1200。】</span></p>
+          <p>清脆的系统提示音在脑海里炸开，<span class="term character">林战</span>抹了一把脸上的血污，看了一眼悬浮在视野角落的属性面板——力量 87，距离 100 点大关只差最后一步。</p>
+          <p>「再刷三头赤焰狼，应该就能点满。」他弯腰捡起狼王掉落的<span class="term item">赤霄剑·残</span>，心中默念：装备栏里的<span class="term item">玄铁战甲</span>已经布满裂痕，回镇之后得找铁匠修一修了。</p>
+          <p>火球术的熟练度也在这一战中涨了一截，掌心那团橙色火苗比昨日凝实了不少。他盘膝坐下，开始运转《赤炎诀》，把今天攒下的经验值一点点炼进经脉里。</p>
+        </div>
+      </div>
+
+      <div class="statusbar">
+        <span class="pill">本章 1,842 字</span>
+        <span class="pill">今日 +2,306 字</span>
+        <span class="pill">速度 612 字/时</span>
+        <span class="spacer" style="flex:1"></span>
+        <span class="pill">标注层 · 开</span>
+      </div>
+
+      <!-- ★ R1 悬浮入口：编辑区内右下角，不依附左右侧栏 -->
+      <button class="fab" id="fab" title="主角属性面板">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+          <circle cx="10" cy="6.2" r="3.1" stroke="#fff" stroke-width="1.6"/>
+          <path d="M3.6 16.4c.9-2.9 3.4-4.4 6.4-4.4s5.5 1.5 6.4 4.4" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/>
+          <path d="M14.6 3.2v3.4M12.9 4.9h3.4" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+      </button>
+      <span class="fab-tip">主角属性面板</span>
+
+      <!-- ★ R2 属性面板：贴身无遮罩浮层，锚定 FAB 上方，正文全程可见可编辑 -->
+      <div class="pop-wrap" id="pop" role="dialog" aria-label="主角属性面板">
+        <div class="p-head">
+          <div class="avatar">林</div>
+          <div class="who">
+            <div class="name-row">
+              <span class="name">林战</span>
+              <span class="chip realm" title="复用等级体系「武道境界」的当前境界绑定">筑基中期</span>
+            </div>
+          </div>
+          <div class="spacer"></div>
+          <div class="save-state" id="saveState"><span class="ok">●</span> 已保存</div>
+          <button class="icon-btn" id="closeBtn" title="关闭 (Esc)">✕</button>
+        </div>
+
+        <div class="seg-wrap">
+          <div class="seg">
+            <button class="active" data-pane="attr">状态<span class="cnt">4</span></button>
+            <button data-pane="equip">装备·法宝<span class="cnt">4</span></button>
+            <button data-pane="skill">功法技艺<span class="cnt">3</span></button>
+            <button class="seg-more" id="moreBtn" title="管理分组与条目">⋯</button>
+          </div>
+          <!-- 管理菜单：分组 / 条目 / 模板均自定义 -->
+          <div class="more-menu" id="moreMenu" hidden>
+            <div class="menu-cap">当前模板：系统流 · 全部可改</div>
+            <button>＋ 添加分组</button>
+            <button>✎ 编辑分组与条目</button>
+            <button>⇄ 套用其他预设模板</button>
+            <button>Blank 空白白板，从零搭建</button>
+          </div>
+        </div>
+
+        <!-- ★ R5 状态汇总栏：基础值 + 永久加成 + 激活中加成，实时派生不落库 -->
+        <div class="sum-bar" id="sumBar">
+          <button class="sum-head" id="sumHead">
+            <span class="cap"><span class="dot"></span>状态汇总</span>
+            <span class="sum-chips" id="sumChips"></span>
+            <span class="sum-caret">▾</span>
+          </button>
+          <div class="sum-detail" id="sumDetail"></div>
+        </div>
+
+        <div class="p-body">
+          <!-- Pane 1：分组「状态」——数值条目（含可分配资源） -->
+          <div class="pane active" id="pane-attr">
+            <div class="group-hint">分组与条目均为自定义 · 此为「系统流」预设模板示例</div>
+            <div class="attr">
+              <div class="attr-line1">
+                <input class="cell-input" value="未分配属性点" data-save />
+                <span class="pool-tag">可分配</span>
+                <div class="stepper bump"><button data-step="-1">−</button><span class="val">5</span><button data-step="1">＋</button></div>
+                <button class="del" title="删除">✕</button>
+              </div>
+              <div class="attr-line2">
+                <button class="prev-chip" hidden data-prev="" title="回退到上一次保存的值（可再次点击切回）">↩ 上次 <b></b></button>
+                <input class="cell-input note" value="每升一级 +5，自由分配到下方属性" data-save />
+              </div>
+            </div>
+            <div class="attr" data-attr="力量">
+              <div class="attr-line1">
+                <input class="cell-input" value="力量" data-save />
+                <div class="stepper bump"><button data-step="-1">−</button><span class="val">87</span><button data-step="1">＋</button></div>
+                <button class="del" title="删除">✕</button>
+              </div>
+              <div class="attr-line2">
+                <button class="prev-chip" data-prev="74" title="回退到上一次保存的值（可再次点击切回）">↩ 上次 <b>74</b></button>
+                <span class="mini-label">上限</span><input class="cell-input max" value="100" data-save />
+                <input class="cell-input note" value="点满触发「力破千钧」" data-save />
+              </div>
+            </div>
+            <div class="attr" data-attr="敏捷">
+              <div class="attr-line1">
+                <input class="cell-input" value="敏捷" data-save />
+                <div class="stepper"><button data-step="-1">−</button><span class="val">62</span><button data-step="1">＋</button></div>
+                <button class="del" title="删除">✕</button>
+              </div>
+              <div class="attr-line2">
+                <button class="prev-chip" hidden data-prev="" title="回退到上一次保存的值（可再次点击切回）">↩ 上次 <b></b></button>
+                <span class="mini-label">上限</span><input class="cell-input max" value="—" data-save />
+                <input class="cell-input note" value="" placeholder="备注…" data-save />
+              </div>
+            </div>
+            <div class="attr" data-attr="灵力">
+              <div class="attr-line1">
+                <input class="cell-input" value="灵力" data-save />
+                <div class="stepper"><button data-step="-1">−</button><span class="val">320</span><button data-step="1">＋</button></div>
+                <button class="del" title="删除">✕</button>
+              </div>
+              <div class="attr-line2">
+                <button class="prev-chip" hidden data-prev="" title="回退到上一次保存的值（可再次点击切回）">↩ 上次 <b></b></button>
+                <span class="mini-label">上限</span><input class="cell-input max" value="500" data-save />
+                <input class="cell-input note" value="赤炎诀第二重上限" data-save />
+              </div>
+            </div>
+            <button class="add-row">＋ 添加属性</button>
+          </div>
+
+          <!-- Pane 2：分组「装备·法宝」——条目可关联 item 要素（品质为自定义标签） -->
+          <div class="pane" id="pane-equip">
+            <div class="slot" data-src="赤霄剑" data-bonus='[{"attr":"力量","amount":12,"mode":"active"}]'>
+              <div class="slot-line1">
+                <span class="slot-ico" style="background:var(--app-accent-rose-weak)">⚔</span>
+                <span class="slot-name">武器</span>
+                <div class="acts">
+                  <button class="act-toggle on" data-on="装备中" data-off="未装备"><i></i>装备中</button>
+                  <button title="换绑其他 item 要素">换绑</button>
+                </div>
+              </div>
+              <div class="slot-line2">
+                <div class="equip-chip"><span class="q purple">史诗</span>赤霄剑<span style="color:var(--app-text-muted);font-size:12px">· 已建卡</span></div>
+                <div class="bonus-line"><button class="bonus-add" title="添加属性加成">＋ 加成</button></div>
+                <div class="note-line">附「灼血」效果</div>
+              </div>
+            </div>
+            <div class="slot" data-src="玄铁战甲" data-bonus='[{"attr":"敏捷","amount":6,"mode":"active"}]'>
+              <div class="slot-line1">
+                <span class="slot-ico" style="background:var(--app-accent-blue-weak)">🛡</span>
+                <span class="slot-name">护甲</span>
+                <div class="acts">
+                  <button class="act-toggle on" data-on="装备中" data-off="未装备"><i></i>装备中</button>
+                  <button>换绑</button>
+                </div>
+              </div>
+              <div class="slot-line2">
+                <div class="equip-chip"><span class="q blue">稀有</span>玄铁战甲<span style="color:var(--app-text-muted);font-size:12px">· 已建卡</span></div>
+                <div class="bonus-line"><button class="bonus-add" title="添加属性加成">＋ 加成</button></div>
+                <div class="note-line">已布满裂痕待修复</div>
+              </div>
+            </div>
+            <div class="slot" data-src="炎龙戒指" data-bonus='[{"attr":"灵力","amount":8,"mode":"active"}]'>
+              <div class="slot-line1">
+                <span class="slot-ico" style="background:var(--app-accent-amber-weak)">💍</span>
+                <span class="slot-name">饰品</span>
+                <div class="acts">
+                  <button class="act-toggle" data-on="佩戴中" data-off="未佩戴"><i></i>未佩戴</button>
+                  <button>换绑</button>
+                </div>
+              </div>
+              <div class="slot-line2">
+                <div class="equip-chip"><span class="q amber">传说</span>炎龙戒指<span style="color:var(--app-text-muted);font-size:12px">· 已建卡</span></div>
+                <div class="bonus-line"><button class="bonus-add" title="添加属性加成">＋ 加成</button></div>
+                <div class="note-line">火系技能熟练度获取 +20%</div>
+              </div>
+            </div>
+            <div class="slot">
+              <div class="slot-line1">
+                <span class="slot-ico" style="background:var(--app-surface-active)">👝</span>
+                <span class="slot-name">储物</span>
+                <div class="acts"><button>编辑</button><button>清空</button></div>
+              </div>
+              <div class="slot-line2">
+                <div class="equip-chip" style="color:var(--app-text-secondary)">文本条目 · 三立方储物袋：回气丹 ×12、赤焰狼皮 ×3</div>
+              </div>
+            </div>
+            <button class="add-row">＋ 添加条目 / 自定义槽位</button>
+          </div>
+
+          <!-- Pane 3：分组「功法技艺」——数值条目 + 可选绑定等级体系 -->
+          <div class="pane" id="pane-skill">
+            <div class="skill" data-src="赤炎诀" data-bonus='[{"attr":"灵力","amount":20,"mode":"active"}]'>
+              <div class="skill-line1">
+                <div class="sname">赤炎诀<span class="lv">Lv.4</span></div>
+                <select class="bind-select" title="绑定等级体系等级项">
+                  <option>武道境界</option><option selected>武学品阶</option><option>不绑定</option>
+                </select>
+                <div class="bar-nums">320 / 500</div>
+                <button class="del" title="删除">✕</button>
+              </div>
+              <div class="skill-line2">
+                <div class="bar"><i style="width:64%"></i></div>
+                <button class="prev-chip" hidden data-prev="" title="回退到上一次保存的值（可再次点击切回）">↩ 上次 <b></b></button>
+                <button class="act-toggle on" data-on="运功中" data-off="未运功"><i></i>运功中</button>
+              </div>
+              <div class="bonus-line"><button class="bonus-add" title="添加属性加成">＋ 加成</button></div>
+            </div>
+            <div class="skill" data-src="火球术" data-bonus='[{"attr":"力量","amount":3,"mode":"active"}]'>
+              <div class="skill-line1">
+                <div class="sname">火球术<span class="lv">大成</span></div>
+                <select class="bind-select"><option selected>武道境界</option><option>武学品阶</option><option>不绑定</option></select>
+                <div class="bar-nums">820 / 1000</div>
+                <button class="del" title="删除">✕</button>
+              </div>
+              <div class="skill-line2">
+                <div class="bar"><i style="width:82%"></i></div>
+                <button class="prev-chip" data-prev="760/1000" title="回退到上一次保存的值（可再次点击切回）">↩ 上次 <b>760 / 1000</b></button>
+                <button class="act-toggle" data-on="激活中" data-off="未激活"><i></i>未激活</button>
+              </div>
+              <div class="bonus-line"><button class="bonus-add" title="添加属性加成">＋ 加成</button></div>
+            </div>
+            <div class="skill" data-src="疾风步" data-bonus='[{"attr":"敏捷","amount":4,"mode":"permanent"}]'>
+              <div class="skill-line1">
+                <div class="sname">疾风步<span class="lv">小成 · 被动</span></div>
+                <select class="bind-select"><option>武道境界</option><option selected>武学品阶</option><option>不绑定</option></select>
+                <div class="bar-nums">175 / 500</div>
+                <button class="del" title="删除">✕</button>
+              </div>
+              <div class="skill-line2">
+                <div class="bar"><i style="width:35%"></i></div>
+                <button class="prev-chip" hidden data-prev="" title="回退到上一次保存的值（可再次点击切回）">↩ 上次 <b></b></button>
+              </div>
+              <div class="bonus-line"><button class="bonus-add" title="添加属性加成">＋ 加成</button></div>
+            </div>
+            <button class="add-row">＋ 添加技能</button>
+          </div>
+        </div>
+
+        <div class="p-foot">
+          <span>自动保存</span><span>·</span><span>「↩ 上次」可回退</span>
+          <div class="spacer"></div>
+          <span class="k">Esc</span>
+          <span class="saved-at" id="savedAt">14:02</span>
+        </div>
+      </div>
+    </main>
+
+    <!-- 右：SupportPanel 折叠边缘（示意，悬浮按钮不依附两侧栏） -->
+    <aside class="right-edge"><i></i><i></i><i></i></aside>
+  </div>
+</div>
+
+<script>
+  // ── 浮层开关：无遮罩，点面板外任意处即收起 ──
+  const pop = document.getElementById("pop");
+  const fab = document.getElementById("fab");
+  const stage = document.getElementById("stage");
+  const open = () => { pop.classList.add("open"); fab.classList.add("active"); stage.classList.add("pop-open"); };
+  const close = () => { pop.classList.remove("open"); fab.classList.remove("active"); stage.classList.remove("pop-open"); };
+  const isOpen = () => pop.classList.contains("open");
+  fab.addEventListener("click", (e) => { e.stopPropagation(); isOpen() ? close() : open(); });
+  document.getElementById("closeBtn").addEventListener("click", close);
+  document.addEventListener("mousedown", (e) => {
+    if (isOpen() && !pop.contains(e.target) && !fab.contains(e.target)) close();
+  });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+
+  // ── 分段控件切换 ──
+  document.querySelectorAll(".seg button[data-pane]").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      document.querySelectorAll(".seg button[data-pane]").forEach((t) => t.classList.remove("active"));
+      document.querySelectorAll(".pane").forEach((p) => p.classList.remove("active"));
+      tab.classList.add("active");
+      document.getElementById("pane-" + tab.dataset.pane).classList.add("active");
+    });
+  });
+
+  // ── 管理菜单（分组 / 条目 / 模板均自定义） ──
+  const moreBtn = document.getElementById("moreBtn");
+  const moreMenu = document.getElementById("moreMenu");
+  moreBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    moreMenu.hidden = !moreMenu.hidden;
+  });
+  moreMenu.querySelectorAll("button").forEach((item) => {
+    item.addEventListener("click", () => { moreMenu.hidden = true; touchSave(); });
+  });
+  document.addEventListener("mousedown", (e) => {
+    if (!moreMenu.hidden && !moreMenu.contains(e.target) && e.target !== moreBtn) moreMenu.hidden = true;
+  });
+
+  // ── 自动保存状态机（模拟 SaveState：pending → saving → saved） ──
+  const saveState = document.getElementById("saveState");
+  const savedAt = document.getElementById("savedAt");
+  let saveTimer = null;
+  function touchSave() {
+    saveState.innerHTML = '<span class="spin">◌</span> 保存中…';
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      const t = new Date();
+      const hh = String(t.getHours()).padStart(2, "0");
+      const mm = String(t.getMinutes()).padStart(2, "0");
+      saveState.innerHTML = '<span class="ok">●</span> 已保存';
+      savedAt.textContent = hh + ":" + mm;
+    }, 800);
+  }
+
+  // ── 步进器 + R4「上次保存值」回退点 ──
+  document.querySelectorAll(".stepper").forEach((st) => {
+    const row = st.closest(".attr");
+    const chip = row.querySelector(".prev-chip");
+    const val = st.querySelector(".val");
+    st.querySelectorAll("button").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        // 首次修改：把当前值记为回退点（模拟落库时写 prevValue）
+        if (chip.hidden) {
+          chip.dataset.prev = val.textContent;
+          chip.querySelector("b").textContent = chip.dataset.prev;
+          chip.hidden = false;
+        }
+        let n = parseInt(val.textContent, 10) + parseInt(btn.dataset.step, 10) * 10;
+        if (n < 0) n = 0;
+        val.textContent = n;
+        renderSummary();
+        touchSave();
+      });
+    });
+  });
+
+  // ── R4 一键回退：当前值与「上次保存值」互换（回退本身也会再走一次自动保存） ──
+  document.querySelectorAll(".prev-chip").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      const row = chip.closest(".attr") || chip.closest(".skill");
+      if (row.classList.contains("attr")) {
+        // 属性行：互换步进器当前值
+        const val = row.querySelector(".val");
+        const cur = val.textContent;
+        val.textContent = chip.dataset.prev;
+        chip.dataset.prev = cur;
+        chip.querySelector("b").textContent = chip.dataset.prev;
+      } else {
+        // 技能行：互换熟练度数字 + 重算进度条
+        const nums = row.querySelector(".bar-nums");
+        const fill = row.querySelector(".bar i");
+        const cur = nums.textContent.replace(/\s+/g, "");
+        const prev = chip.dataset.prev;
+        nums.textContent = prev.split("/").map((s) => s.trim()).join(" / ");
+        chip.dataset.prev = cur;
+        chip.querySelector("b").textContent = prev.split("/").map((s) => s.trim()).join(" / ");
+        const [c, m] = prev.split("/").map(Number);
+        fill.style.width = (m ? Math.min(100, (c / m) * 100) : 100) + "%";
+      }
+      renderSummary();
+      touchSave();
+    });
+  });
+
+  // ── 装备槽：换绑演示（循环样例 item 要素） ──
+  const demoItems = [
+    { q: "purple", name: "赤霄剑·完整" },
+    { q: "blue", name: "青锋短刃" },
+    { q: "amber", name: "龙吟长枪" },
+  ];
+  let demoIdx = 0;
+  document.querySelectorAll(".slot .acts button").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.textContent.trim() !== "换绑") return;
+      const chip = btn.closest(".slot").querySelector(".equip-chip");
+      demoIdx = (demoIdx + 1) % demoItems.length;
+      const it = demoItems[demoIdx];
+      chip.innerHTML = '<span class="q ' + it.q + '">' +
+        ({ purple: "史诗", blue: "稀有", amber: "传说" }[it.q]) +
+        '</span>' + it.name + '<span style="color:var(--app-text-muted);font-size:12px">· 已建卡</span>';
+      touchSave();
+    });
+  });
+
+  // ════ R5 属性加成 chips + 状态汇总栏 ════
+  const MODE_LABEL = { permanent: "永久", active: "激活时" };
+  function entryName(entry) { return entry.dataset.src || "条目"; }
+
+  // 条目上的加成 chips（从 data-bonus 渲染，实际实现为行内小表单：选目标属性 + 数值 + 模式）
+  function renderEntryBonuses(entry) {
+    const line = entry.querySelector(".bonus-line");
+    if (!line) return;
+    const add = line.querySelector(".bonus-add");
+    line.querySelectorAll(".bonus-chip").forEach((c) => c.remove());
+    JSON.parse(entry.dataset.bonus || "[]").slice().reverse().forEach((b) => {
+      const chip = document.createElement("span");
+      chip.className = "bonus-chip" + (b.amount < 0 ? " neg" : "");
+      chip.innerHTML = b.attr + " <b>" + (b.amount > 0 ? "+" : "") + b.amount + "</b>" +
+        '<span class="mode">· ' + MODE_LABEL[b.mode] + '</span><span class="x" title="移除加成">✕</span>';
+      chip.querySelector(".x").addEventListener("click", () => {
+        const cur = JSON.parse(entry.dataset.bonus || "[]");
+        const i = cur.findIndex((x) => x.attr === b.attr && x.amount === b.amount && x.mode === b.mode);
+        if (i > -1) cur.splice(i, 1);
+        entry.dataset.bonus = JSON.stringify(cur);
+        renderEntryBonuses(entry);
+        renderSummary();
+        touchSave();
+      });
+      line.insertBefore(chip, add);
+    });
+  }
+  document.querySelectorAll("[data-bonus]").forEach(renderEntryBonuses);
+
+  // ＋加成：demo 语义——每次追加一条「力量 +5 · 永久」
+  document.querySelectorAll(".bonus-add").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const entry = btn.closest("[data-bonus]");
+      const cur = JSON.parse(entry.dataset.bonus || "[]");
+      cur.push({ attr: "力量", amount: 5, mode: "permanent" });
+      entry.dataset.bonus = JSON.stringify(cur);
+      renderEntryBonuses(entry);
+      renderSummary();
+      touchSave();
+    });
+  });
+
+  // ── 状态汇总：总值 = 基础 + Σ永久 + Σ激活中（派生值，实时重算，不落库） ──
+  const sumBar = document.getElementById("sumBar");
+  const sumChips = document.getElementById("sumChips");
+  const sumDetail = document.getElementById("sumDetail");
+  function computeSummary() {
+    const base = {};
+    document.querySelectorAll(".attr[data-attr]").forEach((row) => {
+      const val = row.querySelector(".stepper .val");
+      if (val) base[row.dataset.attr] = parseInt(val.textContent, 10) || 0;
+    });
+    const srcs = {};
+    document.querySelectorAll("[data-bonus]").forEach((entry) => {
+      const t = entry.querySelector(".act-toggle");
+      const entryOn = !t || t.classList.contains("on");
+      JSON.parse(entry.dataset.bonus || "[]").forEach((b) => {
+        const on = b.mode === "permanent" ? true : entryOn;
+        (srcs[b.attr] = srcs[b.attr] || []).push({ src: entryName(entry), amount: b.amount, on, mode: b.mode });
+      });
+    });
+    return { base, srcs };
+  }
+  function renderSummary() {
+    const { base, srcs } = computeSummary();
+    sumChips.innerHTML = "";
+    sumDetail.innerHTML = "";
+    const attrs = Object.keys(srcs).filter((a) => a in base);
+    if (!attrs.length) {
+      sumChips.innerHTML = '<span class="sum-chip plain">尚无属性加成 · 在装备 / 技能条目上「＋ 加成」</span>';
+      return;
+    }
+    attrs.forEach((a) => {
+      const list = srcs[a];
+      const bonus = list.filter((s) => s.on).reduce((n, s) => n + s.amount, 0);
+      const total = base[a] + bonus;
+      const chip = document.createElement("span");
+      chip.className = "sum-chip" + (bonus === 0 ? " plain" : "");
+      chip.textContent = a + " " + total + (bonus !== 0 ? " (" + (bonus > 0 ? "+" : "") + bonus + ")" : "");
+      sumChips.appendChild(chip);
+
+      const row = document.createElement("div");
+      row.className = "sum-row";
+      const srcHtml = list.map((s) =>
+        '<span class="sum-src' + (s.on ? "" : " off") + '"><span class="amt' + (s.amount < 0 ? " neg" : "") + '">' +
+        (s.amount > 0 ? "+" : "") + s.amount + "</span>" + s.src + " · " + MODE_LABEL[s.mode] + (s.on ? "" : " · 未生效") + "</span>"
+      ).join("");
+      row.innerHTML =
+        '<div class="r1"><span class="nm">' + a + '</span><span class="calc">基础 ' + base[a] + " → 总 " + total + "</span>" +
+        '<span class="delta' + (bonus === 0 ? " zero" : "") + '">' + (bonus !== 0 ? (bonus > 0 ? "+" : "") + bonus : "±0") + "</span></div>" +
+        '<div class="sum-srcs">' + srcHtml + "</div>";
+      sumDetail.appendChild(row);
+    });
+  }
+  document.getElementById("sumHead").addEventListener("click", () => sumBar.classList.toggle("open"));
+  document.querySelectorAll(".act-toggle").forEach((t) => {
+    t.addEventListener("click", () => {
+      t.classList.toggle("on");
+      t.lastChild.textContent = t.classList.contains("on") ? t.dataset.on : t.dataset.off;
+      renderSummary();
+      touchSave();
+    });
+  });
+  renderSummary();
+</script>
+</body>
+</html>

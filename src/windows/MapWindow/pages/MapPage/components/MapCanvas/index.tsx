@@ -9,12 +9,13 @@
  *
  * 样式就近 index.scss，仅用 var(--app-*)。
  */
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { PointerEvent as RPE, WheelEvent as RWE, KeyboardEvent as RKE } from "react";
 import type { BuiltWorld } from "../../map-terrain";
-import { drawTerrain } from "../../map-render";
+import { drawTerrain, drawOverlayFeatures, drawRiverRibbons } from "../../map-render";
 import { drawTiles } from "../../map-tiles";
 import { drawSymbol, findSymbol } from "../../map-symbols";
+import { useTerrainGl } from "../../hooks/useTerrainGl";
 import type { MapContent, MapAnnotation, MapStamp } from "@/shared/types/electron.d.ts";
 import MapIcon from "../MapIcon";
 import "./index.scss";
@@ -110,7 +111,21 @@ export default function MapCanvas(props: MapCanvasProps) {
 
   const hostRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const glHostRef = useRef<HTMLDivElement>(null);
   const paintBuffer = useRef<Map<number, number>>(new Map());
+
+  // 动态地貌：常驻动画默认暂停，指针进入画布才运行（全局动画 + 性能双约束）
+  const [hovered, setHovered] = useState(false);
+  const [dynamicOn, setDynamicOn] = useState(true);
+  const { ready: glReadyRaw } = useTerrainGl({
+    glHostRef,
+    hostRef,
+    world,
+    viewport,
+    animate: hovered && dynamicOn,
+  });
+  // 地块模式没有 GL 实现，强制走 Canvas2D 全绘制
+  const glReady = glReadyRaw && !content.tileMode;
   const drag = useRef<{
     mode: "none" | "pan" | "paint" | "moveAnno" | "moveStamp" | "area" | "line";
     lastX: number;
@@ -142,17 +157,33 @@ export default function MapCanvas(props: MapCanvasProps) {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.fillStyle = "#eef1f8";
-    ctx.fillRect(0, 0, cw, ch);
-    if (!world) return;
+    // GL 地形层可用时：上层 2D canvas 保持透明，只承担符号与标注；
+    // 不可用时（上下文丢失 / 地块模式 / 无 WebGL）退化为完整 Canvas2D 渲染。
+    if (glReady) {
+      ctx.clearRect(0, 0, cw, ch);
+    } else {
+      ctx.fillStyle = "#eef1f8";
+      ctx.fillRect(0, 0, cw, ch);
+    }
+    if (!world) {
+      // GL 层负责自身清屏，此处只需保证 2D 层已清空
+      return;
+    }
     ctx.translate(viewport.tx, viewport.ty);
     ctx.scale(viewport.scale, viewport.scale);
-    if (content.tileMode) drawTiles(ctx, world, content.symbolStyle ?? "A");
-    else drawTerrain(ctx, world, { style: content.symbolStyle ?? "A" });
+    if (!glReady) {
+      if (content.tileMode) drawTiles(ctx, world, content.symbolStyle ?? "A");
+      else drawTerrain(ctx, world, { style: content.symbolStyle ?? "A" });
+    } else {
+      // 河流 ribbon 与叠加型符号（悬崖/岛屿/瀑布）仍走 2D 层补画：
+      // GL 层的水体来自 cells（河常仅 1 格宽），ribbon 负责明确走向
+      drawRiverRibbons(ctx, world);
+      drawOverlayFeatures(ctx, world, world.snum);
+    }
     for (const a of content.annotations) drawAnnotation(ctx, a, a.id === selectedAnno);
     const stamps = [...(content.stamps ?? [])].sort((p, q) => p.z - q.z);
     for (const s of stamps) drawStampOnCanvas(ctx, s, s.id === selectedStamp, content.symbolStyle ?? "A");
-  }, [world, content, viewport, selectedAnno, selectedStamp]);
+  }, [world, content, viewport, selectedAnno, selectedStamp, glReady]);
 
   useEffect(() => {
     draw();
@@ -362,11 +393,17 @@ export default function MapCanvas(props: MapCanvasProps) {
       onWheel={onWheel}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
+      onPointerEnter={() => setHovered(true)}
       onPointerUp={onPointerUp}
-      onPointerLeave={onPointerUp}
+      onPointerLeave={() => {
+        setHovered(false);
+        onPointerUp();
+      }}
       onKeyDown={onKeyDown}
       onKeyUp={onKeyUp}
     >
+      {/* GL 地形层：canvas 由 useTerrainGl 自建（一实例一画布，见该 hook 注释） */}
+      <div ref={glHostRef} className="cv__gl" />
       <canvas ref={canvasRef} className="cv__canvas" />
 
       <div className="scale-bar">
@@ -416,6 +453,18 @@ export default function MapCanvas(props: MapCanvasProps) {
         <span className="zoom-bar__val">{pct}%</span>
         <button type="button" className="icon-btn" title="放大" onClick={() => onZoomBy(1.2, worldSize.w / 2, worldSize.h / 2)}>
           <MapIcon name="plus" size={15} />
+        </button>
+        <button
+          type="button"
+          className={`icon-btn zoom-bar__flow${dynamicOn ? " is-on" : ""}`}
+          title={
+            dynamicOn
+              ? "动态地貌：开（指针悬停水面/岩浆即流动）"
+              : "动态地貌：关（完全静止，省电）"
+          }
+          onClick={() => setDynamicOn((v) => !v)}
+        >
+          <MapIcon name="flow" size={15} />
         </button>
         <div className="tool-rail__sep" style={{ margin: "0 2px", height: 18 }} />
         <button type="button" className="icon-btn" title="适应画布" onClick={() => props.onFitView(hostRef.current?.clientWidth ?? 0, hostRef.current?.clientHeight ?? 0, worldSize.w, worldSize.h)}>

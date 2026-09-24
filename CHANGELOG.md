@@ -1,5 +1,89 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **主角属性面板（WorkerWindow / NovelPage，M1 纯前端版）**：编辑区右下角新增悬浮
+  入口（`StatusFab`），点击在按钮上方弹出贴身无遮罩浮层（`StatusPanelPopover`，
+  正文全程可见可编辑，点外 / Esc / 再点 FAB 收起，收起前 flush）。分组由模板驱动
+  完全自定义，条目支持 数值 / 文本 / 标签 三类；装备、技能条目可挂「永久 / 激活时」
+  两种属性加成并带激活开关；头部下方常驻可折叠「状态汇总栏」，实时展示
+  基础值 + Σ永久 + Σ激活中的总属性及来源明细（`status-totals.ts` 纯函数，附 7 项
+  vitest）。数值行带「↩ 上次」一键回退（R4 prevValue 渲染层口径）。
+  **当前为 mock 数据（`STATUS_SHEET_MOCK`），未接 novel_status_sheets 持久化与
+  IPC，自动保存为本地模拟**，落库链路下一步打通。
+
+## [1.18.1] - 2026-09-24
+
+### Added
+
+- **地图渲染守卫测试**：新增 `map-symbols.test.ts`（5 项，校验配色单一事实源的数量一致、
+  边界色与主色的亮度关系、水域集合不含熔岩），以及 `map-gl/shaders` 的**源码守卫** ——
+  扫描 shaders.ts 的模板字符串区间内是否混入反引号 / `${`（一旦混入 GLSL 会被静默截断，
+  曾连续两次造成 `0.5 is not a function`）、并断言必备顶点属性名与关键 uniform 存在。
+
+### Fixed
+
+- **地形「除末位通道对应地貌外全被压成同一色」**：splat 贴图用 alpha 承载第 4 个地形通道，
+  而 Pixi `TextureSource` 默认 `alphaMode: "premultiply-alpha-on-upload"`，上传时按 alpha
+  预乘会把 alphaless 纹素的 RGB 清零 —— 表现为只剩沙漠一类地块正常着色。
+  改为 `BufferImageSource` + `alphaMode: "no-premultiply-alpha"`。
+- **GL 地形静默降级回 Canvas2D（「无方块感」失效的真凶）**：首帧自检沿用了调用方传入的
+  viewport；一旦传入的是存档坐标 `{x, y}`（渲染器要的是 `{tx, ty}`）或视口落在世界之外，
+  自检读到空帧 → 判定「首帧为空」并**永久**回退 Canvas2D 硬边绘制，界面却毫无提示，
+  于是用户看到的仍是方块地图。现在渲染器内部用 `selfCheckViewport()` 独立计算自检视口，
+  并对 `tx / ty / scale` 加有限性守卫，同时要求画布 CSS 尺寸 ≥ 2px 才判定首帧。
+- **GL 地形与上层 Canvas2D 错位**（标注、河流丝带漂到别处）：顶点着色器写作
+  `(world - t) * s`，而 2D 层是 `world * s + t`，两者仅在 `t = 0` 时重合。统一为 `world * s + t`。
+- **进入地图页后整窗假死（点击、缩放、关闭全部无响应）**：`MeshGeometry` 的顶点属性名
+  必须是 Pixi 约定的 `aPosition`；此前使用自定义名 `aWorld`，Pixi 每帧都会因
+  shader ↔ geometry 属性不匹配而重建 program，主线程被瞬时打满，窗口拖拽与关闭事件被阻塞。
+  改用固定属性名，并补源码守卫测试防回归。
+- **地物边界处理重做**：弃用「45% 沙色宽晕」（实测把地貌细节整片糊掉），改为设计稿的两笔海岸
+  （宽浅滩 + 窄深色水线）叠加每种地形各自的墨线；同时补上 `second > 0.06` 守卫 —— 否则在
+  成片同质地块内部，次高权重恒为 0 号地形（海），海岸线会被画到草地中央。
+
+## [1.18.0] - 2026-09-24
+
+### Added
+
+- **地形渲染底座换为 PixiJS v8（新增依赖 `pixi.js@^8.21.0`）**：`MapPage/map-gl/`
+  实现零手写 GL 的地形渲染器 —— `Application` + `Mesh`（全屏 quad）+ 自定义 `Shader`，
+  由 Pixi 托管 program / buffer / texture 生命周期。
+  - **消除方块感**：cells 编码成 3 张 one-hot RGBA8 贴图
+    （`terrain-splat.ts`，通道 0-3 / 4-7 / 8-9），交给 GPU 的 LINEAR 双线性插值
+    直接得到「各地形占比」，无需 CPU 侧 marching squares；采样前叠加低频 fbm 扰动 UV
+    让直线格边界蜿蜒成海岸线，过渡带再混合出海岸浅滩。
+  - **无级缩放**：地形按像素实时采样，不再有固定倍率的离屏位图，放大不糊。
+    `LAYOUT` 缩放范围由 `0.1–4.0` 放开到 `0.02–16`。
+  - **动态地貌**：新增 `uTime` uniform 与 shader 内 fbm —— 大海涌浪、湖泊涟漪、
+    河流窄幅流动走「双层错相位」平移（避免单向漂移的塑料感），熔岩走 domain warping
+    自发光龟裂缝。动画遵循全局规范：**常驻默认暂停，指针进入画布才运行**，
+    另提供「动态地貌」开关可完全关闭。
+  - 画布改为**双 canvas 叠加**：底层 GL 画地形，上层 Canvas2D 继续画叠加符号 /
+    标注 / 贴章；WebGL 不可用、上下文丢失或地块模式（`tileMode`）自动回退 Canvas2D 全绘制。
+- **第 10 类地形「熔岩」**：`T_LAVA = 9`，追加在末尾保证旧存档回读安全；
+  **生成器不产出**，仅供地形画笔手绘。图例 / 画笔面板 / PNG 导出图例随 `TER_KEY` 自动适配。
+
+### Changed
+
+- **地形配色收敛为单一事实源**：`TERRAIN_COLORS` 同时供 Canvas2D、PNG 图例与
+  shader uniform 使用（新增 `hexToRgb01` 转换），禁止在渲染层各写一份。
+  该类色值属「地物惯例色 / 业务数据」，四套主题下保持一致（对齐 AGENTS.md 6.1.1 例外条例）。
+- 撤销栈与自动保存调度移出 `setContent` 的 updater（见 Fixed 第 3 条对 StrictMode 的修复）。
+- 移除 `d3-contour` 依赖与 `map-smooth.ts`（等值线方案由 GPU 软分类替代）。
+
+### Fixed
+
+- **手改地形后河流不同步**：`worldFromContent` 原样塞回 `features`，把河道涂成沙漠后
+  仍会画出「悬在沙漠上的河」。新增 `pruneStaleRivers()` 按 cells 复核（沿线采样点 3×3
+  邻域仍有水体才算有效，命中率低于 60% 丢弃），非河流要素与异常数据原样保留。
+- **撤销栈在 StrictMode 下重复入栈**：历史 push 与自动保存定时器写在 `setContent`
+  的 updater 内，updater 双调用会导致撤销栈被污染、定时器重复创建；已全部移到 updater 外，
+  并在 updater 内同步维护 `contentRef` 保证连续提交拿到正确快照。
+- 上层 Canvas2D 层在 GL 模式下不再填充背景色，避免遮挡地形层；浮层控件补 `z-index` 防止被画布盖住。
+
 ## [1.17.0] - 2026-09-23
 
 ### Added

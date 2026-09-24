@@ -1,0 +1,758 @@
+/* ════ 主角属性面板：贴身无遮罩浮层（R1/R2/R5，对齐 designs/novel-status-panel） ════ */
+
+/* 锚点容器：FAB 与浮层同源，点外关闭以它为界（fab 点击不会误触发关闭） */
+.nv-status-anchor {
+  position: absolute;
+  right: 30px;
+  bottom: 52px;
+  z-index: 40;
+}
+
+.nv-status-pop {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 10px);
+  width: 376px;
+  max-height: 540px;
+  display: flex;
+  flex-direction: column;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-panel);
+  box-shadow: var(--app-shadow-pop);
+  visibility: hidden;
+  opacity: 0;
+  transform: translateY(8px) scale(0.97);
+  transform-origin: bottom right;
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.15);
+
+  &.is-open {
+    visibility: visible;
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  /* 指向 FAB 的小箭头 */
+  &::after {
+    content: "";
+    position: absolute;
+    right: 16px;
+    bottom: -6px;
+    width: 12px;
+    height: 12px;
+    background: var(--app-surface);
+    border-right: 1px solid var(--app-border);
+    border-bottom: 1px solid var(--app-border);
+    transform: rotate(45deg);
+  }
+}
+
+/* ── 头部 ── */
+.nv-status-pop__head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid var(--app-splitter);
+  border-radius: var(--app-radius-panel) var(--app-radius-panel) 0 0;
+  position: relative;
+  z-index: 1;
+
+  .avatar {
+    flex: none;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--app-primary-gradient);
+    color: var(--app-primary-contrast);
+    font-size: 14px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .who {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .who .name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--app-text-strong);
+    line-height: 1.2;
+  }
+
+  .who .mock-chip {
+    align-self: flex-start;
+    font-size: 12px;
+    line-height: 1.5;
+    padding: 0 7px;
+    border-radius: var(--app-radius-pill);
+    background: var(--app-warning-weak);
+    color: var(--app-warning);
+    white-space: nowrap;
+  }
+
+  .spacer {
+    flex: 1;
+  }
+
+  .save-state {
+    flex: none;
+    font-size: 12px;
+    color: var(--app-text-muted);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+
+    &.is-saving .dot {
+      color: var(--app-primary);
+    }
+
+    &.is-saved .dot {
+      color: var(--app-success);
+    }
+  }
+
+  .icon-btn {
+    flex: none;
+    width: 26px;
+    height: 26px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--app-text-muted);
+    font-size: 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    &:hover {
+      background: var(--app-surface-hover);
+      color: var(--app-text);
+    }
+  }
+}
+
+/* ── 分组分段控件 + 管理入口 ── */
+.nv-status-pop__seg {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px 0;
+  position: relative;
+  z-index: 1;
+
+  .ant-segmented {
+    flex: 1;
+    min-width: 0;
+    padding: 3px;
+    background: var(--app-surface-alt);
+    border: 1px solid var(--app-splitter);
+    border-radius: var(--app-radius-pill);
+
+    .ant-segmented-item {
+      min-width: 0;
+      border-radius: var(--app-radius-pill);
+      color: var(--app-text-secondary);
+      font-size: 12px;
+    }
+
+    .ant-segmented-item-selected {
+      background: var(--app-surface);
+      color: var(--app-primary-strong);
+      font-weight: 600;
+      box-shadow: var(--app-shadow-card);
+    }
+  }
+
+  .more-btn {
+    flex: none;
+    width: 26px;
+    height: 26px;
+    border: none;
+    border-radius: var(--app-radius-item);
+    background: transparent;
+    color: var(--app-text-muted);
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    &:hover {
+      background: var(--app-surface-active);
+      color: var(--app-text);
+    }
+  }
+}
+
+/* ── R5 状态汇总栏（派生值，实时计算，不落库） ── */
+.nv-status-sum {
+  flex: none;
+  padding: 7px 14px 8px;
+  border-bottom: 1px solid var(--app-splitter);
+
+  &__head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    border: none;
+    background: transparent;
+    padding: 0;
+    cursor: pointer;
+
+    .cap {
+      flex: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--app-text-strong);
+
+      .dot {
+        flex: none;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--app-accent-purple);
+      }
+    }
+
+    .chips {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      gap: 4px;
+      overflow-x: auto;
+      scrollbar-width: none;
+
+      &::-webkit-scrollbar {
+        display: none;
+      }
+    }
+
+    .caret {
+      flex: none;
+      font-size: 12px;
+      color: var(--app-text-muted);
+      transition: transform 0.15s ease;
+    }
+  }
+
+  &.is-open .caret {
+    transform: rotate(180deg);
+  }
+
+  .sum-chip {
+    flex: none;
+    font-size: 12px;
+    line-height: 1.5;
+    padding: 1px 7px;
+    border-radius: var(--app-radius-pill);
+    background: var(--app-success-weak);
+    color: var(--app-success);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+
+    &.is-plain {
+      background: var(--app-surface-alt);
+      color: var(--app-text-muted);
+    }
+  }
+
+  &__detail {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px dashed var(--app-border);
+  }
+
+  .sum-row {
+    padding: 5px 0;
+
+    & + .sum-row {
+      border-top: 1px solid var(--app-surface-alt);
+    }
+
+    .r1 {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+    }
+
+    .nm {
+      flex: none;
+      font-weight: 600;
+      color: var(--app-text-strong);
+    }
+
+    .calc {
+      color: var(--app-text-secondary);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .delta {
+      margin-left: auto;
+      flex: none;
+      font-weight: 600;
+      color: var(--app-success);
+      font-variant-numeric: tabular-nums;
+
+      &.is-zero {
+        color: var(--app-text-muted);
+        font-weight: 400;
+      }
+    }
+
+    .srcs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin: 4px 0 0 2px;
+    }
+
+    .src {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      font-size: 12px;
+      padding: 1px 7px;
+      border-radius: var(--app-radius-pill);
+      background: var(--app-surface-alt);
+      color: var(--app-text-secondary);
+      white-space: nowrap;
+
+      .amt {
+        font-weight: 600;
+        color: var(--app-success);
+        font-variant-numeric: tabular-nums;
+
+        &.is-neg {
+          color: var(--app-error);
+        }
+      }
+
+      &.is-off {
+        opacity: 0.5;
+
+        .amt {
+          color: var(--app-text-muted);
+        }
+      }
+    }
+  }
+
+  .sum-empty {
+    font-size: 12px;
+    color: var(--app-text-muted);
+  }
+}
+
+/* ── 条目区 ── */
+.nv-status-pop__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 14px 16px;
+}
+
+.empty-hint {
+  font-size: 12px;
+  color: var(--app-text-muted);
+  padding: 4px 0;
+}
+
+.nv-status-row {
+  padding: 9px 10px;
+  border-radius: var(--app-radius-item);
+
+  &:hover {
+    background: var(--app-surface-alt);
+  }
+
+  .line1 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .line2 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+    padding-left: 2px;
+
+    &.opts {
+      flex-wrap: wrap;
+    }
+  }
+
+  .line3 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 7px;
+  }
+
+  .cell {
+    height: 28px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-item);
+    background: var(--app-input-bg);
+    color: var(--app-text);
+    font-size: 14px;
+    padding: 0 8px;
+    outline: none;
+
+    &:focus {
+      border-color: var(--app-primary);
+      box-shadow: 0 0 0 2px var(--app-primary-weak);
+    }
+  }
+
+  .cell--name {
+    flex: 1;
+    min-width: 0;
+    font-weight: 600;
+  }
+
+  .cell--text,
+  .cell--note {
+    font-size: 12px;
+    height: 24px;
+    color: var(--app-text-secondary);
+  }
+
+  .cell--text {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .cell--note {
+    flex: 1;
+    min-width: 0;
+    border-color: transparent;
+    background: transparent;
+  }
+
+  &:hover .cell--note {
+    border-color: var(--app-border);
+    background: var(--app-input-bg);
+  }
+
+  .mini {
+    flex: none;
+    font-size: 12px;
+    color: var(--app-text-muted);
+  }
+
+  .cell--max {
+    flex: none;
+    width: 52px;
+    height: 24px;
+    font-size: 12px;
+    text-align: center;
+  }
+
+  .opt {
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-pill);
+    background: var(--app-surface-alt);
+    color: var(--app-text-secondary);
+    font-size: 12px;
+    padding: 1px 9px;
+    cursor: pointer;
+
+    &.is-on {
+      background: var(--app-primary-weak);
+      color: var(--app-primary-strong);
+      border-color: var(--app-primary);
+    }
+  }
+
+  .stepper {
+    flex: none;
+    display: flex;
+    align-items: center;
+    height: 28px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-item);
+    background: var(--app-input-bg);
+    overflow: hidden;
+
+    button {
+      width: 26px;
+      height: 100%;
+      border: none;
+      background: transparent;
+      color: var(--app-text-secondary);
+      font-size: 14px;
+      cursor: pointer;
+
+      &:hover {
+        background: var(--app-surface-hover);
+        color: var(--app-primary-strong);
+      }
+    }
+
+    .val {
+      min-width: 34px;
+      padding: 0 2px;
+      text-align: center;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--app-text-strong);
+      font-variant-numeric: tabular-nums;
+    }
+  }
+
+  .del {
+    flex: none;
+    width: 22px;
+    height: 22px;
+    border: none;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--app-text-muted);
+    font-size: 12px;
+    cursor: pointer;
+    opacity: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.15s ease;
+
+    &:hover {
+      background: var(--app-error-weak);
+      color: var(--app-error);
+    }
+  }
+
+  &:hover .del {
+    opacity: 1;
+  }
+
+  .prev-chip {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 1px 8px;
+    border: 1px dashed var(--app-border-strong);
+    border-radius: var(--app-radius-pill);
+    background: var(--app-surface-alt);
+    color: var(--app-text-muted);
+    font-size: 12px;
+    cursor: pointer;
+    white-space: nowrap;
+
+    b {
+      font-weight: 600;
+      color: var(--app-text-secondary);
+      font-variant-numeric: tabular-nums;
+    }
+
+    &:hover {
+      color: var(--app-primary-strong);
+      border-color: var(--app-primary);
+      background: var(--app-primary-weak);
+    }
+
+    &:hover b {
+      color: var(--app-primary-strong);
+    }
+  }
+
+  .bar {
+    flex: 1;
+    height: 8px;
+    border-radius: var(--app-radius-pill);
+    background: var(--app-surface-active);
+    overflow: hidden;
+
+    i {
+      display: block;
+      height: 100%;
+      border-radius: var(--app-radius-pill);
+      background: var(--app-primary-gradient);
+    }
+  }
+
+  .nums {
+    flex: none;
+    font-size: 12px;
+    color: var(--app-text-secondary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ant-switch {
+    flex: none;
+  }
+}
+
+/* ── R5 加成 chips + 行内加成表单 ── */
+.nv-status-bonus-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 1px 7px;
+    border-radius: var(--app-radius-pill);
+    background: var(--app-primary-weak);
+    color: var(--app-primary-strong);
+    font-size: 12px;
+    white-space: nowrap;
+
+    b {
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .mode {
+      opacity: 0.72;
+    }
+
+    .x {
+      display: inline-flex;
+      align-items: center;
+      border: none;
+      background: transparent;
+      padding: 0;
+      color: inherit;
+      opacity: 0.55;
+      font-size: 12px;
+      cursor: pointer;
+
+      &:hover {
+        opacity: 1;
+      }
+    }
+
+    &.is-neg {
+      background: var(--app-error-weak);
+      color: var(--app-error);
+    }
+  }
+
+  .ghost-add {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 1px 8px 2px;
+    border: 1px dashed var(--app-border-strong);
+    border-radius: var(--app-radius-pill);
+    background: transparent;
+    color: var(--app-text-muted);
+    font-size: 12px;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+
+    &:hover:not(:disabled) {
+      color: var(--app-primary-strong);
+      border-color: var(--app-primary);
+      background: var(--app-primary-weak);
+    }
+
+    &:disabled {
+      opacity: 0;
+      cursor: default;
+    }
+  }
+
+  .bonus-form {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 4px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-item);
+    background: var(--app-surface-alt);
+
+    .ok,
+    .cancel {
+      height: 22px;
+      padding: 0 8px;
+      border: none;
+      border-radius: var(--app-radius-item);
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .ok {
+      background: var(--app-primary);
+      color: var(--app-primary-contrast);
+
+      &:hover:not(:disabled) {
+        background: var(--app-primary-strong);
+      }
+
+      &:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+    }
+
+    .cancel {
+      background: transparent;
+      color: var(--app-text-secondary);
+
+      &:hover {
+        background: var(--app-surface-hover);
+      }
+    }
+  }
+}
+
+/* 条目行 hover 时浮现「＋ 加成」入口 */
+.nv-status-row:hover .nv-status-bonus-line .ghost-add:not(:disabled) {
+  opacity: 1;
+}
+
+/* ── 底部 ── */
+.nv-status-pop__foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px 10px;
+  border-top: 1px solid var(--app-splitter);
+  border-radius: 0 0 var(--app-radius-panel) var(--app-radius-panel);
+  font-size: 12px;
+  color: var(--app-text-muted);
+
+  .spacer {
+    flex: 1;
+  }
+
+  .k {
+    border: 1px solid var(--app-border-strong);
+    border-radius: 6px;
+    padding: 0 5px;
+    background: var(--app-surface-alt);
+  }
+
+  .time {
+    font-variant-numeric: tabular-nums;
+  }
+}

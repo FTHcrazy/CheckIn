@@ -21,6 +21,11 @@ export const T_FOREST = 5;
 export const T_MOUNTAIN = 6;
 export const T_SNOW = 7;
 export const T_SNOWFIELD = 8;
+/**
+ * 熔岩（第 10 类）：**生成器不产出**，仅供地形画笔手绘（PRD RM9）。
+ * 追加在末尾保证旧存档回读安全 —— 旧图 cells 里不存在该值。
+ */
+export const T_LAVA = 9;
 
 export const TER_KEY = [
   "sea",
@@ -32,6 +37,7 @@ export const TER_KEY = [
   "mountain",
   "snowmtn",
   "snowfield",
+  "lava",
 ] as const;
 
 export interface TerrainMeta {
@@ -50,6 +56,11 @@ export const TER_META: readonly TerrainMeta[] = [
   { key: "mountain", name: "山地", desc: "折线山形符号连绵成脊" },
   { key: "snowmtn", name: "雪山", desc: "山形符号，峰顶覆白" },
   { key: "snowfield", name: "雪原", desc: "极稀疏淡蓝冰晶点，几乎纯白" },
+  {
+    key: "lava",
+    name: "熔岩",
+    desc: "暗红岩壳上龟裂的橙黄岩浆沟，会缓慢流动发光；仅画笔手绘",
+  },
 ];
 
 // ── 约束模板（RM8① 可多选组合）──
@@ -602,6 +613,67 @@ export function buildWorld(opt: BuildWorldOptions): BuiltWorld {
 }
 
 /** 生成随机 seed（16 进制 6 位，对齐设计稿格式） */
+// ── 手绘后的一致性校验（RM9）──
+
+/**
+ * 丢弃「河道已被地形画笔抹掉」的河流 feature。
+ *
+ * 背景：features 存档独立于一维 cells，用户把河道涂成沙漠后旧实现依然原样绘制，
+ * 出现「河流悬在沙漠上」。这里按「沿线采样点是否仍紧邻水体」做确定性裁剪。
+ *
+ * 判定：路径采样点 3×3 邻域内仍有 T_RIVER 记为命中；命中率低于 THRESHOLD 即丢弃。
+ * （留容差是因为 ribbon 中心线与实际河道格可能错开半格）
+ *
+ * 非河流要素原样返回；无采样点（异常数据）按保留处理，避免误删用户内容。
+ */
+export function pruneStaleRivers(
+  features: TerrainFeature[],
+  cells: ArrayLike<number>,
+  cols: number,
+  rows: number,
+  cell: number = CELL,
+): TerrainFeature[] {
+  const THRESHOLD = 0.6;
+  const out: TerrainFeature[] = [];
+  for (const f of features) {
+    if (f.type !== "river" || !f.pts || f.pts.length < 4) {
+      out.push(f);
+      continue;
+    }
+    let total = 0;
+    let hit = 0;
+    for (let i = 0; i + 1 < f.pts.length; i += 2) {
+      const cx = Math.floor(f.pts[i] / cell);
+      const cy = Math.floor(f.pts[i + 1] / cell);
+      if (cx < 0 || cy < 0 || cx >= cols || cy >= rows) continue;
+      total++;
+      if (hasRiverAround(cells, cols, rows, cx, cy)) hit++;
+    }
+    if (total === 0 || hit / total >= THRESHOLD) out.push(f);
+  }
+  return out;
+}
+
+/** 格点 3×3 邻域内是否存在河流格 */
+function hasRiverAround(
+  cells: ArrayLike<number>,
+  cols: number,
+  rows: number,
+  cx: number,
+  cy: number,
+): boolean {
+  for (let dy = -1; dy <= 1; dy++) {
+    const y = cy + dy;
+    if (y < 0 || y >= rows) continue;
+    for (let dx = -1; dx <= 1; dx++) {
+      const x = cx + dx;
+      if (x < 0 || x >= cols) continue;
+      if (cells[y * cols + x] === T_RIVER) return true;
+    }
+  }
+  return false;
+}
+
 export function randomSeed(): string {
   return Math.floor(Math.random() * 0xffffff)
     .toString(16)
@@ -640,13 +712,16 @@ export function worldFromContent(opts: {
       elev[r * cols + c] = 1 - Math.min(1, d * 1.6);
     }
   }
-  const feats: TerrainFeature[] = (opts.features ?? []).map((f) => ({
+  const raw: TerrainFeature[] = (opts.features ?? []).map((f) => ({
     id: f.id,
     type: f.type,
     points: f.points,
     cells: f.cells,
     seed: f.seed,
   }));
+  // 手改地形后按 cells 复核河流：河道已被涂掉的 feature 直接丢弃，
+  // 否则会出现「河悬在沙漠上」（旧实现把 features 原样塞回，不做任何校验）
+  const feats = pruneStaleRivers(raw, arr, cols, rows);
   // 河流 feature 也可能在存档里以 type "river" 出现
   return {
     cols,

@@ -78,14 +78,23 @@ export function drawTerrain(
   if (opts.contours !== false) drawContours(ctx, world);
 
   // ④ 河流
-  if (opts.rivers !== false) {
-    for (const f of world.features) {
-      if (f.type === "river" && f.pts) drawRiver(ctx, f.pts, cell);
-    }
-  }
+  if (opts.rivers !== false) drawRiverRibbons(ctx, world);
 
   // ⑤ 叠加型符号
   if (opts.features !== false) drawOverlayFeatures(ctx, world, world.snum);
+}
+
+/**
+ * 只画河流 ribbon（供 WebGL 地形层之上补画）。
+ *
+ * 为什么 GL 路径还需要它：GL 层的水体来自 cells（河常只有 1 格宽），
+ * 而设计稿的水系观感靠 features 里的 ribbon 曲线水带表达（River*DTO）。
+ * 两者互补：cells 给水面材质，ribbon 给明确走向。
+ */
+export function drawRiverRibbons(ctx: CanvasRenderingContext2D, world: BuiltWorld): void {
+  for (const f of world.features) {
+    if (f.type === "river" && f.pts) drawRiver(ctx, f.pts, world.cell);
+  }
 }
 
 export function drawCellTexture(
@@ -198,6 +207,23 @@ export function drawCellTexture(
       }
       break;
     }
+    case "lava": {
+      // 熔岩（静态回退版）：岩壳底 + 交错橙黄岩浆沟 + 零星高光
+      ctx.strokeStyle = "rgba(232,132,26,0.75)";
+      ctx.lineWidth = 1.4;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(x + 2, y + s * 0.3);
+      ctx.quadraticCurveTo(cx, cy + (rnd - 0.5) * s * 0.5, x + s - 2, y + s * 0.62);
+      ctx.stroke();
+      if (rnd > 0.45) {
+        ctx.fillStyle = "rgba(255,196,84,0.85)";
+        ctx.beginPath();
+        ctx.arc(cx + (rnd - 0.5) * s * 0.4, cy, 1.3, 0, 6.3);
+        ctx.fill();
+      }
+      break;
+    }
     case "crystal": {
       // 雪原：极稀疏淡蓝冰晶点
       if (rnd > 0.82) {
@@ -274,8 +300,8 @@ function strokePts(ctx: CanvasRenderingContext2D, pts: number[]): void {
   ctx.stroke();
 }
 
-/** 叠加型符号层 */
-function drawOverlayFeatures(
+/** 叠加型符号层（从 drawTerrain 拆出：GL 模式下由 Canvas2D 层单独绘制） */
+export function drawOverlayFeatures(
   ctx: CanvasRenderingContext2D,
   world: BuiltWorld,
   seed: number,

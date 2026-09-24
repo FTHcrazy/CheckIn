@@ -11,10 +11,14 @@
  * 边界：纯数据 + 纯函数，不 import React / window，可独立单测。
  */
 
-import { TER_KEY } from "./map-terrain";
+import { TER_KEY, T_SEA, T_LAKE, T_RIVER, T_LAVA } from "./map-terrain";
 export { TER_KEY } from "./map-terrain";
 
-// ── 9 类铺满型地形配色（画布用具体 hex；主题切换仅影响 UI 外壳，地形保持地图惯例色）──
+// ── 铺满型地形配色 ──
+// 说明（对齐 AGENTS.md 6.1.1 例外条例）：地形色属于**地物惯例色 / 业务数据**，
+// 与「用户自定义活动配色」「地形图例」同性质，四套主题下保持一致，故允许硬编码。
+// 单一事实源：Canvas2D 回退、PNG 导出图例、WebGL shader uniform 三处共用本数组，
+// 禁止在 shader / 组件里各写一份，否则改一处会掉色。
 export const TERRAIN_COLORS: readonly string[] = [
   "#2f6f9f", // 0 sea
   "#3f7ea6", // 1 lake
@@ -25,7 +29,44 @@ export const TERRAIN_COLORS: readonly string[] = [
   "#9a8b76", // 6 mountain
   "#b7c2cf", // 7 snowmtn
   "#e7eef6", // 8 snowfield
+  "#8f3b21", // 9 lava（岩壳底色，岩浆沟的高光由 shader / 纹理叠加）
 ];
+
+/**
+ * 地形分界描边色（手绘地图的「墨线」语义，逐条移植自设计稿 outlineLayer.BORDER_COLOR）。
+ *
+ * 用途：GL shader 与 Canvas2D 回退都会在每个地形区块的等值线上叠一道极窄的同调深色线。
+ * 这是「一眼能分辨地貌」的关键——相邻地形（草原/森林、山地/沙漠）底色接近，
+ * 只靠底色差异在高倍率下会糊成一片。
+ *
+ * sea / river / lava 在设计稿里没有专属描边（海岸另走「沙带 + 深岸线」两笔画），
+ * 这里取其底色的加深近似，保证数组长度与 TERRAIN_COLORS 对齐。
+ */
+export const TERRAIN_BORDER_COLORS: readonly string[] = [
+  "#24587f", // 0 sea
+  "#3d7aa6", // 1 lake
+  "#37729b", // 2 river
+  "#bb9145", // 3 desert
+  "#7ea358", // 4 grass
+  "#4d7d3c", // 5 forest
+  "#6d5840", // 6 mountain
+  "#6f8298", // 7 snowmtn
+  "#aec6da", // 8 snowfield
+  "#6d2a15", // 9 lava
+];
+
+/** 海岸线配色（设计稿 outlineLayer：宽沙带 + 窄深岸线） */
+export const COAST_SAND = "#e8d9ad";
+export const COAST_LINE = "#456a85";
+
+/** 水域地形索引（海岸线只画在「陆地↔水体」交界，湖/河之间不算海岸） */
+export const WATER_TERRAIN: readonly number[] = [T_SEA, T_LAKE, T_RIVER];
+
+/**
+ * 会随时间流动的地形索引（水体的涌动、岩浆的缓慢环流）。
+ * shader 与 Canvas2D 静态回退共用同一份判定，避免出现「GL 下会动、降级后不动」的认知割裂。
+ */
+export const FLUID_TERRAIN: readonly number[] = [T_SEA, T_LAKE, T_RIVER, T_LAVA];
 
 /** 纹理风格枚举，与 TER_KEY 索引对应 */
 export type TerrainTexture =
@@ -37,7 +78,8 @@ export type TerrainTexture =
   | "tree"
   | "ridge"
   | "snowcap"
-  | "crystal";
+  | "crystal"
+  | "lava";
 
 export const TERRAIN_TEXTURE: readonly TerrainTexture[] = [
   "wave",
@@ -49,6 +91,7 @@ export const TERRAIN_TEXTURE: readonly TerrainTexture[] = [
   "ridge",
   "snowcap",
   "crystal",
+  "lava",
 ];
 
 export interface SymbolDef {

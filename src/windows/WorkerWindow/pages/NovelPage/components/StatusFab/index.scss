@@ -1,0 +1,20 @@
+.nv-status-fab {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border: none;
+  border-radius: var(--app-radius-pill);
+  background: var(--app-primary-gradient);
+  color: var(--app-primary-contrast);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: var(--app-shadow-pop);
+  transition: transform 0.18s ease;
+
+  &:hover,
+  &.is-open {
+    transform: translateY(-2px);
+  }
+}
