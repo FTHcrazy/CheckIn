@@ -166,10 +166,27 @@ export interface MapContent {
   terrain: {
     cols: number
     rows: number
-    /** 铺满型地形索引数组（9 类，见 §5.1 图例表） */
+    /** 铺满型地形索引数组（12 类，见 §5.1 图例表） */
     cells: number[]
-    /** 叠加型符号数组 */
-    features?: Array<{ id: string; type: "cliff" | "island" | "waterfall"; cells?: number[]; points?: Array<{ x: number; y: number }>; seed?: string }>
+    /**
+     * 地形要素数组。
+     * **只持久化 `type: "river"`**（河道走向无法从 1 格宽 cells 唯一还原）；
+     * island / waterfall 属于「叠加型符号」，由 `buildOverlayFeatures`
+     * 从 cells 确定性派生 —— 存档里的旧值会被读取时忽略并重算（自愈）。
+     */
+    features?: Array<{
+      id?: string
+      type: "island" | "waterfall" | "river"
+      cells?: number[]
+      points?: Array<{ x: number; y: number }>
+      /** 有序折线（扁平 [x0,y0,x1,y1,…]，世界坐标）：river 用 */
+      pts?: number[]
+      /** 瀑布水帘跌落方向（弧度，画布坐标系；派生时算好） */
+      angle?: number
+      seed?: string
+      /** 是否支流（渲染更细） */
+      trib?: boolean
+    }>
     legendVersion?: number
   }
   annotations: MapAnnotation[]

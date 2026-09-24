@@ -5,6 +5,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { buildWorld, randomSeed, type BuiltWorld, type TerrainTemplates } from "../../map-terrain";
 import { drawTerrain } from "../../map-render";
+import { MAP_PAPER } from "../../map-symbols";
 import { TEMPLATE_OPTIONS, RES_PRESETS, DEFAULT_RES } from "../../map-config";
 import MapIcon from "../MapIcon";
 import "./index.scss";
@@ -48,7 +49,7 @@ export default function GenerateDialog(props: GenerateDialogProps) {
     canvas.width = cw * dpr;
     canvas.height = ch * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.fillStyle = "#eef1f8";
+    ctx.fillStyle = MAP_PAPER;
     ctx.fillRect(0, 0, cw, ch);
     const k = Math.min(cw / world.width, ch / world.height);
     ctx.translate((cw - world.width * k) / 2, (ch - world.height * k) / 2);
@@ -79,13 +80,25 @@ export default function GenerateDialog(props: GenerateDialogProps) {
         <div className="modal__body">
           <div className="gen-left">
             <div className="side-section-title" style={{ padding: "0 0 6px" }}>地形约束模板 <i>· 可多选</i></div>
-            {TEMPLATE_OPTIONS.map((t) => (
-              <button key={t.key} type="button" className={`tpl${templates[t.key as keyof TerrainTemplates] ? " is-on" : ""}`} onClick={() => toggleTpl(t.key as keyof TerrainTemplates)}>
-                <span className="tpl__box"><MapIcon name="check" size={11} /></span>
-                <span className="tpl__text"><b>{t.name}</b><span>{t.desc}</span></span>
-              </button>
+            {(["base", "hot"] as const).map((g) => (
+              <div key={g} className="tpl-group">
+                <div className="tpl-group__label">
+                  {g === "base" ? "基础格局" : "热门小说格局"}
+                </div>
+                {TEMPLATE_OPTIONS.filter((t) => t.group === g).map((t) => (
+                  <button
+                    key={t.key}
+                    type="button"
+                    className={`tpl${templates[t.key as keyof TerrainTemplates] ? " is-on" : ""}`}
+                    onClick={() => toggleTpl(t.key as keyof TerrainTemplates)}
+                  >
+                    <span className="tpl__box"><MapIcon name="check" size={11} /></span>
+                    <span className="tpl__text"><b>{t.name}</b><span>{t.desc}</span></span>
+                  </button>
+                ))}
+              </div>
             ))}
-            <div className="field-note" style={{ marginTop: 8, fontSize: 11, color: "var(--app-text-muted)" }}>
+            <div className="field-note" style={{ marginTop: 8, fontSize: 12, color: "var(--app-text-muted)" }}>
               约束只管大格局，细节交给噪声 + 手改；不满意就「换一批」。
             </div>
             <div className="side-section-title" style={{ padding: "12px 0 6px" }}>栅格分辨率</div>

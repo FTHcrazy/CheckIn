@@ -112,14 +112,19 @@ export function useMapData() {
           cols: world.cols,
           rows: world.rows,
           cells: Array.from(world.cells),
-          features: world.features.map((f) => ({
-            id: f.id ?? `${f.type}_${Math.random().toString(36).slice(2, 8)}`,
-            type: f.type as "cliff" | "island" | "waterfall",
-            points: f.points,
-            cells: f.cells,
-            seed: f.seed,
-          })),
-          legendVersion: 1,
+          // ⚠️ 只存河流：island / waterfall 由 worldFromContent 从 cells 重新派生，
+          //    存了也没用（会被忽略），还会让 content 体积膨胀数倍。
+          //    `pts` 必须透传 —— 旧实现漏掉它，导致存档再打开后河流 ribbon 整条消失。
+          features: world.features
+            .filter((f) => f.type === "river")
+            .map((f) => ({
+              id: f.id ?? `river_${Math.random().toString(36).slice(2, 8)}`,
+              type: "river" as const,
+              pts: f.pts,
+              trib: f.trib,
+              seed: f.seed,
+            })),
+          legendVersion: 2,
         },
         annotations: [],
         stamps: [],

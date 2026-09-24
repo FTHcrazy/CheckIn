@@ -20,6 +20,7 @@ import {
   findSymbol,
   TERRAIN_COLORS,
   TER_KEY,
+  terrainLabel,
 } from "./map-symbols";
 import type { MapContent, MapAnnotation, MapStamp } from "@/shared/types/electron.d.ts";
 
@@ -214,41 +215,30 @@ function drawLegendStrip(
   ctx.font = "12px sans-serif";
   let x = 12;
   const y = topY / scale + 22;
+  // 图例条目用固定步距 96px 平铺；12 类地形需要两行，行距 20px
+  let row = 0;
   for (let i = 0; i < TER_KEY.length; i++) {
-    ctx.fillStyle = TERRAIN_COLORS[i];
-    ctx.fillRect(x, y - 12, 14, 14);
-    ctx.strokeStyle = "rgba(0,0,0,0.25)";
-    ctx.strokeRect(x, y - 12, 14, 14);
-    ctx.fillStyle = "#333";
-    ctx.fillText(terrainCn(TER_KEY[i]), x + 18, y - 1);
-    x += 96;
     if (x > W - 90) {
       x = 12;
+      row++;
     }
+    const ry = y + row * 20;
+    ctx.fillStyle = TERRAIN_COLORS[i];
+    ctx.fillRect(x, ry - 12, 14, 14);
+    ctx.strokeStyle = "rgba(0,0,0,0.25)";
+    ctx.strokeRect(x, ry - 12, 14, 14);
+    ctx.fillStyle = "#333";
+    ctx.fillText(terrainLabel(TER_KEY[i]), x + 18, ry - 1);
+    x += 96;
   }
   ctx.fillStyle = "#555";
-  ctx.font = "11px sans-serif";
+  ctx.font = "12px sans-serif";
   ctx.fillText(
     `标注 ${content.annotations.length} 个 · 贴章 ${(content.stamps ?? []).length} 个`,
     12,
     topY / scale + h - 14,
   );
   ctx.restore();
-}
-
-function terrainCn(key: string): string {
-  const m: Record<string, string> = {
-    sea: "大海",
-    lake: "湖泊",
-    river: "河流",
-    desert: "沙漠",
-    grass: "草原",
-    forest: "森林",
-    mountain: "山地",
-    snowmtn: "雪山",
-    snowfield: "雪原",
-  };
-  return m[key] ?? key;
 }
 
 function kindColor(kind: string): string {

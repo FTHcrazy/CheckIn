@@ -33,15 +33,35 @@ export const RES_PRESETS = [
 
 export const DEFAULT_RES = "80x50";
 
-/** 约束模板清单（RM8① 可多选组合） */
+/**
+ * 约束模板清单（RM8① 可多选组合）。
+ *
+ * 分两组：
+ * - `base` 基础格局：通用世界地理形态，任意题材都能用；
+ * - `hot` 热门小说格局：网文高频世界观（九州/十万大山/南疆沼泽/赤炎火山/裂谷/
+ *   群岛/东荒/古战场/千里平原），勾一个就能出「读者一眼认得出」的格局。
+ *
+ * 每条 desc 即「提示词语义」——文案只描述**大格局**，细节交给噪声与手改。
+ */
 export const TEMPLATE_OPTIONS = [
-  { key: "threeSea", name: "三面环海", desc: "西/东/南三侧入海，北侧与大陆相连" },
-  { key: "island", name: "四面环海", desc: "孤岛，四周皆海" },
-  { key: "westDesert", name: "西面沙漠", desc: "西侧干旱，沙丘连绵" },
-  { key: "northSnow", name: "北境雪原", desc: "北方覆雪，雪山雪原" },
-  { key: "centerLake", name: "中央大湖", desc: "大陆中央内陆湖" },
-  { key: "bigRiver", name: "大河贯境", desc: "主干河流 + 支流" },
-  { key: "barren", name: "荒芜大陆", desc: "整体干旱，少植被" },
+  // ── 基础格局 ──
+  { key: "threeSea", group: "base", name: "三面环海", desc: "西/东/南三侧入海，北侧与大陆相连" },
+  { key: "island", group: "base", name: "四面环海", desc: "孤岛，四周皆海" },
+  { key: "centralContinent", group: "base", name: "中央大陆", desc: "大陆居中四方临海，九州格局的底子" },
+  { key: "westDesert", group: "base", name: "西面沙漠", desc: "西侧干旱，沙丘连绵" },
+  { key: "northSnow", group: "base", name: "北境雪原", desc: "北方覆雪，雪山雪原" },
+  { key: "centerLake", group: "base", name: "中央大湖", desc: "大陆中央内陆湖" },
+  { key: "bigRiver", group: "base", name: "大河贯境", desc: "主干河流 + 支流" },
+  { key: "barren", group: "base", name: "荒芜大陆", desc: "整体干旱，少植被" },
+  // ── 热门小说格局 ──
+  { key: "tenThousandMountains", group: "hot", name: "十万大山", desc: "山脉自北向南连绵，山国格局：山多平原少、崖壁密布" },
+  { key: "southSwamp", group: "hot", name: "南疆沼泽", desc: "南部低洼水乡，沼泽与河网成片" },
+  { key: "volcanic", group: "hot", name: "赤炎火山", desc: "火脉纵横，熔岩成片，土色焦黑" },
+  { key: "riftCanyon", group: "hot", name: "裂谷天堑", desc: "一条深谷自北向南贯通全图，两岸崖壁对立" },
+  { key: "archipelago", group: "hot", name: "群岛海域", desc: "碎岛散布、海面为主，航海与渡海世界" },
+  { key: "eastWaste", group: "hot", name: "东荒戈壁", desc: "东侧干旱荒原，碎石与沙砾遍布" },
+  { key: "ruinFields", group: "hot", name: "古战场废墟", desc: "大片废墟碎石夹杂断墙，上古战场遗迹" },
+  { key: "plains", group: "hot", name: "千里平原", desc: "低起伏的大平原，山地稀少、视野开阔" },
 ] as const;
 
 /** 符号风格（开放问题 ⑦） */

@@ -227,6 +227,19 @@ describe("shader 源码守卫", () => {
     expect(FRAG_SRC).not.toContain("undefined");
   });
 
+  it("色板 uniform 覆盖全部 12 类地形（新增地形漏声明会静默掉色）", () => {
+    for (let i = 0; i < MAX_TERRAIN_TYPES; i++) {
+      expect(FRAG_SRC).toContain(`uniform vec3 uColor${i};`);
+      expect(FRAG_SRC).toContain(`uniform vec3 uBorder${i};`);
+      expect(FRAG_SRC).toContain(`CMP(s${Math.floor(i / SPLAT_CHANNELS)}.${"rgba"[i % SPLAT_CHANNELS]}`);
+    }
+  });
+
+  it("含地形晕渲（hillshade）：否则地图会退化成「一片平的色块」", () => {
+    expect(FRAG_SRC).toContain("landC");
+    expect(FRAG_SRC).toContain("shade");
+  });
+
   it("顶点着色器与 Canvas2D 层同构：screen = world * scale + offset", () => {
     expect(VERT_SRC).toContain("aPosition * uViewScale + uViewOffset");
   });

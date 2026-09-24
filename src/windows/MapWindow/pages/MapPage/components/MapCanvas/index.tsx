@@ -12,9 +12,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PointerEvent as RPE, WheelEvent as RWE, KeyboardEvent as RKE } from "react";
 import type { BuiltWorld } from "../../map-terrain";
-import { drawTerrain, drawOverlayFeatures, drawRiverRibbons } from "../../map-render";
+import { drawTerrain, drawOverlayFeatures, drawRiverRibbons, drawTerrainIcons } from "../../map-render";
 import { drawTiles } from "../../map-tiles";
-import { drawSymbol, findSymbol } from "../../map-symbols";
+import { drawMapFrame, drawSymbol, findSymbol, MAP_PAPER } from "../../map-symbols";
 import { useTerrainGl } from "../../hooks/useTerrainGl";
 import type { MapContent, MapAnnotation, MapStamp } from "@/shared/types/electron.d.ts";
 import MapIcon from "../MapIcon";
@@ -162,7 +162,7 @@ export default function MapCanvas(props: MapCanvasProps) {
     if (glReady) {
       ctx.clearRect(0, 0, cw, ch);
     } else {
-      ctx.fillStyle = "#eef1f8";
+      ctx.fillStyle = MAP_PAPER;
       ctx.fillRect(0, 0, cw, ch);
     }
     if (!world) {
@@ -175,10 +175,14 @@ export default function MapCanvas(props: MapCanvasProps) {
       if (content.tileMode) drawTiles(ctx, world, content.symbolStyle ?? "A");
       else drawTerrain(ctx, world, { style: content.symbolStyle ?? "A" });
     } else {
-      // 河流 ribbon 与叠加型符号（悬崖/岛屿/瀑布）仍走 2D 层补画：
-      // GL 层的水体来自 cells（河常仅 1 格宽），ribbon 负责明确走向
+      // GL 层负责地形底色 / 海岸线 / 起伏晕渲；可识别性靠 2D 层补画：
+      // ① 陆地地形图标（树/沙丘/山脊/雪帽/岩浆/沼泽/废墟…）——GL 只有软色块会认不出地形
+      // ② 河流 ribbon（GL 的水体来自 cells，河常仅 1 格宽，ribbon 负责明确走向）
+      // ③ 叠加型符号（岛屿/瀑布）与古地图图框
+      drawTerrainIcons(ctx, world, content.symbolStyle ?? "A", viewport.scale);
       drawRiverRibbons(ctx, world);
-      drawOverlayFeatures(ctx, world, world.snum);
+      drawOverlayFeatures(ctx, world);
+      drawMapFrame(ctx, world);
     }
     for (const a of content.annotations) drawAnnotation(ctx, a, a.id === selectedAnno);
     const stamps = [...(content.stamps ?? [])].sort((p, q) => p.z - q.z);

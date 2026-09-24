@@ -82,12 +82,38 @@ export function setWorkMapBinding(
   );
 }
 
-/** 解析 content JSON 为 MapContent */
+/**
+ * 解析 content JSON 为 MapContent（含**旧档归一化**）。
+ *
+ * 归一化三件事：
+ * ① 只保留 `type: "river"` 的 features —— 叠加型符号（island/waterfall）已改为
+ *    从 cells 派生（见 map-terrain.buildOverlayFeatures），旧档里那批
+ *    「悬崖线段 + 漂在水上的瀑布」读进来只会画出错误图案，直接丢弃；
+ *    下次自动保存时一并从存档里消失（旧图因此自愈且体积变小）。
+ * ② 补齐 `stamps` / `viewport` / `symbolStyle`，避免下游到处判 undefined。
+ * ③ `legendVersion` 升到 2（新增沼泽/废墟两类地形）。
+ */
 export function parseContent(raw: string): MapContent {
   try {
-    const parsed = JSON.parse(raw);
+    const parsed = JSON.parse(raw) as Partial<MapContent> | null;
     if (typeof parsed === "object" && parsed !== null) {
-      return parsed as MapContent;
+      const base = emptyContent();
+      const terrain = parsed.terrain ?? base.terrain;
+      return {
+        terrain: {
+          cols: terrain.cols ?? base.terrain.cols,
+          rows: terrain.rows ?? base.terrain.rows,
+          cells: terrain.cells ?? [],
+          features: (terrain.features ?? []).filter((f) => f.type === "river"),
+          legendVersion: 2,
+        },
+        annotations: parsed.annotations ?? [],
+        stamps: parsed.stamps ?? [],
+        links: parsed.links ?? [],
+        viewport: parsed.viewport ?? base.viewport,
+        tileMode: parsed.tileMode ?? false,
+        symbolStyle: parsed.symbolStyle ?? "A",
+      };
     }
   } catch {
     // fallthrough
@@ -98,7 +124,7 @@ export function parseContent(raw: string): MapContent {
 /** 构造空画布文档 */
 export function emptyContent(): MapContent {
   return {
-    terrain: { cols: 80, rows: 50, cells: [], legendVersion: 1 },
+    terrain: { cols: 80, rows: 50, cells: [], legendVersion: 2 },
     annotations: [],
     stamps: [],
     links: [],

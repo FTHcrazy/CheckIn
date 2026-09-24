@@ -45,6 +45,10 @@
 .gen-left {
   flex: 1;
   min-width: 0;
+  /* 模板已扩到 16 条：左侧独立滚动，右侧预览保持可见（避免「选了模板看不到效果」）*/
+  max-height: 62vh;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 .gen-right {
   flex: 1;
@@ -58,6 +62,15 @@
   border-top: 1px solid var(--app-border);
 }
 
+.tpl-group {
+  margin-bottom: 10px;
+}
+.tpl-group__label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--app-text-secondary-strong);
+  padding: 2px 0 6px;
+}
 .tpl {
   display: flex;
   align-items: center;
@@ -96,12 +109,12 @@
   flex-direction: column;
 }
 .tpl__text b {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--app-text);
 }
 .tpl__text span {
-  font-size: 11px;
-  color: var(--app-text-muted);
+  font-size: 12px;
+  color: var(--app-text-secondary-strong);
 }
 
 .gen-preview {

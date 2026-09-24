@@ -11,6 +11,7 @@ import {
   TER_KEY,
   PLACE_SYMBOLS,
   DECOR_SYMBOLS,
+  terrainLabel,
 } from "../../map-symbols";
 import type { MapContent, MapAnnotation } from "@/shared/types/electron.d.ts";
 import MapIcon from "../MapIcon";
@@ -44,7 +45,6 @@ export interface MapSidebarProps {
 }
 
 const OVERLAY = [
-  { key: "cliff", name: "悬崖" },
   { key: "island", name: "岛屿" },
   { key: "waterfall", name: "瀑布" },
 ];
@@ -120,7 +120,7 @@ export default function MapSidebar(props: MapSidebarProps) {
       <div className="panel-terrain" style={{ display: props.sideTab === "terrain" ? "flex" : "none" }}>
         <div className="side-head">
           <MapIcon name="brush" size={15} /> 地形画笔
-          <span className="side-head__count">12 类</span>
+          <span className="side-head__count">{TER_KEY.length} 类</span>
         </div>
         <div className="side-body">
           <div className="side-section-title">铺满型 <i>· 点选后涂刷栅格</i></div>
@@ -150,7 +150,7 @@ export default function MapSidebar(props: MapSidebarProps) {
                 onClick={() => props.onSetTool("brush")}
                 title={`${o.name}（随机成图自动生成；手绘见 M2 后续）`}
               >
-                <span className="terrain-cell__sw terrain-cell__sw--overlay"><MapIcon name={o.key === "cliff" ? "layer" : o.key === "island" ? "map" : "download"} size={14} /></span>
+                <span className="terrain-cell__sw terrain-cell__sw--overlay"><MapIcon name={o.key === "island" ? "map" : "download"} size={14} /></span>
                 <span className="terrain-cell__name">{o.name}</span>
               </button>
             ))}
@@ -253,11 +253,7 @@ function SymbolTile({ def, active, style, onClick }: { def: { key: string; name:
 }
 
 function terrainCn(key: string): string {
-  const m: Record<string, string> = {
-    sea: "大海", lake: "湖泊", river: "河流", desert: "沙漠", grass: "草原",
-    forest: "森林", mountain: "山地", snowmtn: "雪山", snowfield: "雪原",
-  };
-  return m[key] ?? key;
+  return terrainLabel(key);
 }
 function symbolName(key: string): string {
   const all = [...PLACE_SYMBOLS, ...DECOR_SYMBOLS];

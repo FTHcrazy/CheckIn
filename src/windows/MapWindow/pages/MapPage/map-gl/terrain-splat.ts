@@ -8,12 +8,12 @@
  * - cells 只有 cols×rows 字节级体量，局部涂改可用 patch 走增量，不必整图重建
  *
  * 通道映射（与 shaders.ts FRAG_SRC 严格对应，改一边必须改另一边）：
- *   layer0.rgba → 地形 0-3 ｜ layer1.rgba → 地形 4-7 ｜ layer2.rg → 地形 8-9
+ *   layer0.rgba → 地形 0-3 ｜ layer1.rgba → 地形 4-7 ｜ layer2.rgba → 地形 8-11
  *
  * 边界：不 import React / window / document，可独立单测（见 map-gl.test.ts）。
  */
 
-/** splat 贴图张数（3 张 RGBA = 12 通道，当前 10 类地形留 2 通道余量） */
+/** splat 贴图张数（3 张 RGBA = 12 通道，当前 12 类地形**恰好占满**） */
 export const SPLAT_LAYERS = 3;
 /** 单张贴图的通道数 */
 export const SPLAT_CHANNELS = 4;
@@ -45,7 +45,9 @@ export const TERRAIN_WEIGHT: readonly number[] = [
   1.0, // 6 山地
   1.0, // 7 雪山
   1.0, // 8 雪原
-  1.8, // 9 熔岩（手绘小片）
+  1.8, // 9 熔岩（手绘小片 / 火山模板的岩浆带）
+  1.5, // 10 沼泽（常沿低洼成片，但要能压住草原的模糊外扩）
+  1.3, // 11 废墟（斑块状散布，比周边草原略强即可）
 ];
 
 /** 覆盖度模糊的盒式核半径（格）：越大越圆润，过大会吞掉 1 格宽特征 */
