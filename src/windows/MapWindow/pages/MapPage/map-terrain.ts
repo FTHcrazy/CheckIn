@@ -154,6 +154,25 @@ export interface BuiltWorld {
   templates: TerrainTemplates;
   features: TerrainFeature[];
   snum: number;
+  /**
+   * **抹掉河流后的地表底质**（`fillRiverBase` 派生，与 cells 同尺寸）。
+   *
+   * 为什么要有它：河流此前被画了两遍 —— GL 拿 cells 里的河格刷出一片宽水面，
+   * 2D 层再按 `pts` 描一条窄水带，两者中心线与宽度都对不上（GL 还有域扰动 +
+   * 覆盖度模糊把 1 格河吹宽到 ≈3 格），实测就是「水道不连贯、两条水并排、
+   * 水里还长着山」。现在的约定是——**河由 2D 层按 pts 单独绘制，cells 里的
+   * 河格不再产生水面**，故地表渲染（GL splat / Canvas2D 底色）一律读 `baseCells`。
+   * 涂刷/手改地形后由 `worldFromContent` 重新派生，保证一致。
+   */
+  baseCells?: Uint8Array;
+}
+
+/**
+ * 地表渲染该读的栅格：有 `baseCells` 用 `baseCells`，否则退回 `cells`。
+ * 单一事实源，GL 与 Canvas2D 两条路径都必须走它（否则两条路径画面不一致）。
+ */
+export function paintedCells(world: BuiltWorld): ArrayLike<number> {
+  return world.baseCells ?? world.cells;
 }
 
 // ── 常量 ──
@@ -426,6 +445,11 @@ function addTributaries(world: BuiltWorld, mainPts: number[], sd: number): void 
       if (bc === cc && br === rr) break;
       cc = bc;
       rr = br;
+      // ⚠️ 支流必须**刻进 cells**：旧实现只 push feature（pts），于是支流成了一条
+      //    「悬在陆地上的水带」——与 cells 派生的水体完全脱节（实测截图里那条
+      //    斜插进山地的浅蓝水带就是它）。刻进栅格后支流与主干在同一格交汇，
+      //    水体、瀑布判定、缩略图、导出全部自动包含支流。
+      world.cells[rr * cols + cc] = T_RIVER;
       pts.push((cc + 0.5) * CELL, (rr + 0.5) * CELL);
     }
     if (pts.length >= 8) {
@@ -434,8 +458,62 @@ function addTributaries(world: BuiltWorld, mainPts: number[], sd: number): void 
   }
 }
 
+/**
+ * 河格底质回填：把 `T_RIVER` 格替换为**最近的非水体地形**，产出 `BuiltWorld.baseCells`。
+ *
+ * 河流的水面不再由 cells 承担（见 `BuiltWorld.baseCells` 注释），所以 GL / Canvas2D
+ * 的地表渲染必须知道「河床底下原本是什么」——山地里的河，两岸就该继续是山地，
+ * 而不是沿河糊出一条谁也不认识的水面宽带。
+ *
+ * 算法：以全部陆地为多源做 8 邻域 BFS，只允许扩散进河格，先到先得 ⇒
+ * 每格取到的是「最近陆地地形」（棋盘距离），纯函数 + 确定性，同 cells 必出同结果。
+ * 海 / 湖自身仍是水面（不参与回填，也不作为扩散源）。
+ *
+ * 兜底：整图全是河（无陆地源）时该格退化为草原，避免留下 0（= 大海）把图变蓝。
+ */
+export function fillRiverBase(cells: ArrayLike<number>, cols: number, rows: number): Uint8Array {
+  const n = cols * rows;
+  const out = new Uint8Array(n);
+  const dist = new Int32Array(n).fill(-1);
+  const queue = new Int32Array(n);
+  let qh = 0;
+  let qt = 0;
+
+  for (let i = 0; i < n; i++) {
+    const t = cells[i] ?? 0;
+    out[i] = t;
+    if (t === T_RIVER) continue;
+    if (t === T_SEA || t === T_LAKE) continue;
+    dist[i] = 0;
+    queue[qt++] = i;
+  }
+
+  const DX = [1, -1, 0, 0, 1, 1, -1, -1];
+  const DY = [0, 0, 1, -1, 1, -1, 1, -1];
+  while (qh < qt) {
+    const cur = queue[qh++];
+    const cx = cur % cols;
+    const cy = (cur - cx) / cols;
+    for (let k = 0; k < 8; k++) {
+      const ax = cx + DX[k];
+      const ay = cy + DY[k];
+      if (ax < 0 || ay < 0 || ax >= cols || ay >= rows) continue;
+      const ni = ay * cols + ax;
+      if (dist[ni] >= 0) continue;
+      if ((cells[ni] ?? 0) !== T_RIVER) continue;
+      dist[ni] = dist[cur] + 1;
+      out[ni] = out[cur];
+      queue[qt++] = ni;
+    }
+  }
+
+  for (let i = 0; i < n; i++) {
+    if (out[i] === T_RIVER) out[i] = T_GRASS;
+  }
+  return out;
+}
+
 // ── 叠加型符号（岛屿/瀑布，§5.1 叠加型）──
-//
 // ⚠️ 设计变更：叠加型符号一律由栅格**确定性派生**（不在存档里维护），具体为
 //   ① 瀑布 = 只在「高差格边 ∩ 河道」处生成，落点吸附到崖唇中点（绝不再漂在水上），
 //      跌落方向在派生时按低侧法线算好（`angle` 字段），渲染层不用再猜；
@@ -813,6 +891,8 @@ export function buildWorld(opt: BuildWorldOptions): BuiltWorld {
   world.features.push(
     ...buildOverlayFeatures({ cols, rows, cells: world.cells, rivers, seed: s }),
   );
+  // ⑥ 地表底质（河格回填为最近陆地地形）：地表渲染读它，河由 2D 层按 pts 单独绘制
+  world.baseCells = fillRiverBase(world.cells, cols, rows);
   return world;
 }
 
@@ -949,5 +1029,8 @@ export function worldFromContent(opts: {
     templates: {},
     features: feats.concat(buildOverlayFeatures({ cols, rows, cells: arr, rivers: feats, seed: snum })),
     snum,
+    // 地表底质每次重建（涂刷后 entries 会重跑本函数）：保证 GL/Canvas2D 读到的
+    // 「河床底下是什么」与当前 cells 严格同步
+    baseCells: fillRiverBase(arr, cols, rows),
   };
 }

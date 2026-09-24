@@ -229,7 +229,10 @@ void main() {
     float w = flowField(cell * 0.20, t, 0.16);
     base *= 0.95 + 0.10 * w;
   } else if (domId < 2.5) {
-    // 2 河流：沿自身窄幅流动
+    // 2 河流：⚠️ 正常情况下**这里不会命中** —— 河流已改为由 2D 层按 pts 单独绘制，
+    //    喂给 splat 的是「抹掉河流的地表底质」（map-terrain.fillRiverBase），
+    //    河格在软场里已经被两岸地形顶掉。此分支只在有人直接用含河格的 cells
+    //    构建 splat 时（历史数据 / 诊断脚本）兜底，保留是为了不改变 12 通道索引约定。
     float w = flowField(cell * 0.26, t, 0.22);
     base *= 0.93 + 0.14 * w;
     base += vec3(0.06, 0.08, 0.09) * smoothstep(0.66, 0.9, w);

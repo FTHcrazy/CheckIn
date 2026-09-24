@@ -31,6 +31,7 @@
  */
 import { Application, BufferImageSource, Container, Mesh, MeshGeometry, Shader } from "pixi.js";
 import type { BuiltWorld } from "../map-terrain";
+import { paintedCells } from "../map-terrain";
 import { COAST_LINE, COAST_SAND, TERRAIN_BORDER_COLORS, TERRAIN_COLORS } from "../map-symbols";
 import { FRAG_SRC, GL_BACKGROUND, VERT_SRC } from "./shaders";
 import {
@@ -313,7 +314,10 @@ export async function createTerrainRenderer(
       if (disposed) return;
       const needGeo = !world || world.width !== next.width || world.height !== next.height;
       world = next;
-      maps = buildSplatMaps(next.cells, next.cols, next.rows, options.softPasses);
+      // ⚠️ splat 必须喂**地表底质**（河格已回填）：河由 2D 层按 pts 单独绘制，
+      //    若这里继续用含河格的 cells，就会刷出一片宽水面与 2D 水带并排错位
+      //    —— 这正是「水道不连贯、水里还有山」的老病根（详见 map-render 文件头）。
+      maps = buildSplatMaps(paintedCells(next), next.cols, next.rows, options.softPasses);
       if (needGeo) {
         geometry.positions = new Float32Array([
           0, 0,
@@ -329,7 +333,7 @@ export async function createTerrainRenderer(
 
     patchCells(dirty) {
       if (disposed || !world || !maps) return;
-      patchSplatMaps(maps, dirty, world.cells);
+      patchSplatMaps(maps, dirty, paintedCells(world));
       uploadAll();
     },
 

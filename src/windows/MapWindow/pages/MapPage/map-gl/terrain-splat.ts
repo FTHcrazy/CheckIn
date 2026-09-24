@@ -34,11 +34,16 @@ export interface SplatMaps {
 /**
  * 细窄地形的分类权重（> 1 会把该地形的「达标阈值」沿梯度往外推，
  * 于是 1 格宽的河流/熔岩在模糊后仍能胜出，而孤立单格噪点被自然抹平）。
+ *
+ * ⚠️ 索引 2（河流）现在几乎不参与分类：河流改由 2D 层按 `pts` 单独绘制，
+ * 喂给 splat 的是 `fillRiverBase` 回填过的底质（河格已被两岸地形顶掉）。
+ * 保留这一档是为了不改动「12 通道 ↔ 地形索引」的既定映射，
+ * 并为「直接喂含河格 cells」的调用方（历史数据 / 诊断脚本）留兜底。
  */
 export const TERRAIN_WEIGHT: readonly number[] = [
   1.0, // 0 海
   1.4, // 1 湖（细长水体）
-  2.4, // 2 河（常为 1 格宽）
+  2.4, // 2 河（常为 1 格宽；现由 2D 层单独绘制，见上）
   1.0, // 3 沙漠
   1.0, // 4 草原
   1.0, // 5 森林
@@ -189,8 +194,59 @@ export function countHotChannels(maps: SplatMaps, index: number): number {
   return hot;
 }
 
-/** "#rrggbb" / "#rgb" → 归一化 [r,g,b]，供 shader uniform 使用 */
-export function hexToRgb01(hex: string): [number, number, number] {
+/**
+ * 该格在 GL 里最终呈现的**主导地形**（= shader 的取色规则：软场读数取最大，值相同取前者）。
+ *
+ * 用途：2D 补画层（图标 / 河道）要知道「GL 把这一格画成了什么」，才能只在陆地上落笔。
+ * 旧实现只看 `cells` 里的地形码，而 GL 的实际画面是**模糊后的软场**决定的 ——
+ * 于是 1 格宽的河被加权吹宽后，两岸明明是山地格、画面却已经是水，
+ * 山形图标就长在了水里（实测截图：水里全是折线山）。
+ *
+ * 采样位置就是纹素中心（`uv = cell/cols` 恰好落在第 cell 个纹素中心），故无需插值；
+ * 域扰动带来的横向偏移（≤ 0.8 格）无法在 CPU 侧复刻，这里按「格中心归属」近似，
+ * 对于「水面/陆地」这种成片区分的判定足够（水面本身有 1.4~2.4 的权重冗余）。
+ */
+export function dominantTerrainAt(maps: SplatMaps, index: number): number {
+  if (index < 0 || index >= maps.cols * maps.rows) return 0;
+  let best = -1;
+  let id = 0;
+  for (let l = 0; l < maps.soft.length; l++) {
+    const base = index * SPLAT_CHANNELS;
+    for (let ch = 0; ch < SPLAT_CHANNELS; ch++) {
+      const v = maps.soft[l][base + ch];
+      // 与 shader 的 CMP 宏同款：严格大于，平局取编号小的
+      if (v > best) {
+        best = v;
+        id = l * SPLAT_CHANNELS + ch;
+      }
+    }
+  }
+  return id;
+}
+
+/**
+ * GL 水体掩码：1 = GL 会把这格画成水（大海 / 湖泊）。
+ *
+ * 传进来的必须是**地表底质**（`paintedCells(world)`，即河格已回填的 cells）——
+ * 河流不走 GL（由 2D 层单独绘制），故掩码里不该出现河。
+ * 图标层据此跳过绘制，杜绝「水面上冒出山/树」。
+ */
+export function buildGlWaterMask(
+  painted: ArrayLike<number>,
+  cols: number,
+  rows: number,
+  softPasses: number = SOFT_PASSES,
+): Uint8Array {
+  const maps = buildSplatMaps(painted, cols, rows, softPasses);
+  const mask = new Uint8Array(cols * rows);
+  for (let i = 0; i < mask.length; i++) {
+    const t = dominantTerrainAt(maps, i);
+    if (t === 0 || t === 1) mask[i] = 1;
+  }
+  return mask;
+}
+
+/** "#rrggbb" / "#rgb" → 归一化 [r,g,b]，供 shader uniform 使用 */export function hexToRgb01(hex: string): [number, number, number] {
   const h = hex.trim().replace(/^#/, "");
   const full =
     h.length === 3

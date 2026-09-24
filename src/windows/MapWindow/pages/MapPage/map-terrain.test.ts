@@ -11,14 +11,18 @@ import { describe, it, expect } from "vitest";
 import {
   buildWorld,
   buildOverlayFeatures,
+  fillRiverBase,
   hashSeed,
+  paintedCells,
   randomSeed,
   pruneStaleRivers,
   worldFromContent,
   CELL,
   OVERLAY_TYPES,
   T_DESERT,
+  T_FOREST,
   T_GRASS,
+  T_LAKE,
   T_LAVA,
   T_MARSH,
   T_MOUNTAIN,
@@ -503,5 +507,89 @@ describe("worldFromContent：叠加型符号由 cells 派生（旧档自愈）",
     // 河流（含 pts）保留 —— 旧实现漏掉 pts 导致重开图后河流 ribbon 消失
     const rv = w.features.find((f) => f.type === "river");
     expect(rv?.pts?.length).toBe(riverPts.length);
+  });
+});
+
+describe("addTributaries：支流必须刻进 cells（本轮修复：水道不连贯）", () => {
+  const opt = {
+    cols: 64,
+    rows: 40,
+    seed: "4F2A19",
+    templates: { bigRiver: true } as TerrainTemplates,
+  };
+
+  it("每条河道（主干 + 支流）的每个采样格都必须是河道格", () => {
+    const w = buildWorld(opt);
+    const rivers = w.features.filter((f) => f.type === "river" && f.pts);
+    expect(rivers.length).toBeGreaterThan(1);
+    expect(rivers.some((f) => f.trib)).toBe(true);
+    for (const f of rivers) {
+      const pts = f.pts as number[];
+      let total = 0;
+      for (let i = 0; i + 1 < pts.length; i += 2) {
+        const c = Math.floor(pts[i] / CELL);
+        const r = Math.floor(pts[i + 1] / CELL);
+        total++;
+        // 旧实现只存 pts 不刻格 ⇒ 支流成了「悬在陆地上的水带」
+        expect(
+          w.cells[r * w.cols + c],
+          `河道（${f.trib ? "支流" : "主干"}）第 ${i / 2} 点未刻进 cells`,
+        ).toBe(T_RIVER);
+      }
+      expect(total).toBeGreaterThan(0);
+    }
+  });
+
+  it("每条河道都至少有一格与主干同水域相接（交汇点真的连着）", () => {
+    const w = buildWorld(opt);
+    const tribs = w.features.filter((f) => f.type === "river" && f.trib && f.pts);
+    expect(tribs.length).toBeGreaterThan(0);
+    for (const t of tribs) {
+      const pts = t.pts as number[];
+      const c = Math.floor(pts[0] / CELL);
+      const r = Math.floor(pts[1] / CELL);
+      expect(w.cells[r * w.cols + c]).toBe(T_RIVER);
+    }
+  });
+});
+
+describe("fillRiverBase：河床底质回填（地表渲染读它）", () => {
+  it("河格回填为最近陆地地形，绝不留下水格", () => {
+    const cols = 5;
+    const rows = 3;
+    const cells = new Uint8Array(cols * rows).fill(T_MOUNTAIN);
+    for (let c = 1; c <= 3; c++) cells[1 * cols + c] = T_RIVER;
+    const base = fillRiverBase(cells, cols, rows);
+    expect(Array.from(base).filter((t) => t === T_RIVER).length).toBe(0);
+    for (let c = 1; c <= 3; c++) expect(base[1 * cols + c]).toBe(T_MOUNTAIN);
+    // 非河格原样保留
+    expect(base[0]).toBe(T_MOUNTAIN);
+  });
+
+  it("海与湖保持水面（不参与回填，也不作为扩散源）", () => {
+    const cells = new Uint8Array([T_MOUNTAIN, T_RIVER, T_SEA, T_RIVER, T_LAKE]);
+    const base = fillRiverBase(cells, 5, 1);
+    expect(base[0]).toBe(T_MOUNTAIN);
+    expect(base[1]).toBe(T_MOUNTAIN); // 最近的陆地是左邻
+    expect(base[2]).toBe(T_SEA); // 海仍是海（不会被回填成陆地）
+    expect(base[4]).toBe(T_LAKE); // 湖仍是湖
+    // 右侧那条河只与海/湖相邻（没有陆地源可达）⇒ 走草原兜底，绝不留下水格
+    expect(base[3]).toBe(T_GRASS);
+  });
+
+  it("确定性：同 cells 必出同结果", () => {
+    const cells = new Uint8Array([T_GRASS, T_RIVER, T_FOREST, T_RIVER, T_GRASS]);
+    expect(Array.from(fillRiverBase(cells, 5, 1))).toEqual(Array.from(fillRiverBase(cells, 5, 1)));
+  });
+
+  it("整图无陆地源（全是河）时退化为草原，不留下 0（= 大海）", () => {
+    const base = fillRiverBase(new Uint8Array([T_RIVER, T_RIVER, T_RIVER]), 3, 1);
+    expect(Array.from(base)).toEqual([T_GRASS, T_GRASS, T_GRASS]);
+  });
+
+  it("生成出的世界必带 baseCells（地表渲染的数据源）", () => {
+    const w = buildWorld({ cols: 32, rows: 20, seed: "4F2A19", templates: {} });
+    expect(w.baseCells?.length).toBe(w.cols * w.rows);
+    expect(paintedCells(w)).toBe(w.baseCells);
   });
 });

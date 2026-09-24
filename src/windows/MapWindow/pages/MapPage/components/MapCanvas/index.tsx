@@ -9,12 +9,15 @@
  *
  * 样式就近 index.scss，仅用 var(--app-*)。
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as RPE, WheelEvent as RWE, KeyboardEvent as RKE } from "react";
 import type { BuiltWorld } from "../../map-terrain";
+import { LI_PER_CELL, paintedCells } from "../../map-terrain";
 import { drawTerrain, drawOverlayFeatures, drawRiverRibbons, drawTerrainIcons } from "../../map-render";
 import { drawTiles } from "../../map-tiles";
 import { drawMapFrame, drawSymbol, findSymbol, MAP_PAPER } from "../../map-symbols";
+import { buildGlWaterMask } from "../../map-gl/terrain-splat";
+import { scaleBarFor } from "../../map-scale";
 import { useTerrainGl } from "../../hooks/useTerrainGl";
 import type { MapContent, MapAnnotation, MapStamp } from "@/shared/types/electron.d.ts";
 import MapIcon from "../MapIcon";
@@ -141,6 +144,22 @@ export default function MapCanvas(props: MapCanvasProps) {
 
   const worldSize = world ? { w: world.width, h: world.height } : { w: 1, h: 1 };
 
+  /**
+   * GL 会渲染成水面的格掩码（图标层据此跳过）：
+   * 只看 cells 的地形码会漏掉「被水面包住的陆格」——叠加型符号与山形图标就会长到水里。
+   * 以 world 为依赖缓存：涂刷提交后 world 重建，掩码跟着重算。
+   */
+  const waterMask = useMemo(
+    () => (world ? buildGlWaterMask(paintedCells(world), world.cols, world.rows) : null),
+    [world],
+  );
+
+  /** 比例尺随缩放实时换算（屏幕长度稳定、里程逐档变化） */
+  const scaleBar = useMemo(
+    () => scaleBarFor(viewport.scale, world?.cell ?? 16),
+    [viewport.scale, world?.cell],
+  );
+
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
     const host = hostRef.current;
@@ -173,21 +192,21 @@ export default function MapCanvas(props: MapCanvasProps) {
     ctx.scale(viewport.scale, viewport.scale);
     if (!glReady) {
       if (content.tileMode) drawTiles(ctx, world, content.symbolStyle ?? "A");
-      else drawTerrain(ctx, world, { style: content.symbolStyle ?? "A" });
+      else drawTerrain(ctx, world, { style: content.symbolStyle ?? "A", scale: viewport.scale });
     } else {
       // GL 层负责地形底色 / 海岸线 / 起伏晕渲；可识别性靠 2D 层补画：
       // ① 陆地地形图标（树/沙丘/山脊/雪帽/岩浆/沼泽/废墟…）——GL 只有软色块会认不出地形
-      // ② 河流 ribbon（GL 的水体来自 cells，河常仅 1 格宽，ribbon 负责明确走向）
+      // ② 河流 ribbon（水体唯一几何：cells 里的河格已在 shader 侧被底质回填顶掉）
       // ③ 叠加型符号（岛屿/瀑布）与古地图图框
-      drawTerrainIcons(ctx, world, content.symbolStyle ?? "A", viewport.scale);
-      drawRiverRibbons(ctx, world);
+      drawTerrainIcons(ctx, world, content.symbolStyle ?? "A", viewport.scale, waterMask);
+      drawRiverRibbons(ctx, world, viewport.scale);
       drawOverlayFeatures(ctx, world);
       drawMapFrame(ctx, world);
     }
     for (const a of content.annotations) drawAnnotation(ctx, a, a.id === selectedAnno);
     const stamps = [...(content.stamps ?? [])].sort((p, q) => p.z - q.z);
     for (const s of stamps) drawStampOnCanvas(ctx, s, s.id === selectedStamp, content.symbolStyle ?? "A");
-  }, [world, content, viewport, selectedAnno, selectedStamp, glReady]);
+  }, [world, content, viewport, selectedAnno, selectedStamp, glReady, waterMask]);
 
   useEffect(() => {
     draw();
@@ -410,15 +429,35 @@ export default function MapCanvas(props: MapCanvasProps) {
       <div ref={glHostRef} className="cv__gl" />
       <canvas ref={canvasRef} className="cv__canvas" />
 
+      {/*
+        比例尺：**屏幕长度稳定、里程随缩放逐档变化**（1/2/5 × 10ⁿ 里）。
+        刻度条的 px 与文案都来自 scaleBarFor，缩放一下数字就会跟着变 ——
+        旧实现是写死的 150px + 固定文案，正是「缩放时尺寸标注没变化」的来源。
+      */}
       <div className="scale-bar">
-        <svg width="150" height="30">
-          <line x1="6" y1="20" x2="146" y2="20" stroke="var(--app-text-secondary)" strokeWidth="2" />
-          <line x1="6" y1="15" x2="6" y2="25" stroke="var(--app-text-secondary)" strokeWidth="2" />
-          <line x1="76" y1="16" x2="76" y2="24" stroke="var(--app-text-secondary)" strokeWidth="1.5" />
-          <line x1="146" y1="15" x2="146" y2="25" stroke="var(--app-text-secondary)" strokeWidth="2" />
+        <svg width={Math.max(24, Math.round(scaleBar.px) + 12)} height="26" aria-label={`比例尺 ${scaleBar.label}`}>
+          <line x1="6" y1="16" x2={6 + Math.round(scaleBar.px)} y2="16" stroke="var(--app-text-secondary)" strokeWidth="2" />
+          <line x1="6" y1="11" x2="6" y2="21" stroke="var(--app-text-secondary)" strokeWidth="2" />
+          <line
+            x1={6 + Math.round(scaleBar.px) / scaleBar.segments}
+            y1="12.5"
+            x2={6 + Math.round(scaleBar.px) / scaleBar.segments}
+            y2="19.5"
+            stroke="var(--app-text-secondary)"
+            strokeWidth="1.5"
+          />
+          <line
+            x1={6 + Math.round(scaleBar.px)}
+            y1="11"
+            x2={6 + Math.round(scaleBar.px)}
+            y2="21"
+            stroke="var(--app-text-secondary)"
+            strokeWidth="2"
+          />
         </svg>
         <div className="scale-bar__meta">
-          1 格 = 25 里 · 全图 {world ? world.cols * 25 : 0}×{world ? world.rows * 25 : 0} 里
+          <b>{scaleBar.label}</b> · 1 格 = {LI_PER_CELL} 里
+          {world ? ` · 全图 ${world.cols * LI_PER_CELL}×${world.rows * LI_PER_CELL} 里` : ""}
         </div>
       </div>
 

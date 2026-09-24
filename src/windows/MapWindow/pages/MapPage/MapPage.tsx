@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMapData } from "./hooks/useMapData";
 import { useMapViewState, type MapTool } from "./hooks/useMapViewState";
-import { worldFromContent, type BuiltWorld, type TerrainTemplates } from "./map-terrain";
+import { worldFromContent, LI_PER_CELL, type BuiltWorld, type TerrainTemplates } from "./map-terrain";
+import { viewExtentLi } from "./map-scale";
 import { exportPng } from "./services/map-service";
 import type { MapAnnotation, MapStamp } from "@/shared/types/electron.d.ts";
 import MapTopBar from "./components/MapTopBar";
@@ -16,6 +17,14 @@ import MapStatusBar from "./components/MapStatusBar";
 import MapIcon from "./components/MapIcon";
 import { EnvironmentOutlined } from "@ant-design/icons";
 import "./index.scss";
+
+/**
+ * 里程数值文案（千分位、不带单位）：用于「全图 W×H 里」这类拼接场景，
+ * 单值展示请用 map-scale.formatLi（自动切「万里」）。
+ */
+function fmtLi(v: number): string {
+  return Math.round(v).toLocaleString("zh-CN");
+}
 
 /**
  * MapPage —— 小说架空地图编辑器主页面（docs/novel-map-prd.md §4 产品结构）
@@ -213,6 +222,21 @@ export default function MapPage() {
     };
   }, [view.viewport, world, regionSize]);
 
+  /**
+   * 状态条里的尺寸标注：**视野**随缩放实时变化（「全图」是图本身的属性、不随缩放变），
+   * 与左下角比例尺一起回应「缩放时尺寸标注没变化」。
+   */
+  const extent = useMemo(
+    () =>
+      world
+        ? viewExtentLi(view.viewport.scale, world.cell, regionSize.w, regionSize.h)
+        : { w: 0, h: 0 },
+    [world, view.viewport.scale, regionSize],
+  );
+  const scaleHint = world
+    ? `${world.cols}×${world.rows} 格 · 1 格 = ${LI_PER_CELL} 里 · 全图 ${fmtLi(world.cols * LI_PER_CELL)}×${fmtLi(world.rows * LI_PER_CELL)} 里 · 视野 ${fmtLi(extent.w)}×${fmtLi(extent.h)} 里`
+    : "—";
+
   const handleExport = useCallback(
     async (dataUrl: string) => {
       const res = await exportPng(dataUrl, mapData.content ? `map_${mapData.currentId ?? "export"}` : "map");
@@ -366,7 +390,7 @@ export default function MapPage() {
         zoomPct={Math.round(view.viewport.scale * 100)}
         annoCount={mapData.content.annotations.length}
         stampCount={(mapData.content.stamps ?? []).length}
-        scaleHint={world ? `${world.cols}×${world.rows} 格 · 1 格 = 25 里 · 全图 ${world.cols * 25}×${world.rows * 25} 里` : "—"}
+        scaleHint={scaleHint}
         saveState={mapData.saveState}
         updatedAt={mapData.updatedAt}
       />

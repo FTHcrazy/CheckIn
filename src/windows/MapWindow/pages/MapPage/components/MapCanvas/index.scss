@@ -69,6 +69,12 @@
   margin-top: 2px;
   white-space: nowrap;
 }
+/* 里程数是随缩放变化的读数，用高对比 + 等宽数字，跳动时不会左右晃 */
+.scale-bar__meta b {
+  font-weight: 600;
+  color: var(--app-text);
+  font-variant-numeric: tabular-nums;
+}
 
 /* 工具轨 */
 .tool-rail {
