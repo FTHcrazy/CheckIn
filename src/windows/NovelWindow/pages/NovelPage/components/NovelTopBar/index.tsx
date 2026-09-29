@@ -6,6 +6,7 @@ import {
   LayoutOutlined,
   MenuOutlined,
   SettingOutlined,
+  ShoppingOutlined,
 } from "@ant-design/icons";
 import { SAVE_STATE_TEXT } from "../../novel-config";
 import { formatClock, formatThousands, type WorkMeta } from "../../novel-utils";
@@ -27,6 +28,8 @@ interface NovelTopBarProps {
   settingsOpen: boolean;
   /** 历史快照抽屉开合状态：按钮呈高亮开关态 */
   snapshotOpen: boolean;
+  /** 行囊面板开关（入口独立于侧边栏，Ctrl+Shift+B 同效） */
+  packOpen: boolean;
   onSelectWork: (workId: string) => void;
   onCreateWork: (name: string) => boolean;
   onRenameWork: (name: string) => boolean;
@@ -41,6 +44,8 @@ interface NovelTopBarProps {
   onToggleSettings: () => void;
   /** 历史快照按钮即开关：开 → 关 → 开 循环切换 */
   onToggleHistory: () => void;
+  /** 行囊按钮即开关：再点一次收起 */
+  onTogglePack: () => void;
   /** 返回书架（书架主页接入后传入）；未传则不渲染返回按钮 */
   onBackToShelf?: () => void;
 }
@@ -64,6 +69,7 @@ export default function NovelTopBar({
   typewriter,
   settingsOpen,
   snapshotOpen,
+  packOpen,
   onSelectWork,
   onCreateWork,
   onRenameWork,
@@ -77,6 +83,7 @@ export default function NovelTopBar({
   onToggleTypewriter,
   onToggleSettings,
   onToggleHistory,
+  onTogglePack,
   onBackToShelf,
 }: NovelTopBarProps) {
   const { saveState, lastSavedAt } = useSaveState();
@@ -180,6 +187,17 @@ export default function NovelTopBar({
             aria-label="打字机模式"
           >
             <ColumnHeightOutlined />
+          </button>
+        </Tooltip>
+        <Tooltip title="行囊（主角随身盘点 · Ctrl+Shift+B）">
+          <button
+            type="button"
+            className={`nv-topbar__icon${packOpen ? " is-on" : ""}`}
+            onClick={onTogglePack}
+            aria-label="行囊"
+            aria-pressed={packOpen}
+          >
+            <ShoppingOutlined />
           </button>
         </Tooltip>
         <Tooltip title={snapshotOpen ? "收起历史快照" : "历史快照"}>

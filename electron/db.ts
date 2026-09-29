@@ -244,7 +244,153 @@ function initializeDataDb(database: Database.Database): void {
       payload TEXT,
       created_at INTEGER NOT NULL
     );
+
+    -- ── 行囊 CharacterPack（PRD docs/character-pack-prd.md §9.2）──
+    -- v1 只承载 1 条主角，模型按多角色预留（全部表带 character_id）
+    -- 数值统一 REAL、布尔统一 INTEGER 0/1、JSON 字段统一 TEXT
+    CREATE TABLE IF NOT EXISTS novel_pack_characters (
+      id TEXT PRIMARY KEY,
+      work_id TEXT NOT NULL,
+      name TEXT NOT NULL DEFAULT '主角',
+      avatar TEXT,
+      is_protagonist INTEGER NOT NULL DEFAULT 1,
+      -- 绑定 EntityPanel 实体（novel_entities.id）：缺失会导致境界同步静默失效（§9.7.5）
+      entity_id TEXT,
+      -- 未绑定实体时的「仅行囊内使用」境界（JSON {levelId, sub}）；绑定时以 novel_links 为准
+      realm_at TEXT,
+      note TEXT NOT NULL DEFAULT '',
+      sort_order INTEGER NOT NULL DEFAULT 1
+    );
+    CREATE TABLE IF NOT EXISTS novel_pack_attributes (
+      id TEXT PRIMARY KEY,
+      character_id TEXT NOT NULL,
+      group_name TEXT NOT NULL DEFAULT '基础属性',
+      name TEXT NOT NULL,
+      base_value REAL NOT NULL DEFAULT 0,
+      decimals INTEGER NOT NULL DEFAULT 0,
+      unit TEXT NOT NULL DEFAULT '',
+      sort_order INTEGER NOT NULL DEFAULT 1
+    );
+    CREATE INDEX IF NOT EXISTS idx_pack_attr_char ON novel_pack_attributes(character_id, sort_order);
+    CREATE TABLE IF NOT EXISTS novel_pack_slots (
+      id TEXT PRIMARY KEY,
+      character_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      capacity INTEGER NOT NULL DEFAULT 1,
+      -- 仅接受物品类型（多选）；空数组 = 不限
+      accepts TEXT NOT NULL DEFAULT '[]',
+      enabled INTEGER NOT NULL DEFAULT 1,
+      note TEXT NOT NULL DEFAULT '',
+      sort_order INTEGER NOT NULL DEFAULT 1
+    );
+    CREATE INDEX IF NOT EXISTS idx_pack_slot_char ON novel_pack_slots(character_id, sort_order);
+    CREATE TABLE IF NOT EXISTS novel_pack_items (
+      id TEXT PRIMARY KEY,
+      character_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      category TEXT NOT NULL DEFAULT 'misc',
+      qty INTEGER NOT NULL DEFAULT 1,
+      rarity TEXT NOT NULL DEFAULT 'common',
+      icon TEXT NOT NULL DEFAULT '',
+      desc TEXT NOT NULL DEFAULT '',
+      tags TEXT NOT NULL DEFAULT '[]',
+      -- 穿戴位置：equipped_slot_id 非空即视为佩戴；slot_index 为部位内第几个槽位
+      equipped_slot_id TEXT,
+      slot_index INTEGER,
+      source_chapter_id TEXT,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_pack_item_char ON novel_pack_items(character_id);
+    CREATE TABLE IF NOT EXISTS novel_pack_skills (
+      id TEXT PRIMARY KEY,
+      character_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      desc TEXT NOT NULL DEFAULT '',
+      -- 载体开关（技能级总开关）：停用则全部效果（被动+持续）不参与汇总
+      enabled INTEGER NOT NULL DEFAULT 1,
+      proficiency_raw REAL NOT NULL DEFAULT 0,
+      tags TEXT NOT NULL DEFAULT '[]',
+      sort_order INTEGER NOT NULL DEFAULT 1
+    );
+    CREATE INDEX IF NOT EXISTS idx_pack_skill_char ON novel_pack_skills(character_id, sort_order);
+    CREATE TABLE IF NOT EXISTS novel_pack_modifiers (
+      id TEXT PRIMARY KEY,
+      owner_type TEXT NOT NULL CHECK (owner_type IN ('item', 'skill', 'status')),
+      owner_id TEXT NOT NULL,
+      -- 效果性质（§9.2.1）：passive 被动 / sustained 持续 / cast 释放
+      nature TEXT NOT NULL DEFAULT 'passive' CHECK (nature IN ('passive', 'sustained', 'cast')),
+      name TEXT NOT NULL DEFAULT '',
+      -- 可空：cast 型不指向任何属性
+      target_attr_id TEXT,
+      op TEXT NOT NULL DEFAULT 'add' CHECK (op IN ('add', 'percent', 'mul', 'override')),
+      value REAL NOT NULL DEFAULT 0,
+      value_unit TEXT,
+      scale_by_proficiency INTEGER NOT NULL DEFAULT 0,
+      -- 仅 sustained：效果自己的独立开关（与载体开关分离）
+      active INTEGER NOT NULL DEFAULT 0,
+      default_on INTEGER NOT NULL DEFAULT 0,
+      cost TEXT,
+      cooldown REAL,
+      duration TEXT,
+      target TEXT,
+      trigger TEXT,
+      condition TEXT,
+      note TEXT NOT NULL DEFAULT '',
+      disabled INTEGER NOT NULL DEFAULT 0,
+      sort_order INTEGER NOT NULL DEFAULT 1
+    );
+    CREATE INDEX IF NOT EXISTS idx_pack_mod_owner ON novel_pack_modifiers(owner_type, owner_id);
+    CREATE TABLE IF NOT EXISTS novel_pack_unit_systems (
+      id TEXT PRIMARY KEY,
+      character_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      kind TEXT NOT NULL CHECK (kind IN ('ladder', 'ratio', 'threshold')),
+      levels TEXT NOT NULL DEFAULT '[]',
+      config TEXT NOT NULL DEFAULT '{}',
+      is_default INTEGER NOT NULL DEFAULT 0,
+      sort_order INTEGER NOT NULL DEFAULT 1
+    );
+    CREATE INDEX IF NOT EXISTS idx_pack_unit_char ON novel_pack_unit_systems(character_id, kind);
+    -- 模块拼装：只承载「这本小说要哪些模块、什么顺序」这类设定数据。
+    -- 折叠状态 / 面板宽度 / 列表视图属于界面偏好，走 config 的 novel_pack_ui
+    -- （判据：改了这个值别人的这本书会变吗？不会 → 即改即存，不进本表）
+    CREATE TABLE IF NOT EXISTS novel_pack_layouts (
+      character_id TEXT NOT NULL,
+      module_key TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      sort_order INTEGER NOT NULL DEFAULT 1,
+      PRIMARY KEY (character_id, module_key)
+    );
+    CREATE TABLE IF NOT EXISTS novel_pack_records (
+      id TEXT PRIMARY KEY,
+      character_id TEXT NOT NULL,
+      chapter_id TEXT,
+      taken_at INTEGER NOT NULL,
+      reason TEXT NOT NULL DEFAULT '',
+      payload TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_pack_records_char
+      ON novel_pack_records(character_id, taken_at DESC);
+    -- 草稿（§8.6）：payload 与正式表同构，提交成功后清空
+    CREATE TABLE IF NOT EXISTS novel_pack_drafts (
+      character_id TEXT PRIMARY KEY,
+      payload TEXT NOT NULL,
+      dirty_count INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL
+    );
   `)
+
+  // ── 增量迁移：novel_levels 补「小层」与「战力当量」（PRD §9.7.2 缺口①②）
+  // 两项必须同一次 migration 做完，避免二次表重建
+  const levelColumns = database.prepare("PRAGMA table_info(novel_levels)").all() as Array<{
+    name: string
+  }>
+  if (!levelColumns.some((column) => column.name === "sub_levels")) {
+    database.exec("ALTER TABLE novel_levels ADD COLUMN sub_levels INTEGER NOT NULL DEFAULT 1")
+  }
+  if (!levelColumns.some((column) => column.name === "power")) {
+    database.exec("ALTER TABLE novel_levels ADD COLUMN power REAL")
+  }
 }
 
 /** 初始化应用级用户数据库 */

@@ -1,0 +1,262 @@
+/**
+ * 行囊公共原语（单一事实源）
+ *
+ * 这些类被多个模块复用（例如持续型开关在状态模块与效果列表里都要出现），
+ * 因此**不能**定义在某个具体组件的 scss 里 —— 那会让「某个模块没渲染 → 开关没样式」
+ * 这种缺陷随渲染路径变化而随机出现。全部集中在根 `index.scss` 以 @use 引入。
+ */
+
+/* ── 通用按钮（面板密度；.ghost 表达次级操作）── */
+.cpk-btn {
+  height: 22px;
+  padding: 0 9px;
+  border: 1px solid var(--app-border-strong);
+  border-radius: var(--app-radius-item);
+  background: var(--app-surface);
+  color: var(--app-text-strong);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  box-sizing: border-box;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+
+  &:hover:not(:disabled) {
+    background: var(--app-surface-hover);
+  }
+
+  &.primary {
+    border-color: var(--app-primary);
+    background: var(--app-primary);
+    color: var(--app-primary-contrast);
+    font-weight: 600;
+
+    &:hover:not(:disabled) {
+      background: var(--app-primary-strong);
+    }
+  }
+
+  &.ghost {
+    height: 20px;
+    padding: 0 7px;
+    border-color: transparent;
+    background: transparent;
+    color: var(--app-text-secondary-strong);
+
+    &:hover:not(:disabled) {
+      background: var(--app-surface-active);
+    }
+  }
+
+  &.danger {
+    border-color: transparent;
+    background: transparent;
+    color: var(--app-error);
+
+    &:hover:not(:disabled) {
+      background: var(--app-error-weak);
+    }
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+/* ── 图标按钮（含 .tiny 行内尺寸）── */
+.cpk-iconbtn {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--app-radius-item);
+  background: transparent;
+  color: var(--app-text-secondary-strong);
+  cursor: pointer;
+  font-size: 13px;
+  box-sizing: border-box;
+
+  &:hover {
+    background: var(--app-surface-hover);
+    color: var(--app-text-strong);
+  }
+
+  &.tiny {
+    width: 20px;
+    height: 20px;
+    font-size: 11px;
+
+    &.danger:hover {
+      background: var(--app-error-weak);
+      color: var(--app-error);
+    }
+
+    &.is-active {
+      background: var(--app-surface-active);
+      color: var(--app-warning);
+    }
+  }
+
+  &.danger:hover {
+    background: var(--app-error-weak);
+    color: var(--app-error);
+  }
+}
+
+/* ── 效果性质徽标：`被`灰 / `持`蓝 / `放`橙（§8.3 一眼可分）── */
+.cpk-bdg {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  box-sizing: border-box;
+
+  &.is-passive {
+    background: var(--app-surface-active);
+    color: var(--app-text-secondary-strong);
+  }
+
+  &.is-sustained {
+    background: var(--app-accent-blue-weak);
+    color: var(--app-accent-blue);
+  }
+
+  &.is-cast {
+    background: var(--app-accent-amber-weak);
+    color: var(--app-accent-amber);
+  }
+}
+
+/* ── 小尺寸开关（持续型效果 / 状态自己那一档，与载体开关分离）── */
+.cpk-sw2 {
+  flex: none;
+  width: 26px;
+  height: 15px;
+  padding: 0;
+  border: 1px solid var(--app-border-strong);
+  border-radius: var(--app-radius-pill);
+  background: var(--app-surface-active);
+  cursor: pointer;
+  position: relative;
+  box-sizing: border-box;
+  transition: background 0.18s ease, border-color 0.18s ease;
+
+  &__dot {
+    position: absolute;
+    top: 1px;
+    left: 1px;
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    background: var(--app-surface);
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.25);
+    transition: transform 0.18s ease;
+  }
+
+  &.is-on {
+    background: var(--app-accent-blue);
+    border-color: var(--app-accent-blue);
+  }
+
+  &.is-on &__dot {
+    transform: translateX(11px);
+  }
+}
+
+/* ── 空态 / 提示片段 ── */
+.cpk-empty {
+  margin: 0;
+  padding: 2px 0;
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--app-text-muted);
+}
+
+.cpk-chip {
+  padding: 0 6px;
+  border-radius: var(--app-radius-pill);
+  background: var(--app-warning-weak);
+  color: var(--app-warning);
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+/* ── 表格化行内输入（属性名 / 部位名这类「总是可编辑」的短字段）── */
+.cpk-inline {
+  min-width: 0;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: var(--app-radius-item);
+  background: transparent;
+  color: var(--app-text-strong);
+  font: inherit;
+  font-size: 12px;
+  box-sizing: border-box;
+
+  &:hover {
+    border-color: var(--app-border);
+    background: var(--app-surface-hover);
+  }
+
+  &:focus {
+    outline: none;
+    border-color: var(--app-primary);
+    background: var(--app-input-bg);
+  }
+
+  &::placeholder {
+    color: var(--app-text-disabled);
+  }
+}
+
+/** 数值列（等宽数字，避免增减时行内跳动） */
+.cpk-num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── 弹窗通用文案 ── */
+.cpk-guard {
+  &__text {
+    margin: 0 0 6px;
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--app-text);
+  }
+
+  &__sub {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--app-text-muted);
+  }
+
+  &__footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+}
+
+/* ── antd 下拉浮层（必须给实体边框：暗色下 shadow 分不开）── */
+.cpk-dropdown {
+  border: 1px solid var(--app-border-strong);
+  border-radius: var(--app-radius-panel);
+  box-shadow: var(--app-shadow-pop);
+  background: var(--app-surface-elevated);
+
+  .ant-select-item {
+    font-size: 12px;
+  }
+}

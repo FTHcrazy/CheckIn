@@ -1,0 +1,24 @@
+.cpk-note__area {
+  width: 100%;
+  min-height: 58px;
+  padding: 6px 8px;
+  border: 1px solid var(--app-border-strong);
+  border-radius: var(--app-radius-item);
+  background: var(--app-input-bg);
+  color: var(--app-text);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.65;
+  resize: vertical;
+  box-sizing: border-box;
+  scrollbar-gutter: stable;
+
+  &:focus {
+    outline: none;
+    border-color: var(--app-primary);
+  }
+
+  &::placeholder {
+    color: var(--app-text-disabled);
+  }
+}

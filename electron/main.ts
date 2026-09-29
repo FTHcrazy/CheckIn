@@ -18,6 +18,7 @@ import {
   markNovelSessionClosed,
   registerNovelHandlers,
 } from "./handlers/novel-handlers";
+import { registerNovelPackHandlers } from "./handlers/novel-pack-handlers";
 import {
   logoutUser,
   registerUserHandlers,
@@ -527,6 +528,7 @@ app.whenReady().then(() => {
   // 仅 full/lite 注册：todo/memo/activity/checkin/ledger
   // （novel 版不打包对应窗口，省启动开销，也缩小可触达的 IPC 面）。
   registerNovelHandlers();
+  registerNovelPackHandlers();
   registerUserHandlers();
   setupRendererHttpSession();
   registerHttpSessionHandlers();

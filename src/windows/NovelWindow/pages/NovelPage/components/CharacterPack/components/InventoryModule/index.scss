@@ -1,0 +1,106 @@
+/** 物品栏：列表 / 宫格两种视图，行内直改 */
+.cpk-inv {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+
+  &__search {
+    width: 96px;
+    font-size: 12px;
+  }
+
+  &__item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 4px;
+    border: 1px solid transparent;
+    border-radius: var(--app-radius-item);
+
+    &:hover {
+      border-color: var(--app-border);
+      background: var(--app-surface-hover);
+    }
+
+    &.is-equipped {
+      border-color: var(--app-accent-blue-weak);
+      background: var(--app-accent-blue-weak);
+    }
+  }
+
+  &__name {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__cat {
+    width: 74px;
+    flex: none;
+  }
+
+  &__qty {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 1px;
+  }
+
+  &__qtynum {
+    min-width: 30px;
+    text-align: center;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: var(--app-text-strong);
+  }
+
+  /* ── 宫格视图 ── */
+  &.is-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+    gap: 5px;
+  }
+
+  &.is-grid &__item {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 3px;
+    padding: 6px;
+    border-color: var(--app-border);
+    background: var(--app-surface-alt);
+  }
+
+  &.is-grid &__name {
+    text-align: center;
+  }
+
+  &.is-grid &__cat {
+    width: 100%;
+  }
+
+  &.is-grid &__qty {
+    align-self: center;
+  }
+
+  &__confirm {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 7px;
+    padding: 6px 8px;
+    border: 1px solid var(--app-error);
+    border-radius: var(--app-radius-item);
+    background: var(--app-error-weak);
+    font-size: 12px;
+    color: var(--app-text-strong);
+  }
+
+  &__confirmactions {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+}

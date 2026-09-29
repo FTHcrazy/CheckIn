@@ -50,6 +50,11 @@ export const STORAGE_KEYS = {
   namingCustomPools: "novel_naming_custom_pools",
   /** 右栏宽度（支撑面板改版）：单个数字整读整写，270ms 防抖后落库 */
   panelWidth: "novel_panel_width",
+  /**
+   * 行囊界面偏好（CharacterPack，PRD §8.6.2）：形态 / 宽度 / 模块折叠 /
+   * 物品栏视图 / 展示熟练度 / 自动保存 —— 全部「即改即存」，不进草稿。
+   */
+  packUi: "novel_pack_ui",
 } as const;
 
 /** 续写位置记忆（R6）：变化后防抖落库 */

@@ -9,7 +9,9 @@ export interface NovelShortcutHandlers {
   onNewChapter: () => void;
   /** F11 专注模式开关 */
   onToggleFocus: () => void;
-  /** Esc：按优先级关闭最上层的浮层（设置 → 快照 → 专注模式） */
+  /** Ctrl+Shift+B 行囊面板开关（入口独立于侧边栏） */
+  onTogglePack: () => void;
+  /** Esc：按优先级关闭最上层的浮层（设置 → 行囊 → 快照 → 专注模式） */
   onEscape: () => void;
 }
 
@@ -26,11 +28,18 @@ export function useNovelShortcuts({
   onJump,
   onNewChapter,
   onToggleFocus,
+  onTogglePack,
   onEscape,
 }: NovelShortcutHandlers): void {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing) return;
+
+      if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === "b") {
+        event.preventDefault();
+        onTogglePack();
+        return;
+      }
 
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
         event.preventDefault();
@@ -64,5 +73,5 @@ export function useNovelShortcuts({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onSave, onJump, onNewChapter, onToggleFocus, onEscape]);
+  }, [onSave, onJump, onNewChapter, onToggleFocus, onTogglePack, onEscape]);
 }

@@ -1,0 +1,77 @@
+/** 货币：进制阶梯 + 即时换算试算 */
+.cpk-cur {
+  &__empty {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: flex-start;
+  }
+
+  &__ladder {
+    margin: 0 0 7px;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  &__lvl {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 3px 6px;
+    border-radius: var(--app-radius-item);
+    background: var(--app-surface-alt);
+    font-size: 12px;
+  }
+
+  &__lvlname {
+    color: var(--app-text-strong);
+    font-weight: 600;
+  }
+
+  &__ratio {
+    color: var(--app-text-secondary-strong);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__try {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 6px 7px;
+    border: 1px dashed var(--app-border-strong);
+    border-radius: var(--app-radius-item);
+    font-size: 12px;
+  }
+
+  &__label {
+    color: var(--app-text-secondary-strong);
+  }
+
+  &__unit {
+    color: var(--app-text-muted);
+  }
+
+  &__eq {
+    color: var(--app-text-disabled);
+  }
+
+  &__out {
+    flex: 1;
+    min-width: 0;
+    color: var(--app-primary);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__hint {
+    margin: 6px 0 0;
+    font-size: 11px;
+    line-height: 1.6;
+    color: var(--app-text-muted);
+  }
+}

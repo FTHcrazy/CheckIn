@@ -1,0 +1,61 @@
+/** 技能栏：载体开关 + 熟练度 + 效果展开 */
+.cpk-skl {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+
+  &__toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--app-text-secondary-strong);
+  }
+
+  &__item {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 5px 6px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-item);
+    background: var(--app-surface-alt);
+
+    &.is-off {
+      opacity: 0.62;
+    }
+  }
+
+  &__head {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  &__name {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+  }
+
+  &__tier {
+    flex: none;
+    padding: 0 5px;
+    border-radius: var(--app-radius-pill);
+    background: var(--app-accent-green-weak);
+    color: var(--app-accent-green);
+    font-size: 11px;
+    line-height: 16px;
+  }
+
+  &__effects {
+    padding-left: 2px;
+  }
+}
+
+.cpk-skl__head .cpk-btn.ghost.is-plain {
+  color: var(--app-text-muted);
+}

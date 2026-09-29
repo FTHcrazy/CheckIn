@@ -138,6 +138,189 @@ export interface NovelBundleDTO {
   recovery: { snapshotTime: number; deltaWords: number } | null
 }
 
+// ── 行囊 CharacterPack DTO（与 electron/handlers/novel-pack-handlers.ts 保持一致） ──
+
+export type PackNatureDTO = "passive" | "sustained" | "cast"
+export type PackOpDTO = "add" | "percent" | "mul" | "override"
+export type PackOwnerTypeDTO = "item" | "skill" | "status"
+
+export interface PackCharacterDTO {
+  id: string
+  workId: string
+  name: string
+  avatar: string
+  isProtagonist: boolean
+  /** 绑定的 EntityPanel 实体 id；空串 = 仅行囊内使用（不写 novel_links） */
+  entityId: string
+  /** 未绑定实体时的行囊内境界 JSON `{levelId, sub}` */
+  realmAt: string
+  note: string
+  sortOrder: number
+}
+
+export interface PackAttributeDTO {
+  id: string
+  characterId: string
+  groupName: string
+  name: string
+  baseValue: number
+  decimals: number
+  unit: string
+  sortOrder: number
+}
+
+export interface PackSlotDTO {
+  id: string
+  characterId: string
+  name: string
+  capacity: number
+  accepts: string[]
+  enabled: boolean
+  note: string
+  sortOrder: number
+}
+
+export interface PackItemDTO {
+  id: string
+  characterId: string
+  name: string
+  category: string
+  qty: number
+  rarity: string
+  icon: string
+  desc: string
+  tags: string[]
+  equippedSlotId: string
+  slotIndex: number | null
+  sourceChapterId: string
+  updatedAt: number
+}
+
+export interface PackSkillDTO {
+  id: string
+  characterId: string
+  name: string
+  desc: string
+  enabled: boolean
+  proficiencyRaw: number
+  tags: string[]
+  sortOrder: number
+}
+
+export interface PackModifierDTO {
+  id: string
+  ownerType: PackOwnerTypeDTO
+  ownerId: string
+  nature: PackNatureDTO
+  name: string
+  /** 空串 = 不指向属性（cast 型） */
+  targetAttrId: string
+  op: PackOpDTO
+  value: number
+  valueUnit: string
+  scaleByProficiency: boolean
+  active: boolean
+  defaultOn: boolean
+  cost: string
+  cooldown: number | null
+  duration: string
+  target: string
+  trigger: string
+  condition: string
+  note: string
+  disabled: boolean
+  sortOrder: number
+}
+
+export interface PackUnitSystemDTO {
+  id: string
+  characterId: string
+  name: string
+  kind: "ladder" | "ratio" | "threshold"
+  /** JSON 字符串：三种模型各自的 level 列表 */
+  levels: string
+  config: string
+  isDefault: boolean
+  sortOrder: number
+}
+
+export interface PackLayoutDTO {
+  characterId: string
+  moduleKey: string
+  enabled: boolean
+  sortOrder: number
+}
+
+export interface PackRecordDTO {
+  id: string
+  characterId: string
+  chapterId: string
+  takenAt: number
+  reason: string
+  payload: string
+}
+
+export interface PackDraftDTO {
+  characterId: string
+  payload: string
+  dirtyCount: number
+  updatedAt: number
+}
+
+export interface PackRealmLinkDTO {
+  id: string
+  fromType: string
+  fromId: string
+  toType: string
+  toId: string
+  relation: string
+  note: string
+}
+
+/** R25 等级项（含 v1.4 补的 subLevels / power，PRD §9.7.2） */
+export interface PackLevelRungDTO {
+  id: string
+  name: string
+  rank: number
+  subLevels: number
+  power: number | null
+}
+
+export interface PackLevelSystemDTO {
+  id: string
+  workId: string
+  name: string
+  rungs: PackLevelRungDTO[]
+}
+
+export interface PackBundleDTO {
+  character: PackCharacterDTO | null
+  attributes: PackAttributeDTO[]
+  slots: PackSlotDTO[]
+  items: PackItemDTO[]
+  skills: PackSkillDTO[]
+  modifiers: PackModifierDTO[]
+  unitSystems: PackUnitSystemDTO[]
+  layouts: PackLayoutDTO[]
+  records: PackRecordDTO[]
+  draft: PackDraftDTO | null
+  levelSystems: PackLevelSystemDTO[]
+  realmLink: PackRealmLinkDTO | null
+}
+
+export interface PackSavePayloadDTO {
+  character: PackCharacterDTO
+  attributes: PackAttributeDTO[]
+  slots: PackSlotDTO[]
+  items: PackItemDTO[]
+  skills: PackSkillDTO[]
+  modifiers: PackModifierDTO[]
+  unitSystems: PackUnitSystemDTO[]
+  layouts: PackLayoutDTO[]
+  reason: string
+  chapterId: string
+}
+
 // ── 备份包 DTO（todo/memo zip 备份导出导入，与 electron/backup-utils.ts 一致） ──
 
 export interface BackupExportResult {
@@ -306,6 +489,31 @@ export interface ElectronAPI {
     /** 今日新增字数（chapter_save 事件 delta 净增）、保存次数与连续码字天数，0 点按主进程本地时间 */
     usageToday: () => Promise<{ todayWords: number; saveCount: number; streakDays: number }>
     usageLog: (event: string, payload: Record<string, unknown>) => Promise<boolean>
+    // ── 行囊 CharacterPack（PRD docs/character-pack-prd.md） ──
+    pack: {
+      load: (workId: string) => Promise<PackBundleDTO>
+      /** 整文档事务保存：写前先落回退点、成功后清空草稿；false 表示已整体回滚 */
+      save: (payload: PackSavePayloadDTO) => Promise<boolean>
+      draftSet: (characterId: string, payload: string, dirtyCount: number) => Promise<boolean>
+      draftGet: (characterId: string) => Promise<PackDraftDTO | null>
+      draftClear: (characterId: string) => Promise<boolean>
+      recordList: (characterId: string, limit?: number) => Promise<PackRecordDTO[]>
+      /** 境界幂等写入（同一来源+关系只保留一行） */
+      linkSet: (link: {
+        id: string
+        fromType: string
+        fromId: string
+        toType: string
+        toId: string
+        relation: string
+        note?: string
+      }) => Promise<boolean>
+      /** 等级项补列：小层数 / 战力当量（PRD §9.7.2） */
+      levelMetaSet: (
+        id: string,
+        meta: { subLevels?: number; power?: number | null },
+      ) => Promise<boolean>
+    }
   }
 
   send: (channel: string, data: unknown) => void

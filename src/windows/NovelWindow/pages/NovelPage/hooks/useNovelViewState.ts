@@ -39,6 +39,11 @@ export function useNovelViewState() {
   const [levelManagerOpen, setLevelManagerOpen] = useState(false);
   /** 自定义类型管理弹框（R23） */
   const [typeManagerOpen, setTypeManagerOpen] = useState(false);
+  /**
+   * 行囊面板（CharacterPack）：入口独立于侧边栏，默认「右侧让位」占位而非覆盖。
+   * 面板内部状态（形态 / 宽度 / 模块折叠…）由它自己经 config 持久化，这里只持开关。
+   */
+  const [packOpen, setPackOpen] = useState(false);
   const [toast, setToast] = useState<ToastPayload | null>(null);
 
   /**
@@ -196,6 +201,11 @@ export function useNovelViewState() {
   const openTypeManager = useCallback(() => setTypeManagerOpen(true), []);
   const closeTypeManager = useCallback(() => setTypeManagerOpen(false), []);
 
+  const openPack = useCallback(() => setPackOpen(true), []);
+  const closePack = useCallback(() => setPackOpen(false), []);
+  /** 顶栏图标与 Ctrl+Shift+B 都是开关：再按一次收起 */
+  const togglePack = useCallback(() => setPackOpen((open) => !open), []);
+
   const selectPanelTab = useCallback((tab: PanelTab) => {
     setPanelTab(tab);
     setRightOpen(true);
@@ -210,10 +220,13 @@ export function useNovelViewState() {
     () => rightOpen && !focusMode,
     [rightOpen, focusMode],
   );
+  /** 行囊与左右栏同一口径：专注模式下一起让位（内容与草稿都不受影响） */
+  const effectivePackOpen = useMemo(() => packOpen && !focusMode, [packOpen, focusMode]);
 
   return {
     leftOpen: effectiveLeftOpen,
     rightOpen: effectiveRightOpen,
+    packOpen: effectivePackOpen,
     rightWidth,
     focusMode,
     typewriter,
@@ -244,6 +257,9 @@ export function useNovelViewState() {
     closeLevelManager,
     openTypeManager,
     closeTypeManager,
+    openPack,
+    closePack,
+    togglePack,
     openSnapshot,
     closeSnapshot,
     toggleSnapshot,

@@ -1,0 +1,44 @@
+.cpk-mgr {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+
+  &__row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 6px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-item);
+    background: var(--app-surface-alt);
+  }
+
+  &__ops {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  &__text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  &__label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--app-text-strong);
+  }
+
+  &__desc {
+    font-size: 11px;
+    line-height: 1.45;
+    color: var(--app-text-muted);
+  }
+}

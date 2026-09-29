@@ -1,0 +1,188 @@
+/** 装备栏：部位 → 槽位占用 → 加成效果 */
+.cpk-eq {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+
+  &__slot {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 6px 7px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-item);
+    background: var(--app-surface-alt);
+
+    &.is-disabled {
+      opacity: 0.7;
+    }
+  }
+
+  &__head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  &__slotname {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--app-text-strong);
+  }
+
+  &__cap {
+    padding: 0 5px;
+    border-radius: var(--app-radius-pill);
+    background: var(--app-surface-active);
+    color: var(--app-text-secondary-strong);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__accepts {
+    flex: 1;
+    min-width: 0;
+    font-size: 11px;
+    color: var(--app-text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__head .cpk-btn.ghost {
+    margin-left: auto;
+  }
+
+  &__empty {
+    margin: 0;
+    padding: 2px 0;
+    font-size: 11px;
+    color: var(--app-text-disabled);
+  }
+
+  &__items {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  &__item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 5px 6px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-item);
+    background: var(--app-surface);
+
+    &.is-off {
+      opacity: 0.62;
+    }
+  }
+
+  &__itemhead {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  &__itemname {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--app-text-strong);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__offtag {
+    flex: none;
+    font-size: 11px;
+    color: var(--app-warning);
+  }
+
+  &__itemops {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+  }
+
+  &__picker {
+    padding: 5px 6px;
+    border: 1px dashed var(--app-border-strong);
+    border-radius: var(--app-radius-item);
+    background: var(--app-surface);
+  }
+
+  &__cands {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 180px;
+    overflow-y: auto;
+  }
+
+  &__cand {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 3px 5px;
+    border: 1px solid transparent;
+    border-radius: var(--app-radius-item);
+    background: transparent;
+    font: inherit;
+    font-size: 12px;
+    color: var(--app-text);
+    cursor: pointer;
+    box-sizing: border-box;
+    text-align: left;
+
+    &:hover {
+      border-color: var(--app-border);
+      background: var(--app-surface-hover);
+    }
+  }
+
+  &__candname {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__candcat {
+    flex: none;
+    font-size: 11px;
+    color: var(--app-text-muted);
+  }
+
+  &__candhint {
+    flex: none;
+    font-size: 11px;
+    color: var(--app-warning);
+  }
+}
+
+/* 稀有度圆点（物品栏与装备栏共用） */
+.cpk-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--app-text-disabled);
+}
+
+.cpk-eq .cpk-eflist {
+  padding-top: 2px;
+}

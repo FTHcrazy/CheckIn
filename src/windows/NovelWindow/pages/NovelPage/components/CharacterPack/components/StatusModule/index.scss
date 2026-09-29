@@ -1,0 +1,72 @@
+/** 状态效果：每个状态自成载体，开关与编辑都在行内 */
+.cpk-stt {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 6px 7px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-item);
+  background: var(--app-surface-alt);
+
+  &.is-sustained {
+    border-left: 3px solid var(--app-accent-blue);
+  }
+
+  &.is-passive {
+    border-left: 3px solid var(--app-text-disabled);
+  }
+
+  &.is-on {
+    background: var(--app-surface);
+  }
+
+  &__list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  &__top {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+
+    .ant-input {
+      flex: 1;
+      min-width: 0;
+      font-size: 12px;
+    }
+  }
+
+  &__row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+
+    .ant-select {
+      min-width: 0;
+    }
+  }
+
+  &__nature {
+    width: 84px;
+  }
+
+  &__attr {
+    flex: 1;
+  }
+
+  &__op {
+    width: 74px;
+  }
+
+  &__preview {
+    margin: 0;
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--app-text-muted);
+  }
+}

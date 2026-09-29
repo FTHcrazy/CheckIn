@@ -1,0 +1,192 @@
+/** 效果编辑器（C-1）：先选性质 → 表单按性质分叉 */
+.cpk-fxmodal {
+  .ant-modal-body {
+    padding-top: 4px;
+  }
+
+  &__body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  /* ── 已有效果的紧凑选择列表 ── */
+  &__list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    max-height: 168px;
+    overflow-y: auto;
+  }
+
+  &__pick {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 4px 6px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-item);
+    background: var(--app-surface-alt);
+    color: var(--app-text);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    box-sizing: border-box;
+    text-align: left;
+
+    &:hover {
+      background: var(--app-surface-hover);
+    }
+
+    &.is-active {
+      border-color: var(--app-primary);
+      background: var(--app-primary-weak);
+    }
+  }
+
+  &__pickname {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--app-text-strong);
+  }
+
+  &__pickval {
+    flex: none;
+    color: var(--app-text-secondary-strong);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ── 第一步：三张性质卡 ── */
+  &__natures {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  &__tip {
+    grid-column: 1 / -1;
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--app-text-muted);
+  }
+
+  &__form {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+  }
+
+  &__lead {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 8px;
+    border-radius: var(--app-radius-item);
+    background: var(--app-surface-alt);
+  }
+
+  &__leadtext {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--app-text-secondary-strong);
+  }
+
+  &__warn {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--app-accent-amber);
+  }
+
+  &__foot {
+    display: flex;
+    justify-content: flex-end;
+    padding-top: 4px;
+  }
+}
+
+/* ── 性质卡：选中前是唯一入口，必须一眼看懂差异 ── */
+.cpk-ncard {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  padding: 10px;
+  border: 1px solid var(--app-border-strong);
+  border-radius: var(--app-radius-card);
+  background: var(--app-surface);
+  font: inherit;
+  cursor: pointer;
+  box-sizing: border-box;
+  text-align: left;
+  transition: border-color 0.16s ease, background 0.16s ease;
+
+  &:hover {
+    background: var(--app-surface-hover);
+  }
+
+  &.is-passive:hover {
+    border-color: var(--app-text-disabled);
+  }
+
+  &.is-sustained:hover {
+    border-color: var(--app-accent-blue);
+  }
+
+  &.is-cast:hover {
+    border-color: var(--app-accent-amber);
+  }
+
+  &__label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--app-text-strong);
+  }
+
+  &__hint {
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--app-text-secondary-strong);
+  }
+}
+
+/* ── 表单字段 ── */
+.cpk-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+
+  &--row {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  &--half {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__label {
+    flex: none;
+    font-size: 12px;
+    color: var(--app-text-secondary-strong);
+  }
+
+  /* 半宽字段里 Select/InputNumber 撑满 */
+  &.cpk-field--half .ant-select,
+  &.cpk-field--half .ant-input-number {
+    width: 100%;
+  }
+}

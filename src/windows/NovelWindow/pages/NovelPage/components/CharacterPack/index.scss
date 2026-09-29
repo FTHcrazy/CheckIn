@@ -1,0 +1,93 @@
+@use "./styles/pack-common.scss";
+
+/**
+ * 行囊面板外壳
+ *
+ * 默认形态是「右侧让位」：它是正文容器的一个 flex 兄弟项，占位即压缩正文
+ * 而不是盖住它。只有窗口不够宽时才降级为浮层（`.is-overlay` + 遮罩）。
+ */
+.cpk-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 19;
+  background: rgba(15, 23, 42, 0.32);
+}
+
+.cpk {
+  position: relative;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-left: 1px solid var(--app-border);
+  background: var(--app-surface);
+  overflow: hidden;
+
+  &.is-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    border-left: 0;
+    box-shadow: var(--app-shadow-window);
+  }
+
+  &__grip {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -3px;
+    width: 7px;
+    z-index: 3;
+    cursor: col-resize;
+    background: transparent;
+
+    &:hover,
+    &:active {
+      background: var(--app-primary-weak);
+    }
+  }
+
+  &__body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 8px;
+    scrollbar-gutter: stable;
+  }
+
+  &__loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 28px 0;
+    font-size: 12px;
+    color: var(--app-text-muted);
+  }
+
+  &__spinner {
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--app-border-strong);
+    border-top-color: var(--app-primary);
+    border-radius: 50%;
+    animation: cpk-spin 0.8s linear infinite;
+  }
+
+  &__error {
+    margin: 0;
+    padding: 10px 8px;
+    border-radius: var(--app-radius-item);
+    background: var(--app-error-weak);
+    color: var(--app-error);
+    font-size: 12px;
+    line-height: 1.6;
+  }
+}
+
+@keyframes cpk-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

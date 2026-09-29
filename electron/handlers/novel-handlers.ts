@@ -531,6 +531,17 @@ function seedTemplateBook(): {
     dbRun("DELETE FROM novel_level_conversions");
     dbRun("DELETE FROM novel_levels");
     dbRun("DELETE FROM novel_level_systems");
+    // 行囊（CharacterPack）随作品一起清空：作品 id 会重建，行囊角色留着会成孤儿
+    dbRun("DELETE FROM novel_pack_modifiers");
+    dbRun("DELETE FROM novel_pack_items");
+    dbRun("DELETE FROM novel_pack_skills");
+    dbRun("DELETE FROM novel_pack_attributes");
+    dbRun("DELETE FROM novel_pack_slots");
+    dbRun("DELETE FROM novel_pack_unit_systems");
+    dbRun("DELETE FROM novel_pack_layouts");
+    dbRun("DELETE FROM novel_pack_records");
+    dbRun("DELETE FROM novel_pack_drafts");
+    dbRun("DELETE FROM novel_pack_characters");
     // 位置记忆指向的章节即将不存在，直接清除
     dbRun("DELETE FROM config WHERE key = 'novel_editor_position'");
 

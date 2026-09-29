@@ -1,0 +1,6 @@
+/** 关闭拦截弹窗：仅保留弹窗自身的按钮排布（文案类见 styles/pack-common.scss） */
+.cpk-guard {
+  &__footer .ant-btn {
+    font-size: 13px;
+  }
+}

@@ -1,0 +1,144 @@
+/** 行囊头部：角色 + 境界 chip + 保存条三态 */
+.cpk-head {
+  flex: none;
+  border-bottom: 1px solid var(--app-border);
+  background: var(--app-header-bg, var(--app-surface));
+
+  &__top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 8px 6px;
+  }
+
+  &__who {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  &__avatar {
+    flex: none;
+    width: 22px;
+    height: 22px;
+    border-radius: var(--app-radius-pill);
+    background: var(--app-primary-weak);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+  }
+
+  &__name {
+    border: 0;
+    padding: 0 2px;
+    background: transparent;
+    cursor: text;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--app-text-strong);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 30%;
+  }
+
+  &__name-input {
+    width: 30%;
+    min-width: 60px;
+    height: 22px;
+    padding: 0 6px;
+    border: 1px solid var(--app-border-strong);
+    border-radius: var(--app-radius-item);
+    background: var(--app-input-bg);
+    color: var(--app-text);
+    font: inherit;
+    font-size: 13px;
+  }
+
+  &__realm {
+    flex: none;
+    padding: 1px 7px;
+    border-radius: var(--app-radius-chip);
+    background: var(--app-accent-blue-weak);
+    color: var(--app-accent-blue);
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  &__ops {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+}
+
+/* ── 保存条（三态底色必须两两可分，暗色同样成立）── */
+.cpk-savebar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px 7px;
+
+  &__state {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__actions {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  &.is-idle &__state {
+    color: var(--app-text-muted);
+  }
+
+  &.is-dirty {
+    background: var(--app-warning-weak);
+  }
+
+  &.is-dirty &__state {
+    color: var(--app-text-strong);
+    font-weight: 600;
+  }
+
+  &.is-busy &__state {
+    color: var(--app-text-secondary-strong);
+  }
+
+  &.is-failed {
+    background: var(--app-error-weak);
+  }
+
+  &.is-failed &__state {
+    color: var(--app-error);
+    font-weight: 600;
+  }
+
+  /* ≥5 处改动：一次轻微呼吸（不循环） */
+  &.is-breathe .cpk-btn.primary {
+    animation: cpk-breathe 1.5s ease-out 2;
+  }
+}
+
+@keyframes cpk-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.06);
+  }
+}

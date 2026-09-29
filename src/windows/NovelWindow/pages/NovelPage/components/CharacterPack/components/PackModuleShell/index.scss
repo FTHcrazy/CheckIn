@@ -1,0 +1,95 @@
+/** 行囊模块壳：标题行 + 可折叠内容（grid 0fr/1fr 过渡，不打断动画） */
+.cpk-mod {
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-item);
+  background: var(--app-surface);
+  overflow: hidden;
+
+  & + & {
+    margin-top: 8px;
+  }
+
+  &__head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 8px 7px 6px;
+    background: var(--app-surface-alt);
+    border-bottom: 1px solid var(--app-border);
+  }
+
+  &.is-collapsed &__head {
+    border-bottom-color: transparent;
+  }
+
+  &__toggle {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    border: 0;
+    padding: 0;
+    background: transparent;
+    cursor: pointer;
+    font: inherit;
+    text-align: left;
+    color: var(--app-text-strong);
+  }
+
+  &__caret {
+    flex: none;
+    width: 14px;
+    font-size: 11px;
+    color: var(--app-text-muted);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__title {
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__actions {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  &__wrap {
+    display: grid;
+    grid-template-rows: 1fr;
+    transition: grid-template-rows 0.22s ease;
+  }
+
+  &.is-collapsed &__wrap {
+    grid-template-rows: 0fr;
+  }
+
+  &__inner {
+    min-height: 0;
+    overflow: hidden;
+    padding: 8px;
+  }
+
+  &.is-collapsed &__inner {
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+
+  &__hint {
+    margin: 0 0 8px;
+    padding: 6px 8px;
+    border-radius: var(--app-radius-item);
+    background: var(--app-primary-weak);
+    color: var(--app-text-secondary-strong);
+    font-size: 12px;
+    line-height: 1.55;
+  }
+}

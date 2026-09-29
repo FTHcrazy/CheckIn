@@ -917,10 +917,15 @@ export function useNovelPage() {
     ],
   );
 
-  // Esc 关闭链：设置 → 快照 → 专注模式（逐层退出，章节跳转面板自己处理 Esc）
+  // Esc 关闭链：设置 → 行囊 → 快照 → 专注模式（逐层退出，章节跳转面板自己处理 Esc；
+  // 行囊面板内部优先处理自己的浮层与未保存改动，见 CharacterPackHost）
   const handleEscape = useCallback((): void => {
     if (view.settingsOpen) {
       view.closeSettings();
+      return;
+    }
+    if (view.packOpen) {
+      view.closePack();
       return;
     }
     if (view.snapshotOpen) {
@@ -937,6 +942,7 @@ export function useNovelPage() {
     onJump: () => (view.jumpOpen ? view.closeJump() : view.openJump()),
     onNewChapter: handleNewChapter,
     onToggleFocus: view.toggleFocus,
+    onTogglePack: view.togglePack,
     onEscape: handleEscape,
   });
 

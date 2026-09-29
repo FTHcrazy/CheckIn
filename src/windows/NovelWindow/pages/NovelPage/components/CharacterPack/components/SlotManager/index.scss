@@ -1,0 +1,62 @@
+.cpk-slotmgr {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  &__row {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 6px 7px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-item);
+    background: var(--app-surface-alt);
+  }
+
+  &__line {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  &__name {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__field {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--app-text-secondary-strong);
+  }
+
+  &__accepts {
+    flex: none;
+    width: 152px;
+  }
+
+  &__note {
+    width: 100%;
+    font-size: 11px;
+    color: var(--app-text-secondary-strong);
+  }
+
+  &__foot {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 14px;
+  }
+
+  &__count {
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--app-text-muted);
+  }
+}

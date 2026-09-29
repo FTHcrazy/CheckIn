@@ -1,0 +1,137 @@
+/** 总属性汇总：每行「基础 → 总览」+ 增量分段 */
+.cpk-sum {
+  &__rows {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  &__row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 4px 6px;
+    border: 1px solid transparent;
+    border-radius: var(--app-radius-item);
+    background: transparent;
+    font: inherit;
+    cursor: pointer;
+    box-sizing: border-box;
+    text-align: left;
+
+    &:hover {
+      border-color: var(--app-border);
+      background: var(--app-surface-hover);
+    }
+  }
+
+  &__name {
+    flex: none;
+    min-width: 62px;
+    max-width: 96px;
+    font-size: 12px;
+    color: var(--app-text-secondary-strong);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__calc {
+    flex: none;
+    display: inline-flex;
+    align-items: baseline;
+    gap: 5px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__num {
+    font-size: 12px;
+    color: var(--app-text-muted);
+
+    &.is-final {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--app-text-strong);
+    }
+
+    &.is-override {
+      color: var(--app-warning);
+    }
+  }
+
+  &__unit {
+    margin-left: 1px;
+    font-size: 11px;
+    font-style: normal;
+    color: var(--app-text-muted);
+  }
+
+  &__arrow {
+    font-size: 11px;
+    color: var(--app-text-disabled);
+  }
+
+  &__seg {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 3px;
+  }
+
+  &__none {
+    font-size: 11px;
+    color: var(--app-text-disabled);
+  }
+
+  &__count {
+    flex: none;
+    font-size: 11px;
+    color: var(--app-text-disabled);
+  }
+
+  &__note {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    margin: 8px 0 0;
+    padding: 5px 7px;
+    border-radius: var(--app-radius-item);
+    background: var(--app-accent-amber-weak);
+    color: var(--app-accent-amber);
+    font-size: 11px;
+    line-height: 1.6;
+  }
+}
+
+/* 增量分段：被动灰 / 持续蓝 / 覆盖警示 */
+.cpk-seg {
+  padding: 0 5px;
+  border-radius: var(--app-radius-pill);
+  font-size: 11px;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  line-height: 17px;
+  white-space: nowrap;
+
+  &.is-passive {
+    background: var(--app-surface-active);
+    color: var(--app-text-secondary-strong);
+  }
+
+  &.is-sustained {
+    background: var(--app-accent-blue-weak);
+    color: var(--app-accent-blue);
+  }
+
+  &.is-override {
+    background: var(--app-warning-weak);
+    color: var(--app-warning);
+    font-weight: 600;
+  }
+}

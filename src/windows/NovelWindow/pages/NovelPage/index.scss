@@ -18,6 +18,8 @@
     min-height: 0;
     display: flex;
     overflow: hidden;
+    /* 行囊在窄窗降级为浮层时需以此为定位参照（见 CharacterPack/index.scss） */
+    position: relative;
   }
 
   &__stage {

@@ -1,0 +1,35 @@
+/** 行囊轻提示：底部居中，2.6s 自动消失 */
+.cpk-toast {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  max-width: 86%;
+  padding: 6px 12px;
+  border-radius: var(--app-radius-chip);
+  border: 1px solid var(--app-border-strong);
+  background: var(--app-surface-elevated);
+  box-shadow: var(--app-shadow-pop);
+  color: var(--app-text-strong);
+  font-size: 12px;
+  line-height: 1.5;
+  pointer-events: none;
+  z-index: 30;
+
+  &.is-success {
+    border-color: var(--app-success);
+  }
+
+  &.is-info {
+    border-color: var(--app-accent-blue);
+  }
+
+  &.is-warning {
+    border-color: var(--app-warning);
+  }
+
+  &.is-error {
+    border-color: var(--app-error);
+    color: var(--app-error);
+  }
+}
