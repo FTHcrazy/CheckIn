@@ -1,0 +1,3067 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="aurora">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CheckIn 小说编辑器 · 行囊（Character Pack）交互原型 v1.0</title>
+<style>
+/* ============================================================
+   0. 基础重置
+   ============================================================ */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; }
+input, select { font: inherit; color: inherit; }
+h1, h2, h3, h4, p { margin: 0; }
+ul { margin: 0; padding: 0; list-style: none; }
+
+/* ============================================================
+   1. 主题令牌
+   变量名逐字对齐 src/shared/styles/themes.scss（aurora / midnight），
+   原型样式可零改造搬进真实代码。
+   ============================================================ */
+:root, [data-theme="aurora"] {
+  --app-bg: #f3f5fc;
+  --app-surface: #ffffff;
+  --app-surface-alt: #f7f8fe;
+  --app-surface-hover: #eef1fc;
+  --app-surface-active: #e4e9fa;
+  --app-surface-elevated: #ffffff;
+  --app-header-bg: #ffffff;
+  --app-sidebar-bg: #ffffff;
+  --app-input-bg: #ffffff;
+  --app-mask: rgba(43, 47, 74, 0.35);
+
+  --app-border: #e2e6f4;
+  --app-border-strong: #d3d9ee;
+
+  --app-text: #2b2f4a;
+  --app-text-secondary: #5a5f7a;
+  --app-text-muted: #8a90ac;
+  --app-text-disabled: #b6bbd0;
+  --app-text-inverse: #ffffff;
+
+  --app-text-strong: #1d2242;
+  --app-text-secondary-strong: #434a6e;
+  --app-primary-weak-strong: #dbe4ff;
+
+  --app-primary: #5b6cf9;
+  --app-primary-strong: #4a5ae0;
+  --app-primary-contrast: #ffffff;
+  --app-primary-weak: #eaf0ff;
+  --app-primary-gradient: linear-gradient(90deg, #7b8cff 0%, #a5b0ff 100%);
+
+  --app-success: #34b37e;
+  --app-warning: #f5a623;
+  --app-warning-weak: #fff3e0;
+  --app-error: #e5484d;
+  --app-error-weak: #ffecee;
+  --app-info-weak: #eaf0ff;
+
+  --app-accent-blue: #5b8def;
+  --app-accent-blue-weak: #eaf0ff;
+  --app-accent-purple: #8b77f0;
+  --app-accent-purple-weak: #f1edff;
+  --app-accent-amber: #f5a623;
+  --app-accent-amber-weak: #fff3e0;
+  --app-accent-orange: #e8935e;
+  --app-accent-rose: #e8618c;
+  --app-accent-rose-weak: #ffeef2;
+
+  --app-radius-pill: 999px;
+  --app-shadow-card: 0 6px 16px rgba(53, 64, 101, 0.07);
+  --app-shadow-pop: 0 10px 30px rgba(53, 64, 101, 0.14);
+  --app-scrollbar: #c9cff5;
+  --app-scrollbar-hover: #b3bbee;
+}
+
+[data-theme="midnight"] {
+  --app-bg: #15171f;
+  --app-surface: #1d2029;
+  --app-surface-alt: #232733;
+  --app-surface-hover: #2a2f3c;
+  --app-surface-active: #323848;
+  --app-surface-elevated: #262b38;
+  --app-header-bg: #1d2029;
+  --app-sidebar-bg: #191c26;
+  --app-input-bg: #232733;
+  --app-mask: rgba(0, 0, 0, 0.5);
+
+  --app-border: #2c313e;
+  --app-border-strong: #3a4152;
+
+  --app-text: #e8eaf2;
+  --app-text-secondary: #aeb4c4;
+  --app-text-muted: #7e8595;
+  --app-text-disabled: #5c6273;
+  --app-text-inverse: #15171f;
+
+  --app-text-strong: #f6f7fc;
+  --app-text-secondary-strong: #ccd2e0;
+  --app-primary-weak-strong: #2d3556;
+
+  --app-primary: #7b8cff;
+  --app-primary-strong: #93a0ff;
+  --app-primary-contrast: #10131f;
+  --app-primary-weak: #232842;
+  --app-primary-gradient: linear-gradient(90deg, #6a7cf5 0%, #8f9dff 100%);
+
+  --app-success: #4fc98d;
+  --app-warning: #e8b334;
+  --app-warning-weak: rgba(232, 179, 52, 0.14);
+  --app-error: #f26d6d;
+  --app-error-weak: rgba(242, 109, 109, 0.16);
+  --app-info-weak: rgba(127, 166, 255, 0.14);
+
+  --app-accent-blue: #7fa6ff;
+  --app-accent-blue-weak: rgba(127, 166, 255, 0.14);
+  --app-accent-purple: #a58cf5;
+  --app-accent-purple-weak: rgba(165, 140, 245, 0.14);
+  --app-accent-amber: #e8b334;
+  --app-accent-amber-weak: rgba(232, 179, 52, 0.14);
+  --app-accent-orange: #f0a06a;
+  --app-accent-rose: #f07fa4;
+  --app-accent-rose-weak: rgba(240, 127, 164, 0.14);
+
+  --app-shadow-card: 0 6px 16px rgba(0, 0, 0, 0.28);
+  --app-shadow-pop: 0 10px 30px rgba(0, 0, 0, 0.42);
+  --app-scrollbar: #3a4152;
+  --app-scrollbar-hover: #4a5266;
+}
+
+/* ============================================================
+   2. 原型页框架
+   ============================================================ */
+:root {
+  --s-1: 4px;  --s-2: 8px;  --s-3: 12px; --s-4: 16px;
+  --s-5: 20px; --s-6: 24px; --s-8: 32px;
+  --r-xs: 6px; --r-sm: 10px; --r-md: 14px; --r-lg: 20px;
+  --ease-out: cubic-bezier(.22, .61, .36, 1);
+  --d-fast: 120ms; --d-base: 180ms; --d-slow: 260ms;
+
+  --left-w: 232px;
+  --top-h: 46px;
+  --status-h: 30px;
+  --pack-w: 380px;
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+             "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  --font-read: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+body {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--app-text);
+  background: #dfe3ef;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  padding: var(--s-3);
+  height: 100%;
+  overflow: hidden;
+}
+[data-theme="midnight"] body { background: #0f111a; }
+
+/* ── 原型演示控制条（非产品 UI） ── */
+.demobar {
+  flex: 0 0 auto;
+  display: flex; align-items: center; gap: var(--s-3); flex-wrap: wrap;
+  padding: var(--s-2) var(--s-3);
+  background: #2b2f4a; color: #e8eaf2;
+  border-radius: var(--r-md);
+  font-size: 12px;
+}
+.demobar .dbtitle {
+  font-weight: 700; letter-spacing: .04em; color: #fff;
+  padding-right: var(--s-3); border-right: 1px solid rgba(255,255,255,.18);
+}
+.demobar .dbgroup { display: flex; align-items: center; gap: 4px; }
+.demobar .dblabel { color: #9aa1bd; margin-right: 2px; }
+.demobar .dbhint { margin-left: auto; color: #8a90ac; font-size: 11px; }
+.dbseg { display: flex; gap: 2px; padding: 2px; background: rgba(255,255,255,.08); border-radius: var(--r-xs); }
+.dbseg button {
+  padding: 4px 10px; border-radius: 5px; font-size: 12px; color: #c6cbe0;
+  transition: background var(--d-fast) var(--ease-out), color var(--d-fast) var(--ease-out);
+}
+.dbseg button:hover { background: rgba(255,255,255,.1); color: #fff; }
+.dbseg button.on { background: #5b6cf9; color: #fff; font-weight: 600; }
+.dbbtn {
+  padding: 5px 11px; border-radius: var(--r-xs); font-size: 12px;
+  background: rgba(255,255,255,.1); color: #e8eaf2;
+  transition: background var(--d-fast) var(--ease-out);
+}
+.dbbtn:hover { background: rgba(255,255,255,.18); }
+
+/* ============================================================
+   3. 桌面舞台 + 应用窗口外壳
+   ============================================================ */
+.stage { flex: 1 1 auto; min-height: 0; position: relative; display: flex; gap: var(--s-4); align-items: stretch; }
+.appwin {
+  flex: 1 1 auto; min-width: 0; min-height: 0; position: relative;
+  display: flex; flex-direction: column;
+  background: var(--app-bg);
+  border-radius: var(--r-lg);
+  box-shadow: 0 18px 50px rgba(20, 25, 50, .18);
+  overflow: hidden;
+}
+
+/* ── 顶栏 ── */
+.topbar {
+  flex: 0 0 auto; height: var(--top-h);
+  display: flex; align-items: center; gap: var(--s-3);
+  padding: 0 var(--s-3);
+  background: var(--app-header-bg);
+  border-bottom: 1px solid var(--app-border);
+}
+.topbar .workname {
+  font-size: 13px; font-weight: 600; color: var(--app-text-strong);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.topbar .workmeta { font-size: 12px; color: var(--app-text-muted); white-space: nowrap; }
+.topbar .spacer { flex: 1 1 auto; }
+.tbtn {
+  height: 30px; min-width: 30px; padding: 0 var(--s-3);
+  display: inline-flex; align-items: center; gap: 6px;
+  border-radius: var(--r-xs);
+  font-size: 12px; color: var(--app-text-secondary-strong);
+  transition: background var(--d-fast) var(--ease-out), color var(--d-fast) var(--ease-out);
+}
+.tbtn:hover { background: var(--app-surface-hover); color: var(--app-text-strong); }
+.tbtn.on { background: var(--app-primary-weak-strong); color: var(--app-primary); font-weight: 600; }
+.tbtn .ico { font-size: 14px; line-height: 1; }
+.tbtn kbd {
+  font-family: var(--font-mono); font-size: 10px; padding: 1px 4px;
+  border-radius: 4px; background: var(--app-surface-alt);
+  border: 1px solid var(--app-border); color: var(--app-text-muted);
+}
+.winctl { display: flex; gap: 2px; margin-left: var(--s-2); }
+.winctl button { width: 30px; height: 26px; border-radius: 6px; color: var(--app-text-muted); font-size: 12px; }
+.winctl button:hover { background: var(--app-surface-hover); }
+
+/* ── 主体三栏 ── */
+.appbody { flex: 1 1 auto; min-height: 0; display: flex; position: relative; }
+
+.leftrail {
+  flex: 0 0 var(--left-w); min-height: 0;
+  display: flex; flex-direction: column;
+  background: var(--app-sidebar-bg);
+  border-right: 1px solid var(--app-border);
+}
+.railhd { flex: 0 0 auto; padding: var(--s-3) var(--s-3) var(--s-2); font-size: 12px; font-weight: 700; color: var(--app-text-strong); letter-spacing: .03em; }
+.raillist { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 0 var(--s-2) var(--s-3); }
+.railrow {
+  display: flex; align-items: center; gap: var(--s-2);
+  padding: 7px var(--s-2); border-radius: var(--r-xs);
+  font-size: 12px; color: var(--app-text-secondary-strong);
+}
+.railrow:hover { background: var(--app-surface-hover); }
+.railrow.on { background: var(--app-primary-weak-strong); color: var(--app-primary); font-weight: 600; }
+.railrow .num { color: var(--app-text-muted); font-size: 11px; margin-left: auto; }
+.railrow .nw { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ── 编辑器：flex:1 + min-width:0 → 面板让位时正文重排（reflow），零遮挡 ── */
+.editor { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--app-surface); position: relative; }
+.editorhd { flex: 0 0 auto; padding: var(--s-4) var(--s-6) var(--s-2); }
+.editorhd .chtitle { font-size: 17px; font-weight: 700; color: var(--app-text-strong); letter-spacing: .01em; }
+.editorhd .chmeta { margin-top: 4px; font-size: 12px; color: var(--app-text-muted); }
+.editorbody { flex: 1 1 auto; min-height: 0; overflow: auto; padding: var(--s-3) var(--s-6) var(--s-8); }
+.manuscript { font-family: var(--font-read); font-size: 15px; line-height: 2.05; color: var(--app-text); max-width: 46em; }
+.manuscript p { margin-bottom: 1.1em; text-indent: 2em; }
+.manuscript p.flush { text-indent: 0; }
+.hl {
+  background: var(--app-accent-amber-weak);
+  border-bottom: 1px solid var(--app-accent-amber);
+  border-radius: 3px; padding: 1px 2px; cursor: pointer;
+}
+.hl:hover { background: var(--app-accent-amber); color: #fff; }
+
+.statusbar {
+  flex: 0 0 auto; height: var(--status-h);
+  display: flex; align-items: center; gap: var(--s-4);
+  padding: 0 var(--s-4);
+  background: var(--app-header-bg);
+  border-top: 1px solid var(--app-border);
+  font-size: 11px; color: var(--app-text-muted);
+}
+.statusbar b { color: var(--app-text-secondary-strong); font-weight: 600; }
+.statusbar .spacer { flex: 1 1 auto; }
+
+/* ============================================================
+   4. 行囊面板
+   ============================================================ */
+.pack {
+  flex: 0 0 var(--pack-w); min-height: 0; width: var(--pack-w);
+  display: flex; flex-direction: column;
+  background: var(--app-surface-elevated);
+  border-left: 1px solid var(--app-border);
+  position: relative;
+}
+/* 形态：降级浮层（遮挡正文，用于对比「不遮挡」的价值） */
+.pack.mode-overlay {
+  position: absolute; top: 0; right: 0; bottom: 0; z-index: 30;
+  border-radius: var(--r-md) 0 0 var(--r-md);
+  box-shadow: var(--app-shadow-pop);
+  animation: slidein var(--d-slow) var(--ease-out);
+}
+/* 形态：Peek 半透明速览 */
+.pack.mode-peek {
+  position: absolute; top: 0; right: 0; bottom: 0; z-index: 32;
+  border-radius: var(--r-md) 0 0 var(--r-md);
+  box-shadow: var(--app-shadow-pop);
+  opacity: .95;
+  animation: slidein var(--d-slow) var(--ease-out);
+}
+/* 形态提示条（真实元素而非伪元素：flex 容器里的 absolute 伪元素会被裁） */
+.modebanner {
+  flex: 0 0 auto;
+  padding: 6px 10px; text-align: center;
+  font-size: 11px; line-height: 1.4; color: #fff;
+  background: var(--app-warning);
+}
+.modebanner.hidden { display: none; }
+@keyframes slidein { from { transform: translateX(24px); opacity: .6; } to { transform: translateX(0); opacity: 1; } }
+.pack.hidden { display: none; }
+
+.mask {
+  position: absolute; inset: 0; z-index: 20;
+  background: var(--app-mask);
+  opacity: 0; pointer-events: none;
+  transition: opacity var(--d-base) var(--ease-out);
+}
+.mask.on { opacity: 1; pointer-events: auto; }
+
+.resizer { position: absolute; left: -3px; top: 0; bottom: 0; width: 7px; cursor: col-resize; z-index: 40; }
+.resizer::after {
+  content: ""; position: absolute; left: 3px; top: 0; bottom: 0; width: 1px;
+  background: transparent; transition: background var(--d-fast);
+}
+.resizer:hover::after { background: var(--app-primary); }
+
+.packhd { flex: 0 0 auto; padding: var(--s-3) var(--s-3) var(--s-2); border-bottom: 1px solid var(--app-border); }
+.packhd-row { display: flex; align-items: center; gap: var(--s-2); }
+.packhd .ptitle { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; color: var(--app-text-strong); }
+.packhd .ptitle .bagico { font-size: 15px; }
+.packhd .psub { font-size: 11px; color: var(--app-text-muted); margin-left: 2px; }
+.packhd .spacer { flex: 1 1 auto; }
+.packhd .pbtn {
+  width: 26px; height: 26px; border-radius: var(--r-xs);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 13px; color: var(--app-text-secondary-strong);
+  transition: background var(--d-fast) var(--ease-out);
+}
+.packhd .pbtn:hover { background: var(--app-surface-hover); color: var(--app-text-strong); }
+
+.chiprow { display: flex; flex-wrap: wrap; gap: 6px; margin-top: var(--s-2); }
+.chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 9px; border-radius: var(--app-radius-pill);
+  font-size: 12px; font-weight: 600;
+  background: var(--app-accent-purple-weak); color: var(--app-accent-purple);
+}
+.chip.cur { background: var(--app-accent-amber-weak); color: var(--app-accent-amber); }
+.chip.realm { background: var(--app-accent-blue-weak); color: var(--app-accent-blue); }
+.chip .v { font-family: var(--font-mono); }
+
+.packbody { flex: 1 1 auto; min-height: 0; overflow: auto; padding: var(--s-3); }
+
+/* ── 模块卡片 ── */
+.mod { margin-bottom: var(--s-3); }
+.mod:last-child { margin-bottom: 0; }
+.modhd {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px var(--s-2); border-radius: var(--r-xs);
+  cursor: pointer; user-select: none;
+  transition: background var(--d-fast) var(--ease-out);
+}
+.modhd:hover { background: var(--app-surface-hover); }
+.modhd .caret { font-size: 9px; color: var(--app-text-muted); width: 10px; text-align: center; display: inline-block; transition: transform var(--d-base) var(--ease-out); }
+.mod.collapsed .modhd .caret { transform: rotate(-90deg); }
+.modhd .mtitle { font-size: 12px; font-weight: 700; color: var(--app-text-strong); letter-spacing: .02em; }
+.modhd .mcount { font-size: 11px; color: var(--app-text-muted); font-family: var(--font-mono); }
+.modhd .spacer { flex: 1 1 auto; }
+.modhd .mact {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 22px; height: 20px; padding: 0 6px; border-radius: 5px;
+  font-size: 11px; color: var(--app-text-muted);
+  transition: background var(--d-fast), color var(--d-fast);
+}
+.modhd .mact:hover { background: var(--app-surface-active); color: var(--app-text-strong); }
+.modhd .mact.on { background: var(--app-primary-weak-strong); color: var(--app-primary); }
+.modbody { padding: 2px 0 0; }
+.mod.collapsed .modbody { display: none; }
+
+/* ── 汇总行 ── */
+.sumrow {
+  display: grid; grid-template-columns: 1fr auto; align-items: center;
+  gap: var(--s-2); padding: 7px var(--s-2);
+  border-radius: var(--r-xs); cursor: pointer;
+  transition: background var(--d-fast) var(--ease-out);
+}
+.sumrow:hover { background: var(--app-surface-hover); }
+.sumrow + .sumrow { border-top: 1px solid var(--app-surface-alt); }
+.sumrow .aname { font-size: 12px; color: var(--app-text-secondary-strong); }
+.sumrow .base { display: block; font-size: 11px; color: var(--app-text-muted); margin-top: 1px; }
+.sumrow .aval { display: flex; align-items: baseline; gap: 6px; }
+.sumrow .final { font-family: var(--font-mono); font-size: 14px; font-weight: 700; color: var(--app-text-strong); }
+.sumrow .delta { font-family: var(--font-mono); font-size: 11px; font-weight: 600; color: var(--app-success); }
+.sumrow .delta.neg { color: var(--app-error); }
+.sumrow .info { font-size: 11px; color: var(--app-text-disabled); width: 14px; text-align: center; }
+.sumrow:hover .info { color: var(--app-primary); }
+
+/* ── 属性编辑行 ── */
+.attgroup + .attgroup { margin-top: var(--s-2); }
+.attgrouphd { padding: 4px var(--s-2); font-size: 11px; font-weight: 700; color: var(--app-text-muted); letter-spacing: .06em; }
+.attrow { display: flex; align-items: center; gap: var(--s-2); padding: 5px var(--s-2); border-radius: var(--r-xs); }
+.attrow:hover { background: var(--app-surface-hover); }
+.attrow .an { flex: 1 1 auto; font-size: 12px; color: var(--app-text-secondary-strong); }
+.attrow .an small { color: var(--app-text-muted); }
+.attrow .ai {
+  width: 96px; text-align: right;
+  font-family: var(--font-mono); font-size: 12px;
+  padding: 3px 6px; border-radius: 5px;
+  background: var(--app-input-bg); border: 1px solid var(--app-border); color: var(--app-text);
+}
+.attrow .ai:focus { outline: none; border-color: var(--app-primary); box-shadow: 0 0 0 2px var(--app-primary-weak); }
+.attrow .tot { width: 74px; text-align: right; font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--app-text-strong); }
+.attrow .lock { font-size: 11px; color: var(--app-text-disabled); width: 12px; }
+
+/* ── 装备槽位 ── */
+.slotgrid { display: grid; grid-template-columns: 1fr; gap: 5px; }
+.slotrow { display: flex; align-items: center; gap: var(--s-2); padding: 6px var(--s-2); border-radius: var(--r-xs); }
+.slotrow:hover { background: var(--app-surface-hover); }
+.slotrow .sname { flex: 0 0 54px; font-size: 11px; color: var(--app-text-muted); text-align: right; white-space: nowrap; }
+.slotrow .cells { display: flex; gap: 5px; flex: 1 1 auto; min-width: 0; flex-wrap: wrap; }
+.morehint {
+  margin: 3px var(--s-2) 0;
+  padding: 5px var(--s-2); border-radius: var(--r-xs);
+  font-size: 11px; color: var(--app-text-muted);
+  background: var(--app-surface-alt);
+  text-align: center;
+}
+.cell {
+  position: relative;
+  display: flex; align-items: center; gap: 6px;
+  min-width: 0; flex: 1 1 130px;
+  padding: 6px var(--s-2); border-radius: var(--r-sm);
+  border: 1px dashed var(--app-border-strong);
+  background: var(--app-surface-alt);
+  font-size: 12px; color: var(--app-text-muted);
+  transition: border-color var(--d-fast), background var(--d-fast);
+}
+.cell.filled { border-style: solid; border-color: var(--app-border); background: var(--app-surface); color: var(--app-text); box-shadow: var(--app-shadow-card); }
+.cell.filled:hover { border-color: var(--app-primary); }
+.cell .qico { font-size: 13px; }
+.cell .qname { flex: 1 1 auto; min-width: 0; font-weight: 600; color: var(--app-text-strong); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cell .qmods { font-family: var(--font-mono); font-size: 10px; color: var(--app-success); white-space: nowrap; }
+.cell .xbtn {
+  width: 18px; height: 18px; border-radius: 4px; flex: 0 0 auto;
+  display: none; align-items: center; justify-content: center;
+  font-size: 11px; color: var(--app-text-muted);
+}
+.cell.filled:hover .xbtn { display: inline-flex; }
+.cell .xbtn:hover { background: var(--app-error-weak); color: var(--app-error); }
+.cell.empty { font-size: 11px; justify-content: center; }
+
+/* ── §9.2.1 效果性质徽标：被动 / 持续 / 释放 必须一眼可分 ── */
+.bdg {
+  flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; border-radius: 4px;
+  font-size: 10px; font-weight: 700; line-height: 1;
+}
+.bdg.passive   { background: var(--app-surface-active); color: var(--app-text-secondary-strong); }
+.bdg.sustained { background: var(--app-accent-blue-weak); color: var(--app-accent-blue); }
+.bdg.cast      { background: var(--app-accent-amber-weak); color: var(--app-accent-amber); }
+
+/* 效果行（挂在装备格子 / 技能行下方） */
+.effects { display: flex; flex-direction: column; gap: 3px; }
+.efx { display: flex; align-items: flex-start; gap: 5px;
+       font-family: var(--font-mono); font-size: 10px; line-height: 1.5; color: var(--app-text-muted); }
+.efx .etxt { flex: 1 1 auto; min-width: 0; }
+.efx.passive .etxt { color: var(--app-success); }
+.efx.sustained.on .etxt { color: var(--app-accent-blue); font-weight: 600; }
+.efx.sustained.off .etxt { color: var(--app-text-disabled); }
+.efx.sustained.off .etxt { text-decoration: line-through; }
+.efx.cast .etxt { color: var(--app-accent-amber); }
+.efx .excl {
+  flex: 0 0 auto; align-self: center; padding: 0 4px; border-radius: 3px;
+  font-size: 9px; background: var(--app-surface-active); color: var(--app-text-muted);
+}
+/* 效果行内的独立开关（与载体开关分离，§9.2.1） */
+.sw2 {
+  flex: 0 0 auto; width: 24px; height: 14px; border-radius: 999px; margin-top: 1px;
+  background: var(--app-border-strong); position: relative;
+  transition: background var(--d-base) var(--ease-out);
+}
+.sw2::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 10px; height: 10px;
+  border-radius: 50%; background: #fff; transition: transform var(--d-base) var(--ease-out);
+}
+.sw2.on { background: var(--app-accent-blue); }
+.sw2.on::after { transform: translateX(10px); }
+
+/* 装备格子改为纵向堆叠（容纳效果行） */
+.slotrow .cells { flex-direction: column; gap: 5px; }
+.cell { flex: 0 0 auto; flex-direction: column; align-items: stretch; gap: 2px; min-height: 30px; }
+.cell .chead { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.cell .ebtn {
+  width: 18px; height: 18px; border-radius: 4px; flex: 0 0 auto;
+  display: none; align-items: center; justify-content: center;
+  font-size: 11px; color: var(--app-text-muted);
+}
+.cell.filled:hover .ebtn { display: inline-flex; }
+.cell .ebtn:hover { background: var(--app-primary-weak-strong); color: var(--app-primary); }
+
+/* 技能行内展开的效果区 */
+.skillrow { flex-wrap: wrap; }
+.skillrow > .effects { flex: 0 0 100%; margin: 4px 0 2px 40px; }
+.skillrow.off > .effects { opacity: .45; }
+
+/* ── 保存条（PRD §8.6）── */
+.savebar {
+  display: flex; align-items: center; gap: var(--s-2);
+  margin-top: var(--s-2); padding: 5px var(--s-2);
+  border-radius: var(--r-sm); background: var(--app-surface-alt);
+  font-size: 11px; color: var(--app-text-muted);
+}
+.savebar.dirty { background: var(--app-warning-weak); }
+.savebar.fail  { background: var(--app-error-weak); color: var(--app-error); }
+.savebar .st { flex: 1 1 auto; min-width: 0; }
+.savebar .st b { color: var(--app-text-strong); }
+.savebar .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--app-warning); margin-right: 4px; vertical-align: 1px; }
+.savebar .sbtn {
+  flex: 0 0 auto; padding: 3px 8px; border-radius: 5px; font-size: 11px; font-weight: 600;
+  background: var(--app-surface); color: var(--app-text-secondary-strong);
+  border: 1px solid var(--app-border);
+}
+.savebar .sbtn:hover { border-color: var(--app-primary); color: var(--app-primary); }
+.savebar .sbtn.primary { background: var(--app-primary); color: var(--app-primary-contrast); border-color: transparent; }
+.savebar .sbtn[disabled] { opacity: .45; cursor: default; }
+
+/* 关闭拦截三选一 */
+.saveask {
+  position: fixed; inset: 0; z-index: 200;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(20, 22, 34, .42);
+}
+.saveask .sacard {
+  width: 388px; max-width: 88%; padding: var(--s-4);
+  border-radius: var(--r-md); background: var(--app-surface-elevated);
+  box-shadow: var(--app-shadow-pop);
+}
+.saveask .sat { font-size: 14px; font-weight: 700; color: var(--app-text-strong); }
+.saveask .sad { margin-top: 6px; font-size: 12px; line-height: 1.75; color: var(--app-text-muted); }
+.saveask .sab { margin-top: var(--s-4); display: flex; gap: var(--s-2); justify-content: flex-end; }
+.saveask .sab button { padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; }
+.saveask .sab .dang  { background: var(--app-error-weak); color: var(--app-error); }
+.saveask .sab .plain { background: var(--app-surface-active); color: var(--app-text-secondary-strong); }
+.saveask .sab .prim  { background: var(--app-primary); color: var(--app-primary-contrast); }
+
+/* ── R25 联动（PRD §9.7 D-2）── */
+.sync {
+  display: flex; align-items: center; gap: var(--s-2);
+  margin-bottom: var(--s-2); padding: 5px var(--s-2);
+  border-radius: var(--r-sm); background: var(--app-accent-blue-weak);
+  font-size: 11px; color: var(--app-accent-blue);
+}
+.sync .sd { width: 6px; height: 6px; border-radius: 50%; background: var(--app-accent-blue); flex: 0 0 auto; }
+.sync .sx { flex: 1 1 auto; min-width: 0; }
+.sync .sx b { font-weight: 700; }
+.sync .sbtn {
+  flex: 0 0 auto; padding: 2px 7px; border-radius: 5px; font-size: 11px; font-weight: 600;
+  background: var(--app-surface); color: var(--app-accent-blue); border: 1px solid transparent;
+}
+.sync .sbtn:hover { border-color: var(--app-accent-blue); }
+
+/* 境界：当前值（linked 一份 / split 两份并列） */
+.lvlcur { display: flex; gap: var(--s-2); margin-bottom: var(--s-2); }
+.lvlcur .lc {
+  flex: 1 1 0; min-width: 0; flex-direction: column; gap: 1px;
+  padding: 6px var(--s-2); border-radius: var(--r-sm);
+  background: var(--app-surface-alt); border: 1px solid var(--app-border);
+}
+.lvlcur .lc i { font-style: normal; font-size: 11px; color: var(--app-text-muted); }
+.lvlcur .lc b { font-size: 12px; font-weight: 700; color: var(--app-text-strong); }
+.lvlcur .lc em { font-style: normal; font-size: 11px; color: var(--app-text-muted); }
+
+/* 境界：预留扩展位开关（虚线框 = 非正式 UI 的自我标注） */
+.rpre {
+  display: flex; flex-direction: column; gap: 4px; margin-top: var(--s-2);
+  padding: 6px var(--s-2); border-radius: var(--r-sm);
+  border: 1px dashed var(--app-border-strong);
+}
+.rpre .rphead { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); }
+.rpre .rplb { font-size: 11px; font-weight: 600; color: var(--app-text-strong); }
+.rpre .rplb i {
+  font-style: normal; font-weight: 400; margin-left: 4px; font-size: 11px;
+  padding: 0 4px; border-radius: 3px;
+  background: var(--app-surface-active); color: var(--app-text-muted);
+}
+.rpre .rps { font-size: 11px; line-height: 1.5; color: var(--app-text-muted); }
+.rpre .rps b { color: var(--app-text-strong); font-weight: 600; }
+.r25who .r25sp {
+  margin-left: 6px; font-size: 11px; font-weight: 600; padding: 1px 5px; border-radius: 4px;
+  background: var(--app-accent-blue-weak); color: var(--app-accent-blue);
+}
+
+.r25ov { position: fixed; left: 296px; top: 62px; z-index: 190; }
+.r25card {
+  width: 338px; border-radius: var(--r-md); overflow: hidden;
+  background: var(--app-surface-elevated); box-shadow: var(--app-shadow-pop);
+  border: 1px solid var(--app-border);   /* 浅色主题下 elevated 也是纯白，无边框会糊在正文里 */
+}
+.r25hd { display: flex; align-items: center; gap: 6px; padding: 8px var(--s-3); border-bottom: 1px solid var(--app-border); background: var(--app-surface-alt); }
+.r25tag {
+  font-size: 10px; font-weight: 800; letter-spacing: .04em; padding: 1px 5px;
+  border-radius: 4px; background: var(--app-accent-blue); color: #FFFFFF;
+}
+.r25tt { flex: 1 1 auto; font-size: 12px; font-weight: 700; color: var(--app-text-strong); }
+.r25x { width: 20px; height: 20px; border-radius: 4px; color: var(--app-text-muted); }
+.r25x:hover { background: var(--app-surface-active); color: var(--app-text-strong); }
+.r25body { padding: var(--s-3); }
+.r25who { font-size: 13px; font-weight: 700; color: var(--app-text-strong); margin-bottom: var(--s-3); }
+.r25who span { font-size: 10px; font-weight: 600; color: var(--app-text-muted); margin-left: 5px; }
+.r25row { display: flex; align-items: center; gap: var(--s-2); margin-bottom: var(--s-2); font-size: 12px; }
+.r25row > span { flex: 0 0 64px; color: var(--app-text-muted); }
+.r25row > b { flex: 1 1 auto; color: var(--app-text-strong); }
+.r25row select {
+  flex: 1 1 auto; min-width: 0; padding: 3px 6px; border-radius: 5px; font-size: 12px;
+  background: var(--app-surface); color: var(--app-text-strong); border: 1px solid var(--app-border);
+}
+.r25map {
+  margin-top: var(--s-3); padding: 6px var(--s-2); border-radius: var(--r-sm);
+  background: var(--app-surface-alt); font-size: 11px; line-height: 1.8; color: var(--app-text-muted);
+}
+.r25map b { color: var(--app-text-strong); font-weight: 600; }
+.r25note { margin-top: var(--s-2); font-size: 11px; line-height: 1.7; color: var(--app-text-muted); }
+
+/* 「不计入」标签（通用） */
+.excl {
+  flex: 0 0 auto; align-self: center; padding: 0 4px; border-radius: 3px;
+  font-size: 9px; background: var(--app-surface-active); color: var(--app-text-muted);
+}
+/* 技能行的效果编辑入口 */
+.skillrow .ebtn2 {
+  flex: 0 0 auto; width: 22px; height: 22px; border-radius: 5px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11px; color: var(--app-text-muted);
+}
+.skillrow .ebtn2:hover { background: var(--app-primary-weak-strong); color: var(--app-primary); }
+/* 效果编辑表单 */
+.cfgchk { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--app-text-secondary-strong); }
+.cfgfoot { display: flex; gap: var(--s-2); justify-content: flex-end; margin-top: var(--s-3); }
+
+/* 汇总的「被动 / 持续」分段增量 */
+.sumrow .seg { font-family: var(--font-mono); font-size: 11px; font-weight: 600; margin-left: 6px; }
+.sumrow .seg.p { color: var(--app-success); }
+.sumrow .seg.s { color: var(--app-accent-blue); }
+.sumrow .seg i { font-style: normal; font-size: 9px; opacity: .7; margin-left: 2px; }
+/* 「不计入」提示行 */
+.castnote {
+  margin: 4px var(--s-2) 0; padding: 5px var(--s-2); border-radius: var(--r-xs);
+  display: flex; align-items: center; gap: 6px;
+  background: var(--app-surface-alt); font-size: 11px; color: var(--app-text-muted);
+}
+.castnote b { color: var(--app-accent-amber); }
+
+/* 效果编辑抽屉 */
+.efrow { display: flex; align-items: center; gap: 6px; padding: 7px var(--s-2);
+         border-radius: var(--r-xs); font-size: 12px; }
+.efrow + .efrow { border-top: 1px solid var(--app-surface-alt); }
+.efrow .etxt { flex: 1 1 auto; min-width: 0; font-family: var(--font-mono); font-size: 11px;
+  color: var(--app-text-secondary-strong); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.efrow .scdel, .cfgrow .scdel { padding: 3px 7px; border-radius: 5px; font-size: 11px;
+  color: var(--app-error); background: var(--app-error-weak); flex: 0 0 auto; }
+.efrow .efctrl { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.npick { display: flex; flex-wrap: wrap; gap: var(--s-2); margin: var(--s-2) 0 var(--s-3); }
+.ncard {
+  flex: 1 1 128px; min-width: 128px; padding: 10px; border-radius: var(--r-sm); text-align: left;
+  border: 1.5px solid var(--app-border); background: var(--app-surface);
+  transition: border-color var(--d-fast), background var(--d-fast);
+}
+.ncard:hover { border-color: var(--app-primary); background: var(--app-surface-hover); }
+.ncard .nt { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: var(--app-text-strong); }
+.ncard .nd { margin-top: 5px; font-size: 10px; line-height: 1.55; color: var(--app-text-muted); }
+.ncard .nx { margin-top: 6px; font-family: var(--font-mono); font-size: 10px; color: var(--app-text-disabled); }
+.cfgrow { display: flex; align-items: center; gap: var(--s-2); padding: 6px var(--s-2); border-radius: var(--r-xs); }
+.cfgrow + .cfgrow { border-top: 1px solid var(--app-surface-alt); }
+.cfgrow .cfgl { flex: 0 0 116px; font-size: 12px; color: var(--app-text-secondary-strong); }
+.cfgrow .cfgl small { display: block; font-size: 10px; color: var(--app-text-muted); margin-top: 1px; }
+.cfgrow .cfgv { flex: 1 1 auto; display: flex; align-items: center; gap: 6px; min-width: 0; }
+.cfgsel, .cfgtxt, .cfgrow input.num {
+  padding: 4px 6px; border-radius: 6px; font-size: 12px;
+  background: var(--app-input-bg); border: 1px solid var(--app-border); color: var(--app-text);
+}
+.cfgsel:focus, .cfgtxt:focus, .cfgrow input.num:focus { outline: none; border-color: var(--app-primary); }
+.cfgrow input.num { width: 72px; text-align: center; font-family: var(--font-mono); }
+.cfgsel { flex: 1 1 auto; min-width: 0; }
+.cfgtxt { flex: 1 1 auto; min-width: 0; }
+
+/* hover Δ 预览气泡 */
+.dtip {
+  position: fixed; z-index: 90; pointer-events: none;
+  padding: 8px 10px; border-radius: var(--r-sm);
+  background: var(--app-surface-elevated);
+  border: 1px solid var(--app-border);
+  box-shadow: var(--app-shadow-pop);
+  font-size: 11px; min-width: 172px;
+  opacity: 0; transform: translateY(4px);
+  transition: opacity var(--d-fast) var(--ease-out), transform var(--d-fast) var(--ease-out);
+}
+.dtip.on { opacity: 1; transform: translateY(0); }
+.dtip .dth { font-size: 11px; font-weight: 700; color: var(--app-text-strong); padding-bottom: 5px; margin-bottom: 5px; border-bottom: 1px solid var(--app-border); }
+.dtip .dtrow { display: flex; justify-content: space-between; gap: var(--s-4); padding: 2px 0; color: var(--app-text-secondary); }
+.dtip .dtrow b { font-family: var(--font-mono); color: var(--app-success); font-weight: 700; }
+.dtip .dtrow b.neg { color: var(--app-error); }
+.dtip .dtempty { color: var(--app-text-muted); }
+
+/* ── 物品栏 ── */
+.invtools { display: flex; gap: 6px; padding: 2px var(--s-2) var(--s-2); }
+.invsearch {
+  flex: 1 1 auto; min-width: 0;
+  padding: 5px var(--s-2); border-radius: var(--r-xs);
+  background: var(--app-input-bg); border: 1px solid var(--app-border); color: var(--app-text);
+  font-size: 12px;
+}
+.invsearch:focus { outline: none; border-color: var(--app-primary); }
+.invtoggle { display: flex; gap: 2px; padding: 2px; border-radius: var(--r-xs); background: var(--app-surface-alt); border: 1px solid var(--app-border); }
+.invtoggle button { padding: 3px 7px; border-radius: 5px; font-size: 11px; color: var(--app-text-muted); }
+.invtoggle button.on { background: var(--app-surface); color: var(--app-text-strong); font-weight: 600; box-shadow: var(--app-shadow-card); }
+.addbtn {
+  padding: 5px 10px; border-radius: var(--r-xs); flex: 0 0 auto;
+  font-size: 12px; font-weight: 600;
+  background: var(--app-primary); color: var(--app-primary-contrast);
+}
+.addbtn:hover { background: var(--app-primary-strong); }
+/* 次级按钮：用于「−1 层」这类反向操作，避免与「突破」同权重 */
+.addbtn.ghost {
+  background: var(--app-surface); color: var(--app-text-secondary-strong);
+  border: 1px solid var(--app-border);
+}
+.addbtn.ghost:hover { background: var(--app-surface); border-color: var(--app-primary); color: var(--app-primary); }
+
+.invlist { display: flex; flex-direction: column; gap: 4px; }
+.invrow { display: flex; align-items: center; gap: var(--s-2); padding: 6px var(--s-2); border-radius: var(--r-xs); transition: background var(--d-fast) var(--ease-out); }
+.invrow:hover { background: var(--app-surface-hover); }
+.invrow .iico {
+  width: 24px; height: 24px; flex: 0 0 auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: var(--r-sm); font-size: 13px; background: var(--app-surface-alt);
+}
+.invrow .iico.eq { background: var(--app-primary-weak-strong); }
+.invrow .imain { flex: 1 1 auto; min-width: 0; }
+.invrow .iname { display: flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; color: var(--app-text-strong); }
+.invrow .iname .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.invrow .isub { font-family: var(--font-mono); font-size: 10px; color: var(--app-text-muted); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tag { font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px; letter-spacing: .02em; flex: 0 0 auto; }
+.tag.eq  { background: var(--app-primary-weak-strong); color: var(--app-primary); }
+.tag.new { background: var(--app-accent-amber-weak); color: var(--app-accent-amber); }
+.qty { display: flex; align-items: center; gap: 3px; flex: 0 0 auto; }
+.qty button {
+  width: 20px; height: 20px; border-radius: 5px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700;
+  background: var(--app-surface-alt); color: var(--app-text-secondary-strong);
+  border: 1px solid var(--app-border);
+}
+.qty button:hover { background: var(--app-surface-active); color: var(--app-text-strong); }
+.qty .n { min-width: 28px; text-align: center; font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--app-text-strong); }
+
+.invgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(74px, 1fr)); gap: 6px; }
+.gcell {
+  position: relative; padding: 8px 6px; border-radius: var(--r-sm);
+  border: 1px solid var(--app-border); background: var(--app-surface-alt);
+  text-align: center; cursor: pointer;
+  transition: border-color var(--d-fast), transform var(--d-fast) var(--ease-out);
+}
+.gcell:hover { border-color: var(--app-primary); transform: translateY(-1px); }
+.gcell .gq { position: absolute; right: 4px; bottom: 3px; font-family: var(--font-mono); font-size: 10px; font-weight: 700; color: var(--app-text-secondary); }
+.gcell .gico { font-size: 18px; }
+.gcell .gnm { margin-top: 3px; font-size: 10px; color: var(--app-text-secondary-strong); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ── 技能栏 ── */
+.skillrow { display: flex; align-items: center; gap: var(--s-2); padding: 6px var(--s-2); border-radius: var(--r-xs); }
+.skillrow:hover { background: var(--app-surface-hover); }
+.switch {
+  flex: 0 0 auto; width: 32px; height: 18px; border-radius: 999px;
+  background: var(--app-border-strong); position: relative;
+  transition: background var(--d-base) var(--ease-out);
+}
+.switch::after {
+  content: ""; position: absolute; top: 2px; left: 2px;
+  width: 14px; height: 14px; border-radius: 50%; background: #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,.2);
+  transition: transform var(--d-base) var(--ease-out);
+}
+.switch.on { background: var(--app-success); }
+.switch.on::after { transform: translateX(14px); }
+.skillmain { flex: 1 1 auto; min-width: 0; }
+.skillrow .skname { display: flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; color: var(--app-text-strong); }
+.skillrow.off .skname { color: var(--app-text-disabled); text-decoration: line-through; }
+.skillrow .sksub { font-family: var(--font-mono); font-size: 10px; color: var(--app-text-muted); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.profwrap { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+.profbar { flex: 1 1 auto; height: 5px; border-radius: 999px; overflow: hidden; background: var(--app-surface-active); }
+.profbar i { display: block; height: 100%; border-radius: 999px; background: var(--app-primary-gradient); }
+.proflv { font-size: 10px; font-weight: 700; color: var(--app-primary); white-space: nowrap; }
+.profnum { font-family: var(--font-mono); font-size: 10px; color: var(--app-text-muted); }
+.profq { display: flex; gap: 3px; flex: 0 0 auto; }
+.profq button {
+  padding: 2px 6px; border-radius: 5px; font-size: 10px; font-weight: 700;
+  background: var(--app-surface-alt); color: var(--app-text-secondary-strong);
+  border: 1px solid var(--app-border); font-family: var(--font-mono);
+}
+.profq button:hover { background: var(--app-surface-active); }
+
+/* ── 引导态 / 空态 ── */
+.guide {
+  margin: var(--s-1) var(--s-2) var(--s-2);
+  padding: var(--s-3); border-radius: var(--r-sm);
+  background: var(--app-warning-weak);
+  border: 1px dashed var(--app-warning);
+  font-size: 12px; color: var(--app-text-secondary-strong); line-height: 1.75;
+}
+.guide b { color: var(--app-text-strong); }
+.guide .gbtn {
+  display: inline-block; margin-top: 8px; padding: 4px 10px; border-radius: var(--r-xs);
+  background: var(--app-warning); color: #fff; font-size: 12px; font-weight: 600;
+}
+.emptybox {
+  margin: var(--s-1) var(--s-2) var(--s-2);
+  padding: var(--s-5) var(--s-3); border-radius: var(--r-sm);
+  border: 1px dashed var(--app-border-strong);
+  text-align: center; font-size: 12px; color: var(--app-text-muted); line-height: 1.8;
+}
+.emptybox .eico { font-size: 22px; display: block; margin-bottom: 6px; }
+.emptybox .ebtn {
+  display: inline-block; margin-top: 8px; padding: 5px 12px; border-radius: var(--r-xs);
+  background: var(--app-primary); color: var(--app-primary-contrast);
+  font-size: 12px; font-weight: 600;
+}
+.dotnew { width: 6px; height: 6px; border-radius: 50%; flex: 0 0 auto; background: var(--app-accent-amber); }
+
+/* ============================================================
+   5. 抽屉 / 弹层
+   ============================================================ */
+.scrim {
+  position: absolute; inset: 0; z-index: 50;
+  background: var(--app-mask);
+  display: flex; justify-content: flex-end;
+  opacity: 0; pointer-events: none;
+  transition: opacity var(--d-base) var(--ease-out);
+}
+.scrim.on { opacity: 1; pointer-events: auto; }
+.drawer {
+  width: 336px; max-width: 90%; height: 100%;
+  display: flex; flex-direction: column;
+  background: var(--app-surface-elevated);
+  border-left: 1px solid var(--app-border);
+  box-shadow: var(--app-shadow-pop);
+  transform: translateX(16px);
+  transition: transform var(--d-slow) var(--ease-out);
+}
+.scrim.on .drawer { transform: translateX(0); }
+.drawer.wide { width: 460px; }
+.drhd { flex: 0 0 auto; display: flex; align-items: center; gap: var(--s-2); padding: var(--s-3); border-bottom: 1px solid var(--app-border); }
+.drhd .dt { font-size: 13px; font-weight: 700; color: var(--app-text-strong); }
+.drhd .spacer { flex: 1 1 auto; }
+.drbody { flex: 1 1 auto; min-height: 0; overflow: auto; padding: var(--s-3); }
+.drfoot { flex: 0 0 auto; padding: var(--s-3); border-top: 1px solid var(--app-border); display: flex; gap: var(--s-2); justify-content: flex-end; }
+.drfoot .addbtn { background: var(--app-surface-active); color: var(--app-text-strong); }
+.drfoot .addbtn.primary { background: var(--app-primary); color: var(--app-primary-contrast); }
+
+.formula {
+  font-family: var(--font-mono); font-size: 12px; line-height: 1.95;
+  padding: var(--s-3); border-radius: var(--r-sm);
+  background: var(--app-surface-alt); color: var(--app-text); word-break: break-all;
+}
+.formula .op { color: var(--app-text-muted); }
+.formula .num { color: var(--app-text-strong); font-weight: 700; }
+.formula .res { color: var(--app-primary); font-weight: 700; }
+.frow { display: flex; align-items: baseline; gap: var(--s-2); padding: 7px var(--s-2); border-radius: var(--r-xs); font-size: 12px; }
+.frow + .frow { border-top: 1px solid var(--app-surface-alt); }
+.frow .fsrc { flex: 1 1 auto; min-width: 0; color: var(--app-text-secondary-strong); }
+.frow .fsrc small { display: block; color: var(--app-text-muted); font-size: 10px; margin-top: 1px; }
+.frow .fval { font-family: var(--font-mono); font-weight: 700; color: var(--app-success); white-space: nowrap; }
+.frow .fval.neg { color: var(--app-error); }
+.frow .fval.pct { color: var(--app-accent-purple); }
+.frow .fval.mul { color: var(--app-accent-orange); }
+.frow .fval.ovr { color: var(--app-accent-rose); }
+.frow.base .fval { color: var(--app-text-strong); }
+.frow .fval.mute { color: var(--app-text-disabled); }
+.secnote { margin: var(--s-3) 0 var(--s-2); font-size: 11px; font-weight: 700; color: var(--app-text-muted); letter-spacing: .06em; }
+
+.mrow {
+  display: flex; align-items: center; gap: var(--s-2);
+  padding: 7px var(--s-2); border-radius: var(--r-xs);
+  border: 1px solid var(--app-border); background: var(--app-surface); margin-bottom: 5px;
+}
+.mrow .mh { color: var(--app-text-disabled); font-size: 13px; cursor: grab; }
+.mrow .mn { flex: 1 1 auto; font-size: 12px; font-weight: 600; color: var(--app-text-strong); }
+.mrow .mn small { display: block; font-weight: 400; color: var(--app-text-muted); font-size: 10px; margin-top: 1px; }
+.mrow .mctrl { display: flex; align-items: center; gap: 4px; }
+.mrow .mctrl button { width: 22px; height: 22px; border-radius: 5px; font-size: 11px; color: var(--app-text-secondary-strong); background: var(--app-surface-alt); }
+.mrow .mctrl button:hover { background: var(--app-surface-active); }
+.mrow .mctrl button:disabled { opacity: .35; cursor: default; }
+.mrow.off { opacity: .55; }
+
+.slotcfg { border: 1px solid var(--app-border); border-radius: var(--r-sm); padding: var(--s-2) var(--s-3); margin-bottom: 6px; background: var(--app-surface); }
+.slotcfg .scrow { display: flex; align-items: center; gap: var(--s-2); }
+.slotcfg .scname { flex: 1 1 auto; font-size: 12px; font-weight: 600; color: var(--app-text-strong); }
+.slotcfg .scfield { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--app-text-muted); }
+.slotcfg input.num {
+  width: 44px; text-align: center; padding: 3px 4px; border-radius: 5px;
+  font-family: var(--font-mono); font-size: 12px;
+  background: var(--app-input-bg); border: 1px solid var(--app-border); color: var(--app-text);
+}
+.slotcfg input.num:focus { outline: none; border-color: var(--app-primary); }
+.slotcfg .scdel { padding: 3px 7px; border-radius: 5px; font-size: 11px; color: var(--app-error); background: var(--app-error-weak); }
+.slotcfg .accrow { margin-top: 6px; font-size: 11px; color: var(--app-text-muted); }
+.tabs { display: flex; gap: 3px; padding: 3px; border-radius: var(--r-xs); background: var(--app-surface-alt); margin-bottom: var(--s-3); }
+.tabs button { flex: 1 1 0; padding: 6px 4px; border-radius: 6px; font-size: 12px; color: var(--app-text-muted); font-weight: 600; transition: background var(--d-fast), color var(--d-fast); }
+.tabs button.on { background: var(--app-surface); color: var(--app-text-strong); box-shadow: var(--app-shadow-card); }
+.unitnote {
+  font-size: 11px; line-height: 1.8;
+  padding: var(--s-2) var(--s-3); border-radius: var(--r-sm);
+  background: var(--app-info-weak); color: var(--app-text-secondary-strong);
+  margin-bottom: var(--s-3);
+}
+.unitnote b { color: var(--app-text-strong); }
+.barcfg { display: flex; justify-content: space-between; gap: var(--s-3); font-size: 11px; padding: 3px 0; color: var(--app-text-secondary-strong); }
+.barcfg .k { color: var(--app-text-muted); }
+.lvlrow { display: flex; align-items: center; gap: var(--s-2); padding: 6px var(--s-2); border-radius: var(--r-xs); font-size: 12px; }
+.lvlrow + .lvlrow { border-top: 1px solid var(--app-surface-alt); }
+.lvlrow .ord { font-family: var(--font-mono); font-size: 10px; color: var(--app-text-disabled); width: 18px; }
+.lvlrow .ln { flex: 1 1 auto; color: var(--app-text-strong); font-weight: 600; }
+.lvlrow .lv { font-family: var(--font-mono); font-size: 11px; color: var(--app-text-secondary); }
+.lvlrow .lv.on { color: var(--app-primary); font-weight: 700; }
+
+/* ============================================================
+   6. 分离窗口（形态 ③ 的模拟）
+   ============================================================ */
+.detach {
+  flex: 0 0 auto; width: 336px; max-width: 42vw;
+  display: none; flex-direction: column;
+  background: var(--app-surface-elevated);
+  border: 1px solid var(--app-border);
+  border-radius: var(--r-md);
+  box-shadow: 0 22px 60px rgba(20, 25, 50, .26);
+  overflow: hidden;
+}
+.detach.on { display: flex; animation: popin var(--d-slow) var(--ease-out); }
+@keyframes popin { from { transform: scale(.97); opacity: .5; } to { transform: scale(1); opacity: 1; } }
+.detach .dhead {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 6px;
+  height: 32px; padding: 0 var(--s-3);
+  background: var(--app-surface-alt);
+  border-bottom: 1px solid var(--app-border);
+  font-size: 11px; color: var(--app-text-muted);
+}
+.detach .dhead .spacer { flex: 1 1 auto; }
+.detach .dhead .ddot { display: flex; gap: 5px; }
+.detach .dhead .ddot i { width: 9px; height: 9px; border-radius: 50%; background: var(--app-border-strong); display: block; }
+.detach .dnote {
+  padding: 6px var(--s-3); font-size: 10px; line-height: 1.7;
+  background: var(--app-info-weak); color: var(--app-text-secondary-strong);
+}
+
+/* ── 提示条 ── */
+.toast {
+  position: fixed; left: 50%; bottom: 34px; z-index: 120;
+  transform: translate(-50%, 10px);
+  padding: 9px var(--s-4); border-radius: var(--r-sm);
+  background: #2b2f4a; color: #fff; font-size: 12px;
+  box-shadow: var(--app-shadow-pop);
+  opacity: 0; pointer-events: none;
+  transition: opacity var(--d-base) var(--ease-out), transform var(--d-base) var(--ease-out);
+}
+.toast.on { opacity: 1; transform: translate(-50%, 0); }
+
+/* 滚动条：对齐项目规范（默认隐藏，hover 容器才显示） */
+.rl::-webkit-scrollbar { width: 8px; height: 8px; }
+.rl::-webkit-scrollbar-thumb { background: transparent; border-radius: 999px; }
+.rl:hover::-webkit-scrollbar-thumb { background: var(--app-scrollbar); }
+.rl:hover::-webkit-scrollbar-thumb:hover { background: var(--app-scrollbar-hover); }
+.rl::-webkit-scrollbar-track { background: transparent; }
+</style>
+</head>
+<body>
+
+<!-- ============================================================
+     原型演示控制条（非产品 UI，仅供评审切换场景）
+     ============================================================ -->
+<div class="demobar">
+  <span class="dbtitle">行囊 · 交互原型 v1.0</span>
+
+  <span class="dbgroup">
+    <span class="dblabel">形态</span>
+    <span class="dbseg" id="segMode">
+      <button data-mode="docked" class="on">① 右侧让位</button>
+      <button data-mode="peek">② Peek 速览</button>
+      <button data-mode="overlay">降级浮层</button>
+      <button data-mode="detached">③ 分离窗口</button>
+    </span>
+  </span>
+
+  <span class="dbgroup">
+    <span class="dblabel">主题</span>
+    <span class="dbseg" id="segTheme">
+      <button data-theme="aurora" class="on">aurora</button>
+      <button data-theme="midnight">midnight</button>
+    </span>
+  </span>
+
+  <button class="dbbtn" id="btnReset">重置演示数据</button>
+  <button class="dbbtn" id="btnClearLayout">清空本地记忆</button>
+
+  <span class="dbhint">Ctrl / ⌘ + Shift + B 开关行囊 · Alt + 点顶栏背包 = 速览 · Esc 关最上层浮层</span>
+</div>
+
+<!-- ============================================================
+     桌面舞台
+     ============================================================ -->
+<div class="stage">
+
+  <!-- 应用主窗口 -->
+  <div class="appwin" id="appwin">
+    <div class="topbar">
+      <span class="workname">诸天万界：从灵植夫开始</span>
+      <span class="workmeta">· 第 137 章</span>
+      <span class="spacer"></span>
+
+      <button class="tbtn" id="btnPack" title="行囊（Ctrl/⌘ + Shift + B）｜按住 Alt 点击 = 速览">
+        <span class="ico">🎒</span>
+        <span>行囊</span>
+        <kbd>⇧⌘B</kbd>
+      </button>
+      <button class="tbtn" title="搜索（现有功能占位）"><span class="ico">🔍</span></button>
+      <button class="tbtn" title="设置（现有功能占位）"><span class="ico">⚙</span></button>
+
+      <span class="winctl"><button>—</button><button>□</button><button>✕</button></span>
+    </div>
+
+    <div class="appbody">
+      <!-- 左侧章节树 -->
+      <aside class="leftrail">
+        <div class="railhd">目录 · 137 / 402 章</div>
+        <div class="raillist rl">
+          <div class="railrow"><span class="nw">卷一 · 灵田初启</span></div>
+          <div class="railrow"><span class="nw">135 · 破境丹的代价</span><span class="num">2.4k</span></div>
+          <div class="railrow"><span class="nw">136 · 风雷双匕</span><span class="num">2.8k</span></div>
+          <div class="railrow on"><span class="nw">137 · 血玉戒之秘</span><span class="num">1.2k</span></div>
+          <div class="railrow"><span class="nw">138 · 未命名</span></div>
+        </div>
+      </aside>
+
+      <!-- 编辑器正文 -->
+      <main class="editor">
+        <div class="editorhd">
+          <div class="chtitle">第 137 章 · 血玉戒之秘</div>
+          <div class="chmeta">正文 1,248 字 · 上次保存 2 分钟前</div>
+        </div>
+        <div class="editorbody rl">
+          <div class="manuscript">
+            <p>叶尘立于灵田边缘，掌心摊开。那枚从血袍老者指上褪下的<span class="hl" title="选中这段文字后点右键 → 记入行囊">血玉戒</span>正静静地躺着，戒面上一缕暗红纹路如活物般蠕动。</p>
+            <p>他随手将戒指套上左手无名指，一股温热顺势涌入经脉。脑海里那道冰冷的系统提示音再度响起——</p>
+            <p class="flush">【叮！检测到可佩戴饰品「血玉戒」，是否装备？】</p>
+            <p>叶尘心念一动，意识沉入那方寸之间的行囊。灵田里新收的五十株三叶灵芝还在角落堆着，几枚疗伤用的培元丹压在最底层，倒是那柄月前得来的<span class="hl">风雷双匕</span>仍旧安放在武器位上，匕身雷纹流转，隐有风雷之声。</p>
+            <p>「筑基七层……」他默念了一声，指尖在那枚暗红戒指上摩挲，「再往前一步，就是筑基圆满，届时便可尝试破境。」</p>
+            <p>破境丹他还有三颗。是留到金丹关口再用，还是眼下就吞下一颗搏那一线契机？叶尘抬眼望向远处云雾缭绕的宗门主峰，沉默良久。</p>
+            <p>风起，灵田里的三叶灵芝齐齐伏倒。</p>
+          </div>
+        </div>
+        <div class="statusbar">
+          <span>字数 <b>1,248</b></span>
+          <span>本章目标 <b>3,000</b></span>
+          <span class="spacer"></span>
+          <span id="statusPack">行囊 · 未打开</span>
+        </div>
+      </main>
+
+      <!-- 行囊面板（形态 ①② 挂在这里） -->
+      <section class="pack hidden" id="pack">
+        <div class="resizer" id="resizer" title="拖拽调整宽度（会被记忆）"></div>
+        <div class="packhd">
+          <div class="packhd-row">
+            <span class="ptitle"><span class="bagico">🎒</span>行囊<span class="psub">主角快照</span></span>
+            <span class="spacer"></span>
+            <button class="pbtn" id="btnModules" title="模块管理">⚙</button>
+            <button class="pbtn" id="btnDetach" title="分离为独立窗口（正文零遮挡）">⤢</button>
+            <button class="pbtn" id="btnClose" title="收起（Esc）">✕</button>
+          </div>
+          <div class="chiprow" id="chiprow"></div>
+          <div class="savebar" id="savebar"></div>
+        </div>
+        <div class="packbody rl" id="packbody"></div>
+        <div class="modebanner hidden" id="modebanner"></div>
+      </section>
+
+      <div class="mask" id="mask"></div>
+    </div>
+  </div>
+
+  <!-- 分离窗口模拟（形态 ③） -->
+  <aside class="detach" id="detach">
+    <div class="dhead">
+      <span>🎒 行囊 — 独立窗口</span>
+      <span class="spacer"></span>
+      <span class="ddot"><i></i><i></i><i></i></span>
+    </div>
+    <div class="dnote">
+      真实实现为独立 BrowserWindow（即关即销 · 单实例唤起，参照 SettingsWindow）。<br />
+      可拖到副屏 → 主窗口正文<b>零遮挡</b>。此处为形态示意。
+    </div>
+    <div class="packbody rl" id="detachbody" style="flex:1 1 auto; min-height:0;"></div>
+  </aside>
+</div>
+
+<!-- 抽屉 -->
+<div class="scrim" id="scrim">
+  <div class="drawer" id="drawer">
+    <div class="drhd">
+      <span class="dt" id="drawerTitle">标题</span>
+      <span class="spacer"></span>
+      <button class="pbtn" id="drawerClose" style="width:26px;height:26px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;">✕</button>
+    </div>
+    <div class="drbody rl" id="drawerBody"></div>
+    <div class="drfoot" id="drawerFoot"></div>
+  </div>
+</div>
+
+<!-- hover Δ 预览气泡 -->
+<div class="dtip" id="dtip"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+/* ============================================================
+   行囊 · 交互原型逻辑
+
+   对应 PRD：
+   - 汇总管线严格按 §9.4：(base + Σadd) × (1 + Σpercent/100) × Πmul，override 最高优先
+   - 每个汇总属性可反查来源明细（REQ-017）
+   - 装备槽位支持 capacity（戒指 2 槽）+ 类型白名单（REQ-007 / REQ-008）
+   - 模块可启用 / 排序 / 折叠（REQ-020）
+   - 量纲三模型：ratio 进制 / ladder 阶梯 / threshold 阈值（§9.3）
+   - 三形态：docked 让位 / peek 速览 / overlay 降级浮层 / detached 分离窗口（§8.2）
+   ============================================================ */
+
+/* ---------- 1. 演示数据 ---------- */
+const DEFAULT_STATE = {
+  character: { name: "叶尘", title: "灵植夫 · 外门弟子" },
+
+  /* 量纲 · 进制型（货币）：作者自定义；未配置 → 模块显示引导态，绝不硬编码默认值 */
+  currency: {
+    configured: true,
+    name: "灵石本位",
+    levels: [
+      { name: "上品灵石", ratio: 10000 },
+      { name: "中品灵石", ratio: 100 },
+      { name: "下品灵石", ratio: 1 }
+    ],
+    base: "下品灵石",
+    amounts: { "上品灵石": 0, "中品灵石": 12, "下品灵石": 350 },  /* 合计 1550 下品 */
+    autoCarry: true
+  },
+
+  /* 量纲 · 阶梯型（境界）：非线性，只做位次比较 + 作者自定义战力当量 */
+  realm: {
+    configured: true,
+    name: "修仙境界",
+    levels: [
+      { name: "炼气", sub: 9, power: 100 },
+      { name: "筑基", sub: 9, power: 1000 },
+      { name: "金丹", sub: 9, power: 10000 },
+      { name: "元婴", sub: 4, power: 100000 }
+    ],
+    at: { level: 1, sub: 7 },  /* 面板境界（R25 侧事实源） */
+    /* ↓ 预留口子（PRD §9.7.6）：independent=true 时行囊改用自己那份 own。
+       v1 默认关闭 —— 加字段是为了让口子可演示，不是为了现在就分离。 */
+    independent: false,
+    own: null                  /* { level, sub } —— split 语义下的「真实修为」，v1 不写入 */
+  },
+
+  /* R25 联动（PRD §9.7 D-2）：境界字段与「角色面板」共享，靠 entity_id 映射 */
+  r25: { entityId: "ent-0007", levelId: "lv-4" },
+
+  /* 量纲 · 阈值型（熟练度）：数值区间 → 名称 */
+  prof: {
+    configured: true,
+    name: "技艺熟练度",
+    levels: [
+      { name: "入门", min: 0, max: 100 },
+      { name: "熟练", min: 100, max: 500 },
+      { name: "精通", min: 500, max: 2000 },
+      { name: "大师", min: 2000, max: 10000 }
+    ]
+  },
+
+  /* 人物属性（作者可自定义；base = 基础值） */
+  attributes: [
+    { id: "atk",  name: "攻击",     group: "战斗属性", base: 1200,  dec: 0 },
+    { id: "def",  name: "防御",     group: "战斗属性", base: 2000,  dec: 0 },
+    { id: "agi",  name: "敏捷",     group: "战斗属性", base: 800,   dec: 0 },
+    { id: "crit", name: "暴击",     group: "战斗属性", base: 5,     dec: 1, suffix: "%" },
+    { id: "hp",   name: "气血",     group: "基础属性", base: 12000, dec: 0 },
+    { id: "mp",   name: "真元",     group: "基础属性", base: 6000,  dec: 0 },
+    { id: "alch", name: "炼丹造诣", group: "生活造诣", base: 320,   dec: 0 }
+  ],
+
+  /* 装备部位：预设一套通用（与 PRD 附录 A 逐项对齐，13 项）；
+     作者可增删改名 / 改槽位数 / 改可接受类型 */
+  slots: [
+    { id: "weapon",  name: "武器", cap: 1, accepts: ["武器"],         enabled: true },
+    { id: "offhand", name: "副手", cap: 1, accepts: ["武器", "法器"], enabled: true },
+    { id: "head",    name: "头盔", cap: 1, accepts: ["防具"],         enabled: true },
+    { id: "body",    name: "上衣", cap: 1, accepts: ["防具"],         enabled: true },
+    { id: "wrist",   name: "护腕", cap: 1, accepts: ["防具"],         enabled: true },
+    { id: "glove",   name: "手套", cap: 1, accepts: ["防具"],         enabled: true },
+    { id: "belt",    name: "腰带", cap: 1, accepts: ["饰品"],         enabled: true },
+    { id: "legs",    name: "下装", cap: 1, accepts: ["防具"],         enabled: true },
+    { id: "boots",   name: "靴子", cap: 1, accepts: ["防具"],         enabled: true },
+    { id: "neck",    name: "项链", cap: 1, accepts: ["饰品"],         enabled: true },
+    { id: "ring",    name: "戒指", cap: 2, accepts: ["饰品"],         enabled: true },  /* ← 典型自定义：2 槽 */
+    { id: "trinket", name: "饰品", cap: 1, accepts: ["饰品"],         enabled: true },
+    { id: "mount",   name: "坐骑", cap: 1, accepts: ["坐骑"],         enabled: true }
+  ],
+
+  /* 物品：装备与背包同表，用 slotId 区分是否穿戴 */
+  items: [
+    { id: "i1", name: "风雷双匕", icon: "🗡", cat: "武器", qty: 1,  rarity: "玄品", slotId: "weapon", slotIndex: 0, src: "第 136 章" },
+    { id: "i2", name: "血玉戒",   icon: "💍", cat: "饰品", qty: 1,  rarity: "地品", slotId: null, slotIndex: null, src: "第 137 章" },
+    { id: "i3", name: "玄龟甲",   icon: "🛡", cat: "防具", qty: 1,  rarity: "玄品", slotId: "body", slotIndex: 0, src: "第 128 章" },
+    { id: "i4", name: "青蛟皮靴", icon: "👢", cat: "防具", qty: 1,  rarity: "凡品", slotId: "boots", slotIndex: 0, src: "第 121 章" },
+    { id: "i5", name: "破境丹",   icon: "🔴", cat: "丹药", qty: 3,  rarity: "地品", slotId: null, slotIndex: null, src: "第 135 章" },
+    { id: "i6", name: "培元丹",   icon: "⚪", cat: "丹药", qty: 5,  rarity: "凡品", slotId: null, slotIndex: null, src: "第 130 章" },
+    { id: "i7", name: "三叶灵芝", icon: "🌿", cat: "材料", qty: 50, rarity: "凡品", slotId: null, slotIndex: null, src: "第 137 章" },
+    { id: "i8", name: "定神玉符", icon: "🔱", cat: "法器", qty: 2,  rarity: "玄品", slotId: null, slotIndex: null, src: "第 124 章" }
+  ],
+
+  skills: [
+    { id: "s1", name: "疾风斩",   icon: "🌀", enabled: true,  prof: 1320, showProf: true, desc: "以风雷之势斩出，威能随熟练度提升" },
+    { id: "s2", name: "龟息术",   icon: "🐢", enabled: false, prof: 180,  showProf: true, desc: "收敛气息，降低存在感" },
+    { id: "s3", name: "丹火淬炼", icon: "🔥", enabled: true,  prof: 640,  showProf: true, desc: "炼丹时的火候掌控" }
+  ],
+
+  /* 统一效果表（多态：装备 / 技能共用，§9.2）
+     ★ nature 是 v1.3 的核心字段（§9.2.1）：
+       passive   被动 —— 载体在效即常驻生效，计入总属性
+       sustained 持续 —— 还需自己开启才计入，带 active 开关
+       cast      释放 —— 主动释放，永不参与属性汇总（无 target） */
+  modifiers: [
+    /* 风雷双匕：被动 ×3 + 释放 ×1 —— 同一装备同时有被动与主动 */
+    { id: "m1",  ownerType: "item",  ownerId: "i1", nature: "passive",   target: "atk",  op: "add",     value: 320 },
+    { id: "m2",  ownerType: "item",  ownerId: "i1", nature: "passive",   target: "agi",  op: "add",     value: 120 },
+    { id: "m3",  ownerType: "item",  ownerId: "i1", nature: "passive",   target: "crit", op: "percent", value: 8 },
+    { id: "m11", ownerType: "item",  ownerId: "i1", nature: "cast",      name: "风雷一击", value: 300, valueUnit: "atk_pct", cd: 12, costType: "mp", costValue: 30, castTarget: "single" },
+    /* 玄龟甲：被动 ×2 + 持续 ×1（开启中） */
+    { id: "m4",  ownerType: "item",  ownerId: "i3", nature: "passive",   target: "def",  op: "add",     value: 300 },
+    { id: "m5",  ownerType: "item",  ownerId: "i3", nature: "passive",   target: "hp",   op: "percent", value: 10 },
+    { id: "m12", ownerType: "item",  ownerId: "i3", nature: "sustained", name: "铁壁姿态", target: "def", op: "percent", value: 40, active: true, defaultOn: true, costType: "mp", costValue: 5, duration: "回合" },
+    /* 青蛟皮靴：纯被动 */
+    { id: "m6",  ownerType: "item",  ownerId: "i4", nature: "passive",   target: "agi",  op: "add",     value: 60 },
+    /* 血玉戒（未装备）：纯释放 —— 演示「仅主动效果，不影响总属性」 */
+    { id: "m14", ownerType: "item",  ownerId: "i2", nature: "cast",      name: "血遁", value: 500, valueUnit: "atk_pct", cd: 60, costType: "hp", costValue: 200, castTarget: "self" },
+    /* 疾风斩：被动 ×2（含熟练度缩放）+ 释放 ×1 */
+    { id: "m7",  ownerType: "skill", ownerId: "s1", nature: "passive",   target: "atk",  op: "percent", value: 15, scaleByProf: true },
+    { id: "m8",  ownerType: "skill", ownerId: "s1", nature: "passive",   target: "crit", op: "add",     value: 4 },
+    { id: "m13", ownerType: "skill", ownerId: "s1", nature: "cast",      name: "斩风·连击", value: 250, valueUnit: "atk_pct", cd: 8, costType: "mp", costValue: 20, castTarget: "single" },
+    /* 龟息术（载体已停用）：持续 ×1 —— 演示载体闸门 */
+    { id: "m10", ownerType: "skill", ownerId: "s2", nature: "sustained", name: "龟息归元", target: "def", op: "mul", value: 1.2, active: true, defaultOn: true, costType: "none", costValue: 0, duration: "持续" },
+    /* 丹火淬炼：被动 ×1 + 持续 ×1（默认关 —— 演示「关着的持续效果」） */
+    { id: "m9",  ownerType: "skill", ownerId: "s3", nature: "passive",   target: "alch", op: "add",     value: 80, scaleByProf: true },
+    { id: "m15", ownerType: "skill", ownerId: "s3", nature: "sustained", name: "丹火焚身", target: "alch", op: "percent", value: 50, active: false, defaultOn: false, costType: "mp", costValue: 8, duration: "回合" }
+  ],
+
+  /* 模块拼装（启用 / 顺序 / 默认折叠） */
+  layout: [
+    { key: "summary",    enabled: true,  collapsed: false, name: "总属性汇总", desc: "基础值 → 总值，含加成明细" },
+    { key: "equipment",  enabled: true,  collapsed: false, name: "装备栏",     desc: "部位 / 槽位 / 加成" },
+    { key: "inventory",  enabled: true,  collapsed: false, name: "物品栏",     desc: "背包物品与数量" },
+    { key: "skills",     enabled: true,  collapsed: false, name: "技能栏",     desc: "开关 / 熟练度 / 加成" },
+    { key: "currency",   enabled: true,  collapsed: true,  name: "货币",       desc: "进制换算（需先配置量纲）" },
+    { key: "attributes", enabled: false, collapsed: false, name: "人物属性",   desc: "属性定义与基础值编辑" },
+    { key: "realm",      enabled: true,  collapsed: true,  name: "境界",       desc: "阶梯进位 / 战力当量" }
+  ],
+
+  /* 本章变动标记（F-2：24h 过期 / 手动已读 —— 原型只演示存在性） */
+  changed: { i2: true, i5: true, i7: true }
+};
+
+/* ---------- 2. 状态与持久化 ---------- */
+const LS_KEY = "checkin.pack.proto.v2";   /* v2：效果新增 nature 字段，旧状态不兼容 */
+const clone = (o) => JSON.parse(JSON.stringify(o));
+const $ = (s) => document.querySelector(s);
+
+let S = loadState() || clone(DEFAULT_STATE);
+let UI = { open: false, mode: "docked", width: 380, invView: "list", invQuery: "", drawerOpen: false, peekTimer: null, showAllSlots: false, dirty: 0, saveFailed: false, hashDirty: 0, hashSaveFail: false, r25Open: false };
+
+function loadState() {
+  try { const r = localStorage.getItem(LS_KEY); return r ? JSON.parse(r) : null; } catch (e) { return null; }
+}
+function save() { try { localStorage.setItem(LS_KEY, JSON.stringify(S)); } catch (e) {} }
+function loadUIPrefs() {
+  try {
+    const r = localStorage.getItem(LS_KEY + ".ui");
+    if (!r) return;
+    const u = JSON.parse(r);
+    if (u.width) UI.width = u.width;
+    if (u.mode && u.mode !== "peek") UI.mode = u.mode;   /* 速览不写记忆 */
+    if (u.invView) UI.invView = u.invView;
+  } catch (e) {}
+}
+function saveUIPrefs() {
+  try { localStorage.setItem(LS_KEY + ".ui", JSON.stringify({ width: UI.width, mode: UI.mode, invView: UI.invView })); } catch (e) {}
+}
+const saveUI = saveUIPrefs;
+
+/* ---------- 3. 纯计算层（对应 §9.4，可单测） ---------- */
+const f0 = (n) => Math.round(n).toLocaleString("en-US");
+function fmt(attr, n) {
+  const body = attr.dec ? n.toFixed(attr.dec) : f0(n);
+  return body + (attr.suffix || "");
+}
+const slotOf = (id) => S.slots.find((s) => s.id === id);
+const itemOf = (id) => S.items.find((i) => i.id === id);
+const attrOf = (id) => S.attributes.find((a) => a.id === id);
+const modsOf = (type, id) => S.modifiers.filter((m) => m.ownerType === type && m.ownerId === id);
+
+function profLevel(p) {
+  const ls = S.prof.levels;
+  for (const l of ls) if (p >= l.min && (l.max === null || p < l.max)) return l;
+  return ls[ls.length - 1];
+}
+function profProgress(p) {
+  const l = profLevel(p);
+  if (l.max === null) return 1;
+  return Math.min(1, Math.max(0, (p - l.min) / (l.max - l.min)));
+}
+function accepts(slot, item) {
+  if (!slot) return false;
+  if (!slot.accepts || !slot.accepts.length) return true;
+  return slot.accepts.includes(item.cat);
+}
+
+/* ===== §9.2.1 效果性质：被动 / 持续 / 释放 ===== */
+const NATURES = {
+  passive:   { label: "被动", short: "被", flag: "计入总属性",
+               desc: "载体在效即常驻生效，无需开启。例：攻击 +320" },
+  sustained: { label: "持续", short: "持", flag: "开启时计入总属性",
+               desc: "载体在效后还需显式开启，带消耗。例：铁壁姿态 防御 +40%" },
+  cast:      { label: "释放", short: "放", flag: "不计入总属性",
+               desc: "角色主动释放、瞬时结算。例：疾风斩 300% 攻击力" }
+};
+const NORDER = ["passive", "sustained", "cast"];
+const UNIT_LABEL = { atk_pct: "% 攻击力", flat_dmg: "点伤害", maxhp_pct: "% 气血", mp_pct: "% 真元" };
+const COST_LABEL = { none: "无", mp: "真元", hp: "气血", charge: "次数" };
+const TARGET_LABEL = { self: "自身", single: "单体", aoe: "群体", ally: "友方" };
+const OPS = [["add", "加算 +n"], ["percent", "百分比 +n%"], ["mul", "乘算 ×n"], ["override", "覆盖 →n"]];
+
+const effectsOf   = (t, i, n) => modsOf(t, i).filter((m) => (n ? m.nature === n : true));
+const passiveOf   = (t, i) => effectsOf(t, i, "passive").filter((m) => !m.trigger);
+const sustainedOf = (t, i) => effectsOf(t, i, "sustained");
+const castOf      = (t, i) => effectsOf(t, i, "cast");
+
+const badgeOf = (n) =>
+  '<span class="bdg ' + n + '" title="' + NATURES[n].label + '：' + NATURES[n].desc + '">' + NATURES[n].short + "</span>";
+
+function opSign(m) {
+  return m.op === "percent" ? "+" + m.value + "%"
+       : m.op === "mul" ? "×" + m.value
+       : m.op === "override" ? "→" + m.value
+       : "+" + m.value;
+}
+
+/** 一条效果的短文字（不含徽标） */
+function effectText(m) {
+  if (m.nature === "cast") {
+    let t = (m.name || "主动效果") + " " + m.value + (UNIT_LABEL[m.valueUnit] || "");
+    if (m.cd) t += " · CD" + m.cd + "s";
+    if (m.costType && m.costType !== "none") t += " · 耗" + COST_LABEL[m.costType] + m.costValue;
+    return t;
+  }
+  const a = attrOf(m.target);
+  return (m.name ? m.name + " " : "") + (a ? a.name : m.target) + " " + opSign(m);
+}
+
+/** 被动效果合并成一行（"+320 攻击 · +120 敏捷"） */
+function passiveText(ps) {
+  return ps.map((m) => opSign(m) + " " + ((attrOf(m.target) || {}).name || m.target)).join(" · ");
+}
+
+/** 某载体的效果区：被动在上 / 持续带独立开关 / 释放折叠并标注不计入 */
+function effectsHTML(type, id) {
+  const ps = passiveOf(type, id), ss = sustainedOf(type, id), cs = castOf(type, id);
+  if (!ps.length && !ss.length && !cs.length) return null;
+  const wrap = el("div", "effects");
+  if (ps.length) {
+    wrap.appendChild(el("div", "efx passive",
+      badgeOf("passive") + '<span class="etxt">' + esc(passiveText(ps)) + "</span>"));
+  }
+  ss.forEach((m) => {
+    const r = el("div", "efx sustained " + (m.active ? "on" : "off"),
+      badgeOf("sustained") + '<span class="etxt">' + esc(effectText(m)) + "</span>");
+    const sw = el("button", "sw2" + (m.active ? " on" : ""));
+    sw.title = m.active ? "关闭该持续效果（立即从总属性扣除）" : "开启该持续效果（开启后计入总属性）";
+    sw.onclick = (e) => { e.stopPropagation(); toggleEffect(m); };
+    r.appendChild(sw);
+    wrap.appendChild(r);
+  });
+  cs.forEach((m) => {
+    wrap.appendChild(el("div", "efx cast",
+      badgeOf("cast") + '<span class="etxt">' + esc(effectText(m)) + "</span>" +
+      '<span class="excl">不计入</span>'));
+  });
+  return wrap;
+}
+
+/** 切换持续型效果自身的开关（与载体开关完全分离，REQ-039） */
+function toggleEffect(m) {
+  m.active = !m.active;
+  markDirty();
+  save();
+  renderAll();
+  toast("「" + (m.name || "持续效果") + "」" + (m.active ? "已开启，计入总属性" : "已关闭，已从总属性扣除"));
+}
+
+/** 描述「这个载体为什么不影响总属性」——用于 Δ 预览的空态 */
+function notCountedHint(type, id) {
+  const cs = castOf(type, id), offS = sustainedOf(type, id).filter((m) => !m.active);
+  const parts = [];
+  if (cs.length) parts.push(cs.length + " 项主动技能");
+  if (offS.length) parts.push(offS.length + " 项持续效果未开启");
+  return parts.length ? "仅" + parts.join("、") + "，不影响总属性" : "";
+}
+
+/** 汇总里被排除的效果（按性质归因，让「为什么没算」可见） */
+function excludedFor(type, id) {
+  const out = [];
+  sustainedOf(type, id).filter((m) => !m.active).forEach((m) => out.push({ m: m, why: "持续效果未开启" }));
+  castOf(type, id).forEach((m) => out.push({ m: m, why: "释放型效果" }));
+  effectsOf(type, id, "passive").filter((m) => m.trigger).forEach((m) => out.push({ m: m, why: "带触发条件（事件型）" }));
+  return out;
+}
+
+/**
+ * §9.4.1 闸门 2：效果性质是否允许计入总属性。
+ * ★ 这是本功能最易写错的地方 —— 只看「载体在效」会把释放型技能错误累加进总属性，
+ *   而那种错误在视觉上毫无异常，只有对着数字才发现。
+ */
+function isCounted(m) {
+  if (m.nature === "cast") return false;                    /* 释放型：永不参与属性汇总 */
+  if (m.nature === "sustained") return m.active === true;   /* 持续型：看它自己的开关 */
+  if (m.nature === "passive" && m.trigger) return false;    /* 被动·事件型：有触发条件则不计入 */
+  return true;                                              /* 被动：载体在效即计入 */
+}
+
+/**
+ * 汇总计算。可传入替换用的 items（用于 hover Δ 预览的「假设已装备」）。
+ * 两道闸门（§9.4.1）：① 载体在效 ② 效果性质允许计入。
+ * 数学仍按 §9.4.2：override 最高优先；否则 (base + Σadd) × (1 + Σpercent/100) × Πmul
+ * ★ 被动与持续是同一个运算池，分段只是为了展示（§9.4.2），不可拆成两轮乘算。
+ */
+function computeSummary(items) {
+  const list = items || S.items;
+  const res = {}, casts = [];
+  S.attributes.forEach((a) => {
+    res[a.id] = {
+      attr: a, base: a.base,
+      add: 0, percent: 0, mul: 1, override: null,
+      addP: 0, addS: 0, pctP: 0, pctS: 0, mulP: 1, mulS: 1,
+      detail: []
+    };
+  });
+
+  const apply = (m, label, skill) => {
+    /* 释放型不指向属性 → 单独收集，供汇总页「另有 N 项主动技能」提示 */
+    if (m.nature === "cast") { casts.push({ m: m, label: label }); return; }
+    const r = res[m.target];
+    if (!r) return;
+    if (!isCounted(m)) return;   /* 闸门 2 未通过：不计入（原因由 excludedFor() 呈现） */
+    let v = m.value;
+    let note = "";
+    if (m.scaleByProf && skill) {
+      /* §9.4.3 按熟练度缩放（0.2 → 1.0 线性插值） */
+      const k = 0.2 + 0.8 * Math.min(1, skill.prof / 2000);
+      v = v * k;
+      note = "熟练度缩放 ×" + k.toFixed(2);
+    }
+    const isS = m.nature === "sustained";
+    if (m.op === "add")          { r.add += v;     if (isS) r.addS += v; else r.addP += v; }
+    else if (m.op === "percent") { r.percent += v; if (isS) r.pctS += v; else r.pctP += v; }
+    else if (m.op === "mul")     { r.mul *= v;     if (isS) r.mulS *= v; else r.mulP *= v; }
+    else if (m.op === "override") r.override = v;
+    r.detail.push({ label: label, op: m.op, value: v, note: note, nature: m.nature });
+  };
+
+  /* 装备来源：必须已穿戴 + 槽位启用 + 通过类型白名单（闸门 1） */
+  list.forEach((it) => {
+    if (it.slotId == null) return;
+    const slot = slotOf(it.slotId);
+    if (!slot || !slot.enabled) return;
+    if (!accepts(slot, it)) return;
+    modsOf("item", it.id).forEach((m) => apply(m, "装备 · " + it.name));
+  });
+
+  /* 技能来源：必须 enabled（闸门 1）（REQ-013） */
+  S.skills.forEach((sk) => {
+    if (!sk.enabled) return;
+    modsOf("skill", sk.id).forEach((m) => apply(m, "技能 · " + sk.name, sk));
+  });
+
+  Object.values(res).forEach((r) => {
+    r.final = r.override != null ? r.override : (r.base + r.add) * (1 + r.percent / 100) * r.mul;
+  });
+  res.__casts = casts;   /* 附加在最后，避免被上面的 Object.values 卷入 */
+  return res;
+}
+
+/** 假设把 item 装到 slotId/slotIndex 后的属性增量（REQ-018） */
+function deltaPreview(item, slotId, slotIndex) {
+  const now = computeSummary();
+  const hypo = clone(S.items);
+  const slot = slotOf(slotId);
+  const occupied = hypo.filter((x) => x.slotId === slotId);
+  let replaced = null;
+  if (occupied.some((x) => x.slotIndex === slotIndex)) {
+    replaced = occupied.find((x) => x.slotIndex === slotIndex);
+    replaced.slotId = null; replaced.slotIndex = null;
+  }
+  const t = hypo.find((i) => i.id === item.id);
+  if (t.slotId != null) { t.slotId = null; t.slotIndex = null; }
+  t.slotId = slotId; t.slotIndex = slotIndex;
+  const after = computeSummary(hypo);
+  const out = [];
+  S.attributes.forEach((a) => {
+    const d = after[a.id].final - now[a.id].final;
+    if (Math.abs(d) > 0.001) out.push({ attr: a, delta: d });
+  });
+  return { out: out, replaced: replaced, full: slot && occupied.length >= slot.cap };
+}
+
+/* ---------- 4. 渲染 ---------- */
+const el = (tag, cls, html) => {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (html != null) n.innerHTML = html;
+  return n;
+};
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function currencyText() {
+  const c = S.currency;
+  if (!c.configured) return "未配置";
+  const short = (n) => n.replace(/灵石$/, "");
+  if (!c.autoCarry) {
+    return c.levels.slice().reverse().map((l) => (c.amounts[l.name] || 0) + short(l.name)).join("");
+  }
+  let total = 0;
+  c.levels.forEach((l) => { total += (c.amounts[l.name] || 0) * l.ratio; });
+  let rest = total;
+  const out = [];
+  const sorted = c.levels.slice().sort((a, b) => b.ratio - a.ratio);
+  sorted.forEach((l, i) => {
+    const n = Math.floor(rest / l.ratio);
+    rest -= n * l.ratio;
+    if (n > 0 || i === sorted.length - 1) out.push(n + short(l.name));
+  });
+  return out.join("");
+}
+
+function renderChips() {
+  const rows = [];
+  const r = S.realm;
+  if (r.configured) {
+    const cur = getRealm();   /* ★ 走口子（PRD §9.7.6）：不要直接读 r.at，否则未来切 split 时这里会静默不跟随 */
+    const lv = r.levels[cur.level];
+    rows.push('<span class="chip realm">' + esc(lv.name) + ' <span class="v">' + cur.sub + "/" + lv.sub + "</span></span>");
+  }
+  if (S.currency.configured) {
+    rows.push('<span class="chip cur">💰 <span class="v">' + esc(currencyText()) + "</span></span>");
+  }
+  rows.push('<span class="chip">技能 <span class="v">' + S.skills.filter((s) => s.enabled).length + "/" + S.skills.length + " 生效</span></span>");
+  $("#chiprow").innerHTML = rows.join("");
+}
+
+/* --- 模块：总属性汇总 --- */
+/* ★ 增量必须分段显示（REQ-041）：否则作者看不出「这个数是穿上就有，还是我开了态势才有」 */
+function modSummary() {
+  const sum = computeSummary();
+  const box = el("div", "modbody");
+  S.attributes.forEach((a) => {
+    const r = sum[a.id];
+    const segAdd = (v, cls, lab) => Math.abs(v) > 0.001
+      ? '<span class="seg ' + cls + '">' + (v > 0 ? "+" : "") + fmt(a, v) + "<i>" + lab + "</i></span>" : "";
+    const segPct = (v, cls, lab) => Math.abs(v) > 0.001
+      ? '<span class="seg ' + cls + '">' + (v > 0 ? "+" : "") + v.toFixed(1) + "%<i>" + lab + "</i></span>" : "";
+    const segMul = (v, cls, lab) => Math.abs(v - 1) > 0.0001
+      ? '<span class="seg ' + cls + '">×' + v.toFixed(2) + "<i>" + lab + "</i></span>" : "";
+    let segs = segAdd(r.addP, "p", "被动") + segAdd(r.addS, "s", "持续")
+             + segPct(r.pctP, "p", "被动") + segPct(r.pctS, "s", "持续")
+             + segMul(r.mulP, "p", "被动") + segMul(r.mulS, "s", "持续");
+    const row = el("div", "sumrow");
+    row.innerHTML =
+      "<div><span class=\"aname\">" + esc(a.name) + "</span>" +
+      '<span class="base">基础 ' + fmt(a, r.base) +
+      (segs || '<span class="seg">无加成</span>') + "</span></div>" +
+      '<div class="aval"><span class="final">' + fmt(a, r.final) + '</span><span class="info">ℹ</span></div>';
+    row.title = "点击查看来源明细与算式";
+    row.onclick = () => openDetail(a.id);
+    box.appendChild(row);
+  });
+  /* 释放型：可见，但不污染算式（REQ-041） */
+  const casts = sum.__casts || [];
+  if (casts.length) {
+    const n = el("div", "castnote");
+    n.innerHTML = badgeOf("cast") + "<span>另有 <b>" + casts.length + " 项主动技能</b>，不计入属性</span>";
+    n.title = "点击展开技能栏查看";
+    n.onclick = () => {
+      const m = S.layout.find((x) => x.key === "skills");
+      if (m && m.collapsed) { m.collapsed = false; save(); renderAll(); }
+      toast("主动技能：" + casts.map((c) => c.m.name).join("、"));
+    };
+    box.appendChild(n);
+  }
+  box.appendChild(el("div", "secnote", "点击任意属性 → 来源明细与算式"));
+  return box;
+}
+
+/* --- 模块：装备栏 --- */
+function modEquipment() {
+  const box = el("div", "modbody");
+  const grid = el("div", "slotgrid");
+  /* 13 个部位纵向全部铺开会把面板撑得很长 → 默认只显示「已有穿戴」的部位 */
+  const all = S.slots.filter((s) => s.enabled);
+  const equippedIds = new Set(S.items.filter((i) => i.slotId != null).map((i) => i.slotId));
+  const shown = UI.showAllSlots ? all : all.filter((s) => equippedIds.has(s.id));
+  const hiddenCount = all.length - shown.length;
+
+  shown.forEach((slot) => {
+    const row = el("div", "slotrow");
+    row.appendChild(el("span", "sname", esc(slot.name) + (slot.cap > 1 ? " ×" + slot.cap : "")));
+    const cells = el("div", "cells");
+    for (let i = 0; i < slot.cap; i++) {
+      const it = S.items.find((x) => x.slotId === slot.id && x.slotIndex === i);
+      const cell = el("div", "cell" + (it ? " filled" : " empty"));
+      if (it) {
+        const head = el("div", "chead");
+        head.innerHTML =
+          '<span class="qico">' + it.icon + "</span>" +
+          '<span class="qname">' + esc(it.name) + "</span>";
+        const edit = el("button", "ebtn", "✎");
+        edit.title = "编辑效果（被动 / 持续 / 释放）";
+        edit.onclick = (e) => { e.stopPropagation(); openEffects("item", it.id, it.name); };
+        head.appendChild(edit);
+        const x = el("button", "xbtn", "✕");
+        x.title = "卸下，退回物品栏";
+        x.onclick = (e) => { e.stopPropagation(); unequip(it.id); };
+        head.appendChild(x);
+        cell.appendChild(head);
+        /* 效果区：被动 / 持续（带独立开关）/ 释放（标注不计入） */
+        cell.appendChild(effectsHTML("item", it.id) || el("div", "efx", '<span class="etxt">无效果</span>'));
+        cell.onmouseenter = (e) => showTipDelta(e, "卸下「" + it.name + "」", deltaOnUnequip(it), notCountedHint("item", it.id));
+        cell.onmouseleave = hideTip;
+      } else {
+        cell.textContent = "— 空 —";
+        cell.title = "在物品栏点「装备」即可穿上";
+      }
+      cells.appendChild(cell);
+    }
+    row.appendChild(cells);
+    grid.appendChild(row);
+  });
+  box.appendChild(grid);
+  if (hiddenCount > 0) {
+    const more = el("div", "morehint", "还有 " + hiddenCount + " 个空部位未显示 · 点上方「全部部位」展开");
+    box.appendChild(more);
+  }
+  return box;
+}
+
+/* --- 模块：物品栏 --- */
+function modInventory() {
+  const box = el("div", "modbody");
+  const tools = el("div", "invtools");
+  const search = el("input", "invsearch");
+  search.placeholder = "搜索物品…";
+  search.value = UI.invQuery;
+  search.oninput = () => {
+    UI.invQuery = search.value;
+    const pos = search.selectionStart;
+    renderAll();
+    const s2 = $(".invsearch");
+    if (s2) { s2.focus(); try { s2.setSelectionRange(pos, pos); } catch (e) {} }
+  };
+  tools.appendChild(search);
+
+  const tg = el("div", "invtoggle");
+  [["list", "列表"], ["grid", "宫格"]].forEach(([v, label]) => {
+    const b = el("button", UI.invView === v ? "on" : "", label);
+    b.onclick = () => { UI.invView = v; saveUI(); renderAll(); };
+    tg.appendChild(b);
+  });
+  tools.appendChild(tg);
+
+  const add = el("button", "addbtn", "+ 新增");
+  add.onclick = () => toast("新增物品表单不在原型范围（P0 REQ-010）");
+  tools.appendChild(add);
+  box.appendChild(tools);
+
+  const q = UI.invQuery.trim().toLowerCase();
+  const list = S.items.filter((i) => !q || i.name.toLowerCase().includes(q) || i.cat.toLowerCase().includes(q));
+
+  if (!list.length) {
+    box.appendChild(el("div", "emptybox",
+      '<span class="eico">🎒</span>' +
+      (S.items.length ? "没有匹配的物品" : "还没有任何物品<br>新增第一件吧") +
+      (S.items.length ? "" : '<br><span class="ebtn">+ 新增第一件物品</span>')));
+    return box;
+  }
+
+  if (UI.invView === "grid") {
+    const g = el("div", "invgrid");
+    list.forEach((it) => {
+      const c = el("div", "gcell");
+      c.innerHTML = '<span class="gico">' + it.icon + '</span><span class="gnm">' + esc(it.name) + '</span><span class="gq">×' + it.qty + "</span>";
+      c.title = it.slotId ? "已装备 · 点击卸下" : "点击装备";
+      c.onclick = () => (it.slotId ? unequip(it.id) : tryEquip(it.id));
+      g.appendChild(c);
+    });
+    box.appendChild(g);
+    return box;
+  }
+
+  const l = el("div", "invlist");
+  list.forEach((it) => {
+    const row = el("div", "invrow");
+    /* 物品行的效果摘要：被动原文 + 持续/释放的数量角标（§9.2.1） */
+    const iPs = passiveOf("item", it.id), iSs = sustainedOf("item", it.id), iCs = castOf("item", it.id);
+    const mt = [iPs.length ? passiveText(iPs) : "",
+                iSs.length ? "持×" + iSs.length : "",
+                iCs.length ? "放×" + iCs.length : ""].filter(Boolean).join(" · ");
+    row.innerHTML =
+      '<span class="iico' + (it.slotId ? " eq" : "") + '">' + it.icon + "</span>" +
+      '<span class="imain">' +
+        '<span class="iname"><span class="nm">' + esc(it.name) + "</span>" +
+          (it.slotId ? '<span class="tag eq">已装备</span>' : "") +
+          (S.changed[it.id] ? '<span class="tag new">本章新增</span><span class="dotnew"></span>' : "") +
+        "</span>" +
+        '<span class="isub">' + esc(it.cat) + " · " + esc(it.rarity) + " · " + esc(it.src) + (mt ? " · " + esc(mt) : "") + "</span>" +
+      "</span>";
+
+    /* 数量快调：原地 +/-（REQ-011，禁止点开弹窗改） */
+    const qty = el("div", "qty");
+    const minus = el("button", "", "−");
+    minus.onclick = () => decQty(it.id);
+    const n = el("span", "n", String(it.qty));
+    const plus = el("button", "", "+");
+    plus.onclick = () => { it.qty++; touch(it.id); afterEdit(); };
+    qty.appendChild(minus); qty.appendChild(n); qty.appendChild(plus);
+    row.appendChild(qty);
+
+    row.onmouseenter = (e) => { if (!it.slotId) showEquipDelta(it, ev(e)); };
+    row.onmouseleave = hideTip;
+    row.oncontextmenu = (e) => { e.preventDefault(); toast("右键菜单：「记入行囊」（P1 REQ-027）"); };
+    l.appendChild(row);
+  });
+  box.appendChild(l);
+  return box;
+}
+
+/* --- 模块：技能栏 --- */
+function modSkills() {
+  const box = el("div", "modbody");
+  const l = el("div", "invlist");
+  S.skills.forEach((sk) => {
+    const row = el("div", "skillrow" + (sk.enabled ? "" : " off"));
+    const sw = el("button", "switch" + (sk.enabled ? " on" : ""));
+    sw.title = sk.enabled ? "点击停用（加成将从汇总扣除）" : "点击启用";
+    sw.onclick = () => {
+      sk.enabled = !sk.enabled;
+      afterEdit();
+      toast(sk.enabled ? "已启用「" + sk.name + "」，加成已计入汇总" : "已停用「" + sk.name + "」，加成已从汇总扣除");
+    };
+    row.appendChild(sw);
+
+    const main = el("div", "skillmain");
+    let inner = '<span class="skname">' + sk.icon + " " + esc(sk.name) + "</span>";
+    if (sk.showProf) {
+      const lv = profLevel(sk.prof);
+      const p = profProgress(sk.prof);
+      inner +=
+        '<span class="profwrap">' +
+          '<span class="profbar"><i style="width:' + (p * 100).toFixed(1) + '%"></i></span>' +
+          '<span class="proflv">' + esc(lv.name) + "</span>" +
+          '<span class="profnum">' + sk.prof + (lv.max !== null ? "/" + lv.max : "+") + "</span>" +
+        "</span>";
+    } else {
+      inner += '<span class="sksub">熟练度已隐藏（模块级开关关闭）</span>';
+    }
+    inner += '<span class="sksub">' + esc(sk.desc) + "</span>";
+    main.innerHTML = inner;
+    row.appendChild(main);
+
+    const edit = el("button", "ebtn2", "✎");
+    edit.title = "编辑效果（被动 / 持续 / 释放）";
+    edit.onclick = (e) => { e.stopPropagation(); openEffects("skill", sk.id, sk.name); };
+    row.appendChild(edit);
+
+    if (sk.showProf) {
+      const pq = el("div", "profq");
+      const b1 = el("button", "", "+1");  b1.onclick = () => { sk.prof += 1;  afterEdit(); };
+      const b10 = el("button", "", "+10"); b10.onclick = () => { sk.prof += 10; afterEdit(); };
+      pq.appendChild(b1); pq.appendChild(b10);
+      row.appendChild(pq);
+    }
+    /* 效果区另起一行（带持续效果的独立开关，与上面的载体开关互不影响） */
+    const ef = effectsHTML("skill", sk.id);
+    if (ef) row.appendChild(ef);
+    l.appendChild(row);
+  });
+  box.appendChild(l);
+  return box;
+}
+
+/* --- 模块：人物属性（基础值编辑） --- */
+function modAttributes() {
+  const box = el("div", "modbody");
+  const sum = computeSummary();
+  const groups = {};
+  S.attributes.forEach((a) => { (groups[a.group] = groups[a.group] || []).push(a); });
+  Object.keys(groups).forEach((g) => {
+    const gw = el("div", "attgroup");
+    gw.appendChild(el("div", "attgrouphd", esc(g)));
+    groups[g].forEach((a) => {
+      const row = el("div", "attrow");
+      row.innerHTML = '<span class="an">' + esc(a.name) + "</span>";
+      const inp = el("input", "ai");
+      inp.value = String(a.base);
+      inp.onchange = () => {
+        const v = parseFloat(inp.value);
+        if (isNaN(v)) { inp.value = String(a.base); return; }
+        a.base = v;
+        afterEdit();
+        toast("基础值已更新，汇总已重算");
+      };
+      row.appendChild(inp);
+      row.appendChild(el("span", "tot", fmt(a, sum[a.id].final)));
+      row.appendChild(el("span", "lock", "🔒"));
+      gw.appendChild(row);
+    });
+    box.appendChild(gw);
+  });
+  box.appendChild(el("div", "secnote", "基础值可直接改；总值 = 基础 + 全部生效加成"));
+  return box;
+}
+
+/* --- 模块：货币（进制换算） --- */
+function modCurrency() {
+  const box = el("div", "modbody");
+  const c = S.currency;
+  if (!c.configured) {
+    const g = el("div", "guide", "<b>尚未配置货币量纲</b><br>行囊不会替你猜一套货币体系。<br>");
+    const b = el("span", "gbtn", "去配置");
+    b.onclick = () => openUnitSystem("ratio");
+    g.appendChild(b);
+    box.appendChild(g);
+    return box;
+  }
+  c.levels.forEach((lv) => {
+    const r = el("div", "attrow");
+    r.innerHTML = '<span class="an">' + esc(lv.name) +
+      (lv.ratio > 1 ? ' <small>= ' + lv.ratio + " " + esc(c.base) + "</small>" : "") + "</span>";
+    const inp = el("input", "ai");
+    inp.value = String(c.amounts[lv.name] || 0);
+    inp.onchange = () => {
+      const v = parseInt(inp.value, 10);
+      c.amounts[lv.name] = isNaN(v) ? 0 : v;
+      afterEdit();
+    };
+    r.appendChild(inp);
+    box.appendChild(r);
+  });
+  box.appendChild(el("div", "secnote", "合计（" + (c.autoCarry ? "自动进位" : "不自动进位") + "）：" + currencyText()));
+  return box;
+}
+
+/* ===== 境界 ↔ R25 角色面板 双向联动（PRD §9.7 D-2）===== */
+
+/* ============================================================
+ * 境界的读写口子（PRD §9.7.6）
+ *   linked（v1 唯一实现）：行囊境界 ≡ 面板境界，同一个语义字段
+ *   split（预留）：r.independent = true 时，行囊改用自己那份 r.own
+ *   ★ 未来放开 split，只需改下面几个函数体，调用方零改动。
+ *   ★ 因此：任何地方都不要直接读写 r.at / r.own —— 只能走这三个口子。
+ * ============================================================ */
+
+/** 行囊视角的当前境界 */
+function getRealm() {
+  const r = S.realm;
+  if (r.independent && r.own) return r.own;
+  return r.at;
+}
+
+/** 面板视角的当前境界（R25 侧永远读这一份） */
+function getPanelRealm() { return S.realm.at; }
+
+function fmtRealm(p) {
+  const lv = S.realm.levels[p.level];
+  return lv ? lv.name + " " + p.sub + " 层" : "未设置";
+}
+/** 行囊视角文案 */
+function realmText() { return fmtRealm(getRealm()); }
+/** 面板视角文案 */
+function panelRealmText() { return fmtRealm(getPanelRealm()); }
+
+/** ★ 境界的唯一写入口（行囊侧改、R25 侧改都走这里）
+ *  from: "pack" | "r25" 仅用于提示文案；quiet=true 时不弹 toast（调用方给更精确的话术） */
+function setRealm(level, sub, from, quiet) {
+  const r = S.realm;
+  level = Math.max(0, Math.min(r.levels.length - 1, level));
+  sub = Math.max(1, Math.min(r.levels[level].sub, sub));
+  /* ↓ 这两行就是「口子」：按调用方视角路由 ——
+     R25 侧（from="r25"）永远写面板那份；行囊侧在 split 下写自己那份。
+     调用方完全不知道这件事，未来放开 split 也只改这一处。 */
+  const ownSide = r.independent && from !== "r25";
+  const target = ownSide ? (r.own || (r.own = { level: r.at.level, sub: r.at.sub })) : r.at;
+  const same = target.level === level && target.sub === sub;
+  if (!same) {
+    target.level = level;
+    target.sub = sub;
+    markDirty();          /* 与保存条联动：改境界同样计入未保存改动 */
+    save();
+  }
+  renderAll();
+  if (UI.r25Open) renderR25();
+  if (same || quiet) return;
+  if (from === "r25") toast("R25 角色面板已改 → 行囊同步：" + realmText());
+  else if (ownSide) toast("行囊境界已改（独立模式）→ R25 面板不变：" + realmText());
+  else toast("行囊已改 → 待「保存」后写入 R25：" + realmText());
+}
+
+/** 兼容旧名（口子收口后可整体删除） */
+function setRealmAt(level, sub, from, quiet) { setRealm(level, sub, from, quiet); }
+
+/** 切换「独立境界」预留开关（PRD §9.7.6，仅原型演示，正式版不输出） */
+function setRealmMode(independent) {
+  const r = S.realm;
+  r.independent = !!independent;
+  if (r.independent && !r.own) r.own = { level: r.at.level, sub: r.at.sub };
+  markDirty();      /* 它属于「设定数据」：改了这个值，这本书会变 → 走草稿 */
+  save();
+  renderAll();
+  if (UI.r25Open) renderR25();
+  toast(r.independent
+    ? "已切到「独立境界」：行囊与 R25 面板各存一份，互不干扰"
+    : "已切回「联动」：两侧重新是同一个数");
+}
+
+/** R25 侧只读镜像（模拟另一个窗口的角色面板） */
+function renderR25() {
+  const ov = $("#r25ov");
+  if (!ov) return;
+  const r = S.realm;
+  const p = getPanelRealm();              /* ★ 面板永远读面板那份，不读 getRealm() */
+  const split = r.independent;
+  const lv = r.levels[p.level];
+  const opts = r.levels.map((x, i) =>
+    '<option value="' + i + '"' + (i === p.level ? " selected" : "") + ">" + esc(x.name) + "（" + x.sub + " 层）</option>").join("");
+  let subs = "";
+  for (let i = 1; i <= lv.sub; i++) subs += '<option value="' + i + '"' + (i === p.sub ? " selected" : "") + ">" + i + " 层</option>";
+  ov.querySelector(".r25body").innerHTML =
+    '<div class="r25who">叶尘 <span>主角</span>' + (split ? '<span class="r25sp">独立境界已开启</span>' : "") + "</div>" +
+    '<div class="r25row"><span>境界体系</span><b>' + esc(r.name) + "</b></div>" +
+    '<div class="r25row"><span>当前境界</span><select id="r25lv">' + opts + '</select><select id="r25sub">' + subs + "</select></div>" +
+    '<div class="r25map"><b>映射键</b> characters.entity_id = ' + esc(S.r25.entityId) +
+      '<br><b>R25 侧</b> novel_links(to_type=level) → ' + esc(S.r25.levelId) +
+      '<br><b>行囊侧</b> ' + (split ? "realm_standalone" : "realm_at") + ' → ' + esc(realmText()) + "</div>" +
+    '<div class="r25note">' + (split
+      ? "独立模式：这里改的是面板那份，行囊自己那份不受影响。读写都走 <b>getRealm / setRealm</b> 两个口子，所以切换这个模式没有改任何调用方。"
+      : "两侧不在同一张表、id 不同源，靠 entity_id 映射；把任一侧改一下，另一侧会立刻跟着变 —— 因为写的是同一个语义字段。") + "</div>";
+  const a = ov.querySelector("#r25lv");
+  const b = ov.querySelector("#r25sub");
+  a.onchange = () => setRealm(parseInt(a.value, 10), 1, "r25");
+  b.onchange = () => setRealm(parseInt(a.value, 10), parseInt(b.value, 10), "r25");
+}
+
+function openR25() {
+  if ($("#r25ov")) return;
+  const ov = el("div", "r25ov");
+  ov.id = "r25ov";
+  ov.innerHTML =
+    '<div class="r25card"><div class="r25hd"><span class="r25tag">R25</span>' +
+    '<span class="r25tt">角色面板 · 当前境界</span><button class="r25x" id="r25close">×</button></div>' +
+    '<div class="r25body"></div></div>';
+  document.body.appendChild(ov);
+  ov.querySelector("#r25close").onclick = closeR25;
+  UI.r25Open = true;
+  renderR25();
+}
+
+function closeR25() {
+  const ov = $("#r25ov");
+  if (ov) ov.remove();
+  UI.r25Open = false;
+}
+
+/* --- 模块：境界（阶梯进位 + R25 联动；★ 读写一律走口子） --- */
+function modRealm() {
+  const box = el("div", "modbody");
+  const r = S.realm;
+  if (!r.configured) {
+    const g = el("div", "guide", "<b>尚未配置境界阶梯</b><br>阶梯是非线性的，无法用进制换算表达。<br>");
+    const b = el("span", "gbtn", "去配置");
+    b.onclick = () => openUnitSystem("ladder");
+    g.appendChild(b);
+    box.appendChild(g);
+    return box;
+  }
+  const cur = getRealm();          /* ★ 行囊视角，绝不直接碰 r.at */
+
+  /* 联动条（面板视角） */
+  const strip = el("div", "sync");
+  strip.innerHTML =
+    '<span class="sd"></span><span class="sx">R25 角色面板 · <b>' + esc(panelRealmText()) + "</b></span>" +
+    '<button class="sbtn" id="synOpen">打开 R25</button>';
+  strip.querySelector("#synOpen").onclick = openR25;
+  box.appendChild(strip);
+
+  /* 当前值：linked 一份 / split 两份 */
+  const cv = el("div", "lvlcur");
+  if (r.independent) {
+    cv.innerHTML =
+      '<span class="lc"><i>行囊境界</i><b>' + esc(realmText()) + '</b><em>真实修为</em></span>' +
+      '<span class="lc"><i>面板境界</i><b>' + esc(panelRealmText()) + '</b><em>R25 对外展示</em></span>';
+  } else {
+    cv.innerHTML =
+      '<span class="lc"><i>当前境界</i><b>' + esc(realmText()) + '</b><em>与 R25 面板是同一份数据</em></span>';
+  }
+  box.appendChild(cv);
+
+  const rows = r.levels.map((lv, i) => {
+    const on = i === cur.level;
+    const right = on ? cur.sub + " / " + lv.sub : "战力当量 " + lv.power;
+    return '<div class="lvlrow"><span class="ord">' + (i + 1) + '</span><span class="ln">' + esc(lv.name) +
+           '</span><span class="lv' + (on ? " on" : "") + '">' + right + "</span></div>";
+  });
+  box.appendChild(el("div", "", rows.join("")));
+
+  const btns = el("div", "invtools");
+  const tail = r.independent ? " · 面板不受影响" : " · R25 待保存后同步";
+  const down = el("button", "addbtn ghost", "−1 层");
+  down.onclick = () => {
+    if (cur.level === 0 && cur.sub <= 1) { toast("已至最底层"); return; }
+    const lv = cur.sub > 1 ? r.levels[cur.level] : r.levels[cur.level - 1];
+    setRealm(cur.level, cur.sub > 1 ? cur.sub - 1 : lv.sub, "pack", true);
+    toast("回退至 " + realmText() + tail);
+  };
+  btns.appendChild(down);
+
+  const up = el("button", "addbtn", "突破 +1 层");
+  up.onclick = () => {
+    const lv = r.levels[cur.level];
+    if (cur.sub < lv.sub) {
+      setRealm(cur.level, cur.sub + 1, "pack", true);
+      toast("精进至 " + realmText() + tail);
+    } else if (cur.level < r.levels.length - 1) {
+      setRealm(cur.level + 1, 1, "pack", true);
+      toast("突破成功 → " + realmText() + tail);
+    } else {
+      toast("已至当前阶梯顶端");
+    }
+  };
+  btns.appendChild(up);
+  box.appendChild(btns);
+  box.appendChild(el("div", "secnote", "阶梯为有序序列，只做位次比较；战力当量由作者自定义，仅用于比较"));
+
+  /* ★ 预留扩展位（PRD §9.7.6）：用来证明「读写收敛」这个口子成立 ——
+     打开后两侧各自独立，而**切换它没有改动任何调用点**。正式版 v1 不输出该开关。 */
+  const rp = el("div", "rpre");
+  const rphead = el("div", "rphead");
+  rphead.innerHTML = '<span class="rplb">独立境界<i>预留扩展位</i></span>';
+  const sw = el("button", "sw2" + (r.independent ? " on" : ""));
+  sw.title = r.independent ? "已开启，点击切回联动" : "点击开启独立境界";
+  sw.onclick = () => setRealmMode(!r.independent);
+  rphead.appendChild(sw);
+  rp.appendChild(rphead);
+  const rps = el("span", "rps");
+  rps.innerHTML = r.independent
+    ? "已分离：行囊这份是<b>真实修为</b>，R25 面板那份是<b>对外展示</b>，改哪边都不会串。"
+    : "关着的时候两侧是同一个数。打开后行囊可另存一份「真实修为」，对应扮猪吃虎 / 马甲 / 对外压制这类写法。";
+  rp.appendChild(rps);
+  box.appendChild(rp);
+  return box;
+}
+
+const MODS = {
+  summary: modSummary, equipment: modEquipment, inventory: modInventory,
+  skills: modSkills, attributes: modAttributes, currency: modCurrency, realm: modRealm
+};
+
+function modCount(key) {
+  if (key === "summary" || key === "attributes") return S.attributes.length + " 项";
+  if (key === "equipment") return S.slots.filter((s) => s.enabled).length + " 部位";
+  if (key === "inventory") return S.items.length + " 件";
+  if (key === "skills") return S.skills.filter((s) => s.enabled).length + "/" + S.skills.length;
+  if (key === "currency") return S.currency.configured ? "已配置" : "未配置";
+  if (key === "realm") return S.realm.configured ? "已配置" : "未配置";
+  return "";
+}
+
+/** 把模块列表渲染进某个容器（面板与分离窗口共用同一套构建函数） */
+function renderInto(container) {
+  container.innerHTML = "";
+  const enabled = S.layout.filter((m) => m.enabled);
+  if (!enabled.length) {
+    const e = el("div", "emptybox",
+      '<span class="eico">🧩</span>所有模块都被关闭了<br>行囊现在是空的<br><span class="ebtn">恢复默认组合</span>');
+    e.querySelector(".ebtn").onclick = () => {
+      S.layout.forEach((m, i) => { m.enabled = i < 4; m.collapsed = false; });
+      afterEdit();
+      toast("已恢复默认组合");
+    };
+    container.appendChild(e);
+    return;
+  }
+  enabled.forEach((m) => {
+    const mod = el("div", "mod" + (m.collapsed ? " collapsed" : ""));
+    mod.dataset.mod = m.key;
+    const hd = el("div", "modhd");
+    hd.innerHTML =
+      '<span class="caret">▼</span><span class="mtitle">' + esc(m.name) + "</span>" +
+      '<span class="mcount">' + modCount(m.key) + "</span>" +
+      '<span class="spacer"></span>';
+
+    /* 技能模块：熟练度显示开关（模块级，REQ-014） */
+    if (m.key === "skills") {
+      const on = S.skills.some((s) => s.showProf);
+      const t = el("button", "mact" + (on ? " on" : ""), on ? "熟练度 开" : "熟练度 关");
+      t.title = "模块级开关：关闭后熟练度 UI 完全缺席（不是置灰）";
+      t.onclick = (e) => {
+        e.stopPropagation();
+        const v = !on;
+        S.skills.forEach((s) => (s.showProf = v));
+        afterEdit();
+        toast(v ? "已开启熟练度展示" : "已关闭熟练度展示（UI 完全缺席）");
+      };
+      hd.appendChild(t);
+    }
+    if (m.key === "equipment") {
+      const eq = el("button", "mact" + (UI.showAllSlots ? " on" : ""), UI.showAllSlots ? "全部部位" : "仅已装备");
+      eq.title = "13 个部位全铺开太长 → 默认只显示已有穿戴的部位";
+      eq.onclick = (e) => { e.stopPropagation(); UI.showAllSlots = !UI.showAllSlots; renderAll(); };
+      hd.appendChild(eq);
+      const t = el("button", "mact", "部位 ⚙");
+      t.title = "自定义装备部位 / 槽位数 / 可接受类型";
+      t.onclick = (e) => { e.stopPropagation(); openSlots(); };
+      hd.appendChild(t);
+    }
+    if (m.key === "currency" || m.key === "realm") {
+      const t = el("button", "mact", "量纲 ⚙");
+      t.title = "量纲设置";
+      t.onclick = (e) => { e.stopPropagation(); openUnitSystem(m.key === "currency" ? "ratio" : "ladder"); };
+      hd.appendChild(t);
+    }
+    hd.onclick = () => { m.collapsed = !m.collapsed; save(); renderAll(); };
+    mod.appendChild(hd);
+    if (!m.collapsed && MODS[m.key]) mod.appendChild(MODS[m.key]());
+    container.appendChild(mod);
+  });
+}
+
+function renderAll() {
+  renderChips();
+  renderInto($("#packbody"));
+  renderInto($("#detachbody"));
+  renderSaveBar();
+}
+
+/* ---------- 5. 交互动作 ---------- */
+function touch(id) { if (!S.changed) S.changed = {}; S.changed[id] = true; }
+/* ===== 保存 / 草稿 / 回退（PRD §8.6）===== */
+let SAVED = null;                                  /* 上次保存时的快照 */
+const DIRTY_KEY = "checkin.pack.proto.dirty";      /* 草稿脏计数（模拟主进程 novel_pack_drafts） */
+
+/** 标记一次未提交改动。只记业务数据变更，UI 偏好（宽度/视图/主题）不算。 */
+function markDirty() {
+  UI.dirty = (UI.dirty || 0) + 1;
+  try { localStorage.setItem(DIRTY_KEY, String(UI.dirty)); } catch (e) {}
+  renderSaveBar();
+}
+
+/** 提交：★ 先对「改动前」的状态生成一条盘点记录（回退点），再把当前态落库（§8.6.4） */
+function commitPack() {
+  if (UI.saveFailed) {                       /* 失败态点保存 = 重试 */
+    UI.saveFailed = false;
+    save();
+    renderAll();
+    toast("重试成功：草稿已写入");
+    return;
+  }
+  if (!UI.dirty) return;
+  const n = UI.dirty;
+  S.records = S.records || [];
+  S.records.unshift({
+    at: Date.now(),
+    reason: "改动前自动存档",
+    count: n,
+    payload: SAVED ? JSON.stringify(SAVED) : null
+  });
+  if (S.records.length > 20) S.records.length = 20;    /* 滚动保留最近 20 条 */
+  SAVED = clone(S);                                    /* 新基线 */
+  UI.dirty = 0;
+  save();
+  try { localStorage.setItem(DIRTY_KEY, "0"); } catch (e) {}
+  renderAll();
+  toast("已保存 · 生成回退点（回退点共 " + S.records.length + " 条，保留最近 20 条）");
+}
+
+/** 撤销全部改动：丢弃草稿、回到上次保存状态 */
+function revertAll(silent) {
+  if (!UI.dirty) return;
+  if (!silent) toast("已撤销 " + UI.dirty + " 处改动，回到上次保存状态");
+  if (SAVED) S = clone(SAVED);
+  UI.dirty = 0;
+  UI.saveFailed = false;
+  save();
+  try { localStorage.setItem(DIRTY_KEY, "0"); } catch (e) {}
+  renderAll();
+}
+
+/** 保存条三态（§8.6.1） */
+function renderSaveBar() {
+  const bar = $("#savebar");
+  if (!bar) return;
+  const n = UI.dirty || 0;
+  bar.className = "savebar" + (UI.saveFailed ? " fail" : n ? " dirty" : "");
+  const records = (S.records || []).length;
+  let st;
+  if (UI.saveFailed) {
+    st = "<b>保存失败</b> · 草稿已保留";
+  } else if (n) {
+    st = '<span class="dot"></span>有 <b>' + n + "</b> 处改动未保存";
+  } else {
+    st = "已保存 · 刚刚" + (records ? " · 回退点 " + records + " 条" : "");
+  }
+  bar.innerHTML =
+    '<span class="st">' + st + "</span>" +
+    (n && !UI.saveFailed ? '<button class="sbtn" id="btnRevert">撤销全部</button>' : "") +
+    '<button class="sbtn primary" id="btnSave"' + (n || UI.saveFailed ? "" : " disabled") + ">" +
+      (UI.saveFailed ? "重试" : "保存" + (n ? " (" + n + ")" : "")) +
+    "</button>";
+  const sv = bar.querySelector("#btnSave");
+  if (sv) sv.onclick = () => commitPack();
+  const rv = bar.querySelector("#btnRevert");
+  if (rv) rv.onclick = () => revertAll(false);
+}
+
+function afterEdit() { markDirty(); save(); renderAll(); }
+
+function decQty(id) {
+  const it = itemOf(id);
+  if (!it) return;
+  if (it.qty <= 1) {
+    if (confirm("「" + it.name + "」数量将变为 0。\n\n确定移除该物品？")) {
+      S.items = S.items.filter((x) => x.id !== id);
+      afterEdit();
+      toast("已移除「" + it.name + "」");
+    }
+    return;
+  }
+  it.qty--;
+  touch(id);
+  afterEdit();
+}
+
+function unequip(id) {
+  const it = itemOf(id);
+  if (!it) return;
+  it.slotId = null; it.slotIndex = null;
+  afterEdit();
+  toast("已卸下「" + it.name + "」→ 退回物品栏，汇总已重算");
+}
+
+function tryEquip(id) {
+  const it = itemOf(id);
+  if (!it) return;
+  const slot = S.slots.find((s) => s.enabled && accepts(s, it));
+  if (!slot) { toast("没有能接受「" + it.cat + "」的部位，可在部位设置中调整"); return; }
+  const occupied = S.items.filter((x) => x.slotId === slot.id);
+  let idx = 0;
+  if (occupied.length >= slot.cap) {
+    /* 槽位已满 → 提供「替换」而非直接拒绝（REQ-009） */
+    const victim = occupied[0];
+    if (!confirm("「" + slot.name + "」已满（" + slot.cap + " 槽）。\n\n是否替换「" + victim.name + "」？")) return;
+    idx = victim.slotIndex != null ? victim.slotIndex : 0;
+    victim.slotId = null; victim.slotIndex = null;
+  } else {
+    const used = occupied.map((o) => o.slotIndex);
+    for (let i = 0; i < slot.cap; i++) { if (!used.includes(i)) { idx = i; break; } }
+  }
+  it.slotId = slot.id; it.slotIndex = idx;
+  touch(id);
+  afterEdit();
+  toast("已装备「" + it.name + "」到「" + slot.name + "」，汇总已重算");
+}
+
+/* ---------- 6. Δ 预览气泡 ---------- */
+const dtip = $("#dtip");
+const ev = (e) => e;
+function deltaOnUnequip(it) {
+  const now = computeSummary();
+  const hypo = clone(S.items);
+  const t = hypo.find((i) => i.id === it.id);
+  t.slotId = null; t.slotIndex = null;
+  const after = computeSummary(hypo);
+  const out = [];
+  S.attributes.forEach((a) => {
+    const d = after[a.id].final - now[a.id].final;
+    if (Math.abs(d) > 0.001) out.push({ attr: a, delta: d });
+  });
+  return out;
+}
+function showEquipDelta(it, e) {
+  const slot = S.slots.find((s) => s.enabled && accepts(s, it));
+  if (!slot) { showTip(e, "无可穿戴部位", []); return; }
+  const occupied = S.items.filter((x) => x.slotId === slot.id);
+  let idx;
+  if (occupied.length >= slot.cap) {
+    idx = occupied[0].slotIndex != null ? occupied[0].slotIndex : 0;
+  } else {
+    const used = occupied.map((o) => o.slotIndex);
+    idx = 0;
+    for (let i = 0; i < slot.cap; i++) { if (!used.includes(i)) { idx = i; break; } }
+  }
+  const d = deltaPreview(it, slot.id, idx);
+  const title = "装上「" + it.name + "」→ " + slot.name + (d.full ? "（替换 " + occupied[0].name + "）" : "");
+  showTip(e, title, d.out, notCountedHint("item", it.id));
+}
+function showTipDelta(e, title, rows, hint) { showTip(e, title, rows, hint); }
+function showTip(e, title, rows, hint) {
+  let h = '<div class="dth">' + esc(title) + "</div>";
+  if (!rows.length) h += '<div class="dtempty">' + esc(hint || "属性无变化") + "</div>";
+  else h += rows.map((r) => {
+    const d = r.delta;
+    return '<div class="dtrow"><span>' + esc(r.attr.name) + '</span><b class="' + (d < 0 ? "neg" : "") + '">' +
+           (d > 0 ? "+" : "") + fmt(r.attr, d) + "</b></div>";
+  }).join("");
+  dtip.innerHTML = h;
+  dtip.classList.add("on");
+  const r = dtip.getBoundingClientRect();
+  let x = e.clientX + 14, y = e.clientY + 12;
+  if (x + r.width > window.innerWidth - 8) x = e.clientX - r.width - 14;
+  if (y + r.height > window.innerHeight - 8) y = e.clientY - r.height - 12;
+  dtip.style.left = Math.max(8, x) + "px";
+  dtip.style.top = Math.max(8, y) + "px";
+}
+function hideTip() { dtip.classList.remove("on"); }
+
+/* ---------- 7. 抽屉 ---------- */
+const scrim = $("#scrim");
+function openDrawer(title, bodyNode, footNodes, wide) {
+  $("#drawerTitle").textContent = title;
+  const b = $("#drawerBody"); b.innerHTML = ""; b.appendChild(bodyNode);
+  const f = $("#drawerFoot"); f.innerHTML = "";
+  (footNodes || []).forEach((n) => f.appendChild(n));
+  $("#drawer").classList.toggle("wide", !!wide);
+  scrim.classList.add("on");
+  UI.drawerOpen = true;
+}
+function closeDrawer() { scrim.classList.remove("on"); UI.drawerOpen = false; }
+$("#drawerClose").onclick = closeDrawer;
+scrim.onclick = (e) => { if (e.target === scrim) closeDrawer(); };
+
+/* --- 来源明细（REQ-017）--- */
+function openDetail(attrId) {
+  const a = attrOf(attrId);
+  const sum = computeSummary();
+  const r = sum[attrId];
+  const box = el("div", "");
+
+  box.appendChild(el("div", "unitnote",
+    "固定优先级：<b>加算 → 百分比 → 乘算</b>；<b>覆盖（override）</b>优先级最高且只取一条。<br>" +
+    "被动与持续<b>同属一个运算池</b>，下面的分组只为看清「哪些是常驻、哪些是开了态势才有」。"));
+
+  let expr = '<span class="num">' + fmt(a, r.base) + "</span>";
+  if (Math.abs(r.add) > 0.001) expr += ' <span class="op">+</span> <span class="num">' + fmt(a, r.add) + "</span>";
+  if (Math.abs(r.percent) > 0.001) expr = "(" + expr + ') <span class="op">×</span> (1 + ' + r.percent.toFixed(1) + "%)";
+  if (Math.abs(r.mul - 1) > 0.0001) expr += ' <span class="op">×</span> <span class="num">' + r.mul.toFixed(3) + "</span>";
+  expr += ' <span class="op">=</span> <span class="res">' + fmt(a, r.final) + "</span>";
+  if (r.override != null) expr = '<span class="op">override 生效 → </span><span class="res">' + fmt(a, r.override) + "</span>";
+  box.appendChild(el("div", "formula", expr));
+
+  box.appendChild(el("div", "secnote", "基础值"));
+  box.appendChild(el("div", "frow base",
+    '<span class="fsrc">属性基础值<small>在「人物属性」模块可修改</small></span><span class="fval">' + fmt(a, r.base) + "</span>"));
+
+  /* 计入的贡献：按 被动 / 持续 分组（REQ-041） */
+  ["passive", "sustained"].forEach((n) => {
+    const ds = r.detail.filter((d) => d.nature === n);
+    if (!ds.length) return;
+    box.appendChild(el("div", "secnote",
+      NATURES[n].label + "效果贡献（" + ds.length + " 条）· " + NATURES[n].flag));
+    ds.forEach((d) => box.appendChild(detailRow(a, d)));
+  });
+  if (!r.detail.length) box.appendChild(el("div", "frow", '<span class="fsrc">暂无计入的效果</span>'));
+
+  /* 未计入：必须归因，否则作者会以为面板漏算了（§9.2.1） */
+  const off = [];
+  S.items.filter((it) => it.slotId != null).forEach((it) => {
+    excludedFor("item", it.id).forEach((e2) => {
+      if (e2.m.target === attrId) off.push({ label: "装备 · " + it.name, why: e2.why });
+    });
+  });
+  S.skills.forEach((sk) => {
+    if (!sk.enabled) {
+      modsOf("skill", sk.id).filter((m) => m.target === attrId)
+        .forEach(() => off.push({ label: "技能 · " + sk.name, why: "载体已停用" }));
+      return;
+    }
+    excludedFor("skill", sk.id).forEach((e2) => {
+      if (e2.m.target === attrId) off.push({ label: "技能 · " + sk.name, why: e2.why });
+    });
+  });
+  if (off.length) {
+    box.appendChild(el("div", "secnote", "未计入（仅提示，不参与算式）"));
+    off.forEach((o) => {
+      box.appendChild(el("div", "frow",
+        '<span class="fsrc">' + esc(o.label) + "<small>" + esc(o.why) + "</small></span>" +
+        '<span class="fval mute">未计入</span>'));
+    });
+  }
+  /* 释放型没有 target，属于「不参与任何属性」，单独说明 */
+  const casts = sum.__casts || [];
+  if (casts.length) {
+    box.appendChild(el("div", "secnote", "主动技能（不参与任何属性）"));
+    box.appendChild(el("div", "frow",
+      '<span class="fsrc">' + esc(casts.map((c) => c.m.name).join("、")) +
+      "<small>释放型效果没有目标属性，永不写入汇总</small></span>" +
+      '<span class="fval mute">—</span>'));
+  }
+
+  const close = el("button", "addbtn primary", "知道了");
+  close.onclick = closeDrawer;
+  openDrawer("来源明细 · " + a.name, box, [close]);
+}
+
+/* --- 来源明细的一行（带性质徽标） --- */
+function detailRow(a, d) {
+  const cls = d.op === "percent" ? "pct" : d.op === "mul" ? "mul" : d.op === "override" ? "ovr" : "";
+  const sign = d.op === "mul" ? "×" : d.op === "override" ? "→" : "+";
+  const unit = d.op === "percent" ? "%" : "";
+  const shown = d.op === "mul" ? d.value.toFixed(2) : (a.dec ? d.value.toFixed(a.dec) : f0(d.value));
+  return el("div", "frow",
+    '<span class="fsrc">' + badgeOf(d.nature) + " " + esc(d.label) +
+      (d.note ? "<small>" + esc(d.note) + "</small>" : "") + "</span>" +
+    '<span class="fval ' + cls + '">' + sign + shown + unit + "</span>");
+}
+
+/* --- 表单小控件 --- */
+function cfgSel(opts, val) {
+  const s = el("select", "cfgsel");
+  opts.forEach(([v, l]) => { const o = document.createElement("option"); o.value = v; o.textContent = l; s.appendChild(o); });
+  s.value = val;
+  return s;
+}
+function cfgNum(val, min) {
+  const i = el("input", "num"); i.type = "number"; i.value = String(val);
+  if (min != null) i.min = String(min);
+  return i;
+}
+function cfgTxt(val, ph) {
+  const i = el("input", "cfgtxt"); i.value = val || ""; i.placeholder = ph || "";
+  return i;
+}
+function cfgChk(label, on) {
+  const w = el("label", "cfgchk");
+  const i = document.createElement("input"); i.type = "checkbox"; i.checked = !!on;
+  w.appendChild(i);
+  w.appendChild(document.createTextNode(" " + label));
+  return w;
+}
+
+/* ===== 效果编辑：先选性质，再填内容（§9.2.1 / REQ-038）===== */
+function openEffects(ownerType, ownerId, ownerName) {
+  const box = el("div", "");
+  let pick = null;
+
+  function paint() {
+    box.innerHTML = "";
+    box.appendChild(el("div", "unitnote",
+      "<b>载体状态 × 效果性质</b> 是两个正交的轴。<br>" +
+      "「佩戴 / 启用」决定这个载体的效果<b>有没有资格</b>生效；每条效果的<b>性质</b>决定它<b>是否计入总属性</b>。"));
+
+    const list = modsOf(ownerType, ownerId);
+    box.appendChild(el("div", "secnote", "已有效果（" + list.length + " 条）"));
+    if (!list.length) box.appendChild(el("div", "frow", '<span class="fsrc">暂无效果</span>'));
+    NORDER.forEach((n) => {
+      list.filter((m) => m.nature === n).forEach((m) => {
+        const row = el("div", "efrow");
+        row.innerHTML = badgeOf(n) + '<span class="etxt">' + esc(effectText(m)) + "</span>" +
+          (n === "cast" ? '<span class="excl">不计入总属性</span>' : "");
+        const ctrl = el("div", "efctrl");
+        if (n === "sustained") {
+          const sw = el("button", "sw2" + (m.active ? " on" : ""));
+          sw.title = m.active ? "已开启（计入总属性）" : "已关闭（不计入）";
+          sw.onclick = () => { m.active = !m.active; markDirty(); save(); renderAll(); paint(); };
+          ctrl.appendChild(sw);
+        }
+        const del = el("button", "scdel", "删除");
+        del.onclick = () => {
+          S.modifiers = S.modifiers.filter((x) => x.id !== m.id);
+          markDirty(); save(); renderAll(); paint();
+          toast("已删除效果");
+        };
+        ctrl.appendChild(del);
+        row.appendChild(ctrl);
+        box.appendChild(row);
+      });
+    });
+
+    box.appendChild(el("div", "secnote",
+      pick ? "② 填内容 · 性质 = " + NATURES[pick].label : "① 先选性质"));
+    if (!pick) {
+      const g = el("div", "npick");
+      NORDER.forEach((n) => {
+        const c = el("div", "ncard");
+        c.innerHTML = '<div class="nt">' + badgeOf(n) + NATURES[n].label + "</div>" +
+                      '<div class="nd">' + NATURES[n].desc + "</div>" +
+                      '<div class="nx">' + NATURES[n].flag + "</div>";
+        c.onclick = () => { pick = n; paint(); };
+        g.appendChild(c);
+      });
+      box.appendChild(g);
+      return;
+    }
+    box.appendChild(buildEffectForm(pick, ownerType, (m) => {
+      m.id = "m" + Date.now() + Math.floor(Math.random() * 1000);
+      m.ownerType = ownerType;
+      m.ownerId = ownerId;
+      m.nature = pick;
+      S.modifiers.push(m);
+      markDirty(); save(); renderAll();
+      const label = NATURES[pick].label;
+      const cast = pick === "cast";
+      pick = null; paint();
+      toast("已新增" + label + "效果" + (cast ? "（不计入总属性）" : ""));
+    }, () => { pick = null; paint(); }));
+  }
+
+  const done = el("button", "addbtn primary", "完成");
+  done.onclick = closeDrawer;
+  paint();
+  openDrawer("效果编辑 · " + ownerName, box, [done], true);
+}
+
+/** 按性质分叉的表单：这是「差别体现」在交互上的落点 */
+function buildEffectForm(nature, ownerType, onSave, onCancel) {
+  const box = el("div", "");
+  const row = (label, hint, nodes) => {
+    const r = el("div", "cfgrow");
+    r.innerHTML = '<span class="cfgl">' + label + (hint ? "<small>" + hint + "</small>" : "") + "</span>";
+    const v = el("span", "cfgv");
+    nodes.forEach((n) => v.appendChild(n));
+    r.appendChild(v);
+    box.appendChild(r);
+  };
+  const attrOpts = S.attributes.map((a) => [a.id, a.name]);
+  const costOpts = [["none", "无"], ["mp", "真元"], ["hp", "气血"], ["charge", "次数"]];
+  const isCast = nature === "cast";
+  const isSus = nature === "sustained";
+
+  let nm = null, attrSel = null, opSel = null, valIn = null;
+  let profChk = null, trigChk = null, costSel = null, costIn = null, durIn = null, defChk = null;
+  let unitSel = null, cdIn = null, tgtSel = null;
+
+  if (isCast) {
+    nm = cfgTxt("", "如「风雷一击」");
+    row("效果名称", null, [nm]);
+    valIn = cfgNum(300, 0);
+    unitSel = cfgSel([["atk_pct", "% 攻击力"], ["flat_dmg", "点伤害"], ["maxhp_pct", "% 气血"], ["mp_pct", "% 真元"]], "atk_pct");
+    row("效果量", "倍率 / 伤害值", [valIn, unitSel]);
+    cdIn = cfgNum(12, 0);
+    row("冷却", "秒", [cdIn]);
+    costSel = cfgSel(costOpts, "mp");
+    costIn = cfgNum(30, 0);
+    row("消耗", null, [costSel, costIn]);
+    tgtSel = cfgSel([["self", "自身"], ["single", "单体"], ["aoe", "群体"], ["ally", "友方"]], "single");
+    row("目标", null, [tgtSel]);
+  } else {
+    attrSel = cfgSel(attrOpts, attrOpts.length ? attrOpts[0][0] : "");
+    row("目标属性", null, [attrSel]);
+    opSel = cfgSel(OPS, "add");
+    valIn = cfgNum(120, 0);
+    row("运算 · 数值", null, [opSel, valIn]);
+    if (ownerType === "skill") {
+      profChk = cfgChk("按熟练度缩放", true);
+      row("熟练度", null, [profChk]);
+    }
+    if (isSus) {
+      costSel = cfgSel(costOpts, "mp");
+      costIn = cfgNum(5, 0);
+      row("消耗", "每回合 / 每秒", [costSel, costIn]);
+      durIn = cfgTxt("回合", "属性名，如 回合 / 秒 / 持续");
+      row("持续单位", null, [durIn]);
+      defChk = cfgChk("新建时默认开启", false);
+      row("默认状态", null, [defChk]);
+    }
+    if (nature === "passive") {
+      trigChk = cfgChk("带触发条件（如「受到伤害时」）→ 不计入", false);
+      row("事件型", null, [trigChk]);
+    }
+  }
+  box.appendChild(el("div", "unitnote",
+    isCast ? "释放型效果<b>不会写入总属性</b>，只记录参数。面板不提供「释放」按钮（战斗模拟属范围外）。"
+    : (isSus ? "持续型效果<b>需要单独开启</b>才计入总属性，与载体开关互不影响。"
+              : "被动效果<b>载体在效即计入</b>总属性，无需开启。")));
+
+  const foot = el("div", "cfgfoot");
+  const cancel = el("button", "addbtn", "取消");
+  cancel.onclick = onCancel;
+  const ok = el("button", "addbtn primary", "保存效果");
+  ok.onclick = () => {
+    const m = { nature: nature };
+    if (isCast) {
+      m.name = nm.value.trim() || "主动效果";
+      m.value = parseFloat(valIn.value) || 0;
+      m.valueUnit = unitSel.value;
+      m.cd = parseFloat(cdIn.value) || 0;
+      m.costType = costSel.value;
+      m.costValue = parseFloat(costIn.value) || 0;
+      m.castTarget = tgtSel.value;
+    } else {
+      m.target = attrSel.value;
+      m.op = opSel.value;
+      m.value = parseFloat(valIn.value) || 0;
+      if (profChk && profChk.querySelector("input").checked) m.scaleByProf = true;
+      if (trigChk && trigChk.querySelector("input").checked) m.trigger = "custom";
+      if (isSus) {
+        m.costType = costSel.value;
+        m.costValue = parseFloat(costIn.value) || 0;
+        m.duration = durIn.value.trim() || "持续";
+        m.defaultOn = !!defChk.querySelector("input").checked;
+        m.active = m.defaultOn;
+      }
+    }
+    onSave(m);
+  };
+  foot.appendChild(cancel);
+  foot.appendChild(ok);
+  box.appendChild(foot);
+  return box;
+}
+
+/* --- 模块管理（REQ-020）--- */
+function openModules() {
+  const box = el("div", "");
+  box.appendChild(el("div", "unitnote",
+    "启用 / 禁用、上下排序、默认是否折叠 —— <b>按角色独立存储</b>。<br>被禁用的模块<b>完全不渲染</b>，底层数据保留。"));
+  S.layout.forEach((m, i) => {
+    const row = el("div", "mrow" + (m.enabled ? "" : " off"));
+    row.innerHTML =
+      '<span class="mh">⠿</span>' +
+      '<span class="mn">' + esc(m.name) + "<small>" + esc(m.desc) + "</small></span>" +
+      '<span class="mctrl"></span>';
+    const ctrl = row.querySelector(".mctrl");
+    const up = el("button", "", "↑"); up.disabled = i === 0;
+    up.onclick = () => { const t = S.layout[i - 1]; S.layout[i - 1] = S.layout[i]; S.layout[i] = t; afterEdit(); openModules(); };
+    const dn = el("button", "", "↓"); dn.disabled = i === S.layout.length - 1;
+    dn.onclick = () => { const t = S.layout[i + 1]; S.layout[i + 1] = S.layout[i]; S.layout[i] = t; afterEdit(); openModules(); };
+    const sw = el("button", "", m.enabled ? "●" : "○");
+    sw.title = m.enabled ? "点击禁用（完全缺席）" : "点击启用";
+    sw.onclick = () => { m.enabled = !m.enabled; afterEdit(); openModules(); };
+    ctrl.appendChild(up); ctrl.appendChild(dn); ctrl.appendChild(sw);
+    box.appendChild(row);
+  });
+
+  const reset = el("button", "addbtn", "恢复默认组合");
+  reset.onclick = () => {
+    S.layout.forEach((m, i) => { m.enabled = i < 4; m.collapsed = false; });
+    afterEdit(); closeDrawer(); toast("已恢复默认组合");
+  };
+  const done = el("button", "addbtn primary", "完成");
+  done.onclick = closeDrawer;
+  openDrawer("模块管理", box, [reset, done]);
+}
+
+/* --- 部位管理（REQ-006 ~ REQ-009）--- */
+function openSlots() {
+  const box = el("div", "");
+  box.appendChild(el("div", "unitnote",
+    "预设部位<b>允许删除</b>（写都市系统流不需要「坐骑」）。<br>槽位数 &gt; 1 即支持一个部位戴多件，如<b>戒指戴两枚</b>。"));
+  S.slots.forEach((s) => {
+    const card = el("div", "slotcfg");
+    card.innerHTML =
+      '<div class="scrow">' +
+        '<span class="scname">' + esc(s.name) + "</span>" +
+        '<span class="scfield">槽位 <input class="num" type="number" min="1" max="8" value="' + s.cap + '"></span>' +
+        '<button class="scdel">删除</button>' +
+      "</div>" +
+      '<div class="accrow">仅接受：' + (s.accepts.length ? esc(s.accepts.join(" / ")) : "全部类型") + "</div>";
+
+    card.querySelector("input").onchange = (e) => {
+      const v = Math.max(1, Math.min(8, parseInt(e.target.value, 10) || 1));
+      const occupied = S.items.filter((x) => x.slotId === s.id);
+      if (occupied.length > v) {
+        const over = occupied.filter((x) => x.slotIndex >= v);
+        if (!confirm("「" + s.name + "」将从 " + s.cap + " 槽缩为 " + v + " 槽。\n\n超出的 " +
+                     over.length + " 件装备会退回物品栏（不删除）。继续？")) {
+          e.target.value = String(s.cap);
+          return;
+        }
+        over.forEach((o) => { o.slotId = null; o.slotIndex = null; });
+      }
+      s.cap = v;
+      afterEdit();
+      openSlots();
+      toast("「" + s.name + "」已改为 " + v + " 槽");
+    };
+
+    card.querySelector(".scdel").onclick = () => {
+      const occupied = S.items.filter((x) => x.slotId === s.id);
+      if (occupied.length && !confirm("「" + s.name + "」上有 " + occupied.length + " 件装备。\n\n删除后它们会退回物品栏。继续？")) return;
+      occupied.forEach((o) => { o.slotId = null; o.slotIndex = null; });
+      S.slots = S.slots.filter((x) => x.id !== s.id);
+      afterEdit(); openSlots();
+      toast("已删除部位「" + s.name + "」");
+    };
+    box.appendChild(card);
+  });
+
+  const add = el("button", "addbtn", "+ 新增部位");
+  add.onclick = () => {
+    const name = prompt("新部位名称（如：灵宠 / 面具 / 披风 / 储物袋）");
+    if (!name || !name.trim()) return;
+    S.slots.push({ id: "sl" + Date.now(), name: name.trim(), cap: 1, accepts: [], enabled: true });
+    afterEdit(); openSlots();
+    toast("已新增部位「" + name.trim() + "」");
+  };
+  const done = el("button", "addbtn primary", "完成");
+  done.onclick = closeDrawer;
+  openDrawer("装备部位设置", box, [add, done], true);
+}
+
+/* --- 量纲设置（§9.3：同入口、三模型）--- */
+function openUnitSystem(kind) {
+  const box = el("div", "");
+  const tabs = el("div", "tabs");
+  [["ratio", "货币 · 进制型"], ["ladder", "境界 · 阶梯型"], ["threshold", "熟练度 · 阈值型"]].forEach(([k, label]) => {
+    const b = el("button", k === kind ? "on" : "", label);
+    b.onclick = () => openUnitSystem(k);
+    tabs.appendChild(b);
+  });
+  box.appendChild(tabs);
+
+  if (kind === "ratio") {
+    box.appendChild(el("div", "unitnote",
+      "数学模型：<b>严格线性比例</b>。<br>双向精确、可自动进位。"));
+    S.currency.levels.slice().sort((a, b) => b.ratio - a.ratio).forEach((lv) => {
+      box.appendChild(el("div", "barcfg",
+        '<span class="k">' + esc(lv.name) + "</span><span>1 " + esc(lv.name) + " = " + lv.ratio + " " + esc(S.currency.base) + "</span>"));
+    });
+    box.appendChild(el("div", "barcfg",
+      '<span class="k">自动进位</span><span>' + (S.currency.autoCarry ? "开" : "关（部分设定里低级货币不可兑换）") + "</span>"));
+    const t = el("button", "addbtn", S.currency.autoCarry ? "关闭自动进位" : "开启自动进位");
+    t.style.marginTop = "12px";
+    t.onclick = () => { S.currency.autoCarry = !S.currency.autoCarry; afterEdit(); openUnitSystem("ratio"); };
+    box.appendChild(t);
+  } else if (kind === "ladder") {
+    box.appendChild(el("div", "unitnote",
+      "数学模型：<b>有序非线性序列</b>。<br>一层炼气 ≠ 若干铜板，因此<b>不可线性换算</b>，只支持位次比较与作者自定义的「战力当量」。"));
+    S.realm.levels.forEach((lv, i) => {
+      box.appendChild(el("div", "lvlrow",
+        '<span class="ord">' + (i + 1) + '</span><span class="ln">' + esc(lv.name) +
+        '</span><span class="lv">' + lv.sub + " 层 · 战力当量 " + lv.power + "</span>"));
+    });
+  } else {
+    box.appendChild(el("div", "unitnote",
+      "数学模型：<b>数值区间 → 名称映射</b>。<br>单向（数值 → 等级名 + 区间进度），不能反推。"));
+    S.prof.levels.forEach((lv) => {
+      box.appendChild(el("div", "lvlrow",
+        '<span class="ord">·</span><span class="ln">' + esc(lv.name) +
+        '</span><span class="lv">' + lv.min + " ~ " + (lv.max === null ? "∞" : lv.max) + "</span>"));
+    });
+    const demo = S.skills[0];
+    box.appendChild(el("div", "barcfg",
+      '<span class="k">示例：「' + esc(demo.name) + "」熟练度 " + demo.prof + "</span><span>→ " +
+      esc(profLevel(demo.prof).name) + " · 区间进度 " + (profProgress(demo.prof) * 100).toFixed(1) + "%</span>"));
+  }
+
+  const done = el("button", "addbtn primary", "完成");
+  done.onclick = closeDrawer;
+  openDrawer("量纲设置", box, [done], true);
+}
+
+/* ---------- 8. 面板开关与三形态 ---------- */
+const pack = $("#pack");
+const mask = $("#mask");
+const modeLabel = (m) => ({
+  docked: "① 右侧让位", overlay: "降级浮层", peek: "② Peek 速览", detached: "③ 分离窗口"
+}[m] || m);
+
+function setMode(mode) {
+  UI.mode = mode;
+  if (mode !== "peek") saveUI();
+  document.querySelectorAll("#segMode button").forEach((b) => b.classList.toggle("on", b.dataset.mode === mode));
+  pack.classList.toggle("mode-overlay", mode === "overlay");
+  pack.classList.toggle("mode-peek", mode === "peek");
+  mask.classList.toggle("on", mode === "overlay" || mode === "peek");
+  $("#detach").classList.toggle("on", mode === "detached");
+  /* 形态提示条：让评审一眼看出当前形态的差别 */
+  const banner = $("#modebanner");
+  const bannerText = {
+    overlay: "⚠ 降级形态：正文被遮挡（对比 ① 让位的零遮挡）",
+    peek: "速览 · 3 秒后自动收起，不写入布局记忆"
+  }[mode];
+  banner.textContent = bannerText || "";
+  banner.classList.toggle("hidden", !bannerText);
+  /* 分离模式下主窗口面板完全收起 → 正文恢复满宽 = 零遮挡 */
+  pack.classList.toggle("hidden", mode === "detached" || !UI.open);
+  if (mode === "detached") renderInto($("#detachbody"));
+}
+
+function openPack(mode) {
+  UI.open = true;
+  if (mode) UI.mode = mode;
+  document.body.style.setProperty("--pack-w", UI.width + "px");
+  document.body.classList.add("open");
+  setMode(UI.mode);
+  renderAll();
+  $("#btnPack").classList.toggle("on", UI.mode !== "detached");
+  $("#statusPack").textContent = "行囊 · 已打开（" + modeLabel(UI.mode) + "）";
+  clearTimeout(UI.peekTimer);
+  if (UI.mode === "peek") UI.peekTimer = setTimeout(closePack, 3000);
+}
+
+/** 三选一：保存并关闭 / 丢弃改动 / 取消（默认焦点停在安全侧「保存并关闭」） */
+function askBeforeClose() {
+  const ov = el("div", "saveask");
+  const card = el("div", "sacard");
+  card.innerHTML =
+    '<div class="sat">有 ' + UI.dirty + " 处改动未保存</div>" +
+    '<div class="sad">「保存并关闭」会先对改动前的状态生成一条盘点记录（回退点），再写入数据库。<br>' +
+    "「丢弃改动」将回到上次保存的状态，<b>这一步不可撤销</b>。</div>" +
+    '<div class="sab">' +
+      '<button class="dang" data-a="discard">丢弃改动</button>' +
+      '<button class="plain" data-a="cancel">取消</button>' +
+      '<button class="prim" data-a="save">保存并关闭</button>' +
+    "</div>";
+  ov.appendChild(card);
+  function onKey(e) { if (e.key === "Escape") { ov.remove(); document.removeEventListener("keydown", onKey, true); } }
+  card.querySelectorAll("button").forEach((b) => {
+    b.onclick = () => {
+      const a = b.dataset.a;
+      ov.remove();
+      document.removeEventListener("keydown", onKey, true);
+      if (a === "save") { commitPack(); doClosePack(); }
+      else if (a === "discard") { revertAll(true); doClosePack(); }
+    };
+  });
+  document.addEventListener("keydown", onKey, true);
+  document.body.appendChild(ov);
+  card.querySelector('[data-a="save"]').focus();
+}
+
+function closePack() {
+  if (UI.dirty > 0 || UI.saveFailed) { askBeforeClose(); return; }
+  doClosePack();
+}
+
+function doClosePack() {
+  UI.open = false;
+  clearTimeout(UI.peekTimer);
+  pack.classList.add("hidden");
+  mask.classList.remove("on");
+  $("#detach").classList.remove("on");
+  $("#btnPack").classList.remove("on");
+  $("#statusPack").textContent = "行囊 · 未打开";
+}
+
+$("#btnPack").onclick = (e) => {
+  if (e.altKey) { openPack("peek"); return; }
+  if (UI.open) closePack(); else openPack(UI.mode);
+};
+$("#btnClose").onclick = closePack;
+$("#btnModules").onclick = openModules;
+$("#btnDetach").onclick = () => {
+  openPack("detached");
+  toast("已分离为独立窗口 → 主窗口正文恢复满宽（零遮挡）");
+};
+mask.onclick = closePack;
+
+/* 拖拽改宽（REQ-003） */
+(function initResizer() {
+  const r = $("#resizer");
+  let dragging = false;
+  r.addEventListener("mousedown", (e) => { dragging = true; e.preventDefault(); document.body.style.cursor = "col-resize"; });
+  window.addEventListener("mousemove", (e) => {
+    if (!dragging) return;
+    const win = $("#appwin").getBoundingClientRect();
+    UI.width = Math.round(Math.max(300, Math.min(600, win.right - e.clientX)));
+    document.body.style.setProperty("--pack-w", UI.width + "px");
+  });
+  window.addEventListener("mouseup", () => {
+    if (!dragging) return;
+    dragging = false;
+    document.body.style.cursor = "";
+    saveUI();
+    toast("面板宽度已记忆：" + UI.width + "px");
+  });
+})();
+
+/* 快捷键：Ctrl/⌘+Shift+B；Esc 关最上层浮层（对齐 useNovelShortcuts 的优先级链：设置 → 行囊 → 专注） */
+window.addEventListener("keydown", (e) => {
+  if (e.isComposing) return;            /* IME 组合期一律放行，不打断中文输入 */
+  if (e.defaultPrevented) return;
+  const mod = e.ctrlKey || e.metaKey;
+  if (mod && e.shiftKey && e.key.toLowerCase() === "b") {
+    e.preventDefault();
+    if (UI.open) closePack(); else openPack(UI.mode);
+    return;
+  }
+  if (e.key === "Escape") {
+    e.preventDefault();
+    if (UI.drawerOpen) { closeDrawer(); return; }
+    if (UI.open) closePack();
+  }
+});
+
+/* 演示控制条 */
+document.querySelectorAll("#segMode button").forEach((b) => {
+  b.onclick = () => openPack(b.dataset.mode);
+});
+document.querySelectorAll("#segTheme button").forEach((b) => {
+  b.onclick = () => {
+    document.documentElement.dataset.theme = b.dataset.theme;
+    document.querySelectorAll("#segTheme button").forEach((x) => x.classList.toggle("on", x === b));
+  };
+});
+$("#btnReset").onclick = () => {
+  if (!confirm("重置为初始演示数据？")) return;
+  S = clone(DEFAULT_STATE);
+  afterEdit();
+  toast("演示数据已重置");
+};
+$("#btnClearLayout").onclick = () => {
+  try { localStorage.removeItem(LS_KEY); localStorage.removeItem(LS_KEY + ".ui"); } catch (e) {}
+  toast("本地记忆已清空（刷新后生效）");
+};
+
+/* 正文选区右键 → 记入行囊（REQ-027） */
+document.querySelector(".manuscript").addEventListener("contextmenu", (e) => {
+  const sel = window.getSelection().toString().trim();
+  if (!sel) return;
+  if (sel.length > 24) return;                       /* 只对短语生效，避免误抓整段 */
+  e.preventDefault();
+  if (!confirm("将选中文字「" + sel + "」记入行囊？")) return;
+  const id = "n" + Date.now();
+  S.items.push({ id: id, name: sel, icon: "📦", cat: "材料", qty: 1, rarity: "凡品", slotId: null, slotIndex: null, src: "第 137 章" });
+  touch(id);
+  afterEdit();
+  if (!UI.open) openPack("docked");
+  toast("已记入行囊：「" + sel + "」（本章新增）");
+});
+
+/* 正文高亮词点击 */
+document.querySelectorAll(".manuscript .hl").forEach((n) => {
+  n.onclick = () => {
+    const name = n.textContent.trim();
+    const it = S.items.find((x) => x.name === name);
+    if (!UI.open) openPack("docked");
+    toast(it ? "「" + name + "」已在行囊（" + (it.slotId ? "已装备" : "背包中") + "）" : "「" + name + "」尚未记入行囊");
+  };
+});
+
+/* ---------- 9. 启动 ---------- */
+const toastEl = $("#toast");
+let toastTimer = null;
+function toast(msg) {
+  toastEl.textContent = msg;
+  toastEl.classList.add("on");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove("on"), 2000);
+}
+
+/**
+ * 支持用 hash 直接钉住某个场景，便于评审 / 截图：
+ *   #theme=midnight&mode=detached
+ *   #theme=aurora&mode=overlay
+ *   #mode=peek&open=0
+ *   #fx=item:i1      → 直接打开「风雷双匕」的效果编辑器（被动 ×3 + 释放 ×1）
+ *   #fx=skill:s3     → 直接打开「丹火淬炼」的效果编辑器（含一条「关着的持续效果」）
+ *   #dirty=3         → 演示保存条「有 3 处改动未保存」态
+ *   #savefail=1      → 演示保存条「保存失败 · 草稿已保留」态
+ *   #ask=3           → 直接弹出关闭拦截三选一（保存并关闭 / 丢弃改动 / 取消）
+ *   #r25=1           → 同时打开「R25 角色面板」镜像，演示境界双向联动
+ *   #split=1         → 打开「独立境界 · 预留扩展位」开关，演示读写口子（§9.7.6）成立
+ *   #expand=realm    → 展开指定模块（逗号分隔），便于缩略图评审
+ * mode: docked | peek | overlay | detached   open: 0 表示不自动打开
+ */
+function initFromHash() {
+  const raw = location.hash.replace(/^#/, "");
+  if (!raw) return;
+  const p = new URLSearchParams(raw);
+  const th = p.get("theme");
+  if (th) {
+    document.documentElement.dataset.theme = th;
+    document.querySelectorAll("#segTheme button").forEach((x) => x.classList.toggle("on", x.dataset.theme === th));
+  }
+  const mo = p.get("mode");
+  if (mo && ["docked", "peek", "overlay", "detached"].includes(mo)) UI.mode = mo;
+  if (p.get("open") === "0") UI.autoOpen = false;
+  UI.fxFromHash = p.get("fx");
+  /* #dirty=3 演示未保存态；#savefail=1 演示保存失败态；#ask=3 直接弹出关闭拦截 */
+  const dn = parseInt(p.get("dirty") || "", 10);
+  if (!isNaN(dn)) UI.hashDirty = dn;
+  if (p.get("savefail") === "1") UI.hashSaveFail = true;
+  const ak = parseInt(p.get("ask") || "", 10);
+  if (!isNaN(ak)) { UI.hashDirty = ak || 3; UI.hashAsk = true; }
+  if (p.get("r25") === "1") UI.hashR25 = true;
+  if (p.get("split") === "1") UI.hashSplit = true;   /* #split=1 演示「独立境界」口子 */
+  /* #expand=realm,currency 展开指定模块，便于评审 / 截图 */
+  const ex = p.get("expand");
+  if (ex) {
+    const keys = ex.split(",");
+    keys.forEach((k) => {
+      const m = S.layout.find((x) => x.key === k);
+      if (m) { m.enabled = true; m.collapsed = false; }
+    });
+    UI.hashFocus = keys[0];
+  }
+}
+
+loadUIPrefs();
+initFromHash();
+SAVED = clone(S);                                  /* 打开时先钉基线 */
+try { UI.dirty = parseInt(localStorage.getItem(DIRTY_KEY) || "0", 10) || 0; } catch (e) { UI.dirty = 0; }
+if (UI.hashDirty) UI.dirty = UI.hashDirty;         /* #dirty=N 覆盖 */
+if (UI.hashSaveFail) UI.saveFailed = true;         /* #savefail=1 覆盖 */
+document.body.style.setProperty("--pack-w", UI.width + "px");
+setMode(UI.mode);
+renderAll();
+if (UI.autoOpen !== false) openPack(UI.mode);   /* 默认打开「右侧让位」，评审第一眼看到核心场景 */
+if (UI.dirty > 0 && !UI.hashDirty) toast("检测到 " + UI.dirty + " 处未保存改动（草稿已持久化，崩溃也不丢）");
+if (UI.hashAsk) askBeforeClose();   /* #ask=3 直接弹出关闭拦截，供评审查看三选一弹窗 */
+if (UI.hashSplit) {                 /* #split=1 打开「独立境界」预留开关：验证 §9.7.6 口子成立 */
+  S.realm.independent = true;
+  if (!S.realm.own) S.realm.own = { level: 0, sub: 9 };   /* 真实修为：炼气九层（与面板的筑基七层分离） */
+  const mr = S.layout.find((x) => x.key === "realm");
+  if (mr) { mr.enabled = true; mr.collapsed = false; }
+  UI.hashFocus = "realm";
+  renderAll();
+}
+if (UI.hashR25) openR25();          /* #r25=1 直接打开 R25 角色面板镜像（放在 split 之后，卡片才能拿到正确模式） */
+if (UI.hashFocus) {
+  const body = $("#packbody");
+  const t = body && body.querySelector('[data-mod="' + UI.hashFocus + '"]');
+  if (body && t) body.scrollTop += t.getBoundingClientRect().top - body.getBoundingClientRect().top;
+}
+if (UI.fxFromHash) {
+  const parts = UI.fxFromHash.split(":");
+  const kind = parts[0] === "skill" ? "skill" : "item";
+  const id = parts[1];
+  const owner = kind === "skill" ? S.skills.find((x) => x.id === id) : S.items.find((x) => x.id === id);
+  if (owner) openEffects(kind, id, owner.name);
+}
+</script>
+</body>
+</html>

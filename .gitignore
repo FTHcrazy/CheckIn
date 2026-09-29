@@ -17,6 +17,7 @@ dist-electron
 release
 *.local
 .workbuddy
+.cache-shots
 
 # Editor directories and files
 .vscode/*
