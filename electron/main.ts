@@ -329,10 +329,10 @@ function createNovelWindow(): BrowserWindow {
   return novelWin;
 }
 
-// ── SettingsWindow（全局设置，仅 novel 版开放入口） ──
+// ── SettingsWindow（全局设置，全版本开放入口） ──
 
 /**
- * SettingsWindow —— 全局设置窗口（外观 / 账号，后续扩展字体、快捷键等）。
+ * SettingsWindow —— 全局设置窗口（外观 / 账号 / 个人资料，后续扩展字体、快捷键等）。
  *
  * 即关即销、单实例唤起：设置项即时生效（主题经广播同步到各窗口，
  * 账号操作直接走 IPC），窗口本身不持有草稿状态。
@@ -348,12 +348,10 @@ function createSettingsWindow(): BrowserWindow {
 
   const settingsWin = new BrowserWindow({
     width: 560,
-    height: 480,
+    height: 640,
     minWidth: 480,
-    minHeight: 400,
+    minHeight: 420,
     icon: ICON_PATH,
-    resizable: false,
-    maximizable: false,
     show: false,
     ...ROUNDED_WINDOW_OPTIONS,
     titleBarStyle: "hidden",
@@ -587,9 +585,8 @@ app.whenReady().then(() => {
     createNovelWindow();
   });
 
-  // ── SettingsWindow 开关 IPC（仅 novel 版：设置入口只存在于小说版主窗标题栏） ──
+  // ── SettingsWindow 开关 IPC（全版本：入口分别在 base / novel 主窗标题栏） ──
   ipcMain.on("settings-window-open", () => {
-    if (EDITION !== "novel") return;
     createSettingsWindow();
   });
 

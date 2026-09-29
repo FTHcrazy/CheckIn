@@ -5,6 +5,7 @@ import { ClockCircleOutlined } from "@ant-design/icons";
 import { ThemeProvider } from "@/shared/theme";
 import type { ActivityNotifyData } from "@/shared/ipc/activityNotifyBridge";
 import WindowHeader from "@/shared/components/WindowHeader";
+import SettingsEntry from "./components/SettingsEntry";
 import HomePage from "./pages/HomePage";
 import "./app-routes.scss";
 
@@ -12,7 +13,6 @@ import "./app-routes.scss";
 // 避免开发模式下全量模块预转换/生产模式首屏 chunk 过大导致的卡顿。
 const DailyPage = lazy(() => import("./pages/DailyPage/DailyPage"));
 const CodePage = lazy(() => import("./pages/CodePage/CodePage"));
-const UserPage = lazy(() => import("./pages/UserPage/UserPage"));
 const MemoPage = lazy(() => import("./pages/MemoPage/MemoPage"));
 const TodoPage = lazy(() => import("./pages/TodoPage/TodoPage"));
 const NewsPage = lazy(() => import("./pages/NewsPage/NewsPage"));
@@ -70,8 +70,9 @@ export default function App() {
       <AntdApp>
         {/* 圆角窗口外壳：负责圆角裁剪与描边，内容全部装在其中 */}
         <div className="window-shell">
-          {/* 窗口级标题栏：拖动区 + 最小化/最大化/关闭，替代 NavHeader 的窗口职责 */}
-          <WindowHeader />
+          {/* 窗口级标题栏：拖动区 + 最小化/最大化/关闭，替代 NavHeader 的窗口职责；
+              actions 挂全局「设置」入口（唤起 SettingsWindow，单实例） */}
+          <WindowHeader actions={<SettingsEntry />} />
           <div className="window-shell__body">
             <ActivityNotifier />
             <Suspense fallback={<RouteFallback />}>
@@ -79,7 +80,6 @@ export default function App() {
                 <Route path="/" element={<HomePage />} />
                 <Route path="/daily" element={<DailyPage />} />
                 <Route path="/code" element={<CodePage />} />
-                <Route path="/user" element={<UserPage />} />
                 <Route path="/memo" element={<MemoPage />} />
                 <Route path="/todo" element={<TodoPage />} />
                 <Route path="/news" element={<NewsPage />} />

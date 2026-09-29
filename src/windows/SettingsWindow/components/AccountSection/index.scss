@@ -1,0 +1,9 @@
+// 账号分区专属：危险动作按钮态（退出登录）
+// 基础 .settings-item__action 样式在窗口级 index.scss（与外观分区共用）
+.settings-item__action--danger {
+  color: var(--app-error);
+
+  &:hover {
+    border-color: currentcolor;
+  }
+}

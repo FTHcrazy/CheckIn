@@ -48,15 +48,17 @@ describe("edition manifest", () => {
     }
   });
 
-  it("版本差异语义：lite 不含 novel/settings；novel 不含 base；full 最全", () => {
+  it("版本差异语义：lite 不含 novel；novel 不含 base；full 最全；settings 全版本包含", () => {
+    for (const edition of ["full", "lite", "novel"] as const) {
+      expect(EDITION_WINDOW_ENTRIES[edition]).toContain("settings");
+    }
+
     expect(EDITION_WINDOW_ENTRIES.lite).not.toContain("novel");
-    expect(EDITION_WINDOW_ENTRIES.lite).not.toContain("settings");
 
     expect(EDITION_WINDOW_ENTRIES.novel).not.toContain("base");
-    expect(EDITION_WINDOW_ENTRIES.novel).toContain("settings");
 
     expect(EDITION_WINDOW_ENTRIES.full).toEqual(
-      expect.arrayContaining<WindowEntryKey>(["base", "login", "novel"]),
+      expect.arrayContaining<WindowEntryKey>(["base", "login", "novel", "settings"]),
     );
   });
 

@@ -39,6 +39,15 @@ export default function ThemeSwitcher({
     [themes, theme],
   );
 
+  // 气泡位置微调：
+  // - icon 形态（首页侧边栏底部）——右移上提，让面板贴合图标按钮（历史调好的值）
+  // - button 形态（设置窗口内）——不加竖向偏移：入口常在窗口上部，
+  //   上提会把面板推出窗口边界被 OS 截断（antd 的自动溢出调整不覆盖自定义 offset）
+  const align =
+    variant === "icon"
+      ? { offset: [20, -20] as [number, number] }
+      : { offset: [0, 4] as [number, number] };
+
   const panel = (
     <div className="theme-switcher__panel">
       <div className="theme-switcher__panel-title">主题色</div>
@@ -100,7 +109,7 @@ export default function ThemeSwitcher({
       placement={placement}
       trigger="click"
       arrow={false}
-      align={{ offset: [20, -20] }}
+      align={align}
       overlayClassName="theme-switcher__popover"
       content={panel}
     >

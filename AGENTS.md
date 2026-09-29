@@ -20,7 +20,7 @@ CheckIn 采用 Electron 双进程架构，渲染进程（React）与主进程（
 │  ├─ LoginWindow (登录窗口)                                   │
 │  ├─ NovelWindow (小说窗口：full 版为即关即销子窗口；         │
 │  │               novel 版为主窗口，关闭进托盘)               │
-│  └─ SettingsWindow (全局设置窗口：novel 版开放入口)          │
+│  └─ SettingsWindow (全局设置窗口：全版本开放入口)          │
 ├─────────────────────────────────────────────────────────────┤
 │  Shared (跨窗口共享层)                                       │
 │  ├─ components / services / ipc / types / styles            │
@@ -95,7 +95,7 @@ src/windows/XxxWindow/
 | **BaseWindow** | `windows/BaseWindow/` | `src/windows/BaseWindow/index.html` | 主窗口（full/lite 版），承载全部业务页面（路由在 `App.tsx`） |
 | **LoginWindow** | `windows/LoginWindow/` | `src/windows/LoginWindow/index.html` | 登录/欢迎窗口 |
 | **NovelWindow** | `windows/NovelWindow/` | `src/windows/NovelWindow/index.html` | 小说窗口（书架 + 编辑器）。形态随构建版本分叉：full 版即关即销、重新打开即全新实例；novel 版为主窗口，登录后唤起、关闭进托盘。数据由 `novel_*` 表持久化，崩溃恢复由会话标记驱动 |
-| **SettingsWindow** | `windows/SettingsWindow/` | `src/windows/SettingsWindow/index.html` | 全局设置窗口（外观 / 账号，后续扩展字体、快捷键），即关即销、单实例唤起；当前仅 novel 版构建并开放入口 |
+| **SettingsWindow** | `windows/SettingsWindow/` | `src/windows/SettingsWindow/index.html` | 全局设置窗口（外观 / 个人资料 / 账号，后续扩展字体、快捷键），即关即销、单实例唤起；全版本构建，入口在各自主窗标题栏（base/novel 均经 WindowHeader 的 `actions` 插槽） |
 
 **构建版本（edition）**：环境变量 `CHECKIN_EDITION=full | lite | novel` 决定打包哪些窗口与业务模块，清单唯一事实源为 `electron/edition.ts`（`RENDERER_ENTRY_PATHS` / `EDITION_WINDOW_ENTRIES` / `PRIMARY_WINDOW_ENTRY`），vite.config.ts 的 `rollupOptions.input` 与 electron/main.ts 的窗口加载共用；主窗口归属（full/lite → BaseWindow，novel → NovelWindow）也由它驱动。新增窗口时必须同步该清单并跑 `electron/edition.test.ts` 护栏。
 
@@ -151,7 +151,9 @@ src/windows/XxxWindow/
 | **MemoPage** | MemoPage.tsx | hooks/useMemoData + useMemoEditorState + useMemoViewState | memo IPC（文件系统） | MemoSidebar, MemoHeader, MemoEditor, MemoPreview, MemoListItem |
 | **DailyPage** | DailyPage.tsx | hooks/useDailyPage.ts | daily.ts (语义化 activity IPC) | 无 |
 | **CodePage** | CodePage.tsx | hooks/useCodePage.ts | code.ts (HTTP via 主进程) | 无 |
-| **UserPage** | UserPage.tsx | 内联 Form | user IPC (SQLite) | 无 |
+
+> 原 **UserPage**（用户信息编辑）已迁移至全局 `SettingsWindow` 的「个人资料」分区，
+> 经 BaseWindow 标题栏设置入口唤起，不再是独立路由页面。
 
 **页面模块边界**：
 - 页面之间**无直接依赖**，通过路由跳转
@@ -183,9 +185,7 @@ windows/BaseWindow/
 │     │  └─ MemoPreview (私有)
 │     ├─ DailyPage
 │     │  └─ Page
-│     ├─ CodePage
-│     │  └─ Page
-│     └─ UserPage
+│     └─ CodePage
 │        └─ Page
 └─ pages/ (仅属于 BaseWindow)
 
@@ -317,8 +317,9 @@ CheckIn/
 │   │   │       │           └── index.scss
 │   │   │       ├── MemoPage/
 │   │   │       ├── DailyPage/
-│   │   │       ├── CodePage/
-│   │   │       └── UserPage/
+│   │   │       └── CodePage/
+│   │   ├── components/                    # BaseWindow 窗口级私有组件
+│   │   │   └── SettingsEntry/             # 标题栏「设置」入口（唤起 SettingsWindow）
 │   │   ├── LoginWindow/                   # 登录窗口
 │   │   │   ├── index.html
 │   │   │   ├── main.tsx
@@ -343,7 +344,7 @@ CheckIn/
 │   │               │   └── useNovelEditorState.ts    # 编辑器状态/快照
 │   │               └── components/
 │   │                   └── RestoreBanner/  # 崩溃恢复横幅
-│   │   ├── SettingsWindow/                # 全局设置窗口（外观/账号；novel 版开放入口）
+│   │   ├── SettingsWindow/                # 全局设置窗口（外观/个人资料/账号；全版本开放入口）
 │   │   │   ├── index.html
 │   │   │   ├── main.tsx
 │   │   │   ├── App.tsx
@@ -511,7 +512,7 @@ function normalizeTodo(item: Partial<TodoItem> | null): TodoItem | null {
 ```
 
 **主题切换入口唯一**：full 版在首页侧边栏底部（`HomeSidebar`）挂 `ThemeSwitcher`；
-novel 版在 SettingsWindow 的「外观」分区承载，小说主窗标题栏只有设置入口（不含切换器）。
+SettingsWindow 的「外观」分区是全版本共用的设置面板（full/novel 均可经标题栏设置入口到达）。
 `WindowHeader`、登录窗口等标题栏位置**不要再放切换器**，避免同一功能多处出现。
 
 **允许保留的硬编码（不要"顺手优化"掉）**：

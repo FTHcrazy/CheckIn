@@ -9,10 +9,11 @@
  * - electron/main.ts（运行期）：按版本决定主窗口、close 语义与 IPC 注册
  *
  * 版本语义：
- * - full  ：完整版。base 为主窗口（隐藏到托盘），novel 为即关即销的子窗口
- * - lite  ：精简版。不打包 novel/settings 窗口，主窗口隐藏 novel 入口
+ * - full  ：完整版。base 为主窗口（隐藏到托盘），novel 为即关即销的子窗口；
+ *           SettingsWindow 承载外观 / 账号 / 个人资料（base 头部入口唤起）
+ * - lite  ：精简版。不打包 novel 窗口，主窗口隐藏 novel 入口
  * - novel ：小说版。NovelWindow 升级为主窗口（登录后唤起，关闭进托盘），
- *           附带 SettingsWindow（外观 / 账号）；不打包 base
+ *           附带 SettingsWindow（外观 / 账号 / 个人资料）；不打包 base
  *
  * 注意：novel 版与 full 版共享同一 userData 目录（productName 未变），
  * 用户数据 / novel_* 表天然互通，无需任何数据迁移。
@@ -33,8 +34,8 @@ export const RENDERER_ENTRY_PATHS: Record<WindowEntryKey, string> = {
 
 /** 各版本编译的窗口入口清单（vite input 与主进程可加载窗口的唯一依据） */
 export const EDITION_WINDOW_ENTRIES: Record<CheckInEdition, WindowEntryKey[]> = {
-  full: ["base", "login", "novel"],
-  lite: ["base", "login"],
+  full: ["base", "login", "novel", "settings"],
+  lite: ["base", "login", "settings"],
   novel: ["login", "novel", "settings"],
 };
 

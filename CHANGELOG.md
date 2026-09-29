@@ -7,6 +7,7 @@
 - **新增小说版构建（`pnpm electron:build:novel` / `pnpm dev:novel`）**：以 `CHECKIN_EDITION=novel` 构建的小说专用形态——NovelWindow 为主窗口（登录后唤起、关闭进托盘），附 SettingsWindow；不打包 BaseWindow。`electron/edition.ts` 成为版本清单唯一事实源（入口路径 / 各版本窗口 / 主窗口归属），vite input 与主进程运行时共用同一份清单，并新增 `electron/edition.test.ts` 护栏测试（入口文件存在性、版本差异语义、主窗口归属、env 解析）
 - **新增 SettingsWindow（全局设置窗口）**：外观（主题切换，经既有广播机制全窗口同步换肤）+ 账号（当前邮箱展示 / 退出登录）两个分区；后续字体、快捷键等设置项按「一个 section + 一个条目组件」增量追加。窗口即关即销、单实例唤起，入口在 NovelWindow 标题栏（novel 版专属，经 WindowHeader 新增的 `actions` 插槽）
 - **新增退出登录链路**：`user-handlers.ts` 导出 `logoutUser()`（清除 authDb 缓存用户）；主进程 `auth-logout` 通道负责编排——销毁设置窗与主窗口（防止切换账号后残留上一账号的渲染层状态）后回到登录窗
+- **SettingsWindow 全版本开放 + 吸收用户页**：原 BaseWindow `UserPage`（邮箱编辑）迁移为 SettingsWindow 的「个人资料」分区（外观 / 个人资料 / 账号三区），`/user` 路由与侧边栏「我的」入口移除；SettingsWindow 纳入全版本窗口清单（含 lite），BaseWindow 标题栏新增「设置」入口（`WindowHeader` 的 `actions` 插槽，`BaseWindow/components/SettingsEntry`）唤起同一设置窗口
 
 ### Changed
 
@@ -15,6 +16,10 @@
 - **IPC handler 注册按版本过滤**：novel 版只注册 novel / user / httpSession（todo / memo / activity / checkin / ledger 随 BaseWindow 一并不打包），活动提醒轮询仅在含 DailyPage 的版本启动
 - **`worker-window-open` 通道更名为 `novel-window-open`**，仅在 full 版响应；preload 白名单同步新增 `settings-window-open` / `auth-logout`
 - **WorkerWindow 更名 NovelWindow、WorkerFloatButton 更名 NovelFloatButton**：目录、窗口注册名、CSS 类名（`worker-*` → `novel-*`）、注释与测试路径引用全部同步；`vitest.config.ts` 的 define 对齐改为 `__CHECKIN_EDITION__: 'full'`
+
+### Fixed
+
+- 修复 ThemeSwitcher 气泡在设置窗口顶部被窗口边界截断——为侧边栏图标形态调的 `align offset [20,-20]`（上提贴合按钮）此前被所有形态共用，现仅 icon 形态保留；button 形态（设置窗口）改用无竖向偏移，避免面板被推出窗口外
 
 ### 兼容性说明
 

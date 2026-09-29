@@ -111,12 +111,8 @@ body {
   &:hover {
     background: var(--app-surface-hover);
   }
-
-  &--danger {
-    color: var(--app-error);
-
-    &:hover {
-      border-color: currentcolor;
-    }
-  }
 }
+
+// 个人资料区样式已就近至 components/ProfileSection/index.scss，
+// 账号区危险按钮态已就近至 components/AccountSection/index.scss；
+// 此处仅保留各分区共用的 section / item 基础框架样式。

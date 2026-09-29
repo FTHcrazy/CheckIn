@@ -8,7 +8,6 @@ import {
   EditOutlined,
   HomeOutlined,
   ReadOutlined,
-  UserOutlined,
 } from "@ant-design/icons";
 import ThemeSwitcher from "@/shared/components/ThemeSwitcher";
 import NovelFloatButton from "@/shared/components/NovelFloatButton";
@@ -22,6 +21,7 @@ interface NavItem {
 }
 
 // 模块级常量：避免每次渲染都重建数组导致列表项无谓重渲染
+// （「我的」页已迁移至全局 SettingsWindow，经标题栏设置入口唤起）
 const NAV_ITEMS: NavItem[] = [
   { path: "/", label: "首页", icon: <HomeOutlined /> },
   { path: "/todo", label: "待办", icon: <CheckSquareOutlined /> },
@@ -30,7 +30,6 @@ const NAV_ITEMS: NavItem[] = [
   { path: "/ledger", label: "记账", icon: <AccountBookOutlined /> },
   { path: "/code", label: "代码", icon: <CodeOutlined /> },
   { path: "/news", label: "资讯", icon: <ReadOutlined /> },
-  { path: "/user", label: "我的", icon: <UserOutlined /> },
 ];
 
 /**

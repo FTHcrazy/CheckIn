@@ -1,0 +1,26 @@
+// 标题栏「设置」入口：图标按钮，落在 WindowHeader 的 actions 插槽内
+// （插槽本身已是 no-drag 区，这里只负责视觉态）
+.settings-entry {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--app-radius-item, 6px);
+  background: transparent;
+  color: var(--app-text-secondary, var(--app-text));
+  font-size: 15px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+
+  &:hover {
+    background: var(--app-surface-hover, rgba(0, 0, 0, 0.06));
+    color: var(--app-text-strong, var(--app-text));
+  }
+
+  &:active {
+    background: var(--app-surface-active, rgba(0, 0, 0, 0.1));
+  }
+}
