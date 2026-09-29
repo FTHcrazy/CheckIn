@@ -664,7 +664,13 @@ app.whenReady().then(() => {
   });
 
   createLoginWindow(cachedUser);
-  ensurePrimaryWindow();
+  // 有缓存用户才预创建主窗口：登出后的重启没有缓存用户（userDb 未初始化），
+  // 此时预创建 BaseWindow 会让页面挂载即请求 todo/checkin/ledger 等数据，
+  // 全部命中「尚未初始化当前用户数据」。无缓存时等 login-confirm 切换完
+  // userDb 后经 allowAndShowPrimaryWindow → ensurePrimaryWindow 再创建。
+  if (cachedUser) {
+    ensurePrimaryWindow();
+  }
 
   // 应用级 DevTools 快捷键：即使没有窗口焦点（例如无边框登录窗）也能唤出调试窗口。
   // before-input-event 处理有焦点时的按键，globalShortcut 作为兜底。
