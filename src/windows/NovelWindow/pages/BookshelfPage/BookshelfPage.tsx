@@ -38,7 +38,7 @@ interface BookshelfPageProps {
 }
 
 /**
- * 书架主页面（R32）：WorkerWindow 打开的默认主页。
+ * 书架主页面（R32）：NovelWindow 打开的默认主页。
  *
  * 结构对照设计稿：顶栏（标题/规模胶囊/搜索/新建）→ 统计条 ×4 →
  * 继续写作 Hero → 我的书架（筛选/排序/视图 + 书卡网格）→ 右栏全局灵感库 →

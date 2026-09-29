@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.17.0] - 2026-09-29
+
+### Added
+
+- **新增小说版构建（`pnpm electron:build:novel` / `pnpm dev:novel`）**：以 `CHECKIN_EDITION=novel` 构建的小说专用形态——NovelWindow 为主窗口（登录后唤起、关闭进托盘），附 SettingsWindow；不打包 BaseWindow。`electron/edition.ts` 成为版本清单唯一事实源（入口路径 / 各版本窗口 / 主窗口归属），vite input 与主进程运行时共用同一份清单，并新增 `electron/edition.test.ts` 护栏测试（入口文件存在性、版本差异语义、主窗口归属、env 解析）
+- **新增 SettingsWindow（全局设置窗口）**：外观（主题切换，经既有广播机制全窗口同步换肤）+ 账号（当前邮箱展示 / 退出登录）两个分区；后续字体、快捷键等设置项按「一个 section + 一个条目组件」增量追加。窗口即关即销、单实例唤起，入口在 NovelWindow 标题栏（novel 版专属，经 WindowHeader 新增的 `actions` 插槽）
+- **新增退出登录链路**：`user-handlers.ts` 导出 `logoutUser()`（清除 authDb 缓存用户）；主进程 `auth-logout` 通道负责编排——销毁设置窗与主窗口（防止切换账号后残留上一账号的渲染层状态）后回到登录窗
+
+### Changed
+
+- **构建开关由 `CHECKIN_LITE` 升级为 `CHECKIN_EDITION`（full | lite | novel）**：三处 define（vite 渲染层 / 主进程 / preload）从布尔对齐改为取值对齐；渲染层经 `src/shared/edition.ts` 的派生布尔使用，业务代码不再直接引用编译常量。`electron:build:lite` 脚本同步改为 `CHECKIN_EDITION=lite`，lite 版行为不变（不打包小说窗口、主窗口隐藏入口）
+- **主进程主窗口语义参数化（primary window）**：main.ts 抽出 `PRIMARY_ENTRY` / `PRIMARY_WINDOW_NAME`，登录落点（login-confirm）、托盘点击、second-instance、activate、DevTools 兜底全部指向主窗口——full/lite 版为 BaseWindow（注册名 "main"），novel 版为 NovelWindow（注册名 "novel"）。NovelWindow 形态随版本分叉：novel 版为主窗（close 进托盘、启动预创建、登录后唤起），full 版保持即关即销子窗口
+- **IPC handler 注册按版本过滤**：novel 版只注册 novel / user / httpSession（todo / memo / activity / checkin / ledger 随 BaseWindow 一并不打包），活动提醒轮询仅在含 DailyPage 的版本启动
+- **`worker-window-open` 通道更名为 `novel-window-open`**，仅在 full 版响应；preload 白名单同步新增 `settings-window-open` / `auth-logout`
+- **WorkerWindow 更名 NovelWindow、WorkerFloatButton 更名 NovelFloatButton**：目录、窗口注册名、CSS 类名（`worker-*` → `novel-*`）、注释与测试路径引用全部同步；`vitest.config.ts` 的 define 对齐改为 `__CHECKIN_EDITION__: 'full'`
+
+### 兼容性说明
+
+- productName / appId / userData 目录均未改动：novel 版与 full/lite 版共享同一用户数据目录，novel_* 表等数据天然互通，无需迁移
+- 未登录（缓存用户为空）时三版本行为一致：先展示登录窗，确认后唤起各自的主窗口
+
 ## [1.16.0] - 2026-09-23
 
 ### 性能优化

@@ -1127,7 +1127,7 @@ ipcMain.handle("novel-editor-reset-template", () => seedTemplateBook());
 
 /**
  * 标记编辑器会话正常关闭。
- * 由主进程在 WorkerWindow closed 事件与应用退出前调用；
+ * 由主进程在 NovelWindow closed 事件与应用退出前调用；
  * 用户库未初始化（未登录）时静默忽略。
  */
 export function markNovelSessionClosed(): void {

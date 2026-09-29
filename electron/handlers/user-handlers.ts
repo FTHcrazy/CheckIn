@@ -17,6 +17,11 @@ export function getCachedUser(): UserCache | null {
   return user?.email ? user : null;
 }
 
+/** 退出登录：清除缓存用户（authDb 单记录）。窗口编排由 main.ts 的 auth-logout 负责 */
+export function logoutUser(): void {
+  getAuthDb().prepare("DELETE FROM user WHERE id = 1").run();
+}
+
 export function registerUserHandlers(): void {
   ipcMain.handle("user-get", () => getCachedUser());
 

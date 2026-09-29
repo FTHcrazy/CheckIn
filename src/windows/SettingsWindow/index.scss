@@ -1,0 +1,122 @@
+@use "../../shared/styles/window-shell";
+@use "../../shared/styles/scrollbars";
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Microsoft YaHei", sans-serif;
+  // 圆角窗口：背景交给 .window-shell，dom 层保持透明
+  background: transparent;
+  color: var(--app-text);
+  -webkit-font-smoothing: antialiased;
+}
+
+// 内容区：标题栏由通用 WindowHeader 提供，这里只负责主体内容铺满
+.window-shell__body {
+  flex: 1;
+  min-height: 0;
+}
+
+.settings-page {
+  height: 100%;
+  box-sizing: border-box;
+  padding: 16px 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.settings-section {
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-panel);
+  overflow: hidden;
+}
+
+.settings-section__title {
+  margin: 0;
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--app-text-strong);
+  border-bottom: 1px solid var(--app-border);
+  background: var(--app-surface-hover);
+}
+
+.settings-section__body {
+  padding: 4px 0;
+}
+
+// 单条设置项：左侧文案、右侧控件
+.settings-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 16px;
+  min-height: 48px;
+  box-sizing: border-box;
+
+  & + & {
+    border-top: 1px solid var(--app-border);
+  }
+}
+
+.settings-item__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.settings-item__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--app-text-strong);
+  // 长邮箱截断展示，悬停可看全文的需求留给后续 Tooltip（当前场景足够）
+  overflow-wrap: anywhere;
+}
+
+.settings-item__icon {
+  color: var(--app-text-secondary);
+  font-size: 13px;
+}
+
+.settings-item__hint {
+  font-size: 12px;
+  color: var(--app-text-secondary);
+}
+
+.settings-item__action {
+  flex-shrink: 0;
+  padding: 5px 14px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-item);
+  background: var(--app-surface);
+  color: var(--app-text);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease,
+    border-color 0.15s ease;
+
+  &:hover {
+    background: var(--app-surface-hover);
+  }
+
+  &--danger {
+    color: var(--app-error);
+
+    &:hover {
+      border-color: currentcolor;
+    }
+  }
+}

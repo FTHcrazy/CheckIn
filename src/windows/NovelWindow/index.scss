@@ -25,13 +25,13 @@ body {
 
 // ── 书架 ↔ 编辑器双视图 ─────────────────────────────────────────
 // 常驻挂载 + display 切换：切换不走卸载，编辑器未落库键入得以保留
-.worker-views {
+.novel-views {
   display: flex;
   height: 100%;
   min-height: 0;
 }
 
-.worker-view {
+.novel-view {
   display: flex;
   flex: 1;
   min-width: 0;
@@ -52,7 +52,7 @@ body {
 }
 
 // 窗口标题栏徽标（书架视图）：对齐设计稿头部的「书架」chip
-.worker-badge {
+.novel-badge {
   padding: 2px 10px;
   border-radius: var(--app-radius-pill);
   background: var(--app-primary-weak);
@@ -61,4 +61,26 @@ body {
   font-weight: 600;
   line-height: 16px;
   white-space: nowrap;
+}
+
+// novel 版主窗标题栏的设置入口（挂在 WindowHeader 的 actions 插槽内）
+.novel-window-header-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: var(--app-radius-item);
+  background: transparent;
+  color: var(--app-text-secondary);
+  font-size: 14px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+
+  &:hover {
+    background: var(--app-surface-hover);
+    color: var(--app-text);
+  }
 }

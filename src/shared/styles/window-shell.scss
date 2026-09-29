@@ -1,7 +1,7 @@
 /**
  * 窗口外壳（圆角窗口）统一样式
  *
- * 三个窗口（BaseWindow / LoginWindow / WorkerWindow）共用同一套圆角实现：
+ * 各窗口（BaseWindow / LoginWindow / NovelWindow 等）共用同一套圆角实现：
  * - 主进程侧开启 `transparent: true` + `frame: false`，窗口本体不带系统边框
  * - 渲染层用 `.window-shell` 画圆角、裁剪内容，圆角外区域透明
  *

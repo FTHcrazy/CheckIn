@@ -11,7 +11,8 @@ import {
   UserOutlined,
 } from "@ant-design/icons";
 import ThemeSwitcher from "@/shared/components/ThemeSwitcher";
-import WorkerFloatButton from "@/shared/components/WorkerFloatButton";
+import NovelFloatButton from "@/shared/components/NovelFloatButton";
+import { IS_LITE_EDITION } from "@/shared/edition";
 import "./index.scss";
 
 interface NavItem {
@@ -70,10 +71,10 @@ export default function HomeSidebar() {
       </nav>
 
       <div className="home-sidebar__footer">
-        {/* 精简构建（CHECKIN_LITE=1）不含 WorkerWindow：入口按钮与分隔线一并隐藏 */}
-        {!__CHECKIN_LITE__ && (
+        {/* 精简构建（CHECKIN_EDITION=lite）不含小说窗口：入口按钮与分隔线一并隐藏 */}
+        {!IS_LITE_EDITION && (
           <>
-            <WorkerFloatButton variant="inline" />
+            <NovelFloatButton variant="inline" />
             <span className="home-sidebar__divider" aria-hidden="true" />
           </>
         )}

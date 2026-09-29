@@ -16,7 +16,7 @@ import { describe, expect, it } from "vitest";
 const scss = readFileSync(
   resolve(
     process.cwd(),
-    "src/windows/WorkerWindow/pages/NovelPage/components/EditorPane/index.scss",
+    "src/windows/NovelWindow/pages/NovelPage/components/EditorPane/index.scss",
   ),
   "utf8",
 );

@@ -16,7 +16,7 @@ import {
 } from "./theme-storage";
 
 /**
- * 全局主题提供者：三个窗口（BaseWindow / LoginWindow / WorkerWindow）共用。
+ * 全局主题提供者：各窗口（BaseWindow / LoginWindow / NovelWindow / SettingsWindow）共用。
  *
  * 职责：
  * 1. 在 <html data-theme> 上落主题，CSS 变量整体换肤

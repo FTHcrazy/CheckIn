@@ -10,8 +10,8 @@ import { defineConfig } from "vitest/config";
  * resolve.alias 必须与 vite.config.ts / tsconfig.json 保持一致（@ → src）。
  */
 export default defineConfig({
-  // 与 vite.config.ts 的 define 对齐：测试环境按“完整构建”处理（非精简）
-  define: { __CHECKIN_LITE__: "false" },
+  // 与 vite.config.ts 的 define 对齐：测试环境按"完整构建"（full 版）处理
+  define: { __CHECKIN_EDITION__: "'full'" },
   plugins: [react()],
   resolve: {
     alias: {

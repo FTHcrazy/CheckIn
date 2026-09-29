@@ -43,6 +43,21 @@
   margin-left: 8px;
 }
 
+// 控制按钮左侧的动作插槽（如小说版主窗的「设置」入口）：
+// 内部是可点击按钮，必须排除拖动区
+.window-header__actions {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+  margin-right: 4px;
+  -webkit-app-region: no-drag;
+
+  // 有动作插槽时，靠右的自由空间由 actions 吸收，controls 紧随其后
+  + .window-header__controls {
+    margin-left: 0;
+  }
+}
+
 .window-header__controls {
   display: flex;
   align-items: stretch;

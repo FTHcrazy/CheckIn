@@ -18,7 +18,11 @@ import {
   markNovelSessionClosed,
   registerNovelHandlers,
 } from "./handlers/novel-handlers";
-import { registerUserHandlers, getCachedUser } from "./handlers/user-handlers";
+import {
+  logoutUser,
+  registerUserHandlers,
+  getCachedUser,
+} from "./handlers/user-handlers";
 import { registerMemoHandlers } from "./handlers/memo-handlers";
 import { registerLedgerHandlers } from "./handlers/ledger-handlers";
 import { registerCheckinHandlers } from "./handlers/checkin-handlers";
@@ -26,6 +30,22 @@ import {
   registerHttpSessionHandlers,
   setupRendererHttpSession,
 } from "./httpSession";
+import {
+  PRIMARY_WINDOW_ENTRY,
+  RENDERER_ENTRY_PATHS,
+  type WindowEntryKey,
+} from "./edition";
+
+// ── 构建版本（edition） ──
+// 编译期常量，由 vite.config.ts 按 CHECKIN_EDITION 环境变量注入三处 define。
+// 清单（入口路径 / 各版本窗口 / 主窗口归属）的唯一事实源在 electron/edition.ts。
+const EDITION = __CHECKIN_EDITION__;
+/** 主窗口入口：full/lite → base，novel → novel */
+const PRIMARY_ENTRY = PRIMARY_WINDOW_ENTRY[EDITION];
+/** 主窗口在 windowManager 中的注册名（base 窗口沿用历史注册名 "main"） */
+const PRIMARY_WINDOW_NAME = PRIMARY_ENTRY === "base" ? "main" : "novel";
+/** novel 版：小说窗口即主窗口（登录后唤起、close 进托盘） */
+const IS_NOVEL_PRIMARY = PRIMARY_ENTRY === "novel";
 
 // Windows 下通知必须设置 AppUserModelId
 // 开发环境用 process.execPath（electron.exe 路径），生产环境用固定 ID
@@ -59,12 +79,7 @@ const DEVTOOLS_MODE = (process.env["VITE_DEVTOOLS_MODE"] ?? "detach") as
   | "bottom"
   | "undocked"
   | "detach";
-// 渲染层窗口入口清单，与 vite.config.ts 的 rollupOptions.input 对应
-const RENDERER_ENTRIES = {
-  base: "src/windows/BaseWindow/index.html",
-  login: "src/windows/LoginWindow/index.html",
-  worker: "src/windows/WorkerWindow/index.html",
-} as const;
+
 let tray: Tray | null = null;
 const ICON_PATH = VITE_DEV_SERVER_URL
   ? path.join(DIST_ELECTRON, "../public/icon.ico")
@@ -89,7 +104,7 @@ protocol.registerSchemesAsPrivileged([
 
 let isQuitting = false;
 let canShowMainWindow = false;
-let isMainWindowReady = false;
+let isPrimaryReady = false;
 let hasStartedActivityPolling = false;
 const LOGIN_WINDOW_MIN_DISPLAY_MS = 2000;
 let loginWindowVisibleAt: number | null = null;
@@ -124,7 +139,7 @@ function registerDevToolsShortcuts(win: BrowserWindow): void {
 }
 
 // ── 圆角窗口公共配置 ──
-// 三个窗口统一为「无系统边框 + 透明底 + CSS 圆角」的实现方式：
+// 各窗口统一为「无系统边框 + 透明底 + CSS 圆角」的实现方式：
 // - frame: false 去掉系统方角边框
 // - transparent: true 让圆角外的区域可以真正透明
 // - backgroundColor 必须是全透明（#00000000），否则圆角外会残留方角底色
@@ -140,7 +155,7 @@ const ROUNDED_WINDOW_OPTIONS = {
   roundedCorners: false,
 } as const;
 
-/** 统一的 webPreferences，三个窗口保持一致的安全设置 */
+/** 统一的 webPreferences，各窗口保持一致的安全设置 */
 function createWebPreferences() {
   return {
     preload: path.join(DIST_ELECTRON, "preload.js"),
@@ -152,7 +167,7 @@ function createWebPreferences() {
 /**
  * 把窗口的 maximize / unmaximize 事件转发给渲染层，
  * 供 WindowHeader 切换最大化/还原图标并同步方角样式。
- * 所有使用 WindowHeader 的窗口（main / worker）都需要注册。
+ * 所有使用 WindowHeader 的窗口都需要注册。
  */
 function forwardMaximizeState(win: BrowserWindow): void {
   const send = () => {
@@ -164,9 +179,20 @@ function forwardMaximizeState(win: BrowserWindow): void {
   win.on("unmaximize", send);
 }
 
-function createWindow(): BrowserWindow {
+/** 按入口 key 加载渲染层页面（dev 走 vite server，生产走 app:// 协议） */
+function loadRendererEntry(win: BrowserWindow, entry: WindowEntryKey, query = ""): void {
+  const relPath = RENDERER_ENTRY_PATHS[entry];
+  if (VITE_DEV_SERVER_URL) {
+    win.loadURL(`${VITE_DEV_SERVER_URL}/${relPath}${query}`);
+  } else {
+    win.loadURL(`app://./${relPath}${query}`);
+  }
+}
+
+// ── BaseWindow（full/lite 版主窗口） ──
+
+function createBaseWindow(): BrowserWindow {
   const t0 = Date.now();
-  isMainWindowReady = false;
 
   const win = new BrowserWindow({
     width: 1200,
@@ -181,6 +207,7 @@ function createWindow(): BrowserWindow {
 
   win.removeMenu();
 
+  // 主窗口 close → 隐藏到托盘（退出走托盘菜单 / before-quit）
   win.on("close", (e) => {
     if (!isQuitting) {
       e.preventDefault();
@@ -189,7 +216,7 @@ function createWindow(): BrowserWindow {
   });
 
   win.on("closed", () => {
-    isMainWindowReady = false;
+    isPrimaryReady = false;
   });
 
   // 最大化状态变化时同步给渲染层，WindowHeader 据此切换最大化/还原图标
@@ -197,86 +224,183 @@ function createWindow(): BrowserWindow {
 
   win.webContents.once("did-finish-load", () => {
     console.log(`[main] 页面加载完成: ${Date.now() - t0}ms`);
-    isMainWindowReady = true;
+    isPrimaryReady = true;
     if (canShowMainWindow) {
-      showMainWindow();
+      showPrimaryWindow();
     }
   });
 
-  if (VITE_DEV_SERVER_URL) {
-    win.loadURL(`${VITE_DEV_SERVER_URL}/${RENDERER_ENTRIES.base}`);
-    if (OPEN_DEVTOOLS) win.webContents.openDevTools({ mode: DEVTOOLS_MODE });
-  } else {
-    win.loadURL(`app://./${RENDERER_ENTRIES.base}`);
-  }
-
-  // 开发模式下随时可用 Ctrl+Shift+I / F12 开关调试窗口
   if (IS_DEV) registerDevToolsShortcuts(win);
 
   // 注册到窗口管理池
   windowManager.register("main", win);
 
+  loadRendererEntry(win, "base");
+
   return win;
 }
 
-function ensureMainWindow(): BrowserWindow {
-  let win = windowManager.get("main");
-  if (!win) {
-    win = createWindow();
+// ── NovelWindow（小说窗口） ──
+
+/**
+ * NovelWindow —— CheckIn 小说窗口，形态随构建版本分叉（electron/edition.ts）：
+ *
+ * - novel 版：主窗口。启动时预创建（不显示），登录确认后唤起；
+ *   close → 隐藏到托盘，与 full/lite 版主窗口行为一致。
+ * - full 版：即关即销的子窗口。从主窗口侧边栏入口唤起，重新打开即全新实例
+ *   —— 对编辑器反而是优点：无状态腐化，数据安全完全由持久化层兜底。
+ *
+ * 默认尺寸 1200×760（min 800×560）。
+ * TODO(数据层里程碑)：bounds 记忆（尺寸/位置持久化）与 R12 全局快捷键 Alt+W 一起做
+ */
+function createNovelWindow(): BrowserWindow {
+  const existing = windowManager.get("novel");
+  if (existing) {
+    // 已开：聚焦而不是重复创建（例如入口重复触发）
+    if (existing.isMinimized()) existing.restore();
+    existing.show();
+    existing.focus();
+    return existing;
   }
-  return win;
-}
 
-function allowAndShowMainWindow() {
-  canShowMainWindow = true;
-  ensureMainWindow();
+  const novelWin = new BrowserWindow({
+    width: 1200,
+    height: 760,
+    minWidth: 800,
+    minHeight: 560,
+    icon: ICON_PATH,
+    show: false,
+    ...ROUNDED_WINDOW_OPTIONS,
+    titleBarStyle: "hidden",
+    webPreferences: createWebPreferences(),
+  });
 
-  const delay =
-    loginWindowHasShown && loginWindowVisibleAt
-      ? Math.max(
-          0,
-          LOGIN_WINDOW_MIN_DISPLAY_MS - (Date.now() - loginWindowVisibleAt),
-        )
-      : 0;
+  novelWin.removeMenu();
 
-  const closeLoginWindow = () => {
-    const loginWin = windowManager.get("login");
-    if (loginWin && !loginWin.isDestroyed()) {
-      loginWin.close();
+  novelWin.webContents.once("did-finish-load", () => {
+    if (!novelWin || novelWin.isDestroyed()) return;
+    if (IS_NOVEL_PRIMARY) {
+      // 主窗形态：就绪标记 + 由登录流程/托盘驱动显示，不自动 show
+      isPrimaryReady = true;
+      if (canShowMainWindow) {
+        showPrimaryWindow();
+      }
+    } else {
+      novelWin.show();
+      novelWin.focus();
     }
-  };
+  });
 
-  if (delay > 0) {
-    setTimeout(() => {
-      closeLoginWindow();
-      showMainWindow();
-    }, delay);
-  } else {
-    closeLoginWindow();
-    showMainWindow();
+  if (IS_DEV) {
+    registerDevToolsShortcuts(novelWin);
+    if (OPEN_DEVTOOLS) novelWin.webContents.openDevTools({ mode: DEVTOOLS_MODE });
   }
+
+  // 标题栏的最小化/最大化按钮需要最大化状态推送
+  forwardMaximizeState(novelWin);
+
+  // 注册到窗口管理池（自动处理 closed 事件清理）
+  windowManager.register("novel", novelWin);
+
+  if (IS_NOVEL_PRIMARY) {
+    // 主窗形态：close → 隐藏到托盘；登出/退出时经 destroy() 真正销毁
+    novelWin.on("close", (e) => {
+      if (!isQuitting) {
+        e.preventDefault();
+        novelWin.hide();
+      }
+    });
+    novelWin.on("closed", () => {
+      isPrimaryReady = false;
+      // 编辑器会话结束：清除崩溃恢复标记（PRD R3 ③）
+      markNovelSessionClosed();
+    });
+  } else {
+    // 子窗形态：不拦截 close，正常关闭，窗口随实例销毁
+    novelWin.on("closed", () => {
+      console.log("[main] Novel 窗口已关闭");
+      // 编辑器会话正常结束：清除崩溃恢复标记（PRD R3 ③）
+      markNovelSessionClosed();
+    });
+  }
+
+  loadRendererEntry(novelWin, "novel");
+
+  return novelWin;
 }
 
-function showMainWindow() {
-  if (!canShowMainWindow) {
-    const loginWin = windowManager.get("login");
-    if (loginWin?.isMinimized()) loginWin.restore();
-    loginWin?.show();
-    loginWin?.focus();
-    return;
+// ── SettingsWindow（全局设置，仅 novel 版开放入口） ──
+
+/**
+ * SettingsWindow —— 全局设置窗口（外观 / 账号，后续扩展字体、快捷键等）。
+ *
+ * 即关即销、单实例唤起：设置项即时生效（主题经广播同步到各窗口，
+ * 账号操作直接走 IPC），窗口本身不持有草稿状态。
+ */
+function createSettingsWindow(): BrowserWindow {
+  const existing = windowManager.get("settings");
+  if (existing) {
+    if (existing.isMinimized()) existing.restore();
+    existing.show();
+    existing.focus();
+    return existing;
   }
 
-  const mainWin = windowManager.get("main");
-  if (!mainWin || !isMainWindowReady) return;
+  const settingsWin = new BrowserWindow({
+    width: 560,
+    height: 480,
+    minWidth: 480,
+    minHeight: 400,
+    icon: ICON_PATH,
+    resizable: false,
+    maximizable: false,
+    show: false,
+    ...ROUNDED_WINDOW_OPTIONS,
+    titleBarStyle: "hidden",
+    webPreferences: createWebPreferences(),
+  });
 
-  if (mainWin.isMinimized()) mainWin.restore();
-  mainWin.show();
-  mainWin.focus();
+  settingsWin.removeMenu();
 
-  if (!hasStartedActivityPolling) {
-    hasStartedActivityPolling = true;
-    startActivityPolling();
+  settingsWin.webContents.once("did-finish-load", () => {
+    if (settingsWin && !settingsWin.isDestroyed()) {
+      settingsWin.show();
+      settingsWin.focus();
+    }
+  });
+
+  if (IS_DEV) {
+    registerDevToolsShortcuts(settingsWin);
+    if (OPEN_DEVTOOLS) settingsWin.webContents.openDevTools({ mode: DEVTOOLS_MODE });
   }
+
+  windowManager.register("settings", settingsWin);
+
+  settingsWin.on("closed", () => {
+    console.log("[main] Settings 窗口已关闭");
+  });
+
+  loadRendererEntry(settingsWin, "settings");
+
+  return settingsWin;
+}
+
+// ── 登录窗口 ──
+
+function getLoginWindowUrl(email?: string) {
+  const params = new URLSearchParams();
+  if (email) {
+    params.set("email", email);
+  }
+
+  const query = params.toString();
+  const suffix = query ? `?${query}` : "";
+
+  const relPath = RENDERER_ENTRY_PATHS.login;
+  if (VITE_DEV_SERVER_URL) {
+    return `${VITE_DEV_SERVER_URL}/${relPath}${suffix}`;
+  }
+  return `app://./${relPath}${suffix}`;
 }
 
 function createLoginWindow(user?: { email: string } | null) {
@@ -316,88 +440,71 @@ function createLoginWindow(user?: { email: string } | null) {
   loginWin.loadURL(getLoginWindowUrl(user?.email));
 }
 
-/**
- * WorkerWindow —— CheckIn 小说编辑器窗口（PRD v0.4 §7 窗口级改造）。
- *
- * 特性：
- * - 标准窗口行为：出现在任务栏、可最小化/最大化/关闭（由通用 WindowHeader 提供）
- * - 不拦截 close 事件，关闭即随实例销毁；重新打开即全新实例
- *   —— 对编辑器反而是优点：无状态腐化，数据安全完全由持久化层兜底
- * - 默认尺寸 1200×760（min 800×560）
- * - TODO(数据层里程碑)：bounds 记忆（尺寸/位置持久化）与 R12 全局快捷键 Alt+W 一起做
- * - 若窗口已存在（例如快捷键重复触发），先聚焦而不是重复创建
- */
-function createWorkerWindow(): BrowserWindow {
-  const existing = windowManager.get("worker");
-  if (existing) {
-    if (existing.isMinimized()) existing.restore();
-    existing.show();
-    existing.focus();
-    return existing;
-  }
+// ── 主窗口（primary window）语义 ──
+// full/lite 版主窗口 = BaseWindow（注册名 "main"），novel 版主窗口 = NovelWindow
+// （注册名 "novel"）。登录落点、托盘、second-instance、activate 全部指向 primary。
 
-  const workerWin = new BrowserWindow({
-    // PRD v0.4 §7：编辑器窗口默认 1200×760，最小 800×560（三栏布局的可用下限）
-    width: 1200,
-    height: 760,
-    minWidth: 800,
-    minHeight: 560,
-    icon: ICON_PATH,
-    show: false,
-    ...ROUNDED_WINDOW_OPTIONS,
-    titleBarStyle: "hidden",
-    webPreferences: createWebPreferences(),
-  });
-
-  workerWin.removeMenu();
-
-  workerWin.webContents.once("did-finish-load", () => {
-    if (workerWin && !workerWin.isDestroyed()) {
-      workerWin.show();
-      workerWin.focus();
-    }
-  });
-
-  if (IS_DEV) {
-    registerDevToolsShortcuts(workerWin);
-    if (OPEN_DEVTOOLS) workerWin.webContents.openDevTools({ mode: DEVTOOLS_MODE });
-  }
-
-  // 标题栏的最小化/最大化按钮需要最大化状态推送
-  forwardMaximizeState(workerWin);
-
-  // 注册到窗口管理池（自动处理 closed 事件清理）
-  windowManager.register("worker", workerWin);
-
-  // 不拦截 close 事件：正常关闭，窗口随实例销毁
-  workerWin.on("closed", () => {
-    console.log("[main] Worker 窗口已关闭");
-    // 编辑器会话正常结束：清除崩溃恢复标记（PRD R3 ③）
-    markNovelSessionClosed();
-  });
-
-  const url = IS_DEV
-    ? `${VITE_DEV_SERVER_URL}/${RENDERER_ENTRIES.worker}`
-    : `app://./${RENDERER_ENTRIES.worker}`;
-  workerWin.loadURL(url);
-
-  return workerWin;
+function createPrimaryWindow(): BrowserWindow {
+  isPrimaryReady = false;
+  return PRIMARY_ENTRY === "base" ? createBaseWindow() : createNovelWindow();
 }
 
-function getLoginWindowUrl(email?: string) {
-  const params = new URLSearchParams();
-  if (email) {
-    params.set("email", email);
+function ensurePrimaryWindow(): BrowserWindow {
+  const existing = windowManager.get(PRIMARY_WINDOW_NAME);
+  return existing ?? createPrimaryWindow();
+}
+
+function allowAndShowPrimaryWindow() {
+  canShowMainWindow = true;
+  ensurePrimaryWindow();
+
+  const delay =
+    loginWindowHasShown && loginWindowVisibleAt
+      ? Math.max(
+          0,
+          LOGIN_WINDOW_MIN_DISPLAY_MS - (Date.now() - loginWindowVisibleAt),
+        )
+      : 0;
+
+  const closeLoginWindow = () => {
+    const loginWin = windowManager.get("login");
+    if (loginWin && !loginWin.isDestroyed()) {
+      loginWin.close();
+    }
+  };
+
+  if (delay > 0) {
+    setTimeout(() => {
+      closeLoginWindow();
+      showPrimaryWindow();
+    }, delay);
+  } else {
+    closeLoginWindow();
+    showPrimaryWindow();
+  }
+}
+
+function showPrimaryWindow() {
+  if (!canShowMainWindow) {
+    const loginWin = windowManager.get("login");
+    if (loginWin?.isMinimized()) loginWin.restore();
+    loginWin?.show();
+    loginWin?.focus();
+    return;
   }
 
-  const query = params.toString();
-  const suffix = query ? `?${query}` : "";
+  const primaryWin = windowManager.get(PRIMARY_WINDOW_NAME);
+  if (!primaryWin || !isPrimaryReady) return;
 
-  if (VITE_DEV_SERVER_URL) {
-    return `${VITE_DEV_SERVER_URL}/${RENDERER_ENTRIES.login}${suffix}`;
+  if (primaryWin.isMinimized()) primaryWin.restore();
+  primaryWin.show();
+  primaryWin.focus();
+
+  // 活动提醒轮询只在含 DailyPage 的版本启动（novel 版没有日程页）
+  if (EDITION !== "novel" && !hasStartedActivityPolling) {
+    hasStartedActivityPolling = true;
+    startActivityPolling();
   }
-
-  return `app://./${RENDERER_ENTRIES.login}${suffix}`;
 }
 
 // 单实例锁定：防止多个应用和托盘同时存在
@@ -407,8 +514,8 @@ if (!gotLock) {
 }
 
 app.on("second-instance", () => {
-  // 第二个实例启动时，聚焦已有窗口或登录窗口
-  showMainWindow();
+  // 第二个实例启动时，聚焦已有主窗口或登录窗口
+  showPrimaryWindow();
 });
 
 app.whenReady().then(() => {
@@ -417,24 +524,26 @@ app.whenReady().then(() => {
   const cachedUser = getCachedUser();
   if (cachedUser) switchUserDb(cachedUser.email, true);
 
-  // 注册语义化 IPC handlers
-  registerActivityHandlers();
-  registerTodoHandlers();
+  // 注册语义化 IPC handlers。
+  // 全版本注册：小说（novel 版的唯一业务域）与用户登录；
+  // 仅 full/lite 注册：todo/memo/activity/checkin/ledger
+  // （novel 版不打包对应窗口，省启动开销，也缩小可触达的 IPC 面）。
   registerNovelHandlers();
   registerUserHandlers();
-  registerMemoHandlers();
-  registerCheckinHandlers();
-  registerLedgerHandlers();
-
-  // 渲染进程网络会话：一次性配置 CORS 放行 + Cookie 播种通道。
-  // 请求本身全部在渲染进程发起，主进程不再代理 HTTP。
   setupRendererHttpSession();
   registerHttpSessionHandlers();
+  if (EDITION !== "novel") {
+    registerActivityHandlers();
+    registerTodoHandlers();
+    registerMemoHandlers();
+    registerCheckinHandlers();
+    registerLedgerHandlers();
+  }
 
   // 注册跨窗口通信 IPC handler
   ipcMain.handle("window-broadcast", (_event, event: string, data?: unknown) => {
     const sender = BrowserWindow.fromWebContents(_event.sender);
-    // 广播时排除发送者自己（按窗口实例反查注册名，覆盖 main/login/worker 全部窗口）
+    // 广播时排除发送者自己（按窗口实例反查注册名，覆盖全部窗口）
     const senderName = sender ? windowManager.getNameOf(sender) : undefined;
     windowManager.broadcast(event, data, senderName);
   });
@@ -470,17 +579,44 @@ app.whenReady().then(() => {
     return true;
   });
 
-  // ── WorkerWindow 开关 IPC ──
-  // 精简构建（CHECKIN_LITE=1）不含 WorkerWindow：入口已隐藏，打开请求直接忽略
-  ipcMain.on("worker-window-open", () => {
-    if (__CHECKIN_LITE__) return;
-    createWorkerWindow();
+  // ── NovelWindow 开关 IPC ──
+  // 仅 full 版响应：lite 不打包 novel 窗口（入口已隐藏），novel 版小说窗口
+  // 本身就是主窗口，打开请求无意义。
+  ipcMain.on("novel-window-open", () => {
+    if (EDITION !== "full") return;
+    createNovelWindow();
+  });
+
+  // ── SettingsWindow 开关 IPC（仅 novel 版：设置入口只存在于小说版主窗标题栏） ──
+  ipcMain.on("settings-window-open", () => {
+    if (EDITION !== "novel") return;
+    createSettingsWindow();
+  });
+
+  // ── 退出登录（SettingsWindow 账号区发起） ──
+  // 主进程编排：清除缓存用户 → 销毁设置窗与主窗口（登录态下的数据随窗口
+  // 销毁，防止切换账号后残留上一账号的渲染层状态）→ 回到登录窗。
+  ipcMain.on("auth-logout", () => {
+    logoutUser();
+    canShowMainWindow = false;
+    isPrimaryReady = false;
+
+    windowManager.get("settings")?.destroy();
+    windowManager.get(PRIMARY_WINDOW_NAME)?.destroy();
+
+    const loginWin = windowManager.get("login");
+    if (loginWin) {
+      loginWin.show();
+      loginWin.focus();
+    } else {
+      createLoginWindow(null);
+    }
   });
 
   // ── 窗口控制 IPC（WindowHeader 的最小化/最大化/关闭按钮） ──
   // 约定：payload 是动作字符串本身（"minimize" | "maximize-toggle" | "close"）。
   // close 走 win.close()：由各窗口自己的 close 语义决定行为
-  // （主窗口隐藏到托盘、worker/login 直接关闭）
+  // （主窗口隐藏到托盘、novel 主窗同样进托盘、其余子窗口直接关闭）
   ipcMain.on("window-control", (event, payload: unknown) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win || win.isDestroyed()) return;
@@ -526,19 +662,19 @@ app.whenReady().then(() => {
       if (email) {
         switchUserDb(email);
       }
-      allowAndShowMainWindow();
+      allowAndShowPrimaryWindow();
     }
   });
 
   createLoginWindow(cachedUser);
-  ensureMainWindow();
+  ensurePrimaryWindow();
 
   // 应用级 DevTools 快捷键：即使没有窗口焦点（例如无边框登录窗）也能唤出调试窗口。
   // before-input-event 处理有焦点时的按键，globalShortcut 作为兜底。
   if (IS_DEV) {
     const toggleFocused = () => {
       const focused = BrowserWindow.getFocusedWindow();
-      toggleDevTools(focused ?? windowManager.get("main") ?? windowManager.get("login"));
+      toggleDevTools(focused ?? windowManager.get(PRIMARY_WINDOW_NAME) ?? windowManager.get("login"));
     };
     globalShortcut.register("CommandOrControl+Shift+I", toggleFocused);
     globalShortcut.register("F12", toggleFocused);
@@ -550,7 +686,7 @@ app.whenReady().then(() => {
   tray.setToolTip("CheckIn");
   tray.setContextMenu(
     Menu.buildFromTemplate([
-      { label: "显示窗口", click: () => showMainWindow() },
+      { label: "显示窗口", click: () => showPrimaryWindow() },
       {
         label: "退出",
         click: () => {
@@ -561,11 +697,11 @@ app.whenReady().then(() => {
     ]),
   );
   tray.on("click", () => {
-    const mainWin = windowManager.get("main");
-    if (mainWin?.isVisible()) {
-      mainWin.hide();
+    const primaryWin = windowManager.get(PRIMARY_WINDOW_NAME);
+    if (primaryWin?.isVisible()) {
+      primaryWin.hide();
     } else {
-      showMainWindow();
+      showPrimaryWindow();
     }
   });
   tray.on("right-click", () => {
@@ -573,10 +709,10 @@ app.whenReady().then(() => {
   });
 
   app.on("activate", () => {
-    if (!windowManager.has("main") && !windowManager.has("login")) {
+    if (!windowManager.has(PRIMARY_WINDOW_NAME) && !windowManager.has("login")) {
       createLoginWindow(getCachedUser());
     }
-    showMainWindow();
+    showPrimaryWindow();
   });
 });
 
@@ -584,7 +720,7 @@ app.on("before-quit", () => {
   isQuitting = true;
   globalShortcut.unregisterAll();
   stopActivityPolling();
-  // 编辑器会话随应用退出正常结束（worker closed 未触发时兜底）
+  // 编辑器会话随应用退出正常结束（novel closed 未触发时兜底）
   markNovelSessionClosed();
   tray?.destroy();
   tray = null;

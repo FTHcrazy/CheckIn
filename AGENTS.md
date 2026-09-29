@@ -18,7 +18,9 @@ CheckIn 采用 Electron 双进程架构，渲染进程（React）与主进程（
 │  ├─ BaseWindow (主窗口)                                      │
 │  │  └─ pages: Todo / Memo / Daily / Code / User / Home      │
 │  ├─ LoginWindow (登录窗口)                                   │
-│  └─ WorkerWindow (临时工作窗口，即关即销)                    │
+│  ├─ NovelWindow (小说窗口：full 版为即关即销子窗口；         │
+│  │               novel 版为主窗口，关闭进托盘)               │
+│  └─ SettingsWindow (全局设置窗口：novel 版开放入口)          │
 ├─────────────────────────────────────────────────────────────┤
 │  Shared (跨窗口共享层)                                       │
 │  ├─ components / services / ipc / types / styles            │
@@ -90,13 +92,16 @@ src/windows/XxxWindow/
 
 | 窗口 | 路径 | 入口 HTML | 职责 |
 |------|------|----------|------|
-| **BaseWindow** | `windows/BaseWindow/` | `src/windows/BaseWindow/index.html` | 主窗口，承载全部业务页面（路由在 `App.tsx`） |
+| **BaseWindow** | `windows/BaseWindow/` | `src/windows/BaseWindow/index.html` | 主窗口（full/lite 版），承载全部业务页面（路由在 `App.tsx`） |
 | **LoginWindow** | `windows/LoginWindow/` | `src/windows/LoginWindow/index.html` | 登录/欢迎窗口 |
-| **WorkerWindow** | `windows/WorkerWindow/` | `src/windows/WorkerWindow/index.html` | 小说编辑器窗口（NovelPage），即关即销、重新打开即全新实例；数据由 `novel_*` 表持久化，崩溃恢复由会话标记驱动 |
+| **NovelWindow** | `windows/NovelWindow/` | `src/windows/NovelWindow/index.html` | 小说窗口（书架 + 编辑器）。形态随构建版本分叉：full 版即关即销、重新打开即全新实例；novel 版为主窗口，登录后唤起、关闭进托盘。数据由 `novel_*` 表持久化，崩溃恢复由会话标记驱动 |
+| **SettingsWindow** | `windows/SettingsWindow/` | `src/windows/SettingsWindow/index.html` | 全局设置窗口（外观 / 账号，后续扩展字体、快捷键），即关即销、单实例唤起；当前仅 novel 版构建并开放入口 |
+
+**构建版本（edition）**：环境变量 `CHECKIN_EDITION=full | lite | novel` 决定打包哪些窗口与业务模块，清单唯一事实源为 `electron/edition.ts`（`RENDERER_ENTRY_PATHS` / `EDITION_WINDOW_ENTRIES` / `PRIMARY_WINDOW_ENTRY`），vite.config.ts 的 `rollupOptions.input` 与 electron/main.ts 的窗口加载共用；主窗口归属（full/lite → BaseWindow，novel → NovelWindow）也由它驱动。新增窗口时必须同步该清单并跑 `electron/edition.test.ts` 护栏。
 
 **窗口边界规则**：
 - 窗口之间**禁止互相导入**（如 `LoginWindow` 不得导入 `BaseWindow/pages` 的任何内容）
-- 新增窗口时：在 `src/windows/` 建目录 → `vite.config.ts` 的 `rollupOptions.input` 登记 HTML → `electron/main.ts` 的 `RENDERER_ENTRIES` 登记加载路径
+- 新增窗口时：在 `src/windows/` 建目录 → `electron/edition.ts` 的 `RENDERER_ENTRY_PATHS` 登记路径并加入目标版本的 `EDITION_WINDOW_ENTRIES` → 在 `electron/main.ts` 增加创建函数（如需界面入口再接 IPC 通道）
 - 仅需某窗口处理的 IPC 推送，封装在 `shared/ipc/` 的显式注册函数中，由该窗口入口调用一次（如 `registerActivityNotifyBridge()`），避免模块加载副作用扩散
 
 #### 2.2.1 共享层 (`shared/`)
@@ -188,7 +193,7 @@ windows/LoginWindow/
 ├─ main.tsx (入口)
 └─ App.tsx (登录/欢迎表单)
 
-windows/WorkerWindow/
+windows/NovelWindow/
 ├─ main.tsx (入口：注册本窗口级 IPC 桥接)
 └─ App.tsx
    └─ NovelPage (小说编辑器，三栏布局)
@@ -204,7 +209,7 @@ windows/WorkerWindow/
 - **窗口隔离**：`LoginWindow` 与 `BaseWindow` 之间禁止互相导入，共享代码只能经由 `shared/`
 - **平级禁止**：`TodoPage` 不导入 `MemoPage` 的任何内容
 - **私有保护**：`pages/TodoPage/components/NoteModal` 仅被 `TodoPage` 使用
-- **WorkerWindow 数据层**：`NovelPage` 经 `services/novel-service` → `novel IPC` → `novel-handlers` → `novel_*` 表持久化；崩溃恢复由会话级 `running` 标记驱动（窗口正常关闭 / 应用退出时清除，异常退出下次启动触发恢复横幅）
+- **NovelWindow 数据层**：`NovelPage` 经 `services/novel-service` → `novel IPC` → `novel-handlers` → `novel_*` 表持久化；崩溃恢复由会话级 `running` 标记驱动（窗口正常关闭 / 应用退出时清除，异常退出下次启动触发恢复横幅）
 
 ---
 
@@ -272,7 +277,7 @@ File System
 ```text
 CheckIn/
 ├── electron/                              # 主进程代码
-│   ├── main.ts                            # 入口 + 窗口加载（RENDERER_ENTRIES）+ 系统级 IPC
+│   ├── main.ts                            # 入口 + 窗口加载（经 electron/edition.ts 清单）+ 系统级 IPC
 │   ├── handlers/                          # 语义化 IPC handler（按模块拆分）
 │   │   ├── activity-handlers.ts           # 日程活动 CRUD
 │   │   ├── todo-handlers.ts               # Todo CRUD + 父子级联
@@ -319,7 +324,7 @@ CheckIn/
 │   │   │   ├── main.tsx
 │   │   │   ├── App.tsx
 │   │   │   └── index.scss
-│   │   └── WorkerWindow/                  # 小说编辑器窗口（NovelPage，即关即销）
+│   │   ├── NovelWindow/                   # 小说窗口（书架+编辑器；novel 版为主窗口）
 │   │       ├── index.html
 │   │       ├── main.tsx
 │   │       ├── App.tsx
@@ -338,13 +343,18 @@ CheckIn/
 │   │               │   └── useNovelEditorState.ts    # 编辑器状态/快照
 │   │               └── components/
 │   │                   └── RestoreBanner/  # 崩溃恢复横幅
+│   │   ├── SettingsWindow/                # 全局设置窗口（外观/账号；novel 版开放入口）
+│   │   │   ├── index.html
+│   │   │   ├── main.tsx
+│   │   │   ├── App.tsx
+│   │   │   └── index.scss
 │   └── shared/                            # 跨窗口共享层
 │       ├── components/                    # 共享 UI（Page、NavHeader…）
 │       ├── services/                      # 数据服务（daily.ts、code.ts）
 │       ├── ipc/                           # 窗口级 IPC 桥接（activityNotifyBridge.ts）
 │       ├── types/                         # 全局类型（electron.d.ts）
 │       └── styles/                        # themes.scss、variables.scss、window-shell.scss
-├── vite.config.ts                         # rollupOptions.input 与 windows/* 一一对应；主进程 external 列 Node 运行时模块（electron/better-sqlite3/mammoth/docx）
+├── vite.config.ts                         # rollupOptions.input 由 electron/edition.ts 清单按版本生成；主进程 external 列 Node 运行时模块（electron/better-sqlite3/mammoth/docx）
 ├── tsconfig.json
 └── package.json
 ```
@@ -500,7 +510,8 @@ function normalizeTodo(item: Partial<TodoItem> | null): TodoItem | null {
 <PlusOutlined style={{ color: "var(--app-success)" }} />
 ```
 
-**主题切换入口唯一**：全局只在首页侧边栏底部（`HomeSidebar`）挂 `ThemeSwitcher`。
+**主题切换入口唯一**：full 版在首页侧边栏底部（`HomeSidebar`）挂 `ThemeSwitcher`；
+novel 版在 SettingsWindow 的「外观」分区承载，小说主窗标题栏只有设置入口（不含切换器）。
 `WindowHeader`、登录窗口等标题栏位置**不要再放切换器**，避免同一功能多处出现。
 
 **允许保留的硬编码（不要"顺手优化"掉）**：
@@ -790,7 +801,7 @@ function initializeDataDb(db: Database) {
 
 - [ ] 在 `src/windows/` 创建 `XxxWindow/` 目录（`index.html` + `main.tsx` + `App.tsx`）
 - [ ] 在 `vite.config.ts` 的 `rollupOptions.input` 登记入口 HTML
-- [ ] 在 `electron/main.ts` 的 `RENDERER_ENTRIES` 登记窗口加载路径
+- [ ] 在 `electron/edition.ts` 的 `RENDERER_ENTRY_PATHS` / `EDITION_WINDOW_ENTRIES` 登记入口（护栏测试会校验文件存在性）
 - [ ] 入口引入 `@/shared/styles/themes.scss` + `createRoot` 前调用 `initThemeFromStorage()`
 - [ ] 用 `ThemeProvider` 包裹 App（内部已含 ConfigProvider，不要再包 `ConfigProvider`）
 - [ ] 窗口私有页面/组件放在窗口目录内，禁止其他窗口导入
@@ -1007,7 +1018,7 @@ function initializeDataDb(db: Database) {
 | 主题变量 | `src/shared/styles/themes.scss` | 四套主题的 `--app-*` CSS 变量 |
 | 主题模块 | `src/shared/theme/` | 主题清单、存储、Provider 与 `useTheme` |
 | 主题切换器 | `src/shared/components/ThemeSwitcher/` | 切换 UI，切换后广播到所有窗口 |
-| 窗口入口清单 | `electron/main.ts` 的 `RENDERER_ENTRIES` | 窗口 URL 映射，与 vite input 对应 |
+| 窗口入口清单 | `electron/edition.ts` | 入口路径 / 各版本窗口 / 主窗口归属的唯一事实源，与 vite input 对应 |
 
 ---
 

@@ -3,15 +3,31 @@ import react from '@vitejs/plugin-react'
 import electron from 'vite-plugin-electron'
 import renderer from 'vite-plugin-electron-renderer'
 import path from 'path'
+import {
+  EDITION_WINDOW_ENTRIES,
+  RENDERER_ENTRY_PATHS,
+  resolveEditionFromEnv,
+} from './electron/edition'
 
-// 精简构建开关：CHECKIN_LITE=1 时不打包 WorkerWindow，主窗口隐藏其入口按钮
-// （配套脚本：pnpm electron:build:lite）
-const isLite = process.env.CHECKIN_LITE === '1'
+// 构建版本：CHECKIN_EDITION=full | lite | novel（缺省 full，配套脚本见 package.json）
+// - lite ：精简构建，不打包 NovelWindow / SettingsWindow，主窗口隐藏小说入口
+// - novel：小说版，NovelWindow 为主窗口 + SettingsWindow，不打包 BaseWindow
+// 清单唯一事实源：electron/edition.ts（主进程运行时与 vite 构建期共用），
+// 三处 define 必须注入同一个取值（下方 edition 变量单点计算，天然对齐）。
+const edition = resolveEditionFromEnv()
+
+// 各版本窗口入口即 rollupOptions.input，与主进程可加载窗口一一对应
+const rendererInputs = Object.fromEntries(
+  EDITION_WINDOW_ENTRIES[edition].map((key) => [
+    key,
+    path.resolve(__dirname, RENDERER_ENTRY_PATHS[key]),
+  ]),
+)
 
 // https://vite.dev/config/
 export default defineConfig({
-  // 渲染层编译期常量：精简构建为 true（HomeSidebar 据此隐藏 Worker 入口）
-  define: { __CHECKIN_LITE__: JSON.stringify(isLite) },
+  // 渲染层编译期常量：版本号（src/shared/edition.ts 据此派生布尔）
+  define: { __CHECKIN_EDITION__: JSON.stringify(edition) },
   plugins: [
     react(),
     electron([
@@ -22,8 +38,8 @@ export default defineConfig({
           // 不自动启动 Electron，由 concurrently 在 dev server 就绪后启动
         },
         vite: {
-          // 主进程编译期常量：精简构建时 worker-window-open 打开请求直接忽略
-          define: { __CHECKIN_LITE__: JSON.stringify(isLite) },
+          // 主进程编译期常量：决定主窗口归属、close 语义与 IPC 注册范围
+          define: { __CHECKIN_EDITION__: JSON.stringify(edition) },
           build: {
             outDir: 'dist-electron',
             rollupOptions: {
@@ -46,7 +62,7 @@ export default defineConfig({
           // preload 变更后需手动重启 dev
         },
         vite: {
-          define: { __CHECKIN_LITE__: JSON.stringify(isLite) },
+          define: { __CHECKIN_EDITION__: JSON.stringify(edition) },
           build: {
             outDir: 'dist-electron',
           },
@@ -72,15 +88,8 @@ export default defineConfig({
   },
   build: {
     rollupOptions: {
-      input: {
-        // 每个独立窗口一个 HTML 入口，与 src/windows/* 一一对应
-        base: path.resolve(__dirname, 'src/windows/BaseWindow/index.html'),
-        login: path.resolve(__dirname, 'src/windows/LoginWindow/index.html'),
-        // 精简构建不产出 WorkerWindow 入口（dist 中不含 worker 页面产物）
-        ...(isLite
-          ? {}
-          : { worker: path.resolve(__dirname, 'src/windows/WorkerWindow/index.html') }),
-      },
+      // 每个独立窗口一个 HTML 入口，按版本由 electron/edition.ts 清单生成
+      input: rendererInputs,
       output: {
         manualChunks(id: string) {
           if (id.includes('node_modules/react-dom') || id.includes('node_modules/react/')) {

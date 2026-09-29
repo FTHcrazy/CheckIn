@@ -1,22 +1,46 @@
 import { useCallback, useEffect, useState } from "react";
-import { BookOutlined } from "@ant-design/icons";
+import { BookOutlined, SettingOutlined } from "@ant-design/icons";
+import { Tooltip } from "antd";
 import WindowHeader from "@/shared/components/WindowHeader";
+import { IS_NOVEL_EDITION } from "@/shared/edition";
 import BookshelfPage from "./pages/BookshelfPage/BookshelfPage";
 import NovelPage, { type OpenWorkRequest } from "./pages/NovelPage/NovelPage";
 import "./index.scss";
 
 /**
- * WorkerWindow —— CheckIn 小说窗口
+ * NovelWindow —— CheckIn 小说窗口
  *
  * 双视图：书架主页（默认）↔ 编辑器。编辑器懒挂载——首次进入才 mount，
  * 之后常驻并用 display 切换显隐，保住未落库的键入内容（崩溃恢复另由
  * 会话标记驱动）。打开作品经 OpenWorkRequest（幂等 token）传递，由
  * NovelPage 消费后回调置空。
  *
+ * 窗口形态随构建版本分叉（见 electron/edition.ts）：
+ * - full 版：即关即销的子窗口，从主窗口侧边栏入口唤起
+ * - novel 版：主窗口，登录后唤起、关闭进托盘；标题栏带设置入口
+ *   （SettingsWindow 承载外观 / 账号等全局设置）
+ *
  * 注意：PRD §2「零打断原则」明确移除了 Esc 关窗——编辑场景 Esc 属高频误触，
  * Esc 现在只用于退出专注模式（实现在 useNovelShortcuts）。
  */
-export default function WorkerWindowApp() {
+
+/** novel 版主窗标题栏的设置入口：发起打开 SettingsWindow 请求（即关即销） */
+function SettingsEntryButton() {
+  return (
+    <Tooltip title="设置" placement="bottom">
+      <button
+        type="button"
+        className="novel-window-header-btn"
+        aria-label="设置"
+        onClick={() => window.electronAPI?.send("settings-window-open", null)}
+      >
+        <SettingOutlined />
+      </button>
+    </Tooltip>
+  );
+}
+
+export default function NovelWindowApp() {
   const [view, setView] = useState<"shelf" | "editor">("shelf");
   const [editorMounted, setEditorMounted] = useState(false);
   const [openRequest, setOpenRequest] = useState<OpenWorkRequest | null>(null);
@@ -46,19 +70,20 @@ export default function WorkerWindowApp() {
       <WindowHeader
         title="CheckIn 小说"
         icon={<BookOutlined />}
-        badge={view === "shelf" ? <span className="worker-badge">书架</span> : null}
+        badge={view === "shelf" ? <span className="novel-badge">书架</span> : null}
+        actions={IS_NOVEL_EDITION ? <SettingsEntryButton /> : null}
       />
       <div className="window-shell__body">
-        <div className="worker-views">
+        <div className="novel-views">
           <div
-            className={`worker-view${view === "shelf" ? "" : " is-hidden"}`}
+            className={`novel-view${view === "shelf" ? "" : " is-hidden"}`}
             aria-hidden={view !== "shelf"}
           >
             <BookshelfPage visible={view === "shelf"} onOpenWork={openWork} />
           </div>
           {editorMounted && (
             <div
-              className={`worker-view${view === "editor" ? "" : " is-hidden"}`}
+              className={`novel-view${view === "editor" ? "" : " is-hidden"}`}
               aria-hidden={view !== "editor"}
             >
               <NovelPage

@@ -1,7 +1,7 @@
 /**
  * 主进程侧编译常量声明（值由 vite.config.ts 的 define 注入）：
  *
- * __CHECKIN_LITE__ —— 精简构建开关（环境变量 CHECKIN_LITE=1 时为 true）：
- * 不打包 WorkerWindow 入口，主窗口隐藏入口按钮，worker-window-open 请求被忽略。
+ * __CHECKIN_EDITION__ —— 构建版本（环境变量 CHECKIN_EDITION，缺省 full）：
+ * 与 electron/edition.ts 的清单配合，决定主窗口归属、close 语义与 IPC 注册范围。
  */
-declare const __CHECKIN_LITE__: boolean;
+declare const __CHECKIN_EDITION__: "full" | "lite" | "novel";
