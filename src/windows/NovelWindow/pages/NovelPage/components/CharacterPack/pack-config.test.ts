@@ -3,6 +3,8 @@ import {
   notifyProtagonistChanged,
   PACK_PROTAGONIST_EVENT,
   readEventDetail,
+  registerPackCloser,
+  requestClosePackPanel,
   type PackProtagonistEventDetail,
 } from "./pack-config";
 
@@ -47,5 +49,44 @@ describe("readEventDetail（事件负载归一化）", () => {
     }
     expect(seen).toHaveLength(1);
     expect(seen[0]).toEqual({ workId: "w1", entityId: "e1" });
+  });
+});
+
+/**
+ * 受保护关闭桥。
+ *
+ * 钉死「返回值是接管与否的诚实汇报」：调用方据此决定是否兜底。
+ * 曾经三条外部路径都绕过这座桥直接 `setPackOpen(false)`，未保存拦截和草稿
+ * flush 全被跳过 —— 在行囊里敲半天，关掉之后一个字都没留下。
+ */
+describe("受保护关闭桥（P1-8）", () => {
+  it("面板未挂载时返回 false，调用方自行兜底", () => {
+    registerPackCloser(null);
+    expect(requestClosePackPanel()).toBe(false);
+  });
+
+  it("面板挂载后返回 true，并把关闭决定权交给面板", async () => {
+    let called = 0;
+    registerPackCloser(async () => {
+      called += 1;
+    });
+    try {
+      expect(requestClosePackPanel()).toBe(true);
+      expect(requestClosePackPanel()).toBe(true);
+      expect(called).toBe(2);
+    } finally {
+      registerPackCloser(null);
+    }
+  });
+
+  it("面板拒绝关闭（有未保存改动时弹拦截）时桥仍然是 true —— 它只报告已接管", async () => {
+    registerPackCloser(async () => {
+      /* 面板选择什么都不做：弹出了关闭拦截 */
+    });
+    try {
+      expect(requestClosePackPanel()).toBe(true);
+    } finally {
+      registerPackCloser(null);
+    }
   });
 });

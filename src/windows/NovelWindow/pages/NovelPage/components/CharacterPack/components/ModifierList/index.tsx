@@ -130,7 +130,7 @@ export default function ModifierList({
             <>
               {mod.name ? <span className="cpk-efrow__name">{mod.name}</span> : null}
               <span className="cpk-efrow__value">{statText(mod, attributes)}</span>
-              {mod.scaleByProficiency ? (
+              {mod.scaleByProficiency && mod.ownerType === "skill" ? (
                 <span className="cpk-efrow__tag">按熟练度缩放</span>
               ) : null}
               {mod.nature === "sustained" && mod.cost ? (

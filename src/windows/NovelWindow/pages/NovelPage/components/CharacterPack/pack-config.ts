@@ -163,3 +163,33 @@ export function notifyRealmLinkChanged(
   window.dispatchEvent(new CustomEvent(PACK_REALM_EVENT, { detail }));
   void window.electronAPI?.windowAPI.broadcast(PACK_REALM_EVENT, detail);
 }
+
+// ── 受保护的关闭桥 ──
+
+/**
+ * 「关闭请求」的唯一受保护实现，由面板挂载时注册。
+ *
+ * 为什么要这一层：除了面板自己的关闭按钮，还有三条路径能把它收起来 ——
+ * 顶栏「行囊」图标、`Ctrl+Shift+B`、页面级 Esc 优先级链。它们过去都直接
+ * `setPackOpen(false)`，绕开了未保存拦截（G-2）与草稿 flush（A5），表现为
+ * 「在行囊里改了半天，关掉之后什么都没留下」。
+ *
+ * 面板是数据主人但状态在页面手里，反过来让页面 import 组件不合适 —— 用桥：
+ * 面板注册自己的 `requestClose`，外部一律调用它。
+ */
+let closer: (() => Promise<void>) | null = null;
+
+/** 面板挂载 / 卸载时调用；同一时刻只允许一个面板（面板形态是唯一的） */
+export function registerPackCloser(fn: (() => Promise<void>) | null): void {
+  closer = fn;
+}
+
+/**
+ * 请求关闭行囊面板。**返回 false 表示当前没有面板**（调用方自行兜底关闭）；
+ * 返回 true 表示已交给面板处理 —— 它可能不关（有未保存改动时弹拦截）。
+ */
+export function requestClosePackPanel(): boolean {
+  if (!closer) return false;
+  void closer();
+  return true;
+}

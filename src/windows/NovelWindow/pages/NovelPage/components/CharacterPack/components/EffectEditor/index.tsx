@@ -258,7 +258,9 @@ export default function EffectEditor({
               </>
             )}
 
-            {current.nature !== "cast" ? (
+            {/* 熟练度只有技能才统计：宿主是装备 / 状态时查不到熟练度，缩放会恒取
+                下限系数，把数值静默腰斩 —— 干脆不给这个开关 */}
+            {current.nature !== "cast" && current.ownerType === "skill" ? (
               <label className="cpk-field cpk-field--row">
                 <span className="cpk-field__label">按熟练度缩放</span>
                 <Switch

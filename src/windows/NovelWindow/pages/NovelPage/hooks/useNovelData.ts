@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addChapter as addChapterRemote,
   addLevel as addLevelRemote,
@@ -104,11 +104,20 @@ export function useNovelData() {
   const [lastPosition, setLastPosition] = useState<RestorePosition | null>(null);
   /** 起名工具收藏夹（R18 ④）：跨作品单键存储，UI 按 workId 过滤 */
   const [nameFavorites, setNameFavorites] = useState<NameFavorite[]>([]);
+  /** 装载失败提示：异常时编辑器不能停在永久空态，要给用户可重试的错误态 */
+  const [loadError, setLoadError] = useState("");
+  /**
+   * 装载序号：挂载 / 删最后一部作品 / resetTemplate / reload 四个入口都可能并发，
+   * 旧响应后到会把新 bundle 覆盖回去 —— 只认最后一次发起的请求。
+   */
+  const loadSeqRef = useRef(0);
 
   const load = useCallback(async (): Promise<void> => {
+    const seq = (loadSeqRef.current += 1);
     setLoading(true);
     try {
       const next = await fetchNovelBundle();
+      if (seq !== loadSeqRef.current) return;
       const saved = sanitizeRestorePosition(
         parseJsonOrNull(await fetchLastPosition()),
         next.works,
@@ -128,9 +137,16 @@ export function useNovelData() {
       // sanitize —— 少了 parseJsonOrNull 时 Array.isArray(字符串) 恒为 false，
       // 表现为「每次启动收藏夹都是空的」，且首次收藏会用空数组覆盖历史数据
       const favoritesJson = await fetchNameFavorites();
+      if (seq !== loadSeqRef.current) return;
       setNameFavorites(sanitizeNameFavorites(parseJsonOrNull(favoritesJson)));
+      setLoadError("");
+    } catch {
+      // 没有 catch 的话 rejection 会一路冒到 `void load()` 成为未捕获错误，
+      // bundle 保持 null → 编辑器永远空态、也没有任何重试入口
+      if (seq !== loadSeqRef.current) return;
+      setLoadError("小说数据装载失败，请重试");
     } finally {
-      setLoading(false);
+      if (seq === loadSeqRef.current) setLoading(false);
     }
   }, []);
 
@@ -177,6 +193,9 @@ export function useNovelData() {
     const handler = (...args: unknown[]) => {
       const detail = readEventDetail<PackRealmEventDetail>(args);
       if (!detail || typeof detail !== "object") return;
+      // 跨窗口 / 跨作品防串书：bundle 的 entities 包含**全部作品**的要素，
+      // 只校验 fromId 存在是不够的 —— 别作品的境界变更会被打进当前内存 links
+      if (detail.workId && detail.workId !== activeWorkId) return;
       applyRealmLinkChange(detail.link);
     };
     window.addEventListener(PACK_REALM_EVENT, handler as EventListener);
@@ -187,7 +206,7 @@ export function useNovelData() {
       window.removeEventListener(PACK_REALM_EVENT, handler as EventListener);
       api?.off(PACK_REALM_EVENT, handler);
     };
-  }, [applyRealmLinkChange]);
+  }, [applyRealmLinkChange, activeWorkId]);
 
   /** 光标 / 滚动恢复完成后由编辑器回调清空，避免切章时误用旧位置 */
   const consumeLastPosition = useCallback((): void => setLastPosition(null), []);
@@ -1280,18 +1299,30 @@ export function useNovelData() {
     void removeOutlineEntryRemote(entryId);
   }, []);
 
+  /** 快照请求序号：抽屉开着时切章会有两个请求并发，先发的 A 章响应后到会把列表覆盖成 A 的 */
+  const snapshotSeqRef = useRef(0);
+
   const loadSnapshots = useCallback(async (chapterId: string): Promise<void> => {
-    const list = await fetchChapterSnapshots(chapterId);
-    setSnapshots(list);
+    const seq = (snapshotSeqRef.current += 1);
+    try {
+      const list = await fetchChapterSnapshots(chapterId);
+      if (seq !== snapshotSeqRef.current) return;
+      setSnapshots(list);
+    } catch {
+      // 装载失败不清空列表：抽屉会显示上一次的时间线，好过凭空白屏
+    }
   }, []);
 
   /** 回滚：返回该快照的正文，由上层灌入编辑器（PRD R3） */
   const rollbackSnapshot = useCallback(
     async (snapshotId: string): Promise<string | null> => {
       const target = snapshots.find((snapshot) => snapshot.id === snapshotId);
-      return target?.content ?? null;
+      // ⚠️ 必须校验快照属于当前章：抽屉开着时切章，列表可能是上一次请求的结果
+      // （并发后到也会覆盖），直接返回正文会把 A 章的历史内容灌进 B 章并立刻落库
+      if (!target || target.chapterId !== activeChapterId) return null;
+      return target.content;
     },
-    [snapshots],
+    [snapshots, activeChapterId],
   );
 
   const searchBook = useCallback(
@@ -1318,6 +1349,7 @@ export function useNovelData() {
     recovery,
     snapshots,
     loading,
+    loadError,
     lastPosition,
     setActiveWorkId,
     selectChapter,

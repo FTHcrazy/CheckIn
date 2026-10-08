@@ -254,6 +254,24 @@ const SESSION_KEY = "novel_editor_session";
  */
 const SEEDED_KEY = "novel_seeded";
 
+/**
+ * 行囊里按 `character_id` 挂载的子表（九张，不含宿主表 `novel_pack_characters`
+ * 与多态表 `novel_pack_modifiers`）。
+ *
+ * 删作品级联时必须**先删 modifiers 再删这里的 items / skills**：modifiers
+ * 的归属是从宿主表反查的，宿主先没了子查询就变成空集，一条都删不掉。
+ */
+const PACK_CHILD_TABLES = [
+  "novel_pack_items",
+  "novel_pack_skills",
+  "novel_pack_attributes",
+  "novel_pack_slots",
+  "novel_pack_unit_systems",
+  "novel_pack_layouts",
+  "novel_pack_records",
+  "novel_pack_drafts",
+] as const;
+
 /** 生成带随机后缀的行 ID，避免同毫秒并发创建时碰撞 */
 function createId(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -374,19 +392,26 @@ function buildRecovery(): NovelRecoveryDto | null {
     | undefined;
   if (session?.value !== "running") return null;
 
-  const snapshot = dbGet(
-    "SELECT * FROM novel_snapshots ORDER BY created_at DESC LIMIT 1",
-  ) as NovelSnapshotRow | undefined;
-  if (!snapshot) return null;
-
-  const chapter = dbGet("SELECT * FROM novel_chapters WHERE id = ?", [
-    snapshot.chapter_id,
-  ]) as NovelChapterRow | undefined;
-  if (!chapter || chapter.content === snapshot.content) return null;
+  // 挑「快照与当前正文不一致」的最新一条：
+  // - 只取全局最新快照会把结论钉死在「恰好最后写过快照的那一章」上 —— A 章写满
+  //   500 字产生快照后切到 B 章写几十字就崩溃，B 的改动会被完全忽略；
+  // - JOIN 章节表同时排除了 chapter_id 已悬空的孤儿快照（删章后残留），
+  //   否则一条孤儿快照因为 created_at 最新会把恢复提示彻底屏蔽。
+  const mismatch = dbGet(
+    `SELECT s.created_at AS snapshot_time, s.word_count AS snapshot_words,
+            c.word_count AS chapter_words
+       FROM novel_snapshots s
+       JOIN novel_chapters c ON c.id = s.chapter_id
+      WHERE c.content <> s.content
+      ORDER BY s.created_at DESC LIMIT 1`,
+  ) as
+    | { snapshot_time: number; snapshot_words: number; chapter_words: number }
+    | undefined;
+  if (!mismatch) return null;
 
   return {
-    snapshotTime: snapshot.created_at,
-    deltaWords: Math.max(0, chapter.word_count - snapshot.word_count),
+    snapshotTime: mismatch.snapshot_time,
+    deltaWords: Math.max(0, mismatch.chapter_words - mismatch.snapshot_words),
   };
 }
 
@@ -447,11 +472,10 @@ export function registerNovelHandlers(): void {
   ipcMain.handle("novel-work-rename", (_event, id: string, name: string) => {
     const trimmed = name.trim();
     if (!trimmed) return false;
-    dbRun("UPDATE novel_works SET name = ? WHERE id = ?", [trimmed, id]);
-    return true;
+    return dbRun("UPDATE novel_works SET name = ? WHERE id = ?", [trimmed, id]).changes > 0;
   });
 
-  // 删除作品：卷章快照 / 要素关联 / 灵感伏笔 / 等级体系级联清理，单事务
+  // 删除作品：卷章快照 / 要素关联 / 灵感伏笔 / 等级体系 / 行囊级联清理，单事务
   ipcMain.handle("novel-work-delete", (_event, id: string) => {
     const db = getDb();
     const apply = db.transaction(() => {
@@ -494,6 +518,33 @@ export function registerNovelHandlers(): void {
         dbRun("DELETE FROM novel_levels WHERE system_id = ?", [system.id]);
       }
       dbRun("DELETE FROM novel_level_systems WHERE work_id = ?", [id]);
+
+      // 行囊（CharacterPack）：漏掉这一整棵会留下永远查不到也删不掉的孤儿 ——
+      // pack 角色只按作品内部拖拽 narrative 访问，作品没了就再无任何入口。
+      // 顺序同 pack-save：多态表 modifiers 靠子查询从宿主反查归属，
+      // 必须先于 items / skills 删除，否则子查询变空集、一条都删不掉。
+      for (const character of dbAll(
+        "SELECT id FROM novel_pack_characters WHERE work_id = ?",
+        [id],
+      ) as Array<{ id: string }>) {
+        dbRun(
+          "DELETE FROM novel_pack_modifiers WHERE owner_type = 'status' AND owner_id = ?",
+          [character.id],
+        );
+        dbRun(
+          "DELETE FROM novel_pack_modifiers WHERE owner_type = 'item' AND owner_id IN (SELECT id FROM novel_pack_items WHERE character_id = ?)",
+          [character.id],
+        );
+        dbRun(
+          "DELETE FROM novel_pack_modifiers WHERE owner_type = 'skill' AND owner_id IN (SELECT id FROM novel_pack_skills WHERE character_id = ?)",
+          [character.id],
+        );
+        for (const table of PACK_CHILD_TABLES) {
+          dbRun(`DELETE FROM ${table} WHERE character_id = ?`, [character.id]);
+        }
+      }
+      dbRun("DELETE FROM novel_pack_characters WHERE work_id = ?", [id]);
+
       // 作品行本身也要删：漏掉会导致「删光后 reload 复活全部作品名」
       dbRun("DELETE FROM novel_works WHERE id = ?", [id]);
     });
@@ -909,7 +960,11 @@ ipcMain.handle("novel-editor-reset-template", () => seedTemplateBook());
         const chapter = dbGet("SELECT word_count FROM novel_chapters WHERE id = ?", [
           id,
         ]) as { word_count?: number | null } | undefined;
-        const delta = chapter ? wordCount - (chapter.word_count ?? 0) : 0;
+        // ⚠️ 章节不存在就中止：继续跑会写一条 chapter_id 悬空的孤儿快照，
+        // 而崩溃恢复挑的是「最新一条快照」—— 孤儿快照时间戳最新，会把真正
+        // 需要恢复的那次改动屏蔽掉。宁可报错也不能污染恢复链路。
+        if (!chapter) return false;
+        const delta = wordCount - (chapter.word_count ?? 0);
         const last = dbGet(
           "SELECT * FROM novel_snapshots WHERE chapter_id = ? ORDER BY created_at DESC LIMIT 1",
           [id],
@@ -939,9 +994,9 @@ ipcMain.handle("novel-editor-reset-template", () => seedTemplateBook());
         );
         // R14：保存事件带净增字数（负值 = 删字回退），今日新增 = 当日 delta 求和
         logUsage("chapter_save", { chapterId: id, delta, words: wordCount });
+        return true;
       });
-      save();
-      return true;
+      return save() === true;
     },
   );
 
@@ -981,24 +1036,23 @@ ipcMain.handle("novel-editor-reset-template", () => seedTemplateBook());
 
   // 章节重命名
   ipcMain.handle("novel-chapter-rename", (_event, id: string, title: string) => {
-    dbRun("UPDATE novel_chapters SET title = ? WHERE id = ?", [title, id]);
-    return true;
+    return dbRun("UPDATE novel_chapters SET title = ? WHERE id = ?", [title, id]).changes > 0;
   });
 
   // 章节状态切换（草稿 / 完稿）
   ipcMain.handle("novel-chapter-status", (_event, id: string, status: string) => {
     if (!isChapterStatus(status)) return false;
-    dbRun("UPDATE novel_chapters SET status = ? WHERE id = ?", [status, id]);
-    return true;
+    return dbRun("UPDATE novel_chapters SET status = ? WHERE id = ?", [status, id]).changes > 0;
   });
 
   // 章节大纲梗概保存（空串清除 → NULL）
   ipcMain.handle("novel-chapter-outline", (_event, id: string, note: string) => {
-    dbRun("UPDATE novel_chapters SET outline_note = ? WHERE id = ?", [
-      note.trim() ? note : null,
-      id,
-    ]);
-    return true;
+    return (
+      dbRun("UPDATE novel_chapters SET outline_note = ? WHERE id = ?", [
+        note.trim() ? note : null,
+        id,
+      ]).changes > 0
+    );
   });
 
   // 章节批量重排 / 跨卷移动（单事务落库）
@@ -1027,8 +1081,7 @@ ipcMain.handle("novel-editor-reset-template", () => seedTemplateBook());
 
   // 卷命名
   ipcMain.handle("novel-volume-rename", (_event, id: string, name: string) => {
-    dbRun("UPDATE novel_volumes SET name = ? WHERE id = ?", [name, id]);
-    return true;
+    return dbRun("UPDATE novel_volumes SET name = ? WHERE id = ?", [name, id]).changes > 0;
   });
 
   // 卷批量重排（单事务落库）
@@ -1113,8 +1166,7 @@ ipcMain.handle("novel-editor-reset-template", () => seedTemplateBook());
 
   // 灵感归属迁移（书架全局灵感库 R32）：归档到作品；workId 传 '' 退回未归属池
   ipcMain.handle("novel-note-move", (_event, id: string, workId: string) => {
-    dbRun("UPDATE novel_notes SET work_id = ? WHERE id = ?", [workId, id]);
-    return true;
+    return dbRun("UPDATE novel_notes SET work_id = ? WHERE id = ?", [workId, id]).changes > 0;
   });
 
   // 伏笔条目保存（upsert）
@@ -1164,8 +1216,7 @@ ipcMain.handle("novel-editor-reset-template", () => seedTemplateBook());
   ipcMain.handle("novel-level-system-rename", (_event, id: string, name: string) => {
     const trimmed = name.trim();
     if (!trimmed) return false;
-    dbRun("UPDATE novel_level_systems SET name = ? WHERE id = ?", [trimmed, id]);
-    return true;
+    return dbRun("UPDATE novel_level_systems SET name = ? WHERE id = ?", [trimmed, id]).changes > 0;
   });
 
   // 删除体系：等级项 / 转换关系 / 指向等级项的关联（当前境界）同事务级联
@@ -1213,8 +1264,7 @@ ipcMain.handle("novel-editor-reset-template", () => seedTemplateBook());
   ipcMain.handle("novel-level-rename", (_event, id: string, name: string) => {
     const trimmed = name.trim();
     if (!trimmed) return false;
-    dbRun("UPDATE novel_levels SET name = ? WHERE id = ?", [trimmed, id]);
-    return true;
+    return dbRun("UPDATE novel_levels SET name = ? WHERE id = ?", [trimmed, id]).changes > 0;
   });
 
   // 删除等级项：转换关系与指向它的「当前境界」关联同事务清理

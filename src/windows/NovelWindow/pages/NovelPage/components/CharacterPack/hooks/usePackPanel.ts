@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createNovelId, logUsageEvent } from "../../../services/novel-service";
-import { DEFAULT_LAYOUTS, QTY_MAX } from "../pack-config";
+import { DEFAULT_LAYOUTS, QTY_MAX, registerPackCloser } from "../pack-config";
 import {
   getPanelRealm,
   getRealm,
@@ -205,7 +205,11 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
       doc.slots,
       doc.items,
       doc.skills,
-      statusModifiers.map((mod) => ({ id: mod.ownerId, active: mod.active })),
+      // ⚠️ 状态的载体键必须取 **效果自己的 id**，不能取 ownerId：
+      // 所有 status 效果的 ownerId 都是同一个角色 id（多态表约定），用它会让
+      // 全部状态折叠成单个 `status:<charId>` 键 —— 于是「全关」时 passive 状态
+      // 被整条丢弃、「任一条 sustained 开着」时 passive 的开关彻底失效。
+      statusModifiers.map((mod) => ({ id: mod.id, active: mod.active })),
     );
   }, [doc, statusModifiers]);
 
@@ -452,10 +456,17 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
   }, [data, onClose]);
 
   const confirmSaveAndClose = useCallback(async () => {
-    await data.save("手动保存");
+    const ok = await data.save("手动保存");
+    if (!ok) {
+      // 保存失败不能照样关闭：面板一卸载 `saveFailed` 状态就随组件消失，
+      // 用户只会看到「改动没了」，却从没被告知保存失败。留在原地等他重试。
+      setCloseGuardOpen(false);
+      showToast("保存失败，草稿仍在本地，请在面板内重试", "error");
+      return;
+    }
     setCloseGuardOpen(false);
     onClose();
-  }, [data, onClose]);
+  }, [data, onClose, showToast]);
 
   const confirmDiscardAndClose = useCallback(async () => {
     await data.revertAll();
@@ -464,6 +475,19 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
   }, [data, onClose]);
 
   const cancelClose = useCallback(() => setCloseGuardOpen(false), []);
+
+  // 外部关闭路径（顶栏图标 / Ctrl+Shift+B / 页面级 Esc）统一走这条桥。
+  // requestClose 每次编辑都会变身份，若在 effect 依赖里直接放它，敲一个字就重注册
+  // 一次 —— 用 ref 转发，注册只随 open 变动。
+  const requestCloseRef = useRef(requestClose);
+  useEffect(() => {
+    requestCloseRef.current = requestClose;
+  }, [requestClose]);
+  useEffect(() => {
+    if (!open) return undefined;
+    registerPackCloser(() => requestCloseRef.current());
+    return () => registerPackCloser(null);
+  }, [open]);
 
   // ═══════════════ 业务动作 ═══════════════
 

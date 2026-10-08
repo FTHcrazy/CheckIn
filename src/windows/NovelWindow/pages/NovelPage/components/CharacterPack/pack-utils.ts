@@ -233,13 +233,18 @@ export function computeSummary(input: SummaryInput): SummaryResult {
     const row = mod.targetAttrId ? rows.get(mod.targetAttrId) : undefined;
     if (!row) continue;
 
-    const raw = mod.scaleByProficiency
-      ? scaleByProficiency(
-          mod.value,
-          input.proficiency[mod.ownerId] ?? 0,
-          scaling,
-        )
-      : mod.value;
+    // ⚠️ 熟练度只对宿主是「技能」的效果成立：`proficiency` 的键就是 skill.id，
+    // 拿装备 / 状态的 id 去查必然落空，若再沿用 `?? 0` 就会把 ratio 算成 0、
+    // 系数取到 minScale（0.5）——数值被静默腰斩，而列表里仍显示原始值，
+    // 只有对着汇总与「来源明细」才看得出来。宿主不是技能时一律不缩放。
+    const raw =
+      mod.scaleByProficiency && mod.ownerType === "skill"
+        ? scaleByProficiency(
+            mod.value,
+            input.proficiency[mod.ownerId] ?? 0,
+            scaling,
+          )
+        : mod.value;
     const applied = roundTo(raw, 4);
     const sustained = mod.nature === "sustained";
 

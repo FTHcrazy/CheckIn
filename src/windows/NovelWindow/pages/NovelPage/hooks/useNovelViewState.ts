@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LAYOUT, PANEL_WIDTH, TOAST_DURATION_MS } from "../novel-config";
 import { clampPanelWidth, parseJsonOrNull } from "../novel-utils";
 import { fetchPanelWidth, savePanelWidth } from "../services/novel-service";
+import { requestClosePackPanel } from "../components/CharacterPack/pack-config";
 import type { EntityType } from "../types";
 
 export type PanelTab = "outline" | "entity" | "note" | "search" | "tools";
@@ -202,9 +203,19 @@ export function useNovelViewState() {
   const closeTypeManager = useCallback(() => setTypeManagerOpen(false), []);
 
   const openPack = useCallback(() => setPackOpen(true), []);
+  /** 仅供无面板时的兜底；正常关闭一律走 `requestClosePackPanel()` 桥 */
   const closePack = useCallback(() => setPackOpen(false), []);
-  /** 顶栏图标与 Ctrl+Shift+B 都是开关：再按一次收起 */
-  const togglePack = useCallback(() => setPackOpen((open) => !open), []);
+  /**
+   * 顶栏图标与 Ctrl+Shift+B 都是开关。收起时必须过面板的受保护路径 ——
+   * 直接 `setPackOpen(false)` 会跳过未保存拦截与草稿 flush，改动静默丢失。
+   */
+  const togglePack = useCallback(() => {
+    if (packOpen) {
+      if (!requestClosePackPanel()) setPackOpen(false);
+      return;
+    }
+    setPackOpen(true);
+  }, [packOpen]);
 
   const selectPanelTab = useCallback((tab: PanelTab) => {
     setPanelTab(tab);

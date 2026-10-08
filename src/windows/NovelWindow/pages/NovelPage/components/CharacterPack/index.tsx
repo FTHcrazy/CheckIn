@@ -83,6 +83,9 @@ export default function CharacterPackHost({
           target.tagName === "TEXTAREA" ||
           target.isContentEditable)
       ) {
+        // 输入框内放行，让按键继续到达 target（antd 的输入控件自己要处理 Esc）。
+        // 冒泡到页面级 Esc 优先级链时会经由 `requestClosePackPanel()` 桥
+        // 回到这里的 `requestClose()` —— 未保存拦截与草稿 flush 都不会丢。
         return;
       }
       const anyModalOpen =

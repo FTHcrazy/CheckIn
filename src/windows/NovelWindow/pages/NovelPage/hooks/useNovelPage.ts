@@ -29,6 +29,7 @@ import {
   saveCustomEntityTypes,
   saveLastPosition,
 } from "../services/novel-service";
+import { requestClosePackPanel } from "../components/CharacterPack/pack-config";
 import { buildEntityTypesValue, type EntityTypesContextValue } from "./entity-types-context";
 import type {
   CustomEntityTypeDef,
@@ -124,6 +125,13 @@ export function useNovelPage() {
       cancelled = true;
     };
   }, []);
+
+  // 装载失败不能停在无声空态：bundle 为 null 时整页没有内容也没有提示，
+  // 用户只会以为「这个功能是空的」。给一次明确告警，reload 入口照常可用。
+  useEffect(() => {
+    if (!data.loadError) return;
+    view.showToast(data.loadError, "warning");
+  }, [data.loadError, view]);
 
   useEffect(() => {
     if (!customTypesLoadedRef.current) return;
@@ -957,7 +965,9 @@ export function useNovelPage() {
       return;
     }
     if (view.packOpen) {
-      view.closePack();
+      // 走面板自己的关闭流程（未保存拦截 + 草稿 flush），不能直接翻状态位；
+      // 面板不在（理论上不会）时才退回老办法
+      if (!requestClosePackPanel()) view.closePack();
       return;
     }
     if (view.snapshotOpen) {

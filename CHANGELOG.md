@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.21.2] - 2026-10-08
+
+> 依据 `docs/novel-window-review.md` 修复的第二批（`正确性`：P1-3 / P1-4 / P1-5 / P1-8 / P1-9 / P1-10~13）。
+
+### Fixed
+
+- **删除作品不清行囊，留下一整棵孤儿**（主进程 `novel-handlers.ts`）：`novel-work-delete` 的事务清了卷章快照 / 要素 / 灵感 / 等级体系，唯独没有碰任何 `novel_pack_*` 表 —— 而同一个文件里播种那段的注释明确写着「行囊随作品一起清空，角色留着会成孤儿」，可知这条约束是知道的，只是删除路径漏了。`novel_pack_characters` 连同 9 张子表全部残留，`entity_id` 指向已删要素，且**删了作品后再无任何入口能查到或删掉它们**；多态表 `novel_pack_modifiers` 的 `owner_id` 仍指向存在的 item/skill，所以保存侧的孤儿清理也扫不到。现改为同事务内先按 `work_id` 定位角色行，再按 `character_id` 清 8 张子表；顺序与 pack-save 一致 —— `modifiers` 必须先于 `items` / `skills`（它靠子查询从宿主反查归属，宿主先删子查询就变成空集，一条都删不掉）
+- **状态效果共用一个载体键，passive 被误杀 / sustained 开关串扰**（`hooks/usePackPanel.ts`）：所有 `ownerType === "status"` 的效果按约定共用 `ownerId = 角色 id`，而 `buildActiveCarriers` 把这个 `ownerId` 当载体键用，于是整组状态折叠成同一个 `status:<charId>` 键 —— 全部状态关闭时组里没有这个键，**所有 passive 状态被静默丢弃**（passive 本就是「计入」档，不该受开关影响）；任一条 sustained 开着时键在集合里，**所有 passive 的开关彻底失效**。现改为取效果自己的 `mod.id` 作键，每条状态独立成键
+- **熟练度缩放对装备 / 状态宿主静默 ×0.5**（`pack-utils.ts` + `EffectEditor` + `ModifierList`）：`proficiency` 的键只有技能 id，`computeSummary` 里却是 `input.proficiency[mod.ownerId] ?? 0` —— 非技能宿主必然落空 → ratio 0 → 系数取下界 0.5 → **贡献值腰斩**。而列表仍显示原始数值，只有对着总属性与「来源明细」才看得出。现改为宿主不是技能时一律不缩放，效果编辑器不再给非技能宿主这个开关，列表也不再给失效条目挂「按熟练度缩放」标签
+- **行囊关闭链路三洞**：
+  - **保存失败照样关闭**（`usePackPanel.ts`）：「保存并关闭」里 `await data.save()` 后**无条件** `onClose()`，失败也关，且 `saveFailed` 状态随组件卸载消失 —— 用户只看到「改动没了」，从未被告知保存失败。现检查返回值，失败时留在面板内并给出提示（草稿仍在）
+  - **卸载 / 切作品没有 flush 兜底**（`usePackData.ts`）：草稿是 800ms 防抖，连续打字时计时器每帧重置，组件若在这期间被卸载（切作品、进专注模式、面板形态切换都会卸载它）整段连续输入就没机会落库。现增加一条依赖含 `workId` 的 effect —— 让 cleanup 在换书那一帧（此时 `docRef` 还是旧作品文档）与卸载时各跑一次 `flushDraft()`
+  - **外部关闭路径全部绕过未保存拦截**（新增 `pack-config.ts` 关闭桥）：除面板自己的关闭按钮外，还有三条路径能收起面板 —— 顶栏「行囊」图标、`Ctrl+Shift+B`、页面级 Esc 优先级链，它们过去都直接 `setPackOpen(false)`，跳过 CloseGuard（G-2）与草稿 flush。现由面板挂载时注册自己的 `requestClose`，外部统一经 `requestClosePackPanel()` 桥进入同一条受保护路径
+- **崩溃恢复的两处判定缺陷**（`novel-handlers.ts`）：
+  - 对不存在的章节保存时仍会写一条 `chapter_id` 悬空的孤儿快照，而 `buildRecovery()` 取的是**全局最新**快照 —— 这条孤儿时间戳最新，**崩溃恢复提示被彻底屏蔽**。现章节查不到就直接中止、`return false`
+  - `buildRecovery()` 只检测「恰好拥有全局最新快照的那一章」：A 章写满 500 字触发快照 → 切 B 章写几十字（不足快照阈值）→ 崩溃，查到的是 A 章快照且 `A.content === snapshot.content` → `return null`，**B 章的未保存改动被完全忽略**。现把判定下推到「快照与当前正文不一致」的最新一条（`JOIN novel_chapters ... WHERE c.content <> s.content`），同时顺带排除了 `chapter_id` 已悬空的孤儿快照
+- **写操作命中 0 行仍返回成功**（`novel-handlers.ts` 8 处）：`rename` / `status` / `outline` / `note-move` / `volume-rename` / `level-rename` 等 8 个通道原本一律 `return true`。渲染层大多是 `void xxxRemote(...)` 且已乐观更新 —— 用户以为改成功，下次启动数据悄悄回滚且没有任何提示。现改为返回 `dbRun(...).changes > 0`
+- **快照列表无并发守卫，回滚可能把 A 章正文写进 B 章**（`useNovelData.ts` + `useNovelPage.ts`）：快照抽屉开着时切章会并发两个请求，先发的 A 章响应后到会把列表覆盖成 A 的；而 `handleRollback` 不校验快照属于哪一章。现给 `loadSnapshots` 加请求序号，`rollbackSnapshot` 校验 `snapshot.chapterId === activeChapterId` 后才返回正文
+- **`load()` 无 catch、无并发序号**（`useNovelData.ts`）：只有 `finally` 没有 `catch`，`fetchNovelBundle()` reject 时 bundle 保持 `null` → 编辑器停在**永久空态且无任何提示**（`void load()` 还产生未捕获 rejection）；挂载 / 删最后一部作品 / resetTemplate / `reload()` 四个入口可能并发，旧响应后到会覆盖新 bundle。现加请求序号 + `catch` 落到可提示的错误态（页面给一次 toast，`reload` 入口照常可用）
+- **跨窗口境界事件不校验 `workId`**（`useNovelData.ts`）：主角事件有 `detail.workId !== workId` 的防串书守卫，境界事件没有。而 bundle 的 `entities` 是**全部作品**的要素，只校验 `fromId` 存在不足以挡住跨作品 —— 别窗口 / 别作品的境界变更会被打进当前内存 links。补上同样的守卫
+
+### Added
+
+- 守卫测试 `electron/novel-write-guard.test.ts`（14 例）：源码断言「删作品必须清理全部 9 张行囊表、`modifiers` 必须先于 `PACK_CHILD_TABLES` 循环、`status` 必须用 `owner_type` 限定」；「8 个写通道必须返回 `changes > 0` 且不再残留裸 `return true`」；「章节不存在不写孤儿快照」与「恢复判定必须是 JOIN + content 不一致」
+- 守卫测试 `CharacterPack/pack-close-guard.test.ts`（9 例）：钉住「载体键取 `mod.id` 而非 `ownerId`」「写入侧的 `ownerId` 仍必须是角色 id」「缩放以 `ownerType === 'skill'` 收窄」「三条外部关闭路径都走桥」「保存失败不关闭」「卸载与切作品都有 flush」
+- `pack-config.test.ts` 补 3 例行为单测：关闭桥的返回值语义（未挂载返回 false 由调用方兜底；已挂载返回 true 只表示「已接管」，面板可能选择不关 —— 有未保存改动时弹拦截）
+- `pack-utils.test.ts` 补 2 例：「熟练度缩放只对技能宿主生效」同时算技能与装备两条路径，钉死非技能宿主不再是旧的 1250；「每条状态各自成键」
+
 ## [1.21.1] - 2026-10-08
 
 > 依据 `docs/novel-window-review.md`（Novel 窗口全量代码审查）修复的第一批缺陷，全部为 P0 / P1 级数据正确性问题。

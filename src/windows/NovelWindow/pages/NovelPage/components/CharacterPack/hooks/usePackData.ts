@@ -234,6 +234,21 @@ export function usePackData(workId: string, chapterId: string) {
     await putPackDraft(current.character.id, JSON.stringify(current), dirtyRef.current);
   }, []);
 
+  /**
+   * 卸载前 / 切作品前兜底 flush。
+   *
+   * 依赖里放 `workId` 不是为了在新作品上做什么，而是让 **cleanup 在换书的那一
+   * 帧先跑一次** —— 此时 `docRef` 还是上一部作品的文档。防抖是 800ms，连续打字
+   * 时每帧重置计时器，若组件在这期间被卸载或换书，整段连续输入就没机会落库了。
+   * 卸载路径（远多于换书）也由同一条 cleanup 覆盖。
+   */
+  useEffect(
+    () => () => {
+      void flushDraft();
+    },
+    [workId, flushDraft],
+  );
+
   const save = useCallback(
     async (reason: DirtyReason = "手动保存"): Promise<boolean> => {
       const current = docRef.current;

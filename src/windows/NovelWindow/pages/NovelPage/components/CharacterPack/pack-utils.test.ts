@@ -220,6 +220,41 @@ describe("computeSummary —— 三段分解与运算优先级（§9.4.2）", ()
     expect(result.byAttr.get("a1")!.final).toBeCloseTo(1300, 6);
   });
 
+  it("熟练度缩放只对技能宿主生效：装备 / 状态宿主不被 ×0.5 腰斩", () => {
+    // `proficiency` 的键是 skill.id。拿装备 id 去查必然落空，若沿用 `?? 0`
+    // 就会算出 ratio 0 → factor 取下界 0.5，数值静默腰斩（列表仍显示原始值）
+    const [
+      { final: skillScaled },
+      { final: itemRaw },
+    ] = [
+      { ownerType: "skill" as const, ownerId: "s1", carriers: ["skill:s1"] },
+      { ownerType: "item" as const, ownerId: "i1", carriers: ["item:i1"] },
+    ].map(({ ownerType, ownerId, carriers }) =>
+      computeSummary({
+        attributes,
+        modifiers: [
+          mod({
+            id: "m1",
+            ownerType,
+            ownerId,
+            nature: "passive",
+            op: "add",
+            value: 100,
+            scaleByProficiency: true,
+          }),
+        ],
+        activeCarriers: new Set(carriers),
+        proficiency: { s1: 250 },
+        scaling: { maxProficiency: 500, minScale: 0.5, maxScale: 1.5 },
+      }).byAttr.get("a1")!,
+    );
+
+    // 技能宿主：lerp(0.5, 1.5, 0.5) = 1.0
+    expect(skillScaled).toBeCloseTo(1300, 6);
+    // 非技能宿主：不缩放，老实现这里会给 1250（100 × 0.5）
+    expect(itemRaw).toBeCloseTo(1300, 6);
+  });
+
   it("不指向属性的条目（cast 除外）不会污染任何一行", () => {
     const result = computeSummary({
       attributes,
@@ -286,6 +321,18 @@ describe("buildActiveCarriers —— 闸门 1 的组装", () => {
       },
     ];
     expect(buildActiveCarriers(limited, items, [], []).size).toBe(0);
+  });
+
+  it("每条状态各自成键：同组的 passive 不会被 sustained 的开关串扰", () => {
+    // 所有 status 效果的 ownerId 都是同一个角色 id，用它当键会让整组折叠成一个
+    // 键 —— 全关时 passive 被连坐丢弃、任一 sustained 开着时 passive 开关失效
+    const statuses = [
+      { id: "m1", active: true },
+      { id: "m2", active: false },
+    ];
+    const active = buildActiveCarriers([], [], [], statuses);
+    expect(active.has("status:m1")).toBe(true);
+    expect(active.has("status:m2")).toBe(false);
   });
 });
 
