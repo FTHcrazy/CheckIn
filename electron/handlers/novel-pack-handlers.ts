@@ -181,6 +181,12 @@ export interface PackCharacterDto {
   sortOrder: number;
 }
 
+/** 主角绑定读数：`entityId` 为空串表示尚未指定主角 */
+export interface PackProtagonistDto {
+  characterId: string;
+  entityId: string;
+}
+
 export interface PackAttributeDto {
   id: string;
   characterId: string;
@@ -625,29 +631,37 @@ function readRealmLink(entityId: string): PackRealmLinkDto | null {
   };
 }
 
+/**
+ * 取该作品的行囊主角行；不存在则播种一条并套上通用部位预设（PRD 附录 A）。
+ *
+ * 抽成公共函数是因为「首次使用」有两个入口：打开行囊面板，以及在右侧要素栏
+ * 把某个角色设为主角。两个入口都必须能建出同一条骨架，否则从要素栏设主角
+ * 会写到一个不存在的 character_id 上（静默丢绑定）。
+ */
+function ensurePackCharacterRow(workId: string): PackCharacterRow {
+  const existing = dbGet(
+    "SELECT * FROM novel_pack_characters WHERE work_id = ? ORDER BY sort_order LIMIT 1",
+    [workId],
+  ) as PackCharacterRow | undefined;
+  if (existing) return existing;
+
+  const id = createId("pc");
+  dbRun(
+    `INSERT INTO novel_pack_characters
+       (id, work_id, name, is_protagonist, entity_id, realm_at, note, sort_order)
+     VALUES (?, ?, '主角', 1, NULL, NULL, '', 1)`,
+    [id, workId],
+  );
+  seedDefaultSlots(id);
+  return dbGet("SELECT * FROM novel_pack_characters WHERE id = ?", [
+    id,
+  ]) as PackCharacterRow;
+}
+
 export function registerNovelPackHandlers(): void {
   // ── 全量装载 ──
   ipcMain.handle("novel-pack-load", (_event, workId: string): PackBundleDto => {
-    let characterRow = dbGet(
-      "SELECT * FROM novel_pack_characters WHERE work_id = ? ORDER BY sort_order LIMIT 1",
-      [workId],
-    ) as PackCharacterRow | undefined;
-
-    // 首次使用：播种一条主角与一套通用部位预设（PRD 附录 A），
-    // 让作者一打开就有可用的骨架，而不是白屏（B-1 / B-2 的「首次使用」验收点）
-    if (!characterRow) {
-      const id = createId("pc");
-      dbRun(
-        `INSERT INTO novel_pack_characters
-           (id, work_id, name, is_protagonist, entity_id, realm_at, note, sort_order)
-         VALUES (?, ?, '主角', 1, NULL, NULL, '', 1)`,
-        [id, workId],
-      );
-      seedDefaultSlots(id);
-      characterRow = dbGet("SELECT * FROM novel_pack_characters WHERE id = ?", [
-        id,
-      ]) as PackCharacterRow;
-    }
+    const characterRow = ensurePackCharacterRow(workId);
 
     const character = toCharacterDto(characterRow);
     const snapshot = readCharacterSnapshot(character.id);
@@ -669,6 +683,38 @@ export function registerNovelPackHandlers(): void {
       realmLink: readRealmLink(character.entityId),
     };
   });
+
+  // ── 主角绑定（右侧要素栏「设为主角」与行囊面板「绑定实体」共用同一条通道） ──
+  //
+  // 「谁是主角」的唯一事实源就是 `novel_pack_characters.entity_id`：不另建表、
+  // 不另加列（v1 行囊只承载一条主角，`is_protagonist` 已按多角色预留）。
+  // 设为主角 = 把该角色实体绑成行囊主角；换一个即改写同一格；
+  // 传空串即解除绑定（境界退回「仅在本面板内使用」）。
+  ipcMain.handle("novel-pack-protagonist-get", (_event, workId: string): PackProtagonistDto | null => {
+    // 读取不建行：作者可能压根没打开过行囊，此时右侧要素栏就不该有主角角标
+    const row = dbGet(
+      "SELECT id, entity_id FROM novel_pack_characters WHERE work_id = ? ORDER BY sort_order LIMIT 1",
+      [workId],
+    ) as { id: string; entity_id: string | null } | undefined;
+    if (!row) return null;
+    return { characterId: row.id, entityId: row.entity_id ?? "" };
+  });
+
+  ipcMain.handle(
+    "novel-pack-protagonist-set",
+    (_event, workId: string, entityId: string): boolean => {
+      try {
+        const row = ensurePackCharacterRow(workId);
+        dbRun("UPDATE novel_pack_characters SET entity_id = ? WHERE id = ?", [
+          entityId || null,
+          row.id,
+        ]);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+  );
 
   // ── 整文档事务保存（写前先落回退点，成功后清草稿） ──
   ipcMain.handle("novel-pack-save", (_event, payload: PackSavePayloadDto): boolean => {
@@ -709,6 +755,30 @@ export function registerNovelPackHandlers(): void {
       }
 
       // ② 整体替换（任一语句抛错 → better-sqlite3 自动回滚整事务，不留中间态）
+
+      // ⚠️ 顺序是硬约束：**加成必须先于它的宿主删**。
+      // `novel_pack_modifiers` 是多态表（只有 owner_type/owner_id，没有 character_id），
+      // 只能靠子查询从 items/skills 反查归属。若先把 items/skills 删掉，反查子查询
+      // 立刻变成空集 → 一条加成也删不掉 → 紧接着重新插入同 id 就撞主键：
+      //   `UNIQUE constraint failed: novel_pack_modifiers.id`
+      // 而整个保存是一个事务，抛错即整体回滚 → 用户侧表现为「行囊存不上」。
+      // 用模板行囊（固定 id `tpl-pm-*`）时必现，因为 id 每次保存都完全一样。
+      dbRun(
+        `DELETE FROM novel_pack_modifiers
+          WHERE (owner_type = 'item'   AND owner_id IN (SELECT id FROM novel_pack_items  WHERE character_id = ?))
+             OR (owner_type = 'skill'  AND owner_id IN (SELECT id FROM novel_pack_skills WHERE character_id = ?))
+             OR (owner_type = 'status' AND owner_id = ?)`,
+        [characterId, characterId, characterId],
+      );
+      // 顺手清孤儿：宿主已经不存在的加成。历史上正因为上面那段顺序写反而残留下来，
+      // 它们既不显示也不参与汇总，只会越攒越多、并在将来某次 id 复用时突然报主键冲突。
+      // 限定 item / skill 两类（status 的 owner_id 就是 character_id，不参与本清理）。
+      dbRun(
+        `DELETE FROM novel_pack_modifiers
+          WHERE (owner_type = 'item'  AND owner_id NOT IN (SELECT id FROM novel_pack_items))
+             OR (owner_type = 'skill' AND owner_id NOT IN (SELECT id FROM novel_pack_skills))`,
+      );
+
       for (const table of [
         "novel_pack_attributes",
         "novel_pack_slots",
@@ -719,22 +789,19 @@ export function registerNovelPackHandlers(): void {
       ]) {
         dbRun(`DELETE FROM ${table} WHERE character_id = ?`, [characterId]);
       }
-      dbRun(
-        `DELETE FROM novel_pack_modifiers
-          WHERE (owner_type = 'item'   AND owner_id IN (SELECT id FROM novel_pack_items  WHERE character_id = ?))
-             OR (owner_type = 'skill'  AND owner_id IN (SELECT id FROM novel_pack_skills WHERE character_id = ?))
-             OR (owner_type = 'status' AND owner_id = ?)`,
-        [characterId, characterId, characterId],
-      );
 
       const c = payload.character;
+      // ⚠️ 保存**不回写 `entity_id`**：主角绑定是跨模块共享的一格数据，写入口
+      // 唯一（`novel-pack-protagonist-set`）。若让整文档保存也参与写它，草稿里
+      // 那份可能已经过期的快照就会在保存时把右侧栏刚设的主角覆盖掉——
+      // 「行囊里显示未指定、右侧卡上却戴着皇冠」正是这么来的。
       dbRun(
         `INSERT INTO novel_pack_characters
            (id, work_id, name, avatar, is_protagonist, entity_id, realm_at, note, sort_order)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            work_id = excluded.work_id, name = excluded.name, avatar = excluded.avatar,
-           is_protagonist = excluded.is_protagonist, entity_id = excluded.entity_id,
+           is_protagonist = excluded.is_protagonist,
            realm_at = excluded.realm_at, note = excluded.note, sort_order = excluded.sort_order`,
         [
           c.id,

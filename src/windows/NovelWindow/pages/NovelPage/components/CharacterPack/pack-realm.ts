@@ -38,7 +38,7 @@ export interface RealmWritePlan {
   realmRaw: string | null;
 }
 
-export const UNBOUND_REALM_HINT = "未绑定实体，境界仅在本面板内使用";
+export const UNBOUND_REALM_HINT = "尚未指定主角，境界仅在行囊内使用";
 
 /** 解析行囊自持境界（`{levelId, sub}`），失败返回 null */
 export function parseRealmRaw(raw: string): { levelId: string; sub: number } | null {

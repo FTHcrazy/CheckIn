@@ -46,6 +46,10 @@ interface EntityPanelProps {
   onSetEntityLevel: (entityId: string, rungId: string | null) => void;
   /** 打开等级体系管理弹框（R25） */
   onOpenLevelManager: () => void;
+  /** 行囊主角绑定的要素 id（空串 = 尚未指定） */
+  protagonistEntityId: string;
+  /** 设为主角 / 换一个 / 再点一次取消（与行囊面板的「绑定实体」同源） */
+  onSetProtagonist: (entityId: string) => void;
   /** 把要素名插入正文光标处 */
   onInsertName: (name: string) => void;
 }
@@ -84,6 +88,8 @@ export default function EntityPanel({
   onRemoveRelation,
   onSetEntityLevel,
   onOpenLevelManager,
+  protagonistEntityId,
+  onSetProtagonist,
   onInsertName,
 }: EntityPanelProps) {
   const { metaOf, filterOrder } = useEntityTypeMeta();
@@ -92,7 +98,7 @@ export default function EntityPanel({
   // 页面根不再为了这个数字被保存动作推一遍
   const appearanceCounts = useAppearanceStore((state) => state.counts);
   // 类型 chips 行横向溢出时两端渐隐提示（滚动条为隐藏设计）
-  const chipsFade = useEdgeFade<HTMLDivElement>();
+  const { ref: chipsRef, fadeLeft, fadeRight } = useEdgeFade<HTMLDivElement>();
 
   // 类型计数：只在要素集合变化时重算，与筛选 / 搜索无关
   const counts = useMemo(() => {
@@ -108,7 +114,7 @@ export default function EntityPanel({
   // 行中间，免去手动 Shift+滚轮找；首次挂载（恢复上次筛选）不做动画
   const chipsMountedRef = useRef(false);
   useEffect(() => {
-    const row = chipsFade.ref.current;
+    const row = chipsRef.current;
     const on = row?.querySelector<HTMLElement>(".nv-chip.is-on");
     if (!row || !on) return;
     // 用视口矩形差值求目标 scrollLeft：.nv-chips 不是定位元素，
@@ -125,7 +131,7 @@ export default function EntityPanel({
       behavior: chipsMountedRef.current ? "smooth" : "auto",
     });
     chipsMountedRef.current = true;
-  }, [filter, counts, chipsFade.ref]);
+  }, [filter, counts, chipsRef]);
 
   const trimmed = keyword.trim().toLowerCase();
 
@@ -179,13 +185,25 @@ export default function EntityPanel({
         onRemoveRelation={onRemoveRelation}
         onSetEntityLevel={(rungId) => onSetEntityLevel(detail.id, rungId)}
         onOpenLevelManager={onOpenLevelManager}
+        isProtagonist={Boolean(protagonistEntityId) && detail.id === protagonistEntityId}
+        onSetProtagonist={() => onSetProtagonist(detail.id)}
         onBack={onCloseEntity}
       />
     );
   }
 
+  /** 主角置顶：同一类型里，主角永远是第一张卡，省掉每次翻找 */
+  const protagonistFirst = (list: NovelEntity[]): NovelEntity[] => {
+    if (!protagonistEntityId || list.length < 2) return list;
+    const index = list.findIndex((entity) => entity.id === protagonistEntityId);
+    if (index <= 0) return list;
+    return [list[index], ...list.slice(0, index), ...list.slice(index + 1)];
+  };
+
   const renderCard = (entity: NovelEntity) => {
     const stats = statsOf.get(entity.id);
+    const isProtagonist =
+      Boolean(protagonistEntityId) && entity.id === protagonistEntityId;
     return (
       <li key={entity.id}>
         <EntityCard
@@ -193,8 +211,10 @@ export default function EntityPanel({
           relationCount={stats?.relations ?? 0}
           appearanceCount={appearanceCounts.get(entity.id) ?? 0}
           levelName={stats?.levelName ?? ""}
+          isProtagonist={isProtagonist}
           onOpen={onOpenEntity}
           onInsertName={onInsertName}
+          onSetProtagonist={() => onSetProtagonist(entity.id)}
         />
       </li>
     );
@@ -224,9 +244,9 @@ export default function EntityPanel({
       </div>
 
       <div
-        ref={chipsFade.ref}
-        className={`nv-chips nv-entity__chips${chipsFade.fadeLeft ? " is-fade-left" : ""}${
-          chipsFade.fadeRight ? " is-fade-right" : ""
+        ref={chipsRef}
+        className={`nv-chips nv-entity__chips${fadeLeft ? " is-fade-left" : ""}${
+          fadeRight ? " is-fade-right" : ""
         }`}
       >
         <button
@@ -265,7 +285,9 @@ export default function EntityPanel({
       ) : filter === "all" ? (
         <>
           {filterOrder.map((type) => {
-            const group = visible.filter((entity) => entity.type === type);
+            const group = protagonistFirst(
+              visible.filter((entity) => entity.type === type),
+            );
             if (group.length === 0) return null;
             return (
               <div key={type}>
@@ -284,7 +306,7 @@ export default function EntityPanel({
             {metaOf(filter).label}
             <em>{visible.length}</em>
           </div>
-          <ul className="nv-entity__list">{visible.map(renderCard)}</ul>
+          <ul className="nv-entity__list">{protagonistFirst(visible).map(renderCard)}</ul>
         </>
       )}
     </div>

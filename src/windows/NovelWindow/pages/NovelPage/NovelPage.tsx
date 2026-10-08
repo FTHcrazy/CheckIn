@@ -102,6 +102,8 @@ export default function NovelPage({
     namingActions,
     namingExclude,
     namingFavorites,
+    protagonistEntityId,
+    handleSetProtagonist,
   } = useNovelPage();
 
   const { loadSnapshots, activeChapterId, searchBook } = data;
@@ -397,6 +399,8 @@ export default function NovelPage({
           }}
           onOpenLevelManager={view.openLevelManager}
           onOpenTypeManager={view.openTypeManager}
+          protagonistEntityId={protagonistEntityId}
+          onSetProtagonist={handleSetProtagonist}
           namingActions={namingActions}
           namingExclude={namingExclude}
           namingFavorites={namingFavorites}

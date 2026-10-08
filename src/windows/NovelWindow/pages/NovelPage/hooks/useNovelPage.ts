@@ -48,6 +48,7 @@ import { useNovelData } from "./useNovelData";
 import { useNovelEditorState } from "./useNovelEditorState";
 import { useNovelShortcuts } from "./useNovelShortcuts";
 import { useNovelViewState } from "./useNovelViewState";
+import { usePackProtagonist } from "./usePackProtagonist";
 
 /** 待确认的重排请求（防误触排序开启时，拖拽先到这里等用户确认） */
 type PendingReorder =
@@ -74,6 +75,25 @@ export function useNovelPage() {
   const view = useNovelViewState();
   // hover 只注册副作用，不返回状态（卡片自己订阅 store，页面不跟着悬停重渲染）
   useEntityHover(data.getEntityById);
+
+  /**
+   * 行囊主角绑定（右侧要素栏 ↔ 行囊面板的交叉点）。
+   *
+   * 放在页面层而不是行囊模块里：它要在行囊面板关闭时依然生效——作者可能
+   * 只是在右侧要素栏把某个角色设为主角，行囊面板压根没打开过。
+   */
+  const {
+    protagonistEntityId,
+    designate: designateProtagonist,
+    refresh: refreshProtagonist,
+  } = usePackProtagonist(data.activeWorkId);
+
+  const handleSetProtagonist = useCallback(
+    (entityId: string): void => {
+      void designateProtagonist(entityId);
+    },
+    [designateProtagonist],
+  );
 
   // 只取低频切片：正文 / 字数 / 保存态由各自组件订阅 store，
   // 这里一旦订阅，敲一个字就会把整棵树推一遍
@@ -301,11 +321,14 @@ export function useNovelPage() {
       view.showToast("重置失败，请重试", "warning");
       return;
     }
+    // 重置会连行囊一起清空重播（模板行囊的主角是沈青梧），
+    // 而作品 id 不变、hook 的 workId 依赖不会触发重读 → 显式刷一次
+    await refreshProtagonist();
     view.showToast(
       `已重置为模板书籍 · ${summary.chapters} 章 / 约 ${formatThousands(summary.words)} 字`,
       "info",
     );
-  }, [data, view]);
+  }, [data, view, refreshProtagonist]);
 
   // ── TXT 导出（R13）：标题序号按 numberStyle + 后缀派生，与界面所见一致 ──
 
@@ -1050,5 +1073,8 @@ export function useNovelPage() {
     namingActions,
     namingExclude,
     namingFavorites,
+    // 行囊主角绑定（右侧要素栏）
+    protagonistEntityId,
+    handleSetProtagonist,
   };
 }

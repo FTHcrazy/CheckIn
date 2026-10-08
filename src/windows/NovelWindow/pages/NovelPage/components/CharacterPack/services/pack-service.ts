@@ -66,6 +66,26 @@ export async function writeLevelMeta(
   return window.electronAPI!.novel.pack.levelMetaSet(id, meta);
 }
 
+// ── 主角绑定（行囊面板与右侧要素栏共用同一格数据） ──
+
+/**
+ * 读取「谁是主角」。null = 该作品还没建过行囊角色，此时右侧要素栏
+ * 不显示任何主角角标（而不是伪造一个空主角）。
+ */
+export async function fetchProtagonistBinding(
+  workId: string,
+): Promise<{ characterId: string; entityId: string } | null> {
+  return window.electronAPI!.novel.pack.protagonistGet(workId);
+}
+
+/** 设为主角 / 换一个主角 / 传空串解除主角 */
+export async function writeProtagonistBinding(
+  workId: string,
+  entityId: string,
+): Promise<boolean> {
+  return window.electronAPI!.novel.pack.protagonistSet(workId, entityId);
+}
+
 // ── 界面偏好（即改即存，走 config 整读整写；不进草稿，见 PRD §8.6.2） ──
 
 /** 读取行囊界面偏好 JSON（键不存在返回 null，由上层合并默认值） */

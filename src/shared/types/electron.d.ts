@@ -158,6 +158,18 @@ export interface PackCharacterDTO {
   sortOrder: number
 }
 
+/**
+ * 主角绑定读数。
+ *
+ * 「谁是主角」的唯一事实源就是 `novel_pack_characters.entity_id`：右侧要素栏的
+ * 「设为主角」与行囊面板的「绑定实体」是两个入口，写的是同一格。
+ */
+export interface PackProtagonistDTO {
+  characterId: string
+  /** 空串表示尚未指定主角 */
+  entityId: string
+}
+
 export interface PackAttributeDTO {
   id: string
   characterId: string
@@ -513,6 +525,10 @@ export interface ElectronAPI {
         id: string,
         meta: { subLevels?: number; power?: number | null },
       ) => Promise<boolean>
+      /** 主角绑定读数：null 表示该作品还没建过行囊角色 */
+      protagonistGet: (workId: string) => Promise<PackProtagonistDTO | null>
+      /** 设为主角 / 解除主角：entityId 传空串即解绑 */
+      protagonistSet: (workId: string, entityId: string) => Promise<boolean>
     }
   }
 

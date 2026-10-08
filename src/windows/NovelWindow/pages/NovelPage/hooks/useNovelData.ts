@@ -75,6 +75,12 @@ import type {
   OutlineEntryDraft,
   SearchHit,
 } from "../types";
+import {
+  notifyRealmLinkChanged,
+  PACK_REALM_EVENT,
+  readEventDetail,
+  type PackRealmEventDetail,
+} from "../components/CharacterPack/pack-config";
 
 /** 选区标记的结果：新建要素 / 关联为别名 / 已存在 */
 export type MarkResult =
@@ -129,6 +135,57 @@ export function useNovelData() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  /**
+   * 行囊改了主角境界 → 这里跟着改同一行。
+   *
+   * 不做整体重载：重载会打断正在编辑的正文与面板状态，而这条改动只涉及
+   * `novel_links` 的一行（同一 from + to_type='level' + relation 只留一条）。
+   * 只打内存补丁，右侧角色卡上的境界名就会立刻变。
+   */
+  const applyRealmLinkChange = useCallback(
+    (link: PackRealmEventDetail["link"]) => {
+      if (!link) return;
+      setBundle((current) => {
+        if (!current) return current;
+        // 另一个窗口可能开着别的书：目标要素不在本书就整条忽略，
+        // 否则会把别人书里的关联行灌进来（多窗口下是真实场景）
+        if (!current.entities.some((entity) => entity.id === link.fromId)) {
+          return current;
+        }
+        const others = current.links.filter(
+          (candidate) =>
+            !(
+              candidate.fromType === link.fromType &&
+              candidate.fromId === link.fromId &&
+              candidate.toType === "level" &&
+              candidate.relation === link.relation
+            ),
+        );
+        return {
+          ...current,
+          links: [{ ...link, toType: "level" } as NovelLink, ...others],
+        };
+      });
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const handler = (...args: unknown[]) => {
+      const detail = readEventDetail<PackRealmEventDetail>(args);
+      if (!detail || typeof detail !== "object") return;
+      applyRealmLinkChange(detail.link);
+    };
+    window.addEventListener(PACK_REALM_EVENT, handler as EventListener);
+
+    const api = window.electronAPI?.windowAPI;
+    api?.on(PACK_REALM_EVENT, handler);
+    return () => {
+      window.removeEventListener(PACK_REALM_EVENT, handler as EventListener);
+      api?.off(PACK_REALM_EVENT, handler);
+    };
+  }, [applyRealmLinkChange]);
 
   /** 光标 / 滚动恢复完成后由编辑器回调清空，避免切章时误用旧位置 */
   const consumeLastPosition = useCallback((): void => setLastPosition(null), []);
@@ -953,8 +1010,11 @@ export function useNovelData() {
       });
       if (binding) void removeLinkRemote(binding.id);
       if (created) void addLinkRemote(created);
+      // 行囊面板开着时要立刻跟上：不发这一枪，那边会继续显示旧境界，
+      // 表现为「右侧改了境界、行囊还写着原来那阶」
+      notifyRealmLinkChanged(activeWorkId, created, "panel");
     },
-    [bundle],
+    [bundle, activeWorkId],
   );
 
   /**

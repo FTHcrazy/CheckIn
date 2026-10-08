@@ -1,4 +1,12 @@
-import { BookOutlined, EditOutlined, LinkOutlined, RiseOutlined, ThunderboltOutlined } from "@ant-design/icons";
+import {
+  BookOutlined,
+  CrownFilled,
+  CrownOutlined,
+  EditOutlined,
+  LinkOutlined,
+  RiseOutlined,
+  ThunderboltOutlined,
+} from "@ant-design/icons";
 import { useEntityTypeMeta } from "../../hooks/entity-types-context";
 import type { NovelEntity } from "../../types";
 import "./index.scss";
@@ -11,9 +19,13 @@ interface EntityCardProps {
   appearanceCount: number;
   /** 当前境界名（R25 绑定，未绑定为空串） */
   levelName: string;
+  /** 是否为行囊主角（决定「主角」角标与置顶） */
+  isProtagonist: boolean;
   onOpen: (entityId: string) => void;
   /** 把要素名插入正文光标处 */
   onInsertName: (name: string) => void;
+  /** 设为主角 / 取消主角 */
+  onSetProtagonist: () => void;
 }
 
 /**
@@ -21,20 +33,29 @@ interface EntityCardProps {
  *
  * 卡片主体是整块的点击区（打开详情），「插入正文 / 编辑」悬停才浮出——
  * 常驻四个图标会让列表变成一片按钮墙。
+ *
+ * 主角设定只对角色卡出现：行囊只承载主角一人，把入口铺到地点 / 派系卡上
+ * 只会让人以为「也能设主角」。
  */
 export default function EntityCard({
   entity,
   relationCount,
   appearanceCount,
   levelName,
+  isProtagonist,
   onOpen,
   onInsertName,
+  onSetProtagonist,
 }: EntityCardProps) {
   const { metaOf } = useEntityTypeMeta();
   const meta = metaOf(entity.type);
+  const canBeProtagonist = entity.type === "character";
 
   return (
-    <div className="nv-ecard" style={{ ["--ent-color" as string]: meta.color }}>
+    <div
+      className={`nv-ecard${isProtagonist ? " is-protagonist" : ""}`}
+      style={{ ["--ent-color" as string]: meta.color }}
+    >
       <button
         type="button"
         className="nv-ecard__main"
@@ -49,6 +70,12 @@ export default function EntityCard({
         <span className="nv-ecard__body">
           <span className="nv-ecard__top">
             <span className="nv-ecard__name">{entity.name}</span>
+            {isProtagonist && (
+              <span className="nv-ecard__protagonist" title="行囊主角：境界与行囊同源">
+                <CrownFilled />
+                主角
+              </span>
+            )}
             <span
               className="nv-ecard__badge"
               style={{ color: meta.color, background: meta.colorWeak }}
@@ -79,6 +106,22 @@ export default function EntityCard({
       </button>
 
       <span className="nv-ecard__quick">
+        {canBeProtagonist && (
+          <button
+            type="button"
+            className={`nv-mini${isProtagonist ? " is-on" : ""}`}
+            aria-pressed={isProtagonist}
+            aria-label={isProtagonist ? "取消主角" : "设为主角"}
+            title={
+              isProtagonist
+                ? "取消主角（行囊境界退回仅面板内使用）"
+                : "设为主角：行囊境界与这张卡同源"
+            }
+            onClick={onSetProtagonist}
+          >
+            {isProtagonist ? <CrownFilled /> : <CrownOutlined />}
+          </button>
+        )}
         <button
           type="button"
           className="nv-mini"

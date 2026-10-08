@@ -161,6 +161,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
       /** 等级项补列：小层数 / 战力当量（PRD §9.7.2） */
       levelMetaSet: (id: string, meta: { subLevels?: number; power?: number | null }) =>
         ipcRenderer.invoke('novel-level-meta-set', id, meta) as Promise<boolean>,
+      /** 主角绑定读数：null 表示该作品还没建过行囊角色（右侧要素栏就不显示主角角标） */
+      protagonistGet: (workId: string) =>
+        ipcRenderer.invoke('novel-pack-protagonist-get', workId),
+      /** 设为主角 / 解除主角：entityId 传空串即解绑（同一格，换一个就换主角） */
+      protagonistSet: (workId: string, entityId: string) =>
+        ipcRenderer.invoke('novel-pack-protagonist-set', workId, entityId) as Promise<boolean>,
     },
   },
 

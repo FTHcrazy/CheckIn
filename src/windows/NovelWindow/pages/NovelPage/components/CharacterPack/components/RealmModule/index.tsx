@@ -7,7 +7,6 @@ import { moduleLabel } from "../module-meta";
 import { fetchNovelBundle, logUsageEvent } from "../../../../services/novel-service";
 import type { LadderRung } from "../../pack-utils";
 import "./index.scss";
-import "./index.scss";
 
 interface RealmModuleProps {
   api: PackPanelApi;
@@ -39,9 +38,12 @@ export default function RealmModule({ api }: RealmModuleProps) {
     }
   }, [entities.length]);
 
+  // 挂载即加载，而不是等下拉展开才加载：`Select` 是「value 有值 + options 为空」
+  // 的展示形态时，antd 会直接把裸 id 显示出来（模板书里就是一串
+  // `tpl-e-char-shen`），看上去和「没设主角」几乎一样。
   useEffect(() => {
-    if (bindOpen) void loadEntities();
-  }, [bindOpen, loadEntities]);
+    void loadEntities();
+  }, [loadEntities]);
 
   const rungs: LadderRung[] = api.rungs;
   const doc = api.doc;
@@ -150,12 +152,12 @@ export default function RealmModule({ api }: RealmModuleProps) {
           ) : null}
 
           <div className="cpk-rlm__bind">
-            <span className="cpk-rlm__bindlabel">绑定实体</span>
+            <span className="cpk-rlm__bindlabel">主角</span>
             <Select
               size="small"
               style={{ flex: 1, minWidth: 0 }}
               value={doc.character.entityId || undefined}
-              placeholder="未绑定（境界仅在本面板内使用）"
+              placeholder="未指定（境界仅在行囊内使用）"
               open={bindOpen}
               onOpenChange={setBindOpen}
               allowClear
@@ -167,7 +169,13 @@ export default function RealmModule({ api }: RealmModuleProps) {
               }}
             />
           </div>
-          {api.realmHint ? <p className="cpk-rlm__hint">{api.realmHint}</p> : null}
+          {/* 主角是两边共用的同一个设定：说清楚入口关系，作者才不会以为
+              「这里绑了、那边还要再设一次」 */}
+          <p className="cpk-rlm__hint">
+            {api.realmHint
+              ? `${api.realmHint}。右侧「要素」栏的角色卡上点皇冠图标同样能设为主角。`
+              : "与右侧「要素」栏的角色卡是同一个人：那边设了主角，这里立刻跟着变。"}
+          </p>
         </>
       )}
 

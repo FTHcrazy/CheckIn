@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import type { KeyboardEvent } from "react";
 import {
   ArrowLeftOutlined,
+  CrownFilled,
+  CrownOutlined,
   EditOutlined,
   PlusOutlined,
   SettingOutlined,
@@ -42,6 +44,10 @@ interface EntityDetailProps {
   onSetEntityLevel: (rungId: string | null) => void;
   /** 打开等级体系管理弹框（R25） */
   onOpenLevelManager: () => void;
+  /** 是否为行囊主角 */
+  isProtagonist: boolean;
+  /** 设为主角 / 取消主角 */
+  onSetProtagonist: () => void;
   onSelectChapter: (chapterId: string) => void;
   onBack: () => void;
 }
@@ -73,6 +79,8 @@ export default function EntityDetail({
   onRemoveRelation,
   onSetEntityLevel,
   onOpenLevelManager,
+  isProtagonist,
+  onSetProtagonist,
   onSelectChapter,
   onBack,
 }: EntityDetailProps) {
@@ -480,10 +488,41 @@ export default function EntityDetail({
         </button>
       )}
 
+      {/* 主角设定：只对角色卡出现。行囊只承载主角一人，所以「主角」这一格
+          是行囊 ↔ 实体面板唯一的挂钩——设了它，两边境界才是同一行数据 */}
+      {entity.type === "character" && (
+        <>
+          <div className="nv-sechead">主角</div>
+          <button
+            type="button"
+            className={`nv-edetail__protagonist${isProtagonist ? " is-on" : ""}`}
+            aria-pressed={isProtagonist}
+            onClick={onSetProtagonist}
+          >
+            <span className="nv-edetail__protagonist-icon">
+              {isProtagonist ? <CrownFilled /> : <CrownOutlined />}
+            </span>
+            <span className="nv-edetail__protagonist-text">
+              <b>{isProtagonist ? "已设为主角" : "设为主角"}</b>
+              <em>
+                {isProtagonist
+                  ? "行囊的境界与这里同源，改任一处两边都跟着变"
+                  : "行囊只记主角的随身物品；设为主角后，行囊的境界与这张卡同步"}
+              </em>
+            </span>
+          </button>
+        </>
+      )}
+
       {levelSystems.length > 0 && activeSystem && (
         <>
           <div className="nv-sechead">
             当前境界
+            {isProtagonist && (
+              <span className="nv-edetail__same" title="与行囊面板读的是同一行 novel_links">
+                <CrownFilled /> 行囊同源
+              </span>
+            )}
             <button
               type="button"
               className="nv-edetail__manage"

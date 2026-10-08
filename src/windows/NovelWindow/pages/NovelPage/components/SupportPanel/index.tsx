@@ -82,6 +82,10 @@ interface SupportPanelProps {
   onSetEntityLevel: (entityId: string, rungId: string | null) => void;
   /** 打开等级体系管理弹框（R25） */
   onOpenLevelManager: () => void;
+  /** 行囊主角绑定的要素 id（空串 = 尚未指定）；决定角色卡上的「主角」角标 */
+  protagonistEntityId: string;
+  /** 设为主角 / 换一个 / 再点一次取消（与行囊面板的「绑定实体」是同一格数据） */
+  onSetProtagonist: (entityId: string) => void;
   /** 打开自定义类型管理弹框（R23）：要素库面板头的齿轮 */
   onOpenTypeManager: () => void;
   /** 起名工具动作组（R18 / 步骤三）：插入正文 / 建角色卡 / 收藏 / 删除收藏 */
@@ -153,6 +157,8 @@ export default function SupportPanel({
   onRemoveRelation,
   onSetEntityLevel,
   onOpenLevelManager,
+  protagonistEntityId,
+  onSetProtagonist,
   onOpenTypeManager,
   namingActions,
   namingExclude,
@@ -514,6 +520,8 @@ export default function SupportPanel({
               onRemoveRelation={onRemoveRelation}
               onSetEntityLevel={onSetEntityLevel}
               onOpenLevelManager={onOpenLevelManager}
+              protagonistEntityId={protagonistEntityId}
+              onSetProtagonist={onSetProtagonist}
               onInsertName={namingActions.onInsertToEditor}
             />
           )}

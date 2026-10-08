@@ -372,6 +372,105 @@
     }
   }
 
+  /* ── 主角设定 ─────────────────────────────────────────────────── */
+  &__protagonist {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    padding: 9px 10px;
+    border: 1px dashed var(--app-border-strong);
+    border-radius: var(--app-radius-item);
+    background: var(--app-surface);
+    color: var(--app-text-secondary);
+    font-family: inherit;
+    font-size: 12px;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 150ms ease, background 150ms ease;
+
+    &:hover {
+      border-color: var(--app-accent-amber);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--app-primary);
+      outline-offset: 2px;
+    }
+
+    /* 已设为主角：从虚框转为实心强调，与「未设」一眼可分 */
+    &.is-on {
+      border-style: solid;
+      border-color: var(--app-accent-amber);
+      background: var(--app-accent-amber-weak);
+
+      .nv-edetail__protagonist-icon {
+        color: var(--app-accent-amber);
+      }
+
+      .nv-edetail__protagonist-text b {
+        color: var(--app-accent-amber);
+      }
+    }
+  }
+
+  &__protagonist-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
+    background: var(--app-surface-alt);
+    color: var(--app-text-muted);
+    font-size: 14px;
+  }
+
+  &__protagonist-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+
+    b {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--app-text-strong);
+    }
+
+    /* 说明文字独占一行：与标题同行会被挤成三行窄柱（面板宽 280 时尤其明显） */
+    em {
+      font-style: normal;
+      font-size: 12px;
+      line-height: 1.6;
+      color: var(--app-text-secondary-strong);
+    }
+  }
+
+  /* 「当前境界」标题行里的同源角标 */
+  &__same {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    margin-left: 6px;
+    padding: 0 6px;
+    border-radius: var(--app-radius-pill);
+    background: var(--app-accent-amber-weak);
+    color: var(--app-accent-amber);
+    font-size: 12px;
+    font-weight: 400;
+    letter-spacing: 0;
+    white-space: nowrap;
+
+    & > svg,
+    & > .anticon {
+      width: 11px;
+      height: 11px;
+      font-size: 12px;
+    }
+  }
+
   &__ladder {
     display: grid;
     gap: 4px;

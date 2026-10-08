@@ -17,6 +17,7 @@ import type {
   PackNatureDTO,
   PackOpDTO,
   PackOwnerTypeDTO,
+  PackProtagonistDTO,
   PackRealmLinkDTO,
   PackRecordDTO,
   PackSavePayloadDTO,
@@ -53,6 +54,7 @@ export type PackRealmLink = PackRealmLinkDTO;
 export type PackRecord = PackRecordDTO;
 export type PackDraft = PackDraftDTO;
 export type PackBundle = PackBundleDTO;
+export type PackProtagonist = PackProtagonistDTO;
 
 /** 效果性质的中文与徽标（§8.3 徽标图例：三者视觉必须一眼可分） */
 export const NATURE_META: Record<

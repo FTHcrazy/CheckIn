@@ -2,7 +2,11 @@
 
 > 对应 PRD：`docs/character-pack-prd.md` v1.5
 > 本轮落地范围：**按步骤实现 PRD 的 P0 主体 + 可直接落地的 P1**；形态固定为「右侧让位」。
-> 登记日期：2026-09-29 ｜ 代码基线：`1.18.0`
+> 登记日期：2026-10-08 ｜ 代码基线：`1.19.2`
+>
+> **1.19.0 追加**：① 右侧要素栏补「主角」设定（行囊 ↔ 实体面板的挂钩落地）；② 模板书预设一份完整模板行囊 + 等级阶梯补小层/当量（见 §8）。
+> **1.19.1 追加**：修掉主角 / 联动三项静默失效，根因是跨模块事件的负载形状有两套而监听器只认了一套（见 §9 —— 新增双投递事件必须走 `readEventDetail`）。
+> **1.19.2 追加**：修掉行囊保存「从第二次起必然失败」（`UNIQUE constraint failed: novel_pack_modifiers.id`），根因是整文档保存里**多态加成表的删除排在了它的宿主表之后**（见 §10 —— 多态表的删除顺序是硬约束）。
 
 ## 0. 怎么用这张表
 
@@ -32,7 +36,7 @@
 NovelPage/components/CharacterPack/
 ├── index.tsx / index.scss          # 面板宿主：形态、宽度拖拽、模块遍历、浮层挂载
 ├── types.ts                        # 领域别名 + 模块清单 + 常量（性质/稀有度/模板/阈值）
-├── pack-config.ts                  # 面板尺寸、出厂布局、量纲模板、长按参数
+├── pack-config.ts                  # 面板尺寸、出厂布局、量纲模板、长按参数、跨模块事件
 ├── pack-utils.ts / .test.ts        # 纯函数：两道闸门、汇总管线、进位、量程换算（30 例）
 ├── pack-realm.ts / .test.ts        # 境界读写口子（REQ-048），15 例
 ├── styles/pack-common.scss         # 跨模块公共原语（按钮/徽标/开关/下拉浮层）
@@ -48,7 +52,16 @@ NovelPage/components/CharacterPack/
     └── RecordDrawer/ SourceDetailDrawer/
 ```
 
-主进程侧：`electron/handlers/novel-pack-handlers.ts`（9 条通道）、`electron/db.ts`（10 张表 + `novel_levels` 两条补列）、`electron/preload.ts`、`src/shared/types/electron.d.ts`。
+主进程侧：`electron/handlers/novel-pack-handlers.ts`（11 条通道）、`electron/db.ts`（10 张表 + `novel_levels` 两条补列）、`electron/template`（`novel-template.ts` 的 `TemplatePack` 模板行囊）、`electron/preload.ts`、`src/shared/types/electron.d.ts`。
+
+**主角绑定**（行囊 ↔ 右侧要素栏的交叉点，1.19.0 新增）：
+
+```
+NovelPage/hooks/usePackProtagonist.ts          # 页面侧读数 + 写入口（主角绑定要在行囊关闭时仍可用）
+NovelPage/components/EntityCard|EntityDetail|EntityPanel/  # 「设为主角」入口与角标
+CharacterPack/pack-config.ts                   # 事件定义 + notify（PACK_PROTAGONIST_EVENT / PACK_REALM_EVENT）
+CharacterPack/services/pack-service.ts         # fetchProtagonistBinding / writeProtagonistBinding
+```
 
 ## 3. 功能登记
 
@@ -99,7 +112,8 @@ NovelPage/components/CharacterPack/
 | REQ | 项 | 状态 | 落点 | 缺口 / 备注 |
 |---|---|---|---|---|
 | REQ-048 | 境界读写收敛为三个函数 | ✅ | `pack-realm.ts`（15 例单测） | 契约：**每次改动后 grep 一遍**，禁止业务层直接引用 `realm_at` / 「当前境界」行 |
-| REQ-046 | 境界 ↔ R25 双向同步 | 🟡 | `pack-realm.ts`、`novel-link-set`、`novel-level-meta-set` | 复用 `novel_levels` + `novel_links`（不另建表）✅；小层数 / 战力当量补列 ✅；阶内进位 `carryRealm()` ✅；**EntityPanel 侧尚未订阅 `pack-realm-changed`**（面板 → 行囊的反向刷新靠重载，未做实时） |
+| REQ-046 | 境界 ↔ R25 双向同步 | ✅ | `pack-realm.ts`、`novel-link-set`、`novel-level-meta-set`、`hooks/usePackProtagonist.ts` | 复用 `novel_levels` + `novel_links`（不另建表）；小层数 / 战力当量补列；阶内进位 `carryRealm()`；**双向实时**：两边任一改动都广播 `pack-protagonist-changed`，另一侧立刻跟随（同窗口 CustomEvent + 跨窗口 broadcast 各发一次） |
+| REQ-047-主角 | 右侧要素栏「设为主角」 | ✅ | `EntityCard`（皇冠角标 + 快捷按钮）、`EntityDetail`（主角区 + 「行囊同源」角标）、`novel-pack-protagonist-get/-set` | 唯一事实源是 `novel_pack_characters.entity_id`，**不另建表、不另加列**；主角卡在列表里置顶；仅角色卡可见入口（地点 / 派系卡上不给，避免误以为也能设主角）。⚠️ 1.19.1 修掉一处静默失效：双投递事件监听器只认了一种负载形状，导致同窗口这条路读不到值（见 §9） |
 | REQ-040 | 释放型结构化参数 | ✅ | `EffectEditor` 的 cast 分支 | 效果量 / 单位 / 冷却 / 消耗 / 目标 |
 | REQ-022 | 量纲统一入口 + 三模型 + JSON 导入导出 | 🟡 | `UnitSystemManager`、`pack-utils` 的 `formatRatio/thresholdOf` | 三模型齐全 ✅（ladder 由境界承担）；**JSON 导入导出未做**；量纲目前只用于展示与试算，不参与属性汇总 |
 | REQ-023 | 货币：自定义进制 + 自动进位可关 | ✅ | `CurrencyModule` | 「铜钱换不成银」= 关掉自动进位 |
@@ -171,13 +185,174 @@ NovelPage/components/CharacterPack/
 | `tsc --noEmit -p tsconfig.app.json` | exit 0 |
 | `tsc --noEmit -p tsconfig.node.json` | exit 0 |
 | `eslint`（新增 / 改动文件） | 0 problems |
-| `vitest run`（全量） | 35 files / **447 passed**（其中行囊 45 例：纯函数 30 + 境界口子 15） |
+| `vitest run`（全量） | 37 files / **465 passed**（其中行囊 53 例：纯函数 30 + 境界口子 15 + 事件归一化 4 + 保存删除顺序 4；模板 22 例，含行囊 10 例） |
 | 真实 Electron 目视验证 | ⬜ **未做**（沙箱禁 GUI）—— 下一次开发前建议先 `pnpm dev:novel` 走一遍「打开 → 改数 → 保存 → 关闭拦截 → 载入回退点」 |
+
+### 顺带修掉的两处既有 lint 报错
+
+`react-hooks/refs` 认为「把 `useEdgeFade()` 的返回值整体读属性」是在渲染期访问 ref
+（`chipsFade.ref` / `chipsFade.fadeLeft` 都被判为 ref 值）。改为解构后消失，
+`EntityPanel` 与 `SearchPanel` 各一处，行为不变。
 
 ## 7. 下一批建议顺序
 
 1. **REQ-043 的剩余部分**：切章 / 退出应用拦截 —— 这是「防误操作丢数据」承诺的最后一环。
 2. **REQ-018 + REQ-037**：同一套「假想输入」能力，做一次解决两条（换装预览 + 临时估算）。
 3. **REQ-027 + REQ-028 + REQ-030**：三条都依赖「正文 ↔ 面板」的桥，一起做边际成本最低。
-4. **REQ-046 的剩余部分**：EntityPanel 订阅 `pack-realm-changed`，把「面板 → 行囊」也变成实时。
-5. **REQ-010 / REQ-014 的收尾**：稀有度可改 + 熟练度进度条，各半天以内。
+4. **REQ-010 / REQ-014 的收尾**：稀有度可改 + 熟练度进度条，各半天以内。
+
+## 8. 1.19.0 追加：主角设定 + 模板行囊
+
+### 8.1 为什么要补「主角」这一格
+
+行囊只承载主角一人，境界要同步就必须知道**主角对应设定库里的哪张角色卡**。
+此前这件事只能靠在行囊面板里手动选一个实体（`RealmModule` 的下拉），
+两边的认知是断开的：右侧要素栏看不出谁是主角，行囊也看不出这张卡是不是主角。
+
+现在把「谁是主角」明确定义为 **`novel_pack_characters.entity_id` 这一格**：
+
+- **不另建表、不另加列**（v1 只有一条主角，`is_protagonist` 已按多角色预留）；
+- 「设为主角」= 把该角色实体绑成行囊主角；换一个即改写同一格；取消即置空；
+- 右侧要素栏与行囊面板的绑定下拉是**同一格的两个入口**，写的是同一份数据。
+
+### 8.2 落点
+
+| 面 | 落点 | 说明 |
+|---|---|---|
+| 主进程 | `novel-pack-handlers.ts` 的 `ensurePackCharacterRow()` + `novel-pack-protagonist-get/-set` | 「首次使用」有两个入口（开面板 / 在要素栏设主角），共用同一个播种函数；读取不建行（没打开过行囊就不该有角标） |
+| 右侧要素栏 | `EntityCard`（皇冠角标 + 快捷按钮）、`EntityDetail`（主角区 + 当前境界标题的「行囊同源」角标）、`EntityPanel`（主角置顶） | 入口**只在角色卡上出现**：地点 / 派系卡给这个按钮会让人误以为也能设主角 |
+| 页面接线 | `hooks/usePackProtagonist.ts` → `useNovelPage` → `SupportPanel` → `EntityPanel` | 主角绑定要在行囊面板关闭时依然可用 |
+| 事件 | `pack-config.ts` 的 `PACK_PROTAGONIST_EVENT` / `PACK_REALM_EVENT` + 两个 `notify*` | 定义放在行囊模块里：主角与境界都是行囊的数据，右侧栏只是另一个展示面；未来迁独立窗口时事件随模块走 |
+
+### 8.3 双向实时（本轮把闭环接完）
+
+| 方向 | 触发 | 另一侧的反应 |
+|---|---|---|
+| 要素栏 → 行囊 | `setProtagonist` → 写库 → 广播 `pack-protagonist-changed` | 行囊**只打内存补丁**（`dirtyDelta=0`）并重读元数据，不重载文档——重载会吃掉未保存的编辑 |
+| 行囊 → 要素栏 | 行囊绑定下拉 → 同一条 IPC → 同一广播 | 角色卡角标立即跟随；不再需要等到保存 |
+| 行囊 → 要素栏（境界） | `writeRealm` → 写 `novel_links` → 广播 `pack-realm-changed` | `useNovelData` 对 `links` 打补丁（不整体重载）→ 角色卡上的境界名立刻变 |
+| 要素栏 → 行囊（境界） | `setEntityLevel` → 广播 `pack-realm-changed`（`origin='panel'`） | 行囊重读元数据；`origin='pack'` 的广播被自己跳过，避免无谓的整体重读 |
+
+**边界**：主角绑定与境界关联都属于「跨模块共享的那一份」——**即时落库、不计入未保存改动数、不参与「撤销到上次保存」**。
+理由同 §4 的判据：这一格改了，别人的这本书的那个角色也会变，它本来就不是行囊私有的编辑。
+
+### 8.4 模板行囊（模板书里的范例）
+
+`electron/novel-template.ts` 新增 `TemplatePack`，由 `seedTemplateBook()` 落到 `novel_pack_*` 表。
+一份「填满了的范例」比空壳更能说明怎么用：
+
+- **主角直接绑到 `tpl-e-char-shen`（沈青梧）**，而模板第 9 条关联已把她的「当前境界」落在**凝丹**
+  → 打开行囊即可看到「行囊 ↔ 实体面板同源」是活的，不需要先自己配一遍；
+- **三档性质各留范例**：被动（锋锐 / 剑势 / 静心 / 蕴灵 / 通明）、
+  持续（踏浪 / 持灯 / 听潮 开着；灯影护体 **关着** 作对照）、释放（引魂照影 / 观星问潮）；
+- **两条「不计入」的边界情况**：被动 + 触发条件（残卷·窥机，触发「潮汐之夜」）、
+  技能总开关关掉（观星术，其被动同样不计入）；
+- **戒指 capacity=2**，素银戒 / 星砂戒 分别占 0 / 1 号槽位；
+- **熟练度缩放**：执灯诀 熟练度 500（满）→ 持灯 +4 实际按 1.5 倍计为 +6；
+- **量纲**：1 金 = 100 银 = 10000 铜；熟练度三档（入门 / 熟练 / 大师）；
+- **等级阶梯补齐 R25 两个缺口**：每阶都有 `sub_levels` 与 `power`（引气 9 层 / 当量 10 → 登仙 当量 65610）。
+
+`electron/novel-template.test.ts` 新增 10 例锁死这些约束（尤其「主角必须绑到角色要素」
+「穿戴位置不越容量且不重复占格」「每条效果都指向有效载体与属性」）。
+
+⚠️ 已知缺口（未处理，属于既有行为）：若在**行囊面板打开的情况下**执行「重置为模板书籍」，
+面板里的文档仍是重置前那份，保存会把旧数据写回去。重置是调试入口，暂不额外拦截。
+
+---
+
+## 9. 1.19.1：主角/联动三项静默失效的根因与修复
+
+> 起因：作者实测反馈「设为主角的功能无用 / 行囊和面板信息还是不同步 / 预设的模板需要预设一个主角」。
+> 结论：前两条是**同一个根因**造成的静默失效，第三条的模板数据本来是对的、但被同一个形态问题掩盖。
+
+### 9.1 根因：跨模块事件的负载形状有两套，监听器只认了一套
+
+`pack-config.ts` 的 `notify*` 每次都发两次（同窗口 `CustomEvent` + 跨窗口 `windowAPI.broadcast`），
+这是**刻意的**——因为 `window-broadcast` 会 **排除发送者**（`broadcast(event, data, senderName)`），
+只发 broadcast 的话，同窗口的另一个展示面收不到。但两条路的负载形状不同：
+
+| 路径 | 监听器收到的第一个参数 | 负载位置 |
+|---|---|---|
+| 同窗口 | `CustomEvent` 实例 | `.detail` |
+| 跨窗口 | 负载对象本身 | 第一个参数 |
+
+而四个订阅点全部写成 `args[0] as Detail` → **同窗口这条路永远读出 `undefined`**：
+
+| 订阅点 | 读到 `undefined` 后的行为 | 作者看到的现象 |
+|---|---|---|
+| `usePackProtagonist` | `setEntityId(undefined ?? "")` → **清空** | 点「设为主角」角标一闪就没 → 「无用」 |
+| `usePackPanel`（主角） | `undefined !== workId` → `return` | 右侧设的主角，行囊不知道 |
+| `usePackPanel`（境界） | 同上 → `return` | 右侧改境界，行囊不知道 |
+| `useNovelData`（境界） | `detail.link` 为 `undefined` → `return` | 行囊改境界，右侧不知道 |
+
+**修复**：`pack-config.ts` 导出 `readEventDetail<T>(args)` 统一归一化（`first instanceof Event` 就取
+`.detail`），四个订阅点全部改用它；`pack-config.test.ts` 补 4 例（含「广播后同窗口监听器拿到的必须是
+负载而不是事件对象」这条回归）。**这是一类缺陷，不是一个 bug**：以后新增任何「同窗口 + 跨窗口」
+双投递事件，都必须走这个读取函数。
+
+### 9.2 第二处：保存会把刚设的主角冲掉
+
+`novel-pack-save` 的 upsert 此前连带回写 `entity_id`。而草稿（`novel_pack_drafts`）里存着
+`character.entityId` 的快照——若草稿是设主角**之前**写的，一次保存就把它覆盖回去。
+**修复**：主角绑定只保留一个写入口（`novel-pack-protagonist-set`），保存不再写该列。
+
+### 9.3 第三处：行囊「主角」下拉读不到名字
+
+`RealmModule` 的角色选项原本 `if (bindOpen)` 才加载。未展开时 `Select` 处于
+「value 有值 + options 为空」的形态，antd 会把**裸 id**（模板书里就是 `tpl-e-char-shen`）显示出来，
+看着和「没设主角」几乎一样——所以模板其实一直有主角，只是没显示成人名。
+**修复**：改为模块挂载即加载。
+
+### 9.4 一致性收敛：主角绑定以库为准
+
+- 装载（`usePackData.applyBundle`）：**不从草稿取 `character.entityId`**，一律用正式行的值；
+- 「撤销全部改动」（`revertAll`）：保留当前的 `entityId`，不跟着撤销回退。
+
+理由是它属于跨模块共享数据（判据 §4 / PRD §8.6.2），不属于「可撤销的设定数据」。
+
+### 9.5 验证
+
+`tsc`（渲染层 / 主进程）exit 0 ｜ `eslint src/windows/NovelWindow electron src/shared` → **0 errors** ｜
+`vitest run` 全量 **36 files / 461 passed**（+4 例事件归一化）｜ `vite build` exit 0
+⬜ 仍需真机目视（沙箱禁 GUI）——重点复测四条方向：右侧设主角 → 行囊下拉是否立刻变、
+行囊换主角 → 右侧皇冠是否跟着走、两边各改一次境界是否互见、重置模板后行囊是否自带沈青梧。
+
+## 10. 1.19.2：行囊保存「第二次起必然失败」
+
+### 10.1 现象与根因
+
+保存直接报 `SqliteError: UNIQUE constraint failed: novel_pack_modifiers.id`，整个事务回滚
+→ 用户侧看到的就是「改了存不上」。
+
+`novel_pack_modifiers` 是**多态表**：`(owner_type, owner_id)` 指向 item / skill / status，
+**没有 `character_id`**，所以「这本书的加成」只能靠子查询从宿主表反查：
+
+```sql
+DELETE FROM novel_pack_modifiers
+ WHERE (owner_type = 'item'  AND owner_id IN (SELECT id FROM novel_pack_items  WHERE character_id = ?))
+    OR (owner_type = 'skill' AND owner_id IN (SELECT id FROM novel_pack_skills WHERE character_id = ?))
+    OR (owner_type = 'status' AND owner_id = ?)
+```
+
+而整文档替换原本写的是「**先删宿主、再删加成**」——宿主一删，反查子查询立刻变成空集，
+**一条加成也删不掉**；紧接着重新 INSERT 同 id（id 来自文档，保存前后不变）→ 主键冲突 → 事务回滚。
+
+第一次保存之所以没事：库里还没有这些 id。**从第二次起必失败**；
+用模板行囊（固定 id `tpl-pm-*`）时 100% 复现，因为每次保存的 id 完全一样。
+
+### 10.2 修复
+
+1. 加成删除**提到宿主循环之前**，并在原处写明「这是硬约束，不是风格问题」。
+2. 顺带加一次**孤儿清理**：`owner_type = 'item' | 'skill'` 而宿主已不存在的加成直接删掉。
+   它们是历史上这个顺序写反而残留的，既不显示也不参与汇总，只会在将来某次 id 复用时突然报冲突。
+3. 新增 `electron/novel-pack-save-order.test.ts`（4 例）把顺序钉住。
+   **为什么用源码断言**：better-sqlite3 的 native 模块按 Electron ABI 编译，
+   vitest（node 进程）下 `require` 直接抛 → 这类顺序不变量在单测里只能断言源码。
+   项目已有先例（`themes.test.ts` / `line-geometry.test.ts`）。
+
+### 10.3 验证
+
+`tsc`（渲染层 / 主进程）exit 0 ｜ `eslint src/windows/NovelWindow electron src/shared` → **0 errors** ｜
+`vitest run` 全量 **37 files / 465 passed** ｜ `vite build` exit 0
+⬜ 仍需真机复测，且**必须连做两次保存**：打开模板书 → 改一处（如某件装备的加成值）→ 保存
+→ **再改一次、再保存**（第二次才是原缺陷的触发点，只存一次看不出问题）。

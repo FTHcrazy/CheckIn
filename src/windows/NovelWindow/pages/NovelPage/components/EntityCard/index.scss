@@ -72,6 +72,39 @@
     font-size: 12px;
   }
 
+  /* 「主角」角标：行囊境界与这张卡同源的唯一可见凭据。
+     用皇冠 + 强调文字色，与紧随其后的类型徽标（淡底 + 类型色）刻意区分 */
+  &__protagonist {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    flex: none;
+    padding: 0 6px;
+    border-radius: 4px;
+    background: var(--app-accent-amber-weak);
+    color: var(--app-accent-amber);
+    font-size: 12px;
+    white-space: nowrap;
+
+    & > svg,
+    & > .anticon {
+      width: 11px;
+      height: 11px;
+      font-size: 12px;
+    }
+  }
+
+  /* 主角卡左缘一道竖条：列表滚动时也能一眼定位（角标可能被挤出可视区）。
+     用 inset 阴影而不是 border-left，避免改变盒宽把同行卡片挤得不对齐 */
+  &.is-protagonist &__main {
+    box-shadow: inset 2px 0 0 0 var(--app-accent-amber);
+
+    &:hover {
+      box-shadow: inset 2px 0 0 0 var(--app-accent-amber),
+        var(--app-shadow-card);
+    }
+  }
+
   &__alias {
     min-width: 0;
     overflow: hidden;

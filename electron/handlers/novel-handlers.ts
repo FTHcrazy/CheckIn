@@ -609,13 +609,19 @@ function seedTemplateBook(): {
         system.name,
       ]);
       for (const rung of system.rungs) {
-        dbRun("INSERT INTO novel_levels (id, system_id, name, rank, note) VALUES (?, ?, ?, ?, ?)", [
-          rung.id,
-          system.id,
-          rung.name,
-          rung.rank,
-          rung.note ?? null,
-        ]);
+        dbRun(
+          `INSERT INTO novel_levels (id, system_id, name, rank, note, sub_levels, power)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [
+            rung.id,
+            system.id,
+            rung.name,
+            rung.rank,
+            rung.note ?? null,
+            rung.subLevels ?? 1,
+            rung.power ?? null,
+          ],
+        );
       }
     }
     for (const note of template.notes) {
@@ -640,6 +646,143 @@ function seedTemplateBook(): {
           entry.status,
           now,
         ],
+      );
+    }
+
+    // ── 模板行囊（CharacterPack）：一份填满的范例，而不是空壳 ──
+    // 主角直接绑到模板里的沈青梧，而模板第 9 条关联已把她的「当前境界」落在凝丹，
+    // 所以打开行囊就能看到「行囊 ↔ 实体面板同源」这条链路是通的（PRD §9.7）
+    const pack = template.pack;
+    dbRun(
+      `INSERT INTO novel_pack_characters
+         (id, work_id, name, avatar, is_protagonist, entity_id, realm_at, note, sort_order)
+       VALUES (?, ?, ?, NULL, 1, ?, NULL, ?, 1)`,
+      [pack.character.id, template.workId, pack.character.name, pack.character.entityId, pack.character.note],
+    );
+    for (const attribute of pack.attributes) {
+      dbRun(
+        `INSERT INTO novel_pack_attributes
+           (id, character_id, group_name, name, base_value, decimals, unit, sort_order)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          attribute.id,
+          pack.character.id,
+          attribute.groupName,
+          attribute.name,
+          attribute.baseValue,
+          attribute.decimals,
+          attribute.unit,
+          attribute.sortOrder,
+        ],
+      );
+    }
+    for (const slot of pack.slots) {
+      dbRun(
+        `INSERT INTO novel_pack_slots
+           (id, character_id, name, capacity, accepts, enabled, note, sort_order)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          slot.id,
+          pack.character.id,
+          slot.name,
+          slot.capacity,
+          JSON.stringify(slot.accepts),
+          slot.enabled ? 1 : 0,
+          slot.note,
+          slot.sortOrder,
+        ],
+      );
+    }
+    for (const item of pack.items) {
+      dbRun(
+        `INSERT INTO novel_pack_items
+           (id, character_id, name, category, qty, rarity, icon, desc, tags,
+            equipped_slot_id, slot_index, source_chapter_id, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, '', ?, '[]', ?, ?, NULL, ?)`,
+        [
+          item.id,
+          pack.character.id,
+          item.name,
+          item.category,
+          item.qty,
+          item.rarity,
+          item.desc,
+          item.equippedSlotId || null,
+          item.slotIndex,
+          now,
+        ],
+      );
+    }
+    for (const skill of pack.skills) {
+      dbRun(
+        `INSERT INTO novel_pack_skills
+           (id, character_id, name, desc, enabled, proficiency_raw, tags, sort_order)
+         VALUES (?, ?, ?, ?, ?, ?, '[]', ?)`,
+        [
+          skill.id,
+          pack.character.id,
+          skill.name,
+          skill.desc,
+          skill.enabled ? 1 : 0,
+          skill.proficiencyRaw,
+          skill.sortOrder,
+        ],
+      );
+    }
+    for (const modifier of pack.modifiers) {
+      dbRun(
+        `INSERT INTO novel_pack_modifiers
+           (id, owner_type, owner_id, nature, name, target_attr_id, op, value, value_unit,
+            scale_by_proficiency, active, default_on, cost, cooldown, duration, target,
+            trigger, condition, note, disabled, sort_order)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          modifier.id,
+          modifier.ownerType,
+          modifier.ownerId,
+          modifier.nature,
+          modifier.name,
+          modifier.targetAttrId || null,
+          modifier.op,
+          modifier.value,
+          modifier.valueUnit || null,
+          modifier.scaleByProficiency ? 1 : 0,
+          modifier.active ? 1 : 0,
+          modifier.defaultOn ? 1 : 0,
+          modifier.cost || null,
+          modifier.cooldown,
+          modifier.duration || null,
+          modifier.target || null,
+          modifier.trigger || null,
+          modifier.condition || null,
+          modifier.note,
+          modifier.disabled ? 1 : 0,
+          modifier.sortOrder,
+        ],
+      );
+    }
+    for (const system of pack.unitSystems) {
+      dbRun(
+        `INSERT INTO novel_pack_unit_systems
+           (id, character_id, name, kind, levels, config, is_default, sort_order)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          system.id,
+          pack.character.id,
+          system.name,
+          system.kind,
+          JSON.stringify(system.levels),
+          JSON.stringify(system.config),
+          system.isDefault ? 1 : 0,
+          system.sortOrder,
+        ],
+      );
+    }
+    for (const layout of pack.layouts) {
+      dbRun(
+        `INSERT INTO novel_pack_layouts (character_id, module_key, enabled, sort_order)
+         VALUES (?, ?, ?, ?)`,
+        [pack.character.id, layout.moduleKey, layout.enabled ? 1 : 0, layout.sortOrder],
       );
     }
   });

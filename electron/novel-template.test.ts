@@ -153,3 +153,163 @@ describe("buildNovelTemplateBook 确定性与幂等", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 });
+
+describe("模板行囊（buildTemplatePack）", () => {
+  const pack = book.pack;
+
+  it("主角绑到模板里真实存在的角色要素上", () => {
+    const target = book.entities.find((e) => e.id === pack.character.entityId);
+    expect(target).toBeDefined();
+    // 绑到非角色卡（地点 / 派系）会让「主角」这个说法直接失真
+    expect(target?.type).toBe("character");
+    expect(pack.character.name).toBe(target?.name);
+  });
+
+  it("模板已把该角色的当前境界落在有效等级项上（打开行囊即见联动是活的）", () => {
+    const relation = book.links.find(
+      (link) => link.fromId === pack.character.entityId && link.toType === "level",
+    );
+    expect(relation).toBeDefined();
+    expect(relation?.relation).toBe("当前境界");
+    const rungIds = new Set(
+      book.levelSystems.flatMap((system) => system.rungs.map((rung) => rung.id)),
+    );
+    expect(rungIds.has(relation!.toId)).toBe(true);
+  });
+
+  it("等级阶梯补齐 R25 两个缺口：小层数与战力当量都有值", () => {
+    for (const system of book.levelSystems) {
+      for (const rung of system.rungs) {
+        expect(rung.subLevels).toBeGreaterThanOrEqual(1);
+        expect(typeof rung.power).toBe("number");
+        expect(rung.power!).toBeGreaterThan(0);
+      }
+    }
+    // 至少要有一阶是多层，否则「小层」这条能力在模板里没被演示到
+    expect(
+      book.levelSystems.some((system) =>
+        system.rungs.some((rung) => (rung.subLevels ?? 1) > 1),
+      ),
+    ).toBe(true);
+  });
+
+  it("三档效果性质都有范例，且两条不计入的边界情况都在", () => {
+    const natures = new Set(pack.modifiers.map((m) => m.nature));
+    expect(natures.has("passive")).toBe(true);
+    expect(natures.has("sustained")).toBe(true);
+    expect(natures.has("cast")).toBe(true);
+
+    // 持续型必须「开着 / 关着」各一条，否则看不出它有独立开关
+    const sustained = pack.modifiers.filter((m) => m.nature === "sustained");
+    expect(sustained.some((m) => m.active)).toBe(true);
+    expect(sustained.some((m) => !m.active)).toBe(true);
+
+    // 被动 + 触发条件 → 不计入；技能总开关关掉 → 其被动同样不计入
+    expect(
+      pack.modifiers.some((m) => m.nature === "passive" && m.trigger !== ""),
+    ).toBe(true);
+    const disabledSkills = new Set(
+      pack.skills.filter((s) => !s.enabled).map((s) => s.id),
+    );
+    expect(disabledSkills.size).toBeGreaterThan(0);
+    expect(
+      pack.modifiers.some(
+        (m) => m.ownerType === "skill" && disabledSkills.has(m.ownerId),
+      ),
+    ).toBe(true);
+  });
+
+  it("每一条效果都指向有效的载体与属性（不会被汇总静默丢掉）", () => {
+    const itemIds = new Set(pack.items.map((i) => i.id));
+    const skillIds = new Set(pack.skills.map((s) => s.id));
+    const attrIds = new Set(pack.attributes.map((a) => a.id));
+    for (const modifier of pack.modifiers) {
+      if (modifier.ownerType === "item") {
+        expect(itemIds.has(modifier.ownerId)).toBe(true);
+      } else if (modifier.ownerType === "skill") {
+        expect(skillIds.has(modifier.ownerId)).toBe(true);
+      } else {
+        // 状态效果的载体就是主角自己
+        expect(modifier.ownerId).toBe(pack.character.id);
+      }
+      // cast 型不指向属性（只记参数），其余必须指向一条真实属性
+      if (modifier.nature === "cast") {
+        expect(modifier.targetAttrId).toBe("");
+      } else {
+        expect(attrIds.has(modifier.targetAttrId)).toBe(true);
+      }
+    }
+  });
+
+  it("穿戴位置合法：部位存在、槽位下标不越容量（戒指两枚各占一格）", () => {
+    const slotById = new Map(pack.slots.map((s) => [s.id, s]));
+    const equipped = pack.items.filter((item) => item.equippedSlotId !== "");
+    expect(equipped.length).toBeGreaterThan(0);
+
+    const used = new Map<string, Set<number>>();
+    for (const item of equipped) {
+      const slot = slotById.get(item.equippedSlotId);
+      expect(slot).toBeDefined();
+      expect(item.slotIndex).not.toBeNull();
+      expect(item.slotIndex!).toBeGreaterThanOrEqual(0);
+      expect(item.slotIndex!).toBeLessThan(slot!.capacity);
+      // 有 accepts 限制的部位，穿上去的物品必须落在白名单里
+      if (slot!.accepts.length > 0) {
+        expect(slot!.accepts).toContain(item.category);
+      }
+      const taken = used.get(slot!.id) ?? new Set<number>();
+      expect(taken.has(item.slotIndex!)).toBe(false);
+      taken.add(item.slotIndex!);
+      used.set(slot!.id, taken);
+    }
+
+    // 至少有一个部位容量 > 1，否则「一部位多件」这条能力没被演示到
+    expect(pack.slots.some((slot) => slot.capacity > 1)).toBe(true);
+  });
+
+  it("未穿戴物品的 slotIndex 为空（不能出现「没穿却占着格子」）", () => {
+    for (const item of pack.items) {
+      if (item.equippedSlotId === "") expect(item.slotIndex).toBeNull();
+    }
+  });
+
+  it("量纲齐备：货币进制与熟练度阈值各一套", () => {
+    const uses = pack.unitSystems.map(
+      (system) => (system.config as { use?: string }).use,
+    );
+    expect(uses).toContain("currency");
+    expect(uses).toContain("proficiency");
+  });
+
+  it("模块布局覆盖全部九个模块且顺序唯一", () => {
+    const keys = pack.layouts.map((layout) => layout.moduleKey);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(keys).toHaveLength(9);
+    for (const key of [
+      "summary",
+      "attributes",
+      "equipment",
+      "inventory",
+      "skills",
+      "realm",
+      "currency",
+      "status",
+      "note",
+    ]) {
+      expect(keys).toContain(key);
+    }
+  });
+
+  it("行囊内 id 无重复（角色 / 属性 / 部位 / 物品 / 技能 / 效果 / 量纲）", () => {
+    const ids = [
+      pack.character.id,
+      ...pack.attributes.map((a) => a.id),
+      ...pack.slots.map((s) => s.id),
+      ...pack.items.map((i) => i.id),
+      ...pack.skills.map((s) => s.id),
+      ...pack.modifiers.map((m) => m.id),
+      ...pack.unitSystems.map((u) => u.id),
+    ];
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+});

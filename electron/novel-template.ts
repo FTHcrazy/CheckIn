@@ -58,7 +58,108 @@ export interface TemplateLink {
 export interface TemplateLevelSystem {
   id: string;
   name: string;
-  rungs: Array<{ id: string; name: string; rank: number; note?: string }>;
+  rungs: Array<{
+    id: string;
+    name: string;
+    rank: number;
+    note?: string;
+    /** 阶内小层数（R25 缺口 ①，PRD §9.7.2）：1 表示不分层 */
+    subLevels?: number;
+    /** 战力当量（R25 缺口 ②）：可选的跨阶比较基准 */
+    power?: number;
+  }>;
+}
+
+// ── 行囊（CharacterPack）模板：与 novel_pack_* 表一一对应 ──
+
+export interface TemplatePackAttribute {
+  id: string;
+  groupName: string;
+  name: string;
+  baseValue: number;
+  decimals: number;
+  unit: string;
+  sortOrder: number;
+}
+
+export interface TemplatePackSlot {
+  id: string;
+  name: string;
+  capacity: number;
+  accepts: string[];
+  enabled: boolean;
+  note: string;
+  sortOrder: number;
+}
+
+export interface TemplatePackItem {
+  id: string;
+  name: string;
+  category: string;
+  qty: number;
+  rarity: string;
+  desc: string;
+  /** 穿戴到的部位 id（空串 = 躺在物品栏） */
+  equippedSlotId: string;
+  /** 部位内槽位下标（戒指这类多槽部位靠它区分，未穿戴为 null） */
+  slotIndex: number | null;
+}
+
+export interface TemplatePackSkill {
+  id: string;
+  name: string;
+  desc: string;
+  enabled: boolean;
+  proficiencyRaw: number;
+  sortOrder: number;
+}
+
+/** 效果词条：三档性质（passive / sustained / cast）在模板里各留范例 */
+export interface TemplatePackModifier {
+  id: string;
+  ownerType: "item" | "skill" | "status";
+  ownerId: string;
+  nature: "passive" | "sustained" | "cast";
+  name: string;
+  targetAttrId: string;
+  op: "add" | "percent" | "mul" | "override";
+  value: number;
+  valueUnit: string;
+  scaleByProficiency: boolean;
+  active: boolean;
+  defaultOn: boolean;
+  cost: string;
+  cooldown: number | null;
+  duration: string;
+  target: string;
+  trigger: string;
+  condition: string;
+  note: string;
+  disabled: boolean;
+  sortOrder: number;
+}
+
+export interface TemplatePackUnitSystem {
+  id: string;
+  name: string;
+  kind: "ladder" | "ratio" | "threshold";
+  levels: unknown;
+  config: Record<string, unknown>;
+  isDefault: boolean;
+  sortOrder: number;
+}
+
+export interface TemplatePack {
+  /** 行囊角色（v1 只承载主角一条） */
+  character: { id: string; name: string; note: string; entityId: string };
+  attributes: TemplatePackAttribute[];
+  slots: TemplatePackSlot[];
+  items: TemplatePackItem[];
+  skills: TemplatePackSkill[];
+  modifiers: TemplatePackModifier[];
+  unitSystems: TemplatePackUnitSystem[];
+  /** 模块启用与顺序（模块键见 CharacterPack/types.ts 的 PACK_MODULES） */
+  layouts: Array<{ moduleKey: string; enabled: boolean; sortOrder: number }>;
 }
 
 export interface TemplateNote {
@@ -88,6 +189,8 @@ export interface NovelTemplateBook {
   levelSystems: TemplateLevelSystem[];
   notes: TemplateNote[];
   outlineEntries: TemplateOutlineEntry[];
+  /** 模板行囊：给作者一份「填满了的范例」，而不是空壳 */
+  pack: TemplatePack;
 }
 
 // ── 确定性伪随机（mulberry32）：模板生成不依赖 Math.random / Date.now ──
@@ -408,6 +511,174 @@ function countWords(content: string): number {
 }
 
 /**
+ * 模板行囊（CharacterPack）：一份「填满了的范例」。
+ *
+ * 为什么模板里要有行囊：作者点开行囊看到的如果是空壳，就得自己猜三档效果性质、
+ * 猜多槽部位的用法、猜境界怎么和要素栏联动。这里把每种能力都摆一个实例出来，
+ * 让「怎么用」这件事由数据本身回答：
+ * - 主角直接绑到 `tpl-e-char-shen`（沈青梧），而模板第 9 条关联已把她的「当前境界」
+ *   落在凝丹 → 打开行囊即可看到「行囊 ↔ 实体面板同源」是活的
+ * - 三档性质各留范例：被动（常驻计入）/ 持续（独立开关，一盏开一盏关）/
+ *   释放（只记参数、永不参与汇总）
+ * - 两条「不计入」的边界情况：被动 + 触发条件（潮汐之夜）、技能总开关关掉
+ * - 戒指部位 capacity=2，两枚戒指分别占 0 / 1 号槽位
+ * - 货币 1 金 = 100 银 = 10000 铜，熟练度三档（入门 / 熟练 / 大师）
+ *
+ * id 全部固定前缀，配合「先清空再播种」的重置流程保持幂等。
+ */
+function buildTemplatePack(): TemplatePack {
+  const characterId = "tpl-pc-shen";
+
+  const attributes: TemplatePackAttribute[] = [
+    { id: "tpl-pa-hp", groupName: "基础属性", name: "气血", baseValue: 100, decimals: 0, unit: "点", sortOrder: 1 },
+    { id: "tpl-pa-mp", groupName: "基础属性", name: "灵力", baseValue: 60, decimals: 0, unit: "点", sortOrder: 2 },
+    { id: "tpl-pa-spirit", groupName: "基础属性", name: "神识", baseValue: 12, decimals: 0, unit: "点", sortOrder: 3 },
+    { id: "tpl-pa-root", groupName: "资质", name: "根骨", baseValue: 9, decimals: 0, unit: "", sortOrder: 4 },
+    { id: "tpl-pa-insight", groupName: "资质", name: "悟性", baseValue: 8, decimals: 0, unit: "", sortOrder: 5 },
+    { id: "tpl-pa-sword", groupName: "战斗属性", name: "剑意", baseValue: 10, decimals: 0, unit: "", sortOrder: 6 },
+  ];
+
+  // 部位：戒指 capacity=2 演示「一个部位穿两件」（REQ-007）；
+  // accepts 只在装备类部位上收窄，丹药 / 材料这类不设限，避免作者放不进去
+  const slots: TemplatePackSlot[] = [
+    { id: "tpl-ps-weapon", name: "武器", capacity: 1, accepts: ["装备"], enabled: true, note: "主手兵刃", sortOrder: 1 },
+    { id: "tpl-ps-offhand", name: "副手", capacity: 1, accepts: ["装备"], enabled: true, note: "灯 / 卷 / 盾", sortOrder: 2 },
+    { id: "tpl-ps-head", name: "头饰", capacity: 1, accepts: [], enabled: true, note: "", sortOrder: 3 },
+    { id: "tpl-ps-armor", name: "上衣", capacity: 1, accepts: [], enabled: true, note: "", sortOrder: 4 },
+    { id: "tpl-ps-wrist", name: "护腕", capacity: 1, accepts: [], enabled: true, note: "", sortOrder: 5 },
+    { id: "tpl-ps-belt", name: "腰带", capacity: 1, accepts: [], enabled: true, note: "", sortOrder: 6 },
+    { id: "tpl-ps-legs", name: "下装", capacity: 1, accepts: [], enabled: true, note: "", sortOrder: 7 },
+    { id: "tpl-ps-boots", name: "靴子", capacity: 1, accepts: ["装备"], enabled: true, note: "", sortOrder: 8 },
+    { id: "tpl-ps-neck", name: "项链", capacity: 1, accepts: [], enabled: true, note: "", sortOrder: 9 },
+    { id: "tpl-ps-ring", name: "戒指", capacity: 2, accepts: ["装备"], enabled: true, note: "双手各一枚", sortOrder: 10 },
+    { id: "tpl-ps-charm", name: "护符", capacity: 1, accepts: [], enabled: true, note: "", sortOrder: 11 },
+    { id: "tpl-ps-mount", name: "坐骑", capacity: 1, accepts: [], enabled: true, note: "", sortOrder: 12 },
+  ];
+
+  const items: TemplatePackItem[] = [
+    { id: "tpl-pi-sword", name: "青锋剑", category: "装备", qty: 1, rarity: "rare", desc: "陆行舟替她重铸的剑，剑脊上有一道未合的隙。", equippedSlotId: "tpl-ps-weapon", slotIndex: 0 },
+    { id: "tpl-pi-lamp", name: "照影灯", category: "装备", qty: 1, rarity: "legend", desc: "青铜古灯，灯芯是一截白发。持续供灯要烧灯油。", equippedSlotId: "tpl-ps-offhand", slotIndex: 0 },
+    { id: "tpl-pi-ring-silver", name: "素银戒", category: "装备", qty: 1, rarity: "fine", desc: "白芷给的，说是压惊用的。", equippedSlotId: "tpl-ps-ring", slotIndex: 0 },
+    { id: "tpl-pi-ring-sand", name: "星砂戒", category: "装备", qty: 1, rarity: "rare", desc: "观星台的坠料打的，夜里会泛一点点青光。", equippedSlotId: "tpl-ps-ring", slotIndex: 1 },
+    { id: "tpl-pi-boots", name: "潮生靴", category: "装备", qty: 1, rarity: "rare", desc: "踩潮不沉，代价是要耗灵力。", equippedSlotId: "tpl-ps-boots", slotIndex: 0 },
+    { id: "tpl-pi-scroll", name: "山海残卷", category: "杂物", qty: 1, rarity: "legend", desc: "遇潮显字；有些字只在潮汐之夜才读得出来。", equippedSlotId: "", slotIndex: null },
+    { id: "tpl-pi-pill", name: "凝神丹", category: "丹药", qty: 3, rarity: "fine", desc: "药谷的方子，一夜只能服一粒。", equippedSlotId: "", slotIndex: null },
+    { id: "tpl-pi-salt", name: "雾盐", category: "材料", qty: 12, rarity: "common", desc: "雾隐城的通货，也能镇住显字的残卷。", equippedSlotId: "", slotIndex: null },
+  ];
+
+  const skills: TemplatePackSkill[] = [
+    { id: "tpl-pk-lamp", name: "执灯诀", desc: "执灯人の本命法门，熟练度越高，灯焰越稳。", enabled: true, proficiencyRaw: 500, sortOrder: 1 },
+    { id: "tpl-pk-tide", name: "听潮步", desc: "踏浪而行的身法，一步一里。", enabled: true, proficiencyRaw: 120, sortOrder: 2 },
+    { id: "tpl-pk-star", name: "观星术", desc: "占验潮汐的旁门，尚未学成——技能总开关是关的，效果不计入。", enabled: false, proficiencyRaw: 0, sortOrder: 3 },
+  ];
+
+  /** 效果词条的公共默认值，逐条只写差异部分，避免 14 条里全是噪音 */
+  const mod = (
+    partial: Pick<TemplatePackModifier, "id" | "ownerType" | "ownerId" | "nature" | "name" | "sortOrder"> &
+      Partial<TemplatePackModifier>,
+  ): TemplatePackModifier => ({
+    targetAttrId: "",
+    op: "add",
+    value: 0,
+    valueUnit: "",
+    scaleByProficiency: false,
+    active: false,
+    defaultOn: false,
+    cost: "",
+    cooldown: null,
+    duration: "",
+    target: "",
+    trigger: "",
+    condition: "",
+    note: "",
+    disabled: false,
+    ...partial,
+  });
+
+  const modifiers: TemplatePackModifier[] = [
+    // ── 被动：载体在效即常驻计入 ──
+    mod({ id: "tpl-pm-1", ownerType: "item", ownerId: "tpl-pi-sword", nature: "passive", name: "锋锐", targetAttrId: "tpl-pa-sword", value: 6, sortOrder: 1 }),
+    mod({ id: "tpl-pm-2", ownerType: "item", ownerId: "tpl-pi-sword", nature: "passive", name: "剑势", targetAttrId: "tpl-pa-sword", op: "percent", value: 8, sortOrder: 2 }),
+    mod({ id: "tpl-pm-3", ownerType: "item", ownerId: "tpl-pi-ring-silver", nature: "passive", name: "静心", targetAttrId: "tpl-pa-spirit", value: 2, sortOrder: 1 }),
+    mod({ id: "tpl-pm-4", ownerType: "item", ownerId: "tpl-pi-ring-sand", nature: "passive", name: "蕴灵", targetAttrId: "tpl-pa-mp", value: 20, sortOrder: 1 }),
+    mod({ id: "tpl-pm-5", ownerType: "skill", ownerId: "tpl-pk-lamp", nature: "passive", name: "通明", targetAttrId: "tpl-pa-mp", op: "percent", value: 10, sortOrder: 2 }),
+
+    // ── 持续：有自己的开关，开着才计入；关着的那条用来对照 ──
+    mod({ id: "tpl-pm-6", ownerType: "item", ownerId: "tpl-pi-boots", nature: "sustained", name: "踏浪", targetAttrId: "tpl-pa-root", value: 3, active: true, cost: "灵力 2 / 刻", duration: "持续", sortOrder: 2 }),
+    mod({ id: "tpl-pm-7", ownerType: "item", ownerId: "tpl-pi-lamp", nature: "sustained", name: "灯影护体", targetAttrId: "tpl-pa-hp", value: 30, active: false, cost: "灯油 1 / 刻", duration: "一炷香", note: "默认关着：供灯要烧灯油，作者按战况自行开启", sortOrder: 2 }),
+    mod({ id: "tpl-pm-8", ownerType: "skill", ownerId: "tpl-pk-lamp", nature: "sustained", name: "持灯", targetAttrId: "tpl-pa-spirit", value: 4, active: true, scaleByProficiency: true, cost: "灵力 1 / 刻", note: "熟练度 500（已满）→ 效果量按 1.5 倍缩放，实际 +6", sortOrder: 1 }),
+    mod({ id: "tpl-pm-9", ownerType: "skill", ownerId: "tpl-pk-tide", nature: "sustained", name: "听潮", targetAttrId: "tpl-pa-root", value: 2, active: true, cost: "灵力 1 / 里", sortOrder: 1 }),
+    mod({ id: "tpl-pm-10", ownerType: "status", ownerId: characterId, nature: "sustained", name: "潮汐共鸣", targetAttrId: "tpl-pa-hp", value: 20, active: false, duration: "自潮起至潮落", note: "状态效果：不挂在任何装备 / 技能上", sortOrder: 1 }),
+
+    // ── 释放：只记参数，永不参与属性汇总 ──
+    mod({ id: "tpl-pm-11", ownerType: "item", ownerId: "tpl-pi-lamp", nature: "cast", name: "引魂照影", value: 320, valueUnit: "攻击力%", target: "单体", cost: "灯油 3", cooldown: 3, note: "照出对手的一段记忆，附带精神冲击", sortOrder: 3 }),
+    mod({ id: "tpl-pm-12", ownerType: "skill", ownerId: "tpl-pk-star", nature: "cast", name: "观星问潮", value: 150, valueUnit: "法术强度%", target: "自身", cost: "灵力 20", cooldown: 1, sortOrder: 1 }),
+
+    // ── 两条「不计入」的边界情况，专门留给作者对照 ──
+    mod({ id: "tpl-pm-13", ownerType: "item", ownerId: "tpl-pi-scroll", nature: "passive", name: "窥机", targetAttrId: "tpl-pa-insight", value: 2, trigger: "潮汐之夜", note: "事件型被动：只在触发时生效，不改常驻属性", sortOrder: 1 }),
+    mod({ id: "tpl-pm-14", ownerType: "skill", ownerId: "tpl-pk-star", nature: "passive", name: "识潮", targetAttrId: "tpl-pa-insight", value: 3, note: "技能总开关关着 → 这条被动同样不计入", sortOrder: 2 }),
+  ];
+
+  const unitSystems: TemplatePackUnitSystem[] = [
+    {
+      id: "tpl-pu-currency",
+      name: "货币",
+      kind: "ratio",
+      levels: [
+        { name: "金", ratioToBase: 10000 },
+        { name: "银", ratioToBase: 100 },
+        { name: "铜", ratioToBase: 1 },
+      ],
+      config: { use: "currency", autoCarry: true },
+      isDefault: true,
+      sortOrder: 1,
+    },
+    {
+      id: "tpl-pu-proficiency",
+      name: "熟练度",
+      kind: "threshold",
+      levels: [
+        { name: "入门", min: 0, max: 99 },
+        { name: "熟练", min: 100, max: 499 },
+        { name: "大师", min: 500, max: null },
+      ],
+      config: { use: "proficiency" },
+      isDefault: false,
+      sortOrder: 2,
+    },
+  ];
+
+  // 模块顺序与 CharacterPack/types.ts 的 PACK_MODULES 保持一致，全部启用
+  const layouts = [
+    "summary",
+    "attributes",
+    "equipment",
+    "inventory",
+    "skills",
+    "realm",
+    "currency",
+    "status",
+    "note",
+  ].map((moduleKey, index) => ({ moduleKey, enabled: true, sortOrder: (index + 1) * 10 }));
+
+  return {
+    character: {
+      id: characterId,
+      name: "沈青梧",
+      note: "执灯人。随身带着照影灯与山海残卷——灯要油，卷要潮，两样都得在行囊里记着。",
+      entityId: "tpl-e-char-shen",
+    },
+    attributes,
+    slots,
+    items,
+    skills,
+    modifiers,
+    unitSystems,
+    layouts,
+  };
+}
+
+/**
  * 构建模板书籍全量种子数据（纯函数、确定性，可直接单测）。
  * 每章正文 ≥ minWordsPerChapter 字（非空白字符口径），默认 3200。
  */
@@ -471,28 +742,28 @@ export function buildNovelTemplateBook(minWordsPerChapter = 3200): NovelTemplate
       id: "tpl-ls-lingtu",
       name: "灵徒九境",
       rungs: [
-        { id: "tpl-lr-1", name: "引气", rank: 1, note: "初入修行，引气入体" },
-        { id: "tpl-lr-2", name: "聚元", rank: 2 },
-        { id: "tpl-lr-3", name: "通脉", rank: 3 },
-        { id: "tpl-lr-4", name: "凝丹", rank: 4 },
-        { id: "tpl-lr-5", name: "碎虚", rank: 5 },
-        { id: "tpl-lr-6", name: "化神", rank: 6 },
-        { id: "tpl-lr-7", name: "渡劫", rank: 7 },
-        { id: "tpl-lr-8", name: "大乘", rank: 8 },
-        { id: "tpl-lr-9", name: "登仙", rank: 9, note: "传说之境，东海无人抵达" },
+        { id: "tpl-lr-1", name: "引气", rank: 1, note: "初入修行，引气入体", subLevels: 9, power: 10 },
+        { id: "tpl-lr-2", name: "聚元", rank: 2, subLevels: 3, power: 30 },
+        { id: "tpl-lr-3", name: "通脉", rank: 3, subLevels: 3, power: 90 },
+        { id: "tpl-lr-4", name: "凝丹", rank: 4, subLevels: 3, power: 270 },
+        { id: "tpl-lr-5", name: "碎虚", rank: 5, subLevels: 1, power: 810 },
+        { id: "tpl-lr-6", name: "化神", rank: 6, subLevels: 1, power: 2430 },
+        { id: "tpl-lr-7", name: "渡劫", rank: 7, subLevels: 1, power: 7290 },
+        { id: "tpl-lr-8", name: "大乘", rank: 8, subLevels: 1, power: 21870 },
+        { id: "tpl-lr-9", name: "登仙", rank: 9, note: "传说之境，东海无人抵达", subLevels: 1, power: 65610 },
       ],
     },
     {
       id: "tpl-ls-qijie",
       name: "器阶七品",
       rungs: [
-        { id: "tpl-lq-1", name: "凡器", rank: 1 },
-        { id: "tpl-lq-2", name: "良器", rank: 2 },
-        { id: "tpl-lq-3", name: "珍器", rank: 3 },
-        { id: "tpl-lq-4", name: "宝器", rank: 4 },
-        { id: "tpl-lq-5", name: "灵器", rank: 5, note: "照影灯在列" },
-        { id: "tpl-lq-6", name: "仙器", rank: 6 },
-        { id: "tpl-lq-7", name: "神器", rank: 7 },
+        { id: "tpl-lq-1", name: "凡器", rank: 1, subLevels: 1, power: 1 },
+        { id: "tpl-lq-2", name: "良器", rank: 2, subLevels: 1, power: 2 },
+        { id: "tpl-lq-3", name: "珍器", rank: 3, subLevels: 1, power: 4 },
+        { id: "tpl-lq-4", name: "宝器", rank: 4, subLevels: 1, power: 8 },
+        { id: "tpl-lq-5", name: "灵器", rank: 5, note: "照影灯在列", subLevels: 1, power: 16 },
+        { id: "tpl-lq-6", name: "仙器", rank: 6, subLevels: 1, power: 32 },
+        { id: "tpl-lq-7", name: "神器", rank: 7, subLevels: 1, power: 64 },
       ],
     },
   ];
@@ -524,5 +795,6 @@ export function buildNovelTemplateBook(minWordsPerChapter = 3200): NovelTemplate
     levelSystems,
     notes,
     outlineEntries,
+    pack: buildTemplatePack(),
   };
 }

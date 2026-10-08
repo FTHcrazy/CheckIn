@@ -64,3 +64,102 @@ export type UnitKind = "currency" | "proficiency";
 
 /** 数量总数上限（F-5 负重是 P2，这里只做显示用的大数保护） */
 export const QTY_MAX = 999999;
+
+// ── 主角绑定变更事件 ──
+
+/**
+ * 事件名（本窗口 CustomEvent 与跨窗口 broadcast 共用同一个名字）。
+ *
+ * 为什么需要它：右侧要素栏的「设为主角」与行囊面板的「绑定实体」是两个入口、
+ * 写的是同一格数据（`novel_pack_characters.entity_id`）。若不广播，另一边就得
+ * 等到重新装载才跟上——表现为「这边设了主角、那边还写着未绑定」。
+ *
+ * 事件定义放在行囊模块里而不是页面配置里：主角绑定是行囊的数据，
+ * 右侧要素栏只是它的另一个展示面。这样未来把模块迁到独立窗口时，
+ * 事件随模块一起走，调用方零改动。
+ */
+export const PACK_PROTAGONIST_EVENT = "pack-protagonist-changed";
+
+/** 事件负载：`workId` 用于过滤别的作品（多窗口可能各自开着不同的书） */
+export interface PackProtagonistEventDetail {
+  workId: string;
+  entityId: string;
+}
+
+/**
+ * 读取事件负载——两种投递形状必须都认。
+ *
+ * 同一个事件有两条投递路径，负载形状**不同**：
+ * - 同窗口：`window.dispatchEvent(new CustomEvent(name, { detail }))`
+ *   → 监听器收到的第一个参数是 `CustomEvent`，负载挂在 `.detail` 上；
+ * - 跨窗口：`ipcRenderer.on(name, (_e, ...args) => handler(...args))`
+ *   → 第一个参数就是负载对象本身。
+ *
+ * ⚠️ 必须在这里归一化，不能各监听器直接 `args[0] as Detail`。此前就是那样写的，
+ * 于是同窗口这条路径永远读出 `undefined`：读主角的那处会把值**清空**
+ * （表现为「点了设为主角，角标一闪就没」），读境界的那几处则因为 `workId`
+ * 是 `undefined` 直接 return（表现为「行囊和面板各说各话」）。
+ *
+ * 而广播又刻意**排除发送者**（`window-broadcast` → `broadcast(..., senderName)`），
+ * 所以同窗口没有任何一条路能兜住它——这个洞是纯静默的。
+ */
+export function readEventDetail<T>(args: unknown[]): T | undefined {
+  const first = args[0];
+  if (typeof Event !== "undefined" && first instanceof Event) {
+    return (first as CustomEvent).detail as T | undefined;
+  }
+  return first as T | undefined;
+}
+
+/**
+ * 广播「主角换了」。
+ *
+ * 两条路径都必须发：只发 CustomEvent 时分离窗口收不到；只发 broadcast 时
+ * 同窗口内的监听不保证回环。两边都发一次，代价只是多一个 IPC 通知。
+ */
+export function notifyProtagonistChanged(workId: string, entityId: string): void {
+  const detail: PackProtagonistEventDetail = { workId, entityId };
+  window.dispatchEvent(new CustomEvent(PACK_PROTAGONIST_EVENT, { detail }));
+  void window.electronAPI?.windowAPI.broadcast(PACK_PROTAGONIST_EVENT, detail);
+}
+
+// ── 境界关联变更事件 ──
+
+/**
+ * 事件名：行囊改了「主角的当前境界」后，右侧要素栏的卡片要立刻重画同样的读数。
+ *
+ * 没有它会发生什么：行囊里把境界推到「碎虚」，写库已经成功，但右侧角色卡上
+ * 仍然写着「凝丹」——直到下次重载。这正是「看着像联动、实际各说各话」的典型。
+ */
+export const PACK_REALM_EVENT = "pack-realm-changed";
+
+/** 事件负载：带上 workId，避免另一个窗口开着别的书时被误改 */
+export interface PackRealmEventDetail {
+  workId: string;
+  link: {
+    id: string;
+    fromType: string;
+    fromId: string;
+    toType: string;
+    toId: string;
+    relation: string;
+    note?: string;
+  } | null;
+  /**
+   * 改动来源。`'pack'` 表示行囊面板自己写的——它写完已经读过一遍元数据，
+   * 再被自己的广播触发一次整体重读纯属浪费（realm 改动是点击级频率，
+   * 但整体重读要过一次完整 bundle 装载）。
+   */
+  origin: "pack" | "panel";
+}
+
+/** 广播「境界关联变了」（同窗口 + 跨窗口各一次，理由同 notifyProtagonistChanged） */
+export function notifyRealmLinkChanged(
+  workId: string,
+  link: PackRealmEventDetail["link"],
+  origin: PackRealmEventDetail["origin"],
+): void {
+  const detail: PackRealmEventDetail = { workId, link, origin };
+  window.dispatchEvent(new CustomEvent(PACK_REALM_EVENT, { detail }));
+  void window.electronAPI?.windowAPI.broadcast(PACK_REALM_EVENT, detail);
+}

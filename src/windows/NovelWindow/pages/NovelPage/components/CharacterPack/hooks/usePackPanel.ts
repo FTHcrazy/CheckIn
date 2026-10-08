@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createNovelId, logUsageEvent } from "../../../services/novel-service";
-import { DEFAULT_LAYOUTS, PACK_LEVEL_RELATION, QTY_MAX } from "../pack-config";
+import { DEFAULT_LAYOUTS, QTY_MAX } from "../pack-config";
 import {
   getPanelRealm,
   getRealm,
@@ -25,6 +25,7 @@ import {
   fetchPackUiPrefsRaw,
   savePackUiPrefsRaw,
   writeLevelMeta,
+  writeProtagonistBinding,
   writeRealmLink,
 } from "../services/pack-service";
 import {
@@ -45,7 +46,16 @@ import {
   type PackUnitSystem,
 } from "../types";
 import { CURRENCY_TEMPLATE, PACK_PANEL } from "../pack-config";
-import { usePackData } from "./usePackData";
+import {
+  notifyProtagonistChanged,
+  notifyRealmLinkChanged,
+  PACK_PROTAGONIST_EVENT,
+  PACK_REALM_EVENT,
+  readEventDetail,
+  type PackProtagonistEventDetail,
+  type PackRealmEventDetail,
+} from "../pack-config";
+import { usePackData, type PackDoc } from "./usePackData";
 import { AUTOSAVE_IDLE_MS, DIRTY_BREATHE_AT } from "../types";
 
 export interface PackToastState {
@@ -93,7 +103,18 @@ function parsePrefs(raw: string | null): Partial<PackUiPrefs> {
  */
 export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelOptions) {
   const data = usePackData(workId, chapterId);
-  const { doc, meta, mutate } = data;
+  const { doc, meta, mutate, syncMeta } = data;
+
+  /**
+   * 文档镜像。
+   *
+   * 事件订阅（另一个入口改了同一格数据）需要在回调里读「当前」文档，
+   * 但把它写进 effect 依赖会让监听器每改一个字就重新注册一次。
+   */
+  const docRef = useRef<PackDoc | null>(doc);
+  useEffect(() => {
+    docRef.current = doc;
+  }, [doc]);
 
   // ── 界面偏好（即改即存） ──
   const [prefs, setPrefs] = useState<PackUiPrefs>(DEFAULT_UI_PREFS);
@@ -265,12 +286,12 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
   );
 
   /** 通知实体面板重读同一行（§9.7.3 双向同步） */
-  const notifyRealmChanged = useCallback((link: RealmState["link"]) => {
-    window.dispatchEvent(
-      new CustomEvent("pack-realm-changed", { detail: { link, relation: PACK_LEVEL_RELATION } }),
-    );
-    void window.electronAPI?.windowAPI.broadcast("pack-realm-changed", link);
-  }, []);
+  const notifyRealmChanged = useCallback(
+    (link: RealmState["link"]) => {
+      notifyRealmLinkChanged(doc?.character.workId ?? "", link, "pack");
+    },
+    [doc],
+  );
 
   /** 境界的**唯一写入口**：所有境界改动都必须经过它（REQ-048 契约第 2 条） */
   const writeRealm = useCallback(
@@ -311,18 +332,89 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
     [doc, rungs, realmState, mutate, data, notifyRealmChanged, showToast],
   );
 
-  /** 绑定 / 解绑 EntityPanel 实体（§9.7.5：不绑定就不写 novel_links） */
+  /** 绑定 / 解绑主角实体（§9.7.5：不绑定就不写 novel_links）
+   *
+   *  与右侧要素栏的「设为主角」写的是**同一格**（`novel_pack_characters.entity_id`），
+   *  所以这里不只在内存里改：立即落库 + 广播，否则要素卡的角标要等到保存
+   *  才跟上，而保存又会把这一格覆盖回去（两边各持一份 entityId 就是分叉源头）。
+   *
+   *  因此主角绑定与境界关联一样，属于「跨模块共享的那一份」，即时落库、
+   *  不计入未保存改动数、不参与「撤销到上次保存」。 */
   const bindEntity = useCallback(
     async (entityId: string) => {
+      const workId = doc?.character.workId ?? "";
+      if (!workId) return;
+      const ok = await writeProtagonistBinding(workId, entityId);
+      if (!ok) {
+        showToast("主角绑定失败", "error");
+        return;
+      }
       mutate(
         (current) => ({ ...current, character: { ...current.character, entityId } }),
-        1,
+        0,
       );
+      notifyProtagonistChanged(workId, entityId);
       await data.syncMeta();
-      showToast(entityId ? "已绑定实体，境界与实体面板同步" : "已解除绑定，境界仅在行囊内使用", "info");
+      showToast(
+        entityId ? "已设为主角，境界与右侧角色卡同步" : "已取消主角，境界仅在行囊内使用",
+        "info",
+      );
     },
-    [mutate, data, showToast],
+    [doc, mutate, data, showToast],
   );
+
+  /** 右侧要素栏改了主角：把这一格同步进行囊（不重载文档，避免吃掉未保存的编辑） */
+  useEffect(() => {
+    const handler = (...args: unknown[]) => {
+      const detail = readEventDetail<PackProtagonistEventDetail>(args);
+      if (!detail || typeof detail !== "object") return;
+      if (detail.workId !== workId) return;
+      const next = detail.entityId ?? "";
+      mutate(
+        (current) =>
+          current.character.entityId === next
+            ? current
+            : { ...current, character: { ...current.character, entityId: next } },
+        0,
+      );
+      void data.syncMeta();
+    };
+    window.addEventListener(PACK_PROTAGONIST_EVENT, handler as EventListener);
+    const api = window.electronAPI?.windowAPI;
+    api?.on(PACK_PROTAGONIST_EVENT, handler);
+    return () => {
+      window.removeEventListener(PACK_PROTAGONIST_EVENT, handler as EventListener);
+      api?.off(PACK_PROTAGONIST_EVENT, handler);
+    };
+  }, [workId, mutate, syncMeta]);
+
+  /**
+   * 右侧要素栏改了「当前境界」：这里重读同一行。
+   *
+   * 反向靠 `notifyRealmChanged`（本面板写入时广播）。两边都不订阅对方，
+   * 就会出现「一边改了、另一边还显示旧值」——这正是「看着像同源、实际各说各话」。
+   * 只重读元数据（`syncMeta`），不重载文档，避免吃掉未保存的编辑。
+   */
+  useEffect(() => {
+    const handler = (...args: unknown[]) => {
+      const detail = readEventDetail<PackRealmEventDetail>(args);
+      if (!detail || typeof detail !== "object") return;
+      if (detail.workId !== workId) return;
+      // 自己写的已经读过元数据了，不为自己再重读一次
+      if (detail.origin === "pack") return;
+      const link = detail.link;
+      // 与本人无关的要素（另一本书 / 另一张角色卡）不触发重读
+      if (link && link.fromId !== docRef.current?.character.entityId) return;
+      void data.syncMeta();
+    };
+    window.addEventListener(PACK_REALM_EVENT, handler as EventListener);
+    const api = window.electronAPI?.windowAPI;
+    api?.on(PACK_REALM_EVENT, handler);
+    return () => {
+      window.removeEventListener(PACK_REALM_EVENT, handler as EventListener);
+      api?.off(PACK_REALM_EVENT, handler);
+    };
+  }, [workId, syncMeta]);
 
   /** 等级项补列（小层数 / 战力当量）：改的是 novel_levels，两边共享同一张表 */
   const setRungMeta = useCallback(

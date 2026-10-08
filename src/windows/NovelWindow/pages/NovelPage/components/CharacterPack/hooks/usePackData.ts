@@ -118,7 +118,22 @@ export function usePackData(workId: string, chapterId: string) {
     const formal = fromBundle(bundle);
     savedRef.current = formal;
     const draft = bundle.draft ? parseDraft(bundle.draft.payload) : null;
-    setDocState(draft ?? formal);
+    // ⚠️ 主角绑定（`character.entityId`）**永远以库里的正式行为准**，不从草稿取。
+    // 它不是「设定数据」而是跨模块共享的一格（判据见 PRD §8.6.2「改了这个值
+    // 别人的书会变吗」）：写入口唯一、即时落库，草稿只是编辑过程的中间态。
+    // 否则会出现「右侧卡上戴着皇冠、行囊里还写着未指定」——因为草稿里存的是
+    // 设主角之前那份快照，而草稿优先于正式行。
+    const merged =
+      draft && formal
+        ? {
+            ...draft,
+            character: {
+              ...draft.character,
+              entityId: formal.character.entityId,
+            },
+          }
+        : (draft ?? formal);
+    setDocState(merged);
     setDirty(draft ? bundle.draft!.dirtyCount : 0);
     setSavedAt(bundle.records[0]?.takenAt ?? 0);
     setMeta({
@@ -253,7 +268,16 @@ export function usePackData(workId: string, chapterId: string) {
   const revertAll = useCallback(async (): Promise<void> => {
     const saved = savedRef.current;
     if (!saved) return;
-    setDocState(saved);
+    // 主角绑定不属于「可撤销的设定数据」：撤销的是行囊内的编辑，不该顺手
+    // 把右侧栏设的主角也退回去（那份绑定在库里，撤销界面回退不了它）
+    setDocState((current) =>
+      current
+        ? {
+            ...saved,
+            character: { ...saved.character, entityId: current.character.entityId },
+          }
+        : saved,
+    );
     setDirty(0);
     setSaveFailed(false);
     await clearPackDraft(saved.character.id);
