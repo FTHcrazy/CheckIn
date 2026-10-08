@@ -41,7 +41,11 @@ import type { InspirationActions } from "../components/InspirationPanel";
 import type { NamingActions } from "../components/NameGeneratorPanel";
 import type { EditorPaneHandle } from "../components/EditorPane";
 import type { OutlineActions } from "../components/OutlinePanel";
-import { editorActions, useNovelEditorStore } from "../store/useNovelEditorStore";
+import {
+  editorActions,
+  needsFlushSave,
+  useNovelEditorStore,
+} from "../store/useNovelEditorStore";
 import { dismiss } from "../store/useHoverStore";
 import { useEntityHover } from "./useEntityHover";
 import { useNovelData } from "./useNovelData";
@@ -212,8 +216,13 @@ export function useNovelPage() {
   );
 
   const handleSaveNow = useCallback(async (): Promise<void> => {
-    await editor.flushSave();
-    view.showToast(`已保存 · ${formatClock(Date.now())}`);
+    const ok = await editor.flushSave();
+    if (ok) {
+      view.showToast(`已保存 · ${formatClock(Date.now())}`);
+    } else {
+      // 草稿还在内存里（调保存也不会丢），30s 兜底会重试；如实告知，别谎报成功
+      view.showToast("保存失败，草稿仍在本地，稍后自动重试", "warning");
+    }
   }, [editor, view]);
 
   const handleNewChapter = useCallback((): void => {
@@ -1008,10 +1017,10 @@ export function useNovelPage() {
   // 关窗前的最后一次 flush（PRD §2：关窗永不询问，数据由持久化兜底）；
   // 位置记忆同步落库，下次打开原位续写（R6）
   useEffect(() => {
+    // failed 也要补一次：这是编辑者能拿到的最后一次落库机会，
+    // 只判 pending 会让「上次保存失败的那段正文」在关窗时静默丢失
     const flush = () => {
-      if (useNovelEditorStore.getState().saveState === "pending") {
-        void editorActions.flushSave();
-      }
+      if (needsFlushSave()) void editorActions.flushSave();
       savePositionNow();
     };
     window.addEventListener("beforeunload", flush);

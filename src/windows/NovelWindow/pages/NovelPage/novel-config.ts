@@ -235,5 +235,7 @@ export const SAVE_STATE_TEXT = {
   pending: "输入中",
   saving: "保存中",
   saved: "已保存",
-  failed: "已转入快照",
+  // 落库失败时草稿仍在内存里，30s 兜底与关窗 flush 会重试；
+  // 快照是主进程在保存事务里写的，保存失败就不会有快照，不能写成「已转入快照」
+  failed: "保存失败，待重试",
 } as const;

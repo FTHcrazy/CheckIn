@@ -8,6 +8,7 @@ import {
 } from "../services/novel-service";
 import {
   editorActions,
+  needsFlushSave,
   registerEditorRunner,
   sessionStartedAt,
   sessionWords,
@@ -112,12 +113,11 @@ export function useNovelEditorState(data: NovelData) {
     return () => window.clearInterval(timer);
   }, []);
 
-  // 兜底强制 flush：防抖若被持续输入一直重置，这里 30s 补一次
+  // 兜底强制 flush：防抖若被持续输入一直重置，这里 30s 补一次。
+  // failed 也要补 —— 上次落库没能成功时，这里是唯一的自动重试通道
   useEffect(() => {
     const timer = window.setInterval(() => {
-      if (useNovelEditorStore.getState().saveState === "pending") {
-        void editorActions.flushSave();
-      }
+      if (needsFlushSave()) void editorActions.flushSave();
     }, SAVE.flushIntervalMs);
     return () => window.clearInterval(timer);
   }, []);

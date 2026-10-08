@@ -245,6 +245,15 @@ const SNAPSHOT_INTERVAL_MS = 300_000;
 /** 编辑器会话标记键：running = 会话进行中；非 running = 上次已正常关闭 */
 const SESSION_KEY = "novel_editor_session";
 
+/**
+ * 模板书籍「已播种过」标记。
+ *
+ * 播种判据不能用「works 为空」：用户把所有作品删光后，装载时会再次判定为空库
+ * 并自动重播，而 seedTemplateBook 是清库操作 —— 这会连带清掉用户的灵感与行囊草稿。
+ * 播种只在**确凿的首次使用**时发生一次；此后书架为空是正常的空态，由 UI 引导新建作品。
+ */
+const SEEDED_KEY = "novel_seeded";
+
 /** 生成带随机后缀的行 ID，避免同毫秒并发创建时碰撞 */
 function createId(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -281,6 +290,13 @@ function isChapterStatus(value: string): value is "draft" | "done" {
 
 function isEntryStatus(value: string): value is "open" | "resolved" {
   return value === "open" || value === "resolved";
+}
+
+function getConfig(key: string): string | null {
+  const row = dbGet("SELECT value FROM config WHERE key = ?", [key]) as
+    | { value?: string }
+    | undefined;
+  return typeof row?.value === "string" ? row.value : null;
 }
 
 function setConfig(key: string, value: string): void {
@@ -497,12 +513,15 @@ export function registerNovelHandlers(): void {
   });
 
 /**
- * 模板书籍播种（单事务）：清空全部 novel_* 表后写入模板数据。
+ * 模板书籍播种（单事务）：清空 novel_* 业务表后写入模板数据。
  *
  * 两条路径复用：
- * - 「一键重置为模板书籍」调试入口
- * - 新用户首次装载（novel_* 为空库时）：书架 / 编辑器开局即有一部
- *   预设模板书，而不是空白「未命名作品」
+ * - 「一键重置为模板书籍」入口（UI 层已有二次确认）
+ * - 确凿的首次使用：书架 / 编辑器开局即有一部预设模板书，而不是空白画布。
+ *   判据是 SEEDED_KEY 从未落过，**不是**「works 为空」——后者会在用户删光
+ *   作品时把这次清库再跑一遍，连带丢掉灵感池
+ *
+ * 唯一的例外是灵感：只清 `work_id <> ''` 的行，未归属的全局灵感池保留。
  *
  * 模板由 electron/novel-template.ts 实时构建，改模板定义后重置即生效。
  * 排版设置（novel_editor_settings）保留，续写位置（novel_editor_position）
@@ -524,7 +543,9 @@ function seedTemplateBook(): {
     dbRun("DELETE FROM novel_chapters");
     dbRun("DELETE FROM novel_volumes");
     dbRun("DELETE FROM novel_works");
-    dbRun("DELETE FROM novel_notes");
+    // ⚠️ 灵感只清归属作品的行：work_id = '' 是 novel-note-move(id, '') 的合法目标
+    // （「退回未归属」的全局灵感池），与任何作品都无关，清库不该动它
+    dbRun("DELETE FROM novel_notes WHERE work_id <> ''");
     dbRun("DELETE FROM novel_outline_entries");
     dbRun("DELETE FROM novel_links");
     dbRun("DELETE FROM novel_entities");
@@ -802,10 +823,11 @@ ipcMain.handle("novel-editor-reset-template", () => seedTemplateBook());
   // 全量装载：编辑器启动一次拉取所有 novel_* 表 + 崩溃恢复信息
   ipcMain.handle("novel-editor-load", () => {
     let works = dbAll("SELECT * FROM novel_works ORDER BY created_at") as NovelWorkRow[];
-    if (works.length === 0) {
-      // 首次使用（PRD R1 零配置开写）：播种预设模板书籍，
-      // 书架 / 编辑器开局即见一部完整示例书，而不是空白「未命名作品」
+    // 只在确凿的首次使用（从未播种过且库里一部作品都没有）时自动播种。
+    // 不能退化成「works 为空就播种」——那会在用户删光作品后触发一次清库（见 SEEDED_KEY 注释）
+    if (works.length === 0 && getConfig(SEEDED_KEY) === null) {
       seedTemplateBook();
+      setConfig(SEEDED_KEY, "1");
       works = dbAll("SELECT * FROM novel_works ORDER BY created_at") as NovelWorkRow[];
     }
 

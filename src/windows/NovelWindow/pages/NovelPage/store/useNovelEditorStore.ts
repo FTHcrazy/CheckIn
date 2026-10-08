@@ -74,14 +74,19 @@ export interface EditorState {
   speed: number;
 
   /**
-   * 上报正文变化。`baseContent` 是上报方（编辑器）所知的变更前正文——
-   * 程序化文档同步（切章灌入 / 回滚回写）必须带上它作为字数基线，
-   * 否则无草稿的章节会以空串为基线，把整章字数误计入今日新增。
-   * 真实的用户输入可以不传（草稿里已有准确的基线）。
+   * 上报正文变化。语义由 `baseContent` 区分两类来源：
+   *
+   * - **用户输入**（编辑器传 `update.startState.doc` 或省略）：以「变更前正文」为基线，
+   *   差值计入今日新增与会话字数。
+   * - **程序化灌入**（切章 / 回滚 / 恢复）：编辑器必须传 `baseContent === next`。
+   *   此时 `previous` 必然等于 `next`，走下方早返回分支 —— 只切换 activeChapterId。
+   *   ⚠️ 灌入若也传「变更前正文」，会导致爆破式字数：首次进入把整章字数算成今日新增，
+   *   长章切短章则出现负增长（EditorPane 的 hydratingRef 就是为此存在）。
    */
   setContent: (chapterId: string, next: string, baseContent?: string) => void;
   applyExternalContent: (chapterId: string, next: string) => void;
-  flushSave: () => Promise<void>;
+  /** 返回是否全部落库成功（调用方据此决定提示文案，不要无条件说「已保存」） */
+  flushSave: () => Promise<boolean>;
   updateSetting: <K extends keyof EditorSettings>(
     key: K,
     value: EditorSettings[K],
@@ -124,26 +129,40 @@ function cancelPendingSave(): void {
 }
 
 export const useNovelEditorStore = create<EditorState>()((set, get) => {
-  /** 落库指定章节的草稿（无论当前处于哪个保存态） */
-  const persistChapterNow = async (chapterId: string): Promise<void> => {
+  /**
+   * 落库指定章节的草稿（无论当前处于哪个保存态）。
+   *
+   * 返回是否成功：调用方据此决定提示文案与是否需要提醒用户。
+   * 没有草稿时算成功——本来就无需写，不是失败。
+   */
+  const persistChapterNow = async (chapterId: string): Promise<boolean> => {
     const state = get();
     const { draftMap, settings } = state;
 
     const content = draftMap[chapterId];
-    if (content === undefined) return;
+    if (content === undefined) return true;
 
     set({ saveState: "saving" });
-    const ok = runner
-      ? await runner.persistChapter(
-          chapterId,
-          content,
-          countWords(content, settings.wordCountMode),
-        )
-      : false;
+    let ok: boolean;
+    try {
+      ok = runner
+        ? await runner.persistChapter(
+            chapterId,
+            content,
+            countWords(content, settings.wordCountMode),
+          )
+        : false;
+    } catch {
+      // 必须在这里收住：IPC reject（写盘失败 / 主进程异常）会让整个 async 抛出去，
+      // 而调用点是 void 调用 → 变成 unhandled rejection，且下面这行 set 永不执行，
+      // saveState 永久停在 "saving"，此后所有兜底通道都不再重试
+      ok = false;
+    }
     set({
       saveState: ok ? "saved" : "failed",
       lastSavedAt: ok ? Date.now() : state.lastSavedAt,
     });
+    return ok;
   };
 
   /**
@@ -232,11 +251,13 @@ export const useNovelEditorStore = create<EditorState>()((set, get) => {
       // 再落库当前章；两者同章时只写一次
       const pendingId = pendingSaveChapterId;
       cancelPendingSave();
-      if (pendingId) await persistChapterNow(pendingId);
+      const staleOk = pendingId ? await persistChapterNow(pendingId) : true;
       const currentId = get().activeChapterId;
-      if (currentId && currentId !== pendingId) {
-        await persistChapterNow(currentId);
-      }
+      const currentOk =
+        currentId && currentId !== pendingId
+          ? await persistChapterNow(currentId)
+          : true;
+      return staleOk && currentOk;
     },
 
     updateSetting: (key, value) => {
@@ -286,6 +307,18 @@ export const useNovelEditorStore = create<EditorState>()((set, get) => {
 
 /** 保存态文案（顶栏显示） */
 export const saveTextOf = (state: SaveState): string => SAVE_STATE_TEXT[state];
+
+/**
+ * 是否值得再 flush 一次。
+ *
+ * `pending` 是防抖在途，`failed` 是上一次落库没成功 —— **两者都必须重试**。
+ * 只判 pending 的后果是：一次 IPC 抖动后就再也没人去救那段草稿，
+ * 而此时用户看到的仍是「已保存」类文案，直到关窗才发现正文丢了。
+ */
+export function needsFlushSave(): boolean {
+  const { saveState } = useNovelEditorStore.getState();
+  return saveState === "pending" || saveState === "failed";
+}
 
 /**
  * 章节草稿订阅：切章时自动拿到该章草稿。
@@ -352,7 +385,7 @@ export const editorActions = {
   applyExternalContent: (chapterId: string, next: string): void => {
     useNovelEditorStore.getState().applyExternalContent(chapterId, next);
   },
-  flushSave: (): Promise<void> => useNovelEditorStore.getState().flushSave(),
+  flushSave: (): Promise<boolean> => useNovelEditorStore.getState().flushSave(),
   updateSetting: <K extends keyof EditorSettings>(
     key: K,
     value: EditorSettings[K],

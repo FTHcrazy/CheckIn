@@ -1,5 +1,18 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
+/**
+ * `ipcRenderer.on` 注册的是包了一层的 wrapper（剥掉 Electron 的 event 首参），
+ * 而 `removeListener` 按**引用**比对 —— `off(event, handler)` 传的是原始 handler，
+ * 永远匹配不到那个匿名 wrapper，监听器与它捕获的整条闭包链会一直存活。
+ * 所以这里记住 handler → channel → wrapper 的映射，`off` 时删真 wrapper。
+ *
+ * 用 WeakMap 以 handler 为键：handler 被 GC 时映射自动释放，不会变成新泄漏源。
+ */
+const listenerWrappers = new WeakMap<
+  (...args: unknown[]) => void,
+  Map<string, (...args: unknown[]) => void>
+>();
+
 // 通过 contextBridge 暴露安全的 API 给渲染进程
 contextBridge.exposeInMainWorld('electronAPI', {
   // 网络会话配置（一次性）：把认证 Cookie 写入 session jar，
@@ -223,9 +236,28 @@ contextBridge.exposeInMainWorld('electronAPI', {
     sendTo: (target: string, event: string, data?: unknown) =>
       ipcRenderer.invoke('window-send-to', target, event, data),
     on: (event: string, handler: (...args: unknown[]) => void) => {
-      ipcRenderer.on(event, (_event, ...args) => handler(...args))
+      const wrapper = (_event: unknown, ...args: unknown[]) => handler(...args)
+      let byChannel = listenerWrappers.get(handler)
+      if (!byChannel) {
+        byChannel = new Map()
+        listenerWrappers.set(handler, byChannel)
+      }
+      // 同一 handler 重复注册同一频道：先摘掉旧的，避免叠加两条Notify
+      const previous = byChannel.get(event)
+      if (previous) ipcRenderer.removeListener(event, previous)
+      byChannel.set(event, wrapper)
+      ipcRenderer.on(event, wrapper)
     },
     off: (event: string, handler: (...args: unknown[]) => void) => {
+      const byChannel = listenerWrappers.get(handler)
+      const wrapper = byChannel?.get(event)
+      if (wrapper) {
+        ipcRenderer.removeListener(event, wrapper)
+        byChannel?.delete(event)
+        if (byChannel && byChannel.size === 0) listenerWrappers.delete(handler)
+        return
+      }
+      // 兜底：监听器不是由 windowAPI.on 注册的（其它模块 ipcRenderer.on 直通），按引用删
       ipcRenderer.removeListener(event, handler)
     },
   },

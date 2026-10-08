@@ -154,9 +154,9 @@ export default function EditorPane({
     chapterIdRef.current = chapter?.id ?? null;
   }, [chapter?.id]);
   /**
-   * 当前已知的正文放 ref：作为字数基线随上报传给 store——
-   * 程序化文档同步（切章灌入正文）到达时，基线是「灌入后的正文」本身，
-   * 于是 previous === next 提前返回，既不计字数也不重启防抖。
+   * 当前已知的正文放 ref：IME 组合结束后以此为字数基线上报最终文档——
+   * 组合期间的中间态从未上报过，store 的基线上仍停在「组合前的已知正文」。
+   * （程序化灌入的基线不由它负责，见 hydratingRef）
    */
   const contentRef = useRef(content);
   useEffect(() => {
@@ -164,6 +164,18 @@ export default function EditorPane({
   }, [content]);
   /** IME 组合期标记：拼音候选期间的文档变化不上报，避免字数按拼音递增（R2） */
   const composingRef = useRef(false);
+  /**
+   * 程序化灌入标记（切章 / 回滚 / 崩溃恢复）。
+   *
+   * CodeMirror 的 updateListener 分不清「用户敲的字」和「我们用 dispatch 灌进去的整篇正文」，
+   * 而它的 `update.startState.doc` 是**变更前**的文档——切章时那是上一章的正文。
+   * 拿它当字数基线会把「整章字数」或「两章字数之差」当成用户新增：
+   * 打开一本 4200 字的章节立刻「今日 +4200」，从长章切到短章则出现负增长。
+   *
+   * 灌入不是写作行为，必须走 `baseContent === next` 的语义（store 据此提前返回：
+   * 不写草稿、不计字数、不重启防抖，从而不断掉旧章在途的保存）。
+   */
+  const hydratingRef = useRef(false);
 
   /**
    * 命令式 API（R18 / 步骤三）：把名字插入到正文光标处。
@@ -295,12 +307,14 @@ export default function EditorPane({
               // 拼音候选期间的中间态不上报：草稿与字数统计只看确认后的文本。
               // compositionend 时由下方监听器统一上报最终文档
               if (composingRef.current) return;
-              handlersRef.current.onChange(
-                update.state.doc.toString(),
-                // 程序化同步（切章灌入）到达时 previous === next，
-                // store 据此提前返回，不误计字数、不打断旧章在途保存
-                update.startState.doc.toString(),
-              );
+              const next = update.state.doc.toString();
+              // 程序化灌入：以 next 自身为基线 —— 与 store 的草稿比对必然相等，
+              // 于是走「内容没变」分支，只切换 activeChapterId
+              if (hydratingRef.current) {
+                handlersRef.current.onChange(next, next);
+                return;
+              }
+              handlersRef.current.onChange(next, update.startState.doc.toString());
             }
             if (update.selectionSet) {
               const { main } = update.state.selection;
@@ -370,11 +384,18 @@ export default function EditorPane({
   useEffect(() => {
     const view = viewRef.current;
     if (!view || view.state.doc.toString() === content) return;
-    view.dispatch({
-      changes: { from: 0, to: view.state.doc.length, insert: content },
-      effects: refreshAnnotation.of(null),
-      annotations: isolateHistory.of("full"),
-    });
+    // try/finally 兜底：一次 dispatch 可能产生多条 update，标记必须在退出前复位，
+    // 否则之后用户敲的字会被误判成灌入（表现为「打死字数不涨」）
+    hydratingRef.current = true;
+    try {
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: content },
+        effects: refreshAnnotation.of(null),
+        annotations: isolateHistory.of("full"),
+      });
+    } finally {
+      hydratingRef.current = false;
+    }
   }, [content]);
 
   // 排版设置热更新

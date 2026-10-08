@@ -4,6 +4,7 @@ import { countWords } from "../novel-utils";
 import type { NovelEntity } from "../types";
 import {
   editorActions,
+  needsFlushSave,
   registerEditorRunner,
   useNovelEditorStore,
 } from "./useNovelEditorStore";
@@ -118,6 +119,39 @@ describe("useNovelEditorStore（编辑器交互状态）", () => {
     expect(state().todayTotal).toBe(delta);
   });
 
+  it("切章灌入必须传 next 自身作基线（传上一章正文会窜出整章字数）", () => {
+    registerEditorRunner({
+      persistChapter: async () => true,
+      markSelectionAsEntity: () => null,
+      persistSettings: () => {},
+    });
+
+    const longChapter = "甲".repeat(200);
+    const shortChapter = "乙".repeat(50);
+
+    // 先在 c1 写到 200 字
+    state().setContent("c1", longChapter);
+    const wordsAfterC1 = state().todayAdded;
+    expect(wordsAfterC1).toBe(countWords(longChapter, DEFAULT_SETTINGS.wordCountMode));
+
+    // ✅ 正确契约：切到 c2 时 EditorPane 的 hydratingRef 把 next 自身当基线
+    state().setContent("c2", shortChapter, shortChapter);
+    expect(state().todayAdded).toBe(wordsAfterC1);
+    expect(state().draftMap.c2).toBeUndefined();
+
+    reset();
+
+    // ❌ 历史缺陷：灌入时传的是 update.startState.doc（变更前的 c1 正文）
+    // 50 - 200 = -150，表现为「今日字数倒退」；反过来短章切长章则凭空多出整章字数
+    state().setContent("c1", longChapter);
+    const before = state().todayAdded;
+    state().setContent("c2", shortChapter, longChapter);
+    expect(state().todayAdded).toBe(
+      before + countWords(shortChapter, DEFAULT_SETTINGS.wordCountMode) - before,
+    );
+    expect(state().todayAdded).toBeLessThan(before);
+  });
+
   it("换章后立刻输入：旧章在途保存立即落库，不被新章防抖吞掉", async () => {
     const saved: Array<[string, string]> = [];
     registerEditorRunner({
@@ -207,6 +241,70 @@ describe("useNovelEditorStore（编辑器交互状态）", () => {
 
     expect(state().saveState).toBe("failed");
     expect(state().lastSavedAt).toBeNull();
+  });
+
+  it("runner 抛错（IPC reject）不会让保存态卡死在 saving", async () => {
+    registerEditorRunner({
+      persistChapter: async () => {
+        throw new Error("IPC channel closed");
+      },
+      markSelectionAsEntity: () => null,
+      persistSettings: () => {},
+    });
+
+    state().setContent("c1", "正文");
+    // store 内部是 void 调用：异常若不被 persistChapterNow 收住，这里就是
+    // unhandled rejection，且 set({saveState}) 永不执行 → 顶栏永久「保存中」
+    await vi.advanceTimersByTimeAsync(SAVE.debounceMs + 1);
+
+    expect(state().saveState).toBe("failed");
+    expect(state().draftMap.c1).toBe("正文");
+  });
+
+  it("flushSave 如实返回是否全部落库成功", async () => {
+    let ok = true;
+    registerEditorRunner({
+      persistChapter: async () => ok,
+      markSelectionAsEntity: () => null,
+      persistSettings: () => {},
+    });
+
+    state().setContent("c1", "正文");
+    expect(await editorActions.flushSave()).toBe(true);
+
+    ok = false;
+    state().setContent("c1", "正文改");
+    // 调用方据此决定提示文案，不能无条件说「已保存」
+    expect(await editorActions.flushSave()).toBe(false);
+    expect(state().saveState).toBe("failed");
+  });
+
+  it("needsFlushSave 必须把 failed 也算进来（否则失败后再无人重试）", async () => {
+    registerEditorRunner({
+      persistChapter: async () => false,
+      markSelectionAsEntity: () => null,
+      persistSettings: () => {},
+    });
+
+    expect(needsFlushSave()).toBe(false);
+
+    state().setContent("c1", "正文");
+    await vi.advanceTimersByTimeAsync(SAVE.debounceMs + 1);
+    expect(state().saveState).toBe("failed");
+
+    // 这是 30s 兜底与关窗 flush 唯一的判据：只认 pending 的话，
+    // 一次 IPC 抖动后这段草稿就再也没有自动落库的机会了
+    expect(needsFlushSave()).toBe(true);
+
+    // 重试成功后回到 false
+    registerEditorRunner({
+      persistChapter: async () => true,
+      markSelectionAsEntity: () => null,
+      persistSettings: () => {},
+    });
+    await editorActions.flushSave();
+    expect(state().saveState).toBe("saved");
+    expect(needsFlushSave()).toBe(false);
   });
 
   it("flushSave 立即落库并取消在途防抖（只写一次）", async () => {

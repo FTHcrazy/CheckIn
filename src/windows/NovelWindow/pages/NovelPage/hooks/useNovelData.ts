@@ -124,9 +124,11 @@ export function useNovelData() {
       } else {
         setActiveChapterId((current) => current ?? next.chapters[0]?.id ?? null);
       }
-      // 起名工具收藏夹（R18 ④）：与全量 bundle 并行加载
+      // 收藏夹在库里是 JSON 字符串（config 整读整写），必须先 parse 再交给
+      // sanitize —— 少了 parseJsonOrNull 时 Array.isArray(字符串) 恒为 false，
+      // 表现为「每次启动收藏夹都是空的」，且首次收藏会用空数组覆盖历史数据
       const favoritesJson = await fetchNameFavorites();
-      setNameFavorites(sanitizeNameFavorites(favoritesJson));
+      setNameFavorites(sanitizeNameFavorites(parseJsonOrNull(favoritesJson)));
     } finally {
       setLoading(false);
     }

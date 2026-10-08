@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.21.1] - 2026-10-08
+
+> 依据 `docs/novel-window-review.md`（Novel 窗口全量代码审查）修复的第一批缺陷，全部为 P0 / P1 级数据正确性问题。
+
+### Fixed
+
+- **删光作品后自动播种会误删全局灵感池**（主进程 `novel-handlers.ts`）：播种判据原本是「作品数为 0」，而 `seedTemplateBook()` 是清库重播种，内含一条全表 `DELETE FROM novel_notes`。灵感里 `work_id = ''` 是合法业务状态（`novel-note-move(id, '')` = 退回未归属的全局池），与任何作品都无关。于是「删除最后一部作品 → 下次装载」这条链会静默清空用户原创灵感、行囊草稿与盘点记录，无确认无备份。现改为：判据加 `config.novel_seeded` 标记（只在确凿的首次使用播种一次，此后书架为空是正常的空态、`NewWorkCard` 照常引导新建）；灵感删除加 `WHERE work_id <> ''`
+- **跨窗口订阅注销不掉**（`electron/preload.ts`，全应用级）：`windowAPI.on` 注册的是剥掉 event 首参的匿名 wrapper，`off` 却按原始 handler 调 `removeListener`（按引用比对）→ 永远删不掉。每次开关行囊面板泄漏 2 个 `ipcRenderer` 监听与整条闭包链，开合 N 次后一次主角/境界变更会触发 N 次全表重载。现用 `WeakMap<handler, Map<channel, wrapper>>` 记住真 wrapper，`off` 按它删除；顺带对「同一 handler 重复注册同一频道」做了去重，避免叠加两条
+- **正文保存失败后永不重试**（`store/useNovelEditorStore.ts`）：一次 IPC 抖动后 `saveState` 变成 `failed`，而 30s 兜底与关窗 flush 的判断条件都是 `=== "pending"` → 此后再无自动落库机会，正文只留在内存草稿里，关窗即丢。同时 `await runner.persistChapter()` 没有 try/catch，IPC reject 时整个 async 抛给 `void` 调用（unhandled rejection），`set({saveState})` 永不执行 → 顶栏永久卡在「保存中」。现改为：落库逻辑收住异常并返回成败；新增统一判据 `needsFlushSave()`（`pending || failed` 都要重试）；`flushSave` 返回是否全部成功，`handleSaveNow` 据此选提示文案
+- 修正保存失败时的顶栏文案：原为「已转入快照」，但快照是主进程在保存事务里写的 —— 保存失败根本不会有快照，会让用户误以为已妥善落库。改为「保存失败，待重试」
+- **字数统计被章节灌入污染**（`components/EditorPane` + store）：CodeMirror 的 `updateListener` 分不清用户敲的字与我们 `dispatch` 灌进去的整篇正文，而 `update.startState.doc` 是**变更前**的文档——切章时那是上一章正文。结果是打开一本 4200 字的章节立刻「今日 +4200」，长章切短章则出现负增长、进度条倒退。现加 `hydratingRef` 区分两条上报通道：程序化灌入以 `next` 自身为基线（走 store 的「内容没变」早返回分支，不写草稿、不计字数、不断掉旧章在途保存），只有真实输入才传变更前后两份文档
+- **起名收藏夹永远读不回来**（`hooks/useNovelData.ts`）：`config` 里存的是 JSON 字符串，`sanitizeNameFavorites()` 却直接收到它就判定 `Array.isArray(字符串) === false` → 每次启动恒为空；更糟的是首次「加收藏」会拿这个空数组去整读整写，把库里原有收藏全部覆盖。补上 `parseJsonOrNull`
+
+### Added
+
+- 守卫测试 `electron/novel-seed-guard.test.ts`（6 例）：源码断言「播种必须带 SEEDED_KEY 判据、播种后必须落标记、灵感删除必须带 `work_id <> ''` 过滤」。better-sqlite3 的 native 按 Electron ABI 编译、vitest 下无法 require，故这类 SQL 不变量沿用仓库既有的源码断言做法
+- 守卫测试 `electron/preload-listener.test.ts`（4 例）：钉住 `on` 必须先登记 wrapper 再注册、`off` 必须删映射表里的 wrapper 而不是原始 handler
+- store 单测 4 例：runner 抛错时不得卡在 `saving`；`flushSave` 如实返回成败；`needsFlushSave` 必须涵盖 `failed`；「切章灌入必须传 `next` 自身作基线」（用例里同时演示了传上一章正文时的负增长后果）
+
 ## [1.21.0] - 2026-10-08
 
 ### Changed
