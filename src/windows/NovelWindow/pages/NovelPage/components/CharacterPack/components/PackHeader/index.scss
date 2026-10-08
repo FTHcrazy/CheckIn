@@ -1,3 +1,5 @@
+@use "../../styles/pack-widget" as widget;
+
 /** 行囊头部：角色 + 境界 chip + 保存条三态 */
 .cpk-head {
   flex: none;
@@ -31,32 +33,43 @@
     font-size: 12px;
   }
 
-  &__name {
-    border: 0;
+  /* 角色名（未编辑态）：点开改名，造型自带。
+   * antd 的按钮是 inline-flex，`text-overflow` 不会作用在 flex 容器上
+   * → 显式改回 inline-block，让整行文本作为一个整体省略。 */
+  &__name.ant-btn {
+    @include widget.cpk-widget;
+    --ant-button-default-hover-bg: transparent;
+    --ant-button-default-active-bg: transparent;
+    display: inline-block;
     padding: 0 2px;
-    background: transparent;
-    cursor: text;
-    font: inherit;
     font-size: 13px;
     font-weight: 600;
     color: var(--app-text-strong);
+    cursor: text;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    text-align: left;
     max-width: 30%;
   }
 
-  &__name-input {
+  /* 角色名（编辑态）：一个有边框的短输入框 */
+  &__name-input.ant-input {
+    --ant-input-padding-block-sm: 0px;
+    --ant-input-padding-inline-sm: 6px;
+    --ant-input-input-font-size-sm: 13px;
+    --ant-border-radius-sm: var(--app-radius-item);
+    --ant-input-padding-block: 0px;
+    --ant-input-padding-inline: 6px;
+    --ant-input-input-font-size: 13px;
+    --ant-border-radius: var(--app-radius-item);
+    --ant-color-text: var(--app-text);
+    --ant-color-border: var(--app-border-strong);
+    --ant-color-bg-container: var(--app-input-bg);
     width: 30%;
     min-width: 60px;
     height: 22px;
-    padding: 0 6px;
-    border: 1px solid var(--app-border-strong);
-    border-radius: var(--app-radius-item);
-    background: var(--app-input-bg);
-    color: var(--app-text);
-    font: inherit;
-    font-size: 13px;
+    font-family: inherit;
   }
 
   &__realm {

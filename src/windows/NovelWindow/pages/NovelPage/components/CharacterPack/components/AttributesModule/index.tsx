@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Button, Dropdown, InputNumber, Modal, Select } from "antd";
+import { Button, Dropdown, Input, InputNumber, Modal, Select } from "antd";
 import { ArrowDownOutlined, ArrowUpOutlined, DeleteOutlined, PlusOutlined } from "@ant-design/icons";
 import PackModuleShell from "../PackModuleShell";
 import type { PackPanelApi } from "../../hooks/usePackPanel";
@@ -78,13 +78,13 @@ export default function AttributesModule({ api }: AttributesModuleProps) {
             }}
             trigger={["click"]}
           >
-            <button type="button" className="cpk-btn ghost">
+            <Button className="cpk-btn ghost">
               模板
-            </button>
+            </Button>
           </Dropdown>
-          <button type="button" className="cpk-btn ghost" onClick={() => api.addAttribute()}>
+          <Button className="cpk-btn ghost" onClick={() => api.addAttribute()}>
             <PlusOutlined /> 属性
-          </button>
+          </Button>
         </>
       }
     >
@@ -96,7 +96,9 @@ export default function AttributesModule({ api }: AttributesModuleProps) {
         <div className="cpk-attr">
           {groups.map(([groupName, items]) => (
             <section key={groupName} className="cpk-attr__group">
-              <input
+              <Input
+                size="small"
+                variant="borderless"
                 className="cpk-inline cpk-attr__groupname"
                 value={groupName}
                 aria-label="属性分组名"
@@ -105,7 +107,9 @@ export default function AttributesModule({ api }: AttributesModuleProps) {
               <ul className="cpk-attr__rows">
                 {items.map((attr, index) => (
                   <li key={attr.id} className="cpk-attr__row">
-                    <input
+                    <Input
+                      size="small"
+                      variant="borderless"
                       className="cpk-inline cpk-attr__name"
                       value={attr.name}
                       placeholder="属性名"
@@ -122,7 +126,9 @@ export default function AttributesModule({ api }: AttributesModuleProps) {
                         api.updateAttribute(attr.id, { baseValue: Number(value) || 0 })
                       }
                     />
-                    <input
+                    <Input
+                      size="small"
+                      variant="borderless"
                       className="cpk-inline cpk-attr__unit"
                       value={attr.unit}
                       placeholder="单位"
@@ -138,32 +144,29 @@ export default function AttributesModule({ api }: AttributesModuleProps) {
                       onChange={(value: number) => api.updateAttribute(attr.id, { decimals: value })}
                     />
                     <span className="cpk-attr__ops">
-                      <button
-                        type="button"
+                      <Button
                         className="cpk-iconbtn tiny"
                         onClick={() => move(items, index, -1)}
                         disabled={index === 0}
                         title="上移"
                       >
                         <ArrowUpOutlined />
-                      </button>
-                      <button
-                        type="button"
+                      </Button>
+                      <Button
                         className="cpk-iconbtn tiny"
                         onClick={() => move(items, index, 1)}
                         disabled={index === items.length - 1}
                         title="下移"
                       >
                         <ArrowDownOutlined />
-                      </button>
-                      <button
-                        type="button"
+                      </Button>
+                      <Button
                         className="cpk-iconbtn tiny danger"
                         onClick={() => tryRemove(attr)}
                         title="删除属性"
                       >
                         <DeleteOutlined />
-                      </button>
+                      </Button>
                     </span>
                   </li>
                 ))}

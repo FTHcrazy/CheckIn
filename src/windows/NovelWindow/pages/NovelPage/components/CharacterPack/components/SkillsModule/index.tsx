@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Input, InputNumber, Switch } from "antd";
+import { Button, Input, InputNumber, Switch } from "antd";
 import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
 import PackModuleShell from "../PackModuleShell";
 import ModifierList from "../ModifierList";
@@ -55,9 +55,9 @@ export default function SkillsModule({ api }: SkillsModuleProps) {
               onChange={(checked) => api.patchPrefs({ showProficiency: checked })}
             />
           </label>
-          <button type="button" className="cpk-btn ghost" onClick={() => api.addSkill()}>
-            <PlusOutlined /> 技能
-          </button>
+          <Button className="cpk-btn ghost" onClick={() => api.addSkill()}>
+            <PlusOutlined />技能
+          </Button>
         </>
       }
     >
@@ -111,21 +111,19 @@ export default function SkillsModule({ api }: SkillsModuleProps) {
                       ) : null}
                     </>
                   ) : null}
-                  <button
-                    type="button"
+                  <Button
                     className={`cpk-btn ghost${mods.length > 0 ? "" : " is-plain"}`}
                     onClick={() => setExpanded(open ? null : skill.id)}
                   >
                     效果 {mods.length > 0 ? mods.length : ""}
-                  </button>
-                  <button
-                    type="button"
+                  </Button>
+                  <Button
                     className="cpk-iconbtn tiny danger"
                     onClick={() => api.removeSkill(skill.id)}
                     title="删除技能"
                   >
                     <DeleteOutlined />
-                  </button>
+                  </Button>
                 </div>
 
                 {open ? (

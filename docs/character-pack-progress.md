@@ -7,6 +7,7 @@
 > **1.19.0 追加**：① 右侧要素栏补「主角」设定（行囊 ↔ 实体面板的挂钩落地）；② 模板书预设一份完整模板行囊 + 等级阶梯补小层/当量（见 §8）。
 > **1.19.1 追加**：修掉主角 / 联动三项静默失效，根因是跨模块事件的负载形状有两套而监听器只认了一套（见 §9 —— 新增双投递事件必须走 `readEventDetail`）。
 > **1.19.2 追加**：修掉行囊保存「从第二次起必然失败」（`UNIQUE constraint failed: novel_pack_modifiers.id`），根因是整文档保存里**多态加成表的删除排在了它的宿主表之后**（见 §10 —— 多态表的删除顺序是硬约束）。
+> **1.21.0 追加**：行囊全量切换到组件库控件，原生表单控件清零；`AGENTS.md` §6.1.2 升级为强制条款（见 §11 —— 覆盖组件库外观只该改变量，以及三份长期不生效的样式这个真缺陷）。
 
 ## 0. 怎么用这张表
 
@@ -356,3 +357,111 @@ DELETE FROM novel_pack_modifiers
 `vitest run` 全量 **37 files / 465 passed** ｜ `vite build` exit 0
 ⬜ 仍需真机复测，且**必须连做两次保存**：打开模板书 → 改一处（如某件装备的加成值）→ 保存
 → **再改一次、再保存**（第二次才是原缺陷的触发点，只存一次看不出问题）。
+
+## 11. 1.21.0：行囊 UI 全量切换组件库 + 三份「不生效的样式」
+
+### 11.1 为什么必须换（不是风格洁癖）
+
+原生控件在暗色主题下不跟随 antd 的 `darkAlgorithm`（会变成浅色斑块），且拿不到
+组件库给的键盘可达性、焦点环、禁用与 `aria` 语义；更要紧的是**每个状态都得自己再写一套**
+hover / active，改主题时总有一两处漏掉。所以 `AGENTS.md` §6.1.2 从"描述性偏好"
+升级为**强制条款**。
+
+本轮清零的范围：7 个 `<input>`、1 个 `<textarea>`、60 个 `<button>`（无原生 `<select>`，
+下拉本来就是 `Select`），共 68 处，涉及 15 个组件文件 + 4 份公共原语。
+
+### 11.2 覆盖组件库外观：只改变量，不写状态属性
+
+这是本轮最重要的一条经验，**别退回老写法**：
+
+```scss
+// ✅ 改变量：antd 自己的 hover / active / disabled 规则会跟着变
+.cpk-btn.ant-btn {
+  --ant-button-default-bg: var(--app-surface);
+  --ant-button-default-hover-bg: var(--app-surface-hover);
+}
+
+// ❌ 写属性：压不过组件库，换主题也不联动
+.cpk-btn:hover { background: var(--app-surface-hover); }
+```
+
+原因是特异性：antd 的状态规则（`.ant-btn-color-default.ant-btn-variant-outlined:not(:disabled):hover`）
+是 **(0,4,0)**，自写 `.cpk-btn:hover` 只有 (0,2,0)。而这些规则读的正是上面那些变量——
+**改状态只需改变量**。
+
+**两处必须记住的实现事实**（都已核对过 antd 6.6.2 的真实产物）：
+
+| 事实 | 结论 |
+|---|---|
+| 组件级变量的默认值写在 `.css-var-<hash>.ant-btn`（(0,2,0)）上，与 `.cpk-btn.ant-btn` **同特异性** | 胜负由源码顺序决定。antd 的 cssinjs 用 `insertBefore(firstChild)` 把样式插到 `<head>` **最前面**，应用 CSS 的 `<link>` 在后 → **我们的规则胜出**，不需要 `!important`（状态覆盖除外，见 `EntityDetail` 的既有写法） |
+| `.ant-btn` 的 height / padding / border-radius / font-size / gap 都只**消费一次**对应变量（(0,1,0)） | `.cpk-btn.ant-btn`（(0,2,0)）稳定压过它 → **行囊统一不传 `size`**，密度由样式表给 `--ant-control-height`，杜绝"漏传 size 就变形" |
+
+另外两条容易踩的：
+
+- **图标作 `icon` 属性传**会让 antd 包一层 `.ant-btn-icon` 并推 `ant-btn-icon-only`；
+  **作 children 传**时图标与文字都是按钮的 flex 子项，间距由 `--ant-button-icon-gap` 决定 ——
+  此时 JSX 里**不要再留空格**，否则间距翻倍（`<PlusOutlined />物品` 而不是 `<PlusOutlined /> 物品`）。
+- **`<button>` 里不能嵌 `<button>`**：浏览器会拆坏 DOM，React 不报错、类型也过。
+  效果编辑器原来的"整行可点 + 行尾删除"是 `<button>` 里放 `span[role=button]`，
+  换成组件库按钮后必须重构为**行容器 + 两个并列真按钮**（行容器不是交互元素）。
+
+### 11.3 「清零点」mixin：`styles/pack-widget.scss`
+
+行囊里有一批**视觉是设计定的**控件（阶梯格子、候选物品行、折叠头、性质卡、属性汇总行、
+释放提示条、属性引用胶囊、角色名、效果选择行）。做法是仍用 `Button` 承载
+（拿到波纹 / 键盘 / 禁用语义 / focus 环），再用 mixin 把 antd 自带外观清零后重绘。
+
+**必须是 mixin，不能是 `pack-common.scss` 里的公共类**：清零与控件自己的变量要写在
+**同一个选择器**里，才能靠源码先后决定胜负；写成两个类则要靠文件先后，而组件样式先于
+`pack-common.scss` 打包，顺序恰好是反的 —— **会静默失效**。
+
+```scss
+// 组件自己的 index.scss
+@use "../../styles/pack-widget" as widget;
+
+.cpk-xxx.ant-btn {
+  @include widget.cpk-widget;                    // 先清零
+  --ant-button-default-bg: var(--app-surface);   // 再按需声明
+  width: 100%;                                   // antd 不接管的属性直接写
+}
+```
+
+虚线边框不要写 `border-style`，改 `--ant-line-type: dashed` —— antd 的边框恒读这个变量
+（`border: var(--ant-btn-border-width) var(--ant-btn-border-style) var(--ant-btn-border-color)`），
+写变量比写属性更不容易漏掉某个状态。
+
+### 11.4 顺带发现的真缺陷：三份「改了没反应」的样式
+
+`NoteModule` / `StatusModule` / `SummaryModule` 的 `index.scss` **从未被任何地方引用**
+（构建产物里连 `cpk-note__area` / `cpk-stt__top` / `cpk-sum__rows` 这些类名都不存在）。
+表现就是"改了样式、界面毫无反应"，而且**不报错、类型也过**。已按 `AGENTS.md` §8.3
+补上 `import "./index.scss"`，并把这条写进守卫测试。
+
+> 排查手法：换完类名后 `grep -l -F "<新类名>" dist/assets/*.css`。产物里没有 = 样式根本没进包，
+> 不要再去纠结特异性。
+
+### 11.5 验证方式（比截图强，可复用）
+
+1. **先核对 antd 真实产物，不要凭记忆猜变量名**：用 `ConfigProvider` +
+   `@ant-design/cssinjs` 的 `createCache` / `extractStyle` 打一份真实 CSS，
+   确认变量名（实际是 kebab-case 的 `--ant-button-*`，不是文档里的 camelCase token 名）
+   与它消费的属性。
+2. **可视验证台**（`.probe-visual.cjs` 的思路）：把 antd 真实 CSS 与编译后的 SCSS
+   按「antd 在前、应用 CSS 在后」的顺序注入一个静态页面，再用无头 Chrome 在页面内
+   `getComputedStyle` 逐条断言（高度 / 内边距 / 颜色 / 边框样式 / flex 间距 / 是否被清零）。
+   本轮 58 条断言全绿。比看截图可靠得多。
+
+   > 一个反例：`variant="borderless"` 的 `Input` 块内边距是 **1px** 而不是 0 ——
+   > antd 做了 `calc(padding-block + line-width)` 补偿，让无边框输入框与同尺寸带边框的
+   > 兄弟保持文字基线一致。这是**预期行为**，别去"修"它。
+3. `tsc`（渲染层 / 主进程）｜ `eslint` ｜ `vitest run` 全量 ｜ `vite build`（见 §11.6）。
+4. 产物顺序确认：`dist/src/windows/NovelWindow/index.html` 里应用 CSS 是
+   `<link rel="stylesheet">`（在 antd 运行时注入的 `<style>` **之后**）—— 这是
+   「同特异性下我们胜出」这个前提的落地依据。
+
+### 11.6 验证记录
+
+`tsc --noEmit -p tsconfig.app.json` exit 0 ｜ `eslint .` **0 errors**（1 条既有 warning，与本次无关）｜
+`vitest run` 全量 **38 files / 487 passed** ｜ `vite build` exit 0 ｜ 无头 Chrome 计算样式 **58/58 PASS**
+⬜ 仍需真机复测：四套主题各看一眼行囊（按钮/输入框/开关/虚线提示条/阶梯格子），
+重点看**暗色主题**下有无"浅色斑块"，以及效果编辑器的"整行可点 + 行尾删除"两处是否都可点。

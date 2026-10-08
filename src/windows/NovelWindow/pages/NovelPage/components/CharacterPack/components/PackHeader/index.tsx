@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { KeyboardEvent } from "react";
+import { Button, Input } from "antd";
 import {
   ClockCircleOutlined,
   CloseOutlined,
@@ -90,7 +91,8 @@ export default function PackHeader({
             🧑
           </span>
           {editing ? (
-            <input
+            <Input
+              size="small"
               className="cpk-head__name-input"
               value={draft}
               autoFocus
@@ -100,47 +102,43 @@ export default function PackHeader({
               aria-label="角色名"
             />
           ) : (
-            <button
-              type="button"
+            <Button
               className="cpk-head__name"
               onClick={() => setEditing(true)}
               title="点击改名"
             >
               {characterName || "主角"}
-            </button>
+            </Button>
           )}
           <span className="cpk-head__realm" title={realmHint || "与实体面板同一份数据"}>
             {realmText}
           </span>
         </div>
         <div className="cpk-head__ops">
-          <button
-            type="button"
+          <Button
             className="cpk-iconbtn"
             onClick={onOpenRecords}
             title="盘点记录 / 与本章初对比"
           >
             <ClockCircleOutlined />
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
             className="cpk-iconbtn"
             onClick={onOpenUnitManager}
             title="量纲设置（货币 / 熟练度）"
           >
             <SlidersOutlined />
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
             className="cpk-iconbtn"
             onClick={onOpenModules}
             title="模块管理"
           >
             <SettingOutlined />
-          </button>
-          <button type="button" className="cpk-iconbtn" onClick={onClose} title="关闭（Esc）">
+          </Button>
+          <Button className="cpk-iconbtn" onClick={onClose} title="关闭（Esc）">
             <CloseOutlined />
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -154,19 +152,18 @@ export default function PackHeader({
         </span>
         <span className="cpk-savebar__actions">
           {tone === "dirty" && (
-            <button type="button" className="cpk-btn ghost" onClick={onRevertAll}>
+            <Button className="cpk-btn ghost" onClick={onRevertAll}>
               撤销全部
-            </button>
+            </Button>
           )}
-          <button
-            type="button"
+          <Button
             className="cpk-btn primary"
             onClick={onSave}
             disabled={saving || dirty === 0}
             title={dirty === 0 ? "没有未保存的改动" : "先落回退点，再写入正式表"}
           >
             {tone === "failed" ? "重试" : dirty > 0 ? `保存 (${dirty})` : "保存"}
-          </button>
+          </Button>
         </span>
       </div>
     </header>

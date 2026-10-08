@@ -6,105 +6,125 @@
  * 这种缺陷随渲染路径变化而随机出现。全部集中在根 `index.scss` 以 @use 引入。
  */
 
-/* ── 通用按钮（面板密度；.ghost 表达次级操作）── */
-.cpk-btn {
-  height: 22px;
-  padding: 0 9px;
-  border: 1px solid var(--app-border-strong);
-  border-radius: var(--app-radius-item);
-  background: var(--app-surface);
-  color: var(--app-text-strong);
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-  box-sizing: border-box;
-  white-space: nowrap;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+/* ── 按钮 ──
+ * 一律是 antd `Button`；外观**只通过组件级 CSS 变量**配置，不另写 :hover / :active ——
+ * antd 的状态选择器（`.ant-btn-color-default.ant-btn-variant-outlined:not(:disabled):hover`）
+ * 比特异性高出两级，自写规则压不过它；配置它读取的变量才是稳定做法。
+ * ⚠️ 变量名以 **antd 6.6 实际生成的样式**为准，别照抄文档里的 camelCase token 名。
+ * 不传 `size`：面板密度由这里给 `--ant-control-height` 决定 —— 漏传 size 就变形的坑太大。
+ */
 
-  &:hover:not(:disabled) {
-    background: var(--app-surface-hover);
-  }
+/* 通用按钮（面板密度；.ghost 次级操作 / .primary 主操作 / .danger 破坏性） */
+.cpk-btn.ant-btn {
+  --ant-control-height: 22px;
+  --ant-button-padding-inline: 9px;
+  --ant-button-content-font-size: 12px;
+  --ant-button-font-weight: 400;
+  --ant-button-icon-gap: 4px;
+  --ant-border-radius: var(--app-radius-item);
+  --ant-button-default-bg: var(--app-surface);
+  --ant-button-default-color: var(--app-text-strong);
+  --ant-button-default-border-color: var(--app-border-strong);
+  --ant-button-default-hover-bg: var(--app-surface-hover);
+  --ant-button-default-hover-color: var(--app-text-strong);
+  --ant-button-default-hover-border-color: var(--app-border-strong);
+  --ant-button-default-active-bg: var(--app-surface-active);
+  --ant-button-default-active-color: var(--app-text-strong);
+  --ant-button-default-active-border-color: var(--app-border-strong);
+  --ant-button-default-bg-disabled: var(--app-surface);
+  --ant-button-border-color-disabled: var(--app-border);
+  --ant-button-default-shadow: none;
+  font-family: inherit;
+  white-space: nowrap;
 
   &.primary {
-    border-color: var(--app-primary);
-    background: var(--app-primary);
-    color: var(--app-primary-contrast);
-    font-weight: 600;
-
-    &:hover:not(:disabled) {
-      background: var(--app-primary-strong);
-    }
+    --ant-button-default-bg: var(--app-primary);
+    --ant-button-default-color: var(--app-primary-contrast);
+    --ant-button-default-border-color: var(--app-primary);
+    --ant-button-default-hover-bg: var(--app-primary-strong);
+    --ant-button-default-hover-color: var(--app-primary-contrast);
+    --ant-button-default-hover-border-color: var(--app-primary-strong);
+    --ant-button-default-active-bg: var(--app-primary-strong);
+    --ant-button-default-active-color: var(--app-primary-contrast);
+    --ant-button-default-active-border-color: var(--app-primary-strong);
+    --ant-button-font-weight: 600;
   }
 
   &.ghost {
-    height: 20px;
-    padding: 0 7px;
-    border-color: transparent;
-    background: transparent;
-    color: var(--app-text-secondary-strong);
-
-    &:hover:not(:disabled) {
-      background: var(--app-surface-active);
-    }
+    --ant-control-height: 20px;
+    --ant-button-padding-inline: 7px;
+    --ant-button-default-bg: transparent;
+    --ant-button-default-color: var(--app-text-secondary-strong);
+    --ant-button-default-border-color: transparent;
+    --ant-button-default-hover-bg: var(--app-surface-active);
+    --ant-button-default-hover-color: var(--app-text-secondary-strong);
+    --ant-button-default-hover-border-color: transparent;
+    --ant-button-default-active-bg: var(--app-surface-active);
+    --ant-button-default-active-color: var(--app-text-secondary-strong);
+    --ant-button-default-active-border-color: transparent;
+    --ant-button-default-bg-disabled: transparent;
+    --ant-button-border-color-disabled: transparent;
   }
 
   &.danger {
-    border-color: transparent;
-    background: transparent;
-    color: var(--app-error);
-
-    &:hover:not(:disabled) {
-      background: var(--app-error-weak);
-    }
-  }
-
-  &:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
+    --ant-button-default-bg: transparent;
+    --ant-button-default-color: var(--app-error);
+    --ant-button-default-border-color: transparent;
+    --ant-button-default-hover-bg: var(--app-error-weak);
+    --ant-button-default-hover-color: var(--app-error);
+    --ant-button-default-hover-border-color: transparent;
+    --ant-button-default-active-bg: var(--app-error-weak);
+    --ant-button-default-active-color: var(--app-error);
+    --ant-button-default-active-border-color: transparent;
+    --ant-button-default-bg-disabled: transparent;
+    --ant-button-border-color-disabled: transparent;
   }
 }
 
-/* ── 图标按钮（含 .tiny 行内尺寸）── */
-.cpk-iconbtn {
+/* ── 图标按钮（含 .tiny 行内尺寸）──
+ * 宽度由这里给：antd 只在用了 `icon` 属性时才推 `ant-btn-icon-only` 的宽度，
+ * 行囊统一把图标当 children 传，所以宽度落在自己手里。 */
+.cpk-iconbtn.ant-btn {
+  --ant-control-height: 24px;
+  --ant-button-padding-inline: 0px;
+  --ant-button-content-font-size: 13px;
+  --ant-border-radius: var(--app-radius-item);
+  --ant-button-default-bg: transparent;
+  --ant-button-default-color: var(--app-text-secondary-strong);
+  --ant-button-default-border-color: transparent;
+  --ant-button-default-hover-bg: var(--app-surface-hover);
+  --ant-button-default-hover-color: var(--app-text-strong);
+  --ant-button-default-hover-border-color: transparent;
+  --ant-button-default-active-bg: var(--app-surface-hover);
+  --ant-button-default-active-color: var(--app-text-strong);
+  --ant-button-default-active-border-color: transparent;
+  --ant-button-default-shadow: none;
+  --ant-button-default-bg-disabled: transparent;
+  --ant-button-border-color-disabled: transparent;
   width: 24px;
-  height: 24px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  border-radius: var(--app-radius-item);
-  background: transparent;
-  color: var(--app-text-secondary-strong);
-  cursor: pointer;
-  font-size: 13px;
-  box-sizing: border-box;
-
-  &:hover {
-    background: var(--app-surface-hover);
-    color: var(--app-text-strong);
-  }
+  font-family: inherit;
 
   &.tiny {
+    --ant-control-height: 20px;
+    --ant-button-content-font-size: 11px;
     width: 20px;
-    height: 20px;
-    font-size: 11px;
-
-    &.danger:hover {
-      background: var(--app-error-weak);
-      color: var(--app-error);
-    }
-
-    &.is-active {
-      background: var(--app-surface-active);
-      color: var(--app-warning);
-    }
   }
 
-  &.danger:hover {
-    background: var(--app-error-weak);
-    color: var(--app-error);
+  &.danger {
+    --ant-button-default-hover-bg: var(--app-error-weak);
+    --ant-button-default-hover-color: var(--app-error);
+    --ant-button-default-active-bg: var(--app-error-weak);
+    --ant-button-default-active-color: var(--app-error);
+  }
+
+  /** 「这条已被临时禁用」的按压态（⊘） */
+  &.is-active {
+    --ant-button-default-bg: var(--app-surface-active);
+    --ant-button-default-color: var(--app-warning);
+    --ant-button-default-hover-bg: var(--app-surface-active);
+    --ant-button-default-hover-color: var(--app-warning);
+    --ant-button-default-active-bg: var(--app-surface-active);
+    --ant-button-default-active-color: var(--app-warning);
   }
 }
 
@@ -137,40 +157,15 @@
   }
 }
 
-/* ── 小尺寸开关（持续型效果 / 状态自己那一档，与载体开关分离）── */
-.cpk-sw2 {
+/* ── 小尺寸开关（持续型效果 / 状态自己那一档，与载体开关分离）──
+ * 用 antd `Switch`（size="small"）：语义、键盘可达性与 aria 全由组件库给，
+ * 这里只把它钉成「不收缩的固定件」并把尺寸收到面板密度。
+ * 配色刻意留空 → 与技能栏那个开关同色，面板里不该出现两种绿色。 */
+.cpk-sw2.ant-switch {
+  --ant-switch-track-height-sm: 15px;
+  --ant-switch-track-min-width-sm: 26px;
+  --ant-switch-handle-size-sm: 11px;
   flex: none;
-  width: 26px;
-  height: 15px;
-  padding: 0;
-  border: 1px solid var(--app-border-strong);
-  border-radius: var(--app-radius-pill);
-  background: var(--app-surface-active);
-  cursor: pointer;
-  position: relative;
-  box-sizing: border-box;
-  transition: background 0.18s ease, border-color 0.18s ease;
-
-  &__dot {
-    position: absolute;
-    top: 1px;
-    left: 1px;
-    width: 11px;
-    height: 11px;
-    border-radius: 50%;
-    background: var(--app-surface);
-    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.25);
-    transition: transform 0.18s ease;
-  }
-
-  &.is-on {
-    background: var(--app-accent-blue);
-    border-color: var(--app-accent-blue);
-  }
-
-  &.is-on &__dot {
-    transform: translateX(11px);
-  }
 }
 
 /* ── 空态 / 提示片段 ── */
@@ -192,32 +187,26 @@
   white-space: nowrap;
 }
 
-/* ── 表格化行内输入（属性名 / 部位名这类「总是可编辑」的短字段）── */
-.cpk-inline {
-  min-width: 0;
+/* ── 表格化行内输入（属性名 / 部位名这类「总是可编辑」的短字段）──
+ * antd `Input` 的 `variant="borderless"`：低强调、无边框，聚焦时由组件库给主色 focus 环
+ * （比自画 border 更可达）。这里只压密度与尺寸。
+ * ⚠️ 颜色走变量而不是 `color` 声明：使用点若要改色（如单位列、分组名），
+ * 得用 `.ant-input` 限定选择器压过组件库的 base 规则，两者同为属性声明会互相打架。 */
+.cpk-inline.ant-input {
+  --ant-input-padding-block: 0px;
+  --ant-input-padding-inline: 6px;
+  --ant-input-input-font-size: 12px;
+  --ant-input-padding-block-sm: 0px;
+  --ant-input-padding-inline-sm: 6px;
+  --ant-input-input-font-size-sm: 12px;
+  --ant-border-radius: var(--app-radius-item);
+  --ant-border-radius-sm: var(--app-radius-item);
+  --ant-color-text: var(--app-text-strong);
   height: 22px;
-  padding: 0 6px;
-  border: 1px solid transparent;
-  border-radius: var(--app-radius-item);
-  background: transparent;
-  color: var(--app-text-strong);
-  font: inherit;
-  font-size: 12px;
-  box-sizing: border-box;
+  font-family: inherit;
 
-  &:hover {
-    border-color: var(--app-border);
+  &:hover:not(:disabled) {
     background: var(--app-surface-hover);
-  }
-
-  &:focus {
-    outline: none;
-    border-color: var(--app-primary);
-    background: var(--app-input-bg);
-  }
-
-  &::placeholder {
-    color: var(--app-text-disabled);
   }
 }
 

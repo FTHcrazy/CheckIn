@@ -1,3 +1,5 @@
+@use "../../styles/pack-widget" as widget;
+
 /** 装备栏：部位 → 槽位占用 → 加成效果 */
 .cpk-eq {
   display: flex;
@@ -131,26 +133,26 @@
     overflow-y: auto;
   }
 
-  &__cand {
+  /* 候选物品行：整行可点，造型自带 → 先清零 antd 外观再声明 */
+  &__cand.ant-btn {
+    @include widget.cpk-widget;
+    --ant-line-width: 1px;
+    --ant-border-radius: var(--app-radius-item);
+    --ant-button-default-color: var(--app-text);
+    --ant-button-default-hover-color: var(--app-text);
+    --ant-button-default-active-color: var(--app-text);
+    --ant-button-default-border-color: transparent;
+    --ant-button-default-hover-border-color: var(--app-border);
+    --ant-button-default-active-border-color: var(--app-border);
+    --ant-button-default-hover-bg: var(--app-surface-hover);
+    --ant-button-default-active-bg: var(--app-surface-hover);
     display: flex;
     align-items: center;
     gap: 6px;
     width: 100%;
     padding: 3px 5px;
-    border: 1px solid transparent;
-    border-radius: var(--app-radius-item);
-    background: transparent;
-    font: inherit;
     font-size: 12px;
-    color: var(--app-text);
-    cursor: pointer;
     box-sizing: border-box;
-    text-align: left;
-
-    &:hover {
-      border-color: var(--app-border);
-      background: var(--app-surface-hover);
-    }
   }
 
   &__candname {

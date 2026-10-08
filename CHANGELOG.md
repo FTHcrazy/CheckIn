@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.21.0] - 2026-10-08
+
+### Changed
+
+- **行囊（`CharacterPack`）全量切换到组件库控件，原生表单控件清零**：面板内 68 处原生控件（7 个 `<input>`、1 个 `<textarea>`、60 个 `<button>`；下拉本来就是 antd `Select`）全部换成 antd 组件。外观一律**只改组件级 CSS 变量**（`--ant-button-*` / `--ant-input-*` / `--ant-switch-*`），不写 `:hover` / `:active` 属性规则——antd 的状态规则（如 `.ant-btn-color-default.ant-btn-variant-outlined:not(:disabled):hover`，特异性 (0,4,0)）自写规则压不过，而那些规则读的正是这些变量，**改状态只需改变量**。所有色值仍走 `var(--app-*)`，四套主题与暗色算法自动跟随
+- **新增「清零点」mixin `CharacterPack/styles/pack-widget.scss`**：行囊里有一批视觉是设计定的控件（阶梯格子、候选物品行、折叠头、性质卡、属性汇总行、释放提示条、属性引用胶囊、角色名、效果选择行）。做法是仍用 `Button` 承载（拿到波纹 / 键盘 / 禁用语义 / focus 环），再用 mixin 把 antd 自带外观通过变量清零后重绘。**必须是 mixin 而非公共类**：清零与控件自己的变量要写在同一个选择器里才能靠源码顺序决定胜负；写成两个类则要靠文件先后，而组件样式先于 `pack-common.scss` 打包，顺序恰好是反的 —— 会静默失效
+- 三处自绘开关（`.cpk-sw2` 的 `span` + 圆点）改为 antd `Switch size="small"`，`aria` / 键盘 / 禁用语义改由组件库提供；配色刻意留空以与技能栏那个开关同色
+- 效果编辑器的「删除该条」改为**行容器 + 两个并列真按钮**：原先它是嵌在选择按钮内部的 `span[role=button]`，改成组件库按钮后 `<button>` 里再嵌 `<button>` 会被浏览器拆坏 DOM（React 不报错、类型也过）。行容器承载药丸外观，悬停整行高亮，视觉不变
+- `AGENTS.md` §6.1.2 由「描述性偏好」升级为**强制条款**：选型表补齐 `Input` / `Input.TextArea` / `InputNumber` / `Button` / `Switch` 等行，例外收敛到三条并须写明理由；新增「覆盖组件库外观的规范」九条（为什么只该改变量、变量名以实际产物为准、清零点为什么必须是 mixin、按钮不可嵌套、图标作 `icon` 属性与作 children 的间距规则不同、行囊一律不传 `size` 的约定、弹层挂类与 `.ant-select` 根元素覆盖），§8.3 检查清单同步加项
+- 顺带修掉 `UnitSystemManager` 重复的 `import "./index.scss"`
+
+### Added
+
+- 守卫测试 `CharacterPack/pack-ui-kit.test.ts`（22 例）：源码断言行囊目录内不得出现原生表单控件、不得残留旧自绘开关 DOM、每个组件的 `index.scss` 必须被同目录 `index.tsx` 引入；并**编译 SCSS 后断言** 9 个自带造型控件都以 `.xxx.ant-btn` 承载且确实展开了清零点（`--ant-control-height: auto`）。之所以断言编译产物而不是源码文本——控件样式都写成 `&__xxx.ant-btn` 的嵌套形式，字面量在源码里根本不存在
+
+### Fixed
+
+- **修复三份「无论如何都不生效」的行囊样式**：`NoteModule` / `StatusModule` / `SummaryModule` 的 `index.scss` 从未被任何地方引用（构建产物里连 `cpk-note__area` / `cpk-stt__top` / `cpk-sum__rows` 这些类名都不存在），即「改了样式、界面毫无反应」。现按 §8.3 补上 `import "./index.scss"`，并把这条加进守卫测试
+- 修正 `AGENTS.md` §6.1.2 中已废弃的 `popupClassName` 代码示例（antd 6.6+ 统一改用 `classNames.popup.root`）
+
 ## [1.20.0] - 2026-10-08
 
 ### Added

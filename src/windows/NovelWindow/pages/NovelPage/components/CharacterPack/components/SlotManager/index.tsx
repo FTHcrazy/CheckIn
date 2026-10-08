@@ -1,4 +1,4 @@
-import { Button, InputNumber, Modal, Select, Switch } from "antd";
+import { Button, Input, InputNumber, Modal, Select, Switch } from "antd";
 import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
 import type { PackPanelApi } from "../../hooks/usePackPanel";
 import { ITEM_CATEGORIES } from "../../types";
@@ -45,7 +45,9 @@ export default function SlotManager({ api }: SlotManagerProps) {
         {slots.map((slot) => (
           <li key={slot.id} className="cpk-slotmgr__row">
             <div className="cpk-slotmgr__line">
-              <input
+              <Input
+                size="small"
+                variant="borderless"
                 className="cpk-inline cpk-slotmgr__name"
                 value={slot.name}
                 placeholder="部位名"
@@ -81,16 +83,17 @@ export default function SlotManager({ api }: SlotManagerProps) {
                 onChange={(checked) => api.updateSlot(slot.id, { enabled: checked })}
                 title={slot.enabled ? "启用中" : "已停用（该部位的装备不再在效）"}
               />
-              <button
-                type="button"
+              <Button
                 className="cpk-iconbtn tiny danger"
                 onClick={() => api.removeSlot(slot.id)}
                 title="删除部位（里面的装备退回物品栏）"
               >
                 <DeleteOutlined />
-              </button>
+              </Button>
             </div>
-            <input
+            <Input
+              size="small"
+              variant="borderless"
               className="cpk-inline cpk-slotmgr__note"
               value={slot.note}
               placeholder="备注（例如「作者私设：灵器位」）"

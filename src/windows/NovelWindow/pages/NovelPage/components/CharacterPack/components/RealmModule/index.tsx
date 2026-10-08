@@ -66,14 +66,13 @@ export default function RealmModule({ api }: RealmModuleProps) {
       collapsed={Boolean(api.prefs.collapsed[key])}
       onToggle={() => api.toggleModuleCollapsed(key)}
       actions={
-        <button
-          type="button"
+        <Button
           className="cpk-iconbtn"
           onClick={() => setRungOpen(true)}
           title="阶设置（小层数 / 战力当量）"
         >
           <SettingOutlined />
-        </button>
+        </Button>
       }
     >
       {rungs.length === 0 ? (
@@ -86,12 +85,12 @@ export default function RealmModule({ api }: RealmModuleProps) {
           <div className="cpk-rlm__now">
             <span className="cpk-rlm__value">{api.realmText}</span>
             <span className="cpk-rlm__stepper">
-              <button type="button" className="cpk-btn ghost" onClick={() => step(-1)}>
+              <Button className="cpk-btn ghost" onClick={() => step(-1)}>
                 − 1 层
-              </button>
-              <button type="button" className="cpk-btn ghost" onClick={() => step(1)}>
+              </Button>
+              <Button className="cpk-btn ghost" onClick={() => step(1)}>
                 + 1 层
-              </button>
+              </Button>
             </span>
           </div>
 
@@ -110,8 +109,7 @@ export default function RealmModule({ api }: RealmModuleProps) {
           <ul className="cpk-rlm__ladder">
             {rungs.map((item, index) => (
               <li key={item.id}>
-                <button
-                  type="button"
+                <Button
                   className={`cpk-rlm__rung${index === api.realmPos.index ? " is-on" : ""}${
                     index < api.realmPos.index ? " is-passed" : ""
                   }`}
@@ -120,7 +118,7 @@ export default function RealmModule({ api }: RealmModuleProps) {
                 >
                   {item.name}
                   {item.subLevels > 1 ? <em>{item.subLevels}</em> : null}
-                </button>
+                </Button>
               </li>
             ))}
           </ul>
@@ -141,13 +139,12 @@ export default function RealmModule({ api }: RealmModuleProps) {
                   void api.writeRealm({ index: api.realmPos.index, sub: value }, "pack")
                 }
               />
-              <button
-                type="button"
+              <Button
                 className="cpk-btn ghost"
                 onClick={() => void api.writeRealm(api.realmPos, "pack", { delta: 1 })}
               >
                 阶内进位
-              </button>
+              </Button>
             </div>
           ) : null}
 

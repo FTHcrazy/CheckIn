@@ -1,3 +1,5 @@
+@use "../../styles/pack-widget" as widget;
+
 /** 总属性汇总：每行「基础 → 总览」+ 增量分段 */
 .cpk-sum {
   &__rows {
@@ -9,24 +11,22 @@
     gap: 2px;
   }
 
-  &__row {
+  /* 属性行：整行可点开明细，造型自带（平时无框，悬停才浮出一层）→ 先清零再声明 */
+  &__row.ant-btn {
+    @include widget.cpk-widget;
+    --ant-line-width: 1px;
+    --ant-border-radius: var(--app-radius-item);
+    --ant-button-default-border-color: transparent;
+    --ant-button-default-hover-border-color: var(--app-border);
+    --ant-button-default-active-border-color: var(--app-border);
+    --ant-button-default-hover-bg: var(--app-surface-hover);
+    --ant-button-default-active-bg: var(--app-surface-hover);
     display: flex;
     align-items: center;
     gap: 8px;
     width: 100%;
     padding: 4px 6px;
-    border: 1px solid transparent;
-    border-radius: var(--app-radius-item);
-    background: transparent;
-    font: inherit;
-    cursor: pointer;
     box-sizing: border-box;
-    text-align: left;
-
-    &:hover {
-      border-color: var(--app-border);
-      background: var(--app-surface-hover);
-    }
   }
 
   &__name {

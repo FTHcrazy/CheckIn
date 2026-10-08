@@ -1,6 +1,8 @@
+import { Input } from "antd";
 import PackModuleShell from "../PackModuleShell";
 import type { PackPanelApi } from "../../hooks/usePackPanel";
 import { moduleLabel } from "../module-meta";
+import "./index.scss";
 
 interface NoteModuleProps {
   api: PackPanelApi;
@@ -23,7 +25,7 @@ export default function NoteModule({ api }: NoteModuleProps) {
       collapsed={Boolean(api.prefs.collapsed[key])}
       onToggle={() => api.toggleModuleCollapsed(key)}
     >
-      <textarea
+      <Input.TextArea
         className="cpk-note__area"
         rows={3}
         value={doc.character.note}

@@ -103,12 +103,13 @@ export default function EffectEditor({
         {modifiers.length > 0 ? (
           <ul className="cpk-fxmodal__list">
             {modifiers.map((mod) => (
-              <li key={mod.id}>
-                <button
-                  type="button"
-                  className={`cpk-fxmodal__pick${mod.id === editingId ? " is-active" : ""}`}
-                  onClick={() => onSelect(mod.id)}
-                >
+              /* 行容器不是交互元素：里面放「选择」与「删除」两个真按钮 ——
+                 `<button>` 里嵌 `<button>` 会被浏览器拆坏 DOM，所以删除不能留在选择按钮内部。 */
+              <li
+                key={mod.id}
+                className={`cpk-fxmodal__row${mod.id === editingId ? " is-active" : ""}`}
+              >
+                <Button className="cpk-fxmodal__pick" onClick={() => onSelect(mod.id)}>
                   <span className={`cpk-bdg is-${mod.nature}`}>{NATURE_META[mod.nature].badge}</span>
                   <span className="cpk-fxmodal__pickname">
                     {mod.name || NATURE_META[mod.nature].label + "效果"}
@@ -118,26 +119,17 @@ export default function EffectEditor({
                       ? `${mod.value}${mod.valueUnit}`
                       : `${OP_META[mod.op].symbol}${mod.value}`}
                   </span>
-                  <span
-                    role="button"
-                    tabIndex={0}
-                    className="cpk-iconbtn tiny danger"
-                    title="删除该条"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onRemove(mod.id);
-                      if (mod.id === editingId) onSelect(null);
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        onRemove(mod.id);
-                        onSelect(null);
-                      }
-                    }}
-                  >
-                    <CloseOutlined />
-                  </span>
-                </button>
+                </Button>
+                <Button
+                  className="cpk-iconbtn tiny danger"
+                  title="删除该条"
+                  onClick={() => {
+                    onRemove(mod.id);
+                    if (mod.id === editingId) onSelect(null);
+                  }}
+                >
+                  <CloseOutlined />
+                </Button>
               </li>
             ))}
           </ul>
@@ -148,16 +140,15 @@ export default function EffectEditor({
           <div className="cpk-fxmodal__natures">
             <p className="cpk-fxmodal__tip">先选择效果性质，表单会按性质分叉：</p>
             {NATURES.map((nature) => (
-              <button
+              <Button
                 key={nature}
-                type="button"
                 className={`cpk-ncard is-${nature}`}
                 onClick={() => pickNature(nature)}
               >
                 <span className={`cpk-bdg is-${nature}`}>{NATURE_META[nature].badge}</span>
                 <span className="cpk-ncard__label">{NATURE_META[nature].label}</span>
                 <span className="cpk-ncard__hint">{NATURE_META[nature].hint}</span>
-              </button>
+              </Button>
             ))}
           </div>
         ) : (

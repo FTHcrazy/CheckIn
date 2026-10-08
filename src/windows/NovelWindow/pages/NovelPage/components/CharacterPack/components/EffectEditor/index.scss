@@ -1,3 +1,5 @@
+@use "../../styles/pack-widget" as widget;
+
 /** 效果编辑器（C-1）：先选性质 → 表单按性质分叉 */
 .cpk-fxmodal {
   .ant-modal-body {
@@ -22,21 +24,17 @@
     overflow-y: auto;
   }
 
-  &__pick {
+  /* 行容器承载「药丸」外观（悬停整行高亮），里面是两个真按钮 */
+  &__row {
     display: flex;
     align-items: center;
-    gap: 6px;
-    width: 100%;
+    gap: 4px;
     padding: 4px 6px;
     border: 1px solid var(--app-border);
     border-radius: var(--app-radius-item);
     background: var(--app-surface-alt);
-    color: var(--app-text);
-    font: inherit;
-    font-size: 12px;
-    cursor: pointer;
     box-sizing: border-box;
-    text-align: left;
+    transition: border-color 0.16s ease, background 0.16s ease;
 
     &:hover {
       background: var(--app-surface-hover);
@@ -46,6 +44,19 @@
       border-color: var(--app-primary);
       background: var(--app-primary-weak);
     }
+  }
+
+  /* 选择按钮：透明无框，只负责「可点」与排版 */
+  &__pick.ant-btn {
+    @include widget.cpk-widget;
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0;
+    font-size: 12px;
+    box-sizing: border-box;
   }
 
   &__pickname {
@@ -116,37 +127,44 @@
 }
 
 /* ── 性质卡：选中前是唯一入口，必须一眼看懂差异 ── */
-.cpk-ncard {
+.cpk-ncard.ant-btn {
+  @include widget.cpk-widget;
+  /* 造型自带 → 先清零，再声明本题的边框与底色 */
+  --ant-line-width: 1px;
+  --ant-border-radius: var(--app-radius-card);
+  --ant-button-default-bg: var(--app-surface);
+  --ant-button-default-hover-bg: var(--app-surface-hover);
+  --ant-button-default-active-bg: var(--app-surface-hover);
+  --ant-button-default-border-color: var(--app-border-strong);
+  --ant-button-default-hover-border-color: var(--app-border-strong);
+  --ant-button-default-active-border-color: var(--app-border-strong);
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 5px;
   padding: 10px;
-  border: 1px solid var(--app-border-strong);
-  border-radius: var(--app-radius-card);
-  background: var(--app-surface);
-  font: inherit;
-  cursor: pointer;
   box-sizing: border-box;
-  text-align: left;
   transition: border-color 0.16s ease, background 0.16s ease;
 
-  &:hover {
-    background: var(--app-surface-hover);
+  /* 悬停时用各自的语义色勾边：一眼分清三档性质 */
+  &.is-passive {
+    --ant-button-default-hover-border-color: var(--app-text-disabled);
+    --ant-button-default-active-border-color: var(--app-text-disabled);
   }
 
-  &.is-passive:hover {
-    border-color: var(--app-text-disabled);
+  &.is-sustained {
+    --ant-button-default-hover-border-color: var(--app-accent-blue);
+    --ant-button-default-active-border-color: var(--app-accent-blue);
   }
 
-  &.is-sustained:hover {
-    border-color: var(--app-accent-blue);
+  &.is-cast {
+    --ant-button-default-hover-border-color: var(--app-accent-amber);
+    --ant-button-default-active-border-color: var(--app-accent-amber);
   }
+}
 
-  &.is-cast:hover {
-    border-color: var(--app-accent-amber);
-  }
-
+/* 卡片内文（Button 的子节点，不参与 antd 外观清零） */
+.cpk-ncard {
   &__label {
     font-size: 13px;
     font-weight: 600;

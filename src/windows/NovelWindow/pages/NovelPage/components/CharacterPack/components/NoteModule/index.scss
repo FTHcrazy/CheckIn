@@ -1,24 +1,16 @@
-.cpk-note__area {
-  width: 100%;
+/* 备注速记区：antd `Input.TextArea`（默认描边变体，与面板里其它输入同款） */
+.cpk-note__area.ant-input {
+  --ant-border-radius: var(--app-radius-item);
+  --ant-input-padding-block: 6px;
+  --ant-input-padding-inline: 8px;
+  --ant-input-input-font-size: 12px;
+  --ant-input-hover-bg: var(--app-input-bg);
+  --ant-input-active-bg: var(--app-input-bg);
+  --ant-color-text: var(--app-text);
+  --ant-color-bg-container: var(--app-input-bg);
+  --ant-color-border: var(--app-border-strong);
   min-height: 58px;
-  padding: 6px 8px;
-  border: 1px solid var(--app-border-strong);
-  border-radius: var(--app-radius-item);
-  background: var(--app-input-bg);
-  color: var(--app-text);
-  font: inherit;
-  font-size: 12px;
   line-height: 1.65;
-  resize: vertical;
-  box-sizing: border-box;
+  font-family: inherit;
   scrollbar-gutter: stable;
-
-  &:focus {
-    outline: none;
-    border-color: var(--app-primary);
-  }
-
-  &::placeholder {
-    color: var(--app-text-disabled);
-  }
 }

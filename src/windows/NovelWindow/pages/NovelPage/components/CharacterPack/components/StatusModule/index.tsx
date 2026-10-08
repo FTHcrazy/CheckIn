@@ -1,10 +1,11 @@
 import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
-import { Input, InputNumber, Select } from "antd";
+import { Button, Input, InputNumber, Select, Switch } from "antd";
 import PackModuleShell from "../PackModuleShell";
 import type { PackPanelApi } from "../../hooks/usePackPanel";
 import { moduleLabel } from "../module-meta";
 import { formatAttrValue } from "../../pack-utils";
 import { NATURE_META, OP_META, type PackModifier, type PackNature } from "../../types";
+import "./index.scss";
 
 interface StatusModuleProps {
   api: PackPanelApi;
@@ -57,12 +58,12 @@ export default function StatusModule({ api }: StatusModuleProps) {
       onToggle={() => api.toggleModuleCollapsed(key)}
       actions={
         <>
-          <button type="button" className="cpk-btn ghost" onClick={() => add("sustained")}>
-            <PlusOutlined /> 持续
-          </button>
-          <button type="button" className="cpk-btn ghost" onClick={() => add("passive")}>
-            <PlusOutlined /> 被动
-          </button>
+          <Button className="cpk-btn ghost" onClick={() => add("sustained")}>
+            <PlusOutlined />持续
+          </Button>
+          <Button className="cpk-btn ghost" onClick={() => add("passive")}>
+            <PlusOutlined />被动
+          </Button>
         </>
       }
     >
@@ -78,38 +79,33 @@ export default function StatusModule({ api }: StatusModuleProps) {
             return (
               <li key={mod.id} className={`cpk-stt is-${mod.nature}${mod.active ? " is-on" : ""}`}>
                 <div className="cpk-stt__top">
-                  <button
-                    type="button"
-                    className={`cpk-sw2${mod.active ? " is-on" : ""}`}
-                    role="switch"
-                    aria-checked={mod.active}
-                    onClick={() => api.toggleModifierActive(mod.id)}
+                  <Switch
+                    size="small"
+                    className="cpk-sw2"
+                    checked={mod.active}
+                    onChange={() => api.toggleModifierActive(mod.id)}
                     title={mod.active ? "已生效，计入总属性" : "未生效，不计入总属性"}
-                  >
-                    <span className="cpk-sw2__dot" />
-                  </button>
+                  />
                   <Input
                     size="small"
                     value={mod.name}
                     placeholder="状态名（如：中毒）"
                     onChange={(event) => api.updateModifier(mod.id, { name: event.target.value })}
                   />
-                  <button
-                    type="button"
+                  <Button
                     className="cpk-iconbtn tiny"
                     onClick={() => api.openEffectEditor("status", doc.character.id, mod.name || "状态效果", mod.id)}
                     title="详细编辑"
                   >
                     ⋯
-                  </button>
-                  <button
-                    type="button"
+                  </Button>
+                  <Button
                     className="cpk-iconbtn tiny danger"
                     onClick={() => api.removeModifier(mod.id)}
                     title="删除状态"
                   >
                     <DeleteOutlined />
-                  </button>
+                  </Button>
                 </div>
                 <div className="cpk-stt__row">
                   <span className={`cpk-bdg is-${mod.nature}`} title={NATURE_META[mod.nature].hint}>

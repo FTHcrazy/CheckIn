@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Dropdown, Input, Select } from "antd";
+import { Button, Dropdown, Input, Select } from "antd";
 import {
   AppstoreOutlined,
   DeleteOutlined,
@@ -101,8 +101,7 @@ export default function InventoryModule({ api }: InventoryModuleProps) {
 
   const renderQty = (item: PackItem) => (
     <span className="cpk-inv__qty">
-      <button
-        type="button"
+      <Button
         className="cpk-iconbtn tiny"
         onPointerDown={() => hold.start(() => api.stepItemQty(item.id, -1))}
         onPointerUp={hold.stop}
@@ -113,10 +112,9 @@ export default function InventoryModule({ api }: InventoryModuleProps) {
         title="减 1（按住连减）"
       >
         −
-      </button>
+      </Button>
       <span className="cpk-inv__qtynum">{item.qty}</span>
-      <button
-        type="button"
+      <Button
         className="cpk-iconbtn tiny"
         onPointerDown={() => hold.start(() => api.stepItemQty(item.id, 1))}
         onPointerUp={hold.stop}
@@ -126,7 +124,7 @@ export default function InventoryModule({ api }: InventoryModuleProps) {
         title="加 1（按住连加）"
       >
         +
-      </button>
+      </Button>
     </span>
   );
 
@@ -148,17 +146,16 @@ export default function InventoryModule({ api }: InventoryModuleProps) {
               onChange={(event) => setKeyword(event.target.value)}
             />
           ) : null}
-          <button
-            type="button"
+          <Button
             className="cpk-iconbtn"
             onClick={() => api.patchPrefs({ inventoryView: grid ? "list" : "grid" })}
             title={grid ? "切换到列表视图" : "切换到宫格视图"}
           >
             {grid ? <UnorderedListOutlined /> : <AppstoreOutlined />}
-          </button>
-          <button type="button" className="cpk-btn ghost" onClick={() => api.addItem()}>
+          </Button>
+          <Button className="cpk-btn ghost" onClick={() => api.addItem()}>
             <PlusOutlined /> 物品
-          </button>
+          </Button>
         </>
       }
     >
@@ -177,7 +174,9 @@ export default function InventoryModule({ api }: InventoryModuleProps) {
                   style={{ background: RARITY_META[item.rarity]?.color }}
                   title={RARITY_META[item.rarity]?.label ?? item.rarity}
                 />
-                <input
+                <Input
+                  size="small"
+                  variant="borderless"
                   className="cpk-inline cpk-inv__name"
                   value={item.name}
                   placeholder="物品名"
@@ -194,43 +193,39 @@ export default function InventoryModule({ api }: InventoryModuleProps) {
                 />
                 {renderQty(item)}
                 {equipped ? (
-                  <button
-                    type="button"
+                  <Button
                     className="cpk-btn ghost"
                     onClick={() => api.unequipItem(item.id)}
                     title="点击卸下"
                   >
                     已穿戴
-                  </button>
+                  </Button>
                 ) : (
                   <Dropdown trigger={["click"]} menu={{ items: equipOptions }}>
-                    <button
-                      type="button"
+                    <Button
                       className="cpk-btn ghost"
                       onClick={() => {
                         equipTargetRef.current = item.id;
                       }}
                     >
                       装备
-                    </button>
+                    </Button>
                   </Dropdown>
                 )}
-                <button
-                  type="button"
+                <Button
                   className="cpk-iconbtn tiny"
                   onClick={() => api.openEffectEditor("item", item.id, item.name || "物品")}
                   title="加成效果"
                 >
                   ✦
-                </button>
-                <button
-                  type="button"
+                </Button>
+                <Button
                   className="cpk-iconbtn tiny danger"
                   onClick={() => setPendingRemove(item)}
                   title="删除"
                 >
                   <DeleteOutlined />
-                </button>
+                </Button>
               </li>
             );
           })}
@@ -247,11 +242,10 @@ export default function InventoryModule({ api }: InventoryModuleProps) {
             ？
           </span>
           <span className="cpk-inv__confirmactions">
-            <button type="button" className="cpk-btn ghost" onClick={() => setPendingRemove(null)}>
+            <Button className="cpk-btn ghost" onClick={() => setPendingRemove(null)}>
               取消
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
               className="cpk-btn danger"
               onClick={() => {
                 api.removeItem(pendingRemove.id);
@@ -259,7 +253,7 @@ export default function InventoryModule({ api }: InventoryModuleProps) {
               }}
             >
               删除
-            </button>
+            </Button>
           </span>
         </div>
       ) : null}

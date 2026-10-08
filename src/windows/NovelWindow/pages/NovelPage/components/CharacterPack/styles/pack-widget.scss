@@ -1,0 +1,57 @@
+/**
+ * 造型控件的「清零点」mixin（行囊公共原语）
+ *
+ * 行囊里有一批**自带完整造型**的控件（阶梯格子、候选行、折叠头、性质卡……）：
+ * 视觉是设计定的，但交互基建应该复用组件库（波纹 / 键盘 / 禁用语义 / focus 环）。
+ * 做法是用 antd `Button` 承载，再把它自带的外观**通过组件级变量清零**。
+ *
+ * 为什么必须是 mixin，而不是 pack-common 里的一个公共类：
+ * 清零要压过 antd 的 `.ant-btn`（特异性 0,1,0），而各控件自己的变量又要压过清零 ——
+ * 两者写在**同一个选择器**里（`.cpk-xxx.ant-btn`）时，靠源码先后就能解决；
+ * 写成两个类（`.cpk-flat` + `.cpk-xxx`）则要靠文件先后，而组件样式先于
+ * pack-common 打包，顺序恰好是反的，会静默失效。
+ *
+ * 顺带解决状态样式：antd 的 hover / active 选择器特异性更高
+ * （`.ant-btn-color-default.ant-btn-variant-outlined:not(:disabled):hover`），
+ * 自写 `:hover` 压不过 —— 但那些规则读的就是这里清零的变量，改状态只需改变量。
+ *
+ * 用法（组件自己的 scss 里）：
+ * ```scss
+ * @use "../../styles/pack-widget" as widget;
+ *
+ * .cpk-xxx.ant-btn {
+ *   @include widget.cpk-widget;   // 先清零
+ *   --ant-button-default-bg: var(--app-surface);   // 再按需声明，靠源码顺序覆盖
+ *   width: 100%;                  // antd 不接管的属性直接写
+ * }
+ * ```
+ */
+@mixin cpk-widget {
+  /* 尺寸：不固定高宽，交给控件自己的布局 */
+  --ant-control-height: auto;
+  --ant-button-padding-inline: 0px;
+  --ant-button-content-font-size: inherit;
+  --ant-button-font-weight: inherit;
+  --ant-button-icon-gap: normal;
+  --ant-border-radius: 0px;
+
+  /* 外观：全部归零，控件按需重新声明 */
+  --ant-line-width: 0px;
+  --ant-button-default-bg: transparent;
+  --ant-button-default-hover-bg: transparent;
+  --ant-button-default-active-bg: transparent;
+  --ant-button-default-border-color: transparent;
+  --ant-button-default-hover-border-color: transparent;
+  --ant-button-default-active-border-color: transparent;
+  --ant-button-default-color: currentColor;
+  --ant-button-default-hover-color: currentColor;
+  --ant-button-default-active-color: currentColor;
+  --ant-button-default-shadow: none;
+  --ant-button-default-bg-disabled: transparent;
+  --ant-button-border-color-disabled: transparent;
+
+  /* 文本与对齐：随容器，不跟 antd 的居中排版 */
+  font-family: inherit;
+  justify-content: normal;
+  text-align: inherit;
+}

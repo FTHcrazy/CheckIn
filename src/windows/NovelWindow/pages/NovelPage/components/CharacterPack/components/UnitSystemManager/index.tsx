@@ -4,7 +4,6 @@ import type { PackPanelApi } from "../../hooks/usePackPanel";
 import { CURRENCY_TEMPLATE, PROFICIENCY_TEMPLATE } from "../../pack-config";
 import { formatRatio, type RatioLevel, type ThresholdLevel } from "../../pack-utils";
 import "./index.scss";
-import "./index.scss";
 
 interface UnitSystemManagerProps {
   api: PackPanelApi;
@@ -118,14 +117,13 @@ export default function UnitSystemManager({ api }: UnitSystemManagerProps) {
                   writeCurrency(next);
                 }}
               />
-              <button
-                type="button"
+              <Button
                 className="cpk-iconbtn tiny danger"
                 onClick={() => writeCurrency(currencyLevels.filter((_, i) => i !== index))}
                 title="删除这一档"
               >
                 <DeleteOutlined />
-              </button>
+              </Button>
             </li>
           ))}
         </ul>
@@ -198,14 +196,13 @@ export default function UnitSystemManager({ api }: UnitSystemManagerProps) {
                   writeProficiency(next);
                 }}
               />
-              <button
-                type="button"
+              <Button
                 className="cpk-iconbtn tiny danger"
                 onClick={() => writeProficiency(proficiencyLevels.filter((_, i) => i !== index))}
                 title="删除这一档"
               >
                 <DeleteOutlined />
-              </button>
+              </Button>
             </li>
           ))}
         </ul>

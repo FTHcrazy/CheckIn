@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Button, Switch } from "antd";
 import { DeleteOutlined, EditOutlined, PlusOutlined, ThunderboltOutlined } from "@ant-design/icons";
 import { NATURE_META, type PackAttribute, type PackModifier, type PackNature } from "../../types";
 import { formatAttrValue } from "../../pack-utils";
@@ -114,15 +115,14 @@ export default function ModifierList({
                     .filter((attr) => mod.valueUnit.startsWith(attr.name))
                     .slice(0, 1)
                     .map((attr) => (
-                      <button
+                      <Button
                         key={attr.id}
-                        type="button"
                         className="cpk-attrref"
                         onClick={() => onJumpAttribute(attr.id)}
                         title="查看该属性当前值（只读引用）"
                       >
                         {attr.name} 当前值 ▸
-                      </button>
+                      </Button>
                     ))
                 : null}
             </>
@@ -146,51 +146,44 @@ export default function ModifierList({
 
         {/* 持续型效果自己的开关：与载体开关互不影响 */}
         {mod.nature === "sustained" ? (
-          <button
-            type="button"
-            className={`cpk-sw2${mod.active ? " is-on" : ""}`}
-            role="switch"
-            aria-checked={mod.active}
-            onClick={() => onToggleActive(mod.id)}
+          <Switch
+            size="small"
+            className="cpk-sw2"
+            checked={mod.active}
+            onChange={() => onToggleActive(mod.id)}
             title={mod.active ? "已开启，计入总属性" : "未开启，不计入总属性"}
-          >
-            <span className="cpk-sw2__dot" />
-          </button>
+          />
         ) : null}
 
         <span className="cpk-efrow__ops">
-          <button
-            type="button"
+          <Button
             className="cpk-iconbtn tiny"
             onClick={() => onOpenEditor(mod.id)}
             title="编辑"
           >
             <EditOutlined />
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
             className="cpk-iconbtn tiny"
             onClick={() => onDuplicate(mod.id)}
             title="复制一条"
           >
             <PlusOutlined />
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
             className={`cpk-iconbtn tiny${mod.disabled ? " is-active" : ""}`}
             onClick={() => onToggleDisabled(mod.id)}
             title={mod.disabled ? "启用这条效果" : "临时禁用（保留配置）"}
           >
             ⊘
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
             className="cpk-iconbtn tiny danger"
             onClick={() => onRemove(mod.id)}
             title="删除"
           >
             <DeleteOutlined />
-          </button>
+          </Button>
         </span>
       </li>
     );
@@ -208,8 +201,7 @@ export default function ModifierList({
 
       {casts.length > 0 ? (
         <>
-          <button
-            type="button"
+          <Button
             className="cpk-castnote"
             onClick={() => setCastsOpen((open) => !open)}
           >
@@ -217,15 +209,15 @@ export default function ModifierList({
             <span>主动效果 {casts.length} 项</span>
             <span className="cpk-castnote__warn">不计入总属性</span>
             <span className="cpk-castnote__caret">{castsOpen ? "▴" : "▾"}</span>
-          </button>
+          </Button>
           {castsOpen ? <ul className="cpk-eflist__rows">{casts.map(renderRow)}</ul> : null}
         </>
       ) : null}
 
       <div className="cpk-eflist__add">
-        <button type="button" className="cpk-btn ghost" onClick={() => onOpenEditor()}>
+        <Button className="cpk-btn ghost" onClick={() => onOpenEditor()}>
           + 新增效果
-        </button>
+        </Button>
       </div>
     </div>
   );

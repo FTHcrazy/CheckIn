@@ -1,3 +1,5 @@
+@use "../../styles/pack-widget" as widget;
+
 /** 行囊模块壳：标题行 + 可折叠内容（grid 0fr/1fr 过渡，不打断动画） */
 .cpk-mod {
   border: 1px solid var(--app-border);
@@ -22,18 +24,15 @@
     border-bottom-color: transparent;
   }
 
-  &__toggle {
+  /* 折叠头：整行可点，造型自带 → 先清零 antd 外观再声明 */
+  &__toggle.ant-btn {
+    @include widget.cpk-widget;
     flex: 1;
     min-width: 0;
     display: flex;
     align-items: center;
     gap: 6px;
-    border: 0;
     padding: 0;
-    background: transparent;
-    cursor: pointer;
-    font: inherit;
-    text-align: left;
     color: var(--app-text-strong);
   }
 

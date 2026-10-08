@@ -1,9 +1,11 @@
+import { Button } from "antd";
 import { ThunderboltOutlined } from "@ant-design/icons";
 import PackModuleShell from "../PackModuleShell";
 import type { PackPanelApi } from "../../hooks/usePackPanel";
 import { moduleLabel } from "../module-meta";
 import { formatAttrValue, type SummaryRow } from "../../pack-utils";
 import type { PackAttribute } from "../../types";
+import "./index.scss";
 
 interface SummaryModuleProps {
   api: PackPanelApi;
@@ -69,8 +71,7 @@ export default function SummaryModule({ api }: SummaryModuleProps) {
             const conflict = row.overrideCount > 1;
             return (
               <li key={row.attrId}>
-                <button
-                  type="button"
+                <Button
                   className="cpk-sum__row"
                   onClick={() => api.setDetailAttrId(row.attrId)}
                   title="查看这项属性的来源明细"
@@ -107,7 +108,7 @@ export default function SummaryModule({ api }: SummaryModuleProps) {
                   {row.contributions.length > 0 ? (
                     <span className="cpk-sum__count">{row.contributions.length} 条来源</span>
                   ) : null}
-                </button>
+                </Button>
               </li>
             );
           })}

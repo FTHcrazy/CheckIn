@@ -1,4 +1,4 @@
-import { Button, Modal } from "antd";
+import { Button, Modal, Switch } from "antd";
 import { ArrowDownOutlined, ArrowUpOutlined, ReloadOutlined } from "@ant-design/icons";
 import type { PackPanelApi } from "../../hooks/usePackPanel";
 import { moduleDesc, moduleLabel } from "../module-meta";
@@ -45,39 +45,34 @@ export default function ModuleManager({ api }: ModuleManagerProps) {
         {ordered.map((module, index) => (
           <li key={module.key} className="cpk-mgr__row">
             <span className="cpk-mgr__ops">
-              <button
-                type="button"
+              <Button
                 className="cpk-iconbtn tiny"
                 onClick={() => move(index, -1)}
                 disabled={index === 0}
                 title="上移"
               >
                 <ArrowUpOutlined />
-              </button>
-              <button
-                type="button"
+              </Button>
+              <Button
                 className="cpk-iconbtn tiny"
                 onClick={() => move(index, 1)}
                 disabled={index === ordered.length - 1}
                 title="下移"
               >
                 <ArrowDownOutlined />
-              </button>
+              </Button>
             </span>
             <span className="cpk-mgr__text">
               <span className="cpk-mgr__label">{moduleLabel(module.key)}</span>
               <span className="cpk-mgr__desc">{moduleDesc(module.key)}</span>
             </span>
-            <button
-              type="button"
-              className={`cpk-sw2${module.enabled ? " is-on" : ""}`}
-              role="switch"
-              aria-checked={module.enabled}
-              onClick={() => api.setModuleEnabled(module.key, !module.enabled)}
+            <Switch
+              size="small"
+              className="cpk-sw2"
+              checked={module.enabled}
+              onChange={(checked) => api.setModuleEnabled(module.key, checked)}
               title={module.enabled ? "已启用" : "已关闭"}
-            >
-              <span className="cpk-sw2__dot" />
-            </button>
+            />
           </li>
         ))}
       </ul>

@@ -1,3 +1,5 @@
+@use "../../styles/pack-widget" as widget;
+
 /** 境界：当前值 / 双读数对照 / 阶梯 / 小层进位 / 绑定实体 */
 .cpk-rlm {
   &__now {
@@ -77,18 +79,25 @@
     gap: 4px;
   }
 
-  &__rung {
+  /* 阶梯格子：一颗可点的 chip，造型自带 → 先清零 antd 外观再声明 */
+  &__rung.ant-btn {
+    @include widget.cpk-widget;
+    --ant-line-width: 1px;
+    --ant-border-radius: var(--app-radius-chip);
+    --ant-button-default-bg: var(--app-surface);
+    --ant-button-default-color: var(--app-text-secondary-strong);
+    --ant-button-default-hover-color: var(--app-text-secondary-strong);
+    --ant-button-default-active-color: var(--app-text-secondary-strong);
+    --ant-button-default-border-color: var(--app-border-strong);
+    --ant-button-default-hover-border-color: var(--app-border-strong);
+    --ant-button-default-active-border-color: var(--app-border-strong);
+    --ant-button-default-hover-bg: var(--app-surface-hover);
+    --ant-button-default-active-bg: var(--app-surface-hover);
     display: inline-flex;
     align-items: baseline;
     gap: 3px;
     padding: 2px 8px;
-    border: 1px solid var(--app-border-strong);
-    border-radius: var(--app-radius-chip);
-    background: var(--app-surface);
-    color: var(--app-text-secondary-strong);
-    font: inherit;
     font-size: 12px;
-    cursor: pointer;
 
     em {
       font-size: 10px;
@@ -96,19 +105,25 @@
       color: var(--app-text-disabled);
     }
 
-    &:hover {
-      background: var(--app-surface-hover);
-    }
-
+    /* 已经走过的阶：压暗，但仍可点回去 */
     &.is-passed {
-      color: var(--app-text-muted);
+      --ant-button-default-color: var(--app-text-muted);
+      --ant-button-default-hover-color: var(--app-text-muted);
+      --ant-button-default-active-color: var(--app-text-muted);
     }
 
+    /* 当前所在阶：实心蓝 */
     &.is-on {
-      border-color: var(--app-accent-blue);
-      background: var(--app-accent-blue);
-      color: var(--app-primary-contrast);
-      font-weight: 600;
+      --ant-button-default-bg: var(--app-accent-blue);
+      --ant-button-default-color: var(--app-primary-contrast);
+      --ant-button-default-hover-bg: var(--app-accent-blue);
+      --ant-button-default-hover-color: var(--app-primary-contrast);
+      --ant-button-default-active-bg: var(--app-accent-blue);
+      --ant-button-default-active-color: var(--app-primary-contrast);
+      --ant-button-default-border-color: var(--app-accent-blue);
+      --ant-button-default-hover-border-color: var(--app-accent-blue);
+      --ant-button-default-active-border-color: var(--app-accent-blue);
+      --ant-button-font-weight: 600;
 
       em {
         color: var(--app-primary-contrast);

@@ -1,3 +1,5 @@
+@use "../../styles/pack-widget" as widget;
+
 /** 效果词条列表：行 / 释放折叠 / 不计入提示（徽标与开关见 styles/pack-common.scss） */
 .cpk-eflist {
   display: flex;
@@ -95,22 +97,33 @@
   }
 }
 
-/* ── 释放型折叠提示条 ── */
-.cpk-castnote {
+/* ── 释放型折叠提示条 ──
+ * 造型自带（整条是一颗橙色虚线胶囊）→ 先清零 antd 外观，再声明本题变量。
+ * 虚线靠 `--ant-line-type` —— antd 的边框恒读这个变量，比写 `border-style` 更不容易漏掉某个状态。 */
+.cpk-castnote.ant-btn {
+  @include widget.cpk-widget;
+  --ant-line-width: 1px;
+  --ant-line-type: dashed;
+  --ant-border-radius: var(--app-radius-item);
+  --ant-button-default-bg: var(--app-accent-amber-weak);
+  --ant-button-default-hover-bg: var(--app-accent-amber-weak);
+  --ant-button-default-active-bg: var(--app-accent-amber-weak);
+  --ant-button-default-color: var(--app-text-strong);
+  --ant-button-default-hover-color: var(--app-text-strong);
+  --ant-button-default-active-color: var(--app-text-strong);
+  --ant-button-default-border-color: var(--app-accent-amber);
+  --ant-button-default-hover-border-color: var(--app-accent-amber);
+  --ant-button-default-active-border-color: var(--app-accent-amber);
   display: flex;
   align-items: center;
   gap: 6px;
   width: 100%;
   padding: 5px 7px;
-  border: 1px dashed var(--app-accent-amber);
-  border-radius: var(--app-radius-item);
-  background: var(--app-accent-amber-weak);
-  color: var(--app-text-strong);
-  font: inherit;
   font-size: 12px;
-  cursor: pointer;
   box-sizing: border-box;
+}
 
+.cpk-castnote {
   &__warn {
     flex: 1;
     text-align: left;
@@ -125,18 +138,20 @@
   }
 }
 
-/* 释放型引用的属性（只读，不参与计算） */
-.cpk-attrref {
+/* 释放型引用的属性（只读，不参与计算）：胶囊造型自带 → 同样先清零 */
+.cpk-attrref.ant-btn {
+  @include widget.cpk-widget;
+  --ant-line-width: 1px;
+  --ant-border-radius: var(--app-radius-pill);
+  --ant-button-default-bg: var(--app-surface);
+  --ant-button-default-hover-bg: var(--app-accent-blue-weak);
+  --ant-button-default-active-bg: var(--app-accent-blue-weak);
+  --ant-button-default-color: var(--app-accent-blue);
+  --ant-button-default-hover-color: var(--app-accent-blue);
+  --ant-button-default-active-color: var(--app-accent-blue);
+  --ant-button-default-border-color: var(--app-border-strong);
+  --ant-button-default-hover-border-color: var(--app-border-strong);
+  --ant-button-default-active-border-color: var(--app-border-strong);
   padding: 0 6px;
-  border: 1px solid var(--app-border-strong);
-  border-radius: var(--app-radius-pill);
-  background: var(--app-surface);
-  color: var(--app-accent-blue);
-  font: inherit;
   font-size: 11px;
-  cursor: pointer;
-
-  &:hover {
-    background: var(--app-accent-blue-weak);
-  }
 }

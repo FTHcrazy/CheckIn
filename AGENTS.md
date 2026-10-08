@@ -528,43 +528,115 @@ SettingsWindow 的「外观」分区是全版本共用的设置面板（full/nov
 | `shared/services/daily.ts` 的 `ACTIVITY_COLORS` | 供用户挑选的调色板，属业务数据 |
 | `shared/styles/variables.scss` 的 `$primary-color` 等 | 已废弃，仅供历史样式引用；新样式一律用 `--app-*` |
 
-### 6.1.2 UI 组件库优先规范
+### 6.1.2 UI 组件库优先规范（强制）
 
-**原则：组件库（Ant Design）已提供能力的控件，一律用组件库组件，禁止用原生控件替代。**
+> **原则：凡是组件库（Ant Design）已提供能力的控件，一律使用组件库组件。
+> 业务代码中禁止出现原生表单控件。**
 
-原生控件在暗色主题下不会跟随 antd 的 `darkAlgorithm`（会变成浅色斑块），且缺少
-键盘可达性、弹层定位与空态处理。新写代码按下表选型：
+这条是**强制条款**，不是偏好。原生控件在暗色主题下不跟随 antd 的 `darkAlgorithm`
+（会变成浅色斑块），没有组件库给的键盘可达性、焦点环、禁用与 `aria` 语义，
+弹层定位与空态也要自己造，还得为每个状态手写一套 hover / active —— 改主题时
+总有一两处漏掉。**例外只有下表列出的三种，且必须写明理由**。
+
+**选型对照表（全部为强制项）**：
 
 | 场景 | 必须使用 | 禁止 |
 |------|---------|------|
 | 下拉选择（单选 / 多选 / 带禁用项） | `Select` | 原生 `<select>` + `<option>` |
+| 文本 / 多行文本 | `Input` / `Input.TextArea` | 原生 `<input>` / `<textarea>` |
+| 数值输入（带步进 / 范围 / 前后缀） | `InputNumber` | 原生 `<input type="number">` |
+| 任意按钮（含图标按钮、整行可点行、卡片式入口） | `Button` | 原生 `<button>` |
 | 日期 / 时间选择 | `DatePicker` / `TimePicker` | 原生 `<input type="date">` |
 | 弹窗 / 抽屉 / 确认框 | `Modal` / `Drawer` / `Popconfirm` | 手写 `position: fixed` 遮罩 |
-| 浮层提示 / 长按说明 | `Tooltip` / `Popover` | 手写 `title` 属性外的自建浮层 |
-| 开关 / 复选 / 单选组 | `Switch` / `Checkbox` / `Radio.Group` | 原生 `<input type="checkbox">` |
+| 浮层提示 / 长按说明 | `Tooltip` / `Popover` | 自建浮层（逐行重绘成本高） |
+| 开关 / 复选 / 单选组 | `Switch` / `Checkbox` / `Radio.Group` | 原生 `<input type="checkbox">` + 自绘圆点 |
 | 分段切换 / 标签页 | `Segmented` / `Tabs` | 手写按钮组再自行维护选中态 |
+| 折叠面板 | `Collapse`，或 `grid-template-rows: 0fr/1fr` 过渡（见 6.4） | 条件渲染打断动画 |
 
-**例外（保留原生控件不算违规）**：
+**例外（仅此三种，保留原生控件不算违规）**：
 
 | 场景 | 保留原因 |
 |------|---------|
 | 码字区 / 编辑器（CodeMirror） | 深度定制的光标、输入法与滚动行为，组件库无法承载 |
-| 面板内的即时输入（检索框、速记框、一行重命名） | 需要零弹层、零延迟的受控输入，且样式已走 `var(--app-*)` |
-| 行内自增高度的输入（`textarea` 自适应） | antd `Input.TextArea` 的 autoSize 与面板密度不符 |
+| 镜像高亮编辑器（MemoPage） | 输入层与高亮层必须逐像素对齐，组件库包一层 wrapper 就错位 |
+| 行内自适应高度且需要精确控制滚动同步的 `textarea` | antd `Input.TextArea` 的 autoSize 与面板密度不符，且无法接管 `scrollbar-gutter` |
 
-**接入要求**：
+**存量代码**：不要求一次性全量重构，但**同一模块内不得混用**；只要动了某个模块，
+就把该模块内的原生控件一并换掉（行囊 `CharacterPack/` 已全量清零，见下文参考实现）。
 
-1. 组件库组件的默认外观必须覆盖为面板密度与主题变量（`height` / `border-radius` /
-   `background: var(--app-input-bg)` / `color: var(--app-text)`），**禁止**直接套用默认尺寸。
-2. 弹层类组件（`Select` / `Tooltip` / `Popover` / `DatePicker`）的下拉挂在 `body`
-   的 portal 上，**样式必须写在组件根选择器之外**，并通过 `classNames={{ popup: { root: "..." } }}` 挂类命中，
-   否则换肤后弹层掉色。（`popupClassName` 在 antd 6.6+ 已废弃，统一改用 `classNames.popup.root`）
-3. **antd 6 的 Select 边框/背景画在根元素 `.ant-select` 上**（v5 的 `.ant-select-selector`
+#### 覆盖组件库外观的规范（最容易踩的部分）
+
+1. **只改组件级 CSS 变量，不写状态属性选择器。**
+   主题已开启 `cssVar: { prefix: "ant" }` + `hashed: false`（`shared/theme/ThemeProvider.tsx`），
+   antd 会为每个组件生成一套**私有 CSS 变量**并在所有状态规则里读取它们。
+   `:hover` / `:active` / `:disabled` 的外观因此全部由变量驱动：
+
+   ```scss
+   // ✅ 正确：配置变量，antd 自己维护的 hover/active/disabled 规则会跟着变
+   .my-panel__cancel.ant-btn {
+     --ant-button-default-bg: var(--app-surface);
+     --ant-button-default-color: var(--app-text-strong);
+     --ant-button-default-border-color: var(--app-border-strong);
+     --ant-button-default-hover-bg: var(--app-surface-hover);
+   }
+
+   // ❌ 错误：自写状态规则压不过组件库，且换主题时不联动
+   .my-panel__cancel:hover { background: var(--app-surface-hover); }
+   ```
+
+   原因是特异性：antd 的状态规则如
+   `.ant-btn-color-default.ant-btn-variant-outlined:not(:disabled):hover` 是 (0,4,0)，
+   自写的 `.my-panel__cancel:hover` 只有 (0,2,0)，**永远压不过**；
+   而这些规则读的正是上表那些变量，所以改变量是稳的，写属性是脆的。
+
+2. **变量名以实际生成的样式为准，不要照抄文档里的 camelCase token 名。**
+   实际产物是 kebab-case 的 `--ant-button-*` / `--ant-input-*` / `--ant-select-*` / `--ant-switch-*`。
+   拿不准时用 `ConfigProvider` + `@ant-design/cssinjs` 的 `extractStyle` 打一份真实
+   CSS 出来核对变量名与它消费的属性，**不要凭记忆猜**。
+
+3. **自带完整造型的控件：用组件库按钮承载 + 「清零点」mixin，禁止用 `<div>` 冒充按钮。**
+   行囊里有一批视觉是设计定的控件（阶梯格子、候选行、折叠头、性质卡、整行可点的属性行……）。
+   正确做法是仍用 `Button` 承载（拿到波纹 / 键盘 / 禁用语义 / focus 环），
+   再用 `styles/pack-widget.scss` 的 mixin 把 antd 自带外观清零后重绘：
+
+   ```scss
+   @use "../../styles/pack-widget" as widget;
+
+   .cpk-xxx.ant-btn {
+     @include widget.cpk-widget;                    // 先清零
+     --ant-button-default-bg: var(--app-surface);   // 再按需声明（同选择器内靠源码顺序覆盖）
+     width: 100%;                                   // antd 不接管的属性直接写
+   }
+   ```
+
+   **必须是 mixin，不能是 `pack-common.scss` 里的公共类**：清零与控件自己的变量要写在
+   **同一个选择器**里才能靠源码先后决定胜负；写成两个类则要靠文件先后，而组件样式先于
+   `pack-common.scss` 打包，顺序恰好是反的 —— **会静默失效**。
+
+4. **不要在 `<button>` 里嵌 `<button>`。**
+   HTML 不允许按钮嵌套，浏览器会把 DOM 拆坏（React 不报错、类型也过）。
+   「整行可点 + 行尾一个删除按钮」这类结构要改成：**行容器（非交互元素）承载外观，
+   里面放两个并列的真按钮**。
+
+5. **图标用 `icon` 属性还是 children，间距规则不同。**
+   用 `icon` 属性时 antd 会包 `.ant-btn-icon` 并推 `ant-btn-icon-only`；
+   把图标当 children 传时，图标与文字都成为按钮的 flex 子项，间距由
+   `--ant-button-icon-gap` 决定 —— 此时**不要在 JSX 里再留一个空格**，否则间距翻倍。
+
+6. **行囊控件的尺寸约定：一律不传 `size`。**
+   `.ant-btn` 的高度只消费一次 `--ant-control-height`，而 `.cpk-btn.ant-btn`（(0,2,0)）
+   稳定压过 `.ant-btn`（(0,1,0)），所以密度由样式表统一决定 —— 避免「漏传 `size` 就变形」的坑。
+   `Input` 则相反：保留 `size="small"`，配置 `--ant-input-*-sm` 一族变量。
+
+7. 弹层类组件（`Select` / `Tooltip` / `Popover` / `DatePicker`）的下拉挂在 `body`
+   的 portal 上，**样式必须写在组件根选择器之外**，并通过 `classNames={{ popup: { root: "..." } }}`
+   挂类命中，否则换肤后弹层掉色。（`popupClassName` 在 antd 6.6+ 已废弃）
+
+8. **antd 6 的 Select 边框/背景画在根元素 `.ant-select` 上**（v5 的 `.ant-select-selector`
    已移除，`.ant-select-content` 只是根内无边框的内容子元素）。覆盖外观必须改根元素的
-   `--ant-select-*` CSS 变量（`border-color` / `background-color` / `border-radius` /
-   `padding-horizontal` / `font-size` / `color`，antd 自身的 hover/focus/disabled 联动即基于这些变量），
-   **禁止**再给内层 `.ant-select-content` 加 `border`——根内加边框会出现双边框。
-4. 组件库组件仍须遵守 6.1.1：**不得硬编码色值**，覆盖样式一律用 `var(--app-*)`。
+   `--ant-select-*` CSS 变量，**禁止**再给内层 `.ant-select-content` 加 `border` —— 会出现双边框。
+
+9. 组件库组件仍须遵守 6.1.1：**不得硬编码色值**，覆盖样式一律用 `var(--app-*)`。
 
 ```tsx
 // ❌ 错误：原生 select，暗色主题下白底黑字
@@ -572,15 +644,23 @@ SettingsWindow 的「外观」分区是全版本共用的设置面板（full/nov
   <option value="person">人名</option>
 </select>
 
-// ✅ 正确：组件库 Select + popupClassName + 主题变量覆盖
+// ✅ 正确：组件库 Select + classNames 挂弹层类 + 主题变量覆盖
 <Select
   size="small"
-  popupClassName="nv-name__dropdown"
   value={kind}
   options={kindOptions}
+  classNames={{ popup: { root: "nv-name__dropdown" } }}
   onChange={setKind}
 />
 ```
+
+**参考实现（照抄这一套即可）**：
+
+| 文件 | 内容 |
+|------|------|
+| `CharacterPack/styles/pack-common.scss` | 面板密度原语：`.cpk-btn` / `.cpk-iconbtn` / `.cpk-sw2` / `.cpk-inline` 的变量配置 |
+| `CharacterPack/styles/pack-widget.scss` | 「清零点」mixin（自带造型控件复用） |
+| `CharacterPack/pack-ui-kit.test.ts` | 守卫测试：源码里不得出现原生表单控件、自带造型控件必须以 `.ant-btn` 承载 |
 
 ### 6.2 状态管理规范
 
@@ -907,6 +987,12 @@ function initializeDataDb(db: Database) {
 - [ ] 创建 `SubComponent/index.scss`（样式就近，入口文件引入）
 - [ ] 在 `SubComponent/index.tsx` 中 `import './index.scss'`
 - [ ] 从父组件 `index.scss` 中移除该组件的样式
+- [ ] **UI 一律用组件库组件**：不出现原生 `<button>` / `<input>` / `<textarea>` / `<select>`（§6.1.2）
+- [ ] 覆盖组件库外观时**只改组件级 CSS 变量**（`--ant-button-*` / `--ant-input-*` / `--ant-select-*` …），
+      不写 `:hover` / `:active` 属性规则；色值一律走 `var(--app-*)`
+- [ ] 自带造型的控件用组件库组件承载 + 清零点 mixin（`@include widget.cpk-widget`），
+      且必须写在控件自己的 `.xxx.ant-btn` 同一个选择器里
+- [ ] 存量的兄弟控件**顺手一并替换**（同一模块内不得原生与组件库混用）
 
 ### 8.4 新增数据表
 

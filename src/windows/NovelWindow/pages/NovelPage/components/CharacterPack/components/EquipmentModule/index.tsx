@@ -78,14 +78,13 @@ export default function EquipmentModule({ api }: EquipmentModuleProps) {
       collapsed={Boolean(api.prefs.collapsed[key])}
       onToggle={() => api.toggleModuleCollapsed(key)}
       actions={
-        <button
-          type="button"
+        <Button
           className="cpk-iconbtn"
           onClick={() => api.setSlotManagerOpen(true)}
           title="部位设置（名称 / 容量 / 可接受类别）"
         >
           <SettingOutlined />
-        </button>
+        </Button>
       }
     >
       {slots.length === 0 ? (
@@ -108,14 +107,13 @@ export default function EquipmentModule({ api }: EquipmentModuleProps) {
                   {slot.accepts.length > 0 ? (
                     <span className="cpk-eq__accepts">仅 {slot.accepts.join("/")}</span>
                   ) : null}
-                  <button
-                    type="button"
+                  <Button
                     className="cpk-btn ghost"
                     onClick={() => setPicking(picking === slot.id ? null : slot.id)}
                     disabled={!slot.enabled}
                   >
                     {picking === slot.id ? "收起" : "穿戴"}
-                  </button>
+                  </Button>
                 </header>
 
                 {occupants.length === 0 ? (
@@ -138,22 +136,20 @@ export default function EquipmentModule({ api }: EquipmentModuleProps) {
                             <span className="cpk-eq__itemname">{item.name}</span>
                             {!slot.enabled ? <span className="cpk-eq__offtag">部位已停用</span> : null}
                             <span className="cpk-eq__itemops">
-                              <button
-                                type="button"
+                              <Button
                                 className="cpk-btn ghost"
                                 onClick={() =>
                                   api.openEffectEditor("item", item.id, item.name || "装备")
                                 }
                               >
                                 加成效果
-                              </button>
-                              <button
-                                type="button"
+                              </Button>
+                              <Button
                                 className="cpk-btn ghost"
                                 onClick={() => api.unequipItem(item.id)}
                               >
                                 卸下
-                              </button>
+                              </Button>
                             </span>
                           </div>
                           <ModifierList
@@ -183,8 +179,7 @@ export default function EquipmentModule({ api }: EquipmentModuleProps) {
                       <ul className="cpk-eq__cands">
                         {candidates.map((item) => (
                           <li key={item.id}>
-                            <button
-                              type="button"
+                            <Button
                               className="cpk-eq__cand"
                               onClick={() => requestEquip(item, slot)}
                             >
@@ -197,7 +192,7 @@ export default function EquipmentModule({ api }: EquipmentModuleProps) {
                               {occupants.length >= slot.capacity ? (
                                 <span className="cpk-eq__candhint">将替换 1 件</span>
                               ) : null}
-                            </button>
+                            </Button>
                           </li>
                         ))}
                       </ul>

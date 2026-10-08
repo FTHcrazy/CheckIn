@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { InputNumber } from "antd";
+import { Button, InputNumber } from "antd";
 import { SettingOutlined } from "@ant-design/icons";
 import PackModuleShell from "../PackModuleShell";
 import type { PackPanelApi } from "../../hooks/usePackPanel";
@@ -54,14 +54,13 @@ export default function CurrencyModule({ api }: CurrencyModuleProps) {
       collapsed={Boolean(api.prefs.collapsed[key])}
       onToggle={() => api.toggleModuleCollapsed(key)}
       actions={
-        <button
-          type="button"
+        <Button
           className="cpk-iconbtn"
           onClick={() => api.setUnitManagerOpen(true)}
           title="量纲设置"
         >
           <SettingOutlined />
-        </button>
+        </Button>
       }
     >
       {!system || ordered.length === 0 ? (
@@ -69,9 +68,9 @@ export default function CurrencyModule({ api }: CurrencyModuleProps) {
           <p className="cpk-empty">
             还没有设置货币进制。作者自定义换算关系后，这里会把大数自动进位成「n 金 n 银 n 铜」。
           </p>
-          <button type="button" className="cpk-btn ghost" onClick={api.applyCurrencyTemplate}>
+          <Button className="cpk-btn ghost" onClick={api.applyCurrencyTemplate}>
             套用模板（1 金 = 100 银 = 10000 铜）
-          </button>
+          </Button>
         </div>
       ) : (
         <>

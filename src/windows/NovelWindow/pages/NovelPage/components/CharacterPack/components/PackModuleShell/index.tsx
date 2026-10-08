@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Button } from "antd";
 import { DownOutlined, RightOutlined } from "@ant-design/icons";
 import "./index.scss";
 
@@ -30,8 +31,7 @@ export default function PackModuleShell({
   return (
     <section className={`cpk-mod${collapsed ? " is-collapsed" : ""}`}>
       <header className="cpk-mod__head">
-        <button
-          type="button"
+        <Button
           className="cpk-mod__toggle"
           onClick={onToggle}
           aria-expanded={!collapsed}
@@ -41,7 +41,7 @@ export default function PackModuleShell({
             {collapsed ? <RightOutlined /> : <DownOutlined />}
           </span>
           <span className="cpk-mod__title">{title}</span>
-        </button>
+        </Button>
         {actions ? <div className="cpk-mod__actions">{actions}</div> : null}
       </header>
       <div className="cpk-mod__wrap">

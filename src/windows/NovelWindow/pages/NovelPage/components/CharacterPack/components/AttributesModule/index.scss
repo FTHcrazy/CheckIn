@@ -10,7 +10,8 @@
     gap: 3px;
   }
 
-  &__groupname {
+  /* 用 `.ant-input` 限定：这是 antd `Input`，不加限定会被组件库的 base 规则按源码顺序压掉 */
+  &__groupname.ant-input {
     align-self: flex-start;
     font-weight: 600;
     font-size: 12px;
@@ -38,7 +39,7 @@
     min-width: 0;
   }
 
-  &__unit {
+  &__unit.ant-input {
     width: 46px;
     text-align: center;
     color: var(--app-text-secondary-strong);
