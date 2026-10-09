@@ -32,6 +32,7 @@ import {
   setupRendererHttpSession,
 } from "./httpSession";
 import {
+  EDITION_WINDOW_ENTRIES,
   PRIMARY_WINDOW_ENTRY,
   RENDERER_ENTRY_PATHS,
   type WindowEntryKey,
@@ -384,6 +385,65 @@ function createSettingsWindow(): BrowserWindow {
   return settingsWin;
 }
 
+// ── MapWindow（地图编辑器，full 版开放入口） ──
+
+/**
+ * MapWindow —— 地图编辑器窗口（即关即销、单实例唤起）。
+ *
+ * 形态与 SettingsWindow 一致：无草稿状态跨窗口，关闭即销毁。
+ * 仅在打包了 map 入口的版本（full）可创建；其它版本调用直接返回。
+ */
+function createMapWindow(): BrowserWindow | undefined {
+  if (!EDITION_WINDOW_ENTRIES[EDITION].includes("map")) {
+    console.warn(`[main] 当前版本（${EDITION}）未打包 map 窗口，忽略打开请求`);
+    return undefined;
+  }
+
+  const existing = windowManager.get("map");
+  if (existing) {
+    if (existing.isMinimized()) existing.restore();
+    existing.show();
+    existing.focus();
+    return existing;
+  }
+
+  const mapWin = new BrowserWindow({
+    width: 1180,
+    height: 780,
+    minWidth: 760,
+    minHeight: 520,
+    icon: ICON_PATH,
+    show: false,
+    ...ROUNDED_WINDOW_OPTIONS,
+    titleBarStyle: "hidden",
+    webPreferences: createWebPreferences(),
+  });
+
+  mapWin.removeMenu();
+
+  mapWin.webContents.once("did-finish-load", () => {
+    if (mapWin && !mapWin.isDestroyed()) {
+      mapWin.show();
+      mapWin.focus();
+    }
+  });
+
+  if (IS_DEV) {
+    registerDevToolsShortcuts(mapWin);
+    if (OPEN_DEVTOOLS) mapWin.webContents.openDevTools({ mode: DEVTOOLS_MODE });
+  }
+
+  windowManager.register("map", mapWin);
+
+  mapWin.on("closed", () => {
+    console.log("[main] Map 窗口已关闭");
+  });
+
+  loadRendererEntry(mapWin, "map");
+
+  return mapWin;
+}
+
 // ── 登录窗口 ──
 
 function getLoginWindowUrl(email?: string) {
@@ -590,6 +650,11 @@ app.whenReady().then(() => {
   // ── SettingsWindow 开关 IPC（全版本：入口分别在 base / novel 主窗标题栏） ──
   ipcMain.on("settings-window-open", () => {
     createSettingsWindow();
+  });
+
+  // ── MapWindow 开关 IPC（仅在打包了 map 入口的版本生效，函数内自行兜底） ──
+  ipcMain.on("map-window-open", () => {
+    createMapWindow();
   });
 
   // ── 退出登录（SettingsWindow 账号区发起） ──

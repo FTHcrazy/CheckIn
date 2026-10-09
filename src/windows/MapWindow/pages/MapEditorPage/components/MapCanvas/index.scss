@@ -1,0 +1,35 @@
+/**
+ * MapCanvas 局部样式（PixiJS 版）
+ *
+ * Pixi 会把 <canvas> 自行注入本容器，故只需保证容器铺满且能接收指针事件。
+ */
+
+.map-canvas {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--app-bg);
+  // 阻止触控板双指手势被浏览器当作页面滚动
+  touch-action: none;
+
+  // Pixi 注入的 canvas：铺满并禁用默认拖拽/选中行为
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+}
+
+.map-canvas__loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  color: var(--app-text-secondary);
+  background: var(--app-bg);
+  pointer-events: none;
+}

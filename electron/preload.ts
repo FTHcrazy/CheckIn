@@ -206,6 +206,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'novel-window-open',
       // 设置窗口开关（novel 版主窗标题栏的设置入口）
       'settings-window-open',
+      // 地图窗口开关（full 版主窗的地图入口）
+      'map-window-open',
       // 退出登录（SettingsWindow 账号区发起，主进程编排回登录窗）
       'auth-logout',
       // WindowHeader 窗口控制（最小化/最大化/关闭）与最大化状态查询

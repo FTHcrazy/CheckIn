@@ -6,6 +6,7 @@ import { ThemeProvider } from "@/shared/theme";
 import type { ActivityNotifyData } from "@/shared/ipc/activityNotifyBridge";
 import WindowHeader from "@/shared/components/WindowHeader";
 import SettingsEntry from "./components/SettingsEntry";
+import MapEntry from "./components/MapEntry";
 import HomePage from "./pages/HomePage";
 import "./app-routes.scss";
 
@@ -71,8 +72,15 @@ export default function App() {
         {/* 圆角窗口外壳：负责圆角裁剪与描边，内容全部装在其中 */}
         <div className="window-shell">
           {/* 窗口级标题栏：拖动区 + 最小化/最大化/关闭，替代 NavHeader 的窗口职责；
-              actions 挂全局「设置」入口（唤起 SettingsWindow，单实例） */}
-          <WindowHeader actions={<SettingsEntry />} />
+              actions 挂「地图」与全局「设置」入口（分别唤起 MapWindow / SettingsWindow，单实例） */}
+          <WindowHeader
+            actions={
+              <>
+                <MapEntry />
+                <SettingsEntry />
+              </>
+            }
+          />
           <div className="window-shell__body">
             <ActivityNotifier />
             <Suspense fallback={<RouteFallback />}>

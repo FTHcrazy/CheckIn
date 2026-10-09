@@ -1,0 +1,33 @@
+@use "../../shared/styles/window-shell";
+@use "../../shared/styles/scrollbars";
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Microsoft YaHei", sans-serif;
+  // 圆角窗口：背景交给 .window-shell，dom 层保持透明
+  background: transparent;
+  color: var(--app-text);
+  -webkit-font-smoothing: antialiased;
+}
+
+// 内容区：标题栏由通用 WindowHeader 提供，这里负责主体铺满
+.window-shell__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.map-window-page {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}

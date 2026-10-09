@@ -83,8 +83,9 @@ export default defineConfig({
     },
   },
   // 预优化重型依赖，加速首次页面加载
+  // pixi.js：地图窗口的 WebGL 渲染内核（体量大、内部模块多，预构建收益明显）
   optimizeDeps: {
-    include: ['antd', '@ant-design/icons', 'react', 'react-dom'],
+    include: ['antd', '@ant-design/icons', 'react', 'react-dom', 'pixi.js'],
   },
   build: {
     rollupOptions: {
