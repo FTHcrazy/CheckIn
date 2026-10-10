@@ -33,6 +33,16 @@ export async function fetchNovelBundle(): Promise<NovelBundle> {
   return window.electronAPI!.novel.editorLoad();
 }
 
+/**
+ * 开启编辑器会话（novel-session-open）：置崩溃恢复标记 + 上报 editor_open。
+ *
+ * 与 `fetchNovelBundle` 分开是刻意的 —— 后者是通用装载，书架与行囊也在调，
+ * 不能拿它当「进了编辑器」的判据。
+ */
+export async function openEditorSession(): Promise<boolean> {
+  return window.electronAPI!.novel.sessionOpen();
+}
+
 // ── userDb config 读写（R5 设置持久化 / R6 位置记忆） ──
 
 /** 读取编辑器设置 JSON（键不存在返回 null，由上层合并默认值） */

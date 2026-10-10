@@ -201,12 +201,77 @@ describe("REQ-043 切章 / 切作品 / 退出应用拦截（守卫）", () => {
 });
 
 // ─────────────────────────────────────────────────────────────
+// 境界「阶内进位」（曾经点不动）
+// ─────────────────────────────────────────────────────────────
+
+describe("境界阶内进位（守卫）", () => {
+  const REALM_UI = read(`${PACK_DIR}/components/RealmModule/index.tsx`);
+  const REALM = read(`${PACK_DIR}/pack-realm.ts`);
+
+  it("「阶内进位」必须传 carry: true —— 漏了会走 clamp 分支，位置原样返回", () => {
+    const at = REALM_UI.indexOf("阶内进位");
+    expect(at).toBeGreaterThan(-1);
+    // 取按钮本体（onClick 在同一条 JSX 里，往前取一段足够覆盖）
+    const button = REALM_UI.slice(Math.max(0, at - 400), at);
+    expect(button).toContain("carry: true");
+    expect(button).toContain("delta: 1");
+  });
+
+  it("进位 / 夹取只在 setRealm 里算一次，plan 回带 position 供文案使用", () => {
+    // 写入口不得自己再算一遍位置（两份规则漂移 = 假变更）
+    const body = PANEL.slice(PANEL.indexOf("const writeRealm = useCallback"));
+    expect(body.slice(0, 900)).not.toContain("carryRealm(");
+    expect(body.slice(0, 900)).not.toContain("clampRealm(");
+    expect(body).toContain("plan.position");
+    // setRealm 必须回带 position
+    expect(REALM).toContain("position: next");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────
+// 未保存计数 = 净变化（不是逐次按键累加）
+// ─────────────────────────────────────────────────────────────
+
+describe("未保存计数口径（守卫）", () => {
+  const DIRTY = read(`${PACK_DIR}/pack-dirty.ts`);
+
+  it("计数由 countNetChanges 派生，不得回退成自增计数器", () => {
+    // 唯一写入口是 recomputeDirty
+    expect(DATA).toContain("countNetChanges(savedRef.current, next)");
+    expect(DATA).toContain("import { countNetChanges } from \"../pack-dirty\"");
+    // 反面：不许再有 setDirty((count) => count + N) 这种累加
+    expect(DATA).not.toMatch(/setDirty\(\(count\)\s*=>/);
+    // 也不许 updateXxx 之类的编辑点自己调 setDirty
+    expect(PANEL).not.toMatch(/setDirty\(/);
+  });
+
+  it("updatedAt 不参与比较（它是打点，不是内容）", () => {
+    expect(DIRTY).toContain("delete copy.updatedAt");
+    expect(DIRTY).not.toContain("updatedAt:");
+  });
+
+  it("主角绑定（即时落库的那一格）不进计数", () => {
+    const body = DIRTY.slice(DIRTY.indexOf("function realmSignature"));
+    expect(body).not.toContain("entityId");
+    expect(body).toContain("realmLink");
+  });
+
+  it("增删发生时不再重复计一次「移动」", () => {
+    // 顺序比较必须有「成员完全一致」的前置判断，否则删 2 行会算成 3 处
+    expect(DIRTY).toContain("sameMembers");
+    expect(DIRTY).toContain("before.size === after.size");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────
 // REQ-027 快速记账（正文选区 → 记入背包）
 // ─────────────────────────────────────────────────────────────
 
 const SERVICE = read(`${PACK_DIR}/services/pack-service.ts`);
 const HANDLERS = read("electron/handlers/novel-pack-handlers.ts");
-const DB = read("electron/db.ts");
+// ⚠️ novel 域的表自 1.33.0 起全部住在 novel.db（electron/novel-db.ts），
+// checkin.db（electron/db.ts）里已经没有 novel_* 的表了 —— 断言要跟着搬家
+const DB = read("electron/novel-db.ts");
 const CTXMENU = read(
   "src/windows/NovelWindow/pages/NovelPage/components/EntityContextMenu/index.tsx",
 );
@@ -268,12 +333,19 @@ describe("REQ-027 快速记账（守卫）", () => {
 // ─────────────────────────────────────────────────────────────
 
 describe("REQ-028 本章变动角标（守卫）", () => {
-  it("属性 / 技能补列 updated_at，且默认 0（旧数据不能凭空亮角标）", () => {
-    expect(DB).toContain(
-      "ALTER TABLE novel_pack_attributes ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0",
+  it("属性 / 技能声明 updated_at，且默认 0（旧数据不能凭空亮角标）", () => {
+    // 分段取「这一张表的建表块」：全文件 toContain 会命中别的表，断言形同虚设
+    const block = (table: string): string => {
+      const start = DB.indexOf(`CREATE TABLE IF NOT EXISTS ${table} (`);
+      expect(start, `novel.db 缺少建表语句 ${table}`).toBeGreaterThan(-1);
+      const end = DB.indexOf("\n    );", start);
+      return DB.slice(start, end === -1 ? DB.length : end);
+    };
+    expect(block("novel_pack_attributes")).toContain(
+      "updated_at INTEGER NOT NULL DEFAULT 0",
     );
-    expect(DB).toContain(
-      "ALTER TABLE novel_pack_skills ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0",
+    expect(block("novel_pack_skills")).toContain(
+      "updated_at INTEGER NOT NULL DEFAULT 0",
     );
   });
 
@@ -309,5 +381,54 @@ describe("REQ-028 本章变动角标（守卫）", () => {
       expect(source, `${module} 没有角标`).toContain("<PackChangedDot");
       expect(source, `${module} 自己算了时间窗`).toContain("api.isRecentlyChanged(");
     }
+  });
+});
+
+describe("退出链路的时序（守卫）", () => {
+  const MAIN = read("electron/main.ts");
+  const GUARD = read("electron/close-guard.ts");
+  const DB = read("electron/db.ts");
+  const PACK_HANDLERS = read("electron/handlers/novel-pack-handlers.ts");
+
+  it("托盘「退出」不得提前置 isQuitting —— 置了 before-quit 的询问分支就被整体跳过", () => {
+    const tray = MAIN.slice(MAIN.indexOf('label: "退出"'));
+    expect(tray.slice(0, 300)).not.toContain("isQuitting = true");
+  });
+
+  it("before-quit 清理阶段必须先给守卫缴械（否则窗口还会弹「未保存」，保存必然失败）", () => {
+    const quit = MAIN.slice(MAIN.indexOf('app.on("before-quit"'));
+    expect(quit).toContain("standDownCloseGuards()");
+    // 缴械必须发生在清理动作之前（unregisterAll 之后才算开清理）
+    expect(quit.indexOf("standDownCloseGuards()")).toBeLessThan(
+      quit.indexOf("globalShortcut.unregisterAll()"),
+    );
+  });
+
+  it("closeDb() 必须在 will-quit，不得留在 before-quit（窗口销毁期间还可能有最后一次保存）", () => {
+    const quit = MAIN.slice(
+      MAIN.indexOf('app.on("before-quit"'),
+      MAIN.indexOf('app.on("will-quit"'),
+    );
+    expect(quit).not.toContain("closeDb()");
+    expect(MAIN).toContain('app.on("will-quit"');
+    const will = MAIN.slice(MAIN.indexOf('app.on("will-quit"'));
+    expect(will.slice(0, 300)).toContain("closeDb()");
+  });
+
+  it("缴械后的守卫不得再拦 close（preventDefault 前先看 inert）", () => {
+    const handler = GUARD.slice(GUARD.indexOf('win.on("close"'));
+    expect(handler.slice(0, 300)).toContain("inert");
+    expect(GUARD).toContain("export function standDownCloseGuards");
+  });
+
+  it("closeDb 幂等：什么都没关时不广播 onClosed（监听者不该重复收到关闭事件）", () => {
+    expect(DB).toContain("if (hadUserDb || hadAuthDb) emitLifecycle('onClosed')");
+  });
+
+  it("novel-pack-save / novel-config 在库未就绪时优雅拒绝，不抛穿给渲染层", () => {
+    expect(PACK_HANDLERS).toContain("if (!isNovelDbReady())");
+    const save = PACK_HANDLERS.slice(PACK_HANDLERS.indexOf('"novel-pack-save"'));
+    expect(save.slice(0, 600)).toContain("isNovelDbReady()");
+    expect(read("electron/handlers/novel-handlers.ts")).toContain("if (!requireReady())");
   });
 });

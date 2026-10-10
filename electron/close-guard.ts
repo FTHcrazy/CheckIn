@@ -39,6 +39,25 @@ const approved = new Set<number>();
 /** 在途询问的答复回调（key = `webContents.id`） */
 const pending = new Map<number, (allow: boolean) => void>();
 
+/**
+ * 应用已确认退出、清理已开始：此后所有窗口的守卫就地缴械。
+ *
+ * 缴械前窗口若再拦 `close`（preventDefault + show 弹「未保存」），用户点
+ * 「保存并退出」时数据层可能已关闭 —— 表现就是「其余窗口都关了，行囊弹出
+ * 来，保存却报『尚未初始化 novel 数据』」。退出是用户已经拍板的决定，
+ * 这里不再给他第二次「反悔/保存」的入口（那一次机会在 `before-quit` 的
+ * 询问分支里，已经给过了）。
+ */
+let inert = false;
+
+export function standDownCloseGuards(): void {
+  inert = true;
+  armed.clear();
+  approved.clear();
+  for (const settle of pending.values()) settle(true);
+  pending.clear();
+}
+
 function readBoolean(payload: unknown): boolean {
   if (typeof payload === "boolean") return payload;
   if (payload && typeof payload === "object" && "enabled" in payload) {
@@ -103,7 +122,9 @@ export function attachCloseGuard(
   const id = win.webContents.id;
 
   win.on("close", (event) => {
-    if (!shouldGuard() || !isArmed(win)) return;
+    // 缴械后不再拦：退出已确认，数据层随时会关，再弹「未保存」只会让
+    // 用户在必然失败的保存上浪费时间（见 standDownCloseGuards 的注释）
+    if (inert || !shouldGuard() || !isArmed(win)) return;
     event.preventDefault();
     void askWindow(win, "关闭窗口").then((allow) => {
       if (!allow) return;

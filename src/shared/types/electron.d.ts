@@ -496,6 +496,8 @@ export interface ElectronAPI {
   // ── 小说编辑器（数据存 userDb 的 novel_* 表） ──
   novel: {
     editorLoad: () => Promise<NovelBundleDTO>
+    /** 开启编辑器会话：崩溃恢复标记的唯一写入口（只有真正进入编辑器才调） */
+    sessionOpen: () => Promise<boolean>
     /** 读取 userDb config（R5 设置持久化 / R6 位置记忆共用；键不存在返回 null） */
     configGet: (key: string) => Promise<string | null>
     configSet: (key: string, value: string) => Promise<boolean>

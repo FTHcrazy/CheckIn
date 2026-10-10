@@ -351,6 +351,104 @@ describe("useNovelEditorStore（编辑器交互状态）", () => {
     expect(saved).toBe("回滚后的正文");
   });
 
+  it("删章后草稿与在途防抖一起撤掉（否则保存态永久 failed）", async () => {
+    const saved: string[] = [];
+    registerEditorRunner({
+      persistChapter: async (id) => {
+        saved.push(id);
+        return true;
+      },
+      markSelectionAsEntity: () => null,
+      persistSettings: () => {},
+    });
+
+    state().setContent("c1", "待删除章的正文");
+    expect(state().saveState).toBe("pending");
+
+    // 章节在库里已被删除：store 必须同步放弃它的草稿与在途防抖
+    editorActions.dropChapterDraft("c1");
+    expect(state().draftMap.c1).toBeUndefined();
+    expect(state().saveState).toBe("idle");
+
+    // 关键：防抖到点后不再拿已删除的 id 去落库。
+    // 若照旧落库，novel-chapter-save 找不到章节返回 false → saveState
+    // 停在 failed → 30s 兜底每半分钟重试一次注定失败的请求，顶栏一直红
+    await vi.advanceTimersByTimeAsync(SAVE.debounceMs * 2);
+    expect(saved).toEqual([]);
+    expect(state().saveState).toBe("idle");
+    expect(needsFlushSave()).toBe(false);
+  });
+
+  it("删章撤草稿只影响该章，别的章节草稿照旧可存", async () => {
+    const saved: Array<[string, string]> = [];
+    registerEditorRunner({
+      persistChapter: async (id, content) => {
+        saved.push([id, content]);
+        return true;
+      },
+      markSelectionAsEntity: () => null,
+      persistSettings: () => {},
+    });
+
+    state().setContent("c1", "保留的正文");
+    state().setContent("c2", "要删的正文");
+    editorActions.dropChapterDraft("c2");
+
+    await editorActions.flushSave();
+    expect(saved).toEqual([["c1", "保留的正文"]]);
+  });
+
+  it("删作品 / 重置模板库清空全部草稿，不在途的保存也一并撤掉", async () => {
+    const saved: string[] = [];
+    registerEditorRunner({
+      persistChapter: async (id) => {
+        saved.push(id);
+        return true;
+      },
+      markSelectionAsEntity: () => null,
+      persistSettings: () => {},
+    });
+
+    // c1 先正常落库，随后在 c2 上打字（换章会把 c1 的在途防抖立即落库，
+    // 所以这里让 c1 走完防抖，只留 c2 在途）
+    state().setContent("c1", "旧作品正文");
+    await vi.advanceTimersByTimeAsync(SAVE.debounceMs + 1);
+    state().setContent("c2", "旧作品另一章");
+    expect(state().saveState).toBe("pending");
+
+    editorActions.clearDrafts();
+    expect(state().draftMap).toEqual({});
+    expect(state().activeChapterId).toBeNull();
+    expect(state().saveState).toBe("idle");
+
+    // 只有换章前已落库的 c1：c2 的在途防抖被 clearDrafts 撤掉，不再补写
+    await vi.advanceTimersByTimeAsync(SAVE.debounceMs * 2);
+    expect(saved).toEqual(["c1"]);
+  });
+
+  it("回滚灌入的正文要跟着回退今日字数（与库里的负 delta 对齐）", async () => {
+    registerEditorRunner({
+      persistChapter: async () => true,
+      markSelectionAsEntity: () => null,
+      persistSettings: () => {},
+    });
+
+    state().setContent("c1", "苏晚走进灵潮再补一段");
+    const afterTyped = state().todayTotal;
+
+    // 回滚到更短的旧正文：主进程按负 delta 记 chapter_save，库里今日字数
+    // 会回退；渲染层必须同步回退，否则状态条一直错到下次重启
+    editorActions.applyExternalContent("c1", "苏晚");
+    const expected =
+      afterTyped +
+      countWords("苏晚", DEFAULT_SETTINGS.wordCountMode) -
+      countWords("苏晚走进灵潮再补一段", DEFAULT_SETTINGS.wordCountMode);
+
+    expect(state().todayTotal).toBe(expected);
+    expect(state().todayTotal).toBeLessThan(afterTyped);
+    expect(state().draftMap.c1).toBe("苏晚");
+  });
+
   it("改排版设置即时持久化，且不动草稿", () => {
     let persisted = 0;
     registerEditorRunner({

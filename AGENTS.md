@@ -69,13 +69,15 @@ CheckIn 采用 Electron 双进程架构，渲染进程（React）与主进程（
 | **main.ts** | 窗口生命周期管理、IPC 通道注册、托盘图标、应用启动流程 | 仅处理窗口和系统级操作，不包含业务逻辑 |
 | **handlers/** | 语义化 IPC handler 按模块注册（`activity-handlers.ts` / `todo-handlers.ts` / `novel-handlers.ts` / `user-handlers.ts` / `memo-handlers.ts`），持有预定义 SQL | 每个 handler 文件只负责一个业务模块；SQL 只出现在 handlers 与 db.ts，禁止出现在渲染进程 |
 | **preload.ts** | 通过 `contextBridge` 暴露安全的 API 给渲染进程 | 仅做 API 转发，不实现业务逻辑 |
-| **db.ts** | SQLite 数据库初始化、双库管理（authDb/userDb）、通用 CRUD 封装 | 提供底层数据库操作，不感知上层业务 |
+| **db.ts** | SQLite 数据库初始化、双库管理（authDb/userDb）、通用 CRUD 封装 | 提供底层数据库操作，不感知上层业务；**只承载 checkin 域**，不建任何 `novel_*` 表 |
+| **novel-db.ts** | 小说域独立库 `novel.db` 的初始化与 CRUD 封装（`novel_*` / `novel_pack_*` / `novel_config` / `novel_usage_log`），通过 `registerUserDbLifecycle()` 跟随 checkin 库开关 | 单向依赖 `db.ts`（ lifecycle 回调桥接），`db.ts` 不反向依赖它；novel handler 一律从这里取写通道 |
 | **activitiesTask.ts** | 后台活动提醒轮询、系统事件监听（睡眠/锁屏） | 独立后台任务，通过 IPC 通知渲染进程 |
 | **windowManager.ts** | 窗口管理池：注册/注销/广播/定点发送 | 只管理 BrowserWindow 实例，不感知业务 |
 
 **模块边界规则**：
 - `main.ts` 仅承担窗口生命周期、托盘、协议、窗口级 IPC（broadcast/window-control/find-in-page 等），**一切业务 IPC（user / memo / todo / activity / novel 等）一律抽到 `handlers/` 下独立模块**，禁止在 `main.ts` 内联业务逻辑或 SQL
 - `db.ts` 不导入 `main.ts` 的任何内容；`db.ts` 维护当前用户邮箱（`getCurrentUserEmail()`），业务 handler 通过它定位用户数据目录，不依赖 `main.ts` 闭包
+- **两个数据域两本库**：checkin 域（`db.ts` → `checkin.db`）与 novel 域（`novel-db.ts` → `novel.db`，与 `checkin.db` 同目录）。novel handler 只能从 `novel-db.ts` 取写通道，**禁止** import `../db` 的 `dbRun` 写 `novel_*` 表；`db.ts` 只通过 lifecycle 回调通知 novel 库切换/关闭，不 import `novel-db.ts`（否则循环依赖）。由 `electron/novel-db-split.test.ts` 源码守卫
 - `activitiesTask.ts` 通过 `ipcMain` 注册通道，不直接调用 `main.ts` 函数
 - `preload.ts` 仅读取 `db.ts` 和 `main.ts` 暴露的 IPC 通道
 
@@ -932,9 +934,14 @@ function initializeDataDb(db: Database) {
 
 ```json
 {
-  "novelArch": "refactor"
+  "novelArch": "compat"
 }
 ```
+
+> 变更记录：1.33.0 在 `refactor` 下完成了 novel 存储重设（`novel_*` / `novel_pack_*`
+> 从 `checkin.db` 拆出为独立的 `novel.db`），已按本节第 4 条改回 `compat`。
+> 此后 novel 域的表结构变更重新受 §6.5 约束——增量迁移写在 `electron/novel-db.ts`
+> 自己的建表函数里，不再动 `electron/db.ts`。
 
 合法值只有两个：
 
@@ -1238,7 +1245,8 @@ function initializeDataDb(db: Database) {
 | 文件 | 路径 | 作用 |
 |------|------|------|
 | 主进程入口 | `electron/main.ts` | 窗口管理、IPC 注册 |
-| 数据库初始化 | `electron/db.ts` | 双库管理、表结构迁移 |
+| 数据库初始化 | `electron/db.ts` | 双库管理、表结构迁移（checkin 域） |
+| 小说库初始化 | `electron/novel-db.ts` | `novel.db`：小说与行囊全部表，跟随用户切换开关 |
 | API 暴露 | `electron/preload.ts` | contextBridge 白名单 |
 | 路由配置 | `src/windows/BaseWindow/App.tsx` | HashRouter + Routes |
 | 全局类型 | `src/shared/types/electron.d.ts` | window.electronAPI 接口 |
@@ -1250,6 +1258,6 @@ function initializeDataDb(db: Database) {
 
 ---
 
-**文档版本**: 2.2  
-**最后更新**: 2026-09-22  
+**文档版本**: 2.3  
+**最后更新**: 2026-10-11  
 **维护者**: CheckIn 开发团队

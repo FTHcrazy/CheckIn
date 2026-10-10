@@ -21,8 +21,6 @@ import {
   buildPackMarkdown,
   capacityStatus,
   carrierKey,
-  carryRealm,
-  clampRealm,
   computeHypotheticalSummary,
   computeSummary,
   countRecentChanges,
@@ -182,7 +180,8 @@ function parsePrefs(raw: string | null): Partial<PackUiPrefs> {
  */
 export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelOptions) {
   const data = usePackData(workId, chapterId);
-  const { doc, meta, mutate, syncMeta } = data;
+  // syncMeta 只经 dataRef 转发（事件回调里读最新的那一份），不在依赖里出现
+  const { doc, meta, mutate } = data;
 
   /**
    * 文档镜像。
@@ -194,6 +193,22 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
   useEffect(() => {
     docRef.current = doc;
   }, [doc]);
+
+  /**
+   * `data` 的镜像（与 docRef 同理）。
+   *
+   * ⚠️ `usePackData` 每次渲染都返回一个**新对象**，把它直接放进 effect 依赖，
+   * effect 就会在每次渲染时重跑：定时器被反复清掉重建、事件监听被反复解绑重挂。
+   * 需要「读最新数据但不触发重注册」的地方一律走这两个 ref。
+   */
+  const dataRef = useRef(data);
+  useEffect(() => {
+    dataRef.current = data;
+  }, [data]);
+  const saveRef = useRef(data.save);
+  useEffect(() => {
+    saveRef.current = data.save;
+  }, [data.save]);
 
   // ── 界面偏好（即改即存） ──
   const [prefs, setPrefs] = useState<PackUiPrefs>(DEFAULT_UI_PREFS);
@@ -585,10 +600,10 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
         showToast("主角绑定失败", "error");
         return;
       }
-      mutate(
-        (current) => ({ ...current, character: { ...current.character, entityId } }),
-        0,
-      );
+      mutate((current) => ({
+        ...current,
+        character: { ...current.character, entityId },
+      }));
       notifyProtagonistChanged(workId, entityId);
       await data.syncMeta();
       showToast(
@@ -606,14 +621,12 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
       if (!detail || typeof detail !== "object") return;
       if (detail.workId !== workId) return;
       const next = detail.entityId ?? "";
-      mutate(
-        (current) =>
-          current.character.entityId === next
-            ? current
-            : { ...current, character: { ...current.character, entityId: next } },
-        0,
+      mutate((current) =>
+        current.character.entityId === next
+          ? current
+          : { ...current, character: { ...current.character, entityId: next } },
       );
-      void data.syncMeta();
+      void dataRef.current.syncMeta();
     };
     window.addEventListener(PACK_PROTAGONIST_EVENT, handler as EventListener);
     const api = window.electronAPI?.windowAPI;
@@ -622,7 +635,7 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
       window.removeEventListener(PACK_PROTAGONIST_EVENT, handler as EventListener);
       api?.off(PACK_PROTAGONIST_EVENT, handler);
     };
-  }, [workId, mutate, syncMeta]);
+  }, [workId, mutate]);
 
   /**
    * 右侧要素栏改了「当前境界」：这里跟进同一行。
@@ -643,18 +656,16 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
       const link = detail.link;
       // 与本人无关的要素（另一本书 / 另一张角色卡）不跟进
       if (link && link.fromId !== docRef.current?.character.entityId) return;
-      mutate(
-        (current) =>
-          JSON.stringify(current.realmLink) === JSON.stringify(link)
-            ? current
-            : {
-                ...current,
-                // 事件负载的 note 是可选的，PackDoc 里是定长字段，归一化再进文档
-                realmLink: link ? { ...link, note: link.note ?? "" } : null,
-              },
-        0,
+      mutate((current) =>
+        JSON.stringify(current.realmLink) === JSON.stringify(link)
+          ? current
+          : {
+              ...current,
+              // 事件负载的 note 是可选的，PackDoc 里是定长字段，归一化再进文档
+              realmLink: link ? { ...link, note: link.note ?? "" } : null,
+            },
       );
-      void data.syncMeta();
+      void dataRef.current.syncMeta();
     };
     window.addEventListener(PACK_REALM_EVENT, handler as EventListener);
     const api = window.electronAPI?.windowAPI;
@@ -663,7 +674,7 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
       window.removeEventListener(PACK_REALM_EVENT, handler as EventListener);
       api?.off(PACK_REALM_EVENT, handler);
     };
-  }, [workId, mutate, data]);
+  }, [workId, mutate]);
 
   /** 等级项补列（小层数 / 战力当量）：改的是 novel_levels，两边共享同一张表 */
   const setRungMeta = useCallback(
@@ -680,15 +691,21 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
   );
 
   // ── 自动保存兜底（G-3） ──
+  /**
+   * 依赖里只放三个**标量**（开关 / 脏计数 / 最后编辑时刻）：
+   * 此前依赖里直接放了 `data`，而它是每次渲染的新对象 —— 打字触发的每一次
+   * 渲染都会把计时器清掉重建，等于「空闲计时」永远从最后一次渲染起算。
+   * 面板里只要有周期渲染（toast 倒计时等），自动保存就再也不会触发。
+   */
   useEffect(() => {
     if (!prefs.autoSave || data.dirty <= 0) return undefined;
     const timer = window.setTimeout(() => {
-      void data.save("自动保存").then((ok) => {
+      void saveRef.current("自动保存").then((ok) => {
         if (ok) showToast("已自动保存", "info");
       });
     }, AUTOSAVE_IDLE_MS);
     return () => window.clearTimeout(timer);
-  }, [prefs.autoSave, data, lastEditAt, showToast]);
+  }, [prefs.autoSave, data.dirty, lastEditAt, showToast]);
 
   // ── 未保存闸门（G-2 / REQ-043） ──
   /**
@@ -806,9 +823,17 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
 
   const touch = useCallback(() => setLastEditAt(Date.now()), []);
 
+  /**
+   * 编辑入口的统一包装：改文档 + 记「最后编辑时间」（自动保存的判据）。
+   *
+   * ⚠️ 第二参数保留只为不改动几十个调用点，**已不再参与脏计数**：
+   * 计数由 `usePackData` 按「与上次保存态的净差异」派生（见 `pack-dirty.ts`）。
+   * 传 `0` 依旧表示「这次不算用户的设定改动」，但如今它只影响 `touch` 语义 ——
+   * 真正的计数不再依赖调用方自觉。
+   */
   const callMutate = useCallback(
-    (recipe: Parameters<typeof mutate>[0], dirtyDelta = 1) => {
-      mutate(recipe, dirtyDelta);
+    (recipe: Parameters<typeof mutate>[0]) => {
+      mutate(recipe);
       touch();
     },
     [mutate, touch],
@@ -826,9 +851,11 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
       options: { carry?: boolean; delta?: number } = {},
     ): Promise<void> => {
       if (!doc || rungs.length === 0) return;
-      const next = options.carry
-        ? carryRealm(rungs, position, options.delta ?? 0)
-        : clampRealm(rungs, position);
+      /* 进位 / 夹取只在 `setRealm` 里算一次，文案用它回带的 `position`。
+       *
+       * 历史上这里另算了一份「展示用的 next」，而 setRealm 内部按同一规则再算一遍 ——
+       * 两份规则一旦漂移就会出现「toast 说变了、数据没变」的假变更。
+       * 「阶内进位」正是因为这里传了 carry、`{ delta: 1 }` 却漏了它而彻底点不动。 */
       const plan = setRealm(realmState, position, origin, options);
       if (plan.link || plan.realmRaw !== null) {
         callMutate((current) => ({
@@ -842,7 +869,10 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
               ? { ...current.character, realmAt: plan.realmRaw ?? "" }
               : current.character,
         }));
-        showToast(`境界已更新：${formatRealm(rungs, next)}（保存后生效）`, "success");
+        showToast(
+          `境界已更新：${formatRealm(rungs, plan.position)}（保存后生效）`,
+          "success",
+        );
       }
     },
     [doc, rungs, realmState, callMutate, showToast],
@@ -953,7 +983,7 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
           updatedAt: Date.now(),
         }));
         return { ...current, attributes: [...current.attributes, ...created] };
-      }, template.length);
+      });
       showToast(`已套用「${templateName}」属性模板（${template.length} 项）`, "success");
     },
     [callMutate, showToast],

@@ -15,6 +15,7 @@ import {
   attachCloseGuard,
   hasArmedCloseGuard,
   registerCloseGuardHandlers,
+  standDownCloseGuards,
 } from "./close-guard";
 import { startActivityPolling, stopActivityPolling } from "./activitiesTask";
 import { windowManager } from "./windowManager";
@@ -25,6 +26,7 @@ import {
   registerNovelHandlers,
 } from "./handlers/novel-handlers";
 import { registerNovelPackHandlers } from "./handlers/novel-pack-handlers";
+import { registerNovelDbBridge } from "./novel-db";
 import {
   logoutUser,
   registerUserHandlers,
@@ -612,6 +614,10 @@ app.whenReady().then(() => {
   // 全版本注册：小说（novel 版的唯一业务域）与用户登录；
   // 仅 full/lite 注册：todo/memo/activity/checkin/ledger
   // （novel 版不打包对应窗口，省启动开销，也缩小可触达的 IPC 面）。
+  // novel.db 挂在用户库的生命周期上：切用户 / 退出登录 / 退出应用时同步开关。
+  // 必须早于 novel handler 注册 —— 注册时若已有当前用户（启动期走的是
+  // switchUserDb → register 的顺序），它会立即补开一次
+  registerNovelDbBridge();
   registerNovelHandlers();
   registerNovelPackHandlers();
   registerUserHandlers();
@@ -803,7 +809,10 @@ app.whenReady().then(() => {
       {
         label: "退出",
         click: () => {
-          isQuitting = true;
+          // ⚠️ 不在这里置 `isQuitting`：置了 `before-quit` 的询问分支
+          // （`!isQuitting && hasArmedCloseGuard()`）就被整体跳过，直接走到
+          // 清理 + 关库 —— 行囊的「保存并退出」会在库已关闭后落空。
+          // 是否真的退出、退前要不要问，统一由 `before-quit` 裁决。
           app.quit();
         },
       },
@@ -830,9 +839,9 @@ app.whenReady().then(() => {
 });
 
 app.on("before-quit", (event) => {
-  // ⚠️ 顺序是关键：下面这段清理会把数据库关掉（`closeDb()`）。若先清理再问用户，
-  // 等他慢慢选完「保存并退出」时库已关闭，保存必然失败 —— 所以询问必须发生在
-  // 清理之前，且询问期间**不能**置 `isQuitting`（置了主窗就会直接销毁）。
+  // ⚠️ 顺序是关键：清理一旦开始，窗口会陆续销毁、渲染层随时可能发起最后一次
+  // 保存 —— 所以「问不问用户」必须在任何清理之前裁决；且询问期间**不能**置
+  // `isQuitting`（置了主窗就会直接销毁，守卫也跟着失效）。
   if (!isQuitting && hasArmedCloseGuard()) {
     event.preventDefault();
     void askCloseGuards("退出应用").then((allow) => {
@@ -845,12 +854,26 @@ app.on("before-quit", (event) => {
   }
 
   isQuitting = true;
+  // 守卫就地缴械：此刻起窗口陆续销毁、数据层即将关闭，任何窗口都不许再
+  // preventDefault + 弹「未保存」—— 用户点「保存」时库已关，必然失败
+  //（「其余窗口都关了、行囊弹出来、保存报错」正是缺了这一步的样子）。
+  standDownCloseGuards();
   globalShortcut.unregisterAll();
   stopActivityPolling();
-  // 编辑器会话随应用退出正常结束（novel closed 未触发时兜底）
+  // 编辑器会话随应用退出正常结束（novel closed 未触发时兜底）。
+  // 注意它要写库 —— 所以必须发生在 will-quit 关库之前，这里正好还开着。
   markNovelSessionClosed();
   tray?.destroy();
   tray = null;
+  // 关库不在这里：before-quit 阶段窗口还活着，销毁过程中渲染层的
+  // 最后一次保存（防抖兜底 / 退出前 flush）仍可能到达。关库挪到 will-quit
+  // —— 那时所有窗口已销毁，不可能再有保存进来，也不会有「库已关却收到
+  // 保存请求」的时间窗。
+});
+
+app.on("will-quit", () => {
+  // 所有窗口已销毁、渲染层全部下线 —— 此时关库才是安全的最后一步。
+  // 放在 before-quit 曾导致行囊「保存并退出」时库已关闭（保存必然失败）。
   closeDb();
 });
 

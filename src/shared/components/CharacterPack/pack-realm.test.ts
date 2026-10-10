@@ -126,6 +126,30 @@ describe("境界口子 —— 写（origin 决定路由目标）", () => {
     expect(plan.link!.toId).toBe("l3");
     expect(plan.link!.note).toBe(JSON.stringify({ sub: 1 }));
   });
+
+  it("plan.position 回带真实落点 —— 调用方拿它做文案，不再各算一遍", () => {
+    const s = state({ bound: true, entityId: "e1" });
+    // 元婴 1/3 点「阶内进位」：应落到 2，而不是原样
+    expect(setRealm(s, { index: 1, sub: 1 }, "pack", { carry: true, delta: 1 }).position)
+      .toEqual({ index: 1, sub: 2 });
+    // 满层再进：跨阶到下一阶第 1 层
+    expect(setRealm(s, { index: 1, sub: 9 }, "pack", { carry: true, delta: 1 }).position)
+      .toEqual({ index: 2, sub: 1 });
+    // 未绑定走自持 JSON 时同样回带位置
+    expect(setRealm(state({ bound: false }), { index: 0, sub: 2 }, "pack", {
+      carry: true,
+      delta: 1,
+    }).position).toEqual({ index: 0, sub: 3 });
+  });
+
+  it("漏传 carry 时位置原样返回（这正是「阶内进位」点不动的根因）", () => {
+    const s = state({ bound: true, entityId: "e1" });
+    // 只有 delta 时走 clampRealm 分支 —— 位置不动，但调用方仍会 mutate + 弹 toast
+    expect(setRealm(s, { index: 1, sub: 1 }, "pack", { delta: 1 }).position).toEqual({
+      index: 1,
+      sub: 1,
+    });
+  });
 });
 
 describe("parseSub：novel_links.note 只写 {sub}（不能用 parseRealmRaw 代读）", () => {

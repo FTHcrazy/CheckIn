@@ -9,12 +9,23 @@
  *
  * 边界：SQL 只出现在本文件与 db.ts；不导入 main.ts；
  * 渲染层通过 preload 暴露的 novel 命名空间调用，禁止裸拼 SQL。
+ *
+ * 存储：全部落在 **novel.db**（`electron/novel-db.ts`），与 checkin.db 分离。
+ * 本文件的 `dbAll / dbGet / dbRun / getDb` 都是 novel.db 的封装别名 ——
+ * 改动时不要从 checkin 的 `../db` 导入写通道，那会把数据写回 checkin 库里去。
  */
 import { ipcMain, dialog } from "electron";
 import { promises as fsp } from "node:fs";
 import path from "node:path";
 import mammoth from "mammoth";
-import { dbAll, dbGet, dbRun, getDb } from "../db";
+import {
+  novelAll as dbAll,
+  novelGet as dbGet,
+  novelRun as dbRun,
+  getNovelDb as getDb,
+  isNovelDbReady,
+  NOVEL_SESSION_KEY,
+} from "../novel-db";
 import { buildNovelTemplateBook } from "../novel-template";
 
 // ── 行类型（snake_case，对应表结构） ──
@@ -253,7 +264,7 @@ const SNAPSHOT_DELTA_WORDS = 500;
 const SNAPSHOT_INTERVAL_MS = 300_000;
 
 /** 编辑器会话标记键：running = 会话进行中；非 running = 上次已正常关闭 */
-const SESSION_KEY = "novel_editor_session";
+const SESSION_KEY = NOVEL_SESSION_KEY;
 
 /**
  * 模板书籍的自动播种已**整条移除**（连同 `novel_seeded` 标记）。
@@ -270,8 +281,12 @@ const SESSION_KEY = "novel_editor_session";
  */
 
 /**
- * 行囊里按 `character_id` 挂载的子表（九张，不含宿主表 `novel_pack_characters`
+ * 行囊里按 `character_id` 挂载的子表（十张，不含宿主表 `novel_pack_characters`
  * 与多态表 `novel_pack_modifiers`）。
+ *
+ * ⚠️ 这张清单必须覆盖 `readCharacterSnapshot` 会读到的**每一张**按 character_id
+ * 挂载的表：漏一张，删作品后那张表的行就永远查不到、也删不掉（没有 UI 入口，
+ * 也没有级联），只能靠清库。`novel_pack_presets` 就漏过一次（1.33.0 修复）。
  *
  * 删作品级联时必须**先删 modifiers 再删这里的 items / skills**：modifiers
  * 的归属是从宿主表反查的，宿主先没了子查询就变成空集，一条都删不掉。
@@ -281,6 +296,7 @@ const PACK_CHILD_TABLES = [
   "novel_pack_skills",
   "novel_pack_attributes",
   "novel_pack_slots",
+  "novel_pack_presets",
   "novel_pack_unit_systems",
   "novel_pack_layouts",
   "novel_pack_records",
@@ -327,7 +343,7 @@ function isEntryStatus(value: string): value is "open" | "resolved" {
 
 function setConfig(key: string, value: string): void {
   dbRun(
-    `INSERT INTO config (key, value) VALUES (?, ?)
+    `INSERT INTO novel_config (key, value) VALUES (?, ?)
      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now', 'localtime')`,
     [key, value],
   );
@@ -336,7 +352,7 @@ function setConfig(key: string, value: string): void {
 /** 写入 usage_log 埋点（R14）：payload 序列化失败不影响主流程 */
 function logUsage(event: string, payload: Record<string, unknown>): void {
   try {
-    dbRun("INSERT INTO usage_log (event, payload, created_at) VALUES (?, ?, ?)", [
+    dbRun("INSERT INTO novel_usage_log (event, payload, created_at) VALUES (?, ?, ?)", [
       event,
       JSON.stringify(payload),
       Date.now(),
@@ -395,7 +411,7 @@ function toLinkDto(row: NovelLinkRow): NovelLinkDto {
  * 说明上次会话未走正常关闭流程（崩溃 / 断电），从最近快照构建恢复提示。
  */
 function buildRecovery(): NovelRecoveryDto | null {
-  const session = dbGet("SELECT value FROM config WHERE key = ?", [SESSION_KEY]) as
+  const session = dbGet("SELECT value FROM novel_config WHERE key = ?", [SESSION_KEY]) as
     | { value?: string }
     | undefined;
   if (session?.value !== "running") return null;
@@ -450,15 +466,39 @@ function computeStreakDays(activeDays: ReadonlySet<string>, today: Date): number
 
 export function registerNovelHandlers(): void {
   // ── 通用 config 读写（R5 设置持久化 / R6 位置记忆共用） ──
+  // 库未就绪（未登录 / 正在退出）时优雅降级而不是抛错 —— 退出销毁窗口的
+  // 过程中渲染层仍可能发来一次 config 写入，抛穿只会刷「尚未初始化 novel 数据」
+  const requireReady = (): boolean => {
+    if (isNovelDbReady()) return true;
+    console.error("[novel-config] novel.db 未就绪（未登录或正在退出），本次读写跳过");
+    return false;
+  };
+
   ipcMain.handle("novel-config-get", (_event, key: string) => {
-    const row = dbGet("SELECT value FROM config WHERE key = ?", [key]) as
+    if (!requireReady()) return null;
+    const row = dbGet("SELECT value FROM novel_config WHERE key = ?", [key]) as
       | { value?: string }
       | undefined;
     return row?.value ?? null;
   });
 
   ipcMain.handle("novel-config-set", (_event, key: string, value: string) => {
+    if (!requireReady()) return false;
     setConfig(key, value);
+    return true;
+  });
+
+  /**
+   * 开启编辑器会话（崩溃恢复标记的**唯一**写入口）。
+   *
+   * 标记必须与「真正进了编辑器」这件事绑定：装载数据是通用动作，开个行囊
+   * 面板也会做，用它当判据会把没进过编辑器的会话也记成「进行中」。
+   * 关闭侧见 `markNovelSessionClosed()`（NovelWindow closed / 应用退出）。
+   */
+  ipcMain.handle("novel-session-open", () => {
+    setConfig(SESSION_KEY, "running");
+    // R14：编辑器唤起埋点（北极星「打开→开始输入」漏斗的起点）
+    logUsage("editor_open", {});
     return true;
   });
 
@@ -625,18 +665,16 @@ function seedTemplateBook(): {
     dbRun("DELETE FROM novel_levels");
     dbRun("DELETE FROM novel_level_systems");
     // 行囊（CharacterPack）随作品一起清空：作品 id 会重建，行囊角色留着会成孤儿
+    // 清单与 PACK_CHILD_TABLES 同源，避免「清库漏一张、级联漏一张」各自漂移
     dbRun("DELETE FROM novel_pack_modifiers");
-    dbRun("DELETE FROM novel_pack_items");
-    dbRun("DELETE FROM novel_pack_skills");
-    dbRun("DELETE FROM novel_pack_attributes");
-    dbRun("DELETE FROM novel_pack_slots");
-    dbRun("DELETE FROM novel_pack_unit_systems");
-    dbRun("DELETE FROM novel_pack_layouts");
-    dbRun("DELETE FROM novel_pack_records");
-    dbRun("DELETE FROM novel_pack_drafts");
+    for (const table of PACK_CHILD_TABLES) dbRun(`DELETE FROM ${table}`);
     dbRun("DELETE FROM novel_pack_characters");
+    // 埋点与会话标记也一并清：它们是「这本小说的写作记录」，
+    // 留着会让「今日新增字数 / 连续码字天数」在重置后仍算旧账
+    dbRun("DELETE FROM novel_usage_log");
+    dbRun("DELETE FROM novel_config WHERE key = ?", [SESSION_KEY]);
     // 位置记忆指向的章节即将不存在，直接清除
-    dbRun("DELETE FROM config WHERE key = 'novel_editor_position'");
+    dbRun("DELETE FROM novel_config WHERE key = 'novel_editor_position'");
 
     dbRun("INSERT INTO novel_works (id, name, created_at) VALUES (?, ?, ?)", [
       template.workId,
@@ -964,10 +1002,17 @@ ipcMain.handle("novel-editor-reset-template", () => seedTemplateBook());
       createdAt: row.created_at,
     }));
 
+    /**
+     * ⚠️ 这里**不再**置会话标记、也不再上报 `editor_open`。
+     *
+     * 本通道是通用数据装载，不止编辑器在用：书架（`bookshelf-service`）与
+     * 行囊「绑定主角」下拉（`fetchPackBindableEntities`）都调它。把
+     * `running` 写在这里，等于「打开过行囊」也会被记为「编辑器会话进行中」——
+     * 而清除标记只发生在 NovelWindow 的 closed 与应用退出，PackWindow 关掉
+     * 时没人清 → 下次启动凭空弹出「检测到未正常关闭」。
+     * 标记改由 `novel-session-open` 显式开启（只有真正进入编辑器才会调）。
+     */
     const recovery = buildRecovery();
-    setConfig(SESSION_KEY, "running");
-    // R14：编辑器唤起埋点（北极星「打开→开始输入」漏斗的起点）
-    logUsage("editor_open", {});
 
     const bundle: NovelBundleDto = {
       works: works.map((row) => ({ id: row.id, name: row.name, createdAt: row.created_at })),
@@ -1495,14 +1540,14 @@ ipcMain.handle("novel-editor-reset-template", () => seedTemplateBook());
       `SELECT
          COALESCE(SUM(CAST(json_extract(payload, '$.delta') AS INTEGER)), 0) AS today_words,
          COUNT(*) AS save_count
-       FROM usage_log
+       FROM novel_usage_log
        WHERE event = 'chapter_save' AND created_at >= ?`,
       [start.getTime()],
     ) as { today_words: number; save_count: number };
     const activeDays = new Set(
       (dbAll(
         `SELECT DISTINCT date(created_at / 1000, 'unixepoch', 'localtime') AS day
-         FROM usage_log
+         FROM novel_usage_log
          WHERE event = 'chapter_save'
          ORDER BY day DESC
          LIMIT 400`,

@@ -8,6 +8,7 @@ import {
   writeRealmLink,
 } from "../services/pack-service";
 import { notifyRealmLinkChanged } from "../pack-config";
+import { countNetChanges } from "../pack-dirty";
 import type {
   PackBundleDTO,
   PackCharacter,
@@ -112,6 +113,13 @@ export function usePackData(workId: string, chapterId: string) {
     levelSystems: [],
     realmLink: null,
   });
+  /**
+   * 未保存改动处数 —— **派生值**，不是自增计数器（见 `pack-dirty.ts`）。
+   *
+   * 计数器版本在输入框上是错的：`updateAttribute(id, {name})` 每敲一个字调一次，
+   * 「破境丹」= 3 处改动。这里只在**文档或基线真的变了**时重算一次，
+   * 口径是「新增 / 修改 / 删除 / 移动的最终净变化」。
+   */
   const [dirty, setDirty] = useState(0);
   const [saving, setSaving] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
@@ -123,6 +131,19 @@ export function usePackData(workId: string, chapterId: string) {
   const draftTimerRef = useRef<number | null>(null);
   const docRef = useRef<PackDoc | null>(null);
   const dirtyRef = useRef(0);
+
+  /**
+   * 重算未保存处数。
+   *
+   * 唯一的写入口是它 —— 不要再往回调 `setDirty((n) => n + 1)`，那正是被换掉的
+   * 计数器口径（敲 3 个字算 3 处）。基线取自 `savedRef`（上次保存态镜像）。
+   *
+   * 传 `baseline` 参数是为了「刚刚保存完」这一帧：此时 `savedRef.current` 已被
+   * 推进到新文档，但 `docRef.current` 也已是同一份 → 差值为 0，正合预期。
+   */
+  const recomputeDirty = useCallback((next: PackDoc | null): void => {
+    setDirty(countNetChanges(savedRef.current, next));
+  }, []);
 
   useEffect(() => {
     docRef.current = doc;
@@ -153,8 +174,12 @@ export function usePackData(workId: string, chapterId: string) {
             realmLink: draft.realmLink ?? formal.realmLink,
           }
         : (draft ?? formal);
+    docRef.current = merged;
     setDocState(merged);
-    setDirty(draft ? bundle.draft!.dirtyCount : 0);
+    // 计数一律以 savedRef（正式行基线）与当前文档的净差异重算 —— 草稿里存的
+    // `dirtyCount` 是旧计数器口径的产物，只在没有正式行可比时当作兜底参考。
+    // 重算的好处：装载后立刻是准确的（草稿里被改回去的部分不会算进来）。
+    setDirty(formal ? countNetChanges(formal, merged) : (bundle.draft?.dirtyCount ?? 0));
     setSavedAt(bundle.records[0]?.takenAt ?? 0);
     setMeta({
       records: bundle.records,
@@ -197,7 +222,10 @@ export function usePackData(workId: string, chapterId: string) {
       if (bundle.character && !docRef.current) {
         const formal = fromBundle(bundle);
         savedRef.current = formal;
+        docRef.current = formal;
         setDocState(formal);
+        // 首次拿到的正式行即基线 → 净差异必然为 0
+        setDirty(0);
       }
       return next;
     } catch {
@@ -206,26 +234,54 @@ export function usePackData(workId: string, chapterId: string) {
   }, [workId]);
 
   /**
-   * 唯一的编辑入口：所有改动都经过它 → 标脏 → 防抖写草稿。
-   * dirtyDelta 默认为 1（= 一处改动）；批量操作可传实际条目数。
+   * 唯一的编辑入口：所有改动都经过它 → 重算净变化 → 防抖写草稿。
+   *
+   * ⚠️ 第二参数保留只为**不改动几十个调用点**，不再参与计数。
+   *
+   * 早期是 `dirtyDelta` 自增计数器（批量操作传条目数），但输入框每次 `onChange`
+   * 都调一次 mutate，于是「破境丹」算 3 处、改回原样仍显示改过 —— 与作者要的
+   * 「净变化」不符。现在计数一律由 `countNetChanges(savedRef, doc)` 派生，
+   * 与调了多少次、每次建了几条都无关。
    */
   const mutate = useCallback(
-    (recipe: (current: PackDoc) => PackDoc, dirtyDelta = 1) => {
-      setDocState((prev) => {
-        if (!prev) return prev;
-        const next = recipe(prev);
-        if (next === prev) return prev;
-        if (dirtyDelta > 0) setDirty((count) => count + dirtyDelta);
-        return next;
-      });
+    (recipe: (current: PackDoc) => PackDoc) => {
+      /**
+       * ⚠️ 不要改回 `setDocState((prev) => …)` 的 updater 形式。
+       *
+       * 之前是 updater 内部顺手标脏，而 **updater 必须是纯函数**：
+       * StrictMode 下它会连跑两次，于是每次编辑都被记两次。这里先算后写，
+       * 副作用留在 updater 外面。
+       *
+       * 代价是要自己推进 `docRef`：同一 tick 内连续多次 mutate（批量操作）
+       * 读到的不能还是旧文档，否则后一次会把前一次的改动盖掉。
+       */
+      const prev = docRef.current;
+      if (!prev) return;
+      const next = recipe(prev);
+      if (next === prev) return;
+      docRef.current = next;
+      setDocState(next);
+      recomputeDirty(next);
     },
-    [],
+    [recomputeDirty],
   );
 
-  /** 界面状态等不产生脏计数的文档替换（如绑定实体后同步境界行） */
-  const replaceDoc = useCallback((next: PackDoc) => {
-    setDocState(next);
-  }, []);
+  /**
+   * 不产生「新增/修改/删除」语义的文档替换（如绑定实体后同步境界行）。
+   *
+   * 计数仍然要重算 —— 境界那一格本身就参与净变化，跳过会让「改了境界」不计数。
+   * 重算而非自增，所以它天然只在真的变了时才 +1。
+   */
+  const replaceDoc = useCallback(
+    (next: PackDoc) => {
+      // 与 mutate 同理：docRef 是「当前文档」的唯一真相，必须同步推进，
+      // 否则紧随其后的一次 mutate 会基于旧文档计算、把这次替换盖掉
+      docRef.current = next;
+      setDocState(next);
+      recomputeDirty(next);
+    },
+    [recomputeDirty],
+  );
 
   // 草稿防抖写入（§9.6 问题 5：800ms 防抖；关闭面板时另有必写路径）
   useEffect(() => {
@@ -299,7 +355,8 @@ export function usePackData(workId: string, chapterId: string) {
           }
         }
         savedRef.current = current;
-        setDirty(0);
+        // 基线刚被推进到当前文档 —— 重算必然得 0（同一份文档比同一份文档）
+        recomputeDirty(current);
         setSavedAt(Date.now());
         const records = await fetchPackRecords(current.character.id).catch(
           () => meta.records,
@@ -312,7 +369,7 @@ export function usePackData(workId: string, chapterId: string) {
       setSaving(false);
       return ok;
     },
-    [chapterId, meta.records],
+    [chapterId, meta.records, recomputeDirty],
   );
 
   /** 撤销全部改动：丢弃草稿，回到上次保存态 */
@@ -321,18 +378,18 @@ export function usePackData(workId: string, chapterId: string) {
     if (!saved) return;
     // 主角绑定不属于「可撤销的设定数据」：撤销的是行囊内的编辑，不该顺手
     // 把右侧栏设的主角也退回去（那份绑定在库里，撤销界面回退不了它）
-    setDocState((current) =>
-      current
-        ? {
-            ...saved,
-            character: { ...saved.character, entityId: current.character.entityId },
-          }
-        : saved,
-    );
-    setDirty(0);
+    const current = docRef.current;
+    const next = current
+      ? { ...saved, character: { ...saved.character, entityId: current.character.entityId } }
+      : saved;
+    docRef.current = next;
+    setDocState(next);
+    // 主角绑定被刻意保留 → 它若与 savedRef 不同，仍会算出 1 处改动（正确：
+    // 「撤销全部」撤的是设定数据，绑定那一格本就不该被撤掉）
+    recomputeDirty(next);
     setSaveFailed(false);
     await clearPackDraft(saved.character.id);
-  }, []);
+  }, [recomputeDirty]);
 
   /** 撤销到上次保存：从最近一条盘点记录恢复（带确认由调用方负责） */
   const restoreFromRecord = useCallback(
@@ -343,11 +400,13 @@ export function usePackData(workId: string, chapterId: string) {
       // 不让 parseDraft 的默认值把它抹成 null
       const current = docRef.current;
       if (current && !restored.realmLink) restored.realmLink = current.realmLink;
+      docRef.current = restored;
       setDocState(restored);
-      setDirty((count) => count + 1);
+      // 恢复后与「上次保存态」的净差异 —— 可能是 0（正好回到保存态）也可能是 N
+      recomputeDirty(restored);
       return true;
     },
-    [],
+    [recomputeDirty],
   );
 
   /** 导出当前草稿为 JSON（G-4：连续失败 3 次的逃生出口） */

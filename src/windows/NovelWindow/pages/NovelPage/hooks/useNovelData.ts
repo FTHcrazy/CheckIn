@@ -11,6 +11,7 @@ import {
   fetchLastPosition,
   fetchNameFavorites,
   fetchNovelBundle,
+  openEditorSession,
   removeLevel as removeLevelRemote,
   removeLevelSystem as removeLevelSystemRemote,
   removeLink as removeLinkRemote,
@@ -144,6 +145,9 @@ export function useNovelData() {
       // 表现为「每次启动收藏夹都是空的」，且首次收藏会用空数组覆盖历史数据
       setNameFavorites(sanitizeNameFavorites(parseJsonOrNull(favoritesJson)));
       setLoadError("");
+      // 崩溃恢复标记与 editor_open 埋点都在这里开启：本 Hook 只有编辑器在用，
+      // 书架 / 行囊走的是各自的装载通道，不该被算成「编辑器会话进行中」
+      void openEditorSession();
     } catch {
       // 没有 catch 的话 rejection 会一路冒到 `void load()` 成为未捕获错误，
       // bundle 保持 null → 编辑器永远空态、也没有任何重试入口
@@ -648,7 +652,12 @@ export function useNovelData() {
   /**
    * 删除章节：本地摘除 + 远端同事务清理快照。
    * 删的是当前章节 → 按展示顺序自动切到后一个，没有后一个切前一个；
-   * 快照由主进程随章节一并删除，本地草稿残留无害（同 id 不会复用）。
+   * 快照由主进程随章节一并删除。
+   *
+   * ⚠️ 调用方（useNovelPage.handleDeleteChapter）必须**先**调
+   * `editor.dropChapterDraft(chapterId)`：本函数只管数据层，而草稿与在途
+   * 防抖活在 store 里——留着它们，800ms 后的防抖会拿已删除的 chapterId
+   * 落库，主进程找不到章节如实返回 false，保存态就永久停在 failed。
    */
   const deleteChapter = useCallback(
     (chapterId: string): void => {

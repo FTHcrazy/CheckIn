@@ -36,6 +36,13 @@ export interface RealmWritePlan {
   link: PackRealmLinkDTO | null;
   /** 需要写回的 realm_at JSON；null = 本次不改该字段 */
   realmRaw: string | null;
+  /**
+   * 本次实际落到的位置（进位 / 夹取之后的**唯一真相**）。
+   *
+   * 调用方拿它做 toast 文案，不要自己再算一遍：两份规则一旦漂移，就会出现
+   * 「toast 说变了、数据没变」的假变更（「阶内进位」曾因为漏传 carry 而踩到）。
+   */
+  position: RealmPosition;
 }
 
 export const UNBOUND_REALM_HINT = "尚未指定主角，境界仅在行囊内使用";
@@ -144,6 +151,7 @@ export function setRealm(
 
   if (state.bound && state.entityId) {
     return {
+      position: next,
       link: {
         // id 仅在新建行时使用；已有行沿用原 id，保证幂等 upsert 不新增孤儿
         id: options.linkId || state.link?.id || "",
@@ -158,8 +166,9 @@ export function setRealm(
     };
   }
   // 未绑定：仅行囊内使用。面板视角不存在目标，不写。
-  if (origin === "r25") return { link: null, realmRaw: null };
+  if (origin === "r25") return { position: next, link: null, realmRaw: null };
   return {
+    position: next,
     link: null,
     realmRaw: JSON.stringify({ levelId: resolved.levelId, sub: resolved.sub }),
   };

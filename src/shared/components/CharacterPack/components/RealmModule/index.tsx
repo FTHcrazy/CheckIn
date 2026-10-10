@@ -50,6 +50,9 @@ export default function RealmModule({ api }: RealmModuleProps) {
   const key = "realm" as const;
   const rung = rungs[api.realmPos.index];
   const subMax = Math.max(1, rung?.subLevels ?? 1);
+  /** 已在顶阶最后一小层：再进位无处可去（按钮据此置灰并给出原因） */
+  const atLadderTop =
+    api.realmPos.index === rungs.length - 1 && api.realmPos.sub >= subMax;
 
   const step = (delta: number) => {
     void api.writeRealm(api.realmPos, "pack", { carry: true, delta });
@@ -140,7 +143,19 @@ export default function RealmModule({ api }: RealmModuleProps) {
               />
               <Button
                 className="cpk-btn ghost"
-                onClick={() => void api.writeRealm(api.realmPos, "pack", { delta: 1 })}
+                // 已在顶阶满层时进位无处可去（carryRealm 会原样返回）。
+                // 不禁用的话「点了没反应」与「功能坏了」长得一样 —— 这正是
+                // 本次报障的最初观感，所以把「到顶」显式说出来。
+                disabled={atLadderTop}
+                title={atLadderTop ? "已是最高阶最后一层" : "推进一小层，满层自动进位"}
+                onClick={() =>
+                  // ⚠️ `carry: true` 不可省：writeRealm / setRealm 都按它分支，
+                  // 缺了就走 clampRealm(pos) —— 位置原样返回，看着「点了没反应」
+                  void api.writeRealm(api.realmPos, "pack", {
+                    carry: true,
+                    delta: 1,
+                  })
+                }
               >
                 阶内进位
               </Button>

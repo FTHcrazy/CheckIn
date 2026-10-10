@@ -1,6 +1,11 @@
 /**
  * 本地 SQLite 数据库模块
  * 使用 better-sqlite3 提供持久化存储
+ *
+ * 只承载 **checkin 域**：todo / memo / 日程 / 记账 / 打卡 / 应用级账号。
+ * 小说域（novel_* + 行囊 novel_pack_*）自 1.33.0 起独立为 `novel.db`，
+ * 见 `electron/novel-db.ts` —— 那边通过下面的生命周期回调跟随本库一起开关，
+ * 本模块**不反向依赖**它（避免循环 import）。
  */
 import Database from 'better-sqlite3'
 import path from 'path'
@@ -12,6 +17,41 @@ let authDb: Database.Database | null = null
 let db: Database.Database | null = null
 /** 当前登录用户 email（switchUserDb 时同步），供业务 handler 定位用户数据目录 */
 let currentEmail = ''
+
+/**
+ * 用户库生命周期监听（供其它独立库跟随开关，如 novel.db）
+ *
+ * 注册即返回一个注销函数；多个监听者互不影响。
+ * 单个监听者抛错**不阻断**其它监听者，也不阻断本库的切换 —— 附属库挂了不该
+ * 让待办 / 日程一起不可用。
+ */
+export interface UserDbLifecycle {
+  /** 用户库已就绪（切换 / 首次打开）后触发，入参为当前 email */
+  onSwitched?: (email: string) => void
+  /** 用户库关闭后触发 */
+  onClosed?: () => void
+}
+
+const lifecycleListeners = new Set<UserDbLifecycle>()
+
+export function registerUserDbLifecycle(listener: UserDbLifecycle): () => void {
+  lifecycleListeners.add(listener)
+  return () => lifecycleListeners.delete(listener)
+}
+
+function emitLifecycle<K extends keyof UserDbLifecycle>(
+  event: K,
+  ...args: Parameters<NonNullable<UserDbLifecycle[K]>>
+): void {
+  for (const listener of lifecycleListeners) {
+    try {
+      const handler = listener[event] as ((...a: unknown[]) => void) | undefined
+      handler?.(...args)
+    } catch (error) {
+      console.error(`[db] 生命周期监听 ${String(event)} 失败：`, error)
+    }
+  }
+}
 
 function getLegacyDbPath(): string {
   const userDataPath = app.getPath('userData')
@@ -64,6 +104,11 @@ function initializeDataDb(database: Database.Database): void {
       updated_at TEXT DEFAULT (datetime('now', 'localtime'))
     );
     CREATE INDEX IF NOT EXISTS idx_activities_date ON activities(date);
+
+    -- ── 小说域表已迁出 ──
+    -- novel_* / novel_pack_* / usage_log 全部归属 novel.db（见 electron/novel-db.ts）。
+    -- 历史上它们建在本库里，1.33.0 起不再创建、也不再读取；老库中残留的
+    -- 同名表不会被触碰（数据仍在盘上，只是无人读取）。
     CREATE TABLE IF NOT EXISTS todos (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       parent_id INTEGER DEFAULT NULL,
@@ -76,106 +121,6 @@ function initializeDataDb(database: Database.Database): void {
       done_at TEXT DEFAULT NULL
     );
 
-    -- ── 小说编辑器（PRD v0.4 §7 数据层，M1 一次到位）──
-    -- 时间戳统一存毫秒整数（渲染层 Date.now() 口径），避免字符串时区解析
-    CREATE TABLE IF NOT EXISTS novel_works (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      created_at INTEGER NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS novel_volumes (
-      id TEXT PRIMARY KEY,
-      work_id TEXT NOT NULL,
-      name TEXT NOT NULL DEFAULT '未命名卷',
-      sort INTEGER NOT NULL DEFAULT 1
-    );
-    CREATE TABLE IF NOT EXISTS novel_chapters (
-      id TEXT PRIMARY KEY,
-      work_id TEXT NOT NULL,
-      volume_id TEXT NOT NULL,
-      title TEXT NOT NULL DEFAULT '未命名',
-      content TEXT NOT NULL DEFAULT '',
-      word_count INTEGER NOT NULL DEFAULT 0,
-      status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'done')),
-      sort INTEGER NOT NULL DEFAULT 1,
-      outline_note TEXT,
-      updated_at INTEGER NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_novel_chapters_work
-      ON novel_chapters(work_id, volume_id, sort);
-    CREATE TABLE IF NOT EXISTS novel_snapshots (
-      id TEXT PRIMARY KEY,
-      chapter_id TEXT NOT NULL,
-      content TEXT NOT NULL,
-      word_count INTEGER NOT NULL DEFAULT 0,
-      delta_words INTEGER NOT NULL DEFAULT 0,
-      created_at INTEGER NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_novel_snapshots_chapter
-      ON novel_snapshots(chapter_id, created_at);
-    CREATE TABLE IF NOT EXISTS novel_notes (
-      id TEXT PRIMARY KEY,
-      work_id TEXT NOT NULL,
-      content TEXT NOT NULL,
-      created_at INTEGER NOT NULL,
-      pinned INTEGER NOT NULL DEFAULT 0,
-      foreshadow_id TEXT
-    );
-    CREATE TABLE IF NOT EXISTS novel_outline_entries (
-      id TEXT PRIMARY KEY,
-      work_id TEXT NOT NULL,
-      kind TEXT NOT NULL DEFAULT 'foreshadow',
-      volume_id TEXT NOT NULL,
-      chapter_id TEXT,
-      title TEXT NOT NULL,
-      note TEXT NOT NULL DEFAULT '',
-      status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'resolved')),
-      created_at INTEGER NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS novel_entities (
-      id TEXT PRIMARY KEY,
-      work_id TEXT NOT NULL,
-      type TEXT NOT NULL DEFAULT 'custom',
-      name TEXT NOT NULL,
-      aliases TEXT NOT NULL DEFAULT '[]',
-      summary TEXT NOT NULL DEFAULT '',
-      content TEXT NOT NULL DEFAULT '',
-      fields TEXT NOT NULL DEFAULT '{}',
-      sort INTEGER NOT NULL DEFAULT 1,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS novel_links (
-      id TEXT PRIMARY KEY,
-      from_type TEXT NOT NULL,
-      from_id TEXT NOT NULL,
-      to_type TEXT NOT NULL,
-      to_id TEXT NOT NULL,
-      relation TEXT NOT NULL,
-      note TEXT
-    );
-    CREATE TABLE IF NOT EXISTS novel_level_systems (
-      id TEXT PRIMARY KEY,
-      work_id TEXT NOT NULL,
-      name TEXT NOT NULL,
-      note TEXT
-    );
-    CREATE TABLE IF NOT EXISTS novel_levels (
-      id TEXT PRIMARY KEY,
-      system_id TEXT NOT NULL,
-      name TEXT NOT NULL,
-      rank INTEGER NOT NULL,
-      note TEXT
-    );
-    CREATE INDEX IF NOT EXISTS idx_novel_levels_system
-      ON novel_levels(system_id, rank);
-    CREATE TABLE IF NOT EXISTS novel_level_conversions (
-      id TEXT PRIMARY KEY,
-      from_level_id TEXT NOT NULL,
-      to_level_id TEXT NOT NULL,
-      relation TEXT NOT NULL,
-      note TEXT
-    );
     -- ── 记账（PRD v0.1 数据模型）──
     -- 金额统一 REAL（元），时间统一本地字符串 YYYY-MM-DD HH:mm:ss
     CREATE TABLE IF NOT EXISTS ledger_categories (
@@ -238,228 +183,7 @@ function initializeDataDb(database: Database.Database): void {
       amount REAL NOT NULL DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now', 'localtime'))
     );
-    CREATE TABLE IF NOT EXISTS usage_log (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      event TEXT NOT NULL,
-      payload TEXT,
-      created_at INTEGER NOT NULL
-    );
-
-    -- ── 行囊 CharacterPack（PRD docs/character-pack-prd.md §9.2）──
-    -- v1 只承载 1 条主角，模型按多角色预留（全部表带 character_id）
-    -- 数值统一 REAL、布尔统一 INTEGER 0/1、JSON 字段统一 TEXT
-    CREATE TABLE IF NOT EXISTS novel_pack_characters (
-      id TEXT PRIMARY KEY,
-      work_id TEXT NOT NULL,
-      name TEXT NOT NULL DEFAULT '主角',
-      avatar TEXT,
-      is_protagonist INTEGER NOT NULL DEFAULT 1,
-      -- 绑定 EntityPanel 实体（novel_entities.id）：缺失会导致境界同步静默失效（§9.7.5）
-      entity_id TEXT,
-      -- 未绑定实体时的「仅行囊内使用」境界（JSON {levelId, sub}）；绑定时以 novel_links 为准
-      realm_at TEXT,
-      note TEXT NOT NULL DEFAULT '',
-      -- 负重上限（REQ-033）：0 = 不限。默认不限而不是给个拍脑袋的数——
-      -- 那样作者一打开行囊就会看见「超载」，而他并没有记过任何重量
-      weight_limit REAL NOT NULL DEFAULT 0,
-      -- 格数上限（F-5 第一条）：0 = 不限。与负重是两把尺子——
-      -- 200 株草药占 1 格但可能压垮肩膀，两件事都要能各自触发
-      capacity_limit INTEGER NOT NULL DEFAULT 0,
-      sort_order INTEGER NOT NULL DEFAULT 1
-    );
-    CREATE TABLE IF NOT EXISTS novel_pack_attributes (
-      id TEXT PRIMARY KEY,
-      character_id TEXT NOT NULL,
-      group_name TEXT NOT NULL DEFAULT '基础属性',
-      name TEXT NOT NULL,
-      base_value REAL NOT NULL DEFAULT 0,
-      decimals INTEGER NOT NULL DEFAULT 0,
-      unit TEXT NOT NULL DEFAULT '',
-      sort_order INTEGER NOT NULL DEFAULT 1,
-      -- 最近一次改动的落点时刻（REQ-028 本章变动角标）；旧数据补列为 0 = 不算变动
-      updated_at INTEGER NOT NULL DEFAULT 0
-    );
-    CREATE INDEX IF NOT EXISTS idx_pack_attr_char ON novel_pack_attributes(character_id, sort_order);
-    CREATE TABLE IF NOT EXISTS novel_pack_slots (
-      id TEXT PRIMARY KEY,
-      character_id TEXT NOT NULL,
-      name TEXT NOT NULL,
-      capacity INTEGER NOT NULL DEFAULT 1,
-      -- 仅接受物品类型（多选）；空数组 = 不限
-      accepts TEXT NOT NULL DEFAULT '[]',
-      enabled INTEGER NOT NULL DEFAULT 1,
-      note TEXT NOT NULL DEFAULT '',
-      sort_order INTEGER NOT NULL DEFAULT 1
-    );
-    CREATE INDEX IF NOT EXISTS idx_pack_slot_char ON novel_pack_slots(character_id, sort_order);
-    CREATE TABLE IF NOT EXISTS novel_pack_items (
-      id TEXT PRIMARY KEY,
-      character_id TEXT NOT NULL,
-      name TEXT NOT NULL,
-      category TEXT NOT NULL DEFAULT 'misc',
-      qty INTEGER NOT NULL DEFAULT 1,
-      rarity TEXT NOT NULL DEFAULT 'common',
-      icon TEXT NOT NULL DEFAULT '',
-      desc TEXT NOT NULL DEFAULT '',
-      tags TEXT NOT NULL DEFAULT '[]',
-      -- 穿戴位置：equipped_slot_id 非空即视为佩戴；slot_index 为部位内第几个槽位
-      equipped_slot_id TEXT,
-      slot_index INTEGER,
-      source_chapter_id TEXT,
-      -- 单件重量（REQ-033）：0 = 没记。总重按 weight × qty 累计（数量即件数）
-      weight REAL NOT NULL DEFAULT 0,
-      updated_at INTEGER NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_pack_item_char ON novel_pack_items(character_id);
-    CREATE TABLE IF NOT EXISTS novel_pack_skills (
-      id TEXT PRIMARY KEY,
-      character_id TEXT NOT NULL,
-      name TEXT NOT NULL,
-      desc TEXT NOT NULL DEFAULT '',
-      -- 载体开关（技能级总开关）：停用则全部效果（被动+持续）不参与汇总
-      enabled INTEGER NOT NULL DEFAULT 1,
-      proficiency_raw REAL NOT NULL DEFAULT 0,
-      tags TEXT NOT NULL DEFAULT '[]',
-      sort_order INTEGER NOT NULL DEFAULT 1,
-      -- 最近一次改动的落点时刻（REQ-028 本章变动角标）；旧数据补列为 0 = 不算变动
-      updated_at INTEGER NOT NULL DEFAULT 0
-    );
-    CREATE INDEX IF NOT EXISTS idx_pack_skill_char ON novel_pack_skills(character_id, sort_order);
-    CREATE TABLE IF NOT EXISTS novel_pack_modifiers (
-      id TEXT PRIMARY KEY,
-      owner_type TEXT NOT NULL CHECK (owner_type IN ('item', 'skill', 'status')),
-      owner_id TEXT NOT NULL,
-      -- 效果性质（§9.2.1）：passive 被动 / sustained 持续 / cast 释放
-      nature TEXT NOT NULL DEFAULT 'passive' CHECK (nature IN ('passive', 'sustained', 'cast')),
-      name TEXT NOT NULL DEFAULT '',
-      -- 可空：cast 型不指向任何属性
-      target_attr_id TEXT,
-      op TEXT NOT NULL DEFAULT 'add' CHECK (op IN ('add', 'percent', 'mul', 'override')),
-      value REAL NOT NULL DEFAULT 0,
-      value_unit TEXT,
-      scale_by_proficiency INTEGER NOT NULL DEFAULT 0,
-      -- 仅 sustained：效果自己的独立开关（与载体开关分离）
-      active INTEGER NOT NULL DEFAULT 0,
-      default_on INTEGER NOT NULL DEFAULT 0,
-      cost TEXT,
-      cooldown REAL,
-      duration TEXT,
-      -- 剩余回合数（REQ-025 状态效果时效）：NULL = 不限时。到 0 即视为已过期，
-      -- 由 isCounted 的时效闸门挡在汇总之外（不直接翻 active —— 那是作者的开关）
-      rounds_left INTEGER,
-      target TEXT,
-      trigger TEXT,
-      condition TEXT,
-      note TEXT NOT NULL DEFAULT '',
-      disabled INTEGER NOT NULL DEFAULT 0,
-      sort_order INTEGER NOT NULL DEFAULT 1
-    );
-    CREATE INDEX IF NOT EXISTS idx_pack_mod_owner ON novel_pack_modifiers(owner_type, owner_id);
-    -- 换装方案（REQ-032）：payload 只存「谁穿在哪个部位的哪一格」，
-    -- 不存物品本身——物品被删掉时方案仍然可用，套用时跳过错失的那几件。
-    CREATE TABLE IF NOT EXISTS novel_pack_presets (
-      id TEXT PRIMARY KEY,
-      character_id TEXT NOT NULL,
-      name TEXT NOT NULL,
-      payload TEXT NOT NULL DEFAULT '[]',
-      note TEXT NOT NULL DEFAULT '',
-      sort_order INTEGER NOT NULL DEFAULT 1,
-      updated_at INTEGER NOT NULL DEFAULT 0
-    );
-    CREATE INDEX IF NOT EXISTS idx_pack_preset_char ON novel_pack_presets(character_id, sort_order);
-    CREATE TABLE IF NOT EXISTS novel_pack_unit_systems (
-      id TEXT PRIMARY KEY,
-      character_id TEXT NOT NULL,
-      name TEXT NOT NULL,
-      kind TEXT NOT NULL CHECK (kind IN ('ladder', 'ratio', 'threshold')),
-      levels TEXT NOT NULL DEFAULT '[]',
-      config TEXT NOT NULL DEFAULT '{}',
-      is_default INTEGER NOT NULL DEFAULT 0,
-      sort_order INTEGER NOT NULL DEFAULT 1
-    );
-    CREATE INDEX IF NOT EXISTS idx_pack_unit_char ON novel_pack_unit_systems(character_id, kind);
-    -- 模块拼装：只承载「这本小说要哪些模块、什么顺序」这类设定数据。
-    -- 折叠状态 / 面板宽度 / 列表视图属于界面偏好，走 config 的 novel_pack_ui
-    -- （判据：改了这个值别人的这本书会变吗？不会 → 即改即存，不进本表）
-    CREATE TABLE IF NOT EXISTS novel_pack_layouts (
-      character_id TEXT NOT NULL,
-      module_key TEXT NOT NULL,
-      enabled INTEGER NOT NULL DEFAULT 1,
-      sort_order INTEGER NOT NULL DEFAULT 1,
-      PRIMARY KEY (character_id, module_key)
-    );
-    CREATE TABLE IF NOT EXISTS novel_pack_records (
-      id TEXT PRIMARY KEY,
-      character_id TEXT NOT NULL,
-      chapter_id TEXT,
-      taken_at INTEGER NOT NULL,
-      reason TEXT NOT NULL DEFAULT '',
-      payload TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_pack_records_char
-      ON novel_pack_records(character_id, taken_at DESC);
-    -- 草稿（§8.6）：payload 与正式表同构，提交成功后清空
-    CREATE TABLE IF NOT EXISTS novel_pack_drafts (
-      character_id TEXT PRIMARY KEY,
-      payload TEXT NOT NULL,
-      dirty_count INTEGER NOT NULL DEFAULT 0,
-      updated_at INTEGER NOT NULL
-    );
   `)
-
-  // ── 增量迁移：novel_levels 补「小层」与「战力当量」（PRD §9.7.2 缺口①②）
-  // 两项必须同一次 migration 做完，避免二次表重建
-  const levelColumns = database.prepare("PRAGMA table_info(novel_levels)").all() as Array<{
-    name: string
-  }>
-  if (!levelColumns.some((column) => column.name === "sub_levels")) {
-    database.exec("ALTER TABLE novel_levels ADD COLUMN sub_levels INTEGER NOT NULL DEFAULT 1")
-  }
-  if (!levelColumns.some((column) => column.name === "power")) {
-    database.exec("ALTER TABLE novel_levels ADD COLUMN power REAL")
-  }
-
-  // ── 增量迁移：属性 / 技能补「最近改动时刻」（行囊 REQ-028 本章变动角标）
-  //
-  // 默认 0 而不是 `Date.now()`：老数据「从来没有改动记录」是事实，
-  // 补成当前时刻会让作者一打开行囊就看见满屏「刚改动」的假角标。
-  // 两列各自独立判断，避免其中一张表已迁移过时另一张漏掉。
-  const hasColumn = (table: string, column: string): boolean =>
-    (database.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).some(
-      (item) => item.name === column,
-    )
-  if (!hasColumn("novel_pack_attributes", "updated_at")) {
-    database.exec(
-      "ALTER TABLE novel_pack_attributes ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0",
-    )
-  }
-  if (!hasColumn("novel_pack_skills", "updated_at")) {
-    database.exec("ALTER TABLE novel_pack_skills ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0")
-  }
-
-  // ── 增量迁移：物品重量 + 负重 / 格数上限（行囊 REQ-033 负重与容量）
-  //
-  // 三列默认都是 0（= 没记重量 / 不限重 / 不限格），而不是给个拍脑袋的默认值：
-  // 那会让作者一打开物品栏就看见「超载 / 背包已满」，而他什么都没记过。
-  if (!hasColumn("novel_pack_items", "weight")) {
-    database.exec("ALTER TABLE novel_pack_items ADD COLUMN weight REAL NOT NULL DEFAULT 0")
-  }
-  if (!hasColumn("novel_pack_characters", "weight_limit")) {
-    database.exec("ALTER TABLE novel_pack_characters ADD COLUMN weight_limit REAL NOT NULL DEFAULT 0")
-  }
-  if (!hasColumn("novel_pack_characters", "capacity_limit")) {
-    database.exec(
-      "ALTER TABLE novel_pack_characters ADD COLUMN capacity_limit INTEGER NOT NULL DEFAULT 0",
-    )
-  }
-
-  // ── 增量迁移：状态效果的剩余回合（行囊 REQ-025 时效）
-  //
-  // 可空列，**不写 DEFAULT**：NULL 表示「不限时」是这一格的语义本身，
-  // 补 0 会让所有旧状态效果在下次打开时集体判定为「已过期」。
-  if (!hasColumn("novel_pack_modifiers", "rounds_left")) {
-    database.exec("ALTER TABLE novel_pack_modifiers ADD COLUMN rounds_left INTEGER")
-  }
 }
 
 /** 初始化应用级用户数据库 */
@@ -544,6 +268,9 @@ export function switchUserDb(email: string, migrateLegacy = false): void {
     console.log(`[db] 已迁移旧用户数据: ${userDbPath}`)
   }
   console.log(`[db] 当前用户数据: ${userDbPath}`)
+  // 附属库（novel.db）跟随切换：必须放在本库完全就绪之后，
+  // 让监听者可以安全地读到当前 email 与用户目录
+  emitLifecycle('onSwitched', currentEmail)
 }
 
 export function getAuthDb(): Database.Database {
@@ -555,8 +282,10 @@ export function getCurrentUserEmail(): string {
   return currentEmail
 }
 
-/** 关闭数据库 */
+/** 关闭数据库（幂等；只有真的关了东西才广播 onClosed，避免监听者重复收到） */
 export function closeDb(): void {
+  const hadUserDb = db !== null
+  const hadAuthDb = authDb !== null
   if (db) {
     db.close()
     db = null
@@ -566,6 +295,7 @@ export function closeDb(): void {
     authDb.close()
     authDb = null
   }
+  if (hadUserDb || hadAuthDb) emitLifecycle('onClosed')
 }
 
 // ── 通用 CRUD 方法 ──

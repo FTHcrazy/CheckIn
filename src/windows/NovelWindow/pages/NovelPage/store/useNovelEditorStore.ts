@@ -95,6 +95,18 @@ export interface EditorState {
   setSelection: (selection: EditorSelection | null) => void;
   markSelection: (type: EditorSettings["annotationTypes"][number]) => MarkResult;
   dismissRecovery: () => void;
+  /**
+   * 丢弃某一章的草稿（删章时调用）。
+   *
+   * 草稿的生命周期与库里的章节是两套账：章节被删后，指向它的在途防抖
+   * 仍会在 800ms 后拿这个 id 去落库，而 `novel-chapter-save` 找不到章节会
+   * 如实返回 false —— 于是 saveState 永久停在 "failed"，30s 兜底每半分钟
+   * 重试一次注定失败的请求，顶栏也一直红着「保存失败」，可真实情况是
+   * 「没有任何东西需要保存」。删章必须连带把草稿与在途防抖一起撤掉。
+   */
+  dropChapterDraft: (chapterId: string) => void;
+  /** 丢弃全部草稿（删作品 / 重置模板库：章节 id 整批换掉，旧草稿全部失效） */
+  clearDrafts: () => void;
   /** 启动恢复的排版设置（只调一次，loaded 守卫在编排层） */
   hydrateSettings: (settings: EditorSettings) => void;
   /** 启动恢复的今日累计字数 */
@@ -237,11 +249,36 @@ export const useNovelEditorStore = create<EditorState>()((set, get) => {
       scheduleSave();
     },
 
+    /**
+     * 程序化改写正文（回滚快照 / 崩溃恢复）。
+     *
+     * 与 `setContent` 的区别是**它确实改变了正文**，所以字数必须跟着走：
+     * 回滚到一份更短的旧正文时，主进程 `novel-chapter-save` 是按
+     * `wordCount - 库里旧字数` 记负 delta 的，今日累计在库里会如实回退；
+     * 若渲染层不跟着减，状态条的「今日新增」就与库里的统计对不上，
+     * 一直错到下次重启（hydrateUsage 才会把它拉回来）。
+     */
     applyExternalContent: (chapterId, next) => {
       const state = get();
+      const previous = state.draftMap[chapterId] ?? "";
+      if (previous === next) {
+        if (state.activeChapterId !== chapterId) {
+          set({ activeChapterId: chapterId });
+        }
+        return;
+      }
+      const delta =
+        countWords(next, state.settings.wordCountMode) -
+        countWords(previous, state.settings.wordCountMode);
+      if (delta !== 0) {
+        session = session ?? { words: 0, startedAt: Date.now() };
+        session = { words: session.words + delta, startedAt: session.startedAt };
+      }
       set({
         draftMap: { ...state.draftMap, [chapterId]: next },
         activeChapterId: chapterId,
+        todayAdded: state.todayAdded + delta,
+        todayTotal: state.todayTotal + delta,
       });
       scheduleSave();
     },
@@ -293,6 +330,32 @@ export const useNovelEditorStore = create<EditorState>()((set, get) => {
     },
 
     dismissRecovery: () => set({ recoveryDismissed: true }),
+
+    dropChapterDraft: (chapterId) => {
+      const state = get();
+      // 在途防抖若正是这一章，连定时器一起撤掉：章节都没了，没得可存
+      const wasPending = pendingSaveChapterId === chapterId;
+      if (wasPending) cancelPendingSave();
+      if (!(chapterId in state.draftMap)) return;
+      const draftMap = { ...state.draftMap };
+      delete draftMap[chapterId];
+      set({
+        draftMap,
+        // 撤掉的是唯一的在途保存 → 回到 idle，别把 pending 留给兜底通道
+        saveState:
+          wasPending && state.saveState === "pending" ? "idle" : state.saveState,
+      });
+    },
+
+    clearDrafts: () => {
+      cancelPendingSave();
+      set({
+        draftMap: {},
+        activeChapterId: null,
+        selection: null,
+        saveState: "idle",
+      });
+    },
 
     hydrateSettings: (settings) => set({ settings }),
 
@@ -405,5 +468,11 @@ export const editorActions = {
   ): MarkResult => useNovelEditorStore.getState().markSelection(type),
   dismissRecovery: (): void => {
     useNovelEditorStore.getState().dismissRecovery();
+  },
+  dropChapterDraft: (chapterId: string): void => {
+    useNovelEditorStore.getState().dropChapterDraft(chapterId);
+  },
+  clearDrafts: (): void => {
+    useNovelEditorStore.getState().clearDrafts();
   },
 };

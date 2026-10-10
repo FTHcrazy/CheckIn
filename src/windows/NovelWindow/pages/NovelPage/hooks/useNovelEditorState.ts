@@ -137,6 +137,8 @@ export function useNovelEditorState(data: NovelData) {
     setSelection: editorActions.setSelection,
     markSelection: editorActions.markSelection,
     dismissRecovery: editorActions.dismissRecovery,
+    dropChapterDraft: editorActions.dropChapterDraft,
+    clearDrafts: editorActions.clearDrafts,
   };
 }
 

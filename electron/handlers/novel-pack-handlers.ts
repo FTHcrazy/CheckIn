@@ -14,9 +14,19 @@
  * - 等级项补列写入（novel-level-meta-set）：sub_levels / power（§9.7.2）
  *
  * 边界：SQL 只出现在本文件与 db.ts；不导入 main.ts。
+ *
+ * 存储：全部落在 **novel.db**（`electron/novel-db.ts`），与 checkin.db 分离。
+ * 本文件的 `dbAll / dbGet / dbRun / getDb` 都是 novel.db 的封装别名 ——
+ * 改动时不要从 checkin 的 `../db` 导入写通道，那会把数据写回 checkin 库里去。
  */
 import { ipcMain } from "electron";
-import { dbAll, dbGet, dbRun, getDb } from "../db";
+import {
+  novelAll as dbAll,
+  novelGet as dbGet,
+  novelRun as dbRun,
+  getNovelDb as getDb,
+  isNovelDbReady,
+} from "../novel-db";
 
 // ── 行类型（snake_case） ──
 
@@ -621,17 +631,13 @@ function toPresetDto(row: PackPresetRow): PackPresetDto {
 
 /** 读取某角色当前正式数据（供保存前的回退点快照使用） */
 function readCharacterSnapshot(characterId: string): PackBundleDto {
+  // 查一次就够：此前为了判空先 `dbGet` 一遍、再为转 DTO 查第二遍，
+  // 同一行被读了两次（SQL 是同步的，等于白跑一趟 prepare + 查询）
+  const characterRow = dbGet("SELECT * FROM novel_pack_characters WHERE id = ?", [
+    characterId,
+  ]) as PackCharacterRow | undefined;
   return {
-    character:
-      (dbGet("SELECT * FROM novel_pack_characters WHERE id = ?", [
-        characterId,
-      ]) as PackCharacterRow | undefined)?.id !== undefined
-        ? toCharacterDto(
-            dbGet("SELECT * FROM novel_pack_characters WHERE id = ?", [
-              characterId,
-            ]) as PackCharacterRow,
-          )
-        : null,
+    character: characterRow ? toCharacterDto(characterRow) : null,
     attributes: (
       dbAll("SELECT * FROM novel_pack_attributes WHERE character_id = ? ORDER BY sort_order", [
         characterId,
@@ -699,8 +705,15 @@ function readLevelSystems(workId: string): PackLevelSystemDto[] {
   ) as NovelLevelSystemRow2[];
   if (systems.length === 0) return [];
 
+  // 等级项也要按作品收口：不带范围时，其它作品的等级项会被一并捞回来，
+  // 再经下面的 Map 分组虽然不会串进结果，但白读一遍全表；
+  // 真正危险的是后面有人改成「不分组直接用」—— 那时就会开始串书
+  const systemIds = systems.map((system) => system.id);
   const levels = dbAll(
-    "SELECT * FROM novel_levels ORDER BY system_id, rank",
+    `SELECT * FROM novel_levels
+      WHERE system_id IN (${systemIds.map(() => "?").join(", ")})
+      ORDER BY system_id, rank`,
+    systemIds,
   ) as NovelLevelRow2[];
   const rungsBySystem = new Map<string, PackLevelSystemDto["rungs"]>();
   for (const level of levels) {
@@ -758,17 +771,34 @@ function ensurePackCharacterRow(workId: string): PackCharacterRow {
   ) as PackCharacterRow | undefined;
   if (existing) return existing;
 
-  const id = createId("pc");
-  dbRun(
-    `INSERT INTO novel_pack_characters
-       (id, work_id, name, is_protagonist, entity_id, realm_at, note, sort_order)
-     VALUES (?, ?, '主角', 1, NULL, NULL, '', 1)`,
-    [id, workId],
-  );
-  seedDefaultSlots(id);
-  return dbGet("SELECT * FROM novel_pack_characters WHERE id = ?", [
-    id,
-  ]) as PackCharacterRow;
+  /**
+   * 播种走 `immediate` 事务，且**进入事务后再查一次**。
+   *
+   * 两个入口（打开行囊面板 / 右侧要素栏设主角）可能并发首次触发，而表里没有
+   * `work_id` 的唯一约束 —— 默认事务是 deferred（BEGIN），写锁要到第一条
+   * INSERT 才拿，两个调用会各自查到「没有」然后各插一条，同一部书出现两个主角。
+   * `immediate` 让写锁在事务开始就拿，配合事务内的第二次查询即可收敛成一条。
+   */
+  const create = getDb().transaction((): PackCharacterRow => {
+    const again = dbGet(
+      "SELECT * FROM novel_pack_characters WHERE work_id = ? ORDER BY sort_order LIMIT 1",
+      [workId],
+    ) as PackCharacterRow | undefined;
+    if (again) return again;
+
+    const id = createId("pc");
+    dbRun(
+      `INSERT INTO novel_pack_characters
+         (id, work_id, name, is_protagonist, entity_id, realm_at, note, sort_order)
+       VALUES (?, ?, '主角', 1, NULL, NULL, '', 1)`,
+      [id, workId],
+    );
+    seedDefaultSlots(id);
+    return dbGet("SELECT * FROM novel_pack_characters WHERE id = ?", [
+      id,
+    ]) as PackCharacterRow;
+  });
+  return create.immediate();
 }
 
 export function registerNovelPackHandlers(): void {
@@ -922,6 +952,14 @@ export function registerNovelPackHandlers(): void {
   ipcMain.handle("novel-pack-save", (_event, payload: PackSavePayloadDto): boolean => {
     const characterId = payload.character.id;
     if (!characterId) return false;
+    // 库未就绪（未登录 / 正在退出 / 已关闭）必须**优雅拒绝**而不是抛错：
+    // getDb() 在 try 块外抛「尚未初始化 novel 数据」会变成渲染层无法理解的
+    // 异常（退出瞬间曾因此刷屏）。返回 false 让渲染层走它自己的失败分支
+    // —— 草稿还在主进程表里，数据不会丢。
+    if (!isNovelDbReady()) {
+      console.error("[novel-pack-save] novel.db 未就绪（未登录或正在退出），拒绝保存");
+      return false;
+    }
     const db = getDb();
     const now = Date.now();
 

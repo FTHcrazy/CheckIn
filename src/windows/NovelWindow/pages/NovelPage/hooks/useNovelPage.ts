@@ -351,12 +351,18 @@ export function useNovelPage() {
   );
 
   const handleDeleteWork = useCallback((): void => {
+    // 整部作品的章节 id 全部失效：草稿与在途防抖一并清空，
+    // 否则防抖会拿已删除的 chapterId 落库 → 保存态永久 failed
+    editor.clearDrafts();
     data.deleteWork(data.activeWorkId);
     view.showToast("作品及其关联数据已删除", "info");
-  }, [data, view]);
+  }, [data, editor, view]);
 
   /** 一键重置为模板书籍（调试）：重载后回到模板第一章 */
   const handleResetTemplate = useCallback(async (): Promise<void> => {
+    // 清库重播会把章节 id 整批换掉：旧草稿与在途防抖全部失效，先撤掉，
+    // 免得防抖拿已删除的 chapterId 落库把保存态钉死在 failed
+    editor.clearDrafts();
     const summary = await data.resetTemplate();
     if (!summary) {
       view.showToast("重置失败，请重试", "warning");
@@ -369,7 +375,7 @@ export function useNovelPage() {
       `已重置为模板书籍 · ${summary.chapters} 章 / 约 ${formatThousands(summary.words)} 字`,
       "info",
     );
-  }, [data, view, refreshProtagonist]);
+  }, [data, editor, view, refreshProtagonist]);
 
   // ── TXT 导出（R13）：标题序号按 numberStyle + 后缀派生，与界面所见一致 ──
 
@@ -488,10 +494,14 @@ export function useNovelPage() {
   /** 删除章节（行内已 Popconfirm 确认）：删当前章由数据层自动切邻居 */
   const handleDeleteChapter = useCallback(
     (chapterId: string): void => {
+      // 先撤草稿与在途防抖，再删章节：顺序反了的话，800ms 后的防抖会拿
+      // 一个已删除的 chapterId 去落库，主进程如实返回 false，保存态就
+      // 永久停在 failed（30s 兜底会一直重试这个注定失败的请求）
+      editor.dropChapterDraft(chapterId);
       data.deleteChapter(chapterId);
       view.showToast("章节及其历史快照已删除", "info");
     },
-    [data, view],
+    [data, editor, view],
   );
 
   const handleRollback = useCallback(
