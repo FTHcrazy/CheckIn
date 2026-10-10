@@ -14,6 +14,7 @@ import {
   type ViewUpdate,
 } from "@codemirror/view";
 import type { EntityTerm } from "./types";
+import { findTermMatches } from "./novel-utils";
 
 /**
  * 编辑器内核的非 UI 部分：标注层（highlight / hover 数据源）扩展。
@@ -43,6 +44,25 @@ export const annotationEnabledCompartment = new Compartment();
 
 /** 防抖结束后的强制刷新信号 */
 export const refreshAnnotation = StateEffect.define<null>();
+
+/**
+ * 类型 → 注入色（自定义类型 `ct-*` 没有静态 CSS 选择器，主色以 inline 变量注入，R23）。
+ *
+ * 以词库数组身份为键缓存：`build()` 每次重建都查一遍类型色，
+ * 逐命中扫全量词库找 color 会是 O(命中 × 词条)。词库变化即换新数组，缓存自然失效。
+ */
+const colorCache = new WeakMap<EntityTerm[], Map<string, string>>();
+
+function colorMapOf(terms: EntityTerm[]): Map<string, string> {
+  const cached = colorCache.get(terms);
+  if (cached) return cached;
+  const map = new Map<string, string>();
+  for (const item of terms) {
+    if (item.color && !map.has(item.type)) map.set(item.type, item.color);
+  }
+  colorCache.set(terms, map);
+  return map;
+}
 
 const highlightDecoration = (term: EntityTerm): Decoration =>
   Decoration.mark({
@@ -142,28 +162,21 @@ class AnnotationPlugin {
     const terms = view.state.facet(termsFacet);
     if (terms.length === 0) return Decoration.none;
 
-    const sorted = [...terms].sort((a, b) => b.term.length - a.term.length);
+    // 词库走 findTermMatches 的同一套「首字分桶 + 缓存索引」，不在这里再排一次序：
+    // 旧实现每次重建都 `[...terms].sort()`，而本方法在滚动（viewportChanged）、
+    // 打字防抖、词库热更新时都会被调用 —— 3000 章 + 数百词条时这是可见的卡顿。
+    // 分桶后「首字不在词库」的位置直接跳过，长正文里命中稀疏时省掉绝大部分比较。
+    const termColorOf = colorMapOf(terms);
     const builder = new RangeSetBuilder<Decoration>();
 
     for (const { from, to } of view.visibleRanges) {
-      const slice = view.state.sliceDoc(from, to);
-      let offset = from;
-
-      while (offset < to) {
-        const rest = slice.slice(offset - from);
-        const hit = sorted.find(
-          (item) => item.term.length > 0 && rest.startsWith(item.term),
+      for (const hit of findTermMatches(view.state.sliceDoc(from, to), terms)) {
+        const color = termColorOf.get(hit.type);
+        builder.add(
+          from + hit.from,
+          from + hit.to,
+          highlightDecoration({ ...hit, ...(color ? { color } : {}) }),
         );
-        if (hit) {
-          builder.add(
-            offset,
-            offset + hit.term.length,
-            highlightDecoration(hit),
-          );
-          offset += hit.term.length;
-        } else {
-          offset += 1;
-        }
       }
     }
 

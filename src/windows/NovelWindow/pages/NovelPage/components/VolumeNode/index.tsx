@@ -1,7 +1,6 @@
 import { useState } from "react";
 import type { DragEvent, KeyboardEvent } from "react";
 import { DownOutlined, PlusOutlined, RightOutlined } from "@ant-design/icons";
-import { Button, Input } from "antd";
 import { DRAG_MIME_CHAPTER, DRAG_MIME_VOLUME, UNNAMED_VOLUME } from "../../novel-config";
 import { volumeDisplayName } from "../../novel-utils";
 import type { LabelNumberStyle, NovelVolume } from "../../types";
@@ -33,6 +32,10 @@ interface VolumeNodeProps {
  * 只渲染卷头本身：展开折叠（受控）、拖拽（卷重排 / 章节移入）、双击重命名。
  * 卷下的章行由 ChapterTree 扁平化后单独渲染，不再嵌套在本组件里。
  * 卷名编辑是本行的短生命周期状态，可以留在行内——编辑中的行必然可见。
+ *
+ * 行内控件走语义化原生标签，理由与约束见 ChapterTreeItem 顶部注释
+ * （§6.1.2「超长虚拟化列表行」例外：虚拟化列表的行数可达数千，
+ * 行的拖拽/重命名由本行承担，但**不挂** Popconfirm / Tooltip 等重浮层）。
  */
 export default function VolumeNode({
   volume,
@@ -79,27 +82,27 @@ export default function VolumeNode({
   /** 展示名与面包屑 / 确认弹框共用一套派生口径：未命名卷 → 第N卷 */
   const displayName = volumeDisplayName(volume, numberStyle, volumeSuffix);
 
-  const handleHeadDragStart = (event: DragEvent<HTMLButtonElement>): void => {
+  const handleHeadDragStart = (event: DragEvent<HTMLElement>): void => {
     event.dataTransfer.setData(DRAG_MIME_VOLUME, volume.id);
     event.dataTransfer.effectAllowed = "move";
   };
 
   /** 卷头同时是两种 drop 目标：章节（移入本卷）与卷（重排顺序） */
-  const handleHeadDragOver = (event: DragEvent<HTMLButtonElement>): void => {
+  const handleHeadDragOver = (event: DragEvent<HTMLElement>): void => {
     const { types } = event.dataTransfer;
     if (!types.includes(DRAG_MIME_CHAPTER) && !types.includes(DRAG_MIME_VOLUME)) {
       return;
     }
     event.preventDefault();
     event.dataTransfer.dropEffect = "move";
-    setDropActive(true);
+    if (!dropActive) setDropActive(true);
   };
 
-  const handleHeadDragLeave = (event: DragEvent<HTMLButtonElement>): void => {
+  const handleHeadDragLeave = (event: DragEvent<HTMLElement>): void => {
     if (event.currentTarget === event.target) setDropActive(false);
   };
 
-  const handleHeadDrop = (event: DragEvent<HTMLButtonElement>): void => {
+  const handleHeadDrop = (event: DragEvent<HTMLElement>): void => {
     event.preventDefault();
     setDropActive(false);
 
@@ -117,25 +120,26 @@ export default function VolumeNode({
   return (
     <div className="nv-volume">
       {nameEditing ? (
-        /* 编辑态不用 button：避免 button 内嵌 input 的交互嵌套 */
         <div className="nv-volume__head is-editing">
           <DownOutlined className="nv-volume__caret" />
-          <Input
+          <input
             className="nv-volume__name-input"
-            variant="borderless"
-            value={nameDraft}
-            autoFocus
-            maxLength={30}
             aria-label="卷名称"
+            maxLength={30}
             placeholder="卷名称（可留空）"
+            value={nameDraft}
             onChange={(event) => setNameDraft(event.target.value)}
             onBlur={commitNameEdit}
             onKeyDown={handleNameKeyDown}
           />
         </div>
       ) : (
-        <Button
+        <button
+          type="button"
           className={`nv-volume__head${dropActive ? " is-drop" : ""}`}
+          aria-expanded={open}
+          aria-label={`${displayName}：${open ? "收起" : "展开"}本卷的章节`}
+          title="单击展开/收起 · 双击卷名重命名"
           draggable
           onDragStart={handleHeadDragStart}
           onDragOver={handleHeadDragOver}
@@ -143,7 +147,6 @@ export default function VolumeNode({
           onDrop={handleHeadDrop}
           onDragEnd={handleHeadDragEnd}
           onClick={onToggleOpen}
-          aria-expanded={open}
         >
           {open ? (
             <DownOutlined className="nv-volume__caret" />
@@ -161,11 +164,12 @@ export default function VolumeNode({
             {displayName}
           </span>
           <span className="nv-volume__count">{chapterCount}</span>
-        </Button>
+        </button>
       )}
       {/* 新建章节入口挂在行外（button 不能嵌 button），卷头悬浮时浮现盖住章数 */}
       {!nameEditing && (
-        <Button
+        <button
+          type="button"
           className="nv-volume__add"
           aria-label={`在${displayName}新建章节`}
           title={`在${displayName}新建章节`}
@@ -175,7 +179,7 @@ export default function VolumeNode({
           }}
         >
           <PlusOutlined />
-        </Button>
+        </button>
       )}
     </div>
   );

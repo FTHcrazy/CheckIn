@@ -97,6 +97,9 @@ export default function EntityPanel({
   // 出场章数索引由 store 增量维护：本面板订阅它，角标更新时才重渲染，
   // 页面根不再为了这个数字被保存动作推一遍
   const appearanceCounts = useAppearanceStore((state) => state.counts);
+  // 首次导入长篇（数千章）时冷扫已改为分批：统计期间角标显示占位，
+  // 否则用户看到的是一个会跳动的小数字，误以为「出场 3 章」是真实结果
+  const appearancePending = useAppearanceStore((state) => state.pending);
   // 类型 chips 行横向溢出时两端渐隐提示（滚动条为隐藏设计）
   const { ref: chipsRef, fadeLeft, fadeRight } = useEdgeFade<HTMLDivElement>();
 
@@ -145,10 +148,13 @@ export default function EntityPanel({
     [entities, filter, trimmed],
   );
 
-  // 卡片的关联数与当前境界：列表级一次性算好，避免逐卡重复扫关联表
+  // 卡片的关联数与当前境界：只为**当前可见**的要素算，而不是全量。
+  // 原实现对 entities（全量）逐个 getEntityRelations + 遍历全部等级体系，
+  // 长篇里要素数以百计、关联更多，切一次筛选/输一个关键词就整表重算。
+  // 可见集通常远小于全量，且贴边卡片才有必要知道这些数字。
   const statsOf = useMemo(() => {
     const map = new Map<string, { relations: number; levelName: string }>();
-    for (const entity of entities) {
+    for (const entity of visible) {
       const relations = getEntityRelations(entity.id, entity.type);
       const binding = relations.find((item) => item.targetType === "level");
       let levelName = "";
@@ -164,7 +170,7 @@ export default function EntityPanel({
       map.set(entity.id, { relations: relations.length, levelName });
     }
     return map;
-  }, [entities, getEntityRelations, levelSystems]);
+  }, [visible, getEntityRelations, levelSystems]);
 
   const detail = entities.find((entity) => entity.id === detailEntityId) ?? null;
 
@@ -210,6 +216,7 @@ export default function EntityPanel({
           entity={entity}
           relationCount={stats?.relations ?? 0}
           appearanceCount={appearanceCounts.get(entity.id) ?? 0}
+          appearancePending={appearancePending}
           levelName={stats?.levelName ?? ""}
           isProtagonist={isProtagonist}
           onOpen={onOpenEntity}

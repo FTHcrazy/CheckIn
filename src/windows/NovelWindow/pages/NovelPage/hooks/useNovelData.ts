@@ -39,7 +39,7 @@ import {
 import { LEVEL_RELATION, UNNAMED_VOLUME } from "../novel-config";
 import {
   buildChapterGroups,
-  buildChapterNumbers,
+  buildChapterNumbersFromGroups,
   patchChapterOutlineNote,
   patchNote,
   patchOutlineEntry,
@@ -269,10 +269,16 @@ export function useNovelData() {
     [volumes, chapters],
   );
 
-  /** 全书章节序号（拖拽重排后自动跟随的派生属性） */
+  /**
+   * 全书章节序号（拖拽重排后自动跟随的派生属性）。
+   *
+   * 复用上面那份 groups，而不是让 buildChapterNumbers 内部再建一遍分组：
+   * 3000 章 / 60 卷时建分组是 O(章 + 卷) 的实打实开销，而这两个派生值
+   * 每次保存正文（chapters 换新数组）都会一起重算。
+   */
   const chapterNumbers = useMemo(
-    () => buildChapterNumbers(volumes, chapters),
-    [volumes, chapters],
+    () => buildChapterNumbersFromGroups(groups),
+    [groups],
   );
 
   const activeChapter = useMemo(

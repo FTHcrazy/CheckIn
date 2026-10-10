@@ -390,7 +390,17 @@ export default function SupportPanel({
     }
   }, [namedActive]);
 
-  const flatScroll = namedActive === "note" || namedActive === "search";
+  /**
+   * 面板滚动区是否交给内容自己管。
+   *
+   * note / search：内容自带滚动容器（虚拟列表）。
+   * outline：章节列表已虚拟化并自持滚动，若外层再留 `overflow-y: auto`
+   *   会形成「外层滚一下、内层再滚一下」的双滚动条，滚轮落在内层虚拟列表上
+   *   时外层永远滚不到（反之亦然），表现为滚到一半卡住。
+   *   统计区 / 切换器留在列表之上不参与滚动，所以这里整块交给内容最省事。
+   */
+  const flatScroll =
+    namedActive === "note" || namedActive === "search" || namedActive === "outline";
 
   return (
     <div className={`nv-panel-region${open ? "" : " is-collapsed"}`}>

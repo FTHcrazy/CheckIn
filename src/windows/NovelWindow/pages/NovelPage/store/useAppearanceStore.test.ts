@@ -148,6 +148,91 @@ describe("useAppearanceStore（要素出场章数索引）", () => {
   });
 });
 
+describe("useAppearanceStore —— 首扫分批调度（长篇小说不冻结主线程）", () => {
+  beforeEach(() => {
+    resetScan();
+    resetAppearances();
+  });
+
+  afterEach(() => {
+    resetAppearances();
+    vi.clearAllMocks();
+  });
+
+  /** 造出超过分批阈值的章节量（阈值 400）：500 章必走分片 */
+  const manyChapters = (count: number) =>
+    Array.from({ length: count }, (_, i) =>
+      // 每章都命中 e1：最终 counts.get("e1") === count
+      chapter(`c${i}`, `苏晚第${i}章`),
+    );
+
+  it("待扫超过阈值时立即标记 pending，并在调度结束后补齐索引", async () => {
+    const chapters = manyChapters(500);
+    const terms = [term("苏晚", "e1")];
+
+    syncAppearances(chapters, terms);
+
+    // 首帧：不能等全部扫完才给反馈，pending 必须立刻为 true
+    expect(state().pending).toBe(true);
+    // 未扫完前不应给出「完整」结果（已扫部分的中间态允许存在，但一定 < 全量）
+    expect(state().counts.get("e1") ?? 0).toBeLessThan(500);
+
+    // 让出主线程的调度跑完（setTimeout(0) 宏任务）
+    await vi.waitFor(() => {
+      expect(state().pending).toBe(false);
+    });
+    expect(state().counts.get("e1")).toBe(500);
+  });
+
+  it("分片期间重复同步会取消在途调度，最终结果以最后一次为准", async () => {
+    const terms = [term("苏晚", "e1")];
+    syncAppearances(manyChapters(500), terms);
+    expect(state().pending).toBe(true);
+
+    // 内容全变：再来一次，取消上一轮分片，避免两轮互相覆盖
+    resetScan();
+    const next = manyChapters(600);
+    syncAppearances(next, terms);
+
+    await vi.waitFor(() => {
+      expect(state().pending).toBe(false);
+    });
+    expect(state().counts.get("e1")).toBe(600);
+  });
+
+  it("reset 会取消在途分片，之后不会再把旧书结果写回来", async () => {
+    const terms = [term("苏晚", "e1")];
+    syncAppearances(manyChapters(500), terms);
+    expect(state().pending).toBe(true);
+
+    resetAppearances();
+    expect(state().pending).toBe(false);
+    expect(state().counts.size).toBe(0);
+
+    // 等过原本分片该跑完的时间：旧结果不得回流
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(state().counts.size).toBe(0);
+    expect(appearancesOf("e1")).toEqual([]);
+  });
+
+  it("小书（低于阈值）仍同步扫完，保持「保存后角标立即正确」", () => {
+    const terms = [term("苏晚", "e1")];
+    syncAppearances([chapter("c1", "苏晚"), chapter("c2", "苏晚")], terms);
+    // 没有 pending 过程，直接可用
+    expect(state().pending).toBe(false);
+    expect(state().counts.get("e1")).toBe(2);
+  });
+
+  it("分片完成后倒排索引可用（详情卡跳转列表拿到全部出场章）", async () => {
+    const terms = [term("苏晚", "e1")];
+    syncAppearances(manyChapters(500), terms);
+    await vi.waitFor(() => {
+      expect(state().pending).toBe(false);
+    });
+    expect(appearancesOf("e1")).toHaveLength(500);
+  });
+});
+
 describe("appearancesOf（详情卡跳转列表走倒排索引，不再扫全书）", () => {
   beforeEach(() => {
     resetScan();

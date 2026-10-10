@@ -158,6 +158,39 @@ describe("findTermMatches", () => {
     expect(findTermMatches("任意文本", [])).toEqual([]);
     expect(findTermMatches("", [{ term: "沈砚", entityId: "a", type: "character" }])).toEqual([]);
   });
+
+  it("调用方传入的未排序词库同样长词优先（索引按首字分桶时保证）", () => {
+    // 索引缓存以数组身份为键：同一数组二次调用必须结果一致
+    const terms = [
+      { term: "青梧", entityId: "a", type: "location" as const },
+      { term: "青梧山", entityId: "b", type: "location" as const },
+    ];
+    const first = findTermMatches("远望青梧山", terms);
+    const second = findTermMatches("远望青梧山", terms);
+    expect(first).toEqual(second);
+    expect(first[0].term).toBe("青梧山");
+  });
+
+  it("首字不在词库的位置不产生命中，但同首字的短词照常命中", () => {
+    const terms = [
+      { term: "沈砚", entityId: "a", type: "character" as const },
+      { term: "沈", entityId: "b", type: "character" as const },
+    ];
+    // 「沈砚」长词优先；「沈」单独出现时仍能命中
+    const matches = findTermMatches("沈砚来了，沈家上下", terms);
+    expect(matches.map((m) => m.term)).toEqual(["沈砚", "沈"]);
+    expect(matches[1].from).toBe(5);
+  });
+
+  it("空词条（term 为空串）不产生命中也不污染索引", () => {
+    const terms = [
+      { term: "", entityId: "a", type: "character" as const },
+      { term: "青梧", entityId: "b", type: "location" as const },
+    ];
+    const matches = findTermMatches("青梧山下", terms);
+    expect(matches).toHaveLength(1);
+    expect(matches[0].term).toBe("青梧");
+  });
 });
 
 describe("目标与速度", () => {

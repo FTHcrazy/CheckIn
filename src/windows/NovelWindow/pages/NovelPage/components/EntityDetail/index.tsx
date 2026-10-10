@@ -9,6 +9,7 @@ import {
   SettingOutlined,
 } from "@ant-design/icons";
 import { Button, Input, Select } from "antd";
+import { Virtuoso } from "react-virtuoso";
 import { useEntityTypeMeta } from "../../hooks/entity-types-context";
 import type {
   EntityAppearance,
@@ -63,6 +64,18 @@ interface EntityDraft {
 
 /** 别名 / 性格输入分隔符：展示分隔符「·」不参与拆分（避免误拆含·的名字） */
 const ALIAS_SPLIT = /[,，、;；\s]+/;
+
+/**
+ * 出场章节虚拟列表的行高与高度上限（px）。
+ *
+ * 必须与 `index.scss` 里 `.nv-edetail__appear-list` 的行盒保持一致：
+ * Virtuoso 需要一个确切的行高来算滚动区间，给错会有跳白条。
+ * 26 = chip 内容行高（12px 字号 ≈ 18）+ 上下 padding 3×2 + 描边 1×2，
+ * 外加 2px 行间距凑整。
+ */
+const APPEAR_ROW_HEIGHT = 28;
+/** 列表封顶高度：超过就内部滚动，避免上千章把下方操作区推得很远 */
+const APPEAR_MAX_HEIGHT = 240;
 
 /** 要素详情：基础字段编辑 / 关联要素增删 / 当前境界（R25）/ 出场章节跳转 */
 export default function EntityDetail({
@@ -593,20 +606,44 @@ export default function EntityDetail({
           <div className="nv-sechead">
             出场章节<em>{appearances.length}</em>
           </div>
-          <div className="nv-edetail__appear">
-            {appearances.map((item) => (
-              <Button
-                key={item.chapterId}
-                className="nv-edetail__chip"
-                title={`跳转到 ${item.label ? `${item.label}·` : ""}${item.title}`}
-                onClick={() => onSelectChapter(item.chapterId)}
-              >
-                {item.label && (
-                  <span className="nv-edetail__chip-no">{item.label}</span>
-                )}
-                {item.title}
-              </Button>
-            ))}
+          {/*
+            出场章节列表走虚拟化：三千章的长篇里一个角色可能出场上千章，
+            原先 `appearances.map` 会一次挂载上千个 antd Button
+            —— 打开详情卡就是几百毫秒的同步渲染 + 内存尖峰。
+            Virtuoso 只挂可视区，且是既有依赖（左栏章节树已用同一套）。
+
+            ⚠️ 高度必须**确定**：Virtuoso 的行绝对定位、不参与父级尺寸计算，
+            容器只给 `max-height` 会塌成 0，列表整个看不见。这里按
+            「行数 × 行高」算出内联高度 —— 几条出场时自适应收缩不留空白，
+            上千条时封顶 APPEAR_MAX_HEIGHT 由容器内部滚动。
+          */}
+          <div
+            className="nv-edetail__appear"
+            style={{
+              height: Math.min(
+                APPEAR_MAX_HEIGHT,
+                appearances.length * APPEAR_ROW_HEIGHT,
+              ),
+            }}
+          >
+            <Virtuoso
+              className="nv-edetail__appear-list"
+              style={{ height: "100%" }}
+              data={appearances}
+              computeItemKey={(_, item) => item.chapterId}
+              itemContent={(_, item) => (
+                <Button
+                  className="nv-edetail__chip"
+                  title={`跳转到 ${item.label ? `${item.label}·` : ""}${item.title}`}
+                  onClick={() => onSelectChapter(item.chapterId)}
+                >
+                  {item.label && (
+                    <span className="nv-edetail__chip-no">{item.label}</span>
+                  )}
+                  {item.title}
+                </Button>
+              )}
+            />
           </div>
         </>
       )}

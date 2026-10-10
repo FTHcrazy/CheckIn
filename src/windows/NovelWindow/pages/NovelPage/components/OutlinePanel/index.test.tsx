@@ -6,9 +6,26 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { OutlineNode } from "../../types";
 import OutlinePanel, { type OutlineActions } from "./index";
+
+// jsdom 没有真实布局，Virtuoso 视口高度为 0 导致不渲染任何行；
+// 测试中用平铺渲染等价替身，只保留 data + itemContent 的行为契约。
+// 真组件用 computeItemKey 给 item wrapper 上 key，替身同样按索引兜一个。
+vi.mock("react-virtuoso", () => ({
+  Virtuoso: <T,>(props: {
+    data: T[];
+    itemContent: (index: number, item: T) => ReactNode;
+  }) => (
+    <>
+      {props.data.map((item, index) => (
+        <div key={index}>{props.itemContent(index, item)}</div>
+      ))}
+    </>
+  ),
+}));
 
 const buildActions = (over: Partial<OutlineActions> = {}): OutlineActions => ({
   onEditChapterNote: vi.fn(),
@@ -648,5 +665,117 @@ describe("OutlinePanel 组件", () => {
     expect(
       container.querySelectorAll(".nv-outline__fs-item.is-resolved").length,
     ).toBe(2);
+  });
+});
+
+/**
+ * 章节视图虚拟化后的**行模型**守卫。
+ *
+ * 章节视图原先直接 `volumeNodes.map` 渲染「卷 → 章」两层，三千章 = 3000 个
+ * `<li>` 一次挂载。改成压平成一维行交给 Virtuoso 之后，有两类语义是靠
+ * 「压平时跳过 / 追加哪一行」实现的，不再由 JSX 的嵌套条件表达 ——
+ * 它们不会自己报错，必须钉住：
+ * 1. 折叠的卷不产生任何章行（原先靠 `.is-fold` 隐藏列表）；
+ * 2. 卷级伏笔表单排在**该卷所有章行之后**（原先挂在卷 section 尾部）。
+ */
+describe("OutlinePanel：章节视图的行模型（虚拟化后）", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("折叠某一卷后，该卷的章节行整体消失，其它卷不受影响", () => {
+    const twoVolumes: OutlineNode[] = [
+      {
+        kind: "volume",
+        id: "v1",
+        title: "第一卷",
+        note: "",
+        openForeshadows: 0,
+        children: [
+          {
+            kind: "chapter",
+            id: "a1",
+            chapterId: "a1",
+            title: "甲章",
+            label: "第一章",
+            note: "",
+            wordCount: 0,
+            status: "draft",
+            foreshadows: 0,
+            openForeshadows: 0,
+          },
+        ],
+      },
+      {
+        kind: "volume",
+        id: "v2",
+        title: "第二卷",
+        note: "",
+        openForeshadows: 0,
+        children: [
+          {
+            kind: "chapter",
+            id: "b1",
+            chapterId: "b1",
+            title: "乙章",
+            label: "第二章",
+            note: "",
+            wordCount: 0,
+            status: "draft",
+            foreshadows: 0,
+            openForeshadows: 0,
+          },
+        ],
+      },
+    ];
+
+    const { container } = render(
+      <OutlinePanel
+        outline={twoVolumes}
+        activeChapterId={null}
+        onSelectChapter={vi.fn()}
+        actions={buildActions()}
+      />,
+    );
+
+    expect(screen.getByText("甲章")).toBeInTheDocument();
+    expect(screen.getByText("乙章")).toBeInTheDocument();
+
+    // 点第一卷卷头折叠它
+    const heads = container.querySelectorAll<HTMLElement>(".nv-outline__vol-toggle");
+    fireEvent.click(heads[0]);
+
+    // 甲章消失，乙章仍在：折叠只影响自己那一卷
+    expect(screen.queryByText("甲章")).toBeNull();
+    expect(screen.getByText("乙章")).toBeInTheDocument();
+    // 卷头本身不会被折叠掉（折叠的是它的章行）
+    expect(screen.getByText("第一卷")).toBeInTheDocument();
+  });
+
+  it("卷级伏笔表单排在章行之后（不再靠卷 section 尾部占位）", () => {
+    const { container } = render(
+      <OutlinePanel
+        outline={outline}
+        activeChapterId={null}
+        onSelectChapter={vi.fn()}
+        actions={buildActions()}
+      />,
+    );
+
+    // 点卷头「＋」开卷级表单
+    const volAdd = container.querySelector<HTMLElement>(".nv-outline__vol-add");
+    expect(volAdd).not.toBeNull();
+    fireEvent.click(volAdd as HTMLElement);
+
+    expect(screen.getByLabelText("伏笔标题")).toBeInTheDocument();
+    // 表单容器必须排在所有章节行之后：虚拟化后它们成了并列行，
+    // 顺序由行模型的 push 次序决定
+    const form = container.querySelector<HTMLElement>(".nv-outline__form");
+    expect(form).not.toBeNull();
+    const item = container.querySelector<HTMLElement>(".nv-outline__item");
+    if (item && form) {
+      const position = item.compareDocumentPosition(form);
+      expect(position & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
   });
 });

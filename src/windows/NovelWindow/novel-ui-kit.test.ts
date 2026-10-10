@@ -47,6 +47,36 @@ const compiledCss = scssFiles
 
 const NATIVE_CONTROL = /<(button|input|textarea|select)(?=[\s/>])/;
 
+/** 可访问名签名：任一 `aria-*` 或 `title=`（例外组件的原生控件必须自带） */
+const A11Y = /aria-[a-z]+=|title=/;
+
+/**
+ * 「超长虚拟化列表行」例外白名单（AGENTS.md §6.1.2，1.32.0 新增）。
+ *
+ * 这些组件在**已被虚拟化、行数可达数千**的列表里，滚动时会被反复
+ * mount / unmount。用 antd 组件承载行内控件时，每行都带 Context + Portal +
+ * 状态机，滚动一次要反复创建/销毁上万个组件 —— 这正是「切章卡、滚动卡」的源头。
+ *
+ * 例外**只**放开「必须用组件库组件」一条；下面三条仍然由本测试守护：
+ * - 语义化标签与键盘可达（原生 `<button>` / `<input>` 本身即满足，
+ *   且必须带 `aria-*` 或 `title`）
+ * - 不得 `<Button>` 嵌 `<Button>`（对原生标签同样成立，见下方嵌套检查）
+ * - 外观必须走 `var(--app-*)`（由 §6.1.1 的主题守卫与本文件的 scss 断言覆盖）
+ *
+ * 白名单是**路径后缀**匹配，新增条目必须同时在本文件的说明与 AGENTS.md 里
+ * 补上理由 —— 别把它当成绕过守卫的快捷键。
+ */
+const VIRTUALIZED_ROW_EXCEPTION = [
+  "components/ChapterTreeItem/index.tsx",
+  "components/VolumeNode/index.tsx",
+];
+
+const isExemptFromComponentLibrary = (file: string): boolean => {
+  // 路径分隔符在 Windows 上是 `\`，先归一化成 `/` 再比对后缀
+  const normalized = file.replace(/\\/g, "/");
+  return VIRTUALIZED_ROW_EXCEPTION.some((suffix) => normalized.endsWith(suffix));
+};
+
 /**
  * 扫出所有 `<Button` 开标签（含自闭合），返回它们在源码里的位置与是否自闭合。
  * 必须手写到「匹配的 `>`」为止：属性里有 `onClick={() => ...}` 这种带 `>` 的箭头，
@@ -130,9 +160,11 @@ describe("Novel 窗口：原生表单控件清零", () => {
     expect(compiledCss.length).toBeGreaterThan(10000);
   });
 
-  it("窗口内没有任何原生表单控件", () => {
+  it("窗口内没有任何原生表单控件（虚拟化列表行白名单除外）", () => {
     const offenders: string[] = [];
     for (const file of tsxFiles) {
+      // 白名单组件豁免「必须用组件库组件」，但下面的可访问性断言仍会检查它们
+      if (isExemptFromComponentLibrary(file)) continue;
       stripComments(readFileSync(file, "utf8"))
         .split("\n")
         .forEach((line, index) => {
@@ -142,6 +174,108 @@ describe("Novel 窗口：原生表单控件清零", () => {
         });
     }
     expect(offenders).toEqual([]);
+  });
+
+  /**
+   * 白名单组件的**补偿性**守卫：放开组件库不等于放开可访问性。
+   * 每个原生控件都必须自带可访问名（aria-label / aria-selected / title /
+   * aria-current / aria-expanded / aria-pressed 之一），否则它就是
+   * 「看不见的按钮」—— 键盘用户与屏幕阅读器完全无法理解。
+   *
+   * 只看开标签本身（到该标签的 `>` 为止），不设置行窗口：
+   * 可访问名与控件之间隔着几行属性是**写法差异**，不是可访问性差异，
+   * 用「向下看 N 行」当判据既会漏（属性写远了）也会误放行（下一行的邻居
+   * 控件带了 aria-label）。取真开标签才是这条断言的语义。
+   */
+  it("例外组件里的原生控件仍带可访问名（aria-* / title）", () => {
+    const offenders: string[] = [];
+    for (const file of tsxFiles) {
+      if (!isExemptFromComponentLibrary(file)) continue;
+      const lines = stripComments(readFileSync(file, "utf8")).split("\n");
+      lines.forEach((line, index) => {
+        const start = NATIVE_CONTROL.exec(line);
+        if (!start) return;
+        // 从 `<` 起花括号配平地找到真开标签的 `>`，把整段属性当作可访问名的搜索域
+        const source = lines.slice(index).join("\n");
+        let j = start.index;
+        let brace = 0;
+        let quote: string | null = null;
+        while (j < source.length) {
+          const ch = source[j];
+          if (quote) {
+            if (ch === quote) quote = null;
+          } else if (ch === '"' || ch === "'" || ch === "`") {
+            quote = ch;
+          } else if (ch === "{") brace++;
+          else if (ch === "}") brace--;
+          else if (ch === ">" && brace === 0) break;
+          j++;
+        }
+        const openTag = source.slice(start.index, j + 1);
+        if (!A11Y.test(openTag)) {
+          offenders.push(`${path.relative(ROOT, file)}:${index + 1}`);
+        }
+      });
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  /**
+   * 例外组件必须**自带完整造型**：这是它换掉组件库之后要付的账。
+   *
+   * 走 antd `Button` 时，高度 / 内边距 / 圆角 / 边框 / 背景全由组件库给，
+   * 清零只需覆盖差异项。换成原生标签后这些基础样式**全部消失**——
+   * 浏览器会给出 `buttonface` 灰底 + 原生边框 + 默认字体，
+   * 而这一步没有任何类型或构建错误提示你漏了。
+   *
+   * 因此对白名单文件反过来提要求：它们的 index.scss 必须真的声明外观，
+   * 而不是靠"反正 antd 会给"的空壳。否则白名单就成了"少写样式也没人管"的后门。
+   */
+  it("例外组件的样式自带完整造型（height/border/padding 不能靠组件库兜底）", () => {
+    const offenders: string[] = [];
+    for (const suffix of VIRTUALIZED_ROW_EXCEPTION) {
+      const dir = path.join(ROOT, "pages/NovelPage", path.dirname(suffix));
+      const scss = path.join(dir, "index.scss");
+      const source = stripComments(readFileSync(scss, "utf8"));
+      // 原生控件的"看得见"三件套：盒子尺寸、可见边界、内边距
+      const missing = (["height", "border", "padding"] as const).filter(
+        (prop) => !new RegExp(`(^|[\\s;{(])${prop}\\s*:`, "m").test(source),
+      );
+      if (missing.length > 0) {
+        offenders.push(`${path.relative(ROOT, scss)} 缺少 ${missing.join(" / ")}`);
+      }
+      // 豁免组件不得再残留指向组件库的清零规则：那是死 CSS，
+      // 会让人误以为"这里还是 antd 按钮"而照抄回组件库写法
+      if (/ant-btn/.test(source)) {
+        offenders.push(`${path.relative(ROOT, scss)} 残留 .ant-btn 规则（已是原生标签）`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  /**
+   * 白名单只准收「已被虚拟化、行数可达数千」的**行组件**。
+   * 后缀匹配很容易写宽（比如误写成 `components/`），一旦放宽，
+   * 整个目录的组件都会失去组件库优先约束而不自知。
+   * 这里反向钉两条：条目必须是具体文件、且确实处在虚拟化列表路径下。
+   */
+  it("白名单收得很紧（具体文件 + 虚拟化列表行，不会误放行整目录）", () => {
+    expect(VIRTUALIZED_ROW_EXCEPTION.length).toBeGreaterThan(0);
+    for (const suffix of VIRTUALIZED_ROW_EXCEPTION) {
+      // 必须精确到某个组件的 index.tsx，不能是目录前缀
+      expect(suffix.endsWith("/index.tsx")).toBe(true);
+      expect(suffix.startsWith("components/")).toBe(true);
+      // 必须真实存在，避免改名后留下一条永远匹配不到的僵尸条目
+      const abs = path.join(ROOT, "pages/NovelPage", suffix);
+      expect(statSync(abs).isFile()).toBe(true);
+      // 反向验证：匹配必须落在该文件上，且不会顺带命中同目录的兄弟文件
+      expect(isExemptFromComponentLibrary(abs)).toBe(true);
+      // 兄弟文件（同目录的 index.scss）不得被后缀顺带命中 ——
+      // 注意 path.join 在 Windows 上给的是 `\`，替换时要先把分隔符归一化
+      const sibling = abs.replace(/[\\/]index\.tsx$/, "/index.scss");
+      expect(sibling.endsWith("index.scss")).toBe(true);
+      expect(isExemptFromComponentLibrary(sibling)).toBe(false);
+    }
   });
 
   it("没有 Button 嵌 Button（浏览器会拆坏 DOM）", () => {
@@ -161,6 +295,60 @@ describe("Novel 窗口：原生表单控件清零", () => {
       }
     }
     expect(offenders).toEqual([]);
+  });
+});
+
+/**
+ * 虚拟化列表容器的**尺寸守卫**。
+ *
+ * 起因是一个真实事故：出场章节列表的 Virtuoso 容器写了 `max-height: 240px`
+ * 却没有确定高度。Virtuoso 的行是**绝对定位**、不参与父级尺寸计算，容器高度
+ * 因此由 auto 塌成 0 —— 列表整个不可见，只剩标题上的章数。
+ * 这个 bug 不会报错、不会抛异常、测试也查不到「元素缺失」（行确实渲染了，
+ * 只是渲染在一个 0 高的盒子里），只能靠人眼看出来。
+ *
+ * 所以对每个用到 Virtuoso 的组件反过来提要求：承载它的那条规则必须给出
+ * **确定高度**（`height` 或 flex 的 `flex: 1` + `min-height: 0`），
+ * 只写 `max-height` 一律视为违规。
+ */
+describe("Novel 窗口：虚拟化列表容器必须有确定高度", () => {
+  /** 用到 Virtuoso 的组件目录（相对 ROOT） */
+  const VIRTUALIZED_DIRS = [
+    "pages/NovelPage/components/ChapterTree",
+    "pages/NovelPage/components/EntityDetail",
+    "pages/NovelPage/components/OutlinePanel",
+    "pages/NovelPage/components/InspirationPanel",
+  ];
+
+  it("每个虚拟列表的样式都给了确定高度（不能只写 max-height）", () => {
+    const offenders: string[] = [];
+    for (const dir of VIRTUALIZED_DIRS) {
+      const tsx = readFileSync(path.join(ROOT, dir, "index.tsx"), "utf8");
+      // 目录里没用 Virtuoso 就跳过（清单比实现先列出来时不假红）
+      if (!tsx.includes("Virtuoso")) continue;
+
+      const scss = stripComments(
+        readFileSync(path.join(ROOT, dir, "index.scss"), "utf8"),
+      );
+      // 确定高度 = 显式 height，或 flex: 1 配合 min-height: 0
+      const hasDefiniteHeight = /\bheight\s*:/.test(scss) || /\bflex\s*:\s*1/.test(scss);
+      const hasMinHeightZero = /min-height\s*:\s*0/.test(scss);
+
+      if (!hasDefiniteHeight) {
+        offenders.push(`${dir}/index.scss 没有任何确定高度（height / flex: 1）`);
+      } else if (!hasMinHeightZero && /flex\s*:\s*1/.test(scss)) {
+        // flex: 1 单独用不足以收缩：父级 flex 项的默认 min-height 是 auto，
+        // 长内容会把容器顶高而不是内部滚动
+        offenders.push(`${dir}/index.scss 用了 flex: 1 但缺 min-height: 0`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("清单本身有效（目录存在，避免路径写错导致整段空转）", () => {
+    for (const dir of VIRTUALIZED_DIRS) {
+      expect(statSync(path.join(ROOT, dir)).isDirectory()).toBe(true);
+    }
   });
 });
 

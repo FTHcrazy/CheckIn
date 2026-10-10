@@ -217,15 +217,23 @@ export function useNovelPage() {
   /**
    * 大纲树：骨架取自真实卷章（大纲里点章节 = 真跳转），伏笔来自 outlineEntries。
    * 序号标签随「数字样式 + 章节/卷后缀」配置派生，与左栏章节树严格一致。
+   *
+   * 依赖 data.groups（而非 volumes/chapters 各自重算）：useNovelData 已经为
+   * 左栏章节树建好了分组，大纲直接复用同一份，避免同一轮渲染里建两遍。
    */
   const outline = useMemo(
     () =>
-      buildOutlineTree(data.volumes, data.chapters, data.outlineEntries, {
-        numberStyle: settings.numberStyle,
-        chapterSuffix: settings.chapterSuffix,
-        volumeSuffix: settings.volumeSuffix,
-      }),
-    [data.volumes, data.chapters, data.outlineEntries, settings],
+      buildOutlineTree(
+        data.groups,
+        data.chapters,
+        data.outlineEntries,
+        {
+          numberStyle: settings.numberStyle,
+          chapterSuffix: settings.chapterSuffix,
+          volumeSuffix: settings.volumeSuffix,
+        },
+      ),
+    [data.groups, data.chapters, data.outlineEntries, settings],
   );
 
   const handleSaveNow = useCallback(async (): Promise<void> => {

@@ -594,10 +594,30 @@
   }
 
   /* ── 出场章节 ─────────────────────────────────────────────────── */
+  /* 虚拟化容器：必须给**确定高度**，Virtuoso 才有可视区可测。
+     ⚠️ 这里踩过一次坑：原先写的是 `max-height: 240px` —— `max-height`
+     只设上限、不产生确定高度，而 Virtuoso 的行是绝对定位、不参与父级
+     尺寸计算，容器的 auto 高度因此塌成 0，整个列表**完全不可见**
+     （只剩标题上的章数）。虚拟化列表的容器尺寸只能来自 `height` 或
+     flex 分配的确定高度，不能只给 max-height。
+
+     上限由组件按「行数 × 行高」算出后内联给 `height`（少则自适应收缩、
+     多则封顶 240px 内部滚动），样式这边只兜底一个最小值与滚动行为。 */
   &__appear {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 5px;
+    min-height: 0;
+    overflow-y: auto;
+    scrollbar-width: thin;
+  }
+
+  &__appear-list {
+    height: 100%;
+  }
+
+  /* Virtuoso 把每个 item 包一层绝对定位的 div，行间距只能由行内边距产生
+     （原先 flex-wrap 的 gap 在虚拟化后不生效）。行高必须与 TSX 里的
+     APPEAR_ROW_HEIGHT 对齐 */
+  &__appear-list > div > div {
+    padding-bottom: 2px;
   }
 
   &__chip.ant-btn {
@@ -620,6 +640,11 @@
     display: inline-flex;
     gap: 4px;
     padding: 3px 8px;
+    /* 虚拟化行内单行展示：过长标题截断，完整标题仍走 title 悬浮 */
+    max-width: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
   }
 
   &__chip-no {

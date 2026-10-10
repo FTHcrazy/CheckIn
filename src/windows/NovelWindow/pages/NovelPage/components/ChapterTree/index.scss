@@ -101,6 +101,13 @@
     border-top: 1px solid var(--app-border);
   }
 
+  /* 删除确认浮层的定位锚点：不可见、不参与布局，只提供坐标 */
+  &__del-anchor {
+    position: fixed;
+    pointer-events: none;
+    visibility: hidden;
+  }
+
   /* 底部动作 ghost 化：描边按钮在左栏里存在感过强，降为浅底幽灵按钮。
      幽灵外观全部写成组件级变量（含 hover/active），靠 antd 自己的状态规则生效 */
   &__foot-btn.ant-btn {

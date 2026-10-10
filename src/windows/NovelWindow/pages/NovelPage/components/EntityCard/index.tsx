@@ -18,6 +18,11 @@ interface EntityCardProps {
   relationCount: number;
   /** 出场章数：由页面一次性统计后传入，避免列表里逐卡扫全书 */
   appearanceCount: number;
+  /**
+   * 出场章数是否仍在后台补扫（首次导入长篇时为 true）。
+   * 为 true 时不显示会跳动的中间数字，改显示「统计中…」。
+   */
+  appearancePending?: boolean;
   /** 当前境界名（R25 绑定，未绑定为空串） */
   levelName: string;
   /** 是否为行囊主角（决定「主角」角标与置顶） */
@@ -42,6 +47,7 @@ export default function EntityCard({
   entity,
   relationCount,
   appearanceCount,
+  appearancePending = false,
   levelName,
   isProtagonist,
   onOpen,
@@ -94,7 +100,8 @@ export default function EntityCard({
               <LinkOutlined /> 关联 {relationCount}
             </span>
             <span className="nv-ecard__stat">
-              <BookOutlined /> 出场 {appearanceCount} 章
+              <BookOutlined />{" "}
+              {appearancePending ? "统计中…" : `出场 ${appearanceCount} 章`}
             </span>
             {levelName && (
               <span className="nv-ecard__stat nv-ecard__stat--level">

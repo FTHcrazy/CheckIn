@@ -14,6 +14,23 @@
   /* 作为右栏滚动区的唯一子项：允许被压到比内容更窄（否则 nowrap 内容会从
      这里把整个面板顶宽） */
   min-width: 0;
+  /* 撑满右栏滚动区，把剩余高度分给下方的虚拟列表。
+     父级 .nv-panel__scroll 是 flex column + overflow-y: auto，
+     这里必须同时给 flex: 1 与 min-height: 0 才能拿到**确定高度** ——
+     虚拟列表（Virtuoso）依赖容器有确切高度，只靠内容撑高会塌成 0。 */
+  flex: 1;
+  min-height: 0;
+
+  /* 虚拟化章节列表：占满 summary / switch 之外的剩余高度，自身滚动。
+     > div 是 Virtuoso 的内部滚动容器，需一并撑满。 */
+  &__vlist {
+    flex: 1;
+    min-height: 0;
+
+    > div {
+      height: 100%;
+    }
+  }
 
   &__summary {
     display: grid;
@@ -58,6 +75,16 @@
   }
 
   /* ── 卷 ───────────────────────────────────────────────────────── */
+  /* 伏笔子视图的滚动容器：与虚拟列表同样的「占满剩余高度 + 自身滚动」，
+     因为外层 scroll 已对本面板关闭（见 SupportPanel 的 flatScroll） */
+  &__fswrap {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: thin;
+  }
+
   &__vol {
     margin-bottom: 10px;
 

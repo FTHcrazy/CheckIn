@@ -1,58 +1,46 @@
-// 卷头与「本卷新建章节」都由 antd `Button` 承载（AGENTS §6.1.2）：
-// 先清零组件级变量再声明；hover / 拖拽高亮一律写成变量，
-// 自写属性规则压不过 antd 的状态选择器（0,4,0）
-@use "../../../../../../shared/styles/widget" as widget;
+// 卷头行（§6.1.2「超长虚拟化列表行」例外）：行内是语义化原生 <button> / <input>，
+// 不套 antd Button。该例外只放开「必须用组件库组件」一条 —— 键盘可达性、aria、
+// `<button>` 不嵌套、主题变量三条照旧。状态选择器写在本文件是例外明确允许的，
+// 色值一律走 var(--app-*)。
+//
+// 为什么不用组件库：左栏在长篇里数千行且已虚拟化，滚动时行被反复
+// mount/unmount，重组件（Context + Portal + 状态机）撑不住。
 
 .nv-volume {
   position: relative;
   min-width: 0;
 
-  /* 卷头（展示态是 Button、编辑态是 div）：布局属性两层共用，
-     外观只写在下面的 .ant-btn 块里 */
+  /* 卷头（展示态是 button、编辑态是 div）：布局属性两层共用，
+     外观写在通用选择器上（不再依赖 antd 的组件级变量） */
   &__head {
     width: 100%;
     min-width: 0;
-    /* 编辑态行是 div（非 button），UA 不再默认 border-box：
-       width:100% + padding 会左右各撑出 8px 顶满面板边，须显式声明 */
+    /* 显式 border-box：width:100% + padding 在 content-box 下会左右撑出面板边 */
     box-sizing: border-box;
     display: flex;
     align-items: center;
     gap: 6px;
     height: 28px;
     padding: 0 8px;
+    font: inherit;
     font-size: 12px;
     font-weight: 600;
+    color: var(--app-text-secondary);
+    background: transparent;
+    border: none;
+    border-radius: var(--app-radius-item);
+    text-align: left;
     cursor: pointer;
-  }
+    transition: background 120ms ease;
 
-  &__head.ant-btn {
-    @include widget.ant-button-reset;
-    --ant-control-height: 28px;
-    --ant-button-padding-inline: 8px;
-    --ant-button-content-font-size: 12px;
-    --ant-button-font-weight: 600;
-    --ant-button-icon-gap: 6px;
-    --ant-border-radius: var(--app-radius-item);
-    --ant-button-default-bg: transparent;
-    --ant-button-default-color: var(--app-text-secondary);
-    --ant-button-default-hover-bg: var(--app-surface-hover);
-    --ant-button-default-hover-color: var(--app-text-secondary);
-    --ant-button-default-active-bg: var(--app-surface-hover);
-    --ant-button-default-active-color: var(--app-text-secondary);
-    --ant-button-default-shadow: none;
+    &:hover {
+      background: var(--app-surface-hover);
+    }
 
-    /* antd 的 `.ant-btn` 是 inline-flex（同为 0,1,0，靠源码顺序才压得住）：
-       卷头必须是块级 flex，否则行内基线会在卷行下留出几像素空隙，
-       Virtuoso 的行高测量随之抖动 —— 这里在 0,2,0 上再钉一次 */
-    display: flex;
-
-    /* 拖拽 drop 目标高亮（R9）：章节移入 / 卷重排共用。
-       持久态写默认变量，hover / active 同步保持高亮不掉色 */
+    /* 拖拽 drop 目标高亮（R9）：章节移入 / 卷重排共用 */
     &.is-drop {
-      --ant-button-default-bg: var(--app-primary-weak);
-      --ant-button-default-hover-bg: var(--app-primary-weak);
-      --ant-button-default-active-bg: var(--app-primary-weak);
-      --ant-button-default-shadow: inset 0 2px 0 var(--app-primary);
+      background: var(--app-primary-weak);
+      box-shadow: inset 0 2px 0 var(--app-primary);
     }
 
     &:focus-visible {
@@ -81,15 +69,10 @@
     border-radius: 4px;
     background: var(--app-surface);
     color: var(--app-text);
+    font: inherit;
     font-size: 12px;
     font-weight: 600;
 
-    // antd Input（AGENTS 6.1.2）：复合选择器压过组件库默认内边距
-    &.ant-input {
-      padding: 2px 6px;
-    }
-
-    // antd v6 borderless 聚焦自带 focus-visible outline，与自身边框叠两层
     &:focus,
     &:focus-visible {
       outline: none;
@@ -111,32 +94,29 @@
   }
 
   /* 在本卷新建章节：卷头悬浮时浮现并盖住章数，避免布局抖动 */
-  &__add.ant-btn {
-    @include widget.ant-button-reset;
-    --ant-control-height: 20px;
-    --ant-button-padding-inline: 0px;
-    --ant-button-content-font-size: 12px;
-    --ant-border-radius: 4px;
-    --ant-button-default-bg: transparent;
-    --ant-button-default-color: var(--app-text-muted);
-    --ant-button-default-hover-bg: var(--app-surface-hover);
-    --ant-button-default-hover-color: var(--app-primary);
-    --ant-button-default-active-bg: var(--app-surface-hover);
-    --ant-button-default-active-color: var(--app-primary);
-    --ant-button-default-shadow: none;
-
-    /* antd 不接管的属性 */
+  &__add {
     position: absolute;
     right: 4px;
     top: 50%;
     transform: translateY(-50%);
     width: 20px;
+    height: 20px;
     display: flex;
     align-items: center;
     justify-content: center;
+    font-size: 12px;
+    color: var(--app-text-muted);
+    background: transparent;
+    border: none;
+    border-radius: 4px;
     cursor: pointer;
     opacity: 0;
     transition: opacity 120ms ease, color 120ms ease, background 120ms ease;
+
+    &:hover {
+      background: var(--app-surface-hover);
+      color: var(--app-primary);
+    }
 
     &:focus-visible {
       opacity: 1;

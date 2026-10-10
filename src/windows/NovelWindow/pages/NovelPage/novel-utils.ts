@@ -103,34 +103,79 @@ export function buildEntityTerms(
 }
 
 /**
+ * 词条索引：首字符 → 该首字开头的候选词条（已按词长倒序）。
+ *
+ * 为什么按首字分桶：原实现是「文本逐字符推进，每个位置遍历**全部**词条跑
+ * `startsWith`」——单章 3000 字 × 300 词条实测 8ms，3000 章冷扫 9 秒。
+ * 分桶后每个位置只在「首字相同的少数词条」里比对，命中率越低收益越大。
+ *
+ * `WeakMap` 以词条数组身份为键：`terms` 由 `buildEntityTerms` 每次重建新数组，
+ * 旧索引随数组一起被 GC，无需手动清理，也不会串到别的书。
+ */
+interface TermIndex {
+  /** 首字符 → 候选词条（长词优先） */
+  byFirstChar: Map<string, EntityTerm[]>;
+}
+
+const termIndexCache = new WeakMap<EntityTerm[], TermIndex>();
+
+function indexOfTerms(terms: EntityTerm[]): TermIndex {
+  const cached = termIndexCache.get(terms);
+  if (cached) return cached;
+
+  const byFirstChar = new Map<string, EntityTerm[]>();
+  for (const item of terms) {
+    if (!item.term) continue;
+    const first = item.term[0];
+    const bucket = byFirstChar.get(first);
+    if (bucket) bucket.push(item);
+    else byFirstChar.set(first, [item]);
+  }
+  // 每个桶内按词长倒序：长词优先，避免「青梧」吃掉「青梧山」
+  for (const bucket of byFirstChar.values()) {
+    bucket.sort((a, b) => b.term.length - a.term.length);
+  }
+
+  const index: TermIndex = { byFirstChar };
+  termIndexCache.set(terms, index);
+  return index;
+}
+
+/**
  * 在给定文本中做白名单匹配，返回互不重叠、（同起点）最长的命中区间。
  * 只扫传入文本，不做全文档扫描——调用方负责切成可视区片段。
+ *
+ * 调用方**无需**预先排序：候选桶在索引构建时已按词长倒序。
+ * 早先这里每次都 `[...terms].sort()`，而它被标注层按可视区、按防抖高频调用，
+ * 等于每次重建都白白重排一遍全量词库。
  */
 export function findTermMatches(
   text: string,
   terms: EntityTerm[],
 ): TermMatch[] {
   if (!text || terms.length === 0) return [];
-  const sorted = [...terms].sort((a, b) => b.term.length - a.term.length);
+  const { byFirstChar } = indexOfTerms(terms);
   const matches: TermMatch[] = [];
   let index = 0;
 
   while (index < text.length) {
-    const hit = sorted.find(
-      (item) => item.term.length > 0 && text.startsWith(item.term, index),
-    );
-    if (hit) {
-      matches.push({
-        from: index,
-        to: index + hit.term.length,
-        term: hit.term,
-        entityId: hit.entityId,
-        type: hit.type,
-      });
-      index += hit.term.length;
-    } else {
-      index += 1;
+    // 首字不在词库里 → 这个位置不可能有命中，直接推进一字符
+    const bucket = byFirstChar.get(text[index]);
+    if (bucket) {
+      const hit = bucket.find((item) => text.startsWith(item.term, index));
+      if (hit) {
+        matches.push({
+          from: index,
+          to: index + hit.term.length,
+          term: hit.term,
+          entityId: hit.entityId,
+          type: hit.type,
+        });
+        index += hit.term.length;
+        continue;
+      }
     }
+    index += 1;
   }
 
   return matches;
@@ -306,6 +351,18 @@ export interface OutlineBuildOptions {
 }
 
 /**
+ * 区分 buildOutlineTree 的两种首参：分组带 `volume` 字段，卷本身没有。
+ * 用 `in` 做结构判别，不依赖调用方传标记位（调用方传错了也不会静默出错数据）。
+ */
+function isChapterGroupList(
+  value: NovelVolume[] | ChapterGroup[],
+): value is ChapterGroup[] {
+  const first = value[0];
+  if (!first) return false;
+  return "volume" in first;
+}
+
+/**
  * 由真实卷 / 章 + 用户手写的伏笔派生大纲树（PRD R7）
  *
  * 骨架永远来自 volumes / chapters，不落库、也不允许与左栏不一致——
@@ -313,22 +370,44 @@ export interface OutlineBuildOptions {
  * 用「o-c7」这类假 id，点了编辑器直接空态）。
  * 伏笔统一挂到所属卷末尾（待回收在前、同级内按写入时间），不插进章序中间，
  * 避免「大纲顺序 ≠ 章节顺序」的误导。
+ *
+ * 首参可传**已建好的分组**（`ChapterGroup[]`，useNovelPage 走这条，复用左栏那份），
+ * 也可传卷数组（`NovelVolume[]`，纯函数测试与其它调用方走这条，内部现建分组）。
+ * 两种入参在行为上完全等价 —— 传入分组只是省掉一次 O(章 + 卷) 的重复建组。
  */
 export function buildOutlineTree(
-  volumes: NovelVolume[],
+  volumesOrGroups: NovelVolume[] | ChapterGroup[],
   chapters: NovelChapter[],
   entries: OutlineEntry[],
   options: OutlineBuildOptions,
 ): OutlineNode[] {
-  const numbers = buildChapterNumbers(volumes, chapters);
+  const groups = isChapterGroupList(volumesOrGroups)
+    ? volumesOrGroups
+    : buildChapterGroups(volumesOrGroups, chapters);
 
-  return buildChapterGroups(volumes, chapters).map((group, index) => {
-    const owned = entries.filter((entry) => entry.volumeId === group.volume.id);
+  // 序号与骨架都从同一份分组派生。原实现内部走 buildChapterNumbers →
+  // 再建一次同样的分组，长篇里是白白多跑一遍 O(章 + 卷)。
+  const numbers = buildChapterNumbersFromGroups(groups);
+
+  // 伏笔按卷预分桶：原实现是「每个卷各 filter 一遍全量伏笔」，
+  // 卷数 × 伏笔数 的乘积在长篇里不可忽略（60 卷 × 数百条 = 数万次比较，
+  // 且每次切章都要重算一遍）。分桶后整体降到 O(伏笔)。
+  const entriesByVolume = new Map<string, OutlineEntry[]>();
+  for (const entry of entries) {
+    const bucket = entriesByVolume.get(entry.volumeId);
+    if (bucket) bucket.push(entry);
+    else entriesByVolume.set(entry.volumeId, [entry]);
+  }
+
+  return groups.map((group, index) => {
+    const owned = entriesByVolume.get(group.volume.id) ?? [];
 
     // 章节行要标出「本章埋了伏笔」：先按 chapterId 归并一次，
     // 避免「每章各扫一遍全量伏笔」的 O(章 × 伏笔)
     const planted = new Map<string, { total: number; open: number }>();
+    let openCount = 0;
     for (const item of owned) {
+      if (item.status === "open") openCount += 1;
       if (!item.chapterId) continue; // 卷级伏笔不绑章，由卷头计数承载
       const record = planted.get(item.chapterId) ?? { total: 0, open: 0 };
       record.total += 1;
@@ -356,6 +435,9 @@ export function buildOutlineTree(
       };
     });
 
+    // 章节 id → 章：伏笔的「埋在哪一章」标签要还原标题，不能每卷再 find 一遍
+    const chapterById = new Map(group.chapters.map((chapter) => [chapter.id, chapter]));
+
     const foreshadowNodes: OutlineNode[] = [...owned]
       .sort(
         (a, b) =>
@@ -363,9 +445,7 @@ export function buildOutlineTree(
           a.createdAt - b.createdAt,
       )
       .map((entry) => {
-        const bound = entry.chapterId
-          ? group.chapters.find((chapter) => chapter.id === entry.chapterId)
-          : undefined;
+        const bound = entry.chapterId ? chapterById.get(entry.chapterId) : undefined;
         return {
           kind: "foreshadow" as const,
           id: entry.id,
@@ -390,7 +470,7 @@ export function buildOutlineTree(
         index + 1,
       ),
       note: group.volume.name === UNNAMED_VOLUME ? "" : group.volume.name,
-      openForeshadows: owned.filter((entry) => entry.status === "open").length,
+      openForeshadows: openCount,
       children: [...chapterNodes, ...foreshadowNodes],
     };
   });
@@ -508,13 +588,22 @@ export function buildChapterGroups(
   volumes: NovelVolume[],
   chapters: NovelChapter[],
 ): ChapterGroup[] {
+  // 先按 volumeId 分桶再排序：原实现是「每个卷各 filter 一遍全量章节」，
+  // 复杂度 O(卷 × 章)。3000 章 / 60 卷时是 18 万次比较，而它每次切章、
+  // 每次保存正文（chapters 换新数组）都会被调用，且 buildChapterNumbers 里
+  // 还会再调一次 —— 分桶后降为 O(章 + 卷)，排序只作用于卷内子集。
+  const byVolume = new Map<string, NovelChapter[]>();
+  for (const chapter of chapters) {
+    const bucket = byVolume.get(chapter.volumeId);
+    if (bucket) bucket.push(chapter);
+    else byVolume.set(chapter.volumeId, [chapter]);
+  }
+
   return [...volumes]
     .sort((a, b) => a.sort - b.sort)
     .map((volume) => ({
       volume,
-      chapters: chapters
-        .filter((chapter) => chapter.volumeId === volume.id)
-        .sort((a, b) => a.sort - b.sort),
+      chapters: (byVolume.get(volume.id) ?? []).sort((a, b) => a.sort - b.sort),
     }));
 }
 
@@ -526,9 +615,19 @@ export function buildChapterNumbers(
   volumes: NovelVolume[],
   chapters: NovelChapter[],
 ): Map<string, number> {
+  return buildChapterNumbersFromGroups(buildChapterGroups(volumes, chapters));
+}
+
+/**
+ * 序号派生的内部入口：接受**已建好**的分组，避免调用方已经算过 groups 时
+ * 再建一遍（buildOutlineTree 同时要 groups 与 numbers，原本建了两遍）。
+ */
+export function buildChapterNumbersFromGroups(
+  groups: ChapterGroup[],
+): Map<string, number> {
   const numbers = new Map<string, number>();
   let seq = 0;
-  for (const group of buildChapterGroups(volumes, chapters)) {
+  for (const group of groups) {
     for (const chapter of group.chapters) {
       seq += 1;
       numbers.set(chapter.id, seq);
