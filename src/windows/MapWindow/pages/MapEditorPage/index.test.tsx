@@ -222,6 +222,34 @@ function countLabel(): string {
   return document.querySelector(".map-editor__count")?.textContent ?? "";
 }
 
+/** 工具栏层级胶囊文本；未生成区块时该元素不渲染，返回空串 */
+function levelChip(): string {
+  return document.querySelector(".map-editor__level-chip")?.textContent ?? "";
+}
+
+/** 画布下方提示：说明新放置的素材会归入哪一级 */
+function canvasHint(): string {
+  return document.querySelector(".map-editor__canvas-hint")?.textContent ?? "";
+}
+
+/**
+ * 世界坐标 → 画布本地像素，缩放取自**页面当前真实显示**的值。
+ *
+ * 不能用上面那个基于常量 SCALE 的 localOf：本组用例会在 80% 与 228% 之间来回，
+ * 换算必须跟着实际视口走。（缩放锚点是画布中心，所以视口中心恒为世界原点。）
+ */
+function localAt(world: { x: number; y: number }) {
+  const scale = Number(zoomLabel().replace("%", "")) / 100;
+  return { x: world.x * scale + CANVAS / 2, y: world.y * scale + CANVAS / 2 };
+}
+
+/** 连点缩放按钮若干次 */
+function zoomBy(button: "zoom-in" | "zoom-out", times: number) {
+  for (let i = 0; i < times; i += 1) {
+    fireEvent.click(screen.getByRole("button", { name: button }));
+  }
+}
+
 /** 工具栏"已生成 N 块"文本；无区块时该元素不渲染，返回空串 */
 function regionLabel(): string {
   return document.querySelector(".map-editor__region-count")?.textContent ?? "";
@@ -511,5 +539,83 @@ describe("MapEditorPage 坐标链路", () => {
     // 继续缩出去：洲淡出、大陆淡入，最终只剩大陆
     for (let i = 0; i < 9; i += 1) fireEvent.click(zoomOut());
     await waitFor(() => expect(state()).toBe("34% → 大陆"), { timeout: 3000 });
+  }, 15000);
+
+  /**
+   * 素材的层级归属 —— 用户报障：「在放大到最小的一级（郡）添加的山，缩放到上一级
+   * 并没有同步」。
+   *
+   * 根因：素材此前是"浮在地图上的一层贴纸"，不参与任何层级、也不随层级显隐，
+   * 于是在郡那一级摆的山，缩到洲/国家去看时依旧原样显示，与当前尺度完全脱节。
+   *
+   * 现在素材会记住放置时所处的主导层级，并挂在那一级的容器下、随其权重淡入淡出 ——
+   * 即"每一等级的元素随该地图缩放而缩放，换到另一级时消失"。
+   */
+  it("素材归属放置时的层级：缩到别级即淡出、也点不中", async () => {
+    await setup();
+    fireEvent.click(screen.getByRole("button", { name: /生成区块/ }));
+    await waitFor(() => expect(regionLabel()).toContain("223"));
+
+    // 放大到「郡」那一级（0.8 × 1.1¹¹ = 228%）
+    zoomBy("zoom-in", 11);
+    await waitFor(() => expect(levelChip()).toBe("郡"));
+    expect(canvasHint()).toContain("新素材归入「郡」级");
+
+    // 在郡级摆一座山 —— 它自此属于「郡」
+    pickSprite("山（中）");
+    const anchor = { x: 30, y: 20 };
+    clickCanvas(localAt(anchor));
+    await waitFor(() => expect(countLabel()).toContain("1"));
+    expect(deleteButton()).not.toBeDisabled(); // 落位即选中
+
+    // ── 缩回整图：郡的权重归 0，山随之退场 ──
+    fireEvent.click(screen.getByRole("button", { name: "expand" }));
+    await waitFor(() => expect(levelChip()).toBe("洲 ↔ 国家"));
+
+    // 看不见了就自动取消选中 —— 否则会出现"选中框不见了、删除按钮却亮着"，
+    // 用户按一下 Delete 就删掉了一个自己根本没看见的东西。
+    await waitFor(() => expect(deleteButton()).toBeDisabled());
+
+    // 在它原来的位置上点也点不中：看不见的东西不该能被选中
+    clickCanvas(localAt({ x: anchor.x, y: 0 }));
+    expect(deleteButton()).toBeDisabled();
+
+    // ── 回到郡那一级：它又出现了，也重新点得中 ──
+    zoomBy("zoom-in", 11);
+    await waitFor(() => expect(levelChip()).toBe("郡"));
+    clickCanvas(localAt({ x: anchor.x, y: 0 }));
+    expect(deleteButton()).not.toBeDisabled();
+  }, 15000);
+
+  /**
+   * 反向保障：**生成区块之前**放置的素材没有层级可言，不能因此被藏起来。
+   *
+   * 这类素材记 `level: null`（层级无关，权重恒为 1），且生成区块**不会**回头
+   * 改写它们的归属 —— 隐式的数据改写比"素材与新层级不一致"更难排查。
+   */
+  it("未生成区块时放置的素材层级无关：缩到任何一级都还在、也点得中", async () => {
+    await setup();
+    expect(canvasHint()).toContain("不归属层级");
+
+    pickSprite("森林");
+    clickCanvas(localOf({ x: 40, y: 40 }));
+    await waitFor(() => expect(countLabel()).toContain("1"));
+
+    fireEvent.click(screen.getByRole("button", { name: /生成区块/ }));
+    await waitFor(() => expect(regionLabel()).toContain("223"));
+    // 提示改为"新素材归入某级"，说明归属只对之后放置的素材生效
+    expect(canvasHint()).not.toContain("不归属层级");
+    // 层级无关 → 不该被层级切换清掉选中
+    expect(deleteButton()).not.toBeDisabled();
+
+    // 先取消选中，后面那一下点击才有断言价值
+    clickCanvas({ x: 20, y: 1000 });
+    expect(deleteButton()).toBeDisabled();
+
+    // 缩到最粗一级（大陆）：它依然在，且点得中
+    zoomBy("zoom-out", 8);
+    await waitFor(() => expect(levelChip()).toBe("大陆"));
+    clickCanvas(localAt({ x: 40, y: 0 }));
+    expect(deleteButton()).not.toBeDisabled();
   }, 15000);
 });

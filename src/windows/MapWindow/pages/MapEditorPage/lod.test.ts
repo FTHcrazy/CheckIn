@@ -1,15 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
+  ELEMENT_PICK_MIN_WEIGHT,
   LOD_ALPHA_EPSILON,
   LOD_BAND_OCTAVES,
   LOD_BLOCK_PX,
   activeLevel,
   bandEdges,
   bandProgress,
+  elementWeight,
   levelAlphas,
   levelBlockRadius,
   levelCountsOf,
   naturalScales,
+  resolveElementLevel,
   visibleLevels,
   zoomLimitsFor,
   type LodBounds,
@@ -245,5 +248,106 @@ describe("交叉带宽度", () => {
       const after = levelAlphas(e * 2 ** half, scales);
       expect(after[i + 1]).toBeCloseTo(1, 3);
     });
+  });
+});
+
+/**
+ * 素材的层级归属 —— 「每一等级的元素随地图缩放而缩放，换到另一级时消失」。
+ *
+ * 规则只有两条，但两条都踩过坑，所以逐条钉死：
+ *  - 层级越界的素材**并入现存最细一级**，而不是权重 0。若判 0，先用 4 级放了一堆
+ *    素材、之后改成 2 级生成，那些素材会永久不可见也永远点不中 —— 等于丢数据。
+ *  - 层级缺失（老数据 / 生成区块之前放置）按"层级无关"读，权重恒为 1。
+ */
+describe("resolveElementLevel：把元素层级规整到当前配置", () => {
+  it("未生成区块（levelCount = 0）⇒ 层级无关", () => {
+    expect(resolveElementLevel(0, 0)).toBeNull();
+    expect(resolveElementLevel(3, 0)).toBeNull();
+    expect(resolveElementLevel(null, 0)).toBeNull();
+  });
+
+  it("层级缺失或非法 ⇒ 层级无关（老数据不该因此消失）", () => {
+    expect(resolveElementLevel(null, 4)).toBeNull();
+    expect(resolveElementLevel(undefined, 4)).toBeNull();
+    expect(resolveElementLevel(Number.NaN, 4)).toBeNull();
+    expect(resolveElementLevel(Number.POSITIVE_INFINITY, 4)).toBeNull();
+  });
+
+  it("层级越界 ⇒ 并入现存最细的一级（而不是判 0 藏起来）", () => {
+    // 先按 4 级放了素材，之后只生成 2 级
+    expect(resolveElementLevel(3, 2)).toBe(1);
+    expect(resolveElementLevel(2, 2)).toBe(1);
+    expect(resolveElementLevel(99, 4)).toBe(3);
+  });
+
+  it("负数与非整数一律夹到合法区间", () => {
+    expect(resolveElementLevel(-1, 4)).toBe(0);
+    expect(resolveElementLevel(2.7, 4)).toBe(2);
+  });
+
+  it("合法层级原样返回", () => {
+    for (let level = 0; level < 4; level += 1) {
+      expect(resolveElementLevel(level, 4)).toBe(level);
+    }
+  });
+});
+
+describe("elementWeight：素材可见权重 = 它所属层级的权重", () => {
+  const scales = naturalScales(COUNTS, BOUNDS);
+
+  it("层级无关的素材恒为 1（任何缩放下都可见）", () => {
+    for (const z of [0.05, 0.8, 2.5, 12]) {
+      expect(elementWeight(null, levelAlphas(z, scales))).toBe(1);
+    }
+    // 还没生成区块时也只是空数组，同样恒为 1
+    expect(elementWeight(null, [])).toBe(1);
+  });
+
+  it("与所属层级的权重逐个吻合", () => {
+    for (const z of [0.2, 0.43, 0.8, 1.18, 2.2, 6]) {
+      const alphas = levelAlphas(z, scales);
+      for (let level = 0; level < 4; level += 1) {
+        expect(elementWeight(level, alphas)).toBe(alphas[level]);
+      }
+    }
+  });
+
+  it("主导该级时接近 1，切到别级时归 0（这就是用户要的「消失」）", () => {
+    // 0.8 下主导层级是洲（见 LOD_BLOCK_PX 的推导）
+    const atFit = levelAlphas(0.8, scales);
+    expect(activeLevel(0.8, scales)).toBe(1);
+    expect(elementWeight(1, atFit)).toBeGreaterThan(0.9);
+    expect(elementWeight(3, atFit)).toBe(0); // 郡级素材完全消失
+    expect(elementWeight(0, atFit)).toBe(0);
+
+    // 郡的自然缩放（2.223）下反过来：郡级最清楚，洲级已归 0
+    const atFine = levelAlphas(2.223, scales);
+    expect(elementWeight(3, atFine)).toBeCloseTo(1, 6);
+    expect(elementWeight(1, atFine)).toBe(0);
+  });
+
+  it("层级越界的素材并入最细一级后仍可见（不丢数据）", () => {
+    const alphas = levelAlphas(2.223, scales);
+    expect(elementWeight(3, alphas)).toBeCloseTo(1, 6);
+    // 只认两级的层级配置下，level 3 的素材并入第 1 级
+    const twoLevels = levelAlphas(2.223, scales.slice(0, 2));
+    expect(elementWeight(3, twoLevels)).toBe(twoLevels[1]);
+  });
+
+  it("权重永远落在 [0,1]：渲染层拿去当 alpha 不会越界", () => {
+    for (const z of ZOOM_SWEEP) {
+      const alphas = levelAlphas(z, scales);
+      for (const level of [0, 1, 2, 3, 3.9, -1, null, undefined]) {
+        const w = elementWeight(level as number | null, alphas);
+        expect(w).toBeGreaterThanOrEqual(0);
+        expect(w).toBeLessThanOrEqual(1);
+      }
+    }
+  });
+});
+
+describe("ELEMENT_PICK_MIN_WEIGHT", () => {
+  it("高于渲染裁剪阈值：避免「看不见却点得中」", () => {
+    expect(ELEMENT_PICK_MIN_WEIGHT).toBeGreaterThan(LOD_ALPHA_EPSILON);
   });
 });

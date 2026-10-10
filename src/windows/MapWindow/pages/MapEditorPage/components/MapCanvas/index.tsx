@@ -7,6 +7,7 @@ import {
   REGION_BORDER_PX,
   REGION_FILL_ALPHA,
 } from "../../regions";
+import { elementWeight, resolveElementLevel } from "../../lod";
 import type { MapDocument } from "../../types";
 import { hitTestElement, type CanvasSize, type Viewport } from "../../coords";
 import type { TextureMap } from "../../hooks/useTextureCache";
@@ -124,6 +125,32 @@ interface LevelLayers {
   border: Graphics;
 }
 
+/**
+ * 素材层级容器的哨兵键：**层级无关**。
+ *
+ * 生成区块之前放置的素材没有层级可言（那时还没有任何分区），放在这个容器里、
+ * alpha 恒为 1，任何缩放下都可见。它排在所有层级容器之后，因此永远画在最上层。
+ */
+const LOOSE_LEVEL_KEY = -1;
+
+/** 一个已放置素材的渲染句柄：精灵本体 + 它当前挂在哪个层级容器下 */
+interface ElementSprite {
+  sprite: Sprite;
+  /** 层级容器的键（见 `LOOSE_LEVEL_KEY`）。与 `elementLayersRef` 的键同域 */
+  key: number;
+}
+
+/**
+ * 素材所属的层级容器键。
+ *
+ * 与 `lod.ts` 的 `resolveElementLevel` 同一条规则（越界并入最细一级、无层级归 LOOSE），
+ * 只差在把 `null` 映射成哨兵键 —— 渲染层要的是一个可索引的容器编号。
+ */
+function elementKeyOf(level: number | null | undefined, levelCount: number): number {
+  const resolved = resolveElementLevel(level, levelCount);
+  return resolved === null ? LOOSE_LEVEL_KEY : resolved;
+}
+
 /** 缺省权重（不画任何区块）。用模块级常量避免每次渲染都造一个新数组引用。 */
 const NO_LEVELS: number[] = [];
 
@@ -139,7 +166,10 @@ const NO_LEVELS: number[] = [];
  *      │   ├─ L0 容器     ├─ 填充 Graphics
  *      │   │              └─ 边界 Graphics  ← 屏幕恒定线宽
  *      │   └─ L1 / L2 / L3 …（同上）
- *      ├─ elementLayer  素材精灵（按放置顺序，后放盖上层）
+ *      ├─ elementLayer  素材层（容器，同样按层级分若干子容器）
+ *      │   ├─ L0 容器    ← 在"大陆"那一级放置的素材，alpha = α_0
+ *      │   ├─ L1 / L2 / L3 …（同上）
+ *      │   └─ LOOSE 容器 ← 层级无关的素材（生成区块之前放的），alpha 恒为 1
  *      └─ overlayLayer  选中框等交互指示（Graphics）
  *
  * 区块层为什么按"层级的容器"而不是"一个 Graphics"：
@@ -147,6 +177,11 @@ const NO_LEVELS: number[] = [];
  * 上，滚轮每一格就只是改几个浮点数；若把 alpha 烘进 Graphics 的填充/描边样式，
  * 每滚一格都要重建两百多个多边形的几何，帧率立刻塌。层级容器本身还能顺手把
  * 线宽重建的频率从"每格"降到"每跨一档"。
+ *
+ * 素材层用同一套结构、同一份权重，于是素材与区块**同呼吸**：所属层级淡出它就淡出，
+ * 切到别的层级它就消失。素材按"放置时所处的层级"归属（见 types.ts 的
+ * `MapElement.level`）—— 在郡那一级摆的山属于郡的世界，缩到洲去看时不该还在。
+ * 同样是为了"每格只改几个浮点数"，而不是遍历两千个精灵逐个设 alpha。
  *
  * 层级顺序即数组顺序：区块压在底图之上、素材之下，
  * 这样素材看起来是"落在"某个区块里，而不是被区块盖住。
@@ -185,9 +220,11 @@ export default function MapCanvas({
   /** 每个层级一份「容器 + 填充 + 边界」，索引即层级序号 */
   const levelLayersRef = useRef<LevelLayers[]>([]);
   const elementLayerRef = useRef<Container | null>(null);
+  /** 素材按层级分容器（键见 `LOOSE_LEVEL_KEY`），容器 alpha 跟该层级权重走 */
+  const elementLayersRef = useRef<Map<number, Container>>(new Map());
   const overlayRef = useRef<Graphics | null>(null);
-  /** 实例 id → 精灵，增量同步用（避免每帧重建全部精灵） */
-  const spriteByIdRef = useRef<Map<string, Sprite>>(new Map());
+  /** 实例 id → 渲染句柄，增量同步用（避免每帧重建全部精灵） */
+  const spriteByIdRef = useRef<Map<string, ElementSprite>>(new Map());
 
   /**
    * 线宽用的量化缩放。
@@ -314,6 +351,7 @@ export default function MapCanvas({
       // 子容器随 world 一起被 destroy(true, {children:true}) 回收，这里只清引用
       levelLayersRef.current = [];
       elementLayerRef.current = null;
+      elementLayersRef.current.clear();
       overlayRef.current = null;
 
       if (initDone) {
@@ -464,16 +502,49 @@ export default function MapCanvas({
   //
   // 上层保证 Σα ≡ 1（见 lod.ts 的帽函数），因此这里逐级赋 alpha 即可，
   // 不存在"过渡带里所有层级都太淡"或"多级叠加发黑"的情况。
+  //
+  // 【依赖里必须有 app】首次挂载时 app 还是 null、层级容器尚未建立，本 effect 会
+  // 空跑一次；而 levelAlphas 由上层 useMemo 而来、引用常年不变，若只依赖它，
+  // 容器建好之后就再也没有机会把权重写进去 —— 结果是所有层级都停在容器默认的
+  // alpha 1 上，四级区块和各级素材同时全亮。这种事在"恰好又改了缩放（引用变了）"
+  // 时会被悄悄掩盖，正是最容易漏掉的一类时序缺陷。
   useEffect(() => {
     levelLayersRef.current.forEach((lv, i) => {
       lv.container.alpha = levelAlphas[i] ?? 0;
     });
-  }, [levelAlphas]);
+  }, [levelAlphas, app]);
 
-  // ── 素材精灵增量同步 ──
+  // ── 素材层 · 第一步：按层级建容器（层级数变化时重排顺序）──
+  //
+  // 素材不是"浮在地图上的一层贴纸"，而是某个尺度下的地形：在郡那一级摆的山属于
+  // 郡的世界，缩到洲/国家去看时就该退场。做法与区块层完全一致 —— 每个层级一个
+  // 容器，容器的 alpha 跟着该层级的权重走（见下面的权重 effect）。
+  //
+  // 为什么不用"逐个精灵设 alpha"：那样滚轮每滚一格都要遍历全部素材（2000+ 元素时
+  // 每个 notch 两千次写入），而按容器分组后每格只改三四个浮点数 —— 这正是本组件
+  // 一直守着的"视口变化不得触碰元素"的底线。
   useEffect(() => {
-    const layer = elementLayerRef.current;
-    if (!layer) return;
+    const group = elementLayerRef.current;
+    if (!group) return;
+
+    // "层级无关"排在最后：它恒为不透明，不能排在会被淡出的层级下面
+    const keys = [...levelAlphas.keys(), LOOSE_LEVEL_KEY];
+    for (const key of keys) {
+      if (!elementLayersRef.current.has(key)) {
+        elementLayersRef.current.set(key, new Container());
+      }
+    }
+
+    // 已存在的容器不销毁（精灵还挂在里面），只重建挂载顺序。
+    // 层级数是可以改的，新层级若直接 append 会跑到"层级无关"之上，顺序就乱了。
+    for (const container of elementLayersRef.current.values()) group.removeChild(container);
+    for (const key of keys) group.addChild(elementLayersRef.current.get(key) as Container);
+  }, [levelAlphas.length, app]);
+
+  // ── 素材层 · 第二步：增量同步精灵（只随素材/纹理变化重建）──
+  useEffect(() => {
+    const group = elementLayerRef.current;
+    if (!group) return;
 
     const existing = spriteByIdRef.current;
     const seen = new Set<string>();
@@ -484,14 +555,26 @@ export default function MapCanvas({
       const tex = textures[el.spriteId];
       if (!def) continue;
 
-      let sprite = existing.get(el.id);
-      if (!sprite) {
-        sprite = new Sprite(tex ?? Texture.EMPTY);
+      // 目标容器：该素材所属层级的容器（层级越界时并入最细一级）
+      const key = elementKeyOf(el.level, levelAlphas.length);
+      const target = elementLayersRef.current.get(key) ?? group;
+
+      let entry = existing.get(el.id);
+      if (!entry) {
+        const sprite = new Sprite(tex ?? Texture.EMPTY);
         // 锚点：水平居中、垂直底部（贴图"脚底"落在世界 y 上）
         sprite.anchor.set(0.5, 1);
-        layer.addChild(sprite);
-        existing.set(el.id, sprite);
+        target.addChild(sprite);
+        entry = { sprite, key };
+        existing.set(el.id, entry);
+      } else if (entry.key !== key) {
+        // 层级归属变了（改了层级数、或撤销重做到了另一次放置）：换容器
+        elementLayersRef.current.get(entry.key)?.removeChild(entry.sprite);
+        target.addChild(entry.sprite);
+        entry.key = key;
       }
+
+      const { sprite } = entry;
       if (tex && sprite.texture !== tex) sprite.texture = tex;
 
       sprite.position.set(el.x, el.y);
@@ -501,14 +584,26 @@ export default function MapCanvas({
     }
 
     // 移除已删除的元素精灵
-    for (const [id, sprite] of existing) {
+    for (const [id, entry] of existing) {
       if (!seen.has(id)) {
-        layer.removeChild(sprite);
-        sprite.destroy();
+        entry.sprite.parent?.removeChild(entry.sprite);
+        entry.sprite.destroy();
         existing.delete(id);
       }
     }
-  }, [doc.elements, textures, app]);
+  }, [doc.elements, textures, levelAlphas.length, app]);
+
+  // ── 素材层 · 第三步：权重（与区块层同一份 levelAlphas，因此同呼吸）──
+  //
+  // 依赖里同样必须有 app，理由与区块层的权重 effect 完全一致（见上方注释）：
+  // 少了它，素材的层级容器会一直停在默认 alpha 1，也就是"所有层级的素材同时可见"，
+  // 层级归属形同虚设 —— 正是用户报的那个"素材没跟着层级走"。
+  useEffect(() => {
+    elementLayersRef.current.forEach((container, key) => {
+      // 层级无关的素材恒为不透明；其余按所属层级的权重淡入淡出
+      container.alpha = key === LOOSE_LEVEL_KEY ? 1 : levelAlphas[key] ?? 0;
+    });
+  }, [levelAlphas, app]);
 
   // ── 视口变换（每次 viewport 变化只改 world 容器的两个属性）──
   useEffect(() => {
@@ -534,11 +629,16 @@ export default function MapCanvas({
 
     const w = def.baseWidth * el.scale;
     const h = def.baseHeight * el.scale;
+    // 选中框画在 world 之外的 overlay 上（不随素材所在的层级容器淡出），
+    // 所以这里要手动乘上该素材的层级权重，否则会出现"框还在、素材已经淡没了"。
+    const weight = elementWeight(el.level, levelAlphas);
+    if (weight <= 0) return;
+
     // 元素锚点是底部中心；选中框用世界坐标绘制，随 world 一起缩放
     overlay
       .rect(el.x - w / 2, el.y - h, w, h)
-      .stroke({ width: 2, color: 0x5b6cf9, alignment: 0.5 });
-  }, [selectedId, doc.elements, viewport.scale, app]);
+      .stroke({ width: 2, color: 0x5b6cf9, alignment: 0.5, alpha: weight });
+  }, [selectedId, doc.elements, levelAlphas, app]);
 
   // ── 指针事件 ──
   const getLocalPoint = useCallback((e: React.PointerEvent | PointerEvent) => {

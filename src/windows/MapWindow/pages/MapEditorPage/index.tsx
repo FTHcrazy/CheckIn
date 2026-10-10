@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { App as AntApp, Button, Divider, InputNumber, Tooltip } from "antd";
 import {
   ClearOutlined,
@@ -13,7 +13,7 @@ import {
 } from "@ant-design/icons";
 import type { CanvasSize } from "./coords";
 import { REGION_LEVELS, REGION_LEVEL_COUNT_LIMITS } from "./regions";
-import { activeLevel } from "./lod";
+import { resolveElementLevel } from "./lod";
 import { useMapEditor } from "./hooks/useMapEditor";
 import MapCanvas from "./components/MapCanvas";
 import SpritePanel from "./components/SpritePanel";
@@ -44,7 +44,8 @@ export default function MapEditorPage() {
     canUndo,
     canRedo,
     levelAlphas,
-    regionScales,
+    /** 当前主导层级（`null` = 还没生成区块）。新放置的素材就归到这一级 */
+    currentLevel,
   } = editor;
 
   /**
@@ -56,7 +57,28 @@ export default function MapEditorPage() {
   const visibleLevels = levelAlphas
     .map((alpha, level) => ({ level, alpha }))
     .filter((v) => v.alpha > LEVEL_CHIP_EPSILON);
-  const currentLevel = regionScales.length > 0 ? activeLevel(viewport.scale, regionScales) : -1;
+
+  /**
+   * 各层级已有的素材数量。
+   *
+   * 【为什么要在界面上说这个】素材是按层级显隐的（在郡那级摆的山，缩到洲去看就
+   * 该退场），于是用户很容易把"缩出去山没了"当成丢数据。这里把每一级的存量摆到
+   * 层级胶囊的悬浮说明里，让人一眼看到"山还在，只是属于郡那一级"。
+   */
+  const elementCountsByLevel = useMemo(() => {
+    const counts: number[] = [];
+    let loose = 0;
+    for (const el of doc.elements) {
+      const level = resolveElementLevel(el.level, levelAlphas.length);
+      if (level === null) loose += 1;
+      else counts[level] = (counts[level] ?? 0) + 1;
+    }
+    const parts = counts
+      .map((n, level) => (n > 0 ? `${REGION_LEVELS[level]?.label ?? `L${level}`} ${n}` : ""))
+      .filter(Boolean);
+    if (loose > 0) parts.push(`层级无关 ${loose}`);
+    return parts.join(" · ");
+  }, [doc.elements, levelAlphas.length]);
 
   /**
    * 画布点击。
@@ -257,13 +279,14 @@ export default function MapEditorPage() {
           {doc.regions.length > 0 && (
             <span className="map-editor__region-count">已生成 {doc.regions.length} 块</span>
           )}
-          {currentLevel >= 0 && (
+          {currentLevel !== null && (
             <Tooltip
               title={
                 `缩放 ${Math.round(viewport.scale * 100)}% · ` +
                 visibleLevels
                   .map((v) => `${REGION_LEVELS[v.level].label} ${Math.round(v.alpha * 100)}%`)
-                  .join(" · ")
+                  .join(" · ") +
+                (elementCountsByLevel ? `｜素材：${elementCountsByLevel}` : "")
               }
             >
               <span className="map-editor__level-chip">
@@ -311,6 +334,9 @@ export default function MapEditorPage() {
           />
           <div className="map-editor__canvas-hint">
             滚轮缩放（大陆 → 洲 → 国家 → 郡 连续衔接）· 拖动空白平移 · 点击素材选中后拖动可移动
+            {currentLevel === null
+              ? " · 素材不归属层级（未生成区块）"
+              : ` · 新素材归入「${REGION_LEVELS[currentLevel].label}」级，缩放到别级会淡出`}
           </div>
         </div>
       </div>

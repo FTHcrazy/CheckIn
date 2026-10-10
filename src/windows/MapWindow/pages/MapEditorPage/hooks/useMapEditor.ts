@@ -18,10 +18,13 @@ import {
   type MapRegion,
 } from "../regions";
 import {
+  activeLevel,
+  elementWeight,
   levelAlphas as computeLevelAlphas,
   levelCountsOf,
   naturalScales,
   zoomLimitsFor,
+  ELEMENT_PICK_MIN_WEIGHT,
 } from "../lod";
 import {
   createElementId,
@@ -104,6 +107,18 @@ export function useMapEditor(canvasSize: CanvasSize) {
   );
 
   /**
+   * 当前主导层级 —— 新放下的素材就归到这一级（也是工具栏层级胶囊显示的那一级）。
+   *
+   * `null` = 还没生成区块，此时素材层级无关（任何缩放下都可见）。
+   * 与上面的 `levelAlphas` 同源（`activeLevel` 内部就是取它的最大项），
+   * 不会出现"工具栏说国家、素材却落进郡"的不一致。
+   */
+  const currentLevel = useMemo(
+    () => (regionScales.length === 0 ? null : activeLevel(viewport.scale, regionScales)),
+    [regionScales, viewport.scale],
+  );
+
+  /**
    * 缩放上下限：由层级反推，但**下限不得大于"整图适配"** ——
    * 否则层级配置一变（自然缩放下限被抬高），用户就再也缩不回整张地图了。
    */
@@ -121,6 +136,20 @@ export function useMapEditor(canvasSize: CanvasSize) {
       return s === vp.scale ? vp : { ...vp, scale: s };
     });
   }, [zoomLimits]);
+
+  /**
+   * 选中的素材若因层级切换而隐没，自动取消选中。
+   *
+   * 与 `pickElement` 的过滤是同一件事的两面：既然"看不见的素材点不中"，
+   * 那已经选中的素材淡出时也不该继续被选中 —— 否则会出现"选中框看不见、
+   * 但删除按钮亮着"，用户按一下 Delete 就删掉了一个自己根本没看见的东西。
+   */
+  useEffect(() => {
+    if (!selectedId) return;
+    const el = doc.elements.find((e) => e.id === selectedId);
+    if (!el) return;
+    if (elementWeight(el.level, levelAlphas) < ELEMENT_PICK_MIN_WEIGHT) setSelectedId(null);
+  }, [selectedId, doc.elements, levelAlphas]);
 
   /**
    * 提交一次文档变更（自动入撤销栈）。
@@ -198,7 +227,13 @@ export function useMapEditor(canvasSize: CanvasSize) {
     setViewport((vp) => panByScreenDelta(vp, dx, dy));
   }, []);
 
-  /** 放置素材到世界坐标 */
+  /**
+   * 放置素材到世界坐标。
+   *
+   * **素材会记住放置时所处的层级**（`currentLevel`）：那一刻用户看着哪一级的地图，
+   * 摆下的就是哪一级的地形。之后缩放到别的层级时它随之淡出/消失（见 types.ts 的
+   * `MapElement.level`）。尚未生成区块时记 `null`，即"层级无关、始终可见"。
+   */
   const placeSprite = useCallback(
     (spriteId: string, world: { x: number; y: number }) => {
       const def = SPRITE_MAP[spriteId];
@@ -211,20 +246,28 @@ export function useMapEditor(canvasSize: CanvasSize) {
         y: world.y,
         scale: 1,
         rotation: 0,
+        level: currentLevel,
       };
       commit((d) => ({ ...d, elements: [...d.elements, element] }));
       setSelectedId(element.id);
     },
-    [commit],
+    [commit, currentLevel],
   );
 
-  /** 命中测试：返回最上层（后放置 = 上层）被点中的元素 */
+  /**
+   * 命中测试：返回最上层（后放置 = 上层）被点中的元素。
+   *
+   * 只挑**当前缩放下属实可见**的元素（权重 ≥ `ELEMENT_PICK_MIN_WEIGHT`）：
+   * 别级素材正在淡出、只剩一层几乎看不见的影子时，若还能点中，用户会在
+   * "看着什么都没有"的地方选中东西，比点不中更让人困惑。
+   */
   const pickElement = useCallback(
     (world: { x: number; y: number }): MapElement | null => {
       for (let i = doc.elements.length - 1; i >= 0; i -= 1) {
         const el = doc.elements[i];
         const def = SPRITE_MAP[el.spriteId];
         if (!def) continue;
+        if (elementWeight(el.level, levelAlphas) < ELEMENT_PICK_MIN_WEIGHT) continue;
         if (
           hitTestElement(world, {
             x: el.x,
@@ -239,7 +282,7 @@ export function useMapEditor(canvasSize: CanvasSize) {
       }
       return null;
     },
-    [doc.elements],
+    [doc.elements, levelAlphas],
   );
 
   /**
@@ -323,6 +366,8 @@ export function useMapEditor(canvasSize: CanvasSize) {
     canRedo: redoStack.length > 0,
     /** 各层级可见权重（空数组 = 还没有区块） */
     levelAlphas,
+    /** 当前主导层级（`null` = 还没生成区块）；新放下的素材归到这一级 */
+    currentLevel,
     /** 各级的自然缩放（空数组 = 还没有区块），工具栏用来显示配置是否生效 */
     regionScales,
     /** 由层级反推的缩放上下限 */

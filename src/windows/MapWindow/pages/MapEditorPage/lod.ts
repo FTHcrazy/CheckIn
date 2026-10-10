@@ -163,6 +163,52 @@ export function visibleLevels(
 }
 
 /**
+ * 把素材元素记录的层级，规整为"当前层级配置下真正生效的那一级"。
+ *
+ * 素材是在某个缩放下放置的，放置那一刻的主层级就是它的归属（见 `activeLevel`）。
+ * 但层级配置是可变的（生成时可以选 2~4 级），于是会出现两种"对不上的层级"：
+ *
+ *   · `level` 为 `null`（或在生成区块之前放置，字段缺失）→ 层级无关，任何缩放下都可见；
+ *   · `level` 超出当前的层级数（先用 4 级放了一堆素材，之后改成 2 级）→
+ *     **并入现存最细的一级**，而不是权重记 0。
+ *
+ * 后一条是刻意为之：若越界直接判 0，那些素材会永久不可见、也永远点不中，
+ * 用户只能靠"撤销回生成之前"来救 —— 那是数据丢失级别的坑。并入最细一级后，
+ * 缩进去仍能看到它们，行为可预期。
+ */
+export function resolveElementLevel(
+  level: number | null | undefined,
+  levelCount: number,
+): number | null {
+  if (typeof level !== "number" || !Number.isFinite(level) || levelCount <= 0) return null;
+  return Math.min(Math.max(0, Math.trunc(level)), levelCount - 1);
+}
+
+/**
+ * 素材元素在当前缩放下的可见权重。
+ *
+ * 直接取它所属层级的权重（`levelAlphas`），因此素材与区块边界**同呼吸**：
+ * 该层级淡出，它跟着淡出；切到别的层级，它就消失。层级无关的素材恒为 1。
+ */
+export function elementWeight(
+  level: number | null | undefined,
+  alphas: readonly number[],
+): number {
+  const resolved = resolveElementLevel(level, alphas.length);
+  if (resolved === null) return 1;
+  return alphas[resolved] ?? 0;
+}
+
+/**
+ * 低于此权重的素材视为"不可见"，不参与命中测试。
+ *
+ * 取 0.2 而不是渲染阈值 0.004：权重只有一两成的素材在画面上只是一层几乎看不见的
+ * 影子，若还允许点中它，用户会在"明明什么都没有"的地方选中东西，随后又发现
+ * 选中框（同样几乎透明）不出现 —— 比"点不中"更让人困惑。
+ */
+export const ELEMENT_PICK_MIN_WEIGHT = 0.2;
+
+/**
  * 由层级反推视口的缩放上下限。
  *
  * 下限：比最粗一级的自然缩放再退一点，保证整张地图铺得下（实际下限还会与
