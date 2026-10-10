@@ -10,6 +10,9 @@
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+  // 这一层背景就是底图之外的"留白"：Pixi 画布是透明的（backgroundAlpha: 0），
+  // 留白由它提供，因此自动跟随主题 —— 浅色主题是浅底、暗色主题是暗底。
+  // 不要在 Pixi 里硬编码背景色，否则切主题会出现一块与页面不搭的色板。
   background: var(--app-bg);
   // 阻止触控板双指手势被浏览器当作页面滚动
   touch-action: none;

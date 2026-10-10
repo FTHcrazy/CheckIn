@@ -99,23 +99,48 @@ export function panByScreenDelta(
 }
 
 /**
+ * 「适应窗口」时底图占视口的比例，其余部分作为四周的**留白**。
+ *
+ * 【为什么必须留白】底图一旦铺满画布，四条边都被画框裁掉，读起来是"一块
+ * 望不到边的大陆"——轮廓不可见，反而失了分量。留下一圈空白后，整张地图
+ * 作为**一张完整的图纸**呈现：边界、外轮廓全都在视野里，四周的空白正好
+ * 把它衬出来。0.8 = 四周各留视口的 10%。
+ *
+ * 【与主题的关系】底图之外的这片空白由画布背景提供（见 MapCanvas 的
+ * `backgroundAlpha: 0`），因此它会跟随主题的 `--app-bg`，深浅主题都成立。
+ */
+export const FIT_PADDING = 0.8;
+
+/**
+ * 让矩形适配画布所需的缩放（**不含上下限钳制**）。
+ *
+ * 单独抽出来是因为它有两个用途：一是"适应窗口"，二是**推导缩放下限** ——
+ * 无论层级配置成几级，用户都必须能把整张地图缩进视野，所以下限取
+ * `min(层级推出来的下限, 这里的适配缩放)`。两者共用同一个换算，避免各写一遍。
+ */
+export function fitScaleFor(
+  rect: { x: number; y: number; width: number; height: number },
+  size: CanvasSize,
+  padding = FIT_PADDING,
+): number {
+  if (rect.width <= 0 || rect.height <= 0 || size.width <= 0 || size.height <= 0) return 1;
+  return Math.min(size.width / rect.width, size.height / rect.height) * padding;
+}
+
+/**
  * 计算「让指定世界矩形适配画布」的视口
  * 用于"适应窗口"按钮与底图首次载入时的初始视口。
  */
 export function fitToRect(
   rect: { x: number; y: number; width: number; height: number },
   size: CanvasSize,
-  padding = 0.9,
+  padding = FIT_PADDING,
   limits = ZOOM_LIMITS,
 ): Viewport {
   if (rect.width <= 0 || rect.height <= 0 || size.width <= 0 || size.height <= 0) {
     return { x: 0, y: 0, scale: 1 };
   }
-  const scale = clamp(
-    Math.min(size.width / rect.width, size.height / rect.height) * padding,
-    limits.min,
-    limits.max,
-  );
+  const scale = clamp(fitScaleFor(rect, size, padding), limits.min, limits.max);
   return {
     x: rect.x + rect.width / 2,
     y: rect.y + rect.height / 2,

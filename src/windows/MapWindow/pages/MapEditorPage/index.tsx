@@ -1,19 +1,26 @@
 import { useCallback, useEffect, useState } from "react";
-import { App as AntApp, Button, Divider, Tooltip } from "antd";
+import { App as AntApp, Button, Divider, InputNumber, Tooltip } from "antd";
 import {
   ClearOutlined,
   DeleteOutlined,
+  MinusCircleOutlined,
   RedoOutlined,
+  ThunderboltOutlined,
   UndoOutlined,
   ZoomInOutlined,
   ZoomOutOutlined,
   ExpandOutlined,
 } from "@ant-design/icons";
 import type { CanvasSize } from "./coords";
+import { REGION_LEVELS, REGION_LEVEL_COUNT_LIMITS } from "./regions";
+import { activeLevel } from "./lod";
 import { useMapEditor } from "./hooks/useMapEditor";
 import MapCanvas from "./components/MapCanvas";
 import SpritePanel from "./components/SpritePanel";
 import "./index.scss";
+
+/** 权重低于此值的层级不再出现在工具栏的指示里（与渲染层的阈值同源） */
+const LEVEL_CHIP_EPSILON = 0.004;
 
 /**
  * MapEditorPage —— 地图编辑器主页面。
@@ -24,6 +31,8 @@ import "./index.scss";
 export default function MapEditorPage() {
   const { message, modal } = AntApp.useApp();
   const [canvasSize, setCanvasSize] = useState<CanvasSize>({ width: 0, height: 0 });
+  /** 下次生成区块用几个层级（工具栏可调，不影响已生成的区块） */
+  const [levelDepth, setLevelDepth] = useState<number>(REGION_LEVEL_COUNT_LIMITS.default);
   const editor = useMapEditor(canvasSize);
   const {
     doc,
@@ -34,7 +43,20 @@ export default function MapEditorPage() {
     imagesReady,
     canUndo,
     canRedo,
+    levelAlphas,
+    regionScales,
   } = editor;
+
+  /**
+   * 工具栏的层级指示。
+   *
+   * 直接复用画布那份权重（`levelAlphas`），而不是另算一遍 —— 两边各算一次
+   * 迟早会在边界处出现"工具栏说当前是郡、画面明明是国"的不一致。
+   */
+  const visibleLevels = levelAlphas
+    .map((alpha, level) => ({ level, alpha }))
+    .filter((v) => v.alpha > LEVEL_CHIP_EPSILON);
+  const currentLevel = regionScales.length > 0 ? activeLevel(viewport.scale, regionScales) : -1;
 
   /**
    * 画布点击。
@@ -60,8 +82,8 @@ export default function MapEditorPage() {
 
   /** 开始拖拽已选中元素：把当前快照压入撤销栈（全程只记一次） */
   const handleElementDragStart = useCallback(() => {
-    editor.commitDragStart(doc.elements);
-  }, [editor, doc.elements]);
+    editor.commitDragStart(doc);
+  }, [editor, doc]);
 
   /** 拖拽中：按世界坐标增量移动，保持抓取点与元素的相对位置不变 */
   const handleElementDragDelta = useCallback(
@@ -72,10 +94,19 @@ export default function MapEditorPage() {
     [editor, selectedId],
   );
 
+  /**
+   * 工具栏的缩放按钮。
+   *
+   * 【为什么只收方向、不收倍率】按钮此前写成 `handleZoom(1.2)` / `handleZoom(1/1.2)`，
+   * 读起来像"每点一次 ×1.2"，实际倍率却由 `editor.handleWheel` 统一决定（1.1），
+   * 这里传进去的数只被拿去判正负 —— 把 1.2 改成 1.5 不会有任何效果，纯属会骗人的
+   * 死数字（写单测时就险些按 1.2 去推缩放档位）。改成只传方向后，步长只剩
+   * handleWheel 一个出处。
+   */
   const handleZoom = useCallback(
-    (factor: number) => {
+    (direction: "in" | "out") => {
       // 以画布中心为锚点做按钮缩放
-      editor.handleWheel(factor > 1 ? -1 : 1, {
+      editor.handleWheel(direction === "in" ? -1 : 1, {
         x: canvasSize.width / 2,
         y: canvasSize.height / 2,
       });
@@ -105,6 +136,11 @@ export default function MapEditorPage() {
       onOk: () => editor.clearAll(),
     });
   }, [editor, doc.elements.length, modal, message]);
+
+  /** 用新的随机种子重新生成一棵层级区块树（每次结果都不同） */
+  const handleGenerateRegions = useCallback(() => {
+    editor.regenerateHierarchy(levelDepth);
+  }, [editor, levelDepth]);
 
   // ── 键盘快捷键：Ctrl/Cmd+Z 撤销、Ctrl/Cmd+Shift+Z 重做、Delete 删除 ──
   useEffect(() => {
@@ -159,24 +195,24 @@ export default function MapEditorPage() {
           </Tooltip>
         </div>
 
-        <Divider type="vertical" />
+        <Divider orientation="vertical" />
 
         <div className="map-editor__toolbar-group">
           <Tooltip title="缩小">
-            <Button size="small" icon={<ZoomOutOutlined />} onClick={() => handleZoom(1 / 1.2)} />
+            <Button size="small" icon={<ZoomOutOutlined />} onClick={() => handleZoom("out")} />
           </Tooltip>
           <span className="map-editor__zoom-label">
             {Math.round(viewport.scale * 100)}%
           </span>
           <Tooltip title="放大">
-            <Button size="small" icon={<ZoomInOutlined />} onClick={() => handleZoom(1.2)} />
+            <Button size="small" icon={<ZoomInOutlined />} onClick={() => handleZoom("in")} />
           </Tooltip>
           <Tooltip title="适应窗口">
             <Button size="small" icon={<ExpandOutlined />} onClick={editor.fitView} />
           </Tooltip>
         </div>
 
-        <Divider type="vertical" />
+        <Divider orientation="vertical" />
 
         <div className="map-editor__toolbar-group">
           <Tooltip title="删除选中 (Delete)">
@@ -193,6 +229,56 @@ export default function MapEditorPage() {
               icon={<ClearOutlined />}
               disabled={doc.elements.length === 0}
               onClick={handleClear}
+            />
+          </Tooltip>
+        </div>
+
+        <Divider orientation="vertical" />
+
+        {/* ── 层级区块划分 ── */}
+        <div className="map-editor__toolbar-group">
+          <Tooltip title="生成几级行政区划：1 = 只切大陆，4 = 大陆 / 洲 / 国家 / 郡">
+            <InputNumber
+              size="small"
+              min={REGION_LEVEL_COUNT_LIMITS.min}
+              max={REGION_LEVEL_COUNT_LIMITS.max}
+              value={levelDepth}
+              style={{ width: 46 }}
+              onChange={(v) =>
+                setLevelDepth(typeof v === "number" ? v : REGION_LEVEL_COUNT_LIMITS.default)
+              }
+            />
+          </Tooltip>
+          <Tooltip title="随机生成层级区块（每次结果都不同，可撤销）">
+            <Button size="small" icon={<ThunderboltOutlined />} onClick={handleGenerateRegions}>
+              生成区块
+            </Button>
+          </Tooltip>
+          {doc.regions.length > 0 && (
+            <span className="map-editor__region-count">已生成 {doc.regions.length} 块</span>
+          )}
+          {currentLevel >= 0 && (
+            <Tooltip
+              title={
+                `缩放 ${Math.round(viewport.scale * 100)}% · ` +
+                visibleLevels
+                  .map((v) => `${REGION_LEVELS[v.level].label} ${Math.round(v.alpha * 100)}%`)
+                  .join(" · ")
+              }
+            >
+              <span className="map-editor__level-chip">
+                {visibleLevels.length > 1
+                  ? visibleLevels.map((v) => REGION_LEVELS[v.level].label).join(" ↔ ")
+                  : REGION_LEVELS[currentLevel].label}
+              </span>
+            </Tooltip>
+          )}
+          <Tooltip title="清除全部区块">
+            <Button
+              size="small"
+              icon={<MinusCircleOutlined />}
+              disabled={doc.regions.length === 0}
+              onClick={editor.clearRegions}
             />
           </Tooltip>
         </div>
@@ -215,6 +301,7 @@ export default function MapEditorPage() {
             texturesReady={imagesReady}
             selectedId={selectedId}
             pendingSpriteId={pendingSpriteId}
+            levelAlphas={levelAlphas}
             onSizeChange={setCanvasSize}
             onWheel={editor.handleWheel}
             onPan={editor.handlePan}
@@ -223,7 +310,7 @@ export default function MapEditorPage() {
             onElementDragDelta={handleElementDragDelta}
           />
           <div className="map-editor__canvas-hint">
-            滚轮缩放 · 拖动空白平移 · 点击素材选中后拖动可移动
+            滚轮缩放（大陆 → 洲 → 国家 → 郡 连续衔接）· 拖动空白平移 · 点击素材选中后拖动可移动
           </div>
         </div>
       </div>

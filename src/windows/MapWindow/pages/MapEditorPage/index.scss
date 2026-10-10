@@ -48,6 +48,30 @@
   color: var(--app-text-secondary);
 }
 
+.map-editor__region-count {
+  font-size: 12px;
+  color: var(--app-text-secondary);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/**
+ * 当前层级指示。
+ *
+ * 做成"胶囊"而不是普通文字：它是一个**状态**而不是统计数字，
+ * 缩放到交界处时还会显示成「国家 ↔ 郡」，需要有别于两侧的计数文字的辨识度。
+ */
+.map-editor__level-chip {
+  font-size: 12px;
+  white-space: nowrap;
+  padding: 1px 8px;
+  border-radius: 9px;
+  color: var(--app-accent, #5b6cf9);
+  background: color-mix(in srgb, var(--app-accent, #5b6cf9) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--app-accent, #5b6cf9) 28%, transparent);
+  cursor: default;
+}
+
 // ── 主体 ──
 .map-editor__body {
   flex: 1;

@@ -4,6 +4,7 @@
  * 与 PRD §7 的 `novel_maps.content` JSON 结构对齐，便于后续接持久化。
  * 本阶段仅内存态（不落库），但结构保持一致，避免后续迁移。
  */
+import type { MapRegion } from "./regions";
 
 /** 已放置的素材实例 */
 export interface MapElement {
@@ -29,6 +30,8 @@ export interface MapDocument {
   baseImageId: string;
   /** 已放置的素材 */
   elements: MapElement[];
+  /** 随机生成的区块划分（空数组 = 未分区） */
+  regions: MapRegion[];
 }
 
 /** 创建空文档 */
@@ -37,6 +40,7 @@ export function createEmptyDocument(): MapDocument {
     version: 1,
     baseImageId: "base-1",
     elements: [],
+    regions: [],
   };
 }
 

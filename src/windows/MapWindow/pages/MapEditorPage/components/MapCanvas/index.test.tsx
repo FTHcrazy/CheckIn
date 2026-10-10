@@ -76,6 +76,12 @@ vi.mock("pixi.js", () => {
     rect() {
       return this;
     }
+    poly() {
+      return this;
+    }
+    fill() {
+      return this;
+    }
     stroke() {
       return this;
     }
@@ -113,7 +119,7 @@ import MapCanvas from "./index";
 import type { MapDocument } from "../../types";
 
 function makeDoc(): MapDocument {
-  return { version: 1, baseImageId: "base-1", elements: [] };
+  return { version: 1, baseImageId: "base-1", elements: [], regions: [] };
 }
 
 const noop = () => {};
