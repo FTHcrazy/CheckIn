@@ -1,3 +1,26 @@
+// 整卡是 antd Button（§6.1.2）：卡片外观由 CSS 定，先把组件级变量清零再声明
+@use "../../../../../../shared/styles/widget" as widget;
+
+.bs-card.ant-btn {
+  @include widget.ant-button-reset;
+  --ant-control-height: auto;
+  --ant-border-radius: var(--app-radius-panel);
+  --ant-line-width: 1px;
+  --ant-button-default-bg: var(--app-surface);
+  --ant-button-default-border-color: var(--app-border);
+  --ant-button-default-hover-bg: var(--app-surface);
+  --ant-button-default-hover-border-color: var(--app-border);
+  --ant-button-default-active-bg: var(--app-surface);
+  --ant-button-default-active-border-color: var(--app-border);
+
+  /* 下面这些属性 antd 不接管，直接写在自己身上即可 */
+  display: flex;
+  align-items: stretch;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
 .bs-card {
   background: var(--app-surface);
   border: 1px solid var(--app-border);
@@ -32,26 +55,83 @@
     }
   }
 
-  /* ── 列表视图：横排小封面 ── */
-  &--list {
+  /* ── 列表视图：横排行（标题行 + 合并信息行 + 右缘箭头）──
+     行是满宽的，不适合网格卡那套「上浮 2px」的 hover：改用底色 + 描边表达
+     「这一行可进」，视线不跳。标题行不再 space-between —— 状态标签紧贴标题，
+     右缘只留箭头，避免「标签与标题脱开、又和箭头挤在一条线上」的两截感。
+
+     ⚠️ 必须写成 `&--list.ant-btn`：布局属性（display / align-items / padding）
+     要压过基类 `.bs-card.ant-btn` 的 `padding: 0; align-items: stretch`，
+     只写 `.bs-card--list`（0,1,0）会被 (0,2,0) 的基类吃掉 —— 表现为
+     「列表行内边距全丢、封面贴死边角」。 */
+  &--list.ant-btn {
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 10px 14px 10px 10px;
+    padding: 8px 12px 8px 8px;
+
+    &:hover,
+    &:focus-visible {
+      transform: none;
+      box-shadow: none;
+      background: var(--app-surface-hover);
+      border-color: var(--app-border-strong);
+    }
 
     .bs-card__cover {
       flex: none;
-      width: 46px;
-      height: 60px;
+      width: 38px;
+      height: 50px;
+      border-radius: 7px;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+    }
+
+    .bs-card__cover-char {
+      font-size: 20px;
     }
 
     .bs-card__info {
       flex: 1;
       min-width: 0;
+      gap: 3px;
     }
 
-    .bs-card__updated {
-      margin-top: 1px;
+    .bs-card__name-row {
+      justify-content: flex-start;
+      gap: 8px;
+    }
+
+    .bs-card__badge {
+      padding: 0 7px;
+      line-height: 18px;
+    }
+
+    /* 信息行可能比面板长（「连载中 · 5 万字 · 21 章 · 今天 10:45 更新」），
+       整行省略号收口，不让它顶开卡片宽度 */
+    .bs-card__meta {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* 右缘尾随区：箭头默认很淡，hover 时点亮并右移一点，
+       给「这一行可进」的方向感 */
+    .bs-card__trail {
+      flex: none;
+      display: flex;
+      align-items: center;
+      padding-left: 4px;
+    }
+
+    .bs-card__go {
+      font-size: 12px;
+      color: var(--app-text-disabled);
+      transition: color 160ms ease, transform 160ms ease;
+    }
+
+    &:hover .bs-card__go {
+      color: var(--app-primary);
+      transform: translateX(2px);
     }
   }
 

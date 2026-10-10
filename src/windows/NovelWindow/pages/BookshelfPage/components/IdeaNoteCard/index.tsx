@@ -5,7 +5,7 @@ import {
   PushpinOutlined,
   RollbackOutlined,
 } from "@ant-design/icons";
-import { Dropdown, Popconfirm, Tooltip } from "antd";
+import { Button, Dropdown, Popconfirm, Tooltip } from "antd";
 import { formatDayLabel } from "../../bookshelf-utils";
 import type { NovelNoteDTO } from "@/shared/types/electron";
 import "./index.scss";
@@ -50,14 +50,13 @@ export default function IdeaNoteCard({
 
       <div className="bs-idea__actions">
         <Tooltip title={note.pinned ? "取消置顶" : "置顶"}>
-          <button
-            type="button"
+          <Button
             className={`bs-idea__action${note.pinned ? " is-on" : ""}`}
             onClick={onTogglePin}
             aria-label={note.pinned ? "取消置顶" : "置顶"}
           >
             {note.pinned ? <PushpinFilled /> : <PushpinOutlined />}
-          </button>
+          </Button>
         </Tooltip>
 
         {unassigned ? (
@@ -73,25 +72,23 @@ export default function IdeaNoteCard({
             }}
           >
             <Tooltip title={workOptions.length === 0 ? "先创建作品再归档" : "归档到作品"}>
-              <button
-                type="button"
+              <Button
                 className="bs-idea__action"
                 aria-label="归档到作品"
               >
                 <FolderAddOutlined />
-              </button>
+              </Button>
             </Tooltip>
           </Dropdown>
         ) : (
           <Tooltip title="退回灵感池">
-            <button
-              type="button"
+            <Button
               className="bs-idea__action"
               onClick={onUnassign}
               aria-label="退回灵感池"
             >
               <RollbackOutlined />
-            </button>
+            </Button>
           </Tooltip>
         )}
 
@@ -102,9 +99,9 @@ export default function IdeaNoteCard({
           onConfirm={onRemove}
         >
           <Tooltip title="删除">
-            <button type="button" className="bs-idea__action" aria-label="删除灵感">
+            <Button className="bs-idea__action" aria-label="删除灵感">
               <DeleteOutlined />
-            </button>
+            </Button>
           </Tooltip>
         </Popconfirm>
       </div>

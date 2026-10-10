@@ -47,8 +47,35 @@
     border-radius: var(--app-radius-pill);
     background: var(--app-accent-green-weak);
     color: var(--app-accent-green);
-    font-size: 11px;
+    font-size: 12px;
     line-height: 16px;
+  }
+
+  /* 熟练度进度条（REQ-014）：条占满剩余宽，右侧标出档位量纲。
+     外观只改 Progress 的组件级变量 —— 它的默认轨道色是 `colorFillSecondary`，
+     在浅色主题下与面板底的灰度差几乎看不出来。 */
+  &__prog {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding-left: 1px;
+  }
+
+  &__bar.ant-progress {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    line-height: 1;
+    --ant-progress-default-color: var(--app-accent-green);
+    --ant-progress-remaining-color: var(--app-surface-active);
+    --ant-progress-line-border-radius: var(--app-radius-pill);
+  }
+
+  &__scale {
+    flex: none;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: var(--app-text-secondary-strong);
   }
 
   &__effects {

@@ -1,3 +1,4 @@
+import { Button } from "antd";
 import {
   ApartmentOutlined,
   EnvironmentOutlined,
@@ -88,14 +89,13 @@ export default function ToolLauncher({ onOpenNaming }: ToolLauncherProps) {
           );
 
           return tool.onOpen ? (
-            <button
+            <Button
               key={tool.id}
-              type="button"
               className="nv-tools__card"
               onClick={tool.onOpen}
             >
               {body}
-            </button>
+            </Button>
           ) : (
             <div key={tool.id} className="nv-tools__card is-planned">
               {body}

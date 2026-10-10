@@ -1,4 +1,5 @@
-import { Select, Tooltip } from "antd";
+import { Button, Select, Tooltip } from "antd";
+import type { Ref } from "react";
 import {
   ArrowLeftOutlined,
   ColumnHeightOutlined,
@@ -11,13 +12,15 @@ import {
 import { SAVE_STATE_TEXT } from "../../novel-config";
 import { formatClock, formatThousands, type WorkMeta } from "../../novel-utils";
 import { useSaveState } from "../../store/useNovelEditorStore";
-import WorkManageMenu from "../WorkManageMenu";
+import WorkManageMenu, { type WorkManageMenuHandle } from "../WorkManageMenu";
 import type { NovelWork } from "../../types";
 import "./index.scss";
 
 interface NovelTopBarProps {
   works: NovelWork[];
   activeWorkId: string;
+  /** 作品管理菜单的命令式句柄（空书架空态里「新建作品」复用它） */
+  menuRef?: Ref<WorkManageMenuHandle>;
   /** 作品聚合信息（R29）：章节数 / 字数，随下拉选项展示 */
   workMeta: Map<string, WorkMeta>;
   volumeName: string;
@@ -44,8 +47,8 @@ interface NovelTopBarProps {
   onToggleSettings: () => void;
   /** 历史快照按钮即开关：开 → 关 → 开 循环切换 */
   onToggleHistory: () => void;
-  /** 行囊按钮即开关：再点一次收起 */
-  onTogglePack: () => void;
+  /** 行囊按钮即开关：再点一次收起；`Alt+点击` = 速览形态（3 秒后自动收起，不写记忆） */
+  onTogglePack: (peek?: boolean) => void;
   /** 返回书架（书架主页接入后传入）；未传则不渲染返回按钮 */
   onBackToShelf?: () => void;
 }
@@ -61,6 +64,7 @@ interface NovelTopBarProps {
 export default function NovelTopBar({
   works,
   activeWorkId,
+  menuRef,
   workMeta,
   volumeName,
   chapterName,
@@ -95,15 +99,14 @@ export default function NovelTopBar({
     <div className="nv-topbar">
       {onBackToShelf && (
         <Tooltip title="返回书架">
-          <button
-            type="button"
+          <Button
             className="nv-topbar__back"
             onClick={onBackToShelf}
             aria-label="返回书架"
           >
             <ArrowLeftOutlined />
             <span>书架</span>
-          </button>
+          </Button>
         </Tooltip>
       )}
 
@@ -131,6 +134,7 @@ export default function NovelTopBar({
       />
 
       <WorkManageMenu
+        ref={menuRef}
         activeWorkName={activeWork?.name ?? ""}
         activeMeta={activeMeta}
         hasActiveChapter={hasActiveChapter}
@@ -160,66 +164,60 @@ export default function NovelTopBar({
 
       <div className="nv-topbar__actions">
         <Tooltip title={leftOpen ? "收起章节栏" : "展开章节栏"}>
-          <button
-            type="button"
+          <Button
             className={`nv-topbar__icon${leftOpen ? " is-on" : ""}`}
             onClick={onToggleLeft}
             aria-label="章节栏"
           >
             <MenuOutlined />
-          </button>
+          </Button>
         </Tooltip>
         <Tooltip title={rightOpen ? "收起支撑面板" : "展开支撑面板"}>
-          <button
-            type="button"
+          <Button
             className={`nv-topbar__icon${rightOpen ? " is-on" : ""}`}
             onClick={onToggleRight}
             aria-label="支撑面板"
           >
             <LayoutOutlined />
-          </button>
+          </Button>
         </Tooltip>
         <Tooltip title="打字机模式">
-          <button
-            type="button"
+          <Button
             className={`nv-topbar__icon${typewriter ? " is-on" : ""}`}
             onClick={onToggleTypewriter}
             aria-label="打字机模式"
           >
             <ColumnHeightOutlined />
-          </button>
+          </Button>
         </Tooltip>
-        <Tooltip title="行囊（主角随身盘点 · Ctrl+Shift+B）">
-          <button
-            type="button"
+        <Tooltip title="行囊（主角随身盘点 · Ctrl+Shift+B；Alt+点击 = 速览）">
+          <Button
             className={`nv-topbar__icon${packOpen ? " is-on" : ""}`}
-            onClick={onTogglePack}
+            onClick={(event) => onTogglePack(event.altKey)}
             aria-label="行囊"
             aria-pressed={packOpen}
           >
             <ShoppingOutlined />
-          </button>
+          </Button>
         </Tooltip>
         <Tooltip title={snapshotOpen ? "收起历史快照" : "历史快照"}>
-          <button
-            type="button"
+          <Button
             className={`nv-topbar__icon${snapshotOpen ? " is-on" : ""}`}
             onClick={onToggleHistory}
             aria-label="历史快照"
             aria-pressed={snapshotOpen}
           >
             <HistoryOutlined />
-          </button>
+          </Button>
         </Tooltip>
         <Tooltip title="设置">
-          <button
-            type="button"
+          <Button
             className={`nv-topbar__icon${settingsOpen ? " is-on" : ""}`}
             onClick={onToggleSettings}
             aria-label="设置"
           >
             <SettingOutlined />
-          </button>
+          </Button>
         </Tooltip>
       </div>
     </div>

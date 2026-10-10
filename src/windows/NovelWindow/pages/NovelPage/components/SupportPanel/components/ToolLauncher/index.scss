@@ -1,4 +1,12 @@
-/* 工具箱启动器（NL 设计稿 §3·工具区） */
+@use "../../../../../../../../shared/styles/widget" as widget;
+
+/* 工具箱启动器（NL 设计稿 §3·工具区）
+
+   .nv-tools__card 有两种宿主：可进入的工具是 antd `Button`，
+   规划中的工具是 `<div>` 占位（可看不可点）。因此卡片的基础盒属性保留在这里
+   给 div 用；Button 版本的外观一律走下面的 `.ant-btn` 变量块——antd 的规则
+   比特异性更高，会盖掉这里的 border / background / border-radius，
+   hover / active 也只读变量，自写 `:hover` 属性压不过（AGENTS §6.1.2）。 */
 
 .nv-tools {
   display: flex;
@@ -6,9 +14,12 @@
 
   &__grid {
     display: grid;
+    /* 单列网格：显式 0 下限，见 EntityPanel__list 的说明 */
+    grid-template-columns: minmax(0, 1fr);
     gap: 8px;
   }
 
+  /* 卡片本体（规划中的 <div> 占位卡走这套） */
   &__card {
     display: flex;
     gap: 11px;
@@ -20,25 +31,39 @@
     font-family: inherit;
     text-align: left;
     cursor: pointer;
-    transition: border-color 160ms ease, box-shadow 160ms ease,
-      transform 160ms ease;
-
-    &:hover {
-      border-color: var(--app-primary);
-      box-shadow: var(--app-shadow-card);
-      transform: translateY(-2px);
-    }
 
     /* 规划中的工具：可看不可点，避免给用户假入口 */
     &.is-planned {
       cursor: default;
       opacity: 0.68;
+    }
+  }
 
-      &:hover {
-        border-color: var(--app-border);
-        box-shadow: none;
-        transform: none;
-      }
+  /* 可进入的工具：antd Button 承载，先清零再只声明变量 */
+  &__card.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-border-radius: var(--app-radius-panel);
+    --ant-line-width: 1px;
+    --ant-button-default-bg: var(--app-surface);
+    --ant-button-default-color: var(--app-text);
+    --ant-button-default-border-color: var(--app-border);
+    --ant-button-default-hover-bg: var(--app-surface);
+    --ant-button-default-hover-color: var(--app-text);
+    --ant-button-default-hover-border-color: var(--app-primary);
+    --ant-button-default-active-bg: var(--app-surface);
+    --ant-button-default-active-color: var(--app-text);
+    --ant-button-default-active-border-color: var(--app-primary);
+    /* 卡片靠恒定投影托起：antd 只给了一个不分状态的 shadow 变量
+       （参考 CharacterPack：--ant-button-default-shadow） */
+    --ant-button-default-shadow: var(--app-shadow-card);
+    display: flex;
+    gap: 11px;
+    padding: 12px;
+    text-align: left;
+
+    /* 悬停浮起：transform antd 不接管（§6.1.2 允许保留） */
+    &:hover {
+      transform: translateY(-2px);
     }
   }
 

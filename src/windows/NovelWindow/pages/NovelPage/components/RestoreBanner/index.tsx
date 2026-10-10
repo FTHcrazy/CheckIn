@@ -1,3 +1,4 @@
+import { Button } from "antd";
 import { WarningFilled } from "@ant-design/icons";
 import { formatClock } from "../../novel-utils";
 import type { NovelRecovery } from "../../types";
@@ -25,9 +26,9 @@ export default function RestoreBanner({
         检测到上次未正常退出，已恢复至 {formatClock(recovery.snapshotTime)}{" "}
         的自动快照（含本次新增 {recovery.deltaWords} 字）
       </span>
-      <button type="button" className="nv-recbar__ack" onClick={onAcknowledge}>
+      <Button className="nv-recbar__ack" onClick={onAcknowledge}>
         知道了
-      </button>
+      </Button>
     </div>
   );
 }

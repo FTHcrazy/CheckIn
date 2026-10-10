@@ -7,7 +7,7 @@ import {
   useState,
 } from "react";
 import type { CSSProperties, KeyboardEvent, MouseEvent as ReactMouseEvent, Ref } from "react";
-import { Empty, Input } from "antd";
+import { Button, Empty, Input } from "antd";
 import {
   defaultKeymap,
   history,
@@ -48,6 +48,16 @@ interface EditorPaneProps {
   onTermLeave: () => void;
   onTermClick: (entityId: string) => void;
   onCreateChapter: () => void;
+  /**
+   * 空态语义：`no-work` = 整个书架还没有任何作品（要引导新建作品，
+   * 此时「写下第一章」点了也无处可落）；`no-chapter` = 有作品但没选中章节。
+   * 默认 `no-chapter`，保持既有调用方行为不变。
+   */
+  emptyKind?: "no-work" | "no-chapter";
+  /** 空态为 `no-work` 时点「新建作品」的回调 */
+  onCreateWork?: () => void;
+  /** 书架 → 编辑器：空书架时的「导入书籍」入口（可选） */
+  onImportBook?: () => void;
   onRenameChapter: (chapterId: string, title: string) => void;
   /** 续写位置恢复（R6）：与当前章节匹配时应用一次，完成后回调清空 */
   restore: RestorePosition | null;
@@ -59,14 +69,23 @@ interface EditorPaneProps {
 }
 
 /**
- * 命令式 API（R18 / 步骤三：起名工具「插入正文」出口）
+ * 命令式 API（R18 / 步骤三：起名工具「插入正文」出口；REQ-034：行囊表格「插入本章末尾」）
  *
- * 用于在不动 EditorPane 受控 props 的情况下、向光标处插入文本
- * （起名工具面板按名字一键插入正文）。其它面板内部动作仍走 onChange。
+ * 用于在不动 EditorPane 受控 props 的情况下、向正文里插入文本
+ * （起名工具面板按名字一键插入；行囊按模块把 Markdown 表格追加到章末）。
+ * 其它面板内部动作仍走 onChange。
  */
 export interface EditorPaneHandle {
   /** 在当前光标处插入文本；选区非空时替换选区，插入后光标移到插入末尾 */
   insertText: (text: string) => void;
+  /**
+   * 追加到本章正文末尾（REQ-034）。
+   *
+   * 与 `insertText` 分开而不是「先把光标移到文末再调它」：那会顺手改掉作者的
+   * 光标位置 —— 他正写在半路，插一张表不该把他弹到章末去。这里只动文档尾部，
+   * 光标跟着落到插入内容的末尾（作者刚插完，多半要接着在那后面看一眼）。
+   */
+  appendText: (text: string) => void;
 }
 
 /** 排版相关的动态样式走独立 compartment，改字号不必重建编辑器 */
@@ -132,6 +151,9 @@ export default function EditorPane({
   onTermLeave,
   onTermClick,
   onCreateChapter,
+  emptyKind = "no-chapter",
+  onCreateWork,
+  onImportBook,
   onRenameChapter,
   restore,
   onRestoreDone,
@@ -206,6 +228,19 @@ export default function EditorPane({
                 userEvent: "input.insert",
               },
         );
+        view.focus();
+      },
+      appendText: (text: string): void => {
+        const view = viewRef.current;
+        if (!view || !text) return;
+        const end = view.state.doc.length;
+        // 前面补两个换行：章末紧贴着上一个自然段的句子时，标题要能独立成段
+        const insert = `\n\n${text}`;
+        view.dispatch({
+          changes: { from: end, insert },
+          selection: { anchor: end + insert.length },
+          userEvent: "input.insert",
+        });
         view.focus();
       },
     }),
@@ -566,8 +601,7 @@ export default function EditorPane({
               onKeyDown={handleTitleKeyDown}
             />
           ) : (
-            <button
-              type="button"
+            <Button
               className="nv-editor__title-text"
               title="点击修改章节名称"
               onClick={startTitleEdit}
@@ -582,7 +616,7 @@ export default function EditorPane({
                 </span>
               )}
               {chapter.title}
-            </button>
+            </Button>
           )}
           {/* 状态徽标只在完稿时出现；草稿是默认态，常驻只会变成噪音 */}
           {chapter.status === "done" && (
@@ -601,18 +635,51 @@ export default function EditorPane({
       </div>
       {!chapter && (
         <div className="nv-editor__veil">
-          <Empty
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description="还没有选中章节"
-          >
-            <button
-              type="button"
-              className="nv-editor__create"
-              onClick={onCreateChapter}
+          {emptyKind === "no-work" ? (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description={
+                <span className="nv-editor__empty-desc">
+                  书架还是空的
+                  <span className="nv-editor__empty-hint">
+                    新建一部作品开始写，或从 TXT／DOCX 导入整本书
+                  </span>
+                </span>
+              }
             >
-              写下第一章
-            </button>
-          </Empty>
+              <div className="nv-editor__empty-actions">
+                {onCreateWork && (
+                  <Button
+                    type="primary"
+                    className="nv-editor__create"
+                    onClick={onCreateWork}
+                  >
+                    新建作品
+                  </Button>
+                )}
+                {onImportBook && (
+                  <Button
+                    className="nv-editor__import"
+                    onClick={onImportBook}
+                  >
+                    导入书籍
+                  </Button>
+                )}
+              </div>
+            </Empty>
+          ) : (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description="还没有选中章节"
+            >
+              <Button
+                className="nv-editor__create"
+                onClick={onCreateChapter}
+              >
+                写下第一章
+              </Button>
+            </Empty>
+          )}
         </div>
       )}
     </div>

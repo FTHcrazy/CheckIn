@@ -21,6 +21,7 @@ import type {
   TextSegment,
   WordCountMode,
 } from "./types";
+import { formatRelativeTime as relativeTime } from "@/shared/utils/format";
 import {
   DEFAULT_SETTINGS,
   ENTITY_TYPE_META,
@@ -54,12 +55,7 @@ export function countWords(text: string, mode: WordCountMode): number {
 }
 
 /** 千分位分隔，用于状态条与章节树右侧字数 */
-export function formatThousands(value: number): string {
-  return String(Math.max(0, Math.round(value))).replace(
-    /\B(?=(\d{3})+(?!\d))/g,
-    ",",
-  );
-}
+export { formatThousands } from "@/shared/utils/format";
 
 /** 章节序号补零：7 → "07" */
 export function padIndex(index: number): string {
@@ -78,15 +74,7 @@ export function formatRelativeTime(
   timestamp: number,
   now: number = Date.now(),
 ): string {
-  const diff = now - timestamp;
-  if (diff < 0) return "刚刚";
-  const minutes = Math.floor(diff / 60_000);
-  if (minutes < 1) return "刚刚";
-  if (minutes < 60) return `${minutes} 分钟前`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} 小时前`;
-  const date = new Date(timestamp);
-  return `${date.getMonth() + 1}月${date.getDate()}日`;
+  return relativeTime(timestamp, now);
 }
 
 /**
@@ -335,22 +323,39 @@ export function buildOutlineTree(
   const numbers = buildChapterNumbers(volumes, chapters);
 
   return buildChapterGroups(volumes, chapters).map((group, index) => {
-    const chapterNodes: OutlineNode[] = group.chapters.map((chapter) => ({
-      kind: "chapter",
-      id: chapter.id,
-      chapterId: chapter.id,
-      title: chapter.title,
-      label: formatNumberedLabel(
-        options.numberStyle,
-        options.chapterSuffix,
-        numbers.get(chapter.id) ?? 1,
-      ),
-      note: chapter.outlineNote ?? "",
-      wordCount: chapter.wordCount,
-      status: chapter.status,
-    }));
-
     const owned = entries.filter((entry) => entry.volumeId === group.volume.id);
+
+    // 章节行要标出「本章埋了伏笔」：先按 chapterId 归并一次，
+    // 避免「每章各扫一遍全量伏笔」的 O(章 × 伏笔)
+    const planted = new Map<string, { total: number; open: number }>();
+    for (const item of owned) {
+      if (!item.chapterId) continue; // 卷级伏笔不绑章，由卷头计数承载
+      const record = planted.get(item.chapterId) ?? { total: 0, open: 0 };
+      record.total += 1;
+      if (item.status === "open") record.open += 1;
+      planted.set(item.chapterId, record);
+    }
+
+    const chapterNodes: OutlineNode[] = group.chapters.map((chapter) => {
+      const own = planted.get(chapter.id);
+      return {
+        kind: "chapter",
+        id: chapter.id,
+        chapterId: chapter.id,
+        title: chapter.title,
+        label: formatNumberedLabel(
+          options.numberStyle,
+          options.chapterSuffix,
+          numbers.get(chapter.id) ?? 1,
+        ),
+        note: chapter.outlineNote ?? "",
+        wordCount: chapter.wordCount,
+        status: chapter.status,
+        foreshadows: own?.total ?? 0,
+        openForeshadows: own?.open ?? 0,
+      };
+    });
+
     const foreshadowNodes: OutlineNode[] = [...owned]
       .sort(
         (a, b) =>
@@ -365,6 +370,8 @@ export function buildOutlineTree(
           kind: "foreshadow" as const,
           id: entry.id,
           entryId: entry.id,
+          volumeId: group.volume.id,
+          chapterId: entry.chapterId ?? "",
           title: entry.title,
           note: entry.note,
           resolved: entry.status === "resolved",
@@ -467,6 +474,8 @@ export function patchOutlineEntry(
     next.title = trimmed;
   }
   if (patch.note !== undefined) next.note = patch.note.trim();
+  // 埋设章节改绑：空串退回卷级（OutlineEntry.chapterId 缺省即卷级）
+  if (patch.chapterId !== undefined) next.chapterId = patch.chapterId || undefined;
   return entries.map((entry) => (entry.id === entryId ? next : entry));
 }
 

@@ -1,3 +1,4 @@
+import { Button } from "antd";
 import { useEffect, useState } from "react";
 import { calcGoalProgress, formatThousands } from "../../novel-utils";
 import { useWritingStats } from "../../store/useNovelEditorStore";
@@ -47,8 +48,7 @@ export default function StatusBar({
         <b>{stats.speed}</b> 字/分
       </span>
 
-      <button
-        type="button"
+      <Button
         className={`nv-status__anno${annotationOn ? " is-on" : ""}`}
         onClick={onToggleAnnotation}
         aria-pressed={annotationOn}
@@ -56,7 +56,7 @@ export default function StatusBar({
       >
         <span className="nv-status__anno-dot" />
         标注 {annotationOn ? "开" : "关"}
-      </button>
+      </Button>
 
       <div className="nv-status__goal">
         <span className="nv-status__goal-label">

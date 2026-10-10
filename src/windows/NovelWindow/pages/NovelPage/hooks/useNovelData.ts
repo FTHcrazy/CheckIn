@@ -116,10 +116,16 @@ export function useNovelData() {
     const seq = (loadSeqRef.current += 1);
     setLoading(true);
     try {
-      const next = await fetchNovelBundle();
+      // 三个请求互不依赖，串行会把首屏拖成三倍往返（且 bundle 要等位置记忆
+      // 那一次 IPC 才落地，注释里写的「并行加载」才名副其实）
+      const [next, positionJson, favoritesJson] = await Promise.all([
+        fetchNovelBundle(),
+        fetchLastPosition(),
+        fetchNameFavorites(),
+      ]);
       if (seq !== loadSeqRef.current) return;
       const saved = sanitizeRestorePosition(
-        parseJsonOrNull(await fetchLastPosition()),
+        parseJsonOrNull(positionJson),
         next.works,
         next.chapters,
       );
@@ -136,8 +142,6 @@ export function useNovelData() {
       // 收藏夹在库里是 JSON 字符串（config 整读整写），必须先 parse 再交给
       // sanitize —— 少了 parseJsonOrNull 时 Array.isArray(字符串) 恒为 false，
       // 表现为「每次启动收藏夹都是空的」，且首次收藏会用空数组覆盖历史数据
-      const favoritesJson = await fetchNameFavorites();
-      if (seq !== loadSeqRef.current) return;
       setNameFavorites(sanitizeNameFavorites(parseJsonOrNull(favoritesJson)));
       setLoadError("");
     } catch {
@@ -532,7 +536,8 @@ export function useNovelData() {
 
   /**
    * 删除作品（R29）：本地级联摘除 + 远端事务级联删除。
-   * 删的是当前作品 → 切到剩余第一部；全部删完 → 重新装载（主进程重新播种模板书籍）。
+   * 删的是当前作品 → 切到剩余第一部；全部删完 → 清空活动态并重载，
+   * **停在空态**（主进程不再自动播种模板书，新用户默认就是空书架）。
    */
   const deleteWork = useCallback(
     (workId: string): void => {
@@ -577,7 +582,10 @@ export function useNovelData() {
         return;
       }
 
-      // 最后一部也被删除：清掉活动态后重新装载，主进程会重新播种「未命名作品」
+      // 最后一部也被删除：清掉活动态后重新装载。
+      // ⚠️ 这里必须先把 activeWorkId / activeChapterId 清空 —— load 只在
+      // current 为空时才接受远端首选项，残留旧 id 会让编辑器停在已不存在的作品上。
+      // 重载后 works 为空是**正常终态**：编辑器显示空态引导「新建作品」。
       setActiveWorkId("");
       setActiveChapterId(null);
       void load();

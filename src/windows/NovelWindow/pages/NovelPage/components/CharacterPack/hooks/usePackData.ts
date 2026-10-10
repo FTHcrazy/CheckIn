@@ -12,6 +12,7 @@ import type {
   PackLayout,
   PackLevelSystem,
   PackModifier,
+  PackPreset,
   PackRealmLink,
   PackRecord,
   PackUnitSystem,
@@ -34,6 +35,8 @@ export interface PackDoc {
   modifiers: PackModifier[];
   unitSystems: PackUnitSystem[];
   layouts: PackLayout[];
+  /** 换装方案（REQ-032）：与其它表一样属于设定数据，随草稿走 */
+  presets: PackPreset[];
 }
 
 export interface PackMeta {
@@ -55,6 +58,7 @@ function fromBundle(bundle: PackBundleDTO): PackDoc | null {
     modifiers: bundle.modifiers,
     unitSystems: bundle.unitSystems,
     layouts: bundle.layouts,
+    presets: bundle.presets ?? [],
   };
 }
 
@@ -73,6 +77,7 @@ function parseDraft(payload: string): PackDoc | null {
       modifiers: doc.modifiers ?? [],
       unitSystems: doc.unitSystems ?? [],
       layouts: doc.layouts ?? [],
+      presets: doc.presets ?? [],
     };
   } catch {
     return null;

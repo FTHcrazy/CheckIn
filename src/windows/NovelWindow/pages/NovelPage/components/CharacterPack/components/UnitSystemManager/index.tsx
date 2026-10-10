@@ -1,8 +1,10 @@
-import { Button, Input, InputNumber, Modal, Switch } from "antd";
+import { Button, Input, InputNumber, Modal, Switch, Upload } from "antd";
 import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
 import type { PackPanelApi } from "../../hooks/usePackPanel";
 import { CURRENCY_TEMPLATE, PROFICIENCY_TEMPLATE } from "../../pack-config";
 import { formatRatio, type RatioLevel, type ThresholdLevel } from "../../pack-utils";
+import { buildUnitsJson, parseUnitsJson } from "../../pack-units";
+import { copyText, downloadText } from "../../services/pack-export";
 import "./index.scss";
 
 interface UnitSystemManagerProps {
@@ -57,6 +59,55 @@ export default function UnitSystemManager({ api }: UnitSystemManagerProps) {
 
   const sorted = [...currencyLevels].sort((a, b) => b.ratioToBase - a.ratioToBase);
   const baseName = sorted[sorted.length - 1]?.name;
+
+  /** 导出：把库里这两套量纲拼成一段可交换的 JSON（REQ-022） */
+  const unitsJson = () => buildUnitsJson(api.doc?.unitSystems ?? []);
+
+  const handleCopyUnits = async (): Promise<void> => {
+    const ok = await copyText(unitsJson());
+    if (ok) api.showToast("已复制量纲 JSON");
+    else api.showToast("复制失败，请改用「下载」", "warning");
+  };
+
+  const handleDownloadUnits = async (): Promise<void> => {
+    const path = await downloadText("行囊-量纲.json", unitsJson(), "json", "JSON");
+    if (path) api.showToast(`已导出：${path}`);
+    else api.showToast("已取消导出", "info");
+  };
+
+  /**
+   * 导入：**覆盖同用途的那一套**（货币覆盖货币、熟练度覆盖熟练度），不做合并。
+   *
+   * 合并会让「档位被删掉」变成静默失败（旧档位还在），而作者看着文件里没有它
+   * 会以为导入没生效。覆盖是可解释的语义，且这一步只改内存 + 标脏，
+   * 真写库要等显式保存 —— 导错了「撤销全部」就能回去。
+   */
+  const handleImportUnits = async (file: File): Promise<void> => {
+    // 不给初值 `""`：读了才赋值，读失败直接 return —— 给初值会变成一次
+    // 永远不会被用到的赋值（`no-useless-assignment`）。
+    let text: string;
+    try {
+      text = await file.text();
+    } catch {
+      api.showToast("这个文件读不出来", "warning");
+      return;
+    }
+    const result = parseUnitsJson(text);
+    if (!result.ok) {
+      api.showToast(`导入失败：${result.error}`, "warning");
+      return;
+    }
+    for (const unit of result.units) {
+      const existing = unit.use === "currency" ? currency : proficiency;
+      api.upsertUnitSystem(unit.kind, unit.use, {
+        id: existing?.id,
+        name: unit.name,
+        levels: unit.levels,
+        config: { ...unit.config, use: unit.use },
+      });
+    }
+    api.showToast(`已导入 ${result.units.length} 套量纲（保存后生效）`, "success");
+  };
 
   return (
     <Modal
@@ -226,6 +277,33 @@ export default function UnitSystemManager({ api }: UnitSystemManagerProps) {
           ) : null}
         </div>
       </section>
+
+      <div className="cpk-unit__io">
+        <span className="cpk-unit__iohead">量纲 JSON</span>
+        <span className="cpk-unit__ioacts">
+          <Button size="small" onClick={() => void handleCopyUnits()} title="复制这段 JSON">
+            复制
+          </Button>
+          <Button size="small" onClick={() => void handleDownloadUnits()} title="存成 .json 文件">
+            下载
+          </Button>
+          {/* 选文件走 antd Upload 的 beforeUpload（自己读文本、返回 false 阻止上传），
+              渲染层就不需要为主进程再开一条「读文件」通道 */}
+          <Upload
+            accept=".json,application/json"
+            showUploadList={false}
+            maxCount={1}
+            beforeUpload={(file) => {
+              void handleImportUnits(file);
+              return false;
+            }}
+          >
+            <Button size="small" title="从 .json 文件导入（覆盖同用途的那套）">
+              导入
+            </Button>
+          </Upload>
+        </span>
+      </div>
 
       <p className="cpk-guard__sub">
         修改量纲不会清空已有数值 —— 作者换一套换算关系时，原始数值必须保留（{CURRENCY_TEMPLATE.length}

@@ -29,6 +29,8 @@ interface PackCharacterRow {
   entity_id: string | null;
   realm_at: string | null;
   note: string;
+  weight_limit: number;
+  capacity_limit: number;
   sort_order: number;
 }
 
@@ -41,6 +43,7 @@ interface PackAttributeRow {
   decimals: number;
   unit: string;
   sort_order: number;
+  updated_at: number;
 }
 
 interface PackSlotRow {
@@ -67,6 +70,7 @@ interface PackItemRow {
   equipped_slot_id: string | null;
   slot_index: number | null;
   source_chapter_id: string | null;
+  weight: number;
   updated_at: number;
 }
 
@@ -79,6 +83,7 @@ interface PackSkillRow {
   proficiency_raw: number;
   tags: string;
   sort_order: number;
+  updated_at: number;
 }
 
 interface PackModifierRow {
@@ -97,12 +102,23 @@ interface PackModifierRow {
   cost: string | null;
   cooldown: number | null;
   duration: string | null;
+  rounds_left: number | null;
   target: string | null;
   trigger: string | null;
   condition: string | null;
   note: string;
   disabled: number;
   sort_order: number;
+}
+
+interface PackPresetRow {
+  id: string;
+  character_id: string;
+  name: string;
+  payload: string;
+  note: string;
+  sort_order: number;
+  updated_at: number;
 }
 
 interface PackUnitSystemRow {
@@ -137,6 +153,18 @@ interface PackDraftRow {
   payload: string;
   dirty_count: number;
   updated_at: number;
+}
+
+/**
+ * 草稿 payload 的形状：与渲染层 `PackDoc` 同构。
+ *
+ * 索引签名是**刻意的**：新增字段（attributes / skills / …）会原样透传，
+ * 快速记账不需要跟着改；但 `items` 必须显式声明，否则「往草稿里塞一件物品」
+ * 这一步就失去了类型约束。
+ */
+interface PackDraftDoc {
+  items?: PackItemDto[];
+  [key: string]: unknown;
 }
 
 interface NovelLevelRow2 {
@@ -178,6 +206,10 @@ export interface PackCharacterDto {
   /** 未绑定实体时的行囊内境界（JSON 字符串 `{levelId, sub}`） */
   realmAt: string;
   note: string;
+  /** 负重上限（REQ-033）；0 = 不限 */
+  weightLimit: number;
+  /** 物品栏格数上限（F-5）；0 = 不限 */
+  capacityLimit: number;
   sortOrder: number;
 }
 
@@ -196,6 +228,8 @@ export interface PackAttributeDto {
   decimals: number;
   unit: string;
   sortOrder: number;
+  /** 最近一次改动的落点时刻（REQ-028 本章变动角标）；0 = 从无改动记录 */
+  updatedAt: number;
 }
 
 export interface PackSlotDto {
@@ -222,6 +256,8 @@ export interface PackItemDto {
   equippedSlotId: string;
   slotIndex: number | null;
   sourceChapterId: string;
+  /** 单件重量（REQ-033）；0 = 没记 */
+  weight: number;
   updatedAt: number;
 }
 
@@ -234,6 +270,8 @@ export interface PackSkillDto {
   proficiencyRaw: number;
   tags: string[];
   sortOrder: number;
+  /** 最近一次改动的落点时刻（REQ-028 本章变动角标）；0 = 从无改动记录 */
+  updatedAt: number;
 }
 
 export type PackNature = "passive" | "sustained" | "cast";
@@ -257,12 +295,25 @@ export interface PackModifierDto {
   cost: string;
   cooldown: number | null;
   duration: string;
+  /** 剩余回合数（REQ-025）；null = 不限时 */
+  roundsLeft: number | null;
   target: string;
   trigger: string;
   condition: string;
   note: string;
   disabled: boolean;
   sortOrder: number;
+}
+
+export interface PackPresetDto {
+  id: string;
+  characterId: string;
+  name: string;
+  /** 穿戴映射 JSON `[{itemId, slotId, slotIndex}]`（只搬不解释） */
+  payload: string;
+  note: string;
+  sortOrder: number;
+  updatedAt: number;
 }
 
 export interface PackUnitSystemDto {
@@ -314,6 +365,8 @@ export interface PackBundleDto {
   levelSystems: PackLevelSystemDto[];
   /** 主角绑定的实体当前的「当前境界」关联行（无则 null） */
   realmLink: PackRealmLinkDto | null;
+  /** 换装方案（REQ-032），与其它表一样属于整文档 */
+  presets: PackPresetDto[];
 }
 
 export interface PackRecordDto {
@@ -353,6 +406,7 @@ export interface PackSavePayloadDto {
   modifiers: PackModifierDto[];
   unitSystems: PackUnitSystemDto[];
   layouts: PackLayoutDto[];
+  presets: PackPresetDto[];
   /** 盘点记录原因（如「改动前自动存档：手动保存」） */
   reason: string;
   /** 记录归属章节（切换章节 / 退出时说明改动属于哪一章） */
@@ -379,6 +433,23 @@ function toInt(value: boolean): number {
   return value ? 1 : 0;
 }
 
+/**
+ * 解析草稿 payload（与 `PackDoc` 同构的 JSON）。
+ *
+ * 只做「解得出且是对象」这一层校验：草稿是**渲染层自己写进来的中间态**，
+ * 字段残缺时不该顺手丢掉整份草稿（里面有作者还没保存的全部改动）——
+ * 调用方按需 `Array.isArray` 兜底即可。
+ */
+function parseDraftDoc(raw: string): PackDraftDoc | null {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return null;
+    return parsed as PackDraftDoc;
+  } catch {
+    return null;
+  }
+}
+
 // ── 行 → DTO ──
 
 function toCharacterDto(row: PackCharacterRow): PackCharacterDto {
@@ -391,6 +462,8 @@ function toCharacterDto(row: PackCharacterRow): PackCharacterDto {
     entityId: row.entity_id ?? "",
     realmAt: row.realm_at ?? "",
     note: row.note,
+    weightLimit: row.weight_limit ?? 0,
+    capacityLimit: row.capacity_limit ?? 0,
     sortOrder: row.sort_order,
   };
 }
@@ -405,6 +478,7 @@ function toAttributeDto(row: PackAttributeRow): PackAttributeDto {
     decimals: row.decimals,
     unit: row.unit,
     sortOrder: row.sort_order,
+    updatedAt: row.updated_at ?? 0,
   };
 }
 
@@ -435,6 +509,7 @@ function toItemDto(row: PackItemRow): PackItemDto {
     equippedSlotId: row.equipped_slot_id ?? "",
     slotIndex: row.slot_index,
     sourceChapterId: row.source_chapter_id ?? "",
+    weight: row.weight ?? 0,
     updatedAt: row.updated_at,
   };
 }
@@ -449,6 +524,7 @@ function toSkillDto(row: PackSkillRow): PackSkillDto {
     proficiencyRaw: row.proficiency_raw,
     tags: parseJsonArray(row.tags),
     sortOrder: row.sort_order,
+    updatedAt: row.updated_at ?? 0,
   };
 }
 
@@ -475,6 +551,7 @@ function toModifierDto(row: PackModifierRow): PackModifierDto {
     cost: row.cost ?? "",
     cooldown: row.cooldown,
     duration: row.duration ?? "",
+    roundsLeft: row.rounds_left ?? null,
     target: row.target ?? "",
     trigger: row.trigger ?? "",
     condition: row.condition ?? "",
@@ -527,6 +604,18 @@ function toDraftDto(row: PackDraftRow): PackDraftDto {
     payload: row.payload,
     dirtyCount: row.dirty_count,
     updatedAt: row.updated_at,
+  };
+}
+
+function toPresetDto(row: PackPresetRow): PackPresetDto {
+  return {
+    id: row.id,
+    characterId: row.character_id,
+    name: row.name,
+    payload: row.payload,
+    note: row.note,
+    sortOrder: row.sort_order,
+    updatedAt: row.updated_at ?? 0,
   };
 }
 
@@ -583,30 +672,54 @@ function readCharacterSnapshot(characterId: string): PackBundleDto {
       ]) as PackLayoutRow[]
     ).map(toLayoutDto),
     records: [],
+    presets: (
+      dbAll("SELECT * FROM novel_pack_presets WHERE character_id = ? ORDER BY sort_order", [
+        characterId,
+      ]) as PackPresetRow[]
+    ).map(toPresetDto),
     draft: null,
     levelSystems: [],
     realmLink: null,
   };
 }
 
-/** 读取 R25 等级体系（含 sub_levels / power） */
-function readLevelSystems(): PackLevelSystemDto[] {
-  const systems = dbAll("SELECT * FROM novel_level_systems") as NovelLevelSystemRow2[];
-  return systems.map((system) => ({
-    id: system.id,
-    workId: system.work_id,
-    name: system.name,
-    rungs: (
-      dbAll("SELECT * FROM novel_levels WHERE system_id = ? ORDER BY rank", [
-        system.id,
-      ]) as NovelLevelRow2[]
-    ).map((level) => ({
+/**
+ * 读取 R25 等级体系（含 sub_levels / power）
+ *
+ * 两处必须这么写：
+ * - **带 `workId`**：`novel_level_systems.work_id` 是 NOT NULL，体系按作品私有。
+ *   不带过滤时两部作品都建过体系就会把另一部小说的等级体系返回过来，
+ *   再经 `novel-link-set` 写出跨作品的 `novel_links`，界面上看不出来。
+ * - **等级项一次取回后分组**：每个体系一条 SQL 就是 N+1。
+ */
+function readLevelSystems(workId: string): PackLevelSystemDto[] {
+  const systems = dbAll(
+    "SELECT * FROM novel_level_systems WHERE work_id = ?",
+    [workId],
+  ) as NovelLevelSystemRow2[];
+  if (systems.length === 0) return [];
+
+  const levels = dbAll(
+    "SELECT * FROM novel_levels ORDER BY system_id, rank",
+  ) as NovelLevelRow2[];
+  const rungsBySystem = new Map<string, PackLevelSystemDto["rungs"]>();
+  for (const level of levels) {
+    const list = rungsBySystem.get(level.system_id) ?? [];
+    list.push({
       id: level.id,
       name: level.name,
       rank: level.rank,
       subLevels: level.sub_levels ?? 1,
       power: level.power,
-    })),
+    });
+    rungsBySystem.set(level.system_id, list);
+  }
+
+  return systems.map((system) => ({
+    id: system.id,
+    workId: system.work_id,
+    name: system.name,
+    rungs: rungsBySystem.get(system.id) ?? [],
   }));
 }
 
@@ -679,7 +792,7 @@ export function registerNovelPackHandlers(): void {
       ...snapshot,
       records,
       draft: draftRow ? toDraftDto(draftRow) : null,
-      levelSystems: readLevelSystems(),
+      levelSystems: readLevelSystems(workId),
       realmLink: readRealmLink(character.entityId),
     };
   });
@@ -716,6 +829,95 @@ export function registerNovelPackHandlers(): void {
     },
   );
 
+  // ── 快速记账（REQ-027）：正文选区 → 记入背包 ──
+  //
+  // 这是**面板没挂载时**的落库路径（面板开着时由渲染层直接改内存文档，见
+  // `registerPackQuickAdd`）。两件事必须一起做，否则是纯静默的数据丢失：
+  //
+  // ① 草稿优先于正式行（`applyBundle` 的合并顺序），所以**有草稿就并入草稿**。
+  //    若只往正式表插一行而草稿里还留着改动前那份快照，下次打开面板时草稿整个
+  //    盖上来 —— 刚记下的物品凭空消失，没有任何报错。
+  // ② 草稿不存在时才直插正式表，并把 `source_chapter_id` 带上（记账的价值有一半
+  //    在「这东西是哪一章捡的」）。
+  ipcMain.handle(
+    "novel-pack-quick-add",
+    (
+      _event,
+      workId: string,
+      name: string,
+      chapterId: string,
+      category: string,
+    ): { id: string; characterId: string } | null => {
+      const trimmed = (name ?? "").trim();
+      if (!workId || !trimmed) return null;
+      try {
+        const character = ensurePackCharacterRow(workId);
+        const now = Date.now();
+        const item: PackItemDto = {
+          id: createId("pi"),
+          characterId: character.id,
+          name: trimmed,
+          category: category || "杂物",
+          qty: 1,
+          rarity: "common",
+          icon: "",
+          desc: "",
+          tags: [],
+          equippedSlotId: "",
+          slotIndex: null,
+          sourceChapterId: chapterId || "",
+          // 正文选区给不出重量（同「分类固定杂物」的理由：猜不如不猜）
+          weight: 0,
+          updatedAt: now,
+        };
+
+        const draftRow = dbGet(
+          "SELECT * FROM novel_pack_drafts WHERE character_id = ?",
+          [character.id],
+        ) as PackDraftRow | undefined;
+        const draft = draftRow ? parseDraftDoc(draftRow.payload) : null;
+
+        if (draft) {
+          draft.items = Array.isArray(draft.items) ? draft.items : [];
+          draft.items.push(item);
+          dbRun(
+            `UPDATE novel_pack_drafts
+               SET payload = ?, dirty_count = dirty_count + 1, updated_at = ?
+             WHERE character_id = ?`,
+            [JSON.stringify(draft), now, character.id],
+          );
+        } else {
+          dbRun(
+            `INSERT INTO novel_pack_items
+               (id, character_id, name, category, qty, rarity, icon, desc, tags,
+                equipped_slot_id, slot_index, source_chapter_id, weight, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              item.id,
+              item.characterId,
+              item.name,
+              item.category,
+              item.qty,
+              item.rarity,
+              item.icon,
+              item.desc,
+              JSON.stringify(item.tags),
+              null,
+              null,
+              item.sourceChapterId || null,
+              item.weight,
+              item.updatedAt,
+            ],
+          );
+        }
+        return { id: item.id, characterId: character.id };
+      } catch (error) {
+        console.error("[novel-pack-quick-add] 记账失败：", error);
+        return null;
+      }
+    },
+  );
+
   // ── 整文档事务保存（写前先落回退点，成功后清草稿） ──
   ipcMain.handle("novel-pack-save", (_event, payload: PackSavePayloadDto): boolean => {
     const characterId = payload.character.id;
@@ -733,6 +935,20 @@ export function registerNovelPackHandlers(): void {
         before.skills.length > 0 ||
         before.unitSystems.length > 0;
       if (hasData) {
+        /**
+         * 额外把**当时的境界关联行**一并存进 payload（REQ-029）。
+         *
+         * 境界的真实值住在 `novel_links`（主角绑定了实体时），而它不随行囊文档走，
+         * 记录里的 `character.realm_at` 在绑定状态下是空的 —— 不存这一格，
+         * 「本章初」的境界就永久丢了，「与本章初对比」会永远少掉
+         * 「境界 筑基六层 → 筑基七层」这一行。
+         *
+         * 这里只**搬数据**、不解释数据：关联行原样存，解析与小层换算仍归渲染层的
+         * `pack-realm.ts`（在 main 里重写一遍就是第二个真相源）。
+         */
+        const beforeRealmLink = before.character
+          ? readRealmLink(before.character.entityId)
+          : null;
         dbRun(
           `INSERT INTO novel_pack_records (id, character_id, chapter_id, taken_at, reason, payload)
            VALUES (?, ?, ?, ?, ?, ?)`,
@@ -742,7 +958,7 @@ export function registerNovelPackHandlers(): void {
             payload.chapterId || null,
             now,
             payload.reason || "改动前自动存档",
-            JSON.stringify(before),
+            JSON.stringify({ ...before, realmLink: beforeRealmLink }),
           ],
         );
         dbRun(
@@ -786,6 +1002,7 @@ export function registerNovelPackHandlers(): void {
         "novel_pack_skills",
         "novel_pack_unit_systems",
         "novel_pack_layouts",
+        "novel_pack_presets",
       ]) {
         dbRun(`DELETE FROM ${table} WHERE character_id = ?`, [characterId]);
       }
@@ -797,12 +1014,14 @@ export function registerNovelPackHandlers(): void {
       // 「行囊里显示未指定、右侧卡上却戴着皇冠」正是这么来的。
       dbRun(
         `INSERT INTO novel_pack_characters
-           (id, work_id, name, avatar, is_protagonist, entity_id, realm_at, note, sort_order)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+           (id, work_id, name, avatar, is_protagonist, entity_id, realm_at, note, weight_limit, capacity_limit, sort_order)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            work_id = excluded.work_id, name = excluded.name, avatar = excluded.avatar,
            is_protagonist = excluded.is_protagonist,
-           realm_at = excluded.realm_at, note = excluded.note, sort_order = excluded.sort_order`,
+           realm_at = excluded.realm_at, note = excluded.note,
+           weight_limit = excluded.weight_limit, capacity_limit = excluded.capacity_limit,
+           sort_order = excluded.sort_order`,
         [
           c.id,
           c.workId,
@@ -812,14 +1031,16 @@ export function registerNovelPackHandlers(): void {
           c.entityId || null,
           c.realmAt || null,
           c.note,
+          c.weightLimit || 0,
+          c.capacityLimit || 0,
           c.sortOrder,
         ],
       );
 
       const attrStmt = db.prepare(
         `INSERT INTO novel_pack_attributes
-           (id, character_id, group_name, name, base_value, decimals, unit, sort_order)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+           (id, character_id, group_name, name, base_value, decimals, unit, sort_order, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       for (const a of payload.attributes) {
         attrStmt.run(
@@ -831,6 +1052,7 @@ export function registerNovelPackHandlers(): void {
           a.decimals,
           a.unit,
           a.sortOrder,
+          a.updatedAt || 0,
         );
       }
 
@@ -855,8 +1077,8 @@ export function registerNovelPackHandlers(): void {
       const itemStmt = db.prepare(
         `INSERT INTO novel_pack_items
            (id, character_id, name, category, qty, rarity, icon, desc, tags,
-            equipped_slot_id, slot_index, source_chapter_id, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            equipped_slot_id, slot_index, source_chapter_id, weight, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       for (const i of payload.items) {
         itemStmt.run(
@@ -872,14 +1094,15 @@ export function registerNovelPackHandlers(): void {
           i.equippedSlotId || null,
           i.slotIndex,
           i.sourceChapterId || null,
+          i.weight || 0,
           i.updatedAt || now,
         );
       }
 
       const skillStmt = db.prepare(
         `INSERT INTO novel_pack_skills
-           (id, character_id, name, desc, enabled, proficiency_raw, tags, sort_order)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+           (id, character_id, name, desc, enabled, proficiency_raw, tags, sort_order, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       for (const s of payload.skills) {
         skillStmt.run(
@@ -891,15 +1114,16 @@ export function registerNovelPackHandlers(): void {
           s.proficiencyRaw,
           JSON.stringify(s.tags),
           s.sortOrder,
+          s.updatedAt || 0,
         );
       }
 
       const modStmt = db.prepare(
         `INSERT INTO novel_pack_modifiers
            (id, owner_type, owner_id, nature, name, target_attr_id, op, value, value_unit,
-            scale_by_proficiency, active, default_on, cost, cooldown, duration, target,
-            trigger, condition, note, disabled, sort_order)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            scale_by_proficiency, active, default_on, cost, cooldown, duration, rounds_left,
+            target, trigger, condition, note, disabled, sort_order)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       for (const m of payload.modifiers) {
         modStmt.run(
@@ -918,6 +1142,7 @@ export function registerNovelPackHandlers(): void {
           m.cost || null,
           m.cooldown,
           m.duration || null,
+          m.roundsLeft ?? null,
           m.target || null,
           m.trigger || null,
           m.condition || null,
@@ -951,6 +1176,23 @@ export function registerNovelPackHandlers(): void {
       );
       for (const l of payload.layouts) {
         layoutStmt.run(characterId, l.moduleKey, toInt(l.enabled), l.sortOrder);
+      }
+
+      const presetStmt = db.prepare(
+        `INSERT INTO novel_pack_presets
+           (id, character_id, name, payload, note, sort_order, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      );
+      for (const p of payload.presets ?? []) {
+        presetStmt.run(
+          p.id,
+          characterId,
+          p.name,
+          p.payload,
+          p.note,
+          p.sortOrder,
+          p.updatedAt || 0,
+        );
       }
 
       // ③ 提交成功 → 清空草稿（草稿只承载未提交中间态）

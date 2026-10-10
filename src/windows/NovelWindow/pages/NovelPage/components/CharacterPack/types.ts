@@ -17,6 +17,7 @@ import type {
   PackNatureDTO,
   PackOpDTO,
   PackOwnerTypeDTO,
+  PackPresetDTO,
   PackProtagonistDTO,
   PackRealmLinkDTO,
   PackRecordDTO,
@@ -45,6 +46,7 @@ export type PackSkill = PackSkillDTO;
 export type PackModifier = PackModifierDTO;
 export type PackUnitSystem = PackUnitSystemDTO;
 export type PackLayout = PackLayoutDTO;
+export type PackPreset = PackPresetDTO;
 export type PackNature = PackNatureDTO;
 export type PackOp = PackOpDTO;
 export type PackOwnerType = PackOwnerTypeDTO;
@@ -147,6 +149,21 @@ export const DEFAULT_UI_PREFS: PackUiPrefs = {
 /** 本章变动角标有效期（F-2） */
 export const CHANGED_TTL_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * 估算模式的临时加成（REQ-037）
+ *
+ * **只活在内存里**：不落草稿、不进正式表、不计入未保存改动数 —— 它的语义就是
+ * 「假设这些加成现在就生效，换算结果是多少」。面板一关就没了，这是刻意的：
+ * 一旦它被持久化，就变成一条要维护的真数据，估算模式也就不再是「试算」。
+ */
+export interface EstimateEntry {
+  id: string;
+  /** 目标属性 id */
+  attrId: string;
+  op: PackOp;
+  value: number;
+}
+
 /** 属性分组的默认值（B-1 支持分组） */
 export const DEFAULT_ATTR_GROUP = "基础属性";
 
@@ -196,6 +213,29 @@ export const RARITY_META: Record<string, { label: string; color: string }> = {
   epic: { label: "史诗", color: "var(--app-accent-purple)" },
   legend: { label: "传说", color: "var(--app-accent-amber)" },
 };
+
+/**
+ * 稀有度取值顺序（REQ-010：下拉菜单按它排列，从低到高）
+ *
+ * 单独导出而不是用 `Object.keys(RARITY_META)`：菜单顺序是**产品口径**（由弱到强），
+ * 不该被一个「文案表」的键序顺带决定 —— 哪天有人为了分组把 META 重新排一遍，
+ * 菜单就会跟着乱，而且不会有任何报错。
+ */
+export const RARITY_KEYS = ["common", "fine", "rare", "epic", "legend"] as const;
+export type PackRarity = (typeof RARITY_KEYS)[number];
+
+/**
+ * 取稀有度的显示元信息（未知取值给中性兜底）
+ *
+ * 库里的 `rarity` 是自由字符串（历史数据 / 手工改库都可能有别的值），
+ * 直接用 `RARITY_META[key]` 会得到 `undefined` → 圆点变成没有 background 的透明块，
+ * 看着像「这条没设稀有度」而不是「这个值不认识」。
+ */
+export function rarityMetaOf(key: string): { label: string; color: string } {
+  const meta: { label: string; color: string } | undefined = RARITY_META[key];
+  if (meta) return meta;
+  return { label: key || "未知", color: "var(--app-text-disabled)" };
+}
 
 /** 释放型效果的参数字段（REQ-040）：效果量单位 / 目标 */
 export const CAST_UNITS = ["攻击力%", "法术强度%", "最大生命%", "固定伤害", "治疗量%"] as const;

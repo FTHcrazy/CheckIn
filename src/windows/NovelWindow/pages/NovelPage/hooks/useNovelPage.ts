@@ -29,7 +29,12 @@ import {
   saveCustomEntityTypes,
   saveLastPosition,
 } from "../services/novel-service";
-import { requestClosePackPanel } from "../components/CharacterPack/pack-config";
+import {
+  guardPackBeforeAction,
+  registerPackInsertIntoChapter,
+  requestClosePackPanel,
+} from "../components/CharacterPack/pack-config";
+import { quickAddPackItem } from "../components/CharacterPack/services/pack-service";
 import { buildEntityTypesValue, type EntityTypesContextValue } from "./entity-types-context";
 import type {
   CustomEntityTypeDef,
@@ -247,10 +252,32 @@ export function useNovelPage() {
     [data, view],
   );
 
+  /**
+   * 切章前过一次行囊闸门（REQ-043）。
+   *
+   * 行囊里的编辑不随章节切换而卸载（文档挂在 workId 上），所以「不拦也不会
+   * 立刻丢」—— 但作者切走之后就不会再回来保存了，那些改动会一直挂在面板上
+   * 直到某次关闭才被问到。拦截发生在离开上下文的那一刻，比攒到最后一次问更清楚。
+   */
   const handleSelectChapter = useCallback(
-    (chapterId: string): void => {
+    async (chapterId: string): Promise<void> => {
+      if (chapterId === data.activeChapterId) {
+        dismiss();
+        return;
+      }
+      if (!(await guardPackBeforeAction("切换章节"))) return;
       data.selectChapter(chapterId);
       dismiss();
+    },
+    [data, dismiss],
+  );
+
+  /** 切作品同理，而且更严重：换书会让行囊**整体重载**，当前这本的编辑必须有个交代 */
+  const handleSelectWork = useCallback(
+    async (workId: string): Promise<void> => {
+      if (workId === data.activeWorkId) return;
+      if (!(await guardPackBeforeAction("切换作品"))) return;
+      data.setActiveWorkId(workId);
     },
     [data],
   );
@@ -517,6 +544,36 @@ export function useNovelPage() {
 
   const closeCtxMenu = useCallback(() => setCtxMenu(null), []);
 
+  /** 物品名长度上限：正文里选中的常常是整句，超过这个长度当物品名没有意义 */
+  const QUICK_ADD_NAME_MAX = 40;
+
+  /**
+   * 选区右键 → 记入背包（REQ-027）。
+   *
+   * 面板开着时由面板改它自己的内存文档（脏计数 +1，需保存），没开则落主进程
+   * （它会自己判断要不要并进草稿）—— 两边的选择封装在 `quickAddPackItem` 里，
+   * 这里只负责取文本、给出反馈。
+   */
+  const handleCtxToPack = useCallback(async (): Promise<void> => {
+    const text = (editor.selection?.text ?? "").trim();
+    setCtxMenu(null);
+    editor.setSelection(null);
+    if (!text) {
+      view.showToast("先选中要记入的物品名", "warning");
+      return;
+    }
+    const name = text.slice(0, QUICK_ADD_NAME_MAX);
+    const ok = await quickAddPackItem(data.activeWorkId, {
+      name,
+      chapterId: data.activeChapterId ?? "",
+    });
+    if (ok) {
+      view.showToast(`已记入背包：${name}${text.length > name.length ? "…" : ""}`);
+    } else {
+      view.showToast("记入背包失败，请重试", "warning");
+    }
+  }, [data, editor, view]);
+
   const handleCtxMark = useCallback(
     (type: EntityType): void => {
       setCtxMenu(null);
@@ -608,6 +665,27 @@ export function useNovelPage() {
   /** 把名字插入正文光标处（不依赖选区；选区非空则替换） */
   const handleInsertName = useCallback((name: string): void => {
     editorPaneRef.current?.insertText(name);
+  }, []);
+
+  /**
+   * 行囊表格「插入本章末尾」（REQ-034）：**由页面这侧注册写入能力**。
+   *
+   * 反过来（行囊直接 import 编辑器 store）会让那个模块绑死在「宿主是 NovelPage」上，
+   * 而 PRD §1 明确要求它能整体搬去独立窗口 —— 分离窗口下没有正文可插，
+   * 那时这个桥自然没人注册，行囊侧给出「先在编辑器里打开一章」的提示即可。
+   *
+   * 不在这里调 flushSave：`appendText` 走的是 CodeMirror 的 dispatch，
+   * 会经 updateListener → `setContent` → 编辑器自己的防抖保存落库，
+   * 再补一次手动保存只是让它提前几秒写下去。
+   */
+  useEffect(() => {
+    registerPackInsertIntoChapter((text) => {
+      const pane = editorPaneRef.current;
+      if (!pane) return false;
+      pane.appendText(text);
+      return true;
+    });
+    return () => registerPackInsertIntoChapter(null);
   }, []);
 
   /** 把名字建为角色卡（type=character，名字带入；复用 markSelectionAsEntity 走查重 + 落库） */
@@ -1058,6 +1136,7 @@ export function useNovelPage() {
     handleNewChapter,
     handleCreateChapterInVolume,
     handleSelectChapter,
+    handleSelectWork,
     handleRollback,
     handleMark,
     handleOpenEntity,
@@ -1067,6 +1146,7 @@ export function useNovelPage() {
     closeCtxMenu,
     handleCtxMark,
     handleCtxBind,
+    handleCtxToPack,
     handleNewVolume,
     handleSaveEntity,
     handleRenameVolume,

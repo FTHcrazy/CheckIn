@@ -259,6 +259,12 @@ function initializeDataDb(database: Database.Database): void {
       -- 未绑定实体时的「仅行囊内使用」境界（JSON {levelId, sub}）；绑定时以 novel_links 为准
       realm_at TEXT,
       note TEXT NOT NULL DEFAULT '',
+      -- 负重上限（REQ-033）：0 = 不限。默认不限而不是给个拍脑袋的数——
+      -- 那样作者一打开行囊就会看见「超载」，而他并没有记过任何重量
+      weight_limit REAL NOT NULL DEFAULT 0,
+      -- 格数上限（F-5 第一条）：0 = 不限。与负重是两把尺子——
+      -- 200 株草药占 1 格但可能压垮肩膀，两件事都要能各自触发
+      capacity_limit INTEGER NOT NULL DEFAULT 0,
       sort_order INTEGER NOT NULL DEFAULT 1
     );
     CREATE TABLE IF NOT EXISTS novel_pack_attributes (
@@ -269,7 +275,9 @@ function initializeDataDb(database: Database.Database): void {
       base_value REAL NOT NULL DEFAULT 0,
       decimals INTEGER NOT NULL DEFAULT 0,
       unit TEXT NOT NULL DEFAULT '',
-      sort_order INTEGER NOT NULL DEFAULT 1
+      sort_order INTEGER NOT NULL DEFAULT 1,
+      -- 最近一次改动的落点时刻（REQ-028 本章变动角标）；旧数据补列为 0 = 不算变动
+      updated_at INTEGER NOT NULL DEFAULT 0
     );
     CREATE INDEX IF NOT EXISTS idx_pack_attr_char ON novel_pack_attributes(character_id, sort_order);
     CREATE TABLE IF NOT EXISTS novel_pack_slots (
@@ -298,6 +306,8 @@ function initializeDataDb(database: Database.Database): void {
       equipped_slot_id TEXT,
       slot_index INTEGER,
       source_chapter_id TEXT,
+      -- 单件重量（REQ-033）：0 = 没记。总重按 weight × qty 累计（数量即件数）
+      weight REAL NOT NULL DEFAULT 0,
       updated_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_pack_item_char ON novel_pack_items(character_id);
@@ -310,7 +320,9 @@ function initializeDataDb(database: Database.Database): void {
       enabled INTEGER NOT NULL DEFAULT 1,
       proficiency_raw REAL NOT NULL DEFAULT 0,
       tags TEXT NOT NULL DEFAULT '[]',
-      sort_order INTEGER NOT NULL DEFAULT 1
+      sort_order INTEGER NOT NULL DEFAULT 1,
+      -- 最近一次改动的落点时刻（REQ-028 本章变动角标）；旧数据补列为 0 = 不算变动
+      updated_at INTEGER NOT NULL DEFAULT 0
     );
     CREATE INDEX IF NOT EXISTS idx_pack_skill_char ON novel_pack_skills(character_id, sort_order);
     CREATE TABLE IF NOT EXISTS novel_pack_modifiers (
@@ -332,6 +344,9 @@ function initializeDataDb(database: Database.Database): void {
       cost TEXT,
       cooldown REAL,
       duration TEXT,
+      -- 剩余回合数（REQ-025 状态效果时效）：NULL = 不限时。到 0 即视为已过期，
+      -- 由 isCounted 的时效闸门挡在汇总之外（不直接翻 active —— 那是作者的开关）
+      rounds_left INTEGER,
       target TEXT,
       trigger TEXT,
       condition TEXT,
@@ -340,6 +355,18 @@ function initializeDataDb(database: Database.Database): void {
       sort_order INTEGER NOT NULL DEFAULT 1
     );
     CREATE INDEX IF NOT EXISTS idx_pack_mod_owner ON novel_pack_modifiers(owner_type, owner_id);
+    -- 换装方案（REQ-032）：payload 只存「谁穿在哪个部位的哪一格」，
+    -- 不存物品本身——物品被删掉时方案仍然可用，套用时跳过错失的那几件。
+    CREATE TABLE IF NOT EXISTS novel_pack_presets (
+      id TEXT PRIMARY KEY,
+      character_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      payload TEXT NOT NULL DEFAULT '[]',
+      note TEXT NOT NULL DEFAULT '',
+      sort_order INTEGER NOT NULL DEFAULT 1,
+      updated_at INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_pack_preset_char ON novel_pack_presets(character_id, sort_order);
     CREATE TABLE IF NOT EXISTS novel_pack_unit_systems (
       id TEXT PRIMARY KEY,
       character_id TEXT NOT NULL,
@@ -390,6 +417,48 @@ function initializeDataDb(database: Database.Database): void {
   }
   if (!levelColumns.some((column) => column.name === "power")) {
     database.exec("ALTER TABLE novel_levels ADD COLUMN power REAL")
+  }
+
+  // ── 增量迁移：属性 / 技能补「最近改动时刻」（行囊 REQ-028 本章变动角标）
+  //
+  // 默认 0 而不是 `Date.now()`：老数据「从来没有改动记录」是事实，
+  // 补成当前时刻会让作者一打开行囊就看见满屏「刚改动」的假角标。
+  // 两列各自独立判断，避免其中一张表已迁移过时另一张漏掉。
+  const hasColumn = (table: string, column: string): boolean =>
+    (database.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).some(
+      (item) => item.name === column,
+    )
+  if (!hasColumn("novel_pack_attributes", "updated_at")) {
+    database.exec(
+      "ALTER TABLE novel_pack_attributes ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0",
+    )
+  }
+  if (!hasColumn("novel_pack_skills", "updated_at")) {
+    database.exec("ALTER TABLE novel_pack_skills ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0")
+  }
+
+  // ── 增量迁移：物品重量 + 负重 / 格数上限（行囊 REQ-033 负重与容量）
+  //
+  // 三列默认都是 0（= 没记重量 / 不限重 / 不限格），而不是给个拍脑袋的默认值：
+  // 那会让作者一打开物品栏就看见「超载 / 背包已满」，而他什么都没记过。
+  if (!hasColumn("novel_pack_items", "weight")) {
+    database.exec("ALTER TABLE novel_pack_items ADD COLUMN weight REAL NOT NULL DEFAULT 0")
+  }
+  if (!hasColumn("novel_pack_characters", "weight_limit")) {
+    database.exec("ALTER TABLE novel_pack_characters ADD COLUMN weight_limit REAL NOT NULL DEFAULT 0")
+  }
+  if (!hasColumn("novel_pack_characters", "capacity_limit")) {
+    database.exec(
+      "ALTER TABLE novel_pack_characters ADD COLUMN capacity_limit INTEGER NOT NULL DEFAULT 0",
+    )
+  }
+
+  // ── 增量迁移：状态效果的剩余回合（行囊 REQ-025 时效）
+  //
+  // 可空列，**不写 DEFAULT**：NULL 表示「不限时」是这一格的语义本身，
+  // 补 0 会让所有旧状态效果在下次打开时集体判定为「已过期」。
+  if (!hasColumn("novel_pack_modifiers", "rounds_left")) {
+    database.exec("ALTER TABLE novel_pack_modifiers ADD COLUMN rounds_left INTEGER")
   }
 }
 

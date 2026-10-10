@@ -64,6 +64,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const antdProps = useMemo(
     () => ({
       locale: zhCN,
+      // 关掉「两字中文自动加字间距」：本应用大量自带造型的按钮由 Button 承载
+      // （§6.1.2），antd 会给「保存 / 取消 / 连载中」这类两字标签额外加
+      // 0.34em 字距，把这些按钮撑宽、破坏既有的紧凑排版。真需要字距时
+      // 由控件自己的样式声明
+      button: { autoInsertSpace: false },
       theme: {
         algorithm: meta.isDark
           ? antdTheme.darkAlgorithm

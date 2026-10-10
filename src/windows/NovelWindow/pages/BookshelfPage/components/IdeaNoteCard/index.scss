@@ -1,3 +1,8 @@
+// 悬浮操作（置顶 / 归档 / 退回灵感池 / 删除）由 antd `Button` 承载（AGENTS §6.1.2）：
+// 先清零组件级变量再声明自己的外观；hover / 激活态一律写成变量 ——
+// 自写 `:hover` 属性规则压不过 `.ant-btn:not(:disabled):not(.ant-btn-disabled):hover`（0,4,0）
+@use "../../../../../../shared/styles/widget" as widget;
+
 .bs-idea {
   position: relative;
   padding: 10px 12px;
@@ -84,27 +89,36 @@
     transform: translateY(0);
   }
 
-  &__action {
+  &__action.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 22px;
+    --ant-button-content-font-size: 12px;
+    --ant-border-radius: 6px;
+    /* 原来的 hover 描边是 `box-shadow: 0 0 0 1px inset`：antd 没有 hover 阴影变量，
+       改用真实边框承接（默认透明，hover / active 才染色），观感一致且能写成变量 */
+    --ant-line-width: 1px;
+    --ant-button-default-bg: transparent;
+    --ant-button-default-color: var(--app-text-muted);
+    --ant-button-default-border-color: transparent;
+    --ant-button-default-hover-bg: transparent;
+    --ant-button-default-hover-color: var(--app-primary);
+    --ant-button-default-hover-border-color: var(--app-border);
+    --ant-button-default-active-bg: transparent;
+    --ant-button-default-active-color: var(--app-primary);
+    --ant-button-default-active-border-color: var(--app-border);
+    --ant-button-default-shadow: none;
+
+    /* antd 不接管的属性 */
     display: inline-flex;
     align-items: center;
     justify-content: center;
     width: 22px;
-    height: 22px;
-    border: none;
-    border-radius: 6px;
-    background: transparent;
-    color: var(--app-text-muted);
-    font-size: 12px;
-    cursor: pointer;
-    transition: box-shadow 0.15s ease;
 
-    &:hover {
-      color: var(--app-primary);
-      box-shadow: 0 0 0 1px var(--app-border) inset;
-    }
-
+    /* 已置顶：图标转琥珀色，hover / active 同步不掉色 */
     &.is-on {
-      color: var(--app-warning);
+      --ant-button-default-color: var(--app-warning);
+      --ant-button-default-hover-color: var(--app-warning);
+      --ant-button-default-active-color: var(--app-warning);
     }
   }
 }

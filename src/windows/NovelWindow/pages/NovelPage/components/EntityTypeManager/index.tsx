@@ -200,9 +200,8 @@ export default function EntityTypeManager({
           />
           <div className="nv-etm__palette">
             {CUSTOM_TYPE_PALETTE.map((color) => (
-              <button
+              <Button
                 key={color}
-                type="button"
                 className={`nv-etm__swatch${
                   colorDraft === color ? " is-on" : ""
                 }`}

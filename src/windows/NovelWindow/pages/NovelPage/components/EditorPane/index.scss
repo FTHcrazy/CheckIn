@@ -1,3 +1,8 @@
+// 章节标题（点击改名）与空态 CTA 都由 antd `Button` 承载（AGENTS §6.1.2）：
+// 先清零组件级变量再声明；hover 也必须写成变量，自写 `:hover` 压不过
+// antd 的状态选择器 `.ant-btn-color-default.ant-btn-variant-outlined:not(:disabled):hover`（0,4,0）
+@use "../../../../../../shared/styles/widget" as widget;
+
 .nv-editor {
   flex: 1;
   min-width: 0;
@@ -30,21 +35,26 @@
     gap: 3px;
   }
 
-  &__title-text {
-    border: none;
-    background: transparent;
-    padding: 2px 10px;
-    font-size: 16px;
-    font-weight: 600;
-    letter-spacing: 0.5px;
-    color: var(--app-text);
-    font-family: inherit;
-    border-radius: var(--app-radius-chip);
-    transition: background var(--nv-t-fast, 120ms) ease;
+  /* 标题即改名入口：幽灵外观全部交给组件级变量，hover 底也写成变量 */
+  &__title-text.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 24px;
+    --ant-button-padding-inline: 10px;
+    --ant-button-content-font-size: 16px;
+    --ant-button-font-weight: 600;
+    --ant-border-radius: var(--app-radius-chip);
+    --ant-button-default-bg: transparent;
+    --ant-button-default-color: var(--app-text);
+    --ant-button-default-hover-bg: var(--app-surface-hover);
+    --ant-button-default-hover-color: var(--app-text);
+    --ant-button-default-active-bg: var(--app-surface-hover);
+    --ant-button-default-active-color: var(--app-text);
+    --ant-button-default-shadow: none;
 
-    &:hover {
-      background: var(--app-surface-hover);
-    }
+    /* antd 不接管的属性 */
+    font-family: inherit;
+    letter-spacing: 0.5px;
+    transition: background var(--nv-t-fast, 120ms) ease;
 
     &:focus-visible {
       outline: 2px solid var(--app-primary);
@@ -248,19 +258,59 @@
     background: var(--app-surface);
   }
 
-  &__create {
-    margin-top: 12px;
-    padding: 7px 16px;
-    border-radius: var(--app-radius-chip);
-    border: none;
-    background: var(--app-primary);
-    color: var(--app-primary-contrast);
-    font-size: 14px;
-    transition: background var(--nv-t-fast, 120ms) ease;
+  /* 空态 CTA：主色实底，hover / active 走组件级变量 */
+  &__create.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 32px;
+    --ant-button-padding-inline: 16px;
+    --ant-button-content-font-size: 14px;
+    --ant-border-radius: var(--app-radius-chip);
+    --ant-button-default-bg: var(--app-primary);
+    --ant-button-default-color: var(--app-primary-contrast);
+    --ant-button-default-hover-bg: var(--app-primary-strong);
+    --ant-button-default-hover-color: var(--app-primary-contrast);
+    --ant-button-default-active-bg: var(--app-primary-strong);
+    --ant-button-default-active-color: var(--app-primary-contrast);
+    --ant-button-default-shadow: none;
 
-    &:hover {
-      background: var(--app-primary-strong);
-    }
+    /* antd 不接管的属性 */
+    margin-top: 12px;
+    transition: background var(--nv-t-fast, 120ms) ease;
+  }
+
+  /* 空书架空态：主描述 + 一行灰色副提示 */
+  &__empty-desc {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    color: var(--app-text);
+    font-size: 14px;
+  }
+
+  &__empty-hint {
+    /* 小字号禁用 text-muted 承载正文（AGENTS §6.1）：走 secondary */
+    color: var(--app-text-secondary);
+    font-size: 12px;
+  }
+
+  &__empty-actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 4px;
+  }
+
+  /* 空态次按钮（导入书籍）：描边样式，与主色 CTA 拉开层级 */
+  &__import.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 32px;
+    --ant-button-padding-inline: 16px;
+    --ant-button-content-font-size: 14px;
+    --ant-border-radius: var(--app-radius-chip);
+
+    /* antd 不接管的属性 */
+    margin-top: 12px;
   }
 }
 

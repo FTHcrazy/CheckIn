@@ -1,4 +1,11 @@
-/* 全书检索面板（NL 设计稿 §3·检索） */
+@use "../../../../../../shared/styles/widget" as widget;
+
+/* 全书检索面板（NL 设计稿 §3·检索）
+
+   按钮类（.nv-sub__btn / .nv-search__hit）由 antd `Button` 承载：外观只通过
+   组件级 CSS 变量配置，不写 `:hover` / `:disabled` 属性规则——antd 的状态选择器
+   是 (0,4,0) 级，自写规则压不过它们（AGENTS §6.1.2）。
+   聚焦环同样交给组件库（`:focus-visible` 规则读 --ant-line-width-focus）。 */
 
 .nv-search {
   flex: 1;
@@ -22,9 +29,11 @@
     flex: none;
     margin-top: 8px;
 
-    .nv-sub__btn:disabled {
-      color: var(--app-text-disabled);
-      cursor: default;
+    /* 禁用态（未选章时的「本章」）：文字色走 --ant-color-text-disabled ——
+       antd 的 :disabled 规则读的是这个全局 token，没有按钮级变量可改；
+       自写 :disabled 属性规则在这里是 (0,3,0)，换主题时容易漏，故不写 */
+    .nv-sub__btn.ant-btn {
+      --ant-color-text-disabled: var(--app-text-disabled);
     }
   }
 
@@ -47,33 +56,35 @@
   }
 
   &__item {
-    padding-bottom: 6px;
+    /* 顶部 2px 呼吸位：第一条 hover 上浮 1px + 投影时，
+       边框不会被虚拟列表视口的上边缘裁掉 */
+    padding: 2px 0 6px;
   }
 
-  &__hit {
+  &__hit.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-border-radius: var(--app-radius-item);
+    --ant-line-width: 1px;
+    --ant-button-default-bg: var(--app-surface);
+    --ant-button-default-color: var(--app-text);
+    --ant-button-default-border-color: var(--app-border);
+    --ant-button-default-hover-bg: var(--app-surface);
+    --ant-button-default-hover-color: var(--app-text);
+    --ant-button-default-hover-border-color: var(--app-primary);
+    --ant-button-default-active-bg: var(--app-surface);
+    --ant-button-default-active-color: var(--app-text);
+    --ant-button-default-active-border-color: var(--app-primary);
+    /* 命中卡靠恒定投影托起：antd 只有一个不分状态的 shadow 变量 */
+    --ant-button-default-shadow: var(--app-shadow-card);
     display: block;
     width: 100%;
     padding: 9px 10px;
-    border: 1px solid var(--app-border);
-    border-radius: var(--app-radius-item);
-    background: var(--app-surface);
-    color: var(--app-text);
-    font-family: inherit;
     text-align: left;
-    cursor: pointer;
-    transition: border-color 150ms ease, box-shadow 150ms ease,
-      transform 150ms ease;
+  }
 
-    &:hover {
-      border-color: var(--app-primary);
-      box-shadow: var(--app-shadow-card);
-      transform: translateY(-1px);
-    }
-
-    &:focus-visible {
-      outline: 2px solid var(--app-primary);
-      outline-offset: -2px;
-    }
+  /* 悬停浮起：transform antd 不接管（§6.1.2 允许保留） */
+  &__hit:hover {
+    transform: translateY(-1px);
   }
 
   &__head {

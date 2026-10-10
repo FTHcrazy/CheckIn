@@ -255,8 +255,7 @@ export default function LevelSystemManager({
                     />
                   ) : (
                     <>
-                      <button
-                        type="button"
+                      <Button
                         className="nv-lsm__name"
                         title="点击重命名"
                         onClick={() => {
@@ -265,7 +264,7 @@ export default function LevelSystemManager({
                         }}
                       >
                         {rung.name}
-                      </button>
+                      </Button>
                       <span className="nv-lsm__actions">
                         <Button
                           size="small"

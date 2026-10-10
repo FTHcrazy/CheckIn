@@ -10,6 +10,12 @@ import {
 import path from "path";
 import fs from "fs";
 import { initDb, closeDb, switchUserDb } from "./db";
+import {
+  askCloseGuards,
+  attachCloseGuard,
+  hasArmedCloseGuard,
+  registerCloseGuardHandlers,
+} from "./close-guard";
 import { startActivityPolling, stopActivityPolling } from "./activitiesTask";
 import { windowManager } from "./windowManager";
 import { registerActivityHandlers } from "./handlers/activity-handlers";
@@ -311,6 +317,9 @@ function createNovelWindow(): BrowserWindow {
         novelWin.hide();
       }
     });
+    // 真销毁（退出应用）前先问一句：行囊里可能还有未保存的编辑。
+    // 隐藏到托盘那一次不算 —— 窗口还活着，草稿安全，弹拦截反而打扰。
+    attachCloseGuard(novelWin, () => isQuitting);
     novelWin.on("closed", () => {
       isPrimaryReady = false;
       // 编辑器会话结束：清除崩溃恢复标记（PRD R3 ③）
@@ -318,6 +327,8 @@ function createNovelWindow(): BrowserWindow {
     });
   } else {
     // 子窗形态：不拦截 close，正常关闭，窗口随实例销毁
+    // 即关即销 → 有一次编辑就拦一次（关闭 = 渲染层连同草稿上下文一起消失）
+    attachCloseGuard(novelWin);
     novelWin.on("closed", () => {
       console.log("[main] Novel 窗口已关闭");
       // 编辑器会话正常结束：清除崩溃恢复标记（PRD R3 ③）
@@ -530,6 +541,8 @@ app.whenReady().then(() => {
   registerNovelHandlers();
   registerNovelPackHandlers();
   registerUserHandlers();
+  // 关闭守卫：窗口真销毁前先问渲染层「还有未保存的改动吗」
+  registerCloseGuardHandlers();
   setupRendererHttpSession();
   registerHttpSessionHandlers();
   if (EDITION !== "novel") {
@@ -721,7 +734,21 @@ app.whenReady().then(() => {
   });
 });
 
-app.on("before-quit", () => {
+app.on("before-quit", (event) => {
+  // ⚠️ 顺序是关键：下面这段清理会把数据库关掉（`closeDb()`）。若先清理再问用户，
+  // 等他慢慢选完「保存并退出」时库已关闭，保存必然失败 —— 所以询问必须发生在
+  // 清理之前，且询问期间**不能**置 `isQuitting`（置了主窗就会直接销毁）。
+  if (!isQuitting && hasArmedCloseGuard()) {
+    event.preventDefault();
+    void askCloseGuards("退出应用").then((allow) => {
+      // 取消：什么都不做，应用继续运行，`isQuitting` 仍为 false，下次退出会重新问
+      if (!allow) return;
+      isQuitting = true;
+      app.quit();
+    });
+    return;
+  }
+
   isQuitting = true;
   globalShortcut.unregisterAll();
   stopActivityPolling();

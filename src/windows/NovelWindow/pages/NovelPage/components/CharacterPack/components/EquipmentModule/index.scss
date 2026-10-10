@@ -133,6 +133,14 @@
     overflow-y: auto;
   }
 
+  /* 候选区的一句话提示：Δ 预览是悬停触发的，不写出来没人会去悬停 */
+  &__candtip {
+    margin: 0 0 4px;
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--app-text-muted);
+  }
+
   /* 候选物品行：整行可点，造型自带 → 先清零 antd 外观再声明 */
   &__cand.ant-btn {
     @include widget.cpk-widget;
@@ -173,6 +181,76 @@
     flex: none;
     font-size: 11px;
     color: var(--app-warning);
+  }
+
+  /* ── 换装方案浮层（REQ-032）──
+   * 浮层是 Popover 的内容，**不在 `.cpk-eq` 里**；下面这些 `&__x` 之所以有效，
+   * 靠的是 SCSS 把 `&__x` 编译成平铺的 `.cpk-eq__x`（与 DOM 嵌套无关）。 */
+  &__presets {
+    width: 320px;
+    max-width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  &__presetsave {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  &__presetinput.ant-input {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+  }
+
+  &__presetempty,
+  &__presettip {
+    margin: 0;
+    font-size: 12px;
+    line-height: 17px;
+    color: var(--app-text-secondary);
+  }
+
+  &__presetlist {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 240px;
+    overflow-y: auto;
+  }
+
+  &__preset {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 4px;
+    border-radius: var(--app-radius-item);
+    min-width: 0;
+
+    &:hover {
+      background: var(--app-surface-hover);
+    }
+  }
+
+  /* 名字可直接改（borderless 输入框），所以给一个可编辑的视觉暗示 */
+  &__presetname.ant-input {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+  }
+
+  &__presetmeta {
+    flex: none;
+    font-size: 12px;
+    color: var(--app-text-secondary);
+    font-variant-numeric: tabular-nums;
   }
 }
 

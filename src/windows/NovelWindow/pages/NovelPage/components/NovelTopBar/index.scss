@@ -1,3 +1,8 @@
+// 顶栏入口（返回书架 / 图标按钮）由 antd `Button` 承载（AGENTS §6.1.2）：
+// 先清零组件级变量再声明。hover 与 `.is-on` 持久高亮态都必须写成变量 ——
+// 自写 `.x:hover`（0,2,0）/ `.x.is-on`（0,2,0）压不过 antd 的状态规则（0,4,0）
+@use "../../../../../../shared/styles/widget" as widget;
+
 .nv-topbar {
   height: 44px;
   flex: none;
@@ -9,28 +14,32 @@
   background: var(--app-header-bg);
 
   /* 返回书架（R32）：书架主页接入后显示在作品下拉左侧 */
-  &__back {
+  &__back.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 28px;
+    /* 原「左 8px / 右 10px」的不对称内边距组件级变量表达不了，取中值 9px
+       （图标与文字间距另由 --ant-button-icon-gap 给） */
+    --ant-button-padding-inline: 9px;
+    --ant-button-content-font-size: 12px;
+    --ant-button-font-weight: 500;
+    --ant-button-icon-gap: 4px;
+    --ant-border-radius: var(--app-radius-chip);
+    --ant-button-default-bg: transparent;
+    --ant-button-default-color: var(--app-text-secondary);
+    --ant-button-default-hover-bg: var(--app-surface-hover);
+    --ant-button-default-hover-color: var(--app-text);
+    --ant-button-default-active-bg: var(--app-surface-hover);
+    --ant-button-default-active-color: var(--app-text);
+    --ant-button-default-shadow: none;
+
+    /* antd 不接管的属性 */
     display: inline-flex;
     align-items: center;
-    gap: 4px;
     flex: none;
-    height: 28px;
-    padding: 0 10px 0 8px;
-    border: none;
-    border-radius: var(--app-radius-chip);
-    background: transparent;
-    color: var(--app-text-secondary);
-    font-size: 12px;
-    font-weight: 500;
     cursor: pointer;
     transition:
       background 120ms ease,
       color 120ms ease;
-
-    &:hover {
-      background: var(--app-surface-hover);
-      color: var(--app-text);
-    }
 
     &:focus-visible {
       outline: 2px solid var(--app-primary);
@@ -126,27 +135,36 @@
     flex: none;
   }
 
-  &__icon {
+  &__icon.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 28px;
+    --ant-button-padding-inline: 0px;
+    --ant-button-content-font-size: 14px;
+    --ant-border-radius: var(--app-radius-chip);
+    --ant-button-default-bg: transparent;
+    --ant-button-default-color: var(--app-text-secondary);
+    --ant-button-default-hover-bg: var(--app-surface-hover);
+    --ant-button-default-hover-color: var(--app-text);
+    --ant-button-default-active-bg: var(--app-surface-hover);
+    --ant-button-default-active-color: var(--app-text);
+    --ant-button-default-shadow: none;
+
+    /* antd 不接管的属性 */
     width: 28px;
-    height: 28px;
-    border-radius: var(--app-radius-chip);
     display: grid;
     place-items: center;
-    border: none;
-    background: transparent;
-    color: var(--app-text-secondary);
-    font-size: 14px;
     cursor: pointer;
     transition: background 120ms ease, color 120ms ease;
 
-    &:hover {
-      background: var(--app-surface-hover);
-      color: var(--app-text);
-    }
-
+    /* 持久高亮态（面板已展开 / 打字机已开 / 行囊已开 …）：
+       写默认变量即可，hover / active 同步保持高亮不掉色 */
     &.is-on {
-      background: var(--app-primary-weak);
-      color: var(--app-primary);
+      --ant-button-default-bg: var(--app-primary-weak);
+      --ant-button-default-color: var(--app-primary);
+      --ant-button-default-hover-bg: var(--app-primary-weak);
+      --ant-button-default-hover-color: var(--app-primary);
+      --ant-button-default-active-bg: var(--app-primary-weak);
+      --ant-button-default-active-color: var(--app-primary);
     }
 
     &:focus-visible {

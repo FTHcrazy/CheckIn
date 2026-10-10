@@ -79,6 +79,21 @@
     --ant-button-default-bg-disabled: transparent;
     --ant-button-border-color-disabled: transparent;
   }
+
+  /* 「这个开关已打开」的按压态（如估算模式）——与 .ghost 组合使用。
+     必须排在 .ghost 之后：两者特异性相同，靠源码顺序决胜负。 */
+  &.is-on {
+    --ant-button-default-bg: var(--app-accent-blue-weak);
+    --ant-button-default-color: var(--app-accent-blue);
+    --ant-button-default-border-color: transparent;
+    --ant-button-default-hover-bg: var(--app-accent-blue-weak);
+    --ant-button-default-hover-color: var(--app-accent-blue);
+    --ant-button-default-hover-border-color: transparent;
+    --ant-button-default-active-bg: var(--app-accent-blue-weak);
+    --ant-button-default-active-color: var(--app-accent-blue);
+    --ant-button-default-active-border-color: transparent;
+    --ant-button-font-weight: 600;
+  }
 }
 
 /* ── 图标按钮（含 .tiny 行内尺寸）──
@@ -125,6 +140,16 @@
     --ant-button-default-hover-color: var(--app-warning);
     --ant-button-default-active-bg: var(--app-surface-active);
     --ant-button-default-active-color: var(--app-warning);
+  }
+
+  /** 「这个图标按钮的对应面板已展开」的按压态（物品栏的详情展开箭头） */
+  &.is-on {
+    --ant-button-default-bg: var(--app-accent-blue-weak);
+    --ant-button-default-color: var(--app-accent-blue);
+    --ant-button-default-hover-bg: var(--app-accent-blue-weak);
+    --ant-button-default-hover-color: var(--app-accent-blue);
+    --ant-button-default-active-bg: var(--app-accent-blue-weak);
+    --ant-button-default-active-color: var(--app-accent-blue);
   }
 }
 
@@ -213,6 +238,20 @@
 /** 数值列（等宽数字，避免增减时行内跳动） */
 .cpk-num {
   font-variant-numeric: tabular-nums;
+}
+
+/* ── 「刚改动」角标（REQ-028 / F-2）──
+ * 一个 6px 实心圆点，不是文字 chip：它要贴在任意模块的行里，绝不能参与
+ * 布局挤压（`flex: none` + 固定宽高），也不该把行高撑起来。
+ * 颜色走主色 + 一圈同色弱底光晕 —— 语义是「最近动过」，用 warning / error
+ * 色会让整屏看起来「到处都是错」。 */
+.cpk-changed {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--app-primary);
+  box-shadow: 0 0 0 2px var(--app-primary-weak);
 }
 
 /* ── 弹窗通用文案 ── */

@@ -4,7 +4,11 @@ import {
   PACK_PROTAGONIST_EVENT,
   readEventDetail,
   registerPackCloser,
+  registerPackInsertIntoChapter,
+  registerPackPeek,
   requestClosePackPanel,
+  requestPackPeek,
+  runPackInsertIntoChapter,
   type PackProtagonistEventDetail,
 } from "./pack-config";
 
@@ -87,6 +91,88 @@ describe("受保护关闭桥（P1-8）", () => {
       expect(requestClosePackPanel()).toBe(true);
     } finally {
       registerPackCloser(null);
+    }
+  });
+});
+
+/**
+ * Peek 速览桥（REQ-001 第三形态）
+ *
+ * 这组测试钉的是「**不能用 setTimeout 猜 React 提交时机**」这条结论：
+ * 顶栏 Alt+点击时面板可能还没挂载（`packOpen` 从 false 翻到 true，React 要等这一拍
+ * commit 之后才跑 effect），此时请求必须被**记成待办**、由面板注册时消费。
+ * 用定时器猜的实现会在快设备上偶发通过、在慢机器上偶发失败。
+ */
+describe("Peek 速览桥（REQ-001）", () => {
+  it("面板没挂载 → 返回 false 并记下待办，挂载时立刻消费", () => {
+    registerPackPeek(null);
+    const calls: number[] = [];
+
+    expect(requestPackPeek()).toBe(false);
+    expect(calls).toHaveLength(0);
+
+    registerPackPeek(() => calls.push(Date.now()));
+    expect(calls).toHaveLength(1);
+    try {
+      // 待办只能消费一次：否则下一次「普通打开」会莫名其妙进入速览
+      registerPackPeek(() => calls.push(Date.now()));
+      expect(calls).toHaveLength(1);
+    } finally {
+      registerPackPeek(null);
+    }
+  });
+
+  it("面板在挂载中 → 直接生效，不留下次触发", () => {
+    const calls: number[] = [];
+    registerPackPeek(() => calls.push(Date.now()));
+    try {
+      expect(requestPackPeek()).toBe(true);
+      expect(calls).toHaveLength(1);
+      registerPackPeek(() => calls.push(Date.now()));
+      expect(calls).toHaveLength(1);
+    } finally {
+      registerPackPeek(null);
+    }
+  });
+
+  it("卸载时清掉待办（面板关掉后请求不该延到下一次打开）", () => {
+    requestPackPeek();
+    registerPackPeek(null);
+    const calls: number[] = [];
+    registerPackPeek(() => calls.push(Date.now()));
+    try {
+      expect(calls).toHaveLength(0);
+    } finally {
+      registerPackPeek(null);
+    }
+  });
+});
+
+/**
+ * 「插入本章末尾」桥（REQ-034）
+ *
+ * 行囊**不该 import 编辑器的 store**（PRD §1 要求它将来能整体搬去独立窗口，
+ * 分离窗口下根本没有正文可插）。所以由页面那侧注册处理器，行囊只发一句话。
+ * 没有处理器时返回 false，调用方据此给出「先在编辑器里打开一章」的提示。
+ */
+describe("插入本章末尾桥（REQ-034）", () => {
+  it("没有处理器时返回 false（不是静默成功）", () => {
+    registerPackInsertIntoChapter(null);
+    expect(runPackInsertIntoChapter("## x")).toBe(false);
+  });
+
+  it("把文本原样交给处理器，并把处理器的结果透传出来", () => {
+    const seen: string[] = [];
+    registerPackInsertIntoChapter((text) => {
+      seen.push(text);
+      return text.length > 4;
+    });
+    try {
+      expect(runPackInsertIntoChapter("## 行囊 · 物品栏")).toBe(true);
+      expect(runPackInsertIntoChapter("x")).toBe(false);
+      expect(seen).toEqual(["## 行囊 · 物品栏", "x"]);
+    } finally {
+      registerPackInsertIntoChapter(null);
     }
   });
 });

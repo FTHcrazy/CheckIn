@@ -1,3 +1,4 @@
+import { Badge, Button } from "antd";
 import {
   AppstoreOutlined,
   BulbOutlined,
@@ -171,7 +172,8 @@ export default function SupportPanel({
   const [dragging, setDragging] = useState(false);
 
   const tabsRef = useRef<HTMLDivElement | null>(null);
-  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  // antd Button 的 ref 是 button 或 anchor（传 href 时），这里只用 offsetLeft/offsetWidth
+  const tabRefs = useRef<Array<HTMLElement | null>>([]);
   const dragCleanupRef = useRef<(() => void) | null>(null);
 
   // 换作品时清空检索缓存（store 是模块级的，不能把上一本书的命中带过来）
@@ -409,42 +411,38 @@ export default function SupportPanel({
           </div>
           <div className="nv-panel__head-actions">
             {toolSub && (
-              <button
-                type="button"
+              <Button
                 className="nv-panel__icon"
                 title="返回工具箱"
                 onClick={backToTools}
               >
                 <LeftOutlined />
-              </button>
+              </Button>
             )}
             {head.action && (
-              <button
-                type="button"
+              <Button
                 className="nv-panel__btn"
                 onClick={head.action.onClick}
               >
                 {head.action.label}
-              </button>
+              </Button>
             )}
             {namedActive === "entity" && (
-              <button
-                type="button"
+              <Button
                 className="nv-panel__icon"
                 title="要素类型管理"
                 onClick={onOpenTypeManager}
               >
                 <SettingOutlined />
-              </button>
+              </Button>
             )}
-            <button
-              type="button"
+            <Button
               className="nv-panel__icon"
               title="收起面板"
               onClick={onCollapse}
             >
               <RightOutlined />
-            </button>
+            </Button>
           </div>
         </header>
 
@@ -458,13 +456,19 @@ export default function SupportPanel({
           />
           {TABS.map((tab, index) => {
             const on = tab.key === activeTab;
+            // tab 角标计数：0 时 antd Badge 自己就不渲染角标（不是我们的分支）
+            const badgeCount =
+              tab.key === "outline"
+                ? counts.openForeshadows
+                : tab.key === "note"
+                  ? notes.length
+                  : 0;
             return (
-              <button
+              <Button
                 key={tab.key}
                 ref={(node) => {
                   tabRefs.current[index] = node;
                 }}
-                type="button"
                 role="tab"
                 aria-selected={on}
                 className={`nv-panel__tab${on ? " is-on" : ""}`}
@@ -473,17 +477,20 @@ export default function SupportPanel({
                   setToolSub(null);
                 }}
               >
-                {tab.icon}
+                {/* 角标走组件库 Badge（§6.1.2）：包住图标，位置 / 描边 / 圆角
+                    由组件库负责；灵感条数是中性信息，走 --soft 换语义色 */}
+                <Badge
+                  className={`nv-panel__tab-badge${
+                    tab.key === "note" ? " nv-panel__tab-badge--soft" : ""
+                  }`}
+                  count={badgeCount}
+                  size="small"
+                  overflowCount={99}
+                >
+                  {tab.icon}
+                </Badge>
                 <span>{tab.label}</span>
-                {tab.key === "outline" && counts.openForeshadows > 0 && (
-                  <i className="nv-panel__badge">{counts.openForeshadows}</i>
-                )}
-                {tab.key === "note" && notes.length > 0 && (
-                  <i className="nv-panel__badge nv-panel__badge--soft">
-                    {notes.length}
-                  </i>
-                )}
-              </button>
+              </Button>
             );
           })}
         </nav>
@@ -559,15 +566,14 @@ export default function SupportPanel({
         <footer className="nv-panel__foot">{foot}</footer>
       </aside>
 
-      <button
-        type="button"
+      <Button
         className="nv-panel__reopen"
         title="展开面板"
         onClick={onCollapse}
       >
         <LeftOutlined />
         <span className="nv-panel__reopen-text">展开面板</span>
-      </button>
+      </Button>
     </div>
   );
 }

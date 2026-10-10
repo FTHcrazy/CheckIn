@@ -14,6 +14,7 @@ import ShelfStats, { type ShelfStatItem } from "./components/ShelfStats";
 import ShelfToolbar, { type ShelfViewMode } from "./components/ShelfToolbar";
 import ShelfTopBar from "./components/ShelfTopBar";
 import { useBookshelfData } from "./hooks/useBookshelfData";
+import { useBookImport } from "./hooks/useBookImport";
 import {
   filterIdeaNotes,
   filterWorkCards,
@@ -84,6 +85,13 @@ export default function BookshelfPage({
     }
     void refresh(true);
   }, [visible, refresh]);
+
+  // ── 导入书籍（TXT）：worker 解析 + 单事务落库 + 完成后刷新书架 ──
+  const {
+    importing,
+    phase: importPhase,
+    startImport,
+  } = useBookImport({ onDone: () => void refresh(true) });
 
   const totalWords = useMemo(
     () => cards.reduce((sum, card) => sum + card.totalWords, 0),
@@ -210,6 +218,9 @@ export default function BookshelfPage({
         keyword={keyword}
         onKeywordChange={setKeyword}
         onCreateClick={() => setCreateOpen(true)}
+        onImportClick={() => void startImport()}
+        importing={importing}
+        importPhase={importPhase}
       />
 
       <div className="bs-page__body">
@@ -252,7 +263,10 @@ export default function BookshelfPage({
                   onOpen={openWorkCard}
                 />
               ))}
-              <NewWorkCard onCreateClick={() => setCreateOpen(true)} />
+              <NewWorkCard
+                view={viewMode}
+                onCreateClick={() => setCreateOpen(true)}
+              />
             </div>
           </section>
         </main>

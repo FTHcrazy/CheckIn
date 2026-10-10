@@ -1,7 +1,9 @@
 import { useMemo, useState } from "react";
-import { Button, Input, InputNumber, Switch } from "antd";
+import { Button, Input, InputNumber, Progress, Switch } from "antd";
 import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
 import PackModuleShell from "../PackModuleShell";
+import PackExportButton from "../PackExportButton";
+import PackChangedDot from "../PackChangedDot";
 import ModifierList from "../ModifierList";
 import type { PackPanelApi } from "../../hooks/usePackPanel";
 import { moduleLabel } from "../module-meta";
@@ -38,6 +40,7 @@ export default function SkillsModule({ api }: SkillsModuleProps) {
 
   if (!doc) return null;
   const key = "skills" as const;
+  const showProficiency = api.prefs.showProficiency;
   const skills = [...doc.skills].sort((a, b) => a.sortOrder - b.sortOrder);
 
   return (
@@ -47,6 +50,7 @@ export default function SkillsModule({ api }: SkillsModuleProps) {
       onToggle={() => api.toggleModuleCollapsed(key)}
       actions={
         <>
+          <PackExportButton api={api} moduleKey="skills" label={moduleLabel(key)} />
           <label className="cpk-skl__toggle" title="关闭后熟练度相关的界面完全隐藏，而不是置灰">
             <span>熟练度</span>
             <Switch
@@ -71,7 +75,7 @@ export default function SkillsModule({ api }: SkillsModuleProps) {
           {skills.map((skill) => {
             const mods = api.modifiersOf("skill", skill.id);
             const active = api.isCarrierActive("skill", skill.id);
-            const position = api.prefs.showProficiency
+            const position = showProficiency
               ? thresholdOf(thresholds, skill.proficiencyRaw)
               : null;
             const open = expanded === skill.id;
@@ -91,7 +95,17 @@ export default function SkillsModule({ api }: SkillsModuleProps) {
                     placeholder="技能名"
                     onChange={(event) => api.updateSkill(skill.id, { name: event.target.value })}
                   />
-                  {position ? (
+                  <PackChangedDot
+                    updatedAt={skill.updatedAt}
+                    changed={api.isRecentlyChanged(skill.updatedAt)}
+                  />
+                  {/*
+                    数值与「档位名 + 进度条」的可见条件**不一样**：
+                    数值是熟练度的本体（效果可以按它缩放，`scaleByProficiency`），
+                    没有配过等级体系时它照样可改；档位名与进度条要有阈值体系才有意义。
+                    两者都挂在同一个「熟练度」开关下（关掉即整块缺席，不是置灰）。
+                  */}
+                  {showProficiency ? (
                     <>
                       <InputNumber
                         size="small"
@@ -103,7 +117,7 @@ export default function SkillsModule({ api }: SkillsModuleProps) {
                         }
                         title="熟练度（可被效果按上限 500 缩放）"
                       />
-                      {position.name ? (
+                      {position?.name ? (
                         <span className="cpk-skl__tier">
                           {position.name}
                           {position.overflow ? "+" : ""}
@@ -125,6 +139,27 @@ export default function SkillsModule({ api }: SkillsModuleProps) {
                     <DeleteOutlined />
                   </Button>
                 </div>
+
+                {/*
+                  熟练度进度条（REQ-014）：只描述「当前档位内走了多少」，
+                  档位的量纲（min–max）标在右边 —— 光有一根条读者不知道满格是多少。
+                  末档无上限（`max === null`）时不存在「进度」，改标 `min+`，
+                  条固定满格（`thresholdOf` 的 progress 就是二值的）。
+                */}
+                {position ? (
+                  <div className="cpk-skl__prog">
+                    <Progress
+                      percent={Math.round(position.progress * 100)}
+                      showInfo={false}
+                      size="small"
+                      className="cpk-skl__bar"
+                      aria-label="熟练度进度"
+                    />
+                    <span className="cpk-skl__scale">
+                      {position.max === null ? `${position.min}+` : `${position.min}–${position.max}`}
+                    </span>
+                  </div>
+                ) : null}
 
                 {open ? (
                   <div className="cpk-skl__effects">

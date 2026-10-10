@@ -1,3 +1,9 @@
+@use "../../../../../../shared/styles/widget" as widget;
+
+/* 标注开关 .nv-status__anno 由 antd `Button` 承载：先清零再只声明组件级变量。
+   开态（.is-on）是永久高亮，写成默认变量，避免被 antd 的 :hover / :active
+   规则压回去（AGENTS §6.1.2）；聚焦环用组件库自带的。 */
+
 .nv-status {
   height: 32px;
   flex: none;
@@ -21,34 +27,36 @@
   }
 
   // 全局标注层开关（PRD §2 风险对策）：常驻状态条，码字途中一键关闭高亮/悬浮卡
-  &__anno {
+  &__anno.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-border-radius: 4px;
+    --ant-line-width: 1px;
+    --ant-button-content-font-size: 12px;
+    --ant-button-icon-gap: 5px;
+    --ant-button-default-bg: transparent;
+    --ant-button-default-color: var(--app-text-muted);
+    --ant-button-default-border-color: var(--app-border);
+    --ant-button-default-hover-color: var(--app-text-secondary);
+    --ant-button-default-hover-border-color: var(--app-text-muted);
+    --ant-button-default-active-color: var(--app-text-secondary);
+    --ant-button-default-active-border-color: var(--app-text-muted);
     display: inline-flex;
     align-items: center;
-    gap: 5px;
     padding: 3px 8px;
-    border: 1px solid var(--app-border);
-    border-radius: var(--app-radius-sm, 4px);
-    background: transparent;
-    color: var(--app-text-muted);
-    font-size: 12px;
-    font-family: inherit;
-    cursor: pointer;
-    transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
 
-    &:hover {
-      color: var(--app-text-secondary);
-      border-color: var(--app-text-muted);
-    }
-
+    /* 开态：主色描边 + 主色文字（永久高亮 → 写默认变量）。
+       底色沿用原 `var(--app-primary-bg, transparent)` 的求值结果 transparent ——
+       主题层没有 --app-primary-bg，若想加淡底改成 --app-primary-weak 即可 */
     &.is-on {
-      color: var(--app-primary);
-      border-color: var(--app-primary);
-      background: var(--app-primary-bg, transparent);
-    }
-
-    &:focus-visible {
-      outline: 2px solid var(--app-primary);
-      outline-offset: 1px;
+      --ant-button-default-bg: transparent;
+      --ant-button-default-color: var(--app-primary);
+      --ant-button-default-border-color: var(--app-primary);
+      --ant-button-default-hover-bg: transparent;
+      --ant-button-default-hover-color: var(--app-primary);
+      --ant-button-default-hover-border-color: var(--app-primary);
+      --ant-button-default-active-bg: transparent;
+      --ant-button-default-active-color: var(--app-primary);
+      --ant-button-default-active-border-color: var(--app-primary);
     }
   }
 

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { BookOutlined, PlusOutlined, SearchOutlined } from "@ant-design/icons";
-import { Input } from "antd";
+import { Button, Input } from "antd";
 import { Virtuoso } from "react-virtuoso";
 import VolumeNode from "../VolumeNode";
 import ChapterTreeItem from "../ChapterTreeItem";
@@ -176,17 +176,16 @@ export default function ChapterTree({
       )}
 
       <div className="nv-tree__foot">
-        <button type="button" className="nv-tree__foot-btn" onClick={onCreate}>
-          <PlusOutlined /> 新章节
-        </button>
-        <button
-          type="button"
+        <Button className="nv-tree__foot-btn" onClick={onCreate}>
+          <PlusOutlined />新章节
+        </Button>
+        <Button
           className="nv-tree__foot-btn"
           onClick={onCreateVolume}
           title="在当前作品末尾新建一卷"
         >
-          <BookOutlined /> 新卷
-        </button>
+          <BookOutlined />新卷
+        </Button>
       </div>
     </div>
   );

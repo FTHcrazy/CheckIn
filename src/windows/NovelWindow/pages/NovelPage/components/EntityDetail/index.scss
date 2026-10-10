@@ -1,4 +1,10 @@
-/* 要素详情（NL 设计稿 §3·要素详情） */
+/* 要素详情（NL 设计稿 §3·要素详情）
+
+   本文件里的可点控件一律是 antd Button：先用 widget.ant-button-reset 把组件级
+   变量清零，再声明自己的值（同一个选择器里靠源码顺序覆盖）。
+   hover / active / disabled 不写属性规则 —— antd 的状态选择器是 (0,4,0)，
+   自写的 .x:hover（0,2,0）永远压不过，只能改它读取的那组 --ant-button-* 变量。 */
+@use "../../../../../../shared/styles/widget" as widget;
 
 .nv-edetail {
   display: flex;
@@ -12,46 +18,40 @@
     margin-bottom: 12px;
   }
 
-  &__icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 27px;
-    height: 27px;
-    border: none;
-    border-radius: 8px;
-    background: transparent;
-    color: var(--app-text-muted);
-    cursor: pointer;
-    transition: background 150ms ease, color 150ms ease;
+  /* 纯图标按钮（返回）：清零后要自己把图标推回居中 */
+  &__icon.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 27px;
+    --ant-border-radius: 8px;
+    --ant-button-default-color: var(--app-text-muted);
+    --ant-button-default-hover-bg: var(--app-surface-hover);
+    --ant-button-default-hover-color: var(--app-text);
+    --ant-button-default-active-bg: var(--app-surface-hover);
+    --ant-button-default-active-color: var(--app-text);
+    --ant-button-default-shadow: none;
 
-    &:hover {
-      background: var(--app-surface-hover);
-      color: var(--app-text);
-    }
+    width: 27px;
+    justify-content: center;
   }
 
-  &__edit {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 5px;
-    margin-left: auto;
-    height: 27px;
-    padding: 0 9px;
-    border: none;
-    border-radius: 8px;
-    background: var(--app-primary);
-    color: var(--app-primary-contrast);
-    font-family: inherit;
-    font-size: 12px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: background 150ms ease;
+  &__edit.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 27px;
+    --ant-button-padding-inline: 9px;
+    --ant-button-content-font-size: 12px;
+    --ant-button-font-weight: 500;
+    --ant-button-icon-gap: 5px;
+    --ant-border-radius: 8px;
+    --ant-button-default-bg: var(--app-primary);
+    --ant-button-default-color: var(--app-primary-contrast);
+    --ant-button-default-hover-bg: var(--app-primary-strong);
+    --ant-button-default-hover-color: var(--app-primary-contrast);
+    --ant-button-default-active-bg: var(--app-primary-strong);
+    --ant-button-default-active-color: var(--app-primary-contrast);
+    --ant-button-default-shadow: none;
 
-    &:hover {
-      background: var(--app-primary-strong);
-    }
+    margin-left: auto;
+    justify-content: center;
   }
 
   &__hero {
@@ -191,24 +191,30 @@
     gap: 5px;
   }
 
-  &__type-chip {
+  /* 类型选择胶囊：未选中时文字色由 TSX 内联给出（内联高于任何变量） */
+  &__type-chip.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: auto;
+    --ant-button-content-font-size: 12px;
+    --ant-border-radius: var(--app-radius-pill);
+    --ant-line-width: 1px;
+    --ant-button-default-bg: var(--app-surface);
+    --ant-button-default-border-color: transparent;
+    --ant-button-default-hover-bg: var(--app-surface-hover);
+    --ant-button-default-active-bg: var(--app-surface-hover);
+    --ant-button-default-shadow: none;
+
     padding: 2px 8px;
-    border: 1px solid transparent;
-    border-radius: var(--app-radius-pill);
-    background: var(--app-surface);
-    font-family: inherit;
-    font-size: 12px;
-    cursor: pointer;
-    transition: border-color 150ms ease, background 150ms ease;
 
-    &:hover {
-      background: var(--app-surface-hover);
-    }
-
+    /* 选中态是持久高亮，写默认变量（hover / active 一并跟上，不掉色） */
     &.is-on {
-      border-color: currentColor;
-      color: var(--app-primary);
-      font-weight: 600;
+      --ant-button-default-color: var(--app-primary);
+      --ant-button-default-border-color: currentColor;
+      --ant-button-default-hover-color: var(--app-primary);
+      --ant-button-default-hover-border-color: currentColor;
+      --ant-button-default-active-color: var(--app-primary);
+      --ant-button-default-active-border-color: currentColor;
+      --ant-button-font-weight: 600;
     }
   }
 
@@ -219,42 +225,43 @@
     margin-top: 8px;
   }
 
-  &__save,
-  &__cancel {
-    height: 27px;
-    padding: 0 12px;
-    border-radius: 8px;
-    font-family: inherit;
-    font-size: 12px;
-    cursor: pointer;
-    transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
+  /* 保存 / 取消：尺寸与排版共用，配色各自声明（资料卡表单与关联表单复用同一组类） */
+  &__save.ant-btn,
+  &__cancel.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 27px;
+    --ant-button-padding-inline: 12px;
+    --ant-button-content-font-size: 12px;
+    --ant-border-radius: 8px;
+    --ant-button-default-shadow: none;
+
+    justify-content: center;
   }
 
-  &__save {
-    border: none;
-    background: var(--app-primary);
-    color: var(--app-primary-contrast);
-
-    &:hover:not(:disabled) {
-      background: var(--app-primary-strong);
-    }
-
-    &:disabled {
-      background: var(--app-surface-active);
-      color: var(--app-text-disabled);
-      cursor: default;
-    }
+  &__save.ant-btn {
+    --ant-button-default-bg: var(--app-primary);
+    --ant-button-default-color: var(--app-primary-contrast);
+    --ant-button-default-hover-bg: var(--app-primary-strong);
+    --ant-button-default-hover-color: var(--app-primary-contrast);
+    --ant-button-default-active-bg: var(--app-primary-strong);
+    --ant-button-default-active-color: var(--app-primary-contrast);
+    /* 禁用态：antd 只把 bg / border 暴露成组件级变量，文字色走它自己的
+       --ant-color-text-disabled（ThemeProvider 已映射到 --app-text-disabled） */
+    --ant-button-default-bg-disabled: var(--app-surface-active);
+    --ant-button-border-color-disabled: var(--app-surface-active);
   }
 
-  &__cancel {
-    border: 1px solid var(--app-border);
-    background: transparent;
-    color: var(--app-text-secondary);
-
-    &:hover {
-      color: var(--app-text);
-      border-color: var(--app-text-muted);
-    }
+  &__cancel.ant-btn {
+    --ant-line-width: 1px;
+    --ant-button-default-bg: transparent;
+    --ant-button-default-color: var(--app-text-secondary);
+    --ant-button-default-border-color: var(--app-border);
+    --ant-button-default-hover-bg: transparent;
+    --ant-button-default-hover-color: var(--app-text);
+    --ant-button-default-hover-border-color: var(--app-text-muted);
+    --ant-button-default-active-bg: transparent;
+    --ant-button-default-active-color: var(--app-text);
+    --ant-button-default-active-border-color: var(--app-text-muted);
   }
 
   &__tags {
@@ -311,32 +318,29 @@
     font-size: 12px;
   }
 
-  &__rel-add {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 5px;
+  /* 虚线框入口：antd 只把 border-style 暴露成 --ant-line-type，走变量而不是自画 border */
+  &__rel-add.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 30px;
+    --ant-button-content-font-size: 12px;
+    --ant-button-icon-gap: 5px;
+    --ant-border-radius: 9px;
+    --ant-line-width: 1px;
+    --ant-line-type: dashed;
+    --ant-button-default-bg: transparent;
+    --ant-button-default-color: var(--app-text-muted);
+    --ant-button-default-border-color: var(--app-border-strong);
+    --ant-button-default-hover-color: var(--app-primary);
+    --ant-button-default-hover-border-color: var(--app-primary);
+    --ant-button-default-active-color: var(--app-primary);
+    --ant-button-default-active-border-color: var(--app-primary);
+    /* 禁用态只换文字色，虚线框要留着（清零点把 border-color-disabled 归零了） */
+    --ant-button-border-color-disabled: var(--app-border-strong);
+    --ant-button-default-shadow: none;
+
     width: 100%;
-    height: 30px;
     margin-top: 6px;
-    border: 1px dashed var(--app-border-strong);
-    border-radius: 9px;
-    background: transparent;
-    color: var(--app-text-muted);
-    font-family: inherit;
-    font-size: 12px;
-    cursor: pointer;
-    transition: border-color 150ms ease, color 150ms ease;
-
-    &:hover:not(:disabled) {
-      border-color: var(--app-primary);
-      color: var(--app-primary);
-    }
-
-    &:disabled {
-      color: var(--app-text-disabled);
-      cursor: default;
-    }
+    justify-content: center;
   }
 
   &__rel-form {
@@ -351,58 +355,61 @@
   }
 
   /* ── 境界阶梯 ─────────────────────────────────────────────────── */
-  &__manage {
-    margin-left: auto;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 0 6px;
-    border: none;
-    border-radius: var(--app-radius-pill);
-    background: transparent;
-    color: var(--app-text-muted);
-    font-family: inherit;
-    font-size: 12px;
-    font-weight: 400;
-    letter-spacing: 0;
-    cursor: pointer;
+  &__manage.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: auto;
+    --ant-button-padding-inline: 6px;
+    --ant-button-content-font-size: 12px;
+    --ant-button-font-weight: 400;
+    --ant-button-icon-gap: 4px;
+    --ant-border-radius: var(--app-radius-pill);
+    --ant-button-default-color: var(--app-text-muted);
+    --ant-button-default-hover-color: var(--app-primary);
+    --ant-button-default-active-color: var(--app-primary);
+    --ant-button-default-shadow: none;
 
-    &:hover {
-      color: var(--app-primary);
-    }
+    margin-left: auto;
   }
 
   /* ── 主角设定 ─────────────────────────────────────────────────── */
-  &__protagonist {
+  &__protagonist.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: auto;
+    --ant-button-content-font-size: 12px;
+    --ant-border-radius: var(--app-radius-item);
+    --ant-line-width: 1px;
+    --ant-line-type: dashed;
+    --ant-button-default-bg: var(--app-surface);
+    --ant-button-default-color: var(--app-text-secondary);
+    --ant-button-default-border-color: var(--app-border-strong);
+    --ant-button-default-hover-bg: var(--app-surface);
+    --ant-button-default-hover-border-color: var(--app-accent-amber);
+    --ant-button-default-active-bg: var(--app-surface);
+    --ant-button-default-active-border-color: var(--app-accent-amber);
+    --ant-button-default-shadow: none;
+
     display: flex;
-    align-items: center;
     gap: 9px;
     width: 100%;
     padding: 9px 10px;
-    border: 1px dashed var(--app-border-strong);
-    border-radius: var(--app-radius-item);
-    background: var(--app-surface);
-    color: var(--app-text-secondary);
-    font-family: inherit;
-    font-size: 12px;
     text-align: left;
-    cursor: pointer;
-    transition: border-color 150ms ease, background 150ms ease;
-
-    &:hover {
-      border-color: var(--app-accent-amber);
-    }
+    /* 说明文字要换行：antd 给按钮加了 white-space: nowrap */
+    white-space: normal;
 
     &:focus-visible {
       outline: 2px solid var(--app-primary);
       outline-offset: 2px;
     }
 
-    /* 已设为主角：从虚框转为实心强调，与「未设」一眼可分 */
+    /* 已设为主角：从虚框转为实心强调，与「未设」一眼可分（持久高亮 → 默认变量） */
     &.is-on {
-      border-style: solid;
-      border-color: var(--app-accent-amber);
-      background: var(--app-accent-amber-weak);
+      --ant-line-type: solid;
+      --ant-button-default-bg: var(--app-accent-amber-weak);
+      --ant-button-default-border-color: var(--app-accent-amber);
+      --ant-button-default-hover-bg: var(--app-accent-amber-weak);
+      --ant-button-default-hover-border-color: var(--app-accent-amber);
+      --ant-button-default-active-bg: var(--app-accent-amber-weak);
+      --ant-button-default-active-border-color: var(--app-accent-amber);
 
       .nv-edetail__protagonist-icon {
         color: var(--app-accent-amber);
@@ -473,34 +480,92 @@
 
   &__ladder {
     display: grid;
+    /* 单列网格：显式 0 下限，见 EntityPanel__list 的说明 */
+    grid-template-columns: minmax(0, 1fr);
     gap: 4px;
     margin-top: 6px;
   }
 
-  &__rung {
+  /* 「当前境界」空态：还没建等级体系时，这一格不能什么都不画 ——
+     否则资料卡上找不到任何设境界关联的入口（管理按钮原本也在这个区块里） */
+  &__lvlempty {
     display: flex;
-    align-items: center;
+    flex-direction: column;
+    gap: 7px;
+    margin-top: 6px;
+    padding: 10px 12px;
+    border: 1px dashed var(--app-border-strong);
+    border-radius: var(--app-radius-item);
+    background: var(--app-surface);
+
+    b {
+      font-size: 12px;
+      color: var(--app-text-secondary-strong);
+    }
+
+    em {
+      font-style: normal;
+      font-size: 12px;
+      line-height: 1.6;
+      color: var(--app-text-secondary-strong);
+    }
+  }
+
+  /* 空态里的建体系入口：自带造型，清零后重绘（主色描边 + hover 弱底） */
+  &__lvlempty-add.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 30px;
+    --ant-button-content-font-size: 12px;
+    --ant-button-icon-gap: 5px;
+    --ant-border-radius: 9px;
+    --ant-line-width: 1px;
+    --ant-button-default-bg: transparent;
+    --ant-button-default-color: var(--app-primary);
+    --ant-button-default-border-color: var(--app-primary);
+    --ant-button-default-hover-bg: var(--app-primary-weak);
+    --ant-button-default-hover-color: var(--app-primary);
+    --ant-button-default-hover-border-color: var(--app-primary);
+    --ant-button-default-active-bg: var(--app-primary-weak);
+    --ant-button-default-active-color: var(--app-primary);
+    --ant-button-default-active-border-color: var(--app-primary);
+    --ant-button-default-shadow: none;
+
+    align-self: flex-start;
+    justify-content: center;
+  }
+
+  /* 等级格子：自带造型，清零后重绘；hover 换底、is-on 是持久高亮，都写变量 */
+  &__rung.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: auto;
+    --ant-button-content-font-size: 12px;
+    --ant-border-radius: 9px;
+    --ant-line-width: 1px;
+    --ant-button-default-bg: var(--app-surface);
+    --ant-button-default-color: var(--app-text-secondary);
+    --ant-button-default-border-color: var(--app-border);
+    --ant-button-default-hover-bg: var(--app-surface-hover);
+    --ant-button-default-hover-border-color: var(--app-border);
+    --ant-button-default-active-bg: var(--app-surface-hover);
+    --ant-button-default-active-border-color: var(--app-border);
+    --ant-button-default-shadow: none;
+
+    display: flex;
     gap: 8px;
     width: 100%;
     padding: 6px 9px;
-    border: 1px solid var(--app-border);
-    border-radius: 9px;
-    background: var(--app-surface);
-    color: var(--app-text-secondary);
-    font-family: inherit;
-    font-size: 12px;
-    cursor: pointer;
-    transition: border-color 150ms ease, background 150ms ease, color 150ms ease;
-
-    &:hover {
-      background: var(--app-surface-hover);
-    }
 
     &.is-on {
-      border-color: var(--app-accent-blue);
-      background: var(--app-accent-blue-weak);
-      color: var(--app-accent-blue);
-      font-weight: 600;
+      --ant-button-default-bg: var(--app-accent-blue-weak);
+      --ant-button-default-color: var(--app-accent-blue);
+      --ant-button-default-border-color: var(--app-accent-blue);
+      --ant-button-default-hover-bg: var(--app-accent-blue-weak);
+      --ant-button-default-hover-color: var(--app-accent-blue);
+      --ant-button-default-hover-border-color: var(--app-accent-blue);
+      --ant-button-default-active-bg: var(--app-accent-blue-weak);
+      --ant-button-default-active-color: var(--app-accent-blue);
+      --ant-button-default-active-border-color: var(--app-accent-blue);
+      --ant-button-font-weight: 600;
     }
   }
 
@@ -535,25 +600,26 @@
     gap: 5px;
   }
 
-  &__chip {
+  &__chip.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: auto;
+    --ant-button-content-font-size: 12px;
+    --ant-border-radius: var(--app-radius-pill);
+    --ant-line-width: 1px;
+    --ant-button-default-bg: var(--app-surface);
+    --ant-button-default-color: var(--app-text-secondary);
+    --ant-button-default-border-color: var(--app-border);
+    --ant-button-default-hover-bg: var(--app-primary-weak);
+    --ant-button-default-hover-color: var(--app-primary);
+    --ant-button-default-hover-border-color: var(--app-primary);
+    --ant-button-default-active-bg: var(--app-primary-weak);
+    --ant-button-default-active-color: var(--app-primary);
+    --ant-button-default-active-border-color: var(--app-primary);
+    --ant-button-default-shadow: none;
+
     display: inline-flex;
-    align-items: center;
     gap: 4px;
     padding: 3px 8px;
-    border: 1px solid var(--app-border);
-    border-radius: var(--app-radius-pill);
-    background: var(--app-surface);
-    color: var(--app-text-secondary);
-    font-family: inherit;
-    font-size: 12px;
-    cursor: pointer;
-    transition: border-color 150ms ease, color 150ms ease, background 150ms ease;
-
-    &:hover {
-      border-color: var(--app-primary);
-      color: var(--app-primary);
-      background: var(--app-primary-weak);
-    }
   }
 
   &__chip-no {
@@ -563,6 +629,8 @@
 
   &__acts {
     display: grid;
+    /* 单列网格：显式 0 下限，见 EntityPanel__list 的说明 */
+    grid-template-columns: minmax(0, 1fr);
     gap: 6px;
     margin-top: 14px;
   }

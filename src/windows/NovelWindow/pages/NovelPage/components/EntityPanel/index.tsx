@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CloseOutlined, SearchOutlined } from "@ant-design/icons";
-import { Input } from "antd";
+import { Button, Input } from "antd";
 import EntityCard from "../EntityCard";
 import EntityDetail from "../EntityDetail";
 import type { EntitySavePatch } from "../EntityDetail";
@@ -232,14 +232,13 @@ export default function EntityPanel({
           onChange={(event) => setKeyword(event.target.value)}
         />
         {keyword && (
-          <button
-            type="button"
+          <Button
             className="nv-field__clear"
             aria-label="清空搜索"
             onClick={() => setKeyword("")}
           >
             <CloseOutlined />
-          </button>
+          </Button>
         )}
       </div>
 
@@ -249,30 +248,28 @@ export default function EntityPanel({
           fadeRight ? " is-fade-right" : ""
         }`}
       >
-        <button
-          type="button"
+        <Button
           className={`nv-chip${filter === "all" ? " is-on" : ""}`}
           style={filter === "all" ? { color: "var(--app-primary)" } : undefined}
           onClick={() => onFilterChange("all")}
         >
           全部<em>{entities.length}</em>
-        </button>
+        </Button>
         {filterOrder.map((type) => {
           const count = counts.get(type) ?? 0;
           if (count === 0) return null;
           const meta = metaOf(type);
           const on = filter === type;
           return (
-            <button
+            <Button
               key={type}
-              type="button"
               className={`nv-chip${on ? " is-on" : ""}`}
               style={on ? { color: meta.color } : undefined}
               onClick={() => onFilterChange(type)}
             >
               {meta.label}
               <em>{count}</em>
-            </button>
+            </Button>
           );
         })}
       </div>

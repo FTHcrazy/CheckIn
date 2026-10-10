@@ -1,4 +1,4 @@
-import { ArrowUpOutlined, PlusOutlined } from "@ant-design/icons";
+import { ArrowUpOutlined } from "@ant-design/icons";
 import { useRef, useState } from "react";
 import { Button, Input, Select } from "antd";
 import type { InputRef } from "antd";
@@ -62,14 +62,6 @@ export default function IdeaRail({
       <div className="bs-rail__head">
         <span className="bs-rail__title">灵感库</span>
         <span className="bs-rail__total">全部 {counts.all}</span>
-        <button
-          type="button"
-          className="bs-rail__plus"
-          onClick={() => textareaRef.current?.focus()}
-          aria-label="记一条灵感"
-        >
-          <PlusOutlined />
-        </button>
       </div>
       <p className="bs-rail__subtitle">跨作品收集，随时归纳到作品或回编辑器转为伏笔</p>
 
@@ -116,9 +108,8 @@ export default function IdeaRail({
 
       <div className="bs-rail__chips" role="tablist" aria-label="灵感筛选">
         {FILTER_CHIPS.map((chip) => (
-          <button
+          <Button
             key={chip.key}
-            type="button"
             role="tab"
             aria-selected={filter === chip.key}
             className={`bs-rail__chip${filter === chip.key ? " is-active" : ""}`}
@@ -126,7 +117,7 @@ export default function IdeaRail({
           >
             {chip.label}
             <span className="bs-rail__chip-count">{counts[chip.key]}</span>
-          </button>
+          </Button>
         ))}
       </div>
 

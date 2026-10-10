@@ -2,6 +2,8 @@ import { useMemo, useState } from "react";
 import { Button, Dropdown, Input, InputNumber, Modal, Select } from "antd";
 import { ArrowDownOutlined, ArrowUpOutlined, DeleteOutlined, PlusOutlined } from "@ant-design/icons";
 import PackModuleShell from "../PackModuleShell";
+import PackExportButton from "../PackExportButton";
+import PackChangedDot from "../PackChangedDot";
 import type { PackPanelApi } from "../../hooks/usePackPanel";
 import { moduleLabel } from "../module-meta";
 import { ATTR_TEMPLATES, type PackAttribute } from "../../types";
@@ -68,6 +70,7 @@ export default function AttributesModule({ api }: AttributesModuleProps) {
       onToggle={() => api.toggleModuleCollapsed(key)}
       actions={
         <>
+          <PackExportButton api={api} moduleKey="attributes" label={moduleLabel(key)} />
           <Dropdown
             menu={{
               items: Object.keys(ATTR_TEMPLATES).map((name) => ({
@@ -115,6 +118,10 @@ export default function AttributesModule({ api }: AttributesModuleProps) {
                       placeholder="属性名"
                       aria-label="属性名"
                       onChange={(event) => api.updateAttribute(attr.id, { name: event.target.value })}
+                    />
+                    <PackChangedDot
+                      updatedAt={attr.updatedAt}
+                      changed={api.isRecentlyChanged(attr.updatedAt)}
                     />
                     <InputNumber
                       size="small"

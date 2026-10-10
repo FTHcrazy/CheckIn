@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { DragEvent, KeyboardEvent } from "react";
 import { DownOutlined, PlusOutlined, RightOutlined } from "@ant-design/icons";
-import { Input } from "antd";
+import { Button, Input } from "antd";
 import { DRAG_MIME_CHAPTER, DRAG_MIME_VOLUME, UNNAMED_VOLUME } from "../../novel-config";
 import { volumeDisplayName } from "../../novel-utils";
 import type { LabelNumberStyle, NovelVolume } from "../../types";
@@ -134,8 +134,7 @@ export default function VolumeNode({
           />
         </div>
       ) : (
-        <button
-          type="button"
+        <Button
           className={`nv-volume__head${dropActive ? " is-drop" : ""}`}
           draggable
           onDragStart={handleHeadDragStart}
@@ -162,12 +161,11 @@ export default function VolumeNode({
             {displayName}
           </span>
           <span className="nv-volume__count">{chapterCount}</span>
-        </button>
+        </Button>
       )}
       {/* 新建章节入口挂在行外（button 不能嵌 button），卷头悬浮时浮现盖住章数 */}
       {!nameEditing && (
-        <button
-          type="button"
+        <Button
           className="nv-volume__add"
           aria-label={`在${displayName}新建章节`}
           title={`在${displayName}新建章节`}
@@ -177,7 +175,7 @@ export default function VolumeNode({
           }}
         >
           <PlusOutlined />
-        </button>
+        </Button>
       )}
     </div>
   );

@@ -12,7 +12,7 @@ import type {
   PackRealmLinkDTO,
   PackSavePayloadDTO,
 } from "../types";
-import { PACK_UI_KEY } from "../pack-config";
+import { PACK_UI_KEY, runPackQuickAdd, type PackQuickAddRequest } from "../pack-config";
 
 export interface PackSaveInput extends Omit<PackSavePayloadDTO, "reason" | "chapterId"> {
   reason: string;
@@ -96,4 +96,33 @@ export async function fetchPackUiPrefsRaw(): Promise<string | null> {
 /** 保存行囊界面偏好（防抖由调用方负责） */
 export async function savePackUiPrefsRaw(value: string): Promise<boolean> {
   return window.electronAPI!.novel.configSet(PACK_UI_KEY, value);
+}
+
+// ── 快速记账（REQ-027：正文选区 → 记入背包） ──
+
+/**
+ * 把一段正文记入背包。**面板开着时由面板处理，否则落主进程。**
+ *
+ * 两条路的差异不是「快慢」而是「谁是数据主人」：面板开着的整个会话里，
+ * 真正的当前状态是它的内存文档 + 草稿，直接写库会被下一次整文档草稿覆盖；
+ * 面板没开时主进程才是唯一写入方（且它自己会判断要不要并进草稿）。
+ */
+export async function quickAddPackItem(
+  workId: string,
+  request: PackQuickAddRequest,
+): Promise<boolean> {
+  const local = runPackQuickAdd(request);
+  if (local.handled) return local.ok;
+  if (!workId) return false;
+  try {
+    const created = await window.electronAPI!.novel.pack.quickAdd(
+      workId,
+      request.name,
+      request.chapterId,
+      request.category ?? "杂物",
+    );
+    return created !== null;
+  } catch {
+    return false;
+  }
 }

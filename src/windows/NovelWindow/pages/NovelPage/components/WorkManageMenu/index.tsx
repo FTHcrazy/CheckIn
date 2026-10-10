@@ -1,5 +1,10 @@
-import { useEffect, useState } from "react";
-import { Dropdown, Input, Modal } from "antd";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useState,
+} from "react";
+import { Button, Dropdown, Input, Modal } from "antd";
 import {
   DeleteOutlined,
   EditOutlined,
@@ -14,6 +19,12 @@ import { formatThousands, type WorkMeta } from "../../novel-utils";
 import "./index.scss";
 
 export type WorkModalKind = "create" | "rename" | "delete" | "reset-template" | null;
+
+/** 命令式 API：空书架引导处点「新建作品」要复用这里的创建弹框 */
+export interface WorkManageMenuHandle {
+  /** 直接打开「新建作品」弹框 */
+  openCreate: () => void;
+}
 
 interface WorkManageMenuProps {
   /** 当前作品名（重命名 / 删除确认里展示） */
@@ -44,18 +55,22 @@ interface WorkManageMenuProps {
  * 作品切换仍由旁边的 Select 承担，这里只放管理动作；
  * 删除必须走确认弹框并明示级联范围（卷章 / 要素 / 灵感伏笔 / 快照）。
  */
-export default function WorkManageMenu({
-  activeWorkName,
-  activeMeta,
-  hasActiveChapter,
-  onCreate,
-  onRename,
-  onDelete,
-  onResetTemplate,
-  onExportBook,
-  onExportVolume,
-  onExportChapter,
-}: WorkManageMenuProps) {
+export default forwardRef<WorkManageMenuHandle, WorkManageMenuProps>(
+  function WorkManageMenu(
+    {
+      activeWorkName,
+      activeMeta,
+      hasActiveChapter,
+      onCreate,
+      onRename,
+      onDelete,
+      onResetTemplate,
+      onExportBook,
+      onExportVolume,
+      onExportChapter,
+    }: WorkManageMenuProps,
+    ref,
+  ) {
   const [modalKind, setModalKind] = useState<WorkModalKind>(null);
   const [nameDraft, setNameDraft] = useState("");
 
@@ -63,6 +78,9 @@ export default function WorkManageMenu({
     setNameDraft("");
     setModalKind("create");
   };
+
+  // 空书架引导处（EditorPane 空态）点「新建作品」直接开这个弹框
+  useImperativeHandle(ref, () => ({ openCreate }), []);
   const openRename = (): void => {
     setNameDraft(activeWorkName);
     setModalKind("rename");
@@ -141,14 +159,13 @@ export default function WorkManageMenu({
           },
         }}
       >
-        <button
-          type="button"
+        <Button
           className="nv-topbar__icon"
           aria-label="作品管理"
           title="作品管理"
         >
           <FolderOpenOutlined />
-        </button>
+        </Button>
       </Dropdown>
 
       <Modal
@@ -218,4 +235,5 @@ export default function WorkManageMenu({
       </Modal>
     </>
   );
-}
+  },
+);

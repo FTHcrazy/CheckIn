@@ -8,7 +8,7 @@ import {
   PlusOutlined,
   SettingOutlined,
 } from "@ant-design/icons";
-import { Input, Select } from "antd";
+import { Button, Input, Select } from "antd";
 import { useEntityTypeMeta } from "../../hooks/entity-types-context";
 import type {
   EntityAppearance,
@@ -230,18 +230,17 @@ export default function EntityDetail({
   return (
     <div className="nv-edetail">
       <div className="nv-edetail__top">
-        <button
-          type="button"
+        <Button
           className="nv-edetail__icon"
           title="返回要素库"
           onClick={onBack}
         >
           <ArrowLeftOutlined />
-        </button>
+        </Button>
         {!editing && (
-          <button type="button" className="nv-edetail__edit" onClick={startEdit}>
-            <EditOutlined /> 编辑
-          </button>
+          <Button className="nv-edetail__edit" onClick={startEdit}>
+            <EditOutlined />编辑
+          </Button>
         )}
       </div>
 
@@ -289,9 +288,8 @@ export default function EntityDetail({
               {filterOrder.map((type) => {
                 const typeMeta = metaOf(type);
                 return (
-                  <button
+                  <Button
                     key={type}
-                    type="button"
                     className={`nv-edetail__type-chip${
                       draft.type === type ? " is-on" : ""
                     }`}
@@ -305,7 +303,7 @@ export default function EntityDetail({
                     }
                   >
                     {typeMeta.label}
-                  </button>
+                  </Button>
                 );
               })}
             </div>
@@ -361,22 +359,20 @@ export default function EntityDetail({
             />
           </div>
           <div className="nv-edetail__form-actions">
-            <button
-              type="button"
+            <Button
               className="nv-edetail__save"
               onClick={commitEdit}
               disabled={!draft.name.trim()}
               title={draft.name.trim() ? "保存修改" : "名称不能为空"}
             >
               保存
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
               className="nv-edetail__cancel"
               onClick={cancelEdit}
             >
               取消
-            </button>
+            </Button>
           </div>
         </>
       ) : (
@@ -422,15 +418,14 @@ export default function EntityDetail({
           </span>
           <span className="nv-edetail__rel-name">{relation.targetName}</span>
           <span className="nv-edetail__rel-tag">{relation.relation}</span>
-          <button
-            type="button"
+          <Button
             className="nv-mini nv-mini--warn"
             title={`解除与「${relation.targetName}」的关联`}
             aria-label={`解除与「${relation.targetName}」的关联`}
             onClick={() => onRemoveRelation(relation.id, relation.targetName)}
           >
             ×
-          </button>
+          </Button>
         </div>
       ))}
       {relAdding ? (
@@ -456,27 +451,24 @@ export default function EntityDetail({
             onKeyDown={handleRelKeyDown}
           />
           <div className="nv-edetail__form-actions">
-            <button
-              type="button"
+            <Button
               className="nv-edetail__save"
               onClick={submitRelation}
               disabled={!relTargetId}
               title={relTargetId ? "添加关联" : "先选择目标要素"}
             >
               添加
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
               className="nv-edetail__cancel"
               onClick={() => setRelAdding(false)}
             >
               取消
-            </button>
+            </Button>
           </div>
         </div>
       ) : (
-        <button
-          type="button"
+        <Button
           className="nv-edetail__rel-add"
           onClick={() => setRelAdding(true)}
           disabled={entities.length <= 1}
@@ -484,8 +476,8 @@ export default function EntityDetail({
             entities.length <= 1 ? "设定库里还没有其他要素" : "关联到其他资料卡"
           }
         >
-          <PlusOutlined /> 添加关联
-        </button>
+          <PlusOutlined />添加关联
+        </Button>
       )}
 
       {/* 主角设定：只对角色卡出现。行囊只承载主角一人，所以「主角」这一格
@@ -493,8 +485,7 @@ export default function EntityDetail({
       {entity.type === "character" && (
         <>
           <div className="nv-sechead">主角</div>
-          <button
-            type="button"
+          <Button
             className={`nv-edetail__protagonist${isProtagonist ? " is-on" : ""}`}
             aria-pressed={isProtagonist}
             onClick={onSetProtagonist}
@@ -510,11 +501,17 @@ export default function EntityDetail({
                   : "行囊只记主角的随身物品；设为主角后，行囊的境界与这张卡同步"}
               </em>
             </span>
-          </button>
+          </Button>
         </>
       )}
 
-      {levelSystems.length > 0 && activeSystem && (
+      {/* 当前境界（R25）。
+          角色卡**永远**显示这一格：原来整个区块挂在 `levelSystems.length > 0`
+          上，新开的书还没有等级体系时它整块消失 —— 连「管理」按钮也跟着没了，
+          作者在资料卡里找不到任何地方去设境界关联。
+          没体系时给空态 + 建体系入口，而不是什么都不画。 */}
+      {(entity.type === "character" ||
+        (levelSystems.length > 0 && Boolean(activeSystem))) && (
         <>
           <div className="nv-sechead">
             当前境界
@@ -523,51 +520,71 @@ export default function EntityDetail({
                 <CrownFilled /> 行囊同源
               </span>
             )}
-            <button
-              type="button"
-              className="nv-edetail__manage"
-              onClick={onOpenLevelManager}
-              title="管理体系与等级项"
-            >
-              <SettingOutlined /> 管理
-            </button>
-          </div>
-          <Select
-            className="nv-edetail__select"
-            size="small"
-            classNames={{ popup: { root: "nv-edetail__dropdown" } }}
-            aria-label="选择等级体系"
-            placeholder="选择等级体系"
-            value={activeSystemIdResolved || undefined}
-            options={levelSystemOptions}
-            onChange={setActiveSystemId}
-          />
-          <div className="nv-edetail__ladder">
-            {activeSystem.rungs.map((rung) => {
-              const bound = rung.id === boundRungId;
-              return (
-                <button
-                  key={rung.id}
-                  type="button"
-                  className={`nv-edetail__rung${bound ? " is-on" : ""}`}
-                  title={bound ? "点击取消当前境界绑定" : "点击设为当前境界"}
-                  onClick={() => onSetEntityLevel(bound ? null : rung.id)}
-                >
-                  <span className="nv-edetail__rung-no">{rung.rank}</span>
-                  <span>{rung.name}</span>
-                  {rung.note && (
-                    <span className="nv-edetail__rung-note">{rung.note}</span>
-                  )}
-                  {bound && <span className="nv-edetail__rung-cur">当前</span>}
-                </button>
-              );
-            })}
-            {activeSystem.rungs.length === 0 && (
-              <div className="nv-kv">
-                <span className="nv-kv__v">该体系还没有等级项，点「管理」添加</span>
-              </div>
+            {/* 空态里已经有「＋新建等级体系」这个更明确的入口，
+                再挂一个同样打开管理弹框的「管理」就是两个按钮一件事 */}
+            {activeSystem && (
+              <Button
+                className="nv-edetail__manage"
+                onClick={onOpenLevelManager}
+                title="管理体系与等级项"
+              >
+                <SettingOutlined />管理
+              </Button>
             )}
           </div>
+          {!activeSystem ? (
+            <div className="nv-edetail__lvlempty">
+              <b>还没有等级体系</b>
+              <em>
+                境界挂在「等级体系」的阶梯上（炼气 / 筑基…）。先建一套阶梯，
+                建好后就能在这张卡上点选当前境界。
+              </em>
+              <Button
+                className="nv-edetail__lvlempty-add"
+                onClick={onOpenLevelManager}
+              >
+                <PlusOutlined />新建等级体系
+              </Button>
+            </div>
+          ) : (
+            <>
+              <Select
+                className="nv-edetail__select"
+                size="small"
+                classNames={{ popup: { root: "nv-edetail__dropdown" } }}
+                aria-label="选择等级体系"
+                placeholder="选择等级体系"
+                value={activeSystemIdResolved || undefined}
+                options={levelSystemOptions}
+                onChange={setActiveSystemId}
+              />
+              <div className="nv-edetail__ladder">
+                {activeSystem.rungs.map((rung) => {
+                  const bound = rung.id === boundRungId;
+                  return (
+                    <Button
+                      key={rung.id}
+                      className={`nv-edetail__rung${bound ? " is-on" : ""}`}
+                      title={bound ? "点击取消当前境界绑定" : "点击设为当前境界"}
+                      onClick={() => onSetEntityLevel(bound ? null : rung.id)}
+                    >
+                      <span className="nv-edetail__rung-no">{rung.rank}</span>
+                      <span>{rung.name}</span>
+                      {rung.note && (
+                        <span className="nv-edetail__rung-note">{rung.note}</span>
+                      )}
+                      {bound && <span className="nv-edetail__rung-cur">当前</span>}
+                    </Button>
+                  );
+                })}
+                {activeSystem.rungs.length === 0 && (
+                  <div className="nv-kv">
+                    <span className="nv-kv__v">该体系还没有等级项，点「管理」添加</span>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </>
       )}
 
@@ -578,9 +595,8 @@ export default function EntityDetail({
           </div>
           <div className="nv-edetail__appear">
             {appearances.map((item) => (
-              <button
+              <Button
                 key={item.chapterId}
-                type="button"
                 className="nv-edetail__chip"
                 title={`跳转到 ${item.label ? `${item.label}·` : ""}${item.title}`}
                 onClick={() => onSelectChapter(item.chapterId)}
@@ -589,7 +605,7 @@ export default function EntityDetail({
                   <span className="nv-edetail__chip-no">{item.label}</span>
                 )}
                 {item.title}
-              </button>
+              </Button>
             ))}
           </div>
         </>
@@ -597,16 +613,15 @@ export default function EntityDetail({
 
       {!editing && (
         <div className="nv-edetail__acts">
-          <button
-            type="button"
+          <Button
             className={`nv-ghost${highlighted ? " is-on" : ""}`}
             onClick={onToggleHighlight}
           >
             {highlighted ? "已在正文中高亮" : "在正文中高亮此要素"}
-          </button>
-          <button type="button" className="nv-ghost" onClick={onExportCard}>
+          </Button>
+          <Button className="nv-ghost" onClick={onExportCard}>
             导出为设定卡
-          </button>
+          </Button>
         </div>
       )}
     </div>

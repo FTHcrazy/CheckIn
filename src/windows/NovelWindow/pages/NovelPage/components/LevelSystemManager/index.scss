@@ -1,4 +1,9 @@
-/** 等级体系管理弹框（R25） */
+/** 等级体系管理弹框（R25）
+
+    等级项名称是 antd Button（点击即重命名）：先清零组件级变量再声明自己的值，
+    hover 换色走变量而不是自写 :hover 属性规则。 */
+@use "../../../../../../shared/styles/widget" as widget;
+
 .nv-lsm {
   display: flex;
   flex-direction: column;
@@ -72,22 +77,26 @@
     color: var(--app-text-muted);
   }
 
-  &__name {
+  &__name.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: auto;
+    --ant-button-content-font-size: 12px;
+    --ant-button-default-color: var(--app-text);
+    --ant-button-default-hover-color: var(--app-primary);
+    --ant-button-default-active-color: var(--app-primary);
+    --ant-button-default-shadow: none;
+
     flex: 1;
     min-width: 0;
     padding: 2px 4px;
-    border: none;
-    background: transparent;
-    text-align: left;
-    font-size: 12px;
-    color: var(--app-text);
-    cursor: text;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
 
-    &:hover {
-      color: var(--app-primary);
+    /* 文本被 antd 包了一层裸 <span>，截断要落在这层上才生效 */
+    > span {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
   }
 

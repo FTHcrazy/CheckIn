@@ -8,6 +8,7 @@ import HoverEntityCard from "./components/HoverEntityCard";
 import LevelSystemManager from "./components/LevelSystemManager";
 import NovelToast from "./components/NovelToast";
 import NovelTopBar from "./components/NovelTopBar";
+import type { WorkManageMenuHandle } from "./components/WorkManageMenu";
 import CharacterPackHost from "./components/CharacterPack";
 import ReorderConfirmModal from "./components/ReorderConfirmModal";
 import RestoreBanner from "./components/RestoreBanner";
@@ -18,9 +19,13 @@ import SupportPanel from "./components/SupportPanel";
 import { EntityTypesProvider } from "./hooks/useEntityTypes";
 import { useNovelPage } from "./hooks/useNovelPage";
 import { hoverActions } from "./store/useHoverStore";
-import { syncAppearances } from "./store/useAppearanceStore";
-import { findTermMatches, formatNumberedLabel } from "./novel-utils";
-import type { EntityAppearance } from "./types";
+import {
+  appearancesOf,
+  resetAppearances,
+  syncAppearances,
+} from "./store/useAppearanceStore";
+import { formatNumberedLabel } from "./novel-utils";
+import type { EntityAppearance, NovelChapter } from "./types";
 import "./index.scss";
 
 /** 书架 → 编辑器的打开请求：幂等 token 防止 StrictMode 下 effect 双消费 */
@@ -69,6 +74,7 @@ export default function NovelPage({
     handleNewChapter,
     handleCreateChapterInVolume,
     handleSelectChapter,
+    handleSelectWork,
     handleRollback,
     handleOpenEntity,
     handleRestoreRecovery,
@@ -77,6 +83,7 @@ export default function NovelPage({
     closeCtxMenu,
     handleCtxMark,
     handleCtxBind,
+    handleCtxToPack,
     handleNewVolume,
     handleSaveEntity,
     handleRenameVolume,
@@ -111,6 +118,12 @@ export default function NovelPage({
   // 书架 → 编辑器：消费打开请求（token 守卫，StrictMode 双执行只消费一次）
   const consumedTokenRef = useRef<number | null>(null);
   const { reload, setActiveWorkId, selectChapter, works } = data;
+
+  /**
+   * 作品管理菜单的命令式句柄：空书架空态里的「新建作品」直接开它的创建弹框
+   * （创建弹框只此一份，不另抄一个同名 Modal）。
+   */
+  const workMenuRef = useRef<WorkManageMenuHandle>(null);
   useEffect(() => {
     if (!openRequest || consumedTokenRef.current === openRequest.token) return;
     consumedTokenRef.current = openRequest.token;
@@ -148,29 +161,45 @@ export default function NovelPage({
     syncAppearances(data.chapters, terms);
   }, [data.chapters, terms]);
 
-  /** 出场章节（R21 升级）：返回全量可跳转引用，序号标签随序号配置派生 */
+  // 切作品先清索引：上一本书的倒排索引留着会短暂读到别的书的出场章
+  useEffect(() => {
+    return () => resetAppearances();
+  }, [data.activeWorkId]);
+
+  /** 章节 id → 章（出场列表要把倒排索引的 id 还原成标题与序号） */
+  const chapterById = useMemo(() => {
+    const map = new Map<string, NovelChapter>();
+    for (const chapter of data.chapters) map.set(chapter.id, chapter);
+    return map;
+  }, [data.chapters]);
+
+  /**
+   * 出场章节（R21 升级）：读 store 的倒排索引，不再自己扫全书。
+   * 老实现在渲染体里对**每一章**跑 `findTermMatches`（字数 × 词条的正则），
+   * 详情卡开着时自动保存每 800ms 就触发一遍全书扫描。
+   */
   const getAppearances = useCallback(
     (entityId: string): EntityAppearance[] => {
-      const owned = terms.filter((term) => term.entityId === entityId);
-      if (owned.length === 0) return [];
+      const chapterIds = appearancesOf(entityId);
+      if (chapterIds.length === 0) return [];
       const { numberStyle, chapterSuffix } = editor.settings;
-      return data.chapters
-        .filter(
-          (chapter) => findTermMatches(chapter.content, owned).length > 0,
-        )
-        .map((chapter) => {
-          const number = data.chapterNumbers.get(chapter.id) ?? 0;
-          return {
-            chapterId: chapter.id,
-            title: chapter.title,
-            label:
-              number > 0
-                ? formatNumberedLabel(numberStyle, chapterSuffix, number)
-                : "",
-          };
+      const list: EntityAppearance[] = [];
+      for (const chapterId of chapterIds) {
+        const chapter = chapterById.get(chapterId);
+        if (!chapter) continue;
+        const number = data.chapterNumbers.get(chapterId) ?? 0;
+        list.push({
+          chapterId,
+          title: chapter.title,
+          label:
+            number > 0
+              ? formatNumberedLabel(numberStyle, chapterSuffix, number)
+              : "",
         });
+      }
+      return list;
     },
-    [terms, data.chapters, data.chapterNumbers, editor.settings],
+    [chapterById, data.chapterNumbers, editor.settings],
   );
 
   const detailEntity = useMemo(
@@ -232,13 +261,14 @@ export default function NovelPage({
           activeWorkId={data.activeWorkId}
           workMeta={workMeta}
           onBackToShelf={onBackToShelf}
+          menuRef={workMenuRef}
           volumeName={breadcrumb.volumeName}
           chapterName={breadcrumb.chapterName}
           leftOpen={view.leftOpen}
           rightOpen={view.rightOpen}
           typewriter={view.typewriter}
           settingsOpen={view.settingsOpen}
-          onSelectWork={data.setActiveWorkId}
+          onSelectWork={(workId) => void handleSelectWork(workId)}
           onCreateWork={handleCreateWork}
           onRenameWork={handleRenameWork}
           onDeleteWork={handleDeleteWork}
@@ -297,6 +327,9 @@ export default function NovelPage({
             onTermLeave={hoverActions.leave}
             onTermClick={handleOpenEntity}
             onCreateChapter={handleNewChapter}
+            emptyKind={works.length === 0 ? "no-work" : "no-chapter"}
+            onCreateWork={() => workMenuRef.current?.openCreate()}
+            onImportBook={onBackToShelf}
             onRenameChapter={data.renameChapter}
             restore={data.lastPosition}
             onRestoreDone={data.consumeLastPosition}
@@ -316,6 +349,7 @@ export default function NovelPage({
               y={ctxMenu.y}
               text={editor.selection.text}
               entities={data.entities}
+              onAddToPack={() => void handleCtxToPack()}
               onMark={handleCtxMark}
               onBind={handleCtxBind}
               onClose={closeCtxMenu}

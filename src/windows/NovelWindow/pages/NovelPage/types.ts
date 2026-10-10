@@ -142,8 +142,8 @@ export interface OutlineEntry {
   createdAt: number;
 }
 
-/** 伏笔可编辑字段（增删由专用动作承载，不放这里） */
-export type ForeshadowPatch = Partial<Pick<OutlineEntry, "title" | "note">>;
+/** 伏笔可编辑字段（增删由专用动作承载，不放这里）；chapterId 空串 = 退回卷级 */
+export type ForeshadowPatch = Partial<Pick<OutlineEntry, "title" | "note" | "chapterId">>;
 
 /** 新建伏笔时由调用方补齐 id 与时间戳的草稿 */
 export type OutlineEntryDraft = Omit<OutlineEntry, "id" | "createdAt">;
@@ -267,12 +267,23 @@ export type OutlineNode =
       note: string;
       wordCount: number;
       status: ChapterStatus;
+      /**
+       * 埋在本章的伏笔总数（含已回收），0 = 章节行不出标识。
+       * 由 buildOutlineTree 派生 —— 组件不自己去翻伏笔列表。
+       */
+      foreshadows: number;
+      /** 其中待回收条数：> 0 时章节行的标识转警示色 */
+      openForeshadows: number;
     }
   | {
       kind: "foreshadow";
       id: string;
       /** 伏笔条目 id：编辑 / 删除 / 回收状态切换用 */
       entryId: string;
+      /** 归属卷 id：编辑表单的埋设章节下拉按卷取选项 */
+      volumeId: string;
+      /** 绑定的章节 id，空串 = 卷级伏笔（编辑表单回填下拉用） */
+      chapterId: string;
       title: string;
       note: string;
       resolved: boolean;

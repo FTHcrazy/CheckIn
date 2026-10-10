@@ -12,11 +12,15 @@
     font-size: 12px;
   }
 
+  /* 一条物品 = 「控制行 +（可选）详情块」两段。
+     不要靠 `flex-wrap` 让详情块换行到第二行：wrap 的触发条件是「行内放不下」，
+     面板缩到 340px 时会把「装备」按钮一起挤到第二行（同一份样式在两种宽度下
+     表现不同）。列向布局 + 行容器才是稳定的（同 SkillsModule 的做法）。 */
   &__item {
     display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 2px 4px;
+    flex-direction: column;
+    gap: 3px;
+    padding: 3px 4px;
     border: 1px solid transparent;
     border-radius: var(--app-radius-item);
 
@@ -31,9 +35,79 @@
     }
   }
 
+  &__line {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+  }
+
   &__name {
     flex: 1;
     min-width: 0;
+  }
+
+  &__raropt {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  &__rarchk {
+    margin-left: auto;
+    padding-left: 10px;
+    color: var(--app-accent-blue);
+    font-size: 12px;
+  }
+
+  /* ── 详情行（描述 / 标签 / 重量）：仅展开时占一行，缩进对齐物品名 ── */
+  &__detail {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding-left: 24px;
+  }
+
+  /* 单件重量 + 小计。同样进详情行：主行在 340px 面板下只剩 285px，
+     而「已穿戴 + 角标」已经用掉 292px（见更多菜单的注释），放不下了。 */
+  &__meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  &__metalabel {
+    flex: none;
+    font-size: 12px;
+    color: var(--app-text-secondary-strong);
+  }
+
+  &__weight.ant-input-number {
+    width: 76px;
+    flex: none;
+    font-size: 12px;
+  }
+
+  &__subtotal {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    color: var(--app-text-secondary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__desc.ant-input {
+    font-size: 12px;
+    line-height: 18px;
+    resize: none;
+  }
+
+  &__tags.ant-input {
+    font-size: 12px;
   }
 
   &__cat {
@@ -64,16 +138,25 @@
   }
 
   &.is-grid &__item {
-    flex-direction: column;
-    align-items: stretch;
     gap: 3px;
     padding: 6px;
     border-color: var(--app-border);
     background: var(--app-surface-alt);
   }
 
+  /* 宫格：控制行自己竖起来（原来是把控件直接铺在 __item 上） */
+  &.is-grid &__line {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 3px;
+  }
+
   &.is-grid &__name {
     text-align: center;
+  }
+
+  &.is-grid &__detail {
+    padding-left: 0;
   }
 
   &.is-grid &__cat {
@@ -82,6 +165,100 @@
 
   &.is-grid &__qty {
     align-self: center;
+  }
+
+  /* ── 渲染窗口的「显示更多」（REQ-019）：只在超过窗口时才出现 ── */
+  &__more {
+    display: flex;
+    justify-content: center;
+    margin-top: 6px;
+  }
+
+  /* ── 负重 / 容量条（REQ-033 / F-5）──
+   * 这一条挂在 `.cpk-inv` 的**外面**（它是模块正文的第一个孩子，不是列表项），
+   * 所以下面这些 `&__x` 之所以有效，靠的是 SCSS 把 `&__x` 编译成平铺的
+   * `.cpk-inv__x` —— 与 DOM 嵌套无关。不要再把它当成「必须在 .cpk-inv 里」。 */
+  &__load {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 6px;
+    padding: 4px 6px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-item);
+    background: var(--app-surface-alt);
+    font-size: 12px;
+    /* ⚠️ 显式给下限：默认 `min-width: auto` 时不换行的元信息会把整行撑出
+       容器（面板最窄 340px），表现是这一条连右侧按钮一起被裁掉。 */
+    min-width: 0;
+  }
+
+  &__loadseg {
+    flex: none;
+    color: var(--app-text-secondary-strong);
+    font-variant-numeric: tabular-nums;
+
+    /* 用同一个高对比错误色表达「满了 / 超了」：两个口径的严重程度是一样的，
+       给两种红会让作者以为其中一个是「更严重」的。 */
+    &.is-over {
+      color: var(--app-error);
+      font-weight: 600;
+    }
+  }
+
+  &__loadsep {
+    flex: none;
+    color: var(--app-text-disabled);
+  }
+
+  &__loadwarn {
+    flex: none;
+    padding: 1px 6px;
+    border: 1px solid var(--app-error);
+    border-radius: var(--app-radius-pill);
+    background: var(--app-error-weak);
+    color: var(--app-error);
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  &__limits {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+    padding: 8px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-item);
+    background: var(--app-surface);
+  }
+
+  &__limitfield {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  &__limitlabel {
+    font-size: 12px;
+    color: var(--app-text-secondary-strong);
+  }
+
+  &__limitnum.ant-input-number {
+    width: 84px;
+    font-size: 12px;
+  }
+
+  /* 提示独占一行（`flex-basis: 100%`），否则它会跟着两个输入框挤在同一行里被压成窄条 */
+  &__limithint {
+    flex: 0 0 100%;
+    margin: 0;
+    font-size: 12px;
+    line-height: 17px;
+    color: var(--app-text-secondary);
   }
 
   &__confirm {

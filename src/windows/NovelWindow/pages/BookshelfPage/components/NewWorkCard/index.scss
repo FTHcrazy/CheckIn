@@ -1,23 +1,43 @@
-.bs-newcard {
+// 新建作品虚线卡由 antd `Button` 承载（AGENTS §6.1.2）：卡片外观由 CSS 定，
+// 先清零组件级变量再声明；hover / focus 色一律写成变量 ——
+// 自写 `:hover` 属性规则压不过 `.ant-btn:not(:disabled):not(.ant-btn-disabled):hover`（0,4,0）
+@use "../../../../../../shared/styles/widget" as widget;
+
+.bs-newcard.ant-btn {
+  @include widget.ant-button-reset;
+  --ant-control-height: auto;
+  --ant-button-content-font-size: 14px;
+  --ant-button-icon-gap: 6px;
+  --ant-border-radius: var(--app-radius-panel);
+  /* 虚线卡的线宽 / 线型 / 颜色全部走变量：antd 的 hover 规则会整条重写 `border` 简写，
+     border-style 写成属性会在 hover 时被简写里的 `var(--ant-line-type)` 冲回 solid */
+  --ant-line-width: 1.5px;
+  --ant-line-type: dashed;
+  --ant-button-default-bg: transparent;
+  --ant-button-default-color: var(--app-text-muted);
+  --ant-button-default-border-color: var(--app-border-strong);
+  --ant-button-default-hover-bg: transparent;
+  --ant-button-default-hover-color: var(--app-primary);
+  --ant-button-default-hover-border-color: var(--app-primary);
+  --ant-button-default-active-bg: transparent;
+  --ant-button-default-active-color: var(--app-primary);
+  --ant-button-default-active-border-color: var(--app-primary);
+  --ant-button-default-shadow: none;
+
+  /* antd 不接管的属性 */
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
   min-height: 232px;
   padding: 20px;
-  border: 1.5px dashed var(--app-border-strong);
-  border-radius: var(--app-radius-panel);
-  background: transparent;
-  color: var(--app-text-muted);
-  cursor: pointer;
-  transition: box-shadow 0.18s ease, transform 0.18s ease;
+  transition: transform 0.18s ease;
 
+  /* 悬浮投影：antd 只有恒定的 --ant-button-default-shadow，没有 hover 阴影变量。
+     这里只在 :hover 上改**变量**（不写 box-shadow 属性）保住「悬浮才投影」 */
   &:hover {
+    --ant-button-default-shadow: var(--app-shadow-card);
     transform: translateY(-2px);
-    box-shadow: var(--app-shadow-card);
-    border-color: var(--app-primary);
-    color: var(--app-primary);
   }
 
   &:focus-visible {
@@ -25,6 +45,24 @@
     outline-offset: 2px;
   }
 
+  /* ── 列表视图：细长虚线条，与书卡行同一套内边距节奏 ── */
+  &.bs-newcard--list {
+    flex-direction: row;
+    min-height: 0;
+    padding: 8px 12px 8px 8px;
+    justify-content: flex-start;
+
+    .bs-newcard__plus {
+      width: 26px;
+      height: 26px;
+      margin-bottom: 0;
+      margin-right: 10px;
+      font-size: 14px;
+    }
+  }
+}
+
+.bs-newcard {
   &__plus {
     display: inline-flex;
     align-items: center;

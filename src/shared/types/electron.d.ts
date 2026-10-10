@@ -155,6 +155,15 @@ export interface PackCharacterDTO {
   /** 未绑定实体时的行囊内境界 JSON `{levelId, sub}` */
   realmAt: string
   note: string
+  /** 负重上限（REQ-033）；0 = 不限 */
+  weightLimit: number
+  /**
+   * 物品栏格数上限（F-5 第一条）；0 = 不限
+   *
+   * 与 `weightLimit` 是两个独立口径：200 株草药占 1 格但可能压垮肩膀。
+   * 到上限时新增物品会被拦下并给出提示（PRD F-5 原话是「阻止新增」）。
+   */
+  capacityLimit: number
   sortOrder: number
 }
 
@@ -179,6 +188,8 @@ export interface PackAttributeDTO {
   decimals: number
   unit: string
   sortOrder: number
+  /** 最近一次改动的落点时刻（REQ-028 本章变动角标）；0 = 从无改动记录 */
+  updatedAt: number
 }
 
 export interface PackSlotDTO {
@@ -205,6 +216,8 @@ export interface PackItemDTO {
   equippedSlotId: string
   slotIndex: number | null
   sourceChapterId: string
+  /** 单件重量（REQ-033）；0 = 没记重量。总重按 `weight × qty` 算 */
+  weight: number
   updatedAt: number
 }
 
@@ -217,6 +230,8 @@ export interface PackSkillDTO {
   proficiencyRaw: number
   tags: string[]
   sortOrder: number
+  /** 最近一次改动的落点时刻（REQ-028 本章变动角标）；0 = 从无改动记录 */
+  updatedAt: number
 }
 
 export interface PackModifierDTO {
@@ -236,12 +251,33 @@ export interface PackModifierDTO {
   cost: string
   cooldown: number | null
   duration: string
+  /** 剩余回合数（REQ-025 状态时效）；null = 不限时。到 0 即不再计入汇总 */
+  roundsLeft: number | null
   target: string
   trigger: string
   condition: string
   note: string
   disabled: boolean
   sortOrder: number
+}
+
+/**
+ * 换装方案（REQ-032）。
+ *
+ * `payload` 是 JSON 字符串，内容为穿戴映射
+ * `[{ itemId, slotId, slotIndex }]` —— **只记「谁穿在哪个部位的哪一格」**，
+ * 不挂物品快照：物品被删或改名之后方案仍然可读，套用时跳过错失的那几件并如实报数。
+ * 保持字符串（而不是在这一层解析成对象数组）的理由同 `realmLink`：主进程只搬数据、
+ * 不解释数据，条目结构将来要长字段时不必回来改两处。
+ */
+export interface PackPresetDTO {
+  id: string
+  characterId: string
+  name: string
+  payload: string
+  note: string
+  sortOrder: number
+  updatedAt: number
 }
 
 export interface PackUnitSystemDTO {
@@ -314,6 +350,7 @@ export interface PackBundleDTO {
   modifiers: PackModifierDTO[]
   unitSystems: PackUnitSystemDTO[]
   layouts: PackLayoutDTO[]
+  presets: PackPresetDTO[]
   records: PackRecordDTO[]
   draft: PackDraftDTO | null
   levelSystems: PackLevelSystemDTO[]
@@ -329,6 +366,7 @@ export interface PackSavePayloadDTO {
   modifiers: PackModifierDTO[]
   unitSystems: PackUnitSystemDTO[]
   layouts: PackLayoutDTO[]
+  presets: PackPresetDTO[]
   reason: string
   chapterId: string
 }
@@ -495,8 +533,30 @@ export interface ElectronAPI {
     levelRename: (id: string, name: string) => Promise<boolean>
     levelDelete: (id: string) => Promise<boolean>
     levelOrder: (updates: Array<{ id: string; rank: number }>) => Promise<boolean>
-    // ── 导出（R13）：主进程弹保存框 + 写盘；用户取消返回 null ──
-    exportTxt: (defaultName: string, content: string) => Promise<{ path: string } | null>
+    // ── 书籍导入（TXT）：主进程只负责选文件 + 读字节 / 批量落库 ──
+    /** 弹文件选择框并读回字节；用户取消返回 null */
+    importPickFile: () => Promise<{ fileName: string; bytes: ArrayBuffer; size: number } | null>
+    /** 解析结果单事务落库（作品 + 卷 + 章）；失败返回 { ok: false, error } */
+    importBook: (payload: {
+      work: NovelWorkDTO
+      volumes: Array<{ id: string; name: string; sort: number }>
+      chapters: Array<{
+        id: string
+        volumeId: string
+        title: string
+        content: string
+        wordCount: number
+        sort: number
+      }>
+    }) => Promise<{ ok: boolean; chapterCount: number; wordCount: number } | { ok: false; error: string }>
+    // ── 导出（R13 / 行囊 REQ-030）：主进程弹保存框 + 写盘；用户取消返回 null ──
+    /** ext 缺省为 txt；传 "md" + 「Markdown」即导出 .md（同一通道，不再另开一条） */
+    exportFile: (
+      defaultName: string,
+      content: string,
+      ext?: string,
+      filterName?: string,
+    ) => Promise<{ path: string } | null>
     // ── 使用埋点（R14） ──
     /** 今日新增字数（chapter_save 事件 delta 净增）、保存次数与连续码字天数，0 点按主进程本地时间 */
     usageToday: () => Promise<{ todayWords: number; saveCount: number; streakDays: number }>
@@ -529,6 +589,16 @@ export interface ElectronAPI {
       protagonistGet: (workId: string) => Promise<PackProtagonistDTO | null>
       /** 设为主角 / 解除主角：entityId 传空串即解绑 */
       protagonistSet: (workId: string, entityId: string) => Promise<boolean>
+      /**
+       * 快速记账（REQ-027）：正文选区 → 记入背包，供**面板未挂载**时使用。
+       * 主进程按「有草稿并入草稿、没有才直插正式表」落库（草稿优先于正式行）。
+       */
+      quickAdd: (
+        workId: string,
+        name: string,
+        chapterId: string,
+        category: string,
+      ) => Promise<{ id: string; characterId: string } | null>
     }
   }
 
@@ -542,6 +612,10 @@ export interface ElectronAPI {
     sendTo: (target: string, event: string, data?: unknown) => Promise<void>
     on: (event: string, handler: (...args: unknown[]) => void) => void
     off: (event: string, handler: (...args: unknown[]) => void) => void
+    /** 关闭守卫：有未保存改动时武装本窗口（`electron/close-guard.ts`） */
+    setCloseGuard: (enabled: boolean) => void
+    /** 答复主进程的关闭询问（true = 放行，可以关闭 / 退出） */
+    respondClose: (allow: boolean) => void
   }
 
   memo: {

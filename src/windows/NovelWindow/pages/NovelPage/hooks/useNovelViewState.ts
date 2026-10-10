@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LAYOUT, PANEL_WIDTH, TOAST_DURATION_MS } from "../novel-config";
 import { clampPanelWidth, parseJsonOrNull } from "../novel-utils";
 import { fetchPanelWidth, savePanelWidth } from "../services/novel-service";
-import { requestClosePackPanel } from "../components/CharacterPack/pack-config";
+import { requestClosePackPanel, requestPackPeek } from "../components/CharacterPack/pack-config";
 import type { EntityType } from "../types";
 
 export type PanelTab = "outline" | "entity" | "note" | "search" | "tools";
@@ -103,6 +103,16 @@ export function useNovelViewState() {
     return () => window.clearTimeout(timer);
   }, [rightWidth]);
 
+  // 卸载兜底：拖完立刻关窗 / 切回书架时，300ms 防抖还没到点就被 clearTimeout
+  // 取消了，最后一次拖动的宽度会丢（位置记忆有 beforeunload 兜底，宽度没有）
+  useEffect(
+    () => () => {
+      if (!widthLoadedRef.current) return;
+      void savePanelWidth(rightWidthRef.current);
+    },
+    [],
+  );
+
   // 轻提示：2.4s 自动消失，pointer-events:none 由组件保证不阻塞输入（设计方案 §06）
   useEffect(() => {
     if (!toast) return;
@@ -164,7 +174,10 @@ export function useNovelViewState() {
     mountedRef.current = true;
     window.addEventListener("resize", sync);
     return () => window.removeEventListener("resize", sync);
-  }, [rightOpen, rightWidth, showToast]);
+    // ⚠️ 依赖必须是空：拖右栏时 rightWidth 每帧都变，写在依赖里就是「每帧
+    // 解绑再重绑一次 resize 监听」（拖一次几十次 add/removeEventListener）。
+    // 宽度与开关都从 ref 读，ref 在下面的同步 effect 里已更新
+  }, []);
 
   // 专注模式 hides 顶栏 / 状态条 / 左右栏；Esc 只退出专注，不关窗（PRD §2 零打断）
   const toggleFocus = useCallback(() => {
@@ -208,14 +221,31 @@ export function useNovelViewState() {
   /**
    * 顶栏图标与 Ctrl+Shift+B 都是开关。收起时必须过面板的受保护路径 ——
    * 直接 `setPackOpen(false)` 会跳过未保存拦截与草稿 flush，改动静默丢失。
+   *
+   * `peek = true`（顶栏按钮 Alt+点击）走「速览」：面板仍开着，只是切成半透明浮层、
+   * 3 秒无操作自动收起。**它不写布局记忆**，所以这里只翻开关 + 请求面板换形态。
    */
-  const togglePack = useCallback(() => {
-    if (packOpen) {
-      if (!requestClosePackPanel()) setPackOpen(false);
-      return;
-    }
-    setPackOpen(true);
-  }, [packOpen]);
+  const togglePack = useCallback(
+    (peek?: boolean) => {
+      if (peek && !packOpen) {
+        // 面板还没挂载 → 桥那头没人接，请求会被记成待办，面板一出现就生效。
+        // 所以这里只需要先把面板开出来，**不用自己重试**。
+        setPackOpen(true);
+        requestPackPeek();
+        return;
+      }
+      if (peek) {
+        requestPackPeek();
+        return;
+      }
+      if (packOpen) {
+        if (!requestClosePackPanel()) setPackOpen(false);
+        return;
+      }
+      setPackOpen(true);
+    },
+    [packOpen],
+  );
 
   const selectPanelTab = useCallback((tab: PanelTab) => {
     setPanelTab(tab);

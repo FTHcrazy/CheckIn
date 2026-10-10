@@ -1,3 +1,4 @@
+import { Button } from "antd";
 import { useEffect } from "react";
 import { CloseOutlined } from "@ant-design/icons";
 import { formatClock, formatThousands } from "../../novel-utils";
@@ -39,9 +40,9 @@ export default function SnapshotDrawer({
       <header className="nv-snap__head">
         <b>历史快照</b>
         <span className="nv-snap__sub">· 每章保留 20 版</span>
-        <button type="button" aria-label="关闭" onClick={onClose}>
+        <Button aria-label="关闭" onClick={onClose}>
           <CloseOutlined />
-        </button>
+        </Button>
       </header>
 
       <div className="nv-snap__body">
@@ -61,12 +62,11 @@ export default function SnapshotDrawer({
               </span>
               <span className="nv-snap__actions">
                 {index !== 0 && (
-                  <button
-                    type="button"
+                  <Button
                     onClick={() => onRollback(snapshot.id, snapshot.createdAt)}
                   >
                     回滚
-                  </button>
+                  </Button>
                 )}
               </span>
               {snapshot.content && (

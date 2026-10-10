@@ -876,7 +876,7 @@ function initializeDataDb(db: Database) {
 
 ```json
 {
-  "novelArch": "compat"
+  "novelArch": "refactor"
 }
 ```
 

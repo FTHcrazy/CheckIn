@@ -1,5 +1,8 @@
 @use "../../shared/styles/window-shell";
 @use "../../shared/styles/scrollbars";
+// 标题栏入口按钮由 antd `Button` 承载（AGENTS §6.1.2）：清零点 mixin 先清零
+// 组件级变量，再声明自己的外观；hover 也必须写成变量
+@use "../../shared/styles/widget" as widget;
 
 html,
 body,
@@ -64,23 +67,25 @@ body {
 }
 
 // novel 版主窗标题栏的设置入口（挂在 WindowHeader 的 actions 插槽内）
-.novel-window-header-btn {
+.novel-window-header-btn.ant-btn {
+  @include widget.ant-button-reset;
+  --ant-control-height: 24px;
+  --ant-button-padding-inline: 0px;
+  --ant-button-content-font-size: 14px;
+  --ant-border-radius: var(--app-radius-item);
+  --ant-button-default-bg: transparent;
+  --ant-button-default-color: var(--app-text-secondary);
+  --ant-button-default-hover-bg: var(--app-surface-hover);
+  --ant-button-default-hover-color: var(--app-text);
+  --ant-button-default-active-bg: var(--app-surface-hover);
+  --ant-button-default-active-color: var(--app-text);
+  --ant-button-default-shadow: none;
+
+  /* antd 不接管的属性 */
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 28px;
-  height: 24px;
-  padding: 0;
-  border: none;
-  border-radius: var(--app-radius-item);
-  background: transparent;
-  color: var(--app-text-secondary);
-  font-size: 14px;
   cursor: pointer;
   transition: background-color 0.15s ease, color 0.15s ease;
-
-  &:hover {
-    background: var(--app-surface-hover);
-    color: var(--app-text);
-  }
 }

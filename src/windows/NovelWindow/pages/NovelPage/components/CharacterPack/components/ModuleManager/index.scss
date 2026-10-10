@@ -1,3 +1,5 @@
+@use "../../styles/pack-widget" as widget;
+
 .cpk-mgr {
   margin: 8px 0 0;
   padding: 0;
@@ -14,12 +16,36 @@
     border: 1px solid var(--app-border);
     border-radius: var(--app-radius-item);
     background: var(--app-surface-alt);
+
+    /* 拖起的那一行压暗：不加这个，拖动时看起来像「什么都没发生」 */
+    &.is-dragging {
+      opacity: 0.5;
+    }
+
+    /* 落点用左侧竖条而不是整行描边 —— 竖条能表达「插到这里」，描边只表达「在这行上」 */
+    &.is-drop {
+      border-left: 2px solid var(--app-primary);
+    }
   }
 
-  &__ops {
+  /**
+   * 手柄。**外观仍由 `.cpk-iconbtn` / `.cpk-iconbtn.tiny` 原语给**，这里只补
+   * `cursor: grab`。
+   *
+   * 清零点 mixin **必须包含**，不能省：`novel-ui-kit.test.ts` 扫的是「凡是挂在
+   * `<Button>` 上的 `cpk-` 类，都必须有 `.类名.ant-btn` 规则且块内含
+   * `--ant-control-height`」。它把该变量重置成 `auto` 也不会影响尺寸 ——
+   * `.cpk-iconbtn.tiny.ant-btn` 是**三个类**，特异性比这里的两个类高一级，
+   * 那三条声明（20px 高度等）稳赢，与源码顺序无关。
+   */
+  &__handle.ant-btn {
+    @include widget.cpk-widget;
     flex: none;
-    display: inline-flex;
-    align-items: center;
+    cursor: grab;
+
+    &:active {
+      cursor: grabbing;
+    }
   }
 
   &__text {

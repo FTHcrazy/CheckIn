@@ -1,3 +1,7 @@
+// 底部动作按钮由 antd `Button` 承载（AGENTS §6.1.2）：先把组件级变量清零，
+// 再按需声明 —— 自写 `:hover` 属性规则压不过 antd 的状态选择器（0,4,0）
+@use "../../../../../../shared/styles/widget" as widget;
+
 .nv-tree {
   width: 236px;
   flex: none;
@@ -97,26 +101,30 @@
     border-top: 1px solid var(--app-border);
   }
 
-  /* 底部动作 ghost 化：描边按钮在左栏里存在感过强，降为浅底幽灵按钮 */
-  &__foot-btn {
+  /* 底部动作 ghost 化：描边按钮在左栏里存在感过强，降为浅底幽灵按钮。
+     幽灵外观全部写成组件级变量（含 hover/active），靠 antd 自己的状态规则生效 */
+  &__foot-btn.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 26px;
+    --ant-button-padding-inline: 5px;
+    --ant-button-content-font-size: 12px;
+    --ant-button-icon-gap: 4px;
+    --ant-border-radius: var(--app-radius-item);
+    --ant-button-default-bg: transparent;
+    --ant-button-default-color: var(--app-text-muted);
+    --ant-button-default-hover-bg: var(--app-surface-hover);
+    --ant-button-default-hover-color: var(--app-primary);
+    --ant-button-default-active-bg: var(--app-surface-hover);
+    --ant-button-default-active-color: var(--app-primary);
+    --ant-button-default-shadow: none;
+
+    /* antd 不接管的属性 */
     flex: 1;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 4px;
-    padding: 5px;
-    border: 1px solid transparent;
-    border-radius: var(--app-radius-item);
-    background: transparent;
-    color: var(--app-text-muted);
-    font-size: 12px;
     cursor: pointer;
     transition: color 120ms ease, background 120ms ease;
-
-    &:hover {
-      color: var(--app-primary);
-      background: var(--app-surface-hover);
-    }
 
     &:focus-visible {
       outline: 2px solid var(--app-primary);

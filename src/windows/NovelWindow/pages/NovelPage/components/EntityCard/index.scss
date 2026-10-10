@@ -1,30 +1,47 @@
-/* 要素卡（NL 设计稿 §3·要素库） */
+/* 要素卡（NL 设计稿 §3·要素库）
+
+   整卡入口是 antd Button（§6.1.2）：卡片外观由这里定，所以先用清零点 mixin
+   把组件级变量归零，再逐项声明自己的值（同一个选择器里靠源码顺序覆盖）。
+   hover / active 一律写成变量 —— antd 的状态选择器是 (0,4,0)，自写属性规则压不过。 */
+@use "../../../../../../shared/styles/widget" as widget;
 
 .nv-ecard {
   position: relative;
 
-  & + & {
-    margin-top: 6px;
-  }
+  /* 卡间距由 .nv-entity__list 的 grid gap 提供：本组件渲染在 <li> 行容器里，
+     兄弟选择器跨层不生效（详见 EntityPanel/index.scss） */
 
-  &__main {
+  &__main.ant-btn {
+    @include widget.ant-button-reset; // 先清零，之后才是自己的声明
+    --ant-border-radius: var(--app-radius-item);
+    --ant-line-width: 1px;
+    --ant-button-default-bg: var(--app-surface);
+    --ant-button-default-color: var(--app-text);
+    --ant-button-default-border-color: var(--app-border);
+    /* hover / active 不换底，只把描边点亮成要素类型色 */
+    --ant-button-default-hover-bg: var(--app-surface);
+    --ant-button-default-hover-border-color: var(--ent-color, var(--app-border));
+    --ant-button-default-active-bg: var(--app-surface);
+    --ant-button-default-active-border-color: var(--ent-color, var(--app-border));
+    --ant-button-default-shadow: none;
+
+    /* antd 不接管的属性 */
     display: flex;
+    align-items: stretch;
     gap: 9px;
     width: 100%;
     padding: 9px 10px;
-    border: 1px solid var(--app-border);
-    border-radius: var(--app-radius-item);
-    background: var(--app-surface);
-    color: var(--app-text);
-    font-family: inherit;
     text-align: left;
-    cursor: pointer;
+    /* 摘要是两行截断：antd 给按钮加了 white-space: nowrap，必须还原否则
+       -webkit-line-clamp 失效（文字不换行就没有第二行可截） */
+    white-space: normal;
     transition: border-color 160ms ease, box-shadow 160ms ease,
       transform 160ms ease;
 
+    /* 悬停浮起：box-shadow 只有 --ant-button-default-shadow 一个入口（没有
+       hover 版本），所以在 :hover 里改变量而不是写属性；transform antd 不接管 */
     &:hover {
-      border-color: var(--ent-color, var(--app-border));
-      box-shadow: var(--app-shadow-card);
+      --ant-button-default-shadow: var(--app-shadow-card);
       transform: translateY(-1px);
     }
 
@@ -95,12 +112,15 @@
   }
 
   /* 主角卡左缘一道竖条：列表滚动时也能一眼定位（角标可能被挤出可视区）。
-     用 inset 阴影而不是 border-left，避免改变盒宽把同行卡片挤得不对齐 */
-  &.is-protagonist &__main {
-    box-shadow: inset 2px 0 0 0 var(--app-accent-amber);
+     用 inset 阴影而不是 border-left，避免改变盒宽把同行卡片挤得不对齐。
+     写 --ant-button-default-shadow 而不是 box-shadow 属性：antd 的 outlined
+     变体在 (0,2,0) 上画 box-shadow，属性写法会时灵时不灵 */
+  &.is-protagonist &__main.ant-btn {
+    --ant-button-default-shadow: inset 2px 0 0 0 var(--app-accent-amber);
 
+    /* 悬停时竖条要保留，所以这里把两条阴影一起给（比上面的基础规则更高一级） */
     &:hover {
-      box-shadow: inset 2px 0 0 0 var(--app-accent-amber),
+      --ant-button-default-shadow: inset 2px 0 0 0 var(--app-accent-amber),
         var(--app-shadow-card);
     }
   }
@@ -175,7 +195,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .nv-ecard__main {
+  .nv-ecard__main.ant-btn {
     transition-duration: 0ms;
 
     &:hover {

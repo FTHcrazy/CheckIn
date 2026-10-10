@@ -1,5 +1,5 @@
-import { PlusOutlined, SearchOutlined } from "@ant-design/icons";
-import { Button, Input } from "antd";
+import { ImportOutlined, PlusOutlined, SearchOutlined } from "@ant-design/icons";
+import { Button, Input, Tooltip } from "antd";
 import "./index.scss";
 
 interface ShelfTopBarProps {
@@ -9,10 +9,15 @@ interface ShelfTopBarProps {
   keyword: string;
   onKeywordChange: (value: string) => void;
   onCreateClick: () => void;
+  /** 导入书籍（TXT）；进行中按钮转 loading */
+  onImportClick: () => void;
+  importing: boolean;
+  /** 导入进度文案（如「正在拆分章节…」），仅进行中展示 */
+  importPhase?: string;
 }
 
 /**
- * 书架顶栏（R32）：书架标题 + 规模胶囊 + 搜索 + 新建作品。
+ * 书架顶栏（R32）：书架标题 + 规模胶囊 + 搜索 + 导入 + 新建作品。
  * 搜索词同时驱动书卡与灵感库过滤（一处输入，两处生效）。
  */
 export default function ShelfTopBar({
@@ -21,6 +26,9 @@ export default function ShelfTopBar({
   keyword,
   onKeywordChange,
   onCreateClick,
+  onImportClick,
+  importing,
+  importPhase,
 }: ShelfTopBarProps) {
   return (
     <div className="bs-topbar">
@@ -40,6 +48,17 @@ export default function ShelfTopBar({
           allowClear
           prefix={<SearchOutlined />}
         />
+        <Tooltip title={importing ? importPhase || "正在导入" : "导入 TXT 书籍"}>
+          <Button
+            className="bs-topbar__import"
+            icon={<ImportOutlined />}
+            onClick={onImportClick}
+            loading={importing}
+            disabled={importing}
+          >
+            {importing ? "导入中" : "导入书籍"}
+          </Button>
+        </Tooltip>
         <Button type="primary" icon={<PlusOutlined />} onClick={onCreateClick}>
           新建作品
         </Button>

@@ -293,6 +293,35 @@ export default function EffectEditor({
                     />
                   </label>
                 </div>
+                {/*
+                  剩余回合（REQ-025 时效）。
+                  与上面的「持续时间」**不是**同一件事：那个是给人看的自由文本
+                  （「一盏茶 / 三息」），这个是**会被判定的数字** —— 到 0 就不再计入
+                  总属性。刻意留空为「不限时」，因为给个默认 1 会让新建的状态
+                  下一拍就自己过期，而作者根本没填过这一格。
+                */}
+                <label className="cpk-field cpk-field--row">
+                  <span className="cpk-field__label">剩余回合</span>
+                  <InputNumber
+                    size="small"
+                    min={0}
+                    value={current.roundsLeft ?? undefined}
+                    placeholder="留空 = 不限时"
+                    aria-label="剩余回合"
+                    style={{ width: "100%" }}
+                    onChange={(value) =>
+                      onUpdate(current.id, {
+                        roundsLeft:
+                          value === null || value === undefined
+                            ? null
+                            : Math.max(0, Math.floor(Number(value))),
+                      })
+                    }
+                  />
+                </label>
+                <p className="cpk-fxmodal__tip">
+                  填 0 即视为已过期：这条会保留在列表里，但暂时不计入总属性。把回合数加回去就恢复。
+                </p>
                 <label className="cpk-field cpk-field--row">
                   <span className="cpk-field__label">默认开启</span>
                   <Switch

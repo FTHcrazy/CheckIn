@@ -1,3 +1,5 @@
+@use "../../../../../../shared/styles/widget" as widget;
+
 .bs-topbar {
   flex: none;
   display: flex;
@@ -41,6 +43,13 @@
 
   &__search {
     width: 240px;
+    border-radius: var(--app-radius-pill);
+  }
+
+  // 导入按钮：默认次级样式（描边），与主色「新建作品」拉开层级。
+  // 自带圆角造型 → 必须补清零点 mixin（novel-ui-kit.test.ts 守卫）
+  &__import.ant-btn {
+    @include widget.ant-button-reset;
     border-radius: var(--app-radius-pill);
   }
 }

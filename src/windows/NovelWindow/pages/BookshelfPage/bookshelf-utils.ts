@@ -7,6 +7,10 @@
  * 数据契约以 preload 暴露的线格式（DTO）为准。
  */
 
+import {
+  formatRelativeTime as relativeTime,
+  formatThousands,
+} from "@/shared/utils/format";
 import type {
   NovelBundleDTO,
   NovelChapterDTO,
@@ -60,12 +64,7 @@ export interface ShelfPosition {
 // ── 格式化 ──────────────────────────────────────────────────────────
 
 /** 千分位（今日新增 1,284） */
-export function formatThousands(value: number): string {
-  return String(Math.max(0, Math.round(value))).replace(
-    /\B(?=(\d{3})+(?!\d))/g,
-    ",",
-  );
-}
+export { formatThousands } from "@/shared/utils/format";
 
 /** 字数紧凑展示：≥1 万 → 「48.2 万」（去尾 .0），否则千分位 */
 export function formatWordsCompact(words: number): string {
@@ -78,15 +77,11 @@ export function formatWordsCompact(words: number): string {
 
 /** 相对时间（Hero「上次写到 · 12 分钟前」） */
 export function formatRelativeTime(timestamp: number, now: number = Date.now()): string {
-  if (!timestamp) return "尚未动笔";
-  const diff = now - timestamp;
-  if (diff < 0) return "刚刚";
-  const minutes = Math.floor(diff / 60_000);
-  if (minutes < 1) return "刚刚";
-  if (minutes < 60) return `${minutes} 分钟前`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} 小时前`;
-  return formatDayLabel(timestamp, now);
+  // 书架的口径：没有时间戳 = 尚未动笔；超过一天走 formatDayLabel（今天/昨天/上周…）
+  return relativeTime(timestamp, now, {
+    empty: "尚未动笔",
+    beyondDay: (at, current) => formatDayLabel(at, current),
+  });
 }
 
 const clockOf = (timestamp: number): string => {

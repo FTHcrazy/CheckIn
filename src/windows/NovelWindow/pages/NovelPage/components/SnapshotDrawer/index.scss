@@ -1,3 +1,8 @@
+/* 抽屉里的按钮一律是 antd `Button`（AGENTS 6.1.2）：先清零再声明组件级变量，
+ * 状态样式只写变量（antd 的 :hover / :active 规则特异性更高，自写属性压不过）。
+ */
+@use "../../../../../../shared/styles/widget" as widget;
+
 .nv-snap {
   position: absolute;
   top: 0;
@@ -30,23 +35,24 @@
       color: var(--app-text-strong);
     }
 
-    button {
+    // 关闭按钮：无业务类，用组件库根类命中，hover 的底色 / 字色写成变量
+    .ant-btn {
+      @include widget.ant-button-reset;
+      --ant-control-height: 22px;
+      --ant-button-padding-inline: 0px;
+      --ant-button-content-font-size: 12px;
+      --ant-border-radius: 4px;
+      --ant-button-default-color: var(--app-text-muted);
+      --ant-button-default-hover-bg: var(--app-surface-hover);
+      --ant-button-default-hover-color: var(--app-text);
+      --ant-button-default-active-bg: var(--app-surface-hover);
+      --ant-button-default-active-color: var(--app-text);
+      --ant-button-default-shadow: none;
+
       margin-left: auto;
       display: grid;
       place-items: center;
       width: 22px;
-      height: 22px;
-      border: none;
-      border-radius: 4px;
-      background: transparent;
-      color: var(--app-text-muted);
-      font-size: 12px;
-      cursor: pointer;
-
-      &:hover {
-        background: var(--app-surface-hover);
-        color: var(--app-text);
-      }
     }
   }
 
@@ -101,18 +107,26 @@
     display: flex;
     gap: 5px;
 
-    button {
-      padding: 1px 6px;
-      border: 1px solid var(--app-primary);
-      border-radius: 3px;
-      background: transparent;
-      color: var(--app-primary);
-      font-size: 12px;
-      cursor: pointer;
+    // 「回滚」：无业务类，用组件库根类命中，hover 底色走变量
+    .ant-btn {
+      @include widget.ant-button-reset;
+      --ant-control-height: auto;
+      --ant-button-padding-inline: 6px;
+      --ant-button-content-font-size: 12px;
+      --ant-border-radius: 3px;
+      --ant-line-width: 1px;
+      --ant-button-default-border-color: var(--app-primary);
+      --ant-button-default-color: var(--app-primary);
+      --ant-button-default-hover-bg: var(--app-primary-weak);
+      --ant-button-default-hover-color: var(--app-primary);
+      --ant-button-default-hover-border-color: var(--app-primary);
+      --ant-button-default-active-bg: var(--app-primary-weak);
+      --ant-button-default-active-color: var(--app-primary);
+      --ant-button-default-active-border-color: var(--app-primary);
+      --ant-button-default-shadow: none;
 
-      &:hover {
-        background: var(--app-primary-weak);
-      }
+      padding-block: 1px;
+      justify-content: center;
     }
   }
 

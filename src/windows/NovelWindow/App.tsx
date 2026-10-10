@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { BookOutlined, SettingOutlined } from "@ant-design/icons";
-import { Tooltip } from "antd";
+import { App as AntdApp, Button, Tooltip } from "antd";
 import WindowHeader from "@/shared/components/WindowHeader";
 import { IS_NOVEL_EDITION } from "@/shared/edition";
+// 根级样式由 main.tsx 引入（两者都引会重复插入同一份 CSS）
 import BookshelfPage from "./pages/BookshelfPage/BookshelfPage";
 import NovelPage, { type OpenWorkRequest } from "./pages/NovelPage/NovelPage";
-import "./index.scss";
 
 /**
  * NovelWindow —— CheckIn 小说窗口
@@ -28,14 +28,13 @@ import "./index.scss";
 function SettingsEntryButton() {
   return (
     <Tooltip title="设置" placement="bottom">
-      <button
-        type="button"
+      <Button
         className="novel-window-header-btn"
         aria-label="设置"
         onClick={() => window.electronAPI?.send("settings-window-open", null)}
       >
         <SettingOutlined />
-      </button>
+      </Button>
     </Tooltip>
   );
 }
@@ -66,35 +65,37 @@ export default function NovelWindowApp() {
   }, [view]);
 
   return (
-    <div className="window-shell">
-      <WindowHeader
-        title="CheckIn 小说"
-        icon={<BookOutlined />}
-        badge={view === "shelf" ? <span className="novel-badge">书架</span> : null}
-        actions={IS_NOVEL_EDITION ? <SettingsEntryButton /> : null}
-      />
-      <div className="window-shell__body">
-        <div className="novel-views">
-          <div
-            className={`novel-view${view === "shelf" ? "" : " is-hidden"}`}
-            aria-hidden={view !== "shelf"}
-          >
-            <BookshelfPage visible={view === "shelf"} onOpenWork={openWork} />
-          </div>
-          {editorMounted && (
+    <AntdApp className="novel-app-root">
+      <div className="window-shell">
+        <WindowHeader
+          title="CheckIn 小说"
+          icon={<BookOutlined />}
+          badge={view === "shelf" ? <span className="novel-badge">书架</span> : null}
+          actions={IS_NOVEL_EDITION ? <SettingsEntryButton /> : null}
+        />
+        <div className="window-shell__body">
+          <div className="novel-views">
             <div
-              className={`novel-view${view === "editor" ? "" : " is-hidden"}`}
-              aria-hidden={view !== "editor"}
+              className={`novel-view${view === "shelf" ? "" : " is-hidden"}`}
+              aria-hidden={view !== "shelf"}
             >
-              <NovelPage
-                openRequest={openRequest}
-                onOpenRequestConsumed={consumeOpenRequest}
-                onBackToShelf={backToShelf}
-              />
+              <BookshelfPage visible={view === "shelf"} onOpenWork={openWork} />
             </div>
-          )}
+            {editorMounted && (
+              <div
+                className={`novel-view${view === "editor" ? "" : " is-hidden"}`}
+                aria-hidden={view !== "editor"}
+              >
+                <NovelPage
+                  openRequest={openRequest}
+                  onOpenRequestConsumed={consumeOpenRequest}
+                  onBackToShelf={backToShelf}
+                />
+              </div>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+    </AntdApp>
   );
 }

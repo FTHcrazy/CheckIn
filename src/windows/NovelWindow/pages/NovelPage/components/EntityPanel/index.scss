@@ -17,5 +17,12 @@
     margin: 0;
     padding: 0;
     list-style: none;
+    /* 卡片间距收在列表上：卡外层有 <li> 包装（§6.1.2 行容器），
+       EntityCard 原来的 `.nv-ecard + .nv-ecard` 兄弟选择器跨了层不生效。
+       ⚠️ 单列网格的隐式轨道是 `auto` = max-content，卡内 nowrap 文案会把它
+       撑到比面板宽（面板横向溢出）；显式 minmax(0, 1fr) 才是「等宽收缩」。 */
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
   }
 }

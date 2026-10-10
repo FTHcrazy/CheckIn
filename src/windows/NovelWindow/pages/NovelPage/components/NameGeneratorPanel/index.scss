@@ -2,7 +2,11 @@
  * 起名工具面板样式（PRD R18 / 步骤三；版式见 NL 设计稿 §3·工具·起名器）
  *
  * 全部走 var(--app-*) 主题变量，禁止硬编码色值（AGENTS 6.1.1）。
+ *
+ * 按钮是 antd `Button`（AGENTS 6.1.2）：先清零再声明组件级变量，
+ * 不写 :hover / :active 属性规则（antd 状态规则特异性更高，自写压不过）。
  */
+@use "../../../../../../shared/styles/widget" as widget;
 
 .nv-name {
   display: flex;
@@ -55,26 +59,32 @@
     }
   }
 
-  &__regen {
+  /* 「换一批」主操作：图标与文字同为 children，间距走 --ant-button-icon-gap
+     （JSX 里不再留空格，否则间距翻倍，见 AGENTS 6.1.2） */
+  &__regen.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 30px;
+    --ant-button-padding-inline: 12px;
+    --ant-button-content-font-size: 12px;
+    --ant-button-icon-gap: 5px;
+    --ant-border-radius: 9px;
+    --ant-button-default-bg: var(--app-primary);
+    --ant-button-default-color: var(--app-primary-contrast);
+    --ant-button-default-border-color: var(--app-primary);
+    --ant-button-default-hover-bg: var(--app-primary-strong);
+    --ant-button-default-hover-color: var(--app-primary-contrast);
+    --ant-button-default-hover-border-color: var(--app-primary-strong);
+    --ant-button-default-active-bg: var(--app-primary-strong);
+    --ant-button-default-active-color: var(--app-primary-contrast);
+    --ant-button-default-active-border-color: var(--app-primary-strong);
+    --ant-button-default-shadow: none;
+
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 5px;
     width: 100%;
-    height: 30px;
     margin-top: 8px;
-    border: none;
-    border-radius: 9px;
-    background: var(--app-primary);
-    color: var(--app-primary-contrast);
-    font-family: inherit;
-    font-size: 12px;
-    cursor: pointer;
     transition: background 150ms ease, transform 100ms ease;
-
-    &:hover {
-      background: var(--app-primary-strong);
-    }
 
     &:active {
       transform: scale(0.98);

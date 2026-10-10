@@ -1,3 +1,6 @@
+/* 本组件唯一的按钮（下拉触发器）用的是顶栏的 `nv-topbar__icon`：
+   它是顶栏的外观件，清零点与组件级变量就近写在 NovelTopBar/index.scss，
+   本组件只在下拉菜单项与删除确认文案上自持样式，不重复声明按钮外观。 */
 .nv-work-menu {
   &__delete-name {
     font-weight: 600;

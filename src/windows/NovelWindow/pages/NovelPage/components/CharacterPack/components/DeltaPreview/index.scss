@@ -1,0 +1,105 @@
+/** 穿戴 Δ 预览浮层（REQ-018）：只在真的会变的属性上占一行 */
+.cpk-delta {
+  min-width: 190px;
+  max-width: 260px;
+
+  &__title {
+    margin: 0 0 5px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--app-text-secondary-strong);
+    letter-spacing: 0.04em;
+  }
+
+  &__none {
+    margin: 0;
+    font-size: 12px;
+    color: var(--app-text-muted);
+  }
+
+  &__list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  &__row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "name chip"
+      "calc calc";
+    align-items: center;
+    gap: 2px 8px;
+  }
+
+  &__name {
+    grid-area: name;
+    min-width: 0;
+    font-size: 12px;
+    color: var(--app-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__calc {
+    grid-area: calc;
+    display: inline-flex;
+    align-items: baseline;
+    gap: 5px;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    color: var(--app-text-muted);
+  }
+
+  &__from {
+    color: var(--app-text-muted);
+  }
+
+  &__arrow {
+    color: var(--app-text-disabled);
+  }
+
+  &__after {
+    font-weight: 600;
+    color: var(--app-text-strong);
+  }
+
+  /* 涨跌用语义色：与总属性汇总的增量分段同一套颜色语言 */
+  &__chip {
+    grid-area: chip;
+    flex: none;
+    padding: 0 6px;
+    border-radius: var(--app-radius-pill);
+    font-size: 11px;
+    font-style: normal;
+    font-variant-numeric: tabular-nums;
+    line-height: 17px;
+    white-space: nowrap;
+    background: var(--app-accent-green-weak);
+    color: var(--app-accent-green);
+  }
+
+  &__row.is-up &__chip {
+    background: var(--app-accent-green-weak);
+    color: var(--app-accent-green);
+  }
+
+  &__row.is-down &__chip {
+    background: var(--app-error-weak);
+    color: var(--app-error);
+  }
+}
+
+/*
+ * 浮层容器：必须给实体描边。
+ * 浅色主题下 `--app-surface-elevated` 与页面底色同为 #FFFFFF，只靠阴影分不开。
+ */
+.cpk-delta-pop .ant-popover-inner {
+  border: 1px solid var(--app-border-strong);
+  box-shadow: var(--app-shadow-pop);
+}

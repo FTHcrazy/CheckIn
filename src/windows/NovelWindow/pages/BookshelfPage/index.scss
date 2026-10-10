@@ -75,7 +75,8 @@
     }
 
     &--list {
-      grid-template-columns: 1fr;
+      /* minmax(0, 1fr)：单列也要给 0 下限，否则行的 max-content 会把轨道撑宽 */
+      grid-template-columns: minmax(0, 1fr);
     }
   }
 

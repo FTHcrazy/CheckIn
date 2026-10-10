@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Button, InputNumber } from "antd";
 import { SettingOutlined } from "@ant-design/icons";
 import PackModuleShell from "../PackModuleShell";
+import PackExportButton from "../PackExportButton";
 import type { PackPanelApi } from "../../hooks/usePackPanel";
 import { moduleLabel } from "../module-meta";
 import { formatAttrValue, formatRatio, type RatioLevel } from "../../pack-utils";
@@ -54,13 +55,16 @@ export default function CurrencyModule({ api }: CurrencyModuleProps) {
       collapsed={Boolean(api.prefs.collapsed[key])}
       onToggle={() => api.toggleModuleCollapsed(key)}
       actions={
-        <Button
-          className="cpk-iconbtn"
-          onClick={() => api.setUnitManagerOpen(true)}
-          title="量纲设置"
-        >
-          <SettingOutlined />
-        </Button>
+        <>
+          <PackExportButton api={api} moduleKey="currency" label={moduleLabel(key)} />
+          <Button
+            className="cpk-iconbtn"
+            onClick={() => api.setUnitManagerOpen(true)}
+            title="量纲设置"
+          >
+            <SettingOutlined />
+          </Button>
+        </>
       }
     >
       {!system || ordered.length === 0 ? (

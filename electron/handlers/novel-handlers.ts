@@ -12,6 +12,8 @@
  */
 import { ipcMain, dialog } from "electron";
 import { promises as fsp } from "node:fs";
+import path from "node:path";
+import mammoth from "mammoth";
 import { dbAll, dbGet, dbRun, getDb } from "../db";
 import { buildNovelTemplateBook } from "../novel-template";
 
@@ -109,6 +111,14 @@ interface NovelLevelRow {
   name: string;
   rank: number;
   note: string | null;
+}
+
+/** 等级项 DTO：一次取回全部等级项后按体系分组时用得到（避免 N+1 查询） */
+interface LevelRungDto {
+  id: string;
+  name: string;
+  rank: number;
+  note?: string;
 }
 
 // ── DTO 类型（camelCase，IPC 线格式，与渲染层领域模型结构一致） ──
@@ -246,13 +256,18 @@ const SNAPSHOT_INTERVAL_MS = 300_000;
 const SESSION_KEY = "novel_editor_session";
 
 /**
- * 模板书籍「已播种过」标记。
+ * 模板书籍的自动播种已**整条移除**（连同 `novel_seeded` 标记）。
  *
- * 播种判据不能用「works 为空」：用户把所有作品删光后，装载时会再次判定为空库
- * 并自动重播，而 seedTemplateBook 是清库操作 —— 这会连带清掉用户的灵感与行囊草稿。
- * 播种只在**确凿的首次使用**时发生一次；此后书架为空是正常的空态，由 UI 引导新建作品。
+ * 原判据「works 为空且从未播种过」有两个绕不开的毛病：
+ * 1. `seedTemplateBook` 是**清库重播种** —— 判据一旦误触发，用户的灵感
+ *    （`work_id = ''` 的全局池）与行囊草稿会被一起抹掉；
+ * 2. 判据依赖 config 里的 `novel_seeded`，而**老版本升级的用户没有这个键**，
+ *    删光作品后立刻触发一次清库，表现为「删掉的书全回来了，还多一本模板书」。
+ *
+ * 现在的口径：**新用户默认空书架**，模板书只能经「重置为模板书籍」显式获取
+ * （见 `novel-editor-reset-template`）。旧的 `novel_seeded` 键留在 config 里
+ * 无副作用（没人再读它），不必清理。
  */
-const SEEDED_KEY = "novel_seeded";
 
 /**
  * 行囊里按 `character_id` 挂载的子表（九张，不含宿主表 `novel_pack_characters`
@@ -308,13 +323,6 @@ function isChapterStatus(value: string): value is "draft" | "done" {
 
 function isEntryStatus(value: string): value is "open" | "resolved" {
   return value === "open" || value === "resolved";
-}
-
-function getConfig(key: string): string | null {
-  const row = dbGet("SELECT value FROM config WHERE key = ?", [key]) as
-    | { value?: string }
-    | undefined;
-  return typeof row?.value === "string" ? row.value : null;
 }
 
 function setConfig(key: string, value: string): void {
@@ -479,69 +487,82 @@ export function registerNovelHandlers(): void {
   ipcMain.handle("novel-work-delete", (_event, id: string) => {
     const db = getDb();
     const apply = db.transaction(() => {
-      for (const chapter of dbAll(
-        "SELECT id FROM novel_chapters WHERE work_id = ?",
+      // ⚠️ 全部走集合删除（子查询 IN），不要在 JS 里逐行循环：
+      // 长篇上千章 / 上百要素时逐条 DELETE 要重新 prepare 上千次，
+      // 实测是「删一部书卡几秒」的来源。级联顺序仍然是从叶到根。
+      dbRun(
+        `DELETE FROM novel_snapshots
+          WHERE chapter_id IN (SELECT id FROM novel_chapters WHERE work_id = ?)`,
         [id],
-      ) as Array<{ id: string }>) {
-        dbRun("DELETE FROM novel_snapshots WHERE chapter_id = ?", [chapter.id]);
-      }
+      );
       dbRun("DELETE FROM novel_chapters WHERE work_id = ?", [id]);
       dbRun("DELETE FROM novel_volumes WHERE work_id = ?", [id]);
       dbRun("DELETE FROM novel_notes WHERE work_id = ?", [id]);
       dbRun("DELETE FROM novel_outline_entries WHERE work_id = ?", [id]);
 
-      const entities = dbAll(
-        "SELECT id FROM novel_entities WHERE work_id = ?",
-        [id],
-      ) as Array<{ id: string }>;
+      // links 的两端都可能指向要素：先删关联，再删要素本身
+      dbRun(
+        `DELETE FROM novel_links
+          WHERE from_id IN (SELECT id FROM novel_entities WHERE work_id = ?)
+             OR to_id IN (SELECT id FROM novel_entities WHERE work_id = ?)`,
+        [id, id],
+      );
       dbRun("DELETE FROM novel_entities WHERE work_id = ?", [id]);
-      for (const entity of entities) {
-        dbRun("DELETE FROM novel_links WHERE from_id = ? OR to_id = ?", [
-          entity.id,
-          entity.id,
-        ]);
-      }
 
-      for (const system of dbAll(
-        "SELECT id FROM novel_level_systems WHERE work_id = ?",
+      dbRun(
+        `DELETE FROM novel_level_conversions
+          WHERE from_level_id IN (
+            SELECT id FROM novel_levels
+             WHERE system_id IN (SELECT id FROM novel_level_systems WHERE work_id = ?)
+          ) OR to_level_id IN (
+            SELECT id FROM novel_levels
+             WHERE system_id IN (SELECT id FROM novel_level_systems WHERE work_id = ?)
+          )`,
+        [id, id],
+      );
+      dbRun(
+        `DELETE FROM novel_levels
+          WHERE system_id IN (SELECT id FROM novel_level_systems WHERE work_id = ?)`,
         [id],
-      ) as Array<{ id: string }>) {
-        for (const level of dbAll(
-          "SELECT id FROM novel_levels WHERE system_id = ?",
-          [system.id],
-        ) as Array<{ id: string }>) {
-          dbRun(
-            "DELETE FROM novel_level_conversions WHERE from_level_id = ? OR to_level_id = ?",
-            [level.id, level.id],
-          );
-        }
-        dbRun("DELETE FROM novel_levels WHERE system_id = ?", [system.id]);
-      }
+      );
       dbRun("DELETE FROM novel_level_systems WHERE work_id = ?", [id]);
 
       // 行囊（CharacterPack）：漏掉这一整棵会留下永远查不到也删不掉的孤儿 ——
       // pack 角色只按作品内部拖拽 narrative 访问，作品没了就再无任何入口。
       // 顺序同 pack-save：多态表 modifiers 靠子查询从宿主反查归属，
       // 必须先于 items / skills 删除，否则子查询变空集、一条都删不掉。
-      for (const character of dbAll(
-        "SELECT id FROM novel_pack_characters WHERE work_id = ?",
+      // 多态加成表的三条删除（status 直挂角色、item / skill 反查宿主）
+      // 必须整体先于 items / skills 删除：子查询一旦变空集就一条都删不掉
+      dbRun(
+        `DELETE FROM novel_pack_modifiers
+          WHERE owner_type = 'status'
+            AND owner_id IN (SELECT id FROM novel_pack_characters WHERE work_id = ?)`,
         [id],
-      ) as Array<{ id: string }>) {
+      );
+      dbRun(
+        `DELETE FROM novel_pack_modifiers
+          WHERE owner_type = 'item'
+            AND owner_id IN (
+              SELECT id FROM novel_pack_items
+               WHERE character_id IN (SELECT id FROM novel_pack_characters WHERE work_id = ?)
+            )`,
+        [id],
+      );
+      dbRun(
+        `DELETE FROM novel_pack_modifiers
+          WHERE owner_type = 'skill'
+            AND owner_id IN (
+              SELECT id FROM novel_pack_skills
+               WHERE character_id IN (SELECT id FROM novel_pack_characters WHERE work_id = ?)
+            )`,
+        [id],
+      );
+      for (const table of PACK_CHILD_TABLES) {
         dbRun(
-          "DELETE FROM novel_pack_modifiers WHERE owner_type = 'status' AND owner_id = ?",
-          [character.id],
+          `DELETE FROM ${table}
+            WHERE character_id IN (SELECT id FROM novel_pack_characters WHERE work_id = ?)`,
+          [id],
         );
-        dbRun(
-          "DELETE FROM novel_pack_modifiers WHERE owner_type = 'item' AND owner_id IN (SELECT id FROM novel_pack_items WHERE character_id = ?)",
-          [character.id],
-        );
-        dbRun(
-          "DELETE FROM novel_pack_modifiers WHERE owner_type = 'skill' AND owner_id IN (SELECT id FROM novel_pack_skills WHERE character_id = ?)",
-          [character.id],
-        );
-        for (const table of PACK_CHILD_TABLES) {
-          dbRun(`DELETE FROM ${table} WHERE character_id = ?`, [character.id]);
-        }
       }
       dbRun("DELETE FROM novel_pack_characters WHERE work_id = ?", [id]);
 
@@ -566,13 +587,13 @@ export function registerNovelHandlers(): void {
 /**
  * 模板书籍播种（单事务）：清空 novel_* 业务表后写入模板数据。
  *
- * 两条路径复用：
- * - 「一键重置为模板书籍」入口（UI 层已有二次确认）
- * - 确凿的首次使用：书架 / 编辑器开局即有一部预设模板书，而不是空白画布。
- *   判据是 SEEDED_KEY 从未落过，**不是**「works 为空」——后者会在用户删光
- *   作品时把这次清库再跑一遍，连带丢掉灵感池
+ * **唯一的调用方**是「一键重置为模板书籍」入口（UI 层已有二次确认）。
+ * 它曾经还被「确凿的首次使用」自动调用，但那让「删光作品」与「升级用户」
+ * 都可能撞上这次清库 —— 现已整条移除（见上方 SEEDED 段注释）。
  *
- * 唯一的例外是灵感：只清 `work_id <> ''` 的行，未归属的全局灵感池保留。
+ * 注意：即便只有手动一条路径，它依然是**破坏性操作** —— 会清空当前用户的
+ * 全部作品 / 灵感 / 行囊。唯一的例外是灵感：只清 `work_id <> ''` 的行，
+ * 未归属的全局灵感池保留。
  *
  * 模板由 electron/novel-template.ts 实时构建，改模板定义后重置即生效。
  * 排版设置（novel_editor_settings）保留，续写位置（novel_editor_position）
@@ -872,15 +893,19 @@ function seedTemplateBook(): {
 ipcMain.handle("novel-editor-reset-template", () => seedTemplateBook());
 
   // 全量装载：编辑器启动一次拉取所有 novel_* 表 + 崩溃恢复信息
+  //
+  // ⚠️ 这里**不做任何自动播种**：新用户打开小说窗口就是空书架（由 UI 引导
+  // 「新建作品 / 导入书籍」），模板书只能经「重置为模板书籍」手动获取。
+  //
+  // 曾经的实现是「works 为空且 novel_seeded 未落过 → seedTemplateBook()」，
+  // 它有两个绕不开的毛病，所以整条删除：
+  // 1. seedTemplateBook 是**清库重播种**，只要判据被误触发就会连用户灵感
+  //    （work_id = '' 的全局池）与行囊草稿一起抹掉；
+  // 2. 判据依赖 config 里的 novel_seeded，而**老版本升级上来的用户没有这个键** ——
+  //    他们删光自己的作品的下一刻就会触发一次清库，表现为「删掉的书全回来了，
+  //    还多出一本模板书」。判据天生不可靠，不如不判。
   ipcMain.handle("novel-editor-load", () => {
-    let works = dbAll("SELECT * FROM novel_works ORDER BY created_at") as NovelWorkRow[];
-    // 只在确凿的首次使用（从未播种过且库里一部作品都没有）时自动播种。
-    // 不能退化成「works 为空就播种」——那会在用户删光作品后触发一次清库（见 SEEDED_KEY 注释）
-    if (works.length === 0 && getConfig(SEEDED_KEY) === null) {
-      seedTemplateBook();
-      setConfig(SEEDED_KEY, "1");
-      works = dbAll("SELECT * FROM novel_works ORDER BY created_at") as NovelWorkRow[];
-    }
+    const works = dbAll("SELECT * FROM novel_works ORDER BY created_at") as NovelWorkRow[];
 
     const volumes = (dbAll("SELECT * FROM novel_volumes ORDER BY sort") as NovelVolumeRow[]).map(
       (row) => ({ id: row.id, workId: row.work_id, name: row.name, sort: row.sort }),
@@ -891,21 +916,29 @@ ipcMain.handle("novel-editor-reset-template", () => seedTemplateBook());
     );
     const links = (dbAll("SELECT * FROM novel_links") as NovelLinkRow[]).map(toLinkDto);
 
+    // 等级项一次取回后在 JS 分组（每个体系一条 SQL 会变成 N+1：
+    // 作品一多就是几十次 prepare）
+    const levelRows = dbAll(
+      "SELECT * FROM novel_levels ORDER BY system_id, rank",
+    ) as NovelLevelRow[];
+    const rungsBySystem = new Map<string, LevelRungDto[]>();
+    for (const level of levelRows) {
+      const list = rungsBySystem.get(level.system_id) ?? [];
+      list.push({
+        id: level.id,
+        name: level.name,
+        rank: level.rank,
+        ...(level.note !== null ? { note: level.note } : {}),
+      });
+      rungsBySystem.set(level.system_id, list);
+    }
     const levelSystems = (dbAll(
       "SELECT * FROM novel_level_systems",
     ) as NovelLevelSystemRow[]).map((system) => ({
       id: system.id,
       workId: system.work_id,
       name: system.name,
-      rungs: (dbAll(
-        "SELECT * FROM novel_levels WHERE system_id = ? ORDER BY rank",
-        [system.id],
-      ) as NovelLevelRow[]).map((level) => ({
-        id: level.id,
-        name: level.name,
-        rank: level.rank,
-        ...(level.note !== null ? { note: level.note } : {}),
-      })),
+      rungs: rungsBySystem.get(system.id) ?? [],
     }));
 
     const notes = (dbAll("SELECT * FROM novel_notes") as NovelNoteRow[]).map((row) => ({
@@ -1296,16 +1329,154 @@ ipcMain.handle("novel-editor-reset-template", () => seedTemplateBook());
     },
   );
 
-  // ── TXT 导出（R13）：文本组装在渲染层完成，这里只负责弹保存框 + 落盘 ──
+  // ── 书籍导入（TXT／DOCX）：选文件 + 读字节 / 解析结果单事务落库 ──────
+  //
+  // 分工：主进程只做「选文件 + 读盘成字节」与「批量入库」；
+  // 编码探测与章节/卷拆分在渲染层 web worker 完成（不占主界面，也不占主进程）。
+  // 阅读器（参考 Ftiehan）走的是「按需读盘 + 字节偏移」，这里是一次性全量入库，
+  // 故把整份字节交给渲染层解析、再整份写回。
+
+  ipcMain.handle("novel-import-pick-file", async (): Promise<
+    { fileName: string; bytes: ArrayBuffer; size: number } | null
+  > => {
+    const result = await dialog.showOpenDialog({
+      title: "导入书籍",
+      properties: ["openFile"],
+      filters: [
+        { name: "文本书籍", extensions: ["txt", "docx"] },
+        { name: "纯文本", extensions: ["txt"] },
+        { name: "Word 文档", extensions: ["docx"] },
+      ],
+    });
+    if (result.canceled || result.filePaths.length === 0) return null;
+    const filePath = result.filePaths[0];
+    const fileName = path.basename(filePath);
+    const ext = path.extname(filePath).toLowerCase();
+
+    // DOCX：mammoth 抽取正文纯文本后，走与 TXT 完全相同的解析链路。
+    // 抽取出的是字符串，转成 UTF-8 字节回传，保持渲染层「字节 → 解码 → 拆章」
+    // 的单一路径（与其它格式一致，渲染层无需分支）。
+    if (ext === ".docx") {
+      const { value } = await mammoth.extractRawText({ path: filePath });
+      const bytes = new TextEncoder().encode(value).buffer as ArrayBuffer;
+      return { fileName, bytes, size: bytes.byteLength };
+    }
+
+    const buffer = await fsp.readFile(filePath);
+    // 转成可结构化克隆的 ArrayBuffer：Buffer 底层常带 pool 偏移，
+    // 直接 slice 出精确区段再交给渲染层（transfer 后原 buffer 会被 detach）
+    const bytes = buffer.buffer.slice(
+      buffer.byteOffset,
+      buffer.byteOffset + buffer.byteLength,
+    ) as ArrayBuffer;
+    return { fileName, bytes, size: buffer.byteLength };
+  });
+
+  // 导入落库：作品 + 卷 + 章一次事务写入。任何一卷/一章失败整体回滚，
+  // 不会在书架上留下半本书。
+  ipcMain.handle(
+    "novel-import-book",
+    (
+      _event,
+      payload: {
+        work: NovelWorkDto;
+        volumes: Array<{ id: string; name: string; sort: number }>;
+        chapters: Array<{
+          id: string;
+          volumeId: string;
+          title: string;
+          content: string;
+          wordCount: number;
+          sort: number;
+        }>;
+      },
+    ): { ok: boolean; chapterCount: number; wordCount: number } | { ok: false; error: string } => {
+      const name = payload?.work?.name?.trim();
+      if (!payload?.work?.id || !name) {
+        return { ok: false, error: "书名不能为空" };
+      }
+      if (!Array.isArray(payload.volumes) || !Array.isArray(payload.chapters)) {
+        return { ok: false, error: "导入数据格式不正确" };
+      }
+
+      const db = getDb();
+      const now = Date.now();
+      const apply = db.transaction(() => {
+        dbRun("INSERT INTO novel_works (id, name, created_at) VALUES (?, ?, ?)", [
+          payload.work.id,
+          name,
+          payload.work.createdAt || now,
+        ]);
+        const volumeStmt = db.prepare(
+          "INSERT INTO novel_volumes (id, work_id, name, sort) VALUES (?, ?, ?, ?)",
+        );
+        for (const volume of payload.volumes) {
+          volumeStmt.run(
+            volume.id,
+            payload.work.id,
+            volume.name || "未命名卷",
+            volume.sort,
+          );
+        }
+        const chapterStmt = db.prepare(
+          `INSERT INTO novel_chapters
+             (id, work_id, volume_id, title, content, word_count, status, sort, outline_note, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, NULL, ?)`,
+        );
+        for (const chapter of payload.chapters) {
+          chapterStmt.run(
+            chapter.id,
+            payload.work.id,
+            chapter.volumeId,
+            chapter.title || "未命名",
+            chapter.content ?? "",
+            chapter.wordCount ?? 0,
+            chapter.sort,
+            now,
+          );
+        }
+      });
+      apply();
+
+      const wordCount = payload.chapters.reduce(
+        (sum, chapter) => sum + (chapter.wordCount ?? 0),
+        0,
+      );
+      logUsage("book_import", {
+        workId: payload.work.id,
+        volumes: payload.volumes.length,
+        chapters: payload.chapters.length,
+        words: wordCount,
+      });
+      return { ok: true, chapterCount: payload.chapters.length, wordCount };
+    },
+  );
+
+  // ── 文件导出：文本组装在渲染层完成，这里只负责弹保存框 + 落盘 ──
+  //
+  // 从「只导 TXT」泛化成任意文本格式（ext / filterName 可选，缺省即 TXT）：
+  // 行囊的 Markdown 导出走同一条通道，避免为「换个扩展名」再抄一份 showSaveDialog。
 
   ipcMain.handle(
-    "novel-export-txt",
-    async (_event, defaultName: string, content: string): Promise<{ path: string } | null> => {
+    "novel-export-file",
+    async (
+      _event,
+      defaultName: string,
+      content: string,
+      ext = "txt",
+      filterName = "文本文件",
+    ): Promise<{ path: string } | null> => {
+      const suffix = ext.replace(/^\./, "") || "txt";
       const safeName = defaultName.replace(/[\\/:*?"<>|]/g, "_").trim() || "导出";
+      // 调用方可能已经把扩展名写进 defaultName（「设定卡.txt」），去掉再拼，
+      // 否则会存成 `设定卡.txt.txt`
+      const stem = safeName.toLowerCase().endsWith(`.${suffix.toLowerCase()}`)
+        ? safeName.slice(0, -(suffix.length + 1))
+        : safeName;
       const result = await dialog.showSaveDialog({
-        title: "导出 TXT",
-        defaultPath: `${safeName}.txt`,
-        filters: [{ name: "文本文件", extensions: ["txt"] }],
+        title: `导出 ${suffix.toUpperCase()}`,
+        defaultPath: `${stem}.${suffix}`,
+        filters: [{ name: filterName, extensions: [suffix] }],
       });
       if (result.canceled || !result.filePath) return null;
       await fsp.writeFile(result.filePath, content, "utf8");

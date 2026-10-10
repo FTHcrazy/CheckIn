@@ -1,3 +1,5 @@
+@use "../../../../../../shared/styles/widget" as widget;
+
 /*
  * 支撑面板内的通用零件（NL 设计稿 §3）
  *
@@ -7,6 +9,13 @@
  * 指的是「不承担别人不该承担的」，而不是「宁可重复」）。
  *
  * 作用域统一收在 .nv-panel 之下，避免影响 panel 之外的任何样式。
+ *
+ * ⚠️ 按钮类（.nv-mini / .nv-chip / .nv-ghost / .nv-field__clear / .nv-sub__btn）
+ * 一律由 antd `Button` 承载，外观只通过组件级 CSS 变量配置（AGENTS §6.1.2）：
+ * 先用 `@include widget.ant-button-reset` 把组件库自带外观清零，再在同一个
+ * `.xxx.ant-btn` 选择器里声明变量——antd 的 hover / active / disabled 规则是
+ * (0,4,0) 级，自写 `:hover` 属性规则永远压不过它，而那些规则读的正是这些变量。
+ * 因此 `.is-on` 这种永久高亮态也写成默认变量，不写 `:hover` / `:active`。
  */
 
 .nv-panel {
@@ -67,20 +76,17 @@
     }
   }
 
-  .nv-field__clear {
+  /* 清空按钮：antd Button 承载，仅描一个圆角与图标色 */
+  .nv-field__clear.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-border-radius: 4px;
+    --ant-button-default-color: var(--app-text-disabled);
+    --ant-button-default-hover-color: var(--app-text-secondary);
+    --ant-button-default-active-color: var(--app-text-secondary);
     display: inline-flex;
     align-items: center;
     justify-content: center;
     padding: 2px;
-    border: none;
-    border-radius: 4px;
-    background: transparent;
-    color: var(--app-text-disabled);
-    cursor: pointer;
-
-    &:hover {
-      color: var(--app-text-secondary);
-    }
   }
 
   /* ── 子分段（大纲的章节 / 伏笔、检索的作用域）──────────────────── */
@@ -91,32 +97,38 @@
     border-radius: 9px;
     background: var(--app-surface-hover);
 
-    &__btn {
+    &__btn.ant-btn {
+      @include widget.ant-button-reset;
+      --ant-control-height: 25px;
+      --ant-button-padding-inline: 8px;
+      --ant-button-content-font-size: 12px;
+      --ant-button-font-weight: 400;
+      --ant-button-icon-gap: 4px;
+      --ant-border-radius: 6px;
+      --ant-button-default-bg: transparent;
+      --ant-button-default-color: var(--app-text-secondary);
+      --ant-button-default-hover-color: var(--app-text);
+      --ant-button-default-active-color: var(--app-text);
+      --ant-button-default-bg-disabled: transparent;
+      --ant-button-border-color-disabled: transparent;
+      /* 禁用态文字色：antd 的 :disabled 规则读的是全局 token，没有按钮级变量，
+         只能在本元素上改它（不写 :disabled 属性规则） */
+      --ant-color-text-disabled: var(--app-text-disabled);
       flex: 1;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 4px;
-      height: 25px;
-      padding: 0 8px;
-      border: none;
-      border-radius: 6px;
-      background: transparent;
-      color: var(--app-text-secondary);
-      font-family: inherit;
-      font-size: 12px;
-      cursor: pointer;
-      transition: background 150ms ease, color 150ms ease;
 
-      &:hover {
-        color: var(--app-text);
-      }
-
+      /* 选中：浮起的白色滑块（永久态 → 写默认变量，hover/active 读同一份） */
       &.is-on {
-        background: var(--app-surface);
-        color: var(--app-text);
-        font-weight: 600;
-        box-shadow: var(--app-shadow-card);
+        --ant-button-default-bg: var(--app-surface);
+        --ant-button-default-color: var(--app-text);
+        --ant-button-default-hover-bg: var(--app-surface);
+        --ant-button-default-hover-color: var(--app-text);
+        --ant-button-default-active-bg: var(--app-surface);
+        --ant-button-default-active-color: var(--app-text);
+        --ant-button-font-weight: 600;
+        --ant-button-default-shadow: var(--app-shadow-card);
       }
     }
 
@@ -161,34 +173,32 @@
     }
   }
 
-  .nv-chip {
+  .nv-chip.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 24px;
+    --ant-button-padding-inline: 9px;
+    --ant-button-content-font-size: 12px;
+    --ant-button-font-weight: 400;
+    --ant-button-icon-gap: 4px;
+    --ant-border-radius: var(--app-radius-pill);
+    --ant-line-width: 1px;
+    --ant-button-default-bg: var(--app-surface);
+    --ant-button-default-color: var(--app-text-secondary);
+    --ant-button-default-border-color: transparent;
+    --ant-button-default-hover-bg: var(--app-surface-hover);
+    --ant-button-default-hover-border-color: transparent;
+    --ant-button-default-active-bg: var(--app-surface-hover);
+    --ant-button-default-active-border-color: transparent;
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    height: 24px;
-    padding: 0 9px;
-    border: 1px solid transparent;
-    border-radius: var(--app-radius-pill);
-    background: var(--app-surface);
-    color: var(--app-text-secondary);
-    font-family: inherit;
-    font-size: 12px;
     white-space: nowrap;
-    cursor: pointer;
-    transition: background 150ms ease, color 150ms ease, border-color 150ms ease,
-      transform 100ms ease;
 
-    &:hover {
-      background: var(--app-surface-hover);
-    }
-
-    &:active {
-      transform: scale(0.96);
-    }
-
+    /* 选中：描边取当前字色 + 加粗（永久态 → 写默认变量） */
     &.is-on {
-      border-color: currentColor;
-      font-weight: 600;
+      --ant-button-default-border-color: currentColor;
+      --ant-button-default-hover-border-color: currentColor;
+      --ant-button-default-active-border-color: currentColor;
+      --ant-button-font-weight: 600;
     }
 
     em {
@@ -201,6 +211,11 @@
       color: inherit;
       opacity: 0.7;
     }
+  }
+
+  /* 按下的缩放反馈：transform 是 antd 不接管的属性（§6.1.2 允许保留） */
+  .nv-chip:active {
+    transform: scale(0.96);
   }
 
   /* ── 分区标题 ─────────────────────────────────────────────────── */
@@ -241,18 +256,20 @@
   }
 
   /* ── 行内图标按钮（悬停浮出的快捷操作）────────────────────────── */
-  .nv-mini {
+  .nv-mini.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 24px;
+    --ant-border-radius: 7px;
+    --ant-button-default-bg: transparent;
+    --ant-button-default-color: var(--app-text-disabled);
+    --ant-button-default-hover-bg: var(--app-surface-hover);
+    --ant-button-default-hover-color: var(--app-text);
+    --ant-button-default-active-bg: var(--app-surface-hover);
+    --ant-button-default-active-color: var(--app-text);
+    width: 24px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 24px;
-    height: 24px;
-    border: none;
-    border-radius: 7px;
-    background: transparent;
-    color: var(--app-text-disabled);
-    cursor: pointer;
-    transition: background 140ms ease, color 140ms ease;
 
     & > svg,
     & > .anticon {
@@ -261,25 +278,30 @@
       font-size: 14px;
     }
 
-    &:hover:not(:disabled) {
-      background: var(--app-surface-hover);
-      color: var(--app-text);
-    }
-
+    /* 开态（置顶 / 收藏 / 主角）是永久高亮：写默认变量，
+       antd 的 hover / active 读同一份变量，才不会被它们压回常态 */
     &.is-on {
-      color: var(--app-primary);
-      background: var(--app-primary-weak);
+      --ant-button-default-bg: var(--app-primary-weak);
+      --ant-button-default-color: var(--app-primary);
+      --ant-button-default-hover-bg: var(--app-primary-weak);
+      --ant-button-default-hover-color: var(--app-primary);
+      --ant-button-default-active-bg: var(--app-primary-weak);
+      --ant-button-default-active-color: var(--app-primary);
     }
 
+    /* 只剩 antd 不接管的属性（§6.1.2）：禁用态压暗；
+       光标交给组件库的 not-allowed 语义 */
     &:disabled {
-      cursor: default;
       opacity: 0.35;
     }
+  }
 
-    &--warn:hover:not(:disabled) {
-      background: var(--app-error-weak);
-      color: var(--app-error);
-    }
+  /* 破坏性动作（删除）：悬停 / 按下转错误色，同样只改变量 */
+  .nv-mini--warn.ant-btn {
+    --ant-button-default-hover-bg: var(--app-error-weak);
+    --ant-button-default-hover-color: var(--app-error);
+    --ant-button-default-active-bg: var(--app-error-weak);
+    --ant-button-default-active-color: var(--app-error);
   }
 
   /* ── 键值行（详情字段 / 说明）──────────────────────────────────── */
@@ -307,31 +329,38 @@
   }
 
   /* ── 幽灵按钮（详情区底部动作）────────────────────────────────── */
-  .nv-ghost {
+  .nv-ghost.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 30px;
+    --ant-button-padding-inline: 12px;
+    --ant-button-content-font-size: 12px;
+    --ant-button-icon-gap: 5px;
+    --ant-border-radius: 9px;
+    --ant-line-width: 1px;
+    --ant-button-default-bg: var(--app-surface);
+    --ant-button-default-color: var(--app-text-secondary);
+    --ant-button-default-border-color: var(--app-border);
+    --ant-button-default-hover-bg: var(--app-surface);
+    --ant-button-default-hover-color: var(--app-primary);
+    --ant-button-default-hover-border-color: var(--app-primary);
+    --ant-button-default-active-bg: var(--app-surface);
+    --ant-button-default-active-color: var(--app-primary);
+    --ant-button-default-active-border-color: var(--app-primary);
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 5px;
-    height: 30px;
-    padding: 0 12px;
-    border: 1px solid var(--app-border);
-    border-radius: 9px;
-    background: var(--app-surface);
-    color: var(--app-text-secondary);
-    font-family: inherit;
-    font-size: 12px;
-    cursor: pointer;
-    transition: border-color 150ms ease, color 150ms ease, background 150ms ease;
 
-    &:hover {
-      border-color: var(--app-primary);
-      color: var(--app-primary);
-    }
-
+    /* 开态（标注高亮已开）：永久高亮 → 默认 / hover / active 同一套值 */
     &.is-on {
-      border-color: var(--app-primary);
-      background: var(--app-primary-weak);
-      color: var(--app-primary);
+      --ant-button-default-bg: var(--app-primary-weak);
+      --ant-button-default-color: var(--app-primary);
+      --ant-button-default-border-color: var(--app-primary);
+      --ant-button-default-hover-bg: var(--app-primary-weak);
+      --ant-button-default-hover-color: var(--app-primary);
+      --ant-button-default-hover-border-color: var(--app-primary);
+      --ant-button-default-active-bg: var(--app-primary-weak);
+      --ant-button-default-active-color: var(--app-primary);
+      --ant-button-default-active-border-color: var(--app-primary);
     }
   }
 }

@@ -50,15 +50,39 @@ function scanChapter(content: string, terms: EntityTerm[]): string[] {
   return Array.from(ids);
 }
 
-/** 聚合缓存成「要素 → 章数」 */
-function aggregate(): Map<string, number> {
+/** 倒排索引：要素 → 出场章节 id（按章节顺序，供详情卡的跳转列表用） */
+let inverseIndex: Map<string, string[]> = new Map();
+
+const EMPTY: string[] = [];
+
+/** 聚合缓存成「要素 → 章数」+ 倒排索引 */
+function aggregate(chapters: NovelChapter[]): Map<string, number> {
   const counts = new Map<string, number>();
-  for (const entry of cache.values()) {
+  const inverse = new Map<string, string[]>();
+  // 按传入的 chapters 顺序遍历，而不是遍历 cache：拖拽重排后 map 的插入顺序
+  // 不会跟着变，那样跳转列表的顺序会停留在上次的章节顺序
+  for (const chapter of chapters) {
+    const entry = cache.get(chapter.id);
+    if (!entry) continue;
     for (const id of entry.ids) {
       counts.set(id, (counts.get(id) ?? 0) + 1);
+      const list = inverse.get(id);
+      if (list) list.push(chapter.id);
+      else inverse.set(id, [chapter.id]);
     }
   }
+  inverseIndex = inverse;
   return counts;
+}
+
+/**
+ * 出场章节 id（按书籍顺序）。
+ *
+ * 详情页之前是在渲染体里对全书每章跑 `findTermMatches`：详情卡一开，
+ * 自动保存每 800ms 就触发一次全书正则扫描。这里直接读倒排索引，零扫描。
+ */
+export function appearancesOf(entityId: string): string[] {
+  return inverseIndex.get(entityId) ?? EMPTY;
 }
 
 /** 增量同步：只扫内容变了的章；没有任何变化时连 set 都不做 */
@@ -91,20 +115,16 @@ export function syncAppearances(
     changed = true;
   }
 
-  // 章节增删（内容没变但集合变了）也要重算
-  let idsChanged = alive.size !== cachedIds.length;
-  if (!idsChanged) {
-    for (const id of cachedIds) {
-      if (!alive.has(id)) {
-        idsChanged = true;
-        break;
-      }
-    }
-  }
-  cachedIds = Array.from(alive);
+  // 章节增删**或重排**（内容都没变，但集合 / 顺序变了）也要重算：
+  // 倒排索引的顺序就是详情卡跳转列表的顺序，拖拽重排后它必须跟着变
+  const idsNow = chapters.map((chapter) => chapter.id);
+  const idsChanged =
+    idsNow.length !== cachedIds.length ||
+    idsNow.some((id, index) => cachedIds[index] !== id);
+  cachedIds = idsNow;
 
   if (!changed && !idsChanged) return;
-  useAppearanceStore.setState({ counts: aggregate() });
+  useAppearanceStore.setState({ counts: aggregate(chapters) });
 }
 
 /** 清空索引（切作品 / 重载 bundle 时调用） */
@@ -112,5 +132,6 @@ export function resetAppearances(): void {
   cache.clear();
   cachedTerms = null;
   cachedIds = [];
+  inverseIndex = new Map();
   useAppearanceStore.setState({ counts: new Map<string, number>() });
 }

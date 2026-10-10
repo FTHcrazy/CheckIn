@@ -30,8 +30,33 @@ export const PACK_PANEL = {
   overlayBelow: 1100,
 } as const;
 
+/** Peek 速览形态（REQ-001 第三形态）：半透明浮层 + 无操作自动收起 */
+export const PACK_PEEK = {
+  /**
+   * 浮层不透明度。**不是越低越好**：半透明的意义是「能看见下面的正文，
+   * 确认自己没有挡到正在写的那一段」，低到看不清清单就白开一次面板了。
+   */
+  opacity: 0.96,
+  /** 无操作自动收起（原型 3000ms） */
+  autoCloseMs: 3000,
+} as const;
+
 /** 物品列表搜索防抖（B-3：≥20 条时实时过滤，防抖 200ms） */
 export const INVENTORY_SEARCH_DEBOUNCE_MS = 200;
+
+/**
+ * 物品列表一次挂载多少条（REQ-019 长列表）。
+ *
+ * 这里**没有用 JS 虚拟列表**（虽然仓库装了 `react-virtuoso`）：虚拟列表要求列表
+ * 自己拥有确定高度的滚动容器，而行囊的滚动是整块 `.cpk__body` 一个（九个模块共用
+ * 一条滚动条）。改成嵌套滚动之后，「滚到技能模块」会变成「先滚内层再滚外层」，
+ * 那不是这个面板想要的交互。
+ *
+ * 取值 80：低于它的列表完全不出现「显示更多」，也就是绝大多数书的默认路径与
+ * 加这个之前**逐字节相同**；超过之后按窗口追加，避免 500 条物品时一次挂载
+ * 500 套 antd 输入控件。
+ */
+export const INVENTORY_RENDER_WINDOW = 80;
 
 /** 物品数量长按连续增减：首次延迟与步进间隔 */
 export const QTY_HOLD = { delayMs: 400, intervalMs: 60 } as const;
@@ -192,4 +217,157 @@ export function requestClosePackPanel(): boolean {
   if (!closer) return false;
   void closer();
   return true;
+}
+
+// ── 「先处理后行动」闸门 ──
+
+/**
+ * 需要先征询用户的动作。**这是一份白名单，不是给人看的文案** ——
+ * 每加一处调用点，都要想清楚「这个动作会不会让未保存的编辑离场」：
+ * 会，就必须过闸门；不会，就别加（无缘无故弹拦截比丢数据更烦人）。
+ */
+export type PackGuardReason = "关闭行囊" | "切换章节" | "切换作品" | "退出应用" | "关闭窗口";
+
+/**
+ * 未保存改动的通用闸门，由面板挂载时注册。
+ *
+ * 与上面的 `requestClosePackPanel` 的区别：那个是「关掉面板」这一件事的桥，
+ * 返回同步布尔（调用方只需知道「面板接没接手」）；这个是**异步裁决** ——
+ * 返回 `true` 表示「可以继续做那件事」，`false` 表示用户在弹窗里选了取消。
+ * 切章 / 切作品 / 退出应用都走它：它们不关面板，但会让编辑离开当前上下文。
+ */
+let guard: ((reason: PackGuardReason) => Promise<boolean>) | null = null;
+
+/** 面板挂载 / 卸载时调用（与 `registerPackCloser` 同生命周期） */
+export function registerPackGuard(fn: ((reason: PackGuardReason) => Promise<boolean>) | null): void {
+  guard = fn;
+}
+
+/**
+ * 做某个动作前先过一次闸门：**没有面板、或没有未保存改动时直接放行**。
+ *
+ * 调用方一律写成「先 await 再动手」，不要自己判断脏计数 —— 脏计数是面板
+ * 私有的（草稿、回退点都在它那边），页面层复制一份判断必然有一次不一致。
+ */
+export async function guardPackBeforeAction(reason: PackGuardReason): Promise<boolean> {
+  if (!guard) return true;
+  return guard(reason);
+}
+
+// ── 快速记账桥（REQ-027 正文选区 → 记入背包） ──
+
+/** 一次快速记账请求 */
+export interface PackQuickAddRequest {
+  /** 物品名（取自正文选区，调用方已去空白并截断） */
+  name: string;
+  /** 分类，缺省「杂物」 */
+  category?: string;
+  /** 来源章节（正文选区所在的章），展示与导出都要用 */
+  chapterId: string;
+}
+
+/**
+ * 面板挂载时注册的处理器：**同步**返回新建物品 id，失败返回 null。
+ *
+ * 同步是刻意的：面板那条路径只是往内存文档里 push 一条 + 标脏，没有任何 await；
+ * 做成 Promise 会让调用方在「面板开着」这条最快路径上也要挂一次 then。
+ */
+let quickAdder: ((request: PackQuickAddRequest) => string | null) | null = null;
+
+/** 面板挂载 / 卸载时调用（与 `registerPackCloser` 同生命周期） */
+export function registerPackQuickAdd(fn: ((request: PackQuickAddRequest) => string | null) | null): void {
+  quickAdder = fn;
+}
+
+/**
+ * 走面板那条路径记账。返回 `handled: false` 表示**当前没有面板** ——
+ * 调用方改用主进程落库（`quickAddPackItem`），而不是当作失败。
+ *
+ * 为什么必须分两条路：面板开着时数据主人是它的内存文档 + 草稿，直接写库会
+ * 与面板的下一份整文档草稿互相覆盖；面板没开时才轮到主进程（且它还得看草稿
+ * 在不在，见 `novel-pack-quick-add` 的注释）。
+ */
+export function runPackQuickAdd(request: PackQuickAddRequest): {
+  handled: boolean;
+  ok: boolean;
+} {
+  if (!quickAdder) return { handled: false, ok: false };
+  return { handled: true, ok: quickAdder(request) !== null };
+}
+
+// ── Peek 速览桥（REQ-001 第三形态） ──
+
+/**
+ * 切到速览形态，由面板挂载时注册。
+ *
+ * ⚠️ **Peek 刻意不进 `PackUiPrefs`**：它 3 秒后自动收起。若写进 `novel_pack_ui`，
+ * 下次打开行囊会「自己又没了」——那是没法向用户解释的行为。所以它是面板的
+ * **运行时状态**，面板一关就复位，形态记忆仍然只记 reflow / overlay 两值。
+ *
+ * 与 `requestClosePackPanel` 的区别：那个是「关掉」，这个是「换成速览」，
+ * 面板仍然开着（用户可以在提示条上点「固定」把它变回常规形态）。
+ */
+let peeker: (() => void) | null = null;
+
+/**
+ * 「还没挂载就先按了速览」的待办。
+ *
+ * 顶栏 Alt+点击时面板可能还没开（`packOpen` 从 false 翻到 true，React 要等这一拍
+ * commit 之后才跑 effect）。**不能用 setTimeout 猜时序** —— 那是在赌 React 的
+ * 提交时机；改成记一个待办，由面板注册时立刻消费。
+ */
+let pendingPeek = false;
+
+/** 面板挂载 / 卸载时调用（与 `registerPackCloser` 同生命周期） */
+export function registerPackPeek(fn: (() => void) | null): void {
+  peeker = fn;
+  if (!fn) {
+    // 卸载时把待办一并清掉：否则下一次是「普通打开」，却会莫名其妙进入速览
+    pendingPeek = false;
+    return;
+  }
+  if (pendingPeek) {
+    pendingPeek = false;
+    fn();
+  }
+}
+
+/**
+ * 请求切到速览形态。
+ *
+ * **返回 false 表示面板还没挂载**（请求已记下，面板一出现就会生效），
+ * 调用方不需要自己重试。
+ */
+export function requestPackPeek(): boolean {
+  if (!peeker) {
+    pendingPeek = true;
+    return false;
+  }
+  peeker();
+  return true;
+}
+
+// ── 「插入本章末尾」桥（REQ-034） ──
+
+/**
+ * 行囊里有几张表（属性 / 物品 / 装备…），作者会想把它们抄进正文。
+ *
+ * 与关闭桥同理：**行囊不该 import 编辑器的 store** —— 那样这个模块就绑死在
+ * 「宿主是 NovelPage」上了，而 PRD §1 明确要求它能整体搬去独立窗口（分离窗口下
+ * 根本没有正文可插）。所以由页面那侧注册一个处理器，行囊只发一句
+ * 「把这段 Markdown 追加到当前章末尾」。
+ */
+let chapterInserter: ((text: string) => boolean) | null = null;
+
+/** 页面挂载时调用（返回 `false` 表示当前没有可写的章节） */
+export type PackChapterInserter = (text: string) => boolean;
+
+export function registerPackInsertIntoChapter(fn: PackChapterInserter | null): void {
+  chapterInserter = fn;
+}
+
+/** 没有正文可写时返回 false，调用方据此给出「请先在编辑器里打开一章」的提示 */
+export function runPackInsertIntoChapter(text: string): boolean {
+  if (!chapterInserter) return false;
+  return chapterInserter(text);
 }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Select } from "antd";
+import { Button, Select } from "antd";
 import {
   CopyOutlined,
   PlusOutlined,
@@ -308,14 +308,13 @@ export default function NameGeneratorPanel({
         </div>
       </div>
 
-      <button
-        type="button"
+      <Button
         className="nv-name__regen"
         onClick={handleNextBatch}
         title="换一批（避开本书已用名）"
       >
-        <ReloadOutlined /> 换一批（避开本书已用名）
-      </button>
+        <ReloadOutlined />换一批（避开本书已用名）
+      </Button>
 
       <div className="nv-sechead">
         结果<em>{results.length}</em>
@@ -344,26 +343,23 @@ export default function NameGeneratorPanel({
               >
                 <span className="nv-name__text">{r.name}</span>
                 <span className="nv-name__acts">
-                  <button
-                    type="button"
+                  <Button
                     className="nv-mini"
                     aria-label="插入正文"
                     title="插入到正文光标处"
                     onClick={() => actions.onInsertToEditor(r.name)}
                   >
                     <ThunderboltOutlined />
-                  </button>
-                  <button
-                    type="button"
+                  </Button>
+                  <Button
                     className="nv-mini"
                     aria-label="建为角色卡"
                     title="建为角色卡（名称带入）"
                     onClick={() => actions.onCreateCharacter(r.name)}
                   >
                     <PlusOutlined />
-                  </button>
-                  <button
-                    type="button"
+                  </Button>
+                  <Button
                     className={`nv-mini${favorited ? " is-on" : ""}`}
                     aria-label={favorited ? "已收藏" : "加入收藏"}
                     title={favorited ? "已收藏" : "加入收藏"}
@@ -372,16 +368,15 @@ export default function NameGeneratorPanel({
                     onClick={() => actions.onAddFavorite(r.name, r.kind, r.style)}
                   >
                     {favorited ? <StarFilled /> : <StarOutlined />}
-                  </button>
-                  <button
-                    type="button"
+                  </Button>
+                  <Button
                     className="nv-mini"
                     aria-label="复制"
                     title="复制到剪贴板"
                     onClick={() => void handleCopy(r.name)}
                   >
                     <CopyOutlined />
-                  </button>
+                  </Button>
                 </span>
               </div>
             );
@@ -410,33 +405,30 @@ export default function NameGeneratorPanel({
                 {NAMING_DICTIONARY.kinds.find((k) => k.id === f.kind)?.label}
               </span>
               <span className="nv-name__fav-acts">
-                <button
-                  type="button"
+                <Button
                   className="nv-mini"
                   aria-label="插入正文"
                   title="插入到正文光标处"
                   onClick={() => actions.onInsertToEditor(f.name)}
                 >
                   <ThunderboltOutlined />
-                </button>
-                <button
-                  type="button"
+                </Button>
+                <Button
                   className="nv-mini"
                   aria-label="建为角色卡"
                   title="建为角色卡"
                   onClick={() => actions.onCreateCharacter(f.name)}
                 >
                   <PlusOutlined />
-                </button>
-                <button
-                  type="button"
+                </Button>
+                <Button
                   className="nv-mini is-on"
                   aria-label="移除收藏"
                   title="移除收藏"
                   onClick={() => actions.onRemoveFavorite(f.id)}
                 >
                   <StarFilled />
-                </button>
+                </Button>
               </span>
             </li>
           ))}

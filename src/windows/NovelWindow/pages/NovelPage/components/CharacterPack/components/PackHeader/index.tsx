@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { Button, Input } from "antd";
 import {
+  CheckOutlined,
   ClockCircleOutlined,
   CloseOutlined,
   SettingOutlined,
@@ -20,9 +21,19 @@ interface PackHeaderProps {
   savedAt: number;
   /** ≥5 处改动时做一次轻微呼吸提示（不循环，G-3） */
   breathe: boolean;
+  /** 处于「刚改动」窗口内的条目数（REQ-028）；0 时「全部已读」完全不出现在界面里 */
+  changedCount: number;
+  onMarkAllRead: () => void;
   onRename: (name: string) => void;
   onSave: () => void;
   onRevertAll: () => void;
+  /**
+   * 保存连续失败时的逃生出口（G-4）：把当前草稿整份导出成 JSON。
+   *
+   * 只在失败态出现 —— 它是「这个面板已经存不进去了」的兜底，不是常规导出
+   * （常规导出在 REQ-030 的模块级入口上，输出的是人读的 Markdown）。
+   */
+  onExportDraft: () => void;
   onOpenModules: () => void;
   onOpenUnitManager: () => void;
   onOpenRecords: () => void;
@@ -44,9 +55,12 @@ export default function PackHeader({
   saveFailed,
   savedAt,
   breathe,
+  changedCount,
+  onMarkAllRead,
   onRename,
   onSave,
   onRevertAll,
+  onExportDraft,
   onOpenModules,
   onOpenUnitManager,
   onOpenRecords,
@@ -115,6 +129,17 @@ export default function PackHeader({
           </span>
         </div>
         <div className="cpk-head__ops">
+          {/* 「全部已读」只在真有角标时出现：常驻一个永远可点但无事发生的按钮，
+              比不显示更让人困惑。数字让作者知道点掉的是几个标记。 */}
+          {changedCount > 0 ? (
+            <Button
+              className="cpk-btn ghost"
+              onClick={onMarkAllRead}
+              title="把属性 / 物品 / 技能上的「刚改动」角标一次清掉（不影响数据）"
+            >
+              <CheckOutlined /> 全部已读 {changedCount}
+            </Button>
+          ) : null}
           <Button
             className="cpk-iconbtn"
             onClick={onOpenRecords}
@@ -154,6 +179,16 @@ export default function PackHeader({
           {tone === "dirty" && (
             <Button className="cpk-btn ghost" onClick={onRevertAll}>
               撤销全部
+            </Button>
+          )}
+          {/* 逃生出口：写不进去的时候，先让作者把这份改动捞出来（G-4） */}
+          {tone === "failed" && (
+            <Button
+              className="cpk-btn ghost"
+              onClick={onExportDraft}
+              title="把当前改动整份导出成 JSON 文件，避免写库连续失败时丢数据"
+            >
+              导出草稿
             </Button>
           )}
           <Button

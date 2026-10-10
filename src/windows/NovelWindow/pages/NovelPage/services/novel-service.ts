@@ -128,19 +128,35 @@ export async function searchAcrossBook(
   const trimmed = keyword.trim();
   if (!trimmed) return [];
 
-  return chapters
-    .map((chapter) => {
-      const count = chapter.content.split(trimmed).length - 1;
-      return {
-        id: `${chapter.id}-${trimmed}`,
-        chapterId: chapter.id,
-        chapterTitle: chapter.title,
-        count,
-        snippet: buildSearchSnippet(chapter.content, trimmed),
-      };
-    })
-    .filter((hit) => hit.count > 0)
-    .sort((a, b) => b.count - a.count);
+  // ⚠️ 两步走，别在 map 里先建结果再 filter：
+  // ① `content.split(keyword)` 会为**每一章**分配一个全章大小的数组（百章长篇
+  //    就是几百 MB 级的临时分配），② 摘要里的 `replace(/\s+/g, " ")` 是全文正则，
+  //    对压根没命中的章也跑一遍 —— 防抖每触发一次就是一遍全书级同步 CPU，
+  //    会卡住输入法。改成 indexOf 计数：未命中章一次扫描、零分配、零摘要。
+  const hits: SearchHit[] = [];
+  for (const chapter of chapters) {
+    const count = countOccurrences(chapter.content, trimmed);
+    if (count === 0) continue;
+    hits.push({
+      id: `${chapter.id}-${trimmed}`,
+      chapterId: chapter.id,
+      chapterTitle: chapter.title,
+      count,
+      snippet: buildSearchSnippet(chapter.content, trimmed),
+    });
+  }
+  return hits.sort((a, b) => b.count - a.count);
+}
+
+/** 子串出现次数：indexOf 循环，不切开字符串（零中间数组） */
+function countOccurrences(haystack: string, needle: string): number {
+  let count = 0;
+  let at = haystack.indexOf(needle);
+  while (at !== -1) {
+    count += 1;
+    at = haystack.indexOf(needle, at + needle.length);
+  }
+  return count;
 }
 
 /** 新建章节落库（novel-chapter-add；id 已由渲染层生成） */
@@ -292,14 +308,24 @@ export async function saveLevelOrder(
   return window.electronAPI!.novel.levelOrder(updates);
 }
 
-// ── TXT 导出（R13） ──
+// ── 文本导出（R13；行囊 REQ-030 复用同一通道） ──
 
-/** 导出 TXT（novel-export-txt）：主进程弹保存框 + 写盘；用户取消返回 null */
+/** 导出 TXT（novel-export-file，缺省 ext）：主进程弹保存框 + 写盘；用户取消返回 null */
 export async function exportTxtFile(
   defaultName: string,
   content: string,
 ): Promise<{ path: string } | null> {
-  return window.electronAPI!.novel.exportTxt(defaultName, content);
+  return window.electronAPI!.novel.exportFile(defaultName, content);
+}
+
+/** 导出任意文本格式（行囊的 Markdown 表格走这条） */
+export async function exportTextFile(
+  defaultName: string,
+  content: string,
+  ext: string,
+  filterName: string,
+): Promise<{ path: string } | null> {
+  return window.electronAPI!.novel.exportFile(defaultName, content, ext, filterName);
 }
 
 // ── 使用埋点（R14） ──

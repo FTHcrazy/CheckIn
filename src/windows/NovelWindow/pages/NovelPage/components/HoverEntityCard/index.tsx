@@ -1,3 +1,4 @@
+import { Button } from "antd";
 import { useEntityTypeMeta } from "../../hooks/entity-types-context";
 import { useHoverStore } from "../../store/useHoverStore";
 import "./index.scss";
@@ -68,9 +69,9 @@ export default function HoverEntityCard({
       )}
 
       <div className="nv-pop__foot">
-        <button type="button" onClick={() => onOpenDetail(entity.id)}>
+        <Button onClick={() => onOpenDetail(entity.id)}>
           查看完整设定
-        </button>
+        </Button>
       </div>
     </div>
   );

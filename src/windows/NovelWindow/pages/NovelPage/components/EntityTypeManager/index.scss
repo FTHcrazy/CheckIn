@@ -1,4 +1,9 @@
-/** 自定义要素类型管理弹框（R23） */
+/** 自定义要素类型管理弹框（R23）
+
+    色板色块是 antd Button：先用清零点 mixin 归零组件级变量再声明自己的值。
+    色块底色由 TSX 内联 style 给出（内联高于任何选择器），这里只管描边与尺寸。 */
+@use "../../../../../../shared/styles/widget" as widget;
+
 .nv-etm {
   display: flex;
   flex-direction: column;
@@ -84,22 +89,30 @@
     gap: 6px;
   }
 
-  &__swatch {
-    width: 20px;
-    height: 20px;
-    padding: 0;
-    border: 2px solid transparent;
-    border-radius: 50%;
-    cursor: pointer;
+  &__swatch.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 20px;
+    --ant-button-padding-inline: 0px;
+    --ant-border-radius: 50%;
+    --ant-line-width: 2px;
+    --ant-button-default-border-color: transparent;
+    --ant-button-default-hover-border-color: transparent;
+    --ant-button-default-active-border-color: transparent;
+    --ant-button-default-shadow: none;
 
+    width: 20px;
+
+    /* 选中环：持久高亮，写默认变量并让 hover / active 一并跟上 */
     &.is-on {
-      border-color: var(--app-text);
+      --ant-button-default-border-color: var(--app-text);
+      --ant-button-default-hover-border-color: var(--app-text);
+      --ant-button-default-active-border-color: var(--app-text);
     }
   }
 
   &__error {
     margin: 0;
     font-size: 12px;
-    color: #d4380d;
+    color: var(--app-error);
   }
 }

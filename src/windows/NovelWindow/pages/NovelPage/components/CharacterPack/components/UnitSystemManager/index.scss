@@ -70,4 +70,27 @@
     gap: 6px;
     margin-top: 6px;
   }
+
+  /* ── 量纲 JSON 的出入（REQ-022）：两套量纲共用一组入口 ── */
+  &__io {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+    padding-top: 9px;
+    border-top: 1px solid var(--app-border);
+  }
+
+  &__iohead {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--app-text-strong);
+  }
+
+  &__ioacts {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
 }

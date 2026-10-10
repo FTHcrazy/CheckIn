@@ -1,4 +1,4 @@
-import { Input, Segmented, Slider, Switch } from "antd";
+import { Button, Input, Segmented, Slider, Switch } from "antd";
 import {
   CHAPTER_SUFFIX_OPTIONS,
   SETTINGS_RANGE,
@@ -54,9 +54,9 @@ export default function SettingsDrawer({
       <aside className={`nv-setting${open ? " is-open" : ""}`}>
       <header className="nv-setting__head">
         <b>设置</b>
-        <button type="button" aria-label="关闭" onClick={onClose}>
+        <Button aria-label="关闭" onClick={onClose}>
           ✕
-        </button>
+        </Button>
       </header>
 
       <div className="nv-setting__body">
@@ -152,16 +152,15 @@ export default function SettingsDrawer({
           <h6 className="nv-setting__label">章节后缀</h6>
           <div className="nv-setting__chips">
             {CHAPTER_SUFFIX_OPTIONS.map((suffix) => (
-              <button
+              <Button
                 key={suffix}
-                type="button"
                 className={`nv-setting__chip${
                   settings.chapterSuffix === suffix ? " is-on" : ""
                 }`}
                 onClick={() => onUpdate("chapterSuffix", suffix)}
               >
                 {formatNumberedLabel(settings.numberStyle, suffix, 1)}
-              </button>
+              </Button>
             ))}
           </div>
           <Input
@@ -181,16 +180,15 @@ export default function SettingsDrawer({
           <h6 className="nv-setting__label">卷名后缀</h6>
           <div className="nv-setting__chips">
             {VOLUME_SUFFIX_OPTIONS.map((suffix) => (
-              <button
+              <Button
                 key={suffix}
-                type="button"
                 className={`nv-setting__chip${
                   settings.volumeSuffix === suffix ? " is-on" : ""
                 }`}
                 onClick={() => onUpdate("volumeSuffix", suffix)}
               >
                 {formatNumberedLabel(settings.numberStyle, suffix, 1)}
-              </button>
+              </Button>
             ))}
           </div>
           <Input
@@ -224,15 +222,14 @@ export default function SettingsDrawer({
               const meta = metaOf(type);
               const on = settings.annotationTypes.includes(type);
               return (
-                <button
+                <Button
                   key={type}
-                  type="button"
                   className={`nv-setting__chip${on ? " is-on" : ""}`}
                   style={on ? undefined : { color: meta.color }}
                   onClick={() => onToggleAnnotationType(type)}
                 >
                   {meta.label}
-                </button>
+                </Button>
               );
             })}
           </div>

@@ -45,8 +45,154 @@
     line-height: 15px;
   }
 
+  /* 「本章初」标记：与「最新」不同色 —— 这两个标记会同时落在同一条记录上
+     （本章只保存过一次），同色的话读起来像重复标了两次 */
+  &__mark {
+    padding: 0 5px;
+    border-radius: var(--app-radius-pill);
+    background: var(--app-accent-blue-weak);
+    color: var(--app-accent-blue);
+    font-size: 10px;
+    font-style: normal;
+    line-height: 15px;
+  }
+
   &__time {
     font-size: 11px;
     color: var(--app-text-muted);
+  }
+}
+
+/* ── 与本章初对比（REQ-029）── */
+.cpk-diff {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--app-border);
+
+  &--last {
+    padding-bottom: 0;
+    border-bottom: none;
+  }
+
+  &__head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  &__title {
+    flex: none;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--app-text-strong);
+  }
+
+  &__meta {
+    min-width: 0;
+    font-size: 11px;
+    line-height: 16px;
+    color: var(--app-text-muted);
+    text-align: right;
+  }
+
+  &__empty {
+    margin: 0;
+    padding: 8px 10px;
+    border: 1px dashed var(--app-border);
+    border-radius: var(--app-radius-item);
+    background: var(--app-surface-alt);
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--app-text-secondary);
+  }
+
+  &__groups {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 260px;
+    overflow-y: auto;
+  }
+
+  /*
+   * 组标签独立一列而不是行内前缀：变更行会换行，行内前缀只在第一行对齐，
+   * 折下来的部分会缩回标签左边，看上去像漏了缩进。
+   */
+  &__group {
+    display: grid;
+    grid-template-columns: 46px minmax(0, 1fr);
+    gap: 6px;
+    align-items: start;
+  }
+
+  &__glabel {
+    padding-top: 1px;
+    font-size: 11px;
+    line-height: 18px;
+    color: var(--app-text-muted);
+  }
+
+  &__rows {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  &__row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px;
+    min-width: 0;
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--app-text-secondary);
+  }
+
+  &__sign {
+    flex: none;
+    width: 12px;
+    text-align: center;
+    font-weight: 600;
+  }
+
+  &__label {
+    color: var(--app-text-strong);
+  }
+
+  &__from {
+    color: var(--app-text-muted);
+    text-decoration: line-through;
+  }
+
+  &__arrow {
+    color: var(--app-text-muted);
+  }
+
+  &__to {
+    font-variant-numeric: tabular-nums;
+    color: var(--app-text-strong);
+  }
+
+  /* 正向 / 负向沿用 DeltaPreview 的配色口径（同一模块内不一致比不好看更糟） */
+  &__row.is-add &__sign,
+  &__row.is-add &__to {
+    color: var(--app-accent-green);
+  }
+
+  &__row.is-remove &__sign,
+  &__row.is-remove &__to {
+    color: var(--app-error);
+  }
+
+  &__row.is-remove &__label {
+    color: var(--app-text-muted);
+    text-decoration: line-through;
   }
 }

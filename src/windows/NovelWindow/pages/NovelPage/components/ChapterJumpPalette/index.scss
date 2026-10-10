@@ -1,3 +1,10 @@
+@use "../../../../../../shared/styles/widget" as widget;
+
+/* 候选行 .nv-palette__row 由 antd `Button` 承载（键盘可达 / focus 环）：
+   先清零再只声明组件级变量；键盘光标所在行的高亮是永久态，写成默认变量，
+   否则 antd 的 :hover / :active 规则（(0,4,0)）会把高亮压回去（AGENTS §6.1.2）。
+   聚焦环用组件库自带的（:focus-visible 规则读 --ant-line-width-focus）。 */
+
 .nv-palette {
   position: absolute;
   top: 56px;
@@ -70,29 +77,31 @@
     color: var(--app-text-muted);
   }
 
-  &__row {
+  &__row.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-border-radius: var(--app-radius-chip);
+    --ant-button-content-font-size: 12px;
+    --ant-button-default-bg: transparent;
+    --ant-button-default-color: var(--app-text-secondary);
+    --ant-button-default-hover-bg: transparent;
+    --ant-button-default-hover-color: var(--app-text-secondary);
+    --ant-button-default-active-bg: transparent;
+    --ant-button-default-active-color: var(--app-text-secondary);
     width: 100%;
     display: flex;
     align-items: center;
     gap: 9px;
     padding: 7px 9px;
-    border: none;
-    border-radius: var(--app-radius-chip);
-    background: transparent;
-    color: var(--app-text-secondary);
-    font-size: 12px;
     text-align: left;
-    cursor: pointer;
-    transition: background 120ms ease;
 
+    /* 键盘光标所在行：永久高亮 → 默认 / hover / active 同一套值 */
     &.is-on {
-      background: var(--app-primary-weak);
-      color: var(--app-primary);
-    }
-
-    &:focus-visible {
-      outline: 2px solid var(--app-primary);
-      outline-offset: -2px;
+      --ant-button-default-bg: var(--app-primary-weak);
+      --ant-button-default-color: var(--app-primary);
+      --ant-button-default-hover-bg: var(--app-primary-weak);
+      --ant-button-default-hover-color: var(--app-primary);
+      --ant-button-default-active-bg: var(--app-primary-weak);
+      --ant-button-default-active-color: var(--app-primary);
     }
   }
 

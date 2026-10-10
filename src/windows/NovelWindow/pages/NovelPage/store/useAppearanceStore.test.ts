@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EntityTerm, NovelChapter } from "../types";
 import {
+  appearancesOf,
   resetAppearances,
   syncAppearances,
   useAppearanceStore,
@@ -144,5 +145,52 @@ describe("useAppearanceStore（要素出场章数索引）", () => {
   it("空词库不产出索引", () => {
     syncAppearances([chapter("c1", "苏晚")], []);
     expect(state().counts.size).toBe(0);
+  });
+});
+
+describe("appearancesOf（详情卡跳转列表走倒排索引，不再扫全书）", () => {
+  beforeEach(() => {
+    resetScan();
+    resetAppearances();
+  });
+
+  afterEach(() => {
+    resetAppearances();
+    vi.clearAllMocks();
+  });
+
+  const chapters = () => [
+    chapter("c1", "青梧走进山门"),
+    chapter("c2", "山门空无一人"),
+    chapter("c3", "青梧与掌门对峙"),
+  ];
+  const terms = () => [term("青梧", "e1"), term("掌门", "e2")];
+
+  it("返回出场章节 id，顺序与书籍顺序一致", () => {
+    syncAppearances(chapters(), terms());
+    expect(appearancesOf("e1")).toEqual(["c1", "c3"]);
+    expect(appearancesOf("e2")).toEqual(["c3"]);
+  });
+
+  it("读倒排索引不再触发任何扫描（详情卡开着也不重扫）", () => {
+    syncAppearances(chapters(), terms());
+    resetScan();
+    appearancesOf("e1");
+    appearancesOf("e2");
+    expect(scanCount()).toBe(0);
+  });
+
+  it("拖拽重排后顺序跟着 chapters 变，而不是停留在缓存插入序", () => {
+    syncAppearances(chapters(), terms());
+    const reordered = [chapters()[2], chapters()[0], chapters()[1]];
+    // 内容没变 —— 只有顺序变了，索引必须按新的 chapters 顺序重排
+    syncAppearances(reordered, terms());
+    expect(appearancesOf("e1")).toEqual(["c3", "c1"]);
+  });
+
+  it("reset 后倒排索引清空（切作品不该读到上一本书）", () => {
+    syncAppearances(chapters(), terms());
+    resetAppearances();
+    expect(appearancesOf("e1")).toEqual([]);
   });
 });

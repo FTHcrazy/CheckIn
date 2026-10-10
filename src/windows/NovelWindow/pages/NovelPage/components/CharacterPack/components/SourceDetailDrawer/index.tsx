@@ -4,7 +4,6 @@ import { formatAttrValue } from "../../pack-utils";
 import { NATURE_META, OP_META } from "../../types";
 import type { PackDoc } from "../../hooks/usePackData";
 import "./index.scss";
-import "./index.scss";
 
 interface SourceDetailDrawerProps {
   api: PackPanelApi;

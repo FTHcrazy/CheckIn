@@ -1,7 +1,14 @@
+// 卷头与「本卷新建章节」都由 antd `Button` 承载（AGENTS §6.1.2）：
+// 先清零组件级变量再声明；hover / 拖拽高亮一律写成变量，
+// 自写属性规则压不过 antd 的状态选择器（0,4,0）
+@use "../../../../../../shared/styles/widget" as widget;
+
 .nv-volume {
   position: relative;
   min-width: 0;
 
+  /* 卷头（展示态是 Button、编辑态是 div）：布局属性两层共用，
+     外观只写在下面的 .ant-btn 块里 */
   &__head {
     width: 100%;
     min-width: 0;
@@ -13,23 +20,39 @@
     gap: 6px;
     height: 28px;
     padding: 0 8px;
-    border: none;
-    background: transparent;
-    color: var(--app-text-secondary);
     font-size: 12px;
     font-weight: 600;
     cursor: pointer;
-    border-radius: var(--app-radius-item);
-    transition: background 120ms ease;
+  }
 
-    &:hover {
-      background: var(--app-surface-hover);
-    }
+  &__head.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 28px;
+    --ant-button-padding-inline: 8px;
+    --ant-button-content-font-size: 12px;
+    --ant-button-font-weight: 600;
+    --ant-button-icon-gap: 6px;
+    --ant-border-radius: var(--app-radius-item);
+    --ant-button-default-bg: transparent;
+    --ant-button-default-color: var(--app-text-secondary);
+    --ant-button-default-hover-bg: var(--app-surface-hover);
+    --ant-button-default-hover-color: var(--app-text-secondary);
+    --ant-button-default-active-bg: var(--app-surface-hover);
+    --ant-button-default-active-color: var(--app-text-secondary);
+    --ant-button-default-shadow: none;
 
-    /* 拖拽 drop 目标高亮（R9）：章节移入 / 卷重排共用 */
+    /* antd 的 `.ant-btn` 是 inline-flex（同为 0,1,0，靠源码顺序才压得住）：
+       卷头必须是块级 flex，否则行内基线会在卷行下留出几像素空隙，
+       Virtuoso 的行高测量随之抖动 —— 这里在 0,2,0 上再钉一次 */
+    display: flex;
+
+    /* 拖拽 drop 目标高亮（R9）：章节移入 / 卷重排共用。
+       持久态写默认变量，hover / active 同步保持高亮不掉色 */
     &.is-drop {
-      background: var(--app-primary-weak);
-      box-shadow: inset 0 2px 0 var(--app-primary);
+      --ant-button-default-bg: var(--app-primary-weak);
+      --ant-button-default-hover-bg: var(--app-primary-weak);
+      --ant-button-default-active-bg: var(--app-primary-weak);
+      --ant-button-default-shadow: inset 0 2px 0 var(--app-primary);
     }
 
     &:focus-visible {
@@ -88,29 +111,32 @@
   }
 
   /* 在本卷新建章节：卷头悬浮时浮现并盖住章数，避免布局抖动 */
-  &__add {
+  &__add.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 20px;
+    --ant-button-padding-inline: 0px;
+    --ant-button-content-font-size: 12px;
+    --ant-border-radius: 4px;
+    --ant-button-default-bg: transparent;
+    --ant-button-default-color: var(--app-text-muted);
+    --ant-button-default-hover-bg: var(--app-surface-hover);
+    --ant-button-default-hover-color: var(--app-primary);
+    --ant-button-default-active-bg: var(--app-surface-hover);
+    --ant-button-default-active-color: var(--app-primary);
+    --ant-button-default-shadow: none;
+
+    /* antd 不接管的属性 */
     position: absolute;
     right: 4px;
     top: 50%;
     transform: translateY(-50%);
     width: 20px;
-    height: 20px;
     display: flex;
     align-items: center;
     justify-content: center;
-    border: none;
-    border-radius: 4px;
-    background: transparent;
-    color: var(--app-text-muted);
-    font-size: 12px;
     cursor: pointer;
     opacity: 0;
     transition: opacity 120ms ease, color 120ms ease, background 120ms ease;
-
-    &:hover {
-      color: var(--app-primary);
-      background: var(--app-surface-hover);
-    }
 
     &:focus-visible {
       opacity: 1;

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { DragEvent, KeyboardEvent, MouseEvent, ReactElement } from "react";
-import { Input, Popconfirm, Tooltip } from "antd";
+import { Button, Input, Popconfirm, Tooltip } from "antd";
 import { DeleteOutlined } from "@ant-design/icons";
 import { CHAPTER_STATUS_META, DRAG_MIME_CHAPTER } from "../../novel-config";
 import { formatThousands, padIndex } from "../../novel-utils";
@@ -37,9 +37,11 @@ interface ChapterTreeItemProps {
  * 点击只切状态不选中章节。
  * 空章节字数显示「—」而非 0（对齐原型 renderTree 的 w === '0' ? '—'）。
  *
- * 行用 div[role=button] 而非 <button>：删除按钮需要行内排在字数之前
- * （原型右端只有干净的字数，悬浮删除按钮浮现时不遮盖字数），
- * button 内不能嵌套 button；键盘语义由 role/tabIndex/onKeyDown 补齐。
+ * 行结构 = 「行容器（只承载拖拽） + 三个并列的真按钮」（§6.1.2 第 4 条）：
+ * 状态点 / 序号+标题的激活区 / 删除按钮必须在字数之前与之内，
+ * 而 `<button>` 不能嵌 `<button>`，所以整行不能做成按钮 —— 旧实现整行是
+ * `div[role=button]`、状态点是 `span[role=button]`（连 tabIndex 都没有，
+ * 键盘完全不可达），现已拆成并列真按钮，键盘顺序为 状态 → 打开 → 删除。
  */
 export default function ChapterTreeItem({
   chapter,
@@ -80,7 +82,7 @@ export default function ChapterTreeItem({
     }
   };
 
-  const handleStatusClick = (event: MouseEvent<HTMLSpanElement>): void => {
+  const handleStatusClick = (event: MouseEvent<HTMLElement>): void => {
     event.stopPropagation();
     onToggleStatus(chapter.id);
   };
@@ -110,14 +112,6 @@ export default function ChapterTreeItem({
 
   const handleDragEnd = (): void => setDropActive(false);
 
-  const handleRowKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
-    if (event.nativeEvent.isComposing) return;
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      onSelect(chapter.id);
-    }
-  };
-
   const rowClass = `nv-chapter__row${active ? " is-active" : ""}${
     dropActive ? " is-drop" : ""
   }`;
@@ -127,12 +121,14 @@ export default function ChapterTreeItem({
       ? "完稿 · 点击改回草稿"
       : "草稿 · 点击标记完稿";
 
+  // 状态点（原型 .chap__st）：既是「切换草稿⇄完稿」的按钮，也承载图示语义。
+  // 由组件库按钮承载（§6.1.2）：旧实现是 `span[role=button]`，连 tabIndex 都没有，
+  // 键盘完全不可达
   const renderStatus = (): ReactElement => (
     <Tooltip title={statusHint}>
-      <span
+      <Button
         className="nv-chapter__status"
         data-s={chapter.status}
-        role="button"
         aria-label={`章节状态：${status.label}，点击切换`}
         onClick={handleStatusClick}
       />
@@ -158,9 +154,10 @@ export default function ChapterTreeItem({
           />
         </div>
       ) : (
+        // 行容器只留拖拽：激活动作用在内部的 __hit 按钮上。
+        // 「整行可点 + 行尾删除」按 §6.1.2 第 4 条拆成「行容器 + 两个并列真按钮」——
+        // 直接把整行做成 Button 会包住删除按钮，形成 <button> 嵌套 <button>
         <div
-          role="button"
-          tabIndex={0}
           className={rowClass}
           draggable
           onDragStart={handleDragStart}
@@ -168,22 +165,21 @@ export default function ChapterTreeItem({
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
           onDragEnd={handleDragEnd}
-          onClick={() => onSelect(chapter.id)}
-          onKeyDown={handleRowKeyDown}
         >
           {renderStatus()}
-          <span className="nv-chapter__index">{padIndex(chapterNumber)}</span>
-          <span
-            className="nv-chapter__title"
-            title="双击修改章节名称"
+          <Button
+            className="nv-chapter__hit"
+            aria-current={active}
+            onClick={() => onSelect(chapter.id)}
             onDoubleClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
               startTitleEdit();
             }}
           >
-            {chapter.title}
-          </span>
+            <span className="nv-chapter__index">{padIndex(chapterNumber)}</span>
+            <span className="nv-chapter__title">{chapter.title}</span>
+          </Button>
           {/* 删除按钮行内排在字数之前：悬浮时宽度展开，字数只平移不被遮盖 */}
           <Popconfirm
             title="删除章节"
@@ -193,15 +189,14 @@ export default function ChapterTreeItem({
             okButtonProps={{ danger: true }}
             onConfirm={() => onDelete(chapter.id)}
           >
-            <button
-              type="button"
+            <Button
               className="nv-chapter__del"
               aria-label={`删除章节 ${chapter.title}`}
               title="删除章节"
               onClick={(event) => event.stopPropagation()}
             >
               <DeleteOutlined />
-            </button>
+            </Button>
           </Popconfirm>
           <span className="nv-chapter__words">
             {chapter.wordCount === 0 ? "—" : formatThousands(chapter.wordCount)}

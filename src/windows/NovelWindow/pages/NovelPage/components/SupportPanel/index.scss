@@ -1,3 +1,4 @@
+@use "../../../../../../shared/styles/widget" as widget;
 @use "./panel-primitives.scss";
 
 /*
@@ -6,6 +7,13 @@
  * 四段式骨架：面板头（标题 + 语境计数 + 主操作）／分段 Tab（白色滑块指示器）／
  * 内容滚动区／常驻提示条。尺寸一律走 var(--app-*)，切主题不掉色；
  * 宽度由 JS 以 inline style 给出（280–460 可拖拽），折叠走 width/opacity 过渡。
+ *
+ * ⚠️ 按钮类（__btn / __icon / __tab / __reopen）由 antd `Button` 承载，外观只
+ * 通过组件级 CSS 变量配置（AGENTS §6.1.2）：先 `@include widget.ant-button-reset`
+ * 清零，再在同一个 `.xxx.ant-btn` 里声明变量。antd 的 hover / active / disabled
+ * 规则是 (0,4,0) 级，自写 `:hover` 属性规则压不过它，而它们读的正是这些变量。
+ * __tab 带 ref 且要读 offsetLeft / offsetWidth：只改变量与 antd 会抢的盒属性，
+ * 布局（grid 项、flex 方向、定位）一律不动。
  */
 
 .nv-panel-region {
@@ -100,49 +108,46 @@
     flex: none;
   }
 
-  &__btn {
+  &__btn.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 27px;
+    --ant-button-padding-inline: 9px;
+    --ant-button-content-font-size: 12px;
+    --ant-button-font-weight: 500;
+    --ant-button-icon-gap: 4px;
+    --ant-border-radius: 8px;
+    --ant-button-default-bg: var(--app-primary);
+    --ant-button-default-color: var(--app-primary-contrast);
+    --ant-button-default-hover-bg: var(--app-primary-strong);
+    --ant-button-default-hover-color: var(--app-primary-contrast);
+    --ant-button-default-hover-border-color: transparent;
+    --ant-button-default-active-bg: var(--app-primary-strong);
+    --ant-button-default-active-color: var(--app-primary-contrast);
+    --ant-button-default-active-border-color: transparent;
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    height: 27px;
-    padding: 0 9px;
-    border: none;
-    border-radius: 8px;
-    background: var(--app-primary);
-    color: var(--app-primary-contrast);
-    font-family: inherit;
-    font-size: 12px;
-    font-weight: 500;
     white-space: nowrap;
-    cursor: pointer;
-    transition: background 150ms ease, transform 100ms ease;
-
-    &:hover {
-      background: var(--app-primary-strong);
-    }
-
-    &:active {
-      transform: scale(0.97);
-    }
   }
 
-  &__icon {
+  /* 按下的缩放反馈：transform antd 不接管（§6.1.2 允许保留） */
+  &__btn:active {
+    transform: scale(0.97);
+  }
+
+  &__icon.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 27px;
+    --ant-border-radius: 8px;
+    --ant-button-default-bg: transparent;
+    --ant-button-default-color: var(--app-text-muted);
+    --ant-button-default-hover-bg: var(--app-surface-hover);
+    --ant-button-default-hover-color: var(--app-text);
+    --ant-button-default-active-bg: var(--app-surface-hover);
+    --ant-button-default-active-color: var(--app-text);
+    width: 27px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 27px;
-    height: 27px;
-    border: none;
-    border-radius: 8px;
-    background: transparent;
-    color: var(--app-text-muted);
-    cursor: pointer;
-    transition: background 150ms ease, color 150ms ease;
-
-    &:hover {
-      background: var(--app-surface-hover);
-      color: var(--app-text);
-    }
   }
 
   /* ── 分段式 Tab ─────────────────────────────────────────────── */
@@ -150,7 +155,10 @@
     position: relative;
     flex: none;
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    /* minmax(0, 1fr) 而非 1fr：`1fr` 的下限是 tab 内容的 min-content，
+       面板拖窄时 5 格会一起把轨道撑到比容器宽（横向溢出）。见
+       OutlinePanel 里 __vol-list 的说明。 */
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 2px;
     margin: 10px 12px 8px;
     padding: 4px;
@@ -171,7 +179,18 @@
       width 260ms cubic-bezier(0.34, 1.2, 0.5, 1);
   }
 
-  &__tab {
+  /* Tab 带 ref 且要读 offsetLeft / offsetWidth：布局属性（display / flex 方向 /
+     gap / 定位 / z-index）保持原样，只把 antd 会抢的盒与外观换成变量 */
+  &__tab.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 40px;
+    --ant-button-padding-inline: 0px;
+    --ant-button-content-font-size: 12px;
+    --ant-button-font-weight: 400;
+    --ant-button-default-bg: transparent;
+    --ant-button-default-color: var(--app-text-secondary-strong);
+    --ant-button-default-hover-color: var(--app-text);
+    --ant-button-default-active-color: var(--app-text);
     position: relative;
     z-index: 1;
     display: flex;
@@ -179,52 +198,47 @@
     align-items: center;
     justify-content: center;
     gap: 2px;
-    height: 40px;
-    padding: 0;
-    border: none;
-    background: transparent;
-    color: var(--app-text-secondary-strong);
-    font-family: inherit;
-    font-size: 12px;
-    cursor: pointer;
-    transition: color 180ms ease;
 
-    &:hover {
-      color: var(--app-text);
-    }
-
+    /* 选中：主色 + 加粗（永久态 → 写默认变量，hover 读同一份不再变回灰） */
     &.is-on {
-      color: var(--app-primary);
-      font-weight: 600;
+      --ant-button-default-color: var(--app-primary);
+      --ant-button-default-hover-color: var(--app-primary);
+      --ant-button-default-active-color: var(--app-primary);
+      --ant-button-font-weight: 600;
     }
 
+    /* 图标被 Badge 包了一层，直接子选择器要跟着覆盖到组件库的包装里 */
     & > svg,
-    & > .anticon {
+    & > .anticon,
+    & > .ant-badge svg,
+    & > .ant-badge .anticon {
       width: 16px;
       height: 16px;
       font-size: 16px;
     }
   }
 
-  &__badge {
-    position: absolute;
-    top: 3px;
-    right: 9px;
-    min-width: 15px;
-    height: 15px;
-    padding: 0 4px;
-    border-radius: var(--app-radius-pill);
-    background: var(--app-error);
-    color: #fff;
-    font-size: 12px;
-    line-height: 15px;
-    font-weight: 600;
-    font-style: normal;
+  /* Tab 角标：组件库 Badge（§6.1.2）。角标挂在图标上（Badge 包住 icon），
+     位置 / 圆角 / 描边 / 溢出计数全由组件库负责 —— 旧的自绘角标锚 tab 右缘，
+     面板拖到最小宽度（280px，每格约 48px）时会整个压住图标。
+     这里只调「密度 + 语义色」，不重画造型 */
+  &__tab-badge.ant-badge {
+    --ant-badge-indicator-height: 15px;
+    --ant-badge-indicator-height-sm: 15px;
+    --ant-badge-text-font-size: 12px;
+    --ant-badge-text-font-size-sm: 12px;
+    --ant-badge-text-font-weight: 500;
+    --ant-badge-padding-inline: 5px;
+  }
 
-    &--soft {
-      background: var(--app-primary-weak);
-      color: var(--app-primary);
-    }
+  /* 灵感条数是中性信息（不是待办），走主色而不是组件库默认的错误红。
+     组件库没提供「角标底色」的组件级变量（.ant-badge-count 直接读全局
+     token --ant-color-error），只能在本作用域内把它换掉 —— 仍是走变量、
+     不写硬编码色值，也不写 :hover 属性规则。
+     ⚠️ 不能写成 `&--soft`：那会展开成 `.nv-panel__tab-badge.ant-badge--soft` */
+  &__tab-badge--soft.ant-badge {
+    --ant-color-error: var(--app-primary);
+    --ant-color-text-light-solid: var(--app-primary-contrast);
   }
 
   /* ── 内容滚动区 ─────────────────────────────────────────────── */
@@ -295,7 +309,16 @@
   /* ── 收起后的重开把手 ───────────────────────────────────────── */
   /* 按钮本体保持水平书写方向，仅文字 span 竖排——整钮 vertical-rl 时
      anticon 的正交 span 会横向占位，把文字挤出 26px 按钮外 */
-  &__reopen {
+  &__reopen.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-border-radius: 10px 0 0 10px;
+    --ant-line-width: 1px;
+    --ant-button-default-bg: var(--app-surface);
+    --ant-button-default-color: var(--app-text-muted);
+    --ant-button-default-border-color: var(--app-border);
+    --ant-button-default-hover-color: var(--app-primary);
+    --ant-button-default-active-color: var(--app-primary);
+    --ant-button-default-shadow: var(--app-shadow-card);
     position: absolute;
     top: 50%;
     right: 0;
@@ -306,23 +329,12 @@
     gap: 8px;
     width: 26px;
     padding: 12px 0;
-    border: 1px solid var(--app-border);
     border-right: none;
-    border-radius: 10px 0 0 10px;
-    background: var(--app-surface);
-    color: var(--app-text-muted);
-    font-family: inherit;
-    cursor: pointer;
     transform: translateY(-50%);
-    box-shadow: var(--app-shadow-card);
 
     & > .anticon {
       font-size: 12px;
       line-height: 1;
-    }
-
-    &:hover {
-      color: var(--app-primary);
     }
   }
 

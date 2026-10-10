@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { SearchOutlined } from "@ant-design/icons";
-import { Input } from "antd";
+import { Button, Input } from "antd";
 import type { InputRef } from "antd";
 import { Virtuoso } from "react-virtuoso";
 import type { VirtuosoHandle } from "react-virtuoso";
@@ -112,8 +112,7 @@ export default function ChapterJumpPalette({
             overscan={10}
             computeItemKey={(_, chapter) => chapter.id}
             itemContent={(index, chapter) => (
-              <button
-                type="button"
+              <Button
                 className={`nv-palette__row${index === cursor ? " is-on" : ""}`}
                 onMouseEnter={() => setCursor(index)}
                 onClick={() => commit(index)}
@@ -125,7 +124,7 @@ export default function ChapterJumpPalette({
                 <span className="nv-palette__words">
                   {formatThousands(chapter.wordCount)}
                 </span>
-              </button>
+              </Button>
             )}
           />
         )}

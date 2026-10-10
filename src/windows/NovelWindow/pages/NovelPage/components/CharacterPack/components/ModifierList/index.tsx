@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Button, Switch } from "antd";
 import { DeleteOutlined, EditOutlined, PlusOutlined, ThunderboltOutlined } from "@ant-design/icons";
 import { NATURE_META, type PackAttribute, type PackModifier, type PackNature } from "../../types";
-import { formatAttrValue } from "../../pack-utils";
+import { castParamText, formatAttrValue } from "../../pack-utils";
 import "./index.scss";
 
 interface ModifierListProps {
@@ -43,16 +43,6 @@ function statText(mod: PackModifier, attributes: PackAttribute[]): string {
     default:
       return `${name} +${value}`;
   }
-}
-
-/** 释放型的参数文案：`300% 攻击力 · CD 12s · 耗蓝 30 · 单体` */
-function castText(mod: PackModifier): string {
-  const parts: string[] = [];
-  if (mod.value) parts.push(`${formatAttrValue(mod.value, 0)}${mod.valueUnit || ""}`);
-  if (mod.cooldown) parts.push(`CD ${mod.cooldown}s`);
-  if (mod.cost) parts.push(mod.cost);
-  if (mod.target) parts.push(mod.target);
-  return parts.join(" · ");
 }
 
 /** 该条为何不计入汇总（避免作者以为面板漏算） */
@@ -108,7 +98,7 @@ export default function ModifierList({
           {mod.nature === "cast" ? (
             <>
               <span className="cpk-efrow__name">{mod.name || "未命名主动效果"}</span>
-              <span className="cpk-efrow__value">{castText(mod)}</span>
+              <span className="cpk-efrow__value">{castParamText(mod)}</span>
               {/* 释放型引用的属性可点击定位（只读引用，不参与计算） */}
               {onJumpAttribute
                 ? attributes

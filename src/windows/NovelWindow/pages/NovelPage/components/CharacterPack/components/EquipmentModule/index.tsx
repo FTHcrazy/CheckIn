@@ -1,8 +1,10 @@
 import { useMemo, useState } from "react";
-import { Button, Modal } from "antd";
-import { SettingOutlined } from "@ant-design/icons";
+import { Button, Input, Modal, Popover } from "antd";
+import { DeleteOutlined, SettingOutlined, SwapOutlined } from "@ant-design/icons";
 import PackModuleShell from "../PackModuleShell";
 import ModifierList from "../ModifierList";
+import EquipDeltaPreview from "../DeltaPreview";
+import PackExportButton from "../PackExportButton";
 import type { PackPanelApi } from "../../hooks/usePackPanel";
 import { moduleLabel } from "../module-meta";
 import { isItemEquipped } from "../../pack-utils";
@@ -32,14 +34,27 @@ export default function EquipmentModule({ api }: EquipmentModuleProps) {
   const doc = api.doc;
   const [picking, setPicking] = useState<string | null>(null);
   const [replacing, setReplacing] = useState<ReplaceTarget | null>(null);
+  /** 换装方案浮层是否展开（REQ-032） */
+  const [presetsOpen, setPresetsOpen] = useState(false);
+  /** 待保存的方案名（浮层里的输入框；保存成功后清空） */
+  const [presetName, setPresetName] = useState("");
 
   const slots = useMemo(
     () => [...(doc?.slots ?? [])].sort((a, b) => a.sortOrder - b.sortOrder),
     [doc],
   );
 
+  const presets = useMemo(
+    () => [...(doc?.presets ?? [])].sort((a, b) => a.sortOrder - b.sortOrder),
+    [doc],
+  );
+
   if (!doc) return null;
   const key = "equipment" as const;
+
+  const saveCurrentPreset = () => {
+    if (api.savePreset(presetName)) setPresetName("");
+  };
 
   const occupantsOf = (slotId: string) =>
     doc.items
@@ -78,13 +93,106 @@ export default function EquipmentModule({ api }: EquipmentModuleProps) {
       collapsed={Boolean(api.prefs.collapsed[key])}
       onToggle={() => api.toggleModuleCollapsed(key)}
       actions={
-        <Button
-          className="cpk-iconbtn"
-          onClick={() => api.setSlotManagerOpen(true)}
-          title="部位设置（名称 / 容量 / 可接受类别）"
-        >
-          <SettingOutlined />
-        </Button>
+        <>
+          <PackExportButton api={api} moduleKey="equipment" label={moduleLabel(key)} />
+          {/*
+            换装方案（REQ-032）。
+            用 Popover 而不是 Dropdown 菜单：每一行要能**就地改名**、要显示「几件可用」、
+            还要并列两个真按钮（套用 / 删除）—— 菜单项里塞按钮会让点击冒泡到菜单项本身
+            （点删除同时触发套用），这是这个仓库里已经踩过一次的坑。
+          */}
+          <Popover
+            trigger="click"
+            placement="bottomRight"
+            arrow={false}
+            open={presetsOpen}
+            onOpenChange={setPresetsOpen}
+            overlayClassName="cpk-dropdown"
+            title="换装方案"
+            content={
+              <div className="cpk-eq__presets">
+                <div className="cpk-eq__presetsave">
+                  <Input
+                    size="small"
+                    className="cpk-eq__presetinput"
+                    value={presetName}
+                    placeholder="方案名（如：战斗装）"
+                    aria-label="新方案名"
+                    onChange={(event) => setPresetName(event.target.value)}
+                    onPressEnter={saveCurrentPreset}
+                  />
+                  <Button className="cpk-btn ghost" onClick={saveCurrentPreset}>
+                    保存当前穿戴
+                  </Button>
+                </div>
+                {presets.length === 0 ? (
+                  <p className="cpk-eq__presetempty">
+                    还没有方案。先把这一套穿好，再点上面的「保存当前穿戴」。
+                  </p>
+                ) : (
+                  <ul className="cpk-eq__presetlist">
+                    {presets.map((preset) => {
+                      const readout = api.presetReadout(preset);
+                      return (
+                        <li key={preset.id} className="cpk-eq__preset">
+                          <Input
+                            size="small"
+                            variant="borderless"
+                            className="cpk-inline cpk-eq__presetname"
+                            value={preset.name}
+                            aria-label={`方案名：${preset.name}`}
+                            onChange={(event) => api.renamePreset(preset.id, event.target.value)}
+                          />
+                          <span className="cpk-eq__presetmeta">
+                            {readout.available}/{readout.total} 件
+                            {readout.missing > 0 ? ` · 缺 ${readout.missing}` : ""}
+                            {readout.broken > 0 ? ` · 失效 ${readout.broken}` : ""}
+                          </span>
+                          <Button
+                            className="cpk-btn ghost"
+                            disabled={readout.available === 0}
+                            onClick={() => api.applyPresetById(preset.id)}
+                            title={
+                              readout.available === 0
+                                ? "这套方案里的东西现在一件都穿不上"
+                                : "套用：先全部卸下，再按这套方案穿"
+                            }
+                          >
+                            套用
+                          </Button>
+                          <Button
+                            className="cpk-iconbtn tiny danger"
+                            onClick={() => api.removePreset(preset.id)}
+                            title="删除方案"
+                          >
+                            <DeleteOutlined />
+                          </Button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+                <p className="cpk-eq__presettip">
+                  套用会先把身上全部卸下，再按方案穿。方案只记「谁穿在哪一格」，物品被删掉时会自动跳过。
+                </p>
+              </div>
+            }
+          >
+            <Button
+              className={`cpk-iconbtn${presetsOpen ? " is-on" : ""}`}
+              title="换装方案（保存 / 套用）"
+            >
+              <SwapOutlined />
+            </Button>
+          </Popover>
+          <Button
+            className="cpk-iconbtn"
+            onClick={() => api.setSlotManagerOpen(true)}
+            title="部位设置（名称 / 容量 / 可接受类别）"
+          >
+            <SettingOutlined />
+          </Button>
+        </>
       }
     >
       {slots.length === 0 ? (
@@ -176,26 +284,42 @@ export default function EquipmentModule({ api }: EquipmentModuleProps) {
                     {candidates.length === 0 ? (
                       <p className="cpk-eq__empty">物品栏里没有可放进这个部位的物品。</p>
                     ) : (
-                      <ul className="cpk-eq__cands">
-                        {candidates.map((item) => (
-                          <li key={item.id}>
-                            <Button
-                              className="cpk-eq__cand"
-                              onClick={() => requestEquip(item, slot)}
-                            >
-                              <span
-                                className="cpk-dot"
-                                style={{ background: RARITY_META[item.rarity]?.color }}
-                              />
-                              <span className="cpk-eq__candname">{item.name}</span>
-                              <span className="cpk-eq__candcat">{item.category}</span>
-                              {occupants.length >= slot.capacity ? (
-                                <span className="cpk-eq__candhint">将替换 1 件</span>
-                              ) : null}
-                            </Button>
-                          </li>
-                        ))}
-                      </ul>
+                      <>
+                        <p className="cpk-eq__candtip">悬停候选可预览装上后的属性变化</p>
+                        <ul className="cpk-eq__cands">
+                          {candidates.map((item) => (
+                            <li key={item.id}>
+                              {/* hover 即预览 Δ（REQ-018）。浮层内容为惰性挂载，
+                                  所以「每件都算一遍完整汇总管线」不会发生在列表渲染时。 */}
+                              <Popover
+                                trigger="hover"
+                                placement="leftTop"
+                                mouseEnterDelay={0.25}
+                                arrow={false}
+                                overlayClassName="cpk-delta-pop"
+                                content={
+                                  <EquipDeltaPreview api={api} itemId={item.id} slotId={slot.id} />
+                                }
+                              >
+                                <Button
+                                  className="cpk-eq__cand"
+                                  onClick={() => requestEquip(item, slot)}
+                                >
+                                  <span
+                                    className="cpk-dot"
+                                    style={{ background: RARITY_META[item.rarity]?.color }}
+                                  />
+                                  <span className="cpk-eq__candname">{item.name}</span>
+                                  <span className="cpk-eq__candcat">{item.category}</span>
+                                  {occupants.length >= slot.capacity ? (
+                                    <span className="cpk-eq__candhint">将替换 1 件</span>
+                                  ) : null}
+                                </Button>
+                              </Popover>
+                            </li>
+                          ))}
+                        </ul>
+                      </>
                     )}
                   </div>
                 ) : null}

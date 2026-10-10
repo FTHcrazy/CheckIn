@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from "react";
 import { CloseOutlined, SearchOutlined } from "@ant-design/icons";
-import { Input } from "antd";
+import { Button, Input } from "antd";
 import { Virtuoso } from "react-virtuoso";
 import { useEntityTypeMeta } from "../../hooks/entity-types-context";
 import { splitByKeyword } from "../../novel-utils";
@@ -126,29 +126,27 @@ export default function SearchPanel({
           </span>
         )}
         {keyword && (
-          <button
-            type="button"
+          <Button
             className="nv-field__clear"
             aria-label="清空检索"
             onClick={clear}
           >
             <CloseOutlined />
-          </button>
+          </Button>
         )}
       </div>
 
       <div className="nv-sub nv-search__scopes">
         {SCOPES.map((item) => (
-          <button
+          <Button
             key={item.key}
-            type="button"
             className={`nv-sub__btn${scope === item.key ? " is-on" : ""}`}
             disabled={item.key === "chapter" && !activeChapterId}
             title={item.key === "chapter" && !activeChapterId ? "先选一章" : undefined}
             onClick={() => setScope(item.key)}
           >
             {item.label}
-          </button>
+          </Button>
         ))}
       </div>
 
@@ -173,14 +171,13 @@ export default function SearchPanel({
                 }`}
               >
                 {recent.map((item) => (
-                  <button
+                  <Button
                     key={item}
-                    type="button"
                     className="nv-chip"
                     onClick={() => setKeyword(item)}
                   >
                     {item}
-                  </button>
+                  </Button>
                 ))}
               </div>
             </>
@@ -226,8 +223,7 @@ export default function SearchPanel({
                 : null;
               return (
                 <div className="nv-search__item">
-                  <button
-                    type="button"
+                  <Button
                     className="nv-search__hit"
                     onClick={() =>
                       isEntityScope
@@ -260,7 +256,7 @@ export default function SearchPanel({
                         ),
                       )}
                     </span>
-                  </button>
+                  </Button>
                 </div>
               );
             }}

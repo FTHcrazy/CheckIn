@@ -1,4 +1,5 @@
-import { RightOutlined } from "@ant-design/icons";
+import { Button } from "antd";
+import { ImportOutlined, RightOutlined } from "@ant-design/icons";
 import { MARK_TYPE_OPTIONS } from "../../novel-config";
 import { useEntityTypeMeta } from "../../hooks/entity-types-context";
 import { truncate } from "../../novel-utils";
@@ -12,6 +13,8 @@ interface EntityContextMenuProps {
   /** 选中的正文文本 */
   text: string;
   entities: NovelEntity[];
+  /** 把选中文本记入行囊物品栏（REQ-027）；面板没开也生效 */
+  onAddToPack: () => void;
   /** 新建资料卡（类型由菜单项决定） */
   onMark: (type: EntityType) => void;
   /** 绑定到现有资料卡（关联为别名） */
@@ -31,6 +34,7 @@ export default function EntityContextMenu({
   y,
   text,
   entities,
+  onAddToPack,
   onMark,
   onBind,
   onClose,
@@ -46,14 +50,28 @@ export default function EntityContextMenu({
           {truncate(text, 16)}
         </p>
 
+        {/* 快捷记账（REQ-027）排在最前：一次点击就完成，没有二级选择，
+            与下面两组「先选类型 / 先选卡」的层级结构明显不同 */}
+        <p className="nv-ctxmenu__label">记入行囊</p>
+        <div className="nv-ctxmenu__types">
+          <Button
+            role="menuitem"
+            className="nv-ctxmenu__item"
+            onClick={onAddToPack}
+            title="把这件东西记进物品栏，来源章节自动填当前章"
+          >
+            <ImportOutlined className="nv-ctxmenu__go" />
+            记入背包
+          </Button>
+        </div>
+
         <p className="nv-ctxmenu__label">新建资料卡</p>
         <div className="nv-ctxmenu__types">
           {MARK_TYPE_OPTIONS.map((type) => {
             const meta = metaOf(type);
             return (
-              <button
+              <Button
                 key={type}
-                type="button"
                 role="menuitem"
                 className="nv-ctxmenu__item"
                 style={{ color: meta.color }}
@@ -64,7 +82,7 @@ export default function EntityContextMenu({
                   style={{ background: meta.color }}
                 />
                 {meta.label}
-              </button>
+              </Button>
             );
           })}
         </div>
@@ -79,9 +97,8 @@ export default function EntityContextMenu({
               const bound =
                 entity.name === text || entity.aliases.includes(text);
               return (
-                <button
+                <Button
                   key={entity.id}
-                  type="button"
                   role="menuitem"
                   className="nv-ctxmenu__item"
                   disabled={bound}
@@ -97,7 +114,7 @@ export default function EntityContextMenu({
                   ) : (
                     <RightOutlined className="nv-ctxmenu__go" />
                   )}
-                </button>
+                </Button>
               );
             })}
           </div>

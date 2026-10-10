@@ -1,5 +1,5 @@
 import { AppstoreOutlined, SortAscendingOutlined, UnorderedListOutlined } from "@ant-design/icons";
-import { Select } from "antd";
+import { Button, Select } from "antd";
 import type { ShelfSortKey, ShelfStatusFilter } from "../../bookshelf-utils";
 import "./index.scss";
 
@@ -41,9 +41,8 @@ export default function ShelfToolbar({
     <div className="bs-toolbar">
       <div className="bs-toolbar__chips" role="tablist" aria-label="作品状态筛选">
         {STATUS_CHIPS.map((chip) => (
-          <button
+          <Button
             key={chip.key}
-            type="button"
             role="tab"
             aria-selected={status === chip.key}
             className={`bs-toolbar__chip${status === chip.key ? " is-active" : ""}`}
@@ -51,7 +50,7 @@ export default function ShelfToolbar({
           >
             {chip.label}
             <span className="bs-toolbar__chip-count">{counts[chip.key]}</span>
-          </button>
+          </Button>
         ))}
       </div>
 
@@ -67,22 +66,20 @@ export default function ShelfToolbar({
           popupMatchSelectWidth={false}
         />
         <div className="bs-toolbar__views" role="group" aria-label="视图切换">
-          <button
-            type="button"
+          <Button
             className={`bs-toolbar__view${viewMode === "grid" ? " is-active" : ""}`}
             onClick={() => onViewModeChange("grid")}
             aria-label="网格视图"
           >
             <AppstoreOutlined />
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
             className={`bs-toolbar__view${viewMode === "list" ? " is-active" : ""}`}
             onClick={() => onViewModeChange("list")}
             aria-label="列表视图"
           >
             <UnorderedListOutlined />
-          </button>
+          </Button>
         </div>
       </div>
     </div>

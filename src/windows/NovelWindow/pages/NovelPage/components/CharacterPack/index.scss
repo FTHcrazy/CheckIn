@@ -10,7 +10,15 @@
   position: absolute;
   inset: 0;
   z-index: 19;
-  background: rgba(15, 23, 42, 0.32);
+  background: var(--app-mask);
+
+  /**
+   * 速览的遮罩只负责「点面板外面就关」，**不压暗正文** ——
+   * 半透明面板的卖点就是「看得见自己没挡住正文」，再给它糊一层灰就自相矛盾了。
+   */
+  &.is-peek {
+    background: transparent;
+  }
 }
 
 .cpk {
@@ -29,6 +37,45 @@
     z-index: 20;
     border-left: 0;
     box-shadow: var(--app-shadow-window);
+  }
+
+  /**
+   * Peek 速览（REQ-001 第三形态）：**浮层但不占位**，正文完全不重排。
+   *
+   * 与 `.is-overlay` 的三处差别：① 只贴右侧、不全屏（作者仍能看见大半页正文，
+   * 这才是「速览」而不是「遮挡」）；② 半透明（opacity 由 TS 侧 `PACK_PEEK.opacity`
+   * 以内联样式给，避免同一个数在两处各写一遍）；③ 顶部有一条提示条说明它会自动收起。
+   */
+  &.is-peek {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 21;
+    border-left: 0;
+    box-shadow: var(--app-shadow-window);
+    animation: cpk-peek-in 160ms ease-out;
+  }
+
+  &__peekbar {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 3px 6px 3px 10px;
+    border-bottom: 1px solid var(--app-border);
+    background: var(--app-warning-weak);
+    color: var(--app-text-secondary);
+    font-size: 11px;
+    line-height: 18px;
+  }
+
+  &__peektext {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   &__grip {
@@ -89,5 +136,12 @@
 @keyframes cpk-spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+/* 只做位移，不碰 opacity：那一位是内联的 PACK_PEEK.opacity，交给动画去插值会打架 */
+@keyframes cpk-peek-in {
+  from {
+    transform: translateX(18px);
   }
 }

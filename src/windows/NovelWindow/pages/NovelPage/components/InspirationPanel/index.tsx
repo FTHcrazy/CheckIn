@@ -8,7 +8,7 @@ import {
   PushpinOutlined,
   SearchOutlined,
 } from "@ant-design/icons";
-import { Input } from "antd";
+import { Button, Input } from "antd";
 import { Virtuoso } from "react-virtuoso";
 import { filterNotes, formatRelativeTime } from "../../novel-utils";
 import type { NovelNote } from "../../types";
@@ -195,8 +195,7 @@ export default function InspirationPanel({
                 )}
                 {!external && (
                   <span className="nv-note__acts">
-                    <button
-                      type="button"
+                    <Button
                       className={`nv-mini${note.pinned ? " is-on" : ""}`}
                       aria-pressed={note.pinned}
                       aria-label={note.pinned ? "取消置顶" : "置顶"}
@@ -204,9 +203,8 @@ export default function InspirationPanel({
                       onClick={() => actions.onTogglePin(note.id, !note.pinned)}
                     >
                       {note.pinned ? <PushpinFilled /> : <PushpinOutlined />}
-                    </button>
-                    <button
-                      type="button"
+                    </Button>
+                    <Button
                       className="nv-mini"
                       disabled={Boolean(note.foreshadowId)}
                       aria-label="转为伏笔"
@@ -218,25 +216,23 @@ export default function InspirationPanel({
                       onClick={() => actions.onPromoteNote(note.id)}
                     >
                       <FlagOutlined />
-                    </button>
-                    <button
-                      type="button"
+                    </Button>
+                    <Button
                       className="nv-mini"
                       aria-label="编辑灵感"
                       title="编辑灵感"
                       onClick={() => startEdit(note)}
                     >
                       <EditOutlined />
-                    </button>
-                    <button
-                      type="button"
+                    </Button>
+                    <Button
                       className="nv-mini nv-mini--warn"
                       aria-label="删除灵感"
                       title="删除灵感"
                       onClick={() => actions.onRemoveNote(note.id)}
                     >
                       <CloseOutlined />
-                    </button>
+                    </Button>
                   </span>
                 )}
               </footer>
@@ -274,14 +270,13 @@ export default function InspirationPanel({
           <span className="nv-note__tip">
             <kbd>Enter</kbd> 记录 · <kbd>Shift</kbd>+<kbd>Enter</kbd> 换行
           </span>
-          <button
-            type="button"
+          <Button
             className="nv-note__send"
             onClick={submit}
             disabled={draft.trim().length === 0}
           >
             记录
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -295,14 +290,13 @@ export default function InspirationPanel({
           onChange={(event) => setKeyword(event.target.value)}
         />
         {filtering && (
-          <button
-            type="button"
+          <Button
             className="nv-field__clear"
             aria-label="清空搜索"
             onClick={() => setKeyword("")}
           >
             <CloseOutlined />
-          </button>
+          </Button>
         )}
       </div>
 

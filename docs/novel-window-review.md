@@ -199,12 +199,12 @@ return true;   // 影响 0 行也 true
 
 `loadSnapshots` 无请求序号；`handleRollback` 直接 `applyExternalContent(data.activeChapterId, content)`，**不校验快照属于哪一章**。快照抽屉开着时切章 → 两个请求并发，先发的 A 章响应后到会覆盖成 A 的列表 → 点回滚把 A 章历史正文写进 B 章并立即落库。
 
+
 - **修法**：加 `requestSeqRef`（参照 `usePackProtagonist.ts:31-45`）；`handleRollback` 校验 `snapshot.chapterId === activeChapterId`。
 
 ### P1-12 `load()` 无 catch、无并发序号 → 异常时编辑器永久空态
 
 `hooks/useNovelData.ts:108-133`
-
 
 只有 `finally { setLoading(false) }`，没有 `catch`。`fetchNovelBundle()` reject 时 bundle 保持 `null`，页面无任何错误态（`void load()` 产生未捕获 rejection）。并发入口有 4 处（挂载 effect、删最后一部作品、resetTemplate、`NovelPage.tsx:121` 的 `reload()`），旧响应后到会覆盖新 bundle。
 
@@ -296,6 +296,7 @@ return true;   // 影响 0 行也 true
 | 18 | `useNovelViewState.ts:141-166`                               | 拖右栏时 effect 依赖含 `rightWidth`，每帧解绑/重绑 resize 监听。该 hook 已建 `rightWidthRef` 但依赖数组没用上。                                                                                                                     |
 | 19 | `useNovelViewState.ts:97-103`                                | 右栏宽度 300ms 防抖，cleanup 只 `clearTimeout`；拖完立刻关窗就丢了（位置记忆有 `beforeunload` 兜底，宽度没有）。                                                                                                                        |
 | 20 | `useNovelData.ts:684`                                        | `sort: bundle.entities.length + 1` 用**全库**要素数，跨作品会撞号。应按 `activeWorkId` 过滤后再取。                                                                                                                          |
+
 
 ### 健壮性
 

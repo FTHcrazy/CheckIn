@@ -1,3 +1,8 @@
+// 右栏的「记一条灵感」图标按钮与筛选 chips 都由 antd `Button` 承载（AGENTS §6.1.2）：
+// 先清零组件级变量再声明自己的外观；hover / 选中态一律写成变量 ——
+// 自写 `:hover` 属性规则压不过 `.ant-btn:not(:disabled):not(.ant-btn-disabled):hover`（0,4,0）
+@use "../../../../../../shared/styles/widget" as widget;
+
 .bs-rail {
   flex: none;
   display: flex;
@@ -27,27 +32,6 @@
     color: var(--app-primary);
     font-size: 12px;
     font-weight: 500;
-  }
-
-  &__plus {
-    margin-left: auto;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 24px;
-    height: 24px;
-    border: none;
-    border-radius: var(--app-radius-item);
-    background: transparent;
-    color: var(--app-text-muted);
-    font-size: 14px;
-    cursor: pointer;
-    transition: box-shadow 0.15s ease;
-
-    &:hover {
-      color: var(--app-primary);
-      box-shadow: 0 0 0 1px var(--app-border) inset;
-    }
   }
 
   &__subtitle {
@@ -116,27 +100,50 @@
     flex-wrap: wrap;
   }
 
-  &__chip {
+  &__chip.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: auto;
+    --ant-button-padding-inline: 10px;
+    --ant-button-content-font-size: 12px;
+    --ant-button-icon-gap: 5px;
+    --ant-border-radius: var(--app-radius-pill);
+    --ant-line-width: 1px;
+    --ant-button-default-bg: var(--app-surface);
+    --ant-button-default-color: var(--app-text-secondary);
+    --ant-button-default-border-color: transparent;
+    --ant-button-default-hover-bg: var(--app-surface);
+    --ant-button-default-hover-color: var(--app-text-secondary);
+    --ant-button-default-hover-border-color: transparent;
+    --ant-button-default-active-bg: var(--app-surface);
+    --ant-button-default-active-color: var(--app-text-secondary);
+    --ant-button-default-active-border-color: transparent;
+    --ant-button-default-shadow: none;
+
+    /* antd 不接管的属性 */
     display: inline-flex;
     align-items: center;
-    gap: 5px;
-    padding: 3px 10px;
-    border: 1px solid transparent;
-    border-radius: var(--app-radius-pill);
-    background: var(--app-surface);
-    color: var(--app-text-secondary);
-    font-size: 12px;
-    cursor: pointer;
-    transition: box-shadow 0.15s ease;
+    padding-block: 3px;
 
+    /* 悬浮投影：antd 只有恒定的 --ant-button-default-shadow，没有 hover 阴影变量。
+       这里只在 :hover 上改**变量**（不写 box-shadow 属性），既保住「悬浮才投影」，
+       也不用跟 antd 的 box-shadow 声明比特异性 */
     &:hover {
-      box-shadow: var(--app-shadow-card);
+      --ant-button-default-shadow: var(--app-shadow-card);
     }
 
+    /* 选中态：主色实底 + 反白字。hover / active 必须同步写成主色，
+       否则会被 antd 的 (0,4,0) hover 规则拉回默认底色 */
     &.is-active {
-      background: var(--app-primary);
-      color: var(--app-primary-contrast);
-      font-weight: 600;
+      --ant-button-default-bg: var(--app-primary);
+      --ant-button-default-color: var(--app-primary-contrast);
+      --ant-button-default-border-color: var(--app-primary);
+      --ant-button-default-hover-bg: var(--app-primary-strong);
+      --ant-button-default-hover-color: var(--app-primary-contrast);
+      --ant-button-default-hover-border-color: var(--app-primary-strong);
+      --ant-button-default-active-bg: var(--app-primary-active);
+      --ant-button-default-active-color: var(--app-primary-contrast);
+      --ant-button-default-active-border-color: var(--app-primary-active);
+      --ant-button-font-weight: 600;
     }
   }
 

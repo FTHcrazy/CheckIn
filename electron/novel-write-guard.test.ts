@@ -53,7 +53,10 @@ describe("P1-3 删作品级联清理行囊（守卫）", () => {
   });
 
   it("status 类载体用 owner_type 限定，不能拿 character_id 直接比对 owner_id", () => {
-    expect(body).toContain("owner_type = 'status' AND owner_id = ?");
+    // 集合删除后 id 来源是子查询而不是参数，但「先按 owner_type 分流」这条
+    // 顺序约束不能丢：多态表的 owner_id 在不同 owner_type 下是不同表的主键
+    expect(body).toContain("owner_type = 'status'");
+    expect(body).toContain("owner_id IN (SELECT id FROM novel_pack_characters");
   });
 });
 

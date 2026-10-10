@@ -1,3 +1,4 @@
+import { Button } from "antd";
 import {
   BookOutlined,
   CrownFilled,
@@ -56,8 +57,7 @@ export default function EntityCard({
       className={`nv-ecard${isProtagonist ? " is-protagonist" : ""}`}
       style={{ ["--ent-color" as string]: meta.color }}
     >
-      <button
-        type="button"
+      <Button
         className="nv-ecard__main"
         onClick={() => onOpen(entity.id)}
       >
@@ -103,12 +103,11 @@ export default function EntityCard({
             )}
           </span>
         </span>
-      </button>
+      </Button>
 
       <span className="nv-ecard__quick">
         {canBeProtagonist && (
-          <button
-            type="button"
+          <Button
             className={`nv-mini${isProtagonist ? " is-on" : ""}`}
             aria-pressed={isProtagonist}
             aria-label={isProtagonist ? "取消主角" : "设为主角"}
@@ -120,26 +119,24 @@ export default function EntityCard({
             onClick={onSetProtagonist}
           >
             {isProtagonist ? <CrownFilled /> : <CrownOutlined />}
-          </button>
+          </Button>
         )}
-        <button
-          type="button"
+        <Button
           className="nv-mini"
           aria-label="插入正文"
           title="插入正文光标处"
           onClick={() => onInsertName(entity.name)}
         >
           <ThunderboltOutlined />
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
           className="nv-mini"
           aria-label="编辑要素"
           title="编辑要素"
           onClick={() => onOpen(entity.id)}
         >
           <EditOutlined />
-        </button>
+        </Button>
       </span>
     </div>
   );

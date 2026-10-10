@@ -147,9 +147,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('novel-level-delete', id) as Promise<boolean>,
     levelOrder: (updates: Array<{ id: string; rank: number }>) =>
       ipcRenderer.invoke('novel-level-order', updates) as Promise<boolean>,
+    // ── 书籍导入（TXT）：主进程只负责选文件 + 读字节 / 批量落库 ──
+    /** 弹文件选择框并读回字节；取消返回 null */
+    importPickFile: () =>
+      ipcRenderer.invoke('novel-import-pick-file') as Promise<
+        { fileName: string; bytes: ArrayBuffer; size: number } | null
+      >,
+    /** 解析结果单事务落库（作品 + 卷 + 章） */
+    importBook: (payload: unknown) =>
+      ipcRenderer.invoke('novel-import-book', payload) as Promise<
+        { ok: boolean; chapterCount: number; wordCount: number } | { ok: false; error: string }
+      >,
     // ── 导出（R13）与埋点（R14） ──
-    exportTxt: (defaultName: string, content: string) =>
-      ipcRenderer.invoke('novel-export-txt', defaultName, content) as Promise<{ path: string } | null>,
+    /** 通用文本导出：主进程弹保存框 + 写盘；取消返回 null */
+    exportFile: (defaultName: string, content: string, ext?: string, filterName?: string) =>
+      ipcRenderer.invoke('novel-export-file', defaultName, content, ext, filterName) as Promise<{ path: string } | null>,
     usageToday: () =>
       ipcRenderer.invoke('novel-usage-today') as Promise<{ todayWords: number; saveCount: number; streakDays: number }>,
     usageLog: (event: string, payload: Record<string, unknown>) =>
@@ -180,6 +192,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
       /** 设为主角 / 解除主角：entityId 传空串即解绑（同一格，换一个就换主角） */
       protagonistSet: (workId: string, entityId: string) =>
         ipcRenderer.invoke('novel-pack-protagonist-set', workId, entityId) as Promise<boolean>,
+      /**
+       * 快速记账（REQ-027）：正文选区 → 记入背包。
+       * 面板开着时渲染层自己改内存文档，不会走到这里；这条通道服务「面板没挂载」
+       * 的场景，主进程会按「有草稿并入草稿、没有才直插正式表」落库。
+       */
+      quickAdd: (workId: string, name: string, chapterId: string, category: string) =>
+        ipcRenderer.invoke('novel-pack-quick-add', workId, name, chapterId, category) as Promise<
+          { id: string; characterId: string } | null
+        >,
     },
   },
 
@@ -260,6 +281,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
       // 兜底：监听器不是由 windowAPI.on 注册的（其它模块 ipcRenderer.on 直通），按引用删
       ipcRenderer.removeListener(event, handler)
     },
+    // ── 关闭守卫（electron/close-guard.ts）──
+    // 有未保存改动时武装本窗口；主进程在真要销毁前会发 `window-close-request`
+    // （用上面的 `on` 订阅，它会先摘掉同名旧监听再登记），渲染层用 respondClose 答复。
+    setCloseGuard: (enabled: boolean) =>
+      ipcRenderer.send('window-close-guard', enabled),
+    respondClose: (allow: boolean) =>
+      ipcRenderer.send('window-close-response', allow),
   },
 
   // ── 备忘文件操作 ──

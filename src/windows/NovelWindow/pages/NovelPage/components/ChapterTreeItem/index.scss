@@ -1,3 +1,8 @@
+// 由组件库 Button 承载的控件：先清零 antd 的组件级变量（清零点 mixin），
+// 再按需重新声明 —— hover / focus 色也必须写成变量，自写 `:hover` 属性规则
+// 压不过 `.ant-btn-color-default.ant-btn-variant-outlined:not(:disabled):hover`（0,4,0）
+@use "../../../../../../shared/styles/widget" as widget;
+
 .nv-chapter {
   position: relative;
   /* 章行相对卷头缩进（原型 .vol__body > ul 的 padding-left 6px）；
@@ -8,7 +13,8 @@
 
   &__row {
     width: 100%;
-    /* div 默认 content-box（button 是 border-box）：不加会把左右 padding
+    /* 行容器现在是普通 div（以前是 div[role=button]，谓语不在这一层了）：
+       div 默认 content-box（button 是 border-box）：不加会把左右 padding
        加到 100% 之外，行溢出容器 18px——高亮右侧圆角被裁、字数被推出可视区 */
     box-sizing: border-box;
     min-width: 0;
@@ -23,7 +29,6 @@
     border-radius: var(--app-radius-item);
     color: var(--app-text-secondary);
     font-size: 12px;
-    cursor: pointer;
     text-align: left;
     transition: background 120ms ease, color 120ms ease;
 
@@ -106,6 +111,30 @@
     }
   }
 
+  &__status.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 16px;
+    --ant-border-radius: 4px;
+    --ant-button-default-hover-bg: var(--app-surface-hover);
+  }
+
+  /* 「序号 + 标题」的激活区：行容器不再自己承担点击，所以 cursor 与命中区都在它身上 */
+  &__hit {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    overflow: hidden;
+    cursor: pointer;
+  }
+
+  &__hit.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 28px;
+    --ant-button-default-hover-bg: transparent;
+  }
+
   &__index {
     width: 26px;
     flex: none;
@@ -161,33 +190,35 @@
   &__del {
     width: 0;
     min-width: 0;
-    height: 22px;
-    padding: 0;
-    flex: none;
     overflow: hidden;
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
+    flex: none;
+    /* margin -3.5px 对冲两侧 flex gap：收起时标题→字数间距恰为单个 7px，
+       与原型 .chap__t/.chap__w 的 gap 一致 */
     margin: 0 -3.5px;
-    border: none;
-    border-radius: 4px;
-    background: transparent;
-    color: var(--app-text-muted);
-    font-size: 12px;
-    cursor: pointer;
     opacity: 0;
     transition: width 140ms ease, opacity 140ms ease, color 120ms ease;
 
-    &:hover {
-      color: var(--app-danger, #d4380d);
-    }
-
+    /* 悬浮/聚焦时宽度 0→18px 展开：比常驻更省空间，且聚焦也能撑开 */
     &:focus-visible {
       width: 18px;
       opacity: 1;
       outline: 2px solid var(--app-primary);
       outline-offset: -1px;
     }
+  }
+
+  &__del.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 22px;
+    --ant-border-radius: 4px;
+    --ant-button-default-color: var(--app-text-muted);
+    // ⚠️ 主题层只有 --app-error，没有 --app-danger：
+    // 写成 var(--app-danger, #d4380d) 时变量恒不存在 → 永远回退成死值，
+    // 四套主题（尤其暗色）都用同一个刺眼的橙红，且不随主题联动。
+    // 而且 hover 必须写成变量：自写 :hover 压不过 antd 的 (0,4,0) 状态规则
+    --ant-button-default-hover-color: var(--app-error);
+    --ant-button-content-font-size: 12px;
+    justify-content: flex-end;
   }
 
   &:hover &__del {

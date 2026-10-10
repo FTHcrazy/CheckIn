@@ -70,7 +70,12 @@ describe("InspirationPanel 组件", () => {
     const onAddNote = vi.fn();
     render(<InspirationPanel notes={[]} actions={buildActions({ onAddNote })} />);
 
-    const send = screen.getByRole("button", { name: "记录" });
+    // antd 默认给两字中文按钮插字间距空格（应用内由 ThemeProvider 关掉）；
+    // 组件测试不走 ThemeProvider，这里按去空白后的名字匹配
+    const send = screen.getByRole("button", {
+      name: (accessibleName: string) =>
+        accessibleName.replace(/\s+/g, "") === "记录",
+    });
     expect(send).toBeDisabled();
 
     fireEvent.change(screen.getByLabelText("新增灵感"), {
