@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LAYOUT, PANEL_WIDTH, TOAST_DURATION_MS } from "../novel-config";
 import { clampPanelWidth, parseJsonOrNull } from "../novel-utils";
 import { fetchPanelWidth, savePanelWidth } from "../services/novel-service";
-import { requestClosePackPanel, requestPackPeek } from "../components/CharacterPack/pack-config";
 import type { EntityType } from "../types";
 
 export type PanelTab = "outline" | "entity" | "note" | "search" | "tools";
@@ -40,11 +39,6 @@ export function useNovelViewState() {
   const [levelManagerOpen, setLevelManagerOpen] = useState(false);
   /** 自定义类型管理弹框（R23） */
   const [typeManagerOpen, setTypeManagerOpen] = useState(false);
-  /**
-   * 行囊面板（CharacterPack）：入口独立于侧边栏，默认「右侧让位」占位而非覆盖。
-   * 面板内部状态（形态 / 宽度 / 模块折叠…）由它自己经 config 持久化，这里只持开关。
-   */
-  const [packOpen, setPackOpen] = useState(false);
   const [toast, setToast] = useState<ToastPayload | null>(null);
 
   /**
@@ -215,38 +209,6 @@ export function useNovelViewState() {
   const openTypeManager = useCallback(() => setTypeManagerOpen(true), []);
   const closeTypeManager = useCallback(() => setTypeManagerOpen(false), []);
 
-  const openPack = useCallback(() => setPackOpen(true), []);
-  /** 仅供无面板时的兜底；正常关闭一律走 `requestClosePackPanel()` 桥 */
-  const closePack = useCallback(() => setPackOpen(false), []);
-  /**
-   * 顶栏图标与 Ctrl+Shift+B 都是开关。收起时必须过面板的受保护路径 ——
-   * 直接 `setPackOpen(false)` 会跳过未保存拦截与草稿 flush，改动静默丢失。
-   *
-   * `peek = true`（顶栏按钮 Alt+点击）走「速览」：面板仍开着，只是切成半透明浮层、
-   * 3 秒无操作自动收起。**它不写布局记忆**，所以这里只翻开关 + 请求面板换形态。
-   */
-  const togglePack = useCallback(
-    (peek?: boolean) => {
-      if (peek && !packOpen) {
-        // 面板还没挂载 → 桥那头没人接，请求会被记成待办，面板一出现就生效。
-        // 所以这里只需要先把面板开出来，**不用自己重试**。
-        setPackOpen(true);
-        requestPackPeek();
-        return;
-      }
-      if (peek) {
-        requestPackPeek();
-        return;
-      }
-      if (packOpen) {
-        if (!requestClosePackPanel()) setPackOpen(false);
-        return;
-      }
-      setPackOpen(true);
-    },
-    [packOpen],
-  );
-
   const selectPanelTab = useCallback((tab: PanelTab) => {
     setPanelTab(tab);
     setRightOpen(true);
@@ -261,13 +223,10 @@ export function useNovelViewState() {
     () => rightOpen && !focusMode,
     [rightOpen, focusMode],
   );
-  /** 行囊与左右栏同一口径：专注模式下一起让位（内容与草稿都不受影响） */
-  const effectivePackOpen = useMemo(() => packOpen && !focusMode, [packOpen, focusMode]);
 
   return {
     leftOpen: effectiveLeftOpen,
     rightOpen: effectiveRightOpen,
-    packOpen: effectivePackOpen,
     rightWidth,
     focusMode,
     typewriter,
@@ -298,9 +257,6 @@ export function useNovelViewState() {
     closeLevelManager,
     openTypeManager,
     closeTypeManager,
-    openPack,
-    closePack,
-    togglePack,
     openSnapshot,
     closeSnapshot,
     toggleSnapshot,

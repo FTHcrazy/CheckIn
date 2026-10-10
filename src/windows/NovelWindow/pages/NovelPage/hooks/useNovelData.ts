@@ -80,7 +80,7 @@ import {
   PACK_REALM_EVENT,
   readEventDetail,
   type PackRealmEventDetail,
-} from "../components/CharacterPack/pack-config";
+} from "@/shared/components/CharacterPack/pack-config";
 
 /** 选区标记的结果：新建要素 / 关联为别名 / 已存在 */
 export type MarkResult =

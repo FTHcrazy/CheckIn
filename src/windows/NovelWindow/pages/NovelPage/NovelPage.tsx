@@ -9,7 +9,6 @@ import LevelSystemManager from "./components/LevelSystemManager";
 import NovelToast from "./components/NovelToast";
 import NovelTopBar from "./components/NovelTopBar";
 import type { WorkManageMenuHandle } from "./components/WorkManageMenu";
-import CharacterPackHost from "./components/CharacterPack";
 import ReorderConfirmModal from "./components/ReorderConfirmModal";
 import RestoreBanner from "./components/RestoreBanner";
 import SettingsDrawer from "./components/SettingsDrawer";
@@ -111,6 +110,7 @@ export default function NovelPage({
     namingFavorites,
     protagonistEntityId,
     handleSetProtagonist,
+    openPackWindow,
   } = useNovelPage();
 
   const { loadSnapshots, activeChapterId, searchBook } = data;
@@ -281,8 +281,7 @@ export default function NovelPage({
           onToggleTypewriter={view.toggleTypewriter}
           onToggleSettings={view.toggleSettings}
           snapshotOpen={view.snapshotOpen}
-          packOpen={view.packOpen}
-          onTogglePack={view.togglePack}
+          onOpenPack={openPackWindow}
           onToggleHistory={view.toggleSnapshot}
         />
       </div>
@@ -441,17 +440,10 @@ export default function NovelPage({
         />
 
         {/*
-          行囊（CharacterPack）：入口独立于侧边栏，形态默认「右侧让位」——
-          作为正文之外的 flex 兄弟项占位，编辑器收窄重排而不是被盖住。
-          它自己吃 workId / chapterId，未来迁独立窗口时这里换成新窗口入口即可。
+          行囊已迁独立窗口（PackWindow）：顶栏按钮 / Ctrl+Shift+B 唤起，
+          本页面不再内嵌渲染面板。作品 / 章节变化经 `novel-work-changed`
+          广播由行囊窗口主动跟进（见 useNovelPage）。
         */}
-        {view.packOpen && data.activeWorkId ? (
-          <CharacterPackHost
-            workId={data.activeWorkId}
-            chapterId={data.activeChapterId ?? ""}
-            onClose={view.closePack}
-          />
-        ) : null}
       </div>
 
       {/* 等级体系管理（R25）/ 自定义类型管理（R23） */}

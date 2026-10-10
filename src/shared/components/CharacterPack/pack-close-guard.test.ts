@@ -15,15 +15,13 @@ import { describe, expect, it } from "vitest";
 const read = (rel: string): string =>
   readFileSync(resolve(process.cwd(), rel), "utf8");
 
-const PACK_DIR = "src/windows/NovelWindow/pages/NovelPage/components/CharacterPack";
+const PACK_DIR = "src/shared/components/CharacterPack";
 
 const CONFIG = read(`${PACK_DIR}/pack-config.ts`);
 const UTILS = read(`${PACK_DIR}/pack-utils.ts`);
 const PANEL = read(`${PACK_DIR}/hooks/usePackPanel.ts`);
 const DATA = read(`${PACK_DIR}/hooks/usePackData.ts`);
-const VIEW_STATE = read(
-  "src/windows/NovelWindow/pages/NovelPage/hooks/useNovelViewState.ts",
-);
+const HOST = read(`${PACK_DIR}/index.tsx`);
 const PAGE = read(
   "src/windows/NovelWindow/pages/NovelPage/hooks/useNovelPage.ts",
 );
@@ -80,16 +78,12 @@ describe("P1-8 行囊关闭链路（守卫）", () => {
     expect(PANEL).toContain("registerPackCloser(");
   });
 
-  it("Esc 优先级链与顶栏开关都走桥，不再直接 setPackOpen(false)", () => {
-    expect(PAGE).toContain("requestClosePackPanel()");
-    expect(VIEW_STATE).toContain("requestClosePackPanel()");
-    // handleEscape 里不能留着裸的 view.closePack()
-    const escapeBody = PAGE.slice(
-      PAGE.indexOf("const handleEscape"),
-      PAGE.indexOf("useNovelShortcuts("),
-    );
-    expect(escapeBody).toContain("requestClosePackPanel()");
-    expect(escapeBody).not.toMatch(/^\s*view\.closePack\(\);$/m);
+  it("Esc 关闭走面板自己的受保护路径（行囊已独立成窗口，宿主不再代持开关）", () => {
+    expect(PANEL).toContain("registerPackCloser(() => requestCloseRef.current())");
+    // 面板 Esc：闸门弹窗自己吃掉 Esc，等价「取消」
+    expect(HOST).toContain("if (current.guardOpen)");
+    // 行囊窗口的关闭按钮最终也走 requestClose
+    expect(HOST).toContain("void current.requestClose()");
   });
 
   it("保存失败不放行 —— 闸门检查保存返回值后再决定", () => {
@@ -127,10 +121,11 @@ describe("REQ-043 切章 / 切作品 / 退出应用拦截（守卫）", () => {
     expect(PANEL).toContain("registerPackGuard(null)");
   });
 
-  it("切章与切作品都先过闸门", () => {
-    expect(PAGE).toContain('guardPackBeforeAction("切换章节")');
-    expect(PAGE).toContain('guardPackBeforeAction("切换作品")');
-    expect(PAGE).toContain("handleSelectWork,");
+  it("切章 / 切作品不再过闸门：草稿在主进程表，跨窗口一份，切换不丢编辑", () => {
+    // 行囊拆独立窗口后，草稿落 `novel_pack_drafts`（主进程），切书重挂时会
+    // 兜底 flush —— 页面层不需要再拦截切章 / 切作品
+    expect(PAGE).not.toContain("guardPackBeforeAction");
+    expect(CONFIG).toContain("export async function guardPackBeforeAction");
   });
 
   it("已有弹窗在问时本次动作直接取消 —— 不能让新问题顶掉旧 Promise", () => {

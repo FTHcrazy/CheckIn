@@ -11,7 +11,7 @@
  *
  * 新写的行囊控件也建议直接引公共层，不要再经这个别名。
  */
-@use "../../../../../../../shared/styles/widget" as shared;
+@use "../../../styles/widget" as shared;
 
 @mixin cpk-widget {
   @include shared.ant-button-reset;

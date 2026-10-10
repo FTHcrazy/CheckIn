@@ -4,7 +4,7 @@
  * 只放「本模块私有」的常量与出厂值；跨模块复用的（如「当前境界」关系名）
  * 一律从既有配置导入，避免第二份事实源。
  */
-import { LEVEL_RELATION, STORAGE_KEYS } from "../../novel-config";
+import { LEVEL_RELATION, STORAGE_KEYS } from "@/shared/novel/constants";
 import { PACK_MODULES, type PackModuleState } from "./types";
 
 /** 「当前境界」关联名：与 R25 实体面板共用同一份定义（§9.7.3 唯一事实源） */
@@ -28,17 +28,6 @@ export const PACK_PANEL = {
   debounceMs: 300,
   /** 窄窗降级阈值：可用宽度低于此值 → 全屏浮层 + 遮罩（§8.2 降级规则） */
   overlayBelow: 1100,
-} as const;
-
-/** Peek 速览形态（REQ-001 第三形态）：半透明浮层 + 无操作自动收起 */
-export const PACK_PEEK = {
-  /**
-   * 浮层不透明度。**不是越低越好**：半透明的意义是「能看见下面的正文，
-   * 确认自己没有挡到正在写的那一段」，低到看不清清单就白开一次面板了。
-   */
-  opacity: 0.96,
-  /** 无操作自动收起（原型 3000ms） */
-  autoCloseMs: 3000,
 } as const;
 
 /** 物品列表搜索防抖（B-3：≥20 条时实时过滤，防抖 200ms） */
@@ -295,67 +284,15 @@ export function runPackQuickAdd(request: PackQuickAddRequest): {
   return { handled: true, ok: quickAdder(request) !== null };
 }
 
-// ── Peek 速览桥（REQ-001 第三形态） ──
-
-/**
- * 切到速览形态，由面板挂载时注册。
- *
- * ⚠️ **Peek 刻意不进 `PackUiPrefs`**：它 3 秒后自动收起。若写进 `novel_pack_ui`，
- * 下次打开行囊会「自己又没了」——那是没法向用户解释的行为。所以它是面板的
- * **运行时状态**，面板一关就复位，形态记忆仍然只记 reflow / overlay 两值。
- *
- * 与 `requestClosePackPanel` 的区别：那个是「关掉」，这个是「换成速览」，
- * 面板仍然开着（用户可以在提示条上点「固定」把它变回常规形态）。
- */
-let peeker: (() => void) | null = null;
-
-/**
- * 「还没挂载就先按了速览」的待办。
- *
- * 顶栏 Alt+点击时面板可能还没开（`packOpen` 从 false 翻到 true，React 要等这一拍
- * commit 之后才跑 effect）。**不能用 setTimeout 猜时序** —— 那是在赌 React 的
- * 提交时机；改成记一个待办，由面板注册时立刻消费。
- */
-let pendingPeek = false;
-
-/** 面板挂载 / 卸载时调用（与 `registerPackCloser` 同生命周期） */
-export function registerPackPeek(fn: (() => void) | null): void {
-  peeker = fn;
-  if (!fn) {
-    // 卸载时把待办一并清掉：否则下一次是「普通打开」，却会莫名其妙进入速览
-    pendingPeek = false;
-    return;
-  }
-  if (pendingPeek) {
-    pendingPeek = false;
-    fn();
-  }
-}
-
-/**
- * 请求切到速览形态。
- *
- * **返回 false 表示面板还没挂载**（请求已记下，面板一出现就会生效），
- * 调用方不需要自己重试。
- */
-export function requestPackPeek(): boolean {
-  if (!peeker) {
-    pendingPeek = true;
-    return false;
-  }
-  peeker();
-  return true;
-}
-
 // ── 「插入本章末尾」桥（REQ-034） ──
 
 /**
  * 行囊里有几张表（属性 / 物品 / 装备…），作者会想把它们抄进正文。
  *
- * 与关闭桥同理：**行囊不该 import 编辑器的 store** —— 那样这个模块就绑死在
- * 「宿主是 NovelPage」上了，而 PRD §1 明确要求它能整体搬去独立窗口（分离窗口下
- * 根本没有正文可插）。所以由页面那侧注册一个处理器，行囊只发一句
- * 「把这段 Markdown 追加到当前章末尾」。
+ * 行囊独立成窗口后与编辑器分属两个 renderer —— 本地桥由宿主页面（若有）
+ * 注册；**没有本地桥时走跨窗口广播**：NovelPage 订阅
+ * `pack-insert-into-chapter` 频道接收文本并追加到当前章末尾。
+ * fire-and-forget：行囊侧无法得知编辑器有没有章可写，失败由编辑器侧提示。
  */
 let chapterInserter: ((text: string) => boolean) | null = null;
 
@@ -366,8 +303,9 @@ export function registerPackInsertIntoChapter(fn: PackChapterInserter | null): v
   chapterInserter = fn;
 }
 
-/** 没有正文可写时返回 false，调用方据此给出「请先在编辑器里打开一章」的提示 */
+/** 本地桥缺失时返回 true（已转投跨窗口广播），调用方不再自行兜底 */
 export function runPackInsertIntoChapter(text: string): boolean {
-  if (!chapterInserter) return false;
-  return chapterInserter(text);
+  if (chapterInserter) return chapterInserter(text);
+  void window.electronAPI?.windowAPI.broadcast("pack-insert-into-chapter", text);
+  return true;
 }

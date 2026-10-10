@@ -4,11 +4,11 @@ import {
   notifyProtagonistChanged,
   readEventDetail,
   type PackProtagonistEventDetail,
-} from "../components/CharacterPack/pack-config";
+} from "@/shared/components/CharacterPack/pack-config";
 import {
   fetchProtagonistBinding,
   writeProtagonistBinding,
-} from "../components/CharacterPack/services/pack-service";
+} from "@/shared/components/CharacterPack/services/pack-service";
 
 /**
  * 行囊主角绑定（右侧要素栏 ↔ 行囊面板的交叉点）。

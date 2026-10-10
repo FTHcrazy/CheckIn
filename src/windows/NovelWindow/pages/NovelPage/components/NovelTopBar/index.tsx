@@ -31,8 +31,6 @@ interface NovelTopBarProps {
   settingsOpen: boolean;
   /** 历史快照抽屉开合状态：按钮呈高亮开关态 */
   snapshotOpen: boolean;
-  /** 行囊面板开关（入口独立于侧边栏，Ctrl+Shift+B 同效） */
-  packOpen: boolean;
   onSelectWork: (workId: string) => void;
   onCreateWork: (name: string) => boolean;
   onRenameWork: (name: string) => boolean;
@@ -47,8 +45,8 @@ interface NovelTopBarProps {
   onToggleSettings: () => void;
   /** 历史快照按钮即开关：开 → 关 → 开 循环切换 */
   onToggleHistory: () => void;
-  /** 行囊按钮即开关：再点一次收起；`Alt+点击` = 速览形态（3 秒后自动收起，不写记忆） */
-  onTogglePack: (peek?: boolean) => void;
+  /** 行囊：唤起独立行囊窗口（单实例，重复点击仅聚焦），Ctrl+Shift+B 同效 */
+  onOpenPack: () => void;
   /** 返回书架（书架主页接入后传入）；未传则不渲染返回按钮 */
   onBackToShelf?: () => void;
 }
@@ -73,7 +71,6 @@ export default function NovelTopBar({
   typewriter,
   settingsOpen,
   snapshotOpen,
-  packOpen,
   onSelectWork,
   onCreateWork,
   onRenameWork,
@@ -87,7 +84,7 @@ export default function NovelTopBar({
   onToggleTypewriter,
   onToggleSettings,
   onToggleHistory,
-  onTogglePack,
+  onOpenPack,
   onBackToShelf,
 }: NovelTopBarProps) {
   const { saveState, lastSavedAt } = useSaveState();
@@ -190,12 +187,11 @@ export default function NovelTopBar({
             <ColumnHeightOutlined />
           </Button>
         </Tooltip>
-        <Tooltip title="行囊（主角随身盘点 · Ctrl+Shift+B；Alt+点击 = 速览）">
+        <Tooltip title="行囊（主角随身盘点 · Ctrl+Shift+B）">
           <Button
-            className={`nv-topbar__icon${packOpen ? " is-on" : ""}`}
-            onClick={(event) => onTogglePack(event.altKey)}
+            className="nv-topbar__icon"
+            onClick={onOpenPack}
             aria-label="行囊"
-            aria-pressed={packOpen}
           >
             <ShoppingOutlined />
           </Button>

@@ -5,7 +5,9 @@ import {
   loadPackBundle,
   putPackDraft,
   savePackDocument,
+  writeRealmLink,
 } from "../services/pack-service";
+import { notifyRealmLinkChanged } from "../pack-config";
 import type {
   PackBundleDTO,
   PackCharacter,
@@ -37,6 +39,14 @@ export interface PackDoc {
   layouts: PackLayout[];
   /** 换装方案（REQ-032）：与其它表一样属于设定数据，随草稿走 */
   presets: PackPreset[];
+  /**
+   * 「当前境界」绑定（novel_links 的 LEVEL_RELATION 行）。
+   *
+   * 原本即时落库、只存在于 meta；现按「行囊改动一律草稿化」的要求随草稿走：
+   * 编辑只改这里，保存时若与上次保存态有差异才写 novel_links 并广播。
+   * meta.realmLink 继续保留库内真值镜像（外部改动经 syncMeta 进来）。
+   */
+  realmLink: PackRealmLink | null;
 }
 
 export interface PackMeta {
@@ -59,6 +69,7 @@ function fromBundle(bundle: PackBundleDTO): PackDoc | null {
     unitSystems: bundle.unitSystems,
     layouts: bundle.layouts,
     presets: bundle.presets ?? [],
+    realmLink: bundle.realmLink,
   };
 }
 
@@ -78,6 +89,7 @@ function parseDraft(payload: string): PackDoc | null {
       unitSystems: doc.unitSystems ?? [],
       layouts: doc.layouts ?? [],
       presets: doc.presets ?? [],
+      realmLink: doc.realmLink ?? null,
     };
   } catch {
     return null;
@@ -136,6 +148,9 @@ export function usePackData(workId: string, chapterId: string) {
               ...draft.character,
               entityId: formal.character.entityId,
             },
+            // 境界绑定随草稿走，但旧草稿（该字段引入前写的）没有这一格，
+            // 不能让 `?? null` 把库里已有的绑定抹掉
+            realmLink: draft.realmLink ?? formal.realmLink,
           }
         : (draft ?? formal);
     setDocState(merged);
@@ -267,6 +282,22 @@ export function usePackData(workId: string, chapterId: string) {
         ok = false;
       }
       if (ok) {
+        // 境界绑定随草稿走：与上次保存态比较，有差异才写 novel_links 并广播。
+        // 未绑定（link 为 null）不产生写库 —— 与 §9.7.5「不绑定就不写 novel_links」一致。
+        const prevLink = savedRef.current?.realmLink ?? null;
+        const nextLink = current.realmLink;
+        if (nextLink && JSON.stringify(prevLink) !== JSON.stringify(nextLink)) {
+          const linkOk = await writeRealmLink(nextLink).catch(() => false);
+          if (linkOk) {
+            notifyRealmLinkChanged(current.character.workId, nextLink, "pack");
+            setMeta((previous) => ({ ...previous, realmLink: nextLink }));
+          } else {
+            // 境界行写失败：保持脏状态，让用户重试整个保存
+            setSaveFailed(true);
+            setSaving(false);
+            return false;
+          }
+        }
         savedRef.current = current;
         setDirty(0);
         setSavedAt(Date.now());
@@ -308,6 +339,10 @@ export function usePackData(workId: string, chapterId: string) {
     (record: PackRecord): boolean => {
       const restored = parseDraft(record.payload);
       if (!restored) return false;
+      // 盘点记录是物品快照，不含境界绑定：恢复时保留当前草稿里的境界，
+      // 不让 parseDraft 的默认值把它抹成 null
+      const current = docRef.current;
+      if (current && !restored.realmLink) restored.realmLink = current.realmLink;
       setDocState(restored);
       setDirty((count) => count + 1);
       return true;

@@ -395,6 +395,80 @@ function createSettingsWindow(): BrowserWindow {
   return settingsWin;
 }
 
+// ── PackWindow（行囊独立窗口） ──
+
+/**
+ * 行囊窗口上下文：最近一次打开行囊时携带的作品 / 章节。
+ * 新窗口 did-finish-load 后经 `pack-window-context` 下发；
+ * 后续切换由 NovelWindow 的 `novel-work-changed` 广播跟进。
+ */
+let packWindowContext: { workId: string; chapterId: string } | null = null;
+
+/**
+ * PackWindow —— 行囊独立窗口（full / novel 版）。
+ *
+ * 即关即销、单实例唤起；数据全部经 novel-pack IPC（userDb 的 novel_* 表），
+ * 窗口本身不持有需要迁移的状态 —— 草稿在主进程表里，跨窗口一致、崩溃不丢。
+ * 有未保存改动时由 close-guard 拦截（渲染层武装，dirty>0 才拦）。
+ */
+function createPackWindow(): BrowserWindow {
+  const existing = windowManager.get("pack");
+  if (existing) {
+    // 已开：补发一次上下文兜底（切书广播若在加载完成前发出会错过），再聚焦
+    if (packWindowContext) {
+      windowManager.sendTo("pack", "pack-window-context", packWindowContext);
+    }
+    if (existing.isMinimized()) existing.restore();
+    existing.show();
+    existing.focus();
+    return existing;
+  }
+
+  const packWin = new BrowserWindow({
+    width: 520,
+    height: 820,
+    minWidth: 380,
+    minHeight: 480,
+    icon: ICON_PATH,
+    show: false,
+    ...ROUNDED_WINDOW_OPTIONS,
+    titleBarStyle: "hidden",
+    webPreferences: createWebPreferences(),
+  });
+
+  packWin.removeMenu();
+
+  packWin.webContents.once("did-finish-load", () => {
+    if (!packWin || packWin.isDestroyed()) return;
+    if (packWindowContext) {
+      windowManager.sendTo("pack", "pack-window-context", packWindowContext);
+    }
+    packWin.show();
+    packWin.focus();
+  });
+
+  if (IS_DEV) {
+    registerDevToolsShortcuts(packWin);
+    if (OPEN_DEVTOOLS) packWin.webContents.openDevTools({ mode: DEVTOOLS_MODE });
+  }
+
+  // 标题栏的最小化/最大化按钮需要最大化状态推送
+  forwardMaximizeState(packWin);
+
+  windowManager.register("pack", packWin);
+
+  // 即关即销：有未保存改动时先问渲染层（草稿在主进程，但「保存并关闭」
+  // 要在窗口活着时把内存文档写库）
+  attachCloseGuard(packWin);
+  packWin.on("closed", () => {
+    console.log("[main] Pack 窗口已关闭");
+  });
+
+  loadRendererEntry(packWin, "pack");
+
+  return packWin;
+}
+
 // ── 登录窗口 ──
 
 function getLoginWindowUrl(email?: string) {
@@ -605,6 +679,26 @@ app.whenReady().then(() => {
     createSettingsWindow();
   });
 
+  // ── PackWindow 开关 IPC（full / novel 版：入口在小说窗口顶栏） ──
+  // payload 携带当前作品 / 章节，供新窗口装载与切书兜底；lite 版不打包
+  // 行囊窗口（novel 域整体缺席），请求直接忽略。
+  ipcMain.on("pack-window-open", (_event, payload: unknown) => {
+    if (EDITION === "lite") return;
+    if (payload && typeof payload === "object") {
+      const workId =
+        "workId" in payload && typeof (payload as { workId: unknown }).workId === "string"
+          ? (payload as { workId: string }).workId
+          : "";
+      const chapterId =
+        "chapterId" in payload &&
+        typeof (payload as { chapterId: unknown }).chapterId === "string"
+          ? (payload as { chapterId: string }).chapterId
+          : "";
+      packWindowContext = { workId, chapterId };
+    }
+    createPackWindow();
+  });
+
   // ── 退出登录（SettingsWindow 账号区发起） ──
   // 主进程编排：清除缓存用户 → 销毁设置窗与主窗口（登录态下的数据随窗口
   // 销毁，防止切换账号后残留上一账号的渲染层状态）→ 回到登录窗。
@@ -614,6 +708,7 @@ app.whenReady().then(() => {
     isPrimaryReady = false;
 
     windowManager.get("settings")?.destroy();
+    windowManager.get("pack")?.destroy();
     windowManager.get(PRIMARY_WINDOW_NAME)?.destroy();
 
     const loginWin = windowManager.get("login");

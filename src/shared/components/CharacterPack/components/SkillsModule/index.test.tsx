@@ -51,6 +51,7 @@ const doc: PackDoc = {
   unitSystems: [],
   layouts: [],
   presets: [],
+  realmLink: null,
 };
 
 /** 三档：入门 0–99 / 熟练 100–299 / 精通 300+（末档无上限，网文里的常态） */

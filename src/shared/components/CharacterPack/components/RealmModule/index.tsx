@@ -4,7 +4,10 @@ import { SettingOutlined } from "@ant-design/icons";
 import PackModuleShell from "../PackModuleShell";
 import type { PackPanelApi } from "../../hooks/usePackPanel";
 import { moduleLabel } from "../module-meta";
-import { fetchNovelBundle, logUsageEvent } from "../../../../services/novel-service";
+import {
+  fetchPackBindableEntities,
+  logUsageEvent,
+} from "@/shared/services/novel-shared";
 import type { LadderRung } from "../../pack-utils";
 import "./index.scss";
 
@@ -27,12 +30,8 @@ export default function RealmModule({ api }: RealmModuleProps) {
   const loadEntities = useCallback(async () => {
     if (entities.length > 0) return;
     try {
-      const bundle = await fetchNovelBundle();
-      setEntities(
-        bundle.entities
-          .filter((entity) => entity.type === "character")
-          .map((entity) => ({ id: entity.id, name: entity.name })),
-      );
+      const bundle = await fetchPackBindableEntities();
+      setEntities(bundle);
     } catch {
       setEntities([]);
     }

@@ -18,10 +18,7 @@ import { describe, expect, it } from "vitest";
  * 「嵌套解析正确」与「清零点确实被展开进来」两件事。
  */
 
-const ROOT = path.resolve(
-  process.cwd(),
-  "src/windows/NovelWindow/pages/NovelPage/components/CharacterPack",
-);
+const ROOT = path.resolve(process.cwd(), "src/shared/components/CharacterPack");
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {

@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createNovelId, logUsageEvent } from "../../../services/novel-service";
+import { createNovelId, logUsageEvent } from "@/shared/services/novel-shared";
 import {
   DEFAULT_LAYOUTS,
   QTY_MAX,
   registerPackCloser,
   registerPackGuard,
-  registerPackPeek,
   registerPackQuickAdd,
   type PackGuardReason,
   type PackQuickAddRequest,
@@ -58,7 +57,6 @@ import {
   savePackUiPrefsRaw,
   writeLevelMeta,
   writeProtagonistBinding,
-  writeRealmLink,
 } from "../services/pack-service";
 import {
   ATTR_TEMPLATES,
@@ -83,7 +81,6 @@ import {
 import { CURRENCY_TEMPLATE, PACK_PANEL } from "../pack-config";
 import {
   notifyProtagonistChanged,
-  notifyRealmLinkChanged,
   PACK_PROTAGONIST_EVENT,
   PACK_REALM_EVENT,
   readEventDetail,
@@ -251,15 +248,7 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
   const [unitManagerOpen, setUnitManagerOpen] = useState(false);
   const [slotManagerOpen, setSlotManagerOpen] = useState(false);
   const [recordDrawerOpen, setRecordDrawerOpen] = useState(false);
-  /**
-   * Peek 速览（REQ-001 第三形态）
-   *
-   * **运行时状态，不是界面偏好** —— 理由见 `pack-config.ts` 的 `registerPackPeek`：
-   * 它 3 秒后自动收起，写进 `novel_pack_ui` 就变成「下次打开也自己消失」。
-   * 面板是条件渲染的（`NovelPage.tsx`），所以这一格天然随开随复位。
-   */
-  const [peek, setPeek] = useState(false);
-  /** 未保存闸门弹窗（关闭面板 / 切章 / 切作品 / 退出应用共用同一个） */
+  /** 未保存闸门弹窗（关闭窗口 / 退出应用共用同一个） */
   const [guardOpen, setGuardOpen] = useState(false);
   const [guardReason, setGuardReason] = useState<PackGuardReason>("关闭行囊");
   const [inventoryKeyword, setInventoryKeyword] = useState("");
@@ -560,7 +549,9 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
 
   const realmState: RealmState = useMemo(
     () => ({
-      link: meta.realmLink,
+      // 境界随草稿走：显示草稿里的 link（未保存也所见即所得），
+      // 草稿没有时回退库内真值（meta.realmLink）
+      link: doc?.realmLink ?? meta.realmLink,
       realmRaw: doc?.character.realmAt ?? "",
       rungs,
       bound: Boolean(doc?.character.entityId),
@@ -575,53 +566,6 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
   const panelRealmText = useMemo(
     () => formatRealm(rungs, panelRealmPos),
     [rungs, panelRealmPos],
-  );
-
-  /** 通知实体面板重读同一行（§9.7.3 双向同步） */
-  const notifyRealmChanged = useCallback(
-    (link: RealmState["link"]) => {
-      notifyRealmLinkChanged(doc?.character.workId ?? "", link, "pack");
-    },
-    [doc],
-  );
-
-  /** 境界的**唯一写入口**：所有境界改动都必须经过它（REQ-048 契约第 2 条） */
-  const writeRealm = useCallback(
-    async (
-      position: RealmPosition,
-      origin: "pack" | "r25",
-      options: { carry?: boolean; delta?: number } = {},
-    ): Promise<void> => {
-      if (!doc || rungs.length === 0) return;
-      const next = options.carry
-        ? carryRealm(rungs, position, options.delta ?? 0)
-        : clampRealm(rungs, position);
-      const plan = setRealm(realmState, position, origin, options);
-      let changed = false;
-      if (plan.link) {
-        const link = { ...plan.link, id: plan.link.id || createNovelId("nl") };
-        const ok = await writeRealmLink(link);
-        if (ok) {
-          notifyRealmChanged(link);
-          changed = true;
-        }
-      }
-      if (plan.realmRaw !== null) {
-        mutate(
-          (current) => ({
-            ...current,
-            character: { ...current.character, realmAt: plan.realmRaw ?? "" },
-          }),
-          1,
-        );
-        changed = true;
-      }
-      if (changed) {
-        await data.syncMeta();
-        showToast(`境界已更新：${formatRealm(rungs, next)}`, "success");
-      }
-    },
-    [doc, rungs, realmState, mutate, data, notifyRealmChanged, showToast],
   );
 
   /** 绑定 / 解绑主角实体（§9.7.5：不绑定就不写 novel_links）
@@ -681,22 +625,35 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
   }, [workId, mutate, syncMeta]);
 
   /**
-   * 右侧要素栏改了「当前境界」：这里重读同一行。
+   * 右侧要素栏改了「当前境界」：这里跟进同一行。
    *
-   * 反向靠 `notifyRealmChanged`（本面板写入时广播）。两边都不订阅对方，
-   * 就会出现「一边改了、另一边还显示旧值」——这正是「看着像同源、实际各说各话」。
-   * 只重读元数据（`syncMeta`），不重载文档，避免吃掉未保存的编辑。
+   * 反向由 usePackData.save() 在境界行落库后广播（origin="pack"）。两边都不订阅
+   * 对方，就会出现「一边改了、另一边还显示旧值」。
+   * 外部改动（origin≠"pack"）用 delta=0 的 mutate 把新 link 写进文档 —— 不计脏、
+   * 但会随下次防抖进草稿；这样本次未保存的其它编辑不会把它冲掉，保存时
+   * usePackData 也会因与 savedRef 一致而不重复写库。只同步，不重载文档。
    */
   useEffect(() => {
     const handler = (...args: unknown[]) => {
       const detail = readEventDetail<PackRealmEventDetail>(args);
       if (!detail || typeof detail !== "object") return;
       if (detail.workId !== workId) return;
-      // 自己写的已经读过元数据了，不为自己再重读一次
+      // 自己保存写库的广播已经落文档了，不为自己再走一遍
       if (detail.origin === "pack") return;
       const link = detail.link;
-      // 与本人无关的要素（另一本书 / 另一张角色卡）不触发重读
+      // 与本人无关的要素（另一本书 / 另一张角色卡）不跟进
       if (link && link.fromId !== docRef.current?.character.entityId) return;
+      mutate(
+        (current) =>
+          JSON.stringify(current.realmLink) === JSON.stringify(link)
+            ? current
+            : {
+                ...current,
+                // 事件负载的 note 是可选的，PackDoc 里是定长字段，归一化再进文档
+                realmLink: link ? { ...link, note: link.note ?? "" } : null,
+              },
+        0,
+      );
       void data.syncMeta();
     };
     window.addEventListener(PACK_REALM_EVENT, handler as EventListener);
@@ -706,7 +663,7 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
       window.removeEventListener(PACK_REALM_EVENT, handler as EventListener);
       api?.off(PACK_REALM_EVENT, handler);
     };
-  }, [workId, syncMeta]);
+  }, [workId, mutate, data]);
 
   /** 等级项补列（小层数 / 战力当量）：改的是 novel_levels，两边共享同一张表 */
   const setRungMeta = useCallback(
@@ -855,6 +812,40 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
       touch();
     },
     [mutate, touch],
+  );
+
+  /** 境界的**唯一写入口**：所有境界改动都必须经过它（REQ-048 契约第 2 条）
+   *
+   *  境界改动现在**只进草稿**（mutate + dirty），点「保存」时由 usePackData
+   *  统一写 novel_links 并广播 —— 与行囊其它设定数据同一套节奏，即时落库的
+   *  只剩主角绑定那一格（它是跨模块共享的一格，判据 PRD §8.6.2）。 */
+  const writeRealm = useCallback(
+    async (
+      position: RealmPosition,
+      origin: "pack" | "r25",
+      options: { carry?: boolean; delta?: number } = {},
+    ): Promise<void> => {
+      if (!doc || rungs.length === 0) return;
+      const next = options.carry
+        ? carryRealm(rungs, position, options.delta ?? 0)
+        : clampRealm(rungs, position);
+      const plan = setRealm(realmState, position, origin, options);
+      if (plan.link || plan.realmRaw !== null) {
+        callMutate((current) => ({
+          ...current,
+          realmLink:
+            plan.link && JSON.stringify(current.realmLink) !== JSON.stringify(plan.link)
+              ? { ...plan.link, id: plan.link.id || createNovelId("nl") }
+              : current.realmLink,
+          character:
+            plan.realmRaw !== null
+              ? { ...current.character, realmAt: plan.realmRaw ?? "" }
+              : current.character,
+        }));
+        showToast(`境界已更新：${formatRealm(rungs, next)}（保存后生效）`, "success");
+      }
+    },
+    [doc, rungs, realmState, callMutate, showToast],
   );
 
   // ── 属性（M1） ──
@@ -1133,14 +1124,6 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
     if (!open) return undefined;
     registerPackQuickAdd((request) => quickAddRef.current(request));
     return () => registerPackQuickAdd(null);
-  }, [open]);
-
-  // 速览形态入口（顶栏「行囊」按钮 Alt+点击）。切过去只是翻一拍状态位，
-  // 自动收起的计时归渲染那侧管（它要拿 DOM 做「鼠标在面板上就暂停」）。
-  useEffect(() => {
-    if (!open) return undefined;
-    registerPackPeek(() => setPeek(true));
-    return () => registerPackPeek(null);
   }, [open]);
 
   const updateItem = useCallback(
@@ -1932,8 +1915,6 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
     guardCancel,
     inventoryKeyword,
     setInventoryKeyword,
-    peek,
-    setPeek,
 
     // 派生
     modules,

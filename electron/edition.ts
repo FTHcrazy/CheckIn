@@ -22,21 +22,22 @@
 export type CheckInEdition = "full" | "lite" | "novel";
 
 /** 窗口入口 key，与 windowManager 注册名保持一致（base 例外：注册名为 "main"） */
-export type WindowEntryKey = "base" | "login" | "novel" | "settings";
+export type WindowEntryKey = "base" | "login" | "novel" | "pack" | "settings";
 
 /** 入口 key → 渲染层 HTML 路径（相对项目根，dev 与 app:// 协议同用该相对路径） */
 export const RENDERER_ENTRY_PATHS: Record<WindowEntryKey, string> = {
   base: "src/windows/BaseWindow/index.html",
   login: "src/windows/LoginWindow/index.html",
   novel: "src/windows/NovelWindow/index.html",
+  pack: "src/windows/PackWindow/index.html",
   settings: "src/windows/SettingsWindow/index.html",
 };
 
 /** 各版本编译的窗口入口清单（vite input 与主进程可加载窗口的唯一依据） */
 export const EDITION_WINDOW_ENTRIES: Record<CheckInEdition, WindowEntryKey[]> = {
-  full: ["base", "login", "novel", "settings"],
+  full: ["base", "login", "novel", "pack", "settings"],
   lite: ["base", "login", "settings"],
-  novel: ["login", "novel", "settings"],
+  novel: ["login", "novel", "pack", "settings"],
 };
 
 /** 各版本的主窗口入口：full/lite → base，novel → novel */

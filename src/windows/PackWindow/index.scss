@@ -1,0 +1,40 @@
+@use "../../shared/styles/window-shell";
+@use "../../shared/styles/scrollbars";
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Microsoft YaHei", sans-serif;
+  // 圆角窗口：背景交给 .window-shell，dom 层保持透明
+  background: transparent;
+  color: var(--app-text);
+  -webkit-font-smoothing: antialiased;
+}
+
+// 内容区：标题栏由通用 WindowHeader 提供，行囊面板铺满剩余空间
+.window-shell__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+
+  > * {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+  }
+}
+
+// 上下文未到达时的占位（主进程 did-finish-load 后立刻下发，通常一闪而过）
+.pack-window__loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--app-text-secondary);
+  font-size: 13px;
+}

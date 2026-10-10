@@ -25,10 +25,8 @@ import type {
  * 全书检索在渲染层基于已装载的章节内存完成（无 IPC 往返）。
  */
 
-/** 生成带随机后缀的行 ID，避免同毫秒并发创建时碰撞 */
-export function createNovelId(prefix: string): string {
-  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-}
+/** 生成带随机后缀的行 ID —— 定义在 shared（行囊模块跨窗口共用），此处转发 */
+export { createNovelId, logUsageEvent } from "@/shared/services/novel-shared";
 
 /** 拉取编辑器所需的全部数据（novel-editor-load） */
 export async function fetchNovelBundle(): Promise<NovelBundle> {
@@ -342,17 +340,8 @@ export async function fetchUsageToday(): Promise<UsageTodaySummary> {
   return window.electronAPI!.novel.usageToday();
 }
 
-/** 通用事件上报（novel-usage-log）：埋点失败静默，不影响写作主流程 */
-export async function logUsageEvent(
-  event: string,
-  payload: Record<string, unknown> = {},
-): Promise<void> {
-  try {
-    await window.electronAPI!.novel.usageLog(event, payload);
-  } catch {
-    // 静默：统计缺失可接受，写作链路不可被埋点阻塞
-  }
-}
+// 通用事件上报已迁至 shared/services/novel-shared.ts（行囊模块跨窗口共用），
+// 由文件头的 re-export 转发，原引用路径不变。
 
 // ── 自定义要素类型（R23，config 整读整写） ──
 

@@ -82,6 +82,7 @@ function makeApi(over: { doc?: Partial<PackDoc>; statuses?: PackModifier[] } = {
     unitSystems: [],
     layouts: [],
     presets: [],
+    realmLink: null,
     ...over.doc,
   };
   return {

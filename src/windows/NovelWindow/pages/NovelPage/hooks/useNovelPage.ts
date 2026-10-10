@@ -29,12 +29,7 @@ import {
   saveCustomEntityTypes,
   saveLastPosition,
 } from "../services/novel-service";
-import {
-  guardPackBeforeAction,
-  registerPackInsertIntoChapter,
-  requestClosePackPanel,
-} from "../components/CharacterPack/pack-config";
-import { quickAddPackItem } from "../components/CharacterPack/services/pack-service";
+import { quickAddPackItem } from "@/shared/components/CharacterPack/services/pack-service";
 import { buildEntityTypesValue, type EntityTypesContextValue } from "./entity-types-context";
 import type {
   CustomEntityTypeDef,
@@ -261,30 +256,24 @@ export function useNovelPage() {
   );
 
   /**
-   * 切章前过一次行囊闸门（REQ-043）。
-   *
-   * 行囊里的编辑不随章节切换而卸载（文档挂在 workId 上），所以「不拦也不会
-   * 立刻丢」—— 但作者切走之后就不会再回来保存了，那些改动会一直挂在面板上
-   * 直到某次关闭才被问到。拦截发生在离开上下文的那一刻，比攒到最后一次问更清楚。
+   * 切章 / 切作品：行囊已是独立窗口（PackWindow），由 `novel-work-changed`
+   * 广播主动跟进 —— 它会先 flush 旧作品的草稿再重载 bundle，无需页面侧拦截。
    */
   const handleSelectChapter = useCallback(
-    async (chapterId: string): Promise<void> => {
+    (chapterId: string): void => {
       if (chapterId === data.activeChapterId) {
         dismiss();
         return;
       }
-      if (!(await guardPackBeforeAction("切换章节"))) return;
       data.selectChapter(chapterId);
       dismiss();
     },
     [data, dismiss],
   );
 
-  /** 切作品同理，而且更严重：换书会让行囊**整体重载**，当前这本的编辑必须有个交代 */
   const handleSelectWork = useCallback(
-    async (workId: string): Promise<void> => {
+    (workId: string): void => {
       if (workId === data.activeWorkId) return;
-      if (!(await guardPackBeforeAction("切换作品"))) return;
       data.setActiveWorkId(workId);
     },
     [data],
@@ -676,25 +665,54 @@ export function useNovelPage() {
   }, []);
 
   /**
-   * 行囊表格「插入本章末尾」（REQ-034）：**由页面这侧注册写入能力**。
+   * 行囊表格「插入本章末尾」（REQ-034）：跨窗口桥。
    *
-   * 反过来（行囊直接 import 编辑器 store）会让那个模块绑死在「宿主是 NovelPage」上，
-   * 而 PRD §1 明确要求它能整体搬去独立窗口 —— 分离窗口下没有正文可插，
-   * 那时这个桥自然没人注册，行囊侧给出「先在编辑器里打开一章」的提示即可。
+   * 行囊已迁独立窗口（PackWindow），它把 Markdown 文本经
+   * `pack-insert-into-chapter` 广播发过来，本窗口订阅后写入当前章末尾。
+   * 广播会送达所有窗口，但只有本窗口注册了写入能力，其余窗口忽略。
    *
    * 不在这里调 flushSave：`appendText` 走的是 CodeMirror 的 dispatch，
-   * 会经 updateListener → `setContent` → 编辑器自己的防抖保存落库，
-   * 再补一次手动保存只是让它提前几秒写下去。
+   * 会经 updateListener → `setContent` → 编辑器自己的防抖保存落库。
    */
   useEffect(() => {
-    registerPackInsertIntoChapter((text) => {
-      const pane = editorPaneRef.current;
-      if (!pane) return false;
-      pane.appendText(text);
-      return true;
-    });
-    return () => registerPackInsertIntoChapter(null);
+    const api = window.electronAPI?.windowAPI;
+    if (!api) return undefined;
+    const handler = (...args: unknown[]): void => {
+      const text = args[0];
+      if (typeof text !== "string" || !text) return;
+      editorPaneRef.current?.appendText(text);
+    };
+    api.on("pack-insert-into-chapter", handler);
+    return () => api.off("pack-insert-into-chapter", handler);
   }, []);
+
+  // ── 行囊独立窗口（PackWindow）联动 ──────────────────────────────────────
+  /** 唤起行囊窗口（单实例；已开则聚焦）。上下文随打开请求携带 */
+  const openPackWindow = useCallback((): void => {
+    window.electronAPI?.send("pack-window-open", {
+      workId: data.activeWorkId,
+      chapterId: data.activeChapterId ?? "",
+    });
+  }, [data.activeWorkId, data.activeChapterId]);
+
+  /**
+   * 行囊窗口主动跟进：作品 / 章节变化（含编辑器首挂载）即广播新上下文。
+   * PackWindow 收到后 flush 旧作品草稿（重挂载兜底）并重新装载 bundle。
+   * 签名去重：同一上下文不重复广播，避免数据 hook 的中间态抖动连发。
+   */
+  const workContextRef = useRef("");
+  useEffect(() => {
+    const workId = data.activeWorkId;
+    if (!workId) return;
+    const chapterId = data.activeChapterId ?? "";
+    const signature = `${workId}\u0000${chapterId}`;
+    if (workContextRef.current === signature) return;
+    workContextRef.current = signature;
+    void window.electronAPI?.windowAPI?.broadcast("novel-work-changed", {
+      workId,
+      chapterId,
+    });
+  }, [data.activeWorkId, data.activeChapterId]);
 
   /** 把名字建为角色卡（type=character，名字带入；复用 markSelectionAsEntity 走查重 + 落库） */
   const handleCreateEntityFromName = useCallback(
@@ -1043,17 +1061,11 @@ export function useNovelPage() {
     ],
   );
 
-  // Esc 关闭链：设置 → 行囊 → 快照 → 专注模式（逐层退出，章节跳转面板自己处理 Esc；
-  // 行囊面板内部优先处理自己的浮层与未保存改动，见 CharacterPackHost）
+  // Esc 关闭链：设置 → 快照 → 专注模式（逐层退出，章节跳转面板自己处理 Esc；
+  // 行囊已是独立窗口，本窗口的 Esc 不再越界管它）
   const handleEscape = useCallback((): void => {
     if (view.settingsOpen) {
       view.closeSettings();
-      return;
-    }
-    if (view.packOpen) {
-      // 走面板自己的关闭流程（未保存拦截 + 草稿 flush），不能直接翻状态位；
-      // 面板不在（理论上不会）时才退回老办法
-      if (!requestClosePackPanel()) view.closePack();
       return;
     }
     if (view.snapshotOpen) {
@@ -1070,7 +1082,7 @@ export function useNovelPage() {
     onJump: () => (view.jumpOpen ? view.closeJump() : view.openJump()),
     onNewChapter: handleNewChapter,
     onToggleFocus: view.toggleFocus,
-    onTogglePack: view.togglePack,
+    onTogglePack: openPackWindow,
     onEscape: handleEscape,
   });
 
@@ -1145,6 +1157,7 @@ export function useNovelPage() {
     handleCreateChapterInVolume,
     handleSelectChapter,
     handleSelectWork,
+    openPackWindow,
     handleRollback,
     handleMark,
     handleOpenEntity,

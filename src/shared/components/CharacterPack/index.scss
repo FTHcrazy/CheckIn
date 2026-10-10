@@ -1,0 +1,62 @@
+@use "./styles/pack-common.scss";
+
+/**
+ * 行囊外壳（独立窗口形态）
+ *
+ * 行囊已拆成专属窗口（PackWindow）：`.cpk` 由窗口内容区（`.window-shell__body`）
+ * 铺满 —— flex: 1 占满全部可用空间，不再有内嵌面板时代的让位 / 浮层 / 速览。
+ */
+.cpk {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--app-surface);
+  overflow: hidden;
+
+  &__body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 8px;
+    scrollbar-gutter: stable;
+  }
+
+  &__loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 28px 0;
+    font-size: 12px;
+    color: var(--app-text-muted);
+  }
+
+  &__spinner {
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--app-border-strong);
+    border-top-color: var(--app-primary);
+    border-radius: 50%;
+    animation: cpk-spin 0.8s linear infinite;
+  }
+
+  &__error {
+    margin: 0;
+    padding: 10px 8px;
+    border-radius: var(--app-radius-item);
+    background: var(--app-error-weak);
+    color: var(--app-error);
+    font-size: 12px;
+    line-height: 1.6;
+  }
+}
+
+@keyframes cpk-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

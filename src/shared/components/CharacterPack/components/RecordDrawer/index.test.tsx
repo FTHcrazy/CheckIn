@@ -67,8 +67,7 @@ function payloadOf(partial: Record<string, unknown> = {}): string {
     layouts: [],
     presets: [],
     realmLink: null,
-    ...partial,
-  });
+    ...partial,  });
 }
 
 function record(partial: Partial<PackRecord> = {}): PackRecord {
@@ -105,6 +104,7 @@ const currentDoc: PackDoc = {
   unitSystems: [],
   layouts: [],
   presets: [],
+  realmLink: null,
 };
 
 function makeApi(over: Partial<PackPanelApi> = {}) {

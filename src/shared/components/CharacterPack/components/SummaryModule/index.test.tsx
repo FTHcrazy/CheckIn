@@ -129,6 +129,7 @@ const doc: PackDoc = {
   unitSystems: [],
   layouts: [],
   presets: [],
+  realmLink: null,
 };
 
 function makeApi(over: Partial<PackPanelApi> = {}): PackPanelApi {

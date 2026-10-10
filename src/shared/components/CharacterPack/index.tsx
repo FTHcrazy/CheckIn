@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { ComponentType, PointerEvent as ReactPointerEvent } from "react";
-import { Button } from "antd";
+import { useEffect, useRef } from "react";
+import type { ComponentType } from "react";
 import PackHeader from "./components/PackHeader";
 import PackToast from "./components/PackToast";
 import CloseGuardModal from "./components/CloseGuardModal";
@@ -21,7 +20,6 @@ import RecordDrawer from "./components/RecordDrawer";
 import SourceDetailDrawer from "./components/SourceDetailDrawer";
 import { usePackPanel, type PackPanelApi } from "./hooks/usePackPanel";
 import { downloadText } from "./services/pack-export";
-import { PACK_PANEL, PACK_PEEK } from "./pack-config";
 import type { PackModuleKey } from "./types";
 import "./index.scss";
 
@@ -49,12 +47,10 @@ const MODULE_VIEWS: Record<PackModuleKey, ModuleView> = {
  * 行囊面板宿主（唯一入口）
  *
  * 整个功能只吃 `workId / chapterId / onClose` 三个入参，其余全部自持 ——
- * 数据装载、草稿、保存、界面偏好都在 `usePackPanel` 里收口。未来要把它搬到
- * 独立窗口，只需在新窗口入口渲染同一个组件、把 `onClose` 换成 `window.close`，
- * 这里与其下的任何文件都不需要改动。
+ * 数据装载、草稿、保存、界面偏好都在 `usePackPanel` 里收口。
  *
- * 形态（§8.2）：默认「右侧让位」—— 作为正文之外的 flex 兄弟项存在，编辑器被
- * 压缩重排而不是被盖住；窗口不够宽时降级为全屏浮层。
+ * 行囊已独立成专属窗口（PackWindow）：本组件铺满整个窗口内容区，
+ * 不再有内嵌面板时代的拖宽 / 浮层降级 / 速览形态。
  */
 export default function CharacterPackHost({
   workId,
@@ -62,8 +58,6 @@ export default function CharacterPackHost({
   onClose,
 }: CharacterPackHostProps) {
   const api = usePackPanel({ workId, chapterId, open: true, onClose });
-  const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
-  const [windowWidth, setWindowWidth] = useState(() => window.innerWidth);
 
   // 事件监听里要读最新 api，但监听不能每次渲染都重挂 —— 用 effect 同步 ref
   // （渲染期写 ref 会破坏并发渲染下的可预测性，必须放 effect 里）
@@ -72,8 +66,7 @@ export default function CharacterPackHost({
     apiRef.current = api;
   }, [api]);
 
-  // Esc 关闭：用捕获阶段，保证在「专注模式」等页面级 Esc 之前处理，
-  // 避免一次 Esc 同时触发两件事。输入框内按 Esc 一律放行（IME / 改名场景）。
+  // Esc 关闭。输入框内按 Esc 一律放行（IME / 改名场景）。
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
@@ -86,13 +79,9 @@ export default function CharacterPackHost({
           target.isContentEditable)
       ) {
         // 输入框内放行，让按键继续到达 target（antd 的输入控件自己要处理 Esc）。
-        // 冒泡到页面级 Esc 优先级链时会经由 `requestClosePackPanel()` 桥
-        // 回到这里的 `requestClose()` —— 未保存拦截与草稿 flush 都不会丢。
         return;
       }
       // 闸门弹窗自己吃掉 Esc：等价于三选一里的「取消」（那件事不继续做）。
-      // 不能让它冒泡到页面级 Esc —— 那里会再请求一次关闭，撞上「已有弹窗在问」
-      // 的守卫后什么都不发生，表现成「按 Esc 没反应」。
       if (current.guardOpen) {
         event.stopPropagation();
         event.preventDefault();
@@ -105,8 +94,7 @@ export default function CharacterPackHost({
         current.unitManagerOpen ||
         current.slotManagerOpen ||
         current.recordDrawerOpen ||
-        Boolean(current.detailAttrId) ||
-        current.guardOpen;
+        Boolean(current.detailAttrId);
       if (anyModalOpen) return;
       event.stopPropagation();
       event.preventDefault();
@@ -116,65 +104,6 @@ export default function CharacterPackHost({
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, []);
 
-  // 窄窗降级：把「右侧让位」换成全屏浮层 + 遮罩，否则正文会被挤到不可用
-  useEffect(() => {
-    const onResize = () => setWindowWidth(window.innerWidth);
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
-
-  // ── 宽度拖拽（左边缘；越界即夹取，记忆走即改即存的 prefs） ──
-  const onGripDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    dragRef.current = { startX: event.clientX, startWidth: api.prefs.width };
-    event.currentTarget.setPointerCapture(event.pointerId);
-  };
-
-  const onGripMove = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const state = dragRef.current;
-    if (!state) return;
-    const next = Math.min(
-      PACK_PANEL.maxWidth,
-      Math.max(PACK_PANEL.minWidth, state.startWidth - (event.clientX - state.startX)),
-    );
-    api.patchPrefs({ width: Math.round(next) });
-  };
-
-  const onGripUp = (event: ReactPointerEvent<HTMLDivElement>) => {
-    dragRef.current = null;
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-  };
-
-  // ── Peek 速览：无操作 3 秒自动收起 ──
-  // 鼠标停在面板上就暂停计时（`onPointerEnter` 清、`onPointerLeave` 重新计时）：
-  // 「正在读清单的时候它自己收掉了」是这个形态最容易变成负体验的失败方式。
-  const peekTimerRef = useRef<number | null>(null);
-  const clearPeekTimer = useCallback(() => {
-    if (peekTimerRef.current !== null) {
-      window.clearTimeout(peekTimerRef.current);
-      peekTimerRef.current = null;
-    }
-  }, []);
-  const armPeekTimer = useCallback(() => {
-    clearPeekTimer();
-    peekTimerRef.current = window.setTimeout(() => {
-      peekTimerRef.current = null;
-      // 走受保护的关闭路径：速览期间万一动过东西，未保存拦截与草稿 flush 都还在
-      void apiRef.current.requestClose();
-    }, PACK_PEEK.autoCloseMs);
-  }, [clearPeekTimer]);
-
-  useEffect(() => {
-    if (!api.peek) return undefined;
-    armPeekTimer();
-    return clearPeekTimer;
-  }, [api.peek, armPeekTimer, clearPeekTimer]);
-
-  // 窄窗一律降级为全屏浮层；Peek 只在常规宽度下成立 —— 窄窗下它本来就已是浮层，
-  // 再叠一层「半透明速览」只会让人分不清当前是哪种形态。
-  const overlay = api.prefs.form === "overlay" || windowWidth < PACK_PANEL.overlayBelow;
-  const peek = !overlay && api.peek;
   const doc = api.doc;
 
   /** 保存失败时的逃生出口：把内存里这份改动整份落盘（G-4） */
@@ -190,50 +119,7 @@ export default function CharacterPackHost({
   };
 
   return (
-    <>
-      {overlay || peek ? (
-        <div
-          className={`cpk-backdrop${peek ? " is-peek" : ""}`}
-          role="presentation"
-          onClick={() => void api.requestClose()}
-        />
-      ) : null}
-      <aside
-        className={`cpk${overlay ? " is-overlay" : ""}${peek ? " is-peek" : ""}`}
-        style={
-          overlay
-            ? undefined
-            : { width: api.prefs.width, ...(peek ? { opacity: PACK_PEEK.opacity } : {}) }
-        }
-        aria-label="行囊"
-        onPointerEnter={peek ? clearPeekTimer : undefined}
-        onPointerLeave={peek ? armPeekTimer : undefined}
-      >
-      {!overlay && !peek ? (
-        <div
-          className="cpk__grip"
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="调整行囊宽度"
-          onPointerDown={onGripDown}
-          onPointerMove={onGripMove}
-          onPointerUp={onGripUp}
-          onPointerCancel={onGripUp}
-          onDoubleClick={() => api.patchPrefs({ width: PACK_PANEL.defaultWidth })}
-        />
-      ) : null}
-
-      {peek ? (
-        <div className="cpk__peekbar">
-          <span className="cpk__peektext">
-            速览 · {PACK_PEEK.autoCloseMs / 1000} 秒后自动收起
-          </span>
-          <Button className="cpk-btn ghost" onClick={() => api.setPeek(false)}>
-            保持打开
-          </Button>
-        </div>
-      ) : null}
-
+    <aside className="cpk" aria-label="行囊">
       <PackHeader
         characterName={doc?.character.name ?? "主角"}
         realmText={api.realmText}
@@ -319,6 +205,5 @@ export default function CharacterPackHost({
         onCancel={api.guardCancel}
       />
     </aside>
-    </>
   );
 }
