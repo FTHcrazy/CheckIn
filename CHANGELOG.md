@@ -26,6 +26,14 @@
 
 ### Fixed
 
+- **大纲面板虚拟化后行宽不自适应**（横向滚动条 + 激活高亮框右侧被裁）：应用没有
+  全局 box-sizing 重置，`.nv-outline__line` 是普通 div，`width: 100%` +
+  `padding-inline-end: 34px` + 1px 描边在 content-box 下恰好宽出 **36px**。
+  虚拟化后行挂在 Virtuoso 滚动容器里（`overflow-y: auto` 连带 `overflow-x: auto`），
+  这 36px 直接变成横向滚动条 —— 而行内的 antd 按钮早已由 `ant-button-reset`
+  的 border-box 兜住，唯独这个普通 div 漏了。修复：`__line` 显式
+  `box-sizing: border-box`。Playwright 实测：修复前行宽 376/容器 340、
+  `hasHScroll: true`；修复后 340/340、无滚动。
 - **点正文高亮不切回「要素」tab**：右栏切到笔记 / 搜索 / 工具后再点正文里的
   高亮词，只开了面板和详情、没切 tab，详情渲染在看不见的地方，表现为
   「点了没反应」。`openEntityDetail` 现在一并 `selectPanelTab("entity")`，
@@ -37,6 +45,13 @@
 - **书架 Hero 在渲染期调 `Date.now()`**：`resolveHero` 的入参 `now` 提为
   state，由 `load()` 写入 —— 渲染期取时间违反 React 纯度规则
   （同一份输入在不同渲染间产出不同结果），且 Hero 的时间口径现在与数据同刻。
+
+### Removed
+
+- **打字机模式**：顶栏开关、光标行垂直居中 effect（keyup/click 监听 +
+  `scrollIntoView`）、`nv-editor--typewriter` 的上下留白样式全部移除；
+  PRD R8 收窄为「专注模式」。定位光标后的滚动由 CodeMirror 默认滚动行为承担，
+  需要沉浸写作用 F11 专注模式。
 
 ### 守卫
 
@@ -58,6 +73,8 @@
   未变不重复滚（不抢用户手动滚动）、无激活章不滚、目标被搜索滤掉不滚不报错。
 - `useNovelViewState.test.ts`（新增 4 例）：非要素 tab 下打开详情会切回、
   各个 tab 都覆盖、换要素仍在要素 tab、关闭详情不动 tab 与右栏开关。
+- `novel-ui-kit.test.ts` +1 例：虚拟化行内 `width: 100%` 的普通元素必须显式
+  `border-box`（钉住 OutlinePanel `__line`，防 box-sizing 回潮）。
 
 ## [1.33.2] - 2026-10-11
 

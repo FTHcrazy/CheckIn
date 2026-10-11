@@ -16,14 +16,6 @@
   container-type: inline-size;
   container-name: nv-editor;
 
-  /* 打字机模式：上下留白把当前行挤到视口中线 */
-  &--typewriter {
-    .cm-content {
-      padding-top: 40%;
-      padding-bottom: 45%;
-    }
-  }
-
   &__title {
     flex: none;
     padding: 20px 0 4px;

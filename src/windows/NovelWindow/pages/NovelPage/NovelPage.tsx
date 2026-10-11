@@ -266,7 +266,6 @@ export default function NovelPage({
           chapterName={breadcrumb.chapterName}
           leftOpen={view.leftOpen}
           rightOpen={view.rightOpen}
-          typewriter={view.typewriter}
           settingsOpen={view.settingsOpen}
           onSelectWork={(workId) => void handleSelectWork(workId)}
           onCreateWork={handleCreateWork}
@@ -278,7 +277,6 @@ export default function NovelPage({
           onExportChapter={() => void handleExportChapter()}
           onToggleLeft={view.toggleLeft}
           onToggleRight={view.toggleRight}
-          onToggleTypewriter={view.toggleTypewriter}
           onToggleSettings={view.toggleSettings}
           snapshotOpen={view.snapshotOpen}
           onOpenPack={openPackWindow}
@@ -318,7 +316,6 @@ export default function NovelPage({
             }
             settings={editor.settings}
             terms={terms}
-            typewriter={view.typewriter}
             annotationOn={view.annotationOn}
             onSelectionChange={editor.setSelection}
             onContextMenu={handleEditorContextMenu}

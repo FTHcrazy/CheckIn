@@ -2,7 +2,6 @@ import { Button, Select, Tooltip } from "antd";
 import type { Ref } from "react";
 import {
   ArrowLeftOutlined,
-  ColumnHeightOutlined,
   HistoryOutlined,
   LayoutOutlined,
   MenuOutlined,
@@ -27,7 +26,6 @@ interface NovelTopBarProps {
   chapterName: string;
   leftOpen: boolean;
   rightOpen: boolean;
-  typewriter: boolean;
   settingsOpen: boolean;
   /** 历史快照抽屉开合状态：按钮呈高亮开关态 */
   snapshotOpen: boolean;
@@ -41,7 +39,6 @@ interface NovelTopBarProps {
   onExportChapter: () => void;
   onToggleLeft: () => void;
   onToggleRight: () => void;
-  onToggleTypewriter: () => void;
   onToggleSettings: () => void;
   /** 历史快照按钮即开关：开 → 关 → 开 循环切换 */
   onToggleHistory: () => void;
@@ -68,7 +65,6 @@ export default function NovelTopBar({
   chapterName,
   leftOpen,
   rightOpen,
-  typewriter,
   settingsOpen,
   snapshotOpen,
   onSelectWork,
@@ -81,7 +77,6 @@ export default function NovelTopBar({
   onExportChapter,
   onToggleLeft,
   onToggleRight,
-  onToggleTypewriter,
   onToggleSettings,
   onToggleHistory,
   onOpenPack,
@@ -176,15 +171,6 @@ export default function NovelTopBar({
             aria-label="支撑面板"
           >
             <LayoutOutlined />
-          </Button>
-        </Tooltip>
-        <Tooltip title="打字机模式">
-          <Button
-            className={`nv-topbar__icon${typewriter ? " is-on" : ""}`}
-            onClick={onToggleTypewriter}
-            aria-label="打字机模式"
-          >
-            <ColumnHeightOutlined />
           </Button>
         </Tooltip>
         <Tooltip title="行囊（主角随身盘点 · Ctrl+Shift+B）">

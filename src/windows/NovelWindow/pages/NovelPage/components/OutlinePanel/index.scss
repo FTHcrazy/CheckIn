@@ -234,8 +234,16 @@
      因为这一行有两个并列的真按钮（整行跳转 + 旗标标识），而 <button> 里不能
      再放 <button>（浏览器会拆坏 DOM，React 不报错）→ 外壳必须落到行容器上。
      行尾的字数与状态点也放在这里（纯文本不是控件），这样有没有标识的行
-     都在同一条竖线上收口。保留 1px 透明边框占位，激活时描边不引起位移。 */
+     都在同一条竖线上收口。保留 1px 透明边框占位，激活时描边不引起位移。
+
+     ⚠️ 必须显式 box-sizing: border-box：应用没有全局 box-sizing 重置，
+     普通 div 默认 content-box —— width: 100% + padding-inline-end: 34px +
+     border 1px 会比容器宽出 36px。虚拟化后行挂在 Virtuoso 的滚动容器里
+     （overflow-y: auto 连带 overflow-x: auto），这 36px 直接变成横向滚动条、
+     行的高亮框右侧被裁 —— 表现为「标题宽度不自适应」。
+     （antd 按钮由 ant-button-reset 的 border-box 兜住，普通 div 得自己声明。） */
   &__line {
+    box-sizing: border-box;
     display: flex;
     align-items: center;
     gap: 8px;

@@ -432,3 +432,27 @@ describe("Novel 窗口：主题变量", () => {
     expect(offenders.map((f) => path.relative(ROOT, f))).toEqual([]);
   });
 });
+
+describe("Novel 窗口：虚拟化行内 width:100% 的普通元素必须显式 border-box", () => {
+  it("OutlinePanel 章节行容器不把横向滚动条带进虚拟列表（1.34.0 回归守卫）", () => {
+    // 应用没有全局 box-sizing 重置：普通 div 默认 content-box，
+    // `width: 100% + padding + border` 会比容器宽出 2×padding + 2×border。
+    // antd 按钮由 ant-button-reset 的 border-box 兜住，**普通 div 得自己声明**。
+    // OutlinePanel.__line（34px 槽位 + 1px 描边）漏声明时恰好宽出 36px：
+    // 虚拟列表滚动容器 overflow-y:auto 连带 overflow-x:auto，这 36px 直接
+    // 变成横向滚动条 + 激活高亮框右侧被裁（表现为「标题宽度不自适应」）。
+    const css = sass.compile(
+      path.join(ROOT, "pages/NovelPage/components/OutlinePanel/index.scss"),
+      { style: "expanded" },
+    ).css;
+    const rule = css
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .match(/\.nv-outline__line\s*\{([^}]*)\}/);
+    expect(rule).not.toBeNull();
+    expect(rule![1]).toContain("box-sizing: border-box");
+    // 行宽自适应的两个前提也要在：width:100% 与槽位 padding 仍存在，
+    // 断言才真的钉住了「这个元素会溢出」这件事本身
+    expect(rule![1]).toContain("width: 100%");
+    expect(rule![1]).toContain("padding-inline-end");
+  });
+});

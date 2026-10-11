@@ -24,7 +24,6 @@ export function useNovelViewState() {
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
-  const [typewriter, setTypewriter] = useState(false);
   // 全局标注层开关（PRD §2 风险对策：提供一键关闭标注层）。
   // 当前为会话级视图态，未并入 R5 settings 持久化——保持最小落地；
   // 后续若需跨会话记忆，并入 EditorSettings.annotationOn 即可。
@@ -126,7 +125,6 @@ export function useNovelViewState() {
     setLeftOpen((open) => !open);
   }, []);
   const toggleRight = useCallback(() => setRightOpen((open) => !open), []);
-  const toggleTypewriter = useCallback(() => setTypewriter((on) => !on), []);
   /** 拖拽右栏边界：只更新内存宽度（夹取到 280–460），落库由上面 effect 防抖接管 */
   const setRightWidth = useCallback((next: number) => {
     setRightWidthState(clampPanelWidth(next));
@@ -236,7 +234,6 @@ export function useNovelViewState() {
     rightOpen: effectiveRightOpen,
     rightWidth,
     focusMode,
-    typewriter,
     annotationOn,
     panelTab,
     entityFilter,
@@ -252,7 +249,6 @@ export function useNovelViewState() {
     setRightWidth,
     toggleFocus,
     exitFocus,
-    toggleTypewriter,
     toggleAnnotation,
     selectPanelTab,
     setEntityFilter,

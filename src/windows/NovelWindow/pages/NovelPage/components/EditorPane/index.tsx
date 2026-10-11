@@ -38,7 +38,6 @@ interface EditorPaneProps {
   chapterNumber: number;
   settings: EditorSettings;
   terms: EntityTerm[];
-  typewriter: boolean;
   /** 全局标注层开关（PRD §2 风险对策）：关闭时即使有词库也不渲染高亮/悬浮卡 */
   annotationOn: boolean;
   onSelectionChange: (selection: EditorSelection | null) => void;
@@ -143,7 +142,6 @@ export default function EditorPane({
   chapterNumber,
   settings,
   terms,
-  typewriter,
   annotationOn,
   onSelectionChange,
   onContextMenu,
@@ -163,7 +161,6 @@ export default function EditorPane({
 }: EditorPaneProps & { ref?: Ref<EditorPaneHandle> }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
-  const lastLineRef = useRef<number>(-1);
   /**
    * 正文来自 store 的逐章草稿（没有草稿时回落到章节正文）。
    * 打字只让本组件与状态条重渲染——页面根不再持有正文。
@@ -491,35 +488,6 @@ export default function EditorPane({
     view.dispatch({ selection: { anchor: pos } });
   };
 
-  // 打字机模式：当前光标行垂直居中（PRD R8）
-  useEffect(() => {
-    const view = viewRef.current;
-    if (!view) return undefined;
-
-    if (!typewriter) {
-      lastLineRef.current = -1;
-      return undefined;
-    }
-
-    const center = (): void => {
-      const head = view.state.selection.main.head;
-      const line = view.state.doc.lineAt(head).number;
-      if (line === lastLineRef.current) return;
-      lastLineRef.current = line;
-      view.dispatch({
-        effects: EditorView.scrollIntoView(head, { y: "center" }),
-      });
-    };
-
-    center();
-    view.contentDOM.addEventListener("keyup", center);
-    view.contentDOM.addEventListener("click", center);
-    return () => {
-      view.contentDOM.removeEventListener("keyup", center);
-      view.contentDOM.removeEventListener("click", center);
-    };
-  }, [typewriter]);
-
   // 悬浮资料卡：命中高亮词才上报，坐标相对码字区容器
   useEffect(() => {
     const view = viewRef.current;
@@ -578,7 +546,7 @@ export default function EditorPane({
   // 在首帧（章节尚未加载）跑完后 host 才出现，编辑器永远创建不出来。
   return (
     <div
-      className={`nv-editor${typewriter ? " nv-editor--typewriter" : ""}`}
+      className="nv-editor"
       style={
         {
           "--nv-indent": settings.indent ? "2em" : "0",
