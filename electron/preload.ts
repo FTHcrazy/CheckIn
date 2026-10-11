@@ -83,7 +83,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // ── 小说编辑器（语义化 IPC，数据存 userDb 的 novel_* 表） ──
   novel: {
-    editorLoad: () => ipcRenderer.invoke('novel-editor-load'),
+    // includeContent=false：只要章节元数据，不拉正文（书架用，见 novel-handlers）
+    editorLoad: (includeContent?: boolean) =>
+      ipcRenderer.invoke('novel-editor-load', includeContent),
     /** 开启编辑器会话（崩溃恢复标记的唯一写入口；只有真正进入编辑器才调） */
     sessionOpen: () => ipcRenderer.invoke('novel-session-open') as Promise<boolean>,
     configGet: (key: string) =>

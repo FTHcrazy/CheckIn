@@ -68,9 +68,16 @@ interface EquipDeltaPreviewProps {
  * 候选列表里有几件就预计算几遍完整汇总管线，是这类功能的典型性能陷阱。
  */
 export default function EquipDeltaPreview({ api, itemId, slotId }: EquipDeltaPreviewProps) {
+  /*
+   * 依赖里只放真正用到的那个回调，不要放整个 `api`。
+   * `api` 是 usePackPanel 每次渲染新建的对象，放进去等于把这个 memo 判成
+   * 恒失效 —— 浮层展开后，作者在**别的输入框**里每敲一个字都要重跑一遍
+   * 完整的汇总管线（computeHypotheticalSummary）。
+   */
+  const { previewEquipDeltas } = api;
   const deltas = useMemo(
-    () => api.previewEquipDeltas(itemId, slotId),
-    [api, itemId, slotId],
+    () => previewEquipDeltas(itemId, slotId),
+    [previewEquipDeltas, itemId, slotId],
   );
 
   return (

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 export interface NovelShortcutHandlers {
   /** Ctrl+S 手动保存 */
@@ -23,55 +23,62 @@ export interface NovelShortcutHandlers {
  * 编辑器已消费的按键（查找面板的 Esc / Ctrl+F / Ctrl+H 等）会 preventDefault，
  * 这里跳过，避免「Esc 既关查找面板又退专注模式」的双跳。
  */
-export function useNovelShortcuts({
-  onSave,
-  onJump,
-  onNewChapter,
-  onToggleFocus,
-  onTogglePack,
-  onEscape,
-}: NovelShortcutHandlers): void {
+export function useNovelShortcuts(handlers: NovelShortcutHandlers): void {
+  /*
+   * 用 ref 持有最新回调，effect 依赖置空 —— 整个会话只绑一次。
+   *
+   * 上层传来的多是内联箭头（onSave / onJump）或依赖了每次渲染都换引用的
+   * useCallback（handleNewChapter / handleEscape），直接进依赖数组会让这条
+   * 全局输入通道**每次重渲染都 remove + add 一次**：写作期间约每秒一次
+   * （自动保存、toast、面板开合都会触发），既无谓也有概率丢并发事件。
+   */
+  const handlersRef = useRef(handlers);
+  useEffect(() => {
+    handlersRef.current = handlers;
+  });
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing) return;
+      const h = handlersRef.current;
 
       if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === "b") {
         event.preventDefault();
-        onTogglePack();
+        h.onTogglePack();
         return;
       }
 
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
         event.preventDefault();
-        onSave();
+        h.onSave();
         return;
       }
 
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "p") {
         event.preventDefault();
-        onJump();
+        h.onJump();
         return;
       }
 
       if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
         event.preventDefault();
-        onNewChapter();
+        h.onNewChapter();
         return;
       }
 
       if (event.key === "F11") {
         event.preventDefault();
-        onToggleFocus();
+        h.onToggleFocus();
         return;
       }
 
       if (event.key === "Escape") {
         event.preventDefault();
-        onEscape();
+        h.onEscape();
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onSave, onJump, onNewChapter, onToggleFocus, onTogglePack, onEscape]);
+  }, []);
 }

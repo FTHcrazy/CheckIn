@@ -40,6 +40,14 @@ import {
 /** 中日韩统一表意文字 + 扩展 A + 兼容表意文字 */
 const HAN_PATTERN = /[㐀-䶿一-鿿豈-﫿]/g;
 
+/**
+ * 非空白字符（`u` 标志按码点匹配，与逐字符 `for...of` 口径一致）。
+ *
+ * 打字链路每次按键要统计 2~3 遍整篇文档，原先是逐字符 `/\s/.test(ch)`：
+ * 3 万字章节就是 9 万次正则调用。改一次原生 pass 后快一个数量级。
+ */
+const NON_WHITESPACE_PATTERN = /\S/gu;
+
 /** 统计字数。默认口径含标点（与主流平台一致），可切纯汉字 */
 export function countWords(text: string, mode: WordCountMode): number {
   if (!text) return 0;
@@ -47,11 +55,8 @@ export function countWords(text: string, mode: WordCountMode): number {
     const matched = text.match(HAN_PATTERN);
     return matched ? matched.length : 0;
   }
-  let count = 0;
-  for (const ch of text) {
-    if (!/\s/.test(ch)) count += 1;
-  }
-  return count;
+  const matched = text.match(NON_WHITESPACE_PATTERN);
+  return matched ? matched.length : 0;
 }
 
 /** 千分位分隔，用于状态条与章节树右侧字数 */

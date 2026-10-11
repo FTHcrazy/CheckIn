@@ -649,11 +649,13 @@ app.whenReady().then(() => {
   });
 
   // 注册协议处理器，将 app:// 请求映射到本地文件
-  protocol.handle("app", (request) => {
+  // 必须异步：每个 bundle / CSS / 字体都是一次 1~5MB 的读盘，同步读会把
+  // 冷启动的加载阶段整段堵在主进程上（protocol.handle 支持返回 Promise）
+  protocol.handle("app", async (request) => {
     const url = request.url.replace("app://./", "");
     const cleanUrl = url.split("?")[0];
     const filePath = path.join(DIST, decodeURIComponent(cleanUrl));
-    const content = fs.readFileSync(filePath);
+    const content = await fs.promises.readFile(filePath);
     return new Response(content, {
       headers: {
         "Content-Type": getMimeType(filePath),

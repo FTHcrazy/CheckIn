@@ -76,9 +76,16 @@ describe("换章滚动复位", () => {
     expect(body).toMatch(/cancelAnimationFrame\(/);
   });
 
-  it("effect 依赖含 chapter —— 换章必须重新触发定位", () => {
+  it("effect 依赖的是章节 id，不是 chapter 对象 —— 保存正文不得触发复位", () => {
     const body = scrollEffectBody();
-    // activeChapter 由 chapters.find 派生，换章换引用，effect 因此必然触发
-    expect(body).toMatch(/\}, \[chapter, restore, onRestoreDone\]\)/);
+    /*
+      反面断言：依赖数组里不许出现 chapter 对象本身。
+      防抖保存会 setBundle 出一个新的 chapter 对象（content / wordCount / updatedAt
+      变了），换引用不换 id。以对象引用为信号时，每 800ms 保存一次就要走一遍
+      「没有恢复点 → scrollTop = 0」分支 —— 作者写一会儿正文，画面自己跳回第一行。
+    */
+    expect(body).not.toMatch(/\}, \[chapter, restore, onRestoreDone\]\)/);
+    // 正面：依赖必须是 chapterId（换章时变、保存正文时不变）
+    expect(body).toMatch(/\}, \[chapterId, restore, onRestoreDone\]\)/);
   });
 });

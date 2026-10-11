@@ -103,6 +103,11 @@ function initializeNovelDb(database: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_novel_snapshots_chapter
       ON novel_snapshots(chapter_id, created_at);
+    -- 崩溃恢复按「时间倒序找第一条与正文不一致的快照」查库（见 buildRecovery）。
+    -- 上面那条 (chapter_id, created_at) 复合索引无法用于全局 ORDER BY created_at，
+    -- 没有这条就得全表扫 + 临时 B-tree 排序，而每次打开书架都会跑一遍。
+    CREATE INDEX IF NOT EXISTS idx_novel_snapshots_created
+      ON novel_snapshots(created_at);
 
     -- ── 灵感速记 / 伏笔（大纲条目）──
     -- 灵感 work_id = '' 表示「未归属的全局池」，是合法值（novel-note-move 的目标）

@@ -20,11 +20,20 @@ export function useTodoData() {
     itemsRef.current = items;
   }, [items]);
 
+  /**
+   * 装载序号：下面十几个写操作全部以 `void loadItems()` 收尾，快速连点
+   * （连续勾几个复选框）会并发多个 `list()`，而 IPC 返回顺序不保证 ——
+   * 不判序号，先发的那个可能后到，把中间态盖回界面，表现为勾选偶发回弹。
+   */
+  const loadSeqRef = useRef(0);
   const loadItems = useCallback(async (): Promise<void> => {
+    const seq = (loadSeqRef.current += 1);
     try {
       const rows = await api.list();
+      if (seq !== loadSeqRef.current) return;
       setItems(rows);
     } catch (error) {
+      if (seq !== loadSeqRef.current) return;
       message.error("加载 TODO 列表失败");
       console.error(error);
     }

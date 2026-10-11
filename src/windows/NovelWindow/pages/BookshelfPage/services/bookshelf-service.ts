@@ -28,9 +28,14 @@ export function createShelfId(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-/** 拉取全量数据包（novel-editor-load；空库时主进程播种预设模板书籍） */
+/**
+ * 拉取全量数据包（novel-editor-load）
+ *
+ * 显式传 `includeContent: false`：书架只算章节数 / 字数 / 状态，从不读正文。
+ * 让它随包一起过 IPC 的话，一本 2000 章的书就是约 12MB 字符串白跑一趟。
+ */
 export async function fetchShelfBundle(): Promise<NovelBundleDTO> {
-  return window.electronAPI!.novel.editorLoad();
+  return window.electronAPI!.novel.editorLoad(false);
 }
 
 /** 今日写作聚合（含连续码字天数） */

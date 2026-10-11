@@ -1,5 +1,101 @@
 # Changelog
 
+## [1.34.1] - 2026-10-11
+
+> 按 AGENTS.md 做的一次全仓代码走查：修掉 1 个会持续打断写作的错误行为、
+> 3 处会导致界面与数据对不上的竞态、2 处会留下不一致数据的事务缺失，
+> 并把几条热路径上的无谓开销（每敲一个字的全文档扫描、每次渲染的近万条过滤、
+> 每次打开书架的全表正文跨进程）降下来。
+
+### Fixed
+
+- **自动保存后正文跳回第一行**（写作期间持续打断）：`EditorPane` 换章滚动复位的
+  effect 依赖的是 `chapter` **对象引用**，而防抖保存（800ms）会 `setBundle` 出一个
+  新的 chapter 对象（content / wordCount / updatedAt 变了）—— 引用必变、章节没换，
+  于是每保存一次就走一遍「没有恢复点 → `scrollTop = 0」`分支。改为依赖
+  `chapterId`：换章才触发，保存正文不触发。守卫
+  `scroll-reset-guard.test.ts` 同步改为钉「依赖必须是 id，不许是 chapter 对象」。
+
+- **日历快速连点 / 连续翻月后活动与日期对不上**：`useDailyPage.refreshData`
+  没有请求序号，先发的不一定先回，旧响应会盖掉新数据（要刷新窗口才恢复）。
+  加 `reqSeqRef` + `aliveRef` 双守卫；顺带把弹窗表单的两处 `setTimeout`
+  收进可清理的 `scheduleFormFill`（切走路由后不再碰已卸载组件的 form）。
+
+- **记账连续切周期后流水与周期条错位**：`useLedgerData.load` 同样无序号守卫，
+  「本年」区间返回最慢却常常最后到达，把一整年流水写进「本月」视图，
+  环比基准也跟着错。加序号守卫，并补 `catch`（失败不再静默保留旧数据 + 转圈不停）。
+
+- **换邮箱查询时月度产出显示上一个邮箱的数据**：`useCodePage.loadMonthOutput`
+  加请求序号；`useTodoData.loadItems` 同样加序号（十几个写操作都以
+  `void loadItems()` 收尾，并发时中间态会盖回界面，表现为勾选偶发回弹）。
+
+- **Todo 父子勾选可能留下对不上的数据**：`handleToggleChildLogic` /
+  `handleToggleParentLogic` 原先连发 2~3 条裸 SQL 无事务，中途失败会留下
+  「父项已完成而子项没有」。整段包进 `db.transaction`，并把「兄弟项是否全完成」
+  从「捞回全部兄弟行 + JS `every`」改成 SQL 里一次 `COUNT/SUM`。
+  `ledger-category-delete` 的「流水重指派 + 删分类」同样补事务（该表无外键约束，
+  两步之间失败会留下指向已删分类的悬空 id）。
+
+- **收藏夹每次收藏发两次 IPC**：`addNameFavorite` / `removeNameFavorite` 把
+  `saveNameFavorites` 写在了 setState 的 **updater 里** —— updater 必须是纯函数，
+  而 NovelWindow 启用了 StrictMode，开发态双调用即双写。落库移到以
+  `nameFavorites` 为唯一触发的 effect，并用 `favoritesSavedRef` 跳过「刚从库里
+  读出来、与库内一致」那一次。
+
+### Changed
+
+- **字数统计不再逐字符跑正则**：`countWords` 的含标点口径原先是
+  `for (const ch of text) if (!/\s/.test(ch))`，3 万字章节就是 3 万次正则调用，
+  而打字链路每键要跑 2~3 遍（新值 + 旧值 + 状态条）。改为一次原生
+  `/\S/gu` pass（`u` 标志保证按码点计数，与原语义一致）；
+  `useNovelEditorStore` 再加一层单槽缓存 —— 连续输入时「上一次的 next 就是
+  这一次的 previous」，命中率接近 100%。
+
+- **书架不再把全书正文拉过 IPC**：`novel-editor-load` 原先无条件
+  `SELECT * FROM novel_chapters`，而书架只算章节数 / 字数 / 状态，从不读正文。
+  新增可选入参 `includeContent`（默认 true，编辑器行为不变），书架显式传
+  `false` 时 SQL 不取 content 列。2000 章 × 3000 字场景下少跑约 12MB 字符串的
+  structured-clone。
+
+- **打开书架不再全表扫快照**：崩溃恢复的「找最新一条与正文不一致的快照」
+  原先没有时间下界，SQLite 要对整张 `novel_snapshots` 逐行读出 content 做整串
+  比较（每章保留 20 版，2000 章就是 4 万条 × 3000 字），而它挂在装载通道上。
+  加 7 天时间窗 + 索引 `idx_novel_snapshots_created`（从最新往回扫，命中即停）。
+  `novel-usage-today` 的连续码字天数同样补 400 天时间下界
+  （`LIMIT` 在 `DISTINCT` 之后才生效，没有下界就要扫完只增不减的历史表）。
+
+- **CodePage 输入邮箱不再卡**：`Statistic` 的 Tooltip 文案原先是写在 JSX 里的
+  IIFE，**每次渲染同步执行**近万条数据的过滤 + reduce，而敲邮箱每个字符都会
+  触发重渲染。提为 `useCodePage` 的 `selectedRangeHint` memo，比较改用时间戳
+  避免逐条构造 dayjs 实例。`trendMax` 从裸 `Math.max(...arr)`（无 memo，
+  且元素超 6 万会抛栈溢出）改为 memo + `reduce`；趋势数组加 366 天上限，
+  避免选到几年前时渲染几千个节点把页面拖死。
+
+- **行囊装备栏 / Δ预览不再每敲一个字重算整条汇总管线**：`EquipDeltaPreview`
+  的 `useMemo` 依赖整个 `api`（每次渲染都是新对象）导致缓存恒失效，改为只依赖
+  用到的 `previewEquipDeltas`；`EquipmentModule` 把「每个部位全表 filter + sort」
+  改为按部位预建 `Map` 索引 + 一个未装备候选池（12 部位 × 200 物品从约 4800 次
+  遍历降到一次建表）；`modifiersOf` 改为按 (ownerType, ownerId) 预建索引并复用
+  模块级空数组常量（原先每行调用都 filter + sort，且每次返回新引用，
+  把下游 `ModifierList` 的 memo 判成恒失效）。
+
+- **全局快捷键每次渲染都解绑重绑**：`useNovelShortcuts` 改为用 ref 持有最新
+  回调、effect 依赖置空 —— 整条全局输入通道整个会话只绑一次（原先因上层传
+  内联箭头，每次重渲染都要 `remove` + `add` 一遍 `window` 监听）。
+
+- **主进程两处同步 IO 改异步**：`app://` 协议处理器的 `readFileSync`
+  （冷启动时几十次 1~5MB 同步读盘堵主进程）与 `memo-list` / `memo-backup-export`
+  的 N 次 `statSync` / `readFileSync` 循环改为 `fs.promises` + `Promise.all`。
+  `novel-chapter-save` 取最近快照不再 `SELECT *`（高频路径只用到两个标量，
+  长章每次白读 20KB+ 正文）；`novel-level-system-delete` 的逐等级项循环删除
+  改为子查询集合删除。
+
+- `MemoSidebar` 补 `memo`（父层已把 8 个回调全部 `useCallback` 化，但组件本身
+  没包，等于白做），导出/导入菜单项提到模块作用域（原先每次渲染新建含 JSX 的
+  数组，让 antd `Dropdown` 的 `menu.items` 身份每次都变）。日历格子 key 从
+  数组下标改为日期字符串（翻月时格子整体换人而 key 不变，className 逐格 diff
+  会闪一帧错位）。
+
 ## [1.34.0] - 2026-10-11
 
 > 导入图书的四项增强：章节名不再带序号、序号规则按书独立、跳转正文时左栏跟着滚、

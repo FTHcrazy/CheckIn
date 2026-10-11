@@ -89,12 +89,26 @@ describe("P1-9 崩溃恢复判定（守卫）", () => {
     const start = HANDLERS.indexOf("function buildRecovery");
     const body = HANDLERS.slice(start, start + 1400);
     expect(body).toContain("JOIN novel_chapters c ON c.id = s.chapter_id");
-    expect(body).toContain("WHERE c.content <> s.content");
+    expect(body).toContain("c.content <> s.content");
     expect(body).toContain("ORDER BY s.created_at DESC LIMIT 1");
     // 老写法：只取全局最新快照，会被孤儿快照或「恰好最后写快照那一章」带偏
     expect(body).not.toContain(
       "SELECT * FROM novel_snapshots ORDER BY created_at DESC LIMIT 1",
     );
+  });
+
+  it("崩溃恢复的快照查询必须带时间下界 —— 否则每次装载全表扫 4 万条正文", () => {
+    const start = HANDLERS.indexOf("function buildRecovery");
+    const body = HANDLERS.slice(start, start + 1400);
+    // 必须先把时间下界写进 WHERE，再让 content 比较参与过滤
+    expect(body).toContain("s.created_at >= ?");
+    expect(body).toContain("RECOVERY_SNAPSHOT_WINDOW_MS");
+  });
+
+  it("novel-chapter-save 取最近一条快照时不读 content（高频路径只用到两个标量）", () => {
+    const body = channelBody("novel-chapter-save");
+    expect(body).toContain("SELECT word_count, created_at FROM novel_snapshots");
+    expect(body).not.toContain("SELECT * FROM novel_snapshots WHERE chapter_id");
   });
 });
 

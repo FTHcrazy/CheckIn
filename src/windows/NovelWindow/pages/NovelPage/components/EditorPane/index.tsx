@@ -458,11 +458,16 @@ export default function EditorPane({
    * 要等新正文**排版完成**才是对的；在旧高度上设 `scrollTop` 会被新高度夹取，
    * 表现为「短章滚不到真正的顶」。
    */
+  // ⚠️ 触发信号必须是「章节 id」而不是「chapter 对象引用」。
+  // 防抖保存（800ms）会 setBundle 出一个新的 chapter 对象（content / wordCount /
+  // updatedAt 变了），引用必变而 id 不变。若以对象引用为信号，每保存一次就会
+  // 走一遍「没有恢复点 → scrollTop = 0」分支 —— 表现为写一会儿正文自己跳回第一行。
+  const chapterId = chapter?.id ?? null;
   useEffect(() => {
     const view = viewRef.current;
-    if (!view || !chapter) return undefined;
+    if (!view || !chapterId) return undefined;
 
-    const isRestore = Boolean(restore && restore.chapterId === chapter.id);
+    const isRestore = Boolean(restore && restore.chapterId === chapterId);
     const frame = window.requestAnimationFrame(() => {
       const current = viewRef.current;
       if (!current) return;
@@ -483,7 +488,7 @@ export default function EditorPane({
     return () => window.cancelAnimationFrame(frame);
     // restore 是**一次性**输入：消费后由 onRestoreDone 清空，避免它在下一次
     // 换章时被误当成「这一章也有恢复点」而复用上一章的位置
-  }, [chapter, restore, onRestoreDone]);
+  }, [chapterId, restore, onRestoreDone]);
 
   // 词库与标注层开关热更新：只换 facet 值，不重建插件实例（PRD §7：要素保存即刷新词库）。
   // 强制刷新信号必须同事务携带：插件只在 forced/viewportChanged/docChanged 时重建，

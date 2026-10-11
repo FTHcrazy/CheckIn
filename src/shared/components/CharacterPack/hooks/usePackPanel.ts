@@ -124,6 +124,9 @@ function mergeLayouts(layouts: PackLayout[]): PackModuleState[] {
   }).sort((a, b) => a.sortOrder - b.sortOrder || a.key.localeCompare(b.key));
 }
 
+/** 共享的空加成数组：让「没有加成」的宿主拿到稳定引用，不击穿下游 memo */
+const EMPTY_MODIFIERS: PackModifier[] = [];
+
 /**
  * 效果词条改动 → 它的宿主（装备 / 技能）也算改动（REQ-028 变动角标）。
  *
@@ -1943,12 +1946,33 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
     if (open) void logUsageEvent("pack_open", { workId });
   }, [open, workId]);
 
+  /*
+   * 按 (ownerType, ownerId) 预建索引，一次建表供整棵面板复用。
+   *
+   * 原先每次调用都 filter + sort 全表一遍，而它在装备栏 / 技能栏 / 背包
+   * 的**每一行**渲染里被调用（背包同一处还连调两次）：300 条加成 × 20 个
+   * 宿主 ≈ 每次渲染几千次比较。更关键的是每次都返回新数组引用，直接把
+   * 下游 `ModifierList` 的 groups memo 判成恒失效。
+   */
+  const modifiersByOwner = useMemo(() => {
+    const map = new Map<string, PackModifier[]>();
+    for (const mod of doc?.modifiers ?? []) {
+      const key = `${mod.ownerType}:${mod.ownerId}`;
+      const list = map.get(key);
+      if (list) list.push(mod);
+      else map.set(key, [mod]);
+    }
+    for (const list of map.values()) {
+      list.sort((a, b) => a.sortOrder - b.sortOrder);
+    }
+    return map;
+  }, [doc]);
+
   const modifiersOf = useCallback(
     (ownerType: PackModifier["ownerType"], ownerId: string): PackModifier[] =>
-      (doc?.modifiers ?? [])
-        .filter((mod) => mod.ownerType === ownerType && mod.ownerId === ownerId)
-        .sort((a, b) => a.sortOrder - b.sortOrder),
-    [doc],
+      // 空结果返回模块级常量：每次返回新 [] 会让下游 memo 白失效
+      modifiersByOwner.get(`${ownerType}:${ownerId}`) ?? EMPTY_MODIFIERS,
+    [modifiersByOwner],
   );
 
   /**

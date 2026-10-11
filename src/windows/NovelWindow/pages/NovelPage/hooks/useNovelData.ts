@@ -108,6 +108,14 @@ export function useNovelData() {
   const [lastPosition, setLastPosition] = useState<RestorePosition | null>(null);
   /** 起名工具收藏夹（R18 ④）：跨作品单键存储，UI 按 workId 过滤 */
   const [nameFavorites, setNameFavorites] = useState<NameFavorite[]>([]);
+  /**
+   * 已落库的收藏夹快照。
+   *
+   * 收藏夹的落库由 effect 以 `nameFavorites` 为唯一触发（见下方「收藏夹落库」），
+   * 这个 ref 用来区分「刚从库里读出来的」和「用户真的改过的」——
+   * 装载那一次与库内必然一致，不该再回写一遍。
+   */
+  const favoritesSavedRef = useRef<NameFavorite[] | null>(null);
   /** 装载失败提示：异常时编辑器不能停在永久空态，要给用户可重试的错误态 */
   const [loadError, setLoadError] = useState("");
   /**
@@ -146,7 +154,10 @@ export function useNovelData() {
       // 收藏夹在库里是 JSON 字符串（config 整读整写），必须先 parse 再交给
       // sanitize —— 少了 parseJsonOrNull 时 Array.isArray(字符串) 恒为 false，
       // 表现为「每次启动收藏夹都是空的」，且首次收藏会用空数组覆盖历史数据
-      setNameFavorites(sanitizeNameFavorites(parseJsonOrNull(favoritesJson)));
+      const loadedFavorites = sanitizeNameFavorites(parseJsonOrNull(favoritesJson));
+      setNameFavorites(loadedFavorites);
+      // 与库内一致：下方落库 effect 因此不会把刚读出来的原样再写一遍
+      favoritesSavedRef.current = loadedFavorites;
       setLoadError("");
       // 崩溃恢复标记与 editor_open 埋点都在这里开启：本 Hook 只有编辑器在用，
       // 书架 / 行囊走的是各自的装载通道，不该被算成「编辑器会话进行中」
@@ -1159,6 +1170,20 @@ export function useNovelData() {
 
   // ── 起名工具收藏夹（R18 ④）：跨作品单键存储，按 workId 过滤 ────────────
 
+  /**
+   * 收藏夹落库（唯一的写入口）。
+   *
+   * ⚠️ 这份副作用原先写在 `setNameFavorites` 的 **updater 里** —— state updater
+   * 必须是纯函数，本窗口启用了 StrictMode，开发态会双调用，等于每次收藏都
+   * 发两次 `saveNameFavorites` IPC（config 整读整写，第二次纯属浪费）。
+   * 移到 effect 后，写入次数由数据本身决定，与渲染次数无关。
+   */
+  useEffect(() => {
+    if (favoritesSavedRef.current === nameFavorites) return;
+    favoritesSavedRef.current = nameFavorites;
+    void saveNameFavorites(nameFavorites);
+  }, [nameFavorites]);
+
   /** 加入收藏夹（防抖落库；同作品同名不重复入） */
   const addNameFavorite = useCallback(
     (workId: string, name: string, kind: NamingKind, style: NameStyle): void => {
@@ -1183,7 +1208,7 @@ export function useNovelData() {
           },
           ...current,
         ];
-        void saveNameFavorites(next);
+        // 落库交给上面的 effect：updater 只做纯计算
         return next;
       });
     },
@@ -1195,7 +1220,6 @@ export function useNovelData() {
     setNameFavorites((current) => {
       const next = current.filter((f) => f.id !== favoriteId);
       if (next.length === current.length) return current;
-      void saveNameFavorites(next);
       return next;
     });
   }, []);

@@ -1,3 +1,4 @@
+import { memo } from "react";
 import {
   Button,
   Dropdown,
@@ -23,6 +24,59 @@ import "./index.scss";
 
 const { Text, Title } = Typography;
 
+/*
+ * 导出 / 导入菜单项内容恒定，提到模块作用域。
+ *
+ * 这两份数组原先写在组件体内：每次渲染都新建含 JSX 的数组 → antd `Dropdown`
+ * 的 `menu.items` 身份每次都变 → 菜单整份重建。配合下面的 `memo` 才能真正
+ * 挡住「父层任何一次重渲染都带着侧栏一起重渲染」。
+ */
+const EXPORT_ITEMS = [
+  {
+    key: "txt",
+    label: (
+      <Space size={6}>
+        <FileTextOutlined /> 导出为 TXT
+      </Space>
+    ),
+  },
+  {
+    key: "docx",
+    label: (
+      <Space size={6}>
+        <FileWordOutlined /> 导出为 DOCX
+      </Space>
+    ),
+  },
+  {
+    key: "backup",
+    label: (
+      <Space size={6}>
+        <FileZipOutlined /> 备份包（zip，全部备忘）
+      </Space>
+    ),
+  },
+];
+
+const IMPORT_ITEMS = [
+  {
+    key: "file",
+    label: (
+      <Space size={6}>
+        <ImportOutlined /> 导入文件（MD / TXT / DOCX）
+      </Space>
+    ),
+  },
+  {
+    key: "backup",
+    label: (
+      <Space size={6}>
+        <FileZipOutlined /> 导入备份包（zip）
+      </Space>
+    ),
+  },
+];
+
 interface MemoSidebarProps {
   files: MemoFile[];
   selected: string | null;
@@ -38,7 +92,7 @@ interface MemoSidebarProps {
   onOpenInExplorer: (filename: string) => void;
 }
 
-export default function MemoSidebar({
+function MemoSidebar({
   files,
   selected,
   loading,
@@ -52,52 +106,6 @@ export default function MemoSidebar({
   onDelete,
   onOpenInExplorer,
 }: MemoSidebarProps) {
-  const exportItems = [
-    {
-      key: "txt",
-      label: (
-        <Space size={6}>
-          <FileTextOutlined /> 导出为 TXT
-        </Space>
-      ),
-    },
-    {
-      key: "docx",
-      label: (
-        <Space size={6}>
-          <FileWordOutlined /> 导出为 DOCX
-        </Space>
-      ),
-    },
-    {
-      key: "backup",
-      label: (
-        <Space size={6}>
-          <FileZipOutlined /> 备份包（zip，全部备忘）
-        </Space>
-      ),
-    },
-  ];
-
-  const importItems = [
-    {
-      key: "file",
-      label: (
-        <Space size={6}>
-          <ImportOutlined /> 导入文件（MD / TXT / DOCX）
-        </Space>
-      ),
-    },
-    {
-      key: "backup",
-      label: (
-        <Space size={6}>
-          <FileZipOutlined /> 导入备份包（zip）
-        </Space>
-      ),
-    },
-  ];
-
   return (
     <div className="memo-sidebar">
       <div className="memo-sidebar-header">
@@ -110,7 +118,7 @@ export default function MemoSidebar({
         <Space size={4}>
           <Dropdown
             menu={{
-              items: importItems,
+              items: IMPORT_ITEMS,
               onClick: ({ key }) => {
                 if (key === "backup") onImportBackup();
                 else onImport();
@@ -123,7 +131,7 @@ export default function MemoSidebar({
           </Dropdown>
           <Dropdown
             menu={{
-              items: exportItems,
+              items: EXPORT_ITEMS,
               onClick: ({ key }) => {
                 if (key === "docx") onExport("docx");
                 else if (key === "backup") onExport("backup");
@@ -187,3 +195,5 @@ export default function MemoSidebar({
     </div>
   );
 }
+
+export default memo(MemoSidebar);

@@ -25,7 +25,6 @@ import {
 import dayjs from "dayjs";
 import Page from "@/shared/components/Page";
 import type { GitWebhookLogItem } from "@/shared/services/code";
-import { calcWorkdays, getCommitOutput } from "./code-utils";
 import { useCodePage } from "./hooks/useCodePage";
 import "./index.scss";
 
@@ -133,6 +132,7 @@ export default function CodePage() {
     monthlyDailyNeeded,
     dailyOutput,
     selectedRangeDailyNeeded,
+    selectedRangeHint,
     dailyOutputTrend,
     trendMax,
   } = useCodePage();
@@ -315,30 +315,9 @@ export default function CodePage() {
                 <Statistic
                   title={
                     <Tooltip
-                      title={(() => {
-                        const mEnd = dayjs().endOf("month").startOf("day");
-                        const effEnd = dateRange[1].isBefore(mEnd)
-                          ? dateRange[1].startOf("day")
-                          : mEnd;
-                        const totalWd = calcWorkdays(
-                          dateRange[0].startOf("day"),
-                          mEnd,
-                        );
-                        const remainWd = calcWorkdays(effEnd, mEnd);
-                        const outEnd = effEnd.subtract(1, "day");
-                        const output = data
-                          .filter((i) => {
-                            const d = dayjs(i.commitTime).startOf("day");
-                            return (
-                              (d.isSame(dateRange[0], "day") ||
-                                d.isAfter(dateRange[0], "day")) &&
-                              (d.isSame(outEnd, "day") ||
-                                d.isBefore(outEnd, "day"))
-                            );
-                          })
-                          .reduce((s, i) => s + getCommitOutput(i), 0);
-                        return `目标: 200×${totalWd}=${200 * totalWd}行 | 已产出(不含截止日): ${Math.round(output)}行 | 剩余${remainWd}个工作日均摊缺口`;
-                      })()}
+                      /* 文案由 useCodePage 记忆化提供：原先写在这里的 IIFE
+                         会在每次渲染同步跑一遍近万条数据的过滤 */
+                      title={selectedRangeHint}
                     >
                       <span style={{ cursor: "help" }}>
                         选中区间剩余日均 <AimOutlined />

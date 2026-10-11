@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Form } from 'antd'
 import dayjs from 'dayjs'
 import type { Dayjs } from 'dayjs'
@@ -21,10 +21,44 @@ export function useDailyPage() {
   const [editingActivity, setEditingActivity] = useState<Activity | null>(null)
   const [form] = Form.useForm()
 
+  /**
+   * 请求序号 + 存活标记。
+   *
+   * 快速连点日历格子（A→B→C）或连续翻月时，先发出的请求不一定先返回；
+   * 没有序号守卫，A 的响应会盖掉 C 的，表现为「右侧活动列表与顶部日期
+   * 长期对不上，要刷新窗口才恢复」。
+   */
+  const reqSeqRef = useRef(0)
+  const aliveRef = useRef(true)
+  useEffect(() => {
+    aliveRef.current = true
+    return () => {
+      aliveRef.current = false
+    }
+  }, [])
+
+  // 弹窗表单的延迟设值：切走路由后不得再碰已卸载组件的 form
+  const formTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(
+    () => () => {
+      if (formTimerRef.current) clearTimeout(formTimerRef.current)
+    },
+    [],
+  )
+  /** 安排一次表单延迟设值，同一次打开只保留最后一个定时器 */
+  const scheduleFormFill = useCallback((fill: () => void) => {
+    if (formTimerRef.current) clearTimeout(formTimerRef.current)
+    formTimerRef.current = setTimeout(() => {
+      formTimerRef.current = null
+      fill()
+    }, 0)
+  }, [])
+
   const selectedDateStr = selectedDate.format('YYYY-MM-DD')
 
   // 加载活动数据（用 useCallback 稳定引用，避免每次渲染都触发下面 effect 重新拉数据）
   const refreshData = useCallback(async () => {
+    const seq = ++reqSeqRef.current
     const start = currentMonth.startOf('month').subtract(7, 'day').format('YYYY-MM-DD')
     const end = currentMonth.endOf('month').add(7, 'day').format('YYYY-MM-DD')
     const [acts, dates, checkins] = await Promise.all([
@@ -32,6 +66,7 @@ export function useDailyPage() {
       getActiveDates(start, end),
       getCheckinDates(start, end),
     ])
+    if (!aliveRef.current || seq !== reqSeqRef.current) return
     setActivities(acts)
     setActiveDates(dates)
     setCheckinDates(checkins)
@@ -71,7 +106,7 @@ export function useDailyPage() {
     setEditingActivity(null)
     setModalOpen(true)
     // Form 在 Modal 打开后才渲染，需异步设值
-    setTimeout(() => {
+    scheduleFormFill(() => {
       form.resetFields()
       form.setFieldsValue({
         startTime: startTime ? dayjs(`2000-01-01 ${startTime}`) : dayjs().startOf('hour'),
@@ -80,21 +115,21 @@ export function useDailyPage() {
           : dayjs().startOf('hour').add(1, 'hour'),
         color: ACTIVITY_COLORS[Math.floor(Math.random() * ACTIVITY_COLORS.length)],
       })
-    }, 0)
+    })
   }
 
   // 打开编辑活动弹窗
   const openEditModal = (activity: Activity) => {
     setEditingActivity(activity)
     setModalOpen(true)
-    setTimeout(() => {
+    scheduleFormFill(() => {
       form.setFieldsValue({
         name: activity.name,
         startTime: dayjs(`2000-01-01 ${activity.startTime}`),
         endTime: dayjs(`2000-01-01 ${activity.endTime}`),
         color: activity.color || ACTIVITY_COLORS[0],
       })
-    }, 0)
+    })
   }
 
   // 保存活动

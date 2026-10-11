@@ -49,6 +49,34 @@ export default function EquipmentModule({ api }: EquipmentModuleProps) {
     [doc],
   );
 
+  /*
+   * 按部位预建索引 + 一个未装备候选池。
+   *
+   * 原先 `occupantsOf` / `candidatesOf` 写在 `slots.map` 里各做一次全表
+   * `filter`（`occupantsOf` 还额外 sort 一次），于是整块装备栏一次渲染是
+   * O(部位数 × 物品数)：12 部位 × 200 物品 ≈ 4800 次遍历 + 12 次排序，
+   * 而这在行囊里**每敲一个字**就要重跑一次。
+   */
+  const items = doc?.items;
+  const occupantsBySlot = useMemo(() => {
+    const map = new Map<string, PackItem[]>();
+    for (const item of items ?? []) {
+      if (!item.equippedSlotId) continue;
+      const list = map.get(item.equippedSlotId);
+      if (list) list.push(item);
+      else map.set(item.equippedSlotId, [item]);
+    }
+    for (const list of map.values()) {
+      list.sort((a, b) => (a.slotIndex ?? 0) - (b.slotIndex ?? 0));
+    }
+    return map;
+  }, [items]);
+
+  const unequippedPool = useMemo(
+    () => (items ?? []).filter((item) => !isItemEquipped(item)),
+    [items],
+  );
+
   if (!doc) return null;
   const key = "equipment" as const;
 
@@ -56,18 +84,13 @@ export default function EquipmentModule({ api }: EquipmentModuleProps) {
     if (api.savePreset(presetName)) setPresetName("");
   };
 
-  const occupantsOf = (slotId: string) =>
-    doc.items
-      .filter((item) => item.equippedSlotId === slotId)
-      .sort((a, b) => (a.slotIndex ?? 0) - (b.slotIndex ?? 0));
+  const occupantsOf = (slotId: string): PackItem[] =>
+    occupantsBySlot.get(slotId) ?? [];
 
   const candidatesOf = (slot: PackSlot): PackItem[] =>
-    doc.items.filter((item) => {
-      if (item.equippedSlotId === slot.id) return false;
-      if (isItemEquipped(item)) return false;
-      if (slot.accepts.length > 0 && !slot.accepts.includes(item.category)) return false;
-      return true;
-    });
+    unequippedPool.filter(
+      (item) => slot.accepts.length === 0 || slot.accepts.includes(item.category),
+    );
 
   const requestEquip = (item: PackItem, slot: PackSlot) => {
     const result = api.equipItem(item.id, slot.id);

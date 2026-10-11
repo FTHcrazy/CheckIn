@@ -8,7 +8,7 @@
  * - 更新类接口只接受白名单列，禁止拼接外部列名
  */
 import { ipcMain } from 'electron';
-import { dbAll, dbGet, dbRun } from '../db';
+import { dbAll, dbGet, dbRun, getDb } from '../db';
 
 interface LedgerTransactionRow {
   id: string;
@@ -227,8 +227,15 @@ export function registerLedgerHandlers(): void {
 
   /** 删除分类：历史流水重指派到 fallbackId（渲染进程传「其他」分类 id） */
   ipcMain.handle('ledger-category-delete', async (_event, id: string, fallbackId: string) => {
-    dbRun('UPDATE ledger_transactions SET category_id = ? WHERE category_id = ?', [fallbackId, id]);
-    dbRun('DELETE FROM ledger_categories WHERE id = ?', [id]);
+    /*
+     * 必须包事务：「历史流水重指派 + 删分类」是一次原子操作。
+     * ledger_transactions.category_id 没有外键约束，两步之间失败会留下
+     * 指向已删分类的悬空 id —— 分类筛选与统计会静默漏掉这些流水。
+     */
+    getDb().transaction(() => {
+      dbRun('UPDATE ledger_transactions SET category_id = ? WHERE category_id = ?', [fallbackId, id]);
+      dbRun('DELETE FROM ledger_categories WHERE id = ?', [id]);
+    })();
     return true;
   });
 }

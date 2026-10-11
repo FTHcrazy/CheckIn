@@ -362,13 +362,17 @@ function logUsage(event: string, payload: Record<string, unknown>): void {
   }
 }
 
-function toChapterDto(row: NovelChapterRow): NovelChapterDto {
+/**
+ * `includeContent = false` 用于只要元数据的调用方（书架）——
+ * 那时 SQL 根本不取 content 列，这里填空串占位。
+ */
+function toChapterDto(row: NovelChapterRow, includeContent = true): NovelChapterDto {
   return {
     id: row.id,
     workId: row.work_id,
     volumeId: row.volume_id,
     title: row.title,
-    content: row.content,
+    content: includeContent ? row.content : "",
     wordCount: row.word_count,
     status: isChapterStatus(row.status) ? row.status : "draft",
     sort: row.sort,
@@ -410,6 +414,12 @@ function toLinkDto(row: NovelLinkRow): NovelLinkDto {
  * 正常关闭（窗口 closed / 应用退出）时置回 closed。若下次装载时仍是 running，
  * 说明上次会话未走正常关闭流程（崩溃 / 断电），从最近快照构建恢复提示。
  */
+/** 崩溃恢复只回溯最近 7 天的快照：再往前对「上次会话写了什么」没有意义 */
+const RECOVERY_SNAPSHOT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** 连续码字天数最多回溯多少天（也是 novel-usage-today 的时间窗宽度） */
+const USAGE_ACTIVE_DAY_LIMIT = 400;
+
 function buildRecovery(): NovelRecoveryDto | null {
   const session = dbGet("SELECT value FROM novel_config WHERE key = ?", [SESSION_KEY]) as
     | { value?: string }
@@ -421,13 +431,20 @@ function buildRecovery(): NovelRecoveryDto | null {
   //   500 字产生快照后切到 B 章写几十字就崩溃，B 的改动会被完全忽略；
   // - JOIN 章节表同时排除了 chapter_id 已悬空的孤儿快照（删章后残留），
   //   否则一条孤儿快照因为 created_at 最新会把恢复提示彻底屏蔽。
+  // ⚠️ 必须带时间下界：崩溃恢复只在乎「上次会话」留下的快照，翻一年前的没有意义。
+  // 没有下界时 SQLite 要对整张快照表逐行读出 content 与正文做整串比较
+  // （快照是正文的整份拷贝，每章保留 20 版，2000 章就是 4 万条 × 3000 字），
+  // 而这条查询挂在装载通道上 —— 每次打开书架都要跑一遍。
+  // 配合 idx_novel_snapshots_created 从最新往回扫，命中第一条即停。
   const mismatch = dbGet(
     `SELECT s.created_at AS snapshot_time, s.word_count AS snapshot_words,
             c.word_count AS chapter_words
        FROM novel_snapshots s
        JOIN novel_chapters c ON c.id = s.chapter_id
-      WHERE c.content <> s.content
+      WHERE s.created_at >= ?
+        AND c.content <> s.content
       ORDER BY s.created_at DESC LIMIT 1`,
+    [Date.now() - RECOVERY_SNAPSHOT_WINDOW_MS],
   ) as
     | { snapshot_time: number; snapshot_words: number; chapter_words: number }
     | undefined;
@@ -942,13 +959,24 @@ ipcMain.handle("novel-editor-reset-template", () => seedTemplateBook());
   // 2. 判据依赖 config 里的 novel_seeded，而**老版本升级上来的用户没有这个键** ——
   //    他们删光自己的作品的下一刻就会触发一次清库，表现为「删掉的书全回来了，
   //    还多出一本模板书」。判据天生不可靠，不如不判。
-  ipcMain.handle("novel-editor-load", () => {
+  ipcMain.handle("novel-editor-load", (_event, includeContent: boolean = true) => {
     const works = dbAll("SELECT * FROM novel_works ORDER BY created_at") as NovelWorkRow[];
 
     const volumes = (dbAll("SELECT * FROM novel_volumes ORDER BY sort") as NovelVolumeRow[]).map(
       (row) => ({ id: row.id, workId: row.work_id, name: row.name, sort: row.sort }),
     );
-    const chapters = (dbAll("SELECT * FROM novel_chapters") as NovelChapterRow[]).map(toChapterDto);
+    /*
+     * ⚠️ 正文是这条通道里唯一的大字段，且**书架根本不用它**（只算章节数 / 字数 /
+     * 状态）。原先无条件 `SELECT *`，打开一次书架要把全书正文拉过 IPC：
+     * 2000 章 × 3000 字 ≈ 600 万字符，JS 侧 UTF-16 约 12MB，还要经
+     * structured-clone 双份驻留并同步阻塞主进程与渲染进程。
+     * 书架显式传 false，只取元数据列。
+     */
+    const chapters = (dbAll(
+      includeContent
+        ? "SELECT * FROM novel_chapters"
+        : "SELECT id, work_id, volume_id, title, word_count, status, sort, updated_at, outline_note FROM novel_chapters",
+    ) as NovelChapterRow[]).map((row) => toChapterDto(row, includeContent));
     const entities = (dbAll("SELECT * FROM novel_entities ORDER BY sort") as NovelEntityRow[]).map(
       toEntityDto,
     );
@@ -1043,10 +1071,12 @@ ipcMain.handle("novel-editor-reset-template", () => seedTemplateBook());
         // 需要恢复的那次改动屏蔽掉。宁可报错也不能污染恢复链路。
         if (!chapter) return false;
         const delta = wordCount - (chapter.word_count ?? 0);
+        // 只取用到的两列：这里是每次自动保存都要跑的高频路径，
+        // SELECT * 会白读一份完整正文（长章 20KB+）却一次都不用
         const last = dbGet(
-          "SELECT * FROM novel_snapshots WHERE chapter_id = ? ORDER BY created_at DESC LIMIT 1",
+          "SELECT word_count, created_at FROM novel_snapshots WHERE chapter_id = ? ORDER BY created_at DESC LIMIT 1",
           [id],
-        ) as NovelSnapshotRow | undefined;
+        ) as { word_count: number; created_at: number } | undefined;
         const shouldSnapshot =
           !last ||
           wordCount - last.word_count >= SNAPSHOT_DELTA_WORDS ||
@@ -1301,16 +1331,20 @@ ipcMain.handle("novel-editor-reset-template", () => seedTemplateBook());
   ipcMain.handle("novel-level-system-delete", (_event, id: string) => {
     const db = getDb();
     const apply = db.transaction(() => {
-      const levels = dbAll("SELECT id FROM novel_levels WHERE system_id = ?", [
-        id,
-      ]) as Array<{ id: string }>;
-      for (const level of levels) {
-        dbRun(
-          "DELETE FROM novel_level_conversions WHERE from_level_id = ? OR to_level_id = ?",
-          [level.id, level.id],
-        );
-        dbRun("DELETE FROM novel_links WHERE to_type = 'level' AND to_id = ?", [level.id]);
-      }
+      // 集合删除而非逐等级项循环：一个体系几十阶就是上百次 prepare + 往返。
+      // 与 novel-work-delete 的级联写法保持一致。
+      dbRun(
+        `DELETE FROM novel_level_conversions
+          WHERE from_level_id IN (SELECT id FROM novel_levels WHERE system_id = ?)
+             OR to_level_id  IN (SELECT id FROM novel_levels WHERE system_id = ?)`,
+        [id, id],
+      );
+      dbRun(
+        `DELETE FROM novel_links
+          WHERE to_type = 'level'
+            AND to_id IN (SELECT id FROM novel_levels WHERE system_id = ?)`,
+        [id],
+      );
       dbRun("DELETE FROM novel_levels WHERE system_id = ?", [id]);
       dbRun("DELETE FROM novel_level_systems WHERE id = ?", [id]);
     });
@@ -1544,13 +1578,20 @@ ipcMain.handle("novel-editor-reset-template", () => seedTemplateBook());
        WHERE event = 'chapter_save' AND created_at >= ?`,
       [start.getTime()],
     ) as { today_words: number; save_count: number };
+    /*
+     * 必须给时间下界：LIMIT 是在 DISTINCT 之后才生效的，没有下界 SQLite 要
+     * 扫完整个 chapter_save 历史再排序去重。而 novel_usage_log 只增不减，
+     * 按每天 100 次自动保存算，一年就是 3 万多行 —— 这条查询挂在书架装载上。
+     * 连续码字天数最多看 USAGE_ACTIVE_DAY_LIMIT 天，下界与之对齐即可。
+     */
     const activeDays = new Set(
       (dbAll(
         `SELECT DISTINCT date(created_at / 1000, 'unixepoch', 'localtime') AS day
          FROM novel_usage_log
-         WHERE event = 'chapter_save'
+         WHERE event = 'chapter_save' AND created_at >= ?
          ORDER BY day DESC
-         LIMIT 400`,
+         LIMIT ?`,
+        [Date.now() - USAGE_ACTIVE_DAY_LIMIT * 86_400_000, USAGE_ACTIVE_DAY_LIMIT],
       ) as Array<{ day: string }>).map((item) => item.day),
     );
     return {

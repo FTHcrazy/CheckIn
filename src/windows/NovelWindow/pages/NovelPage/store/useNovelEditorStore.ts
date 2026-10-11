@@ -27,8 +27,28 @@ import type {
   EntityType,
   NovelEntity,
   SaveState,
+  WordCountMode,
   WritingStats,
 } from "../types";
+
+/**
+ * 字数单槽缓存。
+ *
+ * `setContent` 每次要扫两遍整篇文档：变更后的 `next` 一遍、变更前的 `previous`
+ * 一遍。而连续输入时「上一次的 next 就是这一次的 previous」——单槽缓存命中率
+ * 接近 100%，直接省掉一整遍全文档扫描。状态条读当前草稿字数时同样命中
+ * （它读的就是最近一次算过的那个字符串）。
+ */
+let countedCache: { text: string; mode: WordCountMode; words: number } | null =
+  null;
+function countWordsCached(text: string, mode: WordCountMode): number {
+  if (countedCache && countedCache.text === text && countedCache.mode === mode) {
+    return countedCache.words;
+  }
+  const words = countWords(text, mode);
+  countedCache = { text, mode, words };
+  return words;
+}
 
 /** 编辑器选区（标记 / 右键菜单的输入） */
 export interface EditorSelection {
@@ -169,7 +189,7 @@ export const useNovelEditorStore = create<EditorState>()((set, get) => {
         ? await runner.persistChapter(
             chapterId,
             content,
-            countWords(content, settings.wordCountMode),
+            countWordsCached(content, settings.wordCountMode),
           )
         : false;
     } catch {
@@ -238,14 +258,14 @@ export const useNovelEditorStore = create<EditorState>()((set, get) => {
         if (state.activeChapterId !== chapterId) {
           set({
             activeChapterId: chapterId,
-            activeBaseWords: countWords(next, state.settings.wordCountMode),
+            activeBaseWords: countWordsCached(next, state.settings.wordCountMode),
           });
         }
         return;
       }
 
-      const words = countWords(next, state.settings.wordCountMode);
-      const delta = words - countWords(previous, state.settings.wordCountMode);
+      const words = countWordsCached(next, state.settings.wordCountMode);
+      const delta = words - countWordsCached(previous, state.settings.wordCountMode);
 
       // 会话采样：首次输入起算，供 10s 一次的码字速度使用
       if (delta !== 0) {
@@ -279,14 +299,14 @@ export const useNovelEditorStore = create<EditorState>()((set, get) => {
         if (state.activeChapterId !== chapterId) {
           set({
             activeChapterId: chapterId,
-            activeBaseWords: countWords(next, state.settings.wordCountMode),
+            activeBaseWords: countWordsCached(next, state.settings.wordCountMode),
           });
         }
         return;
       }
       const delta =
-        countWords(next, state.settings.wordCountMode) -
-        countWords(previous, state.settings.wordCountMode);
+        countWordsCached(next, state.settings.wordCountMode) -
+        countWordsCached(previous, state.settings.wordCountMode);
       if (delta !== 0) {
         session = session ?? { words: 0, startedAt: Date.now() };
         session = { words: session.words + delta, startedAt: session.startedAt };
@@ -441,7 +461,7 @@ export function useWritingStats(): WritingStats {
     // 有草稿以草稿为准；没打过字的章（导入的书）用灌入时记下的落库字数兜底
     chapterWords:
       chapterDraft !== undefined
-        ? countWords(chapterDraft, wordCountMode)
+        ? countWordsCached(chapterDraft, wordCountMode)
         : baseWords,
     todayAdded,
     todayTotal,

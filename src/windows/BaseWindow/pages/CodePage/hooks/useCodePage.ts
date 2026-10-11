@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { App } from "antd";
 import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
@@ -10,6 +10,9 @@ import {
   getThisMonthRange,
   isWorkday,
 } from "../code-utils";
+
+/** 趋势条最多铺多少天：超过就截断，避免极端区间拖死页面 */
+const MAX_TREND_DAYS = 366;
 
 /** CodePage 业务逻辑：Git 提交数据查询、工作日统计与产出趋势计算 */
 export function useCodePage() {
@@ -32,7 +35,15 @@ export function useCodePage() {
   // 本月累计有效产出（独立于表格查询区间）
   const [monthOutput, setMonthOutput] = useState(0);
 
+  /**
+   * 月度统计请求序号。
+   *
+   * 连续换邮箱查询时，先发的不一定先回；不判序号会把上一个邮箱的月度产出
+   * 写进新邮箱的视图（「本月剩余日均」显示的是别人的数据）。
+   */
+  const monthSeqRef = useRef(0);
   const loadMonthOutput = useCallback(async (target: string) => {
+    const seq = (monthSeqRef.current += 1);
     try {
       const today = dayjs().startOf("day");
       const monthStart = today.startOf("month");
@@ -52,9 +63,11 @@ export function useCodePage() {
       const list = res.gitwebhooklog?.pageInfo?.list ?? [];
       const output = list.reduce((acc, item) => acc + getCommitOutput(item), 0);
 
+      if (seq !== monthSeqRef.current) return;
       setMonthOutput(output);
     } catch {
       // 月度统计请求失败不影响主流程，静默处理或置零
+      if (seq !== monthSeqRef.current) return;
       setMonthOutput(0);
     }
   }, []);
@@ -247,6 +260,37 @@ export function useCodePage() {
     return Math.ceil(gap / remainingWorkdays);
   }, [dateRange, data]);
 
+  /**
+   * 选中区间的目标提示文案（Tooltip 用）。
+   *
+   * ⚠️ 这份逻辑原先以 IIFE 形式内联在 CodePage 的 JSX 里，于是**每次渲染**
+   * 都同步跑一遍：data 上限 9999 条，而打字改邮箱会逐字符触发重渲染 ——
+   * 敲一个字就是近万次 dayjs 构造 + 一次全量 reduce。
+   *
+   * 比较改用时间戳而非 `dayjs(...).startOf("day")` 逐条构造实例。
+   */
+  const selectedRangeHint = useMemo(() => {
+    const TARGET = 200;
+    const [rangeFrom, rangeTo] = dateRange;
+    const monthEnd = dayjs().endOf("month").startOf("day");
+    const effectiveEnd = rangeTo.isBefore(monthEnd)
+      ? rangeTo.startOf("day")
+      : monthEnd;
+    const totalWd = calcWorkdays(rangeFrom.startOf("day"), monthEnd);
+    const remainWd = calcWorkdays(effectiveEnd, monthEnd);
+    // 截止日当天计入剩余工作日，其产出不提前扣减 → 只聚合到截止日前一天
+    const outputEndDate = effectiveEnd.subtract(1, "day");
+    const fromTs = rangeFrom.startOf("day").valueOf();
+    const outEndTs = outputEndDate.endOf("day").valueOf();
+
+    let output = 0;
+    for (const item of data) {
+      const ts = new Date(item.commitTime).getTime();
+      if (ts >= fromTs && ts <= outEndTs) output += getCommitOutput(item);
+    }
+    return `目标: 200×${totalWd}=${TARGET * totalWd}行 | 已产出(不含截止日): ${Math.round(output)}行 | 剩余${remainWd}个工作日均摊缺口`;
+  }, [dateRange, data]);
+
   const dailyOutputTrend = useMemo(() => {
     const [rangeFrom, rangeTo] = dateRange;
     const outputByDate = new Map<string, number>();
@@ -258,7 +302,10 @@ export function useCodePage() {
     const trend: { date: string; output: number; isWorkday: boolean }[] = [];
     let current = rangeFrom.startOf("day");
     const end = rangeTo.startOf("day");
-    while (current.isBefore(end) || current.isSame(end)) {
+    // 区间只禁未来、不禁过去，选到几年前就是几千天 → 趋势条几千个节点，
+    // 页面直接失去响应。这里兜底截断，避免极端区间把页面拖死。
+    let guard = 0;
+    while ((current.isBefore(end) || current.isSame(end)) && guard < MAX_TREND_DAYS) {
       const date = current.format("YYYY-MM-DD");
       trend.push({
         date,
@@ -266,13 +313,20 @@ export function useCodePage() {
         isWorkday: isWorkday(current),
       });
       current = current.add(1, "day");
+      guard += 1;
     }
     return trend;
   }, [dateRange, data]);
 
-  const trendMax = Math.max(
-    200,
-    ...dailyOutputTrend.map((item) => item.output),
+  // reduce 而非 Math.max(...arr)：展开 6 万+ 元素会抛 RangeError（栈溢出），
+  // 且原本没有 memo，每次渲染都重跑一遍
+  const trendMax = useMemo(
+    () =>
+      dailyOutputTrend.reduce(
+        (max, item) => (item.output > max ? item.output : max),
+        200,
+      ),
+    [dailyOutputTrend],
   );
 
   return {
@@ -294,6 +348,8 @@ export function useCodePage() {
     monthlyDailyNeeded,
     dailyOutput,
     selectedRangeDailyNeeded,
+    /** 选中区间目标的明细提示（Tooltip 文案） */
+    selectedRangeHint,
     dailyOutputTrend,
     trendMax,
   };
