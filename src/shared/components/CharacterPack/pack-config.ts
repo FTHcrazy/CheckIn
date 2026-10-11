@@ -90,15 +90,6 @@ export const PROFICIENCY_TEMPLATE: Array<{ name: string; min: number; max: numbe
   { name: "大师", min: 500, max: null },
 ];
 
-/** 境界阶梯模板（D-1：从模板创建，一步到位） */
-export const LADDER_TEMPLATE: Array<{ name: string; subLevels: number }> = [
-  { name: "炼气", subLevels: 9 },
-  { name: "筑基", subLevels: 9 },
-  { name: "金丹", subLevels: 9 },
-  { name: "元婴", subLevels: 9 },
-  { name: "化神", subLevels: 1 },
-];
-
 /** 量纲体系的用途键：同一角色最多各一套（境界复用 R25，不在这里） */
 export type UnitKind = "currency" | "proficiency";
 

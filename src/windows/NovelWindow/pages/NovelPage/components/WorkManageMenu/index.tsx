@@ -116,22 +116,32 @@ export default forwardRef<WorkManageMenuHandle, WorkManageMenuProps>(
             },
             { type: "divider" as const },
             {
-              key: "export-book",
-              icon: <FileTextOutlined />,
-              label: "导出整本 TXT",
-              disabled: !activeWorkName || !activeMeta || activeMeta.chapters === 0,
-            },
-            {
-              key: "export-volume",
-              icon: <FileAddOutlined />,
-              label: "导出当前卷 TXT",
-              disabled: !hasActiveChapter,
-            },
-            {
-              key: "export-chapter",
+              // 三个导出维度收进一个子菜单：菜单只扫两屏长度，
+              // 「导出」作为一个意图整体出现，比三条平级项更好扫
+              key: "export",
               icon: <ExportOutlined />,
-              label: "导出当前章 TXT",
-              disabled: !hasActiveChapter,
+              label: "导出 TXT",
+              disabled: !activeWorkName,
+              children: [
+                {
+                  key: "export-book",
+                  icon: <FileTextOutlined />,
+                  label: "整本",
+                  disabled: !activeMeta || activeMeta.chapters === 0,
+                },
+                {
+                  key: "export-volume",
+                  icon: <FileAddOutlined />,
+                  label: "当前卷",
+                  disabled: !hasActiveChapter,
+                },
+                {
+                  key: "export-chapter",
+                  icon: <FileTextOutlined />,
+                  label: "当前章",
+                  disabled: !hasActiveChapter,
+                },
+              ],
             },
             { type: "divider" as const },
             {
@@ -141,12 +151,18 @@ export default forwardRef<WorkManageMenuHandle, WorkManageMenuProps>(
               danger: true,
               disabled: !activeWorkName,
             },
-            { type: "divider" as const },
-            {
-              key: "reset-template",
-              icon: <ReloadOutlined />,
-              label: "重置为模板书籍（调试）",
-            },
+            /* 调试项（清空全部作品并重新播种模板）不进正式构建的菜单：
+               与用户动作并列是噪音，且属高危操作 */
+            ...(import.meta.env.DEV
+              ? [
+                  { type: "divider" as const },
+                  {
+                    key: "reset-template",
+                    icon: <ReloadOutlined />,
+                    label: "重置为模板书籍（调试）",
+                  },
+                ]
+              : []),
           ],
           onClick: ({ key }) => {
             if (key === "create") openCreate();

@@ -47,8 +47,11 @@
     }
   }
 
+  /* 作品名自适应内容宽度（上限内不截断）——书名是顶栏的主信息，
+     死宽 108px 会把「我在修仙 simulation」这类标题拦腰截成「我在修仙…」 */
   &__work {
-    width: 108px;
+    min-width: 0;
+    max-width: 220px;
     flex: none;
     font-weight: 600;
   }
@@ -74,6 +77,7 @@
     color: var(--app-text-muted);
   }
 
+  /* 位置面包屑：卷是次要定位、章名是「我读到哪」的主信息，字号与字重分层 */
   &__crumb {
     display: flex;
     align-items: center;
@@ -83,11 +87,21 @@
     color: var(--app-text-secondary);
   }
 
+  &__crumb-volume {
+    flex: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 140px;
+  }
+
   &__crumb-sep {
     color: var(--app-text-muted);
   }
 
   &__crumb-chapter {
+    font-size: 13px;
+    font-weight: 500;
     color: var(--app-text);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -132,6 +146,15 @@
     display: flex;
     align-items: center;
     gap: 2px;
+    flex: none;
+  }
+
+  /* 动作区分组线：布局开关（章节栏/面板）｜窗口级入口（行囊/快照/设置） */
+  &__divider {
+    width: 1px;
+    height: 16px;
+    margin: 0 5px;
+    background: var(--app-splitter);
     flex: none;
   }
 

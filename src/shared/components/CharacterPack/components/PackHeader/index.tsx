@@ -64,13 +64,13 @@ interface PackHeaderProps {
 /** 读数入参的形状来自 pack-layout（与 usePackPanel 的 load 派生量同形） */
 export type { PackHeaderReadingsInput };
 
-const READING_KEYS = ["weight", "capacity", "skills"] as const;
+const READING_KEYS = ["weight", "capacity"] as const;
 
 /**
  * 行囊头部：横向概览带（§8.6.1）
  *
  * 设计稿把它做成**一条横向带**：左侧角色（头像 + 名 + 境界 + 绑定态）、
- * 中间三个读数（负重 / 容量 / 技能）、右侧保存三态与工具按钮，全部同高并排。
+ * 中间两个读数（负重 / 容量）、右侧保存三态与工具按钮，全部同高并排。
  * 这和旧版的三层堆叠（角色行 / 保存行 / 分栏）是两种信息结构 ——
  * 横向带把「我现在是谁、我这趟盘完了没有、我存了没有」压进一行，
  * 内容区因此能多出一整条的高度给九个模块。
@@ -168,11 +168,12 @@ export default function PackHeader({
         </div>
       </div>
 
-      {/* ── 中：三个读数（设计稿的「这趟盘完没有」） ── */}
+      {/* ── 中：两个读数（设计稿的「这趟盘完没有」） ── */}
       {readings ? (
         <div className="cpk-head__readings">
           {READING_KEYS.map((readingKey) => {
-            const reading = headerReadings(readingKey, readings);            return (
+            const reading = headerReadings(readingKey, readings);
+            return (
               <div
                 key={readingKey}
                 className={`cpk-head__r${reading.alert ? " is-alert" : ""}`}

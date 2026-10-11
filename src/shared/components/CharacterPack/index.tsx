@@ -198,12 +198,13 @@ export default function CharacterPackHost({
         realmBound={api.realmBound}
         /*
           读数只在宽 / 中档给。窄档（<600px）下头部要同时容纳
-          「头像 + 名字 + 境界 + 保存态 + 按钮 + 工具」，再塞三个读数会挤到
+          「头像 + 名字 + 境界 + 保存态 + 按钮 + 工具」，再塞两个读数会挤到
           文字互相重叠、「全部已读」被裁出屏幕（曾实测）。
           读数回答的是「这趟盘完没有」，窄窗下用滚一眼物品栏同样能得到 ——
           故窄档整块不传，而不是压成小字继续挤。
+          技能数不再上头部：它与技能模块摘要同源，头部只留负重 / 容量。
         */
-        readings={doc && tier !== "narrow" ? { load: api.load, skills: doc.skills } : null}
+        readings={doc && tier !== "narrow" ? { load: api.load } : null}
         compact={tier === "narrow"}
         dirty={api.dirty}
         saving={api.saving}

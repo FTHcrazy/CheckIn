@@ -61,6 +61,14 @@ export interface EditorState {
   draftMap: Record<string, string>;
   /** 当前编辑的章节（由输入动作带进来，保存时用它定位） */
   activeChapterId: string | null;
+  /**
+   * 当前章灌入正文的字数（切章 / 回滚 / 恢复时按灌入内容记一次）。
+   *
+   * 草稿只在用户真正输入后才存在——导入的书、没打过一个字的章，`draftMap`
+   * 里没有记录，状态条的「本章字数」若只认草稿就会一直显示 0（与左栏
+   * 章节树对不上）。有草稿时本字段不参与，字数一律以草稿为准。
+   */
+  activeBaseWords: number;
   saveState: SaveState;
   lastSavedAt: number | null;
   settings: EditorSettings;
@@ -208,6 +216,7 @@ export const useNovelEditorStore = create<EditorState>()((set, get) => {
   return {
     draftMap: {},
     activeChapterId: null,
+    activeBaseWords: 0,
     saveState: "idle",
     lastSavedAt: null,
     settings: DEFAULT_SETTINGS,
@@ -223,9 +232,14 @@ export const useNovelEditorStore = create<EditorState>()((set, get) => {
       const previous = state.draftMap[chapterId] ?? baseContent ?? "";
       if (previous === next) {
         // 内容没变（切章灌入 / 输入法中间态 / 重复 dispatch）：不写草稿、
-        // 不计字数、也不重启防抖——正在排队的旧章保存因此不受影响
+        // 不计字数、也不重启防抖——正在排队的旧章保存因此不受影响。
+        // 切章灌入时顺手记下本章字数：没打过字的章没有草稿，
+        // 状态条的「本章字数」靠它兜底（否则导入的书永远显示 0）
         if (state.activeChapterId !== chapterId) {
-          set({ activeChapterId: chapterId });
+          set({
+            activeChapterId: chapterId,
+            activeBaseWords: countWords(next, state.settings.wordCountMode),
+          });
         }
         return;
       }
@@ -263,7 +277,10 @@ export const useNovelEditorStore = create<EditorState>()((set, get) => {
       const previous = state.draftMap[chapterId] ?? "";
       if (previous === next) {
         if (state.activeChapterId !== chapterId) {
-          set({ activeChapterId: chapterId });
+          set({
+            activeChapterId: chapterId,
+            activeBaseWords: countWords(next, state.settings.wordCountMode),
+          });
         }
         return;
       }
@@ -352,6 +369,7 @@ export const useNovelEditorStore = create<EditorState>()((set, get) => {
       set({
         draftMap: {},
         activeChapterId: null,
+        activeBaseWords: 0,
         selection: null,
         saveState: "idle",
       });
@@ -364,7 +382,7 @@ export const useNovelEditorStore = create<EditorState>()((set, get) => {
     setSpeed: (speed) => set({ speed }),
 
     resetForChapter: (chapterId) =>
-      set({ activeChapterId: chapterId, selection: null }),
+      set({ activeChapterId: chapterId, activeBaseWords: 0, selection: null }),
   };
 });
 
@@ -407,9 +425,10 @@ export function useSaveState(): { saveState: SaveState; lastSavedAt: number | nu
  * 而「本章字数」只随当前章草稿变化——打字时只有状态条与码字区会动。
  */
 export function useWritingStats(): WritingStats {
-  const chapterContent = useNovelEditorStore((state) =>
-    state.activeChapterId ? state.draftMap[state.activeChapterId] ?? "" : "",
+  const chapterDraft = useNovelEditorStore((state) =>
+    state.activeChapterId ? state.draftMap[state.activeChapterId] : undefined,
   );
+  const baseWords = useNovelEditorStore((state) => state.activeBaseWords);
   const wordCountMode = useNovelEditorStore(
     (state) => state.settings.wordCountMode,
   );
@@ -419,7 +438,11 @@ export function useWritingStats(): WritingStats {
   const speed = useNovelEditorStore((state) => state.speed);
 
   return {
-    chapterWords: countWords(chapterContent, wordCountMode),
+    // 有草稿以草稿为准；没打过字的章（导入的书）用灌入时记下的落库字数兜底
+    chapterWords:
+      chapterDraft !== undefined
+        ? countWords(chapterDraft, wordCountMode)
+        : baseWords,
     todayAdded,
     todayTotal,
     speed,

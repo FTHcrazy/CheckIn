@@ -283,7 +283,7 @@ describe("moduleSummary", () => {
  * 三条容易写错的口径在这里钉死：
  * - `limit === 0` 表示「不限」，要显示 `—` 一类的东西而不是 `0/0` 这种假读数；
  * - 超限 / 满格才标告警，正常值不标；
- * - 技能读的是「总数」，启用数放副行。
+ * - 技能不再上头部（与技能模块摘要同源，1.34.x 精简），只留负重 / 容量。
  */
 describe("headerReadings", () => {
   const base = {
@@ -291,7 +291,6 @@ describe("headerReadings", () => {
       weight: { total: 128, limit: 200, over: false },
       capacity: { used: 18, limit: 30, full: false },
     },
-    skills: [{ enabled: true }, { enabled: true }, { enabled: false }],
   };
 
   it("负重：有上限时给 `实重 / 上限`，不标告警", () => {
@@ -342,20 +341,6 @@ describe("headerReadings", () => {
       load: { ...base.load, capacity: { used: 30, limit: 30, full: true } },
     });
     expect(r.alert).toBe(true);
-  });
-
-  it("技能：主读数是总数，启用数放副行", () => {
-    const r = headerReadings("skills", base);
-    expect(r.label).toBe("技能");
-    expect(r.value).toBe("3");
-    expect(r.hint).toBe("2 启用");
-    expect(r.alert).toBe(false);
-  });
-
-  it("技能：一项都没有时主读数是 0，不抛", () => {
-    const r = headerReadings("skills", { ...base, skills: [] });
-    expect(r.value).toBe("0");
-    expect(r.hint).toBe("0 启用");
   });
 });
 

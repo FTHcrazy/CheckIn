@@ -53,7 +53,7 @@ export default function SettingsDrawer({
       )}
       <aside className={`nv-setting${open ? " is-open" : ""}`}>
       <header className="nv-setting__head">
-        <b>设置</b>
+        <b>排版与偏好</b>
         <Button aria-label="关闭" onClick={onClose}>
           ✕
         </Button>

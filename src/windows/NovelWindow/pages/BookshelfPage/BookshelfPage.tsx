@@ -5,7 +5,7 @@ import {
   EditOutlined,
   ThunderboltOutlined,
 } from "@ant-design/icons";
-import { Input, Modal } from "antd";
+import { Input, Modal, Button } from "antd";
 import ContinueHero from "./components/ContinueHero";
 import BookCard from "./components/BookCard";
 import IdeaRail from "./components/IdeaRail";
@@ -36,6 +36,14 @@ interface BookshelfPageProps {
   visible?: boolean;
   /** 打开某部作品进入编辑器；chapterId 缺省时由编辑器落到该作品第一章 */
   onOpenWork: (workId: string, chapterId?: string) => void;
+  /**
+   * 编辑器空书架空态的「导入书籍」请求（幂等 token）：收到后在本页发起选文件
+   * 导入。导入的实现（选文件 → worker 解析 → 落库）只在这里有一份，
+   * 编辑器侧经窗口根转发请求，不抄第二条链路。
+   */
+  importRequest?: number | null;
+  /** 导入请求处理完成后回调（窗口根组件据此置空请求） */
+  onImportRequestConsumed?: () => void;
 }
 
 /**
@@ -48,6 +56,8 @@ interface BookshelfPageProps {
 export default function BookshelfPage({
   visible = true,
   onOpenWork,
+  importRequest = null,
+  onImportRequestConsumed,
 }: BookshelfPageProps) {
   const {
     bundle,
@@ -92,6 +102,15 @@ export default function BookshelfPage({
     phase: importPhase,
     startImport,
   } = useBookImport({ onDone: () => void refresh(true) });
+
+  // 编辑器空书架空态发来的导入请求：token 守卫，StrictMode 双执行只消费一次
+  const consumedImportRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!importRequest || consumedImportRef.current === importRequest) return;
+    consumedImportRef.current = importRequest;
+    void startImport();
+    onImportRequestConsumed?.();
+  }, [importRequest, startImport, onImportRequestConsumed]);
 
   const totalWords = useMemo(
     () => cards.reduce((sum, card) => sum + card.totalWords, 0),
@@ -254,6 +273,22 @@ export default function BookshelfPage({
               <div className="bs-page__empty">没有找到匹配的作品，换个关键词试试</div>
             )}
 
+            {cards.length === 0 && (
+              <div className="bs-page__welcome">
+                <span className="bs-page__welcome-text">
+                  书架还是空的。新建一部作品开始写，或从 TXT／DOCX 导入整本书。
+                </span>
+                <Button
+                  size="small"
+                  onClick={() => void startImport()}
+                  disabled={importing}
+                  loading={importing}
+                >
+                  导入书籍
+                </Button>
+              </div>
+            )}
+
             <div className={`bs-page__grid bs-page__grid--${viewMode}`}>
               {visibleCards.map((card) => (
                 <BookCard
@@ -286,11 +321,9 @@ export default function BookshelfPage({
       </div>
 
       <footer className="bs-page__status">
+        {/* 作品数 / 字数 / 今日新增 / 连续码字已分别由顶栏胶囊与统计条承载，
+            底栏不再复读 —— 一份信息只在一个地方说。 */}
         <span>本地优先 · 数据存储于本机</span>
-        <span>
-          共 {cards.length} 部作品 · {formatWordsCompact(totalWords)}字 · 今日新增{" "}
-          {formatThousands(usage.todayWords)} 字 · 连续码字 {usage.streakDays} 天
-        </span>
       </footer>
 
       <Modal

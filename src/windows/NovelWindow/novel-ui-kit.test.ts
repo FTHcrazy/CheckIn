@@ -456,3 +456,42 @@ describe("Novel 窗口：虚拟化行内 width:100% 的普通元素必须显式 
     expect(rule![1]).toContain("padding-inline-end");
   });
 });
+
+describe("Novel 窗口：大纲章节行不渲染 antd 点击涟漪", () => {
+  it("__row 按钮上关掉了 .ant-wave（1.34.0「点击效果只有一半」回归守卫）", () => {
+    // antd 把 `.ant-wave` div **插进被点的按钮内部**
+    // （_util/wave/WaveEffect.js: `target.insertBefore(holder, target.firstChild)`），
+    // 规则 `box-shadow: 0 0 0 6px currentcolor; opacity: .2`，且 opacity 过渡长达 2s。
+    // OutlinePanel 的 __row 按钮只占整行里「标题那一段」——行尾的伏笔标识 /
+    // 字数 / 状态点 / ＋伏笔 都是**并列在按钮之外**的真按钮，于是这圈涟漪只罩住
+    // 标题，与 __line 的整行高亮叠起来，就是用户连报三次的「内层框 / 只有一半」。
+    //
+    // 这条守卫钉两件事：
+    //  (a) 规则存在且 display: none（编译产出，不搜源码文本）；
+    //  (b) 选择器特异性 ≥ 3 个类 —— antd 自己的 `.ant-wave` 是 (0,1,0)，
+    //      本仓若把它降成 (0,1,0) 会因 cssinjs 注入顺序输掉，环又回来。
+    const css = sass
+      .compile(
+        path.join(ROOT, "pages/NovelPage/components/OutlinePanel/index.scss"),
+        { style: "expanded" },
+      )
+      .css.replace(/\/\*[\s\S]*?\*\//g, "");
+
+    const selector = ".nv-outline__row.ant-btn .ant-wave";
+    const at = css.indexOf(`${selector} {`);
+    expect(at, `缺少规则 ${selector}`).toBeGreaterThan(-1);
+    // 花括号配平取块体（块内可能有 color-mix(...) 之类，不能只找下一个 }）
+    const open = css.indexOf("{", at);
+    let depth = 0;
+    let end = open;
+    for (; end < css.length; end++) {
+      if (css[end] === "{") depth++;
+      else if (css[end] === "}" && --depth === 0) break;
+    }
+    expect(css.slice(open + 1, end)).toContain("display: none");
+
+    // 特异性：选择器里应当有 3 个类名（nv-outline__row / ant-btn / ant-wave）
+    const classCount = (selector.match(/\./g) ?? []).length;
+    expect(classCount).toBeGreaterThanOrEqual(3);
+  });
+});

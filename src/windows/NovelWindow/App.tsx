@@ -43,6 +43,8 @@ export default function NovelWindowApp() {
   const [view, setView] = useState<"shelf" | "editor">("shelf");
   const [editorMounted, setEditorMounted] = useState(false);
   const [openRequest, setOpenRequest] = useState<OpenWorkRequest | null>(null);
+  // 编辑器空书架空态的「导入书籍」请求（幂等 token）：转交书架发起导入
+  const [importRequest, setImportRequest] = useState<number | null>(null);
 
   /** 书架 → 编辑器：懒挂载 + 派发打开请求 + 切视图 */
   const openWork = useCallback((workId: string, chapterId?: string) => {
@@ -54,6 +56,14 @@ export default function NovelWindowApp() {
   const consumeOpenRequest = useCallback(() => setOpenRequest(null), []);
 
   const backToShelf = useCallback(() => setView("shelf"), []);
+
+  /** 编辑器 → 书架：请求发起导入。切回书架让导入进度（顶栏按钮 loading）可见 */
+  const requestImport = useCallback(() => {
+    setView("shelf");
+    setImportRequest(Date.now());
+  }, []);
+
+  const consumeImportRequest = useCallback(() => setImportRequest(null), []);
 
   // 编辑器从 display:none 恢复可见后派发 resize，让 CodeMirror 按新视口重测量
   useEffect(() => {
@@ -79,7 +89,12 @@ export default function NovelWindowApp() {
               className={`novel-view${view === "shelf" ? "" : " is-hidden"}`}
               aria-hidden={view !== "shelf"}
             >
-              <BookshelfPage visible={view === "shelf"} onOpenWork={openWork} />
+              <BookshelfPage
+                visible={view === "shelf"}
+                onOpenWork={openWork}
+                importRequest={importRequest}
+                onImportRequestConsumed={consumeImportRequest}
+              />
             </div>
             {editorMounted && (
               <div
@@ -90,6 +105,7 @@ export default function NovelWindowApp() {
                   openRequest={openRequest}
                   onOpenRequestConsumed={consumeOpenRequest}
                   onBackToShelf={backToShelf}
+                  onImportBook={requestImport}
                 />
               </div>
             )}

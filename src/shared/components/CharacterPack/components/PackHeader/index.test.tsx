@@ -20,7 +20,6 @@ const READINGS = {
     weight: { total: 128, limit: 200, over: false },
     capacity: { used: 18, limit: 30, full: false },
   },
-  skills: [{ enabled: true }, { enabled: true }, { enabled: false }],
 };
 
 function props(over: Partial<Parameters<typeof PackHeader>[0]> = {}) {
@@ -83,12 +82,12 @@ describe("PackHeader —— 保存条（G-3）", () => {
 describe("PackHeader —— 顶部概览带读数", () => {
   afterEach(cleanup);
 
-  it("有数据时给出负重 / 容量 / 技能三个读数", () => {
+  it("有数据时给出负重 / 容量两个读数（技能不上头部，与技能模块摘要同源）", () => {
     render(<PackHeader {...props().base} />);
     const labels = Array.from(document.querySelectorAll(".cpk-head__rlabel")).map(
       (node) => node.textContent,
     );
-    expect(labels).toEqual(["负重", "容量", "技能"]);
+    expect(labels).toEqual(["负重", "容量"]);
   });
 
   it("负重超限时那一格标成告警态", () => {
@@ -100,7 +99,6 @@ describe("PackHeader —— 顶部概览带读数", () => {
               weight: { total: 260, limit: 200, over: true },
               capacity: { used: 18, limit: 30, full: false },
             },
-            skills: [],
           },
         }).base}
       />,

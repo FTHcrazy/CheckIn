@@ -2,10 +2,10 @@ import { Button, Select, Tooltip } from "antd";
 import type { Ref } from "react";
 import {
   ArrowLeftOutlined,
+  ControlOutlined,
   HistoryOutlined,
   LayoutOutlined,
   MenuOutlined,
-  SettingOutlined,
   ShoppingOutlined,
 } from "@ant-design/icons";
 import { SAVE_STATE_TEXT } from "../../novel-config";
@@ -139,8 +139,11 @@ export default function NovelTopBar({
         onExportChapter={onExportChapter}
       />
 
+      {/* 语义分组：左侧是「哪部作品」的切换与管理，右侧是「读到哪」的位置 */}
+      <span className="nv-topbar__divider" aria-hidden />
+
       <div className="nv-topbar__crumb">
-        <span>{volumeName}</span>
+        <span className="nv-topbar__crumb-volume">{volumeName}</span>
         <span className="nv-topbar__crumb-sep">/</span>
         <span className="nv-topbar__crumb-chapter">{chapterName}</span>
       </div>
@@ -173,6 +176,9 @@ export default function NovelTopBar({
             <LayoutOutlined />
           </Button>
         </Tooltip>
+        {/* 语义分组：左边是本页布局开关，右边是窗口级 / 抽屉级入口。
+            五颗 icon 一排不加边界时，布局开关与功能入口容易扫成一团 */}
+        <span className="nv-topbar__divider" aria-hidden />
         <Tooltip title="行囊（主角随身盘点 · Ctrl+Shift+B）">
           <Button
             className="nv-topbar__icon"
@@ -192,13 +198,15 @@ export default function NovelTopBar({
             <HistoryOutlined />
           </Button>
         </Tooltip>
-        <Tooltip title="设置">
+        {/* 与标题栏的「设置」（全局：外观/账号）区分：这里只管排版与码字偏好，
+            图标用滑杆而不是齿轮，避免同屏两颗齿轮各开各的设置 */}
+        <Tooltip title="排版与偏好">
           <Button
             className={`nv-topbar__icon${settingsOpen ? " is-on" : ""}`}
             onClick={onToggleSettings}
-            aria-label="设置"
+            aria-label="排版与偏好"
           >
-            <SettingOutlined />
+            <ControlOutlined />
           </Button>
         </Tooltip>
       </div>

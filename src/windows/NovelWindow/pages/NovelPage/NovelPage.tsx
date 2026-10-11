@@ -41,6 +41,12 @@ interface NovelPageProps {
   onOpenRequestConsumed?: () => void;
   /** 顶栏「返回书架」回调；未传则不渲染返回按钮 */
   onBackToShelf?: () => void;
+  /**
+   * 空书架空态「导入书籍」的回调（经窗口根转交书架发起导入）。
+   * 之前这里误接 onBackToShelf：点了按钮只回书架、不出选文件框，
+   * 现在一步直达 —— 由窗口根切回书架并派发导入请求。
+   */
+  onImportBook?: () => void;
 }
 
 /**
@@ -53,6 +59,7 @@ export default function NovelPage({
   openRequest = null,
   onOpenRequestConsumed,
   onBackToShelf,
+  onImportBook,
 }: NovelPageProps = {}) {
   const {
     data,
@@ -326,7 +333,7 @@ export default function NovelPage({
             onCreateChapter={handleNewChapter}
             emptyKind={works.length === 0 ? "no-work" : "no-chapter"}
             onCreateWork={() => workMenuRef.current?.openCreate()}
-            onImportBook={onBackToShelf}
+            onImportBook={onImportBook}
             onRenameChapter={data.renameChapter}
             restore={data.lastPosition}
             onRestoreDone={data.consumeLastPosition}

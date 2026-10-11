@@ -117,7 +117,7 @@
     min-width: 0;
     display: flex;
     align-items: center;
-    gap: 7px;
+    gap: 8px;
     padding-block: 6px;
     text-align: left;
     transition: background 140ms ease;
@@ -244,11 +244,14 @@
      （antd 按钮由 ant-button-reset 的 border-box 兜住，普通 div 得自己声明。） */
   &__line {
     box-sizing: border-box;
+    /* 定位上下文：行尾悬停浮现的「＋伏笔」绝对定位相对这里，
+       才能用 top:50% 相对行高垂直居中（li 还包含下方梗概文本） */
+    position: relative;
     display: flex;
     align-items: center;
     gap: 8px;
     width: 100%;
-    /* 右侧留出 __row-add（悬停浮现的「＋伏笔」，绝对定位 right: 5px、20px 宽）
+    /* 右侧留出 __row-add（悬停浮现的「＋伏笔」，绝对定位 right: 4px、20px 宽）
        的槽位 + 8px 呼吸位：不留的话它会压住行尾的状态点与旗标标识（这是本轮
        之前就有的重叠，只是标识原先在行中间，看不出来） */
     padding-inline-end: 34px;
@@ -261,14 +264,18 @@
     }
   }
 
-  /* 章节行「＋伏笔」入口：悬停浮现于行右上角（行容器 + 并列真按钮，
-     不能嵌进整行按钮里）；表单内联在本章下方，见 renderChapter */
+  /* 章节行「＋伏笔」入口：悬停浮现、相对行高垂直居中（挂在 __line 里，
+     见 JSX 注释；不能嵌进整行按钮 —— §6.1.2 第 4 条）；
+     表单内联在本章下方，见 renderChapter。
+     默认色用 primary 而不是 text-disabled：激活行的底色本就是浅橙，
+     灰色加号压在上面几乎看不见（用户反馈「很不显眼」），主色在明暗主题
+     下都与高亮底拉开对比，且「添加」动词语义上就该是主色 */
   &__row-add.ant-btn {
     @include widget.ant-button-reset;
     --ant-control-height: 20px;
     --ant-button-padding-inline: 0px;
     --ant-border-radius: 6px;
-    --ant-button-default-color: var(--app-text-disabled);
+    --ant-button-default-color: var(--app-primary);
     --ant-button-default-hover-bg: var(--app-surface-hover);
     --ant-button-default-hover-color: var(--app-primary);
     --ant-button-default-active-bg: var(--app-surface-hover);
@@ -276,7 +283,10 @@
     --ant-button-default-shadow: none;
 
     position: absolute;
-    top: 5px;
+    /* 相对 __line（行容器）垂直居中：top:5px 挂在 li 上时会被下方
+       梗概文本拉偏（用户反馈「没有垂直居中」），50% + translateY 不挑行高 */
+    top: 50%;
+    transform: translateY(-50%);
     right: 4px;
     z-index: 1;
     display: inline-flex;
@@ -309,6 +319,15 @@
     --ant-button-content-font-size: 14px;
     --ant-border-radius: 9px;
     --ant-button-default-color: var(--app-text-strong);
+    /* antd 焦点环的宽度变量（实测 cream 主题下是 3px 实色描边）。
+       必须在变量层清零：antd 的 :focus-visible 规则由 cssinjs 运行时注入、
+       晚于打包 CSS，属性级 outline:none 同特异性必输（踩过）；
+       变量级覆盖不参与这场竞争 —— antd 规则照常命中，只是解析成 0 宽。
+
+       注：这一条清的是**键盘焦点环**，与被用户三连报的「点击效果只有
+       一半」无关 —— 那条的成因是 antd wave 涟漪，见下方 .ant-wave 规则。
+       两者形状相近（都贴着 __row 按钮），此前误判过一次，留此备查。 */
+    --ant-line-width-focus: 0px;
 
     flex: 1;
     min-width: 0;
@@ -317,6 +336,42 @@
     gap: 8px;
     padding-block: 7px;
     text-align: left;
+
+    /* 焦点环的实际清零靠上面的 --ant-line-width-focus 变量（属性级
+       outline:none 在真实应用里赢不了 cssinjs 的注入顺序，留作双保险）。
+       键盘焦点环改画在整行容器上（见下一条），与 hover/active 同形状。
+       同样地：这里处理的是键盘 Tab 焦点，不是鼠标点击 —— 点击反馈见
+       下方的 .ant-wave 规则 */
+    .nv-outline__line &:focus-visible {
+      outline: none;
+    }
+  }
+
+  /* 点击涟漪（antd wave）必须在这颗按钮上关掉 —— 它就是「点击效果只有一半」。
+     antd 把 `.ant-wave` **插进被点的按钮里**（_util/wave/WaveEffect.js：
+     `target.insertBefore(holder, target.firstChild)`），规则是
+     `box-shadow: 0 0 0 6px currentcolor; opacity: .2`（currentcolor = 主色，
+     实测 cream 主题即 #e8834a）；更糟的是 `opacity` 的过渡长达 **2s**
+     （box-shadow 0.4s 长到 6px，opacity 2s 才淡出）→ 点完一行后能挂两秒，
+     所以截图必然拍得到。
+
+     本行的按钮只是「整行里的透明一段」：行尾的伏笔标识 / 字数 / 状态点 /
+     ＋伏笔 都在按钮**外面**（并列真按钮，见 JSX 注释）。于是这圈环只罩住
+     标题那截，与行容器的整行高亮（is-active 的底 + 描边）叠在一起，就是
+     用户看到的「内层框 / 点击效果只有一半」。
+     整行的点击反馈已由 __line 的 :hover 与 is-active 高亮承担（覆盖整行、
+     也覆盖行尾那些标识），涟漪在这里只剩误导，直接不渲染。
+     注：跳章面板 / 右键菜单 / 工具卡的按钮**本身就是整个可点区域**，
+     涟漪环绕它们属于 antd 的正常观感，不要照搬这条。 */
+  &__row.ant-btn .ant-wave {
+    display: none;
+  }
+
+  /* 键盘焦点环：整行化。:has() 特异性含参数最高项（0,4,0），
+     稳压 antd 的 .ant-btn:not(:disabled):focus-visible（0,3,0） */
+  &__line:has(.nv-outline__row.ant-btn:focus-visible) {
+    outline: 2px solid var(--app-primary);
+    outline-offset: 1px;
   }
 
   /* 当前章：持久高亮态 → 外壳写在行容器上，行按钮只跟文字色
@@ -449,7 +504,7 @@
   /* 行内清单里的伏笔条目：内边距收一档，字号跟着小一级 */
   &__fs-item.is-compact &__fs {
     padding: 6px 8px;
-    gap: 7px;
+    gap: 8px;
     background: var(--app-surface-alt);
   }
 
@@ -589,7 +644,7 @@
 
   &__fs {
     display: flex;
-    gap: 9px;
+    gap: 8px;
     padding: 9px 10px;
     border: 1px solid var(--app-border);
     border-radius: var(--app-radius-item);

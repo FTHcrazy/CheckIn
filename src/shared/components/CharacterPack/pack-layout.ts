@@ -86,19 +86,22 @@ export function isAutoCollapsed(
 }
 
 /**
- * 顶部概览带的三个读数（派生值，不是存下来的数据）。
+ * 顶部概览带的两个读数（派生值，不是存下来的数据）。
  *
- * 设计稿把「负重 / 容量 / 技能」三个读数并排放在头部中央 —— 它们回答的是
- * 「这一趟盘完没有」：负重超没超、格子还剩几格、几项技能开着。三者在
- * `usePackPanel` 里都已有派生量（`load` / `doc.skills`），这里只做**格式化**，
- * 不新增统计口径。
+ * 设计稿把「负重 / 容量」两个读数并排放在头部中央 —— 它们回答的是
+ * 「这一趟盘完没有」：负重超没超、格子还剩几格。二者在 `usePackPanel`
+ * 里都已有派生量（`load`），这里只做**格式化**，不新增统计口径。
+ *
+ * 曾经还有第三个「技能」读数（N 项 · N 启用），但它与技能模块自身的
+ * 摘要（`moduleSummary("skills")`）完全同源 —— 同一份信息不该在头部
+ * 和模块里各说一遍，头部让位后整条概览带也少一分密度。
  *
  * 为什么把格式化也抽成纯函数：`limit === 0` 表示「不限」，此时要显示 `—`
- * 而不是 `0/0`（后者像一个「0 容量」的错误读数）；超限要变色。这三条规则
- * 散在 JSX 里就变成三处 `? :` 嵌套，测不到也改不动。
+ * 而不是 `0/0`（后者像一个「0 容量」的错误读数）；超限要变色。这两条规则
+ * 散在 JSX 里就变成两处 `? :` 嵌套，测不到也改不动。
  */
 export interface PackHeaderReading {
-  /** 读数标签（负重 / 容量 / 技能） */
+  /** 读数标签（负重 / 容量） */
   label: string;
   /** 主读数，如 `128 / 200` 或 `18 / 30 格` */
   value: string;
@@ -108,17 +111,16 @@ export interface PackHeaderReading {
   hint: string;
 }
 
-/** headerReadings 的入参：与 usePackPanel 的 load / skills 派生量同形 */
+/** headerReadings 的入参：与 usePackPanel 的 load 派生量同形 */
 export interface PackHeaderReadingsInput {
   load: {
     weight: { total: number; limit: number; over: boolean };
     capacity: { used: number; limit: number; full: boolean };
   };
-  skills: Array<{ enabled: boolean }>;
 }
 
 export function headerReadings(
-  key: "weight" | "capacity" | "skills",
+  key: "weight" | "capacity",
   input: PackHeaderReadingsInput,
 ): PackHeaderReading {
   switch (key) {
@@ -139,15 +141,6 @@ export function headerReadings(
         value: limit > 0 ? `${used} / ${limit} 格` : `${used} 格`,
         alert: full,
         hint: limit > 0 ? "" : "未设上限",
-      };
-    }
-    case "skills": {
-      const on = input.skills.filter((skill) => skill.enabled).length;
-      return {
-        label: "技能",
-        value: String(input.skills.length),
-        alert: false,
-        hint: `${on} 启用`,
       };
     }
   }

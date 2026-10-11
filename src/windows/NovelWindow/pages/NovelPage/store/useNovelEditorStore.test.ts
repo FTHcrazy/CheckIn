@@ -17,6 +17,7 @@ function reset(): void {
   useNovelEditorStore.setState({
     draftMap: {},
     activeChapterId: null,
+    activeBaseWords: 0,
     saveState: "idle",
     lastSavedAt: null,
     settings: DEFAULT_SETTINGS,
@@ -102,6 +103,25 @@ describe("useNovelEditorStore（编辑器交互状态）", () => {
     expect(state().todayTotal).toBe(0);
     expect(state().saveState).toBe("idle");
     expect(state().activeChapterId).toBe("c1");
+  });
+
+  it("切章灌入记录本章落库字数：没打过字的章（导入书）状态条不再是 0", () => {
+    state().setContent("c1", "第一章正文", "第一章正文");
+
+    expect(state().activeBaseWords).toBe(
+      countWords("第一章正文", DEFAULT_SETTINGS.wordCountMode),
+    );
+
+    // 同章重复 dispatch（输入法中间态）不重算；切到别的章换成新值
+    state().setContent("c1", "第一章正文", "第一章正文");
+    expect(state().activeBaseWords).toBe(
+      countWords("第一章正文", DEFAULT_SETTINGS.wordCountMode),
+    );
+
+    state().setContent("c2", "第二章正文更长一些", "第二章正文更长一些");
+    expect(state().activeBaseWords).toBe(
+      countWords("第二章正文更长一些", DEFAULT_SETTINGS.wordCountMode),
+    );
   });
 
   it("带基线的真实输入：增量按基线算，而不是按空串", () => {

@@ -491,17 +491,20 @@ export default function OutlinePanel({
             style={{ background: CHAPTER_STATUS_META[node.status].color }}
             title={CHAPTER_STATUS_META[node.status].label}
           />
+          {/* 章节级伏笔入口：放在行容器内（绝对定位，不参与 flex 布局），
+              才能相对「行」垂直居中 —— 挂在 li 上时 li 还包含下方的梗概
+              文本，top:5px 会随行高变化偏离行中心（用户反馈）。行容器 +
+              并列真按钮（§6.1.2 第 4 条）：不能嵌进整行按钮里。
+              表单内联在本章下方，绑定预设为本章 */}
+          <Button
+            className="nv-outline__row-add"
+            title="在本章添加伏笔"
+            aria-label={`在本章（${node.label} ${node.title}）添加伏笔`}
+            onClick={() => startAddForeshadowAt(volumeId, node.chapterId)}
+          >
+            <PlusOutlined />
+          </Button>
         </div>
-        {/* 章节级伏笔入口：悬停浮现（§6.1.2 行容器 + 并列真按钮，
-            不能嵌进行按钮里）；表单内联在本章下方，绑定预设为本章 */}
-        <Button
-          className="nv-outline__row-add"
-          title="在本章添加伏笔"
-          aria-label={`在本章（${node.label} ${node.title}）添加伏笔`}
-          onClick={() => startAddForeshadowAt(volumeId, node.chapterId)}
-        >
-          <PlusOutlined />
-        </Button>
 
         {editing ? (
           <Input

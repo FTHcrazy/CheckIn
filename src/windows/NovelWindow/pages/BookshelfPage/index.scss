@@ -64,6 +64,20 @@
     font-size: 14px;
   }
 
+  // 零作品首启引导：一句话说明 + 导入直达（新建由旁边的 NewWorkCard 承担）
+  &__welcome {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 18px 16px;
+    border: 1px dashed var(--app-border);
+    border-radius: var(--app-radius-item);
+    color: var(--app-text-muted);
+    font-size: 13px;
+  }
+
   // 书卡网格：宽屏约 4 列起，随窗口宽度自动伸缩；列表视图退化为单列
   &__grid {
     display: grid;

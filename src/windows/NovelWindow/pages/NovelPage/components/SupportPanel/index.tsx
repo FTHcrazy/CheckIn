@@ -6,7 +6,7 @@ import {
   LeftOutlined,
   RightOutlined,
   SearchOutlined,
-  SettingOutlined,
+  TagsOutlined,
   ToolOutlined,
   UnorderedListOutlined,
 } from "@ant-design/icons";
@@ -443,7 +443,8 @@ export default function SupportPanel({
                 title="要素类型管理"
                 onClick={onOpenTypeManager}
               >
-                <SettingOutlined />
+                {/* 用标签图标与「设置」齿轮区分：它管的是要素类型，不是设置 */}
+                <TagsOutlined />
               </Button>
             )}
             <Button
