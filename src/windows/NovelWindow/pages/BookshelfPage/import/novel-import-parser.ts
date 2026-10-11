@@ -22,6 +22,68 @@ export const CHAPTER_TITLE_RE =
   /^\s*(?:第\s*[零〇一二三四五六七八九十百千万兩两貳參肆伍陸柒捌玖拾佰仟萬0-9]+\s*(?:章|回|节|集)|[Cc]hapter\s+[0-9０-９]+)\s*[^\n]{0,40}$/;
 
 /**
+ * 标题序号前缀（捕获式）：第N章/回/节/集 或 Chapter N。
+ *
+ * 1.34.0 起，导入的章节**不再把序号存进标题** —— 左栏本就有序号列，
+ * 「01 第1章 黑暗恐惧」是重复展示。这里捕获序号与后缀字，供两处使用：
+ * ① `stripChapterNumbering` 剥离出纯章名；② `detectChapterNumbering`
+ * 统计全书用的是哪种规则（章/回/节/集 × 阿拉伯/中文），写入该书的
+ * 序号规则记录，让设置里的后缀自适应（见 shared/novel/work-numbering.ts）。
+ */
+const CHAPTER_NUM_RE =
+  /^\s*(?:第\s*([零〇一二三四五六七八九十百千万兩两貳參肆伍陸柒捌玖拾佰仟萬0-9０-９]+)\s*([章回节集])|chapter\s*([0-9０-９]+))\s*/i;
+
+/** 序号前缀之后紧跟的分隔符（「第1章：黑暗」「Chapter 3 - 雾」）一并剥掉 */
+const LEADING_SEP_RE = /^[\s\u3000：:·．.。、\-—_*～~]+/;
+
+/** 剥离标题中的序号前缀，返回纯章名（无前缀时原样返回） */
+export function stripChapterNumbering(title: string): string {
+  return title.replace(CHAPTER_NUM_RE, "").replace(LEADING_SEP_RE, "").trim();
+}
+
+/** 从标题集合里统计出的章节序号规则 */
+export interface DetectedNumbering {
+  /** 出现最多的后缀字（章 / 回 / 节 / 集；Chapter N 记「章」） */
+  suffix: string;
+  numberStyle: "arabic" | "chinese";
+}
+
+/**
+ * 检测一本书的章节序号规则：后缀取出现最多的字，数字样式取多数派。
+ * 一个都没匹配上（无结构 / 全是兜底章）返回 null，调用方沿用默认规则。
+ */
+export function detectChapterNumbering(titles: string[]): DetectedNumbering | null {
+  const suffixCount = new Map<string, number>();
+  let arabic = 0;
+  let chinese = 0;
+  for (const title of titles) {
+    const match = CHAPTER_NUM_RE.exec(title);
+    if (!match) continue;
+    // 第①组+②组 = 第N章形态；第③组 = Chapter N 形态（记「章」，必为阿拉伯）
+    if (match[3] !== undefined) {
+      suffixCount.set("章", (suffixCount.get("章") ?? 0) + 1);
+      arabic += 1;
+      continue;
+    }
+    const suffix = match[2] ?? "章";
+    suffixCount.set(suffix, (suffixCount.get(suffix) ?? 0) + 1);
+    const numeric = match[1] ?? "";
+    if (/[0-9０-９]/.test(numeric)) arabic += 1;
+    else if (numeric) chinese += 1;
+  }
+  if (suffixCount.size === 0) return null;
+  let suffix = "章";
+  let best = -1;
+  for (const [key, count] of suffixCount) {
+    if (count > best) {
+      suffix = key;
+      best = count;
+    }
+  }
+  return { suffix, numberStyle: arabic > chinese ? "arabic" : "chinese" };
+}
+
+/**
  * 卷标题行：第X卷 / 卷X / Volume N / Book N。
  *
  * 严格模式（用户选定）：只有行内明确出现「卷」字（中文序号形式），
@@ -62,6 +124,11 @@ export interface ParsedBook {
   chapters: ParsedChapter[];
   /** 是否真正识别出了章节标题结构（false = 全文作为一章兜底） */
   structured: boolean;
+  /**
+   * 从章节标题统计出的序号规则（1.34.0）；识别不出返回 null。
+   * 落库时写入该书的序号规则记录，让「章节后缀」设置自适应本书。
+   */
+  numberingRule: DetectedNumbering | null;
 }
 
 /** 默认卷名：章节出现在任何卷标记之前时挂到这里 */
@@ -117,10 +184,12 @@ export function parseTxtBook(text: string): ParsedBook {
   let currentVolume = -1;
   /** 当前章下标；-1 = 尚未开章 */
   let currentChapter = -1;
-  /** 上一个被识别的标题行（折叠相邻重复标题） */
+  /** 上一个被识别的标题行（折叠相邻重复标题）；存**原始行**而非剥后的章名 */
   let lastTitle = "";
   /** 是否识别到过「真实章标题」（决定 structured） */
   let sawExplicitChapter = false;
+  /** 识别出的原始标题行（未剥序号）：供 detectChapterNumbering 统计全书规则 */
+  const rawTitleLines: string[] = [];
   /**
    * 卷标记出现前开的兜底章下标（书名 / 作者 / 引文）。
    * 首个真实卷出现时把它**归并**过去（改名「<卷名> · 序」并把默认卷删掉），
@@ -135,12 +204,17 @@ export function parseTxtBook(text: string): ParsedBook {
     return currentVolume;
   };
 
-  const openChapter = (title: string, explicit: boolean): void => {
+  /**
+   * 开一章。`dedupeKey` 是「相邻重复标题折叠」的比较依据 —— 传**原始行**：
+   * 标题剥掉序号后多个不同的原始行会得到同一个空串（第N章无章名），
+   * 拿剥后的章名比会误折叠（详见调用处注释）。
+   */
+  const openChapter = (title: string, explicit: boolean, dedupeKey: string): void => {
     const volumeIndex = ensureVolume();
     chapters.push({ title, content: "", volumeIndex, explicit });
     buffers.push("");
     currentChapter = chapters.length - 1;
-    lastTitle = title;
+    lastTitle = dedupeKey;
   };
 
   for (const raw of rawLines) {
@@ -170,9 +244,14 @@ export function parseTxtBook(text: string): ParsedBook {
 
     // ② 章标题
     if (isChapterTitle(raw)) {
-      const title = normalizeTitle(raw);
-      if (title === lastTitle) continue; // 相邻重复标题折叠
-      openChapter(title, true);
+      // 序号进左栏序号列，不进标题：剥掉「第N章 」只留章名（1.34.0）
+      const title = stripChapterNumbering(normalizeTitle(raw));
+      // ⚠️ 折叠判据必须是**原始行**，不能是剥后的 title：多章都叫「第N章」
+      // （无章名）时剥完全是空串，拿空串比会把后面每一章都当成「相邻重复」丢掉。
+      const normalizedRaw = normalizeTitle(raw);
+      if (normalizedRaw === lastTitle) continue; // 相邻重复标题折叠
+      rawTitleLines.push(raw);
+      openChapter(title, true, normalizedRaw);
       sawExplicitChapter = true;
       preambleChapter = null;
       continue;
@@ -188,7 +267,7 @@ export function parseTxtBook(text: string): ParsedBook {
         currentVolume >= 0
           ? `${volumes[currentVolume].name} · 序`
           : `${DEFAULT_VOLUME_NAME} · 序`;
-      openChapter(fallbackTitle, false);
+      openChapter(fallbackTitle, false, fallbackTitle);
       // 记下「卷标记前的前言章」，供首个真实卷出现时归并
       if (beforeAnyVolume) preambleChapter = currentChapter;
     }
@@ -240,8 +319,14 @@ export function parseTxtBook(text: string): ParsedBook {
         },
       ],
       structured: false,
+      numberingRule: null,
     };
   }
 
-  return { volumes, chapters: resultChapters, structured: true };
+  return {
+    volumes,
+    chapters: resultChapters,
+    structured: true,
+    numberingRule: detectChapterNumbering(rawTitleLines),
+  };
 }

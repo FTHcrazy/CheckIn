@@ -26,6 +26,11 @@ import type {
   NovelNoteDTO,
   NovelWorkDTO,
 } from "@/shared/types/electron";
+import {
+  applyWorkNumbering,
+  fetchWorkNumbering,
+  type WorkNumberingEntry,
+} from "@/shared/novel/work-numbering";
 
 /**
  * 书架数据层 Hook（R32）
@@ -95,23 +100,38 @@ export function useBookshelfData() {
     streakDays: 0,
   });
   const [style, setStyle] = useState<ShelfNumberStyle>(DEFAULT_STYLE);
+  /** 按书序号规则（1.34.0）：「继续写作」Hero 按目标书自己的规则展示 */
+  const [numberingMap, setNumberingMap] = useState<Record<string, WorkNumberingEntry>>({});
   const [position, setPosition] = useState<ShelfPosition | null>(null);
   const [loading, setLoading] = useState(true);
+  /**
+   * 「现在」的时间戳快照。
+   *
+   * `resolveHero` 要拿它算「上次写作距今多久」，但**不能在渲染期取** ——
+   * `Date.now()` 是副作用函数，放进 useMemo 会让同一份输入在不同渲染间产出
+   * 不同结果（React 纯度规则明确禁止）。改为在 load() 里取一次存进 state：
+   * Hero 的时间口径与数据同一时刻，反而比每次渲染各取一次更准。
+   */
+  const [now, setNow] = useState(() => Date.now());
 
   /** silent = 静默刷新（从编辑器返回书架时重算统计，不闪 loading） */
   const load = useCallback(async (silent = false): Promise<void> => {
     if (!silent) setLoading(true);
     try {
-      const [nextBundle, nextUsage, settingsRaw, positionRaw] = await Promise.all([
-        fetchShelfBundle(),
-        fetchShelfUsage(),
-        fetchShelfSettingsRaw(),
-        fetchShelfPositionRaw(),
-      ]);
+      const [nextBundle, nextUsage, settingsRaw, positionRaw, numbering] =
+        await Promise.all([
+          fetchShelfBundle(),
+          fetchShelfUsage(),
+          fetchShelfSettingsRaw(),
+          fetchShelfPositionRaw(),
+          fetchWorkNumbering(),
+        ]);
       setBundle(nextBundle);
       setUsage(nextUsage);
       setStyle(parseNumberStyle(settingsRaw));
+      setNumberingMap(numbering);
       setPosition(parsePosition(positionRaw));
+      setNow(Date.now());
     } finally {
       if (!silent) setLoading(false);
     }
@@ -125,8 +145,13 @@ export function useBookshelfData() {
   const notes = useMemo(() => bundle?.notes ?? [], [bundle]);
   const ideaCounts = useMemo(() => countIdeaNotes(notes), [notes]);
   const hero = useMemo(
-    () => (bundle ? resolveHero(bundle, position, style) : null),
-    [bundle, position, style],
+    () =>
+      bundle
+        ? resolveHero(bundle, position, style, now, (workId) =>
+            applyWorkNumbering(style, workId, numberingMap),
+          )
+        : null,
+    [bundle, position, style, now, numberingMap],
   );
 
   // ── 作品 ────────────────────────────────────────────────────────

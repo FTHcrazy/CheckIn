@@ -231,6 +231,8 @@ export function resolveHero(
   position: ShelfPosition | null,
   style: ShelfNumberStyle,
   now: number = Date.now(),
+  /** 按书取序号规则（1.34.0）；不传则全书共用 `style` */
+  styleForWork?: (workId: string) => ShelfNumberStyle,
 ): HeroView | null {
   let workId = "";
   let chapterId = "";
@@ -261,12 +263,14 @@ export function resolveHero(
   const workChapters = bundle.chapters.filter((item) => item.workId === workId);
   const ordinals = buildWorkOrdinals(workVolumes, workChapters);
   const volume = workVolumes.find((item) => item.id === chapter.volumeId);
+  // 「继续写作」展示的是这一本书的序号规则，不是全局设置（1.34.0 按书独立）
+  const workStyle = styleForWork?.(workId) ?? style;
   const volumeLabel = volume
-    ? formatNumberedLabel(style.numberStyle, style.volumeSuffix, Math.max(1, volume.sort))
+    ? formatNumberedLabel(workStyle.numberStyle, workStyle.volumeSuffix, Math.max(1, volume.sort))
     : "";
   const chapterLabel = `${formatNumberedLabel(
-    style.numberStyle,
-    style.chapterSuffix,
+    workStyle.numberStyle,
+    workStyle.chapterSuffix,
     ordinals.get(chapter.id) ?? 1,
   )} ${chapter.title}`.trim();
 

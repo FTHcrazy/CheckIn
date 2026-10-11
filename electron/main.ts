@@ -426,9 +426,12 @@ function createPackWindow(): BrowserWindow {
     return existing;
   }
 
+  // 尺寸是「分区仪表盘」形态的：宽档默认 1080×872（顶部概览带 + 双栏九模块），
+  // 下限保留 380×480 —— 低于 600 宽时面板降级为「核心三块常驻 + 其余折叠成标题行」，
+  // 保证缩到最窄仍能边写边对记（见 CharacterPack 的三档响应式）。
   const packWin = new BrowserWindow({
-    width: 520,
-    height: 820,
+    width: 1080,
+    height: 872,
     minWidth: 380,
     minHeight: 480,
     icon: ICON_PATH,

@@ -19,6 +19,7 @@
 import {
   countWords,
   parseTxtBook,
+  type DetectedNumbering,
   type ParsedBook,
 } from "./novel-import-parser";
 
@@ -35,6 +36,8 @@ export interface ImportParseResult {
     wordCount: number;
   }>;
   totalWords: number;
+  /** 从标题统计出的本书序号规则（识别不出为 null） */
+  numberingRule: DetectedNumbering | null;
 }
 
 /** 统计文本中的替换字符（U+FFFD）：解码失败的信号 */
@@ -108,6 +111,7 @@ self.onmessage = (event: MessageEvent<{ type: string; bytes: ArrayBuffer; fileNa
       volumes: book.volumes,
       chapters,
       totalWords: chapters.reduce((sum, chapter) => sum + chapter.wordCount, 0),
+      numberingRule: book.numberingRule,
     };
 
     self.postMessage({ type: "done", result });

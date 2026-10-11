@@ -1,7 +1,8 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BookOutlined, PlusOutlined, SearchOutlined } from "@ant-design/icons";
 import { Button, Input, Popconfirm } from "antd";
 import { Virtuoso } from "react-virtuoso";
+import type { VirtuosoHandle } from "react-virtuoso";
 import VolumeNode from "../VolumeNode";
 import ChapterTreeItem from "../ChapterTreeItem";
 import type { ChapterGroup } from "../../novel-utils";
@@ -51,6 +52,10 @@ type TreeRow =
  * 列表用 Virtuoso 虚拟化：卷章结构扁平化为一维行（卷头行 + 章行），
  * 长篇上千章时只挂载可视区；折叠状态提升到本组件——
  * 虚拟化后离屏行会被卸载，行内局部状态会丢失，不能留在行组件里。
+ *
+ * 激活章变化（点左栏、点大纲、点要素详情的「出场章节」、Ctrl+P 跳转……）
+ * 一律以 `activeChapterId` 为唯一信号，列表自动滚到该章 —— 跳转入口五花八门，
+ * 逐个埋滚动调用必然漏；盯住状态才是收口。
  */
 export default function ChapterTree({
   collapsed,
@@ -74,6 +79,7 @@ export default function ChapterTree({
   const [keyword, setKeyword] = useState("");
   /** 折叠的卷 id 集合（默认全部展开） */
   const [folded, setFolded] = useState<ReadonlySet<string>>(new Set());
+  const listRef = useRef<VirtuosoHandle | null>(null);
 
   /**
    * 删除确认浮层（§6.1.2「超长虚拟化列表行」例外）。
@@ -158,6 +164,26 @@ export default function ChapterTree({
     return list;
   }, [filtered, folded, searching]);
 
+  /**
+   * 激活章变化 → 列表滚动到该章。
+   *
+   * 只依赖 `activeChapterId`：无论跳转从哪来（左栏点击 / 大纲 / 要素的出场章节 /
+   * Ctrl+P），激活章一变就滚，不区分来源。
+   *
+   * 三种情况静默跳过，都不是错误：
+   * - `index < 0`：目标章被搜索词滤掉、或所在卷处于折叠状态（不可见就无从滚）；
+   * - `activeChapterId` 为空：没有激活章；
+   * - 列表尚未挂载（`rows` 为空时渲染的是空态 div，没有 Virtuoso 实例）。
+   */
+  useEffect(() => {
+    if (!activeChapterId) return;
+    const index = rows.findIndex(
+      (row) => row.kind === "chapter" && row.chapter.id === activeChapterId,
+    );
+    if (index < 0) return;
+    listRef.current?.scrollToIndex({ index, align: "center" });
+  }, [activeChapterId, rows]);
+
   const toggleVolume = (volumeId: string): void => {
     setFolded((current) => {
       const next = new Set(current);
@@ -189,6 +215,7 @@ export default function ChapterTree({
         </div>
       ) : (
         <Virtuoso
+          ref={listRef}
           className="nv-tree__list"
           data={rows}
           overscan={12}

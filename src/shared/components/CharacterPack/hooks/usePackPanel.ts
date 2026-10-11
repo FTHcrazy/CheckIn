@@ -76,7 +76,7 @@ import {
   type PackUiPrefs,
   type PackUnitSystem,
 } from "../types";
-import { CURRENCY_TEMPLATE, PACK_PANEL } from "../pack-config";
+import { CURRENCY_TEMPLATE, PACK_UI_SAVE_DEBOUNCE_MS } from "../pack-config";
 import {
   notifyProtagonistChanged,
   PACK_PROTAGONIST_EVENT,
@@ -237,7 +237,7 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
     prefsTimerRef.current = window.setTimeout(() => {
       prefsTimerRef.current = null;
       void savePackUiPrefsRaw(JSON.stringify(prefs));
-    }, PACK_PANEL.debounceMs);
+    }, PACK_UI_SAVE_DEBOUNCE_MS);
     return () => {
       if (prefsTimerRef.current !== null) {
         window.clearTimeout(prefsTimerRef.current);

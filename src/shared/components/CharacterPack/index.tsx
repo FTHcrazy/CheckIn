@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { ComponentType } from "react";
 import PackHeader from "./components/PackHeader";
 import PackToast from "./components/PackToast";
@@ -18,9 +18,19 @@ import UnitSystemManager from "./components/UnitSystemManager";
 import SlotManager from "./components/SlotManager";
 import RecordDrawer from "./components/RecordDrawer";
 import SourceDetailDrawer from "./components/SourceDetailDrawer";
+import { PackModuleSummaryContext } from "./components/module-summary-context";
 import { usePackPanel, type PackPanelApi } from "./hooks/usePackPanel";
+import { useElementWidth } from "./hooks/useElementWidth";
 import { downloadText } from "./services/pack-export";
-import type { PackModuleKey } from "./types";
+import { packWidthTier } from "./pack-config";
+import {
+  PACK_ZONE_LABEL,
+  isAutoCollapsed,
+  moduleSummary,
+  splitByZone,
+  type PackZone,
+} from "./pack-layout";
+import type { PackModuleKey, PackModuleState } from "./types";
 import "./index.scss";
 
 interface CharacterPackHostProps {
@@ -44,6 +54,32 @@ const MODULE_VIEWS: Record<PackModuleKey, ModuleView> = {
 };
 
 /**
+ * 给模块视图包一层「生效折叠态」。
+ *
+ * 为什么不让九个模块各自去算：折叠真值现在有两个来源 —— 作者的显式偏好
+ * （`prefs.collapsed`）与窗口宽度（窄档下未表态的次要模块自动折叠）。若每个
+ * 模块自己调 `isAutoCollapsed`，规则一改就要改九处，且九个模块都得知道
+ * 「当前窗口多宽」这件与它们无关的事。
+ *
+ * 这里用一层 api 代理把「(模块键, 档位) → 是否折叠」收敛到唯一入口：
+ * 模块照旧读 `api.prefs.collapsed[key]`，只是读到的是**算过的值**；
+ * `toggleModuleCollapsed` 也照旧写 `prefs`，于是作者一点，「自动折叠」
+ * 就被显式偏好接管（规则 2 生效）—— 与 `isAutoCollapsed` 的注释完全对应。
+ */
+function withEffectiveCollapse(
+  api: PackPanelApi,
+  key: PackModuleKey,
+  tier: "wide" | "mid" | "narrow",
+): PackPanelApi {
+  const collapsed = isAutoCollapsed(key, tier, api.prefs.collapsed);
+  if (Boolean(api.prefs.collapsed[key]) === collapsed) return api;
+  return {
+    ...api,
+    prefs: { ...api.prefs, collapsed: { ...api.prefs.collapsed, [key]: collapsed } },
+  };
+}
+
+/**
  * 行囊面板宿主（唯一入口）
  *
  * 整个功能只吃 `workId / chapterId / onClose` 三个入参，其余全部自持 ——
@@ -51,6 +87,10 @@ const MODULE_VIEWS: Record<PackModuleKey, ModuleView> = {
  *
  * 行囊已独立成专属窗口（PackWindow）：本组件铺满整个窗口内容区，
  * 不再有内嵌面板时代的拖宽 / 浮层降级 / 速览形态。
+ *
+ * 布局是「分区仪表盘」：宽档按语义双栏并排，中档单栏纵向流，窄档把次要
+ * 六模块自动折叠成带摘要的标题行、核心三块（汇总 / 属性 / 境界）照常展开。
+ * 分档与折叠规则全在 `pack-layout.ts` 的纯函数里，这里只负责量宽度与铺 DOM。
  */
 export default function CharacterPackHost({
   workId,
@@ -58,6 +98,7 @@ export default function CharacterPackHost({
   onClose,
 }: CharacterPackHostProps) {
   const api = usePackPanel({ workId, chapterId, open: true, onClose });
+  const { ref: bodyRef, width: contentWidth } = useElementWidth<HTMLDivElement>();
 
   // 事件监听里要读最新 api，但监听不能每次渲染都重挂 —— 用 effect 同步 ref
   // （渲染期写 ref 会破坏并发渲染下的可预测性，必须放 effect 里）
@@ -106,6 +147,32 @@ export default function CharacterPackHost({
 
   const doc = api.doc;
 
+  /**
+   * 档位。`contentWidth` 未测出（0，如 jsdom 或不支持 ResizeObserver 的宿主）
+   * 时按最保守的窄档走 —— 宁可折叠得比需要多，也不要排成双栏挤成一团。
+   */
+  const tier = packWidthTier(contentWidth);
+  const isWide = tier === "wide";
+
+  const zoneModules = useMemo(
+    () => splitByZone(api.enabledModules),
+    [api.enabledModules],
+  );
+
+  /** 渲染单个模块。代理只在该模块的生效折叠态与作者偏好不同时才新建对象。 */
+  const renderModule = (module: PackModuleState) => {
+    const View = MODULE_VIEWS[module.key];
+    const scopedApi = withEffectiveCollapse(api, module.key, tier);
+    return (
+      <PackModuleSummaryContext.Provider
+        key={module.key}
+        value={tier === "narrow" ? moduleSummary(module.key, doc) : ""}
+      >
+        <View api={scopedApi} />
+      </PackModuleSummaryContext.Provider>
+    );
+  };
+
   /** 保存失败时的逃生出口：把内存里这份改动整份落盘（G-4） */
   const handleExportDraft = async (): Promise<void> => {
     const path = await downloadText(
@@ -124,6 +191,16 @@ export default function CharacterPackHost({
         characterName={doc?.character.name ?? "主角"}
         realmText={api.realmText}
         realmHint={api.realmHint}
+        realmBound={api.realmBound}
+        /*
+          读数只在宽 / 中档给。窄档（<600px）下头部要同时容纳
+          「头像 + 名字 + 境界 + 保存态 + 按钮 + 工具」，再塞三个读数会挤到
+          文字互相重叠、「全部已读」被裁出屏幕（曾实测）。
+          读数回答的是「这趟盘完没有」，窄窗下用滚一眼物品栏同样能得到 ——
+          故窄档整块不传，而不是压成小字继续挤。
+        */
+        readings={doc && tier !== "narrow" ? { load: api.load, skills: doc.skills } : null}
+        compact={tier === "narrow"}
         dirty={api.dirty}
         saving={api.saving}
         saveFailed={api.saveFailed}
@@ -141,7 +218,11 @@ export default function CharacterPackHost({
         onClose={() => void api.requestClose()}
       />
 
-      <div className="cpk__body">
+      <div
+        className={`cpk__body cpk__body--${tier}`}
+        ref={bodyRef}
+        data-tier={tier}
+      >
         {api.loading ? (
           <div className="cpk__loading">
             <span className="cpk__spinner" />
@@ -155,11 +236,29 @@ export default function CharacterPackHost({
           <p className="cpk-empty">
             所有模块都被关掉了。点右上角的齿轮重新打开需要的模块。
           </p>
+        ) : isWide ? (
+          /*
+            宽档：按语义双栏。左「装备类」/ 右「数值与状态」——
+            两栏各自独立滚动区会抢滚轮，所以仍共用外层这一条滚动条，
+            两栏只是并排的网格轨道（高度由内容决定，短的那栏自然留白）。
+          */
+          <div className="cpk__zones">
+            {(["gear", "stats"] as PackZone[]).map((zone) => (
+              <section
+                key={zone}
+                className={`cpk__zone cpk__zone--${zone}`}
+                aria-label={PACK_ZONE_LABEL[zone]}
+              >
+                <h3 className="cpk__zonetitle">{PACK_ZONE_LABEL[zone]}</h3>
+                <div className="cpk__zonestack">
+                  {zoneModules[zone].map(renderModule)}
+                </div>
+              </section>
+            ))}
+          </div>
         ) : (
-          api.enabledModules.map((module) => {
-            const View = MODULE_VIEWS[module.key];
-            return <View key={module.key} api={api} />;
-          })
+          /* 中 / 窄档：单栏纵向流；窄档下次要模块由 isAutoCollapsed 折叠成标题行 */
+          <div className="cpk__flow">{api.enabledModules.map(renderModule)}</div>
         )}
       </div>
 

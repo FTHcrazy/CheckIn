@@ -5,7 +5,7 @@
  * 一律从既有配置导入，避免第二份事实源。
  */
 import { LEVEL_RELATION, STORAGE_KEYS } from "@/shared/novel/constants";
-import { PACK_MODULES, type PackModuleState } from "./types";
+import { PACK_MODULES, type PackModuleKey, type PackModuleState } from "./types";
 
 /** 「当前境界」关联名：与 R25 实体面板共用同一份定义（§9.7.3 唯一事实源） */
 export const PACK_LEVEL_RELATION = LEVEL_RELATION;
@@ -20,15 +20,41 @@ export const DEFAULT_LAYOUTS: PackModuleState[] = PACK_MODULES.map((module, inde
   sortOrder: index + 1,
 }));
 
-/** 面板宽度（与既有右栏共存，故比右栏更宽一档以便宫格视图） */
-export const PACK_PANEL = {
-  defaultWidth: 420,
-  minWidth: 340,
-  maxWidth: 620,
-  debounceMs: 300,
-  /** 窄窗降级阈值：可用宽度低于此值 → 全屏浮层 + 遮罩（§8.2 降级规则） */
-  overlayBelow: 1100,
+/**
+ * 界面偏好落库防抖（界面偏好是即改即存，但打字般的连续折叠不应每次都写库）
+ */
+export const PACK_UI_SAVE_DEBOUNCE_MS = 300;
+
+/**
+ * 行囊窗口的三档断点（px，按**窗口内容区宽度**判定）。
+ *
+ * 行囊是独立窗口、作者边写边对记，所以要能一路缩到 380px 仍可用：
+ * - `wide`（≥900）：左栏「装备类」+ 右栏「数值与状态」双栏并排，九模块同屏可达；
+ * - `narrow`（<600）：单栏；核心三块（总属性汇总 / 人物属性 / 境界）照常展开，
+ *   其余六模块**自动折叠成标题行**（右侧带一句派生摘要），点开才展开。
+ * - 600–900 之间：单栏纵向流，全部模块按序展开。
+ *
+ * 判据用 `contentWidth`（窗口宽度）而不是 `window.innerWidth`：窗口壳自带
+ * 边框与内边距，直接读 innerWidth 会把边框算进可用宽度，导致断点在临界值抖动。
+ */
+export const PACK_WINDOW_BREAKPOINTS = {
+  wide: 900,
+  narrow: 600,
+  /** 窄档下永不折叠的模块（对记时最常瞟的三块） */
+  coreModules: ["summary", "attributes", "realm"],
 } as const;
+
+/** 判定档位。纯函数，供组件与单测共用同一份规则（不重复实现）。 */
+export function packWidthTier(width: number): "wide" | "mid" | "narrow" {
+  if (width >= PACK_WINDOW_BREAKPOINTS.wide) return "wide";
+  if (width < PACK_WINDOW_BREAKPOINTS.narrow) return "narrow";
+  return "mid";
+}
+
+/** 该模块在指定档位下是否强制常驻（不接受折叠态）。 */
+export function isCorePackModule(key: PackModuleKey): boolean {
+  return (PACK_WINDOW_BREAKPOINTS.coreModules as readonly string[]).includes(key);
+}
 
 /** 物品列表搜索防抖（B-3：≥20 条时实时过滤，防抖 200ms） */
 export const INVENTORY_SEARCH_DEBOUNCE_MS = 200;

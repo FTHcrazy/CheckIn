@@ -7,15 +7,17 @@
   background: var(--app-surface);
   overflow: hidden;
 
-  & + & {
-    margin-top: 8px;
-  }
+  /*
+    相邻间距由**外层容器**（.cpk__zonestack / .cpk__flow）的 `> * + *` 统一给，
+    这里不再写 `& + &` —— 分栏之后模块壳会分别落在两个容器里，
+    自身相邻选择器管不到跨栏的首尾间距，两处各写一份必然漂移。
+  */
 
   &__head {
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 7px 8px 7px 6px;
+    padding: 9px 10px;
     background: var(--app-surface-alt);
     border-bottom: 1px solid var(--app-border);
   }
@@ -47,11 +49,26 @@
   }
 
   &__title {
+    flex: none;
     font-size: 13px;
     font-weight: 600;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  /* 派生摘要：贴着标题右侧、吃掉剩余宽度，过长省略而不是换行 */
+  &__summary {
+    flex: 1;
+    min-width: 0;
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--app-text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: right;
+    padding-left: 6px;
   }
 
   &__actions {
@@ -74,7 +91,7 @@
   &__inner {
     min-height: 0;
     overflow: hidden;
-    padding: 8px;
+    padding: 10px;
   }
 
   &.is-collapsed &__inner {

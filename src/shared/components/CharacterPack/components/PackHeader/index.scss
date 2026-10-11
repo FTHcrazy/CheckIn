@@ -1,36 +1,75 @@
 @use "../../styles/pack-widget" as widget;
 
-/** 行囊头部：角色 + 境界 chip + 保存条三态 */
+/**
+ * 行囊头部：横向概览带
+ *
+ * 一条横带装三组信息：左「我是谁」、中「这趟盘完没有」、右「存了没有 + 工具」。
+ * 布局用 flex。窄档（<600px）下由 `index.tsx` 决定两块让位：
+ *   - 读数区整块不渲染（`readings` 不传）；
+ *   - 次要文字动作与四个工具收进「更多」菜单（`compact` 为真）。
+ * 留在窄档外面的只有身份块 + 保存态 pill + 保存按钮，它们是不可省的三件。
+ */
 .cpk-head {
   flex: none;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
   border-bottom: 1px solid var(--app-border);
   background: var(--app-header-bg, var(--app-surface));
 
-  &__top {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 8px 6px;
-  }
+  /*
+    ⚠️ 这里是「谁让位」的声明，不是随手写的 flex。三块的优先级：
 
+      1. 中读数区 —— 最先牺牲。窄档整块不渲染；中档可缩到 0 都不影响可用性，
+         因为它回答的是「这趟盘完没有」，而不是「我是谁 / 我存没存」。
+      2. 右操作区 —— 其次受压，但**只压文字按钮的宽度**，图标与主按钮不缩。
+         它是「能不能存下」的操作区，宁可让读数先消失，也不能让保存按钮点不到。
+      3. 左身份块 —— 最后让位，且**永远保留一个下限**。
+
+    ⚠️ 曾经的三个坑（都在窄窗下实测过）：
+    - 三块都用默认 `flex: 0 1 auto` → 浏览器先压缩「本来就窄」的，把读数文字
+      挤到互相重叠；
+    - `__who` 没有下限 → 440px 时它被压成 **0 宽**（量过：whoW=0、whoScroll=106），
+      整块身份区看不见，但**不报错** —— 祖先的 `overflow: hidden` 让它只是消失。
+      下限取 `头像 38 + 间距 + 名字前几个字`，至少让人知道这是谁的囊。
+    - `__ops` 设 `flex: none` → 四个工具 + （脏态下的）两个文字按钮全按自然宽
+      占位，窄档直接把身份区挤没。最终解法不是让它们可缩，而是**窄档整块收进
+      「更多」菜单**（见 index.tsx 的 compact 分支）——
+      被省略成「部已读」的按钮，比放进菜单里的按钮更让人不明所以。
+  */
   &__who {
-    flex: 1;
-    min-width: 0;
+    /* 下限：头像 + 间距 + 至少 4 个字的角色名。再窄就是「这是谁的囊都看不清」 */
+    flex: 0 1 auto;
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 10px;
+    min-width: 96px;
   }
 
+  /*
+    头像：圆形底 + 人形图标。此前是一枚 emoji（🧑）—— 它跟着系统字体渲染，
+    在四套主题里颜色不可控、在 Windows 上是彩色表情，与整块中性配色打架
+    （AGENTS.md §6.1 明确不用 emoji 当图标）。
+  */
   &__avatar {
     flex: none;
-    width: 22px;
-    height: 22px;
+    width: 38px;
+    height: 38px;
     border-radius: var(--app-radius-pill);
     background: var(--app-primary-weak);
+    color: var(--app-primary);
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 12px;
+    font-size: 19px;
+  }
+
+  &__id {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
   }
 
   /* 角色名（未编辑态）：点开改名，造型自带。
@@ -41,35 +80,48 @@
     --ant-button-default-hover-bg: transparent;
     --ant-button-default-active-bg: transparent;
     display: inline-block;
-    padding: 0 2px;
-    font-size: 13px;
-    font-weight: 600;
+    align-self: flex-start;
+    padding: 0;
+    font-size: 16px;
+    font-weight: 700;
     color: var(--app-text-strong);
     cursor: text;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     text-align: left;
-    max-width: 30%;
+    max-width: 180px;
+    line-height: 1.25;
   }
 
   /* 角色名（编辑态）：一个有边框的短输入框 */
   &__name-input.ant-input {
     --ant-input-padding-block-sm: 0px;
     --ant-input-padding-inline-sm: 6px;
-    --ant-input-input-font-size-sm: 13px;
+    --ant-input-input-font-size-sm: 15px;
     --ant-border-radius-sm: var(--app-radius-item);
     --ant-input-padding-block: 0px;
     --ant-input-padding-inline: 6px;
-    --ant-input-input-font-size: 13px;
+    --ant-input-input-font-size: 15px;
     --ant-border-radius: var(--app-radius-item);
     --ant-color-text: var(--app-text);
     --ant-color-border: var(--app-border-strong);
     --ant-color-bg-container: var(--app-input-bg);
-    width: 30%;
+    width: 160px;
     min-width: 60px;
-    height: 22px;
+    height: 24px;
     font-family: inherit;
+    font-weight: 700;
+  }
+
+  /* 名下的副行：境界 chip + 绑定态，一行放不下就整体省略。
+   * 「已绑定主角」是**可以牺牲**的那一段（境界更重要），所以给它
+   * `min-width: 0` + 省略号；境界 chip 不缩，它只有几个字且是硬信息。 */
+  &__meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
   }
 
   &__realm {
@@ -78,72 +130,169 @@
     border-radius: var(--app-radius-chip);
     background: var(--app-accent-blue-weak);
     color: var(--app-accent-blue);
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 600;
     white-space: nowrap;
   }
 
-  &__ops {
-    flex: none;
-    display: flex;
-    align-items: center;
-    gap: 2px;
-  }
-}
-
-/* ── 保存条（三态底色必须两两可分，暗色同样成立）── */
-.cpk-savebar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 8px 7px;
-
-  &__state {
-    flex: 1;
+  &__bound {
     min-width: 0;
-    font-size: 12px;
+    font-size: 11px;
+    color: var(--app-text-muted);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
-  &__actions {
-    flex: none;
+  /* ── 中：三个读数 ── */
+  &__readings {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    align-items: flex-start;
+    gap: 40px;
+    padding-left: 28px;
+  }
+
+  &__r {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  &__rlabel {
+    font-size: 11px;
+    color: var(--app-text-muted);
+    white-space: nowrap;
+  }
+
+  /*
+    读数数值用等宽数字：三个读数会随编辑实时跳动，比例字体会让相邻项目
+    左右乱晃（「1」比「8」窄），一行数字看着在抖。tabular-nums 定宽。
+  */
+  &__rvalue {
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--app-text-strong);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.25;
+  }
+
+  &__rhint {
+    font-size: 11px;
+    color: var(--app-text-muted);
+    white-space: nowrap;
+  }
+
+  &__r.is-alert &__rvalue {
+    color: var(--app-error);
+  }
+
+  /* ── 右：保存态 + 工具 ── */
+  &__ops {
+    /*
+      可缩，但内部按「谁先省略」排序：
+      - 保存态文字 / 「全部已读」/ 「撤销全部」是**可省**的叙述性内容，先省略；
+      - 「保存」主按钮与工具入口是**不可省**的动作，`flex: none` 保住它们。
+      只要主按钮还在，作者就能把改动存下去 —— 这是这条带子的底线。
+    */
+    flex: 0 1 auto;
+    margin-left: auto;
     display: flex;
     align-items: center;
     gap: 6px;
+    min-width: 0;
   }
 
-  &.is-idle &__state {
-    color: var(--app-text-muted);
+  &__tools {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: 4px;
+    padding-left: 8px;
+    border-left: 1px solid var(--app-border);
+    flex: none;
   }
 
+  /*
+    「保存」主按钮与「更多」入口不可缩 —— 它们是这条带子的动作底线：
+    按钮被压变形 / 图标被裁掉，等于把「能不能存下」这件事弄丢了。
+
+    次要文字动作（「全部已读」「撤销全部」）在窄档已整块收进「更多」菜单
+    （见 index.tsx），故此处的 `ghost` 按钮只会出现在宽 / 中档 ——
+    那里空间充足，它们按自然宽排布即可，不需要可缩。
+  */
+  &__ops > .cpk-btn.primary,
+  &__ops > .cpk-iconbtn {
+    flex: none;
+  }
+
+  /* 脏态给整条带子一个极淡的暖底：作者扫一眼就知道「还有东西没存」，
+   * 不必去读右侧那行小字。失败态换成红底。 */
   &.is-dirty {
     background: var(--app-warning-weak);
-  }
-
-  &.is-dirty &__state {
-    color: var(--app-text-strong);
-    font-weight: 600;
-  }
-
-  &.is-busy &__state {
-    color: var(--app-text-secondary-strong);
   }
 
   &.is-failed {
     background: var(--app-error-weak);
   }
+}
 
-  &.is-failed &__state {
-    color: var(--app-error);
+/* ── 保存态（三态必须两两可分，暗色同样成立）── */
+.cpk-savebar__state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  white-space: nowrap;
+  /* 窄档下先省略这段叙述文字（「已保存 · 3 分钟前」→「已保存…」），
+     保全「保存」主按钮与工具入口 */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  /* 干净态做成一颗绿点 + 文字的 pill：设计稿的观感，也比纯文字更快读 */
+  &.is-idle {
+    padding: 3px 9px;
+    border-radius: var(--app-radius-pill);
+    background: var(--app-accent-green-weak);
+    color: var(--app-accent-green);
     font-weight: 600;
   }
 
-  /* ≥5 处改动：一次轻微呼吸（不循环） */
-  &.is-breathe .cpk-btn.primary {
-    animation: cpk-breathe 1.5s ease-out 2;
+  &.is-dirty {
+    padding: 3px 9px;
+    border-radius: var(--app-radius-pill);
+    background: var(--app-warning-weak);
+    color: var(--app-warning);
+    font-weight: 600;
   }
+
+  &.is-busy {
+    color: var(--app-text-secondary-strong);
+  }
+
+  &.is-failed {
+    padding: 3px 9px;
+    border-radius: var(--app-radius-pill);
+    background: var(--app-error-weak);
+    color: var(--app-error);
+    font-weight: 600;
+  }
+}
+
+.cpk-savebar__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* ≥5 处改动：保存按钮一次轻微呼吸（不循环） */
+.cpk-head.is-breathe .cpk-btn.primary {
+  animation: cpk-breathe 1.5s ease-out 2;
 }
 
 @keyframes cpk-breathe {

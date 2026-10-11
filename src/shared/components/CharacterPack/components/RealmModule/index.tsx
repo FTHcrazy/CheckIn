@@ -84,6 +84,30 @@ export default function RealmModule({ api }: RealmModuleProps) {
         </p>
       ) : (
         <>
+          {/*
+            横向阶梯 chip 行（对齐设计稿）。
+            刻意不换行 + 横向滚动：换行会让「炼气…化神」这排高低次序变成两段，
+            反而看不出进度；横向滚动保持「一条尺子」的读法，窄窗口下也能拖。
+          */}
+          <div className="cpk-rlm__ladderwrap">
+            <ul className="cpk-rlm__ladder">
+              {rungs.map((item, index) => (
+                <li key={item.id}>
+                  <Button
+                    className={`cpk-rlm__rung${index === api.realmPos.index ? " is-on" : ""}${
+                      index < api.realmPos.index ? " is-passed" : ""
+                    }`}
+                    onClick={() => pick(index)}
+                    title={item.power ? `战力当量 ${item.power}` : "点击跳到这一阶"}
+                  >
+                    {item.name}
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* 当前境界 + 距下一阶进度（设计稿此处是一条横向进度条） */}
           <div className="cpk-rlm__now">
             <span className="cpk-rlm__value">{api.realmText}</span>
             <span className="cpk-rlm__stepper">
@@ -96,51 +120,17 @@ export default function RealmModule({ api }: RealmModuleProps) {
             </span>
           </div>
 
-          <div className="cpk-rlm__mirror">
-            <span className="cpk-rlm__mirrorlabel">实体面板显示</span>
-            <span className="cpk-rlm__mirrorvalue">{api.panelRealmText}</span>
-            {api.panelRealmText !== api.realmText ? (
-              <span className="cpk-rlm__diverge" title="两处已分叉，请检查绑定">
-                已分叉
-              </span>
-            ) : (
-              <span className="cpk-rlm__same">同源</span>
-            )}
-          </div>
-
-          <ul className="cpk-rlm__ladder">
-            {rungs.map((item, index) => (
-              <li key={item.id}>
-                <Button
-                  className={`cpk-rlm__rung${index === api.realmPos.index ? " is-on" : ""}${
-                    index < api.realmPos.index ? " is-passed" : ""
-                  }`}
-                  onClick={() => pick(index)}
-                  title={item.power ? `战力当量 ${item.power}` : "点击跳到这一阶"}
-                >
-                  {item.name}
-                  {item.subLevels > 1 ? <em>{item.subLevels}</em> : null}
-                </Button>
-              </li>
-            ))}
-          </ul>
-
           {subMax > 1 ? (
-            <div className="cpk-rlm__sub">
-              <span className="cpk-rlm__sublabel">小层</span>
-              <Select
-                size="small"
-                value={api.realmPos.sub}
-                style={{ width: 76 }}
-                options={Array.from({ length: subMax }, (_, index) => ({
-                  value: index + 1,
-                  label: `${index + 1} / ${subMax}`,
-                }))}
-                classNames={{ popup: { root: "cpk-dropdown" } }}
-                onChange={(value: number) =>
-                  void api.writeRealm({ index: api.realmPos.index, sub: value }, "pack")
-                }
-              />
+            <div className="cpk-rlm__progress">
+              <div className="cpk-rlm__bar">
+                <span
+                  className="cpk-rlm__fill"
+                  style={{ width: `${Math.round((api.realmPos.sub / subMax) * 100)}%` }}
+                />
+              </div>
+              <span className="cpk-rlm__progresslabel">
+                阶内 {api.realmPos.sub} / {subMax}
+              </span>
               <Button
                 className="cpk-btn ghost"
                 // 已在顶阶满层时进位无处可去（carryRealm 会原样返回）。
@@ -161,6 +151,19 @@ export default function RealmModule({ api }: RealmModuleProps) {
               </Button>
             </div>
           ) : null}
+
+          {/* 双读数对照：行囊改了、实体面板没跟上时，一眼可见「已分叉」 */}
+          <div className="cpk-rlm__mirror">
+            <span className="cpk-rlm__mirrorlabel">实体面板显示</span>
+            <span className="cpk-rlm__mirrorvalue">{api.panelRealmText}</span>
+            {api.panelRealmText !== api.realmText ? (
+              <span className="cpk-rlm__diverge" title="两处已分叉，请检查绑定">
+                已分叉
+              </span>
+            ) : (
+              <span className="cpk-rlm__same">同源</span>
+            )}
+          </div>
 
           <div className="cpk-rlm__bind">
             <span className="cpk-rlm__bindlabel">主角</span>

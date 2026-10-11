@@ -57,32 +57,36 @@ describe("端到端：字节 → 卷章结构", () => {
     expect(book.structured).toBe(true);
     expect(book.volumes.map((v) => v.name)).toEqual(["第一卷 少年游", "第二卷 江湖路"]);
 
-    // 书名 / 作者 / 网址行不是标题，归入卷首兜底章
+    // 书名 / 作者 / 网址行不是标题，归入卷首兜底章。
+    // 1.34.0 起章标题的序号前缀被剥掉，只留纯章名（序号由左栏序号列派生）
     const titles = book.chapters.map((c) => c.title);
     expect(titles).toContain("第一卷 少年游 · 序");
-    expect(titles).toContain("第一章 出生");
-    expect(titles).toContain("第二章 离乡");
-    expect(titles).toContain("第一章 初入江湖");
-    expect(titles).toContain("第二章 拜师");
+    expect(titles).toContain("出生");
+    expect(titles).toContain("离乡");
+    expect(titles).toContain("初入江湖");
+    expect(titles).toContain("拜师");
     // 广告行不成为章节
     expect(titles.some((t) => t.includes("最新章节"))).toBe(false);
 
     // 卷归属正确
     const byTitle = (t: string) => book.chapters.find((c) => c.title === t)!;
-    expect(byTitle("第一章 出生").volumeIndex).toBe(0);
-    expect(byTitle("第二章 离乡").volumeIndex).toBe(0);
-    expect(byTitle("第一章 初入江湖").volumeIndex).toBe(1);
-    expect(byTitle("第二章 拜师").volumeIndex).toBe(1);
+    expect(byTitle("出生").volumeIndex).toBe(0);
+    expect(byTitle("离乡").volumeIndex).toBe(0);
+    expect(byTitle("初入江湖").volumeIndex).toBe(1);
+    expect(byTitle("拜师").volumeIndex).toBe(1);
 
     // 广告行被并入正文而非丢弃
-    expect(byTitle("第一章 初入江湖").content).toContain("最新章节请记住本站");
+    expect(byTitle("初入江湖").content).toContain("最新章节请记住本站");
+
+    // 按书识别出的序号规则：中文数字 + 章
+    expect(book.numberingRule).toEqual({ suffix: "章", numberStyle: "chinese" });
   });
 
   it("超大单章不会吞掉后续章节（标题依然切分）", () => {
     const body = Array.from({ length: 500 }, (_, i) => `第 ${i} 段正文。`).join("\n");
     const raw = `第一章 甲\n${body}\n第二章 乙\n收尾。`;
     const book = parseTxtBook(raw);
-    expect(book.chapters.map((c) => c.title)).toEqual(["第一章 甲", "第二章 乙"]);
+    expect(book.chapters.map((c) => c.title)).toEqual(["甲", "乙"]);
     expect(book.chapters[1].content).toBe("收尾。");
   });
 });

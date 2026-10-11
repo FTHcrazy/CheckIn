@@ -70,13 +70,25 @@
     font-weight: 600;
   }
 
+  /*
+    阶梯行：横向不换行 + 可滚动（对齐设计稿的「一条尺子」读法）。
+    内层 ul 撑开宽度、外层负责滚动 —— 这样 chip 之间不会被压扁，
+    窄窗口下拖横向滚动条即可看到后面几阶。
+  */
+  &__ladderwrap {
+    margin-top: 2px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+  }
+
   &__ladder {
-    margin: 7px 0 0;
-    padding: 0;
+    margin: 0;
+    padding: 0 0 4px;
     list-style: none;
     display: flex;
-    flex-wrap: wrap;
     gap: 4px;
+    width: max-content;
   }
 
   /* 阶梯格子：一颗可点的 chip，造型自带 → 先清零 antd 外观再声明 */
@@ -137,6 +149,43 @@
     align-items: center;
     gap: 6px;
     margin-top: 7px;
+  }
+
+  /*
+    阶内进度：一条横向进度条 + 「阶内 n / m」+ 进位按钮。
+    进度条画的是**当前阶内已走的层数**，不是阶数 —— 作者关心的是
+    「还差几层破境」，用阶数画对这条尺子就没意义了。
+  */
+  &__progress {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+  }
+
+  &__bar {
+    flex: 1;
+    min-width: 0;
+    height: 6px;
+    border-radius: var(--app-radius-pill);
+    background: var(--app-surface-alt);
+    overflow: hidden;
+  }
+
+  &__fill {
+    display: block;
+    height: 100%;
+    border-radius: var(--app-radius-pill);
+    background: var(--app-accent-blue);
+    transition: width 0.22s ease;
+  }
+
+  &__progresslabel {
+    flex: none;
+    font-size: 11px;
+    color: var(--app-text-secondary-strong);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
   }
 
   &__sublabel {

@@ -203,6 +203,10 @@ R11 自动排版 ｜ R12 全局快捷键 Alt+W + 托盘入口 + 窗口 bounds �
 | 章节一句话梗概（行内编辑、空串清除） | `novel_chapters.outline_note` 列 + novel-chapter-outline IPC | 补录为 R30 |
 | 灵感置顶 + 一键转伏笔（转出标记 foreshadowId） | novel_notes.pinned / foreshadow_id | 补录为 R30 |
 | 序号体系自定义（阿拉伯/中文数字 × 章/卷后缀自由组合） | numberStyle/chapterSuffix/volumeSuffix 设置 | 并入 R5 描述 |
+| **序号规则按书独立**（v1.34.0）：导入时统计本书规则写进 `novel_work_numbering`，设置里的序号三字段降级为「无记录作品的默认值」，换书互不影响 | `src/shared/novel/work-numbering.ts` + config 键 | 并入 R5 描述 |
+| **导入自动剥离章节序号**（v1.34.0）：「第1章 黑暗恐惧」→「黑暗恐惧」，序号只由左栏序号列派生；只有序号无章名时空标题按本书规则补「第N×」 | `novel-import-parser.ts` 的 `stripChapterNumbering` / `detectChapterNumbering` | 并入导入能力描述 |
+| **激活章自动滚动定位**（v1.34.0）：大纲 / 要素「出场章节」/ Ctrl+P 跳转后左栏滚到该章，收口在 `activeChapterId` 而非各入口 | ChapterTree 的 `scrollToIndex({ align: "center" })` | 并入 R6 描述 |
+| **点正文高亮自动切回「要素」tab**（v1.34.0）：右栏停在别的 tab 时，正文高亮与悬浮卡两条入口都经 `openEntityDetail` 切 tab | `useNovelViewState.openEntityDetail` | 并入 R6 描述 |
 | 拖拽重排防误触确认（预览序号变更再应用，默认开） | confirmReorder 设置 + ReorderConfirmModal | 并入 R9 描述 |
 | 小屏自动收起左栏（舞台宽 < 560px 让位码字区） | LAYOUT.minStageWidth + useNovelViewState | 实现细节，记录备查 |
 | 关联要素/灵感/大纲等单测 | OutlinePanel/InspirationPanel/novel-utils 测试 | 质量保障，记录备查 |

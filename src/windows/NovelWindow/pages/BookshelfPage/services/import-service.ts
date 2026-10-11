@@ -9,7 +9,10 @@
  */
 
 import type { NovelBundleDTO } from "@/shared/types/electron";
+import { type WorkNumberingRule } from "@/shared/novel/constants";
+import { saveWorkNumberingRule } from "@/shared/novel/work-numbering";
 import { createShelfId } from "./bookshelf-service";
+import { formatNumberedLabel } from "../bookshelf-utils";
 import type { ImportParseResult } from "../import/import.worker";
 
 /** 导入进度回调：phase 文案 + 0~1 比例 */
@@ -115,6 +118,7 @@ async function parseOnMainThread(bytes: ArrayBuffer): Promise<ImportParseResult>
     volumes: book.volumes,
     chapters,
     totalWords: chapters.reduce((sum, chapter) => sum + chapter.wordCount, 0),
+    numberingRule: book.numberingRule,
   };
 }
 
@@ -129,6 +133,14 @@ export async function commitImport(
 ): Promise<ImportCommitResult> {
   const workId = createShelfId("w");
   const now = Date.now();
+  /** 从章节标题统计出的本书序号规则（识别不出则用全局默认） */
+  const rule: WorkNumberingRule | null = parsed.numberingRule
+    ? {
+        numberStyle: parsed.numberingRule.numberStyle,
+        chapterSuffix: parsed.numberingRule.suffix,
+        volumeSuffix: "卷",
+      }
+    : null;
 
   // 卷列表兜底：解析结果理论上至少有一条默认卷，但空数组会让下面
   // chapters 的 volumeId 全部悬空，这里显式保底造一卷。
@@ -144,7 +156,14 @@ export async function commitImport(
     return {
       id: createShelfId("c"),
       volumeId: volumes[volumeIndex].id,
-      title: chapter.title || `第${index + 1}章`,
+      // 解析器已剥掉序号前缀（1.34.0）：空标题按本书规则兜底出「第N×」
+      title:
+        chapter.title ||
+        formatNumberedLabel(
+          rule?.numberStyle ?? "arabic",
+          rule?.chapterSuffix ?? "章",
+          index + 1,
+        ),
       content: chapter.content,
       wordCount: chapter.wordCount,
       sort: index + 1,
@@ -156,6 +175,12 @@ export async function commitImport(
     volumes,
     chapters,
   });
+
+  // 序号规则按书落库（1.34.0）：这本书从此在设置里自适应「章/回/节」与
+  // 阿拉伯/中文，且与其它书的规则互不影响。失败不阻塞导入 —— 退化成默认规则。
+  if (rule) {
+    await saveWorkNumberingRule(workId, rule).catch(() => false);
+  }
 
   return {
     workId,

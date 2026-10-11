@@ -31,7 +31,21 @@ export const STORAGE_KEYS = {
    * 物品栏视图 / 展示熟练度 / 自动保存 —— 全部「即改即存」，不进草稿。
    */
   packUi: "novel_pack_ui",
+  /**
+   * 按书独立的章节序号规则（1.34.0）：`Record<workId, WorkNumberingRule>`
+   * 整读整写。排版设置（novel_editor_settings）里的同名三字段退化为
+   * 「无记录作品的默认值」—— 每本书一旦有记录（导入自适应 / 手动改过），
+   * 覆盖即生效，互不影响。
+   */
+  workNumbering: "novel_work_numbering",
 } as const;
+
+/** 按书独立的章节序号规则（章节树 / 大纲 / 导出 / 新建章的「第N×」展示口径） */
+export interface WorkNumberingRule {
+  numberStyle: "arabic" | "chinese";
+  chapterSuffix: string;
+  volumeSuffix: string;
+}
 
 /** 「当前境界」关联名（novel_links.relation，行囊境界模块与实体面板共用） */
 export const LEVEL_RELATION = "当前境界";

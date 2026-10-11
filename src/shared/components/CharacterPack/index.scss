@@ -1,10 +1,15 @@
 @use "./styles/pack-common.scss";
 
 /**
- * 行囊外壳（独立窗口形态）
+ * 行囊外壳（独立窗口形态 · 分区仪表盘）
  *
  * 行囊已拆成专属窗口（PackWindow）：`.cpk` 由窗口内容区（`.window-shell__body`）
  * 铺满 —— flex: 1 占满全部可用空间，不再有内嵌面板时代的让位 / 浮层 / 速览。
+ *
+ * 布局分三档（判据在 TS 侧 `packWidthTier`，这里只按 `data-tier` 出样式）：
+ * - wide  ：双栏并排（左装备类 / 右数值与状态）
+ * - mid   ：单栏纵向流，全部模块展开
+ * - narrow：单栏纵向流，次要六模块由 TS 侧折叠成标题行
  */
 .cpk {
   position: relative;
@@ -21,8 +26,52 @@
     min-height: 0;
     overflow-y: auto;
     overflow-x: hidden;
-    padding: 8px;
+    padding: 12px;
     scrollbar-gutter: stable;
+  }
+
+  /*
+    双栏容器：左栏略宽。
+    设计稿给的左右是 596 : 460（约 56:44）—— 左栏是装备 / 物品 / 技能，
+    行内元素多（部位名 + 按钮、物品行 + 数量 + 按钮），给窄了会挤成两行；
+    右栏多是「标签 : 数值」的短行，窄一点无妨。
+    用 `minmax(0, …)` 而非固定 px：窗口拉伸时两栏按比例分配，不会出现某一栏
+    被压到 0 宽（那会让长英文/数字溢出而不是省略）。
+  */
+  &__zones {
+    display: grid;
+    grid-template-columns: minmax(0, 56fr) minmax(0, 44fr);
+    align-items: start;
+    gap: 14px;
+  }
+
+  &__zone {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* 栏眉标：小字、弱色，只负责分区，不抢模块标题的层级 */
+  &__zonetitle {
+    margin: 0 0 6px 2px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    color: var(--app-text-muted);
+  }
+
+  /*
+    栏内堆叠：用 `> * + *` 而不是依赖模块壳自己的 `& + &`。
+    模块壳的相邻外边距只对「同一条流里的相邻兄弟」成立，跨栏之后
+    首个子项的前间距与末尾子项的尾间距都要靠这里兜住，逻辑集中在容器上更好改。
+  */
+  &__zonestack,
+  &__flow {
+    min-width: 0;
+
+    > * + * {
+      margin-top: 12px;
+    }
   }
 
   &__loading {
@@ -52,6 +101,19 @@
     color: var(--app-error);
     font-size: 12px;
     line-height: 1.6;
+  }
+}
+
+/*
+  窄档：面板已经缩到 ~380px，外边距和栏间距都收一收，
+  把横向空间尽量让给内容（属性表、物品行的每 1px 都算数）。
+*/
+.cpk__body--narrow {
+  padding: 6px;
+
+  .cpk__zonestack > * + *,
+  .cpk__flow > * + * {
+    margin-top: 6px;
   }
 }
 

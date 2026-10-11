@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   countWords,
   DEFAULT_VOLUME_NAME,
+  detectChapterNumbering,
   isChapterTitle,
   isVolumeTitle,
   parseTxtBook,
+  stripChapterNumbering,
 } from "./novel-import-parser";
 
 describe("标题识别", () => {
@@ -65,6 +67,78 @@ describe("标题识别", () => {
   });
 });
 
+describe("stripChapterNumbering（导入时剥掉序号前缀）", () => {
+  it("剥掉阿拉伯数字序号", () => {
+    expect(stripChapterNumbering("第1章 初见")).toBe("初见");
+    expect(stripChapterNumbering("第003章 无缩进")).toBe("无缩进");
+    expect(stripChapterNumbering("Chapter 12 The End")).toBe("The End");
+  });
+
+  it("剥掉中文数字序号", () => {
+    expect(stripChapterNumbering("第一百二十三章 终局")).toBe("终局");
+    expect(stripChapterNumbering("第十回 交手")).toBe("交手");
+    expect(stripChapterNumbering("第五十七节 尾声")).toBe("尾声");
+    expect(stripChapterNumbering("第三集 落幕")).toBe("落幕");
+  });
+
+  it("序号与章名之间是冒号 / 顿号 / 破折号也能剥", () => {
+    expect(stripChapterNumbering("第一章：开端")).toBe("开端");
+    expect(stripChapterNumbering("第一章、开端")).toBe("开端");
+    expect(stripChapterNumbering("第一章 —— 开端")).toBe("开端");
+    expect(stripChapterNumbering("第一章 · 开端")).toBe("开端");
+  });
+
+  it("只有序号没有章名：剥成空串（由调用方按本书规则补「第N×」）", () => {
+    expect(stripChapterNumbering("第一章")).toBe("");
+    expect(stripChapterNumbering("第十二回")).toBe("");
+    expect(stripChapterNumbering("  第 3 章  ")).toBe("");
+  });
+
+  it("无序号前缀的标题原样返回（仅规整空白）", () => {
+    expect(stripChapterNumbering("序章")).toBe("序章");
+    expect(stripChapterNumbering("番外 · 那年夏天")).toBe("番外 · 那年夏天");
+  });
+
+  it("不误伤正文标题里以「第」开头的普通词", () => {
+    // 「第一次」不是章节序号：缺「章」类后缀，不剥
+    expect(stripChapterNumbering("第一次相遇")).toBe("第一次相遇");
+    expect(stripChapterNumbering("第二天")).toBe("第二天");
+  });
+});
+
+describe("detectChapterNumbering（按书自适应规则）", () => {
+  it("识别阿拉伯数字 + 章", () => {
+    expect(detectChapterNumbering(["第1章 A", "第2章 B", "第10章 C"])).toEqual({
+      suffix: "章",
+      numberStyle: "arabic",
+    });
+  });
+
+  it("识别中文数字 + 章", () => {
+    expect(detectChapterNumbering(["第一章 A", "第二章 B"])).toEqual({
+      suffix: "章",
+      numberStyle: "chinese",
+    });
+  });
+
+  it("识别回 / 节 / 集 等其它后缀", () => {
+    expect(detectChapterNumbering(["第一回 A", "第二回 B", "第三回 C"])?.suffix).toBe("回");
+    expect(detectChapterNumbering(["第一节 A", "第二节 B"])?.suffix).toBe("节");
+  });
+
+  it("混合出现时取多数派", () => {
+    expect(detectChapterNumbering(["第1章 A", "第二章 B", "第3章 C", "第4章 D"])).toEqual({
+      suffix: "章",
+      numberStyle: "arabic",
+    });
+  });
+
+  it("样本不足或全无序号返回 null（上层保留全局默认）", () => {
+    expect(detectChapterNumbering([])).toBeNull();
+    expect(detectChapterNumbering(["序章", "尾声"])).toBeNull();
+  });
+});
+
 describe("parseTxtBook", () => {
   it("无卷结构：全部章节归入默认卷「正文」", () => {
     const text = [
@@ -79,10 +153,12 @@ describe("parseTxtBook", () => {
     expect(book.structured).toBe(true);
     expect(book.volumes).toHaveLength(1);
     expect(book.volumes[0].name).toBe(DEFAULT_VOLUME_NAME);
-    expect(book.chapters.map((c) => c.title)).toEqual(["第一章 开端", "第二章 发展"]);
+    // 1.34.0：序号已剥离，只留纯章名；序号由左栏序号列派生展示
+    expect(book.chapters.map((c) => c.title)).toEqual(["开端", "发展"]);
     expect(book.chapters.every((c) => c.volumeIndex === 0)).toBe(true);
     expect(book.chapters[0].content).toBe("正文一。");
     expect(book.chapters[1].content).toBe("正文二。");
+    expect(book.numberingRule).toEqual({ suffix: "章", numberStyle: "chinese" });
   });
 
   it("卷归档：章节归属最近一个卷", () => {
@@ -99,11 +175,7 @@ describe("parseTxtBook", () => {
 
     const book = parseTxtBook(text);
     expect(book.volumes.map((v) => v.name)).toEqual(["第一卷 少年", "第二卷 风云"]);
-    expect(book.chapters.map((c) => c.title)).toEqual([
-      "第一章 出生",
-      "第二章 求学",
-      "第三章 出山",
-    ]);
+    expect(book.chapters.map((c) => c.title)).toEqual(["出生", "求学", "出山"]);
     // 前两章属卷 0，第三章属卷 1
     expect(book.chapters.map((c) => c.volumeIndex)).toEqual([0, 0, 1]);
   });
@@ -112,8 +184,8 @@ describe("parseTxtBook", () => {
     const text = ["第一卷 A", "第一章 x", "aaa", "第二卷 B", "bbb"].join("\n");
     const book = parseTxtBook(text);
     // 「bbb」应落在卷 1 的兜底序章，而不是续到「第一章 x」里
-    const first = book.chapters.find((c) => c.title === "第一章 x");
-    expect(first?.content).toBe("aaa");
+    const first = book.chapters.find((c) => c.content === "aaa");
+    expect(first?.title).toBe("x");
     const volumeOneChapters = book.chapters.filter((c) => c.volumeIndex === 1);
     expect(volumeOneChapters).toHaveLength(1);
     expect(volumeOneChapters[0].content).toBe("bbb");
@@ -124,7 +196,7 @@ describe("parseTxtBook", () => {
     const book = parseTxtBook(text);
     expect(book.chapters[0].title).toContain("序");
     expect(book.chapters[0].content).toBe("这是引子。");
-    expect(book.chapters[1].title).toBe("第一章 开端");
+    expect(book.chapters[1].title).toBe("开端");
     expect(book.structured).toBe(true);
   });
 
@@ -147,7 +219,7 @@ describe("parseTxtBook", () => {
     expect(book.chapters[0].volumeIndex).toBe(0);
     expect(book.chapters[0].content).toContain("《样例小说》");
     // 正常章节紧随其后，同属卷 0
-    expect(book.chapters[1].title).toBe("第一章 出生");
+    expect(book.chapters[1].title).toBe("出生");
     expect(book.chapters[1].volumeIndex).toBe(0);
   });
 
@@ -166,6 +238,17 @@ describe("parseTxtBook", () => {
     expect(book.chapters[0].content).toBe("正文。");
   });
 
+  it("相邻重复标题折叠按原始行判，剥序号后的空标题不被误折叠", () => {
+    // 回归守卫：剥完序号后标题都是空串，若拿剥后的串判「相邻重复」，
+    // 第二章往后会被整章丢掉 —— 必须按原始行判。
+    const text = ["第一章", "正文一。", "第二章", "正文二。", "第三章", "正文三。"].join("\n");
+    const book = parseTxtBook(text);
+    expect(book.chapters).toHaveLength(3);
+    expect(book.chapters.map((c) => c.content)).toEqual(["正文一。", "正文二。", "正文三。"]);
+    // 剥后同为空，但原始行不同 → 都算真实章
+    expect(book.chapters.every((c) => c.explicit)).toBe(true);
+  });
+
   it("完全没有章节结构：整本兜底成一章且 structured=false", () => {
     const text = "这是一段没有任何章节标题的散文。\n第二段。";
     const book = parseTxtBook(text);
@@ -173,6 +256,8 @@ describe("parseTxtBook", () => {
     expect(book.chapters).toHaveLength(1);
     expect(book.chapters[0].content).toContain("散文");
     expect(book.volumes[0].name).toBe(DEFAULT_VOLUME_NAME);
+    // 无章标题 → 识别不出规则，上层保留全局默认
+    expect(book.numberingRule).toBeNull();
   });
 
   it("只有卷、没有章标题：仍算未结构化，不产出空章", () => {
@@ -185,14 +270,20 @@ describe("parseTxtBook", () => {
   it("Windows 换行 \\r\\n 正确处理", () => {
     const text = "第一章 A\r\naaa\r\n第二章 B\r\nbbb";
     const book = parseTxtBook(text);
-    expect(book.chapters.map((c) => c.title)).toEqual(["第一章 A", "第二章 B"]);
+    expect(book.chapters.map((c) => c.title)).toEqual(["A", "B"]);
     expect(book.chapters[0].content).toBe("aaa");
     expect(book.chapters[1].content).toBe("bbb");
   });
 
   it("章标题里的多余空白被规整", () => {
     const book = parseTxtBook("第  一  章    开端\n正文");
-    expect(book.chapters[0].title).toBe("第 一 章 开端");
+    expect(book.chapters[0].title).toBe("开端");
+  });
+
+  it("导入书仅有序号、无章名：剥成空标题交给落库兜底", () => {
+    const book = parseTxtBook("第一章\n正文一。\n\n第二章\n正文二。");
+    expect(book.chapters.map((c) => c.title)).toEqual(["", ""]);
+    expect(book.numberingRule).toEqual({ suffix: "章", numberStyle: "chinese" });
   });
 });
 

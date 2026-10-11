@@ -21,8 +21,21 @@ type ImportPayload = {
 const importBookMock = vi.fn<(payload: ImportPayload) => Promise<{ ok: boolean }>>(
   async () => ({ ok: true }),
 );
+/** config 表替身：序号规则按书落库走这里 */
+let configStore: string | null = null;
+const configGetMock = vi.fn(async () => configStore);
+const configSetMock = vi.fn(async (_key: string, value: string) => {
+  configStore = value;
+  return true;
+});
 (globalThis as unknown as { window: unknown }).window = {
-  electronAPI: { novel: { importBook: importBookMock } },
+  electronAPI: {
+    novel: {
+      importBook: importBookMock,
+      configGet: configGetMock,
+      configSet: configSetMock,
+    },
+  },
 };
 
 const { commitImport } = await import("./import-service");
@@ -47,6 +60,7 @@ function makeParsed(overrides: Partial<ImportParseResult> = {}): ImportParseResu
       { title: "第三章", content: "ccc", volumeIndex: 1, wordCount: 3 },
     ],
     totalWords: 9,
+    numberingRule: null,
     ...overrides,
   };
 }
@@ -54,6 +68,9 @@ function makeParsed(overrides: Partial<ImportParseResult> = {}): ImportParseResu
 describe("commitImport", () => {
   beforeEach(() => {
     importBookMock.mockClear();
+    configGetMock.mockClear();
+    configSetMock.mockClear();
+    configStore = null;
   });
 
   it("卷章结构正确映射，章归属对应卷", async () => {
@@ -101,5 +118,80 @@ describe("commitImport", () => {
     // 卷列表为空时兜底造一卷，避免 volumeId 悬空
     expect(payload.volumes).toHaveLength(1);
     expect(payload.chapters[0].title).toBe("第1章");
+  });
+});
+
+describe("commitImport · 按书落库序号规则（1.34.0）", () => {
+  beforeEach(() => {
+    importBookMock.mockClear();
+    configGetMock.mockClear();
+    configSetMock.mockClear();
+    configStore = null;
+  });
+
+  it("识别出规则时写入该书的记录（后缀 + 数字样式）", async () => {
+    const parsed = makeParsed({
+      numberingRule: { suffix: "回", numberStyle: "chinese" },
+    });
+    const result = await commitImport(parsed, "规则书");
+
+    expect(configSetMock).toHaveBeenCalledTimes(1);
+    const map = JSON.parse(configStore!);
+    expect(map[result.workId]).toEqual({
+      numberStyle: "chinese",
+      chapterSuffix: "回",
+      volumeSuffix: "卷",
+    });
+  });
+
+  it("每本书各写各的记录，互不覆盖", async () => {
+    const first = await commitImport(
+      makeParsed({ numberingRule: { suffix: "回", numberStyle: "chinese" } }),
+      "甲书",
+    );
+    const second = await commitImport(
+      makeParsed({ numberingRule: { suffix: "节", numberStyle: "arabic" } }),
+      "乙书",
+    );
+
+    const map = JSON.parse(configStore!);
+    expect(map[first.workId].chapterSuffix).toBe("回");
+    expect(map[second.workId].chapterSuffix).toBe("节");
+    expect(Object.keys(map)).toHaveLength(2);
+  });
+
+  it("识别不出规则时不写记录（沿用全局默认）", async () => {
+    await commitImport(makeParsed({ numberingRule: null }), "无规则书");
+    expect(configSetMock).not.toHaveBeenCalled();
+  });
+
+  it("空标题兜底也走本书规则，而不是硬编码「章」", async () => {
+    const parsed = makeParsed({
+      volumes: [],
+      numberingRule: { suffix: "回", numberStyle: "arabic" },
+      chapters: [{ title: "", content: "x", volumeIndex: 0, wordCount: 1 }],
+    });
+    await commitImport(parsed, "空标题回目书");
+    expect(lastPayload().chapters[0].title).toBe("第1回");
+  });
+
+  it("空标题 + 中文数字规则 → 兜底出中文序号", async () => {
+    const parsed = makeParsed({
+      volumes: [],
+      numberingRule: { suffix: "章", numberStyle: "chinese" },
+      chapters: [{ title: "", content: "x", volumeIndex: 0, wordCount: 1 }],
+    });
+    await commitImport(parsed, "空标题中文书");
+    expect(lastPayload().chapters[0].title).toBe("第一章");
+  });
+
+  it("写规则失败不影响导入本身（退化成默认规则）", async () => {
+    configSetMock.mockResolvedValueOnce(false);
+    const result = await commitImport(
+      makeParsed({ numberingRule: { suffix: "回", numberStyle: "arabic" } }),
+      "写失败书",
+    );
+    expect(result.chapterCount).toBe(3);
+    expect(importBookMock).toHaveBeenCalledTimes(1);
   });
 });

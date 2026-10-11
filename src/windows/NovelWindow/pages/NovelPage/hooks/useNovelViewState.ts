@@ -180,8 +180,15 @@ export function useNovelViewState() {
 
   const exitFocus = useCallback(() => setFocusMode(false), []);
 
+  /**
+   * 打开要素详情。**必须一并切回「要素」tab**：
+   * 用户在右栏切到笔记 / 搜索 / 工具后，再去点正文里的高亮词，期望是「看到这个
+   * 要素的详情」。只开面板不切 tab，右栏会停在原 tab、详情渲染在看不见的地方，
+   * 表现为「点了没反应」。正文高亮与悬浮卡两条入口都收口到这里。
+   */
   const openEntityDetail = useCallback((entityId: string) => {
     setDetailEntityId(entityId);
+    setPanelTab("entity");
     setRightOpen(true);
   }, []);
 

@@ -121,9 +121,6 @@ export interface PackModuleState {
  * 不会 → 属于「我在怎么用这个工具」，不进草稿、不计入未保存改动。
  */
 export interface PackUiPrefs {
-  /** 面板形态：reflow = 右侧让位；overlay = 窄窗降级（全屏浮层 + 遮罩） */
-  form: "reflow" | "overlay";
-  width: number;
   /** 模块折叠状态 */
   collapsed: Partial<Record<PackModuleKey, boolean>>;
   /** 物品栏视图 */
@@ -137,8 +134,6 @@ export interface PackUiPrefs {
 }
 
 export const DEFAULT_UI_PREFS: PackUiPrefs = {
-  form: "reflow",
-  width: 420,
   collapsed: {},
   inventoryView: "list",
   showProficiency: false,
