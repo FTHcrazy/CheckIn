@@ -4,7 +4,6 @@ import { Button, Dropdown, Input } from "antd";
 import {
   CheckOutlined,
   ClockCircleOutlined,
-  CloseOutlined,
   MoreOutlined,
   SettingOutlined,
   SlidersOutlined,
@@ -42,7 +41,12 @@ interface PackHeaderProps {
   /** 处于「刚改动」窗口内的条目数（REQ-028）；0 时「全部已读」完全不出现在界面里 */
   changedCount: number;
   onMarkAllRead: () => void;
-  onRename: (name: string) => void;
+  /**
+   * 改角色名。**不是本地改名** —— 绑定了主角实体时改的是要素库的实体名
+   * （名字的单一事实源在要素库），落库后由主进程回带最终名字。
+   * 故返回值可能是 Promise（调用方 fire-and-forget，失败会出 toast）。
+   */
+  onRename: (name: string) => void | Promise<void>;
   onSave: () => void;
   onRevertAll: () => void;
   /**
@@ -55,7 +59,6 @@ interface PackHeaderProps {
   onOpenModules: () => void;
   onOpenUnitManager: () => void;
   onOpenRecords: () => void;
-  onClose: () => void;
 }
 
 /** 读数入参的形状来自 pack-layout（与 usePackPanel 的 load 派生量同形） */
@@ -96,7 +99,6 @@ export default function PackHeader({
   onOpenModules,
   onOpenUnitManager,
   onOpenRecords,
-  onClose,
 }: PackHeaderProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(characterName);
@@ -274,8 +276,6 @@ export default function PackHeader({
                 { key: "records", icon: <ClockCircleOutlined />, label: "盘点记录 / 与本章初对比" },
                 { key: "units", icon: <SlidersOutlined />, label: "量纲设置（货币 / 熟练度）" },
                 { key: "modules", icon: <SettingOutlined />, label: "模块管理" },
-                { type: "divider" as const },
-                { key: "close", icon: <CloseOutlined />, label: "关闭行囊", danger: true },
               ],
               onClick: ({ key }) => {
                 if (key === "markRead") onMarkAllRead();
@@ -283,7 +283,6 @@ export default function PackHeader({
                 else if (key === "records") onOpenRecords();
                 else if (key === "units") onOpenUnitManager();
                 else if (key === "modules") onOpenModules();
-                else if (key === "close") onClose();
               },
             }}
           >
@@ -309,9 +308,6 @@ export default function PackHeader({
             </Button>
             <Button className="cpk-iconbtn" onClick={onOpenModules} title="模块管理">
               <SettingOutlined />
-            </Button>
-            <Button className="cpk-iconbtn" onClick={onClose} title="关闭（Esc）">
-              <CloseOutlined />
             </Button>
           </span>
         )}

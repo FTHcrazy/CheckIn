@@ -115,3 +115,150 @@ describe("行囊 UI：自带造型的控件以 .ant-btn 承载", () => {
     expect(compiledCss.slice(at, at + 600)).toContain("--ant-control-height: auto");
   });
 });
+
+/**
+ * 头部工具栏的图标尺寸（用户报障：图标太小、看着「不明显」）。
+ *
+ * 钉死的是一条**极容易静默退化**的约束：头部图标要比面板其它地方大一号。
+ * 它靠 PackHeader 的局部覆盖实现，而覆盖对象 `.cpk-iconbtn` 是**跨模块公共原语**
+ * —— 后人「顺手把基础档调大」或「把这条覆盖删掉当作冗余」，都会让头部图标
+ * 悄悄缩回 13px，且**没有任何类型或构建错误**。
+ *
+ * 为什么覆盖必须写在头部而不是改基础档：`.cpk-iconbtn` 在面板里有十几处使用点
+ * （每个模块标题行右侧并排 3~4 枚），调基础档等于改整个面板的密度。
+ * 故这里同时断言**两侧**：头部有覆盖 + 基础档仍是模块密度。
+ */
+describe("行囊 UI：头部工具栏图标比面板其它地方大一号", () => {
+  const headScssPath = path.resolve(
+    ROOT,
+    "components/PackHeader/index.scss",
+  );
+  const headCss = sass.compile(headScssPath, { style: "expanded" }).css;
+  const commonCss = sass.compile(
+    path.resolve(ROOT, "styles/pack-common.scss"),
+    { style: "expanded" },
+  ).css;
+
+  /** 取某选择器规则块的正文 */
+  function block(css: string, selector: string): string {
+    const at = css.indexOf(selector);
+    if (at < 0) throw new Error(`编译产物里找不到选择器：${selector}`);
+    return css.slice(at, css.indexOf("}", at) + 1);
+  }
+
+  it("头部对图标按钮做了局部放大（16px 字形 / 28px 盒）", () => {
+    const rule = block(headCss, ".cpk-head__tools .cpk-iconbtn.ant-btn");
+    expect(rule).toContain("--ant-button-content-font-size: 16px");
+    expect(rule).toContain("--ant-control-height: 28px");
+    expect(rule).toContain("width: 28px");
+  });
+
+  it("窄档那枚「更多」入口也吃到同一档尺寸（它不在 __tools 里）", () => {
+    // compact 时四枚工具收进 Dropdown，触发按钮是 __ops 的直接子元素
+    expect(headCss).toMatch(
+      /\.cpk-head__ops\s*>\s*\.cpk-iconbtn\.ant-btn[^{]*\{[^}]*--ant-button-content-font-size:\s*16px/,
+    );
+  });
+
+  it("图标描边色提到 --app-text 一档（只有字号大、颜色仍淡一样不明显）", () => {
+    const rule = block(headCss, ".cpk-head__tools .cpk-iconbtn.ant-btn");
+    expect(rule).toContain("--ant-button-default-color: var(--app-text)");
+  });
+
+  it("基础档保持模块密度（24px 盒 / 13px 字形）—— 不许顺手调大", () => {
+    const rule = block(commonCss, ".cpk-iconbtn.ant-btn");
+    expect(rule).toContain("--ant-control-height: 24px");
+    expect(rule).toContain("--ant-button-content-font-size: 13px");
+  });
+
+  it("基础档仍然可被缩小（.tiny 行内档存在且更小）", () => {
+    const at = commonCss.indexOf(".cpk-iconbtn.ant-btn.tiny");
+    expect(at).toBeGreaterThan(-1);
+    const rule = commonCss.slice(at, commonCss.indexOf("}", at) + 1);
+    expect(rule).toContain("--ant-button-content-font-size: 11px");
+  });
+});
+
+/**
+ * 头部文字动作按钮的描边形态。
+ *
+ * 设计稿里「全部已读 / 撤销全部」是浅描边按钮；面板其它地方的 `.cpk-btn.ghost`
+ * 是**无框低强调**（模块头里的次级操作），那里不该被改成有框。
+ * 所以这是一条**局部覆盖**，且必须靠 `.cpk-head` 多挂一个类来压过公共层 ——
+ * 因为包顺序上 PackHeader 的样式先于 pack-common 加载，同特异性下后者胜出，
+ * 3 个类的写法会被**静默吃掉**（不报错、只是没生效）。
+ */
+describe("行囊 UI：头部文字按钮按设计稿加描边", () => {
+  const headScssPath = path.resolve(ROOT, "components/PackHeader/index.scss");
+  // ⚠️ 必须先去注释：sass 的 expanded 产物**保留注释**，而说明文字里会引用
+  // 选择器原文（`.cpk-head .cpk-head__ops > .cpk-btn.ghost`），
+  // `indexOf` 会先命中注释里的那一段，取出来的「规则块」其实是注释。
+  const headCss = stripComments(
+    sass.compile(headScssPath, { style: "expanded" }).css,
+  );
+
+  it("覆盖选择器带 .cpk-head 前缀（4 个类，压得过公共层的 3 个类）", () => {
+    const at = headCss.indexOf(".cpk-head .cpk-head__ops > .cpk-btn.ghost");
+    expect(at).toBeGreaterThan(-1);
+    const rule = headCss.slice(at, headCss.indexOf("}", at) + 1);
+    expect(rule).toContain("--ant-button-default-border-color: var(--app-border-strong)");
+    expect(rule).toContain("--ant-button-default-bg: var(--app-surface)");
+  });
+
+  it("公共层的 ghost 仍是无框低强调（模块头那边不受影响）", () => {
+    const commonCss = stripComments(
+      sass.compile(path.resolve(ROOT, "styles/pack-common.scss"), {
+        style: "expanded",
+      }).css,
+    );
+    const at = commonCss.indexOf(".cpk-btn.ant-btn.ghost");
+    expect(at).toBeGreaterThan(-1);
+    const rule = commonCss.slice(at, commonCss.indexOf("}", at) + 1);
+    expect(rule).toContain("--ant-button-default-border-color: transparent");
+  });
+});
+
+/**
+ * 「刚改动」角标与「稀有度圆点」在形状上必须分得开（2026-10 用户报障）。
+ *
+ * 物品行首原本是「7px 稀有度圆点 + 6px 改动圆点」两个**同形状**的小圆点，
+ * 读者只看到「每项前面有两个点」，分不出哪个是内容、哪个是状态
+ * （用户直接把这一对圈出来问「不清楚干什么的」）。
+ *
+ * 修法是给两者定不同的形状：稀有度点是**内容**（有色阶含义、可点改），
+ * 保持圆形；改动点是**状态提示**，改成竖条。这条守卫把「形状必须不同」
+ * 钉死 —— 谁把 `.cpk-changed` 改回圆点，两个点又会糊在一起。
+ */
+describe("行囊 UI：改动角标与稀有度圆点形状可分", () => {
+  const commonCss = stripComments(
+    sass.compile(path.resolve(ROOT, "styles/pack-common.scss"), {
+      style: "expanded",
+    }).css,
+  );
+
+  function ruleOf(css: string, selector: string): string {
+    const at = css.indexOf(selector);
+    expect(at).toBeGreaterThan(-1);
+    return css.slice(at, css.indexOf("}", at) + 1);
+  }
+
+  it("改动角标是竖条（宽 < 高），不是圆点", () => {
+    const rule = ruleOf(commonCss, ".cpk-changed");
+    const width = /width:\s*(\d+)px/.exec(rule)?.[1];
+    const height = /height:\s*(\d+)px/.exec(rule)?.[1];
+    expect(width).toBeDefined();
+    expect(height).toBeDefined();
+    expect(Number(width)).toBeLessThan(Number(height));
+    expect(rule).not.toContain("border-radius: 50%");
+  });
+
+  it("稀有度圆点仍是圆形（它是内容，有自己的色阶语义）", () => {
+    const eqCss = stripComments(
+      sass.compile(path.resolve(ROOT, "components/EquipmentModule/index.scss"), {
+        style: "expanded",
+      }).css,
+    );
+    const rule = ruleOf(eqCss, ".cpk-dot");
+    expect(rule).toContain("border-radius: 50%");
+  });
+});

@@ -102,6 +102,7 @@ export default function NovelPage({
     handleSetEntityLevel,
     handleAddCustomType,
     handleRenameCustomType,
+    handleRecolorCustomType,
     handleRemoveCustomType,
     entityTypesValue,
     editorPaneRef,
@@ -463,6 +464,7 @@ export default function NovelPage({
         onClose={view.closeTypeManager}
         onAdd={handleAddCustomType}
         onRename={handleRenameCustomType}
+        onRecolor={handleRecolorCustomType}
         onRemove={handleRemoveCustomType}
       />
       </div>

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS, LAYOUT, UNNAMED_VOLUME } from "./novel-config";
 import {
+  applyCustomTypeColors,
   buildBreadcrumb,
   buildChapterGroups,
   buildChapterNumbers,
@@ -138,6 +139,54 @@ describe("buildEntityTerms", () => {
       ["location"],
     );
     expect(terms[0].term).toBe("青梧山");
+  });
+});
+
+describe("applyCustomTypeColors —— 自建类型标识色注入词库（R23）", () => {
+  const built = () =>
+    buildEntityTerms(
+      [
+        entity({ id: "e1", type: "ct-1", name: "九幽诀" }),
+        entity({ id: "e2", type: "character", name: "沈砚" }),
+      ],
+      ["ct-1", "character"],
+    );
+
+  it("自建类型词条带上该类型的颜色", () => {
+    const terms = applyCustomTypeColors(built(), [
+      { id: "ct-1", color: "#e0559a" },
+    ]);
+    expect(terms.find((t) => t.type === "ct-1")?.color).toBe("#e0559a");
+  });
+
+  it("内置类型不注入（颜色由 SCSS 静态定义给，注入会覆盖主题）", () => {
+    const terms = applyCustomTypeColors(built(), [
+      { id: "ct-1", color: "#e0559a" },
+    ]);
+    expect(terms.find((t) => t.type === "character")?.color).toBeUndefined();
+  });
+
+  it("改色后同一批词条拿到新颜色（改色即时生效的前提）", () => {
+    const before = applyCustomTypeColors(built(), [
+      { id: "ct-1", color: "#e0559a" },
+    ]);
+    const after = applyCustomTypeColors(built(), [
+      { id: "ct-1", color: "#8b5cf6" },
+    ]);
+    expect(before.find((t) => t.type === "ct-1")?.color).toBe("#e0559a");
+    expect(after.find((t) => t.type === "ct-1")?.color).toBe("#8b5cf6");
+  });
+
+  it("没有自建类型时原样返回（省掉一次 map）", () => {
+    const terms = built();
+    expect(applyCustomTypeColors(terms, [])).toBe(terms);
+  });
+
+  it("类型已删除时词条不带色（不残留旧颜色）", () => {
+    const terms = applyCustomTypeColors(built(), [
+      { id: "ct-other", color: "#e0559a" },
+    ]);
+    expect(terms.find((t) => t.type === "ct-1")?.color).toBeUndefined();
   });
 });
 

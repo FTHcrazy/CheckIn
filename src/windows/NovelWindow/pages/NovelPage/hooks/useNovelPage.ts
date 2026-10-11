@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { POSITION } from "../novel-config";
 import {
+  applyCustomTypeColors,
   buildBreadcrumb,
   buildBookPlainText,
   buildChapterNumbers,
@@ -172,6 +173,21 @@ export function useNovelPage() {
   );
 
   /**
+   * 自建类型改色：正文高亮、chip、圆点共用 `def.color` 这一份，
+   * 改完经 terms 的 useMemo 自动重算词条色，标注层热更新即可换色。
+   */
+  const handleRecolorCustomType = useCallback(
+    (typeId: string, color: string): void => {
+      const next = color.trim();
+      if (!next) return;
+      setCustomTypes((current) =>
+        current.map((def) => (def.id === typeId ? { ...def, color: next } : def)),
+      );
+    },
+    [],
+  );
+
+  /**
    * 删除自建类型：该类型要素卡先全部迁回 custom 兜底（数据不丢），返回
    * 迁移数量供 toast 汇报；未删除任何实体时返回 0。
    */
@@ -190,15 +206,14 @@ export function useNovelPage() {
   );
 
   /** 标注层词库：随要素保存即时刷新（PRD §7）；自建类型词条带注入色（R23） */
-  const terms = useMemo(() => {
-    const colorOf = new Map(customTypes.map((def) => [def.id, def.color]));
-    return buildEntityTerms(data.entities, settings.annotationTypes).map(
-      (term) => {
-        const color = colorOf.get(term.type);
-        return color ? { ...term, color } : term;
-      },
-    );
-  }, [data.entities, settings.annotationTypes, customTypes]);
+  const terms = useMemo(
+    () =>
+      applyCustomTypeColors(
+        buildEntityTerms(data.entities, settings.annotationTypes),
+        customTypes,
+      ),
+    [data.entities, settings.annotationTypes, customTypes],
+  );
 
   const breadcrumb = useMemo(
     () =>
@@ -1197,6 +1212,7 @@ export function useNovelPage() {
     handleSetEntityLevel,
     handleAddCustomType,
     handleRenameCustomType,
+    handleRecolorCustomType,
     handleRemoveCustomType,
     // 起名工具（R18 / 步骤三）
     editorPaneRef,

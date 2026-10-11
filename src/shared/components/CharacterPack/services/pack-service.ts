@@ -86,6 +86,19 @@ export async function writeProtagonistBinding(
   return window.electronAPI!.novel.pack.protagonistSet(workId, entityId);
 }
 
+/**
+ * 改主角名。
+ *
+ * 绑定了主角实体时改的是**实体名**（名字的单一事实源在要素库），否则改行囊
+ * 内那格。返回真实落点，调用方据此渲染 —— 不在本地猜「到底哪个名字生效了」。
+ */
+export async function renamePackCharacter(
+  workId: string,
+  name: string,
+): Promise<{ ok: boolean; displayName: string; target: "entity" | "character" }> {
+  return window.electronAPI!.novel.pack.rename(workId, name);
+}
+
 // ── 界面偏好（即改即存，走 config 整读整写；不进草稿，见 PRD §8.6.2） ──
 
 /** 读取行囊界面偏好 JSON（键不存在返回 null，由上层合并默认值） */

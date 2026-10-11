@@ -194,6 +194,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
       /** 设为主角 / 解除主角：entityId 传空串即解绑（同一格，换一个就换主角） */
       protagonistSet: (workId: string, entityId: string) =>
         ipcRenderer.invoke('novel-pack-protagonist-set', workId, entityId) as Promise<boolean>,
+      /** 改主角名：绑定了实体就改实体名（名字的单一事实源在要素库） */
+      rename: (workId: string, name: string) =>
+        ipcRenderer.invoke('novel-pack-rename', workId, name) as Promise<{
+          ok: boolean
+          displayName: string
+          target: 'entity' | 'character'
+        }>,
       /**
        * 快速记账（REQ-027）：正文选区 → 记入背包。
        * 面板开着时渲染层自己改内存文档，不会走到这里；这条通道服务「面板没挂载」

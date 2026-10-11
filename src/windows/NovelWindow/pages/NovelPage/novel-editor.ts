@@ -70,10 +70,19 @@ const highlightDecoration = (term: EntityTerm): Decoration =>
     attributes: {
       "data-entity-id": term.entityId,
       "data-entity-type": term.type,
+      // 自定义类型（ct-*）没有静态 CSS 选择器，主色以 inline 变量注入（R23）；
+      // 内置类型仍走 EditorPane/index.scss 的 --nv-mark-color 默认定义。
+      //
+      // ⚠️ 必须写在 attributes.style，不能写成 Decoration.mark 的顶层 spec.style：
+      // MarkDecoration 的构造函数只读 `spec.class` 与 `spec.attributes`
+      // （@codemirror/view: `this.attrs = spec.class && spec.attributes
+      //   ? combineAttrs(spec.attributes, {class: spec.class}) : ...`），
+      // 顶层 style 字段被**静默丢弃**——不报错、不发警告，DOM 上连 style 属性
+      // 都不会有。曾因此让全部 ct-* 高亮失效：--nv-mark-color 落到 undefined，
+      // color-mix(in srgb, var(...) 14%, transparent) 整条声明失效 →
+      // 背景透明 + 下划线消失，看着就是「自定义要素完全不高亮」。
+      ...(term.color ? { style: `--nv-mark-color: ${term.color}` } : {}),
     },
-    // 自定义类型（ct-*）没有静态 CSS 选择器，主色以 inline 变量注入（R23）；
-    // 内置类型仍走 EditorPane/index.scss 的 --nv-mark-color 默认定义
-    ...(term.color ? { style: `--nv-mark-color: ${term.color}` } : {}),
   });
 
 class AnnotationPlugin {

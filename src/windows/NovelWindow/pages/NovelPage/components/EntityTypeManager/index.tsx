@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { KeyboardEvent } from "react";
-import { Button, Input, Modal, Popconfirm } from "antd";
+import { Button, ColorPicker, Input, Modal, Popconfirm } from "antd";
 import { DeleteOutlined, EditOutlined, PlusOutlined } from "@ant-design/icons";
 import { CUSTOM_TYPE_PALETTE } from "../../novel-config";
 import type { CustomEntityTypeDef } from "../../types";
@@ -16,6 +16,8 @@ interface EntityTypeManagerProps {
   onAdd: (name: string, color: string) => CustomEntityTypeDef | null;
   /** 重命名：返回 false 表示重名或空名 */
   onRename: (typeId: string, name: string) => boolean;
+  /** 改色：正文高亮 / chip / 圆点共用这一份颜色 */
+  onRecolor: (typeId: string, color: string) => void;
   /** 删除类型：该类型要素卡由编排层迁回 custom 兜底 */
   onRemove: (typeId: string) => void;
 }
@@ -23,7 +25,9 @@ interface EntityTypeManagerProps {
 /**
  * 自定义要素类型管理弹框（R23）
  *
- * 用户自建类型（命名 + 色板选色，id 固定 ct- 前缀），定义存 config。
+ * 用户自建类型（命名 + 自选色，id 固定 ct- 前缀），定义存 config。
+ * 取色用组件库 ColorPicker（AGENTS §6.1.2）：色板自由、支持直接填 hex，
+ * 不再受固定色板的个数限制；下方 presets 保留原配色作为快捷起点。
  * 删除类型不删数据：该类型要素卡自动迁回「自定义」兜底类型。
  */
 export default function EntityTypeManager({
@@ -33,13 +37,15 @@ export default function EntityTypeManager({
   onClose,
   onAdd,
   onRename,
+  onRecolor,
   onRemove,
 }: EntityTypeManagerProps) {
   const [nameDraft, setNameDraft] = useState("");
-  const [colorDraft, setColorDraft] = useState(CUSTOM_TYPE_PALETTE[0]);
+  const [colorDraft, setColorDraft] = useState<string>(CUSTOM_TYPE_PALETTE[0]);
   const [error, setError] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
+  const [recolorId, setRecolorId] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) return;
@@ -47,6 +53,7 @@ export default function EntityTypeManager({
     setColorDraft(CUSTOM_TYPE_PALETTE[0]);
     setError("");
     setEditingId(null);
+    setRecolorId(null);
   }, [open]);
 
   const submitAdd = (): void => {
@@ -63,10 +70,8 @@ export default function EntityTypeManager({
     if (created) {
       setNameDraft("");
       setError("");
-      // 下一个新建默认取未占用的下一个颜色
-      const used = new Set(
-        [...customTypes, created].map((def) => def.color),
-      );
+      // 下一个新建默认取未占用的下一个颜色；色板用尽则给一个中性灰起点
+      const used = new Set([...customTypes, created].map((def) => def.color));
       setColorDraft(
         CUSTOM_TYPE_PALETTE.find((color) => !used.has(color)) ??
           CUSTOM_TYPE_PALETTE[0],
@@ -115,10 +120,26 @@ export default function EntityTypeManager({
         <ul className="nv-etm__list">
           {customTypes.map((def) => (
             <li key={def.id} className="nv-etm__item">
-              <span
-                className="nv-etm__dot"
-                style={{ background: def.color }}
-              />
+              {/* 圆点即取色入口：点它换色，色板即时预览 */}
+              <ColorPicker
+                className="nv-etm__pick"
+                value={def.color}
+                disabledAlpha
+                format="hex"
+                presets={[
+                  { label: "推荐", colors: [...CUSTOM_TYPE_PALETTE] },
+                ]}
+                open={recolorId === def.id}
+                onOpenChange={(next) => setRecolorId(next ? def.id : null)}
+                onChangeComplete={(color) => onRecolor(def.id, color.toHexString())}
+                aria-label={`修改 ${def.name} 的颜色`}
+              >
+                <Button
+                  className="nv-etm__dot"
+                  style={{ background: def.color }}
+                  aria-label={`修改 ${def.name} 的颜色`}
+                />
+              </ColorPicker>
               {editingId === def.id ? (
                 <Input
                   size="small"
@@ -198,18 +219,18 @@ export default function EntityTypeManager({
             }}
             onPressEnter={submitAdd}
           />
-          <div className="nv-etm__palette">
-            {CUSTOM_TYPE_PALETTE.map((color) => (
-              <Button
-                key={color}
-                className={`nv-etm__swatch${
-                  colorDraft === color ? " is-on" : ""
-                }`}
-                style={{ background: color }}
-                aria-label={`选择颜色 ${color}`}
-                onClick={() => setColorDraft(color)}
-              />
-            ))}
+          <div className="nv-etm__colorrow">
+            <span className="nv-etm__colorlabel">标识色</span>
+            <ColorPicker
+              className="nv-etm__pick nv-etm__pick--draft"
+              value={colorDraft}
+              disabledAlpha
+              format="hex"
+              showText
+              presets={[{ label: "推荐", colors: [...CUSTOM_TYPE_PALETTE] }]}
+              onChangeComplete={(color) => setColorDraft(color.toHexString())}
+              aria-label="新类型颜色"
+            />
           </div>
           {error && <p className="nv-etm__error">{error}</p>}
           <Button

@@ -163,6 +163,59 @@ export function notifyProtagonistChanged(workId: string, entityId: string): void
   void window.electronAPI?.windowAPI.broadcast(PACK_PROTAGONIST_EVENT, detail);
 }
 
+// ── 主角名字变更事件 ──
+
+/**
+ * 事件名：主角名改了，行囊头部与右侧要素栏/角色卡要一起重画。
+ *
+ * 名字的**单一事实源是要素库的实体**（见 `PackCharacterDTO.displayName`）：
+ * 在行囊里改名 = 改实体名，在要素库改名 = 改同一格。两个入口若互不通知，
+ * 就会出现「行囊显示陆长安、要素库还是旧名」这种同屏打架。
+ *
+ * 与「主角换了」分开两条事件：换主角要重载整份 bundle（境界绑定跟着变），
+ * 改名只动一格文字，重载反而会把未保存的编辑冲掉。分开后能按需选轻的那条。
+ */
+export const PACK_NAME_EVENT = "pack-name-changed";
+
+/** 事件负载：`workId` 用于过滤别的作品；`displayName` 是解析后的最终展示名 */
+export interface PackNameEventDetail {
+  workId: string;
+  displayName: string;
+  /**
+   * 改名落到哪个实体上（未绑定主角、改的是行囊内那格时为空串）。
+   *
+   * 监听方靠它**精确定位**要改哪一条要素 —— 不能按名字找：
+   * 同名要素是真实存在的（作者常有两个「神秘人」），按旧名匹配会改错人。
+   */
+  entityId: string;
+}
+
+/**
+ * 广播「主角名变了」。
+ *
+ * `origin` 用来避免自己触发自己：行囊自己改的名已经落进文档，不必再走一遍；
+ * 要素库改的名则要推给行囊（行囊没有监听实体表的通道）。
+ */
+export function notifyNameChanged(
+  workId: string,
+  displayName: string,
+  origin: "pack" | "panel",
+  /**
+   * 落点实体 id。**行囊改名前一定先查过绑定**，故知道是哪个实体；
+   * 要素库侧 `updateEntity` 天然就有 id。未绑定时传空串。
+   */
+  entityId = "",
+): void {
+  const detail: PackNameEventDetail & { origin: "pack" | "panel" } = {
+    workId,
+    displayName,
+    entityId,
+    origin,
+  };
+  window.dispatchEvent(new CustomEvent(PACK_NAME_EVENT, { detail }));
+  void window.electronAPI?.windowAPI.broadcast(PACK_NAME_EVENT, detail);
+}
+
 // ── 境界关联变更事件 ──
 
 /**

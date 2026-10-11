@@ -181,6 +181,26 @@ export function findTermMatches(
   return matches;
 }
 
+/**
+ * 把自建类型的标识色合并进标注层词条（R23）。
+ *
+ * 内置六类的颜色由 SCSS 静态定义给出，`ct-*` 是动态 id、没有静态规则，
+ * 只能把颜色随词条带下去（再经 novel-editor 注入成 inline CSS 变量）。
+ * 抽成纯函数是为了能直接断言「改色后词条颜色跟着变」这条契约 ——
+ * 原先写在 useNovelPage 的 useMemo 里，只能靠组件测试间接覆盖。
+ */
+export function applyCustomTypeColors(
+  terms: EntityTerm[],
+  customTypes: { id: string; color: string }[],
+): EntityTerm[] {
+  if (customTypes.length === 0) return terms;
+  const colorOf = new Map(customTypes.map((def) => [def.id, def.color]));
+  return terms.map((term) => {
+    const color = colorOf.get(term.type);
+    return color ? { ...term, color } : term;
+  });
+}
+
 /** 今日目标进度百分比，上限 100 */
 export function calcGoalProgress(todayTotal: number, goal: number): number {
   if (goal <= 0) return 0;

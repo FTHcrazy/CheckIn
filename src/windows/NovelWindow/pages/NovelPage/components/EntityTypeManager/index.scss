@@ -1,7 +1,11 @@
 /** 自定义要素类型管理弹框（R23）
 
-    色板色块是 antd Button：先用清零点 mixin 归零组件级变量再声明自己的值。
-    色块底色由 TSX 内联 style 给出（内联高于任何选择器），这里只管描边与尺寸。 */
+    取色改用组件库 ColorPicker（AGENTS §6.1.2）：色板自由、可直接填 hex，
+    不再受固定色板个数限制。这里只管触发器外观与间距，面板配色由 antd 负责。
+
+    列表行里的圆点是 ColorPicker 的触发器，所以圆点本身是 antd Button：
+    用清零点 mixin 归零组件级变量再声明自己的值，底色由 TSX 内联给出
+    （内联高于任何选择器），这里只管尺寸与描边。 */
 @use "../../../../../../shared/styles/widget" as widget;
 
 .nv-etm {
@@ -36,11 +40,43 @@
     }
   }
 
-  &__dot {
-    width: 10px;
-    height: 10px;
+  /* 取色触发器容器：宽度收成圆点尺寸，别让 ColorPicker 的 root 撑开一行。
+     ColorPicker 带 children 时直接渲染孩子（不套 .ant-color-picker-trigger），
+     所以下面两档选择器都留着 —— 有 children 与无 children 都别多占宽度。 */
+  &__pick.ant-color-picker-trigger,
+  &__pick {
     flex: none;
-    border-radius: 50%;
+    width: auto;
+    padding: 0;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+  }
+
+  /* 圆点同时是取色触发器：做成 14px 的圆形点击目标（含自绘描边），
+     比 10px 的纯展示圆点稍大 —— 它现在要点，视觉上也要「像个能点的东西」。 */
+  &__dot.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 14px;
+    --ant-button-padding-inline: 0px;
+    --ant-border-radius: 50%;
+    --ant-line-width: 1px;
+    --ant-button-default-border-color: color-mix(
+      in srgb,
+      var(--app-text) 24%,
+      transparent
+    );
+    --ant-button-default-hover-border-color: var(--app-text);
+    --ant-button-default-active-border-color: var(--app-text);
+    --ant-button-default-shadow: none;
+
+    width: 14px;
+    height: 14px;
+    min-width: 14px;
+    cursor: pointer;
+
+    /* 内圈留一点白，让颜色与被压暗的描边分开，小尺寸下更清楚 */
+    box-shadow: inset 0 0 0 2px var(--app-surface);
   }
 
   &__name {
@@ -83,31 +119,20 @@
     color: var(--app-text-muted);
   }
 
-  &__palette {
+  /* 新建区的「标识色」一行：标签在左、ColorPicker 在右 */
+  &__colorrow {
     display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
+    align-items: center;
+    gap: 8px;
   }
 
-  &__swatch.ant-btn {
-    @include widget.ant-button-reset;
-    --ant-control-height: 20px;
-    --ant-button-padding-inline: 0px;
-    --ant-border-radius: 50%;
-    --ant-line-width: 2px;
-    --ant-button-default-border-color: transparent;
-    --ant-button-default-hover-border-color: transparent;
-    --ant-button-default-active-border-color: transparent;
-    --ant-button-default-shadow: none;
+  &__colorlabel {
+    font-size: 12px;
+    color: var(--app-text-secondary);
+  }
 
-    width: 20px;
-
-    /* 选中环：持久高亮，写默认变量并让 hover / active 一并跟上 */
-    &.is-on {
-      --ant-button-default-border-color: var(--app-text);
-      --ant-button-default-hover-border-color: var(--app-text);
-      --ant-button-default-active-border-color: var(--app-text);
-    }
+  &__pick--draft {
+    flex: none;
   }
 
   &__error {

@@ -176,7 +176,7 @@ export default function CharacterPackHost({
   /** 保存失败时的逃生出口：把内存里这份改动整份落盘（G-4） */
   const handleExportDraft = async (): Promise<void> => {
     const path = await downloadText(
-      `行囊-${doc?.character.name || "主角"}-草稿.json`,
+      `行囊-${doc?.character.displayName || doc?.character.name || "主角"}-草稿.json`,
       api.exportDraftJson(),
       "json",
       "JSON",
@@ -188,7 +188,11 @@ export default function CharacterPackHost({
   return (
     <aside className="cpk" aria-label="行囊">
       <PackHeader
-        characterName={doc?.character.name ?? "主角"}
+        /*
+          绑定了主角实体就显示实体名（主进程已解析进 displayName），
+          未绑定时回退到行囊内的名字。见 PackCharacterDTO.displayName。
+        */
+        characterName={doc?.character.displayName || doc?.character.name || "主角"}
         realmText={api.realmText}
         realmHint={api.realmHint}
         realmBound={api.realmBound}
@@ -215,7 +219,6 @@ export default function CharacterPackHost({
         onOpenModules={() => api.setModuleManagerOpen(true)}
         onOpenUnitManager={() => api.setUnitManagerOpen(true)}
         onOpenRecords={() => api.setRecordDrawerOpen(true)}
-        onClose={() => void api.requestClose()}
       />
 
       <div

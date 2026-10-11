@@ -52,6 +52,7 @@ import {
 } from "../pack-presets";
 import {
   fetchPackUiPrefsRaw,
+  renamePackCharacter,
   savePackUiPrefsRaw,
   writeLevelMeta,
   writeProtagonistBinding,
@@ -76,12 +77,15 @@ import {
   type PackUiPrefs,
   type PackUnitSystem,
 } from "../types";
-import { CURRENCY_TEMPLATE, PACK_UI_SAVE_DEBOUNCE_MS } from "../pack-config";
+import { CURRENCY_TEMPLATE, PACK_UI_SAVE_DEBOUNCE_MS, PROFICIENCY_TEMPLATE } from "../pack-config";
 import {
+  notifyNameChanged,
   notifyProtagonistChanged,
+  PACK_NAME_EVENT,
   PACK_PROTAGONIST_EVENT,
   PACK_REALM_EVENT,
   readEventDetail,
+  type PackNameEventDetail,
   type PackProtagonistEventDetail,
   type PackRealmEventDetail,
 } from "../pack-config";
@@ -634,6 +638,38 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
     return () => {
       window.removeEventListener(PACK_PROTAGONIST_EVENT, handler as EventListener);
       api?.off(PACK_PROTAGONIST_EVENT, handler);
+    };
+  }, [workId, mutate]);
+
+  /**
+   * 右侧要素栏 / 要素库改了主角名：把新名同步进行囊（头部立刻跟着变）。
+   *
+   * 名字的单一事实源是实体，行囊只是它的一个展示面 —— 要素库改名后若不通知，
+   * 行囊头部会一直显示旧名，直到下次重载（表现为「要素库里改了名，行囊没动」）。
+   *
+   * `origin === "pack"` 的是自己改的：文档已经更新过了，跳过避免重复 mutate。
+   * 只改 `displayName` 一格，不重载整份文档 —— 否则未保存的编辑会被冲掉。
+   */
+  useEffect(() => {
+    const handler = (...args: unknown[]) => {
+      const detail = readEventDetail<PackNameEventDetail & { origin?: string }>(args);
+      if (!detail || typeof detail !== "object") return;
+      if (detail.workId !== workId) return;
+      if (detail.origin === "pack") return;
+      const displayName = detail.displayName ?? "";
+      if (!displayName) return;
+      mutate((current) =>
+        current.character.displayName === displayName
+          ? current
+          : { ...current, character: { ...current.character, displayName } },
+      );
+    };
+    window.addEventListener(PACK_NAME_EVENT, handler as EventListener);
+    const api = window.electronAPI?.windowAPI;
+    api?.on(PACK_NAME_EVENT, handler);
+    return () => {
+      window.removeEventListener(PACK_NAME_EVENT, handler as EventListener);
+      api?.off(PACK_NAME_EVENT, handler);
     };
   }, [workId, mutate]);
 
@@ -1744,6 +1780,21 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
     showToast("已套用货币模板（1 金 = 100 银 = 10000 铜）", "success");
   }, [upsertUnitSystem, showToast]);
 
+  /**
+   * 套用熟练度模板（入门 / 熟练 / 大师）。
+   *
+   * 与货币模板成对：货币那边一直有这个入口，熟练度却只在量纲弹窗里能建 ——
+   * 于是「熟练度开着、数值能填、但档位一个都看不到」成为常态，作者也找不到
+   * 建立档位的地方（用户报障）。技能栏在「没有档位体系」时直接给出这个动作。
+   */
+  const applyProficiencyTemplate = useCallback(() => {
+    upsertUnitSystem("threshold", "proficiency", {
+      name: "熟练度",
+      levels: PROFICIENCY_TEMPLATE,
+    });
+    showToast("已套用熟练度模板（入门 / 熟练 / 大师）", "success");
+  }, [upsertUnitSystem, showToast]);
+
   // ── 模块拼装（E-1） ──
   const setModuleEnabled = useCallback(
     (key: PackModuleKey, enabled: boolean) => {
@@ -1830,14 +1881,48 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
     [callMutate],
   );
 
+  /**
+   * 改主角名。
+   *
+   * 名字的单一事实源是**要素库的实体**（绑定了主角时）：这里经 `novel-pack-rename`
+   * 落库 —— 主进程按「绑没绑实体」决定改实体名还是改行囊内那格，并把最终名字
+   * 回带。**不在本地自己拼**，因为「到底哪个名字生效」这件事只有库知道
+   * （实体可能已被删、名可能被别的窗口改过）。
+   *
+   * 为什么不用 `mutate` 走草稿：名字与装备/属性不同，它不是「行囊里的设定数据」
+   * 而是一格**跨模块共享的实体信息**（右侧要素栏 / 角色卡都显示同一个名字）。
+   * 走草稿会让「行囊里改了名、要素库没变」，且保存后两边再次分叉 —— 与主角绑定
+   * 同一判据（PRD §8.6.2「改了这个值别人的地方会变吗」→ 会）。
+   *
+   * 落库成功后：① 广播（要素库 / 别的窗口的同一格跟着变）；
+   * ② 刷新本窗口文档里的 displayName（头部立刻显示新名）。
+   */
   const renameCharacter = useCallback(
-    (name: string) => {
-      callMutate((current) => ({
-        ...current,
-        character: { ...current.character, name },
+    async (name: string) => {
+      const current = docRef.current;
+      const workId = current?.character.workId;
+      if (!current || !workId) return;
+      const trimmed = name.trim();
+      if (!trimmed || trimmed === (current.character.displayName || current.character.name)) {
+        return;
+      }
+      const result = await renamePackCharacter(workId, trimmed).catch(() => null);
+      if (!result || !result.ok) {
+        showToast("改名失败，请重试", "error");
+        return;
+      }
+      mutate((doc) => ({
+        ...doc,
+        character: {
+          ...doc.character,
+          displayName: result.displayName,
+          // 未绑定时主进程改的是行囊内那格，name 也要跟上，否则再次装载会打回旧名
+          name: result.target === "character" ? result.displayName : doc.character.name,
+        },
       }));
+      notifyNameChanged(workId, result.displayName, "pack", result.target === "entity" ? current.character.entityId : "");
     },
-    [callMutate],
+    [mutate, showToast],
   );
 
   // ── 效果编辑器入口（装备 / 技能 / 状态共用一套） ──
@@ -2022,6 +2107,7 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
     upsertUnitSystem,
     removeUnitSystem,
     applyCurrencyTemplate,
+    applyProficiencyTemplate,
     setModuleEnabled,
     setModuleOrder,
     resetModules,

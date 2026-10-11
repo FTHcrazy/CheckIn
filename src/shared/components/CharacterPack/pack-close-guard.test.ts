@@ -15,6 +15,16 @@ import { describe, expect, it } from "vitest";
 const read = (rel: string): string =>
   readFileSync(resolve(process.cwd(), rel), "utf8");
 
+/**
+ * 去掉注释后再断言。
+ *
+ * ⚠️ 反向断言（「某字符串**不**许出现」）必须过这一层：本仓的注释习惯是
+ * 把历史 bug 的原文写在旁边（「这里原本有一颗『阶内进位』…」），
+ * 直接搜源码文本会把**说明**当成**代码**命中，守卫于是永远红着。
+ */
+const stripComments = (source: string): string =>
+  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+
 const PACK_DIR = "src/shared/components/CharacterPack";
 
 const CONFIG = read(`${PACK_DIR}/pack-config.ts`);
@@ -201,20 +211,39 @@ describe("REQ-043 切章 / 切作品 / 退出应用拦截（守卫）", () => {
 });
 
 // ─────────────────────────────────────────────────────────────
-// 境界「阶内进位」（曾经点不动）
+// 境界台阶推进（曾经点不动 + 控件去重）
 // ─────────────────────────────────────────────────────────────
 
-describe("境界阶内进位（守卫）", () => {
+describe("境界台阶推进（守卫）", () => {
   const REALM_UI = read(`${PACK_DIR}/components/RealmModule/index.tsx`);
+  /** 去注释版本：反向断言专用（注释里会引用被删控件的原文） */
+  const REALM_CODE = stripComments(REALM_UI);
   const REALM = read(`${PACK_DIR}/pack-realm.ts`);
 
-  it("「阶内进位」必须传 carry: true —— 漏了会走 clamp 分支，位置原样返回", () => {
-    const at = REALM_UI.indexOf("阶内进位");
+  it("「+ 1 层」推进必须走带 carry 的 step —— 漏了会走 clamp，位置原样返回", () => {
+    const at = REALM_CODE.indexOf("+ 1 层");
     expect(at).toBeGreaterThan(-1);
     // 取按钮本体（onClick 在同一条 JSX 里，往前取一段足够覆盖）
-    const button = REALM_UI.slice(Math.max(0, at - 400), at);
-    expect(button).toContain("carry: true");
-    expect(button).toContain("delta: 1");
+    const button = REALM_CODE.slice(Math.max(0, at - 700), at);
+    expect(button).toContain("step(1)");
+  });
+
+  it("step 只在一处定义且带 carry —— 两条推进路径不许各写一遍入参", () => {
+    // 曾经「阶内进位」与「+ 1 层」各写一份 `writeRealm(..., { carry: true, delta })`，
+    // 结果漏传 carry 的那份点了没反应。收口成一个 step() 后这种分叉不可能再发生。
+    const stepDefs = REALM_CODE.match(/const step = /g) ?? [];
+    expect(stepDefs).toHaveLength(1);
+    const body = REALM_CODE.slice(REALM_CODE.indexOf("const step = "));
+    expect(body.slice(0, 200)).toContain("carry: true");
+    expect(body.slice(0, 200)).toContain("delta");
+    // 组件里不许再有第二处直接调 writeRealm 做推进
+    const writes = REALM_CODE.match(/api\.writeRealm\(/g) ?? [];
+    // pick（点阶梯跳转）1 处 + step 1 处 = 2
+    expect(writes).toHaveLength(2);
+  });
+
+  it("「阶内进位」不许回来 —— 它与「+ 1 层」调同一入参", () => {
+    expect(REALM_CODE).not.toContain("阶内进位");
   });
 
   it("进位 / 夹取只在 setRealm 里算一次，plan 回带 position 供文案使用", () => {

@@ -1,4 +1,4 @@
-/** 技能栏：载体开关 + 熟练度 + 效果展开 */
+/** 技能栏：载体开关 + 熟练度（行内可改档位） + 效果展开 */
 .cpk-skl {
   margin: 0;
   padding: 0;
@@ -33,22 +33,80 @@
     display: flex;
     align-items: center;
     gap: 5px;
+    /* 窄档下这一行控件最多（开关 + 名称 + 数值 + 档位 + 效果 + 删除），
+       允许换行而不是把名称输入框压成 0 宽 —— 压到读不出名字比换行更糟。 */
+    flex-wrap: wrap;
   }
 
   &__name.ant-input {
     flex: 1;
-    min-width: 0;
+    min-width: 64px;
     font-size: 12px;
   }
 
-  &__tier {
+  /* 熟练度数值：收窄到 5 位数以内够用（上限 500 缩放），别和档位 chip 抢宽度 */
+  &__raw.ant-input-number {
     flex: none;
-    padding: 0 5px;
+    width: 62px;
+  }
+
+  /* 档位 chip 现在是**可点入口**（切档位 / 改区间 / 加档），
+     所以它有描边 + hover 反馈，不再是一块纯装饰的色块。 */
+  &__tier.ant-btn {
+    flex: none;
+    height: 22px;
+    padding: 0 8px;
     border-radius: var(--app-radius-pill);
-    background: var(--app-accent-green-weak);
-    color: var(--app-accent-green);
     font-size: 12px;
-    line-height: 16px;
+    --ant-button-content-font-size: 12px;
+    --ant-control-height: 22px;
+    --ant-button-padding-inline: 8px;
+    --ant-button-default-bg: var(--app-accent-green-weak);
+    --ant-button-default-color: var(--app-accent-green);
+    --ant-button-default-border-color: transparent;
+    --ant-button-default-hover-bg: var(--app-accent-green-weak);
+    --ant-button-default-hover-color: var(--app-accent-green);
+    --ant-button-default-hover-border-color: var(--app-accent-green);
+    --ant-button-default-active-bg: var(--app-accent-green-weak);
+    --ant-button-default-active-border-color: var(--app-accent-green);
+
+    &:disabled {
+      color: var(--app-accent-green);
+    }
+  }
+
+  /* 档位下拉里的每一档：名字靠左、量纲靠右 */
+  &__tieropt {
+    display: inline-flex;
+    align-items: center;
+    gap: 16px;
+    min-width: 130px;
+    justify-content: space-between;
+  }
+
+  &__tieropt-range {
+    font-size: 12px;
+    color: var(--app-text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* 「还没有档位」的一次性引导条：只在该出现的时候出现 */
+  &__setuptip {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 6px 8px;
+    margin-bottom: 6px;
+    border: 1px dashed var(--app-border-strong);
+    border-radius: var(--app-radius-item);
+    font-size: 12px;
+    color: var(--app-text-secondary-strong);
+  }
+
+  /* 效果按钮：留个下限宽度，展开态与收起态宽度别跳 */
+  &__effects.ant-btn {
+    flex: none;
   }
 
   /* 熟练度进度条（REQ-014）：条占满剩余宽，右侧标出档位量纲。
@@ -78,7 +136,7 @@
     color: var(--app-text-secondary-strong);
   }
 
-  &__effects {
+  &__effects-list {
     padding-left: 2px;
   }
 }

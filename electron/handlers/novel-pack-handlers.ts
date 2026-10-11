@@ -209,6 +209,16 @@ export interface PackCharacterDto {
   id: string;
   workId: string;
   name: string;
+  /**
+   * 展示名 —— **绑定了主角实体时以实体的名字为准**（单一事实源在要素库）。
+   *
+   * 为什么不让渲染层自己拼：`name` 是播种时写死的 `'主角'`，只有「未绑定」
+   * 时才代表什么。绑定后真实名字在 `novel_entities` 里，渲染层没有那条查询，
+   * 让它自己拼就得把实体表暴露到窗口侧。
+   *
+   * 未绑定时 `displayName === name`（即 `'主角'` 或作者在行囊里改的名）。
+   */
+  displayName: string;
   avatar: string;
   isProtagonist: boolean;
   /** 绑定的 EntityPanel 实体（novel_entities.id）；空串 = 仅行囊内使用 */
@@ -462,14 +472,36 @@ function parseDraftDoc(raw: string): PackDraftDoc | null {
 
 // ── 行 → DTO ──
 
+/**
+ * 读绑定实体的名字。
+ *
+ * 绑定的主角是「要素库里的一个实体」，它的名字（如「陆长安」）只存在
+ * `novel_entities.name` 里；行囊自己那格 `name` 是播种时的 `'主角'`，
+ * 绑定后就不该再用了（否则界面显示「主角」而要素库里是「陆长安」）。
+ *
+ * 查不到实体（被删了 / entityId 悬空）时返回空串，由调用方回退到行囊内的名字 ——
+ * 不抛错：一条悬空绑定不该让整个行囊装载失败。
+ */
+function readEntityName(entityId: string): string {
+  if (!entityId) return "";
+  const row = dbGet("SELECT name FROM novel_entities WHERE id = ?", [entityId]) as
+    | { name: string }
+    | undefined;
+  return row?.name ?? "";
+}
+
 function toCharacterDto(row: PackCharacterRow): PackCharacterDto {
+  const entityId = row.entity_id ?? "";
+  const entityName = readEntityName(entityId);
   return {
     id: row.id,
     workId: row.work_id,
     name: row.name,
+    // 绑定了实体就显示实体名；实体被删 / 名称为空时回退到行囊内的名字
+    displayName: entityName || row.name,
     avatar: row.avatar ?? "",
     isProtagonist: row.is_protagonist === 1,
-    entityId: row.entity_id ?? "",
+    entityId,
     realmAt: row.realm_at ?? "",
     note: row.note,
     weightLimit: row.weight_limit ?? 0,
@@ -855,6 +887,51 @@ export function registerNovelPackHandlers(): void {
         return true;
       } catch {
         return false;
+      }
+    },
+  );
+
+  /**
+   * 改主角名（行囊头部的「改名」入口）。
+   *
+   * 名字的单一事实源是**要素库的实体**（见 `toCharacterDto` 的 displayName）：
+   * 绑定了实体就改实体名，未绑定才改行囊自己那格。于是在行囊里改名 =
+   * 在要素库改名，两处永远是同一个名字 —— 这正是用户要的「改任一处两边都变」。
+   *
+   * 为什么单开一条通道而不用现成的 `novel-entity-save`：那条要整份 DTO
+   * （type / summary / content / fields / aliases…），行囊只拿得到名字，
+   * 传个残缺 DTO 过去会把其余字段一起覆盖成空。窄通道只动 name 一列。
+   *
+   * 返回真实落点（实体名 / 行囊名），让调用方据此渲染，不靠本地猜测。
+   */
+  ipcMain.handle(
+    "novel-pack-rename",
+    (
+      _event,
+      workId: string,
+      name: string,
+    ): { ok: boolean; displayName: string; target: "entity" | "character" } => {
+      const trimmed = name.trim();
+      try {
+        const row = ensurePackCharacterRow(workId);
+        if (!trimmed) {
+          const fallback = readEntityName(row.entity_id ?? "") || row.name;
+          return { ok: false, displayName: fallback, target: "character" };
+        }
+        const entityId = row.entity_id ?? "";
+        if (entityId) {
+          // 绑定了实体：改实体名（行囊那格不动，它已经不再被显示了）
+          dbRun("UPDATE novel_entities SET name = ?, updated_at = ? WHERE id = ?", [
+            trimmed,
+            Date.now(),
+            entityId,
+          ]);
+          return { ok: true, displayName: trimmed, target: "entity" };
+        }
+        dbRun("UPDATE novel_pack_characters SET name = ? WHERE id = ?", [trimmed, row.id]);
+        return { ok: true, displayName: trimmed, target: "character" };
+      } catch {
+        return { ok: false, displayName: "", target: "character" };
       }
     },
   );

@@ -40,6 +40,7 @@ const doc: PackDoc = {
     id: "c1",
     workId: "w1",
     name: "主角",
+    displayName: "主角",
     avatar: "",
     isProtagonist: true,
     entityId: "",
@@ -145,13 +146,17 @@ describe("InventoryModule —— 描述 / 标签（REQ-010）", () => {
     expect(document.querySelector(".cpk-inv__detail")).toBeNull();
   });
 
-  it("行尾只有「加成效果」与「更多」两个图标按钮（340px 的硬约束）", () => {
+  it("主行只留 4 个图标按钮，低频入口全进「更多」（340px 的硬约束）", () => {
     render(<InventoryModule api={makeApi()} />);
     const line = document.querySelector(".cpk-inv__line") as HTMLElement;
-    // 稀有度 + 减 + 加 + ✦ + ⋯ = 5；再加一个行尾按钮就会在 340px 下溢出
-    expect(line.querySelectorAll(".cpk-iconbtn").length).toBe(5);
+    // 稀有度 + 减 + 加 + ⋯ = 4。
+    // 2026-10 用户报障「行太窄、每行塞太多控件」：分类下拉与 ✦ 加成效果
+    // 已移入「更多」菜单，名称输入框因此拿回被分类吃掉的 ~74px。
+    expect(line.querySelectorAll(".cpk-iconbtn").length).toBe(4);
     expect(screen.getByLabelText("更多操作")).toBeInTheDocument();
-    expect(screen.getByTitle("加成效果")).toBeInTheDocument();
+    // 移走的两个都不该再出现在主行里
+    expect(screen.queryByTitle("加成效果")).toBeNull();
+    expect(line.querySelector(".cpk-inv__cat")).toBeNull();
   });
 
   it("从菜单展开后描述直改回写 desc", async () => {

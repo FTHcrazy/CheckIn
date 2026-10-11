@@ -19,8 +19,7 @@ import type {
   PackRealmLink,
   PackRecord,
   PackUnitSystem,
-} from "../types";
-import type { PackAttribute, PackItem, PackSkill, PackSlot } from "../types";
+} from "../types";import type { PackAttribute, PackItem, PackSkill, PackSlot } from "../types";
 import { DRAFT_DEBOUNCE_MS } from "../types";
 
 /**
@@ -209,6 +208,26 @@ export function usePackData(workId: string, chapterId: string) {
     };
   }, [workId, applyBundle]);
 
+  /**
+   * 只把「展示名」从正式行同步进当前文档（换绑主角 / 要素库改名后）。
+   *
+   * 为什么单拎出来而不整体 replace：换绑发生在**别的界面**（右侧要素栏），
+   * 此时行囊里可能正有未保存的编辑 —— 整体替换会把它们冲掉。
+   * `displayName` 是纯派生值（由绑定的实体算出），独立刷新它没有副作用。
+   */
+  const putBundleCharacterName = useCallback((character: PackCharacter): void => {
+    const current = docRef.current;
+    if (!current) return;
+    const displayName = character.displayName || character.name;
+    if (current.character.displayName === displayName) return;
+    const next: PackDoc = {
+      ...current,
+      character: { ...current.character, displayName },
+    };
+    docRef.current = next;
+    setDocState(next);
+  }, []);
+
   /** 只刷新元数据（盘点记录 / 等级体系 / 境界绑定），不覆盖正在编辑的文档 */
   const syncMeta = useCallback(async (): Promise<PackMeta | null> => {
     try {
@@ -226,12 +245,24 @@ export function usePackData(workId: string, chapterId: string) {
         setDocState(formal);
         // 首次拿到的正式行即基线 → 净差异必然为 0
         setDirty(0);
+      } else if (bundle.character && docRef.current) {
+        /**
+         * 文档已存在时也要跟一格：`displayName`。
+         *
+         * 它由「绑定的是哪个实体」派生（见主进程 `toCharacterDto`），换绑主角后
+         * 必须重算 —— 否则行囊头部会一直显示旧主角的名字。
+         *
+         * 只动这一格，不整体替换文档：换绑发生在右侧要素栏，此时行囊里可能正有
+         * 未保存的编辑，整体 replace 会把它们冲掉（这正是 syncMeta 的立身之本）。
+         * 绑定那一格 `entityId` 由调用方（bindEntity / 事件监听）自己写。
+         */
+        putBundleCharacterName(bundle.character);
       }
       return next;
     } catch {
       return null;
     }
-  }, [workId]);
+  }, [workId, putBundleCharacterName]);
 
   /**
    * 唯一的编辑入口：所有改动都经过它 → 重算净变化 → 防抖写草稿。

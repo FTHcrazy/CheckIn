@@ -239,16 +239,24 @@ export default function InventoryModule({ api }: InventoryModuleProps) {
   };
 
   /**
-   * 行尾的「更多」菜单：**描述与标签** + **删除**
+   * 行尾的「更多」菜单：**分类** + **加成效果** + **描述与标签** + **删除**
    *
-   * 这里不是在追求「少放几个按钮」，而是被实测宽度逼出来的：行囊面板最窄 340px，
-   * 扣掉正文内边距、滚动条留槽（10px）、模块与条目的 padding，一行只剩 **285px**；
-   * 而「已穿戴 + 刚改动角标」这一行的不可再压缩宽度就是 292px —— 已经贴着上限。
-   * 每个行尾图标按钮（哪怕被压到 11px）连间距要吃掉 15px，实测 340px 下**只放得下
-   * 两个**。所以新增的入口一律并进这个菜单，而不是再加第三个按钮。
+   * 2026-10 用户报障「行太窄、每行塞太多控件」：主行原本并排 8 个控件
+   * （稀有度点 / 改动点 / 名称 / 分类下拉 / 数量 −N+ / 装备 / ✦ / ⋯），
+   * 在 380px 窗口下名称输入框被压到只剩几十像素，连物品名都读不全。
    *
-   * 刻意把「加成效果」留在菜单外：那是行囊的主行为（这个面板存在的理由就是汇总加成），
-   * 不该被推进二级。删除反而本来就带一步确认，进菜单后是三步，更安全。
+   * 减法的判据是**「是不是每次盘点都会动」**：
+   *   - 名称、数量、装备态 → 每次都可能改，留在主行；
+   *   - 分类 → 一件物品建好时定一次，之后基本不动 → 进菜单；
+   *   - 加成效果（✦）→ 是「展开编辑器」的低频入口，且已在菜单里有同族项 → 进菜单；
+   *   - 描述 / 标签 / 重量 → 本来就低频 → 留在菜单。
+   *
+   * 被移走的两个都不是「紧急行为」：分类改错不影响汇总口径的数字，
+   * 加成效果漏填会体现在总属性上、作者看得到。而删除是破坏性操作，
+   * 留在菜单里天然多一道确认。
+   *
+   * ⚠️ 主行现在最窄只需容纳「点 + 名称 + 数量 + 装备 + ⋯」，
+   * 名称输入框因此拿得回被分类下拉吃掉的 ~74px。
    */
   const renderMore = (item: PackItem, open: boolean) => (
     <Dropdown
@@ -256,12 +264,34 @@ export default function InventoryModule({ api }: InventoryModuleProps) {
       classNames={{ root: "cpk-dropdown" }}
       menu={{
         items: [
+          {
+            key: "category",
+            label: (
+              <span className="cpk-inv__catopt">
+                <span className="cpk-inv__catopt-label">分类</span>
+                <Select
+                  size="small"
+                  variant="borderless"
+                  className="cpk-inv__catopt-select"
+                  value={item.category}
+                  options={CATEGORY_OPTIONS}
+                  popupMatchSelectWidth={false}
+                  classNames={{ popup: { root: "cpk-dropdown" } }}
+                  // 下拉本身在 menu 里：点它不该把外层菜单一起关掉
+                  onClick={(event) => event.stopPropagation()}
+                  onChange={(value: string) => api.updateItem(item.id, { category: value })}
+                />
+              </span>
+            ),
+          },
+          { key: "effect", label: "加成效果" },
           { key: "detail", label: open ? "收起描述与标签" : "描述 / 标签 / 重量" },
           { type: "divider" },
           { key: "remove", label: "删除", danger: true },
         ],
         onClick: ({ key }) => {
-          if (key === "detail") toggleDetail(item.id);
+          if (key === "effect") api.openEffectEditor("item", item.id, item.name || "物品");
+          else if (key === "detail") toggleDetail(item.id);
           else if (key === "remove") setPendingRemove(item);
         },
       }}
@@ -270,7 +300,7 @@ export default function InventoryModule({ api }: InventoryModuleProps) {
         className={`cpk-iconbtn tiny${open ? " is-on" : ""}`}
         aria-label="更多操作"
         aria-haspopup="menu"
-        title="描述 / 标签 / 重量 / 删除"
+        title="分类 / 加成效果 / 描述 / 标签 / 重量 / 删除"
       >
         <MoreOutlined />
       </Button>
@@ -431,14 +461,6 @@ export default function InventoryModule({ api }: InventoryModuleProps) {
                     aria-label="物品名"
                     onChange={(event) => api.updateItem(item.id, { name: event.target.value })}
                   />
-                  <Select
-                    size="small"
-                    className="cpk-inv__cat"
-                    value={item.category}
-                    options={CATEGORY_OPTIONS}
-                    classNames={{ popup: { root: "cpk-dropdown" } }}
-                    onChange={(value: string) => api.updateItem(item.id, { category: value })}
-                  />
                   {renderQty(item)}
                   {equipped ? (
                     <Button
@@ -460,13 +482,6 @@ export default function InventoryModule({ api }: InventoryModuleProps) {
                       </Button>
                     </Dropdown>
                   )}
-                  <Button
-                    className="cpk-iconbtn tiny"
-                    onClick={() => api.openEffectEditor("item", item.id, item.name || "物品")}
-                    title="加成效果"
-                  >
-                    ✦
-                  </Button>
                   {renderMore(item, open)}
                 </div>
 

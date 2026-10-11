@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  notifyNameChanged,
   notifyProtagonistChanged,
+  PACK_NAME_EVENT,
   PACK_PROTAGONIST_EVENT,
   readEventDetail,
   registerPackCloser,
   registerPackInsertIntoChapter,
   requestClosePackPanel,
   runPackInsertIntoChapter,
+  type PackNameEventDetail,
   type PackProtagonistEventDetail,
 } from "./pack-config";
 
@@ -120,5 +123,53 @@ describe("插入本章末尾桥（REQ-034）", () => {
     } finally {
       registerPackInsertIntoChapter(null);
     }
+  });
+});
+
+/**
+ * 主角名变更事件。
+ *
+ * 钉死的是「要素库改名 → 行囊头部跟着变」这条链路上的两个约定：
+ * ① 负载形状仍走 readEventDetail 的归一化（同窗口 / 跨窗口两种都要认）；
+ * ② 广播必须带 `origin`，否则行囊自己改的名会绕回来再 mutate 一次
+ *    （虽然被幂等判等挡住，但依赖判等兜错不如一开始就不发）。
+ */
+describe("notifyNameChanged（主角名变更广播）", () => {
+  it("同窗口能收到，负载含 workId / displayName / entityId / origin", () => {
+    const seen: Array<PackNameEventDetail & { origin?: string }> = [];
+    const handler = (event: Event) => {
+      seen.push(readEventDetail<PackNameEventDetail & { origin?: string }>([event])!);
+    };
+    window.addEventListener(PACK_NAME_EVENT, handler);
+    try {
+      notifyNameChanged("w1", "陆长安", "panel", "e1");
+    } finally {
+      window.removeEventListener(PACK_NAME_EVENT, handler);
+    }
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toEqual({
+      workId: "w1",
+      displayName: "陆长安",
+      entityId: "e1",
+      origin: "panel",
+    });
+  });
+
+  it("未绑定实体（改行囊内那格）时 entityId 为空串", () => {
+    const seen: Array<PackNameEventDetail & { origin?: string }> = [];
+    const handler = (event: Event) => {
+      seen.push(readEventDetail<PackNameEventDetail & { origin?: string }>([event])!);
+    };
+    window.addEventListener(PACK_NAME_EVENT, handler);
+    try {
+      notifyNameChanged("w1", "主角", "pack");
+    } finally {
+      window.removeEventListener(PACK_NAME_EVENT, handler);
+    }
+    expect(seen[0]?.entityId).toBe("");
+  });
+
+  it("事件名与主角变更事件分开（改名不必重载整份 bundle）", () => {
+    expect(PACK_NAME_EVENT).not.toBe(PACK_PROTAGONIST_EVENT);
   });
 });

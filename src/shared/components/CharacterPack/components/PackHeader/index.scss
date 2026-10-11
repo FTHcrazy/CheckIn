@@ -202,31 +202,82 @@
     margin-left: auto;
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     min-width: 0;
   }
 
+  /*
+    ⚠️ 头部工具栏的图标要**比面板其它地方大一号**，故在此局部覆盖原语。
+
+    为什么不直接改 `.cpk-iconbtn` 基础档：那一档是「模块头 / 行内」密度，
+    面板里有十几处使用点（每个模块标题行右侧都并排 3~4 枚），
+    调它等于把整个面板的密度改掉，且会把模块标题挤到省略号。
+
+    实测对照设计稿：头部图标是**饱满有分量**的（字形大 + 笔画不细 + 颜色不淡），
+    初版的 13px 字形 + 弱灰配色在小窗里看着就是「一排认不出的小点」。
+    这里给 16px 字形 + `--app-text` 一档的描边色 —— 两条一起给才够显眼。
+
+    `&__tools` 里是宽档的平铺四枚；`&__ops > .cpk-iconbtn` 兜住窄档那枚
+    「更多」入口（它不在 `__tools` 里，是 `__ops` 的直接子元素）。
+  */
+  &__tools .cpk-iconbtn.ant-btn,
+  &__ops > .cpk-iconbtn.ant-btn {
+    --ant-control-height: 28px;
+    --ant-button-content-font-size: 16px;
+    --ant-button-default-color: var(--app-text);
+    width: 28px;
+  }
+
+  /*
+    工具组：图标按钮之间有淡分隔线，右边是关闭。
+    间距按设计稿给 —— 图标盒 28px，中心距约 32px → gap 4px。
+    比 gap 更大反而会让四枚图标散开成「四个独立按钮」而不是「一组工具」。
+  */
   &__tools {
     display: flex;
     align-items: center;
-    gap: 2px;
-    margin-left: 4px;
-    padding-left: 8px;
+    gap: 4px;
+    margin-left: 6px;
+    padding-left: 10px;
     border-left: 1px solid var(--app-border);
     flex: none;
   }
 
   /*
-    「保存」主按钮与「更多」入口不可缩 —— 它们是这条带子的动作底线：
+    「保存」主按钮不可缩 —— 它是这条带子的动作底线：
     按钮被压变形 / 图标被裁掉，等于把「能不能存下」这件事弄丢了。
-
-    次要文字动作（「全部已读」「撤销全部」）在窄档已整块收进「更多」菜单
-    （见 index.tsx），故此处的 `ghost` 按钮只会出现在宽 / 中档 ——
-    那里空间充足，它们按自然宽排布即可，不需要可缩。
   */
-  &__ops > .cpk-btn.primary,
-  &__ops > .cpk-iconbtn {
+  &__ops > .cpk-btn.primary {
     flex: none;
+  }
+
+  /*
+    头部这排文字动作按钮按**设计稿的描边形态**排布（局部覆盖 `.cpk-btn.ghost`）。
+
+    设计稿里「全部已读 / 撤销全部」是浅描边按钮、「保存(N)」是实心主色 ——
+    三档强度分明。面板其它地方的 ghost 是「无框低强调」（模块头里的次级操作），
+    那里保持原样不动；只有头部这条带子上，它们与实心主按钮同排，
+    无框会显得比设计稿弱一级、也让「可点」这件事看不出来。
+
+    高度 26px 与旁边的图标盒（28px）视觉齐平：矮一截会让这一排看着断成两层。
+
+    ⚠️ 选择器必须写成 `.cpk-head .cpk-head__ops > .cpk-btn.ghost`（**4 个类**）：
+    公共层的 `.cpk-btn.ant-btn.ghost` 是 3 个类，与 `&__ops > .cpk-btn.ghost`
+    同特异性 —— 而包顺序上 PackHeader 的样式**先**于 pack-common 加载
+    （`index.tsx` 第 3 行 import PackHeader、第 34 行才 `import "./index.scss"`），
+    同特异性下靠后者胜出，本覆盖会被静默吃掉。
+    多挂一个 `.cpk-head` 即可稳压，且语义上也更准（只在这个头部里生效）。
+  */
+  .cpk-head &__ops > .cpk-btn.ghost {
+    --ant-control-height: 26px;
+    --ant-button-padding-inline: 10px;
+    --ant-button-default-bg: var(--app-surface);
+    --ant-button-default-border-color: var(--app-border-strong);
+    --ant-button-default-hover-bg: var(--app-surface-hover);
+    --ant-button-default-hover-color: var(--app-text-strong);
+    --ant-button-default-hover-border-color: var(--app-border-strong);
+    --ant-button-default-active-bg: var(--app-surface-active);
+    --ant-button-default-active-border-color: var(--app-border-strong);
   }
 
   /* 脏态给整条带子一个极淡的暖底：作者扫一眼就知道「还有东西没存」，
@@ -240,12 +291,14 @@
   }
 }
 
-/* ── 保存态（三态必须两两可分，暗色同样成立）── */
+/* ── 保存态（三态必须两两可分，暗色同样成立）──
+ * 字号 13px 与放大后的图标（16px 字形）同一档观感：设计稿里这颗 pill
+ * 与图标是同等醒目的，12px 配 16px 图标会明显偏轻。 */
 .cpk-savebar__state {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  font-size: 12px;
+  gap: 6px;
+  font-size: 13px;
   white-space: nowrap;
   /* 窄档下先省略这段叙述文字（「已保存 · 3 分钟前」→「已保存…」），
      保全「保存」主按钮与工具入口 */
@@ -255,7 +308,7 @@
 
   /* 干净态做成一颗绿点 + 文字的 pill：设计稿的观感，也比纯文字更快读 */
   &.is-idle {
-    padding: 3px 9px;
+    padding: 4px 11px;
     border-radius: var(--app-radius-pill);
     background: var(--app-accent-green-weak);
     color: var(--app-accent-green);
@@ -263,7 +316,7 @@
   }
 
   &.is-dirty {
-    padding: 3px 9px;
+    padding: 4px 11px;
     border-radius: var(--app-radius-pill);
     background: var(--app-warning-weak);
     color: var(--app-warning);
@@ -275,7 +328,7 @@
   }
 
   &.is-failed {
-    padding: 3px 9px;
+    padding: 4px 11px;
     border-radius: var(--app-radius-pill);
     background: var(--app-error-weak);
     color: var(--app-error);
@@ -284,8 +337,8 @@
 }
 
 .cpk-savebar__dot {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: currentColor;
 }

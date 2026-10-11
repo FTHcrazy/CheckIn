@@ -187,8 +187,13 @@ export const MARK_TYPE_OPTIONS: BuiltinEntityType[] = [
  */
 
 /**
- * 自定义类型色板（R23）：具体色值，与四套主题的 var(--app-*) 解耦。
+ * 自定义类型推荐配色（R23）：具体色值，与四套主题的 var(--app-*) 解耦。
  * 取与内置语义色错开的中饱和色，弱色在使用处 color-mix 派生。
+ *
+ * 定位是**快捷起点**而非可选范围：取色已改用组件库 ColorPicker，
+ * 用户可以自选任意色并直接填 hex。这份数组同时承担两个职责：
+ *   ① ColorPicker 的「推荐」presets 分组
+ *   ② 新建类型时自动挑一个还没被占用的颜色做默认值
  */
 export const CUSTOM_TYPE_PALETTE: readonly string[] = [
   "#e0559a",

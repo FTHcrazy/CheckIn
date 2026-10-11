@@ -77,9 +77,12 @@ import type {
   SearchHit,
 } from "../types";
 import {
+  notifyNameChanged,
   notifyRealmLinkChanged,
+  PACK_NAME_EVENT,
   PACK_REALM_EVENT,
   readEventDetail,
+  type PackNameEventDetail,
   type PackRealmEventDetail,
 } from "@/shared/components/CharacterPack/pack-config";
 
@@ -215,6 +218,58 @@ export function useNovelData() {
       api?.off(PACK_REALM_EVENT, handler);
     };
   }, [applyRealmLinkChange, activeWorkId]);
+
+  /**
+   * 行囊（或另一个窗口）改了主角名：把本地 bundle 里那个要素的名字同步过来。
+   *
+   * 为什么需要：名字的单一事实源是实体，但本地的 `bundle.entities` 是**一份内存
+   * 快照** —— 行囊窗口改的是库里的行，这个窗口的内存副本不会自己变。
+   * 不跟进的话，右侧要素栏会一直显示旧名（行囊头部已经是新名，同屏两个名字）。
+   *
+   * `origin === "panel"` 的是本窗口自己发的（`updateEntity` 里），
+   * 内存已经改过，跳过避免重复 setState。
+   */
+  /**
+   * 行囊（或另一个窗口）改了主角名：把本地 bundle 里那个要素的名字同步过来。
+   *
+   * 为什么需要：名字的单一事实源是实体，但本地的 `bundle.entities` 是**一份内存
+   * 快照** —— 行囊窗口改的是库里的行，这个窗口的内存副本不会自己变。
+   * 不跟进的话，右侧要素栏会一直显示旧名（行囊头部已是新名，同屏两个名字）。
+   *
+   * 定位靠事件里的 `entityId`，不靠名字猜：同名要素是真实存在的，
+   * 「按旧名找」会改错人。
+   *
+   * `origin === "panel"` 的是本窗口自己发的（`updateEntity` 里），
+   * 内存已经改过，跳过避免重复 setState。
+   */
+  useEffect(() => {
+    const handler = (...args: unknown[]) => {
+      const detail = readEventDetail<PackNameEventDetail & { origin?: string }>(args);
+      if (!detail || typeof detail !== "object") return;
+      if (detail.workId && detail.workId !== activeWorkId) return;
+      if (detail.origin === "panel") return;
+      const displayName = detail.displayName ?? "";
+      const entityId = detail.entityId ?? "";
+      if (!displayName || !entityId) return;
+      setBundle((current) => {
+        if (!current) return current;
+        const index = current.entities.findIndex((entity) => entity.id === entityId);
+        if (index < 0) return current;
+        const target = current.entities[index];
+        if (target.name === displayName) return current;
+        const entities = [...current.entities];
+        entities[index] = { ...target, name: displayName };
+        return { ...current, entities };
+      });
+    };
+    window.addEventListener(PACK_NAME_EVENT, handler as EventListener);
+    const api = window.electronAPI?.windowAPI;
+    api?.on(PACK_NAME_EVENT, handler);
+    return () => {
+      window.removeEventListener(PACK_NAME_EVENT, handler as EventListener);
+      api?.off(PACK_NAME_EVENT, handler);
+    };
+  }, [activeWorkId]);
 
   /** 光标 / 滚动恢复完成后由编辑器回调清空，避免切章时误用旧位置 */
   const consumeLastPosition = useCallback((): void => setLastPosition(null), []);
@@ -761,6 +816,18 @@ export function useNovelData() {
           : current,
       );
       void saveEntity(merged);
+      /**
+       * 改名要通知行囊 —— 名字的单一事实源是实体，行囊头部显示的正是它。
+       *
+       * 不通知的话：在要素库把「陆长安」改成别的名字，行囊头部仍是「陆长安」，
+       * 直到下次重载（同屏两个名字打架）。
+       *
+       * 只有**名字真的变了**才广播：updateEntity 也承载摘要 / 正文等编辑，
+       * 那些改动跑一遍广播纯属噪音（行囊会平白 mutate 一次）。
+       */
+      if (merged.name !== target.name) {
+        notifyNameChanged(merged.workId, merged.name, "panel", merged.id);
+      }
     },
     [entities],
   );

@@ -437,24 +437,52 @@ export default function EditorPane({
     });
   }, [settings]);
 
-  // 续写位置恢复（R6）：等章节正文灌入后下一帧应用光标与滚动，再向上层回收。
-  // 光标越界（章节在别处被改短）按文档长度夹取
+  /**
+   * 换章时的滚动定位（R6）。
+   *
+   * 两种情形共用这一处：
+   *
+   * 1. **有恢复点**（`restore`，仅启动时来自上次续写位置）→ 跳到记下的
+   *    `cursor` 与 `scrollTop`，再向上层回收这份一次性恢复。
+   * 2. **没有恢复点**（点章节树 / 大纲 / 要素出场章节等正常换章）→ **滚回顶部**。
+   *
+   * ⚠️ 第 2 条是修掉「切章后滚动条停在上一章的位置」的关键：
+   * `.nv-editor__scroll` 这个滚动容器**不随章节重挂**（编辑器实例整个会话唯一，
+   * 见初始化 effect），正文是灌进同一块 DOM 的。于是换章后容器仍带着上一章的
+   * `scrollTop` —— 短章一进来就停在中段甚至直接触底，作者看到的是「文本没了」。
+   *
+   * 上层（useNovelPage）已经把「存下来的位置」在换章时归零，但那只是记录，
+   * 碰不到真实 DOM；真实滚动量必须在这里复位。
+   *
+   * 用 rAF 而非同步执行：正文灌入是同一个提交里的另一次 effect，滚动容器的高度
+   * 要等新正文**排版完成**才是对的；在旧高度上设 `scrollTop` 会被新高度夹取，
+   * 表现为「短章滚不到真正的顶」。
+   */
   useEffect(() => {
     const view = viewRef.current;
-    if (!view || !chapter || !restore || restore.chapterId !== chapter.id) {
-      return undefined;
-    }
+    if (!view || !chapter) return undefined;
+
+    const isRestore = Boolean(restore && restore.chapterId === chapter.id);
     const frame = window.requestAnimationFrame(() => {
       const current = viewRef.current;
       if (!current) return;
-      current.dispatch({
-        selection: { anchor: Math.min(restore.cursor, current.state.doc.length) },
-      });
+      if (isRestore && restore) {
+        // 光标越界（章节在别处被改短）按文档长度夹取
+        current.dispatch({
+          selection: { anchor: Math.min(restore.cursor, current.state.doc.length) },
+        });
+      }
       const scroller = hostRef.current?.closest<HTMLElement>(".nv-editor__scroll");
-      if (scroller) scroller.scrollTop = restore.scrollTop;
-      onRestoreDone();
+      if (scroller) {
+        // 有恢复点用它记下的位置，否则一律归零 —— 新章从第一行开始读是唯一
+        // 说得通的行为，没有哪一章的「合理起点」是上一章的滚动位置
+        scroller.scrollTop = isRestore && restore ? restore.scrollTop : 0;
+      }
+      if (isRestore) onRestoreDone();
     });
     return () => window.cancelAnimationFrame(frame);
+    // restore 是**一次性**输入：消费后由 onRestoreDone 清空，避免它在下一次
+    // 换章时被误当成「这一章也有恢复点」而复用上一章的位置
   }, [chapter, restore, onRestoreDone]);
 
   // 词库与标注层开关热更新：只换 facet 值，不重建插件实例（PRD §7：要素保存即刷新词库）。

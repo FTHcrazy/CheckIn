@@ -53,6 +53,24 @@
     gap: 6px;
   }
 
+  /* 菜单里的「分类」行：标签 + 内嵌下拉（下拉自己处理点击，不关外层菜单） */
+  &__catopt {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 150px;
+    justify-content: space-between;
+  }
+
+  &__catopt-label {
+    color: var(--app-text-secondary-strong);
+  }
+
+  &__catopt-select.ant-select {
+    min-width: 84px;
+    font-size: 12px;
+  }
+
   &__rarchk {
     margin-left: auto;
     padding-left: 10px;
@@ -110,11 +128,6 @@
     font-size: 12px;
   }
 
-  &__cat {
-    width: 74px;
-    flex: none;
-  }
-
   &__qty {
     flex: none;
     display: inline-flex;
@@ -157,10 +170,6 @@
 
   &.is-grid &__detail {
     padding-left: 0;
-  }
-
-  &.is-grid &__cat {
-    width: 100%;
   }
 
   &.is-grid &__qty {

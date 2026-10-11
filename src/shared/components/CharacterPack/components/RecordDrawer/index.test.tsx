@@ -87,6 +87,7 @@ const currentDoc: PackDoc = {
     id: "c1",
     workId: "w1",
     name: "主角",
+    displayName: "主角",
     avatar: "",
     isProtagonist: true,
     entityId: "e1",

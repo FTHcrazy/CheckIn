@@ -148,6 +148,14 @@ export interface PackCharacterDTO {
   id: string
   workId: string
   name: string
+  /**
+   * 展示名 —— 绑定了主角实体时以实体的名字为准（单一事实源在要素库）。
+   *
+   * `name` 是播种时写死的 `'主角'`，只有「未绑定」时才代表什么。绑定后真实
+   * 名字在 `novel_entities.name` 里，由主进程解析好下发，窗口侧直接用
+   * `displayName` 渲染即可 —— 不必自己查实体表，也不会两边不一致。
+   */
+  displayName: string
   avatar: string
   isProtagonist: boolean
   /** 绑定的 EntityPanel 实体 id；空串 = 仅行囊内使用（不写 novel_links） */
@@ -591,6 +599,14 @@ export interface ElectronAPI {
       protagonistGet: (workId: string) => Promise<PackProtagonistDTO | null>
       /** 设为主角 / 解除主角：entityId 传空串即解绑 */
       protagonistSet: (workId: string, entityId: string) => Promise<boolean>
+      /**
+       * 改主角名 —— 绑定了实体就改实体名，未绑定才改行囊内那格。
+       * 返回真实落点，调用方据此渲染（不靠本地猜测）。
+       */
+      rename: (
+        workId: string,
+        name: string,
+      ) => Promise<{ ok: boolean; displayName: string; target: "entity" | "character" }>
       /**
        * 快速记账（REQ-027）：正文选区 → 记入背包，供**面板未挂载**时使用。
        * 主进程按「有草稿并入草稿、没有才直插正式表」落库（草稿优先于正式行）。

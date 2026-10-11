@@ -46,7 +46,6 @@ function props(over: Partial<Parameters<typeof PackHeader>[0]> = {}) {
     onOpenModules: vi.fn(),
     onOpenUnitManager: vi.fn(),
     onOpenRecords: vi.fn(),
-    onClose: vi.fn(),
     ...over,
   };
   return { base, onExportDraft };
@@ -145,24 +144,28 @@ describe("PackHeader —— 失败态逃生出口（REQ-045）", () => {
 });
 
 /**
- * 窄档紧凑模式（<600px）：四个工具收进「更多」。
+ * 窄档紧凑模式（<600px）：工具收进「更多」。
  *
- * 小窗下把「盘点记录 / 量纲 / 模块管理 / 关闭」四个图标摊平，
+ * 小窗下把「盘点记录 / 量纲 / 模块管理」三个图标摊平，
  * 会和读数、保存态抢同一行的宽度 —— 实测结果是读数文字互相重叠、
  * 「全部已读」被裁出右边界。收进菜单是**主动让位**：
  * 留白比留一排点不到的按钮重要（点不到的按钮比藏起来的更糟）。
  *
  * 两个方向都要钉住：紧凑档只能有一个入口按钮、且不能出现平铺的工具条；
  * 宽档反过来 —— 一排图标点起来比展开菜单快，空间够用时不该留着菜单。
+ *
+ * 头部**没有**关闭按钮（2026-10 用户报障）：窗口自己有关闭按钮、Esc 也能关，
+ * 再摆一枚「×」是第三个重复入口，且紧挨着「模块管理」，误点即关窗。
+ * 这条同时钉窄档菜单里也不许再出现「关闭行囊」。
  */
 describe("PackHeader —— 窄档工具收进「更多」", () => {
   afterEach(cleanup);
 
-  it("compact 时四个工具不出现，只有一个「更多」入口", () => {
+  it("compact 时工具不出现，只有一个「更多」入口", () => {
     render(<PackHeader {...props({ compact: true }).base} />);
     // 平铺工具条整块不渲染
     expect(document.querySelector(".cpk-head__tools")).toBeNull();
-    // 宽档那四个图标按钮都不在
+    // 宽档那三个图标按钮都不在
     const titles = Array.from(document.querySelectorAll(".cpk-iconbtn")).map(
       (node) => node.getAttribute("title"),
     );
@@ -184,7 +187,7 @@ describe("PackHeader —— 窄档工具收进「更多」", () => {
     expect(screen.getByRole("button", { name: /保存 \(2\)/ })).toBeInTheDocument();
   });
 
-  it("宽档（compact=false）保持四个工具平铺，不出「更多」", () => {
+  it("宽档（compact=false）保持三个工具平铺，不出「更多」", () => {
     render(<PackHeader {...props({ compact: false }).base} />);
     expect(document.querySelector(".cpk-head__tools")).not.toBeNull();
     const titles = Array.from(document.querySelectorAll(".cpk-iconbtn")).map(
@@ -194,7 +197,6 @@ describe("PackHeader —— 窄档工具收进「更多」", () => {
       "盘点记录 / 与本章初对比",
       "量纲设置（货币 / 熟练度）",
       "模块管理",
-      "关闭（Esc）",
     ]);
     expect(titles).not.toContain("更多");
   });
@@ -208,6 +210,15 @@ describe("PackHeader —— 窄档工具收进「更多」", () => {
   it("compact 下「保存」主按钮仍然可达（工具让位不许把操作区一起收走）", () => {
     render(<PackHeader {...props({ compact: true, dirty: 2 }).base} />);
     expect(screen.getByRole("button", { name: /保\s*存/ })).toBeInTheDocument();
+  });
+
+  it("两档都不出现关闭按钮（窗口自身有关闭按钮，Esc 也能关，不该有第三个入口）", () => {
+    const { unmount } = render(<PackHeader {...props({ compact: false }).base} />);
+    expect(screen.queryByRole("button", { name: /关闭/ })).toBeNull();
+    unmount();
+
+    render(<PackHeader {...props({ compact: true }).base} />);
+    expect(screen.queryByRole("button", { name: /关闭/ })).toBeNull();
   });
 });
 
