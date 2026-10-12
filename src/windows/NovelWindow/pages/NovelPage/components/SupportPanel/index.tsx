@@ -82,8 +82,8 @@ interface SupportPanelProps {
     relation: string,
   ) => void;
   onRemoveRelation: (linkId: string, targetName: string) => void;
-  /** 设定 / 取消当前境界 */
-  onSetEntityLevel: (entityId: string, levelId: string | null) => void;
+  /** 设定 / 取消当前境界（sub = 阶内第几层，父阶是组的统一坐标） */
+  onSetEntityLevel: (entityId: string, levelId: string | null, sub?: number) => void;
   /** 打开设定中心 */
   onOpenSettings: () => void;
   /** 当前章正文：设定速查面板的一致性检查扫描它 */

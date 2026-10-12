@@ -561,6 +561,7 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
   );
 
   // ── 派生：境界（全部经由口子，禁止直接读字段 REQ-048） ──
+  // 主进程投影已只出根阶（子层级折算成阶内层数），这里原样透传
   const rungs: LadderRung[] = useMemo(() => {
     const system = meta.levelSystems[0];
     if (!system) return [];
@@ -571,6 +572,7 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
         rank: rung.rank,
         subLevels: rung.subLevels,
         power: rung.power,
+        hasChildren: rung.hasChildren ?? false,
       })),
     );
   }, [meta.levelSystems]);

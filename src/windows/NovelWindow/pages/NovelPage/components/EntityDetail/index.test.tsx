@@ -290,4 +290,106 @@ describe("EntityDetail：出场章节列表", () => {
     render(<EntityDetail {...buildProps({ appearances: [] })} />);
     expect(screen.queryByText("出场章节")).toBeNull();
   });
+
+  it("父阶是组：点父阶绑定 (根阶, 第 1 层)，与行囊共用同一坐标（1.38.1）", () => {
+    const onSetEntityLevel = vi.fn();
+    render(
+      <EntityDetail
+        {...buildProps({
+          settings: [
+            {
+              ...realmCategory,
+              levels: [
+                { ...realmCategory.levels[0], subLevels: 9 },
+                {
+                  ...realmCategory.levels[0],
+                  id: "r1__seg1",
+                  name: "第1层",
+                  rank: 2,
+                  parentId: "r1",
+                  segFrom: 1,
+                  segTo: 1,
+                  subLevels: 1,
+                },
+                {
+                  ...realmCategory.levels[0],
+                  id: "r1__seg2",
+                  name: "第2层",
+                  rank: 3,
+                  parentId: "r1",
+                  segFrom: 2,
+                  segTo: 2,
+                  subLevels: 1,
+                },
+                realmCategory.levels[1],
+              ],
+            },
+          ],
+          onSetEntityLevel,
+        })}
+      />,
+    );
+
+    // 切到有子层级的父阶 = 绑定 (根阶, 第 1 层)，而不是组本身或子层级 id
+    fireEvent.click(screen.getByText("炼气"));
+    expect(onSetEntityLevel).toHaveBeenCalledWith("r1", 1);
+
+    // 没有子层级的父阶照旧绑自己
+    fireEvent.click(screen.getByText("筑基"));
+    expect(onSetEntityLevel).toHaveBeenLastCalledWith("r2", undefined);
+  });
+
+  it("绑定统一落 (根阶, note.sub)：行囊写回的进度在实体卡上高亮对应子层级", () => {
+    const { container } = render(
+      <EntityDetail
+        {...buildProps({
+          settings: [
+            {
+              ...realmCategory,
+              levels: [
+                { ...realmCategory.levels[0], subLevels: 9 },
+                {
+                  ...realmCategory.levels[0],
+                  id: "r1__seg1",
+                  name: "第1层",
+                  rank: 2,
+                  parentId: "r1",
+                  segFrom: 1,
+                  segTo: 1,
+                  subLevels: 1,
+                },
+                {
+                  ...realmCategory.levels[0],
+                  id: "r1__seg2",
+                  name: "第2层",
+                  rank: 3,
+                  parentId: "r1",
+                  segFrom: 2,
+                  segTo: 2,
+                  subLevels: 1,
+                },
+              ],
+            },
+          ],
+          relations: [
+            {
+              id: "l1",
+              direction: "out",
+              targetId: "r1",
+              targetName: "炼气",
+              targetType: "level",
+              relation: "当前境界",
+              note: '{"sub":2}',
+            },
+          ],
+        })}
+      />,
+    );
+
+    // 根阶行高亮 + 标注阶内进度（2–2 / 共 9 层）
+    expect(container.querySelector(".nv-edetail__rung.is-on")).not.toBeNull();
+    expect(screen.getByText(/2–2 \/ 共 9 层/)).toBeInTheDocument();
+    // 对应子层级小条高亮
+    expect(container.querySelector(".nv-edetail__rung-seg.is-on")).not.toBeNull();
+  });
 });

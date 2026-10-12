@@ -22,6 +22,7 @@ import type {
 } from "../../types";
 import {
   findRealmPosition,
+  parseRealmNoteSub,
   rootLevels,
   sortLevels,
 } from "../../utils/setting-utils";
@@ -48,8 +49,12 @@ interface EntityDetailProps {
     relation: string,
   ) => void;
   onRemoveRelation: (linkId: string, targetName: string) => void;
-  /** 设定 / 替换 / 取消当前境界：levelId 传 null 即取消 */
-  onSetEntityLevel: (levelId: string | null) => void;
+  /**
+   * 设定 / 替换 / 取消当前境界：levelId 传 null 即取消。
+   * 父阶是「组」（1.38.1）：绑定统一落在根阶 + sub（阶内第几层）上，
+   * 与行囊共用同一坐标（novel_links.note 的 {sub}）。
+   */
+  onSetEntityLevel: (levelId: string | null, sub?: number) => void;
   /** 打开设定中心并定位到境界体系分类 */
   onOpenSettings: () => void;
   /** 是否为行囊主角 */
@@ -154,11 +159,18 @@ export default function EntityDetail({
     }
     return map;
   }, [realmCategory]);
-  const boundLevelId = levelBinding?.targetId ?? null;
-  /** 绑定落点：绑在哪个根阶下、落在哪个派生段（渲染「境界内进度」用） */
+  /**
+   * 绑定落点：绑在哪个根阶下、落在哪个派生段（渲染「境界内进度」用）。
+   * 绑定统一落 (根阶, note.sub) —— 行囊 ±1 层写的就是 note 那一格。
+   */
   const boundPosition = useMemo(
-    () => findRealmPosition(realmCategory?.levels ?? [], boundLevelId),
-    [realmCategory, boundLevelId],
+    () =>
+      findRealmPosition(
+        realmCategory?.levels ?? [],
+        levelBinding?.targetId ?? null,
+        parseRealmNoteSub(levelBinding?.note),
+      ),
+    [realmCategory, levelBinding],
   );
 
   const BASE_KEYS = ["别名", "一句话", "性格"];
@@ -592,8 +604,27 @@ export default function EntityDetail({
                   <div key={level.id} className="nv-edetail__rung-group">
                     <Button
                       className={`nv-edetail__rung${boundToRoot ? " is-on" : ""}`}
-                      title={boundToRoot ? "点击取消当前境界绑定" : "点击设为当前境界"}
-                      onClick={() => onSetEntityLevel(boundToRoot ? null : level.id)}
+                      title={
+                        boundInSubtree
+                          ? "点击取消当前境界绑定"
+                          : segments.length > 0
+                            ? "点击设为当前境界（自动选中第 1 层）"
+                            : "点击设为当前境界"
+                      }
+                      onClick={() => {
+                        // 这一阶下已有绑定（绑在组上或某个子层级上）→ 再点即取消
+                        if (boundInSubtree) {
+                          onSetEntityLevel(null);
+                          return;
+                        }
+                        // 父阶是「组」，不单独当境界：有子层级时切到这一阶
+                        // = 绑定 (根阶, 第 1 层)；子层级从 1 起编号
+                        if (segments.length > 0) {
+                          onSetEntityLevel(level.id, 1);
+                        } else {
+                          onSetEntityLevel(level.id);
+                        }
+                      }}
                     >
                       <span className="nv-edetail__rung-no">{level.rank}</span>
                       <span>{level.name}</span>
@@ -612,7 +643,9 @@ export default function EntityDetail({
                     {segments.length > 0 && (
                       <div className="nv-edetail__rung-segs">
                         {segments.map((segment) => {
-                          const segBound = segment.id === boundLevelId;
+                          // 绑定统一落 (根阶, note.sub)：落在该段区间内即高亮；
+                          // 旧数据绑在段 id 上时 boundPosition.segment 就是该段，同样命中
+                          const segBound = boundSegment?.id === segment.id;
                           return (
                             <Button
                               key={segment.id}
@@ -621,7 +654,10 @@ export default function EntityDetail({
                                 segBound ? "（点击取消绑定）" : "（点击绑定此段）"
                               }`}
                               onClick={() =>
-                                onSetEntityLevel(segBound ? null : segment.id)
+                                onSetEntityLevel(
+                                  segBound ? null : level.id,
+                                  segment.segFrom ?? 1,
+                                )
                               }
                             >
                               {segment.name}

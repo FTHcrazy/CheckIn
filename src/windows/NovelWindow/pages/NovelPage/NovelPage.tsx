@@ -527,9 +527,9 @@ export default function NovelPage({
           onSaveEntity={handleSaveEntity}
           onAddRelation={handleAddRelation}
           onRemoveRelation={handleRemoveRelation}
-          onSetEntityLevel={(entityId, levelId) => {
+          onSetEntityLevel={(entityId, levelId, sub) => {
             const target = data.getEntityById(entityId);
-            if (target) handleSetEntityLevel(entityId, target.type, levelId);
+            if (target) handleSetEntityLevel(entityId, target.type, levelId, sub);
           }}
           onOpenSettings={openSettingCenterForRealm}
           chapterContent={data.activeChapter?.content ?? ""}

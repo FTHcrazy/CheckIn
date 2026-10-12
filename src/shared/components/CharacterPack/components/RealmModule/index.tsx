@@ -234,6 +234,10 @@ export default function RealmModule({ api }: RealmModuleProps) {
                   min={1}
                   style={{ width: 62 }}
                   value={item.subLevels}
+                  // 拆出子层级后父阶是「组」：小层数由子层级决定，
+                  // 这里改只会和子层级打架（改完重载又被总数兜底改回来）
+                  disabled={item.hasChildren}
+                  title={item.hasChildren ? "已在设定中心拆出子层级，小层数由子层级决定" : undefined}
                   onChange={(value) =>
                     void api.setRungMeta(item.id, { subLevels: Math.max(1, Number(value) || 1) })
                   }

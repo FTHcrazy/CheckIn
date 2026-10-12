@@ -46,6 +46,7 @@ import {
   applySplit,
   insertLevel,
   moveLevel,
+  parseRealmNoteSub,
   previewSplit,
   removeLevels,
 } from "../utils/setting-utils";
@@ -1279,8 +1280,10 @@ export function useNovelData() {
 
   /**
    * 设定 / 替换 / 取消要素的「当前境界」（R25）。
-   * 绑定存 novel_links：toType='level'、toId=novel_levels.id、relation 固定
-   * 「当前境界」；一个要素同时只持有一条——先摘旧绑定再落新绑定。
+   * 绑定存 novel_links：toType='level'、toId=根阶 id、relation 固定
+   * 「当前境界」、note 写 {sub}（阶内第几层）—— 父阶是「组」（1.38.1），
+   * 面板与行囊共用同一坐标：行囊读 note.sub 就是进度条位置，无需换算。
+   * 一个要素同时只持有一条——先摘旧绑定再落新绑定。
    * rungId 传 null 即取消绑定。
    */
   const setEntityLevel = useCallback(
@@ -1288,6 +1291,7 @@ export function useNovelData() {
       entityId: string,
       entityType: EntityType,
       rungId: string | null,
+      sub?: number,
     ): void => {
       if (!bundle) return;
       const binding = bundle.links.find(
@@ -1296,8 +1300,12 @@ export function useNovelData() {
           link.fromType === entityType &&
           link.toType === "level",
       );
+      const samePosition =
+        rungId !== null &&
+        binding?.toId === rungId &&
+        parseRealmNoteSub(binding.note) === Math.max(1, Math.floor(sub ?? 1) || 1);
       const created: NovelLink | null =
-        rungId === null || rungId === binding?.toId
+        rungId === null || samePosition
           ? null
           : {
               id: createNovelId("l"),
@@ -1306,6 +1314,9 @@ export function useNovelData() {
               toType: "level",
               toId: rungId,
               relation: LEVEL_RELATION,
+              // 阶内小层进度：行囊与实体卡都从这格读（缺省第 1 层不写）
+              note:
+                sub && sub > 1 ? JSON.stringify({ sub: Math.floor(sub) }) : "",
             };
       setBundle((current) => {
         if (!current) return current;

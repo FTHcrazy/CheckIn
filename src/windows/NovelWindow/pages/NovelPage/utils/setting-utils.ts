@@ -408,11 +408,12 @@ export interface RealmPosition {
 }
 
 /**
- * 把「绑定到某个等级项 id」翻译成「根阶 + 境界内进度」
+ * 把「绑定到某个等级项 id + 阶内小层」翻译成「根阶 + 境界内进度」
  *
- * - 绑在根阶上 → `{ root, segment: null, total }`（无段内进度，就是这一阶）；
- * - 绑在派生段上 → segment 带着它占据的 [segFrom, segTo]，展示层据此渲染
- *   「练气 · 第4段（共 9 层）」这类进度文案；
+ * - 绑在根阶上（统一口径，1.38.1 起）：父阶是「组」，绑定总是落在
+ *   根阶 + note.sub（阶内第几层）上 —— 有子层级时 segment 由 noteSub 落在
+ *   哪个段决定，展示层据此渲染「练气 · 第4层（共 9 层）」这类进度文案；
+ * - 绑在派生段上（旧数据）：segment 就是该段；
  * - 兼容旧模型（1.38.1 前父阶自己占第一段）：绑在 segFrom 非空的旧父阶上，
  *   把父阶自身当作段，进度照常展示；
  * - id 不在序列里（已删 / 换了体系）→ null。
@@ -420,6 +421,7 @@ export interface RealmPosition {
 export function findRealmPosition(
   levels: SettingLevel[],
   boundLevelId: string | null,
+  noteSub = 1,
 ): RealmPosition | null {
   if (!boundLevelId) return null;
   const bound = levels.find((level) => level.id === boundLevelId);
@@ -433,26 +435,57 @@ export function findRealmPosition(
     if (level.parentId !== root.id) continue;
     if (level.segTo !== null) total = Math.max(total, level.segTo);
   }
+  let segment: SettingLevel | null;
+  if (bound.parentId) {
+    segment = bound;
+  } else if (root.segFrom !== null) {
+    segment = root; // 旧模型：父阶自己占第一段
+  } else {
+    // 统一口径：绑在根阶 + note.sub —— 落在哪个子层级的段区间里就是哪段
+    const sub = Math.max(1, Math.floor(noteSub) || 1);
+    segment =
+      levels.find(
+        (level) =>
+          level.parentId === root.id &&
+          level.segFrom !== null &&
+          level.segTo !== null &&
+          sub >= level.segFrom &&
+          sub <= level.segTo,
+      ) ?? null;
+  }
   return {
     root,
-    segment: bound.parentId ? bound : root.segFrom !== null ? root : null,
+    segment,
     total: Math.max(1, Math.floor(total) || 1),
   };
 }
 
+/** 解析绑定行的阶内小层（novel_links.note 的 {sub}），缺省 1 */
+export function parseRealmNoteSub(note?: string | null): number {
+  if (!note) return 1;
+  try {
+    const parsed: unknown = JSON.parse(note);
+    if (!parsed || typeof parsed !== "object") return 1;
+    const sub = Number((parsed as { sub?: unknown }).sub);
+    return Number.isFinite(sub) && sub >= 1 ? Math.floor(sub) : 1;
+  } catch {
+    return 1;
+  }
+}
+
 /**
- * 绑定落点的**可读名**：父阶优先，派生段折算成「父阶 · 段名」
+ * 绑定落点的**可读名**：父阶优先，阶内进度折算成「父阶 · 层名」
  *
- * 卡片 / 导出这类只有一行的场合用：绑在「练气 · 第4段」上显示
- * 「练气 · 第4段」（默认命名自带父前缀，原样即可）；自定义段名没带
- * 父阶前缀时（如「第4段」）补上 —— 单看一行也得知道是哪一阶的进度。
- * 绑在根阶上就是根阶名。
+ * 卡片 / 导出这类只有一行的场合用：绑在「练气」第 4 层上显示
+ * 「练气 · 第4层」；段名自定义且没带父阶前缀时补上 —— 单看一行也得知道
+ * 是哪一阶的进度。没有子层级（未拆分）时就是根阶名。
  */
 export function formatBoundRealmName(
   levels: SettingLevel[],
   boundLevelId: string | null,
+  noteSub = 1,
 ): string {
-  const position = findRealmPosition(levels, boundLevelId);
+  const position = findRealmPosition(levels, boundLevelId, noteSub);
   if (!position) return "";
   const { root, segment } = position;
   if (!segment) return root.name;

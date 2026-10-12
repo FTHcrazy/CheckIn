@@ -200,6 +200,10 @@ interface NovelSettingLevelRow2 {
   rank: number;
   sub_levels: number;
   power: number | null;
+  /** 拆分子层级（1.38.1）：非空 = 本行是某个父阶的派生段 */
+  parent_id?: string | null;
+  seg_from?: number | null;
+  seg_to?: number | null;
 }
 
 interface NovelSettingCategoryRow2 {
@@ -395,6 +399,8 @@ export interface PackLevelRungDto {
   rank: number;
   subLevels: number;
   power: number | null;
+  /** 已拆出子层级：父阶是组，小层数由子层级决定（阶设置里不可改） */
+  hasChildren: boolean;
 }
 
 export interface PackLevelSystemDto {
@@ -540,7 +546,9 @@ function toCharacterDto(row: PackCharacterRow): PackCharacterDto {
     avatar: row.avatar ?? "",
     isProtagonist: row.is_protagonist === 1,
     entityId,
-    realmAt: row.realm_at ?? "",
+    // 未绑定时的行囊自持境界也换算回父阶口径（旧数据可能记着子层级 id，
+    // 阶梯投影后找不到行会静默回落到首阶）
+    realmAt: normalizeRealmRaw(row.realm_at ?? ""),
     note: row.note,
     weightLimit: row.weight_limit ?? 0,
     capacityLimit: row.capacity_limit ?? 0,
@@ -784,6 +792,10 @@ function readCharacterSnapshot(characterId: string): PackBundleDto {
  * 行囊只消费「一部作品的境界阶梯」这一个视图，不关心设定中心还有多少别的
  * 分类 —— 所以这里做投影而不是把 `novel_setting_categories` 整张搬过来。
  *
+ * **只投影根阶（1.38.1）**：拆分出的子层级（parent_id 非空）是「父阶内的层」，
+ * 不是独立的新阶 —— 平铺进阶梯会让行囊的台阶行出现「练气、第1层…第9层」
+ * 同一层的假象。父阶 = 组，子层级折算成它的阶内层数（subLevels）。
+ *
  * 两处必须这么写：
  * - **带 `workId`**：`novel_setting_categories.work_id` 是 NOT NULL，设定按作品
  *   私有。不带过滤时两部作品都建过境界体系就会把另一部小说的阶梯返回过来，
@@ -804,15 +816,35 @@ function readLevelSystems(workId: string): PackLevelSystemDto[] {
       ORDER BY category_id, rank`,
     categoryIds,
   ) as NovelSettingLevelRow2[];
+
+  // 先归组子层级，再投影根阶 —— 子层级不占阶梯位，只贡献阶内层数
+  const childrenByParent = new Map<string, NovelSettingLevelRow2[]>();
+  for (const level of levels) {
+    if (!level.parent_id) continue;
+    const list = childrenByParent.get(level.parent_id) ?? [];
+    list.push(level);
+    childrenByParent.set(level.parent_id, list);
+  }
+
   const rungsByCategory = new Map<string, PackLevelSystemDto["rungs"]>();
   for (const level of levels) {
+    if (level.parent_id) continue;
+    const children = childrenByParent.get(level.id) ?? [];
+    // 小层总数取 max 兜底两代数据：新模型父阶 sub_levels 即整阶总数（拆分时写入）；
+    // 旧模型父阶只留第一段的层数 —— 用「子段小层和 / 子段最大层号」找回真实总数。
+    const childSum = children.reduce((sum, child) => sum + (child.sub_levels ?? 1), 0);
+    const childMaxSeg = children.reduce(
+      (max, child) => Math.max(max, child.seg_to ?? 0),
+      0,
+    );
     const list = rungsByCategory.get(level.category_id) ?? [];
     list.push({
       id: level.id,
       name: level.name,
       rank: level.rank,
-      subLevels: level.sub_levels ?? 1,
+      subLevels: Math.max(level.sub_levels ?? 1, childSum, childMaxSeg),
       power: level.power,
+      hasChildren: children.length > 0,
     });
     rungsByCategory.set(level.category_id, list);
   }
@@ -825,6 +857,29 @@ function readLevelSystems(workId: string): PackLevelSystemDto[] {
   }));
 }
 
+/**
+ * 子层级绑定换算回父阶口径（1.38.1）。
+ *
+ * 阶梯投影只出根阶后，行囊的坐标系里没有子层级 id —— 绑定若落在拆分产物上
+ * （实体面板点选某个子层），原样返回会让 `toPosition` 找不到行而回落到首阶
+ * （「明明绑在第 4 层，行囊却显示第一阶」）。这里统一换算：
+ * toId → 父阶 id，sub → 该段在父阶内的起始层号（新模型每段 1 层，二者相等）。
+ */
+function normalizeRealmTarget(
+  levelId: string,
+  sub: number,
+): { levelId: string; sub: number } {
+  const level = dbGet(
+    "SELECT parent_id, seg_from FROM novel_setting_levels WHERE id = ?",
+    [levelId],
+  ) as { parent_id: string | null; seg_from: number | null } | undefined;
+  if (!level || !level.parent_id) return { levelId, sub };
+  return {
+    levelId: level.parent_id,
+    sub: Math.max(1, level.seg_from ?? sub),
+  };
+}
+
 /** 读取主角实体当前境界关联行（§9.7.3 唯一事实源） */
 function readRealmLink(entityId: string): PackRealmLinkDto | null {
   if (!entityId) return null;
@@ -835,15 +890,51 @@ function readRealmLink(entityId: string): PackRealmLinkDto | null {
     [entityId],
   ) as NovelLinkRow2 | undefined;
   if (!row) return null;
+  // note 只写 {sub}（等级由 to_id 承载）—— 绑定落在子层级上时先换算回父阶
+  const fallbackSub = parseSubFromNote(row.note);
+  const target = normalizeRealmTarget(row.to_id, fallbackSub);
   return {
     id: row.id,
     fromType: row.from_type,
     fromId: row.from_id,
     toType: row.to_type,
-    toId: row.to_id,
+    toId: target.levelId,
     relation: row.relation,
-    note: row.note ?? "",
+    note: JSON.stringify({ sub: target.sub }),
   };
+}
+
+/** 从 novel_links.note / realm_at JSON 里读 sub（读不到回落 1） */
+function parseSubFromNote(raw: string | null): number {
+  if (!raw) return 1;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return 1;
+    const sub = Number((parsed as { sub?: unknown }).sub);
+    return Number.isFinite(sub) && sub >= 1 ? Math.floor(sub) : 1;
+  } catch {
+    return 1;
+  }
+}
+
+/** 行囊自持境界 JSON（{levelId, sub}）里的子层级 id 换算回父阶；原样不合法时原样返回 */
+function normalizeRealmRaw(raw: string): string {
+  if (!raw) return raw;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return raw;
+    const record = parsed as { levelId?: unknown; sub?: unknown };
+    if (typeof record.levelId !== "string") return raw;
+    const sub = Number(record.sub);
+    const target = normalizeRealmTarget(
+      record.levelId,
+      Number.isFinite(sub) && sub >= 1 ? Math.floor(sub) : 1,
+    );
+    if (target.levelId === record.levelId) return raw;
+    return JSON.stringify({ levelId: target.levelId, sub: target.sub });
+  } catch {
+    return raw;
+  }
 }
 
 /**

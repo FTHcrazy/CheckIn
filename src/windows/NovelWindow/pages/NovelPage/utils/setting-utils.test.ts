@@ -13,6 +13,7 @@ import {
   listSubLevels,
   countSubLevels,
   moveLevel,
+  parseRealmNoteSub,
   previewSplit,
   removeLevel,
   replaceInContent,
@@ -472,10 +473,35 @@ describe("设定：绑定展示优先父等级，子层级折算境界内进度�
     expect(findRealmPosition(splitLadder, null)).toBeNull();
   });
 
+  it("findRealmPosition：绑在分组 + note.sub 时按落点段给进度（统一口径）", () => {
+    // 统一口径（1.38.1 起）：绑定 = 根阶 + note.sub，落在哪个段区间就是哪段
+    const position = findRealmPosition(splitLadder, "练气", 2);
+    expect(position?.root.id).toBe("练气");
+    expect(position?.segment?.id).toBe("练气__seg2");
+    expect(position?.total).toBe(9);
+    // sub 没落在任何段区间（fixture 没有第 1 段）→ 无段进度
+    expect(findRealmPosition(splitLadder, "练气", 1)?.segment).toBeNull();
+  });
+
+  it("parseRealmNoteSub：{sub} 解析，缺省 / 非法回落 1", () => {
+    expect(parseRealmNoteSub('{"sub":4}')).toBe(4);
+    expect(parseRealmNoteSub("")).toBe(1);
+    expect(parseRealmNoteSub(undefined)).toBe(1);
+    expect(parseRealmNoteSub("不是 JSON")).toBe(1);
+    expect(parseRealmNoteSub('{"sub":-2}')).toBe(1);
+  });
+
   it("formatBoundRealmName：段名没带父前缀时补上，带了就原样", () => {
     expect(formatBoundRealmName(splitLadder, "练气__seg2")).toBe("练气 · 第2段");
     expect(formatBoundRealmName(splitLadder, "练气__seg1")).toBe("练气 · 第1段");
     expect(formatBoundRealmName(splitLadder, "筑基")).toBe("筑基");
     expect(formatBoundRealmName(splitLadder, null)).toBe("");
+  });
+
+  it("formatBoundRealmName：根阶 + note.sub 折算成「父阶 · 层名」", () => {
+    expect(formatBoundRealmName(splitLadder, "练气", 2)).toBe("练气 · 第2段");
+    expect(formatBoundRealmName(splitLadder, "练气", 3)).toBe("练气 · 第3段");
+    // sub 没有对应段（未覆盖区间）→ 只有根阶名
+    expect(formatBoundRealmName(splitLadder, "练气", 1)).toBe("练气");
   });
 });

@@ -15,7 +15,7 @@ import type {
   SettingCategory,
   NovelEntity,
 } from "../../types";
-import { formatBoundRealmName } from "../../utils/setting-utils";
+import { formatBoundRealmName, parseRealmNoteSub } from "../../utils/setting-utils";
 import "./index.scss";
 
 interface EntityPanelProps {
@@ -45,7 +45,7 @@ interface EntityPanelProps {
   ) => void;
   onRemoveRelation: (linkId: string, targetName: string) => void;
   /** 设定 / 取消当前境界 */
-  onSetEntityLevel: (entityId: string, levelId: string | null) => void;
+  onSetEntityLevel: (entityId: string, levelId: string | null, sub?: number) => void;
   /** 打开设定中心 */
   onOpenSettings: () => void;
   /** 行囊主角绑定的要素 id（空串 = 尚未指定） */
@@ -162,8 +162,13 @@ export default function EntityPanel({
       let levelName = "";
       if (binding) {
         for (const category of settings) {
-          // 父阶优先：绑在派生段上时显示「父阶 · 段进度」，而不是孤零零的段名
-          const name = formatBoundRealmName(category.levels, binding.targetId);
+          // 父阶优先：绑在根阶 + note.sub 时显示「父阶 · 层名」，
+          // 绑在派生段上（旧数据）显示「父阶 · 段名」
+          const name = formatBoundRealmName(
+            category.levels,
+            binding.targetId,
+            parseRealmNoteSub(binding.note),
+          );
           if (name) {
             levelName = name;
             break;
@@ -192,7 +197,9 @@ export default function EntityPanel({
         onSelectChapter={onSelectChapter}
         onAddRelation={onAddRelation}
         onRemoveRelation={onRemoveRelation}
-        onSetEntityLevel={(levelId) => onSetEntityLevel(detail.id, levelId)}
+        onSetEntityLevel={(levelId, sub) =>
+          onSetEntityLevel(detail.id, levelId, sub)
+        }
         onOpenSettings={onOpenSettings}
         isProtagonist={Boolean(protagonistEntityId) && detail.id === protagonistEntityId}
         onSetProtagonist={() => onSetProtagonist(detail.id)}

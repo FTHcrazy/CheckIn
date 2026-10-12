@@ -448,6 +448,8 @@ export interface PackLevelRungDTO {
   rank: number
   subLevels: number
   power: number | null
+  /** 已拆出子层级：父阶是组，小层数由子层级决定（阶设置里不可改） */
+  hasChildren?: boolean
 }
 
 export interface PackLevelSystemDTO {

@@ -776,6 +776,8 @@ export interface LadderRung {
   subLevels: number;
   /** 作者自定义的战力当量（跨阶比较基准，可空） */
   power: number | null;
+  /** 已拆出子层级：父阶是组，小层数由子层级决定（阶设置里锁定不可改） */
+  hasChildren?: boolean;
 }
 
 export interface RealmPosition {

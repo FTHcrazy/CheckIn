@@ -188,3 +188,24 @@ describe("RealmModule —— 阶内进度条是纯读数，不挂动作按钮", 
     expect(screen.queryByText("小层")).toBeNull();
   });
 });
+
+describe("RealmModule —— 拆分子层级后的阶设置（父阶=组）", () => {
+  afterEach(cleanup);
+
+  it("拆出子层级的阶：小层数锁定（由子层级决定），没拆的照常可改", () => {
+    const api = makeApi({
+      rungs: [
+        { id: "l1", name: "炼气", rank: 1, subLevels: 9, power: null, hasChildren: true },
+        { id: "l2", name: "筑基", rank: 2, subLevels: 3, power: null },
+      ],
+    });
+    render(<RealmModule api={api} />);
+
+    fireEvent.click(screen.getByTitle("阶设置（小层数 / 战力当量）"));
+    const inputs = screen.getAllByRole("spinbutton") as HTMLInputElement[];
+    // 每行两个数字输入：小层 + 当量
+    expect(inputs[0].disabled).toBe(true);
+    expect(inputs[1].disabled).toBe(false);
+    expect(inputs[2].disabled).toBe(false);
+  });
+});

@@ -496,8 +496,13 @@ export function useNovelPage() {
 
   /** 设定 / 替换 / 取消当前境界（R25）：数据层先摘旧绑定再落新绑定 */
   const handleSetEntityLevel = useCallback(
-    (entityId: string, entityType: EntityType, rungId: string | null): void => {
-      data.setEntityLevel(entityId, entityType, rungId);
+    (
+      entityId: string,
+      entityType: EntityType,
+      rungId: string | null,
+      sub?: number,
+    ): void => {
+      data.setEntityLevel(entityId, entityType, rungId, sub);
       view.showToast(
         rungId === null ? "已取消当前境界绑定" : "已更新当前境界",
         "info",
