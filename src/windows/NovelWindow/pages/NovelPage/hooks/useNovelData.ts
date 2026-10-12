@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addChapter as addChapterRemote,
-  addLevel as addLevelRemote,
-  addLevelSystem as addLevelSystemRemote,
   addLink as addLinkRemote,
+  addSettingCategory as addSettingCategoryRemote,
+  addSettingLevel as addSettingLevelRemote,
+  batchAddSettingLevels as batchAddSettingLevelsRemote,
   addVolume as addVolumeRemote,
   addWork as addWorkRemote,
   createNovelId,
@@ -11,17 +12,18 @@ import {
   fetchLastPosition,
   fetchNameFavorites,
   fetchNovelBundle,
+  mergeSettingLevel as mergeSettingLevelRemote,
   openEditorSession,
-  removeLevel as removeLevelRemote,
-  removeLevelSystem as removeLevelSystemRemote,
+  patchSettingCategory as patchSettingCategoryRemote,
+  patchSettingLevel as patchSettingLevelRemote,
   removeLink as removeLinkRemote,
   removeNote as removeNoteRemote,
   removeOutlineEntry as removeOutlineEntryRemote,
+  removeSettingCategory as removeSettingCategoryRemote,
+  removeSettingLevel as removeSettingLevelRemote,
   removeWork as removeWorkRemote,
   removeChapter as removeChapterRemote,
   renameChapter as renameChapterRemote,
-  renameLevel as renameLevelRemote,
-  renameLevelSystem as renameLevelSystemRemote,
   renameVolume as renameVolumeRemote,
   renameWork as renameWorkRemote,
   resetTemplateBook,
@@ -29,15 +31,31 @@ import {
   saveChapterOrder,
   saveChapterOutline,
   saveEntity,
-  saveLevelOrder,
   saveNameFavorites,
   saveNote as saveNoteRemote,
   saveOutlineEntry,
+  saveSettingCategoryOrder as saveSettingCategoryOrderRemote,
+  saveSettingLevelOrder as saveSettingLevelOrderRemote,
   saveVolumeOrder,
   searchAcrossBook,
   setChapterStatus,
+  splitSettingLevel as splitSettingLevelRemote,
 } from "../services/novel-service";
-import { LEVEL_RELATION, UNNAMED_VOLUME } from "../novel-config";
+import {
+  applyMerge,
+  applySplit,
+  insertLevel,
+  moveLevel,
+  previewSplit,
+  removeLevels,
+} from "../utils/setting-utils";
+import {
+  DEFAULT_CATEGORY_COLOR,
+  DEFAULT_SUB_LEVELS,
+  DEFAULT_SUB_PATTERN,
+  LEVEL_RELATION,
+  UNNAMED_VOLUME,
+} from "../novel-config";
 import {
   buildChapterGroups,
   buildChapterNumbersFromGroups,
@@ -58,8 +76,6 @@ import type {
   EntityRelationView,
   EntityType,
   ForeshadowPatch,
-  LevelRung,
-  LevelSystem,
   NameFavorite,
   NamingKind,
   NameStyle,
@@ -75,7 +91,14 @@ import type {
   OutlineEntry,
   OutlineEntryDraft,
   SearchHit,
+  SettingCategory,
+  SettingCategoryKind,
+  SettingLevel,
 } from "../types";
+import type {
+  NovelSettingCategoryPatch,
+  NovelSettingLevelPatch,
+} from "@/shared/types/electron";
 import {
   notifyNameChanged,
   notifyRealmLinkChanged,
@@ -296,20 +319,31 @@ export function useNovelData() {
     [allEntities, activeWorkId],
   );
   const links = useMemo(() => bundle?.links ?? [], [bundle?.links]);
-  const levelSystems = useMemo(
-    () => (bundle?.levelSystems ?? []).filter((item) => item.workId === activeWorkId),
-    [bundle?.levelSystems, activeWorkId],
+  /** 小说设定（按作品隔离）；境界体系是其中 kind='realm' 的那一个 */
+  const settings = useMemo(
+    () => (bundle?.settings ?? []).filter((item) => item.workId === activeWorkId),
+    [bundle?.settings, activeWorkId],
   );
-  /** 等级项索引（R25）：关联视图与当前境界绑定把 novel_levels.id 翻译成可读名 */
+  /** 等级项索引：关联视图与当前境界绑定把 novel_setting_levels.id 翻译成可读名。
+   *  派生段的名字补上父阶前缀（「第4段」→「练气 · 第4段」）：单看一行也要
+   *  能看出是哪一阶的进度；默认命名自带父前缀时原样保留（1.38.1） */
   const levelRungIndex = useMemo(() => {
     const index = new Map<string, { name: string; systemName: string }>();
-    for (const system of bundle?.levelSystems ?? []) {
-      for (const rung of system.rungs) {
-        index.set(rung.id, { name: rung.name, systemName: system.name });
+    for (const category of bundle?.settings ?? []) {
+      const byId = new Map(category.levels.map((level) => [level.id, level]));
+      for (const level of category.levels) {
+        let name = level.name;
+        if (level.parentId) {
+          const parent = byId.get(level.parentId);
+          if (parent && !name.startsWith(parent.name)) {
+            name = `${parent.name} · ${name}`;
+          }
+        }
+        index.set(level.id, { name, systemName: category.name });
       }
     }
     return index;
-  }, [bundle?.levelSystems]);
+  }, [bundle?.settings]);
   const volumes = useMemo(
     () => (bundle?.volumes ?? []).filter((volume) => volume.workId === activeWorkId),
     [bundle?.volumes, activeWorkId],
@@ -635,9 +669,7 @@ export function useNovelData() {
               links: current.links.filter(
                 (link) => !entityIds.has(link.fromId) && !entityIds.has(link.toId),
               ),
-              levelSystems: current.levelSystems.filter(
-                (system) => system.workId !== workId,
-              ),
+              settings: current.settings.filter((item) => item.workId !== workId),
               notes: current.notes.filter((note) => note.workId !== workId),
               outlineEntries: current.outlineEntries.filter(
                 (entry) => entry.workId !== workId,
@@ -924,173 +956,325 @@ export function useNovelData() {
     void removeLinkRemote(linkId);
   }, []);
 
-  // ── 等级体系管理（R25）：体系 / 等级项 CRUD + 当前境界绑定 ──────────
+  // ── 小说设定：分类 / 等级项 CRUD（1.36.0 起取代「等级体系管理」） ──────────
+  //
+  // 境界体系不再是独立实体，而是 `kind='realm'` 的设定分类。角色卡「当前境界」
+  // 仍绑在 `novel_setting_levels.id` 上，语义不变 —— 只是换了个容器。
 
-  /** 新建体系：本地先建空体系并乐观落库，返回 null 表示名称非法 */
-  const createLevelSystem = useCallback(
-    (name: string): LevelSystem | null => {
+  /** 本地改写某个分类（乐观更新 + 远端回写共用的补丁口） */
+  const patchCategoryLocal = useCallback(
+    (categoryId: string, patch: (category: SettingCategory) => SettingCategory): void => {
+      setBundle((current) =>
+        current
+          ? {
+              ...current,
+              settings: current.settings.map((category) =>
+                category.id === categoryId ? patch(category) : category,
+              ),
+            }
+          : current,
+      );
+    },
+    [],
+  );
+
+  /**
+   * 新建设定分类
+   *
+   * `kind='realm'` 时主进程可能降级为 custom（境界体系全书唯一），所以本地
+   * 要以**远端返回值**修正 kind —— 直接采信入参会造出第二个境界体系。
+   */
+  const createSettingCategory = useCallback(
+    (
+      name: string,
+      kind: SettingCategoryKind = "custom",
+      color?: string,
+    ): SettingCategory | null => {
       const trimmed = name.trim();
       if (!trimmed || !bundle) return null;
-      const system: LevelSystem = {
-        id: createNovelId("ls"),
+      const id = createNovelId("sc");
+      const draft: SettingCategory = {
+        id,
         workId: activeWorkId,
         name: trimmed,
-        rungs: [],
+        color: color ?? DEFAULT_CATEGORY_COLOR,
+        kind,
+        sortOrder: settings.length + 1,
+        note: "",
+        subLevels: DEFAULT_SUB_LEVELS,
+        carryDir: "asc",
+        subPattern: DEFAULT_SUB_PATTERN,
+        levels: [],
       };
       setBundle((current) =>
-        current
-          ? { ...current, levelSystems: [...current.levelSystems, system] }
-          : current,
+        current ? { ...current, settings: [...current.settings, draft] } : current,
       );
-      void addLevelSystemRemote({
-        id: system.id,
-        workId: system.workId,
-        name: system.name,
-      });
-      return system;
+      void addSettingCategoryRemote(activeWorkId, id, trimmed, kind, color).then(
+        (saved) => {
+          // 主进程是唯一裁判：它说降级了就是降级了
+          if (saved && saved.kind !== kind) {
+            patchCategoryLocal(id, (category) => ({ ...category, kind: saved.kind }));
+          }
+        },
+      );
+      return draft;
     },
-    [bundle, activeWorkId],
+    [bundle, activeWorkId, settings.length, patchCategoryLocal],
   );
 
-  /** 体系重命名：空名不落 */
-  const renameLevelSystem = useCallback((systemId: string, name: string): void => {
-    const trimmed = name.trim();
-    if (!trimmed) return;
+  /** 改分类：重命名 / 改色 / 说明 / 进位规则。空名不落 */
+  const patchSettingCategory = useCallback(
+    (categoryId: string, patch: NovelSettingCategoryPatch): void => {
+      if (patch.name !== undefined && !patch.name.trim()) return;
+      patchCategoryLocal(categoryId, (category) => ({ ...category, ...patch }));
+      void patchSettingCategoryRemote(categoryId, patch);
+    },
+    [patchCategoryLocal],
+  );
+
+  /** 删除分类：本地级联摘除该分类全部等级项的当前境界绑定（主进程同事务级联） */
+  const deleteSettingCategory = useCallback((categoryId: string): void => {
+    setBundle((current) => {
+      if (!current) return current;
+      const category = current.settings.find((item) => item.id === categoryId);
+      const levelIds = new Set(category?.levels.map((level) => level.id) ?? []);
+      return {
+        ...current,
+        settings: current.settings.filter((item) => item.id !== categoryId),
+        links: current.links.filter((link) => !levelIds.has(link.toId)),
+      };
+    });
+    void removeSettingCategoryRemote(categoryId);
+  }, []);
+
+  /** 分类重排：orderedIds 为目标顺序（sortOrder 从 1 起） */
+  const reorderSettingCategories = useCallback((orderedIds: string[]): void => {
+    const orderOf = new Map(orderedIds.map((id, index) => [id, index + 1]));
     setBundle((current) =>
       current
         ? {
             ...current,
-            levelSystems: current.levelSystems.map((system) =>
-              system.id === systemId ? { ...system, name: trimmed } : system,
-            ),
+            settings: current.settings
+              .map((category) => ({
+                ...category,
+                sortOrder: orderOf.get(category.id) ?? category.sortOrder,
+              }))
+              .sort((a, b) => a.sortOrder - b.sortOrder),
           }
         : current,
     );
-    void renameLevelSystemRemote(systemId, trimmed);
+    void saveSettingCategoryOrderRemote(
+      orderedIds.map((id, index) => ({ id, sortOrder: index + 1 })),
+    );
   }, []);
 
-  /** 删除体系：本地级联摘除该体系全部等级项的当前境界绑定（主进程同事务级联） */
-  const deleteLevelSystem = useCallback(
-    (systemId: string): void => {
-      if (!bundle) return;
-      const system = bundle.levelSystems.find((item) => item.id === systemId);
-      if (!system) return;
-      const rungIds = new Set(system.rungs.map((rung) => rung.id));
-      setBundle((current) =>
-        current
-          ? {
-              ...current,
-              levelSystems: current.levelSystems.filter(
-                (item) => item.id !== systemId,
-              ),
-              links: current.links.filter((link) => !rungIds.has(link.toId)),
-            }
-          : current,
-      );
-      void removeLevelSystemRemote(systemId);
-    },
-    [bundle],
-  );
-
-  /** 追加等级项：rank 取该体系当前最大值 + 1，与主进程 MAX(rank)+1 同口径 */
-  const addLevel = useCallback(
-    (systemId: string, name: string): LevelRung | null => {
+  /**
+   * 新增 / 插入等级项
+   *
+   * `index` 为行序落点（0 = 最前，省略 = 追加到末尾）。重排用 `insertLevel`
+   * 的口径，与主进程保持一致 —— 两边各算一套必然错位。
+   *
+   * 小层数 / 小层命名继承分类：新阶立刻带上该体系的常规小层。此前硬编码
+   * `subLevels: category.subLevels` 而 `subPattern: ""` 本身是对的（空 = 沿用
+   * 分类模板），但阶梯里**看不出来**小层到底有哪些 —— 所以 1.38.0 在行内补了
+   * 小层清单（见 SettingCenter 的 `nv-sc__sub`）。
+   */
+  const addSettingLevel = useCallback(
+    (categoryId: string, name: string, index?: number): SettingLevel | null => {
       const trimmed = name.trim();
       if (!trimmed || !bundle) return null;
-      const system = bundle.levelSystems.find((item) => item.id === systemId);
-      if (!system) return null;
-      const rung: LevelRung = {
-        id: createNovelId("lr"),
+      const category = bundle.settings.find((item) => item.id === categoryId);
+      if (!category) return null;
+      const id = createNovelId("sl");
+      const at = index ?? category.levels.length;
+      const draft: Omit<SettingLevel, "rank"> = {
+        id,
+        categoryId,
         name: trimmed,
-        rank: system.rungs.reduce((max, rung) => Math.max(max, rung.rank), 0) + 1,
+        aliases: [],
+        note: "",
+        subLevels: category.subLevels,
+        subPattern: "",
+        power: null,
+        parentId: null,
+        segFrom: null,
+        segTo: null,
       };
-      setBundle((current) =>
-        current
-          ? {
-              ...current,
-              levelSystems: current.levelSystems.map((item) =>
-                item.id === systemId
-                  ? { ...item, rungs: [...item.rungs, rung] }
-                  : item,
-              ),
-            }
-          : current,
-      );
-      void addLevelRemote(systemId, rung.id, trimmed);
-      return rung;
+      const next = insertLevel(category.levels, at, draft);
+      patchCategoryLocal(categoryId, (item) => ({ ...item, levels: next }));
+      void addSettingLevelRemote(categoryId, id, trimmed, at);
+      return next.find((level) => level.id === id) ?? null;
     },
-    [bundle],
+    [bundle, patchCategoryLocal],
   );
 
-  /** 等级项重命名：空名不落 */
-  const renameLevel = useCallback((rungId: string, name: string): void => {
-    const trimmed = name.trim();
-    if (!trimmed) return;
-    setBundle((current) =>
-      current
-        ? {
-            ...current,
-            levelSystems: current.levelSystems.map((system) => ({
-              ...system,
-              rungs: system.rungs.map((rung) =>
-                rung.id === rungId ? { ...rung, name: trimmed } : rung,
-              ),
-            })),
-          }
-        : current,
-    );
-    void renameLevelRemote(rungId, trimmed);
-  }, []);
+  /**
+   * 批量新增等级项（1.37.0）：模板生成 / 逐行粘贴 / 预设套用共用。
+   *
+   * 全部追加到末尾；小层数缺省继承分类，小层命名缺省为空（沿用分类模板）。
+   * 本地一次 patch、远端一次事务 —— 与单条新增「本地 insertLevel + 远端重排」
+   * 的口径一致，序号两头各算但规则相同。
+   */
+  const batchAddSettingLevels = useCallback(
+    (
+      categoryId: string,
+      drafts: Array<{ name: string; subLevels?: number; subPattern?: string }>,
+    ): number => {
+      if (!bundle) return 0;
+      const category = bundle.settings.find((item) => item.id === categoryId);
+      if (!category) return 0;
+      const cleaned = drafts
+        .map((draft) => ({
+          name: draft.name.trim().slice(0, 60),
+          subLevels:
+            draft.subLevels !== undefined && draft.subLevels >= 1
+              ? Math.floor(draft.subLevels)
+              : category.subLevels,
+          subPattern: (draft.subPattern ?? "").trim().slice(0, 60),
+        }))
+        .filter((draft) => draft.name)
+        .slice(0, 99);
+      if (cleaned.length === 0) return 0;
+      const items = cleaned.map((draft) => ({ ...draft, id: createNovelId("sl") }));
+      patchCategoryLocal(categoryId, (item) => ({
+        ...item,
+        levels: [
+          ...item.levels,
+          ...items.map((draft, index) => ({
+            id: draft.id,
+            categoryId,
+            name: draft.name,
+            aliases: [],
+            note: "",
+            subLevels: draft.subLevels,
+            subPattern: draft.subPattern,
+            power: null,
+            parentId: null,
+            segFrom: null,
+            segTo: null,
+            rank: item.levels.length + index + 1,
+          })),
+        ],
+      }));
+      void batchAddSettingLevelsRemote(categoryId, items);
+      return items.length;
+    },
+    [bundle, patchCategoryLocal],
+  );
 
-  /** 删除等级项：本地摘除 + 摘掉指向它的当前境界绑定（主进程级联） */
-  const deleteLevel = useCallback((rungId: string): void => {
-    setBundle((current) =>
-      current
-        ? {
-            ...current,
-            levelSystems: current.levelSystems.map((system) => ({
-              ...system,
-              rungs: system.rungs.filter((rung) => rung.id !== rungId),
-            })),
-            links: current.links.filter(
-              (link) => !(link.toType === "level" && link.toId === rungId),
-            ),
-          }
-        : current,
-    );
-    void removeLevelRemote(rungId);
-  }, []);
-
-  /** 等级项重排：orderedIds 为目标顺序（rank 从 1 起），本地排序 + 全量回写 */
-  const reorderLevels = useCallback(
-    (systemId: string, orderedIds: string[]): void => {
-      if (!bundle) return;
-      const rankOf = new Map(orderedIds.map((id, index) => [id, index + 1]));
+  /** 改等级项：重命名 / 别名 / 说明 / 小层数 / 小层命名 / 战力当量。空名不落 */
+  const patchSettingLevel = useCallback(
+    (levelId: string, patch: NovelSettingLevelPatch): void => {
+      if (patch.name !== undefined && !patch.name.trim()) return;
       setBundle((current) =>
         current
           ? {
               ...current,
-              levelSystems: current.levelSystems.map((system) =>
-                system.id === systemId
-                  ? {
-                      ...system,
-                      rungs: system.rungs
-                        .map((rung) => ({
-                          ...rung,
-                          rank: rankOf.get(rung.id) ?? rung.rank,
-                        }))
-                        .sort((a, b) => a.rank - b.rank),
-                    }
-                  : system,
-              ),
+              settings: current.settings.map((category) => ({
+                ...category,
+                levels: category.levels.map((level) =>
+                  level.id === levelId ? { ...level, ...patch } : level,
+                ),
+              })),
             }
           : current,
       );
-      void saveLevelOrder(
-        orderedIds.map((id, index) => ({ id, rank: index + 1 })),
+      void patchSettingLevelRemote(levelId, patch);
+    },
+    [],
+  );
+
+  /** 删除等级项：连同它的派生分段一起删，并摘掉指向它们的境界绑定 */
+  const deleteSettingLevel = useCallback((levelId: string): void => {
+    setBundle((current) => {
+      if (!current) return current;
+      // 派生段的 id 由「父 id + __segN」派生，按前缀收口
+      const doomed = new Set<string>([levelId]);
+      return {
+        ...current,
+        settings: current.settings.map((category) => {
+          for (const level of category.levels) {
+            if (level.parentId === levelId) doomed.add(level.id);
+          }
+          return { ...category, levels: removeLevels(category.levels, [...doomed]) };
+        }),
+        links: current.links.filter((link) => !doomed.has(link.toId)),
+      };
+    });
+    void removeSettingLevelRemote(levelId);
+  }, []);
+
+  /** 等级项重排：按拖拽落点重算 rank 后全量回写 */
+  const reorderSettingLevels = useCallback(
+    (categoryId: string, fromId: string, toIndex: number): void => {
+      if (!bundle) return;
+      const category = bundle.settings.find((item) => item.id === categoryId);
+      if (!category) return;
+      const next = moveLevel(category.levels, fromId, toIndex);
+      patchCategoryLocal(categoryId, (item) => ({ ...item, levels: next }));
+      void saveSettingLevelOrderRemote(
+        next.map((level) => ({ id: level.id, rank: level.rank })),
       );
     },
-    [bundle],
+    [bundle, patchCategoryLocal],
+  );
+
+  /**
+   * 拆分层级：原阶降级为分组（不占段），全部子层级从第 1 段起挂在它下面
+   *
+   * `namePattern` 为段名模板（{name} 原名 / {n} 段号 / 固定名单），缺省沿用
+   * 「原名 · 第N段」。主进程是唯一裁判（它要写 parent_id / 层段），本地只做
+   * 同一口径的乐观更新，落库失败时下次装载会被纠正回来。
+   */
+  const splitSettingLevel = useCallback(
+    (levelId: string, parts: number, namePattern?: string): void => {
+      if (!bundle) return;
+      const owner = bundle.settings.find((category) =>
+        category.levels.some((level) => level.id === levelId),
+      );
+      const target = owner?.levels.find((level) => level.id === levelId);
+      if (!owner || !target) return;
+      const segments = previewSplit(target, parts, target.subLevels * 1, namePattern);
+      const next = applySplit(owner.levels, levelId, segments);
+      patchCategoryLocal(owner.id, (category) => ({ ...category, levels: next }));
+      void splitSettingLevelRemote(
+        levelId,
+        segments.map((segment) => ({
+          name: segment.name,
+          from: segment.segFrom,
+          to: segment.segTo,
+        })),
+      );
+    },
+    [bundle, patchCategoryLocal],
+  );
+
+  /** 合并层级：摘掉派生段、还原小层总数并前移后续 rank */
+  const mergeSettingLevel = useCallback(
+    (levelId: string): void => {
+      if (!bundle) return;
+      const owner = bundle.settings.find((category) =>
+        category.levels.some((level) => level.id === levelId),
+      );
+      if (!owner) return;
+      const next = applyMerge(owner.levels, levelId);
+      const removed = new Set(
+        owner.levels
+          .filter((level) => level.parentId === levelId)
+          .map((level) => level.id),
+      );
+      patchCategoryLocal(owner.id, (category) => ({ ...category, levels: next }));
+      setBundle((current) =>
+        current
+          ? {
+              ...current,
+              links: current.links.filter((link) => !removed.has(link.toId)),
+            }
+          : current,
+      );
+      void mergeSettingLevelRemote(levelId);
+    },
+    [bundle, patchCategoryLocal],
   );
 
   /**
@@ -1451,7 +1635,12 @@ export function useNovelData() {
     chapters,
     entities,
     links,
-    levelSystems,
+    settings,
+    /** 境界体系分类：全书唯一，角色卡「当前境界」只认它 */
+    realmCategory: useMemo(
+      () => settings.find((category) => category.kind === "realm") ?? null,
+      [settings],
+    ),
     notes,
     allNotes,
     outlineEntries,
@@ -1488,13 +1677,17 @@ export function useNovelData() {
     bindTextToEntity,
     addLink,
     removeLink,
-    createLevelSystem,
-    renameLevelSystem,
-    deleteLevelSystem,
-    addLevel,
-    renameLevel,
-    deleteLevel,
-    reorderLevels,
+    createSettingCategory,
+    patchSettingCategory,
+    deleteSettingCategory,
+    reorderSettingCategories,
+    addSettingLevel,
+    batchAddSettingLevels,
+    patchSettingLevel,
+    deleteSettingLevel,
+    reorderSettingLevels,
+    splitSettingLevel,
+    mergeSettingLevel,
     setEntityLevel,
     migrateEntityType,
     getEntityById,

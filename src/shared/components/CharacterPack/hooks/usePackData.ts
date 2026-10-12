@@ -14,12 +14,14 @@ import type {
   PackCharacter,
   PackLayout,
   PackLevelSystem,
+  PackMapping,
   PackModifier,
   PackPreset,
   PackRealmLink,
   PackRecord,
   PackUnitSystem,
-} from "../types";import type { PackAttribute, PackItem, PackSkill, PackSlot } from "../types";
+} from "../types";
+import type { PackAttribute, PackItem, PackSkill, PackSlot } from "../types";
 import { DRAFT_DEBOUNCE_MS } from "../types";
 
 /**
@@ -31,6 +33,8 @@ import { DRAFT_DEBOUNCE_MS } from "../types";
 export interface PackDoc {
   character: PackCharacter;
   attributes: PackAttribute[];
+  /** 属性映射（1.35.0）：与属性同属设定数据，随草稿与盘点走 */
+  mappings: PackMapping[];
   slots: PackSlot[];
   items: PackItem[];
   skills: PackSkill[];
@@ -62,6 +66,7 @@ function fromBundle(bundle: PackBundleDTO): PackDoc | null {
   return {
     character: bundle.character,
     attributes: bundle.attributes,
+    mappings: bundle.mappings ?? [],
     slots: bundle.slots,
     items: bundle.items,
     skills: bundle.skills,
@@ -82,6 +87,9 @@ function parseDraft(payload: string): PackDoc | null {
     return {
       character: doc.character,
       attributes: doc.attributes ?? [],
+      // `?? []` 是兼容旧草稿：属性映射引入之前写下的草稿没有这一格，
+      // 少了兜底会让整份草稿被当成残缺而丢掉（里面是作者全部未保存的改动）
+      mappings: doc.mappings ?? [],
       slots: doc.slots ?? [],
       items: doc.items ?? [],
       skills: doc.skills ?? [],

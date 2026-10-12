@@ -31,11 +31,13 @@ import {
   formatAttrValue,
   formatRealm,
   isItemEquipped,
+  roundTo,
   type LadderRung,
 } from "./pack-utils";
 import type {
   PackAttribute,
   PackItem,
+  PackMapping,
   PackModifier,
   PackRealmLinkDTO,
   PackSkill,
@@ -57,6 +59,15 @@ export interface PackDiffDoc {
    * `undefined`（而不是 `null`）表示**这条记录里没有这一格** —— 见文件头第 4 条。
    */
   realmLink?: PackRealmLinkDTO | null;
+  /**
+   * 属性映射（1.35.0）。
+   *
+   * `undefined`（而不是 `[]`）表示**这份文档没有这一格**：属性映射引入之前
+   * 存下的盘点记录就是这样。当成 `[]` 的话，那些老记录会把当前所有映射
+   * 报成「本章新增了 N 条换算」——纯粹是把「当时没这个功能」渲染成了
+   * 「当时一条都没有」。同 `realmLink` 的处理。
+   */
+  mappings?: PackMapping[];
 }
 
 export type PackDiffKind = "add" | "remove" | "change";
@@ -64,6 +75,7 @@ export type PackDiffKind = "add" | "remove" | "change";
 export type PackDiffGroup =
   | "realm"
   | "attribute"
+  | "mapping"
   | "equip"
   | "item"
   | "skill"
@@ -74,6 +86,8 @@ export type PackDiffGroup =
 export const DIFF_GROUPS: PackDiffGroup[] = [
   "realm",
   "attribute",
+  // 映射紧跟属性：属性那一行的变化常常正是它解释的
+  "mapping",
   "equip",
   "item",
   "skill",
@@ -84,6 +98,7 @@ export const DIFF_GROUPS: PackDiffGroup[] = [
 export const DIFF_GROUP_LABEL: Record<PackDiffGroup, string> = {
   realm: "境界",
   attribute: "属性",
+  mapping: "属性映射",
   equip: "穿戴",
   item: "物品",
   skill: "技能",
@@ -138,6 +153,10 @@ export function parsePackDiffDoc(payload: string): PackDiffDoc | null {
     // 「有这一格但值为 null」= 当时确实没绑境界，是有效信息；
     // 「根本没这一格」= 旧记录没存过，此时不能把它当成「当时无境界」。
     ...("realmLink" in doc ? { realmLink: doc.realmLink ?? null } : {}),
+    // 同 realmLink：属性映射引入之前的记录没有这一格，要能区分出「没这一格」
+    ...("mappings" in doc
+      ? { mappings: Array.isArray(doc.mappings) ? doc.mappings : [] }
+      : {}),
   };
 }
 
@@ -149,6 +168,7 @@ export function diffPackDoc(
   const entries: PackDiffEntry[] = [
     ...diffRealm(baseline, current, rungs),
     ...diffAttributes(baseline, current),
+    ...diffMappings(baseline, current),
     ...diffEquip(baseline, current),
     ...diffItems(baseline, current),
     ...diffSkills(baseline, current),
@@ -218,6 +238,9 @@ function summarize(doc: PackDiffDoc) {
   return computeSummary({
     attributes: doc.attributes,
     modifiers: doc.modifiers,
+    // 老记录缺这一格 → 当空：那份记录的总览值本来就不含映射，
+    // 差额（若真有）如实出现在属性组里，正是作者想知道的
+    mappings: doc.mappings ?? [],
     activeCarriers: buildActiveCarriersFrom({
       slots: doc.slots,
       items: doc.items,
@@ -261,6 +284,64 @@ function diffAttributes(baseline: PackDiffDoc, current: PackDiffDoc): PackDiffEn
     const prevRow = before.byAttr.get(attr.id);
     out.push(
       entry("attribute", "remove", attr.name, attrText(attr, prevRow?.final ?? attr.baseValue), ""),
+    );
+  }
+  return out;
+}
+
+// ─────────────────────────────────────────────────────────────
+// 属性映射（1.35.0）
+// ─────────────────────────────────────────────────────────────
+
+function attrLabel(attributes: PackAttribute[], id: string): string {
+  return attributes.find((attr) => attr.id === id)?.name || "(已删除的属性)";
+}
+
+/** 换算率文案；系数为 0 是「这条关着」，要能一眼看出来 */
+function rateText(mapping: PackMapping): string {
+  return mapping.rate === 0 ? "已停用" : `每 1 点 +${roundTo(mapping.rate, 4)}`;
+}
+
+/** 「力量 → 生命值」：这条映射的展示身份 */
+function mappingLabel(attributes: PackAttribute[], mapping: PackMapping): string {
+  return `${attrLabel(attributes, mapping.sourceAttrId)} → ${attrLabel(attributes, mapping.targetAttrId)}`;
+}
+
+/**
+ * 只比**换算规则本身**（端点与系数）。
+ *
+ * 映射带来的数值后果已经由「属性」组用总览值呈现了，这里报的是「规则动了」
+ * ——两者互补：属性组说「气血涨了 112」，这一组说「因为新增了 根骨 → 气血 ×8」。
+ */
+function diffMappings(baseline: PackDiffDoc, current: PackDiffDoc): PackDiffEntry[] {
+  // 老记录没有这一格 → 整组跳过（见 `PackDiffDoc.mappings` 的注释）
+  if (baseline.mappings === undefined) return [];
+  const before = new Map(baseline.mappings.map((mapping) => [mapping.id, mapping]));
+  const currentIds = new Set((current.mappings ?? []).map((mapping) => mapping.id));
+  const out: PackDiffEntry[] = [];
+
+  for (const mapping of current.mappings ?? []) {
+    const label = mappingLabel(current.attributes, mapping);
+    const prev = before.get(mapping.id);
+    if (!prev) {
+      out.push(entry("mapping", "add", label, "", rateText(mapping)));
+      continue;
+    }
+    const was = rateText(prev);
+    const now = rateText(mapping);
+    const wasLabel = mappingLabel(baseline.attributes, prev);
+    if (wasLabel !== label) {
+      // 端点被改到别的属性上了：这不是「调了个系数」，旧身份要一起交代
+      out.push(entry("mapping", "change", label, `${wasLabel} · ${was}`, now));
+      continue;
+    }
+    if (was !== now) out.push(entry("mapping", "change", label, was, now));
+  }
+
+  for (const mapping of baseline.mappings) {
+    if (currentIds.has(mapping.id)) continue;
+    out.push(
+      entry("mapping", "remove", mappingLabel(baseline.attributes, mapping), rateText(mapping), ""),
     );
   }
   return out;

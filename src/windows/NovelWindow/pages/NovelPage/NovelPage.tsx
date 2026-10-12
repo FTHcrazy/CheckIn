@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ChapterJumpPalette from "./components/ChapterJumpPalette";
 import ChapterTree from "./components/ChapterTree";
 import EditorPane from "./components/EditorPane";
 import EntityContextMenu from "./components/EntityContextMenu";
 import EntityTypeManager from "./components/EntityTypeManager";
 import HoverEntityCard from "./components/HoverEntityCard";
-import LevelSystemManager from "./components/LevelSystemManager";
+import SettingCenter from "./components/SettingCenter";
+import { SETTING_PRESETS } from "./utils/setting-presets";
 import NovelToast from "./components/NovelToast";
 import NovelTopBar from "./components/NovelTopBar";
 import type { WorkManageMenuHandle } from "./components/WorkManageMenu";
@@ -23,6 +24,15 @@ import {
   resetAppearances,
   syncAppearances,
 } from "./store/useAppearanceStore";
+import { createNovelId } from "./services/novel-service";
+import {
+  applySettingTemplate,
+  exportSetting,
+  exportTextFile,
+  listSettingTemplates,
+  removeSettingTemplate,
+  saveSettingTemplate,
+} from "./services/novel-service";
 import { formatNumberedLabel } from "./novel-utils";
 import type { EntityAppearance, NovelChapter } from "./types";
 import "./index.scss";
@@ -111,6 +121,9 @@ export default function NovelPage({
     handleRenameCustomType,
     handleRecolorCustomType,
     handleRemoveCustomType,
+    handleInsertSettingTerm,
+    handleReplaceSettingTerm,
+    handleRegisterSettingTerm,
     entityTypesValue,
     editorPaneRef,
     namingActions,
@@ -243,10 +256,92 @@ export default function NovelPage({
     [data.works],
   );
 
+  /** 预设模板列表：设定中心的模板库面板按需拉取（打开时才读库） */
+  const [settingTemplates, setSettingTemplates] = useState<
+    Array<{ id: string; name: string; createdAt: number }>
+  >([]);
+  const refreshTemplates = useCallback(() => {
+    void listSettingTemplates().then((list) =>
+      setSettingTemplates(list.map((item) => ({
+        id: item.id,
+        name: item.name,
+        createdAt: item.createdAt,
+      }))),
+    );
+  }, []);
+
   // onExportCard 为同步签名（EntityPanel 透传链），异步导出在此收口
   const triggerExportCard = useCallback(() => {
     void handleExportCard();
   }, [handleExportCard]);
+
+  /**
+   * 从角色卡进设定中心：直接落到境界体系那一个分类
+   *
+   * 传 focusId 而不是让组件自己猜 —— 同一本书可能还有「功法等级」等分类，
+   * 作者从「当前境界」点进来想看的就是境界阶梯。还没有境界体系时传 null，
+   * 由组件落在空态上（空态里有「新建境界体系」的入口）。
+   */
+  const openSettingCenterForRealm = useCallback(() => {
+    view.openSettingCenter(data.realmCategory?.id ?? null);
+  }, [view, data.realmCategory]);
+
+  /** 导出设定：JSON 供再导入，Markdown 供人读 */
+  const handleExportSetting = useCallback(
+    (categoryId: string, format: "json" | "markdown") => {
+      void (async () => {
+        const category = data.settings.find((item) => item.id === categoryId);
+        if (!category) return;
+        const payload = await exportSetting(data.activeWorkId);
+        const picked = payload.categories.filter(
+          (item) => item.name === category.name,
+        );
+        const scope = picked.length > 0 ? picked : payload.categories;
+        const base = `${workNameOf(data.activeWorkId)}-设定-${category.name}`;
+        if (format === "json") {
+          await exportTextFile(
+            base,
+            JSON.stringify({ ...payload, categories: scope }, null, 2),
+            "json",
+            "JSON 文件",
+          );
+          return;
+        }
+        const lines: string[] = [`# ${category.name}`, ""];
+        if (category.note) lines.push(category.note, "");
+        for (const level of category.levels) {
+          const alias = level.aliases.length > 0 ? `（别名：${level.aliases.join("、")}）` : "";
+          lines.push(`- **${level.rank}. ${level.name}**${alias} ${level.note}`);
+        }
+        await exportTextFile(base, lines.join("\n"), "md", "Markdown 文件");
+      })();
+    },
+    [data.settings, data.activeWorkId, workNameOf],
+  );
+
+  const handleSaveSettingTemplate = useCallback(
+    (categoryId: string, name: string) => {
+      void saveSettingTemplate(
+        createNovelId("st"),
+        name,
+        data.activeWorkId,
+        [categoryId],
+      ).then((ok) => {
+        if (ok) void refreshTemplates();
+      });
+    },
+    [data.activeWorkId, refreshTemplates],
+  );
+
+  const handleApplySettingTemplate = useCallback(
+    (templateId: string) => {
+      void applySettingTemplate(templateId, data.activeWorkId).then(() => {
+        void refreshTemplates();
+        void data.reload();
+      });
+    },
+    [data, refreshTemplates],
+  );
 
   /** 删除类型弹框用：该自建类型下现有多少张要素卡（当前作品口径） */
   const usageCountOf = useCallback(
@@ -288,6 +383,7 @@ export default function NovelPage({
           onToggleSettings={view.toggleSettings}
           snapshotOpen={view.snapshotOpen}
           onOpenPack={openPackWindow}
+          onOpenSettings={openSettingCenterForRealm}
           onToggleHistory={view.toggleSnapshot}
         />
       </div>
@@ -417,7 +513,7 @@ export default function NovelPage({
           onCloseEntity={view.closeEntityDetail}
           getEntityRelations={data.getEntityRelations}
           getAppearances={getAppearances}
-          levelSystems={data.levelSystems}
+          settings={data.settings}
           notes={data.notes}
           globalNotes={data.allNotes}
           activeWorkId={data.activeWorkId}
@@ -431,11 +527,15 @@ export default function NovelPage({
           onSaveEntity={handleSaveEntity}
           onAddRelation={handleAddRelation}
           onRemoveRelation={handleRemoveRelation}
-          onSetEntityLevel={(entityId, rungId) => {
+          onSetEntityLevel={(entityId, levelId) => {
             const target = data.getEntityById(entityId);
-            if (target) handleSetEntityLevel(entityId, target.type, rungId);
+            if (target) handleSetEntityLevel(entityId, target.type, levelId);
           }}
-          onOpenLevelManager={view.openLevelManager}
+          onOpenSettings={openSettingCenterForRealm}
+          chapterContent={data.activeChapter?.content ?? ""}
+          onInsertSettingTerm={handleInsertSettingTerm}
+          onReplaceSettingTerm={handleReplaceSettingTerm}
+          onRegisterSettingTerm={handleRegisterSettingTerm}
           onOpenTypeManager={view.openTypeManager}
           protagonistEntityId={protagonistEntityId}
           onSetProtagonist={handleSetProtagonist}
@@ -451,18 +551,55 @@ export default function NovelPage({
         */}
       </div>
 
-      {/* 等级体系管理（R25）/ 自定义类型管理（R23） */}
-      <LevelSystemManager
-        open={view.levelManagerOpen}
-        levelSystems={data.levelSystems}
-        onClose={view.closeLevelManager}
-        onCreateSystem={data.createLevelSystem}
-        onRenameSystem={data.renameLevelSystem}
-        onDeleteSystem={data.deleteLevelSystem}
-        onAddLevel={data.addLevel}
-        onRenameLevel={data.renameLevel}
-        onDeleteLevel={data.deleteLevel}
-        onReorderLevels={data.reorderLevels}
+      {/* 设定中心（1.36.0 取代原「等级体系管理」弹框）/ 自定义类型管理（R23） */}
+      <SettingCenter
+        open={view.settingCenterOpen}
+        workName={workNameOf(data.activeWorkId)}
+        settings={data.settings}
+        focusCategoryId={view.settingFocusId}
+        onClose={view.closeSettingCenter}
+        onCreateCategory={(name) => data.createSettingCategory(name, "custom")}
+        onPatchCategory={data.patchSettingCategory}
+        onDeleteCategory={data.deleteSettingCategory}
+        onReorderCategories={data.reorderSettingCategories}
+        onAddLevel={(categoryId, name, index) =>
+          data.addSettingLevel(categoryId, name, index)
+        }
+        onBatchAddLevels={(categoryId, names) => {
+          data.batchAddSettingLevels(
+            categoryId,
+            names.map((name) => ({ name })),
+          );
+        }}
+        onPatchLevel={data.patchSettingLevel}
+        onDeleteLevel={data.deleteSettingLevel}
+        onReorderLevels={data.reorderSettingLevels}
+        onSplitLevel={data.splitSettingLevel}
+        onMergeLevel={data.mergeSettingLevel}
+        onExport={handleExportSetting}
+        onSaveTemplate={handleSaveSettingTemplate}
+        templates={settingTemplates}
+        onRefreshTemplates={refreshTemplates}
+        onApplyTemplate={handleApplySettingTemplate}
+        onDeleteTemplate={(templateId) => {
+          void removeSettingTemplate(templateId).then(() => void refreshTemplates());
+        }}
+        onApplyPreset={(presetId) => {
+          const preset = SETTING_PRESETS.find((item) => item.id === presetId);
+          if (!preset) return;
+          // 应用 = 新建一个普通分类再灌入预设等级；kind='realm' 遇上已有
+          // 境界体系会被主进程降级为 custom（createSettingCategory 已处理回执修正）
+          const category = data.createSettingCategory(preset.name, preset.kind);
+          if (!category) return;
+          data.batchAddSettingLevels(
+            category.id,
+            preset.levels.map((level) => ({
+              name: level.name,
+              subLevels: level.subLevels,
+              subPattern: level.subPattern ?? "",
+            })),
+          );
+        }}
       />
       <EntityTypeManager
         open={view.typeManagerOpen}

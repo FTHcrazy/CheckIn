@@ -131,6 +131,7 @@ const doc: PackDoc = {
   layouts: [],
   presets: [],
   realmLink: null,
+  mappings: [],
 };
 
 function makeApi(over: Partial<PackPanelApi> = {}): PackPanelApi {
@@ -255,5 +256,51 @@ describe("EquipDeltaPreview —— 穿戴 Δ（REQ-018）", () => {
   it("穿上后属性不变时给一句话，而不是空白浮层", () => {
     render(<EquipDeltaPreview api={makeApi()} itemId="missing" slotId="s1" />);
     expect(screen.getByText("穿上后总属性不变")).toBeInTheDocument();
+  });
+});
+
+describe("SummaryModule —— 属性映射分段（1.35.0）", () => {
+  afterEach(cleanup);
+
+  // 「每 1 点攻击力 → 防御力 +2」：攻击力本身不是目标，不该有映射段；
+  // 防御力拿到 130(基础 100 + 剑锋 30) × 2 = 260，单独成一段 is-mapped。
+  // 玄铁剑必须真的穿上 —— 「剑锋 +30」挂在装备上，没穿就不计入，
+  // 这条用例要验的恰恰是「源取的是含装备加成的最终值」。
+  const mappedDoc: PackDoc = {
+    ...doc,
+    items: doc.items.map((item) => ({ ...item, equippedSlotId: "s1", slotIndex: 0 })),
+    mappings: [
+      {
+        id: "pm1",
+        characterId: "c1",
+        sourceAttrId: "a1",
+        targetAttrId: "a2",
+        rate: 2,
+        note: "",
+        sortOrder: 1,
+        updatedAt: 0,
+      },
+    ],
+  };
+  const mappedSummary = computeSummary({
+    attributes,
+    modifiers,
+    activeCarriers: buildActiveCarriersFrom(mappedDoc),
+    proficiency: {},
+    mappings: mappedDoc.mappings,
+  });
+
+  it("映射折算量单独成段，且不混进被动段", () => {
+    render(<SummaryModule api={makeApi({ doc: mappedDoc, summary: mappedSummary })} />);
+    const mapped = document.querySelectorAll(".cpk-seg.is-mapped");
+    expect(mapped.length).toBe(1);
+    expect(mapped[0].textContent).toBe("+260");
+  });
+
+  it("映射的输入是源的最终值（含装备加成），不是基础值", () => {
+    render(<SummaryModule api={makeApi({ doc: mappedDoc, summary: mappedSummary })} />);
+    // 防御力 50 → 310（50 + 260），若错用基础值会得到 50 + 200 = 250
+    expect(mappedSummary.byAttr.get("a2")?.addMapped).toBe(260);
+    expect(mappedSummary.byAttr.get("a2")?.final).toBe(310);
   });
 });

@@ -16,9 +16,15 @@ import type {
   EntityRelationView,
   EntitySavePatch,
   EntityType,
-  LevelSystem,
   NovelEntity,
+  SettingCategory,
+  SettingLevel,
 } from "../../types";
+import {
+  findRealmPosition,
+  rootLevels,
+  sortLevels,
+} from "../../utils/setting-utils";
 import "./index.scss";
 
 export type { EntitySavePatch };
@@ -29,7 +35,8 @@ interface EntityDetailProps {
   entities: NovelEntity[];
   relations: EntityRelationView[];
   appearances: EntityAppearance[];
-  levelSystems: LevelSystem[];
+  /** 小说设定：境界阶梯取其中 kind='realm' 的那一个分类 */
+  settings: SettingCategory[];
   highlighted: boolean;
   onToggleHighlight: () => void;
   onExportCard: () => void;
@@ -41,10 +48,10 @@ interface EntityDetailProps {
     relation: string,
   ) => void;
   onRemoveRelation: (linkId: string, targetName: string) => void;
-  /** 设定 / 替换 / 取消当前境界（R25）：rungId 传 null 即取消 */
-  onSetEntityLevel: (rungId: string | null) => void;
-  /** 打开等级体系管理弹框（R25） */
-  onOpenLevelManager: () => void;
+  /** 设定 / 替换 / 取消当前境界：levelId 传 null 即取消 */
+  onSetEntityLevel: (levelId: string | null) => void;
+  /** 打开设定中心并定位到境界体系分类 */
+  onOpenSettings: () => void;
   /** 是否为行囊主角 */
   isProtagonist: boolean;
   /** 设为主角 / 取消主角 */
@@ -83,7 +90,7 @@ export default function EntityDetail({
   entities,
   relations,
   appearances,
-  levelSystems,
+  settings,
   highlighted,
   onToggleHighlight,
   onExportCard,
@@ -91,7 +98,7 @@ export default function EntityDetail({
   onAddRelation,
   onRemoveRelation,
   onSetEntityLevel,
-  onOpenLevelManager,
+  onOpenSettings,
   isProtagonist,
   onSetProtagonist,
   onSelectChapter,
@@ -109,35 +116,49 @@ export default function EntityDetail({
     (relation) => relation.targetType !== "level",
   );
 
-  /** 绑定等级项 → 所属体系（用于默认选中下拉与绑定名回显） */
-  const rungSystemOf = useMemo(() => {
-    const index = new Map<string, LevelSystem>();
-    for (const system of levelSystems) {
-      for (const rung of system.rungs) index.set(rung.id, system);
-    }
-    return index;
-  }, [levelSystems]);
-
-  /** 当前展示的体系：默认绑定所在体系，否则第一个；切换查看对象时重置 */
-  const [activeSystemId, setActiveSystemId] = useState("");
-  const activeSystemIdResolved = useMemo(() => {
-    if (activeSystemId && levelSystems.some((s) => s.id === activeSystemId)) {
-      return activeSystemId;
-    }
-    const boundSystem = levelBinding
-      ? rungSystemOf.get(levelBinding.targetId)
-      : undefined;
-    return boundSystem?.id ?? levelSystems[0]?.id ?? "";
-  }, [activeSystemId, levelSystems, levelBinding, rungSystemOf]);
-  const activeSystem = levelSystems.find(
-    (system) => system.id === activeSystemIdResolved,
+  /**
+   * 境界阶梯：取 kind='realm' 的那个分类
+   *
+   * 境界体系全书唯一（主进程对第二个 realm 请求会降级为 custom），所以这里
+   * 不需要「选哪个体系」的下拉 —— 阶梯本身就是那一条。
+   */
+  const realmCategory = useMemo(
+    () => settings.find((category) => category.kind === "realm") ?? null,
+    [settings],
   );
-  const boundRungId = levelBinding?.targetId ?? null;
-
-  /** 等级体系下拉选项（组件库 Select，AGENTS 6.1.2） */
-  const levelSystemOptions = useMemo(
-    () => levelSystems.map((system) => ({ value: system.id, label: system.name })),
-    [levelSystems],
+  /**
+   * 阶梯按进位方向展示：desc 时高阶在上（「九品 → 一品」）。
+   * 只列**根阶** —— 拆分出的子层级是「阶内进度」，不是独立的新阶；
+   * 「练气」拆 9 段后阶梯上仍是一行「练气」，段进度挂在它下面（1.38.1）。
+   */
+  const realmRoots = useMemo(
+    () => (realmCategory ? rootLevels(realmCategory.levels, realmCategory.carryDir) : []),
+    [realmCategory],
+  );
+  /** 每个根阶下的派生段（阶内进度）与其小层总数，按展示序排列 */
+  const subtreeByRoot = useMemo(() => {
+    const map = new Map<string, { segments: SettingLevel[]; total: number }>();
+    if (!realmCategory) return map;
+    for (const level of sortLevels(realmCategory.levels, realmCategory.carryDir)) {
+      if (!level.parentId) continue;
+      const entry = map.get(level.parentId) ?? { segments: [], total: 0 };
+      entry.segments.push(level);
+      if (level.segTo !== null) entry.total = Math.max(entry.total, level.segTo);
+      map.set(level.parentId, entry);
+    }
+    for (const root of realmCategory.levels) {
+      const entry = map.get(root.id);
+      if (entry) {
+        entry.total = Math.max(entry.total, root.subLevels);
+      }
+    }
+    return map;
+  }, [realmCategory]);
+  const boundLevelId = levelBinding?.targetId ?? null;
+  /** 绑定落点：绑在哪个根阶下、落在哪个派生段（渲染「境界内进度」用） */
+  const boundPosition = useMemo(
+    () => findRealmPosition(realmCategory?.levels ?? [], boundLevelId),
+    [realmCategory, boundLevelId],
   );
 
   const BASE_KEYS = ["别名", "一句话", "性格"];
@@ -165,11 +186,10 @@ export default function EntityDetail({
     [entities, entity.id, metaOf],
   );
 
-  // 切换查看对象时退出编辑态，避免把 A 卡的草稿写进 B 卡；体系选择一并重置
+  // 切换查看对象时退出编辑态，避免把 A 卡的草稿写进 B 卡
   useEffect(() => {
     setDraft(null);
     setRelAdding(false);
-    setActiveSystemId("");
   }, [entity.id]);
 
   const startEdit = (): void =>
@@ -518,13 +538,13 @@ export default function EntityDetail({
         </>
       )}
 
-      {/* 当前境界（R25）。
-          角色卡**永远**显示这一格：原来整个区块挂在 `levelSystems.length > 0`
-          上，新开的书还没有等级体系时它整块消失 —— 连「管理」按钮也跟着没了，
+      {/* 当前境界。
+          角色卡**永远**显示这一格：原来整个区块挂在「有没有等级体系」上，
+          新开的书还没有境界体系时它整块消失 —— 连入口按钮也跟着没了，
           作者在资料卡里找不到任何地方去设境界关联。
           没体系时给空态 + 建体系入口，而不是什么都不画。 */}
       {(entity.type === "character" ||
-        (levelSystems.length > 0 && Boolean(activeSystem))) && (
+        (settings.length > 0 && Boolean(realmCategory))) && (
         <>
           <div className="nv-sechead">
             当前境界
@@ -533,70 +553,92 @@ export default function EntityDetail({
                 <CrownFilled /> 行囊同源
               </span>
             )}
-            {/* 空态里已经有「＋新建等级体系」这个更明确的入口，
-                再挂一个同样打开管理弹框的「管理」就是两个按钮一件事 */}
-            {activeSystem && (
+            {/* 空态里已经有「＋新建境界体系」这个更明确的入口，
+                再挂一个同样打开设定中心的「管理」就是两个按钮一件事 */}
+            {realmCategory && (
               <Button
                 className="nv-edetail__manage"
-                onClick={onOpenLevelManager}
-                title="管理体系与等级项"
+                onClick={onOpenSettings}
+                title="在设定中心管理境界阶梯"
               >
                 <SettingOutlined />管理
               </Button>
             )}
           </div>
-          {!activeSystem ? (
+          {!realmCategory ? (
             <div className="nv-edetail__lvlempty">
-              <b>还没有等级体系</b>
+              <b>还没有境界体系</b>
               <em>
-                境界挂在「等级体系」的阶梯上（炼气 / 筑基…）。先建一套阶梯，
+                境界挂在设定里的「境界体系」阶梯上（炼气 / 筑基…）。先建一套阶梯，
                 建好后就能在这张卡上点选当前境界。
               </em>
               <Button
                 className="nv-edetail__lvlempty-add"
-                onClick={onOpenLevelManager}
+                onClick={onOpenSettings}
               >
-                <PlusOutlined />新建等级体系
+                <PlusOutlined />新建境界体系
               </Button>
             </div>
           ) : (
-            <>
-              <Select
-                className="nv-edetail__select"
-                size="small"
-                classNames={{ popup: { root: "nv-edetail__dropdown" } }}
-                aria-label="选择等级体系"
-                placeholder="选择等级体系"
-                value={activeSystemIdResolved || undefined}
-                options={levelSystemOptions}
-                onChange={setActiveSystemId}
-              />
-              <div className="nv-edetail__ladder">
-                {activeSystem.rungs.map((rung) => {
-                  const bound = rung.id === boundRungId;
-                  return (
+            <div className="nv-edetail__ladder">
+              {realmRoots.map((level) => {
+                const subtree = subtreeByRoot.get(level.id);
+                const segments = subtree?.segments ?? [];
+                const total = subtree?.total ?? level.subLevels;
+                const boundInSubtree = boundPosition?.root.id === level.id;
+                const boundToRoot = boundInSubtree && !boundPosition?.segment;
+                const boundSegment = boundInSubtree ? boundPosition?.segment ?? null : null;
+                return (
+                  <div key={level.id} className="nv-edetail__rung-group">
                     <Button
-                      key={rung.id}
-                      className={`nv-edetail__rung${bound ? " is-on" : ""}`}
-                      title={bound ? "点击取消当前境界绑定" : "点击设为当前境界"}
-                      onClick={() => onSetEntityLevel(bound ? null : rung.id)}
+                      className={`nv-edetail__rung${boundToRoot ? " is-on" : ""}`}
+                      title={boundToRoot ? "点击取消当前境界绑定" : "点击设为当前境界"}
+                      onClick={() => onSetEntityLevel(boundToRoot ? null : level.id)}
                     >
-                      <span className="nv-edetail__rung-no">{rung.rank}</span>
-                      <span>{rung.name}</span>
-                      {rung.note && (
-                        <span className="nv-edetail__rung-note">{rung.note}</span>
+                      <span className="nv-edetail__rung-no">{level.rank}</span>
+                      <span>{level.name}</span>
+                      {level.note && (
+                        <span className="nv-edetail__rung-note">{level.note}</span>
                       )}
-                      {bound && <span className="nv-edetail__rung-cur">当前</span>}
+                      {boundSegment && (
+                        <span className="nv-edetail__rung-prog">
+                          {boundSegment.segFrom}–{boundSegment.segTo} / 共 {total} 层
+                        </span>
+                      )}
+                      {(boundToRoot || boundSegment) && (
+                        <span className="nv-edetail__rung-cur">当前</span>
+                      )}
                     </Button>
-                  );
-                })}
-                {activeSystem.rungs.length === 0 && (
-                  <div className="nv-kv">
-                    <span className="nv-kv__v">该体系还没有等级项，点「管理」添加</span>
+                    {segments.length > 0 && (
+                      <div className="nv-edetail__rung-segs">
+                        {segments.map((segment) => {
+                          const segBound = segment.id === boundLevelId;
+                          return (
+                            <Button
+                              key={segment.id}
+                              className={`nv-edetail__rung-seg${segBound ? " is-on" : ""}`}
+                              title={`${segment.name} · 子层 ${segment.segFrom}–${segment.segTo}，共 ${total} 层${
+                                segBound ? "（点击取消绑定）" : "（点击绑定此段）"
+                              }`}
+                              onClick={() =>
+                                onSetEntityLevel(segBound ? null : segment.id)
+                              }
+                            >
+                              {segment.name}
+                            </Button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            </>
+                );
+              })}
+              {realmRoots.length === 0 && (
+                <div className="nv-kv">
+                  <span className="nv-kv__v">这套阶梯还没有等级，点「管理」添加</span>
+                </div>
+              )}
+            </div>
           )}
         </>
       )}

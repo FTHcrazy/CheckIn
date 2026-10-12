@@ -26,6 +26,7 @@ import {
   registerNovelHandlers,
 } from "./handlers/novel-handlers";
 import { registerNovelPackHandlers } from "./handlers/novel-pack-handlers";
+import { registerNovelSettingHandlers } from "./handlers/novel-setting-handlers";
 import { registerNovelDbBridge } from "./novel-db";
 import {
   logoutUser,
@@ -623,6 +624,7 @@ app.whenReady().then(() => {
   registerNovelDbBridge();
   registerNovelHandlers();
   registerNovelPackHandlers();
+  registerNovelSettingHandlers();
   registerUserHandlers();
   // 关闭守卫：窗口真销毁前先问渲染层「还有未保存的改动吗」
   registerCloseGuardHandlers();

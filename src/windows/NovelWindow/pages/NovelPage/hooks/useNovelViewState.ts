@@ -4,7 +4,7 @@ import { clampPanelWidth, parseJsonOrNull } from "../novel-utils";
 import { fetchPanelWidth, savePanelWidth } from "../services/novel-service";
 import type { EntityType } from "../types";
 
-export type PanelTab = "outline" | "entity" | "note" | "search" | "tools";
+export type PanelTab = "outline" | "entity" | "setting" | "note" | "search" | "tools";
 export type EntityFilter = EntityType | "all";
 export type ToastTone = "success" | "info" | "warning";
 
@@ -34,8 +34,15 @@ export function useNovelViewState() {
   const [jumpOpen, setJumpOpen] = useState(false);
   const [snapshotOpen, setSnapshotOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  /** 等级体系管理弹框（R25） */
-  const [levelManagerOpen, setLevelManagerOpen] = useState(false);
+  /** 设定中心浮层（取代原「等级体系管理」弹框） */
+  const [settingCenterOpen, setSettingCenterOpen] = useState(false);
+  /**
+   * 打开设定中心时要聚焦的分类 id
+   *
+   * 从角色卡「新建境界体系 / 管理」进来时传 realm 分类 id —— 直接落到境界
+   * 阶梯上，而不是让作者在分类列表里再找一遍。
+   */
+  const [settingFocusId, setSettingFocusId] = useState<string | null>(null);
   /** 自定义类型管理弹框（R23） */
   const [typeManagerOpen, setTypeManagerOpen] = useState(false);
   const [toast, setToast] = useState<ToastPayload | null>(null);
@@ -209,8 +216,15 @@ export function useNovelViewState() {
   const openJump = useCallback(() => setJumpOpen(true), []);
   const closeJump = useCallback(() => setJumpOpen(false), []);
 
-  const openLevelManager = useCallback(() => setLevelManagerOpen(true), []);
-  const closeLevelManager = useCallback(() => setLevelManagerOpen(false), []);
+  /** 打开设定中心；focusId 传 realm 分类 id 即直接落到境界阶梯 */
+  const openSettingCenter = useCallback((focusId: string | null = null) => {
+    setSettingFocusId(focusId);
+    setSettingCenterOpen(true);
+  }, []);
+  const closeSettingCenter = useCallback(() => {
+    setSettingCenterOpen(false);
+    setSettingFocusId(null);
+  }, []);
   const openTypeManager = useCallback(() => setTypeManagerOpen(true), []);
   const closeTypeManager = useCallback(() => setTypeManagerOpen(false), []);
 
@@ -241,7 +255,8 @@ export function useNovelViewState() {
     jumpOpen,
     snapshotOpen,
     settingsOpen,
-    levelManagerOpen,
+    settingCenterOpen,
+    settingFocusId,
     typeManagerOpen,
     toast,
     toggleLeft,
@@ -256,8 +271,8 @@ export function useNovelViewState() {
     closeEntityDetail,
     openJump,
     closeJump,
-    openLevelManager,
-    closeLevelManager,
+    openSettingCenter,
+    closeSettingCenter,
     openTypeManager,
     closeTypeManager,
     openSnapshot,

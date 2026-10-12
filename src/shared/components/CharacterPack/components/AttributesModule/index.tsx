@@ -23,8 +23,9 @@ const DECIMAL_OPTIONS = [
  * 人物属性（B-1）
  *
  * 支持分组（战斗属性 / 资质 / 资源…）、自定义小数位与单位。
- * 删除属性会**连带清掉指向它的加成词条**，所以条数为正时必须先确认 ——
- * 否则装备上的加成会静默消失，作者只会觉得「总属性怎么掉了」。
+ * 删除属性会**连带清掉指向它的加成词条与属性映射（源、目标两端都算）**，
+ * 所以条数为正时必须先确认 —— 否则装备上的加成会静默消失、别处的加点换算
+ * 也会悄悄少一截，作者只会觉得「总属性怎么掉了」。
  */
 export default function AttributesModule({ api }: AttributesModuleProps) {
   const doc = api.doc;
@@ -43,8 +44,14 @@ export default function AttributesModule({ api }: AttributesModuleProps) {
   if (!doc) return null;
   const key = "attributes" as const;
 
+  // 待删属性牵连到的引用条数（确认框要逐类说清楚删掉的是什么）
+  const pendingMods = pendingRemove ? api.countModifiersOfAttribute(pendingRemove.id) : 0;
+  const pendingMaps = pendingRemove ? api.countMappingsOfAttribute(pendingRemove.id) : 0;
+
   const tryRemove = (attr: PackAttribute) => {
-    if (api.countModifiersOfAttribute(attr.id) > 0) {
+    // 加成与换算都要算：两者都是「删了属性就再也算不出来」的引用，
+    // 只判加成的话，一个纯换算属性会被静默删掉、连带清掉别人的折算量。
+    if (api.countModifiersOfAttribute(attr.id) > 0 || api.countMappingsOfAttribute(attr.id) > 0) {
       setPendingRemove({ id: attr.id, name: attr.name });
       return;
     }
@@ -185,7 +192,7 @@ export default function AttributesModule({ api }: AttributesModuleProps) {
 
       <Modal
         open={pendingRemove !== null}
-        title="删除属性会同时移除加成"
+        title={pendingMaps > 0 ? "删除属性会同时移除加成与换算" : "删除属性会同时移除加成"}
         centered
         width={340}
         footer={
@@ -204,11 +211,16 @@ export default function AttributesModule({ api }: AttributesModuleProps) {
         }
       >
         <p className="cpk-guard__text">
-          「{pendingRemove?.name}」上有{" "}
-          <b>{pendingRemove ? api.countModifiersOfAttribute(pendingRemove.id) : 0}</b> 条加成效果。
+          「{pendingRemove?.name}」{pendingMods > 0 ? "上有 " : null}
+          {pendingMods > 0 ? <b>{pendingMods}</b> : null}
+          {pendingMods > 0 ? " 条加成效果" : null}
+          {pendingMods > 0 && pendingMaps > 0 ? "，" : null}
+          {pendingMaps > 0 ? (pendingMods > 0 ? "另有 " : "上有 ") : null}
+          {pendingMaps > 0 ? <b>{pendingMaps}</b> : null}
+          {pendingMaps > 0 ? " 条属性换算。" : "。"}
         </p>
         <p className="cpk-guard__sub">
-          继续删除会把这些效果一并移除（它们在装备 / 技能上，不会自己恢复）。若只是想停用，可以改到效果编辑器里临时禁用。
+          继续删除会把它们一并移除（加成的源头在装备 / 技能上，换算在「属性映射」里，都不会自己恢复）。若只是想停用，可以把效果临时禁用，或把那条换算的系数改成 0。
         </p>
       </Modal>
     </PackModuleShell>

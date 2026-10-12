@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { LevelSystem, NovelEntity } from "../../types";
+import type { NovelEntity, SettingCategory } from "../../types";
 import EntityDetail from "./index";
 
 // jsdom 没有真实布局，Virtuoso 视口高度为 0 导致不渲染任何行；
@@ -24,7 +24,7 @@ vi.mock("react-virtuoso", () => ({
 /**
  * 「当前境界」这一格的回归守卫。
  *
- * 原来的区块整个挂在 `levelSystems.length > 0` 上：新开的书还没有等级体系时
+ * 原来的区块整个挂在 `levelSystems.length > 0` 上：新开的书还没有境界体系时
  * 它整块消失 —— 连「管理」按钮也跟着没了，作者在资料卡里找不到任何地方去设
  * 境界关联（用户反馈原话：新开一本书给角色设资料卡时，境界没地方设）。
  */
@@ -46,7 +46,7 @@ const buildProps = (over: Partial<Parameters<typeof EntityDetail>[0]> = {}) => (
   entities: [entity],
   relations: [],
   appearances: [],
-  levelSystems: [] as LevelSystem[],
+  settings: [] as SettingCategory[],
   highlighted: false,
   onToggleHighlight: vi.fn(),
   onExportCard: vi.fn(),
@@ -54,7 +54,7 @@ const buildProps = (over: Partial<Parameters<typeof EntityDetail>[0]> = {}) => (
   onAddRelation: vi.fn(),
   onRemoveRelation: vi.fn(),
   onSetEntityLevel: vi.fn(),
-  onOpenLevelManager: vi.fn(),
+  onOpenSettings: vi.fn(),
   isProtagonist: false,
   onSetProtagonist: vi.fn(),
   onSelectChapter: vi.fn(),
@@ -62,13 +62,46 @@ const buildProps = (over: Partial<Parameters<typeof EntityDetail>[0]> = {}) => (
   ...over,
 });
 
-const system: LevelSystem = {
+const realmCategory: SettingCategory = {
   id: "ls1",
   workId: "w1",
   name: "修仙阶位",
-  rungs: [
-    { id: "r1", name: "炼气", rank: 1 },
-    { id: "r2", name: "筑基", rank: 2 },
+  color: "#5B8DEF",
+  kind: "realm",
+  sortOrder: 1,
+  note: "",
+  subLevels: 1,
+  carryDir: "asc",
+  subPattern: "第{n}层",
+  levels: [
+    {
+      id: "r1",
+      categoryId: "ls1",
+      name: "炼气",
+      rank: 1,
+      aliases: [],
+      note: "",
+      subLevels: 1,
+      subPattern: "",
+      power: null,
+      parentId: null,
+      segFrom: null,
+      segTo: null,
+    },
+    {
+      id: "r2",
+      categoryId: "ls1",
+      name: "筑基",
+      rank: 2,
+      aliases: [],
+      note: "",
+      subLevels: 1,
+      subPattern: "",
+      power: null,
+      parentId: null,
+      segFrom: null,
+      segTo: null,
+    },
   ],
 };
 
@@ -77,24 +110,24 @@ describe("EntityDetail：当前境界入口", () => {
     cleanup();
   });
 
-  it("角色卡还没有等级体系时给出空态与建体系入口（而不是整块消失）", () => {
-    const onOpenLevelManager = vi.fn();
+  it("角色卡还没有境界体系时给出空态与建体系入口（而不是整块消失）", () => {
+    const onOpenSettings = vi.fn();
     const { container } = render(
-      <EntityDetail {...buildProps({ onOpenLevelManager })} />,
+      <EntityDetail {...buildProps({ onOpenSettings })} />,
     );
 
     expect(screen.getByText("当前境界")).toBeInTheDocument();
     expect(container.querySelector(".nv-edetail__lvlempty")).not.toBeNull();
     // 阶梯区还没到能用的时候
     expect(container.querySelector(".nv-edetail__ladder")).toBeNull();
-    // 空态里已有「＋新建等级体系」，不再并列一个同样打开管理弹框的「管理」
+    // 空态里已有「＋新建境界体系」，不再并列一个同样打开管理弹框的「管理」
     expect(screen.queryByText("管理")).toBeNull();
 
-    fireEvent.click(screen.getByText("新建等级体系"));
-    expect(onOpenLevelManager).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByText("新建境界体系"));
+    expect(onOpenSettings).toHaveBeenCalledTimes(1);
   });
 
-  it("非角色卡且没有等级体系时不出现这一格（不给地点 / 物品添噪音）", () => {
+  it("非角色卡且没有境界体系时不出现这一格（不给地点 / 物品添噪音）", () => {
     render(
       <EntityDetail
         {...buildProps({ entity: { ...entity, type: "location" } })}
@@ -104,16 +137,16 @@ describe("EntityDetail：当前境界入口", () => {
     expect(screen.queryByText("当前境界")).toBeNull();
   });
 
-  it("有等级体系时照旧出阶梯，点等级项即设当前境界", () => {
+  it("有境界体系时照旧出阶梯，点等级项即设当前境界", () => {
     const onSetEntityLevel = vi.fn();
     render(
       <EntityDetail
-        {...buildProps({ levelSystems: [system], onSetEntityLevel })}
+        {...buildProps({ settings: [realmCategory], onSetEntityLevel })}
       />,
     );
 
-    expect(screen.queryByText("还没有等级体系")).toBeNull();
-    // 有体系时「管理」照旧在（空态才收起，避免与「新建等级体系」重复）
+    expect(screen.queryByText("还没有境界体系")).toBeNull();
+    // 有体系时「管理」照旧在（空态才收起，避免与「新建境界体系」重复）
     expect(screen.getByText("管理")).toBeInTheDocument();
     fireEvent.click(screen.getByText("筑基"));
     expect(onSetEntityLevel).toHaveBeenCalledWith("r2");
@@ -124,7 +157,7 @@ describe("EntityDetail：当前境界入口", () => {
     render(
       <EntityDetail
         {...buildProps({
-          levelSystems: [system],
+          settings: [realmCategory],
           onSetEntityLevel,
           relations: [
             {
@@ -143,6 +176,51 @@ describe("EntityDetail：当前境界入口", () => {
     expect(screen.getByText("当前")).toBeInTheDocument();
     fireEvent.click(screen.getByText("炼气"));
     expect(onSetEntityLevel).toHaveBeenCalledWith(null);
+  });
+
+  it("拆分后的子层级不当独立阶平铺：只列父阶，段是阶内进度（1.38.1）", () => {
+    const { container } = render(
+      <EntityDetail
+        {...buildProps({
+          settings: [
+            {
+              ...realmCategory,
+              levels: [
+                { ...realmCategory.levels[0], subLevels: 9 },
+                {
+                  ...realmCategory.levels[0],
+                  id: "r1__seg1",
+                  name: "炼气 · 第1段",
+                  rank: 2,
+                  parentId: "r1",
+                  segFrom: 1,
+                  segTo: 1,
+                  subLevels: 1,
+                },
+              ],
+            },
+          ],
+          relations: [
+            {
+              id: "l1",
+              direction: "out",
+              targetId: "r1__seg1",
+              targetName: "炼气 · 第1段",
+              targetType: "level",
+              relation: "当前境界",
+            },
+          ],
+        })}
+      />,
+    );
+
+    // 父阶只出现一次：绑在派生段上也不多出一行「阶」
+    expect(screen.getByText("炼气")).toBeInTheDocument();
+    // 段以阶内进度小条出现，且带高亮
+    expect(container.querySelector(".nv-edetail__rung-seg.is-on")).not.toBeNull();
+    // 父阶行内标注境界内进度（1–1 / 共 9 层）并带「当前」
+    expect(screen.getByText(/1–1 \/ 共 9 层/)).toBeInTheDocument();
+    expect(container.querySelector(".nv-edetail__rung.is-on")).not.toBeNull();
   });
 });
 

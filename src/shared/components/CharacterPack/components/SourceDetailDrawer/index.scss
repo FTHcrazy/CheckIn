@@ -25,6 +25,12 @@
     &.is-sustained {
       border-left: 3px solid var(--app-accent-blue);
     }
+
+    /* 映射来源：与效果行同骨架，靠左侧紫条 + 徽标「映」区分 —— 它不是谁给的效果，
+       而是别的属性加点折算过来的量 */
+    &.is-mapped {
+      border-left: 3px solid var(--app-accent-purple);
+    }
   }
 
   &__who {
@@ -47,6 +53,25 @@
     &--muted {
       color: var(--app-text-disabled);
     }
+  }
+
+  /* 映射来源名 + 换算率：名字可截断，系数是不收缩的尾缀 */
+  &__mapname {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 3px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__rate {
+    flex: none;
+    font-size: 11px;
+    font-style: normal;
+    color: var(--app-accent-purple);
+    font-variant-numeric: tabular-nums;
   }
 
   &__total {

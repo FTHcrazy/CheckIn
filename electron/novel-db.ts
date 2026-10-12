@@ -161,30 +161,57 @@ function initializeNovelDb(database: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_novel_links_from ON novel_links(from_type, from_id);
     CREATE INDEX IF NOT EXISTS idx_novel_links_to ON novel_links(to_type, to_id);
 
-    -- ── 等级体系（R25）──
-    CREATE TABLE IF NOT EXISTS novel_level_systems (
+    -- ── 小说设定（1.36.0 重构：统一取代 R25 的 novel_level_systems / novel_levels）──
+    -- 一部作品的**全部**等级序列都在这里，不再区分「境界体系」与「其它序列」：
+    -- 境界体系只是 kind='realm' 的一个分类（每部作品至多一个），功法等级 /
+    -- 丹药稀有度 / 法宝品阶是 kind='custom' 的其它分类。三张旧表在本次重构中删除，
+    -- 没有迁移脚本——老数据经「导入书籍 / 应用模板」重建。
+    CREATE TABLE IF NOT EXISTS novel_setting_categories (
       id TEXT PRIMARY KEY,
       work_id TEXT NOT NULL,
-      name TEXT NOT NULL
+      name TEXT NOT NULL,
+      color TEXT NOT NULL DEFAULT '#5B8DEF',
+      -- realm = 境界体系：角色卡「当前境界」与行囊境界换算只认这一个分类
+      kind TEXT NOT NULL DEFAULT 'custom' CHECK (kind IN ('realm', 'custom')),
+      sort_order INTEGER NOT NULL DEFAULT 1,
+      note TEXT NOT NULL DEFAULT '',
+      -- 进位规则：每阶小层数 + 进位方向 + 小层命名
+      -- carry_dir='desc' 承载「九品 → 一品」这类倒序序列（rank 递增而层级递减）
+      sub_levels INTEGER NOT NULL DEFAULT 1,
+      carry_dir TEXT NOT NULL DEFAULT 'asc' CHECK (carry_dir IN ('asc', 'desc')),
+      sub_pattern TEXT NOT NULL DEFAULT '第{n}层'
     );
-    CREATE INDEX IF NOT EXISTS idx_novel_level_systems_work ON novel_level_systems(work_id);
-    CREATE TABLE IF NOT EXISTS novel_levels (
+    CREATE INDEX IF NOT EXISTS idx_novel_setting_cat_work
+      ON novel_setting_categories(work_id, sort_order);
+    CREATE TABLE IF NOT EXISTS novel_setting_levels (
       id TEXT PRIMARY KEY,
-      system_id TEXT NOT NULL,
+      category_id TEXT NOT NULL,
       name TEXT NOT NULL,
       rank INTEGER NOT NULL,
-      note TEXT,
-      -- 小层数与战力当量（PRD §9.7.2）：行囊境界换算依赖这两列
+      -- 别名数组（JSON TEXT）：正文用词不一致时靠它归并，也是一致性检查的词表来源
+      aliases TEXT NOT NULL DEFAULT '[]',
+      note TEXT NOT NULL DEFAULT '',
+      -- 小层数与战力当量：行囊境界换算依赖这两列
       sub_levels INTEGER NOT NULL DEFAULT 1,
-      power REAL
+      power REAL,
+      -- 拆分层级：parent_id 非空表示本条派生自它，并占据 [seg_from, seg_to] 小层段。
+      -- 合并即反向：删子级、把层段还给父级。不建外键——删父级要能连带清理而非失败。
+      parent_id TEXT,
+      seg_from INTEGER,
+      seg_to INTEGER,
+      -- 1.37.0：本阶专属的小层命名模板；空串 = 沿用分类的 sub_pattern。
+      -- 固定名单（如「初期,中期,后期,圆满」）与 {n} 模板都合法，语义见 setting-utils
+      sub_pattern TEXT NOT NULL DEFAULT ''
     );
-    CREATE INDEX IF NOT EXISTS idx_novel_levels_system ON novel_levels(system_id, rank);
-    CREATE TABLE IF NOT EXISTS novel_level_conversions (
+    CREATE INDEX IF NOT EXISTS idx_novel_setting_lv_cat
+      ON novel_setting_levels(category_id, rank);
+    -- 设定模板：跨作品复用的分类快照（「另存为模板」/「从模板导入」）。
+    -- 刻意不带 work_id —— 模板存在的意义就是换书复用；设定数据本身仍按作品隔离。
+    CREATE TABLE IF NOT EXISTS novel_setting_templates (
       id TEXT PRIMARY KEY,
-      from_level_id TEXT NOT NULL,
-      to_level_id TEXT NOT NULL,
-      relation TEXT NOT NULL,
-      note TEXT
+      name TEXT NOT NULL,
+      payload TEXT NOT NULL,
+      created_at INTEGER NOT NULL
     );
 
     -- ── 行囊 CharacterPack（PRD docs/character-pack-prd.md §9.2）──
@@ -221,6 +248,23 @@ function initializeNovelDb(database: Database.Database): void {
       updated_at INTEGER NOT NULL DEFAULT 0
     );
     CREATE INDEX IF NOT EXISTS idx_pack_attr_char ON novel_pack_attributes(character_id, sort_order);
+    -- 属性映射（1.35.0）：每 1 点源属性 → 目标属性加算 rate（「加 1 点力量，血量 +100」）
+    -- 关掉一条映射 = 把 rate 设成 0：**不另设 enabled**，两种「关」会让脏计数与
+    -- 「与本章初对比」都说不清哪一份才是作者的意思（rate 为 0 时汇总视同关闭，且不报警告）
+    CREATE TABLE IF NOT EXISTS novel_pack_mappings (
+      id TEXT PRIMARY KEY,
+      character_id TEXT NOT NULL,
+      -- 源属性 / 目标属性都指向 novel_pack_attributes.id；属性被删后这两格可能悬空，
+      -- 由汇总层报 missing（不建外键：删属性时要能连带清理，而不是让删除失败）
+      source_attr_id TEXT NOT NULL,
+      target_attr_id TEXT NOT NULL,
+      rate REAL NOT NULL DEFAULT 0,
+      note TEXT NOT NULL DEFAULT '',
+      sort_order INTEGER NOT NULL DEFAULT 1,
+      -- 最近一次改动的落点时刻（REQ-028 本章变动角标）；0 = 不算变动
+      updated_at INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_pack_mapping_char ON novel_pack_mappings(character_id, sort_order);
     CREATE TABLE IF NOT EXISTS novel_pack_slots (
       id TEXT PRIMARY KEY,
       character_id TEXT NOT NULL,
@@ -343,6 +387,18 @@ function initializeNovelDb(database: Database.Database): void {
       updated_at INTEGER NOT NULL
     );
   `);
+
+  // ── 增量迁移（§6.5）───────────────────────────────────────────────
+  // 1.36.0 建的 novel.db 没有 sub_pattern 列（1.37.0 逐级小层命名）：
+  // PRAGMA 探测后再 ALTER，幂等可重复执行。
+  const levelColumns = database.pragma("table_info(novel_setting_levels)") as Array<{
+    name: string;
+  }>;
+  if (!levelColumns.some((column) => column.name === "sub_pattern")) {
+    database.exec(
+      "ALTER TABLE novel_setting_levels ADD COLUMN sub_pattern TEXT NOT NULL DEFAULT ''",
+    );
+  }
 }
 
 /** 打开（或切换到）当前用户的 novel.db */

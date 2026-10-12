@@ -10,6 +10,7 @@ import type { LadderRung } from "./pack-utils";
 import type {
   PackAttribute,
   PackItem,
+  PackMapping,
   PackModifier,
   PackRealmLinkDTO,
   PackSkill,
@@ -150,6 +151,30 @@ function realmLink(toId: string, sub: number): PackRealmLinkDTO {
   };
 }
 
+/** 一条属性映射；默认「力量(a1) → 生命(a2) 每点 ×10」 */
+function mapping(partial: Partial<PackMapping> = {}): PackMapping {
+  return {
+    id: "pm1",
+    characterId: "c1",
+    sourceAttrId: "a1",
+    targetAttrId: "a2",
+    rate: 10,
+    note: "",
+    sortOrder: 1,
+    updatedAt: 0,
+    ...partial,
+  };
+}
+
+/** 力量 0 / 生命 0 / 防御 0：映射组要能把两端解析成属性名。
+ *  源取 0 是为了让换算不产生数值后果 —— 否则「属性组」会同时报一行变化，
+ *  把这一组要断言的条目淹掉。 */
+const MAP_ATTRS: PackAttribute[] = [
+  attr({ id: "a1", name: "力量", baseValue: 0 }),
+  attr({ id: "a2", name: "生命", baseValue: 0 }),
+  attr({ id: "a3", name: "防御", baseValue: 0 }),
+];
+
 /** 默认是一份「空白但可比」的文档：带境界那一格，属性/物品/技能全空 */
 function doc(partial: Partial<PackDiffDoc> = {}): PackDiffDoc {
   return {
@@ -199,6 +224,20 @@ describe("parsePackDiffDoc —— 读不出来就说读不出来", () => {
 
     const withNull = parsePackDiffDoc(JSON.stringify({ attributes: [], realmLink: null }));
     expect(withNull && "realmLink" in withNull).toBe(true);
+  });
+
+  it("属性映射同理：老记录「没这一格」不能当成「当时一条都没有」", () => {
+    // 映射功能上线前的记录 → 不能凭空报「本章新增了 N 条换算」
+    const withoutKey = parsePackDiffDoc(JSON.stringify({ attributes: [] }));
+    expect(withoutKey && "mappings" in withoutKey).toBe(false);
+
+    const withEmpty = parsePackDiffDoc(JSON.stringify({ attributes: [], mappings: [] }));
+    expect(withEmpty && "mappings" in withEmpty).toBe(true);
+    expect(withEmpty?.mappings).toEqual([]);
+
+    // 有这一格但类型不对 → 兜底成空数组，不能让整张表崩掉
+    const bad = parsePackDiffDoc(JSON.stringify({ attributes: [], mappings: "nope" }));
+    expect(bad?.mappings).toEqual([]);
   });
 });
 
@@ -400,6 +439,64 @@ describe("境界组 —— 三态不能混", () => {
   });
 });
 
+describe("属性映射组（1.35.0）", () => {
+  it("新增 / 改系数 / 换端点 / 停用 / 删除，五种都要报", () => {
+    expect(
+      texts(diffPackDoc(doc({ attributes: MAP_ATTRS, mappings: [] }), doc({ attributes: MAP_ATTRS, mappings: [mapping()] })).entries),
+    ).toEqual(["mapping/add|力量 → 生命||每 1 点 +10"]);
+
+    expect(
+      texts(
+        diffPackDoc(
+          doc({ attributes: MAP_ATTRS, mappings: [mapping({ rate: 10 })] }),
+          doc({ attributes: MAP_ATTRS, mappings: [mapping({ rate: 100 })] }),
+        ).entries,
+      ),
+    ).toEqual(["mapping/change|力量 → 生命|每 1 点 +10|每 1 点 +100"]);
+
+    // 端点被改到别的属性上：旧身份要一起交代，否则只看到「每 1 点 +10」没变
+    expect(
+      texts(
+        diffPackDoc(
+          doc({ attributes: MAP_ATTRS, mappings: [mapping()] }),
+          doc({ attributes: MAP_ATTRS, mappings: [mapping({ targetAttrId: "a3" })] }),
+        ).entries,
+      ),
+    ).toEqual(["mapping/change|力量 → 防御|力量 → 生命 · 每 1 点 +10|每 1 点 +10"]);
+
+    // 系数改成 0 = 停用（没有 enabled 列，只留一种「关」）
+    expect(
+      texts(
+        diffPackDoc(
+          doc({ attributes: MAP_ATTRS, mappings: [mapping({ rate: 10 })] }),
+          doc({ attributes: MAP_ATTRS, mappings: [mapping({ rate: 0 })] }),
+        ).entries,
+      ),
+    ).toEqual(["mapping/change|力量 → 生命|每 1 点 +10|已停用"]);
+
+    expect(
+      texts(diffPackDoc(doc({ attributes: MAP_ATTRS, mappings: [mapping()] }), doc({ attributes: MAP_ATTRS, mappings: [] })).entries),
+    ).toEqual(["mapping/remove|力量 → 生命|每 1 点 +10|"]);
+  });
+
+  it("两边一样 → 不报", () => {
+    const same = doc({ attributes: MAP_ATTRS, mappings: [mapping()] });
+    expect(diffPackDoc(same, same).total).toBe(0);
+  });
+
+  it("老记录「没有这一格」→ 整组跳过；数值后果仍由属性组如实呈现", () => {
+    // 源改成 10：这样换算真会产生 100 点后果，才能验证「后果照样报、原因不报」
+    const attrs = [attr({ id: "a1", name: "力量", baseValue: 10 }), ...MAP_ATTRS.slice(1)];
+    // `doc()` 默认不带 mappings，模拟属性映射引入之前存下的盘点记录
+    const past = doc({ attributes: attrs });
+    expect("mappings" in past).toBe(false);
+    const entries = diffPackDoc(past, doc({ attributes: attrs, mappings: [mapping()] })).entries;
+    expect(entries.filter((entry) => entry.group === "mapping")).toEqual([]);
+    // 但「生命涨了 100」照样在属性组里 —— 老记录只是没法告诉我们「为什么涨」
+    expect(texts(entries)).toContain("attribute/change|生命|0|100");
+  });
+});
+
 describe("设置组", () => {
   it("部位容量与量纲换算都进「设置」", () => {
     const r = diffPackDoc(
@@ -415,7 +512,7 @@ describe("设置组", () => {
 });
 
 describe("分组与排序", () => {
-  it("空组不出现，非空组顺序固定（境界 → 属性 → 穿戴 → 物品 → 技能 → 主动 → 设置）", () => {
+  it("空组不出现，非空组顺序固定（境界 → 属性 → 映射 → 穿戴 → 物品 → 技能 → 主动 → 设置）", () => {
     const r = diffPackDoc(
       doc({
         attributes: [attr({ baseValue: 1 })],
@@ -452,5 +549,14 @@ describe("分组与排序", () => {
       realmLink: realmLink("l1", 1),
     });
     expect(diffPackDoc(same, same, LADDER).total).toBe(0);
+  });
+
+  it("映射组紧跟在属性组之后（属性那行的变化常常正是它解释的）", () => {
+    const r = diffPackDoc(
+      doc({ attributes: MAP_ATTRS, mappings: [] }),
+      doc({ attributes: MAP_ATTRS, mappings: [mapping()] }),
+    );
+    expect(r.buckets.map((bucket) => bucket.group)).toEqual(["mapping"]);
+    expect(DIFF_GROUPS.indexOf("mapping")).toBe(DIFF_GROUPS.indexOf("attribute") + 1);
   });
 });

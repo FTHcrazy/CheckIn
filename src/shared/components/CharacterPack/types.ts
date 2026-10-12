@@ -21,6 +21,7 @@ import type {
   PackProtagonistDTO,
   PackRealmLinkDTO,
   PackRecordDTO,
+  PackMappingDTO,
   PackSavePayloadDTO,
   PackSkillDTO,
   PackSlotDTO,
@@ -40,6 +41,7 @@ export type {
 /** 领域别名：本模块内部统一用不带 DTO 后缀的名字 */
 export type PackCharacter = PackCharacterDTO;
 export type PackAttribute = PackAttributeDTO;
+export type PackMapping = PackMappingDTO;
 export type PackSlot = PackSlotDTO;
 export type PackItem = PackItemDTO;
 export type PackSkill = PackSkillDTO;
@@ -79,6 +81,7 @@ export const OP_META: Record<PackOp, { label: string; symbol: string }> = {
 export type PackModuleKey =
   | "summary"
   | "attributes"
+  | "mapping"
   | "equipment"
   | "inventory"
   | "skills"
@@ -98,6 +101,7 @@ export interface PackModuleMeta {
 export const PACK_MODULES: PackModuleMeta[] = [
   { key: "summary", label: "总属性汇总", desc: "基础值 → 总览值，增量按被动 / 持续分段" },
   { key: "attributes", label: "人物属性", desc: "自定义属性定义与基础值，支持分组" },
+  { key: "mapping", label: "属性映射", desc: "加点换算：每 1 点源属性 → 目标属性增加多少" },
   { key: "equipment", label: "装备栏", desc: "部位与槽位自定义，穿戴 / 卸下" },
   { key: "inventory", label: "物品栏", desc: "背包物品与数量快调" },
   { key: "skills", label: "技能栏", desc: "技能开关、熟练度与效果" },
@@ -161,6 +165,44 @@ export interface EstimateEntry {
 
 /** 属性分组的默认值（B-1 支持分组） */
 export const DEFAULT_ATTR_GROUP = "基础属性";
+
+/**
+ * 属性映射（1.35.0）：一条「成长换算」规则。
+ *
+ * 网游里常见的写法是「每加 1 点力量，血量 +100」—— 也就是一条属性按固定系数
+ * 折算成另一条属性。落地成 `每 1 点 源属性 → 目标属性 加算 rate`：
+ *
+ * - **源取的是该属性的最终值**（含装备 / 技能 / 状态的加成，以及它自己作为
+ *   别的映射目标时得到的换算量），所以「装备加了 20 点力量」会顺带抬高血量；
+ * - 换算量进的是目标属性的**加算池**（与被动/持续同池），因此目标属性上的
+ *   百分比与乘算对它一样生效；`override`（覆盖型效果）仍然优先 —— 覆盖的语义
+ *   就是「这个属性就是这个值」；
+ * - 依赖按拓扑序求值，`力量→攻击→战力` 这类链式映射有效；**成环时环上所有
+ *   映射一律不生效**（而不是取某个任意解），并在界面上明示，见 `pack-mapping.ts`。
+ */
+export interface PackMappingRule {
+  /**
+   * 规则 id。
+   *
+   * DTO 一律带上（`PackMapping` 有），纯函数单测里可以省 —— 省了之后
+   * `evaluateMappings` 会按 `源→目标` 合成一个稳定 id 当作名字用。
+   * 汇总管线把「这条映射没生效」的结论挂在这个 id 上，界面据此回到对应行。
+   */
+  id?: string;
+  /** 源属性（换算的输入），如「力量」 */
+  sourceAttrId: string;
+  /** 目标属性（换算的输出），如「生命值」 */
+  targetAttrId: string;
+  /** 每 1 点源属性给目标属性加多少（可小数，如 0.5） */
+  rate: number;
+  /**
+   * 求值顺序（DTO 必带）。
+   *
+   * 只在**同一条源 → 同一条目标**有多条规则时决定叠加次序；链式依赖的先后
+   * 由拓扑序决定，与它无关。缺省按 1 处理（等值排序 → 保持数组原序，稳定）。
+   */
+  sortOrder?: number;
+}
 
 /** 属性模板（B-1：通用 / 玄幻 / 网游 一键套用） */
 export interface AttrTemplateItem {

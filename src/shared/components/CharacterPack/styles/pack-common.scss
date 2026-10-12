@@ -188,6 +188,12 @@
     background: var(--app-accent-amber-weak);
     color: var(--app-accent-amber);
   }
+
+  /* 属性映射：与三种效果性质并列的第 4 个来源标记（紫，与汇总分段的 is-mapped 同色） */
+  &.is-mapped {
+    background: var(--app-accent-purple-weak);
+    color: var(--app-accent-purple);
+  }
 }
 
 /* ── 小尺寸开关（持续型效果 / 状态自己那一档，与载体开关分离）──

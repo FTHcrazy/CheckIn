@@ -85,6 +85,14 @@ export interface EditorPaneHandle {
    * 光标跟着落到插入内容的末尾（作者刚插完，多半要接着在那后面看一眼）。
    */
   appendText: (text: string) => void;
+  /**
+   * 全量替换正文里的某个词（设定一致性检查的「一键替换」）
+   *
+   * 不自己改 chapter.content 再回灌 —— 编辑器是非受控的 CodeMirror 实例，
+   * 改 prop 不会同步进文档，于是库里换了、屏上没换。这里走 dispatch，
+   * 与正常打字同一条链路（updateListener → 防抖保存），且能 Ctrl+Z 撤销。
+   */
+  replaceAll: (from: string, to: string) => number;
 }
 
 /** 排版相关的动态样式走独立 compartment，改字号不必重建编辑器 */
@@ -239,6 +247,24 @@ export default function EditorPane({
           userEvent: "input.insert",
         });
         view.focus();
+      },
+      replaceAll: (from: string, to: string): number => {
+        const view = viewRef.current;
+        if (!view || !from || from === to) return 0;
+        const doc = view.state.doc.toString();
+        const changes: Array<{ from: number; to: number; insert: string }> = [];
+        let cursor = 0;
+        // 逐段扫描而不是 split/join：要的是「文档内的位置」，
+        // 拼完再整体替换会丢掉光标与 undo 历史
+        for (;;) {
+          const hit = doc.indexOf(from, cursor);
+          if (hit < 0) break;
+          changes.push({ from: hit, to: hit + from.length, insert: to });
+          cursor = hit + from.length;
+        }
+        if (changes.length === 0) return 0;
+        view.dispatch({ changes, userEvent: "input.replace" });
+        return changes.length;
       },
     }),
     [],

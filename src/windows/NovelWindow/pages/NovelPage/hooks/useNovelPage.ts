@@ -760,6 +760,46 @@ export function useNovelPage() {
     [data, view],
   );
 
+  // ── 小说设定：写作态速查（1.36.0） ──────────────────────────
+
+  /** 点等级 chip → 插到光标处 */
+  const handleInsertSettingTerm = useCallback(
+    (term: string): void => {
+      editorPaneRef.current?.insertText(term);
+    },
+    [],
+  );
+
+  /**
+   * 一致性检查的「一键替换」
+   *
+   * 走 EditorPane 的命令式 replaceAll（CodeMirror dispatch）而不是改章节
+   * content 再回灌：编辑器非受控，改 prop 进不了文档，会出现「库里换了、
+   * 屏上没换」。dispatch 与打字同一链路，替换能 Ctrl+Z 撤销。
+   */
+  const handleReplaceSettingTerm = useCallback(
+    (from: string, to: string): void => {
+      const count = editorPaneRef.current?.replaceAll(from, to) ?? 0;
+      view.showToast(
+        count > 0 ? `已替换 ${count} 处「${from}」→「${to}」` : `没有找到「${from}」`,
+        count > 0 ? "success" : "info",
+      );
+    },
+    [view],
+  );
+
+  /** 「登记」未登记词：在该分类末尾新增一条等级 */
+  const handleRegisterSettingTerm = useCallback(
+    (categoryId: string, term: string): void => {
+      const created = data.addSettingLevel(categoryId, term);
+      view.showToast(
+        created ? `已把「${term}」登记进设定` : "登记失败，请先选中分类",
+        created ? "success" : "warning",
+      );
+    },
+    [data, view],
+  );
+
   /** 起名工具动作组（透传给 NameGeneratorPanel） */
   const namingActions = useMemo<NamingActions>(
     () => ({
@@ -1089,6 +1129,12 @@ export function useNovelPage() {
   // Esc 关闭链：设置 → 快照 → 专注模式（逐层退出，章节跳转面板自己处理 Esc；
   // 行囊已是独立窗口，本窗口的 Esc 不再越界管它）
   const handleEscape = useCallback((): void => {
+    // 设定中心是最上层浮层，先关它：否则 Esc 会穿透去关排版抽屉，
+    // 作者以为关的是眼前这个大面板
+    if (view.settingCenterOpen) {
+      view.closeSettingCenter();
+      return;
+    }
     if (view.settingsOpen) {
       view.closeSettings();
       return;
@@ -1108,6 +1154,7 @@ export function useNovelPage() {
     onNewChapter: handleNewChapter,
     onToggleFocus: view.toggleFocus,
     onTogglePack: openPackWindow,
+    onOpenSettings: () => view.openSettingCenter(null),
     onEscape: handleEscape,
   });
 
@@ -1214,6 +1261,10 @@ export function useNovelPage() {
     handleRenameCustomType,
     handleRecolorCustomType,
     handleRemoveCustomType,
+    // 设定速查（1.36.0）
+    handleInsertSettingTerm,
+    handleReplaceSettingTerm,
+    handleRegisterSettingTerm,
     // 起名工具（R18 / 步骤三）
     editorPaneRef,
     namingActions,

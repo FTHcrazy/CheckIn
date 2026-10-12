@@ -67,6 +67,22 @@ interface PackSlotRow {
   sort_order: number;
 }
 
+/**
+ * 属性映射（1.35.0）：每 1 点 `source_attr_id` → `target_attr_id` 加算 `rate`。
+ *
+ * 没有 `enabled` 列：关掉一条映射就是把 `rate` 设成 0（见 novel-db.ts 的注释）。
+ */
+interface PackMappingRow {
+  id: string;
+  character_id: string;
+  source_attr_id: string;
+  target_attr_id: string;
+  rate: number;
+  note: string;
+  sort_order: number;
+  updated_at: number;
+}
+
 interface PackItemRow {
   id: string;
   character_id: string;
@@ -177,17 +193,16 @@ interface PackDraftDoc {
   [key: string]: unknown;
 }
 
-interface NovelLevelRow2 {
+interface NovelSettingLevelRow2 {
   id: string;
-  system_id: string;
+  category_id: string;
   name: string;
   rank: number;
-  note: string | null;
   sub_levels: number;
   power: number | null;
 }
 
-interface NovelLevelSystemRow2 {
+interface NovelSettingCategoryRow2 {
   id: string;
   work_id: string;
   name: string;
@@ -247,6 +262,25 @@ export interface PackAttributeDto {
   baseValue: number;
   decimals: number;
   unit: string;
+  sortOrder: number;
+  /** 最近一次改动的落点时刻（REQ-028 本章变动角标）；0 = 从无改动记录 */
+  updatedAt: number;
+}
+
+/**
+ * 属性映射（1.35.0）。
+ *
+ * `rate` 为 0 视同「这条关着」—— 汇总里不算，也不报警告（用户是主动关的，
+ * 不是配错了）。因此没有 `enabled` 字段。
+ */
+export interface PackMappingDto {
+  id: string;
+  characterId: string;
+  sourceAttrId: string;
+  targetAttrId: string;
+  /** 每 1 点源属性给目标属性加多少（可小数） */
+  rate: number;
+  note: string;
   sortOrder: number;
   /** 最近一次改动的落点时刻（REQ-028 本章变动角标）；0 = 从无改动记录 */
   updatedAt: number;
@@ -373,6 +407,8 @@ export interface PackLevelSystemDto {
 export interface PackBundleDto {
   character: PackCharacterDto | null;
   attributes: PackAttributeDto[];
+  /** 属性映射（1.35.0） */
+  mappings: PackMappingDto[];
   slots: PackSlotDto[];
   items: PackItemDto[];
   skills: PackSkillDto[];
@@ -420,6 +456,8 @@ export interface PackRealmLinkDto {
 export interface PackSavePayloadDto {
   character: PackCharacterDto;
   attributes: PackAttributeDto[];
+  /** 属性映射（1.35.0）：与属性同属「设定数据」，整文档一起走草稿与盘点 */
+  mappings: PackMappingDto[];
   slots: PackSlotDto[];
   items: PackItemDto[];
   skills: PackSkillDto[];
@@ -519,6 +557,19 @@ function toAttributeDto(row: PackAttributeRow): PackAttributeDto {
     baseValue: row.base_value,
     decimals: row.decimals,
     unit: row.unit,
+    sortOrder: row.sort_order,
+    updatedAt: row.updated_at ?? 0,
+  };
+}
+
+function toMappingDto(row: PackMappingRow): PackMappingDto {
+  return {
+    id: row.id,
+    characterId: row.character_id,
+    sourceAttrId: row.source_attr_id,
+    targetAttrId: row.target_attr_id,
+    rate: row.rate ?? 0,
+    note: row.note ?? "",
     sortOrder: row.sort_order,
     updatedAt: row.updated_at ?? 0,
   };
@@ -675,6 +726,11 @@ function readCharacterSnapshot(characterId: string): PackBundleDto {
         characterId,
       ]) as PackAttributeRow[]
     ).map(toAttributeDto),
+    mappings: (
+      dbAll("SELECT * FROM novel_pack_mappings WHERE character_id = ? ORDER BY sort_order", [
+        characterId,
+      ]) as PackMappingRow[]
+    ).map(toMappingDto),
     slots: (
       dbAll("SELECT * FROM novel_pack_slots WHERE character_id = ? ORDER BY sort_order", [
         characterId,
@@ -722,34 +778,35 @@ function readCharacterSnapshot(characterId: string): PackBundleDto {
 }
 
 /**
- * 读取 R25 等级体系（含 sub_levels / power）
+ * 把作品的**境界阶梯**投影成行囊要的形状（含 sub_levels / power）。
+ *
+ * 数据源是统一设定域里 `kind='realm'` 的那一条分类（1.36.0 起）。
+ * 行囊只消费「一部作品的境界阶梯」这一个视图，不关心设定中心还有多少别的
+ * 分类 —— 所以这里做投影而不是把 `novel_setting_categories` 整张搬过来。
  *
  * 两处必须这么写：
- * - **带 `workId`**：`novel_level_systems.work_id` 是 NOT NULL，体系按作品私有。
- *   不带过滤时两部作品都建过体系就会把另一部小说的等级体系返回过来，
+ * - **带 `workId`**：`novel_setting_categories.work_id` 是 NOT NULL，设定按作品
+ *   私有。不带过滤时两部作品都建过境界体系就会把另一部小说的阶梯返回过来，
  *   再经 `novel-link-set` 写出跨作品的 `novel_links`，界面上看不出来。
- * - **等级项一次取回后分组**：每个体系一条 SQL 就是 N+1。
+ * - **等级项一次取回后分组**：每个分类一条 SQL 就是 N+1。
  */
 function readLevelSystems(workId: string): PackLevelSystemDto[] {
-  const systems = dbAll(
-    "SELECT * FROM novel_level_systems WHERE work_id = ?",
+  const categories = dbAll(
+    "SELECT * FROM novel_setting_categories WHERE work_id = ? AND kind = 'realm' ORDER BY sort_order",
     [workId],
-  ) as NovelLevelSystemRow2[];
-  if (systems.length === 0) return [];
+  ) as NovelSettingCategoryRow2[];
+  if (categories.length === 0) return [];
 
-  // 等级项也要按作品收口：不带范围时，其它作品的等级项会被一并捞回来，
-  // 再经下面的 Map 分组虽然不会串进结果，但白读一遍全表；
-  // 真正危险的是后面有人改成「不分组直接用」—— 那时就会开始串书
-  const systemIds = systems.map((system) => system.id);
+  const categoryIds = categories.map((category) => category.id);
   const levels = dbAll(
-    `SELECT * FROM novel_levels
-      WHERE system_id IN (${systemIds.map(() => "?").join(", ")})
-      ORDER BY system_id, rank`,
-    systemIds,
-  ) as NovelLevelRow2[];
-  const rungsBySystem = new Map<string, PackLevelSystemDto["rungs"]>();
+    `SELECT * FROM novel_setting_levels
+      WHERE category_id IN (${categoryIds.map(() => "?").join(", ")})
+      ORDER BY category_id, rank`,
+    categoryIds,
+  ) as NovelSettingLevelRow2[];
+  const rungsByCategory = new Map<string, PackLevelSystemDto["rungs"]>();
   for (const level of levels) {
-    const list = rungsBySystem.get(level.system_id) ?? [];
+    const list = rungsByCategory.get(level.category_id) ?? [];
     list.push({
       id: level.id,
       name: level.name,
@@ -757,14 +814,14 @@ function readLevelSystems(workId: string): PackLevelSystemDto[] {
       subLevels: level.sub_levels ?? 1,
       power: level.power,
     });
-    rungsBySystem.set(level.system_id, list);
+    rungsByCategory.set(level.category_id, list);
   }
 
-  return systems.map((system) => ({
-    id: system.id,
-    workId: system.work_id,
-    name: system.name,
-    rungs: rungsBySystem.get(system.id) ?? [],
+  return categories.map((category) => ({
+    id: category.id,
+    workId: category.work_id,
+    name: category.name,
+    rungs: rungsByCategory.get(category.id) ?? [],
   }));
 }
 
@@ -1045,6 +1102,7 @@ export function registerNovelPackHandlers(): void {
       const before = readCharacterSnapshot(characterId);
       const hasData =
         before.attributes.length > 0 ||
+        before.mappings.length > 0 ||
         before.slots.length > 0 ||
         before.items.length > 0 ||
         before.skills.length > 0 ||
@@ -1112,6 +1170,7 @@ export function registerNovelPackHandlers(): void {
 
       for (const table of [
         "novel_pack_attributes",
+        "novel_pack_mappings",
         "novel_pack_slots",
         "novel_pack_items",
         "novel_pack_skills",
@@ -1168,6 +1227,24 @@ export function registerNovelPackHandlers(): void {
           a.unit,
           a.sortOrder,
           a.updatedAt || 0,
+        );
+      }
+
+      const mappingStmt = db.prepare(
+        `INSERT INTO novel_pack_mappings
+           (id, character_id, source_attr_id, target_attr_id, rate, note, sort_order, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      );
+      for (const m of payload.mappings ?? []) {
+        mappingStmt.run(
+          m.id,
+          characterId,
+          m.sourceAttrId,
+          m.targetAttrId,
+          m.rate || 0,
+          m.note,
+          m.sortOrder,
+          m.updatedAt || 0,
         );
       }
 
@@ -1406,28 +1483,6 @@ export function registerNovelPackHandlers(): void {
         console.error("[novel-link-set] 失败：", error);
         return false;
       }
-    },
-  );
-
-  // ── 等级项补列（§9.7.2 缺口①②：小层数 / 战力当量） ──
-  ipcMain.handle(
-    "novel-level-meta-set",
-    (_event, id: string, meta: { subLevels?: number; power?: number | null }): boolean => {
-      const current = dbGet("SELECT sub_levels, power FROM novel_levels WHERE id = ?", [
-        id,
-      ]) as { sub_levels: number; power: number | null } | undefined;
-      if (!current) return false;
-      const subLevels =
-        meta.subLevels === undefined
-          ? current.sub_levels
-          : Math.max(1, Math.floor(meta.subLevels) || 1);
-      const power = meta.power === undefined ? current.power : meta.power;
-      dbRun("UPDATE novel_levels SET sub_levels = ?, power = ? WHERE id = ?", [
-        subLevels,
-        power,
-        id,
-      ]);
-      return true;
     },
   );
 }

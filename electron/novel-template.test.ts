@@ -87,7 +87,7 @@ describe("buildNovelTemplateBook 功能覆盖", () => {
       if (link.toType === "level") {
         expect(link.relation).toBe("当前境界");
         const rungIds = new Set(
-          book.levelSystems.flatMap((s) => s.rungs.map((r) => r.id)),
+          book.settings.flatMap((category) => category.levels.map((level) => level.id)),
         );
         expect(rungIds.has(link.toId)).toBe(true);
         continue;
@@ -101,13 +101,15 @@ describe("buildNovelTemplateBook 功能覆盖", () => {
     ).toBe(true);
   });
 
-  it("等级体系两条且阶梯按 rank 升序", () => {
-    expect(book.levelSystems).toHaveLength(2);
-    for (const system of book.levelSystems) {
-      const ranks = system.rungs.map((r) => r.rank);
+  it("设定分类至少两条、阶梯按 rank 升序，且恰有一条境界体系", () => {
+    expect(book.settings.length).toBeGreaterThanOrEqual(2);
+    for (const category of book.settings) {
+      const ranks = category.levels.map((level) => level.rank);
       expect(ranks).toEqual([...ranks].sort((a, b) => a - b));
-      expect(system.rungs.length).toBeGreaterThanOrEqual(7);
+      expect(category.levels.length).toBeGreaterThanOrEqual(6);
     }
+    // 「每部作品至多一个境界体系」是角色卡「当前境界」与行囊境界换算的前提
+    expect(book.settings.filter((category) => category.kind === "realm")).toHaveLength(1);
   });
 
   it("灵感速记覆盖置顶与已转伏笔标记", () => {
@@ -148,7 +150,7 @@ describe("buildNovelTemplateBook 确定性与幂等", () => {
       ...book.links.map((l) => l.id),
       ...book.notes.map((n) => n.id),
       ...book.outlineEntries.map((e) => e.id),
-      ...book.levelSystems.flatMap((s) => [s.id, ...s.rungs.map((r) => r.id)]),
+      ...book.settings.flatMap((category) => [category.id, ...category.levels.map((level) => level.id)]),
     ];
     expect(new Set(ids).size).toBe(ids.length);
   });
@@ -172,25 +174,22 @@ describe("模板行囊（buildTemplatePack）", () => {
     expect(relation).toBeDefined();
     expect(relation?.relation).toBe("当前境界");
     const rungIds = new Set(
-      book.levelSystems.flatMap((system) => system.rungs.map((rung) => rung.id)),
+      book.settings.flatMap((category) => category.levels.map((level) => level.id)),
     );
     expect(rungIds.has(relation!.toId)).toBe(true);
   });
 
-  it("等级阶梯补齐 R25 两个缺口：小层数与战力当量都有值", () => {
-    for (const system of book.levelSystems) {
-      for (const rung of system.rungs) {
-        expect(rung.subLevels).toBeGreaterThanOrEqual(1);
-        expect(typeof rung.power).toBe("number");
-        expect(rung.power!).toBeGreaterThan(0);
-      }
+  it("境界阶梯补齐小层数与战力当量（行囊换算依赖这两项）", () => {
+    const realm = book.settings.find((category) => category.kind === "realm");
+    expect(realm).toBeDefined();
+    for (const level of realm!.levels) {
+      expect(level.subLevels).toBeGreaterThanOrEqual(1);
+      // 战力当量只有境界体系需要：品阶 / 稀有度的「当量」没有可比基准
+      expect(typeof level.power).toBe("number");
+      expect(level.power!).toBeGreaterThan(0);
     }
-    // 至少要有一阶是多层，否则「小层」这条能力在模板里没被演示到
-    expect(
-      book.levelSystems.some((system) =>
-        system.rungs.some((rung) => (rung.subLevels ?? 1) > 1),
-      ),
-    ).toBe(true);
+    // 至少要有一阶是多层，否则「小层进位」这条能力在模板里没被演示到
+    expect(realm!.levels.some((level) => (level.subLevels ?? 1) > 1)).toBe(true);
   });
 
   it("三档效果性质都有范例，且两条不计入的边界情况都在", () => {
@@ -281,13 +280,14 @@ describe("模板行囊（buildTemplatePack）", () => {
     expect(uses).toContain("proficiency");
   });
 
-  it("模块布局覆盖全部九个模块且顺序唯一", () => {
+  it("模块布局覆盖全部十个模块且顺序唯一", () => {
     const keys = pack.layouts.map((layout) => layout.moduleKey);
     expect(new Set(keys).size).toBe(keys.length);
-    expect(keys).toHaveLength(9);
+    expect(keys).toHaveLength(10);
     for (const key of [
       "summary",
       "attributes",
+      "mapping",
       "equipment",
       "inventory",
       "skills",
@@ -300,10 +300,53 @@ describe("模板行囊（buildTemplatePack）", () => {
     }
   });
 
-  it("行囊内 id 无重复（角色 / 属性 / 部位 / 物品 / 技能 / 效果 / 量纲）", () => {
+  it("属性映射：端点都在真实属性上，且有一条链式换算与一条停用示例", () => {
+    const attrIds = new Set(pack.attributes.map((a) => a.id));
+    expect(pack.mappings.length).toBeGreaterThan(0);
+    for (const mapping of pack.mappings) {
+      // 端点悬空 → 汇总里会归到 missing，模板不该自带这种例子
+      expect(attrIds.has(mapping.sourceAttrId), `映射端点 ${mapping.sourceAttrId} 不存在`).toBe(true);
+      expect(attrIds.has(mapping.targetAttrId), `映射端点 ${mapping.targetAttrId} 不存在`).toBe(true);
+      expect(mapping.sourceAttrId).not.toBe(mapping.targetAttrId);
+    }
+
+    // 停用示例：系数为 0（这是「关掉一条映射」的唯一方式，模板要演示到）
+    expect(pack.mappings.some((m) => m.rate === 0)).toBe(true);
+
+    // 链式：存在 A → B 与 B → C（下游读到上游换算之后的值）
+    const live = pack.mappings.filter((m) => m.rate !== 0);
+    const edges = live.map((m) => [m.sourceAttrId, m.targetAttrId] as const);
+    expect(
+      live.some((first) =>
+        edges.some(
+          ([src, dst]) => src === first.targetAttrId && dst !== first.sourceAttrId,
+        ),
+      ),
+    ).toBe(true);
+
+    // 且不能自带环 —— 模板一打开就满屏「循环引用」是很糟的第一印象
+    const onCycle = (start: string): boolean => {
+      const stack = edges.filter(([src]) => src === start).map(([, dst]) => dst);
+      const seen = new Set<string>();
+      while (stack.length > 0) {
+        const at = stack.pop() as string;
+        if (at === start) return true;
+        if (seen.has(at)) continue;
+        seen.add(at);
+        for (const [src, dst] of edges) if (src === at) stack.push(dst);
+      }
+      return false;
+    };
+    const nodes = [...new Set(edges.flat())];
+    const cyclic = nodes.filter(onCycle);
+    expect(cyclic, `模板映射自带了环：${cyclic.join(" / ")}`).toEqual([]);
+  });
+
+  it("行囊内 id 无重复（角色 / 属性 / 映射 / 部位 / 物品 / 技能 / 效果 / 量纲）", () => {
     const ids = [
       pack.character.id,
       ...pack.attributes.map((a) => a.id),
+      ...pack.mappings.map((m) => m.id),
       ...pack.slots.map((s) => s.id),
       ...pack.items.map((i) => i.id),
       ...pack.skills.map((s) => s.id),

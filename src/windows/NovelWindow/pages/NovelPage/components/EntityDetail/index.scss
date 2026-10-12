@@ -593,6 +593,68 @@
     font-size: 12px;
   }
 
+  /* 绑定在派生段上时，父阶行内的「境界内进度」标注（如 4–4 / 共 9 层） */
+  &__rung-prog {
+    margin-left: auto;
+    flex: none;
+    font-size: 11px;
+    color: var(--app-text-secondary);
+    font-weight: 400;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__rung.is-on &__rung-prog {
+    color: inherit;
+  }
+
+  /* 一行根阶 + 它的阶内进度小条 */
+  &__rung-group {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 3px;
+  }
+
+  /* 子层级（阶内进度）行：小号、缩进、次级观感 —— 父阶是主角，段是进度 */
+  &__rung-segs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+    padding-left: 22px;
+  }
+
+  &__rung-seg.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: auto;
+    --ant-button-content-font-size: 11px;
+    --ant-border-radius: 7px;
+    --ant-line-width: 1px;
+    --ant-button-default-bg: transparent;
+    --ant-button-default-color: var(--app-text-secondary);
+    --ant-button-default-border-color: transparent;
+    --ant-button-default-hover-bg: var(--app-surface-hover);
+    --ant-button-default-hover-color: var(--app-text-primary);
+    --ant-button-default-hover-border-color: transparent;
+    --ant-button-default-active-bg: var(--app-surface-hover);
+    --ant-button-default-active-color: var(--app-text-primary);
+    --ant-button-default-active-border-color: transparent;
+    --ant-button-default-shadow: none;
+
+    padding: 2px 7px;
+
+    &.is-on {
+      --ant-button-default-bg: var(--app-accent-blue-weak);
+      --ant-button-default-color: var(--app-accent-blue);
+      --ant-button-default-border-color: transparent;
+      --ant-button-default-hover-bg: var(--app-accent-blue-weak);
+      --ant-button-default-hover-color: var(--app-accent-blue);
+      --ant-button-default-hover-border-color: transparent;
+      --ant-button-default-active-bg: var(--app-accent-blue-weak);
+      --ant-button-default-active-color: var(--app-accent-blue);
+      --ant-button-default-active-border-color: transparent;
+      --ant-button-font-weight: 600;
+    }
+  }
+
   /* ── 出场章节 ─────────────────────────────────────────────────── */
   /* 虚拟化容器：必须给**确定高度**，Virtuoso 才有可视区可测。
      ⚠️ 这里踩过一次坑：原先写的是 `max-height: 240px` —— `max-height`

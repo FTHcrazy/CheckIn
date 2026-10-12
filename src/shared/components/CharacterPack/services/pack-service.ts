@@ -58,12 +58,17 @@ export async function writeRealmLink(link: PackRealmLinkDTO): Promise<boolean> {
   return window.electronAPI!.novel.pack.linkSet(link);
 }
 
-/** 等级项补列：小层数 / 战力当量（PRD §9.7.2） */
+/**
+ * 等级项补列：小层数 / 战力当量（PRD §9.7.2）
+ *
+ * 1.36.0 起走统一设定域的 `novel-setting-level-update`：等级项不管属于境界体系
+ * 还是别的分类，都住在 `novel_setting_levels` 里，没有第二条写入路径。
+ */
 export async function writeLevelMeta(
   id: string,
   meta: { subLevels?: number; power?: number | null },
 ): Promise<boolean> {
-  return window.electronAPI!.novel.pack.levelMetaSet(id, meta);
+  return window.electronAPI!.novel.settingLevelUpdate(id, meta);
 }
 
 // ── 主角绑定（行囊面板与右侧要素栏共用同一格数据） ──

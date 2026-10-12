@@ -12,9 +12,10 @@ import type {
   EntityAppearance,
   EntityRelationView,
   EntityType,
-  LevelSystem,
+  SettingCategory,
   NovelEntity,
 } from "../../types";
+import { formatBoundRealmName } from "../../utils/setting-utils";
 import "./index.scss";
 
 interface EntityPanelProps {
@@ -29,7 +30,8 @@ interface EntityPanelProps {
     type: EntityType,
   ) => EntityRelationView[];
   getAppearances: (entityId: string) => EntityAppearance[];
-  levelSystems: LevelSystem[];
+  /** 小说设定：卡片上的「当前境界」从 realm 分类的阶梯里取 */
+  settings: SettingCategory[];
   highlighted: boolean;
   onToggleHighlight: () => void;
   onExportCard: () => void;
@@ -42,10 +44,10 @@ interface EntityPanelProps {
     relation: string,
   ) => void;
   onRemoveRelation: (linkId: string, targetName: string) => void;
-  /** 设定 / 取消当前境界（R25） */
-  onSetEntityLevel: (entityId: string, rungId: string | null) => void;
-  /** 打开等级体系管理弹框（R25） */
-  onOpenLevelManager: () => void;
+  /** 设定 / 取消当前境界 */
+  onSetEntityLevel: (entityId: string, levelId: string | null) => void;
+  /** 打开设定中心 */
+  onOpenSettings: () => void;
   /** 行囊主角绑定的要素 id（空串 = 尚未指定） */
   protagonistEntityId: string;
   /** 设为主角 / 换一个 / 再点一次取消（与行囊面板的「绑定实体」同源） */
@@ -78,7 +80,7 @@ export default function EntityPanel({
   onCloseEntity,
   getEntityRelations,
   getAppearances,
-  levelSystems,
+  settings,
   highlighted,
   onToggleHighlight,
   onExportCard,
@@ -87,7 +89,7 @@ export default function EntityPanel({
   onAddRelation,
   onRemoveRelation,
   onSetEntityLevel,
-  onOpenLevelManager,
+  onOpenSettings,
   protagonistEntityId,
   onSetProtagonist,
   onInsertName,
@@ -159,10 +161,11 @@ export default function EntityPanel({
       const binding = relations.find((item) => item.targetType === "level");
       let levelName = "";
       if (binding) {
-        for (const system of levelSystems) {
-          const rung = system.rungs.find((item) => item.id === binding.targetId);
-          if (rung) {
-            levelName = rung.name;
+        for (const category of settings) {
+          // 父阶优先：绑在派生段上时显示「父阶 · 段进度」，而不是孤零零的段名
+          const name = formatBoundRealmName(category.levels, binding.targetId);
+          if (name) {
+            levelName = name;
             break;
           }
         }
@@ -170,7 +173,7 @@ export default function EntityPanel({
       map.set(entity.id, { relations: relations.length, levelName });
     }
     return map;
-  }, [visible, getEntityRelations, levelSystems]);
+  }, [visible, getEntityRelations, settings]);
 
   const detail = entities.find((entity) => entity.id === detailEntityId) ?? null;
 
@@ -181,7 +184,7 @@ export default function EntityPanel({
         entities={entities}
         relations={getEntityRelations(detail.id, detail.type)}
         appearances={getAppearances(detail.id)}
-        levelSystems={levelSystems}
+        settings={settings}
         highlighted={highlighted}
         onToggleHighlight={onToggleHighlight}
         onExportCard={onExportCard}
@@ -189,8 +192,8 @@ export default function EntityPanel({
         onSelectChapter={onSelectChapter}
         onAddRelation={onAddRelation}
         onRemoveRelation={onRemoveRelation}
-        onSetEntityLevel={(rungId) => onSetEntityLevel(detail.id, rungId)}
-        onOpenLevelManager={onOpenLevelManager}
+        onSetEntityLevel={(levelId) => onSetEntityLevel(detail.id, levelId)}
+        onOpenSettings={onOpenSettings}
         isProtagonist={Boolean(protagonistEntityId) && detail.id === protagonistEntityId}
         onSetProtagonist={() => onSetProtagonist(detail.id)}
         onBack={onCloseEntity}

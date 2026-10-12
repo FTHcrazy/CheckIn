@@ -76,6 +76,7 @@ function makeApi(over: { doc?: Partial<PackDoc>; statuses?: PackModifier[] } = {
       sortOrder: 1,
     },
     attributes: [attr()],
+    mappings: [],
     slots: [],
     items: [],
     skills: [],

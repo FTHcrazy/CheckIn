@@ -26,13 +26,14 @@ function channelBody(channel: string): string {
 describe("P1-3 删作品级联清理行囊（守卫）", () => {
   const body = channelBody("novel-work-delete");
 
-  it("定位到角色行再按 character_id 清九张子表", () => {
+  it("定位到角色行再按 character_id 清全部子表", () => {
     expect(body).toContain("SELECT id FROM novel_pack_characters WHERE work_id = ?");
     expect(body).toContain("DELETE FROM novel_pack_characters WHERE work_id = ?");
     for (const table of [
       "novel_pack_items",
       "novel_pack_skills",
       "novel_pack_attributes",
+      "novel_pack_mappings",
       "novel_pack_slots",
       "novel_pack_unit_systems",
       "novel_pack_layouts",
@@ -120,9 +121,10 @@ describe("P1-10 写操作必须命中才返回成功（守卫）", () => {
     ["novel-chapter-outline", "UPDATE novel_chapters SET outline_note"],
     ["novel-volume-rename", "UPDATE novel_volumes SET name"],
     ["novel-note-move", "UPDATE novel_notes SET work_id"],
-    ["novel-level-system-rename", "UPDATE novel_level_systems SET name"],
-    ["novel-level-rename", "UPDATE novel_levels SET name"],
   ] as const;
+
+  // 小说设定的改名通道在 `novel-setting-handlers.ts`，由
+  // `novel-setting-guard.test.ts` 单独守卫（本文件只读 novel-handlers.ts）。
 
   for (const [channel, sql] of mustHit) {
     it(`${channel} 返回 changes > 0，命中 0 行不再谎报成功`, () => {

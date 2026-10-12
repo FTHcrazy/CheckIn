@@ -13,15 +13,20 @@ interface SummaryModuleProps {
   api: PackPanelApi;
 }
 
-/** 增量片段（被动走灰、持续走蓝，与效果徽标同一套颜色语言） */
+/** 增量片段（被动走灰、持续走蓝、映射走紫，与效果徽标同一套颜色语言） */
 function segments(row: SummaryRow, attr: PackAttribute) {
   const decimals = attr.decimals ?? 0;
-  const items: Array<{ tone: "passive" | "sustained"; text: string }> = [];
+  const items: Array<{ tone: "passive" | "sustained" | "mapped"; text: string }> = [];
   if (row.addPassive) {
     items.push({ tone: "passive", text: `+${formatAttrValue(row.addPassive, decimals)}` });
   }
   if (row.addSustained) {
     items.push({ tone: "sustained", text: `+${formatAttrValue(row.addSustained, decimals)}` });
+  }
+  // 映射折算量与被动 / 持续同池（都进加算），只是**来源**不同 → 单独一段标出来，
+  // 否则作者看到「基础 10 → 总览 90」时无法判断那 80 是词条给的还是加点换算出来的。
+  if (row.addMapped) {
+    items.push({ tone: "mapped", text: `+${formatAttrValue(row.addMapped, decimals)}` });
   }
   const percent = (row.percentPassive || 0) + (row.percentSustained || 0);
   if (percent) {

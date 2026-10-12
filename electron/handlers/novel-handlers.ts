@@ -110,28 +110,36 @@ interface NovelLinkRow {
   note: string | null;
 }
 
-interface NovelLevelSystemRow {
+interface NovelSettingCategoryRow {
   id: string;
   work_id: string;
   name: string;
+  color: string;
+  kind: string;
+  sort_order: number;
+  note: string;
+  sub_levels: number;
+  carry_dir: string;
+  sub_pattern: string;
 }
 
-interface NovelLevelRow {
+interface NovelSettingLevelRow {
   id: string;
-  system_id: string;
+  category_id: string;
   name: string;
   rank: number;
-  note: string | null;
+  aliases: string;
+  note: string;
+  sub_levels: number;
+  power: number | null;
+  parent_id: string | null;
+  seg_from: number | null;
+  seg_to: number | null;
+  /** 1.37.0：本阶专属小层命名模板；空串 = 沿用分类 */
+  sub_pattern: string;
 }
 
 /** 等级项 DTO：一次取回全部等级项后按体系分组时用得到（避免 N+1 查询） */
-interface LevelRungDto {
-  id: string;
-  name: string;
-  rank: number;
-  note?: string;
-}
-
 // ── DTO 类型（camelCase，IPC 线格式，与渲染层领域模型结构一致） ──
 
 /** 要素类型（与渲染层 types.ts 的 EntityType 保持一致，用户自建类型归 custom） */
@@ -220,11 +228,39 @@ export interface NovelLinkDto {
   note?: string;
 }
 
-export interface NovelLevelSystemDto {
+/** 设定分类下的一条等级项（DTO，渲染层直接用） */
+export interface NovelSettingLevelDto {
+  id: string;
+  categoryId: string;
+  name: string;
+  rank: number;
+  aliases: string[];
+  note: string;
+  /** 本阶小层数（行囊境界换算按它展开） */
+  subLevels: number;
+  power: number | null;
+  /** 拆分层级：非空表示派生自 parentId，占据 [segFrom, segTo] 小层段 */
+  parentId: string | null;
+  segFrom: number | null;
+  segTo: number | null;
+  /** 本阶专属小层命名模板；空串 = 沿用分类的 subPattern（1.37.0） */
+  subPattern: string;
+}
+
+/** 设定分类（DTO）：kind='realm' 的那一条即「境界体系」 */
+export interface NovelSettingCategoryDto {
   id: string;
   workId: string;
   name: string;
-  rungs: Array<{ id: string; name: string; rank: number; note?: string }>;
+  color: string;
+  kind: "realm" | "custom";
+  sortOrder: number;
+  note: string;
+  /** 进位规则 */
+  subLevels: number;
+  carryDir: "asc" | "desc";
+  subPattern: string;
+  levels: NovelSettingLevelDto[];
 }
 
 export interface NovelRecoveryDto {
@@ -238,7 +274,8 @@ export interface NovelBundleDto {
   chapters: NovelChapterDto[];
   entities: NovelEntityDto[];
   links: NovelLinkDto[];
-  levelSystems: NovelLevelSystemDto[];
+  /** 小说设定：分类 + 其下的等级序列（取代原 levelSystems） */
+  settings: NovelSettingCategoryDto[];
   notes: NovelNoteDto[];
   outlineEntries: NovelOutlineEntryDto[];
   recovery: NovelRecoveryDto | null;
@@ -295,6 +332,9 @@ const PACK_CHILD_TABLES = [
   "novel_pack_items",
   "novel_pack_skills",
   "novel_pack_attributes",
+  // 属性映射（1.35.0）：挂在 character_id 上（不是 owner_id），漏了它删作品后
+  // 映射行会一直留在库里，下次同一部书重建时按固定 id 撞主键
+  "novel_pack_mappings",
   "novel_pack_slots",
   "novel_pack_presets",
   "novel_pack_unit_systems",
@@ -339,6 +379,20 @@ function isChapterStatus(value: string): value is "draft" | "done" {
 
 function isEntryStatus(value: string): value is "open" | "resolved" {
   return value === "open" || value === "resolved";
+}
+
+/** 设定分类的默认小层命名（{n} 为层号占位符） */
+export const DEFAULT_SUB_PATTERN = "第{n}层";
+
+/** 设定分类的默认色点 */
+export const DEFAULT_CATEGORY_COLOR = "#5B8DEF";
+
+function isSettingKind(value: string): value is "realm" | "custom" {
+  return value === "realm" || value === "custom";
+}
+
+function isCarryDir(value: string): value is "asc" | "desc" {
+  return value === "asc" || value === "desc";
 }
 
 function setConfig(key: string, value: string): void {
@@ -566,23 +620,23 @@ export function registerNovelHandlers(): void {
       );
       dbRun("DELETE FROM novel_entities WHERE work_id = ?", [id]);
 
+      // 设定：先摘「当前境界」关联，再删等级项，最后删分类。
+      // to_type='level' 现在指向 novel_setting_levels.id，级联口径与旧等级表一致。
       dbRun(
-        `DELETE FROM novel_level_conversions
-          WHERE from_level_id IN (
-            SELECT id FROM novel_levels
-             WHERE system_id IN (SELECT id FROM novel_level_systems WHERE work_id = ?)
-          ) OR to_level_id IN (
-            SELECT id FROM novel_levels
-             WHERE system_id IN (SELECT id FROM novel_level_systems WHERE work_id = ?)
-          )`,
-        [id, id],
-      );
-      dbRun(
-        `DELETE FROM novel_levels
-          WHERE system_id IN (SELECT id FROM novel_level_systems WHERE work_id = ?)`,
+        `DELETE FROM novel_links
+          WHERE to_type = 'level'
+            AND to_id IN (
+              SELECT id FROM novel_setting_levels
+               WHERE category_id IN (SELECT id FROM novel_setting_categories WHERE work_id = ?)
+            )`,
         [id],
       );
-      dbRun("DELETE FROM novel_level_systems WHERE work_id = ?", [id]);
+      dbRun(
+        `DELETE FROM novel_setting_levels
+          WHERE category_id IN (SELECT id FROM novel_setting_categories WHERE work_id = ?)`,
+        [id],
+      );
+      dbRun("DELETE FROM novel_setting_categories WHERE work_id = ?", [id]);
 
       // 行囊（CharacterPack）：漏掉这一整棵会留下永远查不到也删不掉的孤儿 ——
       // pack 角色只按作品内部拖拽 narrative 访问，作品没了就再无任何入口。
@@ -678,9 +732,9 @@ function seedTemplateBook(): {
     dbRun("DELETE FROM novel_outline_entries");
     dbRun("DELETE FROM novel_links");
     dbRun("DELETE FROM novel_entities");
-    dbRun("DELETE FROM novel_level_conversions");
-    dbRun("DELETE FROM novel_levels");
-    dbRun("DELETE FROM novel_level_systems");
+    dbRun("DELETE FROM novel_setting_levels");
+    dbRun("DELETE FROM novel_setting_categories");
+    // 设定模板刻意**不清**：它不按作品隔离，存在的意义就是换书复用
     // 行囊（CharacterPack）随作品一起清空：作品 id 会重建，行囊角色留着会成孤儿
     // 清单与 PACK_CHILD_TABLES 同源，避免「清库漏一张、级联漏一张」各自漂移
     dbRun("DELETE FROM novel_pack_modifiers");
@@ -750,24 +804,40 @@ function seedTemplateBook(): {
         [link.id, link.fromType, link.fromId, link.toType, link.toId, link.relation, null],
       );
     }
-    for (const system of template.levelSystems) {
-      dbRun("INSERT INTO novel_level_systems (id, work_id, name) VALUES (?, ?, ?)", [
-        system.id,
-        template.workId,
-        system.name,
-      ]);
-      for (const rung of system.rungs) {
+    for (const category of template.settings) {
+      dbRun(
+        `INSERT INTO novel_setting_categories
+           (id, work_id, name, color, kind, sort_order, note, sub_levels, carry_dir, sub_pattern)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          category.id,
+          template.workId,
+          category.name,
+          category.color ?? DEFAULT_CATEGORY_COLOR,
+          category.kind ?? "custom",
+          category.sortOrder ?? 1,
+          category.note ?? "",
+          category.subLevels ?? 1,
+          category.carryDir ?? "asc",
+          category.subPattern ?? DEFAULT_SUB_PATTERN,
+        ],
+      );
+      for (const level of category.levels) {
         dbRun(
-          `INSERT INTO novel_levels (id, system_id, name, rank, note, sub_levels, power)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO novel_setting_levels
+             (id, category_id, name, rank, aliases, note, sub_levels, power,
+              parent_id, seg_from, seg_to, sub_pattern)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?)`,
           [
-            rung.id,
-            system.id,
-            rung.name,
-            rung.rank,
-            rung.note ?? null,
-            rung.subLevels ?? 1,
-            rung.power ?? null,
+            level.id,
+            category.id,
+            level.name,
+            level.rank,
+            JSON.stringify(level.aliases ?? []),
+            level.note ?? "",
+            level.subLevels ?? 1,
+            level.power ?? null,
+            typeof level.subPattern === "string" ? level.subPattern : "",
           ],
         );
       }
@@ -821,6 +891,22 @@ function seedTemplateBook(): {
           attribute.decimals,
           attribute.unit,
           attribute.sortOrder,
+        ],
+      );
+    }
+    for (const mapping of pack.mappings) {
+      dbRun(
+        `INSERT INTO novel_pack_mappings
+           (id, character_id, source_attr_id, target_attr_id, rate, note, sort_order)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [
+          mapping.id,
+          pack.character.id,
+          mapping.sourceAttrId,
+          mapping.targetAttrId,
+          mapping.rate,
+          mapping.note,
+          mapping.sortOrder,
         ],
       );
     }
@@ -982,29 +1068,43 @@ ipcMain.handle("novel-editor-reset-template", () => seedTemplateBook());
     );
     const links = (dbAll("SELECT * FROM novel_links") as NovelLinkRow[]).map(toLinkDto);
 
-    // 等级项一次取回后在 JS 分组（每个体系一条 SQL 会变成 N+1：
-    // 作品一多就是几十次 prepare）
-    const levelRows = dbAll(
-      "SELECT * FROM novel_levels ORDER BY system_id, rank",
-    ) as NovelLevelRow[];
-    const rungsBySystem = new Map<string, LevelRungDto[]>();
-    for (const level of levelRows) {
-      const list = rungsBySystem.get(level.system_id) ?? [];
+    // 设定：等级项一次取回后在 JS 分组（每个分类一条 SQL 会变成 N+1）
+    const settingLevelRows = dbAll(
+      "SELECT * FROM novel_setting_levels ORDER BY category_id, rank",
+    ) as NovelSettingLevelRow[];
+    const levelsByCategory = new Map<string, NovelSettingLevelDto[]>();
+    for (const level of settingLevelRows) {
+      const list = levelsByCategory.get(level.category_id) ?? [];
       list.push({
         id: level.id,
+        categoryId: level.category_id,
         name: level.name,
         rank: level.rank,
-        ...(level.note !== null ? { note: level.note } : {}),
+        aliases: parseAliases(level.aliases),
+        note: level.note ?? "",
+        subLevels: level.sub_levels ?? 1,
+        power: level.power,
+        parentId: level.parent_id,
+        segFrom: level.seg_from,
+        segTo: level.seg_to,
+        subPattern: level.sub_pattern ?? "",
       });
-      rungsBySystem.set(level.system_id, list);
+      levelsByCategory.set(level.category_id, list);
     }
-    const levelSystems = (dbAll(
-      "SELECT * FROM novel_level_systems",
-    ) as NovelLevelSystemRow[]).map((system) => ({
-      id: system.id,
-      workId: system.work_id,
-      name: system.name,
-      rungs: rungsBySystem.get(system.id) ?? [],
+    const settings = (
+      dbAll("SELECT * FROM novel_setting_categories ORDER BY sort_order") as NovelSettingCategoryRow[]
+    ).map((category) => ({
+      id: category.id,
+      workId: category.work_id,
+      name: category.name,
+      color: category.color,
+      kind: isSettingKind(category.kind) ? category.kind : "custom",
+      sortOrder: category.sort_order,
+      note: category.note ?? "",
+      subLevels: category.sub_levels ?? 1,
+      carryDir: isCarryDir(category.carry_dir) ? category.carry_dir : "asc",
+      subPattern: category.sub_pattern ?? DEFAULT_SUB_PATTERN,
+      levels: levelsByCategory.get(category.id) ?? [],
     }));
 
     const notes = (dbAll("SELECT * FROM novel_notes") as NovelNoteRow[]).map((row) => ({
@@ -1048,7 +1148,7 @@ ipcMain.handle("novel-editor-reset-template", () => seedTemplateBook());
       chapters,
       entities,
       links,
-      levelSystems,
+      settings,
       notes,
       outlineEntries,
       recovery,
@@ -1305,108 +1405,6 @@ ipcMain.handle("novel-editor-reset-template", () => seedTemplateBook());
     dbRun("DELETE FROM novel_outline_entries WHERE id = ?", [id]);
     return true;
   });
-
-  // ── 等级体系管理（R25 落地：此前只有读，无 CRUD） ────────────────────
-
-  // 新建体系（渲染层生成 id）
-  ipcMain.handle("novel-level-system-add", (_event, system: NovelLevelSystemDto) => {
-    const name = system.name.trim();
-    if (!name) return false;
-    dbRun("INSERT INTO novel_level_systems (id, work_id, name) VALUES (?, ?, ?)", [
-      system.id,
-      system.workId,
-      name,
-    ]);
-    return true;
-  });
-
-  // 体系重命名
-  ipcMain.handle("novel-level-system-rename", (_event, id: string, name: string) => {
-    const trimmed = name.trim();
-    if (!trimmed) return false;
-    return dbRun("UPDATE novel_level_systems SET name = ? WHERE id = ?", [trimmed, id]).changes > 0;
-  });
-
-  // 删除体系：等级项 / 转换关系 / 指向等级项的关联（当前境界）同事务级联
-  ipcMain.handle("novel-level-system-delete", (_event, id: string) => {
-    const db = getDb();
-    const apply = db.transaction(() => {
-      // 集合删除而非逐等级项循环：一个体系几十阶就是上百次 prepare + 往返。
-      // 与 novel-work-delete 的级联写法保持一致。
-      dbRun(
-        `DELETE FROM novel_level_conversions
-          WHERE from_level_id IN (SELECT id FROM novel_levels WHERE system_id = ?)
-             OR to_level_id  IN (SELECT id FROM novel_levels WHERE system_id = ?)`,
-        [id, id],
-      );
-      dbRun(
-        `DELETE FROM novel_links
-          WHERE to_type = 'level'
-            AND to_id IN (SELECT id FROM novel_levels WHERE system_id = ?)`,
-        [id],
-      );
-      dbRun("DELETE FROM novel_levels WHERE system_id = ?", [id]);
-      dbRun("DELETE FROM novel_level_systems WHERE id = ?", [id]);
-    });
-    apply();
-    return true;
-  });
-
-  // 新建等级项：rank 取体系内最大值 + 1（追加到阶梯末尾）
-  ipcMain.handle(
-    "novel-level-add",
-    (_event, systemId: string, id: string, name: string): NovelLevelSystemDto["rungs"][number] | null => {
-      const trimmed = name.trim();
-      if (!trimmed) return null;
-      const max = dbGet("SELECT COALESCE(MAX(rank), 0) AS max FROM novel_levels WHERE system_id = ?", [
-        systemId,
-      ]) as { max: number };
-      const rank = max.max + 1;
-      dbRun("INSERT INTO novel_levels (id, system_id, name, rank) VALUES (?, ?, ?, ?)", [
-        id,
-        systemId,
-        trimmed,
-        rank,
-      ]);
-      return { id, name: trimmed, rank };
-    },
-  );
-
-  // 等级项重命名
-  ipcMain.handle("novel-level-rename", (_event, id: string, name: string) => {
-    const trimmed = name.trim();
-    if (!trimmed) return false;
-    return dbRun("UPDATE novel_levels SET name = ? WHERE id = ?", [trimmed, id]).changes > 0;
-  });
-
-  // 删除等级项：转换关系与指向它的「当前境界」关联同事务清理
-  ipcMain.handle("novel-level-delete", (_event, id: string) => {
-    const db = getDb();
-    const apply = db.transaction(() => {
-      dbRun(
-        "DELETE FROM novel_level_conversions WHERE from_level_id = ? OR to_level_id = ?",
-        [id, id],
-      );
-      dbRun("DELETE FROM novel_links WHERE to_type = 'level' AND to_id = ?", [id]);
-      dbRun("DELETE FROM novel_levels WHERE id = ?", [id]);
-    });
-    apply();
-    return true;
-  });
-
-  // 等级项排序（rank 重排，单事务）
-  ipcMain.handle(
-    "novel-level-order",
-    (_event, updates: Array<{ id: string; rank: number }>) => {
-      const db = getDb();
-      const apply = db.transaction(() => {
-        const stmt = db.prepare("UPDATE novel_levels SET rank = ? WHERE id = ?");
-        for (const update of updates) stmt.run(update.rank, update.id);
-      });
-      apply();
-      return true;
-    },
-  );
 
   // ── 书籍导入（TXT／DOCX）：选文件 + 读字节 / 解析结果单事务落库 ──────
   //

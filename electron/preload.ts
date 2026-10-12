@@ -136,21 +136,43 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('novel-outline-entry-save', entry) as Promise<boolean>,
     removeOutlineEntry: (id: string) =>
       ipcRenderer.invoke('novel-outline-entry-remove', id) as Promise<boolean>,
-    // ── 等级体系管理（R25） ──
-    levelSystemAdd: (system: unknown) =>
-      ipcRenderer.invoke('novel-level-system-add', system) as Promise<boolean>,
-    levelSystemRename: (id: string, name: string) =>
-      ipcRenderer.invoke('novel-level-system-rename', id, name) as Promise<boolean>,
-    levelSystemDelete: (id: string) =>
-      ipcRenderer.invoke('novel-level-system-delete', id) as Promise<boolean>,
-    levelAdd: (systemId: string, id: string, name: string) =>
-      ipcRenderer.invoke('novel-level-add', systemId, id, name) as Promise<{ id: string; name: string; rank: number } | null>,
-    levelRename: (id: string, name: string) =>
-      ipcRenderer.invoke('novel-level-rename', id, name) as Promise<boolean>,
-    levelDelete: (id: string) =>
-      ipcRenderer.invoke('novel-level-delete', id) as Promise<boolean>,
-    levelOrder: (updates: Array<{ id: string; rank: number }>) =>
-      ipcRenderer.invoke('novel-level-order', updates) as Promise<boolean>,
+    // ── 小说设定（1.36.0：取代原等级体系管理） ──
+    settingCategoryAdd: (workId: string, id: string, name: string, kind: 'realm' | 'custom', color?: string) =>
+      ipcRenderer.invoke('novel-setting-category-add', workId, id, name, kind, color) as Promise<{ id: string; kind: 'realm' | 'custom' } | null>,
+    settingCategoryUpdate: (id: string, patch: unknown) =>
+      ipcRenderer.invoke('novel-setting-category-update', id, patch) as Promise<boolean>,
+    settingCategoryDelete: (id: string) =>
+      ipcRenderer.invoke('novel-setting-category-delete', id) as Promise<boolean>,
+    settingCategoryOrder: (updates: Array<{ id: string; sortOrder: number }>) =>
+      ipcRenderer.invoke('novel-setting-category-order', updates) as Promise<boolean>,
+    /** index 为插入位置（0-based），-1 表示追加到末尾 */
+    settingLevelAdd: (categoryId: string, id: string, name: string, index: number) =>
+      ipcRenderer.invoke('novel-setting-level-add', categoryId, id, name, index) as Promise<{ id: string; rank: number } | null>,
+    /** 批量新增等级项：全部追加到末尾，返回实际插入条数（1.37.0） */
+    settingLevelBatchAdd: (categoryId: string, items: Array<{ id: string; name: string; subLevels?: number; subPattern?: string }>) =>
+      ipcRenderer.invoke('novel-setting-level-batch-add', categoryId, items) as Promise<number>,
+    settingLevelUpdate: (id: string, patch: unknown) =>
+      ipcRenderer.invoke('novel-setting-level-update', id, patch) as Promise<boolean>,
+    settingLevelDelete: (id: string) =>
+      ipcRenderer.invoke('novel-setting-level-delete', id) as Promise<boolean>,
+    settingLevelOrder: (updates: Array<{ id: string; rank: number }>) =>
+      ipcRenderer.invoke('novel-setting-level-order', updates) as Promise<boolean>,
+    settingLevelSplit: (levelId: string, segments: Array<{ name: string; from: number; to: number }>) =>
+      ipcRenderer.invoke('novel-setting-level-split', levelId, segments) as Promise<boolean>,
+    settingLevelMerge: (levelId: string) =>
+      ipcRenderer.invoke('novel-setting-level-merge', levelId) as Promise<boolean>,
+    settingExport: (workId: string) =>
+      ipcRenderer.invoke('novel-setting-export', workId) as Promise<{ version: number; exportedAt: string; categories: unknown[] }>,
+    settingImport: (workId: string, payload: unknown, mode: 'merge' | 'replace') =>
+      ipcRenderer.invoke('novel-setting-import', workId, payload, mode) as Promise<{ imported: number; skipped: number }>,
+    settingTemplateList: () =>
+      ipcRenderer.invoke('novel-setting-template-list') as Promise<Array<{ id: string; name: string; createdAt: number; categories: unknown[] }>>,
+    settingTemplateSave: (id: string, name: string, workId: string, categoryIds: string[]) =>
+      ipcRenderer.invoke('novel-setting-template-save', id, name, workId, categoryIds) as Promise<boolean>,
+    settingTemplateApply: (templateId: string, workId: string) =>
+      ipcRenderer.invoke('novel-setting-template-apply', templateId, workId) as Promise<number>,
+    settingTemplateDelete: (id: string) =>
+      ipcRenderer.invoke('novel-setting-template-delete', id) as Promise<boolean>,
     // ── 书籍导入（TXT）：主进程只负责选文件 + 读字节 / 批量落库 ──
     /** 弹文件选择框并读回字节；取消返回 null */
     importPickFile: () =>
@@ -187,9 +209,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
       /** 境界幂等写入（同一来源+关系只保留一行） */
       linkSet: (link: unknown) =>
         ipcRenderer.invoke('novel-link-set', link) as Promise<boolean>,
-      /** 等级项补列：小层数 / 战力当量（PRD §9.7.2） */
-      levelMetaSet: (id: string, meta: { subLevels?: number; power?: number | null }) =>
-        ipcRenderer.invoke('novel-level-meta-set', id, meta) as Promise<boolean>,
       /** 主角绑定读数：null 表示该作品还没建过行囊角色（右侧要素栏就不显示主角角标） */
       protagonistGet: (workId: string) =>
         ipcRenderer.invoke('novel-pack-protagonist-get', workId),

@@ -6,6 +6,7 @@ import {
   HistoryOutlined,
   LayoutOutlined,
   MenuOutlined,
+  SettingOutlined,
   ShoppingOutlined,
 } from "@ant-design/icons";
 import { SAVE_STATE_TEXT } from "../../novel-config";
@@ -44,6 +45,8 @@ interface NovelTopBarProps {
   onToggleHistory: () => void;
   /** 行囊：唤起独立行囊窗口（单实例，重复点击仅聚焦），Ctrl+Shift+B 同效 */
   onOpenPack: () => void;
+  /** 设定中心：管理本书的分类与等级序列，Ctrl+Shift+S 同效 */
+  onOpenSettings: () => void;
   /** 返回书架（书架主页接入后传入）；未传则不渲染返回按钮 */
   onBackToShelf?: () => void;
 }
@@ -78,6 +81,7 @@ export default function NovelTopBar({
   onToggleLeft,
   onToggleRight,
   onToggleSettings,
+  onOpenSettings,
   onToggleHistory,
   onOpenPack,
   onBackToShelf,
@@ -196,6 +200,15 @@ export default function NovelTopBar({
             aria-pressed={snapshotOpen}
           >
             <HistoryOutlined />
+          </Button>
+        </Tooltip>
+        <Tooltip title="小说设定（Ctrl+Shift+S）">
+          <Button
+            className="nv-topbar__icon"
+            onClick={onOpenSettings}
+            aria-label="小说设定"
+          >
+            <SettingOutlined />
           </Button>
         </Tooltip>
         {/* 与标题栏的「设置」（全局：外观/账号）区分：这里只管排版与码字偏好，

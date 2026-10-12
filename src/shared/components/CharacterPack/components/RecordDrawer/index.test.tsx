@@ -59,6 +59,7 @@ function payloadOf(partial: Record<string, unknown> = {}): string {
   return JSON.stringify({
     character: { id: "c1", workId: "w1", name: "主角", entityId: "e1", realmAt: "" },
     attributes: [],
+    mappings: [],
     slots: [],
     items: [],
     skills: [],
@@ -98,6 +99,7 @@ const currentDoc: PackDoc = {
     sortOrder: 1,
   },
   attributes: [attr({ baseValue: 100 })],
+  mappings: [],
   slots: [],
   items: [],
   skills: [],

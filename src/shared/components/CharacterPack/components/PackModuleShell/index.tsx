@@ -22,7 +22,7 @@ interface PackModuleShellProps {
  * 条件渲染会打断过渡（AGENTS.md 6.4）。
  *
  * 标题右侧可有一句派生摘要（如「12 种 · 共 46 件」）：它由外壳按窗口宽度
- * 经 context 投下来，窄档下九个模块压成九行时用来回答「这栏是不是空的」。
+ * 经 context 投下来，窄档下十个模块压成十行时用来回答「这栏是不是空的」。
  * 模块自己不需要知道它从哪来，宽 / 中档下它是空串，不占位也不改版式。
  */
 export default function PackModuleShell({

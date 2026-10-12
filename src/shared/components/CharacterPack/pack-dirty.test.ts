@@ -13,6 +13,7 @@ function doc(partial: Partial<DirtyDoc> = {}): DirtyDoc {
   return {
     character: { id: "ch1", workId: "w1", entityId: "", realmAt: "" } as DirtyDoc["character"],
     attributes: [],
+    mappings: [],
     slots: [],
     items: [],
     skills: [],
@@ -61,6 +62,20 @@ function item(id: string, name: string, qty = 1, extra: Record<string, unknown> 
  * `sortedDoc` 的 helper：给列表按 sortOrder 重排（上面 attr/item 的默认 sortOrder 都是 1，
  * 需要位置用例时显式改写）。
  */
+
+function mapping(id: string, extra: Record<string, unknown> = {}) {
+  return {
+    id,
+    characterId: "ch1",
+    sourceAttrId: "a1",
+    targetAttrId: "a2",
+    rate: 10,
+    note: "",
+    sortOrder: 1,
+    updatedAt: 0,
+    ...extra,
+  } as never;
+}
 
 describe("countNetChanges：输入框逐字编辑只算 1 处", () => {
   it("一个字段连改多次（模拟逐字输入）仍只算 1 处", () => {
@@ -229,6 +244,37 @@ describe("countNetChanges：跨类实体都要计到", () => {
     });
     // 绑定时已经写库了，算进来会让顶栏常亮一个按不掉的角标
     expect(countNetChanges(saved, cur)).toBe(0);
+  });
+});
+
+describe("countNetChanges：属性映射（1.35.0）", () => {
+  it("改系数 = 1 处；只动 updatedAt 不算", () => {
+    const saved = doc({ mappings: [mapping("pm1")] });
+    expect(countNetChanges(saved, doc({ mappings: [mapping("pm1", { rate: 100 })] }))).toBe(1);
+    // rate 没变，只是打了点
+    expect(countNetChanges(saved, doc({ mappings: [mapping("pm1", { updatedAt: 999 })] }))).toBe(0);
+  });
+
+  it("换端点 = 1 处", () => {
+    const saved = doc({ mappings: [mapping("pm1")] });
+    const cur = doc({ mappings: [mapping("pm1", { targetAttrId: "a3" })] });
+    expect(countNetChanges(saved, cur)).toBe(1);
+  });
+
+  it("新增 / 删除换算各算 1 处", () => {
+    const saved = doc({ mappings: [mapping("pm1")] });
+    expect(countNetChanges(saved, doc({ mappings: [mapping("pm1"), mapping("pm2")] }))).toBe(1);
+    expect(countNetChanges(saved, doc({ mappings: [] }))).toBe(1);
+  });
+
+  it("成员不变时拖动排序算 1 处移动（不是每行各一处）", () => {
+    const saved = doc({
+      mappings: [mapping("pm1", { sortOrder: 1 }), mapping("pm2", { sortOrder: 2 })],
+    });
+    const cur = doc({
+      mappings: [mapping("pm1", { sortOrder: 2 }), mapping("pm2", { sortOrder: 1 })],
+    });
+    expect(countNetChanges(saved, cur)).toBe(1);
   });
 });
 

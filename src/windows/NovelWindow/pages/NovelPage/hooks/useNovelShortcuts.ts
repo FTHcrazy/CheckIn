@@ -11,6 +11,8 @@ export interface NovelShortcutHandlers {
   onToggleFocus: () => void;
   /** Ctrl+Shift+B 行囊面板开关（入口独立于侧边栏） */
   onTogglePack: () => void;
+  /** Ctrl+Shift+S 设定中心（境界 / 功法 / 稀有度等序列的管理入口） */
+  onOpenSettings: () => void;
   /** Esc：按优先级关闭最上层的浮层（设置 → 行囊 → 快照 → 专注模式） */
   onEscape: () => void;
 }
@@ -45,6 +47,18 @@ export function useNovelShortcuts(handlers: NovelShortcutHandlers): void {
       if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === "b") {
         event.preventDefault();
         h.onTogglePack();
+        return;
+      }
+
+      // 必须排在裸 Ctrl+S 之前：两者都满足 ctrl+「s」，
+      // 顺序反了 Ctrl+Shift+S 会被保存吃掉，设定中心永远打不开
+      if (
+        (event.ctrlKey || event.metaKey) &&
+        event.shiftKey &&
+        event.key.toLowerCase() === "s"
+      ) {
+        event.preventDefault();
+        h.onOpenSettings();
         return;
       }
 

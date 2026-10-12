@@ -1,7 +1,7 @@
 /**
  * 行囊窗口的「分区仪表盘」布局编排（纯函数）
  *
- * 行囊从侧边栏升级为独立窗口后，九个模块不再是一条长滚动，而是按语义分栏、
+ * 行囊从侧边栏升级为独立窗口后，十个模块不再是一条长滚动，而是按语义分栏、
  * 并按窗口宽度分档降级。这里集中放**与渲染无关**的编排规则：
  * 哪个模块属于哪一栏、窄档下哪些模块要折叠、折叠行右侧那句摘要怎么算。
  *
@@ -22,7 +22,10 @@ export type PackZone = "gear" | "stats";
  * 依据是「作者改一样东西时另一只手在干什么」：
  * - 装备 / 物品 / 技能是**同一类操作**（挑一件东西、装配、开开关），放一栏，
  *   视线不需要横跨整屏；
- * - 汇总 / 属性 / 境界 / 数值 / 状态 / 备注都是**读数或定义**，放另一栏。
+ * - 汇总 / 属性 / 映射 / 境界 / 数值 / 状态 / 备注都是**读数或定义**，放另一栏。
+ *
+ * 属性映射归 stats 而不是 gear：它回答的是「这个数是怎么来的」，
+ * 与属性定义是一件事的两半（所以紧挨着属性放）。
  *
  * 用 `satisfies` 而不是注释约定：新增模块时漏登记会被类型检查直接拦下。
  */
@@ -32,6 +35,7 @@ export const PACK_ZONE_OF = {
   skills: "gear",
   summary: "stats",
   attributes: "stats",
+  mapping: "stats",
   realm: "stats",
   currency: "stats",
   status: "stats",
@@ -163,7 +167,7 @@ export function formatNumber(value: number): string {
 /**
  * 折叠行右侧的一句摘要（派生值，不是存下来的数据）。
  *
- * 窄档下九个模块压成九行，光看标题作者分不清「物品栏是不是空的」——
+ * 窄档下十个模块压成十行，光看标题作者分不清「物品栏是不是空的」——
  * 摘要就是用来回答这个的。全部取**已有的派生量**，不新增统计口径：
  * 数得出来就写，数不出来就返回空串（不编）。
  *
@@ -218,6 +222,15 @@ export function moduleSummary(
         (mod) => mod.ownerType === "status" && mod.active,
       ).length;
       return active > 0 ? `${active} 项生效` : "无生效中";
+    }
+    case "mapping": {
+      // 系数为 0 的那几条等于「停用」，别混进「N 条换算」里 —— 摘要说「3 条换算」
+      // 而面板上只有 2 条在动，作者会以为哪条坏了
+      const live = doc.mappings.filter((mapping) => mapping.rate !== 0).length;
+      if (doc.mappings.length === 0) return "暂无换算";
+      return live === doc.mappings.length
+        ? `${live} 条换算`
+        : `${live} / ${doc.mappings.length} 条换算`;
     }
     case "note": {
       const length = doc.character.note.trim().length;

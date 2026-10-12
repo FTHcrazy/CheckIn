@@ -6,12 +6,19 @@
  */
 import { formatRelativeTime as relativeTime } from "@/shared/utils/format";
 import {
+  evaluateMappings,
+  MAPPING_PROBLEM_META,
+  type MappingHit,
+  type MappingProblem,
+} from "./pack-mapping";
+import {
   CHANGED_TTL_MS,
   NATURE_META,
   OP_META,
   RARITY_META,
   type PackAttribute,
   type PackItem,
+  type PackMappingRule,
   type PackModifier,
   type PackNature,
   type PackSkill,
@@ -206,8 +213,20 @@ export interface SummaryRow {
   attrId: string;
   base: number;
   final: number;
+  /**
+   * 跑到映射那一步之前的最终值：`(base + Σadd) × (1 + Σpercent/100) × Πmul`。
+   *
+   * 它是映射的**输入基准**，也是成环时回退到的值。单独留一列而不是让界面反算，
+   * 是因为「映射前是多少」正好是作者判断换算对不对的唯一参照 —— 反算一遍就会
+   * 出现两份算式，哪天公式改了必分叉，而且是纯静默的。
+   */
+  preMapping: number;
   addPassive: number;
   addSustained: number;
+  /** 属性映射折算进来的加算合计（1.35.0）；与被动 / 持续同池，见 `computeSummary` */
+  addMapped: number;
+  /** 该属性收到的换算明细（逐条；`映射加算` 那一段的来源） */
+  mappedHits: MappingHit[];
   percentPassive: number;
   percentSustained: number;
   mulPassive: number;
@@ -235,6 +254,16 @@ export interface SummaryResult {
    * 混在一起写提示，作者会以为自己的触发条件设错了。
    */
   expired: PackModifier[];
+  /**
+   * 没生效的属性映射 → 原因（1.35.0）。
+   *
+   * 键是映射 id，与 `PackMapping.id` 同源，界面据此把警告挂回对应那一行。
+   * 放在汇总结果里而不是让面板自己再判一遍：判定要跑拓扑排序，两处各写一遍
+   * 就会出现「汇总说没算、列表说算了」的分裂。
+   */
+  mappingProblems: Map<string, MappingProblem>;
+  /** 每条生效映射的换算总量（mappingId → applied），供映射列表就地显示 */
+  mappingApplied: Map<string, number>;
   /** 参与计算的贡献条数（埋点 / 性能观测用） */
   countedCount: number;
 }
@@ -242,6 +271,8 @@ export interface SummaryResult {
 export interface SummaryInput {
   attributes: PackAttribute[];
   modifiers: PackModifier[];
+  /** 属性映射规则（1.35.0）；省略即「没有映射」，行为与引入本功能之前完全一致 */
+  mappings?: PackMappingRule[];
   /** 闸门 1：在效载体 id 集合（carrierKey 形式） */
   activeCarriers: Set<string>;
   /** 技能熟练度原始值：skillId → value */
@@ -254,12 +285,22 @@ const DEFAULT_MUL = 1;
 /**
  * 总属性汇总。
  *
- * final = (base + Σadd_被动 + Σadd_持续)
+ * final = (base + Σadd_被动 + Σadd_持续 + Σadd_映射)
  *         × (1 + (Σpercent_被动 + Σpercent_持续) / 100)
  *         × Π mul_被动 × Π mul_持续
  *
- * 被动与持续是**同一个运算池**，只在展示层分段（§9.4.2）——
+ * 被动、持续与映射是**同一个运算池**，只在展示层分段（§9.4.2）——
  * 拆成两轮乘算会算出与作者预期不符的结果，这里刻意不拆。
+ *
+ * ## 映射为什么分两段算（1.35.0）
+ *
+ * 一条映射的输入是源属性的**最终值**（含装备 / 技能 / 状态的加成，也含它自己
+ * 作为别的映射目标时得到的换算量），所以映射**不能**和效果词条挤在同一趟循环里：
+ * 那会变成「先遍历到的读基础值、后遍历到的读含加成值」，结果由 `sortOrder` 决定，
+ * 而作者看不出任何异常 —— 只是数字不对。
+ *
+ * 于是这里分两步：先把每个属性算到 `preMapping`（不含映射的最终值），
+ * 再交给 `evaluateMappings` 按依赖顺序叠加。链式（`力量→攻击→战力`）因此成立。
  */
 export function computeSummary(input: SummaryInput): SummaryResult {
   const scaling = input.scaling ?? DEFAULT_SCALING;
@@ -269,8 +310,11 @@ export function computeSummary(input: SummaryInput): SummaryResult {
       attrId: attr.id,
       base: attr.baseValue,
       final: attr.baseValue,
+      preMapping: attr.baseValue,
       addPassive: 0,
       addSustained: 0,
+      addMapped: 0,
+      mappedHits: [],
       percentPassive: 0,
       percentSustained: 0,
       mulPassive: DEFAULT_MUL,
@@ -359,16 +403,54 @@ export function computeSummary(input: SummaryInput): SummaryResult {
     }
   }
 
+  // 第一趟结算：算出每个属性「不含映射」的最终值，它就是映射的输入基准
+  const frozenAttrIds = new Set<string>();
   for (const row of rows.values()) {
+    if (row.override !== null) {
+      // 覆盖命中的属性：值到此为止（映射进来的量不改写它，见 evaluateMappings）
+      frozenAttrIds.add(row.attrId);
+      row.preMapping = roundTo(row.override, 4);
+      continue;
+    }
+    row.preMapping = roundTo(
+      (row.base + row.addPassive + row.addSustained) *
+        (1 + (row.percentPassive + row.percentSustained) / 100) *
+        row.mulPassive *
+        row.mulSustained,
+      4,
+    );
+  }
+
+  // 第二趟：映射按依赖顺序叠加（拓扑序 + 成环上报，细节都在 pack-mapping.ts）
+  const mappings = input.mappings ?? [];
+  const evaluation = evaluateMappings({
+    attrOrder: input.attributes.map((attr) => attr.id),
+    baseFinal: new Map([...rows.values()].map((row) => [row.attrId, row.preMapping])),
+    mappings,
+    frozenAttrIds,
+    idOf: (mapping) => mapping.id ?? `${mapping.sourceAttrId}->${mapping.targetAttrId}`,
+    sortOrderOf: (mapping) => mapping.sortOrder ?? 0,
+  });
+  const mappingApplied = new Map<string, number>();
+  for (const hits of evaluation.hits.values()) {
+    for (const hit of hits) {
+      mappingApplied.set(hit.mappingId, hit.applied);
+    }
+  }
+
+  for (const row of rows.values()) {
+    row.addMapped = roundTo(evaluation.addMapped.get(row.attrId) ?? 0, 4);
+    row.mappedHits = evaluation.hits.get(row.attrId) ?? [];
     if (row.override !== null) {
       row.final = roundTo(row.override, 4);
       continue;
     }
-    const sumAdd = row.addPassive + row.addSustained;
-    const sumPercent = row.percentPassive + row.percentSustained;
-    const product = row.mulPassive * row.mulSustained;
+    // 换算量进的是**加算池**：目标属性上的百分比与乘算对它一样生效（所以在乘算之前加）
     row.final = roundTo(
-      (row.base + sumAdd) * (1 + sumPercent / 100) * product,
+      (row.base + row.addPassive + row.addSustained + row.addMapped) *
+        (1 + (row.percentPassive + row.percentSustained) / 100) *
+        row.mulPassive *
+        row.mulSustained,
       4,
     );
   }
@@ -380,6 +462,8 @@ export function computeSummary(input: SummaryInput): SummaryResult {
     casts,
     eventOnly,
     expired,
+    mappingProblems: evaluation.problems,
+    mappingApplied,
     countedCount,
   };
 }
@@ -520,6 +604,14 @@ export interface HypotheticalInput {
   items: PackItem[];
   skills: PackSkill[];
   modifiers: PackModifier[];
+  /**
+   * 属性映射也必须在场（1.35.0）。
+   *
+   * 换装预览最容易漏的就是它：穿上「+20 力量」的剑，血量会因为「每 1 力量 → 生命 +100」
+   * 跟着涨 2000。少了这一项，预览会说「只涨了力量」，装上之后血量也变了 ——
+   * 正是本函数注释里最怕的那种偏差。
+   */
+  mappings: PackMappingRule[];
   proficiency: Record<string, number>;
   scaling?: ProficiencyScaling;
 }
@@ -609,6 +701,7 @@ export function computeHypotheticalSummary(
   return computeSummary({
     attributes: next.attributes,
     modifiers: next.modifiers,
+    mappings: next.mappings,
     activeCarriers: buildActiveCarriersFrom(next),
     proficiency: next.proficiency,
     scaling: next.scaling,
@@ -949,6 +1042,7 @@ export function countRecentChanges(
 export type PackExportKey =
   | "summary"
   | "attributes"
+  | "mapping"
   | "equipment"
   | "inventory"
   | "skills"
@@ -967,6 +1061,8 @@ export interface PackExportContext {
   items: PackItem[];
   skills: PackSkill[];
   modifiers: PackModifier[];
+  /** 属性映射规则（1.35.0） */
+  mappings: PackMappingRule[];
   summary: SummaryResult;
   /** 熟练度档位（技能表用；为空则不出「档位」这一列） */
   proficiencyLevels?: ThresholdLevel[];
@@ -1010,13 +1106,28 @@ function attrNameOf(attributes: PackAttribute[], id: string): string {
   return attributes.find((attr) => attr.id === id)?.name ?? "(已删除的属性)";
 }
 
-/** 总属性汇总：基础值 → 总览值，并按被动 / 持续分列（与 §9.4.2 的分段口径一致） */
+/** 数值转文本：收掉浮点尾巴，且不补零（`100` / `0.5` / `0.3333`） */
+function numText(value: number): string {
+  return String(roundTo(value, 4));
+}
+
+/** 总属性汇总：基础值 → 总览值，并按被动 / 持续 / 映射分列（与 §9.4.2 的分段口径一致） */
 function summaryTable(ctx: PackExportContext): PackExportTable {
   const ordered = ctx.attributes
     .map((attr) => ({ attr, row: ctx.summary.byAttr.get(attr.id) }))
     .filter((entry): entry is { attr: PackAttribute; row: SummaryRow } => Boolean(entry.row));
   return {
-    headers: ["属性", "基础值", "总览值", "被动加算", "持续加算", "百分比", "乘算", "单位"],
+    headers: [
+      "属性",
+      "基础值",
+      "总览值",
+      "被动加算",
+      "持续加算",
+      "映射加算",
+      "百分比",
+      "乘算",
+      "单位",
+    ],
     rows: ordered.map(({ attr, row }) => {
       const decimals = attr.decimals ?? 0;
       const percent = (row.percentPassive || 0) + (row.percentSustained || 0);
@@ -1027,6 +1138,7 @@ function summaryTable(ctx: PackExportContext): PackExportTable {
         formatAttrValue(row.final, decimals),
         row.addPassive ? formatAttrValue(row.addPassive, decimals) : DASH,
         row.addSustained ? formatAttrValue(row.addSustained, decimals) : DASH,
+        row.addMapped ? formatAttrValue(row.addMapped, decimals) : DASH,
         percent ? `${percent > 0 ? "+" : ""}${formatAttrValue(percent, 1)}%` : DASH,
         mul !== 1 ? `×${formatAttrValue(mul, 2)}` : DASH,
         attr.unit || DASH,
@@ -1048,6 +1160,35 @@ function attributesTable(ctx: PackExportContext): PackExportTable {
         String(attr.decimals ?? 0),
       ]),
   };
+}
+
+/**
+ * 属性映射：一行一条换算规则。
+ *
+ * 「当前换算」导的是**这一次算出来的量**（不是一个孤立系数）—— 作者要抄进正文的
+ * 是「这套装备下加了多少力量、折合多少生命」，只给系数等于让他自己再算一遍。
+ * 没生效的规则同样列出：在导出稿里删掉它们的人不会知道自己删了什么。
+ */
+function mappingTable(ctx: PackExportContext): PackExportTable {
+  const rows = [...ctx.mappings]
+    .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+    .map((mapping) => {
+      const problem = mapping.id ? ctx.summary.mappingProblems.get(mapping.id) : undefined;
+      const applied = mapping.id ? ctx.summary.mappingApplied.get(mapping.id) : undefined;
+      const status = problem
+        ? MAPPING_PROBLEM_META[problem].label
+        : mapping.rate === 0
+          ? "未启用（换算率为 0）"
+          : "生效";
+      return [
+        attrNameOf(ctx.attributes, mapping.sourceAttrId),
+        attrNameOf(ctx.attributes, mapping.targetAttrId),
+        `每 1 点 +${numText(mapping.rate)}`,
+        problem ? DASH : numText(applied ?? 0),
+        status,
+      ];
+    });
+  return { headers: ["源属性", "目标属性", "换算率", "当前换算", "状态"], rows };
 }
 
 /**
@@ -1191,6 +1332,8 @@ export function buildPackTable(
       return summaryTable(ctx);
     case "attributes":
       return attributesTable(ctx);
+    case "mapping":
+      return mappingTable(ctx);
     case "equipment":
       return equipmentTable(ctx);
     case "inventory":

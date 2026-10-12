@@ -6,6 +6,7 @@ import CloseGuardModal from "./components/CloseGuardModal";
 import EffectEditor from "./components/EffectEditor";
 import SummaryModule from "./components/SummaryModule";
 import AttributesModule from "./components/AttributesModule";
+import MappingModule from "./components/MappingModule";
 import EquipmentModule from "./components/EquipmentModule";
 import InventoryModule from "./components/InventoryModule";
 import SkillsModule from "./components/SkillsModule";
@@ -44,6 +45,7 @@ type ModuleView = ComponentType<{ api: PackPanelApi }>;
 const MODULE_VIEWS: Record<PackModuleKey, ModuleView> = {
   summary: SummaryModule,
   attributes: AttributesModule,
+  mapping: MappingModule,
   equipment: EquipmentModule,
   inventory: InventoryModule,
   skills: SkillsModule,
@@ -56,9 +58,9 @@ const MODULE_VIEWS: Record<PackModuleKey, ModuleView> = {
 /**
  * 给模块视图包一层「生效折叠态」。
  *
- * 为什么不让九个模块各自去算：折叠真值现在有两个来源 —— 作者的显式偏好
+ * 为什么不让十个模块各自去算：折叠真值现在有两个来源 —— 作者的显式偏好
  * （`prefs.collapsed`）与窗口宽度（窄档下未表态的次要模块自动折叠）。若每个
- * 模块自己调 `isAutoCollapsed`，规则一改就要改九处，且九个模块都得知道
+ * 模块自己调 `isAutoCollapsed`，规则一改就要改十处，且十个模块都得知道
  * 「当前窗口多宽」这件与它们无关的事。
  *
  * 这里用一层 api 代理把「(模块键, 档位) → 是否折叠」收敛到唯一入口：

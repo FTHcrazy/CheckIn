@@ -942,6 +942,11 @@ function initializeDataDb(db: Database) {
 > 从 `checkin.db` 拆出为独立的 `novel.db`），已按本节第 4 条改回 `compat`。
 > 此后 novel 域的表结构变更重新受 §6.5 约束——增量迁移写在 `electron/novel-db.ts`
 > 自己的建表函数里，不再动 `electron/db.ts`。
+> 1.36.0 在 `refactor` 下完成了「小说设定」重构：删除 `novel_level_systems` /
+> `novel_levels` / `novel_level_conversions`，改由 `novel_setting_categories` +
+> `novel_setting_levels` 承载（旧等级数据不保留，见 CHANGELOG 1.36.0），
+> 旧弹框 `LevelSystemManager` 已迁移为 `SettingCenter` + `SettingQuickPanel`，
+> 现按本节第 4 条改回 `compat`。
 
 合法值只有两个：
 

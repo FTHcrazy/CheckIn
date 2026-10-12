@@ -52,6 +52,11 @@ describe("分区映射（PackZone）", () => {
     expect(PACK_ZONE_OF.skills).toBe("gear");
   });
 
+  it("映射跟属性同栏（它解释的是属性读数，不是「挑装备」）", () => {
+    expect(PACK_ZONE_OF.mapping).toBe(PACK_ZONE_OF.attributes);
+    expect(PACK_ZONE_OF.mapping).toBe("stats");
+  });
+
   it("两栏各有中文眉标，且互不相同", () => {
     expect(PACK_ZONE_LABEL.gear).toBeTruthy();
     expect(PACK_ZONE_LABEL.stats).toBeTruthy();
@@ -123,7 +128,15 @@ describe("isAutoCollapsed", () => {
   });
 
   it("窄档下未表态的次要模块默认折叠（这就是「自动折叠成标题行」）", () => {
-    const secondary: PackModuleKey[] = ["equipment", "inventory", "skills", "currency", "status", "note"];
+    const secondary: PackModuleKey[] = [
+      "equipment",
+      "inventory",
+      "skills",
+      "mapping",
+      "currency",
+      "status",
+      "note",
+    ];
     for (const key of secondary) {
       expect(isCorePackModule(key)).toBe(false);
       expect(isAutoCollapsed(key, "narrow", {})).toBe(true);
@@ -166,12 +179,14 @@ describe("packWidthTier", () => {
   });
 });
 
-/** 造一份最小的 PackDoc，只填 moduleSummary 会用到的字段 */function docWith(overrides: {
+/** 造一份最小的 PackDoc，只填 moduleSummary 会用到的字段 */
+function docWith(overrides: {
   slots?: Array<{ equippedSlotId?: string }>;
   items?: Array<{ qty: number; equippedSlotId?: string }>;
   skills?: Array<{ enabled: boolean }>;
   modifiers?: Array<{ ownerType: string; active: boolean }>;
   unitSystems?: Array<{ config: string }>;
+  mappings?: Array<{ rate: number }>;
   note?: string;
 }) {
   return {
@@ -180,6 +195,7 @@ describe("packWidthTier", () => {
     skills: overrides.skills ?? [],
     modifiers: overrides.modifiers ?? [],
     unitSystems: overrides.unitSystems ?? [],
+    mappings: overrides.mappings ?? [],
     character: { note: overrides.note ?? "" },
   } as never;
 }
@@ -270,6 +286,14 @@ describe("moduleSummary", () => {
 
   it("备注：报字数（去首尾空白后）", () => {
     expect(moduleSummary("note", docWith({ note: "  记得带干粮  " }))).toBe("5 字");
+  });
+
+  it("映射：只数系数非 0 的（系数 0 = 停用，混进来会显得「哪条坏了」）", () => {
+    expect(moduleSummary("mapping", docWith({ mappings: [] }))).toBe("暂无换算");
+    expect(moduleSummary("mapping", docWith({ mappings: [{ rate: 1 }, { rate: 2 }] }))).toBe("2 条换算");
+    // 有停用的才写成 `生效 / 总数`
+    expect(moduleSummary("mapping", docWith({ mappings: [{ rate: 1 }, { rate: 0 }] }))).toBe("1 / 2 条换算");
+    expect(moduleSummary("mapping", docWith({ mappings: [{ rate: 0 }] }))).toBe("0 / 1 条换算");
   });
 
   it("备注空白时说「空白」", () => {

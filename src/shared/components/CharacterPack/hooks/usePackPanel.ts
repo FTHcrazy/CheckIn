@@ -67,6 +67,7 @@ import {
   type PackAttribute,
   type PackItem,
   type PackLayout,
+  type PackMapping,
   type PackModuleKey,
   type PackModuleState,
   type PackModifier,
@@ -342,6 +343,7 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
       computeSummary({
         attributes: doc?.attributes ?? [],
         modifiers: doc?.modifiers ?? [],
+        mappings: doc?.mappings ?? [],
         activeCarriers,
         proficiency,
       }),
@@ -356,6 +358,9 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
       items: doc?.items ?? [],
       skills: doc?.skills ?? [],
       modifiers: doc?.modifiers ?? [],
+      // 映射必须在场：穿上「+20 力量」的剑，气血会因为「根骨/力量 → 气血」
+      // 跟着涨 —— 少了它，预览与装上之后的总属性就对不上了
+      mappings: doc?.mappings ?? [],
       proficiency,
     }),
     [doc, proficiency],
@@ -543,6 +548,7 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
         items: doc?.items ?? [],
         skills: doc?.skills ?? [],
         modifiers: doc?.modifiers ?? [],
+        mappings: doc?.mappings ?? [],
         summary,
         proficiencyLevels,
         currency: currencyLevels.length
@@ -955,7 +961,13 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
     [callMutate],
   );
 
-  /** 删除属性：相关加成词条一并清理（B-1 验收点），返回被清理条数 */
+  /**
+   * 删除属性：相关加成词条与属性映射一并清理（B-1 验收点），返回被清理的加成条数。
+   *
+   * 映射**两端都指向属性**，任一端落在被删的属性上就整条清掉 —— 留着的话汇总会给它
+   * 标一句「属性已删除」，作者还得自己一条条找出来删。`countMappingsOfAttribute`
+   * 会在确认框里把这件事说清楚，所以这里是「说好了再删」，不是静默改动。
+   */
   const removeAttribute = useCallback(
     (id: string): number => {
       let removed = 0;
@@ -965,6 +977,9 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
           ...current,
           attributes: current.attributes.filter((attr) => attr.id !== id),
           modifiers: current.modifiers.filter((mod) => mod.targetAttrId !== id),
+          mappings: current.mappings.filter(
+            (mapping) => mapping.sourceAttrId !== id && mapping.targetAttrId !== id,
+          ),
         };
       });
       return removed;
@@ -975,6 +990,15 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
   const countModifiersOfAttribute = useCallback(
     (id: string): number =>
       (doc?.modifiers ?? []).filter((mod) => mod.targetAttrId === id).length,
+    [doc],
+  );
+
+  /** 删属性时会被连带清掉的映射条数（确认框要如实说明） */
+  const countMappingsOfAttribute = useCallback(
+    (id: string): number =>
+      (doc?.mappings ?? []).filter(
+        (mapping) => mapping.sourceAttrId === id || mapping.targetAttrId === id,
+      ).length,
     [doc],
   );
 
@@ -1026,6 +1050,90 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
       showToast(`已套用「${templateName}」属性模板（${template.length} 项）`, "success");
     },
     [callMutate, showToast],
+  );
+
+  // ── 属性映射（M3，1.35.0） ──
+
+  /**
+   * 新增一条换算。
+   *
+   * 默认给一对**不同的**属性（源取第一条，目标取第一条不是源的）—— 否则新行一出现
+   * 就带着「源与目标相同」的警告，用户第一眼看到的就是一个错误。
+   * 属性不足两条时返回空串：没有「另一条属性」可折算，调用方据此给提示而不是
+   * 造出一条必然无效的记录。
+   */
+  const addMapping = useCallback(
+    (partial: Partial<PackMapping> = {}): string => {
+      const current = docRef.current;
+      if (!current || current.attributes.length < 2) return "";
+      const sourceAttrId = partial.sourceAttrId ?? current.attributes[0].id;
+      const targetAttrId =
+        partial.targetAttrId ??
+        current.attributes.find((attr) => attr.id !== sourceAttrId)?.id ??
+        "";
+      if (!targetAttrId || sourceAttrId === targetAttrId) return "";
+      const id = createNovelId("pm");
+      callMutate((doc0) => ({
+        ...doc0,
+        mappings: [
+          ...doc0.mappings,
+          {
+            id,
+            characterId: doc0.character.id,
+            sourceAttrId,
+            targetAttrId,
+            // 默认 1：系数 0 在本功能里等于「停用」，不该拿它当新行的初值
+            rate: partial.rate ?? 1,
+            note: partial.note ?? "",
+            sortOrder: doc0.mappings.length + 1,
+            updatedAt: Date.now(),
+          },
+        ],
+      }));
+      return id;
+    },
+    [callMutate],
+  );
+
+  const updateMapping = useCallback(
+    (id: string, patch: Partial<PackMapping>) => {
+      callMutate((current) => ({
+        ...current,
+        mappings: current.mappings.map((mapping) =>
+          mapping.id === id ? { ...mapping, ...patch, updatedAt: Date.now() } : mapping,
+        ),
+      }));
+    },
+    [callMutate],
+  );
+
+  const removeMapping = useCallback(
+    (id: string) => {
+      callMutate((current) => ({
+        ...current,
+        mappings: current.mappings.filter((mapping) => mapping.id !== id),
+      }));
+    },
+    [callMutate],
+  );
+
+  const reorderMappings = useCallback(
+    (orderedIds: string[]) => {
+      callMutate((current) => ({
+        ...current,
+        mappings: current.mappings.map((mapping) => {
+          const index = orderedIds.indexOf(mapping.id);
+          return index < 0 ? mapping : { ...mapping, sortOrder: index + 1 };
+        }),
+      }));
+    },
+    [callMutate],
+  );
+
+  /** 按 sortOrder 排好的映射列表：映射模块与导出都读它，顺序只有这一个产出点 */
+  const mappings = useMemo(
+    () => [...(doc?.mappings ?? [])].sort((a, b) => a.sortOrder - b.sortOrder),
+    [doc],
   );
 
   // ── 装备部位（M2） ──
@@ -2062,6 +2170,7 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
     statusModifiers,
     activeCarriers,
     summary,
+    mappings,
     load,
     previewEquipDeltas,
     estimateOn,
@@ -2091,9 +2200,14 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
     updateAttribute,
     removeAttribute,
     countModifiersOfAttribute,
+    countMappingsOfAttribute,
     reorderAttributes,
     renameAttributeGroup,
     applyAttrTemplate,
+    addMapping,
+    updateMapping,
+    removeMapping,
+    reorderMappings,
     addEstimate,
     updateEstimate,
     removeEstimate,

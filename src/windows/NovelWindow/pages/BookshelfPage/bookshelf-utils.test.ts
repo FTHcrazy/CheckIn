@@ -27,7 +27,7 @@ function makeBundle(overrides?: Partial<NovelBundleDTO>): NovelBundleDTO {
     chapters: [],
     entities: [],
     links: [],
-    levelSystems: [],
+    settings: [],
     notes: [],
     outlineEntries: [],
     recovery: null,

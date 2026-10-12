@@ -51,6 +51,7 @@ const doc: PackDoc = {
     sortOrder: 1,
   },
   attributes: [],
+  mappings: [],
   slots: [],
   items: [item],
   skills: [],

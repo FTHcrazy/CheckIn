@@ -1,0 +1,120 @@
+/**
+ * 属性映射：一行一条「源 → 目标」的换算，行内改系数、行尾报折算量。
+ *
+ * 两段式（换算行 + 读数行）而不是挤成一行：一条换算最少要「源选择器 +
+ * 目标选择器 + 系数 + 折算量 + 三枚操作按钮」，340px 宽的面板里一行放不下。
+ */
+.cpk-map {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+
+  &__item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 6px 7px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-item);
+    background: var(--app-surface-alt);
+
+    /* 左侧色条：一眼看出这条换算当前是什么状态（生效 / 停用 / 算不出来） */
+    &.is-value {
+      border-left: 3px solid var(--app-accent-blue);
+    }
+
+    &.is-off {
+      border-left: 3px solid var(--app-text-disabled);
+    }
+
+    &.is-problem {
+      border-left: 3px solid var(--app-warning);
+    }
+  }
+
+  &__row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+
+    /* ⚠️ 两个选择器必须能一起压缩：写死宽度会在窄档下把行尾按钮挤出容器
+       （`overflow-x: hidden` 藏得住滚动条，藏不住 focus-scroll） */
+    .ant-select {
+      min-width: 0;
+    }
+  }
+
+  &__attr {
+    flex: 1 1 0;
+  }
+
+  &__arrow {
+    flex: none;
+    font-size: 12px;
+    line-height: 1;
+    color: var(--app-text-muted);
+  }
+
+  &__ops {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0;
+  }
+
+  &__calc {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  &__rateLabel {
+    flex: none;
+    font-size: 12px;
+    color: var(--app-text-secondary-strong);
+  }
+
+  &__rate.ant-input-number {
+    flex: none;
+    width: 72px;
+    font-size: 12px;
+  }
+
+  /* 折算量 / 停用 / 算不出来的原因。语义色 pill 惯例：弱底 + 同色描边 + 同色文字
+     —— 只靠文字色会被行底色吃掉，只靠底色在浅色主题下又与面板底分不开。 */
+  &__readout {
+    flex: 1;
+    min-width: 0;
+    padding: 0 6px;
+    border: 1px solid transparent;
+    border-radius: var(--app-radius-pill);
+    font-size: 12px;
+    line-height: 16px;
+    color: var(--app-text-secondary-strong);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+
+    &.is-value {
+      background: var(--app-accent-blue-weak);
+      border-color: var(--app-accent-blue);
+      color: var(--app-accent-blue);
+    }
+
+    &.is-off {
+      color: var(--app-text-disabled);
+    }
+
+    &.is-problem {
+      background: var(--app-warning-weak);
+      border-color: var(--app-warning);
+      color: var(--app-warning);
+    }
+  }
+}

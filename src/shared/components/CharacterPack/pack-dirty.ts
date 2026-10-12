@@ -35,7 +35,16 @@ import type { PackDoc } from "./hooks/usePackData";
 /** 一份可比较的文档切片（`PackDoc` 与草稿 payload 都满足） */
 export type DirtyDoc = Pick<
   PackDoc,
-  "character" | "attributes" | "slots" | "items" | "skills" | "modifiers" | "unitSystems" | "presets" | "realmLink"
+  | "character"
+  | "attributes"
+  | "mappings"
+  | "slots"
+  | "items"
+  | "skills"
+  | "modifiers"
+  | "unitSystems"
+  | "presets"
+  | "realmLink"
 >;
 
 /** 逐类实体：id 提取 + 实质字段序列化 */
@@ -65,6 +74,13 @@ function stripTouch<T extends { updatedAt?: number }>(item: T): Record<string, u
 const SPECS: Array<EntitySpec<never>> = [
   {
     list: (doc) => doc.attributes as never[],
+    id: (item: never) => (item as { id: string }).id,
+    signature: (item: never) => JSON.stringify(stripTouch(item as { updatedAt?: number })),
+  },
+  {
+    // 属性映射（1.35.0）：改系数 / 换端点 / 拖动排序都要能标脏。
+    // 它带 `updatedAt`（本章变动角标），所以必须走 stripTouch 剥掉打点字段。
+    list: (doc) => doc.mappings as never[],
     id: (item: never) => (item as { id: string }).id,
     signature: (item: never) => JSON.stringify(stripTouch(item as { updatedAt?: number })),
   },

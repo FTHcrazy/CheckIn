@@ -119,11 +119,98 @@ export interface NovelLinkDTO {
   note?: string
 }
 
-export interface NovelLevelSystemDTO {
+/** 设定分类下的一条等级项 */
+export interface NovelSettingLevelDTO {
+  id: string
+  categoryId: string
+  name: string
+  rank: number
+  /** 别名：正文里同一阶的其它叫法，一致性检查靠它归并 */
+  aliases: string[]
+  note: string
+  /** 本阶小层数 */
+  subLevels: number
+  /** 战力当量（可空） */
+  power: number | null
+  /** 拆分层级：非空表示派生自 parentId，占据 [segFrom, segTo] 小层段 */
+  parentId: string | null
+  segFrom: number | null
+  segTo: number | null
+  /** 本阶专属小层命名模板；空串 = 沿用分类的 subPattern（1.37.0） */
+  subPattern: string
+}
+
+/** 设定分类：kind='realm' 的那一条即「境界体系」 */
+export interface NovelSettingCategoryDTO {
   id: string
   workId: string
   name: string
-  rungs: Array<{ id: string; name: string; rank: number; note?: string }>
+  color: string
+  kind: 'realm' | 'custom'
+  sortOrder: number
+  note: string
+  /** 进位规则 */
+  subLevels: number
+  /** asc 由低到高；desc 由高到低（承载「九品 → 一品」这类倒序序列） */
+  carryDir: 'asc' | 'desc'
+  subPattern: string
+  levels: NovelSettingLevelDTO[]
+}
+
+export interface NovelSettingCategoryPatch {
+  name?: string
+  color?: string
+  note?: string
+  subLevels?: number
+  carryDir?: 'asc' | 'desc'
+  subPattern?: string
+  /** 切换分类种类。设为 realm 时主进程保证唯一：同作品原境界体系自动降级为 custom */
+  kind?: 'realm' | 'custom'
+}
+
+export interface NovelSettingLevelPatch {
+  name?: string
+  aliases?: string[]
+  note?: string
+  subLevels?: number
+  power?: number | null
+  /** 本阶专属小层命名模板；空串 = 沿用分类（1.37.0） */
+  subPattern?: string
+}
+
+/** 导入导出的分类快照（去掉 workId，便于跨作品搬运） */
+export interface NovelSettingSnapshot {
+  name: string
+  color: string
+  kind: 'realm' | 'custom'
+  sortOrder: number
+  note: string
+  subLevels: number
+  carryDir: 'asc' | 'desc'
+  subPattern: string
+  levels: Array<{
+    name: string
+    rank: number
+    aliases: string[]
+    note: string
+    subLevels: number
+    power: number | null
+    /** 本阶专属小层命名模板；空串 = 沿用分类。旧版快照缺省按空串处理 */
+    subPattern: string
+  }>
+}
+
+export interface NovelSettingExportPayload {
+  version: number
+  exportedAt: string
+  categories: NovelSettingSnapshot[]
+}
+
+export interface NovelSettingTemplateDTO {
+  id: string
+  name: string
+  createdAt: number
+  categories: NovelSettingSnapshot[]
 }
 
 export interface NovelBundleDTO {
@@ -132,7 +219,8 @@ export interface NovelBundleDTO {
   chapters: NovelChapterDTO[]
   entities: NovelEntityDTO[]
   links: NovelLinkDTO[]
-  levelSystems: NovelLevelSystemDTO[]
+  /** 小说设定：分类 + 其下的等级序列（kind='realm' 即境界体系） */
+  settings: NovelSettingCategoryDTO[]
   notes: NovelNoteDTO[]
   outlineEntries: NovelOutlineEntryDTO[]
   recovery: { snapshotTime: number; deltaWords: number } | null
@@ -195,6 +283,26 @@ export interface PackAttributeDTO {
   baseValue: number
   decimals: number
   unit: string
+  sortOrder: number
+  /** 最近一次改动的落点时刻（REQ-028 本章变动角标）；0 = 从无改动记录 */
+  updatedAt: number
+}
+
+/**
+ * 属性映射（1.35.0）：每 1 点源属性 → 目标属性加算 `rate`
+ * （「加 1 点力量，血量 +100」这类成长换算）。
+ *
+ * `rate` 为 0 视同「这条关着」—— 汇总里不算，也不报警告。因此**没有 enabled**：
+ * 两种「关」（开关 + 系数 0）会让脏计数与「与本章初对比」都说不清哪个才是作者的意思。
+ */
+export interface PackMappingDTO {
+  id: string
+  characterId: string
+  sourceAttrId: string
+  targetAttrId: string
+  /** 每 1 点源属性给目标属性加多少（可小数，如 0.5） */
+  rate: number
+  note: string
   sortOrder: number
   /** 最近一次改动的落点时刻（REQ-028 本章变动角标）；0 = 从无改动记录 */
   updatedAt: number
@@ -352,6 +460,8 @@ export interface PackLevelSystemDTO {
 export interface PackBundleDTO {
   character: PackCharacterDTO | null
   attributes: PackAttributeDTO[]
+  /** 属性映射（1.35.0） */
+  mappings: PackMappingDTO[]
   slots: PackSlotDTO[]
   items: PackItemDTO[]
   skills: PackSkillDTO[]
@@ -368,6 +478,8 @@ export interface PackBundleDTO {
 export interface PackSavePayloadDTO {
   character: PackCharacterDTO
   attributes: PackAttributeDTO[]
+  /** 属性映射（1.35.0）：与属性同属「设定数据」，整文档一起走草稿与盘点 */
+  mappings: PackMappingDTO[]
   slots: PackSlotDTO[]
   items: PackItemDTO[]
   skills: PackSkillDTO[]
@@ -535,15 +647,33 @@ export interface ElectronAPI {
     moveNote: (id: string, workId: string) => Promise<boolean>
     saveOutlineEntry: (entry: NovelOutlineEntryDTO) => Promise<boolean>
     removeOutlineEntry: (id: string) => Promise<boolean>
-    // ── 等级体系管理（R25） ──
-    levelSystemAdd: (system: { id: string; workId: string; name: string }) => Promise<boolean>
-    levelSystemRename: (id: string, name: string) => Promise<boolean>
-    levelSystemDelete: (id: string) => Promise<boolean>
-    /** 向体系追加等级项，rank 由主进程按 MAX(rank)+1 分配；返回新等级项 */
-    levelAdd: (systemId: string, id: string, name: string) => Promise<{ id: string; name: string; rank: number } | null>
-    levelRename: (id: string, name: string) => Promise<boolean>
-    levelDelete: (id: string) => Promise<boolean>
-    levelOrder: (updates: Array<{ id: string; rank: number }>) => Promise<boolean>
+    // ── 小说设定（1.36.0：统一取代原等级体系管理） ──
+    /** 新建分类。作品已有境界体系时 kind='realm' 会被降级为 'custom'（每书至多一个） */
+    settingCategoryAdd: (workId: string, id: string, name: string, kind: 'realm' | 'custom', color?: string) =>
+      Promise<{ id: string; kind: 'realm' | 'custom' } | null>
+    settingCategoryUpdate: (id: string, patch: NovelSettingCategoryPatch) => Promise<boolean>
+    settingCategoryDelete: (id: string) => Promise<boolean>
+    settingCategoryOrder: (updates: Array<{ id: string; sortOrder: number }>) => Promise<boolean>
+    /** index 为插入位置（0-based）；-1 追加到末尾。原位置及之后的 rank 自动 +1 */
+    settingLevelAdd: (categoryId: string, id: string, name: string, index: number) =>
+      Promise<{ id: string; rank: number } | null>
+    /** 批量新增等级项：全部追加到末尾，返回实际插入条数（1.37.0） */
+    settingLevelBatchAdd: (categoryId: string, items: Array<{ id: string; name: string; subLevels?: number; subPattern?: string }>) =>
+      Promise<number>
+    settingLevelUpdate: (id: string, patch: NovelSettingLevelPatch) => Promise<boolean>
+    settingLevelDelete: (id: string) => Promise<boolean>
+    settingLevelOrder: (updates: Array<{ id: string; rank: number }>) => Promise<boolean>
+    /** 拆分层级：第一段复用原 id（绑定不失效），其余新建并挂 parent_id */
+    settingLevelSplit: (levelId: string, segments: Array<{ name: string; from: number; to: number }>) => Promise<boolean>
+    /** 合并：拆分的逆操作，删掉全部派生段、层段还给本体 */
+    settingLevelMerge: (levelId: string) => Promise<boolean>
+    settingExport: (workId: string) => Promise<NovelSettingExportPayload>
+    settingImport: (workId: string, payload: unknown, mode: 'merge' | 'replace') =>
+      Promise<{ imported: number; skipped: number }>
+    settingTemplateList: () => Promise<NovelSettingTemplateDTO[]>
+    settingTemplateSave: (id: string, name: string, workId: string, categoryIds: string[]) => Promise<boolean>
+    settingTemplateApply: (templateId: string, workId: string) => Promise<number>
+    settingTemplateDelete: (id: string) => Promise<boolean>
     // ── 书籍导入（TXT）：主进程只负责选文件 + 读字节 / 批量落库 ──
     /** 弹文件选择框并读回字节；用户取消返回 null */
     importPickFile: () => Promise<{ fileName: string; bytes: ArrayBuffer; size: number } | null>
@@ -591,11 +721,6 @@ export interface ElectronAPI {
         relation: string
         note?: string
       }) => Promise<boolean>
-      /** 等级项补列：小层数 / 战力当量（PRD §9.7.2） */
-      levelMetaSet: (
-        id: string,
-        meta: { subLevels?: number; power?: number | null },
-      ) => Promise<boolean>
       /** 主角绑定读数：null 表示该作品还没建过行囊角色 */
       protagonistGet: (workId: string) => Promise<PackProtagonistDTO | null>
       /** 设为主角 / 解除主角：entityId 传空串即解绑 */

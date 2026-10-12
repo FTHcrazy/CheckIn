@@ -132,7 +132,7 @@
   }
 }
 
-/* 增量分段：被动灰 / 持续蓝 / 覆盖警示 */
+/* 增量分段：被动灰 / 持续蓝 / 映射紫 / 覆盖警示 */
 .cpk-seg {
   padding: 0 5px;
   border-radius: var(--app-radius-pill);
@@ -150,6 +150,13 @@
   &.is-sustained {
     background: var(--app-accent-blue-weak);
     color: var(--app-accent-blue);
+  }
+
+  /* 映射加算：与被动（灰）/ 持续（蓝）拉开色相即可，同池但不喧宾夺主 ——
+     它和它们一样只是加算，没有更特殊，只是来源是另一条属性的加点 */
+  &.is-mapped {
+    background: var(--app-accent-purple-weak);
+    color: var(--app-accent-purple);
   }
 
   &.is-override {

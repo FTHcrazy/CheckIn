@@ -1,0 +1,610 @@
+/** 设定中心（1.36.0）
+
+    左分类列表 + 右「分类头 / 进位规则 / 等级序列」三块。浮层尺寸偏大，
+    所以这里的两栏宽度用固定 + minmax(0, 1fr)：等级序列表有 6 列，
+    给 `1fr` 下限是内容宽时，antd Button 的 nowrap 会把整行撑出容器。
+
+    行间插入条默认只有 hover 才显形（`:hover` 在行容器上），
+    输入态由 `.is-on` 常驻 —— 否则失焦瞬间条会消失、输入被吞掉。 */
+@use "../../../../../../shared/styles/widget" as widget;
+
+.nv-sc {
+  &__title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--app-text);
+  }
+
+  &__pill {
+    padding: 1px 8px;
+    border-radius: var(--app-radius-chip);
+    background: var(--app-accent-blue-weak);
+    color: var(--app-accent-blue);
+    font-size: 12px;
+    font-weight: 400;
+  }
+
+  &__head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--app-border);
+  }
+
+  &__hint {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    color: var(--app-text-muted);
+  }
+
+  &__actions {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  &__body-grid {
+    display: grid;
+    grid-template-columns: 220px minmax(0, 1fr);
+    // 行轨道同样要 minmax(0, 1fr)：auto 行按内容计高，height 钳不住它
+    grid-template-rows: minmax(0, 1fr);
+    gap: 16px;
+    margin-top: 12px;
+    // 等级序列长到几十条时只让右栏内部滚，整个浮层不跟着长高。
+    // ⚠️ 必须是确定高度（height）而非 max-height：grid 的隐式行轨道按内容
+    // 计算，容器 max-height 只钳住盒子、钳不住轨道 —— 内容超高时两栏
+    // 会整体溢出 grid 盒子往下画，而弹层底色只画到盒子为止，看起来就是
+    // 「弹层下半截透明、正文透出来」。height 定死 + minmax(0,1fr) 轨道，
+    // 内部的 __list / __rows 滚动链才真正生效。
+    height: calc(100vh - 260px);
+    min-height: 320px;
+  }
+
+  // ── 左栏：分类列表 ──
+
+  &__side {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+    // grid item 的 min-height 默认是 auto（不小于内容）：不归零的话分类
+    // 一多整栏撑出轨道，和 __body-grid 的限高意图打架
+    min-height: 0;
+    padding-right: 12px;
+    border-right: 1px solid var(--app-border);
+  }
+
+  &__side-head,
+  &__sec-title {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--app-text-muted);
+  }
+
+  &__list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  &__cat {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: var(--app-radius-chip);
+    cursor: pointer;
+
+    &:hover {
+      background: var(--app-surface-hover);
+    }
+
+    &.is-on {
+      background: var(--app-accent-blue-weak);
+    }
+  }
+
+  &__dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  &__cat-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    color: var(--app-text);
+
+    .nv-sc__cat.is-on & {
+      color: var(--app-accent-blue);
+      font-weight: 500;
+    }
+  }
+
+  &__cat-count {
+    flex-shrink: 0;
+    font-size: 11px;
+    color: var(--app-text-muted);
+  }
+
+  &__newcat {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px;
+  }
+
+  &__tip {
+    font-size: 11px;
+    color: var(--app-text-muted);
+  }
+
+  &__empty {
+    margin: 24px 0;
+  }
+
+  // ── 右栏 ──
+
+  &__main {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  &__card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 14px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-card);
+
+    &.is-grow {
+      flex: 1;
+      min-height: 0;
+      padding-bottom: 8px;
+    }
+  }
+
+  &__card-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  &__cat-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--app-text);
+  }
+
+  &__spacer {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__badge {
+    padding: 1px 6px;
+    border-radius: var(--app-radius-chip);
+    background: var(--app-accent-purple-weak);
+    color: var(--app-accent-purple);
+    font-size: 11px;
+
+    &.is-link {
+      background: var(--app-accent-blue-weak);
+      color: var(--app-accent-blue);
+    }
+  }
+
+  // 自定义分类的「设为境界体系」入口：让自建分类能接管角色卡「当前境界」绑定
+  &__set-realm {
+    height: 20px;
+    padding: 0 4px;
+    font-size: 12px;
+  }
+
+  &__note {
+    display: flex;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--app-text-secondary);
+  }
+
+  &__note-label {
+    flex-shrink: 0;
+    font-size: 11px;
+    color: var(--app-text-muted);
+  }
+
+  &__form {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px;
+    align-items: end;
+  }
+
+  &__field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+    font-size: 11px;
+    color: var(--app-text-muted);
+  }
+
+  &__form-actions {
+    display: flex;
+    gap: 6px;
+    justify-content: flex-end;
+  }
+
+  // ── 进位规则条 ──
+
+  &__carry {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 10px;
+    border-radius: var(--app-radius-chip);
+    background: var(--app-surface-alt);
+  }
+
+  &__carry-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  &__carry-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--app-text);
+
+    em {
+      font-style: normal;
+      font-size: 11px;
+      font-weight: 400;
+      color: var(--app-text-muted);
+    }
+  }
+
+  &__carry-select {
+    min-width: 96px;
+  }
+
+  &__carry-example {
+    display: flex;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--app-text-secondary);
+
+    em {
+      flex-shrink: 0;
+      font-style: normal;
+      font-size: 11px;
+      color: var(--app-text-muted);
+    }
+  }
+
+  // ── 等级序列表 ──
+
+  &__thead,
+  &__row {
+    display: grid;
+    grid-template-columns:
+      16px
+      28px
+      minmax(0, 1.2fr)
+      minmax(0, 1.4fr)
+      minmax(0, 2fr)
+      72px;
+    gap: 10px;
+    align-items: center;
+  }
+
+  &__thead {
+    padding: 0 8px 6px;
+    border-bottom: 1px solid var(--app-border);
+    font-size: 11px;
+    color: var(--app-text-muted);
+  }
+
+  &__rows {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  &__row {
+    padding: 4px 8px;
+    border-radius: var(--app-radius-chip);
+
+    &:hover {
+      background: var(--app-surface-hover);
+    }
+
+    &.is-drag {
+      opacity: 0.6;
+      background: var(--app-accent-blue-weak);
+    }
+
+    /* 拖拽中的行浮起：dnd-kit 只给 transform，观感补底色与投影 */
+    &.is-dragging,
+    .is-dragging & {
+      background: var(--app-surface-alt);
+      box-shadow: var(--app-shadow-card);
+    }
+
+    /* ── 父子层级：派生段（子层级）缩进 + 树状连接线 ──
+       数据上子层级的 parentId 指回父阶、rank 紧跟父阶之后，
+       展示必须如实反映这层父子关系，而不是平铺成同级兄弟 */
+    &.is-child {
+      padding-left: 30px;
+
+      &::before {
+        content: "";
+        position: absolute;
+        left: 15px;
+        top: -6px;
+        bottom: 50%;
+        width: 1px;
+        background: var(--app-border);
+      }
+
+      // 与父行连接的横向肘线；末行断开由 height 自适应近似即可
+      &::after {
+        content: "";
+        position: absolute;
+        left: 15px;
+        top: 50%;
+        width: 10px;
+        height: 1px;
+        background: var(--app-border);
+      }
+
+      .nv-sc__col-name {
+        font-size: 13px;
+        font-weight: 400;
+        color: var(--app-text-secondary);
+      }
+    }
+  }
+
+  &__grip {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--app-text-muted);
+    cursor: grab;
+    // PointerSensor 需要禁掉浏览器原生的触摸/拖拽默认行为
+    touch-action: none;
+
+    &:active {
+      cursor: grabbing;
+    }
+  }
+
+  &__col-no {
+    font-size: 12px;
+    color: var(--app-text-muted);
+  }
+
+  &__col-name {
+    min-width: 0;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--app-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__col-alias,
+  &__col-note {
+    min-width: 0;
+    font-size: 12px;
+    color: var(--app-text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__col-ops {
+    display: flex;
+    gap: 4px;
+    justify-content: flex-end;
+    min-width: 0;
+  }
+
+  // 编辑态的「小层命名」占满第二行（行网格只有 6 列，第 7 个子项自动换行）
+  &__col-sub {
+    grid-column: 1 / -1;
+    min-width: 0;
+  }
+
+  &__seg {
+    margin-left: 6px;
+    padding: 0 4px;
+    border-radius: 3px;
+    background: var(--app-accent-purple-weak);
+    color: var(--app-accent-purple);
+    font-size: 11px;
+  }
+
+  // 小境界清单（1.38.0）：占满整行第二行，紧跟在等级行下方
+  // 「练气」这一阶设了几层，这里就把几层名字平铺出来
+  &__sub {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    min-width: 0;
+    padding: 2px 0 4px;
+  }
+
+  &__sub-label {
+    flex: none;
+    padding-top: 2px;
+    font-size: 11px;
+    color: var(--app-text-muted);
+    white-space: nowrap;
+  }
+
+  &__sub-list {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+  }
+
+  // 小层名用真按钮承载（键盘可达 / 有 title），但外观是浅底小签
+  // 清零放在同一个选择器里，改外观只动 --ant-button-* 变量（§6.1.2 第 1、3 条）
+  &__sub-chip.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-button-text-hover-bg: var(--app-surface-hover);
+    --ant-button-text-color: var(--app-text-secondary);
+    --ant-button-text-hover-color: var(--app-text);
+    height: 20px;
+    padding: 0 6px;
+    border-radius: 3px;
+    background: var(--app-surface-hover);
+    font-size: 11px;
+  }
+
+  // ── 行间插入条 ──
+
+  &__ins {
+    display: flex;
+    align-items: center;
+    height: 26px;
+    padding-left: 16px;
+    // 默认隐身：七行同屏时每条都画出来会盖掉行的分隔感
+    opacity: 0;
+
+    &.is-on {
+      opacity: 1;
+    }
+
+    &.is-last {
+      opacity: 1;
+    }
+  }
+
+  &__row:hover + .nv-sc__ins,
+  &__ins:hover {
+    opacity: 1;
+  }
+
+  &__ins-btn {
+    @include widget.ant-button-reset;
+    padding: 0;
+    height: 20px;
+    font-size: 11px;
+    color: var(--app-accent-blue);
+  }
+
+  &__ins-btn.ant-btn {
+    @include widget.ant-button-reset;
+    padding: 0;
+    height: 20px;
+    font-size: 11px;
+  }
+
+  &__ins-input {
+    max-width: 320px;
+  }
+
+  &__append {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    padding: 8px;
+  }
+
+  &__status {
+    padding-top: 6px;
+    font-size: 11px;
+    color: var(--app-text-muted);
+  }
+
+  // ── 批量生成 / 拆分弹窗（1.37.0）──
+
+  &__batch {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  &__batch-fields {
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+
+    .nv-sc__field {
+      flex: 1;
+    }
+
+    .nv-sc__field.is-narrow {
+      flex: 0 0 128px;
+    }
+  }
+
+  // ── 模板库 ──
+
+  &__library {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  &__lib-head {
+    margin-top: 8px;
+    font-size: 11px;
+    color: var(--app-text-muted);
+
+    &:first-child {
+      margin-top: 0;
+    }
+  }
+
+  &__lib-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 6px;
+    border-radius: var(--app-radius-chip);
+
+    &:hover {
+      background: var(--app-surface-hover);
+    }
+  }
+
+  &__lib-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    color: var(--app-text);
+  }
+}

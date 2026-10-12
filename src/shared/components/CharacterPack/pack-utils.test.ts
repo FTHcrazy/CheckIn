@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CHANGED_TTL_MS, type PackAttribute, type PackItem, type PackModifier, type PackSkill, type PackSlot } from "./types";
+import { CHANGED_TTL_MS, type PackAttribute, type PackItem, type PackMappingRule, type PackModifier, type PackSkill, type PackSlot } from "./types";
 import {
   buildActiveCarriers,
   buildActiveCarriersFrom,
@@ -88,6 +88,17 @@ const LADDER: LadderRung[] = [
   { id: "l2", name: "筑基", rank: 2, subLevels: 9, power: 1000 },
   { id: "l3", name: "金丹", rank: 3, subLevels: 1, power: 10000 },
 ];
+
+function mapping(partial: Partial<PackMappingRule>): PackMappingRule {
+  return {
+    id: "pm1",
+    sourceAttrId: "str",
+    targetAttrId: "hp",
+    rate: 100,
+    sortOrder: 1,
+    ...partial,
+  };
+}
 
 describe("isCounted —— 闸门矩阵（§9.4.1，本功能最易回归的缺陷点）", () => {
   it("cast 型永不参与汇总", () => {
@@ -294,6 +305,223 @@ describe("computeSummary —— 三段分解与运算优先级（§9.4.2）", ()
     });
     expect(result.byAttr.get("a1")!.final).toBe(1200);
     expect(result.countedCount).toBe(0);
+  });
+});
+
+describe("computeSummary —— 属性映射（1.35.0）", () => {
+  const attributes: PackAttribute[] = [
+    attr({ id: "str", name: "力量", baseValue: 10 }),
+    attr({ id: "hp", name: "生命值", baseValue: 1000, sortOrder: 2 }),
+  ];
+
+  function summaryOf(
+    modifiers: PackModifier[] = [],
+    mappings: PackMappingRule[] = [],
+    carriers: string[] = [],
+  ): SummaryResult {
+    return computeSummary({
+      attributes,
+      modifiers,
+      mappings,
+      activeCarriers: new Set(carriers),
+      proficiency: {},
+    });
+  }
+
+  it("每 1 点力量 → 生命 +100（就是「加点力量会增加血量」那个场景）", () => {
+    const result = summaryOf([], [mapping({})]);
+    expect(result.byAttr.get("str")!.final).toBe(10);
+    expect(result.byAttr.get("hp")!.final).toBe(2000);
+    expect(result.byAttr.get("hp")!.addMapped).toBe(1000);
+    // 映射前的值留在 preMapping 上，界面据此说明「1000 → 2000」
+    expect(result.byAttr.get("hp")!.preMapping).toBe(1000);
+  });
+
+  it("换算量进的是加算池：目标属性上的百分比与乘算对它一样生效", () => {
+    const result = summaryOf(
+      [
+        mod({
+          id: "m1",
+          ownerType: "status",
+          ownerId: "c1",
+          nature: "passive",
+          targetAttrId: "hp",
+          op: "percent",
+          value: 50,
+        }),
+      ],
+      [mapping({})],
+      ["status:m1"],
+    );
+    // (1000 + 1000) × 1.5 —— 若把映射当成独立乘区，这里会算出 3000 以外的东西
+    expect(result.byAttr.get("hp")!.final).toBe(3000);
+  });
+
+  it("源取的是**最终值**：装备加的 20 点力量也会被折算成生命", () => {
+    const result = summaryOf(
+      [mod({ id: "m1", ownerType: "item", ownerId: "i1", targetAttrId: "str", value: 20 })],
+      [mapping({})],
+      ["item:i1"],
+    );
+    expect(result.byAttr.get("str")!.final).toBe(30);
+    expect(result.byAttr.get("hp")!.final).toBe(4000); // 1000 + 30 × 100
+  });
+
+  it("链式 力量 → 攻击 → 战力：中间环的换算会被下游读到", () => {
+    const attrs = [
+      attr({ id: "str", name: "力量", baseValue: 10 }),
+      attr({ id: "atk", name: "攻击", baseValue: 100, sortOrder: 2 }),
+      attr({ id: "power", name: "战力", baseValue: 0, sortOrder: 3 }),
+    ];
+    const result = computeSummary({
+      attributes: attrs,
+      modifiers: [],
+      mappings: [
+        mapping({ id: "pm1", sourceAttrId: "str", targetAttrId: "atk", rate: 2 }),
+        mapping({ id: "pm2", sourceAttrId: "atk", targetAttrId: "power", rate: 10, sortOrder: 2 }),
+      ],
+      activeCarriers: new Set(),
+      proficiency: {},
+    });
+    expect(result.byAttr.get("atk")!.final).toBe(120);
+    expect(result.byAttr.get("power")!.final).toBe(1200);
+  });
+
+  it("override 优先：换算量照记账，但不改写覆盖值", () => {
+    const result = summaryOf(
+      [
+        mod({
+          id: "m1",
+          ownerType: "status",
+          ownerId: "c1",
+          nature: "passive",
+          targetAttrId: "hp",
+          op: "override",
+          value: 7777,
+        }),
+      ],
+      [mapping({})],
+      ["status:m1"],
+    );
+    const hp = result.byAttr.get("hp")!;
+    expect(hp.preMapping).toBe(7777);
+    expect(hp.final).toBe(7777);
+    expect(hp.addMapped).toBe(1000); // 算出来了，只是覆盖说了算
+  });
+
+  it("被覆盖的属性当源时，下游读到的是覆盖值，而不是「覆盖值 + 映射进来的量」", () => {
+    // 力量 10 → 生命 +1000，同时生命被覆盖为 500；生命 → 战力 每 1 点 +2
+    // 正确：生命最终 500，战力 = 500 × 2 = 1000
+    // 若没把覆盖值「钉住」：生命内部值会变成 500 + 1000，战力算出 3000
+    const attrs = [
+      attr({ id: "str", name: "力量", baseValue: 10 }),
+      attr({ id: "hp", name: "生命值", baseValue: 100, sortOrder: 2 }),
+      attr({ id: "power", name: "战力", baseValue: 0, sortOrder: 3 }),
+    ];
+    const result = computeSummary({
+      attributes: attrs,
+      modifiers: [
+        mod({
+          id: "m1",
+          ownerType: "status",
+          ownerId: "c1",
+          nature: "passive",
+          targetAttrId: "hp",
+          op: "override",
+          value: 500,
+        }),
+      ],
+      mappings: [
+        mapping({ id: "pm1", sourceAttrId: "str", targetAttrId: "hp", rate: 100 }),
+        mapping({ id: "pm2", sourceAttrId: "hp", targetAttrId: "power", rate: 2, sortOrder: 2 }),
+      ],
+      activeCarriers: new Set(["status:m1"]),
+      proficiency: {},
+    });
+    expect(result.byAttr.get("hp")!.final).toBe(500);
+    expect(result.byAttr.get("power")!.final).toBe(1000);
+  });
+
+  it("成环：整组不生效，且原因如实上报（不给一个随排序变化的数）", () => {
+    const result = summaryOf([], [
+      mapping({ id: "pm1", sourceAttrId: "str", targetAttrId: "hp", rate: 100 }),
+      mapping({ id: "pm2", sourceAttrId: "hp", targetAttrId: "str", rate: 0.5, sortOrder: 2 }),
+    ]);
+    expect(result.byAttr.get("hp")!.final).toBe(1000);
+    expect(result.byAttr.get("str")!.final).toBe(10);
+    expect(result.byAttr.get("hp")!.addMapped).toBe(0);
+    expect(result.byAttr.get("hp")!.mappedHits).toEqual([]);
+    expect(result.mappingProblems.get("pm1")).toBe("cycle");
+    expect(result.mappingProblems.get("pm2")).toBe("cycle");
+    expect(result.mappingApplied.size).toBe(0);
+  });
+
+  it("指向已删除属性的映射报 missing，且不污染那一行", () => {
+    const result = summaryOf([], [
+      mapping({ id: "pm9", sourceAttrId: "gone", targetAttrId: "hp", rate: 100 }),
+    ]);
+    expect(result.mappingProblems.get("pm9")).toBe("missing");
+    expect(result.byAttr.get("hp")!.final).toBe(1000);
+    expect(result.byAttr.get("hp")!.addMapped).toBe(0);
+  });
+
+  it("mappedHits 逐条留痕，供「来源明细」说清这个数是哪条换算来的", () => {
+    const hits = summaryOf([], [mapping({})]).byAttr.get("hp")!.mappedHits;
+    expect(hits).toHaveLength(1);
+    expect(hits[0]).toEqual({
+      mappingId: "pm1",
+      sourceAttrId: "str",
+      rate: 100,
+      sourceValue: 10,
+      applied: 1000,
+    });
+  });
+
+  it("mappingApplied 记下每条映射这次算出了多少（映射列表就地显示用）", () => {
+    expect(summaryOf([], [mapping({ rate: 7 })]).mappingApplied.get("pm1")).toBe(70);
+  });
+
+  it("省略 mappings 时与引入本功能之前完全一致（老调用点不用改）", () => {
+    const result = computeSummary({
+      attributes,
+      modifiers: [],
+      activeCarriers: new Set(),
+      proficiency: {},
+    });
+    expect(result.byAttr.get("hp")!.final).toBe(1000);
+    expect(result.byAttr.get("hp")!.addMapped).toBe(0);
+    expect(result.mappingProblems.size).toBe(0);
+    expect(result.mappingApplied.size).toBe(0);
+  });
+
+  it("换装预览把映射一起算进去：+20 力量顺带把生命抬高 2000", () => {
+    // 这一条是「预览必须与真实汇总同源」在映射上的具体体现。少了 HypotheticalInput.mappings，
+    // 预览只会说「力量 +20」，装上之后生命却也变了。
+    const sword = item({ id: "i1" });
+    const mods = [
+      mod({ id: "m1", ownerType: "item", ownerId: "i1", targetAttrId: "str", value: 20 }),
+    ];
+    const mappings = [mapping({})];
+    const before = summaryOf(mods, mappings);
+    const after = computeHypotheticalSummary(
+      {
+        attributes,
+        slots: [slot({ id: "s1" })],
+        items: [sword],
+        skills: [],
+        modifiers: mods,
+        mappings,
+        proficiency: {},
+      },
+      { equip: { itemId: "i1", slotId: "s1" } },
+    );
+    expect(before.byAttr.get("hp")!.final).toBe(2000);
+    expect(after.byAttr.get("str")!.final).toBe(30);
+    expect(after.byAttr.get("hp")!.final).toBe(4000);
+    expect(summaryDeltas(before, after)).toEqual([
+      { attrId: "str", before: 10, after: 30, delta: 20 },
+      { attrId: "hp", before: 2000, after: 4000, delta: 2000 },
+    ]);
   });
 });
 
@@ -652,6 +880,7 @@ describe("computeHypotheticalSummary —— 预览必须与真实汇总同源", 
       items: [],
       skills: [],
       modifiers: [],
+      mappings: [],
       proficiency: {},
       ...partial,
     };
@@ -787,11 +1016,13 @@ function skill(partial: Partial<PackSkill>): PackSkill {
 function exportCtx(partial: Partial<Parameters<typeof buildPackTable>[1]> = {}) {
   const attributes = partial.attributes ?? [attr({ id: "a1", name: "攻击力", baseValue: 100 })];
   const modifiers = partial.modifiers ?? [];
+  const mappings = partial.mappings ?? [];
   const summary: SummaryResult =
     partial.summary ??
     computeSummary({
       attributes,
       modifiers,
+      mappings,
       activeCarriers: buildActiveCarriersFrom({
         slots: partial.slots ?? [],
         items: partial.items ?? [],
@@ -806,6 +1037,7 @@ function exportCtx(partial: Partial<Parameters<typeof buildPackTable>[1]> = {}) 
     items: partial.items ?? [],
     skills: partial.skills ?? [],
     modifiers,
+    mappings,
     summary,
     proficiencyLevels: partial.proficiencyLevels,
     currency: partial.currency ?? null,
@@ -939,6 +1171,43 @@ describe("buildPackMarkdown —— 各模块的表格口径", () => {
     expect(table.rows[0]).toContain("150");
   });
 
+  it("汇总表的「映射加算」列与总览值对得上", () => {
+    const table = buildPackTable(
+      "summary",
+      exportCtx({
+        attributes: [
+          attr({ id: "str", name: "力量", baseValue: 10 }),
+          attr({ id: "hp", name: "生命值", baseValue: 1000, sortOrder: 2 }),
+        ],
+        mappings: [mapping({})],
+      }),
+    );
+    const hpRow = table.rows.find((row) => row[0] === "生命值")!;
+    expect(hpRow).toHaveLength(table.headers.length);
+    expect(hpRow[2]).toBe("2,000"); // 总览值
+    expect(hpRow[5]).toBe("1,000"); // 映射加算
+  });
+
+  it("映射表：导出**这次算出来多少**，并标出没生效的原因", () => {
+    const ctx = exportCtx({
+      attributes: [
+        attr({ id: "str", name: "力量", baseValue: 10 }),
+        attr({ id: "hp", name: "生命值", baseValue: 1000, sortOrder: 2 }),
+      ],
+      mappings: [
+        { id: "pm1", sourceAttrId: "str", targetAttrId: "hp", rate: 100, sortOrder: 1 },
+        { id: "pm2", sourceAttrId: "hp", targetAttrId: "gone", rate: 1, sortOrder: 2 },
+        { id: "pm3", sourceAttrId: "str", targetAttrId: "hp", rate: 0, sortOrder: 3 },
+      ],
+    });
+    const table = buildPackTable("mapping", ctx);
+    expect(table.headers).toEqual(["源属性", "目标属性", "换算率", "当前换算", "状态"]);
+    expect(table.rows[0]).toEqual(["力量", "生命值", "每 1 点 +100", "1000", "生效"]);
+    // 没生效的也列出来：作者据此知道导出稿里少了什么
+    expect(table.rows[1]).toEqual(["生命值", "(已删除的属性)", "每 1 点 +1", "—", "属性已删除"]);
+    expect(table.rows[2][4]).toBe("未启用（换算率为 0）");
+  });
+
   it("货币表导的是换算体系本身，不是某个余额", () => {
     const table = buildPackTable(
       "currency",
@@ -967,7 +1236,7 @@ describe("buildPackMarkdown —— 各模块的表格口径", () => {
       modifiers: [mod({ id: "m1", ownerType: "status", ownerId: "c1" })],
       currency: { autoCarry: false, levels: [{ name: "铜", ratioToBase: 1 }] },
     });
-    for (const key of ["summary", "attributes", "equipment", "inventory", "skills", "status", "currency"] as const) {
+    for (const key of ["summary", "attributes", "mapping", "equipment", "inventory", "skills", "status", "currency"] as const) {
       const table = buildPackTable(key, ctx);
       for (const row of table.rows) {
         expect(row, `${key} 的某一行列数不对`).toHaveLength(table.headers.length);

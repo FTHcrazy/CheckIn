@@ -31,6 +31,39 @@ export const LAYOUT = {
 /** 新建卷的默认存储名：展示时视为「未命名」不追加显示（左栏卷头与大纲板共用） */
 export const UNNAMED_VOLUME = "未命名卷";
 
+// ── 小说设定的默认值 ──
+//
+// 这三个值**必须与主进程一致**：主进程建表 / 插入时用自己的一份常量
+// （electron/handlers/novel-handlers.ts），渲染层乐观更新用这里的。
+// 两边不一致会出现「新建分类后本地显示九层、落库是一层」这类难查的错位，
+// 由 electron/novel-setting-defaults-guard.test.ts 做源码级比对。
+
+/** 设定分类的默认色点 */
+export const DEFAULT_CATEGORY_COLOR = "#5B8DEF";
+
+/** 默认小层命名模板（{n} 为层号占位符） */
+export const DEFAULT_SUB_PATTERN = "第{n}层";
+
+/** 默认每阶小层数：1 表示不分层 */
+export const DEFAULT_SUB_LEVELS = 1;
+
+/**
+ * 设定分类色板
+ *
+ * 放配置而不是组件文件里：组件文件只允许导出组件（react-refresh 规则），
+ * 且色板要能被守卫测试直接读到。新建分类按「还没被占用的第一个」取色 ——
+ * 全部同色的分类列表没法扫读。
+ */
+export const CATEGORY_PALETTE = [
+  "#5B8DEF",
+  "#8B77F0",
+  "#34B37E",
+  "#E8935E",
+  "#E8618C",
+  "#2FA57E",
+  "#C9A227",
+] as const;
+
 /**
  * userDb config 表存储键 —— 定义已提升到 shared（行囊模块跨窗口共用），
  * 这里 re-export 保持既有引用路径不变。

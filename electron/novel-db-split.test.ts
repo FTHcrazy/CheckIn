@@ -41,11 +41,13 @@ const NOVEL_TABLES = [
   "novel_outline_entries",
   "novel_entities",
   "novel_links",
-  "novel_level_systems",
-  "novel_levels",
-  "novel_level_conversions",
+  // 小说设定（1.36.0：统一取代上面的三张等级表）
+  "novel_setting_categories",
+  "novel_setting_levels",
+  "novel_setting_templates",
   "novel_pack_characters",
   "novel_pack_attributes",
+  "novel_pack_mappings",
   "novel_pack_slots",
   "novel_pack_items",
   "novel_pack_skills",
@@ -131,6 +133,8 @@ describe("行囊级联清单不漏表（守卫）", () => {
       "novel_pack_items",
       "novel_pack_skills",
       "novel_pack_attributes",
+      // 属性映射挂在 character_id 上：漏掉它，删作品后映射行永远删不掉
+      "novel_pack_mappings",
       "novel_pack_slots",
       // 换装方案挂在 character_id 上：漏掉它，删作品后方案永远查不到也删不掉
       "novel_pack_presets",

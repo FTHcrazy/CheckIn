@@ -1,6 +1,12 @@
 import { buildSearchSnippet, type LastPosition } from "../novel-utils";
 import { STORAGE_KEYS } from "../novel-config";
 import type {
+  NovelSettingCategoryPatch,
+  NovelSettingExportPayload,
+  NovelSettingLevelPatch,
+  NovelSettingTemplateDTO,
+} from "@/shared/types/electron";
+import type {
   CustomEntityTypeDef,
   EditorSettings,
   NameFavorite,
@@ -266,54 +272,149 @@ export async function removeOutlineEntry(entryId: string): Promise<boolean> {
   return window.electronAPI!.novel.removeOutlineEntry(entryId);
 }
 
-// ── 等级体系管理（R25） ──
+// ── 小说设定（1.36.0 起取代「等级体系管理」） ──
+//
+// 境界体系不再是独立实体，而是 `kind='realm'` 的一个设定分类；
+// 功法等级 / 丹药稀有度等同构。全部走 `novel_setting_*` 两张表。
 
-/** 新建等级体系（novel-level-system-add；id / workId 由渲染层生成） */
-export async function addLevelSystem(system: {
-  id: string;
-  workId: string;
-  name: string;
-}): Promise<boolean> {
-  return window.electronAPI!.novel.levelSystemAdd(system);
-}
-
-/** 体系重命名（novel-level-system-rename） */
-export async function renameLevelSystem(
-  systemId: string,
-  name: string,
-): Promise<boolean> {
-  return window.electronAPI!.novel.levelSystemRename(systemId, name);
-}
-
-/** 删除体系（novel-level-system-delete，主进程事务级联清理等级项 / 换算 / 境界绑定） */
-export async function removeLevelSystem(systemId: string): Promise<boolean> {
-  return window.electronAPI!.novel.levelSystemDelete(systemId);
-}
-
-/** 追加等级项（novel-level-add；id 渲染层生成，rank 由主进程 MAX+1 分配） */
-export async function addLevel(
-  systemId: string,
+/**
+ * 新建设定分类（novel-setting-category-add）
+ *
+ * `kind` 传 'realm' 时主进程会先查本书是否已有境界体系 —— 有则**降级为 custom**，
+ * 境界体系全书只能有一个（角色卡「当前境界」绑定依赖这个唯一性）。
+ * 返回的 `kind` 是落地后的真实值，渲染层要用它而不是入参。
+ */
+export async function addSettingCategory(
+  workId: string,
   id: string,
   name: string,
-): Promise<{ id: string; name: string; rank: number } | null> {
-  return window.electronAPI!.novel.levelAdd(systemId, id, name);
+  kind: "realm" | "custom",
+  color?: string,
+): Promise<{ id: string; kind: "realm" | "custom" } | null> {
+  return window.electronAPI!.novel.settingCategoryAdd(workId, id, name, kind, color);
 }
 
-/** 等级项重命名（novel-level-rename） */
-export async function renameLevel(rungId: string, name: string): Promise<boolean> {
-  return window.electronAPI!.novel.levelRename(rungId, name);
+/** 改分类：重命名 / 改色 / 改说明 / 改进位规则（novel-setting-category-update） */
+export async function patchSettingCategory(
+  categoryId: string,
+  patch: NovelSettingCategoryPatch,
+): Promise<boolean> {
+  return window.electronAPI!.novel.settingCategoryUpdate(categoryId, patch);
 }
 
-/** 删除等级项（novel-level-delete，主进程级联清理换算与境界绑定） */
-export async function removeLevel(rungId: string): Promise<boolean> {
-  return window.electronAPI!.novel.levelDelete(rungId);
+/** 删除分类（主进程级联摘除境界绑定与等级项） */
+export async function removeSettingCategory(categoryId: string): Promise<boolean> {
+  return window.electronAPI!.novel.settingCategoryDelete(categoryId);
 }
 
-/** 等级项批量重排（novel-level-order：{id, rank} 全量回写） */
-export async function saveLevelOrder(
+/** 分类重排 */
+export async function saveSettingCategoryOrder(
+  updates: Array<{ id: string; sortOrder: number }>,
+): Promise<boolean> {
+  return window.electronAPI!.novel.settingCategoryOrder(updates);
+}
+
+/**
+ * 追加 / 插入等级项（novel-setting-level-add）
+ *
+ * `index` 是插入落点（0 = 最前）；主进程重排落点及之后的 rank，
+ * 不重排会出现两条相同 rank 的行。
+ */
+export async function addSettingLevel(
+  categoryId: string,
+  id: string,
+  name: string,
+  index: number,
+): Promise<{ id: string; rank: number } | null> {
+  return window.electronAPI!.novel.settingLevelAdd(categoryId, id, name, index);
+}
+
+/** 批量新增等级项：全部追加到末尾，返回实际插入条数（1.37.0） */
+export async function batchAddSettingLevels(
+  categoryId: string,
+  items: Array<{ id: string; name: string; subLevels?: number; subPattern?: string }>,
+): Promise<number> {
+  return window.electronAPI!.novel.settingLevelBatchAdd(categoryId, items);
+}
+
+/** 改等级项：重命名 / 别名 / 说明 / 小层数 / 战力当量 */
+export async function patchSettingLevel(
+  levelId: string,
+  patch: NovelSettingLevelPatch,
+): Promise<boolean> {
+  return window.electronAPI!.novel.settingLevelUpdate(levelId, patch);
+}
+
+/** 删除等级项（连同它的派生分段一起删，并把后面的 rank 前移） */
+export async function removeSettingLevel(levelId: string): Promise<boolean> {
+  return window.electronAPI!.novel.settingLevelDelete(levelId);
+}
+
+/** 等级项批量重排（拖拽后全量回写 {id, rank}） */
+export async function saveSettingLevelOrder(
   updates: Array<{ id: string; rank: number }>,
 ): Promise<boolean> {
-  return window.electronAPI!.novel.levelOrder(updates);
+  return window.electronAPI!.novel.settingLevelOrder(updates);
+}
+
+/** 拆分层级：按小层分界切成多段，原行变成第一段 */
+export async function splitSettingLevel(
+  levelId: string,
+  segments: Array<{ name: string; from: number; to: number }>,
+): Promise<boolean> {
+  return window.electronAPI!.novel.settingLevelSplit(levelId, segments);
+}
+
+/** 合并层级：摘掉派生段，还原小层总数 */
+export async function mergeSettingLevel(levelId: string): Promise<boolean> {
+  return window.electronAPI!.novel.settingLevelMerge(levelId);
+}
+
+/** 导出设定为可搬运载荷（写文件 / 存模板共用同一份快照） */
+export async function exportSetting(workId: string): Promise<NovelSettingExportPayload> {
+  return window.electronAPI!.novel.settingExport(workId);
+}
+
+/**
+ * 导入设定快照
+ *
+ * `mode='merge'` 同名分类合并、异名新建；`'replace'` 先清空本书设定再写入。
+ * 返回条数用于给「导入了 N 条、跳过 M 条」的提示。
+ */
+export async function importSetting(
+  workId: string,
+  payload: unknown,
+  mode: "merge" | "replace",
+): Promise<{ imported: number; skipped: number }> {
+  return window.electronAPI!.novel.settingImport(workId, payload, mode);
+}
+
+/** 列出预设模板 */
+export async function listSettingTemplates(): Promise<NovelSettingTemplateDTO[]> {
+  return window.electronAPI!.novel.settingTemplateList();
+}
+
+/** 把当前作品的设定存为模板 */
+export async function saveSettingTemplate(
+  id: string,
+  name: string,
+  workId: string,
+  categoryIds: string[],
+): Promise<boolean> {
+  return window.electronAPI!.novel.settingTemplateSave(id, name, workId, categoryIds);
+}
+
+/** 套用模板到当前作品，返回写入的分类数 */
+export async function applySettingTemplate(
+  templateId: string,
+  workId: string,
+): Promise<number> {
+  return window.electronAPI!.novel.settingTemplateApply(templateId, workId);
+}
+
+/** 删除模板 */
+export async function removeSettingTemplate(templateId: string): Promise<boolean> {
+  return window.electronAPI!.novel.settingTemplateDelete(templateId);
 }
 
 // ── 文本导出（R13；行囊 REQ-030 复用同一通道） ──

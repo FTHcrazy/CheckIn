@@ -76,12 +76,17 @@ describe("ModuleManager —— 排序（REQ-020）", () => {
   it("拖到远处是**插入**而不是交换（相邻一格时两种写法无法区分）", () => {
     const api = makeApi();
     render(<ModuleManager api={api} />);
-    // 把「总属性汇总」（第 1 位）拖到「技能栏」（第 5 位）上
+    // ⚠️ 位置一律从 MODULES 现算，不写字面量：模块清单每加一项，
+    // 写死的索引就会静默错位（而这条断言恰恰是在验「插入 vs 交换」，
+    // 索引错了会把两种写法都判成通过或者都判成失败）。
+    const skillsAt = MODULES.findIndex((module) => module.key === "skills");
+    // 把「总属性汇总」（第 1 位）拖到「技能栏」上
     dragTo("总属性汇总", "技能栏");
     const keys = orderedKeys(api);
-    expect(keys.indexOf("summary")).toBe(4);
-    // 交换写法的结果：summary 到第 5 位、skills 到第 1 位 —— 这里技能必须只前移一格
-    expect(keys.indexOf("skills")).toBe(3);
+    // 插入：summary 落到技能栏原来的位置，技能只前移一格
+    expect(keys.indexOf("summary")).toBe(skillsAt);
+    // 交换写法的结果：summary 到 skillsAt、skills 回到第 1 位 —— 这里技能必须只前移一格
+    expect(keys.indexOf("skills")).toBe(skillsAt - 1);
   });
 
   it("方向键也能排：↑ 上移一格、↓ 下移一格，越界时不动", () => {
