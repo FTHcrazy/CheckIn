@@ -401,11 +401,19 @@ function createSettingsWindow(): BrowserWindow {
 // ── PackWindow（行囊独立窗口） ──
 
 /**
- * 行囊窗口上下文：最近一次打开行囊时携带的作品 / 章节。
+ * 行囊窗口上下文：最近一次打开行囊时携带的作品 / 章节 / 代号。
  * 新窗口 did-finish-load 后经 `pack-window-context` 下发；
  * 后续切换由 NovelWindow 的 `novel-work-changed` 广播跟进。
+ *
+ * `nonce` 由 NovelWindow 生成（重置模板 = 同 workId 清库重播时 +1），
+ * 原样转发：行囊宿主把它拼进 key，同 workId 也能重挂载重新装载。
+ * 老负载没有这一格 →  undefined，行囊侧按 0 处理。
  */
-let packWindowContext: { workId: string; chapterId: string } | null = null;
+let packWindowContext: {
+  workId: string;
+  chapterId: string;
+  nonce?: number;
+} | null = null;
 
 /**
  * PackWindow —— 行囊独立窗口（full / novel 版）。
@@ -707,7 +715,11 @@ app.whenReady().then(() => {
         typeof (payload as { chapterId: unknown }).chapterId === "string"
           ? (payload as { chapterId: string }).chapterId
           : "";
-      packWindowContext = { workId, chapterId };
+      const nonce =
+        "nonce" in payload && typeof (payload as { nonce: unknown }).nonce === "number"
+          ? (payload as { nonce: number }).nonce
+          : undefined;
+      packWindowContext = { workId, chapterId, nonce };
     }
     createPackWindow();
   });

@@ -2,15 +2,20 @@ import { describe, expect, it } from "vitest";
 import {
   notifyNameChanged,
   notifyProtagonistChanged,
+  notifyQuickAdded,
   PACK_NAME_EVENT,
   PACK_PROTAGONIST_EVENT,
+  PACK_QUICK_ADDED_EVENT,
   readEventDetail,
   registerPackCloser,
   registerPackInsertIntoChapter,
+  registerPackQuickAdd,
   requestClosePackPanel,
   runPackInsertIntoChapter,
+  runPackQuickAdd,
   type PackNameEventDetail,
   type PackProtagonistEventDetail,
+  type PackQuickAddedEventDetail,
 } from "./pack-config";
 
 /**
@@ -171,5 +176,61 @@ describe("notifyNameChanged（主角名变更广播）", () => {
 
   it("事件名与主角变更事件分开（改名不必重载整份 bundle）", () => {
     expect(PACK_NAME_EVENT).not.toBe(PACK_PROTAGONIST_EVENT);
+  });
+});
+
+/**
+ * 快速记账跨窗口合并（P1-1）。
+ *
+ * 钉死两件事：① 桥把新建物品 id 透出来（合并要靠它定位）；
+ * ② `notifyQuickAdded` 双通道各发一次，负载带 workId + itemId。
+ * 少了任何一个，行囊窗口的下一次整文档保存都会把刚记的物品清掉。
+ */
+describe("快速记账跨窗口合并（P1-1）", () => {
+  it("本地桥把新建物品 id 透出来；没面板时 handled=false", () => {
+    registerPackQuickAdd(() => "pi-new");
+    try {
+      const hit = runPackQuickAdd({ name: "破境丹", chapterId: "c1" });
+      expect(hit).toEqual({ handled: true, ok: true, itemId: "pi-new" });
+    } finally {
+      registerPackQuickAdd(null);
+    }
+    expect(runPackQuickAdd({ name: "x", chapterId: "c1" })).toEqual({
+      handled: false,
+      ok: false,
+      itemId: null,
+    });
+  });
+
+  it("面板记账失败（返回 null）时 ok=false，调用方落主进程", () => {
+    registerPackQuickAdd(() => null);
+    try {
+      const hit = runPackQuickAdd({ name: "破境丹", chapterId: "c1" });
+      expect(hit.handled).toBe(true);
+      expect(hit.ok).toBe(false);
+      expect(hit.itemId).toBeNull();
+    } finally {
+      registerPackQuickAdd(null);
+    }
+  });
+
+  it("notifyQuickAdded 同窗口可收，负载含 workId + itemId", () => {
+    const seen: Array<PackQuickAddedEventDetail | undefined> = [];
+    const handler = (...args: unknown[]) => {
+      seen.push(readEventDetail<PackQuickAddedEventDetail>(args));
+    };
+    window.addEventListener(PACK_QUICK_ADDED_EVENT, handler as EventListener);
+    try {
+      notifyQuickAdded("w1", "pi-42");
+    } finally {
+      window.removeEventListener(PACK_QUICK_ADDED_EVENT, handler as EventListener);
+    }
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toEqual({ workId: "w1", itemId: "pi-42" });
+  });
+
+  it("事件名与其它行囊事件互不撞车", () => {
+    expect(PACK_QUICK_ADDED_EVENT).not.toBe(PACK_PROTAGONIST_EVENT);
+    expect(PACK_QUICK_ADDED_EVENT).not.toBe(PACK_NAME_EVENT);
   });
 });

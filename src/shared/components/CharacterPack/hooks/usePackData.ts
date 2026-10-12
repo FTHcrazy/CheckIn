@@ -7,7 +7,12 @@ import {
   savePackDocument,
   writeRealmLink,
 } from "../services/pack-service";
-import { notifyRealmLinkChanged } from "../pack-config";
+import {
+  notifyRealmLinkChanged,
+  PACK_QUICK_ADDED_EVENT,
+  readEventDetail,
+  type PackQuickAddedEventDetail,
+} from "../pack-config";
 import { countNetChanges } from "../pack-dirty";
 import type {
   PackBundleDTO,
@@ -255,22 +260,104 @@ export function usePackData(workId: string, chapterId: string) {
         setDirty(0);
       } else if (bundle.character && docRef.current) {
         /**
-         * 文档已存在时也要跟一格：`displayName`。
+         * 文档已存在时也要跟两格：`displayName` 与 `realmLink`。
          *
-         * 它由「绑定的是哪个实体」派生（见主进程 `toCharacterDto`），换绑主角后
-         * 必须重算 —— 否则行囊头部会一直显示旧主角的名字。
+         * `displayName` 由「绑定的是哪个实体」派生（见主进程 `toCharacterDto`），
+         * 换绑主角后必须重算 —— 否则行囊头部会一直显示旧主角的名字。
          *
-         * 只动这一格，不整体替换文档：换绑发生在右侧要素栏，此时行囊里可能正有
+         * `realmLink` 同理但更隐蔽：换绑只改 `entityId` 那一格，文档里的
+         * realmLink 仍留着**旧实体的 fromId**，而 `realmState.link` 优先取
+         * doc —— 不换就会显示旧主角的境界，保存时还会把新主角的境界写到旧
+         * 实体名下。仅在落点确实换了人时整体替换；未绑定时库内没有关系行
+         * （§9.7.5「不绑定就不写 novel_links」），显式置空。
+         *
+         * 只动这两格，不整体替换文档：换绑发生在右侧要素栏，此时行囊里可能正有
          * 未保存的编辑，整体 replace 会把它们冲掉（这正是 syncMeta 的立身之本）。
          * 绑定那一格 `entityId` 由调用方（bindEntity / 事件监听）自己写。
          */
         putBundleCharacterName(bundle.character);
+        const current = docRef.current;
+        if ((current.realmLink?.fromId ?? "") !== bundle.character.entityId) {
+          const link = next.realmLink;
+          const patched: PackDoc = {
+            ...current,
+            realmLink: link ? { ...link, note: link.note ?? "" } : null,
+          };
+          docRef.current = patched;
+          setDocState(patched);
+          // realmLink 参与净变化计数（pack-dirty 的 realmSignature）：
+          // 换了人就是一处未保存改动，下次保存才会把新绑定写进 novel_links
+          // （幂等）并广播 —— 与「外部改了境界」的同步路径同一口径
+          recomputeDirty(patched);
+        }
       }
       return next;
     } catch {
       return null;
     }
-  }, [workId, putBundleCharacterName]);
+  }, [workId, putBundleCharacterName, recomputeDirty]);
+
+  /**
+   * 把「别的渲染进程记的账」合并进当前文档（跨窗口快速记账，REQ-027）。
+   *
+   * 编辑器窗口里本地记账桥够不着（`runPackQuickAdd` 只在本渲染进程有效），
+   * 于是落主进程：有草稿并草稿、没有直插正式表。本窗口的内存文档对这次
+   * 写入**不知情** —— 不合并的话，下一次整文档保存连草稿一起清，刚记的
+   * 物品凭空消失（纯静默的数据丢失）。
+   *
+   * 按 `itemId` 定位，**已存在就跳过**：广播可能重复到达（双通道各发一次、
+   * 切网重连），合并必须幂等。装载失败静默返回 —— 不影响本地编辑，下次
+   * 装载时这条物品本来就在草稿 / 正式表里，会自然带上。
+   */
+  const mergeExternalItem = useCallback(
+    async (itemId: string): Promise<void> => {
+      const current = docRef.current;
+      if (!current || !itemId) return;
+      if (current.items.some((item) => item.id === itemId)) return;
+      let bundle: PackBundleDTO;
+      try {
+        bundle = await loadPackBundle(workId);
+      } catch {
+        return;
+      }
+      // 主进程两条落库路径都可能命中：无草稿时在正式表里，有草稿时在草稿里
+      const draft = bundle.draft ? parseDraft(bundle.draft.payload) : null;
+      const item =
+        draft?.items.find((row) => row.id === itemId) ??
+        bundle.items.find((row) => row.id === itemId);
+      if (!item) return;
+      // 等待装载的期间本地可能已经加过同 id 的物品（或文档被整体换掉），再判一次
+      const latest = docRef.current;
+      if (!latest || latest.items.some((row) => row.id === itemId)) return;
+      const next: PackDoc = { ...latest, items: [...latest.items, item] };
+      docRef.current = next;
+      setDocState(next);
+      recomputeDirty(next);
+    },
+    [workId, recomputeDirty],
+  );
+
+  /**
+   * 订阅「记账成功」广播（跨窗口快速记账）。
+   *
+   * 双通道与其它行囊事件一致：同窗口 CustomEvent + 跨窗口 broadcast
+   * （广播刻意排除发送者，所以两条都要接；`workId` 过滤别的作品）。
+   */
+  useEffect(() => {
+    const handler = (...args: unknown[]): void => {
+      const detail = readEventDetail<PackQuickAddedEventDetail>(args);
+      if (!detail || typeof detail !== "object") return;
+      if (detail.workId !== workId || !detail.itemId) return;
+      void mergeExternalItem(detail.itemId);
+    };
+    window.addEventListener(PACK_QUICK_ADDED_EVENT, handler as EventListener);
+    const api = window.electronAPI?.windowAPI;
+    api?.on(PACK_QUICK_ADDED_EVENT, handler);
+    return () => {
+      window.removeEventListener(PACK_QUICK_ADDED_EVENT, handler as EventListener);
+      api?.off(PACK_QUICK_ADDED_EVENT, handler);
+    };
+  }, [workId, mergeExternalItem]);
 
   /**
    * 唯一的编辑入口：所有改动都经过它 → 重算净变化 → 防抖写草稿。

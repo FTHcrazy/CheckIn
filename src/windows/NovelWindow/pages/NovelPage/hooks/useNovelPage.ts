@@ -31,6 +31,7 @@ import {
   saveLastPosition,
 } from "../services/novel-service";
 import { quickAddPackItem } from "@/shared/components/CharacterPack/services/pack-service";
+import { notifyQuickAdded } from "@/shared/components/CharacterPack/pack-config";
 import { buildEntityTypesValue, type EntityTypesContextValue } from "./entity-types-context";
 import type {
   CustomEntityTypeDef,
@@ -76,6 +77,19 @@ interface ReorderPreview {
  * 折叠与浮层在 useNovelViewState，本层不重复实现它们的逻辑。
  */
 export function useNovelPage() {
+  /**
+   * 行囊窗口上下文的「代号」：重置模板 / 清库重播后 +1。
+   *
+   * 为什么需要它：`seedTemplateBook` 是**同 workId**（模板书 id 固定为
+   * `tpl-w`）的清库重播种，行囊数据被连库清掉重播。PackWindow 的宿主按
+   * `workId#nonce` 做 key，同 workId 不会重挂载 —— 它持重置前内存文档，
+   * 下一次保存（手动 / 自动）会把旧文档盖回重播种数据（角色行都已重建，
+   * 写回去的还是旧 characterId 的孤儿数据）。代号变化强制重挂载 → 重新装载。
+   *
+   * 声明在顶部：`handleResetTemplate`（下方）要 set它，setState 必须先声明。
+   */
+  const [packNonce, setPackNonce] = useState(0);
+
   const data = useNovelData();
   const editor = useNovelEditorState(data);
   const view = useNovelViewState();
@@ -384,8 +398,11 @@ export function useNovelPage() {
       return;
     }
     // 重置会连行囊一起清空重播（模板行囊的主角是沈青梧），
-    // 而作品 id 不变、hook 的 workId 依赖不会触发重读 → 显式刷一次
+    // 而作品 id 不变（模板书 id 固定）、hook 的 workId 依赖不会触发重读 → 显式刷一次
     await refreshProtagonist();
+    // 行囊数据被连库重播：+1 代号让行囊窗口按 key 重挂载重新装载，
+    // 否则它持重置前内存文档，下一次保存会把旧文档盖回重播种数据
+    setPackNonce((n) => n + 1);
     view.showToast(
       `已重置为模板书籍 · ${summary.chapters} 章 / 约 ${formatThousands(summary.words)} 字`,
       "info",
@@ -580,6 +597,9 @@ export function useNovelPage() {
    * 面板开着时由面板改它自己的内存文档（脏计数 +1，需保存），没开则落主进程
    * （它会自己判断要不要并进草稿）—— 两边的选择封装在 `quickAddPackItem` 里，
    * 这里只负责取文本、给出反馈。
+   *
+   * 落主进程那条路**必须广播** `notifyQuickAdded`：行囊窗口是另一个渲染进程，
+   * 不通知它，下一次整文档保存就会把刚记的物品连草稿一起清掉。
    */
   const handleCtxToPack = useCallback(async (): Promise<void> => {
     const text = (editor.selection?.text ?? "").trim();
@@ -590,11 +610,12 @@ export function useNovelPage() {
       return;
     }
     const name = text.slice(0, QUICK_ADD_NAME_MAX);
-    const ok = await quickAddPackItem(data.activeWorkId, {
+    const itemId = await quickAddPackItem(data.activeWorkId, {
       name,
       chapterId: data.activeChapterId ?? "",
     });
-    if (ok) {
+    if (itemId) {
+      notifyQuickAdded(data.activeWorkId, itemId);
       view.showToast(`已记入背包：${name}${text.length > name.length ? "…" : ""}`);
     } else {
       view.showToast("记入背包失败，请重试", "warning");
@@ -722,27 +743,34 @@ export function useNovelPage() {
     window.electronAPI?.send("pack-window-open", {
       workId: data.activeWorkId,
       chapterId: data.activeChapterId ?? "",
+      nonce: packNonce,
     });
-  }, [data.activeWorkId, data.activeChapterId]);
+  }, [data.activeWorkId, data.activeChapterId, packNonce]);
 
   /**
    * 行囊窗口主动跟进：作品 / 章节变化（含编辑器首挂载）即广播新上下文。
    * PackWindow 收到后 flush 旧作品草稿（重挂载兜底）并重新装载 bundle。
    * 签名去重：同一上下文不重复广播，避免数据 hook 的中间态抖动连发。
+   *
+   * `nonce` 参与签名与依赖：重置后 workId / chapterId 可能都没变，只有它
+   * 能区分「真的换了书」与「同一本书被清库重播了」。
+   *
+   * 空 workId 也广播（作品被删光）：行囊窗口据此退回占位态，而不是一直
+   * 显示已删作品的旧文档；App 侧按空串不装载，不会触发建行。
    */
   const workContextRef = useRef("");
   useEffect(() => {
     const workId = data.activeWorkId;
-    if (!workId) return;
     const chapterId = data.activeChapterId ?? "";
-    const signature = `${workId}\u0000${chapterId}`;
+    const signature = `${workId}\u0000${chapterId}\u0000${packNonce}`;
     if (workContextRef.current === signature) return;
     workContextRef.current = signature;
     void window.electronAPI?.windowAPI?.broadcast("novel-work-changed", {
       workId,
       chapterId,
+      nonce: packNonce,
     });
-  }, [data.activeWorkId, data.activeChapterId]);
+  }, [data.activeWorkId, data.activeChapterId, packNonce]);
 
   /** 把名字建为角色卡（type=character，名字带入；复用 markSelectionAsEntity 走查重 + 落库） */
   const handleCreateEntityFromName = useCallback(

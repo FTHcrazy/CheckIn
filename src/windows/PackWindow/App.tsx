@@ -10,7 +10,7 @@ import CharacterPackHost from "@/shared/components/CharacterPack";
  * 模块本体在 `shared/components/CharacterPack`（NovelWindow 与本窗口共用，
  * 窗口之间禁止互相导入）。
  *
- * 上下文（workId / chapterId）有两条投递路径，负载形状相同：
+ * 上下文（workId / chapterId / nonce）有两条投递路径，负载形状相同：
  * - `pack-window-context`：主进程在新窗口 did-finish-load 后下发（打开时携带）；
  * - `novel-work-changed`：NovelWindow 切换作品 / 章节后广播，本窗口主动跟进
  *   （重挂载宿主 → 重新装载 bundle；旧作品的未保存编辑已由草稿兜底）。
@@ -23,6 +23,12 @@ import CharacterPackHost from "@/shared/components/CharacterPack";
 interface PackWindowContext {
   workId: string;
   chapterId: string;
+  /**
+   * 上下文代号：NovelWindow 重置模板（同 workId 清库重播）时 +1。
+   * 进 key 是为了「同 workId 也要重挂载」——否则行囊持重置前的内存文档，
+   * 下一次保存会把旧文档盖回重播种数据。缺省 0（旧负载 / 打开时携带）。
+   */
+  nonce?: number;
 }
 
 function isPackWindowContext(value: unknown): value is PackWindowContext {
@@ -47,6 +53,7 @@ export default function PackWindowApp() {
       setContext({
         workId: first.workId,
         chapterId: typeof first.chapterId === "string" ? first.chapterId : "",
+        nonce: typeof first.nonce === "number" ? first.nonce : 0,
       });
     };
     api.on("pack-window-context", handler);
@@ -61,16 +68,20 @@ export default function PackWindowApp() {
     <div className="window-shell">
       <WindowHeader title="行囊" icon={<BookOutlined />} />
       <div className="window-shell__body">
-        {context ? (
-          // key = workId：切作品时整只重挂 —— usePackData 的卸载兜底会把
-          // 旧作品的草稿 flush 落库（渲染进程还活着，异步 IPC 能跑完），
-          // 然后新作品从草稿 + 正式行完整装载
+        {context?.workId ? (
+          // key = workId#nonce：切作品 / 重置模板（同 workId 清库重播，靠 nonce
+          // 区分）时整只重挂 —— usePackData 的卸载兜底会把旧作品的草稿 flush
+          // 落库（渲染进程还活着，异步 IPC 能跑完），然后从草稿 + 正式行完整装载
           <CharacterPackHost
-            key={context.workId}
+            key={`${context.workId}#${context.nonce ?? 0}`}
             workId={context.workId}
             chapterId={context.chapterId}
             onClose={() => window.electronAPI?.send("window-control", "close")}
           />
+        ) : context ? (
+          // 作品被删光：显示占位而不是已删作品的旧文档。空 workId 不进宿主，
+          // 避免主进程 ensurePackCharacterRow("") 建出 work_id='' 的垃圾行
+          <div className="pack-window__loading">当前没有作品，行囊暂无内容</div>
         ) : (
           <div className="pack-window__loading">正在打开行囊…</div>
         )}

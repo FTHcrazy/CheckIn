@@ -95,9 +95,12 @@ describe("主角名：以要素库实体为准", () => {
 });
 
 describe("主角名：三个同步场景都有链路", () => {
-  it("场景①书架切作品：PackWindow 以 workId 为 key 整只重挂", () => {
+  it("场景①书架切作品：PackWindow 以 workId（+nonce）为 key 整只重挂", () => {
     const app = read("src/windows/PackWindow/App.tsx");
-    expect(app).toMatch(/key=\{context\.workId\}/);
+    expect(app).toMatch(/key=\{`\$\{context\.workId\}#\$\{context\.nonce \?\? 0\}`\}/);
+    // nonce 进 key：重置模板是**同 workId** 清库重播，只靠 workId 不会重挂载，
+    // 行囊会持重置前内存文档把旧数据盖回去（P1-2）
+    expect(app).toMatch(/nonce: typeof first\.nonce === "number" \? first\.nonce : 0/);
   });
 
   it("场景②右侧换绑主角：syncMeta 会刷新 displayName", () => {

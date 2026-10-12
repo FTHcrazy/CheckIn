@@ -345,13 +345,47 @@ export function registerPackQuickAdd(fn: ((request: PackQuickAddRequest) => stri
  * 为什么必须分两条路：面板开着时数据主人是它的内存文档 + 草稿，直接写库会
  * 与面板的下一份整文档草稿互相覆盖；面板没开时才轮到主进程（且它还得看草稿
  * 在不在，见 `novel-pack-quick-add` 的注释）。
+ *
+ * `itemId` 是新建物品的 id（面板那条路同步就有；主进程那条路由调用方从 IPC
+ * 返回值里拿）。跨窗口合并要靠它定位，见 `PACK_QUICK_ADDED_EVENT`。
  */
 export function runPackQuickAdd(request: PackQuickAddRequest): {
   handled: boolean;
   ok: boolean;
+  itemId: string | null;
 } {
-  if (!quickAdder) return { handled: false, ok: false };
-  return { handled: true, ok: quickAdder(request) !== null };
+  if (!quickAdder) return { handled: false, ok: false, itemId: null };
+  const id = quickAdder(request);
+  return { handled: true, ok: id !== null, itemId: id };
+}
+
+// ── 快速记账跨窗口合并事件 ──
+
+/**
+ * 事件名：**别的渲染进程**替行囊记了一笔账，行囊窗口要把它并进内存文档。
+ *
+ * 拆窗之后 `runPackQuickAdd` 的本地桥只在面板所在渲染进程里有效 ——
+ * 编辑器窗口（NovelWindow）里它永远 `handled: false`，于是记账落主进程
+ * （`novel-pack-quick-add`：有草稿并草稿、没有直插正式表）。而行囊窗口
+ * 持着自己的内存文档，对这次写入**不知情**：它的下一次整文档保存会连草稿
+ * 一起清掉，刚记的物品凭空消失（纯静默的数据丢失）。
+ *
+ * 所以主进程落库成功后必须广播本事件，行囊窗口按 `itemId` 合并（已存在则
+ * 跳过，幂等）。负载形状与其它行囊事件一致：`workId` 过滤别的作品。
+ */
+export const PACK_QUICK_ADDED_EVENT = "pack-quick-added";
+
+/** 事件负载：`itemId` 指向主进程新建（或并入草稿）的那一条物品 */
+export interface PackQuickAddedEventDetail {
+  workId: string;
+  itemId: string;
+}
+
+/** 广播「记账成功，行囊窗口来合并」（同窗口 + 跨窗口各一次，理由同其它事件） */
+export function notifyQuickAdded(workId: string, itemId: string): void {
+  const detail: PackQuickAddedEventDetail = { workId, itemId };
+  window.dispatchEvent(new CustomEvent(PACK_QUICK_ADDED_EVENT, { detail }));
+  void window.electronAPI?.windowAPI.broadcast(PACK_QUICK_ADDED_EVENT, detail);
 }
 
 // ── 「插入本章末尾」桥（REQ-034） ──

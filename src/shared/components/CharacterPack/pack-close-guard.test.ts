@@ -310,8 +310,20 @@ describe("REQ-027 快速记账（守卫）", () => {
     const body = SERVICE.slice(SERVICE.indexOf("export async function quickAddPackItem"));
     expect(body).toContain("runPackQuickAdd(request)");
     // handled 为真 = 面板接手（它只改内存文档）；否则才走 IPC
-    expect(body).toContain("if (local.handled) return local.ok;");
+    expect(body).toContain("if (local.handled) return local.itemId;");
     expect(body).toContain("novel.pack.quickAdd(");
+  });
+
+  it("ⓘ 返回值是新建物品 id，供调用方广播 pack-quick-added 跨窗口合并", () => {
+    const body = SERVICE.slice(SERVICE.indexOf("export async function quickAddPackItem"));
+    // 拆窗后主进程那条路对行囊窗口是「别人写的」：不广播它下一次整文档保存
+    // 连草稿一起清，刚记的物品凭空消失（P1-1，见 PACK_QUICK_ADDED_EVENT 注释）
+    expect(body).toContain("Promise<string | null>");
+    expect(body).toContain("created ? created.id : null");
+    const page = read("src/windows/NovelWindow/pages/NovelPage/hooks/useNovelPage.ts");
+    const at = page.indexOf("const itemId = await quickAddPackItem(");
+    expect(at).toBeGreaterThan(-1);
+    expect(page.slice(at, at + 400)).toContain("notifyQuickAdded(");
   });
 
   it("面板只在 open 时注册记账桥，卸载时必须摘掉（否则面板关了还往内存里写）", () => {

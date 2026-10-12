@@ -124,14 +124,18 @@ export async function savePackUiPrefsRaw(value: string): Promise<boolean> {
  * 两条路的差异不是「快慢」而是「谁是数据主人」：面板开着的整个会话里，
  * 真正的当前状态是它的内存文档 + 草稿，直接写库会被下一次整文档草稿覆盖；
  * 面板没开时主进程才是唯一写入方（且它自己会判断要不要并进草稿）。
+ *
+ * 返回新建物品的 id（失败 / 无作品返回 null）。**调用方拿到 id 后要广播
+ * `notifyQuickAdded`**：拆窗后主进程那条路对行囊窗口是「别人写的」，
+ * 不广播它下一次整文档保存就会把这条物品覆盖掉（见 PACK_QUICK_ADDED_EVENT）。
  */
 export async function quickAddPackItem(
   workId: string,
   request: PackQuickAddRequest,
-): Promise<boolean> {
+): Promise<string | null> {
   const local = runPackQuickAdd(request);
-  if (local.handled) return local.ok;
-  if (!workId) return false;
+  if (local.handled) return local.itemId;
+  if (!workId) return null;
   try {
     const created = await window.electronAPI!.novel.pack.quickAdd(
       workId,
@@ -139,8 +143,8 @@ export async function quickAddPackItem(
       request.chapterId,
       request.category ?? "杂物",
     );
-    return created !== null;
+    return created ? created.id : null;
   } catch {
-    return false;
+    return null;
   }
 }
