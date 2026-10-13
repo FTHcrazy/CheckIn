@@ -15,13 +15,6 @@ import PackHeader from "./index";
  * 不再是独立的 `.cpk-savebar` 条 —— 断言跟着改，语义不变。
  */
 
-const READINGS = {
-  load: {
-    weight: { total: 128, limit: 200, over: false },
-    capacity: { used: 18, limit: 30, full: false },
-  },
-};
-
 function props(over: Partial<Parameters<typeof PackHeader>[0]> = {}) {
   const onExportDraft = vi.fn();
   const base: Parameters<typeof PackHeader>[0] = {
@@ -29,7 +22,6 @@ function props(over: Partial<Parameters<typeof PackHeader>[0]> = {}) {
     realmText: "筑基 1/9",
     realmHint: "",
     realmBound: false,
-    readings: READINGS,
     compact: false,
     dirty: 0,
     saving: false,
@@ -79,39 +71,6 @@ describe("PackHeader —— 保存条（G-3）", () => {
   });
 });
 
-describe("PackHeader —— 顶部概览带读数", () => {
-  afterEach(cleanup);
-
-  it("有数据时给出负重 / 容量两个读数（技能不上头部，与技能模块摘要同源）", () => {
-    render(<PackHeader {...props().base} />);
-    const labels = Array.from(document.querySelectorAll(".cpk-head__rlabel")).map(
-      (node) => node.textContent,
-    );
-    expect(labels).toEqual(["负重", "容量"]);
-  });
-
-  it("负重超限时那一格标成告警态", () => {
-    render(
-      <PackHeader
-        {...props({
-          readings: {
-            load: {
-              weight: { total: 260, limit: 200, over: true },
-              capacity: { used: 18, limit: 30, full: false },
-            },
-          },
-        }).base}
-      />,
-    );
-    expect(document.querySelector(".cpk-head__r.is-alert")).not.toBeNull();
-  });
-
-  it("没有文档（readings 为 null）时不渲染读数区，头部不塌", () => {
-    render(<PackHeader {...props({ readings: null }).base} />);
-    expect(document.querySelector(".cpk-head__readings")).toBeNull();
-  });
-});
-
 describe("PackHeader —— 失败态逃生出口（REQ-045）", () => {
   afterEach(cleanup);
 
@@ -145,7 +104,7 @@ describe("PackHeader —— 失败态逃生出口（REQ-045）", () => {
  * 窄档紧凑模式（<600px）：工具收进「更多」。
  *
  * 小窗下把「盘点记录 / 量纲 / 模块管理」三个图标摊平，
- * 会和读数、保存态抢同一行的宽度 —— 实测结果是读数文字互相重叠、
+ * 会和保存态抢同一行的宽度 —— 实测结果是身份区被挤到 0 宽、
  * 「全部已读」被裁出右边界。收进菜单是**主动让位**：
  * 留白比留一排点不到的按钮重要（点不到的按钮比藏起来的更糟）。
  *

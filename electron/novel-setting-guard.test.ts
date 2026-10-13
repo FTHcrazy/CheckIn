@@ -24,6 +24,11 @@ function channelBody(channel: string): string {
   return HANDLERS.slice(start, next < 0 ? HANDLERS.length : next);
 }
 
+/** 去掉注释再匹配：说明文字里会引用被改掉的写法，不该算命中 */
+function stripComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+}
+
 describe("设定模块：写操作必须命中才返回成功", () => {
   const mustHit = [
     ["novel-setting-category-update", "UPDATE novel_setting_categories SET"],
@@ -111,14 +116,26 @@ describe("设定模块：插入与拆分的序号口径", () => {
     expect(body).not.toContain("'[]', '', 1, NULL, NULL, NULL, NULL)");
   });
 
-  it("拆分的第一段复用原 id —— 绑在这一阶上的「当前境界」因此不会失效", () => {
+  it("拆分（1.38.1）：原阶降级为分组、id 不变 —— 绑在这一阶上的「当前境界」不失效", () => {
     const body = channelBody("novel-setting-level-split");
-    // 第一段走 UPDATE 而不是 INSERT，才是「复用原 id」；
-    // 段长要落进 sub_levels（1.37.0 起与渲染层 applySplit 同口径，
-    // 否则重载后行囊境界换算把每段当 1 层算错）
-    expect(body).toContain("UPDATE novel_setting_levels SET name = ?, seg_from = ?, seg_to = ?, sub_levels = ? WHERE id = ?");
-    // 后续段新建并挂 parent_id
-    expect(body).toContain("parent_id");
+    /*
+      1.38.1 起父阶是**纯分组**：自己不占任何小层段。原阶那一行保留 id、
+      把 seg_from / seg_to 置 NULL、sub_levels 落**整阶总数**；各段全部新建
+      行并挂 parent_id。
+
+      「绑定不失效」这条意图因此更强：绑定统一落 (根阶, note.sub)，而根阶
+      正是原阶那一行、id 没动 —— 拆分前后「当前境界」指的是同一个阶，
+      只是进度改由 note.sub 表达，不再依赖某个段 id 是否存在。
+    */
+    expect(body).toContain(
+      "UPDATE novel_setting_levels SET seg_from = NULL, seg_to = NULL, sub_levels = ? WHERE id = ?",
+    );
+    // 各段新建：段长落 sub_levels，段区间落 seg_from / seg_to，全部挂 parent_id
+    expect(body).toContain("parent_id, seg_from, seg_to, sub_pattern");
+    // 反面：不许退回「第一段复用原 id、父阶自己占第一段」的旧模型
+    expect(stripComments(body)).not.toContain(
+      "UPDATE novel_setting_levels SET name = ?, seg_from = ?, seg_to = ?, sub_levels = ? WHERE id = ?",
+    );
   });
 });
 

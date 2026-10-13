@@ -39,8 +39,6 @@ interface PackCharacterRow {
   entity_id: string | null;
   realm_at: string | null;
   note: string;
-  weight_limit: number;
-  capacity_limit: number;
   sort_order: number;
 }
 
@@ -127,7 +125,6 @@ interface PackItemRow {
   /** 归属分组（novel_pack_groups.id）；'' = 未分组 */
   group_id: string;
   source_chapter_id: string | null;
-  weight: number;
   updated_at: number;
 }
 
@@ -278,10 +275,6 @@ export interface PackCharacterDto {
   /** 未绑定实体时的行囊内境界（JSON 字符串 `{levelId, sub}`） */
   realmAt: string;
   note: string;
-  /** 负重上限（REQ-033）；0 = 不限 */
-  weightLimit: number;
-  /** 物品栏格数上限（F-5）；0 = 不限 */
-  capacityLimit: number;
   sortOrder: number;
 }
 
@@ -379,8 +372,6 @@ export interface PackItemDto {
   /** 归属分组（novel_pack_groups.id）；'' = 未分组 */
   groupId: string;
   sourceChapterId: string;
-  /** 单件重量（REQ-033）；0 = 没记 */
-  weight: number;
   updatedAt: number;
 }
 
@@ -627,8 +618,6 @@ function toCharacterDto(row: PackCharacterRow): PackCharacterDto {
     // 阶梯投影后找不到行会静默回落到首阶）
     realmAt: normalizeRealmRaw(row.realm_at ?? ""),
     note: row.note,
-    weightLimit: row.weight_limit ?? 0,
-    capacityLimit: row.capacity_limit ?? 0,
     sortOrder: row.sort_order,
   };
 }
@@ -712,7 +701,6 @@ function toItemDto(row: PackItemRow): PackItemDto {
     slotIndex: row.slot_index,
     groupId: row.group_id ?? "",
     sourceChapterId: row.source_chapter_id ?? "",
-    weight: row.weight ?? 0,
     updatedAt: row.updated_at,
   };
 }
@@ -1244,8 +1232,6 @@ export function registerNovelPackHandlers(): void {
           slotIndex: null,
           groupId: "",
           sourceChapterId: chapterId || "",
-          // 正文选区给不出重量（同「分类固定杂物」的理由：猜不如不猜）
-          weight: 0,
           updatedAt: now,
         };
 
@@ -1268,8 +1254,8 @@ export function registerNovelPackHandlers(): void {
           dbRun(
             `INSERT INTO novel_pack_items
                (id, character_id, name, category, qty, rarity, icon, desc, tags,
-                equipped_slot_id, slot_index, source_chapter_id, weight, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                equipped_slot_id, slot_index, source_chapter_id, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               item.id,
               item.characterId,
@@ -1283,7 +1269,6 @@ export function registerNovelPackHandlers(): void {
               null,
               null,
               item.sourceChapterId || null,
-              item.weight,
               item.updatedAt,
             ],
           );
@@ -1408,13 +1393,12 @@ export function registerNovelPackHandlers(): void {
       // 「行囊里显示未指定、右侧卡上却戴着皇冠」正是这么来的。
       dbRun(
         `INSERT INTO novel_pack_characters
-           (id, work_id, name, avatar, is_protagonist, entity_id, realm_at, note, weight_limit, capacity_limit, sort_order)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           (id, work_id, name, avatar, is_protagonist, entity_id, realm_at, note, sort_order)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            work_id = excluded.work_id, name = excluded.name, avatar = excluded.avatar,
            is_protagonist = excluded.is_protagonist,
            realm_at = excluded.realm_at, note = excluded.note,
-           weight_limit = excluded.weight_limit, capacity_limit = excluded.capacity_limit,
            sort_order = excluded.sort_order`,
         [
           c.id,
@@ -1425,8 +1409,6 @@ export function registerNovelPackHandlers(): void {
           c.entityId || null,
           c.realmAt || null,
           c.note,
-          c.weightLimit || 0,
-          c.capacityLimit || 0,
           c.sortOrder,
         ],
       );
@@ -1519,8 +1501,8 @@ export function registerNovelPackHandlers(): void {
       const itemStmt = db.prepare(
         `INSERT INTO novel_pack_items
            (id, character_id, name, category, qty, rarity, icon, desc, tags,
-            equipped_slot_id, slot_index, group_id, source_chapter_id, weight, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            equipped_slot_id, slot_index, group_id, source_chapter_id, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       for (const i of payload.items) {
         itemStmt.run(
@@ -1537,7 +1519,6 @@ export function registerNovelPackHandlers(): void {
           i.slotIndex,
           i.groupId || "",
           i.sourceChapterId || null,
-          i.weight || 0,
           i.updatedAt || now,
         );
       }

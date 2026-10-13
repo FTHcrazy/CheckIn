@@ -1,4 +1,5 @@
 @use "./styles/pack-common.scss";
+@use "../../styles/widget" as widget;
 
 /**
  * 行囊外壳（独立窗口形态 · 分区仪表盘）
@@ -7,7 +8,7 @@
  * 铺满 —— flex: 1 占满全部可用空间，不再有内嵌面板时代的让位 / 浮层 / 速览。
  *
  * 布局分三档（判据在 TS 侧 `packWidthTier`，这里只按 `data-tier` 出样式）：
- * - wide  ：双栏并排（左装备类 / 右数值与状态）
+ * - wide  ：双栏并排（左数值与状态 / 右装备类）
  * - mid   ：单栏纵向流，全部模块展开
  * - narrow：单栏纵向流，次要六模块由 TS 侧折叠成标题行
  */
@@ -31,18 +32,68 @@
   }
 
   /*
-    双栏容器：左栏略宽。
-    设计稿给的左右是 596 : 460（约 56:44）—— 左栏是装备 / 物品 / 技能，
-    行内元素多（部位名 + 按钮、物品行 + 数量 + 按钮），给窄了会挤成两行；
-    右栏多是「标签 : 数值」的短行，窄一点无妨。
+    双栏容器：**左「数值与状态」/ 右「装备类」**（顺序见 pack-layout 的
+    PACK_ZONE_ORDER，两处必须同序 —— 左上是视线起点，放作者第一眼要找的
+    属性汇总 / 人物属性 / 境界）。
+    宽度 44 : 56：右栏（装备 / 物品 / 技能）是「部位名 + 按钮 / 物品行 + 数量 +
+    按钮」这类长行，给窄了会挤成两行；左栏多是「标签 : 数值」的短行，窄一点无妨。
     用 `minmax(0, …)` 而非固定 px：窗口拉伸时两栏按比例分配，不会出现某一栏
     被压到 0 宽（那会让长英文/数字溢出而不是省略）。
   */
   &__zones {
     display: grid;
-    grid-template-columns: minmax(0, 56fr) minmax(0, 44fr);
+    grid-template-columns: minmax(0, 44fr) minmax(0, 56fr);
     align-items: start;
     gap: 14px;
+  }
+
+  /*
+    单分区独占：对面分区一个启用模块都没有时（新书出厂只开核心三块，
+    全在 stats 栏），空分区不渲染，这一栏居中收窄 —— 卡片既不拉满整窗，
+    也不缩在角落，整版只有一个视觉重心。
+    上限取设计稿右栏的舒适行宽再放宽一档：三栏卡片行文都不长，720px 内
+    空态文案恰好一行到一行半，不会拖成大段落。
+  */
+  &__zones--solo {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: 720px;
+    margin: 0 auto;
+  }
+
+  /*
+    分区引导卡：对面分区被整体关掉时，替它占一句话的位置。
+    造型自带（虚线幽灵卡）→ 先清零 antd 外观再声明（清零必须在覆盖之前）。
+    antd 的边框恒读 `--ant-line-width` / `--ant-line-type`，清零把宽度归零了，
+    虚线要在这里按需恢复（同 ModifierList 的 cpk-castnote）。
+  */
+  &__zoneghost.ant-btn {
+    @include widget.ant-button-reset;
+
+    --ant-line-width: 1px;
+    --ant-line-type: dashed;
+    --ant-border-radius: var(--app-radius-item);
+    --ant-button-default-border-color: var(--app-border);
+    --ant-button-default-hover-border-color: var(--app-primary);
+    --ant-button-default-active-border-color: var(--app-primary);
+
+    display: block;
+    height: auto;
+    min-height: 0;
+    padding: 12px 16px;
+    text-align: left;
+    white-space: normal;
+    line-height: 1.7;
+    color: var(--app-text-muted);
+  }
+
+  .cpk__zoneghost-line {
+    display: block;
+    font-size: 12px;
+  }
+
+  .cpk__zoneghost-line--title {
+    font-weight: 600;
+    color: var(--app-text-secondary);
   }
 
   &__zone {

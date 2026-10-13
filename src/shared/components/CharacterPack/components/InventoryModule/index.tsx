@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button, Dropdown, Input, InputNumber, Select } from "antd";
+import { Button, Dropdown, Input, Select } from "antd";
 import {
   AppstoreOutlined,
   CheckOutlined,
@@ -14,7 +14,7 @@ import PackExportButton from "../PackExportButton";
 import PackChangedDot from "../PackChangedDot";
 import type { PackPanelApi } from "../../hooks/usePackPanel";
 import { moduleLabel } from "../module-meta";
-import { formatWeight, isItemEquipped, itemWeight, matchesKeyword } from "../../pack-utils";
+import { isItemEquipped, matchesKeyword } from "../../pack-utils";
 import { INVENTORY_RENDER_WINDOW, INVENTORY_SEARCH_DEBOUNCE_MS, QTY_HOLD } from "../../pack-config";
 import { ITEM_CATEGORIES, RARITY_KEYS, rarityMetaOf, type PackItem } from "../../types";
 import "./index.scss";
@@ -22,9 +22,6 @@ import "./index.scss";
 interface InventoryModuleProps {
   api: PackPanelApi;
 }
-
-/** 「超载」状态在状态模块里的名字（自动创建 / 去重都按它认人） */
-const OVERLOAD_STATUS_NAME = "超载";
 
 /** 物品数量：长按连续增减（第一下立即生效，按住 400ms 后每 60ms 一次） */
 function useHoldRepeat() {
@@ -78,8 +75,6 @@ export default function InventoryModule({ api }: InventoryModuleProps) {
    * 失焦 / 回车 / 折叠时才解析一次提交。
    */
   const [tagsDraft, setTagsDraft] = useState<Record<string, string>>({});
-  /** 上限设置面板是否展开（REQ-033：负重 / 格数） */
-  const [limitsOpen, setLimitsOpen] = useState(false);
   /** 装备下拉的目标物品：用 ref 而不是 state，避免菜单读到上一帧的对象 */
   const equipTargetRef = useRef<string>("");
   const hold = useHoldRepeat();
@@ -168,35 +163,6 @@ export default function InventoryModule({ api }: InventoryModuleProps) {
   const showSearch = doc.items.length >= 20;
   const grid = api.prefs.inventoryView === "grid";
   const slots = [...doc.slots].sort((a, b) => a.sortOrder - b.sortOrder);
-  const load = api.load;
-
-  /**
-   * 是否已经有一条「超载」状态。
-   *
-   * 按**名字**认人而不是记一个 id：状态是作者自己的数据，他可能删了重建、
-   * 也可能从别的书复制过来。按名字去重是最不容易出错的判据 —— 而这里必须
-   * 去重，否则超载期间每点一次就多一条「超载」。
-   */
-  const overloadStatus = doc.modifiers.find(
-    (mod) => mod.ownerType === "status" && mod.name === OVERLOAD_STATUS_NAME,
-  );
-
-  /**
-   * 「把超载记成状态效果」（F-5 第二条：**复用状态模块**）。
-   *
-   * 刻意**不做自动挂载**：超载该扣什么属性、扣多少，是每本书自己的规则，
-   * 工具猜不出来。自动塞一条 `value = 0` 的「超载」进设定，作者要过很久才会
-   * 发现它在汇总里什么都没干 —— 那比不做更糟。所以这里只建出这条骨架并直接
-   * 打开效果编辑器，让作者当场填数值。
-   */
-  const addOverloadStatus = () => {
-    const id = api.addStatus({
-      name: OVERLOAD_STATUS_NAME,
-      nature: "sustained",
-      active: true,
-    });
-    if (id) api.openEffectEditor("status", doc.character.id, "状态效果", id);
-  };
 
   const equipOptions = slots.map((slot) => ({
     key: slot.id,
@@ -272,7 +238,7 @@ export default function InventoryModule({ api }: InventoryModuleProps) {
    *   - 名称、数量、装备态 → 每次都可能改，留在主行；
    *   - 分类 → 一件物品建好时定一次，之后基本不动 → 进菜单；
    *   - 加成效果（✦）→ 是「展开编辑器」的低频入口，且已在菜单里有同族项 → 进菜单；
-   *   - 描述 / 标签 / 重量 → 本来就低频 → 留在菜单。
+   *   - 描述 / 标签 → 本来就低频 → 留在菜单。
    *
    * 被移走的两个都不是「紧急行为」：分类改错不影响汇总口径的数字，
    * 加成效果漏填会体现在总属性上、作者看得到。而删除是破坏性操作，
@@ -329,7 +295,7 @@ export default function InventoryModule({ api }: InventoryModuleProps) {
             ),
           },
           { key: "effect", label: "加成效果" },
-          { key: "detail", label: open ? "收起描述与标签" : "描述 / 标签 / 重量" },
+          { key: "detail", label: open ? "收起描述与标签" : "描述 / 标签" },
           { type: "divider" },
           { key: "remove", label: "删除", danger: true },
         ],
@@ -344,7 +310,7 @@ export default function InventoryModule({ api }: InventoryModuleProps) {
         className={`cpk-iconbtn tiny${open ? " is-on" : ""}`}
         aria-label="更多操作"
         aria-haspopup="menu"
-        title="分类 / 加成效果 / 描述 / 标签 / 重量 / 删除"
+        title="分类 / 加成效果 / 描述 / 标签 / 删除"
       >
         <MoreOutlined />
       </Button>
@@ -419,73 +385,6 @@ export default function InventoryModule({ api }: InventoryModuleProps) {
         </>
       }
     >
-      {/*
-        负重 / 容量条（REQ-033 / F-5）
-        两个口径并排：200 株草药占 1 格却可能压垮肩膀，作者需要同时看到两把尺子。
-        上限为 0 显示「不限」而不是 0 —— 「不限」和「上限为零」是相反的结论。
-      */}
-      <div className="cpk-inv__load">
-        <span className={`cpk-inv__loadseg${load.capacity.full ? " is-over" : ""}`}>
-          格数 {load.capacity.used}
-          {load.capacity.limit > 0 ? `/${load.capacity.limit}` : "（不限）"}
-        </span>
-        <span className="cpk-inv__loadsep">·</span>
-        <span className={`cpk-inv__loadseg${load.weight.over ? " is-over" : ""}`}>
-          负重 {formatWeight(load.weight.total)}
-          {load.weight.limit > 0 ? `/${formatWeight(load.weight.limit)}` : "（不限）"}
-        </span>
-        {load.capacity.full ? <span className="cpk-inv__loadwarn">背包已满</span> : null}
-        {load.weight.over ? <span className="cpk-inv__loadwarn">超载</span> : null}
-        {load.weight.over && !overloadStatus ? (
-          <Button
-            className="cpk-btn ghost"
-            onClick={addOverloadStatus}
-            title="在「状态效果」里建一条超载并立刻填数值"
-          >
-            记为状态
-          </Button>
-        ) : null}
-        <Button
-          className="cpk-btn ghost"
-          onClick={() => setLimitsOpen((open) => !open)}
-          aria-expanded={limitsOpen}
-        >
-          {limitsOpen ? "收起" : "上限"}
-        </Button>
-      </div>
-
-      {limitsOpen ? (
-        <div className="cpk-inv__limits">
-          <label className="cpk-inv__limitfield">
-            <span className="cpk-inv__limitlabel">格数上限</span>
-            <InputNumber
-              size="small"
-              min={0}
-              step={1}
-              className="cpk-inv__limitnum"
-              value={doc.character.capacityLimit}
-              placeholder="0 = 不限"
-              onChange={(value) => api.setLoadLimits({ capacityLimit: Number(value) || 0 })}
-            />
-          </label>
-          <label className="cpk-inv__limitfield">
-            <span className="cpk-inv__limitlabel">负重上限</span>
-            <InputNumber
-              size="small"
-              min={0}
-              step={1}
-              className="cpk-inv__limitnum"
-              value={doc.character.weightLimit}
-              placeholder="0 = 不限"
-              onChange={(value) => api.setLoadLimits({ weightLimit: Number(value) || 0 })}
-            />
-          </label>
-          <p className="cpk-inv__limithint">
-            填 0 表示不限。重量填在每件物品的「描述与标签」里，总重按「单件重量 × 数量」累计。
-          </p>
-        </div>
-      ) : null}
-
       {doc.items.length === 0 ? (
         <p className="cpk-empty">还没有物品。把主角身上带着的东西先记下来，比「回头再补」靠谱。</p>
       ) : items.length === 0 ? (
@@ -559,31 +458,6 @@ export default function InventoryModule({ api }: InventoryModuleProps) {
                       onBlur={() => commitTags(item.id)}
                       onPressEnter={() => commitTags(item.id)}
                     />
-                    {/*
-                      单件重量（REQ-033）。放在详情行而不是主行：
-                      面板最窄 340px 时主行只剩 285px，而「已穿戴 + 角标」已经占掉 292px
-                      —— 主行里再加一个数字输入框，会把这个模块整体撑出容器。
-                    */}
-                    <div className="cpk-inv__meta">
-                      <span className="cpk-inv__metalabel">单件重量</span>
-                      <InputNumber
-                        size="small"
-                        min={0}
-                        step={0.1}
-                        className="cpk-inv__weight"
-                        value={item.weight || undefined}
-                        placeholder="0 = 没记"
-                        aria-label="单件重量"
-                        onChange={(value) =>
-                          api.updateItem(item.id, { weight: Math.max(0, Number(value) || 0) })
-                        }
-                      />
-                      <span className="cpk-inv__subtotal">
-                        {item.weight > 0
-                          ? `小计 ${formatWeight(itemWeight(item))}（${item.qty} 件）`
-                          : "总重不含这一件"}
-                      </span>
-                    </div>
                   </div>
                 ) : null}
               </li>

@@ -1,4 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { CORE_PACK_MODULE_KEYS, DEFAULT_LAYOUTS } from "./pack-config";
+import { PACK_MODULES } from "./types";
 import {
   notifyNameChanged,
   notifyProtagonistChanged,
@@ -212,5 +216,78 @@ describe("快速记账跨窗口合并（P1-1）", () => {
   it("事件名与其它行囊事件互不撞车", () => {
     expect(PACK_QUICK_ADDED_EVENT).not.toBe(PACK_PROTAGONIST_EVENT);
     expect(PACK_QUICK_ADDED_EVENT).not.toBe(PACK_NAME_EVENT);
+  });
+});
+
+/**
+ * 出厂模块拼装（默认启用态）。
+ *
+ * 钉的是「新书打开行囊一屏全开」这个已经被吐槽过的默认值：出厂只启用核心三块
+ * （总属性汇总 / 人物属性 / 境界），其余七块以「存在但关闭」出厂 —— 顺序与完整性
+ * 照旧，只是打开行囊先给一张干净的仪表盘。
+ *
+ * 顺带钉住第二条：`DEFAULT_LAYOUTS` 的启用集合必须**恰好**是核心模块清单。
+ * 只要有人把某个模块加进 `coreModules`（动机通常是窄档不想折叠它），它就会
+ * 顺带改变新书的默认启用态 —— 这个联动是刻意的，所以要有断言把它显式化，
+ * 而不是留给下一个人从 diff 里发现。
+ */
+describe("DEFAULT_LAYOUTS（出厂模块拼装）", () => {
+  it("覆盖全部模块，顺序与 PACK_MODULES 一致", () => {
+    expect(DEFAULT_LAYOUTS.map((layout) => layout.key)).toEqual(
+      PACK_MODULES.map((module) => module.key),
+    );
+  });
+
+  it("默认只启用核心三块", () => {
+    expect(
+      DEFAULT_LAYOUTS.filter((layout) => layout.enabled).map((layout) => layout.key),
+    ).toEqual([...CORE_PACK_MODULE_KEYS]);
+  });
+
+  it("核心三块之外没有被默认启用的（反向：别退化成全部启用）", () => {
+    expect(DEFAULT_LAYOUTS.filter((layout) => layout.enabled)).toHaveLength(
+      CORE_PACK_MODULE_KEYS.length,
+    );
+    expect(CORE_PACK_MODULE_KEYS.length).toBeLessThan(PACK_MODULES.length);
+  });
+});
+
+/** 去掉注释再匹配：说明文字里会引用被改掉的写法，不该算命中 */
+function stripSourceComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+}
+
+/**
+ * 缺失行的兜底必须与出厂默认**同源**——这是那条缺陷真正的根。
+ *
+ * 「新书一屏全开」不止 `DEFAULT_LAYOUTS` 一处写死的默认值，还在**每个替
+ * 「库里没有这一行」拿主意的分支**：`mergeLayouts`（装载时补齐缺失行）与
+ * `setModuleOrder`（重排序时补齐）。旧写法兜底 `true`，后果是「以后每加一个
+ * 模块，所有老书都自动多开一块」——同一毛病换个入口复发（`pack-config.ts`
+ * 顶部注释里写的就是这条）。
+ *
+ * 这两个函数都在 hook 内部、不导出，跨不了进程也挂不上组件，只能钉源码文本
+ * （同 `pack-character-name-guard.test.ts` 的做法）。正面断言「两处都读
+ * isCorePackModule」，反面断言「不许退回写死 true」——反面那条必须先
+ * `stripSourceComments`，否则会命中解释这段历史的注释。
+ */
+describe("模块启用态：缺失行兜底与出厂默认同源", () => {
+  const PANEL = stripSourceComments(
+    readFileSync(
+      resolve(__dirname, "hooks/usePackPanel.ts"),
+      "utf8",
+    ).replace(/\r\n/g, "\n"),
+  );
+
+  it("mergeLayouts：缺失行按核心模块判定，不写死 true", () => {
+    const body = PANEL.slice(PANEL.indexOf("function mergeLayouts")).slice(0, 900);
+    expect(body).toMatch(/enabled: stored\?\.enabled \?\? isCorePackModule\(module\.key\)/);
+    expect(body).not.toMatch(/enabled: stored\?\.enabled \?\? true/);
+  });
+
+  it("setModuleOrder：重排序补齐的缺失行同样按核心模块判定", () => {
+    const body = PANEL.slice(PANEL.indexOf("const setModuleOrder")).slice(0, 1200);
+    expect(body).toMatch(/enabled: stored\?\.enabled \?\? isCorePackModule\(key\)/);
+    expect(body).not.toMatch(/enabled: stored\?\.enabled \?\? true/);
   });
 });

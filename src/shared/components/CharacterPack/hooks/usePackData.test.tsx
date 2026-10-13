@@ -39,7 +39,6 @@ function makeItem(id: string): PackItem {
     groupId: "",
     slotIndex: null,
     sourceChapterId: "c1",
-    weight: 0,
     updatedAt: 100,
   };
 }
@@ -77,8 +76,6 @@ function makeBundle(overrides: BundleOverrides = {}): PackBundleDTO {
       entityId,
       realmAt: "",
       note: "",
-      weightLimit: 0,
-      capacityLimit: 0,
       sortOrder: 1,
     },
     attributes: [],

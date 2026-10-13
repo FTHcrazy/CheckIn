@@ -33,7 +33,6 @@ function item(partial: Partial<PackItem>): PackItem {
     groupId: "",
     slotIndex: null,
     sourceChapterId: "",
-    weight: 0,
     updatedAt: 0,
     ...partial,
   };

@@ -603,7 +603,17 @@ export default function EntityDetail({
                 return (
                   <div key={level.id} className="nv-edetail__rung-group">
                     <Button
-                      className={`nv-edetail__rung${boundToRoot ? " is-on" : ""}`}
+                      /*
+                        根阶行在「绑定落点属于这一阶」时就高亮，而不是只在
+                        `boundToRoot`（没落在任何段上）时高亮。
+
+                        绑定统一落 (根阶, note.sub)：落在段上和落在未覆盖层上，
+                        **当前境界都还是这一阶** —— 卡片上要能一眼看出「主角在炼气」，
+                        段只是阶内进度。只按 boundToRoot 判的话，绑在「炼气 第1段」
+                        上会出现「段小条高亮、炼气那一行反而不高亮」，看起来像
+                        当前境界不在这一阶。
+                      */
+                      className={`nv-edetail__rung${boundInSubtree ? " is-on" : ""}`}
                       title={
                         boundInSubtree
                           ? "点击取消当前境界绑定"
@@ -622,7 +632,9 @@ export default function EntityDetail({
                         if (segments.length > 0) {
                           onSetEntityLevel(level.id, 1);
                         } else {
-                          onSetEntityLevel(level.id);
+                          // 显式传 undefined：这一阶没有子层级，note 里不写
+                          // {sub}（下游靠「第二参有没有」判断要不要落小层号）
+                          onSetEntityLevel(level.id, undefined);
                         }
                       }}
                     >

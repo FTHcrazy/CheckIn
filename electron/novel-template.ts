@@ -762,7 +762,14 @@ function buildTemplatePack(): TemplatePack {
     },
   ];
 
-  // 模块顺序与 CharacterPack/types.ts 的 PACK_MODULES 保持一致，全部启用
+  // 模块顺序与 CharacterPack/types.ts 的 PACK_MODULES 保持一致。
+  //
+  // 新作品**只默认启用核心三块**（总属性汇总 / 人物属性 / 境界），其余七块以
+  // 「存在但关闭」播种：顺序与完整性照旧（模块管理里十条都在），只是打开行囊
+  // 不再一屏全开 —— 默认值必须与渲染层对齐，否则「新书」和「恢复默认」两种
+  // 入口给出两套默认态。主进程不 import 渲染层，靠 novel-template.test.ts
+  // 把这份清单与 pack-config 的 CORE_PACK_MODULE_KEYS 钉在一起。
+  const coreModuleKeys = ["summary", "attributes", "realm"];
   const layouts = [
     "summary",
     "attributes",
@@ -774,7 +781,11 @@ function buildTemplatePack(): TemplatePack {
     "currency",
     "status",
     "note",
-  ].map((moduleKey, index) => ({ moduleKey, enabled: true, sortOrder: (index + 1) * 10 }));
+  ].map((moduleKey, index) => ({
+    moduleKey,
+    enabled: coreModuleKeys.includes(moduleKey),
+    sortOrder: (index + 1) * 10,
+  }));
 
   return {
     character: {

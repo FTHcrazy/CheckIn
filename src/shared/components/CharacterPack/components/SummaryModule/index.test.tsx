@@ -98,7 +98,6 @@ const items: PackItem[] = [
     groupId: "",
     slotIndex: null,
     sourceChapterId: "",
-    weight: 0,
     updatedAt: 0,
   },
 ];
@@ -140,8 +139,6 @@ const doc: PackDoc = {
     isProtagonist: true,
     entityId: "",
     realmAt: "",
-    weightLimit: 0,
-    capacityLimit: 0,
     note: "",
     sortOrder: 1,
   },

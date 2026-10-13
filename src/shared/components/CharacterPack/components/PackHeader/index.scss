@@ -3,11 +3,10 @@
 /**
  * 行囊头部：横向概览带
  *
- * 一条横带装三组信息：左「我是谁」、中「这趟盘完没有」、右「存了没有 + 工具」。
- * 布局用 flex。窄档（<600px）下由 `index.tsx` 决定两块让位：
- *   - 读数区整块不渲染（`readings` 不传）；
- *   - 次要文字动作与四个工具收进「更多」菜单（`compact` 为真）。
- * 留在窄档外面的只有身份块 + 保存态 pill + 保存按钮，它们是不可省的三件。
+ * 一条横带装两组信息：左「我是谁」、右「存了没有 + 工具」。
+ * 布局用 flex。窄档（<600px）下由 `index.tsx` 决定：
+ *   - 次要文字动作与四个工具收进「更多」菜单（`compact` 为真）；
+ *   - 留在外面的只有身份块 + 保存态 pill + 保存按钮，它们是不可省的三件。
  */
 .cpk-head {
   flex: none;
@@ -19,17 +18,13 @@
   background: var(--app-header-bg, var(--app-surface));
 
   /*
-    ⚠️ 这里是「谁让位」的声明，不是随手写的 flex。三块的优先级：
+    ⚠️ 这里是「谁让位」的声明，不是随手写的 flex。两块的优先级：
 
-      1. 中读数区 —— 最先牺牲。窄档整块不渲染；中档可缩到 0 都不影响可用性，
-         因为它回答的是「这趟盘完没有」，而不是「我是谁 / 我存没存」。
-      2. 右操作区 —— 其次受压，但**只压文字按钮的宽度**，图标与主按钮不缩。
-         它是「能不能存下」的操作区，宁可让读数先消失，也不能让保存按钮点不到。
-      3. 左身份块 —— 最后让位，且**永远保留一个下限**。
+      1. 右操作区 —— 受压时**只压文字按钮的宽度**，图标与主按钮不缩。
+         它是「能不能存下」的操作区，宁可让文字先省略，也不能让保存按钮点不到。
+      2. 左身份块 —— 最后让位，且**永远保留一个下限**。
 
-    ⚠️ 曾经的三个坑（都在窄窗下实测过）：
-    - 三块都用默认 `flex: 0 1 auto` → 浏览器先压缩「本来就窄」的，把读数文字
-      挤到互相重叠；
+    ⚠️ 曾经的坑（都在窄窗下实测过）：
     - `__who` 没有下限 → 440px 时它被压成 **0 宽**（量过：whoW=0、whoScroll=106），
       整块身份区看不见，但**不报错** —— 祖先的 `overflow: hidden` 让它只是消失。
       下限取 `头像 38 + 间距 + 名字前几个字`，至少让人知道这是谁的囊。
@@ -142,52 +137,6 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-  }
-
-  /* ── 中：两个读数 ── */
-  &__readings {
-    flex: 1 1 auto;
-    min-width: 0;
-    display: flex;
-    align-items: flex-start;
-    gap: 40px;
-    padding-left: 28px;
-  }
-
-  &__r {
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-
-  &__rlabel {
-    font-size: 11px;
-    color: var(--app-text-muted);
-    white-space: nowrap;
-  }
-
-  /*
-    读数数值用等宽数字：三个读数会随编辑实时跳动，比例字体会让相邻项目
-    左右乱晃（「1」比「8」窄），一行数字看着在抖。tabular-nums 定宽。
-  */
-  &__rvalue {
-    font-size: 17px;
-    font-weight: 700;
-    color: var(--app-text-strong);
-    white-space: nowrap;
-    font-variant-numeric: tabular-nums;
-    line-height: 1.25;
-  }
-
-  &__rhint {
-    font-size: 11px;
-    color: var(--app-text-muted);
-    white-space: nowrap;
-  }
-
-  &__r.is-alert &__rvalue {
-    color: var(--app-error);
   }
 
   /* ── 右：保存态 + 工具 ── */

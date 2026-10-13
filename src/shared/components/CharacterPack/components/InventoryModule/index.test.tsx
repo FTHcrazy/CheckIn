@@ -32,7 +32,6 @@ const item: PackItem = {
   groupId: "",
   slotIndex: null,
   sourceChapterId: "",
-  weight: 0,
   updatedAt: 0,
 };
 
@@ -46,8 +45,6 @@ const doc: PackDoc = {
     isProtagonist: true,
     entityId: "",
     realmAt: "",
-    weightLimit: 0,
-    capacityLimit: 0,
     note: "",
     sortOrder: 1,
   },
@@ -71,18 +68,6 @@ function makeApi(over: Partial<PackPanelApi> = {}) {
     summary: { rows: [], ignoredCast: 0 },
     dirty: 0,
     prefs: { collapsed: {}, inventoryView: "list" },
-    /**
-     * 负重 / 容量读数（REQ-033）。
-     *
-     * 这里给的是**手写的小对象**而不是调 `weightStatus()`：夹具要能独立地表达
-     * 「超载」「满格」这些边界（真实函数在重量为 0 时永远算出 over=false），
-     * 用真实函数反而测不到警告分支。
-     */
-    load: {
-      weight: { total: 0, limit: 0, over: false, ratio: 0, hasWeight: false },
-      capacity: { used: doc.items.length, limit: 0, full: false, ratio: 0 },
-    },
-    setLoadLimits: vi.fn(),
     addStatus: vi.fn(() => ""),
     toggleModuleCollapsed: vi.fn(),
     isRecentlyChanged: () => false,
@@ -138,7 +123,7 @@ describe("InventoryModule —— 描述 / 标签（REQ-010）", () => {
 
   /**
    * 详情菜单项。**用正则而不是抄死文案**：它的标签随展开状态变
-   * （「描述 / 标签 / 重量」↔「收起描述与标签」），一个修饰词改动就挂一整片测试，
+   * （「描述 / 标签」↔「收起描述与标签」），一个修饰词改动就挂一整片测试，
    * 而那些断言测的是数据回写，不是文案。
    */
   const DETAIL_MENU = /描述/;
@@ -239,133 +224,5 @@ describe("InventoryModule —— 描述 / 标签（REQ-010）", () => {
     await waitFor(() => {
       expect((screen.getByLabelText("物品标签") as HTMLInputElement).value).toBe("玄铁 断剑");
     });
-  });
-});
-
-/**
- * 负重 / 容量条（REQ-033 / F-5）
- *
- * 这里钉的是**两条容易被合并掉的语义**：
- *  - 上限为 0 是「不限」而不是「上限为零」—— 合并的话所有没设上限的书都会顶着红字；
- *  - 满格与超载是**两个独立口径**（200 株草药占 1 格却可能压垮肩膀），必须能各自报警。
- */
-describe("InventoryModule —— 负重与容量（REQ-033）", () => {
-  afterEach(cleanup);
-
-  const withLoad = (over: Record<string, unknown>) =>
-    makeApi({
-      doc: { ...doc, character: { ...doc.character, weightLimit: 20, capacityLimit: 40 } },
-      ...over,
-    } as Partial<PackPanelApi>);
-
-  it("把格数与负重都显示出来（上限为 0 时说「不限」而不是 0）", () => {
-    render(<InventoryModule api={makeApi()} />);
-    const bar = document.querySelector(".cpk-inv__load") as HTMLElement;
-    expect(bar.textContent).toContain("格数 1");
-    expect(bar.textContent).toContain("（不限）");
-  });
-
-  it("满了 / 超了各自出警告，且不会互相冒充", () => {
-    const api = withLoad({
-      load: {
-        weight: { total: 31.5, limit: 20, over: true, ratio: 1.575, hasWeight: true },
-        capacity: { used: 40, limit: 40, full: true, ratio: 1 },
-      },
-    });
-    render(<InventoryModule api={api} />);
-    const bar = document.querySelector(".cpk-inv__load") as HTMLElement;
-    expect(bar.textContent).toContain("背包已满");
-    expect(bar.textContent).toContain("超载");
-    expect(bar.textContent).toContain("31.5/20");
-  });
-
-  it("只在超载时给「记为状态」入口，且已有同名状态时不重复给", () => {
-    const { unmount } = render(
-      <InventoryModule
-        api={withLoad({
-          load: {
-            weight: { total: 31.5, limit: 20, over: true, ratio: 1.575, hasWeight: true },
-            capacity: { used: 1, limit: 40, full: false, ratio: 0.025 },
-          },
-        })}
-      />,
-    );
-    expect(screen.getByRole("button", { name: /记为状态/ })).toBeInTheDocument();
-    unmount();
-
-    // 已经有一条「超载」状态 → 不能让作者点出第二条
-    render(
-      <InventoryModule
-        api={withLoad({
-          doc: {
-            ...doc,
-            character: { ...doc.character, weightLimit: 20, capacityLimit: 40 },
-            modifiers: [
-              {
-                id: "pm1",
-                ownerType: "status",
-                ownerId: "c1",
-                nature: "sustained",
-                name: "超载",
-                targetAttrId: "",
-                op: "add",
-                value: 0,
-                valueUnit: "",
-                scaleByProficiency: false,
-                active: true,
-                defaultOn: false,
-                cost: "",
-                cooldown: null,
-                duration: "",
-                roundsLeft: null,
-                target: "",
-                trigger: "",
-                condition: "",
-                note: "",
-                disabled: false,
-                sortOrder: 1,
-              },
-            ],
-          },
-          load: {
-            weight: { total: 31.5, limit: 20, over: true, ratio: 1.575, hasWeight: true },
-            capacity: { used: 1, limit: 40, full: false, ratio: 0.025 },
-          },
-        })}
-      />,
-    );
-    expect(screen.queryByRole("button", { name: /记为状态/ })).toBeNull();
-  });
-
-  it("上限面板里的两个输入框分别回写（规范化在纯函数层，见 pack-utils 的 normalizeLimit）", () => {
-    const api = withLoad({});
-    render(<InventoryModule api={api} />);
-    // 两字中文按钮会被 antd 插字间距（「上 限」），所以按正则去空白匹配
-    fireEvent.click(screen.getByRole("button", { name: /上\s*限/ }));
-
-    // ⚠️ 填的值必须与当前值不同：antd 的 InputNumber 在「解析结果和现有值一样」时
-    // 不回调 onChange（夹具的初始上限是 40 / 20），填同一个数会得到零调用。
-    fireEvent.change(screen.getByLabelText("格数上限"), { target: { value: "60" } });
-    expect(api.setLoadLimits).toHaveBeenCalledWith({ capacityLimit: 60 });
-
-    fireEvent.change(screen.getByLabelText("负重上限"), { target: { value: "12.5" } });
-    expect(api.setLoadLimits).toHaveBeenCalledWith({ weightLimit: 12.5 });
-  });
-
-  it("单件重量在详情行里改，并按「单件 × 数量」显示小计", async () => {
-    const api = makeApi({
-      doc: {
-        ...doc,
-        items: [{ ...item, qty: 3, weight: 1.5 }],
-      },
-    });
-    render(<InventoryModule api={api} />);
-    const more = screen.getByLabelText("更多操作");
-    fireEvent.click(more);
-    fireEvent.click(await screen.findByRole("menuitem", { name: /描述/ }));
-
-    expect(screen.getByText(/小计 4.5（3 件）/)).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("单件重量"), { target: { value: "2" } });
-    expect(api.updateItem).toHaveBeenCalledWith("i1", { weight: 2 });
   });
 });

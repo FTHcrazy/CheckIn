@@ -42,11 +42,42 @@ export const PACK_ZONE_OF = {
   note: "stats",
 } satisfies Record<PackModuleKey, PackZone>;
 
+/**
+ * 宽档下两栏的**左右落位**（唯一事实源）。
+ *
+ * 左栏放「数值与状态」而不是「装备类」：左上是视线的起点，而作者开行囊第一眼
+ * 找的是属性汇总 / 人物属性 / 境界这三块（新书出厂也只有这三块）—— 把它们放在
+ * 左栏第一屏，装备 / 物品 / 技能这些「按需翻下去」的放右栏。
+ *
+ * 宽度配比跟着内容走：装备类是「部位名 + 按钮 / 物品行 + 数量 + 按钮」这类长行，
+ * 给窄了会挤成两行；数值类多是「标签 : 数值」的短行，窄一点无妨 —— 所以右栏
+ * （装备类）反而更宽（44 : 56）。样式层 `&__zones` 与这里必须同序。
+ */
+export const PACK_ZONE_ORDER: readonly PackZone[] = ["stats", "gear"];
+
 /** 分区标题（宽档两栏各顶一个眉标） */
 export const PACK_ZONE_LABEL: Record<PackZone, string> = {
   gear: "装备类",
   stats: "数值与状态",
 };
+
+/**
+ * 仪表盘展示顺序：核心三块（汇总 / 属性 / 境界）**恒在最前**，其余模块按
+ * 作者的排序跟在后面（两段各自保持相对顺序，稳定分区）。
+ *
+ * 为什么不纯按 `sortOrder`：存量书的布局顺序里核心三块可能排在末尾（老版本
+ * 播种 / 作者拖过），每新开一个模块它就插在核心三块上面，把主内容越顶越深 ——
+ * 行囊第一屏永远该是这三块。代价是仪表盘里核心三块**拖不动**（模块管理里
+ * 拖了也不影响它们在仪表盘的落位），这是「钉顶」的题中之义。
+ */
+export function coreFirstOrder(modules: PackModuleState[]): PackModuleState[] {
+  const core: PackModuleState[] = [];
+  const rest: PackModuleState[] = [];
+  for (const module of modules) {
+    (isCorePackModule(module.key) ? core : rest).push(module);
+  }
+  return [...core, ...rest];
+}
 
 /**
  * 依当前**启用且排序后**的模块清单，拆成两栏。
@@ -64,6 +95,27 @@ export function splitByZone(
     else stats.push(module);
   }
   return { gear, stats };
+}
+
+/**
+ * 宽档下真正要渲染的分区：一个启用模块都没有的分区**整个不渲染**。
+ *
+ * 新书出厂只开核心三块（汇总 / 属性 / 境界），全在 stats 栏 —— 若照旧渲染
+ * 空的 gear 栏，左半窗只剩一个孤零零的「装备类」眉标，画面六成是死空间。
+ * 空分区退场后，剩下一栏由样式层（`--solo`）居中收窄，整版只有一个视觉重心。
+ */
+export function activeZones(split: Record<PackZone, PackModuleState[]>): PackZone[] {
+  return PACK_ZONE_ORDER.filter((zone) => split[zone].length > 0);
+}
+
+/**
+ * 唯一渲染分区的**对面栏**（被整体关掉的那栏），宽档下用一张引导卡替它占位，
+ * 作者才知道行囊还有可开未开的模块。双栏都在（或全空，上游已有整版空态）时
+ * 返回 null —— 双栏并排时引导卡反而是噪音。
+ */
+export function missingZoneOf(active: PackZone[]): PackZone | null {
+  if (active.length !== 1) return null;
+  return active[0] === "gear" ? "stats" : "gear";
 }
 
 /**
@@ -87,81 +139,6 @@ export function isAutoCollapsed(
   if (tier !== "narrow") return Boolean(authored[key]);
   if (isCorePackModule(key)) return false;
   return authored[key] ?? true;
-}
-
-/**
- * 顶部概览带的两个读数（派生值，不是存下来的数据）。
- *
- * 设计稿把「负重 / 容量」两个读数并排放在头部中央 —— 它们回答的是
- * 「这一趟盘完没有」：负重超没超、格子还剩几格。二者在 `usePackPanel`
- * 里都已有派生量（`load`），这里只做**格式化**，不新增统计口径。
- *
- * 曾经还有第三个「技能」读数（N 项 · N 启用），但它与技能模块自身的
- * 摘要（`moduleSummary("skills")`）完全同源 —— 同一份信息不该在头部
- * 和模块里各说一遍，头部让位后整条概览带也少一分密度。
- *
- * 为什么把格式化也抽成纯函数：`limit === 0` 表示「不限」，此时要显示 `—`
- * 而不是 `0/0`（后者像一个「0 容量」的错误读数）；超限要变色。这两条规则
- * 散在 JSX 里就变成两处 `? :` 嵌套，测不到也改不动。
- */
-export interface PackHeaderReading {
-  /** 读数标签（负重 / 容量） */
-  label: string;
-  /** 主读数，如 `128 / 200` 或 `18 / 30 格` */
-  value: string;
-  /** 超限 / 超载标记：为真时头部按告警配色 */
-  alert: boolean;
-  /** 无上限或未配置时的补充说明（显示在读数下方） */
-  hint: string;
-}
-
-/** headerReadings 的入参：与 usePackPanel 的 load 派生量同形 */
-export interface PackHeaderReadingsInput {
-  load: {
-    weight: { total: number; limit: number; over: boolean };
-    capacity: { used: number; limit: number; full: boolean };
-  };
-}
-
-export function headerReadings(
-  key: "weight" | "capacity",
-  input: PackHeaderReadingsInput,
-): PackHeaderReading {
-  switch (key) {
-    case "weight": {
-      const { total, limit, over } = input.load.weight;
-      // limit 为 0 = 作者没设上限：显示实重但不给分母，避免「/0」这种假读数
-      return {
-        label: "负重",
-        value: limit > 0 ? `${formatNumber(total)} / ${formatNumber(limit)}` : formatNumber(total),
-        alert: over,
-        hint: limit > 0 ? "" : "未设上限",
-      };
-    }
-    case "capacity": {
-      const { used, limit, full } = input.load.capacity;
-      return {
-        label: "容量",
-        value: limit > 0 ? `${used} / ${limit} 格` : `${used} 格`,
-        alert: full,
-        hint: limit > 0 ? "" : "未设上限",
-      };
-    }
-  }
-}
-
-/**
- * 千分位。重量可能是 `1280.5` 这种，整数部分分组、小数原样保留。
- *
- * 不引 `Intl.NumberFormat`：它要过一遍 locale 解析，而这个面板每敲一个字
- * 都要重算一次读数，没必要为「128 / 200」这种短数字付那份开销。
- */
-export function formatNumber(value: number): string {
-  if (!Number.isFinite(value)) return "0";
-  const rounded = Math.round(value * 100) / 100;
-  const [intPart, decimalPart] = String(rounded).split(".");
-  const grouped = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-  return decimalPart ? `${grouped}.${decimalPart}` : grouped;
 }
 
 /**

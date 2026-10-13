@@ -228,10 +228,6 @@ function initializeNovelDb(database: Database.Database): void {
       -- 未绑定实体时的「仅行囊内使用」境界（JSON {levelId, sub}）；绑定时以 novel_links 为准
       realm_at TEXT,
       note TEXT NOT NULL DEFAULT '',
-      -- 负重上限（REQ-033）：0 = 不限
-      weight_limit REAL NOT NULL DEFAULT 0,
-      -- 格数上限（F-5）：0 = 不限
-      capacity_limit INTEGER NOT NULL DEFAULT 0,
       sort_order INTEGER NOT NULL DEFAULT 1
     );
     CREATE INDEX IF NOT EXISTS idx_pack_char_work ON novel_pack_characters(work_id, sort_order);
@@ -326,8 +322,6 @@ function initializeNovelDb(database: Database.Database): void {
       -- 归属分组（novel_pack_groups.id）；'' = 未分组
       group_id TEXT NOT NULL DEFAULT '',
       source_chapter_id TEXT,
-      -- 单件重量（REQ-033）：0 = 没记。总重按 weight × qty 累计
-      weight REAL NOT NULL DEFAULT 0,
       updated_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_pack_item_char ON novel_pack_items(character_id);
@@ -434,6 +428,37 @@ function initializeNovelDb(database: Database.Database): void {
   if (!levelColumns.some((column) => column.name === "sub_pattern")) {
     database.exec(
       "ALTER TABLE novel_setting_levels ADD COLUMN sub_pattern TEXT NOT NULL DEFAULT ''",
+    );
+  }
+
+  // 1.39.0 下线「负重 / 容量」（REQ-033 / F-5）：老库里的三列直接删掉。
+  // 这是**破坏性**清列 —— 旧的重量与上限数值不保留、不迁移（§6.7 `refactor` 口径，
+  // 该功能已从产品中移除，留着列只会让下一次重构再犹豫一次）。
+  dropColumnIfExists(database, "novel_pack_characters", "weight_limit");
+  dropColumnIfExists(database, "novel_pack_characters", "capacity_limit");
+  dropColumnIfExists(database, "novel_pack_items", "weight");
+}
+
+/**
+ * 删除历史遗留列（幂等）。
+ *
+ * `DROP COLUMN` 需要 SQLite ≥ 3.35，且该列不能出现在索引 / 视图 / 触发器里；
+ * 这里三列都是裸列，正常路径不会抛。仍然 try/catch 兜一层：老库若是被手工改过
+ * 的奇怪形态，不该把「少一个已下线的功能」升级成「整个行囊打不开」。
+ */
+function dropColumnIfExists(
+  database: Database.Database,
+  table: string,
+  column: string,
+): void {
+  const columns = database.pragma(`table_info(${table})`) as Array<{ name: string }>;
+  if (!columns.some((entry) => entry.name === column)) return;
+  try {
+    database.exec(`ALTER TABLE ${table} DROP COLUMN ${column}`);
+  } catch (error) {
+    console.warn(
+      `[novel-db] 删除历史列 ${table}.${column} 失败（该字段已下线，可忽略）：`,
+      error,
     );
   }
 }

@@ -13,10 +13,26 @@ export const PACK_LEVEL_RELATION = LEVEL_RELATION;
 /** 界面偏好落库键（即改即存，不进草稿；与 §8.6.2 的判据一致） */
 export const PACK_UI_KEY = STORAGE_KEYS.packUi;
 
-/** 出厂模块布局：全部启用，顺序即 PACK_MODULES */
+/**
+ * 核心模块：对记时最常瞟的三块（总属性汇总 / 人物属性 / 境界）。
+ *
+ * 这一份清单同时承担两件事，别再在别处写第二份：
+ * - 窄档下这三块**不参与自动折叠**（`isAutoCollapsed` 经 `isCorePackModule` 读它）；
+ * - 新作品**默认只启用**这三块（本文件的 `DEFAULT_LAYOUTS`、主进程播种、
+ *   `mergeLayouts` / `setModuleOrder` 对缺失行的兜底）。
+ */
+export const CORE_PACK_MODULE_KEYS = ["summary", "attributes", "realm"] as const;
+
+/**
+ * 出厂模块布局：顺序即 PACK_MODULES，但**只有核心三块默认启用**。
+ *
+ * 十个模块的「存在」与顺序照旧（模块管理弹窗里十条都在，仍代表这本小说的
+ * 模块拼装），变的只是新书的默认启用态 —— 打开行囊先是一张干净的仪表盘，
+ * 其余七块按需打开。「模块管理」的「恢复默认」回写的也是这份值。
+ */
 export const DEFAULT_LAYOUTS: PackModuleState[] = PACK_MODULES.map((module, index) => ({
   key: module.key,
-  enabled: true,
+  enabled: (CORE_PACK_MODULE_KEYS as readonly string[]).includes(module.key),
   sortOrder: index + 1,
 }));
 
@@ -40,8 +56,8 @@ export const PACK_UI_SAVE_DEBOUNCE_MS = 300;
 export const PACK_WINDOW_BREAKPOINTS = {
   wide: 900,
   narrow: 600,
-  /** 窄档下永不折叠的模块（对记时最常瞟的三块） */
-  coreModules: ["summary", "attributes", "realm"],
+  /** 窄档下永不折叠的模块（同 CORE_PACK_MODULE_KEYS，见文件顶部） */
+  coreModules: CORE_PACK_MODULE_KEYS,
 } as const;
 
 /** 判定档位。纯函数，供组件与单测共用同一份规则（不重复实现）。 */
@@ -93,7 +109,7 @@ export const PROFICIENCY_TEMPLATE: Array<{ name: string; min: number; max: numbe
 /** 量纲体系的用途键：同一角色最多各一套（境界复用 R25，不在这里） */
 export type UnitKind = "currency" | "proficiency";
 
-/** 数量总数上限（F-5 负重是 P2，这里只做显示用的大数保护） */
+/** 数量总数上限（只是显示用的大数保护：防止误按长按把数量推到溢出） */
 export const QTY_MAX = 999999;
 
 // ── 主角绑定变更事件 ──

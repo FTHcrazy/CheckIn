@@ -1,5 +1,27 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { buildNovelTemplateBook, type NovelTemplateBook } from "./novel-template";
+
+/**
+ * 渲染层 pack-config 里的核心模块清单（按源码文本抽取）。
+ *
+ * 这里刻意**不** import `@/shared/components/CharacterPack/pack-config`：主进程的
+ * tsconfig 不含 DOM lib，把 pack-config（里面到处是 `window` 事件广播）拖进主进程
+ * 的 program，`tsc -b` 立刻报一串 `Cannot find name 'window'`。主 / 渲染的边界
+ * 只能靠文本守 —— 同 `novel-db-split.test.ts` / `work-numbering-guard.test.ts` 的手法。
+ */
+const rendererCoreModuleKeys = ((): string[] => {
+  const source = readFileSync(
+    path.resolve(process.cwd(), "src/shared/components/CharacterPack/pack-config.ts"),
+    "utf8",
+  );
+  // 先去掉注释：说明文字里也引用过这个常量名，留着会先匹配到注释里的那处
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+  const hit = /CORE_PACK_MODULE_KEYS\s*=\s*\[([^\]]*)\]/.exec(code);
+  if (!hit) throw new Error("pack-config.ts 里找不到 CORE_PACK_MODULE_KEYS 清单");
+  return [...hit[1].matchAll(/"([^"]+)"/g)].map((match) => match[1]);
+})();
 
 const MIN_WORDS_PER_CHAPTER = 3200;
 
@@ -298,6 +320,16 @@ describe("模板行囊（buildTemplatePack）", () => {
     ]) {
       expect(keys).toContain(key);
     }
+
+    // 新作品只默认启用核心三块（总属性汇总 / 人物属性 / 境界）。
+    // 这条断言把主进程的播种清单与渲染层 pack-config 的 CORE_PACK_MODULE_KEYS
+    // 钉在一起：两边一旦分叉，新书与「恢复默认」就会给出两套默认态 ——
+    // 主进程不 import 渲染层，只能靠测试守。
+    expect(
+      pack.layouts
+        .filter((layout) => layout.enabled)
+        .map((layout) => layout.moduleKey),
+    ).toEqual(rendererCoreModuleKeys);
   });
 
   it("属性映射：端点都在真实属性上，且有一条链式换算与一条停用示例", () => {

@@ -585,110 +585,6 @@ export function castOwnerIds(casts: PackModifier[]): {
 }
 
 // ─────────────────────────────────────────────────────────────
-// 负重与容量（REQ-033 / F-5）
-// ─────────────────────────────────────────────────────────────
-
-/**
- * 单件总重：重量 × 件数。
- *
- * **数量即件数** —— 「龙血草 ×20」的重量就是二十株。「×20 只算一份重量」在
- * 网文里没有对应直觉（真那样写，作者反而要把总重自己乘好填进单件）。
- *
- * 值为 0 表示**没记**（列默认 0），此时贡献 0，不影响总重。
- */
-export function itemWeight(item: PackItem): number {
-  const per = item.weight ?? 0;
-  if (!per) return 0;
-  return per * Math.max(0, item.qty ?? 0);
-}
-
-/** 全部物品的总重（含未穿戴的 —— 背在身上和揣在包里的都算负重） */
-export function totalWeight(items: PackItem[]): number {
-  let sum = 0;
-  for (const item of items) sum += itemWeight(item);
-  // 浮点尾巴会一路累积到展示层（1.1 + 2.2 = 3.3000000000000003）
-  return roundTo(sum, 3);
-}
-
-export interface WeightStatus {
-  total: number;
-  /** 上限；**0 = 不限**（列默认值），不是「上限为零」 */
-  limit: number;
-  /** 是否超载。上限为 0 时恒 false —— 不限重量的书永远不该看到超载红字 */
-  over: boolean;
-  /** 已用比例（可 > 1 表示超载）；上限为 0 时为 0 */
-  ratio: number;
-  /** 有没有任何一件记了重量：全都没记时「总重 0」是「没填」而不是「没负重」 */
-  hasWeight: boolean;
-}
-
-/**
- * 负重状态。
- *
- * 判定用 `>`：压在上限上不算超载（作者写「上限 20」时想的是「20 以内都行」）。
- * 这与容量上限的 `>=` 不同，两者是真不一样 —— 没有第 41 件，但有第 20.0 公斤。
- */
-export function weightStatus(items: PackItem[], limit: number): WeightStatus {
-  const total = totalWeight(items);
-  const bound = limit > 0 ? limit : 0;
-  return {
-    total,
-    limit: bound,
-    over: bound > 0 && total > bound,
-    ratio: bound > 0 ? total / bound : 0,
-    hasWeight: items.some((item) => (item.weight ?? 0) > 0),
-  };
-}
-
-export interface CapacityStatus {
-  /** 已占格数（按**条目**算，不是件数：200 株龙血草占 1 格） */
-  used: number;
-  /** 格数上限；**0 = 不限** */
-  limit: number;
-  /** 是否已满（`used >= limit`）—— 「上限 40 格」的意思就是第 41 件放不下 */
-  full: boolean;
-  ratio: number;
-}
-
-export function capacityStatus(items: PackItem[], limit: number): CapacityStatus {
-  const used = items.length;
-  const bound = limit > 0 ? limit : 0;
-  return {
-    used,
-    limit: bound,
-    full: bound > 0 && used >= bound,
-    ratio: bound > 0 ? used / bound : 0,
-  };
-}
-
-/**
- * 上限输入的规范化。
- *
- * 抽成纯函数是为了让它**可测**：这段逻辑原本埋在 `setLoadLimits` 的 mutation 里，
- * 而 antd 的 `InputNumber` 在 `min={0}` 时对越界输入**根本不会回调 `onChange`**，
- * 于是「负数夹到 0」这条不变量在组件测试里永远测不到，只能靠人肉点。
- *
- * `integer` 用于格数（格没有半格）；`weight` 允许小数（半斤、1.5 公斤）。
- * 非有限数（NaN / Infinity，来自输入框被清空或粘贴垃圾）一律归 0 = 不限。
- */
-export function normalizeLimit(value: number, integer = false): number {
-  if (!Number.isFinite(value)) return 0;
-  const clamped = Math.max(0, value);
-  return integer ? Math.floor(clamped) : clamped;
-}
-
-/**
- * 重量文案：最多 2 位小数并去掉尾随零（`0.50` → `0.5`，`3.00` → `3`）。
- *
- * 不复用 `formatAttrValue`：那个按属性自己声明的小数位补零（丹药重量是 0.5，
- * 补成 `0.50` 反而像是有两位精度）。作者填什么精度就显示什么精度。
- */
-export function formatWeight(value: number): string {
-  const fixed = (Math.round(value * 100) / 100).toFixed(2);
-  return fixed.replace(/\.?0+$/, "") || "0";
-}
-
-// ─────────────────────────────────────────────────────────────
 // 假想输入（REQ-018 换装预览 / REQ-037 估算模式）
 // ─────────────────────────────────────────────────────────────
 
@@ -1454,22 +1350,16 @@ function inventoryTable(ctx: PackExportContext): PackExportTable {
   const groupNameOf = (id: string): string =>
     id ? (ctx.groups?.find((group) => group.id === id)?.name ?? "(已删除的分组)") : DASH;
   return {
-    // 「重量」导出的是**小计**（单件 × 件数）而不是单件值：这张表是给作者盘账用的，
-    // 单件重量乘一遍再抄进正文毫无意义，而小计可以直接当「这一趟背了多少」。
-    headers: ["物品", "分组", "分类", "数量", "重量", "稀有度", "穿戴部位", "标签"],
-    rows: ctx.items.map((item) => {
-      const subtotal = itemWeight(item);
-      return [
-        item.name,
-        groupNameOf(item.groupId),
-        item.category,
-        String(item.qty),
-        subtotal > 0 ? formatWeight(subtotal) : DASH,
-        labelOf(RARITY_META, item.rarity),
-        slotNameOf(item.equippedSlotId),
-        item.tags.join(" / ") || DASH,
-      ];
-    }),
+    headers: ["物品", "分组", "分类", "数量", "稀有度", "穿戴部位", "标签"],
+    rows: ctx.items.map((item) => [
+      item.name,
+      groupNameOf(item.groupId),
+      item.category,
+      String(item.qty),
+      labelOf(RARITY_META, item.rarity),
+      slotNameOf(item.equippedSlotId),
+      item.tags.join(" / ") || DASH,
+    ]),
   };
 }
 

@@ -934,7 +934,7 @@ function initializeDataDb(db: Database) {
 
 ```json
 {
-  "novelArch": "refactor"
+  "novelArch": "compat"
 }
 ```
 
@@ -947,6 +947,12 @@ function initializeDataDb(db: Database) {
 > `novel_setting_levels` 承载（旧等级数据不保留，见 CHANGELOG 1.36.0），
 > 旧弹框 `LevelSystemManager` 已迁移为 `SettingCenter` + `SettingQuickPanel`，
 > 现按本节第 4 条改回 `compat`。
+> 1.39.0 在 `refactor` 下完成了「行囊负重 / 容量」下线（REQ-033 / F-5）：删除
+> `novel_pack_characters.weight_limit` / `capacity_limit` 与 `novel_pack_items.weight`
+> 三列（旧数值不保留，见 CHANGELOG 1.39.0），并清空对应的 DTO / 纯函数 / 界面
+> 与导出列，现按本节第 4 条改回 `compat`。
+> ⚠️ 若下一次行囊「看板重构」需要继续放弃兼容承诺，须**重新把本开关改为
+> `refactor` 并提交**，不得默认沿用已关闭的窗口。
 
 合法值只有两个：
 

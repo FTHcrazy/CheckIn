@@ -10,10 +10,6 @@ import {
   UserOutlined,
 } from "@ant-design/icons";
 import { formatRelativeTime } from "../../pack-utils";
-import {
-  headerReadings,
-  type PackHeaderReadingsInput,
-} from "../../pack-layout";
 import "./index.scss";
 
 interface PackHeaderProps {
@@ -22,13 +18,10 @@ interface PackHeaderProps {
   realmHint: string;
   /** 是否已绑定主角实体（绑了才在境界 chip 旁给「已绑定主角」） */
   realmBound: boolean;
-  /** 顶部概览带的读数入参（外壳从 doc / load 派生，格式化在 pack-layout） */
-  readings: PackHeaderReadingsInput | null;
   /**
    * 紧凑模式（窄档 <600px）。
    *
-   * 打开后三个读数由外壳整块不传（见 index.tsx 的注释），
-   * 四个工具按钮收进一个「更多」下拉 —— 小窗下留白比留按钮重要：
+   * 打开后四个工具按钮收进一个「更多」下拉 —— 小窗下留白比留按钮重要：
    * 按钮挤成一排会被裁掉一半，点不到的按钮比藏起来的更糟。
    */
   compact: boolean;
@@ -61,16 +54,11 @@ interface PackHeaderProps {
   onOpenRecords: () => void;
 }
 
-/** 读数入参的形状来自 pack-layout（与 usePackPanel 的 load 派生量同形） */
-export type { PackHeaderReadingsInput };
-
-const READING_KEYS = ["weight", "capacity"] as const;
-
 /**
  * 行囊头部：横向概览带（§8.6.1）
  *
  * 设计稿把它做成**一条横向带**：左侧角色（头像 + 名 + 境界 + 绑定态）、
- * 中间两个读数（负重 / 容量）、右侧保存三态与工具按钮，全部同高并排。
+ * 右侧保存三态与工具按钮，全部同高并排。
  * 这和旧版的三层堆叠（角色行 / 保存行 / 分栏）是两种信息结构 ——
  * 横向带把「我现在是谁、我这趟盘完了没有、我存了没有」压进一行，
  * 内容区因此能多出一整条的高度给十个模块。
@@ -83,7 +71,6 @@ export default function PackHeader({
   realmText,
   realmHint,
   realmBound,
-  readings,
   compact,
   dirty,
   saving,
@@ -167,27 +154,6 @@ export default function PackHeader({
           </div>
         </div>
       </div>
-
-      {/* ── 中：两个读数（设计稿的「这趟盘完没有」） ── */}
-      {readings ? (
-        <div className="cpk-head__readings">
-          {READING_KEYS.map((readingKey) => {
-            const reading = headerReadings(readingKey, readings);
-            return (
-              <div
-                key={readingKey}
-                className={`cpk-head__r${reading.alert ? " is-alert" : ""}`}
-              >
-                <span className="cpk-head__rlabel">{reading.label}</span>
-                <span className="cpk-head__rvalue">{reading.value}</span>
-                {reading.hint ? (
-                  <span className="cpk-head__rhint">{reading.hint}</span>
-                ) : null}
-              </div>
-            );
-          })}
-        </div>
-      ) : null}
 
       {/* ── 右：保存三态 + 工具 ── */}
       <div className="cpk-head__ops">

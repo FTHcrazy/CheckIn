@@ -118,8 +118,7 @@ export default function SettingQuickPanel({
           const isCollapsed = collapsed.has(category.id);
           return (
             <section key={category.id} className="nv-sqp__group">
-              <button
-                type="button"
+              <Button
                 className="nv-sqp__group-head"
                 onClick={() => toggle(category.id)}
                 aria-expanded={!isCollapsed}
@@ -136,7 +135,7 @@ export default function SettingQuickPanel({
                 <span className={`nv-sqp__caret${isCollapsed ? "" : " is-open"}`}>
                   ›
                 </span>
-              </button>
+              </Button>
               {!isCollapsed && (
                 <div className="nv-sqp__chips">
                   {category.levels.map((level) => (
@@ -144,13 +143,12 @@ export default function SettingQuickPanel({
                       key={level.id}
                       title={level.note || "点击插入到光标处"}
                     >
-                      <button
-                        type="button"
+                      <Button
                         className="nv-sqp__chip"
                         onClick={() => onInsertTerm(level.name)}
                       >
                         {level.name}
-                      </button>
+                      </Button>
                     </Tooltip>
                   ))}
                   {category.levels.length === 0 && (
@@ -163,14 +161,13 @@ export default function SettingQuickPanel({
         })}
 
         {filtered.length > 0 && (
-          <button
-            type="button"
+          <Button
             className="nv-sqp__manage"
             onClick={onOpenSettings}
           >
             <SettingOutlined />
             打开设定中心，管理分类与阶梯
-          </button>
+          </Button>
         )}
       </div>
 

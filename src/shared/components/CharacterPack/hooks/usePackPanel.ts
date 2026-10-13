@@ -20,7 +20,6 @@ import {
   buildActiveCarriersFrom,
   buildGroupOffCarriers,
   buildPackMarkdown,
-  capacityStatus,
   carrierKey,
   composeAttributes,
   computeHypotheticalSummary,
@@ -28,12 +27,10 @@ import {
   countRecentChanges,
   formatRealm,
   hasRecentChange,
-  normalizeLimit,
   proficiencySchemeOf,
   sortLadder,
   stepQty,
   summaryDeltas,
-  weightStatus,
   type HypotheticalInput,
   type LadderRung,
   type PackExportContext,
@@ -87,6 +84,7 @@ import {
 } from "../types";
 import {
   CURRENCY_TEMPLATE,
+  isCorePackModule,
   PACK_UI_SAVE_DEBOUNCE_MS,
   PROFICIENCY_TEMPLATE,
 } from "../pack-config";
@@ -101,6 +99,7 @@ import {
   type PackProtagonistEventDetail,
   type PackRealmEventDetail,
 } from "../pack-config";
+import { coreFirstOrder } from "../pack-layout";
 import { usePackData, type PackDoc } from "./usePackData";
 import {
   onCloseRequest,
@@ -120,13 +119,20 @@ interface UsePackPanelOptions {
   onClose: () => void;
 }
 
+/**
+ * 库里的 layout 行 → 渲染用的模块状态。
+ *
+ * 缺失行的兜底必须与「出厂默认」同一口径（核心三块启用、其余关闭），否则
+ * 同一个毛病会换个入口再犯一次：老库里没有新模块的行，兜底写 `true` 就意味着
+ * 「以后每加一个模块，所有老书都自动多开一块」—— 这正是新书一屏全开的老毛病。
+ */
 function mergeLayouts(layouts: PackLayout[]): PackModuleState[] {
   const known = new Map(layouts.map((layout) => [layout.moduleKey, layout]));
   return PACK_MODULES.map((module, index) => {
     const stored = known.get(module.key);
     return {
       key: module.key,
-      enabled: stored?.enabled ?? true,
+      enabled: stored?.enabled ?? isCorePackModule(module.key),
       sortOrder: stored?.sortOrder ?? (index + 1) * 10,
     };
   }).sort((a, b) => a.sortOrder - b.sortOrder || a.key.localeCompare(b.key));
@@ -298,8 +304,9 @@ export function usePackPanel({
 
   // ── 派生：模块布局、在效载体、汇总 ──
   const modules = useMemo(() => (doc ? mergeLayouts(doc.layouts) : []), [doc]);
+  /** 展示顺序：核心三块钉顶，其余按作者排序跟后（规则见 coreFirstOrder） */
   const enabledModules = useMemo(
-    () => modules.filter((module) => module.enabled),
+    () => coreFirstOrder(modules.filter((module) => module.enabled)),
     [modules],
   );
 
@@ -341,20 +348,6 @@ export function usePackPanel({
     const map: Record<string, number> = {};
     for (const skill of doc?.skills ?? []) map[skill.id] = skill.proficiencyRaw;
     return map;
-  }, [doc]);
-
-  /**
-   * 负重与格数（REQ-033 / F-5）
-   *
-   * 两个口径各算各的：200 株草药占 1 格却可能压垮肩膀。`limit` 为 0 表示不限，
-   * 此时 `over` / `full` 恒 false —— 作者没设上限就永远不该看到警告。
-   */
-  const load = useMemo(() => {
-    const items = doc?.items ?? [];
-    return {
-      weight: weightStatus(items, doc?.character.weightLimit ?? 0),
-      capacity: capacityStatus(items, doc?.character.capacityLimit ?? 0),
-    };
   }, [doc]);
 
   /**
@@ -1477,30 +1470,13 @@ export function usePackPanel({
 
   // ── 物品（M3） ──
   /**
-   * 新增物品。**满格时拒绝**（F-5 原话：「显示背包已满警告并阻止新增」）。
+   * 新增物品。返回新条目的 id（调用方按它继续操作，如立刻展开详情行）。
    *
-   * 拒绝而不是「照加、只是标红」：容量上限在网文里是叙事约束（灵石袋装不下更多），
-   * 工具替作者守住它才有意义。返回 `null` 让调用方（含正文选区记账那条桥）
-   * 与「没能新建」区分开 —— 那条桥本来就允许返回 null。
-   *
-   * ⚠️ 这里读 `docRef.current` 而不是 `doc`：`addItem` 被 `registerPackQuickAdd`
-   * 那条桥引用，依赖数组里加 `doc` 会让它每次编辑都换身份、桥也要跟着重注册。
-   * 满格判定必须是**最新的**物品数，所以只能走镜像。
+   * 不再有「满格拒绝」：格数上限随负重 / 容量一起下线（REQ-033 撤销），
+   * 物品栏现在是纯清单，加多少条由作者自己决定。
    */
   const addItem = useCallback(
     (partial: Partial<PackItem> = {}): string | null => {
-      const current = docRef.current;
-      const capacity = capacityStatus(
-        current?.items ?? [],
-        current?.character.capacityLimit ?? 0,
-      );
-      if (capacity.full) {
-        showToast(
-          `物品栏已满（${capacity.used}/${capacity.limit} 格）· 到「负重 / 容量」里调高上限`,
-          "warning",
-        );
-        return null;
-      }
       const id = createNovelId("pi");
       callMutate((state) => ({
         ...state,
@@ -1520,14 +1496,13 @@ export function usePackPanel({
             equippedSlotId: "",
             slotIndex: null,
             sourceChapterId: partial.sourceChapterId ?? "",
-            weight: partial.weight ?? 0,
             updatedAt: Date.now(),
           },
         ],
       }));
       return id;
     },
-    [callMutate, showToast],
+    [callMutate],
   );
 
   /**
@@ -1719,40 +1694,6 @@ export function usePackPanel({
             : item,
         ),
       }));
-    },
-    [callMutate],
-  );
-
-  // ── 负重与容量上限（REQ-033 / F-5） ──
-  //
-  // 上限是**这个角色的设定数据**（判据 §8.6.2：改了这个值，别人的这本书会变吗？
-  // 会 —— 同一个角色在别的窗口打开也是这个上限），所以走草稿、计入未保存改动，
-  // 而不是像面板宽度那样即改即存。
-  //
-  // 一次 mutation 改两个上限：它们是同一处 UI 上的两个输入框，分开写会让
-  // 「两个都改了」变成两处未保存改动，脏计数虚高。
-  const setLoadLimits = useCallback(
-    (patch: { weightLimit?: number; capacityLimit?: number }) => {
-      callMutate((current) => {
-        const weightLimit =
-          patch.weightLimit === undefined
-            ? current.character.weightLimit
-            : normalizeLimit(patch.weightLimit);
-        const capacityLimit =
-          patch.capacityLimit === undefined
-            ? current.character.capacityLimit
-            : normalizeLimit(patch.capacityLimit, true);
-        if (
-          weightLimit === current.character.weightLimit &&
-          capacityLimit === current.character.capacityLimit
-        ) {
-          return current;
-        }
-        return {
-          ...current,
-          character: { ...current.character, weightLimit, capacityLimit },
-        };
-      });
     },
     [callMutate],
   );
@@ -2274,13 +2215,14 @@ export function usePackPanel({
         );
         const next: PackLayout[] = [];
         orderedKeys.forEach((key, index) => {
-          const stored = byKey.get(key);
-          next.push({
-            characterId: current.character.id,
-            moduleKey: key,
-            enabled: stored?.enabled ?? true,
-            sortOrder: (index + 1) * 10,
-          });
+        const stored = byKey.get(key);
+        next.push({
+          characterId: current.character.id,
+          moduleKey: key,
+          // 缺失行沿用「核心三块启用」的出厂口径（与 mergeLayouts 同一规则）
+          enabled: stored?.enabled ?? isCorePackModule(key),
+          sortOrder: (index + 1) * 10,
+        });
         });
         return { ...current, layouts: next };
       });
@@ -2522,7 +2464,6 @@ export function usePackPanel({
     groupOffCarriers,
     summary,
     mappings,
-    load,
     previewEquipDeltas,
     estimateOn,
     setEstimateOn,
@@ -2584,7 +2525,6 @@ export function usePackPanel({
     equipItem,
     replaceInSlot,
     unequipItem,
-    setLoadLimits,
     savePreset,
     renamePreset,
     removePreset,

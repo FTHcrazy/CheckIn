@@ -37,7 +37,10 @@
     gap: 6px;
   }
 
-  &__group-head {
+  // 清零点与外观写在**同一个** `.xxx.ant-btn` 选择器里：拆成两个类会因打包
+  // 顺序静默失效（§6.1.2 第 1、3 条），且 reset 必须在覆盖之前
+  &__group-head.ant-btn {
+    @include widget.ant-button-reset;
     display: flex;
     align-items: center;
     gap: 6px;
@@ -106,7 +109,8 @@
     padding-left: 14px;
   }
 
-  &__chip {
+  &__chip.ant-btn {
+    @include widget.ant-button-reset;
     padding: 2px 9px;
     border: 1px solid var(--app-border);
     border-radius: var(--app-radius-chip);
@@ -144,7 +148,8 @@
   }
 
   /* 收纳入口：管理动作沉底，弱化为链接行，不和内容抢视觉 */
-  &__manage {
+  &__manage.ant-btn {
+    @include widget.ant-button-reset;
     display: flex;
     align-items: center;
     justify-content: center;

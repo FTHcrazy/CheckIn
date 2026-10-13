@@ -105,3 +105,31 @@
     color: #fff;
   }
 }
+
+/**
+ * 拖动带的浮层豁免（缺陷回归：弹窗右上角的 × 点不动）。
+ *
+ * 上面那条 `-webkit-app-region: drag` 不是「优先级较低的命中目标」，而是
+ * **整块矩形在系统命中测试阶段就被判成标题栏**（Windows 走
+ * `WM_NCHITTEST → HTCAPTION`）：落在带内的像素收不到任何鼠标消息 ——
+ * 连 `:hover` 都不会触发，click 更没有。关键是**与 z-index / 绘制层级无关**，
+ * 把浮层画在它「上面」照样点不动（这也是 Electron 官方文档特别提示的一点）。
+ *
+ * antd 的浮层一律 portal 到 `document.body`，落在 `.window-shell` 之外 ——
+ * 所以它们不在上面 `.window-header__actions` / `__controls` 那两处 no-drag 的
+ * 覆盖范围内。后果随「弹窗有多高」出现：居中布局下 × 的纵坐标是
+ * `(窗口高 − 弹窗高) / 2 + 17`，弹窗越高 × 越靠上，掉进这 34px 之后的表现
+ * 就正好是「看得见、能拖动窗口、但点不出反应」，而点遮罩与 Esc 照常
+ * （那两条不走指针，所以不露馅）。
+ *
+ * 这里按「浮层自己的盒子」扣除：弹窗本体与各类下拉浮层整体可点，拖动带其余
+ * 部分（含标题栏空白）照旧能拖窗口。**新增浮层记得补进这一组。**
+ */
+.ant-modal-container,
+.ant-modal-render,
+.ant-dropdown,
+.ant-select-dropdown,
+.ant-picker-dropdown,
+.ant-popover {
+  -webkit-app-region: no-drag;
+}

@@ -62,7 +62,6 @@ function item(partial: Partial<PackItem> = {}): PackItem {
     groupId: "",
     slotIndex: null,
     sourceChapterId: "",
-    weight: 0,
     updatedAt: 0,
     ...partial,
   };
@@ -108,8 +107,6 @@ const currentDoc: PackDoc = {
     isProtagonist: true,
     entityId: "e1",
     realmAt: "",
-    weightLimit: 0,
-    capacityLimit: 0,
     note: "",
     sortOrder: 1,
   },

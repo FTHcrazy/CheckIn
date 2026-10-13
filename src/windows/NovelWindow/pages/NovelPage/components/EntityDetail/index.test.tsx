@@ -149,7 +149,9 @@ describe("EntityDetail：当前境界入口", () => {
     // 有体系时「管理」照旧在（空态才收起，避免与「新建境界体系」重复）
     expect(screen.getByText("管理")).toBeInTheDocument();
     fireEvent.click(screen.getByText("筑基"));
-    expect(onSetEntityLevel).toHaveBeenCalledWith("r2");
+    // 第二参显式 undefined：筑基没有子层级，note 里不写 {sub}
+    // （与「父阶是组」那条 1.38.1 用例同一口径）
+    expect(onSetEntityLevel).toHaveBeenCalledWith("r2", undefined);
   });
 
   it("已绑定的等级项再点一次即取消绑定", () => {

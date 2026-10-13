@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   PACK_ZONE_LABEL,
   PACK_ZONE_OF,
-  formatNumber,
-  headerReadings,
+  PACK_ZONE_ORDER,
+  activeZones,
+  coreFirstOrder,
   isAutoCollapsed,
+  missingZoneOf,
   moduleSummary,
   splitByZone,
 } from "./pack-layout";
@@ -62,6 +64,16 @@ describe("分区映射（PackZone）", () => {
     expect(PACK_ZONE_LABEL.stats).toBeTruthy();
     expect(PACK_ZONE_LABEL.gear).not.toBe(PACK_ZONE_LABEL.stats);
   });
+
+  /*
+    左栏必须是「数值与状态」：左上第一屏给了装备类，作者开行囊第一眼看到的
+    就不是属性与境界。这条同时钉死与 `index.scss` 的 `&__zones` 栏宽配比同序
+    —— 两处一旦不同步，右栏（装备类，行内元素多）会被压成窄条挤成两行。
+  */
+  it("宽档落位：stats 在左、gear 在右", () => {
+    expect(PACK_ZONE_ORDER).toEqual(["stats", "gear"]);
+    expect(PACK_ZONE_ORDER).toHaveLength(2);
+  });
 });
 
 /**
@@ -99,6 +111,103 @@ describe("splitByZone", () => {
 
   it("空输入给两个空栏，不抛", () => {
     expect(splitByZone([])).toEqual({ gear: [], stats: [] });
+  });
+});
+
+/**
+ * activeZones / missingZoneOf：新书出厂只开核心三块（全在 stats 栏）时的
+ * 宽档编排 —— 空分区不渲染，对面栏出引导卡。这是「初始界面不发空」的关键规则。
+ */
+describe("activeZones / missingZoneOf", () => {
+  it("新书出厂态（只有核心三块）：只渲染 stats，gear 整栏退场", () => {
+    const core = allModules().filter((m) =>
+      ["summary", "attributes", "realm"].includes(m.key),
+    );
+    const active = activeZones(splitByZone(core));
+    expect(active).toEqual(["stats"]);
+    expect(missingZoneOf(active)).toBe("gear");
+  });
+
+  it("双栏都有模块：两栏都渲染，不出引导卡", () => {
+    const active = activeZones(splitByZone(allModules()));
+    expect(active).toEqual(["stats", "gear"]);
+    expect(missingZoneOf(active)).toBeNull();
+  });
+
+  it("左栏是「数值与状态」—— 核心三块（汇总 / 属性 / 境界）落在第一栏", () => {
+    const split = splitByZone(allModules());
+    const active = activeZones(split);
+    expect(active[0]).toBe("stats");
+    const leftKeys = split[active[0]].map((m) => m.key);
+    for (const key of ["summary", "attributes", "realm"]) {
+      expect(leftKeys).toContain(key);
+    }
+    // 装备 / 物品 / 技能在右栏，不在左栏
+    expect(leftKeys).not.toContain("equipment");
+    expect(split[active[1]].map((m) => m.key)).toEqual([
+      "equipment",
+      "inventory",
+      "skills",
+    ]);
+  });
+
+  it("只有装备类模块：只渲染 gear，对面引导卡指向 stats", () => {
+    const gearOnly = allModules().filter((m) => PACK_ZONE_OF[m.key] === "gear");
+    const active = activeZones(splitByZone(gearOnly));
+    expect(active).toEqual(["gear"]);
+    expect(missingZoneOf(active)).toBe("stats");
+  });
+
+  it("全空：不出引导卡（整版空态由上游「所有模块都关掉了」分支负责）", () => {
+    const active = activeZones(splitByZone([]));
+    expect(active).toEqual([]);
+    expect(missingZoneOf(active)).toBeNull();
+  });
+});
+
+/**
+ * coreFirstOrder：核心三块钉顶。存量书的布局顺序里核心三块可能排在末尾，
+ * 每新开一个模块它就插在核心三块上面，把主内容越顶越深 —— 钉顶后不会。
+ */
+describe("coreFirstOrder", () => {
+  const byKey = (list: PackModuleState[]) => list.map((m) => m.key);
+
+  it("核心三块恒在最前，即使输入把它们排在末尾", () => {
+    // 显式造「核心三块沉底」的输入（allModules 的出厂顺序核心本来就靠前，
+    // 构造不出这个场景）
+    const input: PackModuleState[] = [
+      { key: "currency", enabled: true, sortOrder: 1 },
+      { key: "mapping", enabled: true, sortOrder: 2 },
+      { key: "note", enabled: true, sortOrder: 3 },
+      { key: "summary", enabled: true, sortOrder: 4 },
+      { key: "realm", enabled: true, sortOrder: 5 },
+      { key: "attributes", enabled: true, sortOrder: 6 },
+    ];
+    expect(byKey(coreFirstOrder(input))).toEqual([
+      "summary",
+      "realm",
+      "attributes",
+      "currency",
+      "mapping",
+      "note",
+    ]);
+  });
+
+  it("两段各自保持相对顺序（其余模块的作者排序不被打乱）", () => {
+    const input: PackModuleState[] = [
+      { key: "note", enabled: true, sortOrder: 1 },
+      { key: "realm", enabled: true, sortOrder: 2 },
+      { key: "status", enabled: true, sortOrder: 3 },
+      { key: "attributes", enabled: true, sortOrder: 4 },
+      { key: "currency", enabled: true, sortOrder: 5 },
+      { key: "summary", enabled: true, sortOrder: 6 },
+    ];
+    const rest = byKey(coreFirstOrder(input)).slice(3);
+    expect(rest).toEqual(["note", "status", "currency"]);
+  });
+
+  it("空输入给空数组，不抛", () => {
+    expect(coreFirstOrder([])).toEqual([]);
   });
 });
 
@@ -298,96 +407,5 @@ describe("moduleSummary", () => {
 
   it("备注空白时说「空白」", () => {
     expect(moduleSummary("note", docWith({ note: "   \n  " }))).toBe("空白");
-  });
-});
-
-/**
- * 顶部概览带读数（设计稿的「这趟盘完没有」）。
- *
- * 三条容易写错的口径在这里钉死：
- * - `limit === 0` 表示「不限」，要显示 `—` 一类的东西而不是 `0/0` 这种假读数；
- * - 超限 / 满格才标告警，正常值不标；
- * - 技能不再上头部（与技能模块摘要同源，1.34.x 精简），只留负重 / 容量。
- */
-describe("headerReadings", () => {
-  const base = {
-    load: {
-      weight: { total: 128, limit: 200, over: false },
-      capacity: { used: 18, limit: 30, full: false },
-    },
-  };
-
-  it("负重：有上限时给 `实重 / 上限`，不标告警", () => {
-    const r = headerReadings("weight", base);
-    expect(r.label).toBe("负重");
-    expect(r.value).toBe("128 / 200");
-    expect(r.alert).toBe(false);
-    expect(r.hint).toBe("");
-  });
-
-  it("负重：未设上限（limit=0）时只给实重 + 「未设上限」，不出现 /0", () => {
-    const r = headerReadings("weight", {
-      ...base,
-      load: { ...base.load, weight: { total: 128, limit: 0, over: false } },
-    });
-    expect(r.value).toBe("128");
-    expect(r.value).not.toContain("/");
-    expect(r.hint).toBe("未设上限");
-  });
-
-  it("负重：超限时标告警", () => {
-    const r = headerReadings("weight", {
-      ...base,
-      load: { ...base.load, weight: { total: 260, limit: 200, over: true } },
-    });
-    expect(r.alert).toBe(true);
-  });
-
-  it("容量：带「格」单位", () => {
-    const r = headerReadings("capacity", base);
-    expect(r.label).toBe("容量");
-    expect(r.value).toBe("18 / 30 格");
-    expect(r.alert).toBe(false);
-  });
-
-  it("容量：未设上限时只给 `n 格`", () => {
-    const r = headerReadings("capacity", {
-      ...base,
-      load: { ...base.load, capacity: { used: 18, limit: 0, full: false } },
-    });
-    expect(r.value).toBe("18 格");
-    expect(r.hint).toBe("未设上限");
-  });
-
-  it("容量：满格时标告警", () => {
-    const r = headerReadings("capacity", {
-      ...base,
-      load: { ...base.load, capacity: { used: 30, limit: 30, full: true } },
-    });
-    expect(r.alert).toBe(true);
-  });
-});
-
-describe("formatNumber", () => {
-  it("四位数以上加千分位", () => {
-    expect(formatNumber(128)).toBe("128");
-    expect(formatNumber(8420)).toBe("8,420");
-    expect(formatNumber(1234567)).toBe("1,234,567");
-  });
-
-  it("小数保留两位以内且整数部分照样分组", () => {
-    expect(formatNumber(1280.5)).toBe("1,280.5");
-    expect(formatNumber(1280.456)).toBe("1,280.46");
-  });
-
-  it("非有限数归 0（输入框清空 / 粘贴垃圾都可能给出 NaN）", () => {
-    expect(formatNumber(Number.NaN)).toBe("0");
-    expect(formatNumber(Number.POSITIVE_INFINITY)).toBe("0");
-  });
-
-  it("0 与负数不崩", () => {
-    expect(formatNumber(0)).toBe("0");
-    expect(formatNumber(-42)).toBe("-42");
-    expect(formatNumber(-1234)).toBe("-1,234");
   });
 });

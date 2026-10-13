@@ -46,8 +46,6 @@ const doc: PackDoc = {
     isProtagonist: true,
     entityId: "",
     realmAt: "",
-    weightLimit: 0,
-    capacityLimit: 0,
     note: "",
     sortOrder: 1,
   },

@@ -251,15 +251,6 @@ export interface PackCharacterDTO {
   /** 未绑定实体时的行囊内境界 JSON `{levelId, sub}` */
   realmAt: string
   note: string
-  /** 负重上限（REQ-033）；0 = 不限 */
-  weightLimit: number
-  /**
-   * 物品栏格数上限（F-5 第一条）；0 = 不限
-   *
-   * 与 `weightLimit` 是两个独立口径：200 株草药占 1 格但可能压垮肩膀。
-   * 到上限时新增物品会被拦下并给出提示（PRD F-5 原话是「阻止新增」）。
-   */
-  capacityLimit: number
   sortOrder: number
 }
 
@@ -364,8 +355,6 @@ export interface PackItemDTO {
   /** 归属分组（PackGroupDTO.id）；'' = 未分组 */
   groupId: string
   sourceChapterId: string
-  /** 单件重量（REQ-033）；0 = 没记重量。总重按 `weight × qty` 算 */
-  weight: number
   updatedAt: number
 }
 

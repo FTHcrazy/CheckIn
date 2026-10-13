@@ -8,7 +8,6 @@ import {
   buildPackTable,
   carrierKeyOf,
   carryRealm,
-  capacityStatus,
   castOwnerIds,
   clamp,
   clampRealm,
@@ -20,13 +19,10 @@ import {
   formatRatio,
   formatRealm,
   formatRelativeTime,
-  formatWeight,
   hasRecentChange,
   isCounted,
   isExpired,
-  itemWeight,
   matchesKeyword,
-  normalizeLimit,
   proficiencySchemeOf,
   carryBreakdown,
   safeText,
@@ -36,8 +32,6 @@ import {
   summaryDeltas,
   thresholdOf,
   toMarkdownTable,
-  totalWeight,
-  weightStatus,
   composeAttributes,
   type HypotheticalInput,
   type LadderRung,
@@ -560,7 +554,6 @@ describe("buildActiveCarriers —— 闸门 1 的组装", () => {
       groupId: "",
       slotIndex: n - 1,
       sourceChapterId: "",
-      weight: 0,
       updatedAt: 0,
     }));
     const active = buildActiveCarriers(slots, items, [], []);
@@ -584,7 +577,6 @@ describe("buildActiveCarriers —— 闸门 1 的组装", () => {
         groupId: "",
         slotIndex: 0,
         sourceChapterId: "",
-        weight: 0,
         updatedAt: 0,
       },
     ];
@@ -642,7 +634,6 @@ describe("载体分组与闸门 0（1.39.0 二期）", () => {
     groupId: "g1",
     slotIndex: 0,
     sourceChapterId: "",
-    weight: 0,
     updatedAt: 0,
     ...partial,
   });
@@ -1098,7 +1089,6 @@ function item(partial: Partial<PackItem>): PackItem {
     groupId: "",
     slotIndex: null,
     sourceChapterId: "",
-    weight: 0,
     updatedAt: 0,
     ...partial,
   };
@@ -1554,75 +1544,12 @@ describe("isCounted / isExpired —— 时效闸门（REQ-025）", () => {
 });
 
 /**
- * 负重与容量（REQ-033 / F-5）
+ * 状态表的时效列（导出用）。
  *
- * 「0 = 不限」是这一组的核心：把「不限」和「上限为零」合并的实现在空库上
- * 看不出任何异常，只在作者真的填了重量时集体变红。
+ * 「持续型 / 被动」在导出里必须是两套文案：被动没有回合概念，给「不限时」
+ * 会让作者以为它真的有时效。
  */
-describe("weightStatus / capacityStatus —— 负重与容量（REQ-033）", () => {
-  it("总重按「单件重量 × 数量」累计，并修掉浮点尾巴", () => {
-    const items = [
-      item({ id: "i1", weight: 1.1, qty: 2 }),
-      item({ id: "i2", weight: 2.2, qty: 1 }),
-      item({ id: "i3", weight: 0, qty: 99 }),
-    ];
-    expect(totalWeight(items)).toBe(4.4);
-    expect(itemWeight(items[0])).toBe(2.2);
-  });
-
-  it("上限为 0 是「不限」：永远不超载，比例也是 0（不是 Infinity）", () => {
-    const status = weightStatus([item({ weight: 999, qty: 3 })], 0);
-    expect(status.over).toBe(false);
-    expect(status.ratio).toBe(0);
-    expect(status.limit).toBe(0);
-  });
-
-  it("压在上限上不算超载（> 而不是 >=）—— 有第 20.0 公斤，没有第 41 件", () => {
-    expect(weightStatus([item({ weight: 20, qty: 1 })], 20).over).toBe(false);
-    expect(weightStatus([item({ weight: 20.5, qty: 1 })], 20).over).toBe(true);
-    // 容量反过来：上限 40 格就是第 41 件放不下
-    const nine = Array.from({ length: 40 }, (_, index) => item({ id: `i${index}` }));
-    expect(capacityStatus(nine, 40).full).toBe(true);
-    expect(capacityStatus(nine.slice(0, 39), 40).full).toBe(false);
-  });
-
-  it("格数按条目算而不是件数（200 株草药占 1 格）", () => {
-    expect(capacityStatus([item({ qty: 200 })], 40).used).toBe(1);
-  });
-
-  it("hasWeight 区分「没记重量」与「真的没负重」", () => {
-    expect(weightStatus([item({ weight: 0 })], 20).hasWeight).toBe(false);
-    expect(weightStatus([item({ weight: 0.1 })], 20).hasWeight).toBe(true);
-  });
-
-  it("重量文案去掉尾随零（0.50 → 0.5，3.00 → 3，0 → 0）", () => {
-    expect(formatWeight(0)).toBe("0");
-    expect(formatWeight(3)).toBe("3");
-    expect(formatWeight(0.5)).toBe("0.5");
-    expect(formatWeight(12.34)).toBe("12.34");
-    expect(formatWeight(31.5)).toBe("31.5");
-  });
-
-  it("上限输入规范化：负数 / 非有限数夹到 0，格数取整", () => {
-    expect(normalizeLimit(-3)).toBe(0);
-    expect(normalizeLimit(-3, true)).toBe(0);
-    expect(normalizeLimit(Number.NaN)).toBe(0);
-    expect(normalizeLimit(Number.POSITIVE_INFINITY)).toBe(0);
-    expect(normalizeLimit(12.5)).toBe(12.5);
-    // 格数没有半格
-    expect(normalizeLimit(40.9, true)).toBe(40);
-  });
-
-  it("物品表导出重量小计，没记重量给「—」而不是 0", () => {
-    const ctx = exportCtx({
-      items: [item({ id: "i1", name: "玄铁剑", weight: 1.5, qty: 3 }), item({ id: "i2", name: "水囊" })],
-    });
-    const table = buildPackTable("inventory", ctx);
-    expect(table.headers).toContain("重量");
-    expect(table.rows[0]).toContain("4.5");
-    expect(table.rows[1]).toContain("—");
-  });
-
+describe("导出表 —— 状态时效口径", () => {
   it("状态表导出时效：持续型给「剩 N 回合 / 已过期 / 不限时」，被动给「—」", () => {
     const ctx = exportCtx({
       modifiers: [

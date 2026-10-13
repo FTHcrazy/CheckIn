@@ -52,7 +52,6 @@ function item(id: string, name: string, qty = 1, extra: Record<string, unknown> 
     desc: "",
     tags: [],
     qty,
-    weight: 0,
     equippedSlotId: null,
     sortOrder: 1,
     updatedAt: 0,

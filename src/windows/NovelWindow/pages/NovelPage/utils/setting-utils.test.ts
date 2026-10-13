@@ -439,7 +439,16 @@ describe("设定：绑定展示优先父等级，子层级折算境界内进度�
       segTo: 2,
       subLevels: 1,
     }),
-    level("筑基", 4, { subLevels: 3 }),
+    level("练气__seg3", 4, {
+      name: "第3段",
+      parentId: "练气",
+      segFrom: 3,
+      segTo: 3,
+      subLevels: 1,
+    }),
+    // 段只覆盖第 1–3 层，第 4–9 层是「未覆盖区间」—— 下面用它测
+    // 「落点不在任何段里 → 无段进度」这条分支
+    level("筑基", 5, { subLevels: 3 }),
   ];
 
   it("rootLevels 只留根阶：派生段不是独立的新阶", () => {
@@ -454,9 +463,19 @@ describe("设定：绑定展示优先父等级，子层级折算境界内进度�
     expect(position?.total).toBe(9);
   });
 
-  it("findRealmPosition：绑在分组上无段进度；旧模型绑在父阶上按第一段算", () => {
+  it("findRealmPosition：分组上落点未覆盖任何段 → 无段进度；旧模型绑在父阶上按第一段算", () => {
     expect(findRealmPosition(splitLadder, "筑基")?.segment).toBeNull();
-    expect(findRealmPosition(splitLadder, "练气")?.segment).toBeNull();
+    /*
+      「无段进度」指的是**落点不在任何段的区间里**，不是「绑在分组上就一定没进度」：
+      分组（练气）持有整阶 9 层，段各占一段；第 5 层没有被任何段覆盖，
+      所以折算不出段 —— 只有根阶名。
+
+      旧写法断言 `findRealmPosition(splitLadder, "练气")` 为 null，但缺省
+      noteSub = 1，而第 1 段恰好覆盖 1–1，于是它落到第 1 段上、断言与
+      「sub=2 → 第2段 / sub=3 → 第3段」自相矛盾。未覆盖分支改用真正没被
+      覆盖的层号（5），覆盖关系不变。
+    */
+    expect(findRealmPosition(splitLadder, "练气", 5)?.segment).toBeNull();
     // 旧模型数据：父阶自己占 1–4，绑在它上面仍有进度
     const legacy = [
       level("练气", 1, { subLevels: 4, segFrom: 1, segTo: 4 }),
@@ -479,8 +498,8 @@ describe("设定：绑定展示优先父等级，子层级折算境界内进度�
     expect(position?.root.id).toBe("练气");
     expect(position?.segment?.id).toBe("练气__seg2");
     expect(position?.total).toBe(9);
-    // sub 没落在任何段区间（fixture 没有第 1 段）→ 无段进度
-    expect(findRealmPosition(splitLadder, "练气", 1)?.segment).toBeNull();
+    // sub 没落在任何段区间（段只覆盖 1–3，第 5 层未覆盖）→ 无段进度
+    expect(findRealmPosition(splitLadder, "练气", 5)?.segment).toBeNull();
   });
 
   it("parseRealmNoteSub：{sub} 解析，缺省 / 非法回落 1", () => {
@@ -501,7 +520,7 @@ describe("设定：绑定展示优先父等级，子层级折算境界内进度�
   it("formatBoundRealmName：根阶 + note.sub 折算成「父阶 · 层名」", () => {
     expect(formatBoundRealmName(splitLadder, "练气", 2)).toBe("练气 · 第2段");
     expect(formatBoundRealmName(splitLadder, "练气", 3)).toBe("练气 · 第3段");
-    // sub 没有对应段（未覆盖区间）→ 只有根阶名
-    expect(formatBoundRealmName(splitLadder, "练气", 1)).toBe("练气");
+    // sub 没有对应段（未覆盖区间，段只覆盖 1–3）→ 只有根阶名
+    expect(formatBoundRealmName(splitLadder, "练气", 5)).toBe("练气");
   });
 });

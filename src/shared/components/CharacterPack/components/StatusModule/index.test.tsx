@@ -84,8 +84,6 @@ function makeApi(over: { doc?: Partial<PackDoc>; statuses?: PackModifier[] } = {
       entityId: "",
       realmAt: "",
       note: "",
-      weightLimit: 0,
-      capacityLimit: 0,
       sortOrder: 1,
     },
     attrDefs: [],

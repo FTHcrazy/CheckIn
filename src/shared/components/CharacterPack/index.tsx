@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import type { ComponentType } from "react";
+import { Button } from "antd";
 import PackHeader from "./components/PackHeader";
 import PackToast from "./components/PackToast";
 import CloseGuardModal from "./components/CloseGuardModal";
@@ -27,12 +28,15 @@ import { downloadText } from "./services/pack-export";
 import { packWidthTier } from "./pack-config";
 import {
   PACK_ZONE_LABEL,
+  PACK_ZONE_OF,
+  activeZones,
   isAutoCollapsed,
+  missingZoneOf,
   moduleSummary,
   splitByZone,
   type PackZone,
 } from "./pack-layout";
-import type { PackModuleKey, PackModuleState } from "./types";
+import { PACK_MODULES, type PackModuleKey, type PackModuleState } from "./types";
 import "./index.scss";
 
 interface CharacterPackHostProps {
@@ -162,6 +166,15 @@ export default function CharacterPackHost({
     [api.enabledModules],
   );
 
+  /**
+   * 宽档下实际要渲染的分区与被整体关掉的对面栏（渲染规则见 pack-layout）。
+   */
+  const wideZones = useMemo(
+    () => activeZones(zoneModules),
+    [zoneModules],
+  );
+  const missingZone: PackZone | null = missingZoneOf(wideZones);
+
   /** 渲染单个模块。代理只在该模块的生效折叠态与作者偏好不同时才新建对象。 */
   const renderModule = (module: PackModuleState) => {
     const View = MODULE_VIEWS[module.key];
@@ -199,15 +212,6 @@ export default function CharacterPackHost({
         realmText={api.realmText}
         realmHint={api.realmHint}
         realmBound={api.realmBound}
-        /*
-          读数只在宽 / 中档给。窄档（<600px）下头部要同时容纳
-          「头像 + 名字 + 境界 + 保存态 + 按钮 + 工具」，再塞两个读数会挤到
-          文字互相重叠、「全部已读」被裁出屏幕（曾实测）。
-          读数回答的是「这趟盘完没有」，窄窗下用滚一眼物品栏同样能得到 ——
-          故窄档整块不传，而不是压成小字继续挤。
-          技能数不再上头部：它与技能模块摘要同源，头部只留负重 / 容量。
-        */
-        readings={doc && tier !== "narrow" ? { load: api.load } : null}
         compact={tier === "narrow"}
         dirty={api.dirty}
         saving={api.saving}
@@ -249,19 +253,45 @@ export default function CharacterPackHost({
             两栏各自独立滚动区会抢滚轮，所以仍共用外层这一条滚动条，
             两栏只是并排的网格轨道（高度由内容决定，短的那栏自然留白）。
           */
-          <div className="cpk__zones">
-            {(["gear", "stats"] as PackZone[]).map((zone) => (
+          <div
+            className={`cpk__zones${wideZones.length === 1 ? " cpk__zones--solo" : ""}`}
+          >
+            {wideZones.map((zone) => (
               <section
                 key={zone}
                 className={`cpk__zone cpk__zone--${zone}`}
                 aria-label={PACK_ZONE_LABEL[zone]}
               >
-                <h3 className="cpk__zonetitle">{PACK_ZONE_LABEL[zone]}</h3>
+                {/*
+                  单分区时眉标是噪音（整个内容区就是这一栏），只在双栏时出；
+                  对面栏被整体关掉时补一张引导卡，作者才知道行囊还能开更多模块。
+                */}
+                {wideZones.length > 1 ? (
+                  <h3 className="cpk__zonetitle">{PACK_ZONE_LABEL[zone]}</h3>
+                ) : null}
                 <div className="cpk__zonestack">
                   {zoneModules[zone].map(renderModule)}
                 </div>
               </section>
             ))}
+            {missingZone ? (
+              <Button
+                type="dashed"
+                block
+                className="cpk__zoneghost"
+                onClick={() => api.setModuleManagerOpen(true)}
+              >
+                <span className="cpk__zoneghost-line cpk__zoneghost-line--title">
+                  {PACK_ZONE_LABEL[missingZone]}模块都还没开
+                </span>
+                <span className="cpk__zoneghost-line">
+                  {PACK_MODULES.filter((m) => PACK_ZONE_OF[m.key] === missingZone)
+                    .map((m) => m.label)
+                    .join(" / ")}
+                  ，点这里在「模块管理」里按需开启。
+                </span>
+              </Button>
+            ) : null}
           </div>
         ) : (
           /* 中 / 窄档：单栏纵向流；窄档下次要模块由 isAutoCollapsed 折叠成标题行 */
