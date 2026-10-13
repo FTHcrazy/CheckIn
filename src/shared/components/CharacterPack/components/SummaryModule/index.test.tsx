@@ -10,7 +10,7 @@ import {
   computeSummary,
   summaryDeltas,
 } from "../../pack-utils";
-import type { PackAttribute, PackItem, PackModifier, PackSlot } from "../../types";
+import type { PackAttrDef, PackAttrValue, PackAttribute, PackItem, PackModifier, PackSlot } from "../../types";
 
 /**
  * 估算模式（REQ-037）与穿戴 Δ 预览（REQ-018）的 DOM 不变量。
@@ -29,6 +29,7 @@ const attributes: PackAttribute[] = [
     characterId: "c1",
     groupName: "战斗属性",
     name: "攻击力",
+    defaultValue: 100,
     baseValue: 100,
     decimals: 0,
     unit: "",
@@ -40,6 +41,7 @@ const attributes: PackAttribute[] = [
     characterId: "c1",
     groupName: "战斗属性",
     name: "防御力",
+    defaultValue: 50,
     baseValue: 50,
     decimals: 0,
     unit: "",
@@ -47,6 +49,26 @@ const attributes: PackAttribute[] = [
     updatedAt: 0,
   },
 ];
+
+/** 测试里只写一份「视图」，defs / values 由它投影 —— 与运行时 composeAttributes 互为镜像 */
+const attrDefs: PackAttrDef[] = attributes.map((a) => ({
+  id: a.id,
+  key: "",
+  workId: "w1",
+  name: a.name,
+  groupName: a.groupName,
+  unit: a.unit,
+  decimals: a.decimals,
+  defaultValue: a.defaultValue,
+  sortOrder: a.sortOrder,
+}));
+const attrValues: PackAttrValue[] = attributes.map((a) => ({
+  id: `v-${a.id}`,
+  characterId: a.characterId,
+  defId: a.id,
+  baseValue: a.baseValue,
+  updatedAt: a.updatedAt,
+}));
 
 const slots: PackSlot[] = [
   {
@@ -73,6 +95,7 @@ const items: PackItem[] = [
     desc: "",
     tags: [],
     equippedSlotId: "",
+    groupId: "",
     slotIndex: null,
     sourceChapterId: "",
     weight: 0,
@@ -122,10 +145,12 @@ const doc: PackDoc = {
     note: "",
     sortOrder: 1,
   },
-  attributes,
+  attrDefs,
+  attributes: attrValues,
   slots,
   items,
   skills: [],
+  groups: [],
   modifiers,
   unitSystems: [],
   layouts: [],
@@ -144,7 +169,7 @@ function makeApi(over: Partial<PackPanelApi> = {}): PackPanelApi {
   const estimateEntries = over.estimateEntries ?? [];
   const estimateSummary = estimateEntries.length
     ? computeHypotheticalSummary(
-        { ...doc, proficiency: {} },
+        { ...doc, attributes, proficiency: {} },
         {
           extraModifiers: estimateEntries.map((entry, index) => ({
             id: `est-${entry.id}`,
@@ -176,6 +201,7 @@ function makeApi(over: Partial<PackPanelApi> = {}): PackPanelApi {
 
   return {
     doc,
+    attrView: attributes,
     summary,
     dirty: 0,
     prefs: { collapsed: {} },
@@ -191,7 +217,7 @@ function makeApi(over: Partial<PackPanelApi> = {}): PackPanelApi {
     clearEstimates: vi.fn(),
     setDetailAttrId: vi.fn(),
     previewEquipDeltas: (itemId: string, slotId: string) =>
-      summaryDeltas(summary, computeHypotheticalSummary({ ...doc, proficiency: {} }, { equip: { itemId, slotId } })),
+      summaryDeltas(summary, computeHypotheticalSummary({ ...doc, attributes, proficiency: {} }, { equip: { itemId, slotId } })),
     ...over,
   } as unknown as PackPanelApi;
 }

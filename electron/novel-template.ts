@@ -91,14 +91,25 @@ export interface TemplateSettingCategory {
 
 // ── 行囊（CharacterPack）模板：与 novel_pack_* 表一一对应 ──
 
-export interface TemplatePackAttribute {
+/**
+ * 属性定义（作品级，1.39.0）：`defaultValue` 即模板角色的初始数值，
+ * 模板书打开即可见完整的两层结构。
+ */
+export interface TemplatePackAttrDef {
   id: string;
-  groupName: string;
   name: string;
-  baseValue: number;
-  decimals: number;
+  groupName: string;
   unit: string;
+  decimals: number;
+  defaultValue: number;
   sortOrder: number;
+}
+
+/** 属性数值（角色级实例）：`defId` 引用 `TemplatePackAttrDef.id`，id 恒等于 defId */
+export interface TemplatePackAttrValue {
+  id: string;
+  defId: string;
+  baseValue: number;
 }
 
 export interface TemplatePackSlot {
@@ -108,6 +119,23 @@ export interface TemplatePackSlot {
   accepts: string[];
   enabled: boolean;
   note: string;
+  sortOrder: number;
+}
+
+/**
+ * 载体分组（1.39.0 二期）：条目分类维度 + 能力开关。
+ *
+ * 组内条目的编辑器按开关渲染统一模板的哪几块；组停用 = 汇总闸门 0。
+ * `profSchemeId` 指向 `TemplatePackUnitSystem.id`（可空 = 该组无熟练度）。
+ */
+export interface TemplatePackGroup {
+  id: string;
+  name: string;
+  icon: string;
+  canEquip: boolean;
+  canEnable: boolean;
+  profSchemeId: string;
+  enabled: boolean;
   sortOrder: number;
 }
 
@@ -136,6 +164,8 @@ export interface TemplatePackItem {
   equippedSlotId: string;
   /** 部位内槽位下标（戒指这类多槽部位靠它区分，未穿戴为 null） */
   slotIndex: number | null;
+  /** 归属分组（TemplatePackGroup.id）；空串 = 未分组 */
+  groupId: string;
 }
 
 export interface TemplatePackSkill {
@@ -143,6 +173,8 @@ export interface TemplatePackSkill {
   name: string;
   desc: string;
   enabled: boolean;
+  /** 归属分组（TemplatePackGroup.id）；空串 = 未分组 */
+  groupId: string;
   proficiencyRaw: number;
   sortOrder: number;
 }
@@ -185,9 +217,12 @@ export interface TemplatePackUnitSystem {
 export interface TemplatePack {
   /** 行囊角色（v1 只承载主角一条） */
   character: { id: string; name: string; note: string; entityId: string };
-  attributes: TemplatePackAttribute[];
+  attrDefs: TemplatePackAttrDef[];
+  attrValues: TemplatePackAttrValue[];
   mappings: TemplatePackMapping[];
   slots: TemplatePackSlot[];
+  /** 载体分组（1.39.0 二期）：条目 groupId 引用这里的 id */
+  groups: TemplatePackGroup[];
   items: TemplatePackItem[];
   skills: TemplatePackSkill[];
   modifiers: TemplatePackModifier[];
@@ -566,14 +601,21 @@ function countWords(content: string): number {
 function buildTemplatePack(): TemplatePack {
   const characterId = "tpl-pc-shen";
 
-  const attributes: TemplatePackAttribute[] = [
-    { id: "tpl-pa-hp", groupName: "基础属性", name: "气血", baseValue: 100, decimals: 0, unit: "点", sortOrder: 1 },
-    { id: "tpl-pa-mp", groupName: "基础属性", name: "灵力", baseValue: 60, decimals: 0, unit: "点", sortOrder: 2 },
-    { id: "tpl-pa-spirit", groupName: "基础属性", name: "神识", baseValue: 12, decimals: 0, unit: "点", sortOrder: 3 },
-    { id: "tpl-pa-root", groupName: "资质", name: "根骨", baseValue: 9, decimals: 0, unit: "", sortOrder: 4 },
-    { id: "tpl-pa-insight", groupName: "资质", name: "悟性", baseValue: 8, decimals: 0, unit: "", sortOrder: 5 },
-    { id: "tpl-pa-sword", groupName: "战斗属性", name: "剑意", baseValue: 10, decimals: 0, unit: "", sortOrder: 6 },
+  // 属性模型（作品级定义）与实例数值（1.39.0）：baseValue 同时作为 defaultValue
+  // 与主角的初始数值 —— 打开模板书就能看到「模型 / 数值」两层各长什么样
+  const attrDefs: TemplatePackAttrDef[] = [
+    { id: "tpl-pa-hp", groupName: "基础属性", name: "气血", unit: "点", decimals: 0, defaultValue: 100, sortOrder: 1 },
+    { id: "tpl-pa-mp", groupName: "基础属性", name: "灵力", unit: "点", decimals: 0, defaultValue: 60, sortOrder: 2 },
+    { id: "tpl-pa-spirit", groupName: "基础属性", name: "神识", unit: "点", decimals: 0, defaultValue: 12, sortOrder: 3 },
+    { id: "tpl-pa-root", groupName: "资质", name: "根骨", unit: "", decimals: 0, defaultValue: 9, sortOrder: 4 },
+    { id: "tpl-pa-insight", groupName: "资质", name: "悟性", unit: "", decimals: 0, defaultValue: 8, sortOrder: 5 },
+    { id: "tpl-pa-sword", groupName: "战斗属性", name: "剑意", unit: "", decimals: 0, defaultValue: 10, sortOrder: 6 },
   ];
+  const attrValues: TemplatePackAttrValue[] = attrDefs.map((def) => ({
+    id: def.id,
+    defId: def.id,
+    baseValue: def.defaultValue,
+  }));
 
   // 属性映射：演示「加点换算」两件最容易踩的事 —— 链式与停用
   // 链式：悟性 → 灵力 → 神识。灵力那条换算会被神识第二次读到，
@@ -586,37 +628,47 @@ function buildTemplatePack(): TemplatePack {
   ];
 
   // 部位：戒指 capacity=2 演示「一个部位穿两件」（REQ-007）；
-  // accepts 只在装备类部位上收窄，丹药 / 材料这类不设限，避免作者放不进去
+  // accepts（1.39.0 二期）按**组 id** 匹配：装备类部位只收「法宝」组的条目，
+  // 其余部位不限；category 降级为展示标签，不再承担能力语义
   const slots: TemplatePackSlot[] = [
-    { id: "tpl-ps-weapon", name: "武器", capacity: 1, accepts: ["装备"], enabled: true, note: "主手兵刃", sortOrder: 1 },
-    { id: "tpl-ps-offhand", name: "副手", capacity: 1, accepts: ["装备"], enabled: true, note: "灯 / 卷 / 盾", sortOrder: 2 },
+    { id: "tpl-ps-weapon", name: "武器", capacity: 1, accepts: ["tpl-pg-weapon"], enabled: true, note: "主手兵刃", sortOrder: 1 },
+    { id: "tpl-ps-offhand", name: "副手", capacity: 1, accepts: ["tpl-pg-weapon"], enabled: true, note: "灯 / 卷 / 盾", sortOrder: 2 },
     { id: "tpl-ps-head", name: "头饰", capacity: 1, accepts: [], enabled: true, note: "", sortOrder: 3 },
     { id: "tpl-ps-armor", name: "上衣", capacity: 1, accepts: [], enabled: true, note: "", sortOrder: 4 },
     { id: "tpl-ps-wrist", name: "护腕", capacity: 1, accepts: [], enabled: true, note: "", sortOrder: 5 },
     { id: "tpl-ps-belt", name: "腰带", capacity: 1, accepts: [], enabled: true, note: "", sortOrder: 6 },
     { id: "tpl-ps-legs", name: "下装", capacity: 1, accepts: [], enabled: true, note: "", sortOrder: 7 },
-    { id: "tpl-ps-boots", name: "靴子", capacity: 1, accepts: ["装备"], enabled: true, note: "", sortOrder: 8 },
+    { id: "tpl-ps-boots", name: "靴子", capacity: 1, accepts: ["tpl-pg-weapon"], enabled: true, note: "", sortOrder: 8 },
     { id: "tpl-ps-neck", name: "项链", capacity: 1, accepts: [], enabled: true, note: "", sortOrder: 9 },
-    { id: "tpl-ps-ring", name: "戒指", capacity: 2, accepts: ["装备"], enabled: true, note: "双手各一枚", sortOrder: 10 },
+    { id: "tpl-ps-ring", name: "戒指", capacity: 2, accepts: ["tpl-pg-weapon"], enabled: true, note: "双手各一枚", sortOrder: 10 },
     { id: "tpl-ps-charm", name: "护符", capacity: 1, accepts: [], enabled: true, note: "", sortOrder: 11 },
     { id: "tpl-ps-mount", name: "坐骑", capacity: 1, accepts: [], enabled: true, note: "", sortOrder: 12 },
   ];
 
+  // 载体分组（1.39.0 二期）：三个示例组各演示一种能力组合 ——
+  // 法宝组可穿戴（部位 accepts 按组匹配的示例）、功法组绑熟练度体系、
+  // 随身组无开关（canEnable=0：组内条目没有载体级启停按钮）
+  const groups: TemplatePackGroup[] = [
+    { id: "tpl-pg-weapon", name: "法宝", icon: "⚔", canEquip: true, canEnable: true, profSchemeId: "", enabled: true, sortOrder: 1 },
+    { id: "tpl-pg-gongfa", name: "功法", icon: "📖", canEquip: false, canEnable: true, profSchemeId: "tpl-pu-cultivation", enabled: true, sortOrder: 2 },
+    { id: "tpl-pg-carry", name: "随身", icon: "🎒", canEquip: false, canEnable: false, profSchemeId: "", enabled: true, sortOrder: 3 },
+  ];
+
   const items: TemplatePackItem[] = [
-    { id: "tpl-pi-sword", name: "青锋剑", category: "装备", qty: 1, rarity: "rare", desc: "陆行舟替她重铸的剑，剑脊上有一道未合的隙。", equippedSlotId: "tpl-ps-weapon", slotIndex: 0 },
-    { id: "tpl-pi-lamp", name: "照影灯", category: "装备", qty: 1, rarity: "legend", desc: "青铜古灯，灯芯是一截白发。持续供灯要烧灯油。", equippedSlotId: "tpl-ps-offhand", slotIndex: 0 },
-    { id: "tpl-pi-ring-silver", name: "素银戒", category: "装备", qty: 1, rarity: "fine", desc: "白芷给的，说是压惊用的。", equippedSlotId: "tpl-ps-ring", slotIndex: 0 },
-    { id: "tpl-pi-ring-sand", name: "星砂戒", category: "装备", qty: 1, rarity: "rare", desc: "观星台的坠料打的，夜里会泛一点点青光。", equippedSlotId: "tpl-ps-ring", slotIndex: 1 },
-    { id: "tpl-pi-boots", name: "潮生靴", category: "装备", qty: 1, rarity: "rare", desc: "踩潮不沉，代价是要耗灵力。", equippedSlotId: "tpl-ps-boots", slotIndex: 0 },
-    { id: "tpl-pi-scroll", name: "山海残卷", category: "杂物", qty: 1, rarity: "legend", desc: "遇潮显字；有些字只在潮汐之夜才读得出来。", equippedSlotId: "", slotIndex: null },
-    { id: "tpl-pi-pill", name: "凝神丹", category: "丹药", qty: 3, rarity: "fine", desc: "药谷的方子，一夜只能服一粒。", equippedSlotId: "", slotIndex: null },
-    { id: "tpl-pi-salt", name: "雾盐", category: "材料", qty: 12, rarity: "common", desc: "雾隐城的通货，也能镇住显字的残卷。", equippedSlotId: "", slotIndex: null },
+    { id: "tpl-pi-sword", name: "青锋剑", category: "装备", qty: 1, rarity: "rare", desc: "陆行舟替她重铸的剑，剑脊上有一道未合的隙。", equippedSlotId: "tpl-ps-weapon", slotIndex: 0, groupId: "tpl-pg-weapon" },
+    { id: "tpl-pi-lamp", name: "照影灯", category: "装备", qty: 1, rarity: "legend", desc: "青铜古灯，灯芯是一截白发。持续供灯要烧灯油。", equippedSlotId: "tpl-ps-offhand", slotIndex: 0, groupId: "tpl-pg-weapon" },
+    { id: "tpl-pi-ring-silver", name: "素银戒", category: "装备", qty: 1, rarity: "fine", desc: "白芷给的，说是压惊用的。", equippedSlotId: "tpl-ps-ring", slotIndex: 0, groupId: "tpl-pg-weapon" },
+    { id: "tpl-pi-ring-sand", name: "星砂戒", category: "装备", qty: 1, rarity: "rare", desc: "观星台的坠料打的，夜里会泛一点点青光。", equippedSlotId: "tpl-ps-ring", slotIndex: 1, groupId: "tpl-pg-weapon" },
+    { id: "tpl-pi-boots", name: "潮生靴", category: "装备", qty: 1, rarity: "rare", desc: "踩潮不沉，代价是要耗灵力。", equippedSlotId: "tpl-ps-boots", slotIndex: 0, groupId: "tpl-pg-weapon" },
+    { id: "tpl-pi-scroll", name: "山海残卷", category: "杂物", qty: 1, rarity: "legend", desc: "遇潮显字；有些字只在潮汐之夜才读得出来。", equippedSlotId: "", slotIndex: null, groupId: "tpl-pg-carry" },
+    { id: "tpl-pi-pill", name: "凝神丹", category: "丹药", qty: 3, rarity: "fine", desc: "药谷的方子，一夜只能服一粒。", equippedSlotId: "", slotIndex: null, groupId: "tpl-pg-carry" },
+    { id: "tpl-pi-salt", name: "雾盐", category: "材料", qty: 12, rarity: "common", desc: "雾隐城的通货，也能镇住显字的残卷。", equippedSlotId: "", slotIndex: null, groupId: "tpl-pg-carry" },
   ];
 
   const skills: TemplatePackSkill[] = [
-    { id: "tpl-pk-lamp", name: "执灯诀", desc: "执灯人の本命法门，熟练度越高，灯焰越稳。", enabled: true, proficiencyRaw: 500, sortOrder: 1 },
-    { id: "tpl-pk-tide", name: "听潮步", desc: "踏浪而行的身法，一步一里。", enabled: true, proficiencyRaw: 120, sortOrder: 2 },
-    { id: "tpl-pk-star", name: "观星术", desc: "占验潮汐的旁门，尚未学成——技能总开关是关的，效果不计入。", enabled: false, proficiencyRaw: 0, sortOrder: 3 },
+    { id: "tpl-pk-lamp", name: "执灯诀", desc: "执灯人の本命法门，熟练度越高，灯焰越稳。", enabled: true, groupId: "tpl-pg-gongfa", proficiencyRaw: 500, sortOrder: 1 },
+    { id: "tpl-pk-tide", name: "听潮步", desc: "踏浪而行的身法，一步一里。", enabled: true, groupId: "tpl-pg-gongfa", proficiencyRaw: 120, sortOrder: 2 },
+    { id: "tpl-pk-star", name: "观星术", desc: "占验潮汐的旁门，尚未学成——技能总开关是关的，效果不计入。", enabled: false, groupId: "tpl-pg-gongfa", proficiencyRaw: 0, sortOrder: 3 },
   ];
 
   /** 效果词条的公共默认值，逐条只写差异部分，避免 14 条里全是噪音 */
@@ -693,6 +745,21 @@ function buildTemplatePack(): TemplatePack {
       isDefault: false,
       sortOrder: 2,
     },
+    {
+      // Phase 3 示范：第二套体系「修为」带进位换算与别名，功法组绑定它 ——
+      // 打开模板行囊就能看到「修为 / 1 通玄 2 气旋」而不是「熟练度 / 120」
+      id: "tpl-pu-cultivation",
+      name: "修为",
+      kind: "threshold",
+      levels: [
+        { name: "入门", min: 0, max: 99, ratio: 10 },
+        { name: "气旋", min: 100, max: 499, ratio: 10 },
+        { name: "通玄", min: 500, max: null },
+      ],
+      config: { use: "proficiency", alias: "修为", autoCarry: true },
+      isDefault: false,
+      sortOrder: 3,
+    },
   ];
 
   // 模块顺序与 CharacterPack/types.ts 的 PACK_MODULES 保持一致，全部启用
@@ -716,9 +783,11 @@ function buildTemplatePack(): TemplatePack {
       note: "执灯人。随身带着照影灯与山海残卷——灯要油，卷要潮，两样都得在行囊里记着。",
       entityId: "tpl-e-char-shen",
     },
-    attributes,
+    attrDefs,
+    attrValues,
     mappings,
     slots,
+    groups,
     items,
     skills,
     modifiers,

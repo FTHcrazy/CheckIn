@@ -68,6 +68,7 @@ export default function BookshelfPage({
     usage,
     style,
     loading,
+    loadError,
     createWork,
     addNote,
     toggleNotePinned,
@@ -221,10 +222,25 @@ export default function BookshelfPage({
     [cards.length, totalWords, usage.todayWords, usage.streakDays],
   );
 
+  // bundle 还没到手时的三种形态必须严格分开（P2-6）：装载中 / 失败 / 都不是。
+  // 失败绝不能落进下面的「书架还是空的」空态 —— 那会让用户以为数据丢了。
   if (loading && !bundle) {
     return (
       <div className="bs-page">
         <div className="bs-page__loading">正在载入书架…</div>
+      </div>
+    );
+  }
+
+  if (!bundle && loadError) {
+    return (
+      <div className="bs-page">
+        <div className="bs-page__error" role="alert">
+          <span>{loadError}</span>
+          <Button size="small" onClick={() => void refresh()}>
+            重试
+          </Button>
+        </div>
       </div>
     );
   }

@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { CHANGED_TTL_MS, type PackAttribute, type PackItem, type PackMappingRule, type PackModifier, type PackSkill, type PackSlot } from "./types";
+import { CHANGED_TTL_MS, type PackAttrDef, type PackAttrValue, type PackAttribute, type PackGroup, type PackItem, type PackMappingRule, type PackModifier, type PackSkill, type PackSlot } from "./types";
 import {
   buildActiveCarriers,
   buildActiveCarriersFrom,
+  buildGroupOffCarriers,
   buildPackMarkdown,
   buildPackTable,
   carrierKeyOf,
@@ -26,6 +27,8 @@ import {
   itemWeight,
   matchesKeyword,
   normalizeLimit,
+  proficiencySchemeOf,
+  carryBreakdown,
   safeText,
   scaleByProficiency,
   sortLadder,
@@ -35,9 +38,11 @@ import {
   toMarkdownTable,
   totalWeight,
   weightStatus,
+  composeAttributes,
   type HypotheticalInput,
   type LadderRung,
   type SummaryResult,
+  type ThresholdLevel,
 } from "./pack-utils";
 
 function mod(partial: Partial<PackModifier>): PackModifier {
@@ -74,6 +79,7 @@ function attr(partial: Partial<PackAttribute>): PackAttribute {
     characterId: "c1",
     groupName: "基础属性",
     name: "攻击力",
+    defaultValue: 0,
     baseValue: 0,
     decimals: 0,
     unit: "",
@@ -551,6 +557,7 @@ describe("buildActiveCarriers —— 闸门 1 的组装", () => {
       desc: "",
       tags: [],
       equippedSlotId: "s1",
+      groupId: "",
       slotIndex: n - 1,
       sourceChapterId: "",
       weight: 0,
@@ -560,7 +567,7 @@ describe("buildActiveCarriers —— 闸门 1 的组装", () => {
     expect(active.size).toBe(0);
   });
 
-  it("accepts 不匹配的穿戴物不被接受", () => {
+  it("accepts 不匹配（组 id 不在清单里）的穿戴物不被接受", () => {
     const limited = [{ ...slots[0], accepts: ["武器"] }];
     const items = [
       {
@@ -574,6 +581,7 @@ describe("buildActiveCarriers —— 闸门 1 的组装", () => {
         desc: "",
         tags: [],
         equippedSlotId: "s1",
+        groupId: "",
         slotIndex: 0,
         sourceChapterId: "",
         weight: 0,
@@ -593,6 +601,139 @@ describe("buildActiveCarriers —— 闸门 1 的组装", () => {
     const active = buildActiveCarriers([], [], [], statuses);
     expect(active.has("status:m1")).toBe(true);
     expect(active.has("status:m2")).toBe(false);
+  });
+});
+
+describe("载体分组与闸门 0（1.39.0 二期）", () => {
+  const slot = (partial: Partial<PackSlot> = {}): PackSlot => ({
+    id: "s1",
+    characterId: "c1",
+    name: "主手",
+    capacity: 1,
+    accepts: [],
+    enabled: true,
+    note: "",
+    sortOrder: 1,
+    ...partial,
+  });
+  const group = (partial: Partial<PackGroup> = {}): PackGroup => ({
+    id: "g1",
+    characterId: "c1",
+    name: "法宝",
+    icon: "",
+    canEquip: true,
+    canEnable: true,
+    profSchemeId: "",
+    enabled: true,
+    sortOrder: 1,
+    ...partial,
+  });
+  const item = (partial: Partial<PackItem> = {}): PackItem => ({
+    id: "i1",
+    characterId: "c1",
+    name: "飞剑",
+    category: "装备",
+    qty: 1,
+    rarity: "common",
+    icon: "",
+    desc: "",
+    tags: [],
+    equippedSlotId: "s1",
+    groupId: "g1",
+    slotIndex: 0,
+    sourceChapterId: "",
+    weight: 0,
+    updatedAt: 0,
+    ...partial,
+  });
+
+  it("accepts 按**组 id**匹配：同组穿得进，未分组 / 异组穿不进", () => {
+    const limited = [slot({ accepts: ["g1"] })];
+    expect(buildActiveCarriers(limited, [item()], [], []).size).toBe(1);
+    expect(buildActiveCarriers(limited, [item({ groupId: "" })], [], []).size).toBe(0);
+    expect(
+      buildActiveCarriers(limited, [item({ groupId: "g2" })], [], []).size,
+    ).toBe(0);
+  });
+
+  it("buildGroupOffCarriers：只收停用组的条目，未分组与启用组不收", () => {
+    const groups = [group({ id: "g1", enabled: false }), group({ id: "g2", enabled: true })];
+    const off = buildGroupOffCarriers(
+      groups,
+      [item(), item({ id: "i2", groupId: "g2" }), item({ id: "i3", groupId: "" })],
+      [],
+    );
+    expect(off.has("item:i1")).toBe(true);
+    expect(off.has("item:i2")).toBe(false);
+    expect(off.has("item:i3")).toBe(false);
+  });
+
+  it("闸门 0：停用组内条目的效果（含开着的持续型）全部进 groupOff 桶，总属性回落", () => {
+    const attributes: PackAttribute[] = [attr({ id: "a1", baseValue: 1200 })];
+    const modifiers: PackModifier[] = [
+      mod({ id: "m1", nature: "passive", op: "add", value: 300, sortOrder: 1 }),
+      mod({
+        id: "m2",
+        nature: "sustained",
+        op: "percent",
+        value: 40,
+        active: true,
+        sortOrder: 2,
+      }),
+    ];
+    const groupOffCarriers = buildGroupOffCarriers(
+      [group({ enabled: false })],
+      [item()],
+      [],
+    );
+    const result = computeSummary({
+      attributes,
+      modifiers,
+      // 闸门 1 也把它剔出在效集合（buildActiveCarriers 的第 5 参）
+      activeCarriers: buildActiveCarriers([slot()], [item()], [], [], [
+        group({ enabled: false }),
+      ]),
+      groupOffCarriers,
+      proficiency: {},
+    });
+    // 总属性如实回落到基础值
+    expect(result.byAttr.get("a1")!.final).toBe(1200);
+    // 两条都进独立 groupOff 桶，不与 expired / eventOnly 混桶
+    expect(result.groupOff.map((m) => m.id).sort()).toEqual(["m1", "m2"]);
+    expect(result.expired).toEqual([]);
+    expect(result.eventOnly).toEqual([]);
+  });
+
+  it("组未停用时一切照旧（闸门 0 不误伤）", () => {
+    const attributes: PackAttribute[] = [attr({ id: "a1", baseValue: 1200 })];
+    const modifiers = [mod({ id: "m1", op: "add", value: 300 })];
+    const result = computeSummary({
+      attributes,
+      modifiers,
+      activeCarriers: buildActiveCarriers([slot()], [item()], [], [], [group()]),
+      groupOffCarriers: buildGroupOffCarriers([group()], [item()], []),
+      proficiency: {},
+    });
+    expect(result.byAttr.get("a1")!.final).toBe(1500);
+    expect(result.groupOff).toEqual([]);
+  });
+
+  it("估算 / 换装预览对组停用同样生效：groups 在场即重算停用集合", () => {
+    const attributes: PackAttribute[] = [attr({ id: "a1", baseValue: 1200 })];
+    const modifiers = [mod({ id: "m1", op: "add", value: 300 })];
+    const input: HypotheticalInput = {
+      attributes,
+      slots: [slot()],
+      items: [item()],
+      skills: [],
+      modifiers,
+      groups: [group({ enabled: false })],
+      mappings: [],
+      proficiency: {},
+    };
+    const result = computeHypotheticalSummary(input, {});
+    expect(result.byAttr.get("a1")!.final).toBe(1200);
+    expect(result.groupOff.map((m) => m.id)).toEqual(["m1"]);
   });
 });
 
@@ -784,6 +925,112 @@ function statusMod(partial: Partial<PackModifier>): PackModifier {
   return mod({ ownerType: "status", ownerId: "c1", nature: "sustained", ...partial });
 }
 
+describe("熟练度体系：进位与别名（Phase 3，断层 C）", () => {
+  /** 设计文档 §7.1 的示例体系：入门 ×100 = 1 层，层 ×10 = 1 重 */
+  const SCHEME_LEVELS: ThresholdLevel[] = [
+    { name: "入门", min: 0, max: null, ratio: 100 },
+    { name: "层", min: 0, max: null, ratio: 10 },
+    { name: "重", min: 0, max: null },
+  ];
+
+  it("carryBreakdown：12500 → 「12 重 5 层」（ratio 存在低档位：1×上一档 = ratio×本档）", () => {
+    expect(carryBreakdown(12500, SCHEME_LEVELS)).toBe("12 重 5 层");
+  });
+
+  it("carryBreakdown：基准档余量带在末尾，整除的高档零头省略", () => {
+    expect(carryBreakdown(12050, SCHEME_LEVELS)).toBe("12 重 50 入门");
+    expect(carryBreakdown(12000, SCHEME_LEVELS)).toBe("12 重");
+  });
+
+  it("carryBreakdown：换算链断档（中间档无 ratio）剩余量全记当前档", () => {
+    const broken: ThresholdLevel[] = [
+      { name: "入门", min: 0, max: null, ratio: 100 },
+      { name: "层", min: 0, max: null },
+      { name: "重", min: 0, max: null },
+    ];
+    expect(carryBreakdown(12500, broken)).toBe("125 层");
+  });
+
+  it("carryBreakdown：无 ratio / 单档 / 零值 / 非法输入的边界", () => {
+    expect(carryBreakdown(12500, [{ name: "入门", min: 0, max: null }])).toBe("");
+    expect(
+      carryBreakdown(12500, [
+        { name: "入门", min: 0, max: null },
+        { name: "层", min: 0, max: null },
+      ]),
+    ).toBe("");
+    expect(carryBreakdown(0, SCHEME_LEVELS)).toBe("0 入门");
+    expect(carryBreakdown(Number.NaN, SCHEME_LEVELS)).toBe("0 入门");
+    expect(carryBreakdown(-5, SCHEME_LEVELS)).toBe("0 入门");
+    expect(carryBreakdown(12.9, SCHEME_LEVELS)).toBe("12 入门");
+  });
+
+  it("proficiencySchemeOf：旧体系（无 alias / autoCarry / ratio）解析出 v1 缺省，行为不变", () => {
+    const meta = proficiencySchemeOf(
+      JSON.stringify([{ name: "入门", min: 0, max: 99 }]),
+      '{ "use": "proficiency" }',
+    );
+    expect(meta.alias).toBe("熟练度");
+    expect(meta.autoCarry).toBe(true);
+    expect(meta.levels[0]).toEqual({ name: "入门", min: 0, max: 99 });
+  });
+
+  it("proficiencySchemeOf：v2 字段读得出，脏 JSON 一律缺省不抛错", () => {
+    const meta = proficiencySchemeOf(
+      JSON.stringify([{ name: "入门", min: 0, max: null, ratio: 100 }]),
+      '{ "use": "proficiency", "alias": "修为", "autoCarry": false }',
+    );
+    expect(meta.alias).toBe("修为");
+    expect(meta.autoCarry).toBe(false);
+    expect(meta.levels[0].ratio).toBe(100);
+    expect(proficiencySchemeOf("not-json", undefined).levels).toEqual([]);
+    expect(proficiencySchemeOf(undefined, "not-json").alias).toBe("熟练度");
+  });
+
+  it("验收：autoCarry 开/关展示不同，但汇总缩放只吃原始值、结果一致", () => {
+    // 展示层：有 ratio 且 autoCarry on → 换算文本；off → 调用方不进位，只显原始值
+    expect(carryBreakdown(12500, SCHEME_LEVELS)).not.toBe("12500");
+    // 汇总层：computeSummary 根本不接收体系元数据 —— 缩放输入只有原始值
+    const result = computeSummary({
+      attributes: [attr({ id: "a1", baseValue: 0 })],
+      modifiers: [
+        mod({
+          id: "m1",
+          ownerType: "skill",
+          ownerId: "k1",
+          nature: "sustained",
+          active: true,
+          scaleByProficiency: true,
+          value: 100,
+        }),
+      ],
+      activeCarriers: new Set(["skill:k1"]),
+      proficiency: { k1: 0 },
+    });
+    // 100 × lerp(0.5, 1.5, 0) = 50：缩放只认原始值，与换算率 / 别名 / autoCarry 无关
+    expect(result.rows[0]?.contributions[0]?.applied).toBe(50);
+  });
+
+  it("技能表列名跟随默认体系别名，进位文本附在原始值后（原始值仍是真相源）", () => {
+    const table = buildPackTable(
+      "skills",
+      exportCtx({
+        skills: [skill({ proficiencyRaw: 12500 })],
+        proficiencyLevels: SCHEME_LEVELS,
+        proficiencyAlias: "修为",
+        proficiencySchemesByGroup: {
+          g1: { levels: SCHEME_LEVELS, autoCarry: true },
+        },
+      }),
+    );
+    expect(table.headers).toContain("修为");
+    expect(table.headers).not.toContain("熟练度");
+    expect(table.rows[0].some((cell) => cell.includes("12500（12 重 5 层）"))).toBe(
+      true,
+    );
+  });
+});
+
 describe("carrierKeyOf —— 状态效果自己就是载体", () => {
   const attributes = [attr({ id: "a1", baseValue: 100 })];
 
@@ -848,6 +1095,7 @@ function item(partial: Partial<PackItem>): PackItem {
     desc: "",
     tags: [],
     equippedSlotId: "",
+    groupId: "",
     slotIndex: null,
     sourceChapterId: "",
     weight: 0,
@@ -1004,6 +1252,7 @@ function skill(partial: Partial<PackSkill>): PackSkill {
     name: "御剑术",
     desc: "",
     enabled: true,
+    groupId: "",
     proficiencyRaw: 0,
     tags: [],
     sortOrder: 1,
@@ -1040,6 +1289,8 @@ function exportCtx(partial: Partial<Parameters<typeof buildPackTable>[1]> = {}) 
     mappings,
     summary,
     proficiencyLevels: partial.proficiencyLevels,
+    proficiencyAlias: partial.proficiencyAlias,
+    proficiencySchemesByGroup: partial.proficiencySchemesByGroup,
     currency: partial.currency ?? null,
   };
 }
@@ -1386,5 +1637,68 @@ describe("weightStatus / capacityStatus —— 负重与容量（REQ-033）", ()
     expect(table.rows[1]).toContain("已过期");
     expect(table.rows[2]).toContain("不限时");
     expect(table.rows[3]).toContain("—");
+  });
+});
+
+describe("composeAttributes：defs + values → 组合视图", () => {
+  // 第一期重构的核心不变量：视图行 id 恒为**定义 id**（效果 / 映射 / 估算引用的都是它），
+  // 数值行 id 恒等于 defId（一角色一属性至多一行）；缺实例回落 defaultValue，悬空数值行跳过。
+  function def(partial: Partial<PackAttrDef> = {}): PackAttrDef {
+    return {
+      id: "a1",
+      key: "",
+      workId: "w1",
+      name: "攻击力",
+      groupName: "战斗",
+      unit: "",
+      decimals: 0,
+      defaultValue: 10,
+      sortOrder: 1,
+      ...partial,
+    };
+  }
+  function value(partial: Partial<PackAttrValue> = {}): PackAttrValue {
+    return {
+      id: "v-a1",
+      characterId: "c1",
+      defId: "a1",
+      baseValue: 42,
+      updatedAt: 7,
+      ...partial,
+    };
+  }
+
+  it("id 取定义 id，数值行 id == defId 时按 defId 配对", () => {
+    const view = composeAttributes([def()], [value({ id: "随便什么行 id" })]);
+    expect(view).toHaveLength(1);
+    expect(view[0].id).toBe("a1");
+    expect(view[0].baseValue).toBe(42);
+    expect(view[0].updatedAt).toBe(7);
+    expect(view[0].characterId).toBe("c1");
+  });
+
+  it("没有数值行 → baseValue 回落 defaultValue、updatedAt 归 0", () => {
+    const view = composeAttributes([def({ defaultValue: 99 })], []);
+    expect(view[0].baseValue).toBe(99);
+    expect(view[0].updatedAt).toBe(0);
+  });
+
+  it("悬空数值行（def 已被删）被跳过，不凭空造一行", () => {
+    const view = composeAttributes([def()], [value({ defId: "ghost" })]);
+    expect(view).toHaveLength(1);
+    expect(view[0].id).toBe("a1");
+  });
+
+  it("按 defs 的 sortOrder 输出，values 顺序不影响", () => {
+    const view = composeAttributes(
+      [def({ id: "a2", name: "防御", sortOrder: 2 }), def({ id: "a1", name: "攻击", sortOrder: 1 })],
+      [value({ defId: "a2" }), value({ defId: "a1" })],
+    );
+    expect(view.map((row) => row.name)).toEqual(["攻击", "防御"]);
+  });
+
+  it("同一 defId 有多行数值（不该出现）时取最后一行，不抛错", () => {
+    const view = composeAttributes([def()], [value({ baseValue: 1 }), value({ baseValue: 2 })]);
+    expect(view[0].baseValue).toBe(2);
   });
 });

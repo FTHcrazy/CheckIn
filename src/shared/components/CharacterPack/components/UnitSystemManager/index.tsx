@@ -2,7 +2,13 @@ import { Button, Input, InputNumber, Modal, Switch, Upload } from "antd";
 import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
 import type { PackPanelApi } from "../../hooks/usePackPanel";
 import { CURRENCY_TEMPLATE, PROFICIENCY_TEMPLATE } from "../../pack-config";
-import { formatRatio, type RatioLevel, type ThresholdLevel } from "../../pack-utils";
+import {
+  carryBreakdown,
+  formatRatio,
+  proficiencySchemeOf,
+  type RatioLevel,
+  type ThresholdLevel,
+} from "../../pack-utils";
 import { buildUnitsJson, parseUnitsJson } from "../../pack-units";
 import { copyText, downloadText } from "../../services/pack-export";
 import "./index.scss";
@@ -39,7 +45,6 @@ export default function UnitSystemManager({ api }: UnitSystemManagerProps) {
   const proficiency = api.proficiencySystem;
 
   const currencyLevels = parse<RatioLevel>(currency?.levels);
-  const proficiencyLevels = parse<ThresholdLevel>(proficiency?.levels);
   const autoCarry = configOf(currency?.config).autoCarry !== false;
 
   const writeCurrency = (levels: RatioLevel[], nextAutoCarry = autoCarry) =>
@@ -50,14 +55,34 @@ export default function UnitSystemManager({ api }: UnitSystemManagerProps) {
       config: { autoCarry: nextAutoCarry },
     });
 
-  const writeProficiency = (levels: ThresholdLevel[]) =>
+  /**
+   * 写回某套熟练度体系：levels + 别名 + autoCarry 一起写（upsert 的 config 是
+   * merge 语义，但「改别名」和「改档位」若分开写会让中间态互相覆盖）。
+   * ratio ≤ 0 的档位写回时剥掉字段 —— 存储里只留有效进位率，JSON 干净。
+   */
+  const writeProficiencySystem = (
+    systemId: string | undefined,
+    levels: ThresholdLevel[],
+    meta: { alias: string; autoCarry: boolean },
+  ) =>
     api.upsertUnitSystem("threshold", "proficiency", {
-      id: proficiency?.id,
-      name: "熟练度",
-      levels,
+      id: systemId,
+      levels: levels.map((level) =>
+        level.ratio && level.ratio > 0
+          ? level
+          : { name: level.name, min: level.min, max: level.max },
+      ),
+      config: { alias: meta.alias.trim(), autoCarry: meta.autoCarry },
     });
 
-  const sorted = [...currencyLevels].sort((a, b) => b.ratioToBase - a.ratioToBase);
+  /** 新增一套熟练度体系（Phase 3：修为 / 剑意并存），初始为空档位 */
+  const addProficiencySystem = () =>
+    api.upsertUnitSystem("threshold", "proficiency", {
+      create: true,
+      name: "新体系",
+      levels: [{ name: "入门", min: 0, max: null }],
+      config: { alias: "" },
+    });  const sorted = [...currencyLevels].sort((a, b) => b.ratioToBase - a.ratioToBase);
   const baseName = sorted[sorted.length - 1]?.name;
 
   /** 导出：把库里这两套量纲拼成一段可交换的 JSON（REQ-022） */
@@ -202,81 +227,163 @@ export default function UnitSystemManager({ api }: UnitSystemManagerProps) {
         </div>
       </section>
 
-      <section className="cpk-unit">
-        <header className="cpk-unit__head">
-          <h4 className="cpk-unit__title">熟练度（阈值型）</h4>
-        </header>
-        <p className="cpk-unit__sub">
-          上限留空表示「无上限」，网文里「超越大师」只会被标注，不会被截断。
-        </p>
-        <ul className="cpk-unit__rows">
-          {proficiencyLevels.map((level, index) => (
-            <li key={index} className="cpk-unit__row">
-              <Input
-                size="small"
-                value={level.name}
-                placeholder="档位名"
-                onChange={(event) => {
-                  const next = [...proficiencyLevels];
-                  next[index] = { ...level, name: event.target.value };
-                  writeProficiency(next);
-                }}
-              />
-              <InputNumber
-                size="small"
-                min={0}
-                style={{ width: 84 }}
-                value={level.min}
-                addonBefore="≥"
-                onChange={(value) => {
-                  const next = [...proficiencyLevels];
-                  next[index] = { ...level, min: Math.max(0, Number(value) || 0) };
-                  writeProficiency(next);
-                }}
-              />
-              <InputNumber
-                size="small"
-                min={0}
-                style={{ width: 84 }}
-                value={level.max ?? undefined}
-                placeholder="无上限"
-                addonBefore="≤"
-                onChange={(value) => {
-                  const next = [...proficiencyLevels];
-                  next[index] = { ...level, max: value === null ? null : Number(value) };
-                  writeProficiency(next);
-                }}
-              />
+      {api.proficiencySystems.length === 0 ? (
+        <section className="cpk-unit">
+          <header className="cpk-unit__head">
+            <h4 className="cpk-unit__title">熟练度（阈值型）</h4>
+          </header>
+          <p className="cpk-unit__sub">
+            还没有熟练度体系。可先新增一套再套用模板；分组可以各自绑定不同的体系（修为 / 剑意并存）。
+          </p>
+        </section>
+      ) : null}
+      {api.proficiencySystems.map((system) => {
+        const meta = proficiencySchemeOf(system.levels, system.config);
+        const sample = meta.autoCarry ? carryBreakdown(12345, meta.levels) : "";
+        const setLevels = (next: ThresholdLevel[]) =>
+          writeProficiencySystem(system.id, next, meta);
+        return (
+          <section key={system.id} className="cpk-unit">
+            <header className="cpk-unit__head">
+              <h4 className="cpk-unit__title">{meta.alias}（阈值型）</h4>
+              <label className="cpk-unit__switch">
+                <span>自动进位</span>
+                <Switch
+                  size="small"
+                  checked={meta.autoCarry}
+                  onChange={(checked) =>
+                    writeProficiencySystem(system.id, meta.levels, {
+                      alias: meta.alias,
+                      autoCarry: checked,
+                    })
+                  }
+                />
+              </label>
+            </header>
+            <p className="cpk-unit__sub">
+              别名会替换行囊里所有「熟练度」字样；进位率填在档位上，表示「1 × 上一档 = 几 × 本档」，留空不进位。原始数值始终是唯一真相源，进位只影响展示。
+              {sample ? <> 当前示例：12345 = {sample}。</> : null}
+            </p>
+            <div className="cpk-unit__io">
+              <span className="cpk-unit__iohead">别名</span>
+              <span className="cpk-unit__ioacts">
+                <Input
+                  size="small"
+                  style={{ width: 140 }}
+                  value={meta.alias === "熟练度" ? "" : meta.alias}
+                  placeholder="熟练度"
+                  onChange={(event) =>
+                    writeProficiencySystem(system.id, meta.levels, {
+                      alias: event.target.value,
+                      autoCarry: meta.autoCarry,
+                    })
+                  }
+                />
+              </span>
+            </div>
+            <ul className="cpk-unit__rows">
+              {meta.levels.map((level, index) => (
+                <li key={index} className="cpk-unit__row">
+                  <Input
+                    size="small"
+                    value={level.name}
+                    placeholder="档位名"
+                    onChange={(event) => {
+                      const next = [...meta.levels];
+                      next[index] = { ...level, name: event.target.value };
+                      setLevels(next);
+                    }}
+                  />
+                  <InputNumber
+                    size="small"
+                    min={0}
+                    style={{ width: 84 }}
+                    value={level.min}
+                    addonBefore="≥"
+                    onChange={(value) => {
+                      const next = [...meta.levels];
+                      next[index] = { ...level, min: Math.max(0, Number(value) || 0) };
+                      setLevels(next);
+                    }}
+                  />
+                  <InputNumber
+                    size="small"
+                    min={0}
+                    style={{ width: 84 }}
+                    value={level.max ?? undefined}
+                    placeholder="无上限"
+                    addonBefore="≤"
+                    onChange={(value) => {
+                      const next = [...meta.levels];
+                      next[index] = { ...level, max: value === null ? null : Number(value) };
+                      setLevels(next);
+                    }}
+                  />
+                  <InputNumber
+                    size="small"
+                    min={0}
+                    style={{ width: 88 }}
+                    value={level.ratio}
+                    placeholder="进位率"
+                    title="1 × 上一档单位 = 几 × 本档单位；留空表示这一档不进位"
+                    onChange={(value) => {
+                      const next = [...meta.levels];
+                      const ratio = Math.max(0, Number(value) || 0);
+                      next[index] = {
+                        name: level.name,
+                        min: level.min,
+                        max: level.max,
+                        ...(ratio > 0 ? { ratio } : {}),
+                      };
+                      setLevels(next);
+                    }}
+                  />
+                  <Button
+                    className="cpk-iconbtn tiny danger"
+                    onClick={() => setLevels(meta.levels.filter((_, i) => i !== index))}
+                    title="删除这一档"
+                  >
+                    <DeleteOutlined />
+                  </Button>
+                </li>
+              ))}
+            </ul>
+            <div className="cpk-unit__actions">
               <Button
-                className="cpk-iconbtn tiny danger"
-                onClick={() => writeProficiency(proficiencyLevels.filter((_, i) => i !== index))}
-                title="删除这一档"
+                size="small"
+                icon={<PlusOutlined />}
+                onClick={() =>
+                  setLevels([
+                    ...meta.levels,
+                    { name: "新档位", min: 0, max: null },
+                  ])
+                }
               >
-                <DeleteOutlined />
+                加一档
               </Button>
-            </li>
-          ))}
-        </ul>
-        <div className="cpk-unit__actions">
-          <Button
-            size="small"
-            icon={<PlusOutlined />}
-            onClick={() =>
-              writeProficiency([...proficiencyLevels, { name: "新档位", min: 0, max: null }])
-            }
-          >
-            加一档
-          </Button>
-          <Button size="small" onClick={() => writeProficiency(PROFICIENCY_TEMPLATE)}>
-            套用模板
-          </Button>
-          {proficiency ? (
-            <Button size="small" danger onClick={() => api.removeUnitSystem(proficiency.id)}>
-              清除设置
-            </Button>
-          ) : null}
-        </div>
-      </section>
+              <Button
+                size="small"
+                onClick={() => writeProficiencySystem(system.id, PROFICIENCY_TEMPLATE, meta)}
+              >
+                套用模板
+              </Button>
+              <Button
+                size="small"
+                danger
+                onClick={() => api.removeUnitSystem(system.id)}
+                title="删除这套体系（组内绑定会回落到默认体系，原始数值不受影响）"
+              >
+                删除体系
+              </Button>
+            </div>
+          </section>
+        );
+      })}
+      <div className="cpk-unit__actions">
+        <Button size="small" icon={<PlusOutlined />} onClick={addProficiencySystem}>
+          新增体系
+        </Button>
+      </div>
 
       <div className="cpk-unit__io">
         <span className="cpk-unit__iohead">量纲 JSON</span>

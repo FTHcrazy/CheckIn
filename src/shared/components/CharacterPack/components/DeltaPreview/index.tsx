@@ -31,7 +31,7 @@ export function SummaryDeltaList({
   return (
     <ul className="cpk-delta__list">
       {deltas.map((item) => {
-        const attr = doc.attributes.find((candidate) => candidate.id === item.attrId);
+        const attr = api.attrView.find((candidate) => candidate.id === item.attrId);
         if (!attr) return null;
         const decimals = attr.decimals ?? 0;
         const up = item.delta > 0;

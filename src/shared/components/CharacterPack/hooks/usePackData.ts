@@ -15,8 +15,10 @@ import {
 } from "../pack-config";
 import { countNetChanges } from "../pack-dirty";
 import type {
+  PackAttrDef,
   PackBundleDTO,
   PackCharacter,
+  PackGroup,
   PackLayout,
   PackLevelSystem,
   PackMapping,
@@ -26,8 +28,9 @@ import type {
   PackRecord,
   PackUnitSystem,
 } from "../types";
-import type { PackAttribute, PackItem, PackSkill, PackSlot } from "../types";
+import type { PackAttrValue, PackItem, PackSkill, PackSlot } from "../types";
 import { DRAFT_DEBOUNCE_MS } from "../types";
+import { subscribeDualChannel } from "@/shared/novel/dual-channel";
 
 /**
  * 一份完整的行囊文档（与草稿 payload / 正式表同构）
@@ -37,10 +40,15 @@ import { DRAFT_DEBOUNCE_MS } from "../types";
  */
 export interface PackDoc {
   character: PackCharacter;
-  attributes: PackAttribute[];
+  /** 属性定义（作品级，1.39.0）：「这本书有哪些属性」的模型 */
+  attrDefs: PackAttrDef[];
+  /** 属性数值（角色级实例，defId 引用 attrDefs）。展示用组合视图走 `composeAttributes` */
+  attributes: PackAttrValue[];
   /** 属性映射（1.35.0）：与属性同属设定数据，随草稿与盘点走 */
   mappings: PackMapping[];
   slots: PackSlot[];
+  /** 载体分组（1.39.0 二期）：条目 groupId 引用这里的 id */
+  groups: PackGroup[];
   items: PackItem[];
   skills: PackSkill[];
   modifiers: PackModifier[];
@@ -70,9 +78,11 @@ function fromBundle(bundle: PackBundleDTO): PackDoc | null {
   if (!bundle.character) return null;
   return {
     character: bundle.character,
+    attrDefs: bundle.attrDefs ?? [],
     attributes: bundle.attributes,
     mappings: bundle.mappings ?? [],
     slots: bundle.slots,
+    groups: bundle.groups ?? [],
     items: bundle.items,
     skills: bundle.skills,
     modifiers: bundle.modifiers,
@@ -91,11 +101,13 @@ function parseDraft(payload: string): PackDoc | null {
     if (!doc.character || !doc.character.id) return null;
     return {
       character: doc.character,
+      attrDefs: doc.attrDefs ?? [],
       attributes: doc.attributes ?? [],
       // `?? []` 是兼容旧草稿：属性映射引入之前写下的草稿没有这一格，
       // 少了兜底会让整份草稿被当成残缺而丢掉（里面是作者全部未保存的改动）
       mappings: doc.mappings ?? [],
       slots: doc.slots ?? [],
+      groups: doc.groups ?? [],
       items: doc.items ?? [],
       skills: doc.skills ?? [],
       modifiers: doc.modifiers ?? [],
@@ -350,13 +362,7 @@ export function usePackData(workId: string, chapterId: string) {
       if (detail.workId !== workId || !detail.itemId) return;
       void mergeExternalItem(detail.itemId);
     };
-    window.addEventListener(PACK_QUICK_ADDED_EVENT, handler as EventListener);
-    const api = window.electronAPI?.windowAPI;
-    api?.on(PACK_QUICK_ADDED_EVENT, handler);
-    return () => {
-      window.removeEventListener(PACK_QUICK_ADDED_EVENT, handler as EventListener);
-      api?.off(PACK_QUICK_ADDED_EVENT, handler);
-    };
+    return subscribeDualChannel(PACK_QUICK_ADDED_EVENT, handler);
   }, [workId, mergeExternalItem]);
 
   /**
@@ -433,7 +439,16 @@ export function usePackData(workId: string, chapterId: string) {
       window.clearTimeout(draftTimerRef.current);
       draftTimerRef.current = null;
     }
-    await putPackDraft(current.character.id, JSON.stringify(current), dirtyRef.current);
+    // P3-6：IPC reject 必须就地收住（仿编辑器 store 的 persistChapterNow 先例）。
+    // 本函数有两个调用方：cleanup 里的 `void flushDraft()`（reject 即 unhandled
+    // rejection）与面板 requestGuard 里的 await（reject 会把整个裁决链打断，
+    // 用户卡在弹窗/切章上）。失败按 save() 的语义置 saveFailed —— 草稿仍在
+    // 内存、脏数不清零，用户可经手动保存重试。
+    try {
+      await putPackDraft(current.character.id, JSON.stringify(current), dirtyRef.current);
+    } catch {
+      setSaveFailed(true);
+    }
   }, []);
 
   /**

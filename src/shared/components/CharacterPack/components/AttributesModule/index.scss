@@ -60,4 +60,26 @@
     align-items: center;
     gap: 0;
   }
+
+  /* 两段化的小节标题（1.39.0）：模型 / 数值 */
+  &__section {
+    margin: 0;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--app-text-secondary-strong);
+  }
+
+  &__valuelabel {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__valueunit {
+    flex: none;
+    font-size: 12px;
+    color: var(--app-text-secondary-strong);
+  }
 }

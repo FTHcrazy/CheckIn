@@ -275,15 +275,28 @@ export interface PackProtagonistDTO {
   entityId: string
 }
 
+/** 属性定义（作品级预设，1.39.0 refactor 重构）：效果 / 映射 / 其它系统引用这里的 id */
+export interface PackAttrDefDTO {
+  id: string
+  workId: string
+  /** 机器名（空串 = 未设）：导入导出与跨系统按名解析用 */
+  key: string
+  name: string
+  groupName: string
+  unit: string
+  decimals: number
+  /** 新建角色实例时的初始 baseValue */
+  defaultValue: number
+  sortOrder: number
+}
+
+/** 属性数值（角色级实例）：展示字段一律从 `PackAttrDefDTO` 读 */
 export interface PackAttributeDTO {
   id: string
   characterId: string
-  groupName: string
-  name: string
+  /** 指向 `PackAttrDefDTO.id`；按「一角色一属性至多一行」的约定，id 恒等于 defId */
+  defId: string
   baseValue: number
-  decimals: number
-  unit: string
-  sortOrder: number
   /** 最近一次改动的落点时刻（REQ-028 本章变动角标）；0 = 从无改动记录 */
   updatedAt: number
 }
@@ -319,6 +332,23 @@ export interface PackSlotDTO {
   sortOrder: number
 }
 
+/** 载体分组（1.39.0 二期）：条目分类维度 + 能力开关；条目 groupId 引用这里的 id */
+export interface PackGroupDTO {
+  id: string
+  characterId: string
+  name: string
+  icon: string
+  /** 组内条目可穿戴（接入 slots；部位 accepts 按组匹配） */
+  canEquip: boolean
+  /** 组内条目有载体级启停开关 */
+  canEnable: boolean
+  /** 绑定的熟练度体系（novel_pack_unit_systems.id）；'' = 该组无熟练度 */
+  profSchemeId: string
+  /** 组停用 = 闸门 0：组内全部条目的效果不计入汇总 */
+  enabled: boolean
+  sortOrder: number
+}
+
 export interface PackItemDTO {
   id: string
   characterId: string
@@ -331,6 +361,8 @@ export interface PackItemDTO {
   tags: string[]
   equippedSlotId: string
   slotIndex: number | null
+  /** 归属分组（PackGroupDTO.id）；'' = 未分组 */
+  groupId: string
   sourceChapterId: string
   /** 单件重量（REQ-033）；0 = 没记重量。总重按 `weight × qty` 算 */
   weight: number
@@ -343,6 +375,8 @@ export interface PackSkillDTO {
   name: string
   desc: string
   enabled: boolean
+  /** 归属分组（PackGroupDTO.id）；'' = 未分组 */
+  groupId: string
   proficiencyRaw: number
   tags: string[]
   sortOrder: number
@@ -461,10 +495,15 @@ export interface PackLevelSystemDTO {
 
 export interface PackBundleDTO {
   character: PackCharacterDTO | null
+  /** 属性定义（作品级）：这条 bundle 的「属性模型」 */
+  attrDefs: PackAttrDefDTO[]
+  /** 属性数值（角色级实例，defId 引用 attrDefs） */
   attributes: PackAttributeDTO[]
   /** 属性映射（1.35.0） */
   mappings: PackMappingDTO[]
   slots: PackSlotDTO[]
+  /** 载体分组（1.39.0 二期）：条目 groupId 引用这里的 id */
+  groups: PackGroupDTO[]
   items: PackItemDTO[]
   skills: PackSkillDTO[]
   modifiers: PackModifierDTO[]
@@ -479,10 +518,15 @@ export interface PackBundleDTO {
 
 export interface PackSavePayloadDTO {
   character: PackCharacterDTO
+  /** 属性定义（作品级）：整文档随草稿走，保存时按 workId 整体替换 */
+  attrDefs: PackAttrDefDTO[]
+  /** 属性数值（角色级实例） */
   attributes: PackAttributeDTO[]
   /** 属性映射（1.35.0）：与属性同属「设定数据」，整文档一起走草稿与盘点 */
   mappings: PackMappingDTO[]
   slots: PackSlotDTO[]
+  /** 载体分组（1.39.0 二期） */
+  groups: PackGroupDTO[]
   items: PackItemDTO[]
   skills: PackSkillDTO[]
   modifiers: PackModifierDTO[]

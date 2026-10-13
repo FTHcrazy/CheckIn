@@ -25,6 +25,11 @@ interface EffectEditorProps {
   onUpdate: (id: string, patch: Partial<PackModifier>) => void;
   onRemove: (id: string) => void;
   onClose: () => void;
+  /**
+   * 宿主体系的别名（Phase 3）：「按熟练度缩放」字段名跟随它
+   * （技能所属组绑定了体系就用那套的别名；不传回落「熟练度」）
+   */
+  proficiencyAlias?: string;
 }
 
 const TRIGGERS = [
@@ -62,6 +67,7 @@ export default function EffectEditor({
   onUpdate,
   onRemove,
   onClose,
+  proficiencyAlias,
 }: EffectEditorProps) {
   const [pendingTrigger, setPendingTrigger] = useState<{ id: string; trigger: string } | null>(
     null,
@@ -262,7 +268,7 @@ export default function EffectEditor({
                 下限系数，把数值静默腰斩 —— 干脆不给这个开关 */}
             {current.nature !== "cast" && current.ownerType === "skill" ? (
               <label className="cpk-field cpk-field--row">
-                <span className="cpk-field__label">按熟练度缩放</span>
+                <span className="cpk-field__label">按{proficiencyAlias ?? "熟练度"}缩放</span>
                 <Switch
                   size="small"
                   checked={current.scaleByProficiency}

@@ -50,6 +50,13 @@
     width: 62px;
   }
 
+  /* 分组下拉（Phase 2）：只需读出「法宝 / 功法」这种两三个字的组名 */
+  &__group.ant-select {
+    flex: 0 1 88px;
+    min-width: 64px;
+    font-size: 12px;
+  }
+
   /* 档位 chip 现在是**可点入口**（切档位 / 改区间 / 加档），
      所以它有描边 + hover 反馈，不再是一块纯装饰的色块。 */
   &__tier.ant-btn {
@@ -134,6 +141,15 @@
     font-size: 12px;
     font-variant-numeric: tabular-nums;
     color: var(--app-text-secondary-strong);
+  }
+
+  /* 进位展示（Phase 3）：「1 重 2 层 500」式换算文本，只读注释性质，弱一档
+     （12px 正文不走 text-muted，用次级对比变量） */
+  &__carry {
+    flex: none;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: var(--app-text-secondary);
   }
 
   &__effects-list {

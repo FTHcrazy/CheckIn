@@ -4,6 +4,7 @@ import SkillsModule from "./index";
 import type { PackPanelApi } from "../../hooks/usePackPanel";
 import type { PackDoc } from "../../hooks/usePackData";
 import { DEFAULT_UI_PREFS, type PackSkill, type PackUnitSystem } from "../../types";
+import { proficiencySchemeOf } from "../../pack-utils";
 
 /**
  * 熟练度的**可见性边界**（REQ-014 收尾：进度条）。
@@ -23,6 +24,7 @@ const skill: PackSkill = {
   name: "听潮步",
   desc: "",
   enabled: true,
+  groupId: "",
   proficiencyRaw: 150,
   tags: [],
   sortOrder: 1,
@@ -45,8 +47,10 @@ const doc: PackDoc = {
     sortOrder: 1,
   },
   attributes: [],
+  attrDefs: [],
   mappings: [],
   slots: [],
+  groups: [],
   items: [],
   skills: [skill],
   modifiers: [],
@@ -73,6 +77,12 @@ const PROFICIENCY: PackUnitSystem = {
 };
 
 function makeApi(over: Partial<PackPanelApi> = {}) {
+  // Phase 3：组件经 `schemeForSkill` 解析体系（组绑定 → 默认）。测试里没有分组，
+  // 统一回落到 `over.proficiencySystem`（默认体系）。
+  const profSystem = over.proficiencySystem;
+  const profMeta = profSystem
+    ? proficiencySchemeOf(profSystem.levels, profSystem.config)
+    : { levels: [], alias: "熟练度", autoCarry: true };
   return {
     doc,
     summary: { rows: [], ignoredCast: 0 },
@@ -82,6 +92,9 @@ function makeApi(over: Partial<PackPanelApi> = {}) {
     patchPrefs: vi.fn(),
     isRecentlyChanged: () => false,
     proficiencySystem: undefined,
+    proficiencySystems: profSystem ? [profSystem] : [],
+    proficiencySchemes: new Map(profSystem ? [[profSystem.id, profMeta]] : []),
+    schemeForSkill: () => ({ system: profSystem, meta: profMeta }),
     modifiersOf: () => [],
     isCarrierActive: () => true,
     addSkill: vi.fn(),

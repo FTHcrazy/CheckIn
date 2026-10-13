@@ -77,6 +77,13 @@ export default function EquipmentModule({ api }: EquipmentModuleProps) {
     [items],
   );
 
+  // accepts 现在存的是**组 id**（Phase 2 refactor 口径），标签要翻译回组名
+  const groupNameOf = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const group of doc?.groups ?? []) map.set(group.id, group.name);
+    return map;
+  }, [doc]);
+
   if (!doc) return null;
   const key = "equipment" as const;
 
@@ -87,9 +94,11 @@ export default function EquipmentModule({ api }: EquipmentModuleProps) {
   const occupantsOf = (slotId: string): PackItem[] =>
     occupantsBySlot.get(slotId) ?? [];
 
+  // 部位的 accepts 匹配的是物品的**分组**：未分组（groupId=""）的物品
+  // 穿不进任何设了限的部位 —— 与汇总管线 isItemActive 同一口径
   const candidatesOf = (slot: PackSlot): PackItem[] =>
     unequippedPool.filter(
-      (item) => slot.accepts.length === 0 || slot.accepts.includes(item.category),
+      (item) => slot.accepts.length === 0 || slot.accepts.includes(item.groupId),
     );
 
   const requestEquip = (item: PackItem, slot: PackSlot) => {
@@ -236,7 +245,9 @@ export default function EquipmentModule({ api }: EquipmentModuleProps) {
                     {occupants.length}/{slot.capacity}
                   </span>
                   {slot.accepts.length > 0 ? (
-                    <span className="cpk-eq__accepts">仅 {slot.accepts.join("/")}</span>
+                    <span className="cpk-eq__accepts">
+                      仅 {slot.accepts.map((id) => groupNameOf.get(id) ?? "未知分组").join("/")}
+                    </span>
                   ) : null}
                   <Button
                     className="cpk-btn ghost"
@@ -285,7 +296,7 @@ export default function EquipmentModule({ api }: EquipmentModuleProps) {
                           </div>
                           <ModifierList
                             modifiers={api.modifiersOf("item", item.id)}
-                            attributes={doc.attributes}
+                            attributes={api.attrView}
                             ownerActive={active}
                             onOpenEditor={(modifierId) =>
                               api.openEffectEditor("item", item.id, item.name || "装备", modifierId)

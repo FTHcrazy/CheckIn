@@ -4,7 +4,7 @@ import RecordDrawer from "./index";
 import type { PackPanelApi } from "../../hooks/usePackPanel";
 import type { PackDoc } from "../../hooks/usePackData";
 import type { LadderRung } from "../../pack-utils";
-import { DEFAULT_UI_PREFS, type PackAttribute, type PackItem, type PackRecord } from "../../types";
+import { DEFAULT_UI_PREFS, type PackAttrValue, type PackAttribute, type PackItem, type PackRecord } from "../../types";
 
 /**
  * 盘点记录抽屉（REQ-029 的对比视图 + REQ-044 的回退点）。
@@ -25,10 +25,23 @@ function attr(partial: Partial<PackAttribute> = {}): PackAttribute {
     characterId: "c1",
     groupName: "基础",
     name: "攻击",
+    defaultValue: 0,
     baseValue: 0,
     decimals: 0,
     unit: "",
     sortOrder: 1,
+    updatedAt: 0,
+    ...partial,
+  };
+}
+
+/** 数值行（角色级实例）：doc.attributes 里存的是这个；视图行 id 恒等于 defId */
+function val(partial: Partial<PackAttrValue> = {}): PackAttrValue {
+  return {
+    id: "v-a1",
+    characterId: "c1",
+    defId: "a1",
+    baseValue: 0,
     updatedAt: 0,
     ...partial,
   };
@@ -46,6 +59,7 @@ function item(partial: Partial<PackItem> = {}): PackItem {
     desc: "",
     tags: [],
     equippedSlotId: "",
+    groupId: "",
     slotIndex: null,
     sourceChapterId: "",
     weight: 0,
@@ -61,6 +75,7 @@ function payloadOf(partial: Record<string, unknown> = {}): string {
     attributes: [],
     mappings: [],
     slots: [],
+    groups: [],
     items: [],
     skills: [],
     modifiers: [],
@@ -98,9 +113,11 @@ const currentDoc: PackDoc = {
     note: "",
     sortOrder: 1,
   },
-  attributes: [attr({ baseValue: 100 })],
+  attrDefs: [],
+  attributes: [val({ baseValue: 100 })],
   mappings: [],
   slots: [],
+  groups: [],
   items: [],
   skills: [],
   modifiers: [],
@@ -116,6 +133,7 @@ function makeApi(over: Partial<PackPanelApi> = {}) {
     recordDrawerOpen: true,
     chapterBaseline: records[0],
     doc: currentDoc,
+    attrView: [attr({ baseValue: 100 })],
     meta: { records, levelSystems: [], realmLink: null },
     rungs: LADDER,
     prefs: { ...DEFAULT_UI_PREFS, collapsed: {} },

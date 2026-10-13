@@ -82,14 +82,14 @@ describe("P1-5 熟练度缩放只作用于技能宿主（守卫）", () => {
 });
 
 describe("P1-8 行囊关闭链路（守卫）", () => {
-  it("存在受保护关闭桥，且由面板挂载时注册", () => {
-    expect(CONFIG).toContain("export function registerPackCloser");
-    expect(CONFIG).toContain("export function requestClosePackPanel");
-    expect(PANEL).toContain("registerPackCloser(");
+  it("进程内关闭桥已随 P3-1 删除（拆窗后页面侧无调用方，复活即半座桥）", () => {
+    // 断言用 export 形式：pack-config 的历史注释会提到桥的名字，裸字符串会误伤
+    expect(CONFIG).not.toContain("export function registerPackCloser");
+    expect(CONFIG).not.toContain("export function requestClosePackPanel");
+    expect(PANEL).not.toContain("registerPackCloser(");
   });
 
   it("Esc 关闭走面板自己的受保护路径（行囊已独立成窗口，宿主不再代持开关）", () => {
-    expect(PANEL).toContain("registerPackCloser(() => requestCloseRef.current())");
     // 面板 Esc：闸门弹窗自己吃掉 Esc，等价「取消」
     expect(HOST).toContain("if (current.guardOpen)");
     // 行囊窗口的关闭按钮最终也走 requestClose
@@ -120,22 +120,20 @@ describe("REQ-043 切章 / 切作品 / 退出应用拦截（守卫）", () => {
   const HOST = read(`${PACK_DIR}/index.tsx`);
   const MODAL = read(`${PACK_DIR}/components/CloseGuardModal/index.tsx`);
 
-  it("闸门是异步裁决（返回布尔），不是只报「接没接手」", () => {
-    expect(CONFIG).toContain("export function registerPackGuard");
-    expect(CONFIG).toContain("export async function guardPackBeforeAction");
-    // 没有面板时要直接放行，否则页面层每次切章都白等一次 Promise
-    expect(CONFIG.slice(CONFIG.indexOf("export async function guardPackBeforeAction"))).toContain(
-      "if (!guard) return true;",
-    );
-    expect(PANEL).toContain("registerPackGuard((reason) => requestGuardRef.current(reason))");
-    expect(PANEL).toContain("registerPackGuard(null)");
+  it("闸门是异步裁决（返回布尔），注册到 pack-config 的桥已随 P3-1 删除", () => {
+    // 断言用 export 形式：历史注释里会提到桥的名字，裸字符串会误伤
+    expect(CONFIG).not.toContain("export function registerPackGuard");
+    expect(CONFIG).not.toContain("export async function guardPackBeforeAction");
+    expect(PANEL).not.toContain("registerPackGuard");
+    // 面板自己的 requestGuard 闸门仍在（close-guard 三通道复用同一个弹窗）
+    expect(PANEL).toContain("const requestGuard");
   });
 
   it("切章 / 切作品不再过闸门：草稿在主进程表，跨窗口一份，切换不丢编辑", () => {
     // 行囊拆独立窗口后，草稿落 `novel_pack_drafts`（主进程），切书重挂时会
     // 兜底 flush —— 页面层不需要再拦截切章 / 切作品
     expect(PAGE).not.toContain("guardPackBeforeAction");
-    expect(CONFIG).toContain("export async function guardPackBeforeAction");
+    expect(CONFIG).not.toContain("export async function guardPackBeforeAction");
   });
 
   it("已有弹窗在问时本次动作直接取消 —— 不能让新问题顶掉旧 Promise", () => {
@@ -396,8 +394,11 @@ describe("REQ-028 本章变动角标（守卫）", () => {
   });
 
   it("改动时打点：新增与编辑都要写 updatedAt（只写新增会让「改了」永远不亮）", () => {
-    expect(PANEL).toContain("? { ...attr, ...patch, updatedAt: Date.now() } : attr");
-    expect(PANEL).toContain("? { ...skill, ...patch, updatedAt: Date.now() } : skill");
+    // 1.39.0 拆分后 updateAttribute 按字段分流：编辑（含仅改名字）与「缺实例补建」
+    // 都必须把打点写到数值行上 —— 用 now 变量统一取 Date.now()
+    expect(PANEL).toContain("const now = Date.now();");
+    expect(PANEL).toContain("updatedAt: now,");
+    expect(PANEL).toContain("? { ...skill, ...patch, updatedAt: Date.now() }");
   });
 
   it("效果词条的改动会记到宿主上（改了装备的加成，物品那行也该亮）", () => {

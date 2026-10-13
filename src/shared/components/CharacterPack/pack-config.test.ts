@@ -7,10 +7,7 @@ import {
   PACK_PROTAGONIST_EVENT,
   PACK_QUICK_ADDED_EVENT,
   readEventDetail,
-  registerPackCloser,
-  registerPackInsertIntoChapter,
   registerPackQuickAdd,
-  requestClosePackPanel,
   runPackInsertIntoChapter,
   runPackQuickAdd,
   type PackNameEventDetail,
@@ -63,71 +60,54 @@ describe("readEventDetail（事件负载归一化）", () => {
 });
 
 /**
- * 受保护关闭桥。
+ * 受保护关闭桥（历史 P1-8）。
  *
- * 钉死「返回值是接管与否的诚实汇报」：调用方据此决定是否兜底。
- * 曾经三条外部路径都绕过这座桥直接 `setPackOpen(false)`，未保存拦截和草稿
- * flush 全被跳过 —— 在行囊里敲半天，关掉之后一个字都没留下。
+ * P3-1 已把进程内关闭桥（registerPackCloser / requestClosePackPanel /
+ * registerPackGuard / guardPackBeforeAction）整体删除：行囊拆成独立窗口后
+ * 页面侧再无调用方，跨窗口的未保存拦截统一由主进程关闭守卫三通道裁决。
+ * 这组**反向守卫**钉死「桥不得复活」—— 复活了也不会有人调用（半座桥）。
  */
-describe("受保护关闭桥（P1-8）", () => {
-  it("面板未挂载时返回 false，调用方自行兜底", () => {
-    registerPackCloser(null);
-    expect(requestClosePackPanel()).toBe(false);
-  });
-
-  it("面板挂载后返回 true，并把关闭决定权交给面板", async () => {
-    let called = 0;
-    registerPackCloser(async () => {
-      called += 1;
-    });
-    try {
-      expect(requestClosePackPanel()).toBe(true);
-      expect(requestClosePackPanel()).toBe(true);
-      expect(called).toBe(2);
-    } finally {
-      registerPackCloser(null);
-    }
-  });
-
-  it("面板拒绝关闭（有未保存改动时弹拦截）时桥仍然是 true —— 它只报告已接管", async () => {
-    registerPackCloser(async () => {
-      /* 面板选择什么都不做：弹出了关闭拦截 */
-    });
-    try {
-      expect(requestClosePackPanel()).toBe(true);
-    } finally {
-      registerPackCloser(null);
-    }
+describe("受保护关闭桥已删除（P3-1 反向守卫）", () => {
+  it("pack-config 不再导出任何进程内关闭 / 闸门桥", async () => {
+    const mod = await import("./pack-config");
+    expect("requestClosePackPanel" in mod).toBe(false);
+    expect("registerPackCloser" in mod).toBe(false);
+    expect("registerPackGuard" in mod).toBe(false);
+    expect("guardPackBeforeAction" in mod).toBe(false);
+    // PackGuardReason 类型仍由 pack-close-guard 三通道使用（类型擦除，运行时查不到）
+    expect("PackGuardReason" in mod).toBe(false);
   });
 });
 
 /**
  * 「插入本章末尾」桥（REQ-034）
  *
- * 行囊已独立成窗口，与编辑器分属两个 renderer。有本地桥（宿主页面注册）时
- * 透传文本与结果；没有本地桥时转投跨窗口广播（`pack-insert-into-chapter`），
- * 返回 true 表示「已发出」—— fire-and-forget，失败由编辑器侧提示。
+ * 行囊已独立成窗口，与编辑器分属两个 renderer —— 恒走跨窗口广播
+ * （`pack-insert-into-chapter`），返回 true 表示「已发出」—— fire-and-forget，
+ * 失败由编辑器侧提示。P3-1 删掉了再无注册方的本地桥半座。
  */
 describe("插入本章末尾桥（REQ-034）", () => {
-  it("没有本地桥时转投跨窗口广播，返回 true（已发出）", () => {
-    registerPackInsertIntoChapter(null);
-    // 测试环境没有 electronAPI，广播是 no-op —— 但语义上「已转投」仍是 true
-    expect(runPackInsertIntoChapter("## x")).toBe(true);
-  });
-
-  it("把文本原样交给处理器，并把处理器的结果透传出来", () => {
-    const seen: string[] = [];
-    registerPackInsertIntoChapter((text) => {
-      seen.push(text);
-      return text.length > 4;
-    });
+  it("恒转投跨窗口广播并返回 true（已发出）", () => {
+    const seen: Array<[string, string]> = [];
+    const prev = window.electronAPI;
+    (window as { electronAPI?: unknown }).electronAPI = {
+      windowAPI: {
+        broadcast: (event: string, text: string) => {
+          seen.push([event, text]);
+        },
+      },
+    };
     try {
       expect(runPackInsertIntoChapter("## 行囊 · 物品栏")).toBe(true);
-      expect(runPackInsertIntoChapter("x")).toBe(false);
-      expect(seen).toEqual(["## 行囊 · 物品栏", "x"]);
+      expect(seen).toEqual([["pack-insert-into-chapter", "## 行囊 · 物品栏"]]);
     } finally {
-      registerPackInsertIntoChapter(null);
+      (window as { electronAPI?: unknown }).electronAPI = prev;
     }
+  });
+
+  it("模块不再导出本地桥注册入口（P3-1 反向守卫）", async () => {
+    const mod = await import("./pack-config");
+    expect("registerPackInsertIntoChapter" in mod).toBe(false);
   });
 });
 

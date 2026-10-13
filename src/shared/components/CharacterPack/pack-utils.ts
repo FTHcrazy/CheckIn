@@ -16,7 +16,10 @@ import {
   NATURE_META,
   OP_META,
   RARITY_META,
+  type PackAttrDef,
   type PackAttribute,
+  type PackAttrValue,
+  type PackGroup,
   type PackItem,
   type PackMappingRule,
   type PackModifier,
@@ -24,6 +27,44 @@ import {
   type PackSkill,
   type PackSlot,
 } from "./types";
+
+// ─────────────────────────────────────────────────────────────
+// 属性组合视图（1.39.0 统一属性模型）
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * 把「作品级属性定义 + 角色级数值」拼成汇总管线与展示层消费的组合视图。
+ *
+ * 唯一的组合产出点 —— 汇总、映射、效果编辑器、导出、与本章初对比都要用同一份
+ * 视图，各处自己拼一遍必然分叉（`carrierKeyOf` 的教训同款）。
+ *
+ * 规则：
+ * - 行身份 = **定义 id**（效果 / 映射引用的也是它）；
+ * - 实例缺失时 `baseValue` 回落定义的 `defaultValue`（「模型里有、角色还没初始化」
+ *   的属性照样参与汇总与展示，数值即默认值）；
+ * - 定义不在 defs 里的悬空数值行**跳过**（正常流程里删定义会连带删值，悬空
+ *   只可能来自异常路径，如实不显示而不是猜名字）。
+ */
+export function composeAttributes(defs: PackAttrDef[], values: PackAttrValue[]): PackAttribute[] {
+  const valueByDef = new Map(values.map((value) => [value.defId, value]));
+  return [...defs]
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((def) => {
+      const value = valueByDef.get(def.id);
+      return {
+        id: def.id,
+        characterId: value?.characterId ?? "",
+        groupName: def.groupName,
+        name: def.name,
+        defaultValue: def.defaultValue,
+        baseValue: value ? value.baseValue : def.defaultValue,
+        decimals: def.decimals,
+        unit: def.unit,
+        sortOrder: def.sortOrder,
+        updatedAt: value?.updatedAt ?? 0,
+      };
+    });
+}
 
 export const CARRIER_DELIM = ":";
 
@@ -97,7 +138,13 @@ export function isItemEquipped(item: PackItem): boolean {
   return item.equippedSlotId !== "" && item.slotIndex !== null;
 }
 
-/** 闸门 1：按部位配置判定某物品是否真的穿得上（容量与 accepts 都满足） */
+/**
+ * 闸门 1：按部位配置判定某物品是否真的穿得上（容量与 accepts 都满足）。
+ *
+ * `accepts` 存**组 id**（1.39.0 二期）：部位限定「哪些分组可以穿进来」，
+ * 空数组 = 不限。未分组（groupId=""）的条目穿不进任何设了 accepts 的部位 ——
+ * 这是刻意的：作者明确圈了范围，工具不替他放宽。
+ */
 export function isItemActive(
   item: PackItem,
   slots: PackSlot[],
@@ -108,8 +155,32 @@ export function isItemActive(
   if (!slot || !slot.enabled) return false;
   if (slot.capacity < 1) return false;
   if (itemsInSlot.length > slot.capacity) return false;
-  if (slot.accepts.length > 0 && !slot.accepts.includes(item.category)) return false;
+  if (slot.accepts.length > 0 && !slot.accepts.includes(item.groupId)) return false;
   return true;
+}
+
+/**
+ * 闸门 0（组停用）的停用集合：`enabled=false` 的组内全部条目按 carrierKey 收集。
+ *
+ * 与 `buildActiveCarriers` 分开成两个函数而不是塞在一起，是因为这两个集合的
+ * **消费方不同**：activeCarriers 决定「算不算」，groupOffCarriers 决定「不算的时候
+ * 报到哪个桶」。合写会在 computeSummary 里丢掉区分「未穿戴」与「组停用」的依据。
+ */
+export function buildGroupOffCarriers(
+  groups: PackGroup[],
+  items: PackItem[],
+  skills: PackSkill[],
+): Set<string> {
+  const off = new Set<string>();
+  const disabledIds = new Set(groups.filter((group) => !group.enabled).map((group) => group.id));
+  if (disabledIds.size === 0) return off;
+  for (const item of items) {
+    if (item.groupId && disabledIds.has(item.groupId)) off.add(carrierKey("item", item.id));
+  }
+  for (const skill of skills) {
+    if (skill.groupId && disabledIds.has(skill.groupId)) off.add(carrierKey("skill", skill.id));
+  }
+  return off;
 }
 
 /** 汇总当前「在效载体」集合，供 computeSummary 的闸门 1 使用 */
@@ -118,17 +189,23 @@ export function buildActiveCarriers(
   items: PackItem[],
   skills: PackSkill[],
   statuses: Array<{ id: string; active: boolean }>,
+  groups: PackGroup[] = [],
 ): Set<string> {
   const active = new Set<string>();
+  // 闸门 0：组停用的条目一律不在效（组内开着的效果也随组一起静默）
+  const off = buildGroupOffCarriers(groups, items, skills);
   for (const slot of slots) {
     if (!slot.enabled) continue;
     const occupants = items.filter((item) => item.equippedSlotId === slot.id);
     for (const item of occupants) {
+      if (off.has(carrierKey("item", item.id))) continue;
       if (isItemActive(item, slots, occupants)) active.add(carrierKey("item", item.id));
     }
   }
   for (const skill of skills) {
-    if (skill.enabled) active.add(carrierKey("skill", skill.id));
+    if (skill.enabled && !off.has(carrierKey("skill", skill.id))) {
+      active.add(carrierKey("skill", skill.id));
+    }
   }
   for (const status of statuses) {
     if (status.active) active.add(carrierKey("status", status.id));
@@ -148,6 +225,7 @@ export function buildActiveCarriersFrom(parts: {
   items: PackItem[];
   skills: PackSkill[];
   modifiers: PackModifier[];
+  groups?: PackGroup[];
 }): Set<string> {
   return buildActiveCarriers(
     parts.slots,
@@ -156,6 +234,7 @@ export function buildActiveCarriersFrom(parts: {
     parts.modifiers
       .filter((mod) => mod.ownerType === "status")
       .map((mod) => ({ id: mod.id, active: mod.active })),
+    parts.groups ?? [],
   );
 }
 
@@ -255,6 +334,14 @@ export interface SummaryResult {
    */
   expired: PackModifier[];
   /**
+   * 因**所属分组被停用**（闸门 0）而暂不计入的效果（1.39.0 二期）。
+   *
+   * 与 `expired` 同理单列一桶：组停用是「这一类都没了」（如封印全部武器），
+   * 与「这一条暂时关着」「到回合了」对作者意味着三件不同的事 ——
+   * 混桶会把作者引去改错地方。
+   */
+  groupOff: PackModifier[];
+  /**
    * 没生效的属性映射 → 原因（1.35.0）。
    *
    * 键是映射 id，与 `PackMapping.id` 同源，界面据此把警告挂回对应那一行。
@@ -275,6 +362,12 @@ export interface SummaryInput {
   mappings?: PackMappingRule[];
   /** 闸门 1：在效载体 id 集合（carrierKey 形式） */
   activeCarriers: Set<string>;
+  /**
+   * 闸门 0 的上报依据（1.39.0 二期）：因所属分组停用而失效的载体集合
+   * （`buildGroupOffCarriers` 的产出）。载体命中它时进 `groupOff` 桶，
+   * 与「未穿戴 / 技能关掉」区分开 —— 省略即「无分组停用」，行为与一期一致。
+   */
+  groupOffCarriers?: Set<string>;
   /** 技能熟练度原始值：skillId → value */
   proficiency: Record<string, number>;
   scaling?: ProficiencyScaling;
@@ -328,6 +421,7 @@ export function computeSummary(input: SummaryInput): SummaryResult {
   const casts: PackModifier[] = [];
   const eventOnly: PackModifier[] = [];
   const expired: PackModifier[] = [];
+  const groupOff: PackModifier[] = [];
   let countedCount = 0;
 
   const ordered = [...input.modifiers].sort((a, b) => a.sortOrder - b.sortOrder);
@@ -341,6 +435,13 @@ export function computeSummary(input: SummaryInput): SummaryResult {
     }
     if (mod.nature === "passive" && mod.trigger) {
       eventOnly.push(mod);
+      continue;
+    }
+    // 闸门 0（组停用）：先于闸门 1 上报 —— 载体键命中 groupOffCarriers 时
+    // 一定也不在 activeCarriers 里（buildActiveCarriers 已剔除），但「为什么不算」
+    // 必须归到自己的桶，否则组停用会伪装成「没穿戴 / 开关没开」。
+    if (input.groupOffCarriers?.has(carrierKeyOf(mod))) {
+      groupOff.push(mod);
       continue;
     }
     // 闸门 1：载体在效。判定键只从 `carrierKeyOf` 来 —— 状态效果用它自己的 id，
@@ -462,6 +563,7 @@ export function computeSummary(input: SummaryInput): SummaryResult {
     casts,
     eventOnly,
     expired,
+    groupOff,
     mappingProblems: evaluation.problems,
     mappingApplied,
     countedCount,
@@ -604,6 +706,8 @@ export interface HypotheticalInput {
   items: PackItem[];
   skills: PackSkill[];
   modifiers: PackModifier[];
+  /** 载体分组（1.39.0 二期）：闸门 0 要靠它判定组停用；省略 = 无分组概念 */
+  groups?: PackGroup[];
   /**
    * 属性映射也必须在场（1.35.0）。
    *
@@ -703,6 +807,11 @@ export function computeHypotheticalSummary(
     modifiers: next.modifiers,
     mappings: next.mappings,
     activeCarriers: buildActiveCarriersFrom(next),
+    groupOffCarriers: buildGroupOffCarriers(
+      next.groups ?? [],
+      next.items,
+      next.skills,
+    ),
     proficiency: next.proficiency,
     scaling: next.scaling,
   });
@@ -899,12 +1008,6 @@ export function formatRatio(
 // 量纲：阈值型（§9.3 threshold / 熟练度分级）
 // ─────────────────────────────────────────────────────────────
 
-export interface ThresholdLevel {
-  name: string;
-  min: number;
-  max: number | null;
-}
-
 export interface ThresholdPosition {
   name: string;
   /** 区间内进度 0–1（区间无上限时以 min 起算的溢出量做渐进，封顶 1） */
@@ -970,6 +1073,117 @@ export function thresholdOf(
     max: last.max,
     overflow: true,
   };
+}
+
+// ─────────────────────────────────────────────────────────────
+// 熟练度体系：进位换算（Phase 3，断层 C）
+// ─────────────────────────────────────────────────────────────
+
+export interface ThresholdLevel {
+  name: string;
+  min: number;
+  max: number | null;
+  /**
+   * 进位换算率（Phase 3，可选）：**存在低档位上**，语义是
+   * 「1 × 上一档单位 = ratio × 本档单位」。
+   * 例：入门.ratio=100 → 1 层 = 100 入门；层.ratio=10 → 1 重 = 10 层。
+   * 缺省 / ≤0 = 本档不做进位（该档往上的换算断掉，剩余量全记在当前档）。
+   */
+  ratio?: number;
+}
+
+/** 熟练度体系的展示配置（config JSON 的 v2 增补字段） */
+export interface ProficiencySchemeMeta {
+  levels: ThresholdLevel[];
+  /** 体系别名（config.alias）：缺省回落「熟练度」。只影响展示文案。 */
+  alias: string;
+  /** 展示层自动进位开关（config.autoCarry）：false 时原始值直接显示 */
+  autoCarry: boolean;
+}
+
+const PROFICIENCY_FALLBACK_ALIAS = "熟练度";
+
+/**
+ * 熟练度体系的统一解析口子：levels JSON + config JSON → 结构化元数据。
+ *
+ * 别名 / autoCarry / ratio 全部**缺省安全**：旧体系（v1，无这三个字段）
+ * 解析出来就是「熟练度 + 自动进位 + 无 ratio」，行为与升级前逐字节一致。
+ * 顶得住任何脏 JSON（解析失败一律回落缺省），因为量纲编辑器允许保存中间态。
+ */
+export function proficiencySchemeOf(
+  rawLevels: string | undefined,
+  rawConfig: string | undefined,
+): ProficiencySchemeMeta {
+  let levels: ThresholdLevel[] = [];
+  try {
+    const parsed: unknown = JSON.parse(rawLevels || "[]");
+    if (Array.isArray(parsed)) {
+      levels = parsed
+        .filter((item): item is ThresholdLevel => !!item && typeof item === "object")
+        .map((item) => ({
+          name: typeof item.name === "string" ? item.name : "",
+          min: Number(item.min) || 0,
+          max: item.max === null || item.max === undefined ? null : Number(item.max),
+          ...(Number(item.ratio) > 0 ? { ratio: Number(item.ratio) } : {}),
+        }));
+    }
+  } catch {
+    levels = [];
+  }
+  let alias = PROFICIENCY_FALLBACK_ALIAS;
+  let autoCarry = true;
+  try {
+    const config = JSON.parse(rawConfig || "{}") as Record<string, unknown>;
+    if (typeof config.alias === "string" && config.alias.trim()) alias = config.alias.trim();
+    if (config.autoCarry === false) autoCarry = false;
+  } catch {
+    // config 解析失败：保持缺省
+  }
+  return { levels, alias, autoCarry };
+}
+
+/**
+ * 进位展示（Phase 3）：把原始值按各档 `ratio` 拆成「1 重 2 层 500 熟练」式文本。
+ *
+ * - **原始值恒为唯一真相源**：这只发生在展示层，与 `thresholdOf` 的档位判定、
+ *   `scaleByProficiency` 的缩放互不读写（验收口径：autoCarry 开/关展示不同，
+ *   汇总缩放结果一致）；
+ * - 换算率存在**低档位**上（`入门.ratio=100` 即 1 层 = 100 入门），从低到高
+ *   逐档取余进位；中途某档没有 ratio 就断掉，剩余量全记在当前档；
+ * - 没有任何 ratio（或 levels 为空）返回空串，调用方回落「只显示原始值」；
+ * - `autoCarry=false` 时调用方**直接不调用**本函数（开关纪律与货币同款）。
+ */
+export function carryBreakdown(
+  raw: number,
+  levels: ThresholdLevel[],
+): string {
+  const safe = Math.max(0, Math.floor(Number(raw) || 0));
+  // 只关心档位名与换算率，按 threshold 从低到高排（最低档是进位的「个位」）
+  const ordered = [...levels]
+    .filter((level) => typeof level?.name === "string" && level.name)
+    .sort((a, b) => (a.min ?? 0) - (b.min ?? 0));
+  if (ordered.length < 2 || !ordered.some((level) => (level.ratio ?? 0) > 0)) return "";
+
+  const parts: string[] = [];
+  let remaining = safe;
+  for (let i = 0; i < ordered.length - 1; i += 1) {
+    const ratio = ordered[i].ratio ?? 0;
+    if (ratio <= 0) {
+      // 换算链断了：剩余量全记在当前档，更高档不再出现
+      parts.push(`${remaining} ${ordered[i].name}`);
+      remaining = 0;
+      break;
+    }
+    const count = remaining % ratio;
+    remaining = Math.floor(remaining / ratio);
+    if (count > 0) parts.push(`${count} ${ordered[i].name}`);
+    if (remaining === 0) break;
+  }
+  if (remaining > 0) parts.push(`${remaining} ${ordered[ordered.length - 1].name}`);
+  // 全零（raw=0）：给一个「0 基准档」而不是空串 —— 空串留给「无 ratio」的语义
+  if (parts.length === 0) parts.push(`0 ${ordered[0].name}`);
+  // 从低到高拆出来的，展示惯例是高档在前（「1 重 2 层 500 熟练」）
+  return parts.reverse().join(" ");
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1063,11 +1277,20 @@ export interface PackExportContext {
   items: PackItem[];
   skills: PackSkill[];
   modifiers: PackModifier[];
+  /** 载体分组（Phase 2）：分组名翻译用 —— 导出表里的「分组」列显示组名 */
+  groups?: PackGroup[];
   /** 属性映射规则（1.35.0） */
   mappings: PackMappingRule[];
   summary: SummaryResult;
-  /** 熟练度档位（技能表用；为空则不出「档位」这一列） */
+  /** 熟练度档位（技能表用；为空则不出「档位」这一列）——默认体系的那套 */
   proficiencyLevels?: ThresholdLevel[];
+  /** 默认体系的别名（Phase 3）：技能表的「熟练度」列名跟随它 */
+  proficiencyAlias?: string;
+  /**
+   * groupId → 所绑体系的元数据（Phase 3）：组绑定了 profSchemeId 的技能行，
+   * 档位 / 进位按所绑体系取；未出现的组回落默认体系。
+   */
+  proficiencySchemesByGroup?: Record<string, { levels: ThresholdLevel[]; autoCarry: boolean }>;
   /** 货币：进制型量纲 + 当前数值（没建货币体系时为 null） */
   currency?: { levels: RatioLevel[]; autoCarry: boolean } | null;
 }
@@ -1228,14 +1451,17 @@ function equipmentTable(ctx: PackExportContext): PackExportTable {
 function inventoryTable(ctx: PackExportContext): PackExportTable {
   const slotNameOf = (id: string): string =>
     id ? (ctx.slots.find((slot) => slot.id === id)?.name ?? "(已删除的部位)") : DASH;
+  const groupNameOf = (id: string): string =>
+    id ? (ctx.groups?.find((group) => group.id === id)?.name ?? "(已删除的分组)") : DASH;
   return {
     // 「重量」导出的是**小计**（单件 × 件数）而不是单件值：这张表是给作者盘账用的，
     // 单件重量乘一遍再抄进正文毫无意义，而小计可以直接当「这一趟背了多少」。
-    headers: ["物品", "分类", "数量", "重量", "稀有度", "穿戴部位", "标签"],
+    headers: ["物品", "分组", "分类", "数量", "重量", "稀有度", "穿戴部位", "标签"],
     rows: ctx.items.map((item) => {
       const subtotal = itemWeight(item);
       return [
         item.name,
+        groupNameOf(item.groupId),
         item.category,
         String(item.qty),
         subtotal > 0 ? formatWeight(subtotal) : DASH,
@@ -1248,24 +1474,39 @@ function inventoryTable(ctx: PackExportContext): PackExportTable {
 }
 
 function skillsTable(ctx: PackExportContext): PackExportTable {
-  const levels = ctx.proficiencyLevels ?? [];
-  const withTier = levels.length > 0;
+  // 列名跟随**默认体系**的别名（Phase 3）；行内档位 / 进位按各自行所属体系取
+  const alias = ctx.proficiencyAlias ?? "熟练度";
+  const defaultLevels = ctx.proficiencyLevels ?? [];
+  const withTier = defaultLevels.length > 0;
+  const groupNameOf = (id: string): string =>
+    id ? (ctx.groups?.find((group) => group.id === id)?.name ?? "(已删除的分组)") : DASH;
+  /** 行所属体系的元数据：组绑定了就用那套，否则回落默认体系 */
+  const schemeOf = (groupId: string): { levels: ThresholdLevel[]; autoCarry: boolean } => {
+    const bound = groupId ? ctx.proficiencySchemesByGroup?.[groupId] : undefined;
+    return bound ?? { levels: defaultLevels, autoCarry: true };
+  };
   return {
     headers: withTier
-      ? ["技能", "开关", "熟练度", "档位", "加成条数"]
-      : ["技能", "开关", "熟练度", "加成条数"],
+      ? ["技能", "分组", "开关", alias, "档位", "加成条数"]
+      : ["技能", "分组", "开关", alias, "加成条数"],
     rows: [...ctx.skills]
       .sort((a, b) => a.sortOrder - b.sortOrder)
       .map((skill) => {
         const mods = ctx.modifiers.filter(
           (mod) => mod.ownerType === "skill" && mod.ownerId === skill.id,
         ).length;
+        const scheme = schemeOf(skill.groupId);
+        const carry = scheme.autoCarry
+          ? carryBreakdown(skill.proficiencyRaw, scheme.levels)
+          : "";
         const base = [
           skill.name,
+          groupNameOf(skill.groupId),
           skill.enabled ? "在用" : "已关闭",
-          String(skill.proficiencyRaw),
+          // 有换算率时附上进位文本（原始值恒在前，仍是唯一真相源）
+          carry ? `${skill.proficiencyRaw}（${carry}）` : String(skill.proficiencyRaw),
         ];
-        const tier = thresholdOf(levels, skill.proficiencyRaw);
+        const tier = thresholdOf(scheme.levels, skill.proficiencyRaw);
         return withTier
           ? [...base, tier?.name ? `${tier.name}${tier.overflow ? "+" : ""}` : DASH, String(mods)]
           : [...base, String(mods)];

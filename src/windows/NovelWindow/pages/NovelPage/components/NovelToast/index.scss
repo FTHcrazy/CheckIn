@@ -27,6 +27,11 @@
   &--info svg {
     color: var(--app-info);
   }
+
+  // 编辑器当前不弹 error（共享 hook 的 tone 并集里有），配色随 danger
+  &--error svg {
+    color: var(--app-danger);
+  }
 }
 
 @keyframes nv-toast-in {

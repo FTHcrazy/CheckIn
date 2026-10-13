@@ -6,7 +6,7 @@ import PackExportButton from "../PackExportButton";
 import PackChangedDot from "../PackChangedDot";
 import type { PackPanelApi } from "../../hooks/usePackPanel";
 import { moduleLabel } from "../module-meta";
-import { ATTR_TEMPLATES, type PackAttribute } from "../../types";
+import { ATTR_TEMPLATES, type PackAttrDef } from "../../types";
 import "./index.scss";
 
 interface AttributesModuleProps {
@@ -20,10 +20,14 @@ const DECIMAL_OPTIONS = [
 ];
 
 /**
- * 人物属性（B-1）
+ * 人物属性（B-1 · 1.39.0 定义 / 数值两段化）
  *
- * 支持分组（战斗属性 / 资质 / 资源…）、自定义小数位与单位。
- * 删除属性会**连带清掉指向它的加成词条与属性映射（源、目标两端都算）**，
+ * 上段是**属性模型**（作品级）：这本书有哪些属性、怎么分组、单位与默认值 ——
+ * 效果、映射与未来的其它系统引用的都是这份模型里的 id。
+ * 下段是**属性值**（角色级）：按模型逐条编基础值；模型里有、角色还没初始化的
+ * 给「初始化为默认值」入口。
+ *
+ * 删除定义会**连带清掉指向它的加成词条、属性映射与全部角色的数值行**，
  * 所以条数为正时必须先确认 —— 否则装备上的加成会静默消失、别处的加点换算
  * 也会悄悄少一截，作者只会觉得「总属性怎么掉了」。
  */
@@ -32,33 +36,42 @@ export default function AttributesModule({ api }: AttributesModuleProps) {
   const [pendingRemove, setPendingRemove] = useState<{ id: string; name: string } | null>(null);
 
   const groups = useMemo(() => {
-    const map = new Map<string, PackAttribute[]>();
-    for (const attr of [...(doc?.attributes ?? [])].sort((a, b) => a.sortOrder - b.sortOrder)) {
-      const list = map.get(attr.groupName) ?? [];
-      list.push(attr);
-      map.set(attr.groupName, list);
+    const map = new Map<string, PackAttrDef[]>();
+    for (const def of [...(doc?.attrDefs ?? [])].sort((a, b) => a.sortOrder - b.sortOrder)) {
+      const list = map.get(def.groupName) ?? [];
+      list.push(def);
+      map.set(def.groupName, list);
     }
     return [...map.entries()];
+  }, [doc]);
+
+  /** 模型里没有实例数值行的定义（组合视图回落 defaultValue，这里给初始化入口） */
+  const valuelessIds = useMemo(() => {
+    const set = new Set<string>();
+    if (!doc) return set;
+    const present = new Set(doc.attributes.map((value) => value.defId));
+    for (const def of doc.attrDefs) if (!present.has(def.id)) set.add(def.id);
+    return set;
   }, [doc]);
 
   if (!doc) return null;
   const key = "attributes" as const;
 
-  // 待删属性牵连到的引用条数（确认框要逐类说清楚删掉的是什么）
+  // 待删定义牵连到的引用条数（确认框要逐类说清楚删掉的是什么）
   const pendingMods = pendingRemove ? api.countModifiersOfAttribute(pendingRemove.id) : 0;
   const pendingMaps = pendingRemove ? api.countMappingsOfAttribute(pendingRemove.id) : 0;
 
-  const tryRemove = (attr: PackAttribute) => {
-    // 加成与换算都要算：两者都是「删了属性就再也算不出来」的引用，
+  const tryRemove = (def: PackAttrDef) => {
+    // 加成与换算都要算：两者都是「删了定义就再也算不出来」的引用，
     // 只判加成的话，一个纯换算属性会被静默删掉、连带清掉别人的折算量。
-    if (api.countModifiersOfAttribute(attr.id) > 0 || api.countMappingsOfAttribute(attr.id) > 0) {
-      setPendingRemove({ id: attr.id, name: attr.name });
+    if (api.countModifiersOfAttribute(def.id) > 0 || api.countMappingsOfAttribute(def.id) > 0) {
+      setPendingRemove({ id: def.id, name: def.name });
       return;
     }
-    api.removeAttribute(attr.id);
+    api.removeAttribute(def.id);
   };
 
-  const move = (list: PackAttribute[], index: number, delta: number) => {
+  const move = (list: PackAttrDef[], index: number, delta: number) => {
     const next = [...list];
     const target = index + delta;
     if (target < 0 || target >= next.length) return;
@@ -67,7 +80,7 @@ export default function AttributesModule({ api }: AttributesModuleProps) {
     const ordered = groups.flatMap(([groupName, items]) =>
       groupName === list[0]?.groupName ? next : items,
     );
-    api.reorderAttributes(ordered.map((attr) => attr.id));
+    api.reorderAttributes(ordered.map((def) => def.id));
   };
 
   return (
@@ -104,6 +117,7 @@ export default function AttributesModule({ api }: AttributesModuleProps) {
         </p>
       ) : (
         <div className="cpk-attr">
+          <p className="cpk-attr__section">属性模型 · 全书共用</p>
           {groups.map(([groupName, items]) => (
             <section key={groupName} className="cpk-attr__group">
               <Input
@@ -115,47 +129,44 @@ export default function AttributesModule({ api }: AttributesModuleProps) {
                 onChange={(event) => api.renameAttributeGroup(groupName, event.target.value)}
               />
               <ul className="cpk-attr__rows">
-                {items.map((attr, index) => (
-                  <li key={attr.id} className="cpk-attr__row">
+                {items.map((def, index) => (
+                  <li key={def.id} className="cpk-attr__row">
                     <Input
                       size="small"
                       variant="borderless"
                       className="cpk-inline cpk-attr__name"
-                      value={attr.name}
+                      value={def.name}
                       placeholder="属性名"
                       aria-label="属性名"
-                      onChange={(event) => api.updateAttribute(attr.id, { name: event.target.value })}
-                    />
-                    <PackChangedDot
-                      updatedAt={attr.updatedAt}
-                      changed={api.isRecentlyChanged(attr.updatedAt)}
+                      onChange={(event) => api.updateAttribute(def.id, { name: event.target.value })}
                     />
                     <InputNumber
                       size="small"
                       className="cpk-attr__base"
-                      value={attr.baseValue}
-                      step={attr.decimals > 0 ? 0.1 : 1}
+                      value={def.defaultValue}
+                      step={def.decimals > 0 ? 0.1 : 1}
                       style={{ width: 84 }}
+                      title="默认值：新建角色实例时的初始基础值"
                       onChange={(value) =>
-                        api.updateAttribute(attr.id, { baseValue: Number(value) || 0 })
+                        api.updateAttribute(def.id, { defaultValue: Number(value) || 0 })
                       }
                     />
                     <Input
                       size="small"
                       variant="borderless"
                       className="cpk-inline cpk-attr__unit"
-                      value={attr.unit}
+                      value={def.unit}
                       placeholder="单位"
                       aria-label="单位"
-                      onChange={(event) => api.updateAttribute(attr.id, { unit: event.target.value })}
+                      onChange={(event) => api.updateAttribute(def.id, { unit: event.target.value })}
                     />
                     <Select
                       size="small"
                       className="cpk-attr__decimals"
-                      value={attr.decimals}
+                      value={def.decimals}
                       options={DECIMAL_OPTIONS}
                       classNames={{ popup: { root: "cpk-dropdown" } }}
-                      onChange={(value: number) => api.updateAttribute(attr.id, { decimals: value })}
+                      onChange={(value: number) => api.updateAttribute(def.id, { decimals: value })}
                     />
                     <span className="cpk-attr__ops">
                       <Button
@@ -176,7 +187,7 @@ export default function AttributesModule({ api }: AttributesModuleProps) {
                       </Button>
                       <Button
                         className="cpk-iconbtn tiny danger"
-                        onClick={() => tryRemove(attr)}
+                        onClick={() => tryRemove(def)}
                         title="删除属性"
                       >
                         <DeleteOutlined />
@@ -187,6 +198,41 @@ export default function AttributesModule({ api }: AttributesModuleProps) {
               </ul>
             </section>
           ))}
+
+          <p className="cpk-attr__section">属性值 · 当前角色</p>
+          <ul className="cpk-attr__rows">
+            {api.attrView.map((attr) => (
+              <li key={attr.id} className="cpk-attr__row">
+                <span className="cpk-attr__valuelabel">{attr.name}</span>
+                <PackChangedDot
+                  updatedAt={attr.updatedAt}
+                  changed={api.isRecentlyChanged(attr.updatedAt)}
+                />
+                <InputNumber
+                  size="small"
+                  className="cpk-attr__base"
+                  value={attr.baseValue}
+                  step={attr.decimals > 0 ? 0.1 : 1}
+                  style={{ width: 84 }}
+                  onChange={(value) =>
+                    api.updateAttribute(attr.id, { baseValue: Number(value) || 0 })
+                  }
+                />
+                {attr.unit ? <span className="cpk-attr__valueunit">{attr.unit}</span> : null}
+                {valuelessIds.has(attr.id) ? (
+                  <Button
+                    className="cpk-iconbtn tiny"
+                    title={`把基础值初始化为默认值 ${attr.baseValue}`}
+                    onClick={() =>
+                      api.updateAttribute(attr.id, { baseValue: attr.baseValue })
+                    }
+                  >
+                    <PlusOutlined />
+                  </Button>
+                ) : null}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 
@@ -220,7 +266,7 @@ export default function AttributesModule({ api }: AttributesModuleProps) {
           {pendingMaps > 0 ? " 条属性换算。" : "。"}
         </p>
         <p className="cpk-guard__sub">
-          继续删除会把它们一并移除（加成的源头在装备 / 技能上，换算在「属性映射」里，都不会自己恢复）。若只是想停用，可以把效果临时禁用，或把那条换算的系数改成 0。
+          继续删除会把它们连同这条属性一并移除（加成的源头在装备 / 技能上，换算在「属性映射」里，都不会自己恢复）。若只是想停用，可以把效果临时禁用，或把那条换算的系数改成 0。
         </p>
       </Modal>
     </PackModuleShell>

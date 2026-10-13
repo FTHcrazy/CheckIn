@@ -13,7 +13,7 @@ export interface NovelShortcutHandlers {
   onTogglePack: () => void;
   /** Ctrl+Shift+S 设定中心（境界 / 功法 / 稀有度等序列的管理入口） */
   onOpenSettings: () => void;
-  /** Esc：按优先级关闭最上层的浮层（设置 → 行囊 → 快照 → 专注模式） */
+  /** Esc：按优先级关闭最上层的浮层（设定中心 → 排版设置 → 快照 → 专注模式） */
   onEscape: () => void;
 }
 
@@ -44,7 +44,11 @@ export function useNovelShortcuts(handlers: NovelShortcutHandlers): void {
       if (event.defaultPrevented || event.isComposing) return;
       const h = handlersRef.current;
 
-      if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === "b") {
+      if (
+        (event.ctrlKey || event.metaKey) &&
+        event.shiftKey &&
+        event.key.toLowerCase() === "b"
+      ) {
         event.preventDefault();
         h.onTogglePack();
         return;

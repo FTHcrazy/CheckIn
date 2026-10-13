@@ -18,6 +18,19 @@
     font-size: 14px;
   }
 
+  // 装载失败态（与空态严格分离，P2-6）：失败时绝不能显示「书架还是空的」，
+  // 要给出可重试的明确出口。文案用高对比变量承载（§小字号规范）。
+  &__error {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    flex: 1;
+    color: var(--app-text-strong);
+    font-size: 14px;
+  }
+
   // 主列 + 灵感库右栏
   &__body {
     display: flex;

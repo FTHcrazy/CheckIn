@@ -121,8 +121,8 @@ describe("主角名：三个同步场景都有链路", () => {
       /notifyNameChanged\(merged\.workId, merged\.name, "panel", merged\.id\)/,
     );
     expect(novelData).toMatch(/if \(merged\.name !== target\.name\)/);
-    // 行囊订阅该事件
-    expect(PANEL).toMatch(/window\.addEventListener\(PACK_NAME_EVENT/);
+    // 行囊订阅该事件（P3-2 后订阅样板收口到 subscribeDualChannel）
+    expect(PANEL).toMatch(/subscribeDualChannel\(PACK_NAME_EVENT/);
     // 自己的广播不绕回来（origin 过滤）
     expect(PANEL).toMatch(/detail\.origin === "pack"\) return/);
   });
@@ -131,8 +131,9 @@ describe("主角名：三个同步场景都有链路", () => {
     const novelData = read(
       "src/windows/NovelWindow/pages/NovelPage/hooks/useNovelData.ts",
     );
-    // 右侧也订阅了该事件（行囊改名时要把本地 bundle 里那条要素改名）
-    expect(novelData).toMatch(/window\.addEventListener\(PACK_NAME_EVENT/);
+    // 右侧也订阅了该事件（行囊改名时要把本地 bundle 里那条要素改名；
+    // P3-2 后订阅样板收口到 subscribeDualChannel）
+    expect(novelData).toMatch(/subscribeDualChannel\(PACK_NAME_EVENT/);
     // 定位必须靠 entityId
     expect(novelData).toMatch(/entity\.id === entityId/);
     // 自己发的跳过

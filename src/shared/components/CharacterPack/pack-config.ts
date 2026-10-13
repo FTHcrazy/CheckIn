@@ -248,70 +248,21 @@ export function notifyRealmLinkChanged(
   void window.electronAPI?.windowAPI.broadcast(PACK_REALM_EVENT, detail);
 }
 
-// ── 受保护的关闭桥 ──
-
-/**
- * 「关闭请求」的唯一受保护实现，由面板挂载时注册。
- *
- * 为什么要这一层：除了面板自己的关闭按钮，还有三条路径能把它收起来 ——
- * 顶栏「行囊」图标、`Ctrl+Shift+B`、页面级 Esc 优先级链。它们过去都直接
- * `setPackOpen(false)`，绕开了未保存拦截（G-2）与草稿 flush（A5），表现为
- * 「在行囊里改了半天，关掉之后什么都没留下」。
- *
- * 面板是数据主人但状态在页面手里，反过来让页面 import 组件不合适 —— 用桥：
- * 面板注册自己的 `requestClose`，外部一律调用它。
- */
-let closer: (() => Promise<void>) | null = null;
-
-/** 面板挂载 / 卸载时调用；同一时刻只允许一个面板（面板形态是唯一的） */
-export function registerPackCloser(fn: (() => Promise<void>) | null): void {
-  closer = fn;
-}
-
-/**
- * 请求关闭行囊面板。**返回 false 表示当前没有面板**（调用方自行兜底关闭）；
- * 返回 true 表示已交给面板处理 —— 它可能不关（有未保存改动时弹拦截）。
- */
-export function requestClosePackPanel(): boolean {
-  if (!closer) return false;
-  void closer();
-  return true;
-}
-
 // ── 「先处理后行动」闸门 ──
 
 /**
  * 需要先征询用户的动作。**这是一份白名单，不是给人看的文案** ——
  * 每加一处调用点，都要想清楚「这个动作会不会让未保存的编辑离场」：
  * 会，就必须过闸门；不会，就别加（无缘无故弹拦截比丢数据更烦人）。
+ *
+ * 历史（P3-1）：这里曾有一对「页面 ↔ 面板」的进程内桥（registerPackGuard /
+ * guardPackBeforeAction，外加关闭用的 registerPackCloser / requestClosePackPanel），
+ * 供面板还挂在 NovelPage 里的年代做「切章 / 切作品前先问面板」用。行囊拆成
+ * 独立窗口后页面与面板分属两个 renderer，页面侧从此没有调用方 —— 桥已删除，
+ * 跨窗口的未保存拦截统一由主进程关闭守卫三通道（pack-close-guard.ts：
+ * `onCloseRequest` / `respondCloseRequest` + `setCloseGuardEnabled`）裁决。
  */
 export type PackGuardReason = "关闭行囊" | "切换章节" | "切换作品" | "退出应用" | "关闭窗口";
-
-/**
- * 未保存改动的通用闸门，由面板挂载时注册。
- *
- * 与上面的 `requestClosePackPanel` 的区别：那个是「关掉面板」这一件事的桥，
- * 返回同步布尔（调用方只需知道「面板接没接手」）；这个是**异步裁决** ——
- * 返回 `true` 表示「可以继续做那件事」，`false` 表示用户在弹窗里选了取消。
- * 切章 / 切作品 / 退出应用都走它：它们不关面板，但会让编辑离开当前上下文。
- */
-let guard: ((reason: PackGuardReason) => Promise<boolean>) | null = null;
-
-/** 面板挂载 / 卸载时调用（与 `registerPackCloser` 同生命周期） */
-export function registerPackGuard(fn: ((reason: PackGuardReason) => Promise<boolean>) | null): void {
-  guard = fn;
-}
-
-/**
- * 做某个动作前先过一次闸门：**没有面板、或没有未保存改动时直接放行**。
- *
- * 调用方一律写成「先 await 再动手」，不要自己判断脏计数 —— 脏计数是面板
- * 私有的（草稿、回退点都在它那边），页面层复制一份判断必然有一次不一致。
- */
-export async function guardPackBeforeAction(reason: PackGuardReason): Promise<boolean> {
-  if (!guard) return true;
-  return guard(reason);
-}
 
 // ── 快速记账桥（REQ-027 正文选区 → 记入背包） ──
 
@@ -348,6 +299,11 @@ export function registerPackQuickAdd(fn: ((request: PackQuickAddRequest) => stri
  *
  * `itemId` 是新建物品的 id（面板那条路同步就有；主进程那条路由调用方从 IPC
  * 返回值里拿）。跨窗口合并要靠它定位，见 `PACK_QUICK_ADDED_EVENT`。
+ *
+ * ⚠️ 拆窗后（P3-1 备案）NovelPage 的调用方与面板分属两个 renderer，
+ * `handled` 在编辑器窗口恒为 false、恒落主进程。本地这条「同进程回退」
+ * 路径**刻意保留**：未来任何形态把面板重新挂回调用方所在窗口时它能直接
+ * 生效，且不需要改调用方（`quickAddPackItem` 的分支天然兜住两种布局）。
  */
 export function runPackQuickAdd(request: PackQuickAddRequest): {
   handled: boolean;
@@ -393,23 +349,18 @@ export function notifyQuickAdded(workId: string, itemId: string): void {
 /**
  * 行囊里有几张表（属性 / 物品 / 装备…），作者会想把它们抄进正文。
  *
- * 行囊独立成窗口后与编辑器分属两个 renderer —— 本地桥由宿主页面（若有）
- * 注册；**没有本地桥时走跨窗口广播**：NovelPage 订阅
- * `pack-insert-into-chapter` 频道接收文本并追加到当前章末尾。
+ * 行囊独立成窗口后与编辑器分属两个 renderer —— 恒走跨窗口广播：
+ * NovelPage 订阅 `pack-insert-into-chapter` 频道接收文本并追加到当前章末尾。
  * fire-and-forget：行囊侧无法得知编辑器有没有章可写，失败由编辑器侧提示。
+ * 历史（P3-1）：曾有「宿主页面注册的本地桥」优先、广播兜底的双路设计，
+ * 拆窗后本地桥再无注册方，已按「别留半座桥」删掉注册入口。
  */
-let chapterInserter: ((text: string) => boolean) | null = null;
 
 /** 页面挂载时调用（返回 `false` 表示当前没有可写的章节） */
 export type PackChapterInserter = (text: string) => boolean;
 
-export function registerPackInsertIntoChapter(fn: PackChapterInserter | null): void {
-  chapterInserter = fn;
-}
-
-/** 本地桥缺失时返回 true（已转投跨窗口广播），调用方不再自行兜底 */
+/** 本地恒返回 true（已转投跨窗口广播），失败由编辑器侧提示 */
 export function runPackInsertIntoChapter(text: string): boolean {
-  if (chapterInserter) return chapterInserter(text);
   void window.electronAPI?.windowAPI.broadcast("pack-insert-into-chapter", text);
   return true;
 }

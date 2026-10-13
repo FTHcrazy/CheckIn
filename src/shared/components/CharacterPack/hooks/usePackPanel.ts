@@ -3,8 +3,6 @@ import { createNovelId, logUsageEvent } from "@/shared/services/novel-shared";
 import {
   DEFAULT_LAYOUTS,
   QTY_MAX,
-  registerPackCloser,
-  registerPackGuard,
   registerPackQuickAdd,
   type PackGuardReason,
   type PackQuickAddRequest,
@@ -16,17 +14,22 @@ import {
   UNBOUND_REALM_HINT,
   type RealmState,
 } from "../pack-realm";
+import { subscribeDualChannel } from "@/shared/novel/dual-channel";
+import { useAutoToast, type ToastPayload } from "@/shared/novel/use-auto-toast";
 import {
   buildActiveCarriersFrom,
+  buildGroupOffCarriers,
   buildPackMarkdown,
   capacityStatus,
   carrierKey,
+  composeAttributes,
   computeHypotheticalSummary,
   computeSummary,
   countRecentChanges,
   formatRealm,
   hasRecentChange,
   normalizeLimit,
+  proficiencySchemeOf,
   sortLadder,
   stepQty,
   summaryDeltas,
@@ -35,6 +38,7 @@ import {
   type LadderRung,
   type PackExportContext,
   type PackExportKey,
+  type ProficiencySchemeMeta,
   type RealmPosition,
   type SummaryDelta,
   type SummaryResult,
@@ -64,7 +68,10 @@ import {
   NATURE_META,
   PACK_MODULES,
   type EstimateEntry,
+  type PackAttrDef,
   type PackAttribute,
+  type PackAttrValue,
+  type PackGroup,
   type PackItem,
   type PackLayout,
   type PackMapping,
@@ -78,7 +85,11 @@ import {
   type PackUiPrefs,
   type PackUnitSystem,
 } from "../types";
-import { CURRENCY_TEMPLATE, PACK_UI_SAVE_DEBOUNCE_MS, PROFICIENCY_TEMPLATE } from "../pack-config";
+import {
+  CURRENCY_TEMPLATE,
+  PACK_UI_SAVE_DEBOUNCE_MS,
+  PROFICIENCY_TEMPLATE,
+} from "../pack-config";
 import {
   notifyNameChanged,
   notifyProtagonistChanged,
@@ -98,13 +109,9 @@ import {
 } from "../services/pack-close-guard";
 import { AUTOSAVE_IDLE_MS, DIRTY_BREATHE_AT } from "../types";
 
-export interface PackToastState {
-  id: number;
-  text: string;
-  tone: "success" | "info" | "warning" | "error";
-}
-
-type ToastTone = PackToastState["tone"];
+// 类型出处已收口到共享 hook（P3-3）；PackToastState 保留原名作为别名导出，
+// PackToast 组件的 import 路径不变
+export type PackToastState = ToastPayload;
 
 interface UsePackPanelOptions {
   workId: string;
@@ -174,7 +181,9 @@ function parsePrefs(raw: string | null): Partial<PackUiPrefs> {
   if (!raw) return {};
   try {
     const parsed: unknown = JSON.parse(raw);
-    return parsed && typeof parsed === "object" ? (parsed as Partial<PackUiPrefs>) : {};
+    return parsed && typeof parsed === "object"
+      ? (parsed as Partial<PackUiPrefs>)
+      : {};
   } catch {
     return {};
   }
@@ -186,7 +195,12 @@ function parsePrefs(raw: string | null): Partial<PackUiPrefs> {
  * 所有编辑都收束在这里，组件只做渲染与事件转发 —— 未来把整个模块
  * 迁到独立窗口时，只需换一个入口渲染 <CharacterPackHost>，本文件零改动。
  */
-export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelOptions) {
+export function usePackPanel({
+  workId,
+  chapterId,
+  open,
+  onClose,
+}: UsePackPanelOptions) {
   const data = usePackData(workId, chapterId);
   // syncMeta 只经 dataRef 转发（事件回调里读最新的那一份），不在依赖里出现
   const { doc, meta, mutate } = data;
@@ -241,7 +255,8 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
 
   useEffect(() => {
     if (!prefsLoadedRef.current) return undefined;
-    if (prefsTimerRef.current !== null) window.clearTimeout(prefsTimerRef.current);
+    if (prefsTimerRef.current !== null)
+      window.clearTimeout(prefsTimerRef.current);
     prefsTimerRef.current = window.setTimeout(() => {
       prefsTimerRef.current = null;
       void savePackUiPrefsRaw(JSON.stringify(prefs));
@@ -259,17 +274,21 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
   }, []);
 
   // ── 纯视图状态 ──
-  const [toast, setToast] = useState<PackToastState | null>(null);
+  // 轻提示：计时 / 清理由共享 hook 收口（P3-3），时长沿用面板节奏 2.6s
+  const { toast, showToast, closeToast } = useAutoToast(2600);
   const [editingOwner, setEditingOwner] = useState<{
     ownerType: PackModifier["ownerType"];
     ownerId: string;
     title: string;
   } | null>(null);
-  const [editingModifierId, setEditingModifierId] = useState<string | null>(null);
+  const [editingModifierId, setEditingModifierId] = useState<string | null>(
+    null,
+  );
   const [detailAttrId, setDetailAttrId] = useState<string | null>(null);
   const [moduleManagerOpen, setModuleManagerOpen] = useState(false);
   const [unitManagerOpen, setUnitManagerOpen] = useState(false);
   const [slotManagerOpen, setSlotManagerOpen] = useState(false);
+  const [groupManagerOpen, setGroupManagerOpen] = useState(false);
   const [recordDrawerOpen, setRecordDrawerOpen] = useState(false);
   /** 未保存闸门弹窗（关闭窗口 / 退出应用共用同一个） */
   const [guardOpen, setGuardOpen] = useState(false);
@@ -277,29 +296,16 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
   const [inventoryKeyword, setInventoryKeyword] = useState("");
   const [lastEditAt, setLastEditAt] = useState(0);
 
-  const showToast = useCallback((text: string, tone: ToastTone = "success") => {
-    setToast({ id: Date.now(), text, tone });
-  }, []);
-  const closeToast = useCallback(() => setToast(null), []);
-
-  useEffect(() => {
-    if (!toast) return undefined;
-    const timer = window.setTimeout(() => setToast(null), 2600);
-    return () => window.clearTimeout(timer);
-  }, [toast]);
-
   // ── 派生：模块布局、在效载体、汇总 ──
-  const modules = useMemo(
-    () => (doc ? mergeLayouts(doc.layouts) : []),
-    [doc],
-  );
+  const modules = useMemo(() => (doc ? mergeLayouts(doc.layouts) : []), [doc]);
   const enabledModules = useMemo(
     () => modules.filter((module) => module.enabled),
     [modules],
   );
 
   const statusModifiers = useMemo(
-    () => (doc ? doc.modifiers.filter((mod) => mod.ownerType === "status") : []),
+    () =>
+      doc ? doc.modifiers.filter((mod) => mod.ownerType === "status") : [],
     [doc],
   );
 
@@ -315,7 +321,20 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
       items: doc.items,
       skills: doc.skills,
       modifiers: doc.modifiers,
+      groups: doc.groups,
     });
+  }, [doc]);
+
+  /**
+   * 停用组的载体键集合（闸门 0 归桶用）。
+   *
+   * 与 `activeCarriers` 分成两个 useMemo 是刻意的：前者决定「算不算」，
+   * 这里决定「归哪个桶」—— 组停用的词条要进独立的 `groupOff` 桶
+   * （与 expired / eventOnly 同层），而不是混进「在效」里装作没停用。
+   */
+  const groupOffCarriers = useMemo(() => {
+    if (!doc) return new Set<string>();
+    return buildGroupOffCarriers(doc.groups, doc.items, doc.skills);
   }, [doc]);
 
   const proficiency = useMemo(() => {
@@ -338,32 +357,43 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
     };
   }, [doc]);
 
+  /**
+   * 属性组合视图（def ∪ value）：汇总 / 映射 / 效果编辑器 / 导出统一消费这一份，
+   * 组合只发生在 `composeAttributes` 一个产出点（见该函数注释）。
+   */
+  const attrView: PackAttribute[] = useMemo(
+    () => (doc ? composeAttributes(doc.attrDefs, doc.attributes) : []),
+    [doc],
+  );
+
   const summary: SummaryResult = useMemo(
     () =>
       computeSummary({
-        attributes: doc?.attributes ?? [],
+        attributes: attrView,
         modifiers: doc?.modifiers ?? [],
         mappings: doc?.mappings ?? [],
         activeCarriers,
+        groupOffCarriers,
         proficiency,
       }),
-    [doc, activeCarriers, proficiency],
+    [doc, attrView, activeCarriers, groupOffCarriers, proficiency],
   );
 
   // ── 假想输入：一处能力，两条需求（REQ-018 换装预览 / REQ-037 估算模式）──
   const hypotheticalInput: HypotheticalInput = useMemo(
     () => ({
-      attributes: doc?.attributes ?? [],
+      attributes: attrView,
       slots: doc?.slots ?? [],
       items: doc?.items ?? [],
       skills: doc?.skills ?? [],
+      groups: doc?.groups ?? [],
       modifiers: doc?.modifiers ?? [],
       // 映射必须在场：穿上「+20 力量」的剑，气血会因为「根骨/力量 → 气血」
       // 跟着涨 —— 少了它，预览与装上之后的总属性就对不上了
       mappings: doc?.mappings ?? [],
       proficiency,
     }),
-    [doc, proficiency],
+    [doc, attrView, proficiency],
   );
 
   /**
@@ -376,7 +406,9 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
     (itemId: string, slotId: string): SummaryDelta[] =>
       summaryDeltas(
         summary,
-        computeHypotheticalSummary(hypotheticalInput, { equip: { itemId, slotId } }),
+        computeHypotheticalSummary(hypotheticalInput, {
+          equip: { itemId, slotId },
+        }),
       ),
     [summary, hypotheticalInput],
   );
@@ -427,7 +459,9 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
   const estimateSummary = useMemo<SummaryResult | null>(
     () =>
       estimateOn && doc && estimateModifiers.length > 0
-        ? computeHypotheticalSummary(hypotheticalInput, { extraModifiers: estimateModifiers })
+        ? computeHypotheticalSummary(hypotheticalInput, {
+            extraModifiers: estimateModifiers,
+          })
         : null,
     [estimateOn, doc, estimateModifiers, hypotheticalInput],
   );
@@ -437,26 +471,28 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
     [estimateSummary, summary],
   );
 
-  const addEstimate = useCallback(
-    (partial: Partial<EstimateEntry> = {}) => {
-      setEstimateEntries((current) => [
-        ...current,
-        {
-          id: createNovelId("est"),
-          attrId: partial.attrId ?? docRef.current?.attributes[0]?.id ?? "",
-          op: partial.op ?? "add",
-          value: partial.value ?? 0,
-        },
-      ]);
+  const addEstimate = useCallback((partial: Partial<EstimateEntry> = {}) => {
+    setEstimateEntries((current) => [
+      ...current,
+      {
+        id: createNovelId("est"),
+        attrId: partial.attrId ?? docRef.current?.attrDefs[0]?.id ?? "",
+        op: partial.op ?? "add",
+        value: partial.value ?? 0,
+      },
+    ]);
+  }, []);
+
+  const updateEstimate = useCallback(
+    (id: string, patch: Partial<EstimateEntry>) => {
+      setEstimateEntries((current) =>
+        current.map((entry) =>
+          entry.id === id ? { ...entry, ...patch } : entry,
+        ),
+      );
     },
     [],
   );
-
-  const updateEstimate = useCallback((id: string, patch: Partial<EstimateEntry>) => {
-    setEstimateEntries((current) =>
-      current.map((entry) => (entry.id === id ? { ...entry, ...patch } : entry)),
-    );
-  }, []);
 
   const removeEstimate = useCallback((id: string) => {
     setEstimateEntries((current) => current.filter((entry) => entry.id !== id));
@@ -487,7 +523,57 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
   );
 
   const currencySystem = unitSystemOf("currency");
-  const proficiencySystem = unitSystemOf("proficiency");
+
+  // ── 多套熟练度体系（Phase 3 转正）──
+  //
+  // config.use === "proficiency" 的量纲现在允许**并存**（修为 / 剑意各一套），
+  // 按 sortOrder 取第一套作**默认体系**：未绑定分组的技能、旧数据全部回落到它。
+  // 分组绑了 `profSchemeId` 的，组内技能的档位 / 别名 / 进位跟随所绑体系。
+  const proficiencySystems = useMemo(() => {
+    const list: PackUnitSystem[] = [];
+    for (const system of doc?.unitSystems ?? []) {
+      try {
+        const config = JSON.parse(system.config || "{}") as { use?: string };
+        if (config.use === "proficiency") list.push(system);
+      } catch {
+        // config 坏了视为非熟练度体系，跳过
+      }
+    }
+    return list.sort((a, b) => a.sortOrder - b.sortOrder);
+  }, [doc]);
+  const proficiencySystem = proficiencySystems[0];
+
+  /** systemId → 结构化元数据（levels 含 ratio / 别名 / autoCarry），解析只发生在这里 */
+  const proficiencySchemes = useMemo(() => {
+    const map = new Map<string, ProficiencySchemeMeta>();
+    for (const system of proficiencySystems) {
+      map.set(
+        system.id,
+        proficiencySchemeOf(system.levels, system.config),
+      );
+    }
+    return map;
+  }, [proficiencySystems]);
+
+  /** 技能的熟练度体系解析：组绑定了体系就用那套，否则回落默认体系 */
+  const schemeForSkill = useCallback(
+    (skillGroupId: string): { system: PackUnitSystem | undefined; meta: ProficiencySchemeMeta } => {
+      const boundId = skillGroupId
+        ? (doc?.groups ?? []).find((group) => group.id === skillGroupId)?.profSchemeId
+        : undefined;
+      const system =
+        (boundId
+          ? proficiencySystems.find((candidate) => candidate.id === boundId)
+          : undefined) ?? proficiencySystem;
+      return {
+        system,
+        meta:
+          (system && proficiencySchemes.get(system.id)) ??
+          proficiencySchemeOf(system?.levels, system?.config),
+      };
+    },
+    [doc, proficiencySystems, proficiencySystem, proficiencySchemes],
+  );
 
   // ── 派生：本章变动角标（REQ-028）──
   //
@@ -521,12 +607,23 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
   // **不在渲染期调用**：`PackExportButton` 只在真正点菜单时才 build 一次。
   const buildModuleMarkdown = useCallback(
     (key: PackExportKey, label: string): string => {
-      let proficiencyLevels: ThresholdLevel[] = [];
-      try {
-        const parsed: unknown = JSON.parse(proficiencySystem?.levels || "[]");
-        if (Array.isArray(parsed)) proficiencyLevels = parsed as ThresholdLevel[];
-      } catch {
-        proficiencyLevels = [];
+      // 默认体系的档位 / 别名（Phase 3：技能表列名跟随别名；行内档位按各组的绑定另取）
+      const defaultMeta =
+        (proficiencySystem && proficiencySchemes.get(proficiencySystem.id)) ??
+        proficiencySchemeOf(proficiencySystem?.levels, proficiencySystem?.config);
+      // groupId → 所绑体系的展示元数据（未绑定 / 悬空绑定的组不出现，导出时回落默认）
+      const profSchemesByGroup: Record<
+        string,
+        { levels: ThresholdLevel[]; autoCarry: boolean }
+      > = {};
+      for (const group of doc?.groups ?? []) {
+        if (!group.profSchemeId) continue;
+        const meta = proficiencySchemes.get(group.profSchemeId);
+        if (meta)
+          profSchemesByGroup[group.id] = {
+            levels: meta.levels,
+            autoCarry: meta.autoCarry,
+          };
       }
 
       let currencyLevels: Array<{ name: string; ratioToBase: number }> = [];
@@ -534,30 +631,38 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
       try {
         const parsed: unknown = JSON.parse(currencySystem?.levels || "[]");
         if (Array.isArray(parsed)) {
-          currencyLevels = parsed as Array<{ name: string; ratioToBase: number }>;
+          currencyLevels = parsed as Array<{
+            name: string;
+            ratioToBase: number;
+          }>;
         }
-        const config = JSON.parse(currencySystem?.config || "{}") as { autoCarry?: boolean };
+        const config = JSON.parse(currencySystem?.config || "{}") as {
+          autoCarry?: boolean;
+        };
         currencyAutoCarry = config.autoCarry !== false;
       } catch {
         currencyLevels = [];
       }
 
       const context: PackExportContext = {
-        attributes: doc?.attributes ?? [],
+        attributes: attrView,
         slots: doc?.slots ?? [],
         items: doc?.items ?? [],
         skills: doc?.skills ?? [],
+        groups: doc?.groups ?? [],
         modifiers: doc?.modifiers ?? [],
         mappings: doc?.mappings ?? [],
         summary,
-        proficiencyLevels,
+        proficiencyLevels: defaultMeta.levels,
+        proficiencyAlias: defaultMeta.alias,
+        proficiencySchemesByGroup: profSchemesByGroup,
         currency: currencyLevels.length
           ? { levels: currencyLevels, autoCarry: currencyAutoCarry }
           : null,
       };
       return buildPackMarkdown(key, context, label);
     },
-    [doc, summary, proficiencySystem, currencySystem],
+    [doc, attrView, summary, proficiencySystem, proficiencySchemes, currencySystem],
   );
 
   // ── 派生：境界（全部经由口子，禁止直接读字段 REQ-048） ──
@@ -592,7 +697,10 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
 
   const realmPos = useMemo(() => getRealm(realmState), [realmState]);
   const panelRealmPos = useMemo(() => getPanelRealm(realmState), [realmState]);
-  const realmText = useMemo(() => formatRealm(rungs, realmPos), [rungs, realmPos]);
+  const realmText = useMemo(
+    () => formatRealm(rungs, realmPos),
+    [rungs, realmPos],
+  );
   const panelRealmText = useMemo(
     () => formatRealm(rungs, panelRealmPos),
     [rungs, panelRealmPos],
@@ -622,7 +730,9 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
       notifyProtagonistChanged(workId, entityId);
       await data.syncMeta();
       showToast(
-        entityId ? "已设为主角，境界与右侧角色卡同步" : "已取消主角，境界仅在行囊内使用",
+        entityId
+          ? "已设为主角，境界与右侧角色卡同步"
+          : "已取消主角，境界仅在行囊内使用",
         "info",
       );
     },
@@ -643,13 +753,7 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
       );
       void dataRef.current.syncMeta();
     };
-    window.addEventListener(PACK_PROTAGONIST_EVENT, handler as EventListener);
-    const api = window.electronAPI?.windowAPI;
-    api?.on(PACK_PROTAGONIST_EVENT, handler);
-    return () => {
-      window.removeEventListener(PACK_PROTAGONIST_EVENT, handler as EventListener);
-      api?.off(PACK_PROTAGONIST_EVENT, handler);
-    };
+    return subscribeDualChannel(PACK_PROTAGONIST_EVENT, handler);
   }, [workId, mutate]);
 
   /**
@@ -663,7 +767,9 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
    */
   useEffect(() => {
     const handler = (...args: unknown[]) => {
-      const detail = readEventDetail<PackNameEventDetail & { origin?: string }>(args);
+      const detail = readEventDetail<PackNameEventDetail & { origin?: string }>(
+        args,
+      );
       if (!detail || typeof detail !== "object") return;
       if (detail.workId !== workId) return;
       if (detail.origin === "pack") return;
@@ -675,13 +781,7 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
           : { ...current, character: { ...current.character, displayName } },
       );
     };
-    window.addEventListener(PACK_NAME_EVENT, handler as EventListener);
-    const api = window.electronAPI?.windowAPI;
-    api?.on(PACK_NAME_EVENT, handler);
-    return () => {
-      window.removeEventListener(PACK_NAME_EVENT, handler as EventListener);
-      api?.off(PACK_NAME_EVENT, handler);
-    };
+    return subscribeDualChannel(PACK_NAME_EVENT, handler);
   }, [workId, mutate]);
 
   /**
@@ -714,18 +814,15 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
       );
       void dataRef.current.syncMeta();
     };
-    window.addEventListener(PACK_REALM_EVENT, handler as EventListener);
-    const api = window.electronAPI?.windowAPI;
-    api?.on(PACK_REALM_EVENT, handler);
-    return () => {
-      window.removeEventListener(PACK_REALM_EVENT, handler as EventListener);
-      api?.off(PACK_REALM_EVENT, handler);
-    };
+    return subscribeDualChannel(PACK_REALM_EVENT, handler);
   }, [workId, mutate]);
 
   /** 等级项补列（小层数 / 战力当量）：改的是 novel_levels，两边共享同一张表 */
   const setRungMeta = useCallback(
-    async (rungId: string, patch: { subLevels?: number; power?: number | null }) => {
+    async (
+      rungId: string,
+      patch: { subLevels?: number; power?: number | null },
+    ) => {
       const ok = await writeLevelMeta(rungId, patch);
       if (ok) {
         await data.syncMeta();
@@ -773,6 +870,7 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
       // 它的调用方（例如切章）就永远停在 await 上，表现为「点章节没反应」。
       if (guardResolveRef.current) return false;
       if (data.dirty <= 0) {
+        // flushDraft 内部已收 IPC reject（P3-6），不会把裁决链打断
         await data.flushDraft();
         return true;
       }
@@ -791,7 +889,6 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
     setGuardOpen(false);
     resolve?.(allow);
   }, []);
-
   const guardSaveAndProceed = useCallback(async () => {
     const ok = await data.save("手动保存");
     if (!ok) {
@@ -825,28 +922,17 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
     if (await requestGuard("关闭行囊")) onClose();
   }, [requestGuard, onClose]);
 
-  // 外部关闭路径（顶栏图标 / Ctrl+Shift+B / 页面级 Esc）统一走这条桥，
-  // 切章 / 切作品 / 退出应用则走下面的 `registerPackGuard` 闸门。
-  // requestClose / requestGuard 每次编辑都会变身份，若在 effect 依赖里直接放它们，
-  // 敲一个字就重注册一次 —— 用 ref 转发，注册只随 open 变动。
-  const requestCloseRef = useRef(requestClose);
-  useEffect(() => {
-    requestCloseRef.current = requestClose;
-  }, [requestClose]);
+  // 面板自己的关闭按钮 / 遮罩 / Esc —— 同一道未保存闸门（G-2）。
+  // 历史（P3-1）：这里曾把 requestClose / requestGuard 经 ref 转发注册到
+  // pack-config 的进程内注册桥（closer / guard 两个方向），供面板还挂在
+  // NovelPage 里时页面侧调用；拆窗后页面侧无调用方，桥已删 ——
+  // 跨窗口的关闭拦截统一走下面的主进程 close-guard 三通道。
+  // requestGuardRef 仍要保留：close-guard 的询问回调只随 open 注册一次，
+  // 而 requestGuard 每次编辑都换身份 —— 经 ref 转发拿最新的。
   const requestGuardRef = useRef(requestGuard);
   useEffect(() => {
     requestGuardRef.current = requestGuard;
   }, [requestGuard]);
-
-  useEffect(() => {
-    if (!open) return undefined;
-    registerPackCloser(() => requestCloseRef.current());
-    registerPackGuard((reason) => requestGuardRef.current(reason));
-    return () => {
-      registerPackCloser(null);
-      registerPackGuard(null);
-    };
-  }, [open]);
 
   /**
    * 武装主进程的关闭守卫：有未保存改动时，窗口真要销毁（退出应用 / 子窗关闭）
@@ -862,7 +948,9 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
   useEffect(() => {
     if (!open) return undefined;
     return onCloseRequest((reason) => {
-      void requestGuardRef.current(reason).then((allow) => respondCloseRequest(allow));
+      void requestGuardRef
+        .current(reason)
+        .then((allow) => respondCloseRequest(allow));
     });
   }, [open]);
 
@@ -908,7 +996,8 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
         callMutate((current) => ({
           ...current,
           realmLink:
-            plan.link && JSON.stringify(current.realmLink) !== JSON.stringify(plan.link)
+            plan.link &&
+            JSON.stringify(current.realmLink) !== JSON.stringify(plan.link)
               ? { ...plan.link, id: plan.link.id || createNovelId("nl") }
               : current.realmLink,
           character:
@@ -925,50 +1014,101 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
     [doc, rungs, realmState, callMutate, showToast],
   );
 
-  // ── 属性（M1） ──
+  // ── 属性（M1 · 1.39.0 定义 / 数值分离）──
+  //
+  // 定义（attrDefs，作品级）回答「这本书有哪些属性」，数值（attributes，角色级）
+  // 只回答「每条是多少」。增删改在这里一次拆成两份数据，调用方仍面对单一 API。
   const addAttribute = useCallback(
-    (partial: Partial<PackAttribute> = {}) => {
+    (partial: Partial<PackAttrDef> & { baseValue?: number } = {}) => {
       const id = createNovelId("pa");
-      callMutate((current) => ({
-        ...current,
-        attributes: [
-          ...current.attributes,
-          {
-            id,
-            characterId: current.character.id,
-            groupName: partial.groupName ?? DEFAULT_ATTR_GROUP,
-            name: partial.name ?? "新属性",
-            baseValue: partial.baseValue ?? 0,
-            decimals: partial.decimals ?? 0,
-            unit: partial.unit ?? "",
-            sortOrder: current.attributes.length + 1,
-            updatedAt: Date.now(),
-          },
-        ],
-      }));
+      callMutate((current) => {
+        const baseValue = partial.baseValue ?? partial.defaultValue ?? 0;
+        return {
+          ...current,
+          attrDefs: [
+            ...current.attrDefs,
+            {
+              id,
+              workId: current.character.workId,
+              key: "",
+              groupName: partial.groupName ?? DEFAULT_ATTR_GROUP,
+              name: partial.name ?? "新属性",
+              decimals: partial.decimals ?? 0,
+              unit: partial.unit ?? "",
+              defaultValue: baseValue,
+              sortOrder: current.attrDefs.length + 1,
+            },
+          ],
+          // 新建即初始化实例（值 = 默认值）：模型与数值同步出现，省一次「初始化」点击
+          attributes: [
+            ...current.attributes,
+            {
+              id,
+              characterId: current.character.id,
+              defId: id,
+              baseValue,
+              updatedAt: Date.now(),
+            },
+          ],
+        };
+      });
       return id;
     },
     [callMutate],
   );
 
+  /**
+   * 更新属性：patch 里的展示字段落到**定义**，baseValue 落到**数值行**。
+   *
+   * 定义字段的改动同样刷新数值行的 `updatedAt`（REQ-028 角标以行为单位 ——
+   * 「改了属性名」也是「这条属性变了」）。数值行不存在时跳过：视图层会回落
+   * defaultValue，缺打点只影响角标，不值得为此造一行空实例。
+   */
   const updateAttribute = useCallback(
     (id: string, patch: Partial<PackAttribute>) => {
-      callMutate((current) => ({
-        ...current,
-        attributes: current.attributes.map((attr) =>
-          attr.id === id ? { ...attr, ...patch, updatedAt: Date.now() } : attr,
-        ),
-      }));
+      callMutate((current) => {
+        const defPatch: Partial<PackAttrDef> = {};
+        if (patch.name !== undefined) defPatch.name = patch.name;
+        if (patch.groupName !== undefined) defPatch.groupName = patch.groupName;
+        if (patch.unit !== undefined) defPatch.unit = patch.unit;
+        if (patch.decimals !== undefined) defPatch.decimals = patch.decimals;
+        if (patch.sortOrder !== undefined) defPatch.sortOrder = patch.sortOrder;
+        if (patch.defaultValue !== undefined) defPatch.defaultValue = patch.defaultValue;
+        const hasDefPatch = Object.keys(defPatch).length > 0;
+        if (!hasDefPatch && patch.baseValue === undefined) return current;
+        const now = Date.now();
+        return {
+          ...current,
+          attrDefs: hasDefPatch
+            ? current.attrDefs.map((def) => (def.id === id ? { ...def, ...defPatch } : def))
+            : current.attrDefs,
+          attributes:
+            patch.baseValue !== undefined && !current.attributes.some((value) => value.defId === id)
+              ? [
+                  ...current.attributes,
+                  { id, characterId: current.character.id, defId: id, baseValue: patch.baseValue, updatedAt: now },
+                ]
+              : current.attributes.map((value) =>
+                  value.defId === id
+                    ? {
+                        ...value,
+                        ...(patch.baseValue !== undefined ? { baseValue: patch.baseValue } : null),
+                        updatedAt: now,
+                      }
+                    : value,
+                ),
+        };
+      });
     },
     [callMutate],
   );
 
   /**
-   * 删除属性：相关加成词条与属性映射一并清理（B-1 验收点），返回被清理的加成条数。
+   * 删除属性：删的是**定义**，实例数值行与引用它的效果 / 映射一并清理。
    *
-   * 映射**两端都指向属性**，任一端落在被删的属性上就整条清掉 —— 留着的话汇总会给它
-   * 标一句「属性已删除」，作者还得自己一条条找出来删。`countMappingsOfAttribute`
-   * 会在确认框里把这件事说清楚，所以这里是「说好了再删」，不是静默改动。
+   * 映射两端都指向定义 id，任一端落在被删定义上就整条清掉 —— 留着的话汇总会给
+   * 它标一句「属性已删除」。`countMappingsOfAttribute` 会在确认框里把这件事
+   * 说清楚，所以这里是「说好了再删」，不是静默改动。
    */
   const removeAttribute = useCallback(
     (id: string): number => {
@@ -977,7 +1117,8 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
         removed = current.modifiers.filter((mod) => mod.targetAttrId === id).length;
         return {
           ...current,
-          attributes: current.attributes.filter((attr) => attr.id !== id),
+          attrDefs: current.attrDefs.filter((def) => def.id !== id),
+          attributes: current.attributes.filter((value) => value.defId !== id),
           modifiers: current.modifiers.filter((mod) => mod.targetAttrId !== id),
           mappings: current.mappings.filter(
             (mapping) => mapping.sourceAttrId !== id && mapping.targetAttrId !== id,
@@ -1004,13 +1145,14 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
     [doc],
   );
 
+  // 排序收在**定义**上（数值行不再携带 sortOrder，展示顺序跟着模型走）
   const reorderAttributes = useCallback(
     (orderedIds: string[]) => {
       callMutate((current) => ({
         ...current,
-        attributes: current.attributes.map((attr) => {
-          const index = orderedIds.indexOf(attr.id);
-          return index < 0 ? attr : { ...attr, sortOrder: index + 1 };
+        attrDefs: current.attrDefs.map((def) => {
+          const index = orderedIds.indexOf(def.id);
+          return index < 0 ? def : { ...def, sortOrder: index + 1 };
         }),
       }));
     },
@@ -1022,34 +1164,55 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
     (from: string, to: string) => {
       callMutate((current) => ({
         ...current,
-        attributes: current.attributes.map((attr) =>
-          attr.groupName === from ? { ...attr, groupName: to } : attr,
+        attrDefs: current.attrDefs.map((def) =>
+          def.groupName === from ? { ...def, groupName: to } : def,
         ),
       }));
     },
     [callMutate],
   );
 
+  /** 套用属性模板：种的是**定义**（defaultValue 同步作为初始数值） */
   const applyAttrTemplate = useCallback(
     (templateName: string) => {
       const template = ATTR_TEMPLATES[templateName];
       if (!template) return;
       callMutate((current) => {
-        const base = current.attributes.length;
-        const created = template.map((item, index) => ({
-          id: createNovelId("pa"),
-          characterId: current.character.id,
-          groupName: item.groupName,
-          name: item.name,
-          baseValue: item.baseValue,
-          decimals: 0,
-          unit: item.unit ?? "",
-          sortOrder: base + index + 1,
-          updatedAt: Date.now(),
-        }));
-        return { ...current, attributes: [...current.attributes, ...created] };
+        const base = current.attrDefs.length;
+        const now = Date.now();
+        const createdDefs: PackAttrDef[] = [];
+        const createdValues: PackAttrValue[] = [];
+        template.forEach((item, index) => {
+          const id = createNovelId("pa");
+          createdDefs.push({
+            id,
+            workId: current.character.workId,
+            key: "",
+            groupName: item.groupName,
+            name: item.name,
+            decimals: 0,
+            unit: item.unit ?? "",
+            defaultValue: item.baseValue,
+            sortOrder: base + index + 1,
+          });
+          createdValues.push({
+            id,
+            characterId: current.character.id,
+            defId: id,
+            baseValue: item.baseValue,
+            updatedAt: now,
+          });
+        });
+        return {
+          ...current,
+          attrDefs: [...current.attrDefs, ...createdDefs],
+          attributes: [...current.attributes, ...createdValues],
+        };
       });
-      showToast(`已套用「${templateName}」属性模板（${template.length} 项）`, "success");
+      showToast(
+        `已套用「${templateName}」属性模板（${template.length} 项）`,
+        "success",
+      );
     },
     [callMutate, showToast],
   );
@@ -1067,11 +1230,11 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
   const addMapping = useCallback(
     (partial: Partial<PackMapping> = {}): string => {
       const current = docRef.current;
-      if (!current || current.attributes.length < 2) return "";
-      const sourceAttrId = partial.sourceAttrId ?? current.attributes[0].id;
+      if (!current || current.attrDefs.length < 2) return "";
+      const sourceAttrId = partial.sourceAttrId ?? current.attrDefs[0].id;
       const targetAttrId =
         partial.targetAttrId ??
-        current.attributes.find((attr) => attr.id !== sourceAttrId)?.id ??
+        current.attrDefs.find((attr) => attr.id !== sourceAttrId)?.id ??
         "";
       if (!targetAttrId || sourceAttrId === targetAttrId) return "";
       const id = createNovelId("pm");
@@ -1102,7 +1265,9 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
       callMutate((current) => ({
         ...current,
         mappings: current.mappings.map((mapping) =>
-          mapping.id === id ? { ...mapping, ...patch, updatedAt: Date.now() } : mapping,
+          mapping.id === id
+            ? { ...mapping, ...patch, updatedAt: Date.now() }
+            : mapping,
         ),
       }));
     },
@@ -1165,7 +1330,9 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
     (id: string, patch: Partial<PackSlot>) => {
       callMutate((current) => ({
         ...current,
-        slots: current.slots.map((slot) => (slot.id === id ? { ...slot, ...patch } : slot)),
+        slots: current.slots.map((slot) =>
+          slot.id === id ? { ...slot, ...patch } : slot,
+        ),
       }));
     },
     [callMutate],
@@ -1179,7 +1346,12 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
         slots: current.slots.filter((slot) => slot.id !== id),
         items: current.items.map((item) =>
           item.equippedSlotId === id
-            ? { ...item, equippedSlotId: "", slotIndex: null, updatedAt: Date.now() }
+            ? {
+                ...item,
+                equippedSlotId: "",
+                slotIndex: null,
+                updatedAt: Date.now(),
+              }
             : item,
         ),
       }));
@@ -1195,7 +1367,10 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
         if (!slot) return current;
         const next = Math.max(1, Math.floor(capacity));
         const overflow = current.items
-          .filter((item) => item.equippedSlotId === id && (item.slotIndex ?? 0) >= next)
+          .filter(
+            (item) =>
+              item.equippedSlotId === id && (item.slotIndex ?? 0) >= next,
+          )
           .map((item) => item.id);
         return {
           ...current,
@@ -1204,7 +1379,12 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
           ),
           items: current.items.map((item) =>
             overflow.includes(item.id)
-              ? { ...item, equippedSlotId: "", slotIndex: null, updatedAt: Date.now() }
+              ? {
+                  ...item,
+                  equippedSlotId: "",
+                  slotIndex: null,
+                  updatedAt: Date.now(),
+                }
               : item,
           ),
         };
@@ -1222,6 +1402,75 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
           return index < 0 ? slot : { ...slot, sortOrder: index + 1 };
         }),
       }));
+    },
+    [callMutate],
+  );
+
+  // ── 载体分组（Phase 2）──
+  const addGroup = useCallback(
+    (name = "新分组") => {
+      const id = createNovelId("pg");
+      callMutate((current) => ({
+        ...current,
+        groups: [
+          ...current.groups,
+          {
+            id,
+            characterId: current.character.id,
+            name,
+            icon: "",
+            canEquip: false,
+            canEnable: true,
+            profSchemeId: "",
+            enabled: true,
+            sortOrder: current.groups.length + 1,
+          },
+        ],
+      }));
+      return id;
+    },
+    [callMutate],
+  );
+
+  const updateGroup = useCallback(
+    (id: string, patch: Partial<PackGroup>) => {
+      callMutate((current) => ({
+        ...current,
+        groups: current.groups.map((group) =>
+          group.id === id ? { ...group, ...patch } : group,
+        ),
+      }));
+    },
+    [callMutate],
+  );
+
+  /**
+   * 删除分组：组内条目退回「未分组」（不删除，§8.4 原则 5 —— 与删部位退回
+   * 物品同构）。返回组内条目数，供确认框报数。
+   */
+  const removeGroup = useCallback(
+    (id: string): number => {
+      let affected = 0;
+      callMutate((current) => {
+        affected =
+          current.items.filter((item) => item.groupId === id).length +
+          current.skills.filter((skill) => skill.groupId === id).length;
+        return {
+          ...current,
+          groups: current.groups.filter((group) => group.id !== id),
+          items: current.items.map((item) =>
+            item.groupId === id
+              ? { ...item, groupId: "", updatedAt: Date.now() }
+              : item,
+          ),
+          skills: current.skills.map((skill) =>
+            skill.groupId === id
+              ? { ...skill, groupId: "", updatedAt: Date.now() }
+              : skill,
+          ),
+        };
+      });
+      return affected;
     },
     [callMutate],
   );
@@ -1262,6 +1511,7 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
             characterId: state.character.id,
             name: partial.name ?? "新物品",
             category: partial.category ?? "杂物",
+            groupId: partial.groupId ?? "",
             qty: partial.qty ?? 1,
             rarity: partial.rarity ?? "common",
             icon: partial.icon ?? "",
@@ -1289,7 +1539,9 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
    * **不在这里弹 toast**：记账的调用方（NovelPage）有自己的 toast，两边各弹一次
    * 会同时出现两个提示，而它们说的是同一件事。
    */
-  const quickAddRef = useRef<(request: PackQuickAddRequest) => string | null>(() => null);
+  const quickAddRef = useRef<(request: PackQuickAddRequest) => string | null>(
+    () => null,
+  );
   useEffect(() => {
     quickAddRef.current = (request) =>
       addItem({
@@ -1373,11 +1625,14 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
         return { ok: false, conflict: null };
       }
       const occupants = current.items.filter(
-        (candidate) => candidate.equippedSlotId === slotId && candidate.id !== itemId,
+        (candidate) =>
+          candidate.equippedSlotId === slotId && candidate.id !== itemId,
       );
       let target = slotIndex;
       if (target === undefined) {
-        const used = new Set(occupants.map((candidate) => candidate.slotIndex ?? 0));
+        const used = new Set(
+          occupants.map((candidate) => candidate.slotIndex ?? 0),
+        );
         target = 0;
         while (used.has(target) && target < slot.capacity) target += 1;
       }
@@ -1385,7 +1640,10 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
         // 满位：把冲突对象交回给调用方，由 UI 决定替换谁
         return {
           ok: false,
-          conflict: occupants.find((candidate) => (candidate.slotIndex ?? 0) === target) ??
+          conflict:
+            occupants.find(
+              (candidate) => (candidate.slotIndex ?? 0) === target,
+            ) ??
             occupants[0] ??
             null,
         };
@@ -1394,7 +1652,12 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
         ...state,
         items: state.items.map((candidate) =>
           candidate.id === itemId
-            ? { ...candidate, equippedSlotId: slotId, slotIndex: target ?? 0, updatedAt: Date.now() }
+            ? {
+                ...candidate,
+                equippedSlotId: slotId,
+                slotIndex: target ?? 0,
+                updatedAt: Date.now(),
+              }
             : candidate,
         ),
       }));
@@ -1416,10 +1679,23 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
         ...state,
         items: state.items.map((candidate) => {
           if (candidate.id === itemId) {
-            return { ...candidate, equippedSlotId: slotId, slotIndex, updatedAt: Date.now() };
+            return {
+              ...candidate,
+              equippedSlotId: slotId,
+              slotIndex,
+              updatedAt: Date.now(),
+            };
           }
-          if (candidate.equippedSlotId === slotId && (candidate.slotIndex ?? 0) === slotIndex) {
-            return { ...candidate, equippedSlotId: "", slotIndex: null, updatedAt: Date.now() };
+          if (
+            candidate.equippedSlotId === slotId &&
+            (candidate.slotIndex ?? 0) === slotIndex
+          ) {
+            return {
+              ...candidate,
+              equippedSlotId: "",
+              slotIndex: null,
+              updatedAt: Date.now(),
+            };
           }
           return candidate;
         }),
@@ -1434,7 +1710,12 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
         ...state,
         items: state.items.map((item) =>
           item.id === itemId
-            ? { ...item, equippedSlotId: "", slotIndex: null, updatedAt: Date.now() }
+            ? {
+                ...item,
+                equippedSlotId: "",
+                slotIndex: null,
+                updatedAt: Date.now(),
+              }
             : item,
         ),
       }));
@@ -1489,7 +1770,10 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
       if (!current) return null;
       const payload = buildPresetPayload(current.items);
       if (payload.length === 0) {
-        showToast("当前没有穿戴任何装备，方案会是空的，先穿几件再存", "warning");
+        showToast(
+          "当前没有穿戴任何装备，方案会是空的，先穿几件再存",
+          "warning",
+        );
         return null;
       }
       const label = name.trim() || `方案 ${current.presets.length + 1}`;
@@ -1520,7 +1804,9 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
       callMutate((state) => ({
         ...state,
         presets: state.presets.map((preset) =>
-          preset.id === id ? { ...preset, name, updatedAt: Date.now() } : preset,
+          preset.id === id
+            ? { ...preset, name, updatedAt: Date.now() }
+            : preset,
         ),
       }));
     },
@@ -1538,17 +1824,14 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
   );
 
   /** 套用前的读数（缺几件 / 几条位置已失效）：菜单里先告诉作者，别等他点完才发现 */
-  const presetReadout = useCallback(
-    (preset: PackPreset): PresetReadout => {
-      const current = docRef.current;
-      return readPreset(
-        parsePresetPayload(preset.payload),
-        current?.items ?? [],
-        current?.slots ?? [],
-      );
-    },
-    [],
-  );
+  const presetReadout = useCallback((preset: PackPreset): PresetReadout => {
+    const current = docRef.current;
+    return readPreset(
+      parsePresetPayload(preset.payload),
+      current?.items ?? [],
+      current?.slots ?? [],
+    );
+  }, []);
 
   const applyPresetById = useCallback(
     (presetId: string) => {
@@ -1558,7 +1841,11 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
       const entries = parsePresetPayload(preset.payload);
       // 先算一遍给提示用；真正的写入在 mutator 里按**当时**的文档重算
       // （两次之间隔着一次 setState，不能拿旧结果去写新文档）。
-      const preview: ApplyPresetResult = applyPreset(current.items, entries, current.slots);
+      const preview: ApplyPresetResult = applyPreset(
+        current.items,
+        entries,
+        current.slots,
+      );
       callMutate((state) => ({
         ...state,
         items: applyPreset(state.items, entries, state.slots).items,
@@ -1585,6 +1872,7 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
             characterId: current.character.id,
             name: partial.name ?? "新技能",
             desc: partial.desc ?? "",
+            groupId: partial.groupId ?? "",
             enabled: partial.enabled ?? true,
             proficiencyRaw: partial.proficiencyRaw ?? 0,
             tags: partial.tags ?? [],
@@ -1603,7 +1891,9 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
       callMutate((current) => ({
         ...current,
         skills: current.skills.map((skill) =>
-          skill.id === id ? { ...skill, ...patch, updatedAt: Date.now() } : skill,
+          skill.id === id
+            ? { ...skill, ...patch, updatedAt: Date.now() }
+            : skill,
         ),
       }));
     },
@@ -1643,7 +1933,11 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
 
   // ── 效果词条（C-1 / C-2，装备与技能共用） ──
   const addModifier = useCallback(
-    (ownerType: PackModifier["ownerType"], ownerId: string, nature: PackModifier["nature"]) => {
+    (
+      ownerType: PackModifier["ownerType"],
+      ownerId: string,
+      nature: PackModifier["nature"],
+    ) => {
       const id = createNovelId("pm");
       callMutate((current) => {
         const ownerMods = current.modifiers.filter(
@@ -1655,7 +1949,8 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
           ownerId,
           nature,
           name: "",
-          targetAttrId: nature === "cast" ? "" : (current.attributes[0]?.id ?? ""),
+          targetAttrId:
+            nature === "cast" ? "" : (current.attrDefs[0]?.id ?? ""),
           op: "add",
           value: 0,
           valueUnit: nature === "cast" ? "攻击力%" : "",
@@ -1710,7 +2005,10 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
         // 宿主必须在过滤**之前**取：条目一删，carrierOfModifier 就查不到了
         const carrier = carrierOfModifier(current, id);
         return touchCarrier(
-          { ...current, modifiers: current.modifiers.filter((mod) => mod.id !== id) },
+          {
+            ...current,
+            modifiers: current.modifiers.filter((mod) => mod.id !== id),
+          },
           carrier,
         );
       });
@@ -1794,7 +2092,7 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
             ownerId: state.character.id,
             nature: partial.nature ?? "sustained",
             name: partial.name ?? "新状态",
-            targetAttrId: partial.targetAttrId ?? state.attributes[0]?.id ?? "",
+            targetAttrId: partial.targetAttrId ?? state.attrDefs[0]?.id ?? "",
             op: partial.op ?? "add",
             value: partial.value ?? 0,
             valueUnit: "",
@@ -1820,21 +2118,41 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
   );
 
   // ── 量纲体系（D-1） ──
+  //
+  // Phase 3 起熟练度体系允许多套并存（修为 / 剑意）：`create: true` 跳过
+  // 「按用途找现有那套」直接追加；其余路径保持旧行为 —— 传 id 按 id 改，
+  // 没传 id 按用途匹配（货币模板 / 熟练度模板的既有调用都不带 id）。
   const upsertUnitSystem = useCallback(
     (
       kind: "ladder" | "ratio" | "threshold",
       use: "currency" | "proficiency",
-      patch: { id?: string; name?: string; levels?: unknown; config?: Record<string, unknown> },
+      patch: {
+        id?: string;
+        name?: string;
+        levels?: unknown;
+        config?: Record<string, unknown>;
+        /** 强制新建一套（多熟练度体系的「新增体系」入口） */
+        create?: boolean;
+      },
     ) => {
       callMutate((current) => {
-        const existing = current.unitSystems.find((system) => {
-          try {
-            const config = JSON.parse(system.config || "{}") as { use?: string };
-            return config.use === use;
-          } catch {
-            return false;
-          }
-        });
+        const byUse = () =>
+          current.unitSystems.find((system) => {
+            try {
+              const config = JSON.parse(system.config || "{}") as {
+                use?: string;
+              };
+              return config.use === use;
+            } catch {
+              return false;
+            }
+          });
+        const existing = patch.create
+          ? undefined
+          : patch.id
+            ? (current.unitSystems.find((system) => system.id === patch.id) ??
+              byUse())
+            : byUse();
         if (existing) {
           return {
             ...current,
@@ -1844,8 +2162,14 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
                     ...system,
                     kind,
                     name: patch.name ?? system.name,
-                    levels: patch.levels ? JSON.stringify(patch.levels) : system.levels,
-                    config: JSON.stringify({ ...JSON.parse(system.config || "{}"), use, ...(patch.config ?? {}) }),
+                    levels: patch.levels
+                      ? JSON.stringify(patch.levels)
+                      : system.levels,
+                    config: JSON.stringify({
+                      ...JSON.parse(system.config || "{}"),
+                      use,
+                      ...(patch.config ?? {}),
+                    }),
                   }
                 : system,
             ),
@@ -1912,8 +2236,11 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
   const setModuleEnabled = useCallback(
     (key: PackModuleKey, enabled: boolean) => {
       callMutate((current) => {
-        const exists = current.layouts.some((layout) => layout.moduleKey === key);
-        const fallback = DEFAULT_LAYOUTS.find((layout) => layout.key === key)?.sortOrder ?? 99;
+        const exists = current.layouts.some(
+          (layout) => layout.moduleKey === key,
+        );
+        const fallback =
+          DEFAULT_LAYOUTS.find((layout) => layout.key === key)?.sortOrder ?? 99;
         if (!exists) {
           return {
             ...current,
@@ -1942,7 +2269,9 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
   const setModuleOrder = useCallback(
     (orderedKeys: PackModuleKey[]) => {
       callMutate((current) => {
-        const byKey = new Map(current.layouts.map((layout) => [layout.moduleKey, layout]));
+        const byKey = new Map(
+          current.layouts.map((layout) => [layout.moduleKey, layout]),
+        );
         const next: PackLayout[] = [];
         orderedKeys.forEach((key, index) => {
           const stored = byKey.get(key);
@@ -1972,16 +2301,13 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
     showToast("已恢复默认模块组合", "success");
   }, [callMutate, showToast]);
 
-  const toggleModuleCollapsed = useCallback(
-    (key: PackModuleKey) => {
-      // 折叠属于界面偏好：即改即存，不计入未保存改动（PRD §8.6.2 反面清单）
-      setPrefs((previous) => ({
-        ...previous,
-        collapsed: { ...previous.collapsed, [key]: !previous.collapsed[key] },
-      }));
-    },
-    [],
-  );
+  const toggleModuleCollapsed = useCallback((key: PackModuleKey) => {
+    // 折叠属于界面偏好：即改即存，不计入未保存改动（PRD §8.6.2 反面清单）
+    setPrefs((previous) => ({
+      ...previous,
+      collapsed: { ...previous.collapsed, [key]: !previous.collapsed[key] },
+    }));
+  }, []);
 
   // ── 备注速记（REQ-031） ──
   const setCharacterNote = useCallback(
@@ -2016,10 +2342,15 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
       const workId = current?.character.workId;
       if (!current || !workId) return;
       const trimmed = name.trim();
-      if (!trimmed || trimmed === (current.character.displayName || current.character.name)) {
+      if (
+        !trimmed ||
+        trimmed === (current.character.displayName || current.character.name)
+      ) {
         return;
       }
-      const result = await renamePackCharacter(workId, trimmed).catch(() => null);
+      const result = await renamePackCharacter(workId, trimmed).catch(
+        () => null,
+      );
       if (!result || !result.ok) {
         showToast("改名失败，请重试", "error");
         return;
@@ -2030,17 +2361,30 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
           ...doc.character,
           displayName: result.displayName,
           // 未绑定时主进程改的是行囊内那格，name 也要跟上，否则再次装载会打回旧名
-          name: result.target === "character" ? result.displayName : doc.character.name,
+          name:
+            result.target === "character"
+              ? result.displayName
+              : doc.character.name,
         },
       }));
-      notifyNameChanged(workId, result.displayName, "pack", result.target === "entity" ? current.character.entityId : "");
+      notifyNameChanged(
+        workId,
+        result.displayName,
+        "pack",
+        result.target === "entity" ? current.character.entityId : "",
+      );
     },
     [mutate, showToast],
   );
 
   // ── 效果编辑器入口（装备 / 技能 / 状态共用一套） ──
   const openEffectEditor = useCallback(
-    (ownerType: PackModifier["ownerType"], ownerId: string, title: string, modifierId?: string) => {
+    (
+      ownerType: PackModifier["ownerType"],
+      ownerId: string,
+      title: string,
+      modifierId?: string,
+    ) => {
       setEditingOwner({ ownerType, ownerId, title });
       setEditingModifierId(modifierId ?? null);
     },
@@ -2100,7 +2444,8 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
     if (!chapterId) return null;
     return meta.records.reduce<PackRecord | null>(
       (oldest, record) =>
-        record.chapterId === chapterId && (!oldest || record.takenAt < oldest.takenAt)
+        record.chapterId === chapterId &&
+        (!oldest || record.takenAt < oldest.takenAt)
           ? record
           : oldest,
       null,
@@ -2108,7 +2453,8 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
   }, [meta.records, chapterId]);
 
   const dirtyHint = useMemo(() => {
-    if (data.saveFailed) return { tone: "error" as const, text: "保存失败 · 草稿已保留" };
+    if (data.saveFailed)
+      return { tone: "error" as const, text: "保存失败 · 草稿已保留" };
     if (data.saving) return { tone: "busy" as const, text: "保存中…" };
     if (data.dirty > 0) {
       return {
@@ -2155,6 +2501,8 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
     setUnitManagerOpen,
     slotManagerOpen,
     setSlotManagerOpen,
+    groupManagerOpen,
+    setGroupManagerOpen,
     recordDrawerOpen,
     setRecordDrawerOpen,
     guardOpen,
@@ -2171,6 +2519,7 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
     moduleOf,
     statusModifiers,
     activeCarriers,
+    groupOffCarriers,
     summary,
     mappings,
     load,
@@ -2189,7 +2538,12 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
     realmHint: doc?.character.entityId ? "" : UNBOUND_REALM_HINT,
     currencySystem,
     proficiencySystem,
+    proficiencySystems,
+    proficiencySchemes,
+    schemeForSkill,
     unitSystemOf,
+    /** 属性组合视图（def ∪ value，id = 定义 id）：展示组件统一消费这一份 */
+    attrView,
     changedCount,
     isRecentlyChanged,
     buildModuleMarkdown,
@@ -2220,6 +2574,9 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
     removeSlot,
     shrinkSlotCapacity,
     reorderSlots,
+    addGroup,
+    updateGroup,
+    removeGroup,
     addItem,
     updateItem,
     removeItem,
@@ -2264,8 +2621,10 @@ export function usePackPanel({ workId, chapterId, open, onClose }: UsePackPanelO
      * 效果自己的 id（见 `carrierKeyOf`），拿 ownerId 来问必然得到 false ——
      * 这正是「状态开着但总属性不动」那个静默缺陷的成因，别再往这条路上加调用点。
      */
-    isCarrierActive: (ownerType: PackModifier["ownerType"], ownerId: string): boolean =>
-      activeCarriers.has(carrierKey(ownerType, ownerId)),
+    isCarrierActive: (
+      ownerType: PackModifier["ownerType"],
+      ownerId: string,
+    ): boolean => activeCarriers.has(carrierKey(ownerType, ownerId)),
 
     // 关闭流程
     requestClose,

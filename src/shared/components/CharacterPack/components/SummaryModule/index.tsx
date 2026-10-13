@@ -58,7 +58,7 @@ export default function SummaryModule({ api }: SummaryModuleProps) {
   const key = "summary" as const;
 
   // 保持属性自己的顺序（summary.rows 的插入顺序即 attributes 顺序）
-  const ordered = doc.attributes
+  const ordered = api.attrView
     .map((attr) => api.summary.byAttr.get(attr.id))
     .filter((row): row is SummaryRow => Boolean(row));
 
@@ -67,8 +67,11 @@ export default function SummaryModule({ api }: SummaryModuleProps) {
   // 时效已过的持续型（REQ-025）。单列一句而不是并进「带触发条件」：
   // 前者是期望内的暂停（加回回合数就恢复），后者是设计如此，混着说会让作者去改触发条件。
   const expiredCount = api.summary.expired.length;
+  // 组停用（Phase 2 闸门 0）。与 expired 同层单列：前者是「这一类都没了」
+  // （去分组设置里把组打开），后者是「到回合了」（加回回合数）。
+  const groupOffCount = api.summary.groupOff.length;
   const estimating = api.estimateOn && api.estimateEntries.length > 0;
-  const attrOptions = doc.attributes.map((attr) => ({
+  const attrOptions = api.attrView.map((attr) => ({
     value: attr.id,
     label: attr.unit ? `${attr.name}（${attr.unit}）` : attr.name,
   }));
@@ -176,7 +179,7 @@ export default function SummaryModule({ api }: SummaryModuleProps) {
       ) : (
         <ul className="cpk-sum__rows">
           {ordered.map((row) => {
-            const attr = doc.attributes.find((candidate) => candidate.id === row.attrId);
+            const attr = api.attrView.find((candidate) => candidate.id === row.attrId);
             if (!attr) return null;
             const parts = segments(row, attr);
             const conflict = row.overrideCount > 1;
@@ -246,16 +249,18 @@ export default function SummaryModule({ api }: SummaryModuleProps) {
         </ul>
       )}
 
-      {castCount > 0 || eventCount > 0 || expiredCount > 0 ? (
+      {castCount > 0 || eventCount > 0 || expiredCount > 0 || groupOffCount > 0 ? (
         <p className="cpk-sum__note">
           <ThunderboltOutlined />
           {castCount > 0 ? (
             <span>另有 {castCount} 项主动效果（释放型）不计入总属性</span>
           ) : null}
-          {castCount > 0 && (eventCount > 0 || expiredCount > 0) ? <span>·</span> : null}
+          {castCount > 0 && (eventCount > 0 || expiredCount > 0 || groupOffCount > 0) ? <span>·</span> : null}
           {eventCount > 0 ? <span>{eventCount} 项带触发条件，按事件发生才生效</span> : null}
-          {eventCount > 0 && expiredCount > 0 ? <span>·</span> : null}
+          {eventCount > 0 && (expiredCount > 0 || groupOffCount > 0) ? <span>·</span> : null}
           {expiredCount > 0 ? <span>{expiredCount} 项时效已过，暂时不计入</span> : null}
+          {expiredCount > 0 && groupOffCount > 0 ? <span>·</span> : null}
+          {groupOffCount > 0 ? <span>{groupOffCount} 项所在分组已停用，恢复分组后计入</span> : null}
         </p>
       ) : null}
     </PackModuleShell>

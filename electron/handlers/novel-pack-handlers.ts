@@ -44,16 +44,26 @@ interface PackCharacterRow {
   sort_order: number;
 }
 
+/** 属性数值行（角色级实例）；定义在 `novel_pack_attr_defs`，见 novel-db.ts */
 interface PackAttributeRow {
   id: string;
   character_id: string;
-  group_name: string;
-  name: string;
+  def_id: string;
   base_value: number;
-  decimals: number;
-  unit: string;
-  sort_order: number;
   updated_at: number;
+}
+
+/** 属性定义行（作品级预设，1.39.0 refactor 重构） */
+interface PackAttrDefRow {
+  id: string;
+  work_id: string;
+  key: string | null;
+  name: string;
+  group_name: string;
+  unit: string;
+  decimals: number;
+  default_value: number;
+  sort_order: number;
 }
 
 interface PackSlotRow {
@@ -64,6 +74,25 @@ interface PackSlotRow {
   accepts: string;
   enabled: number;
   note: string;
+  sort_order: number;
+}
+
+/**
+ * 载体分组行（1.39.0 二期）：物品 / 技能的分类维度 + 能力开关。
+ *
+ * 能力开关决定条目编辑器渲染统一模板的哪几块：
+ * can_equip=1 的组内物品才能显示穿戴块；can_enable=0 的组内条目没有载体开关；
+ * prof_scheme_id 绑定该组的熟练度体系（可空 = 该组无熟练度，Phase 3 转正）。
+ */
+interface PackGroupRow {
+  id: string;
+  character_id: string;
+  name: string;
+  icon: string;
+  can_equip: number;
+  can_enable: number;
+  prof_scheme_id: string | null;
+  enabled: number;
   sort_order: number;
 }
 
@@ -95,6 +124,8 @@ interface PackItemRow {
   tags: string;
   equipped_slot_id: string | null;
   slot_index: number | null;
+  /** 归属分组（novel_pack_groups.id）；'' = 未分组 */
+  group_id: string;
   source_chapter_id: string | null;
   weight: number;
   updated_at: number;
@@ -106,6 +137,8 @@ interface PackSkillRow {
   name: string;
   desc: string;
   enabled: number;
+  /** 归属分组（novel_pack_groups.id）；'' = 未分组 */
+  group_id: string;
   proficiency_raw: number;
   tags: string;
   sort_order: number;
@@ -258,17 +291,30 @@ export interface PackProtagonistDto {
   entityId: string;
 }
 
+/** 属性数值（角色级实例）。展示字段（name / unit / …）一律从定义读 —— 见 `PackAttrDefDto` */
 export interface PackAttributeDto {
   id: string;
   characterId: string;
-  groupName: string;
-  name: string;
+  /** 指向 `novel_pack_attr_defs.id`；按「一角色一属性至多一行」的约定，id 恒等于 defId */
+  defId: string;
   baseValue: number;
-  decimals: number;
-  unit: string;
-  sortOrder: number;
   /** 最近一次改动的落点时刻（REQ-028 本章变动角标）；0 = 从无改动记录 */
   updatedAt: number;
+}
+
+/** 属性定义（作品级预设）：效果 / 映射 / 其它系统引用这里的 id */
+export interface PackAttrDefDto {
+  id: string;
+  workId: string;
+  /** 机器名（可空）：导入导出与跨系统按名解析用 */
+  key: string;
+  name: string;
+  groupName: string;
+  unit: string;
+  decimals: number;
+  /** 新建角色实例时的初始 baseValue */
+  defaultValue: number;
+  sortOrder: number;
 }
 
 /**
@@ -301,6 +347,23 @@ export interface PackSlotDto {
   sortOrder: number;
 }
 
+/** 载体分组（1.39.0 二期）：条目分类维度 + 能力开关；条目行上的 groupId 指向这里的 id */
+export interface PackGroupDto {
+  id: string;
+  characterId: string;
+  name: string;
+  icon: string;
+  /** 组内条目可穿戴（接入 slots；部位 accepts 按组匹配） */
+  canEquip: boolean;
+  /** 组内条目有载体级启停开关 */
+  canEnable: boolean;
+  /** 绑定的熟练度体系（novel_pack_unit_systems.id）；'' = 该组无熟练度 */
+  profSchemeId: string;
+  /** 组停用 = 闸门 0：组内全部条目的效果不计入汇总 */
+  enabled: boolean;
+  sortOrder: number;
+}
+
 export interface PackItemDto {
   id: string;
   characterId: string;
@@ -313,6 +376,8 @@ export interface PackItemDto {
   tags: string[];
   equippedSlotId: string;
   slotIndex: number | null;
+  /** 归属分组（novel_pack_groups.id）；'' = 未分组 */
+  groupId: string;
   sourceChapterId: string;
   /** 单件重量（REQ-033）；0 = 没记 */
   weight: number;
@@ -325,6 +390,8 @@ export interface PackSkillDto {
   name: string;
   desc: string;
   enabled: boolean;
+  /** 归属分组（novel_pack_groups.id）；'' = 未分组 */
+  groupId: string;
   proficiencyRaw: number;
   tags: string[];
   sortOrder: number;
@@ -412,10 +479,15 @@ export interface PackLevelSystemDto {
 
 export interface PackBundleDto {
   character: PackCharacterDto | null;
+  /** 属性定义（作品级）：这条 bundle 的「属性模型」 */
+  attrDefs: PackAttrDefDto[];
+  /** 属性数值（角色级实例，defId 引用 attrDefs） */
   attributes: PackAttributeDto[];
   /** 属性映射（1.35.0） */
   mappings: PackMappingDto[];
   slots: PackSlotDto[];
+  /** 载体分组（1.39.0 二期）：条目 groupId 引用这里的 id */
+  groups: PackGroupDto[];
   items: PackItemDto[];
   skills: PackSkillDto[];
   modifiers: PackModifierDto[];
@@ -461,10 +533,15 @@ export interface PackRealmLinkDto {
 /** 保存入参：整文档（草稿同构） */
 export interface PackSavePayloadDto {
   character: PackCharacterDto;
+  /** 属性定义（作品级）：整文档随草稿走，保存时按 work_id 整体替换 */
+  attrDefs: PackAttrDefDto[];
+  /** 属性数值（角色级实例） */
   attributes: PackAttributeDto[];
   /** 属性映射（1.35.0）：与属性同属「设定数据」，整文档一起走草稿与盘点 */
   mappings: PackMappingDto[];
   slots: PackSlotDto[];
+  /** 载体分组（1.39.0 二期） */
+  groups: PackGroupDto[];
   items: PackItemDto[];
   skills: PackSkillDto[];
   modifiers: PackModifierDto[];
@@ -560,13 +637,23 @@ function toAttributeDto(row: PackAttributeRow): PackAttributeDto {
   return {
     id: row.id,
     characterId: row.character_id,
-    groupName: row.group_name,
-    name: row.name,
+    defId: row.def_id,
     baseValue: row.base_value,
-    decimals: row.decimals,
-    unit: row.unit,
-    sortOrder: row.sort_order,
     updatedAt: row.updated_at ?? 0,
+  };
+}
+
+function toAttrDefDto(row: PackAttrDefRow): PackAttrDefDto {
+  return {
+    id: row.id,
+    workId: row.work_id,
+    key: row.key ?? "",
+    name: row.name,
+    groupName: row.group_name,
+    unit: row.unit,
+    decimals: row.decimals,
+    defaultValue: row.default_value,
+    sortOrder: row.sort_order,
   };
 }
 
@@ -596,6 +683,20 @@ function toSlotDto(row: PackSlotRow): PackSlotDto {
   };
 }
 
+function toGroupDto(row: PackGroupRow): PackGroupDto {
+  return {
+    id: row.id,
+    characterId: row.character_id,
+    name: row.name,
+    icon: row.icon ?? "",
+    canEquip: row.can_equip === 1,
+    canEnable: row.can_enable === 1,
+    profSchemeId: row.prof_scheme_id ?? "",
+    enabled: row.enabled === 1,
+    sortOrder: row.sort_order,
+  };
+}
+
 function toItemDto(row: PackItemRow): PackItemDto {
   return {
     id: row.id,
@@ -609,6 +710,7 @@ function toItemDto(row: PackItemRow): PackItemDto {
     tags: parseJsonArray(row.tags),
     equippedSlotId: row.equipped_slot_id ?? "",
     slotIndex: row.slot_index,
+    groupId: row.group_id ?? "",
     sourceChapterId: row.source_chapter_id ?? "",
     weight: row.weight ?? 0,
     updatedAt: row.updated_at,
@@ -622,6 +724,7 @@ function toSkillDto(row: PackSkillRow): PackSkillDto {
     name: row.name,
     desc: row.desc,
     enabled: row.enabled === 1,
+    groupId: row.group_id ?? "",
     proficiencyRaw: row.proficiency_raw,
     tags: parseJsonArray(row.tags),
     sortOrder: row.sort_order,
@@ -729,8 +832,17 @@ function readCharacterSnapshot(characterId: string): PackBundleDto {
   ]) as PackCharacterRow | undefined;
   return {
     character: characterRow ? toCharacterDto(characterRow) : null,
+    // 属性定义是作品级的：角色行不在时无从取 work_id，只能给空（调用方不会
+    // 在没有角色行的情况下消费 defs —— 快照只服务于「已有角色」的保存 / 对比）
+    attrDefs: characterRow
+      ? (
+          dbAll("SELECT * FROM novel_pack_attr_defs WHERE work_id = ? ORDER BY sort_order", [
+            characterRow.work_id,
+          ]) as PackAttrDefRow[]
+        ).map(toAttrDefDto)
+      : [],
     attributes: (
-      dbAll("SELECT * FROM novel_pack_attributes WHERE character_id = ? ORDER BY sort_order", [
+      dbAll("SELECT * FROM novel_pack_attributes WHERE character_id = ? ORDER BY rowid", [
         characterId,
       ]) as PackAttributeRow[]
     ).map(toAttributeDto),
@@ -744,6 +856,11 @@ function readCharacterSnapshot(characterId: string): PackBundleDto {
         characterId,
       ]) as PackSlotRow[]
     ).map(toSlotDto),
+    groups: (
+      dbAll("SELECT * FROM novel_pack_groups WHERE character_id = ? ORDER BY sort_order", [
+        characterId,
+      ]) as PackGroupRow[]
+    ).map(toGroupDto),
     items: (
       dbAll("SELECT * FROM novel_pack_items WHERE character_id = ?", [
         characterId,
@@ -945,6 +1062,11 @@ function normalizeRealmRaw(raw: string): string {
  * 会写到一个不存在的 character_id 上（静默丢绑定）。
  */
 function ensurePackCharacterRow(workId: string): PackCharacterRow {
+  // 空 workId 直接拒绝（P2-5）：放行的话会种出 work_id='' 的角色行，
+  // 行囊窗口关掉重开仍复用这份空壳，且没有 UI 入口能删掉它。
+  // 调用方（protagonist-set / rename / quick-add）各自有 try/catch 兜底，
+  // novel-pack-load 的渲染层也有 loadError 分支，抛错不会变成未处理异常。
+  if (!workId) throw new Error("[novel-pack] workId 不能为空，拒绝播种角色行");
   const existing = dbGet(
     "SELECT * FROM novel_pack_characters WHERE work_id = ? ORDER BY sort_order LIMIT 1",
     [workId],
@@ -1120,6 +1242,7 @@ export function registerNovelPackHandlers(): void {
           tags: [],
           equippedSlotId: "",
           slotIndex: null,
+          groupId: "",
           sourceChapterId: chapterId || "",
           // 正文选区给不出重量（同「分类固定杂物」的理由：猜不如不猜）
           weight: 0,
@@ -1192,9 +1315,11 @@ export function registerNovelPackHandlers(): void {
       // ① 写前快照：这是「撤销到上次保存」的回退点（REQ-042）
       const before = readCharacterSnapshot(characterId);
       const hasData =
+        before.attrDefs.length > 0 ||
         before.attributes.length > 0 ||
         before.mappings.length > 0 ||
         before.slots.length > 0 ||
+        before.groups.length > 0 ||
         before.items.length > 0 ||
         before.skills.length > 0 ||
         before.unitSystems.length > 0;
@@ -1259,10 +1384,14 @@ export function registerNovelPackHandlers(): void {
              OR (owner_type = 'skill' AND owner_id NOT IN (SELECT id FROM novel_pack_skills))`,
       );
 
+      // 属性定义按作品整体替换（v1 一书一主角；多角色时需改为「以 payload 里的
+      // defs 为准做增量」，当前结构下整体替换最直白也最少出错的路径）
+      dbRun("DELETE FROM novel_pack_attr_defs WHERE work_id = ?", [payload.character.workId]);
       for (const table of [
         "novel_pack_attributes",
         "novel_pack_mappings",
         "novel_pack_slots",
+        "novel_pack_groups",
         "novel_pack_items",
         "novel_pack_skills",
         "novel_pack_unit_systems",
@@ -1302,23 +1431,34 @@ export function registerNovelPackHandlers(): void {
         ],
       );
 
-      const attrStmt = db.prepare(
-        `INSERT INTO novel_pack_attributes
-           (id, character_id, group_name, name, base_value, decimals, unit, sort_order, updated_at)
+      const attrDefStmt = db.prepare(
+        `INSERT INTO novel_pack_attr_defs
+           (id, work_id, key, name, group_name, unit, decimals, default_value, sort_order)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
-      for (const a of payload.attributes) {
-        attrStmt.run(
-          a.id,
-          characterId,
-          a.groupName,
-          a.name,
-          a.baseValue,
-          a.decimals,
-          a.unit,
-          a.sortOrder,
-          a.updatedAt || 0,
+      for (const d of payload.attrDefs) {
+        attrDefStmt.run(
+          d.id,
+          payload.character.workId,
+          d.key || null,
+          d.name,
+          d.groupName,
+          d.unit,
+          d.decimals ?? 0,
+          d.defaultValue ?? 0,
+          d.sortOrder,
         );
+      }
+
+      // 数值行 id 恒等于 defId（一角色一属性至多一行）—— 渲染层组合视图时
+      // 直接以 defId 为行身份，效果 / 映射引用的也是 defId，三方同键不分叉
+      const attrStmt = db.prepare(
+        `INSERT INTO novel_pack_attributes
+           (id, character_id, def_id, base_value, updated_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      );
+      for (const a of payload.attributes) {
+        attrStmt.run(a.id, characterId, a.defId, a.baseValue, a.updatedAt || 0);
       }
 
       const mappingStmt = db.prepare(
@@ -1357,11 +1497,30 @@ export function registerNovelPackHandlers(): void {
         );
       }
 
+      const groupStmt = db.prepare(
+        `INSERT INTO novel_pack_groups
+           (id, character_id, name, icon, can_equip, can_enable, prof_scheme_id, enabled, sort_order)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      );
+      for (const g of payload.groups ?? []) {
+        groupStmt.run(
+          g.id,
+          characterId,
+          g.name,
+          g.icon ?? "",
+          toInt(g.canEquip),
+          toInt(g.canEnable),
+          g.profSchemeId || null,
+          toInt(g.enabled),
+          g.sortOrder,
+        );
+      }
+
       const itemStmt = db.prepare(
         `INSERT INTO novel_pack_items
            (id, character_id, name, category, qty, rarity, icon, desc, tags,
-            equipped_slot_id, slot_index, source_chapter_id, weight, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            equipped_slot_id, slot_index, group_id, source_chapter_id, weight, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       for (const i of payload.items) {
         itemStmt.run(
@@ -1376,6 +1535,7 @@ export function registerNovelPackHandlers(): void {
           JSON.stringify(i.tags),
           i.equippedSlotId || null,
           i.slotIndex,
+          i.groupId || "",
           i.sourceChapterId || null,
           i.weight || 0,
           i.updatedAt || now,
@@ -1384,8 +1544,8 @@ export function registerNovelPackHandlers(): void {
 
       const skillStmt = db.prepare(
         `INSERT INTO novel_pack_skills
-           (id, character_id, name, desc, enabled, proficiency_raw, tags, sort_order, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (id, character_id, name, desc, enabled, group_id, proficiency_raw, tags, sort_order, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       for (const s of payload.skills) {
         skillStmt.run(
@@ -1394,6 +1554,7 @@ export function registerNovelPackHandlers(): void {
           s.name,
           s.desc,
           toInt(s.enabled),
+          s.groupId || "",
           s.proficiencyRaw,
           JSON.stringify(s.tags),
           s.sortOrder,

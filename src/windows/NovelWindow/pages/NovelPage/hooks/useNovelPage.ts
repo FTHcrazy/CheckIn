@@ -738,14 +738,25 @@ export function useNovelPage() {
   }, []);
 
   // ── 行囊独立窗口（PackWindow）联动 ──────────────────────────────────────
-  /** 唤起行囊窗口（单实例；已开则聚焦）。上下文随打开请求携带 */
+  /**
+   * 唤起行囊窗口（单实例；已开则聚焦）。上下文随打开请求携带。
+   *
+   * 零作品必须有守卫（P2-5）：空 workId 一路放行的话，主进程会播种
+   * `work_id=''` 的垃圾角色行（下次打开还复用它），行囊窗口也只能显示
+   * 一份空壳。这里给出明确提示，快捷键（Ctrl+Shift+B）与顶栏按钮都走本入口，
+   * 一个口子拦全。
+   */
   const openPackWindow = useCallback((): void => {
+    if (!data.activeWorkId) {
+      view.showToast("先创建一部作品，再打开行囊", "warning");
+      return;
+    }
     window.electronAPI?.send("pack-window-open", {
       workId: data.activeWorkId,
       chapterId: data.activeChapterId ?? "",
       nonce: packNonce,
     });
-  }, [data.activeWorkId, data.activeChapterId, packNonce]);
+  }, [data.activeWorkId, data.activeChapterId, packNonce, view]);
 
   /**
    * 行囊窗口主动跟进：作品 / 章节变化（含编辑器首挂载）即广播新上下文。

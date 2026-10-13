@@ -329,6 +329,8 @@ const SESSION_KEY = NOVEL_SESSION_KEY;
  * 的归属是从宿主表反查的，宿主先没了子查询就变成空集，一条都删不掉。
  */
 const PACK_CHILD_TABLES = [
+  // 载体分组（1.39.0 二期）：挂在 character_id 上
+  "novel_pack_groups",
   "novel_pack_items",
   "novel_pack_skills",
   "novel_pack_attributes",
@@ -342,6 +344,14 @@ const PACK_CHILD_TABLES = [
   "novel_pack_records",
   "novel_pack_drafts",
 ] as const;
+
+/**
+ * 作品级表：挂在 `work_id` 上而不是 character_id（1.39.0 属性字典）。
+ *
+ * ⚠️ 不能并入 `PACK_CHILD_TABLES`：那张清单的删除语句按 character_id 过滤，
+ * 属性定义行上没有这一列，套同一句 SQL 一行都删不到。
+ */
+const PACK_WORK_TABLES = ["novel_pack_attr_defs"] as const;
 
 /** 生成带随机后缀的行 ID，避免同毫秒并发创建时碰撞 */
 function createId(prefix: string): string {
@@ -675,6 +685,10 @@ export function registerNovelHandlers(): void {
           [id],
         );
       }
+      // 作品级表按 work_id 删（见 PACK_WORK_TABLES 的注释）
+      for (const table of PACK_WORK_TABLES) {
+        dbRun(`DELETE FROM ${table} WHERE work_id = ?`, [id]);
+      }
       dbRun("DELETE FROM novel_pack_characters WHERE work_id = ?", [id]);
 
       // 作品行本身也要删：漏掉会导致「删光后 reload 复活全部作品名」
@@ -739,6 +753,7 @@ function seedTemplateBook(): {
     // 清单与 PACK_CHILD_TABLES 同源，避免「清库漏一张、级联漏一张」各自漂移
     dbRun("DELETE FROM novel_pack_modifiers");
     for (const table of PACK_CHILD_TABLES) dbRun(`DELETE FROM ${table}`);
+    for (const table of PACK_WORK_TABLES) dbRun(`DELETE FROM ${table}`);
     dbRun("DELETE FROM novel_pack_characters");
     // 埋点与会话标记也一并清：它们是「这本小说的写作记录」，
     // 留着会让「今日新增字数 / 连续码字天数」在重置后仍算旧账
@@ -877,21 +892,29 @@ function seedTemplateBook(): {
        VALUES (?, ?, ?, NULL, 1, ?, NULL, ?, 1)`,
       [pack.character.id, template.workId, pack.character.name, pack.character.entityId, pack.character.note],
     );
-    for (const attribute of pack.attributes) {
+    for (const def of pack.attrDefs) {
+      dbRun(
+        `INSERT INTO novel_pack_attr_defs
+           (id, work_id, key, name, group_name, unit, decimals, default_value, sort_order)
+         VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?)`,
+        [
+          def.id,
+          template.workId,
+          def.name,
+          def.groupName,
+          def.unit,
+          def.decimals,
+          def.defaultValue,
+          def.sortOrder,
+        ],
+      );
+    }
+    for (const value of pack.attrValues) {
       dbRun(
         `INSERT INTO novel_pack_attributes
-           (id, character_id, group_name, name, base_value, decimals, unit, sort_order)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          attribute.id,
-          pack.character.id,
-          attribute.groupName,
-          attribute.name,
-          attribute.baseValue,
-          attribute.decimals,
-          attribute.unit,
-          attribute.sortOrder,
-        ],
+           (id, character_id, def_id, base_value)
+         VALUES (?, ?, ?, ?)`,
+        [value.id, pack.character.id, value.defId, value.baseValue],
       );
     }
     for (const mapping of pack.mappings) {
@@ -927,12 +950,30 @@ function seedTemplateBook(): {
         ],
       );
     }
+    for (const group of pack.groups) {
+      dbRun(
+        `INSERT INTO novel_pack_groups
+           (id, character_id, name, icon, can_equip, can_enable, prof_scheme_id, enabled, sort_order)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          group.id,
+          pack.character.id,
+          group.name,
+          group.icon,
+          group.canEquip ? 1 : 0,
+          group.canEnable ? 1 : 0,
+          group.profSchemeId || null,
+          group.enabled ? 1 : 0,
+          group.sortOrder,
+        ],
+      );
+    }
     for (const item of pack.items) {
       dbRun(
         `INSERT INTO novel_pack_items
            (id, character_id, name, category, qty, rarity, icon, desc, tags,
-            equipped_slot_id, slot_index, source_chapter_id, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, '', ?, '[]', ?, ?, NULL, ?)`,
+            equipped_slot_id, slot_index, group_id, source_chapter_id, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, '', ?, '[]', ?, ?, ?, NULL, ?)`,
         [
           item.id,
           pack.character.id,
@@ -943,6 +984,7 @@ function seedTemplateBook(): {
           item.desc,
           item.equippedSlotId || null,
           item.slotIndex,
+          item.groupId || "",
           now,
         ],
       );
@@ -950,14 +992,15 @@ function seedTemplateBook(): {
     for (const skill of pack.skills) {
       dbRun(
         `INSERT INTO novel_pack_skills
-           (id, character_id, name, desc, enabled, proficiency_raw, tags, sort_order)
-         VALUES (?, ?, ?, ?, ?, ?, '[]', ?)`,
+           (id, character_id, name, desc, enabled, group_id, proficiency_raw, tags, sort_order)
+         VALUES (?, ?, ?, ?, ?, ?, ?, '[]', ?)`,
         [
           skill.id,
           pack.character.id,
           skill.name,
           skill.desc,
           skill.enabled ? 1 : 0,
+          skill.groupId || "",
           skill.proficiencyRaw,
           skill.sortOrder,
         ],

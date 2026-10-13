@@ -1,18 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ToastPayload } from "@/shared/novel/use-auto-toast";
+import { useAutoToast } from "@/shared/novel/use-auto-toast";
 import { LAYOUT, PANEL_WIDTH, TOAST_DURATION_MS } from "../novel-config";
 import { clampPanelWidth, parseJsonOrNull } from "../novel-utils";
 import { fetchPanelWidth, savePanelWidth } from "../services/novel-service";
 import type { EntityType } from "../types";
 
-export type PanelTab = "outline" | "entity" | "setting" | "note" | "search" | "tools";
+export type PanelTab =
+  | "outline"
+  | "entity"
+  | "setting"
+  | "note"
+  | "search"
+  | "tools";
 export type EntityFilter = EntityType | "all";
-export type ToastTone = "success" | "info" | "warning";
-
-export interface ToastPayload {
-  id: number;
-  text: string;
-  tone: ToastTone;
-}
+// 类型出处已收口到共享 hook（P3-3）；此处 re-export 保持 NovelToast 的 import 路径不变
+export type { ToastPayload } from "@/shared/novel/use-auto-toast";
+export type ToastTone = ToastPayload["tone"];
 
 /**
  * 小说编辑器视图状态 Hook
@@ -45,7 +49,6 @@ export function useNovelViewState() {
   const [settingFocusId, setSettingFocusId] = useState<string | null>(null);
   /** 自定义类型管理弹框（R23） */
   const [typeManagerOpen, setTypeManagerOpen] = useState(false);
-  const [toast, setToast] = useState<ToastPayload | null>(null);
 
   /**
    * 右栏宽度（支撑面板改版）：基准 340，可拖拽 280–460。
@@ -54,7 +57,9 @@ export function useNovelViewState() {
    * config 的 `novel_panel_width` 键，与其他 view 状态一样由本 Hook 自持。
    * 拖拽过程只改内存，停手 300ms 后才落库（避免一次拖拽打出几十次 IPC）。
    */
-  const [rightWidth, setRightWidthState] = useState<number>(LAYOUT.rightRailWidth);
+  const [rightWidth, setRightWidthState] = useState<number>(
+    LAYOUT.rightRailWidth,
+  );
   const widthLoadedRef = useRef(false);
 
   // 小屏自适应用的镜像 / 记忆 ref：effect 里读到最新值，又不把状态塞进依赖
@@ -113,18 +118,8 @@ export function useNovelViewState() {
     [],
   );
 
-  // 轻提示：2.4s 自动消失，pointer-events:none 由组件保证不阻塞输入（设计方案 §06）
-  useEffect(() => {
-    if (!toast) return;
-    const timer = window.setTimeout(() => setToast(null), TOAST_DURATION_MS);
-    return () => window.clearTimeout(timer);
-  }, [toast]);
-
-  const showToast = useCallback((text: string, tone: ToastTone = "success") => {
-    setToast({ id: Date.now(), text, tone });
-  }, []);
-
-  const closeToast = useCallback(() => setToast(null), []);
+  // 轻提示：计时 / 清理由共享 hook 收口（P3-3），时长沿用本页节奏 2.4s
+  const { toast, showToast, closeToast } = useAutoToast(TOAST_DURATION_MS);
 
   const toggleLeft = useCallback(() => {
     // 用户手动开合即接管：此后窗口变化不再还原左栏状态
@@ -151,7 +146,8 @@ export function useNovelViewState() {
   useEffect(() => {
     const sync = (): void => {
       const railBudget =
-        LAYOUT.leftRailWidth + (rightOpenRef.current ? rightWidthRef.current : 0);
+        LAYOUT.leftRailWidth +
+        (rightOpenRef.current ? rightWidthRef.current : 0);
       const tight = window.innerWidth - railBudget < LAYOUT.minStageWidth;
 
       if (tight) {

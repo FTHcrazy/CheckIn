@@ -33,9 +33,14 @@ export default function RecordDrawer({ api }: RecordDrawerProps) {
      * （境界的唯一事实源在那边），而差异的**两边必须同构** ——
      * 不补的话 `realmLink` 恒为 undefined，境界组会永远整组静默跳过。
      */
-    const now = { ...api.doc, realmLink: api.meta.realmLink };
+    const now = {
+      ...api.doc,
+      // 属性给组合视图：diff 层消费的是「看起来像一行属性」的表（id = 定义 id）
+      attributes: api.attrView,
+      realmLink: api.meta.realmLink,
+    };
     return diffPackDoc(past, now, api.rungs);
-  }, [api.recordDrawerOpen, api.doc, api.meta.realmLink, api.rungs, baseline]);
+  }, [api.recordDrawerOpen, api.doc, api.attrView, api.meta.realmLink, api.rungs, baseline]);
 
   const restore = (record: PackRecord) => {
     const ok = api.restoreFromRecord(record);

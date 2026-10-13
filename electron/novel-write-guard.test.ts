@@ -65,14 +65,18 @@ const PACK_TABLES = (HANDLERS.match(/novel_pack_\w+/g) ?? []).filter(
   (name) => name !== "novel_pack_characters" && name !== "novel_pack_modifiers",
 );
 
-const CHILD_LIST_SOURCE = HANDLERS.slice(
+// 1.39.0 起注册表拆成两张：character 级（PACK_CHILD_TABLES）+ 作品级
+//（PACK_WORK_TABLES）。守卫窗口必须把两张都罩住 —— 任何一张漏登记，
+// 对应的 DELETE 循环就删不到那张表
+const REGISTRY_SOURCE = HANDLERS.slice(
   HANDLERS.indexOf("const PACK_CHILD_TABLES"),
+  HANDLERS.indexOf("PACK_WORK_TABLES = [") + 120,
 );
 
 describe("PACK_CHILD_TABLES 清单完整", () => {
-  it("覆盖全部非宿主、非多态的行囊表", () => {
+  it("覆盖全部非宿主、非多态的行囊表（含作品级 PACK_WORK_TABLES）", () => {
     for (const name of new Set(PACK_TABLES)) {
-      expect(CHILD_LIST_SOURCE.slice(0, 400)).toContain(name);
+      expect(REGISTRY_SOURCE).toContain(name);
     }
   });
 });

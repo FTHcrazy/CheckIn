@@ -17,6 +17,11 @@ interface ModifierListProps {
   onRemove: (id: string) => void;
   /** 点击 cast 型效果里引用的属性 → 定位到汇总（只读引用，不参与计算） */
   onJumpAttribute?: (attrId: string) => void;
+  /**
+   * 宿主体系的别名（Phase 3）：「按熟练度缩放」标签跟随它
+   * （技能所属组绑定了体系就用那套的别名；不传回落「熟练度」）
+   */
+  proficiencyAlias?: string;
 }
 
 const NATURE_ORDER: PackNature[] = ["passive", "sustained", "cast"];
@@ -70,6 +75,7 @@ export default function ModifierList({
   onDuplicate,
   onRemove,
   onJumpAttribute,
+  proficiencyAlias,
 }: ModifierListProps) {
   const [castsOpen, setCastsOpen] = useState(false);
 
@@ -121,7 +127,7 @@ export default function ModifierList({
               {mod.name ? <span className="cpk-efrow__name">{mod.name}</span> : null}
               <span className="cpk-efrow__value">{statText(mod, attributes)}</span>
               {mod.scaleByProficiency && mod.ownerType === "skill" ? (
-                <span className="cpk-efrow__tag">按熟练度缩放</span>
+                <span className="cpk-efrow__tag">按{proficiencyAlias ?? "熟练度"}缩放</span>
               ) : null}
               {mod.nature === "sustained" && mod.cost ? (
                 <span className="cpk-efrow__tag">消耗 {mod.cost}</span>

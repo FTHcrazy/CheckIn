@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import StatusModule from "./index";
 import type { PackPanelApi } from "../../hooks/usePackPanel";
 import type { PackDoc } from "../../hooks/usePackData";
-import { DEFAULT_UI_PREFS, type PackAttribute, type PackModifier } from "../../types";
+import { DEFAULT_UI_PREFS, type PackAttrValue, type PackAttribute, type PackModifier } from "../../types";
 
 /**
  * 状态效果时效（REQ-025）
@@ -21,10 +21,23 @@ function attr(partial: Partial<PackAttribute> = {}): PackAttribute {
     characterId: "c1",
     groupName: "基础属性",
     name: "气血",
+    defaultValue: 100,
     baseValue: 100,
     decimals: 0,
     unit: "",
     sortOrder: 1,
+    updatedAt: 0,
+    ...partial,
+  };
+}
+
+/** 数值行（角色级实例）：doc.attributes 里存的是这个；视图行 id 恒等于 defId */
+function val(partial: Partial<PackAttrValue> = {}): PackAttrValue {
+  return {
+    id: "v-a1",
+    characterId: "c1",
+    defId: "a1",
+    baseValue: 100,
     updatedAt: 0,
     ...partial,
   };
@@ -75,9 +88,11 @@ function makeApi(over: { doc?: Partial<PackDoc>; statuses?: PackModifier[] } = {
       capacityLimit: 0,
       sortOrder: 1,
     },
-    attributes: [attr()],
+    attrDefs: [],
+    attributes: [val()],
     mappings: [],
     slots: [],
+    groups: [],
     items: [],
     skills: [],
     modifiers: statuses,
@@ -89,6 +104,7 @@ function makeApi(over: { doc?: Partial<PackDoc>; statuses?: PackModifier[] } = {
   };
   return {
     doc,
+    attrView: [attr()],
     statusModifiers: statuses,
     summary: { rows: [], ignoredCast: 0, casts: [], eventOnly: [], expired: [] },
     dirty: 0,

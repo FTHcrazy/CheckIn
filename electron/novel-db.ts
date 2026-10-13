@@ -235,27 +235,44 @@ function initializeNovelDb(database: Database.Database): void {
       sort_order INTEGER NOT NULL DEFAULT 1
     );
     CREATE INDEX IF NOT EXISTS idx_pack_char_work ON novel_pack_characters(work_id, sort_order);
+    -- 属性字典（作品级预设，1.39.0 refactor 重构）：作者一次定义「这本书有哪些属性」，
+    -- 效果 / 映射 / 未来其它系统统一引用这里的 id；角色只存数值（见下表）。
+    -- key 可空：机器名，供导入导出与跨系统按名解析用。
+    CREATE TABLE IF NOT EXISTS novel_pack_attr_defs (
+      id TEXT PRIMARY KEY,
+      work_id TEXT NOT NULL,
+      key TEXT,
+      name TEXT NOT NULL,
+      group_name TEXT NOT NULL DEFAULT '基础属性',
+      unit TEXT NOT NULL DEFAULT '',
+      decimals INTEGER NOT NULL DEFAULT 0,
+      -- 新建角色实例时的初始 base_value
+      default_value REAL NOT NULL DEFAULT 0,
+      sort_order INTEGER NOT NULL DEFAULT 1
+    );
+    CREATE INDEX IF NOT EXISTS idx_pack_attrdef_work ON novel_pack_attr_defs(work_id, sort_order);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_pack_attrdef_key
+      ON novel_pack_attr_defs(work_id, key) WHERE key IS NOT NULL;
+    -- 属性数值（角色级实例）：纯数值表，一条 = 某角色某属性定义的当前基础值。
+    -- id 恒等于 def_id（一角色一属性至多一行），effect / mapping 的 target_attr_id
+    -- 指向属性定义 id。没有 name / unit 列 —— 展示信息只从 defs 读，单一真相源。
     CREATE TABLE IF NOT EXISTS novel_pack_attributes (
       id TEXT PRIMARY KEY,
       character_id TEXT NOT NULL,
-      group_name TEXT NOT NULL DEFAULT '基础属性',
-      name TEXT NOT NULL,
+      def_id TEXT NOT NULL,
       base_value REAL NOT NULL DEFAULT 0,
-      decimals INTEGER NOT NULL DEFAULT 0,
-      unit TEXT NOT NULL DEFAULT '',
-      sort_order INTEGER NOT NULL DEFAULT 1,
       -- 最近一次改动的落点时刻（REQ-028 本章变动角标）；0 = 不算变动
       updated_at INTEGER NOT NULL DEFAULT 0
     );
-    CREATE INDEX IF NOT EXISTS idx_pack_attr_char ON novel_pack_attributes(character_id, sort_order);
+    CREATE INDEX IF NOT EXISTS idx_pack_attr_char ON novel_pack_attributes(character_id);
     -- 属性映射（1.35.0）：每 1 点源属性 → 目标属性加算 rate（「加 1 点力量，血量 +100」）
     -- 关掉一条映射 = 把 rate 设成 0：**不另设 enabled**，两种「关」会让脏计数与
     -- 「与本章初对比」都说不清哪一份才是作者的意思（rate 为 0 时汇总视同关闭，且不报警告）
     CREATE TABLE IF NOT EXISTS novel_pack_mappings (
       id TEXT PRIMARY KEY,
       character_id TEXT NOT NULL,
-      -- 源属性 / 目标属性都指向 novel_pack_attributes.id；属性被删后这两格可能悬空，
-      -- 由汇总层报 missing（不建外键：删属性时要能连带清理，而不是让删除失败）
+      -- 源属性 / 目标属性都指向 novel_pack_attr_defs.id；定义被删后这两格可能悬空，
+      -- 由汇总层报 missing（不建外键：删定义时要能连带清理，而不是让删除失败）
       source_attr_id TEXT NOT NULL,
       target_attr_id TEXT NOT NULL,
       rate REAL NOT NULL DEFAULT 0,
@@ -277,6 +294,22 @@ function initializeNovelDb(database: Database.Database): void {
       sort_order INTEGER NOT NULL DEFAULT 1
     );
     CREATE INDEX IF NOT EXISTS idx_pack_slot_char ON novel_pack_slots(character_id, sort_order);
+    -- 载体分组（1.39.0 二期，refactor 口径）：物品 / 技能的分类维度（功法 / 武器…），
+    -- 携带能力开关决定条目编辑器渲染模板的哪几块；组可停用 = 汇总管线的闸门 0。
+    -- prof_scheme_id 指向 novel_pack_unit_systems.id（绑定该组的熟练度体系，可空）。
+    CREATE TABLE IF NOT EXISTS novel_pack_groups (
+      id TEXT PRIMARY KEY,
+      character_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      icon TEXT NOT NULL DEFAULT '',
+      -- 能力开关：可穿戴（接入 slots）/ 有载体级启停开关
+      can_equip INTEGER NOT NULL DEFAULT 0,
+      can_enable INTEGER NOT NULL DEFAULT 1,
+      prof_scheme_id TEXT,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      sort_order INTEGER NOT NULL DEFAULT 1
+    );
+    CREATE INDEX IF NOT EXISTS idx_pack_group_char ON novel_pack_groups(character_id, sort_order);
     CREATE TABLE IF NOT EXISTS novel_pack_items (
       id TEXT PRIMARY KEY,
       character_id TEXT NOT NULL,
@@ -290,6 +323,8 @@ function initializeNovelDb(database: Database.Database): void {
       -- 穿戴位置：equipped_slot_id 非空即视为佩戴；slot_index 为部位内第几个槽位
       equipped_slot_id TEXT,
       slot_index INTEGER,
+      -- 归属分组（novel_pack_groups.id）；'' = 未分组
+      group_id TEXT NOT NULL DEFAULT '',
       source_chapter_id TEXT,
       -- 单件重量（REQ-033）：0 = 没记。总重按 weight × qty 累计
       weight REAL NOT NULL DEFAULT 0,
@@ -303,6 +338,8 @@ function initializeNovelDb(database: Database.Database): void {
       desc TEXT NOT NULL DEFAULT '',
       -- 载体开关（技能级总开关）：停用则全部效果（被动+持续）不参与汇总
       enabled INTEGER NOT NULL DEFAULT 1,
+      -- 归属分组（novel_pack_groups.id）；'' = 未分组
+      group_id TEXT NOT NULL DEFAULT '',
       proficiency_raw REAL NOT NULL DEFAULT 0,
       tags TEXT NOT NULL DEFAULT '[]',
       sort_order INTEGER NOT NULL DEFAULT 1,

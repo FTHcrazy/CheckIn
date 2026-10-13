@@ -13,8 +13,10 @@ function doc(partial: Partial<DirtyDoc> = {}): DirtyDoc {
   return {
     character: { id: "ch1", workId: "w1", entityId: "", realmAt: "" } as DirtyDoc["character"],
     attributes: [],
+    attrDefs: [],
     mappings: [],
     slots: [],
+    groups: [],
     items: [],
     skills: [],
     modifiers: [],

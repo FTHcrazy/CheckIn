@@ -26,7 +26,9 @@
 import { getRealm, parseRealmRaw } from "./pack-realm";
 import {
   buildActiveCarriersFrom,
+  buildGroupOffCarriers,
   castParamText,
+  composeAttributes,
   computeSummary,
   formatAttrValue,
   formatRealm,
@@ -36,6 +38,9 @@ import {
 } from "./pack-utils";
 import type {
   PackAttribute,
+  PackAttrDef,
+  PackAttrValue,
+  PackGroup,
   PackItem,
   PackMapping,
   PackModifier,
@@ -47,8 +52,17 @@ import type {
 
 /** 比对用的文档切片：`PackDoc` 与记录 payload 都满足这个形状 */
 export interface PackDiffDoc {
+  /**
+   * 属性的**组合视图**（id = 定义 id）。
+   *
+   * `PackDoc` 侧由调用方经 `composeAttributes` 组好；记录 payload 侧由
+   * `parsePackDiffDoc` 组好（新形状）或原样透传（1.39.0 之前的旧记录 ——
+   * 展示字段与数值混在一行，但字段齐全，组合层直接可读）。
+   */
   attributes: PackAttribute[];
   slots: PackSlot[];
+  /** 载体分组（1.39.0 二期）；老记录没有这一格 → 视为无分组 */
+  groups?: PackGroup[];
   items: PackItem[];
   skills: PackSkill[];
   modifiers: PackModifier[];
@@ -142,9 +156,19 @@ export function parsePackDiffDoc(payload: string): PackDiffDoc | null {
   const doc = parsed as Partial<PackDiffDoc>;
   // attributes 是这张表的骨架（属性组要跑两次汇总管线），缺了就没法比
   if (!Array.isArray(doc.attributes)) return null;
+  // 「格在不在」判断（1.39.0）：payload 带了 attrDefs → attributes 是数值行，
+  // 用定义组合成视图；没有这一格 → 旧记录，attributes 本身就是组合视图形状
+  const rawAttrs = doc.attributes as unknown[];
+  const defs = Array.isArray((doc as { attrDefs?: unknown }).attrDefs)
+    ? ((doc as { attrDefs: PackAttrDef[] }).attrDefs)
+    : null;
+  const attributes: PackAttribute[] = defs
+    ? composeAttributes(defs, rawAttrs as PackAttrValue[])
+    : (rawAttrs as unknown as PackAttribute[]);
   return {
-    attributes: doc.attributes,
+    attributes,
     slots: Array.isArray(doc.slots) ? doc.slots : [],
+    groups: Array.isArray(doc.groups) ? doc.groups : [],
     items: Array.isArray(doc.items) ? doc.items : [],
     skills: Array.isArray(doc.skills) ? doc.skills : [],
     modifiers: Array.isArray(doc.modifiers) ? doc.modifiers : [],
@@ -246,7 +270,9 @@ function summarize(doc: PackDiffDoc) {
       items: doc.items,
       skills: doc.skills,
       modifiers: doc.modifiers,
+      groups: doc.groups ?? [],
     }),
+    groupOffCarriers: buildGroupOffCarriers(doc.groups ?? [], doc.items, doc.skills),
     proficiency: Object.fromEntries(doc.skills.map((skill) => [skill.id, skill.proficiencyRaw])),
   });
 }
@@ -529,6 +555,26 @@ function diffSettings(baseline: PackDiffDoc, current: PackDiffDoc): PackDiffEntr
   for (const unit of baseline.unitSystems ?? []) {
     if (currentUnitIds.has(unit.id)) continue;
     out.push(entry("setting", "remove", `量纲 ${unit.name || "未命名量纲"}`, "", ""));
+  }
+
+  // 载体分组（1.39.0 二期）：分组是「分类维度」的设定数据，归设置组。
+  // 组停用本身不在这里单独报 —— 它的后果（总属性回落）已由属性组如实呈现。
+  const beforeGroups = new Map((baseline.groups ?? []).map((group) => [group.id, group]));
+  const currentGroupIds = new Set((current.groups ?? []).map((group) => group.id));
+  for (const group of current.groups ?? []) {
+    const label = `分组 ${group.name || "未命名分组"}`;
+    const prev = beforeGroups.get(group.id);
+    if (!prev) {
+      out.push(entry("setting", "add", label, "", ""));
+      continue;
+    }
+    if (prev.enabled !== group.enabled) {
+      out.push(entry("setting", "change", label, enabledText(prev.enabled), enabledText(group.enabled)));
+    }
+  }
+  for (const group of baseline.groups ?? []) {
+    if (currentGroupIds.has(group.id)) continue;
+    out.push(entry("setting", "remove", `分组 ${group.name || "未命名分组"}`, "", ""));
   }
 
   return out;

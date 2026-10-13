@@ -34,7 +34,7 @@ export default function MappingModule({ api }: MappingModuleProps) {
   if (!doc) return null;
   const key = "mapping" as const;
 
-  const attributes = doc.attributes;
+  const attributes = api.attrView;
   const attrOptions = attributes.map((attr) => ({
     value: attr.id,
     label: attr.unit ? `${attr.name}（${attr.unit}）` : attr.name,

@@ -6,6 +6,7 @@ import {
   MoreOutlined,
   PlusOutlined,
   SearchOutlined,
+  TeamOutlined,
   UnorderedListOutlined,
 } from "@ant-design/icons";
 import PackModuleShell from "../PackModuleShell";
@@ -143,6 +144,25 @@ export default function InventoryModule({ api }: InventoryModuleProps) {
 
   const visible = useMemo(() => items.slice(0, windowCount), [items, windowCount]);
 
+  // accepts 存组 id（Phase 2 refactor 口径）：装备菜单里翻译回组名
+  const groupNameOf = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const group of doc?.groups ?? []) map.set(group.id, group.name);
+    return map;
+  }, [doc]);
+
+  /** 分组下拉选项（Phase 2）：物品的 groupId 决定能不能穿进设限的部位 */
+  const groupOptions = useMemo(
+    () =>
+      [...(doc?.groups ?? [])]
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        .map((group) => ({
+          value: group.id,
+          label: group.icon ? `${group.icon} ${group.name}` : group.name,
+        })),
+    [doc],
+  );
+
   if (!doc) return null;
   const key = "inventory" as const;
   const showSearch = doc.items.length >= 20;
@@ -180,7 +200,10 @@ export default function InventoryModule({ api }: InventoryModuleProps) {
 
   const equipOptions = slots.map((slot) => ({
     key: slot.id,
-    label: slot.accepts.length > 0 ? `${slot.name}（仅 ${slot.accepts.join("/")}）` : slot.name,
+    label:
+      slot.accepts.length > 0
+        ? `${slot.name}（仅 ${slot.accepts.map((id) => groupNameOf.get(id) ?? "未知分组").join("/")}）`
+        : slot.name,
     disabled: !slot.enabled,
     onClick: () => {
       const target = doc.items.find((item) => item.id === equipTargetRef.current);
@@ -239,7 +262,7 @@ export default function InventoryModule({ api }: InventoryModuleProps) {
   };
 
   /**
-   * 行尾的「更多」菜单：**分类** + **加成效果** + **描述与标签** + **删除**
+   * 行尾的「更多」菜单：**分类** + **分组** + **加成效果** + **描述与标签** + **删除**
    *
    * 2026-10 用户报障「行太窄、每行塞太多控件」：主行原本并排 8 个控件
    * （稀有度点 / 改动点 / 名称 / 分类下拉 / 数量 −N+ / 装备 / ✦ / ⋯），
@@ -280,6 +303,27 @@ export default function InventoryModule({ api }: InventoryModuleProps) {
                   // 下拉本身在 menu 里：点它不该把外层菜单一起关掉
                   onClick={(event) => event.stopPropagation()}
                   onChange={(value: string) => api.updateItem(item.id, { category: value })}
+                />
+              </span>
+            ),
+          },
+          {
+            key: "group",
+            label: (
+              <span className="cpk-inv__catopt">
+                <span className="cpk-inv__catopt-label">分组</span>
+                <Select
+                  size="small"
+                  variant="borderless"
+                  className="cpk-inv__catopt-select"
+                  value={item.groupId || undefined}
+                  placeholder="未分组"
+                  options={groupOptions}
+                  popupMatchSelectWidth={false}
+                  classNames={{ popup: { root: "cpk-dropdown" } }}
+                  // 下拉本身在 menu 里：点它不该把外层菜单一起关掉
+                  onClick={(event) => event.stopPropagation()}
+                  onChange={(value: string) => api.updateItem(item.id, { groupId: value ?? "" })}
                 />
               </span>
             ),
@@ -364,6 +408,13 @@ export default function InventoryModule({ api }: InventoryModuleProps) {
           </Button>
           <Button className="cpk-btn ghost" onClick={() => api.addItem()}>
             <PlusOutlined /> 物品
+          </Button>
+          <Button
+            className="cpk-iconbtn"
+            onClick={() => api.setGroupManagerOpen(true)}
+            title="分组设置（可穿戴 / 载体开关 / 停用整组）"
+          >
+            <TeamOutlined />
           </Button>
         </>
       }

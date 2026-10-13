@@ -1,0 +1,66 @@
+// 分组设置弹层 —— 结构与 SlotManager 同构（行容器 + 并列控件），
+// 变量与间距尽量对齐 cpk-slotmgr，只在本文件里补自己缺的槽位宽。
+.cpk-grpmgr {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+
+  &__row {
+    display: grid;
+    gap: 4px;
+    padding: 6px 8px;
+    border: 1px solid var(--app-border, rgba(0, 0, 0, 0.1));
+    border-radius: 8px;
+  }
+
+  &__line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  &__icon {
+    flex: 0 0 44px;
+    text-align: center;
+  }
+
+  &__name {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  &__switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex: none;
+    font-size: 12px;
+    color: var(--app-text-secondary, inherit);
+  }
+
+  &__sub {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-left: 2px;
+  }
+
+  &__count {
+    font-size: 12px;
+    color: var(--app-text-secondary, inherit);
+  }
+
+  &__prof {
+    flex: 0 0 170px;
+  }
+
+  &__foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 12px;
+  }
+}

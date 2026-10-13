@@ -42,7 +42,7 @@ export default function StatusModule({ api }: StatusModuleProps) {
   const key = "status" as const;
   const statuses = api.statusModifiers;
 
-  const attrOptions = doc.attributes.map((attr) => ({
+  const attrOptions = api.attrView.map((attr) => ({
     value: attr.id,
     label: attr.unit ? `${attr.name}（${attr.unit}）` : attr.name,
   }));
@@ -77,7 +77,7 @@ export default function StatusModule({ api }: StatusModuleProps) {
       ) : (
         <ul className="cpk-stt__list">
           {statuses.map((mod) => {
-            const attr = doc.attributes.find((candidate) => candidate.id === mod.targetAttrId);
+            const attr = api.attrView.find((candidate) => candidate.id === mod.targetAttrId);
             const expired = isExpired(mod);
             return (
               <li

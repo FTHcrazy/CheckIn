@@ -9,6 +9,7 @@ import {
 import type { LadderRung } from "./pack-utils";
 import type {
   PackAttribute,
+  PackGroup,
   PackItem,
   PackMapping,
   PackModifier,
@@ -39,6 +40,7 @@ function attr(partial: Partial<PackAttribute> = {}): PackAttribute {
     characterId: "c1",
     groupName: "基础",
     name: "攻击",
+    defaultValue: 0,
     baseValue: 0,
     decimals: 0,
     unit: "",
@@ -74,6 +76,7 @@ function item(partial: Partial<PackItem> = {}): PackItem {
     desc: "",
     tags: [],
     equippedSlotId: "",
+    groupId: "",
     slotIndex: null,
     sourceChapterId: "",
     weight: 0,
@@ -89,6 +92,7 @@ function skill(partial: Partial<PackSkill> = {}): PackSkill {
     name: "听潮步",
     desc: "",
     enabled: true,
+    groupId: "",
     proficiencyRaw: 0,
     tags: [],
     sortOrder: 1,
@@ -507,6 +511,61 @@ describe("设置组", () => {
     expect(texts(r.entries)).toEqual([
       "setting/change|部位 主手 容量|1|2",
       "setting/change|量纲 灵石||换算已调整",
+    ]);
+  });
+
+  it("分组变更归设置组：增 / 删 / 停用各报一种行", () => {
+    const group = (partial: Partial<PackGroup> = {}): PackGroup => ({
+      id: "g1",
+      characterId: "c1",
+      name: "法宝",
+      icon: "",
+      canEquip: true,
+      canEnable: true,
+      profSchemeId: "",
+      enabled: true,
+      sortOrder: 1,
+      ...partial,
+    });
+    // 新增
+    expect(
+      texts(diffPackDoc(doc(), doc({ groups: [group()] }), LADDER).entries),
+    ).toContain("setting/add|分组 法宝||");
+    // 停用（enabled 变化报 change）
+    expect(
+      texts(
+        diffPackDoc(
+          doc({ groups: [group()] }),
+          doc({ groups: [group({ enabled: false })] }),
+          LADDER,
+        ).entries,
+      ),
+    ).toContain("setting/change|分组 法宝|在用|已停用");
+    // 删除
+    expect(
+      texts(diffPackDoc(doc({ groups: [group()] }), doc(), LADDER).entries),
+    ).toContain("setting/remove|分组 法宝||");
+  });
+
+  it("组停用的属性后果不重复报：只报分组停用本身，数值由属性组呈现", () => {
+    // 停用组的同时属性 base 也变了 → 属性组报 base、设置组只报「分组停用」，
+    // 组内条目效果的消失已经反映在属性汇总值里，不再叠一条「条目 X 停止生效」
+    const r = diffPackDoc(
+      doc({
+        attributes: [attr({ baseValue: 100 })],
+        items: [item({ groupId: "g1" })],
+        groups: [{ id: "g1", characterId: "c1", name: "法宝", icon: "", canEquip: true, canEnable: true, profSchemeId: "", enabled: true, sortOrder: 1 }],
+      }),
+      doc({
+        attributes: [attr({ baseValue: 200 })],
+        items: [item({ groupId: "g1" })],
+        groups: [{ id: "g1", characterId: "c1", name: "法宝", icon: "", canEquip: true, canEnable: true, profSchemeId: "", enabled: false, sortOrder: 1 }],
+      }),
+      LADDER,
+    );
+    expect(texts(r.entries)).toEqual([
+      "attribute/change|攻击|100|200",
+      "setting/change|分组 法宝|在用|已停用",
     ]);
   });
 });

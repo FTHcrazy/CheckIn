@@ -36,9 +36,11 @@ import type { PackDoc } from "./hooks/usePackData";
 export type DirtyDoc = Pick<
   PackDoc,
   | "character"
+  | "attrDefs"
   | "attributes"
   | "mappings"
   | "slots"
+  | "groups"
   | "items"
   | "skills"
   | "modifiers"
@@ -73,6 +75,13 @@ function stripTouch<T extends { updatedAt?: number }>(item: T): Record<string, u
  */
 const SPECS: Array<EntitySpec<never>> = [
   {
+    // 属性定义（作品级模型）：改名 / 换组 / 改单位 / 调默认值都要能标脏
+    list: (doc) => (doc.attrDefs ?? []) as never[],
+    id: (item: never) => (item as { id: string }).id,
+    signature: (item: never) => JSON.stringify(stripTouch(item as { updatedAt?: number })),
+  },
+  {
+    // 属性数值（角色级实例）：改基础值要能标脏
     list: (doc) => doc.attributes as never[],
     id: (item: never) => (item as { id: string }).id,
     signature: (item: never) => JSON.stringify(stripTouch(item as { updatedAt?: number })),
@@ -86,6 +95,12 @@ const SPECS: Array<EntitySpec<never>> = [
   },
   {
     list: (doc) => doc.slots as never[],
+    id: (item: never) => (item as { id: string }).id,
+    signature: (item: never) => JSON.stringify(item),
+  },
+  {
+    // 载体分组（1.39.0 二期）：改名 / 换开关 / 停用组都要能标脏
+    list: (doc) => (doc.groups ?? []) as never[],
     id: (item: never) => (item as { id: string }).id,
     signature: (item: never) => JSON.stringify(item),
   },

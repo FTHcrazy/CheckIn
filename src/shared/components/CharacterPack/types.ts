@@ -5,10 +5,12 @@
  * 这里只做「重命名别名 + 本模块私有的 UI 概念」，避免两处字段定义各自漂移。
  */
 import type {
+  PackAttrDefDTO,
   PackAttributeDTO,
   PackBundleDTO,
   PackCharacterDTO,
   PackDraftDTO,
+  PackGroupDTO,
   PackItemDTO,
   PackLayoutDTO,
   PackLevelRungDTO,
@@ -40,9 +42,35 @@ export type {
 
 /** 领域别名：本模块内部统一用不带 DTO 后缀的名字 */
 export type PackCharacter = PackCharacterDTO;
-export type PackAttribute = PackAttributeDTO;
+/** 属性定义（作品级）：「这本书有哪些属性」的字典行 */
+export type PackAttrDef = PackAttrDefDTO;
+/** 属性数值（角色级实例）：只回答「这个角色每条是多少」 */
+export type PackAttrValue = PackAttributeDTO;
+
+/**
+ * 属性的**组合视图**（def ∪ value）：id 恒为**属性定义 id** —— 效果 / 映射 /
+ * 估算 / 导出引用的都是它，因此汇总管线与各展示组件拿到的还是一张「看起来像
+ * 一行属性」的表。由 `composeAttributes`（pack-utils）从 defs + values 拼出，
+ * 不要手工构造。
+ */
+export interface PackAttribute {
+  id: string;
+  characterId: string;
+  groupName: string;
+  name: string;
+  /** 新建角色实例时的初始基础值（定义字段的视图投影） */
+  defaultValue: number;
+  baseValue: number;
+  decimals: number;
+  unit: string;
+  sortOrder: number;
+  /** 数值行的改动打点；该角色还没有这条属性的实例时为 0 */
+  updatedAt: number;
+}
 export type PackMapping = PackMappingDTO;
 export type PackSlot = PackSlotDTO;
+/** 载体分组（1.39.0 二期）：条目分类维度 + 能力开关（canEquip / canEnable / profSchemeId） */
+export type PackGroup = PackGroupDTO;
 export type PackItem = PackItemDTO;
 export type PackSkill = PackSkillDTO;
 export type PackModifier = PackModifierDTO;

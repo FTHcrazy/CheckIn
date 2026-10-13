@@ -17,6 +17,7 @@ import NoteModule from "./components/NoteModule";
 import ModuleManager from "./components/ModuleManager";
 import UnitSystemManager from "./components/UnitSystemManager";
 import SlotManager from "./components/SlotManager";
+import GroupManager from "./components/GroupManager";
 import RecordDrawer from "./components/RecordDrawer";
 import SourceDetailDrawer from "./components/SourceDetailDrawer";
 import { PackModuleSummaryContext } from "./components/module-summary-context";
@@ -275,7 +276,7 @@ export default function CharacterPackHost({
           open
           ownerTitle={api.editingOwner.title}
           modifiers={api.modifiersOf(api.editingOwner.ownerType, api.editingOwner.ownerId)}
-          attributes={doc.attributes}
+          attributes={api.attrView}
           editingId={api.editingModifierId}
           onSelect={(id) =>
             api.openEffectEditor(
@@ -291,12 +292,20 @@ export default function CharacterPackHost({
           onUpdate={api.updateModifier}
           onRemove={api.removeModifier}
           onClose={api.closeEffectEditor}
+          proficiencyAlias={
+            api.editingOwner.ownerType === "skill"
+              ? api.schemeForSkill(
+                  doc.skills.find((skill) => skill.id === api.editingOwner!.ownerId)?.groupId ?? "",
+                ).meta.alias
+              : undefined
+          }
         />
       ) : null}
 
       <ModuleManager api={api} />
       <UnitSystemManager api={api} />
       <SlotManager api={api} />
+      <GroupManager api={api} />
       <RecordDrawer api={api} />
       <SourceDetailDrawer api={api} />
 

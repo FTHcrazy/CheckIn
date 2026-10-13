@@ -25,8 +25,8 @@ function ownerLabel(doc: PackDoc, ownerType: string, ownerId: string): string {
 }
 
 /** 属性 id → 名字（映射来源行要显示「是哪条属性折过来的」） */
-function attrLabel(doc: PackDoc, attrId: string): string {
-  return doc.attributes.find((candidate) => candidate.id === attrId)?.name || "（已删除的属性）";
+function attrLabel(api: PackPanelApi, attrId: string): string {
+  return api.attrView.find((candidate) => candidate.id === attrId)?.name || "（已删除的属性）";
 }
 
 /**
@@ -40,7 +40,7 @@ export default function SourceDetailDrawer({ api }: SourceDetailDrawerProps) {
   const attrId = api.detailAttrId;
   if (!doc) return null;
 
-  const attr = doc.attributes.find((candidate) => candidate.id === attrId) ?? null;
+  const attr = api.attrView.find((candidate) => candidate.id === attrId) ?? null;
   const row = attrId ? api.summary.byAttr.get(attrId) : undefined;
 
   return (
@@ -101,7 +101,7 @@ export default function SourceDetailDrawer({ api }: SourceDetailDrawerProps) {
                         映
                       </span>
                       <span className="cpk-src__mapname">
-                        {attrLabel(doc, hit.sourceAttrId)}
+                        {attrLabel(api, hit.sourceAttrId)}
                         <em className="cpk-src__rate">{mappingRateText(hit.rate)}</em>
                       </span>
                     </span>

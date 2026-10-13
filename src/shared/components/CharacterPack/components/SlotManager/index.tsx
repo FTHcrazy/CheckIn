@@ -1,28 +1,30 @@
 import { Button, Input, InputNumber, Modal, Select, Switch } from "antd";
 import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
 import type { PackPanelApi } from "../../hooks/usePackPanel";
-import { ITEM_CATEGORIES } from "../../types";
 import "./index.scss";
 
 interface SlotManagerProps {
   api: PackPanelApi;
 }
 
-const CATEGORY_OPTIONS = ITEM_CATEGORIES.map((category) => ({
-  value: category,
-  label: category,
-}));
-
 /**
  * 部位设置（A-2）
  *
- * 容量与「可接受类别」是作者自定义装备栏的两把钥匙：戒指容量 2 就能戴两个，
- * 只在 accepts 里选「装备」就挡住了丹药被塞进武器位。
+ * 容量与「仅接受分组」是作者自定义装备栏的两把钥匙：戒指容量 2 就能戴两个，
+ * 只在 accepts 里选「法宝」就挡住了功法被塞进武器位。
+ *
+ * ⚠️ accepts 存的是**组 id**（Phase 2 refactor 口径）—— 选项必须来自
+ * 分组清单；未分组的物品穿不进任何设了限的部位，提示里要写明。
  */
 export default function SlotManager({ api }: SlotManagerProps) {
   const doc = api.doc;
   if (!doc) return null;
   const slots = [...doc.slots].sort((a, b) => a.sortOrder - b.sortOrder);
+  const groups = [...doc.groups].sort((a, b) => a.sortOrder - b.sortOrder);
+  const groupOptions = groups.map((group) => ({
+    value: group.id,
+    label: group.icon ? `${group.icon} ${group.name}` : group.name,
+  }));
 
   return (
     <Modal
@@ -38,7 +40,7 @@ export default function SlotManager({ api }: SlotManagerProps) {
       }
     >
       <p className="cpk-guard__sub">
-        容量决定这个部位能同时穿几件（戒指给 2 就是双手都戴）。「仅接受」留空表示任何分类都放得进去。
+        容量决定这个部位能同时穿几件（戒指给 2 就是双手都戴）。「仅接受」按<b>分组</b>筛选，留空表示不限；未分组的物品放不进设了限的部位。
       </p>
 
       <ul className="cpk-slotmgr">
@@ -70,9 +72,9 @@ export default function SlotManager({ api }: SlotManagerProps) {
                 mode="multiple"
                 allowClear
                 className="cpk-slotmgr__accepts"
-                placeholder="仅接受（不限）"
+                placeholder="仅接受分组（不限）"
                 value={slot.accepts}
-                options={CATEGORY_OPTIONS}
+                options={groupOptions}
                 maxTagCount={2}
                 classNames={{ popup: { root: "cpk-dropdown" } }}
                 onChange={(value: string[]) => api.updateSlot(slot.id, { accepts: value })}

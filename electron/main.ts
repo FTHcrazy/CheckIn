@@ -710,6 +710,11 @@ app.whenReady().then(() => {
         "workId" in payload && typeof (payload as { workId: unknown }).workId === "string"
           ? (payload as { workId: string }).workId
           : "";
+      // 零作品拒绝开窗（P2-5 双保险，渲染层 openPackWindow 已有同款守卫）：
+      // 空 workId 会让行囊装载通道播种 work_id='' 的垃圾角色行，且窗口
+      // 只能显示一份永远空着的壳。同步广播（novel-work-changed）不受影响，
+      // 那条通道靠空 workId 通知行囊窗口退回占位态，语义不同。
+      if (!workId) return;
       const chapterId =
         "chapterId" in payload &&
         typeof (payload as { chapterId: unknown }).chapterId === "string"
@@ -725,7 +730,7 @@ app.whenReady().then(() => {
   });
 
   // ── 退出登录（SettingsWindow 账号区发起） ──
-  // 主进程编排：清除缓存用户 → 销毁设置窗与主窗口（登录态下的数据随窗口
+  // 主进程编排：清除缓存用户 → 关闭设置窗与主窗口（登录态下的数据随窗口
   // 销毁，防止切换账号后残留上一账号的渲染层状态）→ 回到登录窗。
   ipcMain.on("auth-logout", () => {
     logoutUser();
@@ -733,7 +738,13 @@ app.whenReady().then(() => {
     isPrimaryReady = false;
 
     windowManager.get("settings")?.destroy();
-    windowManager.get("pack")?.destroy();
+    // 行囊窗口**必须走 close() 而不是 destroy()**（P2-7）：destroy 不给
+    // close-guard 三通道任何机会，dirty>0 时用户的未保存编辑会被连窗口
+    // 一起销毁（渲染层 beforeunload flush 依赖页面生命周期，destroy 等不到
+    // 它跑完）。close() 让守卫弹出「保存并关闭 / 放弃 / 取消」；用户选取消
+    // 时行囊窗口留在原地，登出流程照常继续（logoutUser 只清 authDb 用户行，
+    // 不关 novel.db，「保存并关闭」仍能正常落库）。
+    windowManager.get("pack")?.close();
     windowManager.get(PRIMARY_WINDOW_NAME)?.destroy();
 
     const loginWin = windowManager.get("login");

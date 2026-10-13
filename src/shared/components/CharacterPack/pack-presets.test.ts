@@ -30,6 +30,7 @@ function item(partial: Partial<PackItem>): PackItem {
     desc: "",
     tags: [],
     equippedSlotId: "",
+    groupId: "",
     slotIndex: null,
     sourceChapterId: "",
     weight: 0,
@@ -112,11 +113,13 @@ describe("applyPreset —— 先全体卸下，再按方案穿", () => {
     expect(result.applied).toBe(1);
     expect(result.items.find((entry) => entry.id === "i9")).toMatchObject({
       equippedSlotId: "",
+      groupId: "",
       slotIndex: null,
       updatedAt: 1000,
     });
     expect(result.items.find((entry) => entry.id === "i1")).toMatchObject({
       equippedSlotId: "s1",
+      groupId: "",
       slotIndex: 0,
     });
   });
