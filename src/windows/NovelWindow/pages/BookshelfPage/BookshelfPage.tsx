@@ -5,7 +5,7 @@ import {
   EditOutlined,
   ThunderboltOutlined,
 } from "@ant-design/icons";
-import { Input, Modal, Button } from "antd";
+import { Input, Modal, Button, type InputRef } from "antd";
 import ContinueHero from "./components/ContinueHero";
 import BookCard from "./components/BookCard";
 import IdeaRail from "./components/IdeaRail";
@@ -15,6 +15,8 @@ import ShelfToolbar, { type ShelfViewMode } from "./components/ShelfToolbar";
 import ShelfTopBar from "./components/ShelfTopBar";
 import { useBookshelfData } from "./hooks/useBookshelfData";
 import { useBookImport } from "./hooks/useBookImport";
+import NovelGuideTour from "../../components/NovelGuideTour";
+import { useGuideStore } from "../../store/useGuideStore";
 import {
   filterIdeaNotes,
   filterWorkCards,
@@ -22,6 +24,7 @@ import {
   formatWordsCompact,
   sortIdeaNotes,
   sortWorkCards,
+  validateWorkName,
   type IdeaFilter,
   type ShelfSortKey,
   type ShelfStatusFilter,
@@ -86,6 +89,29 @@ export default function BookshelfPage({
   const [ideaFilter, setIdeaFilter] = useState<IdeaFilter>("all");
   const [createOpen, setCreateOpen] = useState(false);
   const [createName, setCreateName] = useState("");
+  /** 书名校验提示（L-03：空名点「创建并开写」曾静默无反应，现在明确告诉你差什么） */
+  const [createError, setCreateError] = useState("");
+  const createInputRef = useRef<InputRef>(null);
+
+  const openCreate = useCallback(() => {
+    // PRD §11：Tour 不与弹窗抢焦点 —— 弹窗打开时引导让位，
+    // 否则第 1 步的卡片钉在「新建作品」按钮上，正好盖住书名输入框
+    useGuideStore.getState().pause();
+    setCreateError("");
+    setCreateOpen(true);
+  }, []);
+
+  const closeCreate = useCallback(() => {
+    setCreateOpen(false);
+    setCreateName("");
+    setCreateError("");
+  }, []);
+
+  /** 取消关闭：把刚才让位的引导续播回来（创建成功走 closeCreate，由视图切换接到第 2 步） */
+  const cancelCreate = useCallback(() => {
+    closeCreate();
+    useGuideStore.getState().start(1);
+  }, [closeCreate]);
 
   // 从编辑器返回书架时静默刷新统计；首次可见跳过（hook 自身已加载）
   const firstVisibleRef = useRef(true);
@@ -181,13 +207,20 @@ export default function BookshelfPage({
   }, [hero, onOpenWork]);
 
   const handleCreateOk = useCallback(() => {
+    // L-03：书名留空时明确报错并聚焦输入框，绝不静默返回
+    // （旧行为：createWork 返回 null 就 return，弹窗不动也不提示，像卡住）
+    const error = validateWorkName(createName);
+    if (error) {
+      setCreateError(error);
+      createInputRef.current?.focus();
+      return;
+    }
     const workId = createWork(createName);
     if (!workId) return;
-    setCreateOpen(false);
-    setCreateName("");
+    closeCreate();
     // 空作品直接进编辑器：空态引导「写下第一章」
     onOpenWork(workId);
-  }, [createName, createWork, onOpenWork]);
+  }, [createName, closeCreate, createWork, onOpenWork]);
 
   const statsItems = useMemo<ShelfStatItem[]>(
     () => [
@@ -253,7 +286,7 @@ export default function BookshelfPage({
         totalWordsText={formatWordsCompact(totalWords)}
         keyword={keyword}
         onKeywordChange={setKeyword}
-        onCreateClick={() => setCreateOpen(true)}
+        onCreateClick={openCreate}
         onImportClick={() => void startImport()}
         importing={importing}
         importPhase={importPhase}
@@ -317,7 +350,7 @@ export default function BookshelfPage({
               ))}
               <NewWorkCard
                 view={viewMode}
-                onCreateClick={() => setCreateOpen(true)}
+                onCreateClick={openCreate}
               />
             </div>
           </section>
@@ -350,21 +383,28 @@ export default function BookshelfPage({
         okText="创建并开写"
         cancelText="取消"
         onOk={handleCreateOk}
-        onCancel={() => {
-          setCreateOpen(false);
-          setCreateName("");
-        }}
+        onCancel={cancelCreate}
         width={380}
       >
         <Input
+          ref={createInputRef}
           value={createName}
-          onChange={(event) => setCreateName(event.target.value)}
+          status={createError ? "error" : undefined}
+          onChange={(event) => {
+            setCreateName(event.target.value);
+            // 一敲字就撤掉报错：作者已经在处理了，红框不该挂着不走
+            setCreateError("");
+          }}
           onPressEnter={handleCreateOk}
           placeholder="给这本书起个名字"
           maxLength={50}
           autoFocus
         />
+        {createError && <p className="bs-page__create-error">{createError}</p>}
       </Modal>
+
+      {/* L1 漫游引导：第 1 步属书架页（第 2-5 步属编辑器页，由 NovelPage 内的实例接管） */}
+      <NovelGuideTour view="shelf" visible={visible} />
     </div>
   );
 }

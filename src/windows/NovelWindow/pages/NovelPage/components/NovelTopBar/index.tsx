@@ -189,6 +189,7 @@ export default function NovelTopBar({
             className="nv-topbar__icon"
             onClick={onOpenPack}
             aria-label="行囊"
+            data-tour-target="topbar-pack"
           >
             <SvgIcon svg={packSvg} />
           </Button>
@@ -208,6 +209,7 @@ export default function NovelTopBar({
             className="nv-topbar__icon"
             onClick={onOpenSettings}
             aria-label="小说设定"
+            data-tour-target="topbar-setting"
           >
             <SvgIcon svg={bookSettingSvg} />
           </Button>

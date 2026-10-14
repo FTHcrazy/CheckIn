@@ -5,6 +5,7 @@ import EditorPane from "./components/EditorPane";
 import EntityContextMenu from "./components/EntityContextMenu";
 import EntityTypeManager from "./components/EntityTypeManager";
 import HoverEntityCard from "./components/HoverEntityCard";
+import NovelGuideTour from "../../components/NovelGuideTour";
 import SettingCenter from "./components/SettingCenter";
 import { SETTING_PRESETS } from "./utils/setting-presets";
 import NovelToast from "./components/NovelToast";
@@ -57,6 +58,11 @@ interface NovelPageProps {
    * 现在一步直达 —— 由窗口根切回书架并派发导入请求。
    */
   onImportBook?: () => void;
+  /**
+   * 本页是否可见（App 层用 display 在两个视图间切换，页面常驻不卸载）。
+   * 新手引导靠它决定何时探测目标：不可见时收摊暂停，重新可见再续播。
+   */
+  visible?: boolean;
 }
 
 /**
@@ -70,6 +76,7 @@ export default function NovelPage({
   onOpenRequestConsumed,
   onBackToShelf,
   onImportBook,
+  visible = true,
 }: NovelPageProps = {}) {
   const {
     data,
@@ -103,6 +110,7 @@ export default function NovelPage({
     handleNewVolume,
     handleSaveEntity,
     handleRenameVolume,
+    handleDeleteVolume,
     handleAddRelation,
     handleRemoveRelation,
     handleCursorChange,
@@ -404,6 +412,7 @@ export default function NovelPage({
           onMoveChapterToVolume={handleMoveChapterToVolume}
           onReorderVolume={handleReorderVolume}
           onRenameVolume={handleRenameVolume}
+          onDeleteVolume={handleDeleteVolume}
         />
 
         <div className="nv-page__stage">
@@ -608,6 +617,9 @@ export default function NovelPage({
         onRecolor={handleRecolorCustomType}
         onRemove={handleRemoveCustomType}
       />
+
+      {/* L1 漫游引导：第 2-5 步属编辑器页（第 1 步在书架页由那里的实例接管） */}
+      <NovelGuideTour view="editor" visible={visible} />
       </div>
     </EntityTypesProvider>
   );

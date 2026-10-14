@@ -18,6 +18,11 @@ import { openSearchPanel, search, searchKeymap } from "@codemirror/search";
 import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { editorActions, useChapterDraft } from "../../store/useNovelEditorStore";
+import { GUIDE_MIN_SELECTION_LENGTH } from "@/shared/novel/guide-copy";
+import SelectionGuide, {
+  type SelectionGuideAnchor,
+} from "../../../../components/SelectionGuide";
+import { useGuideStore } from "../../../../store/useGuideStore";
 import type { EditorSettings, EntityTerm, NovelChapter } from "../../types";
 import { formatNumberedLabel } from "../../novel-utils";
 import type { RestorePosition } from "../../novel-utils";
@@ -169,6 +174,17 @@ export default function EditorPane({
 }: EditorPaneProps & { ref?: Ref<EditorPaneHandle> }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
+  /** 编辑器根节点：T-03 的选区锚点以它为定位基准（.nv-editor 是 position:relative） */
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  /** T-03 锚点：非空表示「此刻有一段选区值得提示右键」 */
+  const [guideAnchor, setGuideAnchor] = useState<SelectionGuideAnchor | null>(null);
+  // SelectionGuide 的 onHide 进 effect 依赖，必须是稳定引用，否则气泡一出现就被清掉
+  const clearGuideAnchor = useCallback(
+    () => setGuideAnchor((prev) => (prev ? null : prev)),
+    [],
+  );
+  /** 打字保护上报：作者一敲字，在场的 Tour / 弱提示立即让位（PRD FR-06） */
+  const noteTyping = useGuideStore((state) => state.noteTyping);
   /**
    * 正文来自 store 的逐章草稿（没有草稿时回落到章节正文）。
    * 打字只让本组件与状态条重渲染——页面根不再持有正文。
@@ -342,6 +358,36 @@ export default function EditorPane({
     const host = hostRef.current;
     if (!host) return undefined;
 
+    /**
+     * T-03：产生非空选区时，在选区下方提示「右键可以建资料卡」。
+     *
+     * 只弹一次（consumeTooltip 落盘标记），且四条排除条件缺一不可：
+     * - 单字符不弹：多半是拖动误选，为它弹提示属于打扰
+     * - 输入法组合期不弹：候选期的替换范围会被误判成选区
+     * - Tour 正在播时不弹：两个气泡会打架（右键建卡已从 Tour 移出，
+     *   改由本提示在首次产生选区时现身说法）
+     * - 打字保护窗口内不弹：此时作者还在码字，不是要建卡
+     */
+    const maybeGuideSelection = (main: {
+      from: number;
+      to: number;
+      empty: boolean;
+    }): void => {
+      if (main.empty) return;
+      if (main.to - main.from < GUIDE_MIN_SELECTION_LENGTH) return;
+      if (composingRef.current) return;
+      const store = useGuideStore.getState();
+      if (store.playingStep !== null) return;
+      if (!store.consumeTooltip("T-03", Date.now())) return;
+      const coords = view.coordsAtPos(main.from);
+      const rootRect = rootRef.current?.getBoundingClientRect();
+      if (!coords || !rootRect) return;
+      setGuideAnchor({
+        x: coords.left - rootRect.left,
+        y: coords.bottom - rootRect.top,
+      });
+    };
+
     const view = new EditorView({
       parent: host,
       state: EditorState.create({
@@ -362,6 +408,11 @@ export default function EditorPane({
           annotationLayer(terms, enabled),
           EditorView.updateListener.of((update) => {
             if (update.docChanged) {
+              // FR-06 打字保护：作者一敲字，任何在场的引导立刻让位。
+              // 放在 composing 判断之前——拼音中间态也是作者在打字
+              noteTyping(Date.now());
+              // 选区提示也撤掉：作者已经开始改字，选区坐标随即失效
+              clearGuideAnchor();
               // 拼音候选期间的中间态不上报：草稿与字数统计只看确认后的文本。
               // compositionend 时由下方监听器统一上报最终文档
               if (composingRef.current) return;
@@ -388,6 +439,7 @@ export default function EditorPane({
                       to: main.to,
                     },
               );
+              maybeGuideSelection(main);
             }
           }),
         ],
@@ -434,7 +486,8 @@ export default function EditorPane({
       viewRef.current = null;
     };
     // 编辑器实例整个会话唯一：content / settings / terms 均通过 ref 或 compartment 热更新
-  }, []);
+    // （clearGuideAnchor 是 useCallback([]) 的稳定引用，不会让编辑器重建）
+  }, [clearGuideAnchor]);
 
   // 外部灌入的正文（切换章节 / 回滚 / 恢复）与编辑器文档不一致时同步进去。
   // 用 isolateHistory 切断撤销栈（撤销不应跨章节回退到上一章正文）；
@@ -605,6 +658,7 @@ export default function EditorPane({
   // 在首帧（章节尚未加载）跑完后 host 才出现，编辑器永远创建不出来。
   return (
     <div
+      ref={rootRef}
       className="nv-editor"
       style={
         {
@@ -654,7 +708,12 @@ export default function EditorPane({
       <div
         className="nv-editor__scroll"
         onClick={handleScrollAreaClick}
-        onScroll={(event) => onScrollChange(event.currentTarget.scrollTop)}
+        onScroll={(event) => {
+          onScrollChange(event.currentTarget.scrollTop);
+          // 滚动后选区坐标失效，气泡会飘在错位置 —— 直接撤掉
+          clearGuideAnchor();
+        }}
+        data-tour-target="editor-body"
       >
         <div className="nv-editor__paper">
           <div ref={hostRef} className="nv-editor__host" />
@@ -702,6 +761,7 @@ export default function EditorPane({
               <Button
                 className="nv-editor__create"
                 onClick={onCreateChapter}
+                data-tour-target="editor-first-chapter"
               >
                 写下第一章
               </Button>
@@ -709,6 +769,8 @@ export default function EditorPane({
           )}
         </div>
       )}
+      {/* T-03：选中文字 → 选区下方提示右键建资料卡（只出现一次） */}
+      <SelectionGuide anchor={guideAnchor} onHide={clearGuideAnchor} />
     </div>
   );
 }

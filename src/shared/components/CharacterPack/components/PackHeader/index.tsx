@@ -5,9 +5,11 @@ import {
   CheckOutlined,
   ClockCircleOutlined,
   MoreOutlined,
+  QuestionCircleOutlined,
   SettingOutlined,
   UserOutlined,
 } from "@ant-design/icons";
+import GuideTooltip from "@/shared/components/GuideTooltip";
 import SvgIcon from "@/shared/components/SvgIcon";
 import dimensionSvg from "@/assets/novel/dimension.svg?raw";
 import { formatRelativeTime } from "../../pack-utils";
@@ -58,6 +60,8 @@ interface PackHeaderProps {
   onOpenModules: () => void;
   onOpenUnitManager: () => void;
   onOpenRecords: () => void;
+  /** 帮助中心（L3 常驻入口）：行囊窗口没有 Tour，所以只开文档不提供「重看引导」 */
+  onOpenHelp: () => void;
 }
 
 /**
@@ -93,6 +97,7 @@ export default function PackHeader({
   onOpenModules,
   onOpenUnitManager,
   onOpenRecords,
+  onOpenHelp,
 }: PackHeaderProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(characterName);
@@ -257,6 +262,7 @@ export default function PackHeader({
                 { key: "records", icon: <ClockCircleOutlined />, label: "盘点记录 / 与本章初对比" },
                 { key: "units", icon: <SvgIcon svg={dimensionSvg} />, label: "量纲设置（货币 / 熟练度）" },
                 { key: "modules", icon: <SettingOutlined />, label: "模块管理" },
+                { key: "help", icon: <QuestionCircleOutlined />, label: "帮助中心" },
               ],
               onClick: ({ key }) => {
                 if (key === "markRead") onMarkAllRead();
@@ -264,6 +270,7 @@ export default function PackHeader({
                 else if (key === "records") onOpenRecords();
                 else if (key === "units") onOpenUnitManager();
                 else if (key === "modules") onOpenModules();
+                else if (key === "help") onOpenHelp();
               },
             }}
           >
@@ -273,6 +280,14 @@ export default function PackHeader({
           </Dropdown>
         ) : (
           <span className="cpk-head__tools">
+            {/* 帮助放最左：与「模块管理」隔开，避免两颗齿轮状图标挨着误点 */}
+            <Button
+              className="cpk-iconbtn"
+              onClick={onOpenHelp}
+              title="帮助中心"
+            >
+              <QuestionCircleOutlined />
+            </Button>
             <Button
               className="cpk-iconbtn"
               onClick={onOpenRecords}
@@ -287,9 +302,17 @@ export default function PackHeader({
             >
               <SvgIcon svg={dimensionSvg} />
             </Button>
-            <Button className="cpk-iconbtn" onClick={onOpenModules} title="模块管理">
-              <SettingOutlined />
-            </Button>
+            {/* T-04：首次开行囊时提示「默认只开了 3 块，其余在模块管理」 */}
+            <GuideTooltip id="T-04">
+              <Button
+                className="cpk-iconbtn"
+                onClick={onOpenModules}
+                title="模块管理"
+                data-tour-target="pack-modules"
+              >
+                <SettingOutlined />
+              </Button>
+            </GuideTooltip>
           </span>
         )}
       </div>

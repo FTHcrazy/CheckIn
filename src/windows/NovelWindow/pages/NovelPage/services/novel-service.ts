@@ -228,6 +228,11 @@ export async function saveVolumeOrder(
   return window.electronAPI!.novel.saveVolumeOrder(updates);
 }
 
+/** 删除卷落库（novel-volume-delete，主进程同事务清理章节 / 快照 / 大纲条目） */
+export async function removeVolume(volumeId: string): Promise<boolean> {
+  return window.electronAPI!.novel.deleteVolume(volumeId);
+}
+
 /** 要素保存（novel-entity-save，upsert：新建 / 编辑 / 别名关联共用） */
 export async function saveEntity(entity: NovelEntity): Promise<boolean> {
   return window.electronAPI!.novel.saveEntity(entity);

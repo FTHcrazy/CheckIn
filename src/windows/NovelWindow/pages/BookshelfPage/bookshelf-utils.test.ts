@@ -14,6 +14,8 @@ import {
   sortIdeaNotes,
   sortWorkCards,
   toChineseOrdinal,
+  validateWorkName,
+  EMPTY_WORK_NAME_HINT,
 } from "./bookshelf-utils";
 import type { NovelBundleDTO, NovelChapterDTO } from "@/shared/types/electron";
 
@@ -263,5 +265,29 @@ describe("coverPaletteOf", () => {
     const first = coverPaletteOf("w-abc-123");
     expect(coverPaletteOf("w-abc-123")).toBe(first);
     expect(coverPaletteOf("w-xyz-999")).toBeTruthy();
+  });
+});
+
+// L-03：书名留空点「创建并开写」曾经静默无反应（弹窗不动也不提示）。
+// 校验必须是「有明确返回值」的函数，页面才说得清楚差什么。
+describe("validateWorkName", () => {
+  it("正常书名通过（返回 null，不挡路）", () => {
+    expect(validateWorkName("灵潮纪元")).toBeNull();
+    expect(validateWorkName("A")).toBeNull();
+  });
+
+  it("空串与纯空白都不通过 —— trim 之后才算数", () => {
+    expect(validateWorkName("")).toBe(EMPTY_WORK_NAME_HINT);
+    expect(validateWorkName("   ")).toBe(EMPTY_WORK_NAME_HINT);
+    expect(validateWorkName("\u3000\t\n")).toBe(EMPTY_WORK_NAME_HINT);
+  });
+
+  it("提示语是给人看的话，不是字段名", () => {
+    expect(EMPTY_WORK_NAME_HINT).not.toMatch(/不能为空|required|invalid/i);
+    expect(EMPTY_WORK_NAME_HINT).toContain("名字");
+  });
+
+  it("两端空格不影响判定（书名本身由 createWork 负责 trim）", () => {
+    expect(validateWorkName("  灵潮  ")).toBeNull();
   });
 });

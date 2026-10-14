@@ -38,6 +38,7 @@ function props(over: Partial<Parameters<typeof PackHeader>[0]> = {}) {
     onOpenModules: vi.fn(),
     onOpenUnitManager: vi.fn(),
     onOpenRecords: vi.fn(),
+    onOpenHelp: vi.fn(),
     ...over,
   };
   return { base, onExportDraft };
@@ -152,11 +153,19 @@ describe("PackHeader —— 窄档工具收进「更多」", () => {
       (node) => node.getAttribute("title"),
     );
     expect(titles).toEqual([
+      "帮助中心",
       "盘点记录 / 与本章初对比",
       "量纲设置（货币 / 熟练度）",
       "模块管理",
     ]);
     expect(titles).not.toContain("更多");
+  });
+
+  it("宽档「帮助中心」按钮调 onOpenHelp（行囊也要有常驻帮助入口）", () => {
+    const onOpenHelp = vi.fn();
+    render(<PackHeader {...props({ onOpenHelp }).base} />);
+    fireEvent.click(screen.getByTitle("帮助中心"));
+    expect(onOpenHelp).toHaveBeenCalledTimes(1);
   });
 
   it("宽档下次要文字按钮仍平铺（空间够用时不该藏进菜单）", () => {

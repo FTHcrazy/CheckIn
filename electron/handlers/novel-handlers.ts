@@ -1348,6 +1348,30 @@ ipcMain.handle("novel-editor-reset-template", () => seedTemplateBook());
     return true;
   });
 
+  // 删除卷：章节 / 快照 / 大纲条目级联清理，单事务（叶 → 根，仿 novel-work-delete）
+  ipcMain.handle("novel-volume-delete", (_event, id: string) => {
+    const db = getDb();
+    const apply = db.transaction(() => {
+      // 大纲条目必须先行：它的 chapter_id 子查询依赖 novel_chapters，
+      // 等章删光了子查询就是空集，一条都删不掉（孤儿行会永远留在库里）
+      dbRun(
+        `DELETE FROM novel_outline_entries
+          WHERE volume_id = ?
+             OR chapter_id IN (SELECT id FROM novel_chapters WHERE volume_id = ?)`,
+        [id, id],
+      );
+      dbRun(
+        `DELETE FROM novel_snapshots
+          WHERE chapter_id IN (SELECT id FROM novel_chapters WHERE volume_id = ?)`,
+        [id],
+      );
+      dbRun("DELETE FROM novel_chapters WHERE volume_id = ?", [id]);
+      dbRun("DELETE FROM novel_volumes WHERE id = ?", [id]);
+    });
+    apply();
+    return true;
+  });
+
   // 要素保存（upsert：新建 / 编辑 / 别名关联共用，保留 created_at）
   ipcMain.handle("novel-entity-save", (_event, entity: NovelEntityDto) => {
     const now = Date.now();

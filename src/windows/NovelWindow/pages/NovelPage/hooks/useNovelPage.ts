@@ -667,6 +667,30 @@ export function useNovelPage() {
     [data],
   );
 
+  /**
+   * 删除卷（卷头悬浮删除，弹层里已二次确认）。
+   *
+   * 先逐章撤草稿与在途防抖再删（理由同删单章：防抖拿已删 id 落库会把保存态
+   * 永久卡在 failed）。逐章 drop 而不是 clearDrafts——后者清空全作品草稿，
+   * 删一卷不该连累其他卷里还没存的内容。
+   */
+  const handleDeleteVolume = useCallback(
+    (volumeId: string): void => {
+      const group = data.groups.find((item) => item.volume.id === volumeId);
+      if (!group) return;
+      for (const chapter of group.chapters) {
+        editor.dropChapterDraft(chapter.id);
+      }
+      const count = group.chapters.length;
+      data.deleteVolume(volumeId);
+      view.showToast(
+        count > 0 ? `本卷及其下 ${count} 章已删除` : "空卷已删除",
+        "info",
+      );
+    },
+    [data, editor, view],
+  );
+
   /** 添加要素关联（人物关系等）：重复关联给出提示 */
   const handleAddRelation = useCallback(
     (
@@ -1250,6 +1274,7 @@ export function useNovelPage() {
     handleNewVolume,
     handleSaveEntity,
     handleRenameVolume,
+    handleDeleteVolume,
     handleAddRelation,
     handleRemoveRelation,
     handleCursorChange,

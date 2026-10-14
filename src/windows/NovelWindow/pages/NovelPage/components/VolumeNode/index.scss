@@ -137,4 +137,41 @@
   &:hover &__count {
     opacity: 0;
   }
+
+  /* 删除卷：紧贴「＋」左侧浮现，与 __add 同一套显隐规则；
+     危险色只在 hover 时出现（日常状态不恐吓用户） */
+  &__del {
+    position: absolute;
+    right: 26px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    color: var(--app-text-muted);
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 120ms ease, color 120ms ease, background 120ms ease;
+
+    &:hover {
+      background: var(--app-surface-hover);
+      color: var(--app-error);
+    }
+
+    &:focus-visible {
+      opacity: 1;
+      outline: 2px solid var(--app-primary);
+      outline-offset: -1px;
+    }
+  }
+
+  &:hover &__del {
+    opacity: 1;
+  }
 }

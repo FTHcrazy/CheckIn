@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ComponentType } from "react";
 import { Button } from "antd";
+import HelpCenter from "@/shared/components/HelpCenter";
+import { NOVEL_HELP_DOC } from "@/shared/novel/guide-doc";
 import PackHeader from "./components/PackHeader";
 import PackToast from "./components/PackToast";
 import CloseGuardModal from "./components/CloseGuardModal";
@@ -107,6 +109,8 @@ export default function CharacterPackHost({
 }: CharacterPackHostProps) {
   const api = usePackPanel({ workId, chapterId, open: true, onClose });
   const { ref: bodyRef, width: contentWidth } = useElementWidth<HTMLDivElement>();
+  /** 帮助中心开合（L3 常驻入口）：行囊窗口没有 Tour，故不传 onReplayGuide */
+  const [helpOpen, setHelpOpen] = useState(false);
 
   // 事件监听里要读最新 api，但监听不能每次渲染都重挂 —— 用 effect 同步 ref
   // （渲染期写 ref 会破坏并发渲染下的可预测性，必须放 effect 里）
@@ -240,6 +244,7 @@ export default function CharacterPackHost({
         onOpenModules={() => api.setModuleManagerOpen(true)}
         onOpenUnitManager={() => api.setUnitManagerOpen(true)}
         onOpenRecords={() => api.setRecordDrawerOpen(true)}
+        onOpenHelp={() => setHelpOpen(true)}
       />
 
       <div
@@ -360,6 +365,12 @@ export default function CharacterPackHost({
         onSaveAndProceed={() => void api.guardSaveAndProceed()}
         onDiscardAndProceed={() => void api.guardDiscardAndProceed()}
         onCancel={api.guardCancel}
+      />
+
+      <HelpCenter
+        open={helpOpen}
+        doc={NOVEL_HELP_DOC}
+        onClose={() => setHelpOpen(false)}
       />
     </aside>
   );

@@ -350,3 +350,22 @@ export function coverPaletteOf(seed: string): CoverPalette {
   }
   return COVER_PALETTES[Math.abs(hash) % COVER_PALETTES.length];
 }
+
+// ── 新建作品校验（L-03） ────────────────────────────────────────────
+
+/**
+ * 书名不能为空的提示。
+ *
+ * 原先书名留空点「创建并开写」是**静默无反应**——`createWork` 直接 return null，
+ * 弹窗不关也不提示，作者只会以为软件卡了（PRD 遗留问题 L-03）。
+ * 现在校验在这里做，错误文案唯一事实源，页面只负责渲染。
+ */
+export const EMPTY_WORK_NAME_HINT = "先给书起个名字（后面随时能改）";
+
+/**
+ * 校验书名：通过返回 null，不通过返回给作者看的提示。
+ * 只看 trim 后的结果——纯空格同样是不合格输入。
+ */
+export function validateWorkName(name: string): string | null {
+  return name.trim() ? null : EMPTY_WORK_NAME_HINT;
+}

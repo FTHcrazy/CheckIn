@@ -53,6 +53,7 @@ export default function StatusBar({
         onClick={onToggleAnnotation}
         aria-pressed={annotationOn}
         title={annotationOn ? "正文标注层已开（人名高亮/悬浮卡），点击关闭" : "正文标注层已关，点击开启"}
+        data-tour-target="status-annotation"
       >
         <span className="nv-status__anno-dot" />
         标注 {annotationOn ? "开" : "关"}

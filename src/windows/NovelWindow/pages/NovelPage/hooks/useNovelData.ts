@@ -23,6 +23,7 @@ import {
   removeSettingLevel as removeSettingLevelRemote,
   removeWork as removeWorkRemote,
   removeChapter as removeChapterRemote,
+  removeVolume as removeVolumeRemote,
   renameChapter as renameChapterRemote,
   renameVolume as renameVolumeRemote,
   renameWork as renameWorkRemote,
@@ -60,6 +61,7 @@ import {
 import {
   buildChapterGroups,
   buildChapterNumbersFromGroups,
+  buildSortOrder,
   patchChapterOutlineNote,
   patchNote,
   patchOutlineEntry,
@@ -696,6 +698,76 @@ export function useNovelData() {
     );
     void renameVolumeRemote(volumeId, trimmed);
   }, []);
+
+  /**
+   * 删除卷（卷头悬浮删除，弹层里已二次确认）。
+   *
+   * 卷下章节 / 快照 / 大纲条目由主进程同事务级联清理；本地摘除后把同作品
+   * 其余卷的 sort 紧实——卷头「第N卷」由 sort 派生，删掉中间卷不紧实会
+   * 显示成「第1卷 / 第3卷」跳号。紧实复用拖拽重排同一套 buildSortOrder
+   * （1 基、稠密），变更量走既有 novel-volume-order 批量落库。
+   *
+   * ⚠️ 调用方（useNovelPage.handleDeleteVolume）必须先对该卷下每一章
+   * `editor.dropChapterDraft(chapterId)`：草稿与在途防抖活在编辑器 store 里，
+   * 留着它们，800ms 后的防抖会拿已删除的 chapterId 去落库，主进程如实返回
+   * false，保存态就永久停在 failed（30s 兜底会一直重试这个注定失败的请求）。
+   */
+  const deleteVolume = useCallback(
+    (volumeId: string): void => {
+      if (!bundle) return;
+      const removed = bundle.volumes.find((volume) => volume.id === volumeId);
+      if (!removed) return;
+      const survivors = bundle.volumes
+        .filter(
+          (volume) => volume.id !== volumeId && volume.workId === activeWorkId,
+        )
+        .sort((a, b) => a.sort - b.sort);
+      const compact = buildSortOrder(survivors);
+      setBundle((current) =>
+        current
+          ? {
+              ...current,
+              volumes: current.volumes
+                .filter((volume) => volume.id !== volumeId)
+                .map((volume) =>
+                  compact.has(volume.id)
+                    ? { ...volume, sort: compact.get(volume.id) ?? volume.sort }
+                    : volume,
+                ),
+              chapters: current.chapters.filter(
+                (chapter) => chapter.volumeId !== volumeId,
+              ),
+            }
+          : current,
+      );
+      // 激活章在被删卷里 → 切到邻卷（先下一卷首章，再上一卷末章），口径同删单章
+      const activeInside = groups.some(
+        (group) =>
+          group.volume.id === volumeId &&
+          group.chapters.some((chapter) => chapter.id === activeChapterId),
+      );
+      if (activeInside) {
+        const rest = groups
+          .filter((group) => group.volume.id !== volumeId)
+          .sort((a, b) => a.volume.sort - b.volume.sort);
+        const nextGroup = rest.find((group) => group.volume.sort > removed.sort);
+        const prevGroups = rest.filter(
+          (group) => group.volume.sort < removed.sort,
+        );
+        const fallbackId =
+          nextGroup?.chapters[0]?.id ??
+          prevGroups[prevGroups.length - 1]?.chapters.slice(-1)[0]?.id ??
+          null;
+        setActiveChapterId(fallbackId);
+      }
+      void removeVolumeRemote(volumeId);
+      const orderUpdates = survivors
+        .filter((volume) => volume.sort !== compact.get(volume.id))
+        .map((volume) => ({ id: volume.id, sort: compact.get(volume.id)! }));
+      if (orderUpdates.length > 0) void saveVolumeOrder(orderUpdates);
+    },
+    [bundle, groups, activeChapterId, activeWorkId],
+  );
 
   // ── 作品管理（R29） ────────────────────────────────────────────────
 
@@ -1914,6 +1986,7 @@ export function useNovelData() {
     renameChapter,
     deleteChapter,
     renameVolume,
+    deleteVolume,
     reorderChapters,
     moveChapterToVolume,
     reorderVolumes,

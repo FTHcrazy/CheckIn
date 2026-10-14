@@ -123,6 +123,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('novel-volume-rename', id, name) as Promise<boolean>,
     saveVolumeOrder: (updates: Array<{ id: string; sort: number }>) =>
       ipcRenderer.invoke('novel-volume-order', updates) as Promise<boolean>,
+    deleteVolume: (id: string) =>
+      ipcRenderer.invoke('novel-volume-delete', id) as Promise<boolean>,
     saveEntity: (entity: unknown) =>
       ipcRenderer.invoke('novel-entity-save', entity) as Promise<boolean>,
     addLink: (link: unknown) => ipcRenderer.invoke('novel-link-add', link) as Promise<boolean>,

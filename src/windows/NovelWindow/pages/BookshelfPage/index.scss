@@ -107,6 +107,15 @@
     }
   }
 
+  // 新建作品：书名校验提示（L-03）。用 danger 色但不上背景块——输入框已经
+  // 是 error 态，再来一层底色会变成双重强调，噪音大于信息。
+  &__create-error {
+    margin: 6px 0 0;
+    color: var(--app-error);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
   &__status {
     display: flex;
     align-items: center;

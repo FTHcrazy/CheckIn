@@ -1,11 +1,19 @@
 import { useCallback, useEffect, useState } from "react";
-import { BookOutlined, SettingOutlined } from "@ant-design/icons";
-import { App as AntdApp, Button, Tooltip } from "antd";
+import {
+  BookOutlined,
+  QuestionCircleOutlined,
+  SettingOutlined,
+} from "@ant-design/icons";
+import { App as AntdApp, Badge, Button, Tooltip } from "antd";
+import HelpCenter from "@/shared/components/HelpCenter";
 import WindowHeader from "@/shared/components/WindowHeader";
+import { HELP_COPY } from "@/shared/novel/guide-copy";
+import { NOVEL_HELP_DOC } from "@/shared/novel/guide-doc";
 import { IS_NOVEL_EDITION } from "@/shared/edition";
 // 根级样式由 main.tsx 引入（两者都引会重复插入同一份 CSS）
 import BookshelfPage from "./pages/BookshelfPage/BookshelfPage";
 import NovelPage, { type OpenWorkRequest } from "./pages/NovelPage/NovelPage";
+import { selectHelpBadgeVisible, useGuideStore } from "./store/useGuideStore";
 
 /**
  * NovelWindow —— CheckIn 小说窗口
@@ -39,6 +47,30 @@ function SettingsEntryButton() {
   );
 }
 
+/**
+ * 帮助入口（L3 常驻）：标题栏「？」，带未看完引导的红点（B-01）
+ *
+ * 红点是「引导是一次性的，帮助是长期的」的落点：Tour 关掉后功能仍需找得到，
+ * 红点负责把跳过的作者拉回帮助中心。
+ */
+function HelpEntryButton() {
+  const badgeVisible = useGuideStore(selectHelpBadgeVisible);
+  const openHelp = useGuideStore((state) => state.openHelp);
+  return (
+    <Badge dot={badgeVisible}>
+      <Tooltip title={HELP_COPY.badgeTip} placement="bottom">
+        <Button
+          className="novel-window-header-btn"
+          aria-label={HELP_COPY.badgeTip}
+          onClick={openHelp}
+        >
+          <QuestionCircleOutlined />
+        </Button>
+      </Tooltip>
+    </Badge>
+  );
+}
+
 export default function NovelWindowApp() {
   const [view, setView] = useState<"shelf" | "editor">("shelf");
   const [editorMounted, setEditorMounted] = useState(false);
@@ -65,6 +97,48 @@ export default function NovelWindowApp() {
 
   const consumeImportRequest = useCallback(() => setImportRequest(null), []);
 
+  // ── 新手引导与帮助中心（L1/L3 编排在这一层：它要同时看见两个视图）──
+  const hydrateGuide = useGuideStore((state) => state.hydrate);
+  const helpOpen = useGuideStore((state) => state.helpOpen);
+  const openHelp = useGuideStore((state) => state.openHelp);
+  const closeHelp = useGuideStore((state) => state.closeHelp);
+  const replayGuide = useGuideStore((state) => state.replay);
+  const guideDone = useGuideStore((state) => state.record.state === "done");
+  const guideHydrated = useGuideStore((state) => state.hydrated);
+  const startGuide = useGuideStore((state) => state.start);
+
+  // 首次读取引导状态：必须在渲染 Tour 之前完成，否则会拿默认记录误判为未开始
+  useEffect(() => {
+    void hydrateGuide();
+  }, [hydrateGuide]);
+
+  // F1 打开了帮助中心（挂在窗口层：书架页与编辑器页都要能唤出）
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "F1" || event.defaultPrevented || event.isComposing) return;
+      event.preventDefault();
+      openHelp();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [openHelp]);
+
+  /**
+   * 引导启动收口在这一层：只有它同时知道「当前是哪个视图」。
+   * 第 1 步属书架页、第 2-5 步属编辑器页，两个 Tour 实例各自只渲染属于自己的那一步，
+   * 跨视图时由上一步的 Tour 结束、下一步的 Tour 接管（目标不可见会自动暂停等待，
+   * 视图重新可见时由这里的 start() 改拍续播）。
+   */
+  useEffect(() => {
+    if (!guideHydrated) return;
+    startGuide(view === "editor" ? 2 : 1);
+  }, [guideHydrated, view, startGuide]);
+
+  /** 重看引导：按当前视图定位起始步（在编辑器里重看不该跳回书架第 1 步） */
+  const handleReplayGuide = useCallback(() => {
+    replayGuide(view === "editor" ? 2 : 1);
+  }, [replayGuide, view]);
+
   // 编辑器从 display:none 恢复可见后派发 resize，让 CodeMirror 按新视口重测量
   useEffect(() => {
     if (view !== "editor") return;
@@ -78,10 +152,15 @@ export default function NovelWindowApp() {
     <AntdApp className="novel-app-root">
       <div className="window-shell">
         <WindowHeader
-          title="CheckIn 小说"
+          title="Novel 随笔"
           icon={<BookOutlined />}
           badge={view === "shelf" ? <span className="novel-badge">书架</span> : null}
-          actions={IS_NOVEL_EDITION ? <SettingsEntryButton /> : null}
+          actions={
+            <>
+              <HelpEntryButton />
+              {IS_NOVEL_EDITION ? <SettingsEntryButton /> : null}
+            </>
+          }
         />
         <div className="window-shell__body">
           <div className="novel-views">
@@ -106,12 +185,20 @@ export default function NovelWindowApp() {
                   onOpenRequestConsumed={consumeOpenRequest}
                   onBackToShelf={backToShelf}
                   onImportBook={requestImport}
+                  visible={view === "editor"}
                 />
               </div>
             )}
           </div>
         </div>
       </div>
+      <HelpCenter
+        open={helpOpen}
+        doc={NOVEL_HELP_DOC}
+        onClose={closeHelp}
+        onReplayGuide={handleReplayGuide}
+        guideDone={guideDone}
+      />
     </AntdApp>
   );
 }

@@ -1,0 +1,14 @@
+/**
+ * T-03 选区定位锚点
+ *
+ * 零尺寸、绝对定位、`pointer-events: none`：它只用来给 antd Tooltip 提供一个
+ * 可测量的落点，既不能撑开布局，也不能挡住作者点右键——气泡提示的正是右键，
+ * 锚点自己把点击吃掉就本末倒置了。
+ */
+.nv-guide-anchor {
+  position: absolute;
+  display: block;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}

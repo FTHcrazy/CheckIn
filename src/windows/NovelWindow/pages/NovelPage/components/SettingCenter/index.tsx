@@ -62,6 +62,8 @@ import {
   sortLevels,
 } from "../../utils/setting-utils";
 import { SETTING_PRESETS } from "../../utils/setting-presets";
+import GuideTooltip from "@/shared/components/GuideTooltip";
+import { EMPTY_CTA_COPY } from "@/shared/novel/guide-copy";
 import "./index.scss";
 
 interface SettingCenterProps {
@@ -612,10 +614,17 @@ export default function SettingCenter({
           设定按作品独立存储 · 修改即时同步到角色卡境界与行囊
         </span>
         <div className="nv-sc__actions">
-          <Button size="small" onClick={() => setLibraryOpen(true)}>
-            <SaveOutlined />
-            模板库
-          </Button>
+          {/* T-02：首次打开设定中心时提示模板库（默认消费判定，无打字保护需求） */}
+          <GuideTooltip id="T-02">
+            <Button
+              size="small"
+              onClick={() => setLibraryOpen(true)}
+              data-tour-target="setting-library"
+            >
+              <SaveOutlined />
+              模板库
+            </Button>
+          </GuideTooltip>
           {active && (
             <Dropdown
               trigger={["click"]}
@@ -730,7 +739,9 @@ export default function SettingCenter({
               新建
             </Button>
           </div>
-          <div className="nv-sc__tip">右键或「⋯」可重命名 / 删除分类</div>
+          {/* FR-05：旧提示承诺了右键与行尾菜单，但分类行两者都没有（无
+              onContextMenu、无「⋯」），作者会一路找下去——已按实际入口订正 */}
+          <div className="nv-sc__tip">重命名与删除在右侧卡片的「编辑 / 删除」按钮</div>
         </aside>
 
         <section className="nv-sc__main">
@@ -739,7 +750,14 @@ export default function SettingCenter({
               className="nv-sc__empty"
               description="先新建一个设定分类"
               image={Empty.PRESENTED_IMAGE_SIMPLE}
-            />
+            >
+              {/* E-02 空态引导卡：空态必须给「下一步动作」，不只描述困境。
+                  直达模板库而不是直接灌某条预设——让作者自己挑，避免误建一堆体系 */}
+              <Button size="small" onClick={() => setLibraryOpen(true)}>
+                <SaveOutlined />
+                {EMPTY_CTA_COPY.settingEmpty}
+              </Button>
+            </Empty>
           ) : (
             <>
               <div className="nv-sc__card">

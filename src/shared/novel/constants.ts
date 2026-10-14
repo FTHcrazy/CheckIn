@@ -38,6 +38,11 @@ export const STORAGE_KEYS = {
    * 覆盖即生效，互不影响。
    */
   workNumbering: "novel_work_numbering",
+  /**
+   * 新手引导状态（PRD FR-04）：安装实例级一次性标记，**不绑定 workId**。
+   * 存 guideState / 已看步骤 / 已出现过的弱提示，不新增数据表。
+   */
+  guideState: "novel_guide_state_v1",
 } as const;
 
 /** 按书独立的章节序号规则（章节树 / 大纲 / 导出 / 新建章的「第N×」展示口径） */

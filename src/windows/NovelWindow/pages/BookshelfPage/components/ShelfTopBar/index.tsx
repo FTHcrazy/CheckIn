@@ -59,7 +59,12 @@ export default function ShelfTopBar({
             {importing ? "导入中" : "导入书籍"}
           </Button>
         </Tooltip>
-        <Button type="primary" icon={<PlusOutlined />} onClick={onCreateClick}>
+        <Button
+          type="primary"
+          icon={<PlusOutlined />}
+          onClick={onCreateClick}
+          data-tour-target="shelf-new-work"
+        >
           新建作品
         </Button>
       </div>

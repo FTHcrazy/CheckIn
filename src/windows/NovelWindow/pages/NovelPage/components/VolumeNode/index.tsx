@@ -1,6 +1,11 @@
 import { useState } from "react";
 import type { KeyboardEvent } from "react";
-import { DownOutlined, PlusOutlined, RightOutlined } from "@ant-design/icons";
+import {
+  DeleteOutlined,
+  DownOutlined,
+  PlusOutlined,
+  RightOutlined,
+} from "@ant-design/icons";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { UNNAMED_VOLUME } from "../../novel-config";
 import { volumeDisplayName } from "../../novel-utils";
@@ -23,6 +28,11 @@ interface VolumeNodeProps {
   onRenameVolume: (volumeId: string, name: string) => void;
   /** 在本卷末尾新建章节（卷头悬浮 + 按钮） */
   onCreateChapter: (volumeId: string) => void;
+  /**
+   * 请求列表容器打开「删除本卷」的确认浮层（同章删除：行只上报意图与
+   * 锚点 DOM，共享 Popconfirm 由 ChapterTree 渲染，行内不挂浮层）。
+   */
+  onRequestDelete: (volumeId: string, anchor: HTMLElement | null) => void;
 }
 
 /**
@@ -52,6 +62,7 @@ export default function VolumeNode({
   onToggleOpen,
   onRenameVolume,
   onCreateChapter,
+  onRequestDelete,
 }: VolumeNodeProps) {
   // 卷名编辑：双击进入（本组件局部交互，含 IME 守卫）
   const [nameEditing, setNameEditing] = useState(false);
@@ -163,6 +174,19 @@ export default function VolumeNode({
         }}
       >
         <PlusOutlined />
+      </button>
+      {/* 删除卷：同样挂在行外，紧贴「＋」左侧；确认浮层由 ChapterTree 承担 */}
+      <button
+        type="button"
+        className="nv-volume__del"
+        aria-label={`删除${displayName}`}
+        title={`删除${displayName}`}
+        onClick={(event) => {
+          event.stopPropagation();
+          onRequestDelete(volume.id, event.currentTarget);
+        }}
+      >
+        <DeleteOutlined />
       </button>
     </div>
   );

@@ -47,6 +47,8 @@ interface ChapterTreeProps {
   onReorderVolume: (fromId: string, toId: string) => void;
   /** 双击卷名重命名 */
   onRenameVolume: (volumeId: string, name: string) => void;
+  /** 删除卷（共享 Popconfirm 确认后触发） */
+  onDeleteVolume: (volumeId: string) => void;
 }
 
 /** 扁平行模型：卷头行 + 已展开的章行（Virtuoso 只接受一维列表） */
@@ -85,6 +87,7 @@ export default function ChapterTree({
   onMoveChapterToVolume,
   onReorderVolume,
   onRenameVolume,
+  onDeleteVolume,
 }: ChapterTreeProps) {
   const [keyword, setKeyword] = useState("");
   /** 折叠的卷 id 集合（默认全部展开） */
@@ -96,31 +99,83 @@ export default function ChapterTree({
    *
    * 行自己不挂 Popconfirm：数千行各带一个 Portal + 状态机，滚动时反复
    * mount/unmount 是主要抖动源。改为**全列表共享唯一一个** Popconfirm，
-   * 行只上报「要删哪一章 + 锚点 DOM」，浮层按需定位。
+   * 行只上报「要删哪一卷/章 + 锚点 DOM」，浮层按需定位。
    * `anchor` 一起存：虚拟化下被点的那一行可能在浮层关闭前就滚出视口，
    * 届时锚点已脱离文档，Popconfirm 会自行贴到视口边缘而不是崩掉。
+   * 章节与卷共用这一个浮层：文案与级联说明按 kind 分支。
    */
   const [pendingDelete, setPendingDelete] = useState<{
-    chapterId: string;
+    kind: "chapter" | "volume";
+    id: string;
     anchor: HTMLElement | null;
   } | null>(null);
 
-  const handleRequestDelete = useCallback(
-    (chapterId: string, anchor: HTMLElement | null) => {
-      setPendingDelete({ chapterId, anchor });
+  const requestDelete = useCallback(
+    (kind: "chapter" | "volume", id: string, anchor: HTMLElement | null) => {
+      setPendingDelete({ kind, id, anchor });
     },
     [],
   );
 
-  const pendingDeleteChapter = useMemo(
-    () =>
-      pendingDelete
-        ? (groups
-            .flatMap((group) => group.chapters)
-            .find((chapter) => chapter.id === pendingDelete.chapterId) ?? null)
-        : null,
-    [groups, pendingDelete],
+  const handleRequestDelete = useCallback(
+    (chapterId: string, anchor: HTMLElement | null) => {
+      requestDelete("chapter", chapterId, anchor);
+    },
+    [requestDelete],
   );
+
+  const handleRequestDeleteVolume = useCallback(
+    (volumeId: string, anchor: HTMLElement | null) => {
+      requestDelete("volume", volumeId, anchor);
+    },
+    [requestDelete],
+  );
+
+  /** 待删目标的文案与确认动作：章节 / 卷各一套，级联影响写进 description */
+  const pendingDeleteAction = useMemo(() => {
+    if (!pendingDelete) return null;
+    const group = groups.find((item) =>
+      pendingDelete.kind === "volume"
+        ? item.volume.id === pendingDelete.id
+        : item.chapters.some((chapter) => chapter.id === pendingDelete.id),
+    );
+    if (!group) return null;
+    if (pendingDelete.kind === "volume") {
+      const count = group.chapters.length;
+      return {
+        title: "删除这个卷？",
+        description:
+          count > 0
+            ? `将删除「${volumeDisplayName(
+                group.volume,
+                numberStyle,
+                volumeSuffix,
+              )}」及其下 ${count} 章、全部历史快照与大纲条目，不可恢复。`
+            : `将删除「${volumeDisplayName(
+                group.volume,
+                numberStyle,
+                volumeSuffix,
+              )}」（空卷），不可恢复。`,
+        onConfirm: () => onDeleteVolume(pendingDelete.id),
+      };
+    }
+    const chapter = group.chapters.find(
+      (item) => item.id === pendingDelete.id,
+    );
+    if (!chapter) return null;
+    return {
+      title: "删除章节",
+      description: `删除「${chapter.title}」及其全部历史快照，不可恢复。`,
+      onConfirm: () => onDeleteChapter(pendingDelete.id),
+    };
+  }, [
+    groups,
+    pendingDelete,
+    numberStyle,
+    volumeSuffix,
+    onDeleteChapter,
+    onDeleteVolume,
+  ]);
 
   /**
    * 锚点位置：取被点删除按钮的视口矩形，转成相对页面的绝对坐标。
@@ -323,6 +378,7 @@ export default function ChapterTree({
                   onToggleOpen={() => toggleVolume(row.volume.id)}
                   onRenameVolume={onRenameVolume}
                   onCreateChapter={onCreateChapterInVolume}
+                  onRequestDelete={handleRequestDeleteVolume}
                 />
               ) : (
                 <ChapterTreeItem
@@ -349,13 +405,18 @@ export default function ChapterTree({
       )}
 
       <div className="nv-tree__foot">
-        <Button className="nv-tree__foot-btn" onClick={onCreate}>
+        <Button
+          className="nv-tree__foot-btn"
+          onClick={onCreate}
+          data-tour-target="tree-new-chapter"
+        >
           <PlusOutlined />新章节
         </Button>
         <Button
           className="nv-tree__foot-btn"
           onClick={onCreateVolume}
           title="在当前作品末尾新建一卷"
+          data-tour-target="tree-new-volume"
         >
           <BookOutlined />新卷
         </Button>
@@ -365,17 +426,18 @@ export default function ChapterTree({
         删除确认浮层：**全列表唯一一个**，`open` 由 pendingDelete 驱动，
         锚点用被点击的那颗删除按钮。Virtuoso 会在浮层挂载后测量行高，
         浮层本身挂在 portal 上、不参与列表布局，不会引起虚拟列表抖动。
+        章节与卷共用：文案 / 级联说明 / 确认动作由 pendingDeleteAction 给出。
       */}
-      {pendingDelete && pendingDeleteChapter && (
+      {pendingDelete && pendingDeleteAction && (
         <Popconfirm
           open
-          title="删除章节"
-          description={`删除「${pendingDeleteChapter.title}」及其全部历史快照，不可恢复。`}
+          title={pendingDeleteAction.title}
+          description={pendingDeleteAction.description}
           okText="删除"
           cancelText="取消"
           okButtonProps={{ danger: true }}
           onConfirm={() => {
-            onDeleteChapter(pendingDelete.chapterId);
+            pendingDeleteAction.onConfirm();
             setPendingDelete(null);
           }}
           onCancel={() => setPendingDelete(null)}

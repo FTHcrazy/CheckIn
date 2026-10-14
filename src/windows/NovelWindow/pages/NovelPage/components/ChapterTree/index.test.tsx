@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChapterGroup } from "../../novel-utils";
 import type { NovelChapter, NovelVolume } from "../../types";
@@ -82,6 +82,7 @@ const baseProps = {
   onMoveChapterToVolume: vi.fn(),
   onReorderVolume: vi.fn(),
   onRenameVolume: vi.fn(),
+  onDeleteVolume: vi.fn(),
 };
 
 describe("ChapterTree 激活章自动滚动（跳转正文时左栏定位）", () => {
@@ -130,5 +131,122 @@ describe("ChapterTree 激活章自动滚动（跳转正文时左栏定位）", (
     fireEvent.change(input, { target: { value: "出生" } });
 
     expect(scrollToIndex).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * 删除二次确认（章节 / 卷共用列表容器里唯一一个共享 Popconfirm）。
+ *
+ * 行组件只上报「要删谁 + 锚点 DOM」，浮层由 ChapterTree 渲染 ——
+ * 虚拟化列表不能每行挂一个 Portal。这里测的是这条链路的契约：
+ * 点删除图标 → 出现确认浮层（不直接删）→ 确认才回调、取消不回调。
+ *
+ * ⚠️ antd 浮层挂 `document.body` portal，RTL 自动清理收不走：
+ * 每条用例后必须手动清空 body，否则上一个用例的浮层活到下一个，
+ * `getByText` 会报 found multiple。单跑永远看不出来。
+ *
+ * ⚠️ antd Button 会在两个中文字符之间插空格（「删除」→「删 除」），
+ * 按文案查按钮一律用 `/删\s*除/` 之类的正则。
+ */
+describe("ChapterTree 删除二次确认（共享 Popconfirm）", () => {
+  afterEach(() => {
+    cleanup();
+    document.body.innerHTML = "";
+  });
+
+  /**
+   * 取浮层内的确认 / 取消按钮。
+   *
+   * 按 textContent 匹配而非 accessible name：行内删除按钮是纯图标
+   * （textContent 为空），但其 aria-label 含「删除」—— 用 getByRole
+   * 会撞车。antd Button 会把两个中文字符之间插一个空格
+   * （「删除」→「删 除」），正则里用 \s* 吃掉。
+   */
+  const popupButton = (name: RegExp): HTMLElement => {
+    const btns = Array.from(document.body.querySelectorAll("button")).filter((node) =>
+      name.test(node.textContent ?? ""),
+    );
+    expect(btns).toHaveLength(1);
+    return btns[0] as HTMLElement;
+  };
+
+  it("点卷头删除图标 → 弹「删除这个卷？」→ 确认后 onDeleteVolume 带卷 id", async () => {
+    const onDeleteVolume = vi.fn();
+    const onDeleteChapter = vi.fn();
+    const { container } = render(
+      <ChapterTree
+        {...baseProps}
+        activeChapterId={null}
+        onDeleteVolume={onDeleteVolume}
+        onDeleteChapter={onDeleteChapter}
+      />,
+    );
+
+    fireEvent.click(container.querySelector<HTMLElement>(".nv-volume__del")!);
+
+    // 二次确认浮层出现（不是点了就删）
+    expect(await screen.findByText(/删\s*除\s*这\s*个\s*卷/)).toBeTruthy();
+    // 级联影响写进 description：章数 + 快照 + 大纲条目
+    expect(screen.getByText(/及其下 3 章、全部历史快照与大纲条目/)).toBeTruthy();
+
+    fireEvent.click(popupButton(/删\s*除/));
+
+    expect(onDeleteVolume).toHaveBeenCalledTimes(1);
+    expect(onDeleteVolume).toHaveBeenCalledWith("v1");
+    expect(onDeleteChapter).not.toHaveBeenCalled();
+  });
+
+  it("空卷的确认文案不带章数级联说明", async () => {
+    const { container } = render(
+      <ChapterTree
+        {...baseProps}
+        groups={[groups[1], { volume: volume("v3", 3), chapters: [] }]}
+        activeChapterId={null}
+      />,
+    );
+
+    // 空卷 v3 的删除按钮
+    const dels = container.querySelectorAll<HTMLElement>(".nv-volume__del");
+    fireEvent.click(dels[dels.length - 1]!);
+
+    expect(await screen.findByText(/删\s*除\s*这\s*个\s*卷/)).toBeTruthy();
+    expect(screen.getByText(/（空卷），不可恢复。/)).toBeTruthy();
+  });
+
+  it("取消确认则不触发任何删除回调", async () => {
+    const onDeleteVolume = vi.fn();
+    const { container } = render(
+      <ChapterTree {...baseProps} activeChapterId={null} onDeleteVolume={onDeleteVolume} />,
+    );
+
+    fireEvent.click(container.querySelector<HTMLElement>(".nv-volume__del")!);
+    await screen.findByText(/删\s*除\s*这\s*个\s*卷/);
+
+    fireEvent.click(popupButton(/取\s*消/));
+    expect(onDeleteVolume).not.toHaveBeenCalled();
+  });
+
+  it("点章节删除图标 → 弹「删除章节」→ 确认后 onDeleteChapter 带章 id", async () => {
+    const onDeleteChapter = vi.fn();
+    const onDeleteVolume = vi.fn();
+    const { container } = render(
+      <ChapterTree
+        {...baseProps}
+        activeChapterId={null}
+        onDeleteChapter={onDeleteChapter}
+        onDeleteVolume={onDeleteVolume}
+      />,
+    );
+
+    fireEvent.click(container.querySelector<HTMLElement>(".nv-chapter__del")!);
+
+    expect(await screen.findByText(/删\s*除\s*章\s*节/)).toBeTruthy();
+    expect(screen.getByText(/及其全部历史快照，不可恢复。/)).toBeTruthy();
+
+    fireEvent.click(popupButton(/删\s*除/));
+
+    expect(onDeleteChapter).toHaveBeenCalledTimes(1);
+    expect(onDeleteChapter).toHaveBeenCalledWith("c1");
+    expect(onDeleteVolume).not.toHaveBeenCalled();
   });
 });

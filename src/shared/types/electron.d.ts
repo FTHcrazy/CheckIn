@@ -706,6 +706,7 @@ export interface ElectronAPI {
     addVolume: (volume: NovelVolumeDTO) => Promise<boolean>
     renameVolume: (id: string, name: string) => Promise<boolean>
     saveVolumeOrder: (updates: Array<{ id: string; sort: number }>) => Promise<boolean>
+    deleteVolume: (id: string) => Promise<boolean>
     saveEntity: (entity: NovelEntityDTO) => Promise<boolean>
     addLink: (link: NovelLinkDTO) => Promise<boolean>
     removeLink: (id: string) => Promise<boolean>
