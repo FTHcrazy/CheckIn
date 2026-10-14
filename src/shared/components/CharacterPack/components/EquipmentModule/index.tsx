@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Button, Input, Modal, Popover } from "antd";
-import { DeleteOutlined, SettingOutlined, SwapOutlined, TeamOutlined } from "@ant-design/icons";
+import { DeleteOutlined, SettingOutlined, SwapOutlined } from "@ant-design/icons";
 import PackModuleShell from "../PackModuleShell";
 import ModifierList from "../ModifierList";
 import EquipDeltaPreview from "../DeltaPreview";
@@ -223,15 +223,6 @@ export default function EquipmentModule({ api }: EquipmentModuleProps) {
             title="部位设置（名称 / 容量 / 可接受类别）"
           >
             <SettingOutlined />
-          </Button>
-          {/* 分组设置（1.41.0 从物品栏迁来）：accepts 的选项来自分组，
-              分组的创建 / 停用与部位是同一条装备链路，入口跟着走 */}
-          <Button
-            className="cpk-iconbtn"
-            onClick={() => api.setGroupManagerOpen(true)}
-            title="分组设置（可穿戴 / 载体开关 / 停用整组）"
-          >
-            <TeamOutlined />
           </Button>
         </>
       }

@@ -82,10 +82,10 @@ const ALIAS_SPLIT = /[,，、;；\s]+/;
  *
  * 必须与 `index.scss` 里 `.nv-edetail__appear-list` 的行盒保持一致：
  * Virtuoso 需要一个确切的行高来算滚动区间，给错会有跳白条。
- * 26 = chip 内容行高（12px 字号 ≈ 18）+ 上下 padding 3×2 + 描边 1×2，
- * 外加 2px 行间距凑整。
+ * 34 = chip 内容行高（12px 字号 ≈ 18）+ 上下 padding 5×2 + 描边 1×2，
+ * 外加 4px 行间距凑整。
  */
-const APPEAR_ROW_HEIGHT = 28;
+const APPEAR_ROW_HEIGHT = 34;
 /** 列表封顶高度：超过就内部滚动，避免上千章把下方操作区推得很远 */
 const APPEAR_MAX_HEIGHT = 240;
 
@@ -730,7 +730,7 @@ export default function EntityDetail({
                   {item.label && (
                     <span className="nv-edetail__chip-no">{item.label}</span>
                   )}
-                  {item.title}
+                  <span className="nv-edetail__chip-title">{item.title}</span>
                 </Button>
               )}
             />

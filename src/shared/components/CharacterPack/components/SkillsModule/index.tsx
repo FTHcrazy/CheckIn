@@ -95,9 +95,10 @@ export default function SkillsModule({ api }: SkillsModuleProps) {
     node.scrollIntoView({ block: "nearest", behavior: "smooth" });
   });
 
-  // 1.39.1 起技能分组已删（没有实际意义）：行内不再有分组选择，分组设置入口
-  // 也撤下；物品栏的分组不受影响。skill.groupId 字段保留（compat），旧数据里
-  // 的分组值不再参与任何判定（熟练度体系恒用默认体系）。
+  // 1.39.1 起技能分组已删（没有实际意义）：行内不再有分组选择。
+  // 分组管理 UI 也已全部下线（1.41.0 物品栏 / 本版装备栏），skill.groupId
+  // 字段保留（compat），旧数据里的分组值不再参与任何判定
+  // （熟练度体系恒用默认体系）。
 
   if (!doc) return null;
   const key = "skills" as const;

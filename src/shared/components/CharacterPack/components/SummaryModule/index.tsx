@@ -61,8 +61,10 @@ export default function SummaryModule({ api }: SummaryModuleProps) {
   // 时效已过的持续型（REQ-025）。单列一句而不是并进「带触发条件」：
   // 前者是期望内的暂停（加回回合数就恢复），后者是设计如此，混着说会让作者去改触发条件。
   const expiredCount = api.summary.expired.length;
-  // 组停用（Phase 2 闸门 0）。与 expired 同层单列：前者是「这一类都没了」
-  // （去分组设置里把组打开），后者是「到回合了」（加回回合数）。
+  // 组停用（Phase 2 闸门 0）。与 expired 同层单列：前者是「这一类都没了」，
+  // 后者是「到回合了」（加回回合数就恢复）。
+  // 分组管理 UI 已全部下线（1.41.0 物品栏 / 本版装备栏），这一路只剩数据层
+  // 兜底：模板种的组默认全启用，只有旧数据里被停用的组还会走到这里。
   const groupOffCount = api.summary.groupOff.length;
 
   return (

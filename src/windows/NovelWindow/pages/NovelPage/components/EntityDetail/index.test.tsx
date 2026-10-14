@@ -258,7 +258,7 @@ describe("EntityDetail：出场章节列表", () => {
     // 少条数：按行高自适应，不留一大片空白
     const short = box();
     expect(short).not.toBeNull();
-    expect(short!.style.height).toBe("56px"); // 2 行 × 28px
+    expect(short!.style.height).toBe("68px"); // 2 行 × 34px
 
     // 上千条：封顶 240px，剩下的交给容器内部滚动
     rerender(

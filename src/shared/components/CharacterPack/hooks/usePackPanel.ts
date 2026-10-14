@@ -67,7 +67,6 @@ import {
   type PackAttrValue,
   type PackCategory,
   type PackGradeSystem,
-  type PackGroup,
   type PackItem,
   type PackLayout,
   type PackMapping,
@@ -293,7 +292,6 @@ export function usePackPanel({
   const [moduleManagerOpen, setModuleManagerOpen] = useState(false);
   const [unitManagerOpen, setUnitManagerOpen] = useState(false);
   const [slotManagerOpen, setSlotManagerOpen] = useState(false);
-  const [groupManagerOpen, setGroupManagerOpen] = useState(false);
   /** 分类管理弹窗（1.40.0）：物品分类改名 / 绑定体系品阶 */
   const [categoryManagerOpen, setCategoryManagerOpen] = useState(false);
   const [recordDrawerOpen, setRecordDrawerOpen] = useState(false);
@@ -406,11 +404,6 @@ export function usePackPanel({
       ),
     [summary, hypotheticalInput],
   );
-
-  // ── 分组管理（1.39.1 起只有物品分组：技能分组已随「技能分组无实际意义」下线）──
-  const openGroupManager = useCallback(() => {
-    setGroupManagerOpen(true);
-  }, []);
 
   const moduleOf = useCallback(
     (key: PackModuleKey): PackModuleState | undefined =>
@@ -1317,75 +1310,6 @@ export function usePackPanel({
           return index < 0 ? slot : { ...slot, sortOrder: index + 1 };
         }),
       }));
-    },
-    [callMutate],
-  );
-
-  // ── 载体分组（Phase 2）──
-  const addGroup = useCallback(
-    (name = "新分组") => {
-      const id = createNovelId("pg");
-      callMutate((current) => ({
-        ...current,
-        groups: [
-          ...current.groups,
-          {
-            id,
-            characterId: current.character.id,
-            name,
-            icon: "",
-            canEquip: false,
-            canEnable: true,
-            profSchemeId: "",
-            enabled: true,
-            sortOrder: current.groups.length + 1,
-          },
-        ],
-      }));
-      return id;
-    },
-    [callMutate],
-  );
-
-  const updateGroup = useCallback(
-    (id: string, patch: Partial<PackGroup>) => {
-      callMutate((current) => ({
-        ...current,
-        groups: current.groups.map((group) =>
-          group.id === id ? { ...group, ...patch } : group,
-        ),
-      }));
-    },
-    [callMutate],
-  );
-
-  /**
-   * 删除分组：组内条目退回「未分组」（不删除，§8.4 原则 5 —— 与删部位退回
-   * 物品同构）。返回组内条目数，供确认框报数。
-   */
-  const removeGroup = useCallback(
-    (id: string): number => {
-      let affected = 0;
-      callMutate((current) => {
-        affected =
-          current.items.filter((item) => item.groupId === id).length +
-          current.skills.filter((skill) => skill.groupId === id).length;
-        return {
-          ...current,
-          groups: current.groups.filter((group) => group.id !== id),
-          items: current.items.map((item) =>
-            item.groupId === id
-              ? { ...item, groupId: "", updatedAt: Date.now() }
-              : item,
-          ),
-          skills: current.skills.map((skill) =>
-            skill.groupId === id
-              ? { ...skill, groupId: "", updatedAt: Date.now() }
-              : skill,
-          ),
-        };
-      });
-      return affected;
     },
     [callMutate],
   );
@@ -2467,9 +2391,6 @@ export function usePackPanel({
     setUnitManagerOpen,
     slotManagerOpen,
     setSlotManagerOpen,
-    groupManagerOpen,
-    setGroupManagerOpen,
-    openGroupManager,
     categoryManagerOpen,
     setCategoryManagerOpen,
     recordDrawerOpen,
@@ -2535,9 +2456,6 @@ export function usePackPanel({
     removeSlot,
     shrinkSlotCapacity,
     reorderSlots,
-    addGroup,
-    updateGroup,
-    removeGroup,
     addCategory,
     updateCategory,
     removeCategory,

@@ -18,7 +18,6 @@ import NoteModule from "./components/NoteModule";
 import ModuleManager from "./components/ModuleManager";
 import UnitSystemManager from "./components/UnitSystemManager";
 import SlotManager from "./components/SlotManager";
-import GroupManager from "./components/GroupManager";
 import CategoryManager from "./components/CategoryManager";
 import RecordDrawer from "./components/RecordDrawer";
 import SourceDetailDrawer from "./components/SourceDetailDrawer";
@@ -143,7 +142,6 @@ export default function CharacterPackHost({
         current.moduleManagerOpen ||
         current.unitManagerOpen ||
         current.slotManagerOpen ||
-        current.groupManagerOpen ||
         current.categoryManagerOpen ||
         current.recordDrawerOpen ||
         Boolean(current.detailAttrId);
@@ -350,7 +348,6 @@ export default function CharacterPackHost({
       <ModuleManager api={api} />
       <UnitSystemManager api={api} />
       <SlotManager api={api} />
-      <GroupManager api={api} />
       <CategoryManager api={api} />
       <RecordDrawer api={api} />
       <SourceDetailDrawer api={api} />

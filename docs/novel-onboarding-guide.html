@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>新手入门指南 · 小说写作应用</title>
+<style>
+  :root {
+    --bg: #0e1116; --panel: #141821; --card: #1b2030; --card2: #232a3d;
+    --line: #2a3142; --txt: #e6eaf2; --sub: #9aa4b8; --dim: #6b7385;
+    --blue: #5b8def; --purple: #8b77f0; --green: #34b37e;
+    --amber: #e8935e; --pink: #e8618c; --kbd-bg: #2e3a55;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--bg); color: var(--txt);
+    font-family: "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+    line-height: 1.75; font-size: 15px;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 48px 24px 80px; }
+  a { color: var(--blue); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  h1 { font-size: 34px; line-height: 1.3; margin-bottom: 10px; }
+  h2 { font-size: 24px; margin: 56px 0 8px; padding-top: 8px; }
+  h3 { font-size: 17px; margin: 26px 0 8px; }
+  p  { color: var(--sub); margin: 8px 0; }
+  .lead { font-size: 16px; color: var(--sub); }
+  .divider { border: none; border-top: 1px solid var(--line); margin: 40px 0 0; }
+  kbd {
+    display: inline-block; background: var(--kbd-bg); color: #c7d0e0;
+    border-radius: 5px; padding: 1px 7px; font-size: 12.5px;
+    font-family: Consolas, monospace; margin: 0 2px; white-space: nowrap;
+  }
+  .tag {
+    display: inline-block; border-radius: 6px; padding: 1px 9px;
+    font-size: 12px; font-weight: 600; color: #fff; vertical-align: middle;
+  }
+  .t-blue { background: var(--blue); } .t-green { background: var(--green); }
+  .t-purple { background: var(--purple); } .t-amber { background: var(--amber); }
+  .t-pink { background: var(--pink); }
+  .btn {
+    display: inline-block; background: #2e3a55; border-radius: 6px;
+    padding: 0 10px; font-size: 13px; color: #c7d0e0; font-weight: 500;
+  }
+  .btn.primary { background: var(--blue); color: #fff; }
+  .btn.danger { background: #5a2e3e; color: #e8a0b4; }
+  .card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 14px; padding: 22px 24px; margin-top: 14px;
+  }
+  .toc {
+    background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    padding: 18px 24px; margin: 28px 0; columns: 2; column-gap: 40px;
+  }
+  .toc a { display: block; padding: 3px 0; color: var(--sub); font-size: 14px; }
+  .toc a:hover { color: var(--txt); text-decoration: none; }
+  table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 14px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--dim); font-weight: 500; font-size: 12.5px; letter-spacing: .04em; }
+  td:first-child { white-space: nowrap; color: var(--txt); }
+  td { color: var(--sub); }
+  .stepgrid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin-top: 20px; }
+  @media (max-width: 860px) { .stepgrid { grid-template-columns: 1fr; } }
+  .step {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 16px 16px 14px;
+  }
+  .step .num { font-size: 24px; font-weight: 800; }
+  .step h4 { font-size: 15.5px; margin: 4px 0 6px; }
+  .step p { font-size: 13px; line-height: 1.65; }
+  .step .g { font-size: 12px; font-weight: 500; margin-top: 8px; display: block; }
+  .flow { margin-top: 26px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 22px; }
+  .flow svg { width: 100%; height: auto; display: block; }
+  .note {
+    border-left: 3px solid var(--amber); background: #241f18;
+    padding: 12px 16px; border-radius: 0 10px 10px 0; margin: 14px 0;
+    font-size: 14px; color: #d9c9a8;
+  }
+  .note b { color: #f0d9b0; }
+  .warn {
+    border-left: 3px solid var(--pink); background: #241a20;
+    padding: 12px 16px; border-radius: 0 10px 10px 0; margin: 14px 0;
+    font-size: 14px; color: #e8c3ce;
+  }
+  details {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 12px; margin-top: 12px; overflow: hidden;
+  }
+  summary {
+    cursor: pointer; padding: 14px 18px; font-weight: 600; font-size: 15px;
+    list-style: none; display: flex; align-items: center; gap: 10px;
+  }
+  summary::-webkit-details-marker { display: none; }
+  summary::before {
+    content: ""; width: 7px; height: 7px; border-right: 2px solid var(--dim);
+    border-bottom: 2px solid var(--dim); transform: rotate(-45deg);
+    transition: transform .15s; flex: none;
+  }
+  details[open] summary::before { transform: rotate(45deg); }
+  details .body { padding: 0 18px 16px; color: var(--sub); font-size: 14.5px; }
+  .cols2 { columns: 1; }
+  footer { margin-top: 64px; color: var(--dim); font-size: 13px; border-top: 1px solid var(--line); padding-top: 20px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>新手入门指南</h1>
+  <p class="lead">写给第一次用这款应用写小说的你。跟着「五步走」走完，你的第一本书就正式开张了；后面遇到任何按钮不明白，回这篇文档搜一下就行。</p>
+  <p style="margin-top:10px"><span class="tag t-blue">快速上手</span>&nbsp; 预计 10 分钟 · 全程不需要外部教程</p>
+
+  <nav class="toc">
+    <a href="#flow">① 快速上手五步（流程图）</a>
+    <a href="#s1">② 第 1 步 · 新建小说</a>
+    <a href="#s2">③ 第 2 步 · 新建卷与章节</a>
+    <a href="#s3">④ 第 3 步 · 创建全书总设定</a>
+    <a href="#s4">⑤ 第 4 步 · 写正文与右键菜单</a>
+    <a href="#s5">⑥ 第 5 步 · 行囊：主角状态盘点</a>
+    <a href="#index">⑦ 分步骤功能索引</a>
+    <a href="#keys">⑧ 快捷键总表</a>
+    <a href="#faq">⑨ 常见问题 FAQ</a>
+  </nav>
+
+  <!-- ============ 流程图 ============ -->
+  <h2 id="flow">快速上手五步</h2>
+  <p>每一步只做一件事，跟着箭头走：</p>
+  <div class="flow">
+    <svg viewBox="0 0 1200 240" xmlns="http://www.w3.org/2000/svg" font-family="'Segoe UI','Microsoft YaHei',sans-serif">
+      <defs>
+        <marker id="arw" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto">
+          <path d="M0,0 L9,4 L0,8 z" fill="#4a556b"/>
+        </marker>
+      </defs>
+      <!-- 节点 -->
+      <g>
+        <rect x="10"  y="40" width="200" height="120" rx="14" fill="#1b2030" stroke="#2a3142"/>
+        <text x="30"  y="70"  font-size="26" font-weight="800" fill="#5b8def">01</text>
+        <text x="30"  y="98"  font-size="17" font-weight="600" fill="#e6eaf2">新建小说</text>
+        <text x="30"  y="124" font-size="12.5" fill="#9aa4b8">填一个书名</text>
+        <text x="30"  y="143" font-size="12.5" fill="#9aa4b8">点「创建并开写」</text>
+      </g>
+      <line x1="214" y1="100" x2="236" y2="100" stroke="#4a556b" stroke-width="2" marker-end="url(#arw)"/>
+      <g>
+        <rect x="242" y="40" width="200" height="120" rx="14" fill="#1b2030" stroke="#2a3142"/>
+        <text x="262" y="70"  font-size="26" font-weight="800" fill="#8b77f0">02</text>
+        <text x="262" y="98"  font-size="17" font-weight="600" fill="#e6eaf2">新建卷与章节</text>
+        <text x="262" y="124" font-size="12.5" fill="#9aa4b8">左栏「新卷」「新章节」</text>
+        <text x="262" y="143" font-size="12.5" fill="#9aa4b8">双击名字可改</text>
+      </g>
+      <line x1="446" y1="100" x2="468" y2="100" stroke="#4a556b" stroke-width="2" marker-end="url(#arw)"/>
+      <g>
+        <rect x="474" y="40" width="200" height="120" rx="14" fill="#1b2030" stroke="#2a3142"/>
+        <text x="494" y="70"  font-size="26" font-weight="800" fill="#34b37e">03</text>
+        <text x="494" y="98"  font-size="17" font-weight="600" fill="#e6eaf2">全书总设定</text>
+        <text x="494" y="124" font-size="12.5" fill="#9aa4b8">Ctrl+Shift+S</text>
+        <text x="494" y="143" font-size="12.5" fill="#9aa4b8">模板库一键套用</text>
+      </g>
+      <line x1="678" y1="100" x2="700" y2="100" stroke="#4a556b" stroke-width="2" marker-end="url(#arw)"/>
+      <g>
+        <rect x="706" y="40" width="200" height="120" rx="14" fill="#1b2030" stroke="#2a3142"/>
+        <text x="726" y="70"  font-size="26" font-weight="800" fill="#e8935e">04</text>
+        <text x="726" y="98"  font-size="17" font-weight="600" fill="#e6eaf2">写正文 · 右键</text>
+        <text x="726" y="124" font-size="12.5" fill="#9aa4b8">选中文字再右键</text>
+        <text x="726" y="143" font-size="12.5" fill="#9aa4b8">建卡 / 记入背包</text>
+      </g>
+      <line x1="910" y1="100" x2="932" y2="100" stroke="#4a556b" stroke-width="2" marker-end="url(#arw)"/>
+      <g>
+        <rect x="938" y="40" width="200" height="120" rx="14" fill="#1b2030" stroke="#2a3142"/>
+        <text x="958" y="70"  font-size="26" font-weight="800" fill="#e8618c">05</text>
+        <text x="958" y="98"  font-size="17" font-weight="600" fill="#e6eaf2">行囊盘点</text>
+        <text x="958" y="124" font-size="12.5" fill="#9aa4b8">Ctrl+Shift+B</text>
+        <text x="958" y="143" font-size="12.5" fill="#9aa4b8">境界 / 物品 / 技能</text>
+      </g>
+      <!-- 底部说明 -->
+      <text x="600" y="205" font-size="13" fill="#6b7385" text-anchor="middle">首次打开应用时，会有一段 5 步的漫游引导高亮每一步的按钮；随时可跳过，之后在「帮助中心（F1）」可重看。</text>
+    </svg>
+  </div>
+
+  <!-- ============ 步骤详解 ============ -->
+  <div class="stepgrid">
+    <div class="step"><span class="num" style="color:var(--blue)">01</span><h4>新建小说</h4><p>书架页 <span class="btn primary">新建作品</span>，只填书名。</p><span class="g" style="color:var(--blue)">引导：第 1 步高亮</span></div>
+    <div class="step"><span class="num" style="color:var(--purple)">02</span><h4>新建卷与章节</h4><p>左栏底部 <span class="btn">新卷</span> <span class="btn">新章节</span>，点一下就建好。</p><span class="g" style="color:var(--purple)">引导：第 2 步高亮</span></div>
+    <div class="step"><span class="num" style="color:var(--green)">03</span><h4>全书总设定</h4><p>设定中心 → 模板库一键套用。</p><span class="g" style="color:var(--green)">引导：第 3 步 + 空态卡</span></div>
+    <div class="step"><span class="num" style="color:var(--amber)">04</span><h4>写正文</h4><p>选中文字右键，三组动作随你挑。</p><span class="g" style="color:var(--amber)">引导：第 4 步 + 气泡</span></div>
+    <div class="step"><span class="num" style="color:var(--pink)">05</span><h4>行囊盘点</h4><p>主角的境界、装备、物品一站式。</p><span class="g" style="color:var(--pink)">引导：第 5 步 + 气泡</span></div>
+  </div>
+
+  <!-- ============ 第 1 步 ============ -->
+  <h2 id="s1">第 1 步 · 新建小说</h2>
+  <div class="card">
+    <h3>怎么建</h3>
+    <p>书架页有两个入口，效果一样：</p>
+    <p>① 顶栏 <span class="btn primary">＋ 新建作品</span>；② 书架网格最后一张虚线卡片「新建作品」。</p>
+    <p>弹窗里<b style="color:var(--txt)">只有一个书名输入框</b>，没有模板、流派、封面要选——填好名字点 <span class="btn primary">创建并开写</span>（或直接按回车），立刻进入编辑器。</p>
+    <div class="note"><b>小提示：</b>书名不是承诺，随时能改。第一本书就叫「试写」也完全没问题。</div>
+    <h3>想从现成的书开始？</h3>
+    <p>顶栏的 <span class="btn">导入书籍</span> 支持 TXT / DOCX 整本导入，导入后自动切分章节。</p>
+  </div>
+
+  <!-- ============ 第 2 步 ============ -->
+  <h2 id="s2">第 2 步 · 新建卷与章节</h2>
+  <div class="card">
+    <h3>点一下就建好，不用填表</h3>
+    <table>
+      <tr><th>想做什么</th><th>怎么做</th></tr>
+      <tr><td>新建一卷</td><td>左栏底部 <span class="btn">新卷</span>（新建在当前作品末尾）</td></tr>
+      <tr><td>新建一章</td><td>左栏底部 <span class="btn">新章节</span>，或把鼠标悬停在卷头上点出现的 <span class="btn">＋</span>（加在这一卷末尾）</td></tr>
+      <tr><td>改名</td><td><b style="color:var(--txt)">双击</b>章名或卷名，回车保存、Esc 取消</td></tr>
+      <tr><td>调整顺序</td><td>直接拖拽。拖完可能弹「确认调整」弹窗，核对序号变化后点「确认调整」即可</td></tr>
+      <tr><td>删除章节</td><td>悬停章行点 <span class="btn danger">删除</span> 图标 → 再点弹层里的「删除」。<b style="color:#e8a0b4">会连同历史快照一起删除，不可恢复</b></td></tr>
+    </table>
+    <div class="note"><b>为什么叫「第一卷」「未命名」？</b>新建时不用先想名字，序号是按排列顺序自动生成的。改名后显示成「第一卷 · 江湖路远」这样，序号依然保留。</div>
+    <div class="warn"><b>别担心误触：</b>「防误触排序」默认开启（拖动后先弹确认框）。不需要的话在顶栏「排版与偏好 → 设置」里关掉。</div>
+  </div>
+
+  <!-- ============ 第 3 步 ============ -->
+  <h2 id="s3">第 3 步 · 创建全书总设定</h2>
+  <div class="card">
+    <p>按 <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd>，或点顶栏的书本图标打开<b style="color:var(--txt)">设定中心</b>。</p>
+    <h3>先认识它的结构</h3>
+    <p>设定中心里没有「世界观 / 人物 / 大纲」这样的分区，它的核心概念是<b style="color:var(--txt)">「设定分类」</b>：一条分类就是一套全书通用的<b style="color:var(--txt)">等级序列</b>，比如：</p>
+    <ul style="color:var(--sub); padding-left:22px; margin:8px 0">
+      <li>「修仙 · 经典九层」——练气 → 筑基 → … → 大乘，这就是作品的境界体系</li>
+      <li>「法宝 · 品阶」——凡器 → 法器 → … → 神器，给物品标品阶用</li>
+      <li>「功法 · 品阶」——黄阶 → 玄阶 → … → 圣阶，给技能标等第用</li>
+    </ul>
+    <p>左栏管理分类（新建 / 拖拽排序 / 色点），右栏编辑这条序列的<b style="color:var(--txt)">等级</b>：每一级有名称、别名、说明，还能配「每阶小层数」（如练气九层）。</p>
+    <h3>新手最快路径：模板库一键套用</h3>
+    <p>设定中心右上角点 <span class="btn primary">模板库</span>，选一条内置预设点 <span class="btn">应用到本书</span>——一秒灌入整套体系，灌完仍是普通分类，随便改。内置预设包括：</p>
+    <table>
+      <tr><th>预设</th><th>用途</th></tr>
+      <tr><td>修仙 · 经典九层 / 练气十三层</td><td>境界体系（练气 9/13 层，筑基起分初期/中期/后期/圆满）</td></tr>
+      <tr><td>玄幻 · 灵武八境</td><td>境界体系（八境各分初期/中期/圆满）</td></tr>
+      <tr><td>都市 · 异能评级</td><td>F→SSS 倒序评级</td></tr>
+      <tr><td>洪荒 · 仙道品位 / 法宝 · 品阶 / 功法 · 品阶 / 丹药 · 品阶</td><td>通用分级，可给行囊物品、技能标注品阶</td></tr>
+    </table>
+    <div class="note"><b>小抄：</b>常用的按钮都收在每个等级行尾的「⋯」菜单里——编辑名称/别名/说明、新增子层级（把一阶拆成多段）、删除该等级。想一次建一串等级用「批量生成」，支持逐行输入和模板（如 <kbd>第{n}阶</kbd>）。</div>
+  </div>
+
+  <!-- ============ 第 4 步 ============ -->
+  <h2 id="s4">第 4 步 · 写正文与右键菜单</h2>
+  <div class="card">
+    <h3>开始写</h3>
+    <p>新建的书还没有章节，正文区会显示「还没有选中章节」——点 <span class="btn primary">写下第一章</span> 就能开写。编辑器是纯文本模式，撑得住三万字的单章。</p>
+    <h3>右键菜单：先选中，再右键</h3>
+    <div class="warn"><b>最重要的一条：</b>右键菜单只在<b style="color:var(--txt)">选中了文字</b>之后才出现。什么都没选就右键，弹出来的是系统菜单——这不是功能坏了，是设计如此。最快的选中方式：双击一个词。</div>
+    <p>选中一段文字后右键，菜单从上到下有三组动作：</p>
+    <table>
+      <tr><th>分组</th><th>动作</th><th>效果</th></tr>
+      <tr><td>记入行囊</td><td><span class="btn">记入背包</span></td><td>把选中的词当作一件物品记进行囊的物品栏，来源章节自动填当前章</td></tr>
+      <tr><td rowspan="1">新建资料卡</td><td><span class="btn">角色</span> <span class="btn">地点</span> <span class="btn">势力</span> <span class="btn">物品</span></td><td>把选中的词一键建成要素资料卡并加入词库；如果这个名字已存在，会自动变成它的「别名」</td></tr>
+      <tr><td>绑定到现有资料卡</td><td>（列出已有要素）</td><td>把这个称呼挂到已有卡片下，作为别名；已绑定的会显示「已绑定」置灰</td></tr>
+    </table>
+    <h3>正文里的高亮词</h3>
+    <p>写下的角色 / 地点 / 势力名会被自动高亮：<b style="color:var(--txt)">单击</b>高亮词打开资料卡，<b style="color:var(--txt)">悬停</b>片刻浮出速览卡。不想被打扰的话，点底部状态条的 <span class="btn">标注 开/关</span> 即可整体关闭。</p>
+    <div class="note"><b>放心写：</b>正文自动保存（<kbd>Ctrl</kbd>+<kbd>S</kbd> 可手动存）。每次保存都会留一版历史快照（每章保留 20 版），顶栏「历史快照」里可预览并一键回滚——回滚本身也会存快照，反悔有路。</div>
+  </div>
+
+  <!-- ============ 第 5 步 ============ -->
+  <h2 id="s5">第 5 步 · 行囊：主角状态盘点</h2>
+  <div class="card">
+    <p>按 <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd> 或点顶栏的行囊图标，打开一个独立窗口，专门记<b style="color:var(--txt)">主角身上</b>的事：境界、属性、装备、物品、技能、货币、状态效果。</p>
+    <h3>新手只需要知道三件事</h3>
+    <table>
+      <tr><th>概念</th><th>一句话解释</th></tr>
+      <tr><td>默认只开 3 个模块</td><td>总属性汇总、人物属性、境界。点右上角齿轮「模块管理」可随时开启其余 7 个（装备栏、物品栏、技能栏、货币、状态效果、属性映射、备注速记），关掉不丢数据</td></tr>
+      <tr><td>境界依赖设定中心</td><td>境界直接复用设定中心里的等级序列。那里没建体系时，境界模块会提示你先去建——从模板库套一条最快的</td></tr>
+      <tr><td>主角是谁</td><td>在「境界」模块顶部下拉里选，或回正文右侧「要素」栏的角色卡上点皇冠图标「设为主角」。两边是同一份数据，改一边即可</td></tr>
+    </table>
+    <h3>保存与关窗</h3>
+    <p>改动会先存草稿；空闲 5 分钟或手动点 <span class="btn primary">保存</span> 才写入正式数据。头部会明确显示状态：<span class="btn">已保存 · 3 分钟前</span> / <span class="btn">3 处改动未保存</span> / <span class="btn">保存中…</span> / <span class="btn danger">保存失败 · 草稿已保留</span>。</p>
+    <div class="note"><b>关窗时：</b>还有未保存改动会弹「有改动未保存」，三个选择——保存并继续 / 丢弃改动 / 取消。即使选了丢弃，草稿也已持久化，能在「盘点记录」里找回上一次保存的版本。</div>
+  </div>
+
+  <!-- ============ 功能索引 ============ -->
+  <hr class="divider" />
+  <h2 id="index">分步骤功能索引</h2>
+  <p>按「你在做什么」查找。括号内是入口或快捷键。</p>
+
+  <h3>作品与书架</h3>
+  <table>
+    <tr><th>功能</th><th>说明</th></tr>
+    <tr><td>新建作品</td><td>书架顶栏或网格尾卡「新建作品」；编辑器顶栏「作品管理」菜单里也有</td></tr>
+    <tr><td>导入书籍</td><td>顶栏「导入书籍」，支持 TXT / DOCX，自动切章</td></tr>
+    <tr><td>查找 / 整理</td><td>顶栏搜索框搜作品或灵感；下方筛选「连载中 / 已完稿」、排序、网格/列表切换</td></tr>
+  </table>
+
+  <h3>章节管理</h3>
+  <table>
+    <tr><th>功能</th><th>说明</th></tr>
+    <tr><td>新建卷 / 章</td><td>左栏底部「新卷」「新章节」；卷头悬浮「＋」向该卷加章；<kbd>Ctrl</kbd>+<kbd>Enter</kbd> 快速新建章</td></tr>
+    <tr><td>重命名</td><td>双击卷名 / 章名，回车保存</td></tr>
+    <tr><td>拖拽排序</td><td>章拖到章 = 同卷/跨卷重排；章拖到卷头 = 移入该卷；卷拖到卷 = 调卷序。默认弹确认框防误触</td></tr>
+    <tr><td>章节状态</td><td>章行左侧圆点点击切换 草稿 ⇄ 完稿</td></tr>
+    <tr><td>搜章节</td><td>左栏顶部搜索框（搜索时自动展开所有卷）</td></tr>
+    <tr><td>快速跳章</td><td><kbd>Ctrl</kbd>+<kbd>P</kbd> 呼出跳章面板，↑↓ 选择、回车跳转</td></tr>
+    <tr><td>删除章节</td><td>悬停章行 → 删除图标 → 确认。连同快照不可恢复，删后自动跳到相邻章</td></tr>
+  </table>
+
+  <h3>设定中心（<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd>）</h3>
+  <table>
+    <tr><th>功能</th><th>说明</th></tr>
+    <tr><td>设定分类</td><td>左栏新建（输入框回车）、拖拽排序、色点改色；重命名 / 删除在右侧「分类信息」卡片的「编辑 / 删除」按钮</td></tr>
+    <tr><td>等级序列</td><td>行间悬停出「＋ 在此插入」条；行尾「⋯」菜单：编辑 / 新增子层级 / 合并还原 / 删除</td></tr>
+    <tr><td>批量生成</td><td>右上角「批量生成」：逐行输入或按模板（如「第{n}阶」、固定名单「初期,中期,后期,圆满」）一次生成最多 99 级</td></tr>
+    <tr><td>小层（小境界）</td><td>每阶可配小层数与命名模板；行下方挂小境界速览 chips，点击复制名称</td></tr>
+    <tr><td>模板库</td><td>8 条内置预设一键套用；自己的体系可「另存为模板」复用；支持导出 JSON / Markdown 设定集</td></tr>
+    <tr><td>联动</td><td>境界体系分类会联动角色卡与行囊：在这里改，两处即时同步</td></tr>
+  </table>
+
+  <h3>正文编辑</h3>
+  <table>
+    <tr><th>功能</th><th>说明</th></tr>
+    <tr><td>保存</td><td>自动保存 + <kbd>Ctrl</kbd>+<kbd>S</kbd> 手动保存</td></tr>
+    <tr><td>历史快照</td><td>顶栏「历史快照」：每章保留 20 版，可预览前 90 字并回滚；回滚前会先把当前版存为快照</td></tr>
+    <tr><td>查找替换</td><td><kbd>Ctrl</kbd>+<kbd>F</kbd>（编辑器内查找）</td></tr>
+    <tr><td>标注层</td><td>底部状态条「标注 开/关」。开启时角色/地点/势力名高亮：单击开资料卡、悬停出速览</td></tr>
+    <tr><td>右键菜单</td><td>选中文字后右键：记入背包 / 新建资料卡（角色·地点·势力·物品）/ 绑定到现有资料卡</td></tr>
+    <tr><td>专注模式</td><td><kbd>F11</kbd> 进入 / 退出，隐藏周边面板</td></tr>
+    <tr><td>今日目标</td><td>底部状态条设置今日目标字数，达成时轻提示不弹窗</td></tr>
+  </table>
+
+  <h3>右栏支撑面板（默认收起，边缘把手展开）</h3>
+  <table>
+    <tr><th>Tab</th><th>说明</th></tr>
+    <tr><td>大纲</td><td>卷章骨架 + 每章「一句话梗概」+ 伏笔登记（待回收/已回收，可绑卷或绑章）。点章节即跳转</td></tr>
+    <tr><td>要素</td><td>角色 / 地点 / 势力 / 物品资料卡：搜名称/别名/简介，可设主角、插入正文、编辑详情；齿轮图标管理自定义类型</td></tr>
+    <tr><td>灵感</td><td>速记本：<kbd>Enter</kbd> 记录、<kbd>Shift</kbd>+<kbd>Enter</kbd> 换行；可置顶、可「转为伏笔」直接写进大纲</td></tr>
+    <tr><td>检索</td><td>全书 / 本章 / 要素名三种范围查找正文</td></tr>
+    <tr><td>工具</td><td>起名器：按题材风格批量起名并<b style="color:var(--txt)">避开本书已用名</b>，可插入正文光标处或直接建成角色卡</td></tr>
+  </table>
+
+  <h3>行囊（<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd>）</h3>
+  <table>
+    <tr><th>模块</th><th>说明</th></tr>
+    <tr><td>总属性汇总</td><td>基础值 → 总览值，增量按被动 / 持续分段，点行看来源明细</td></tr>
+    <tr><td>人物属性</td><td>自定义属性（攻击力 / 防御力…），可套用「通用 / 玄幻 / 网游」模板</td></tr>
+    <tr><td>属性映射</td><td>「加 1 点力量，血量 +100」这类换算关系记在这里</td></tr>
+    <tr><td>装备栏</td><td>自定义部位（名称、容量 1–8、仅接受某分组）；悬停候选可预览「装上后」属性变化；支持换装方案一键套用</td></tr>
+    <tr><td>物品栏</td><td>背包清单：数量 ±（可长按连加）、稀有度、分类、品阶（绑定设定中心的体系后可标注）</td></tr>
+    <tr><td>技能栏</td><td>技能开关、熟练度档位（入门/熟练…）、品阶标注</td></tr>
+    <tr><td>境界</td><td>阶梯点选 + ±1 层微调（满层自动进位）；与角色卡双读数对照</td></tr>
+    <tr><td>货币</td><td>自定义进制（默认 1 金 = 100 银 = 10000 铜），给个大数自动进位试算</td></tr>
+    <tr><td>状态效果</td><td>中毒 / 虚弱 / 阵法增益等 Buff/Debuff，持续型可随剧情开关</td></tr>
+    <tr><td>备注速记</td><td>作者自用的临时备忘</td></tr>
+    <tr><td>导出</td><td>各面板可「复制 / 下载 .txt / 插入本章末尾」</td></tr>
+  </table>
+
+  <!-- ============ 快捷键 ============ -->
+  <h2 id="keys">快捷键总表</h2>
+  <table>
+    <tr><th>快捷键</th><th>作用</th></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>保存当前章节</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd></td><td>打开设定中心（注意和保存区分）</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd></td><td>打开 / 关闭行囊窗口</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>P</kbd></td><td>章节快速跳转（再按一次关闭）</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>Enter</kbd></td><td>新建章节</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>F</kbd></td><td>编辑器内查找</td></tr>
+    <tr><td><kbd>F11</kbd></td><td>专注模式</td></tr>
+    <tr><td><kbd>Esc</kbd></td><td>按优先级关闭浮层：设定中心 → 排版偏好 → 历史快照 → 专注模式</td></tr>
+    <tr><td><kbd>F1</kbd></td><td>打开帮助中心（本文档）</td></tr>
+  </table>
+
+  <!-- ============ FAQ ============ -->
+  <h2 id="faq">常见问题 FAQ</h2>
+
+  <details><summary>右键没有出现「记入背包 / 新建资料卡」菜单？</summary><div class="body">
+    <p>这个菜单只在<b>选中了文字</b>后出现。空选区右键弹的是系统菜单。先用鼠标拖选一段文字，或双击选中一个词，再右键即可。</p>
+  </div></details>
+
+  <details><summary>我只是点了下正文里的人名，为什么弹出了一张卡片？</summary><div class="body">
+    <p>那是「标注层」：已建卡的角色 / 地点 / 势力名会自动高亮，单击高亮词打开资料卡，悬停出速览。如果觉得干扰，点底部状态条的「标注 开/关」整体关闭，关闭不影响任何数据。</p>
+  </div></details>
+
+  <details><summary>新建了作品，正文区为什么是空的？</summary><div class="body">
+    <p>新书还没有章节。点正文区的「写下第一章」按钮即可；也可以用左栏底部的「新章节」。<b>新书还没有卷时，新建章节会自动建第一卷</b>，不用提前规划结构。</p>
+  </div></details>
+
+  <details><summary>设定中心里找不到「人物」「世界观」分区？</summary><div class="body">
+    <p>设定中心管理的是全书通用的<b>等级序列</b>（境界、品阶这类阶梯），按「分类」组织。人物、地点等资料在正文右侧「要素」栏维护；世界观可以用自定义分类记录，也可以写进大纲与灵感。新手建议先从「模板库」套一条预设感受一下结构。</p>
+  </div></details>
+
+  <details><summary>改名后卷名变成「第一卷 · xxx」，能只显示自己起的名字吗？</summary><div class="body">
+    <p>序号（第一卷）由排列顺序自动生成、始终保留，避免章节数多了以后乱序。这是刻意的：拖拽调序时序号会跟着变，方便对齐。</p>
+  </div></details>
+
+  <details><summary>拖动章节为什么弹出确认框？</summary><div class="body">
+    <p>「防误触排序」默认开启：拖拽会改变章节序号，弹窗里列出了每一处「旧序号 → 新序号」，确认后才生效。不需要的话在「排版与偏好 → 设置」里关掉。</p>
+  </div></details>
+
+  <details><summary>删掉的章节还能找回吗？</summary><div class="body">
+    <p>不能。删除章节会连同它的全部历史快照一起删除且不可恢复。如果内容重要，先在编辑器里全选复制留存。行囊数据不受影响（独立保存）。</p>
+  </div></details>
+
+  <details><summary>行囊里怎么没有「金币余额」？</summary><div class="body">
+    <p>行囊的货币模块是「换算器」而不是账本：你自己定义进制（默认 1 金 = 100 银 = 10000 铜），输入大数自动进位试算。金额本身写在正文里，由你掌控。</p>
+  </div></details>
+
+  <details><summary>行囊提示「X 处改动未保存」，关窗会丢吗？</summary><div class="body">
+    <p>不会静默丢。关窗时弹「有改动未保存」，可选「保存并继续 / 丢弃改动 / 取消」。即使丢弃，草稿也已持久化——打开头部「盘点记录」能找回上一次保存的版本。</p>
+  </div></details>
+
+  <details><summary>行囊的境界模块提示「先建等级体系」？</summary><div class="body">
+    <p>境界直接复用设定中心的等级序列。按 <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> 打开设定中心 → 「模板库」套一条（如「修仙 · 经典九层」）→ 回到行囊就能用了。行囊里的境界改动会同步到角色卡。</p>
+  </div></details>
+
+  <details><summary>保存（Ctrl+S）和设定中心（Ctrl+Shift+S）总按混？</summary><div class="body">
+    <p>记法：带 <kbd>Shift</kbd> 的组合键都是「打开大面板」（设定中心、行囊），裸按 <kbd>Ctrl</kbd>+<kbd>S</kbd> 才是保存。另外 <kbd>Esc</kbd> 可以按优先级关闭浮层，打开错了随手 <kbd>Esc</kbd> 就行。</p>
+  </div></details>
+
+  <footer>
+    更多细节见「帮助中心」（标题栏「？」或 <kbd>F1</kbd>），可随时重看新手引导。<br />
+    本文档为产品设计参考交付物，具体交互以应用实际实现为准。
+  </footer>
+</div>
+</body>
+</html>

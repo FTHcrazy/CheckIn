@@ -158,17 +158,21 @@
     flex: none;
   }
 
+  /* 右上角动作图标：常驻浅色 chip 底（不再是纯透明）—— 六颗图标一排
+     不加边界时，「布局开关」与「功能入口」扫过去都是一团灰点，点下去
+     才知道是按钮。默认底用 --app-surface-hover，hover / active 加深一档，
+     .is-on 持久高亮仍走主色弱底，三档层次分明 */
   &__icon.ant-btn {
     @include widget.ant-button-reset;
     --ant-control-height: 28px;
     --ant-button-padding-inline: 0px;
     --ant-button-content-font-size: 14px;
     --ant-border-radius: var(--app-radius-chip);
-    --ant-button-default-bg: transparent;
+    --ant-button-default-bg: var(--app-surface-hover);
     --ant-button-default-color: var(--app-text-secondary);
-    --ant-button-default-hover-bg: var(--app-surface-hover);
+    --ant-button-default-hover-bg: var(--app-surface-active);
     --ant-button-default-hover-color: var(--app-text);
-    --ant-button-default-active-bg: var(--app-surface-hover);
+    --ant-button-default-active-bg: var(--app-surface-active);
     --ant-button-default-active-color: var(--app-text);
     --ant-button-default-shadow: none;
 

@@ -326,22 +326,35 @@
   }
 
   &__thead {
-    padding: 0 8px 6px;
+    padding: 0 10px 6px;
     border-bottom: 1px solid var(--app-border);
-    font-size: 11px;
-    color: var(--app-text-muted);
+    font-size: 12px;
+    color: var(--app-text-secondary);
   }
 
+  /* 行容器收成一张卡：八级 + 每阶一行小境界签，密度本来就高，
+     没有边界就会糊成一片灰。斑马纹 + 行内边距把「一级」读成一个单位 */
   &__rows {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
+    padding: 4px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-item);
+    background: var(--app-surface);
   }
 
   &__row {
-    padding: 4px 8px;
+    padding: 7px 10px;
     border-radius: var(--app-radius-chip);
 
+    /* 斑马纹：奇数行铺一层极浅的底，长列表扫读时不会串行 */
+    &.is-alt {
+      background: var(--app-surface-alt);
+    }
+
+    /* hover 必须排在 is-alt 之后：两者特异性相同（0,2,0），
+       靠源码顺序决定胜负 —— 反过来的话斑马行没有悬停反馈 */
     &:hover {
       background: var(--app-surface-hover);
     }
@@ -465,11 +478,16 @@
     padding: 2px 0 4px;
   }
 
+  /* 小境界标签：「N 小境界」做成主色弱底徽标当行首锚点，
+     后面一串名字才是内容 —— 原来全是 11px 灰字灰底，八阶各一排
+     灰方块，是整个列表最「费眼」的来源 */
   &__sub-label {
     flex: none;
-    padding-top: 2px;
+    padding: 1px 8px;
+    border-radius: var(--app-radius-pill);
+    background: var(--app-primary-weak);
+    color: var(--app-primary);
     font-size: 11px;
-    color: var(--app-text-muted);
     white-space: nowrap;
   }
 
@@ -481,17 +499,17 @@
     gap: 2px;
   }
 
-  // 小层名用真按钮承载（键盘可达 / 有 title），但外观是浅底小签
+  // 小层名用真按钮承载（键盘可达 / 有 title），但外观是无底浅签：
+  // 默认透明不抢戏，hover 才染主色弱底 —— 十三层一排也不会变成灰块墙
   // 清零放在同一个选择器里，改外观只动 --ant-button-* 变量（§6.1.2 第 1、3 条）
   &__sub-chip.ant-btn {
     @include widget.ant-button-reset;
-    --ant-button-text-hover-bg: var(--app-surface-hover);
+    --ant-button-text-hover-bg: var(--app-primary-weak);
     --ant-button-text-color: var(--app-text-secondary);
-    --ant-button-text-hover-color: var(--app-text);
+    --ant-button-text-hover-color: var(--app-primary);
     height: 20px;
     padding: 0 6px;
-    border-radius: 3px;
-    background: var(--app-surface-hover);
+    border-radius: var(--app-radius-pill);
     font-size: 11px;
   }
 

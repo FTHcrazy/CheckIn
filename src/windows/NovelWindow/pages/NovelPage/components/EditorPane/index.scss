@@ -61,12 +61,17 @@
     color: var(--app-text-muted);
   }
 
+  /* 章节名输入框：下划线式行内编辑。
+     ⚠️ 必须显式 `border-radius: 0`：antd Input 自带 6px 圆角，只画
+     `border-bottom` 时圆角会作用在不可见的边框盒上，把下划线两端顶成
+      「圆不圆方不方」的翘角。清零后才是一条干净的直线 */
   &__title-input {
     width: 22em;
     max-width: 80%;
     padding: 2px 10px;
     border: none;
     border-bottom: 2px solid var(--app-primary);
+    border-radius: 0;
     background: transparent;
     outline: none;
     text-align: center;
@@ -327,20 +332,20 @@
 
 @container nv-editor (min-width: 900px) {
   .nv-editor__paper {
-    --nv-paper-width: 46em;
+    --nv-paper-width: 50em;
     --nv-paper-gutter: 40px;
   }
 }
 
 @container nv-editor (min-width: 1200px) {
   .nv-editor__paper {
-    --nv-paper-width: 50em;
+    --nv-paper-width: 60em;
   }
 }
 
 @container nv-editor (min-width: 1500px) {
   .nv-editor__paper {
-    --nv-paper-width: 54em;
+    --nv-paper-width: 72em;
     --nv-paper-gutter: 48px;
   }
 }

@@ -511,23 +511,22 @@
     }
   }
 
-  /* 空态里的建体系入口：自带造型，清零后重绘（主色描边 + hover 弱底） */
+  /* 空态里的建体系入口：这一格是「还没有境界体系」时唯一的行动点，
+     用实心主色而不是虚框描边 —— 空态里它必须是视觉重心（与「编辑」同档） */
   &__lvlempty-add.ant-btn {
     @include widget.ant-button-reset;
     --ant-control-height: 30px;
+    --ant-button-padding-inline: 14px;
     --ant-button-content-font-size: 12px;
+    --ant-button-font-weight: 500;
     --ant-button-icon-gap: 5px;
     --ant-border-radius: 9px;
-    --ant-line-width: 1px;
-    --ant-button-default-bg: transparent;
-    --ant-button-default-color: var(--app-primary);
-    --ant-button-default-border-color: var(--app-primary);
-    --ant-button-default-hover-bg: var(--app-primary-weak);
-    --ant-button-default-hover-color: var(--app-primary);
-    --ant-button-default-hover-border-color: var(--app-primary);
-    --ant-button-default-active-bg: var(--app-primary-weak);
-    --ant-button-default-active-color: var(--app-primary);
-    --ant-button-default-active-border-color: var(--app-primary);
+    --ant-button-default-bg: var(--app-primary);
+    --ant-button-default-color: var(--app-primary-contrast);
+    --ant-button-default-hover-bg: var(--app-primary-strong);
+    --ant-button-default-hover-color: var(--app-primary-contrast);
+    --ant-button-default-active-bg: var(--app-primary-strong);
+    --ant-button-default-active-color: var(--app-primary-contrast);
     --ant-button-default-shadow: none;
 
     align-self: flex-start;
@@ -679,14 +678,17 @@
      （原先 flex-wrap 的 gap 在虚拟化后不生效）。行高必须与 TSX 里的
      APPEAR_ROW_HEIGHT 对齐 */
   &__appear-list > div > div {
-    padding-bottom: 2px;
+    padding-bottom: 4px;
   }
 
+  /* 出场章节行：整行可点的列表行（不是浮动药丸）—— 章名序号徽标 + 标题，
+     hover 整行染主色弱底。虚拟化行内单行展示：过长标题截断，
+     完整标题仍走 title 悬浮 */
   &__chip.ant-btn {
     @include widget.ant-button-reset;
     --ant-control-height: auto;
     --ant-button-content-font-size: 12px;
-    --ant-border-radius: var(--app-radius-pill);
+    --ant-border-radius: var(--app-radius-item);
     --ant-line-width: 1px;
     --ant-button-default-bg: var(--app-surface);
     --ant-button-default-color: var(--app-text-secondary);
@@ -699,19 +701,31 @@
     --ant-button-default-active-border-color: var(--app-primary);
     --ant-button-default-shadow: none;
 
-    display: inline-flex;
-    gap: 4px;
-    padding: 3px 8px;
-    /* 虚拟化行内单行展示：过长标题截断，完整标题仍走 title 悬浮 */
-    max-width: 100%;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
+    display: flex;
+    gap: 8px;
+    width: 100%;
+    padding: 5px 10px;
+    text-align: left;
   }
 
+  /* 章名序号（「第7章」）：主色弱底徽标，与标题文字拉开层级 */
   &__chip-no {
-    font-size: 12px;
-    color: var(--app-text-disabled);
+    flex: none;
+    padding: 0 7px;
+    border-radius: var(--app-radius-pill);
+    background: var(--app-primary-weak);
+    color: var(--app-primary);
+    font-size: 11px;
+    line-height: 18px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* 标题：flex 子项要能收缩，截断才生效 */
+  &__chip-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   &__acts {

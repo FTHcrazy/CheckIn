@@ -984,7 +984,9 @@ export default function SettingCenter({
                       <div
                         className={`nv-sc__row${
                           level.parentId ? " is-child" : ""
-                        }${dragId === lvlId(level.id) ? " is-drag" : ""}`}
+                        }${index % 2 === 1 ? " is-alt" : ""}${
+                          dragId === lvlId(level.id) ? " is-drag" : ""
+                        }`}
                       >
                         <Tooltip title="拖动调整顺序">
                           <span
