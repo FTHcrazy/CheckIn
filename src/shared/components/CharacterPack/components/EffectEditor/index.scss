@@ -171,9 +171,17 @@
     color: var(--app-text-strong);
   }
 
+  /* 说明文字必须能换行：卡片是 minmax(0,1fr) 的网格列，而 antd Button 自带
+     white-space: nowrap，flex 子项的 min-width 又默认 auto —— 不显式放开，
+     「载体在效即常驻生效，计入总属性」这句会冲出卡片右缘（报障实录）。 */
   &__hint {
+    min-width: 0;
+    max-width: 100%;
     font-size: 11px;
     line-height: 1.5;
+    text-align: left;
+    white-space: normal;
+    word-break: break-word;
     color: var(--app-text-secondary-strong);
   }
 }

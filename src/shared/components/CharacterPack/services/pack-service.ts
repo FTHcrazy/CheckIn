@@ -58,18 +58,9 @@ export async function writeRealmLink(link: PackRealmLinkDTO): Promise<boolean> {
   return window.electronAPI!.novel.pack.linkSet(link);
 }
 
-/**
- * 等级项补列：小层数 / 战力当量（PRD §9.7.2）
- *
- * 1.36.0 起走统一设定域的 `novel-setting-level-update`：等级项不管属于境界体系
- * 还是别的分类，都住在 `novel_setting_levels` 里，没有第二条写入路径。
- */
-export async function writeLevelMeta(
-  id: string,
-  meta: { subLevels?: number; power?: number | null },
-): Promise<boolean> {
-  return window.electronAPI!.novel.settingLevelUpdate(id, meta);
-}
+// 1.39.1 起阶设置弹窗已删（writeLevelMeta 一并撤下）：境界层级统一在
+// 「设定中心 → 等级序列」里改，行囊只读。设定域的 novel-setting-level-update
+// 通道本身保留，SettingCenter 仍在用。
 
 // ── 主角绑定（行囊面板与右侧要素栏共用同一格数据） ──
 

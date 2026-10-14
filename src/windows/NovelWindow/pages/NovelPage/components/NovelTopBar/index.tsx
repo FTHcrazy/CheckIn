@@ -6,9 +6,10 @@ import {
   HistoryOutlined,
   LayoutOutlined,
   MenuOutlined,
-  SettingOutlined,
-  ShoppingOutlined,
 } from "@ant-design/icons";
+import SvgIcon from "@/shared/components/SvgIcon";
+import bookSettingSvg from "@/assets/novel/book-setting.svg?raw";
+import packSvg from "@/assets/novel/pack.svg?raw";
 import { SAVE_STATE_TEXT } from "../../novel-config";
 import { formatClock, formatThousands, type WorkMeta } from "../../novel-utils";
 import { useSaveState } from "../../store/useNovelEditorStore";
@@ -189,7 +190,7 @@ export default function NovelTopBar({
             onClick={onOpenPack}
             aria-label="行囊"
           >
-            <ShoppingOutlined />
+            <SvgIcon svg={packSvg} />
           </Button>
         </Tooltip>
         <Tooltip title={snapshotOpen ? "收起历史快照" : "历史快照"}>
@@ -208,7 +209,7 @@ export default function NovelTopBar({
             onClick={onOpenSettings}
             aria-label="小说设定"
           >
-            <SettingOutlined />
+            <SvgIcon svg={bookSettingSvg} />
           </Button>
         </Tooltip>
         {/* 与标题栏的「设置」（全局：外观/账号）区分：这里只管排版与码字偏好，

@@ -20,6 +20,7 @@ function props(over: Partial<Parameters<typeof PackHeader>[0]> = {}) {
   const base: Parameters<typeof PackHeader>[0] = {
     characterName: "主角",
     realmText: "筑基 1/9",
+    realmSubText: "",
     realmHint: "",
     realmBound: false,
     compact: false,
@@ -195,6 +196,26 @@ describe("PackHeader —— 头像不用 emoji", () => {
     expect(avatar?.querySelector(".anticon")).not.toBeNull();
     // 任何 emoji 区段的字符都不该出现在头部里
     expect(header()?.textContent ?? "").not.toMatch(/[\u{1F300}-\u{1FAFF}]/u);
+  });
+});
+
+/**
+ * 小境界别名 chip（1.41.0）：头部此前只显示「合体 2/4」，与境界模块的
+ * 「合体 2/4 · 中期」不同口径。同源数据两处读数必须一致 —— 要么都带名，
+ * 要么都不带。空串（纯数字小层 / 未配置）不渲染。
+ */
+describe("PackHeader —— 头部小境界别名", () => {
+  afterEach(cleanup);
+
+  it("realmSubText 有值时在境界 chip 旁显示别名", () => {
+    render(<PackHeader {...props({ realmText: "合体 2/4", realmSubText: "中期" }).base} />);
+    const sub = document.querySelector(".cpk-head__sub");
+    expect(sub?.textContent).toBe("中期");
+  });
+
+  it("realmSubText 为空串时不渲染（不出现空 chip）", () => {
+    render(<PackHeader {...props({ realmSubText: "" }).base} />);
+    expect(document.querySelector(".cpk-head__sub")).toBeNull();
   });
 });
 

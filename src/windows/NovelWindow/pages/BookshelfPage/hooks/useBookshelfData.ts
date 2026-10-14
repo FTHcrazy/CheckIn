@@ -261,6 +261,30 @@ export function useBookshelfData() {
     [bundle],
   );
 
+  /**
+   * 编辑灵感内容（1.41.0）：书架灵感库此前只有置顶 / 归属 / 删除，
+   * 写错了只能删掉重记。空内容与未改动都不落库（与编辑器灵感面板同口径）。
+   */
+  const updateNoteContent = useCallback(
+    (noteId: string, content: string): void => {
+      const trimmed = content.trim();
+      const source = bundle?.notes.find((note) => note.id === noteId);
+      if (!source || !trimmed || trimmed === source.content) return;
+      const next: NovelNoteDTO = { ...source, content: trimmed };
+      setBundle((current) =>
+        current
+          ? {
+              ...current,
+              notes: current.notes.map((note) => (note.id === noteId ? next : note)),
+            }
+          : current,
+      );
+      void saveShelfNote(next);
+      notifyNoteChanged({ action: "upsert", workId: next.workId, note: next });
+    },
+    [bundle],
+  );
+
   const removeNoteById = useCallback((noteId: string): void => {
     setBundle((current) =>
       current
@@ -285,6 +309,7 @@ export function useBookshelfData() {
     addNote,
     toggleNotePinned,
     moveNoteTo,
+    updateNoteContent,
     removeNoteById,
     refresh: load,
   };

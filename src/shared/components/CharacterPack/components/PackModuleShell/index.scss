@@ -36,6 +36,32 @@
     gap: 6px;
     padding: 0;
     color: var(--app-text-strong);
+    /* 涟漪的定位与裁剪基准（涟漪 span 绝对定位在按钮内） */
+    position: relative;
+    overflow: hidden;
+
+    /* antd 自带 wave 在这颗按钮上必须关掉：标题是占满整行的透明段，
+       wave 环（6px currentcolor 描边 + 2s 淡出）罩上去就是「点了挂两秒的
+       色框」——OutlinePanel 1.34.0「点击效果只有一半」的同构问题。
+       替代的自绘涟漪见 __ripple。 */
+    .ant-wave {
+      display: none;
+    }
+  }
+
+  /* 自绘点击涟漪：从点击位置扩散的淡主色圆，0.45s 收场。
+     起始 8px、scale(26) ≈ 208px，足够漫过最窄档的头部整行。 */
+  &__ripple {
+    position: absolute;
+    top: 50%;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--app-primary);
+    opacity: 0.22;
+    transform: translate(-50%, -50%) scale(0);
+    animation: cpk-mod-ripple 0.45s ease-out forwards;
+    pointer-events: none;
   }
 
   &__caret {
@@ -107,5 +133,12 @@
     color: var(--app-text-secondary-strong);
     font-size: 12px;
     line-height: 1.55;
+  }
+}
+
+@keyframes cpk-mod-ripple {
+  to {
+    transform: translate(-50%, -50%) scale(26);
+    opacity: 0;
   }
 }

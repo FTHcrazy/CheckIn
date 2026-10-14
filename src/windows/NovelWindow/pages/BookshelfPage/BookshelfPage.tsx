@@ -73,6 +73,7 @@ export default function BookshelfPage({
     addNote,
     toggleNotePinned,
     moveNoteTo,
+    updateNoteContent,
     removeNoteById,
     refresh,
   } = useBookshelfData();
@@ -332,6 +333,7 @@ export default function BookshelfPage({
           onAdd={addNote}
           onTogglePin={toggleNotePinned}
           onMove={moveNoteTo}
+          onUpdateContent={updateNoteContent}
           onRemove={removeNoteById}
         />
       </div>

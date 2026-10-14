@@ -293,14 +293,21 @@ export default function SettingCenter({
     [settings],
   );
 
-  // 聚焦：外部指定优先（从角色卡进来），否则落到第一个分类
+  // 聚焦：activeId（用户点选）优先，其次外部指定（从角色卡进来），最后落第一个分类。
+  // ⚠️ focusCategoryId 只能当「初始选中」—— 此前它永久优先，导致「从角色卡
+  // 进入 / 应用模板后」左栏点其它分类永远切不过去（报障回归，别改回）。
   const activeIdResolved = useMemo(() => {
+    if (activeId && sorted.some((item) => item.id === activeId)) return activeId;
     if (focusCategoryId && sorted.some((item) => item.id === focusCategoryId)) {
       return focusCategoryId;
     }
-    if (activeId && sorted.some((item) => item.id === activeId)) return activeId;
     return sorted[0]?.id ?? "";
   }, [activeId, focusCategoryId, sorted]);
+
+  // 外部指定的聚焦变化时采纳一次：activeId 还停在旧分类上时，新 focus 要能接管
+  useEffect(() => {
+    if (focusCategoryId) setActiveId(focusCategoryId);
+  }, [focusCategoryId]);
 
   const active = useMemo(
     () => sorted.find((item) => item.id === activeIdResolved) ?? null,
@@ -310,6 +317,7 @@ export default function SettingCenter({
   /** 关闭后清掉全部草稿：下次打开不该看到上一次没提交的输入 */
   useEffect(() => {
     if (open) return;
+    setActiveId("");
     setNewCategoryName("");
     setCategoryDraft(null);
     setEditingLevelId(null);
@@ -1079,7 +1087,13 @@ export default function SettingCenter({
                                 menu={{
                                   items: [
                                     { key: "edit", label: "编辑名称 / 别名 / 说明" },
-                                    { key: "split", label: "新增子层级…" },
+                                    // 等级序列只支持两个层级（1.39.1）：主等级下可以
+                                    // 挂一层子层级，子层级不能再拆 —— 否则「初级·第1段·
+                                    // 第1段」这种三层嵌套既没法在境界 chip 里表达，
+                                    // 也没人读得懂。子层级（parentId 非空）不给拆分入口。
+                                    ...(level.parentId
+                                      ? []
+                                      : [{ key: "split", label: "新增子层级…" }]),
                                     ...(level.parentId
                                       ? []
                                       : [

@@ -18,8 +18,6 @@ import {
   removeLevel,
   replaceInContent,
   rootLevels,
-  scanConsistency,
-  scanUnregistered,
   sortLevels,
 } from "./setting-utils";
 
@@ -351,66 +349,6 @@ describe("设定：拆分与合并互为逆操作（1.38.1 父阶=分组）", ()
     const merged = applyMerge(legacy, "金丹");
     expect(merged.map((l) => l.name)).toEqual(["引气", "筑基", "金丹"]);
     expect(merged.find((l) => l.id === "金丹")!.subLevels).toBe(18);
-  });
-});
-
-describe("设定：正文一致性扫描", () => {
-  const cat = category([
-    level("金丹", 3, { aliases: ["金丹期", "丹府"] }),
-    level("筑基", 2, { aliases: ["基丹"] }),
-  ]);
-
-  it("正文用了别名 → 报 alias 并给出设定用词", () => {
-    const issues = scanConsistency("他已至金丹期圆满", [cat]);
-    expect(issues).toHaveLength(1);
-    expect(issues[0]).toMatchObject({
-      kind: "alias",
-      term: "金丹期",
-      suggest: "金丹",
-    });
-  });
-
-  it("正文用的就是正式名 → 不报", () => {
-    expect(scanConsistency("他已至金丹圆满", [cat])).toHaveLength(0);
-  });
-
-  it("同一别名只报一次，长别名优先于短别名", () => {
-    const multi = category([
-      level("金丹", 1, { aliases: ["金丹", "金丹期"] }),
-      level("元婴", 2, { aliases: ["元婴期"] }),
-    ]);
-    const issues = scanConsistency("金丹期之后是元婴期", [multi]);
-    expect(issues.map((i) => i.term)).toEqual(["金丹期", "元婴期"]);
-  });
-
-  it("未登记词按共同后缀线索报出（「青元丹」对比「金丹」「玄丹」）", () => {
-    const dan = category([
-      level("金丹", 1),
-      level("玄丹", 2),
-      level("灵丹", 3),
-    ]);
-    const issues = scanUnregistered("掌中那枚青元丹尚存余温", [dan]);
-    expect(issues.map((i) => i.term)).toEqual(["青元丹"]);
-    expect(issues[0].kind).toBe("unknown");
-  });
-
-  it("已登记的词不当作未登记 —— 宁可漏报也不可满屏误报", () => {
-    const dan = category([level("金丹", 1), level("玄丹", 2)]);
-    expect(scanUnregistered("他服下金丹", [dan])).toHaveLength(0);
-  });
-
-  it("没有共同后缀线索时整类跳过", () => {
-    const mixed = category([
-      level("引气", 1),
-      level("筑基", 2),
-      level("金丹", 3),
-    ]);
-    expect(scanUnregistered("沈砚走出洞府", [mixed])).toHaveLength(0);
-  });
-
-  it("空正文 / 空设定都不报错", () => {
-    expect(scanConsistency("", [cat])).toEqual([]);
-    expect(scanConsistency("正文", [])).toEqual([]);
   });
 });
 

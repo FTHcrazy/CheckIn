@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { Button, InputNumber, Modal, Select } from "antd";
-import { SettingOutlined } from "@ant-design/icons";
+import { Button, Select, Tooltip } from "antd";
+import { QuestionCircleOutlined } from "@ant-design/icons";
 import PackModuleShell from "../PackModuleShell";
 import type { PackPanelApi } from "../../hooks/usePackPanel";
 import { moduleLabel } from "../module-meta";
@@ -8,7 +8,7 @@ import {
   fetchPackBindableEntities,
   logUsageEvent,
 } from "@/shared/services/novel-shared";
-import type { LadderRung } from "../../pack-utils";
+import { subLabelAt } from "../../pack-utils";
 import "./index.scss";
 
 interface RealmModuleProps {
@@ -24,7 +24,6 @@ interface RealmModuleProps {
  */
 export default function RealmModule({ api }: RealmModuleProps) {
   const [entities, setEntities] = useState<Array<{ id: string; name: string }>>([]);
-  const [rungOpen, setRungOpen] = useState(false);
   const [bindOpen, setBindOpen] = useState(false);
 
   const loadEntities = useCallback(async () => {
@@ -44,7 +43,7 @@ export default function RealmModule({ api }: RealmModuleProps) {
     void loadEntities();
   }, [loadEntities]);
 
-  const rungs: LadderRung[] = api.rungs;
+  const rungs = api.rungs;
   const doc = api.doc;
   if (!doc) return null;
   const key = "realm" as const;
@@ -69,19 +68,26 @@ export default function RealmModule({ api }: RealmModuleProps) {
     void api.writeRealm({ index, sub: 1 }, "pack");
   };
 
+  /**
+   * 当前小层的显示别名（1.39.1）：拆出子层级的阶，每层有自己的名字
+   * （「合体一层」的别名往往就是「初期」）。「合体 1/4」只答了走到哪，
+   * 别名才回答「现在是什么」—— 空串（纯数字小层 / 没写别名）不显示。
+   */
+  const subAlias = subLabelAt(rung, api.realmPos.sub);
+
   return (
     <PackModuleShell
       title={moduleLabel(key)}
       collapsed={Boolean(api.prefs.collapsed[key])}
       onToggle={() => api.toggleModuleCollapsed(key)}
       actions={
-        <Button
-          className="cpk-iconbtn"
-          onClick={() => setRungOpen(true)}
-          title="阶设置（小层数 / 战力当量）"
+        <Tooltip
+          title="境界层级在「设定中心」的等级序列里设置：每阶小层数 / 别名 / 子层级都在那里改，改完这里与实体面板立刻同步。"
         >
-          <SettingOutlined />
-        </Button>
+          <Button className="cpk-iconbtn" aria-label="境界层级去哪里设置？">
+            <QuestionCircleOutlined />
+          </Button>
+        </Tooltip>
       }
     >
       {rungs.length === 0 ? (
@@ -105,7 +111,7 @@ export default function RealmModule({ api }: RealmModuleProps) {
                       index < api.realmPos.index ? " is-passed" : ""
                     }`}
                     onClick={() => pick(index)}
-                    title={item.power ? `战力当量 ${item.power}` : "点击跳到这一阶"}
+                    title="点击跳到这一阶"
                   >
                     {item.name}
                   </Button>
@@ -117,6 +123,11 @@ export default function RealmModule({ api }: RealmModuleProps) {
           {/* 当前境界 + 距下一阶进度（设计稿此处是一条横向进度条） */}
           <div className="cpk-rlm__now">
             <span className="cpk-rlm__value">{api.realmText}</span>
+            {subAlias ? (
+              <span className="cpk-rlm__alias" title={`当前小层：${subAlias}`}>
+                {subAlias}
+              </span>
+            ) : null}
             <span className="cpk-rlm__stepper">
               <Button
                 className="cpk-btn ghost"
@@ -207,61 +218,6 @@ export default function RealmModule({ api }: RealmModuleProps) {
           </p>
         </>
       )}
-
-      <Modal
-        open={rungOpen}
-        title="阶设置（与实体面板共享同一张表）"
-        centered
-        width={420}
-        footer={
-          <div className="cpk-guard__footer">
-            <Button onClick={() => setRungOpen(false)}>关闭</Button>
-          </div>
-        }
-      >
-        <p className="cpk-guard__sub">
-          小层数决定「炼气 9 层」这种阶内分层；战力当量是可选的跨阶比较基准。
-          两处改动都会立刻同步到实体面板的等级体系。
-        </p>
-        <ul className="cpk-rlm__metas">
-          {rungs.map((item) => (
-            <li key={item.id} className="cpk-rlm__meta">
-              <span className="cpk-rlm__metaname">{item.name}</span>
-              <label className="cpk-rlm__metafield">
-                <span>小层</span>
-                <InputNumber
-                  size="small"
-                  min={1}
-                  style={{ width: 62 }}
-                  value={item.subLevels}
-                  // 拆出子层级后父阶是「组」：小层数由子层级决定，
-                  // 这里改只会和子层级打架（改完重载又被总数兜底改回来）
-                  disabled={item.hasChildren}
-                  title={item.hasChildren ? "已在设定中心拆出子层级，小层数由子层级决定" : undefined}
-                  onChange={(value) =>
-                    void api.setRungMeta(item.id, { subLevels: Math.max(1, Number(value) || 1) })
-                  }
-                />
-              </label>
-              <label className="cpk-rlm__metafield">
-                <span>当量</span>
-                <InputNumber
-                  size="small"
-                  min={0}
-                  style={{ width: 76 }}
-                  value={item.power ?? undefined}
-                  placeholder="—"
-                  onChange={(value) =>
-                    void api.setRungMeta(item.id, {
-                      power: value === null ? null : Number(value),
-                    })
-                  }
-                />
-              </label>
-            </li>
-          ))}
-        </ul>
-      </Modal>
     </PackModuleShell>
   );
 }

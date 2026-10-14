@@ -139,3 +139,22 @@
     }
   }
 }
+
+/* 拖拽随动浮层（@dnd-kit DragOverlay，1.39.1）。
+   渲染在 portal 里（不在 .nv-tree 内），必须是顶层规则 ——
+   嵌进 & 里会跟着嵌套作用域走，挂不到浮层上 */
+.nv-tree__drag-chip {
+  max-width: 220px;
+  padding: 3px 10px;
+  border-radius: var(--app-radius-item);
+  background: var(--app-surface-elevated, var(--app-surface));
+  border: 1px solid var(--app-primary);
+  box-shadow: 0 4px 14px rgb(0 0 0 / 22%);
+  color: var(--app-text-strong);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}

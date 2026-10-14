@@ -14,7 +14,6 @@ import {
 import {
   CHANGED_TTL_MS,
   NATURE_META,
-  OP_META,
   RARITY_META,
   type PackAttrDef,
   type PackAttribute,
@@ -752,21 +751,38 @@ function clampInt(value: number, min: number, max: number): number {
 }
 
 /**
- * 释放型（cast）效果的参数文案：`300% 攻击力 · CD 12s · 蓝耗 30 · 单体`
+ * 属性加成文案：`攻击力 +320` / `防御力 +40%` / `生命值 ×1.5`
  *
- * 放在纯函数层而不是组件里，是因为它有**两个**消费方：效果词条列表（展示）
- * 与「与本章初对比」（比较）。两边各写一遍的话，只要有一边少拼一个字段，
- * 「参数改过」就永远判不出来 —— 而且不会报错，只是那一行静默消失。
+ * 放在纯函数层而不是组件里，是因为它有**三个**消费方：效果词条列表（展示）、
+ * 「与本章初对比」（比较）与导出文本。两边各写一遍的话，只要有一边少拼一个
+ * 字段，「参数改过」就永远判不出来 —— 而且不会报错，只是那一行静默消失。
  *
- * 空字段整体不出现（而不是留一个空档），所以零参数的释放型返回空串。
+ * 1.39.1 起释放型（cast）也走属性加成口径（效果量 / 攻击力% 等参数概念已删），
+ * 三种性质统一用这一份文案。
  */
-export function castParamText(mod: PackModifier): string {
-  const parts: string[] = [];
-  if (mod.value) parts.push(`${formatAttrValue(mod.value, 0)}${mod.valueUnit || ""}`);
-  if (mod.cooldown) parts.push(`CD ${mod.cooldown}s`);
-  if (mod.cost) parts.push(mod.cost);
-  if (mod.target) parts.push(mod.target);
-  return parts.join(" · ");
+export function statText(
+  mod: Pick<PackModifier, "targetAttrId" | "op" | "value">,
+  attributes: PackAttribute[],
+): string {
+  const attr = attributes.find((candidate) => candidate.id === mod.targetAttrId);
+  const name = attr?.name ?? "未指定属性";
+  const decimals = mod.op === "mul" ? 2 : (attr?.decimals ?? 0);
+  const value = formatAttrValue(mod.value, decimals);
+  switch (mod.op) {
+    case "percent":
+      // 负值不给「+-10」这种拧巴符号：负数直接走减号
+      return mod.value < 0
+        ? `${name} -${formatAttrValue(Math.abs(mod.value), decimals)}%`
+        : `${name} +${value}%`;
+    case "mul":
+      return `${name} ×${value}`;
+    case "override":
+      return `${name} 设为 ${value}`;
+    default:
+      return mod.value < 0
+        ? `${name} -${formatAttrValue(Math.abs(mod.value), decimals)}`
+        : `${name} +${value}`;
+  }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -783,6 +799,20 @@ export interface LadderRung {
   power: number | null;
   /** 已拆出子层级：父阶是组，小层数由子层级决定（阶设置里锁定不可改） */
   hasChildren?: boolean;
+  /**
+   * 小层别名表（1.39.1）：下标 = 阶内层号 - 1。仅拆出子层级的阶才有
+   * （纯数字小层没有名字）；空串 = 该层没有别名，不显示。
+   */
+  subLabels?: string[];
+}
+
+/**
+ * 当前小层的显示别名（1.39.1）：拆出子层级的阶取别名表对应项，
+ * 其余情况（纯数字小层 / 未拆分 / 越界）返回空串 —— 调用方据此不渲染。
+ */
+export function subLabelAt(rung: LadderRung | undefined, sub: number): string {
+  if (!rung?.subLabels) return "";
+  return rung.subLabels[sub - 1] ?? "";
 }
 
 export interface RealmPosition {
@@ -1147,10 +1177,14 @@ export function countRecentChanges(
 }
 
 // ─────────────────────────────────────────────────────────────
-// 导出为 Markdown 表格（REQ-030 / F-4 表格那一半）
+// 导出为系统流小说的面板文本（1.39.1：Markdown 表格全面换成 txt 排版）
+//
+// 用户的口径：参考系统流 / 网游小说里的「属性面板」。那种排版是**一行一条
+// 冒号句**（`攻击力：180（基础 100，被动 +30）`），粘进正文不破坏叙事节奏，
+// 也没有 Markdown 表格那种需要渲染器才可读的竖线噪声。
 // ─────────────────────────────────────────────────────────────
 
-/** 可导出的模块（与 `PackModuleKey` 同名前缀，但备注速记没有结构化表格） */
+/** 可导出的模块（与 `PackModuleKey` 同名前缀，但备注速记没有结构化内容） */
 export type PackExportKey =
   | "summary"
   | "attributes"
@@ -1161,62 +1195,34 @@ export type PackExportKey =
   | "status"
   | "currency";
 
-export interface PackExportTable {
-  headers: string[];
-  rows: string[][];
-}
-
-/** 组装一张表所需的全部只读输入（纯数据，不含 api / DOM） */
+/** 组装一份导出文本所需的全部只读输入（纯数据，不含 api / DOM） */
 export interface PackExportContext {
   attributes: PackAttribute[];
   slots: PackSlot[];
   items: PackItem[];
   skills: PackSkill[];
   modifiers: PackModifier[];
-  /** 载体分组（Phase 2）：分组名翻译用 —— 导出表里的「分组」列显示组名 */
+  /** 载体分组（Phase 2）：分组名翻译用 —— 物品行里的「分组」显示组名 */
   groups?: PackGroup[];
   /** 属性映射规则（1.35.0） */
   mappings: PackMappingRule[];
   summary: SummaryResult;
-  /** 熟练度档位（技能表用；为空则不出「档位」这一列）——默认体系的那套 */
+  /** 熟练度档位（技能行用；为空则不出档位段）——默认体系的那套 */
   proficiencyLevels?: ThresholdLevel[];
-  /** 默认体系的别名（Phase 3）：技能表的「熟练度」列名跟随它 */
+  /** 默认体系的别名（Phase 3）：技能行的「熟练度」词跟随它 */
   proficiencyAlias?: string;
-  /**
-   * groupId → 所绑体系的元数据（Phase 3）：组绑定了 profSchemeId 的技能行，
-   * 档位 / 进位按所绑体系取；未出现的组回落默认体系。
-   */
-  proficiencySchemesByGroup?: Record<string, { levels: ThresholdLevel[]; autoCarry: boolean }>;
+  /** 体系品阶名表（1.40.0）：levelId → 「神器」。缺失或查不到时不出品阶段 */
+  gradeNames?: Map<string, string>;
   /** 货币：进制型量纲 + 当前数值（没建货币体系时为 null） */
   currency?: { levels: RatioLevel[]; autoCarry: boolean } | null;
 }
 
-/**
- * 单元格转义。
- *
- * 反斜杠必须**先**处理：物品名里带 `|`（「双刃|短刀」）会把整张表的列数打乱，
- * 而 Markdown 里只有 `\|` 才是真正的字面竖线；先转 `|` 会把后补的 `\` 又转一遍，
- * 结果是 `\\|`，粘贴出去仍然断列。换行同理 —— 表格单元格内不能有软换行。
- */
-export function escapeMarkdownCell(value: string): string {
-  return value
-    .replace(/\\/g, "\\\\")
-    .replace(/\|/g, "\\|")
-    .replace(/\r?\n/g, "<br>")
-    .trim();
-}
-
-/** 表头分隔行：全部左对齐（数值列也左对齐 —— 中文表宽不定，右对齐反而参差） */
-export function toMarkdownTable(table: PackExportTable): string {
-  const head = `| ${table.headers.map(escapeMarkdownCell).join(" | ")} |`;
-  const divider = `| ${table.headers.map(() => "---").join(" | ")} |`;
-  const body = table.rows.map(
-    (row) => `| ${row.map(escapeMarkdownCell).join(" | ")} |`,
-  );
-  return [head, divider, ...body].join("\n");
-}
-
 const DASH = "—";
+
+/** 「数值＋单位」：`180` / `5%` / `50 点`（单位挂在数值后，没有就只有数） */
+function attrAmount(attr: PackAttribute, value: number): string {
+  return `${formatAttrValue(value, attr.decimals ?? 0)}${attr.unit || ""}`;
+}
 
 function labelOf(map: Record<string, { label: string }>, key: string): string {
   return map[key]?.label ?? key;
@@ -1232,55 +1238,28 @@ function numText(value: number): string {
   return String(roundTo(value, 4));
 }
 
-/** 总属性汇总：基础值 → 总览值，并按被动 / 持续 / 映射分列（与 §9.4.2 的分段口径一致） */
-function summaryTable(ctx: PackExportContext): PackExportTable {
-  const ordered = ctx.attributes
+/** 总属性汇总：`攻击力：180（基础 100，被动 +30，持续 +50）`——明细只列非零段 */
+function summaryLines(ctx: PackExportContext): string[] {
+  return ctx.attributes
     .map((attr) => ({ attr, row: ctx.summary.byAttr.get(attr.id) }))
-    .filter((entry): entry is { attr: PackAttribute; row: SummaryRow } => Boolean(entry.row));
-  return {
-    headers: [
-      "属性",
-      "基础值",
-      "总览值",
-      "被动加算",
-      "持续加算",
-      "映射加算",
-      "百分比",
-      "乘算",
-      "单位",
-    ],
-    rows: ordered.map(({ attr, row }) => {
-      const decimals = attr.decimals ?? 0;
+    .filter((entry): entry is { attr: PackAttribute; row: SummaryRow } => Boolean(entry.row))
+    .map(({ attr, row }) => {
       const percent = (row.percentPassive || 0) + (row.percentSustained || 0);
       const mul = row.mulPassive * row.mulSustained;
-      return [
-        attr.name,
-        formatAttrValue(row.base, decimals),
-        formatAttrValue(row.final, decimals),
-        row.addPassive ? formatAttrValue(row.addPassive, decimals) : DASH,
-        row.addSustained ? formatAttrValue(row.addSustained, decimals) : DASH,
-        row.addMapped ? formatAttrValue(row.addMapped, decimals) : DASH,
-        percent ? `${percent > 0 ? "+" : ""}${formatAttrValue(percent, 1)}%` : DASH,
-        mul !== 1 ? `×${formatAttrValue(mul, 2)}` : DASH,
-        attr.unit || DASH,
-      ];
-    }),
-  };
+      const parts = [`基础 ${attrAmount(attr, row.base)}`];
+      if (row.addPassive) parts.push(`被动 +${formatAttrValue(row.addPassive, attr.decimals ?? 0)}`);
+      if (row.addSustained) parts.push(`持续 +${formatAttrValue(row.addSustained, attr.decimals ?? 0)}`);
+      if (row.addMapped) parts.push(`映射 +${formatAttrValue(row.addMapped, attr.decimals ?? 0)}`);
+      if (percent) parts.push(`${percent > 0 ? "+" : ""}${formatAttrValue(percent, 1)}%`);
+      if (mul !== 1) parts.push(`×${formatAttrValue(mul, 2)}`);
+      return `${attr.name}：${attrAmount(attr, row.final)}（${parts.join("，")}）`;
+    });
 }
 
-function attributesTable(ctx: PackExportContext): PackExportTable {
-  return {
-    headers: ["分组", "属性", "基础值", "单位", "小数位"],
-    rows: [...ctx.attributes]
-      .sort((a, b) => a.sortOrder - b.sortOrder)
-      .map((attr) => [
-        attr.groupName,
-        attr.name,
-        formatAttrValue(attr.baseValue, attr.decimals ?? 0),
-        attr.unit || DASH,
-        String(attr.decimals ?? 0),
-      ]),
-  };
+function attributesLines(ctx: PackExportContext): string[] {
+  return [...ctx.attributes]
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((attr) => `${attr.name}：${attrAmount(attr, attr.baseValue)}（${attr.groupName}）`);
 }
 
 /**
@@ -1290,8 +1269,8 @@ function attributesTable(ctx: PackExportContext): PackExportTable {
  * 是「这套装备下加了多少力量、折合多少生命」，只给系数等于让他自己再算一遍。
  * 没生效的规则同样列出：在导出稿里删掉它们的人不会知道自己删了什么。
  */
-function mappingTable(ctx: PackExportContext): PackExportTable {
-  const rows = [...ctx.mappings]
+function mappingLines(ctx: PackExportContext): string[] {
+  return [...ctx.mappings]
     .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
     .map((mapping) => {
       const problem = mapping.id ? ctx.summary.mappingProblems.get(mapping.id) : undefined;
@@ -1299,134 +1278,89 @@ function mappingTable(ctx: PackExportContext): PackExportTable {
       const status = problem
         ? MAPPING_PROBLEM_META[problem].label
         : mapping.rate === 0
-          ? "未启用（换算率为 0）"
+          ? "未启用"
           : "生效";
-      return [
-        attrNameOf(ctx.attributes, mapping.sourceAttrId),
-        attrNameOf(ctx.attributes, mapping.targetAttrId),
-        `每 1 点 +${numText(mapping.rate)}`,
-        problem ? DASH : numText(applied ?? 0),
-        status,
-      ];
+      return `${attrNameOf(ctx.attributes, mapping.sourceAttrId)} → ${attrNameOf(ctx.attributes, mapping.targetAttrId)}：每 1 点 +${numText(mapping.rate)}，当前 +${problem ? DASH : numText(applied ?? 0)}（${status}）`;
     });
-  return { headers: ["源属性", "目标属性", "换算率", "当前换算", "状态"], rows };
 }
 
 /**
- * 装备栏：一个槽位一行不够用（容量 >1 时有多件），所以**每件一 row**，
- * 空部位单独给一行「（空）」—— 否则「哪些部位还空着」在导出里看不出来。
+ * 装备栏：一个槽位一行（容量 >1 时一格一件都列出），空部位显式给「（空）」——
+ * 否则「哪些部位还空着」在导出里看不出来。
  */
-function equipmentTable(ctx: PackExportContext): PackExportTable {
-  const rows: string[][] = [];
+function equipmentLines(ctx: PackExportContext): string[] {
+  const lines: string[] = [];
   for (const slot of [...ctx.slots].sort((a, b) => a.sortOrder - b.sortOrder)) {
     const occupants = ctx.items
       .filter((item) => item.equippedSlotId === slot.id && item.slotIndex !== null)
       .sort((a, b) => (a.slotIndex ?? 0) - (b.slotIndex ?? 0));
     const slotLabel = slot.enabled ? slot.name : `${slot.name}（已停用）`;
     if (occupants.length === 0) {
-      rows.push([slotLabel, "（空）", DASH, DASH, DASH, DASH]);
+      lines.push(`${slotLabel}：（空）`);
       continue;
     }
     for (const item of occupants) {
       const mods = ctx.modifiers.filter(
         (mod) => mod.ownerType === "item" && mod.ownerId === item.id,
       ).length;
-      rows.push([
-        slotLabel,
-        (item.slotIndex ?? 0) + 1 + "/" + slot.capacity,
-        item.name,
-        item.category,
-        labelOf(RARITY_META, item.rarity),
-        String(mods),
-      ]);
+      const pos = slot.capacity > 1 ? ` ${((item.slotIndex ?? 0) + 1)}/${slot.capacity}` : "";
+      lines.push(
+        `${slotLabel}${pos}：${item.name}（${labelOf(RARITY_META, item.rarity)} · ${mods} 条加成）`,
+      );
     }
   }
-  return { headers: ["部位", "槽位", "物品", "分类", "稀有度", "加成条数"], rows };
+  return lines;
 }
 
-function inventoryTable(ctx: PackExportContext): PackExportTable {
+function inventoryLines(ctx: PackExportContext): string[] {
   const slotNameOf = (id: string): string =>
     id ? (ctx.slots.find((slot) => slot.id === id)?.name ?? "(已删除的部位)") : DASH;
   const groupNameOf = (id: string): string =>
     id ? (ctx.groups?.find((group) => group.id === id)?.name ?? "(已删除的分组)") : DASH;
-  return {
-    headers: ["物品", "分组", "分类", "数量", "稀有度", "穿戴部位", "标签"],
-    rows: ctx.items.map((item) => [
-      item.name,
-      groupNameOf(item.groupId),
-      item.category,
-      String(item.qty),
-      labelOf(RARITY_META, item.rarity),
-      slotNameOf(item.equippedSlotId),
-      item.tags.join(" / ") || DASH,
-    ]),
-  };
+  return ctx.items.map((item) => {
+    const grade = item.gradeId ? (ctx.gradeNames?.get(item.gradeId) ?? "") : "";
+    const parts = [item.category, labelOf(RARITY_META, item.rarity)];
+    if (item.equippedSlotId) parts.push(`已装备：${slotNameOf(item.equippedSlotId)}`);
+    if (item.groupId) parts.push(groupNameOf(item.groupId));
+    if (item.tags.length > 0) parts.push(item.tags.join("/"));
+    // 品阶紧跟名字（「小刀 · 神器」是作者在正文里的称呼习惯），括号里放盘点属性
+    return `${item.name}${grade ? ` · ${grade}` : ""} ×${item.qty}（${parts.join(" · ")}）`;
+  });
 }
 
-function skillsTable(ctx: PackExportContext): PackExportTable {
-  // 列名跟随**默认体系**的别名（Phase 3）；行内档位 / 进位按各自行所属体系取
+function skillsLines(ctx: PackExportContext): string[] {
   const alias = ctx.proficiencyAlias ?? "熟练度";
-  const defaultLevels = ctx.proficiencyLevels ?? [];
-  const withTier = defaultLevels.length > 0;
-  const groupNameOf = (id: string): string =>
-    id ? (ctx.groups?.find((group) => group.id === id)?.name ?? "(已删除的分组)") : DASH;
-  /** 行所属体系的元数据：组绑定了就用那套，否则回落默认体系 */
-  const schemeOf = (groupId: string): { levels: ThresholdLevel[]; autoCarry: boolean } => {
-    const bound = groupId ? ctx.proficiencySchemesByGroup?.[groupId] : undefined;
-    return bound ?? { levels: defaultLevels, autoCarry: true };
-  };
-  return {
-    headers: withTier
-      ? ["技能", "分组", "开关", alias, "档位", "加成条数"]
-      : ["技能", "分组", "开关", alias, "加成条数"],
-    rows: [...ctx.skills]
-      .sort((a, b) => a.sortOrder - b.sortOrder)
-      .map((skill) => {
-        const mods = ctx.modifiers.filter(
-          (mod) => mod.ownerType === "skill" && mod.ownerId === skill.id,
-        ).length;
-        const scheme = schemeOf(skill.groupId);
-        const carry = scheme.autoCarry
-          ? carryBreakdown(skill.proficiencyRaw, scheme.levels)
-          : "";
-        const base = [
-          skill.name,
-          groupNameOf(skill.groupId),
-          skill.enabled ? "在用" : "已关闭",
-          // 有换算率时附上进位文本（原始值恒在前，仍是唯一真相源）
-          carry ? `${skill.proficiencyRaw}（${carry}）` : String(skill.proficiencyRaw),
-        ];
-        const tier = thresholdOf(scheme.levels, skill.proficiencyRaw);
-        return withTier
-          ? [...base, tier?.name ? `${tier.name}${tier.overflow ? "+" : ""}` : DASH, String(mods)]
-          : [...base, String(mods)];
-      }),
-  };
+  const levels = ctx.proficiencyLevels ?? [];
+  return [...ctx.skills]
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((skill) => {
+      const mods = ctx.modifiers.filter(
+        (mod) => mod.ownerType === "skill" && mod.ownerId === skill.id,
+      ).length;
+      const state = skill.enabled ? "在用" : "已关闭";
+      const carry = carryBreakdown(skill.proficiencyRaw, levels);
+      const raw = carry
+        ? `${skill.proficiencyRaw}（${carry}）`
+        : String(skill.proficiencyRaw);
+      const tier = thresholdOf(levels, skill.proficiencyRaw);
+      const tierText = levels.length > 0
+        ? `，${tier?.name ? `${tier.name}${tier.overflow ? "+" : ""}` : "未入门"}`
+        : "";
+      // 品阶紧跟名字（「神通 · 天阶」），与物品行同一惯例
+      const grade = skill.gradeId ? (ctx.gradeNames?.get(skill.gradeId) ?? "") : "";
+      return `${skill.name}${grade ? ` · ${grade}` : ""}（${state}）：${alias} ${raw}${tierText}${mods > 0 ? ` · ${mods} 条加成` : ""}`;
+    });
 }
 
-function statusTable(ctx: PackExportContext): PackExportTable {
+function statusLines(ctx: PackExportContext): string[] {
   const statuses = ctx.modifiers.filter((mod) => mod.ownerType === "status");
-  return {
-    headers: ["状态", "性质", "开关", "目标属性", "运算", "数值", "时效", "备注"],
-    rows: statuses.map((mod) => [
-      mod.name || "(未命名状态)",
-      labelOf(NATURE_META, mod.nature),
-      mod.disabled ? "已禁用" : mod.active ? "开" : "关",
-      mod.nature === "cast" ? DASH : attrNameOf(ctx.attributes, mod.targetAttrId),
-      OP_META[mod.op]?.symbol ?? mod.op,
-      `${formatAttrValue(mod.value, Math.abs(mod.value) < 1 ? 2 : 0)}${mod.valueUnit ?? ""}`,
-      // 时效只对持续型有意义（被动是常驻、释放不进汇总）——
-      // 给被动也填「剩 N 回合」会让作者以为它真的会自己掉回合。
-      mod.nature !== "sustained"
-        ? DASH
-        : mod.roundsLeft === null
-          ? "不限时"
-          : mod.roundsLeft <= 0
-            ? "已过期"
-            : `剩 ${mod.roundsLeft} 回合`,
-      mod.note || DASH,
-    ]),
-  };
+  return statuses.map((mod) => {
+    const state = mod.disabled ? "已禁用" : mod.active ? "开" : "关";
+    const effect = mod.nature === "cast" && !mod.targetAttrId
+      ? "（参数已随 1.39.1 迁移，请在面板里补选目标属性）"
+      : statText(mod, ctx.attributes);
+    return `${mod.name || "(未命名状态)"}（${labelOf(NATURE_META, mod.nature)} · ${state}）：${effect}${mod.note ? ` —— ${mod.note}` : ""}`;
+  });
 }
 
 /**
@@ -1434,69 +1368,67 @@ function statusTable(ctx: PackExportContext): PackExportTable {
  *
  * 面板里的金额输入框是「试算」，只活在 `CurrencyModule` 的局部 state 里
  * （作者在正文里写金额，行囊不持有余额字段）—— 拿不到、也不该硬凑一个数，
- * 于是这张表回答的是「这套货币怎么换算」。
+ * 于是这段回答的是「这套货币怎么换算」：`1 金 = 100 银 = 10,000 铜`。
  */
-function currencyTable(ctx: PackExportContext): PackExportTable {
+function currencyLines(ctx: PackExportContext): string[] {
   const currency = ctx.currency;
-  if (!currency || currency.levels.length === 0) {
-    return { headers: ["单位", "进制"], rows: [] };
-  }
+  if (!currency || currency.levels.length === 0) return [];
   const ordered = [...currency.levels].sort((a, b) => b.ratioToBase - a.ratioToBase);
-  const base = ordered[ordered.length - 1];
-  return {
-    headers: ["单位", "进制", "自动进位"],
-    rows: ordered.map((level) => [
-      level.name,
-      level === base
-        ? `基准（1 ${level.name}）`
-        : `1 ${level.name} = ${formatAttrValue(Math.max(1, Math.round(level.ratioToBase)), 0)} ${base?.name ?? ""}`,
-      level === base ? DASH : currency.autoCarry ? "是" : "否",
-    ]),
-  };
+  if (ordered.length === 1) {
+    return [`${ordered[0].name}（基准单位）`];
+  }
+  const chain: string[] = [ordered[0].name];
+  for (let i = 1; i < ordered.length; i += 1) {
+    // 每一段是**对首档的累计进制**（1 金 = 100 银 = 10,000 铜），
+    // 不是相邻档的步进 —— 系统流小说里写的是「终值」，不是换算表
+    const cumulative = ordered[0].ratioToBase / ordered[i].ratioToBase;
+    chain.push(`${formatAttrValue(Math.max(1, Math.round(cumulative)), 0)} ${ordered[i].name}`);
+  }
+  const carry = currency.autoCarry ? "" : "（自动进位：关）";
+  return [`1 ${chain.join(" = ")}${carry}`];
 }
 
-/** 按模块组装表格；该模块没有结构化内容时返回 headers + 空 rows（而不是 null） */
-export function buildPackTable(
+/** 按模块组装导出行；该模块没有结构化内容时返回空数组（外层给「暂无内容」） */
+export function buildPackLines(
   key: PackExportKey,
   ctx: PackExportContext,
-): PackExportTable {
+): string[] {
   switch (key) {
     case "summary":
-      return summaryTable(ctx);
+      return summaryLines(ctx);
     case "attributes":
-      return attributesTable(ctx);
+      return attributesLines(ctx);
     case "mapping":
-      return mappingTable(ctx);
+      return mappingLines(ctx);
     case "equipment":
-      return equipmentTable(ctx);
+      return equipmentLines(ctx);
     case "inventory":
-      return inventoryTable(ctx);
+      return inventoryLines(ctx);
     case "skills":
-      return skillsTable(ctx);
+      return skillsLines(ctx);
     case "status":
-      return statusTable(ctx);
+      return statusLines(ctx);
     case "currency":
-      return currencyTable(ctx);
+      return currencyLines(ctx);
     default:
-      return { headers: [], rows: [] };
+      return [];
   }
 }
 
 /**
- * 完整导出文档：`## 行囊 · <模块名>` + 表格 + 「本表为空」时的显式说明。
+ * 完整导出文档：`【模块名】` + 一行一条冒号句。
  *
- * 空表刻意不输出只有表头的空壳 —— 粘进正文里那就是一段噪声；
- * 一句「（暂无内容）」能让作者立刻确认「确实没有」，而不是以为导出坏了。
+ * 空模块刻意给一句「（暂无内容）」—— 粘进正文里一句「确实没有」好过
+ * 让作者以为导出坏了。文本以 `\n` 收尾，方便追加写。
  */
-export function buildPackMarkdown(
+export function buildPackText(
   key: PackExportKey,
   ctx: PackExportContext,
   label: string,
 ): string {
-  const table = buildPackTable(key, ctx);
-  const title = `## 行囊 · ${label}`;
-  if (table.headers.length === 0 || table.rows.length === 0) {
-    return `${title}\n\n（暂无内容）\n`;
+  const lines = buildPackLines(key, ctx);
+  if (lines.length === 0) {
+    return `【${label}】\n（暂无内容）\n`;
   }
-  return `${title}\n\n${toMarkdownTable(table)}\n`;
+  return `【${label}】\n${lines.join("\n")}\n`;
 }

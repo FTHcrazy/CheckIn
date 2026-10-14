@@ -54,6 +54,7 @@ const doc: PackDoc = {
   mappings: [],
   slots: [],
   groups: [],
+  categories: [],
   items: [],
   skills: [],
   modifiers: [],
@@ -75,7 +76,7 @@ function makeApi(over: Partial<PackPanelApi> = {}) {
     toggleModuleCollapsed: vi.fn(),
     writeRealm: vi.fn(),
     bindEntity: vi.fn(),
-    setRungMeta: vi.fn(),
+    showToast: vi.fn(),
     ...over,
   } as unknown as PackPanelApi;
 }
@@ -189,23 +190,93 @@ describe("RealmModule —— 阶内进度条是纯读数，不挂动作按钮", 
   });
 });
 
-describe("RealmModule —— 拆分子层级后的阶设置（父阶=组）", () => {
+describe("RealmModule —— 阶设置弹窗已删，图标只给 hover 提示（1.41.0）", () => {
   afterEach(cleanup);
 
-  it("拆出子层级的阶：小层数锁定（由子层级决定），没拆的照常可改", () => {
-    const api = makeApi({
-      rungs: [
-        { id: "l1", name: "炼气", rank: 1, subLevels: 9, power: null, hasChildren: true },
-        { id: "l2", name: "筑基", rank: 2, subLevels: 3, power: null },
-      ],
-    });
+  it("问号图标带 aria-label，悬停提示指引去设定中心（不再点击弹 toast）", () => {
+    const api = makeApi();
     render(<RealmModule api={api} />);
 
-    fireEvent.click(screen.getByTitle("阶设置（小层数 / 战力当量）"));
-    const inputs = screen.getAllByRole("spinbutton") as HTMLInputElement[];
-    // 每行两个数字输入：小层 + 当量
-    expect(inputs[0].disabled).toBe(true);
-    expect(inputs[1].disabled).toBe(false);
-    expect(inputs[2].disabled).toBe(false);
+    const hint = screen.getByLabelText("境界层级去哪里设置？");
+    // 1.41.0：齿轮（onClick toast）换成问号（Tooltip hover）—— 提示应该在
+    // Tooltip 里而不是点击回调里
+    expect(hint.tagName).toBe("BUTTON");
+    expect(api.showToast).not.toHaveBeenCalled();
+    fireEvent.click(hint);
+    expect(api.showToast).not.toHaveBeenCalled();
+    expect(document.querySelector(".ant-modal-wrap")).toBeNull();
+  });
+
+  it("弹窗已删：界面上不存在「阶设置（与实体面板共享同一张表）」标题", () => {
+    const api = makeApi();
+    render(<RealmModule api={api} />);
+    expect(screen.queryByText(/阶设置/)).toBeNull();
   });
 });
+
+/**
+ * 小层别名 chip（1.39.1）：拆出子层级的阶，「合体 1/4」旁边要能看到
+ * 当前小层自己的名字（别名优先）——「X n/m」只答了走到哪，别名才回答
+ * 「现在是什么」。纯数字小层 / 空别名不显示。
+ */
+describe("RealmModule —— 头部小层别名 chip", () => {
+  afterEach(cleanup);
+
+  const rungsWithLabels = [
+    {
+      id: "l1",
+      name: "炼气",
+      rank: 1,
+      subLevels: 3,
+      power: null,
+      // 纯数字小层：没有拆出子层级，没有别名表
+    },
+    {
+      id: "l2",
+      name: "元婴",
+      rank: 2,
+      subLevels: 3,
+      power: null,
+      hasChildren: true,
+      subLabels: ["", "中期", "圆满"],
+    },
+  ];
+
+  it("拆出子层级的阶：头部在「X n/m」后显示当前小层的别名", () => {
+    const api = makeApi({
+      rungs: rungsWithLabels,
+      realmPos: { index: 1, sub: 3 },
+      realmText: "元婴 3/3",
+    });
+    render(<RealmModule api={api} />);
+    expect(screen.getByText("圆满")).toBeInTheDocument();
+    expect(document.querySelector(".cpk-rlm__alias")).not.toBeNull();
+  });
+
+  it("当前层别名是空串（未写）/ 没有别名表时不显示 chip", () => {
+    const api = makeApi({
+      rungs: rungsWithLabels,
+      realmPos: { index: 1, sub: 1 },
+      realmText: "元婴 1/3",
+    });
+    render(<RealmModule api={api} />);
+    expect(document.querySelector(".cpk-rlm__alias")).toBeNull();
+  });
+
+  it("纯数字小层（未拆子层级）不显示 chip", () => {
+    const api = makeApi({
+      rungs: rungsWithLabels,
+      realmPos: { index: 0, sub: 2 },
+      realmText: "炼气 2/3",
+    });
+    render(<RealmModule api={api} />);
+    expect(document.querySelector(".cpk-rlm__alias")).toBeNull();
+  });
+});
+
+/**
+ * 阶设置弹窗的回归史（1.39.1 弹窗整体删除，这一段留作「为什么删」的注脚）：
+ * 先是 × 关不掉（onCancel 漏传），后是空表「没有实际作用」，最终判定
+ * 这个弹窗本身就不该存在 —— 层级编辑统一收进设定中心，行囊只读。
+ * 上面的 describe 钉住「齿轮只给指引、不再弹窗」。
+ */

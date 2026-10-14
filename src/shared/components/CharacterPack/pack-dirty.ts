@@ -41,10 +41,12 @@ export type DirtyDoc = Pick<
   | "mappings"
   | "slots"
   | "groups"
+  | "categories"
   | "items"
   | "skills"
   | "modifiers"
   | "unitSystems"
+  | "layouts"
   | "presets"
   | "realmLink"
 >;
@@ -74,6 +76,16 @@ function stripTouch<T extends { updatedAt?: number }>(item: T): Record<string, u
  * （表现为「改了但顶栏还写着已保存」，比多计一次危险得多）。
  */
 const SPECS: Array<EntitySpec<never>> = [
+  {
+    // 角色（备注速记）：`setCharacterNote` 改的是 character.note。
+    // ⚠️ 刻意**只比 note**：entityId 是即时落库的那格（见 realmSignature 注），
+    // displayName 是派生值、name / avatar 由「改名」窄通道即时落库 ——
+    // 比它们任何一个都会让顶栏常亮一个按不掉的角标。
+    list: (doc) => [doc.character] as never[],
+    id: (item: never) => (item as { id: string }).id,
+    signature: (item: never) =>
+      JSON.stringify({ note: (item as { note?: string }).note ?? "" }),
+  },
   {
     // 属性定义（作品级模型）：改名 / 换组 / 改单位 / 调默认值都要能标脏
     list: (doc) => (doc.attrDefs ?? []) as never[],
@@ -105,6 +117,12 @@ const SPECS: Array<EntitySpec<never>> = [
     signature: (item: never) => JSON.stringify(item),
   },
   {
+    // 物品分类管理（1.40.0）：改名 / 换绑体系 / 增删分类都要能标脏
+    list: (doc) => (doc.categories ?? []) as never[],
+    id: (item: never) => (item as { id: string }).id,
+    signature: (item: never) => JSON.stringify(item),
+  },
+  {
     list: (doc) => doc.items as never[],
     id: (item: never) => (item as { id: string }).id,
     signature: (item: never) => JSON.stringify(stripTouch(item as { updatedAt?: number })),
@@ -125,6 +143,17 @@ const SPECS: Array<EntitySpec<never>> = [
     signature: (item: never) => JSON.stringify(stripTouch(item as { updatedAt?: number })),
   },
   {
+    // 模块布局（1.39.0 起随文档保存的设定数据）：模块管理里的开关 / 排序 /
+    // 恢复默认都要能标脏。行没有 id 字段，身份键是 moduleKey ——
+    // 漏了这类的后果是「模块开关 / 排序永远算不出脏数」：保存按钮保持禁用、
+    // 草稿也不写（flushDraft 对 dirty=0 早退），关掉窗口改动即丢，
+    // 用户视角就是「行囊存不上」。
+    list: (doc) => (doc.layouts ?? []) as never[],
+    id: (item: never) => (item as { moduleKey: string }).moduleKey,
+    signature: (item: never) =>
+      JSON.stringify(stripTouch(item as { updatedAt?: number })),
+  },
+  {
     list: (doc) => doc.presets as never[],
     id: (item: never) => (item as { id: string }).id,
     signature: (item: never) => JSON.stringify(stripTouch(item as { updatedAt?: number })),
@@ -140,18 +169,22 @@ const ORDER_KEYS = ["sortOrder", "sort", "order", "position"] as const;
  * 只保留 `id → 排序值`，不与单条 `signature` 混算 —— 否则「上移一行」会因为
  * 两行的 `sortOrder` 都变了而被算成 2 处修改，而作者只做了一次拖动。
  *
+ * ⚠️ 身份键取 `spec.id` 而不是 `record.id`：模块布局（layouts）的行没有
+ * `id` 字段，身份是 `moduleKey` —— 照读 `record.id` 会让整类实体的位置
+ * 签名变成一排空串，排序变化永远算不出来。
+ *
  * ⚠️ 只在**两侧 id 集合完全相同**时才有意义（见 `countNetChanges` 里的用法）：
  * 增删条目本身就会让顺序整体位移，那种情况下顺序变化是增删的**副产物**，
  * 再算一次「移动」就是重复计数（删 2 行会凭空变成 3 处）。
  */
-function orderSignature<T>(list: T[]): string {
+function orderSignature<T>(list: T[], spec: EntitySpec<T>): string {
   const rows = list.map((item) => {
     const record = item as Record<string, unknown>;
     const order: Record<string, unknown> = {};
     for (const key of ORDER_KEYS) {
       if (record[key] !== undefined) order[key] = record[key];
     }
-    return { id: String(record.id ?? ""), order };
+    return { id: spec.id(item), order };
   });
   // 按 id 归一化排列，让签名只反映「id → 位置」的映射本身
   rows.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
@@ -196,7 +229,7 @@ export function countNetChanges(saved: DirtyDoc | null, current: DirtyDoc | null
     // 增删的副产物（上一步已经各算过 1 处），再算一次就是重复计数。
     const sameMembers =
       before.size === after.size && [...before.keys()].every((id) => after.has(id));
-    if (sameMembers && orderSignature(spec.list(saved)) !== orderSignature(spec.list(current))) {
+    if (sameMembers && orderSignature(spec.list(saved), spec) !== orderSignature(spec.list(current), spec)) {
       count += 1;
     }
   }

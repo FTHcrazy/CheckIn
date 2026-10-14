@@ -13,14 +13,13 @@ import {
 import type { PackAttrDef, PackAttrValue, PackAttribute, PackItem, PackModifier, PackSlot } from "../../types";
 
 /**
- * 估算模式（REQ-037）与穿戴 Δ 预览（REQ-018）的 DOM 不变量。
+ * 穿戴 Δ 预览（REQ-018）的 DOM 不变量。
  *
- * 数值口径已经在 `pack-utils.test.ts` 里钉过（两者都只是 `computeHypotheticalSummary`
- * 的展示层）。这里只钉**组件结构**上那两条会静默出错的事：
- *  1. 估算编辑器里有 Select / InputNumber —— 它**必须**在行按钮之外。
- *     `<button>` 里套交互控件是无效 HTML，浏览器会把内层控件踢出按钮，
- *     表现成「点了没反应」或「点输入框变成了看明细」。
+ * 数值口径已经在 `pack-utils.test.ts` 里钉过（预览只是 `computeHypotheticalSummary`
+ * 的展示层）。这里钉**组件结构**上会静默出错的事：
+ *  1. 属性行是 `<button>`，里面不得再出现任何交互控件。
  *  2. Δ 预览只列真的会变的属性；没变的行不占位。
+ * （REQ-037 估算模式已下线，相关用例随组件一并移除。）
  */
 
 const attributes: PackAttribute[] = [
@@ -96,6 +95,7 @@ const items: PackItem[] = [
     tags: [],
     equippedSlotId: "",
     groupId: "",
+    gradeId: "",
     slotIndex: null,
     sourceChapterId: "",
     updatedAt: 0,
@@ -148,6 +148,7 @@ const doc: PackDoc = {
   items,
   skills: [],
   groups: [],
+  categories: [],
   modifiers,
   unitSystems: [],
   layouts: [],
@@ -163,38 +164,6 @@ function makeApi(over: Partial<PackPanelApi> = {}): PackPanelApi {
     activeCarriers: buildActiveCarriersFrom(doc),
     proficiency: {},
   });
-  const estimateEntries = over.estimateEntries ?? [];
-  const estimateSummary = estimateEntries.length
-    ? computeHypotheticalSummary(
-        { ...doc, attributes, proficiency: {} },
-        {
-          extraModifiers: estimateEntries.map((entry, index) => ({
-            id: `est-${entry.id}`,
-            ownerType: "status",
-            ownerId: "c1",
-            nature: "sustained",
-            name: "估算",
-            targetAttrId: entry.attrId,
-            op: entry.op,
-            value: entry.value,
-            valueUnit: "",
-            scaleByProficiency: false,
-            active: true,
-            defaultOn: false,
-            cost: "",
-            cooldown: null,
-            duration: "",
-            roundsLeft: null,
-            target: "",
-            trigger: "",
-            condition: "",
-            note: "",
-            disabled: false,
-            sortOrder: 900000 + index,
-          })),
-        },
-      )
-    : null;
 
   return {
     doc,
@@ -203,15 +172,6 @@ function makeApi(over: Partial<PackPanelApi> = {}): PackPanelApi {
     dirty: 0,
     prefs: { collapsed: {} },
     toggleModuleCollapsed: vi.fn(),
-    estimateOn: false,
-    setEstimateOn: vi.fn(),
-    estimateEntries,
-    estimateSummary,
-    estimateDeltas: estimateSummary ? summaryDeltas(summary, estimateSummary) : [],
-    addEstimate: vi.fn(),
-    updateEstimate: vi.fn(),
-    removeEstimate: vi.fn(),
-    clearEstimates: vi.fn(),
     setDetailAttrId: vi.fn(),
     previewEquipDeltas: (itemId: string, slotId: string) =>
       summaryDeltas(summary, computeHypotheticalSummary({ ...doc, attributes, proficiency: {} }, { equip: { itemId, slotId } })),
@@ -219,48 +179,16 @@ function makeApi(over: Partial<PackPanelApi> = {}): PackPanelApi {
   } as unknown as PackPanelApi;
 }
 
-describe("SummaryModule —— 估算模式（REQ-037）", () => {
+describe("SummaryModule —— 属性行结构", () => {
   afterEach(cleanup);
 
-  it("关闭时完全不出现估算编辑器", () => {
+  it("属性行是 button，行内不得嵌套任何交互控件", () => {
     render(<SummaryModule api={makeApi()} />);
-    expect(screen.queryByText("临时加成只参与试算，不会保存，也不计入未保存改动数。")).toBeNull();
-  });
-
-  it("打开且有条目时，估算控件不在属性行按钮内（无嵌套交互控件）", () => {
-    render(
-      <SummaryModule
-        api={makeApi({
-          estimateOn: true,
-          estimateEntries: [{ id: "e1", attrId: "a1", op: "add", value: 50 }],
-        })}
-      />,
-    );
-
-    // 编辑器确实渲染了
-    expect(screen.getByText("临时加成只参与试算，不会保存，也不计入未保存改动数。")).toBeInTheDocument();
-
-    // 行按钮里不能有任何交互控件：一旦估算编辑器被挪进行按钮，
-    // 这里立刻会数出 0 以外的东西（Select / InputNumber 都渲染成可聚焦元素）。
     const rowButtons = document.querySelectorAll(".cpk-sum__row");
     expect(rowButtons.length).toBe(2);
     rowButtons.forEach((row) => {
       expect(row.querySelectorAll("button, input, [role='combobox']").length).toBe(0);
     });
-  });
-
-  it("有条目时属性行显示估算值与 Δ 增量", () => {
-    render(
-      <SummaryModule
-        api={makeApi({
-          estimateOn: true,
-          estimateEntries: [{ id: "e1", attrId: "a1", op: "add", value: 50 }],
-        })}
-      />,
-    );
-    // 攻击力 100 → 150，Δ +50
-    expect(document.querySelectorAll(".cpk-sum__num.is-est").length).toBeGreaterThan(0);
-    expect(document.querySelectorAll(".cpk-seg.is-est").length).toBeGreaterThan(0);
   });
 });
 

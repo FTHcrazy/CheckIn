@@ -37,6 +37,7 @@ function makeItem(id: string): PackItem {
     tags: [],
     equippedSlotId: "",
     groupId: "",
+    gradeId: "",
     slotIndex: null,
     sourceChapterId: "c1",
     updatedAt: 100,
@@ -83,6 +84,7 @@ function makeBundle(overrides: BundleOverrides = {}): PackBundleDTO {
     mappings: [],
     slots: [],
     groups: [],
+    categories: [],
     items,
     skills: [],
     modifiers: [],
@@ -91,6 +93,7 @@ function makeBundle(overrides: BundleOverrides = {}): PackBundleDTO {
     presets: [],
     records: [],
     levelSystems: [],
+    gradeSystems: [],
     realmLink,
     draft: draftItems
       ? {

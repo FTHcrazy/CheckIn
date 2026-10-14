@@ -9,7 +9,6 @@ import type { EntityType } from "../types";
 export type PanelTab =
   | "outline"
   | "entity"
-  | "setting"
   | "note"
   | "search"
   | "tools";

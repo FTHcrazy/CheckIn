@@ -103,14 +103,6 @@ export default function ToolLauncher({ onOpenNaming }: ToolLauncherProps) {
           );
         })}
       </div>
-
-      <div className="nv-sechead">说明</div>
-      <div className="nv-kv">
-        <span className="nv-kv__k">工具</span>
-        <span className="nv-kv__v">
-          按需即用、关闭即释放，入口统一收在这里，避免顶栏按钮堆积。
-        </span>
-      </div>
     </div>
   );
 }

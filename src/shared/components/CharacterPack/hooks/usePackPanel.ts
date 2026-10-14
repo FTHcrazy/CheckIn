@@ -19,7 +19,7 @@ import { useAutoToast, type ToastPayload } from "@/shared/novel/use-auto-toast";
 import {
   buildActiveCarriersFrom,
   buildGroupOffCarriers,
-  buildPackMarkdown,
+  buildPackText,
   carrierKey,
   composeAttributes,
   computeHypotheticalSummary,
@@ -39,7 +39,6 @@ import {
   type RealmPosition,
   type SummaryDelta,
   type SummaryResult,
-  type ThresholdLevel,
 } from "../pack-utils";
 import {
   applyPreset,
@@ -55,7 +54,6 @@ import {
   fetchPackUiPrefsRaw,
   renamePackCharacter,
   savePackUiPrefsRaw,
-  writeLevelMeta,
   writeProtagonistBinding,
 } from "../services/pack-service";
 import {
@@ -64,10 +62,11 @@ import {
   DEFAULT_UI_PREFS,
   NATURE_META,
   PACK_MODULES,
-  type EstimateEntry,
   type PackAttrDef,
   type PackAttribute,
   type PackAttrValue,
+  type PackCategory,
+  type PackGradeSystem,
   type PackGroup,
   type PackItem,
   type PackLayout,
@@ -295,6 +294,8 @@ export function usePackPanel({
   const [unitManagerOpen, setUnitManagerOpen] = useState(false);
   const [slotManagerOpen, setSlotManagerOpen] = useState(false);
   const [groupManagerOpen, setGroupManagerOpen] = useState(false);
+  /** 分类管理弹窗（1.40.0）：物品分类改名 / 绑定体系品阶 */
+  const [categoryManagerOpen, setCategoryManagerOpen] = useState(false);
   const [recordDrawerOpen, setRecordDrawerOpen] = useState(false);
   /** 未保存闸门弹窗（关闭窗口 / 退出应用共用同一个） */
   const [guardOpen, setGuardOpen] = useState(false);
@@ -406,92 +407,10 @@ export function usePackPanel({
     [summary, hypotheticalInput],
   );
 
-  // ── 估算模式（REQ-037）──
-  const [estimateOn, setEstimateOn] = useState(false);
-  const [estimateEntries, setEstimateEntries] = useState<EstimateEntry[]>([]);
-
-  /**
-   * 临时加成 → 效果词条。
-   *
-   * 挂成 `status` 型：状态效果「自己就是载体」，无需真的造一件装备 / 一个技能，
-   * `active` 恒真才能过闸门 1 与闸门 2 —— 估算的全部意义就是「假设这些现在就生效」。
-   * id 加 `est-` 前缀：它**不是**真数据，任何按 id 回查文档的地方都查不到它，
-   * 前缀让这类落空一眼可辨（而不是伪装成一条被删掉的效果）。
-   */
-  const estimateModifiers = useMemo<PackModifier[]>(
-    () =>
-      estimateEntries.map((entry, index) => ({
-        id: `est-${entry.id}`,
-        ownerType: "status",
-        ownerId: doc?.character.id ?? "",
-        nature: "sustained",
-        name: "估算",
-        targetAttrId: entry.attrId,
-        op: entry.op,
-        value: entry.value,
-        valueUnit: "",
-        scaleByProficiency: false,
-        active: true,
-        defaultOn: false,
-        cost: "",
-        cooldown: null,
-        duration: "",
-        roundsLeft: null,
-        target: "",
-        trigger: "",
-        condition: "",
-        note: "",
-        disabled: false,
-        // 排在真实词条之后：override 冲突时估算值要能盖住（否则「估算」被反盖，很反直觉）
-        sortOrder: 900000 + index,
-      })),
-    [estimateEntries, doc],
-  );
-
-  /** 估算结果：只在「开关打开 + 至少一条临时加成」时才算，其余情况是 null（不是等于真实值） */
-  const estimateSummary = useMemo<SummaryResult | null>(
-    () =>
-      estimateOn && doc && estimateModifiers.length > 0
-        ? computeHypotheticalSummary(hypotheticalInput, {
-            extraModifiers: estimateModifiers,
-          })
-        : null,
-    [estimateOn, doc, estimateModifiers, hypotheticalInput],
-  );
-
-  const estimateDeltas = useMemo(
-    () => (estimateSummary ? summaryDeltas(summary, estimateSummary) : []),
-    [estimateSummary, summary],
-  );
-
-  const addEstimate = useCallback((partial: Partial<EstimateEntry> = {}) => {
-    setEstimateEntries((current) => [
-      ...current,
-      {
-        id: createNovelId("est"),
-        attrId: partial.attrId ?? docRef.current?.attrDefs[0]?.id ?? "",
-        op: partial.op ?? "add",
-        value: partial.value ?? 0,
-      },
-    ]);
+  // ── 分组管理（1.39.1 起只有物品分组：技能分组已随「技能分组无实际意义」下线）──
+  const openGroupManager = useCallback(() => {
+    setGroupManagerOpen(true);
   }, []);
-
-  const updateEstimate = useCallback(
-    (id: string, patch: Partial<EstimateEntry>) => {
-      setEstimateEntries((current) =>
-        current.map((entry) =>
-          entry.id === id ? { ...entry, ...patch } : entry,
-        ),
-      );
-    },
-    [],
-  );
-
-  const removeEstimate = useCallback((id: string) => {
-    setEstimateEntries((current) => current.filter((entry) => entry.id !== id));
-  }, []);
-
-  const clearEstimates = useCallback(() => setEstimateEntries([]), []);
 
   const moduleOf = useCallback(
     (key: PackModuleKey): PackModuleState | undefined =>
@@ -594,30 +513,62 @@ export function usePackPanel({
     patchPrefs({ changedReadAt: Date.now() });
   }, [patchPrefs]);
 
-  // ── 派生：Markdown 导出（REQ-030）──
+  // ── 派生：体系品阶（1.40.0）──
   //
-  // 组装交给纯函数（`buildPackMarkdown`），这里只负责把散落的派生拼成一份输入。
+  // meta.gradeSystems 随装载 / syncMeta 刷新，与 levelSystems 同节奏；
+  // 这里是全部「品阶 → 名字」翻译的唯一入口（组件与导出共用同一份）。
+
+  /** 体系品阶投影：设定域全部分类的根阶清单（物品 / 技能选品阶用） */
+  const gradeSystems: PackGradeSystem[] = useMemo(
+    () => meta.gradeSystems ?? [],
+    [meta.gradeSystems],
+  );
+
+  /** 品阶名翻译：levelId → 「神器」；等级被删 / id 悬空返回空串（chip 不显示） */
+  const gradeNameOf = useCallback(
+    (levelId: string): string => {
+      if (!levelId) return "";
+      for (const system of gradeSystems) {
+        const level = system.levels.find((row) => row.id === levelId);
+        if (level) return level.name;
+      }
+      return "";
+    },
+    [gradeSystems],
+  );
+
+  /** 分类绑定的体系 id（按名字反查；分类被删 → 空串 = 未绑定） */
+  const categorySystemIdOf = useCallback(
+    (categoryName: string): string =>
+      doc?.categories.find((category) => category.name === categoryName)?.systemId ?? "",
+    [doc],
+  );
+
+  /**
+   * 物品 / 技能的品阶归属体系是否可判：品阶选择的前提是有体系可选。
+   * 设定域一个体系都没有时，调用方给「去设定中心创建」的引导。
+   */
+  const hasGradeSystems = gradeSystems.length > 0;
+
+  /** 导出用：levelId → 品阶名 的整表（buildPackText 的 context 吃纯数据） */
+  const gradeNames = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const system of gradeSystems) {
+      for (const level of system.levels) map.set(level.id, level.name);
+    }
+    return map;
+  }, [gradeSystems]);
+
+  // ── 派生：面板文本导出（1.39.1：系统流小说的 txt 排版）──
+  //
+  // 组装交给纯函数（`buildPackText`），这里只负责把散落的派生拼成一份输入。
   // **不在渲染期调用**：`PackExportButton` 只在真正点菜单时才 build 一次。
-  const buildModuleMarkdown = useCallback(
+  const buildModuleText = useCallback(
     (key: PackExportKey, label: string): string => {
-      // 默认体系的档位 / 别名（Phase 3：技能表列名跟随别名；行内档位按各组的绑定另取）
+      // 默认体系的档位 / 别名（Phase 3：技能行文案跟随别名）
       const defaultMeta =
         (proficiencySystem && proficiencySchemes.get(proficiencySystem.id)) ??
         proficiencySchemeOf(proficiencySystem?.levels, proficiencySystem?.config);
-      // groupId → 所绑体系的展示元数据（未绑定 / 悬空绑定的组不出现，导出时回落默认）
-      const profSchemesByGroup: Record<
-        string,
-        { levels: ThresholdLevel[]; autoCarry: boolean }
-      > = {};
-      for (const group of doc?.groups ?? []) {
-        if (!group.profSchemeId) continue;
-        const meta = proficiencySchemes.get(group.profSchemeId);
-        if (meta)
-          profSchemesByGroup[group.id] = {
-            levels: meta.levels,
-            autoCarry: meta.autoCarry,
-          };
-      }
 
       let currencyLevels: Array<{ name: string; ratioToBase: number }> = [];
       let currencyAutoCarry = true;
@@ -648,14 +599,14 @@ export function usePackPanel({
         summary,
         proficiencyLevels: defaultMeta.levels,
         proficiencyAlias: defaultMeta.alias,
-        proficiencySchemesByGroup: profSchemesByGroup,
+        gradeNames,
         currency: currencyLevels.length
           ? { levels: currencyLevels, autoCarry: currencyAutoCarry }
           : null,
       };
-      return buildPackMarkdown(key, context, label);
+      return buildPackText(key, context, label);
     },
-    [doc, attrView, summary, proficiencySystem, proficiencySchemes, currencySystem],
+    [doc, attrView, summary, proficiencySystem, proficiencySchemes, currencySystem, gradeNames],
   );
 
   // ── 派生：境界（全部经由口子，禁止直接读字段 REQ-048） ──
@@ -671,6 +622,7 @@ export function usePackPanel({
         subLevels: rung.subLevels,
         power: rung.power,
         hasChildren: rung.hasChildren ?? false,
+        subLabels: rung.subLabels,
       })),
     );
   }, [meta.levelSystems]);
@@ -809,23 +761,6 @@ export function usePackPanel({
     };
     return subscribeDualChannel(PACK_REALM_EVENT, handler);
   }, [workId, mutate]);
-
-  /** 等级项补列（小层数 / 战力当量）：改的是 novel_levels，两边共享同一张表 */
-  const setRungMeta = useCallback(
-    async (
-      rungId: string,
-      patch: { subLevels?: number; power?: number | null },
-    ) => {
-      const ok = await writeLevelMeta(rungId, patch);
-      if (ok) {
-        await data.syncMeta();
-        showToast("等级体系已更新（实体面板同步生效）", "success");
-      } else {
-        showToast("等级体系更新失败", "error");
-      }
-    },
-    [data, showToast],
-  );
 
   // ── 自动保存兜底（G-3） ──
   /**
@@ -1152,19 +1087,6 @@ export function usePackPanel({
     [callMutate],
   );
 
-  /** 整组改名：一次 mutation 完成，避免逐条改动把「未保存处数」灌水 */
-  const renameAttributeGroup = useCallback(
-    (from: string, to: string) => {
-      callMutate((current) => ({
-        ...current,
-        attrDefs: current.attrDefs.map((def) =>
-          def.groupName === from ? { ...def, groupName: to } : def,
-        ),
-      }));
-    },
-    [callMutate],
-  );
-
   /** 套用属性模板：种的是**定义**（defaultValue 同步作为初始数值） */
   const applyAttrTemplate = useCallback(
     (templateName: string) => {
@@ -1468,6 +1390,106 @@ export function usePackPanel({
     [callMutate],
   );
 
+  // ── 物品分类管理（1.40.0）──
+  //
+  // item.category 存的是**分类名字符串**（compat：老数据零迁移），所以
+  // 改名要把旧名字传播到所有物品行，删除要把物品退回「未分类」——
+  // 与 removeGroup「组内条目退回未分组」同构。
+
+  const addCategory = useCallback(
+    (name = "新分类") => {
+      const id = createNovelId("pcat");
+      callMutate((current) => ({
+        ...current,
+        categories: [
+          ...current.categories,
+          {
+            id,
+            characterId: current.character.id,
+            name,
+            systemId: "",
+            sortOrder:
+              current.categories.reduce((max, row) => Math.max(max, row.sortOrder), 0) + 1,
+          },
+        ],
+      }));
+      return id;
+    },
+    [callMutate],
+  );
+
+  /**
+   * 改分类名 / 换绑体系。改名会传播到物品行；与既有分类撞名时拒绝改名
+   * （名字是物品行的关联键，重复会让「按名字找分类」出现二义），
+   * 调用方据返回值提示。
+   */
+  const updateCategory = useCallback(
+    (id: string, patch: Partial<Pick<PackCategory, "name" | "systemId">>): boolean => {
+      let ok = true;
+      callMutate((current) => {
+        const row = current.categories.find((category) => category.id === id);
+        if (!row) return current;
+        let nextName = row.name;
+        if (patch.name !== undefined && patch.name !== row.name) {
+          const duplicated = current.categories.some(
+            (category) => category.id !== id && category.name === patch.name,
+          );
+          if (duplicated) {
+            ok = false;
+            return current;
+          }
+          nextName = patch.name;
+        }
+        return {
+          ...current,
+          categories: current.categories.map((category) =>
+            category.id === id
+              ? {
+                  ...category,
+                  name: nextName,
+                  systemId: patch.systemId ?? category.systemId,
+                }
+              : category,
+          ),
+          // 改名传播：物品行的 category 存的是名字
+          items:
+            nextName !== row.name
+              ? current.items.map((item) =>
+                  item.category === row.name
+                    ? { ...item, category: nextName, updatedAt: Date.now() }
+                    : item,
+                )
+              : current.items,
+        };
+      });
+      return ok;
+    },
+    [callMutate],
+  );
+
+  /** 删除分类：分类下物品退回「未分类」。返回受影响物品数，供确认框报数 */
+  const removeCategory = useCallback(
+    (id: string): number => {
+      let affected = 0;
+      callMutate((current) => {
+        const row = current.categories.find((category) => category.id === id);
+        if (!row) return current;
+        affected = current.items.filter((item) => item.category === row.name).length;
+        return {
+          ...current,
+          categories: current.categories.filter((category) => category.id !== id),
+          items: current.items.map((item) =>
+            item.category === row.name
+              ? { ...item, category: "", updatedAt: Date.now() }
+              : item,
+          ),
+        };
+      });
+      return affected;
+    },
+    [callMutate],
+  );
+
   // ── 物品（M3） ──
   /**
    * 新增物品。返回新条目的 id（调用方按它继续操作，如立刻展开详情行）。
@@ -1488,6 +1510,7 @@ export function usePackPanel({
             name: partial.name ?? "新物品",
             category: partial.category ?? "杂物",
             groupId: partial.groupId ?? "",
+            gradeId: partial.gradeId ?? "",
             qty: partial.qty ?? 1,
             rarity: partial.rarity ?? "common",
             icon: partial.icon ?? "",
@@ -1816,6 +1839,7 @@ export function usePackPanel({
             groupId: partial.groupId ?? "",
             enabled: partial.enabled ?? true,
             proficiencyRaw: partial.proficiencyRaw ?? 0,
+            gradeId: partial.gradeId ?? "",
             tags: partial.tags ?? [],
             sortOrder: current.skills.length + 1,
             updatedAt: Date.now(),
@@ -1890,11 +1914,11 @@ export function usePackPanel({
           ownerId,
           nature,
           name: "",
-          targetAttrId:
-            nature === "cast" ? "" : (current.attrDefs[0]?.id ?? ""),
+          // 1.39.1 起释放型也是属性加成：默认挂到第一个属性，作者再改
+          targetAttrId: current.attrDefs[0]?.id ?? "",
           op: "add",
           value: 0,
-          valueUnit: nature === "cast" ? "攻击力%" : "",
+          valueUnit: "",
           scaleByProficiency: false,
           // 持续型默认关：需要作者显式开启才计入（§9.2.1）
           active: false,
@@ -1904,7 +1928,7 @@ export function usePackPanel({
           duration: "",
           // 新增的效果默认不限时（NULL）：给个「1 回合」会让它下一拍就自己过期
           roundsLeft: null,
-          target: nature === "cast" ? "单体" : "",
+          target: "",
           trigger: "",
           condition: "",
           note: "",
@@ -2445,6 +2469,9 @@ export function usePackPanel({
     setSlotManagerOpen,
     groupManagerOpen,
     setGroupManagerOpen,
+    openGroupManager,
+    categoryManagerOpen,
+    setCategoryManagerOpen,
     recordDrawerOpen,
     setRecordDrawerOpen,
     guardOpen,
@@ -2465,11 +2492,6 @@ export function usePackPanel({
     summary,
     mappings,
     previewEquipDeltas,
-    estimateOn,
-    setEstimateOn,
-    estimateEntries,
-    estimateSummary,
-    estimateDeltas,
     rungs,
     realmPos,
     panelRealmPos,
@@ -2483,32 +2505,30 @@ export function usePackPanel({
     proficiencySchemes,
     schemeForSkill,
     unitSystemOf,
+    gradeSystems,
+    gradeNameOf,
+    categorySystemIdOf,
+    hasGradeSystems,
     /** 属性组合视图（def ∪ value，id = 定义 id）：展示组件统一消费这一份 */
     attrView,
     changedCount,
     isRecentlyChanged,
-    buildModuleMarkdown,
+    buildModuleText,
 
     // 动作
     writeRealm,
     bindEntity,
-    setRungMeta,
     addAttribute,
     updateAttribute,
     removeAttribute,
     countModifiersOfAttribute,
     countMappingsOfAttribute,
     reorderAttributes,
-    renameAttributeGroup,
     applyAttrTemplate,
     addMapping,
     updateMapping,
     removeMapping,
     reorderMappings,
-    addEstimate,
-    updateEstimate,
-    removeEstimate,
-    clearEstimates,
     markAllChangesRead,
     addSlot,
     updateSlot,
@@ -2518,6 +2538,9 @@ export function usePackPanel({
     addGroup,
     updateGroup,
     removeGroup,
+    addCategory,
+    updateCategory,
+    removeCategory,
     addItem,
     updateItem,
     removeItem,

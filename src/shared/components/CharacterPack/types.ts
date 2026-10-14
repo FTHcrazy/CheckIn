@@ -8,8 +8,10 @@ import type {
   PackAttrDefDTO,
   PackAttributeDTO,
   PackBundleDTO,
+  PackCategoryDTO,
   PackCharacterDTO,
   PackDraftDTO,
+  PackGradeSystemDTO,
   PackGroupDTO,
   PackItemDTO,
   PackLayoutDTO,
@@ -73,6 +75,10 @@ export type PackSlot = PackSlotDTO;
 export type PackGroup = PackGroupDTO;
 export type PackItem = PackItemDTO;
 export type PackSkill = PackSkillDTO;
+/** 物品分类管理（1.40.0）：可改名 / 可绑定设定体系的分类行 */
+export type PackCategory = PackCategoryDTO;
+/** 体系品阶投影（1.40.0）：设定域分类的根阶清单 */
+export type PackGradeSystem = PackGradeSystemDTO;
 export type PackModifier = PackModifierDTO;
 export type PackUnitSystem = PackUnitSystemDTO;
 export type PackLayout = PackLayoutDTO;
@@ -175,21 +181,6 @@ export const DEFAULT_UI_PREFS: PackUiPrefs = {
 
 /** 本章变动角标有效期（F-2） */
 export const CHANGED_TTL_MS = 24 * 60 * 60 * 1000;
-
-/**
- * 估算模式的临时加成（REQ-037）
- *
- * **只活在内存里**：不落草稿、不进正式表、不计入未保存改动数 —— 它的语义就是
- * 「假设这些加成现在就生效，换算结果是多少」。面板一关就没了，这是刻意的：
- * 一旦它被持久化，就变成一条要维护的真数据，估算模式也就不再是「试算」。
- */
-export interface EstimateEntry {
-  id: string;
-  /** 目标属性 id */
-  attrId: string;
-  op: PackOp;
-  value: number;
-}
 
 /** 属性分组的默认值（B-1 支持分组） */
 export const DEFAULT_ATTR_GROUP = "基础属性";
@@ -301,10 +292,6 @@ export function rarityMetaOf(key: string): { label: string; color: string } {
   if (meta) return meta;
   return { label: key || "未知", color: "var(--app-text-disabled)" };
 }
-
-/** 释放型效果的参数字段（REQ-040）：效果量单位 / 目标 */
-export const CAST_UNITS = ["攻击力%", "法术强度%", "最大生命%", "固定伤害", "治疗量%"] as const;
-export const CAST_TARGETS = ["自身", "单体", "群体", "区域"] as const;
 
 /** 汇总分段色（被动 / 持续两段颜色需可区分且不喧宾夺主） */
 export const NATURE_SEGMENT_COLOR: Record<PackNature, string> = {

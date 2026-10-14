@@ -41,7 +41,7 @@ describe("buildChapterPlainText 章节标题序号（用户要求：导出带自
   it("中文数字 + 默认后缀：「第一章 灵潮起」", () => {
     const chapter = makeChapter({ title: "灵潮起", content: "潮起东海。" });
     expect(buildChapterPlainText(chapter, 1, options)).toBe(
-      "第一章 灵潮起\n\n潮起东海。",
+      "第一章 灵潮起\n\n　　潮起东海。",
     );
   });
 
@@ -67,6 +67,41 @@ describe("buildChapterPlainText 章节标题序号（用户要求：导出带自
     expect(buildChapterPlainText(chapter, 105, options).startsWith("第一百零五章")).toBe(
       true,
     );
+  });
+});
+
+describe("导出段首缩进（1.40.0，用户要求：修每章第一段不缩进）", () => {
+  it("每章第一段也补「　　」缩进（与编辑器的 CSS 缩进对齐）", () => {
+    const chapter = makeChapter({
+      title: "灵潮起",
+      // 模拟作者手打的内容：第一段没缩进、第二段自己补了两格
+      content: "潮起东海。\n　　夜里有雾。",
+    });
+    const text = buildChapterPlainText(chapter, 1, options);
+    expect(text).toBe("第一章 灵潮起\n\n　　潮起东海。\n　　夜里有雾。");
+  });
+
+  it("已有缩进的段不重复补（剥了再补，幂等）", () => {
+    const chapter = makeChapter({
+      title: "X",
+      content: "\u3000\u3000\u3000\u3000四格手打。",
+    });
+    expect(buildChapterPlainText(chapter, 1, options)).toContain("　　四格手打。");
+    expect(buildChapterPlainText(chapter, 1, options)).not.toContain("　　　　");
+  });
+
+  it("空行保持空行，不补出「只有缩进」的行", () => {
+    const chapter = makeChapter({ title: "X", content: "第一段。\n\n第三段。" });
+    expect(buildChapterPlainText(chapter, 1, options)).toBe(
+      "第一章 X\n\n　　第一段。\n\n　　第三段。",
+    );
+  });
+
+  it("paragraphIndent: false 保持原文（作者自管排版）", () => {
+    const chapter = makeChapter({ title: "X", content: "潮起东海。" });
+    expect(
+      buildChapterPlainText(chapter, 1, { ...options, paragraphIndent: false }),
+    ).toBe("第一章 X\n\n潮起东海。");
   });
 });
 

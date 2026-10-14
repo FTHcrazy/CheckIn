@@ -17,7 +17,9 @@ import { countNetChanges } from "../pack-dirty";
 import type {
   PackAttrDef,
   PackBundleDTO,
+  PackCategory,
   PackCharacter,
+  PackGradeSystem,
   PackGroup,
   PackLayout,
   PackLevelSystem,
@@ -49,6 +51,8 @@ export interface PackDoc {
   slots: PackSlot[];
   /** 载体分组（1.39.0 二期）：条目 groupId 引用这里的 id */
   groups: PackGroup[];
+  /** 物品分类管理（1.40.0）：item.category 按名字引用这里的行 */
+  categories: PackCategory[];
   items: PackItem[];
   skills: PackSkill[];
   modifiers: PackModifier[];
@@ -69,6 +73,8 @@ export interface PackDoc {
 export interface PackMeta {
   records: PackRecord[];
   levelSystems: PackLevelSystem[];
+  /** 体系品阶投影（1.40.0）：设定域全部分类的根阶清单，物品 / 技能选品阶用 */
+  gradeSystems: PackGradeSystem[];
   realmLink: PackRealmLink | null;
 }
 
@@ -83,6 +89,7 @@ function fromBundle(bundle: PackBundleDTO): PackDoc | null {
     mappings: bundle.mappings ?? [],
     slots: bundle.slots,
     groups: bundle.groups ?? [],
+    categories: bundle.categories ?? [],
     items: bundle.items,
     skills: bundle.skills,
     modifiers: bundle.modifiers,
@@ -108,6 +115,7 @@ function parseDraft(payload: string): PackDoc | null {
       mappings: doc.mappings ?? [],
       slots: doc.slots ?? [],
       groups: doc.groups ?? [],
+      categories: doc.categories ?? [],
       items: doc.items ?? [],
       skills: doc.skills ?? [],
       modifiers: doc.modifiers ?? [],
@@ -135,6 +143,7 @@ export function usePackData(workId: string, chapterId: string) {
   const [meta, setMeta] = useState<PackMeta>({
     records: [],
     levelSystems: [],
+    gradeSystems: [],
     realmLink: null,
   });
   /**
@@ -208,6 +217,7 @@ export function usePackData(workId: string, chapterId: string) {
     setMeta({
       records: bundle.records,
       levelSystems: bundle.levelSystems,
+      gradeSystems: bundle.gradeSystems ?? [],
       realmLink: bundle.realmLink,
     });
   }, []);
@@ -260,6 +270,7 @@ export function usePackData(workId: string, chapterId: string) {
       const next: PackMeta = {
         records: bundle.records,
         levelSystems: bundle.levelSystems,
+        gradeSystems: bundle.gradeSystems ?? [],
         realmLink: bundle.realmLink,
       };
       setMeta(next);

@@ -1,11 +1,14 @@
+import { useState } from "react";
+import type { KeyboardEvent } from "react";
 import {
   DeleteOutlined,
+  EditOutlined,
   FolderAddOutlined,
   PushpinFilled,
   PushpinOutlined,
   RollbackOutlined,
 } from "@ant-design/icons";
-import { Button, Dropdown, Popconfirm, Tooltip } from "antd";
+import { Button, Dropdown, Input, Popconfirm, Tooltip } from "antd";
 import { formatDayLabel } from "../../bookshelf-utils";
 import type { NovelNoteDTO } from "@/shared/types/electron";
 import "./index.scss";
@@ -19,12 +22,14 @@ interface IdeaNoteCardProps {
   onTogglePin: () => void;
   onArchiveTo: (workId: string) => void;
   onUnassign: () => void;
+  /** 编辑内容（1.41.0）：Enter 保存 · Shift+Enter 换行 · Esc 取消 */
+  onUpdateContent: (content: string) => void;
   onRemove: () => void;
 }
 
 /**
  * 灵感卡（R32 全局灵感库）：内容 + 来源归属 chip + 相对时间，
- * 悬浮操作：置顶 / 归档到作品（未归属）或退回灵感池（已归档）/ 删除。
+ * 悬浮操作：置顶 / 编辑 / 归档到作品（未归属）或退回灵感池（已归档）/ 删除。
  */
 export default function IdeaNoteCard({
   note,
@@ -33,13 +38,56 @@ export default function IdeaNoteCard({
   onTogglePin,
   onArchiveTo,
   onUnassign,
+  onUpdateContent,
   onRemove,
 }: IdeaNoteCardProps) {
   const unassigned = workName === null;
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+
+  const startEdit = () => {
+    setDraft(note.content);
+    setEditing(true);
+  };
+
+  const cancelEdit = () => setEditing(false);
+
+  const commitEdit = () => {
+    setEditing(false);
+    onUpdateContent(draft);
+  };
+
+  const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.nativeEvent.isComposing) return;
+    if (event.key === "Escape") {
+      event.stopPropagation();
+      cancelEdit();
+      return;
+    }
+    if (event.key !== "Enter" || event.shiftKey) return;
+    event.preventDefault();
+    commitEdit();
+  };
 
   return (
     <div className={`bs-idea${note.pinned ? " is-pinned" : ""}`}>
-      <p className="bs-idea__content">{note.content}</p>
+      {editing ? (
+        <div className="bs-idea__edit">
+          <Input.TextArea
+            variant="borderless"
+            value={draft}
+            autoFocus
+            rows={3}
+            aria-label="编辑灵感内容"
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={onKeyDown}
+            onBlur={commitEdit}
+          />
+          <span className="bs-idea__edittip">Enter 保存 · Shift+Enter 换行 · Esc 取消</span>
+        </div>
+      ) : (
+        <p className="bs-idea__content">{note.content}</p>
+      )}
 
       <div className="bs-idea__footer">
         <span className={`bs-idea__source bs-idea__source--${unassigned ? "unassigned" : "work"}`}>
@@ -56,6 +104,12 @@ export default function IdeaNoteCard({
             aria-label={note.pinned ? "取消置顶" : "置顶"}
           >
             {note.pinned ? <PushpinFilled /> : <PushpinOutlined />}
+          </Button>
+        </Tooltip>
+
+        <Tooltip title="编辑">
+          <Button className="bs-idea__action" onClick={startEdit} aria-label="编辑灵感">
+            <EditOutlined />
           </Button>
         </Tooltip>
 

@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Button, Switch } from "antd";
 import { DeleteOutlined, EditOutlined, PlusOutlined, ThunderboltOutlined } from "@ant-design/icons";
 import { NATURE_META, type PackAttribute, type PackModifier, type PackNature } from "../../types";
-import { castParamText, formatAttrValue } from "../../pack-utils";
+import { statText } from "../../pack-utils";
 import "./index.scss";
 
 interface ModifierListProps {
@@ -27,27 +27,7 @@ interface ModifierListProps {
 const NATURE_ORDER: PackNature[] = ["passive", "sustained", "cast"];
 
 function attrName(attributes: PackAttribute[], id: string): string {
-  return attributes.find((attr) => attr.id === id)?.name ?? "未指定属性";
-}
-
-function attrDecimals(attributes: PackAttribute[], id: string): number {
-  return attributes.find((attr) => attr.id === id)?.decimals ?? 0;
-}
-
-/** 被动 / 持续型的数值文案：`攻击力 +320` / `防御力 +40%` */
-function statText(mod: PackModifier, attributes: PackAttribute[]): string {
-  const name = attrName(attributes, mod.targetAttrId);
-  const value = formatAttrValue(mod.value, mod.op === "mul" ? 2 : attrDecimals(attributes, mod.targetAttrId));
-  switch (mod.op) {
-    case "percent":
-      return `${name} +${value}%`;
-    case "mul":
-      return `${name} ×${value}`;
-    case "override":
-      return `${name} 设为 ${value}`;
-    default:
-      return `${name} +${value}`;
-  }
+  return attributes.find((attr) => attr.id === id)?.name ?? "";
 }
 
 /** 该条为何不计入汇总（避免作者以为面板漏算） */
@@ -104,23 +84,18 @@ export default function ModifierList({
           {mod.nature === "cast" ? (
             <>
               <span className="cpk-efrow__name">{mod.name || "未命名主动效果"}</span>
-              <span className="cpk-efrow__value">{castParamText(mod)}</span>
+              {/* 1.39.1 起释放型与被动 / 持续同一口径：目标属性 + 运算 + 数值 */}
+              <span className="cpk-efrow__value">{statText(mod, attributes)}</span>
               {/* 释放型引用的属性可点击定位（只读引用，不参与计算） */}
-              {onJumpAttribute
-                ? attributes
-                    .filter((attr) => mod.valueUnit.startsWith(attr.name))
-                    .slice(0, 1)
-                    .map((attr) => (
-                      <Button
-                        key={attr.id}
-                        className="cpk-attrref"
-                        onClick={() => onJumpAttribute(attr.id)}
-                        title="查看该属性当前值（只读引用）"
-                      >
-                        {attr.name} 当前值 ▸
-                      </Button>
-                    ))
-                : null}
+              {onJumpAttribute && mod.targetAttrId && attrName(attributes, mod.targetAttrId) ? (
+                <Button
+                  className="cpk-attrref"
+                  onClick={() => onJumpAttribute(mod.targetAttrId)}
+                  title="查看该属性当前值（只读引用）"
+                >
+                  {attrName(attributes, mod.targetAttrId)} 当前值 ▸
+                </Button>
+              ) : null}
             </>
           ) : (
             <>
@@ -128,12 +103,6 @@ export default function ModifierList({
               <span className="cpk-efrow__value">{statText(mod, attributes)}</span>
               {mod.scaleByProficiency && mod.ownerType === "skill" ? (
                 <span className="cpk-efrow__tag">按{proficiencyAlias ?? "熟练度"}缩放</span>
-              ) : null}
-              {mod.nature === "sustained" && mod.cost ? (
-                <span className="cpk-efrow__tag">消耗 {mod.cost}</span>
-              ) : null}
-              {mod.nature === "sustained" && mod.duration ? (
-                <span className="cpk-efrow__tag">持续 {mod.duration}</span>
               ) : null}
             </>
           )}
@@ -189,7 +158,7 @@ export default function ModifierList({
     <div className={`cpk-eflist${ownerActive ? "" : " is-paused"}`}>
       {acted.length === 0 && casts.length === 0 ? (
         <p className="cpk-eflist__empty">
-          还没有效果。点「+ 被动」写常驻加成，点「+ 释放」写主动技能参数。
+          还没有效果。点「+ 被动」写常驻加成，点「+ 释放」给主动技能挂加成。
         </p>
       ) : null}
 

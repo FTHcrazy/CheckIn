@@ -27,13 +27,13 @@ import { getRealm, parseRealmRaw } from "./pack-realm";
 import {
   buildActiveCarriersFrom,
   buildGroupOffCarriers,
-  castParamText,
   composeAttributes,
   computeSummary,
   formatAttrValue,
   formatRealm,
   isItemEquipped,
   roundTo,
+  statText,
   type LadderRung,
 } from "./pack-utils";
 import type {
@@ -478,7 +478,8 @@ function castsOf(modifiers: PackModifier[]): Map<string, PackModifier> {
  *
  * 被动 / 持续改动会被「属性」组以汇总值的形式体现出来，再逐条列一遍就是重复；
  * 而主动效果不计入总属性，属性组看不见它们 —— 不在这里报，就等于「本章学会了
- * 一招」这件事在对比里完全不存在。
+ * 一招」这件事在对比里完全不存在。1.39.1 起释放型也走属性加成口径，
+ * 文案与效果词条列表共用 `statText`。
  */
 function diffCasts(baseline: PackDiffDoc, current: PackDiffDoc): PackDiffEntry[] {
   const before = castsOf(baseline.modifiers);
@@ -489,19 +490,19 @@ function diffCasts(baseline: PackDiffDoc, current: PackDiffDoc): PackDiffEntry[]
     const name = mod.name || "未命名主动效果";
     const prev = before.get(id);
     if (!prev) {
-      out.push(entry("cast", "add", name, "", castParamText(mod)));
+      out.push(entry("cast", "add", name, "", statText(mod, current.attributes)));
       continue;
     }
     // 整串比较而不是逐字段：文案本身就是参数快照，逐字段写的话
     // 每加一个参数字段都要回来补一处判断，漏一次就是静默不报
-    const was = castParamText(prev);
-    const now = castParamText(mod);
+    const was = statText(prev, baseline.attributes);
+    const now = statText(mod, current.attributes);
     if (was !== now) out.push(entry("cast", "change", name, was, now));
   }
 
   for (const [id, mod] of before) {
     if (after.has(id)) continue;
-    out.push(entry("cast", "remove", mod.name || "未命名主动效果", castParamText(mod), ""));
+    out.push(entry("cast", "remove", mod.name || "未命名主动效果", statText(mod, baseline.attributes), ""));
   }
   return out;
 }

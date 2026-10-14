@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button, Dropdown, Input, InputNumber, Progress, Select, Switch } from "antd";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Button, Dropdown, Input, InputNumber, Progress, Switch } from "antd";
 import {
   DeleteOutlined,
   PlusOutlined,
   SlidersOutlined,
-  TeamOutlined,
 } from "@ant-design/icons";
+import type { MenuProps } from "antd";
 import PackModuleShell from "../PackModuleShell";
 import PackExportButton from "../PackExportButton";
 import PackChangedDot from "../PackChangedDot";
@@ -95,32 +95,14 @@ export default function SkillsModule({ api }: SkillsModuleProps) {
     node.scrollIntoView({ block: "nearest", behavior: "smooth" });
   });
 
-  // 分组下拉选项（Phase 2）：技能的 groupId 指向这里的组 id。
-  // 组的 canEnable=0 时该组条目不渲染载体开关（闸门语义不变，只是没有开关可关）。
-  const groupOptions = useMemo(
-    () =>
-      [...(doc?.groups ?? [])]
-        .sort((a, b) => a.sortOrder - b.sortOrder)
-        .map((group) => ({
-          value: group.id,
-          label: group.icon ? `${group.icon} ${group.name}` : group.name,
-        })),
-    [doc],
-  );
-  const groupOf = useMemo(() => {
-    const map = new Map<string, boolean>();
-    for (const group of doc?.groups ?? []) map.set(group.id, group.canEnable);
-    return map;
-  }, [doc]);
+  // 1.39.1 起技能分组已删（没有实际意义）：行内不再有分组选择，分组设置入口
+  // 也撤下；物品栏的分组不受影响。skill.groupId 字段保留（compat），旧数据里
+  // 的分组值不再参与任何判定（熟练度体系恒用默认体系）。
 
   if (!doc) return null;
   const key = "skills" as const;
   const showProficiency = api.prefs.showProficiency;
   const skills = [...doc.skills].sort((a, b) => a.sortOrder - b.sortOrder);
-
-  /** 该技能所在组是否提供载体开关：未分组恒 true（沿用旧行为） */
-  const skillHasToggle = (skillGroupId: string): boolean =>
-    skillGroupId === "" ? true : (groupOf.get(skillGroupId) ?? true);
 
   /**
    * 写回整套档位到**技能所属的那套体系**（`levels` 是存储格式，JSON 字符串由
@@ -193,6 +175,48 @@ export default function SkillsModule({ api }: SkillsModuleProps) {
     };
   };
 
+  /**
+   * 品阶下拉（1.40.0）：按体系分组列出设定域的根阶（天阶 / 神器…），
+   * 点选即标注这门技能的品阶（技能没有「分类」维度，体系直接在菜单里挑）。
+   * 设定域一个体系都没有时给引导项 —— 与物品栏「没有体系则提示引导」同口径。
+   */
+  const gradeMenu = (skillId: string, currentGradeId: string): MenuProps => {
+    const systems = api.gradeSystems.filter((system) => system.levels.length > 0);
+    const items: MenuProps["items"] =
+      systems.length === 0
+        ? [
+            {
+              key: "guide",
+              disabled: true,
+              label: "先到「设定中心」创建等级体系（如功法品阶），再回来标注",
+            },
+          ]
+        : [
+            ...systems.map((system) => ({
+              key: `sys:${system.id}`,
+              type: "group" as const,
+              label: system.name,
+              children: system.levels.map((level) => ({
+                key: `grade:${level.id}`,
+                label: level.name,
+              })),
+            })),
+            ...(currentGradeId
+              ? [{ type: "divider" as const }, { key: "clear", label: "清除品阶" }]
+              : []),
+          ];
+    return {
+      items,
+      onClick: ({ key }: { key: string }) => {
+        if (key.startsWith("grade:")) {
+          api.updateSkill(skillId, { gradeId: key.slice("grade:".length) });
+        } else if (key === "clear") {
+          api.updateSkill(skillId, { gradeId: "" });
+        }
+      },
+    };
+  };
+
   return (
     <PackModuleShell
       title={moduleLabel(key)}
@@ -214,13 +238,6 @@ export default function SkillsModule({ api }: SkillsModuleProps) {
           </label>
           <Button className="cpk-btn ghost cpk-skl__add" onClick={handleAddSkill}>
             <PlusOutlined />技能
-          </Button>
-          <Button
-            className="cpk-iconbtn"
-            onClick={() => api.setGroupManagerOpen(true)}
-            title="分组设置（可穿戴 / 载体开关 / 停用整组）"
-          >
-            <TeamOutlined />
           </Button>
         </>
       }
@@ -253,8 +270,8 @@ export default function SkillsModule({ api }: SkillsModuleProps) {
             {skills.map((skill) => {
               const mods = api.modifiersOf("skill", skill.id);
               const active = api.isCarrierActive("skill", skill.id);
-              // 该技能所属体系（组绑定 → 默认）与展示元数据（档位 / 别名 / 进位）
-              const scheme = api.schemeForSkill(skill.groupId);
+              // 1.39.1 起技能不分组：熟练度体系恒用默认体系
+              const scheme = api.schemeForSkill("");
               const meta = scheme.meta;
               const skillThresholds = meta.levels;
               const position = showProficiency
@@ -274,14 +291,12 @@ export default function SkillsModule({ api }: SkillsModuleProps) {
                   className={`cpk-skl__item${active ? "" : " is-off"}`}
                 >
                   <div className="cpk-skl__head">
-                    {skillHasToggle(skill.groupId) ? (
-                      <Switch
-                        size="small"
-                        checked={skill.enabled}
-                        onChange={(checked) => api.updateSkill(skill.id, { enabled: checked })}
-                        title={skill.enabled ? "在效：加成效力计入总属性" : "已关闭：不参与汇总"}
-                      />
-                    ) : null}
+                    <Switch
+                      size="small"
+                      checked={skill.enabled}
+                      onChange={(checked) => api.updateSkill(skill.id, { enabled: checked })}
+                      title={skill.enabled ? "在效：加成效力计入总属性" : "已关闭：不参与汇总"}
+                    />
                     <Input
                       size="small"
                       className="cpk-skl__name"
@@ -289,17 +304,26 @@ export default function SkillsModule({ api }: SkillsModuleProps) {
                       placeholder="技能名"
                       onChange={(event) => api.updateSkill(skill.id, { name: event.target.value })}
                     />
-                    <Select
-                      size="small"
-                      allowClear
-                      className="cpk-skl__group"
-                      placeholder="未分组"
-                      value={skill.groupId || undefined}
-                      options={groupOptions}
-                      classNames={{ popup: { root: "cpk-dropdown" } }}
-                      onChange={(value) => api.updateSkill(skill.id, { groupId: value ?? "" })}
-                      title="所属分组（分组能力与停用见分组设置）"
-                    />
+                    {(() => {
+                      // 品阶 chip（1.40.0）：「神通 · 天阶」的「天阶」。未标注时
+                      // 也给「品阶」占位入口（弱化样式），设置路径保持一眼可见
+                      const gradeName = api.gradeNameOf(skill.gradeId);
+                      return (
+                        <Dropdown
+                          trigger={["click"]}
+                          classNames={{ root: "cpk-dropdown" }}
+                          menu={gradeMenu(skill.id, skill.gradeId)}
+                        >
+                          <Button
+                            className={`cpk-skl__grade${gradeName ? "" : " is-empty"}`}
+                            autoInsertSpace={false}
+                            title={gradeName ? `品阶：${gradeName}（点击修改）` : "标注品阶（绑定小说设定的等级体系）"}
+                          >
+                            {gradeName || "品阶"}
+                          </Button>
+                        </Dropdown>
+                      );
+                    })()}
                     <PackChangedDot
                       updatedAt={skill.updatedAt}
                       changed={api.isRecentlyChanged(skill.updatedAt)}

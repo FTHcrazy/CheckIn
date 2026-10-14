@@ -331,6 +331,8 @@ const SESSION_KEY = NOVEL_SESSION_KEY;
 const PACK_CHILD_TABLES = [
   // 载体分组（1.39.0 二期）：挂在 character_id 上
   "novel_pack_groups",
+  // 物品分类管理（1.40.0）：挂在 character_id 上
+  "novel_pack_categories",
   "novel_pack_items",
   "novel_pack_skills",
   "novel_pack_attributes",

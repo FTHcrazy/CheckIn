@@ -1,11 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BookOutlined, PlusOutlined, SearchOutlined } from "@ant-design/icons";
 import { Button, Input, Popconfirm } from "antd";
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import type { DragEndEvent, DragStartEvent } from "@dnd-kit/core";
 import { Virtuoso } from "react-virtuoso";
 import type { VirtuosoHandle } from "react-virtuoso";
 import VolumeNode from "../VolumeNode";
 import ChapterTreeItem from "../ChapterTreeItem";
 import type { ChapterGroup } from "../../novel-utils";
+import { volumeDisplayName } from "../../novel-utils";
 import type { LabelNumberStyle, NovelChapter, NovelVolume } from "../../types";
 import "./index.scss";
 
@@ -196,6 +206,78 @@ export default function ChapterTree({
     });
   };
 
+  // ── 拖拽（@dnd-kit，1.39.1 替换 HTML5 dataTransfer）──────────────
+  //
+  // 一个 DndContext 管整个树，行 id 前缀区分归属：
+  // - 「ch:」章行：拖到别的章行上 = 落到那个位置（同卷重排 / 跨卷移动），
+  //   拖到卷头上 = 移入该卷末尾；
+  // - 「vol:」卷头：拖到别的卷头上 = 重排卷顺序。
+  //
+  // PointerSensor 带 distance 约束：行上的点击（选章 / 状态点 / 展开卷）
+  // 不会误触发拖拽。相比 HTML5 拖拽，浮起的拖拽随动卡片 + 自动滚屏
+  // （拖到列表边缘时 Virtuoso 跟着滚动）是这次换库换来的体验。
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+  );
+
+  /** 正在拖拽的行（浮层展示与落点去重都用它） */
+  const [drag, setDrag] = useState<{
+    id: string;
+    kind: "chapter" | "volume";
+    label: string;
+  } | null>(null);
+
+  const handleDragStart = useCallback(
+    (event: DragStartEvent): void => {
+      const rawId = String(event.active.id);
+      if (rawId.startsWith("ch:")) {
+        const chapterId = rawId.slice(3);
+        const chapter = filtered
+          .flatMap((group) => group.chapters)
+          .find((item) => item.id === chapterId);
+        if (chapter) {
+          setDrag({ id: rawId, kind: "chapter", label: chapter.title });
+        }
+      } else if (rawId.startsWith("vol:")) {
+        const volumeId = rawId.slice(4);
+        const group = filtered.find((item) => item.volume.id === volumeId);
+        if (group) {
+          setDrag({
+            id: rawId,
+            kind: "volume",
+            label: volumeDisplayName(group.volume, numberStyle, volumeSuffix),
+          });
+        }
+      }
+    },
+    [filtered, numberStyle, volumeSuffix],
+  );
+
+  const clearDrag = useCallback((): void => setDrag(null), []);
+
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent): void => {
+      clearDrag();
+      const activeId = String(event.active.id);
+      const overId = event.over ? String(event.over.id) : null;
+      if (!overId || overId === activeId) return;
+
+      if (activeId.startsWith("ch:")) {
+        const fromId = activeId.slice(3);
+        if (overId.startsWith("ch:")) {
+          onReorderChapter(fromId, overId.slice(3));
+        } else if (overId.startsWith("vol:")) {
+          onMoveChapterToVolume(fromId, overId.slice(4));
+        }
+        return;
+      }
+      if (activeId.startsWith("vol:") && overId.startsWith("vol:")) {
+        onReorderVolume(activeId.slice(4), overId.slice(4));
+      }
+    },
+    [clearDrag, onReorderChapter, onMoveChapterToVolume, onReorderVolume],
+  );
+
   return (
     <div className={`nv-tree${collapsed ? " nv-tree--collapsed" : ""}`}>
       <label className="nv-tree__search">
@@ -214,42 +296,56 @@ export default function ChapterTree({
           <p className="nv-tree__empty">没有匹配的章节</p>
         </div>
       ) : (
-        <Virtuoso
-          ref={listRef}
-          className="nv-tree__list"
-          data={rows}
-          overscan={12}
-          computeItemKey={(_, row) =>
-            row.kind === "volume" ? row.volume.id : row.chapter.id
-          }
-          itemContent={(_, row) =>
-            row.kind === "volume" ? (
-              <VolumeNode
-                volume={row.volume}
-                numberStyle={numberStyle}
-                volumeSuffix={volumeSuffix}
-                chapterCount={row.chapterCount}
-                open={searching || !folded.has(row.volume.id)}
-                onToggleOpen={() => toggleVolume(row.volume.id)}
-                onMoveChapterToVolume={onMoveChapterToVolume}
-                onReorderVolume={onReorderVolume}
-                onRenameVolume={onRenameVolume}
-                onCreateChapter={onCreateChapterInVolume}
-              />
-            ) : (
-              <ChapterTreeItem
-                chapter={row.chapter}
-                chapterNumber={chapterNumbers.get(row.chapter.id) ?? 0}
-                active={row.chapter.id === activeChapterId}
-                onSelect={onSelect}
-                onToggleStatus={onToggleStatus}
-                onRename={onRenameChapter}
-                onReorder={onReorderChapter}
-                onRequestDelete={handleRequestDelete}
-              />
-            )
-          }
-        />
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+          onDragCancel={clearDrag}
+        >
+          <Virtuoso
+            ref={listRef}
+            className="nv-tree__list"
+            data={rows}
+            overscan={12}
+            computeItemKey={(_, row) =>
+              row.kind === "volume" ? row.volume.id : row.chapter.id
+            }
+            itemContent={(_, row) =>
+              row.kind === "volume" ? (
+                <VolumeNode
+                  volume={row.volume}
+                  numberStyle={numberStyle}
+                  volumeSuffix={volumeSuffix}
+                  chapterCount={row.chapterCount}
+                  open={searching || !folded.has(row.volume.id)}
+                  dragActiveId={drag?.id ?? null}
+                  onToggleOpen={() => toggleVolume(row.volume.id)}
+                  onRenameVolume={onRenameVolume}
+                  onCreateChapter={onCreateChapterInVolume}
+                />
+              ) : (
+                <ChapterTreeItem
+                  chapter={row.chapter}
+                  chapterNumber={chapterNumbers.get(row.chapter.id) ?? 0}
+                  active={row.chapter.id === activeChapterId}
+                  dragActiveId={drag?.id ?? null}
+                  onSelect={onSelect}
+                  onToggleStatus={onToggleStatus}
+                  onRename={onRenameChapter}
+                  onRequestDelete={handleRequestDelete}
+                />
+              )
+            }
+          />
+          {/*
+            拖拽随动浮层：跟随光标的小卡片，告诉作者「拖的是哪一章/卷」。
+            HTML5 拖拽的原位半透明鬼影在窄行上几乎认不出内容，这是体验主诉。
+          */}
+          <DragOverlay dropAnimation={null}>
+            {drag ? <div className="nv-tree__drag-chip">{drag.label}</div> : null}
+          </DragOverlay>
+        </DndContext>
       )}
 
       <div className="nv-tree__foot">

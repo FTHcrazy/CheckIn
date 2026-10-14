@@ -30,6 +30,7 @@ const item: PackItem = {
   tags: [],
   equippedSlotId: "",
   groupId: "",
+  gradeId: "",
   slotIndex: null,
   sourceChapterId: "",
   updatedAt: 0,
@@ -53,6 +54,7 @@ const doc: PackDoc = {
   mappings: [],
   slots: [],
   groups: [],
+  categories: [],
   items: [item],
   skills: [],
   modifiers: [],
@@ -81,6 +83,12 @@ function makeApi(over: Partial<PackPanelApi> = {}) {
     showToast: vi.fn(),
     patchPrefs: vi.fn(),
     addItem: vi.fn(),
+    // 体系品阶 / 分类管理（1.40.0）：默认「没有体系」的空态路径
+    gradeSystems: [],
+    hasGradeSystems: false,
+    gradeNameOf: () => "",
+    categorySystemIdOf: () => "",
+    setCategoryManagerOpen: vi.fn(),
     ...over,
   } as unknown as PackPanelApi;
 }
@@ -224,5 +232,38 @@ describe("InventoryModule —— 描述 / 标签（REQ-010）", () => {
     await waitFor(() => {
       expect((screen.getByLabelText("物品标签") as HTMLInputElement).value).toBe("玄铁 断剑");
     });
+  });
+});
+
+/**
+ * 分组与宫格视图下线（1.41.0，用户要求）：物品栏只管「带了什么、有多少」。
+ * groupId 列保留（compat，旧数据不丢），只是不再有任何编辑入口；
+ * 装备限制仍由部位 accepts × 物品 groupId 匹配，分组管理入口迁到装备栏。
+ */
+describe("InventoryModule —— 分组与布局切换下线（1.41.0）", () => {
+  afterEach(cleanup);
+
+  it("「更多」菜单里没有「分组」行", async () => {
+    render(<InventoryModule api={makeApi()} />);
+    fireEvent.click(screen.getByLabelText("更多操作"));
+    // 菜单已展开（「分类」行在），且「分组」行不再存在
+    await screen.findByText("分类");
+    expect(screen.queryByText("分组")).toBeNull();
+  });
+
+  it("头部没有布局切换按钮，也不再有分组设置入口", () => {
+    render(<InventoryModule api={makeApi()} />);
+    expect(screen.queryByTitle(/切换到列表视图/)).toBeNull();
+    expect(screen.queryByTitle(/切换到宫格视图/)).toBeNull();
+    expect(screen.queryByTitle(/分组设置/)).toBeNull();
+    // 分类管理入口还在（1.40.0 的功能不受影响）
+    expect(screen.getByTitle(/分类管理/)).toBeInTheDocument();
+  });
+
+  it("列表只渲染为 ul.cpk-inv 列表形态（没有 is-grid 派生类）", () => {
+    render(<InventoryModule api={makeApi()} />);
+    const list = document.querySelector("ul.cpk-inv");
+    expect(list).not.toBeNull();
+    expect(list?.className).not.toContain("is-grid");
   });
 });

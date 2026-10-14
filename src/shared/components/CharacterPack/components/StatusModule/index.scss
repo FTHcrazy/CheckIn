@@ -63,8 +63,7 @@
     width: 74px;
   }
 
-  /* 底行 = 「预览文案 + 剩余回合」。回合数是**这一行的第二个信息**，
-     不该塞进上面那排控件里（那排已经 4 个控件，340px 面板下必挤爆）。 */
+  /* 底行 = 预览文案（1.39.1 起剩余回合已删，只剩这一句） */
   &__foot {
     display: flex;
     align-items: center;
@@ -80,26 +79,5 @@
     font-size: 12px;
     line-height: 1.5;
     color: var(--app-text-secondary);
-
-    &.is-expired {
-      color: var(--app-warning);
-    }
-  }
-
-  &__rounds {
-    flex: none;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-  }
-
-  &__roundslabel {
-    font-size: 12px;
-    color: var(--app-text-secondary-strong);
-  }
-
-  &__roundsnum.ant-input-number {
-    width: 68px;
-    font-size: 12px;
   }
 }

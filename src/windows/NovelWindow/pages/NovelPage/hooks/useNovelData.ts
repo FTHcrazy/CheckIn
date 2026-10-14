@@ -74,6 +74,7 @@ import {
   type RestorePosition,
 } from "../novel-utils";
 import type {
+  CarryDirection,
   EntityRelationView,
   EntityType,
   ForeshadowPatch,
@@ -424,10 +425,18 @@ export function useNovelData() {
       ),
     [bundle?.chapters, activeWorkId],
   );
+  /**
+   * 当前作品的灵感（1.41.0 起并入「未分组」）：workId 为空串的灵感是
+   * 跨作品收集池（书架灵感库的「未归属」），此前被 workId 过滤排掉 ——
+   * 书架里记了一条未归属灵感，回到编辑器灵感面板却一片空白（用户报障）。
+   * 未归属灵感对当前作品同样可见可编辑；搜索时它不带来源标签。
+   */
   const notes = useMemo(
     () =>
       sortNotes(
-        (bundle?.notes ?? []).filter((note) => note.workId === activeWorkId),
+        (bundle?.notes ?? []).filter(
+          (note) => note.workId === activeWorkId || !note.workId,
+        ),
       ),
     [bundle?.notes, activeWorkId],
   );
@@ -1136,6 +1145,92 @@ export function useNovelData() {
     [bundle, activeWorkId, settings.length, patchCategoryLocal],
   );
 
+  /**
+   * 一次性新建分类并灌入等级（预设套用专用）。
+   *
+   * 为什么不让调用方「createSettingCategory + batchAddSettingLevels」两连调：
+   * batchAdd 从**当前闭包的 bundle** 里 find 目标分类，而 setBundle 是异步的，
+   * 同一次点击里刚建好的分类还不在里面 → find 失败、静默返回 0，
+   * 表现为「预设应用成功、等级序列却永远是空的」（分类壳 0 级）。
+   * 这里把分类与等级放进**同一次** setBundle，远端也各发一条
+   * （category-add 后对该新分类 batch level-add，顺序天然安全）。
+   */
+  const createSettingCategoryWithLevels = useCallback(
+    (
+      name: string,
+      kind: SettingCategoryKind,
+      drafts: Array<{ name: string; subLevels?: number; subPattern?: string }>,
+      meta?: {
+        note?: string;
+        subLevels?: number;
+        carryDir?: CarryDirection;
+        subPattern?: string;
+      },
+    ): SettingCategory | null => {
+      const trimmed = name.trim();
+      if (!trimmed || !bundle) return null;
+      const id = createNovelId("sc");
+      const cleaned = drafts
+        .map((draft) => ({
+          name: draft.name.trim().slice(0, 60),
+          subLevels:
+            draft.subLevels !== undefined && draft.subLevels >= 1
+              ? Math.floor(draft.subLevels)
+              : DEFAULT_SUB_LEVELS,
+          subPattern: (draft.subPattern ?? "").trim().slice(0, 60),
+        }))
+        .filter((draft) => draft.name)
+        .slice(0, 99);
+      const items = cleaned.map((draft) => ({ ...draft, id: createNovelId("sl") }));
+      const category: SettingCategory = {
+        id,
+        workId: activeWorkId,
+        name: trimmed,
+        color: DEFAULT_CATEGORY_COLOR,
+        kind,
+        sortOrder: settings.length + 1,
+        note: meta?.note ?? "",
+        subLevels:
+          meta?.subLevels !== undefined && meta.subLevels >= 1
+            ? Math.floor(meta.subLevels)
+            : DEFAULT_SUB_LEVELS,
+        carryDir: meta?.carryDir ?? "asc",
+        subPattern: meta?.subPattern ?? DEFAULT_SUB_PATTERN,
+        levels: items.map((item, index) => ({
+          id: item.id,
+          categoryId: id,
+          name: item.name,
+          aliases: [],
+          note: "",
+          subLevels: item.subLevels,
+          subPattern: item.subPattern,
+          power: null,
+          parentId: null,
+          segFrom: null,
+          segTo: null,
+          rank: index + 1,
+        })),
+      };
+      setBundle((current) =>
+        current
+          ? { ...current, settings: [...current.settings, category] }
+          : current,
+      );
+      void addSettingCategoryRemote(activeWorkId, id, trimmed, kind).then((saved) => {
+        // 主进程是唯一裁判：它说降级了就是降级了
+        if (saved && saved.kind !== kind) {
+          patchCategoryLocal(id, (current) => ({ ...current, kind: saved.kind }));
+        }
+      });
+      // 等级名单清洗后为空（全空名）就不发 batch：主进程对空数组纯属白跑
+      if (items.length > 0) {
+        void batchAddSettingLevelsRemote(id, items);
+      }
+      return category;
+    },
+    [bundle, activeWorkId, settings.length, patchCategoryLocal],
+  );
+
   /** 改分类：重命名 / 改色 / 说明 / 进位规则。空名不落 */
   const patchSettingCategory = useCallback(
     (categoryId: string, patch: NovelSettingCategoryPatch): void => {
@@ -1354,6 +1449,9 @@ export function useNovelData() {
       );
       const target = owner?.levels.find((level) => level.id === levelId);
       if (!owner || !target) return;
+      // 等级序列只支持两个层级（1.39.1）：子层级不允许再拆，否则会出现
+      // 「初级·第1段·第1段」式的三层嵌套，境界 chip 与层级下拉都表达不了。
+      if (target.parentId) return;
       const segments = previewSplit(
         target,
         parts,
@@ -1826,6 +1924,7 @@ export function useNovelData() {
     addLink,
     removeLink,
     createSettingCategory,
+    createSettingCategoryWithLevels,
     patchSettingCategory,
     deleteSettingCategory,
     reorderSettingCategories,

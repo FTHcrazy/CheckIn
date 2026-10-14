@@ -4,7 +4,7 @@ import PackModuleShell from "../PackModuleShell";
 import PackExportButton from "../PackExportButton";
 import type { PackPanelApi } from "../../hooks/usePackPanel";
 import { moduleLabel } from "../module-meta";
-import { formatAttrValue, isExpired } from "../../pack-utils";
+import { statText } from "../../pack-utils";
 import { NATURE_META, OP_META, type PackModifier, type PackNature } from "../../types";
 import "./index.scss";
 
@@ -21,14 +21,6 @@ const STAT_NATURES: Array<{ value: PackNature; label: string }> = [
   { value: "sustained", label: `持续（需开启，${NATURE_META.sustained.hint}）` },
   { value: "passive", label: `被动（在效即生效）` },
 ];
-
-function statText(mod: PackModifier, attrName: string, decimals: number): string {
-  const value = formatAttrValue(mod.value, mod.op === "mul" ? 2 : decimals);
-  if (mod.op === "percent") return `${attrName} +${value}%`;
-  if (mod.op === "mul") return `${attrName} ×${value}`;
-  if (mod.op === "override") return `${attrName} 设为 ${value}`;
-  return `${attrName} +${value}`;
-}
 
 /**
  * 状态效果（REQ-025）
@@ -78,11 +70,10 @@ export default function StatusModule({ api }: StatusModuleProps) {
         <ul className="cpk-stt__list">
           {statuses.map((mod) => {
             const attr = api.attrView.find((candidate) => candidate.id === mod.targetAttrId);
-            const expired = isExpired(mod);
             return (
               <li
                 key={mod.id}
-                className={`cpk-stt is-${mod.nature}${mod.active ? " is-on" : ""}${expired ? " is-expired" : ""}`}
+                className={`cpk-stt is-${mod.nature}${mod.active ? " is-on" : ""}`}
               >
                 <div className="cpk-stt__top">
                   <Switch
@@ -151,44 +142,14 @@ export default function StatusModule({ api }: StatusModuleProps) {
                   />
                 </div>
                 <div className="cpk-stt__foot">
-                  <p
-                    className={`cpk-stt__preview${expired ? " is-expired" : ""}`}
-                    title={
-                      expired
-                        ? "回合数已归零，这条暂时不计入总属性；把回合数加回去即恢复"
-                        : undefined
-                    }
-                  >
+                  {/* 1.39.1 起不再有剩余回合 / 持续时间概念：时效语义由作者写进
+                      效果备注（或状态名），面板只保留「开 / 关」这一个开关。 */}
+                  <p className="cpk-stt__preview">
                     {attr
-                      ? statText(mod, attr.name, attr.decimals ?? 0)
+                      ? statText(mod, api.attrView)
                       : "未选择属性，暂不参与汇总"}
                     {mod.nature === "sustained" && !mod.active ? "（未开启）" : ""}
-                    {mod.duration ? ` · 持续 ${mod.duration}` : ""}
-                    {expired ? " · 已过期" : ""}
                   </p>
-                  {/* 时段只对持续型有意义（被动是常驻、释放不进汇总），
-                      给它们一个回合数输入框只会让人以为它会自己掉回合 */}
-                  {mod.nature === "sustained" ? (
-                    <label className="cpk-stt__rounds">
-                      <span className="cpk-stt__roundslabel">剩余回合</span>
-                      <InputNumber
-                        size="small"
-                        min={0}
-                        className="cpk-stt__roundsnum"
-                        value={mod.roundsLeft ?? undefined}
-                        placeholder="不限"
-                        aria-label="剩余回合"
-                        onChange={(value) =>
-                          api.updateModifier(mod.id, {
-                            roundsLeft:
-                              value === null || value === undefined
-                                ? null
-                                : Math.max(0, Math.floor(Number(value))),
-                          })
-                        }
-                      />
-                    </label>
-                  ) : null}
                 </div>
               </li>
             );

@@ -11,7 +11,9 @@
   width: 320px;
   padding: 16px 16px 16px 14px;
   border-left: 1px solid var(--app-splitter);
-  overflow-y: auto;
+  /* 滚动交给灵感列表自己（1.41.0 虚拟化）：外层再留 overflow 会形成双滚动，
+     虚拟列表量不到可视高度 —— 与 SupportPanel 的 flatScroll 同一条教训 */
+  overflow: hidden;
 
   &__head {
     display: flex;
@@ -152,11 +154,16 @@
     opacity: 0.75;
   }
 
-  /* ── 灵感列表 ── */
+  /* ── 灵感列表（Virtuoso 容器本体，1.41.0 起虚拟化）── */
   &__list {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  /* 虚拟列表没有 flex gap 可用：卡片间距收在每格的 padding 上 */
+  &__cell {
+    padding-bottom: 8px;
   }
 
   &__empty {

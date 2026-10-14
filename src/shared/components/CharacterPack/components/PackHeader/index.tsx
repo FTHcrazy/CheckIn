@@ -6,15 +6,21 @@ import {
   ClockCircleOutlined,
   MoreOutlined,
   SettingOutlined,
-  SlidersOutlined,
   UserOutlined,
 } from "@ant-design/icons";
+import SvgIcon from "@/shared/components/SvgIcon";
+import dimensionSvg from "@/assets/novel/dimension.svg?raw";
 import { formatRelativeTime } from "../../pack-utils";
 import "./index.scss";
 
 interface PackHeaderProps {
   characterName: string;
   realmText: string;
+  /**
+   * 当前小层别名（1.41.0）：「合体 2/4」只答走到哪，「中期」才答现在是什么。
+   * 与境界模块的 `.cpk-rlm__alias` 同源（subLabelAt），空串不渲染。
+   */
+  realmSubText: string;
   realmHint: string;
   /** 是否已绑定主角实体（绑了才在境界 chip 旁给「已绑定主角」） */
   realmBound: boolean;
@@ -69,6 +75,7 @@ interface PackHeaderProps {
 export default function PackHeader({
   characterName,
   realmText,
+  realmSubText,
   realmHint,
   realmBound,
   compact,
@@ -150,6 +157,13 @@ export default function PackHeader({
             <span className="cpk-head__realm" title={realmHint || "与实体面板同一份数据"}>
               {realmText}
             </span>
+            {/* 小境界别名（1.41.0）：与境界模块的「合体 2/4 · 中期」同口径 ——
+                头部此前只显示阶与层数，作者抬眼看不到「现在是什么」 */}
+            {realmSubText ? (
+              <span className="cpk-head__sub" title={`当前小层：${realmSubText}`}>
+                {realmSubText}
+              </span>
+            ) : null}
             {realmBound ? <span className="cpk-head__bound">已绑定主角</span> : null}
           </div>
         </div>
@@ -241,7 +255,7 @@ export default function PackHeader({
                   : []),
                 ...(changedCount > 0 || tone === "dirty" ? [{ type: "divider" as const }] : []),
                 { key: "records", icon: <ClockCircleOutlined />, label: "盘点记录 / 与本章初对比" },
-                { key: "units", icon: <SlidersOutlined />, label: "量纲设置（货币 / 熟练度）" },
+                { key: "units", icon: <SvgIcon svg={dimensionSvg} />, label: "量纲设置（货币 / 熟练度）" },
                 { key: "modules", icon: <SettingOutlined />, label: "模块管理" },
               ],
               onClick: ({ key }) => {
@@ -271,7 +285,7 @@ export default function PackHeader({
               onClick={onOpenUnitManager}
               title="量纲设置（货币 / 熟练度）"
             >
-              <SlidersOutlined />
+              <SvgIcon svg={dimensionSvg} />
             </Button>
             <Button className="cpk-iconbtn" onClick={onOpenModules} title="模块管理">
               <SettingOutlined />

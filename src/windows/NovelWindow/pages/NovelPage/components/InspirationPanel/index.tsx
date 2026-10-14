@@ -83,9 +83,13 @@ export default function InspirationPanel({
       }`
     : `${notes.length} 条${pinnedCount > 0 ? ` · 置顶 ${pinnedCount}` : ""}`;
 
-  /** 其他书籍的灵感：全局搜索结果中只读展示，操作留给归属作品 */
+  /**
+   * 其他书籍的灵感：全局搜索结果中只读展示，操作留给归属作品。
+   * 「未归属」（workId 为空）不算外部 —— 1.41.0 起它直接进当前列表，
+   * 置顶 / 编辑 / 转伏笔都可用（它是跨作品收集池，不属于任何一本书管）。
+   */
   const isExternal = (note: NovelNote): boolean =>
-    Boolean(activeWorkId) && note.workId !== activeWorkId;
+    Boolean(activeWorkId) && Boolean(note.workId) && note.workId !== activeWorkId;
 
   const submit = (): void => {
     const value = draft.trim();

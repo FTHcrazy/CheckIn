@@ -130,6 +130,20 @@
     white-space: nowrap;
   }
 
+  /* 小境界别名（1.41.0）：「合体 2/4」旁的「中期」。紫系弱底与境界模块的
+     `.cpk-rlm__alias` 同一语义（同源数据换个位置显示），蓝留给阶本身 */
+  &__sub {
+    flex: none;
+    padding: 1px 6px;
+    border: 1px solid var(--app-accent-purple-weak);
+    border-radius: var(--app-radius-chip);
+    background: var(--app-accent-purple-weak);
+    color: var(--app-accent-purple);
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
   &__bound {
     min-width: 0;
     font-size: 11px;

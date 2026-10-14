@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import StatusModule from "./index";
 import type { PackPanelApi } from "../../hooks/usePackPanel";
@@ -6,13 +6,12 @@ import type { PackDoc } from "../../hooks/usePackData";
 import { DEFAULT_UI_PREFS, type PackAttrValue, type PackAttribute, type PackModifier } from "../../types";
 
 /**
- * 状态效果时效（REQ-025）
+ * 状态效果行内编辑（1.39.1 重写后）。
  *
- * 这一组钉的是**「过期」的语义边界**，而不是某个 if：
- *  - 回合数只对持续型出现（被动是常驻、释放不进汇总，给它们一个回合输入框
- *    会让作者以为它会自己掉回合）；
- *  - 已过期要**看得见**（文案 + 高亮牌），但**不能翻 `active`** ——
- *    `active` 是作者的开关，工具擅自关掉属于偷偷改设定，而且不可逆。
+ * 剩余回合 / 持续时间 / 消耗这些时效概念已整体下线（语义由作者写进备注），
+ * 行内只剩：名称、性质、目标属性、运算、数值与开关。这一组钉的是：
+ *  - 回合输入框**彻底不再出现**（旧数据里残留的 roundsLeft 也不许把它召回来）；
+ *  - 预览文案与「未开启」标注仍然准确。
  */
 
 function attr(partial: Partial<PackAttribute> = {}): PackAttribute {
@@ -59,7 +58,7 @@ function mod(partial: Partial<PackModifier> = {}): PackModifier {
     defaultOn: false,
     cost: "",
     cooldown: null,
-    duration: "3 回合",
+    duration: "",
     roundsLeft: null,
     target: "",
     trigger: "",
@@ -91,6 +90,7 @@ function makeApi(over: { doc?: Partial<PackDoc>; statuses?: PackModifier[] } = {
     mappings: [],
     slots: [],
     groups: [],
+    categories: [],
     items: [],
     skills: [],
     modifiers: statuses,
@@ -119,45 +119,30 @@ function makeApi(over: { doc?: Partial<PackDoc>; statuses?: PackModifier[] } = {
   } as unknown as PackPanelApi;
 }
 
-const roundsInput = () => screen.getByLabelText("剩余回合") as HTMLInputElement;
-
-describe("StatusModule —— 时效（REQ-025）", () => {
+describe("StatusModule —— 行内编辑（时效概念已下线）", () => {
   afterEach(cleanup);
 
-  it("持续型才有回合数输入框，被动没有", () => {
+  it("不再出现剩余回合输入框 —— 旧数据带 roundsLeft 也一样", () => {
+    render(<StatusModule api={makeApi({ statuses: [mod({ roundsLeft: 3 })] })} />);
+    expect(screen.queryByLabelText("剩余回合")).toBeNull();
+    expect(screen.queryByText(/剩余回合/)).toBeNull();
+  });
+
+  it("预览行给出属性加成文案；持续型未开启时带「（未开启）」标注", () => {
     const { unmount } = render(<StatusModule api={makeApi()} />);
-    expect(roundsInput()).toBeInTheDocument();
+    const preview = document.querySelector(".cpk-stt__preview") as HTMLElement;
+    expect(preview.textContent).toContain("气血 -10");
     unmount();
 
-    render(<StatusModule api={makeApi({ statuses: [mod({ nature: "passive" })] })} />);
-    expect(screen.queryByLabelText("剩余回合")).toBeNull();
+    render(
+      <StatusModule api={makeApi({ statuses: [mod({ active: false })] })} />,
+    );
+    const off = document.querySelector(".cpk-stt__preview") as HTMLElement;
+    expect(off.textContent).toContain("（未开启）");
   });
 
-  it("roundsLeft 为 null 时不显示「已过期」，只显示「不限」占位", () => {
-    render(<StatusModule api={makeApi()} />);
-    expect(document.querySelector(".cpk-stt__preview.is-expired")).toBeNull();
-    expect(roundsInput().placeholder).toBe("不限");
-    expect(document.querySelector(".cpk-stt.is-expired")).toBeNull();
-  });
-
-  it("回合数归零 → 预览行标出「已过期」并高亮（但开关仍是开着的）", () => {
-    const api = makeApi({ statuses: [mod({ roundsLeft: 0 })] });
-    render(<StatusModule api={api} />);
-    const preview = document.querySelector(".cpk-stt__preview") as HTMLElement;
-    expect(preview.textContent).toContain("已过期");
-    expect(preview.className).toContain("is-expired");
-    // ⚠️ 工具不翻 active：这一行仍然是「开着」的状态
-    expect(api.updateModifier).not.toHaveBeenCalled();
-  });
-
-  it("改回合数写回 roundsLeft；清空即恢复「不限时」", () => {
-    const api = makeApi({ statuses: [mod({ roundsLeft: 3 })] });
-    render(<StatusModule api={api} />);
-
-    fireEvent.change(roundsInput(), { target: { value: "7" } });
-    expect(api.updateModifier).toHaveBeenCalledWith("pm1", { roundsLeft: 7 });
-
-    fireEvent.change(roundsInput(), { target: { value: "" } });
-    expect(api.updateModifier).toHaveBeenCalledWith("pm1", { roundsLeft: null });
+  it("目标属性为空时提示「暂不参与汇总」而不是渲染 undefined", () => {
+    render(<StatusModule api={makeApi({ statuses: [mod({ targetAttrId: "" })] })} />);
+    expect(screen.getByText(/未选择属性，暂不参与汇总/)).toBeInTheDocument();
   });
 });

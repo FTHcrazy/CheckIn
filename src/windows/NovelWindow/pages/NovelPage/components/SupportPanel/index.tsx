@@ -1,7 +1,6 @@
 import { Badge, Button } from "antd";
 import {
   AppstoreOutlined,
-  BookOutlined,
   BulbOutlined,
   KeyOutlined,
   LeftOutlined,
@@ -19,7 +18,6 @@ import InspirationPanel, { type InspirationActions } from "../InspirationPanel";
 import NameGeneratorPanel, { type NamingActions } from "../NameGeneratorPanel";
 import OutlinePanel, { type OutlineActions } from "../OutlinePanel";
 import SearchPanel from "../SearchPanel";
-import SettingQuickPanel from "../SettingQuickPanel";
 import { LAYOUT } from "../../novel-config";
 import { useSearchStore } from "../../store/useSearchStore";
 import type { PanelTab, EntityFilter } from "../../hooks/useNovelViewState";
@@ -86,14 +84,6 @@ interface SupportPanelProps {
   onSetEntityLevel: (entityId: string, levelId: string | null, sub?: number) => void;
   /** 打开设定中心 */
   onOpenSettings: () => void;
-  /** 当前章正文：设定速查面板的一致性检查扫描它 */
-  chapterContent: string;
-  /** 把设定用词插到编辑器光标处 */
-  onInsertSettingTerm: (term: string) => void;
-  /** 一键替换正文用词（别名 → 设定用词） */
-  onReplaceSettingTerm: (from: string, to: string) => void;
-  /** 把未登记的词登记进指定分类 */
-  onRegisterSettingTerm: (categoryId: string, term: string) => void;
   /** 行囊主角绑定的要素 id（空串 = 尚未指定）；决定角色卡上的「主角」角标 */
   protagonistEntityId: string;
   /** 设为主角 / 换一个 / 再点一次取消（与行囊面板的「绑定实体」是同一格数据） */
@@ -117,7 +107,6 @@ interface TabMeta {
 const TABS: TabMeta[] = [
   { key: "outline", label: "大纲", icon: <UnorderedListOutlined /> },
   { key: "entity", label: "要素", icon: <AppstoreOutlined /> },
-  { key: "setting", label: "设定", icon: <BookOutlined /> },
   { key: "note", label: "灵感", icon: <BulbOutlined /> },
   { key: "search", label: "检索", icon: <SearchOutlined /> },
   { key: "tools", label: "工具", icon: <ToolOutlined /> },
@@ -170,10 +159,6 @@ export default function SupportPanel({
   onRemoveRelation,
   onSetEntityLevel,
   onOpenSettings,
-  chapterContent,
-  onInsertSettingTerm,
-  onReplaceSettingTerm,
-  onRegisterSettingTerm,
   protagonistEntityId,
   onSetProtagonist,
   onOpenTypeManager,
@@ -321,15 +306,6 @@ export default function SupportPanel({
           meta: `${entities.length} 个要素`,
           action: null,
         };
-      case "setting":
-        return {
-          title: "设定速查",
-          meta:
-            settings.length > 0
-              ? `${settings.length} 套分类 · 点条目插入正文`
-              : "还没有设定分类",
-          action: null,
-        };
       case "note":
         return {
           title: "灵感速记",
@@ -359,7 +335,6 @@ export default function SupportPanel({
     namingExclude.length,
     wordText,
     onTabChange,
-    settings.length,
   ]);
 
   const foot = useMemo(() => {
@@ -376,13 +351,6 @@ export default function SupportPanel({
           <>
             <KeyOutlined />
             <span>选中正文人名 → 右键「标记为角色」</span>
-          </>
-        );
-      case "setting":
-        return (
-          <>
-            <KeyOutlined />
-            <span>点条目插入光标处 · 「设定中心」管理分类与阶梯</span>
           </>
         );
       case "note":
@@ -574,16 +542,6 @@ export default function SupportPanel({
               protagonistEntityId={protagonistEntityId}
               onSetProtagonist={onSetProtagonist}
               onInsertName={namingActions.onInsertToEditor}
-            />
-          )}
-          {activeTab === "setting" && (
-            <SettingQuickPanel
-              settings={settings}
-              content={chapterContent}
-              onInsertTerm={onInsertSettingTerm}
-              onReplaceTerm={onReplaceSettingTerm}
-              onRegisterTerm={onRegisterSettingTerm}
-              onOpenSettings={onOpenSettings}
             />
           )}
           {activeTab === "note" && (

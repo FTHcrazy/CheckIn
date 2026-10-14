@@ -2,8 +2,6 @@ import { useState } from "react";
 import { Button, Input, InputNumber, Modal, Select, Switch } from "antd";
 import { CloseOutlined } from "@ant-design/icons";
 import {
-  CAST_TARGETS,
-  CAST_UNITS,
   NATURE_META,
   OP_META,
   type PackAttribute,
@@ -53,8 +51,10 @@ const NATURES: PackNature[] = ["passive", "sustained", "cast"];
 /**
  * 效果编辑器（C-1）：**先选性质，再填内容**
  *
- * 表单按性质分叉，而不是给一个万能长表单；释放型**不出现「目标属性」字段**
- * （它不指向任何属性），并在顶部明确标注「不计入总属性」。
+ * 表单按性质分叉，而不是给一个万能长表单。1.39.1 起释放型与被动 / 持续
+ * 同一口径（目标属性 + 运算 + 数值）—— 「效果量 / 攻击力% / 目标 / 冷却」
+ * 这套独立参数概念已删；消耗、持续时间、剩余回合也一并删除，
+ * 这些语义由作者写进备注。
  */
 export default function EffectEditor({
   open,
@@ -121,9 +121,7 @@ export default function EffectEditor({
                     {mod.name || NATURE_META[mod.nature].label + "效果"}
                   </span>
                   <span className="cpk-fxmodal__pickval">
-                    {mod.nature === "cast"
-                      ? `${mod.value}${mod.valueUnit}`
-                      : `${OP_META[mod.op].symbol}${mod.value}`}
+                    {`${OP_META[mod.op].symbol}${mod.value}`}
                   </span>
                 </Button>
                 <Button
@@ -178,95 +176,46 @@ export default function EffectEditor({
               />
             </label>
 
-            {current.nature !== "cast" ? (
-              <>
-                <label className="cpk-field">
-                  <span className="cpk-field__label">目标属性</span>
-                  <Select
-                    size="small"
-                    value={current.targetAttrId || undefined}
-                    placeholder="选择属性"
-                    options={attrOptions}
-                    classNames={{ popup: { root: "cpk-dropdown" } }}
-                    onChange={(value: string) => onUpdate(current.id, { targetAttrId: value })}
-                  />
-                </label>
-                <div className="cpk-field cpk-field--row">
-                  <label className="cpk-field cpk-field--half">
-                    <span className="cpk-field__label">运算</span>
-                    <Select
-                      size="small"
-                      value={current.op}
-                      options={OPS}
-                      classNames={{ popup: { root: "cpk-dropdown" } }}
-                      onChange={(value: PackOp) => onUpdate(current.id, { op: value })}
-                    />
-                  </label>
-                  <label className="cpk-field cpk-field--half">
-                    <span className="cpk-field__label">数值</span>
-                    <InputNumber
-                      size="small"
-                      value={current.value}
-                      step={current.op === "mul" ? 0.1 : 1}
-                      style={{ width: "100%" }}
-                      onChange={(value) => onUpdate(current.id, { value: Number(value) || 0 })}
-                    />
-                  </label>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="cpk-field cpk-field--row">
-                  <label className="cpk-field cpk-field--half">
-                    <span className="cpk-field__label">效果量</span>
-                    <InputNumber
-                      size="small"
-                      value={current.value}
-                      style={{ width: "100%" }}
-                      onChange={(value) => onUpdate(current.id, { value: Number(value) || 0 })}
-                    />
-                  </label>
-                  <label className="cpk-field cpk-field--half">
-                    <span className="cpk-field__label">单位</span>
-                    <Select
-                      size="small"
-                      value={current.valueUnit || CAST_UNITS[0]}
-                      options={CAST_UNITS.map((unit) => ({ value: unit, label: unit }))}
-                      classNames={{ popup: { root: "cpk-dropdown" } }}
-                      onChange={(value: string) => onUpdate(current.id, { valueUnit: value })}
-                    />
-                  </label>
-                </div>
-                <div className="cpk-field cpk-field--row">
-                  <label className="cpk-field cpk-field--half">
-                    <span className="cpk-field__label">冷却（秒）</span>
-                    <InputNumber
-                      size="small"
-                      value={current.cooldown ?? undefined}
-                      style={{ width: "100%" }}
-                      onChange={(value) =>
-                        onUpdate(current.id, { cooldown: value === null ? null : Number(value) })
-                      }
-                    />
-                  </label>
-                  <label className="cpk-field cpk-field--half">
-                    <span className="cpk-field__label">目标</span>
-                    <Select
-                      size="small"
-                      value={current.target || CAST_TARGETS[1]}
-                      options={CAST_TARGETS.map((item) => ({ value: item, label: item }))}
-                      classNames={{ popup: { root: "cpk-dropdown" } }}
-                      onChange={(value: string) => onUpdate(current.id, { target: value })}
-                    />
-                  </label>
-                </div>
-                <p className="cpk-fxmodal__warn">该条只记录参数，不参与总属性汇总。</p>
-              </>
-            )}
+            {/* 1.39.1 起三种性质同一份加成表单：目标属性 + 运算 + 数值。
+                释放型依然不计入总属性（见顶部 lead 的性质说明），只是填写方式
+                不再特殊 —— 「攻击力% / 目标 / 冷却」那套独立参数概念已删。 */}
+            <label className="cpk-field">
+              <span className="cpk-field__label">目标属性</span>
+              <Select
+                size="small"
+                value={current.targetAttrId || undefined}
+                placeholder="选择属性"
+                options={attrOptions}
+                classNames={{ popup: { root: "cpk-dropdown" } }}
+                onChange={(value: string) => onUpdate(current.id, { targetAttrId: value })}
+              />
+            </label>
+            <div className="cpk-field cpk-field--row">
+              <label className="cpk-field cpk-field--half">
+                <span className="cpk-field__label">运算</span>
+                <Select
+                  size="small"
+                  value={current.op}
+                  options={OPS}
+                  classNames={{ popup: { root: "cpk-dropdown" } }}
+                  onChange={(value: PackOp) => onUpdate(current.id, { op: value })}
+                />
+              </label>
+              <label className="cpk-field cpk-field--half">
+                <span className="cpk-field__label">数值</span>
+                <InputNumber
+                  size="small"
+                  value={current.value}
+                  step={current.op === "mul" ? 0.1 : 1}
+                  style={{ width: "100%" }}
+                  onChange={(value) => onUpdate(current.id, { value: Number(value) || 0 })}
+                />
+              </label>
+            </div>
 
             {/* 熟练度只有技能才统计：宿主是装备 / 状态时查不到熟练度，缩放会恒取
                 下限系数，把数值静默腰斩 —— 干脆不给这个开关 */}
-            {current.nature !== "cast" && current.ownerType === "skill" ? (
+            {current.ownerType === "skill" ? (
               <label className="cpk-field cpk-field--row">
                 <span className="cpk-field__label">按{proficiencyAlias ?? "熟练度"}缩放</span>
                 <Switch
@@ -278,67 +227,16 @@ export default function EffectEditor({
             ) : null}
 
             {current.nature === "sustained" ? (
-              <>
-                <div className="cpk-field cpk-field--row">
-                  <label className="cpk-field cpk-field--half">
-                    <span className="cpk-field__label">消耗</span>
-                    <Input
-                      size="small"
-                      value={current.cost}
-                      placeholder="如：5 法力/回合"
-                      onChange={(event) => onUpdate(current.id, { cost: event.target.value })}
-                    />
-                  </label>
-                  <label className="cpk-field cpk-field--half">
-                    <span className="cpk-field__label">持续时间</span>
-                    <Input
-                      size="small"
-                      value={current.duration}
-                      placeholder="如：3 回合 / 持续"
-                      onChange={(event) => onUpdate(current.id, { duration: event.target.value })}
-                    />
-                  </label>
-                </div>
-                {/*
-                  剩余回合（REQ-025 时效）。
-                  与上面的「持续时间」**不是**同一件事：那个是给人看的自由文本
-                  （「一盏茶 / 三息」），这个是**会被判定的数字** —— 到 0 就不再计入
-                  总属性。刻意留空为「不限时」，因为给个默认 1 会让新建的状态
-                  下一拍就自己过期，而作者根本没填过这一格。
-                */}
-                <label className="cpk-field cpk-field--row">
-                  <span className="cpk-field__label">剩余回合</span>
-                  <InputNumber
-                    size="small"
-                    min={0}
-                    value={current.roundsLeft ?? undefined}
-                    placeholder="留空 = 不限时"
-                    aria-label="剩余回合"
-                    style={{ width: "100%" }}
-                    onChange={(value) =>
-                      onUpdate(current.id, {
-                        roundsLeft:
-                          value === null || value === undefined
-                            ? null
-                            : Math.max(0, Math.floor(Number(value))),
-                      })
-                    }
-                  />
-                </label>
-                <p className="cpk-fxmodal__tip">
-                  填 0 即视为已过期：这条会保留在列表里，但暂时不计入总属性。把回合数加回去就恢复。
-                </p>
-                <label className="cpk-field cpk-field--row">
-                  <span className="cpk-field__label">默认开启</span>
-                  <Switch
-                    size="small"
-                    checked={current.defaultOn}
-                    onChange={(checked) =>
-                      onUpdate(current.id, { defaultOn: checked, active: checked })
-                    }
-                  />
-                </label>
-              </>
+              <label className="cpk-field cpk-field--row">
+                <span className="cpk-field__label">默认开启</span>
+                <Switch
+                  size="small"
+                  checked={current.defaultOn}
+                  onChange={(checked) =>
+                    onUpdate(current.id, { defaultOn: checked, active: checked })
+                  }
+                />
+              </label>
             ) : null}
 
             {current.nature !== "cast" ? (
@@ -352,23 +250,14 @@ export default function EffectEditor({
                   onChange={(value: string) => changeTrigger(current.id, value)}
                 />
               </label>
-            ) : (
-              <label className="cpk-field">
-                <span className="cpk-field__label">消耗</span>
-                <Input
-                  size="small"
-                  value={current.cost}
-                  placeholder="如：30 法力"
-                  onChange={(event) => onUpdate(current.id, { cost: event.target.value })}
-                />
-              </label>
-            )}
+            ) : null}
 
             <label className="cpk-field">
               <span className="cpk-field__label">备注</span>
               <Input
                 size="small"
                 value={current.note}
+                placeholder="消耗 / 持续时间等自定义设定写在这里"
                 onChange={(event) => onUpdate(current.id, { note: event.target.value })}
               />
             </label>

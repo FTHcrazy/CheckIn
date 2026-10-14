@@ -1,5 +1,217 @@
 # Changelog
 
+## [1.41.0] - 2026-10-14
+
+### Added
+
+- **书架灵感库支持编辑灵感**（`IdeaNoteCard` / `useBookshelfData.updateNoteContent`）。
+  此前灵感卡只有置顶 / 归属迁移 / 删除，写错了只能删掉重记；现在悬浮操作多出
+  「编辑」，行内 TextArea 直改（Enter 保存 · Shift+Enter 换行 · Esc 取消），
+  空内容与未改动不落库，与编辑器灵感面板同口径。落库后照常广播
+  `novel-note-changed`，编辑器侧就地补丁。
+- **书架灵感库列表虚拟化**（`IdeaRail` → `Virtuoso`）。此前是 `.map` 全量挂载，
+  灵感攒到上千条会把右栏拖垮；滚动改由列表自己接管（外层 `overflow: hidden`，
+  避免双滚动条），与编辑器灵感面板同一套方案。
+
+### Changed
+
+- **编辑器右侧灵感列表并入「未分组」灵感**（`useNovelData.notes`）。
+  workId 为空串的灵感是书架灵感库的「未归属」收集池，此前被 workId 过滤
+  排掉 —— 在书架记一条未归属灵感，回编辑器灵感面板却一片空白。现在并入
+  当前列表且可编辑（不走「外部灵感只读」路径，不带来源标签）。
+- **物品栏下线「分组」功能**（用户要求）：物品「更多」菜单的「分组」行与
+  头部的「分组设置」按钮删除，物品不再逐个标分组；`groupId` 列保留（compat，
+  旧数据不丢），装备限制仍由部位 accepts × 物品 groupId 匹配 —— 分组管理
+  入口迁到**装备栏**头部（部位设置旁边），分组与部位本就是同一条装备链路。
+- **物品栏下线「宫格视图」**（用户要求）：布局切换按钮与 `is-grid` 样式删除，
+  只保留列表形态；`prefs.inventoryView` 字段保留（compat），不再被读取。
+- **物品行内 icon 加大加明显**：物品行的 `tiny` 图标按钮（稀有度点 / 数量
+  步进 / ⋯）在物品栏局部放大一号（20→22px，数量步进 24px / 15px 字形 / 700
+  字重），−/ + 提到主文字色；「装备 / 已穿戴」加弱描边，从一行小字变成一眼
+  可点的按钮。全面板密度的 `.cpk-iconbtn.tiny` 本体不动（十几处使用点）。
+- **编辑器顶栏「行囊 / 小说设定」换用设计侧定制图标**（`pack.svg` /
+  `book-setting.svg`，新增 `shared/components/SvgIcon` 内联渲染 `?raw` SVG，
+  `fill="currentColor"` 跟随文字色）；行囊头部「量纲」图标换 `dimension.svg`；
+  物品栏「分类管理」图标换 `category.svg`。
+
+### Fixed
+
+- **行囊头部缺「小境界」展示**：头部此前只显示「合体 2/4」，与境界模块的
+  「合体 2/4 · 中期」不同口径（同源数据两处读数不一致）。头部现在并排显示
+  当前小层别名 chip（`subLabelAt` 同源，空别名不渲染）。
+- **行囊「境界」的设置图标改为 hover 提示**：齿轮（点击弹 toast）换成问号
+  （antd Tooltip 悬停即读，不用点）。
+
+## [1.40.0] - 2026-10-14
+
+### Added
+
+- **行囊物品分类管理**（`novel_pack_categories` 表 + `InventoryModule` /
+  新组件 `CategoryManager`）。物品栏头部新增「分类管理」入口：创建 / 行内改名 /
+  删除分类（删除前确认并报受影响物品数，物品退回「未分类」）；首次使用自动
+  播种默认五类（装备 / 丹药 / 材料 / 消耗品 / 杂物）。分类支持**绑定
+  小说设定的等级体系**：绑定后，该分类下的新增物品在「更多」菜单里多出
+  「品阶」一项，可把物品标注成该体系的某一阶（如 小刀·神器、鞭子·仙器）。
+  未绑定体系的分类给引导文案，书里一个体系都没有时引导去「设定中心」创建。
+  `item.category` 仍按名字关联（零迁移）：改名由前端传播到同分类物品行、
+  撞名拒绝。守卫：`pack-grade-guards.test.ts`（建表 / 索引 / 增量迁移 /
+  `PACK_CHILD_TABLES` 登记 / 保存事务落库）+ `CategoryManager/index.test.tsx`
+  四例 + `pack-dirty.test.ts` 分类计数三例。
+- **物品 / 技能的体系品阶标注（1.40.0 核心）**。物品与技能的名称旁新增品阶
+  chip（`cpk-inv__grade` / `cpk-skl__grade`）：未标注时显示「品阶」灰态占位
+  入口，标注后显示品阶名。品阶选项来自**设定域根阶**（`novel_setting_levels`
+  中 `parent_id` 为空的阶，`readGradeSystems` 投影 `{id, name, levels}`）；
+  技能没有分类维度，品阶菜单直接按体系分组（`type: "group"`）挑选，另附
+  「清除品阶」。等级名不落行囊库（单一事实源在设定域）：`grade_id` 只存
+  `novel_setting_levels.id`，改名实时跟随；查不到的 id 不渲染 chip（不出现
+  裸 id）。导出与快速复制同步携带品阶：`小刀 ×1（装备 · 神器）`、
+  `听潮步（功法品阶 · 天阶）`。守卫：`SkillsModule/index.test.tsx` 品阶四例 +
+  `pack-utils.test.ts` 导出三例。
+- **行囊「境界」模块的阶 chip 显示小层级名称**。此前只有「拆出子层级」的阶
+  有 `subLabels`；配置了**固定名单**模板（如「初期,中期,后期,圆满」）但未
+  拆分时，只显示「1/4」不带名。现在未拆分时按名单模板取名（`{n}` 编号模板
+  不算名字，不生成 chip）——「筑基 · 初期 1/4」如期出现。
+- **小说设定模板库新增热门体系预设**（`utils/setting-presets.ts`）：法宝品阶
+  （凡器→神器）、功法品阶（黄阶→圣阶）、丹药品阶（一品→九品），与行囊物品 /
+  技能的品阶标注配套。
+
+### Fixed
+
+- **导出整本小说时每章第一段不缩进**（`novel-utils.ts`
+  `normalizeParagraphIndent`）。编辑器的段首缩进是 CSS `text-indent`（不落
+  文本），作者手工补的空格又往往第二段起才有 → 导出文本首段顶格。现在导出
+  时对每个非空行「剥掉既有行首空白 → 统一补全角两格」，幂等（跑多少遍都是
+  同一份文本），跟随设置里的「首行缩进」开关。守卫：`novel-export.test.ts`
+  缩进四例。
+
+## [1.39.1] - 2026-10-14
+
+### Fixed
+
+- **设定中心「应用内置预设」只建出分类壳、等级序列永远是空的**（`hooks/useNovelData.ts`
+  新增 `createSettingCategoryWithLevels` / `NovelPage.tsx`）。此前预设应用是
+  `createSettingCategory` + `batchAddSettingLevels` 两连调：后者从当前闭包的
+  bundle 里 find 刚建好的分类，而 `setBundle` 是异步的，同一次点击里它还不在
+  里面 → find 失败、静默返回 0。现在分类与等级在**同一次**状态更新里落地，
+  远端也是 category-add 后对新分类一次 batch（守卫：`useNovelData.setting-preset.test.tsx`
+  四例，钉「分类+等级同帧出现」「远端两条挂同一 id」「realm 降级回执修正」
+  「空名单不发 batch」）。顺带把预设的分类级字段（说明 / 每阶小层数 / 进位
+  方向 / 小层命名）也带进落地分类——此前这些被整包丢弃，「练气十三层」的
+  分类小层数一直是缺省的 1。
+- **行囊「境界」模块的阶设置弹框右上角 × 关不掉**（`CharacterPack/RealmModule`）。
+  antd Modal 的 × 与 ESC 走的都是 `onCancel`，此前漏传，弹框只剩 footer 的
+  「关闭」能关。补上 `onCancel`（守卫：`RealmModule/index.test.tsx` 新增
+  「× 能关掉弹框」回归例）。（1.39.1 追加：弹窗随后整体删除，见 Removed。）
+- **行囊「境界」阶设置弹框在没有等级体系时是一张空表**（同文件）。书里还没
+  建体系时 metas 列表为空，弹框只剩一句说明、看起来「没有实际作用」；现在
+  直接给出「先到设定中心新建或从模板库应用一套」的指引（守卫：空态与有体系
+  两例）。（1.39.1 追加：弹窗随后整体删除，见 Removed。）
+- **行囊「备注速记 / 模块开关与排序」存不上**（`pack-dirty.ts`）。未保存计数的
+  实体清单漏了 `character`（备注）与 `layouts`（模块启用 / 顺序 / 恢复默认）两类
+  —— 这两类改动永远算不出脏数：保存按钮保持禁用（「没有未保存的改动」）、
+  草稿防抖与关闭前的必写路径都按 dirty=0 早退，关掉窗口改动即丢，用户视角
+  就是「行囊无法保存」。修复：两类实体纳入计数（身份键：character.id /
+  moduleKey；`orderSignature` 改用 `spec.id`，否则 layouts 无 `id` 字段、排序
+  变化永远算不出来）。刻意**不比** displayName / name / avatar（派生或即时
+  落库）与 entityId（主角绑定即时落库），避免顶栏常亮按不掉的角标。
+  守卫：`pack-dirty.test.ts` 新增备注 / 开关 / 排序 / 派生格四例。
+- **右栏「设定」tab 下线**（`SupportPanel` / `useNovelViewState` / `useNovelPage` /
+  `NovelPage.tsx`，删除 `SettingQuickPanel`）。它与「设定中心」功能重合：分类
+  与阶梯的管理本就归设定中心，速查的插入 / 一致性检查又只有这一个入口在用。
+  PanelTab 收窄为 outline / entity / note / search / tools 五个（会话级状态，
+  无持久化迁移）；`setting-utils` 的正文一致性扫描（`scanConsistency` /
+  `scanUnregistered` 及其辅助）随唯一消费方一并删除。
+- **行囊「人物属性」两段合一，直接编辑当前角色的属性**（`AttributesModule`）。
+  去掉「属性模型 · 全书共用 / 属性值 · 当前角色」两段与分组改名，改为一张
+  每角色的属性行列表：名称 / 数值 / 单位 / 小数位一行编完（底层仍是 def +
+  value 两份数据与原增删改 API，效果与映射的 defId 引用不变）。属性名称从此前
+  的无边框样式改为**带边框输入框**——此前完全看不出名称能编辑（报障点）；
+  新增属性即建即出现在列表里。存储结构零变更（compat 语义成立）。
+- **行囊整文档保存对残缺字段不再整体回滚**（`novel-pack-handlers.ts`）。保存
+  事务的逐行 INSERT 此前大量字段直绑渲染层值（属性名 / 单位 / 物品描述 / 效果
+  备注 / 熟练度原始值……），better-sqlite3 对 undefined 绑定直接抛错 → 整事务
+  回滚，用户侧只有一句「保存失败 · 草稿已保留」而无从排查（报障：套用属性
+  模板后保存失败）。现在全部 SQL 绑定补 `??` 兜底（缺省值与建表 DEFAULT 一致），
+  跨版本草稿里任何一个字段缺省都不再让整份文档存不进去。已用 node:sqlite
+  内存库复现整条事务验证：规范数据保存成功、缺省字段落入默认值。
+- **设定中心左栏点其它分类切不过去**（`SettingCenter`）。`focusCategoryId`
+  （从角色卡「管理境界」进入 / 应用模板后传入）此前在选中解析里**永久优先**于
+  用户点选，只要它还指向存在的分类，左栏点击永远不生效——应用模板境界后再
+  手动新建分类必然踩中。现在 focus 只作初始选中（打开与变化时采纳一次），
+  此后以用户点选为准；关闭时清空上一次选中，重开仍按外部聚焦定位。
+
+### Removed
+
+- **行囊「战力当量」下线**（`RealmModule`）。阶设置弹框的当量列、阶梯 chip 的
+  当量提示与相关文案整体移除——「跨阶比较基准」的描述让人无法理解，且无任何
+  消费方。`novel_setting_levels.power` 列与 DTO 字段保留（compat：不删列），
+  仅不再提供写入口。
+- **行囊「总属性汇总」的估算 / 临时加成下线**（`SummaryModule` / `usePackPanel` /
+  `types.ts`）。REQ-037 的试算与真实汇总同管线同源，却总被当成「没保存的
+  数据」，鸡肋大于价值；穿戴 Δ 预览（REQ-018）仍走 `computeHypotheticalSummary`
+  不受影响。临时加成本就不落库，无数据清理。
+- **行囊「阶设置」弹窗下线**（`RealmModule` / `usePackPanel` / `pack-service.ts`）。
+  小层数 / 子层级的编辑统一收进「设定中心 → 等级序列」，行囊只读：齿轮点击
+  改为 toast 指引（「境界层级在设定中心设置」），不再弹窗。`setRungMeta` 与
+  `writeLevelMeta` 写入口随唯一消费方一并删除（设定域的 level-update 通道本身
+  保留，SettingCenter 仍在用；守卫：`RealmModule/index.test.tsx` 钉「点齿轮只
+  出指引、无弹窗」）。
+- **行囊「技能分组」下线**（`SkillsModule` / `GroupManager` / `usePackPanel`）。
+  技能行的「未分组」下拉与分组设置入口删除，熟练度体系恒用默认体系（组绑定
+  `profSchemeId` 失去绑定方，编辑入口撤下）。物品分组不受影响；`skill.groupId`
+  与 `profSchemeId` 字段保留（compat），旧数据不再参与判定。
+- **效果参数概念下线：消耗 / 持续时间 / 剩余回合**（`EffectEditor` /
+  `StatusModule` / `ModifierList`）。这些时效语义统一由作者写进效果备注；
+  持续型的「默认开启」开关保留，`roundsLeft` 判定逻辑（isCounted / isExpired）
+  与字段保留（compat），仅 UI 与写入口撤下——旧数据里已填的回合数继续生效。
+  状态行 / 导出文本的「时效」与「持续 X」展示一并移除。
+- **释放型效果的独立参数概念下线：效果量 / 单位（攻击力% 等）/ 目标 / 冷却**（
+  `EffectEditor` / `types.ts` 的 `CAST_UNITS` / `CAST_TARGETS`）。释放型改为与
+  被动 / 持续同一份加成表单（目标属性 + 运算 + 数值），性质说明仍写明
+  「不计入总属性」；`valueUnit` / `cooldown` / `target` 字段保留（compat）。
+
+### Changed
+
+- **行囊所有导出统一为系统流小说的 txt 排版**（`pack-utils.ts` / `PackExportButton`）。
+  Markdown 表格（`## 行囊 · X` + 竖线表）整体换成「【模块名】+ 一行一条冒号句」：
+  `攻击力：150（基础 100，被动 +30，持续 +20）`、`回春丹 ×3（丹药 · 精良 · 丹药匣）`、
+  `1 金 = 100 银 = 10,000 铜`——参考系统流 / 网游小说的面板写法，粘进正文不破坏
+  叙事节奏。菜单项改为「复制面板文本 / 下载 .txt 文件 / 插入本章末尾」；
+  `buildPackMarkdown` / `buildPackTable` / `toMarkdownTable` 更名重写为
+  `buildPackText` / `buildPackLines`（守卫：`pack-utils.test.ts` 导出段全量重写）。
+- **本书设定的等级序列只支持两个层级**（`SettingCenter` / `useNovelData`）。
+  主等级下可挂一层子层级，子层级不再提供「新增子层级」入口（拆分函数同样加
+  守卫）——三层嵌套（「初级·第1段·第1段」）在境界 chip 与层级表达上都没有
+  意义。已存在的三层旧数据不受影响（只挡新增）。
+- **分组名称支持直接输入，导出实时跟随**（`GroupManager`）。分组名从无边框样式
+  改为带边框输入框（此前看不出能改名），说明里写明「物品下拉与导出文本用的是
+  这里实时改的名字」（导出本就按 id 查现值，补了守卫用例）。
+- **技能栏的「分组设置」按载体语境显示**（`GroupManager` / `usePackPanel` /
+  `SkillsModule` / `InventoryModule`）。弹框新增 scope：技能栏打开时隐藏
+  「可穿戴」开关（技能没有「穿」的概念，只制造困惑）并切换说明文案；三颗
+  开关全部补可见标签（可穿戴 / 载体开关 / 整组）与悬浮说明——「整组」此前
+  是一颗无标签的裸开关。
+  （1.39.1 追加：技能分组随后整体下线，scope 机制随之拆除，见 Removed。）
+- **行囊境界头部显示当前小层别名**（`novel-pack-handlers.ts` / `electron.d.ts` /
+  `pack-utils.ts` / `RealmModule`）。拆出子层级的阶，「合体 1/4」旁现在跟一枚
+  别名 chip（取子层级的首个别名，缺省回落段名）——「X n/m」只答了走到哪，
+  别名才回答「现在是什么」；纯数字小层与未写别名不显示。主进程阶梯投影随
+  `PackLevelRungDTO` 增补 `subLabels`（按阶内层号索引，子层段整段共享显示名），
+  `LadderRung` 同步透传（守卫：`pack-utils.test.ts` 的 `subLabelAt` 三例、
+  `RealmModule/index.test.tsx` 有别名 / 空别名 / 纯数字小层三例）。
+- **左栏章节树拖拽排序改用 @dnd-kit**（`ChapterTree` / `ChapterTreeItem` /
+  `VolumeNode`，撤下 `DRAG_MIME_*`）。HTML5 dataTransfer 换成 PointerSensor
+  （distance 6，点击不误触）：拖拽内容浮为跟随光标的小卡片（DragOverlay），
+  拖到列表边缘时自动滚屏；章 → 章（重排 / 跨卷）、章 → 卷头（移入卷末）、
+  卷 → 卷头（重排）三条路径与原先一致。行只挂 dnd-kit listeners 不挂
+  attributes——attributes 会给行容器塞 `role="button"`，与行内三个真按钮叠成
+  嵌套交互语义；可达性仍由行内按钮承担（与 HTML5 时代同为指针拖拽）。
+- **行囊模块壳折叠头换自绘涟漪**（`PackModuleShell`）。标题是占满整行的透明
+  按钮，antd wave 环（6px currentcolor 描边 + 2s 淡出）罩上去就是「点了挂
+  两秒的色框」（OutlinePanel 1.34.0「点击效果只有一半」的同构问题）：按钮上
+  关掉 wave，改为从点击位置扩散的淡主色小涟漪（0.45s 收场、结束即卸载）。
+  守卫：`PackModuleShell/index.test.tsx` 两例（点击出涟漪 + 动画后卸载）。
+
 ## [1.39.0] - 2026-10-13
 
 > 行囊「负重 / 容量」（REQ-033 / F-5）整体下线，并按设计稿把头部横向带与

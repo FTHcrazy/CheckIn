@@ -121,9 +121,6 @@ export default function NovelPage({
     handleRenameCustomType,
     handleRecolorCustomType,
     handleRemoveCustomType,
-    handleInsertSettingTerm,
-    handleReplaceSettingTerm,
-    handleRegisterSettingTerm,
     entityTypesValue,
     editorPaneRef,
     namingActions,
@@ -532,10 +529,6 @@ export default function NovelPage({
             if (target) handleSetEntityLevel(entityId, target.type, levelId, sub);
           }}
           onOpenSettings={openSettingCenterForRealm}
-          chapterContent={data.activeChapter?.content ?? ""}
-          onInsertSettingTerm={handleInsertSettingTerm}
-          onReplaceSettingTerm={handleReplaceSettingTerm}
-          onRegisterSettingTerm={handleRegisterSettingTerm}
           onOpenTypeManager={view.openTypeManager}
           protagonistEntityId={protagonistEntityId}
           onSetProtagonist={handleSetProtagonist}
@@ -587,17 +580,21 @@ export default function NovelPage({
         onApplyPreset={(presetId) => {
           const preset = SETTING_PRESETS.find((item) => item.id === presetId);
           if (!preset) return;
-          // 应用 = 新建一个普通分类再灌入预设等级；kind='realm' 遇上已有
-          // 境界体系会被主进程降级为 custom（createSettingCategory 已处理回执修正）
-          const category = data.createSettingCategory(preset.name, preset.kind);
-          if (!category) return;
-          data.batchAddSettingLevels(
-            category.id,
-            preset.levels.map((level) => ({
-              name: level.name,
-              subLevels: level.subLevels,
-              subPattern: level.subPattern ?? "",
-            })),
+          // 一次性建分类 + 灌入等级（含分类级进位规则）。此前拆成
+          // createSettingCategory + batchAddSettingLevels 两连调：batchAdd 从
+          // 当前闭包的 bundle 里找刚建的分类，而 setBundle 是异步的，同一事件
+          // 循环里它还不在里面 → 静默返回 0，表现为「应用模板后只有分类壳、
+          // 等级序列永远是空的」。
+          data.createSettingCategoryWithLevels(
+            preset.name,
+            preset.kind,
+            preset.levels,
+            {
+              note: preset.note,
+              subLevels: preset.subLevels,
+              carryDir: preset.carryDir,
+              subPattern: preset.subPattern,
+            },
           );
         }}
       />

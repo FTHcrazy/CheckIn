@@ -1065,6 +1065,31 @@ export interface ExportNumberingOptions {
   numberStyle: LabelNumberStyle;
   chapterSuffix: string;
   volumeSuffix: string;
+  /**
+   * 段首缩进（1.40.0）：导出时把每段正文规范化为全角两格缩进（\u3000\u3000）。
+   * 编辑器里的缩进是 CSS `text-indent`（不落在文本上），而作者手工补的
+   * 空格往往只有第二段起才有 —— 首段因此「导出不缩进」。缺省开启
+   * （中文小说 txt 的通行排版）；作者在设置里关掉「首行缩进」视为
+   * 自己管排版，导出保持原文不动。
+   */
+  paragraphIndent?: boolean;
+}
+
+/**
+ * 段落规范化缩进（1.40.0）：每个非空行剥掉既有行首空白后统一补全角两格（\u3000\u3000）。
+ *
+ * 为什么是「剥了再补」而不是「缺了才补」：作者手工补的缩进五花八门
+ * （全角两格 / 四格 / 半角空格 / 制表符），只补缺的话同一章里会出现
+ * 2 格与 4 格并存的行；剥了再补幂等，跑多少遍都是同一份文本。
+ */
+export function normalizeParagraphIndent(content: string): string {
+  return content
+    .split("\n")
+    .map((line) => {
+      const stripped = line.replace(/^[\s\u3000]+/, "");
+      return stripped ? `\u3000\u3000${stripped}` : "";
+    })
+    .join("\n");
 }
 
 /** 章节标题行：「第一章 灵潮起」；章节名为空时退化为纯序号「第一章」 */
@@ -1088,10 +1113,15 @@ export function buildChapterPlainText(
   chapterNumber: number,
   options: ExportNumberingOptions,
 ): string {
-  return [
-    buildChapterHeading(chapter, chapterNumber, options),
-    chapter.content.trimEnd(),
-  ].join("\n\n");
+  // 缩进规范化（1.40.0）：修「每章第一段不缩进」。设置里关掉缩进的作者
+  // 被视为自己在管排版，导出保持原文不动（paragraphIndent 缺省开启）。
+  const body =
+    options.paragraphIndent === false
+      ? chapter.content
+      : normalizeParagraphIndent(chapter.content);
+  return [buildChapterHeading(chapter, chapterNumber, options), body.trimEnd()].join(
+    "\n\n",
+  );
 }
 
 /**

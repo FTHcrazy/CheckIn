@@ -44,6 +44,39 @@
     font-size: 12px;
   }
 
+  /* 品阶 chip（1.40.0）：菜单入口按体系分组列出设定域的等级。
+     已标注走紫（与物品行品阶 chip 同色系），未标注弱化为灰描边 ——
+     两者同尺寸，行高不因状态跳动。 */
+  &__grade.ant-btn {
+    flex: none;
+    height: 22px;
+    padding: 0 8px;
+    border-radius: var(--app-radius-pill);
+    font-size: 12px;
+    --ant-button-content-font-size: 12px;
+    --ant-control-height: 22px;
+    --ant-button-padding-inline: 8px;
+    --ant-button-default-bg: var(--app-accent-purple-weak);
+    --ant-button-default-color: var(--app-accent-purple);
+    --ant-button-default-border-color: transparent;
+    --ant-button-default-hover-bg: var(--app-accent-purple-weak);
+    --ant-button-default-hover-color: var(--app-accent-purple);
+    --ant-button-default-hover-border-color: var(--app-accent-purple);
+    --ant-button-default-active-bg: var(--app-accent-purple-weak);
+    --ant-button-default-active-border-color: var(--app-accent-purple);
+
+    &.is-empty {
+      --ant-button-default-bg: transparent;
+      --ant-button-default-color: var(--app-text-secondary);
+      --ant-button-default-border-color: var(--app-border);
+      --ant-button-default-hover-bg: transparent;
+      --ant-button-default-hover-color: var(--app-text-strong);
+      --ant-button-default-hover-border-color: var(--app-border-strong);
+      --ant-button-default-active-bg: transparent;
+      --ant-button-default-active-border-color: var(--app-border-strong);
+    }
+  }
+
   /* 熟练度数值：收窄到 5 位数以内够用（上限 500 缩放），别和档位 chip 抢宽度 */
   &__raw.ant-input-number {
     flex: none;

@@ -306,6 +306,20 @@ function initializeNovelDb(database: Database.Database): void {
       sort_order INTEGER NOT NULL DEFAULT 1
     );
     CREATE INDEX IF NOT EXISTS idx_pack_group_char ON novel_pack_groups(character_id, sort_order);
+    -- 物品分类管理（1.40.0）：物品栏的「分类」从写死的五个常量升级为可管理的行。
+    -- item.category 仍存**分类名字符串**（compat：老数据零迁移），改名时由渲染层
+    -- 传播到物品行；system_id 指向 novel_setting_categories.id —— 绑定后，归属该
+    -- 分类的物品可从这套体系里选品阶（小刀 · 神器）。无外键：设定分类被删后
+    -- system_id 悬空，渲染层按「未绑定」处理。
+    CREATE TABLE IF NOT EXISTS novel_pack_categories (
+      id TEXT PRIMARY KEY,
+      character_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      system_id TEXT NOT NULL DEFAULT '',
+      sort_order INTEGER NOT NULL DEFAULT 1
+    );
+    CREATE INDEX IF NOT EXISTS idx_pack_cat_char
+      ON novel_pack_categories(character_id, sort_order);
     CREATE TABLE IF NOT EXISTS novel_pack_items (
       id TEXT PRIMARY KEY,
       character_id TEXT NOT NULL,
@@ -321,6 +335,9 @@ function initializeNovelDb(database: Database.Database): void {
       slot_index INTEGER,
       -- 归属分组（novel_pack_groups.id）；'' = 未分组
       group_id TEXT NOT NULL DEFAULT '',
+      -- 体系品阶（1.40.0）：指向 novel_setting_levels.id，物品标注「小刀 · 神器」
+      -- 这类体系等级；'' = 未标注。等级名不落本地（单一事实源在设定域）
+      grade_id TEXT NOT NULL DEFAULT '',
       source_chapter_id TEXT,
       updated_at INTEGER NOT NULL
     );
@@ -335,6 +352,8 @@ function initializeNovelDb(database: Database.Database): void {
       -- 归属分组（novel_pack_groups.id）；'' = 未分组
       group_id TEXT NOT NULL DEFAULT '',
       proficiency_raw REAL NOT NULL DEFAULT 0,
+      -- 体系品阶（1.40.0）：同 items.grade_id，技能标注「神通 · 天阶」
+      grade_id TEXT NOT NULL DEFAULT '',
       tags TEXT NOT NULL DEFAULT '[]',
       sort_order INTEGER NOT NULL DEFAULT 1,
       updated_at INTEGER NOT NULL DEFAULT 0
@@ -437,6 +456,25 @@ function initializeNovelDb(database: Database.Database): void {
   dropColumnIfExists(database, "novel_pack_characters", "weight_limit");
   dropColumnIfExists(database, "novel_pack_characters", "capacity_limit");
   dropColumnIfExists(database, "novel_pack_items", "weight");
+
+  // 1.40.0 物品 / 技能体系品阶：老库补 grade_id 列（增量可重复执行）。
+  // 新库 CREATE TABLE 里已带，pragma 探测保证幂等。
+  const itemColumns = database.pragma("table_info(novel_pack_items)") as Array<{
+    name: string;
+  }>;
+  if (!itemColumns.some((column) => column.name === "grade_id")) {
+    database.exec(
+      "ALTER TABLE novel_pack_items ADD COLUMN grade_id TEXT NOT NULL DEFAULT ''",
+    );
+  }
+  const skillColumns = database.pragma("table_info(novel_pack_skills)") as Array<{
+    name: string;
+  }>;
+  if (!skillColumns.some((column) => column.name === "grade_id")) {
+    database.exec(
+      "ALTER TABLE novel_pack_skills ADD COLUMN grade_id TEXT NOT NULL DEFAULT ''",
+    );
+  }
 }
 
 /**

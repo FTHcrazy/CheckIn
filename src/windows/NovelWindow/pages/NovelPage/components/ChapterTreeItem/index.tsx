@@ -1,7 +1,8 @@
 import { useState } from "react";
-import type { DragEvent, KeyboardEvent } from "react";
+import type { KeyboardEvent } from "react";
 import { DeleteOutlined } from "@ant-design/icons";
-import { CHAPTER_STATUS_META, DRAG_MIME_CHAPTER } from "../../novel-config";
+import { useDraggable, useDroppable } from "@dnd-kit/core";
+import { CHAPTER_STATUS_META } from "../../novel-config";
 import { formatThousands, padIndex } from "../../novel-utils";
 import type { NovelChapter } from "../../types";
 import "./index.scss";
@@ -11,11 +12,11 @@ interface ChapterTreeItemProps {
   /** 全书序号（跨卷连续，随拖拽重排自动变动） */
   chapterNumber: number;
   active: boolean;
+  /** 正在被拖拽的行 id（"ch:…" / "vol:…"）；null = 当前没有拖拽 */
+  dragActiveId: string | null;
   onSelect: (chapterId: string) => void;
   /** 点击状态圆点：草稿 ⇄ 完稿 */
   onToggleStatus: (chapterId: string) => void;
-  /** 拖拽放下：fromId 落到本章节（chapter.id）的位置，同卷重排 / 跨卷移动 */
-  onReorder: (fromId: string, toId: string) => void;
   /** 双击标题快捷重命名：空名 / 同名不落 */
   onRename: (chapterId: string, title: string) => void;
   /**
@@ -48,24 +49,41 @@ interface ChapterTreeItemProps {
  *     不出现 `<button>` 嵌 `<button>`（§6.1.2 第 4 条）
  *   - 外观全部走 `var(--app-*)`，状态选择器写在 index.scss（例外允许处）
  *
- * 状态点对齐 UI 稿（原型 .chap__st）：草稿空心描边、完稿实心语义色，
- * 状态点在序号之前（st → no → 标题 → 删除 → 字数）。
- * 空章节字数显示「—」而非 0（对齐原型 renderTree 的 w === '0' ? '—'）。
+ * ── 拖拽（1.39.1 起用 @dnd-kit，替换 HTML5 dataTransfer）──
+ *
+ * 行容器同时是 draggable 与 droppable（同一个 id，dnd-kit 允许并存）：
+ * 拖它 = 移动本章，别人拖到它上面 = 落到本章的位置（同卷重排 / 跨卷移动）。
+ * 只挂 `listeners` 不挂 `attributes`：attributes 会给行容器塞 `role="button"`
+ * 和 tabIndex，与行内三个真按钮叠成嵌套交互语义；拖拽本就只有指针一种
+ * 输入（HTML5 时代也没有键盘路径），可达性仍由行内按钮承担。
+ * PointerSensor 带 distance 约束（见 ChapterTree），行上点按不误触拖拽。
  */
 export default function ChapterTreeItem({
   chapter,
   chapterNumber,
   active,
+  dragActiveId,
   onSelect,
   onToggleStatus,
-  onReorder,
   onRename,
   onRequestDelete,
 }: ChapterTreeItemProps) {
   const status = CHAPTER_STATUS_META[chapter.status];
-  const [dropActive, setDropActive] = useState(false);
   const [titleEditing, setTitleEditing] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
+
+  const dragId = `ch:${chapter.id}`;
+  const {
+    setNodeRef: setDragRef,
+    listeners,
+    isDragging,
+  } = useDraggable({ id: dragId, data: { kind: "chapter" } });
+  const { setNodeRef: setDropRef, isOver } = useDroppable({
+    id: dragId,
+    data: { kind: "chapter" },
+  });
+  /** 落点高亮：悬停在本行上、且拖的不是本行自己 */
+  const dropActive = isOver && dragActiveId !== null && dragActiveId !== dragId;
 
   const startTitleEdit = (): void => {
     setTitleDraft(chapter.title);
@@ -91,34 +109,9 @@ export default function ChapterTreeItem({
     }
   };
 
-  const handleDragStart = (event: DragEvent<HTMLDivElement>): void => {
-    event.dataTransfer.setData(DRAG_MIME_CHAPTER, chapter.id);
-    event.dataTransfer.effectAllowed = "move";
-  };
-
-  const handleDragOver = (event: DragEvent<HTMLDivElement>): void => {
-    if (!event.dataTransfer.types.includes(DRAG_MIME_CHAPTER)) return;
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "move";
-    if (!dropActive) setDropActive(true);
-  };
-
-  const handleDragLeave = (event: DragEvent<HTMLDivElement>): void => {
-    if (event.currentTarget === event.target) setDropActive(false);
-  };
-
-  const handleDrop = (event: DragEvent<HTMLDivElement>): void => {
-    event.preventDefault();
-    setDropActive(false);
-    const fromId = event.dataTransfer.getData(DRAG_MIME_CHAPTER);
-    if (fromId && fromId !== chapter.id) onReorder(fromId, chapter.id);
-  };
-
-  const handleDragEnd = (): void => setDropActive(false);
-
   const rowClass = `nv-chapter__row${active ? " is-active" : ""}${
     dropActive ? " is-drop" : ""
-  }`;
+  }${isDragging ? " is-drag" : ""}`;
 
   const statusHint =
     chapter.status === "done" ? "完稿 · 点击改回草稿" : "草稿 · 点击标记完稿";
@@ -156,12 +149,11 @@ export default function ChapterTreeItem({
           直接整行做成 button 会包住删除按钮，形成 <button> 嵌 <button> */}
       <div
         className={rowClass}
-        draggable
-        onDragStart={handleDragStart}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-        onDragEnd={handleDragEnd}
+        ref={(node) => {
+          setDragRef(node);
+          setDropRef(node);
+        }}
+        {...listeners}
       >
         <button
           type="button"

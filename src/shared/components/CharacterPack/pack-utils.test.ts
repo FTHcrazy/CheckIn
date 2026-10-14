@@ -4,8 +4,8 @@ import {
   buildActiveCarriers,
   buildActiveCarriersFrom,
   buildGroupOffCarriers,
-  buildPackMarkdown,
-  buildPackTable,
+  buildPackLines,
+  buildPackText,
   carrierKeyOf,
   carryRealm,
   castOwnerIds,
@@ -14,7 +14,6 @@ import {
   computeHypotheticalSummary,
   computeSummary,
   countRecentChanges,
-  escapeMarkdownCell,
   formatAttrValue,
   formatRatio,
   formatRealm,
@@ -28,10 +27,11 @@ import {
   safeText,
   scaleByProficiency,
   sortLadder,
+  statText,
   stepQty,
+  subLabelAt,
   summaryDeltas,
   thresholdOf,
-  toMarkdownTable,
   composeAttributes,
   type HypotheticalInput,
   type LadderRung,
@@ -552,6 +552,7 @@ describe("buildActiveCarriers —— 闸门 1 的组装", () => {
       tags: [],
       equippedSlotId: "s1",
       groupId: "",
+      gradeId: "",
       slotIndex: n - 1,
       sourceChapterId: "",
       updatedAt: 0,
@@ -575,6 +576,7 @@ describe("buildActiveCarriers —— 闸门 1 的组装", () => {
         tags: [],
         equippedSlotId: "s1",
         groupId: "",
+        gradeId: "",
         slotIndex: 0,
         sourceChapterId: "",
         updatedAt: 0,
@@ -632,6 +634,7 @@ describe("载体分组与闸门 0（1.39.0 二期）", () => {
     tags: [],
     equippedSlotId: "s1",
     groupId: "g1",
+    gradeId: "",
     slotIndex: 0,
     sourceChapterId: "",
     updatedAt: 0,
@@ -756,6 +759,33 @@ describe("carryRealm —— 阶内进位（§9.7.2 缺口③）", () => {
   it("无小层的阶显示只带阶名", () => {
     expect(formatRealm(LADDER, { index: 2, sub: 1 })).toBe("金丹");
     expect(formatRealm(LADDER, { index: 1, sub: 7 })).toBe("筑基 7/9");
+  });
+});
+
+describe("subLabelAt —— 小层别名表（1.39.1）", () => {
+  const rung: LadderRung = {
+    id: "l1",
+    name: "合体",
+    rank: 1,
+    subLevels: 4,
+    power: null,
+    hasChildren: true,
+    subLabels: ["", "中期", "后期", "圆满"],
+  };
+
+  it("按阶内层号取别名（下标 = 层号 - 1）", () => {
+    expect(subLabelAt(rung, 2)).toBe("中期");
+    expect(subLabelAt(rung, 4)).toBe("圆满");
+  });
+
+  it("空串（未写别名）原样返回，渲染层据此不显示", () => {
+    expect(subLabelAt(rung, 1)).toBe("");
+  });
+
+  it("越界 / 无别名表 / 无阶时都回落空串", () => {
+    expect(subLabelAt(rung, 5)).toBe("");
+    expect(subLabelAt({ ...rung, subLabels: undefined }, 1)).toBe("");
+    expect(subLabelAt(undefined, 1)).toBe("");
   });
 });
 
@@ -1002,23 +1032,16 @@ describe("熟练度体系：进位与别名（Phase 3，断层 C）", () => {
     expect(result.rows[0]?.contributions[0]?.applied).toBe(50);
   });
 
-  it("技能表列名跟随默认体系别名，进位文本附在原始值后（原始值仍是真相源）", () => {
-    const table = buildPackTable(
+  it("技能行列名跟随默认体系别名，进位文本附在原始值后（原始值仍是真相源）", () => {
+    const lines = buildPackLines(
       "skills",
       exportCtx({
         skills: [skill({ proficiencyRaw: 12500 })],
         proficiencyLevels: SCHEME_LEVELS,
         proficiencyAlias: "修为",
-        proficiencySchemesByGroup: {
-          g1: { levels: SCHEME_LEVELS, autoCarry: true },
-        },
       }),
     );
-    expect(table.headers).toContain("修为");
-    expect(table.headers).not.toContain("熟练度");
-    expect(table.rows[0].some((cell) => cell.includes("12500（12 重 5 层）"))).toBe(
-      true,
-    );
+    expect(lines[0]).toContain("修为 12500（12 重 5 层）");
   });
 });
 
@@ -1087,6 +1110,7 @@ function item(partial: Partial<PackItem>): PackItem {
     tags: [],
     equippedSlotId: "",
     groupId: "",
+    gradeId: "",
     slotIndex: null,
     sourceChapterId: "",
     updatedAt: 0,
@@ -1243,6 +1267,7 @@ function skill(partial: Partial<PackSkill>): PackSkill {
     desc: "",
     enabled: true,
     groupId: "",
+    gradeId: "",
     proficiencyRaw: 0,
     tags: [],
     sortOrder: 1,
@@ -1252,7 +1277,7 @@ function skill(partial: Partial<PackSkill>): PackSkill {
 }
 
 /** 组装一份最小导出上下文：只要给定切片，其余给空 */
-function exportCtx(partial: Partial<Parameters<typeof buildPackTable>[1]> = {}) {
+function exportCtx(partial: Partial<Parameters<typeof buildPackLines>[1]> = {}) {
   const attributes = partial.attributes ?? [attr({ id: "a1", name: "攻击力", baseValue: 100 })];
   const modifiers = partial.modifiers ?? [];
   const mappings = partial.mappings ?? [];
@@ -1275,51 +1300,25 @@ function exportCtx(partial: Partial<Parameters<typeof buildPackTable>[1]> = {}) 
     slots: partial.slots ?? [],
     items: partial.items ?? [],
     skills: partial.skills ?? [],
+    groups: partial.groups ?? [],
     modifiers,
     mappings,
     summary,
     proficiencyLevels: partial.proficiencyLevels,
     proficiencyAlias: partial.proficiencyAlias,
-    proficiencySchemesByGroup: partial.proficiencySchemesByGroup,
+    gradeNames: partial.gradeNames,
     currency: partial.currency ?? null,
   };
 }
 
-describe("Markdown 表格与单元格转义", () => {
-  it("表头 + 分隔行 + 数据行的结构", () => {
-    expect(toMarkdownTable({ headers: ["a", "b"], rows: [["1", "2"]] })).toBe(
-      "| a | b |\n| --- | --- |\n| 1 | 2 |",
-    );
+describe("buildPackText —— 系统流小说的面板文本口径（1.39.1）", () => {
+  it("带【标题】；空模块给一句显式说明而不是空段落", () => {
+    const text = buildPackText("status", exportCtx(), "状态效果");
+    expect(text).toBe("【状态效果】\n（暂无内容）\n");
   });
 
-  it("竖线被转义：物品名里的 | 不能把表格列数打乱", () => {
-    expect(escapeMarkdownCell("双刃|短刀")).toBe("双刃\\|短刀");
-    expect(
-      toMarkdownTable({ headers: ["名"], rows: [["双刃|短刀"]] }),
-    ).toContain("| 双刃\\|短刀 |");
-  });
-
-  it("反斜杠先于竖线处理：否则把补上的转义符又转一遍，粘贴出去仍然断列", () => {
-    // 源串是「a\|b」：反斜杠 → \\，竖线 → \|，结果为 a\\\|b
-    expect(escapeMarkdownCell("a\\|b")).toBe("a\\\\\\|b");
-  });
-
-  it("换行折成 <br>：表格单元格里不能出现软换行", () => {
-    expect(escapeMarkdownCell("第一行\n第二行")).toBe("第一行<br>第二行");
-    expect(escapeMarkdownCell("  去空白  ")).toBe("去空白");
-  });
-});
-
-describe("buildPackMarkdown —— 各模块的表格口径", () => {
-  it("带标题与表格；空模块给一句显式说明而不是只有表头的空壳", () => {
-    const md = buildPackMarkdown("status", exportCtx(), "状态效果");
-    expect(md).toContain("## 行囊 · 状态效果");
-    expect(md).toContain("（暂无内容）");
-    expect(md).not.toContain("| --- |");
-  });
-
-  it("属性表按 sortOrder 出，并带上分组 / 单位 / 小数位", () => {
-    const md = buildPackMarkdown(
+  it("属性行按 sortOrder 出，冒号句带数值与单位", () => {
+    const text = buildPackText(
       "attributes",
       exportCtx({
         attributes: [
@@ -1329,74 +1328,19 @@ describe("buildPackMarkdown —— 各模块的表格口径", () => {
       }),
       "人物属性",
     );
-    const lines = md.trim().split("\n");
-    // 0=标题 1=空行 2=表头 3=分隔 4、5=数据行
-    expect(lines[2]).toContain("分组");
-    expect(lines[4]).toContain("攻击力");
-    expect(lines[5]).toContain("防御力");
-    expect(lines[5]).toContain("点");
+    const lines = text.trim().split("\n");
+    expect(lines[0]).toBe("【人物属性】");
+    expect(lines[1]).toBe("攻击力：100（基础属性）");
+    expect(lines[2]).toBe("防御力：50点（基础属性）");
   });
 
-  it("物品表带上穿戴部位名（查不到部位时给「已删除的部位」而不是裸 id）", () => {
-    const md = buildPackMarkdown(
-      "inventory",
-      exportCtx({
-        slots: [slot({ id: "s1", name: "武器", capacity: 2 })],
-        items: [
-          item({ id: "i1", name: "风雷双匕", equippedSlotId: "s1", slotIndex: 0, tags: ["武器", "雷"] }),
-          item({ id: "i2", name: "野草", equippedSlotId: "s9" }),
-        ],
-      }),
-      "物品栏",
-    );
-    expect(md).toContain("武器");
-    expect(md).toContain("武器 / 雷");
-    expect(md).toContain("(已删除的部位)");
-  });
-
-  it("装备表每个部位一行，空部位也留在表里（否则「哪儿还空着」看不出来）", () => {
-    const table = buildPackTable(
-      "equipment",
-      exportCtx({
-        slots: [
-          slot({ id: "s1", name: "武器", capacity: 1 }),
-          slot({ id: "s2", name: "护甲", capacity: 1, sortOrder: 2 }),
-        ],
-        items: [item({ id: "i1", name: "铁剑", equippedSlotId: "s1", slotIndex: 0 })],
-      }),
-    );
-    expect(table.rows).toHaveLength(2);
-    expect(table.rows[0].join("|")).toContain("铁剑");
-    expect(table.rows[1]).toEqual(["护甲", "（空）", "—", "—", "—", "—"]);
-  });
-
-  it("技能表在没有熟练度体系时不出「档位」列（列头与数据行数必须一致）", () => {
-    const noTier = buildPackTable("skills", exportCtx({ skills: [skill({})] }));
-    expect(noTier.headers).not.toContain("档位");
-    expect(noTier.rows[0]).toHaveLength(noTier.headers.length);
-
-    const withTier = buildPackTable(
-      "skills",
-      exportCtx({
-        skills: [skill({ proficiencyRaw: 120 })],
-        proficiencyLevels: [
-          { name: "入门", min: 0, max: 99 },
-          { name: "熟练", min: 100, max: 499 },
-        ],
-      }),
-    );
-    expect(withTier.headers).toContain("档位");
-    expect(withTier.rows[0]).toHaveLength(withTier.headers.length);
-    expect(withTier.rows[0]).toContain("熟练");
-  });
-
-  it("汇总表把被动 / 持续分开列（与 §9.4.2 的分段口径一致）", () => {
+  it("汇总行把非零明细列在括号里：基础 / 被动 / 持续 / 映射", () => {
     const attributes = [attr({ id: "a1", name: "攻击力", baseValue: 100 })];
     const modifiers = [
       mod({ id: "m1", ownerType: "item", ownerId: "i1", nature: "passive", value: 30 }),
       mod({ id: "m2", ownerType: "status", ownerId: "c1", nature: "sustained", active: true, value: 20 }),
     ];
-    const table = buildPackTable(
+    const lines = buildPackLines(
       "summary",
       exportCtx({
         attributes,
@@ -1405,32 +1349,11 @@ describe("buildPackMarkdown —— 各模块的表格口径", () => {
         modifiers,
       }),
     );
-    expect(table.headers).toContain("被动加算");
-    expect(table.headers).toContain("持续加算");
-    expect(table.rows[0]).toContain("30");
-    expect(table.rows[0]).toContain("20");
-    expect(table.rows[0]).toContain("150");
+    expect(lines).toEqual(["攻击力：150（基础 100，被动 +30，持续 +20）"]);
   });
 
-  it("汇总表的「映射加算」列与总览值对得上", () => {
-    const table = buildPackTable(
-      "summary",
-      exportCtx({
-        attributes: [
-          attr({ id: "str", name: "力量", baseValue: 10 }),
-          attr({ id: "hp", name: "生命值", baseValue: 1000, sortOrder: 2 }),
-        ],
-        mappings: [mapping({})],
-      }),
-    );
-    const hpRow = table.rows.find((row) => row[0] === "生命值")!;
-    expect(hpRow).toHaveLength(table.headers.length);
-    expect(hpRow[2]).toBe("2,000"); // 总览值
-    expect(hpRow[5]).toBe("1,000"); // 映射加算
-  });
-
-  it("映射表：导出**这次算出来多少**，并标出没生效的原因", () => {
-    const ctx = exportCtx({
+  it("映射行：导出**这次算出来多少**，并标出没生效的原因", () => {
+    const lines = buildPackLines("mapping", exportCtx({
       attributes: [
         attr({ id: "str", name: "力量", baseValue: 10 }),
         attr({ id: "hp", name: "生命值", baseValue: 1000, sortOrder: 2 }),
@@ -1440,49 +1363,127 @@ describe("buildPackMarkdown —— 各模块的表格口径", () => {
         { id: "pm2", sourceAttrId: "hp", targetAttrId: "gone", rate: 1, sortOrder: 2 },
         { id: "pm3", sourceAttrId: "str", targetAttrId: "hp", rate: 0, sortOrder: 3 },
       ],
-    });
-    const table = buildPackTable("mapping", ctx);
-    expect(table.headers).toEqual(["源属性", "目标属性", "换算率", "当前换算", "状态"]);
-    expect(table.rows[0]).toEqual(["力量", "生命值", "每 1 点 +100", "1000", "生效"]);
+    }));
+    expect(lines[0]).toBe("力量 → 生命值：每 1 点 +100，当前 +1000（生效）");
     // 没生效的也列出来：作者据此知道导出稿里少了什么
-    expect(table.rows[1]).toEqual(["生命值", "(已删除的属性)", "每 1 点 +1", "—", "属性已删除"]);
-    expect(table.rows[2][4]).toBe("未启用（换算率为 0）");
+    expect(lines[1]).toContain("(已删除的属性)");
+    expect(lines[1]).toContain("属性已删除");
+    expect(lines[2]).toContain("未启用");
   });
 
-  it("货币表导的是换算体系本身，不是某个余额", () => {
-    const table = buildPackTable(
-      "currency",
+  it("物品行带数量 / 分类 / 稀有度 / 穿戴部位，查不到部位时给「已删除的部位」", () => {
+    const lines = buildPackLines(
+      "inventory",
       exportCtx({
-        currency: {
-          autoCarry: true,
-          levels: [
-            { name: "金", ratioToBase: 10000 },
-            { name: "银", ratioToBase: 100 },
-            { name: "铜", ratioToBase: 1 },
-          ],
-        },
+        slots: [slot({ id: "s1", name: "武器", capacity: 2 })],
+        items: [
+          item({ id: "i1", name: "风雷双匕", equippedSlotId: "s1", slotIndex: 0, tags: ["武器", "雷"] }),
+          item({ id: "i2", name: "野草", equippedSlotId: "s9" }),
+        ],
       }),
     );
-    expect(table.headers).toEqual(["单位", "进制", "自动进位"]);
-    expect(table.rows.map((row) => row[0])).toEqual(["金", "银", "铜"]);
-    expect(table.rows[0][1]).toBe("1 金 = 10,000 铜");
-    expect(table.rows[2][1]).toContain("基准");
+    expect(lines[0]).toContain("风雷双匕 ×1");
+    expect(lines[0]).toContain("已装备：武器");
+    expect(lines[0]).toContain("武器/雷");
+    expect(lines[1]).toContain("(已删除的部位)");
   });
 
-  it("所有模块的数据行宽度都与表头一致（列错位是 Markdown 表最典型的坏法）", () => {
-    const ctx = exportCtx({
-      slots: [slot({ id: "s1", capacity: 2 })],
-      items: [item({ id: "i1", equippedSlotId: "s1", slotIndex: 0 })],
-      skills: [skill({})],
-      modifiers: [mod({ id: "m1", ownerType: "status", ownerId: "c1" })],
-      currency: { autoCarry: false, levels: [{ name: "铜", ratioToBase: 1 }] },
-    });
-    for (const key of ["summary", "attributes", "mapping", "equipment", "inventory", "skills", "status", "currency"] as const) {
-      const table = buildPackTable(key, ctx);
-      for (const row of table.rows) {
-        expect(row, `${key} 的某一行列数不对`).toHaveLength(table.headers.length);
-      }
-    }
+  it("装备行每个部位一条，空部位显式「（空）」；多格部位带槽位序号", () => {
+    const lines = buildPackLines(
+      "equipment",
+      exportCtx({
+        slots: [
+          slot({ id: "s1", name: "武器", capacity: 1 }),
+          slot({ id: "s2", name: "护甲", capacity: 1, sortOrder: 2 }),
+          slot({ id: "s3", name: "饰品", capacity: 2, sortOrder: 3 }),
+        ],
+        items: [
+          item({ id: "i1", name: "铁剑", equippedSlotId: "s1", slotIndex: 0 }),
+          item({ id: "i2", name: "玉佩", equippedSlotId: "s3", slotIndex: 1 }),
+        ],
+      }),
+    );
+    expect(lines).toEqual([
+      "武器：铁剑（普通 · 0 条加成）",
+      "护甲：（空）",
+      "饰品 2/2：玉佩（普通 · 0 条加成）",
+    ]);
+  });
+
+  it("技能行：开关 / 熟练度（带进位）/ 档位 / 加成条数；无档位体系时不出现档位词", () => {
+    const noTier = buildPackLines("skills", exportCtx({ skills: [skill({})] }));
+    expect(noTier).toEqual(["御剑术（在用）：熟练度 0"]);
+
+    const withTier = buildPackLines(
+      "skills",
+      exportCtx({
+        skills: [skill({ proficiencyRaw: 120 })],
+        proficiencyLevels: [
+          { name: "入门", min: 0, max: 99 },
+          { name: "熟练", min: 100, max: 499 },
+        ],
+      }),
+    );
+    expect(withTier[0]).toBe("御剑术（在用）：熟练度 120，熟练");
+  });
+
+  it("状态行：性质 + 开关 + 属性加成，备注跟在破折号后；时效概念已删", () => {
+    const lines = buildPackLines("status", exportCtx({
+      modifiers: [
+        mod({ id: "m1", ownerType: "status", ownerId: "c1", nature: "sustained", active: true, value: 20, name: "运功", note: "持续三回合" }),
+      ],
+    }));
+    expect(lines).toEqual(["运功（持续 · 开）：攻击力 +20 —— 持续三回合"]);
+  });
+
+  it("货币行导的是换算链，不是某个余额", () => {
+    const lines = buildPackLines("currency", exportCtx({
+      currency: {
+        autoCarry: true,
+        levels: [
+          { name: "金", ratioToBase: 10000 },
+          { name: "银", ratioToBase: 100 },
+          { name: "铜", ratioToBase: 1 },
+        ],
+      },
+    }));
+    expect(lines).toEqual(["1 金 = 100 银 = 10,000 铜"]);
+  });
+
+  it("技能 / 状态 / 物品分组名实时跟随（改名后导出立刻是新名字）", () => {
+    const lines = buildPackLines(
+      "inventory",
+      exportCtx({
+        groups: [{ id: "g1", name: "丹药匣", icon: "", canEquip: false, canEnable: true, profSchemeId: "", enabled: true, sortOrder: 1, characterId: "c1" }],
+        items: [item({ id: "i1", name: "回春丹", groupId: "g1" })],
+      }),
+    );
+    expect(lines[0]).toContain("丹药匣");
+  });
+});
+
+describe("statText —— 属性加成文案（被动 / 持续 / 释放三性质统一口径）", () => {
+  const attributes = [
+    attr({ id: "a1", name: "攻击力", baseValue: 100 }),
+    attr({ id: "a2", name: "暴击率", baseValue: 5, unit: "%", decimals: 1 }),
+  ];
+
+  it("加算 / 百分比 / 乘算 / 覆盖各有各的符号", () => {
+    expect(statText({ targetAttrId: "a1", op: "add", value: 20 }, attributes)).toBe("攻击力 +20");
+    expect(statText({ targetAttrId: "a1", op: "percent", value: 10 }, attributes)).toBe("攻击力 +10%");
+    expect(statText({ targetAttrId: "a1", op: "mul", value: 1.5 }, attributes)).toBe("攻击力 ×1.50");
+    expect(statText({ targetAttrId: "a1", op: "override", value: 0 }, attributes)).toBe("攻击力 设为 0");
+  });
+
+  it("数值按目标属性自身的小数位渲染；属性不存在时叫「未指定属性」", () => {
+    expect(statText({ targetAttrId: "a2", op: "add", value: 2.5 }, attributes)).toBe("暴击率 +2.5");
+    expect(statText({ targetAttrId: "a2", op: "percent", value: 2.5 }, attributes)).toBe("暴击率 +2.5%");
+    expect(statText({ targetAttrId: "gone", op: "add", value: 3 }, attributes)).toBe("未指定属性 +3");
+  });
+
+  it("负值不给「+-10」的拧巴符号：加算与百分比都走减号", () => {
+    expect(statText({ targetAttrId: "a1", op: "add", value: -10 }, attributes)).toBe("攻击力 -10");
+    expect(statText({ targetAttrId: "a1", op: "percent", value: -5 }, attributes)).toBe("攻击力 -5%");
   });
 });
 
@@ -1540,30 +1541,6 @@ describe("isCounted / isExpired —— 时效闸门（REQ-025）", () => {
     expect(result.byAttr.get("a1")?.final).toBe(100);
     // 过期 ≠ 事件型：两者必须分桶（混在一起会误导作者去改触发条件）
     expect(result.eventOnly).toHaveLength(0);
-  });
-});
-
-/**
- * 状态表的时效列（导出用）。
- *
- * 「持续型 / 被动」在导出里必须是两套文案：被动没有回合概念，给「不限时」
- * 会让作者以为它真的有时效。
- */
-describe("导出表 —— 状态时效口径", () => {
-  it("状态表导出时效：持续型给「剩 N 回合 / 已过期 / 不限时」，被动给「—」", () => {
-    const ctx = exportCtx({
-      modifiers: [
-        mod({ id: "m1", ownerType: "status", ownerId: "c1", nature: "sustained", roundsLeft: 3 }),
-        mod({ id: "m2", ownerType: "status", ownerId: "c1", nature: "sustained", roundsLeft: 0 }),
-        mod({ id: "m3", ownerType: "status", ownerId: "c1", nature: "sustained", roundsLeft: null }),
-        mod({ id: "m4", ownerType: "status", ownerId: "c1", nature: "passive", roundsLeft: 0 }),
-      ],
-    });
-    const table = buildPackTable("status", ctx);
-    expect(table.rows[0]).toContain("剩 3 回合");
-    expect(table.rows[1]).toContain("已过期");
-    expect(table.rows[2]).toContain("不限时");
-    expect(table.rows[3]).toContain("—");
   });
 });
 
@@ -1627,5 +1604,48 @@ describe("composeAttributes：defs + values → 组合视图", () => {
   it("同一 defId 有多行数值（不该出现）时取最后一行，不抛错", () => {
     const view = composeAttributes([def()], [value({ baseValue: 1 }), value({ baseValue: 2 })]);
     expect(view[0].baseValue).toBe(2);
+  });
+});
+
+describe("体系品阶导出（1.40.0）", () => {
+  const gradeNames = new Map([
+    ["lv-shenqi", "神器"],
+    ["lv-tianjie", "天阶"],
+  ]);
+
+  it("物品行把品阶紧跟名字（小刀 · 神器），括号里仍是盘点属性", () => {
+    const lines = buildPackLines(
+      "inventory",
+      exportCtx({
+        items: [item({ id: "i1", name: "小刀", gradeId: "lv-shenqi", category: "装备" })],
+        gradeNames,
+      }),
+    );
+    expect(lines).toEqual(["小刀 · 神器 ×1（装备 · 普通）"]);
+  });
+
+  it("未标注品阶 / 品阶名查不到（等级被删）都不出品阶段", () => {
+    const lines = buildPackLines(
+      "inventory",
+      exportCtx({
+        items: [
+          item({ id: "i1", name: "小刀", gradeId: "" }),
+          item({ id: "i2", name: "鞭子", gradeId: "lv-gone" }),
+        ],
+        gradeNames,
+      }),
+    );
+    expect(lines).toEqual(["小刀 ×1（装备 · 普通）", "鞭子 ×1（装备 · 普通）"]);
+  });
+
+  it("技能行同理：名字后跟品阶（神通 · 天阶）", () => {
+    const lines = buildPackLines(
+      "skills",
+      exportCtx({
+        skills: [skill({ id: "k1", name: "神通", gradeId: "lv-tianjie" })],
+        gradeNames,
+      }),
+    );
+    expect(lines).toEqual(["神通 · 天阶（在用）：熟练度 0"]);
   });
 });

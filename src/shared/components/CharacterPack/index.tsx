@@ -19,6 +19,7 @@ import ModuleManager from "./components/ModuleManager";
 import UnitSystemManager from "./components/UnitSystemManager";
 import SlotManager from "./components/SlotManager";
 import GroupManager from "./components/GroupManager";
+import CategoryManager from "./components/CategoryManager";
 import RecordDrawer from "./components/RecordDrawer";
 import SourceDetailDrawer from "./components/SourceDetailDrawer";
 import { PackModuleSummaryContext } from "./components/module-summary-context";
@@ -26,6 +27,7 @@ import { usePackPanel, type PackPanelApi } from "./hooks/usePackPanel";
 import { useElementWidth } from "./hooks/useElementWidth";
 import { downloadText } from "./services/pack-export";
 import { packWidthTier } from "./pack-config";
+import { subLabelAt } from "./pack-utils";
 import {
   PACK_ZONE_LABEL,
   PACK_ZONE_OF,
@@ -141,6 +143,8 @@ export default function CharacterPackHost({
         current.moduleManagerOpen ||
         current.unitManagerOpen ||
         current.slotManagerOpen ||
+        current.groupManagerOpen ||
+        current.categoryManagerOpen ||
         current.recordDrawerOpen ||
         Boolean(current.detailAttrId);
       if (anyModalOpen) return;
@@ -153,6 +157,16 @@ export default function CharacterPackHost({
   }, []);
 
   const doc = api.doc;
+
+  /**
+   * 当前小层别名（1.41.0）：头部此前只显示「合体 2/4」，与境界模块的
+   * 「合体 2/4 · 中期」不同口径 —— 同源数据两处读数不一致，是历史报障的
+   * 同款观感问题（「实体面板显示」对照条的教训：要么都显示，要么都不显示）。
+   */
+  const realmSubText = useMemo(() => {
+    const rung = api.rungs[api.realmPos.index];
+    return rung ? subLabelAt(rung, api.realmPos.sub) : "";
+  }, [api.rungs, api.realmPos.index, api.realmPos.sub]);
 
   /**
    * 档位。`contentWidth` 未测出（0，如 jsdom 或不支持 ResizeObserver 的宿主）
@@ -210,6 +224,7 @@ export default function CharacterPackHost({
         */
         characterName={doc?.character.displayName || doc?.character.name || "主角"}
         realmText={api.realmText}
+        realmSubText={realmSubText}
         realmHint={api.realmHint}
         realmBound={api.realmBound}
         compact={tier === "narrow"}
@@ -336,6 +351,7 @@ export default function CharacterPackHost({
       <UnitSystemManager api={api} />
       <SlotManager api={api} />
       <GroupManager api={api} />
+      <CategoryManager api={api} />
       <RecordDrawer api={api} />
       <SourceDetailDrawer api={api} />
 

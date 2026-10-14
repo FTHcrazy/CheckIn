@@ -354,6 +354,8 @@ export interface PackItemDTO {
   slotIndex: number | null
   /** 归属分组（PackGroupDTO.id）；'' = 未分组 */
   groupId: string
+  /** 体系品阶（1.40.0）：novel_setting_levels.id；'' = 未标注 */
+  gradeId: string
   sourceChapterId: string
   updatedAt: number
 }
@@ -367,10 +369,30 @@ export interface PackSkillDTO {
   /** 归属分组（PackGroupDTO.id）；'' = 未分组 */
   groupId: string
   proficiencyRaw: number
+  /** 体系品阶（1.40.0）：novel_setting_levels.id；'' = 未标注 */
+  gradeId: string
   tags: string[]
   sortOrder: number
   /** 最近一次改动的落点时刻（REQ-028 本章变动角标）；0 = 从无改动记录 */
   updatedAt: number
+}
+
+/** 物品分类管理（1.40.0）：物品栏分类行，可绑定小说设定的等级体系 */
+export interface PackCategoryDTO {
+  id: string
+  characterId: string
+  name: string
+  /** 绑定的设定分类（novel_setting_categories.id）；'' = 未绑定 */
+  systemId: string
+  sortOrder: number
+}
+
+/** 体系品阶投影（1.40.0）：设定域分类 → 行囊选品阶要的精简视图 */
+export interface PackGradeSystemDTO {
+  id: string
+  name: string
+  /** 只投影根阶（parent_id 为空），按 rank 升序 */
+  levels: Array<{ id: string; name: string }>
 }
 
 export interface PackModifierDTO {
@@ -473,6 +495,11 @@ export interface PackLevelRungDTO {
   power: number | null
   /** 已拆出子层级：父阶是组，小层数由子层级决定（阶设置里不可改） */
   hasChildren?: boolean
+  /**
+   * 小层别名表（1.39.1）：下标 = 阶内层号 - 1，取子层级的首个别名（缺省回落段名）。
+   * 仅拆出子层级的阶才有；空串表示该层没有可显示的别名。
+   */
+  subLabels?: string[]
 }
 
 export interface PackLevelSystemDTO {
@@ -493,6 +520,8 @@ export interface PackBundleDTO {
   slots: PackSlotDTO[]
   /** 载体分组（1.39.0 二期）：条目 groupId 引用这里的 id */
   groups: PackGroupDTO[]
+  /** 物品分类管理（1.40.0）：item.category 按名字引用这里的行 */
+  categories: PackCategoryDTO[]
   items: PackItemDTO[]
   skills: PackSkillDTO[]
   modifiers: PackModifierDTO[]
@@ -502,6 +531,8 @@ export interface PackBundleDTO {
   records: PackRecordDTO[]
   draft: PackDraftDTO | null
   levelSystems: PackLevelSystemDTO[]
+  /** 体系品阶投影（1.40.0）：设定域全部分类的根阶清单，物品 / 技能选品阶用 */
+  gradeSystems: PackGradeSystemDTO[]
   realmLink: PackRealmLinkDTO | null
 }
 
@@ -516,6 +547,8 @@ export interface PackSavePayloadDTO {
   slots: PackSlotDTO[]
   /** 载体分组（1.39.0 二期） */
   groups: PackGroupDTO[]
+  /** 物品分类管理（1.40.0）：与其它表一样属于整文档 */
+  categories: PackCategoryDTO[]
   items: PackItemDTO[]
   skills: PackSkillDTO[]
   modifiers: PackModifierDTO[]

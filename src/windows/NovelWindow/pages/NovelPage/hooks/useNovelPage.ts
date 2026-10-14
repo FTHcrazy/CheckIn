@@ -416,8 +416,11 @@ export function useNovelPage() {
       numberStyle: settings.numberStyle,
       chapterSuffix: settings.chapterSuffix,
       volumeSuffix: settings.volumeSuffix,
+      // 段首缩进（1.40.0）：导出跟随「首行缩进」设置 —— 编辑器开着缩进，
+      // 导出的 txt 也该每段都缩进（含每章第一段）
+      paragraphIndent: settings.indent,
     }),
-    [settings.numberStyle, settings.chapterSuffix, settings.volumeSuffix],
+    [settings.numberStyle, settings.chapterSuffix, settings.volumeSuffix, settings.indent],
   );
 
   const finishExport = useCallback(
@@ -800,46 +803,6 @@ export function useNovelPage() {
       } else {
         view.showToast(`「${result.entity.name}」已在设定库中`, "info");
       }
-    },
-    [data, view],
-  );
-
-  // ── 小说设定：写作态速查（1.36.0） ──────────────────────────
-
-  /** 点等级 chip → 插到光标处 */
-  const handleInsertSettingTerm = useCallback(
-    (term: string): void => {
-      editorPaneRef.current?.insertText(term);
-    },
-    [],
-  );
-
-  /**
-   * 一致性检查的「一键替换」
-   *
-   * 走 EditorPane 的命令式 replaceAll（CodeMirror dispatch）而不是改章节
-   * content 再回灌：编辑器非受控，改 prop 进不了文档，会出现「库里换了、
-   * 屏上没换」。dispatch 与打字同一链路，替换能 Ctrl+Z 撤销。
-   */
-  const handleReplaceSettingTerm = useCallback(
-    (from: string, to: string): void => {
-      const count = editorPaneRef.current?.replaceAll(from, to) ?? 0;
-      view.showToast(
-        count > 0 ? `已替换 ${count} 处「${from}」→「${to}」` : `没有找到「${from}」`,
-        count > 0 ? "success" : "info",
-      );
-    },
-    [view],
-  );
-
-  /** 「登记」未登记词：在该分类末尾新增一条等级 */
-  const handleRegisterSettingTerm = useCallback(
-    (categoryId: string, term: string): void => {
-      const created = data.addSettingLevel(categoryId, term);
-      view.showToast(
-        created ? `已把「${term}」登记进设定` : "登记失败，请先选中分类",
-        created ? "success" : "warning",
-      );
     },
     [data, view],
   );
@@ -1305,10 +1268,6 @@ export function useNovelPage() {
     handleRenameCustomType,
     handleRecolorCustomType,
     handleRemoveCustomType,
-    // 设定速查（1.36.0）
-    handleInsertSettingTerm,
-    handleReplaceSettingTerm,
-    handleRegisterSettingTerm,
     // 起名工具（R18 / 步骤三）
     editorPaneRef,
     namingActions,

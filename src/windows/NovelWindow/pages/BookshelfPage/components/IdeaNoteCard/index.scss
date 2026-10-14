@@ -31,6 +31,18 @@
     overflow-wrap: anywhere;
   }
 
+  /* 编辑态（1.41.0）：TextArea + 快捷键提示，与编辑器灵感面板同口径 */
+  &__edit {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  &__edittip {
+    font-size: 11px;
+    color: var(--app-text-muted);
+  }
+
   &__footer {
     display: flex;
     align-items: center;

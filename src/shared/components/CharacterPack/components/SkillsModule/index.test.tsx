@@ -25,6 +25,7 @@ const skill: PackSkill = {
   desc: "",
   enabled: true,
   groupId: "",
+  gradeId: "",
   proficiencyRaw: 150,
   tags: [],
   sortOrder: 1,
@@ -49,6 +50,7 @@ const doc: PackDoc = {
   mappings: [],
   slots: [],
   groups: [],
+  categories: [],
   items: [],
   skills: [skill],
   modifiers: [],
@@ -108,6 +110,9 @@ function makeApi(over: Partial<PackPanelApi> = {}) {
     duplicateModifier: vi.fn(),
     removeModifier: vi.fn(),
     setDetailAttrId: vi.fn(),
+    // 体系品阶（1.40.0）：默认「没有体系」——品阶 chip 渲染为灰态占位
+    gradeSystems: [],
+    gradeNameOf: () => "",
     ...over,
   } as unknown as PackPanelApi;
 }
@@ -314,5 +319,74 @@ describe("SkillsModule —— 新增技能后滚动到新行", () => {
     rerender(<SkillsModule api={nextApi} />);
 
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * 体系品阶 chip（1.40.0）：技能没有「分类」维度，品阶直接按体系分组挑。
+ *
+ * 钉三件事：已标注时 chip 显示**品阶名**（不是 id）、菜单按体系分组点选回写、
+ * 没有体系时给引导项而不是静默的空菜单（与物品栏「没有体系则提示引导」同口径）。
+ */
+describe("SkillsModule —— 体系品阶 chip（1.40.0）", () => {
+  afterEach(cleanup);
+
+  const GRADE_SYSTEMS = [
+    { id: "sys-1", name: "功法品阶", levels: [{ id: "lv-tian", name: "天阶" }, { id: "lv-di", name: "地阶" }] },
+  ];
+
+  it("已标注品阶 → chip 显示品阶名；菜单按体系分组，点选回写 gradeId", async () => {
+    const api = makeApi({
+      gradeSystems: GRADE_SYSTEMS,
+      gradeNameOf: (id: string) => (id === "lv-tian" ? "天阶" : ""),
+      doc: { ...doc, skills: [{ ...skill, gradeId: "lv-tian" }] },
+    });
+    render(<SkillsModule api={api} />);
+
+    const grade = document.querySelector(".cpk-skl__grade") as HTMLButtonElement;
+    expect(grade?.textContent).toBe("天阶");
+
+    fireEvent.click(grade);
+    // 「地阶」是另一档 → 点它应回写 lv-di
+    const target = await screen.findByText("地阶");
+    fireEvent.click(target);
+    expect(api.updateSkill).toHaveBeenCalledWith("k1", { gradeId: "lv-di" });
+  });
+
+  it("已标注时菜单里有「清除品阶」项，点它清空", async () => {
+    const api = makeApi({
+      gradeSystems: GRADE_SYSTEMS,
+      gradeNameOf: () => "天阶",
+      doc: { ...doc, skills: [{ ...skill, gradeId: "lv-tian" }] },
+    });
+    render(<SkillsModule api={api} />);
+
+    fireEvent.click(document.querySelector(".cpk-skl__grade") as HTMLElement);
+    fireEvent.click(await screen.findByText("清除品阶"));
+    expect(api.updateSkill).toHaveBeenCalledWith("k1", { gradeId: "" });
+  });
+
+  it("未标注 → chip 显示「品阶」占位（灰态），仍可点开菜单设置", async () => {
+    const api = makeApi({ gradeSystems: GRADE_SYSTEMS });
+    render(<SkillsModule api={api} />);
+
+    const grade = document.querySelector(".cpk-skl__grade") as HTMLButtonElement;
+    expect(grade?.textContent).toBe("品阶");
+    expect(grade?.className).toContain("is-empty");
+
+    fireEvent.click(grade);
+    fireEvent.click(await screen.findByText("天阶"));
+    expect(api.updateSkill).toHaveBeenCalledWith("k1", { gradeId: "lv-tian" });
+  });
+
+  it("设定域没有体系 → 菜单给引导项（disabled），不选也不空转", async () => {
+    const api = makeApi({ gradeSystems: [] });
+    render(<SkillsModule api={api} />);
+
+    fireEvent.click(document.querySelector(".cpk-skl__grade") as HTMLElement);
+    const guide = await screen.findByText(/先到「设定中心」创建等级体系/);
+    // 引导项不可点（disabled）——不崩、也不触发 updateSkill
+    expect(guide.closest("[aria-disabled], .ant-menu-item-disabled")).not.toBeNull();
+    expect(api.updateSkill).not.toHaveBeenCalled();
   });
 });

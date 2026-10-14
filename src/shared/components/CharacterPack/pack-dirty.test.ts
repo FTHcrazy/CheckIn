@@ -17,10 +17,12 @@ function doc(partial: Partial<DirtyDoc> = {}): DirtyDoc {
     mappings: [],
     slots: [],
     groups: [],
+    categories: [],
     items: [],
     skills: [],
     modifiers: [],
     unitSystems: [],
+    layouts: [],
     presets: [],
     realmLink: null,
     ...partial,
@@ -248,6 +250,52 @@ describe("countNetChanges：跨类实体都要计到", () => {
   });
 });
 
+describe("countNetChanges：备注与模块布局（1.39.1 补漏）", () => {
+  function layout(moduleKey: string, sortOrder: number, extra: Record<string, unknown> = {}) {
+    return {
+      characterId: "ch1",
+      moduleKey,
+      enabled: true,
+      sortOrder,
+      ...extra,
+    } as never;
+  }
+
+  it("备注速记（character.note）的改动算 1 处", () => {
+    // 此前 SPECS 没有 character：备注改完 dirty 恒为 0 → 保存按钮永远禁用、
+    // 草稿不写，关窗即丢（「行囊存不上」的实锤之一）
+    const saved = doc({
+      character: { id: "ch1", workId: "w1", entityId: "", realmAt: "", note: "" } as DirtyDoc["character"],
+    });
+    const cur = doc({
+      character: { id: "ch1", workId: "w1", entityId: "", realmAt: "", note: "本章捡到破境丹" } as DirtyDoc["character"],
+    });
+    expect(countNetChanges(saved, cur)).toBe(1);
+  });
+
+  it("模块开关（layouts.enabled）的改动算 1 处", () => {
+    const saved = doc({ layouts: [layout("inventory", 1), layout("skills", 2)] });
+    const cur = doc({ layouts: [layout("inventory", 1), layout("skills", 2, { enabled: false })] });
+    expect(countNetChanges(saved, cur)).toBe(1);
+  });
+
+  it("模块拖动排序只算 1 处移动（不是每行各一处）", () => {
+    const saved = doc({ layouts: [layout("inventory", 1), layout("skills", 2)] });
+    const cur = doc({ layouts: [layout("inventory", 2), layout("skills", 1)] });
+    expect(countNetChanges(saved, cur)).toBe(1);
+  });
+
+  it("displayName / name / avatar 是派生或即时落库的格子，不算未保存", () => {
+    const saved = doc({
+      character: { id: "ch1", workId: "w1", entityId: "e1", realmAt: "", note: "同" } as DirtyDoc["character"],
+    });
+    const cur = doc({
+      character: { id: "ch1", workId: "w1", entityId: "e1", realmAt: "", note: "同", displayName: "改过名" } as DirtyDoc["character"],
+    });
+    expect(countNetChanges(saved, cur)).toBe(0);
+  });
+});
+
 describe("countNetChanges：属性映射（1.35.0）", () => {
   it("改系数 = 1 处；只动 updatedAt 不算", () => {
     const saved = doc({ mappings: [mapping("pm1")] });
@@ -276,6 +324,51 @@ describe("countNetChanges：属性映射（1.35.0）", () => {
       mappings: [mapping("pm1", { sortOrder: 2 }), mapping("pm2", { sortOrder: 1 })],
     });
     expect(countNetChanges(saved, cur)).toBe(1);
+  });
+});
+
+/**
+ * 分类管理（1.40.0）：改名 / 换绑体系 / 增删分类都要能标脏 ——
+ * 漏了 SPECS 的话「分类改名 → 保存按钮不亮 → 草稿不写 → 关窗即丢」。
+ */
+describe("countNetChanges：分类管理（1.40.0）", () => {
+  function category(id: string, name: string, extra: Record<string, unknown> = {}) {
+    return {
+      id,
+      characterId: "ch1",
+      name,
+      systemId: "",
+      sortOrder: 1,
+      ...extra,
+    } as never;
+  }
+
+  it("改分类名 = 1 处；顺带改名传播到物品行的改动各算各的", () => {
+    const saved = doc({
+      categories: [category("cat1", "装备")],
+      items: [item("i1", "铁剑", 1, { category: "装备" })],
+    });
+    // 分类改名 + 物品行跟着改（改名传播是两次 update，净变化 = 2）
+    const cur = doc({
+      categories: [category("cat1", "兵器")],
+      items: [item("i1", "铁剑", 1, { category: "兵器" })],
+    });
+    expect(countNetChanges(saved, cur)).toBe(2);
+  });
+
+  it("换绑体系 / 新增 / 删除分类都计数", () => {
+    const saved = doc({ categories: [category("cat1", "装备")] });
+    expect(countNetChanges(saved, doc({ categories: [category("cat1", "装备", { systemId: "sys-1" })] }))).toBe(1);
+    expect(countNetChanges(saved, doc({ categories: [category("cat1", "装备"), category("cat2", "丹药")] }))).toBe(1);
+    expect(countNetChanges(saved, doc({ categories: [] }))).toBe(1);
+  });
+
+  it("分类行没有 updatedAt 打点字段（建表即无）→ 原样比较就是净变化", () => {
+    // 与 items/skills 不同，novel_pack_categories 没有 updated_at 列，
+    // spec 直接 JSON.stringify 整行不会把「碰过」误判成「改了」。
+    // 这里钉死：任何字段不动的两次比较都为 0。
+    const saved = doc({ categories: [category("cat1", "装备")] });
+    expect(countNetChanges(saved, doc({ categories: [category("cat1", "装备")] }))).toBe(0);
   });
 });
 

@@ -77,6 +77,7 @@ function item(partial: Partial<PackItem> = {}): PackItem {
     tags: [],
     equippedSlotId: "",
     groupId: "",
+    gradeId: "",
     slotIndex: null,
     sourceChapterId: "",
     updatedAt: 0,
@@ -92,6 +93,7 @@ function skill(partial: Partial<PackSkill> = {}): PackSkill {
     desc: "",
     enabled: true,
     groupId: "",
+    gradeId: "",
     proficiencyRaw: 0,
     tags: [],
     sortOrder: 1,
@@ -362,31 +364,35 @@ describe("技能组", () => {
 });
 
 describe("主动效果组 —— 只有 cast 进这张表", () => {
-  it("新增主动效果带参数文案", () => {
+  it("新增主动效果带属性加成文案（1.39.1 起与被动同口径）", () => {
     const r = diffPackDoc(
-      doc(),
+      doc({ attributes: [attr()] }),
       doc({
+        attributes: [attr()],
         modifiers: [
           mod({
             nature: "cast",
             name: "风雷一击",
+            targetAttrId: "a1",
+            op: "add",
             value: 300,
-            valueUnit: "攻击力%",
-            cooldown: 12,
-            target: "单体",
           }),
         ],
       }),
       LADDER,
     );
-    expect(texts(r.entries)).toEqual(["cast/add|风雷一击||300攻击力% · CD 12s · 单体"]);
+    expect(texts(r.entries)).toEqual(["cast/add|风雷一击||攻击 +300"]);
   });
 
-  it("参数改动整串比较（CD 改了也报）", () => {
-    const before = mod({ nature: "cast", name: "风雷一击", value: 300, valueUnit: "攻击力%", cooldown: 12 });
-    const after = mod({ nature: "cast", name: "风雷一击", value: 300, valueUnit: "攻击力%", cooldown: 8 });
-    const r = diffPackDoc(doc({ modifiers: [before] }), doc({ modifiers: [after] }), LADDER);
-    expect(texts(r.entries)).toEqual(["cast/change|风雷一击|300攻击力% · CD 12s|300攻击力% · CD 8s"]);
+  it("加成改动整串比较（数值 / 运算变了都报）", () => {
+    const before = mod({ nature: "cast", name: "风雷一击", targetAttrId: "a1", op: "add", value: 300 });
+    const after = mod({ nature: "cast", name: "风雷一击", targetAttrId: "a1", op: "add", value: 500 });
+    const r = diffPackDoc(
+      doc({ attributes: [attr()], modifiers: [before] }),
+      doc({ attributes: [attr()], modifiers: [after] }),
+      LADDER,
+    );
+    expect(texts(r.entries)).toEqual(["cast/change|风雷一击|攻击 +300|攻击 +500"]);
   });
 
   it("被动/持续的改动不进这张表（已由属性组以汇总值体现）", () => {

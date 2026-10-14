@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import { useState } from "react";
+import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { Button } from "antd";
 import { DownOutlined, RightOutlined } from "@ant-design/icons";
 import { useModuleSummary } from "../module-summary-context";
@@ -24,6 +25,12 @@ interface PackModuleShellProps {
  * 标题右侧可有一句派生摘要（如「12 种 · 共 46 件」）：它由外壳按窗口宽度
  * 经 context 投下来，窄档下十个模块压成十行时用来回答「这栏是不是空的」。
  * 模块自己不需要知道它从哪来，宽 / 中档下它是空串，不占位也不改版式。
+ *
+ * 点击涟漪（1.39.1）：标题是「占满头部一整行的透明按钮」，antd 自带的
+ * wave 环（box-shadow 0 0 0 6px currentcolor + 2s 淡出）罩在上面只剩一个
+ * 挂两秒的色框，观感是「点了闪一下怪东西」（OutlinePanel 1.34.0 同款回归）。
+ * 这里在按钮上把 wave 关掉，换成自绘的小涟漪：从点击位置扩散、0.45s 收场，
+ * 轻到不与折叠动画抢戏。
  */
 export default function PackModuleShell({
   title,
@@ -34,12 +41,22 @@ export default function PackModuleShell({
   children,
 }: PackModuleShellProps) {
   const summary = useModuleSummary();
+  /** 当前涟漪（key 换新重启动画；动画结束即卸载） */
+  const [ripple, setRipple] = useState<{ key: number; x: number } | null>(null);
+
+  const handleToggle = (event: ReactMouseEvent<HTMLButtonElement>): void => {
+    // 涟漪锚点取点击处在按钮内的横向位置（纵向恒居中）
+    const rect = event.currentTarget.getBoundingClientRect();
+    setRipple({ key: Date.now(), x: event.clientX - rect.left });
+    onToggle();
+  };
+
   return (
     <section className={`cpk-mod${collapsed ? " is-collapsed" : ""}`}>
       <header className="cpk-mod__head">
         <Button
           className="cpk-mod__toggle"
-          onClick={onToggle}
+          onClick={handleToggle}
           aria-expanded={!collapsed}
           title={collapsed ? "展开" : "折叠"}
         >
@@ -48,6 +65,15 @@ export default function PackModuleShell({
           </span>
           <span className="cpk-mod__title">{title}</span>
           {summary ? <span className="cpk-mod__summary">{summary}</span> : null}
+          {ripple ? (
+            <span
+              key={ripple.key}
+              className="cpk-mod__ripple"
+              style={{ left: ripple.x }}
+              onAnimationEnd={() => setRipple(null)}
+              aria-hidden
+            />
+          ) : null}
         </Button>
         {actions ? <div className="cpk-mod__actions">{actions}</div> : null}
       </header>

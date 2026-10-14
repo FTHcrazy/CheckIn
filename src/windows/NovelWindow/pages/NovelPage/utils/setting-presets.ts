@@ -109,4 +109,43 @@ export const SETTING_PRESETS: SettingPreset[] = [
       "圣人",
     ].map((name) => ({ name })),
   },
+  // ── 1.40.0：行囊物品 / 技能「品阶标注」的热门配套体系（kind=custom）──
+  //
+  // 这三个预设回答的是「法宝/功法/丹药怎么分级」：灌进来的是普通分类，
+  // 行囊里给物品分类绑定它之后，物品 / 技能就能标注品阶（小刀 · 神器、
+  // 神通 · 天阶）。刻意都用无小层的单级序列 —— 品阶是标签不是成长阶梯。
+  {
+    id: "preset-fabao",
+    name: "法宝 · 品阶",
+    kind: "custom",
+    note: "法器到神器八品，行囊里给「物品分类」绑定后可标注（小刀 · 神器）",
+    subLevels: 1,
+    carryDir: "asc",
+    subPattern: "第{n}层",
+    levels: ["凡器", "法器", "灵器", "宝器", "王器", "皇器", "仙器", "神器"].map((name) => ({
+      name,
+    })),
+  },
+  {
+    id: "preset-gongfa",
+    name: "功法 · 品阶",
+    kind: "custom",
+    note: "黄阶到圣阶五品，适合给技能 / 神通标注等第（神通 · 天阶）",
+    subLevels: 1,
+    carryDir: "asc",
+    subPattern: "第{n}层",
+    levels: ["黄阶", "玄阶", "地阶", "天阶", "圣阶"].map((name) => ({ name })),
+  },
+  {
+    id: "preset-danyao",
+    name: "丹药 · 品阶",
+    kind: "custom",
+    note: "一品到九品，丹药 / 灵物的通用分级，行囊物品可按它标注品阶",
+    subLevels: 1,
+    carryDir: "asc",
+    subPattern: "第{n}层",
+    levels: ["一品", "二品", "三品", "四品", "五品", "六品", "七品", "八品", "九品"].map(
+      (name) => ({ name }),
+    ),
+  },
 ];

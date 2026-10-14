@@ -1,14 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Dropdown, Input, Select } from "antd";
-import {
-  AppstoreOutlined,
-  CheckOutlined,
-  MoreOutlined,
-  PlusOutlined,
-  SearchOutlined,
-  TeamOutlined,
-  UnorderedListOutlined,
-} from "@ant-design/icons";
+import { CheckOutlined, MoreOutlined, PlusOutlined, SearchOutlined } from "@ant-design/icons";
+import SvgIcon from "@/shared/components/SvgIcon";
+import categorySvg from "@/assets/novel/category.svg?raw";
 import PackModuleShell from "../PackModuleShell";
 import PackExportButton from "../PackExportButton";
 import PackChangedDot from "../PackChangedDot";
@@ -48,10 +42,7 @@ function useHoldRepeat() {
   return { start, stop };
 }
 
-const CATEGORY_OPTIONS = ITEM_CATEGORIES.map((category) => ({
-  value: category,
-  label: category,
-}));
+/** 出厂默认分类（1.40.0 起分类可管理，分类下拉以它作兜底：见 categoryOptions） */
 
 /**
  * 物品栏（B-3）
@@ -146,22 +137,23 @@ export default function InventoryModule({ api }: InventoryModuleProps) {
     return map;
   }, [doc]);
 
-  /** 分组下拉选项（Phase 2）：物品的 groupId 决定能不能穿进设限的部位 */
-  const groupOptions = useMemo(
-    () =>
-      [...(doc?.groups ?? [])]
-        .sort((a, b) => a.sortOrder - b.sortOrder)
-        .map((group) => ({
-          value: group.id,
-          label: group.icon ? `${group.icon} ${group.name}` : group.name,
-        })),
-    [doc],
-  );
+  /**
+   * 分类下拉选项（1.40.0）：分类管理里的行 + 出厂默认兜底。
+   * 分类按名字关联物品行 —— 老数据里可能还留着不再存在的分类名
+   * （或没播种分类的老角色），兜底合并保证「value 有值 + options 为空」
+   * 不会出现（那会让 antd 显示裸值）。
+   */
+  const categoryOptions = useMemo(() => {
+    const names = new Set<string>(ITEM_CATEGORIES);
+    for (const category of doc?.categories ?? []) {
+      if (category.name.trim()) names.add(category.name);
+    }
+    return [...names].map((name) => ({ value: name, label: name }));
+  }, [doc]);
 
   if (!doc) return null;
   const key = "inventory" as const;
   const showSearch = doc.items.length >= 20;
-  const grid = api.prefs.inventoryView === "grid";
   const slots = [...doc.slots].sort((a, b) => a.sortOrder - b.sortOrder);
 
   const equipOptions = slots.map((slot) => ({
@@ -228,7 +220,52 @@ export default function InventoryModule({ api }: InventoryModuleProps) {
   };
 
   /**
-   * 行尾的「更多」菜单：**分类** + **分组** + **加成效果** + **描述与标签** + **删除**
+   * 品阶行（1.40.0）：物品所属分类绑定了体系 → 下标注品阶（小刀 · 神器）；
+   * 分类未绑 / 设定域没有体系 → 引导文案（用户要求「没有小说体系则提示引导」）。
+   * 体系清单随 bundle 装载（挂载即有），不会出现「value 有值 + options 为空」。
+   */
+  const renderGradeOption = (item: PackItem) => {
+    const systemId = api.categorySystemIdOf(item.category);
+    const system = api.gradeSystems.find((row) => row.id === systemId);
+    if (system) {
+      return (
+        <span className="cpk-inv__catopt">
+          <span className="cpk-inv__catopt-label">品阶</span>
+          <Select
+            size="small"
+            variant="borderless"
+            className="cpk-inv__catopt-select"
+            value={item.gradeId || undefined}
+            placeholder="未标注"
+            allowClear
+            options={system.levels.map((level) => ({ value: level.id, label: level.name }))}
+            popupMatchSelectWidth={false}
+            classNames={{ popup: { root: "cpk-dropdown" } }}
+            // 下拉本身在 menu 里：点它不该把外层菜单一起关掉
+            onClick={(event) => event.stopPropagation()}
+            onChange={(value?: string) => api.updateItem(item.id, { gradeId: value ?? "" })}
+          />
+        </span>
+      );
+    }
+    const hint = api.hasGradeSystems
+      ? "该分类未绑定体系，到「分类管理」绑定"
+      : "先到「设定中心」建一个等级体系（如法宝品阶），再到分类管理绑定";
+    return (
+      <span className="cpk-inv__catopt">
+        <span className="cpk-inv__catopt-label">品阶</span>
+        <span className="cpk-inv__gradehint" title={hint}>
+          {hint}
+        </span>
+      </span>
+    );
+  };
+
+  /**
+   * 行尾的「更多」菜单：**分类** + **品阶** + **加成效果** + **描述与标签** + **删除**
+   *（1.41.0 起「分组」行内入口下线：物品不再逐个标分组，装备限制仍由
+   * 部位的 accepts × 物品 groupId 匹配 —— 旧数据的 groupId 原样保留，
+   * 分组管理入口收进装备栏链路，物品栏只管「带了什么、有多少」。）
    *
    * 2026-10 用户报障「行太窄、每行塞太多控件」：主行原本并排 8 个控件
    * （稀有度点 / 改动点 / 名称 / 分类下拉 / 数量 −N+ / 装备 / ✦ / ⋯），
@@ -263,7 +300,7 @@ export default function InventoryModule({ api }: InventoryModuleProps) {
                   variant="borderless"
                   className="cpk-inv__catopt-select"
                   value={item.category}
-                  options={CATEGORY_OPTIONS}
+                  options={categoryOptions}
                   popupMatchSelectWidth={false}
                   classNames={{ popup: { root: "cpk-dropdown" } }}
                   // 下拉本身在 menu 里：点它不该把外层菜单一起关掉
@@ -274,25 +311,8 @@ export default function InventoryModule({ api }: InventoryModuleProps) {
             ),
           },
           {
-            key: "group",
-            label: (
-              <span className="cpk-inv__catopt">
-                <span className="cpk-inv__catopt-label">分组</span>
-                <Select
-                  size="small"
-                  variant="borderless"
-                  className="cpk-inv__catopt-select"
-                  value={item.groupId || undefined}
-                  placeholder="未分组"
-                  options={groupOptions}
-                  popupMatchSelectWidth={false}
-                  classNames={{ popup: { root: "cpk-dropdown" } }}
-                  // 下拉本身在 menu 里：点它不该把外层菜单一起关掉
-                  onClick={(event) => event.stopPropagation()}
-                  onChange={(value: string) => api.updateItem(item.id, { groupId: value ?? "" })}
-                />
-              </span>
-            ),
+            key: "grade",
+            label: renderGradeOption(item),
           },
           { key: "effect", label: "加成效果" },
           { key: "detail", label: open ? "收起描述与标签" : "描述 / 标签" },
@@ -365,22 +385,15 @@ export default function InventoryModule({ api }: InventoryModuleProps) {
             />
           ) : null}
           <PackExportButton api={api} moduleKey="inventory" label={moduleLabel(key)} />
-          <Button
-            className="cpk-iconbtn"
-            onClick={() => api.patchPrefs({ inventoryView: grid ? "list" : "grid" })}
-            title={grid ? "切换到列表视图" : "切换到宫格视图"}
-          >
-            {grid ? <UnorderedListOutlined /> : <AppstoreOutlined />}
-          </Button>
           <Button className="cpk-btn ghost" onClick={() => api.addItem()}>
             <PlusOutlined /> 物品
           </Button>
           <Button
             className="cpk-iconbtn"
-            onClick={() => api.setGroupManagerOpen(true)}
-            title="分组设置（可穿戴 / 载体开关 / 停用整组）"
+            onClick={() => api.setCategoryManagerOpen(true)}
+            title="分类管理（改名 / 绑定体系品阶）"
           >
-            <TeamOutlined />
+            <SvgIcon svg={categorySvg} />
           </Button>
         </>
       }
@@ -390,10 +403,13 @@ export default function InventoryModule({ api }: InventoryModuleProps) {
       ) : items.length === 0 ? (
         <p className="cpk-empty">没有匹配「{debounced}」的物品。</p>
       ) : (
-        <ul className={`cpk-inv${grid ? " is-grid" : ""}`}>
+        <ul className="cpk-inv">
           {visible.map((item) => {
             const equipped = isItemEquipped(item);
             const open = detailId === item.id;
+            // 品阶 chip（1.40.0）：「小刀 · 神器」的「神器」。等级被删 / id
+            // 悬空时翻译不出名字，不渲染（而不是显示一串裸 id）
+            const gradeName = api.gradeNameOf(item.gradeId);
             return (
               <li key={item.id} className={`cpk-inv__item${equipped ? " is-equipped" : ""}`}>
                 <div className="cpk-inv__line">
@@ -411,6 +427,11 @@ export default function InventoryModule({ api }: InventoryModuleProps) {
                     aria-label="物品名"
                     onChange={(event) => api.updateItem(item.id, { name: event.target.value })}
                   />
+                  {gradeName ? (
+                    <span className="cpk-inv__grade" title={`品阶：${gradeName}`}>
+                      {gradeName}
+                    </span>
+                  ) : null}
                   {renderQty(item)}
                   {equipped ? (
                     <Button
