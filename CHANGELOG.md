@@ -1,5 +1,134 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **行囊「主角信息看板」L0 首页**（UI 需求稿 UI-01）：行囊打开首屏从「十模块
+  编辑器平铺」转为「一屏看懂主角当前状态」的只读看板，五个分区常驻不收起 ——
+  A 主角身份卡（名字 / 境界读数 / 绑定态 / 变动角标）/ B 境界卡（大读数 +
+  「实体面板显示」对照条）/ C 核心属性总览（`base → 最终` + 被动 / 持续 /
+  映射增量段，点行开来源明细）/ D 生效状态（仅列 `active`，行内开关）/
+  E 关键设定摘要行（一行一模块，点击就地展开 L1 编辑器）。
+  - 编辑能力零删减：十模块仍在看板下方（E 区一行即入口），看板只负责「看」，
+    L1 负责「改」，职责分开但入口不缺。
+  - 纯函数落在 `pack-layout.ts`：`dashboardAttrLimit`（默认条数随档位
+    宽 8 / 中 6 / 窄 4）、`dashboardSummaryModules`（原样透传启用模块，保作者
+    拖拽顺序）、`dashboardActiveStatuses`（只留 `ownerType=status && active`）。
+  - 属性增量片段 `attrSegments` 从 `SummaryModule` 提到 `pack-utils.ts`，看板
+    C 区与总属性模块**同源**，避免「同一项属性两处显示不一致」的静默分叉；
+    `.cpk-seg` 色板同步收敛到公共原语 `pack-common.scss`。
+  - 新增组件 `components/PackDashboard/`（`index.tsx` + `index.scss`）；
+    **不新增数据表、不改表结构**（`compat` 语义成立）。
+
+- **行囊空态分层引导**（UI-03）：看板各区分层空态从「纯文字说明」改为
+  「说明 + 下一步动作按钮」：无属性 → 「套用通用 / 玄幻 / 网游模板」+
+  「自己建属性」；无等级体系 → 「去设定中心创建」；未绑定主角 →
+  「设为主角」（展开选择器，无候选时置灰并说明）；无生效状态 →
+  「+ 持续 / + 被动」。
+  - 新增跨窗口导航频道 `novel-open-setting-center`（`src/shared/novel/
+    open-setting-center.ts`）：行囊窗口（独立窗口）自己开不了小说窗口的设定
+    中心，靠此频道把「打开设定中心并定位到等级分类」的意图送过去。
+  - 投递路径沿用既有范式：渲染层 `send` → preload 白名单 → 主进程 focus /
+    拉起 NovelWindow 并把负载**点对点**转发回去（`sendTo`，不是 broadcast）
+    → NovelWindow 侧 `subscribeDualChannel` 订阅消费、`openSettingCenter`
+    定位。负载带 `workId`（多作品过滤）+ `categoryId`（无体系时为 `null`，
+    接收方回落默认态，不报错）。
+
+- **行囊境界卡「阶 + 小层」直选**（UI 需求稿 UI-02）：境界卡新增两条直选路径 ——
+  阶（阶梯尺 chip；阶数 > 8 时以阶下拉为主路径）与小层（层号条 `1..N`；
+  N > 12 时改下拉），保留原有 `± 1 层` 微调。选定「阶 + 小层」≤ 2 次点击、
+  全程不离开行囊窗口。
+  - 阈值抽成纯函数（`REALM_RUNG_DROPDOWN_THRESHOLD=8` /
+    `REALM_SUB_DROPDOWN_THRESHOLD=12` / `realmLadderUsesDropdown` /
+    `realmSubUsesDropdown` / `realmSubBarVisible` / `realmSubAriaLabel`），
+    组件与测试读同一份。
+  - 层号条与下方「阶内进度条」**分开成两块 DOM**：进度条仍是纯读数（沿用
+    「无按钮」守卫），层号条是可点选择，视觉与语义都不混淆；`subMax <= 1` 时
+    整块层号区不渲染（单选项 `[1]` 是噪声）。
+  - 严格走 REQ-048：读写仍只经 `writeRealm → setRealm`，toast 文案取
+    `plan.position` 不二次计算；层号按钮带可读名（「元婴 第 2 层（中期）」）
+    与 `aria-current`。
+
+- **行囊模块渐进披露与钉选**（UI-04）：非核心模块**默认收成摘要行**（点击就地
+  展开为 L1 编辑器），作者可把常用模块**钉选常驻**（打开行囊即展开）。
+  - `PackUiPrefs` 新增 `pinned: PackModuleKey[]`（走 `novel_pack_ui`，即改即存，
+    不计未保存改动）；旧偏好文件无本字段按空数组处理，不弹迁移、不丢既有偏好。
+  - `isAutoCollapsed` 默认策略从「仅窄档折叠」改为「全档一致」（钉选优先 >
+    核心三块永不折叠 > 作者显式表态 > 未表态默认收起）。
+  - `withEffectiveCollapse` 代理改为**按生效值翻转**折叠（`setModuleCollapsed`）：
+    否则未表态模块的 `prefs.collapsed[key]` 是 `undefined`，`!undefined` 翻出来
+    仍是收起，表现为「点了展不开」。
+  - 模块壳头部新增钉选按钮（`PushpinOutlined/Filled`），钉选态 `aria-pressed`
+    + `is-pinned`；核心三块不参与钉选（永远展开）。
+
+### Changed
+
+- **设定中心单体拆分**（UI-10）：`SettingCenter/index.tsx` 1494 行单体按功能拆为
+  子组件目录（左栏分类列表 / 分类卡 / 等级序列 / 顶部工具头 / 四个弹窗），状态机与
+  全部提交动作收敛到 `hooks/useSettingCenter.ts`，父组件只做组合。
+  - **对外契约零变化**：`SettingCenter` 的 props 接口、`export default`、
+    既有回归用例涉及的全部回调时机与参数保持原样 —— 只搬移内部结构，不改对外行为。
+  - 样式随组件就近：公共块级零件收在 `setting-primitives.scss`，其余各归组件
+    `index.scss`；自带造型按钮的清零点（`__set-realm` / `__sub-chip` / `__ins-btn`）
+    一并迁移，`novel-ui-kit.test.ts` 守卫全绿。
+
+- **设定中心信息架构去术语化**（UI-05）：把「境界体系 = `kind='realm'` 的一条
+  等级序列」翻译成新手能按常识找到的入口 —— 左栏分组名从中性的「设定分类」改为
+  「等级序列」，并在该区顶部补一句人话说明「境界 / 品阶 / 功法等级都在这里 ——
+  一种体系建一个分类」；右侧阶梯小节标题同步改称「阶梯」，避免与分组名重复。
+  - 不向用户暴露 `kind='realm'` / `level` / `rank` 等内部字段名；**不新增数据表、
+    不改表结构、不改 IPC 契约**（纯前端信息架构调整）。
+  - 保留并确认 FR-05 订正过的提示「重命名与删除在右侧卡片的「编辑 / 删除」按钮」，
+    不回潮到已废弃的「右键 / 行尾菜单」承诺。
+
+### Fixed
+
+- **行囊境界关联「半保存」**（审查报告 TX-01）：改境界原本分两步落库——先
+  `novel-pack-save` 写文档，再单独调 `novel-link-set` 写 `novel_links`。两步之间
+  任一步失败（进程被杀 / 库忙 / 校验抛错）即留下「文档已变、关联未变」的半保存态，
+  下次打开行囊读到的境界与实体面板对不上。
+  - 渲染层保存折叠为**一次 `novel-pack-save`**：`realmLink` 随文档一起进
+    `PackSavePayloadDto`，仅在「与上次保存态有净变化」时才带上（避免每次保存都重写
+    `novel_links`）。`usePackData.save()` 不再单独调 `writeRealmLink`。
+  - 主进程在 `novel-pack-save` 事务内新增第 ③ 步 `upsertRealmLinkRow()`（先删后插，
+    复用 `dbRun` 并入外层事务），与清草稿、写文档同生共死——要么都成功、要么都回滚。
+  - `novel-link-set` 处理器同步改走同一 helper，消除两处 SQL 漂移。
+
+- **卸载时 flush 与保存竞态**（审查报告 TX-13）：行囊在**保存进行中**被关闭/卸载时，
+  卸载 flush 会把保存前的旧草稿再抖一次写回，覆盖刚落库的新内容。
+  - 新增 `savingRef` 同步闸门：`save()` 进入即置位（同步，卸载 flush 读得到）并取消
+    在途草稿防抖；`flushDraft()` 开头 `if (savingRef.current) return;` 直接跳过；
+    保存结束复位。
+
+- **灌入正文触发的字数基线漂移**（审查报告 TX-02）：打开章时 CodeMirror 把库中原正文
+  灌进编辑器，该次 `setContent` 被当作「用户编辑」，以旧 draft/base 当 `previous`
+  基线、把灌入本身算成净增，导致「本章字数 / 今日 +N」在上手瞬间虚高。
+  - `setContent(chapterId, next, baseContent, source)` 新增第 4 参 `source:
+    "user" | "hydrate"`；`"hydrate"` 分支只按 `baseContent` 刷新基线、零草稿写入。
+    好处：灌入路径不再污染字数统计，切换章时基线始终等于库内真值。
+
+### Tests
+
+- `usePackData.test.tsx` 补 TX-01（境界净变化才提交 / 随保存同事务 / 未变不带）与
+  TX-13（保存中卸载不 flush 旧草稿）回归用例；`beforeEach` 加 `mockReset()` 修复
+  `mockResolvedValueOnce` 队列跨用例泄漏。全套 25 文件 500 用例通过。
+- UI-02 / UI-04 新增守卫与用例：`pack-layout.test.ts`（全档默认折叠 + 钉选优先）、
+  `pack-utils.test.ts`（阈值边界 / 层号可读名）、`types.test.ts`（`pinned` 缺省安全）、
+  `RealmModule/index.test.tsx`（层号条 / 阶下拉 / 小层直选）、
+  `PackModuleShell/index.test.tsx`（钉选按钮显隐与态）、
+  `pack-close-guard.test.ts`（`writeRealm` 调用点计数随 UI-02 更新为 3，
+  并新增「带 carry 的推进只允许一处」断言）。行囊套件 24 文件 496 用例通过。
+- UI-03 / UI-01 新增用例与守卫：`open-setting-center.test.ts`（频道负载归一出
+  与脏负载拒绝）、`pack-window-guards.test.ts`（新增「preload 白名单放行 +
+  主进程 focus 后点对点转发、不得 broadcast」断言）、`pack-layout.test.ts`
+  （看板条数 / D 区过滤 / E 区透传）、`PackDashboard/index.test.tsx`（五区关键
+  行为：默认条数、点行开明细、只列 active、摘要行触发展开）、
+  `RealmModule/index.test.tsx`（空态「去设定中心创建」与「设为主角」按钮）、
+  `AttributesModule/index.test.tsx` + `StatusModule/index.test.tsx`（空态动作按钮）；
+  `pack-ui-kit.test.ts` 收录新增自带造型按钮（`cpk-emptyblock__cta`、
+  `cpk-board__*`）。行囊套件 26 文件 529 用例通过。
+
 ## [1.44.1] - 2026-10-15
 
 ### Changed
