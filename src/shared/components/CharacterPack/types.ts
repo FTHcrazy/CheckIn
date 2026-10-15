@@ -161,6 +161,17 @@ export interface PackModuleState {
 export interface PackUiPrefs {
   /** 模块折叠状态 */
   collapsed: Partial<Record<PackModuleKey, boolean>>;
+  /**
+   * 钉选常驻的模块（UI-04）：列在这里的模块**永不因默认折叠策略收起**，
+   * 打开行囊即以 L1 编辑器形态展开。
+   *
+   * 与 `collapsed` 的分工：`collapsed` 是「作者对某个模块的显式开合表态」（临时），
+   * `pinned` 是「这个模块我常用，请一直摊开」（长期常态）。两者冲突时钉选优先 ——
+   * 作者钉选过就不该再被折叠策略收回。
+   *
+   * 旧偏好文件无本字段 → 解析层按空数组处理（不弹迁移、不丢既有偏好）。
+   */
+  pinned: PackModuleKey[];
   /** 物品栏视图 */
   inventoryView: "list" | "grid";
   /** 技能栏是否展示熟练度（关闭时相关 UI 完全缺席，而非置灰） */
@@ -173,6 +184,7 @@ export interface PackUiPrefs {
 
 export const DEFAULT_UI_PREFS: PackUiPrefs = {
   collapsed: {},
+  pinned: [],
   inventoryView: "list",
   showProficiency: false,
   autoSave: true,

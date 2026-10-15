@@ -323,10 +323,12 @@ export default function EditorPane({
   // 正文上报走 store 动作（身份恒定），其余回调放进 ref，避免重建编辑器
   // （CodeMirror 实例必须整个会话唯一）。previous 是变更前文档，供 store
   // 计算字数增量——不传时 store 以草稿（再兜底空串）为基线。
+  // `source="hydrate"` 用于程序化灌入（切章 / 编辑器重建）：只切章、不计字数，
+  // 不依赖「next === previous」这个会被旧草稿破坏的值相等假设。
   const handleContentChange = useCallback(
-    (next: string, previous?: string): void => {
+    (next: string, previous?: string, source?: "user" | "hydrate"): void => {
       const chapterId = chapterIdRef.current;
-      if (chapterId) editorActions.setContent(chapterId, next, previous);
+      if (chapterId) editorActions.setContent(chapterId, next, previous, source);
     },
     [],
   );
@@ -417,10 +419,12 @@ export default function EditorPane({
               // compositionend 时由下方监听器统一上报最终文档
               if (composingRef.current) return;
               const next = update.state.doc.toString();
-              // 程序化灌入：以 next 自身为基线 —— 与 store 的草稿比对必然相等，
-              // 于是走「内容没变」分支，只切换 activeChapterId
+              // 程序化灌入（切章 / 编辑器重建）：显式声明 hydrate 语义 ——
+              // store 只切章、不计字数、不写草稿。绝不能靠「传 next 自身当基线」
+              // 让 previous 与 next 相等：该章若已有未保存草稿，previous 取到的是
+              // 旧草稿，值相等假设破裂 → 把「旧草稿 → 灌入文本」的差值算进今日字数。
               if (hydratingRef.current) {
-                handlersRef.current.onChange(next, next);
+                handlersRef.current.onChange(next, next, "hydrate");
                 return;
               }
               handlersRef.current.onChange(next, update.startState.doc.toString());

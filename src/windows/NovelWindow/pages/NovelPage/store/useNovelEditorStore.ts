@@ -102,16 +102,25 @@ export interface EditorState {
   speed: number;
 
   /**
-   * 上报正文变化。语义由 `baseContent` 区分两类来源：
+   * 上报正文变化。语义由 `source` 显式区分两类来源：
    *
-   * - **用户输入**（编辑器传 `update.startState.doc` 或省略）：以「变更前正文」为基线，
-   *   差值计入今日新增与会话字数。
-   * - **程序化灌入**（切章 / 回滚 / 恢复）：编辑器必须传 `baseContent === next`。
-   *   此时 `previous` 必然等于 `next`，走下方早返回分支 —— 只切换 activeChapterId。
-   *   ⚠️ 灌入若也传「变更前正文」，会导致爆破式字数：首次进入把整章字数算成今日新增，
-   *   长章切短章则出现负增长（EditorPane 的 hydratingRef 就是为此存在）。
+   * - **用户输入**（`source: "user"`，默认）：以「变更前正文」为基线，差值计入
+   *   今日新增与会话字数。
+   * - **程序化灌入**（`source: "hydrate"`，切章 / 编辑器重建）：**不计字数、不写草稿、
+   *   不重启防抖**，只切换 activeChapterId 并记下本章字数兜底。
+   *
+   * ⚠️ 灌入**不能**再靠「传 `baseContent === next` 让 previous 与 next 相等」这个
+   * 值相等的 hack 来走早返回分支：`previous` 优先取 `draftMap[chapterId]`，只要该章
+   * 已有未保存草稿（改过字但没保存），`previous` 取到的就是旧草稿而非 next，
+   * 值相等假设破裂 → 把「旧草稿 → 灌入文本」的差值当成今日新增（静默字数漂移，
+   * 与库内 `chapter_save` 口径对不上）。用 `source` 把语义写死，不依赖值比较。
    */
-  setContent: (chapterId: string, next: string, baseContent?: string) => void;
+  setContent: (
+    chapterId: string,
+    next: string,
+    baseContent?: string,
+    source?: "user" | "hydrate",
+  ) => void;
   applyExternalContent: (chapterId: string, next: string) => void;
   /** 返回是否全部落库成功（调用方据此决定提示文案，不要无条件说「已保存」） */
   flushSave: () => Promise<boolean>;
@@ -246,8 +255,20 @@ export const useNovelEditorStore = create<EditorState>()((set, get) => {
     todayTotal: 0,
     speed: 0,
 
-    setContent: (chapterId, next, baseContent) => {
+    setContent: (chapterId, next, baseContent, source = "user") => {
       const state = get();
+      // 程序化灌入（切章 / 编辑器重建）：只切章、不计字数、不写草稿、不重启防抖。
+      // 必须走独立分支而非「值相等」判断 —— 该章有旧草稿时 previous 会取到旧草稿，
+      // 值相等假设不成立（详见 EditorState.setContent 注释）。
+      if (source === "hydrate") {
+        if (state.activeChapterId !== chapterId) {
+          set({
+            activeChapterId: chapterId,
+            activeBaseWords: countWordsCached(next, state.settings.wordCountMode),
+          });
+        }
+        return;
+      }
       // 字数基线：优先草稿，其次上报方带来的变更前正文（程序化同步场景）
       const previous = state.draftMap[chapterId] ?? baseContent ?? "";
       if (previous === next) {
@@ -485,8 +506,13 @@ export function sessionStartedAt(): number | null {
  * 这样「父层重渲染 → 回调身份变 → 子组件 memo 失效」这条链就断了。
  */
 export const editorActions = {
-  setContent: (chapterId: string, next: string, baseContent?: string): void => {
-    useNovelEditorStore.getState().setContent(chapterId, next, baseContent);
+  setContent: (
+    chapterId: string,
+    next: string,
+    baseContent?: string,
+    source?: "user" | "hydrate",
+  ): void => {
+    useNovelEditorStore.getState().setContent(chapterId, next, baseContent, source);
   },
   applyExternalContent: (chapterId: string, next: string): void => {
     useNovelEditorStore.getState().applyExternalContent(chapterId, next);

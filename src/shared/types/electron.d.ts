@@ -555,6 +555,11 @@ export interface PackSavePayloadDTO {
   unitSystems: PackUnitSystemDTO[]
   layouts: PackLayoutDTO[]
   presets: PackPresetDTO[]
+  /**
+   * 「当前境界」关联行，随整文档保存同事务写入（避免半保存态）。
+   * `null` = 本次不改动关联行（未绑定主角 / 与上次保存态无差异）。
+   */
+  realmLink: PackRealmLinkDTO | null
   reason: string
   chapterId: string
 }

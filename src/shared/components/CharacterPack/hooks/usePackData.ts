@@ -5,7 +5,6 @@ import {
   loadPackBundle,
   putPackDraft,
   savePackDocument,
-  writeRealmLink,
 } from "../services/pack-service";
 import {
   notifyRealmLinkChanged,
@@ -164,6 +163,16 @@ export function usePackData(workId: string, chapterId: string) {
   const draftTimerRef = useRef<number | null>(null);
   const docRef = useRef<PackDoc | null>(null);
   const dirtyRef = useRef(0);
+  /**
+   * 是否正在保存（同步标志，与 `saving` state 不同——state 更新是异步的，
+   * 卸载 flush 这类同步路径读不到最新值）。
+   *
+   * 立身之本：`save()` 成功后主进程会清空草稿，但组件若在 `await` 期间卸载，
+   * 卸载 cleanup 里的 `flushDraft()` 会拿**尚未重算为 0 的 dirtyRef** 再写一次
+   * 脏草稿 → 库中已是新版文档、草稿却是旧脏版 → 下次打开草稿优先 → 用户看到
+   * 「保存了却回退了」。`flushDraft` 据此跳过，让库中正式行成为唯一真相。
+   */
+  const savingRef = useRef(false);
 
   /**
    * 重算未保存处数。
@@ -446,6 +455,10 @@ export function usePackData(workId: string, chapterId: string) {
   const flushDraft = useCallback(async (): Promise<void> => {
     const current = docRef.current;
     if (!current || dirtyRef.current <= 0) return;
+    // 正在保存 → 跳过。保存成功后主进程已清空草稿、库中为最新文档；此时再写
+    // 一次（dirtyRef 可能尚未重算为 0，因卸载发生在 await 期间）会留下**旧脏
+    // 草稿**，下次装载草稿优先 → 用户看到「保存了却回退了」。
+    if (savingRef.current) return;
     if (draftTimerRef.current !== null) {
       window.clearTimeout(draftTimerRef.current);
       draftTimerRef.current = null;
@@ -481,30 +494,41 @@ export function usePackData(workId: string, chapterId: string) {
     async (reason: DirtyReason = "手动保存"): Promise<boolean> => {
       const current = docRef.current;
       if (!current) return false;
+      // 进入保存态：置 savingRef（同步，卸载 flush 读得到）+ 取消在途草稿防抖
+      // （保存成功会由主进程清空草稿，这里再落一次纯属多余且可能覆盖）
+      savingRef.current = true;
+      if (draftTimerRef.current !== null) {
+        window.clearTimeout(draftTimerRef.current);
+        draftTimerRef.current = null;
+      }
       setSaving(true);
       setSaveFailed(false);
+      // 境界绑定随文档一起提交：与上次保存态比较，有差异才带上 realmLink
+      // （主进程在同事务内幂等 upsert；无差异传 null 表示不动关联行）。
+      // 未绑定（link 为 null）不产生写库 —— 与 §9.7.5「不绑定就不写 novel_links」一致。
+      const prevLink = savedRef.current?.realmLink ?? null;
+      const nextLink = current.realmLink;
+      const linkChanged = nextLink != null && JSON.stringify(prevLink) !== JSON.stringify(nextLink);
       let ok: boolean;
       try {
-        ok = await savePackDocument({ ...current, reason, chapterId });
+        ok = await savePackDocument({
+          ...current,
+          // 只在确有变化时携带；否则显式 null（主进程不碰 novel_links）
+          realmLink: linkChanged ? nextLink : null,
+          reason,
+          chapterId,
+        });
       } catch {
         ok = false;
       }
       if (ok) {
-        // 境界绑定随草稿走：与上次保存态比较，有差异才写 novel_links 并广播。
-        // 未绑定（link 为 null）不产生写库 —— 与 §9.7.5「不绑定就不写 novel_links」一致。
-        const prevLink = savedRef.current?.realmLink ?? null;
-        const nextLink = current.realmLink;
-        if (nextLink && JSON.stringify(prevLink) !== JSON.stringify(nextLink)) {
-          const linkOk = await writeRealmLink(nextLink).catch(() => false);
-          if (linkOk) {
-            notifyRealmLinkChanged(current.character.workId, nextLink, "pack");
-            setMeta((previous) => ({ ...previous, realmLink: nextLink }));
-          } else {
-            // 境界行写失败：保持脏状态，让用户重试整个保存
-            setSaveFailed(true);
-            setSaving(false);
-            return false;
-          }
+        // ⚠️ 境界关联行已由 `novel-pack-save` 在同一事务里写好（TX-01 修复）：
+        // 早期实现在此处再单独调 `writeRealmLink`，两步之间失败即半保存态
+        // —— 文档已落库、函数却 return false 报「保存失败」。现在只有两种结果：
+        // 全成功（文档 + 关联行）或全回滚，不再有中间态。
+        if (linkChanged && nextLink) {
+          notifyRealmLinkChanged(current.character.workId, nextLink, "pack");
+          setMeta((previous) => ({ ...previous, realmLink: nextLink }));
         }
         savedRef.current = current;
         // 基线刚被推进到当前文档 —— 重算必然得 0（同一份文档比同一份文档）
@@ -519,6 +543,7 @@ export function usePackData(workId: string, chapterId: string) {
         setSaveFailed(true);
       }
       setSaving(false);
+      savingRef.current = false;
       return ok;
     },
     [chapterId, meta.records, recomputeDirty],

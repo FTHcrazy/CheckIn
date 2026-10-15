@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { RARITY_KEYS, RARITY_META, rarityMetaOf } from "./types";
+import { DEFAULT_UI_PREFS, RARITY_KEYS, RARITY_META, rarityMetaOf } from "./types";
 
 /**
  * 稀有度的**取值口径**（REQ-010：圆点即下拉入口）。
@@ -41,5 +41,32 @@ describe("稀有度取值口径（REQ-010）", () => {
 
   it("已知取值原样返回，不做包装", () => {
     expect(rarityMetaOf("legend")).toBe(RARITY_META.legend);
+  });
+});
+
+/**
+ * UI-04：`PackUiPrefs.pinned` 的缺省安全与类型契约。
+ *
+ * `pinned` 是后加字段，旧偏好文件（`novel_pack_ui` 里没有它）读出来后
+ * 必须能安全当空数组用 —— 否则 `previous.pinned.includes(...)` 会抛
+ * `undefined is not a function`，行囊一打开就白屏。
+ */
+describe("界面偏好 pinned（UI-04）", () => {
+  it("默认偏好里 pinned 是空数组（不是 undefined）", () => {
+    expect(Array.isArray(DEFAULT_UI_PREFS.pinned)).toBe(true);
+    expect(DEFAULT_UI_PREFS.pinned).toEqual([]);
+  });
+
+  it("pinned 与 collapsed 是两个独立字段（折叠是临时表态、钉选是长期常态）", () => {
+    expect(DEFAULT_UI_PREFS.collapsed).toEqual({});
+    expect(DEFAULT_UI_PREFS.pinned).toEqual([]);
+  });
+
+  it("旧偏好文件缺 pinned 时，展开默认值后仍是可安全 includes 的数组", () => {
+    // 模拟 usePackPanel 的解析路径：{ ...DEFAULT_UI_PREFS, ...parsePrefs(raw) }
+    const legacy = { collapsed: {}, inventoryView: "grid", showProficiency: true };
+    const merged = { ...DEFAULT_UI_PREFS, ...legacy };
+    expect(() => merged.pinned.includes("inventory")).not.toThrow();
+    expect(merged.pinned).toEqual([]);
   });
 });

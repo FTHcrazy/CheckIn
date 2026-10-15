@@ -586,6 +586,19 @@ export interface PackSavePayloadDto {
   unitSystems: PackUnitSystemDto[];
   layouts: PackLayoutDto[];
   presets: PackPresetDto[];
+  /**
+   * 「当前境界」关联行（随整文档保存一起提交）。
+   *
+   * ⚠️ 必须与文档写在同一事务里 —— 境界真实值住在跨作品的 `novel_links`，
+   * 早期实现是「文档事务提交成功后再单独走 `novel-link-set`」，于是出现半保存态：
+   * 文档/物品/属性全部落库了，但此刻写 link 失败 → 渲染层拿到 false 报「保存失败」，
+   * 用户以为整单回滚、继续重试或丢弃，实际数据已半提交（右侧栏显示旧境界、
+   * 行囊显示新境界，直到下次重载）。
+   *
+   * `null` = 本次不需要改动关联行（未绑定主角 / 与上次保存态无差异）；
+   * 传对象 = 幂等 upsert（同 (from,to_type,relation) 先清后插）。
+   */
+  realmLink: PackRealmLinkDto | null;
   /** 盘点记录原因（如「改动前自动存档：手动保存」） */
   reason: string;
   /** 记录归属章节（切换章节 / 退出时说明改动属于哪一章） */
@@ -610,6 +623,27 @@ function parseJsonArray(raw: string): string[] {
 
 function toInt(value: boolean): number {
   return value ? 1 : 0;
+}
+
+/**
+ * 幂等写入一行 `novel_links`（同一 (from_type, from_id, to_type, relation) 先清后插）。
+ *
+ * **只搬数据不解释数据**：调用方已把 note 归一化为 `{"sub":N}`。
+ * 两个消费方共用本函数，禁各写一份 —— `novel-pack-save`（与文档同事务）与
+ * `novel-link-set`（独立通道），实现分叉会让两条路径的幂等语义悄悄不一致。
+ *
+ * ⚠️ 必须在调用方的事务上下文里跑（`novel-pack-save` 的 `apply` 事务内）：
+ * 用全局 `dbRun` 而非 `db.prepare`，才能加入外层事务而不是自开一个。
+ */
+function upsertRealmLinkRow(link: PackRealmLinkDto): void {
+  dbRun(
+    "DELETE FROM novel_links WHERE from_type = ? AND from_id = ? AND to_type = ? AND relation = ?",
+    [link.fromType, link.fromId, link.toType, link.relation],
+  );
+  dbRun(
+    "INSERT INTO novel_links (id, from_type, from_id, to_type, to_id, relation, note) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    [link.id, link.fromType, link.fromId, link.toType, link.toId, link.relation, link.note ?? null],
+  );
 }
 
 /**
@@ -1845,7 +1879,16 @@ export function registerNovelPackHandlers(): void {
         );
       }
 
-      // ③ 提交成功 → 清空草稿（草稿只承载未提交中间态）
+      // ③ 境界关联行（novel_links）—— 与文档同事务写入。
+      // ⚠️ 顺序与原子性是硬要求：境界真实值住在 novel_links，早期实现把它拆成
+      // 「文档事务提交后再单独 novel-link-set」，两步之间失败即半保存态。
+      // 放在同一事务里，任一语句抛错 → better-sqlite3 整体回滚，渲染层拿到的
+      // false 才是真的「什么都没写」。
+      if (payload.realmLink) {
+        upsertRealmLinkRow(payload.realmLink);
+      }
+
+      // ④ 提交成功 → 清空草稿（草稿只承载未提交中间态）
       dbRun("DELETE FROM novel_pack_drafts WHERE character_id = ?", [characterId]);
     });
 
@@ -1917,22 +1960,16 @@ export function registerNovelPackHandlers(): void {
       const db = getDb();
       const apply = db.transaction(() => {
         // 同一 (来源, 目标类型, 关系) 只保留一行：先清后插即幂等
-        dbRun(
-          "DELETE FROM novel_links WHERE from_type = ? AND from_id = ? AND to_type = ? AND relation = ?",
-          [link.fromType, link.fromId, link.toType, link.relation],
-        );
-        dbRun(
-          "INSERT INTO novel_links (id, from_type, from_id, to_type, to_id, relation, note) VALUES (?, ?, ?, ?, ?, ?, ?)",
-          [
-            link.id,
-            link.fromType,
-            link.fromId,
-            link.toType,
-            link.toId,
-            link.relation,
-            link.note ?? null,
-          ],
-        );
+        // （与 `novel-pack-save` 内联写入共用同一实现，禁各写一份）
+        upsertRealmLinkRow({
+          id: link.id,
+          fromType: link.fromType,
+          fromId: link.fromId,
+          toType: link.toType,
+          toId: link.toId,
+          relation: link.relation,
+          note: link.note ?? "",
+        });
       });
       try {
         apply();

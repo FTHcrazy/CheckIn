@@ -122,7 +122,14 @@ function fireBroadcast(event: string, detail: unknown): void {
 
 beforeEach(() => {
   subscribers = new Map();
+  // mockReset 会连 once 队列一起清空 —— 必须做，否则上一个用例用剩的
+  // `mockResolvedValueOnce`（装载 bundle）会泄漏到下一个用例，让装载读到错的书
   serviceMocks.loadPackBundle.mockReset();
+  serviceMocks.putPackDraft.mockReset();
+  serviceMocks.clearPackDraft.mockReset();
+  serviceMocks.savePackDocument.mockReset();
+  serviceMocks.fetchPackRecords.mockReset();
+  serviceMocks.writeRealmLink.mockReset();
   serviceMocks.putPackDraft.mockResolvedValue(true);
   serviceMocks.clearPackDraft.mockResolvedValue(true);
   serviceMocks.savePackDocument.mockResolvedValue(true);
@@ -296,5 +303,130 @@ describe("P1-3 换主角后境界绑定同步（syncMeta）", () => {
     expect(result.current.dirty).toBe(0);
     // 元数据（库内真值）仍然刷新
     expect(result.current.meta.realmLink?.toId).toBe("lvl-9");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────
+// TX-01 境界关联写入原子化（不再单独写 novel_links）
+// ─────────────────────────────────────────────────────────────
+
+describe("TX-01 境界绑定随保存同事务提交", () => {
+  it("换绑主角后保存：realmLink 随 payload 一次提交，不再单独调 writeRealmLink", async () => {
+    const { result } = await mountPack(
+      makeBundle({ entityId: "e1", realmLink: makeLink("e1", "lvl-1") }),
+    );
+
+    // 换绑到 e2 → 文档里 realmLink 变 e2 的那份（一处未保存改动）
+    serviceMocks.loadPackBundle.mockResolvedValueOnce(
+      makeBundle({ entityId: "e2", realmLink: makeLink("e2", "lvl-5") }),
+    );
+    await act(async () => {
+      await result.current.syncMeta();
+    });
+    expect(result.current.dirty).toBe(1);
+
+    await act(async () => {
+      await result.current.save();
+    });
+
+    // ① 只发一次 IPC（不再有第二步 writeRealmLink）
+    expect(serviceMocks.savePackDocument).toHaveBeenCalledTimes(1);
+    expect(serviceMocks.writeRealmLink).not.toHaveBeenCalled();
+    // ② realmLink 被合进保存 payload（主进程同事务写 novel_links）
+    const payload = serviceMocks.savePackDocument.mock.calls[0][0];
+    expect(payload.realmLink).toMatchObject({ fromId: "e2", toId: "lvl-5" });
+    // ③ 保存后脏计数归零
+    expect(result.current.dirty).toBe(0);
+  });
+
+  it("无境界改动时保存：payload.realmLink 为 null（主进程不碰 novel_links）", async () => {
+    const { result } = await mountPack(
+      makeBundle({ entityId: "e1", realmLink: makeLink("e1", "lvl-1") }),
+    );
+
+    // 只改物品（不碰境界）→ 需先制造一处改动
+    await act(async () => {
+      result.current.mutate((doc) => ({
+        ...doc,
+        items: [...doc.items, makeItem("pi-new")],
+      }));
+    });
+    await waitFor(() => expect(result.current.dirty).toBe(1));
+
+    await act(async () => {
+      await result.current.save();
+    });
+
+    // realmLink 与上次保存态一致 → 不带（null）；主进程不碰 novel_links
+    const payload = serviceMocks.savePackDocument.mock.calls.at(-1)![0];
+    expect(payload.realmLink).toBeNull();
+    expect(serviceMocks.writeRealmLink).not.toHaveBeenCalled();
+  });
+
+  it("保存失败时不广播境界变更（无中间态）", async () => {
+    serviceMocks.savePackDocument.mockResolvedValue(false);
+    const { result } = await mountPack(
+      makeBundle({ entityId: "e1", realmLink: makeLink("e1", "lvl-1") }),
+    );
+    serviceMocks.loadPackBundle.mockResolvedValueOnce(
+      makeBundle({ entityId: "e2", realmLink: makeLink("e2", "lvl-5") }),
+    );
+    await act(async () => {
+      await result.current.syncMeta();
+    });
+
+    let ok: boolean | undefined;
+    await act(async () => {
+      ok = await result.current.save();
+    });
+
+    expect(ok).toBe(false);
+    expect(result.current.saveFailed).toBe(true);
+    // 文档都没写成功 → 境界广播也不该发（同事务语义）
+    expect(window.electronAPI?.windowAPI.broadcast).not.toHaveBeenCalled();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────
+// TX-13 保存期间卸载 flush 不得覆盖已保存文档
+// ─────────────────────────────────────────────────────────────
+
+describe("TX-13 保存中卸载 flush 闸门", () => {
+  it("save 在途时 flushDraft 跳过（不写脏草稿覆盖已保存文档）", async () => {
+    // 让保存挂在 pending，模拟 await 期间组件卸载
+    let resolveSave: ((v: boolean) => void) | undefined;
+    serviceMocks.savePackDocument.mockImplementation(
+      () => new Promise<boolean>((resolve) => {
+        resolveSave = resolve;
+      }),
+    );
+
+    const { result } = await mountPack(makeBundle({ items: [makeItem("pi-1")] }));
+    await act(async () => {
+      result.current.mutate((doc) => ({
+        ...doc,
+        items: [...doc.items, makeItem("pi-2")],
+      }));
+    });
+    await waitFor(() => expect(result.current.dirty).toBe(1));
+
+    // 发起保存（不 await，保存仍挂在 pending）
+    let savePromise: Promise<boolean> | undefined;
+    await act(async () => {
+      savePromise = result.current.save();
+    });
+
+    // 保存期间调用 flushDraft：应被 savingRef 闸门拦下，不写草稿
+    serviceMocks.putPackDraft.mockClear();
+    await act(async () => {
+      await result.current.flushDraft();
+    });
+    expect(serviceMocks.putPackDraft).not.toHaveBeenCalled();
+
+    // 收尾：放行保存，避免悬挂 Promise
+    await act(async () => {
+      resolveSave?.(true);
+      await savePromise;
+    });
   });
 });
