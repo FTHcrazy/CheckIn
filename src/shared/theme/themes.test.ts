@@ -17,6 +17,64 @@ const THEME_SCSS = readFileSync(
   path.resolve(process.cwd(), "src/shared/styles/themes.scss"),
   "utf8",
 );
+const SRC_ROOT = path.resolve(process.cwd(), "src");
+
+/* ── 扫描 SCSS 的公共零件（下面两组守卫都要用） ── */
+
+/** 去块注释与行注释：注释里常引用被删掉的写法，参与匹配会误判 */
+function stripComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+}
+
+/** 同上，但块注释按原行数换成空行 —— 报错时行号要对得上真实文件 */
+function stripCommentsKeepLines(source: string): string {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, (block) => "\n".repeat(block.split("\n").length - 1))
+    .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+}
+
+/** 递归收集 src 下的 SCSS（跳过 node_modules / dist） */
+function collectScssFiles(dir: string, acc: string[] = []): string[] {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (!/node_modules|dist/.test(entry.name)) collectScssFiles(full, acc);
+      continue;
+    }
+    if (entry.name.endsWith(".scss")) acc.push(full);
+  }
+  return acc;
+}
+
+/** `[data-theme="x"] { … }` 拆成 id → 声明块（aurora 与 :root 共用一条规则） */
+const THEME_BLOCKS = (() => {
+  const parts = THEME_SCSS.split(/\[data-theme="([a-z]+)"\]/);
+  const map = new Map<string, string>();
+  map.set(DEFAULT_THEME, parts[2] ?? "");
+  for (let i = 1; i < parts.length; i += 2) map.set(parts[i], parts[i + 1]);
+  return map;
+})();
+
+/** 只认 6 位 hex（分层 token 都是纯色，渐变 / rgba 不参与亮度断言） */
+const readVar = (block: string, name: string): string => {
+  const match = new RegExp(`--${name}:\\s*(#[0-9a-fA-F]{6})`).exec(block);
+  return match?.[1]?.toLowerCase() ?? "";
+};
+
+/** WCAG 相对亮度 */
+const luminance = (hex: string): number => {
+  const lin = [1, 3, 5].map((i) => {
+    const c = parseInt(hex.slice(i, i + 2), 16) / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
+};
+
+/** 对比度比（≥1，1 表示两色完全同亮度） */
+const ratio = (a: string, b: string): number => {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+};
 
 describe("isThemeId", () => {
   it("合法主题 id 返回 true", () => {
@@ -90,6 +148,86 @@ describe("THEME_LIST", () => {
 });
 
 /**
+ * 面板分层不变量。
+ *
+ * 浅色主题里 `--app-surface` 与 `--app-surface-elevated` 曾经**都是 #ffffff**：
+ * 结果是卡片、面板、下拉 / 弹窗 / 抽屉同色，只剩描边和阴影分家 —— 行囊看板
+ * 卡「浮在正文之上」的意图完全落空（用户截图反馈过）。
+ *
+ * 这里用相对亮度（WCAG）把「分层」写成可数值校验的不变量，而不是靠人眼比对截图：
+ *   - 方向：elevated 必须比内容面更靠近观察者（暗色更亮、浅色趋纯白）；
+ *   - 幅度：相邻两层至少差一档可感知的量级；
+ *   - 一致性：antd 的容器色板必须与 themes.scss 的对应 token 逐值相等。
+ */
+describe("面板分层（浅色也不能与浮层同色）", () => {
+  const themeBlocks = THEME_BLOCKS;
+
+  it("四套主题都能解析出分层色值", () => {
+    expect(themeBlocks.size).toBe(THEME_LIST.length);
+    THEME_LIST.forEach((theme) => {
+      const block = themeBlocks.get(theme.id) ?? "";
+      expect(block.length).toBeGreaterThan(200);
+      expect(readVar(block, "app-surface")).toMatch(/^#[0-9a-f]{6}$/);
+      expect(readVar(block, "app-surface-elevated")).toMatch(/^#[0-9a-f]{6}$/);
+    });
+  });
+
+  it("elevated 恒为最贴近观察者的一层，且与内容面拉开可感知的一档", () => {
+    THEME_LIST.forEach((theme) => {
+      const block = themeBlocks.get(theme.id)!;
+      const surface = readVar(block, "app-surface");
+      const elevated = readVar(block, "app-surface-elevated");
+      // 方向：浮层比内容面更亮（浅色趋纯白、暗色提亮）
+      expect(luminance(elevated)).toBeGreaterThan(luminance(surface));
+      // 幅度：浅色回归 #ffffff vs #ffffff 时此处必红
+      expect(ratio(surface, elevated)).toBeGreaterThanOrEqual(1.025);
+    });
+  });
+
+  it("内容面与页面底 / 次级面色都分得开（不能靠描边硬撑）", () => {
+    THEME_LIST.forEach((theme) => {
+      const block = themeBlocks.get(theme.id)!;
+      const surface = readVar(block, "app-surface");
+      expect(ratio(readVar(block, "app-bg"), surface)).toBeGreaterThanOrEqual(1.02);
+      expect(ratio(readVar(block, "app-surface-alt"), surface)).toBeGreaterThanOrEqual(1.02);
+    });
+  });
+
+  it("antd 容器色板与 themes.scss 对应 token 逐值同步（防同屏两套底色）", () => {
+    THEME_LIST.forEach((theme) => {
+      const block = themeBlocks.get(theme.id)!;
+      expect(theme.antd.colorBgContainer).toBe(readVar(block, "app-surface"));
+      expect(theme.antd.colorBgElevated).toBe(readVar(block, "app-surface-elevated"));
+      expect(theme.antd.colorBgLayout).toBe(readVar(block, "app-bg"));
+    });
+  });
+
+  /**
+   * 顶栏 chip 的层次（UI-07）同样靠 token 值撑起来：
+   * 默认底要从顶栏底色里「浮」出来，hover 再沉一档，持久激活换主色弱底。
+   * 任一处调平（例如把 surface-hover 改回与 header-bg 同值）就退化成
+   * 「一排灰点看不出可点」，这里用同一套亮度判据钉住。
+   */
+  it("顶栏 chip 底色三档（顶栏底 / 默认 / hover 与按下）逐档可分辨", () => {
+    THEME_LIST.forEach((theme) => {
+      const block = themeBlocks.get(theme.id)!;
+      const header = readVar(block, "app-header-bg");
+      const hover = readVar(block, "app-surface-hover");
+      const active = readVar(block, "app-surface-active");
+      expect(ratio(header, hover)).toBeGreaterThanOrEqual(1.05);
+      expect(ratio(hover, active)).toBeGreaterThanOrEqual(1.03);
+
+      // 激活态：主色弱底与默认底都是「极浅底」，允许亮度相近（激活与否另由
+      // 主色图标 + 1px 主色内描边表达，见 NovelTopBar/index.scss），
+      // 但**绝不能是同一支色**，否则等于底色没变、只剩图标换色。
+      const on = readVar(block, "app-primary-weak");
+      expect(on).not.toBe(hover);
+      expect(on).not.toBe(active);
+    });
+  });
+});
+
+/**
  * 未定义 token 守卫。
  *
  * `var(--app-typo)` 不会报错、不会编译失败 —— 浏览器直接当它不存在，
@@ -102,21 +240,6 @@ describe("THEME_LIST", () => {
  * - 注释里的提及不算引用（`stripComments` 先剔注释再匹配）。
  */
 describe("--app-* token 引用完整性（防静默失效）", () => {
-  const stripComments = (source: string) =>
-    source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
-
-  const collectScssFiles = (dir: string, acc: string[] = []): string[] => {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        if (!/node_modules|dist/.test(entry.name)) collectScssFiles(full, acc);
-        continue;
-      }
-      if (entry.name.endsWith(".scss")) acc.push(full);
-    }
-    return acc;
-  };
-
   it("src 下所有 SCSS 引用的 --app-* 都在 themes.scss 里有定义", () => {
     const defined = new Set(
       [...THEME_SCSS.matchAll(/(--app-[a-z0-9-]+)\s*:/g)].map((m) => m[1]),
@@ -144,6 +267,308 @@ describe("--app-* token 引用完整性（防静默失效）", () => {
     }
 
     expect(offenders).toEqual([]);
+  });
+});
+
+/**
+ * 静态色块不许拿「按下态」色当填充。
+ *
+ * `--app-surface-hover` / `--app-surface-active` 是**相对所在面的交互态**
+ * （hover 加深、按下更深），不是色阶里的一档。拿它们做常驻填充会连出两个后果：
+ *   1. 常驻块直接跳过全站色阶 —— cream 下 `surface-active` 是 **1.20**，而同主题
+ *      最重的常驻弱底 `--app-primary-weak` 才 1.13、凹槽 `--app-surface-alt` 只有
+ *      1.05（数值依据见下一条用例）。大面积铺开后整屏比别的界面重一档 ——
+ *      真机反馈就是行囊「已展开的模块行」那一块深棕。
+ *   2. 中性加深在暖色主题下会变成浑浊的棕黄：没有语义，只剩重量。
+ *
+ * 规矩：**静态中性底走 `--app-surface-alt`**（贴在 surface / elevated 上的槽）；
+ * 贴在页面底 `--app-bg` 上的槽走 `--app-surface-hover`（alt 与 bg 近乎同色会消失，
+ * 例如状态条 / 书架的进度条轨道）；`--app-surface-active` 只允许出现在交互态 ——
+ * 最近的祖先选择器带 `:hover / :active / :focus`，或属性名本身就叫
+ * `--ant-*-hover-bg` / `*-active-bg`。
+ *
+ * 禁用态（`--ant-button-default-bg-disabled`）算常驻，一并受管：禁用应该更**弱**，
+ * 而不是更深。
+ */
+describe("静态色块不用按下态色（--app-surface-active 只留给交互态）", () => {
+  /** 声明所在块的「最近祖先选择器头」：往上找第一个让花括号净深度转正的行 */
+  const enclosingHead = (lines: string[], from: number): string => {
+    let depth = 0;
+    for (let i = from - 1; i >= 0; i -= 1) {
+      depth += (lines[i].match(/\{/g)?.length ?? 0) - (lines[i].match(/\}/g)?.length ?? 0);
+      if (depth > 0) return lines[i].split("{")[0].trim();
+    }
+    return "";
+  };
+
+  const INTERACTIVE_SELECTOR = /:hover|:active|:focus/;
+  /** 属性名自带状态后缀：`--ant-button-default-hover-bg` 这类本身就是交互态声明 */
+  const INTERACTIVE_PROP = /--?[a-z-]*(hover|active)/i;
+
+  it("没有任何常驻填充引用 --app-surface-active", () => {
+    const files = collectScssFiles(SRC_ROOT);
+    // 扫不到文件说明路径写错，别让它静默通过
+    expect(files.length).toBeGreaterThan(20);
+
+    const offenders: string[] = [];
+    let interactiveUses = 0;
+    for (const file of files) {
+      const lines = stripCommentsKeepLines(readFileSync(file, "utf8")).split("\n");
+      lines.forEach((line, index) => {
+        if (!line.includes("var(--app-surface-active)")) return;
+        const prop = line.split(":")[0].trim();
+        const head = enclosingHead(lines, index);
+        if (INTERACTIVE_SELECTOR.test(head) || INTERACTIVE_PROP.test(prop)) {
+          interactiveUses += 1;
+          return;
+        }
+        offenders.push(
+          `${path.relative(process.cwd(), file)}:${index + 1} → ${prop}` +
+            `（所在选择器 ${head || "?"} 不是交互态，静态中性底请用 --app-surface-alt）`,
+        );
+      });
+    }
+
+    expect(offenders).toEqual([]);
+    // 反向自证：token 仍在被真实使用 —— 否则「零违规」可能只是因为全仓没人用它
+    expect(interactiveUses).toBeGreaterThan(3);
+  });
+
+  it("数值依据：浅色主题下 surface-active 确实落在常驻色阶之外", () => {
+    // 三个浅色主题的常驻弱底阶梯：surface-alt → surface-hover → primary-weak，
+    // surface-active 必须严格高于最重的 primary-weak，才配得上「不在色阶里」这条结论。
+    // 暗色主题不参与：暗底需要更大的亮度差才可感知，hover/active 天然更重。
+    for (const theme of ["aurora", "cream", "mint"]) {
+      const block = THEME_BLOCKS.get(theme) ?? "";
+      expect(block.length).toBeGreaterThan(200);
+      const surface = readVar(block, "app-surface");
+      const heaviestStatic = ratio(readVar(block, "app-primary-weak"), surface);
+      const pressed = ratio(readVar(block, "app-surface-active"), surface);
+      expect(heaviestStatic).toBeLessThan(1.15);
+      expect(pressed).toBeGreaterThan(heaviestStatic);
+    }
+  });
+
+  /**
+   * 「差多少档」取决于**基面**，不取决于 token —— 这条用数值钉住。
+   *
+   * 底色 token 全是绝对色：同一支 `--app-surface-alt` 贴内容面只差一档（1.03~1.05），
+   * 贴纯白浮层就跨过 surface 一整层（1.06~1.09），比同屏兄弟块重一倍还丢色相。
+   * 这就是「浮层里必须改用 --app-surface」的数值依据；反过来贴页面底 `--app-bg`
+   * 又会几乎同色消失（1.01），故页面底的槽只能用 `--app-surface-hover`。
+   */
+  it("数值依据：alt 贴纯白浮层会跨过 surface 一整层，贴页面底则几乎消失", () => {
+    for (const theme of ["aurora", "cream", "mint"]) {
+      const block = THEME_BLOCKS.get(theme) ?? "";
+      expect(block.length).toBeGreaterThan(200);
+      const surface = readVar(block, "app-surface");
+      const alt = readVar(block, "app-surface-alt");
+      const elevated = readVar(block, "app-surface-elevated");
+      const bg = readVar(block, "app-bg");
+
+      const altOnSurface = ratio(alt, surface);
+      // 贴内容面 = 正确的一档
+      expect(altOnSurface).toBeLessThan(1.06);
+      // 贴纯白浮层 = 跨层，明显更重（浮层里的槽应改用 surface）
+      expect(ratio(alt, elevated)).toBeGreaterThan(altOnSurface + 0.02);
+      // 浮层里的槽改用 surface 后，正好是一档
+      expect(ratio(surface, elevated)).toBeLessThan(1.06);
+      // 贴页面底会几乎同色消失（页面底的槽只能用 surface-hover）
+      expect(ratio(alt, bg)).toBeLessThan(1.02);
+    }
+  });
+});
+
+/**
+ * 色块阶梯的两条硬规矩（都由真机反馈逼出来）：
+ *   1. 窗口 / 页面根不许铺 `--app-surface` —— 那是内容面。铺上去等于把「页面底」
+ *      抬高一整档，之后每张卡片都少一档、只剩描边撑着（先例：行囊窗口 `.cpk`
+ *      铺了 surface，导致 L1 模块 1.00、看板卡被迫借浮层 token）。
+ *   2. `--app-surface-elevated` 是**浮层专用**。流内卡片借它会与同排卡片不同重量
+ *      （先例：行囊看板卡）。全仓只有下面这张白名单里的文件（都是下拉 / 弹窗 /
+ *      抽屉 / 悬浮卡 / portal 浮层）允许用它 —— 新增一处就会红，逼一次复核。
+ */
+describe("色块阶梯：页面根铺 bg、浮层底只给浮层用", () => {
+  /** 取「最外层规则」的声明块：第一个 `{` 起、到同层 `}` 止之间的文本 */
+  const firstTopLevelBlock = (source: string): string => {
+    const lines = stripCommentsKeepLines(source).split("\n");
+    let depth = 0;
+    let started = false;
+    const picked: string[] = [];
+    for (const line of lines) {
+      if (started && depth === 1) {
+        picked.push(line);
+        if (/^\s*\}/.test(line)) break;
+      }
+      if (!started && depth === 0 && line.includes("{")) started = true;
+      depth += (line.match(/\{/g)?.length ?? 0) - (line.match(/\}/g)?.length ?? 0);
+      if (started && depth === 0) break;
+    }
+    return picked.join("\n");
+  };
+
+  /** 取某个具体规则的声明块：从 `needle`（含 `{`）到配对的 `}` */
+  const blockOf = (source: string, needle: string): string => {
+    const clean = stripCommentsKeepLines(source);
+    const from = clean.indexOf(needle);
+    if (from < 0) return "";
+    let depth = 0;
+    for (let i = from; i < clean.length; i += 1) {
+      if (clean[i] === "{") depth += 1;
+      else if (clean[i] === "}") {
+        depth -= 1;
+        if (depth === 0) return clean.slice(from, i + 1);
+      }
+    }
+    return "";
+  };
+
+  /** 允许铺 `--app-surface-elevated` 的文件：每一处都是浮层 */
+  const ELEVATED_ALLOWED = new Set([
+    "src/shared/components/CharacterPack/components/PackToast/index.scss", // 提示条
+    "src/shared/components/CharacterPack/styles/pack-common.scss", // .cpk-dropdown
+    "src/shared/components/ThemeSwitcher/index.scss", // 主题下拉
+    "src/windows/BaseWindow/pages/LedgerPage/components/LedgerTrendChart/index.scss", // 图表气泡
+    "src/windows/BaseWindow/pages/LedgerPage/components/QuickAddBar/index.scss", // 快捷记账浮层
+    "src/windows/NovelWindow/pages/NovelPage/components/ChapterJumpPalette/index.scss", // 跳章面板
+    "src/windows/NovelWindow/pages/NovelPage/components/ChapterTree/index.scss", // 拖拽随动 chip（portal）
+    "src/windows/NovelWindow/pages/NovelPage/components/EntityContextMenu/index.scss", // 右键菜单
+    "src/windows/NovelWindow/pages/NovelPage/components/HoverEntityCard/index.scss", // 悬浮卡
+    "src/windows/NovelWindow/pages/NovelPage/components/SettingsDrawer/index.scss", // 排版抽屉
+    "src/windows/NovelWindow/pages/NovelPage/components/SnapshotDrawer/index.scss", // 快照抽屉
+  ]);
+
+  it("窗口 / 页面根一律铺 --app-bg（铺 surface 会把页面底抬高一档）", () => {
+    // 页面骨架 + 行囊窗口内容根（后者的根不在 pages/ 下）
+    const roots = [
+      ...collectScssFiles(path.resolve(SRC_ROOT, "windows")).filter((f) =>
+        /[\\/]pages[\\/][^\\/]+[\\/]index\.scss$/.test(f),
+      ),
+      path.resolve(SRC_ROOT, "shared/components/CharacterPack/index.scss"),
+    ];
+    // 反向自证：扫不到页面骨架说明路径规则写错了
+    expect(roots.length).toBeGreaterThanOrEqual(8);
+
+    const offenders: string[] = [];
+    for (const file of roots) {
+      const block = firstTopLevelBlock(readFileSync(file, "utf8"));
+      expect(block.length).toBeGreaterThan(20);
+      const match = /background(?:-color)?:\s*([^;]+);/.exec(block);
+      // 不写也可以（窗口壳 window-shell.scss 已经铺了 bg），写了就必须是 bg
+      if (match && !match[1].includes("var(--app-bg)")) {
+        offenders.push(`${path.relative(process.cwd(), file)} → ${match[1].trim()}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("--app-surface-elevated 只出现在白名单里的浮层文件", () => {
+    const files = collectScssFiles(SRC_ROOT);
+    expect(files.length).toBeGreaterThan(20);
+
+    const offenders: string[] = [];
+    let usedFiles = 0;
+    for (const file of files) {
+      const source = stripComments(readFileSync(file, "utf8"));
+      if (!/background(?:-color)?:[^;]*var\(--app-surface-elevated/.test(source)) continue;
+      const rel = path.relative(process.cwd(), file).split(path.sep).join("/");
+      usedFiles += 1;
+      if (!ELEVATED_ALLOWED.has(rel)) offenders.push(rel);
+    }
+
+    expect(offenders).toEqual([]);
+    // 反向自证：白名单不能空转 —— 至少要有几个文件真的在用
+    expect(usedFiles).toBeGreaterThan(5);
+  });
+
+  it("浮层（elevated 白底）里的槽位一律用 --app-surface，不借 alt / antd 出厂灰", () => {
+    /** [文件, 规则开头（含 `{`）, 必须出现的声明] */
+    const recesses: Array<[string, string, string[]]> = [
+      // 设定中心弹窗里的「进位规则条」
+      [
+        "src/windows/NovelWindow/pages/NovelPage/components/SettingCenter/components/CategoryCard/index.scss",
+        "&__carry {",
+        ["background: var(--app-surface);"],
+      ],
+      // 行囊两个弹窗里的行 / 空态
+      [
+        "src/shared/components/CharacterPack/components/SourceDetailDrawer/index.scss",
+        "&__row {",
+        ["background: var(--app-surface);"],
+      ],
+      [
+        "src/shared/components/CharacterPack/components/RecordDrawer/index.scss",
+        "&__row {",
+        ["background: var(--app-surface);"],
+      ],
+      [
+        "src/shared/components/CharacterPack/components/RecordDrawer/index.scss",
+        "&__empty {",
+        ["background: var(--app-surface);"],
+      ],
+      [
+        "src/shared/components/CharacterPack/components/CategoryManager/index.scss",
+        ".cpk-catmgr__guide {",
+        ["background: var(--app-surface);"],
+      ],
+      // 排版抽屉：antd 组件级槽位必须显式指回（出厂是黑透明 / colorBgLayout）
+      [
+        "src/windows/NovelWindow/pages/NovelPage/components/SettingsDrawer/index.scss",
+        ".nv-setting {",
+        [
+          "--ant-slider-rail-bg: var(--app-surface);",
+          "--ant-segmented-track-bg: var(--app-surface);",
+        ],
+      ],
+    ];
+
+    for (const [rel, needle, required] of recesses) {
+      const block = blockOf(readFileSync(path.resolve(process.cwd(), rel), "utf8"), needle);
+      expect(block, `${rel} 找不到规则 ${needle}`).not.toBe("");
+      for (const decl of required) {
+        expect(block, `${rel} 的 ${needle} 缺少 ${decl}`).toContain(decl);
+      }
+      // 反面：浮层里的槽不许再退回「相对内容面」的 alt 档。
+      // 只看该规则**自身**的声明 —— 嵌套子规则（如 SourceDetailDrawer 的
+      // `&.is-base`，那是 surface 上的 alt，属合法的一档）不在检查范围内。
+      const own = block
+        .split("\n")
+        .reduce<{ depth: number; out: string[] }>(
+          (acc, line) => {
+            if (acc.depth <= 1) acc.out.push(line);
+            acc.depth += (line.match(/\{/g)?.length ?? 0) - (line.match(/\}/g)?.length ?? 0);
+            return acc;
+          },
+          { depth: 0, out: [] },
+        )
+        .out.join("\n");
+      expect(own, `${rel} 的 ${needle} 不该用 alt`).not.toContain(
+        "background: var(--app-surface-alt)",
+      );
+    }
+  });
+
+  it("antd 边框色与 --app-border 同步（缺省会落到中性灰 #d9d9d9）", () => {
+    THEME_LIST.forEach((theme) => {
+      const block = THEME_BLOCKS.get(theme.id) ?? "";
+      expect(block.length).toBeGreaterThan(200);
+      // --app-border-strong / -secondary 之类的兄弟变量不会误匹配（正则要求紧跟冒号）
+      expect(theme.antd.colorBorder).toBe(readVar(block, "app-border"));
+      expect(theme.antd.colorBorder).not.toBe("d9d9d9");
+    });
+  });
+
+  it("ThemeAntdTokens 的每个字段都被 ThemeProvider 透传（防加了 token 忘接线）", () => {
+    const provider = readFileSync(
+      path.resolve(process.cwd(), "src/shared/theme/ThemeProvider.tsx"),
+      "utf8",
+    );
+    const keys = Object.keys(THEME_LIST[0].antd);
+    // 反向自证：token 表非空，否则本用例空转
+    expect(keys.length).toBeGreaterThan(12);
+    keys.forEach((key) => {
+      expect(provider, `ThemeProvider 未透传 antd.${key}`).toContain(`antd.${key}`);
+    });
   });
 });
 

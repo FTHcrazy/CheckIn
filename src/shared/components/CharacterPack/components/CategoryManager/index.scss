@@ -59,7 +59,10 @@
   padding: 8px 10px;
   border: 1px solid var(--app-border);
   border-radius: 6px;
-  background: var(--app-surface-elevated);
+  /* 本组件是 antd Modal（浮层，底 = 纯白）：提示条要「弱」就只能弱到
+     `--app-surface` 这一档。曾经写的是 `--app-surface-elevated` —— 与弹窗
+     自身同色（1.00），提示条其实完全没显形、只剩一圈描边。 */
+  background: var(--app-surface);
   font-size: 12px;
   color: var(--app-text-secondary);
 }

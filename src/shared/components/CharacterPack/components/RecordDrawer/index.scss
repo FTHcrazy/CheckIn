@@ -15,7 +15,9 @@
     padding: 5px 7px;
     border: 1px solid var(--app-border);
     border-radius: var(--app-radius-item);
-    background: var(--app-surface-alt);
+    /* 本组件是 antd Modal（浮层）：块只回退一档 = `--app-surface`。
+       取 `--app-surface-alt` 会跨过 surface 一层，比同屏兄弟块重一倍。 */
+    background: var(--app-surface);
   }
 
   &__main {
@@ -103,7 +105,8 @@
     padding: 8px 10px;
     border: 1px dashed var(--app-border);
     border-radius: var(--app-radius-item);
-    background: var(--app-surface-alt);
+    /* 同 __row：浮层里的块只回退一档 */
+    background: var(--app-surface);
     font-size: 12px;
     line-height: 1.6;
     color: var(--app-text-secondary);

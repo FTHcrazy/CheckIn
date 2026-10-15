@@ -85,6 +85,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
           colorTextSecondary: meta.antd.colorTextSecondary,
           colorTextDisabled: meta.antd.colorTextDisabled,
           colorBorderSecondary: meta.antd.colorBorderSecondary,
+          colorBorder: meta.antd.colorBorder,
           colorSplit: meta.antd.colorSplit,
           colorSuccess: meta.antd.colorSuccess,
           colorWarning: meta.antd.colorWarning,

@@ -96,7 +96,8 @@
     --ant-button-default-active-bg: var(--app-primary-strong);
     --ant-button-default-active-color: var(--app-primary-contrast);
     --ant-button-default-active-border-color: var(--app-primary-strong);
-    --ant-button-default-bg-disabled: var(--app-surface-active);
+    /* 禁用态属于常驻：应该比常态更**弱**，而不是更深（原来是按下档 1.20） */
+    --ant-button-default-bg-disabled: var(--app-surface-alt);
     --ant-button-border-color-disabled: transparent;
     --ant-button-default-shadow: none;
 

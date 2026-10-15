@@ -74,7 +74,8 @@
     max-width: 280px;
     height: 6px;
     border-radius: var(--app-radius-pill);
-    background: var(--app-surface-active);
+    /* 轨道 = 槽，走 hover 档；按下档（cream 1.20）比填充还抢眼 */
+    background: var(--app-surface-hover);
     overflow: hidden;
   }
 

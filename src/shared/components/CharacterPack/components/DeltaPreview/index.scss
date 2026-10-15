@@ -97,7 +97,9 @@
 
 /*
  * 浮层容器：必须给实体描边。
- * 浅色主题下 `--app-surface-elevated` 与页面底色同为 #FFFFFF，只靠阴影分不开。
+ * `--app-surface-elevated` 是最贴近观察者的一层（浅色纯白、暗色提亮），
+ * 与内容面已有亮度差，但浮层往往压在深色文字上、背景又常被遮挡，
+ * 描边是它唯一稳定的边界，别只靠阴影。
  */
 .cpk-delta-pop .ant-popover-inner {
   border: 1px solid var(--app-border-strong);

@@ -47,8 +47,10 @@ interface PackDashboardProps {
  * 头部是设计稿 §8.6.1 钦定的概览带且还多带保存三态与工具，故重复的一方删看板这边；
  * 它唯一独有的「角色首字头像」上移到头部头像位（见 PackHeader）。
  *
- * 看板卡铺 `--app-surface-elevated` + `--app-shadow-card`（见 index.scss）：
- * 正文与 L1 模块壳都是 `--app-surface`，同色会整片糊在一起。
+ * 看板卡铺 `--app-surface` + `--app-shadow-card`（见 index.scss）：
+ * 与 L1 模块壳同档（都比窗口底 `--app-bg` 高一档），靠投影与「只读概览」的角色
+ * 与可编辑模块区分。**不要**再用 `--app-surface-elevated`（浮层专用，纯白）——
+ * 那会让同一窗口里出现两种卡片重量。
  */
 export default function PackDashboard({
   api,

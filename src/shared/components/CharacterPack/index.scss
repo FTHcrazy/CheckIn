@@ -7,6 +7,14 @@
  * 行囊已拆成专属窗口（PackWindow）：`.cpk` 由窗口内容区（`.window-shell__body`）
  * 铺满 —— flex: 1 占满全部可用空间，不再有内嵌面板时代的让位 / 浮层 / 速览。
  *
+ * ⚠️ 底色必须是 `--app-bg`（页面底），与打卡 / 备忘 / 资讯 / 书架 / 写作页同一档。
+ * 曾经铺的是 `--app-surface`（内容面），比全仓其它页面高了一整档，连出两个后果：
+ *   1. L1 模块壳同样铺 `--app-surface` → 与底同色（1.00），只剩描边撑着；
+ *   2. 看板卡为了「不能被糊掉」被迫升到 `--app-surface-elevated`（浮层专用 token），
+ *      于是同一个窗口里「看板卡 = 纯白、模块 = 白里带蓝」两种卡片重量并存。
+ * 真机反馈就是「红色框里的背景跟其余模块的对比度不一致，很割裂」。
+ * 判据与色阶规则见 `src/shared/styles/themes.scss` 文件头「常驻色块阶梯」。
+ *
  * 布局分三档（判据在 TS 侧 `packWidthTier`，这里只按 `data-tier` 出样式）：
  * - wide  ：双栏并排（左数值与状态 / 右装备类）
  * - mid   ：单栏纵向流，全部模块展开
@@ -19,7 +27,7 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--app-surface);
+  background: var(--app-bg);
   overflow: hidden;
 
   &__body {

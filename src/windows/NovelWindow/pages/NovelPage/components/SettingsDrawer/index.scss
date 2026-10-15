@@ -25,6 +25,25 @@
   transform: translateX(100%);
   transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1);
 
+  /* ── 组件槽位：滑块轨道 / 分段底 ──
+   * 这一层是浮层（底 = `--app-surface-elevated` 纯白），里面的「槽」只回退一档
+   * = `--app-surface`，与同面板的 chip 按钮（`--ant-button-default-bg`）同档。
+   *
+   * antd 出厂值两个都落在别处，在纯白浮层上会重一倍、还丢掉蓝味：
+   *   Slider    railBg = colorFillTertiary = rgba(0,0,0,.04) → 白底上退化成
+   *             中性灰 #f5f5f5（1.090），是全仓唯一的「无彩度」元素；
+   *   Segmented trackBg = colorBgLayout = `--app-bg`（页面底，比内容面还深一档）
+   *             → 1.089。
+   * 两者都比这里应有的 1.043 重一倍 —— 真机反馈的「面板里的底色跟其余模块
+   * 对比度不一致」。规则见 `src/shared/styles/themes.scss` 文件头「常驻色块阶梯」。
+   */
+  --ant-slider-rail-bg: var(--app-surface);
+  /* 轨道悬停只允许在常驻色阶内加深一档（alt 贴 surface），
+     不让 4px 的轨道靠交互态色反超常驻块 */
+  --ant-slider-rail-hover-bg: var(--app-surface-alt);
+  --ant-segmented-track-bg: var(--app-surface);
+  --ant-segmented-item-hover-bg: var(--app-surface-alt);
+
   &.is-open {
     transform: none;
   }

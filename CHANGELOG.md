@@ -61,7 +61,103 @@
   - 模块壳头部新增钉选按钮（`PushpinOutlined/Filled`），钉选态 `aria-pressed`
     + `is-pinned`；核心三块不参与钉选（永远展开）。
 
+- **弱提示补齐 T-05 / T-06 / T-07**（UI 需求稿 UI-06）：`guide-copy.ts` 里这三条文案
+  早已定义却一直没挂载，新手在对应场景里看不到任何提示。本次接入：
+  - T-05 大纲：挂在**全局第一个「梗概还空着」的章行**的「＋ 一句话梗概」上。只挑一行
+    是因为每行各包一层会产生十几个 400ms 定时器同时起跳，冒出多个气泡；虚拟化下这行
+    可能在可视区外，滚到时才出现 —— 可接受，总比同屏多个气泡好。
+  - T-06 标注层：包在高亮词悬浮卡（`HoverEntityCard`）自身 —— 它出现的地方正是
+    「高亮词能点」这句要解释的对象。
+  - T-07 排序确认：做成 `ReorderConfirmModal` 标题旁的**常驻说明图标**（气泡只弹一次，
+    图标一直点得到），解释「这个确认是防误触排序的，可在排版与偏好里关掉」。
+  - 三处都走新增的统一入口 `consumeGuideTooltip(id)`：先让位给正在播的 Tour
+    （让位时**不记账**，Tour 结束后同点位仍会弹），再走窗口 store 的**同步**判定 +
+    打字保护。不走 `GuideTooltip` 默认的异步落盘判定，是因为这三处宿主会**反复挂载**
+    （虚拟列表滚进滚出 / 悬浮卡随指针进出 / 弹窗可多次打开），每次挂载读一次
+    `novel_config` 是白花的 IPC。
+
 ### Changed
+
+- **色块阶梯改按「基面」记，浮层里的槽不再跨层**（真机反馈：蓝 / 黄主题下
+  「红框里的背景跟其余模块对比度不一致，很割裂」）：
+  底色 token 都是**绝对色**，「差多少档」取决于它贴在谁身上 —— 同一支
+  `--app-surface-alt` 贴内容面只差一档（aurora 1.027 / cream 1.052 / mint 1.030），
+  贴纯白浮层就**跨过 `surface` 一整层**（1.071 / 1.087 / 1.064），比同屏兄弟块重一倍
+  而且丢掉蓝 / 暖色相。三张真机截图分别是三处成因，用纯 Python 解 PNG 采样 + WCAG
+  对比度比定位（不靠肉眼比截图）：
+
+  - **行囊窗口底越级**（图1）：`.cpk` 铺的是 `--app-surface`，而全仓其它页面
+    （打卡 / 备忘 / 资讯 / 账本 / 书架 / 写作）一律 `--app-bg` —— 页面底被抬高
+    整整一档，于是 L1 模块壳与底**同色 1.00** 只剩描边撑着；为救场，看板卡
+    `.cpk-board__card` 借了 `--app-surface-elevated`，是**全仓唯一一处把浮层
+    token 用在流内卡片**上。真机 1080px 截图实测：看板卡 `#ffffff`、
+    下方模块 `#f5f7fd`，同窗口两种卡片重量。改为 `.cpk → --app-bg` +
+    看板卡 `→ --app-surface`，「谁浮谁沉」交给已有的 `--app-shadow-card`。
+  - **浮层里的块借了「相对内容面」的档**（图2）：`设定中心` 弹窗是浮层（底 =
+    纯白），里面的「进位规则条」却取 `--app-surface-alt`（1.071），而旁边「阶段」
+    容器取 `--app-surface`（1.043）—— 同一弹窗内两种档。同类一并修掉：
+    行囊的 `SourceDetailDrawer` / `RecordDrawer` 行与空态、`CategoryManager`
+    引导条（它原本取 `--app-surface-elevated`，与弹窗**同色 1.00**，其实完全
+    没显形、只剩一圈描边）。浮层里的槽一律改用 `--app-surface`。
+  - **antd 组件槽位从未主题化**（图3）：**修复前**全仓 `--ant-slider-*` / `--ant-segmented-*`
+    **零覆盖**，落到出厂值 —— `Slider.railBg = colorFillTertiary`（黑透明 4%，在
+    白浮层上退化成**无彩度**中性灰 `#f5f5f5`，实测 1.090，是全屏唯一没有色相的
+    元素）、`Segmented.trackBg = colorBgLayout`（= 页面底，比内容面还深一档，1.089）。
+    两者都比浮层应有的 1.043 重一倍。在 `.nv-setting` 作用域里显式指回
+    `--app-surface`（与同面板 chip 按钮的 `--ant-button-default-bg` 同档）。
+  - **antd `colorBorder` 补上主题化**：此前只给了 `colorBorderSecondary`，
+    输入框 / 选择器 / 默认按钮走的是 **antd 出厂中性灰 `#d9d9d9`**（真机图2 的
+    「＋ 新建」按钮实测到 `#f5f5f5` 底 + `#d9d9d9` 边，与同排输入框的 `#f9fafe`
+    不是一族）。四套主题全部补 `colorBorder = --app-border`，并在 ThemeProvider
+    接线。
+
+- **静态色块统一到「常驻色阶」，不再借交互态色**（真机反馈：新界面比其余界面"重"）：
+  `--app-surface-hover` / `--app-surface-active` 的本义是**相对所在面的交互态**（hover
+  加深、按下更深），不是色阶里的一档。全仓有 **14 处**把它们当常驻填充用，于是这些色块
+  直接跳过全站色阶 —— cream 下 `surface-active` 的对比度比是 **1.20**，而同主题最重的
+  常驻弱底 `--app-primary-weak` 才 1.13、凹槽 `--app-surface-alt` 只有 1.05。
+  - 最刺眼的一处是行囊看板 E 区「已展开的模块行」：整行铺 `surface-active`，几个模块
+    同时展开就是一列深棕（真机截图里占屏 10.5%，而基线界面最深的常驻块只有 1.04）。
+  - 同族对照更能说明这是系统性误用：`.cpk-bdg` 四个效果性质徽标里 `被`（灰）用 1.20，
+    另外三个用强调色弱底 ≈1.05；`.cpk-seg` 四个来源分段同理 —— **「灰」的那个永远
+    比兄弟深一档**。
+  - 按语义重新分派：常驻中性底 → `--app-surface-alt`（贴在 surface / elevated 上的槽）；
+    贴在页面底 `--app-bg` 上的槽（状态条 / 书架 Hero 的进度条轨道）→
+    `--app-surface-hover`（alt 与 bg 在浅色主题下近乎同色，会直接消失）；禁用态底 →
+    `--app-surface-alt` + `--app-border`（禁用应当更**弱**，不是更深）；凹槽小标签 /
+    页码输入底 / 抽屉来源行标记 → `--app-surface-alt`。
+  - **立规矩并加守卫**：`themes.test.ts` 新增「静态色块不用按下态色」——递归扫描全仓
+    SCSS，`var(--app-surface-active)` 只允许出现在最近祖先选择器带 `:hover / :active /
+    :focus` 的规则里，或写在属性名自带状态的 `--ant-*-hover-bg / *-active-bg` 上；配套
+    一条数值用例钉住「浅色主题下 `surface-active` 必须严格重于最重的常驻弱底」。规矩
+    同步写进 `themes.scss` 文件头；`themes.test.ts` 的 WCAG 工具提到模块级供两组守卫共用。
+
+- **浅色主题「内容面 vs 浮层」拉开一档**：三个浅色主题（aurora / cream / mint）的
+  `--app-surface` 与 `--app-surface-elevated` 此前都是 `#ffffff` —— 看板卡、模块壳
+  与下拉 / 弹窗只能靠 1px 描边分家，「浮层压在内容之上」这层关系在浅色下完全看不见
+  （只有暗色 midnight 分了层）。
+  - 改法不是把浮层调暗（那会连累所有下拉 / 弹窗的纯白观感），而是给**内容面**
+    `--app-surface` 轻染主题色（aurora `#f9fafe` / cream `#fdfbf7` / mint `#f9fcfa`），
+    并同步下调 `surface-alt` / `header-bg` / `sidebar-bg` / `input-bg`，保持既有
+    「比 surface 再退一档」的凹槽语义；`elevated` 保持纯白。浅色下的层次方向是
+    「越低越深」：elevated(纯白) > surface > alt/header > bg。
+  - antd 侧 `colorBgContainer` 逐值跟随 `--app-surface`（否则 antd 组件底色与应用
+    自绘面不一致，边界又糊回去）；`colorBgElevated` / `colorBgLayout` 不动。
+  - **分层不变量数值化**：新增 5 条守卫（`themes.test.ts`「面板分层」），用 WCAG
+    相对亮度算对比度比 —— elevated vs surface ≥ 1.025、bg / surface-alt 对 surface
+    ≥ 1.02、顶栏 chip 默认→hover ≥ 1.05、hover→激活 ≥ 1.03。人眼比对截图判不准这种
+    3% 的差，数值判据才挡得住「谁把 surface 改回纯白」的回潮。
+
+- **顶栏图标激活态补主色内描边**（UI 需求稿 UI-07 收尾）：三档层次（默认 chip 底 /
+  hover 加深 / 持久激活主色弱底）本已齐全，但默认底与主色弱底都是「极浅底」——
+  aurora 下两者亮度只差约 1.2%，激活与否只能靠图标换色分辨，整排扫过去仍然糊。
+  - `.is-on` 上补 `--ant-button-default-shadow: inset 0 0 0 1px var(--app-primary)`：
+    1px 内描边是不依赖亮度的几何信号。走这个变量而不是直接写 `box-shadow` 属性，
+    是因为 antd 只在 outlined / solid / dashed 变体上把它落成 `box-shadow`，
+    且**不分状态**，hover / active 也不会掉。
+  - 4 颗开关型图标（章节栏 / 支撑面板 / 历史快照 / 排版偏好）补 `aria-pressed`，
+    屏幕阅读器能听出当前态；行囊与小说设定是唤起型入口，语义上没有「开 / 关」，
+    不加该属性。
 
 - **「今日」字数读数口径统一**（UI 需求稿 UI-08）：同一指标此前在三处各写各的
   术语与取值 —— 书架统计条卡「今日新增（字）」、继续写作 Hero「今日 N / M 字」、
@@ -98,6 +194,14 @@
   这类读数请另起字段并显式命名，不要再挂回今日口径。
 
 ### Fixed
+
+- **工具 Tab 的「规划中」占位卡点了没反应**（UI 需求稿 UI-09）：右栏「工具」Tab 的
+  「人物关系网络」「架空地图」两张卡此前是 `<div>` —— 没有按钮语义，键盘 Tab 到不了，
+  鼠标点了也一片安静，与旁边的「起名器」摆在一起像是坏了。改为 antd `Button`
+  （虚线描边 + 显式弱化配色），点击给一次 info toast
+  （「「人物关系网络」还在规划中，上线后会出现在这里」），**不触发**既有的工具回调。
+  - 弱化不再靠整卡 `opacity: .68`（那会把文字一起糊掉、对比度掉到读不清），改为分别
+    下调前景 / 底色 / 描边三色，文字保持可读。
 
 - **编辑器状态条里的「今日」自相矛盾**：状态条显示的是**会话内**计数（`todayAdded`），
   紧挨着的今日目标进度条却按今日累计（`todayTotal`）走 —— 打开编辑器时左边「今日 +0」、
@@ -158,6 +262,27 @@
 
 ### Tests
 
+- 色块阶梯新增 **4 条守卫**（`themes.test.ts` 18 → **22 例**），并逐条做**变异测试**
+  （改坏必红，证明非空转）：
+  - 「窗口 / 页面根一律铺 `--app-bg`」：扫 `src/windows/*/pages/*/index.scss`
+    （9 个页面骨架）+ 行囊窗口内容根，取**最外层规则**的 `background` 断言 ——
+    不写可以（窗口壳已铺 bg），写了就必须是 bg。**M1**（行囊 `.cpk` 退回
+    `--app-surface`）→ RED。
+  - 「`--app-surface-elevated` 只出现在白名单里的浮层文件」：11 个文件白名单
+    （下拉 / 弹窗 / 抽屉 / 悬浮卡 / portal 浮层）+ 反向自证「至少 6 个文件真在用」。
+    **M2**（看板卡退回 elevated）→ RED。防的是本轮行囊看板那类「流内卡片借浮层
+    token」的复发。
+  - 「浮层里的槽一律用 `--app-surface`」：6 处定点断言（进位规则条 / 两个弹窗
+    的行与空态 / 分类引导条 / `.nv-setting` 的两个组件槽位 token），并检查该规则
+    **自身**声明里不得出现 `background: var(--app-surface-alt)`（嵌套子规则如
+    `&.is-base` 属 surface 上的合法一档，排除在外）。**M3**（进位规则条退回 alt）、
+    **M5**（滑块轨道退回 antd 出厂 `#f5f5f5`）→ RED。
+  - 「antd 边框色与 `--app-border` 同步」+「ThemeAntdTokens 每个字段都被
+    ThemeProvider 透传」：后者防「加了 token 忘接线」这类静默失效。
+    **M4**（aurora 去掉 `colorBorder`）→ RED。
+  - 数值依据用例补第二条：同一支 `alt` 贴浮层 > 贴内容面 + 0.02、`surface` 贴浮层
+    < 1.06、`alt` 贴 `bg` < 1.02 —— 把「按基面记」这条结论钉成数字。
+
 - `usePackData.test.tsx` 补 TX-01（境界净变化才提交 / 随保存同事务 / 未变不带）与
   TX-13（保存中卸载不 flush 旧草稿）回归用例；`beforeEach` 加 `mockReset()` 修复
   `mockResolvedValueOnce` 队列跨用例泄漏。全套 25 文件 500 用例通过。
@@ -181,6 +306,25 @@
   **全仓扫描「今日新增」字面量只允许出现在真相源模块**（防第四次分叉）；
   断言三处都不用 `toLocaleString`。`useNovelEditorStore.test.ts` 随字段删除调整
   （断言由等效的 `todayTotal` 承担，另有一例改写为「水合只写 todayTotal、不动恢复横幅开关」）。
+- 浅色分层 / UI-06 / UI-07 / UI-09 用例：`themes.test.ts` 新增「面板分层」5 条（亮度 +
+  对比度比数值判据，含 antd `colorBgContainer / colorBgElevated / colorBgLayout` 与
+  token 逐值一致）；`novel-ui-kit.test.ts` 新增「顶栏图标三档层次」（读编译产物，取
+  **最后一次** `--ant-button-*` 声明再比对 —— 清零点 mixin 自己就会写一行
+  `--ant-button-default-bg: transparent`，用 `toContain` 会被它糊弄过去）；
+  新建 `NovelTopBar/index.test.tsx`（六图标结构契约 + `aria-pressed` + 回调互不串扰）、
+  `useGuideStore.test.ts`（T-05/06/07 消费入口：只吃一次 / 点位互不影响 / Tour 在播时
+  让位且不记账 / 打字保护期内不记账）、`ToolLauncher/index.test.tsx`（三卡皆按钮 +
+  占位 toast 不触发既有回调）；`OutlinePanel/index.test.tsx` 补 T-05「全屏只弹一个气泡」
+  （含「多章都空着」与「都填满」两端）；`guide-guard.test.ts` 补三处挂载点 + 统一消费
+  入口 + `guide-copy.ts` 文案同源的源码路径断言。
+- 本轮变异验证（证明用例非 vacuous）：浅色 `surface` 改回 `#ffffff` → 2 例 RED；
+  antd `colorBgContainer` 改回 `#ffffff` → 1 例 RED；T-05 改成「每行都挂」→ 守卫 RED；
+  T-06 去掉 `consume` 回调 → 守卫 RED。还原后全绿。
+- 静态色块守卫（`themes.test.ts`）自带反向自证：断言扫描到的 SCSS 文件数 > 20、
+  交互态里 `--app-surface-active` 的真实使用处 > 3（否则「零违规」可能只是因为全仓
+  没人用它）。变异：把行囊展开行改回 `surface-active` → RED（且报错行号与真实文件一致，
+  因为新增的 `stripCommentsKeepLines` 按原行数换空行）；把 cream 的 `--app-primary-weak`
+  调深到越过 1.15 → 数值用例 RED。还原后 16/16 GREEN。
 
 ## [1.44.1] - 2026-10-15
 

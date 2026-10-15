@@ -67,7 +67,11 @@
     gap: 6px;
     padding: 8px 10px;
     border-radius: var(--app-radius-chip);
-    background: var(--app-surface-alt);
+    /* 设定中心是弹窗（浮层，底 = `--app-surface-elevated` 纯白）：这里的块
+       回退一档就是 `--app-surface`。曾经取 `--app-surface-alt`（相对内容面的档），
+       贴在白浮层上跨过了 surface 一层 → 1.071，比同屏「阶段容器」(surface 1.043)
+       重一倍，真机反馈「红框里的底色跟其余模块对比度不一致」。 */
+    background: var(--app-surface);
   }
 
   &__carry-row {

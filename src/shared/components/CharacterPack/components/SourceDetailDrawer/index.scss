@@ -15,11 +15,17 @@
     padding: 4px 7px;
     border: 1px solid var(--app-border);
     border-radius: var(--app-radius-item);
-    background: var(--app-surface-alt);
+    /* 本组件是 antd Modal（浮层，底 = `--app-surface-elevated`）：里面的块
+       回退一档就是 `--app-surface`，不能再往下取 `--app-surface-alt` —— 那是
+       「相对内容面」的档位，直接贴白浮层会跨过 surface 一层，比同屏兄弟块重一倍
+       （aurora 1.071 vs 1.043），而且丢掉蓝味。规则见 themes.scss 文件头。 */
+    background: var(--app-surface);
     font-size: 12px;
 
+    /* 基础值行是这张列表的「锚」：在行内再凹一档（alt 贴 surface，1.03）——
+       surface 上的 alt 才是合法的一档，与「阶段容器铺 surface、斑马行铺 alt」同法 */
     &.is-base {
-      background: var(--app-surface-active);
+      background: var(--app-surface-alt);
     }
 
     &.is-sustained {

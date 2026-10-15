@@ -278,6 +278,33 @@
 7. **图标**：自带造型按钮须补清零点 mixin（`pack-ui-kit.test.ts` / `novel-ui-kit.test.ts` 守卫）。
 8. **可访问性**：阶梯 chip / 层号条键盘可达，当前项 `aria-current`；Tour 步骤卡片键盘可达。
 9. **文案同源**：引导类文案以 PRD §7.2 / §7.3 表格为唯一事实源（`guide-copy.ts`），与帮助文档 `docs/novel-onboarding-guide.html` 同源维护。
+10. **常驻色块阶梯**（2026-10-15 补，同日按真机反馈扩写）：底色 token 都是**绝对色**，
+    「差多少档」取决于**贴在谁身上** —— 同一支 `--app-surface-alt` 贴内容面只差 1.03，
+    贴纯白浮层就跨过 surface 一整层变成 1.07。所以按**基面**记：
+
+    | 基面 | 「块」= 高一档 | 「槽」= 低一档 |
+    |---|---|---|
+    | 页面底 `--app-bg` | `--app-surface` 1.042~1.044 | `--app-surface-hover` 1.035~1.052（alt 与 bg 近乎同色会消失） |
+    | 内容面 `--app-surface` | `--app-surface-elevated`（**仅浮层**：下拉/弹窗/抽屉/悬浮卡） | `--app-surface-alt` 1.027~1.052 |
+    | 浮层 `--app-surface-elevated` | ——（已是最贴观察者） | `--app-surface` 1.033~1.043 |
+
+    语义上限 `--app-primary-weak`（1.094~1.135）=「选中 / 当前 / 已展开」，常驻块不许超它。
+    派生三条硬规矩（都是真机反馈「跟其它模块不是一个风格」逼出来的）：
+    ① **窗口 / 页面根一律铺 `--app-bg`**，不许铺 `--app-surface` —— 铺 surface 等于把页面底
+    抬高一整档，之后每张卡片都少一档只剩描边，还逼着某些卡片越级去借浮层 token（先例：
+    行囊 `.cpk`）；② **`--app-surface-alt` 只允许贴在 `--app-surface` 上**，贴浮层会跨层、
+    比同屏兄弟块重一倍且丢色相，浮层里的槽一律用 `--app-surface`；③ **浮层里的组件级槽位
+    必须显式指回**：antd 出厂 `Slider.railBg = colorFillTertiary`（黑透明 4%，在白浮层上退化成
+    **无彩度**中性灰 `#f5f5f5` = 1.090）、`Segmented.trackBg = colorBgLayout`（= 页面底 = 1.089），
+    都比浮层应有的 1.043 重一倍（先例：`.nv-setting` 补 `--ant-slider-rail-bg` /
+    `--ant-segmented-track-bg`）。
+    ⚠️ `--app-surface-hover` 与 `--app-surface-active` 的本义是**交互态**，**不得**当常驻
+    填充（cream 下 `surface-active` 达 1.20，越过全站最重的常驻弱底，大面积铺开整屏就重
+    一档）；禁用态底算常驻，应当更**弱**而不是更深。
+    ⚠️ antd 的 `colorBorder` **必须显式主题化**（= `--app-border`）：缺省会落到出厂的中性灰
+    `#d9d9d9`，而四套主题的内容面都是带色相的，一个无彩度的灰边框同屏就很割裂。
+    守卫：`themes.test.ts`「静态色块不用按下态色」+「色块阶梯：页面根铺 bg、浮层底只给浮层用」
+    （全仓扫描 + 数值依据 + 白名单 + 定点断言，共 6 条）。
 
 ---
 
@@ -295,3 +322,32 @@
 | UI-08 | PX-08 | TX-02（字数口径） | 口径修正后同步 |
 | UI-09 | PX-09 | — | 占位交互规范 |
 | UI-10 | PX-10 | — | 纯重构，不改行为 |
+
+---
+
+## 7. 实施进度
+
+> 更新于 2026-10-15。**只看这一节就能知道还剩什么**；细节见 CHANGELOG `[Unreleased]`。
+
+| 编号 | 状态 | 落地位置（关键） | 备注 |
+|---|---|---|---|
+| UI-01 | ✅ 已交付 | `CharacterPack/components/PackDashboard/`、`pack-layout.ts` | 五区看板；A 区身份卡因与头部重复已删（改动计数上移头部） |
+| UI-02 | ✅ 已交付 | `RealmModule/`、`pack-realm.ts` | 阶 + 小层直选，阈值抽纯函数 |
+| UI-03 | ✅ 已交付 | `RealmModule` / `AttributesModule` / `StatusModule` / `PackHeader`、`shared/novel/open-setting-center.ts` | 含跨窗频道 `novel-open-setting-center`（UI-03a） |
+| UI-04 | ✅ 已交付 | `pack-layout.ts`、`PackModuleShell/` | 摘要行 → 展开 → 钉选 |
+| UI-05 | ✅ 已交付 | `SettingCenter/`、`CategoryList/` | 去术语化：「等级序列」「阶梯」 |
+| UI-06 | ✅ 已交付 | `OutlinePanel`、`HoverEntityCard`、`ReorderConfirmModal`、`useGuideStore.consumeGuideTooltip` | T-05 只挂第一个空梗概章行；T-07 为常驻说明图标 |
+| UI-07 | ✅ 已交付 | `NovelTopBar/index.tsx(+scss)` | 三档层次 + 激活态**主色 1px 内描边** + 4 处 `aria-pressed` |
+| UI-08 | ✅ 已交付 | `shared/novel/today-stats.ts` | 术语 / 取值 / 格式三处统一；PRD 口径拍板为**净增** |
+| UI-09 | ✅ 已交付 | `SupportPanel/components/ToolLauncher/` | 占位卡改真按钮 + info toast |
+| UI-10 | ✅ 已交付 | `SettingCenter/` 子组件目录 + `hooks/useSettingCenter.ts` | 纯重构，对外契约零变化 |
+
+**计划外但已落地（同批）**：浅色主题「内容面 vs 浮层」分层补齐（`themes.scss` +
+`theme/themes.ts`）。三个浅色主题原先 `surface` 与 `surface-elevated` 同为 `#ffffff`，
+浮层关系不可见；现给 surface 轻染主题色、同步下调 alt/header/sidebar/input，
+`elevated` 保持纯白，并加了 WCAG 亮度判据的不变量守卫。
+
+**剩余待办**：本稿 10 项 UI 需求已全部落地。后续若继续，见
+`docs/novel-audit-report.md` 第五部分的 TX 阶段（退出可靠性 / 数据完整性）与
+R27 人物关系网络、R28 架空地图的功能本体（当前仅有占位卡）。
+

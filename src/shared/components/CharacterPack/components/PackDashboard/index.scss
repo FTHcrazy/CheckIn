@@ -9,10 +9,12 @@
  * ⚠️ 没有身份卡：它与头部 `.cpk-head` 逐项重复（名字 / 境界 / 绑定态 /
  * 改动计数），2026-10 已删，见 index.tsx 顶部的说明。
  *
- * ⚠️ 底色必须比正文区高一层：正文 `.cpk__body` 与 L1 的 `.cpk-mod` 都已铺
- * `--app-surface`，看板卡若同色就彻底糊在一起（只剩描边）。这里用
- * `--app-surface-elevated` + `--app-shadow-card`，做到「看板浮在正文之上、
- * L1 模块沉在正文之中」—— 四主题（themes.test）下都靠变量自适配，不新增色。
+ * ⚠️ 底色是 `--app-surface`（内容面），与 L1 的 `.cpk-mod` 同档。
+ * 曾经这里写的是 `--app-surface-elevated` —— 那是**浮层专用** token（纯白），
+ * 全仓只有这一处拿它当流内卡片用，因为当时窗口底误铺了 `--app-surface`，
+ * 卡片同色会糊在一起。修窗口底为 `--app-bg` 之后（见 ../index.scss），
+ * 看板卡与模块卡一起落在「比页面底高一档」这一层，「谁浮谁沉」改由
+ * `--app-shadow-card` 承担 —— 真机反馈的「红框里跟其它模块对比度不一致」由此消除。
  */
 .cpk-board {
   display: flex;
@@ -23,7 +25,7 @@
     padding: 10px 12px;
     border: 1px solid var(--app-border);
     border-radius: var(--app-radius-panel);
-    background: var(--app-surface-elevated);
+    background: var(--app-surface);
     box-shadow: var(--app-shadow-card);
     display: flex;
     flex-direction: column;
@@ -220,8 +222,12 @@
       background: var(--app-surface-hover);
     }
 
+    /* 展开态填充走"凹槽"档（surface-alt）而不是按下档（surface-active）：
+       按下档在 cream 下比内容面重 1.20，是常驻弱底里最重的一档（primary-weak
+       才 1.13），整列铺开就是一块深棕 —— 真机上一眼就和其余界面不是一个重量。
+       展开与否另有箭头方向承担，底色只需给一个"这行的槽"的暗示。 */
     &.is-open {
-      background: var(--app-surface-active);
+      background: var(--app-surface-alt);
     }
   }
 

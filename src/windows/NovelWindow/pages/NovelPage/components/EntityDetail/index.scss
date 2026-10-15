@@ -247,8 +247,8 @@
     --ant-button-default-active-color: var(--app-primary-contrast);
     /* 禁用态：antd 只把 bg / border 暴露成组件级变量，文字色走它自己的
        --ant-color-text-disabled（ThemeProvider 已映射到 --app-text-disabled） */
-    --ant-button-default-bg-disabled: var(--app-surface-active);
-    --ant-button-border-color-disabled: var(--app-surface-active);
+    --ant-button-default-bg-disabled: var(--app-surface-alt);
+    --ant-button-border-color-disabled: var(--app-border);
   }
 
   &__cancel.ant-btn {

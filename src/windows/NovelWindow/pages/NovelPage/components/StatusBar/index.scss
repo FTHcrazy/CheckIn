@@ -87,7 +87,10 @@
     width: 96px;
     height: 4px;
     border-radius: var(--app-radius-pill);
-    background: var(--app-surface-active);
+    /* 轨道是"槽"不是"按下态"。这条贴在页面底 --app-bg 上，而 --app-surface-alt
+       与 bg 几乎同色（cream 下 #faf5ea vs #faf6ef）会直接消失 → 用 hover 档。
+       原来的按下档（1.20）比填充色还抢眼，轨道反而成了主角。 */
+    background: var(--app-surface-hover);
     overflow: hidden;
   }
 
