@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { SettingCategory } from "../../types";
+import type { SettingCategory } from "@/shared/novel/setting-types";
 import SettingCenter from "./index";
 
 /**
@@ -94,6 +94,9 @@ const buildProps = (over: Partial<Parameters<typeof SettingCenter>[0]> = {}) => 
 describe("设定中心", () => {
   afterEach(() => {
     cleanup();
+    // antd Modal 经 portal 挂到 document.body，RTL 的 cleanup 收不走，
+    // 不清会让下一条用例读到上一条残留的浮层
+    document.body.innerHTML = "";
   });
 
   it("focusCategoryId 直接落到指定分类（从角色卡「管理境界」进来）", () => {
@@ -303,5 +306,212 @@ describe("设定中心", () => {
     fireEvent.click(screen.getByText("模板库"));
     fireEvent.click(screen.getByText("修仙 · 经典九层").closest(".nv-sc__lib-row")!.querySelector("button")!);
     expect(onApplyPreset).toHaveBeenCalledWith("preset-xiuxian-9");
+  });
+});
+
+/**
+ * `source` 分支（T03）
+ *
+ * 同一个组件被本书设定中心与全局设定中心窗口共用，靠 `source` 切形态：
+ * - book（缺省）：原行为，标题带作品名、提示语本书口径；
+ * - global：标题「全局设定中心 · 跨书共享」、分类行带「N 部书引用」徽标、
+ *   动作区去掉绑 workId 的「另存为模板」。
+ *
+ * 只断言**呈现差异**，不碰回调契约（拉哪份数据由调用方决定）。
+ */
+describe("source 分支（book / global）", () => {
+  afterEach(() => {
+    cleanup();
+    document.body.innerHTML = "";
+  });
+
+  it("source=book（缺省）：标题带作品名、提示语本书口径、无引用计数徽标", () => {
+    render(<SettingCenter {...buildProps()} />);
+    expect(screen.getByText("设定中心")).toBeInTheDocument();
+    expect(
+      screen.getByText("《九霄剑途》", { selector: ".nv-sc__pill" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/设定按作品独立存储/)).toBeInTheDocument();
+    expect(screen.queryByText("部书引用")).toBeNull();
+    expect(screen.queryByText("暂无引用")).toBeNull();
+  });
+
+  it("source=global：标题改跨书共享、提示语全局口径、分类行带引用计数徽标", () => {
+    render(
+      <SettingCenter
+        {...buildProps({
+          source: "global",
+          settings: [{ ...realm, refCount: 3 }, { ...custom, refCount: 0 }],
+        })}
+      />,
+    );
+    expect(screen.getByText("全局设定中心")).toBeInTheDocument();
+    expect(
+      screen.getByText("跨书共享", { selector: ".nv-sc__pill" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/改动会同步到仍引用它的书/)).toBeInTheDocument();
+    // 聚焦分类是第一个（realm，refCount=3）
+    expect(screen.getByText("3 部书引用")).toBeInTheDocument();
+    // 「已联动角色境界」是本书域概念，全局库不显示
+    expect(screen.queryByText("已联动角色境界")).toBeNull();
+  });
+
+  it("source=global：动作区去掉「另存为模板」，导出改为整库口径", async () => {
+    render(<SettingCenter {...buildProps({ source: "global" })} />);
+    fireEvent.click(screen.getByLabelText("更多设定操作"));
+    expect(await screen.findByText(/导出为 JSON（全部）/)).toBeInTheDocument();
+    expect(screen.queryByText(/另存为模板/)).toBeNull();
+  });
+
+  it("source=book（缺省）：动作区保留「另存为模板」", async () => {
+    render(<SettingCenter {...buildProps()} />);
+    fireEvent.click(screen.getByLabelText("更多设定操作"));
+    expect(await screen.findByText(/另存为模板/)).toBeInTheDocument();
+    expect(screen.getByText(/导出为 JSON（本分类）/)).toBeInTheDocument();
+  });
+});
+
+/**
+ * 本书接线（T04：从全局库选择 / 放置到全局 / 引用态只读）
+ *
+ * 引用是「只读 + 自动同步」的镜像（D2）：UI 隐藏/禁用写入口只是降低误触，
+ * **主进程才是权威**。这里钉的是呈现与回调契约 —— 入口出现条件、
+ * 引用态徽标、只读禁用、上架的冲突二次确认。
+ */
+describe("本书接线（T04：引用 / 上架）", () => {
+  afterEach(() => {
+    cleanup();
+    document.body.innerHTML = "";
+  });
+
+  const globalRealm: SettingCategory = {
+    ...realm,
+    id: "g1",
+    workId: "",
+    name: "通用修仙体系",
+    refCount: 2,
+  };
+
+  const globalCustom: SettingCategory = {
+    ...custom,
+    id: "g2",
+    workId: "",
+    name: "丹药品阶",
+    refCount: 0,
+  };
+
+  it("source=book：提供回调时出现「从全局库选择」与「放置到全局」", () => {
+    render(
+      <SettingCenter
+        {...buildProps({
+          globalCategories: [globalRealm],
+          onRefreshGlobalCategories: vi.fn(),
+          onReferenceGlobal: vi.fn().mockResolvedValue(true),
+          onPublishGlobal: vi.fn().mockResolvedValue({ ok: true }),
+        })}
+      />,
+    );
+    expect(screen.getByText("从全局库选择")).toBeInTheDocument();
+    expect(screen.getByText("放置到全局")).toBeInTheDocument();
+  });
+
+  it("未提供引用回调时不渲染「从全局库选择」（不给够不着的按钮）", () => {
+    render(<SettingCenter {...buildProps()} />);
+    expect(screen.queryByText("从全局库选择")).toBeNull();
+  });
+
+  it("source=global：本书域的引用 / 上架入口都不渲染", () => {
+    render(
+      <SettingCenter
+        {...buildProps({
+          source: "global",
+          globalCategories: [globalRealm],
+          onReferenceGlobal: vi.fn().mockResolvedValue(true),
+          onPublishGlobal: vi.fn().mockResolvedValue({ ok: true }),
+        })}
+      />,
+    );
+    expect(screen.queryByText("从全局库选择")).toBeNull();
+    expect(screen.queryByText("放置到全局")).toBeNull();
+  });
+
+  it("引用态分类：显示「全局 · 自动同步」徽标，编辑 / 删除禁用、行内写入口收走", () => {
+    const imported: SettingCategory = {
+      ...realm,
+      id: "c9",
+      name: "通用体系",
+      sourceGlobalId: "g1",
+    };
+    render(<SettingCenter {...buildProps({ settings: [imported] })} />);
+    expect(screen.getByText("全局 · 自动同步")).toBeInTheDocument();
+    expect(screen.getByText("编辑").closest("button")!.disabled).toBe(true);
+    expect(screen.getByText("删除").closest("button")!.disabled).toBe(true);
+    // 引用项不给行内「⋯」写入口；等级行「操作」列改显只读（每阶一个）
+    expect(screen.queryByLabelText("更多操作")).toBeNull();
+    expect(screen.getAllByText("只读")).toHaveLength(imported.levels.length);
+  });
+
+  it("固化副本：显示「原全局项已删除，已转为本书副本」提示（可继续当普通分类编辑）", () => {
+    const detached: SettingCategory = {
+      ...realm,
+      id: "c8",
+      name: "旧体系",
+      detachedFromName: "旧全局体系",
+    };
+    render(<SettingCenter {...buildProps({ settings: [detached] })} />);
+    expect(
+      screen.getByText("原全局项已删除，已转为本书副本"),
+    ).toBeInTheDocument();
+    // 固化后是普通分类：编辑入口可用
+    expect(screen.getByText("编辑").closest("button")!.disabled).toBe(false);
+  });
+
+  it("从全局库选择：列出全局库（含引用计数）+ U6 降级提示，勾选后「加入本书」逐个建立引用", async () => {
+    const onReferenceGlobal = vi.fn().mockResolvedValue(true);
+    render(
+      <SettingCenter
+        {...buildProps({
+          globalCategories: [globalRealm, globalCustom],
+          onRefreshGlobalCategories: vi.fn(),
+          onReferenceGlobal,
+        })}
+      />,
+    );
+    fireEvent.click(screen.getByText("从全局库选择"));
+    // 选择器列出全局分类 + 引用计数
+    expect(await screen.findByText("通用修仙体系")).toBeInTheDocument();
+    expect(screen.getByText("2 部书引用")).toBeInTheDocument();
+    expect(screen.getByText("暂无引用")).toBeInTheDocument();
+    // U6：本书已有境界体系（默认 settings 含 realm）⇒ 行内提示降级为普通分类
+    expect(
+      screen.getByText("本书已有境界体系，已作为普通分类引入"),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole("checkbox")[0]);
+    clickButton("加入本书");
+    expect(onReferenceGlobal).toHaveBeenCalledWith("g1");
+  });
+
+  it("放置到全局：先探同名（cancel），无同名即上架并提示成功", async () => {
+    const onPublishGlobal = vi.fn().mockResolvedValue({ ok: true });
+    const onNotify = vi.fn();
+    render(<SettingCenter {...buildProps({ onPublishGlobal, onNotify })} />);
+    fireEvent.click(screen.getByText("放置到全局"));
+    expect(onPublishGlobal).toHaveBeenNthCalledWith(1, "c1", "cancel");
+    await vi.waitFor(() =>
+      expect(onNotify).toHaveBeenCalledWith("已上架到全局设定中心", "success"),
+    );
+  });
+
+  it("放置到全局命中同名：弹冲突确认，默认「新建为副本」以 duplicate 重调", async () => {
+    const onPublishGlobal = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, conflict: true })
+      .mockResolvedValueOnce({ ok: true });
+    render(<SettingCenter {...buildProps({ onPublishGlobal, onNotify: vi.fn() })} />);
+    fireEvent.click(screen.getByText("放置到全局"));
+    expect(await screen.findByText("全局库已有同名设定")).toBeInTheDocument();
+    clickButton("新建为副本");
+    expect(onPublishGlobal).toHaveBeenNthCalledWith(2, "c1", "duplicate");
   });
 });

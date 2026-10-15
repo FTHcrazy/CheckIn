@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { Button, Input, Segmented, Slider, Switch } from "antd";
 import {
   CHAPTER_SUFFIX_OPTIONS,
@@ -40,18 +41,45 @@ export default function SettingsDrawer({
   onClose,
 }: SettingsDrawerProps) {
   const { metaOf, filterOrder } = useEntityTypeMeta();
+  const rootRef = useRef<HTMLElement>(null);
+
+  /**
+   * 「点抽屉外部关闭」——文档级 `mousedown` 分流（REQ-050 修法 ③）。
+   *
+   * 原实现是一层 `position:absolute; inset:0` 的**透明捕获层**（`.nv-setting__mask`）：
+   * 用「遮挡换关闭」，与 antd Modal / Tour 的 mask 是同一类模式，是 REQ-050
+   * 「第一击被关闭路径消耗」的回归来源；且它几何上只铺满 stage，够不到顶栏。
+   *
+   * 改法：落点在抽屉本体内 → 不处理；否则调 `onClose()` 关闭抽屉，但**绝不
+   * `preventDefault` / `stopPropagation`** —— 让同一次点击继续正常派发给被点元素
+   * （顶栏按钮 / 正文 / 支撑面板），于是「关抽屉」与「触发被点元素」在同一次点击
+   * 里同时发生，不再需要第二击。
+   *
+   * 例外：触发本抽屉的那颗按钮（顶栏「排版与偏好」）打了
+   * `data-drawer-keep-open="settings"`，它自带 toggle 语义 —— 若这里也关一次，
+   * 就会「先关、再被 toggle 打开」，表现为点了没反应。语义上它是开关本身，不算「外部」。
+   */
+  useEffect(() => {
+    if (!open) return undefined;
+    const handleMouseDown = (event: MouseEvent): void => {
+      const node = rootRef.current;
+      if (!node) return;
+      const target = event.target;
+      if (target instanceof Node && node.contains(target)) return;
+      if (
+        target instanceof Element &&
+        target.closest('[data-drawer-keep-open="settings"]')
+      ) {
+        return;
+      }
+      onClose();
+    };
+    document.addEventListener("mousedown", handleMouseDown);
+    return () => document.removeEventListener("mousedown", handleMouseDown);
+  }, [open, onClose]);
 
   return (
-    <>
-      {/* 点外部关闭：打开时铺满 stage 的透明捕获层（z-index 低于抽屉本体） */}
-      {open && (
-        <div
-          className="nv-setting__mask"
-          aria-hidden="true"
-          onClick={onClose}
-        />
-      )}
-      <aside className={`nv-setting${open ? " is-open" : ""}`}>
+    <aside ref={rootRef} className={`nv-setting${open ? " is-open" : ""}`}>
       <header className="nv-setting__head">
         <b>排版与偏好</b>
         <Button aria-label="关闭" onClick={onClose}>
@@ -238,7 +266,6 @@ export default function SettingsDrawer({
           </p>
         </section>
       </div>
-      </aside>
-    </>
+    </aside>
   );
 }

@@ -200,8 +200,10 @@ export function markHelpOpened(record: GuideRecord): GuideRecord {
 }
 
 /**
- * B-01 角标规则：guideState ≠ done 时显示；且打开过一次帮助中心后消失。
- * 注意 done/skipped 之后若从未打开过帮助中心，红点仍保留——这正是 PRD 想要的
+ * B-01 角标规则：`record.state !== "done"` 时显示（**done 时红点必消失**，
+ * 与 PRD B-01 一致）；此外打开过一次帮助中心后也消失。
+ * 注意 **skipped 等非 done 状态**（not_started / in_progress / skipped /
+ * deferred）之后若从未打开过帮助中心，红点仍保留——这正是 PRD 想要的
  * 「跳过的作者某天点开帮助中心」引导路径。
  */
 export function shouldShowHelpBadge(record: GuideRecord): boolean {

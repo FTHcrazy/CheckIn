@@ -6,7 +6,7 @@
 
     行间插入条默认只有 hover 才显形（`:hover` 在行容器上），
     输入态由 `.is-on` 常驻 —— 否则失焦瞬间条会消失、输入被吞掉。 */
-@use "../../../../../../shared/styles/widget" as widget;
+@use "../../styles/widget" as widget;
 
 .nv-sc {
   &__title {
@@ -146,6 +146,26 @@
     gap: 6px;
   }
 
+  // 「从全局库选择」入口（D2）：整行次级按钮，挂在新建分类下方
+  &__from-global {
+    margin-top: 6px;
+  }
+
+  // 上架到全局（D3）：动作区按钮，与「模板库」并列
+  &__publish {
+    color: var(--app-accent-teal);
+
+    &:hover {
+      color: var(--app-accent-teal);
+    }
+  }
+
+  // 引用项只读占位（等级行「操作」列）
+  &__ro {
+    font-size: 11px;
+    color: var(--app-text-muted);
+  }
+
   &__tip {
     font-size: 11px;
     color: var(--app-text-muted);
@@ -207,6 +227,27 @@
     &.is-link {
       background: var(--app-accent-blue-weak);
       color: var(--app-accent-blue);
+    }
+
+    // 全局库的「N 部书引用」徽标：用中性弱色，与「境界体系 / 自定义」分类徽标区分
+    &.is-ref {
+      background: var(--app-surface-active);
+      color: var(--app-text-secondary);
+    }
+
+    // 本书分类引用自全局中心（D2）：绿色 = 自动同步中的只读镜像
+    &.is-sync {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      background: var(--app-accent-green-weak);
+      color: var(--app-accent-green);
+    }
+
+    // 已固化副本（D4）：原全局项被删，转为本书独有 —— 用警示弱色提示一句
+    &.is-detached {
+      background: var(--app-warning-weak);
+      color: var(--app-warning);
     }
   }
 
@@ -418,6 +459,58 @@
     &:active {
       cursor: grabbing;
     }
+
+    // 引用项只读：手柄留着占位（列对齐），但不可拖、不显示抓取光标
+    &.is-locked {
+      cursor: default;
+      opacity: 0.4;
+    }
+  }
+
+  // ── 从全局库选择（D2 picker） ──
+  &__picker {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 360px;
+    overflow-y: auto;
+  }
+
+  &__picker-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-item);
+    cursor: pointer;
+
+    &:hover {
+      background: var(--app-surface-hover);
+    }
+  }
+
+  &__picker-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--app-text);
+  }
+
+  &__picker-kind,
+  &__picker-count {
+    font-size: 11px;
+    color: var(--app-text-muted);
+  }
+
+  &__picker-count {
+    margin-left: auto;
+  }
+
+  // U6：本书已有境界体系时，全局 realm 降级为普通分类的行内提示
+  &__picker-note {
+    width: 100%;
+    font-size: 11px;
+    color: var(--app-warning);
   }
 
   &__col-no {

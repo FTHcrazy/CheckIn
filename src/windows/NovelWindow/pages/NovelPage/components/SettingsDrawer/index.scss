@@ -1,14 +1,11 @@
 /* 抽屉里的按钮一律是 antd `Button`（AGENTS 6.1.2）：先清零再声明组件级变量。
  * 选中态（.is-on）是持久高亮态 → 写默认变量，不写 :hover 属性规则。
+ *
+ * 「点外部关闭」不再用覆盖式透明捕获层（原 `.nv-setting__mask`）：那是 REQ-050
+ * 「第一击被关闭路径消耗」的回归来源，且几何上够不到顶栏。现改为文档级 `mousedown`
+ * 分流（见 index.tsx），落点在抽屉外即 `onClose()`，绝不拦截事件。
  */
 @use "../../../../../../shared/styles/widget" as widget;
-
-/* 点外部关闭的透明捕获层：不暗化正文（保持「零打断」），只拦一次点击 */
-.nv-setting__mask {
-  position: absolute;
-  inset: 0;
-  z-index: 45;
-}
 
 .nv-setting {
   position: absolute;

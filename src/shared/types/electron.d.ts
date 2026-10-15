@@ -155,6 +155,10 @@ export interface NovelSettingCategoryDTO {
   carryDir: 'asc' | 'desc'
   subPattern: string
   levels: NovelSettingLevelDTO[]
+  /** 非空 = 引用自全局中心（只读镜像，实时同步；1.4x） */
+  sourceGlobalId: string | null
+  /** 非空 = 原全局项已删除，已固化为本书副本（徽标文案用；1.4x） */
+  detachedFromName: string | null
 }
 
 export interface NovelSettingCategoryPatch {
@@ -211,6 +215,75 @@ export interface NovelSettingTemplateDTO {
   name: string
   createdAt: number
   categories: NovelSettingSnapshot[]
+}
+
+// ── 全局设定中心 DTO（1.4x，与 electron/handlers/novel-global-setting-handlers.ts 一致） ──
+
+/** 全局设定等级项（结构对齐 NovelSettingLevelDTO） */
+export interface NovelGlobalSettingLevelDTO {
+  id: string
+  categoryId: string
+  name: string
+  rank: number
+  aliases: string[]
+  note: string
+  subLevels: number
+  power: number | null
+  parentId: string | null
+  segFrom: number | null
+  segTo: number | null
+  subPattern: string
+}
+
+/** 全局设定分类：无 workId；带引用计数（列表徽标） */
+export interface NovelGlobalSettingCategoryDTO {
+  id: string
+  name: string
+  color: string
+  kind: 'realm' | 'custom'
+  sortOrder: number
+  note: string
+  subLevels: number
+  carryDir: 'asc' | 'desc'
+  subPattern: string
+  levels: NovelGlobalSettingLevelDTO[]
+  /** 有多少部书正在引用它（0 = 暂无引用） */
+  refCount: number
+}
+
+export interface NovelGlobalSettingCategoryPatch {
+  name?: string
+  color?: string
+  note?: string
+  subLevels?: number
+  carryDir?: 'asc' | 'desc'
+  subPattern?: string
+  /** 切换分类种类：设为 realm 时全局原境界体系自动降级为 custom（全库至多一个） */
+  kind?: 'realm' | 'custom'
+}
+
+export interface NovelGlobalSettingLevelPatch {
+  name?: string
+  aliases?: string[]
+  note?: string
+  subLevels?: number
+  power?: number | null
+  subPattern?: string
+}
+
+/** D4 删除的返回载荷 */
+export interface GlobalCategoryDeleteResult {
+  ok: boolean
+  /** confirm=false 时回传，供渲染层弹二次确认 */
+  refCount: number
+}
+
+/** D3 上架的返回载荷 */
+export interface PublishToGlobalResult {
+  ok: boolean
+  globalCategoryId?: string
+  /** 命中同名分类：渲染层据此弹「新建副本 / 取消」 */
+  conflict?: boolean
 }
 
 export interface NovelBundleDTO {
@@ -500,6 +573,11 @@ export interface PackLevelRungDTO {
    * 仅拆出子层级的阶才有；空串表示该层没有可显示的别名。
    */
   subLabels?: string[]
+  /**
+   * 本阶生效的小层命名模板（1.4x）：自己的为空则沿用分类的。主进程对 `{n}` 模板
+   * **不**生成 subLabels（编号不是名字），渲染层据此现场渲染「第七层」这类小层名。
+   */
+  subPattern?: string
 }
 
 export interface PackLevelSystemDTO {
@@ -743,6 +821,30 @@ export interface ElectronAPI {
     settingTemplateSave: (id: string, name: string, workId: string, categoryIds: string[]) => Promise<boolean>
     settingTemplateApply: (templateId: string, workId: string) => Promise<number>
     settingTemplateDelete: (id: string) => Promise<boolean>
+    // ── 全局设定中心（1.4x）：全局库 CRUD + 导出 ──
+    globalSettingLoad: () => Promise<{ categories: NovelGlobalSettingCategoryDTO[] }>
+    globalCategoryAdd: (id: string, name: string, kind: 'realm' | 'custom', color?: string) =>
+      Promise<{ id: string; kind: 'realm' | 'custom' } | null>
+    globalCategoryUpdate: (id: string, patch: NovelGlobalSettingCategoryPatch) => Promise<boolean>
+    /** confirm 缺省 / 非 true 时只回传 refCount 供二次确认，不删除（D4） */
+    globalCategoryDelete: (id: string, confirm?: boolean) => Promise<GlobalCategoryDeleteResult>
+    globalCategoryOrder: (updates: Array<{ id: string; sortOrder: number }>) => Promise<boolean>
+    globalLevelAdd: (categoryId: string, id: string, name: string, index: number) =>
+      Promise<{ id: string; rank: number } | null>
+    globalLevelBatchAdd: (categoryId: string, items: Array<{ id: string; name: string; subLevels?: number; subPattern?: string }>) =>
+      Promise<number>
+    globalLevelUpdate: (id: string, patch: NovelGlobalSettingLevelPatch) => Promise<boolean>
+    globalLevelDelete: (id: string) => Promise<boolean>
+    globalLevelOrder: (updates: Array<{ id: string; rank: number }>) => Promise<boolean>
+    globalLevelSplit: (levelId: string, segments: Array<{ name: string; from: number; to: number }>) => Promise<boolean>
+    globalLevelMerge: (levelId: string) => Promise<boolean>
+    globalSettingExport: () => Promise<NovelSettingExportPayload>
+    // ── 全局设定中心：本书「引用 / 上架」 ──
+    /** 本书引用一个全局分类（建立镜像，实时同步）；已引用幂等返回 true */
+    referenceGlobal: (workId: string, globalCategoryId: string) => Promise<boolean>
+    /** 本书分类上架到全局（复制快照）；同名冲突由 conflict 决定 */
+    publishGlobal: (workId: string, categoryId: string, conflict: 'duplicate' | 'cancel') =>
+      Promise<PublishToGlobalResult>
     // ── 书籍导入（TXT）：主进程只负责选文件 + 读字节 / 批量落库 ──
     /** 弹文件选择框并读回字节；用户取消返回 null */
     importPickFile: () => Promise<{ fileName: string; bytes: ArrayBuffer; size: number } | null>

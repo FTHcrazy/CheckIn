@@ -290,6 +290,10 @@ export default function BookshelfPage({
         onImportClick={() => void startImport()}
         importing={importing}
         importPhase={importPhase}
+        onGlobalSettingClick={() =>
+          // 打开「全局设定中心」独立窗口（M13）；lite 版不打包该窗口，主进程侧拦截
+          window.electronAPI?.send("global-setting-window-open", null)
+        }
       />
 
       <div className="bs-page__body">

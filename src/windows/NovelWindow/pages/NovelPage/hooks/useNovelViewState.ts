@@ -220,6 +220,19 @@ export function useNovelViewState() {
     setSettingCenterOpen(false);
     setSettingFocusId(null);
   }, []);
+  /**
+   * 顶栏「本书设定」即开关：再点一次收起（与「快照」「排版」一致）。
+   *
+   * REQ-050 修法 ③ 的正面要求：这两颗原本「只开不关」的按钮缺 toggle 语义，
+   * 让「再点一次」表现得像「第一次无效」。改成 toggle 后与另两颗行为对齐。
+   * 开时清掉聚焦分类（从顶栏进来的通用入口不该停在某个分类上）。
+   */
+  const toggleSettingCenter = useCallback(() => {
+    setSettingCenterOpen((open) => {
+      if (open) setSettingFocusId(null);
+      return !open;
+    });
+  }, []);
   const openTypeManager = useCallback(() => setTypeManagerOpen(true), []);
   const closeTypeManager = useCallback(() => setTypeManagerOpen(false), []);
 
@@ -268,6 +281,7 @@ export function useNovelViewState() {
     closeJump,
     openSettingCenter,
     closeSettingCenter,
+    toggleSettingCenter,
     openTypeManager,
     closeTypeManager,
     openSnapshot,

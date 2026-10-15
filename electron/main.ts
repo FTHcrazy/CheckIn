@@ -27,6 +27,7 @@ import {
 } from "./handlers/novel-handlers";
 import { registerNovelPackHandlers } from "./handlers/novel-pack-handlers";
 import { registerNovelSettingHandlers } from "./handlers/novel-setting-handlers";
+import { registerNovelGlobalSettingHandlers } from "./handlers/novel-global-setting-handlers";
 import { registerNovelDbBridge } from "./novel-db";
 import {
   logoutUser,
@@ -483,6 +484,69 @@ function createPackWindow(): BrowserWindow {
   return packWin;
 }
 
+// ── GlobalSettingWindow（全局设定中心独立窗口） ──
+
+/**
+ * GlobalSettingWindow —— 全局设定中心独立窗口（full / novel 版）。
+ *
+ * 逐行对齐 `createPackWindow`：即关即销、单实例唤起（已开则 restore/show/focus）。
+ * 数据全部经全局设定域 IPC（novel 库的 novel_global_setting_* 两表），窗口不持有
+ * 需要迁移的状态 —— 写操作直接落库，无草稿。`attachCloseGuard` 照常挂上：本窗口
+ * 无未保存改动，守卫在渲染层不武装即直接放行。
+ *
+ * lite 版不打包本窗口（novel 域整体缺席），`global-setting-window-open` 直接忽略。
+ */
+function createGlobalSettingWindow(): BrowserWindow {
+  const existing = windowManager.get("globalSetting");
+  if (existing) {
+    // 已开：聚焦而不是重复创建（例如入口重复触发）
+    if (existing.isMinimized()) existing.restore();
+    existing.show();
+    existing.focus();
+    return existing;
+  }
+
+  const globalWin = new BrowserWindow({
+    width: 1240,
+    height: 860,
+    minWidth: 920,
+    minHeight: 600,
+    icon: ICON_PATH,
+    show: false,
+    ...ROUNDED_WINDOW_OPTIONS,
+    titleBarStyle: "hidden",
+    webPreferences: createWebPreferences(),
+  });
+
+  globalWin.removeMenu();
+
+  globalWin.webContents.once("did-finish-load", () => {
+    if (!globalWin || globalWin.isDestroyed()) return;
+    globalWin.show();
+    globalWin.focus();
+  });
+
+  if (IS_DEV) {
+    registerDevToolsShortcuts(globalWin);
+    if (OPEN_DEVTOOLS) globalWin.webContents.openDevTools({ mode: DEVTOOLS_MODE });
+  }
+
+  // 标题栏的最小化/最大化按钮需要最大化状态推送
+  forwardMaximizeState(globalWin);
+
+  windowManager.register("globalSetting", globalWin);
+
+  // 即关即销：本窗口无草稿，守卫在渲染层不武装即放行（保持与行囊同范式）
+  attachCloseGuard(globalWin);
+  globalWin.on("closed", () => {
+    console.log("[main] GlobalSetting 窗口已关闭");
+  });
+
+  loadRendererEntry(globalWin, "globalSetting");
+
+  return globalWin;
+}
+
 // ── 登录窗口 ──
 
 function getLoginWindowUrl(email?: string) {
@@ -633,6 +697,9 @@ app.whenReady().then(() => {
   registerNovelHandlers();
   registerNovelPackHandlers();
   registerNovelSettingHandlers();
+  // 全局设定中心（1.4x）：全局库 CRUD + 引用/上架；每次全局写成功后由 handler
+  // 广播 `global-setting-changed`（书窗口订阅后重载设定，REQ-041 ③）。
+  registerNovelGlobalSettingHandlers();
   registerUserHandlers();
   // 关闭守卫：窗口真销毁前先问渲染层「还有未保存的改动吗」
   registerCloseGuardHandlers();
@@ -729,6 +796,14 @@ app.whenReady().then(() => {
     createPackWindow();
   });
 
+  // ── GlobalSettingWindow 开关 IPC（full / novel 版：入口在书架顶栏） ──
+  // 单实例唤起（createGlobalSettingWindow 内部已开则聚焦）。lite 版不打包本
+  // 窗口（novel 域整体缺席），请求直接忽略。
+  ipcMain.on("global-setting-window-open", () => {
+    if (EDITION === "lite") return;
+    createGlobalSettingWindow();
+  });
+
   // ── 退出登录（SettingsWindow 账号区发起） ──
   // 主进程编排：清除缓存用户 → 关闭设置窗与主窗口（登录态下的数据随窗口
   // 销毁，防止切换账号后残留上一账号的渲染层状态）→ 回到登录窗。
@@ -745,6 +820,9 @@ app.whenReady().then(() => {
     // 时行囊窗口留在原地，登出流程照常继续（logoutUser 只清 authDb 用户行，
     // 不关 novel.db，「保存并关闭」仍能正常落库）。
     windowManager.get("pack")?.close();
+    // 全局设定中心同样属 novel 域（数据在用户级 novel.db）：登出后必须关掉，
+    // 否则窗口会留着上一账号的全局库。同走 close()（守卫本窗口不武装，即放行）。
+    windowManager.get("globalSetting")?.close();
     windowManager.get(PRIMARY_WINDOW_NAME)?.destroy();
 
     const loginWin = windowManager.get("login");

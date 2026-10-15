@@ -741,6 +741,38 @@
     background: var(--app-surface-alt);
     color: var(--app-text-secondary-strong);
     font-size: 12px;
+
+    /* 卷级伏笔：没有可去之处，光标保持默认 —— 不要让作者以为能点开 */
+    &.is-static {
+      cursor: default;
+    }
+  }
+
+  /* 绑定章节的伏笔：来源文案即跳转入口（REQ-048）。
+     走 `type="link"`，但清零点仍写在同一个 `.xxx.ant-btn` 选择器里（§6.1.2）——
+     link 变体读的是 `--ant-button-text-*` 这组变量，与默认变体不同，故一并声明。 */
+  &__fs-src.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: auto;
+    --ant-border-radius: var(--app-radius-pill);
+    --ant-button-text-color: var(--app-text-secondary-strong);
+    --ant-button-text-hover-color: var(--app-primary);
+    --ant-button-text-bg: var(--app-surface-alt);
+    --ant-button-text-hover-bg: var(--app-primary-weak);
+
+    margin-top: 6px;
+    padding: 1px 7px;
+    font-size: 12px;
+
+    &:hover {
+      background: var(--app-primary-weak);
+      color: var(--app-primary);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--app-primary);
+      outline-offset: 2px;
+    }
   }
 
   /* ── 伏笔新增 / 编辑表单 ──────────────────────────────────────── */

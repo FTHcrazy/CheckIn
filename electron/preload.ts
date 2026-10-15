@@ -175,6 +175,39 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('novel-setting-template-apply', templateId, workId) as Promise<number>,
     settingTemplateDelete: (id: string) =>
       ipcRenderer.invoke('novel-setting-template-delete', id) as Promise<boolean>,
+    // ── 全局设定中心（1.4x，独立窗口）：全局库 CRUD + 导出 ──
+    globalSettingLoad: () =>
+      ipcRenderer.invoke('novel-global-setting-load') as Promise<{ categories: unknown[] }>,
+    globalCategoryAdd: (id: string, name: string, kind: 'realm' | 'custom', color?: string) =>
+      ipcRenderer.invoke('novel-global-setting-category-add', id, name, kind, color) as Promise<{ id: string; kind: 'realm' | 'custom' } | null>,
+    globalCategoryUpdate: (id: string, patch: unknown) =>
+      ipcRenderer.invoke('novel-global-setting-category-update', id, patch) as Promise<boolean>,
+    /** confirm 缺省 / 非 true 时只回传 refCount 供二次确认，不删除（D4） */
+    globalCategoryDelete: (id: string, confirm?: boolean) =>
+      ipcRenderer.invoke('novel-global-setting-category-delete', id, confirm) as Promise<{ ok: boolean; refCount: number }>,
+    globalCategoryOrder: (updates: Array<{ id: string; sortOrder: number }>) =>
+      ipcRenderer.invoke('novel-global-setting-category-order', updates) as Promise<boolean>,
+    globalLevelAdd: (categoryId: string, id: string, name: string, index: number) =>
+      ipcRenderer.invoke('novel-global-setting-level-add', categoryId, id, name, index) as Promise<{ id: string; rank: number } | null>,
+    globalLevelBatchAdd: (categoryId: string, items: Array<{ id: string; name: string; subLevels?: number; subPattern?: string }>) =>
+      ipcRenderer.invoke('novel-global-setting-level-batch-add', categoryId, items) as Promise<number>,
+    globalLevelUpdate: (id: string, patch: unknown) =>
+      ipcRenderer.invoke('novel-global-setting-level-update', id, patch) as Promise<boolean>,
+    globalLevelDelete: (id: string) =>
+      ipcRenderer.invoke('novel-global-setting-level-delete', id) as Promise<boolean>,
+    globalLevelOrder: (updates: Array<{ id: string; rank: number }>) =>
+      ipcRenderer.invoke('novel-global-setting-level-order', updates) as Promise<boolean>,
+    globalLevelSplit: (levelId: string, segments: Array<{ name: string; from: number; to: number }>) =>
+      ipcRenderer.invoke('novel-global-setting-level-split', levelId, segments) as Promise<boolean>,
+    globalLevelMerge: (levelId: string) =>
+      ipcRenderer.invoke('novel-global-setting-level-merge', levelId) as Promise<boolean>,
+    globalSettingExport: () =>
+      ipcRenderer.invoke('novel-global-setting-export') as Promise<{ version: number; exportedAt: string; categories: unknown[] }>,
+    // ── 全局设定中心：本书「引用 / 上架」（写目标含本书侧镜像行，落在本书域通道） ──
+    referenceGlobal: (workId: string, globalCategoryId: string) =>
+      ipcRenderer.invoke('novel-setting-reference-global', workId, globalCategoryId) as Promise<boolean>,
+    publishGlobal: (workId: string, categoryId: string, conflict: 'duplicate' | 'cancel') =>
+      ipcRenderer.invoke('novel-setting-publish-global', workId, categoryId, conflict) as Promise<{ ok: boolean; globalCategoryId?: string; conflict?: boolean }>,
     // ── 书籍导入（TXT）：主进程只负责选文件 + 读字节 / 批量落库 ──
     /** 弹文件选择框并读回字节；取消返回 null */
     importPickFile: () =>
@@ -261,6 +294,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'settings-window-open',
       // 行囊独立窗口开关（小说窗口顶栏入口，full/novel 版）
       'pack-window-open',
+      // 全局设定中心独立窗口开关（书架入口，full/novel 版）
+      'global-setting-window-open',
       // 退出登录（SettingsWindow 账号区发起，主进程编排回登录窗）
       'auth-logout',
       // WindowHeader 窗口控制（最小化/最大化/关闭）与最大化状态查询

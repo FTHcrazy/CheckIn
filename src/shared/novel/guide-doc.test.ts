@@ -54,14 +54,15 @@ describe("searchHelpDoc", () => {
 });
 
 describe("文档结构", () => {
-  it("Tour 讲过的 5 步都在快速上手里（引导消失后功能仍找得到）", () => {
-    expect(NOVEL_HELP_DOC.flow).toHaveLength(5);
+  it("Tour 讲过的 6 步都在快速上手里（引导消失后功能仍找得到）", () => {
+    expect(NOVEL_HELP_DOC.flow).toHaveLength(6);
     const titles = NOVEL_HELP_DOC.flow.map((step) => step.title);
     expect(titles).toContain("新建小说");
     expect(titles).toContain("新建卷与章节");
     expect(titles).toContain("创建全书总设定");
     expect(titles).toContain("行囊：主角状态盘点");
     expect(titles).toContain("写正文与右键菜单");
+    expect(titles).toContain("跨作品复用设定");
   });
 
   it("行囊 10 个模块全部在索引里（模块管理默认只开 3 块，其余要靠文档补）", () => {

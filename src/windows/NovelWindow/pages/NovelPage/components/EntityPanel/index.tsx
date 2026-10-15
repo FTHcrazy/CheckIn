@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CloseOutlined, SearchOutlined } from "@ant-design/icons";
+import { CloseOutlined, SearchOutlined, TagsOutlined } from "@ant-design/icons";
 import { Button, Input } from "antd";
 import EntityCard from "../EntityCard";
 import EntityDetail from "../EntityDetail";
@@ -48,6 +48,8 @@ interface EntityPanelProps {
   onSetEntityLevel: (entityId: string, levelId: string | null, sub?: number) => void;
   /** 打开设定中心 */
   onOpenSettings: () => void;
+  /** 打开自定义要素类型管理（REQ-049：空态 CTA 直达） */
+  onOpenTypeManager: () => void;
   /** 行囊主角绑定的要素 id（空串 = 尚未指定） */
   protagonistEntityId: string;
   /** 设为主角 / 换一个 / 再点一次取消（与行囊面板的「绑定实体」同源） */
@@ -90,6 +92,7 @@ export default function EntityPanel({
   onRemoveRelation,
   onSetEntityLevel,
   onOpenSettings,
+  onOpenTypeManager,
   protagonistEntityId,
   onSetProtagonist,
   onInsertName,
@@ -295,6 +298,15 @@ export default function EntityPanel({
         <div className="nv-empty">
           <b>没有匹配的要素</b>
           <span>换个关键词，或切回「全部」</span>
+          {/* REQ-049：空态正好是「想建个新类型但找不到入口」的高发场景，
+              在这里给一条直达类型管理的引导，而不是让作者去面板头找图标 */}
+          <span className="nv-empty__hint">
+            还没有自定义类型？点「类型管理」新建
+          </span>
+          <Button className="nv-empty__cta" onClick={onOpenTypeManager}>
+            <TagsOutlined />
+            <span>类型管理</span>
+          </Button>
         </div>
       ) : filter === "all" ? (
         <>

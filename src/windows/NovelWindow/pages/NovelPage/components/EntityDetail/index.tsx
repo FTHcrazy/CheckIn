@@ -22,6 +22,7 @@ import type {
 } from "../../types";
 import {
   findRealmPosition,
+  listSubLevels,
   parseRealmNoteSub,
   rootLevels,
   sortLevels,
@@ -82,10 +83,14 @@ const ALIAS_SPLIT = /[,，、;；\s]+/;
  *
  * 必须与 `index.scss` 里 `.nv-edetail__appear-list` 的行盒保持一致：
  * Virtuoso 需要一个确切的行高来算滚动区间，给错会有跳白条。
- * 34 = chip 内容行高（12px 字号 ≈ 18）+ 上下 padding 5×2 + 描边 1×2，
- * 外加 4px 行间距凑整。
+ *
+ * 38 = chip 内容行高（12px 字号 ≈ 18）+ 上下 padding 5×2 + 描边 1×2 + 行间距 8，
+ * 与 `&__appear-list > div > div { padding-bottom: 8px }`（REQ-046 行间距 4→8）
+ * 一一对应 —— 这两处是本项的唯一契约，改一边必须同步改另一边。
+ *
+ * 导出供契约测试断言（`EntityDetail/index.test.tsx`）。
  */
-const APPEAR_ROW_HEIGHT = 34;
+export const APPEAR_ROW_HEIGHT = 38;
 /** 列表封顶高度：超过就内部滚动，避免上千章把下方操作区推得很远 */
 const APPEAR_MAX_HEIGHT = 240;
 
@@ -172,6 +177,13 @@ export default function EntityDetail({
       ),
     [realmCategory, levelBinding],
   );
+  /**
+   * 绑定行的阶内小层（`novel_links.note` 的 `{sub}`）。
+   *
+   * 未拆分但配了多个小层的阶，没有派生段可高亮 —— 用这个下标点亮对应的小层
+   * chip（REQ-045）。缺省 1（与 `parseRealmNoteSub` 同口径）。
+   */
+  const boundSub = parseRealmNoteSub(levelBinding?.note);
 
   const BASE_KEYS = ["别名", "一句话", "性格"];
   const customEntries = Object.entries(entity.fields).filter(
@@ -673,6 +685,43 @@ export default function EntityDetail({
                               }
                             >
                               {segment.name}
+                            </Button>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {/*
+                      REQ-045：这一阶**没有拆分**、只配了多个小层时，派生出的小层
+                      清单直接铺成一行 chip —— 否则这类阶只能绑到「阶」本身，
+                      选不到第 N 层（「已拆分」的阶用上面的派生段那行，二者互斥）。
+                      名称由 listSubLevels 唯一生成；绑定坐标是 (根阶, 第 N 层)，
+                      与行囊 ±1 层共用同一格 note.sub。
+                    */}
+                    {segments.length === 0 && level.subLevels > 1 && (
+                      <div className="nv-edetail__rung-subs">
+                        {listSubLevels(level, realmCategory).map((name, index) => {
+                          const subIndex = index + 1;
+                          const subBound = boundInSubtree && boundSub === subIndex;
+                          return (
+                            <Button
+                              key={subIndex}
+                              className={`nv-edetail__rung-sub${
+                                subBound ? " is-on" : ""
+                              }`}
+                              title={
+                                subBound
+                                  ? `当前小境界（${name}），点击取消绑定`
+                                  : `把当前境界设为「${level.name} · ${name}」`
+                              }
+                              onClick={() => {
+                                if (subBound) {
+                                  onSetEntityLevel(null);
+                                  return;
+                                }
+                                onSetEntityLevel(level.id, subIndex);
+                              }}
+                            >
+                              {name}
                             </Button>
                           );
                         })}

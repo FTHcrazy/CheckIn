@@ -31,6 +31,8 @@ interface NovelTopBarProps {
   settingsOpen: boolean;
   /** 历史快照抽屉开合状态：按钮呈高亮开关态 */
   snapshotOpen: boolean;
+  /** 设定中心（本书设定）开合状态：按钮呈高亮开关态 */
+  settingCenterOpen: boolean;
   onSelectWork: (workId: string) => void;
   onCreateWork: (name: string) => boolean;
   onRenameWork: (name: string) => boolean;
@@ -46,8 +48,11 @@ interface NovelTopBarProps {
   onToggleHistory: () => void;
   /** 行囊：唤起独立行囊窗口（单实例，重复点击仅聚焦），Ctrl+Shift+B 同效 */
   onOpenPack: () => void;
-  /** 设定中心：管理本书的分类与等级序列，Ctrl+Shift+S 同效 */
-  onOpenSettings: () => void;
+  /**
+   * 设定中心（本书设定）：按钮即开关 —— 再点一次收起（REQ-050 修法 ③）。
+   * 与「快照」「排版」一致的 toggle 语义，避免「第二次点击看起来没反应」。
+   */
+  onToggleSettingCenter: () => void;
   /** 返回书架（书架主页接入后传入）；未传则不渲染返回按钮 */
   onBackToShelf?: () => void;
 }
@@ -71,6 +76,7 @@ export default function NovelTopBar({
   rightOpen,
   settingsOpen,
   snapshotOpen,
+  settingCenterOpen,
   onSelectWork,
   onCreateWork,
   onRenameWork,
@@ -82,7 +88,7 @@ export default function NovelTopBar({
   onToggleLeft,
   onToggleRight,
   onToggleSettings,
-  onOpenSettings,
+  onToggleSettingCenter,
   onToggleHistory,
   onOpenPack,
   onBackToShelf,
@@ -204,23 +210,29 @@ export default function NovelTopBar({
             <HistoryOutlined />
           </Button>
         </Tooltip>
-        <Tooltip title="小说设定（Ctrl+Shift+S）">
+        <Tooltip title={settingCenterOpen ? "收起小说设定" : "小说设定（Ctrl+Shift+S）"}>
           <Button
-            className="nv-topbar__icon"
-            onClick={onOpenSettings}
+            className={`nv-topbar__icon${settingCenterOpen ? " is-on" : ""}`}
+            onClick={onToggleSettingCenter}
             aria-label="小说设定"
+            aria-pressed={settingCenterOpen}
             data-tour-target="topbar-setting"
           >
             <SvgIcon svg={bookSettingSvg} />
           </Button>
         </Tooltip>
         {/* 与标题栏的「设置」（全局：外观/账号）区分：这里只管排版与码字偏好，
-            图标用滑杆而不是齿轮，避免同屏两颗齿轮各开各的设置 */}
+            图标用滑杆而不是齿轮，避免同屏两颗齿轮各开各的设置。
+            `data-drawer-keep-open` 是给 SettingsDrawer 的「点外部关闭」看的：
+            这颗按钮是它的开关，落在它上面的 mousedown 不算「点了抽屉外部」——
+            否则会「先被文档级监听关掉、再被 toggle 打开」，表现为点了没反应。 */}
         <Tooltip title="排版与偏好">
           <Button
             className={`nv-topbar__icon${settingsOpen ? " is-on" : ""}`}
             onClick={onToggleSettings}
             aria-label="排版与偏好"
+            aria-pressed={settingsOpen}
+            data-drawer-keep-open="settings"
           >
             <ControlOutlined />
           </Button>

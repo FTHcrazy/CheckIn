@@ -39,8 +39,8 @@ export default function RecordDrawer({ api }: RecordDrawerProps) {
       attributes: api.attrView,
       realmLink: api.meta.realmLink,
     };
-    return diffPackDoc(past, now, api.rungs);
-  }, [api.recordDrawerOpen, api.doc, api.attrView, api.meta.realmLink, api.rungs, baseline]);
+    return diffPackDoc(past, now, api.rungs, api.numberStyle);
+  }, [api.recordDrawerOpen, api.doc, api.attrView, api.meta.realmLink, api.rungs, api.numberStyle, baseline]);
 
   const restore = (record: PackRecord) => {
     const ok = api.restoreFromRecord(record);

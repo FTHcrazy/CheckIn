@@ -35,8 +35,11 @@ const ANCHOR_OWNERS: Array<[anchor: string, file: string]> = [
   ["editor-body", "src/windows/NovelWindow/pages/NovelPage/components/EditorPane/index.tsx"],
   ["editor-first-chapter", "src/windows/NovelWindow/pages/NovelPage/components/EditorPane/index.tsx"],
   ["status-annotation", "src/windows/NovelWindow/pages/NovelPage/components/StatusBar/index.tsx"],
-  ["setting-library", "src/windows/NovelWindow/pages/NovelPage/components/SettingCenter/index.tsx"],
+  // T03：SettingCenter 已提升到 shared（供全局窗口复用），锚点随组件迁入
+  ["setting-library", "src/shared/components/SettingCenter/index.tsx"],
   ["pack-modules", "src/shared/components/CharacterPack/components/PackHeader/index.tsx"],
+  // T04（1.4x）：第 6 步「跨书共享设定」锚点挂在书架顶栏的「全局设定中心」按钮上
+  ["shelf-global-setting", "src/windows/NovelWindow/pages/BookshelfPage/components/ShelfTopBar/index.tsx"],
 ];
 
 describe("引导锚点（RK-03：目标漂移）", () => {
@@ -61,26 +64,29 @@ describe("引导锚点（RK-03：目标漂移）", () => {
 });
 
 describe("Tour 挂载与编排", () => {
-  it("第 1 步由书架页实例播、第 2-5 步由编辑器页实例播（两页是 display 切换的兄弟容器）", () => {
+  it("第 1、6 步由书架页实例播、第 2-5 步由编辑器页实例播（两页是 display 切换的兄弟容器）", () => {
     const shelf = read("src/windows/NovelWindow/pages/BookshelfPage/BookshelfPage.tsx");
     const editor = read("src/windows/NovelWindow/pages/NovelPage/NovelPage.tsx");
     expect(shelf).toContain('<NovelGuideTour view="shelf" visible={visible} />');
-    expect(editor).toContain('<NovelGuideTour view="editor" visible={visible} />');
+    // editor 侧多一个 onGoToView（P2-1：第 5→6 步跨视图回书架时切视图），
+    // 故断言挂载前缀 + 新回调，而不是写死整行自闭合
+    expect(editor).toContain('<NovelGuideTour view="editor" visible={visible}');
+    expect(editor).toContain("onGoToView={onGoToView}");
   });
 
-  it("Tour 步骤按视图分组，第 1 步属 shelf、其余属 editor", () => {
+  it("Tour 步骤按视图分组：第 1、6 步属 shelf，第 2-5 步属 editor", () => {
     const copy = stripComments(read("src/shared/novel/guide-copy.ts"));
     expect(copy).toContain('view: "shelf"');
     expect(copy).toContain('view: "editor"');
-    expect(copy).toContain("GUIDE_TOTAL_STEPS = 5");
+    expect(copy).toContain("GUIDE_TOTAL_STEPS = 6");
   });
 
-  it("编辑器内的顺序是 2 卷章 → 3 设定 → 4 行囊 → 5 右键，共 5 步", () => {
+  it("编辑器内的顺序是 2 卷章 → 3 设定 → 4 行囊 → 5 右键，第 6 步回书架讲跨书共享，共 6 步", () => {
     const copy = stripComments(read("src/shared/novel/guide-copy.ts"));
     const stepMarks = copy.match(/step: \d/g) ?? [];
-    expect(stepMarks).toHaveLength(5);
-    expect(copy).not.toContain("step: 6");
-    // 顺序即文档承诺的顺序：右键收尾，且是最后一步
+    expect(stepMarks).toHaveLength(6);
+    expect(copy).not.toContain("step: 7");
+    // 顺序即文档承诺的顺序：右键收尾（编辑器段），第 6 步（跨书共享）在最后
     expect(copy.indexOf("建一卷、一章，开始写")).toBeLessThan(
       copy.indexOf("先把全书的总设定立起来"),
     );
@@ -90,8 +96,14 @@ describe("Tour 挂载与编排", () => {
     expect(copy.indexOf("行囊：主角的状态面板")).toBeLessThan(
       copy.indexOf("选中文字，右键有惊喜"),
     );
+    expect(copy.indexOf("选中文字，右键有惊喜")).toBeLessThan(
+      copy.indexOf("一套设定，多本书共用"),
+    );
     const rightClickBlock = copy.slice(copy.indexOf("选中文字，右键有惊喜") - 300);
     expect(rightClickBlock).toContain("step: 5");
+    const globalBlock = copy.slice(copy.indexOf("一套设定，多本书共用") - 300);
+    expect(globalBlock).toContain("step: 6");
+    expect(globalBlock).toContain("shelfGlobalSetting");
   });
 
   it("目标不可见时暂停而不是写死 state（等视图到位后续播）", () => {
@@ -119,13 +131,31 @@ describe("Tour 挂载与编排", () => {
     expect(store).toContain("viewOfStep(playingStep) === viewOfStep(step)");
   });
 
-  it("强制引导只覆盖第 1-4 步：无关闭叉、不响应 Esc，第 5 步恢复可关闭", () => {
+  it("强制引导只覆盖第 1-4 步：无关闭叉、不响应 Esc，第 5、6 步恢复可关闭", () => {
     const tour = read("src/windows/NovelWindow/components/NovelGuideTour/index.tsx");
-    // 强制与否按「是否最后一步」派生，而不是写死 false（第 5 步要给叉）
     expect(tour).toContain("closable={!forced}");
     expect(tour).toContain("keyboard={!forced}");
-    // 「强制引导结束」的边界：第 4 步行囊讲完即止
-    expect(tour).toContain("const forced = !isLast");
+    // 强制边界按 FORCED_MAX_STEP（=4）派生，而不是「是否最后一步」：
+    // 1.4x 新增第 6 步后，`!isLast` 会把第 5 步误升为强制步
+    expect(tour).toContain("const forced = step.step <= FORCED_MAX_STEP");
+    const copy = read("src/shared/novel/guide-copy.ts");
+    expect(copy).toContain("FORCED_MAX_STEP = 4");
+  });
+
+  it("guideState=done 的老用户不因步数 5→6 被强制重放（判据是 state，不是步数）", () => {
+    // 自动播放只认 state：done / skipped 永不自动弹，与步数增减无关
+    const state = stripComments(read("src/shared/novel/guide-state.ts"));
+    expect(state).toContain('record.state === "not_started"');
+    // store 的 start() 同样先挡非 not_started / in_progress
+    const store = stripComments(
+      read("src/windows/NovelWindow/store/useGuideStore.ts"),
+    );
+    expect(store).toContain(
+      'record.state !== "not_started" && record.state !== "in_progress"',
+    );
+    // 步数常量本身已是 6（升级后 done 记录原样保留，不触发重播分支）
+    const copy = stripComments(read("src/shared/novel/guide-copy.ts"));
+    expect(copy).toContain("GUIDE_TOTAL_STEPS = 6");
   });
 
   it("单步实例的 finish 路由坑：onClose 不许在强制步上接 skip", () => {
@@ -308,7 +338,7 @@ describe("新建作品校验（L-03：空名点「创建并开写」曾静默无
 describe("过期文案修正（FR-05）", () => {
   it("设定中心左栏提示已改成实际存在的入口路径", () => {
     const setting = stripComments(
-      read("src/windows/NovelWindow/pages/NovelPage/components/SettingCenter/index.tsx"),
+      read("src/shared/components/SettingCenter/index.tsx"),
     );
     // 旧文案承诺的「右键」与「⋯」在分类行上都不存在
     expect(setting).not.toContain("右键或「⋯」可重命名");
@@ -316,7 +346,7 @@ describe("过期文案修正（FR-05）", () => {
   });
 
   it("设定中心空态给了 CTA（空态必须给下一步动作，不只描述困境）", () => {
-    const setting = read("src/windows/NovelWindow/pages/NovelPage/components/SettingCenter/index.tsx");
+    const setting = read("src/shared/components/SettingCenter/index.tsx");
     expect(setting).toContain("EMPTY_CTA_COPY.settingEmpty");
     expect(setting).toContain("setLibraryOpen(true)");
   });
