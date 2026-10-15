@@ -1,0 +1,24 @@
+/* 设定中心 · 顶部工具头（UI-10 拆分） */
+
+.nv-sc {
+  &__head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--app-border);
+  }
+
+  &__hint {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    color: var(--app-text-muted);
+  }
+
+  &__actions {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+}

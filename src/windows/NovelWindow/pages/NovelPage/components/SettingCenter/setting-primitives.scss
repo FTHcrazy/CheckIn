@@ -1,0 +1,90 @@
+/* 设定中心跨子组件复用的块级零件（UI-10 拆分）
+
+   由父组件 index.scss 统一 @use 一次，左栏 / 卡片 / 等级序列 / 两个弹窗
+   只复用类名、不重复实现。这些是 `.nv-sc` 这个块的**公共元素**（卡片外壳、
+   字段标签、提示条、预览行……），被两处以上子组件使用 —— 就近原则指的是
+   「不承担别人不该承担的」，而不是「宁可五处各写一份造成漂移」。
+
+   作用域统一收在 .nv-sc 之下，不影响块外的任何样式。 */
+
+.nv-sc {
+  &__card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 14px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-card);
+
+    &.is-grow {
+      flex: 1;
+      min-height: 0;
+      padding-bottom: 8px;
+    }
+  }
+
+  &__card-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  &__spacer {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+    font-size: 11px;
+    color: var(--app-text-muted);
+  }
+
+  &__tip {
+    font-size: 11px;
+    color: var(--app-text-muted);
+  }
+
+  &__empty {
+    margin: 24px 0;
+  }
+
+  &__carry-example {
+    display: flex;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--app-text-secondary);
+
+    em {
+      flex-shrink: 0;
+      font-style: normal;
+      font-size: 11px;
+      color: var(--app-text-muted);
+    }
+  }
+
+  // ── 批量生成 / 拆分弹窗共用骨架 ──
+
+  &__batch {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  &__batch-fields {
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+
+    .nv-sc__field {
+      flex: 1;
+    }
+
+    .nv-sc__field.is-narrow {
+      flex: 0 0 128px;
+    }
+  }
+}

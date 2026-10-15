@@ -35,7 +35,8 @@ const ANCHOR_OWNERS: Array<[anchor: string, file: string]> = [
   ["editor-body", "src/windows/NovelWindow/pages/NovelPage/components/EditorPane/index.tsx"],
   ["editor-first-chapter", "src/windows/NovelWindow/pages/NovelPage/components/EditorPane/index.tsx"],
   ["status-annotation", "src/windows/NovelWindow/pages/NovelPage/components/StatusBar/index.tsx"],
-  ["setting-library", "src/windows/NovelWindow/pages/NovelPage/components/SettingCenter/index.tsx"],
+  // UI-10 拆分：目录内 anchor 现在挂在实际渲染它的子组件上（不是父组合器）
+  ["setting-library", "src/windows/NovelWindow/pages/NovelPage/components/SettingCenter/components/SettingPanelHead/index.tsx"],
   ["pack-modules", "src/shared/components/CharacterPack/components/PackHeader/index.tsx"],
 ];
 
@@ -307,8 +308,9 @@ describe("新建作品校验（L-03：空名点「创建并开写」曾静默无
 
 describe("过期文案修正（FR-05）", () => {
   it("设定中心左栏提示已改成实际存在的入口路径", () => {
+    // UI-10 拆分：左栏（含提示）搬到了 CategoryList 子组件
     const setting = stripComments(
-      read("src/windows/NovelWindow/pages/NovelPage/components/SettingCenter/index.tsx"),
+      read("src/windows/NovelWindow/pages/NovelPage/components/SettingCenter/components/CategoryList/index.tsx"),
     );
     // 旧文案承诺的「右键」与「⋯」在分类行上都不存在
     expect(setting).not.toContain("右键或「⋯」可重命名");
@@ -316,8 +318,10 @@ describe("过期文案修正（FR-05）", () => {
   });
 
   it("设定中心空态给了 CTA（空态必须给下一步动作，不只描述困境）", () => {
+    // UI-10 拆分：空态 CTA 仍在父组件，打开模板库的动作搬进了状态 Hook
     const setting = read("src/windows/NovelWindow/pages/NovelPage/components/SettingCenter/index.tsx");
+    const hook = read("src/windows/NovelWindow/pages/NovelPage/components/SettingCenter/hooks/useSettingCenter.ts");
     expect(setting).toContain("EMPTY_CTA_COPY.settingEmpty");
-    expect(setting).toContain("setLibraryOpen(true)");
+    expect(hook).toContain("setLibraryOpen(true)");
   });
 });

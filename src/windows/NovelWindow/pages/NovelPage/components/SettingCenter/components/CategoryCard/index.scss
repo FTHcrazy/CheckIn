@@ -1,0 +1,99 @@
+/* 设定中心 · 分类卡（UI-10 拆分） */
+@use "../../../../../../../../shared/styles/widget" as widget;
+
+.nv-sc {
+  &__cat-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--app-text);
+  }
+
+  &__badge {
+    padding: 1px 6px;
+    border-radius: var(--app-radius-chip);
+    background: var(--app-accent-purple-weak);
+    color: var(--app-accent-purple);
+    font-size: 11px;
+
+    &.is-link {
+      background: var(--app-accent-blue-weak);
+      color: var(--app-accent-blue);
+    }
+  }
+
+  // 自定义分类的「设为境界体系」入口：让自建分类能接管角色卡「当前境界」绑定。
+  // 走 `type="link"`，但清零点仍要写在同一个 `.xxx.ant-btn` 选择器里 —— 否则
+  // antd 换了承载标签后这三行外观声明会全部落空（§6.1.2 第 1、3 条）
+  &__set-realm.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-button-text-color: var(--app-accent-blue);
+    --ant-button-text-hover-color: var(--app-accent-blue);
+    height: 20px;
+    padding: 0 4px;
+    font-size: 12px;
+  }
+
+  &__note {
+    display: flex;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--app-text-secondary);
+  }
+
+  &__note-label {
+    flex-shrink: 0;
+    font-size: 11px;
+    color: var(--app-text-muted);
+  }
+
+  &__form {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px;
+    align-items: end;
+  }
+
+  &__form-actions {
+    display: flex;
+    gap: 6px;
+    justify-content: flex-end;
+  }
+
+  // ── 进位规则条 ──
+
+  &__carry {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 10px;
+    border-radius: var(--app-radius-chip);
+    background: var(--app-surface-alt);
+  }
+
+  &__carry-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  &__carry-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--app-text);
+
+    em {
+      font-style: normal;
+      font-size: 11px;
+      font-weight: 400;
+      color: var(--app-text-muted);
+    }
+  }
+
+  &__carry-select {
+    min-width: 96px;
+  }
+}

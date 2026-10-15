@@ -304,4 +304,35 @@ describe("设定中心", () => {
     fireEvent.click(screen.getByText("修仙 · 经典九层").closest(".nv-sc__lib-row")!.querySelector("button")!);
     expect(onApplyPreset).toHaveBeenCalledWith("preset-xiuxian-9");
   });
+
+  /**
+   * UI-05：把「境界体系只是 kind='realm' 的一条等级序列」这件事，
+   * 翻译成新手能按常识找到的入口 —— 左栏用直白分组名 + 一句人话说明。
+   * 钉住这两处，避免后续有人「顺手」改回中性的「设定分类」。
+   */
+  it("UI-05：左栏用常识化分组名「等级序列」并给出人话说明", () => {
+    render(<SettingCenter {...buildProps()} />);
+    expect(
+      screen.getByText("等级序列", { selector: ".nv-sc__side-head" }),
+    ).toBeInTheDocument();
+    // 说明里必须出现通用的常识词，否则新手还是找不到入口
+    expect(
+      screen.getByText(/境界.*品阶.*功法等级都在这里/),
+    ).toBeInTheDocument();
+  });
+
+  it("UI-05：分类为空时，左栏分组说明与右栏空态引导同时保留", () => {
+    render(<SettingCenter {...buildProps({ settings: [] })} />);
+    expect(
+      screen.getByText("等级序列", { selector: ".nv-sc__side-head" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("先新建一个设定分类")).toBeInTheDocument();
+  });
+
+  it("FR-05 提示保留：重命名与删除指向右侧卡片按钮（勿回潮到「右键 / 行尾菜单」）", () => {
+    render(<SettingCenter {...buildProps()} />);
+    expect(
+      screen.getByText("重命名与删除在右侧卡片的「编辑 / 删除」按钮"),
+    ).toBeInTheDocument();
+  });
 });
