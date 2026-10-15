@@ -94,9 +94,14 @@ export interface EditorState {
   settings: EditorSettings;
   selection: EditorSelection | null;
   recoveryDismissed: boolean;
-  /** 会话内新增字数（本次打开编辑器起算） */
-  todayAdded: number;
-  /** 今日累计（跨会话，启动时由 usage_log 聚合初始化） */
+  /**
+   * 今日累计**净增**字数（跨会话，启动时由 usage_log 聚合初始化，会话内续加）。
+   *
+   * 全应用只有这一个「今日字数」字段（UI-08）。曾经并存的 `todayAdded`（会话内
+   * 计数）已删除：它只被状态条渲染，于是「今日」在同一个界面里有会话内与今日累计
+   * 两个值，刚打开编辑器时状态条显示 +0、紧邻的进度条却按今日累计走。要加
+   * 「本次写作字数」这类新读数请另起字段并显式命名，**不要**把它塞回今日口径。
+   */
   todayTotal: number;
   /** 码字速度（字/分，10s 采样） */
   speed: number;
@@ -251,7 +256,6 @@ export const useNovelEditorStore = create<EditorState>()((set, get) => {
     settings: DEFAULT_SETTINGS,
     selection: null,
     recoveryDismissed: false,
-    todayAdded: 0,
     todayTotal: 0,
     speed: 0,
 
@@ -297,7 +301,6 @@ export const useNovelEditorStore = create<EditorState>()((set, get) => {
       set({
         draftMap: { ...state.draftMap, [chapterId]: next },
         activeChapterId: chapterId,
-        todayAdded: state.todayAdded + delta,
         todayTotal: state.todayTotal + delta,
       });
 
@@ -335,7 +338,6 @@ export const useNovelEditorStore = create<EditorState>()((set, get) => {
       set({
         draftMap: { ...state.draftMap, [chapterId]: next },
         activeChapterId: chapterId,
-        todayAdded: state.todayAdded + delta,
         todayTotal: state.todayTotal + delta,
       });
       scheduleSave();
@@ -474,7 +476,6 @@ export function useWritingStats(): WritingStats {
     (state) => state.settings.wordCountMode,
   );
   const dailyGoal = useNovelEditorStore((state) => state.settings.dailyGoal);
-  const todayAdded = useNovelEditorStore((state) => state.todayAdded);
   const todayTotal = useNovelEditorStore((state) => state.todayTotal);
   const speed = useNovelEditorStore((state) => state.speed);
 
@@ -484,7 +485,6 @@ export function useWritingStats(): WritingStats {
       chapterDraft !== undefined
         ? countWordsCached(chapterDraft, wordCountMode)
         : baseWords,
-    todayAdded,
     todayTotal,
     speed,
     dailyGoal,

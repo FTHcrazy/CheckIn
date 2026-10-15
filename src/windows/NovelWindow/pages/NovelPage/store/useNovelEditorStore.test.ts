@@ -23,7 +23,6 @@ function reset(): void {
     settings: DEFAULT_SETTINGS,
     selection: null,
     recoveryDismissed: false,
-    todayAdded: 0,
     todayTotal: 0,
     speed: 0,
   });
@@ -66,7 +65,6 @@ describe("useNovelEditorStore（编辑器交互状态）", () => {
 
     expect(state().draftMap.c1).toBe("苏晚走进灵潮");
     expect(state().activeChapterId).toBe("c1");
-    expect(state().todayAdded).toBe(words);
     expect(state().todayTotal).toBe(words);
     expect(state().saveState).toBe("pending");
   });
@@ -99,7 +97,6 @@ describe("useNovelEditorStore（编辑器交互状态）", () => {
     state().setContent("c1", "第一章正文", "第一章正文");
 
     expect(state().draftMap.c1).toBeUndefined();
-    expect(state().todayAdded).toBe(0);
     expect(state().todayTotal).toBe(0);
     expect(state().saveState).toBe("idle");
     expect(state().activeChapterId).toBe("c1");
@@ -135,7 +132,6 @@ describe("useNovelEditorStore（编辑器交互状态）", () => {
     state().setContent("c1", "第一章正文更多", "第一章正文");
     const delta = countWords("更多", DEFAULT_SETTINGS.wordCountMode);
 
-    expect(state().todayAdded).toBe(delta);
     expect(state().todayTotal).toBe(delta);
   });
 
@@ -151,12 +147,12 @@ describe("useNovelEditorStore（编辑器交互状态）", () => {
 
     // 先在 c1 写到 200 字
     state().setContent("c1", longChapter);
-    const wordsAfterC1 = state().todayAdded;
+    const wordsAfterC1 = state().todayTotal;
     expect(wordsAfterC1).toBe(countWords(longChapter, DEFAULT_SETTINGS.wordCountMode));
 
     // ✅ 正确契约：切到 c2 时 EditorPane 的 hydratingRef 把 next 自身当基线
     state().setContent("c2", shortChapter, shortChapter);
-    expect(state().todayAdded).toBe(wordsAfterC1);
+    expect(state().todayTotal).toBe(wordsAfterC1);
     expect(state().draftMap.c2).toBeUndefined();
 
     reset();
@@ -164,12 +160,12 @@ describe("useNovelEditorStore（编辑器交互状态）", () => {
     // ❌ 历史缺陷：灌入时传的是 update.startState.doc（变更前的 c1 正文）
     // 50 - 200 = -150，表现为「今日字数倒退」；反过来短章切长章则凭空多出整章字数
     state().setContent("c1", longChapter);
-    const before = state().todayAdded;
+    const before = state().todayTotal;
     state().setContent("c2", shortChapter, longChapter);
-    expect(state().todayAdded).toBe(
+    expect(state().todayTotal).toBe(
       before + countWords(shortChapter, DEFAULT_SETTINGS.wordCountMode) - before,
     );
-    expect(state().todayAdded).toBeLessThan(before);
+    expect(state().todayTotal).toBeLessThan(before);
   });
 
   it("换章后立刻输入：旧章在途保存立即落库，不被新章防抖吞掉", async () => {
@@ -513,18 +509,16 @@ describe("useNovelEditorStore（编辑器交互状态）", () => {
     expect(state().markSelection("character")).toBeNull();
   });
 
-  it("今日累计与恢复横幅的开关各自独立", () => {
+  it("今日累计水合只写 todayTotal，不动恢复横幅开关", () => {
     registerEditorRunner({
       persistChapter: async () => true,
       markSelectionAsEntity: () => null,
       persistSettings: () => {},
     });
 
+    state().dismissRecovery();
     state().hydrateUsage(1200);
     expect(state().todayTotal).toBe(1200);
-    expect(state().todayAdded).toBe(0);
-
-    state().dismissRecovery();
     expect(state().recoveryDismissed).toBe(true);
   });
 });

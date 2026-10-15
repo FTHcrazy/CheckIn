@@ -367,10 +367,15 @@ export interface EditorSettings {
   confirmReorder: boolean;
 }
 
-/** 底部状态条所需的统计（PRD R4） */
+/**
+ * 底部状态条所需的统计（PRD R4）
+ *
+ * `todayTotal` 是**今日累计净增**，与书架「今日新增」同源（UI-08）；
+ * 不要再往这里加「会话内新增」之类的同义字段 —— 同一个「今日」两个数
+ * 正是 UI-08 修掉的那个缺陷。
+ */
 export interface WritingStats {
   chapterWords: number;
-  todayAdded: number;
   speed: number;
   todayTotal: number;
   dailyGoal: number;

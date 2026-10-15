@@ -29,6 +29,7 @@ import {
   type ShelfSortKey,
   type ShelfStatusFilter,
 } from "./bookshelf-utils";
+import { TODAY_ADDED_LABEL, WORD_UNIT } from "@/shared/novel/today-stats";
 import "./index.scss";
 
 interface BookshelfPageProps {
@@ -242,8 +243,10 @@ export default function BookshelfPage({
         key: "today",
         icon: <ThunderboltOutlined />,
         tone: "green",
-        value: formatThousands(usage.todayWords),
-        label: "今日新增（字）",
+        // UI-08：单位跟着数字（与同排「12 部」「48.2 万」「5 天」一致），
+        // 术语取自 today-stats，与编辑器状态条同源
+        value: `${formatThousands(usage.todayWords)} ${WORD_UNIT}`,
+        label: TODAY_ADDED_LABEL,
       },
       {
         key: "streak",

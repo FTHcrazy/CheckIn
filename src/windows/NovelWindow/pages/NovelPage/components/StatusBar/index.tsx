@@ -1,5 +1,6 @@
 import { Button } from "antd";
 import { useEffect, useState } from "react";
+import { TODAY_ADDED_LABEL, TODAY_GOAL_LABEL, WORD_UNIT } from "@/shared/novel/today-stats";
 import { calcGoalProgress, formatThousands } from "../../novel-utils";
 import { useWritingStats } from "../../store/useNovelEditorStore";
 import "./index.scss";
@@ -39,10 +40,16 @@ export default function StatusBar({
   return (
     <div className="nv-status">
       <span className="nv-status__item">
-        本章 <b>{formatThousands(stats.chapterWords)}</b> 字
+        本章 <b>{formatThousands(stats.chapterWords)}</b> {WORD_UNIT}
       </span>
+      {/*
+        UI-08：读 todayTotal（今日累计净增）而不是会话内计数。此前显示「今日 +N」
+        只算本次打开编辑器后的增量，于是刚进来是「今日 +0」，而右边进度条却按今日
+        累计走 —— 同一条状态栏里两个「今日」，也和书架的「今日新增」对不上。
+      */}
       <span className="nv-status__item">
-        今日 <b className="nv-status__positive">+{formatThousands(stats.todayAdded)}</b>
+        {TODAY_ADDED_LABEL}{" "}
+        <b className="nv-status__positive">{formatThousands(stats.todayTotal)}</b> {WORD_UNIT}
       </span>
       <span className="nv-status__item">
         <b>{stats.speed}</b> 字/分
@@ -61,7 +68,7 @@ export default function StatusBar({
 
       <div className="nv-status__goal">
         <span className="nv-status__goal-label">
-          今日目标 {formatThousands(stats.dailyGoal)}
+          {TODAY_GOAL_LABEL} {formatThousands(stats.dailyGoal)} {WORD_UNIT}
         </span>
         <div
           className="nv-status__bar"

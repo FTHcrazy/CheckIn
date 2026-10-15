@@ -213,7 +213,7 @@ export default function EditorPane({
    * CodeMirror 的 updateListener 分不清「用户敲的字」和「我们用 dispatch 灌进去的整篇正文」，
    * 而它的 `update.startState.doc` 是**变更前**的文档——切章时那是上一章的正文。
    * 拿它当字数基线会把「整章字数」或「两章字数之差」当成用户新增：
-   * 打开一本 4200 字的章节立刻「今日 +4200」，从长章切到短章则出现负增长。
+   * 打开一本 4200 字的章节立刻「今日新增 4,200 字」，从长章切到短章则出现负增长。
    *
    * 灌入不是写作行为，必须走 `baseContent === next` 的语义（store 据此提前返回：
    * 不写草稿、不计字数、不重启防抖，从而不断掉旧章在途的保存）。
@@ -422,7 +422,7 @@ export default function EditorPane({
               // 程序化灌入（切章 / 编辑器重建）：显式声明 hydrate 语义 ——
               // store 只切章、不计字数、不写草稿。绝不能靠「传 next 自身当基线」
               // 让 previous 与 next 相等：该章若已有未保存草稿，previous 取到的是
-              // 旧草稿，值相等假设破裂 → 把「旧草稿 → 灌入文本」的差值算进今日字数。
+              // 旧草稿，值相等假设破裂 → 把「旧草稿 → 灌入文本」的差值算进今日新增。
               if (hydratingRef.current) {
                 handlersRef.current.onChange(next, next, "hydrate");
                 return;
