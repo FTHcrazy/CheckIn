@@ -3,8 +3,11 @@
 /**
  * 行囊 L0 看板（UI-01）
  *
- * 只读为主的信息一屏。卡片化分区：A 身份 / B 境界 / C 核心属性 / D 生效状态 /
+ * 只读为主的信息一屏。卡片化分区：B 境界 / C 核心属性 / D 生效状态 /
  * E 关键设定摘要行。
+ *
+ * ⚠️ 没有身份卡：它与头部 `.cpk-head` 逐项重复（名字 / 境界 / 绑定态 /
+ * 改动计数），2026-10 已删，见 index.tsx 顶部的说明。
  *
  * ⚠️ 底色必须比正文区高一层：正文 `.cpk__body` 与 L1 的 `.cpk-mod` 都已铺
  * `--app-surface`，看板卡若同色就彻底糊在一起（只剩描边）。这里用
@@ -26,90 +29,6 @@
     flex-direction: column;
     gap: 8px;
     min-width: 0;
-  }
-
-  /* ── A 主角身份卡 ── */
-  &__identity {
-    flex-direction: row;
-    align-items: center;
-    gap: 10px;
-  }
-
-  &__avatar {
-    flex: none;
-    width: 40px;
-    height: 40px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: var(--app-radius-item);
-    background: var(--app-primary-weak);
-    color: var(--app-primary);
-    font-size: 18px;
-    font-weight: 600;
-    line-height: 1;
-  }
-
-  &__idmain {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-
-  &__name {
-    font-size: 15px;
-    font-weight: 600;
-    color: var(--app-text);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  &__idmeta {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 6px;
-    min-width: 0;
-  }
-
-  &__realmchip {
-    padding: 0 7px;
-    border-radius: var(--app-radius-pill);
-    background: var(--app-surface-active);
-    color: var(--app-text-secondary-strong);
-    font-size: 11px;
-    line-height: 17px;
-    white-space: nowrap;
-  }
-
-  &__bound,
-  &__unbound {
-    font-size: 11px;
-    white-space: nowrap;
-  }
-
-  &__bound {
-    color: var(--app-accent-green);
-  }
-
-  &__unbound {
-    color: var(--app-text-muted);
-  }
-
-  /* A 区「本章变动」角标（FR-08） */
-  &__changes.ant-btn {
-    @include widget.cpk-widget;
-    flex: none;
-    height: 22px;
-    padding: 0 9px;
-    border: 1px solid var(--app-warning);
-    border-radius: var(--app-radius-pill);
-    background: var(--app-warning-weak);
-    color: var(--app-warning);
-    font-size: 11px;
   }
 
   /* ── 通用行头 ── */

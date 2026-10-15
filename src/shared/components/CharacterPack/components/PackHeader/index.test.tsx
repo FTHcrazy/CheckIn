@@ -190,21 +190,30 @@ describe("PackHeader —— 窄档工具收进「更多」", () => {
 });
 
 /**
- * 头像必须是图标而不是 emoji。
+ * 头像：角色名首字（名字为空才退回图标），不是 emoji。
  *
  * 一度用 🧑 当头像：它跟着系统字体渲染，在 Windows 上是彩色表情，
  * 与整块中性配色打架，暗色主题下尤其突兀（AGENTS.md §6.1 明确不用 emoji 当图标）。
+ *
+ * 后来又短暂用过纯人形图标；2026-10 看板那版冗余身份卡被删掉后，它的「首字头像」
+ * 上移到这里 —— 这是身份卡唯一独有的视觉信息，丢掉可惜。
  */
-describe("PackHeader —— 头像不用 emoji", () => {
+describe("PackHeader —— 头像用角色名首字，不用 emoji", () => {
   afterEach(cleanup);
 
-  it("头像容器里没有 emoji 字符，用的是 antd 图标", () => {
-    render(<PackHeader {...props().base} />);
+  it("头像显示角色名首字", () => {
+    render(<PackHeader {...props({ characterName: "沈长青" }).base} />);
     const avatar = document.querySelector(".cpk-head__avatar");
     expect(avatar).not.toBeNull();
-    expect(avatar?.querySelector(".anticon")).not.toBeNull();
+    expect(avatar?.textContent).toBe("沈");
     // 任何 emoji 区段的字符都不该出现在头部里
     expect(header()?.textContent ?? "").not.toMatch(/[\u{1F300}-\u{1FAFF}]/u);
+  });
+
+  it("名字为空时退回人形图标，不渲染空字符", () => {
+    render(<PackHeader {...props({ characterName: "" }).base} />);
+    const avatar = document.querySelector(".cpk-head__avatar");
+    expect(avatar?.querySelector(".anticon")).not.toBeNull();
   });
 });
 

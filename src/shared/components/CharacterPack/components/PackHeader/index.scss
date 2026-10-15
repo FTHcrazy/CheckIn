@@ -43,7 +43,8 @@
   }
 
   /*
-    头像：圆形底 + 人形图标。此前是一枚 emoji（🧑）—— 它跟着系统字体渲染，
+    头像：圆形底 + 角色名首字（名字为空时才退回人形图标）。
+    此前是一枚 emoji（🧑）—— 它跟着系统字体渲染，
     在四套主题里颜色不可控、在 Windows 上是彩色表情，与整块中性配色打架
     （AGENTS.md §6.1 明确不用 emoji 当图标）。
   */
@@ -58,6 +59,9 @@
     align-items: center;
     justify-content: center;
     font-size: 19px;
+    /* 首字是文本（不是图标），压一档字号 + 加粗才不至于在圆里显得飘 */
+    font-weight: 600;
+    line-height: 1;
   }
 
   &__id {

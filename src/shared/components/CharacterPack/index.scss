@@ -32,6 +32,21 @@
   }
 
   /*
+    L0 看板与 L1 编辑器区之间的呼吸。
+
+    两者都是 `.cpk__body` 的**直接子项**，而 body 是块级流 —— 相邻块之间没有
+    默认外边距，不加这一条就会出现「看板最后一行摘要贴着第一个模块卡上沿」，
+    两块连成一片、看不出是两级结构（模块壳自己的 `& + &` 只管栏内相邻兄弟，
+    管不到跨级这一层）。
+
+    用相邻兄弟选择器而不是给 body 上 flex + gap：body 是滚动容器，
+    改成 flex 会让子项默认 `flex-shrink: 1`，内容超高时把看板压扁。
+  */
+  &__body > .cpk-board + * {
+    margin-top: 14px;
+  }
+
+  /*
     双栏容器：**左「数值与状态」/ 右「装备类」**（顺序见 pack-layout 的
     PACK_ZONE_ORDER，两处必须同序 —— 左上是视线起点，放作者第一眼要找的
     属性汇总 / 人物属性 / 境界）。
@@ -125,6 +140,15 @@
     }
   }
 
+  /*
+    模块定位包装：纯透明块，只承载 `data-pack-module` 锚点，供「看板点摘要行 →
+    滚到对应模块」查询。`min-width: 0` 是给日后若换 flex/grid 容器留的后路
+    （那时不加会被 nowrap 内容撑破），当下不改版式。
+  */
+  &__module {
+    min-width: 0;
+  }
+
   &__loading {
     display: flex;
     align-items: center;
@@ -165,6 +189,11 @@
   .cpk__zonestack > * + *,
   .cpk__flow > * + * {
     margin-top: 6px;
+  }
+
+  /* 看板与 L1 的间距同档收窄（见 `.cpk__body > .cpk-board + *`） */
+  > .cpk-board + * {
+    margin-top: 8px;
   }
 }
 

@@ -248,7 +248,7 @@ export function dashboardAttrLimit(tier: "wide" | "mid" | "narrow"): number {
 /**
  * E 区「关键设定」摘要行 = **当前启用的全部模块**。
  *
- * 为什么连核心三块（汇总 / 属性 / 境界）也列进来：A/B/C 只给只读速览，而
+ * 为什么连核心几块（汇总 / 属性 / 境界）也列进来：B/C 只给只读速览，而
  * 十模块的编辑能力必须一条不少（G-04）。把它们留成摘要行，作者仍能一键进
  * L1 编辑器 —— 看板负责「看」，摘要行负责「改」，职责分开但入口不缺。
  *
@@ -270,5 +270,28 @@ export function dashboardActiveStatuses<T extends { ownerType: string; active: b
   modifiers: readonly T[],
 ): T[] {
   return modifiers.filter((mod) => mod.ownerType === "status" && mod.active);
+}
+
+/** 定位时给目标顶部留的呼吸距离（px） */
+export const MODULE_SCROLL_MARGIN = 8;
+
+/**
+ * 「点看板摘要行 → 找到下方的模块编辑器」需要滚动多少。
+ *
+ * 看板在上、编辑器在下，点摘要行展开时**变化发生在视口之外**：手点了、画面
+ * 没动，用户会以为按钮坏了，得自己往下滚才找到刚展开的模块。这里给出滚动判据：
+ * - 目标已**完整可见** → 返回 `null`（一像素都不动，避免「点了画面乱跳」）；
+ * - 否则 → 返回把目标顶部对齐到可视区顶部（留 {@link MODULE_SCROLL_MARGIN} 呼吸）
+ *   所需的像素位移；目标在可视区上方时自然为负值，向上滚。
+ *
+ * 抽成纯函数是为了测得到：jsdom 没有布局引擎，`scrollIntoView` 与
+ * `getBoundingClientRect` 都量不出真值，只有把判据从 DOM 里摘出来才能断言。
+ */
+export function moduleScrollDelta(
+  target: { top: number; bottom: number },
+  viewport: { top: number; bottom: number },
+): number | null {
+  if (target.top >= viewport.top && target.bottom <= viewport.bottom) return null;
+  return target.top - viewport.top - MODULE_SCROLL_MARGIN;
 }
 

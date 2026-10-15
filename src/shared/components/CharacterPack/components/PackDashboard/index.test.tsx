@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import PackDashboard from "./index";
 import type { PackPanelApi } from "../../hooks/usePackPanel";
 import type { PackDoc } from "../../hooks/usePackData";
+import type { LadderRung } from "../../pack-utils";
 import {
   DEFAULT_UI_PREFS,
   type PackAttribute,
@@ -13,12 +14,15 @@ import {
 /**
  * 行囊 L0 看板（UI-01）。
  *
- * 钉住五区的关键行为：
- * - A 身份卡：读名字 / 绑定态 / 变动角标；
+ * 钉住各区的关键行为：
+ * - B 境界卡：大读数 + 镜像条；「调整」是**导航入口**，恒展开语义、不出「收起」；
  * - C 核心属性：默认条数受档位限制、点行开来源明细、「展开全部」放出其余；
  * - D 生效状态：只列 active、开关可点；
- * - E 摘要行：一行一模块、点击触发展开回调、箭头随展开态。
+ * - E 摘要行：一行一模块、点击触发导航回调、箭头随展开态。
  * 只读看板不改数据 —— 所有写动作都通过回调 / API 方法，断言校验调用即可。
+ *
+ * ⚠️ 曾经有一版 A 区身份卡（名字 / 境界 chip / 绑定态 / 改动角标），因与头部
+ * 逐项重复已删。若有人想加回来，先看 index.tsx 顶部那段说明。
  */
 
 function attr(id: string, name: string, partial: Partial<PackAttribute> = {}): PackAttribute {
@@ -61,6 +65,18 @@ function mod(partial: Partial<PackModifier> = {}): PackModifier {
     note: "",
     disabled: false,
     sortOrder: 1,
+    ...partial,
+  };
+}
+
+function rung(partial: Partial<LadderRung> = {}): LadderRung {
+  return {
+    id: "r1",
+    name: "炼气",
+    rank: 1,
+    subLevels: 13,
+    power: null,
+    hasChildren: false,
     ...partial,
   };
 }
@@ -175,22 +191,52 @@ function renderBoard(over: Partial<PackPanelApi> = {}, tier: "wide" | "mid" | "n
   return { api, onExpandModule, onToggleAttrs, container: result.container };
 }
 
-describe("PackDashboard —— A 主角身份卡", () => {
+describe("PackDashboard —— B 境界卡", () => {
   afterEach(cleanup);
 
-  it("显示角色名、境界读数与绑定态", () => {
+  it("给大读数与「实体面板显示」镜像条（同源态）", () => {
     renderBoard();
-    expect(screen.getByText("陆长安")).toBeInTheDocument();
-    // 境界读数在读 chip 与 B 区大读数各出现一次
     expect(screen.getAllByText("炼气 1 层").length).toBeGreaterThan(0);
-    expect(screen.getByText("未绑定主角")).toBeInTheDocument();
+    expect(screen.getByText("实体面板显示")).toBeInTheDocument();
+    expect(screen.getByText("同源")).toBeInTheDocument();
   });
 
-  it("有改动时出现变动角标，点击走全部已读", () => {
-    const { api } = renderBoard({ changedCount: 3 });
-    const badge = screen.getByText("3 处改动").closest("button") as HTMLButtonElement;
-    fireEvent.click(badge);
-    expect(api.markAllChangesRead).toHaveBeenCalledTimes(1);
+  it("两处读数不一致时标注「已分叉」", () => {
+    renderBoard({ panelRealmText: "筑基 2 层" });
+    expect(screen.getByText("已分叉")).toBeInTheDocument();
+    expect(screen.getByText("筑基 2 层")).toBeInTheDocument();
+  });
+
+  it("没有等级体系时不渲染「调整」入口", () => {
+    renderBoard({ rungs: [] });
+    // ⚠️ 两个坑：① antd 会给两字中文按钮插字间距（测试环境没挂 ThemeProvider，
+    // 走 antd 默认 autoInsertSpace=true），文本实际是「调 整」→ 用文案断言会假通过；
+    // ② `.cpk-board__entry` 同时是 C 区「展开全部」的类名 → 必须限定在境界卡内查。
+    expect(document.querySelector(".cpk-board__realm .cpk-board__entry")).toBeNull();
+  });
+
+  it("「调整」是导航入口：模块已展开时也仍可点，不出「收起」", () => {
+    const api = makeApi({ rungs: [rung()] });
+    const onExpandModule = vi.fn();
+    render(
+      <PackDashboard
+        api={api}
+        tier="wide"
+        attrsExpanded={false}
+        onToggleAttrs={vi.fn()}
+        onExpandModule={onExpandModule}
+        expandedKeys={new Set(["realm"])}
+      />,
+    );
+    const entry = document.querySelector(
+      ".cpk-board__realm .cpk-board__entry",
+    ) as HTMLButtonElement;
+    expect(entry).not.toBeNull();
+    // 旧版在展开态下把文案切成「收起」，而这张卡本身没有可收起的内容
+    // → 点完卡面毫无变化，用户报障「这颗按钮没用」。（比对时去掉 antd 插的字间距）
+    expect((entry.textContent ?? "").replace(/\s/g, "")).toBe("调整");
+    fireEvent.click(entry);
+    expect(onExpandModule).toHaveBeenCalledWith("realm");
   });
 });
 
@@ -259,6 +305,9 @@ describe("PackDashboard —— E 关键设定摘要行", () => {
     );
     const row = screen.getByText("装备栏").closest("button") as HTMLButtonElement;
     expect(row.getAttribute("aria-expanded")).toBe("true");
+    // 已展开的行提示「跳过去」，不是「收起」—— 从看板收一个视口外的模块
+    // 同样看不见反馈，语义上就只保留导航
+    expect(row.getAttribute("title")).toContain("跳过去");
   });
 
   it("「模块管理」按钮打开模块管理器", () => {

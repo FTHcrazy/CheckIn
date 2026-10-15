@@ -104,7 +104,6 @@ describe("行囊 UI：自带造型的控件以 .ant-btn 承载", () => {
     "cpk-fxmodal__pick",
     "cpk-ncard",
     "cpk-emptyblock__cta",
-    "cpk-board__changes",
     "cpk-board__entry",
     "cpk-board__attrrow",
     "cpk-board__modrow",

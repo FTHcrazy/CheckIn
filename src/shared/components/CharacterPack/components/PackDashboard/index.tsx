@@ -1,5 +1,5 @@
 import { Button, Switch, Tooltip } from "antd";
-import { DownOutlined, RightOutlined, UserOutlined } from "@ant-design/icons";
+import { DownOutlined, RightOutlined } from "@ant-design/icons";
 import type { PackPanelApi } from "../../hooks/usePackPanel";
 import { moduleLabel } from "../module-meta";
 import { attrSegments, formatAttrValue, statText } from "../../pack-utils";
@@ -18,9 +18,14 @@ interface PackDashboardProps {
   /** C 区「展开全部」开关（由宿主持有，跨看板与 L1 保持同一份状态） */
   attrsExpanded: boolean;
   onToggleAttrs: () => void;
-  /** 点 E 区某行：把对应模块就地展开为 L1 编辑器 */
+  /**
+   * 点摘要行 / 境界卡「调整」：**导航**到该模块。
+   *
+   * 宿主负责「确保展开 + 滚动定位」；看板不自己翻转折叠 —— 从看板远程收起一个
+   * 视口外的模块，画面同样没有反馈，等于把「点了没反应」换个方向再犯一次。
+   */
   onExpandModule: (key: PackModuleKey) => void;
-  /** 当前已展开（非收起）的模块集合，用于摘要行的箭头与「已在下方展开」提示 */
+  /** 当前已展开（非收起）的模块集合，供摘要行的箭头与「已展开」高亮只读展示 */
   expandedKeys: ReadonlySet<PackModuleKey>;
 }
 
@@ -28,17 +33,22 @@ interface PackDashboardProps {
  * 行囊 L0 看板（UI-01）
  *
  * 首屏从「十模块编辑器平铺」转为「一屏看懂主角当前状态」的只读看板：
- * - A 主角身份卡（名字 / 境界读数 / 绑定态 / 保存三态）
- * - B 境界卡（复用 RealmModule 的完整境界卡，直选见 UI-02）
+ * - B 境界卡（大读数 + 与实体面板的对照条，点「调整」跳到 L1 直选）
  * - C 核心属性总览（base → final + 增量段，点行开来源明细）
  * - D 生效状态（仅 active，含开关）
- * - E 关键设定摘要行（一行一模块，点击就地展开 L1）
+ * - E 关键设定摘要行（一行一模块，点击即展开并**滚动到**该模块）
  *
  * 看板只做「看」，编辑能力全部留在 L1（E 区一行即入口）—— 两者职责分开，
  * 但入口一条不缺，满足「能力零删减」。
  *
- * 保存三态（A 区）在……宿主头部已有一份；这里仅显示只读读数，不重复挂按钮，
- * 避免同屏两个「保存」按钮（那是历史报障里「点了没反应」的同款噪声）。
+ * ⚠️ 这里**没有**身份卡。曾经有过一版 A 区「主角身份卡」（首字头像 + 名字 +
+ * 境界 chip + 绑定态 + 改动角标），但它与头部 `.cpk-head` 横向概览带**逐项重复**
+ * （名字 / 境界 / 绑定态 / 改动计数四样全都一样），两行叠在一起纯属噪音。
+ * 头部是设计稿 §8.6.1 钦定的概览带且还多带保存三态与工具，故重复的一方删看板这边；
+ * 它唯一独有的「角色首字头像」上移到头部头像位（见 PackHeader）。
+ *
+ * 看板卡铺 `--app-surface-elevated` + `--app-shadow-card`（见 index.scss）：
+ * 正文与 L1 模块壳都是 `--app-surface`，同色会整片糊在一起。
  */
 export default function PackDashboard({
   api,
@@ -50,10 +60,6 @@ export default function PackDashboard({
 }: PackDashboardProps) {
   const doc = api.doc;
   if (!doc) return null;
-
-  // ── A 主角身份卡 ──
-  const name = doc.character.displayName || doc.character.name || "主角";
-  const initial = name.trim().charAt(0) || "主";
 
   // ── C 核心属性总览 ──
   const orderedRows = api.attrView
@@ -71,54 +77,25 @@ export default function PackDashboard({
 
   return (
     <div className={`cpk-board cpk-board--${tier}`} aria-label="主角信息看板">
-      {/* ── A 主角身份卡 ── */}
-      <section className="cpk-board__card cpk-board__identity" aria-label="主角身份">
-        <span className="cpk-board__avatar" aria-hidden>
-          {initial}
-        </span>
-        <div className="cpk-board__idmain">
-          <span className="cpk-board__name" title={name}>
-            {name}
-          </span>
-          <div className="cpk-board__idmeta">
-            <span className="cpk-board__realmchip" title={api.realmHint || "当前境界"}>
-              {api.realmText}
-            </span>
-            {api.realmBound ? (
-              <span className="cpk-board__bound" title="已绑定主角实体，与右侧「要素」栏同步">
-                <UserOutlined /> 已绑定主角
-              </span>
-            ) : (
-              <span className="cpk-board__unbound">未绑定主角</span>
-            )}
-          </div>
-        </div>
-        {/* FR-08：本章变动的入口以角标形式留在 A 区，不再占据中部读数带 */}
-        {api.changedCount > 0 ? (
-          <Button
-            size="small"
-            className="cpk-board__changes"
-            onClick={api.markAllChangesRead}
-            title="把这批改动标记为已读"
-          >
-            {api.changedCount} 处改动
-          </Button>
-        ) : null}
-      </section>
-
-      {/* ── B 境界卡 ──（UI-02 的完整直选能力由宿主在看板下方渲染的 RealmModule 承担；
-          这里给一条只读大读数 + 直选提示，避免「看板看不到境界」） */}
+      {/* ── B 境界卡 ──（完整直选能力在 L1 的 RealmModule，UI-02；这里给一条
+          只读大读数 + 「调整」入口，避免「看板看不到境界」） */}
       <section className="cpk-board__card cpk-board__realm" aria-label="境界">
         <div className="cpk-board__rowhead">
           <span className="cpk-board__rowtitle">境界</span>
           {api.rungs.length > 0 ? (
+            /*
+              恒为「调整」，**不再出现「收起」**：这张卡本身没有任何可收起的内容，
+              旧版按展开态切成的「收起」切的是下方 L1 的境界模块 —— 视口外的东西，
+              点完卡面毫无变化，观感是「这颗按钮没用」（实测报障）。
+              收起交给 L1 模块壳自己的折叠按钮。
+            */
             <Button
               size="small"
               className="cpk-board__entry"
               onClick={() => onExpandModule("realm")}
-              title="展开境界编辑器，直选阶与小层"
+              title="展开并跳到境界编辑器，直选阶与小层"
             >
-              {expandedKeys.has("realm") ? "收起" : "调整"}
+              调整
             </Button>
           ) : null}
         </div>
@@ -263,7 +240,11 @@ export default function PackDashboard({
                 <Button
                   className={`cpk-board__modrow${expanded ? " is-open" : ""}`}
                   onClick={() => onExpandModule(module.key)}
-                  title={expanded ? "收起编辑器" : "展开编辑器"}
+                  title={
+                    expanded
+                      ? "该模块已在下方展开 · 点这里跳过去"
+                      : "展开该模块并跳过去"
+                  }
                   aria-expanded={expanded}
                 >
                   <span className="cpk-board__modlabel">{moduleLabel(module.key)}</span>

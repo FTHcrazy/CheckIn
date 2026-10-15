@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  MODULE_SCROLL_MARGIN,
   PACK_ZONE_LABEL,
   PACK_ZONE_OF,
   PACK_ZONE_ORDER,
@@ -10,6 +11,7 @@ import {
   dashboardSummaryModules,
   isAutoCollapsed,
   missingZoneOf,
+  moduleScrollDelta,
   moduleSummary,
   splitByZone,
 } from "./pack-layout";
@@ -429,7 +431,7 @@ describe("UI-01 看板 L0 编排（纯函数）", () => {
     expect(dashboardAttrLimit("narrow")).toBe(4);
   });
 
-  it("E 区摘要行 = 当前启用的全部模块（含核心三块，保编辑入口）", () => {
+  it("E 区摘要行 = 当前启用的全部模块（含核心几块，保编辑入口）", () => {
     const modules = allModules();
     // 原样透传、不重排 —— 作者拖拽顺序必须被尊重
     expect(dashboardSummaryModules(modules)).toBe(modules);
@@ -448,5 +450,38 @@ describe("UI-01 看板 L0 编排（纯函数）", () => {
   it("D 区无生效状态时返回空数组", () => {
     expect(dashboardActiveStatuses([])).toEqual([]);
     expect(dashboardActiveStatuses([{ ownerType: "status", active: false }])).toEqual([]);
+  });
+});
+
+/**
+ * 看板摘要行 → L1 模块的滚动定位（用户报障：点开没反应，得自己往下滑）。
+ *
+ * 判据抽成纯函数才测得到 —— jsdom 没有布局引擎，`getBoundingClientRect`
+ * 全返回 0、`scrollIntoView` 也没实现，靠组件测不出「滚了多少」。
+ */
+describe("UI-01 看板 → 模块滚动定位（纯函数）", () => {
+  const view = { top: 0, bottom: 400 };
+
+  it("目标已完整可见 → 不动画面（null），避免「点了画面乱跳」", () => {
+    expect(moduleScrollDelta({ top: 50, bottom: 200 }, view)).toBeNull();
+    // 与可视区上下沿正好贴合也算「完整可见」
+    expect(moduleScrollDelta({ top: 0, bottom: 400 }, view)).toBeNull();
+  });
+
+  it("目标在可视区下方 → 把它的顶部对齐到可视区顶部（留 8px 呼吸）", () => {
+    expect(moduleScrollDelta({ top: 900, bottom: 1300 }, view)).toBe(900 - 0 - MODULE_SCROLL_MARGIN);
+    expect(MODULE_SCROLL_MARGIN).toBeGreaterThan(0);
+  });
+
+  it("目标被下沿截断也算「没看全」，要滚", () => {
+    expect(moduleScrollDelta({ top: 200, bottom: 460 }, view)).toBe(200 - MODULE_SCROLL_MARGIN);
+  });
+
+  it("目标在可视区上方 → 返回负位移（向上滚）", () => {
+    expect(moduleScrollDelta({ top: -120, bottom: -20 }, view)).toBe(-120 - MODULE_SCROLL_MARGIN);
+  });
+
+  it("目标比可视区还高时也照滚（顶部对齐，露出开头）", () => {
+    expect(moduleScrollDelta({ top: 600, bottom: 1600 }, view)).toBe(600 - MODULE_SCROLL_MARGIN);
   });
 });

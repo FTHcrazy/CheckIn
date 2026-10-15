@@ -36,6 +36,7 @@ import {
   activeZones,
   isAutoCollapsed,
   missingZoneOf,
+  moduleScrollDelta,
   moduleSummary,
   splitByZone,
   type PackZone,
@@ -220,9 +221,46 @@ export default function CharacterPackHost({
     [api.enabledModules, effectiveCollapsed],
   );
 
-  /** 看板摘要行点击：按**生效值**翻转折叠（与 withEffectiveCollapse 的 toggle 同规则） */
-  const toggleModuleFromBoard = (key: PackModuleKey) => {
-    api.setModuleCollapsed(key, !effectiveCollapsed[key]);
+  /**
+   * 把 L1 里的某个模块滚进可视区。
+   *
+   * 看板在上、编辑器在下：点摘要行若只改状态，变化会落在视口之外 —— 用户手点了、
+   * 画面没动，就会以为按钮坏了（实测报障）。展开之后把目标模块滚到顶，变化就在眼前。
+   * 目标已完整可见时 `moduleScrollDelta` 返回 `null`，这里一像素都不动。
+   */
+  const scrollToModule = (key: PackModuleKey) => {
+    const body = bodyRef.current;
+    if (!body) return;
+    const node = body.querySelector<HTMLElement>(`[data-pack-module="${key}"]`);
+    if (!node) return;
+    const delta = moduleScrollDelta(
+      node.getBoundingClientRect(),
+      body.getBoundingClientRect(),
+    );
+    if (delta === null) return;
+    // jsdom 不实现元素级滚动（测试环境），退回直接赋 scrollTop 而不是抛错
+    if (typeof body.scrollTo === "function") {
+      body.scrollTo({ top: body.scrollTop + delta, behavior: "smooth" });
+    } else {
+      body.scrollTop += delta;
+    }
+  };
+
+  /**
+   * 看板摘要行 / 境界卡入口：**导航**语义，不是翻转折叠。
+   *
+   * 「确保这个模块是展开的，并把我带到它那儿」：
+   * - 收起态 → 按生效值展开（与 `withEffectiveCollapse` 同规则写
+   *   `prefs.collapsed[key] = false`，作者显式表态过就长期保留）；
+   * - 已展开 → 不收起，只滚动定位。
+   *
+   * 收起为什么不在看板上做：从看板「远程收起」一个视口外的模块，画面同样没有
+   * 反馈，等于把「点了没反应」换个方向再犯一次。收起留给 L1 模块壳自己的折叠
+   * 按钮 —— 那儿松手就能看到内容收起来。
+   */
+  const openModuleFromBoard = (key: PackModuleKey) => {
+    if (effectiveCollapsed[key]) api.setModuleCollapsed(key, false);
+    scrollToModule(key);
   };
 
   const zoneModules = useMemo(
@@ -244,22 +282,31 @@ export default function CharacterPackHost({
    *
    * 外壳经 context 投下三件事：窄档摘要、钉选态、钉选开关。核心三块不参与
    * 钉选（它们永远展开，钉了对作者没有意义），故 `onTogglePin` 传 undefined。
+   *
+   * 外面那层 `.cpk__module` 只挂 `data-pack-module` 锚点：看板点摘要行后要
+   * 把对应模块滚进可视区（见 `scrollToModule`），靠它定位。它是一层纯定位用的
+   * 透明块，不改版式。
    */
   const renderModule = (module: PackModuleState) => {
     const View = MODULE_VIEWS[module.key];
     const scopedApi = withEffectiveCollapse(api, module.key, tier);
     const core = isCorePackModule(module.key);
     return (
-      <PackModuleSummaryContext.Provider
+      <div
         key={module.key}
-        value={{
-          summary: tier === "narrow" ? moduleSummary(module.key, doc) : "",
-          pinned: api.prefs.pinned.includes(module.key),
-          onTogglePin: core ? undefined : () => api.toggleModulePinned(module.key),
-        }}
+        className="cpk__module"
+        data-pack-module={module.key}
       >
-        <View api={scopedApi} />
-      </PackModuleSummaryContext.Provider>
+        <PackModuleSummaryContext.Provider
+          value={{
+            summary: tier === "narrow" ? moduleSummary(module.key, doc) : "",
+            pinned: api.prefs.pinned.includes(module.key),
+            onTogglePin: core ? undefined : () => api.toggleModulePinned(module.key),
+          }}
+        >
+          <View api={scopedApi} />
+        </PackModuleSummaryContext.Provider>
+      </div>
     );
   };
 
@@ -331,7 +378,7 @@ export default function CharacterPackHost({
               tier={tier}
               attrsExpanded={attrsExpanded}
               onToggleAttrs={() => setAttrsExpanded((value) => !value)}
-              onExpandModule={toggleModuleFromBoard}
+              onExpandModule={openModuleFromBoard}
               expandedKeys={expandedKeys}
             />
 

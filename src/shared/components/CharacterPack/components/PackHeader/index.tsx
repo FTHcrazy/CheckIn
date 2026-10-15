@@ -130,12 +130,21 @@ export default function PackHeader({
 
   const tone = saveFailed ? "failed" : saving ? "busy" : dirty > 0 ? "dirty" : "idle";
 
+  /**
+   * 头像内容：角色名首字。
+   *
+   * 看板那版冗余身份卡被删掉后（它与本头部逐项重复），首字头像上移到这里 ——
+   * 它是身份卡唯一独有的视觉信息，丢掉可惜。名字为空时退回人形图标，
+   * 不去渲染一个没有意义的字符。
+   */
+  const initial = (characterName || "").trim().charAt(0);
+
   return (
     <header className={`cpk-head is-${tone}${breathe ? " is-breathe" : ""}`}>
       {/* ── 左：角色 ── */}
       <div className="cpk-head__who">
         <span className="cpk-head__avatar" aria-hidden>
-          <UserOutlined />
+          {initial || <UserOutlined />}
         </span>
         <div className="cpk-head__id">
           {editing ? (
