@@ -745,6 +745,40 @@ export function formatAttrValue(value: number, decimals: number): string {
   return fraction ? `${grouped}.${fraction}` : grouped;
 }
 
+/**
+ * 属性增量片段（被动 / 持续 / 映射 / 百分比 / 乘算）。
+ *
+ * 从 SummaryModule 提到这里（UI-01）：看板 C 区与总属性模块必须**同源**，
+ * 否则「同一项属性，看板显示 +60、L1 显示 +62」这种分叉没有任何报错，
+ * 只会让作者不敢信面板上的数。三色语言（被动灰 / 持续蓝 / 映射紫）也一起搬。
+ */
+export interface AttrSegment {
+  tone: "passive" | "sustained" | "mapped";
+  text: string;
+}
+
+export function attrSegments(row: SummaryRow, decimals: number): AttrSegment[] {
+  const items: AttrSegment[] = [];
+  if (row.addPassive) {
+    items.push({ tone: "passive", text: `+${formatAttrValue(row.addPassive, decimals)}` });
+  }
+  if (row.addSustained) {
+    items.push({ tone: "sustained", text: `+${formatAttrValue(row.addSustained, decimals)}` });
+  }
+  // 映射折算量与被动 / 持续同池（都进加算），只是**来源**不同 → 单独一段标出来，
+  // 否则作者看到「基础 10 → 总览 90」时无法判断那 80 是词条给的还是加点换算出来的。
+  if (row.addMapped) {
+    items.push({ tone: "mapped", text: `+${formatAttrValue(row.addMapped, decimals)}` });
+  }
+  const percent = (row.percentPassive || 0) + (row.percentSustained || 0);
+  if (percent) {
+    items.push({ tone: "sustained", text: `${percent > 0 ? "+" : ""}${formatAttrValue(percent, 1)}%` });
+  }
+  const mul = row.mulPassive * row.mulSustained;
+  if (mul !== 1) items.push({ tone: "sustained", text: `×${formatAttrValue(mul, 2)}` });
+  return items;
+}
+
 function clampInt(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min;
   return Math.min(max, Math.max(min, Math.floor(value)));
@@ -813,6 +847,58 @@ export interface LadderRung {
 export function subLabelAt(rung: LadderRung | undefined, sub: number): string {
   if (!rung?.subLabels) return "";
   return rung.subLabels[sub - 1] ?? "";
+}
+
+/**
+ * UI-02 阈值：阶数超过它时阶梯尺改用下拉为主路径（chip 行太长反而难扫）。
+ *
+ * 抽成常量 + 纯函数而不是散在组件里的魔法数：阈值是「两条直选路径何时切换」
+ * 的唯一判据，组件与测试必须读同一份，否则改一处就出现「界面切了、断言没跟着」。
+ */
+export const REALM_RUNG_DROPDOWN_THRESHOLD = 8;
+
+/** UI-02 阈值：小层数超过它时层号条改用下拉（1..N 的按钮排会挤爆一行）。 */
+export const REALM_SUB_DROPDOWN_THRESHOLD = 12;
+
+/**
+ * 阶梯尺是否应以**下拉为主路径**（UI-02）。
+ *
+ * 判据取「阶数 > 阈值」：恰好等于阈值时仍走 chip 行（8 个 chip 一行放得下），
+ * 超过才切 —— 与 `packWidthTier` 的边界口径一致（恰好在断点上算上一档）。
+ */
+export function realmLadderUsesDropdown(rungCount: number): boolean {
+  return rungCount > REALM_RUNG_DROPDOWN_THRESHOLD;
+}
+
+/**
+ * 层号条是否应以**下拉代替按钮排**（UI-02）。
+ *
+ * 判据取「小层数 > 阈值」。另有一条硬规则：`subMax <= 1` 时**不渲染层号条**
+ * （单选项 `[1]` 是纯噪声，且会让作者误以为「只有一层可点」）——
+ * 该判定由 `realmSubBarVisible` 单独给出，调用方据此整块不渲染。
+ */
+export function realmSubUsesDropdown(subMax: number): boolean {
+  return subMax > REALM_SUB_DROPDOWN_THRESHOLD;
+}
+
+/** 层号条是否有意义渲染（UI-02）：只有多小层的阶才需要「选第几层」这条路径。 */
+export function realmSubBarVisible(subMax: number): boolean {
+  return subMax > 1;
+}
+
+/**
+ * 第 n 小层的可读名（UI-02 可访问性）：层号按钮的 `aria-label` / Tooltip 用它。
+ *
+ * 有别名时拼成「合体 第 2 层（中期）」，没有别名时「合体 第 2 层」——
+ * 屏幕阅读器读到的必须是**完整语义**，不能只是「2」。
+ */
+export function realmSubAriaLabel(
+  rung: LadderRung | undefined,
+  sub: number,
+): string {
+  const tierName = rung?.name ?? "境界";
+  const alias = subLabelAt(rung, sub);
+  return alias ? `${tierName} 第 ${sub} 层（${alias}）` : `${tierName} 第 ${sub} 层`;
 }
 
 export interface RealmPosition {

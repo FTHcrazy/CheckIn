@@ -211,6 +211,73 @@
     color: var(--app-text-secondary-strong);
   }
 
+  /*
+    阶下拉（UI-02）：阶数 > 阈值时取代 chip 行。与 chip 行占同一位置，
+    所以这里也给它一个浅浅的顶距，视觉节奏一致。
+  */
+  &__rungdrop {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 2px;
+  }
+
+  /*
+    小层直选（UI-02）：层号条 / 层下拉。与下方的「阶内进度条」分开成两块
+    （进度条是纯读数、层号条是可点选择），故各自有独立类名与顶距。
+  */
+  &__subbar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  &__subnums {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  /* 层号按钮：一颗可点的数字 chip，造型自带 → 先清零 antd 外观再声明 */
+  &__subnum.ant-btn {
+    @include widget.cpk-widget;
+    --ant-line-width: 1px;
+    --ant-border-radius: var(--app-radius-chip);
+    --ant-button-default-bg: var(--app-surface);
+    --ant-button-default-color: var(--app-text-secondary-strong);
+    --ant-button-default-hover-color: var(--app-text-strong);
+    --ant-button-default-active-color: var(--app-text-strong);
+    --ant-button-default-border-color: var(--app-border-strong);
+    --ant-button-default-hover-border-color: var(--app-accent-blue);
+    --ant-button-default-active-border-color: var(--app-accent-blue);
+    --ant-button-default-hover-bg: var(--app-surface-hover);
+    --ant-button-default-active-bg: var(--app-surface-hover);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 24px;
+    padding: 2px 6px;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+
+    /* 当前层：实心蓝（与阶梯 chip 的 is-on 同一套语义色） */
+    &.is-on {
+      --ant-button-default-bg: var(--app-accent-blue);
+      --ant-button-default-color: var(--app-primary-contrast);
+      --ant-button-default-hover-bg: var(--app-accent-blue);
+      --ant-button-default-hover-color: var(--app-primary-contrast);
+      --ant-button-default-active-bg: var(--app-accent-blue);
+      --ant-button-default-active-color: var(--app-primary-contrast);
+      --ant-button-default-border-color: var(--app-accent-blue);
+      --ant-button-default-hover-border-color: var(--app-accent-blue);
+      --ant-button-default-active-border-color: var(--app-accent-blue);
+      --ant-button-font-weight: 600;
+    }
+  }
+
   &__bind {
     display: flex;
     align-items: center;

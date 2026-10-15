@@ -754,6 +754,28 @@ app.whenReady().then(() => {
     createPackWindow();
   });
 
+  // ── 跨窗口导航：行囊窗口 → 小说窗口的设定中心（UI-03） ──
+  // 行囊窗口（独立窗口）的空态引导「去设定中心创建等级体系」需要把用户带回
+  // NovelWindow 的设定中心。主进程只做两件事：把 novel 窗口弄到前面、把负载
+  // 原样转发回去（同窗口路径走 CustomEvent，跨窗口路径走这条 IPC）。
+  //
+  // 为什么不做分类定位：定位要读作品数据（哪个分类是等级序列），那是渲染层
+  // 的知识；主进程介入只会把 novel 域逻辑漏进主进程。此处只搬运。
+  //
+  // 与 novel-window-open 的差别：那条是「开窗」语义（lite 版忽略），本条是
+  // 「拉起到前面 + 定位」——novel 版小说窗口即主窗，本条同样成立，故不设
+  // 版本门（lite 版不存在行囊窗口，也就没有发起方，天然到不了这里）。
+  ipcMain.on("novel-open-setting-center", (_event, payload: unknown) => {
+    const novelWin = windowManager.get("novel");
+    if (!novelWin || novelWin.isDestroyed()) return;
+    if (novelWin.isMinimized()) novelWin.restore();
+    novelWin.show();
+    novelWin.focus();
+    // 转发给小说窗口自己消费（渲染层订阅后打开设定中心并定位到目标分类）。
+    // 用 sendTo 而非 broadcast：这是点对点导航意图，其它窗口不该收到。
+    windowManager.sendTo("novel", "novel-open-setting-center", payload);
+  });
+
   // ── 退出登录（SettingsWindow 账号区发起） ──
   // 主进程编排：清除缓存用户 → 关闭设置窗与主窗口（登录态下的数据随窗口
   // 销毁，防止切换账号后残留上一账号的渲染层状态）→ 回到登录窗。

@@ -104,6 +104,30 @@
     gap: 4px;
   }
 
+  /* 钉选按钮（UI-04）：自带造型 → 先清零 antd 外观再声明。
+     默认浅灰、hover 转主色、钉选态常亮主色（实心钉）。 */
+  &__pin.ant-btn {
+    @include widget.cpk-widget;
+    flex: none;
+    width: 22px;
+    height: 22px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--app-radius-item);
+    font-size: 12px;
+    color: var(--app-text-muted);
+
+    &:hover {
+      color: var(--app-text-strong);
+      background: var(--app-surface);
+    }
+  }
+
+  &.is-pinned &__pin.ant-btn {
+    color: var(--app-primary);
+  }
+
   &__wrap {
     display: grid;
     grid-template-rows: 1fr;

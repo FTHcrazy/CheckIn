@@ -261,6 +261,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'settings-window-open',
       // 行囊独立窗口开关（小说窗口顶栏入口，full/novel 版）
       'pack-window-open',
+      // 跨窗口导航：行囊窗口请求打开小说窗口的设定中心（UI-03）
+      'novel-open-setting-center',
       // 退出登录（SettingsWindow 账号区发起，主进程编排回登录窗）
       'auth-logout',
       // WindowHeader 窗口控制（最小化/最大化/关闭）与最大化状态查询

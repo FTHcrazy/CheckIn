@@ -6,6 +6,9 @@
  * 这种缺陷随渲染路径变化而随机出现。全部集中在根 `index.scss` 以 @use 引入。
  */
 
+/* 造型控件清零点（同一份 antd 按钮重置，勿在本文件另写副本） */
+@use "./pack-widget" as widget;
+
 /* ── 按钮 ──
  * 一律是 antd `Button`；外观**只通过组件级 CSS 变量**配置，不另写 :hover / :active ——
  * antd 的状态选择器（`.ant-btn-color-default.ant-btn-variant-outlined:not(:disabled):hover`）
@@ -216,6 +219,40 @@
   color: var(--app-text-muted);
 }
 
+/* 空态引导块（UI-03）：说明 + 下一步动作按钮。
+ * 空态不再只是「一句话」，而是把作者能做的下一步直接摆出来。 */
+.cpk-emptyblock {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.cpk-emptyblock__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  /* flex 子项 nowrap 会撑爆容器 → 显式给下限（本项目硬规范） */
+  min-width: 0;
+}
+
+/* 空态主按钮沿用自带造型按钮的重置基座（widget.ant-button-reset），
+ * 与面板其它按钮同构；不补重置会与 antd 默认态打架。 */
+.cpk-emptyblock__cta.ant-btn {
+  @include widget.cpk-widget;
+  /* 空态按钮给一个明确的小尺寸（面板密度档）；`--ant-control-height` 保留清零点
+     给的 auto，高度用直接属性给 —— 这样清零 mixin 的签名声明仍在同一规则块里，
+     UI kit 守卫据此确认「确实 include 了重置」 */
+  height: 24px;
+  --ant-button-padding-inline: 10px;
+  --ant-button-content-font-size: 12px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-item);
+  color: var(--app-text);
+}
+
+
 .cpk-chip {
   padding: 0 6px;
   border-radius: var(--app-radius-pill);
@@ -224,6 +261,41 @@
   font-size: 11px;
   line-height: 16px;
   white-space: nowrap;
+}
+
+/* 属性增量分段：被动灰 / 持续蓝 / 映射紫 / 覆盖警示（单一起源 ——
+ * 看板 C 区与总属性模块共用；两处各写一份必分叉且静默）。 */
+.cpk-seg {
+  padding: 0 5px;
+  border-radius: var(--app-radius-pill);
+  font-size: 11px;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  line-height: 17px;
+  white-space: nowrap;
+
+  &.is-passive {
+    background: var(--app-surface-active);
+    color: var(--app-text-secondary-strong);
+  }
+
+  &.is-sustained {
+    background: var(--app-accent-blue-weak);
+    color: var(--app-accent-blue);
+  }
+
+  /* 映射加算：与被动（灰）/ 持续（蓝）拉开色相即可，同池但不喧宾夺主 ——
+     它和它们一样只是加算，没有更特殊，只是来源是另一条属性的加点 */
+  &.is-mapped {
+    background: var(--app-accent-purple-weak);
+    color: var(--app-accent-purple);
+  }
+
+  &.is-override {
+    background: var(--app-warning-weak);
+    color: var(--app-warning);
+    font-weight: 600;
+  }
 }
 
 /* ── 表格化行内输入（属性名 / 部位名这类「总是可编辑」的短字段）──

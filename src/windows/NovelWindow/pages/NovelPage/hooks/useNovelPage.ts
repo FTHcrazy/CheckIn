@@ -32,6 +32,11 @@ import {
 } from "../services/novel-service";
 import { quickAddPackItem } from "@/shared/components/CharacterPack/services/pack-service";
 import { notifyQuickAdded } from "@/shared/components/CharacterPack/pack-config";
+import { subscribeDualChannel } from "@/shared/novel/dual-channel";
+import {
+  NOVEL_OPEN_SETTING_CENTER_CHANNEL,
+  parseOpenSettingCenterRequest,
+} from "@/shared/novel/open-setting-center";
 import { buildEntityTypesValue, type EntityTypesContextValue } from "./entity-types-context";
 import type {
   CustomEntityTypeDef,
@@ -1224,6 +1229,30 @@ export function useNovelPage() {
     });
     return unsubscribe;
   }, []);
+
+  // ── 跨窗口导航：行囊窗口 → 本窗口设定中心（UI-03） ──
+  // 行囊窗口的空态引导「去设定中心创建等级体系」自己开不了设定中心（它不是
+  // NovelWindow 的组件），靠这条频道把请求送过来。主进程已把本窗口拉到前面并
+  // 转发负载，这里只负责落地：打开设定中心 + 定位到目标分类。
+  //
+  // 防串书：行囊窗口可能开着另一本书（多作品场景），负载带 workId，不是当前
+  // 作品就忽略 —— 否则会把作者正在写的书拽到别的书的设定中心。
+  //
+  // 定位失败（分类被删 / 传了 null）回落默认态，不报错：导航失败不该把作者
+  // 卡在错误上（见 open-setting-center.ts 的 categoryId 语义）。
+  //
+  // 依赖 openSettingCenter 这个 useCallback([]) 稳定引用，而非整个 view 对象
+  // （view 是每渲染新建的字面量，会白订阅一遍）。
+  const openSettingCenter = view.openSettingCenter;
+  useEffect(() => {
+    const handler = (...args: unknown[]) => {
+      const req = parseOpenSettingCenterRequest(args);
+      if (!req) return;
+      if (req.workId && req.workId !== data.activeWorkId) return;
+      openSettingCenter(req.categoryId);
+    };
+    return subscribeDualChannel(NOVEL_OPEN_SETTING_CENTER_CHANNEL, handler);
+  }, [data.activeWorkId, openSettingCenter]);
 
   // 关窗前的最后一次 flush（PRD §2：关窗永不询问，数据由持久化兜底）；
   // 位置记忆同步落库，下次打开原位续写（R6）

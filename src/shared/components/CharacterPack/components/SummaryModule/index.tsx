@@ -4,36 +4,11 @@ import PackModuleShell from "../PackModuleShell";
 import PackExportButton from "../PackExportButton";
 import type { PackPanelApi } from "../../hooks/usePackPanel";
 import { moduleLabel } from "../module-meta";
-import { formatAttrValue, type SummaryRow } from "../../pack-utils";
-import type { PackAttribute } from "../../types";
+import { attrSegments, formatAttrValue, type SummaryRow } from "../../pack-utils";
 import "./index.scss";
 
 interface SummaryModuleProps {
   api: PackPanelApi;
-}
-
-/** 增量片段（被动走灰、持续走蓝、映射走紫，与效果徽标同一套颜色语言） */
-function segments(row: SummaryRow, attr: PackAttribute) {
-  const decimals = attr.decimals ?? 0;
-  const items: Array<{ tone: "passive" | "sustained" | "mapped"; text: string }> = [];
-  if (row.addPassive) {
-    items.push({ tone: "passive", text: `+${formatAttrValue(row.addPassive, decimals)}` });
-  }
-  if (row.addSustained) {
-    items.push({ tone: "sustained", text: `+${formatAttrValue(row.addSustained, decimals)}` });
-  }
-  // 映射折算量与被动 / 持续同池（都进加算），只是**来源**不同 → 单独一段标出来，
-  // 否则作者看到「基础 10 → 总览 90」时无法判断那 80 是词条给的还是加点换算出来的。
-  if (row.addMapped) {
-    items.push({ tone: "mapped", text: `+${formatAttrValue(row.addMapped, decimals)}` });
-  }
-  const percent = (row.percentPassive || 0) + (row.percentSustained || 0);
-  if (percent) {
-    items.push({ tone: "sustained", text: `${percent > 0 ? "+" : ""}${formatAttrValue(percent, 1)}%` });
-  }
-  const mul = row.mulPassive * row.mulSustained;
-  if (mul !== 1) items.push({ tone: "sustained", text: `×${formatAttrValue(mul, 2)}` });
-  return items;
 }
 
 /**
@@ -88,8 +63,7 @@ export default function SummaryModule({ api }: SummaryModuleProps) {
           {ordered.map((row) => {
             const attr = api.attrView.find((candidate) => candidate.id === row.attrId);
             if (!attr) return null;
-            const parts = segments(row, attr);
-            const conflict = row.overrideCount > 1;
+            const parts = attrSegments(row, attr.decimals ?? 0);            const conflict = row.overrideCount > 1;
             return (
               <li key={row.attrId}>
                 <Button

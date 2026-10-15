@@ -119,26 +119,38 @@ export function missingZoneOf(active: PackZone[]): PackZone | null {
 }
 
 /**
- * 窄档下该模块是否**自动折叠成标题行**。
+ * 该模块是否**自动收成摘要行**（UI-04 渐进披露）。
  *
- * 三条规则，缺一不可：
- * 1. 核心三块（汇总 / 属性 / 境界）永不折叠 —— 它们是对记时最常瞟的，任何宽度都留着；
- * 2. 其余模块**跟随作者的显式折叠偏好**：作者自己折叠过的，窄档保持折叠；
- * 3. 作者**没表态过**（`prefs.collapsed[key]` 为 undefined）的其余模块，
- *    窄档下默认折叠 —— 这正是「自动折叠成标题行」要的效果。
+ * 改革前的规则只在窄档生效（「窄档下未表态的次要模块自动折叠」），宽 / 中档
+ * 十模块全摊开 —— 作者开行囊第一屏被编辑控件淹没，「一屏看懂主角状态」做不到。
+ * UI-04 把默认态改成**全档一致**：非核心模块默认就是摘要行，点击就地展开。
  *
- * ⚠️ 与「作者偏好」的区别很关键：规则 3 只影响**未表态**的模块，不覆盖作者
- * 手动展开过的（否则窄档下作者怎么点都展不开）。作者一旦手动操作过，
- * 那个值就进了 `prefs.collapsed`，规则 2 接管。
+ * 四条规则，缺一不可：
+ * 1. **钉选优先**：`pinned` 里的模块永不自动收起（作者已表态「这个常开」）；
+ * 2. 核心三块（汇总 / 属性 / 境界）永不折叠 —— 它们是对记时最常瞟的；
+ * 3. 其余模块**跟随作者的显式折叠偏好**：作者手动开合过的，按作者的值来；
+ * 4. 作者**没表态过**（`authored[key]` 为 undefined）的其余模块，默认折叠成
+ *    摘要行 —— 这是「渐进披露」的题中之义。
+ *
+ * ⚠️ 规则 4 只影响**未表态**的模块，不覆盖作者手动展开过的（否则作者怎么点都
+ * 展不开）。作者一旦手动操作过，那个值就进了 `prefs.collapsed`，规则 3 接管。
  */
 export function isAutoCollapsed(
   key: PackModuleKey,
   tier: "wide" | "mid" | "narrow",
   authored: Partial<Record<PackModuleKey, boolean>>,
+  pinned: readonly PackModuleKey[] = [],
 ): boolean {
-  if (tier !== "narrow") return Boolean(authored[key]);
+  // 规则 1：钉选常驻 —— 高于一切折叠策略
+  if (pinned.includes(key)) return false;
+  // 规则 2：核心三块永不折叠（任何档位）
   if (isCorePackModule(key)) return false;
-  return authored[key] ?? true;
+  // 规则 3：作者显式表态过的，一律从作者
+  if (authored[key] !== undefined) return Boolean(authored[key]);
+  // 规则 4：未表态的非核心模块，默认收成摘要行（全档一致）
+  // tier 仍参与签名以便未来按档微调，但当前默认策略与档位无关。
+  void tier;
+  return true;
 }
 
 /**
@@ -218,3 +230,45 @@ export function moduleSummary(
       return "";
   }
 }
+
+/* ────────────────────────── UI-01 看板（L0）编排 ────────────────────────── */
+
+/**
+ * C 区「核心属性总览」默认展示条数（随档位）。
+ *
+ * 首屏是「一眼看懂」，条数太多会把 D / E 区挤出首屏。宽档给 8 条、中档 6、窄档 4；
+ * 其余属性由「展开全部」放出 —— 不删能力，只是默认收敛。
+ */
+export function dashboardAttrLimit(tier: "wide" | "mid" | "narrow"): number {
+  if (tier === "wide") return 8;
+  if (tier === "narrow") return 4;
+  return 6;
+}
+
+/**
+ * E 区「关键设定」摘要行 = **当前启用的全部模块**。
+ *
+ * 为什么连核心三块（汇总 / 属性 / 境界）也列进来：A/B/C 只给只读速览，而
+ * 十模块的编辑能力必须一条不少（G-04）。把它们留成摘要行，作者仍能一键进
+ * L1 编辑器 —— 看板负责「看」，摘要行负责「改」，职责分开但入口不缺。
+ *
+ * 顺序沿用 `api.enabledModules`（含作者的拖拽排序）；不在这里重排，
+ * 否则模块管理里拖出来的顺序在 E 区会看似失效。
+ */
+export function dashboardSummaryModules(modules: PackModuleState[]): PackModuleState[] {
+  return modules;
+}
+
+/**
+ * D 区「生效状态」：只列**当前生效**的状态效果（`active === true`）。
+ *
+ * 不生效的不看板上出现 —— 看板回答的是「主角现在中了什么」，未开启的持续性
+ * 效果是「可能发生」而不是「正在发生」，混在一起会让作者误判当前处境。
+ * 全部状态仍可在 L1 的「状态效果」模块里开合。
+ */
+export function dashboardActiveStatuses<T extends { ownerType: string; active: boolean }>(
+  modifiers: readonly T[],
+): T[] {
+  return modifiers.filter((mod) => mod.ownerType === "status" && mod.active);
+}
+

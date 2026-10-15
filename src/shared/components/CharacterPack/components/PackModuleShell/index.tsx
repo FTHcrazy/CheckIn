@@ -1,8 +1,8 @@
 import { useState } from "react";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
-import { Button } from "antd";
-import { DownOutlined, RightOutlined } from "@ant-design/icons";
-import { useModuleSummary } from "../module-summary-context";
+import { Button, Tooltip } from "antd";
+import { DownOutlined, PushpinFilled, PushpinOutlined, RightOutlined } from "@ant-design/icons";
+import { useModuleChrome } from "../module-summary-context";
 import "./index.scss";
 
 interface PackModuleShellProps {
@@ -40,7 +40,7 @@ export default function PackModuleShell({
   onToggle,
   children,
 }: PackModuleShellProps) {
-  const summary = useModuleSummary();
+  const { summary, pinned, onTogglePin } = useModuleChrome();
   /** 当前涟漪（key 换新重启动画；动画结束即卸载） */
   const [ripple, setRipple] = useState<{ key: number; x: number } | null>(null);
 
@@ -52,7 +52,7 @@ export default function PackModuleShell({
   };
 
   return (
-    <section className={`cpk-mod${collapsed ? " is-collapsed" : ""}`}>
+    <section className={`cpk-mod${collapsed ? " is-collapsed" : ""}${pinned ? " is-pinned" : ""}`}>
       <header className="cpk-mod__head">
         <Button
           className="cpk-mod__toggle"
@@ -75,6 +75,18 @@ export default function PackModuleShell({
             />
           ) : null}
         </Button>
+        {onTogglePin ? (
+          <Tooltip title={pinned ? "取消钉选：重开行囊时收成摘要行" : "钉选常驻：打开行囊即展开本模块"}>
+            <Button
+              className="cpk-mod__pin"
+              aria-label={pinned ? "取消钉选" : "钉选常驻"}
+              aria-pressed={pinned}
+              onClick={onTogglePin}
+            >
+              {pinned ? <PushpinFilled /> : <PushpinOutlined />}
+            </Button>
+          </Tooltip>
+        ) : null}
         {actions ? <div className="cpk-mod__actions">{actions}</div> : null}
       </header>
       <div className="cpk-mod__wrap">

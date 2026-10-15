@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import PackModuleShell from "./index";
+import { PackModuleSummaryContext } from "../module-summary-context";
 
 /**
  * 折叠头点击涟漪（1.39.1）。
@@ -44,5 +45,51 @@ describe("PackModuleShell —— 折叠头的点击涟漪", () => {
 
     fireEvent.animationEnd(ripple as HTMLElement);
     expect(document.querySelector(".cpk-mod__ripple")).toBeNull();
+  });
+});
+
+/**
+ * 钉选按钮（UI-04）。
+ *
+ * 钉选走外壳 context 投下来的 `onTogglePin`：不传（核心三块 / 无 Provider）
+ * 时按钮整个不渲染 —— 核心模块永远展开，给它一颗「钉选」只会让作者困惑
+ * 「钉了有什么用」。
+ */
+describe("PackModuleShell —— 钉选按钮（UI-04）", () => {
+  afterEach(cleanup);
+
+  function renderWithChrome(chrome: {
+    pinned: boolean;
+    onTogglePin?: () => void;
+  }) {
+    render(
+      <PackModuleSummaryContext.Provider
+        value={{ summary: "", pinned: chrome.pinned, onTogglePin: chrome.onTogglePin }}
+      >
+        <PackModuleShell title="物品栏" collapsed onToggle={vi.fn()}>
+          <p>内容</p>
+        </PackModuleShell>
+      </PackModuleSummaryContext.Provider>,
+    );
+  }
+
+  it("无 Provider / 无 onTogglePin 时不渲染钉选按钮", () => {
+    renderShell();
+    expect(screen.queryByLabelText("钉选常驻")).toBeNull();
+  });
+
+  it("传了 onTogglePin 才出按钮，点击触发回调", () => {
+    const onTogglePin = vi.fn();
+    renderWithChrome({ pinned: false, onTogglePin });
+    const pin = screen.getByLabelText("钉选常驻");
+    fireEvent.click(pin);
+    expect(onTogglePin).toHaveBeenCalledTimes(1);
+  });
+
+  it("钉选态：aria-pressed=true、模块壳带 is-pinned、按钮文案变「取消钉选」", () => {
+    renderWithChrome({ pinned: true, onTogglePin: vi.fn() });
+    const pin = screen.getByLabelText("取消钉选");
+    expect(pin.getAttribute("aria-pressed")).toBe("true");
+    expect(document.querySelector(".cpk-mod.is-pinned")).not.toBeNull();
   });
 });

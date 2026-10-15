@@ -7,6 +7,7 @@ import PackHeader from "./components/PackHeader";
 import PackToast from "./components/PackToast";
 import CloseGuardModal from "./components/CloseGuardModal";
 import EffectEditor from "./components/EffectEditor";
+import PackDashboard from "./components/PackDashboard";
 import SummaryModule from "./components/SummaryModule";
 import AttributesModule from "./components/AttributesModule";
 import MappingModule from "./components/MappingModule";
@@ -27,7 +28,7 @@ import { PackModuleSummaryContext } from "./components/module-summary-context";
 import { usePackPanel, type PackPanelApi } from "./hooks/usePackPanel";
 import { useElementWidth } from "./hooks/useElementWidth";
 import { downloadText } from "./services/pack-export";
-import { packWidthTier } from "./pack-config";
+import { packWidthTier, isCorePackModule } from "./pack-config";
 import { subLabelAt } from "./pack-utils";
 import {
   PACK_ZONE_LABEL,
@@ -67,24 +68,33 @@ const MODULE_VIEWS: Record<PackModuleKey, ModuleView> = {
  * 给模块视图包一层「生效折叠态」。
  *
  * 为什么不让十个模块各自去算：折叠真值现在有两个来源 —— 作者的显式偏好
- * （`prefs.collapsed`）与窗口宽度（窄档下未表态的次要模块自动折叠）。若每个
- * 模块自己调 `isAutoCollapsed`，规则一改就要改十处，且十个模块都得知道
- * 「当前窗口多宽」这件与它们无关的事。
+ * （`prefs.collapsed`）、默认渐进披露策略（UI-04：非核心模块未表态默认收起）、
+ * 以及钉选常驻。若每个模块自己调 `isAutoCollapsed`，规则一改就要改十处，
+ * 且十个模块都得知道「当前窗口多宽」这件与它们无关的事。
  *
- * 这里用一层 api 代理把「(模块键, 档位) → 是否折叠」收敛到唯一入口：
- * 模块照旧读 `api.prefs.collapsed[key]`，只是读到的是**算过的值**；
- * `toggleModuleCollapsed` 也照旧写 `prefs`，于是作者一点，「自动折叠」
- * 就被显式偏好接管（规则 2 生效）—— 与 `isAutoCollapsed` 的注释完全对应。
+ * 这里用一层 api 代理把「(模块键, 档位, 偏好) → 是否折叠」收敛到唯一入口：
+ * 模块照旧读 `api.prefs.collapsed[key]`，只是读到的是**算过的值**。
+ *
+ * ⚠️ `toggleModuleCollapsed` 必须**按生效值翻转**，不能按 `prefs.collapsed[key]`
+ * 翻转：UI-04 之后未表态的非核心模块生效值是 `true`，而 `prefs.collapsed[key]`
+ * 还是 `undefined` —— 用 `!undefined` 翻出来仍是 `true`，表现为「点了展不开」。
+ * 所以这里把 toggle 换成一个绑定生效值的版本：`!collapsed`。
  */
 function withEffectiveCollapse(
   api: PackPanelApi,
   key: PackModuleKey,
   tier: "wide" | "mid" | "narrow",
 ): PackPanelApi {
-  const collapsed = isAutoCollapsed(key, tier, api.prefs.collapsed);
-  if (Boolean(api.prefs.collapsed[key]) === collapsed) return api;
+  const collapsed = isAutoCollapsed(key, tier, api.prefs.collapsed, api.prefs.pinned);
+  const toggleCollapsed = () => api.setModuleCollapsed(key, !collapsed);
+  // 生效值与作者偏好已经一致时，仍要换掉 toggle（模块读到的 collapsed 对，
+  // 但 toggle 的翻转基准必须用生效值）；只在真的没差别时复用原 api 省一次分配。
+  if (Boolean(api.prefs.collapsed[key]) === collapsed) {
+    return { ...api, toggleModuleCollapsed: toggleCollapsed };
+  }
   return {
     ...api,
+    toggleModuleCollapsed: toggleCollapsed,
     prefs: { ...api.prefs, collapsed: { ...api.prefs.collapsed, [key]: collapsed } },
   };
 }
@@ -111,6 +121,8 @@ export default function CharacterPackHost({
   const { ref: bodyRef, width: contentWidth } = useElementWidth<HTMLDivElement>();
   /** 帮助中心开合（L3 常驻入口）：行囊窗口没有 Tour，故不传 onReplayGuide */
   const [helpOpen, setHelpOpen] = useState(false);
+  /** 看板 C 区「展开全部」（UI-01）：只影响看板展示条数，不改任何数据 */
+  const [attrsExpanded, setAttrsExpanded] = useState(false);
 
   // 事件监听里要读最新 api，但监听不能每次渲染都重挂 —— 用 effect 同步 ref
   // （渲染期写 ref 会破坏并发渲染下的可预测性，必须放 effect 里）
@@ -177,6 +189,42 @@ export default function CharacterPackHost({
   const tier = packWidthTier(contentWidth);
   const isWide = tier === "wide";
 
+  /**
+   * 每个模块的**生效折叠态**（含默认策略 / 钉选，见 `isAutoCollapsed`）。
+   *
+   * 看板 E 区的箭头与「展开」判定都读它，而不是读 `api.prefs.collapsed` ——
+   * 后者只是作者显式偏好，未表态的非核心模块在默认策略下其实已折叠（UI-04）。
+   * 与 `withEffectiveCollapse` 用同一条纯函数，避免两处口径分叉。
+   */
+  const effectiveCollapsed = useMemo(() => {
+    const map: Partial<Record<PackModuleKey, boolean>> = {};
+    for (const module of api.enabledModules) {
+      map[module.key] = isAutoCollapsed(
+        module.key,
+        tier,
+        api.prefs.collapsed,
+        api.prefs.pinned,
+      );
+    }
+    return map;
+  }, [api.enabledModules, api.prefs.collapsed, api.prefs.pinned, tier]);
+
+  /** 已展开（生效态为「不折叠」）的模块集合：看板摘要行据此显示箭头方向 */
+  const expandedKeys = useMemo(
+    () =>
+      new Set(
+        api.enabledModules
+          .filter((module) => !effectiveCollapsed[module.key])
+          .map((module) => module.key),
+      ),
+    [api.enabledModules, effectiveCollapsed],
+  );
+
+  /** 看板摘要行点击：按**生效值**翻转折叠（与 withEffectiveCollapse 的 toggle 同规则） */
+  const toggleModuleFromBoard = (key: PackModuleKey) => {
+    api.setModuleCollapsed(key, !effectiveCollapsed[key]);
+  };
+
   const zoneModules = useMemo(
     () => splitByZone(api.enabledModules),
     [api.enabledModules],
@@ -191,14 +239,24 @@ export default function CharacterPackHost({
   );
   const missingZone: PackZone | null = missingZoneOf(wideZones);
 
-  /** 渲染单个模块。代理只在该模块的生效折叠态与作者偏好不同时才新建对象。 */
+  /**
+   * 渲染单个模块。代理只在该模块的生效折叠态与作者偏好不同时才新建对象。
+   *
+   * 外壳经 context 投下三件事：窄档摘要、钉选态、钉选开关。核心三块不参与
+   * 钉选（它们永远展开，钉了对作者没有意义），故 `onTogglePin` 传 undefined。
+   */
   const renderModule = (module: PackModuleState) => {
     const View = MODULE_VIEWS[module.key];
     const scopedApi = withEffectiveCollapse(api, module.key, tier);
+    const core = isCorePackModule(module.key);
     return (
       <PackModuleSummaryContext.Provider
         key={module.key}
-        value={tier === "narrow" ? moduleSummary(module.key, doc) : ""}
+        value={{
+          summary: tier === "narrow" ? moduleSummary(module.key, doc) : "",
+          pinned: api.prefs.pinned.includes(module.key),
+          onTogglePin: core ? undefined : () => api.toggleModulePinned(module.key),
+        }}
       >
         <View api={scopedApi} />
       </PackModuleSummaryContext.Provider>
@@ -265,55 +323,70 @@ export default function CharacterPackHost({
           <p className="cpk-empty">
             所有模块都被关掉了。点右上角的齿轮重新打开需要的模块。
           </p>
-        ) : isWide ? (
-          /*
-            宽档：按语义双栏。左「装备类」/ 右「数值与状态」——
-            两栏各自独立滚动区会抢滚轮，所以仍共用外层这一条滚动条，
-            两栏只是并排的网格轨道（高度由内容决定，短的那栏自然留白）。
-          */
-          <div
-            className={`cpk__zones${wideZones.length === 1 ? " cpk__zones--solo" : ""}`}
-          >
-            {wideZones.map((zone) => (
-              <section
-                key={zone}
-                className={`cpk__zone cpk__zone--${zone}`}
-                aria-label={PACK_ZONE_LABEL[zone]}
-              >
-                {/*
-                  单分区时眉标是噪音（整个内容区就是这一栏），只在双栏时出；
-                  对面栏被整体关掉时补一张引导卡，作者才知道行囊还能开更多模块。
-                */}
-                {wideZones.length > 1 ? (
-                  <h3 className="cpk__zonetitle">{PACK_ZONE_LABEL[zone]}</h3>
-                ) : null}
-                <div className="cpk__zonestack">
-                  {zoneModules[zone].map(renderModule)}
-                </div>
-              </section>
-            ))}
-            {missingZone ? (
-              <Button
-                type="dashed"
-                block
-                className="cpk__zoneghost"
-                onClick={() => api.setModuleManagerOpen(true)}
-              >
-                <span className="cpk__zoneghost-line cpk__zoneghost-line--title">
-                  {PACK_ZONE_LABEL[missingZone]}模块都还没开
-                </span>
-                <span className="cpk__zoneghost-line">
-                  {PACK_MODULES.filter((m) => PACK_ZONE_OF[m.key] === missingZone)
-                    .map((m) => m.label)
-                    .join(" / ")}
-                  ，点这里在「模块管理」里按需开启。
-                </span>
-              </Button>
-            ) : null}
-          </div>
         ) : (
-          /* 中 / 窄档：单栏纵向流；窄档下次要模块由 isAutoCollapsed 折叠成标题行 */
-          <div className="cpk__flow">{api.enabledModules.map(renderModule)}</div>
+          <>
+            {/* ── L0 看板（UI-01）：一屏看懂主角当前状态 ── */}
+            <PackDashboard
+              api={api}
+              tier={tier}
+              attrsExpanded={attrsExpanded}
+              onToggleAttrs={() => setAttrsExpanded((value) => !value)}
+              onExpandModule={toggleModuleFromBoard}
+              expandedKeys={expandedKeys}
+            />
+
+            {/* ── L1 编辑器区：十个模块（摘要行 / 就地展开）── */}
+            {isWide ? (
+              /*
+                宽档：按语义双栏。左「数值与状态」/ 右「装备类」——
+                两栏各自独立滚动区会抢滚轮，所以仍共用外层这一条滚动条，
+                两栏只是并排的网格轨道（高度由内容决定，短的那栏自然留白）。
+              */
+              <div
+                className={`cpk__zones${wideZones.length === 1 ? " cpk__zones--solo" : ""}`}
+              >
+                {wideZones.map((zone) => (
+                  <section
+                    key={zone}
+                    className={`cpk__zone cpk__zone--${zone}`}
+                    aria-label={PACK_ZONE_LABEL[zone]}
+                  >
+                    {/*
+                      单分区时眉标是噪音（整个内容区就是这一栏），只在双栏时出；
+                      对面栏被整体关掉时补一张引导卡，作者才知道行囊还能开更多模块。
+                    */}
+                    {wideZones.length > 1 ? (
+                      <h3 className="cpk__zonetitle">{PACK_ZONE_LABEL[zone]}</h3>
+                    ) : null}
+                    <div className="cpk__zonestack">
+                      {zoneModules[zone].map(renderModule)}
+                    </div>
+                  </section>
+                ))}
+                {missingZone ? (
+                  <Button
+                    type="dashed"
+                    block
+                    className="cpk__zoneghost"
+                    onClick={() => api.setModuleManagerOpen(true)}
+                  >
+                    <span className="cpk__zoneghost-line cpk__zoneghost-line--title">
+                      {PACK_ZONE_LABEL[missingZone]}模块都还没开
+                    </span>
+                    <span className="cpk__zoneghost-line">
+                      {PACK_MODULES.filter((m) => PACK_ZONE_OF[m.key] === missingZone)
+                        .map((m) => m.label)
+                        .join(" / ")}
+                      ，点这里在「模块管理」里按需开启。
+                    </span>
+                  </Button>
+                ) : null}
+              </div>
+            ) : (
+              /* 中 / 窄档：单栏纵向流；窄档下次要模块由 isAutoCollapsed 折叠成标题行 */
+              <div className="cpk__flow">{api.enabledModules.map(renderModule)}</div>
+            )}
+          </>
         )}
       </div>
 

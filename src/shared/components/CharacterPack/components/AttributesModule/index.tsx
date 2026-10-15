@@ -91,10 +91,31 @@ export default function AttributesModule({ api }: AttributesModuleProps) {
       }
     >
       {api.attrView.length === 0 ? (
-        <p className="cpk-empty">
-          还没有属性。点「＋ 属性」直接给当前角色加一条（攻击力 / 防御力这类），
-          装备和技能的加成再往上挂。
-        </p>
+        <div className="cpk-emptyblock">
+          <p className="cpk-empty">
+            还没有属性。先套一套模板起步（力量 / 敏捷这类），也可以自己一条条加；
+            装备和技能的加成再往上挂。
+          </p>
+          <div className="cpk-emptyblock__actions">
+            {Object.keys(ATTR_TEMPLATES).map((name) => (
+              <Button
+                key={name}
+                size="small"
+                className="cpk-emptyblock__cta"
+                onClick={() => api.applyAttrTemplate(name)}
+              >
+                套用{name}模板
+              </Button>
+            ))}
+            <Button
+              size="small"
+              className="cpk-btn ghost"
+              onClick={() => api.addAttribute()}
+            >
+              <PlusOutlined /> 自己建属性
+            </Button>
+          </div>
+        </div>
       ) : (
         <div className="cpk-attr">
           <ul className="cpk-attr__rows">

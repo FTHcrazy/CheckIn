@@ -111,36 +111,6 @@
   }
 }
 
-/* 增量分段：被动灰 / 持续蓝 / 映射紫 / 覆盖警示 */
-.cpk-seg {
-  padding: 0 5px;
-  border-radius: var(--app-radius-pill);
-  font-size: 11px;
-  font-style: normal;
-  font-variant-numeric: tabular-nums;
-  line-height: 17px;
-  white-space: nowrap;
-
-  &.is-passive {
-    background: var(--app-surface-active);
-    color: var(--app-text-secondary-strong);
-  }
-
-  &.is-sustained {
-    background: var(--app-accent-blue-weak);
-    color: var(--app-accent-blue);
-  }
-
-  /* 映射加算：与被动（灰）/ 持续（蓝）拉开色相即可，同池但不喧宾夺主 ——
-     它和它们一样只是加算，没有更特殊，只是来源是另一条属性的加点 */
-  &.is-mapped {
-    background: var(--app-accent-purple-weak);
-    color: var(--app-accent-purple);
-  }
-
-  &.is-override {
-    background: var(--app-warning-weak);
-    color: var(--app-warning);
-    font-weight: 600;
-  }
-}
+/* 增量分段：被动灰 / 持续蓝 / 映射紫 / 覆盖警示。
+ * 已提到公共原语（pack-common.scss）—— 看板 C 区与总属性模块共用同一份，
+ * 避免「同一项属性两处色/文不一致」的静默分叉。 */

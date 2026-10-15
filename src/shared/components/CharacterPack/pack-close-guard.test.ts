@@ -234,10 +234,14 @@ describe("境界台阶推进（守卫）", () => {
     const body = REALM_CODE.slice(REALM_CODE.indexOf("const step = "));
     expect(body.slice(0, 200)).toContain("carry: true");
     expect(body.slice(0, 200)).toContain("delta");
-    // 组件里不许再有第二处直接调 writeRealm 做推进
+    // 组件里直接调 writeRealm 的**只有「选择」类路径**，不许有第二处「推进」：
+    //   pick（点阶梯跳阶）1 处 + pickSub（UI-02 点层号跳层）1 处 + step（推进）1 处 = 3。
+    // 三条各自语义单一（跳阶 / 跳层 / 进位），没有重复入参 —— 这正是本断言要钉的。
     const writes = REALM_CODE.match(/api\.writeRealm\(/g) ?? [];
-    // pick（点阶梯跳转）1 处 + step 1 处 = 2
-    expect(writes).toHaveLength(2);
+    expect(writes).toHaveLength(3);
+    // 推进类（带 carry/step）只允许一处：`step` 的定义体里那一处
+    const carryWrites = REALM_CODE.match(/writeRealm\([^)]*carry/g) ?? [];
+    expect(carryWrites).toHaveLength(1);
   });
 
   it("「阶内进位」不许回来 —— 它与「+ 1 层」调同一入参", () => {

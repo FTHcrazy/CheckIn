@@ -8,7 +8,13 @@ import {
   fetchPackBindableEntities,
   logUsageEvent,
 } from "@/shared/services/novel-shared";
-import { subLabelAt } from "../../pack-utils";
+import {
+  realmLadderUsesDropdown,
+  realmSubAriaLabel,
+  realmSubBarVisible,
+  realmSubUsesDropdown,
+  subLabelAt,
+} from "../../pack-utils";
 import "./index.scss";
 
 interface RealmModuleProps {
@@ -69,6 +75,16 @@ export default function RealmModule({ api }: RealmModuleProps) {
   };
 
   /**
+   * 直选某一小层（UI-02）：点层号条 / 层下拉。
+   *
+   * 只在阶内跳，不跨阶；夹取由 `writeRealm → clampRealm` 统一负责，
+   * toast 文案取 `plan.position`（唯一真相源），这里不二次计算。
+   */
+  const pickSub = (sub: number) => {
+    void api.writeRealm({ index: api.realmPos.index, sub }, "pack");
+  };
+
+  /**
    * 当前小层的显示别名（1.39.1）：拆出子层级的阶，每层有自己的名字
    * （「合体一层」的别名往往就是「初期」）。「合体 1/4」只答了走到哪，
    * 别名才回答「现在是什么」—— 空串（纯数字小层 / 没写别名）不显示。
@@ -91,34 +107,66 @@ export default function RealmModule({ api }: RealmModuleProps) {
       }
     >
       {rungs.length === 0 ? (
-        <p className="cpk-empty">
-          这本书还没有等级体系。境界直接复用「设定 → 等级体系」（R25）里的那一套，
-          先在那里建好阶梯，这里就能用了。
-        </p>
+        <div className="cpk-emptyblock">
+          <p className="cpk-empty">
+            这本书还没有等级体系。境界复用「设定中心」的等级序列（R25），
+            先在那里建好阶梯，这里就能用了。
+          </p>
+          <div className="cpk-emptyblock__actions">
+            <Button
+              type="primary"
+              size="small"
+              className="cpk-emptyblock__cta"
+              onClick={() => api.openRealmSettingCenter()}
+            >
+              去设定中心创建
+            </Button>
+          </div>
+        </div>
       ) : (
         <>
           {/*
-            横向阶梯 chip 行（对齐设计稿）。
-            刻意不换行 + 横向滚动：换行会让「炼气…化神」这排高低次序变成两段，
-            反而看不出进度；横向滚动保持「一条尺子」的读法，窄窗口下也能拖。
+            阶的直选（UI-02）。
+
+            阶数 ≤ 阈值：横向阶梯 chip 行（对齐设计稿）。刻意不换行 + 横向滚动：
+            换行会让「炼气…化神」这排高低次序变成两段，反而看不出进度；
+            横向滚动保持「一条尺子」的读法，窄窗口下也能拖。
+
+            阶数 > 阈值：chip 行太长，扫不动也点不准，改用下拉作主路径
+            （阈值与判据见 `realmLadderUsesDropdown`，抽成纯函数便于测试）。
           */}
-          <div className="cpk-rlm__ladderwrap">
-            <ul className="cpk-rlm__ladder">
-              {rungs.map((item, index) => (
-                <li key={item.id}>
-                  <Button
-                    className={`cpk-rlm__rung${index === api.realmPos.index ? " is-on" : ""}${
-                      index < api.realmPos.index ? " is-passed" : ""
-                    }`}
-                    onClick={() => pick(index)}
-                    title="点击跳到这一阶"
-                  >
-                    {item.name}
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          </div>
+          {realmLadderUsesDropdown(rungs.length) ? (
+            <div className="cpk-rlm__rungdrop">
+              <Select
+                size="small"
+                style={{ flex: 1, minWidth: 0 }}
+                value={api.realmPos.index}
+                options={rungs.map((item, index) => ({ value: index, label: item.name }))}
+                classNames={{ popup: { root: "cpk-dropdown" } }}
+                onChange={(index: number) => pick(index)}
+                aria-label="选择境界阶"
+              />
+            </div>
+          ) : (
+            <div className="cpk-rlm__ladderwrap">
+              <ul className="cpk-rlm__ladder">
+                {rungs.map((item, index) => (
+                  <li key={item.id}>
+                    <Button
+                      className={`cpk-rlm__rung${index === api.realmPos.index ? " is-on" : ""}${
+                        index < api.realmPos.index ? " is-passed" : ""
+                      }`}
+                      onClick={() => pick(index)}
+                      aria-current={index === api.realmPos.index ? "true" : undefined}
+                      title="点击跳到这一阶"
+                    >
+                      {item.name}
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {/* 当前境界 + 距下一阶进度（设计稿此处是一条横向进度条） */}
           <div className="cpk-rlm__now">
@@ -153,6 +201,59 @@ export default function RealmModule({ api }: RealmModuleProps) {
               </Button>
             </span>
           </div>
+
+          {/*
+            小层直选（UI-02）：层号条 `1..N`，N > 阈值改下拉。
+
+            ⚠️ 与下方「阶内进度条」是两块：进度条是**纯读数**（不挂按钮，
+            有守卫钉住），层号条是**可点选择**（跳层）。两者刻意分 DOM，
+            别把层号塞进 `.cpk-rlm__progress` —— 那会让「进度条无按钮」的断言失效，
+            而且「读数」与「可点选项」在视觉上混在一起也难分辨。
+            `subMax <= 1` 时整块不渲染（单选项 `[1]` 是噪声）。
+          */}
+          {realmSubBarVisible(subMax) ? (
+            realmSubUsesDropdown(subMax) ? (
+              <div className="cpk-rlm__subbar">
+                <span className="cpk-rlm__sublabel">小层</span>
+                <Select
+                  size="small"
+                  style={{ flex: 1, minWidth: 0 }}
+                  value={api.realmPos.sub}
+                  options={Array.from({ length: subMax }, (_, i) => {
+                    const sub = i + 1;
+                    const alias = subLabelAt(rung, sub);
+                    return { value: sub, label: alias ? `${sub} · ${alias}` : `${sub}` };
+                  })}
+                  classNames={{ popup: { root: "cpk-dropdown" } }}
+                  onChange={(sub: number) => pickSub(sub)}
+                  aria-label="选择小层"
+                />
+              </div>
+            ) : (
+              <div className="cpk-rlm__subbar" role="group" aria-label="小层直选">
+                <span className="cpk-rlm__sublabel">小层</span>
+                <div className="cpk-rlm__subnums">
+                  {Array.from({ length: subMax }, (_, i) => {
+                    const sub = i + 1;
+                    return (
+                      <Button
+                        key={sub}
+                        className={`cpk-rlm__subnum${
+                          sub === api.realmPos.sub ? " is-on" : ""
+                        }`}
+                        aria-current={sub === api.realmPos.sub ? "true" : undefined}
+                        aria-label={realmSubAriaLabel(rung, sub)}
+                        title={realmSubAriaLabel(rung, sub)}
+                        onClick={() => pickSub(sub)}
+                      >
+                        {sub}
+                      </Button>
+                    );
+                  })}
+                </div>
+              </div>
+            )
+          ) : null}
 
           {/*
             阶内进度条：**纯读数**，不挂动作按钮。
@@ -208,6 +309,24 @@ export default function RealmModule({ api }: RealmModuleProps) {
                 void logUsageEvent("pack_realm_bind", { bound: Boolean(value) });
               }}
             />
+            {/* 未绑定主角时的引导按钮（UI-03）：把「没设主角」变成一键动作，
+                而不是只留一句说明。点它展开选择器 —— 绑定必须挑具体是谁，
+                所以不做「替你选第一个」的隐式行为。已在档位里绑过就不出现。 */}
+            {!doc.character.entityId ? (
+              <Button
+                size="small"
+                className="cpk-emptyblock__cta"
+                disabled={entities.length === 0}
+                title={
+                  entities.length === 0
+                    ? "这本书还没有可绑定的角色要素，先去右侧「要素」栏建一个角色"
+                    : "选择要设为主角的角色"
+                }
+                onClick={() => setBindOpen(true)}
+              >
+                设为主角
+              </Button>
+            ) : null}
           </div>
           {/* 主角是两边共用的同一个设定：说清楚入口关系，作者才不会以为
               「这里绑了、那边还要再设一次」 */}

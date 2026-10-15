@@ -76,6 +76,7 @@ function makeApi(over: Partial<PackPanelApi> = {}) {
     toggleModuleCollapsed: vi.fn(),
     writeRealm: vi.fn(),
     bindEntity: vi.fn(),
+    openRealmSettingCenter: vi.fn(),
     showToast: vi.fn(),
     ...over,
   } as unknown as PackPanelApi;
@@ -87,7 +88,7 @@ const upButton = (): HTMLButtonElement =>
 const downButton = (): HTMLButtonElement =>
   screen.getByText("− 1 层").closest("button") as HTMLButtonElement;
 
-type WriteCall = [unknown, string, { carry?: boolean; delta?: number }];
+type WriteCall = [unknown, string, { carry?: boolean; delta?: number }?];
 const callsOf = (api: PackPanelApi) =>
   (api.writeRealm as unknown as ReturnType<typeof vi.fn>).mock.calls as WriteCall[];
 
@@ -103,8 +104,8 @@ describe("RealmModule —— 台阶推进带 carry（报障回归）", () => {
     expect(api.writeRealm).toHaveBeenCalledTimes(1);
     const [, origin, options] = callsOf(api)[0];
     expect(origin).toBe("pack");
-    expect(options.carry).toBe(true);
-    expect(options.delta).toBe(1);
+    expect(options?.carry).toBe(true);
+    expect(options?.delta).toBe(1);
   });
 
   it("点「− 1 层」同样带 carry: true，delta 为 -1", () => {
@@ -114,8 +115,8 @@ describe("RealmModule —— 台阶推进带 carry（报障回归）", () => {
     fireEvent.click(downButton());
 
     const [, , options] = callsOf(api)[0];
-    expect(options.carry).toBe(true);
-    expect(options.delta).toBe(-1);
+    expect(options?.carry).toBe(true);
+    expect(options?.delta).toBe(-1);
   });
 });
 
@@ -143,6 +144,45 @@ describe("RealmModule —— 台阶推进的边界（到头一律显式置灰）
     expect(downButton()).not.toBeDisabled();
     expect(upButton().getAttribute("title")).toContain("进位");
     expect(downButton().getAttribute("title")).toContain("退位");
+  });
+});
+
+describe("RealmModule —— 空态分层引导（UI-03）", () => {
+  afterEach(cleanup);
+
+  it("无等级体系：给「去设定中心创建」按钮，点击触发跨窗口导航", () => {
+    const api = makeApi({ rungs: [] });
+    render(<RealmModule api={api} />);
+
+    const cta = screen.getByText("去设定中心创建").closest("button") as HTMLButtonElement;
+    expect(cta).toBeTruthy();
+    fireEvent.click(cta);
+    expect(api.openRealmSettingCenter).toHaveBeenCalledTimes(1);
+  });
+
+  it("空态文案不再出现过期术语「设定 → 等级体系」", () => {
+    const api = makeApi({ rungs: [] });
+    const { container } = render(<RealmModule api={api} />);
+    expect(container.textContent).not.toContain("设定 → 等级体系");
+    expect(container.textContent).toContain("设定中心");
+  });
+
+  it("未绑定主角：出现「设为主角」按钮，点击展开选择器", () => {
+    const api = makeApi(); // doc.character.entityId = ""
+    render(<RealmModule api={api} />);
+    const cta = screen.getByText("设为主角").closest("button") as HTMLButtonElement;
+    expect(cta).toBeTruthy();
+    // 候选人默认空（mock 返回 []）→ 按钮置灰并说明原因，避免点了没反应
+    expect(cta).toBeDisabled();
+    expect(cta.getAttribute("title")).toContain("要素");
+  });
+
+  it("已绑定主角：不再出现「设为主角」引导按钮", () => {
+    const api = makeApi({
+      doc: { ...doc, character: { ...doc.character, entityId: "e1" } },
+    });
+    render(<RealmModule api={api} />);
+    expect(screen.queryByText("设为主角")).toBeNull();
   });
 });
 
@@ -280,3 +320,80 @@ describe("RealmModule —— 头部小层别名 chip", () => {
  * 这个弹窗本身就不该存在 —— 层级编辑统一收进设定中心，行囊只读。
  * 上面的 describe 钉住「齿轮只给指引、不再弹窗」。
  */
+
+/**
+ * UI-02：阶 + 小层两条直选路径。
+ *
+ * 目标：选定「阶 + 小层」≤ 2 次点击，全程不离开行囊窗口。
+ */
+describe("RealmModule —— 小层直选（UI-02）", () => {
+  afterEach(cleanup);
+
+  it("层号条给出 1..N 可点按钮，当前层 aria-current", () => {
+    const api = makeApi({ realmPos: { index: 1, sub: 2 } });
+    render(<RealmModule api={api} />);
+    const nums = document.querySelectorAll(".cpk-rlm__subnum");
+    expect(nums).toHaveLength(3);
+    // 第 2 层选中
+    expect(nums[1].getAttribute("aria-current")).toBe("true");
+    expect(nums[1].getAttribute("aria-label")).toBe("元婴 第 2 层");
+  });
+
+  it("点第 3 层 → 同阶内跳层（index 不变，sub=3），且不带动画式进位", () => {
+    const api = makeApi({ realmPos: { index: 1, sub: 1 } });
+    render(<RealmModule api={api} />);
+    fireEvent.click(document.querySelectorAll(".cpk-rlm__subnum")[2]);
+
+    const [position, origin, options] = callsOf(api)[0];
+    expect(origin).toBe("pack");
+    expect(position).toEqual({ index: 1, sub: 3 });
+    // 直选不做 carry（夹取由 setRealm 兜底）：options 可省略，或未带 carry
+    expect(options?.carry).toBeFalsy();
+  });
+
+  it("小层数 > 12 时层号条改下拉（13 层不排一行按钮）", () => {
+    const api = makeApi({
+      rungs: [{ id: "l0", name: "炼气", rank: 1, subLevels: 13, power: null }],
+      realmPos: { index: 0, sub: 1 },
+    });
+    render(<RealmModule api={api} />);
+    // 下拉路径：不再渲染 13 颗按钮
+    expect(document.querySelectorAll(".cpk-rlm__subnum")).toHaveLength(0);
+    expect(document.querySelector(".cpk-rlm__subbar")).not.toBeNull();
+  });
+
+  it("小层数 = 1 时整块层号区（含「小层」标签）不渲染", () => {
+    const api = makeApi({
+      rungs: [{ id: "l1", name: "炼气", rank: 1, subLevels: 1, power: null }],
+      realmPos: { index: 0, sub: 1 },
+    });
+    render(<RealmModule api={api} />);
+    expect(document.querySelector(".cpk-rlm__subbar")).toBeNull();
+    expect(screen.queryByText("小层")).toBeNull();
+  });
+});
+
+describe("RealmModule —— 阶直选下拉（UI-02）", () => {
+  afterEach(cleanup);
+
+  it("阶数 ≤ 8 仍走阶梯 chip 行（不出现阶下拉）", () => {
+    const api = makeApi();
+    render(<RealmModule api={api} />);
+    expect(document.querySelector(".cpk-rlm__ladder")).not.toBeNull();
+    expect(document.querySelector(".cpk-rlm__rungdrop")).toBeNull();
+  });
+
+  it("阶数 > 8 时 chip 行让位给下拉", () => {
+    const many = Array.from({ length: 9 }, (_, i) => ({
+      id: `l${i}`,
+      name: `阶${i + 1}`,
+      rank: i + 1,
+      subLevels: 3,
+      power: null,
+    }));
+    const api = makeApi({ rungs: many, realmPos: { index: 0, sub: 1 } });
+    render(<RealmModule api={api} />);
+    expect(document.querySelector(".cpk-rlm__ladder")).toBeNull();
+    expect(document.querySelector(".cpk-rlm__rungdrop")).not.toBeNull();
+  });
+});

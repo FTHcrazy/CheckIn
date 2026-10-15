@@ -62,10 +62,28 @@ export default function StatusModule({ api }: StatusModuleProps) {
       }
     >
       {statuses.length === 0 ? (
-        <p className="cpk-empty">
-          还没有状态。中毒、虚弱、阵法增益这类「没有装备也没有技能」的效果记在这里，
-          持续型可以在剧情里随时开关。
-        </p>
+        <div className="cpk-emptyblock">
+          <p className="cpk-empty">
+            还没有状态。中毒、虚弱、阵法增益这类「没有装备也没有技能」的效果记在这里，
+            持续型可以在剧情里随时开关。
+          </p>
+          <div className="cpk-emptyblock__actions">
+            <Button
+              size="small"
+              className="cpk-emptyblock__cta"
+              onClick={() => add("sustained")}
+            >
+              <PlusOutlined /> 持续
+            </Button>
+            <Button
+              size="small"
+              className="cpk-emptyblock__cta"
+              onClick={() => add("passive")}
+            >
+              <PlusOutlined /> 被动
+            </Button>
+          </div>
+        </div>
       ) : (
         <ul className="cpk-stt__list">
           {statuses.map((mod) => {

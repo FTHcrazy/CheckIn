@@ -15,6 +15,7 @@ import {
   type RealmState,
 } from "../pack-realm";
 import { subscribeDualChannel } from "@/shared/novel/dual-channel";
+import { requestOpenSettingCenter } from "@/shared/novel/open-setting-center";
 import { useAutoToast, type ToastPayload } from "@/shared/novel/use-auto-toast";
 import {
   buildActiveCarriersFrom,
@@ -676,6 +677,28 @@ export function usePackPanel({
     },
     [doc, mutate, data, showToast],
   );
+
+  /**
+   * 打开小说窗口的设定中心并定位到等级体系（UI-03）。
+   *
+   * 行囊窗口自己打不开设定中心 —— 它是 NovelWindow 的组件。故走跨窗口频道
+   * `novel-open-setting-center`：主进程把小说窗口拉到前面并转发负载，那边
+   * 订阅后打开设定中心定位到目标分类（见 open-setting-center.ts）。
+   *
+   * 目标分类 id 取 `meta.levelSystems[0].id`：主进程投影里 `levelSystems` 的
+   * id 就来自 `novel_setting_categories.id`（kind='realm' 那条），是同一个值。
+   * 空态（无等级体系）时 `levelSystems` 为空 → 传 null，由接收方落在默认态 ——
+   * 这正是「去设定中心创建」要的起点，作者到那儿再走新建流程。
+   *
+   * fire-and-forget：`send` 无回执，故不宣告成功；成败表现为小说窗口是否浮起。
+   */
+  const openRealmSettingCenter = useCallback(() => {
+    const targetWorkId = doc?.character.workId ?? meta.levelSystems[0]?.workId ?? "";
+    if (!targetWorkId) return;
+    const categoryId = meta.levelSystems[0]?.id ?? null;
+    requestOpenSettingCenter(targetWorkId, categoryId);
+    void logUsageEvent("pack_open_setting_center", { from: "realm-empty" });
+  }, [doc, meta.levelSystems]);
 
   /** 右侧要素栏改了主角：把这一格同步进行囊（不重载文档，避免吃掉未保存的编辑） */
   useEffect(() => {
@@ -2199,6 +2222,46 @@ export function usePackPanel({
     }));
   }, []);
 
+  /**
+   * 直接写某模块的折叠态（UI-04）。
+   *
+   * 与 `toggleModuleCollapsed` 的区别：toggle 按**当前偏好**翻转，而
+   * `withEffectiveCollapse` 的代理需要按**生效值**写（未表态的非核心模块生效值
+   * 是「收起」，但偏好里还是 undefined，用 toggle 翻会永远翻不动）。
+   * 代理把生效值算好后直接写这个口子，避免把「未表态」误当成「展开」。
+   */
+  const setModuleCollapsed = useCallback((key: PackModuleKey, collapsed: boolean) => {
+    setPrefs((previous) => ({
+      ...previous,
+      collapsed: { ...previous.collapsed, [key]: collapsed },
+    }));
+  }, []);
+
+  /**
+   * 钉选 / 取消钉选模块（UI-04）。
+   *
+   * 与折叠同属界面偏好（即改即存、不计未保存改动）。钉选时同步把该模块的
+   * 显式折叠态写成「展开」——否则「钉选了却仍收着」会在 `isAutoCollapsed`
+   * 的规则 1 与规则 3 之间留下一个观感矛盾（钉选优先会让它展开，但 `collapsed`
+   * 里那个 `true` 一旦将来钉选被取消就会立刻显形为「自己收起来了」）。
+   * 一并写掉，让两处表态始终自洽。
+   */
+  const toggleModulePinned = useCallback((key: PackModuleKey) => {
+    setPrefs((previous) => {
+      const pinnedNow = previous.pinned.includes(key);
+      const nextPinned = pinnedNow
+        ? previous.pinned.filter((candidate) => candidate !== key)
+        : [...previous.pinned, key];
+      return {
+        ...previous,
+        pinned: nextPinned,
+        collapsed: nextPinned.includes(key)
+          ? { ...previous.collapsed, [key]: false }
+          : previous.collapsed,
+      };
+    });
+  }, []);
+
   // ── 备注速记（REQ-031） ──
   const setCharacterNote = useCallback(
     (note: string) => {
@@ -2439,6 +2502,7 @@ export function usePackPanel({
     // 动作
     writeRealm,
     bindEntity,
+    openRealmSettingCenter,
     addAttribute,
     updateAttribute,
     removeAttribute,
@@ -2490,6 +2554,8 @@ export function usePackPanel({
     setModuleOrder,
     resetModules,
     toggleModuleCollapsed,
+    setModuleCollapsed,
+    toggleModulePinned,
     setCharacterNote,
     renameCharacter,
     openEffectEditor,

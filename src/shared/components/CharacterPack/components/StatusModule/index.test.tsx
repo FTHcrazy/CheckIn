@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import StatusModule from "./index";
 import type { PackPanelApi } from "../../hooks/usePackPanel";
@@ -144,5 +144,25 @@ describe("StatusModule —— 行内编辑（时效概念已下线）", () => {
   it("目标属性为空时提示「暂不参与汇总」而不是渲染 undefined", () => {
     render(<StatusModule api={makeApi({ statuses: [mod({ targetAttrId: "" })] })} />);
     expect(screen.getByText(/未选择属性，暂不参与汇总/)).toBeInTheDocument();
+  });
+
+  it("空态（UI-03）：给「持续 / 被动」动作按钮，点击即新增状态", () => {
+    const api = makeApi({ statuses: [] });
+    const { container } = render(<StatusModule api={api} />);
+    // 说明 + 可点按钮并存，而不是只有一句文字
+    expect(screen.getByText(/还没有状态/)).toBeInTheDocument();
+    // 头部工具条里也有同名的「持续 / 被动」→ 限定取空态块里的那两颗
+    const block = container.querySelector(".cpk-emptyblock") as HTMLElement;
+    expect(block).toBeTruthy();
+    const sustained = Array.from(block.querySelectorAll("button")).find((btn) =>
+      btn.textContent?.includes("持续"),
+    ) as HTMLButtonElement;
+    const passive = Array.from(block.querySelectorAll("button")).find((btn) =>
+      btn.textContent?.includes("被动"),
+    ) as HTMLButtonElement;
+    expect(sustained).toBeTruthy();
+    expect(passive).toBeTruthy();
+    fireEvent.click(sustained);
+    expect(api.addStatus).toHaveBeenCalledWith({ nature: "sustained" });
   });
 });

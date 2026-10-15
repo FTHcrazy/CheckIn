@@ -93,14 +93,21 @@ describe("行囊 UI：自带造型的控件以 .ant-btn 承载", () => {
   /** 这些控件视觉是自己定的，但必须由组件库按钮承载、清零后重绘 */
   const WIDGET_CLASSES = [
     "cpk-mod__toggle",
+    "cpk-mod__pin",
     "cpk-eq__cand",
     "cpk-attrref",
     "cpk-castnote",
     "cpk-sum__row",
     "cpk-rlm__rung",
+    "cpk-rlm__subnum",
     "cpk-head__name",
     "cpk-fxmodal__pick",
     "cpk-ncard",
+    "cpk-emptyblock__cta",
+    "cpk-board__changes",
+    "cpk-board__entry",
+    "cpk-board__attrrow",
+    "cpk-board__modrow",
   ];
 
   it.each(WIDGET_CLASSES)("%s 的选择器带 .ant-btn 限定", (className) => {

@@ -5,6 +5,9 @@ import {
   PACK_ZONE_ORDER,
   activeZones,
   coreFirstOrder,
+  dashboardActiveStatuses,
+  dashboardAttrLimit,
+  dashboardSummaryModules,
   isAutoCollapsed,
   missingZoneOf,
   moduleSummary,
@@ -218,6 +221,10 @@ describe("coreFirstOrder", () => {
  * 「未表态」才自动折叠，作者一旦手动展开过就必须尊重 —— 否则窄档下
  * 作者怎么点都展不开（点了写进 prefs，但被自动折叠又盖回去）。
  */
+/**
+ * UI-04 渐进披露：默认态改为「全档一致」——非核心模块默认收成摘要行，
+ * 作者手动开合过才遵从作者；钉选常驻高于一切折叠策略。
+ */
 describe("isAutoCollapsed", () => {
   it("核心三块在任何档位都不自动折叠", () => {
     for (const key of PACK_WINDOW_BREAKPOINTS.coreModules) {
@@ -229,14 +236,7 @@ describe("isAutoCollapsed", () => {
     }
   });
 
-  it("宽 / 中档一概遵从作者偏好（未表态 = 展开）", () => {
-    expect(isAutoCollapsed("inventory", "wide", {})).toBe(false);
-    expect(isAutoCollapsed("inventory", "mid", {})).toBe(false);
-    expect(isAutoCollapsed("inventory", "wide", { inventory: true })).toBe(true);
-    expect(isAutoCollapsed("inventory", "mid", { inventory: true })).toBe(true);
-  });
-
-  it("窄档下未表态的次要模块默认折叠（这就是「自动折叠成标题行」）", () => {
+  it("非核心模块未表态时全档默认折叠（UI-04：默认摘要行）", () => {
     const secondary: PackModuleKey[] = [
       "equipment",
       "inventory",
@@ -248,16 +248,28 @@ describe("isAutoCollapsed", () => {
     ];
     for (const key of secondary) {
       expect(isCorePackModule(key)).toBe(false);
+      expect(isAutoCollapsed(key, "wide", {})).toBe(true);
+      expect(isAutoCollapsed(key, "mid", {})).toBe(true);
       expect(isAutoCollapsed(key, "narrow", {})).toBe(true);
     }
   });
 
-  it("窄档下作者手动展开过的模块保持展开（自动规则不覆盖显式偏好）", () => {
+  it("作者显式表态过的模块一律遵从作者（任何档位）", () => {
+    expect(isAutoCollapsed("inventory", "wide", { inventory: true })).toBe(true);
+    expect(isAutoCollapsed("inventory", "mid", { inventory: true })).toBe(true);
+    expect(isAutoCollapsed("inventory", "narrow", { inventory: true })).toBe(true);
+    // 手动展开过 → 默认折叠规则不覆盖
+    expect(isAutoCollapsed("inventory", "wide", { inventory: false })).toBe(false);
     expect(isAutoCollapsed("inventory", "narrow", { inventory: false })).toBe(false);
   });
 
-  it("窄档下作者手动折叠过的次要模块保持折叠", () => {
-    expect(isAutoCollapsed("inventory", "narrow", { inventory: true })).toBe(true);
+  it("钉选常驻高于默认折叠：钉选的非核心模块永不自动收起", () => {
+    expect(isAutoCollapsed("inventory", "wide", {}, ["inventory"])).toBe(false);
+    expect(isAutoCollapsed("inventory", "narrow", {}, ["inventory"])).toBe(false);
+    // 钉选也压过作者遗留的折叠表态（toggleModulePinned 会清，这里兜底）
+    expect(isAutoCollapsed("inventory", "wide", { inventory: true }, ["inventory"])).toBe(false);
+    // 未钉选的模块不受影响
+    expect(isAutoCollapsed("skills", "wide", {}, ["inventory"])).toBe(true);
   });
 });
 
@@ -407,5 +419,34 @@ describe("moduleSummary", () => {
 
   it("备注空白时说「空白」", () => {
     expect(moduleSummary("note", docWith({ note: "   \n  " }))).toBe("空白");
+  });
+});
+
+describe("UI-01 看板 L0 编排（纯函数）", () => {
+  it("核心属性默认条数随档位：宽 8 / 中 6 / 窄 4", () => {
+    expect(dashboardAttrLimit("wide")).toBe(8);
+    expect(dashboardAttrLimit("mid")).toBe(6);
+    expect(dashboardAttrLimit("narrow")).toBe(4);
+  });
+
+  it("E 区摘要行 = 当前启用的全部模块（含核心三块，保编辑入口）", () => {
+    const modules = allModules();
+    // 原样透传、不重排 —— 作者拖拽顺序必须被尊重
+    expect(dashboardSummaryModules(modules)).toBe(modules);
+    expect(dashboardSummaryModules(modules).length).toBeGreaterThan(0);
+  });
+
+  it("D 区只列生效状态：ownerType=status 且 active", () => {
+    const mods = [
+      { ownerType: "status", active: true },
+      { ownerType: "status", active: false },
+      { ownerType: "equipment", active: true },
+    ];
+    expect(dashboardActiveStatuses(mods)).toEqual([{ ownerType: "status", active: true }]);
+  });
+
+  it("D 区无生效状态时返回空数组", () => {
+    expect(dashboardActiveStatuses([])).toEqual([]);
+    expect(dashboardActiveStatuses([{ ownerType: "status", active: false }])).toEqual([]);
   });
 });

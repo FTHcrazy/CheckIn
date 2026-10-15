@@ -57,3 +57,23 @@ describe("P2-7 登出不绕过关闭守卫（守卫）", () => {
     );
   });
 });
+
+describe("UI-03 跨窗口导航频道（守卫）", () => {
+  const PRELOAD = readFileSync(path.resolve(process.cwd(), "electron/preload.ts"), "utf8");
+
+  it("preload 白名单放行 novel-open-setting-center（渲染层 send 否则被静默丢弃）", () => {
+    expect(PRELOAD).toContain("'novel-open-setting-center'");
+  });
+
+  it("main.ts 注册 novel-open-setting-center，且把 novel 窗拉起来后再转发", () => {
+    const start = MAIN.indexOf('ipcMain.on("novel-open-setting-center"');
+    expect(start).toBeGreaterThan(-1);
+    const body = MAIN.slice(start, start + 900);
+    // 必须拉到前面（行囊窗口可能盖着它），否则用户看不到定位结果
+    expect(body).toMatch(/windowManager\.get\("novel"\)/);
+    expect(body).toMatch(/novelWin\.focus\(\)/);
+    // 点对点转发给 novel 窗消费，不用 broadcast（其它窗口不该收到导航意图）
+    expect(body).toContain('windowManager.sendTo("novel", "novel-open-setting-center", payload)');
+    expect(body).not.toContain("windowManager.broadcast");
+  });
+});

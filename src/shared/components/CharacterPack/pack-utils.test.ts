@@ -24,6 +24,12 @@ import {
   matchesKeyword,
   proficiencySchemeOf,
   carryBreakdown,
+  realmLadderUsesDropdown,
+  realmSubAriaLabel,
+  realmSubBarVisible,
+  realmSubUsesDropdown,
+  REALM_RUNG_DROPDOWN_THRESHOLD,
+  REALM_SUB_DROPDOWN_THRESHOLD,
   safeText,
   scaleByProficiency,
   sortLadder,
@@ -1647,5 +1653,49 @@ describe("体系品阶导出（1.40.0）", () => {
       }),
     );
     expect(lines).toEqual(["神通 · 天阶（在用）：熟练度 0"]);
+  });
+});
+
+/**
+ * UI-02：境界「阶 + 小层」直选的阈值与可读名（纯函数）。
+ *
+ * 阈值是「chip 行 / 下拉」两条路径切换的唯一判据，必须钉死边界 ——
+ * 恰好在阈值上走 chip 行（8 个 chip 一行放得下），超过才切下拉。
+ */
+describe("UI-02 境界直选阈值与可读名", () => {
+  it("阶下拉阈值：恰好在 8 仍走 chip 行，9 才切下拉", () => {
+    expect(REALM_RUNG_DROPDOWN_THRESHOLD).toBe(8);
+    expect(realmLadderUsesDropdown(8)).toBe(false);
+    expect(realmLadderUsesDropdown(9)).toBe(true);
+    expect(realmLadderUsesDropdown(1)).toBe(false);
+  });
+
+  it("小层下拉阈值：恰好在 12 仍走按钮排，13 才切下拉", () => {
+    expect(REALM_SUB_DROPDOWN_THRESHOLD).toBe(12);
+    expect(realmSubUsesDropdown(12)).toBe(false);
+    expect(realmSubUsesDropdown(13)).toBe(true);
+  });
+
+  it("小层数 = 1 时不渲染层号条（单选项 [1] 是噪声）", () => {
+    expect(realmSubBarVisible(1)).toBe(false);
+    expect(realmSubBarVisible(2)).toBe(true);
+    expect(realmSubBarVisible(0)).toBe(false);
+  });
+
+  it("层号可读名：有别名时带括号，没有时只给「<阶名> 第 n 层」", () => {
+    const rung = {
+      id: "l2",
+      name: "元婴",
+      rank: 2,
+      subLevels: 3,
+      power: null,
+      hasChildren: true,
+      subLabels: ["", "中期", "圆满"],
+    };
+    expect(realmSubAriaLabel(rung, 1)).toBe("元婴 第 1 层");
+    expect(realmSubAriaLabel(rung, 2)).toBe("元婴 第 2 层（中期）");
+    expect(realmSubAriaLabel(rung, 3)).toBe("元婴 第 3 层（圆满）");
+    // 没有别名表（纯数字小层）
+    expect(realmSubAriaLabel(undefined, 2)).toBe("境界 第 2 层");
   });
 });
