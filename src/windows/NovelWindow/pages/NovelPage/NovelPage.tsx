@@ -544,6 +544,7 @@ export default function NovelPage({
           namingActions={namingActions}
           namingExclude={namingExclude}
           namingFavorites={namingFavorites}
+          onNotify={view.showToast}
         />
 
         {/*

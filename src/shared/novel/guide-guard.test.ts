@@ -325,3 +325,77 @@ describe("过期文案修正（FR-05）", () => {
     expect(hook).toContain("setLibraryOpen(true)");
   });
 });
+
+/**
+ * UI-06：L2 弱提示第二批点位。
+ *
+ * 这三处的共同难点是**宿主会反复挂载** —— 大纲章行在虚拟列表里滚进滚出、
+ * 悬浮卡随指针进出、排序弹窗可多次打开。`GuideTooltip` 默认走异步落盘判定，
+ * 每次挂载都要读一次 `novel_config`（白花 IPC），且两个宿主同时起跳会各弹
+ * 一个气泡。所以统一改走窗口 store 的同步入口 `consumeGuideTooltip`。
+ *
+ * 守卫钉两件事：① 三处都挂上了 `id` + `consume`（缺 `consume` 会永不消失，
+ * 缺 `id` 拿不到文案）；② 消费都收敛到那一个入口，不许各自拼 store 调用。
+ */
+describe("弱提示点位（UI-06：T-05 / T-06 / T-07）", () => {
+  const HOSTS: Array<[id: string, file: string]> = [
+    ["T-05", "src/windows/NovelWindow/pages/NovelPage/components/OutlinePanel/index.tsx"],
+    ["T-06", "src/windows/NovelWindow/pages/NovelPage/components/HoverEntityCard/index.tsx"],
+    ["T-07", "src/windows/NovelWindow/pages/NovelPage/components/ReorderConfirmModal/index.tsx"],
+  ];
+
+  it.each(HOSTS)("%s 同时给出 id 与消费回调（缺一个就会永不消失或反复弹）", (id, file) => {
+    const source = stripComments(read(file));
+    expect(source).toContain(
+      `<GuideTooltip id="${id}" consume={() => consumeGuideTooltip("${id}")}>`,
+    );
+  });
+
+  it("消费收敛到唯一入口 consumeGuideTooltip，宿主不许自己拼 getState()", () => {
+    for (const [, file] of HOSTS) {
+      const source = stripComments(read(file));
+      // 相对路径按实际目录深度（components/<X>/index.tsx → NovelWindow/store）
+      expect(source).toContain('from "../../../../store/useGuideStore"');
+      expect(source).not.toContain("useGuideStore.getState()");
+    }
+  });
+
+  it("入口先让位给正在播的 Tour，且让位时不记账（Tour 结束后同点位还能弹）", () => {
+    const store = stripComments(read("src/windows/NovelWindow/store/useGuideStore.ts"));
+    const body = store.slice(store.indexOf("export function consumeGuideTooltip"));
+    expect(body).toContain("store.playingStep !== null");
+    expect(body).toContain("store.consumeTooltip(id, Date.now())");
+    // 让位分支必须在记账之前 return，否则气泡被 Tour 挤掉却留下「已看过」
+    expect(body.indexOf("return false")).toBeLessThan(body.indexOf("return store.consumeTooltip"));
+  });
+
+  it("T-05 只挂一条章行（多行同挂会冒出多个气泡同时起跳）", () => {
+    const outline = stripComments(read(HOSTS[0][1]));
+    // 全文件只有一个挂载点
+    expect(outline.match(/<GuideTooltip\b/g) ?? []).toHaveLength(1);
+    // 锚点由行列表派生出「第一个空梗概章行」的唯一 key，再和行 key 比对
+    expect(outline).toContain("const t05AnchorKey = useMemo");
+    expect(outline).toContain('item.kind === "chapter" && !item.chapter.note');
+    expect(outline).toContain("row.key === t05AnchorKey");
+    // 默认不挂：只有被指认的那一行才进 T-05 分支
+    expect(outline).toContain("anchorT05 = false");
+  });
+
+  it("T-07 的图标本身就是常驻说明入口（气泡只弹一次，图标一直看得见）", () => {
+    const modal = stripComments(read(HOSTS[2][1]));
+    expect(modal).toContain("nv-reorder__title-hint");
+    expect(modal).toContain('aria-label="排序确认说明"');
+    // 图标必须在 title 里，而不是 Modal 的 extra / footer —— 说明和标题是同一件事
+    expect(modal).toContain('<span className="nv-reorder__title">');
+  });
+
+  it("文案同源：三条 TOOLTIP_STEPS 仍在 guide-copy.ts（标语不许只活在组件里）", () => {
+    const copy = read("src/shared/novel/guide-copy.ts");
+    for (const id of ["T-05", "T-06", "T-07"]) {
+      expect(copy).toContain(`id: "${id}"`);
+    }
+    // 文案是给人看的话，不是字段名
+    expect(copy).toContain("给这章留个梗概");
+    expect(copy).toContain("高亮词能点");
+  });
+});

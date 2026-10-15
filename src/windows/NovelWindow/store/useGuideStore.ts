@@ -239,3 +239,20 @@ export const useGuideStore = create<GuideStore>((set, get) => {
 export function selectHelpBadgeVisible(state: GuideStore): boolean {
   return shouldShowHelpBadge(state.record);
 }
+
+/**
+ * 编辑器内弱提示的统一消费入口（T-05 章梗概 / T-06 悬浮卡 / T-07 排序确认）。
+ *
+ * 为什么不直接用 `useGuideStore.getState().consumeTooltip`：还要先让位给正在播的
+ * Tour。两个气泡同时挂上去会互相遮挡，且 Tour 是「一次性教学」、弱提示是「顺手补一
+ * 句」，冲突时该让位的是弱提示。
+ *
+ * 走 store 而非 `GuideTooltip` 的默认持久化判定，是因为这三个点位的宿主都会**反复
+ * 挂载**（章行随虚拟列表滚进滚出、悬浮卡随指针进出），默认判定每次挂载都要读一遍
+ * `novel_config`，白花 IPC；store 的判定在内存里，且自带打字保护（FR-06）。
+ */
+export function consumeGuideTooltip(id: string): boolean {
+  const store = useGuideStore.getState();
+  if (store.playingStep !== null) return false;
+  return store.consumeTooltip(id, Date.now());
+}

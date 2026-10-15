@@ -96,6 +96,8 @@ interface SupportPanelProps {
   namingExclude: string[];
   /** 起名工具收藏夹（当前作品）：按 createdAt 倒序 */
   namingFavorites: import("../../types").NameFavorite[];
+  /** 轻提示：规划中的工具点了也要有回应（UI-09），复用页面级 toast */
+  onNotify: (text: string, tone?: import("@/shared/novel/use-auto-toast").ToastTone) => void;
 }
 
 interface TabMeta {
@@ -165,6 +167,7 @@ export default function SupportPanel({
   namingActions,
   namingExclude,
   namingFavorites,
+  onNotify,
 }: SupportPanelProps) {
   /** 工具箱二级面板：null = 启动器首页 */
   const [toolSub, setToolSub] = useState<"naming" | null>(null);
@@ -571,7 +574,7 @@ export default function SupportPanel({
                 actions={namingActions}
               />
             ) : (
-              <ToolLauncher onOpenNaming={openTool} />
+              <ToolLauncher onOpenNaming={openTool} onNotify={onNotify} />
             ))}
         </div>
 

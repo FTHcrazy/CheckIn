@@ -9,8 +9,10 @@ import {
 } from "@ant-design/icons";
 import { Button, Input, Select, Tooltip } from "antd";
 import { Virtuoso } from "react-virtuoso";
+import GuideTooltip from "@/shared/components/GuideTooltip";
 import { CHAPTER_STATUS_META } from "../../novel-config";
 import { formatThousands } from "../../novel-utils";
+import { consumeGuideTooltip } from "../../../../store/useGuideStore";
 import type { ForeshadowPatch, OutlineNode } from "../../types";
 import "./index.scss";
 
@@ -224,6 +226,19 @@ export default function OutlinePanel({
     return list;
   }, [volumeNodes, folded, fsTarget]);
 
+  /**
+   * T-05 的锚点：全局第一个「梗概还空着」的章行。
+   *
+   * 只挂这一行：每行都包一层 `GuideTooltip` 会有多个气泡同时起跳（各自 400ms
+   * 计时器），而「只出现一次」靠消费时落盘判定，谁先落盘之前谁都可能抢到，
+   * 结果冒出两三个气泡。虚拟化下这一行可能还没挂载（在可视区外），
+   * 气泡会在滚到它时才出现——可接受，总比同屏多个气泡好。
+   */
+  const t05AnchorKey = useMemo(() => {
+    const row = rows.find((item) => item.kind === "chapter" && !item.chapter.note);
+    return row?.key ?? null;
+  }, [rows]);
+
   // 面板头「＋ 伏笔」：切回章节视图并在首卷展开新增表单
   // 只在 signal 自增时响应一次，避免依赖变化时重复抢占正在编辑的表单
   const lastSignalRef = useRef(addForeshadowSignal);
@@ -408,7 +423,12 @@ export default function OutlinePanel({
    * （语义与列表项一致，`list-style` 已在样式里清零），类的层级关系不变，
    * 原先写在 `&__item` 上的 hover / active 规则照旧命中。
    */
-  const renderChapter = (node: ChapterNode, volumeId: string) => {
+  const renderChapter = (
+    node: ChapterNode,
+    volumeId: string,
+    /** 本行是否是 T-05 弱提示的锚点（全局只有一个） */
+    anchorT05 = false,
+  ) => {
     const active = node.chapterId === activeChapterId;
     const editing = noteEditingId === node.chapterId;
     const addingHere = fsTarget?.mode === "add" && fsTarget.anchor === node.id;
@@ -438,6 +458,20 @@ export default function OutlinePanel({
         ))}
         <em>{fsOpen ? "点击收起清单" : "点击在本章下方展开"}</em>
       </div>
+    );
+
+    /**
+     * 梗概按钮。单独抽出来是因为 T-05 那条路径要在它外面多包一层 Tooltip，
+     * 两条路径的按钮本身必须一模一样（否则气泡锚点和非气泡锚点会长得不一样）。
+     */
+    const noteButton = () => (
+      <Button
+        className={`nv-outline__note${node.note ? "" : " is-empty"}`}
+        title="点击编辑一句话梗概"
+        onClick={() => startNoteEdit(node)}
+      >
+        {node.note || "＋ 一句话梗概"}
+      </Button>
     );
 
     return (
@@ -519,14 +553,14 @@ export default function OutlinePanel({
             onBlur={() => commitNoteEdit(node)}
             onKeyDown={(event) => handleNoteKeyDown(event, node)}
           />
+        ) : anchorT05 ? (
+          /* T-05：首次进大纲，在「＋ 一句话梗概」上补一句「给这章留个梗概」。
+             消费走窗口 store（内存判定 + 打字保护），见 consumeGuideTooltip */
+          <GuideTooltip id="T-05" consume={() => consumeGuideTooltip("T-05")}>
+            {noteButton()}
+          </GuideTooltip>
         ) : (
-          <Button
-            className={`nv-outline__note${node.note ? "" : " is-empty"}`}
-            title="点击编辑一句话梗概"
-            onClick={() => startNoteEdit(node)}
-          >
-            {node.note || "＋ 一句话梗概"}
-          </Button>
+          noteButton()
         )}
 
         {/* 本章的伏笔清单：就挂在章节下面，回收 / 编辑 / 删除都在原地完成，
@@ -673,7 +707,7 @@ export default function OutlinePanel({
       case "volume":
         return renderVolume(row.volume);
       case "chapter":
-        return renderChapter(row.chapter, row.volumeId);
+        return renderChapter(row.chapter, row.volumeId, row.key === t05AnchorKey);
       case "hint":
         return <p className="nv-outline__hint">本卷还没有章节</p>;
       case "volume-form":

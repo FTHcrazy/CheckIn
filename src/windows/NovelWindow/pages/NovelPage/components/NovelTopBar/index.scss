@@ -192,6 +192,12 @@
       --ant-button-default-hover-color: var(--app-primary);
       --ant-button-default-active-bg: var(--app-primary-weak);
       --ant-button-default-active-color: var(--app-primary);
+      /* 主色内描边。为什么光靠底色不够：默认底与主色弱底都是「极浅底」，
+         aurora 下两者亮度只差 ~1.2%（实测），激活与否只能靠图标换色分辨，
+         一眼扫过去仍然糊。1px 内描边走 `--ant-button-default-shadow`
+         （antd 只在 outlined/solid/dashed 变体上把它落成 box-shadow，
+         且**不分状态**，所以 hover / active 也不会掉），是确定的几何信号。 */
+      --ant-button-default-shadow: inset 0 0 0 1px var(--app-primary);
     }
 
     &:focus-visible {

@@ -2,10 +2,9 @@
 
 /* 工具箱启动器（NL 设计稿 §3·工具区）
 
-   .nv-tools__card 有两种宿主：可进入的工具是 antd `Button`，
-   规划中的工具是 `<div>` 占位（可看不可点）。因此卡片的基础盒属性保留在这里
-   给 div 用；Button 版本的外观一律走下面的 `.ant-btn` 变量块——antd 的规则
-   比特异性更高，会盖掉这里的 border / background / border-radius，
+   ⚠️ 三类卡**都是** antd `Button`（UI-09：规划中的卡此前是 `<div>` 死链，
+   点了没反应）。所以卡片外观一律走下面的 `.ant-btn` 变量块——antd 的规则
+   比特异性更高，会盖掉裸选择器上的 border / background / border-radius，
    hover / active 也只读变量，自写 `:hover` 属性压不过（AGENTS §6.1.2）。 */
 
 .nv-tools {
@@ -17,26 +16,6 @@
     /* 单列网格：显式 0 下限，见 EntityPanel__list 的说明 */
     grid-template-columns: minmax(0, 1fr);
     gap: 8px;
-  }
-
-  /* 卡片本体（规划中的 <div> 占位卡走这套） */
-  &__card {
-    display: flex;
-    gap: 11px;
-    padding: 12px;
-    border: 1px solid var(--app-border);
-    border-radius: var(--app-radius-panel);
-    background: var(--app-surface);
-    color: var(--app-text);
-    font-family: inherit;
-    text-align: left;
-    cursor: pointer;
-
-    /* 规划中的工具：可看不可点，避免给用户假入口 */
-    &.is-planned {
-      cursor: default;
-      opacity: 0.68;
-    }
   }
 
   /* 可进入的工具：antd Button 承载，先清零再只声明变量 */
@@ -64,6 +43,31 @@
     /* 悬停浮起：transform antd 不接管（§6.1.2 允许保留） */
     &:hover {
       transform: translateY(-2px);
+    }
+  }
+
+  /* 规划中的工具（UI-09）：仍是真按钮（点了给 toast 说明），但视觉上先降一档 ——
+     平面底 + 虚描边 + 无投影，一眼看出「还不是可用入口」，不必点下去才知道。
+     用显式弱化色而不是整卡 opacity：整卡半透明会把说明文字一起糊掉。 */
+  &__card.ant-btn.is-planned {
+    --ant-line-type: dashed;
+    --ant-button-default-bg: var(--app-surface-alt);
+    --ant-button-default-color: var(--app-text-secondary);
+    --ant-button-default-border-color: var(--app-border-strong);
+    --ant-button-default-hover-bg: var(--app-surface-hover);
+    --ant-button-default-hover-color: var(--app-text);
+    --ant-button-default-hover-border-color: var(--app-border-strong);
+    --ant-button-default-active-bg: var(--app-surface-hover);
+    --ant-button-default-active-color: var(--app-text);
+    --ant-button-default-active-border-color: var(--app-border-strong);
+    --ant-button-default-shadow: none;
+
+    &:hover {
+      transform: none;
+    }
+
+    .nv-tools__desc {
+      color: var(--app-text-muted);
     }
   }
 

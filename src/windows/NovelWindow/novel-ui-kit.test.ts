@@ -495,3 +495,63 @@ describe("Novel 窗口：大纲章节行不渲染 antd 点击涟漪", () => {
     expect(classCount).toBeGreaterThanOrEqual(3);
   });
 });
+
+describe("Novel 窗口：顶栏图标三档层次（UI-07 收尾）", () => {
+  /** 花括号配平取规则块体（块内嵌着 `&.is-on`，不能只找下一个 `}`） */
+  const ruleBlock = (css: string, selector: string) => {
+    const at = css.indexOf(`${selector} {`);
+    expect(at, `缺少规则 ${selector}`).toBeGreaterThan(-1);
+    const open = css.indexOf("{", at);
+    let depth = 0;
+    let end = open;
+    for (; end < css.length; end++) {
+      if (css[end] === "{") depth++;
+      else if (css[end] === "}" && --depth === 0) break;
+    }
+    return css.slice(open + 1, end);
+  };
+
+  /**
+   * 取某个组件级变量的**最后一次**声明。
+   * 清零点 mixin 会先把这些变量全部置成 `transparent` / `currentColor`，
+   * 控件再靠源码顺序覆盖 —— 所以「有没有清零」这一层必须看最后一条，
+   * 用 `toContain` 会被 mixin 自己写下的那行糊弄过去。
+   */
+  const lastDecl = (block: string, name: string) => {
+    const matches = [...block.matchAll(new RegExp(`--${name}:\\s*([^;]+);`, "g"))];
+    return matches.at(-1)?.[1]?.trim() ?? "";
+  };
+
+  it("默认 chip 底 / hover 加深 / 持久激活主色弱底，三档都在且不退化", () => {
+    // 1.42.0 之前六颗图标是**纯透明底**，一排扫过去就是一团灰点，
+    // 点下去才知道是按钮（PX-07）。这条把「三档」钉在编译产物上：
+    // 只搜源码文本会漏掉 BEM 嵌套与 mixin 展开。
+    const css = sass
+      .compile(
+        path.join(ROOT, "pages/NovelPage/components/NovelTopBar/index.scss"),
+        { style: "expanded" },
+      )
+      .css.replace(/\/\*[\s\S]*?\*\//g, "");
+
+    // 档 1 + 档 2：默认底不能停在透明，hover / active 各再沉一档
+    const base = ruleBlock(css, ".nv-topbar__icon.ant-btn");
+    expect(lastDecl(base, "ant-button-default-bg")).toBe("var(--app-surface-hover)");
+    expect(lastDecl(base, "ant-button-default-hover-bg")).toBe("var(--app-surface-active)");
+    expect(lastDecl(base, "ant-button-default-active-bg")).toBe("var(--app-surface-active)");
+    // 默认态不描边（描边只属于激活态）
+    expect(lastDecl(base, "ant-button-default-shadow")).toBe("none");
+
+    // 档 3：持久激活走主色弱底 + 主色字 + 主色内描边，
+    // 且必须把 hover / active 一起覆盖（只改默认态的话，鼠标一掠过就掉回灰底，
+    // 看着像「点了没生效」）
+    const on = ruleBlock(css, ".nv-topbar__icon.ant-btn.is-on");
+    expect(lastDecl(on, "ant-button-default-bg")).toBe("var(--app-primary-weak)");
+    expect(lastDecl(on, "ant-button-default-color")).toBe("var(--app-primary)");
+    expect(lastDecl(on, "ant-button-default-hover-bg")).toBe("var(--app-primary-weak)");
+    expect(lastDecl(on, "ant-button-default-active-bg")).toBe("var(--app-primary-weak)");
+    // 主色弱底与默认底亮度太近，激活与否必须另有一个不依赖亮度的信号
+    const onShadow = lastDecl(on, "ant-button-default-shadow");
+    expect(onShadow).toContain("inset");
+    expect(onShadow).toContain("var(--app-primary)");
+  });
+});

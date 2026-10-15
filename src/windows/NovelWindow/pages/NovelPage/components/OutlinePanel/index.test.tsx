@@ -1,4 +1,5 @@
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -7,8 +8,9 @@ import {
   within,
 } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OutlineNode } from "../../types";
+import { useGuideStore } from "../../../../store/useGuideStore";
 import OutlinePanel, { type OutlineActions } from "./index";
 
 // jsdom 没有真实布局，Virtuoso 视口高度为 0 导致不渲染任何行；
@@ -776,6 +778,117 @@ describe("OutlinePanel：章节视图的行模型（虚拟化后）", () => {
     if (item && form) {
       const position = item.compareDocumentPosition(form);
       expect(position & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+  });
+});
+
+/**
+ * T-05 弱提示（UI-06）。
+ *
+ * 验收点不是「某个按钮外面包了一层 Tooltip」——包裹本身在 DOM 上留不下痕迹
+ * （antd Tooltip 不 open 时不渲染浮层），而是「**全屏只有一个气泡**」：
+ * 章行来自虚拟列表，若把锚点挂在每一行、又用了 `GuideTooltip` 默认的
+ * 异步持久化判定，十几个气泡会同时起跳（谁先落盘之前谁都抢得到）。
+ */
+describe("OutlinePanel：T-05 弱提示（UI-06）", () => {
+  // 引导 store 是模块级单例：「已看过」标记会跨用例残留，不清就会串味
+  // （第一条用例消费掉 T-05，后面几条就再也弹不出来了）
+  beforeEach(() => {
+    useGuideStore.setState((state) => ({
+      record: { ...state.record, tooltipSeen: [] },
+      playingStep: null,
+      lastTypingAt: 0,
+    }));
+  });
+
+  afterEach(() => {
+    cleanup();
+    document.body.innerHTML = "";
+  });
+
+  /** 造一份大纲副本，用来在用例里改梗概（不污染共享 fixture） */
+  const outlineCopy = (): OutlineNode[] =>
+    JSON.parse(JSON.stringify(outline)) as OutlineNode[];
+
+  /**
+   * 把每一条章节行的梗概改成同一个值。
+   * 只改 `chapter` 变体：`foreshadow` 的 `note` 是伏笔备注，不是章节梗概。
+   * 递归是因为卷的 `children` 里还会嵌卷（TS 联合类型只在收窄后才有 `children`）。
+   */
+  const fillChapterNotes = (nodes: OutlineNode[], note: string): void => {
+    for (const node of nodes) {
+      if (node.kind === "chapter") node.note = note;
+      else if (node.kind === "volume") fillChapterNotes(node.children, note);
+    }
+  };
+
+  it("挂在第一个「梗概还空着」的章行上，全屏只弹一个气泡", async () => {
+    vi.useFakeTimers();
+    try {
+      render(
+        <OutlinePanel
+          outline={outline}
+          activeChapterId={null}
+          onSelectChapter={vi.fn()}
+          actions={buildActions()}
+        />,
+      );
+      // 气泡延迟 ENTER_DELAY_MS（400ms）才出现：让目标先完成布局
+      await act(async () => {
+        vi.advanceTimersByTime(1000);
+      });
+
+      const bubbles = document.querySelectorAll(".guide-tooltip__title");
+      expect(bubbles).toHaveLength(1);
+      expect(bubbles[0].textContent).toBe("给这章留个梗概");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("多章都空着梗概时也只弹一个（消费判定必须是同步的）", async () => {
+    const nodes = outlineCopy();
+    fillChapterNotes(nodes, "");
+
+    vi.useFakeTimers();
+    try {
+      render(
+        <OutlinePanel
+          outline={nodes}
+          activeChapterId={null}
+          onSelectChapter={vi.fn()}
+          actions={buildActions()}
+        />,
+      );
+      await act(async () => {
+        vi.advanceTimersByTime(1000);
+      });
+      expect(document.querySelectorAll(".guide-tooltip__title")).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("梗概都写满时不挂锚点（没有「＋ 一句话梗概」可指）", async () => {
+    const nodes = outlineCopy();
+    fillChapterNotes(nodes, "都填好了");
+
+    vi.useFakeTimers();
+    try {
+      render(
+        <OutlinePanel
+          outline={nodes}
+          activeChapterId={null}
+          onSelectChapter={vi.fn()}
+          actions={buildActions()}
+        />,
+      );
+      await act(async () => {
+        vi.advanceTimersByTime(1000);
+      });
+      expect(document.querySelectorAll(".guide-tooltip__title")).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
     }
   });
 });

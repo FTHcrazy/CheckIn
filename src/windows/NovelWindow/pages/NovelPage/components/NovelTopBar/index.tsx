@@ -168,6 +168,7 @@ export default function NovelTopBar({
             className={`nv-topbar__icon${leftOpen ? " is-on" : ""}`}
             onClick={onToggleLeft}
             aria-label="章节栏"
+            aria-pressed={leftOpen}
           >
             <MenuOutlined />
           </Button>
@@ -177,6 +178,7 @@ export default function NovelTopBar({
             className={`nv-topbar__icon${rightOpen ? " is-on" : ""}`}
             onClick={onToggleRight}
             aria-label="支撑面板"
+            aria-pressed={rightOpen}
           >
             <LayoutOutlined />
           </Button>
@@ -221,6 +223,7 @@ export default function NovelTopBar({
             className={`nv-topbar__icon${settingsOpen ? " is-on" : ""}`}
             onClick={onToggleSettings}
             aria-label="排版与偏好"
+            aria-pressed={settingsOpen}
           >
             <ControlOutlined />
           </Button>

@@ -1,5 +1,7 @@
 import { Modal } from "antd";
-import { ArrowRightOutlined } from "@ant-design/icons";
+import { ArrowRightOutlined, InfoCircleOutlined } from "@ant-design/icons";
+import GuideTooltip from "@/shared/components/GuideTooltip";
+import { consumeGuideTooltip } from "../../../../store/useGuideStore";
 import "./index.scss";
 
 /** 一条序号变更：name 是章节名 / 卷名，from → to 是序号标签 */
@@ -34,7 +36,22 @@ export default function ReorderConfirmModal({
   return (
     <Modal
       open={open}
-      title={title}
+      title={
+        <span className="nv-reorder__title">
+          {title}
+          {/*
+           * T-07：首次弹出时补一句「这个确认是防误触排序的，可在排版与偏好里关掉」。
+           * 锚点常驻标题旁（气泡只出现一次，消费走窗口 store），所以这里不放
+           * 「一次性」的东西——图标本身就是说明入口，一直看得见。
+           */}
+          <GuideTooltip id="T-07" consume={() => consumeGuideTooltip("T-07")}>
+            <InfoCircleOutlined
+              className="nv-reorder__title-hint"
+              aria-label="排序确认说明"
+            />
+          </GuideTooltip>
+        </span>
+      }
       okText="确认调整"
       cancelText="取消"
       onOk={onConfirm}
