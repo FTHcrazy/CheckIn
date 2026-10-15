@@ -1,5 +1,5 @@
 /// <reference types="node" />
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -88,3 +88,62 @@ describe("THEME_LIST", () => {
     });
   });
 });
+
+/**
+ * 未定义 token 守卫。
+ *
+ * `var(--app-typo)` 不会报错、不会编译失败 —— 浏览器直接当它不存在，
+ * 于是那一条声明静默失效（圆角变 0、颜色继承父级），肉眼很难发现。
+ * 本仓已经踩过三次（--app-radius-sm / --app-text-primary / --app-primary-bg），
+ * 所以这里反向扫一遍：SCSS 里引用的每个 --app-* 必须在 themes.scss 里定义。
+ *
+ * 例外：
+ * - 带 fallback 的 `var(--x, …)` 允许未定义（fallback 即是设计意图）；
+ * - 注释里的提及不算引用（`stripComments` 先剔注释再匹配）。
+ */
+describe("--app-* token 引用完整性（防静默失效）", () => {
+  const stripComments = (source: string) =>
+    source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+
+  const collectScssFiles = (dir: string, acc: string[] = []): string[] => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (!/node_modules|dist/.test(entry.name)) collectScssFiles(full, acc);
+        continue;
+      }
+      if (entry.name.endsWith(".scss")) acc.push(full);
+    }
+    return acc;
+  };
+
+  it("src 下所有 SCSS 引用的 --app-* 都在 themes.scss 里有定义", () => {
+    const defined = new Set(
+      [...THEME_SCSS.matchAll(/(--app-[a-z0-9-]+)\s*:/g)].map((m) => m[1]),
+    );
+    // 先自证 token 池非空，避免正则写错导致本用例 vacuous 通过
+    expect(defined.size).toBeGreaterThan(50);
+
+    const files = collectScssFiles(path.resolve(process.cwd(), "src"));
+    // 同理：扫不到文件说明路径写错了，别让它静默通过
+    expect(files.length).toBeGreaterThan(20);
+
+    const offenders: string[] = [];
+    for (const file of files) {
+      const source = stripComments(readFileSync(file, "utf8"));
+      // `var(--app-x, fallback)` —— 带 fallback 的引用是设计意图，放行
+      const withoutFallback = source.replace(
+        /var\(\s*--app-[a-z0-9-]+\s*,[^)]*\)/g,
+        "",
+      );
+      for (const match of withoutFallback.matchAll(/var\(\s*(--app-[a-z0-9-]+)/g)) {
+        if (!defined.has(match[1])) {
+          offenders.push(`${path.relative(process.cwd(), file)} → ${match[1]}`);
+        }
+      }
+    }
+
+    expect(offenders).toEqual([]);
+  });
+});
+
