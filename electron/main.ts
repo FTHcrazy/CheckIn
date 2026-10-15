@@ -18,6 +18,7 @@ import {
   standDownCloseGuards,
 } from "./close-guard";
 import { startActivityPolling, stopActivityPolling } from "./activitiesTask";
+import { resolveAppProtocolCacheControl } from "./app-protocol-cache";
 import { windowManager } from "./windowManager";
 import { registerActivityHandlers } from "./handlers/activity-handlers";
 import { registerTodoHandlers } from "./handlers/todo-handlers";
@@ -100,6 +101,13 @@ const TRAY_ICON_PATH = VITE_DEV_SERVER_URL
   : path.join(DIST, "tray/tray.png");
 
 // 注册自定义协议用于加载本地文件 (必须在 app.whenReady 之前调用)
+// codeCache：自定义 scheme 默认不写 V8 字节码缓存（Chromium 只对 http(s) 开启），
+// 必须显式打开；但 Chromium 对「不够热」的脚本仍会跳过码缓存（启发式 heat check），
+// 本应用窗口即关即销、antd chunk 每窗只跑一次 → 仅靠 codeCache 大概率空转。
+// 因此渲染侧 createWebPreferences 同时设 v8CacheOptions:"bypassHeatCheck" 跳过热度
+// 判断，两者配套才能让「编译一次」的成果跨渲染进程复用。
+// 注：Cache-Control 的 immutable 能否让自定义协议响应进 Chromium 磁盘缓存、从而
+// 跨窗口免主进程读盘，是未验证假设（自定义 scheme 可能不过 HttpCache），收益以实测为准。
 protocol.registerSchemesAsPrivileged([
   {
     scheme: "app",
@@ -108,6 +116,7 @@ protocol.registerSchemesAsPrivileged([
       secure: true,
       supportFetchAPI: true,
       corsEnabled: true,
+      codeCache: true,
     },
   },
 ]);
@@ -171,6 +180,12 @@ function createWebPreferences() {
     preload: path.join(DIST_ELECTRON, "preload.js"),
     contextIsolation: true,
     nodeIntegration: false,
+    // V8 字节码缓存（渲染侧）。app scheme 已在 registerSchemesAsPrivileged 开
+    // codeCache:true，但 Chromium 默认只对「足够热」的脚本产码缓存（启发式
+    // heat check）；本应用窗口即关即销、antd 等 chunk 每窗只执行一次，启发式
+    // 大概率不满足 → codeCache 空转。bypassHeatCheck 跳过热度判断，让 app://
+    // 脚本的码缓存（含 1.4MB antd chunk）真正跨渲染进程复用，与 scheme 侧配套才完整。
+    v8CacheOptions: "bypassHeatCheck" as const,
   };
 }
 
@@ -661,14 +676,24 @@ app.whenReady().then(() => {
   // 注册协议处理器，将 app:// 请求映射到本地文件
   // 必须异步：每个 bundle / CSS / 字体都是一次 1~5MB 的读盘，同步读会把
   // 冷启动的加载阶段整段堵在主进程上（protocol.handle 支持返回 Promise）
+  //
+  // Cache-Control 按「文件名是否内容寻址」分档（策略见 app-protocol-cache.ts）：
+  // 哈希资产 immutable（内容寻址，跨版本字节不变）→ 若 Chromium 对自定义协议响应
+  // 启用磁盘缓存，后续窗口可免主进程读盘；即便不生效也无害（最坏退回每次读盘）。
+  // 真正的跨窗口收益锚点在 scheme 侧 codeCache + 渲染侧 v8CacheOptions（见上方）。
+  // HTML 入口 no-store → 防止应用升级后仍被喂上一版 HTML（它引用的旧哈希资产已从磁盘删除）。
   protocol.handle("app", async (request) => {
     const url = request.url.replace("app://./", "");
     const cleanUrl = url.split("?")[0];
+    // cleanUrl 直接用于分档判定，filePath 多做了一次 decodeURIComponent：
+    // 哈希资产文件名均为 URL 安全字符（base64url），两者对真实请求永远等价，
+    // 故此处不解码也不影响分档；若将来路径含非安全字符，需把解码后的值一并传入判定。
     const filePath = path.join(DIST, decodeURIComponent(cleanUrl));
     const content = await fs.promises.readFile(filePath);
     return new Response(content, {
       headers: {
         "Content-Type": getMimeType(filePath),
+        "Cache-Control": resolveAppProtocolCacheControl(cleanUrl),
       },
     });
   });

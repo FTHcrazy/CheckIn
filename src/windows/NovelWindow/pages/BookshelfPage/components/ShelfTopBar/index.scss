@@ -10,6 +10,7 @@
   padding: 10px 24px;
   background: var(--app-header-bg);
   border-bottom: 1px solid var(--app-border);
+  user-select: none;
 
   &__lead {
     display: flex;

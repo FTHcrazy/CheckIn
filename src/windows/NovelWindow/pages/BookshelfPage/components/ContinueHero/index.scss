@@ -8,6 +8,7 @@
   border: 1px solid var(--app-border);
   border-radius: var(--app-radius-panel);
   box-shadow: var(--app-shadow-card);
+  user-select: none;
 
   &__cover {
     position: relative;

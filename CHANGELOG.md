@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.44.1] - 2026-10-15
+
+### Changed
+
+- **性能优化**：`app://` 产物响应补缓存策略，并为 `app` scheme 开启 V8 代码缓存、
+  渲染侧 `v8CacheOptions:"bypassHeatCheck"`，降低功能窗口（行囊 / 设置）与主窗
+  启动时对同一批产物（尤其 1.4MB antd chunk）的重复解析
+  （预研见 `docs/window-pool-preresearch.md` §7.1 P0-1、§4.2）。
+  - 哈希资产（`assets/*-<hash>.js|css|woff2` 等内容寻址文件）→
+    `Cache-Control: public, max-age=31536000, immutable`。同一 URL 的字节跨版本
+    不变，若 Chromium 对自定义协议响应启用磁盘缓存则可跨窗口免主进程读盘（**未验证
+    假设**，不成立也无害，最坏退回每次读盘）；真正的跨窗口收益锚点在下方 codeCache。
+  - HTML 入口与固定文件名资源（`src/windows/*/index.html`、favicon、tray 图标）→
+    `Cache-Control: no-store`。这两类跨版本会被同名覆盖，一旦被缓存，升级后仍会
+    被喂上一版 HTML，而它引用的旧哈希资产已从磁盘删除 → 白屏。
+  - `protocol.registerSchemesAsPrivileged` 的 `app` scheme 增加 `codeCache: true`：
+    Chromium 默认只对 http(s) 方案写 V8 字节码缓存，自定义 scheme 必须显式打开，
+    否则一次编译的成果无法跨渲染进程复用。但 Chromium 对「不够热」的脚本仍跳过热度
+    判断，故渲染侧 `createWebPreferences` 同步设 `v8CacheOptions:"bypassHeatCheck"`，
+    二者配套才真正生效（效果验证见预研 §7.3 #4）。
+  - 分档判定抽为纯函数 `electron/app-protocol-cache.ts`
+    （`isHashedAssetPath` / `resolveAppProtocolCacheControl`），单测
+    `app-protocol-cache.test.ts` 用 `dist/` 真实产物文件名覆盖，并加源码守卫
+    防止 `Cache-Control` 接线与 `codeCache` 被误删。
+  - dev 模式不受影响：`VITE_DEV_SERVER_URL` 存在时走 vite server，不经 `app://`。
+
 ## [1.44.0] - 2026-10-14
 
 ### Added
