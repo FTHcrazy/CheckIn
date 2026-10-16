@@ -44,6 +44,16 @@
     &:hover {
       transform: translateY(-2px);
     }
+
+    /* 描述换行（REQ-047）：antd `.ant-btn` 自带 `white-space: nowrap`，
+       未声明就继承它撑破卡片。复合选择器 `.nv-tools__card.ant-btn .nv-tools__desc`
+       （0,3,0）压过 antd 的 0,1,0，不依赖打包顺序；长英文 / 无空格串靠
+       overflow-wrap 不越界。**不**做单行 ellipsis 截断（会隐藏卖点）。 */
+    .nv-tools__desc {
+      white-space: normal;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
   }
 
   /* 规划中的工具（UI-09）：仍是真按钮（点了给 toast 说明），但视觉上先降一档 ——

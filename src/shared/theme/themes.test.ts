@@ -486,7 +486,7 @@ describe("色块阶梯：页面根铺 bg、浮层底只给浮层用", () => {
     const recesses: Array<[string, string, string[]]> = [
       // 设定中心弹窗里的「进位规则条」
       [
-        "src/windows/NovelWindow/pages/NovelPage/components/SettingCenter/components/CategoryCard/index.scss",
+        "src/shared/components/SettingCenter/components/CategoryCard/index.scss",
         "&__carry {",
         ["background: var(--app-surface);"],
       ],

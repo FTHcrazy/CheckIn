@@ -6,7 +6,10 @@ import EntityContextMenu from "./components/EntityContextMenu";
 import EntityTypeManager from "./components/EntityTypeManager";
 import HoverEntityCard from "./components/HoverEntityCard";
 import NovelGuideTour from "../../components/NovelGuideTour";
-import SettingCenter from "./components/SettingCenter";
+import type { GuideView } from "@/shared/novel/guide-copy";
+// T03：设定中心整棵树在 src/shared（GlobalSettingWindow 要跨窗口复用同一份），
+// 这里直接引 shared，不再经 NovelPage 本地垫片。
+import SettingCenter from "@/shared/components/SettingCenter";
 import { SETTING_PRESETS } from "./utils/setting-presets";
 import NovelToast from "./components/NovelToast";
 import NovelTopBar from "./components/NovelTopBar";
@@ -31,11 +34,14 @@ import {
   exportSetting,
   exportTextFile,
   listSettingTemplates,
+  loadGlobalSettingCategories,
+  publishCategoryToGlobal,
+  referenceGlobalCategory,
   removeSettingTemplate,
   saveSettingTemplate,
 } from "./services/novel-service";
 import { formatNumberedLabel } from "./novel-utils";
-import type { EntityAppearance, NovelChapter } from "./types";
+import type { EntityAppearance, NovelChapter, SettingCategory } from "./types";
 import "./index.scss";
 
 /** 书架 → 编辑器的打开请求：幂等 token 防止 StrictMode 下 effect 双消费 */
@@ -63,6 +69,11 @@ interface NovelPageProps {
    * 新手引导靠它决定何时探测目标：不可见时收摊暂停，重新可见再续播。
    */
   visible?: boolean;
+  /**
+   * 引导「下一步」跨视图回书架时的切视图请求（第 5 → 第 6 步，1.4x）。
+   * 由窗口根注入并转交 Tour —— 只有窗口根同时持有两个视图的显隐开关。
+   */
+  onGoToView?: (view: GuideView) => void;
 }
 
 /**
@@ -77,6 +88,7 @@ export default function NovelPage({
   onBackToShelf,
   onImportBook,
   visible = true,
+  onGoToView,
 }: NovelPageProps = {}) {
   const {
     data,
@@ -348,6 +360,82 @@ export default function NovelPage({
     [data, refreshTemplates],
   );
 
+  // ── 全局设定中心联动（1.4x，REQ-041 / REQ-042）：本书设定中心的引用 / 上架 ──
+
+  /** 全局库分类（「从全局库选择」选择器展示用）；打开选择器时才读，低频 */
+  const [globalSettingCategories, setGlobalSettingCategories] = useState<
+    SettingCategory[]
+  >([]);
+
+  /**
+   * 全局 DTO → 本书 SettingCategory：补 `workId: ""`（全局库无作品归属），
+   * `refCount` 原样带上（选择器里显示「N 部书引用」）。
+   */
+  const refreshGlobalCategories = useCallback(() => {
+    void loadGlobalSettingCategories().then((list) =>
+      setGlobalSettingCategories(
+        list.map((item) => ({
+          id: item.id,
+          workId: "",
+          name: item.name,
+          color: item.color,
+          kind: item.kind,
+          sortOrder: item.sortOrder,
+          note: item.note,
+          subLevels: item.subLevels,
+          carryDir: item.carryDir,
+          subPattern: item.subPattern,
+          refCount: item.refCount,
+          levels: item.levels.map((level) => ({
+            id: level.id,
+            categoryId: level.categoryId,
+            name: level.name,
+            rank: level.rank,
+            aliases: level.aliases,
+            note: level.note,
+            subLevels: level.subLevels,
+            subPattern: level.subPattern,
+            power: level.power,
+            parentId: level.parentId,
+            segFrom: level.segFrom,
+            segTo: level.segTo,
+          })),
+        })),
+      ),
+    );
+  }, []);
+
+  /**
+   * 建立引用（D2）：主进程写入本书镜像（只读、随全局实时同步）；
+   * 成功后重载本书设定 —— 新引用的分类即出现在左栏（带「全局 · 自动同步」徽标）。
+   */
+  const handleReferenceGlobal = useCallback(
+    async (globalCategoryId: string): Promise<boolean> => {
+      const ok = await referenceGlobalCategory(data.activeWorkId, globalCategoryId);
+      if (ok) await data.reload();
+      return ok;
+    },
+    [data],
+  );
+
+  /**
+   * 放置到全局（D3）：`cancel` 先探同名，命中返回 `{ok:false, conflict:true}`
+   * 由组件弹冲突确认（默认新建副本）；以 `duplicate` 再调一次即复制快照上架。
+   */
+  const handlePublishGlobal = useCallback(
+    (categoryId: string, conflict: "duplicate" | "cancel") =>
+      publishCategoryToGlobal(data.activeWorkId, categoryId, conflict),
+    [data.activeWorkId],
+  );
+
+  /** 引用 / 上架的轻提示：复用页面既有 toast（引用镜像同步成功等） */
+  const handleSettingNotify = useCallback(
+    (text: string, tone?: "success" | "info" | "warning" | "error") => {
+      view.showToast(text, tone);
+    },
+    [view],
+  );
+
   /** 删除类型弹框用：该自建类型下现有多少张要素卡（当前作品口径） */
   const usageCountOf = useCallback(
     (typeId: string) => data.entities.filter((entity) => entity.type === typeId).length,
@@ -375,6 +463,7 @@ export default function NovelPage({
           leftOpen={view.leftOpen}
           rightOpen={view.rightOpen}
           settingsOpen={view.settingsOpen}
+          settingCenterOpen={view.settingCenterOpen}
           onSelectWork={(workId) => void handleSelectWork(workId)}
           onCreateWork={handleCreateWork}
           onRenameWork={handleRenameWork}
@@ -388,7 +477,7 @@ export default function NovelPage({
           onToggleSettings={view.toggleSettings}
           snapshotOpen={view.snapshotOpen}
           onOpenPack={openPackWindow}
-          onOpenSettings={openSettingCenterForRealm}
+          onToggleSettingCenter={view.toggleSettingCenter}
           onToggleHistory={view.toggleSnapshot}
         />
       </div>
@@ -560,6 +649,7 @@ export default function NovelPage({
         workName={workNameOf(data.activeWorkId)}
         settings={data.settings}
         focusCategoryId={view.settingFocusId}
+        source="book"
         onClose={view.closeSettingCenter}
         onCreateCategory={(name) => data.createSettingCategory(name, "custom")}
         onPatchCategory={data.patchSettingCategory}
@@ -607,6 +697,12 @@ export default function NovelPage({
             },
           );
         }}
+        // ── 全局设定中心联动（1.4x，REQ-041 / REQ-042）：本书域引用 / 上架 ──
+        globalCategories={globalSettingCategories}
+        onRefreshGlobalCategories={refreshGlobalCategories}
+        onReferenceGlobal={handleReferenceGlobal}
+        onPublishGlobal={handlePublishGlobal}
+        onNotify={handleSettingNotify}
       />
       <EntityTypeManager
         open={view.typeManagerOpen}
@@ -620,7 +716,7 @@ export default function NovelPage({
       />
 
       {/* L1 漫游引导：第 2-5 步属编辑器页（第 1 步在书架页由那里的实例接管） */}
-      <NovelGuideTour view="editor" visible={visible} />
+      <NovelGuideTour view="editor" visible={visible} onGoToView={onGoToView} />
       </div>
     </EntityTypesProvider>
   );

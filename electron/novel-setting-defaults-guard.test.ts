@@ -5,9 +5,13 @@ import { describe, expect, it } from "vitest";
  * 设定默认值的两侧一致性守卫
  *
  * 主进程建表 / 插入时用自己的一份常量（electron/handlers/novel-handlers.ts），
- * 渲染层乐观更新用另一份（NovelPage/novel-config.ts）。两边都在源码里，
- * 而 `refactor` 口径下不存在运行期读写对方常量的可能（主进程不 import
- * src/），所以只能用源码断言把它们钉在一起。
+ * 渲染层乐观更新用另一份。两侧都在源码里，而 `refactor` 口径下不存在运行期
+ * 读写对方常量的可能（主进程不 import src/），所以只能用源码断言把它们钉在一起。
+ *
+ * T03 起渲染层这份**定义**从 `NovelPage/novel-config.ts` 下沉到
+ * `src/shared/novel/setting-defaults.ts`（设定中心提升 shared 的连带改动，
+ * shared 不允许 import windows）——novel-config 改为 re-export。断言因此指向
+ * 新的唯一事实源。
  *
  * 漂移的后果很隐蔽：新建分类后本地显示 9 层、落库是 1 层，重开一次才暴露，
  * 且只在用户改进位规则时才被察觉。
@@ -18,7 +22,7 @@ const SETTING_HANDLERS = readFileSync(
   "utf8",
 );
 const CONFIG = readFileSync(
-  "src/windows/NovelWindow/pages/NovelPage/novel-config.ts",
+  "src/shared/novel/setting-defaults.ts",
   "utf8",
 );
 

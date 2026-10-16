@@ -12,8 +12,8 @@
   }
 
   &__value {
-    /* 不吃满剩余宽（flex:none）：别名 chip 要紧贴在「合体 1/4」后面，
-       剩余空间由 stepper 的 margin-left:auto 吃掉 */
+    /* 不吃满剩余宽（flex:none）：境界文案（已含小层名，如「筑基 * 初期 1/4」）
+       自然宽度展示，剩余空间由 stepper 的 margin-left:auto 吃掉 */
     flex: none;
     min-width: 0;
     font-size: 15px;
@@ -22,26 +22,12 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* 当前小层的别名 chip（1.39.1）：「合体 1/4 初期」——
-     弱底 + 同色描边 + 同色文字的语义 pill 惯例 */
-  &__alias {
-    flex: none;
-    padding: 0 6px;
-    border: 1px solid var(--app-accent-blue);
-    border-radius: var(--app-radius-pill);
-    background: var(--app-surface);
-    color: var(--app-accent-blue);
-    font-size: 11px;
-    line-height: 17px;
-    white-space: nowrap;
-  }
-
   &__stepper {
     flex: none;
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    /* 吃掉「文本 + 别名 chip」以外的剩余宽度：stepper 靠右、chip 贴文本 */
+    /* 吃掉「境界文案」以外的剩余宽度：stepper 靠右 */
     margin-left: auto;
   }
 

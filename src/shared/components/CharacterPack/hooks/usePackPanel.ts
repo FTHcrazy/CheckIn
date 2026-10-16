@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createNovelId, logUsageEvent } from "@/shared/services/novel-shared";
+import type { NumberLabelStyle } from "@/shared/novel/number-label";
+import { STORAGE_KEYS } from "@/shared/novel/constants";
+import { parseWorkNumbering, workNumberingOf } from "@/shared/novel/work-numbering";
 import {
   DEFAULT_LAYOUTS,
   QTY_MAX,
@@ -116,6 +119,36 @@ interface UsePackPanelOptions {
   chapterId: string;
   open: boolean;
   onClose: () => void;
+}
+
+/**
+ * 本书的序号数字样式（REQ-052 口径跟随本书 `numberStyle`）。
+ *
+ * 行囊是**独立窗口**，拿不到编辑器 store，只能读 config：
+ * 先看本书规则（`novel_work_numbering`），无记录再回退全局排版设置
+ * （`novel_editor_settings`）。两处都缺 / 坏 JSON 时回退应用默认「中文」——
+ * 与编辑器 `DEFAULT_SETTINGS.numberStyle` 同口径，不另立一套。
+ */
+async function readWorkNumberStyle(workId: string): Promise<NumberLabelStyle> {
+  const fallback: NumberLabelStyle = "chinese";
+  const api = window.electronAPI;
+  if (!api?.novel) return fallback;
+  try {
+    const [numberingRaw, settingsRaw] = await Promise.all([
+      api.novel.configGet(STORAGE_KEYS.workNumbering),
+      api.novel.configGet(STORAGE_KEYS.settings),
+    ]);
+    const rule = workNumberingOf(workId, parseWorkNumbering(numberingRaw ?? null));
+    if (rule?.numberStyle) return rule.numberStyle;
+    const parsed: unknown = settingsRaw ? JSON.parse(settingsRaw) : null;
+    if (parsed && typeof parsed === "object") {
+      const value = (parsed as { numberStyle?: unknown }).numberStyle;
+      if (value === "arabic" || value === "chinese") return value;
+    }
+  } catch {
+    // IPC / JSON 失败：回退默认，境界文案照常可渲染
+  }
+  return fallback;
 }
 
 /**
@@ -301,6 +334,23 @@ export function usePackPanel({
   const [guardReason, setGuardReason] = useState<PackGuardReason>("关闭行囊");
   const [inventoryKeyword, setInventoryKeyword] = useState("");
   const [lastEditAt, setLastEditAt] = useState(0);
+
+  /**
+   * 本书序号数字样式（REQ-052）：行囊境界文案里 `{n}` 模板的小层名要跟随它
+   * （「第七层」/「第7层」）。装载一次即可 —— 序号规则是低频设置，
+   * 与境界阶梯同属「跨窗口共享的那一份」，本面板只读不写。
+   */
+  const [numberStyle, setNumberStyle] = useState<NumberLabelStyle>("chinese");
+  useEffect(() => {
+    if (!workId) return undefined;
+    let cancelled = false;
+    void readWorkNumberStyle(workId).then((style) => {
+      if (!cancelled) setNumberStyle(style);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [workId]);
 
   // ── 派生：模块布局、在效载体、汇总 ──
   const modules = useMemo(() => (doc ? mergeLayouts(doc.layouts) : []), [doc]);
@@ -617,6 +667,8 @@ export function usePackPanel({
         power: rung.power,
         hasChildren: rung.hasChildren ?? false,
         subLabels: rung.subLabels,
+        // 本阶生效的小层命名模板（REQ-052）：渲染层据此现场渲染「第七层」
+        subPattern: rung.subPattern ?? "",
       })),
     );
   }, [meta.levelSystems]);
@@ -637,12 +689,12 @@ export function usePackPanel({
   const realmPos = useMemo(() => getRealm(realmState), [realmState]);
   const panelRealmPos = useMemo(() => getPanelRealm(realmState), [realmState]);
   const realmText = useMemo(
-    () => formatRealm(rungs, realmPos),
-    [rungs, realmPos],
+    () => formatRealm(rungs, realmPos, numberStyle),
+    [rungs, realmPos, numberStyle],
   );
   const panelRealmText = useMemo(
-    () => formatRealm(rungs, panelRealmPos),
-    [rungs, panelRealmPos],
+    () => formatRealm(rungs, panelRealmPos, numberStyle),
+    [rungs, panelRealmPos, numberStyle],
   );
 
   /** 绑定 / 解绑主角实体（§9.7.5：不绑定就不写 novel_links）
@@ -950,12 +1002,12 @@ export function usePackPanel({
               : current.character,
         }));
         showToast(
-          `境界已更新：${formatRealm(rungs, plan.position)}（保存后生效）`,
+          `境界已更新：${formatRealm(rungs, plan.position, numberStyle)}（保存后生效）`,
           "success",
         );
       }
     },
-    [doc, rungs, realmState, callMutate, showToast],
+    [doc, rungs, realmState, callMutate, showToast, numberStyle],
   );
 
   // ── 属性（M1 · 1.39.0 定义 / 数值分离）──
@@ -2481,6 +2533,8 @@ export function usePackPanel({
     panelRealmPos,
     realmText,
     panelRealmText,
+    /** 本书序号数字样式（REQ-052）：境界文案已并入，盘点记录的差异文案同样需要 */
+    numberStyle,
     realmBound: Boolean(doc?.character.entityId),
     realmHint: doc?.character.entityId ? "" : UNBOUND_REALM_HINT,
     currencySystem,

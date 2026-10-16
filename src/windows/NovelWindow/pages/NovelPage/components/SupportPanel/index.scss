@@ -150,6 +150,27 @@
     justify-content: center;
   }
 
+  /* REQ-049：「类型管理」入口 —— 图标 + 文字。沿 __icon 的配色口径，
+     只是多了一段文字：inline-flex + icon-gap，并放开横向内边距；
+     热区高度 28px 满足 ≥28×28（宽度由图标 + 文字自然撑开）。 */
+  &__type.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 28px;
+    --ant-button-padding-inline: 8px;
+    --ant-button-content-font-size: 12px;
+    --ant-button-icon-gap: 4px;
+    --ant-border-radius: 8px;
+    --ant-button-default-bg: transparent;
+    --ant-button-default-color: var(--app-text-muted);
+    --ant-button-default-hover-bg: var(--app-surface-hover);
+    --ant-button-default-hover-color: var(--app-text);
+    --ant-button-default-active-bg: var(--app-surface-hover);
+    --ant-button-default-active-color: var(--app-text);
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+  }
+
   /* ── 分段式 Tab ─────────────────────────────────────────────── */
   &__tabs {
     position: relative;

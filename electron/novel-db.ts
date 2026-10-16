@@ -214,6 +214,45 @@ function initializeNovelDb(database: Database.Database): void {
       created_at INTEGER NOT NULL
     );
 
+    -- ── 全局设定（跨书共享设定库，D1，REQ-040）─────────────────────────
+    -- 结构与 novel_setting_categories 对齐，**去掉 work_id**：全局设定的生命周期
+    -- 独立于任何作品（REQ-040 ③「删光作品后仍在」）。书侧引用它时，把全局的等级
+    -- 「镜像」成本书的 novel_setting_levels 行（全新 id，靠 source_global_id 一一对应），
+    -- 因此两个域的列名 / 约束 / rank 口径完全一致，handler 工具可共用同一套。
+    CREATE TABLE IF NOT EXISTS novel_global_setting_categories (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      color TEXT NOT NULL DEFAULT '#5B8DEF',
+      -- realm = 全局唯一的境界体系；其余为 custom
+      kind TEXT NOT NULL DEFAULT 'custom' CHECK (kind IN ('realm', 'custom')),
+      sort_order INTEGER NOT NULL DEFAULT 1,
+      note TEXT NOT NULL DEFAULT '',
+      sub_levels INTEGER NOT NULL DEFAULT 1,
+      carry_dir TEXT NOT NULL DEFAULT 'asc' CHECK (carry_dir IN ('asc', 'desc')),
+      sub_pattern TEXT NOT NULL DEFAULT '第{n}层'
+    );
+    CREATE INDEX IF NOT EXISTS idx_novel_global_setting_cat_sort
+      ON novel_global_setting_categories(sort_order);
+    -- 全局 realm 唯一性：应用层校验为主，部分唯一索引兜底（防并发 / 脚本直写）
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_novel_global_setting_cat_realm
+      ON novel_global_setting_categories(kind) WHERE kind = 'realm';
+    CREATE TABLE IF NOT EXISTS novel_global_setting_levels (
+      id TEXT PRIMARY KEY,
+      category_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      rank INTEGER NOT NULL,
+      aliases TEXT NOT NULL DEFAULT '[]',
+      note TEXT NOT NULL DEFAULT '',
+      sub_levels INTEGER NOT NULL DEFAULT 1,
+      power REAL,
+      parent_id TEXT,
+      seg_from INTEGER,
+      seg_to INTEGER,
+      sub_pattern TEXT NOT NULL DEFAULT ''
+    );
+    CREATE INDEX IF NOT EXISTS idx_novel_global_setting_lv_cat
+      ON novel_global_setting_levels(category_id, rank);
+
     -- ── 行囊 CharacterPack（PRD docs/character-pack-prd.md §9.2）──
     -- v1 只承载 1 条主角，模型按多角色预留（全部表带 character_id）
     -- 数值统一 REAL、布尔统一 INTEGER 0/1、JSON 字段统一 TEXT
@@ -475,6 +514,36 @@ function initializeNovelDb(database: Database.Database): void {
       "ALTER TABLE novel_pack_skills ADD COLUMN grade_id TEXT NOT NULL DEFAULT ''",
     );
   }
+
+  // 1.4x 全局设定中心（D1 / D5）：**纯增量**，全部可空列，老库语义即「本书自有」。
+  // 本书侧引用一整个全局分类时，用 source_global_id 建立「镜像行 ↔ 全局行」映射；
+  // 全局项被删除后引用方就地固化，写 detached_from_name 记下原全局名（D4 徽标文案）。
+  const categoryColumns = database.pragma(
+    "table_info(novel_setting_categories)",
+  ) as Array<{ name: string }>;
+  if (!categoryColumns.some((column) => column.name === "source_global_id")) {
+    database.exec(
+      "ALTER TABLE novel_setting_categories ADD COLUMN source_global_id TEXT",
+    );
+  }
+  if (!categoryColumns.some((column) => column.name === "detached_from_name")) {
+    database.exec(
+      "ALTER TABLE novel_setting_categories ADD COLUMN detached_from_name TEXT",
+    );
+  }
+  // levelColumns 已在上方（sub_pattern 迁移）读入，复用它判断等级项的引用列
+  if (!levelColumns.some((column) => column.name === "source_global_id")) {
+    database.exec(
+      "ALTER TABLE novel_setting_levels ADD COLUMN source_global_id TEXT",
+    );
+  }
+  // 引用计数 / 级联同步都要按 source_global_id 收口，两条索引一次建齐（幂等）
+  database.exec(`
+    CREATE INDEX IF NOT EXISTS idx_novel_setting_cat_source
+      ON novel_setting_categories(source_global_id);
+    CREATE INDEX IF NOT EXISTS idx_novel_setting_lv_source
+      ON novel_setting_levels(source_global_id);
+  `);
 }
 
 /**

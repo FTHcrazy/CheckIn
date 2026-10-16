@@ -768,6 +768,64 @@ describe("carryRealm —— 阶内进位（§9.7.2 缺口③）", () => {
   });
 });
 
+/**
+ * 境界文案格式（REQ-051 / REQ-052）：`阶名 * 小层名 进度`。
+ *
+ * 小层名两个来源，缺一不可：
+ * - 拆出子层级的阶 / 固定名单命名 → 主进程投影的 `subLabels`（SEC4）；
+ * - `{n}` 模板命名 → 渲染层用**唯一的** `formatSubLevel` 现场渲染，
+ *   中文样式走 `toChineseOrdinal`（SEC13）。
+ * 无小层名（纯数字、无别名、无模板）只回落到 `阶名 进度`。
+ */
+describe("formatRealm —— 小层名并入主文案（REQ-051 / REQ-052）", () => {
+  /** 固定名单命名（主进程会据此生成 subLabels）：筑基 4 小层 初期/中期/后期/圆满 */
+  const SEC4: LadderRung[] = [
+    {
+      id: "s1",
+      name: "筑基",
+      rank: 1,
+      subLevels: 4,
+      power: null,
+      subLabels: ["初期", "中期", "后期", "圆满"],
+    },
+  ];
+  /** `{n}` 模板命名（主进程不生成 subLabels）：练气 13 小层 */
+  const SEC13: LadderRung[] = [
+    { id: "s1", name: "练气", rank: 1, subLevels: 13, power: null, subPattern: "第{n}层" },
+  ];
+  /** 纯数字小层且无模板：无名可省，回落 `筑基 1/4` */
+  const PLAIN: LadderRung[] = [
+    { id: "s1", name: "筑基", rank: 1, subLevels: 4, power: null, subPattern: "" },
+  ];
+
+  it("固定名单的小层名走别名表：筑基 * 初期 1/4", () => {
+    expect(formatRealm(SEC4, { index: 0, sub: 1 })).toBe("筑基 * 初期 1/4");
+    expect(formatRealm(SEC4, { index: 0, sub: 4 })).toBe("筑基 * 圆满 4/4");
+  });
+
+  it("{n} 模板 + 中文样式：练气 * 第七层 7/13", () => {
+    expect(formatRealm(SEC13, { index: 0, sub: 7 }, "chinese")).toBe(
+      "练气 * 第七层 7/13",
+    );
+  });
+
+  it("{n} 模板 + 阿拉伯样式（默认）：练气 * 第7层 7/13", () => {
+    expect(formatRealm(SEC13, { index: 0, sub: 7 })).toBe("练气 * 第7层 7/13");
+    expect(formatRealm(SEC13, { index: 0, sub: 7 }, "arabic")).toBe(
+      "练气 * 第7层 7/13",
+    );
+  });
+
+  it("纯数字小层 / 无模板：省略 `* 小层名`，回落 筑基 1/4", () => {
+    expect(formatRealm(PLAIN, { index: 0, sub: 1 })).toBe("筑基 1/4");
+    expect(formatRealm(PLAIN, { index: 0, sub: 3 }, "chinese")).toBe("筑基 3/4");
+  });
+
+  it("无小层（subLevels<=1）时只显示阶名，不受样式影响", () => {
+    expect(formatRealm(LADDER, { index: 2, sub: 1 }, "chinese")).toBe("金丹");
+  });
+});
+
 describe("subLabelAt —— 小层别名表（1.39.1）", () => {
   const rung: LadderRung = {
     id: "l1",

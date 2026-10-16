@@ -442,13 +442,17 @@ export default function SupportPanel({
               </Button>
             )}
             {namedActive === "entity" && (
+              /* REQ-049：类型管理入口从「纯图标 + Tooltip」升级为「图标 + 文字」——
+                 纯图标在面板头一排 icon 里几乎发现不了，而这是新建自定义类型的唯一入口。
+                 用标签图标与「设置」齿轮区分：它管的是要素类型，不是设置。 */
               <Button
-                className="nv-panel__icon"
+                className="nv-panel__type"
+                aria-label="要素类型管理"
                 title="要素类型管理"
                 onClick={onOpenTypeManager}
               >
-                {/* 用标签图标与「设置」齿轮区分：它管的是要素类型，不是设置 */}
                 <TagsOutlined />
+                <span>类型管理</span>
               </Button>
             )}
             <Button
@@ -542,6 +546,7 @@ export default function SupportPanel({
               onRemoveRelation={onRemoveRelation}
               onSetEntityLevel={onSetEntityLevel}
               onOpenSettings={onOpenSettings}
+              onOpenTypeManager={onOpenTypeManager}
               protagonistEntityId={protagonistEntityId}
               onSetProtagonist={onSetProtagonist}
               onInsertName={namingActions.onInsertToEditor}

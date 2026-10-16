@@ -1,4 +1,4 @@
-import { ImportOutlined, PlusOutlined, SearchOutlined } from "@ant-design/icons";
+import { ClusterOutlined, ImportOutlined, PlusOutlined, SearchOutlined } from "@ant-design/icons";
 import { Button, Input, Tooltip } from "antd";
 import "./index.scss";
 
@@ -14,10 +14,12 @@ interface ShelfTopBarProps {
   importing: boolean;
   /** 导入进度文案（如「正在拆分章节…」），仅进行中展示 */
   importPhase?: string;
+  /** 打开「全局设定中心」独立窗口（REQ-041；lite 版不打包该窗口） */
+  onGlobalSettingClick: () => void;
 }
 
 /**
- * 书架顶栏（R32）：书架标题 + 规模胶囊 + 搜索 + 导入 + 新建作品。
+ * 书架顶栏（R32）：书架标题 + 规模胶囊 + 搜索 + 全局设定 + 导入 + 新建作品。
  * 搜索词同时驱动书卡与灵感库过滤（一处输入，两处生效）。
  */
 export default function ShelfTopBar({
@@ -29,6 +31,7 @@ export default function ShelfTopBar({
   onImportClick,
   importing,
   importPhase,
+  onGlobalSettingClick,
 }: ShelfTopBarProps) {
   return (
     <div className="bs-topbar">
@@ -48,6 +51,19 @@ export default function ShelfTopBar({
           allowClear
           prefix={<SearchOutlined />}
         />
+        {/* 「全局设定中心」独立窗口入口：与搜索 / 导入 / 新建同一行，置于「新建作品」左侧。
+            图标 + 文字标签，保证可发现性；锚点供新手引导第 6 步高亮（M14）。 */}
+        <Tooltip title="跨作品共享的设定库（引用后可随全局自动同步）">
+          <Button
+            className="bs-topbar__global-setting"
+            icon={<ClusterOutlined />}
+            onClick={onGlobalSettingClick}
+            aria-label="全局设定中心"
+            data-tour-target="shelf-global-setting"
+          >
+            全局设定中心
+          </Button>
+        </Tooltip>
         <Tooltip title={importing ? importPhase || "正在导入" : "导入 TXT 书籍"}>
           <Button
             className="bs-topbar__import"

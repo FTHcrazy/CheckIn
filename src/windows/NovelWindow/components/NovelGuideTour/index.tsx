@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { Tour } from "antd";
 import {
+  FORCED_MAX_STEP,
   GUIDE_TOTAL_STEPS,
+  resolveNextAction,
   TOUR_STEPS,
   type GuideView,
 } from "@/shared/novel/guide-copy";
@@ -32,12 +34,21 @@ export interface NovelGuideTourProps {
    * 而 store 的 start() 会在视图重新可见时把播放步改拍回来续播。
    */
   visible: boolean;
+  /**
+   * 「下一步」跨视图回书架时（第 5 → 第 6 步）切视图的请求。
+   * 由 App 层注入 —— 只有它同时持有两个视图的显隐开关。
+   */
+  onGoToView?: (view: GuideView) => void;
 }
 
 /** 目标探测预算：取不到目标时重试这么久才暂停（首帧布局未定会短暂取不到） */
 const GUIDE_PROBE_BUDGET_MS = 600;
 
-export default function NovelGuideTour({ view, visible }: NovelGuideTourProps) {
+export default function NovelGuideTour({
+  view,
+  visible,
+  onGoToView,
+}: NovelGuideTourProps) {
   const playingStep = useGuideStore((state) => state.playingStep);
   const pause = useGuideStore((state) => state.pause);
   const goNext = useGuideStore((state) => state.goNext);
@@ -94,15 +105,23 @@ export default function NovelGuideTour({ view, visible }: NovelGuideTourProps) {
 
   if (!step || !belongsToThisView || !targetElement) return null;
 
-  const isLast = step.step >= GUIDE_TOTAL_STEPS;
+  /**
+   * 主按钮行为由数据派生（当前步 / 下一步各属哪个视图）：
+   * 末步 → 「完成」；跨视图回书架 → 「下一步 · 去书架」并请求 App 切视图；
+   * 其余 → 「下一步」，仅推进 playingStep。见 `resolveNextAction`。
+   */
+  const nextAction = resolveNextAction(step);
 
   /**
    * 强制引导（2026-10-14 用户反馈）：第 1-4 步不渲染关闭叉、不响应 Esc，
    * 唯一出口是卡片上的「下一步」——零基础作者见叉就点，设定中心与行囊
    * 会被整段跳过。第 4 步行囊讲完即「强制引导结束」；第 5 步（右键建卡）
-   * 恢复为普通可关闭步骤，给个叉随时能撤。
+   * 与第 6 步（跨书共享设定）恢复为普通可关闭步骤，给个叉随时能撤。
+   *
+   * 判据是 `step.step <= FORCED_MAX_STEP`（=4）而不是「是否最后一步」：
+   * 1.4x 新增第 6 步后，「是否最后一步」会把第 5 步误当成强制步。
    */
-  const forced = !isLast;
+  const forced = step.step <= FORCED_MAX_STEP;
 
   return (
     <Tour
@@ -139,9 +158,22 @@ export default function NovelGuideTour({ view, visible }: NovelGuideTourProps) {
             </span>
           ),
           description: step.description,
-          nextButtonProps: isLast
-            ? { children: "完成", onClick: complete }
-            : { children: "下一步", onClick: goNext },
+          nextButtonProps:
+            nextAction.kind === "finish"
+              ? { children: nextAction.label, onClick: complete }
+              : nextAction.kind === "switch"
+                ? {
+                    children: nextAction.label,
+                    onClick: () => {
+                      // 先推进到下一步（playingStep 5 → 6，属书架视图），
+                      // 再请求 App 切视图；书架实例随即接管第 6 步。
+                      // 顺序：先 goNext 可避免切视图时编辑器的 pause() 把
+                      // playingStep 清空，导致下一步无处可续。
+                      goNext();
+                      if (nextAction.view) onGoToView?.(nextAction.view);
+                    },
+                  }
+                : { children: nextAction.label, onClick: goNext },
         },
       ]}
       // 单步实例：进度按全局 5 步显示，而不是 antd 的「1 / 1」

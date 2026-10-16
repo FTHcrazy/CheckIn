@@ -635,11 +635,24 @@ export default function OutlinePanel({
             </div>
             {node.note && <p className="nv-outline__fs-note">{node.note}</p>}
             {/* 行内清单已经挂在那一章下面了，再标一次「埋在哪一章」是废话 */}
-            {!compact && (
-              <span className="nv-outline__fs-src">
-                {node.source || "卷级伏笔 · 不绑定具体章"}
-              </span>
-            )}
+            {!compact &&
+              (node.chapterId ? (
+                /* REQ-048：绑定章节的伏笔，来源文案即跳转入口 —— 点它跳到埋设章。
+                   卷级伏笔没有可去之处，保持纯文本（下方 is-static，不挂 onClick）。 */
+                <Button
+                  type="link"
+                  size="small"
+                  className="nv-outline__fs-src is-link"
+                  aria-label={`跳到章节：${node.source || "未命名章节"}`}
+                  onClick={() => onSelectChapter(node.chapterId)}
+                >
+                  {node.source || "未命名章节"}
+                </Button>
+              ) : (
+                <span className="nv-outline__fs-src is-static">
+                  卷级伏笔 · 不绑定具体章
+                </span>
+              ))}
           </div>
         </div>
       </li>

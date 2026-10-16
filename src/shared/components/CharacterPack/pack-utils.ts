@@ -5,6 +5,8 @@
  * 也让汇总管线是唯一可反查明细的实现（REQ-017）。
  */
 import { formatRelativeTime as relativeTime } from "@/shared/utils/format";
+import type { NumberLabelStyle } from "@/shared/novel/number-label";
+import { formatSubLevel, SUB_PATTERN_TOKEN } from "@/shared/novel/setting-utils";
 import {
   evaluateMappings,
   MAPPING_PROBLEM_META,
@@ -838,6 +840,14 @@ export interface LadderRung {
    * （纯数字小层没有名字）；空串 = 该层没有别名，不显示。
    */
   subLabels?: string[];
+  /**
+   * 本阶生效的小层命名模板（`sub_pattern`）；空串 = 无模板。
+   *
+   * 由主进程投影填充（`readLevelSystems`）。`{n}` 模板的阶主进程**不**生成
+   * `subLabels`（编号不是名字），渲染层据此用一个唯一的命名纯函数
+   * `formatSubLevel` 现场渲染「第七层」（REQ-052）。
+   */
+  subPattern?: string;
 }
 
 /**
@@ -966,16 +976,40 @@ export function carryRealm(
   return { index, sub };
 }
 
-/** 境界显示文案：`筑基 7/9`（无小层时只显示阶名） */
+/**
+ * 境界显示文案（REQ-051 / REQ-052）
+ *
+ * | 情形 | 输出 |
+ * |---|---|
+ * | 无小层（`subLevels <= 1`） | `金丹` |
+ * | 有小层名（拆分子层级 → 别名表） | `筑基 * 初期 1/4` |
+ * | `{n}` 模板 + `style="chinese"` | `练气 * 第七层 7/13` |
+ * | 纯数字小层 / 无别名 / 无模板 | `筑基 1/4`（省略 `* 小层名`） |
+ *
+ * 小层名的**唯一来源**：先看主进程投影的别名表 `subLabels`（拆分子层级的阶），
+ * 没有再按本阶的 `{n}` 模板用 `formatSubLevel` 现场渲染 —— 两处不各写一份，
+ * 「数字 → 中文」全程复用 `toChineseOrdinal`。
+ *
+ * `style` 缺省 `"arabic"`：不传的老调用点（无模板名时本就不进这条分支）
+ * 行为与引入前一致。
+ */
 export function formatRealm(
   rungs: LadderRung[],
   pos: RealmPosition,
+  style: NumberLabelStyle = "arabic",
 ): string {
   const rung = rungs[pos.index];
   if (!rung) return "未设置";
   const subLevels = Math.max(1, rung.subLevels);
   if (subLevels <= 1) return rung.name;
-  return `${rung.name} ${pos.sub}/${subLevels}`;
+  const pattern = rung.subPattern ?? "";
+  const subLabel =
+    subLabelAt(rung, pos.sub) ||
+    (pattern.includes(SUB_PATTERN_TOKEN)
+      ? formatSubLevel(pattern, pos.sub, style)
+      : "");
+  const progress = `${pos.sub}/${subLevels}`;
+  return subLabel ? `${rung.name} * ${subLabel} ${progress}` : `${rung.name} ${progress}`;
 }
 
 // ─────────────────────────────────────────────────────────────

@@ -1,20 +1,25 @@
 /**
- * 小说设定模块（Setting）语义化 IPC handlers
+ * 小说设定模块（Setting）语义化 IPC handlers —— **本书域**
  *
  * 一部作品的**全部**等级序列统一在 `novel_setting_categories` / `novel_setting_levels`：
  * 境界体系只是 `kind='realm'` 的一个分类，功法等级 / 丹药稀有度 / 法宝品阶是
  * `kind='custom'` 的其它分类。1.36.0 重构把 R25 的 `novel_level_systems` /
  * `novel_levels` / `novel_level_conversions` 三张表收进了这里（§6.7 `refactor`）。
  *
- * 边界：SQL 只出现在本文件与 `novel-db.ts`；不导入 `main.ts`；
+ * 1.4x 全局设定中心（D1/D2）：本书可以**引用**全局库里的一个分类（实时同步），
+ * 也可以把本书分类**上架**到全局库（复制快照）。引用项在本书侧只读，权威在主进程；
+ * 跨域逻辑（建立引用 / 同步 / 上架 / 固化 / 引用计数 / 只读守卫）集中在
+ * `novel-setting-shared.ts`，本文件只做本书域的通道注册与前置守卫。
+ *
+ * 边界：SQL 只出现在本文件、`novel-setting-shared.ts` 与 `novel-db.ts`；不导入 `main.ts`；
  * 写通道一律取 `novel-db.ts` 的 `novelRun` 等别名，不得 import `../db`。
  *
  * 与行囊的关系：`novel-pack-handlers` 只读 realm 分类投影出境界阶梯，本模块
  * 不感知行囊；两侧通过 `novel_setting_levels.id` 与 `novel_links.to_type='level'`
  * 保持引用一致即可。
  */
-import { ipcMain } from "electron";
-import { randomUUID } from "node:crypto";
+import { BrowserWindow, ipcMain } from "electron";
+import { windowManager } from "../windowManager";
 import {
   novelAll as dbAll,
   novelGet as dbGet,
@@ -22,38 +27,30 @@ import {
   getNovelDb as getDb,
 } from "../novel-db";
 import { DEFAULT_CATEGORY_COLOR, DEFAULT_SUB_PATTERN } from "./novel-handlers";
+import {
+  createSettingId,
+  isCarryDir,
+  isLevelInReferencedCategory,
+  isReferencedCategory,
+  isSettingKind,
+  levelCount,
+  maxRank,
+  maxSortOrder,
+  normalizeAliases,
+  normalizeSubPattern,
+  parseSnapshot,
+  publishGlobal,
+  rankAt,
+  readSnapshots,
+  referenceGlobal,
+  type PublishToGlobalResult,
+  type SettingCategorySnapshot,
+  type SettingExportPayload,
+  type SettingLevelRow,
+} from "./novel-setting-shared";
 
-// ── 行类型（snake_case，对应表结构） ──
-
-interface SettingLevelRow {
-  id: string;
-  category_id: string;
-  name: string;
-  rank: number;
-  sub_levels: number;
-  parent_id: string | null;
-  /** 本阶专属小层命名模板；空串 = 沿用分类 */
-  sub_pattern: string;
-}
-
-interface SettingCategoryRow {
-  id: string;
-  name: string;
-  color: string;
-  kind: string;
-  sort_order: number;
-  note: string;
-  sub_levels: number;
-  carry_dir: string;
-  sub_pattern: string;
-}
-
-interface SettingTemplateRow {
-  id: string;
-  name: string;
-  payload: string;
-  created_at: number;
-}
+// 既有的快照 / 载荷类型经 shared 落地，这里 re-export 保持既有 import 路径可用
+export type { SettingCategorySnapshot, SettingExportPayload };
 
 // ── 渲染层传入的补丁类型 ──
 
@@ -79,33 +76,11 @@ interface LevelPatch {
   subPattern?: string;
 }
 
-/** 导入导出用的分类快照（与 DTO 同构，去掉 workId 以便跨作品搬运） */
-export interface SettingCategorySnapshot {
+interface SettingTemplateRow {
+  id: string;
   name: string;
-  color: string;
-  kind: "realm" | "custom";
-  sortOrder: number;
-  note: string;
-  subLevels: number;
-  carryDir: "asc" | "desc";
-  subPattern: string;
-  levels: Array<{
-    name: string;
-    rank: number;
-    aliases: string[];
-    note: string;
-    subLevels: number;
-    power: number | null;
-    /** 本阶专属小层命名模板；空串 = 沿用分类。旧版快照缺省按空串处理 */
-    subPattern: string;
-  }>;
-}
-
-/** 导入导出的文件载荷 */
-export interface SettingExportPayload {
-  version: 1;
-  exportedAt: string;
-  categories: SettingCategorySnapshot[];
+  payload: string;
+  created_at: number;
 }
 
 interface SettingTemplateDto {
@@ -117,172 +92,30 @@ interface SettingTemplateDto {
 
 // ── 工具 ──
 
-/** 取分类内当前最大 rank（没有等级项时为 0） */
-function maxRank(categoryId: string): number {
-  const row = dbGet(
-    "SELECT COALESCE(MAX(rank), 0) AS max FROM novel_setting_levels WHERE category_id = ?",
-    [categoryId],
-  ) as { max: number };
-  return row.max;
-}
-
-/** 取作品内当前最大 sortOrder（没有分类时为 0） */
-function maxSortOrder(workId: string): number {
-  const row = dbGet(
-    "SELECT COALESCE(MAX(sort_order), 0) AS max FROM novel_setting_categories WHERE work_id = ?",
-    [workId],
-  ) as { max: number };
-  return row.max;
-}
-
-function isCarryDir(value: unknown): value is "asc" | "desc" {
-  return value === "asc" || value === "desc";
-}
-
-function isSettingKind(value: unknown): value is "realm" | "custom" {
-  return value === "realm" || value === "custom";
-}
-
-/** 别名数组落库前统一清洗：去空白、去重、去空串 */
-function normalizeAliases(input: unknown): string[] {
-  if (!Array.isArray(input)) return [];
-  const seen = new Set<string>();
-  for (const item of input) {
-    if (typeof item !== "string") continue;
-    const trimmed = item.trim();
-    if (trimmed) seen.add(trimmed);
-  }
-  return [...seen];
-}
-
-/** 小层命名模板清洗：去空白、截断到 60 字（模板是短句，超长必是误粘） */
-function normalizeSubPattern(input: unknown): string {
-  if (typeof input !== "string") return "";
-  return input.trim().slice(0, 60);
+/**
+ * 书侧触发的全局引用关系变化 ⇒ 通知其它窗口重载全局设定（H7 / REQ-041）。
+ *
+ * 与全局域 `notifyChanged` 同一事件名与载荷（`{ kinds }`），但**发出方是书窗口**：
+ * 建立引用 / 上架会改变全局库的「N 部书引用」计数，正开着的全局窗口必须即时刷新。
+ *
+ * 防回声：广播按注册名排除**发送窗口**（`getNameOf`）。书窗口走 invoke 通道，
+ * 主进程直接 `broadcast` 时没有「sender 事件」可依，故显式用 `event.sender`
+ * 反查发送窗口名排掉它，避免书窗口收到自己的广播形成回环。
+ */
+function notifyGlobalRefsChanged(
+  event: Electron.IpcMainInvokeEvent,
+  kinds: Array<"category" | "level">,
+): void {
+  const senderWin = BrowserWindow.fromWebContents(event.sender);
+  const exclude = senderWin ? windowManager.getNameOf(senderWin) : undefined;
+  windowManager.broadcast("global-setting-changed", { kinds }, exclude);
 }
 
 /**
- * 把「外部传入的分类快照」解析成可落库的形式。
+ * 把一批快照追加到一个作品下；realm 唯一：作品已有境界体系时，进来的 realm 降级为 custom。
  *
- * 返回值带 `null` 表示这份快照不可用（连名字都没有）——导入时静默跳过它，
- * 而不是整批失败：一份文件里有一条脏数据不该让作者白选一次文件。
+ * 仅本书域使用（全局域本期只做导出，不导入 —— U3）。
  */
-function parseSnapshot(input: unknown): SettingCategorySnapshot | null {
-  if (input === null || typeof input !== "object") return null;
-  const raw = input as Record<string, unknown>;
-  const name = typeof raw.name === "string" ? raw.name.trim() : "";
-  if (!name) return null;
-  const levels: SettingCategorySnapshot["levels"] = [];
-  if (Array.isArray(raw.levels)) {
-    for (const item of raw.levels) {
-      if (item === null || typeof item !== "object") continue;
-      const level = item as Record<string, unknown>;
-      const levelName = typeof level.name === "string" ? level.name.trim() : "";
-      if (!levelName) continue;
-      levels.push({
-        name: levelName,
-        rank: typeof level.rank === "number" && Number.isFinite(level.rank) ? level.rank : levels.length + 1,
-        aliases: normalizeAliases(level.aliases),
-        note: typeof level.note === "string" ? level.note : "",
-        subLevels: typeof level.subLevels === "number" && level.subLevels >= 1
-          ? Math.floor(level.subLevels)
-          : 1,
-        power: typeof level.power === "number" && Number.isFinite(level.power) ? level.power : null,
-        subPattern: normalizeSubPattern(level.subPattern),
-      });
-    }
-  }
-  // rank 可能重复 / 缺失：按数组顺序重排，保证阶梯连续可读
-  levels.forEach((level, index) => {
-    level.rank = index + 1;
-  });
-  return {
-    name,
-    color: typeof raw.color === "string" && raw.color ? raw.color : DEFAULT_CATEGORY_COLOR,
-    kind: isSettingKind(raw.kind) ? raw.kind : "custom",
-    sortOrder: typeof raw.sortOrder === "number" ? raw.sortOrder : 0,
-    note: typeof raw.note === "string" ? raw.note : "",
-    subLevels: typeof raw.subLevels === "number" && raw.subLevels >= 1
-      ? Math.floor(raw.subLevels)
-      : 1,
-    carryDir: isCarryDir(raw.carryDir) ? raw.carryDir : "asc",
-    subPattern: typeof raw.subPattern === "string" && raw.subPattern
-      ? raw.subPattern
-      : DEFAULT_SUB_PATTERN,
-    levels,
-  };
-}
-
-/** 读出一个作品的全部分类快照（导出 / 存模板共用） */
-function readSnapshots(workId: string, categoryIds?: string[]): SettingCategorySnapshot[] {
-  // 两条 SQL 都把收口条件写成字面量：模板拼接的 WHERE 会绕过
-  // novel-setting-guard 的「不裸查整表」源码断言
-  const categories = categoryIds?.length
-    ? (dbAll(
-        `SELECT * FROM novel_setting_categories
-          WHERE id IN (${categoryIds.map(() => "?").join(", ")})
-          ORDER BY sort_order`,
-        categoryIds,
-      ) as SettingCategoryRow[])
-    : (dbAll(
-        "SELECT * FROM novel_setting_categories WHERE work_id = ? ORDER BY sort_order",
-        [workId],
-      ) as SettingCategoryRow[]);
-  if (categories.length === 0) return [];
-
-  const levels = dbAll(
-    `SELECT * FROM novel_setting_levels
-      WHERE category_id IN (${categories.map(() => "?").join(", ")})
-      ORDER BY category_id, rank`,
-    categories.map((category) => category.id),
-  ) as Array<{
-    category_id: string;
-    name: string;
-    rank: number;
-    aliases: string;
-    note: string;
-    sub_levels: number;
-    power: number | null;
-    sub_pattern: string;
-  }>;
-  const byCategory = new Map<string, SettingCategorySnapshot["levels"]>();
-  for (const level of levels) {
-    const list = byCategory.get(level.category_id) ?? [];
-    let aliases: string[] = [];
-    try {
-      const parsed: unknown = JSON.parse(level.aliases);
-      if (Array.isArray(parsed)) {
-        aliases = parsed.filter((item): item is string => typeof item === "string");
-      }
-    } catch {
-      aliases = [];
-    }
-    list.push({
-      name: level.name,
-      rank: level.rank,
-      aliases,
-      note: level.note ?? "",
-      subLevels: level.sub_levels ?? 1,
-      power: level.power,
-      subPattern: level.sub_pattern ?? "",
-    });
-    byCategory.set(level.category_id, list);
-  }
-
-  return categories.map((category) => ({
-    name: category.name,
-    color: category.color,
-    kind: isSettingKind(category.kind) ? category.kind : "custom",
-    sortOrder: category.sort_order,
-    note: category.note ?? "",
-    subLevels: category.sub_levels ?? 1,
-    carryDir: isCarryDir(category.carry_dir) ? category.carry_dir : "asc",
-    subPattern: category.sub_pattern ?? DEFAULT_SUB_PATTERN,
-    levels: byCategory.get(category.id) ?? [],
-  }));
-}
-
-/** 把一批快照追加到一个作品下；realm 唯一：作品已有境界体系时，进来的 realm 降级为 custom */
 function appendSnapshots(
   workId: string,
   snapshots: SettingCategorySnapshot[],
@@ -292,12 +125,12 @@ function appendSnapshots(
       "SELECT COUNT(*) AS count FROM novel_setting_categories WHERE work_id = ? AND kind = 'realm'",
       [workId],
     ) as { count: number }).count > 0;
-  let sort = maxSortOrder(workId);
+  let sort = maxSortOrder("book", workId);
   let count = 0;
   for (const snapshot of snapshots) {
     sort += 1;
     const kind = snapshot.kind === "realm" && !hasRealm ? "realm" : "custom";
-    const categoryId = randomUUID();
+    const categoryId = createSettingId("sc");
     dbRun(
       `INSERT INTO novel_setting_categories
          (id, work_id, name, color, kind, sort_order, note, sub_levels, carry_dir, sub_pattern)
@@ -322,7 +155,7 @@ function appendSnapshots(
             parent_id, seg_from, seg_to, sub_pattern)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?)`,
         [
-          randomUUID(),
+          createSettingId("sl"),
           categoryId,
           level.name,
           level.rank,
@@ -337,32 +170,6 @@ function appendSnapshots(
     count += 1;
   }
   return count;
-}
-
-/**
- * 取分类内当前的等级行数（不是 max(rank)）
- *
- * ⚠️ `max(rank)` 只用来算「追加到末尾」的落点，**不能**当行数用（1.38.0 修）：
- * 删除 / 拆分 / 旧数据裁剪都会让 rank 出现空洞，此时 `max(rank) > count`，
- * 拿 max 当行数会让「在末尾插入」算出一个越界的落点；而 rank 是倒序残留
- * （最大的 rank 在行首）时更糟——新行会被插到错误的行前面。
- */
-function levelCount(categoryId: string): number {
-  const row = dbGet(
-    "SELECT COUNT(*) AS n FROM novel_setting_levels WHERE category_id = ?",
-    [categoryId],
-  ) as { n: number };
-  return row.n;
-}
-
-/** 按行序取第 index 行的 rank；index >= 行数时返回 max(rank) + 1（即末尾之后） */
-function rankAt(categoryId: string, index: number): number {
-  const rows = dbAll(
-    "SELECT rank FROM novel_setting_levels WHERE category_id = ? ORDER BY rank LIMIT 1 OFFSET ?",
-    [categoryId, Math.max(0, index)],
-  ) as Array<{ rank: number }>;
-  if (rows.length > 0) return rows[0].rank;
-  return maxRank(categoryId) + 1;
 }
 
 export function registerNovelSettingHandlers(): void {
@@ -404,7 +211,7 @@ export function registerNovelSettingHandlers(): void {
           trimmed,
           safeColor,
           finalKind,
-          maxSortOrder(workId) + 1,
+          maxSortOrder("book", workId) + 1,
           DEFAULT_SUB_PATTERN,
         ],
       );
@@ -416,6 +223,8 @@ export function registerNovelSettingHandlers(): void {
   ipcMain.handle(
     "novel-setting-category-update",
     (_event, id: string, patch: CategoryPatch): boolean => {
+      // 引用项只读（D2 权威边界）：镜像自全局的分类由全局同步独占改写，直接拒绝
+      if (isReferencedCategory(id)) return false;
       // kind 切换单独走事务：升级为境界体系前先把同作品原 realm 降级，
       // 与 addSettingCategory / appendSnapshots 的「每书至多一个 realm」口径一致
       if (patch.kind !== undefined && isSettingKind(patch.kind)) {
@@ -480,6 +289,8 @@ export function registerNovelSettingHandlers(): void {
 
   // 删除分类：先摘「当前境界」关联，再删等级项，最后删分类（顺序反了会留悬空引用）
   ipcMain.handle("novel-setting-category-delete", (_event, id: string): boolean => {
+    // 引用项只读（D2）：删除要走全局库（或「脱离全局」，Q3 本期不做），本书侧直接拒绝
+    if (isReferencedCategory(id)) return false;
     const db = getDb();
     const apply = db.transaction(() => {
       dbRun(
@@ -502,6 +313,10 @@ export function registerNovelSettingHandlers(): void {
   ipcMain.handle(
     "novel-setting-category-order",
     (_event, updates: Array<{ id: string; sortOrder: number }>): boolean => {
+      // 引用项只读（D2）：命中任一引用行即整批拒绝，不落任何写
+      for (const update of updates) {
+        if (isReferencedCategory(update.id)) return false;
+      }
       const db = getDb();
       const apply = db.transaction(() => {
         const stmt = db.prepare(
@@ -538,16 +353,18 @@ export function registerNovelSettingHandlers(): void {
     ): { id: string; rank: number } | null => {
       const trimmed = name.trim();
       if (!trimmed) return null;
+      // 引用项只读（D2）：引用分类的等级由全局同步独占改写
+      if (isReferencedCategory(categoryId)) return null;
       const category = dbGet(
         "SELECT sub_levels, sub_pattern FROM novel_setting_categories WHERE id = ?",
         [categoryId],
       ) as { sub_levels: number; sub_pattern: string } | undefined;
       if (!category) return null;
-      const total = levelCount(categoryId);
+      const total = levelCount("book", categoryId);
       const at = index < 0 ? total : Math.min(index, total);
       // 末尾追加时用 max(rank)+1，中间插入时用该行的 rank —— 两种落点都要能
       // 让「新 rank 起后面全部 +1」正确执行
-      const rank = at >= total ? maxRank(categoryId) + 1 : rankAt(categoryId, at);
+      const rank = at >= total ? maxRank("book", categoryId) + 1 : rankAt("book", categoryId, at);
       const db = getDb();
       const apply = db.transaction(() => {
         dbRun(
@@ -577,7 +394,7 @@ export function registerNovelSettingHandlers(): void {
   /**
    * 批量新增等级项（1.37.0）：模板生成 / 逐行粘贴 / 预设套用共用这一个通道。
    *
-   * 全部**追加到末尾**——批量生成的语义是「一次造出一段阶梯」，行间精确
+   * 全部**追加到末尾** —— 批量生成的语义是「一次造出一段阶梯」，行间精确
    * 插入走单条的 novel-setting-level-add。单事务写入：中途一条脏数据让
    * 整批回滚，而不是留下半截阶梯。
    */
@@ -589,11 +406,13 @@ export function registerNovelSettingHandlers(): void {
       items: Array<{ id: string; name: string; subLevels?: number; subPattern?: string }>,
     ): number => {
       if (!Array.isArray(items) || items.length === 0) return 0;
+      // 引用项只读（D2）
+      if (isReferencedCategory(categoryId)) return 0;
       // 上限 99：批量生成是「造一阶阶梯」，不是灌整本书的名词表
       const batch = items.slice(0, 99);
       const cleaned = batch
         .map((item) => ({
-          id: typeof item?.id === "string" && item.id.trim() ? item.id.trim() : randomUUID(),
+          id: typeof item?.id === "string" && item.id.trim() ? item.id.trim() : createSettingId("sl"),
           name: typeof item?.name === "string" ? item.name.trim().slice(0, 60) : "",
           subLevels:
             typeof item?.subLevels === "number" && item.subLevels >= 1
@@ -612,7 +431,7 @@ export function registerNovelSettingHandlers(): void {
 
       const db = getDb();
       const apply = db.transaction(() => {
-        let rank = maxRank(categoryId);
+        let rank = maxRank("book", categoryId);
         const stmt = db.prepare(
           `INSERT INTO novel_setting_levels
              (id, category_id, name, rank, aliases, note, sub_levels, power,
@@ -633,6 +452,8 @@ export function registerNovelSettingHandlers(): void {
   ipcMain.handle(
     "novel-setting-level-update",
     (_event, id: string, patch: LevelPatch): boolean => {
+      // 引用项只读（D2）
+      if (isLevelInReferencedCategory(id)) return false;
       const sets: string[] = [];
       const params: unknown[] = [];
       if (patch.name !== undefined) {
@@ -674,6 +495,8 @@ export function registerNovelSettingHandlers(): void {
 
   // 删除等级项：连带删掉它的派生分段（拆分出来的后续段），并摘「当前境界」关联
   ipcMain.handle("novel-setting-level-delete", (_event, id: string): boolean => {
+    // 引用项只读（D2）
+    if (isLevelInReferencedCategory(id)) return false;
     const db = getDb();
     const apply = db.transaction(() => {
       dbRun(
@@ -693,6 +516,10 @@ export function registerNovelSettingHandlers(): void {
   ipcMain.handle(
     "novel-setting-level-order",
     (_event, updates: Array<{ id: string; rank: number }>): boolean => {
+      // 引用项只读（D2）：命中任一引用行即整批拒绝
+      for (const update of updates) {
+        if (isLevelInReferencedCategory(update.id)) return false;
+      }
       const db = getDb();
       const apply = db.transaction(() => {
         const stmt = db.prepare(
@@ -721,6 +548,8 @@ export function registerNovelSettingHandlers(): void {
       segments: Array<{ name: string; from: number; to: number }>,
     ): boolean => {
       if (segments.length < 2) return false;
+      // 引用项只读（D2）
+      if (isLevelInReferencedCategory(levelId)) return false;
       const row = dbGet(
         "SELECT category_id, rank, sub_pattern FROM novel_setting_levels WHERE id = ?",
         [levelId],
@@ -749,7 +578,7 @@ export function registerNovelSettingHandlers(): void {
                 parent_id, seg_from, seg_to, sub_pattern)
              VALUES (?, ?, ?, ?, '[]', '', ?, NULL, ?, ?, ?, ?)`,
             [
-              randomUUID(),
+              createSettingId("sl"),
               row.category_id,
               segment.name.trim(),
               row.rank + i + 1,
@@ -774,6 +603,8 @@ export function registerNovelSettingHandlers(): void {
    * 段里，取「本体 + 段的最大层号 / 段长之和」兜底 —— 兼容两代数据。
    */
   ipcMain.handle("novel-setting-level-merge", (_event, levelId: string): boolean => {
+    // 引用项只读（D2）
+    if (isLevelInReferencedCategory(levelId)) return false;
     const row = dbGet(
       "SELECT id, category_id, rank, sub_levels FROM novel_setting_levels WHERE id = ?",
       [levelId],
@@ -820,7 +651,7 @@ export function registerNovelSettingHandlers(): void {
     return {
       version: 1,
       exportedAt: new Date().toISOString(),
-      categories: readSnapshots(workId),
+      categories: readSnapshots("book", workId),
     };
   });
 
@@ -911,6 +742,7 @@ export function registerNovelSettingHandlers(): void {
       const trimmed = name.trim();
       if (!trimmed) return false;
       const snapshots = readSnapshots(
+        "book",
         workId,
         categoryIds.length > 0 ? categoryIds : undefined,
       );
@@ -953,4 +785,45 @@ export function registerNovelSettingHandlers(): void {
   ipcMain.handle("novel-setting-template-delete", (_event, id: string): boolean => {
     return dbRun("DELETE FROM novel_setting_templates WHERE id = ?", [id]).changes > 0;
   });
+
+  // ── 全局设定中心：引用 / 上架（D2 / D3） ────────────────────────────
+
+  /**
+   * 本书「从全局库选择」⇒ 建立引用（D2）。
+   *
+   * 把全局分类镜像成本书分类 + 全部等级镜像行（实时同步的依据）。已引用幂等返回
+   * `true`；workId 为空 / 全局分类不存在 ⇒ `false`。跨域逻辑见 shared.`referenceGlobal`。
+   */
+  ipcMain.handle(
+    "novel-setting-reference-global",
+    (event, workId: string, globalCategoryId: string): boolean => {
+      const ok = referenceGlobal(workId, globalCategoryId);
+      // 引用建立（含幂等）成功 ⇒ 让正开着的全局窗口刷新「N 部书引用」计数。
+      // 排除发送窗口自身，不与之形成回环。
+      if (ok) notifyGlobalRefsChanged(event, ["category"]);
+      return ok;
+    },
+  );
+
+  /**
+   * 本书「放置到全局」⇒ 复制快照上架（D3）。
+   *
+   * 同名冲突由 `conflict` 表达：`'cancel'` 返回 `{ok:false, conflict:true}` 交渲染层三选，
+   * `'duplicate'` 新建「XXX（副本）」。本书侧保持不变。跨域逻辑见 shared.`publishGlobal`。
+   */
+  ipcMain.handle(
+    "novel-setting-publish-global",
+    (
+      event,
+      workId: string,
+      categoryId: string,
+      conflict: "duplicate" | "cancel",
+    ): PublishToGlobalResult => {
+      const result = publishGlobal(workId, categoryId, conflict);
+      // 上架成功 ⇒ 全局库多了一条分类，其它窗口（含正开着的全局窗口）刷新列表与计数。
+      // 冲突 / 失败（ok=false）不广播，避免无意义的全局重载。同样排除发送窗口。
+      if (result.ok) notifyGlobalRefsChanged(event, ["category"]);
+      return result;
+    },
+  );
 }

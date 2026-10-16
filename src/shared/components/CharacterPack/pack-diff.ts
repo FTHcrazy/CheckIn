@@ -24,6 +24,7 @@
  *    `realmLink === undefined` 表示那条记录没存过，此时整组跳过。
  */
 import { getRealm, parseRealmRaw } from "./pack-realm";
+import type { NumberLabelStyle } from "@/shared/novel/number-label";
 import {
   buildActiveCarriersFrom,
   buildGroupOffCarriers,
@@ -188,9 +189,10 @@ export function diffPackDoc(
   baseline: PackDiffDoc,
   current: PackDiffDoc,
   rungs: LadderRung[] = [],
+  numberStyle: NumberLabelStyle = "arabic",
 ): PackDiffResult {
   const entries: PackDiffEntry[] = [
-    ...diffRealm(baseline, current, rungs),
+    ...diffRealm(baseline, current, rungs, numberStyle),
     ...diffAttributes(baseline, current),
     ...diffMappings(baseline, current),
     ...diffEquip(baseline, current),
@@ -226,7 +228,11 @@ export function diffPackDoc(
  * 位置 —— 用位置判断的话，开局没设境界的角色会被写成「筑基一层 → 筑基七层」，
  * 读起来像他本来就在一层。
  */
-function realmTextOf(doc: PackDiffDoc, rungs: LadderRung[]): string | null {
+function realmTextOf(
+  doc: PackDiffDoc,
+  rungs: LadderRung[],
+  style: NumberLabelStyle,
+): string | null {
   if (doc.realmLink === undefined) return null;
   const entityId = doc.character?.entityId ?? "";
   const realmRaw = doc.character?.realmAt ?? "";
@@ -236,6 +242,7 @@ function realmTextOf(doc: PackDiffDoc, rungs: LadderRung[]): string | null {
   return formatRealm(
     rungs,
     getRealm({ link: doc.realmLink ?? null, realmRaw, rungs, bound, entityId }),
+    style,
   );
 }
 
@@ -243,11 +250,12 @@ function diffRealm(
   baseline: PackDiffDoc,
   current: PackDiffDoc,
   rungs: LadderRung[],
+  numberStyle: NumberLabelStyle,
 ): PackDiffEntry[] {
   // 没有等级体系时文案无从生成（formatRealm 只会给出「未设置」），整组不做
   if (rungs.length === 0) return [];
-  const before = realmTextOf(baseline, rungs);
-  const after = realmTextOf(current, rungs);
+  const before = realmTextOf(baseline, rungs, numberStyle);
+  const after = realmTextOf(current, rungs, numberStyle);
   if (before === null || after === null || before === after) return [];
   if (!before) return [entry("realm", "add", "境界", "", after)];
   if (!after) return [entry("realm", "remove", "境界", before, "")];

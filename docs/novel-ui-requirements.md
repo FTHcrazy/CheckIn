@@ -32,12 +32,12 @@
 | UI-02 | 行囊境界卡「阶 + 小层」直选 | PX-02 | P0 | `components/RealmModule/index.tsx(+scss)` |
 | UI-03 | 行囊空态分层引导（每区给下一步动作） | PX-03 / PX-14 | P1 | `RealmModule`、`AttributesModule`、`StatusModule`、`PackHeader` |
 | UI-04 | 行囊模块「摘要行 → 展开 → 钉选」渐进披露 | PX-01 / PX-04 | P1 | `pack-layout.ts`、`types.ts`、`ModuleManager`、`PackModuleShell` |
-| UI-05 | 设定中心信息架构重组（常识化分组） | PX-05 | P0 | `components/SettingCenter/index.tsx(+scss)` |
+| UI-05 | 设定中心信息架构重组（常识化分组） | PX-05 | P0 | `shared/components/SettingCenter/index.tsx(+scss)` |
 | UI-06 | 新手引导弱提示补齐 T-05 / T-06 / T-07 | PX-06 | P1 | `OutlinePanel`、`HoverEntityCard`、`ReorderConfirmModal`、`guide-copy.ts` |
 | UI-07 | 顶栏图标 hover / 状态分层统一 | PX-07 | P2 | `NovelTopBar/index.tsx(+scss)` |
 | UI-08 | 「今日目标 / 连续码字」跨窗口口径统一 | PX-08 | P1 | `ShelfStats/index.tsx`、`StatusBar/index.tsx` |
 | UI-09 | 工具 Tab「规划中」占位交互规范 | PX-09 | P2 | `SupportPanel/components/ToolLauncher/index.tsx` |
-| UI-10 | 设定中心可维护性支撑（拆分 + 分区锚点） | PX-10 | P1 | `SettingCenter/` 拆为子组件目录 |
+| UI-10 | 设定中心可维护性支撑（拆分 + 分区锚点） | PX-10 | P1 | `shared/components/SettingCenter/` 拆为子组件目录 |
 
 ---
 

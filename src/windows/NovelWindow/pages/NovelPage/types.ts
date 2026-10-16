@@ -176,56 +176,17 @@ export interface NovelLink {
   note?: string;
 }
 
-/** 设定分类的性质：realm = 境界体系（全书唯一，联动角色卡「当前境界」）；custom = 自定义分类 */
-export type SettingCategoryKind = "realm" | "custom";
+// ── 设定类型（1.4x：迁至 shared/novel 供两个设定窗口共用） ──
+// 定义集中在 `@/shared/novel/setting-types`（跨窗口共享位，不含 React）；
+// 此处 import + re-export，便于 service / hooks 沿用 `../types` 统一导入路径。
+import type {
+  CarryDirection,
+  SettingCategory,
+  SettingCategoryKind,
+  SettingLevel,
+} from "@/shared/novel/setting-types";
 
-/**
- * 进位方向：
- * - `asc` 由低到高（引气 → 筑基 → 金丹）
- * - `desc` 由高到低（一品 → 二品 … 或倒序的「九品 → 一品」）
- */
-export type CarryDirection = "asc" | "desc";
-
-/** 设定等级项：一个分类下的阶梯节点（1.36.0 起取代 LevelRung） */
-export interface SettingLevel {
-  id: string;
-  categoryId: string;
-  name: string;
-  /** 阶梯序号，从 1 起；同分类内唯一 */
-  rank: number;
-  /** 别名：写作里出现这些词也算引用了本阶（一致性检查据此识别「金丹期」） */
-  aliases: string[];
-  note: string;
-  /** 本阶小层数（行囊境界换算按它展开） */
-  subLevels: number;
-  /** 本阶专属小层命名模板；空串 = 沿用分类的 subPattern（1.37.0） */
-  subPattern: string;
-  /** 战力当量：跨阶比较的可选基准 */
-  power: number | null;
-  /** 拆分层级后非 null：表示本行派生自 parentId，占据 [segFrom, segTo] 小层段 */
-  parentId: string | null;
-  segFrom: number | null;
-  segTo: number | null;
-}
-
-/** 设定分类：境界体系 / 功法等级 / 丹药稀有度…一个分类挂一条等级序列 */
-export interface SettingCategory {
-  id: string;
-  workId: string;
-  name: string;
-  /** 列表色点，纯展示 */
-  color: string;
-  kind: SettingCategoryKind;
-  sortOrder: number;
-  /** 分类说明 */
-  note: string;
-  /** 分类级默认小层数：新增等级项时继承 */
-  subLevels: number;
-  carryDir: CarryDirection;
-  /** 小层命名模板，{n} 为层号占位符（如「第{n}层」「{n}品」） */
-  subPattern: string;
-  levels: SettingLevel[];
-}
+export type { CarryDirection, SettingCategory, SettingCategoryKind, SettingLevel };
 
 /** 关联要素的展示视图（由 NovelLink + 要素表派生） */
 export interface EntityRelationView {

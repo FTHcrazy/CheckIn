@@ -32,6 +32,8 @@ export const TOUR_TARGETS = {
   settingLibrary: "setting-library",
   /** 行囊头部「模块管理」（弱提示 T-04 锚点） */
   packModules: "pack-modules",
+  /** 书架顶栏「全局设定中心」按钮（Tour 第 6 步锚点，1.4x） */
+  shelfGlobalSetting: "shelf-global-setting",
 } as const;
 
 export type TourTargetKey = keyof typeof TOUR_TARGETS;
@@ -69,12 +71,59 @@ export interface TourStepCopy {
  * 第 5 步「选中文字，右键有惊喜」保留为普通可关闭步骤：
  * 它讲的是一个要先选中文字的交互，硬按着头看效果差，
  * 作者看过前四步已具备基本认知，这一步给个叉随时能撤。
+ *
+ * 1.4x（Q4）新增第 6 步「跨作品复用设定」（书架视图）：同样在强制段之外，
+ * 可关闭。它讲的是「全局设定中心」——引用后随全局自动同步的跨书共享库。
  */
-export const GUIDE_TOTAL_STEPS = 5;
+export const GUIDE_TOTAL_STEPS = 6;
+
+/**
+ * 强制段上界：第 1-4 步不给关闭叉、不响应 Esc。
+ * 第 5、6 步是「加分项」（右键建卡 / 跨书共享），给叉随时能撤。
+ * Tour 组件的 `forced` 判据据此派生（`step.step <= FORCED_MAX_STEP`），
+ * 不再用「是否最后一步」——否则新增第 6 步后第 5 步会被误升为强制步。
+ */
+export const FORCED_MAX_STEP = 4;
 
 /** 步骤 → 视图（store 的 start 靠它判断「当前播放步属不属于调用方视图」） */
 export function viewOfStep(step: number): GuideView | null {
   return TOUR_STEPS.find((item) => item.step === step)?.view ?? null;
+}
+
+/**
+ * 「下一步」主按钮的行为（1.4x）。
+ *
+ * 为什么要有它：第 5 步属编辑器视图、第 6 步属书架视图。第 5 步点「下一步」
+ * 会把 playingStep 改拍成 6，但此刻书架实例 `visible=false` 会 pause()、
+ * 编辑器实例又因步属书架不渲染 —— 整屏无 Tour、零反馈，作者得自己想到
+ * 「返回书架」才会续播。改成：按钮明示后果（「下一步 · 去书架」），点击后
+ * 由 App 层切视图，交给书架实例接管第 6 步。
+ *
+ * 判据**全部来自数据**（当前步 / 下一步各自属于哪个视图），不写死步骤号 ——
+ * 以后增删步骤自动跟随：
+ * - 没有下一步 → `finish`（文案「完成」）；
+ * - 下一步属**另一个视图**且目标是书架（编辑器 → 书架）→ `switch`；
+ * - 其余（同视图，或「书架 → 编辑器」这个反方向）→ `next`（文案「下一步」）。
+ *
+ * 为什么只处理「回书架」这个方向：编辑器是懒挂载的（App 层 `editorMounted`），
+ * 光切视图产生不出有效目标；「书架 → 编辑器」那一步由作者的动作驱动
+ * （新建作品 → `openWork` 同时挂载编辑器并切视图），不由引导按钮代劳。
+ */
+export interface GuideNextAction {
+  kind: "finish" | "next" | "switch";
+  /** 主按钮文案 */
+  label: string;
+  /** `kind === "switch"` 时要切到的视图；其余为 null */
+  view: GuideView | null;
+}
+
+export function resolveNextAction(step: TourStepCopy): GuideNextAction {
+  const next = TOUR_STEPS.find((item) => item.step === step.step + 1);
+  if (!next) return { kind: "finish", label: "完成", view: null };
+  if (next.view !== step.view && next.view === "shelf") {
+    return { kind: "switch", label: "下一步 · 去书架", view: "shelf" };
+  }
+  return { kind: "next", label: "下一步", view: null };
 }
 
 export const TOUR_STEPS: readonly TourStepCopy[] = [
@@ -126,6 +175,16 @@ export const TOUR_STEPS: readonly TourStepCopy[] = [
     description:
       "选中一段文字再右键：记进行囊、一键建成角色 / 地点 / 势力 / 物品资料卡，或绑定到已有卡片。注意：没选中文字时右键是系统菜单。",
     placement: "bottom",
+  },
+  {
+    step: 6,
+    view: "shelf",
+    target: TOUR_TARGETS.shelfGlobalSetting,
+    fallbacks: [TOUR_TARGETS.shelfNewWork],
+    title: "一套设定，多本书共用",
+    description:
+      "书架顶栏的「全局设定中心」维护跨作品共享的体系（境界、品阶…）。其它作品「从全局库选择」即可引用，引用后随全局自动同步——改一处，引用它的书一起更新。",
+    placement: "bottomRight",
   },
 ] as const;
 
@@ -219,7 +278,7 @@ export const HELP_COPY = {
   title: "帮助中心",
   replay: "重看新手引导",
   replayDone: "新手引导已完成",
-  replayHint: "共 5 步，每步点「下一步」就行，看完后这个红点会消失",
+  replayHint: "共 6 步，每步点「下一步」就行，看完后这个红点会消失",
   searchPlaceholder: "搜索功能、按钮或问题（如「右键」「设定」「行囊」）",
   searchEmpty: "没找到相关内容，换个关键词试试",
   badgeTip: "帮助中心（F1）",

@@ -338,6 +338,38 @@ describe("OutlinePanel 组件", () => {
     expect(screen.getByText("卷级伏笔 · 不绑定具体章")).toBeInTheDocument();
   });
 
+  it("绑定章节的伏笔来源是可点跳转入口（REQ-048），卷级伏笔保持纯文本", () => {
+    const onSelectChapter = vi.fn();
+    const { container } = render(
+      <OutlinePanel
+        outline={outline}
+        activeChapterId={null}
+        onSelectChapter={onSelectChapter}
+        actions={buildActions()}
+      />,
+    );
+
+    clickView(container, "伏笔");
+
+    // 绑定章节的伏笔（f1 → c1）：来源文案是可点按钮，点了跳该章
+    const link = container.querySelector<HTMLElement>(".nv-outline__fs-src.is-link");
+    expect(link).not.toBeNull();
+    expect(link!.tagName).toBe("BUTTON");
+    fireEvent.click(link!);
+    expect(onSelectChapter).toHaveBeenCalledWith("c1");
+
+    // 卷级伏笔（f2 无 chapterId）：纯文本，不挂 onClick —— 点了不跳
+    fireEvent.click(screen.getByText("全部"));
+    const statics = container.querySelectorAll<HTMLElement>(
+      ".nv-outline__fs-src.is-static",
+    );
+    expect(statics.length).toBeGreaterThan(0);
+    expect(statics[0].tagName).toBe("SPAN");
+    onSelectChapter.mockClear();
+    fireEvent.click(statics[0]);
+    expect(onSelectChapter).not.toHaveBeenCalled();
+  });
+
   it("伏笔可切换回收状态与删除", () => {
     const onToggleForeshadow = vi.fn();
     const onRemoveForeshadow = vi.fn();

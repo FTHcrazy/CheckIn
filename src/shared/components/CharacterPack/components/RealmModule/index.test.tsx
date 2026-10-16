@@ -255,11 +255,12 @@ describe("RealmModule —— 阶设置弹窗已删，图标只给 hover 提示�
 });
 
 /**
- * 小层别名 chip（1.39.1）：拆出子层级的阶，「合体 1/4」旁边要能看到
- * 当前小层自己的名字（别名优先）——「X n/m」只答了走到哪，别名才回答
- * 「现在是什么」。纯数字小层 / 空别名不显示。
+ * 小层名并入主文案（REQ-051/052，1.4x）：小层名不再单独挂一枚别名 chip，
+ * 而是由 `formatRealm` 合成进 `realmText`（`筑基 * 初期 1/4`）。
+ * 头部只渲染 `api.realmText` 一处 —— 这个 describe 钉住「不再有第二枚 chip」，
+ * 防止回归时又长出一份与主文案重复的小层名。
  */
-describe("RealmModule —— 头部小层别名 chip", () => {
+describe("RealmModule —— 头部小层名（已并入 realmText）", () => {
   afterEach(cleanup);
 
   const rungsWithLabels = [
@@ -282,34 +283,25 @@ describe("RealmModule —— 头部小层别名 chip", () => {
     },
   ];
 
-  it("拆出子层级的阶：头部在「X n/m」后显示当前小层的别名", () => {
+  it("带小层名的主文案原样渲染，且不再有独立的别名 chip", () => {
     const api = makeApi({
       rungs: rungsWithLabels,
       realmPos: { index: 1, sub: 3 },
-      realmText: "元婴 3/3",
+      realmText: "元婴 * 圆满 3/3",
     });
     render(<RealmModule api={api} />);
-    expect(screen.getByText("圆满")).toBeInTheDocument();
-    expect(document.querySelector(".cpk-rlm__alias")).not.toBeNull();
-  });
-
-  it("当前层别名是空串（未写）/ 没有别名表时不显示 chip", () => {
-    const api = makeApi({
-      rungs: rungsWithLabels,
-      realmPos: { index: 1, sub: 1 },
-      realmText: "元婴 1/3",
-    });
-    render(<RealmModule api={api} />);
+    expect(screen.getByText("元婴 * 圆满 3/3")).toBeInTheDocument();
     expect(document.querySelector(".cpk-rlm__alias")).toBeNull();
   });
 
-  it("纯数字小层（未拆子层级）不显示 chip", () => {
+  it("纯数字小层（未拆子层级）只有阶名与进度，也不挂 chip", () => {
     const api = makeApi({
       rungs: rungsWithLabels,
       realmPos: { index: 0, sub: 2 },
       realmText: "炼气 2/3",
     });
     render(<RealmModule api={api} />);
+    expect(screen.getByText("炼气 2/3")).toBeInTheDocument();
     expect(document.querySelector(".cpk-rlm__alias")).toBeNull();
   });
 });

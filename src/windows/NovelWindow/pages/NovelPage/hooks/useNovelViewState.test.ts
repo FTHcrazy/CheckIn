@@ -62,3 +62,42 @@ describe("useNovelViewState · 打开要素详情时切回「要素」tab", () =
     expect(result.current.rightOpen).toBe(true);
   });
 });
+
+describe("useNovelViewState · 本书设定 toggle（REQ-050 修法 ③）", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("连点两次回落：关 → 开 → 关", () => {
+    const { result } = renderHook(() => useNovelViewState());
+
+    expect(result.current.settingCenterOpen).toBe(false);
+    act(() => result.current.toggleSettingCenter());
+    expect(result.current.settingCenterOpen).toBe(true);
+    act(() => result.current.toggleSettingCenter());
+    expect(result.current.settingCenterOpen).toBe(false);
+  });
+
+  it("带聚焦分类打开后再 toggle 收起：focusId 一并清空", () => {
+    const { result } = renderHook(() => useNovelViewState());
+
+    act(() => result.current.openSettingCenter("ls1"));
+    expect(result.current.settingCenterOpen).toBe(true);
+    expect(result.current.settingFocusId).toBe("ls1");
+
+    act(() => result.current.toggleSettingCenter());
+    expect(result.current.settingCenterOpen).toBe(false);
+    expect(result.current.settingFocusId).toBeNull();
+  });
+
+  it("从顶栏 toggle 重新打开时不带聚焦分类（通用入口不停在某个分类）", () => {
+    const { result } = renderHook(() => useNovelViewState());
+
+    act(() => result.current.openSettingCenter("ls1"));
+    act(() => result.current.toggleSettingCenter()); // 关闭，顺带清 focus
+    act(() => result.current.toggleSettingCenter()); // 再开
+
+    expect(result.current.settingCenterOpen).toBe(true);
+    expect(result.current.settingFocusId).toBeNull();
+  });
+});

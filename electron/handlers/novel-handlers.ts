@@ -121,6 +121,10 @@ interface NovelSettingCategoryRow {
   sub_levels: number;
   carry_dir: string;
   sub_pattern: string;
+  /** 1.4x 增量迁移列：非空 = 本分类引用（镜像）自某个全局分类 */
+  source_global_id: string | null;
+  /** 1.4x 增量迁移列：非空 = 原全局项已删除，已固化为本书副本 */
+  detached_from_name: string | null;
 }
 
 interface NovelSettingLevelRow {
@@ -261,6 +265,10 @@ export interface NovelSettingCategoryDto {
   carryDir: "asc" | "desc";
   subPattern: string;
   levels: NovelSettingLevelDto[];
+  /** 非空 = 引用自全局中心（只读镜像；实时同步） */
+  sourceGlobalId: string | null;
+  /** 非空 = 原全局项已删除，已固化为本书副本（徽标文案用） */
+  detachedFromName: string | null;
 }
 
 export interface NovelRecoveryDto {
@@ -1150,6 +1158,9 @@ ipcMain.handle("novel-editor-reset-template", () => seedTemplateBook());
       carryDir: isCarryDir(category.carry_dir) ? category.carry_dir : "asc",
       subPattern: category.sub_pattern ?? DEFAULT_SUB_PATTERN,
       levels: levelsByCategory.get(category.id) ?? [],
+      // 1.4x：引用态透出（渲染层据此显示只读徽标 / 固化提示）
+      sourceGlobalId: category.source_global_id ?? null,
+      detachedFromName: category.detached_from_name ?? null,
     }));
 
     const notes = (dbAll("SELECT * FROM novel_notes") as NovelNoteRow[]).map((row) => ({

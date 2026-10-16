@@ -11,6 +11,7 @@ import {
   formatRelativeTime as relativeTime,
   formatThousands,
 } from "@/shared/utils/format";
+import { formatNumberedLabel, toChineseOrdinal } from "@/shared/novel/number-label";
 import type {
   NovelBundleDTO,
   NovelChapterDTO,
@@ -111,41 +112,10 @@ export function formatDayLabel(timestamp: number, now: number = Date.now()): str
 }
 
 // ── 中文序号（卷/章标签派生，与编辑器 formatNumberedLabel 同口径） ──
-
-const CHINESE_DIGITS = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九"];
-
-/** 中文序数：1-9999（八十七 / 三百零六），超界回退阿拉伯数字 */
-export function toChineseOrdinal(value: number): string {
-  const n = Math.max(1, Math.round(value));
-  if (n >= 10_000) return String(n);
-  if (n < 10) return CHINESE_DIGITS[n];
-
-  const digits = Array.from(String(n), Number);
-  const units = ["", "十", "百", "千"];
-  let result = "";
-  const length = digits.length;
-  digits.forEach((digit, index) => {
-    const unit = units[length - 1 - index];
-    if (digit === 0) {
-      // 防止「三百零」「一千零十」式尾零：仅在中间补「零」
-      if (result && !result.endsWith("零") && index < length - 1) result += "零";
-      return;
-    }
-    result += (n < 20 && n >= 10 && index === 0) ? "" : CHINESE_DIGITS[digit];
-    result += unit;
-  });
-  return result.replace(/零+$/, "");
-}
-
-/** 第N后缀：chinese → 第八十七章，arabic → 第87章 */
-export function formatNumberedLabel(
-  style: "arabic" | "chinese",
-  suffix: string,
-  value: number,
-): string {
-  const n = Math.max(1, Math.round(value));
-  return `第${style === "chinese" ? toChineseOrdinal(n) : n}${suffix}`;
-}
+// 单一实现迁至 @/shared/novel/number-label（N11 / M30）：书架 / 编辑器 / 全局
+// 设定窗口共用一处口径（REQ-052 ③「不另写一份」）。这里 re-export 保持既有
+// import 路径（bookshelf-service、bookshelf-utils.test 等）不变。
+export { formatNumberedLabel, toChineseOrdinal };
 
 /** 按卷序 → 章序派生全书章节序号（书架侧独立实现，不跨页复用编辑器工具） */
 export function buildWorkOrdinals(

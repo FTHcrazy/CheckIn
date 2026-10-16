@@ -1,8 +1,10 @@
+import path from "node:path";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
+import * as sass from "sass";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { NovelEntity, SettingCategory } from "../../types";
-import EntityDetail from "./index";
+import EntityDetail, { APPEAR_ROW_HEIGHT } from "./index";
 
 // jsdom 没有真实布局，Virtuoso 视口高度为 0 导致不渲染任何行；
 // 测试中用平铺渲染等价替身，只保留 data + itemContent 的行为契约。
@@ -258,7 +260,7 @@ describe("EntityDetail：出场章节列表", () => {
     // 少条数：按行高自适应，不留一大片空白
     const short = box();
     expect(short).not.toBeNull();
-    expect(short!.style.height).toBe("68px"); // 2 行 × 34px
+    expect(short!.style.height).toBe("76px"); // 2 行 × 38px（REQ-046 行高 34→38）
 
     // 上千条：封顶 240px，剩下的交给容器内部滚动
     rerender(
@@ -393,5 +395,150 @@ describe("EntityDetail：出场章节列表", () => {
     expect(screen.getByText(/2–2 \/ 共 9 层/)).toBeInTheDocument();
     // 对应子层级小条高亮
     expect(container.querySelector(".nv-edetail__rung-seg.is-on")).not.toBeNull();
+  });
+});
+
+/**
+ * REQ-045：要素境界支持选「小境界」。
+ *
+ * 原实现里，**未拆分**但配了多个小层的阶（`sub_levels > 1` 且没有派生段）
+ * 只能绑到阶本身，选不到第 N 层 —— 与行囊 ±1 层的坐标（novel_links.note.sub）
+ * 对不上。新增的小层 chip 组把阶内每一层都列出来，绑定坐标是 (根阶 id, 第 N 层)。
+ * 「已拆分」的阶仍走派生段那行，两行**互斥**渲染，不并列。
+ */
+describe("EntityDetail：当前境界可选小境界（REQ-045）", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  /** 造一个「未拆分、但配了 subLevels 个小层」的体系 */
+  const ladder = (subLevels: number): SettingCategory => ({
+    ...realmCategory,
+    subLevels,
+    levels: [
+      { ...realmCategory.levels[0], subLevels, subPattern: "第{n}层" },
+      realmCategory.levels[1],
+    ],
+  });
+
+  it("未拆分但配了 13 层的阶 → 点第 7 层 → 回调 (根阶 id, 7)", () => {
+    const onSetEntityLevel = vi.fn();
+    const { container } = render(
+      <EntityDetail
+        {...buildProps({ settings: [ladder(13)], onSetEntityLevel })}
+      />,
+    );
+
+    // 阶内小层 chip 组渲染出来（而不是派生段那行）
+    expect(container.querySelector(".nv-edetail__rung-subs")).not.toBeNull();
+    expect(container.querySelector(".nv-edetail__rung-segs")).toBeNull();
+
+    fireEvent.click(screen.getByText("第7层"));
+    expect(onSetEntityLevel).toHaveBeenCalledWith("r1", 7);
+  });
+
+  it("sub_levels <= 1 的阶不出现小层 chip，绑定照旧落 undefined", () => {
+    const onSetEntityLevel = vi.fn();
+    const { container } = render(
+      <EntityDetail
+        {...buildProps({ settings: [ladder(1)], onSetEntityLevel })}
+      />,
+    );
+
+    expect(container.querySelector(".nv-edetail__rung-subs")).toBeNull();
+    fireEvent.click(screen.getByText("炼气"));
+    expect(onSetEntityLevel).toHaveBeenCalledWith("r1", undefined);
+  });
+
+  it("已拆分（有派生段）的阶保持派生段那行，不并列小层 chip（互斥）", () => {
+    const { container } = render(
+      <EntityDetail
+        {...buildProps({
+          settings: [
+            {
+              ...realmCategory,
+              levels: [
+                { ...realmCategory.levels[0], subLevels: 9 },
+                {
+                  ...realmCategory.levels[0],
+                  id: "r1__seg1",
+                  name: "第1段",
+                  rank: 2,
+                  parentId: "r1",
+                  segFrom: 1,
+                  segTo: 1,
+                  subLevels: 1,
+                },
+              ],
+            },
+          ],
+        })}
+      />,
+    );
+
+    expect(container.querySelector(".nv-edetail__rung-segs")).not.toBeNull();
+    expect(container.querySelector(".nv-edetail__rung-subs")).toBeNull();
+  });
+
+  it("当前绑定的那一层（note.sub）高亮为 .is-on，再点即取消绑定", () => {
+    const onSetEntityLevel = vi.fn();
+    const { container } = render(
+      <EntityDetail
+        {...buildProps({
+          settings: [ladder(13)],
+          onSetEntityLevel,
+          relations: [
+            {
+              id: "l1",
+              direction: "out",
+              targetId: "r1",
+              targetName: "炼气",
+              targetType: "level",
+              relation: "当前境界",
+              note: '{"sub":7}',
+            },
+          ],
+        })}
+      />,
+    );
+
+    const on = container.querySelector(".nv-edetail__rung-sub.is-on");
+    expect(on).not.toBeNull();
+    // 小层名与阶内层号一致（模板「第{n}层」→ 第7层）
+    expect(on!.textContent).toBe("第7层");
+
+    fireEvent.click(on!);
+    // 再点当前层 → 解除绑定（不落回阶本身）
+    expect(onSetEntityLevel).toHaveBeenCalledWith(null);
+  });
+});
+
+/**
+ * REQ-046：出场章节列表行间距 4 → 8，行高常量与 SCSS 成对同步。
+ *
+ * 这是本项唯一的「常量与 SCSS 成对」契约：`APPEAR_ROW_HEIGHT` 给 Virtuoso
+ * 换算滚动区间，SCSS 的 `padding-bottom` 决定真实行盒高度；两者不一致会出现
+ * 跳白条 / 行错位 —— 且没有任何类型或构建错误提示你改漏了一边。
+ */
+describe("EntityDetail：出场列表行高契约（REQ-046）", () => {
+  it("APPEAR_ROW_HEIGHT 为 38（= 行盒 18 + padding 5×2 + 描边 1×2 + 行间距 8）", () => {
+    expect(APPEAR_ROW_HEIGHT).toBe(38);
+  });
+
+  it("index.scss 的行间距与常量同步（padding-bottom: 8px）", () => {
+    const css = sass
+      .compile(
+        path.resolve(
+          process.cwd(),
+          "src/windows/NovelWindow/pages/NovelPage/components/EntityDetail/index.scss",
+        ),
+        { style: "expanded" },
+      )
+      .css.replace(/\/\*[\s\S]*?\*\//g, "");
+    const rule = css.match(
+      /\.nv-edetail__appear-list\s*>\s*div\s*>\s*div\s*\{([^}]*)\}/,
+    );
+    expect(rule).not.toBeNull();
+    expect(rule![1]).toContain("padding-bottom: 8px");
   });
 });

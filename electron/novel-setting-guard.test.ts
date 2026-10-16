@@ -16,6 +16,15 @@ const HANDLERS = readFileSync(
   "utf8",
 );
 
+/**
+ * 1.4x：本书域 / 全局域共用的内核（rank 三件套、引用模型、只读守卫）。
+ * 两个域列名与口径一致，工具下沉到这里 —— 断言口径也要跟着读这个文件。
+ */
+const SETTING_SHARED = readFileSync(
+  resolve(process.cwd(), "electron/handlers/novel-setting-shared.ts"),
+  "utf8",
+);
+
 /** 截取某个 ipcMain.handle 通道的回调体（到下一个 `ipcMain.handle` 为止） */
 function channelBody(channel: string): string {
   const start = HANDLERS.indexOf(`"${channel}"`);
@@ -102,10 +111,13 @@ describe("设定模块：插入与拆分的序号口径", () => {
 
   it("落点按**行序**换算 rank，不用 max(rank) 当行数 —— 否则「在末尾插入」会插到中间", () => {
     const body = channelBody("novel-setting-level-add");
-    // 行数用 COUNT(*)，末尾落点用 max(rank)+1；两者对 rank 空洞的旧数据必须分开算
-    expect(HANDLERS).toContain("SELECT COUNT(*) AS n FROM novel_setting_levels");
-    expect(HANDLERS).toContain("ORDER BY rank LIMIT 1 OFFSET ?");
-    expect(body).toContain("at >= total ? maxRank(categoryId) + 1 : rankAt(categoryId, at)");
+    // 行数用 COUNT(*)，末尾落点用 max(rank)+1；两者对 rank 空洞的旧数据必须分开算。
+    // 1.4x：rank 三件套按域参数化后落在共享内核（本书 / 全局同一口径）。
+    expect(SETTING_SHARED).toContain("SELECT COUNT(*) AS n FROM novel_setting_levels");
+    expect(SETTING_SHARED).toContain("ORDER BY rank LIMIT 1 OFFSET ?");
+    expect(body).toContain(
+      'at >= total ? maxRank("book", categoryId) + 1 : rankAt("book", categoryId, at)',
+    );
     // 回归：旧写法把 max(rank) 的行数语义直接当落点，rank 有空洞时必错
     expect(body).not.toContain("const total = maxRank(categoryId);");
   });
@@ -141,8 +153,9 @@ describe("设定模块：插入与拆分的序号口径", () => {
 
 describe("设定模块：作品隔离与 realm 唯一性", () => {
   it("所有分类查询都带 work_id 或 category_id 收口，不裸查整表", () => {
-    // 不带范围会把另一部小说的设定捞回来，再经 novel-link-set 写出跨作品关联
-    const naked = HANDLERS.match(
+    // 不带范围会把另一部小说的设定捞回来，再经 novel-link-set 写出跨作品关联。
+    // 1.4x：本书查询部分下沉到共享内核，两个文件一起查（模板拼接 WHERE 会绕过断言）
+    const naked = `${HANDLERS}\n${SETTING_SHARED}`.match(
       /SELECT \* FROM novel_setting_categories(?!\s+WHERE)/g,
     );
     expect(naked).toBeNull();

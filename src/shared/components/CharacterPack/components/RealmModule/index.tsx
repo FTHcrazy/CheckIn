@@ -84,13 +84,6 @@ export default function RealmModule({ api }: RealmModuleProps) {
     void api.writeRealm({ index: api.realmPos.index, sub }, "pack");
   };
 
-  /**
-   * 当前小层的显示别名（1.39.1）：拆出子层级的阶，每层有自己的名字
-   * （「合体一层」的别名往往就是「初期」）。「合体 1/4」只答了走到哪，
-   * 别名才回答「现在是什么」—— 空串（纯数字小层 / 没写别名）不显示。
-   */
-  const subAlias = subLabelAt(rung, api.realmPos.sub);
-
   return (
     <PackModuleShell
       title={moduleLabel(key)}
@@ -168,14 +161,11 @@ export default function RealmModule({ api }: RealmModuleProps) {
             </div>
           )}
 
-          {/* 当前境界 + 距下一阶进度（设计稿此处是一条横向进度条） */}
+          {/* 当前境界 + 距下一阶进度（设计稿此处是一条横向进度条）。
+              REQ-051/052：小层名已并入 `realmText`（`筑基 * 初期 1/4`），
+              不再另挂一枚别名 chip —— 「走到哪 + 现在是什么」合并成一句读。 */}
           <div className="cpk-rlm__now">
             <span className="cpk-rlm__value">{api.realmText}</span>
-            {subAlias ? (
-              <span className="cpk-rlm__alias" title={`当前小层：${subAlias}`}>
-                {subAlias}
-              </span>
-            ) : null}
             <span className="cpk-rlm__stepper">
               <Button
                 className="cpk-btn ghost"

@@ -2,14 +2,24 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
+import * as sass from "sass";
 import ToolLauncher from ".";
 
 /**
- * 工具箱启动器（UI-09「规划中」占位交互规范）。
+ * 工具箱启动器的两条契约：
  *
- * 回归背景：规划中的两张卡此前是 `<div>` 死链 —— 外观只比可用卡淡一点，
- * 作者点下去毫无反应，观感就是「点了没反应 / 是不是坏了」。现在三张卡都是
- * 真按钮：可用的进入二级面板，规划中的给一条 toast 说明。
+ * 1. UI-09「规划中」占位交互规范 —— 回归背景：规划中的两张卡此前是 `<div>` 死链，
+ *    外观只比可用卡淡一点，作者点下去毫无反应，观感就是「点了没反应 / 是不是坏了」。
+ *    现在三张卡都是真按钮：可用的进入二级面板，规划中的给一条 toast 说明。
+ * 2. REQ-047 描述换行 —— antd `.ant-btn` 自带 `white-space: nowrap`，而可进入的
+ *    工具卡正是 antd `Button` 承载，描述文字未显式声明时会继承 nowrap，长文案撑破
+ *    卡片。修法是在复合选择器 `.nv-tools__card.ant-btn .nv-tools__desc` 内显式改回
+ *    `white-space: normal` 并配 `overflow-wrap: anywhere`。
+ *
+ *    为什么换行那条钉**编译后的 CSS**而不是渲染差量：jsdom 不做真实排版，
+ *    vitest 也未处理 `.scss` 导入（`getComputedStyle` 拿不到外部样式表），
+ *    渲染层根本看不出「溢出」。能挡住这次回归的只有产物里那条规则 + 它确实命中
+ *    真实 DOM（描述嵌在 antd 卡内），所以两条断言一起写。
  */
 
 afterEach(() => {
@@ -80,5 +90,47 @@ describe("ToolLauncher：规划中的工具不是死链", () => {
     expect(source).not.toMatch(/<div[^>]*nv-tools__card/);
     // 占位卡必须有 toast 兜底，否则又会退化成「点了没反应」
     expect(source).toContain("onNotify(tool.plannedHint");
+  });
+});
+
+describe("ToolLauncher：描述换行契约（REQ-047）", () => {
+  const compiled = (): string =>
+    sass
+      .compile(
+        path.resolve(
+          process.cwd(),
+          "src/windows/NovelWindow/pages/NovelPage/components/SupportPanel/components/ToolLauncher/index.scss",
+        ),
+        { style: "expanded" },
+      )
+      .css.replace(/\/\*[\s\S]*?\*\//g, "");
+
+  it("复合选择器把 .nv-tools__desc 的 white-space 覆盖回 normal", () => {
+    const css = compiled();
+    const at = css.indexOf(".nv-tools__card.ant-btn .nv-tools__desc");
+    expect(at, "缺少 .nv-tools__card.ant-btn .nv-tools__desc 规则").toBeGreaterThan(-1);
+
+    const open = css.indexOf("{", at);
+    const end = css.indexOf("}", open);
+    const body = css.slice(open + 1, end);
+    expect(body).toContain("white-space: normal");
+    expect(body).toContain("overflow-wrap: anywhere");
+  });
+
+  it("描述确实嵌在 .nv-tools__card.ant-btn 内（规则不会失配成死 CSS），长文案整段保留", () => {
+    const { container } = render(
+      <ToolLauncher onOpenNaming={vi.fn()} onNotify={vi.fn()} />,
+    );
+
+    const card = container.querySelector<HTMLElement>(".nv-tools__card.ant-btn");
+    expect(card).not.toBeNull();
+    const desc = card!.querySelector(".nv-tools__desc");
+    expect(desc).not.toBeNull();
+
+    // 最坏情况：无空格长串（≥60 字）。渲染层不做任何截断，换行交给上面的 CSS。
+    const long = "长".repeat(60);
+    expect([...long].length).toBeGreaterThanOrEqual(60);
+    desc!.textContent = long;
+    expect(desc!.textContent).toBe(long);
   });
 });

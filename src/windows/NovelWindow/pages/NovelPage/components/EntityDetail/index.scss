@@ -654,6 +654,48 @@
     }
   }
 
+  /* REQ-045：未拆分但有多小层的阶，小层清单铺成一行 chip（与派生段那行互斥）。
+     与 __rung-segs 同缩进、同字号，只是名字来自「阶内第 N 层」而非派生段名。 */
+  &__rung-subs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+    padding-left: 22px;
+  }
+
+  &__rung-sub.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: auto;
+    --ant-button-content-font-size: 11px;
+    --ant-border-radius: 7px;
+    --ant-line-width: 1px;
+    --ant-button-default-bg: transparent;
+    --ant-button-default-color: var(--app-text-secondary);
+    --ant-button-default-border-color: transparent;
+    --ant-button-default-hover-bg: var(--app-surface-hover);
+    --ant-button-default-hover-color: var(--app-text);
+    --ant-button-default-hover-border-color: transparent;
+    --ant-button-default-active-bg: var(--app-surface-hover);
+    --ant-button-default-active-color: var(--app-text);
+    --ant-button-default-active-border-color: transparent;
+    --ant-button-default-shadow: none;
+
+    padding: 2px 7px;
+
+    &.is-on {
+      --ant-button-default-bg: var(--app-accent-blue-weak);
+      --ant-button-default-color: var(--app-accent-blue);
+      --ant-button-default-border-color: transparent;
+      --ant-button-default-hover-bg: var(--app-accent-blue-weak);
+      --ant-button-default-hover-color: var(--app-accent-blue);
+      --ant-button-default-hover-border-color: transparent;
+      --ant-button-default-active-bg: var(--app-accent-blue-weak);
+      --ant-button-default-active-color: var(--app-accent-blue);
+      --ant-button-default-active-border-color: transparent;
+      --ant-button-font-weight: 600;
+    }
+  }
+
   /* ── 出场章节 ─────────────────────────────────────────────────── */
   /* 虚拟化容器：必须给**确定高度**，Virtuoso 才有可视区可测。
      ⚠️ 这里踩过一次坑：原先写的是 `max-height: 240px` —— `max-height`
@@ -676,9 +718,9 @@
 
   /* Virtuoso 把每个 item 包一层绝对定位的 div，行间距只能由行内边距产生
      （原先 flex-wrap 的 gap 在虚拟化后不生效）。行高必须与 TSX 里的
-     APPEAR_ROW_HEIGHT 对齐 */
+     APPEAR_ROW_HEIGHT 对齐（REQ-046：行间距 4 → 8，常量同步 34 → 38） */
   &__appear-list > div > div {
-    padding-bottom: 4px;
+    padding-bottom: 8px;
   }
 
   /* 出场章节行：整行可点的列表行（不是浮动药丸）—— 章名序号徽标 + 标题，
@@ -702,7 +744,8 @@
     --ant-button-default-shadow: none;
 
     display: flex;
-    gap: 8px;
+    /* 行内间距同向放宽（REQ-046：8 → 10），与行间距一起让列表更透气 */
+    gap: 10px;
     width: 100%;
     padding: 5px 10px;
     text-align: left;

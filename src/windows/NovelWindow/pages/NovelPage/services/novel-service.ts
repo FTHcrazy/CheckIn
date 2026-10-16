@@ -1,10 +1,12 @@
 import { buildSearchSnippet, type LastPosition } from "../novel-utils";
 import { STORAGE_KEYS } from "../novel-config";
 import type {
+  NovelGlobalSettingCategoryDTO,
   NovelSettingCategoryPatch,
   NovelSettingExportPayload,
   NovelSettingLevelPatch,
   NovelSettingTemplateDTO,
+  PublishToGlobalResult,
 } from "@/shared/types/electron";
 import type {
   CustomEntityTypeDef,
@@ -420,6 +422,44 @@ export async function applySettingTemplate(
 /** 删除模板 */
 export async function removeSettingTemplate(templateId: string): Promise<boolean> {
   return window.electronAPI!.novel.settingTemplateDelete(templateId);
+}
+
+// ── 全局设定中心联动（1.4x，REQ-041 / REQ-042） ──
+
+/**
+ * 读全局库分类（供本书「从全局库选择」选择器展示）。
+ * 含 `refCount`（多少部书在引用），低频、打开选择器才读。
+ */
+export async function loadGlobalSettingCategories(): Promise<
+  NovelGlobalSettingCategoryDTO[]
+> {
+  const { categories } = await window.electronAPI!.novel.globalSettingLoad();
+  return categories;
+}
+
+/**
+ * 本书引用一个全局分类（建立只读镜像，改动随全局实时同步，D2）。
+ * 已有引用时幂等返回 true；主进程写成功后广播 `global-setting-changed`，
+ * 让打开着的全局窗口刷新「N 部书引用」计数。
+ */
+export async function referenceGlobalCategory(
+  workId: string,
+  globalCategoryId: string,
+): Promise<boolean> {
+  return window.electronAPI!.novel.referenceGlobal(workId, globalCategoryId);
+}
+
+/**
+ * 本书分类上架到全局（复制快照，D3）；同名冲突由 conflict 决定。
+ * `conflict='cancel'` 先探同名 → 命中返回 `{ok:false, conflict:true}`，
+ * 渲染层二次确认后以 `'duplicate'` 再调一次。
+ */
+export async function publishCategoryToGlobal(
+  workId: string,
+  categoryId: string,
+  conflict: "duplicate" | "cancel",
+): Promise<PublishToGlobalResult> {
+  return window.electronAPI!.novel.publishGlobal(workId, categoryId, conflict);
 }
 
 // ── 文本导出（R13；行囊 REQ-030 复用同一通道） ──

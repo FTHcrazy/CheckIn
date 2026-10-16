@@ -500,6 +500,12 @@ export interface PackLevelRungDto {
   power: number | null;
   /** 已拆出子层级：父阶是组，小层数由子层级决定（阶设置里不可改） */
   hasChildren: boolean;
+  /**
+   * 本阶生效的小层命名模板（1.4x）：自己的为空则沿用分类的。
+   * `{n}` 模板主进程**不**生成 subLabels（编号不是名字），渲染层据此用
+   * 唯一的命名纯函数（number-label）现场渲染「第七层」这类小层名（REQ-051/052）。
+   */
+  subPattern?: string;
 }
 
 export interface PackLevelSystemDto {
@@ -1061,6 +1067,8 @@ function readLevelSystems(workId: string): PackLevelSystemDto[] {
       subLevels: total,
       power: level.power,
       hasChildren: children.length > 0,
+      // 本阶生效的小层命名模板（1.4x）：渲染层拿它现场渲染 {n} 模板小层名
+      subPattern: pattern,
       // 小层别名表（1.39.1，1.40.0 扩）：下标 = 阶内层号 - 1。两个来源——
       // ① 拆出子层级的阶：段内各层共用该段的显示名（首个别名优先，回落段名）；
       // ② 未拆分但配了**固定名单**命名模板的阶（「初期,中期,后期,圆满」）：

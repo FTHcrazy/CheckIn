@@ -72,11 +72,11 @@ describe("parseGuideRecord —— 损坏兜底", () => {
     expect(parseGuideRecord('"x"').state).toBe("not_started");
   });
 
-  it("步骤越界夹取到 1-5，越界步骤不进 stepsViewed", () => {
+  it("步骤越界夹取到 1-6，越界步骤不进 stepsViewed", () => {
     const parsed = parseGuideRecord(
       JSON.stringify({ ...record(), currentStep: 99, stepsViewed: [1, 7, -2, 3] }),
     );
-    expect(parsed.currentStep).toBe(5);
+    expect(parsed.currentStep).toBe(6);
     expect(parsed.stepsViewed).toEqual([1, 3]);
   });
 

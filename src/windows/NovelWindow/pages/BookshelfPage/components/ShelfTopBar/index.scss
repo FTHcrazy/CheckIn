@@ -53,4 +53,11 @@
     @include widget.ant-button-reset;
     border-radius: var(--app-radius-pill);
   }
+
+  // 「全局设定中心」入口：同为次级样式（描边圆角），与导入按钮对齐层级。
+  // mixin 必须写在覆盖之前（AGENTS §2.2.1）
+  &__global-setting.ant-btn {
+    @include widget.ant-button-reset;
+    border-radius: var(--app-radius-pill);
+  }
 }

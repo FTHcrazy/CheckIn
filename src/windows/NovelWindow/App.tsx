@@ -7,7 +7,7 @@ import {
 import { App as AntdApp, Badge, Button, Tooltip } from "antd";
 import HelpCenter from "@/shared/components/HelpCenter";
 import WindowHeader from "@/shared/components/WindowHeader";
-import { HELP_COPY } from "@/shared/novel/guide-copy";
+import { HELP_COPY, type GuideView } from "@/shared/novel/guide-copy";
 import { NOVEL_HELP_DOC } from "@/shared/novel/guide-doc";
 import { IS_NOVEL_EDITION } from "@/shared/edition";
 // 根级样式由 main.tsx 引入（两者都引会重复插入同一份 CSS）
@@ -88,6 +88,12 @@ export default function NovelWindowApp() {
   const consumeOpenRequest = useCallback(() => setOpenRequest(null), []);
 
   const backToShelf = useCallback(() => setView("shelf"), []);
+
+  /**
+   * 引导「下一步」跨视图回书架时的切视图收口（第 5 → 第 6 步，1.4x）。
+   * 只有窗口根同时持有两个视图的显隐开关，故由这里实现并注入编辑器页。
+   */
+  const goToView = useCallback((target: GuideView) => setView(target), []);
 
   /** 编辑器 → 书架：请求发起导入。切回书架让导入进度（顶栏按钮 loading）可见 */
   const requestImport = useCallback(() => {
@@ -186,6 +192,7 @@ export default function NovelWindowApp() {
                   onBackToShelf={backToShelf}
                   onImportBook={requestImport}
                   visible={view === "editor"}
+                  onGoToView={goToView}
                 />
               </div>
             )}
