@@ -30,6 +30,16 @@ const GLOBAL_HANDLERS = readText(
 const SHARED = readText("electron/handlers/novel-setting-shared.ts");
 const PRELOAD = readText("electron/preload.ts");
 const MAIN = readText("electron/main.ts");
+/**
+ * 书窗口编辑器数据层（1.45.1 P0-1）：引用实时同步的**订阅侧**落点。
+ *
+ * ⚠️ 只订阅不刷新（或反过来）都是静默失效：主进程镜像行是对的、书窗口内存快照
+ * 是旧的，界面显示旧值且零报错。渲染层这条链路没法用 node 跑起来（要 BrowserWindow
+ * 与真实 IPC），所以按本仓「源码路径断言型守卫」的先例钉住落点。
+ */
+const NOVEL_PAGE_DATA = readText(
+  "src/windows/NovelWindow/pages/NovelPage/hooks/useNovelData.ts",
+);
 
 /** 去掉注释再匹配：说明文字里会引用被检查的写法，不该算命中 */
 function stripComments(source: string): string {
@@ -242,5 +252,42 @@ describe("接线：广播 / preload / main 注册", () => {
 
   it("main.ts 注册全局设定 handler", () => {
     expect(MAIN).toContain("registerNovelGlobalSettingHandlers");
+  });
+});
+
+describe("书窗口订阅侧：引用镜像就地刷新（1.45.1 P0-1）", () => {
+  // 说明文字里会引用被检查的写法，先剥注释再匹配
+  const body = stripComments(NOVEL_PAGE_DATA);
+
+  it("书窗口数据层订阅 global-setting-changed（此前只有全局窗口自己订阅）", () => {
+    expect(body).toContain("const api = window.electronAPI?.windowAPI;");
+    expect(body).toContain('api.on("global-setting-changed", handler)');
+  });
+
+  it("退订用同一 handler 引用（preload 的 on/off 按引用配对）", () => {
+    // ⚠️ 传新箭头函数等于没摘掉监听，每次重订阅都会多积一条
+    expect(body).toContain('api.off("global-setting-changed", handler)');
+  });
+
+  it("刷新只重读设定、只换 settings 一张表（不碰 chapters = 正文基线）", () => {
+    const start = body.indexOf("const refreshSettingMirror");
+    expect(start).toBeGreaterThan(-1);
+    const refreshBody = body.slice(start, body.indexOf("useEffect(() => {", start));
+    // 只换 settings 一张表：整体重装会把正在编辑的正文基线冲回库内旧值
+    expect(refreshBody).toContain("settings: current.settings.map(");
+    expect(refreshBody).not.toContain("chapters");
+    // 只换「引用态」行：书内自建分类的编辑不受影响
+    expect(refreshBody).toContain("category.sourceGlobalId");
+    // 重读走元数据通道（includeContent=false），不把全书正文拉一遍
+    expect(readText("src/windows/NovelWindow/pages/NovelPage/services/novel-service.ts")).toContain(
+      "window.electronAPI!.novel.editorLoad(false)",
+    );
+  });
+
+  it("跟随判据是「本书真有引用项」，且装载在途时跳过", () => {
+    const start = body.indexOf("const handler = (): void => {");
+    const handlerBody = body.slice(start, body.indexOf("const api = window.electronAPI", start));
+    expect(handlerBody).toContain("sourceGlobalId");
+    expect(handlerBody).toContain("loadInFlightRef.current");
   });
 });

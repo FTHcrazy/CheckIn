@@ -87,10 +87,11 @@
     width: 96px;
     height: 4px;
     border-radius: var(--app-radius-pill);
-    /* 轨道是"槽"不是"按下态"。这条贴在页面底 --app-bg 上，而 --app-surface-alt
-       与 bg 几乎同色（cream 下 #faf5ea vs #faf6ef）会直接消失 → 用 hover 档。
-       原来的按下档（1.20）比填充色还抢眼，轨道反而成了主角。 */
-    background: var(--app-surface-hover);
+    /* 轨道是"槽"不是"按下态"。宿主 .nv-status 铺的是 --app-surface，槽按阶梯
+       低一档取 --app-surface-alt（贴 surface 约 1.027~1.052，一档可感知）；
+       不能借 --app-surface-hover（那是相对所在面的交互态，静态铺开等于把整屏
+       压重一档），也不用 --app-surface-active（cream 下 1.20 比填充色还抢眼）。 */
+    background: var(--app-surface-alt);
     overflow: hidden;
   }
 

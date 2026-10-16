@@ -16,6 +16,7 @@
  *
  * 纯函数：入参字符串 → 出参结构体，便于 vitest 直接覆盖。
  */
+import { countWords as countWordsShared } from "@/shared/novel/word-count";
 
 /** 章节标题行：第X章 / 第X回 / 第X节，或 Chapter N（与参考实现同口径） */
 export const CHAPTER_TITLE_RE =
@@ -155,9 +156,16 @@ export function isChapterTitle(line: string): boolean {
   return CHAPTER_TITLE_RE.test(line);
 }
 
-/** 统计正文字数：忽略空白字符 */
+/**
+ * 统计正文字数：忽略空白字符（N-07 口径统一）。
+ *
+ * 原实现 `text.replace(/\s/g, "").length` 数的是 **UTF-16 码元**，含星平面字符
+ * （emoji、CJK 扩展 B 区）时会比编辑器的 **码点** 口径多算 —— 导入章字数与编辑器
+ * 显示对不上。现统一走 `@/shared/novel/word-count`（与编辑器同一实现、同一口径）。
+ * 保留本函数名与签名，调用方（import-service / import.worker）零改动。
+ */
 export function countWords(text: string): number {
-  return text.replace(/\s/g, "").length;
+  return countWordsShared(text, "withPunctuation");
 }
 
 /**

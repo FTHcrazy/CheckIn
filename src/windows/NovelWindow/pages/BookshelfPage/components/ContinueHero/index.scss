@@ -74,8 +74,8 @@
     max-width: 280px;
     height: 6px;
     border-radius: var(--app-radius-pill);
-    /* 轨道 = 槽，走 hover 档；按下档（cream 1.20）比填充还抢眼 */
-    background: var(--app-surface-hover);
+    /* 轨道 = 槽，宿主 .bs-hero 铺 --app-surface，故取低一档的 alt；按下档（cream 1.20）比填充还抢眼 */
+    background: var(--app-surface-alt);
     overflow: hidden;
   }
 

@@ -7,8 +7,10 @@ import { describe, expect, it } from "vitest";
  * Novel 窗口的「组件库优先」守卫（AGENTS.md §6.1.2）。
  *
  * 与行囊那份 `CharacterPack/pack-ui-kit.test.ts` 的关系：那份钉的是行囊内部，
- * 这一份钉的是**整个窗口**——迁移完 105 处原生 `<button>` 之后，回潮的入口
- * 从「行囊内部新增」变成了「窗口里任何一个新面板顺手写一个原生按钮」。
+ * 这一份钉的是**小说窗口 + 设定中心组件树**（两个扫描根，见下方 `ROOTS`）——
+ * 迁移完 105 处原生 `<button>` 之后，回潮的入口从「行囊内部新增」变成了
+ * 「窗口里任何一个新面板顺手写一个原生按钮」；1.45.1 起设定中心从 NovelWindow
+ * 迁到 `src/shared/components/SettingCenter`，那一整棵组件树也纳入同一份守卫。
  *
  * 三条断言各自对应一类**不会自己报错**的退化：
  * 1. 原生表单控件：功能照跑、类型也过，但不跟随主题的组件级变量、没有键盘与
@@ -22,6 +24,28 @@ import { describe, expect, it } from "vitest";
  */
 
 const ROOT = path.resolve(process.cwd(), "src/windows/NovelWindow");
+
+/**
+ * 第二个扫描根（1.45.1 P1-1）：设定中心组件树。
+ *
+ * UI-10 拆分时，设定中心（浮层标题 / 左分类列表 / 分类卡 / 等级序列 / 两个弹窗）
+ * 从 `pages/NovelPage/components` 迁到了 `src/shared/components/SettingCenter`，
+ * 供「本书设定面板」与「全局设定中心窗口」两处共用。
+ *
+ * 迁出之后它**掉出了这份守卫的扫描根** —— 那是一整棵组件树从此不再受 §6.1.2
+ * 约束（原生控件、`<Button>` 嵌 `<Button>`、漏清零点都不会报），而它恰恰是本域
+ * 控件最密集的面板区。所以扫描根扩成两处。
+ *
+ * 不并入 `CharacterPack`：那份有自己独立的 `pack-ui-kit.test.ts`，一起扫只会把
+ * 同一批违规重复报两遍，还要改一处跑两份。
+ */
+const SETTING_CENTER_ROOT = path.resolve(
+  process.cwd(),
+  "src/shared/components/SettingCenter",
+);
+
+/** 本守卫覆盖的全部扫描根 */
+const ROOTS = [ROOT, SETTING_CENTER_ROOT];
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
@@ -37,7 +61,20 @@ function stripComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
 }
 
-const files = walk(ROOT);
+/**
+ * 相对**最近的那个**扫描根取显示路径。
+ * 跨根文件不能一律拿 ROOT 去 relative（会得到 `../../../shared/...` 这种噪声），
+ * 报出来的路径要能直接拿去定位文件。
+ */
+function relFromRoot(file: string): string {
+  const root =
+    ROOTS.find(
+      (candidate) => !path.relative(candidate, file).startsWith(".."),
+    ) ?? ROOT;
+  return path.relative(root, file).replace(/\\/g, "/");
+}
+
+const files = ROOTS.flatMap((root) => walk(root));
 const tsxFiles = files.filter((file) => file.endsWith(".tsx"));
 const scssFiles = files.filter((file) => file.endsWith(".scss"));
 
@@ -149,10 +186,74 @@ function buttonClasses(source: string): Set<string> {
 }
 
 /**
- * 刻意走组件库自带造型、不需要清零点的按钮类。
- * `bs-hero__cta` 用的是 `type="primary"` + `size="large"`，清零反而会破坏它。
+ * 刻意走组件库自带造型、**不需要清零点**的按钮类。
+ *
+ * 这些类名挂在 `Button` 上，但不是为了「自绘造型」，而是为了改一两个组件级变量
+ * 或补一条 antd 不接管的布局属性。它们要保留 `size` / `type` 给出的整套尺寸与
+ * 描边 —— 清零反而得把高度 / 内边距 / 圆角手工复刻一遍，而同排没挂类名的按钮
+ * 跟着 antd 走，复刻出来的数字一升版就不齐。所以豁免「必须有 `.类.ant-btn`
+ * 清零点规则 + 块内带 `--ant-control-height`」这两条。
+ *
+ * 收录门槛：**不得有任何自绘尺寸或外观**，只允许「组件级变量覆盖」与
+ * 「antd 不接管的布局属性」。新增条目必须写清理由，别当成绕过守卫的快捷键。
  */
-const NO_RESET_NEEDED = new Set(["bs-hero__cta"]);
+const NO_RESET_NEEDED = new Set([
+  // 书架首屏 CTA：`type="primary"` + `size="large"`，整套造型由组件库给
+  "bs-hero__cta",
+  // 设定中心 · 分类卡「放置到全局」：只覆盖 default 变体的文字色变量
+  // （`--ant-button-default-color` ×3），尺寸仍由 `size="small"` 给
+  "nv-sc__publish",
+  // 设定中心 · 左栏「从全局库选择」：只补一条 `margin-top`（antd 不接管），
+  // 造型完全交给组件库
+  "nv-sc__from-global",
+]);
+
+/**
+ * 扫描范围守卫（1.45.1 P1-1）。
+ *
+ * 扫描根本身就是易退化项：根写错了（组件搬家、路径写成目录前缀、改名）不会报
+ * 任何错，只会让下面所有断言在**更小的样本**上静默通过 —— 守卫还在，覆盖面没了。
+ * 这里正面钉住两个根各自都真的贡献了样本。
+ */
+describe("Novel 窗口 / 设定中心：扫描范围", () => {
+  it("设定中心组件树在扫描范围内（迁出 NovelWindow 后不再脱离守卫）", () => {
+    const covered = new Set(files);
+    for (const relative of [
+      "src/shared/components/SettingCenter/index.tsx",
+      "src/shared/components/SettingCenter/index.scss",
+      "src/shared/components/SettingCenter/components/CategoryCard/index.tsx",
+      "src/shared/components/SettingCenter/components/CategoryCard/index.scss",
+      "src/shared/components/SettingCenter/components/LevelSequence/index.tsx",
+    ]) {
+      const absolute = path.resolve(process.cwd(), relative);
+      expect(covered.has(absolute), `${relative} 不在扫描范围内`).toBe(true);
+    }
+  });
+
+  it("两个根都真的贡献样本（任一根路径写错时这条先红，而不是整段空转）", () => {
+    const counts = ROOTS.map((root) => ({
+      tsx: tsxFiles.filter((file) => file.startsWith(root)).length,
+      scss: scssFiles.filter((file) => file.startsWith(root)).length,
+    }));
+    // 根 1：小说窗口本体（当前 61 个 .tsx / 40 个 .scss，取保守下限）
+    expect(counts[0]?.tsx).toBeGreaterThan(40);
+    expect(counts[0]?.scss).toBeGreaterThan(20);
+    // 根 2：设定中心组件树（当前 11 个 .tsx / 8 个 .scss）
+    expect(counts[1]?.tsx).toBeGreaterThan(8);
+    expect(counts[1]?.scss).toBeGreaterThan(4);
+  });
+
+  it("显示路径可定位（跨根文件报成从各自根起的相对路径，不带 ../ 噪声）", () => {
+    const settingCenterFile = path.resolve(
+      process.cwd(),
+      "src/shared/components/SettingCenter/components/CategoryCard/index.tsx",
+    );
+    expect(relFromRoot(settingCenterFile)).toBe("components/CategoryCard/index.tsx");
+    expect(relFromRoot(path.join(ROOT, "pages/NovelPage/NovelPage.tsx"))).toBe(
+      "pages/NovelPage/NovelPage.tsx",
+    );
+  });
+});
 
 describe("Novel 窗口：原生表单控件清零", () => {
   it("编译到了窗口全部样式（产物非空，否则下面的断言会全部假通过）", () => {
@@ -169,7 +270,7 @@ describe("Novel 窗口：原生表单控件清零", () => {
         .split("\n")
         .forEach((line, index) => {
           if (NATIVE_CONTROL.test(line)) {
-            offenders.push(`${path.relative(ROOT, file)}:${index + 1}`);
+            offenders.push(`${relFromRoot(file)}:${index + 1}`);
           }
         });
     }
@@ -213,7 +314,7 @@ describe("Novel 窗口：原生表单控件清零", () => {
         }
         const openTag = source.slice(start.index, j + 1);
         if (!A11Y.test(openTag)) {
-          offenders.push(`${path.relative(ROOT, file)}:${index + 1}`);
+          offenders.push(`${relFromRoot(file)}:${index + 1}`);
         }
       });
     }
@@ -242,12 +343,12 @@ describe("Novel 窗口：原生表单控件清零", () => {
         (prop) => !new RegExp(`(^|[\\s;{(])${prop}\\s*:`, "m").test(source),
       );
       if (missing.length > 0) {
-        offenders.push(`${path.relative(ROOT, scss)} 缺少 ${missing.join(" / ")}`);
+        offenders.push(`${relFromRoot(scss)} 缺少 ${missing.join(" / ")}`);
       }
       // 豁免组件不得再残留指向组件库的清零规则：那是死 CSS，
       // 会让人误以为"这里还是 antd 按钮"而照抄回组件库写法
       if (/ant-btn/.test(source)) {
-        offenders.push(`${path.relative(ROOT, scss)} 残留 .ant-btn 规则（已是原生标签）`);
+        offenders.push(`${relFromRoot(scss)} 残留 .ant-btn 规则（已是原生标签）`);
       }
     }
     expect(offenders).toEqual([]);
@@ -287,7 +388,7 @@ describe("Novel 窗口：原生表单控件清零", () => {
         if (token.type === "open") {
           depth++;
           if (depth > 1) {
-            offenders.push(`${path.relative(ROOT, file)}:${token.line}`);
+            offenders.push(`${relFromRoot(file)}:${token.line}`);
           }
         } else if (token.type === "close" && depth > 0) {
           depth--;
@@ -429,7 +530,7 @@ describe("Novel 窗口：主题变量", () => {
     const offenders = scssFiles.filter((file) =>
       stripComments(readFileSync(file, "utf8")).includes("var(--app-danger"),
     );
-    expect(offenders.map((f) => path.relative(ROOT, f))).toEqual([]);
+    expect(offenders.map((f) => relFromRoot(f))).toEqual([]);
   });
 });
 
@@ -553,5 +654,69 @@ describe("Novel 窗口：顶栏图标三档层次（UI-07 收尾）", () => {
     const onShadow = lastDecl(on, "ant-button-default-shadow");
     expect(onShadow).toContain("inset");
     expect(onShadow).toContain("var(--app-primary)");
+  });
+});
+
+/**
+ * 设定中心 · 分类卡「放置到全局」的文字色必须**跟着主题走**（1.45.1 真机反馈）。
+ *
+ * 这颗按钮的颜色踩过两个**都不会报错**的坑，两条都要钉住：
+ *
+ * 1. 写成 `&__publish { color: …; &:hover { color: … } }`：hover 那条特异性只有
+ *    (0,1,0)+伪类，会被 antd 的
+ *    `.ant-btn-color-default.ant-btn-variant-outlined:not(:disabled):hover`（0,4,0）
+ *    压掉 —— 鼠标一掠过就变回默认字色，类型检查与构建全绿。
+ *
+ * 2. 改挂 `.ant-btn` 变量后取 `--app-accent-teal`：那是「强调色」，按 §6.1.1 供
+ *    「数据卡 / 功能卡的彩色标识」，**跨主题基本恒定** —— 四套主题实测
+ *    `#2fa57e / #4fa88c / #2fa57e / #4fd0a5`（aurora 与 mint **完全相同**），
+ *    于是换肤时这颗按钮看着不动（真机反馈「并没有因为主题切换而变化」）。
+ *
+ * 现在取 `--app-primary`（各主题的**身份色**：蓝 / 橘 / 绿 / 淡紫），并钉住
+ * base / hover / active 三态 —— 只声明默认态的话，hover 一样会掉回默认字色。
+ */
+describe("设定中心：分类卡「放置到全局」的文字色跟随主题", () => {
+  const css = sass
+    .compile(
+      path.join(SETTING_CENTER_ROOT, "components/CategoryCard/index.scss"),
+      { style: "expanded" },
+    )
+    .css.replace(/\/\*[\s\S]*?\*\//g, "");
+
+  /** 花括号配平取规则块体（与顶栏那条同款，独立声明避免跨 describe 依赖） */
+  const ruleBlock = (source: string, selector: string) => {
+    const at = source.indexOf(`${selector} {`);
+    expect(at, `缺少规则 ${selector}`).toBeGreaterThan(-1);
+    const open = source.indexOf("{", at);
+    let depth = 0;
+    let end = open;
+    for (; end < source.length; end++) {
+      if (source[end] === "{") depth++;
+      else if (source[end] === "}" && --depth === 0) break;
+    }
+    return source.slice(open + 1, end);
+  };
+
+  /** 取某个组件级变量的最后一次声明（清零点会先写一遍，必须看最后一条） */
+  const lastDecl = (block: string, name: string) => {
+    const matches = [...block.matchAll(new RegExp(`--${name}:\\s*([^;]+);`, "g"))];
+    return matches.at(-1)?.[1]?.trim() ?? "";
+  };
+
+  it("三态都取主题身份色 --app-primary 一族（退回恒定强调色会红）", () => {
+    const block = ruleBlock(css, ".nv-sc__publish.ant-btn");
+    expect(lastDecl(block, "ant-button-default-color")).toBe("var(--app-primary)");
+    expect(lastDecl(block, "ant-button-default-hover-color")).toBe(
+      "var(--app-primary-strong)",
+    );
+    expect(lastDecl(block, "ant-button-default-active-color")).toBe(
+      "var(--app-primary-active)",
+    );
+  });
+
+  it("不自写 color 属性（会被 antd (0,4,0) 的状态规则压掉）", () => {
+    const block = ruleBlock(css, ".nv-sc__publish.ant-btn");
+    // 属性名恰好是 `color`；组件级变量 `--ant-button-…-color` 前面是 `-`，不算命中
+    expect(/(^|[;{]\s*)color\s*:/.test(block)).toBe(false);
   });
 });

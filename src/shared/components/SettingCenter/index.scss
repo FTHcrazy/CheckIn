@@ -53,3 +53,32 @@
     min-height: 0;
   }
 }
+
+/**
+   panel 形态（1.45.1）：整窗就是这张设定中心，外面**没有** Modal 外壳
+   （`variant="panel"`，GlobalSettingWindow 用）。
+
+   与浮层形态的差别只有两点：
+   1. 浮层自带 24px 内边距与居中尺寸，这里要自己给内边距并铺满宿主容器；
+   2. 浮层的可视高度来自视口，所以 `__body-grid` 用 `calc(100vh - 260px)`
+      硬算；面板里高度来自宿主（窗口内容区），改成 flex 分配更稳 —— 否则
+      标题栏 / 顶部工具头的高度一变，那个 260px 又得跟着调。
+   ⚠️ 仍然必须是**确定高度**：grid 的隐式行轨道按内容计高，`max-height`
+   钳不住轨道（详见上面 `__body-grid` 的注释）。`flex: 1` + `min-height: 0`
+   在 flex 列里给出确定高度，内部 `__list` / `__rows` 的滚动链因此照常生效。 */
+.nv-sc--panel {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 0;
+  // 内部各栏自己滚；面板本身不滚，避免出现两条滚动条
+  overflow: hidden;
+  padding: 16px 20px 20px;
+
+  .nv-sc__body-grid {
+    flex: 1;
+    height: auto;
+    min-height: 0;
+  }
+}

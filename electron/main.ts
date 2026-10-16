@@ -215,6 +215,100 @@ function loadRendererEntry(win: BrowserWindow, entry: WindowEntryKey, query = ""
   }
 }
 
+/**
+ * 装载兜底显示的时限（毫秒）：超过它窗口还没 `did-finish-load`，
+ * 就先把窗口显示出来（错误页也好过什么都不出现）。
+ */
+const WINDOW_LOAD_FALLBACK_MS = 3000;
+
+/** 显示窗口（已显示 / 已销毁时只记日志，不重复 show） */
+function revealWindow(win: BrowserWindow, label: string, reason: string): void {
+  if (win.isDestroyed()) return;
+  if (!win.isVisible()) {
+    win.show();
+    win.focus();
+  }
+  console.log(`[main] ${label} 窗口已显示（${reason}）`);
+}
+
+/**
+ * 窗口装载「可观测化 + 兜底显示」。
+ *
+ * 为什么必须有：本文件的功能窗口一律 `show: false`，只在 `did-finish-load`
+ * 里 `show()`。而装载失败时（产物缺失 / `app://` 读盘报错 / 渲染进程崩溃）
+ * `did-finish-load` **永远不会触发** → 窗口永不显示、主进程一行日志都没有，
+ * 用户侧只看到「点了没反应、窗口不出现」。这正是最难查的那种失效形态：
+ * 静态链路（按钮 / 白名单 / ipcMain / 入口清单）全是通的，运行时却什么也不发生。
+ *
+ * 现在三条链路都可见：
+ * - `did-fail-load`（仅主框架）：打印 errorCode / errorDescription / validatedURL，
+ *   并兜底显示 —— 用户至少能看到一个错误页，而不是一片静默
+ * - `render-process-gone`：打印 reason / exitCode
+ * - 超时兜底：`did-finish-load` 迟迟不来（例如被协议层卡住）也把窗口显示出来
+ *
+ * @param options.timeoutMs 兜底时限，缺省 `WINDOW_LOAD_FALLBACK_MS`
+ * @param options.reveal 显示动作；缺省 `show() + focus()`。主窗口形态必须传自己的
+ *   显示闸门 —— 主窗口是否可见由登录流程（`canShowMainWindow`）决定，不能无条件 show
+ */
+function attachWindowLoadGuard(
+  win: BrowserWindow,
+  label: string,
+  options: { timeoutMs?: number; reveal?: (reason: string) => void } = {},
+): void {
+  const { timeoutMs = WINDOW_LOAD_FALLBACK_MS, reveal: customReveal } = options;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  const reveal = (reason: string): void => {
+    if (timer) {
+      clearTimeout(timer);
+      timer = undefined;
+    }
+    if (customReveal) {
+      customReveal(reason);
+    } else {
+      revealWindow(win, label, reason);
+    }
+  };
+
+  win.webContents.on(
+    "did-fail-load",
+    (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+      // 子资源（图片 / 字体 / 懒加载 chunk）失败不该把窗口顶出来，只处理主框架
+      if (!isMainFrame) return;
+      // -3 = ERR_ABORTED：导航被主动取代或取消（重定向、被新的 loadURL 顶掉、
+      // 装载途中窗口被关闭）。它**不是**装载失败 —— 当成失败会打印一行「装载失败」
+      // 并把错误页顶到用户面前，而 dev 下热重载窗口时这条路径会正常撞上，
+      // 是本守卫最不想制造的误报噪音。
+      if (errorCode === -3) return;
+      console.error(
+        `[main] ${label} 窗口装载失败：code=${errorCode} desc=${errorDescription} url=${validatedURL}`,
+      );
+      reveal("主框架装载失败");
+    },
+  );
+
+  win.webContents.on("render-process-gone", (_event, details) => {
+    console.error(
+      `[main] ${label} 窗口渲染进程异常退出：reason=${details.reason} exitCode=${details.exitCode}`,
+    );
+  });
+
+  win.webContents.once("did-finish-load", () => reveal("did-finish-load"));
+
+  timer = setTimeout(() => {
+    console.warn(`[main] ${label} 窗口 ${timeoutMs}ms 内未完成装载，兜底显示`);
+    reveal("装载超时兜底");
+  }, timeoutMs);
+
+  // 窗口已销毁就别再 show()（对已销毁窗口调用会抛）
+  win.once("closed", () => {
+    if (timer) {
+      clearTimeout(timer);
+      timer = undefined;
+    }
+  });
+}
+
 // ── BaseWindow（full/lite 版主窗口） ──
 
 function createBaseWindow(): BrowserWindow {
@@ -248,12 +342,21 @@ function createBaseWindow(): BrowserWindow {
   // 最大化状态变化时同步给渲染层，WindowHeader 据此切换最大化/还原图标
   forwardMaximizeState(win);
 
-  win.webContents.once("did-finish-load", () => {
-    console.log(`[main] 页面加载完成: ${Date.now() - t0}ms`);
-    isPrimaryReady = true;
-    if (canShowMainWindow) {
-      showPrimaryWindow();
-    }
+  // 主窗口的就绪判定收敛到一处：装载完成 / 装载失败 / 装载超时都算「就绪」——
+  // 否则装载失败时 isPrimaryReady 永远为 false，showPrimaryWindow() 静默空转，
+  // 用户登录后连错误页都看不到（整个应用像死了一样）。
+  attachWindowLoadGuard(win, "Base", {
+    reveal: (reason) => {
+      if (reason === "did-finish-load") {
+        console.log(`[main] 页面加载完成: ${Date.now() - t0}ms`);
+      } else {
+        console.warn(`[main] Base 窗口未经 did-finish-load 就绪（${reason}），仍按就绪处理`);
+      }
+      isPrimaryReady = true;
+      if (canShowMainWindow) {
+        showPrimaryWindow();
+      }
+    },
   });
 
   if (IS_DEV) registerDevToolsShortcuts(win);
@@ -303,19 +406,24 @@ function createNovelWindow(): BrowserWindow {
 
   novelWin.removeMenu();
 
-  novelWin.webContents.once("did-finish-load", () => {
-    if (!novelWin || novelWin.isDestroyed()) return;
-    if (IS_NOVEL_PRIMARY) {
-      // 主窗形态：就绪标记 + 由登录流程/托盘驱动显示，不自动 show
-      isPrimaryReady = true;
-      if (canShowMainWindow) {
-        showPrimaryWindow();
-      }
-    } else {
-      novelWin.show();
-      novelWin.focus();
-    }
-  });
+  if (IS_NOVEL_PRIMARY) {
+    // 主窗形态：就绪标记 + 由登录流程 / 托盘驱动显示，不自动 show。
+    // 装载失败 / 超时同样标记就绪，避免「登录后没有任何窗口可显示」
+    attachWindowLoadGuard(novelWin, "Novel", {
+      reveal: (reason) => {
+        if (reason !== "did-finish-load") {
+          console.warn(`[main] Novel 主窗口未经 did-finish-load 就绪（${reason}），仍按就绪处理`);
+        }
+        isPrimaryReady = true;
+        if (canShowMainWindow) {
+          showPrimaryWindow();
+        }
+      },
+    });
+  } else {
+    // 子窗形态：装载完成即显示
+    attachWindowLoadGuard(novelWin, "Novel");
+  }
 
   if (IS_DEV) {
     registerDevToolsShortcuts(novelWin);
@@ -391,12 +499,7 @@ function createSettingsWindow(): BrowserWindow {
 
   settingsWin.removeMenu();
 
-  settingsWin.webContents.once("did-finish-load", () => {
-    if (settingsWin && !settingsWin.isDestroyed()) {
-      settingsWin.show();
-      settingsWin.focus();
-    }
-  });
+  attachWindowLoadGuard(settingsWin, "Settings");
 
   if (IS_DEV) {
     registerDevToolsShortcuts(settingsWin);
@@ -468,14 +571,16 @@ function createPackWindow(): BrowserWindow {
 
   packWin.removeMenu();
 
+  // 上下文必须在 did-finish-load 时下发（渲染层的 ipcRenderer 监听那时才挂好），
+  // 先注册的监听先执行 → 保证「先发上下文、再显示窗口」，与旧行为一致
   packWin.webContents.once("did-finish-load", () => {
     if (!packWin || packWin.isDestroyed()) return;
     if (packWindowContext) {
       windowManager.sendTo("pack", "pack-window-context", packWindowContext);
     }
-    packWin.show();
-    packWin.focus();
   });
+
+  attachWindowLoadGuard(packWin, "Pack");
 
   if (IS_DEV) {
     registerDevToolsShortcuts(packWin);
@@ -535,11 +640,7 @@ function createGlobalSettingWindow(): BrowserWindow {
 
   globalWin.removeMenu();
 
-  globalWin.webContents.once("did-finish-load", () => {
-    if (!globalWin || globalWin.isDestroyed()) return;
-    globalWin.show();
-    globalWin.focus();
-  });
+  attachWindowLoadGuard(globalWin, "GlobalSetting");
 
   if (IS_DEV) {
     registerDevToolsShortcuts(globalWin);
@@ -596,13 +697,13 @@ function createLoginWindow(user?: { email: string } | null) {
   });
 
   loginWin.removeMenu();
-  loginWin.webContents.once("did-finish-load", () => {
-    if (loginWin && !loginWin.isDestroyed()) {
+
+  attachWindowLoadGuard(loginWin, "Login", {
+    reveal: (reason) => {
       loginWindowHasShown = true;
       loginWindowVisibleAt = Date.now();
-      loginWin.show();
-      loginWin.focus();
-    }
+      revealWindow(loginWin, "Login", reason);
+    },
   });
 
   // 登录窗口同样支持调试快捷键（frame:false 无菜单栏，更需要显式注册）
@@ -846,8 +947,16 @@ app.whenReady().then(() => {
   // ── GlobalSettingWindow 开关 IPC（full / novel 版：入口在书架顶栏） ──
   // 单实例唤起（createGlobalSettingWindow 内部已开则聚焦）。lite 版不打包本
   // 窗口（novel 域整体缺席），请求直接忽略。
+  //
+  // 这条日志是排查「点了没反应」的第一分界线：终端里没有它 = 点击没到达主进程
+  // （preload 白名单 / 运行中的主进程是旧代码）；有它但窗口没出现 = 窗口创建环节，
+  // 后面的 did-fail-load / 超时兜底日志会接着说。
   ipcMain.on("global-setting-window-open", () => {
-    if (EDITION === "lite") return;
+    if (EDITION === "lite") {
+      console.log("[main] 收到 global-setting-window-open，但当前为 lite 版（不含全局设定中心），已忽略");
+      return;
+    }
+    console.log("[main] 收到 global-setting-window-open，开始创建全局设定中心窗口");
     createGlobalSettingWindow();
   });
 

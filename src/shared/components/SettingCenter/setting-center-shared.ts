@@ -20,6 +20,21 @@ import type { CarryDirection, SettingCategory } from "@/shared/novel/setting-typ
 export type SettingCenterSource = "book" | "global";
 
 /**
+ * 设定中心的呈现形态（1.45.1）：
+ * - `modal`（缺省）：可关闭浮层，浮在自己页面之上（本书设定中心，挂在编辑器里）；
+ * - `panel`：**不再套外层浮层**，直接铺满宿主容器（GlobalSettingWindow 用 ——
+ *   独立窗口整窗就是这一张设定中心）。
+ *
+ * 为什么必须有 `panel`：独立窗口里再套一层 Modal，就成了「窗口套弹窗」——
+ * 标题栏与浮层标题重复（两处都写「全局设定中心」）、多出第二枚关闭叉、
+ * 还多一层遮罩；为了点得到窗口的最小化/最大化/关闭三键，窗口侧被迫把
+ * 标题栏 `z-index` 抬到遮罩之上（`GlobalSettingWindow/index.scss` 里那段 hack）。
+ *
+ * 与 `source` 正交：`panel` 只管**外壳**，标题 / 提示语 / 动作区仍由 `source` 决定。
+ */
+export type SettingCenterVariant = "modal" | "panel";
+
+/**
  * 设定中心对外 props（UI-10 拆分前后**保持不变**）。
  *
  * 拆分只搬移内部结构，此接口的字段名、回调签名、触发时机都不动 ——
@@ -36,6 +51,11 @@ export interface SettingCenterProps {
    * 按跨书共享库调整，并给分类行加「N 部书引用」徽标。
    */
   source?: SettingCenterSource;
+  /**
+   * 呈现形态；缺省 `"modal"`。独立窗口传 `"panel"` —— 不再渲染外层 Modal，
+   * 组件自身铺满容器（见 `SettingCenterVariant` 的说明）。
+   */
+  variant?: SettingCenterVariant;
   onClose: () => void;
   onCreateCategory: (name: string, kind: "realm" | "custom", color: string) => void;
   onPatchCategory: (
@@ -73,15 +93,28 @@ export interface SettingCenterProps {
   onMergeLevel: (levelId: string) => void;
   /** 导出：kind 决定写 JSON 还是 Markdown */
   onExport: (categoryId: string, format: "json" | "markdown") => void;
+  // ── 模板能力（以下 5 个 props 必须**齐备**才提供模板能力；1.45.1 / N-04）──
+  //
+  // 模板能力绑 workId，属本书域。语义：**不传（任缺其一）= 本形态不提供模板能力**，
+  // 组件据此收掉三处：动作区「另存为模板」入口、SaveTemplateModal、
+  // 模板库弹窗内的「我的模板」区块（`showTemplates` = hasTemplateCapability）。
+  //
+  // ⚠️ **不包含**「模板库」入口与空态 CTA：模板库里的「内置预设」是纯本地能力
+  // （`onApplyPreset` 是必填 prop，见下），任何形态都能用 —— 把模板库一起门控
+  // 会删掉一个本来可用的功能。
+  //
+  // 此前全局窗口传的是**空实现**（`onSaveTemplate={() => {}}`、`templates={[]}`…）
+  // 而组件**无条件渲染**这些入口 —— 入口点了没反应、模板列表恒空，是对用户的
+  // 假承诺。现在改为显式可选：不做就不传，而不是「传个假的」。
   /** 另存为模板 */
-  onSaveTemplate: (categoryId: string, name: string) => void;
+  onSaveTemplate?: (categoryId: string, name: string) => void;
   /** 预设模板（模板库面板） */
-  templates: Array<{ id: string; name: string; createdAt: number }>;
+  templates?: Array<{ id: string; name: string; createdAt: number }>;
   /** 打开模板库时拉一次列表 */
-  onRefreshTemplates: () => void;
+  onRefreshTemplates?: () => void;
   /** 套用模板到当前作品 */
-  onApplyTemplate: (templateId: string) => void;
-  onDeleteTemplate: (templateId: string) => void;
+  onApplyTemplate?: (templateId: string) => void;
+  onDeleteTemplate?: (templateId: string) => void;
   /** 应用内置预设（按 SETTING_PRESETS 的 id）（1.37.0） */
   onApplyPreset: (presetId: string) => void;
 

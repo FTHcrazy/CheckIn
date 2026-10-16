@@ -41,6 +41,7 @@ import {
   saveSettingTemplate,
 } from "./services/novel-service";
 import { formatNumberedLabel } from "./novel-utils";
+import { toSettingCategory } from "@/shared/novel/setting-mappers";
 import type { EntityAppearance, NovelChapter, SettingCategory } from "./types";
 import "./index.scss";
 
@@ -368,39 +369,16 @@ export default function NovelPage({
   >([]);
 
   /**
-   * 全局 DTO → 本书 SettingCategory：补 `workId: ""`（全局库无作品归属），
-   * `refCount` 原样带上（选择器里显示「N 部书引用」）。
+   * 全局库分类（D2 选择器数据源）。
+   *
+   * 映射统一走 `@/shared/novel/setting-mappers`（N-06）：全局库无作品归属 →
+   * `workId: ""`，`refCount` 带上（选择器显示「N 部书引用」），缺字段按同一套
+   * 兜底口径回退 —— 此前这里内联了一份**无兜底**的映射，与全局窗口那份各写一遍。
    */
   const refreshGlobalCategories = useCallback(() => {
     void loadGlobalSettingCategories().then((list) =>
       setGlobalSettingCategories(
-        list.map((item) => ({
-          id: item.id,
-          workId: "",
-          name: item.name,
-          color: item.color,
-          kind: item.kind,
-          sortOrder: item.sortOrder,
-          note: item.note,
-          subLevels: item.subLevels,
-          carryDir: item.carryDir,
-          subPattern: item.subPattern,
-          refCount: item.refCount,
-          levels: item.levels.map((level) => ({
-            id: level.id,
-            categoryId: level.categoryId,
-            name: level.name,
-            rank: level.rank,
-            aliases: level.aliases,
-            note: level.note,
-            subLevels: level.subLevels,
-            subPattern: level.subPattern,
-            power: level.power,
-            parentId: level.parentId,
-            segFrom: level.segFrom,
-            segTo: level.segTo,
-          })),
-        })),
+        list.map((item) => toSettingCategory(item, { workId: "", withRefCount: true })),
       ),
     );
   }, []);

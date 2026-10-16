@@ -341,9 +341,11 @@ export function useSettingCenter(props: SettingCenterProps): SettingCenterContro
     setPublishConflictId(null);
   }, [open]);
 
-  // 模板库只在打开时读库：模板是低频功能，跟着设定中心的每次重渲染读一遍不值
+  // 模板库只在打开时读库：模板是低频功能，跟着设定中心的每次重渲染读一遍不值。
+  // ⚠️ 可选调用：本形态未提供模板能力时不传 onRefreshTemplates（不传该 prop），
+  // `?.` 是兜底 —— 否则类型上就不成立（N-04）。
   useEffect(() => {
-    if (libraryOpen) onRefreshTemplates();
+    if (libraryOpen) onRefreshTemplates?.();
   }, [libraryOpen, onRefreshTemplates]);
 
   // 换分类时收起行内编辑：草稿是针对某一条的，留在原地会改到别的行
@@ -592,7 +594,7 @@ export function useSettingCenter(props: SettingCenterProps): SettingCenterContro
 
   const submitSaveTemplate = useCallback((): void => {
     if (templateDraft && templateName.trim()) {
-      onSaveTemplate(templateDraft, templateName.trim());
+      onSaveTemplate?.(templateDraft, templateName.trim());
     }
     setTemplateDraft(null);
     setTemplateName("");
@@ -608,7 +610,7 @@ export function useSettingCenter(props: SettingCenterProps): SettingCenterContro
 
   const applyTemplate = useCallback(
     (templateId: string): void => {
-      onApplyTemplate(templateId);
+      onApplyTemplate?.(templateId);
       setLibraryOpen(false);
     },
     [onApplyTemplate],

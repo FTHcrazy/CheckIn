@@ -15,6 +15,17 @@
  * - 顶部工具头 SettingPanelHead、四个弹窗各自的子组件
  * 状态机与全部提交动作收进 hooks/useSettingCenter。父组件只做组合，
  * **对外 props / 导出方式 / 回调时机完全不变**。
+ *
+ * 1.45.1：新增 `variant`。`panel` 形态不套外层 Modal —— 独立窗口
+ * （GlobalSettingWindow）整窗就是这张设定中心，套浮层会变成「窗口套弹窗」。
+ *
+ * 1.45.1（N-04）：模板能力改为**显式可选**。5 个模板 props（templates /
+ * onSaveTemplate / onRefreshTemplates / onApplyTemplate / onDeleteTemplate）
+ * 任缺其一即视为「本形态不提供模板能力」，据此收掉「另存为模板」入口、
+ * SaveTemplateModal 与弹窗内「我的模板」区块 —— 此前全局窗口传空实现、组件却
+ * 无条件渲染，入口点了没反应属假承诺。
+ * ⚠️ 「模板库」入口与空态 CTA **不受**此判据：库内「内置预设」是纯本地能力
+ * （onApplyPreset 必填），任何形态都能用，误把模板库一起门控会删掉可用功能。
  */
 
 import { closestCenter, DndContext } from "@dnd-kit/core";
@@ -38,26 +49,36 @@ import "./index.scss";
 export default function SettingCenter(props: SettingCenterProps) {
   const c = useSettingCenter(props);
 
-  return (
-    <Modal
-      className="nv-sc"
-      classNames={{ body: "nv-sc__body" }}
-      open={props.open}
-      onCancel={props.onClose}
-      footer={null}
-      width={1180}
-      style={{ maxWidth: "calc(100vw - 48px)" }}
-      title={
-        <div className="nv-sc__title">
-          <span>{c.isGlobal ? "全局设定中心" : "设定中心"}</span>
-          <span className="nv-sc__pill">{c.isGlobal ? "跨书共享" : props.workName}</span>
-        </div>
-      }
-      destroyOnHidden
-    >
+  /**
+   * 模板能力是否齐备（N-04）。
+   *
+   * 5 个模板 props 全给了才算「本形态提供模板能力」；任缺其一 ⇒ 不提供。
+   * 它只管**模板能力**（模板 IPC 绑 workId，属本书域）：动作区「另存为模板」
+   * 入口、SaveTemplateModal、模板库弹窗里的「我的模板」区块看它。
+   *
+   * ⚠️ 与**预设能力**分开：模板库里的「内置预设」是纯本地能力
+   * （`SETTING_PRESETS` 直接 import，`onApplyPreset` 是必填 prop），
+   * 任何形态都有 —— 所以「模板库」入口、空态 CTA、TemplateLibraryModal
+   * 都恒渲染，不看这个判据。
+   */
+  const hasTemplateCapability =
+    props.templates !== undefined &&
+    props.onSaveTemplate !== undefined &&
+    props.onRefreshTemplates !== undefined &&
+    props.onApplyTemplate !== undefined &&
+    props.onDeleteTemplate !== undefined;
+
+  /**
+   * 主体内容：两种外壳**共用同一份**，差异只在「外面套不套 Modal」。
+   * 拆成变量而不是复制一份 JSX —— 复制的话标题 / 空态 / 四个弹窗会在
+   * 两条形态里各自漂移，改一处漏一处（本仓已吃过这类亏）。
+   */
+  const content = (
+    <>
       <SettingPanelHead
         active={c.active}
         isGlobal={c.isGlobal}
+        hasTemplateCapability={hasTemplateCapability}
         onOpenLibrary={c.openLibrary}
         onStartSaveTemplate={c.openSaveTemplate}
         onExport={props.onExport}
@@ -95,7 +116,9 @@ export default function SettingCenter(props: SettingCenterProps) {
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
               >
                 {/* E-02 空态引导卡：空态必须给「下一步动作」，不只描述困境。
-                    直达模板库而不是直接灌某条预设——让作者自己挑，避免误建一堆体系 */}
+                    直达模板库而不是直接灌某条预设——让作者自己挑，避免误建一堆体系。
+                    ⚠️ 恒渲染：模板库打开后至少「内置预设」可用（onApplyPreset 必填），
+                    与 hasTemplateCapability（只管「另存为模板」）无关（N-04）。 */}
                 <Button size="small" onClick={c.openLibrary}>
                   <SaveOutlined />
                   {EMPTY_CTA_COPY.settingEmpty}
@@ -155,18 +178,29 @@ export default function SettingCenter(props: SettingCenterProps) {
         </div>
       </DndContext>
 
-      <SaveTemplateModal
-        open={Boolean(c.templateDraft)}
-        name={c.templateName}
-        onNameChange={c.setTemplateName}
-        onSubmit={c.submitSaveTemplate}
-        onCancel={c.closeSaveTemplate}
-      />
+      {/* SaveTemplateModal 只由被门控的「另存为模板」入口打开
+          （`c.templateDraft` 也只可能由它产生）⇒ 整块按 hasTemplateCapability 门控。
+          antd Modal 走 portal 挂到 body，这里不渲染就连 portal 都不会出现。 */}
+      {hasTemplateCapability && (
+        <SaveTemplateModal
+          open={Boolean(c.templateDraft)}
+          name={c.templateName}
+          onNameChange={c.setTemplateName}
+          onSubmit={c.submitSaveTemplate}
+          onCancel={c.closeSaveTemplate}
+        />
+      )}
 
+      {/* 模板库弹窗恒渲染：预设能力恒有（onApplyPreset 必填），与模板能力无关；
+          `showTemplates` 决定弹窗内「我的模板」区块是否出现。
+          模板能力 3 props 在 TemplateLibraryModal 里是**可选**的：无模板能力时
+          调用方**不传**（而非传空实现）—— showTemplates=false ⇒ 该区块不渲染，
+          这三个 prop 也不会被读到（N-04）。 */}
       <TemplateLibraryModal
         open={c.libraryOpen}
-        templates={props.templates}
+        showTemplates={hasTemplateCapability}
         isGlobal={c.isGlobal}
+        templates={props.templates}
         onApplyPreset={c.applyPreset}
         onApplyTemplate={c.applyTemplate}
         onDeleteTemplate={props.onDeleteTemplate}
@@ -225,6 +259,42 @@ export default function SettingCenter(props: SettingCenterProps) {
       >
         <p className="nv-sc__tip">{SETTING_PUBLISH_CONFLICT_HINT}</p>
       </Modal>
+    </>
+  );
+
+  /**
+   * panel 形态：整窗就是这张设定中心，**不再套外层 Modal**。
+   *
+   * 独立窗口自己已经有标题栏（标题 + 三键），再套一层浮层就变成「窗口套弹窗」：
+   * 标题重复、多出第二枚关闭叉、还多一层遮罩（窗口侧得把标题栏 z-index 抬到
+   * 遮罩之上才点得到三键）。这里只换外壳，内容一个字不改。
+   *
+   * ⚠️ 由此 `onClose`（Esc / 点遮罩）在本形态下**不生效** —— 关窗只能走窗口
+   * 自己的三键。这是有意的：本窗口是设定编辑器，行内编辑进行到一半时
+   * 被 Esc 连窗一起收掉会直接丢草稿。
+   */
+  if (props.variant === "panel") {
+    return <div className="nv-sc nv-sc--panel">{content}</div>;
+  }
+
+  return (
+    <Modal
+      className="nv-sc"
+      classNames={{ body: "nv-sc__body" }}
+      open={props.open}
+      onCancel={props.onClose}
+      footer={null}
+      width={1180}
+      style={{ maxWidth: "calc(100vw - 48px)" }}
+      title={
+        <div className="nv-sc__title">
+          <span>{c.isGlobal ? "全局设定中心" : "设定中心"}</span>
+          <span className="nv-sc__pill">{c.isGlobal ? "跨书共享" : props.workName}</span>
+        </div>
+      }
+      destroyOnHidden
+    >
+      {content}
     </Modal>
   );
 }

@@ -119,10 +119,14 @@
     color: var(--app-text-muted);
   }
 
+  /* 状态 chip = 卡面上的槽。默认（非 is-live）只落在 .is-planned 卡上，而该卡的
+     --ant-button-default-bg 是 --app-surface-alt（:64）——基面是 alt，槽按阶梯取
+     高一档的 --app-surface（alt 上约 1.027~1.052，一档可感知）；不能取 alt（与基面
+     同色会消失），也不能借 --app-surface-hover（静态铺开等于把整屏压重一档）。*/
   &__state {
     padding: 0 7px;
     border-radius: var(--app-radius-pill);
-    background: var(--app-surface-hover);
+    background: var(--app-surface);
     color: var(--app-text-muted);
     font-size: 12px;
     font-weight: 500;

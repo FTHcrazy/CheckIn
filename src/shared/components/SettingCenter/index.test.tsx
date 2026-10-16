@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SettingCategory } from "@/shared/novel/setting-types";
@@ -544,5 +546,124 @@ describe("本书接线（T04：引用 / 上架）", () => {
     expect(await screen.findByText("全局库已有同名设定")).toBeInTheDocument();
     clickButton("新建为副本");
     expect(onPublishGlobal).toHaveBeenNthCalledWith(2, "c1", "duplicate");
+  });
+});
+
+/**
+ * 模板能力门控（N-04）
+ *
+ * 5 个模板 props（templates / onSaveTemplate / onRefreshTemplates / onApplyTemplate /
+ * onDeleteTemplate）已改为**显式可选**：不传（任缺其一）= 本形态不提供模板能力。
+ * 但它只收「另存为模板」这一支能力 —— 动作区菜单项、SaveTemplateModal、模板库
+ * 弹窗内的「我的模板」区块（`showTemplates` = hasTemplateCapability）。
+ *
+ * ⚠️ **不再**门控「模板库」入口与空态 CTA —— 库内「内置预设」是纯本地能力
+ * （onApplyPreset 是必填 prop，`SETTING_PRESETS` 直接 import），任何形态都能用。
+ * 把模板库一起门控会删掉一个本来可用的功能。
+ *
+ * 反面断言必须**同时**查渲染树与 `document.body`：antd Modal / Dropdown 走 portal
+ * 挂到 body，只查 render 的 container 会漏掉弹窗与菜单。
+ */
+describe("模板能力门控（N-04：模板能力可选，但模板库 / 内置预设恒可用）", () => {
+  afterEach(() => {
+    cleanup();
+    document.body.innerHTML = "";
+  });
+
+  /** 构造一份「不提供模板能力」的 props：显式删掉那 5 个模板 props */
+  const withoutTemplateProps = (): Parameters<typeof SettingCenter>[0] => {
+    const clone: Record<string, unknown> = { ...buildProps() };
+    for (const key of [
+      "onSaveTemplate",
+      "templates",
+      "onRefreshTemplates",
+      "onApplyTemplate",
+      "onDeleteTemplate",
+    ]) {
+      delete clone[key];
+    }
+    return clone as unknown as Parameters<typeof SettingCenter>[0];
+  };
+
+  it("source=global 且不传模板 props：模板库入口恒在、预设可用；无「另存为模板」「我的模板」", async () => {
+    render(
+      <SettingCenter
+        {...withoutTemplateProps()}
+        source="global"
+        settings={[{ ...realm, refCount: 0 }]}
+      />,
+    );
+
+    // 「模板库」入口恒渲染（预设是纯本地能力，与模板能力无关）
+    expect(screen.getByText("模板库")).toBeInTheDocument();
+
+    // ⋯ 菜单里没有「另存为模板」——先等一个必有的菜单项出现，确保菜单真渲染过
+    fireEvent.click(screen.getByLabelText("更多设定操作"));
+    expect(await screen.findByText(/导出为 JSON（全部）/)).toBeInTheDocument();
+    expect(screen.queryByText(/另存为模板/)).toBeNull();
+
+    // 打开模板库 → 内置预设区块与「应用到全局库」按钮都在（预设能力恒有）
+    fireEvent.click(screen.getByText("模板库"));
+    expect(await screen.findByText(/内置预设/)).toBeInTheDocument();
+    expect(screen.getAllByText("应用到全局库").length).toBeGreaterThan(0);
+
+    // 「我的模板」整块不渲染：标题 / 空态都不出现
+    expect(document.body.textContent).not.toContain("我的模板");
+    expect(document.body.textContent).not.toContain("还没有自己的模板");
+  });
+
+  it("source=book 且模板 props 齐备：模板库弹窗内出现「我的模板」区块", async () => {
+    render(<SettingCenter {...buildProps()} />);
+    fireEvent.click(screen.getByText("模板库"));
+    expect(await screen.findByText(/内置预设/)).toBeInTheDocument();
+    expect(screen.getByText(/我的模板/)).toBeInTheDocument();
+    expect(screen.getByText("还没有自己的模板")).toBeInTheDocument();
+  });
+
+  it("不传模板 props：body 下不得出现 SaveTemplateModal 的文案", () => {
+    render(<SettingCenter {...withoutTemplateProps()} />);
+    expect(document.body.textContent).not.toContain("另存为模板");
+    expect(document.body.textContent).not.toContain("模板名，如");
+    const modalTitles = Array.from(
+      document.querySelectorAll(".ant-modal-title"),
+    ).map((node) => node.textContent ?? "");
+    expect(modalTitles.some((title) => /另存为模板/.test(title))).toBe(false);
+  });
+
+  /**
+   * 「不提供」要在**类型与源码**上都成立，而不是传个空实现凑。
+   *
+   * 上一轮 N-04 的病灶就是「传个假的」（`onSaveTemplate={() => {}}`、`templates={[]}`…）。
+   * 修模板库门控时曾用 `onDeleteTemplate ?? (() => {})` 兜底 —— 运行期虽不可达
+   * （showTemplates=false ⇒ 该区块不渲染），但等于给这条不变量留了个例外。
+   * 现在三个模板 prop 已改为**可选**，调用方不传即可；这条源码断言把它钉住，
+   * 免得下一轮审计又把 `() => {}` 翻出来。
+   */
+  it("不传 = 「没给」而非「给了个假的」：index.tsx 不出现空实现回调兜底", () => {
+    const source = readFileSync(
+      resolve(process.cwd(), "src/shared/components/SettingCenter/index.tsx"),
+      "utf8",
+    ).replace(/\r\n/g, "\n");
+    // 去掉注释，避免匹配到记录历史 bug 的说明文字（本仓注释习惯把旧写法原文写在旁边）
+    const code = source
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/[^\n]*/g, "");
+    expect(code).not.toMatch(/=>\s*\{\s*\}/);
+  });
+
+  it("不传模板 props：空态 CTA「套用内置预设」仍渲染（预设能力恒有）", () => {
+    render(<SettingCenter {...withoutTemplateProps()} settings={[]} />);
+    expect(screen.getByText("先新建一个设定分类")).toBeInTheDocument();
+    expect(screen.getByText("套用内置预设")).toBeInTheDocument();
+  });
+
+  it("传全模板 props：动作区「另存为模板」菜单项与 SaveTemplateModal 都在", async () => {
+    render(<SettingCenter {...buildProps()} />);
+    expect(screen.getByText("模板库")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText("更多设定操作"));
+    const saveItem = await screen.findByRole("menuitem", { name: /另存为模板/ });
+    fireEvent.click(saveItem);
+    expect(await screen.findByLabelText("模板名")).toBeInTheDocument();
   });
 });

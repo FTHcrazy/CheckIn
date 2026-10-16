@@ -19,10 +19,12 @@ CheckIn 采用 Electron 双进程架构，渲染进程（React）与主进程（
 ├─────────────────────────────────────────────────────────────┤
 │  Windows (窗口层：一个子目录 = 一个独立窗口)                  │
 │  ├─ BaseWindow (主窗口)                                      │
-│  │  └─ pages: Todo / Memo / Daily / Code / User / Home      │
+│  │  └─ pages: Todo / Memo / Daily / Code / Ledger / News / Home │
 │  ├─ LoginWindow (登录窗口)                                   │
 │  ├─ NovelWindow (小说窗口：full 版为即关即销子窗口；         │
 │  │               novel 版为主窗口，关闭进托盘)               │
+│  ├─ PackWindow (行囊窗口：novel 域)                         │
+│  ├─ GlobalSettingWindow (全局设定中心：novel 域)            │
 │  └─ SettingsWindow (全局设置窗口：全版本开放入口)          │
 ├─────────────────────────────────────────────────────────────┤
 │  Shared (跨窗口共享层)                                       │
@@ -32,7 +34,7 @@ CheckIn 采用 Electron 双进程架构，渲染进程（React）与主进程（
 │  └─ useTodoPage / useXxxPage                                │
 ├─────────────────────────────────────────────────────────────┤
 │  Services (Data Access Layer)                               │
-│  └─ daily.ts / code.ts                                      │
+│  └─ daily.ts / code.ts / ledger.ts / news.ts …              │
 ├─────────────────────────────────────────────────────────────┤
 │  IPC Bridge (window.electronAPI)                            │
 └─────────────────────────────────────────────────────────────┘
@@ -42,8 +44,9 @@ CheckIn 采用 Electron 双进程架构，渲染进程（React）与主进程（
 ├─────────────────────────────────────────────────────────────┤
 │  IPC Handlers (electron/main.ts + electron/handlers/)       │
 ├─────────────────────────────────────────────────────────────┤
-│  Database Layer (electron/db.ts)                            │
-│  └─ authDb (应用级) + userDb (用户级)                        │
+│  Database Layer (electron/db.ts + novel-db.ts)              │
+│  └─ authDb (应用级) + userDb (用户级)                       │
+│     novel.db：novel_* / novel_pack_*（1.33.0 拆库）         │
 ├─────────────────────────────────────────────────────────────┤
 │  System Services                                            │
 │  └─ File System / Tray / Notifications / Background Tasks   │
@@ -67,7 +70,7 @@ CheckIn 采用 Electron 双进程架构，渲染进程（React）与主进程（
 | 模块 | 职责 | 边界 |
 |------|------|------|
 | **main.ts** | 窗口生命周期管理、IPC 通道注册、托盘图标、应用启动流程 | 仅处理窗口和系统级操作，不包含业务逻辑 |
-| **handlers/** | 语义化 IPC handler 按模块注册（`activity-handlers.ts` / `todo-handlers.ts` / `novel-handlers.ts` / `user-handlers.ts` / `memo-handlers.ts`），持有预定义 SQL | 每个 handler 文件只负责一个业务模块；SQL 只出现在 handlers 与 db.ts，禁止出现在渲染进程 |
+| **handlers/** | 语义化 IPC handler 按模块注册（`activity` / `todo` / `memo` / `ledger` / `checkin` / `user` / `novel` / `novel-pack` / `novel-setting` / `novel-global-setting` 的 `*-handlers.ts`；另有 `novel-setting-shared.ts` 供 novel 设定类 handler 复用，非注册入口），持有预定义 SQL | 每个 handler 文件只负责一个业务模块；SQL 只出现在 handlers 与 db.ts，禁止出现在渲染进程 |
 | **preload.ts** | 通过 `contextBridge` 暴露安全的 API 给渲染进程 | 仅做 API 转发，不实现业务逻辑 |
 | **db.ts** | SQLite 数据库初始化、双库管理（authDb/userDb）、通用 CRUD 封装 | 提供底层数据库操作，不感知上层业务；**只承载 checkin 域**，不建任何 `novel_*` 表 |
 | **novel-db.ts** | 小说域独立库 `novel.db` 的初始化与 CRUD 封装（`novel_*` / `novel_pack_*` / `novel_config` / `novel_usage_log`），通过 `registerUserDbLifecycle()` 跟随 checkin 库开关 | 单向依赖 `db.ts`（ lifecycle 回调桥接），`db.ts` 不反向依赖它；novel handler 一律从这里取写通道 |
@@ -101,6 +104,8 @@ src/windows/XxxWindow/
 | **LoginWindow** | `windows/LoginWindow/` | `src/windows/LoginWindow/index.html` | 登录/欢迎窗口 |
 | **NovelWindow** | `windows/NovelWindow/` | `src/windows/NovelWindow/index.html` | 小说窗口（书架 + 编辑器）。形态随构建版本分叉：full 版即关即销、重新打开即全新实例；novel 版为主窗口，登录后唤起、关闭进托盘。数据由 `novel_*` 表持久化，崩溃恢复由会话标记驱动 |
 | **SettingsWindow** | `windows/SettingsWindow/` | `src/windows/SettingsWindow/index.html` | 全局设置窗口（外观 / 个人资料 / 账号，后续扩展字体、快捷键），即关即销、单实例唤起；全版本构建，入口在各自主窗标题栏（base/novel 均经 WindowHeader 的 `actions` 插槽） |
+| **PackWindow** | `windows/PackWindow/` | `src/windows/PackWindow/index.html` | 行囊独立窗口（novel 域：full / novel 打包，lite 不打包）。承载 `shared/components/CharacterPack` 宿主，单实例、即关即销；上下文经 `pack-window-context` / `novel-work-changed` 投递 |
+| **GlobalSettingWindow** | `windows/GlobalSettingWindow/` | `src/windows/GlobalSettingWindow/index.html` | 全局设定中心独立窗口（novel 域：full / novel 打包，lite 不打包）。复用 `shared/components/SettingCenter`（`source="global"`）呈现跨书共享库，单实例、即关即销、数据全在主进程 |
 
 **构建版本（edition）**：环境变量 `CHECKIN_EDITION=full | lite | novel` 决定打包哪些窗口与业务模块，清单唯一事实源为 `electron/edition.ts`（`RENDERER_ENTRY_PATHS` / `EDITION_WINDOW_ENTRIES` / `PRIMARY_WINDOW_ENTRY`），vite.config.ts 的 `rollupOptions.input` 与 electron/main.ts 的窗口加载共用；主窗口归属（full/lite → BaseWindow，novel → NovelWindow）也由它驱动。新增窗口时必须同步该清单并跑 `electron/edition.test.ts` 护栏。
 
@@ -115,11 +120,11 @@ src/windows/XxxWindow/
 
 | 模块 | 路径 | 职责 |
 |------|------|------|
-| **components** | `shared/components/` | 跨窗口共享 UI：Page（页面容器）、NavHeader（导航栏）、WindowHeader（窗口标题栏） |
-| **services** | `shared/services/` | 数据访问：daily.ts、code.ts |
+| **components** | `shared/components/` | 跨窗口共享 UI：Page（页面容器）、NavHeader（导航栏）、WindowHeader（窗口标题栏）、ThemeSwitcher、SettingCenter、CharacterPack 等（完整清单以目录为准） |
+| **services** | `shared/services/` | 数据访问：daily.ts、code.ts、checkin.ts、ledger.ts、news.ts、novel-shared.ts（完整清单以目录为准） |
 | **ipc** | `shared/ipc/` | 窗口级 IPC 桥接注册（显式调用，带防重复守卫） |
 | **types** | `shared/types/` | 全局类型：electron.d.ts（window.electronAPI） |
-| **styles** | `shared/styles/` | themes.scss（四套主题 `--app-*` 变量）、variables.scss（SCSS 变量）、window-shell.scss（圆角窗口外壳） |
+| **styles** | `shared/styles/` | themes.scss（四套主题 `--app-*` 变量）、variables.scss（SCSS 变量与 mixins，颜色变量已废弃）、window-shell.scss（圆角窗口外壳）、widget.scss（控件基座 mixin）、scrollbars.scss（滚动条样式） |
 
 **边界规则**：
 - 只有两个以上窗口/页面需要时才允许放入 `shared/`；只有一个使用方的代码留在使用方目录内
@@ -127,7 +132,7 @@ src/windows/XxxWindow/
 
 #### 2.2.1.1 组件分层规范：全局组件 vs 当前模块组件
 
-- **全局组件**：放置于 `src/shared/components/`，用于跨窗口/跨页面复用的通用 UI，如 `Page`、`NavHeader`、通用 `EmptyState` 等。
+- **全局组件**：放置于 `src/shared/components/`，用于跨窗口/跨页面复用的通用 UI，如 `Page`、`NavHeader`、`WindowHeader` 等。
 - **当前模块组件**：放置于各页面目录内的 `components/`，仅供该页面或该模块内部使用，如 `TodoPage/components/NoteModal/`。
 - **组件必须以文件夹形式存在**：每个组件都应为独立目录，目录内统一管理其逻辑、样式和入口，禁止出现“单文件组件 + 兄弟样式文件”的散乱结构。
 - **样式统一命名**：组件目录中的样式文件必须统一命名为 `index.scss`，并在组件入口文件中统一引入。
@@ -140,6 +145,10 @@ src/windows/XxxWindow/
 |------|------|---------|---------|
 | **daily.ts** | 日程活动 CRUD + 时间工具函数 | SQLite (via IPC) | DailyPage |
 | **code.ts** | Git Webhook 日志查询 | 外部 HTTP API | CodePage |
+| **checkin.ts** | 每日打卡：状态查询 + 打卡（业务日切分在主进程） | checkin IPC (SQLite) | HomePage（useCheckin） |
+| **ledger.ts** | 记账 CRUD + 分类预设播种 + 区间统计 | ledger IPC (userDb 的 ledger_* 表) | LedgerPage |
+| **news.ts** | 60s API 数据层（要闻 / 摸鱼日报）+ 探活 | 外部 HTTP（渲染进程 http 客户端） | HomePage、NewsPage |
+| **novel-shared.ts** | 小说域跨窗口最小依赖集（ID 生成 / 埋点 / 行囊绑定实体） | novel IPC | CharacterPack（NovelWindow + PackWindow 共用） |
 
 **边界规则**：
 - Service 层封装 IPC 调用，提供语义化 API（如 `addActivity()`）
@@ -156,6 +165,9 @@ src/windows/XxxWindow/
 | **MemoPage** | MemoPage.tsx | hooks/useMemoData + useMemoEditorState + useMemoViewState | memo IPC（文件系统） | MemoSidebar, MemoHeader, MemoEditor, MemoPreview, MemoListItem |
 | **DailyPage** | DailyPage.tsx | hooks/useDailyPage.ts | daily.ts (语义化 activity IPC) | 无 |
 | **CodePage** | CodePage.tsx | hooks/useCodePage.ts | code.ts (HTTP via 主进程) | 无 |
+| **HomePage** | index.tsx | hooks/useHomeOverview + useHomeActions + useCheckin + usePosterVisibility | checkin IPC + news.ts（60s 探活） | HomeSidebar, HomeStats, FeatureCard, PosterWidget |
+| **LedgerPage** | LedgerPage.tsx | hooks/useLedgerData + useLedgerEditorState | ledger.ts (语义化 ledger IPC) | LedgerTimeline, LedgerEditModal, LedgerOverviewCard, LedgerTrendChart, LedgerFab …（完整清单以页面 components/ 为准） |
+| **NewsPage** | NewsPage.tsx | hooks/useNewsData | news.ts（60s API，渲染进程 http） | NewsList, NewsAside |
 
 > 原 **UserPage**（用户信息编辑）已迁移至全局 `SettingsWindow` 的「个人资料」分区，
 > 经 BaseWindow 标题栏设置入口唤起，不再是独立路由页面。
@@ -190,7 +202,11 @@ windows/BaseWindow/
 │     │  └─ MemoPreview (私有)
 │     ├─ DailyPage
 │     │  └─ Page
-│     └─ CodePage
+│     ├─ CodePage
+│     │  └─ Page
+│     ├─ LedgerPage
+│     │  └─ Page
+│     └─ NewsPage
 │        └─ Page
 └─ pages/ (仅属于 BaseWindow)
 
@@ -283,14 +299,18 @@ File System
 CheckIn/
 ├── electron/                              # 主进程代码
 │   ├── main.ts                            # 入口 + 窗口加载（经 electron/edition.ts 清单）+ 系统级 IPC
-│   ├── handlers/                          # 语义化 IPC handler（按模块拆分）
+│   ├── handlers/                          # 语义化 IPC handler（按模块拆分；完整清单以目录为准）
 │   │   ├── activity-handlers.ts           # 日程活动 CRUD
 │   │   ├── todo-handlers.ts               # Todo CRUD + 父子级联
 │   │   ├── novel-handlers.ts              # 小说编辑器（novel_* 表 + 快照 + 崩溃恢复）
 │   │   ├── user-handlers.ts               # 用户登录 / 缓存读写
-│   │   └── memo-handlers.ts               # 备忘文件 CRUD + 导入导出
+│   │   ├── memo-handlers.ts               # 备忘文件 CRUD + 导入导出
+│   │   └── …（checkin / ledger / novel-pack / novel-setting / novel-global-setting 等）
 │   ├── preload.ts                         # API 暴露
-│   ├── db.ts                              # 数据库管理
+│   ├── db.ts                              # checkin 域数据库管理（authDb / userDb）
+│   ├── novel-db.ts                        # novel 域独立库 novel.db（初始化 + CRUD）
+│   ├── edition.ts                         # 构建版本与窗口入口清单（唯一事实源）
+│   ├── httpSession.ts                     # 主进程 session 级 CORS / Cookie 注入
 │   ├── windowManager.ts                   # 窗口管理池
 │   └── activitiesTask.ts                  # 后台任务
 ├── src/
@@ -322,6 +342,8 @@ CheckIn/
 │   │   │       │           └── index.scss
 │   │   │       ├── MemoPage/
 │   │   │       ├── DailyPage/
+│   │   │       ├── LedgerPage/
+│   │   │       ├── NewsPage/
 │   │   │       └── CodePage/
 │   │   ├── components/                    # BaseWindow 窗口级私有组件
 │   │   │   └── SettingsEntry/             # 标题栏「设置」入口（唤起 SettingsWindow）
@@ -336,6 +358,7 @@ CheckIn/
 │   │       ├── App.tsx
 │   │       ├── index.scss
 │   │       └── pages/
+│   │           ├── BookshelfPage/         # 书架（作品列表 / 新建 / 导入）
 │   │           └── NovelPage/             # 小说编辑器（三栏 + 快照/设置抽屉）
 │   │               ├── NovelPage.tsx
 │   │               ├── types.ts            # 领域模型（NovelBundle / NovelRecovery）
@@ -347,20 +370,26 @@ CheckIn/
 │   │               │   ├── useNovelPage.ts
 │   │               │   ├── useNovelData.ts          # 数据持久化
 │   │               │   └── useNovelEditorState.ts    # 编辑器状态/快照
-│   │               └── components/
-│   │                   └── RestoreBanner/  # 崩溃恢复横幅
+│   │               └── components/         # 子组件（代表性子集）
+│   │                   ├── ChapterTree/    # 左栏章节树（虚拟滚动）
+│   │                   ├── EditorPane/     # 中央码字区（CodeMirror 6）
+│   │                   ├── RestoreBanner/  # 崩溃恢复横幅
+│   │                   └── …（EntityPanel / OutlinePanel / 设置抽屉 / 快照抽屉等，
+│   │                        完整清单以 NovelPage/components/ 目录为准）
+│   │   ├── PackWindow/                    # 行囊独立窗口（novel 域；index.html + main.tsx + App.tsx + index.scss）
+│   │   ├── GlobalSettingWindow/           # 全局设定中心独立窗口（novel 域；结构同 LoginWindow）
 │   │   ├── SettingsWindow/                # 全局设置窗口（外观/个人资料/账号；全版本开放入口）
 │   │   │   ├── index.html
 │   │   │   ├── main.tsx
 │   │   │   ├── App.tsx
 │   │   │   └── index.scss
 │   └── shared/                            # 跨窗口共享层
-│       ├── components/                    # 共享 UI（Page、NavHeader…）
-│       ├── services/                      # 数据服务（daily.ts、code.ts）
+│       ├── components/                    # 共享 UI（Page、NavHeader、WindowHeader、ThemeSwitcher…）
+│       ├── services/                      # 数据服务（daily.ts、code.ts、checkin.ts、ledger.ts、news.ts、novel-shared.ts）
 │       ├── ipc/                           # 窗口级 IPC 桥接（activityNotifyBridge.ts）
 │       ├── types/                         # 全局类型（electron.d.ts）
-│       └── styles/                        # themes.scss、variables.scss、window-shell.scss
-├── vite.config.ts                         # rollupOptions.input 由 electron/edition.ts 清单按版本生成；主进程 external 列 Node 运行时模块（electron/better-sqlite3/mammoth/docx）
+│       └── styles/                        # themes.scss、variables.scss、window-shell.scss、widget.scss、scrollbars.scss
+├── vite.config.ts                         # rollupOptions.input 由 electron/edition.ts 清单按版本生成；主进程 external 列 Node 运行时模块（electron/better-sqlite3/mammoth/docx/jszip）
 ├── tsconfig.json
 └── package.json
 ```
@@ -825,17 +854,20 @@ store 只存状态与调度动作，通过模块级「runner 注册」拿到数�
 
 **新增 IPC 通道流程**：
 
-1. **主进程** (`electron/main.ts`)：注册 `ipcMain.handle()`
+1. **主进程** (`electron/handlers/xxx-handlers.ts`)：在 `registerXxxHandlers()` 内注册 `ipcMain.handle()`；`electron/main.ts` 只调用该注册函数，**不在 `main.ts` 内联业务通道**
 2. **预加载** (`electron/preload.ts`)：暴露到 `window.electronAPI`
 3. **类型声明** (`src/shared/types/electron.d.ts`)：更新接口定义
 
 **命名规范**：`模块-操作`
 
 ```typescript
-// main.ts
-ipcMain.handle('todo-add', async (event, content: string) => { ... });
-ipcMain.handle('todo-list', async () => { ... });
-ipcMain.handle('memo-read', async (event, filename: string) => { ... });
+// electron/handlers/todo-handlers.ts
+export function registerTodoHandlers() {
+  ipcMain.handle('todo-add', async (_event, content: string) => { ... });
+  ipcMain.handle('todo-list', async () => { ... });
+}
+// electron/handlers/memo-handlers.ts
+ipcMain.handle('memo-read', async (_event, filename: string) => { ... });
 ```
 
 ### 6.4 布局动画规范
@@ -934,10 +966,13 @@ function initializeDataDb(db: Database) {
 
 ```json
 {
-  "novelArch": "refactor"
+  "novelArch": "compat"
 }
 ```
 
+> ⚠️ **声明块就是这个开关的唯一事实源**：上面这段 JSON 的取值即当前状态。
+> 下面「变更记录」只记历史，**不要拿它反推当前值**。
+>
 > 变更记录：1.33.0 在 `refactor` 下完成了 novel 存储重设（`novel_*` / `novel_pack_*`
 > 从 `checkin.db` 拆出为独立的 `novel.db`），已按本节第 4 条改回 `compat`。
 > 此后 novel 域的表结构变更重新受 §6.5 约束——增量迁移写在 `electron/novel-db.ts`
@@ -965,8 +1000,10 @@ function initializeDataDb(db: Database) {
 
 只覆盖 **novel 窗口**（`CHECKIN_EDITION=novel` 对应的那套代码），具体是：
 
-- **存储**：`novel_*` 数据表 —— `electron/db.ts` 中的 novel 表段、`electron/handlers/novel-handlers.ts`、
-  `electron/handlers/novel-pack-handlers.ts`
+- **存储**：`novel_*` 数据表 —— 独立库 `electron/novel-db.ts`（建表 / 迁移 / CRUD 封装），
+  以及 `electron/handlers/novel-*.ts`（`novel-handlers` / `novel-pack-handlers` /
+  `novel-setting-handlers` / `novel-global-setting-handlers`）。**不含** `electron/db.ts`：
+  后者只承载 checkin 域，不建任何 `novel_*` 表
 - **前端**：`src/windows/NovelWindow/**`，含行囊模块
   `src/windows/NovelWindow/pages/NovelPage/components/CharacterPack/**`
 
@@ -1029,7 +1066,6 @@ function initializeDataDb(db: Database) {
 
 | 问题 | 影响 | 改进方案 |
 |------|------|---------|
-| **SCSS 变量不足** | 大量颜色硬编码 | 扩展 `variables.scss`，与 Antd theme token 对齐 |
 | **Hook/组件级测试待补充** | 目前单测覆盖工具函数与服务层，hooks 与组件交互尚无测试 | 用 `@testing-library/react` 为关键 hook 补充渲染测试 |
 
 ---
@@ -1071,7 +1107,7 @@ function initializeDataDb(db: Database) {
 ### 8.4 新增数据表
 
 - [ ] **若是 novel 窗口的表（`novel_*` 前缀），先看 §6.7 开关的当前值**：`refactor` 可直接重设结构、不写迁移；`compat` 必须走增量迁移
-- [ ] 在 `electron/db.ts` 的 `initializeDataDb()` 中创建表
+- [ ] 在对应数据域的建表函数中创建表：checkin 域在 `electron/db.ts` 的 `initializeDataDb()`，novel 域在 `electron/novel-db.ts`（**不要**写进 `db.ts`）
 - [ ] 编写增量迁移逻辑（检查列是否存在）
 - [ ] 在 `shared/services/` 或页面 `services/` 中封装 IPC 调用（渲染层不内联 SQL）
 - [ ] 定义 TypeScript 接口（如 `XxxItem`）
@@ -1083,7 +1119,7 @@ function initializeDataDb(db: Database) {
 - [ ] 在 `electron/preload.ts` 暴露到 `window.electronAPI`
 - [ ] 在 `src/shared/types/electron.d.ts` 更新 `ElectronAPI` 接口
 - [ ] 在 Service 层封装调用（如 `shared/services/xxx.ts` 或页面 `services/`）
-- [ ] 若 handler 引入新的主进程 Node 依赖，须将其加入 `vite.config.ts` 的 electron `external`（当前：`electron` / `better-sqlite3` / `mammoth` / `docx`），否则 rolldown 会尝试打包其传递依赖而失败
+- [ ] 若 handler 引入新的主进程 Node 依赖，须将其加入 `vite.config.ts` 的 electron `external`（当前：`electron` / `better-sqlite3` / `mammoth` / `docx` / `jszip`），否则 rolldown 会尝试打包其传递依赖而失败
 
 ### 8.6 更新日志规范
 
@@ -1112,15 +1148,20 @@ function initializeDataDb(db: Database) {
 ### 8.7 新机器环境搭建与依赖管理
 
 - **包管理器**：项目基于 pnpm（lockfile `9.0`），本机基准 pnpm 9.x；pnpm ≥10 默认
-  **拦截所有依赖的构建脚本**，必须在 `package.json` 的 `pnpm.onlyBuiltDependencies`
-  中显式放行（当前：`electron` / `better-sqlite3` / `esbuild`）——新增带 postinstall
-  的依赖时同步补这里，否则 electron 二进制等永远装不上。
+  **拦截所有依赖的构建脚本**，必须在 `pnpm-workspace.yaml` 的白名单中显式放行
+  （当前 `onlyBuiltDependencies`：`@parcel/watcher` / `electron-winstaller` /
+  `electron` / `esbuild`）——新增带 postinstall 的依赖时同步补这里，否则 electron
+  二进制等永远装不上。
+  > 位置校正：`package.json` **没有** `pnpm` 字段（该字段已被 pnpm ≥10.26 / 11 忽略，
+  > 见下一条）。白名单的唯一事实源是仓库根的 `pnpm-workspace.yaml`。
 - **pnpm ≥10.26 / 11 的字段迁移（已踩坑）**：pnpm 11 **不再读取** `package.json` 的
   `pnpm` 字段（安装时会警告 `pnpm.onlyBuiltDependencies ignored`），且
   `pnpm-workspace.yaml` 的 `onlyBuiltDependencies` 也被移除，统一改为 `allowBuilds`
   映射。因此 `pnpm-workspace.yaml` 中必须**同时维护两套白名单**：`onlyBuiltDependencies`
-  供 pnpm 9/10 使用，`allowBuilds` 供 pnpm ≥10.26/11 使用，两边都要包含
-  `electron` / `better-sqlite3` / `esbuild`。
+  供 pnpm 9/10 使用，`allowBuilds` 供 pnpm ≥10.26/11 使用。
+  当前 `allowBuilds`：`@parcel/watcher` / `better-sqlite3` / `electron-winstaller` /
+  `electron` / `esbuild`（注意 `better-sqlite3` 只在 `allowBuilds` 中放行，
+  `onlyBuiltDependencies` 未列它）。
   > **更正（2026-09-19）**：上面「`allowBuilds` 漏掉 electron → postinstall 被拦 →
   > `dist/electron.exe` 永远缺失」的归因对 **Electron 42 已不成立**——该版本根本
   > 没有 postinstall 脚本，白名单加不加都不影响它。真正的卡点是无镜像 + 无超时的
@@ -1258,6 +1299,7 @@ function initializeDataDb(db: Database) {
 | 主进程入口 | `electron/main.ts` | 窗口管理、IPC 注册 |
 | 数据库初始化 | `electron/db.ts` | 双库管理、表结构迁移（checkin 域） |
 | 小说库初始化 | `electron/novel-db.ts` | `novel.db`：小说与行囊全部表，跟随用户切换开关 |
+| 会话配置 | `electron/httpSession.ts` | 主进程 session 级 CORS / Cookie 注入（一次性） |
 | API 暴露 | `electron/preload.ts` | contextBridge 白名单 |
 | 路由配置 | `src/windows/BaseWindow/App.tsx` | HashRouter + Routes |
 | 全局类型 | `src/shared/types/electron.d.ts` | window.electronAPI 接口 |

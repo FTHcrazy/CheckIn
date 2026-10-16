@@ -19,10 +19,10 @@ import type {
   OutlineNode,
   TermMatch,
   TextSegment,
-  WordCountMode,
 } from "./types";
 import { formatRelativeTime as relativeTime } from "@/shared/utils/format";
 import { formatNumberedLabel, toChineseOrdinal } from "@/shared/novel/number-label";
+import { countWords, type WordCountMode } from "@/shared/novel/word-count";
 import {
   DEFAULT_SETTINGS,
   ENTITY_TYPE_META,
@@ -38,27 +38,11 @@ import {
  * 模糊检索、片段高亮。IME 与 CodeMirror 交互留在 hooks / 编辑器扩展层。
  */
 
-/** 中日韩统一表意文字 + 扩展 A + 兼容表意文字 */
-const HAN_PATTERN = /[㐀-䶿一-鿿豈-﫿]/g;
-
-/**
- * 非空白字符（`u` 标志按码点匹配，与逐字符 `for...of` 口径一致）。
- *
- * 打字链路每次按键要统计 2~3 遍整篇文档，原先是逐字符 `/\s/.test(ch)`：
- * 3 万字章节就是 9 万次正则调用。改一次原生 pass 后快一个数量级。
- */
-const NON_WHITESPACE_PATTERN = /\S/gu;
-
-/** 统计字数。默认口径含标点（与主流平台一致），可切纯汉字 */
-export function countWords(text: string, mode: WordCountMode): number {
-  if (!text) return 0;
-  if (mode === "hanOnly") {
-    const matched = text.match(HAN_PATTERN);
-    return matched ? matched.length : 0;
-  }
-  const matched = text.match(NON_WHITESPACE_PATTERN);
-  return matched ? matched.length : 0;
-}
+// ── 字数统计（N-07）──
+// 单一实现迁至 @/shared/novel/word-count，与书架导入解析器共用同一口径（按码点）。
+// 此前这里的实现与 novel-import-parser 那份并存，星平面字符会各算各的。
+// 此处 re-export 保持既有 import 路径（useNovelEditorStore / SettingsDrawer…）不变。
+export { countWords };
 
 /** 千分位分隔，用于状态条与章节树右侧字数 */
 export { formatThousands } from "@/shared/utils/format";

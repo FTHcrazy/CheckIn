@@ -277,6 +277,99 @@
 
 ---
 
+## 第六部分 · 增量走查（2026-10-16 · 基线 1.45.1）
+
+> 触发：用户报障「全局设定窗口打不开」+ 要求按 `AGENTS.md` 复核 novel 窗口 / 行囊窗口 / 全局设定窗口与小说域代码。
+> 本部分只记**增量**：与第一部分不重复的结论、本轮修复、以及仍未修的问题。审查方式：架构侧只读走查 + 两个并行改动/验证角色的交叉验证（所有结论附文件:行号，守卫均做变异验证）。
+
+### 6.1 本轮已修复
+
+#### N-00（用户报障）全局设定窗口「打不开」——根因是 dev 会话里渲染层新、主进程/preload 旧
+- **静态接线本身完整**（逐环核对无误）：书架顶栏按钮（`BookshelfPage.tsx:296`）→ `send("global-setting-window-open")` → `preload.ts:300` 白名单 → `main.ts` 的 `ipcMain.on` → `createGlobalSettingWindow()` → `edition.ts` 的 `globalSetting` 入口 → dev server 200。
+- **判据链**：`git log -S"global-setting-window-open"` 显示按钮 / preload 白名单 / ipcMain 三处**全部由同一提交 `2f764a0`（10-16 01:12）引入**，而 `dist/` 构建于 **10-15 18:42**（早于该提交）⇒ 用户截图里的按钮**只能来自 dev server**；`vite-plugin-electron` 的 `onstart` 被覆写为空 ⇒ 主进程/preload 产物变更**不重启运行中的 electron**，渲染层靠 HMR 已新、主进程仍是进程启动那一刻的旧码。
+- **为什么是「零日志」**：`preload.ts:307` 的 `if (validChannels.includes(channel))` **没有 else 分支**，白名单未命中即静默丢弃 ⇒ 点击后主进程什么都没收到，不报错、不提示，表现为「按钮点了没反应」。
+- **修**：
+  1. 6 个窗口全部接入 `attachWindowLoadGuard`（`electron/main.ts`）：`did-fail-load` 打印 errorCode / errorDescription / validatedURL（**仅主框架**，子资源失败不顶窗口）与 `render-process-gone`，加 3s 超时兜底显示 —— 治的是更坏的形态「加载失败则窗口永不出现且零日志」。
+  2. 主窗不再无条件 `show()`：`isPrimaryReady` 在「完成 / 失败 / 超时」三路都置位后，再按登录闸门 `canShowMainWindow` 决定显示，避免「登录后一窗不显示」。
+  3. `ipcMain.on("global-setting-window-open")` 加到达日志（lite 版忽略也记一条）。
+  4. 渲染层：`useGlobalSetting` 对 `api.globalSettingLoad` 缺失显式判空（原先是同步 TypeError → React 卸载整棵树 → **白屏**），装载失败渲染 `Alert` + 重试。
+  5. `scripts/start-electron.js`：监视 `dist-electron/*.js`（400ms 防抖、忽略 `.map`）→ 变更即 SIGTERM 重启子进程。**这是同类故障的通用根因**，不修则每次改主进程都得手动重启。
+- **运维提醒**：**改主进程/preload 后必须重启 `pnpm dev`**；安装版需重新 `pnpm electron:build`。
+
+#### N-10（真机反馈）全局设定窗口「窗口套弹窗」——已修
+- **现象**：独立窗口里整窗又套了一张 antd Modal —— 窗口标题栏写「全局设定中心」、浮层标题再写一遍，右上角多出第二枚关闭叉，还多一层遮罩。
+- **根因**：复用本书设定中心时只换了**数据源**、没换**外壳**。本书域的设定中心是浮在编辑器之上的可关闭浮层，而独立窗口整窗就是这一张设定中心。窗口侧当时靠把标题栏 `z-index` 抬到 1100 才点得到最小化/最大化/关闭三键（`GlobalSettingWindow/index.scss` 里那段注释就是这处 hack 的自白）。
+- **修法**：`SettingCenter` 新增 `variant?: "modal" | "panel"`；`panel` 形态**不渲染外层 Modal**，直接铺满宿主容器。主体 JSX 抽成一个变量供两种外壳共用（不复制第二份，否则标题/空态/四个弹窗会在两条形态里各自漂移）；原浮层标题里的「跨书共享」pill 移到窗口标题栏的徽标插槽；高度改由 flex 分配，不再用浮层时代的 `calc(100vh - 260px)` 硬算。
+- **实测（无头 Chrome，1240×860，真实构建产物 + 12 条等级）**：`.ant-modal` / `.ant-modal-mask` / 浮层标题计数均为 **0**；`.nv-sc--panel` `y=35 h=729`（35+729=764 ≈ 视口 765，正好铺满）；左栏 `.nv-sc__list` `h=518 overflow-y:auto`；阶梯 `.nv-sc__rows` `clientH=370 / scrollH=1234` 且 `overflow-y:auto`（滚动链生效）；`documentElement` 横纵向均无溢出、body 无溢出。
+- ⚠️ **行为变化**：`panel` 形态下 `onClose`（Esc / 点遮罩）不再生效，关窗只走窗口自己的三键 —— 有意的：本窗口是设定编辑器，行内编辑改到一半被 Esc 连窗一起收掉会直接丢草稿。
+
+#### N-01（原 P0-1）全局库改名后书窗口「即时跟随」不成立
+- **现象**：全局库改名 → 书窗口的设定中心仍显示旧值，必须切作品或重开窗口。
+- **根因**：主进程每次全局写成功后已按 `source_global_id` 把改动 upsert 进本书镜像行（**库里是对的**），但书窗口的 `bundle` 是内存快照，而全仓**只有全局设定中心窗口自己订阅**了 `global-setting-changed` ⇒ 1.45.0 CHANGELOG 写的「即时跟随」实际不成立。属于测试查不到的静默失效（分支自身未实现，非合并丢失）。
+- **修**：`useNovelData.ts:398-461` 在数据层最窄处订阅，只重读「设定」并**就地 merge**（`bundle.settings` 单表、仅引用态行），**刻意不用 `load()`**：整体 `setBundle(next)` 会把 `chapters` 的每个对象都换掉 → `EditorPane` 的 `content = draft ?? chapter.content` 重算 → 正是 TX-13「草稿覆盖已保存文档」的形状。
+- **草稿安全的不变量（经独立探针验证）**：不是「`chapters` 表引用不变」这么笼统，而是 —— `chapters` 引用不变 → `activeChapter` 是**同一个对象** → `NovelPage.tsx:510` 把它传给**没有 key** 的 `EditorPane` → `EditorPane/index.tsx:192-193` 的 `draft ?? chapter?.content` 不重算 → 灌入 effect 不触发。已把该论据写进源码注释与 CHANGELOG（原报告的因果表述不准，已纠正）。
+- 附带收益：`fetchSettingMirror()` 走 `editorLoad(false)`，`includeContent=false` 让全书正文（唯一大字段，≈12MB）不过 IPC；且该分支**不写**「最近打开 / 编辑中」会话状态。
+
+#### N-02（原 P1-1）`novel-ui-kit.test.ts` 扫描根漏了 `SettingCenter`
+- 扫描根由 `src/windows/NovelWindow` 扩为 `NovelWindow ∪ src/shared/components/SettingCenter`（新增 `relFromRoot()` 让跨根文件报各自根的相对路径，并加 3 例「扫描范围」自守卫防将来被改窄）。样本 72 `.tsx` / 48 `.scss`，用例 146 → **156**。
+- **扩根后立刻扫出一处真缺陷**：`SettingCenter/components/CategoryCard/index.scss` 的 `nv-sc__publish`（「放置到全局」按钮）把文字色写成 `&__publish { color } + &:hover { color }` —— hover 那条特异性仅 (0,1,0)+伪类，被 antd 的 `.ant-btn-color-default.ant-btn-variant-outlined:not(:disabled):hover`（0,4,0）稳稳压掉，**鼠标一掠过就变回默认字色，且零类型/构建报错**，正是 §6.1.2 第 3 条的形态。
+  - 修法：改为只覆盖组件级变量 `--ant-button-default-color / -hover-color / -active-color`，尺寸仍由 `size="small"` 给。经**运行时 CSS 抽取**证实级联链成立（token 声明 `.css-var-*.ant-btn`（0,2,0，被 `prependQueue/-999` 排到 `<head>` 最前）→ 映射 `.ant-btn.ant-btn-color-default…` → 消费 `.ant-btn:not(…):hover`）：我方 `.nv-sc__publish.ant-btn` 同为 0,2,0 且后到，按源码顺序胜出，改的又是叶子变量、不与被压制的 `color` 直接竞争。⚠️ **外观会变**（由「实际是黑字」变成设计意图的青色），需真机确认含深色主题的对比度。
+- 另一处 `nv-sc__from-global`（只声明 `margin-top: 6px`，造型交给组件库）判定**非缺陷**，收录进 `NO_RESET_NEEDED` 并写清收录门槛。按「`:hover`/`:active` + color/background/border」模式换探测方式复扫两个根（命中 21 处）后确认**无第二处同类漏网**。
+
+#### N-03 窗口修复自身带出的三条缺陷（独立复核发现）
+| # | 位置 | 问题 | 修法 |
+|---|---|---|---|
+| a | `electron/window-load-guard.test.ts:48` | `expect(body).toContain("setTimeout")` 被 `main.ts` 里的**类型注解** `ReturnType<typeof setTimeout>` 命中 ⇒ 断言恒真。实测把超时兜底 `timer = setTimeout(…)` 删掉，`electron` 全目录仍 231 例全绿 ⇒ 该兜底行为**零覆盖**（假阳性） | 改为 `toMatch(/timer = setTimeout\(\(\) => \{[\s\S]*?reveal\("装载超时兜底"\)/)` 并钉住「已显示 / 窗口已关闭」两条清定时器路径 |
+| b | `scripts/start-electron.js:124` / `:179-186` | 关机竞态：`onChildClose` 的重启分支只看 `restartPending`，`shutdown()` 也不复位它 ⇒ 防抖 400ms 到点（已 kill 子进程）之后、`close` 之前收到 SIGINT/SIGTERM → **用户明确退出后 Electron 又被拉起**（「Ctrl+C 之后窗口又冒出来」） | `if (restartPending && !shuttingDown)` + `shutdown()` 里 `restartPending = false` 并 `clearTimeout(restartTimer)` |
+| c | `electron/main.ts` `did-fail-load` | 未过滤 `errorCode === -3`（ERR_ABORTED = 导航被取代/取消，**不是**装载失败）⇒ dev 热重载窗口时正常撞上，会打印「装载失败」并把错误页顶到用户面前，与本次修复要治的「静默」正好相反 | `if (errorCode === -3) return;`（在日志与 reveal 之前），注释写明判据 |
+
+### 6.2 本轮（1.45.1）收口结果
+
+| 编号 | 位置 | 问题 | 状态 |
+|---|---|---|---|
+| N-04 | `GlobalSettingWindow/App.tsx` | 5 个模板 props **全是空实现**，而 `SettingCenter` 无条件渲染模板入口 ⇒ 「另存为模板 / 模板库」是**僵尸接线** | **已修**：模板能力改为**显式可选**（5 props 齐备才算提供），调用方改为「不传」而非「传假的」；门控**只覆盖模板相关**（`SaveTemplateModal`、「另存为模板」菜单项、弹窗内「我的模板」区块）。⚠️ 修正过一次过度收紧：首版把「模板库」入口也一起门控，等于让全局库丢掉**可用的**「套用内置预设」（纯本地能力：`SETTING_PRESETS` 常量 + 必填 `onApplyPreset`），已拆成两个判据 |
+| N-05 | `GlobalSettingWindow/hooks/useGlobalSetting.ts` | 删除分类用原生 `window.confirm`，违反 §6.1.2 | **已修**：改 `Modal.useModal()` 的**实例方法**（静态 `Modal.confirm` 会新建独立 React root、脱离 `ConfigProvider`，本应用 `cssVar:{prefix:"ant"}` + `hashed:false` ⇒ 暗色掉色）；`modalContextHolder` 渲染在 `ThemeProvider/ConfigProvider` 子树内 |
+| N-06 | `NovelPage.tsx` + `useGlobalSetting.ts` | DTO 映射写了两份（前者**无兜底**、后者有防御） → 加一列就漏一处 | **已修**：合并为 `src/shared/novel/setting-mappers.ts` 的 `toSettingCategory(dto, { workId, withRefCount })`，口径取防御更完备的那份；14 字段逐一对照，唯一差异是 `levels` 兜底升级为 `Array.isArray`（坏数据不再抛）。⚠️ 走查原文称「`useNovelData` 里也有一份」——**核实为不存在**，真实两份是 `NovelPage.refreshGlobalCategories` + `useGlobalSetting.toCategory` |
+| N-07 | `novel-utils.ts` vs `import-parser.ts` | `countWords` 双实现、口径不同（码点 vs UTF-16 码元）⇒ 导入章节字数与编辑器读数不一致 | **已修**：统一到 `src/shared/novel/word-count.ts`，口径按**码点**；`novel-utils` 改 re-export、导入解析器保留签名内部改调。⚠️ 走查原文称「主进程也有一份」——**核实为不存在**（主进程只经 IPC 接收 `wordCount`、不做统计） |
+| N-08 | 6 处 | `--app-surface-hover` 被当**常驻**底（交互态 token 禁当常驻填充） | **已修** 6 处（逐处核「最近一个真正画了背景的祖先」）+ 新增**精确清单守卫**。其余边缘项已复核（见 §6.3） |
+| N-09 | `CharacterPack/components/{DeltaPreview,PackChangedDot,PackExportButton}` | 3 个搬迁残留空目录 | **已清**（1.45.0 那轮） |
+| E1~E15 | `AGENTS.md` | 文档漂移（路径/命令/取值与实现不一致） | **已修**：E1~E15 全部修订（1277 → 1314 行），另补 X1~X7 与 Y1~Y2（§1.1 架构图补双库、§9.2 索引补 `httpSession.ts`） |
+
+### 6.3 三项「待裁决」的裁决结果
+
+三项都已核实到源码/数据层面并给出结论，**不再悬挂**：
+
+1. **`AGENTS.md` §6.7 的 `novelArch` 自相矛盾 → 已按建议改为 `compat`**（声明块是唯一事实源、变更记录只是历史；本轮全部修复都是按 `compat` 语义做的），并在声明块下补一行「取值以声明块为准，不要拿变更记录反推」。
+2. **`NovelTopBar/index.scss:171` 的 `--ant-button-default-bg: var(--app-surface-hover)` → 判定「不改」。**
+   按规范字面它确实越档，但顶栏底 `--app-header-bg` 与 `--app-surface` **同值**：改用该规则要求的
+   `--app-surface-alt` 后，四主题实测对比度只有 `1.027 / 1.052 / 1.030 / 1.092` —— 六颗图标又会退回
+   1.42.0 特意修掉的「扫过去一团灰点」。现取值 `1.081 / 1.097 / 1.091 / 1.216`，且已被「顶栏 chip 底色
+   三档」守卫钉死。**属有意决策**，故 N-08 守卫刻意不扫全仓。
+3. **其余边缘同类项 → 判定「全部合法」。** 脚本扫全仓 `background*: var(--app-surface-hover|active)`
+   共 38 处：34 处落在 `:hover / :focus-visible / .is-active`（合法交互态）；余 4 处
+   （`.nv-panel__tabs`、`panel-primitives.scss` 的 `.nv-sub`、检索骨架条、`EntityDetail` 的 `&__tag`）
+   逐一核到基面是 `--app-surface-alt` —— **`.nv-panel` 本身就是 alt 档底**（`SupportPanel/index.scss:32`），
+   取 hover 档恰好是「比基面再深一档」的凹槽（四主题 alt→hover ≈1.05），方向正确；改用 alt 会与基面同色消失。
+   结论已写进 `themes.test.ts` 守卫 docstring。
+4. **`pnpm-workspace.yaml` 的 `onlyBuiltDependencies` 未含 `better-sqlite3` → 误报，无需改。**
+   `package.json` 声明 `packageManager: pnpm@11.25.0`，而 pnpm 11 **已移除** `onlyBuiltDependencies`
+   （连同 `neverBuiltDependencies` / `ignoredBuiltDependencies`），统一由 `allowBuilds` 承担 ——
+   该文件里 `allowBuilds.better-sqlite3: true` **已经在了**。且 pnpm 11 默认 `strictDepBuilds: true`、
+   未列出的包会让 install 直接报错，这条是必需的且已存在。
+
+
+### 6.4 验证与残余风险
+
+- **新增/加固守卫**：`electron/window-load-guard.test.ts`（11 例）、`electron/dev-restart-guard.test.ts`（3 例）、`src/windows/GlobalSettingWindow/App.test.tsx`（6 例，含 `.ant-modal` 反面断言）、`useNovelData.global-setting-sync.test.tsx`（6 例）、`electron/global-setting-guard.test.ts`、`novel-ui-kit.test.ts`（146 → 156 例）。
+- **变异验证**（全部先红后绿 + 还原 md5 校验一致）：N-03 三条守卫各 1~2 次；N-01 3 次 + 1 次；N-02 2 次 + 扩根范围守卫 1 次。其中「P0-1 单测只断言 `chapters`/`activeChapter` 引用同一性、完全不碰 `useNovelEditorStore`」这一覆盖缺口，已补第 6 例（造脏 `draftMap` → 触发广播 → 断言 `draftMap` 引用不变 / 值未改写 / 当前章对象引用不变）。
+- **N-10 的布局验证**（无头 Chrome 跑真实构建产物 + `electronAPI` 桩，12 条等级）：`.ant-modal` / `.ant-modal-mask` / 浮层标题计数全 0；`.nv-sc--panel` `y=35 h=729`（≈视口 765，正好铺满）；左栏 `h=518 overflow-y:auto`、阶梯 `clientH=370 / scrollH=1234 auto`（滚动链生效）；`documentElement` 与 body 均无溢出。
+- **门禁**：`vitest run electron src/shared/components/SettingCenter src/windows/GlobalSettingWindow novel-ui-kit.test.ts src/shared/novel`（**35 文件 / 652 例**）通过；`tsc --noEmit -p tsconfig.app.json` 与 `-p tsconfig.node.json` 均 exit 0；改动范围 eslint exit 0（仅 `package.json` 缺 `type:module` 的既有警告），全仓存量 `6 errors + 1 warning` 与改前基线一致且**全在改动集之外** → 新增 0。
+- **`dist/` 已重建**（末次 16:35，含 N-10 的 panel 样式与 P1-1 的 `__publish` 修复）：`dist/assets/SettingCenter-*.css` 内可见 `nv-sc--panel{…}` 与新变量覆盖规则，6 个窗口入口齐（含 `GlobalSettingWindow/index.html`）。⚠️ **出包前不要回退到 14:38 那份**（既不含 P1-1 也不含 N-10）。
+- **未验证（环境所限，禁跑 GUI）**：真机窗口是否真的弹出、`show()+focus()` 实际生效、`__publish` 修好后的青色观感（建议真机含深色主题瞄一眼对比度）、`start-electron.js` 关机竞态真机复现（证据 = 源码守卫 + 变异 + 时序推演）。
+- **已知低风险**：`loadInFlightRef` 在途跳过会让「装载读之后、apply 之前」提交的那次全局写**丢一次且此后无补偿**（理论窗 = 一次 IPC 往返 + React 提交，jsdom 构造不出）。`refreshSettingMirror` 不判广播负载里的 `kinds`，与本作品无关的全局改动也会刷一次（一次元数据 IPC，低频，可接受）。
+
+---
+
 ## 附：完整 UI 需求稿
 
 见 `docs/novel-ui-requirements.md`。

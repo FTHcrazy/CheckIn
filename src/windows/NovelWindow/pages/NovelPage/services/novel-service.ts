@@ -23,6 +23,7 @@ import type {
   NovelWork,
   OutlineEntry,
   SearchHit,
+  SettingCategory,
 } from "../types";
 
 /**
@@ -283,6 +284,26 @@ export async function removeOutlineEntry(entryId: string): Promise<boolean> {
 //
 // 境界体系不再是独立实体，而是 `kind='realm'` 的一个设定分类；
 // 功法等级 / 丹药稀有度等同构。全部走 `novel_setting_*` 两张表。
+
+/**
+ * 只重读「设定」这一片（含被引用分类的镜像行）—— 1.45.1 全局库实时同步用。
+ *
+ * 走 `novel-editor-load` 的 `includeContent=false`：正文是这条通道里唯一的大字段
+ * （2000 章 × 3000 字 ≈ 12MB，见该 handler 的注释），而全局库改名 / 调层级 /
+ * 增删等级后要刷的只是 `novel_setting_*` —— 没必要把全书正文再拉一遍过 IPC。
+ *
+ * 返回**全作品**的分类（调用方按 id 合并），语义与 `fetchNovelBundle().settings`
+ * 完全一致，只是量级小得多。**不要**拿它当装载用：它不返回 chapters / notes 等，
+ * 只有设定。
+ *
+ * 为什么不新开一条「按作品取设定」的窄通道：本仓读通道只有 `novel-editor-load`
+ * 这一条，新增通道要同时改 preload / electron.d.ts / 主进程 handler 三处，收益
+ * 只是省掉一次元数据读；而全局库写入是低频动作，不值得为它扩一条通道。
+ */
+export async function fetchSettingMirror(): Promise<SettingCategory[]> {
+  const bundle = await window.electronAPI!.novel.editorLoad(false);
+  return bundle.settings;
+}
 
 /**
  * 新建设定分类（novel-setting-category-add）

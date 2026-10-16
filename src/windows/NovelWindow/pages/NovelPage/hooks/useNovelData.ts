@@ -12,6 +12,7 @@ import {
   fetchLastPosition,
   fetchNameFavorites,
   fetchNovelBundle,
+  fetchSettingMirror,
   mergeSettingLevel as mergeSettingLevelRemote,
   openEditorSession,
   patchSettingCategory as patchSettingCategoryRemote,
@@ -393,6 +394,74 @@ export function useNovelData() {
       (bundle?.settings ?? []).filter((item) => item.workId === activeWorkId),
     [bundle?.settings, activeWorkId],
   );
+
+  // ── 全局库变更 → 就地刷新本书的引用镜像（1.45.1，H7 / REQ-041 ③） ──────
+  //
+  // 主进程在每次全局写成功后已同步 `novel_setting_*` 的镜像行（syncReferences），
+  // **数据是对的**；但本窗口的 `bundle` 是一份内存快照，不跟进就仍显示旧值 ——
+  // 用户必须切作品或重开窗口才看得到，1.45.0 CHANGELOG 写的「即时跟随」因此不成立。
+  //
+  // 判据：本书**有引用项**（`sourceGlobalId` 非空）才需要跟随。书内自建分类不受
+  // 全局写影响，没有引用项时整条链路纯属空转（还要白跑一次 IPC）。
+  // 不判广播负载里的 `kinds`：该事件只在「全局库写入」与「本书建立 / 上架引用」
+  // 之后发出，而 `kinds` 只区分改的是分类还是等级，不改变「要不要刷新」的结论。
+  //
+  // 订阅只挂一次：preload 的 `on/off` 按 handler 引用配对，把 settings 放进
+  // effect 依赖会让 handler 每次渲染换引用 → 旧监听摘不掉，所以判据走 ref。
+  const settingsRef = useRef<SettingCategory[]>([]);
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
+
+  const refreshSettingMirror = useCallback(async (): Promise<void> => {
+    let mirror: SettingCategory[];
+    try {
+      mirror = await fetchSettingMirror();
+    } catch {
+      // 刷新失败保留旧值：下一次广播 / 下次装载会再试。这里不弹错 ——
+      // 用户什么都没操作，弹「设定刷新失败」只会被当成新 bug 报上来。
+      return;
+    }
+    setBundle((current) => {
+      if (!current) return current;
+      const byId = new Map(mirror.map((category) => [category.id, category]));
+      return {
+        ...current,
+        // ⚠️ 只换 `settings` 一张表，且只换「引用态」行：
+        // - 只换 settings（chapters / links / 草稿一律不动）保住的是「本章 chapter
+        //   **对象引用不变**」这条不变量：`NovelPage` 把它作为 activeChapter 传给
+        //   **没有 key** 的 EditorPane，而 EditorPane 取的是 `draft ?? chapter?.content`
+        //   —— 引用一变就可能重挂载 / 重新灌入，正在编辑的正文基线随之被顶掉。
+        //   整体 `load()` 会把 chapters 的每个对象都换掉，正是这样踩的雷。
+        // - 只换引用行：引用项在书侧是**只读**的（10 个写通道都被主进程拒），
+        //   不存在会被这次替换覆盖掉的本地乐观编辑；书内自建分类的编辑照旧。
+        // 判据看「当前行是不是引用」而不是「新行是不是引用」：全局项被删时镜像
+        // 会被就地固化成本书副本（`sourceGlobalId` → null），那一行同样要跟。
+        settings: current.settings.map((category) => {
+          const incoming = byId.get(category.id);
+          if (!incoming) return category;
+          if (!category.sourceGlobalId && !incoming.sourceGlobalId) return category;
+          return incoming;
+        }),
+      };
+    });
+  }, []);
+
+  useEffect(() => {
+    const handler = (): void => {
+      // 装载在途时不刷：装载响应本身就来自数据库，天然带最新镜像，
+      // 此刻再读一次纯属浪费（同 novel-note-changed 那条补丁的取舍）
+      if (loadInFlightRef.current) return;
+      if (!settingsRef.current.some((category) => category.sourceGlobalId)) return;
+      void refreshSettingMirror();
+    };
+    const api = window.electronAPI?.windowAPI;
+    if (!api) return undefined;
+    // ⚠️ `off` 必须传**同一个 handler 引用**：preload 的 on/off 按引用配对，
+    // 传一个新箭头函数等于没摘掉监听（每次重订阅都会多积一条）
+    api.on("global-setting-changed", handler);
+    return () => api.off("global-setting-changed", handler);
+  }, [refreshSettingMirror]);
   /** 等级项索引：关联视图与当前境界绑定把 novel_setting_levels.id 翻译成可读名。
    *  派生段的名字补上父阶前缀（「第4段」→「练气 · 第4段」）：单看一行也要
    *  能看出是哪一阶的进度；默认命名自带父前缀时原样保留（1.38.1） */

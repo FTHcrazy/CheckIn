@@ -1,6 +1,7 @@
 /// <reference types="node" />
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
+import * as sass from "sass";
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_THEME,
@@ -281,9 +282,11 @@ describe("--app-* token 引用完整性（防静默失效）", () => {
  *      真机反馈就是行囊「已展开的模块行」那一块深棕。
  *   2. 中性加深在暖色主题下会变成浑浊的棕黄：没有语义，只剩重量。
  *
- * 规矩：**静态中性底走 `--app-surface-alt`**（贴在 surface / elevated 上的槽）；
- * 贴在页面底 `--app-bg` 上的槽走 `--app-surface-hover`（alt 与 bg 近乎同色会消失，
- * 例如状态条 / 书架的进度条轨道）；`--app-surface-active` 只允许出现在交互态 ——
+ * 规矩：**静态中性底按基面取差一档的 token**——贴在 `--app-surface` 上的槽走
+ * `--app-surface-alt`（状态条 / 书架的进度条轨道即此类）；贴在浮层
+ * `--app-surface-elevated` 上的槽走 `--app-surface`；只有贴在页面底 `--app-bg`
+ * 上的槽才走 `--app-surface-hover`（alt 与 bg 近乎同色会消失）。
+ * `--app-surface-active` 只允许出现在交互态 ——
  * 最近的祖先选择器带 `:hover / :active / :focus`，或属性名本身就叫
  * `--ant-*-hover-bg` / `*-active-bg`。
  *
@@ -569,6 +572,106 @@ describe("色块阶梯：页面根铺 bg、浮层底只给浮层用", () => {
     keys.forEach((key) => {
       expect(provider, `ThemeProvider 未透传 antd.${key}`).toContain(`antd.${key}`);
     });
+  });
+});
+
+/**
+ * 特定「常驻中性底」的回潮守卫（N-08，1.45.1）。
+ *
+ * `--app-surface-hover` 与 `--app-surface-active` 的本义都是**相对所在面的交互态**
+ * （见上面「静态色块不用按下态色」的说明），但那条守卫只扫 `--app-surface-active`，
+ * `--app-surface-hover` 一直没有红灯 —— 于是下面这 6 处常驻中性底误用了它：
+ * 贴在 `--app-surface` 上的槽本该取 `--app-surface-alt`，浮层内的槽本该取
+ * `--app-surface`，而 `--app-surface-hover` 一铺开就等于把整屏按「hover」压重一档。
+ *
+ * 这里用**显式文件 + 选择器清单**（不扫全仓，避免把合法的交互态 `:hover` 误伤）
+ * 把 6 处逐一钉住：任一处改回 hover 档即红。断言落在**编译产物**上——BEM 的
+ * `&__bar` 在源码里不是完整选择器，只搜文本会漏（同 novel-ui-kit.test.ts 的做法）。
+ *
+ * ── 复核后**判定为合法、刻意不纳入清单**的常驻底（免得下一轮又当缺口翻出来）──
+ *
+ * 判据不是「用了 hover 档就是错」，而是**相对它真正贴着的那一面的档位差**：
+ * - `NovelTopBar/index.scss` 的 `&__icon.ant-btn` `--ant-button-default-bg`：
+ *   顶栏底 `--app-header-bg` 与 `--app-surface` 同值，若取 `--app-surface-alt`
+ *   差的只有 1.027~1.052（四主题实测），六颗图标又会退回「扫过去一团灰点」——
+ *   正是 1.42.0 要修的问题。此处取 hover 档（1.081~1.216）是**有意决策**，
+ *   且已被上面「顶栏 chip 底色三档」用例钉死。
+ * - 分段轨道 / 加载骨架一类**落在 `--app-surface-alt` 基面上的凹槽**：
+ *   `.nv-panel`（SupportPanel/index.scss:32）本身就是 alt 档，所以
+ *   `.nv-panel__tabs`(:187)、`panel-primitives.scss` 的 `.nv-sub`(:98)、
+ *   `SearchPanel/index.scss` 的骨架条(:48)、`EntityDetail/index.scss` 的
+ *   `&__tag`(:277) 取 hover 档恰好是「比基面再深一档」的凹槽，方向正确。
+ *   反之它们若改用 `--app-surface-alt` 会与基面同色而消失。
+ */
+describe("常驻中性底：槽位不借交互态 token（N-08 精确清单）", () => {
+  /** 花括号配平取规则块体（块内可能嵌着 `&.is-*` 子规则） */
+  const ruleBlock = (css: string, selector: string) => {
+    const at = css.indexOf(`${selector} {`);
+    expect(at, `缺少规则 ${selector}`).toBeGreaterThan(-1);
+    const open = css.indexOf("{", at);
+    let depth = 0;
+    let end = open;
+    for (; end < css.length; end += 1) {
+      if (css[end] === "{") depth += 1;
+      else if (css[end] === "}" && --depth === 0) break;
+    }
+    return css.slice(open + 1, end);
+  };
+
+  /** 取规则块内最后一条 `background:` 声明（不吃 `background-color` / `-image`） */
+  const bgOf = (block: string) => {
+    const matches = [...block.matchAll(/(?:^|[\s;])background:\s*([^;]+);/g)];
+    return matches.at(-1)?.[1]?.trim() ?? "";
+  };
+
+  /** [文件, 编译后选择器, 期望 background]；每条的「最近画底祖先」写在上面 */
+  const cases: Array<[string, string, string]> = [
+    // 基面 .settings-section（index.scss:37 = surface）→ 标题条取 alt
+    ["src/windows/SettingsWindow/index.scss", ".settings-section__title", "var(--app-surface-alt)"],
+    // 基面 .memo-editor-card .ant-card-body（MemoPage/index.scss:40 = surface）→ 斑马纹取 alt（与同表 th 统一）
+    [
+      "src/windows/BaseWindow/pages/MemoPage/components/MemoPreview/index.scss",
+      ".memo-preview table tr:nth-child(even)",
+      "var(--app-surface-alt)",
+    ],
+    // 基面 .nv-pop（HoverEntityCard/index.scss:11 = elevated 浮层）→ 标签取 surface
+    [
+      "src/windows/NovelWindow/pages/NovelPage/components/HoverEntityCard/index.scss",
+      ".nv-pop__tag",
+      "var(--app-surface)",
+    ],
+    // 基面 .nv-status（StatusBar/index.scss:15 = surface）→ 进度槽取 alt
+    [
+      "src/windows/NovelWindow/pages/NovelPage/components/StatusBar/index.scss",
+      ".nv-status__bar",
+      "var(--app-surface-alt)",
+    ],
+    // 基面 .bs-hero（ContinueHero/index.scss:7 = surface）→ 进度槽取 alt
+    [
+      "src/windows/NovelWindow/pages/BookshelfPage/components/ContinueHero/index.scss",
+      ".bs-hero__bar",
+      "var(--app-surface-alt)",
+    ],
+    // 基面 .nv-tools__card.ant-btn.is-planned（ToolLauncher/index.scss:64 = alt）→ 状态 chip 取 surface
+    [
+      "src/windows/NovelWindow/pages/NovelPage/components/SupportPanel/components/ToolLauncher/index.scss",
+      ".nv-tools__state",
+      "var(--app-surface)",
+    ],
+  ];
+
+  it("6 处常驻中性底都取到与基面差一档的 token，且不含 hover / active 档", () => {
+    expect(cases.length).toBe(6);
+    for (const [rel, selector, expected] of cases) {
+      const css = sass
+        .compile(path.resolve(process.cwd(), rel), { style: "expanded" })
+        .css.replace(/\/\*[\s\S]*?\*\//g, "");
+      const got = bgOf(ruleBlock(css, selector));
+      expect(got, `${rel} ${selector} 的 background 应为 ${expected}`).toBe(expected);
+      // 反面：不许退回相对所在面的交互态 token
+      expect(got).not.toContain("--app-surface-hover");
+      expect(got).not.toContain("--app-surface-active");
+    }
   });
 });
 

@@ -42,13 +42,30 @@
     }
   }
 
-  // 上架到全局（D3）：动作区按钮，与「模板库」并列
-  &__publish {
-    color: var(--app-accent-teal);
-
-    &:hover {
-      color: var(--app-accent-teal);
-    }
+  // 上架到全局（D3）：动作区按钮，与「模板库」并列。
+  //
+  // 刻意**不清零**：这一颗要的就是组件库 default + `size="small"` 的整套造型
+  // （高度 / 内边距 / 描边 / 圆角），清零反而要把这些数字手工复刻一遍 ——
+  // 而紧挨着的「编辑 / 删除」两个按钮没有业务类名、跟着 antd 走，
+  // 复刻出来的数字一旦 antd 升版就会和它们不齐。
+  //
+  // 但颜色必须挂在这个 `.ant-btn` 选择器上、且只改组件级变量：
+  // 原先写成 `&__publish { color: …; &:hover { color: … } }` 时，hover 那一条
+  // 会被 antd 的 `.ant-btn-color-default.ant-btn-variant-outlined:not(:disabled):hover`
+  // （特异性 0,4,0）稳稳压掉 —— 表现为「鼠标一掠过就变回默认字色」，
+  // 而这一步没有任何类型或构建错误提示（AGENTS.md §6.1.2 第 3 条）。
+  //
+  // 取 `--app-primary`（**主题身份色**），不是 `--app-accent-teal`：
+  // 强调色按 §6.1.1 是「数据卡 / 功能卡的彩色标识」，跨主题基本恒定 ——
+  // 实测四套主题下 accent-teal 为 #2fa57e / #4fa88c / #2fa57e / #4fd0a5
+  // （**aurora 与 mint 完全相同**），换肤时这颗按钮看着不动（真机反馈）。
+  // primary 是每个主题各自的识别色（蓝 / 橘 / 绿 / 淡紫），动作按钮取它才真正跟随主题。
+  // 三态分别给 base / strong / active：hover 与按下才有反馈
+  // （暗色主题的 strong 是**提亮**，符合 `themes.scss` 里那条约定的方向）。
+  &__publish.ant-btn {
+    --ant-button-default-color: var(--app-primary);
+    --ant-button-default-hover-color: var(--app-primary-strong);
+    --ant-button-default-active-color: var(--app-primary-active);
   }
 
   // 自定义分类的「设为境界体系」入口：让自建分类能接管角色卡「当前境界」绑定。

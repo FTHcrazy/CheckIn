@@ -10,18 +10,14 @@
  *
  * 边界：不含 SQL、不认识主进程内部结构，只经 preload 暴露的 `electronAPI.novel`。
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Modal } from "antd";
 import type {
-  NovelGlobalSettingCategoryDTO,
   NovelGlobalSettingCategoryPatch,
-  NovelGlobalSettingLevelDTO,
   NovelGlobalSettingLevelPatch,
 } from "@/shared/types/electron";
-import type {
-  SettingCategory,
-  SettingCategoryKind,
-  SettingLevel,
-} from "@/shared/novel/setting-types";
+import type { SettingCategory, SettingCategoryKind } from "@/shared/novel/setting-types";
+import { toSettingCategory } from "@/shared/novel/setting-mappers";
 import { DEFAULT_CATEGORY_COLOR } from "@/shared/novel/setting-defaults";
 import { moveLevel, previewSplit } from "@/shared/novel/setting-utils";
 import { SETTING_PRESETS } from "@/shared/novel/setting-presets";
@@ -33,8 +29,26 @@ export interface GlobalSettingController {
   settings: SettingCategory[];
   /** 首次装载是否还在路上（渲染占位用） */
   loading: boolean;
-  /** 主动重载（窗口重新聚焦 / 广播 / 写后） */
+  /**
+   * 装载失败原因（`null` = 正常）。
+   *
+   * 非空时必须渲染「装载失败 + 重试」的**可见错误态**：窗口里既不能白屏，
+   * 也不能一直停在「正在打开…」，更不能把失败伪装成「一个设定都没有」的空库。
+   */
+  loadError: string | null;
+  /** 主动重载（窗口重新聚焦 / 广播 / 写后 / 错误态重试） */
   reload: () => void;
+  /**
+   * 确认框的 `contextHolder`（`Modal.useModal()` 产物），**必须由窗口渲染到组件树里**。
+   *
+   * 为什么不用静态 `Modal.confirm`/`window.confirm`：静态方法会新建独立 React root，
+   * **脱离** `ConfigProvider` 上下文 —— 本应用开了 `cssVar: { prefix: "ant" }`
+   * （见 `shared/theme/ThemeProvider.tsx`），静态调用拿不到主题变量，暗色主题下弹框会掉色；
+   * `window.confirm` 更是原生控件，违反 §6.1.2。`Modal.useModal()` 的实例方法 +
+   * 把 `contextHolder` 渲染在组件树内，则继承主题（与 BaseWindow 的
+   * `notification.useNotification()` 同款用法）。
+   */
+  modalContextHolder: ReactNode;
   onCreateCategory: (name: string, kind: SettingCategoryKind, color: string) => void;
   onPatchCategory: (categoryId: string, patch: NovelGlobalSettingCategoryPatch) => void;
   onDeleteCategory: (categoryId: string) => void;
@@ -50,50 +64,27 @@ export interface GlobalSettingController {
   onApplyPreset: (presetId: string) => void;
 }
 
-/** 全局等级 DTO → 渲染层 SettingLevel（缺省值兜底，字段一一对应） */
-function toLevel(dto: NovelGlobalSettingLevelDTO): SettingLevel {
-  return {
-    id: dto.id,
-    categoryId: dto.categoryId,
-    name: dto.name,
-    rank: dto.rank,
-    aliases: Array.isArray(dto.aliases) ? dto.aliases : [],
-    note: dto.note ?? "",
-    subLevels: dto.subLevels ?? 1,
-    subPattern: dto.subPattern ?? "",
-    power: dto.power ?? null,
-    parentId: dto.parentId ?? null,
-    segFrom: dto.segFrom ?? null,
-    segTo: dto.segTo ?? null,
-  };
-}
+/** preload 里没有全局设定通道（渲染层与主进程版本错位）时的提示 */
+const CHANNEL_MISSING_HINT =
+  "当前运行环境不支持全局设定通道（渲染层与主进程版本不一致）。请完全退出应用后重启。";
 
-/**
- * 全局分类 DTO → 渲染层 SettingCategory。
- *
- * 全局库与作品无关，`workId` 恒为空串；`refCount` 原样带出让列表显示
- * 「N 部书引用」徽标（REQ-041）。
- */
-function toCategory(dto: NovelGlobalSettingCategoryDTO): SettingCategory {
-  return {
-    id: dto.id,
-    workId: "",
-    name: dto.name,
-    color: dto.color,
-    kind: dto.kind === "realm" ? "realm" : "custom",
-    sortOrder: dto.sortOrder,
-    note: dto.note ?? "",
-    subLevels: dto.subLevels ?? 1,
-    carryDir: dto.carryDir === "desc" ? "desc" : "asc",
-    subPattern: dto.subPattern ?? "",
-    levels: (dto.levels ?? []).map(toLevel),
-    refCount: dto.refCount ?? 0,
-  };
+/** IPC 拒绝原因 → 一行可读文案（原始错误对象另外打到控制台，便于定位） */
+function describeLoadError(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) return error.message.trim();
+  if (typeof error === "string" && error.trim()) return error.trim();
+  return "未知错误（详情见开发者工具控制台）";
 }
 
 export function useGlobalSetting(): GlobalSettingController {
   const [settings, setSettings] = useState<SettingCategory[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  /**
+   * 确认框：走 `Modal.useModal()` 的**实例方法**而非静态 `Modal.confirm` ——
+   * 静态方法脱离 ConfigProvider，拿不到 `cssVar` 主题变量（见 interface 上的说明）。
+   * `contextHolder` 由窗口渲染在组件树里（`GlobalSettingWindow/App.tsx`）。
+   */
+  const [modal, modalContextHolder] = Modal.useModal();
   /** 卸载后丢弃迟到的异步结果，避免对已销毁窗口 setState */
   const aliveRef = useRef(true);
 
@@ -106,18 +97,39 @@ export function useGlobalSetting(): GlobalSettingController {
 
   const reload = useCallback(() => {
     const api = window.electronAPI?.novel;
-    if (!api) {
+    // ⚠️ 必须显式判空，不能直接 `api.globalSettingLoad()`：渲染层与 preload 版本
+    // 错位时这个方法是 undefined，直接调用是**同步 TypeError**，而 reload 由
+    // useEffect 调用 —— 抛出会让 React 卸载整棵树，用户看到的是一片白屏。
+    // 这里落到可见错误态，至少能看出「是装载失败」并手动重试。
+    if (!api || typeof api.globalSettingLoad !== "function") {
+      if (!aliveRef.current) return;
       setLoading(false);
+      setLoadError(CHANNEL_MISSING_HINT);
       return;
     }
     void api
       .globalSettingLoad()
       .then((result) => {
         if (!aliveRef.current) return;
-        setSettings((result?.categories ?? []).map(toCategory));
+        // 映射收口到共享的 `toSettingCategory`（`@/shared/novel/setting-mappers`，
+        // N-06 的唯一实现）：此前这里与 `NovelPage.refreshGlobalCategories` 各写
+        // 一份逐字段映射，加一列就漏一处。字段口径与兜底规则见该文件头注释。
+        //
+        // 两个形态开关（不改字段口径，只决定字段的有无）：
+        // - `workId: ""` —— 全局库与作品无关（全局 DTO 本就没有 `workId`，显式覆盖更明确）；
+        // - `withRefCount: true` —— 列表要显示「N 部书引用」徽标（REQ-041）；
+        //   **漏传会静默丢徽标**（`refCount` 只在真值时才写键），故测试里单独钉住。
+        setSettings(
+          (result?.categories ?? []).map((dto) =>
+            toSettingCategory(dto, { workId: "", withRefCount: true }),
+          ),
+        );
+        setLoadError(null);
       })
-      .catch(() => {
-        /* 装载失败保留上次列表；空态由 SettingCenter 自己呈现 */
+      .catch((error: unknown) => {
+        if (!aliveRef.current) return;
+        console.error("[GlobalSettingWindow] 全局设定库装载失败", error);
+        setLoadError(describeLoadError(error));
       })
       .finally(() => {
         if (aliveRef.current) setLoading(false);
@@ -161,23 +173,35 @@ export function useGlobalSetting(): GlobalSettingController {
     (categoryId: string): void => {
       const api = window.electronAPI?.novel;
       if (!api) return;
-      // D4 二次确认在主进程：先探引用计数，>0 时经 window.confirm 再执行固化删除
+      // D4 二次确认在主进程：先探引用计数（first.ok=false 且 refCount>0 即被引用），
+      // **>0 才弹确认**；确认才继续固化删除，取消则中止。
+      //
+      // ⚠️ 用 antd 上下文内的实例确认框（`modal.confirm`，见 `Modal.useModal` 的说明），
+      // 不再用原生 `window.confirm`（§6.1.2 强制条款 + 暗色主题掉色）。
       void api.globalCategoryDelete(categoryId).then(async (first) => {
         if (first.ok) {
           reload();
           return;
         }
         if (first.refCount > 0) {
-          const ok = window.confirm(
-            `该分类正被 ${first.refCount} 部书引用。删除后这些书会把它就地固化为各自的本书副本（保留内容、不再同步）。确定删除？`,
-          );
-          if (!ok) return;
+          const confirmed = await new Promise<boolean>((resolve) => {
+            modal.confirm({
+              title: "删除被引用的全局设定？",
+              content: `该分类正被 ${first.refCount} 部书引用。删除后这些书会把它就地固化为各自的本书副本（保留内容、不再同步）。确定删除？`,
+              okText: "确定删除",
+              okButtonProps: { danger: true },
+              cancelText: "取消",
+              onOk: () => resolve(true),
+              onCancel: () => resolve(false),
+            });
+          });
+          if (!confirmed) return;
         }
         await api.globalCategoryDelete(categoryId, true);
         reload();
       });
     },
-    [reload],
+    [reload, modal],
   );
 
   const onReorderCategories = useCallback(
@@ -373,7 +397,9 @@ export function useGlobalSetting(): GlobalSettingController {
   return {
     settings,
     loading,
+    loadError,
     reload,
+    modalContextHolder,
     onCreateCategory,
     onPatchCategory,
     onDeleteCategory,
