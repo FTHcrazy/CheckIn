@@ -268,3 +268,91 @@ describe("行囊 UI：改动角标与稀有度圆点形状可分", () => {
     expect(rule).toContain("border-radius: 50%");
   });
 });
+
+/**
+ * 大窗的骨架（UI-08）：**一条量尺 + 一条收口**。
+ *
+ * UI-05 当时钉的是「看板与模块区共用 44:56 竖向分界线」—— 那时两级都是双栏。
+ * UI-08 把概览压成一条横贯带（四段发丝线分栏）、工作区改成「一块或两块面板 +
+ * 贴底页脚」，那条分界线本身不再存在，于是守卫改成钉**新的意图**：
+ *   1. 三段落（概览带 / 工作区 / 页脚）共用同一条内容量尺；
+ *   2. 工作区在双分区时是 44:56 两块面板，单分区时**占满整条量尺**
+ *      （`1fr`）—— 一旦退回 `max-width: 720px` 居中窄带，「上宽下窄」立刻复现；
+ *   3. 宽档内容区撑满可视高度、页脚 `margin-top: auto` 贴底 —— 这两条一起
+ *      决定了「内容短时窗口下半截是不是一片空底」。
+ */
+describe("行囊 UI：概览带与工作区同处一条量尺、页脚收口", () => {
+  const SPLIT = /grid-template-columns:\s*minmax\(0,\s*44fr\)\s*minmax\(0,\s*56fr\)/;
+  const rootCss = stripComments(
+    sass.compile(path.resolve(ROOT, "index.scss"), { style: "expanded" }).css,
+  );
+  const boardCss = stripComments(
+    sass.compile(path.resolve(ROOT, "components/PackDashboard/index.scss"), {
+      style: "expanded",
+    }).css,
+  );
+  const headCss = stripComments(
+    sass.compile(path.resolve(ROOT, "components/PackHeader/index.scss"), {
+      style: "expanded",
+    }).css,
+  );
+
+  /** 取某选择器规则块的正文（编译产物保留注释，调用方必须先 stripComments） */
+  function ruleOf(css: string, selector: string): string {
+    const at = css.indexOf(selector);
+    expect(at).toBeGreaterThan(-1);
+    return css.slice(at, css.indexOf("}", at) + 1);
+  }
+
+  it("双分区的工作区用 44:56 两块面板", () => {
+    expect(rootCss).toMatch(SPLIT);
+  });
+
+  it("单分区占满整条量尺（1fr），不许退成居中窄带", () => {
+    const rule = ruleOf(rootCss, ".cpk__zones--single");
+    expect(rule).toContain("grid-template-columns: minmax(0, 1fr)");
+  });
+
+  it("概览带是一条带：只有一个外框，两列包装在宽档退场", () => {
+    const band = ruleOf(boardCss, ".cpk-board--wide");
+    expect(band).toContain("border: 1px solid var(--app-border)");
+    expect(band).toContain("background: var(--app-surface)");
+    // 四段 = 四列；两列包装用 display: contents 把盒子去掉，DOM 不用改
+    expect(ruleOf(boardCss, ".cpk-board--wide > .cpk-board__col {")).toContain(
+      "display: contents",
+    );
+    expect(band).not.toMatch(SPLIT);
+  });
+
+  it("概览带的段与段之间是发丝线，不是四张各自的描边卡", () => {
+    const css = boardCss;
+    expect(css).toMatch(
+      /\.cpk-board--wide > \.cpk-board__col > \.cpk-board__card \+ \.cpk-board__card[^{]*\{[^}]*border-left: 1px solid var\(--app-border\)/,
+    );
+    // 段内的卡必须把描边/投影清零（否则又成「卡里套卡」）
+    expect(css).toMatch(
+      /\.cpk-board--wide > \.cpk-board__col > \.cpk-board__card[^{]*\{[^}]*border: 0;/,
+    );
+  });
+
+  it("内容是「一条量尺」：.cpk__content 读 --cpk-measure，不写死像素", () => {
+    const rule = ruleOf(rootCss, ".cpk__content");
+    expect(rule).toContain("max-width: var(--cpk-measure)");
+  });
+
+  it("头部内容带跟同一条量尺（否则头部横贯整窗、内容只有 1760）", () => {
+    const rule = ruleOf(headCss, ".cpk-head {");
+    expect(rule).toContain("var(--cpk-measure, 1760px)");
+  });
+
+  it("宽档内容撑满高度、页脚贴底（内容短时窗口下半截不能是空底）", () => {
+    expect(rootCss).toMatch(
+      /\.cpk__body--wide \.cpk__content\s*\{[^}]*flex: 1 1 auto/,
+    );
+    expect(ruleOf(rootCss, ".cpk__workfoot")).toContain("margin-top: auto");
+  });
+
+  it("单栏居中窄带不许回来（max-width: 720px 就是「上宽下窄」的成因）", () => {
+    expect(rootCss).not.toMatch(/max-width:\s*720px/);
+  });
+});

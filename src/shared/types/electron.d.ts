@@ -278,6 +278,12 @@ export interface GlobalCategoryDeleteResult {
   refCount: number
 }
 
+/** R12 引用方名单的一行：哪部书在引用某全局分类 */
+export interface GlobalCategoryRef {
+  workId: string
+  workName: string
+}
+
 /** D3 上架的返回载荷 */
 export interface PublishToGlobalResult {
   ok: boolean
@@ -844,6 +850,8 @@ export interface ElectronAPI {
     globalLevelSplit: (levelId: string, segments: Array<{ name: string; from: number; to: number }>) => Promise<boolean>
     globalLevelMerge: (levelId: string) => Promise<boolean>
     globalSettingExport: () => Promise<NovelSettingExportPayload>
+    /** 某全局分类被哪几部书引用（只读；preload 缺通道时渲染层要按空名单兜底） */
+    globalCategoryRefs: (categoryId: string) => Promise<GlobalCategoryRef[]>
     // ── 全局设定中心：本书「引用 / 上架」 ──
     /** 本书引用一个全局分类（建立镜像，实时同步）；已引用幂等返回 true */
     referenceGlobal: (workId: string, globalCategoryId: string) => Promise<boolean>

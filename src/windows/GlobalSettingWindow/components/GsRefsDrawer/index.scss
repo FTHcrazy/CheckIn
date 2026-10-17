@@ -1,0 +1,53 @@
+/* 全局设定中心 · 引用方名单抽屉 */
+
+/* Drawer 的 wrapper / body 经 classNames 挂类命中（弹层挂 body，不能靠后代选择器）
+   ⚠️ 浮层专用底是 --app-surface-elevated，不能拿 --app-surface-alt 贴在浮层上 */
+.gs-refs__wrapper {
+  box-sizing: border-box;
+  // antd 6 的 Drawer `width` 已废弃：宽度在 wrapper（面板外层）上给
+  width: 360px;
+}
+
+.gs-refs__body {
+  box-sizing: border-box;
+  background: var(--app-surface-elevated);
+  color: var(--app-text);
+}
+
+.gs-refs__loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 0;
+}
+
+.gs-refs__count {
+  display: inline-block;
+  margin-bottom: 8px;
+  padding: 2px 10px;
+  border-radius: var(--app-radius-pill);
+  background: var(--app-accent-blue-weak);
+  color: var(--app-accent-blue);
+  font-size: 12px;
+}
+
+.gs-refs__list {
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-chip);
+  background: var(--app-surface);
+  /* 抽屉面板是浮层（elevated），列表贴 surface 才是低一档 */
+  overflow: hidden;
+}
+
+/* 只读名单：行右侧不放任何操作（R12 只回答「被谁引用了」） */
+.gs-refs__item {
+  font-size: 13px;
+}
+
+.gs-refs__name {
+  color: var(--app-text);
+}
+
+.gs-refs__empty {
+  margin: 24px 0;
+}

@@ -1,40 +1,37 @@
-import { useCallback } from "react";
 import { ClusterOutlined } from "@ant-design/icons";
 import { Alert, Button } from "antd";
 import WindowHeader from "@/shared/components/WindowHeader";
-import SettingCenter from "@/shared/components/SettingCenter";
 import { useGlobalSetting } from "./hooks/useGlobalSetting";
+import GsBody from "./components/GsBody";
 import "./index.scss";
 
 /**
  * GlobalSettingWindow —— 全局设定中心独立窗口（Q1 定稿）
  *
  * 与行囊窗口同范式：单实例、即关即销、数据全部在主进程（窗口不持有草稿）。
- * 复用本书设定中心的三栏结构 —— 组件本体在 `shared/components/SettingCenter`
- * （跨窗口共享，窗口之间禁止互相导入），这里传 `source="global"` 切成
- * 「跨书共享库」形态：标题 / 提示语 / 动作区差异化，分类行带「N 部书引用」徽标。
  *
- * ⚠️ 传 `variant="panel"`，**不套外层 Modal**（1.45.1）：本窗口整窗就是这一张
- * 设定中心，再套一层浮层就是「窗口套弹窗」—— 标题栏与浮层标题重复（两处都写
- * 「全局设定中心」）、多出第二枚关闭叉、还多一层遮罩（连带要在 index.scss 里把
- * 标题栏 z-index 抬到遮罩之上，三键才点得到）。`variant="panel"` 下标题改由窗口
- * 标题栏出（`跨书共享` 徽标挂在标题右侧插槽），内容区直接铺满。
+ * 状态机仍复用 shared 的 `useSettingCenter`（与书本侧同一份，见 `components/GsBody`），
+ * 但**外壳是窗口私有的**：不再渲染 `<SettingCenter variant="panel">`，换成
+ * `GsBody`（左栏带搜索 / 筛选 / 排序 / 引用徽标 / 双击改名 / 右键菜单，右栏顶部
+ * 加一条常驻的「影响面条」，空库给引导卡）。改革动因见
+ * `docs/design-global-setting-window-redesign.md`。
  *
  * 实时刷新：`useGlobalSetting` 订阅 `global-setting-changed` 广播 —— 书侧
  * 建立引用 / 上架也会触发（写后重载），无需重开窗口即可看到计数变化。
+ *
+ * ⚠️ 三态分流的顺序不能变：**装载中 → 装载失败 → 主体**。装载失败必须落到
+ * 可见的 `Alert` + 重试，**不得**退化成空库引导（那等于把失败伪装成「一个设定
+ * 都没有」，见 R7④）。
  */
 export default function GlobalSettingWindowApp() {
   const globalSetting = useGlobalSetting();
 
-  /** 关窗：走 window-control（由各窗口自己的 close 语义决定行为，本窗口即关即销） */
-  const closeWindow = useCallback(() => {
-    window.electronAPI?.send("window-control", "close");
-  }, []);
-
   return (
     <div className="window-shell">
       {/* 确认框的 contextHolder 必须渲染在组件树里（在 ThemeProvider/ConfigProvider 之内），
-          才能继承主题 —— 静态 Modal.confirm 会脱离上下文导致暗色掉色（见 useGlobalSetting） */}
+          才能继承主题 —— 静态 Modal.confirm 会脱离上下文导致暗色掉色（见 useGlobalSetting）。
+          ⚠️ 必须排在 .gs-shell 之前：确认框由主体内的动作触发，holder 先挂载才能保证
+          弹窗拿到上下文。 */}
       {globalSetting.modalContextHolder}
       <WindowHeader
         title="全局设定中心"
@@ -63,37 +60,7 @@ export default function GlobalSettingWindowApp() {
             />
           </div>
         ) : (
-          // panel 形态：整窗就是这一张设定中心，不套 Modal。
-          // `open` 仍传（对外契约要求），panel 形态下不参与渲染。
-          <SettingCenter
-            source="global"
-            variant="panel"
-            open
-            workName="跨书共享"
-            settings={globalSetting.settings}
-            focusCategoryId={null}
-            onClose={closeWindow}
-            onCreateCategory={globalSetting.onCreateCategory}
-            onPatchCategory={globalSetting.onPatchCategory}
-            onDeleteCategory={globalSetting.onDeleteCategory}
-            onReorderCategories={globalSetting.onReorderCategories}
-            onAddLevel={globalSetting.onAddLevel}
-            onBatchAddLevels={globalSetting.onBatchAddLevels}
-            onPatchLevel={globalSetting.onPatchLevel}
-            onDeleteLevel={globalSetting.onDeleteLevel}
-            onReorderLevels={globalSetting.onReorderLevels}
-            onSplitLevel={globalSetting.onSplitLevel}
-            onMergeLevel={globalSetting.onMergeLevel}
-            onExport={globalSetting.onExport}
-            // 模板能力绑 workId，属本书域；全局库本期不做（U3）——**不传**模板 props
-            // 即「本形态不提供模板能力」，SettingCenter 据此收走「另存为模板」入口、
-            // SaveTemplateModal 与模板库里的「我的模板」区块（此前传 5 个空实现 +
-            // 组件无条件渲染 = 点了没反应的僵尸入口，N-04）。
-            // ⚠️ 「模板库」入口**仍然保留**：内置预设是纯本地能力（SETTING_PRESETS 常量，
-            // 不依赖 IPC），`onApplyPreset` 全局库有真实实现 —— 一并收走会让全局库
-            // 白白丢掉「套用内置预设」。
-            onApplyPreset={globalSetting.onApplyPreset}
-          />
+          <GsBody data={globalSetting} />
         )}
       </div>
     </div>

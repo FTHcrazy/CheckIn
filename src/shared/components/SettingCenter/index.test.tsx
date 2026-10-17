@@ -5,6 +5,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SettingCategory } from "@/shared/novel/setting-types";
 import SettingCenter from "./index";
 
+// 本文件的「本书接线」describe 是重组件：四个 antd 弹层 + DndContext + dnd-kit
+// sensors，全仓并行跑 CPU 争用时单例会超默认 5s（单独跑 1.3–1.5s）。
+// 与 ColorPicker / GsBody 等重组件同处理，**不改任何既有用例**。
+vi.setConfig({ testTimeout: 20000 });
+
 /**
  * 按可见文案点按钮（去空白匹配 + 限定 BUTTON）
  *

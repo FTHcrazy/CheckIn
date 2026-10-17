@@ -187,6 +187,76 @@ describe("useGlobalSetting · 删除分类二次确认（N-05）", () => {
 });
 
 /**
+ * R12 引用方名单：`loadCategoryRefs`
+ *
+ * 窗口侧要能从「N 部书引用」展开到「哪几部书」。这条通道是**新增**的，所以必须正视
+ * 「渲染层与 preload 版本错位」这条真实路径：老 preload 里没有 `globalCategoryRefs`，
+ * 此时 `api.globalCategoryRefs(...)` 是同步 TypeError —— 而它会被 UI 回调直接在
+ * 渲染期调到，一抛就是整棵树卸载（白屏）。故判据是「返回空名单、不抛」，而不是报错。
+ *
+ * 它是**纯数据原语**：视图态（loading / error / retry）由使用它的抽屉自持。
+ */
+describe("useGlobalSetting · 引用方名单（R12）", () => {
+  afterEach(() => {
+    cleanup();
+    document.body.innerHTML = "";
+    window.electronAPI = undefined;
+    vi.restoreAllMocks();
+  });
+
+  /** 渲染 harness 并等待首次装载结束，返回最新的 controller 读取器 */
+  async function renderWith(novel: NovelApi): Promise<() => GlobalSettingController> {
+    mountApi({
+      globalSettingLoad: vi.fn(async () => ({ categories: [] })),
+      ...novel,
+    });
+    let latest!: GlobalSettingController;
+    render(
+      <Harness
+        onReady={(c) => {
+          latest = c;
+        }}
+      />,
+    );
+    await waitFor(() => expect(latest.loading).toBe(false));
+    return () => latest;
+  }
+
+  it("正常返回名单（透传 IPC 结果，不改写字段）", async () => {
+    const refs = [
+      { workId: "w1", workName: "九州志" },
+      { workId: "w2", workName: "尘仙录" },
+    ];
+    const globalCategoryRefs = vi.fn(async () => refs);
+    const controller = await renderWith({ globalCategoryRefs });
+
+    await expect(controller().loadCategoryRefs("g1")).resolves.toEqual(refs);
+    expect(globalCategoryRefs).toHaveBeenCalledWith("g1");
+  });
+
+  it("preload 缺 globalCategoryRefs（版本错位）：返回 [] 且不抛", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    // 这份桩里**故意不放** globalCategoryRefs —— 模拟旧版 preload
+    const controller = await renderWith({});
+
+    await expect(controller().loadCategoryRefs("g1")).resolves.toEqual([]);
+    // 也不能借 console.error 之外的方式把异常冒到调用方
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it("IPC 拒绝：退化为 [] 并留一条控制台错误（不把窗口打到错误态）", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const globalCategoryRefs = vi.fn(async () => {
+      throw new Error("db locked");
+    });
+    const controller = await renderWith({ globalCategoryRefs });
+
+    await expect(controller().loadCategoryRefs("g1")).resolves.toEqual([]);
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
  * `useGlobalSetting` 装载映射（N-06 收口）
  *
  * 分类/等级 DTO → `SettingCategory` / `SettingLevel` 的映射已收口到共享的

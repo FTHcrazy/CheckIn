@@ -7,6 +7,7 @@ import {
   Menu,
   globalShortcut,
 } from "electron";
+import type { WebContents } from "electron";
 import path from "path";
 import fs from "fs";
 import { initDb, closeDb, switchUserDb } from "./db";
@@ -221,13 +222,31 @@ function loadRendererEntry(win: BrowserWindow, entry: WindowEntryKey, query = ""
  */
 const WINDOW_LOAD_FALLBACK_MS = 3000;
 
-/** 显示窗口（已显示 / 已销毁时只记日志，不重复 show） */
+/**
+ * 把窗口显示出来并**抬到最前**。
+ *
+ * 功能窗口一律 `transparent: true` + `frame: false`（圆角外壳）。这类窗口在
+ * Windows 上「先 `show: false` 创建、随后再 show」时经常只拿到显示、拿不到前台
+ * —— 表现是「点了行囊，窗口其实已经起来了，但被小说窗口压着看不见」，用户再点
+ * 一次，第二次走 `createPackWindow` 的「已开」分支 `focus()` 才把它翻上来，
+ * 于是就成了「要点两次才会弹出行囊窗口」。
+ *
+ * `moveTop()` 与焦点无关地抬 z 序（Windows/macOS 都支持），补上这一击：
+ * `show()` 保证可见、`focus()` 争取焦点（可能被系统前台锁拒）、`moveTop()`
+ * 保证在最上面 —— 三者缺一都有「窗口存在但看不见」的形态。
+ */
+function raiseWindow(win: BrowserWindow): void {
+  if (win.isDestroyed()) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+  win.moveTop();
+}
+
+/** 显示窗口（已销毁时直接返回；已显示也会重新抬到最前，见 raiseWindow） */
 function revealWindow(win: BrowserWindow, label: string, reason: string): void {
   if (win.isDestroyed()) return;
-  if (!win.isVisible()) {
-    win.show();
-    win.focus();
-  }
+  raiseWindow(win);
   console.log(`[main] ${label} 窗口已显示（${reason}）`);
 }
 
@@ -535,22 +554,36 @@ let packWindowContext: {
 } | null = null;
 
 /**
+ * 回执「行囊窗口真的可见了」给发起方（顶栏那颗按钮据此退出 loading）。
+ *
+ * 只在窗口可见时发：首次创建要等整个 SPA 装载完成（dev 下 1–3s），提前发等于
+ * 把「正在打开」提前收掉，作者又会以为没反应。
+ */
+function notifyPackShown(opener?: WebContents): void {
+  if (!opener || opener.isDestroyed()) return;
+  opener.send("pack-window-shown");
+}
+
+/**
  * PackWindow —— 行囊独立窗口（full / novel 版）。
  *
  * 即关即销、单实例唤起；数据全部经 novel-pack IPC（userDb 的 novel_* 表），
  * 窗口本身不持有需要迁移的状态 —— 草稿在主进程表里，跨窗口一致、崩溃不丢。
  * 有未保存改动时由 close-guard 拦截（渲染层武装，dirty>0 才拦）。
+ *
+ * @param opener 发起本次打开的渲染进程（顶栏「行囊」所属窗口）。窗口**真正可见**时
+ *   会回一条 `pack-window-shown`，让那颗按钮从「正在打开」恢复常态 —— 首次创建要等
+ *   整个 SPA 装载（dev 下 1–3s），没有这条回执，作者会觉得「点了没反应」而再点一次。
  */
-function createPackWindow(): BrowserWindow {
+function createPackWindow(opener?: WebContents): BrowserWindow {
   const existing = windowManager.get("pack");
   if (existing) {
-    // 已开：补发一次上下文兜底（切书广播若在加载完成前发出会错过），再聚焦
+    // 已开：补发一次上下文兜底（切书广播若在加载完成前发出会错过），再抬到最前
     if (packWindowContext) {
       windowManager.sendTo("pack", "pack-window-context", packWindowContext);
     }
-    if (existing.isMinimized()) existing.restore();
-    existing.show();
-    existing.focus();
+    raiseWindow(existing);
+    notifyPackShown(opener);
     return existing;
   }
 
@@ -579,6 +612,10 @@ function createPackWindow(): BrowserWindow {
       windowManager.sendTo("pack", "pack-window-context", packWindowContext);
     }
   });
+
+  // 「真的可见」的回执：钉在 `show` 事件上而不是 reveal 里 —— 正常装载、
+  // 装载失败兜底、超时兜底三条路径都会走 show，只有正常路径走 reveal
+  packWin.once("show", () => notifyPackShown(opener));
 
   attachWindowLoadGuard(packWin, "Pack");
 
@@ -619,10 +656,9 @@ function createPackWindow(): BrowserWindow {
 function createGlobalSettingWindow(): BrowserWindow {
   const existing = windowManager.get("globalSetting");
   if (existing) {
-    // 已开：聚焦而不是重复创建（例如入口重复触发）
-    if (existing.isMinimized()) existing.restore();
-    existing.show();
-    existing.focus();
+    // 已开：抬到最前而不是重复创建（同一类「透明无边框窗口 show 后不到前台」，
+    // 见 raiseWindow 的注释）
+    raiseWindow(existing);
     return existing;
   }
 
@@ -896,8 +932,11 @@ app.whenReady().then(() => {
   // ── PackWindow 开关 IPC（full / novel 版：入口在小说窗口顶栏） ──
   // payload 携带当前作品 / 章节，供新窗口装载与切书兜底；lite 版不打包
   // 行囊窗口（novel 域整体缺席），请求直接忽略。
-  ipcMain.on("pack-window-open", (_event, payload: unknown) => {
+  ipcMain.on("pack-window-open", (event, payload: unknown) => {
     if (EDITION === "lite") return;
+    // 到达日志（与 global-setting-window-open 同口径）：「点了没反应」时第一件事
+    // 是分清「点击没到主进程」与「窗口没起来」，没有这行就只剩猜
+    console.log("[main] 收到 pack-window-open，开始唤起行囊窗口");
     if (payload && typeof payload === "object") {
       const workId =
         "workId" in payload && typeof (payload as { workId: unknown }).workId === "string"
@@ -919,7 +958,7 @@ app.whenReady().then(() => {
           : undefined;
       packWindowContext = { workId, chapterId, nonce };
     }
-    createPackWindow();
+    createPackWindow(event.sender);
   });
 
   // ── 跨窗口导航：行囊窗口 → 小说窗口的设定中心（UI-03） ──

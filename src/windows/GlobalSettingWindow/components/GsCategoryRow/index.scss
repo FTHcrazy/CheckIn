@@ -1,0 +1,150 @@
+/* 全局设定中心 · 左栏分类行 */
+@use "../../../../shared/styles/widget" as widget;
+
+/* 行外壳：dnd-kit 的 ref / transform 挂这一层，行本身是里面的 Button。
+   分开是为了让「改名态换成 div 承载输入框」时不破坏拖拽节点。 */
+.gs-cat-slot {
+  position: relative;
+
+  &.is-drag {
+    z-index: 2;
+  }
+}
+
+/* 自带造型 ⇒ 用 Button 承载 + 清零点 mixin（§6.1.2 第 3 条）。
+   ⚠️ @include 与控件自己的 --ant-button-* 必须写在**同一个**选择器里 ——
+   拆成两个类会因打包顺序静默失效。 */
+.gs-cat-row.ant-btn {
+  @include widget.ant-button-reset;
+  --ant-button-default-bg: transparent;
+  --ant-button-default-hover-bg: var(--app-surface-hover);
+  --ant-button-default-active-bg: var(--app-surface-active);
+  --ant-button-default-color: var(--app-text);
+
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 7px 8px;
+  border-radius: var(--app-radius-chip);
+  font-size: 13px;
+  text-align: left;
+
+  /* 选中态：主色弱底 + 同色文字 + 左侧 2px 主色签。
+     常驻块不许超过 --app-primary-weak 这一档（themes.scss 语义上限）；
+     加签是因为弱底在 cream 下与卡片只差一档，光靠底色读不出「我在哪」。 */
+  &.is-on {
+    --ant-button-default-bg: var(--app-primary-weak);
+    --ant-button-default-hover-bg: var(--app-primary-weak);
+    --ant-button-default-color: var(--app-primary);
+    box-shadow: inset 2px 0 0 var(--app-primary);
+
+    .gs-cat-row__name {
+      font-weight: 600;
+    }
+  }
+
+  /* 改名态：去掉按钮外观的残留（输入框自己有边框） */
+  &.is-editing {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 3px 6px;
+  }
+}
+
+.gs-cat-row__grip {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  color: var(--app-text-muted);
+  cursor: grab;
+  /* 手柄默认很淡：它是「可拖」的线索，不该和名称同权重；悬停行才显形 */
+  opacity: 0.45;
+  transition: opacity 0.15s ease;
+  // PointerSensor 需要禁掉浏览器原生的触摸 / 拖拽默认行为
+  touch-action: none;
+
+  .gs-cat-row:hover &,
+  .gs-cat-row:focus-visible & {
+    opacity: 1;
+  }
+
+  &.is-locked {
+    cursor: not-allowed;
+    opacity: 0.3;
+  }
+}
+
+.gs-cat-row__dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--app-radius-pill);
+}
+
+/* 行体：名称一行、计数一行 —— 240px 栏宽下单行式会把名称挤成省略号 */
+.gs-cat-row__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.gs-cat-row__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.gs-cat-row__meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  /* 12px 是下限（见 gs-skin.scss 顶部约定）；行高 1.3 是为了第二行不把
+     整行撑高 —— 一行 13 + 一行 12 的密度已经够了 */
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.3;
+  color: var(--app-text-muted);
+}
+
+.gs-cat-row__sep {
+  color: var(--app-text-disabled);
+}
+
+.gs-cat-row__count {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 引用徽标：>0 用强调蓝字，0 保持弱化灰字（「暂无引用」不该和「5 部书引用」
+   同权重）。这里不再套 pill 底 —— 第二行整行只有 12px，底色会把它压成一块。 */
+.gs-cat-row__ref {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--app-text-muted);
+
+  &.is-on {
+    color: var(--app-accent-blue);
+  }
+}
+
+.gs-cat-row__input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 右键菜单弹层（挂 body）：只声明底色与圆角，不写 :hover 状态选择器 */
+.gs-cat-row__menu {
+  border-radius: var(--app-radius-item);
+}

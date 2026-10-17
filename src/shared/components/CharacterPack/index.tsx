@@ -34,11 +34,14 @@ import {
   PACK_ZONE_LABEL,
   PACK_ZONE_OF,
   activeZones,
+  disabledModuleCount,
   isAutoCollapsed,
   missingZoneOf,
   moduleScrollDelta,
   moduleSummary,
+  panelModuleCount,
   splitByZone,
+  zonePanels,
   type PackZone,
 } from "./pack-layout";
 import { PACK_MODULES, type PackModuleKey, type PackModuleState } from "./types";
@@ -278,6 +281,22 @@ export default function CharacterPackHost({
   const missingZone: PackZone | null = missingZoneOf(wideZones);
 
   /**
+   * 宽档的**分区面板**（UI-08）。
+   *
+   * 面板 = 栏头（分区名 + 模块数）+ 栏目（卡片流），整块撑满概览带以下的高度：
+   * - 双分区都在 → 两块面板（左数值与状态 / 右装备类），44:56 走 `.cpk__zones`；
+   * - 只剩一个分区 → **一块**面板占满整条量尺，内部再拆两栏（`soloColumns`），
+   *   别让下半场缩成一条窄带；
+   * - 对面分区被关掉时，引导卡落在最后一个栏目的末尾（`missingZone`）。
+   *
+   * 编排规则全在 `zonePanels` 这个纯函数里，组件只照着 `columns` 铺 DOM。
+   */
+  const panels = useMemo(() => zonePanels(zoneModules), [zoneModules]);
+
+  /** 栏脚提示用的「还没开启几个模块」（纯减法，见 pack-layout） */
+  const disabledCount = disabledModuleCount(api.enabledModules);
+
+  /**
    * 渲染单个模块。代理只在该模块的生效折叠态与作者偏好不同时才新建对象。
    *
    * 外壳经 context 投下三件事：窄档摘要、钉选态、钉选开关。核心三块不参与
@@ -372,67 +391,110 @@ export default function CharacterPackHost({
           </p>
         ) : (
           <>
-            {/* ── L0 看板（UI-01）：一屏看懂主角当前状态 ── */}
-            <PackDashboard
-              api={api}
-              tier={tier}
-              attrsExpanded={attrsExpanded}
-              onToggleAttrs={() => setAttrsExpanded((value) => !value)}
-              onExpandModule={openModuleFromBoard}
-              expandedKeys={expandedKeys}
-            />
+            {/*
+              统一内容量尺：看板与 L1 模块区共用同一个居中容器（`max-width`
+              见 index.scss）。超宽窗口下两级内容左右边界必须落在同一处，
+              否则上半铺满整窗、下半缩在中间，「割裂」就是这么来的。
+            */}
+            <div className="cpk__content">
+              {/* ── L0 看板（UI-01）：一屏看懂主角当前状态 ── */}
+              <PackDashboard
+                api={api}
+                tier={tier}
+                attrsExpanded={attrsExpanded}
+                onToggleAttrs={() => setAttrsExpanded((value) => !value)}
+                onExpandModule={openModuleFromBoard}
+                expandedKeys={expandedKeys}
+              />
 
-            {/* ── L1 编辑器区：十个模块（摘要行 / 就地展开）── */}
-            {isWide ? (
-              /*
-                宽档：按语义双栏。左「数值与状态」/ 右「装备类」——
-                两栏各自独立滚动区会抢滚轮，所以仍共用外层这一条滚动条，
-                两栏只是并排的网格轨道（高度由内容决定，短的那栏自然留白）。
-              */
-              <div
-                className={`cpk__zones${wideZones.length === 1 ? " cpk__zones--solo" : ""}`}
-              >
-                {wideZones.map((zone) => (
-                  <section
-                    key={zone}
-                    className={`cpk__zone cpk__zone--${zone}`}
-                    aria-label={PACK_ZONE_LABEL[zone]}
-                  >
-                    {/*
-                      单分区时眉标是噪音（整个内容区就是这一栏），只在双栏时出；
-                      对面栏被整体关掉时补一张引导卡，作者才知道行囊还能开更多模块。
-                    */}
-                    {wideZones.length > 1 ? (
-                      <h3 className="cpk__zonetitle">{PACK_ZONE_LABEL[zone]}</h3>
-                    ) : null}
-                    <div className="cpk__zonestack">
-                      {zoneModules[zone].map(renderModule)}
-                    </div>
-                  </section>
-                ))}
-                {missingZone ? (
-                  <Button
-                    type="dashed"
-                    block
-                    className="cpk__zoneghost"
-                    onClick={() => api.setModuleManagerOpen(true)}
-                  >
-                    <span className="cpk__zoneghost-line cpk__zoneghost-line--title">
-                      {PACK_ZONE_LABEL[missingZone]}模块都还没开
-                    </span>
-                    <span className="cpk__zoneghost-line">
-                      {PACK_MODULES.filter((m) => PACK_ZONE_OF[m.key] === missingZone)
-                        .map((m) => m.label)
-                        .join(" / ")}
-                      ，点这里在「模块管理」里按需开启。
-                    </span>
-                  </Button>
-                ) : null}
-              </div>
-            ) : (
-              /* 中 / 窄档：单栏纵向流；窄档下次要模块由 isAutoCollapsed 折叠成标题行 */
-              <div className="cpk__flow">{api.enabledModules.map(renderModule)}</div>
-            )}
+              {/* ── L1 编辑器区：十个模块（摘要行 / 就地展开）── */}
+              {isWide ? (
+                /*
+                  宽档（UI-08）：概览带以下是**工作区**，由一块或两块面板铺成。
+                  面板 = 栏头（这块是哪儿 + 几块模块）+ 栏目（卡片流），
+                  两者共同撑到窗口底部，页脚贴底收口 —— 窗口再高也不会像
+                  「只加载了一半」。
+
+                  只剩一个分区时不再退化成通栏窄带：仍是一块面板（占满整条量尺），
+                  内部由 `zonePanels` 拆成两栏继续走同一套栏目结构。
+                */
+                <div
+                  className={`cpk__zones${panels.length === 1 ? " cpk__zones--single" : ""}`}
+                >
+                  {panels.map((panel, panelIndex) => (
+                    <section
+                      key={panel.key}
+                      className={`cpk__zone cpk__zone--${panel.zone}${
+                        panel.columns.length > 1 ? " cpk__zone--split" : ""
+                      }`}
+                      aria-label={PACK_ZONE_LABEL[panel.zone]}
+                    >
+                      <header className="cpk__zonehead">
+                        <h3 className="cpk__zonetitle">{PACK_ZONE_LABEL[panel.zone]}</h3>
+                        <span className="cpk__zonecount">
+                          {panelModuleCount(panel)} 个模块
+                        </span>
+                      </header>
+                      <div className="cpk__zonestack">
+                        {panel.columns.map((column, columnIndex) => (
+                          <div
+                            className="cpk__zonecol"
+                            key={`${panel.key}-${columnIndex}`}
+                          >
+                            {column.map(renderModule)}
+                            {/*
+                              对面分区被整体关掉时，引导卡落在最后一个栏目的末尾
+                              —— 位置正好是它本该在的地方，作者才知道行囊还能开更多模块。
+                            */}
+                            {missingZone &&
+                            panelIndex === panels.length - 1 &&
+                            columnIndex === panel.columns.length - 1 ? (
+                              <Button
+                                type="dashed"
+                                block
+                                className="cpk__zoneghost"
+                                onClick={() => api.setModuleManagerOpen(true)}
+                              >
+                                <span className="cpk__zoneghost-line cpk__zoneghost-line--title">
+                                  {PACK_ZONE_LABEL[missingZone]}模块都还没开
+                                </span>
+                                <span className="cpk__zoneghost-line">
+                                  {PACK_MODULES.filter(
+                                    (m) => PACK_ZONE_OF[m.key] === missingZone,
+                                  )
+                                    .map((m) => m.label)
+                                    .join(" / ")}
+                                  ，点这里在「模块管理」里按需开启。
+                                </span>
+                              </Button>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  ))}
+                </div>
+              ) : (
+                /* 中 / 窄档：单栏纵向流；窄档下次要模块由 isAutoCollapsed 折叠成标题行 */
+                <div className="cpk__flow">{api.enabledModules.map(renderModule)}</div>
+              )}
+
+              {/*
+                页脚（仅宽档）：把内容区**收口到窗口底部**。
+                没有它，内容短的时候整页浮在上半屏，窗口下半截是一整片空底 ——
+                真机截图里就是「像没加载完」。它不是导航（导航在头部与概览带），
+                只报两个事实：草稿是即存的、模块开了几个。
+              */}
+              {isWide ? (
+                <footer className="cpk__workfoot">
+                  <span>改动即存草稿 · 关窗前会提醒保存</span>
+                  <span className="cpk__workfoot-count">
+                    已启用 {api.enabledModules.length} / {PACK_MODULES.length} 个模块
+                    {disabledCount > 0 ? ` · 还有 ${disabledCount} 个可开` : ""}
+                  </span>
+                </footer>
+              ) : null}
+            </div>
           </>
         )}
       </div>

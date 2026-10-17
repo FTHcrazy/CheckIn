@@ -1,0 +1,90 @@
+/* 全局设定中心 · 影响面（分类头卡的第一行）
+
+   形态从「一条独立灰条」改成卡内的一行元信息：一条通栏弱底会把「说明」
+   压成警示条，而它其实只是分类的一条属性（谁在引用它）。 */
+
+.gs-impact {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  /* 固定高：右栏其余部分靠 flex 分配，这一行不参与伸缩。
+     26 = 24 的图标方片 + 上下各 1px，保证方片与右侧按钮同处一条中线。 */
+  flex: 0 0 auto;
+  min-height: 26px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  /* 与下方分类头之间只留一条发丝线，不再靠底色分块 */
+  border-bottom: 1px solid var(--app-splitter);
+  color: var(--app-text-secondary);
+}
+
+/* 图标方片：与书架统计卡的图标底同款（弱底 + 同色图标）；
+   N = 0 时退回中性弱底 —— 「暂无引用」不该和「被 5 部书引用」同权重 */
+.gs-impact__tile {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  background: var(--app-surface-alt);
+  color: var(--app-text-muted);
+  font-size: 12px;
+}
+
+.gs-impact.is-low .gs-impact__tile,
+.gs-impact.is-high .gs-impact__tile {
+  background: var(--app-accent-blue-weak);
+  color: var(--app-accent-blue);
+}
+
+/* 单行省略：窄窗（≤959px）下面条宽度被压到最小，文案必须能收住而不是撑破盒子 */
+.gs-impact__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.gs-impact__warn {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  font-size: 12px;
+  color: var(--app-warning);
+}
+
+.gs-impact__spacer {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 「查看引用方」：纯文字出口，hover 才落一层弱主色底（与行尾操作同一套）。
+   它是唯一的常驻动作 —— 删除已收归分类卡头，这里不再重复。
+   高度必须与左侧 24px 图标方片一致：22 时它比方片矮一头，一行里两个
+   元素的中线不共线（截图红框里看着「飘」）。 */
+.gs-impact__refs.ant-btn {
+  flex: 0 0 auto;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: var(--app-radius-pill);
+  font-size: 12px;
+  --ant-button-text-color: var(--app-accent-blue);
+  --ant-button-text-hover-color: var(--app-accent-blue);
+  --ant-button-text-hover-bg: var(--app-accent-blue-weak);
+  --ant-button-default-bg: transparent;
+  --ant-button-default-border-color: transparent;
+  --ant-button-default-color: var(--app-accent-blue);
+  --ant-button-default-hover-bg: var(--app-accent-blue-weak);
+  --ant-button-default-hover-border-color: transparent;
+  --ant-button-default-hover-color: var(--app-accent-blue);
+}
+
+/* Tooltip 弹层（挂 body）：只给圆角，不写 :hover 状态选择器 */
+.gs-impact__tip {
+  border-radius: var(--app-radius-item);
+}

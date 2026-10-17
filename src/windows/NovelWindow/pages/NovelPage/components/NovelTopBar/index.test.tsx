@@ -159,3 +159,94 @@ describe("NovelTopBar：「本书设定」toggle 语义（REQ-050 修法 ③）"
     expect(btn).toHaveAttribute("aria-pressed", "false");
   });
 });
+
+/**
+ * REQ-053：浮层（设定中心 / 类型管理 Modal）开着时，顶栏按钮的第一击必须
+ * 既落到按钮本身、又收掉浮层 —— 否则就是「行囊 / 小说设定要点两次」。
+ *
+ * 这里钉的是**通知时机与例外**（jsdom 没有遮罩几何，命中范围由
+ * `NovelPage/index.scss` 的 `.nv-page.is-overlay` 负责，那条由样式守卫钉）。
+ */
+describe("NovelTopBar：页内浮层让位（REQ-053）", () => {
+  it("点「行囊」时先收浮层、再打开行囊（同一次点击，两个动作都发生）", () => {
+    const order: string[] = [];
+    const onDismissOverlays = vi.fn(() => order.push("dismiss"));
+    const onOpenPack = vi.fn(() => order.push("pack"));
+    setup({ onDismissOverlays, onOpenPack });
+
+    iconButton("行囊").click();
+
+    expect(onDismissOverlays).toHaveBeenCalledTimes(1);
+    expect(onOpenPack).toHaveBeenCalledTimes(1);
+    // 顺序不能反：先把浮层收掉（它若还在，会把这次点击的后续动作压在下面）
+    expect(order).toEqual(["dismiss", "pack"]);
+  });
+
+  it("点「小说设定」自己不预先关浮层（否则先关再 toggle 打开 = 点了没反应）", () => {
+    const onDismissOverlays = vi.fn();
+    const onToggleSettingCenter = vi.fn();
+    setup({ onDismissOverlays, onToggleSettingCenter });
+
+    const btn = screen.getByRole("button", { name: "小说设定" });
+    fireEvent.click(btn);
+
+    expect(onDismissOverlays).not.toHaveBeenCalled();
+    expect(onToggleSettingCenter).toHaveBeenCalledTimes(1);
+  });
+
+  it("「小说设定」是唯一带 data-page-overlay-keep-open 的例外；其余动作都会让浮层让位", () => {
+    const onDismissOverlays = vi.fn();
+    setup({ onDismissOverlays });
+
+    expect(
+      screen.getByRole("button", { name: "小说设定" }),
+    ).toHaveAttribute("data-page-overlay-keep-open", "settingCenter");
+
+    // 顶栏下拉、菜单、开关全在一条捕获链上，不逐颗挂标记 —— 除上一颗外都通知
+    ["章节栏", "支撑面板", "行囊", "历史快照", "排版与偏好"].forEach((label) => {
+      expect(iconButton(label).hasAttribute("data-page-overlay-keep-open")).toBe(
+        false,
+      );
+    });
+  });
+});
+
+/**
+ * REQ-054：行囊是独立窗口，首次创建要等整个 SPA 装载（dev 下 1–3s）。
+ * 这段时间按钮必须**自己说明正在打开** —— 否则作者只会看到「点了没反应」，
+ * 补点一次就记成「要点两次才弹出行囊窗口」。
+ *
+ * 同时钉住「**不能**用 `Button` 的 `loading` 属性」：antd 的 loading 会把 onClick
+ * 一起吞掉，而「再点一次」正是窗口落到后面时的唯一退路（主进程已开分支走
+ * `raiseWindow`）。所以这里只换内容不换可点性。
+ */
+describe("NovelTopBar：行囊「正在打开」态（REQ-054）", () => {
+  it("packOpening=true → 图标换成转圈、aria-busy 置位", () => {
+    setup({ packOpening: true });
+
+    const btn = iconButton("行囊");
+    expect(btn.querySelector(".anticon-loading")).not.toBeNull();
+    expect(btn).toHaveAttribute("aria-busy", "true");
+    // 刻意不用 antd loading：那会顺手关掉点击（下面一条钉它）
+    expect(btn.className).not.toContain("ant-btn-loading");
+  });
+
+  it("「正在打开」期间再次点击**仍然**发请求（= 把落到后面的窗口拉前）", () => {
+    const onOpenPack = vi.fn();
+    setup({ packOpening: true, onOpenPack });
+
+    fireEvent.click(iconButton("行囊"));
+    expect(onOpenPack).toHaveBeenCalledTimes(1);
+  });
+
+  it("默认（窗口未在打开）不显示转圈，点击即发请求", () => {
+    const onOpenPack = vi.fn();
+    setup({ onOpenPack });
+
+    const btn = iconButton("行囊");
+    expect(btn.querySelector(".anticon-loading")).toBeNull();
+    expect(btn.hasAttribute("aria-busy")).toBe(false);
+    fireEvent.click(btn);
+    expect(onOpenPack).toHaveBeenCalledTimes(1);
+  });
+});

@@ -236,6 +236,31 @@ export function useNovelViewState() {
   const openTypeManager = useCallback(() => setTypeManagerOpen(true), []);
   const closeTypeManager = useCallback(() => setTypeManagerOpen(false), []);
 
+  /**
+   * 页内浮层（REQ-053）：`设定中心` 与 `自定义类型管理` 都是 **带遮罩的 antd Modal**。
+   *
+   * 与「快照 / 排版」那两个**无遮罩**抽屉不同，它们会给整个视口盖一层
+   * `.ant-modal-wrap`（`position: fixed; inset: 0`），顶栏按钮也在它的命中范围里。
+   * 于是「浮层开着时点顶栏功能按钮」的第一击会被 wrap 自己收走（wrap 点空白即关），
+   * 按钮拿不到 click —— 这正是「行囊 / 小说设定要点两次」在 Modal 路径上的残留。
+   *
+   * 两侧分工：
+   * - **布局**：浮层打开时把顶栏抬到 wrap 之上（`NovelPage/index.scss` 的
+   *   `.nv-page.is-overlay`），让点击能落到按钮本身；
+   * - **语义**：点击落在顶栏上即「离开当前浮层」，先收浮层再执行按钮动作
+   *   （`NovelTopBar` 的 click 捕获阶段统一调本函数）。
+   *
+   * 只在「浮层真的开着」时才有必要调；对已关闭的浮层是空操作。
+   */
+  const dismissPageOverlays = useCallback(() => {
+    setSettingCenterOpen(false);
+    setSettingFocusId(null);
+    setTypeManagerOpen(false);
+  }, []);
+
+  /** 是否有「带遮罩的页内浮层」开着（顶栏要不要抬到遮罩之上，看它） */
+  const pageOverlayOpen = settingCenterOpen || typeManagerOpen;
+
   const selectPanelTab = useCallback((tab: PanelTab) => {
     setPanelTab(tab);
     setRightOpen(true);
@@ -266,6 +291,8 @@ export function useNovelViewState() {
     settingCenterOpen,
     settingFocusId,
     typeManagerOpen,
+    pageOverlayOpen,
+    dismissPageOverlays,
     toast,
     toggleLeft,
     toggleRight,

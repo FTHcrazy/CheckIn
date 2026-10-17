@@ -94,6 +94,20 @@ export function useNovelPage() {
    * 声明在顶部：`handleResetTemplate`（下方）要 set它，setState 必须先声明。
    */
   const [packNonce, setPackNonce] = useState(0);
+  /**
+   * 「正在打开行囊」态（REQ-054）。
+   *
+   * 行囊是**独立窗口**：首次创建要等整个 SPA 装载完（dev 下 1–3s），这段时间
+   * 屏幕上什么都不会发生 —— 作者会以为点了没反应，于是再点一次；第二次恰好命中
+   * 装载完成前后，就成了「要点两次才弹出行囊窗口」。
+   *
+   * 所以点击即置位（顶栏那颗按钮转 loading），主进程在窗口**真正可见**时回执
+   * `pack-window-shown` 复位。另有超时兜底：回执丢了也不要把按钮永久钉住。
+   */
+  const [packOpening, setPackOpening] = useState(false);
+  /** 回执可能永远不来（窗口装载失败且被关掉），兜底时长按 dev 最慢路径留够余量 */
+  const PACK_OPENING_TIMEOUT_MS = 8000;
+  const packOpeningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const data = useNovelData();
   const editor = useNovelEditorState(data);
@@ -783,12 +797,45 @@ export function useNovelPage() {
       view.showToast("先创建一部作品，再打开行囊", "warning");
       return;
     }
+    // 先给反馈再发 IPC：窗口装载期间屏幕上只有这颗按钮能动，
+    // 没有它作者只会看到「点了没反应」（见 packOpening 的注释）
+    setPackOpening(true);
+    if (packOpeningTimerRef.current) clearTimeout(packOpeningTimerRef.current);
+    packOpeningTimerRef.current = setTimeout(() => {
+      packOpeningTimerRef.current = null;
+      setPackOpening(false);
+    }, PACK_OPENING_TIMEOUT_MS);
     window.electronAPI?.send("pack-window-open", {
       workId: data.activeWorkId,
       chapterId: data.activeChapterId ?? "",
       nonce: packNonce,
     });
   }, [data.activeWorkId, data.activeChapterId, packNonce, view]);
+
+  /**
+   * 行囊窗口「真的可见」的回执（主进程 `notifyPackShown` → `pack-window-shown`）。
+   *
+   * 收到即复位 loading；同时清掉兜底定时器 —— 两者谁先到都行，
+   * 但都必须保证不残留一个「8 秒后才复位」的幽灵定时器。
+   */
+  useEffect(() => {
+    const api = window.electronAPI;
+    if (!api?.receive) return undefined;
+    const unsubscribe = api.receive("pack-window-shown", () => {
+      if (packOpeningTimerRef.current) {
+        clearTimeout(packOpeningTimerRef.current);
+        packOpeningTimerRef.current = null;
+      }
+      setPackOpening(false);
+    });
+    return () => {
+      unsubscribe();
+      if (packOpeningTimerRef.current) {
+        clearTimeout(packOpeningTimerRef.current);
+        packOpeningTimerRef.current = null;
+      }
+    };
+  }, []);
 
   /**
    * 行囊窗口主动跟进：作品 / 章节变化（含编辑器首挂载）即广播新上下文。
@@ -1290,6 +1337,7 @@ export function useNovelPage() {
     handleSelectChapter,
     handleSelectWork,
     openPackWindow,
+    packOpening,
     handleRollback,
     handleMark,
     handleOpenEntity,

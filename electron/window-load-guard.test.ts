@@ -57,15 +57,41 @@ describe("装载失败必须可见 + 必有窗口（守卫）", () => {
       /if \(timer\) \{\s*clearTimeout\(timer\);[\s\S]*?timer = undefined;/,
     );
     expect(body).toMatch(/win\.once\("closed",[\s\S]*?clearTimeout\(timer\)/);
-    // 缺省显示动作 = revealWindow（show + focus），由它统一做 isDestroyed 守卫
+    // 缺省显示动作 = revealWindow，由它统一做 isDestroyed 守卫并委托 raiseWindow
     expect(body).toContain("revealWindow(win, label, reason)");
     // 装载失败也要把窗口显示出来（错误页好过什么都不出现）
     expect(body).toContain('reveal("主框架装载失败")');
 
     const show = topLevelBody("function revealWindow(");
     expect(show).toContain("isDestroyed()");
-    expect(show).toContain("win.show()");
-    expect(show).toContain("win.focus()");
+    expect(show).toContain("raiseWindow(win)");
+  });
+
+  /**
+   * 「显示」= 可见 + 最前（REQ-054）。
+   *
+   * 只 `show()` 是不够的：功能窗口一律 `transparent: true` + `frame: false`，
+   * 这类窗口「先隐藏创建、随后再 show」在 Windows 上经常拿不到前台 ——
+   * 窗口确实起来了，但被小说窗口压着，用户会再点一次（第二次走「已开」分支
+   * 才 focus 到前面），于是成了「要点两次才弹出行囊窗口」。
+   * 故三件事缺一不可：restore（最小化）/ show（可见）/ focus + moveTop（最前）。
+   */
+  it("raiseWindow：restore + show + focus + moveTop，且对已销毁窗口短路", () => {
+    const body = topLevelBody("function raiseWindow(");
+    expect(body).toContain("isDestroyed()");
+    expect(body).toContain("isMinimized()");
+    expect(body).toContain("win.restore()");
+    expect(body).toContain("win.show()");
+    expect(body).toContain("win.focus()");
+    expect(body).toContain("win.moveTop()");
+    // 「已开」分支不能再手写 show/focus 三件套（漏 moveTop 就退回到旧行为）
+    const pack = topLevelBody("function createPackWindow(");
+    const existingBranch = pack.slice(0, pack.indexOf("const packWin"));
+    expect(existingBranch).toContain("raiseWindow(existing)");
+    const globalWin = topLevelBody("function createGlobalSettingWindow(");
+    expect(globalWin.slice(0, globalWin.indexOf("const globalWin"))).toContain(
+      "raiseWindow(existing)",
+    );
   });
 
   /**
@@ -131,6 +157,28 @@ describe("装载失败必须可见 + 必有窗口（守卫）", () => {
     expect(body).toContain("收到 global-setting-window-open");
     expect(body).toMatch(/if \(EDITION === "lite"\)/);
     expect(body).toContain("createGlobalSettingWindow()");
+  });
+
+  /**
+   * 行囊打开链路的三条可分辨点（REQ-054）：
+   * 1. 到达日志 —— 分清「点击没到主进程」与「窗口没起来」；
+   * 2. 发起方透传 —— 窗口真可见时才有对象回执 `pack-window-shown`；
+   * 3. 回执钉在 `show` 事件上（正常 / 失败兜底 / 超时兜底三条路径都会 show，
+   *    只有正常路径走 reveal）。
+   */
+  it("pack-window-open：到达日志 + 发起方透传 + show 事件回执", () => {
+    const start = MAIN.indexOf('ipcMain.on("pack-window-open"');
+    expect(start).toBeGreaterThan(-1);
+    const handler = MAIN.slice(start, start + 1200);
+    expect(handler).toContain("收到 pack-window-open");
+    expect(handler).toContain("createPackWindow(event.sender)");
+
+    const body = topLevelBody("function createPackWindow(");
+    expect(body).toContain('packWin.once("show"');
+    expect(body).toContain("notifyPackShown(opener)");
+    const notify = topLevelBody("function notifyPackShown(");
+    expect(notify).toContain("isDestroyed()");
+    expect(notify).toContain('send("pack-window-shown")');
   });
 
   it("行囊上下文仍在 did-finish-load 时下发，且在显示之前（先发上下文，再 reveal）", () => {

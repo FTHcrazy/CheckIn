@@ -150,6 +150,7 @@ export default function NovelPage({
     protagonistEntityId,
     handleSetProtagonist,
     openPackWindow,
+    packOpening,
   } = useNovelPage();
 
   const { loadSnapshots, activeChapterId, searchBook } = data;
@@ -422,7 +423,11 @@ export default function NovelPage({
 
   return (
     <EntityTypesProvider value={entityTypesValue}>
-      <div className={`nv-page${view.focusMode ? " is-focus" : ""}`}>
+      <div
+        className={`nv-page${view.focusMode ? " is-focus" : ""}${
+          view.pageOverlayOpen ? " is-overlay" : ""
+        }`}
+      >
       <div className="nv-page__head">
         {editor.recoveryVisible && data.recovery && (
           <RestoreBanner
@@ -455,8 +460,12 @@ export default function NovelPage({
           onToggleSettings={view.toggleSettings}
           snapshotOpen={view.snapshotOpen}
           onOpenPack={openPackWindow}
+          packOpening={packOpening}
           onToggleSettingCenter={view.toggleSettingCenter}
           onToggleHistory={view.toggleSnapshot}
+          /* REQ-053：浮层（设定中心 / 类型管理 Modal）开着时，点击顶栏即离开浮层 ——
+             它们铺满视口的 wrap 会吃掉同一次点击，让「行囊 / 小说设定」需要点两次 */
+          onDismissOverlays={view.dismissPageOverlays}
         />
       </div>
 

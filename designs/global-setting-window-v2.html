@@ -1,0 +1,2843 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="cream" class="has-window-shell">
+  <head>
+    <meta charset="utf-8" />
+    <title>全局设定中心 · 版式原型</title>
+    <!-- 原型样式 = 真实产品 SCSS 编译产物（designs/preview/gs-preview.scss） -->
+    <style>
+@charset "UTF-8";
+/**
+ * 设计原型样式入口（只服务 designs/global-setting-window-v2.html）
+ *
+ * 不手写任何颜色 / 间距：直接编译真实产品样式，原型才不会被「美化版」
+ * 骗过去。改完产品样式后重跑：
+ *   node -e "const s=require('sass'),f=require('fs');f.writeFileSync(
+ *     'designs/preview/gs-preview.css',
+ *     s.compile('designs/preview/gs-preview.scss',{loadPaths:['src']}).css)"
+ * 再把该 CSS 内联进 designs/global-setting-window-v2.html 的 <style>。
+ *
+ * @use 顺序 = 产品里的打包顺序：共享 → 组件 → 窗口根（含皮肤层）。
+ *
+ * ⚠️ 这份清单必须与 `src/windows/GlobalSettingWindow/index.scss` 的 @use 链
+ * **逐条对齐**，不许在这里「顺便多引一份」。教训：这份原型引了
+ * `setting-primitives`，而真实窗口漏了它（窗口不渲染 `<SettingCenter>`，
+ * 那条 @use 链走不到），于是原型看着正常、真机上卡头却挤成一行 —— 验证
+ * 工具一旦比被测对象「多知道一点」，就会把 bug 藏起来。
+ */
+/**
+ * 全局主题变量（CSS Custom Properties）
+ *
+ * 四套主题共用同一组变量名，业务样式只允许写 var(--app-*)，
+ * 不得再硬编码颜色，切换 `data-theme` 即整体换肤。
+ *
+ * 主题清单见 src/shared/theme/themes.ts：
+ *   - aurora    柔雾紫蓝（默认）
+ *   - cream     奶油暖橘
+ *   - mint      薄荷清新
+ *   - midnight  月夜暗色
+ *
+ * 变量分组（新增变量时四套主题必须同步补齐，themes.test.ts 会校验一致性）：
+ *   底色面板 11 项：bg / surface / surface-alt / surface-hover / surface-active /
+ *                  surface-elevated / header-bg / sidebar-bg / input-bg / splitter / mask
+ *
+ * ⚠️ 分层铁律（themes.test.ts「面板分层」守卫会数值校验）：
+ *   - `--app-surface-elevated` 是**浮层专用**（下拉 / 弹窗 / 抽屉 / 悬浮卡），
+ *     任何主题下都必须是「最接近观察者」的那一层 —— 暗色最亮、浅色纯白。
+ *   - `--app-surface` 是**非浮层内容面**（卡片 / 面板 / 编辑器），必须与 elevated
+ *     拉开可感知的一档，否则浅色下卡片与浮层同为 #ffffff，只剩描边分家。
+ *   - header / sidebar / input 都是 surface 的**同层变体**，跟随 surface 一起动；
+ *     浅色主题下 sidebar 比 surface 再退一档（暗色主题下 sidebar 本就比 surface 深）。
+ *   - 浅色主题的层次方向是「越低越深」：elevated(纯白) > surface > alt/header(同层退档) > bg。
+ *   - 窗口 / 页面根一律铺 `--app-bg`（不是 surface），否则每张卡片都少一档 ——
+ *     见下面「常驻色块阶梯」第 1 条。
+ *
+ *   描边     2 项：border / border-strong
+ *   文本     5 项：text / text-secondary / text-muted / text-disabled / text-inverse
+ *   高对比   4 项：text-strong / text-secondary-strong（小字号可读性）+
+ *                  primary-weak-strong / success-weak-strong（面板头高饱和弱底）
+ *   主色     6 项：primary / primary-strong(hover) / primary-active(按下) /
+ *                  primary-weak(弱底) / primary-contrast(主色上的文字) / primary-gradient
+ *   语义色   8 项：success / warning / error / info 各配一个 -weak 弱底
+ *   打卡点   1 项：checkin-dot（日历打卡提示点，必须与主题主色可区分）
+ *   强调色  14 项：7 个 accent 及其 -weak（图标底 / 数据卡 / 标签）
+ *   圆角     4 项 / 阴影 3 项 / 滚动条 2 项
+ *
+ * ⚠️ 常驻色块阶梯（themes.test.ts 两组守卫会全仓扫描 + 数值校验）
+ *
+ * 底色 token 都是**绝对色**，可「差多少档」取决于它贴在谁身上。同一支 `alt`
+ * 贴 surface 只差 1.03、贴纯白浮层就变成 1.07（跨过 surface 一整层）。
+ * 所以规矩要按**基面**记，而不是按 token 记：
+ *
+ *   基面（谁在底下）        「块」= 高一档              「槽」= 低一档
+ *   ─────────────────────────────────────────────────────────────────────
+ *   页面底 --app-bg         --app-surface  1.042~1.044  --app-surface-hover 1.035~1.052
+ *                                                       （alt 与 bg 近乎同色会消失）
+ *   内容面 --app-surface    --app-surface-elevated       --app-surface-alt 1.027~1.052
+ *                           （**仅浮层**：下拉/弹窗/抽屉/悬浮卡）
+ *   浮层  --app-surface-    ——（已是最贴观察者）          --app-surface 1.033~1.043
+ *         elevated
+ *
+ *   语义上限：`--app-primary-weak`（1.094~1.135）=「选中 / 当前 / 已展开」，
+ *   常驻块永远不许超过它。
+ *
+ * 由此派生的三条硬规矩（本仓踩过三次，都是真机反馈「跟其它模块不是一个风格」）：
+ *   1. **窗口 / 页面根一律铺 `--app-bg`**，不许铺 `--app-surface`。铺成 surface
+ *      等于把「页面底」抬到内容面那一层，之后每张卡片都少一档、只剩描边撑着，
+ *      并逼着某些卡片越级去借浮层 token。（先例：行囊窗口 `.cpk`）
+ *   2. **`--app-surface-alt` 只允许贴在 `--app-surface` 上**。贴浮层（elevated）
+ *      会跨过 surface 一档、比同屏兄弟块重一倍且丢色相；贴页面底（bg）会直接消失。
+ *      浮层里的槽一律用 `--app-surface`。
+ *   3. **浮层里的组件级槽位必须显式指回**：antd 出厂的 `railBg = colorFillTertiary`
+ *      （黑透明 4%，在白浮层上退化成**无彩度**中性灰 #f5f5f5 = 1.090）、
+ *      `Segmented.trackBg = colorBgLayout`（= 页面底，比内容面还深一档 = 1.089）——
+ *      两者都比浮层应有的 1.043 重一倍。用到哪个组件就在浮层作用域里补哪个
+ *      （先例：`.nv-setting` 补 `--ant-slider-rail-bg` / `--ant-segmented-track-bg`）。
+ *
+ * 交互态与常驻的界线：`--app-surface-hover` / `--app-surface-active` 的本义是
+ * **相对所在面的交互态**（hover 加深、按下更深），不是色阶里的一档：cream 下
+ * `surface-active` 达 1.20，越过全站最重的常驻弱底；大面积铺开会让整屏比其它
+ * 界面重一档（真机反馈：行囊「已展开的模块行」曾是一列深棕），而中性加深在暖色
+ * 主题下还会变成浑浊的棕黄 —— 没有语义，只剩重量。这两个 token 只允许出现在
+ * `:hover / :active / :focus` 里，或写在属性名自带状态的 `--ant-*-hover-bg /
+ * *-active-bg` 上；禁用态（`*-disabled`）算常驻，应当更**弱**而不是更深。
+ * （暗色主题不套用这套数值：暗底需要更大的亮度差才可感知，hover / active 天然更重。）
+ *
+ * 使用方式：
+ *   1. 窗口入口 `import "@/shared/styles/themes.scss"`（三个窗口都要引）
+ *   2. ThemeProvider 在 <html> 上写 data-theme="aurora|cream|mint|midnight"
+ */
+:root,
+[data-theme=aurora] {
+  /* ── 底色与面板 ── */
+  --app-bg: #f3f5fc;
+  --app-surface: #f9fafe;
+  --app-surface-alt: #f5f7fd;
+  --app-surface-hover: #eef1fc;
+  --app-surface-active: #e4e9fa;
+  --app-surface-elevated: #ffffff;
+  --app-header-bg: #f9fafe;
+  --app-sidebar-bg: #f5f7fd;
+  --app-input-bg: #f9fafe;
+  --app-splitter: #edf0fa;
+  --app-mask: rgba(43, 47, 74, 0.35);
+  /* ── 描边 ── */
+  --app-border: #e2e6f4;
+  --app-border-strong: #d3d9ee;
+  /* ── 文本 ── */
+  --app-text: #2b2f4a;
+  --app-text-secondary: #5a5f7a;
+  --app-text-muted: #8a90ac;
+  --app-text-disabled: #b6bbd0;
+  --app-text-inverse: #ffffff;
+  /* ── 高对比辅助（小字号可读性：侧栏 / 抽屉 / 折叠面板头）── */
+  --app-text-strong: #1d2242;
+  --app-text-secondary-strong: #434a6e;
+  --app-primary-weak-strong: #dbe4ff;
+  --app-success-weak-strong: #cfeedd;
+  /* ── 主色（strong=hover / active=按下 / weak=弱底 / contrast=主色上的文字）── */
+  --app-primary: #5b6cf9;
+  --app-primary-strong: #4a5ae0;
+  --app-primary-active: #3e4dc9;
+  --app-primary-weak: #eaf0ff;
+  --app-primary-contrast: #ffffff;
+  --app-primary-gradient: linear-gradient(90deg, #7b8cff 0%, #a5b0ff 100%);
+  /* ── 语义色（成功 / 警告 / 错误 / 信息，各配弱底）── */
+  --app-success: #34b37e;
+  --app-success-weak: #e6f7ee;
+  --app-warning: #f5a623;
+  --app-warning-weak: #fff3e0;
+  --app-error: #e5484d;
+  --app-error-weak: #ffecee;
+  --app-info: #5b8def;
+  --app-info-weak: #eaf0ff;
+  --app-checkin-dot: #34b37e;
+  /* ── 强调色（图标底 / 文字）：数据卡与功能卡的彩色标识 ── */
+  --app-accent-blue: #5b8def;
+  --app-accent-blue-weak: #eaf0ff;
+  --app-accent-purple: #8b77f0;
+  --app-accent-purple-weak: #f1edff;
+  --app-accent-green: #34b37e;
+  --app-accent-green-weak: #e6f7ee;
+  --app-accent-amber: #f5a623;
+  --app-accent-amber-weak: #fff3e0;
+  --app-accent-rose: #e8618c;
+  --app-accent-rose-weak: #ffeef2;
+  --app-accent-teal: #2fa57e;
+  --app-accent-teal-weak: #dcf2e8;
+  --app-accent-orange: #e8935e;
+  --app-accent-orange-weak: #fdeedf;
+  /* ── 圆角 ── */
+  --app-radius-card: 20px;
+  --app-radius-panel: 16px;
+  --app-radius-chip: 14px;
+  --app-radius-item: 10px;
+  --app-radius-pill: 999px;
+  /* ── 阴影（软投影，避免生硬黑边）── */
+  --app-shadow-card: 0 6px 16px rgba(53, 64, 101, 0.07);
+  --app-shadow-pop: 0 10px 30px rgba(53, 64, 101, 0.14);
+  --app-shadow-window: inset 0 1px 2px rgba(15, 23, 42, 0.06), inset 0 -2px 6px rgba(15, 23, 42, 0.05);
+  /* ── 滚动条 ── */
+  --app-scrollbar: #c9cff5;
+  --app-scrollbar-hover: #b3bbee;
+}
+
+/* ── 奶油暖橘 ── */
+[data-theme=cream] {
+  /* ── 底色与面板 ── */
+  --app-bg: #faf6ef;
+  --app-surface: #fdfbf7;
+  --app-surface-alt: #faf5ea;
+  --app-surface-hover: #f6f0e6;
+  --app-surface-active: #f0e6d4;
+  --app-surface-elevated: #ffffff;
+  --app-header-bg: #fdfbf7;
+  --app-sidebar-bg: #faf5ea;
+  --app-input-bg: #fdfbf7;
+  --app-splitter: #f3ebdc;
+  --app-mask: rgba(61, 54, 41, 0.35);
+  /* ── 描边 ── */
+  --app-border: #efe5d6;
+  --app-border-strong: #e3d6c2;
+  /* ── 文本 ── */
+  --app-text: #3d3629;
+  --app-text-secondary: #6b6355;
+  --app-text-muted: #9a9080;
+  --app-text-disabled: #c5bba8;
+  --app-text-inverse: #ffffff;
+  /* ── 高对比辅助 ── */
+  --app-text-strong: #2a2415;
+  --app-text-secondary-strong: #524a3a;
+  --app-primary-weak-strong: #ffd8c3;
+  --app-success-weak-strong: #d4e7c9;
+  /* ── 主色 ── */
+  --app-primary: #e8834a;
+  --app-primary-strong: #d06e38;
+  --app-primary-active: #b85e2e;
+  --app-primary-weak: #ffe9dc;
+  --app-primary-contrast: #ffffff;
+  --app-primary-gradient: linear-gradient(90deg, #ffb27a 0%, #ff8e5e 100%);
+  /* ── 语义色 ── */
+  --app-success: #7ba05b;
+  --app-success-weak: #e8f2e4;
+  --app-warning: #d9a514;
+  --app-warning-weak: #fff6d9;
+  --app-error: #d95c5c;
+  --app-error-weak: #fde9e9;
+  --app-info: #5b9bc9;
+  --app-info-weak: #e5f0f7;
+  --app-checkin-dot: #7ba05b;
+  /* ── 强调色 ── */
+  --app-accent-blue: #5b9bc9;
+  --app-accent-blue-weak: #e5f0f7;
+  --app-accent-purple: #a98bd8;
+  --app-accent-purple-weak: #f2ecfa;
+  --app-accent-green: #7ba05b;
+  --app-accent-green-weak: #e8f2e4;
+  --app-accent-amber: #d9a514;
+  --app-accent-amber-weak: #fff6d9;
+  --app-accent-rose: #d96a8b;
+  --app-accent-rose-weak: #fbe4e9;
+  --app-accent-teal: #4fa88c;
+  --app-accent-teal-weak: #e2f2ec;
+  --app-accent-orange: #e8834a;
+  --app-accent-orange-weak: #ffe9dc;
+  /* ── 圆角 ── */
+  --app-radius-card: 20px;
+  --app-radius-panel: 16px;
+  --app-radius-chip: 14px;
+  --app-radius-item: 10px;
+  --app-radius-pill: 999px;
+  /* ── 阴影 ── */
+  --app-shadow-card: 0 6px 16px rgba(120, 95, 60, 0.07);
+  --app-shadow-pop: 0 10px 30px rgba(120, 95, 60, 0.14);
+  --app-shadow-window: inset 0 1px 2px rgba(92, 72, 44, 0.08), inset 0 -2px 6px rgba(92, 72, 44, 0.07);
+  /* ── 滚动条 ── */
+  --app-scrollbar: #ddd2bf;
+  --app-scrollbar-hover: #c9bda6;
+}
+
+/* ── 薄荷清新 ── */
+[data-theme=mint] {
+  /* ── 底色与面板 ── */
+  --app-bg: #f2f8f4;
+  --app-surface: #f9fcfa;
+  --app-surface-alt: #f4f9f7;
+  --app-surface-hover: #e9f4ee;
+  --app-surface-active: #dcf0e5;
+  --app-surface-elevated: #ffffff;
+  --app-header-bg: #f9fcfa;
+  --app-sidebar-bg: #f4f9f7;
+  --app-input-bg: #f9fcfa;
+  --app-splitter: #e6f2eb;
+  --app-mask: rgba(36, 53, 45, 0.35);
+  /* ── 描边 ── */
+  --app-border: #dfeee5;
+  --app-border-strong: #cbe3d6;
+  /* ── 文本 ── */
+  --app-text: #24352d;
+  --app-text-secondary: #4a5c52;
+  --app-text-muted: #8ca096;
+  --app-text-disabled: #b7c7bd;
+  --app-text-inverse: #ffffff;
+  /* ── 高对比辅助 ── */
+  --app-text-strong: #12211a;
+  --app-text-secondary-strong: #2e4036;
+  --app-primary-weak-strong: #c2e7d6;
+  --app-success-weak-strong: #cbe8c6;
+  /* ── 主色 ── */
+  --app-primary: #2fa57e;
+  --app-primary-strong: #218a67;
+  --app-primary-active: #1a7155;
+  --app-primary-weak: #dcf2e8;
+  --app-primary-contrast: #ffffff;
+  --app-primary-gradient: linear-gradient(90deg, #3fbf92 0%, #7ed4b4 100%);
+  /* ── 语义色 ── */
+  /* mint 的 primary 与 success 同为绿色系，success 偏叶绿与主色青绿区分，
+     否则弱底（primary-weak / success-weak）同色，todo 两块折叠板无法分辨 */
+  --app-success: #4f9d5f;
+  --app-success-weak: #e3f3e0;
+  --app-warning: #d9a514;
+  --app-warning-weak: #fbf3dc;
+  --app-error: #d95c5c;
+  --app-error-weak: #fce9e9;
+  --app-info: #4a90c4;
+  --app-info-weak: #eaf3fb;
+  /* mint 的 primary 与 success 同为绿色，打卡点改用琥珀色避开撞色 */
+  --app-checkin-dot: #d9a514;
+  /* ── 强调色 ── */
+  --app-accent-blue: #4a90c4;
+  --app-accent-blue-weak: #eaf3fb;
+  --app-accent-purple: #8b77e0;
+  --app-accent-purple-weak: #efecfa;
+  --app-accent-green: #5fb87f;
+  --app-accent-green-weak: #e6f5ec;
+  --app-accent-amber: #d9a514;
+  --app-accent-amber-weak: #fbf3dc;
+  --app-accent-rose: #d96a8b;
+  --app-accent-rose-weak: #fbe9ef;
+  --app-accent-teal: #2fa57e;
+  --app-accent-teal-weak: #dcf2e8;
+  --app-accent-orange: #e8935e;
+  --app-accent-orange-weak: #fdeedf;
+  /* ── 圆角 ── */
+  --app-radius-card: 20px;
+  --app-radius-panel: 16px;
+  --app-radius-chip: 14px;
+  --app-radius-item: 10px;
+  --app-radius-pill: 999px;
+  /* ── 阴影 ── */
+  --app-shadow-card: 0 6px 16px rgba(30, 90, 66, 0.07);
+  --app-shadow-pop: 0 10px 30px rgba(30, 90, 66, 0.14);
+  --app-shadow-window: inset 0 1px 2px rgba(18, 62, 46, 0.07), inset 0 -2px 6px rgba(18, 62, 46, 0.06);
+  /* ── 滚动条 ── */
+  --app-scrollbar: #c5ded2;
+  --app-scrollbar-hover: #adc9bb;
+}
+
+/* ── 月夜暗色 ── */
+[data-theme=midnight] {
+  /* ── 底色与面板：bg(最深) < sidebar < surface(卡片) < alt/hover < active ── */
+  --app-bg: #15171f;
+  --app-surface: #1d2029;
+  --app-surface-alt: #232733;
+  --app-surface-hover: #2a2f3c;
+  --app-surface-active: #323848;
+  --app-surface-elevated: #262b38;
+  --app-header-bg: #1d2029;
+  --app-sidebar-bg: #191c26;
+  --app-input-bg: #232733;
+  --app-splitter: #262b36;
+  --app-mask: rgba(0, 0, 0, 0.5);
+  /* ── 描边 ── */
+  --app-border: #2c313e;
+  --app-border-strong: #3a4152;
+  /* ── 文本 ── */
+  --app-text: #e8eaf2;
+  --app-text-secondary: #aeb4c4;
+  --app-text-muted: #7e8595;
+  --app-text-disabled: #5c6273;
+  --app-text-inverse: #15171f;
+  /* ── 高对比辅助（暗色下提亮一档）── */
+  --app-text-strong: #f6f7fc;
+  --app-text-secondary-strong: #ccd2e0;
+  --app-primary-weak-strong: #2d3556;
+  --app-success-weak-strong: rgba(79, 201, 141, 0.24);
+  /* ── 主色（暗色下 hover 提亮、按下压暗）── */
+  --app-primary: #7b8cff;
+  --app-primary-strong: #93a0ff;
+  --app-primary-active: #6573e6;
+  --app-primary-weak: #232842;
+  --app-primary-contrast: #10131f;
+  --app-primary-gradient: linear-gradient(90deg, #6a7cf5 0%, #8f9dff 100%);
+  /* ── 语义色（暗色下用亮色文字 + 半透明弱底，避免大块高饱和）── */
+  --app-success: #4fc98d;
+  --app-success-weak: rgba(79, 201, 141, 0.14);
+  --app-warning: #e8b334;
+  --app-warning-weak: rgba(232, 179, 52, 0.14);
+  --app-error: #f26d6d;
+  --app-error-weak: rgba(242, 109, 109, 0.16);
+  --app-info: #7fa6ff;
+  --app-info-weak: rgba(127, 166, 255, 0.14);
+  --app-checkin-dot: #4fc98d;
+  /* ── 强调色 ── */
+  --app-accent-blue: #7fa6ff;
+  --app-accent-blue-weak: rgba(127, 166, 255, 0.14);
+  --app-accent-purple: #a58cf5;
+  --app-accent-purple-weak: rgba(165, 140, 245, 0.14);
+  --app-accent-green: #4fc98d;
+  --app-accent-green-weak: rgba(79, 201, 141, 0.14);
+  --app-accent-amber: #e8b334;
+  --app-accent-amber-weak: rgba(232, 179, 52, 0.14);
+  --app-accent-rose: #f07fa4;
+  --app-accent-rose-weak: rgba(240, 127, 164, 0.14);
+  --app-accent-teal: #4fd0a5;
+  --app-accent-teal-weak: rgba(79, 208, 165, 0.14);
+  --app-accent-orange: #f0a06a;
+  --app-accent-orange-weak: rgba(240, 160, 106, 0.14);
+  /* ── 圆角 ── */
+  --app-radius-card: 20px;
+  --app-radius-panel: 16px;
+  --app-radius-chip: 14px;
+  --app-radius-item: 10px;
+  --app-radius-pill: 999px;
+  /* ── 阴影 ── */
+  --app-shadow-card: 0 6px 18px rgba(0, 0, 0, 0.32);
+  --app-shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.45);
+  --app-shadow-window: inset 0 1px 2px rgba(0, 0, 0, 0.45), inset 0 -2px 6px rgba(0, 0, 0, 0.35);
+  /* ── 滚动条 ── */
+  --app-scrollbar: #3a4152;
+  --app-scrollbar-hover: #4a5265;
+}
+
+/**
+ * 窗口外壳（圆角窗口）统一样式
+ *
+ * 各窗口（BaseWindow / LoginWindow / NovelWindow 等）共用同一套圆角实现：
+ * - 主进程侧开启 `transparent: true` + `frame: false`，窗口本体不带系统边框
+ * - 渲染层用 `.window-shell` 画圆角、裁剪内容，圆角外区域透明
+ *
+ * 使用方式（各窗口 index.scss）：
+ *   @use "../../shared/styles/window-shell";
+ * 并在根节点挂上 class：
+ *   <html class="has-window-shell"> ... <div class="window-shell">…</div>
+ *
+ * 注意：圆角由 CSS 负责裁剪，所以 html/body/#root 必须保持透明背景，
+ * 否则窗口四角会露出方形的白底。
+ */
+html.has-window-shell,
+html.has-window-shell body,
+html.has-window-shell #root {
+  background: transparent !important;
+  overflow: hidden;
+}
+
+.window-shell {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+  box-sizing: border-box;
+  border-radius: 12px;
+  background: var(--app-bg);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1), var(--app-shadow-window);
+}
+
+html.is-window-maximized .window-shell {
+  border-radius: 0;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.window-shell__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/**
+ * 全局滚动条交互：默认隐藏，指针 hover 到滚动容器（或容器内持有焦点）时才展示。
+ *
+ * 实现要点（特异性设计）：
+ * - 未悬停用 `:not(:hover):not(:focus-within)` 提高特异性（0,2,0），
+ *   可压过页面局部 `.foo::-webkit-scrollbar-thumb`（0,1,0）的「常显」配色；
+ * - 悬停时 `*:hover::-webkit-scrollbar-thumb`（0,1,0）与局部规则同特异性，
+ *   页面样式在共享样式之后加载 → 同分时局部胜出，各页面自定义滑块色在
+ *   hover 时依然生效；
+ * - 依赖 --app-scrollbar / --app-scrollbar-hover 主题 token，换肤自动跟随；
+ * - 按项目动画规范不使用 transition（仅允许 transform/opacity/box-shadow）。
+ */
+/* 滚动条本体（横向纵向统一宽度） */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+/* 轨道与拐角始终透明，视觉上只有滑块出现/消失 */
+::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* 未悬停容器：滑块透明（高特异性，压过页面局部配色） */
+*:not(:hover):not(:focus-within)::-webkit-scrollbar-thumb {
+  background: transparent;
+}
+
+/* 悬停容器：滑块浮现（主题兜底色） */
+*:hover::-webkit-scrollbar-thumb {
+  background: var(--app-scrollbar);
+  border-radius: 4px;
+}
+
+/* 悬停滑块本身：加深 */
+*:hover::-webkit-scrollbar-thumb:hover {
+  background: var(--app-scrollbar-hover);
+}
+
+/* 键盘滚动（容器内持有焦点）同样展示 */
+*:focus-within::-webkit-scrollbar-thumb {
+  background: var(--app-scrollbar);
+  border-radius: 4px;
+}
+
+/* 隐藏上下箭头 */
+::-webkit-scrollbar-button {
+  display: none;
+}
+
+/* Firefox 等支持现代滚动条属性的环境：同等交互。
+ *
+ * 注意 scrollbar-width 只在 `*`（0,0,0）上声明一次、两种状态保持一致：
+ * 宽度恒定才不会因 hover 出现/消失滚动条占位而引发布局跳动（实测坑：
+ * 早年写在 (0,2,0) 的 :not(:hover) 规则里，会反过来压过页面级
+ * `scrollbar-width: none`（0,1,0）——横向溢出的 chips 行因此每次
+ * 指针进出都弹一次高度）。页面需要隐藏/调整宽度时，用常规选择器
+ * 覆盖即可稳定生效（同特异性下页面样式后加载，同样赢过 :hover 规则）。
+ * 颜色仍按悬停切换：未悬停滑块透明，悬停浮现主题兜底色。
+ */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+*:hover,
+*:focus-within {
+  scrollbar-color: var(--app-scrollbar) transparent;
+}
+
+/* 设定中心跨子组件复用的块级零件（UI-10 拆分）
+
+   由父组件 index.scss 统一 @use 一次，左栏 / 卡片 / 等级序列 / 两个弹窗
+   只复用类名、不重复实现。这些是 `.nv-sc` 这个块的**公共元素**（卡片外壳、
+   字段标签、提示条、预览行……），被两处以上子组件使用 —— 就近原则指的是
+   「不承担别人不该承担的」，而不是「宁可五处各写一份造成漂移」。
+
+   作用域统一收在 .nv-sc 之下，不影响块外的任何样式。 */
+.nv-sc__card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-card);
+}
+.nv-sc__card.is-grow {
+  flex: 1;
+  min-height: 0;
+  padding-bottom: 8px;
+}
+.nv-sc__card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.nv-sc__spacer {
+  flex: 1;
+  min-width: 0;
+}
+.nv-sc__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--app-text-muted);
+}
+.nv-sc__tip {
+  font-size: 11px;
+  color: var(--app-text-muted);
+}
+.nv-sc__empty {
+  margin: 24px 0;
+}
+.nv-sc__carry-example {
+  display: flex;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--app-text-secondary);
+}
+.nv-sc__carry-example em {
+  flex-shrink: 0;
+  font-style: normal;
+  font-size: 11px;
+  color: var(--app-text-muted);
+}
+.nv-sc__batch {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.nv-sc__batch-fields {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+.nv-sc__batch-fields .nv-sc__field {
+  flex: 1;
+}
+.nv-sc__batch-fields .nv-sc__field.is-narrow {
+  flex: 0 0 128px;
+}
+
+/* 设定中心 · 分类卡（UI-10 拆分） */
+/**
+ * 造型控件的「清零点」mixin（跨窗口公共原语）
+ *
+ * 一批**自带完整造型**的控件（阶梯格子、候选行、折叠头、树节点的小图标按钮……）：
+ * 视觉是设计定的，但交互基建应该复用组件库（键盘可达 / focus 环 / 禁用语义 / 波纹）。
+ * 做法是用 antd `Button` 承载，再把它自带的外观**通过组件级变量清零**。
+ *
+ * 为什么必须是 mixin，而不是一个公共类：
+ * 清零要压过 antd 的 `.ant-btn`（特异性 0,1,0），而各控件自己的变量又要压过清零 ——
+ * 两者写在**同一个选择器**里（`.xxx.ant-btn`）时，靠源码先后就能解决；
+ * 写成两个类（`.nv-flat` + `.xxx`）则要靠文件先后，而组件样式先于公共层打包，
+ * 顺序恰好是反的，会静默失效。
+ *
+ * 顺带解决状态样式：antd 的 hover / active 选择器特异性更高
+ * （`.ant-btn-color-default.ant-btn-variant-outlined:not(:disabled):hover`），
+ * 自写 `:hover` 压不过 —— 但那些规则读的就是这里清零的变量，改状态只需改变量。
+ *
+ * 用法（组件自己的 scss 里）：
+ * ```scss
+ * @use "../../../../../../shared/styles/widget" as widget;
+ *
+ * .nv-xxx__btn.ant-btn {
+ *   @include widget.ant-button-reset;      // 先清零
+ *   --ant-button-default-bg: var(--app-surface);  // 再按需声明，靠源码顺序覆盖
+ *   width: 100%;                           // antd 不接管的属性直接写
+ * }
+ * ```
+ *
+ * 行囊内的一批老控件走的是 `CharacterPack/styles/pack-widget.scss` 的
+ * `cpk-widget`，它已经转发到本 mixin；新代码一律直接引这里。
+ */
+.nv-sc__cat-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--app-text);
+}
+.nv-sc__badge {
+  padding: 1px 6px;
+  border-radius: var(--app-radius-chip);
+  background: var(--app-accent-purple-weak);
+  color: var(--app-accent-purple);
+  font-size: 11px;
+}
+.nv-sc__badge.is-link {
+  background: var(--app-accent-blue-weak);
+  color: var(--app-accent-blue);
+}
+.nv-sc__badge.is-ref {
+  background: var(--app-surface-alt);
+  color: var(--app-text-secondary);
+}
+.nv-sc__badge.is-sync {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: var(--app-accent-green-weak);
+  color: var(--app-accent-green);
+}
+.nv-sc__badge.is-detached {
+  background: var(--app-warning-weak);
+  color: var(--app-warning);
+}
+.nv-sc__publish.ant-btn {
+  --ant-button-default-color: var(--app-primary);
+  --ant-button-default-hover-color: var(--app-primary-strong);
+  --ant-button-default-active-color: var(--app-primary-active);
+}
+.nv-sc__set-realm.ant-btn {
+  /* 尺寸：不固定高宽，交给控件自己的布局 */
+  --ant-control-height: auto;
+  --ant-button-padding-inline: 0px;
+  --ant-button-content-font-size: inherit;
+  --ant-button-font-weight: inherit;
+  --ant-button-icon-gap: normal;
+  --ant-border-radius: 0px;
+  /* 外观：全部归零，控件按需重新声明 */
+  --ant-line-width: 0px;
+  --ant-button-default-bg: transparent;
+  --ant-button-default-hover-bg: transparent;
+  --ant-button-default-active-bg: transparent;
+  --ant-button-default-border-color: transparent;
+  --ant-button-default-hover-border-color: transparent;
+  --ant-button-default-active-border-color: transparent;
+  --ant-button-default-color: currentColor;
+  --ant-button-default-hover-color: currentColor;
+  --ant-button-default-active-color: currentColor;
+  --ant-button-default-shadow: none;
+  --ant-button-default-bg-disabled: transparent;
+  --ant-button-border-color-disabled: transparent;
+  /* 文本与对齐：随容器，不跟 antd 的居中排版 */
+  font-family: inherit;
+  justify-content: normal;
+  text-align: inherit;
+  /* 应用没有全局 box-sizing 重置，而 antd 的 .ant-btn 自身不带 border-box：
+     width:100% + padding-inline + border 的按钮（章节行、命中卡、书卡…）
+     会比容器宽出 2×padding+2×border，被 overflow-x:hidden 裁掉右侧
+     —— 表现为「激活高亮不自适应面板宽度」。清零点统一补上。 */
+  box-sizing: border-box;
+  --ant-button-text-color: var(--app-accent-blue);
+  --ant-button-text-hover-color: var(--app-accent-blue);
+  height: 20px;
+  padding: 0 4px;
+  font-size: 12px;
+}
+.nv-sc__note {
+  display: flex;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--app-text-secondary);
+}
+.nv-sc__note-label {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--app-text-muted);
+}
+.nv-sc__form {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  align-items: end;
+}
+.nv-sc__form-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+.nv-sc__carry {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: var(--app-radius-chip);
+  /* 设定中心是弹窗（浮层，底 = `--app-surface-elevated` 纯白）：这里的块
+     回退一档就是 `--app-surface`。曾经取 `--app-surface-alt`（相对内容面的档），
+     贴在白浮层上跨过了 surface 一层 → 1.071，比同屏「阶段容器」(surface 1.043)
+     重一倍，真机反馈「红框里的底色跟其余模块对比度不一致」。 */
+  background: var(--app-surface);
+}
+.nv-sc__carry-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.nv-sc__carry-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--app-text);
+}
+.nv-sc__carry-item em {
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--app-text-muted);
+}
+.nv-sc__carry-select {
+  min-width: 96px;
+}
+
+/* 设定中心 · 分类卡（UI-10 拆分） */
+/* 设定中心 · 等级序列（UI-10 拆分） */
+.nv-sc__sec-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--app-text-muted);
+}
+.nv-sc__thead, .nv-sc__row {
+  display: grid;
+  grid-template-columns: 16px 28px minmax(0, 1.2fr) minmax(0, 1.4fr) minmax(0, 2fr) 72px;
+  gap: 10px;
+  align-items: center;
+}
+.nv-sc__thead {
+  padding: 0 10px 6px;
+  border-bottom: 1px solid var(--app-border);
+  font-size: 12px;
+  color: var(--app-text-secondary);
+}
+.nv-sc {
+  /* 批量选择（R10）：`selectable` 时行首多一列勾选框 ⇒ 6 轨变 7 轨。
+     不传该 prop 时这两个类都不出现，行网格仍是上面的 6 轨（DOM 零变化）。 */
+}
+.nv-sc__thead.is-selectable, .nv-sc__row.is-selectable {
+  grid-template-columns: 16px 16px 28px minmax(0, 1.2fr) minmax(0, 1.4fr) minmax(0, 2fr) 72px;
+}
+.nv-sc__col-pick {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+}
+.nv-sc {
+  /* 行容器收成一张卡：八级 + 每阶一行小境界签，密度本来就高，
+     没有边界就会糊成一片灰。斑马纹 + 行内边距把「一级」读成一个单位 */
+}
+.nv-sc__rows {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-item);
+  background: var(--app-surface);
+}
+.nv-sc__row {
+  padding: 7px 10px;
+  border-radius: var(--app-radius-chip);
+  /* 斑马纹：奇数行铺一层极浅的底，长列表扫读时不会串行 */
+}
+.nv-sc__row.is-alt {
+  background: var(--app-surface-alt);
+}
+.nv-sc__row {
+  /* hover 必须排在 is-alt 之后：两者特异性相同（0,2,0），
+     靠源码顺序决定胜负 —— 反过来的话斑马行没有悬停反馈 */
+}
+.nv-sc__row:hover {
+  background: var(--app-surface-hover);
+}
+.nv-sc__row.is-drag {
+  opacity: 0.6;
+  background: var(--app-accent-blue-weak);
+}
+.nv-sc__row {
+  /* 拖拽中的行浮起：dnd-kit 只给 transform，观感补底色与投影 */
+}
+.nv-sc__row.is-dragging, .is-dragging .nv-sc__row {
+  background: var(--app-surface-alt);
+  box-shadow: var(--app-shadow-card);
+}
+.nv-sc__row {
+  /* ── 父子层级：派生段（子层级）缩进 + 树状连接线 ──
+     数据上子层级的 parentId 指回父阶、rank 紧跟父阶之后，
+     展示必须如实反映这层父子关系，而不是平铺成同级兄弟 */
+}
+.nv-sc__row.is-child {
+  padding-left: 30px;
+}
+.nv-sc__row.is-child::before {
+  content: "";
+  position: absolute;
+  left: 15px;
+  top: -6px;
+  bottom: 50%;
+  width: 1px;
+  background: var(--app-border);
+}
+.nv-sc__row.is-child::after {
+  content: "";
+  position: absolute;
+  left: 15px;
+  top: 50%;
+  width: 10px;
+  height: 1px;
+  background: var(--app-border);
+}
+.nv-sc__row.is-child .nv-sc__col-name {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--app-text-secondary);
+}
+.nv-sc__grip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--app-text-muted);
+  cursor: grab;
+  touch-action: none;
+}
+.nv-sc__grip:active {
+  cursor: grabbing;
+}
+.nv-sc__grip.is-locked {
+  cursor: default;
+  opacity: 0.4;
+}
+.nv-sc__ro {
+  font-size: 11px;
+  color: var(--app-text-muted);
+}
+.nv-sc__col-no {
+  font-size: 12px;
+  color: var(--app-text-muted);
+}
+.nv-sc__col-name {
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--app-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nv-sc__col-alias, .nv-sc__col-note {
+  min-width: 0;
+  font-size: 12px;
+  color: var(--app-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nv-sc__col-ops {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+  min-width: 0;
+}
+.nv-sc__col-sub {
+  grid-column: 1/-1;
+  min-width: 0;
+}
+.nv-sc__seg {
+  margin-left: 6px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--app-accent-purple-weak);
+  color: var(--app-accent-purple);
+  font-size: 11px;
+}
+.nv-sc__sub {
+  grid-column: 1/-1;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  padding: 2px 0 4px;
+}
+.nv-sc {
+  /* 小境界标签：「N 小境界」做成主色弱底徽标当行首锚点，
+     后面一串名字才是内容 —— 原来全是 11px 灰字灰底，八阶各一排
+     灰方块，是整个列表最「费眼」的来源 */
+}
+.nv-sc__sub-label {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: var(--app-radius-pill);
+  background: var(--app-primary-weak);
+  color: var(--app-primary);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.nv-sc__sub-list {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+.nv-sc__sub-chip.ant-btn {
+  /* 尺寸：不固定高宽，交给控件自己的布局 */
+  --ant-control-height: auto;
+  --ant-button-padding-inline: 0px;
+  --ant-button-content-font-size: inherit;
+  --ant-button-font-weight: inherit;
+  --ant-button-icon-gap: normal;
+  --ant-border-radius: 0px;
+  /* 外观：全部归零，控件按需重新声明 */
+  --ant-line-width: 0px;
+  --ant-button-default-bg: transparent;
+  --ant-button-default-hover-bg: transparent;
+  --ant-button-default-active-bg: transparent;
+  --ant-button-default-border-color: transparent;
+  --ant-button-default-hover-border-color: transparent;
+  --ant-button-default-active-border-color: transparent;
+  --ant-button-default-color: currentColor;
+  --ant-button-default-hover-color: currentColor;
+  --ant-button-default-active-color: currentColor;
+  --ant-button-default-shadow: none;
+  --ant-button-default-bg-disabled: transparent;
+  --ant-button-border-color-disabled: transparent;
+  /* 文本与对齐：随容器，不跟 antd 的居中排版 */
+  font-family: inherit;
+  justify-content: normal;
+  text-align: inherit;
+  /* 应用没有全局 box-sizing 重置，而 antd 的 .ant-btn 自身不带 border-box：
+     width:100% + padding-inline + border 的按钮（章节行、命中卡、书卡…）
+     会比容器宽出 2×padding+2×border，被 overflow-x:hidden 裁掉右侧
+     —— 表现为「激活高亮不自适应面板宽度」。清零点统一补上。 */
+  box-sizing: border-box;
+  --ant-button-text-hover-bg: var(--app-primary-weak);
+  --ant-button-text-color: var(--app-text-secondary);
+  --ant-button-text-hover-color: var(--app-primary);
+  height: 20px;
+  padding: 0 6px;
+  border-radius: var(--app-radius-pill);
+  font-size: 11px;
+}
+.nv-sc__ins {
+  display: flex;
+  align-items: center;
+  height: 26px;
+  padding-left: 16px;
+  opacity: 0;
+}
+.nv-sc__ins.is-on {
+  opacity: 1;
+}
+.nv-sc__ins.is-last {
+  opacity: 1;
+}
+.nv-sc__row:hover + .nv-sc__ins, .nv-sc__ins:hover {
+  opacity: 1;
+}
+.nv-sc__ins-btn {
+  /* 尺寸：不固定高宽，交给控件自己的布局 */
+  --ant-control-height: auto;
+  --ant-button-padding-inline: 0px;
+  --ant-button-content-font-size: inherit;
+  --ant-button-font-weight: inherit;
+  --ant-button-icon-gap: normal;
+  --ant-border-radius: 0px;
+  /* 外观：全部归零，控件按需重新声明 */
+  --ant-line-width: 0px;
+  --ant-button-default-bg: transparent;
+  --ant-button-default-hover-bg: transparent;
+  --ant-button-default-active-bg: transparent;
+  --ant-button-default-border-color: transparent;
+  --ant-button-default-hover-border-color: transparent;
+  --ant-button-default-active-border-color: transparent;
+  --ant-button-default-color: currentColor;
+  --ant-button-default-hover-color: currentColor;
+  --ant-button-default-active-color: currentColor;
+  --ant-button-default-shadow: none;
+  --ant-button-default-bg-disabled: transparent;
+  --ant-button-border-color-disabled: transparent;
+  /* 文本与对齐：随容器，不跟 antd 的居中排版 */
+  font-family: inherit;
+  justify-content: normal;
+  text-align: inherit;
+  /* 应用没有全局 box-sizing 重置，而 antd 的 .ant-btn 自身不带 border-box：
+     width:100% + padding-inline + border 的按钮（章节行、命中卡、书卡…）
+     会比容器宽出 2×padding+2×border，被 overflow-x:hidden 裁掉右侧
+     —— 表现为「激活高亮不自适应面板宽度」。清零点统一补上。 */
+  box-sizing: border-box;
+  padding: 0;
+  height: 20px;
+  font-size: 11px;
+  color: var(--app-accent-blue);
+}
+.nv-sc__ins-btn.ant-btn {
+  /* 尺寸：不固定高宽，交给控件自己的布局 */
+  --ant-control-height: auto;
+  --ant-button-padding-inline: 0px;
+  --ant-button-content-font-size: inherit;
+  --ant-button-font-weight: inherit;
+  --ant-button-icon-gap: normal;
+  --ant-border-radius: 0px;
+  /* 外观：全部归零，控件按需重新声明 */
+  --ant-line-width: 0px;
+  --ant-button-default-bg: transparent;
+  --ant-button-default-hover-bg: transparent;
+  --ant-button-default-active-bg: transparent;
+  --ant-button-default-border-color: transparent;
+  --ant-button-default-hover-border-color: transparent;
+  --ant-button-default-active-border-color: transparent;
+  --ant-button-default-color: currentColor;
+  --ant-button-default-hover-color: currentColor;
+  --ant-button-default-active-color: currentColor;
+  --ant-button-default-shadow: none;
+  --ant-button-default-bg-disabled: transparent;
+  --ant-button-border-color-disabled: transparent;
+  /* 文本与对齐：随容器，不跟 antd 的居中排版 */
+  font-family: inherit;
+  justify-content: normal;
+  text-align: inherit;
+  /* 应用没有全局 box-sizing 重置，而 antd 的 .ant-btn 自身不带 border-box：
+     width:100% + padding-inline + border 的按钮（章节行、命中卡、书卡…）
+     会比容器宽出 2×padding+2×border，被 overflow-x:hidden 裁掉右侧
+     —— 表现为「激活高亮不自适应面板宽度」。清零点统一补上。 */
+  box-sizing: border-box;
+  padding: 0;
+  height: 20px;
+  font-size: 11px;
+}
+.nv-sc__ins-input {
+  max-width: 320px;
+}
+.nv-sc__append {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 8px;
+}
+.nv-sc__status {
+  padding-top: 6px;
+  font-size: 11px;
+  color: var(--app-text-muted);
+}
+
+/* 全局设定中心 · 左栏
+
+   从「一条通栏竖线切出来的窄列」改成一张卡：与右栏两张卡同一组底 / 描边 /
+   圆角 / 投影。窗口里三块内容因此读成「一张导航卡 + 两张内容卡」，而不是
+   「一个表格被切开」。 */
+.gs-side {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-sizing: border-box;
+  /* ⚠️ grid item 默认 min-height:auto，不归零会撑出行轨道（内容超高时整个窗口溢出） */
+  min-width: 0;
+  min-height: 0;
+  padding: 14px 12px 12px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-panel);
+  background: var(--app-surface);
+  box-shadow: var(--app-shadow-card);
+}
+
+/* ── 栏头：名字 + 可见条数 ── */
+.gs-side__head {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 2px 2px;
+}
+
+.gs-side__title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--app-text);
+}
+
+.gs-side__count {
+  flex: 0 0 auto;
+  padding: 1px 8px;
+  border-radius: var(--app-radius-pill);
+  background: var(--app-surface-alt);
+  /* 12px 是下限（见 gs-skin.scss 顶部约定）：11px 的条数签在 210px 左栏里
+     几乎读不出来。行高 16 + 上下 1px = 18，与 13px 的标题同基线。 */
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--app-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── 搜索框：pill + 槽位底色（卡片 surface 上退一档 = alt） ──
+   antd 6 的边框/底色画在 affix-wrapper 上；这里同时压属性与组件变量，
+   避免 hover / focus 时又冒出一圈默认描边。 */
+.gs-side__search {
+  flex: 0 0 auto;
+}
+
+.gs-side__search.ant-input-affix-wrapper,
+.gs-side__search.ant-input {
+  box-sizing: border-box;
+  border-radius: var(--app-radius-pill);
+  border-color: transparent;
+  background: var(--app-surface-alt);
+  box-shadow: none;
+  font-size: 12px;
+  --ant-border-radius: var(--app-radius-pill);
+}
+.gs-side__search.ant-input-affix-wrapper:hover, .gs-side__search.ant-input-affix-wrapper:focus, .gs-side__search.ant-input-affix-wrapper:focus-within,
+.gs-side__search.ant-input:hover,
+.gs-side__search.ant-input:focus,
+.gs-side__search.ant-input:focus-within {
+  border-color: transparent;
+  background: var(--app-surface-alt);
+  box-shadow: none;
+}
+.gs-side__search.ant-input-affix-wrapper,
+.gs-side__search.ant-input {
+  /* 聚焦时才需要「我在输入」的信号：一圈主色淡环，不用整框换色 */
+}
+.gs-side__search.ant-input-affix-wrapper:focus-within,
+.gs-side__search.ant-input:focus-within {
+  box-shadow: 0 0 0 2px var(--app-primary-weak);
+}
+
+/* 筛选 + 排序两个 Select 并排：窄栏（180px）下各占一半，不换行 */
+.gs-side__controls {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+  min-width: 0;
+}
+
+.gs-side__select {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* 选项文字不许折行：窄栏里「自定义顺序」被折成「自定义顺 / 序」时，
+   两颗下拉的高度会跟旁边那颗对不齐（antd 6 的可见文本在 .ant-select-content 里） */
+.gs-side__select .ant-select-content {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Select 也走「无边框 pill」：两颗小描边下拉并排时会变成两条平行的竖线 */
+.gs-side__select.ant-select {
+  /* 28 而非 26：12px 字 + 胶囊内边距后，26 会把「自定义顺序」的上下
+     顶到边框，与左侧搜索框（28）也不齐 */
+  min-height: 28px;
+  --ant-select-border-radius: var(--app-radius-pill);
+  --ant-select-border-color: transparent;
+  --ant-select-background-color: var(--app-surface-alt);
+  --ant-select-padding-horizontal: 8px;
+  --ant-select-font-size: 12px;
+  --ant-select-color: var(--app-text-secondary);
+}
+.gs-side__select.ant-select:not(.ant-select-disabled):hover {
+  --ant-select-border-color: transparent;
+  --ant-select-background-color: var(--app-surface-hover);
+}
+.gs-side__select.ant-select {
+  /* 聚焦：边框回主色，明确键盘焦点落在哪一颗 */
+}
+.gs-side__select.ant-select.ant-select-focused {
+  --ant-select-border-color: var(--app-primary);
+  --ant-select-background-color: var(--app-surface-alt);
+}
+
+/* 左栏的唯一滚动区：flex:1 + min-height:0，其余各块都不滚 */
+.gs-side__list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.gs-side__empty {
+  margin: 24px 0;
+}
+
+/* ── 新建分类：底部固定块，用发丝线与列表分家（不再靠间距猜） ── */
+.gs-side__newcat {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--app-splitter);
+}
+
+.gs-side__newcat-input {
+  width: 100%;
+  min-width: 0;
+}
+
+.gs-side__newcat-input.ant-input {
+  box-sizing: border-box;
+  border-radius: var(--app-radius-pill);
+  border-color: transparent;
+  background: var(--app-surface-alt);
+  font-size: 12px;
+}
+.gs-side__newcat-input.ant-input:hover, .gs-side__newcat-input.ant-input:focus {
+  border-color: transparent;
+  background: var(--app-surface-alt);
+  box-shadow: 0 0 0 2px var(--app-primary-weak);
+}
+
+/* 整行虚线按钮：与书架「＋ 新建作品」的虚线卡同一种「这里是空的、可以加」的暗号 */
+.gs-side__newcat-btn.ant-btn {
+  width: 100%;
+  height: 28px;
+  border-style: dashed;
+  border-radius: var(--app-radius-chip);
+  font-size: 12px;
+  --ant-button-default-bg: transparent;
+  --ant-button-default-border-color: var(--app-border-strong);
+  --ant-button-default-color: var(--app-text-secondary);
+  --ant-button-default-hover-bg: var(--app-primary-weak);
+  --ant-button-default-hover-border-color: var(--app-primary);
+  --ant-button-default-hover-color: var(--app-primary);
+}
+
+.gs-side__tip {
+  flex: 0 0 auto;
+  padding: 0 2px;
+  /* 底部两行快捷键说明：12px 是下限，210px 栏里 11px 会糊成一条灰线 */
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--app-text-muted);
+}
+
+/* Select 的弹层挂 body：用 classNames 挂类命中，不写 :hover 状态选择器 */
+.gs-side__dropdown {
+  border-radius: var(--app-radius-item);
+}
+
+/* 设定中心 · 分类卡（UI-10 拆分） */
+/* 全局设定中心 · 左栏分类行 */
+/* 行外壳：dnd-kit 的 ref / transform 挂这一层，行本身是里面的 Button。
+   分开是为了让「改名态换成 div 承载输入框」时不破坏拖拽节点。 */
+.gs-cat-slot {
+  position: relative;
+}
+.gs-cat-slot.is-drag {
+  z-index: 2;
+}
+
+/* 自带造型 ⇒ 用 Button 承载 + 清零点 mixin（§6.1.2 第 3 条）。
+   ⚠️ @include 与控件自己的 --ant-button-* 必须写在**同一个**选择器里 ——
+   拆成两个类会因打包顺序静默失效。 */
+.gs-cat-row.ant-btn {
+  /* 尺寸：不固定高宽，交给控件自己的布局 */
+  --ant-control-height: auto;
+  --ant-button-padding-inline: 0px;
+  --ant-button-content-font-size: inherit;
+  --ant-button-font-weight: inherit;
+  --ant-button-icon-gap: normal;
+  --ant-border-radius: 0px;
+  /* 外观：全部归零，控件按需重新声明 */
+  --ant-line-width: 0px;
+  --ant-button-default-bg: transparent;
+  --ant-button-default-hover-bg: transparent;
+  --ant-button-default-active-bg: transparent;
+  --ant-button-default-border-color: transparent;
+  --ant-button-default-hover-border-color: transparent;
+  --ant-button-default-active-border-color: transparent;
+  --ant-button-default-color: currentColor;
+  --ant-button-default-hover-color: currentColor;
+  --ant-button-default-active-color: currentColor;
+  --ant-button-default-shadow: none;
+  --ant-button-default-bg-disabled: transparent;
+  --ant-button-border-color-disabled: transparent;
+  /* 文本与对齐：随容器，不跟 antd 的居中排版 */
+  font-family: inherit;
+  justify-content: normal;
+  text-align: inherit;
+  /* 应用没有全局 box-sizing 重置，而 antd 的 .ant-btn 自身不带 border-box：
+     width:100% + padding-inline + border 的按钮（章节行、命中卡、书卡…）
+     会比容器宽出 2×padding+2×border，被 overflow-x:hidden 裁掉右侧
+     —— 表现为「激活高亮不自适应面板宽度」。清零点统一补上。 */
+  box-sizing: border-box;
+  --ant-button-default-bg: transparent;
+  --ant-button-default-hover-bg: var(--app-surface-hover);
+  --ant-button-default-active-bg: var(--app-surface-active);
+  --ant-button-default-color: var(--app-text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 7px 8px;
+  border-radius: var(--app-radius-chip);
+  font-size: 13px;
+  text-align: left;
+  /* 选中态：主色弱底 + 同色文字 + 左侧 2px 主色签。
+     常驻块不许超过 --app-primary-weak 这一档（themes.scss 语义上限）；
+     加签是因为弱底在 cream 下与卡片只差一档，光靠底色读不出「我在哪」。 */
+}
+.gs-cat-row.ant-btn.is-on {
+  --ant-button-default-bg: var(--app-primary-weak);
+  --ant-button-default-hover-bg: var(--app-primary-weak);
+  --ant-button-default-color: var(--app-primary);
+  box-shadow: inset 2px 0 0 var(--app-primary);
+}
+.gs-cat-row.ant-btn.is-on .gs-cat-row__name {
+  font-weight: 600;
+}
+.gs-cat-row.ant-btn {
+  /* 改名态：去掉按钮外观的残留（输入框自己有边框） */
+}
+.gs-cat-row.ant-btn.is-editing {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 6px;
+}
+
+.gs-cat-row__grip {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  color: var(--app-text-muted);
+  cursor: grab;
+  /* 手柄默认很淡：它是「可拖」的线索，不该和名称同权重；悬停行才显形 */
+  opacity: 0.45;
+  transition: opacity 0.15s ease;
+  touch-action: none;
+}
+.gs-cat-row:hover .gs-cat-row__grip, .gs-cat-row:focus-visible .gs-cat-row__grip {
+  opacity: 1;
+}
+.gs-cat-row__grip.is-locked {
+  cursor: not-allowed;
+  opacity: 0.3;
+}
+
+.gs-cat-row__dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--app-radius-pill);
+}
+
+/* 行体：名称一行、计数一行 —— 240px 栏宽下单行式会把名称挤成省略号 */
+.gs-cat-row__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.gs-cat-row__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.gs-cat-row__meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  /* 12px 是下限（见 gs-skin.scss 顶部约定）；行高 1.3 是为了第二行不把
+     整行撑高 —— 一行 13 + 一行 12 的密度已经够了 */
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.3;
+  color: var(--app-text-muted);
+}
+
+.gs-cat-row__sep {
+  color: var(--app-text-disabled);
+}
+
+.gs-cat-row__count {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 引用徽标：>0 用强调蓝字，0 保持弱化灰字（「暂无引用」不该和「5 部书引用」
+   同权重）。这里不再套 pill 底 —— 第二行整行只有 12px，底色会把它压成一块。 */
+.gs-cat-row__ref {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--app-text-muted);
+}
+.gs-cat-row__ref.is-on {
+  color: var(--app-accent-blue);
+}
+
+.gs-cat-row__input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 右键菜单弹层（挂 body）：只声明底色与圆角，不写 :hover 状态选择器 */
+.gs-cat-row__menu {
+  border-radius: var(--app-radius-item);
+}
+
+/* 全局设定中心 · 工具头（窗口私有）
+
+   与书架顶栏同一套动作分级：一颗实底 pill 主命令 + 其余纯文字按钮。
+   四颗 outlined 小按钮并排时，没有任何一颗读起来像「下一步」。 */
+.gs-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-sizing: border-box;
+  /* 固定高：下面 .gs-body 走 flex:1 分配剩余高度，工具头不该参与伸缩。
+     28 = 动作行的统一高度，工具头不再比动作区高一档（30 时按钮在
+     一行里会显得贴顶）。 */
+  flex: 0 0 auto;
+  min-height: 28px;
+}
+
+.gs-toolbar__hint {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--app-text-muted);
+}
+
+.gs-toolbar__spacer {
+  flex: 1;
+  min-width: 0;
+}
+
+.gs-toolbar__actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  /* 4px 时两颗文字按钮的 hover 底几乎相接，四颗读成一整块而不是四颗；
+     8px 才让「一个主命令 + 三个次级动作」分得开。 */
+  gap: 8px;
+}
+
+/* 四颗动作同高同基线：文字按钮此前吃 antd 默认高度（与 28px 的主命令
+   并排时上下各错半格），这是截图红框里「间距不齐」的主因。
+   高度与图标间距在这里统一，各自的颜色 / 内边距仍在下面覆盖。 */
+.gs-toolbar .ant-btn {
+  height: 28px;
+  box-sizing: border-box;
+  --ant-button-icon-gap: 6px;
+  padding-inline: 9px;
+}
+
+/* 主命令：实底 pill。高度压到 28px 是为了让它比卡片标题略重、但不比
+   下方的内容更抢眼（书架「＋ 新建作品」也是这一档）。
+   ⚠️ 只改几何 + 读 antd 的变量，不改背景色属性：primary 的底色由主题
+   `--ant-color-primary` 给出，写死 background 会在换肤时掉队。 */
+.gs-toolbar__cta.ant-btn {
+  height: 28px;
+  padding-inline: 14px;
+  --ant-border-radius: var(--app-radius-pill);
+  --ant-button-content-font-size: 12px;
+  --ant-button-icon-gap: 5px;
+  --ant-button-font-weight: 600;
+  box-sizing: border-box;
+  /* 一颗实底按钮需要一点点「浮起来」的重量，但不能是硬边框：
+     cream 主题下纯白边只会显脏 */
+  box-shadow: 0 4px 10px color-mix(in srgb, var(--app-primary) 20%, transparent);
+}
+
+/* 次级动作用 text 变体，但文字色从「灰」提到「主文本」——
+   灰到与提示语同色时，它们看起来像说明而不是按钮。 */
+.gs-toolbar .ant-btn-text {
+  --ant-button-text-color: var(--app-text-secondary);
+  --ant-button-text-hover-color: var(--app-text);
+  --ant-button-text-hover-bg: var(--app-surface-hover);
+  border-radius: var(--app-radius-pill);
+  font-size: 12px;
+}
+
+/* 批量选择处于开启态：常驻弱主色底，明确「现在正处在这个模式里」 */
+.gs-toolbar__ghost.is-on.ant-btn {
+  --ant-button-text-color: var(--app-primary);
+  --ant-button-text-hover-color: var(--app-primary);
+  --ant-button-text-hover-bg: var(--app-primary-weak);
+  background: var(--app-primary-weak);
+}
+
+/* 全局设定中心 · 影响面（分类头卡的第一行）
+
+   形态从「一条独立灰条」改成卡内的一行元信息：一条通栏弱底会把「说明」
+   压成警示条，而它其实只是分类的一条属性（谁在引用它）。 */
+.gs-impact {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  /* 固定高：右栏其余部分靠 flex 分配，这一行不参与伸缩。
+     26 = 24 的图标方片 + 上下各 1px，保证方片与右侧按钮同处一条中线。 */
+  flex: 0 0 auto;
+  min-height: 26px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  /* 与下方分类头之间只留一条发丝线，不再靠底色分块 */
+  border-bottom: 1px solid var(--app-splitter);
+  color: var(--app-text-secondary);
+}
+
+/* 图标方片：与书架统计卡的图标底同款（弱底 + 同色图标）；
+   N = 0 时退回中性弱底 —— 「暂无引用」不该和「被 5 部书引用」同权重 */
+.gs-impact__tile {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  background: var(--app-surface-alt);
+  color: var(--app-text-muted);
+  font-size: 12px;
+}
+
+.gs-impact.is-low .gs-impact__tile,
+.gs-impact.is-high .gs-impact__tile {
+  background: var(--app-accent-blue-weak);
+  color: var(--app-accent-blue);
+}
+
+/* 单行省略：窄窗（≤959px）下面条宽度被压到最小，文案必须能收住而不是撑破盒子 */
+.gs-impact__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.gs-impact__warn {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  font-size: 12px;
+  color: var(--app-warning);
+}
+
+.gs-impact__spacer {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 「查看引用方」：纯文字出口，hover 才落一层弱主色底（与行尾操作同一套）。
+   它是唯一的常驻动作 —— 删除已收归分类卡头，这里不再重复。
+   高度必须与左侧 24px 图标方片一致：22 时它比方片矮一头，一行里两个
+   元素的中线不共线（截图红框里看着「飘」）。 */
+.gs-impact__refs.ant-btn {
+  flex: 0 0 auto;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: var(--app-radius-pill);
+  font-size: 12px;
+  --ant-button-text-color: var(--app-accent-blue);
+  --ant-button-text-hover-color: var(--app-accent-blue);
+  --ant-button-text-hover-bg: var(--app-accent-blue-weak);
+  --ant-button-default-bg: transparent;
+  --ant-button-default-border-color: transparent;
+  --ant-button-default-color: var(--app-accent-blue);
+  --ant-button-default-hover-bg: var(--app-accent-blue-weak);
+  --ant-button-default-hover-border-color: transparent;
+  --ant-button-default-hover-color: var(--app-accent-blue);
+}
+
+/* Tooltip 弹层（挂 body）：只给圆角，不写 :hover 状态选择器 */
+.gs-impact__tip {
+  border-radius: var(--app-radius-item);
+}
+
+/* 全局设定中心 · 空库引导卡 */
+.gs-empty {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 0;
+  padding: 32px 24px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-panel);
+  background: var(--app-surface);
+  box-shadow: var(--app-shadow-card);
+}
+
+.gs-empty__inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  /* 单一文案列宽：一句话一行，不跟着窗口宽度拉成一条超长行 */
+  max-width: 380px;
+  text-align: center;
+}
+
+/* 图标方片：弱主色底 + 主色图标，是这一屏唯一的「有颜色」的东西 */
+.gs-empty__tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  border-radius: var(--app-radius-panel);
+  background: var(--app-primary-weak);
+  color: var(--app-primary);
+  font-size: 20px;
+}
+
+.gs-empty__desc {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.gs-empty__title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--app-text);
+}
+
+.gs-empty__line {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--app-text-secondary);
+}
+.gs-empty__line.is-faint {
+  color: var(--app-text-muted);
+}
+
+.gs-empty__actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 2px;
+}
+
+/* 全局设定中心 · 等级批量工具条
+
+   它是一条**模式提示**，不是警告：底色取 warning-weak 已足够把它从卡片面上
+   分出来，再描一圈 border-strong 会显得像出错了。 */
+.gs-batch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  padding: 6px 10px 6px 14px;
+  border-radius: var(--app-radius-chip);
+  background: var(--app-warning-weak);
+}
+
+.gs-batch__count {
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--app-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.gs-batch__spacer {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 全局设定中心 · 主体骨架与滚动链
+   （窗口级三档窄窗降级写在窗口 index.scss 里，不进本文件） */
+/* ── 窗口根：确定高度 + 自身不滚 ────────────────────────────── */
+.gs-shell {
+  display: flex;
+  flex-direction: column;
+  /* 工具头与两栏之间统一留白：工具头自己不再补 padding-bottom */
+  gap: 14px;
+  /* ⚠️ 本仓没有全局 box-sizing 重置，普通 div 必须自己声明 */
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 0;
+  /* 内部各栏自己滚，避免双滚动条 */
+  overflow: hidden;
+  padding: 18px 22px 20px;
+}
+
+/* ── 两栏 grid：列 / 行轨道都必须 minmax(0, 1fr) ────────────── */
+.gs-body {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  /* ⚠️ auto 行按内容计高，height 钳不住它 */
+  grid-template-rows: minmax(0, 1fr);
+  gap: 16px;
+  /* ⚠️ max-height 钳不住 grid 隐式轨道，内容超高时会溢出盒子 */
+  flex: 1;
+  min-height: 0;
+}
+
+.gs-main {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* ── 分类头卡：影响面条 + 分类卡合成一张 ──────────────────────
+   影响面（谁在引用我）与分类本身（名称 / 说明 / 进位规则）讲的是同
+   一件事，拆成两张卡会让右栏变成「一条灰条 + 一张卡」的碎片感。
+
+   特异性说明：`.gs-shell .gs-hero > .nv-sc__card`（0,3,0）必须压过
+   `gs-skin.scss` 里的 `.gs-shell .nv-sc__card`（0,2,0）—— 窗口 index.scss
+   在 App.tsx 里最后引入，皮肤层比本文件晚打包，光靠 `>` 不够。 */
+.gs-hero {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  /* 必须与下方等级卡的 `16px 18px` 逐值相同：两张卡上下相邻，内的标题
+     若差 2px，视线扫下来就是「第二张卡偏了」。内层卡在本文件下方被清零
+     内边距，所以这里的值就是分类名的实际左边距。 */
+  padding: 16px 18px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-panel);
+  background: var(--app-surface);
+  box-shadow: var(--app-shadow-card);
+}
+
+.gs-shell .gs-hero > .nv-sc__card {
+  /* 卡中卡会把描边与投影叠两层：内层只保留排版 */
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* ⚠️ 必须自己 @use 共享的「零件」层（1.46.1 修）
+ *
+ * `setting-primitives.scss` 原本只被 `SettingCenter/index.scss` 引入，而
+ * `@use` 是编译期行为 —— 本窗口**不渲染 `<SettingCenter>`**（只复用它的
+ * hook，外壳是私有的 GsBody），那条链根本不会走到，于是这份 CSS 一字节
+ * 都没进 bundle。
+ *
+ * 后果是静默的、且只在真机可见（jsdom 与原型都看不出来）：
+ *   `.nv-sc__card`      → 丢了 display:flex / flex-direction，卡片里的
+ *                         卡头、说明、进位条退化成块级流，`gap` 全部失效；
+ *   `.nv-sc__card-head` → 丢了 display:flex，「标题 + 徽标 + 按钮」只能
+ *                         靠行内空白挤着排（真机反馈「挤在一起没边距」）；
+ *   `.nv-sc__spacer`    → 丢了 flex:1，编辑 / 删除不再靠右；
+ *   `.nv-sc__field`     → 编辑表单的标签与输入框竖排失效；
+ *   `.nv-sc__carry-example` → 丢了 display:flex，「进位示例」与正文粘死。
+ *
+ * 位置必须在 gs-skin **之前**：皮肤用的是 `.gs-shell .nv-sc__*`（0,2,0），
+ * 特异性本就压过零件层的单类规则，但保持「零件 → 皮肤」的先后才是对的
+ * 语义（皮肤只负责改，零件负责存在）。 */
+/* 全局设定中心 · 窗口皮肤层（只作用于 .gs-shell 之内）
+
+   目标：让这个窗口与书架主页（BookshelfPage）读起来是同一套东西 ——
+   页面底 --app-bg 上浮起 --app-surface 卡片，用 1px --app-border + 
+   --app-shadow-card 软投影分家，圆角取 --app-radius-panel；不再是
+   「一整块白表格 + 一条通栏竖线」。
+
+   为什么是覆盖而不是改共享：`.nv-sc__*` 同时服务书本侧的设定中心弹窗，
+   那边有 40 个用例把呈现与 DOM 钉死了。这里每条规则都收在 `.gs-shell`
+   之下（特异性 ≥ 0,2,0），打包顺序怎么变都压得过共享的单类规则。
+
+   色阶纪律（见 shared/styles/themes.scss）：
+   - 窗口根 = --app-bg，卡片 = --app-surface；
+   - 卡片里的「槽」（进位条 / 序号签 / 搜索框）取 --app-surface-alt ——
+     只有贴在 surface 上它才是低一档；
+   - 常驻块不超过 --app-primary-weak 这一档，hover 才用 --app-surface-hover。
+
+   ⚠️ **字号下限 12px（硬约定）**：本窗口任何文字都不许小于 12px。
+   共享层（弹窗形态）里有一批 11px —— 徽标 / 表头 / 序号 / 小境界签 /
+   插入条 / 状态行 / 只读占位 / 表单标签 —— 那是在 1180 宽的弹窗里看的；
+   这个窗口在 210px 左栏 + 三档窄窗下密度更高，11px 会糊成一片灰。
+   提升字号后必须同步补 1–2px 的行高 / 高度 / 内边距，否则字会顶到
+   圆角边缘、小境界签也会被行高压扁（见下方各条的 line-height）。
+*/
+.gs-shell {
+  /* ══ 卡片外壳 ═══════════════════════════════════════════════════════
+     与书架 `.bs-stats__card` / `.bs-hero` 同一组值：surface + 1px 描边 +
+     panel 圆角 + card 投影。共享的 `.nv-sc__card` 只画了描边（它的宿主是
+     弹窗，底本来就是 elevated），在窗口里必须补上底色与投影才立得住。 */
+}
+.gs-shell .nv-sc__card {
+  box-sizing: border-box;
+  gap: 12px;
+  padding: 16px 18px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-panel);
+  background: var(--app-surface);
+  box-shadow: var(--app-shadow-card);
+  /* 等级序列卡的下内边距要比别的卡小 8px：最后一行自己带 8px 竖向
+     内边距，两者相加才是 16 —— 与分类头卡「文字到卡边 16px」对齐。
+     写 16 会让这张卡底部比它上面的卡厚一倍。 */
+}
+.gs-shell .nv-sc__card.is-grow {
+  padding-bottom: 8px;
+}
+.gs-shell {
+  /* 窄窗下头部元素（名称 / 徽标 / 取色 / 编辑 / 删除）允许折行，
+     而不是把名称挤成一个字再省略。
+     ⚠️ 这里的 `gap` 只在 `.nv-sc__card-head` 真的是 flex 时才有意义 ——
+     它来自共享零件层，本窗口必须自己 @use 到（见 window/index.scss 顶部）。 */
+}
+.gs-shell .nv-sc__card-head {
+  flex-wrap: wrap;
+  gap: 12px;
+  row-gap: 8px;
+}
+.gs-shell {
+  /* 中性引用徽标在 mint / aurora 下几乎是「surface 上贴 surface-alt」（1.02
+     的对比），pill 背景等于没有，读起来是一段游离在标题与按钮之间的裸字。
+     补一圈发丝描边让它在四套主题里都成立 —— 只给中性这一颗，彩色的三颗
+     靠底色就能分家。 */
+}
+.gs-shell .nv-sc__badge.is-ref {
+  box-shadow: inset 0 0 0 1px var(--app-border);
+}
+.gs-shell {
+  /* ══ 字号层级 ══════════════════════════════════════════════════════
+     分类名 17/700、小节名 14/700，对应书架的「我的书架」16/700 一族；
+     共享里是 16/600 与 12/500，在大窗里偏轻。 */
+}
+.gs-shell .nv-sc__cat-title {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--app-text);
+}
+.gs-shell .nv-sc__sec-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--app-text);
+}
+.gs-shell {
+  /* 徽标一律 pill：与书架「连载中」「436 万字」同款 */
+}
+.gs-shell .nv-sc__badge {
+  padding: 2px 9px;
+  border-radius: var(--app-radius-pill);
+  /* 12px 字必须显式给行高：默认继承的 normal ≈ 1.2，pill 的上下内边距
+     会被压得不对称（上宽下窄） */
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 500;
+}
+.gs-shell .nv-sc__tip {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--app-text-muted);
+}
+.gs-shell {
+  /* ══ 说明行 ════════════════════════════════════════════════════════
+     标签从裸灰字改成小签，正文给 1.6 行高 —— 长说明不再顶成两行糊字。 */
+}
+.gs-shell .nv-sc__note {
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--app-text-secondary);
+}
+.gs-shell .nv-sc__note-label {
+  padding: 1px 7px;
+  border-radius: var(--app-radius-pill);
+  background: var(--app-surface-alt);
+  /* 19px 高的 pill 对齐 13px 正文的首行（13 × 1.6 ≈ 21）：比正文矮
+     2px 读起来是「签」不是「块」，再高就会把整行说明顶开 */
+  font-size: 12px;
+  line-height: 17px;
+}
+.gs-shell {
+  /* ══ 进位规则条 ════════════════════════════════════════════════════
+     卡片（surface）里的槽 = alt。共享里写的是 --app-surface，那是按
+     「宿主是纯白浮层」算的；贴在本窗卡片上会变成与卡片同色、只剩一个
+     圆角轮廓。 */
+}
+.gs-shell .nv-sc__carry {
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--app-radius-chip);
+  background: var(--app-surface-alt);
+}
+.gs-shell .nv-sc__carry-row {
+  gap: 14px;
+}
+.gs-shell .nv-sc__carry-item {
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.gs-shell .nv-sc__carry-item em {
+  /* em 是「每阶小层数 / 小层命名」这类字段名：12px 后与值的 12/500
+     只差色阶；补一点字距，几个字段名并排才不会连成一串 */
+  font-size: 12px;
+  letter-spacing: 0.01em;
+}
+.gs-shell .nv-sc__carry-example {
+  font-size: 12px;
+  line-height: 1.6;
+}
+.gs-shell {
+  /* 「进位示例」四个字也是 em（共享层 11px），与 carry-item 的字段名同一档 */
+}
+.gs-shell .nv-sc__carry-example em {
+  font-size: 12px;
+}
+.gs-shell {
+  /* 编辑表单 */
+}
+.gs-shell .nv-sc__form {
+  gap: 10px;
+}
+.gs-shell .nv-sc__field {
+  gap: 5px;
+}
+.gs-shell {
+  /* ══ 等级阶梯 ══════════════════════════════════════════════════════
+     去表格化：表头不再画通栏横线，列表本体不再套第二层边框 ——
+     它已经在卡片里，再描一圈就是「卡中卡」。 */
+}
+.gs-shell .nv-sc__thead {
+  padding: 0 12px 6px;
+  border-bottom: none;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: var(--app-text-muted);
+}
+.gs-shell {
+  /* 表头与数据的左边缘必须落在同一条轴上：轨宽 28px，数字签 24px，
+     「序号」两字恰为 24px —— 两处都居中，字心与签心才共线（靠左则
+     表头整体右移半列，扫读时看着像错位）。 */
+}
+.gs-shell .nv-sc__thead .nv-sc__col-no {
+  justify-self: center;
+  text-align: center;
+  white-space: nowrap;
+}
+.gs-shell .nv-sc__rows {
+  /* 行间插入条改成绝对定位后，需要一个定位上下文（见下方 __ins）；
+     顶部留 10px 是为了让**第一条**行的插入条（top:-10px）不被
+     overflow 裁掉 —— 它正好落在内边距里。 */
+  position: relative;
+  padding: 10px 0 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+.gs-shell .nv-sc__row {
+  padding: 8px 12px;
+  border-radius: var(--app-radius-item);
+  background: transparent;
+  /* 行内是两行（等级名 + 小境界速览）。共享的 `gap: 10px` 是**列**间距，
+     抄到行间距上会把小境界签推离它所属的那一阶、读成下一阶的前缀；
+     4px 才是「同一阶的第二行」。 */
+  row-gap: 4px;
+  /* 斑马纹改成「悬停才亮」：一列深浅相间的色块比行内容本身更抢眼，
+     而这里每行已经有「序号签 + 小境界签」两层节奏了。
+     ⚠️ hover 必须排在 is-alt 之后：同特异性靠源码顺序分胜负。 */
+}
+.gs-shell .nv-sc__row.is-alt {
+  background: transparent;
+}
+.gs-shell .nv-sc__row:hover {
+  background: var(--app-surface-alt);
+}
+.gs-shell .nv-sc__row.is-drag {
+  background: var(--app-primary-weak);
+}
+.gs-shell .nv-sc__row.is-dragging, .is-dragging .gs-shell .nv-sc__row {
+  background: var(--app-surface-alt);
+}
+.gs-shell .nv-sc__row {
+  /* 派生段（子层级）的缩进与树线由共享样式给出：本文件晚于它打包，
+     必须把这两条**原样重申**，否则上面的 padding 会把缩进抹平、
+     下面的字号覆盖会把「子层比父层轻」的层级做掉。 */
+}
+.gs-shell .nv-sc__row.is-child {
+  padding-left: 30px;
+}
+.gs-shell .nv-sc__row.is-child .nv-sc__col-name {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--app-text-secondary);
+}
+.gs-shell {
+  /* 序号：给「第几阶」一个固定的小方格锚点，扫读时不会串行。
+     ⚠️ 只作用于数据行（`.nv-sc__row`）—— 表头里的「序号」标签必须保持
+     裸文字，否则它会被撑成 22px 的方块，与旁边几列错开基线。 */
+}
+.gs-shell .nv-sc__row .nv-sc__col-no {
+  display: inline-flex;
+  /* 居中而不是靠左：轨宽 28px、签 24px，靠左会与表头「序号」错开 2px，
+     而这一列只有数字，居中最稳（表头同款对齐见上方 __thead 条） */
+  justify-self: center;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  background: var(--app-surface-alt);
+  font-size: 12px;
+  line-height: 1;
+  color: var(--app-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.gs-shell .nv-sc__col-name {
+  font-size: 14px;
+  font-weight: 600;
+}
+.gs-shell .nv-sc__col-alias,
+.gs-shell .nv-sc__col-note {
+  font-size: 12px;
+  color: var(--app-text-secondary);
+}
+.gs-shell {
+  /* 行尾「⋯」默认隐身，悬停 / 键盘聚焦 / 正在编辑时才出现 ——
+     八九颗灰点常驻会把「等级名称」这一列的视觉重量拉平。
+     `:has(.ant-input)` 兜住编辑态（此时焦点可能已跳到行尾按钮之外）。 */
+}
+.gs-shell .nv-sc__col-ops .ant-btn {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.gs-shell .nv-sc__row:hover .nv-sc__col-ops .ant-btn,
+.gs-shell .nv-sc__row:focus-within .nv-sc__col-ops .ant-btn,
+.gs-shell .nv-sc__row:has(.ant-input) .nv-sc__col-ops .ant-btn {
+  opacity: 1;
+}
+.gs-shell {
+  /* 行尾操作按钮改成「悬浮签」：透明底 + 主色字，hover 才落弱主色底 */
+}
+.gs-shell .nv-sc__col-ops .ant-btn {
+  --ant-button-default-bg: transparent;
+  --ant-button-default-border-color: transparent;
+  --ant-button-default-color: var(--app-text-secondary);
+  --ant-button-default-hover-bg: var(--app-primary-weak);
+  --ant-button-default-hover-border-color: transparent;
+  --ant-button-default-hover-color: var(--app-primary);
+  --ant-button-text-color: var(--app-text-secondary);
+  --ant-button-text-hover-color: var(--app-primary);
+  --ant-button-text-hover-bg: var(--app-primary-weak);
+  border-radius: var(--app-radius-pill);
+}
+.gs-shell {
+  /* 小境界速览：徽标与标签都再轻一档，十三层一排也不结成灰块墙 */
+}
+.gs-shell .nv-sc__sub {
+  gap: 8px;
+  /* 上下各 3px：与上面的等级名、下面的下一阶各留半格呼吸 */
+  padding: 3px 0;
+}
+.gs-shell .nv-sc__sub-label {
+  flex: none;
+  padding: 2px 9px;
+  font-size: 12px;
+  line-height: 18px;
+}
+.gs-shell {
+  /* ⚠️ 13 颗签必须排进一行。一旦折行，设了 13 小境界的那一阶就比其余
+     各阶高出整整一行（24px），整张阶梯的纵向节奏断在这里 —— 这是截图
+     红框里最刺眼的一处「间距不齐」。
+     实测量级（12px 字、Windows 字体）：13 颗签内容 578px，签内边距每边
+     4px、签间距 3px ⇒ 591px；210px 左栏档下可用的速览区是 608px —— 余量
+     17px，再宽就会折行。这也是把 padding 从 5 收到 4、gap 从 6 收到 3 的
+     全部理由：签是透明底文字按钮，收窄后更像一串层名而不是一排按钮。 */
+}
+.gs-shell .nv-sc__sub-list {
+  gap: 2px 3px;
+}
+.gs-shell .nv-sc__sub-chip.ant-btn {
+  height: 24px;
+  padding: 0 4px;
+  font-size: 12px;
+  border-radius: var(--app-radius-pill);
+}
+.gs-shell .nv-sc__seg {
+  margin-left: 6px;
+  padding: 2px 7px;
+  border-radius: var(--app-radius-pill);
+  font-size: 12px;
+  line-height: 17px;
+}
+.gs-shell {
+  /* ══ 行间插入条 ════════════════════════════════════════════════════
+     原来每条都占 26px 高度（默认 opacity:0），8 阶就是 200px 的空白，
+     行与行被拉得像两个段落。改成绝对定位：默认不占位、悬停在行下缘
+     才浮出来；「在末尾插入」仍留在流里常驻（它是主入口之一）。
+     ⚠️ 指针事件默认关掉，否则隐身条会截住下一行的点击。 */
+}
+.gs-shell .nv-sc__ins {
+  position: absolute;
+  top: -10px;
+  right: 0;
+  left: 0;
+  z-index: 3;
+  height: 20px;
+  padding-left: 12px;
+  opacity: 0;
+  pointer-events: none;
+}
+.gs-shell .nv-sc__ins.is-on {
+  z-index: 4;
+  height: auto;
+  padding: 3px 12px;
+  border-radius: var(--app-radius-item);
+  background: var(--app-surface);
+  box-shadow: var(--app-shadow-card);
+  opacity: 1;
+  pointer-events: auto;
+}
+.gs-shell .nv-sc__ins.is-last {
+  position: static;
+  height: 32px;
+  opacity: 1;
+  pointer-events: auto;
+}
+.gs-shell .nv-sc__row:hover + .nv-sc__ins,
+.gs-shell .nv-sc__ins:hover {
+  opacity: 1;
+  pointer-events: auto;
+}
+.gs-shell {
+  /* 「＋ 在此插入」：虚线感的淡入口，hover 落一层弱主色底 */
+}
+.gs-shell .nv-sc__ins-btn.ant-btn {
+  height: 22px;
+  padding: 0 9px;
+  border-radius: var(--app-radius-pill);
+  font-size: 12px;
+  color: var(--app-primary);
+  --ant-button-default-bg: transparent;
+  --ant-button-default-border-color: transparent;
+  --ant-button-default-color: var(--app-primary);
+  --ant-button-default-hover-bg: var(--app-primary-weak);
+  --ant-button-default-hover-border-color: transparent;
+  --ant-button-default-hover-color: var(--app-primary);
+  --ant-button-text-color: var(--app-primary);
+  --ant-button-text-hover-color: var(--app-primary);
+  --ant-button-text-hover-bg: var(--app-primary-weak);
+}
+.gs-shell .nv-sc__ins-input {
+  max-width: 320px;
+}
+.gs-shell {
+  /* 空阶梯时「在末尾插入」与「首条等级名」追加行会同时出现 —— 两个入口
+     都在说「加第一条」。此时只留追加行：它带输入框，一步就能完成。 */
+}
+.gs-shell .nv-sc__rows:has(.nv-sc__append) .nv-sc__ins.is-last {
+  display: none;
+}
+.gs-shell .nv-sc__status {
+  padding-top: 8px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--app-text-muted);
+}
+.gs-shell {
+  /* 共享层里还有两处 11px：引用项只读占位（操作列的「—」）与编辑表单的
+     字段名。它们不是本窗口写的，但同样落在 12px 下限之外。 */
+}
+.gs-shell .nv-sc__ro,
+.gs-shell .nv-sc__field {
+  font-size: 12px;
+}
+.gs-shell {
+  /* ══ 阶梯卡头：把「批量生成」降成文字按钮 ══════════════════════════
+     它是一枚低频动作，outlined 小按钮常驻会与卡头的 14/700 标题抢视线。
+     只命中 `.is-grow`（等级序列卡），不碰分类卡头的编辑 / 删除。 */
+}
+.gs-shell .nv-sc__card.is-grow > .nv-sc__card-head .ant-btn {
+  --ant-button-default-bg: transparent;
+  --ant-button-default-border-color: transparent;
+  --ant-button-default-color: var(--app-primary);
+  --ant-button-default-hover-bg: var(--app-primary-weak);
+  --ant-button-default-hover-border-color: transparent;
+  --ant-button-default-hover-color: var(--app-primary);
+  border-radius: var(--app-radius-pill);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: transparent;
+  color: var(--app-text);
+  -webkit-font-smoothing: antialiased;
+}
+
+.gs-window__badge {
+  padding: 1px 8px;
+  border-radius: var(--app-radius-chip);
+  background: var(--app-accent-blue-weak);
+  color: var(--app-accent-blue);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+/* ══ 窄窗三档（R8）══════════════════════════════════════════════════════
+   为什么改 shared 的类名却写在窗口自己的 scss 里：这是**本窗口私有**的响应式
+   策略 —— 书本弹窗固定 width={1180}，永远不会进这两档断点。全部挂在 `.gs-body`
+   作用域内，对 shared 零侵入、对其它窗口零影响；写进 shared 等于给 book 形态
+   加两条永不生效的媒体查询。
+
+   ⚠️ 特异性：`.gs-shell .gs-body`（0,2,0）压过 `GsBody/index.scss` 里的
+   `.gs-body`（0,1,0），`.gs-body .nv-sc__*`（0,2,0）压过 shared 的
+   `.nv-sc__*`（0,1,0）—— 都**不依赖**打包顺序，谁先谁后都一样生效。   */
+@media (max-width: 1079px) {
+  .gs-shell .gs-body {
+    grid-template-columns: 210px minmax(0, 1fr);
+  }
+  .gs-body .nv-sc__col-alias:not(.ant-input) {
+    display: none;
+  }
+  .gs-body .nv-sc__thead,
+  .gs-body .nv-sc__row {
+    grid-template-columns: 16px 28px minmax(0, 1.2fr) minmax(0, 2fr) 72px;
+  }
+}
+@media (max-width: 959px) {
+  .gs-shell .gs-body {
+    grid-template-columns: 180px minmax(0, 1fr);
+  }
+  .gs-shell .gs-side__controls {
+    flex-direction: column;
+  }
+  .gs-body .nv-sc__col-alias:not(.ant-input),
+  .gs-body .nv-sc__col-note:not(.ant-input) {
+    display: none;
+  }
+  .gs-body .nv-sc__thead,
+  .gs-body .nv-sc__row {
+    grid-template-columns: 16px 28px minmax(0, 1fr) 72px;
+  }
+  .gs-main .nv-sc__carry-row {
+    flex-wrap: wrap;
+  }
+}
+/* 编辑态兜底：含输入框的行恢复 6 轨 —— 否则别名 / 说明的编辑框会被挤没
+   （`:has()` 让本规则特异性高于上面两档，故不受断点影响） */
+.gs-body .nv-sc__row:has(.ant-input) {
+  grid-template-columns: 16px 28px minmax(0, 1.2fr) minmax(0, 1.4fr) minmax(0, 2fr) 72px;
+}
+
+.window-header {
+  position: relative;
+  z-index: 1100;
+}
+
+.window-shell__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.window-shell__body > * {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.gs-window__loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--app-text-secondary);
+  font-size: 13px;
+}
+
+.gs-window__error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 24px;
+}
+.gs-window__error .ant-alert {
+  width: 100%;
+  max-width: 560px;
+}</style>
+    <style>
+      /* ── 仅原型用：antd 6 组件的最小模拟（组件库样式在运行时注入，
+             静态页拿不到；这里只复刻这些控件被产品 CSS 读取的那几个变量）── */
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+      }
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #e7e3dc;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+          "Microsoft YaHei", sans-serif;
+      }
+      .window-shell {
+        width: 1080px;
+        height: 740px;
+        position: relative;
+      }
+
+      /* 窗口标题栏（本次不重设计，仅作上下文） */
+      .pv-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex: 0 0 auto;
+        height: 34px;
+        padding: 0 12px;
+        border-bottom: 1px solid var(--app-splitter);
+        background: var(--app-header-bg);
+        font-size: 12px;
+        color: var(--app-text-secondary);
+        user-select: none;
+      }
+      .pv-header__logo {
+        color: var(--app-primary);
+        font-size: 14px;
+      }
+      .pv-header__title {
+        font-weight: 600;
+        color: var(--app-text);
+      }
+      .pv-header__badge {
+        padding: 0 6px;
+        border-radius: var(--app-radius-pill);
+        background: var(--app-primary-weak);
+        color: var(--app-primary);
+        font-size: 11px;
+      }
+      .pv-header__spacer {
+        flex: 1;
+      }
+      .pv-winbtns {
+        display: flex;
+        gap: 14px;
+        color: var(--app-text-muted);
+      }
+
+      /* antd Button */
+      .ant-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: var(--ant-button-icon-gap, 6px);
+        height: var(--ant-control-height, 24px);
+        padding: 0 var(--ant-button-padding-inline, 10px);
+        border: 1px solid var(--ant-button-default-border-color, var(--app-border));
+        border-radius: var(--ant-border-radius, 8px);
+        background: var(--ant-button-default-bg, var(--app-surface));
+        color: var(--ant-button-default-color, var(--app-text));
+        box-shadow: var(--ant-button-default-shadow, none);
+        font-family: inherit;
+        font-size: var(--ant-button-content-font-size, 12px);
+        font-weight: var(--ant-button-font-weight, 400);
+        box-sizing: border-box;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .ant-btn-primary {
+        border-color: transparent;
+        background: var(--app-primary);
+        color: var(--app-primary-contrast);
+      }
+      .ant-btn-text {
+        border-color: transparent;
+        background: transparent;
+        color: var(--ant-button-text-color, var(--app-text-secondary));
+      }
+      .ant-btn-dangerous {
+        border-color: color-mix(in srgb, var(--app-error) 35%, transparent);
+        background: var(--app-surface);
+        color: var(--app-error);
+      }
+
+      /* antd Input / affix wrapper */
+      .ant-input-affix-wrapper,
+      .ant-input {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 26px;
+        padding: 0 10px;
+        border: 1px solid var(--app-border);
+        border-radius: var(--ant-border-radius, 8px);
+        background: var(--app-input-bg);
+        box-sizing: border-box;
+        font-size: 12px;
+        color: var(--app-text);
+      }
+      .ant-input-affix-wrapper .ant-input {
+        flex: 1;
+        height: auto;
+        padding: 0;
+        border: 0;
+        background: transparent;
+      }
+      .ant-input::placeholder {
+        color: var(--app-text-disabled);
+      }
+      .anticon {
+        color: var(--app-text-muted);
+      }
+
+      /* antd Select */
+      .ant-select {
+        display: inline-flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 4px;
+        height: 26px;
+        padding: 0 var(--ant-select-padding-horizontal, 8px);
+        border: 1px solid var(--ant-select-border-color, var(--app-border));
+        border-radius: var(--ant-select-border-radius, 8px);
+        background: var(--ant-select-background-color, var(--app-input-bg));
+        color: var(--ant-select-color, var(--app-text));
+        font-size: var(--ant-select-font-size, 12px);
+        box-sizing: border-box;
+      }
+      .ant-select__caret {
+        font-size: 9px;
+        color: var(--app-text-muted);
+      }
+
+      /* 取色圆点（antd ColorPicker 的触发块） */
+      .pv-color {
+        display: inline-block;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: conic-gradient(#8b77f0, #5b8def, #2fa57e, #e8834a, #8b77f0);
+        box-shadow: inset 0 0 0 2px var(--app-surface);
+      }
+
+      /* 演示用：把某一行的行尾操作与悬停态静态点亮（:hover 无法静态呈现） */
+      .pv-hover {
+        background: var(--app-surface-alt);
+      }
+      .pv-hover .nv-sc__col-ops .ant-btn {
+        opacity: 1;
+      }
+      .pv-hover .nv-sc__ins {
+        opacity: 1;
+        pointer-events: auto;
+      }
+      .pv-note {
+        position: absolute;
+        left: 0;
+        bottom: -26px;
+        font-size: 12px;
+        color: #8d8578;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="window-shell">
+      <div class="pv-header">
+        <span class="pv-header__logo">◈</span>
+        <span class="pv-header__title">全局设定中心</span>
+        <span class="pv-header__badge">跨书共享</span>
+        <span class="pv-header__spacer"></span>
+        <span class="pv-winbtns">— ▢ ✕</span>
+      </div>
+
+      <div class="window-shell__body">
+        <div class="gs-shell">
+          <!-- ── 工具头 ── -->
+          <div class="gs-toolbar">
+            <span class="gs-toolbar__hint"
+              >这里的设定可被任意作品引用 · 改动会同步到仍引用它的书</span
+            >
+            <span class="gs-toolbar__spacer"></span>
+            <div class="gs-toolbar__actions">
+              <button class="ant-btn ant-btn-text">▤ 模板库</button>
+              <button class="ant-btn ant-btn-primary gs-toolbar__cta">＋ 新建分类</button>
+              <button class="ant-btn ant-btn-text gs-toolbar__ghost">☑ 批量选择</button>
+              <button class="ant-btn ant-btn-text">⋯</button>
+            </div>
+          </div>
+
+          <div class="gs-body">
+            <!-- ── 左栏 ── -->
+            <aside class="gs-side">
+              <div class="gs-side__head">
+                <span class="gs-side__title">设定库</span>
+                <span class="gs-side__count">3 条</span>
+              </div>
+
+              <div class="ant-input-affix-wrapper gs-side__search">
+                <span class="anticon">⌕</span>
+                <input class="ant-input" placeholder="搜索分类名 / 说明" />
+              </div>
+
+              <div class="gs-side__controls">
+                <div class="ant-select gs-side__select">
+                  <span>全部</span><span class="ant-select__caret">▾</span>
+                </div>
+                <div class="ant-select gs-side__select">
+                  <span>自定义顺序</span><span class="ant-select__caret">▾</span>
+                </div>
+              </div>
+
+              <div class="gs-side__list">
+                <button class="ant-btn gs-cat-row is-on">
+                  <span class="gs-cat-row__grip">⠿</span>
+                  <span class="gs-cat-row__dot" style="background: #8b77f0"></span>
+                  <span class="gs-cat-row__body">
+                    <span class="gs-cat-row__name">修仙·练气十三层</span>
+                    <span class="gs-cat-row__meta">
+                      <span class="gs-cat-row__count">8 级</span>
+                      <span class="gs-cat-row__sep">·</span>
+                      <span class="gs-cat-row__ref is-on">5 部书引用</span>
+                    </span>
+                  </span>
+                </button>
+                <button class="ant-btn gs-cat-row">
+                  <span class="gs-cat-row__grip">⠿</span>
+                  <span class="gs-cat-row__dot" style="background: #5b9bc9"></span>
+                  <span class="gs-cat-row__body">
+                    <span class="gs-cat-row__name">法宝品阶</span>
+                    <span class="gs-cat-row__meta">
+                      <span class="gs-cat-row__count">9 级</span>
+                      <span class="gs-cat-row__sep">·</span>
+                      <span class="gs-cat-row__ref is-on">2 部书引用</span>
+                    </span>
+                  </span>
+                </button>
+                <button class="ant-btn gs-cat-row">
+                  <span class="gs-cat-row__grip">⠿</span>
+                  <span class="gs-cat-row__dot" style="background: #7ba05b"></span>
+                  <span class="gs-cat-row__body">
+                    <span class="gs-cat-row__name">丹药稀有度</span>
+                    <span class="gs-cat-row__meta">
+                      <span class="gs-cat-row__count">3 级</span>
+                      <span class="gs-cat-row__sep">·</span>
+                      <span class="gs-cat-row__ref">暂无引用</span>
+                    </span>
+                  </span>
+                </button>
+              </div>
+
+              <div class="gs-side__newcat">
+                <input class="ant-input gs-side__newcat-input" placeholder="新分类名，如「法宝品阶」" />
+                <button class="ant-btn gs-side__newcat-btn">＋ 新建</button>
+              </div>
+
+              <div class="gs-side__tip">
+                双击改名 · 右键更多操作<br />Ctrl+F 搜索 · ↑↓ 切换
+              </div>
+            </aside>
+
+            <!-- ── 右栏 ── -->
+            <section class="gs-main">
+              <div class="gs-hero">
+                <div class="gs-impact is-low">
+                  <span class="gs-impact__tile">🔗</span>
+                  <span class="gs-impact__text"
+                    >被 5 部书引用 · 改动会即时同步到这 5 部书</span
+                  >
+                  <span class="gs-impact__spacer"></span>
+                  <button class="ant-btn ant-btn-text gs-impact__refs">查看引用方</button>
+                </div>
+
+                <div class="nv-sc__card">
+                  <div class="nv-sc__card-head">
+                    <span class="nv-sc__cat-title">修仙·练气十三层</span>
+                    <span class="nv-sc__badge">境界体系</span>
+                    <span class="nv-sc__badge is-ref">5 部书引用</span>
+                    <span class="nv-sc__spacer"></span>
+                    <span class="pv-color"></span>
+                    <button class="ant-btn">✎ 编辑</button>
+                    <button class="ant-btn ant-btn-dangerous">🗑 删除</button>
+                  </div>
+
+                  <div class="nv-sc__note">
+                    <span class="nv-sc__note-label">说明</span>
+                    <span>练气十三层，筑基至大乘各分初期 / 中期 / 后期 / 圆满</span>
+                  </div>
+
+                  <div class="nv-sc__carry">
+                    <div class="nv-sc__carry-row">
+                      <span class="nv-sc__carry-item"><em>每阶小层数</em>13</span>
+                      <span class="nv-sc__carry-item">
+                        <em>进位方向</em>
+                        <span class="ant-select nv-sc__carry-select">
+                          <span>由低到高</span><span class="ant-select__caret">▾</span>
+                        </span>
+                      </span>
+                      <span class="nv-sc__carry-item"><em>小层命名</em>第1层 … 第13层</span>
+                    </div>
+                    <div class="nv-sc__carry-example">
+                      <em>进位示例</em>练气 第13层 →（满层进位）→ 筑基 初期
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="nv-sc__card is-grow">
+                <div class="nv-sc__card-head">
+                  <span class="nv-sc__sec-title">阶梯</span>
+                  <span class="nv-sc__spacer"></span>
+                  <button class="ant-btn">＋ 批量生成</button>
+                  <span class="nv-sc__tip">拖动左侧手柄调整顺序 · 悬停行间可插入</span>
+                </div>
+
+                <div class="nv-sc__thead">
+                  <span class="nv-sc__col-grip"></span>
+                  <span class="nv-sc__col-no">序号</span>
+                  <span class="nv-sc__col-name">等级名称</span>
+                  <span class="nv-sc__col-alias">别名</span>
+                  <span class="nv-sc__col-note">等级说明</span>
+                  <span class="nv-sc__col-ops">操作</span>
+                </div>
+
+                <div class="nv-sc__rows">
+                  <div style="position: relative">
+                    <div class="nv-sc__ins">
+                      <button class="ant-btn ant-btn-text nv-sc__ins-btn">＋ 在此插入</button>
+                    </div>
+                    <div class="nv-sc__row pv-hover">
+                      <span class="nv-sc__grip">⠿</span>
+                      <span class="nv-sc__col-no">1</span>
+                      <span class="nv-sc__col-name">练气</span>
+                      <span class="nv-sc__col-alias">—</span>
+                      <span class="nv-sc__col-note">—</span>
+                      <span class="nv-sc__col-ops">
+                        <button class="ant-btn ant-btn-text">⋯</button>
+                      </span>
+                      <div class="nv-sc__sub">
+                        <span class="nv-sc__sub-label">13 小境界</span>
+                        <span class="nv-sc__sub-list">
+                          <button class="ant-btn ant-btn-text nv-sc__sub-chip">第1层</button>
+                          <button class="ant-btn ant-btn-text nv-sc__sub-chip">第2层</button>
+                          <button class="ant-btn ant-btn-text nv-sc__sub-chip">第3层</button>
+                          <button class="ant-btn ant-btn-text nv-sc__sub-chip">第4层</button>
+                          <button class="ant-btn ant-btn-text nv-sc__sub-chip">第5层</button>
+                          <button class="ant-btn ant-btn-text nv-sc__sub-chip">第6层</button>
+                          <button class="ant-btn ant-btn-text nv-sc__sub-chip">第7层</button>
+                          <button class="ant-btn ant-btn-text nv-sc__sub-chip">第8层</button>
+                          <button class="ant-btn ant-btn-text nv-sc__sub-chip">第9层</button>
+                          <button class="ant-btn ant-btn-text nv-sc__sub-chip">第10层</button>
+                          <button class="ant-btn ant-btn-text nv-sc__sub-chip">第11层</button>
+                          <button class="ant-btn ant-btn-text nv-sc__sub-chip">第12层</button>
+                          <button class="ant-btn ant-btn-text nv-sc__sub-chip">第13层</button>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style="position: relative">
+                    <div class="nv-sc__ins">
+                      <button class="ant-btn ant-btn-text nv-sc__ins-btn">＋ 在此插入</button>
+                    </div>
+                    <div class="nv-sc__row">
+                      <span class="nv-sc__grip">⠿</span>
+                      <span class="nv-sc__col-no">2</span>
+                      <span class="nv-sc__col-name">筑基</span>
+                      <span class="nv-sc__col-alias">—</span>
+                      <span class="nv-sc__col-note">—</span>
+                      <span class="nv-sc__col-ops">
+                        <button class="ant-btn ant-btn-text">⋯</button>
+                      </span>
+                      <div class="nv-sc__sub">
+                        <span class="nv-sc__sub-label">4 小境界</span>
+                        <span class="nv-sc__sub-list">
+                          <button class="ant-btn ant-btn-text nv-sc__sub-chip">初期</button>
+                          <button class="ant-btn ant-btn-text nv-sc__sub-chip">中期</button>
+                          <button class="ant-btn ant-btn-text nv-sc__sub-chip">后期</button>
+                          <button class="ant-btn ant-btn-text nv-sc__sub-chip">圆满</button>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style="position: relative">
+                    <div class="nv-sc__ins">
+                      <button class="ant-btn ant-btn-text nv-sc__ins-btn">＋ 在此插入</button>
+                    </div>
+                    <div class="nv-sc__row">
+                      <span class="nv-sc__grip">⠿</span>
+                      <span class="nv-sc__col-no">3</span>
+                      <span class="nv-sc__col-name">金丹</span>
+                      <span class="nv-sc__col-alias">—</span>
+                      <span class="nv-sc__col-note">—</span>
+                      <span class="nv-sc__col-ops">
+                        <button class="ant-btn ant-btn-text">⋯</button>
+                      </span>
+                      <div class="nv-sc__sub">
+                        <span class="nv-sc__sub-label">4 小境界</span>
+                        <span class="nv-sc__sub-list">
+                          <button class="ant-btn ant-btn-text nv-sc__sub-chip">初期</button>
+                          <button class="ant-btn ant-btn-text nv-sc__sub-chip">中期</button>
+                          <button class="ant-btn ant-btn-text nv-sc__sub-chip">后期</button>
+                          <button class="ant-btn ant-btn-text nv-sc__sub-chip">圆满</button>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style="position: relative">
+                    <div class="nv-sc__ins">
+                      <button class="ant-btn ant-btn-text nv-sc__ins-btn">＋ 在此插入</button>
+                    </div>
+                    <div class="nv-sc__row">
+                      <span class="nv-sc__grip">⠿</span>
+                      <span class="nv-sc__col-no">4</span>
+                      <span class="nv-sc__col-name">元婴</span>
+                      <span class="nv-sc__col-alias">—</span>
+                      <span class="nv-sc__col-note">—</span>
+                      <span class="nv-sc__col-ops">
+                        <button class="ant-btn ant-btn-text">⋯</button>
+                      </span>
+                      <div class="nv-sc__sub">
+                        <span class="nv-sc__sub-label">4 小境界</span>
+                        <span class="nv-sc__sub-list">
+                          <button class="ant-btn ant-btn-text nv-sc__sub-chip">初期</button>
+                          <button class="ant-btn ant-btn-text nv-sc__sub-chip">中期</button>
+                          <button class="ant-btn ant-btn-text nv-sc__sub-chip">后期</button>
+                          <button class="ant-btn ant-btn-text nv-sc__sub-chip">圆满</button>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style="position: relative">
+                    <div class="nv-sc__ins">
+                      <button class="ant-btn ant-btn-text nv-sc__ins-btn">＋ 在此插入</button>
+                    </div>
+                    <div class="nv-sc__row">
+                      <span class="nv-sc__grip">⠿</span>
+                      <span class="nv-sc__col-no">5</span>
+                      <span class="nv-sc__col-name">化神</span>
+                      <span class="nv-sc__col-alias">—</span>
+                      <span class="nv-sc__col-note">—</span>
+                      <span class="nv-sc__col-ops">
+                        <button class="ant-btn ant-btn-text">⋯</button>
+                      </span>
+                      <div class="nv-sc__sub">
+                        <span class="nv-sc__sub-label">4 小境界</span>
+                        <span class="nv-sc__sub-list">
+                          <button class="ant-btn ant-btn-text nv-sc__sub-chip">初期</button>
+                          <button class="ant-btn ant-btn-text nv-sc__sub-chip">中期</button>
+                          <button class="ant-btn ant-btn-text nv-sc__sub-chip">后期</button>
+                          <button class="ant-btn ant-btn-text nv-sc__sub-chip">圆满</button>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="nv-sc__ins is-last">
+                    <button class="ant-btn ant-btn-text nv-sc__ins-btn">＋ 在末尾插入</button>
+                  </div>
+                </div>
+
+                <div class="nv-sc__status">共 8 级 · 49 小境界 · 修改即时生效</div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

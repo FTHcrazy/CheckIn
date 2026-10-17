@@ -2,7 +2,7 @@
 @use "../../styles/widget" as widget;
 
 /**
- * 行囊外壳（独立窗口形态 · 分区仪表盘）
+ * 行囊外壳（独立窗口形态 · 概览带 + 分区工作区）
  *
  * 行囊已拆成专属窗口（PackWindow）：`.cpk` 由窗口内容区（`.window-shell__body`）
  * 铺满 —— flex: 1 占满全部可用空间，不再有内嵌面板时代的让位 / 浮层 / 速览。
@@ -16,9 +16,13 @@
  * 判据与色阶规则见 `src/shared/styles/themes.scss` 文件头「常驻色块阶梯」。
  *
  * 布局分三档（判据在 TS 侧 `packWidthTier`，这里只按 `data-tier` 出样式）：
- * - wide  ：双栏并排（左数值与状态 / 右装备类）
+ * - wide  ：三条水平带 —— 概览带（L0，四段发丝线分栏）/ 分区工作区（L1，一块或
+ *           两块面板）/ 页脚。工作区撑满概览带以下的全部高度，页脚贴窗口底收口。
  * - mid   ：单栏纵向流，全部模块展开
  * - narrow：单栏纵向流，次要六模块由 TS 侧折叠成标题行
+ *
+ * 概览带、工作区、页脚都收在 `.cpk__content`（统一内容量尺）里：超宽窗口下
+ * 三段左右边界必须对齐 —— 上半铺满整窗、下半缩在中间，就是「割裂」的来源。
  */
 .cpk {
   position: relative;
@@ -30,9 +34,31 @@
   background: var(--app-bg);
   overflow: hidden;
 
+  /*
+    内容量尺（唯一事实源，UI-05 / UI-08）：宽屏下窗口可以拉到 2560，但正文不该
+    跟着拉成两公里 —— 概览带、工作区、页脚共用这一条上界，超宽时整体居中。
+
+    放在 `.cpk` 上而不是各写一份字面量：三处（`.cpk-head` 的左右内边距、
+    `.cpk__content` 的 max-width）一旦漂移，上下边界就会错开几像素，
+    「对齐」这件事就白做了。头部样式在 PackHeader 自己的 scss 里，
+    靠自定义属性继承取值 —— 故这里给 `var(..., 1760px)` 的兜底值。
+
+    1760（原 1600）：2560 窗口下两侧各留 400，既保住「两栏各 ~800」的舒适行宽，
+    又不至于让版心缩成窗口中间的一条窄带 —— 真机截图里「窗口那么大、内容那么小」
+    是这一档的直接观感。
+  */
+  --cpk-measure: 1760px;
+
   &__body {
     flex: 1;
     min-height: 0;
+    /*
+      纵向 flex + content 撑满：宽档的页脚要靠 `margin-top: auto` 贴住窗口底部。
+      滚动仍然只有这一条（`overflow-y: auto`）—— 工作区两栏不各自滚动，
+      滚轮永远不会出现「滚的那栏已经到底、另一栏还在下面」的分裂感。
+    */
+    display: flex;
+    flex-direction: column;
     overflow-y: auto;
     overflow-x: hidden;
     padding: 12px;
@@ -40,51 +66,207 @@
   }
 
   /*
-    L0 看板与 L1 编辑器区之间的呼吸。
+    统一内容量尺容器：概览带 / 工作区 / 页脚三段共用。
 
-    两者都是 `.cpk__body` 的**直接子项**，而 body 是块级流 —— 相邻块之间没有
-    默认外边距，不加这一条就会出现「看板最后一行摘要贴着第一个模块卡上沿」，
-    两块连成一片、看不出是两级结构（模块壳自己的 `& + &` 只管栏内相邻兄弟，
-    管不到跨级这一层）。
+    以前两级各用一套宽度：概览卡铺满整窗（行内「标题 …… 按钮」隔着近 2000px），
+    L1 单分区又被 max-width:720 收成居中的一条窄带 —— 上下两半看起来不是同一个
+    界面的。现在三段都收在同一条量尺里、左右边界对齐，超宽屏再把整体居中。
 
-    用相邻兄弟选择器而不是给 body 上 flex + gap：body 是滚动容器，
-    改成 flex 会让子项默认 `flex-shrink: 1`，内容超高时把看板压扁。
+    段间距用 flex `gap` 而不是相邻兄弟 `margin-top`：三段是同级且顺序固定
+    （概览 / 工作区 / 页脚），gap 一处即可，加第四段时不用再补选择器。
   */
-  &__body > .cpk-board + * {
-    margin-top: 14px;
+  &__content {
+    width: 100%;
+    max-width: var(--cpk-measure);
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  /* 宽档：内容撑满可视高度，页脚才能贴底（内容比窗口高时自然退回滚动） */
+  &__body--wide &__content {
+    flex: 1 1 auto;
   }
 
   /*
     双栏容器：**左「数值与状态」/ 右「装备类」**（顺序见 pack-layout 的
     PACK_ZONE_ORDER，两处必须同序 —— 左上是视线起点，放作者第一眼要找的
     属性汇总 / 人物属性 / 境界）。
+
     宽度 44 : 56：右栏（装备 / 物品 / 技能）是「部位名 + 按钮 / 物品行 + 数量 +
     按钮」这类长行，给窄了会挤成两行；左栏多是「标签 : 数值」的短行，窄一点无妨。
     用 `minmax(0, …)` 而非固定 px：窗口拉伸时两栏按比例分配，不会出现某一栏
     被压到 0 宽（那会让长英文/数字溢出而不是省略）。
+
+    `align-items: stretch`（原 start）：两块面板要一起长到窗口底部，
+    栏头在同一水平线上、栏底也在同一水平线上 —— 参差的底边正是「没对齐」的来源。
   */
   &__zones {
     display: grid;
     grid-template-columns: minmax(0, 44fr) minmax(0, 56fr);
-    align-items: start;
+    align-items: stretch;
     gap: 14px;
+    min-width: 0;
   }
 
   /*
-    单分区独占：对面分区一个启用模块都没有时（新书出厂只开核心三块，
-    全在 stats 栏），空分区不渲染，这一栏居中收窄 —— 卡片既不拉满整窗，
-    也不缩在角落，整版只有一个视觉重心。
-    上限取设计稿右栏的舒适行宽再放宽一档：三栏卡片行文都不长，720px 内
-    空态文案恰好一行到一行半，不会拖成大段落。
+    单分区（新书出厂只开核心三块，全在 stats 栏）：**只剩一块面板**，占满整条量尺，
+    内部再由 TS 侧 `soloColumns` 拆两栏。所以这里没有「通栏窄带」的变体 ——
+    退化成一窄条正是 UI-05 之前「上宽下窄」的成因。
   */
-  &__zones--solo {
+  &__zones--single {
     grid-template-columns: minmax(0, 1fr);
-    max-width: 720px;
-    margin: 0 auto;
   }
 
   /*
-    分区引导卡：对面分区被整体关掉时，替它占一句话的位置。
+    宽档的工作区吃掉概览带以下的剩余高度：面板撑到底，页脚再贴底。
+    内容比窗口高时 `min-height: 0` 让 grid 正常收缩，滚动仍交给 `.cpk__body`。
+  */
+  &__body--wide &__zones {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  /*
+    分区面板 = 一张卡（surface + 描边 + 投影）+ 栏头 + 栏目 + 卡片流。
+
+    为什么工作区要有一层「面板」：窗口拉到 2560 而内容只有几个模块时，卡片直接
+    铺在页面底上，下半屏就是一整片空底 —— 真机截图里像没加载完。面板把这块区域
+    **收成一张有边界的卡**，空白落在卡里（读作「这栏还有余量」）而不是页面里。
+
+    ⚠️ 面板既然铺了 `--app-surface`，里面的模块就不能再各自成套边圆角卡
+    （那就成了「卡里套卡」，大窗下很重）：模块在面板内退化成**发丝线分节** ——
+    描边/圆角/底色清零，节与节之间一条横线。视觉上正好是「一张卡里若干节」，
+    与全局设定窗口 v2 的写法同族。
+  */
+  &__zone {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 10px 14px 12px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-panel);
+    background: var(--app-surface);
+    box-shadow: var(--app-shadow-card);
+  }
+
+  /* 面板内的模块退化成「节」：清零卡片外观，靠发丝线分节 */
+  &__zone .cpk-mod {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  &__zone .cpk-mod__head {
+    padding-inline: 0;
+    background: transparent;
+    border-bottom-color: transparent;
+  }
+
+  &__zone .cpk-mod__inner {
+    padding-inline: 0;
+  }
+
+  /*
+    栏头：分区名 + 模块数，一条发丝线收在下面。
+    小字、弱色、字距微开 —— 只负责分区，不抢模块标题的层级。
+  */
+  &__zonehead {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--app-border);
+  }
+
+  &__zonetitle {
+    margin: 0;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    color: var(--app-text-muted);
+  }
+
+  &__zonecount {
+    font-size: 11px;
+    color: var(--app-text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /*
+    栏目栅格：默认一栏（双面板各一栏）；单面板拆两栏时由 `--split` 打开第二列。
+    用 grid 而不是 flex + wrap：两栏宽度必须严格对半（作者拖出来的模块顺序
+    按「前一半 / 后一半」落位，宽度不等会让这个顺序看起来是乱的）。
+  */
+  &__zonestack {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
+    /*
+      吃掉面板剩余的竖向高度：拆两栏时那条竖分隔线才会一路画到卡片底沿。
+      只给栏目上 `border-left` 而不拉高，线会停在最后一节内容下面，
+      看起来像「画到一半断了」。
+    */
+    flex: 1 1 auto;
+  }
+
+  &__zone--split &__zonestack {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    column-gap: 14px;
+  }
+
+  /*
+    栏内的卡片流。间距写在栏目上（而不是模块壳的 `& + &`）：
+    模块壳各自落在不同栏目里，自身相邻选择器管不到跨栏的首尾间距，
+    两处各写一份必然漂移。
+
+    面板内改用「上沿发丝线 + 段前距」分节（而不是留白分开）：模块已经是
+    面板里的节，没有自己的描边，靠一条线切分才看得出是两个模块。
+  */
+  &__zonecol {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+
+    > * + * {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--app-border);
+    }
+  }
+
+  /* 单面板拆两栏时，两栏之间也来一条竖线，与横线组成同一套网格 */
+  &__zone--split &__zonecol + &__zonecol {
+    padding-left: 14px;
+    border-left: 1px solid var(--app-border);
+  }
+
+  /*
+    页脚：把内容收口到窗口底部（`margin-top: auto` 吃掉剩余高度）。
+    只报两个事实（草稿即存 / 模块开了几个），不是导航 —— 导航在头部与概览带，
+    这里再放一颗「模块管理」就成了同入参的重复控件。
+  */
+  &__workfoot {
+    margin-top: auto;
+    padding-top: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 11px;
+    color: var(--app-text-muted);
+  }
+
+  &__workfoot-count {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /*
+    分区引导卡：对面分区被整体关掉时，挂在最后一列的末尾替它占位
+    （本该是那一栏模块的位置，正好回答「这边为什么是空的」）。
     造型自带（虚线幽灵卡）→ 先清零 antd 外观再声明（清零必须在覆盖之前）。
     antd 的边框恒读 `--ant-line-width` / `--ant-line-type`，清零把宽度归零了，
     虚线要在这里按需恢复（同 ModifierList 的 cpk-castnote）。
@@ -119,27 +301,13 @@
     color: var(--app-text-secondary);
   }
 
-  &__zone {
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-  }
-
-  /* 栏眉标：小字、弱色，只负责分区，不抢模块标题的层级 */
-  &__zonetitle {
-    margin: 0 0 6px 2px;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    color: var(--app-text-muted);
-  }
-
   /*
-    栏内堆叠：用 `> * + *` 而不是依赖模块壳自己的 `& + &`。
-    模块壳的相邻外边距只对「同一条流里的相邻兄弟」成立，跨栏之后
-    首个子项的前间距与末尾子项的尾间距都要靠这里兜住，逻辑集中在容器上更好改。
+    栏内纵向流（中 / 窄档的单栏，以及宽档只是「一栏」时的退化形态）。
+
+    间距用 `> * + *` 而不是依赖模块壳自己的 `& + &`：模块壳的相邻外边距只对
+    「同一条流里的相邻兄弟」成立，跨栏之后首个子项的前间距与末尾子项的尾间距
+    都要靠容器兜住，逻辑集中在容器上更好改。
   */
-  &__zonestack,
   &__flow {
     min-width: 0;
 
@@ -194,14 +362,13 @@
 .cpk__body--narrow {
   padding: 6px;
 
-  .cpk__zonestack > * + *,
   .cpk__flow > * + * {
     margin-top: 6px;
   }
 
-  /* 看板与 L1 的间距同档收窄（见 `.cpk__body > .cpk-board + *`） */
-  > .cpk-board + * {
-    margin-top: 8px;
+  /* 概览卡与 L1 的间距同档收窄（宽档的 gap 14 由 `.cpk__content` 统一给） */
+  > .cpk__content {
+    gap: 8px;
   }
 }
 

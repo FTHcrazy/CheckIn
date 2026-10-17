@@ -101,3 +101,53 @@ describe("useNovelViewState · 本书设定 toggle（REQ-050 修法 ③）", () 
     expect(result.current.settingFocusId).toBeNull();
   });
 });
+
+/**
+ * REQ-053：带遮罩的页内浮层（设定中心 / 类型管理 Modal）开着时，点击顶栏
+ * 「行囊 / 小说设定」第一击被 `.ant-modal-wrap` 收走 —— 页面侧靠两件事修：
+ * ① `pageOverlayOpen` 决定顶栏是否抬到 wrap 之上（`.nv-page.is-overlay`）；
+ * ② 顶栏 click 捕获阶段调 `dismissPageOverlays` 让浮层让位。
+ * 这里钉 ① 的数据源与 ② 的收口函数。
+ */
+describe("useNovelViewState · 页内浮层收口（REQ-053）", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("pageOverlayOpen 覆盖「设定中心」与「类型管理」两颗 Modal，抽屉不算", () => {
+    const { result } = renderHook(() => useNovelViewState());
+    expect(result.current.pageOverlayOpen).toBe(false);
+
+    act(() => result.current.openSnapshot());
+    expect(result.current.pageOverlayOpen, "无遮罩抽屉不该抬顶栏").toBe(false);
+    act(() => result.current.closeSnapshot());
+
+    act(() => result.current.openTypeManager());
+    expect(result.current.pageOverlayOpen).toBe(true);
+    act(() => result.current.closeTypeManager());
+
+    act(() => result.current.openSettingCenter("ls1"));
+    expect(result.current.pageOverlayOpen).toBe(true);
+  });
+
+  it("dismissPageOverlays 一次收干净：设定中心 + 聚焦分类 + 类型管理", () => {
+    const { result } = renderHook(() => useNovelViewState());
+
+    act(() => result.current.openSettingCenter("ls1"));
+    act(() => result.current.dismissPageOverlays());
+
+    expect(result.current.settingCenterOpen).toBe(false);
+    expect(result.current.settingFocusId).toBeNull();
+    expect(result.current.pageOverlayOpen).toBe(false);
+  });
+
+  it("浮层没开时调它也不动别的视图状态（抽屉照样开着）", () => {
+    const { result } = renderHook(() => useNovelViewState());
+
+    act(() => result.current.openSettings());
+    act(() => result.current.dismissPageOverlays());
+
+    expect(result.current.settingsOpen, "排版抽屉不是页内浮层").toBe(true);
+    expect(result.current.pageOverlayOpen).toBe(false);
+  });
+});

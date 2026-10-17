@@ -1,0 +1,69 @@
+/* 全局设定中心 · 空库引导卡 */
+
+.gs-empty {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 0;
+  padding: 32px 24px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-panel);
+  background: var(--app-surface);
+  box-shadow: var(--app-shadow-card);
+}
+
+.gs-empty__inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  /* 单一文案列宽：一句话一行，不跟着窗口宽度拉成一条超长行 */
+  max-width: 380px;
+  text-align: center;
+}
+
+/* 图标方片：弱主色底 + 主色图标，是这一屏唯一的「有颜色」的东西 */
+.gs-empty__tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  border-radius: var(--app-radius-panel);
+  background: var(--app-primary-weak);
+  color: var(--app-primary);
+  font-size: 20px;
+}
+
+.gs-empty__desc {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.gs-empty__title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--app-text);
+}
+
+.gs-empty__line {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--app-text-secondary);
+
+  &.is-faint {
+    color: var(--app-text-muted);
+  }
+}
+
+.gs-empty__actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 2px;
+}

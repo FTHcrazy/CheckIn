@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Modal } from "antd";
 import type {
+  GlobalCategoryRef,
   NovelGlobalSettingCategoryPatch,
   NovelGlobalSettingLevelPatch,
 } from "@/shared/types/electron";
@@ -51,6 +52,14 @@ export interface GlobalSettingController {
   modalContextHolder: ReactNode;
   onCreateCategory: (name: string, kind: SettingCategoryKind, color: string) => void;
   onPatchCategory: (categoryId: string, patch: NovelGlobalSettingCategoryPatch) => void;
+  /**
+   * 读取某全局分类被哪些书引用（R12，只读）。
+   *
+   * ⚠️ 必须显式判空：渲染层与 preload 版本错位时 `api.globalCategoryRefs` 是
+   * `undefined`，直接调用是**同步 TypeError**；它可能在渲染期被 UI 回调直接调到，
+   * 一旦抛出 React 会卸载整棵树（用户看到白屏）。故**缺通道返回 `[]`，不抛**。
+   */
+  loadCategoryRefs: (categoryId: string) => Promise<GlobalCategoryRef[]>;
   onDeleteCategory: (categoryId: string) => void;
   onReorderCategories: (orderedIds: string[]) => void;
   onAddLevel: (categoryId: string, name: string, index: number) => void;
@@ -167,6 +176,28 @@ export function useGlobalSetting(): GlobalSettingController {
       void api.globalCategoryUpdate(categoryId, patch).then(() => reload());
     },
     [reload],
+  );
+
+  /**
+   * 引用方名单（R12）：返回「哪些书在引用这个全局分类」，按书名排序。
+   *
+   * 失败一律退化为**空名单**而不是抛：这是个纯数据原语，视图态（loading / error /
+   * retry）由使用它的抽屉自持 —— 读不到就让抽屉显示空态，而不是把整个窗口打挂。
+   */
+  const loadCategoryRefs = useCallback(
+    async (categoryId: string): Promise<GlobalCategoryRef[]> => {
+      const api = window.electronAPI?.novel;
+      // ⚠️ 判空不是防御性编程，而是版本错位的现实路径：旧版 preload 没有这个方法。
+      if (!api || typeof api.globalCategoryRefs !== "function") return [];
+      try {
+        const refs = await api.globalCategoryRefs(categoryId);
+        return Array.isArray(refs) ? refs : [];
+      } catch (error) {
+        console.error("[GlobalSettingWindow] 读取引用方名单失败", error);
+        return [];
+      }
+    },
+    [],
   );
 
   const onDeleteCategory = useCallback(
@@ -400,6 +431,7 @@ export function useGlobalSetting(): GlobalSettingController {
     loadError,
     reload,
     modalContextHolder,
+    loadCategoryRefs,
     onCreateCategory,
     onPatchCategory,
     onDeleteCategory,

@@ -13,7 +13,15 @@
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 12px 14px;
+  /*
+    左右内边距跟内容量尺走：宽屏下窗口拉到 2560 时，标题与右侧工具要落在
+    与概览带 / 工作区**同一列**上（`--cpk-measure` 由 `.cpk` 继承进来，
+    见 ../index.scss）。写死 14px 会让头部横贯 2560、内容只有 1760，
+    又是一次「上下不是一个界面」。
+    背景与下边框仍铺满整条窗口：这是窗口级 chrome，不是内容块。
+  */
+  padding-block: 12px;
+  padding-inline: max(14px, calc((100% - var(--cpk-measure, 1760px)) / 2));
   border-bottom: 1px solid var(--app-border);
   background: var(--app-header-bg, var(--app-surface));
 

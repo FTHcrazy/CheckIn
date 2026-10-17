@@ -1,0 +1,123 @@
+%% (a) 搜索/筛选 → 选中 → 就地改名 → 写后重载 → 广播回灌
+sequenceDiagram
+    autonumber
+    actor U as 作者
+    participant SB as GsCategorySidebar
+    participant ROW as GsCategoryRow
+    participant V as useGlobalSettingView
+    participant UT as gs-view-utils
+    participant BODY as GsBody
+    participant C as useSettingCenter
+    participant D as useGlobalSetting
+    participant IPC as window.electronAPI.novel
+    participant MAIN as 主进程 (global-* handlers)
+
+    Note over U,MAIN ── R1/R2 搜索与筛选：纯前端，零 IPC ──
+    U->>SB: 输入「法」/ 切「已被引用」
+    SB->>V: setKeyword("法") / setFilter("referenced")
+    V->>UT: visibleCategories(sorted, kw, filter, sortMode)
+    UT-->>V: 过滤（名+note 命中 ∩ 筛选）→ 排序
+    V-->>SB: visible / visibleIds / emptyKind / canDrag=false
+    SB-->>U: 左栏即时刷新 + 「N 条」；0 命中 → 专用空态 + 清空入口
+    Note right of SB: 断言：此期间 globalCategoryOrder 调用次数 = 0
+
+    Note over U,MAIN ── 选中 ──
+    U->>ROW: 点击分类行
+    ROW->>C: c.setActiveId(id)
+    C-->>BODY: activeIdResolved / active 更新
+    BODY-->>U: 右栏 CategoryCard + LevelSequence + 影响面条同步
+
+    Note over U,MAIN ── R5 就地改名 ──
+    U->>ROW: 双击分类名
+    ROW->>V: beginRename(id)
+    V-->>ROW: renamingId = id → 渲染 antd Input（非受控 + 原值全选）
+    U->>ROW: 输入新名 + Enter
+    ROW->>V: commitRename(rawValue)
+    alt 空 / 纯空白
+        V->>V: cancelRename()（保持原值退出）
+    else 非空
+        V->>BODY: onRename(id, trimmed)
+        BODY->>D: data.onPatchCategory(id, { name })
+        D->>IPC: globalCategoryUpdate(id, patch)
+        IPC->>MAIN: ipcMain.handle('novel-global-setting-*')
+        MAIN-->>IPC: ok
+        IPC-->>D: resolved
+        D->>D: reload()  —— 写后整表重载（不做本地乐观更新）
+        D->>IPC: globalSettingLoad()
+        IPC-->>D: { categories: [...含新 refCount] }
+        D-->>BODY: setSettings(映射后)
+        BODY-->>U: 左栏 + 右栏 + 影响面条同步刷新
+    end
+
+    Note over U,MAIN ── 跨窗口广播回灌（书侧建引用 / 上架也会触发）──
+    MAIN-)D: 'global-setting-changed' 广播
+    D->>D: reload()
+    D-->>BODY: settings 更新 → 引用计数 / 影响面条同步
+
+
+%% (b) 分类删除（含引用二次确认 + R11 追加提示 + R12 名单）
+sequenceDiagram
+    autonumber
+    actor U as 作者
+    participant BAR as GsImpactBar
+    participant MENU as GsCategoryRow 右键菜单
+    participant KB as useGsShortcuts
+    participant BODY as GsBody
+    participant D as useGlobalSetting
+    participant MODAL as modal.confirm (contextHolder)
+    participant IPC as window.electronAPI.novel
+    participant MAIN as 主进程 / novel.db
+
+    Note over U,MAIN ── 三条入口共用同一个回调：data.onDeleteCategory ──
+    alt 入口 1：影响面条「删除」
+        U->>BAR: 点击「删除」
+        BAR->>BODY: onDelete()
+        BODY->>D: data.onDeleteCategory(id, extraHintOf(refCount))
+    else 入口 2：右键菜单「删除」（右键已先自动选中该分类）
+        U->>MENU: 右键 → 删除
+        MENU->>BODY: c.setActiveId(id) 先落选中
+        MENU->>D: data.onDeleteCategory(id, extraHint)
+    else 入口 3：键盘 Delete（焦点不在输入控件）
+        U->>KB: 按 Delete
+        KB->>D: data.onDeleteCategory(id, extraHint)
+    end
+
+    D->>IPC: globalCategoryDelete(id)  —— 先探引用
+    IPC->>MAIN: COUNT(DISTINCT work_id)
+    MAIN-->>IPC: { ok: false, refCount: N }
+    IPC-->>D: first
+
+    alt first.ok === true（无人引用，直接删）
+        D->>D: reload()
+        D->>IPC: globalSettingLoad()
+        IPC-->>D: 新表
+        D-->>BODY: settings 更新
+    else first.refCount > 0（被引用 → 二次确认）
+        D->>MODAL: modal.confirm({ title: "删除被引用的全局设定？",
+        content: "该分类正被 N 部书引用。删除后这些书会把它就地固化为各自的本书副本（保留内容、不再同步）。确定删除？" + extraHint })
+        MODAL-->>U: 弹确认框（antd 实例方法，继承主题，暗色不掉色）
+        alt 取消
+            U-->>MODAL: 取消
+            MODAL-->>D: resolve(false)
+            D->>D: 中止，不写库
+        else 确定删除
+            U-->>MODAL: 确定删除
+            MODAL-->>D: resolve(true)
+            D->>IPC: globalCategoryDelete(id, true)  —— 固化删除
+            IPC->>MAIN: 删分类 + 引用方就地固化
+            MAIN-->>IPC: ok
+            D->>D: reload()
+            D-->>BODY: settings 更新 → 影响面条 / 徽标同步
+        end
+    end
+
+    Note over U,MAIN ── R12 引用方名单（只读通道）──
+    U->>BAR: 点「查看引用方 ▸」（refCount=0 时不渲染该入口）
+    BAR->>D: data.loadCategoryRefs(id)
+    D->>IPC: globalCategoryRefs(id)
+    IPC->>MAIN: SELECT DISTINCT work_id JOIN novel_works 取名
+    MAIN-->>IPC: [{workId, workName}]
+    IPC-->>D: refs
+    D-->>BAR: refs → 打开 GsRefsDrawer（antd Drawer，portal 挂 body）
+    Note right of D: 与 countGlobalRefs 同一口径（source_global_id 匹配、已脱离的不计入）
+    → 名单条数必须恒等于 refCount

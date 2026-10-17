@@ -253,6 +253,23 @@ describe("接线：广播 / preload / main 注册", () => {
   it("main.ts 注册全局设定 handler", () => {
     expect(MAIN).toContain("registerNovelGlobalSettingHandlers");
   });
+
+  /**
+   * R12 引用方名单：`countGlobalRefs` 只给数字，这条通道负责**反查**被哪几部书引用。
+   * 渲染层碰不到 novel 库，所以从渲染层到 SQL 的整条链路只能靠源码钉：
+   * 少一处接线 UI 就静静空着，多一点写语句则展示通道变成数据污染源。
+   */
+  it("preload 接线含只读通道 novel-global-setting-refs", () => {
+    expect(PRELOAD).toContain("'novel-global-setting-refs'");
+  });
+
+  it("novel-global-setting-refs 是只读通道（不写库）", () => {
+    // ⚠️ 先剥注释：说明文字里常照抄 SQL 关键词，不剥会误命中反向断言
+    const body = stripComments(globalBody("novel-global-setting-refs"));
+    expect(body).not.toMatch(/\bINSERT\b/i);
+    expect(body).not.toMatch(/\bUPDATE\b/i);
+    expect(body).not.toMatch(/\bDELETE\b/i);
+  });
 });
 
 describe("书窗口订阅侧：引用镜像就地刷新（1.45.1 P0-1）", () => {

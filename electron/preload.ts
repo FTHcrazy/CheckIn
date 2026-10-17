@@ -203,6 +203,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('novel-global-setting-level-merge', levelId) as Promise<boolean>,
     globalSettingExport: () =>
       ipcRenderer.invoke('novel-global-setting-export') as Promise<{ version: number; exportedAt: string; categories: unknown[] }>,
+    /** 引用方名单（R12）：某全局分类被哪几部书引用；只读，不写库 */
+    globalCategoryRefs: (categoryId: string) =>
+      ipcRenderer.invoke('novel-global-setting-refs', categoryId) as Promise<Array<{ workId: string; workName: string }>>,
     // ── 全局设定中心：本书「引用 / 上架」（写目标含本书侧镜像行，落在本书域通道） ──
     referenceGlobal: (workId: string, globalCategoryId: string) =>
       ipcRenderer.invoke('novel-setting-reference-global', workId, globalCategoryId) as Promise<boolean>,
@@ -310,7 +313,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   // 返回取消订阅函数，组件卸载时可移除监听，避免重复注册
   receive: (channel: string, func: (...args: unknown[]) => void) => {
-    const validChannels = ['activity-notify', 'window-maximize-state']
+    const validChannels = [
+      'activity-notify',
+      'window-maximize-state',
+      // 行囊窗口「真的可见」的回执：顶栏那颗按钮据此从「正在打开」恢复
+      'pack-window-shown',
+    ]
     if (validChannels.includes(channel)) {
       const listener = (_event: Electron.IpcRendererEvent, ...args: unknown[]) => func(...args)
       ipcRenderer.on(channel, listener)

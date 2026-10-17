@@ -431,6 +431,36 @@ export function countGlobalRefsBatch(): Map<string, number> {
   return new Map(rows.map((row) => [row.gid, row.n]));
 }
 
+/** 引用方名单的一行：哪部书在引用（R12，DTO 直接过 IPC，渲染层不再做字段映射） */
+export type GlobalRefDto = { workId: string; workName: string };
+
+/**
+ * 单个全局分类的「引用方名单」（R12）：被引用的每一本书一行。
+ *
+ * 与 `countGlobalRefs` 同一口径：`source_global_id` 匹配、**已脱离的书不计入**
+ * （U4）。
+ *
+ * ⚠️ `GROUP BY c.work_id, w.name` **不能简化成 `DISTINCT`**：它保证名单条数恒等于
+ * `countGlobalRefs` 的 `COUNT(DISTINCT work_id)` —— 同一本书若有多条引用行也只出一
+ * 行。两边口径一旦不一致，界面就会出现「说被 5 部书引用、名单里只有 3 本」，而且
+ * 这种不一致没有任何报错，只有作者自己撞见。
+ *
+ * **只读**：只 SELECT，不含写语句、不开关事务 —— 它只服务于「这 N 部书是哪些」
+ * 的展示，改数据的事归写通道。
+ */
+export function listGlobalRefs(globalCategoryId: string): GlobalRefDto[] {
+  const rows = dbAll(
+    `SELECT c.work_id AS workId, w.name AS workName
+       FROM novel_setting_categories c
+       JOIN novel_works w ON w.id = c.work_id
+      WHERE c.source_global_id = ?
+      GROUP BY c.work_id, w.name
+      ORDER BY w.name`,
+      [globalCategoryId],
+  ) as GlobalRefDto[];
+  return rows;
+}
+
 /** D3 上架的返回载荷 */
 export interface PublishToGlobalResult {
   ok: boolean;

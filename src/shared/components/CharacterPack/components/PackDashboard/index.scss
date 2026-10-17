@@ -20,6 +20,63 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+  min-width: 0;
+
+  /*
+    列：一块纵向堆叠的卡片。非宽档时父级是单列 flex，两列自然上下相接
+    （列内 gap 与父级 gap 同为 10px，读起来仍是「一串等距卡片」）。
+  */
+  &__col {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  /*
+    宽档：四区合成**一条横贯量尺的概览带**（UI-08）。
+
+    以前是 2×2 四张独立卡（左「境界 / 核心属性」、右「生效状态 / 关键设定」），
+    与下面的模块卡同为「描边圆角卡片」，一屏八张同等重量的卡 —— 视线没有主次，
+    而且每张卡都要自己撑一边，左右两列谁长谁短一眼就看出来。
+    改成一条带之后：外面只有一个框，四段之间用发丝线分栏，读起来是
+    「一张概览卡里的四栏读数」，与下方只画栏头的分区工作区形成两级层次。
+
+    实现上不用改 DOM：两列 `.cpk-board__col` 在宽档 `display: contents`
+    退场，四张卡直接成为这条带的四段（中窄档仍按列堆叠）。
+  */
+  &--wide {
+    display: grid;
+    grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.25fr) minmax(0, 0.98fr) minmax(0, 1fr);
+    gap: 0;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-panel);
+    background: var(--app-surface);
+    box-shadow: var(--app-shadow-card);
+    overflow: hidden;
+
+    > .cpk-board__col {
+      display: contents;
+    }
+
+    > .cpk-board__col > .cpk-board__card {
+      padding: 12px 16px;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      box-shadow: none;
+    }
+
+    /*
+      发丝线分栏：两列包装在 DOM 里还在（`display: contents` 只把盒子去掉），
+      所以跨列那一条要单独点出来 —— 第 2 段的兄弟线管不到第 3 段（它换了父节点）。
+    */
+    > .cpk-board__col > .cpk-board__card + .cpk-board__card,
+    > .cpk-board__col + .cpk-board__col > .cpk-board__card:first-child {
+      border-left: 1px solid var(--app-border);
+    }
+  }
+
 
   &__card {
     padding: 10px 12px;

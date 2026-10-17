@@ -9,11 +9,15 @@ import {
   dashboardActiveStatuses,
   dashboardAttrLimit,
   dashboardSummaryModules,
+  disabledModuleCount,
   isAutoCollapsed,
   missingZoneOf,
   moduleScrollDelta,
   moduleSummary,
+  panelModuleCount,
+  soloColumns,
   splitByZone,
+  zonePanels,
 } from "./pack-layout";
 import {
   isCorePackModule,
@@ -167,6 +171,51 @@ describe("activeZones / missingZoneOf", () => {
     const active = activeZones(splitByZone([]));
     expect(active).toEqual([]);
     expect(missingZoneOf(active)).toBeNull();
+  });
+});
+
+/**
+ * soloColumns：单分区（新书出厂只开核心三块）在宽档下的两列拆分。
+ *
+ * 钉的是「别再退回一条居中窄带」这件事：上半看板是两栏、下半缩成 720px 窄带，
+ * 真机上就是两块拼不到一起的界面（UI-05）。拆成两列后两级的左右边界才对齐。
+ */
+describe("soloColumns", () => {
+  const keys = (list: PackModuleState[]) => list.map((m) => m.key);
+  const core = () =>
+    allModules().filter((m) => ["summary", "attributes", "realm"].includes(m.key));
+
+  it("三块核心模块拆成 2 + 1，且保持先后顺序（前一半 / 后一半）", () => {
+    const [left, right] = soloColumns(core());
+    expect(keys(left)).toEqual(["summary", "attributes"]);
+    expect(keys(right)).toEqual(["realm"]);
+  });
+
+  it("偶数个模块对半分开（4 块 → 2 / 2）", () => {
+    const four = allModules().filter((m) =>
+      ["summary", "attributes", "realm", "status"].includes(m.key),
+    );
+    const [left, right] = soloColumns(four);
+    expect(keys(left)).toEqual(["summary", "attributes"]);
+    expect(keys(right)).toEqual(["realm", "status"]);
+  });
+
+  it("合并回去等于原序列（不丢模块、不改顺序）", () => {
+    for (const input of [core(), allModules()]) {
+      const [left, right] = soloColumns(input);
+      expect([...left, ...right]).toEqual(input);
+    }
+  });
+
+  it("只有一块时全落左栏，右栏留空给对面引导卡占位", () => {
+    const one = core().filter((m) => m.key === "realm");
+    const [left, right] = soloColumns(one);
+    expect(keys(left)).toEqual(["realm"]);
+    expect(right).toEqual([]);
+  });
+
+  it("空输入给两个空栏，不抛", () => {
+    expect(soloColumns([])).toEqual([[], []]);
   });
 });
 
@@ -483,5 +532,72 @@ describe("UI-01 看板 → 模块滚动定位（纯函数）", () => {
 
   it("目标比可视区还高时也照滚（顶部对齐，露出开头）", () => {
     expect(moduleScrollDelta({ top: 600, bottom: 1600 }, view)).toBe(600 - MODULE_SCROLL_MARGIN);
+  });
+});
+
+/**
+ * UI-08：宽档的**分区面板**编排。
+ *
+ * 这一组钉的是大窗骨架的三条事实：
+ * - 双分区 → 两块面板（左 stats / 右 gear，顺序与 PACK_ZONE_ORDER 同序）；
+ * - 单分区 → **一块**面板占满整条量尺，内部拆两栏（不退回居中窄带）；
+ * - 空分区整块不渲染（否则 56% 宽度是一张「这里什么都没有」的大卡）。
+ *
+ * 面板本身是纯数据（栏头计数 + 栏目数组），渲染层只照着铺 DOM，
+ * 所以「几块面板 / 每块几栏 / 栏里放谁」必须在这里说清楚。
+ */
+describe("zonePanels —— 宽档分区面板", () => {
+  function modulesOf(keys: PackModuleKey[]): PackModuleState[] {
+    return keys.map((key, index) => ({ key, enabled: true, sortOrder: index + 1 }));
+  }
+
+  it("双分区 → 两块面板，各一栏，顺序即 PACK_ZONE_ORDER", () => {
+    const split = splitByZone(
+      modulesOf(["summary", "realm", "equipment", "inventory"]),
+    );
+    const panels = zonePanels(split);
+    expect(panels.map((panel) => panel.key)).toEqual([...PACK_ZONE_ORDER]);
+    expect(panels.every((panel) => panel.columns.length === 1)).toBe(true);
+    expect(panels[0].columns[0].map((m) => m.key)).toEqual(["summary", "realm"]);
+    expect(panels[1].columns[0].map((m) => m.key)).toEqual(["equipment", "inventory"]);
+  });
+
+  it("只剩 stats（新书出厂）→ 一块面板拆两栏，前一半 / 后一半", () => {
+    const split = splitByZone(modulesOf(["summary", "attributes", "realm"]));
+    const panels = zonePanels(split);
+    expect(panels).toHaveLength(1);
+    expect(panels[0].zone).toBe("stats");
+    expect(panels[0].columns.map((column) => column.map((m) => m.key))).toEqual([
+      ["summary", "attributes"],
+      ["realm"],
+    ]);
+  });
+
+  it("单模块时右栏留空 —— 那是「对面分区未开启」引导卡的落点", () => {
+    const panels = zonePanels(splitByZone(modulesOf(["realm"])));
+    expect(panels).toHaveLength(1);
+    expect(panels[0].columns).toHaveLength(2);
+    expect(panels[0].columns[1]).toEqual([]);
+  });
+
+  it("一个模块都没启用 → 没有面板（上游已有整版空态）", () => {
+    expect(zonePanels(splitByZone([]))).toEqual([]);
+  });
+
+  it("栏头计数是各栏模块数之和", () => {
+    const panels = zonePanels(
+      splitByZone(modulesOf(["summary", "attributes", "realm"])),
+    );
+    expect(panelModuleCount(panels[0])).toBe(3);
+  });
+
+  it("「还有几个模块没开」只做减法，且不会算出负数", () => {
+    expect(disabledModuleCount(modulesOf(["summary", "attributes", "realm"]))).toBe(
+      PACK_MODULES.length - 3,
+    );
+    expect(disabledModuleCount(allModules())).toBe(0);
+    // 防御：入参比全集还多（理论上不该出现）时兜底成 0，而不是负数
+    const oversize = [...allModules(), { key: "note" as PackModuleKey, enabled: true, sortOrder: 99 }];
+    expect(disabledModuleCount(oversize)).toBe(0);
   });
 });

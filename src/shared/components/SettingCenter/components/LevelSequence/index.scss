@@ -31,6 +31,27 @@
     color: var(--app-text-secondary);
   }
 
+  /* 批量选择（R10）：`selectable` 时行首多一列勾选框 ⇒ 6 轨变 7 轨。
+     不传该 prop 时这两个类都不出现，行网格仍是上面的 6 轨（DOM 零变化）。 */
+  &__thead.is-selectable,
+  &__row.is-selectable {
+    grid-template-columns:
+      16px
+      16px
+      28px
+      minmax(0, 1.2fr)
+      minmax(0, 1.4fr)
+      minmax(0, 2fr)
+      72px;
+  }
+
+  &__col-pick {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+  }
+
   /* 行容器收成一张卡：八级 + 每阶一行小境界签，密度本来就高，
      没有边界就会糊成一片灰。斑马纹 + 行内边距把「一级」读成一个单位 */
   &__rows {

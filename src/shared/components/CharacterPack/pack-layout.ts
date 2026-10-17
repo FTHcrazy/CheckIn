@@ -11,7 +11,7 @@
  */
 import { isCorePackModule } from "./pack-config";
 import type { PackDoc } from "./hooks/usePackData";
-import type { PackModuleKey, PackModuleState } from "./types";
+import { PACK_MODULES, type PackModuleKey, type PackModuleState } from "./types";
 
 /** 内容区的语义分区。宽档下左栏放「装备类」，右栏放「数值与状态类」。 */
 export type PackZone = "gear" | "stats";
@@ -116,6 +116,98 @@ export function activeZones(split: Record<PackZone, PackModuleState[]>): PackZon
 export function missingZoneOf(active: PackZone[]): PackZone | null {
   if (active.length !== 1) return null;
   return active[0] === "gear" ? "stats" : "gear";
+}
+
+/**
+ * 宽档下「只剩一个分区」时，把它自己拆成左右两列。
+ *
+ * 为什么不索性留一条通栏：完整窗口（≥1600）下通栏卡片能拉到 1500px，
+ * 行内「标签 …… 数值」被拉成两公里，视线每读一行都要横跨整屏。而模块多到
+ * 两栏都在时反而是舒服的（左右各 ~700，正是设计稿的舒适行宽）。
+ *
+ * 所以割裂感的来源不是「只有一栏」，而是**上半看板铺满整窗、下半缩成一条窄带**。
+ * 单分区照两栏铺之后，看板、双栏模式、单分区模式共用同一条竖向分界线（44:56），
+ * 切换启用模块时版式不再跳档。
+ *
+ * 拆分用「前一半 / 后一半」而不是交替落位：模块顺序是作者在模块管理里拖出来的，
+ * 交替落位会让相邻两个模块左右跳（读起来成了 1、3、2、4），而前后对半在视觉上
+ * 仍是连续序号（左栏读完接右栏）。这里不做高度估算 —— 纯函数拿不到真实高度，
+ * 按估算分反而会在数据变化时来回搬卡片。
+ *
+ * 只有一个模块时右栏留空，由 `missingZoneOf` 的引导卡占住 —— 正好把「对面那些
+ * 模块还没开」的提示放在它本该在的位置。
+ */
+export function soloColumns(
+  modules: PackModuleState[],
+): [PackModuleState[], PackModuleState[]] {
+  if (modules.length < 2) return [modules, []];
+  const half = Math.ceil(modules.length / 2);
+  return [modules.slice(0, half), modules.slice(half)];
+}
+
+/* ────────────────────── UI-08 大窗：分区面板（宽档骨架） ────────────────────── */
+
+/**
+ * 宽档下的一块**分区面板**（局部编排结果，渲染层照着铺 DOM 即可）。
+ *
+ * 为什么把「一栏模块」升格成「一块面板」：窗口放大到 2560 之后，内容只剩顶上
+ * 半截、下面半屏空底，看起来像没加载完 —— 割裂感来自**没有收口**，不是内容太少。
+ * 面板给了三处收口：栏头（这块是哪儿）、栏目（往里放卡片）、栏脚（还有多少没开），
+ * 于是「工作区」成为一条撑满窗口的带，空白落在面板内部而不是页面底部。
+ *
+ * `columns` 是这块面板的**栏目**：
+ * - 双分区各占一块面板 → 一块面板一栏（`[[…]]`）；
+ * - 只剩一个分区 → 仍是一块面板（占满整条量尺），内部拆两栏
+ *   （`soloColumns`：前一半 / 后一半），行宽才不会拉成两公里。
+ *
+ * 所以渲染层的栅格只有两层：`.cpk__zones` 决定「几块面板」，
+ * `.cpk__zone--split .cpk__zonestack` 决定「面板内几栏」—— 两处各一套，
+ * 不再由模块数量分叉出第三套版式。
+ */
+export interface PackZonePanel {
+  /** 稳定 key：单面板是 `zone-solo`，双面板就是 zone 本身 */
+  key: string;
+  zone: PackZone;
+  columns: PackModuleState[][];
+}
+
+/**
+ * 依分区结果编排宽档面板。
+ *
+ * 空分区**整块不渲染**（`activeZones`）：新书出厂只开核心三块，全在 stats 栏，
+ * 若照旧给 gear 留一块空面板，56% 的宽度就成了一张「这里什么都没有」的大卡。
+ * 被关掉的那一栏改由 `missingZoneOf` 的引导卡占位，落在最后一个栏目的末尾 ——
+ * 位置正好是它本该在的地方。
+ */
+export function zonePanels(
+  split: Record<PackZone, PackModuleState[]>,
+): PackZonePanel[] {
+  const active = activeZones(split);
+  if (active.length === 0) return [];
+  if (active.length > 1) {
+    return active.map((zone) => ({ key: zone, zone, columns: [split[zone]] }));
+  }
+  const zone = active[0];
+  const [left, right] = soloColumns(split[zone]);
+  // 两栏都留（哪怕右栏为空）：空的右栏是引导卡的落点，也是「还能往这儿放」的暗示
+  return [{ key: `${zone}-solo`, zone, columns: [left, right] }];
+}
+
+/** 一块面板里的模块总数（栏头右侧的计数） */
+export function panelModuleCount(panel: PackZonePanel): number {
+  return panel.columns.reduce((sum, column) => sum + column.length, 0);
+}
+
+/**
+ * 还没启用的模块数（栏脚提示：「还有 N 个模块未开启」）。
+ *
+ * 只做减法、不另立清单：`enabledModules` 是既有事实源，全集就是 `PACK_MODULES`。
+ * 负值兜底成 0（理论上不该出现，但一行 `Math.max` 比事后排查便宜）。
+ */
+export function disabledModuleCount(
+  enabled: readonly PackModuleState[],
+): number {
+  return Math.max(0, PACK_MODULES.length - enabled.length);
 }
 
 /**

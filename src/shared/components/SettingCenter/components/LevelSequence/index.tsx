@@ -11,7 +11,7 @@
  */
 
 import { HolderOutlined, PlusOutlined } from "@ant-design/icons";
-import { Button, Dropdown, Input, Tooltip } from "antd";
+import { Button, Checkbox, Dropdown, Input, Tooltip } from "antd";
 import type { KeyboardEvent, ReactNode } from "react";
 import {
   SortableContext,
@@ -87,6 +87,17 @@ export interface LevelSequenceProps {
   onStartSplit: (level: SettingLevel) => void;
   onMergeLevel: (levelId: string) => void;
   onDeleteLevel: (levelId: string) => void;
+  // ── 批量选择（R10，全局设定中心窗口用） ──────────────────────────
+  //
+  // 三个 prop **全可选且带默认值**：本书设定中心不传 ⇒ `selectable` 为 falsy
+  // ⇒ 不渲染勾选框、行网格不加 `is-selectable` 类 ⇒ DOM 与改动前**逐节点一致**。
+  // 这是「可选 prop」而不是「形态分流」—— 不传即等于今天的全部行为。
+  /** 行首是否出现勾选框（批量选择模式） */
+  selectable?: boolean;
+  /** 已勾选的等级 id */
+  selectedIds?: string[];
+  /** 勾选 / 取消一条 */
+  onToggleSelect?: (levelId: string) => void;
 }
 
 export default function LevelSequence({
@@ -116,6 +127,9 @@ export default function LevelSequence({
   onMergeLevel,
   onDeleteLevel,
   referenced = false,
+  selectable = false,
+  selectedIds = [],
+  onToggleSelect,
 }: LevelSequenceProps) {
   return (
     <div className="nv-sc__card is-grow">
@@ -135,8 +149,9 @@ export default function LevelSequence({
         </span>
       </div>
 
-      <div className="nv-sc__thead">
+      <div className={`nv-sc__thead${selectable ? " is-selectable" : ""}`}>
         <span className="nv-sc__col-grip" />
+        {selectable && <span className="nv-sc__col-pick" />}
         <span className="nv-sc__col-no">序号</span>
         <span className="nv-sc__col-name">等级名称</span>
         <span className="nv-sc__col-alias">别名</span>
@@ -196,7 +211,9 @@ export default function LevelSequence({
                   <div
                     className={`nv-sc__row${level.parentId ? " is-child" : ""}${
                       index % 2 === 1 ? " is-alt" : ""
-                    }${dragId === lvlId(level.id) ? " is-drag" : ""}`}
+                    }${dragId === lvlId(level.id) ? " is-drag" : ""}${
+                      selectable ? " is-selectable" : ""
+                    }`}
                   >
                     {referenced ? (
                       <span className="nv-sc__grip is-locked" aria-hidden>
@@ -208,6 +225,16 @@ export default function LevelSequence({
                           <HolderOutlined />
                         </span>
                       </Tooltip>
+                    )}
+                    {/* 批量选择勾选框（R10）：`selectable` 为 falsy 时整段不渲染
+                        ⇒ 本书侧的 DOM 与改动前逐节点一致 */}
+                    {selectable && (
+                      <Checkbox
+                        className="nv-sc__col-pick"
+                        aria-label={`选择 ${level.name}`}
+                        checked={selectedIds.includes(level.id)}
+                        onChange={() => onToggleSelect?.(level.id)}
+                      />
                     )}
                     <span className="nv-sc__col-no">{level.rank}</span>
 

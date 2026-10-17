@@ -30,6 +30,7 @@ import {
   isCarryDir,
   isSettingKind,
   levelCount,
+  listGlobalRefs,
   maxRank,
   maxSortOrder,
   normalizeAliases,
@@ -38,6 +39,7 @@ import {
   readSnapshots,
   solidifyReferencesForCategory,
   syncReferences,
+  type GlobalRefDto,
   type SettingCategoryRow,
   type SettingExportPayload,
   type SettingLevelRow,
@@ -655,4 +657,24 @@ export function registerNovelGlobalSettingHandlers(): void {
       categories: readSnapshots("global", ""),
     };
   });
+
+  // ── 引用方名单（R12，只读） ──────────────────────────────────────
+
+  // 某全局分类被**哪几部书**引用（「N 部书引用」的展开）。一条 SELECT，
+  // 不开关事务、不写库；名单条数与 countGlobalRefs 的引用计数同口径。
+  //
+  // 失败不抛：这是个展示用的增强信息，读失败落到空名单，不该变成渲染层未处理的
+  // IPC reject（与上面 `novel-global-setting-load` 同一做法）。
+  ipcMain.handle(
+    "novel-global-setting-refs",
+    (_event, categoryId: string): GlobalRefDto[] => {
+      if (!categoryId) return [];
+      try {
+        return listGlobalRefs(categoryId);
+      } catch (error) {
+        console.warn("[novel-global-setting] 读取引用方名单失败：", error);
+        return [];
+      }
+    },
+  );
 }
