@@ -12,7 +12,6 @@ import type {
   CustomEntityTypeDef,
   EditorSettings,
   NameFavorite,
-  NamingCustomPool,
   NovelBundle,
   NovelChapter,
   NovelEntity,
@@ -403,20 +402,6 @@ export async function exportSetting(workId: string): Promise<NovelSettingExportP
   return window.electronAPI!.novel.settingExport(workId);
 }
 
-/**
- * 导入设定快照
- *
- * `mode='merge'` 同名分类合并、异名新建；`'replace'` 先清空本书设定再写入。
- * 返回条数用于给「导入了 N 条、跳过 M 条」的提示。
- */
-export async function importSetting(
-  workId: string,
-  payload: unknown,
-  mode: "merge" | "replace",
-): Promise<{ imported: number; skipped: number }> {
-  return window.electronAPI!.novel.settingImport(workId, payload, mode);
-}
-
 /** 列出预设模板 */
 export async function listSettingTemplates(): Promise<NovelSettingTemplateDTO[]> {
   return window.electronAPI!.novel.settingTemplateList();
@@ -551,20 +536,5 @@ export async function saveNameFavorites(
   return window.electronAPI!.novel.configSet(
     STORAGE_KEYS.namingFavorites,
     JSON.stringify(favorites),
-  );
-}
-
-/** 读取用户自定义用字池 JSON（键不存在返回 null） */
-export async function fetchNamingCustomPools(): Promise<string | null> {
-  return window.electronAPI!.novel.configGet(STORAGE_KEYS.namingCustomPools);
-}
-
-/** 保存用户自定义用字池 */
-export async function saveNamingCustomPools(
-  pool: NamingCustomPool,
-): Promise<boolean> {
-  return window.electronAPI!.novel.configSet(
-    STORAGE_KEYS.namingCustomPools,
-    JSON.stringify(pool),
   );
 }

@@ -315,5 +315,4 @@ export function useBookshelfData() {
   };
 }
 
-export type BookshelfData = ReturnType<typeof useBookshelfData>;
 export type { HeroView, IdeaFilter, WorkCardView };

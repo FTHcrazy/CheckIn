@@ -22,8 +22,6 @@ export const STORAGE_KEYS = {
   entityTypes: "novel_entity_types",
   /** 起名工具收藏夹（R18 ④）：NameFavorite[] 整读整写，按作品持久化 */
   namingFavorites: "novel_naming_favorites",
-  /** 起名工具自定义用字池（R18 ①）：NamingCustomPool 整读整写 */
-  namingCustomPools: "novel_naming_custom_pools",
   /** 右栏宽度（支撑面板改版）：单个数字整读整写，270ms 防抖后落库 */
   panelWidth: "novel_panel_width",
   /**

@@ -1236,11 +1236,6 @@ export function carryBreakdown(
 // 杂项
 // ─────────────────────────────────────────────────────────────
 
-/** 稀有度 / 分类等短标签的安全取值 */
-export function safeText(value: string | undefined | null, fallback = ""): string {
-  return typeof value === "string" && value.length > 0 ? value : fallback;
-}
-
 /** 数量增减：夹取到 ≥ 0 的整数 */
 export function stepQty(qty: number, delta: number): number {
   return Math.max(0, Math.floor(qty + delta));

@@ -11,10 +11,9 @@ import "./index.scss";
  * 与行囊窗口同范式：单实例、即关即销、数据全部在主进程（窗口不持有草稿）。
  *
  * 状态机仍复用 shared 的 `useSettingCenter`（与书本侧同一份，见 `components/GsBody`），
- * 但**外壳是窗口私有的**：不再渲染 `<SettingCenter variant="panel">`，换成
+ * 但**外壳是窗口私有的**：不再渲染 shared 的 `<SettingCenter>`，换成
  * `GsBody`（左栏带搜索 / 筛选 / 排序 / 引用徽标 / 双击改名 / 右键菜单，右栏顶部
- * 加一条常驻的「影响面条」，空库给引导卡）。改革动因见
- * `docs/design-global-setting-window-redesign.md`。
+ * 加一条常驻的「影响面条」，空库给引导卡）。重设计过程与取舍见 CHANGELOG 1.45.x。
  *
  * 实时刷新：`useGlobalSetting` 订阅 `global-setting-changed` 广播 —— 书侧
  * 建立引用 / 上架也会触发（写后重载），无需重开窗口即可看到计数变化。

@@ -30,7 +30,6 @@ import {
   realmSubUsesDropdown,
   REALM_RUNG_DROPDOWN_THRESHOLD,
   REALM_SUB_DROPDOWN_THRESHOLD,
-  safeText,
   scaleByProficiency,
   sortLadder,
   statText,
@@ -937,12 +936,6 @@ describe("杂项纯函数（汇总管线的边角：夹取 / 步进 / 匹配 / �
     expect(matchesKeyword("玄铁重剑", "重剑")).toBe(true);
     expect(matchesKeyword("Iron Sword", "sword")).toBe(true);
     expect(matchesKeyword("玄铁重剑", "木")).toBe(false);
-  });
-
-  it("safeText：空串与 undefined 都回落，不会渲染出空白格", () => {
-    expect(safeText("稀有", "—")).toBe("稀有");
-    expect(safeText("", "—")).toBe("—");
-    expect(safeText(undefined, "—")).toBe("—");
   });
 
   it("sortLadder 按 rank 升序且不改入参", () => {

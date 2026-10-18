@@ -7,7 +7,6 @@
  */
 import type {
   PackBundleDTO,
-  PackDraftDTO,
   PackRecordDTO,
   PackRealmLinkDTO,
   PackSavePayloadDTO,
@@ -36,10 +35,6 @@ export async function putPackDraft(
   dirtyCount: number,
 ): Promise<boolean> {
   return window.electronAPI!.novel.pack.draftSet(characterId, payload, dirtyCount);
-}
-
-export async function fetchPackDraft(characterId: string): Promise<PackDraftDTO | null> {
-  return window.electronAPI!.novel.pack.draftGet(characterId);
 }
 
 export async function clearPackDraft(characterId: string): Promise<boolean> {

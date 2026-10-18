@@ -12,7 +12,6 @@ import {
   buildSortOrder,
   buildWorkMeta,
   calcGoalProgress,
-  calcSpeed,
   clampPanelWidth,
   countWords,
   filterNotes,
@@ -242,16 +241,11 @@ describe("findTermMatches", () => {
   });
 });
 
-describe("目标与速度", () => {
+describe("目标进度", () => {
   it("进度封顶 100，目标为 0 时返回 0", () => {
     expect(calcGoalProgress(3200, 3000)).toBe(100);
     expect(calcGoalProgress(1500, 3000)).toBe(50);
     expect(calcGoalProgress(1500, 0)).toBe(0);
-  });
-
-  it("速度为每分钟字数，时间非法返回 0", () => {
-    expect(calcSpeed(600, 10)).toBe(60);
-    expect(calcSpeed(600, 0)).toBe(0);
   });
 });
 

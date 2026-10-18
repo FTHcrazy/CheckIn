@@ -20,9 +20,7 @@ import type {
   PackModifierDTO,
   PackNatureDTO,
   PackOpDTO,
-  PackOwnerTypeDTO,
   PackPresetDTO,
-  PackProtagonistDTO,
   PackRealmLinkDTO,
   PackRecordDTO,
   PackMappingDTO,
@@ -85,14 +83,9 @@ export type PackLayout = PackLayoutDTO;
 export type PackPreset = PackPresetDTO;
 export type PackNature = PackNatureDTO;
 export type PackOp = PackOpDTO;
-export type PackOwnerType = PackOwnerTypeDTO;
 export type PackLevelSystem = PackLevelSystemDTO;
-export type PackLevelRung = PackLevelRungDTO;
 export type PackRealmLink = PackRealmLinkDTO;
 export type PackRecord = PackRecordDTO;
-export type PackDraft = PackDraftDTO;
-export type PackBundle = PackBundleDTO;
-export type PackProtagonist = PackProtagonistDTO;
 
 /** 效果性质的中文与徽标（§8.3 徽标图例：三者视觉必须一眼可分） */
 export const NATURE_META: Record<
@@ -271,7 +264,6 @@ export const ATTR_TEMPLATES: Record<string, AttrTemplateItem[]> = {
 
 /** 物品分类（B-3：3 个常见类别的快捷按钮） */
 export const ITEM_CATEGORIES = ["装备", "丹药", "材料", "消耗品", "杂物"] as const;
-export type ItemCategory = (typeof ITEM_CATEGORIES)[number];
 
 /** 稀有度（B-3 字段之一） */
 export const RARITY_META: Record<string, { label: string; color: string }> = {
@@ -290,7 +282,6 @@ export const RARITY_META: Record<string, { label: string; color: string }> = {
  * 菜单就会跟着乱，而且不会有任何报错。
  */
 export const RARITY_KEYS = ["common", "fine", "rare", "epic", "legend"] as const;
-export type PackRarity = (typeof RARITY_KEYS)[number];
 
 /**
  * 取稀有度的显示元信息（未知取值给中性兜底）
@@ -304,13 +295,6 @@ export function rarityMetaOf(key: string): { label: string; color: string } {
   if (meta) return meta;
   return { label: key || "未知", color: "var(--app-text-disabled)" };
 }
-
-/** 汇总分段色（被动 / 持续两段颜色需可区分且不喧宾夺主） */
-export const NATURE_SEGMENT_COLOR: Record<PackNature, string> = {
-  passive: "var(--app-text-secondary)",
-  sustained: "var(--app-accent-blue)",
-  cast: "var(--app-accent-amber)",
-};
 
 /** 未保存改动的提示文案阈值（G-3：≥5 处做一次轻微呼吸提示） */
 export const DIRTY_BREATHE_AT = 5;

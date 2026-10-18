@@ -13,9 +13,9 @@
  *   `.nv-sc__field`       表单标签与输入框竖排
  *   `.nv-sc__carry-example` display:flex（「进位示例」与正文粘死）
  *
- * 为什么必须用源码断言：这类缺失在 jsdom 里完全不可见（不排版），在原型
- * `designs/preview/gs-preview.scss` 里也看不见（那份 @use 了零件层，正是
- * 它把问题掩盖了一轮）。只有校验「真实入口的 @use 链」才能拦住。
+ * 为什么必须用源码断言：这类缺失在 jsdom 里完全不可见（不排版），在原型页
+ * 里也看不见（原型会 @use 零件层，正是它把问题掩盖了一轮）。只有校验
+ * 「真实入口的 @use 链」才能拦住。
  */
 import { readFileSync } from "node:fs";
 import path from "node:path";

@@ -2,8 +2,8 @@
 
 ### Added
 
-- **全局设定中心窗口 UI 与交互重设计**（REQ-033 系列 / PRD `docs/prd-global-setting-window-redesign.md`、
-  架构 `docs/design-global-setting-window-redesign.md`）：全局设定中心从「复用书本侧设定中心的
+- **全局设定中心窗口 UI 与交互重设计**（REQ-033 系列，设计过程与取舍见本文件
+  1.45.x 记录）：全局设定中心从「复用书本侧设定中心的
   两栏布局」改为**窗口私有的专属布局**，四个痛点一次治完 ——
   - **R1 左栏搜索**：分类名 + 说明纯前端过滤，不触发 IPC、不改 `sortOrder`；
     0 命中给专用空态 + 清空入口。
@@ -452,6 +452,27 @@
   没人用它）。变异：把行囊展开行改回 `surface-active` → RED（且报错行号与真实文件一致，
   因为新增的 `stripCommentsKeepLines` 按原行数换空行）；把 cream 的 `--app-primary-weak`
   调深到越过 1.15 → 数值用例 RED。还原后 16/16 GREEN。
+
+### Removed
+
+- **novel 域三窗口（NovelWindow / GlobalSettingWindow / PackWindow）死代码清理**：删除全仓零引用的
+  `TypeBadge` 组件、只被自身测试引用的纯函数（`calcSpeed` / `removeLevel` / `replaceInContent` /
+  `saveTextOf` / `useModuleSummary`）、未被任何界面消费的服务与 IPC
+  （`fetchPackDraft` + `novel-pack-draft-get`、`fetchNamingCustomPools` / `saveNamingCustomPools` +
+  `namingCustomPools` 配置键、`importSetting` 包装），以及行囊 `types.ts` / `pack-config.ts`
+  中无引用的类型别名与常量（`PackLevelRung` / `PackDraft` / `PackBundle` / `PackProtagonist` /
+  `PackOwnerType` / `ItemCategory` / `PackRarity` / `NATURE_SEGMENT_COLOR` / `PACK_LEVEL_RELATION` /
+  `UnitKind` / `PackChapterInserter`）。`novel-setting-import` 通道本身保留 ——
+  `electron/global-setting-qa.test.ts` 仍在守护它的 replace 语义。
+- **已交付功能的设计 / 产品稿归档清理**：删除 `designs/`（原型页、预览样式、三张截图）与
+  `docs/` 下的类图 / 时序图、两代全局设定中心 PRD 与设计稿、小说编辑器 / 新手引导 / 行囊看板
+  PRD、审查报告、UI 需求稿、窗口池预研；仅保留 `docs/novel-onboarding-guide.html`
+  （应用内帮助中心的数据同源件）。
+
+### Changed
+
+- 上述文档删除后，源码注释中指向已删文件的引用（全局设定重设计、新手引导 PRD、行囊 PRD）
+  改为指向 CHANGELOG / 本文件内的事实源，避免留下断链。
 
 ## [1.45.1] - 2026-10-16
 

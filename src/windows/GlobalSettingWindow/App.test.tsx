@@ -11,7 +11,7 @@ import GlobalSettingWindowApp from "./App";
  * 钉住四件事：
  *
  * 1. **装载成功后必须真的挂出设定中心**，且**不许再套一层浮层**。
- *    1.45.1 起设定中心以 `variant="panel"` 铺在窗口内容区（此前整窗是一张
+ *    1.45.1 起设定中心直接铺在窗口内容区（此前整窗是一张
  *    antd Modal，标题栏与浮层标题重复、多出第二枚关闭叉、还多一层遮罩）；
  *    2.0 起换成窗口私有的 `GsBody`，根类名是 `.gs-shell`。
  *    所以这里既断言 `.gs-shell` 在，也**反面断言 `document.body` 下没有
@@ -61,7 +61,7 @@ function mountApi(novel: Partial<ElectronAPI["novel"]> | undefined): void {
   });
 }
 
-/** 窗口私有的主体根节点（2.0 起不再是 shared 的 `.nv-sc--panel`） */
+/** 窗口私有的主体根节点（2.0 起不再是 shared 的 SettingCenter 外壳） */
 function settingCenterPanel(): HTMLElement | null {
   return document.querySelector(".gs-shell");
 }

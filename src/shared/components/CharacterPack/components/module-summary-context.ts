@@ -35,8 +35,3 @@ export const PackModuleSummaryContext = createContext<PackModuleChrome>(DEFAULT_
 export function useModuleChrome(): PackModuleChrome {
   return useContext(PackModuleSummaryContext);
 }
-
-/** 读取当前模块的摘要（无 Provider 时为空串）—— 兼容旧调用点 */
-export function useModuleSummary(): string {
-  return useModuleChrome().summary;
-}

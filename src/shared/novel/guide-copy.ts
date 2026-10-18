@@ -7,7 +7,7 @@
  * PRD 附录 B 把「文案常量单文件」列为阻塞依赖，就是这个原因。
  *
  * 本文件不含 React、不含副作用，纯数据，两个窗口与两个页面可共用。
- * 文案原文取自 `docs/novel-onboarding-prd.md` §7.2 / §7.3，改文案必须两处同步。
+ * 文案定稿见 CHANGELOG 引导交付记录；改文案必须与 `guide-doc.ts` 同步。
  */
 
 /** Tour 步骤目标锚点：挂在真实 DOM 上的 `data-tour-target` 值 */
@@ -35,8 +35,6 @@ export const TOUR_TARGETS = {
   /** 书架顶栏「全局设定中心」按钮（Tour 第 6 步锚点，1.4x） */
   shelfGlobalSetting: "shelf-global-setting",
 } as const;
-
-export type TourTargetKey = keyof typeof TOUR_TARGETS;
 
 /** 视图归属：书架页与编辑器页是 display 切换的两个兄弟容器，Tour 必须按视图拆分 */
 export type GuideView = "shelf" | "editor";

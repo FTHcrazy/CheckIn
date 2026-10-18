@@ -197,12 +197,6 @@ export function calcGoalProgress(todayTotal: number, goal: number): number {
   return Math.min(100, Math.round((todayTotal / goal) * 100));
 }
 
-/** 码字速度（字 / 分钟） */
-export function calcSpeed(words: number, minutes: number): number {
-  if (minutes <= 0) return 0;
-  return Math.round(words / minutes);
-}
-
 /** 按关键词切分文本，供检索 / 快照 diff 高亮渲染 */
 export function splitByKeyword(text: string, keyword: string): TextSegment[] {
   if (!keyword) return [{ text, hit: false }];

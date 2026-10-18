@@ -230,7 +230,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('novel-usage-today') as Promise<{ todayWords: number; saveCount: number; streakDays: number }>,
     usageLog: (event: string, payload: Record<string, unknown>) =>
       ipcRenderer.invoke('novel-usage-log', event, payload) as Promise<boolean>,
-    // ── 行囊 CharacterPack（PRD docs/character-pack-prd.md） ──
+    // ── 行囊 CharacterPack（PRD v1.5，文档已归档） ──
     pack: {
       load: (workId: string) => ipcRenderer.invoke('novel-pack-load', workId),
       /** 整文档事务保存：写前先落回退点，成功后清空草稿；返回 false 表示已整体回滚 */
@@ -238,8 +238,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.invoke('novel-pack-save', payload) as Promise<boolean>,
       draftSet: (characterId: string, payload: string, dirtyCount: number) =>
         ipcRenderer.invoke('novel-pack-draft-set', characterId, payload, dirtyCount) as Promise<boolean>,
-      draftGet: (characterId: string) =>
-        ipcRenderer.invoke('novel-pack-draft-get', characterId),
       draftClear: (characterId: string) =>
         ipcRenderer.invoke('novel-pack-draft-clear', characterId) as Promise<boolean>,
       recordList: (characterId: string, limit?: number) =>

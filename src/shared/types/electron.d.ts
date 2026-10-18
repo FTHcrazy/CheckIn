@@ -886,13 +886,12 @@ export interface ElectronAPI {
     /** 今日新增字数（chapter_save 事件 delta 净增）、保存次数与连续码字天数，0 点按主进程本地时间 */
     usageToday: () => Promise<{ todayWords: number; saveCount: number; streakDays: number }>
     usageLog: (event: string, payload: Record<string, unknown>) => Promise<boolean>
-    // ── 行囊 CharacterPack（PRD docs/character-pack-prd.md） ──
+    // ── 行囊 CharacterPack（PRD v1.5，文档已归档） ──
     pack: {
       load: (workId: string) => Promise<PackBundleDTO>
       /** 整文档事务保存：写前先落回退点、成功后清空草稿；false 表示已整体回滚 */
       save: (payload: PackSavePayloadDTO) => Promise<boolean>
       draftSet: (characterId: string, payload: string, dirtyCount: number) => Promise<boolean>
-      draftGet: (characterId: string) => Promise<PackDraftDTO | null>
       draftClear: (characterId: string) => Promise<boolean>
       recordList: (characterId: string, limit?: number) => Promise<PackRecordDTO[]>
       /** 境界幂等写入（同一来源+关系只保留一行） */

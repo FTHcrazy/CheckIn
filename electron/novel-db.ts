@@ -253,7 +253,7 @@ function initializeNovelDb(database: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_novel_global_setting_lv_cat
       ON novel_global_setting_levels(category_id, rank);
 
-    -- ── 行囊 CharacterPack（PRD docs/character-pack-prd.md §9.2）──
+    -- ── 行囊 CharacterPack（PRD v1.5 §9.2，文档已归档）──
     -- v1 只承载 1 条主角，模型按多角色预留（全部表带 character_id）
     -- 数值统一 REAL、布尔统一 INTEGER 0/1、JSON 字段统一 TEXT
     CREATE TABLE IF NOT EXISTS novel_pack_characters (

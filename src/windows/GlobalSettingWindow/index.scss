@@ -116,7 +116,7 @@ body {
   grid-template-columns: 16px 28px minmax(0, 1.2fr) minmax(0, 1.4fr) minmax(0, 2fr) 72px;
 }
 
-// 设定中心以 `variant="panel"` 直接铺在内容区（**不再套 Modal**，1.45.1），
+// 设定中心直接铺在内容区（**不套 Modal**，1.45.1 起），
 // 所以没有整窗遮罩要对抗。这条 z-index 现在只服务于「面板里弹出的子浮层」
 // （模板库 / 批量生成 / 拆分 / 冲突确认，经 portal 挂在 body 下，z-index 1000）：
 // 抬到它们之上，最小化 / 最大化 / 关闭三键在子浮层打开时仍然点得到。
@@ -125,7 +125,7 @@ body {
   z-index: 1100;
 }
 
-// 内容区：装载期间显示占位；装载完成后由设定中心以 panel 形态直接铺满
+// 内容区：装载期间显示占位；装载完成后由设定中心直接铺满
 // （不再是「交给 SettingCenter 的 Modal（portal）」）
 .window-shell__body {
   flex: 1;

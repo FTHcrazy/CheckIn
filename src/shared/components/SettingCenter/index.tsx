@@ -16,9 +16,6 @@
  * 状态机与全部提交动作收进 hooks/useSettingCenter。父组件只做组合，
  * **对外 props / 导出方式 / 回调时机完全不变**。
  *
- * 1.45.1：新增 `variant`。`panel` 形态不套外层 Modal —— 独立窗口
- * （GlobalSettingWindow）整窗就是这张设定中心，套浮层会变成「窗口套弹窗」。
- *
  * 1.45.1（N-04）：模板能力改为**显式可选**。5 个模板 props（templates /
  * onSaveTemplate / onRefreshTemplates / onApplyTemplate / onDeleteTemplate）
  * 任缺其一即视为「本形态不提供模板能力」，据此收掉「另存为模板」入口、
@@ -261,21 +258,6 @@ export default function SettingCenter(props: SettingCenterProps) {
       </Modal>
     </>
   );
-
-  /**
-   * panel 形态：整窗就是这张设定中心，**不再套外层 Modal**。
-   *
-   * 独立窗口自己已经有标题栏（标题 + 三键），再套一层浮层就变成「窗口套弹窗」：
-   * 标题重复、多出第二枚关闭叉、还多一层遮罩（窗口侧得把标题栏 z-index 抬到
-   * 遮罩之上才点得到三键）。这里只换外壳，内容一个字不改。
-   *
-   * ⚠️ 由此 `onClose`（Esc / 点遮罩）在本形态下**不生效** —— 关窗只能走窗口
-   * 自己的三键。这是有意的：本窗口是设定编辑器，行内编辑进行到一半时
-   * 被 Esc 连窗一起收掉会直接丢草稿。
-   */
-  if (props.variant === "panel") {
-    return <div className="nv-sc nv-sc--panel">{content}</div>;
-  }
 
   return (
     <Modal

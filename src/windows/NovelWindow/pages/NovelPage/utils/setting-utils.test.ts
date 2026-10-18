@@ -15,8 +15,7 @@ import {
   moveLevel,
   parseRealmNoteSub,
   previewSplit,
-  removeLevel,
-  replaceInContent,
+  removeLevels,
   rootLevels,
   sortLevels,
 } from "./setting-utils";
@@ -243,7 +242,7 @@ describe("设定：插入 / 删除 / 移动的 rank 连续性", () => {
   });
 
   it("删除后后面的 rank 前移补位（不补会出现 1、2、4）", () => {
-    const next = removeLevel(ladder, "筑基");
+    const next = removeLevels(ladder, ["筑基"]);
     expect(next.map((l) => l.rank)).toEqual([1, 2]);
     expect(next.map((l) => l.name)).toEqual(["引气", "金丹"]);
   });
@@ -349,13 +348,6 @@ describe("设定：拆分与合并互为逆操作（1.38.1 父阶=分组）", ()
     const merged = applyMerge(legacy, "金丹");
     expect(merged.map((l) => l.name)).toEqual(["引气", "筑基", "金丹"]);
     expect(merged.find((l) => l.id === "金丹")!.subLevels).toBe(18);
-  });
-});
-
-describe("设定：批量替换已写正文", () => {
-  it("整词替换，且幂等（同名不产出自替换）", () => {
-    expect(replaceInContent("金丹期圆满", "金丹期", "金丹")).toBe("金丹圆满");
-    expect(replaceInContent("金丹", "金丹", "金丹")).toBe("金丹");
   });
 });
 

@@ -16,11 +16,7 @@
  */
 
 import { create } from "zustand";
-import {
-  DEFAULT_SETTINGS,
-  SAVE,
-  SAVE_STATE_TEXT,
-} from "../novel-config";
+import { DEFAULT_SETTINGS, SAVE } from "../novel-config";
 import { countWords } from "../novel-utils";
 import type {
   EditorSettings,
@@ -428,9 +424,6 @@ export const useNovelEditorStore = create<EditorState>()((set, get) => {
       set({ activeChapterId: chapterId, activeBaseWords: 0, selection: null }),
   };
 });
-
-/** 保存态文案（顶栏显示） */
-export const saveTextOf = (state: SaveState): string => SAVE_STATE_TEXT[state];
 
 /**
  * 是否值得再 flush 一次。

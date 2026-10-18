@@ -4,11 +4,8 @@
  * 只放「本模块私有」的常量与出厂值；跨模块复用的（如「当前境界」关系名）
  * 一律从既有配置导入，避免第二份事实源。
  */
-import { LEVEL_RELATION, STORAGE_KEYS } from "@/shared/novel/constants";
+import { STORAGE_KEYS } from "@/shared/novel/constants";
 import { PACK_MODULES, type PackModuleKey, type PackModuleState } from "./types";
-
-/** 「当前境界」关联名：与 R25 实体面板共用同一份定义（§9.7.3 唯一事实源） */
-export const PACK_LEVEL_RELATION = LEVEL_RELATION;
 
 /** 界面偏好落库键（即改即存，不进草稿；与 §8.6.2 的判据一致） */
 export const PACK_UI_KEY = STORAGE_KEYS.packUi;
@@ -105,9 +102,6 @@ export const PROFICIENCY_TEMPLATE: Array<{ name: string; min: number; max: numbe
   { name: "熟练", min: 100, max: 499 },
   { name: "大师", min: 500, max: null },
 ];
-
-/** 量纲体系的用途键：同一角色最多各一套（境界复用 R25，不在这里） */
-export type UnitKind = "currency" | "proficiency";
 
 /** 数量总数上限（只是显示用的大数保护：防止误按长按把数量推到溢出） */
 export const QTY_MAX = 999999;
@@ -371,9 +365,6 @@ export function notifyQuickAdded(workId: string, itemId: string): void {
  * 历史（P3-1）：曾有「宿主页面注册的本地桥」优先、广播兜底的双路设计，
  * 拆窗后本地桥再无注册方，已按「别留半座桥」删掉注册入口。
  */
-
-/** 页面挂载时调用（返回 `false` 表示当前没有可写的章节） */
-export type PackChapterInserter = (text: string) => boolean;
 
 /** 本地恒返回 true（已转投跨窗口广播），失败由编辑器侧提示 */
 export function runPackInsertIntoChapter(text: string): boolean {

@@ -1,14 +1,15 @@
 /**
  * 「行囊」（CharacterPack）语义化 IPC handlers
  *
- * 需求来源：docs/character-pack-prd.md（v1.5）
+ * 需求来源：行囊 PRD v1.5（设计文档已归档；规则以本文件与 `shared/components/CharacterPack` 为准）
  * 职责：
  * - 行囊全量装载（novel-pack-load）：一次拿齐 character / 属性 / 部位 / 物品 /
  *   技能 / 效果 / 量纲 / 模块布局 / 盘点记录 / 草稿，外加 R25 等级体系与当前境界绑定
  *   —— 面板自带数据装载，只依赖 workId 一个入参，便于未来迁移为独立窗口（§9.1）
  * - 整文档事务保存（novel-pack-save）：**写前先对原状态生成盘点记录**（§8.6 回退点），
  *   再整体替换，任一步失败整体回滚（REQ-045），成功后清空草稿
- * - 草稿读写（novel-pack-draft-get/set/clear）：草稿落主进程表，跨窗口一致、崩溃不丢（§8.6.2）
+ * - 草稿写入 / 清除（novel-pack-draft-set/clear）：草稿落主进程表，跨窗口一致、崩溃不丢（§8.6.2）；
+ *   读取随 `novel-pack-load` 一起返回，不再单开读取通道
  * - 盘点记录（novel-pack-record-list）
  * - 境界幂等写入（novel-link-set）：避免前端自行判断 add/remove（§9.7.3）
  * - 等级项补列写入（novel-level-meta-set）：sub_levels / power（§9.7.2）
@@ -1925,13 +1926,6 @@ export function registerNovelPackHandlers(): void {
       return true;
     },
   );
-
-  ipcMain.handle("novel-pack-draft-get", (_event, characterId: string): PackDraftDto | null => {
-    const row = dbGet("SELECT * FROM novel_pack_drafts WHERE character_id = ?", [
-      characterId,
-    ]) as PackDraftRow | undefined;
-    return row ? toDraftDto(row) : null;
-  });
 
   ipcMain.handle("novel-pack-draft-clear", (_event, characterId: string): boolean => {
     dbRun("DELETE FROM novel_pack_drafts WHERE character_id = ?", [characterId]);

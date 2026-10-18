@@ -245,14 +245,6 @@ export function removeLevels(
     .map((level, index) => ({ ...level, rank: index + 1 }));
 }
 
-/** 删除一条等级并补位（见 removeLevels） */
-export function removeLevel(
-  levels: SettingLevel[],
-  levelId: string,
-): SettingLevel[] {
-  return removeLevels(levels, [levelId]);
-}
-
 /**
  * 把第 n 条移到第 m 条的位置（拖拽落点），返回重排后的序列
  *
@@ -516,18 +508,4 @@ export function formatBoundRealmName(
   return segment.name.startsWith(root.name)
     ? segment.name
     : `${root.name} · ${segment.name}`;
-}
-
-/**
- * 把设定名批量替换进正文（重命名等级时「一并更新已写正文」用）
- *
- * 只替换**整词**：`金丹` 不会命中 `金丹期` 的部分 —— 后者由别名扫描单独处理。
- */
-export function replaceInContent(
-  content: string,
-  from: string,
-  to: string,
-): string {
-  if (!from || from === to) return content;
-  return content.split(from).join(to);
 }

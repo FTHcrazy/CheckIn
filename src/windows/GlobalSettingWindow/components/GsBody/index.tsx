@@ -18,7 +18,7 @@
  *    靠 `cat:` 前缀的 sortable 兼作 droppable；sortable id 一律用 shared 的
  *    `catId()` / `lvlId()`，**禁止自拼**（`handleDragEnd` 按前缀分流）。
  * 3. **`open` 必须传常量 `true`**：`useSettingCenter` 里有个「`open` 为 falsy 时
- *    清空全部草稿」的 effect（`useSettingCenter.ts:318-342`），panel 形态绝不能触发。
+ *    清空全部草稿」的 effect（`useSettingCenter.ts:318-342`），整窗形态绝不能触发。
  */
 
 import { useCallback, useRef, useState } from "react";
@@ -48,7 +48,7 @@ export interface GsBodyProps {
 }
 
 /**
- * `onClose` 是 `SettingCenterProps` 的必填项，但 panel 形态下**不生效** ——
+ * `onClose` 是 `SettingCenterProps` 的必填项，但整窗形态下**不生效** ——
  * 关窗只走窗口三键（本窗口是设定编辑器，行内编辑到一半被 Esc 连窗收掉会丢草稿）。
  * 模块级常量：身份恒定，不会让 `useSettingCenter` 的重渲染白白多跑一轮。
  */
