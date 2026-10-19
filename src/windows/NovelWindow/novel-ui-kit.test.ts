@@ -534,6 +534,108 @@ describe("Novel 窗口：主题变量", () => {
   });
 });
 
+/**
+ * 右栏分段切换统一到组件库（§6.1.2）。
+ *
+ * 收敛前右栏有四处手搓分段条（`.nv-sub` + 清零 Button + `.is-on`）外加一条
+ * 自带绝对定位滑块与 ResizeObserver 的 Tab 条。它们的共同问题是**视觉靠人肉
+ * 对齐、键盘语义缺失**：没有 radio 角色、左右键不能切换、滑块宽度要自己量。
+ *
+ * 现在统一走 `NvSegmented`（antd `Segmented`）。这条守卫钉三件事：
+ * 1. `.nv-sub` 不能回潮（否则两种分段条并存，改一处另一处必然漂移）；
+ * 2. 四处调用点仍然用 `NvSegmented`（有人直接写 `<Segmented>` 就会丢掉
+ *    与右栏一致的外观变量）；
+ * 3. 外观等价的关键变量还在（轨道档位、滑块高度算式、计数 Badge）。
+ */
+describe("Novel 窗口：右栏分段切换统一走组件库 Segmented", () => {
+  const segScss = path.join(
+    ROOT,
+    "pages/NovelPage/components/NvSegmented/index.scss",
+  );
+  const segCss = sass
+    .compile(segScss, { style: "expanded" })
+    .css.replace(/\/\*[\s\S]*?\*\//g, "");
+
+  it("手搓分段条彻底下线（源码与编译产物都不得再有 .nv-sub）", () => {
+    const offenders = tsxFiles.filter((file) =>
+      /nv-sub/.test(stripComments(readFileSync(file, "utf8"))),
+    );
+    expect(offenders.map((f) => relFromRoot(f))).toEqual([]);
+    // 编译产物里还要排除**注释**：说明文字里会引用旧类名（sass 的 /* */ 会保留）
+    expect(compiledCss.replace(/\/\*[\s\S]*?\*\//g, "")).not.toContain(".nv-sub");
+  });
+
+  it("四处切换都经 NvSegmented 渲染（不直接裸用 Segmented）", () => {
+    for (const relative of [
+      "pages/NovelPage/components/OutlinePanel/index.tsx",
+      "pages/NovelPage/components/SearchPanel/index.tsx",
+      "pages/NovelPage/components/SensitivePanel/index.tsx",
+      "pages/NovelPage/components/SupportPanel/index.tsx",
+    ]) {
+      const source = stripComments(
+        readFileSync(path.join(ROOT, relative), "utf8"),
+      );
+      expect(source, relative).toContain("<NvSegmented");
+      expect(source, relative).not.toContain("<Segmented");
+    }
+  });
+
+  it("轨道 / 滑块 / 高度算式仍在（复刻改前外观，缺一条就变形）", () => {
+    // 轨道取 --app-surface-hover：.nv-panel 本身是 alt 档，再深一档才是凹槽
+    expect(segCss).toContain("--ant-segmented-track-bg: var(--app-surface-hover)");
+    expect(segCss).toContain("--ant-segmented-item-selected-bg: var(--app-surface)");
+    // 滑块 25px = control-height 31 − 2 × track-padding 3
+    expect(segCss).toContain("--ant-control-height: 31px");
+    expect(segCss).toContain("--ant-segmented-track-padding: 3px");
+    // 五 Tab 变体：40px 格 = 48 − 2 × 4
+    expect(segCss).toContain("--ant-control-height: 48px");
+  });
+
+  it("计数走组件库 Badge（不再自绘计数 span）", () => {
+    const source = stripComments(readFileSync(segScss.replace(/\.scss$/, ".tsx"), "utf8"));
+    expect(source).toContain("<Badge");
+    expect(source).not.toContain("nv-seg__count");
+  });
+});
+
+/**
+ * 要素类型 chips 不得被 flex 压扁（真机反馈：第一个分类名展示不全）。
+ *
+ * `.nv-chips` 是 `display: flex` + 横向滚动。flex 子项缺省 `flex-shrink: 1`，
+ * 于是宽度不够时浏览器**先压扁第一颗 chip**（内容被裁成只剩计数），而不是让
+ * 整行横向滚动 —— 面板拖到 280 宽时「全部 6」只剩一个「6」。
+ * 修法是 `flex: none`：宽度回归内容，溢出交给容器的滚动 + 两端渐隐。
+ */
+describe("Novel 窗口：要素类型 chips 不被挤扁", () => {
+  const css = sass
+    .compile(
+      path.join(ROOT, "pages/NovelPage/components/SupportPanel/panel-primitives.scss"),
+      { style: "expanded" },
+    )
+    .css.replace(/\/\*[\s\S]*?\*\//g, "");
+
+  const ruleBlock = (source: string, selector: string) => {
+    const at = source.indexOf(`${selector} {`);
+    expect(at, `缺少规则 ${selector}`).toBeGreaterThan(-1);
+    const open = source.indexOf("{", at);
+    let depth = 0;
+    let end = open;
+    for (; end < source.length; end++) {
+      if (source[end] === "{") depth++;
+      else if (source[end] === "}" && --depth === 0) break;
+    }
+    return source.slice(open + 1, end);
+  };
+
+  it("chips 不参与收缩，溢出交给横向滚动", () => {
+    const block = ruleBlock(css, ".nv-panel .nv-chip.ant-btn");
+    expect(block).toContain("flex: none");
+    // 容器必须仍可横向滚动，否则 flex: none 会把内容顶出面板
+    const row = ruleBlock(css, ".nv-panel .nv-chips");
+    expect(row).toContain("overflow-x: auto");
+  });
+});
+
 describe("Novel 窗口：虚拟化行内 width:100% 的普通元素必须显式 border-box", () => {
   it("OutlinePanel 章节行容器不把横向滚动条带进虚拟列表（1.34.0 回归守卫）", () => {
     // 应用没有全局 box-sizing 重置：普通 div 默认 content-box，

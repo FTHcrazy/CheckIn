@@ -8,12 +8,13 @@
  * 内容滚动区／常驻提示条。尺寸一律走 var(--app-*)，切主题不掉色；
  * 宽度由 JS 以 inline style 给出（280–460 可拖拽），折叠走 width/opacity 过渡。
  *
- * ⚠️ 按钮类（__btn / __icon / __tab / __reopen）由 antd `Button` 承载，外观只
+ * ⚠️ 按钮类（__btn / __icon / __reopen）由 antd `Button` 承载，外观只
  * 通过组件级 CSS 变量配置（AGENTS §6.1.2）：先 `@include widget.ant-button-reset`
  * 清零，再在同一个 `.xxx.ant-btn` 里声明变量。antd 的 hover / active / disabled
  * 规则是 (0,4,0) 级，自写 `:hover` 属性规则压不过它，而它们读的正是这些变量。
- * __tab 带 ref 且要读 offsetLeft / offsetWidth：只改变量与 antd 会抢的盒属性，
- * 布局（grid 项、flex 方向、定位）一律不动。
+ *
+ * 五 Tab 的分段条不是按钮组，而是 `NvSegmented`（antd `Segmented`）的 tabs
+ * 变体 —— 它的滑块、键盘行为、radio 语义都在组件里，本文件不再声明。
  */
 
 .nv-panel-region {
@@ -171,73 +172,10 @@
     white-space: nowrap;
   }
 
-  /* ── 分段式 Tab ─────────────────────────────────────────────── */
-  &__tabs {
-    position: relative;
-    flex: none;
-    display: grid;
-    /* minmax(0, 1fr) 而非 1fr：`1fr` 的下限是 tab 内容的 min-content，
-       面板拖窄时 5 格会一起把轨道撑到比容器宽（横向溢出）。见
-       OutlinePanel 里 __vol-list 的说明。 */
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 2px;
-    margin: 10px 12px 8px;
-    padding: 4px;
-    border-radius: 12px;
-    background: var(--app-surface-hover);
-  }
-
-  &__indicator {
-    position: absolute;
-    top: 4px;
-    left: 0;
-    height: calc(100% - 8px);
-    border-radius: 9px;
-    background: var(--app-surface);
-    box-shadow: var(--app-shadow-card);
-    transition:
-      transform 260ms cubic-bezier(0.34, 1.2, 0.5, 1),
-      width 260ms cubic-bezier(0.34, 1.2, 0.5, 1);
-  }
-
-  /* Tab 带 ref 且要读 offsetLeft / offsetWidth：布局属性（display / flex 方向 /
-     gap / 定位 / z-index）保持原样，只把 antd 会抢的盒与外观换成变量 */
-  &__tab.ant-btn {
-    @include widget.ant-button-reset;
-    --ant-control-height: 40px;
-    --ant-button-padding-inline: 0px;
-    --ant-button-content-font-size: 12px;
-    --ant-button-font-weight: 400;
-    --ant-button-default-bg: transparent;
-    --ant-button-default-color: var(--app-text-secondary-strong);
-    --ant-button-default-hover-color: var(--app-text);
-    --ant-button-default-active-color: var(--app-text);
-    position: relative;
-    z-index: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 2px;
-
-    /* 选中：主色 + 加粗（永久态 → 写默认变量，hover 读同一份不再变回灰） */
-    &.is-on {
-      --ant-button-default-color: var(--app-primary);
-      --ant-button-default-hover-color: var(--app-primary);
-      --ant-button-default-active-color: var(--app-primary);
-      --ant-button-font-weight: 600;
-    }
-
-    /* 图标被 Badge 包了一层，直接子选择器要跟着覆盖到组件库的包装里 */
-    & > svg,
-    & > .anticon,
-    & > .ant-badge svg,
-    & > .ant-badge .anticon {
-      width: 16px;
-      height: 16px;
-      font-size: 16px;
-    }
-  }
+  /* ── 分段式 Tab ───────────────────────────────────────────────
+     轨道 / 滑块 / 40px 格 / 图标叠文字全部由 NvSegmented 的 tabs 变体
+     （`--ant-segmented-*` 变量）给出，这里不再有 grid / 绝对定位滑块：
+     滑块由组件库按实测宽度自己量，字体加载与面板拖宽都不会错位。 */
 
   /* Tab 角标：组件库 Badge（§6.1.2）。角标挂在图标上（Badge 包住 icon），
      位置 / 圆角 / 描边 / 溢出计数全由组件库负责 —— 旧的自绘角标锚 tab 右缘，

@@ -5,7 +5,6 @@ import {
   render,
   screen,
   waitFor,
-  within,
 } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -96,11 +95,30 @@ const outline: OutlineNode[] = [
   },
 ];
 
-/** 子视图切换器里的按钮：大纲内多处同名文本，必须限定作用域 */
+/**
+ * 分段切换（antd `Segmented`）的选中动作。
+ *
+ * 可点面是 label 里那颗**视觉隐藏**的 radio（`.ant-segmented-item-input`）：
+ * 外层 label 只负责排版，jsdom 不会替我们把 label 的点击转发给控件，
+ * 点 input 才会触发 change → onChange。
+ */
+const clickSegment = (root: HTMLElement, label: string): void => {
+  const item = Array.from(
+    root.querySelectorAll<HTMLElement>(".ant-segmented-item"),
+  ).find((node) => stripped(node.textContent).startsWith(label));
+  expect(item, `分段项「${label}」不存在`).toBeDefined();
+  const input = item?.querySelector<HTMLInputElement>(
+    "input.ant-segmented-item-input",
+  );
+  expect(input).not.toBeNull();
+  fireEvent.click(input as HTMLInputElement);
+};
+
+/** 子视图切换器里的分段项：大纲内多处同名文本，必须限定作用域 */
 const clickView = (container: HTMLElement, label: string): void => {
   const switcher = container.querySelector<HTMLElement>(".nv-outline__switch");
   expect(switcher).not.toBeNull();
-  fireEvent.click(within(switcher as HTMLElement).getByText(label));
+  clickSegment(switcher as HTMLElement, label);
 };
 
 /**
@@ -153,11 +171,10 @@ const looseText = (text: string): HTMLElement =>
 
 const switcherButton = (container: HTMLElement, label: string): HTMLElement => {
   const switcher = container.querySelector<HTMLElement>(".nv-outline__switch");
-  // antd 把「章节」与计数「2」分成了两个子节点，所以按 textContent 前缀匹配
-  // 整颗按钮，断言那边再去掉空白比对
+  // 计数角标是组件库 Badge，仍是文字节点（「章节」+「2」），按前缀匹配整格
   const hit = Array.from(
-    switcher?.querySelectorAll<HTMLElement>("button") ?? [],
-  ).find((button) => stripped(button.textContent).startsWith(label));
+    switcher?.querySelectorAll<HTMLElement>(".ant-segmented-item") ?? [],
+  ).find((item) => stripped(item.textContent).startsWith(label));
   expect(hit).toBeDefined();
   return hit as HTMLElement;
 };
@@ -317,7 +334,11 @@ describe("OutlinePanel 组件", () => {
     expect(screen.getByText("断伞骨")).toBeInTheDocument();
     expect(screen.queryByText("旧剑铭")).toBeNull();
 
-    fireEvent.click(screen.getByText("全部"));
+    // 伏笔三态筛选也是分段切换：切到「全部」才出现已回收的那条
+    clickSegment(
+      container.querySelector<HTMLElement>(".nv-outline__filter") as HTMLElement,
+      "全部",
+    );
     expect(screen.getByText("旧剑铭")).toBeInTheDocument();
   });
 

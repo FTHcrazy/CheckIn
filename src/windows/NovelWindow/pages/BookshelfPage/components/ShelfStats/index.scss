@@ -69,4 +69,27 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
+
+  /* 最小窗口：四连卡每格只剩约 140px，图标 36 + 间距 12 + 内边距 32 之后
+     文字区不到 60（「累计作品」正好 48px 但一放大字号就换行）。
+     收一档图标与内边距，保持四列不折行 —— 折成 2×2 会多吃一行高度，
+     与「矮窗优先露出书卡」的目标相冲突。 */
+  @media (max-width: 1080px) {
+    gap: 10px;
+
+    &__card {
+      gap: 10px;
+      padding: 12px;
+    }
+
+    &__icon {
+      width: 32px;
+      height: 32px;
+      font-size: 16px;
+    }
+
+    &__value {
+      font-size: 16px;
+    }
+  }
 }

@@ -100,4 +100,20 @@
   &__cta {
     flex: none;
   }
+
+  /* 最小窗口：Hero 与统计条、书架头同处一屏，纵向留白要跟着收一档，
+     否则 640 高的窗里首屏连一排书卡都露不全。封面等比缩，比例不变。 */
+  @media (max-width: 1080px) {
+    gap: 14px;
+    padding: 14px 16px;
+
+    &__cover {
+      width: 48px;
+      height: 64px;
+    }
+
+    &__title {
+      font-size: 15px;
+    }
+  }
 }

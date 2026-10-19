@@ -5,6 +5,7 @@ import { Virtuoso } from "react-virtuoso";
 import { useEntityTypeMeta } from "../../hooks/entity-types-context";
 import { splitByKeyword } from "../../novel-utils";
 import { registerSearchRunner, useSearchStore } from "../../store/useSearchStore";
+import NvSegmented from "../NvSegmented";
 import { useEdgeFade } from "../SupportPanel/useEdgeFade";
 import type { SearchScope } from "../../store/useSearchStore";
 import type { NovelEntity, SearchHit } from "../../types";
@@ -136,19 +137,19 @@ export default function SearchPanel({
         )}
       </div>
 
-      <div className="nv-sub nv-search__scopes">
-        {SCOPES.map((item) => (
-          <Button
-            key={item.key}
-            className={`nv-sub__btn${scope === item.key ? " is-on" : ""}`}
-            disabled={item.key === "chapter" && !activeChapterId}
-            title={item.key === "chapter" && !activeChapterId ? "先选一章" : undefined}
-            onClick={() => setScope(item.key)}
-          >
-            {item.label}
-          </Button>
-        ))}
-      </div>
+      <NvSegmented<SearchScope>
+        className="nv-search__scopes"
+        ariaLabel="检索范围"
+        value={scope}
+        onChange={setScope}
+        options={SCOPES.map((item) => ({
+          value: item.key,
+          label: item.label,
+          // 未选章时「本章」没有可检索范围：禁用并说明原因，而不是让它查空
+          disabled: item.key === "chapter" && !activeChapterId,
+          title: item.key === "chapter" && !activeChapterId ? "先选一章" : undefined,
+        }))}
+      />
 
       {loading ? (
         <>

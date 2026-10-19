@@ -21,6 +21,7 @@ import {
   type SensitiveWord,
 } from "../../sensitive";
 import { useSensitiveStore } from "../../store/useSensitiveStore";
+import NvSegmented from "../NvSegmented";
 import type { NovelChapter } from "../../types";
 import "./index.scss";
 
@@ -49,38 +50,14 @@ const MODE_OPTIONS = (Object.keys(SENSITIVE_MODE_META) as SensitiveScanMode[]).m
 );
 
 /**
- * 分段切换。
+ * 分段切换的三处（视图 / 检测机制 / 结果范围）统一走 `NvSegmented`
+ * （antd `Segmented` + 右栏共用外观），与大纲、检索两个 Tab 是同一套控件语言。
  *
- * 刻意不用 antd `Segmented`：本项目所有右栏分段切换都是 `.nv-sub` + antd
- * Button + `.is-on` 这套（大纲的「章节 / 伏笔」、检索的「全书 / 本章 / 要素名」），
- * 外观由 panel-primitives 里那组「轨道底色 + 浮起白滑块」变量统一管。
- * 混进一个 Segmented 就等于在同一个面板里开第二套视觉语言：轨道、圆角、
- * 滑块阴影、字号全都对不上，切过去一眼能看出「这不是同一家的控件」。
+ * 收敛前这里是本文件内私有的 `PanelSwitch`（`.nv-sub` + antd Button 手搓
+ * 选中态）。改成组件库后 radio 语义、键盘左右键、滑块动画都由组件库负责，
+ * 外观仍由 `NvSegmented/index.scss` 的 `--ant-segmented-*` 变量复刻成
+ * 原来的「轨道底 + 浮起白滑块」，肉眼无差别。
  */
-function PanelSwitch<T extends string>({
-  value,
-  options,
-  onChange,
-}: {
-  value: T;
-  options: readonly { label: string; value: T }[];
-  onChange: (value: T) => void;
-}) {
-  return (
-    <div className="nv-sub">
-      {options.map((item) => (
-        <Button
-          key={item.value}
-          className={`nv-sub__btn${value === item.value ? " is-on" : ""}`}
-          aria-pressed={value === item.value}
-          onClick={() => onChange(item.value)}
-        >
-          {item.label}
-        </Button>
-      ))}
-    </div>
-  );
-}
 
 /**
  * 敏感词检测面板（工具箱二级面板）
@@ -273,19 +250,21 @@ export default function SensitivePanel({
 
   return (
     <div className="nv-sm">
-      <PanelSwitch
+      <NvSegmented<PanelView>
+        ariaLabel="敏感词面板视图"
         value={view}
+        onChange={setView}
         options={VIEW_OPTIONS}
-        onChange={(value) => setView(value)}
       />
 
       {view === "result" ? (
         <>
           <div className="nv-sechead">检测机制</div>
-          <PanelSwitch
+          <NvSegmented<SensitiveScanMode>
+            ariaLabel="检测机制"
             value={config.mode}
+            onChange={setMode}
             options={MODE_OPTIONS}
-            onChange={(value) => setMode(value)}
           />
           <p className="nv-sm__hint">{SENSITIVE_MODE_META[config.mode].hint}</p>
 
@@ -324,10 +303,12 @@ export default function SensitivePanel({
                     : "尚未扫描"}
                 </span>
                 <div className="nv-sm__scope">
-                  <PanelSwitch
+                  <NvSegmented<ResultScope>
+                    ariaLabel="结果范围"
+                    block={false}
                     value={scope}
+                    onChange={setScope}
                     options={SCOPE_OPTIONS}
-                    onChange={(value) => setScope(value)}
                   />
                 </div>
               </div>

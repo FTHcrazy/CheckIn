@@ -10,7 +10,7 @@
  *
  * 作用域统一收在 .nv-panel 之下，避免影响 panel 之外的任何样式。
  *
- * ⚠️ 按钮类（.nv-mini / .nv-chip / .nv-ghost / .nv-field__clear / .nv-sub__btn）
+ * ⚠️ 按钮类（.nv-mini / .nv-chip / .nv-ghost / .nv-field__clear）
  * 一律由 antd `Button` 承载，外观只通过组件级 CSS 变量配置（AGENTS §6.1.2）：
  * 先用 `@include widget.ant-button-reset` 把组件库自带外观清零，再在同一个
  * `.xxx.ant-btn` 选择器里声明变量——antd 的 hover / active / disabled 规则是
@@ -89,55 +89,11 @@
     padding: 2px;
   }
 
-  /* ── 子分段（大纲的章节 / 伏笔、检索的作用域）──────────────────── */
-  .nv-sub {
-    display: flex;
-    gap: 2px;
-    padding: 3px;
-    border-radius: 9px;
-    background: var(--app-surface-hover);
-
-    &__btn.ant-btn {
-      @include widget.ant-button-reset;
-      --ant-control-height: 25px;
-      --ant-button-padding-inline: 8px;
-      --ant-button-content-font-size: 12px;
-      --ant-button-font-weight: 400;
-      --ant-button-icon-gap: 4px;
-      --ant-border-radius: 6px;
-      --ant-button-default-bg: transparent;
-      --ant-button-default-color: var(--app-text-secondary);
-      --ant-button-default-hover-color: var(--app-text);
-      --ant-button-default-active-color: var(--app-text);
-      --ant-button-default-bg-disabled: transparent;
-      --ant-button-border-color-disabled: transparent;
-      /* 禁用态文字色：antd 的 :disabled 规则读的是全局 token，没有按钮级变量，
-         只能在本元素上改它（不写 :disabled 属性规则） */
-      --ant-color-text-disabled: var(--app-text-disabled);
-      flex: 1;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-
-      /* 选中：浮起的白色滑块（永久态 → 写默认变量，hover/active 读同一份） */
-      &.is-on {
-        --ant-button-default-bg: var(--app-surface);
-        --ant-button-default-color: var(--app-text);
-        --ant-button-default-hover-bg: var(--app-surface);
-        --ant-button-default-hover-color: var(--app-text);
-        --ant-button-default-active-bg: var(--app-surface);
-        --ant-button-default-active-color: var(--app-text);
-        --ant-button-font-weight: 600;
-        --ant-button-default-shadow: var(--app-shadow-card);
-      }
-    }
-
-    &__count {
-      font-style: normal;
-      font-size: 12px;
-      color: var(--app-text-muted);
-    }
-  }
+  /* ── 子分段（大纲的章节 / 伏笔、检索的作用域、敏感词的三处切换）────
+     已统一收敛到 `NvSegmented`（antd `Segmented` + 右栏共用外观），
+     轨道 / 滑块 / 选中态由该组件自己的 index.scss 用 `--ant-segmented-*`
+     变量声明。这里保留说明，**不要再往回加 `.nv-sub` 手搓按钮组** ——
+     两份实现必然漂移，且键盘语义只有组件库那份是完整的。 */
 
   /* ── 横向滚动 chips（类型筛选 / 最近搜索）──────────────────────── */
   .nv-chips {
@@ -192,6 +148,10 @@
     display: inline-flex;
     align-items: center;
     white-space: nowrap;
+    /* ⚠️ 必须不收缩：chips 行是 flex + 横向滚动容器，缺省 flex-shrink: 1 会让
+       宽度不够时「先压扁第一个 chip」而不是让整行滚动 —— 面板 280 宽时
+       第一颗「全部 6」被挤成只剩计数，分类名展示不全（真机反馈）。 */
+    flex: none;
 
     /* 选中：描边取当前字色 + 加粗（永久态 → 写默认变量） */
     &.is-on {

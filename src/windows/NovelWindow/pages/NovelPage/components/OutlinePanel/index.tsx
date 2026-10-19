@@ -10,6 +10,7 @@ import {
 import { Button, Input, Select, Tooltip } from "antd";
 import { Virtuoso } from "react-virtuoso";
 import GuideTooltip from "@/shared/components/GuideTooltip";
+import NvSegmented from "../NvSegmented";
 import { CHAPTER_STATUS_META } from "../../novel-config";
 import { formatThousands } from "../../novel-utils";
 import { consumeGuideTooltip } from "../../../../store/useGuideStore";
@@ -729,29 +730,21 @@ export default function OutlinePanel({
   };
 
   const renderFsFilters = () => (
-    <div className="nv-sub nv-outline__filter">
-      <Button
-        className={`nv-sub__btn${fsFilter === "open" ? " is-on" : ""}`}
-        onClick={() => setFsFilter("open")}
-      >
-        待回收<span className="nv-sub__count">{openForeshadows}</span>
-      </Button>
-      <Button
-        className={`nv-sub__btn${fsFilter === "resolved" ? " is-on" : ""}`}
-        onClick={() => setFsFilter("resolved")}
-      >
-        已回收
-        <span className="nv-sub__count">
-          {allForeshadows.length - openForeshadows}
-        </span>
-      </Button>
-      <Button
-        className={`nv-sub__btn${fsFilter === "all" ? " is-on" : ""}`}
-        onClick={() => setFsFilter("all")}
-      >
-        全部<span className="nv-sub__count">{allForeshadows.length}</span>
-      </Button>
-    </div>
+    <NvSegmented<ForeshadowFilter>
+      className="nv-outline__filter"
+      ariaLabel="伏笔回收状态筛选"
+      value={fsFilter}
+      onChange={setFsFilter}
+      options={[
+        { value: "open", label: "待回收", count: openForeshadows },
+        {
+          value: "resolved",
+          label: "已回收",
+          count: allForeshadows.length - openForeshadows,
+        },
+        { value: "all", label: "全部", count: allForeshadows.length },
+      ]}
+    />
   );
 
   return (
@@ -771,20 +764,16 @@ export default function OutlinePanel({
         </div>
       </div>
 
-      <div className="nv-sub nv-outline__switch">
-        <Button
-          className={`nv-sub__btn${view === "chapter" ? " is-on" : ""}`}
-          onClick={() => setView("chapter")}
-        >
-          章节<span className="nv-sub__count">{totalChapters}</span>
-        </Button>
-        <Button
-          className={`nv-sub__btn${view === "fs" ? " is-on" : ""}`}
-          onClick={() => setView("fs")}
-        >
-          伏笔<span className="nv-sub__count">{allForeshadows.length}</span>
-        </Button>
-      </div>
+      <NvSegmented<OutlineView>
+        className="nv-outline__switch"
+        ariaLabel="大纲视图"
+        value={view}
+        onChange={setView}
+        options={[
+          { value: "chapter", label: "章节", count: totalChapters },
+          { value: "fs", label: "伏笔", count: allForeshadows.length },
+        ]}
+      />
 
       {view === "fs" ? (
         /* 伏笔子视图：条数远少于章节（一般几十条），不做虚拟化。

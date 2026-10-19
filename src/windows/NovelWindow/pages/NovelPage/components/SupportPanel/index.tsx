@@ -19,6 +19,7 @@ import NameGeneratorPanel, { type NamingActions } from "../NameGeneratorPanel";
 import OutlinePanel, { type OutlineActions } from "../OutlinePanel";
 import SearchPanel from "../SearchPanel";
 import SensitivePanel from "../SensitivePanel";
+import NvSegmented from "../NvSegmented";
 import { LAYOUT } from "../../novel-config";
 import { useSearchStore } from "../../store/useSearchStore";
 import type { PanelTab, EntityFilter } from "../../hooks/useNovelViewState";
@@ -199,9 +200,6 @@ export default function SupportPanel({
   const [addForeshadowTick, setAddForeshadowTick] = useState(0);
   const [dragging, setDragging] = useState(false);
 
-  const tabsRef = useRef<HTMLDivElement | null>(null);
-  // antd Button 的 ref 是 button 或 anchor（传 href 时），这里只用 offsetLeft/offsetWidth
-  const tabRefs = useRef<Array<HTMLElement | null>>([]);
   const dragCleanupRef = useRef<(() => void) | null>(null);
 
   // 换作品时清空检索缓存（store 是模块级的，不能把上一本书的命中带过来）
@@ -248,29 +246,6 @@ export default function SupportPanel({
     }
     return "";
   }, [activeChapterId, outline]);
-
-  // ── 分段 Tab 的滑块指示器 ────────────────────────────────────────
-  const [indicator, setIndicator] = useState({ left: 0, width: 0 });
-
-  const measure = useCallback(() => {
-    const index = TABS.findIndex((tab) => tab.key === activeTab);
-    const node = index >= 0 ? tabRefs.current[index] : null;
-    if (!node) return;
-    setIndicator({ left: node.offsetLeft, width: node.offsetWidth });
-  }, [activeTab]);
-
-  useEffect(() => {
-    measure();
-  }, [measure, width, open]);
-
-  // 字体加载 / 窗口缩放都会改变 tab 宽度：观察容器自身，避免滑块错位
-  useEffect(() => {
-    const node = tabsRef.current;
-    if (!node || typeof ResizeObserver === "undefined") return undefined;
-    const observer = new ResizeObserver(() => measure());
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [measure]);
 
   // ── 拖拽调宽 ────────────────────────────────────────────────────
   const handleDragStart = useCallback(
@@ -508,16 +483,21 @@ export default function SupportPanel({
           </div>
         </header>
 
-        <nav className="nv-panel__tabs" role="tablist" ref={tabsRef}>
-          <span
-            className="nv-panel__indicator"
-            style={{
-              width: `${indicator.width}px`,
-              transform: `translateX(${indicator.left}px)`,
-            }}
-          />
-          {TABS.map((tab, index) => {
-            const on = tab.key === activeTab;
+        {/* 五 Tab 的分段切换：antd Segmented 的 tabs 变体。
+            改前是「grid + 每格一颗清零 Button + 绝对定位滑块 + ResizeObserver
+            重量宽度」——滑块定位、字体加载后的错位、面板拖宽后的重算都要自己
+            兜。Segmented 的滑块由组件库量，键盘左右键与 radio 语义也是白送的；
+            外观（轨道底 / 40px 格 / 图标叠文字 / 选中主色）在 NvSegmented 的
+            tabs 变体里用变量复刻，与改前一致。 */}
+        <NvSegmented<PanelTab>
+          variant="tabs"
+          ariaLabel="右栏面板"
+          value={activeTab}
+          onChange={(tab) => {
+            onTabChange(tab);
+            setToolSub(null);
+          }}
+          options={TABS.map((tab) => {
             // tab 角标计数：0 时 antd Badge 自己就不渲染角标（不是我们的分支）
             const badgeCount =
               tab.key === "outline"
@@ -525,37 +505,28 @@ export default function SupportPanel({
                 : tab.key === "note"
                   ? notes.length
                   : 0;
-            return (
-              <Button
-                key={tab.key}
-                ref={(node) => {
-                  tabRefs.current[index] = node;
-                }}
-                role="tab"
-                aria-selected={on}
-                className={`nv-panel__tab${on ? " is-on" : ""}`}
-                onClick={() => {
-                  onTabChange(tab.key);
-                  setToolSub(null);
-                }}
-              >
-                {/* 角标走组件库 Badge（§6.1.2）：包住图标，位置 / 描边 / 圆角
-                    由组件库负责；灵感条数是中性信息，走 --soft 换语义色 */}
-                <Badge
-                  className={`nv-panel__tab-badge${
-                    tab.key === "note" ? " nv-panel__tab-badge--soft" : ""
-                  }`}
-                  count={badgeCount}
-                  size="small"
-                  overflowCount={99}
-                >
-                  {tab.icon}
-                </Badge>
-                <span>{tab.label}</span>
-              </Button>
-            );
+            return {
+              value: tab.key,
+              label: (
+                <>
+                  {/* 角标走组件库 Badge（§6.1.2）：包住图标，位置 / 描边 / 圆角
+                      由组件库负责；灵感条数是中性信息，走 --soft 换语义色 */}
+                  <Badge
+                    className={`nv-panel__tab-badge${
+                      tab.key === "note" ? " nv-panel__tab-badge--soft" : ""
+                    }`}
+                    count={badgeCount}
+                    size="small"
+                    overflowCount={99}
+                  >
+                    {tab.icon}
+                  </Badge>
+                  <span>{tab.label}</span>
+                </>
+              ),
+            };
           })}
-        </nav>
+        />
 
         <div
           className={`nv-panel__scroll${flatScroll ? " nv-panel__scroll--flat" : ""}`}

@@ -398,7 +398,12 @@ function createBaseWindow(): BrowserWindow {
  * - full 版：即关即销的子窗口。从主窗口侧边栏入口唤起，重新打开即全新实例
  *   —— 对编辑器反而是优点：无状态腐化，数据安全完全由持久化层兜底。
  *
- * 默认尺寸 1200×760（min 800×560）。
+ * 默认尺寸 1200×760（min 960×640）。
+ *
+ * ⚠️ 下限不是随手填的：书架页在 960 宽下「主列 640 + 灵感栏 320」才够摆下
+ * 4 连统计卡与三列书卡；再窄（原 800×560）统计卡会被挤成两行、书卡只剩两列，
+ * 顶栏五个控件也会挤成一串纯文字。640 高保证首屏能完整露出一排书卡。
+ * 改这个下限前先看 `BookshelfPage/index.scss` 的窄窗媒体查询。
  * TODO(数据层里程碑)：bounds 记忆（尺寸/位置持久化）与 R12 全局快捷键 Alt+W 一起做
  */
 function createNovelWindow(): BrowserWindow {
@@ -414,8 +419,8 @@ function createNovelWindow(): BrowserWindow {
   const novelWin = new BrowserWindow({
     width: 1200,
     height: 760,
-    minWidth: 800,
-    minHeight: 560,
+    minWidth: 960,
+    minHeight: 640,
     icon: ICON_PATH,
     show: false,
     ...ROUNDED_WINDOW_OPTIONS,

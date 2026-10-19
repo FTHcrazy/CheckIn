@@ -51,10 +51,12 @@
   }
 
   /* 范围切换是附属控件，不该和「检测结果 / 词库」「检测机制」争同一份宽度：
-     那两处是整行等分（.nv-sub__btn 默认 flex:1），这里收成内容宽、靠右。
-     specificity 必须压过 panel-primitives 的 `.nv-panel .nv-sub__btn.ant-btn` */
-  &__scope .nv-sub .nv-sub__btn.ant-btn {
+     那两处整行等分（NvSegmented 默认 block），这里用 `block={false}` 收成
+     内容宽、靠右。宽度由组件自己决定，父级只负责对齐。 */
+  &__scope {
     flex: none;
+    display: flex;
+    justify-content: flex-end;
   }
 
   &__stat {

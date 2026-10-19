@@ -599,10 +599,10 @@ describe("色块阶梯：页面根铺 bg、浮层底只给浮层用", () => {
  *   且已被上面「顶栏 chip 底色三档」用例钉死。
  * - 分段轨道 / 加载骨架一类**落在 `--app-surface-alt` 基面上的凹槽**：
  *   `.nv-panel`（SupportPanel/index.scss:32）本身就是 alt 档，所以
- *   `.nv-panel__tabs`(:187)、`panel-primitives.scss` 的 `.nv-sub`(:98)、
- *   `SearchPanel/index.scss` 的骨架条(:48)、`EntityDetail/index.scss` 的
- *   `&__tag`(:277) 取 hover 档恰好是「比基面再深一档」的凹槽，方向正确。
- *   反之它们若改用 `--app-surface-alt` 会与基面同色而消失。
+ *   `NvSegmented/index.scss` 的 `--ant-segmented-track-bg`（右栏五 Tab 与
+ *   所有子分段共用）、`SearchPanel/index.scss` 的骨架条(:48)、
+ *   `EntityDetail/index.scss` 的 `&__tag`(:277) 取 hover 档恰好是「比基面再深
+ *   一档」的凹槽，方向正确。反之它们若改用 `--app-surface-alt` 会与基面同色而消失。
  */
 describe("常驻中性底：槽位不借交互态 token（N-08 精确清单）", () => {
   /** 花括号配平取规则块体（块内可能嵌着 `&.is-*` 子规则） */

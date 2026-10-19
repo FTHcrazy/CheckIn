@@ -47,17 +47,60 @@
     border-radius: var(--app-radius-pill);
   }
 
-  // 导入按钮：默认次级样式（描边），与主色「新建作品」拉开层级。
-  // 自带圆角造型 → 必须补清零点 mixin（novel-ui-kit.test.ts 守卫）
-  &__import.ant-btn {
-    @include widget.ant-button-reset;
-    border-radius: var(--app-radius-pill);
-  }
-
-  // 「全局设定中心」入口：同为次级样式（描边圆角），与导入按钮对齐层级。
-  // mixin 必须写在覆盖之前（AGENTS §2.2.1）
+  /* 两颗次级按钮（「全局设定中心」/「导入书籍」）：描边 pill。
+   *
+   * ⚠️ 清零点会把 antd 的 **边框宽度 / 内边距 / 高度** 一起归零
+   * （`--ant-line-width: 0` + `--ant-control-height: auto` + padding 0）。
+   * 早先这里只补了圆角，于是两颗按钮在深色主题下退化成纯文字，
+   * 与主色「新建作品」挤成一串（真机截图为证）。清零之后必须把这三个
+   * 维度显式声明回来，缺一个就会变形：
+   *   --ant-line-width  → 描边（边框色由 --ant-button-default-border-color 给）
+   *   --ant-control-height / --ant-button-padding-inline → 尺寸
+   * 层级：次级描边 < 主色实底「新建作品」，两者都靠组件级变量表达，
+   * 不写 :hover 属性规则（antd 的状态规则是 (0,4,0)，压不过）。 */
+  &__import.ant-btn,
   &__global-setting.ant-btn {
     @include widget.ant-button-reset;
-    border-radius: var(--app-radius-pill);
+    --ant-control-height: 32px;
+    --ant-button-padding-inline: 14px;
+    --ant-button-content-font-size: 13px;
+    --ant-button-font-weight: 500;
+    --ant-button-icon-gap: 6px;
+    --ant-border-radius: var(--app-radius-pill);
+    --ant-line-width: 1px;
+    --ant-button-default-bg: transparent;
+    --ant-button-default-color: var(--app-text-secondary);
+    --ant-button-default-border-color: var(--app-border);
+    --ant-button-default-hover-bg: var(--app-surface-hover);
+    --ant-button-default-hover-color: var(--app-primary);
+    --ant-button-default-hover-border-color: var(--app-primary);
+    --ant-button-default-active-bg: var(--app-surface-active);
+    --ant-button-default-active-color: var(--app-primary);
+    --ant-button-default-active-border-color: var(--app-primary);
+    --ant-button-default-shadow: none;
+    display: inline-flex;
+    align-items: center;
+
+    /* 图标与文字都是 flex 子项：JSX 里不要再留空格（AGENTS §6.1.2 第 5 条） */
+    & > svg,
+    & > .anticon {
+      width: 14px;
+      height: 14px;
+      font-size: 14px;
+    }
+  }
+
+  /* 最小窗口：搜索框让出宽度给右侧三颗按钮，避免整行挤到换行 */
+  @media (max-width: 1080px) {
+    gap: 12px;
+    padding: 10px 18px;
+
+    &__search {
+      width: 200px;
+    }
+
+    &__actions {
+      gap: 8px;
+    }
   }
 }

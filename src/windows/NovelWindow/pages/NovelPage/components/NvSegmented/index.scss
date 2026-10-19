@@ -1,0 +1,129 @@
+/**
+ * 右栏分段切换的外观（NvSegmented 专用）。
+ *
+ * 目标：把 antd `Segmented` 调成与改前 `.nv-sub` **逐项一致**的形态
+ * —— 轨道 `--app-surface-hover` + 3px 内衬，选中项浮起成 `--app-surface`
+ * 白滑块并带卡片投影，圆角 9/6，文字 12px、选中加粗。
+ *
+ * 只改变量与组件库不接管的布局属性，不写任何 `:hover` / `:active` 规则：
+ * Segmented 的状态规则同样读这些变量（`item-hover-*` / `item-active-*`），
+ * 自写属性规则反而会因特异性输掉。
+ */
+
+.nv-seg.ant-segmented {
+  /* 滑块高度 = control-height − 2 × track-padding（25 = 31 − 2×3）。
+     直接写 25 是无效的：组件库只认这两个变量。 */
+  --ant-control-height: 31px;
+  --ant-segmented-track-padding: 3px;
+  --ant-border-radius: 9px;
+  --ant-border-radius-sm: 6px;
+  --ant-segmented-track-bg: var(--app-surface-hover);
+  --ant-segmented-item-color: var(--app-text-secondary);
+  --ant-segmented-item-hover-color: var(--app-text);
+  /* 改前的手搓实现只有「选中」会换底色，hover 不铺色（只换字色） */
+  --ant-segmented-item-hover-bg: transparent;
+  --ant-segmented-item-active-bg: transparent;
+  --ant-segmented-item-selected-bg: var(--app-surface);
+  --ant-segmented-item-selected-color: var(--app-text);
+
+  /* 作为面板的 flex 子项：不参与拉伸计算，宽度交给父级的 stretch */
+  flex: none;
+  font-size: 12px;
+
+  .ant-segmented-item-label {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 0 8px;
+    font-weight: 400;
+  }
+
+  .ant-segmented-item-selected .ant-segmented-item-label {
+    font-weight: 600;
+  }
+
+  /* 选中项与滑块都要投影：滑块是动画期间浮在上面的那一层，
+     只给 item 加的话滑动过程中会「掉影子」 */
+  .ant-segmented-thumb,
+  .ant-segmented-item-selected {
+    box-shadow: var(--app-shadow-card);
+  }
+}
+
+/* 内容宽变体（敏感词面板的「本章 / 全书」）：附属控件，不与整行等分的
+   视图开关 / 检测机制争同一份宽度 */
+.nv-seg--inline.ant-segmented {
+  display: inline-block;
+  width: auto;
+}
+
+.nv-seg__label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+/* 计数角标：组件库 Badge（AGENTS §6.1.2）。
+   这里只调「密度 + 中性语义色」：Badge 的计数底默认取 `--ant-color-error`
+   （红点是「未读 / 出错」的语义），而分类条数只是量词，用中性底 + 次级文字色，
+   视觉上仍是改前那颗灰数字。
+
+   底色取 `--app-surface-alt`：角标贴在滑块（`--app-surface`）或轨道
+   （`--app-surface-hover`）上，alt 这一档（≈1.03~1.05）在两面上都刚好能读出
+   形状又不抢眼。⚠️ 不要改用 `--app-surface-active` —— 那是按下态 token，
+   themes.test.ts「静态色块不用按下态色」会直接红灯。
+
+   ⚠️ 底色的换法只有 `--ant-color-error` 这一条：组件库只为**密度**类 token
+   注册了 CSS 变量（实测产物有 `--ant-badge-indicator-height` /
+   `--ant-badge-padding-inline` / `--ant-badge-text-font-size`），角标底
+   `badgeColor` 是合并出来的别名、不落成变量，`.ant-badge-count` 直接写
+   `background: var(--ant-color-error)`。 */
+.nv-seg__badge.ant-badge {
+  --ant-badge-indicator-height: 15px;
+  --ant-badge-indicator-height-sm: 15px;
+  --ant-badge-text-font-size: 11px;
+  --ant-badge-text-font-size-sm: 11px;
+  --ant-badge-text-font-weight: 500;
+  --ant-badge-padding-inline: 4px;
+  --ant-color-error: var(--app-surface-alt);
+  --ant-color-text-light-solid: var(--app-text-secondary);
+}
+
+/* ── 右栏五 Tab 变体：图标在上、文字在下 ─────────────────────────
+   轨道 4px 内衬 + 12px 圆角，滑块 40 高 9 圆角（48 − 2×4 = 40）。
+   面板拖到最小宽（280）时每格约 50px，仍放得下 16px 图标 + 两字标签。 */
+.nv-seg--tabs.ant-segmented {
+  --ant-control-height: 48px;
+  --ant-segmented-track-padding: 4px;
+  --ant-border-radius: 12px;
+  --ant-border-radius-sm: 9px;
+  --ant-segmented-item-color: var(--app-text-secondary-strong);
+  --ant-segmented-item-selected-color: var(--app-primary);
+
+  margin: 10px 12px 8px;
+
+  .ant-segmented-item-label {
+    padding: 0;
+    /* 角标（Badge）压在图标右上角，超出 40px 行高一点点；
+       组件库默认 overflow: hidden 会把它裁掉半颗 */
+    overflow: visible;
+  }
+
+  .nv-seg__label {
+    flex-direction: column;
+    gap: 2px;
+    /* 组件库给 label 的 line-height 等于行高（40px），叠两行文字会被撑开 */
+    line-height: 1.15;
+  }
+
+  .nv-seg__label > svg,
+  .nv-seg__label .anticon,
+  .nv-seg__label .ant-badge svg {
+    width: 16px;
+    height: 16px;
+    font-size: 16px;
+  }
+}

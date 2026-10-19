@@ -2,7 +2,7 @@
 
 /* 全书检索面板（NL 设计稿 §3·检索）
 
-   按钮类（.nv-sub__btn / .nv-search__hit）由 antd `Button` 承载：外观只通过
+   按钮类（.nv-search__hit）由 antd `Button` 承载：外观只通过
    组件级 CSS 变量配置，不写 `:hover` / `:disabled` 属性规则——antd 的状态选择器
    是 (0,4,0) 级，自写规则压不过它们（AGENTS §6.1.2）。
    聚焦环同样交给组件库（`:focus-visible` 规则读 --ant-line-width-focus）。 */
@@ -30,11 +30,10 @@
     margin-top: 8px;
 
     /* 禁用态（未选章时的「本章」）：文字色走 --ant-color-text-disabled ——
-       antd 的 :disabled 规则读的是这个全局 token，没有按钮级变量可改；
-       自写 :disabled 属性规则在这里是 (0,3,0)，换主题时容易漏，故不写 */
-    .nv-sub__btn.ant-btn {
-      --ant-color-text-disabled: var(--app-text-disabled);
-    }
+       Segmented 的 :disabled 规则读的正是这个全局 token（没有分段项级的
+       变量可改），写在根上会由变量继承下发到每个 item。
+       自写 :disabled 属性规则在这里压不过组件库，故不写。 */
+    --ant-color-text-disabled: var(--app-text-disabled);
   }
 
   &__pending {

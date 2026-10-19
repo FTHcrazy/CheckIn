@@ -81,42 +81,45 @@
     color: var(--app-text-secondary);
   }
 
-  &__views {
-    display: flex;
-    align-items: center;
-    padding: 2px;
-    border-radius: var(--app-radius-item);
-    background: var(--app-surface);
+  /* 视图切换：antd Segmented（书架里唯一的分段控件，与右栏统一到同一套语义）。
+     改前是「轨道 div + 两颗清零 Button + .is-active」，外观要自己维护一套；
+     现在轨道底色 / 滑块 / 文字色全部走组件级变量，尺寸由
+     `--ant-control-height` 与 `--ant-segmented-track-padding` 反算
+     （26 - 2×2 = 22，与改前 --ant-control-height: 22px 的滑块等高）。
+     轨道描边是 antd 不接管的属性，直接写在根上（不写任何状态选择器）。 */
+  &__views.ant-segmented {
+    --ant-control-height: 26px;
+    --ant-segmented-track-padding: 2px;
+    --ant-border-radius: var(--app-radius-item);
+    --ant-border-radius-sm: 7px;
+    --ant-segmented-track-bg: var(--app-surface);
+    --ant-segmented-item-color: var(--app-text-muted);
+    --ant-segmented-item-hover-color: var(--app-text-muted);
+    --ant-segmented-item-hover-bg: transparent;
+    --ant-segmented-item-active-bg: transparent;
+    --ant-segmented-item-selected-bg: var(--app-primary-weak);
+    --ant-segmented-item-selected-color: var(--app-primary);
+
+    flex: none;
     border: 1px solid var(--app-border);
-  }
 
-  &__view.ant-btn {
-    @include widget.ant-button-reset;
-    --ant-control-height: 22px;
-    --ant-button-content-font-size: 14px;
-    --ant-border-radius: 7px;
-    --ant-button-default-bg: transparent;
-    --ant-button-default-color: var(--app-text-muted);
-    --ant-button-default-hover-bg: transparent;
-    --ant-button-default-hover-color: var(--app-text-muted);
-    --ant-button-default-active-bg: transparent;
-    --ant-button-default-active-color: var(--app-text-muted);
-    --ant-button-default-shadow: none;
+    .ant-segmented-item-label {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 26px;
+      padding: 0;
+    }
 
-    /* antd 不接管的属性 */
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 26px;
+    .ant-segmented-item-label svg {
+      width: 14px;
+      height: 14px;
+    }
 
-    /* 选中态：弱主色底 + 主色图标，hover / active 同步保持不掉色 */
-    &.is-active {
-      --ant-button-default-bg: var(--app-primary-weak);
-      --ant-button-default-color: var(--app-primary);
-      --ant-button-default-hover-bg: var(--app-primary-weak);
-      --ant-button-default-hover-color: var(--app-primary);
-      --ant-button-default-active-bg: var(--app-primary-weak);
-      --ant-button-default-active-color: var(--app-primary);
+    /* 改前选中格没有投影：Segmented 默认给滑块 + 选中项都带三级阴影，这里归零 */
+    .ant-segmented-thumb,
+    .ant-segmented-item-selected {
+      box-shadow: none;
     }
   }
 }
