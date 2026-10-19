@@ -10,6 +10,7 @@ import WindowHeader from "@/shared/components/WindowHeader";
 import { HELP_COPY, type GuideView } from "@/shared/novel/guide-copy";
 import { NOVEL_HELP_DOC } from "@/shared/novel/guide-doc";
 import { IS_NOVEL_EDITION } from "@/shared/edition";
+import { matchKeyEvent, useShortcutBindings } from "@/shared/shortcuts";
 // 根级样式由 main.tsx 引入（两者都引会重复插入同一份 CSS）
 import BookshelfPage from "./pages/BookshelfPage/BookshelfPage";
 import NovelPage, { type OpenWorkRequest } from "./pages/NovelPage/NovelPage";
@@ -118,16 +119,20 @@ export default function NovelWindowApp() {
     void hydrateGuide();
   }, [hydrateGuide]);
 
-  // F1 打开了帮助中心（挂在窗口层：书架页与编辑器页都要能唤出）
+  // F1 打开了帮助中心（挂在窗口层：书架页与编辑器页都要能唤出）。
+  // 键位来自共享注册表，用户在设置窗口改过之后这里即刻跟随。
+  const bindings = useShortcutBindings();
+  const helpKeys = bindings.help ?? "F1";
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "F1" || event.defaultPrevented || event.isComposing) return;
+      if (event.defaultPrevented || event.isComposing) return;
+      if (!matchKeyEvent(event, helpKeys)) return;
       event.preventDefault();
       openHelp();
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [openHelp]);
+  }, [openHelp, helpKeys]);
 
   /**
    * 引导启动收口在这一层：只有它同时知道「当前是哪个视图」。

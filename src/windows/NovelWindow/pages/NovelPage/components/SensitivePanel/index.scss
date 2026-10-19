@@ -96,7 +96,11 @@
   /* 外观交给通用 .nv-ghost（与要素详情的底部动作同一套）；等宽伸展纯属布局，
      走容器子选择器，不额外挂一个只有 flex 的类名——那样会多出一个
      「有 .ant-btn 规则但没有清零点」的类，触发 novel-ui-kit 守卫 */
-  &__actions > .ant-btn {
+  /* 「导入词库」等宽伸展；格式说明是纯图标按钮（`.nv-ghost--icon`），
+     不能被拉成一条。窄化内边距在通用原语里做（panel-primitives.scss），
+     这里只管布局，不给它单开一个 `.ant-btn` 规则 —— 那会与 `.nv-ghost`
+     同权重、胜负取决于打包顺序。 */
+  &__actions > .ant-btn:not(.nv-ghost--icon) {
     flex: 1;
     min-width: 0;
   }

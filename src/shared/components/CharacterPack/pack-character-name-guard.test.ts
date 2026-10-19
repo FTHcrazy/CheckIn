@@ -68,7 +68,11 @@ describe("主角名：以要素库实体为准", () => {
 
   it("IPC 三层齐全：handler / preload / 类型声明", () => {
     expect(HANDLERS).toMatch(/ipcMain\.handle\(\s*"novel-pack-rename"/);
-    expect(PRELOAD).toMatch(/ipcRenderer\.invoke\('novel-pack-rename'/);
+    // 1.47.0 起 preload 统一走 trackedInvoke（顺带记录失败与慢调用），
+    // 通道名不变——这里只认「通道在这层被调用过」，不锁死包装函数。
+    expect(PRELOAD).toMatch(
+      /(?:ipcRenderer\.invoke|trackedInvoke)\(\s*['"]novel-pack-rename['"]/,
+    );
     // .d.ts 里是 pack 块下的一个方法（不是点路径字面量）
     expect(ELECTRON_DTS).toMatch(/\brename: \(/);
   });

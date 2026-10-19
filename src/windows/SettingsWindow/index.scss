@@ -38,6 +38,12 @@ body {
   border: 1px solid var(--app-border);
   border-radius: var(--app-radius-panel);
   overflow: hidden;
+  /* ⚠️ 必须禁止收缩。`.settings-page` 是定高的 flex column：分区的默认
+     `flex-shrink: 1` 会在内容超高时把它们按比例压扁，而 `overflow: hidden`
+     又把 `min-height: auto` 变成了 0 —— 于是每个分区都被裁成一截（表现为
+     「设置项显示不全 / 外观区一片空白」），页面反而不滚动。
+     加了这条之后超高只由 `.settings-page` 的 overflow-y 承担。 */
+  flex: none;
 }
 
 .settings-section__title {

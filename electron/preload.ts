@@ -13,6 +13,57 @@ const listenerWrappers = new WeakMap<
   Map<string, (...args: unknown[]) => void>
 >();
 
+/**
+ * IPC 通信观测（1.47.0）。
+ *
+ * 为什么不在主进程统一 hook：`ipcMain.handle` 没有全局拦截点，逐个包一层会
+ * 散落 100+ 处；而 preload 是所有渲染层调用的唯一出口，在这里包一次就全覆盖。
+ *
+ * ⚠️ 只上报「失败」与「慢于阈值」——全量上报会让 ipc.log 一天几十万行，
+ * 真正要排查的异常反而被淹没。阈值 300ms 是按本项目的本地 SQLite 往返定的
+ * （正常调用普遍 <20ms）。
+ */
+const SLOW_IPC_MS = 300
+
+function reportIpc(payload: {
+  channel: string
+  ok: boolean
+  durationMs: number
+  detail?: unknown
+}): void {
+  try {
+    ipcRenderer.send('log-ipc', payload)
+  } catch {
+    // 日志通道自身异常不能影响业务调用
+  }
+}
+
+/** 所有 `ipcRenderer.invoke` 的统一入口：返回值原样透传，异常原样抛出 */
+function trackedInvoke(
+  channel: string,
+  ...args: unknown[]
+): Promise<unknown> {
+  const started = Date.now()
+  return (ipcRenderer.invoke(channel, ...args) as Promise<unknown>).then(
+    (value) => {
+      const durationMs = Date.now() - started
+      if (durationMs >= SLOW_IPC_MS) {
+        reportIpc({ channel, ok: true, durationMs })
+      }
+      return value
+    },
+    (error: unknown) => {
+      reportIpc({
+        channel,
+        ok: false,
+        durationMs: Date.now() - started,
+        detail: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+      })
+      throw error
+    },
+  )
+}
+
 // 通过 contextBridge 暴露安全的 API 给渲染进程
 contextBridge.exposeInMainWorld('electronAPI', {
   // 网络会话配置（一次性）：把认证 Cookie 写入 session jar，
@@ -20,54 +71,54 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 请求本身不再经由主进程转发。
   httpSession: {
     setCookie: (url: string, cookie: string) =>
-      ipcRenderer.invoke('http-session-set-cookie', { url, cookie }) as Promise<boolean>,
+      trackedInvoke('http-session-set-cookie', { url, cookie }) as Promise<boolean>,
   },
 
   // ── 活动管理（语义化 IPC） ──
   activity: {
-    list: () => ipcRenderer.invoke('activity-list'),
-    listByDate: (date: string) => ipcRenderer.invoke('activity-list-by-date', date),
-    activeDates: (start: string, end: string) => ipcRenderer.invoke('activity-active-dates', start, end),
+    list: () => trackedInvoke('activity-list'),
+    listByDate: (date: string) => trackedInvoke('activity-list-by-date', date),
+    activeDates: (start: string, end: string) => trackedInvoke('activity-active-dates', start, end),
     add: (params: { id: string; date: string; startTime: string; endTime: string; name: string; color: string }) =>
-      ipcRenderer.invoke('activity-add', params),
+      trackedInvoke('activity-add', params),
     update: (params: { id: string; updates: Partial<{ date: string; startTime: string; endTime: string; name: string; color: string }> }) =>
-      ipcRenderer.invoke('activity-update', params),
-    delete: (id: string) => ipcRenderer.invoke('activity-delete', id),
+      trackedInvoke('activity-update', params),
+    delete: (id: string) => trackedInvoke('activity-delete', id),
   },
 
   // ── Todo 管理（语义化 IPC） ──
   todo: {
-    list: () => ipcRenderer.invoke('todo-list'),
+    list: () => trackedInvoke('todo-list'),
     add: (content: string, workHour: number | null) =>
-      ipcRenderer.invoke('todo-add', { content, workHour }),
+      trackedInvoke('todo-add', { content, workHour }),
     addChild: (parentId: number, content: string, workHour: number | null) =>
-      ipcRenderer.invoke('todo-add-child', { parentId, content, workHour }),
-    delete: (id: number) => ipcRenderer.invoke('todo-delete', id),
+      trackedInvoke('todo-add-child', { parentId, content, workHour }),
+    delete: (id: number) => trackedInvoke('todo-delete', id),
     updateContent: (id: number, content: string, workHour: number | null) =>
-      ipcRenderer.invoke('todo-update-content', { id, content, workHour }),
+      trackedInvoke('todo-update-content', { id, content, workHour }),
     updateNote: (id: number, note: string | null) =>
-      ipcRenderer.invoke('todo-update-note', id, note),
-    deleteNote: (id: number) => ipcRenderer.invoke('todo-delete-note', id),
+      trackedInvoke('todo-update-note', id, note),
+    deleteNote: (id: number) => trackedInvoke('todo-delete-note', id),
     updateWorkHour: (id: number, workHour: number | null) =>
-      ipcRenderer.invoke('todo-update-work-hour', id, workHour),
-    deleteWorkHour: (id: number) => ipcRenderer.invoke('todo-delete-work-hour', id),
+      trackedInvoke('todo-update-work-hour', id, workHour),
+    deleteWorkHour: (id: number) => trackedInvoke('todo-delete-work-hour', id),
     toggleImportant: (id: number, important: number) =>
-      ipcRenderer.invoke('todo-toggle-important', id, important),
+      trackedInvoke('todo-toggle-important', id, important),
     toggle: (id: number, checked: boolean) =>
-      ipcRenderer.invoke('todo-toggle', id, checked),
+      trackedInvoke('todo-toggle', id, checked),
     toggleChild: (id: number, checked: boolean) =>
-      ipcRenderer.invoke('todo-toggle-child', id, checked),
+      trackedInvoke('todo-toggle-child', id, checked),
     toggleParent: (id: number, checked: boolean) =>
-      ipcRenderer.invoke('todo-toggle-parent', id, checked),
+      trackedInvoke('todo-toggle-parent', id, checked),
     // ── 备份包（zip：manifest + todos.json，追加合并导入） ──
     exportBackup: () =>
-      ipcRenderer.invoke('todo-backup-export') as Promise<{
+      trackedInvoke('todo-backup-export') as Promise<{
         canceled: boolean
         filePath: string | null
         count: number
       }>,
     importBackup: () =>
-      ipcRenderer.invoke('todo-backup-import') as Promise<{
+      trackedInvoke('todo-backup-import') as Promise<{
         canceled: boolean
         count: number
         skipped: string[]
@@ -76,184 +127,184 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // ── 用户管理 ──
   user: {
-    get: () => ipcRenderer.invoke('user-get'),
-    login: (email: string) => ipcRenderer.invoke('user-login', email),
-    update: (email: string) => ipcRenderer.invoke('user-update', email),
+    get: () => trackedInvoke('user-get'),
+    login: (email: string) => trackedInvoke('user-login', email),
+    update: (email: string) => trackedInvoke('user-update', email),
   },
 
   // ── 小说编辑器（语义化 IPC，数据存 userDb 的 novel_* 表） ──
   novel: {
     // includeContent=false：只要章节元数据，不拉正文（书架用，见 novel-handlers）
     editorLoad: (includeContent?: boolean) =>
-      ipcRenderer.invoke('novel-editor-load', includeContent),
+      trackedInvoke('novel-editor-load', includeContent),
     /** 开启编辑器会话（崩溃恢复标记的唯一写入口；只有真正进入编辑器才调） */
-    sessionOpen: () => ipcRenderer.invoke('novel-session-open') as Promise<boolean>,
+    sessionOpen: () => trackedInvoke('novel-session-open') as Promise<boolean>,
     configGet: (key: string) =>
-      ipcRenderer.invoke('novel-config-get', key) as Promise<string | null>,
+      trackedInvoke('novel-config-get', key) as Promise<string | null>,
     configSet: (key: string, value: string) =>
-      ipcRenderer.invoke('novel-config-set', key, value) as Promise<boolean>,
+      trackedInvoke('novel-config-set', key, value) as Promise<boolean>,
     addWork: (work: unknown) =>
-      ipcRenderer.invoke('novel-work-add', work) as Promise<boolean>,
+      trackedInvoke('novel-work-add', work) as Promise<boolean>,
     renameWork: (id: string, name: string) =>
-      ipcRenderer.invoke('novel-work-rename', id, name) as Promise<boolean>,
+      trackedInvoke('novel-work-rename', id, name) as Promise<boolean>,
     deleteWork: (id: string) =>
-      ipcRenderer.invoke('novel-work-delete', id) as Promise<boolean>,
+      trackedInvoke('novel-work-delete', id) as Promise<boolean>,
     // 一键重置为模板书籍（调试）：清空全部 novel_* 表并重新播种模板数据
     resetTemplate: () =>
-      ipcRenderer.invoke('novel-editor-reset-template') as Promise<{ volumes: number; chapters: number; words: number; entities: number }>,
+      trackedInvoke('novel-editor-reset-template') as Promise<{ volumes: number; chapters: number; words: number; entities: number }>,
     saveChapter: (id: string, content: string, wordCount: number) =>
-      ipcRenderer.invoke('novel-chapter-save', id, content, wordCount) as Promise<boolean>,
+      trackedInvoke('novel-chapter-save', id, content, wordCount) as Promise<boolean>,
     listSnapshots: (chapterId: string) =>
-      ipcRenderer.invoke('novel-snapshot-list', chapterId),
+      trackedInvoke('novel-snapshot-list', chapterId),
     addChapter: (chapter: unknown) =>
-      ipcRenderer.invoke('novel-chapter-add', chapter) as Promise<boolean>,
+      trackedInvoke('novel-chapter-add', chapter) as Promise<boolean>,
     renameChapter: (id: string, title: string) =>
-      ipcRenderer.invoke('novel-chapter-rename', id, title) as Promise<boolean>,
+      trackedInvoke('novel-chapter-rename', id, title) as Promise<boolean>,
     deleteChapter: (id: string) =>
-      ipcRenderer.invoke('novel-chapter-delete', id) as Promise<boolean>,
+      trackedInvoke('novel-chapter-delete', id) as Promise<boolean>,
     setChapterStatus: (id: string, status: string) =>
-      ipcRenderer.invoke('novel-chapter-status', id, status) as Promise<boolean>,
+      trackedInvoke('novel-chapter-status', id, status) as Promise<boolean>,
     saveChapterOutline: (id: string, note: string) =>
-      ipcRenderer.invoke('novel-chapter-outline', id, note) as Promise<boolean>,
+      trackedInvoke('novel-chapter-outline', id, note) as Promise<boolean>,
     saveChapterOrder: (updates: Array<{ id: string; sort: number; volumeId: string }>) =>
-      ipcRenderer.invoke('novel-chapter-order', updates) as Promise<boolean>,
+      trackedInvoke('novel-chapter-order', updates) as Promise<boolean>,
     addVolume: (volume: unknown) =>
-      ipcRenderer.invoke('novel-volume-add', volume) as Promise<boolean>,
+      trackedInvoke('novel-volume-add', volume) as Promise<boolean>,
     renameVolume: (id: string, name: string) =>
-      ipcRenderer.invoke('novel-volume-rename', id, name) as Promise<boolean>,
+      trackedInvoke('novel-volume-rename', id, name) as Promise<boolean>,
     saveVolumeOrder: (updates: Array<{ id: string; sort: number }>) =>
-      ipcRenderer.invoke('novel-volume-order', updates) as Promise<boolean>,
+      trackedInvoke('novel-volume-order', updates) as Promise<boolean>,
     deleteVolume: (id: string) =>
-      ipcRenderer.invoke('novel-volume-delete', id) as Promise<boolean>,
+      trackedInvoke('novel-volume-delete', id) as Promise<boolean>,
     saveEntity: (entity: unknown) =>
-      ipcRenderer.invoke('novel-entity-save', entity) as Promise<boolean>,
-    addLink: (link: unknown) => ipcRenderer.invoke('novel-link-add', link) as Promise<boolean>,
-    removeLink: (id: string) => ipcRenderer.invoke('novel-link-remove', id) as Promise<boolean>,
-    saveNote: (note: unknown) => ipcRenderer.invoke('novel-note-save', note) as Promise<boolean>,
-    removeNote: (id: string) => ipcRenderer.invoke('novel-note-remove', id) as Promise<boolean>,
+      trackedInvoke('novel-entity-save', entity) as Promise<boolean>,
+    addLink: (link: unknown) => trackedInvoke('novel-link-add', link) as Promise<boolean>,
+    removeLink: (id: string) => trackedInvoke('novel-link-remove', id) as Promise<boolean>,
+    saveNote: (note: unknown) => trackedInvoke('novel-note-save', note) as Promise<boolean>,
+    removeNote: (id: string) => trackedInvoke('novel-note-remove', id) as Promise<boolean>,
     // 灵感归属迁移（书架全局灵感库）：归档到作品；workId 传 '' 退回未归属池
     moveNote: (id: string, workId: string) =>
-      ipcRenderer.invoke('novel-note-move', id, workId) as Promise<boolean>,
+      trackedInvoke('novel-note-move', id, workId) as Promise<boolean>,
     saveOutlineEntry: (entry: unknown) =>
-      ipcRenderer.invoke('novel-outline-entry-save', entry) as Promise<boolean>,
+      trackedInvoke('novel-outline-entry-save', entry) as Promise<boolean>,
     removeOutlineEntry: (id: string) =>
-      ipcRenderer.invoke('novel-outline-entry-remove', id) as Promise<boolean>,
+      trackedInvoke('novel-outline-entry-remove', id) as Promise<boolean>,
     // ── 小说设定（1.36.0：取代原等级体系管理） ──
     settingCategoryAdd: (workId: string, id: string, name: string, kind: 'realm' | 'custom', color?: string) =>
-      ipcRenderer.invoke('novel-setting-category-add', workId, id, name, kind, color) as Promise<{ id: string; kind: 'realm' | 'custom' } | null>,
+      trackedInvoke('novel-setting-category-add', workId, id, name, kind, color) as Promise<{ id: string; kind: 'realm' | 'custom' } | null>,
     settingCategoryUpdate: (id: string, patch: unknown) =>
-      ipcRenderer.invoke('novel-setting-category-update', id, patch) as Promise<boolean>,
+      trackedInvoke('novel-setting-category-update', id, patch) as Promise<boolean>,
     settingCategoryDelete: (id: string) =>
-      ipcRenderer.invoke('novel-setting-category-delete', id) as Promise<boolean>,
+      trackedInvoke('novel-setting-category-delete', id) as Promise<boolean>,
     settingCategoryOrder: (updates: Array<{ id: string; sortOrder: number }>) =>
-      ipcRenderer.invoke('novel-setting-category-order', updates) as Promise<boolean>,
+      trackedInvoke('novel-setting-category-order', updates) as Promise<boolean>,
     /** index 为插入位置（0-based），-1 表示追加到末尾 */
     settingLevelAdd: (categoryId: string, id: string, name: string, index: number) =>
-      ipcRenderer.invoke('novel-setting-level-add', categoryId, id, name, index) as Promise<{ id: string; rank: number } | null>,
+      trackedInvoke('novel-setting-level-add', categoryId, id, name, index) as Promise<{ id: string; rank: number } | null>,
     /** 批量新增等级项：全部追加到末尾，返回实际插入条数（1.37.0） */
     settingLevelBatchAdd: (categoryId: string, items: Array<{ id: string; name: string; subLevels?: number; subPattern?: string }>) =>
-      ipcRenderer.invoke('novel-setting-level-batch-add', categoryId, items) as Promise<number>,
+      trackedInvoke('novel-setting-level-batch-add', categoryId, items) as Promise<number>,
     settingLevelUpdate: (id: string, patch: unknown) =>
-      ipcRenderer.invoke('novel-setting-level-update', id, patch) as Promise<boolean>,
+      trackedInvoke('novel-setting-level-update', id, patch) as Promise<boolean>,
     settingLevelDelete: (id: string) =>
-      ipcRenderer.invoke('novel-setting-level-delete', id) as Promise<boolean>,
+      trackedInvoke('novel-setting-level-delete', id) as Promise<boolean>,
     settingLevelOrder: (updates: Array<{ id: string; rank: number }>) =>
-      ipcRenderer.invoke('novel-setting-level-order', updates) as Promise<boolean>,
+      trackedInvoke('novel-setting-level-order', updates) as Promise<boolean>,
     settingLevelSplit: (levelId: string, segments: Array<{ name: string; from: number; to: number }>) =>
-      ipcRenderer.invoke('novel-setting-level-split', levelId, segments) as Promise<boolean>,
+      trackedInvoke('novel-setting-level-split', levelId, segments) as Promise<boolean>,
     settingLevelMerge: (levelId: string) =>
-      ipcRenderer.invoke('novel-setting-level-merge', levelId) as Promise<boolean>,
+      trackedInvoke('novel-setting-level-merge', levelId) as Promise<boolean>,
     settingExport: (workId: string) =>
-      ipcRenderer.invoke('novel-setting-export', workId) as Promise<{ version: number; exportedAt: string; categories: unknown[] }>,
+      trackedInvoke('novel-setting-export', workId) as Promise<{ version: number; exportedAt: string; categories: unknown[] }>,
     settingImport: (workId: string, payload: unknown, mode: 'merge' | 'replace') =>
-      ipcRenderer.invoke('novel-setting-import', workId, payload, mode) as Promise<{ imported: number; skipped: number }>,
+      trackedInvoke('novel-setting-import', workId, payload, mode) as Promise<{ imported: number; skipped: number }>,
     settingTemplateList: () =>
-      ipcRenderer.invoke('novel-setting-template-list') as Promise<Array<{ id: string; name: string; createdAt: number; categories: unknown[] }>>,
+      trackedInvoke('novel-setting-template-list') as Promise<Array<{ id: string; name: string; createdAt: number; categories: unknown[] }>>,
     settingTemplateSave: (id: string, name: string, workId: string, categoryIds: string[]) =>
-      ipcRenderer.invoke('novel-setting-template-save', id, name, workId, categoryIds) as Promise<boolean>,
+      trackedInvoke('novel-setting-template-save', id, name, workId, categoryIds) as Promise<boolean>,
     settingTemplateApply: (templateId: string, workId: string) =>
-      ipcRenderer.invoke('novel-setting-template-apply', templateId, workId) as Promise<number>,
+      trackedInvoke('novel-setting-template-apply', templateId, workId) as Promise<number>,
     settingTemplateDelete: (id: string) =>
-      ipcRenderer.invoke('novel-setting-template-delete', id) as Promise<boolean>,
+      trackedInvoke('novel-setting-template-delete', id) as Promise<boolean>,
     // ── 全局设定中心（1.4x，独立窗口）：全局库 CRUD + 导出 ──
     globalSettingLoad: () =>
-      ipcRenderer.invoke('novel-global-setting-load') as Promise<{ categories: unknown[] }>,
+      trackedInvoke('novel-global-setting-load') as Promise<{ categories: unknown[] }>,
     globalCategoryAdd: (id: string, name: string, kind: 'realm' | 'custom', color?: string) =>
-      ipcRenderer.invoke('novel-global-setting-category-add', id, name, kind, color) as Promise<{ id: string; kind: 'realm' | 'custom' } | null>,
+      trackedInvoke('novel-global-setting-category-add', id, name, kind, color) as Promise<{ id: string; kind: 'realm' | 'custom' } | null>,
     globalCategoryUpdate: (id: string, patch: unknown) =>
-      ipcRenderer.invoke('novel-global-setting-category-update', id, patch) as Promise<boolean>,
+      trackedInvoke('novel-global-setting-category-update', id, patch) as Promise<boolean>,
     /** confirm 缺省 / 非 true 时只回传 refCount 供二次确认，不删除（D4） */
     globalCategoryDelete: (id: string, confirm?: boolean) =>
-      ipcRenderer.invoke('novel-global-setting-category-delete', id, confirm) as Promise<{ ok: boolean; refCount: number }>,
+      trackedInvoke('novel-global-setting-category-delete', id, confirm) as Promise<{ ok: boolean; refCount: number }>,
     globalCategoryOrder: (updates: Array<{ id: string; sortOrder: number }>) =>
-      ipcRenderer.invoke('novel-global-setting-category-order', updates) as Promise<boolean>,
+      trackedInvoke('novel-global-setting-category-order', updates) as Promise<boolean>,
     globalLevelAdd: (categoryId: string, id: string, name: string, index: number) =>
-      ipcRenderer.invoke('novel-global-setting-level-add', categoryId, id, name, index) as Promise<{ id: string; rank: number } | null>,
+      trackedInvoke('novel-global-setting-level-add', categoryId, id, name, index) as Promise<{ id: string; rank: number } | null>,
     globalLevelBatchAdd: (categoryId: string, items: Array<{ id: string; name: string; subLevels?: number; subPattern?: string }>) =>
-      ipcRenderer.invoke('novel-global-setting-level-batch-add', categoryId, items) as Promise<number>,
+      trackedInvoke('novel-global-setting-level-batch-add', categoryId, items) as Promise<number>,
     globalLevelUpdate: (id: string, patch: unknown) =>
-      ipcRenderer.invoke('novel-global-setting-level-update', id, patch) as Promise<boolean>,
+      trackedInvoke('novel-global-setting-level-update', id, patch) as Promise<boolean>,
     globalLevelDelete: (id: string) =>
-      ipcRenderer.invoke('novel-global-setting-level-delete', id) as Promise<boolean>,
+      trackedInvoke('novel-global-setting-level-delete', id) as Promise<boolean>,
     globalLevelOrder: (updates: Array<{ id: string; rank: number }>) =>
-      ipcRenderer.invoke('novel-global-setting-level-order', updates) as Promise<boolean>,
+      trackedInvoke('novel-global-setting-level-order', updates) as Promise<boolean>,
     globalLevelSplit: (levelId: string, segments: Array<{ name: string; from: number; to: number }>) =>
-      ipcRenderer.invoke('novel-global-setting-level-split', levelId, segments) as Promise<boolean>,
+      trackedInvoke('novel-global-setting-level-split', levelId, segments) as Promise<boolean>,
     globalLevelMerge: (levelId: string) =>
-      ipcRenderer.invoke('novel-global-setting-level-merge', levelId) as Promise<boolean>,
+      trackedInvoke('novel-global-setting-level-merge', levelId) as Promise<boolean>,
     globalSettingExport: () =>
-      ipcRenderer.invoke('novel-global-setting-export') as Promise<{ version: number; exportedAt: string; categories: unknown[] }>,
+      trackedInvoke('novel-global-setting-export') as Promise<{ version: number; exportedAt: string; categories: unknown[] }>,
     /** 引用方名单（R12）：某全局分类被哪几部书引用；只读，不写库 */
     globalCategoryRefs: (categoryId: string) =>
-      ipcRenderer.invoke('novel-global-setting-refs', categoryId) as Promise<Array<{ workId: string; workName: string }>>,
+      trackedInvoke('novel-global-setting-refs', categoryId) as Promise<Array<{ workId: string; workName: string }>>,
     // ── 全局设定中心：本书「引用 / 上架」（写目标含本书侧镜像行，落在本书域通道） ──
     referenceGlobal: (workId: string, globalCategoryId: string) =>
-      ipcRenderer.invoke('novel-setting-reference-global', workId, globalCategoryId) as Promise<boolean>,
+      trackedInvoke('novel-setting-reference-global', workId, globalCategoryId) as Promise<boolean>,
     publishGlobal: (workId: string, categoryId: string, conflict: 'duplicate' | 'cancel') =>
-      ipcRenderer.invoke('novel-setting-publish-global', workId, categoryId, conflict) as Promise<{ ok: boolean; globalCategoryId?: string; conflict?: boolean }>,
+      trackedInvoke('novel-setting-publish-global', workId, categoryId, conflict) as Promise<{ ok: boolean; globalCategoryId?: string; conflict?: boolean }>,
     // ── 书籍导入（TXT）：主进程只负责选文件 + 读字节 / 批量落库 ──
     /** 弹文件选择框并读回字节；取消返回 null */
     importPickFile: () =>
-      ipcRenderer.invoke('novel-import-pick-file') as Promise<
+      trackedInvoke('novel-import-pick-file') as Promise<
         { fileName: string; bytes: ArrayBuffer; size: number } | null
       >,
     /** 解析结果单事务落库（作品 + 卷 + 章） */
     importBook: (payload: unknown) =>
-      ipcRenderer.invoke('novel-import-book', payload) as Promise<
+      trackedInvoke('novel-import-book', payload) as Promise<
         { ok: boolean; chapterCount: number; wordCount: number } | { ok: false; error: string }
       >,
     // ── 导出（R13）与埋点（R14） ──
     /** 通用文本导出：主进程弹保存框 + 写盘；取消返回 null */
     exportFile: (defaultName: string, content: string, ext?: string, filterName?: string) =>
-      ipcRenderer.invoke('novel-export-file', defaultName, content, ext, filterName) as Promise<{ path: string } | null>,
+      trackedInvoke('novel-export-file', defaultName, content, ext, filterName) as Promise<{ path: string } | null>,
     usageToday: () =>
-      ipcRenderer.invoke('novel-usage-today') as Promise<{ todayWords: number; saveCount: number; streakDays: number }>,
+      trackedInvoke('novel-usage-today') as Promise<{ todayWords: number; saveCount: number; streakDays: number }>,
     usageLog: (event: string, payload: Record<string, unknown>) =>
-      ipcRenderer.invoke('novel-usage-log', event, payload) as Promise<boolean>,
+      trackedInvoke('novel-usage-log', event, payload) as Promise<boolean>,
     // ── 行囊 CharacterPack（PRD v1.5，文档已归档） ──
     pack: {
-      load: (workId: string) => ipcRenderer.invoke('novel-pack-load', workId),
+      load: (workId: string) => trackedInvoke('novel-pack-load', workId),
       /** 整文档事务保存：写前先落回退点，成功后清空草稿；返回 false 表示已整体回滚 */
       save: (payload: unknown) =>
-        ipcRenderer.invoke('novel-pack-save', payload) as Promise<boolean>,
+        trackedInvoke('novel-pack-save', payload) as Promise<boolean>,
       draftSet: (characterId: string, payload: string, dirtyCount: number) =>
-        ipcRenderer.invoke('novel-pack-draft-set', characterId, payload, dirtyCount) as Promise<boolean>,
+        trackedInvoke('novel-pack-draft-set', characterId, payload, dirtyCount) as Promise<boolean>,
       draftClear: (characterId: string) =>
-        ipcRenderer.invoke('novel-pack-draft-clear', characterId) as Promise<boolean>,
+        trackedInvoke('novel-pack-draft-clear', characterId) as Promise<boolean>,
       recordList: (characterId: string, limit?: number) =>
-        ipcRenderer.invoke('novel-pack-record-list', characterId, limit),
+        trackedInvoke('novel-pack-record-list', characterId, limit),
       /** 境界幂等写入（同一来源+关系只保留一行） */
       linkSet: (link: unknown) =>
-        ipcRenderer.invoke('novel-link-set', link) as Promise<boolean>,
+        trackedInvoke('novel-link-set', link) as Promise<boolean>,
       /** 主角绑定读数：null 表示该作品还没建过行囊角色（右侧要素栏就不显示主角角标） */
       protagonistGet: (workId: string) =>
-        ipcRenderer.invoke('novel-pack-protagonist-get', workId),
+        trackedInvoke('novel-pack-protagonist-get', workId),
       /** 设为主角 / 解除主角：entityId 传空串即解绑（同一格，换一个就换主角） */
       protagonistSet: (workId: string, entityId: string) =>
-        ipcRenderer.invoke('novel-pack-protagonist-set', workId, entityId) as Promise<boolean>,
+        trackedInvoke('novel-pack-protagonist-set', workId, entityId) as Promise<boolean>,
       /** 改主角名：绑定了实体就改实体名（名字的单一事实源在要素库） */
       rename: (workId: string, name: string) =>
-        ipcRenderer.invoke('novel-pack-rename', workId, name) as Promise<{
+        trackedInvoke('novel-pack-rename', workId, name) as Promise<{
           ok: boolean
           displayName: string
           target: 'entity' | 'character'
@@ -264,7 +315,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
        * 的场景，主进程会按「有草稿并入草稿、没有才直插正式表」落库。
        */
       quickAdd: (workId: string, name: string, chapterId: string, category: string) =>
-        ipcRenderer.invoke('novel-pack-quick-add', workId, name, chapterId, category) as Promise<
+        trackedInvoke('novel-pack-quick-add', workId, name, chapterId, category) as Promise<
           { id: string; characterId: string } | null
         >,
     },
@@ -273,18 +324,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ── 记账（语义化 IPC，数据存 userDb 的 ledger_* 表） ──
   ledger: {
     listTransactions: (range?: { start?: string; end?: string }) =>
-      ipcRenderer.invoke('ledger-transaction-list', range),
+      trackedInvoke('ledger-transaction-list', range),
     addTransaction: (tx: unknown) =>
-      ipcRenderer.invoke('ledger-transaction-add', tx),
+      trackedInvoke('ledger-transaction-add', tx),
     updateTransaction: (id: string, updates: Record<string, unknown>) =>
-      ipcRenderer.invoke('ledger-transaction-update', id, updates) as Promise<boolean>,
+      trackedInvoke('ledger-transaction-update', id, updates) as Promise<boolean>,
     deleteTransaction: (id: string) =>
-      ipcRenderer.invoke('ledger-transaction-delete', id) as Promise<boolean>,
-    listCategories: () => ipcRenderer.invoke('ledger-category-list'),
+      trackedInvoke('ledger-transaction-delete', id) as Promise<boolean>,
+    listCategories: () => trackedInvoke('ledger-category-list'),
     upsertCategory: (category: unknown) =>
-      ipcRenderer.invoke('ledger-category-upsert', category) as Promise<boolean>,
+      trackedInvoke('ledger-category-upsert', category) as Promise<boolean>,
     deleteCategory: (id: string, fallbackId: string) =>
-      ipcRenderer.invoke('ledger-category-delete', id, fallbackId) as Promise<boolean>,
+      trackedInvoke('ledger-category-delete', id, fallbackId) as Promise<boolean>,
   },
 
   send: (channel: string, data: unknown) => {
@@ -304,6 +355,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       // WindowHeader 窗口控制（最小化/最大化/关闭）与最大化状态查询
       'window-control',
       'window-maximize-query',
+      // 本地日志：IPC 失败 / 慢调用的观测上报（fire-and-forget）
+      'log-ipc',
     ]
     if (validChannels.includes(channel)) {
       ipcRenderer.send(channel, data)
@@ -330,9 +383,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ── 跨窗口通信 ──
   windowAPI: {
     broadcast: (event: string, data?: unknown) =>
-      ipcRenderer.invoke('window-broadcast', event, data),
+      trackedInvoke('window-broadcast', event, data),
     sendTo: (target: string, event: string, data?: unknown) =>
-      ipcRenderer.invoke('window-send-to', target, event, data),
+      trackedInvoke('window-send-to', target, event, data),
     on: (event: string, handler: (...args: unknown[]) => void) => {
       const wrapper = (_event: unknown, ...args: unknown[]) => handler(...args)
       let byChannel = listenerWrappers.get(handler)
@@ -369,24 +422,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // ── 备忘文件操作 ──
   memo: {
-    list: () => ipcRenderer.invoke('memo-list') as Promise<{ name: string; updatedAt: string }[]>,
-    read: (filename: string) => ipcRenderer.invoke('memo-read', filename) as Promise<string>,
-    write: (filename: string, content: string) => ipcRenderer.invoke('memo-write', filename, content) as Promise<boolean>,
-    rename: (oldFilename: string, newFilename: string) => ipcRenderer.invoke('memo-rename', oldFilename, newFilename) as Promise<boolean>,
-    delete: (filename: string) => ipcRenderer.invoke('memo-delete', filename) as Promise<boolean>,
-    openInExplorer: (filename: string) => ipcRenderer.invoke('memo-open-in-explorer', filename) as Promise<boolean>,
-    import: () => ipcRenderer.invoke('memo-import') as Promise<string[]>,
+    list: () => trackedInvoke('memo-list') as Promise<{ name: string; updatedAt: string }[]>,
+    read: (filename: string) => trackedInvoke('memo-read', filename) as Promise<string>,
+    write: (filename: string, content: string) => trackedInvoke('memo-write', filename, content) as Promise<boolean>,
+    rename: (oldFilename: string, newFilename: string) => trackedInvoke('memo-rename', oldFilename, newFilename) as Promise<boolean>,
+    delete: (filename: string) => trackedInvoke('memo-delete', filename) as Promise<boolean>,
+    openInExplorer: (filename: string) => trackedInvoke('memo-open-in-explorer', filename) as Promise<boolean>,
+    import: () => trackedInvoke('memo-import') as Promise<string[]>,
     exportFile: (filename: string, format: 'txt' | 'docx') =>
-      ipcRenderer.invoke('memo-export', filename, format) as Promise<boolean>,
+      trackedInvoke('memo-export', filename, format) as Promise<boolean>,
     // ── 备份包（zip：manifest + memos/*.md，追加合并导入、重名自动改写） ──
     exportBackup: () =>
-      ipcRenderer.invoke('memo-backup-export') as Promise<{
+      trackedInvoke('memo-backup-export') as Promise<{
         canceled: boolean
         filePath: string | null
         count: number
       }>,
     importBackup: () =>
-      ipcRenderer.invoke('memo-backup-import') as Promise<{
+      trackedInvoke('memo-backup-import') as Promise<{
         canceled: boolean
         count: number
         skipped: string[]
@@ -394,19 +447,66 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   findInPage: (value?: string) =>
-    ipcRenderer.invoke('find-in-page', value) as Promise<boolean>,
+    trackedInvoke('find-in-page', value) as Promise<boolean>,
 
   // ── 打卡（语义化 IPC，数据存 userDb 的 checkins 表） ──
   checkin: {
     status: () =>
-      ipcRenderer.invoke('checkin-status') as Promise<{
+      trackedInvoke('checkin-status') as Promise<{
         date: string
         checkedIn: boolean
         resetAt: string
       }>,
     today: () =>
-      ipcRenderer.invoke('checkin-today') as Promise<{ date: string; created: boolean }>,
+      trackedInvoke('checkin-today') as Promise<{ date: string; created: boolean }>,
     dates: (start: string, end: string) =>
-      ipcRenderer.invoke('checkin-dates', start, end) as Promise<string[]>,
+      trackedInvoke('checkin-dates', start, end) as Promise<string[]>,
+  },
+
+  // ── 本地日志（渲染层 → 主进程落盘） ──
+  // 目录形如 {userData}/user-data/{email-hash}/logs/{窗口名}/YYYY-MM-DD.log，
+  // 未登录写 logs/_anonymous/。窗口名由主进程反查，渲染层不必自报。
+  log: {
+    write: (entry: {
+      level: 'debug' | 'info' | 'warn' | 'error'
+      module: string
+      message: string
+      meta?: unknown
+    }) => ipcRenderer.invoke('log-write', entry) as Promise<boolean>,
+    getConfig: () =>
+      ipcRenderer.invoke('log-config-get') as Promise<{
+        level: 'debug' | 'info' | 'warn' | 'error'
+        ipc: boolean
+        retentionDays: number
+      }>,
+    setConfig: (patch: {
+      level?: 'debug' | 'info' | 'warn' | 'error'
+      ipc?: boolean
+      retentionDays?: number
+    }) =>
+      ipcRenderer.invoke('log-config-set', patch) as Promise<{
+        level: 'debug' | 'info' | 'warn' | 'error'
+        ipc: boolean
+        retentionDays: number
+      }>,
+    openDir: (windowName?: string) =>
+      ipcRenderer.invoke('log-open-dir', windowName) as Promise<boolean>,
+    switchUser: (reason: string) =>
+      ipcRenderer.invoke('log-switch-user', reason) as Promise<string>,
+  },
+
+  // ── 快捷键（1.47.0：统一在设置窗口管理，应用级键由主进程注册） ──
+  shortcut: {
+    get: () =>
+      trackedInvoke('shortcut-config-get') as Promise<{
+        bindings: Record<string, string>
+        globals: string[]
+      }>,
+    set: (config: { bindings: Record<string, string>; globals: string[] }) =>
+      trackedInvoke('shortcut-config-set', config) as Promise<{
+        config: { bindings: Record<string, string>; globals: string[] }
+        /** 注册失败（被系统或其他应用占用）的应用级快捷键 id */
+        globalFailures: string[]
+      }>,
   },
 })

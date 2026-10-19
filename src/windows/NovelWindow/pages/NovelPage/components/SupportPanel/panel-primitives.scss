@@ -343,6 +343,16 @@
     align-items: center;
     justify-content: center;
 
+    /* 纯图标用法（旁边还有主按钮时）：收窄内边距 → 30×30 的方形，
+       既不抢主按钮的宽度，也不至于缩成一颗裸图标。
+       ⚠️ 修饰符必须嵌套在这里、与其它控件变量同一个选择器：搬到别处
+       （如子面板的 `.xxx.ant-btn`）会与这条规则权重相同，胜负取决于
+       打包顺序，表现是「有时生效有时不生效」。 */
+    &.nv-ghost--icon {
+      --ant-button-padding-inline: 8px;
+      --ant-button-icon-gap: 0px;
+    }
+
     /* 开态（标注高亮已开）：永久高亮 → 默认 / hover / active 同一套值 */
     &.is-on {
       --ant-button-default-bg: var(--app-primary-weak);

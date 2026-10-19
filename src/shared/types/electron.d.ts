@@ -985,6 +985,51 @@ export interface ElectronAPI {
     /** 区间内已打卡的业务日列表（闭区间，YYYY-MM-DD 升序） */
     dates: (start: string, end: string) => Promise<string[]>
   }
+
+  // ── 本地日志（渲染层上报 → 主进程按「用户 × 窗口」落盘） ──
+  log: {
+    /** 写一条日志；窗口名由主进程从 webContents 反查，渲染层不传 */
+    write: (entry: {
+      level: "debug" | "info" | "warn" | "error"
+      module: string
+      message: string
+      meta?: unknown
+    }) => Promise<boolean>
+    getConfig: () => Promise<LogSettingsDTO>
+    setConfig: (patch: Partial<LogSettingsDTO>) => Promise<LogSettingsDTO>
+    /** 用系统文件管理器打开日志目录（传窗口名则打开该窗口的子目录） */
+    openDir: (windowName?: string) => Promise<boolean>
+    /** 身份变化后重算目录（登录 / 改邮箱 / 登出），返回新的根目录 */
+    switchUser: (reason: string) => Promise<string>
+  }
+
+  // ── 快捷键（配置存 userDb config 表；应用级键由主进程 globalShortcut 注册） ──
+  shortcut: {
+    get: () => Promise<ShortcutConfigDTO>
+    set: (config: ShortcutConfigDTO) => Promise<{
+      config: ShortcutConfigDTO
+      /** 注册失败（被系统或其他应用占用）的应用级快捷键 id */
+      globalFailures: string[]
+    }>
+  }
+}
+
+/** 快捷键持久化载荷（键 novel_shortcuts） */
+export interface ShortcutConfigDTO {
+  /** 快捷键 id → 平台中立键位（`Mod+Shift+B`） */
+  bindings: Record<string, string>
+  /** 已启用「应用外也生效」的 id 列表 */
+  globals: string[]
+}
+
+/** 日志配置（存 userDb 的 config 表，键 log_settings） */
+export interface LogSettingsDTO {
+  /** 主日志文件的最低级别；ipc.log 不受它限制 */
+  level: "debug" | "info" | "warn" | "error"
+  /** 是否记录 IPC 失败 / 慢调用 */
+  ipc: boolean
+  /** 日志保留天数（1–90） */
+  retentionDays: number
 }
 
 declare global {

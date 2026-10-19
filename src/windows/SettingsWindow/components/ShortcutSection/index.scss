@@ -1,0 +1,105 @@
+@use "../../../../shared/styles/widget" as widget;
+
+/* 快捷键分区：沿用 .settings-item 的行框架，只补三列布局与说明文案 */
+
+.settings-shortcut__lead {
+  margin: 0;
+  padding: 10px 16px 2px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--app-text-secondary);
+
+  kbd {
+    display: inline-block;
+    margin: 0 2px;
+    padding: 0 5px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-chip);
+    background: var(--app-surface-alt);
+    color: var(--app-text);
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 11px;
+    line-height: 18px;
+  }
+}
+
+.settings-shortcut__group {
+  border-top: 1px solid var(--app-border);
+}
+
+.settings-shortcut__group-title {
+  margin: 0;
+  padding: 8px 16px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--app-text-muted);
+  background: var(--app-surface-alt);
+}
+
+.settings-shortcut__row {
+  /* 键位与开关同一行的右侧组合，窄窗时整体换行而不是压扁键位 */
+  flex-wrap: wrap;
+}
+
+.settings-shortcut__controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.settings-shortcut__global {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--app-text-secondary);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.settings-shortcut__tag.ant-tag {
+  margin-inline-start: 6px;
+  margin-inline-end: 0;
+  padding-inline: 6px;
+  border: none;
+  border-radius: var(--app-radius-chip);
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--app-text-secondary);
+  background: var(--app-surface-alt);
+}
+
+.settings-shortcut__footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  border-top: 1px solid var(--app-border);
+}
+
+/* 恢复默认：次级描边按钮（清零后补齐高度 / 内边距 / 描边） */
+.settings-shortcut__reset.ant-btn {
+  @include widget.ant-button-reset;
+  --ant-control-height: 30px;
+  --ant-button-padding-inline: 14px;
+  --ant-button-content-font-size: 13px;
+  --ant-button-font-weight: 500;
+  --ant-border-radius: var(--app-radius-item);
+  --ant-line-width: 1px;
+  --ant-button-default-bg: transparent;
+  --ant-button-default-color: var(--app-text-secondary);
+  --ant-button-default-border-color: var(--app-border);
+  --ant-button-default-hover-bg: var(--app-surface-hover);
+  --ant-button-default-hover-color: var(--app-primary);
+  --ant-button-default-hover-border-color: var(--app-primary);
+  --ant-button-default-active-bg: var(--app-surface-active);
+  --ant-button-default-active-color: var(--app-primary);
+  --ant-button-default-active-border-color: var(--app-primary);
+  --ant-button-default-shadow: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}

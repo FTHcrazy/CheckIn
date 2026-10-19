@@ -25,25 +25,45 @@ const buildProps = (over: Partial<Parameters<typeof SettingsDrawer>[0]> = {}) =>
 /** 记录 type==="mousedown" 的监听器引用计数（只看我们自己关心的那类） */
 function trackMouseDownListeners() {
   const active = new Map<EventListenerOrEventListenerObject, number>();
-  const addOrig = document.addEventListener.bind(document);
-  const removeOrig = document.removeEventListener.bind(document);
+  // 原始方法签名是重载的（keyof DocumentEventMap），这里统一按宽松签名接住，
+  // 才能原样转发 spy 收到的任意 type / listener
+  type RawAdd = (
+    type: string,
+    listener: EventListenerOrEventListenerObject,
+    opts?: boolean | AddEventListenerOptions,
+  ) => void;
+  type RawRemove = (
+    type: string,
+    listener: EventListenerOrEventListenerObject,
+    opts?: boolean | EventListenerOptions,
+  ) => void;
+  const addOrig = document.addEventListener.bind(document) as RawAdd;
+  const removeOrig = document.removeEventListener.bind(document) as RawRemove;
   const addSpy = vi
     .spyOn(document, "addEventListener")
-    .mockImplementation(((type: string, listener: any, opts: any) => {
+    .mockImplementation(((
+      type: string,
+      listener: EventListenerOrEventListenerObject,
+      opts?: boolean | AddEventListenerOptions,
+    ) => {
       if (type === "mousedown") {
         active.set(listener, (active.get(listener) ?? 0) + 1);
       }
-      return addOrig(type as any, listener, opts);
+      return addOrig(type, listener, opts);
     }) as typeof document.addEventListener);
   const removeSpy = vi
     .spyOn(document, "removeEventListener")
-    .mockImplementation(((type: string, listener: any, opts: any) => {
+    .mockImplementation(((
+      type: string,
+      listener: EventListenerOrEventListenerObject,
+      opts?: boolean | EventListenerOptions,
+    ) => {
       if (type === "mousedown") {
         const next = (active.get(listener) ?? 0) - 1;
         if (next <= 0) active.delete(listener);
         else active.set(listener, next);
       }
-      return removeOrig(type as any, listener, opts);
+      return removeOrig(type, listener, opts);
     }) as typeof document.removeEventListener);
   return {
     activeCount: () => active.size,

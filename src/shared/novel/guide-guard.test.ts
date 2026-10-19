@@ -203,8 +203,14 @@ describe("打字保护（FR-06）", () => {
 
 describe("帮助中心（L3 常驻入口）", () => {
   it("F1 在窗口层注册（覆盖书架页与编辑器页）", () => {
-    const app = read("src/windows/NovelWindow/App.tsx");
-    expect(app).toContain('event.key !== "F1"');
+    // 1.47.0 起键位来自共享注册表（设置窗口可改），窗口层不再写死
+    // `event.key === "F1"`——因此这里断言的是「读注册表 + 按注册表匹配」，
+    // 而 F1 这个默认值由 shortcuts/registry.test.ts 钉住。
+    const app = stripComments(read("src/windows/NovelWindow/App.tsx"));
+    expect(app).toContain("useShortcutBindings");
+    expect(app).toContain("bindings.help");
+    expect(app).toContain("matchKeyEvent(event, helpKeys)");
+    expect(app).toContain('window.addEventListener("keydown", handleKeyDown)');
     expect(app).toContain("openHelp()");
   });
 

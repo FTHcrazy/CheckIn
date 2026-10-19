@@ -5,6 +5,7 @@ import {
   DownloadOutlined,
   EditOutlined,
   PlusOutlined,
+  QuestionCircleOutlined,
   ReloadOutlined,
   ScanOutlined,
   SearchOutlined,
@@ -22,6 +23,7 @@ import {
 } from "../../sensitive";
 import { useSensitiveStore } from "../../store/useSensitiveStore";
 import NvSegmented from "../NvSegmented";
+import ImportTemplateModal from "./components/ImportTemplateModal";
 import type { NovelChapter } from "../../types";
 import "./index.scss";
 
@@ -94,6 +96,8 @@ export default function SensitivePanel({
   const [scope, setScope] = useState<ResultScope>("chapter");
   const [newTerm, setNewTerm] = useState("");
   const [filter, setFilter] = useState("");
+  /** 导入格式说明弹层：空有「导入词库」按钮，用户只能靠试错猜格式 */
+  const [templateOpen, setTemplateOpen] = useState(false);
   /** 行内编辑：null = 没有正在编辑的词条 */
   const [editing, setEditing] = useState<{ from: string; value: string } | null>(
     null,
@@ -380,6 +384,13 @@ export default function SensitivePanel({
                 导入词库
               </Button>
             </Upload>
+            <Button
+              className="nv-ghost nv-ghost--icon"
+              icon={<QuestionCircleOutlined />}
+              title="导入格式说明"
+              aria-label="导入格式说明"
+              onClick={() => setTemplateOpen(true)}
+            />
             <span className="nv-sm__stat">
               内置 {builtinCount} · 自定义 {userCount}
             </span>
@@ -506,6 +517,13 @@ export default function SensitivePanel({
           )}
         </>
       )}
+
+      {/* 导入格式说明：挂在根节点内，由 antd 自己 portal 到 body */}
+      <ImportTemplateModal
+        open={templateOpen}
+        onClose={() => setTemplateOpen(false)}
+        onNotify={onNotify}
+      />
     </div>
   );
 }

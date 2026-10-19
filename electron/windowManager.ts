@@ -3,6 +3,7 @@
  * 统一管理所有 BrowserWindow 实例，提供注册、获取、广播能力
  */
 import { BrowserWindow } from 'electron';
+import { log } from './logger';
 
 class WindowManager {
   private windows = new Map<string, BrowserWindow>();
@@ -22,12 +23,15 @@ class WindowManager {
 
     this.windows.set(name, win);
     console.log(`[windowManager] 注册窗口: ${name}`);
+    // 窗口生命周期是排查「某个窗口打不开 / 数据没刷新」的第一现场，落一条日志
+    log('info', name, 'window', '窗口已创建');
 
     // 自动清理：窗口关闭时注销
     win.on('closed', () => {
       if (this.windows.get(name) === win) {
         this.windows.delete(name);
         console.log(`[windowManager] 注销窗口: ${name}`);
+        log('info', name, 'window', '窗口已关闭');
       }
     });
   }

@@ -492,6 +492,30 @@ function normalizeTodo(item: Partial<TodoItem> | null): TodoItem | null {
 .memo-sidebar-header { }
 ```
 
+**共享样式的相对引用（1.47.0 事故换来的规则）**：`@use` 一律写相对路径，层级按
+**目录深度**算，不能凭感觉：
+
+| 文件位置 | 到 `src/shared/styles/widget` 的写法 |
+| --- | --- |
+| `src/windows/<W>/components/<C>/index.scss` | `../../../../shared/styles/widget` |
+| `src/windows/<W>/pages/<P>/components/<C>/index.scss` | `../../../../../../shared/styles/widget` |
+
+⚠️ 少一层 `../` 的后果**不是样式不生效，而是整个窗口白屏**：vite 在浏览器里弹
+`[sass] Can't find stylesheet to import` 的遮罩，窗口一行内容都渲染不出来。而
+`tsc` / `eslint` 都不看 `.scss`，vitest 里也只有 NovelWindow 那部分样式会被真正
+编译 —— 所以这条由 `src/shared/styles/scss-imports.test.ts` 静态兜住
+（解析所有相对 `@use` + 校验 `index.scss` 确实被同目录 `index.tsx` 引入）。
+新增组件目录后**务必跑一次这份守卫**。
+
+**定高 flex 容器里的卡片必须 `flex: none`（1.47.0 事故换来的规则）**：父级是
+`height: 100%` / `flex: 1` 的 `flex-direction: column` 时，子项默认
+`flex-shrink: 1`，内容一超高就**按比例压扁所有子项**而不是让父级滚动；如果子项
+还带 `overflow: hidden`，它的自动最小尺寸会从 `min-height: auto` 变成 `0`，压缩
+直接没有下限 —— 表现为「卡片只剩一截、里面的字被拦腰裁断」，**没有任何报错**。
+页面级滚动容器（`.settings-page` 这类）务必给每张卡补 `flex: none`。
+jsdom 不做布局计算，单测量不出来，守卫见
+`src/windows/SettingsWindow/settings-layout-guard.test.ts`。
+
 ### 6.1.1 主题与换肤规范
 
 **原则：业务样式只写 `var(--app-*)`，禁止硬编码色值**
@@ -700,6 +724,17 @@ SettingsWindow 的「外观」分区是全版本共用的设置面板（full/nov
    **同一个选择器**里才能靠源码先后决定胜负；写成两个类则要靠文件先后，而组件样式先于
    `pack-common.scss` 打包，顺序恰好是反的 —— **会静默失效**。
 
+4. **portal 浮层的 DOM 节点名以当前 antd 版本为准，写错是静默的。**
+   v6 把 Modal 的卡片节点从 `.ant-modal-content` 改成 **`.ant-modal-container`**
+   （背景 / 圆角 / 阴影 / 内边距全在它身上），照 v5 的类名写 scss **一条都命中不了，
+   也不报错** —— 表现只是「样式改了毫无反应」，只能靠截图比对才发现。
+   给浮层限高 / 做内部滚动前，先照真实渲染结构确认层级：
+   `node_modules/@rc-component/dialog/es/Dialog/Content/Panel.js` 里
+   `.ant-modal > .ant-modal-container > header / body / footer`。
+   守卫见 `ImportTemplateModal/index.test.tsx`：jsdom 真渲染一遍，钉住
+   「container 存在、content 不存在」与「三段是 container 的**直系**子节点」
+   （scss 里写 `>` 才有效）；另有一条全仓扫描禁止 `.ant-modal-content` 复活。
+
 4. **不要在 `<button>` 里嵌 `<button>`。**
    HTML 不允许按钮嵌套，浏览器会把 DOM 拆坏（React 不报错、类型也过）。
    「整行可点 + 行尾一个删除按钮」这类结构要改成：**行容器（非交互元素）承载外观，
@@ -869,6 +904,58 @@ export function registerTodoHandlers() {
 // electron/handlers/memo-handlers.ts
 ipcMain.handle('memo-read', async (_event, filename: string) => { ... });
 ```
+
+### 6.3.1 本地日志规范（1.47.0）
+
+**分层（渲染层只负责上报，落盘一律在主进程）**：
+
+| 场景 | 用什么 |
+| --- | --- |
+| 主进程 / 任意 handler | `log(level, window, module, message, meta)`（`electron/logger.ts`） |
+| 窗口生命周期 | `windowLogger(窗口名)`（创建 / 关闭 / 装载失败已内置） |
+| 渲染层（组件、hook） | `rendererLog.info/warn/error(module, msg, meta)`（`src/shared/log/renderer-logger.ts`） |
+| 渲染期异常 | `ErrorBoundary`（已装在六个窗口入口） |
+| IPC | 不要手写 —— `preload` 的 `trackedInvoke` 已统一记失败与慢调用 |
+
+**硬性约束**：
+
+1. ⚠️ **目录按「窗口 + 用户」双维度隔离**：`<userData>/logs/<窗口名>/`，窗口名由主进程
+   `BrowserWindow.fromWebContents` + `windowManager.getNameOf` **反查**，渲染层**不许自报**
+   （自报与注册名漂移后日志散落）。用户隔离复用 `getUserDataDir(email)`，未登录落
+   `logs/_anonymous/`。
+2. ⚠️ **登出不触发 userDb lifecycle**（`auth-logout` 只删 authDb 用户行），切匿名目录必须由
+   `auth-logout` 显式 `resetLogRoot("logout")`；登录会触发**两次** `onSwitched`
+   （`user-login` + `login-confirm`），所以写入侧根目录**每次现算**，不缓存。
+3. ⚠️ **一行一条记录**：正文里的换行必须转义成字面 `\n`，否则一次多行打印会把文件切成碎行，
+   `grep` / `awk` 全部失效。格式由 `formatLogLine` 统一产出，不要手拼字符串。
+4. ⚠️ **不要用 `appendFileSync`**：同步写会卡事件循环，一律走 `createWriteStream({ flags: "a" })`。
+5. ⚠️ **`registerLogHandlers()` 里不许读用户配置**：它注册在 `switchUserDb` **之前**，
+   此时用户库还没打开。配置读取走导出的 `loadLogSettings()`，由 `main.ts` 在切库后调。
+6. **量控制**：默认 `level: info`，IPC 只记失败 + 耗时 > 300ms（`SLOW_IPC_MS`），
+   否则 `ipc.log` 会被正常流水刷爆。新增高频路径日志前先问「这条每天都打几万次吗」。
+7. 进程级 `uncaughtException` / `unhandledRejection` **只记录不退出** —— 直接退出会丢掉
+   用户未保存的正文，比崩溃本身更严重。
+
+### 6.3.2 快捷键规范（1.47.0）
+
+**单一事实源 `src/shared/shortcuts/registry.ts`**，渲染层与主进程共用（放 shared 是因为
+窗口之间禁止互相 import）。新增一条快捷键只改注册表 + 在 `HANDLER_BY_ID` 挂处理函数。
+
+- ⚠️ **键位写成平台中立形式** `Mod+Shift+B`（Mod = Ctrl / Cmd），不要写死 `Ctrl`；
+  展示一律走 `formatShortcut`，落 Electron 走 `toAccelerator`（`CommandOrControl+…`）。
+- ⚠️ **匹配必须按 `specificity` 具体度降序**，不能依赖对象书写顺序 ——
+  `Ctrl+S` 先命中会吃掉 `Ctrl+Shift+S`（设定中心永远打不开，历史上真发生过）。
+- ⚠️ **主进程只能引 `keys-core.ts`**（无 DOM 的纯函数），禁止引 `keys.ts` / `store.ts` ——
+  主进程 import 渲染层模块有把 DOM 依赖拖进主进程的风险。两侧一致性由
+  `electron/shortcut-guard.test.ts` 钉死。
+- ⚠️ **应用级（global）白名单只放「唤起窗口」类动作**（`globalEligible: true`）。
+  `Ctrl+S` 之类一旦设成系统级就是全局劫持，别的应用里按保存会跳到本应用。
+- ⚠️ **注册/注销走增量**（`globalShortcut.unregister(accelerator)`），
+  **绝不 `unregisterAll()`** —— 会把 dev 的 F12 一起误伤掉。
+- ⚠️ **录制态必须 capture + `preventDefault` / `stopPropagation`**，否则录 `Ctrl+S`
+  会顺手把稿子存了、录 `Esc` 会被「关闭最上层浮层」吃掉。
+- **展示门控**：`import.meta.env.DEV || IS_NOVEL_EDITION`（渲染）/ `IS_DEV || EDITION === "novel"`
+  （主进程）。full / lite 正式版未打包 `SHORTCUTS_ENABLED` 时，全局注册整体短路。
 
 ### 6.4 布局动画规范
 

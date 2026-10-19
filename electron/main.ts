@@ -32,17 +32,26 @@ import { registerNovelSettingHandlers } from "./handlers/novel-setting-handlers"
 import { registerNovelGlobalSettingHandlers } from "./handlers/novel-global-setting-handlers";
 import { registerNovelDbBridge } from "./novel-db";
 import {
+  getCachedUser,
   logoutUser,
   registerUserHandlers,
-  getCachedUser,
 } from "./handlers/user-handlers";
+import { registerShortcutHandlers } from "./handlers/shortcut-handlers";
 import { registerMemoHandlers } from "./handlers/memo-handlers";
 import { registerLedgerHandlers } from "./handlers/ledger-handlers";
 import { registerCheckinHandlers } from "./handlers/checkin-handlers";
+import { registerHttpSessionHandlers, setupRendererHttpSession } from "./httpSession";
 import {
-  registerHttpSessionHandlers,
-  setupRendererHttpSession,
-} from "./httpSession";
+  registerLogHandlers,
+  loadLogSettings,
+} from "./handlers/log-handlers";
+import {
+  bootstrapLogger,
+  closeLogger,
+  log,
+  resetLogRoot,
+  windowLogger,
+} from "./logger";
 import {
   PRIMARY_WINDOW_ENTRY,
   RENDERER_ENTRY_PATHS,
@@ -94,6 +103,29 @@ const DEVTOOLS_MODE = (process.env["VITE_DEVTOOLS_MODE"] ?? "detach") as
   | "detach";
 
 let tray: Tray | null = null;
+
+/**
+ * 进程级异常兜底（1.47.0 日志系统）。
+ *
+ * 取舍：**只记录、不主动退出**。Electron 默认对 `uncaughtException` 弹原生
+ * 「A JavaScript error occurred」后退出 —— 建档期用户往往正停在编辑器里，
+ * 一次 IPC 分支里的 `TypeError` 直接退掉会丢未保存正文。这里改为落盘 + 控制台，
+ * 由渲染层的兜底与 `render-process-gone` 反映真实影响面。
+ */
+process.on("uncaughtException", (error) => {
+  console.error("[main] 未捕获异常：", error);
+  log("error", "main", "process", `未捕获异常：${error?.message ?? String(error)}`, {
+    stack: error?.stack,
+  });
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("[main] 未处理的 Promise 拒绝：", reason);
+  const message = reason instanceof Error ? reason.message : String(reason);
+  log("error", "main", "process", `未处理的 Promise 拒绝：${message}`, {
+    stack: reason instanceof Error ? reason.stack : undefined,
+  });
+});
 const ICON_PATH = VITE_DEV_SERVER_URL
   ? path.join(DIST_ELECTRON, "../public/icon.ico")
   : path.join(DIST, "icon.ico");
@@ -272,9 +304,15 @@ function revealWindow(win: BrowserWindow, label: string, reason: string): void {
 function attachWindowLoadGuard(
   win: BrowserWindow,
   label: string,
-  options: { timeoutMs?: number; reveal?: (reason: string) => void } = {},
+  options: {
+    timeoutMs?: number;
+    reveal?: (reason: string) => void;
+    /** 日志目录名（windowManager 的注册名）；缺省 main */
+    windowName?: string;
+  } = {},
 ): void {
   const { timeoutMs = WINDOW_LOAD_FALLBACK_MS, reveal: customReveal } = options;
+  const winLog = windowLogger(options.windowName ?? "main");
   let timer: ReturnType<typeof setTimeout> | undefined;
 
   const reveal = (reason: string): void => {
@@ -302,6 +340,11 @@ function attachWindowLoadGuard(
       console.error(
         `[main] ${label} 窗口装载失败：code=${errorCode} desc=${errorDescription} url=${validatedURL}`,
       );
+      winLog.error("window", `${label} 窗口装载失败`, {
+        code: errorCode,
+        desc: errorDescription,
+        url: validatedURL,
+      });
       reveal("主框架装载失败");
     },
   );
@@ -310,12 +353,17 @@ function attachWindowLoadGuard(
     console.error(
       `[main] ${label} 窗口渲染进程异常退出：reason=${details.reason} exitCode=${details.exitCode}`,
     );
+    winLog.error("window", `${label} 窗口渲染进程异常退出`, {
+      reason: details.reason,
+      exitCode: details.exitCode,
+    });
   });
 
   win.webContents.once("did-finish-load", () => reveal("did-finish-load"));
 
   timer = setTimeout(() => {
     console.warn(`[main] ${label} 窗口 ${timeoutMs}ms 内未完成装载，兜底显示`);
+    winLog.warn("window", `${label} 窗口装载超时，已兜底显示`, { timeoutMs });
     reveal("装载超时兜底");
   }, timeoutMs);
 
@@ -365,6 +413,7 @@ function createBaseWindow(): BrowserWindow {
   // 否则装载失败时 isPrimaryReady 永远为 false，showPrimaryWindow() 静默空转，
   // 用户登录后连错误页都看不到（整个应用像死了一样）。
   attachWindowLoadGuard(win, "Base", {
+    windowName: "main",
     reveal: (reason) => {
       if (reason === "did-finish-load") {
         console.log(`[main] 页面加载完成: ${Date.now() - t0}ms`);
@@ -434,6 +483,7 @@ function createNovelWindow(): BrowserWindow {
     // 主窗形态：就绪标记 + 由登录流程 / 托盘驱动显示，不自动 show。
     // 装载失败 / 超时同样标记就绪，避免「登录后没有任何窗口可显示」
     attachWindowLoadGuard(novelWin, "Novel", {
+      windowName: "novel",
       reveal: (reason) => {
         if (reason !== "did-finish-load") {
           console.warn(`[main] Novel 主窗口未经 did-finish-load 就绪（${reason}），仍按就绪处理`);
@@ -446,7 +496,7 @@ function createNovelWindow(): BrowserWindow {
     });
   } else {
     // 子窗形态：装载完成即显示
-    attachWindowLoadGuard(novelWin, "Novel");
+    attachWindowLoadGuard(novelWin, "Novel", { windowName: "novel" });
   }
 
   if (IS_DEV) {
@@ -523,7 +573,7 @@ function createSettingsWindow(): BrowserWindow {
 
   settingsWin.removeMenu();
 
-  attachWindowLoadGuard(settingsWin, "Settings");
+  attachWindowLoadGuard(settingsWin, "Settings", { windowName: "settings" });
 
   if (IS_DEV) {
     registerDevToolsShortcuts(settingsWin);
@@ -622,7 +672,7 @@ function createPackWindow(opener?: WebContents): BrowserWindow {
   // 装载失败兜底、超时兜底三条路径都会走 show，只有正常路径走 reveal
   packWin.once("show", () => notifyPackShown(opener));
 
-  attachWindowLoadGuard(packWin, "Pack");
+  attachWindowLoadGuard(packWin, "Pack", { windowName: "pack" });
 
   if (IS_DEV) {
     registerDevToolsShortcuts(packWin);
@@ -681,7 +731,7 @@ function createGlobalSettingWindow(): BrowserWindow {
 
   globalWin.removeMenu();
 
-  attachWindowLoadGuard(globalWin, "GlobalSetting");
+  attachWindowLoadGuard(globalWin, "GlobalSetting", { windowName: "globalSetting" });
 
   if (IS_DEV) {
     registerDevToolsShortcuts(globalWin);
@@ -740,6 +790,7 @@ function createLoginWindow(user?: { email: string } | null) {
   loginWin.removeMenu();
 
   attachWindowLoadGuard(loginWin, "Login", {
+    windowName: "login",
     reveal: (reason) => {
       loginWindowHasShown = true;
       loginWindowVisibleAt = Date.now();
@@ -840,8 +891,13 @@ app.on("second-instance", () => {
 app.whenReady().then(() => {
   // 初始化本地数据库（authDb 内含 user 表）
   initDb();
+  // 日志 handler 要早注册：启动期的窗口装载 / 登录事件都希望落库。
+  // 配置读取推迟到用户库就绪之后（见下方 loadLogSettings）。
+  registerLogHandlers();
   const cachedUser = getCachedUser();
   if (cachedUser) switchUserDb(cachedUser.email, true);
+  loadLogSettings();
+  bootstrapLogger();
 
   // 注册语义化 IPC handlers。
   // 全版本注册：小说（novel 版的唯一业务域）与用户登录；
@@ -858,6 +914,25 @@ app.whenReady().then(() => {
   // 广播 `global-setting-changed`（书窗口订阅后重载设定，REQ-041 ③）。
   registerNovelGlobalSettingHandlers();
   registerUserHandlers();
+  // 快捷键：配置持久化 + 应用级（globalShortcut）注册。
+  // 动作注入避免 handler 反向 import 窗口创建函数（会形成循环依赖）。
+  registerShortcutHandlers({
+    onGlobalAction: (id) => {
+      if (id !== "showNovelWindow") return;
+      if (EDITION === "lite") return;
+      log("info", "main", "shortcut", "唤出小说窗口（应用级快捷键）");
+      if (IS_NOVEL_PRIMARY) {
+        showPrimaryWindow();
+        return;
+      }
+      const existing = windowManager.get("novel");
+      if (existing) {
+        raiseWindow(existing);
+        return;
+      }
+      createNovelWindow();
+    },
+  });
   // 关闭守卫：窗口真销毁前先问渲染层「还有未保存的改动吗」
   registerCloseGuardHandlers();
   setupRendererHttpSession();
@@ -1008,6 +1083,11 @@ app.whenReady().then(() => {
   // 主进程编排：清除缓存用户 → 关闭设置窗与主窗口（登录态下的数据随窗口
   // 销毁，防止切换账号后残留上一账号的渲染层状态）→ 回到登录窗。
   ipcMain.on("auth-logout", () => {
+    // ⚠️ 登出**不会**触发 userDb 生命周期（logoutUser 只删 authDb 的用户行、
+    // 不关库），所以日志目录必须在这里显式切到匿名目录，否则下一个账号的
+    // 日志会继续写进上一个用户的目录（"按用户隔离"就破了）。
+    log("info", "main", "auth", "用户登出");
+    resetLogRoot("logout");
     logoutUser();
     canShowMainWindow = false;
     isPrimaryReady = false;
@@ -1182,6 +1262,9 @@ app.on("before-quit", (event) => {
 app.on("will-quit", () => {
   // 所有窗口已销毁、渲染层全部下线 —— 此时关库才是安全的最后一步。
   // 放在 before-quit 曾导致行囊「保存并退出」时库已关闭（保存必然失败）。
+  log("info", "main", "app", "应用退出");
+  // 先 flush 日志再关库：关库过程中的异常仍希望留在文件里
+  closeLogger();
   closeDb();
 });
 
