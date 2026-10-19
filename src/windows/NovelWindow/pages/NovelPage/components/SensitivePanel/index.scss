@@ -1,0 +1,245 @@
+@use "../../../../../../shared/styles/widget" as widget;
+
+/* 敏感词检测面板（工具箱二级面板）
+
+   按钮类一律由 antd `Button` 承载：外观只通过组件级 CSS 变量配置，
+   不写 `:hover` / `:disabled` 属性规则 —— antd 的状态选择器特异性更高，
+   自写规则压不过它们（AGENTS §6.1.2）。
+   色值全部走 `var(--app-*)`，换肤自动跟随（§6.1.1）。 */
+
+.nv-sm {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: hidden;
+
+  &__views {
+    flex: none;
+  }
+
+  &__section {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  &__label {
+    font-size: 12px;
+    color: var(--app-text-secondary);
+  }
+
+  &__hint {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--app-text-muted);
+
+    &--warn {
+      color: var(--app-warning);
+    }
+  }
+
+  &__actions {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  &__summary {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  &__stat {
+    font-size: 12px;
+    color: var(--app-text-muted);
+    white-space: nowrap;
+  }
+
+  /* ── 结果区滚动容器 ───────────────────────────────────────────── */
+  &__list {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 2px;
+    scrollbar-width: thin;
+
+    &::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    &::-webkit-scrollbar-thumb {
+      border: 2px solid transparent;
+      border-radius: 8px;
+      background: var(--app-scrollbar);
+      background-clip: content-box;
+    }
+  }
+
+  /* ── 通用按钮 ─────────────────────────────────────────────────── */
+  &__btn.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 28px;
+    --ant-button-padding-inline: 10px;
+    --ant-button-content-font-size: 12px;
+    --ant-border-radius: var(--app-radius-chip);
+    --ant-button-default-bg: var(--app-surface-alt);
+    --ant-button-default-color: var(--app-text);
+    --ant-button-default-border-color: var(--app-border);
+    --ant-button-default-hover-bg: var(--app-surface-hover);
+    --ant-button-default-hover-color: var(--app-text);
+    --ant-button-default-hover-border-color: var(--app-border-strong);
+    --ant-button-default-active-bg: var(--app-surface-hover);
+    --ant-button-default-active-color: var(--app-text);
+  }
+
+  &__icon-btn.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 22px;
+    --ant-button-padding-inline: 4px;
+    --ant-button-content-font-size: 12px;
+    --ant-border-radius: var(--app-radius-chip);
+    --ant-button-default-bg: transparent;
+    --ant-button-default-color: var(--app-text-secondary);
+    --ant-button-default-hover-bg: var(--app-surface-hover);
+    --ant-button-default-hover-color: var(--app-text);
+    --ant-button-default-active-bg: var(--app-surface-active);
+    --ant-button-default-active-color: var(--app-text);
+  }
+
+  /* ── 命中结果行 ───────────────────────────────────────────────── */
+  &-hit.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-border-radius: var(--app-radius-item);
+    --ant-line-width: 1px;
+    --ant-button-default-bg: var(--app-surface);
+    --ant-button-default-color: var(--app-text);
+    --ant-button-default-border-color: var(--app-border);
+    --ant-button-default-hover-bg: var(--app-surface);
+    --ant-button-default-hover-color: var(--app-text);
+    --ant-button-default-hover-border-color: var(--app-primary);
+    --ant-button-default-active-bg: var(--app-surface);
+    --ant-button-default-active-color: var(--app-text);
+    --ant-button-default-active-border-color: var(--app-primary);
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    width: 100%;
+    padding: 8px 10px;
+    text-align: left;
+    white-space: normal;
+  }
+
+  &-hit__head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  &-hit__word {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--app-error);
+  }
+
+  &-hit__count {
+    flex: none;
+    font-size: 12px;
+    color: var(--app-text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &-hit__chapter {
+    font-size: 12px;
+    color: var(--app-text-secondary);
+  }
+
+  &-hit__snippet {
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--app-text-muted);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* ── 词库行 ───────────────────────────────────────────────────── */
+  &-word {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 8px;
+    border-radius: var(--app-radius-item);
+    background: var(--app-surface-alt);
+    min-height: 30px;
+  }
+
+  &-word__term {
+    flex: 1;
+    min-width: 0;
+    font-size: 13px;
+    color: var(--app-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &-word__origin {
+    flex: none;
+    font-size: 12px;
+    color: var(--app-text-muted);
+
+    &.is-user {
+      color: var(--app-primary);
+    }
+  }
+
+  &-word__ops {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+
+  /* ── 已屏蔽词条 ───────────────────────────────────────────────── */
+  &__muted {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-top: 8px;
+    border-top: 1px dashed var(--app-border);
+  }
+
+  &__muted-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  &__muted-chip.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 22px;
+    --ant-button-padding-inline: 8px;
+    --ant-button-content-font-size: 12px;
+    --ant-border-radius: var(--app-radius-pill);
+    --ant-button-default-bg: var(--app-surface-hover);
+    --ant-button-default-color: var(--app-text-secondary);
+    --ant-button-default-hover-bg: var(--app-surface-active);
+    --ant-button-default-hover-color: var(--app-text);
+  }
+}

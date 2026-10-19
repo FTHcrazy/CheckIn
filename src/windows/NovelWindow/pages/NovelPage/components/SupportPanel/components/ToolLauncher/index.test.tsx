@@ -29,21 +29,28 @@ afterEach(() => {
 
 const setup = () => {
   const onOpenNaming = vi.fn();
+  const onOpenSensitive = vi.fn();
   const onNotify = vi.fn();
-  render(<ToolLauncher onOpenNaming={onOpenNaming} onNotify={onNotify} />);
-  return { onOpenNaming, onNotify };
+  render(
+    <ToolLauncher
+      onOpenNaming={onOpenNaming}
+      onOpenSensitive={onOpenSensitive}
+      onNotify={onNotify}
+    />,
+  );
+  return { onOpenNaming, onOpenSensitive, onNotify };
 };
 
 describe("ToolLauncher：规划中的工具不是死链", () => {
-  it("三张卡都是真按钮（占位卡可看不可点是这次要修的病）", () => {
+  it("四张卡都是真按钮（占位卡可看不可点是这次要修的病）", () => {
     setup();
     const cards = document.querySelectorAll(".nv-tools__card");
-    expect(cards).toHaveLength(3);
+    expect(cards).toHaveLength(4);
     cards.forEach((card) => {
       expect(card.tagName).toBe("BUTTON");
     });
     // 「规划中」的卡也必须能被键盘聚焦到，否则读屏用户完全够不着
-    expect(screen.getAllByRole("button")).toHaveLength(3);
+    expect(screen.getAllByRole("button")).toHaveLength(4);
   });
 
   it("点「规划中」的卡给明确反馈，不再静默", () => {
@@ -65,9 +72,13 @@ describe("ToolLauncher：规划中的工具不是死链", () => {
   });
 
   it("可用的工具正常进入二级面板，且不触发「规划中」提示", () => {
-    const { onOpenNaming, onNotify } = setup();
+    const { onOpenNaming, onOpenSensitive, onNotify } = setup();
     screen.getByText("起名器", { selector: "span" }).click();
     expect(onOpenNaming).toHaveBeenCalledTimes(1);
+    expect(onNotify).not.toHaveBeenCalled();
+
+    screen.getByText("敏感词检测", { selector: "span" }).click();
+    expect(onOpenSensitive).toHaveBeenCalledTimes(1);
     expect(onNotify).not.toHaveBeenCalled();
   });
 
@@ -119,7 +130,11 @@ describe("ToolLauncher：描述换行契约（REQ-047）", () => {
 
   it("描述确实嵌在 .nv-tools__card.ant-btn 内（规则不会失配成死 CSS），长文案整段保留", () => {
     const { container } = render(
-      <ToolLauncher onOpenNaming={vi.fn()} onNotify={vi.fn()} />,
+      <ToolLauncher
+        onOpenNaming={vi.fn()}
+        onOpenSensitive={vi.fn()}
+        onNotify={vi.fn()}
+      />,
     );
 
     const card = container.querySelector<HTMLElement>(".nv-tools__card.ant-btn");

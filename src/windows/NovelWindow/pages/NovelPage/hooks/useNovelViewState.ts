@@ -12,6 +12,13 @@ export type PanelTab =
   | "note"
   | "search"
   | "tools";
+/**
+ * 工具箱二级面板：null = 启动器首页。
+ *
+ * 提升到视图状态（原先是 SupportPanel 内部 state）是为了让底部状态条上的
+ * 敏感词角标能一键直达面板 —— 不必先切到「工具」Tab 再点卡片。
+ */
+export type ToolSub = "naming" | "sensitive" | null;
 export type EntityFilter = EntityType | "all";
 // 类型出处已收口到共享 hook（P3-3）；此处 re-export 保持 NovelToast 的 import 路径不变
 export type { ToastPayload } from "@/shared/novel/use-auto-toast";
@@ -32,6 +39,8 @@ export function useNovelViewState() {
   // 后续若需跨会话记忆，并入 EditorSettings.annotationOn 即可。
   const [annotationOn, setAnnotationOn] = useState(true);
   const [panelTab, setPanelTab] = useState<PanelTab>("entity");
+  /** 工具箱二级面板（起名器 / 敏感词检测） */
+  const [toolSub, setToolSub] = useState<ToolSub>(null);
   const [entityFilter, setEntityFilter] = useState<EntityFilter>("all");
   const [detailEntityId, setDetailEntityId] = useState<string | null>(null);
   const [jumpOpen, setJumpOpen] = useState(false);
@@ -263,8 +272,25 @@ export function useNovelViewState() {
 
   const selectPanelTab = useCallback((tab: PanelTab) => {
     setPanelTab(tab);
+    // 切 Tab 即退出工具箱二级面板，回到该 Tab 的首页
+    setToolSub(null);
     setRightOpen(true);
   }, []);
+
+  /**
+   * 直达工具面板（状态条角标 / 工具箱卡片共用）。
+   *
+   * 必须同时切到「工具」Tab 并展开右栏 —— 只设 toolSub 会让面板渲染在
+   * 看不见的 Tab 下，表现为「点了没反应」。
+   */
+  const openToolSub = useCallback((name: Exclude<ToolSub, null>) => {
+    setToolSub(name);
+    setPanelTab("tools");
+    setRightOpen(true);
+  }, []);
+
+  /** 返回工具箱首页（面板头左箭头） */
+  const closeToolSub = useCallback(() => setToolSub(null), []);
 
   /** 打字机模式下额外让左右栏让位，避免视觉噪音 */
   const effectiveLeftOpen = useMemo(
@@ -283,6 +309,7 @@ export function useNovelViewState() {
     focusMode,
     annotationOn,
     panelTab,
+    toolSub,
     entityFilter,
     detailEntityId,
     jumpOpen,
@@ -301,6 +328,9 @@ export function useNovelViewState() {
     exitFocus,
     toggleAnnotation,
     selectPanelTab,
+    openToolSub,
+    closeToolSub,
+    setToolSub,
     setEntityFilter,
     openEntityDetail,
     closeEntityDetail,

@@ -41,6 +41,12 @@ export const STORAGE_KEYS = {
    * 存 guideState / 已看步骤 / 已出现过的弱提示，不新增数据表。
    */
   guideState: "novel_guide_state_v1",
+  /**
+   * 敏感词检测（工具箱）：`SensitiveConfig` 整读整写 ——
+   * 用户词库 / 被屏蔽的内置词 / 扫描模式三项合一，避免为一个小功能开三个键。
+   * 内置词库是常量（`sensitive/builtin-words.ts`），不落库。
+   */
+  sensitiveConfig: "novel_sensitive_config",
 } as const;
 
 /** 按书独立的章节序号规则（章节树 / 大纲 / 导出 / 新建章的「第N×」展示口径） */

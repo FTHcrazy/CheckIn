@@ -34,8 +34,19 @@ import {
   termsCompartment,
   termsFacet,
 } from "../../novel-editor";
+import {
+  refreshSensitive,
+  sensitiveEnabledCompartment,
+  sensitiveEnabledFacet,
+  sensitiveLayer,
+  sensitiveWordsCompartment,
+  sensitiveWordsFacet,
+} from "../../sensitive-editor";
 import type { EditorSelection } from "../../hooks/useNovelEditorState";
 import "./index.scss";
+
+/** 缺省词库：模块级常量，避免每次渲染都换一个新数组（会白跑一次 reconfigure） */
+const NO_WORDS: readonly string[] = [];
 
 interface EditorPaneProps {
   chapter: NovelChapter | null;
@@ -70,6 +81,19 @@ interface EditorPaneProps {
   onCursorChange: (head: number) => void;
   /** 正文滚动上报（R6 位置记忆）：scrollTop */
   onScrollChange: (scrollTop: number) => void;
+  /** 敏感词词库（工具箱 → 敏感词检测）；缺省不渲染高亮层 */
+  sensitiveWords?: readonly string[];
+  /** 敏感词高亮开关（仅自动模式为 true；手动模式正文保持干净） */
+  sensitiveOn?: boolean;
+  /** 面板点结果后要定位的文档偏移；编辑器消费一次即回调清空 */
+  focusPos?: number | null;
+  onFocusPosApplied?: () => void;
+  /**
+   * 正文脉搏：每次内容变更上报一次（含程序化灌入）。
+   * 敏感词检测据此记录最新草稿并在 auto 模式下防抖扫描，
+   * 页面根因此不必订阅草稿、为每个字重渲染整棵树。
+   */
+  onDraftPulse?: (chapterId: string, title: string, content: string) => void;
 }
 
 /**
@@ -170,6 +194,11 @@ export default function EditorPane({
   onRestoreDone,
   onCursorChange,
   onScrollChange,
+  sensitiveWords,
+  sensitiveOn = false,
+  focusPos = null,
+  onFocusPosApplied,
+  onDraftPulse,
   ref,
 }: EditorPaneProps & { ref?: Ref<EditorPaneHandle> }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -338,6 +367,8 @@ export default function EditorPane({
     onSelectionChange,
     onContextMenu,
     onCursorChange,
+    // 敏感词脉搏：未接检测时是空操作（保持 ref 形状稳定，避免每处都判空）
+    onDraftPulse: onDraftPulse ?? ((): void => {}),
   });
   useEffect(() => {
     handlersRef.current = {
@@ -345,8 +376,21 @@ export default function EditorPane({
       onSelectionChange,
       onContextMenu,
       onCursorChange,
+      onDraftPulse: onDraftPulse ?? ((): void => {}),
     };
-  }, [handleContentChange, onSelectionChange, onContextMenu, onCursorChange]);
+  }, [
+    handleContentChange,
+    onSelectionChange,
+    onContextMenu,
+    onCursorChange,
+    onDraftPulse,
+  ]);
+
+  /** 章节标题放 ref：updateListener 里上报脉搏时要用，又不能进编辑器初始化依赖 */
+  const chapterTitleRef = useRef("");
+  useEffect(() => {
+    chapterTitleRef.current = chapter?.title ?? "";
+  }, [chapter?.title]);
 
   // 标注层总开关：有词库且用户未全局关闭时才启用（PRD §2 风险对策）。
   // 复用 annotationEnabledCompartment 热更新通道，关闭即整层不渲染高亮/悬浮卡。
@@ -408,6 +452,8 @@ export default function EditorPane({
           EditorView.lineWrapping,
           stylingCompartment.of(buildTheme(settings)),
           annotationLayer(terms, enabled),
+          // 敏感词高亮层：与要素标注层完全独立（各自 compartment / facet）
+          sensitiveLayer(sensitiveWords ?? NO_WORDS, sensitiveOn),
           EditorView.updateListener.of((update) => {
             if (update.docChanged) {
               // FR-06 打字保护：作者一敲字，任何在场的引导立刻让位。
@@ -425,9 +471,19 @@ export default function EditorPane({
               // 旧草稿，值相等假设破裂 → 把「旧草稿 → 灌入文本」的差值算进今日新增。
               if (hydratingRef.current) {
                 handlersRef.current.onChange(next, next, "hydrate");
-                return;
+              } else {
+                handlersRef.current.onChange(next, update.startState.doc.toString());
               }
-              handlersRef.current.onChange(next, update.startState.doc.toString());
+              // 敏感词脉搏：不论用户打字还是程序化灌入（切章）都上报，
+              // auto 模式由此拿到新章正文、手动扫描也总能用上最新草稿
+              const pulseId = chapterIdRef.current;
+              if (pulseId) {
+                handlersRef.current.onDraftPulse(
+                  pulseId,
+                  chapterTitleRef.current,
+                  next,
+                );
+              }
             }
             if (update.selectionSet) {
               const { main } = update.state.selection;
@@ -505,7 +561,7 @@ export default function EditorPane({
     try {
       view.dispatch({
         changes: { from: 0, to: view.state.doc.length, insert: content },
-        effects: refreshAnnotation.of(null),
+        effects: [refreshAnnotation.of(null), refreshSensitive.of(null)],
         annotations: isolateHistory.of("full"),
       });
     } finally {
@@ -573,6 +629,25 @@ export default function EditorPane({
     // 换章时被误当成「这一章也有恢复点」而复用上一章的位置
   }, [chapterId, restore, onRestoreDone]);
 
+  /**
+   * 切章时补一次敏感词脉搏。
+   *
+   * 首开编辑器时 `EditorState.create({ doc: content })` 不触发 updateListener，
+   * 而上面的「外部灌入」effect 又会因文档已相等而提前返回 —— 于是「刚打开一章、
+   * 一个字没敲」时自动模式拿不到正文，面板会是空的。这里在章节 id 变化时主动上报。
+   *
+   * 只依赖章节 id：正文变化已由 updateListener 逐键上报，挂 content 依赖会重复触发。
+   * `contentRef` 是 prop 的镜像（含未保存草稿），切章时已指向新章内容。
+   */
+  useEffect(() => {
+    if (!chapterId) return;
+    handlersRef.current.onDraftPulse(
+      chapterId,
+      chapterTitleRef.current,
+      contentRef.current,
+    );
+  }, [chapterId]);
+
   // 词库与标注层开关热更新：只换 facet 值，不重建插件实例（PRD §7：要素保存即刷新词库）。
   // 强制刷新信号必须同事务携带：插件只在 forced/viewportChanged/docChanged 时重建，
   // 单纯的 facet 变化不会触发 decoration 重算（新标记的词要立即高亮）
@@ -587,6 +662,48 @@ export default function EditorPane({
       ],
     });
   }, [terms, enabled]);
+
+  // 敏感词词库 / 开关热更新：与要素标注层同一套 compartment 范式，
+  // 但互不影响（关掉人名高亮不该顺手关掉敏感词高亮）。
+  // 强制刷新信号必须同事务携带：纯 facet 变化不会触发 decoration 重算
+  useEffect(() => {
+    viewRef.current?.dispatch({
+      effects: [
+        sensitiveWordsCompartment.reconfigure(
+          sensitiveWordsFacet.of(sensitiveWords ?? NO_WORDS),
+        ),
+        sensitiveEnabledCompartment.reconfigure(
+          sensitiveEnabledFacet.of(sensitiveOn),
+        ),
+        refreshSensitive.of(null),
+      ],
+    });
+  }, [sensitiveWords, sensitiveOn]);
+
+  /**
+   * 跳转定位（面板点命中结果）。
+   *
+   * 必须等新章正文灌进文档之后再定位：灌入是与本 effect 同一提交里的另一次
+   * effect，rAF 排在它后面，此时 doc 已经是新章的。挂载时 focusPos 为 null，
+   * 不会干扰正常的续写位置恢复。
+   */
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || !chapterId || focusPos === null) return undefined;
+
+    const frame = window.requestAnimationFrame(() => {
+      const current = viewRef.current;
+      if (!current) return;
+      const pos = Math.min(Math.max(focusPos, 0), current.state.doc.length);
+      current.dispatch({
+        selection: { anchor: pos },
+        effects: EditorView.scrollIntoView(pos, { y: "center" }),
+      });
+      current.focus();
+      onFocusPosApplied?.();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [chapterId, focusPos, onFocusPosApplied]);
 
   // 点击正文下方的空白区（纸面 / 滚动容器）也能聚焦：CodeMirror 的 content
   // 只占文档实际高度，点在其下方时命中的是容器本身——这里兜底把光标放上去

@@ -1,14 +1,18 @@
 import { Button } from "antd";
+import { SafetyOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
 import { TODAY_ADDED_LABEL, TODAY_GOAL_LABEL, WORD_UNIT } from "@/shared/novel/today-stats";
 import { calcGoalProgress, formatThousands } from "../../novel-utils";
 import { useWritingStats } from "../../store/useNovelEditorStore";
+import { useSensitiveStore } from "../../store/useSensitiveStore";
 import "./index.scss";
 
 interface StatusBarProps {
   /** 全局标注层是否启用（PRD §2 风险对策） */
   annotationOn: boolean;
   onToggleAnnotation: () => void;
+  /** 打开敏感词检测面板；不传则不显示角标（单测直接渲染时无需接） */
+  onOpenSensitive?: () => void;
 }
 
 /**
@@ -23,9 +27,16 @@ interface StatusBarProps {
 export default function StatusBar({
   annotationOn,
   onToggleAnnotation,
+  onOpenSensitive,
 }: StatusBarProps) {
   const stats = useWritingStats();
   const progress = calcGoalProgress(stats.todayTotal, stats.dailyGoal);
+
+  // 敏感词角标：直接订阅 store，计数变化只重渲染本组件（不推页面根）
+  const sensitiveMode = useSensitiveStore((state) => state.config.mode);
+  const chapterResult = useSensitiveStore((state) => state.chapterResult);
+  const sensitiveHits =
+    sensitiveMode === "off" ? 0 : (chapterResult?.total ?? 0);
 
   // 实时时钟：每秒更新一次，tabular-nums 保证宽度不跳动
   const [clock, setClock] = useState(() => formatClock(new Date()));
@@ -65,6 +76,23 @@ export default function StatusBar({
         <span className="nv-status__anno-dot" />
         标注 {annotationOn ? "开" : "关"}
       </Button>
+
+      {/* 敏感词角标：命中 > 0 才转警示色。它是「结果」不是「开关」，
+          点击直接展开右栏面板，省掉「先切工具 Tab 再点卡片」两步 */}
+      {onOpenSensitive && (
+        <Button
+          className={`nv-status__sm${sensitiveHits > 0 ? " is-alert" : ""}`}
+          onClick={onOpenSensitive}
+          title={
+            sensitiveHits > 0
+              ? `本章命中 ${sensitiveHits} 处敏感词，点击查看`
+              : "打开敏感词检测"
+          }
+        >
+          <SafetyOutlined />
+          <span>敏感 {sensitiveHits}</span>
+        </Button>
+      )}
 
       <div className="nv-status__goal">
         <span className="nv-status__goal-label">

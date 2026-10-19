@@ -72,6 +72,36 @@
     }
   }
 
+  /* 敏感词角标：常态与标注开关同款弱化，命中 > 0 时转警示色 */
+  &__sm.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-border-radius: 4px;
+    --ant-line-width: 1px;
+    --ant-button-content-font-size: 12px;
+    --ant-button-icon-gap: 5px;
+    --ant-button-default-bg: transparent;
+    --ant-button-default-color: var(--app-text-muted);
+    --ant-button-default-border-color: transparent;
+    --ant-button-default-hover-color: var(--app-text-secondary);
+    --ant-button-default-hover-border-color: var(--app-border);
+    --ant-button-default-active-color: var(--app-text-secondary);
+    --ant-button-default-active-border-color: var(--app-border);
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 8px;
+
+    &.is-alert {
+      --ant-button-default-color: var(--app-error);
+      --ant-button-default-border-color: var(--app-error-weak);
+      --ant-button-default-hover-bg: var(--app-error-weak);
+      --ant-button-default-hover-color: var(--app-error);
+      --ant-button-default-hover-border-color: var(--app-error);
+      --ant-button-default-active-bg: var(--app-error-weak);
+      --ant-button-default-active-color: var(--app-error);
+      --ant-button-default-active-border-color: var(--app-error);
+    }
+  }
+
   &__goal {
     margin-left: auto;
     display: flex;

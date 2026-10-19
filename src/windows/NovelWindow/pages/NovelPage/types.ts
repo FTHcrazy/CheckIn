@@ -359,3 +359,15 @@ export type {
   NameStyleMeta,
   NamingKindMeta,
 } from "./naming/types";
+
+// ── 敏感词检测（工具箱 → 敏感词检测）───────────────────────────────────
+// 类型定义集中在 sensitive/types.ts（同「页面私有模块」原则），此处仅 re-export，
+// 便于 service / hooks / 面板沿用 ../types 的统一导入路径。
+export type {
+  SensitiveConfig,
+  SensitiveHit,
+  SensitiveScanMode,
+  SensitiveScanResult,
+  SensitiveWord,
+  SensitiveWordOrigin,
+} from "./sensitive/types";

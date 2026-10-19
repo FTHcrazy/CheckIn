@@ -22,6 +22,7 @@ import StatusBar from "./components/StatusBar";
 import SupportPanel from "./components/SupportPanel";
 import { EntityTypesProvider } from "./hooks/useEntityTypes";
 import { useNovelPage } from "./hooks/useNovelPage";
+import { useSensitiveDetection } from "./hooks/useSensitiveDetection";
 import { hoverActions } from "./store/useHoverStore";
 import {
   appearancesOf,
@@ -154,6 +155,15 @@ export default function NovelPage({
   } = useNovelPage();
 
   const { loadSnapshots, activeChapterId, searchBook } = data;
+
+  /**
+   * 敏感词检测：持久化登记 / 读盘 / 跳转消费都在这个 hook 里，
+   * 页面只把它暴露的两件事接给编辑器——词库与定位偏移。
+   */
+  const sensitive = useSensitiveDetection({
+    activeWorkId: data.activeWorkId,
+    onSelectChapter: handleSelectChapter,
+  });
 
   // 书架 → 编辑器：消费打开请求（token 守卫，StrictMode 双执行只消费一次）
   const consumedTokenRef = useRef<number | null>(null);
@@ -517,11 +527,17 @@ export default function NovelPage({
             onRestoreDone={data.consumeLastPosition}
             onCursorChange={handleCursorChange}
             onScrollChange={handleScrollChange}
+            sensitiveWords={sensitive.words}
+            sensitiveOn={sensitive.enabled}
+            focusPos={sensitive.focusPos}
+            onFocusPosApplied={sensitive.clearFocusPos}
+            onDraftPulse={sensitive.handleDraftPulse}
           />
 
           <StatusBar
             annotationOn={view.annotationOn}
             onToggleAnnotation={view.toggleAnnotation}
+            onOpenSensitive={() => view.openToolSub("sensitive")}
           />
 
           {/* 选区右键菜单：手动绑定路线的标注入口（新建 / 绑定为别名） */}
@@ -621,6 +637,9 @@ export default function NovelPage({
           namingExclude={namingExclude}
           namingFavorites={namingFavorites}
           onNotify={view.showToast}
+          chapters={data.chapters}
+          toolSub={view.toolSub}
+          onToolSubChange={view.setToolSub}
         />
 
         {/*

@@ -2,6 +2,7 @@ import { Button } from "antd";
 import {
   ApartmentOutlined,
   EnvironmentOutlined,
+  SafetyOutlined,
   ThunderboltOutlined,
 } from "@ant-design/icons";
 import type { ReactNode } from "react";
@@ -11,6 +12,8 @@ import "./index.scss";
 interface ToolLauncherProps {
   /** 打开起名器二级面板 */
   onOpenNaming: () => void;
+  /** 打开敏感词检测二级面板 */
+  onOpenSensitive: () => void;
   /** 轻提示：规划中的工具点了也要有回应，不能是死链 */
   onNotify: (text: string, tone?: ToastTone) => void;
 }
@@ -42,6 +45,7 @@ interface ToolItem {
  */
 export default function ToolLauncher({
   onOpenNaming,
+  onOpenSensitive,
   onNotify,
 }: ToolLauncherProps) {
   const tools: ToolItem[] = [
@@ -54,6 +58,16 @@ export default function ToolLauncher({
       state: "已上线",
       desc: "八类名称 × 东西方多风格，避开本书已用名，可插入正文或直接建卡。",
       onOpen: onOpenNaming,
+    },
+    {
+      id: "sensitive",
+      icon: <SafetyOutlined />,
+      color: "var(--app-error)",
+      weak: "var(--app-error-weak)",
+      name: "敏感词检测",
+      state: "已上线",
+      desc: "AC 自动机扫全书，内置涉黄涉暴等红线词，可自建词库与批量导入。",
+      onOpen: onOpenSensitive,
     },
     {
       id: "relation",

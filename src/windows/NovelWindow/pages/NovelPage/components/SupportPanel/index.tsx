@@ -18,6 +18,7 @@ import InspirationPanel, { type InspirationActions } from "../InspirationPanel";
 import NameGeneratorPanel, { type NamingActions } from "../NameGeneratorPanel";
 import OutlinePanel, { type OutlineActions } from "../OutlinePanel";
 import SearchPanel from "../SearchPanel";
+import SensitivePanel from "../SensitivePanel";
 import { LAYOUT } from "../../novel-config";
 import { useSearchStore } from "../../store/useSearchStore";
 import type { PanelTab, EntityFilter } from "../../hooks/useNovelViewState";
@@ -27,6 +28,7 @@ import type {
   EntityType,
   SettingCategory,
   NovelEntity,
+  NovelChapter,
   NovelNote,
   OutlineNode,
   SearchHit,
@@ -98,6 +100,21 @@ interface SupportPanelProps {
   namingFavorites: import("../../types").NameFavorite[];
   /** 轻提示：规划中的工具点了也要有回应（UI-09），复用页面级 toast */
   onNotify: (text: string, tone?: import("@/shared/novel/use-auto-toast").ToastTone) => void;
+  /**
+   * 全书章节：敏感词面板「扫描全书」的数据源。
+   *
+   * 可选是因为它只服务工具箱里的一个二级面板；缺省时面板会提示
+   * 「这本书还没有章节」，不影响其余五个 Tab。
+   */
+  chapters?: NovelChapter[];
+  /**
+   * 工具箱二级面板（受控）。
+   *
+   * 不传时退回组件内部 state —— 单测直接渲染本组件不必接这份状态；
+   * 页面侧传入是为了让底部状态条的计数角标能一键直达敏感词面板。
+   */
+  toolSub?: "naming" | "sensitive" | null;
+  onToolSubChange?: (value: "naming" | "sensitive" | null) => void;
 }
 
 interface TabMeta {
@@ -168,9 +185,16 @@ export default function SupportPanel({
   namingExclude,
   namingFavorites,
   onNotify,
+  chapters = [],
+  toolSub: controlledToolSub,
+  onToolSubChange,
 }: SupportPanelProps) {
-  /** 工具箱二级面板：null = 启动器首页 */
-  const [toolSub, setToolSub] = useState<"naming" | null>(null);
+  /** 工具箱二级面板：null = 启动器首页；受控优先，否则组件内自持 */
+  const [internalSub, setInternalSub] = useState<"naming" | "sensitive" | null>(
+    null,
+  );
+  const toolSub = controlledToolSub !== undefined ? controlledToolSub : internalSub;
+  const setToolSub = onToolSubChange ?? setInternalSub;
   /** 面板头「＋ 伏笔」触发次数：OutlinePanel 据此打开首卷的新增表单 */
   const [addForeshadowTick, setAddForeshadowTick] = useState(0);
   const [dragging, setDragging] = useState(false);
@@ -283,10 +307,12 @@ export default function SupportPanel({
     [],
   );
 
-  const openTool = useCallback(() => setToolSub("naming"), []);
-  const backToTools = useCallback(() => setToolSub(null), []);
+  const openTool = useCallback(() => setToolSub("naming"), [setToolSub]);
+  const openSensitive = useCallback(() => setToolSub("sensitive"), [setToolSub]);
+  const backToTools = useCallback(() => setToolSub(null), [setToolSub]);
 
-  const namedActive = toolSub === "naming" ? "naming" : activeTab;
+  // 工具箱二级面板直接顶替 Tab 名：head / foot / 滚动策略都按它分支
+  const namedActive = toolSub ?? activeTab;
 
   // ── 面板头 / 脚：随 Tab 切换 ────────────────────────────────────
   const head = useMemo(() => {
@@ -327,8 +353,14 @@ export default function SupportPanel({
           meta: `已避开本书 ${namingExclude.length} 个已用名`,
           action: null,
         };
+      case "sensitive":
+        return {
+          title: "敏感词检测",
+          meta: "涉黄涉暴等通用红线",
+          action: null,
+        };
       default:
-        return { title: "工具箱", meta: "1 项可用 · 2 项规划中", action: null };
+        return { title: "工具箱", meta: "2 项可用 · 2 项规划中", action: null };
     }
   }, [
     namedActive,
@@ -384,6 +416,13 @@ export default function SupportPanel({
             <span>双击名字插入正文光标处</span>
           </>
         );
+      case "sensitive":
+        return (
+          <>
+            <KeyOutlined />
+            <span>点命中结果跳到正文第一处</span>
+          </>
+        );
       default:
         return (
           <>
@@ -404,7 +443,11 @@ export default function SupportPanel({
    *   统计区 / 切换器留在列表之上不参与滚动，所以这里整块交给内容最省事。
    */
   const flatScroll =
-    namedActive === "note" || namedActive === "search" || namedActive === "outline";
+    namedActive === "note" ||
+    namedActive === "search" ||
+    namedActive === "outline" ||
+    // 敏感词面板：工具栏常驻、结果列表自持滚动
+    namedActive === "sensitive";
 
   return (
     <div className={`nv-panel-region${open ? "" : " is-collapsed"}`}>
@@ -578,8 +621,18 @@ export default function SupportPanel({
                 favorites={namingFavorites}
                 actions={namingActions}
               />
+            ) : toolSub === "sensitive" ? (
+              <SensitivePanel
+                chapterId={activeChapterId}
+                chapters={chapters}
+                onNotify={onNotify}
+              />
             ) : (
-              <ToolLauncher onOpenNaming={openTool} onNotify={onNotify} />
+              <ToolLauncher
+                onOpenNaming={openTool}
+                onOpenSensitive={openSensitive}
+                onNotify={onNotify}
+              />
             ))}
         </div>
 

@@ -244,6 +244,27 @@
     --nv-mark-color: var(--app-text-secondary);
   }
 
+  /*
+   * 敏感词高亮：底纹 + 波浪下划线，不改字宽、不引起重排（与标注层同一条硬约束）。
+   *
+   * 与要素标注的区分靠**下划线形态**（要素是 inset 实线，这里是波浪线）+
+   * 语义色（要素按类型取色，敏感词统一警示色），一眼能分开。
+   *
+   * `--nv-sm-color` 先固定为 error：后续要做分级（block / warn / review）时，
+   * 只需给 decoration 注入这个变量，样式不用再动。
+   */
+  &__host [data-sensitive-word] {
+    --nv-sm-color: var(--app-error);
+    border-radius: 2px;
+    padding: 1px 0;
+    background: color-mix(in srgb, var(--nv-sm-color) 12%, transparent);
+    text-decoration: underline wavy
+      color-mix(in srgb, var(--nv-sm-color) 58%, transparent);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+    cursor: help;
+  }
+
   /* 未选中章节时的空态覆盖层：遮住常驻编辑器而不是卸载它 */
   &__veil {
     position: absolute;

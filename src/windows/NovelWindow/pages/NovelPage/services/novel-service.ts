@@ -23,6 +23,7 @@ import type {
   OutlineEntry,
   SearchHit,
   SettingCategory,
+  SensitiveConfig,
 } from "../types";
 
 /**
@@ -536,5 +537,22 @@ export async function saveNameFavorites(
   return window.electronAPI!.novel.configSet(
     STORAGE_KEYS.namingFavorites,
     JSON.stringify(favorites),
+  );
+}
+
+// ── 敏感词检测（工具箱）：词库 + 扫描模式，复用 config 整读整写 ──
+
+/** 读取敏感词配置 JSON（键不存在返回 null，由上层按默认值兜底） */
+export async function fetchSensitiveConfig(): Promise<string | null> {
+  return window.electronAPI!.novel.configGet(STORAGE_KEYS.sensitiveConfig);
+}
+
+/** 保存敏感词配置（词库 / 屏蔽列表 / 模式三项合一，改动防抖后落库） */
+export async function saveSensitiveConfig(
+  config: SensitiveConfig,
+): Promise<boolean> {
+  return window.electronAPI!.novel.configSet(
+    STORAGE_KEYS.sensitiveConfig,
+    JSON.stringify(config),
   );
 }
