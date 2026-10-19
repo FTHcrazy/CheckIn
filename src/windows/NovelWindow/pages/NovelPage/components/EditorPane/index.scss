@@ -245,24 +245,33 @@
   }
 
   /*
-   * 敏感词高亮：底纹 + 波浪下划线，不改字宽、不引起重排（与标注层同一条硬约束）。
+   * 敏感词：**描边圈注**，与要素标注（填充色块 + 底部实线）在形态上分开。
    *
-   * 与要素标注的区分靠**下划线形态**（要素是 inset 实线，这里是波浪线）+
-   * 语义色（要素按类型取色，敏感词统一警示色），一眼能分开。
+   * 要素标注回答「这是谁」（按类型着色、整块填充，读起来像标签）；
+   * 敏感词回答「这里要改」（统一警示色、只描一圈细边，读起来像红笔圈出来的）。
+   * 两层同时开着时靠**形态**区分而不是靠色相：满屏都是人名的情况下，
+   * 再来一堆同形状的色块，谁也认不出哪个是风险词。
    *
-   * `--nv-sm-color` 先固定为 error：后续要做分级（block / warn / review）时，
+   * 硬约束同标注层：不动 padding-inline、不换字体、不加 border ——
+   * 描边走 inset box-shadow（不参与布局），圈注不会把行高或折行位置顶开。
+   *
+   * `--nv-sm-color` 本轮固定为 error：将来做分级（block / warn / review）时
    * 只需给 decoration 注入这个变量，样式不用再动。
    */
   &__host [data-sensitive-word] {
     --nv-sm-color: var(--app-error);
-    border-radius: 2px;
+    border-radius: 4px;
     padding: 1px 0;
-    background: color-mix(in srgb, var(--nv-sm-color) 12%, transparent);
-    text-decoration: underline wavy
-      color-mix(in srgb, var(--nv-sm-color) 58%, transparent);
-    text-decoration-thickness: 1px;
-    text-underline-offset: 3px;
+    background: color-mix(in srgb, var(--nv-sm-color) 14%, transparent);
+    box-shadow: inset 0 0 0 1px
+      color-mix(in srgb, var(--nv-sm-color) 72%, transparent);
     cursor: help;
+    transition: background var(--nv-t-fast, 120ms) ease;
+  }
+
+  /* 悬停加深一档：正文里满屏圈注会吵，指到哪条才把哪条点亮 */
+  &__host [data-sensitive-word]:hover {
+    background: color-mix(in srgb, var(--nv-sm-color) 22%, transparent);
   }
 
   /* 未选中章节时的空态覆盖层：遮住常驻编辑器而不是卸载它 */

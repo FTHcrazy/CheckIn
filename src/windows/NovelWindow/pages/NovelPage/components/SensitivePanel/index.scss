@@ -7,24 +7,16 @@
    自写规则压不过它们（AGENTS §6.1.2）。
    色值全部走 `var(--app-*)`，换肤自动跟随（§6.1.1）。 */
 
-.nv-sm {
+/* 挂在面板容器下而不是裸 `.nv-sm`：这里的 `display: flex` 一旦泄漏到
+   全局，会作用到任何同名节点上（编辑器里的敏感词标记一度就被它撑成
+   块级元素，段落被顶断）。作用域收窄后，面板样式不可能再跑到正文去。 */
+.nv-panel .nv-sm {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   overflow: hidden;
-
-  &__views {
-    flex: none;
-  }
-
-  &__section {
-    flex: none;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
 
   &__label {
     font-size: 12px;
@@ -58,10 +50,20 @@
     gap: 8px;
   }
 
+  /* 范围切换是附属控件，不该和「检测结果 / 词库」「检测机制」争同一份宽度：
+     那两处是整行等分（.nv-sub__btn 默认 flex:1），这里收成内容宽、靠右。
+     specificity 必须压过 panel-primitives 的 `.nv-panel .nv-sub__btn.ant-btn` */
+  &__scope .nv-sub .nv-sub__btn.ant-btn {
+    flex: none;
+  }
+
   &__stat {
+    min-width: 0;
     font-size: 12px;
     color: var(--app-text-muted);
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   /* ── 结果区滚动容器 ───────────────────────────────────────────── */
@@ -88,21 +90,13 @@
     }
   }
 
-  /* ── 通用按钮 ─────────────────────────────────────────────────── */
-  &__btn.ant-btn {
-    @include widget.ant-button-reset;
-    --ant-control-height: 28px;
-    --ant-button-padding-inline: 10px;
-    --ant-button-content-font-size: 12px;
-    --ant-border-radius: var(--app-radius-chip);
-    --ant-button-default-bg: var(--app-surface-alt);
-    --ant-button-default-color: var(--app-text);
-    --ant-button-default-border-color: var(--app-border);
-    --ant-button-default-hover-bg: var(--app-surface-hover);
-    --ant-button-default-hover-color: var(--app-text);
-    --ant-button-default-hover-border-color: var(--app-border-strong);
-    --ant-button-default-active-bg: var(--app-surface-hover);
-    --ant-button-default-active-color: var(--app-text);
+  /* ── 扫描动作 ─────────────────────────────────────────────────── */
+  /* 外观交给通用 .nv-ghost（与要素详情的底部动作同一套）；等宽伸展纯属布局，
+     走容器子选择器，不额外挂一个只有 flex 的类名——那样会多出一个
+     「有 .ant-btn 规则但没有清零点」的类，触发 novel-ui-kit 守卫 */
+  &__actions > .ant-btn {
+    flex: 1;
+    min-width: 0;
   }
 
   &__icon-btn.ant-btn {
@@ -135,6 +129,12 @@
     --ant-button-default-active-border-color: var(--app-primary);
     display: flex;
     flex-direction: column;
+    /* antd 的 .ant-btn 是「居中排版」的按钮：不清掉 align-items 的话
+       词条 / 章节 / 片段三行都会各自按内容宽度居中，整张卡看起来像标题卡。
+       命中卡是列表项，必须整行铺满、左对齐（text-align 只治行内文本，
+       治不了 flex 子项的交叉轴对齐） */
+    align-items: stretch;
+    justify-content: flex-start;
     gap: 3px;
     width: 100%;
     padding: 8px 10px;

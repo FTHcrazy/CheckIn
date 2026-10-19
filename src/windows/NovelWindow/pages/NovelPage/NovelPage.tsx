@@ -162,6 +162,7 @@ export default function NovelPage({
    */
   const sensitive = useSensitiveDetection({
     activeWorkId: data.activeWorkId,
+    currentChapterId: activeChapterId,
     onSelectChapter: handleSelectChapter,
   });
 
@@ -529,9 +530,11 @@ export default function NovelPage({
             onScrollChange={handleScrollChange}
             sensitiveWords={sensitive.words}
             sensitiveOn={sensitive.enabled}
+            sensitiveRanges={sensitive.ranges}
             focusPos={sensitive.focusPos}
             onFocusPosApplied={sensitive.clearFocusPos}
             onDraftPulse={sensitive.handleDraftPulse}
+            onSensitiveRangesMapped={sensitive.handleRangesMapped}
           />
 
           <StatusBar

@@ -39,9 +39,12 @@ import {
   sensitiveEnabledCompartment,
   sensitiveEnabledFacet,
   sensitiveLayer,
+  sensitiveRangesCompartment,
+  sensitiveRangesFacet,
   sensitiveWordsCompartment,
   sensitiveWordsFacet,
 } from "../../sensitive-editor";
+import type { SensitiveRange } from "../../sensitive";
 import type { EditorSelection } from "../../hooks/useNovelEditorState";
 import "./index.scss";
 
@@ -83,8 +86,18 @@ interface EditorPaneProps {
   onScrollChange: (scrollTop: number) => void;
   /** 敏感词词库（工具箱 → 敏感词检测）；缺省不渲染高亮层 */
   sensitiveWords?: readonly string[];
-  /** 敏感词高亮开关（仅自动模式为 true；手动模式正文保持干净） */
+  /** 敏感词高亮开关（仅「关闭」模式为 false） */
   sensitiveOn?: boolean;
+  /**
+   * 手动模式的标注源：`null` = 按词库实时扫（自动模式），
+   * 数组 = 只标这些区间（手动模式下没扫描过就是空数组）。
+   */
+  sensitiveRanges?: readonly SensitiveRange[] | null;
+  /**
+   * 手动模式：正文改字后，高亮层把跟着平移过的区间报回来（防抖）。
+   * 必须引用稳定 —— 高亮层只在初始化时读一次。
+   */
+  onSensitiveRangesMapped?: (ranges: SensitiveRange[]) => void;
   /** 面板点结果后要定位的文档偏移；编辑器消费一次即回调清空 */
   focusPos?: number | null;
   onFocusPosApplied?: () => void;
@@ -196,6 +209,8 @@ export default function EditorPane({
   onScrollChange,
   sensitiveWords,
   sensitiveOn = false,
+  sensitiveRanges = null,
+  onSensitiveRangesMapped,
   focusPos = null,
   onFocusPosApplied,
   onDraftPulse,
@@ -453,7 +468,12 @@ export default function EditorPane({
           stylingCompartment.of(buildTheme(settings)),
           annotationLayer(terms, enabled),
           // 敏感词高亮层：与要素标注层完全独立（各自 compartment / facet）
-          sensitiveLayer(sensitiveWords ?? NO_WORDS, sensitiveOn),
+          sensitiveLayer(
+            sensitiveWords ?? NO_WORDS,
+            sensitiveOn,
+            sensitiveRanges,
+            onSensitiveRangesMapped ?? null,
+          ),
           EditorView.updateListener.of((update) => {
             if (update.docChanged) {
               // FR-06 打字保护：作者一敲字，任何在场的引导立刻让位。
@@ -517,10 +537,23 @@ export default function EditorPane({
       composingRef.current = false;
       // 组合期间的中间态从未上报，store 的基线仍是「组合前的已知正文」
       // （草稿，兜底 contentRef 里的章节正文），增量即确认文本
-      handlersRef.current.onChange(
-        view.state.doc.toString(),
-        contentRef.current,
-      );
+      const next = view.state.doc.toString();
+      handlersRef.current.onChange(next, contentRef.current);
+      /*
+       * ⚠️ 这里必须补一次脉搏。
+       *
+       * CodeMirror 自己的 compositionend 监听先于本监听器执行：它在那一刻把
+       * 候选文本刷进文档，于是 updateListener 收到 docChanged 时
+       * `composingRef` 还是 true，按上面的守卫直接早退 —— 整段中文输入
+       * 从未上报过脉搏。后果有两个：
+       *   1. 自动模式对中文输入完全不重扫（作者的主要输入方式）
+       *   2. 手动模式点「扫描本章」扫的是**输入之前**的正文，坐标整体偏移
+       *      N 个字，怎么重扫都对不上 —— 正是「改了几个字，高亮全偏了」的根因
+       */
+      const pulseId = chapterIdRef.current;
+      if (pulseId) {
+        handlersRef.current.onDraftPulse(pulseId, chapterTitleRef.current, next);
+      }
     };
     view.contentDOM.addEventListener("compositionstart", handleCompositionStart);
     view.contentDOM.addEventListener("compositionend", handleCompositionEnd);
@@ -663,7 +696,7 @@ export default function EditorPane({
     });
   }, [terms, enabled]);
 
-  // 敏感词词库 / 开关热更新：与要素标注层同一套 compartment 范式，
+  // 敏感词词库 / 开关 / 标注源热更新：与要素标注层同一套 compartment 范式，
   // 但互不影响（关掉人名高亮不该顺手关掉敏感词高亮）。
   // 强制刷新信号必须同事务携带：纯 facet 变化不会触发 decoration 重算
   useEffect(() => {
@@ -675,10 +708,13 @@ export default function EditorPane({
         sensitiveEnabledCompartment.reconfigure(
           sensitiveEnabledFacet.of(sensitiveOn),
         ),
+        sensitiveRangesCompartment.reconfigure(
+          sensitiveRangesFacet.of(sensitiveRanges),
+        ),
         refreshSensitive.of(null),
       ],
     });
-  }, [sensitiveWords, sensitiveOn]);
+  }, [sensitiveWords, sensitiveOn, sensitiveRanges]);
 
   /**
    * 跳转定位（面板点命中结果）。

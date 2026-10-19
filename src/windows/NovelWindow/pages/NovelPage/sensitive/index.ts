@@ -17,20 +17,27 @@ export {
 } from "./builtin-words";
 export { mapMatchToRaw, normalizeForMatch, type NormalizedText } from "./normalize";
 export {
+  bucketMatches,
   buildHitSnippet,
   buildScanResult,
   scanChapter,
+  scanChapterWithMatches,
   scanChapters,
   scanText,
   summarizeHits,
+  type ChapterScan,
   type RawSensitiveMatch,
 } from "./scan";
 export {
   DEFAULT_SENSITIVE_CONFIG,
+  isHighlightEnabled,
+  resolveHighlightSource,
   SENSITIVE_MODE_META,
   SENSITIVE_TERM_MAX_LENGTH,
+  type HighlightSource,
   type SensitiveConfig,
   type SensitiveHit,
+  type SensitiveRange,
   type SensitiveScanMode,
   type SensitiveScanResult,
   type SensitiveWord,

@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import { Button, Empty, Input, Popconfirm, Segmented, Upload } from "antd";
+import { Button, Input, Popconfirm, Upload } from "antd";
 import {
   DeleteOutlined,
   DownloadOutlined,
@@ -7,6 +7,7 @@ import {
   PlusOutlined,
   ReloadOutlined,
   ScanOutlined,
+  SearchOutlined,
   StopOutlined,
 } from "@ant-design/icons";
 import type { UploadProps } from "antd";
@@ -36,16 +37,50 @@ type ResultScope = "chapter" | "book";
 const VIEW_OPTIONS = [
   { label: "检测结果", value: "result" },
   { label: "词库", value: "words" },
-];
+] as const;
 
 const SCOPE_OPTIONS = [
   { label: "本章", value: "chapter" },
   { label: "全书", value: "book" },
-];
+] as const;
 
 const MODE_OPTIONS = (Object.keys(SENSITIVE_MODE_META) as SensitiveScanMode[]).map(
   (mode) => ({ label: SENSITIVE_MODE_META[mode].label, value: mode }),
 );
+
+/**
+ * 分段切换。
+ *
+ * 刻意不用 antd `Segmented`：本项目所有右栏分段切换都是 `.nv-sub` + antd
+ * Button + `.is-on` 这套（大纲的「章节 / 伏笔」、检索的「全书 / 本章 / 要素名」），
+ * 外观由 panel-primitives 里那组「轨道底色 + 浮起白滑块」变量统一管。
+ * 混进一个 Segmented 就等于在同一个面板里开第二套视觉语言：轨道、圆角、
+ * 滑块阴影、字号全都对不上，切过去一眼能看出「这不是同一家的控件」。
+ */
+function PanelSwitch<T extends string>({
+  value,
+  options,
+  onChange,
+}: {
+  value: T;
+  options: readonly { label: string; value: T }[];
+  onChange: (value: T) => void;
+}) {
+  return (
+    <div className="nv-sub">
+      {options.map((item) => (
+        <Button
+          key={item.value}
+          className={`nv-sub__btn${value === item.value ? " is-on" : ""}`}
+          aria-pressed={value === item.value}
+          onClick={() => onChange(item.value)}
+        >
+          {item.label}
+        </Button>
+      ))}
+    </div>
+  );
+}
 
 /**
  * 敏感词检测面板（工具箱二级面板）
@@ -238,33 +273,25 @@ export default function SensitivePanel({
 
   return (
     <div className="nv-sm">
-      <div className="nv-sm__views">
-        <Segmented
-          block
-          size="small"
-          value={view}
-          options={VIEW_OPTIONS}
-          onChange={(value) => setView(value as PanelView)}
-        />
-      </div>
+      <PanelSwitch
+        value={view}
+        options={VIEW_OPTIONS}
+        onChange={(value) => setView(value)}
+      />
 
       {view === "result" ? (
         <>
-          <div className="nv-sm__section">
-            <span className="nv-sm__label">检测机制</span>
-            <Segmented
-              block
-              size="small"
-              value={config.mode}
-              options={MODE_OPTIONS}
-              onChange={(value) => setMode(value as SensitiveScanMode)}
-            />
-            <p className="nv-sm__hint">{SENSITIVE_MODE_META[config.mode].hint}</p>
-          </div>
+          <div className="nv-sechead">检测机制</div>
+          <PanelSwitch
+            value={config.mode}
+            options={MODE_OPTIONS}
+            onChange={(value) => setMode(value)}
+          />
+          <p className="nv-sm__hint">{SENSITIVE_MODE_META[config.mode].hint}</p>
 
           <div className="nv-sm__actions">
             <Button
-              className="nv-sm__btn"
+              className="nv-ghost"
               icon={<ScanOutlined />}
               disabled={config.mode === "off"}
               onClick={handleScanChapter}
@@ -272,7 +299,7 @@ export default function SensitivePanel({
               扫描本章
             </Button>
             <Button
-              className="nv-sm__btn"
+              className="nv-ghost"
               icon={scanningBook ? <ReloadOutlined spin /> : <DownloadOutlined />}
               disabled={config.mode === "off" || scanningBook}
               onClick={handleScanBook}
@@ -284,24 +311,25 @@ export default function SensitivePanel({
           </div>
 
           {config.mode === "off" ? (
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description="检测已关闭，正文也不会高亮"
-            />
+            <div className="nv-empty">
+              <b>检测已关闭</b>
+              <span>选「自动」或「手动」后，正文才会标出敏感词</span>
+            </div>
           ) : (
             <>
               <div className="nv-sm__summary">
-                <Segmented
-                  size="small"
-                  value={scope}
-                  options={SCOPE_OPTIONS}
-                  onChange={(value) => setScope(value as ResultScope)}
-                />
                 <span className="nv-sm__stat">
                   {activeResult
                     ? `${activeResult.total} 处 · ${activeResult.wordCount} 词 · ${activeResult.chapterCount} 章`
                     : "尚未扫描"}
                 </span>
+                <div className="nv-sm__scope">
+                  <PanelSwitch
+                    value={scope}
+                    options={SCOPE_OPTIONS}
+                    onChange={(value) => setScope(value)}
+                  />
+                </div>
               </div>
 
               {resultStale && (
@@ -313,13 +341,26 @@ export default function SensitivePanel({
               <div className="nv-sm__list">
                 {activeResult && activeResult.hits.length > 0 ? (
                   activeResult.hits.map(renderHit)
+                ) : activeResult ? (
+                  <div className="nv-empty">
+                    <b>{scope === "book" ? "全书未命中" : "本章未命中"}</b>
+                    <span>
+                      {scope === "book"
+                        ? "整本扫完，没有命中词库里的词"
+                        : "这一章没有命中词库里的词"}
+                    </span>
+                  </div>
                 ) : (
-                  <Empty
-                    image={Empty.PRESENTED_IMAGE_SIMPLE}
-                    description={
-                      scope === "book" ? "全书未命中" : "本章未命中"
-                    }
-                  />
+                  /* 没扫过与「扫了 0 命中」是两件事：前者正文不该有任何红字，
+                     文案得说清「现在还没有结果」，而不是误报「没有风险词」 */
+                  <div className="nv-empty">
+                    <b>尚未扫描</b>
+                    <span>
+                      {config.mode === "manual"
+                        ? "点「扫描本章」，命中处才会在正文标出"
+                        : "停笔 500ms 后自动扫描当前章"}
+                    </span>
+                  </div>
                 )}
               </div>
             </>
@@ -327,42 +368,46 @@ export default function SensitivePanel({
         </>
       ) : (
         <>
-          <div className="nv-sm__section">
+          {/* 输入行与其它 Tab 统一走 .nv-field：容器画边框，组件库 Input 走
+              borderless —— 直接摆一个 size="small" 的 Input 会得到一套
+              和检索 / 大纲都不一样的圆角与内边距 */}
+          <div className="nv-field">
             <Input
-              size="small"
+              variant="borderless"
               value={newTerm}
               maxLength={40}
               placeholder="新增词条，回车添加"
               onChange={(event) => setNewTerm(event.target.value)}
               onPressEnter={handleAdd}
-              suffix={
-                <Button
-                  className="nv-sm__icon-btn"
-                  icon={<PlusOutlined />}
-                  title="添加词条"
-                  onClick={handleAdd}
-                />
-              }
             />
-            <div className="nv-sm__actions">
-              <Upload
-                accept=".txt,.json"
-                showUploadList={false}
-                beforeUpload={handleImport}
-              >
-                <Button className="nv-sm__btn" icon={<DownloadOutlined />}>
-                  导入词库
-                </Button>
-              </Upload>
-              <span className="nv-sm__stat">
-                内置 {builtinCount} · 自定义 {userCount}
-              </span>
-            </div>
+            <Button
+              className="nv-field__clear"
+              icon={<PlusOutlined />}
+              title="添加词条"
+              aria-label="添加词条"
+              onClick={handleAdd}
+            />
           </div>
 
-          <div className="nv-sm__section">
+          <div className="nv-sm__actions">
+            <Upload
+              accept=".txt,.json"
+              showUploadList={false}
+              beforeUpload={handleImport}
+            >
+              <Button className="nv-ghost" icon={<DownloadOutlined />}>
+                导入词库
+              </Button>
+            </Upload>
+            <span className="nv-sm__stat">
+              内置 {builtinCount} · 自定义 {userCount}
+            </span>
+          </div>
+
+          <div className="nv-field">
+            <SearchOutlined />
             <Input
-              size="small"
+              variant="borderless"
               allowClear
               value={filter}
               placeholder="筛选词条"
@@ -372,7 +417,10 @@ export default function SensitivePanel({
 
           <div className="nv-sm__list">
             {visibleWords.length === 0 ? (
-              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有匹配的词条" />
+              <div className="nv-empty">
+                <b>没有匹配的词条</b>
+                <span>换个关键词，或直接在上面新增一条</span>
+              </div>
             ) : (
               visibleWords.map((item) => (
                 <div className="nv-sm-word" key={`${item.origin}:${item.term}`}>

@@ -18,15 +18,18 @@
 
 import { create } from "zustand";
 import {
+  bucketMatches,
   buildActiveWords,
   buildScanResult,
   DEFAULT_SENSITIVE_CONFIG,
   parseSensitiveConfig,
   sanitizeTerms,
   scanChapter,
+  scanChapterWithMatches,
   summarizeHits,
   type SensitiveConfig,
   type SensitiveHit,
+  type SensitiveRange,
   type SensitiveScanMode,
   type SensitiveScanResult,
 } from "../sensitive";
@@ -73,6 +76,14 @@ export interface SensitiveState {
 
   /** 本章扫描结果（自动模式随输入刷新） */
   chapterResult: SensitiveScanResult | null;
+  /**
+   * 本章每一处命中的原文区间（手动模式的标注源）。
+   *
+   * `SensitiveHit` 是「词 × 章」的聚合、每个词只留首个位置，标红不够用；
+   * 这里存逐处区间。**没有扫描结果时为 null/空** —— 手动模式据此做到
+   * 「没扫过就一个字不标」，标注与面板列表、状态条计数三者同源。
+   */
+  chapterMatches: SensitiveRange[] | null;
   /** `chapterResult` 实际扫的是哪一章：面板据此判断结果是否已过期 */
   chapterResultId: string | null;
   /** 全书扫描结果 */
@@ -108,6 +119,14 @@ export interface SensitiveState {
   noteDraft: (chapter: { id: string; title: string; content: string }) => void;
   /** 用最近一次记录的草稿扫本章；没有记录时返回 false */
   scanLatestDraft: () => boolean;
+  /**
+   * 正文编辑后，编辑器把「跟着挪过」的区间报回来。
+   *
+   * 只接受**本章**的上报（结果换了章就丢弃，避免把 A 章的坐标写到 B 章）。
+   * 不重跑扫描：区间就是扫描结论，只是坐标随编辑平移了，这里只重算聚合
+   * （词数 / 处数 / 跳转位置 / 上下文片段），让面板与正文高亮同源。
+   */
+  syncChapterRanges: (chapterId: string, ranges: SensitiveRange[]) => void;
   /** 全书扫描（分批） */
   scanBook: (chapters: readonly NovelChapter[]) => void;
   /** 中止在途的全书扫描 */
@@ -178,6 +197,7 @@ function applyConfig(
   };
   if (invalidate) {
     patch.chapterResult = null;
+    patch.chapterMatches = null;
     patch.chapterResultId = null;
     patch.bookResult = null;
   }
@@ -197,6 +217,7 @@ export const useSensitiveStore = create<SensitiveState>()((set, get) => ({
   activeWords: buildActiveWords(DEFAULT_SENSITIVE_CONFIG),
   ready: false,
   chapterResult: null,
+  chapterMatches: null,
   chapterResultId: null,
   bookResult: null,
   scanningChapter: false,
@@ -233,12 +254,22 @@ export const useSensitiveStore = create<SensitiveState>()((set, get) => ({
       cancelBook();
       set({
         chapterResult: null,
+        chapterMatches: null,
         chapterResultId: null,
         bookResult: null,
         scanningBook: false,
         bookProgress: 0,
       });
+      return;
     }
+    /*
+     * 切到自动：立刻补一次扫描。
+     *
+     * 自动模式的正文是「按词库实时标」的，而角标计数读扫描结果 —— 不补这一次，
+     * 切过来会有一个「正文已经标了、计数还是上一次的」窗口期，直到用户下一次
+     * 停笔才对齐。防抖仍然走 500ms，只是把触发点从「敲字」挪到「切模式」。
+     */
+    if (mode === "auto" && latestDraft) get().noteDraft(latestDraft);
   },
 
   addWords: (terms) => {
@@ -312,9 +343,15 @@ export const useSensitiveStore = create<SensitiveState>()((set, get) => ({
 
   scanCurrentChapter: (chapter) => {
     const { activeWords } = get();
-    const hits = scanChapter(chapter.id, chapter.title, chapter.content, activeWords);
+    const { hits, matches } = scanChapterWithMatches(
+      chapter.id,
+      chapter.title,
+      chapter.content,
+      activeWords,
+    );
     set({
       chapterResult: buildScanResult(hits, "chapter", Date.now()),
+      chapterMatches: matches,
       chapterResultId: chapter.id,
       scanningChapter: false,
     });
@@ -335,6 +372,26 @@ export const useSensitiveStore = create<SensitiveState>()((set, get) => ({
     if (!draft) return false;
     get().scanCurrentChapter(draft);
     return true;
+  },
+
+  syncChapterRanges: (chapterId, ranges) => {
+    const state = get();
+    // 没扫过（手动模式）或结果属于别的章：这条上报无处可落，丢弃
+    if (state.chapterMatches === null || state.chapterResultId !== chapterId) return;
+    const draft = latestDraft;
+    const { hits } = bucketMatches(
+      ranges,
+      draft?.content ?? "",
+      chapterId,
+      draft?.title ?? "",
+    );
+    // 扫描时间保持第一次扫描的那个：结果还是同一次扫描的结论，只是坐标挪了，
+    // 每敲一次字就刷新时间会让面板看起来像「一直在重扫」
+    const scannedAt = state.chapterResult?.scannedAt ?? Date.now();
+    set({
+      chapterMatches: ranges,
+      chapterResult: buildScanResult(hits, "chapter", scannedAt),
+    });
   },
 
   scanBook: (chapters) => {
@@ -378,11 +435,32 @@ export const useSensitiveStore = create<SensitiveState>()((set, get) => ({
       }
 
       bookCancel = null;
-      set({
+      const patch: Partial<SensitiveState> = {
         bookResult: buildScanResult(summarizeHits(collected), "book", Date.now()),
         scanningBook: false,
         bookProgress: 1,
-      });
+      };
+      /*
+       * 全书扫完顺手把「本章」也刷新一次。
+       *
+       * 手动模式的正文红字来自 `chapterMatches`，状态条计数读 `chapterResult` ——
+       * 只更新全书结果的话，扫完全书会「正文标红了、角标还是 0」，又是一次
+       * 「这些红色从哪来」。用 latestDraft 而不是列表里的 content：前者含未保存
+       * 的编辑，和屏幕上看到的正文是同一份。
+       */
+      const draft = latestDraft;
+      if (draft) {
+        const chapterScan = scanChapterWithMatches(
+          draft.id,
+          draft.title,
+          draft.content,
+          words,
+        );
+        patch.chapterResult = buildScanResult(chapterScan.hits, "chapter", Date.now());
+        patch.chapterMatches = chapterScan.matches;
+        patch.chapterResultId = draft.id;
+      }
+      set(patch);
     };
 
     pump();
@@ -402,6 +480,7 @@ export const useSensitiveStore = create<SensitiveState>()((set, get) => ({
     latestDraft = null;
     set({
       chapterResult: null,
+      chapterMatches: null,
       chapterResultId: null,
       bookResult: null,
       scanningChapter: false,
@@ -432,6 +511,7 @@ export function resetSensitiveStoreForTest(): void {
     activeWords: buildActiveWords(DEFAULT_SENSITIVE_CONFIG),
     ready: false,
     chapterResult: null,
+    chapterMatches: null,
     chapterResultId: null,
     bookResult: null,
     scanningChapter: false,

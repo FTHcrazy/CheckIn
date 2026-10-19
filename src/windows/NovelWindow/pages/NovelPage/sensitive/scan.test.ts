@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { buildHitSnippet, buildScanResult, scanChapter, scanText } from "./scan";
+import {
+  buildHitSnippet,
+  buildScanResult,
+  scanChapter,
+  scanChapterWithMatches,
+  scanText,
+} from "./scan";
 import type { NovelChapter } from "../types";
 
 const chapter = (over: Partial<NovelChapter>): NovelChapter => ({
@@ -107,5 +113,29 @@ describe("scanChapter 与章标题的耦合", () => {
   it("章节对象为空正文时安全返回", () => {
     const empty = chapter({ content: "" });
     expect(scanChapter(empty.id, empty.title, empty.content, ["色情"])).toEqual([]);
+  });
+});
+
+describe("scanChapterWithMatches：聚合与逐处区间是同一次扫描", () => {
+  it("matches 是每一处、hits 是按词聚合，两者不能各扫一遍", () => {
+    const scan = scanChapterWithMatches(
+      "c1",
+      "第一章",
+      "斩首示众，又一次斩首。",
+      ["斩首"],
+    );
+    // 面板列表只给一行（按词聚合），正文标红要两处
+    expect(scan.hits).toHaveLength(1);
+    expect(scan.hits[0].count).toBe(2);
+    expect(scan.matches).toHaveLength(2);
+    // 区间必须落在原文里、且就是那个词
+    expect(scan.matches.map((m) => m.word)).toEqual(["斩首", "斩首"]);
+    expect(scan.matches[0].to).toBeGreaterThan(scan.matches[0].from);
+  });
+
+  it("未命中时两份结果都是空（手动模式的空标注来源）", () => {
+    const scan = scanChapterWithMatches("c1", "第一章", "干净的正文", ["赌博"]);
+    expect(scan.hits).toEqual([]);
+    expect(scan.matches).toEqual([]);
   });
 });
