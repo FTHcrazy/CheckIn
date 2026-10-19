@@ -1131,6 +1131,42 @@ function initializeDataDb(db: Database) {
 只有在**明确知道要重设一套结构、且接受丢掉旧数据**时才打开它，重构做完立刻关掉。
 长期挂着 `refactor` 等于长期没有迁移规范。
 
+### 6.8 打包与依赖归位规范（2.0.0）
+
+**背景**：1.44.0 的 `app.asar` 是 117.34 MiB，其中 `node_modules` 占 121.89 MiB
+逻辑体积 —— 而运行期真正 `require` 的只有 4 个包。原因是 electron-builder 会把
+`package.json` 的 **production `dependencies` 整棵依赖树**塞进 asar，而 19 个纯渲染层
+依赖（antd / react / framer-motion …）早已被 Vite 打进 `dist`（2.20 MiB），asar 里那份
+是纯冗余。开发、调试、功能验证全都不受影响，只有安装包悄悄胖了 5 倍。
+
+**三条铁律**：
+
+1. **判断 `dependencies` / `devDependencies` 的唯一标准是「主进程运行时是否 `require` 它」。**
+   渲染层依赖即使被业务代码 `import`，也必须是 `devDependencies` —— Vite 会把它们打进
+   `dist`，写进 `dependencies` 只会让 electron-builder 把整棵树再塞进 asar 一遍。
+   当前 production `dependencies` 只允许是：`better-sqlite3` / `docx` / `jszip` / `mammoth`。
+2. **新的主进程 Node 依赖必须同时出现在两处**：`vite.config.ts` 的 electron `external`
+   与 `package.json` 的 `dependencies`。只加 external 不声明 → 打包后运行期
+   `Cannot find module`；只声明不加 external → 打包体积白白翻倍（甚至因 pnpm 非扁平结构
+   解析失败而构建红）。
+3. **原生模块的 `asarUnpack` 必须精确到 `.node`**，禁止 `node_modules/**/*.node` 这种
+   整包外置写法 —— 命中一条 `.node` 会触发 smartUnpack 把整个包（含 `deps/sqlite3.c`
+   9.8 MB、`src/*.cpp` 等编译期物料）外置到 `app.asar.unpacked`。
+   **改动任何打包配置后必须跑 `pnpm analyze:asar` 并把分区数据贴进 CHANGELOG / 文档留痕。**
+
+**配套工具与守卫**：
+
+| 项 | 位置 | 作用 |
+|---|---|---|
+| 体积审计 | `scripts/analyze-asar.mjs`（`pnpm analyze:asar`） | 读 asar header，输出顶层分区 / node_modules 按包排序 / 分区小计，`--json` 便于前后对比 |
+| 打包守卫 | `electron/packaging-guard.test.ts` | 断言 dependencies 只有 4 个、external ⊆ dependencies、`build.files` 排除项齐全、`asarUnpack` 精确到 `.node`、version major ≥ 2 |
+| 事后清理 | `scripts/after-pack.js` | 删 Chromium 物料（`LICENSES.chromium.html` / `dxcompiler.dll` / swiftshader / `d3dcompiler_47.dll`），**保留** `LICENSE`（Electron MIT 许可）与 `dxil.dll`（GPU 回退依赖，待 Electron 44 实机回归后评估） |
+
+**locale 裁减**走 `build.electronLanguages: ["zh-CN", "en-US"]` 前置完成，
+`after-pack.js` 里的 locale 清理只作兜底（配置被改回默认时仍能收口）。
+
+数据与后续见 `docs/packaging/bundle-slimming-2.0.0.md`。
+
 ---
 
 ## 7. 技术债务与改进方向
@@ -1206,7 +1242,7 @@ function initializeDataDb(db: Database) {
 - [ ] 在 `electron/preload.ts` 暴露到 `window.electronAPI`
 - [ ] 在 `src/shared/types/electron.d.ts` 更新 `ElectronAPI` 接口
 - [ ] 在 Service 层封装调用（如 `shared/services/xxx.ts` 或页面 `services/`）
-- [ ] 若 handler 引入新的主进程 Node 依赖，须将其加入 `vite.config.ts` 的 electron `external`（当前：`electron` / `better-sqlite3` / `mammoth` / `docx` / `jszip`），否则 rolldown 会尝试打包其传递依赖而失败
+- [ ] 若 handler 引入新的主进程 Node 依赖，须**同时**做两件事：加入 `vite.config.ts` 的 electron `external`（当前：`electron` / `better-sqlite3` / `mammoth` / `docx` / `jszip`），否则 rolldown 会尝试打包其传递依赖而失败；并加入 `package.json` 的 production `dependencies`，否则打包后运行期 `Cannot find module`。两处必须一致，由 `electron/packaging-guard.test.ts` 守卫（规则见 §6.8）
 
 ### 8.6 更新日志规范
 

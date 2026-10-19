@@ -71,6 +71,16 @@ const kept = new Set(keptMinorList);
 const keptBlocks = blocks.filter((b) => kept.has(b.minor));
 const archived = blocks.filter((b) => !kept.has(b.minor));
 
+// 无需分流：主文件仍在 800 行以内、所有版本都在保留窗口内。
+// 此时必须直接退出 —— 后续逻辑用 archived[0] 计算归档指针，空归档会抛 TypeError。
+if (archived.length === 0) {
+  console.log(
+    `[split-changelog] 无需分流：${lines.length} 行（上限 ${MAX_LINES}），` +
+      `${blocks.length} 个版本全部保留在主文件。`,
+  );
+  process.exit(0);
+}
+
 mkdirSync(archiveDir, { recursive: true });
 
 // 按次版本分组写文件（同一文件的版本仍保持倒序）
