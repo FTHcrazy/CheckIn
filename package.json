@@ -1,7 +1,7 @@
 {
   "name": "checkin",
   "private": true,
-  "version": "2.0.0",
+  "version": "2.1.1",
   "description": "CheckIn Desktop Application",
   "main": "dist-electron/main.js",
   "author": "FTH",
@@ -21,8 +21,7 @@
     "electron:build:lite": "tsc -b && cross-env CHECKIN_EDITION=lite vite build && cross-env ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ electron-builder",
     "electron:build:novel": "tsc -b && cross-env CHECKIN_EDITION=novel vite build && cross-env ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ electron-builder",
     "electron:preview": "vite build && electron .",
-    "electron:rebuild": "node scripts/rebuild-native.mjs",
-    "electron:setup": "pnpm install && pnpm ensure:electron && pnpm electron:rebuild",
+    "electron:setup": "pnpm install && pnpm ensure:electron",
     "typecheck": "tsc -b",
     "ensure:electron": "node scripts/ensure-electron.mjs",
     "dev:doctor": "node scripts/dev-doctor.mjs",
@@ -33,7 +32,7 @@
   },
   "packageManager": "pnpm@11.25.0",
   "dependencies": {
-    "better-sqlite3": "^12.11.1",
+    "better-sqlite3": "^13.0.3",
     "docx": "^9.5.1",
     "jszip": "^3.10.2",
     "mammoth": "^1.11.0"
@@ -48,7 +47,6 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@electron/asar": "^3.4.1",
-    "@electron/rebuild": "^4.0.4",
     "@eslint/js": "^10.0.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
@@ -62,8 +60,8 @@
     "concurrently": "^10.0.3",
     "cross-env": "^10.1.0",
     "dayjs": "^1.11.21",
-    "electron": "^42.4.1",
-    "electron-builder": "^25.1.8",
+    "electron": "^44.9.0",
+    "electron-builder": "^26.17.0",
     "eslint": "^10.3.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
@@ -120,10 +118,14 @@
       "!node_modules/**/*.d.ts",
       "!node_modules/**/{test,tests,__tests__,spec,docs,example,examples,benchmark}/**",
       "!node_modules/@types/**",
-      "!node_modules/better-sqlite3/{deps,src}/**"
+      "!node_modules/better-sqlite3/{deps,src}/**",
+      "!node_modules/better-sqlite3/prebuilds/darwin-*.node",
+      "!node_modules/better-sqlite3/prebuilds/linux-*.node",
+      "!node_modules/better-sqlite3/prebuilds/linuxmusl-*.node",
+      "!node_modules/better-sqlite3/prebuilds/win32-arm64.node"
     ],
     "asarUnpack": [
-      "node_modules/better-sqlite3/build/Release/*.node"
+      "node_modules/better-sqlite3/prebuilds/win32-x64.node"
     ],
     "electronLanguages": [
       "zh-CN",

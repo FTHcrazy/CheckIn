@@ -217,11 +217,11 @@ better-sqlite3 unpacked 目录 = build, lib, LICENSE, package.json   # deps/ 与
 
 | 项 | 现状 | 为什么这次不做 | 后续条件 |
 |---|---|---|---|
-| **升级 Electron 42 → 44** | 保持 42.4.1 | 需要实机回归（原生模块 ABI、GPU、托盘、协议注册），与体积治理不是同一件事 | 独立阶段：升级后重跑 `pnpm electron:rebuild` + 全量单测 + 冒烟 |
-| **删除 `dxil.dll`（1.44 MB）** | 保留 | 与已删的 `dxcompiler.dll` 配套；无法实机验证 GPU 回退路径时删除有白屏风险 | Electron 44 实机回归通过后评估 |
-| **升级 electron-builder 25 → 26** | 保持 25.1.8 | 26 的 files / asar 行为有变更，需重新核对守卫与产物 | 单独一次打包实验，产出对比表 |
+| **升级 Electron 42 → 44** | **✅ 2.1.0 已完成** | 已升到 44.9.0 + better-sqlite3 13.0.3（N-API）+ electron-builder 26.17.0，详见 `docs/electron-44-upgrade-precheck.md` | 实机回归清单（透明窗口 / GPU / 托盘 / 下载落盘）仍需用户手动跑 |
+| **删除 `dxil.dll`（1.44 MB）** | 保留 | 与已删的 `dxcompiler.dll` 配套；删本地 DXC 后依赖系统 FXC 回退，收益不值得再压一层 | 如未来确认全量用户都在 Win10+，可评估 |
+| **升级 electron-builder 25 → 26** | **✅ 2.1.0 已完成** | 26.17.0；v26 移除 `app-builder-bin`、原生模块改由 `@electron/rebuild`（`npmRebuild:false` 下不触发） | —— |
 | **进一步瘦身 `docx`（4.32 MiB，含 iife/umd/esm 三份产物）** | 未做 | 需要 `files` 级子路径裁剪（只留 `dist/index.cjs`），属于「改第三方包内容」，风险与收益比不佳 | 如未来 asar 仍偏大，可尝试 |
-| **`better-sqlite3` 单包外置体积（1.86 MB）** | 已最小化 | 只剩 `build/Release/*.node` + `lib/` | —— |
+| **`better-sqlite3` 单包体积** | **✅ 2.1.0 已重算** | 13.x 外置的是 `prebuilds/win32-x64.node`（≈2 MiB）；另外 7 个平台的预编译已在 `files` 中排除 | —— |
 
 ---
 

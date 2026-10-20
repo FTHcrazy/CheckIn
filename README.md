@@ -14,11 +14,10 @@ pnpm electron:setup
 pnpm dev
 ```
 
-如果出现 `NODE_MODULE_VERSION` 不匹配，单独重新编译原生模块：
-
-```bash
-pnpm electron:rebuild
-```
+> `better-sqlite3` 自 **13.0** 起改用 Node-API（N-API）预编译二进制，随 npm 包分发、
+> 跨 Node / Electron ABI 通用，**不再需要 `pnpm electron:rebuild` 这一步**。
+> 若原生模块加载失败（`Could not locate the bindings file` 等），执行 `pnpm install`
+> 重装即可，它会重新解压 `node_modules/better-sqlite3/prebuilds/`。
 
 ## 常见异常排查
 
@@ -38,7 +37,9 @@ pnpm electron:rebuild
 
 **处理**：
 
-1. 确认 `pnpm-workspace.yaml` 的 `allowBuilds` 白名单包含 `electron`、`better-sqlite3`、`esbuild`（pnpm 9/10 走 `package.json` 的 `pnpm.onlyBuiltDependencies`，两处都别漏）；
+1. 确认 `pnpm-workspace.yaml` 的 `allowBuilds` 里 `electron: true`、`esbuild: true`、
+   **`better-sqlite3: false`**（13.x 用包内预编译，本地编译必失败，见「4. pnpm 9 装不上」）；
+   pnpm 9/10 走 `package.json` 的 `pnpm.onlyBuiltDependencies`，**两处都要维护，别只改一边**；
 2. 改完后普通 `pnpm install` 可能因 "Already up to date" 跳过构建脚本，用以下方式强制补齐：
 
 ```bash
@@ -53,17 +54,55 @@ node node_modules\electron\install.js
 
 3. 验证：`node_modules/electron/dist/electron.exe` 与 `node_modules/electron/path.txt` 必须同时存在。
 
-### 3. 数据库报错 / `NODE_MODULE_VERSION` 不匹配
+### 3. 数据库报错 / `Cannot locate the bindings file`
 
-**原因**：`better-sqlite3` 是按 Node ABI 编译的，与 Electron 的 ABI 不一致。
+**原因（历史问题，2.1.0 起已消除）**：`better-sqlite3` 12.x 是用 NAN 直接对接 V8 的
+ABI 相关模块，必须针对 Electron 的 `NODE_MODULE_VERSION` 重编译；Electron 一升级就崩。
 
-**处理**：
+**现状**：`better-sqlite3` 13.x 改用 **Node-API**，`prebuilds/win32-x64.node` 与
+Electron ABI 无关，升 Electron 不再需要重编译，`pnpm electron:rebuild` 已移除。
 
-```bash
-pnpm electron:rebuild
+**若仍报错**（按顺序）：
+
+1. 确认版本：`node -e "console.log(require('better-sqlite3/package.json').version)"`，
+   低于 13 说明 lockfile 没更新，执行 `pnpm install`。
+2. 确认二进制存在：`node_modules/better-sqlite3/prebuilds/win32-x64.node`。
+3. 缺失则 `pnpm install` 重装。
+
+### 4. pnpm 9 安装失败：`gyp ERR! find VS` / `Could not find any Visual Studio installation`
+
+**现象**：`pnpm install` 停在
+
+```
+node_modules/better-sqlite3 install$ node-gyp rebuild
+gyp ERR! find VS could not find a version of Visual Studio 2017 or newer to use
+gyp ERR! not ok
+ELIFECYCLE  Command failed with exit code 1.
 ```
 
-### 4. Electron 二进制下载慢 / 超时
+**原因**：`better-sqlite3@13` 没有 `install` 脚本，但包内留着 `binding.gyp`；npm/pnpm 的既有约定是
+「有 `binding.gyp` 且无 `install` 脚本 → 默认执行 `node-gyp rebuild`」。它真正需要的是**禁止**构建，
+而 `pnpm-workspace.yaml` 里的 `allowBuilds` / `onlyBuiltDependencies` **pnpm 9 完全不读**
+（实测 9.15.9：pnpm 设置只有 pnpm 10 之后才从 `pnpm-workspace.yaml` 读）。
+
+**处理**：仓库已在 `package.json` 里补了 pnpm 9 认的那一份：
+
+```json
+"pnpm": { "onlyBuiltDependencies": ["@parcel/watcher", "electron-winstaller", "electron", "esbuild"] }
+```
+
+`better-sqlite3` **故意不在列表里** → pnpm 9 会打印
+`The following dependencies have build scripts that were ignored: better-sqlite3` 并安装成功。拉最新代码后重跑 `pnpm install` 即可。
+
+**两个附带注意**：
+
+- pnpm 9 会**重写 `pnpm-lock.yaml`**（丢掉 pnpm 11 生成的 peer 后缀，diff 上千行）。
+  装完若看到 lockfile 被改，`git checkout -- pnpm-lock.yaml`，不要提交。
+- 布局不用担心：`nodeLinker: hoisted` 在 `pnpm-workspace.yaml` 里 pnpm 9 同样不读，
+  但 `.npmrc` 有 `node-linker=hoisted` 兜底（这条 pnpm 9 认）。
+- 根治办法是统一到仓库声明的 pnpm 11：`corepack enable` 后直接 `pnpm install`。
+
+### 5. Electron 二进制下载慢 / 超时
 
 **处理**：项目 `.npmrc` 已配置 npmmirror 镜像；若仍超时，安装前显式注入环境变量：
 

@@ -177,10 +177,25 @@ describe("打包守卫：asarUnpack 精确到原生模块", () => {
       expect(pattern, `asarUnpack 出现了整包外置写法: ${pattern}`).not.toMatch(
         /node_modules\/\*\*\/\*\.node$/,
       );
+      // better-sqlite3 ≥13 改 Node-API 后，二进制位置从 build/Release/better_sqlite3.node
+      // 换成包根 prebuilds/<platform>-<arch>.node（解析逻辑见 lib/binding.js 的
+      // getPrebuildPath()，lib/win32-x64.js 也直接 require('../prebuilds/win32-x64.node')）。
+      // 路径写错不会有任何构建期报错，只在运行期抛 "Cannot locate the bindings file"。
       expect(pattern, `asarUnpack 只允许 better-sqlite3 的 .node: ${pattern}`).toContain(
-        "node_modules/better-sqlite3/build/Release/",
+        "node_modules/better-sqlite3/prebuilds/",
       );
       expect(pattern.endsWith(".node"), `asarUnpack 条目必须以 .node 结尾: ${pattern}`).toBe(true);
+    }
+  });
+
+  it("排除非本平台的预编译二进制（7 份各 2~3 MiB，本应用只出 win-x64）", () => {
+    for (const pattern of [
+      "!node_modules/better-sqlite3/prebuilds/darwin-*.node",
+      "!node_modules/better-sqlite3/prebuilds/linux-*.node",
+      "!node_modules/better-sqlite3/prebuilds/linuxmusl-*.node",
+      "!node_modules/better-sqlite3/prebuilds/win32-arm64.node",
+    ]) {
+      expect(FILE_STRINGS, `build.files 缺少 ${pattern}`).toContain(pattern);
     }
   });
 

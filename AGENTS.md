@@ -1299,37 +1299,53 @@ function initializeDataDb(db: Database) {
 
 ### 8.7 新机器环境搭建与依赖管理
 
-- **包管理器**：项目基于 pnpm（lockfile `9.0`），本机基准 pnpm 9.x；pnpm ≥10 默认
-  **拦截所有依赖的构建脚本**，必须在 `pnpm-workspace.yaml` 的白名单中显式放行
-  （当前 `onlyBuiltDependencies`：`@parcel/watcher` / `electron-winstaller` /
-  `electron` / `esbuild`）——新增带 postinstall 的依赖时同步补这里，否则 electron
-  二进制等永远装不上。
-  > 位置校正：`package.json` **没有** `pnpm` 字段（该字段已被 pnpm ≥10.26 / 11 忽略，
-  > 见下一条）。白名单的唯一事实源是仓库根的 `pnpm-workspace.yaml`。
-- **pnpm ≥10.26 / 11 的字段迁移（已踩坑）**：pnpm 11 **不再读取** `package.json` 的
-  `pnpm` 字段（安装时会警告 `pnpm.onlyBuiltDependencies ignored`），且
-  `pnpm-workspace.yaml` 的 `onlyBuiltDependencies` 也被移除，统一改为 `allowBuilds`
-  映射。因此 `pnpm-workspace.yaml` 中必须**同时维护两套白名单**：`onlyBuiltDependencies`
-  供 pnpm 9/10 使用，`allowBuilds` 供 pnpm ≥10.26/11 使用。
-  当前 `allowBuilds`：`@parcel/watcher` / `better-sqlite3` / `electron-winstaller` /
-  `electron` / `esbuild`（注意 `better-sqlite3` 只在 `allowBuilds` 中放行，
-  `onlyBuiltDependencies` 未列它）。
+- **包管理器**：仓库通过 `packageManager` 声明 pnpm@11.25.0（lockfile `9.0`），
+  但**必须同时兼容 pnpm 9**（有开发机在用 9.15.9）。两者读配置的位置完全不同，
+  这是本仓最容易反复踩的坑（2026-10-20 实测）：
+  | 配置 | pnpm 9 | pnpm ≥10.26 / 11 |
+  |---|---|---|
+  | 构建脚本白名单 | **只认 `.npmrc`** 的 `only-built-dependencies[]=包名` | 认 `pnpm-workspace.yaml` 的 `allowBuilds` |
+  | `nodeLinker` | **只认 `.npmrc`** 的 `node-linker=hoisted` | `pnpm-workspace.yaml` 的 `nodeLinker` |
+  | `package.json` 的 `pnpm` 字段 | 读过（但已废弃） | **完全不读**，会打印 WARN |
+  | `pnpm-workspace.yaml` 的 pnpm 设置 | **完全忽略**（无任何报错） | 正常 |
+
+  → 当前落地：`.npmrc` 里 `only-built-dependencies[]`（4 项）供 pnpm 9；
+  `pnpm-workspace.yaml` 里 `allowBuilds` + `onlyBuiltDependencies` 供 pnpm 10/11。
+  **新增带 postinstall 的依赖时，这两处都要补**，否则 pnpm 9 的机器装不上。
+- ⚠️ **`better-sqlite3` 必须显式「禁止」构建，不是「放行」**：它 ≥13 虽然没有任何
+  install 脚本，但包内保留了 `binding.gyp`——npm/pnpm 的既有约定是
+  「有 `binding.gyp` 且无 `install` 脚本 → 默认执行 `node-gyp rebuild`」。
+  于是无 VS C++ 工作负载的机器会 `gyp ERR! find VS` 并让整个 `pnpm install` 失败
+  （2026-10-20 另一台机器实测）。正确写法：`allowBuilds` 里
+  **`better-sqlite3: false`**，且**不要**出现在 `.npmrc` 的 `only-built-dependencies[]` 里。
+  它需要的只是包内 `prebuilds/win32-x64.node`（Node-API，与 Electron ABI 无关）。
   > **更正（2026-09-19）**：上面「`allowBuilds` 漏掉 electron → postinstall 被拦 →
   > `dist/electron.exe` 永远缺失」的归因对 **Electron 42 已不成立**——该版本根本
   > 没有 postinstall 脚本，白名单加不加都不影响它。真正的卡点是无镜像 + 无超时的
   > 懒加载下载，详见本节开头的「`pnpm dev` 卡住不动的真正原因」。白名单仍需维护，
-  > 但它保护的是 `better-sqlite3` / `esbuild` 这类**真的有构建脚本**的包。
+  > 但它保护的是 `esbuild` 这类**真的有构建脚本**的包。
+  > **更正（2026-10-20）**：原文「`better-sqlite3` 13 起已无任何 install 脚本，白名单
+  > 对它不再起作用」是**错的**。没有 `install` 脚本 ≠ 不构建：包内存在 `binding.gyp`
+  > 时，npm/pnpm 仍会默认执行 `node-gyp rebuild`。实测 pnpm 9.15.9 对照：
+  > 白名单不含它 → 打印 `build scripts that were ignored: better-sqlite3`、安装成功；
+  > 白名单缺位或不生效 → `node-gyp rebuild` → `gyp ERR! find VS` → `exit 1`。
 - **镜像配置**：`.npmrc` 已随仓库提交（registry / `electron_mirror` /
   `electron_builder_binaries_mirror` 均指向 npmmirror），新机器 clone 后无需重复配置；
   若仍从 GitHub 下载超时，可临时导出环境变量 `ELECTRON_MIRROR` 强制覆盖。
 - **标准安装流程**：
   1. `pnpm install`（确认安装日志中 electron 无 "Ignored build scripts" 警告）
-  2. `pnpm electron:rebuild`（better-sqlite3 重编译到 Electron ABI，或直接
-     `pnpm electron:setup` 一步到位）
-  3. `pnpm dev`
+  2. `pnpm dev`
+  > **2026-10-20（2.1.0）起，原来的第 2 步 `pnpm electron:rebuild` 已删除。**
+  > `better-sqlite3` ≥13.0 改用 **Node-API**，`prebuilds/win32-x64.node` 随 npm 包分发、
+  > 与 Electron ABI 解耦，升 Electron 不再需要重编译；`scripts/rebuild-native.mjs`
+  > 与 `@electron/rebuild` 依赖一并移除。原生模块加载失败时只需 `pnpm install`。
+  > **必须用 pnpm 11 执行安装**（`pnpm -v` 确认，或 `npx pnpm@11.25.0 install`）。
+  > pnpm 9.x 不认识 `pnpm-workspace.yaml` 里的 `allowBuilds`，会把
+  > `better-sqlite3: false` 当空气，转而执行「有 binding.gyp 就 node-gyp rebuild」
+  > 的默认动作 → 无 VS C++ 工作负载的机器上 `gyp ERR! find VS` 把整个 install 带崩。
 - **`pnpm dev` 卡住不动的真正原因（2026-09-19 定位并根治，务必先读这条）**：
-  Electron ≥41（本项目 **42.4.1**）的 `package.json` **已经没有 postinstall 脚本**
-  （实测 `pkg.scripts === undefined`，只剩 `bin.electron` / `bin.install-electron`）。
+  Electron ≥41（本项目现为 **44.9.0**，42 起即如此）的 `package.json` **已经没有 postinstall 脚本**
+  （实测 `pkg.scripts === null`，只剩 `bin.electron` / `bin.install-electron`）。
   二进制的安装被推迟到了**首次 `require('electron')`**：
   ```js
   // node_modules/electron/index.js
@@ -1406,7 +1422,7 @@ function initializeDataDb(db: Database) {
        只存在于主变体 `electron@<ver>`，指到 `electron@<ver>_<peer>` 会
        出现「能 import 但没有二进制」的假象）
     3. 若仍报「找不到可用实体」——说明已处于半损坏状态，补丁不可靠，
-       彻底重建：删除 `node_modules` → `pnpm install` → `pnpm electron:rebuild`
+       彻底重建：删除 `node_modules` → `pnpm install` → `pnpm ensure:electron`
   - **预防**：
     - `package.json` 已锁定 `"packageManager": "pnpm@11.25.0"`；**升级 pnpm
       大版本后必须删除 `node_modules` 重装**，不要复用旧目录
@@ -1438,9 +1454,11 @@ function initializeDataDb(db: Database) {
 | React | ^19.2.6 |
 | TypeScript | ~6.0.2 |
 | Vite | ^8.0.12 |
-| Electron | ^42.4.1 |
+| Electron | ^44.9.0 |
 | Ant Design | ^6.6.2 |
-| better-sqlite3 | ^12.11.1 |
+| better-sqlite3 | ^13.0.3（Node-API，无需按 ABI 重编译） |
+| electron-builder | ^26.17.0 |
+| pnpm | 11.25.0（`packageManager` 锁定；`allowBuilds` 是 11.x 字段，9.x 会忽略） |
 | react-virtuoso | ^4.18.13 |
 | framer-motion | ^12.23.12 |
 

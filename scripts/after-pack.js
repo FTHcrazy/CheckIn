@@ -11,9 +11,13 @@
  *   `node_modules/electron/dist/LICENSE` 逐字节一致）：electron-builder 打包时会把
  *   `electron/dist/LICENSE` 写成 `appOutDir/LICENSE.electron.txt`。删除即违反 MIT
  *   「随分发附带版权声明」的要求，故已从删除清单移除，**禁止再加回去**。
- * - `dxil.dll`（1.44 MB）：与已被删除的 `dxcompiler.dll` 配套。本次未升级
- *   Electron，无法实机验证 GPU 回退路径，1.44 MB 收益不值得引入白屏风险；
- *   待 Electron 44 实机回归后再评估是否一并删除。
+ * - `dxil.dll`（1.44 MB）：与已被删除的 `dxcompiler.dll` 配套，只服务 DXC 路径。
+ *   Electron 44（ANGLE 静态链入、且被载入每个进程）之后仍保留：ANGLE / Dawn 的
+ *   HLSL 编译有 **DXC（dxcompiler.dll + dxil.dll）与 FXC（d3dcompiler_47.dll）
+ *   双路径**，用 `UseDXC` 开关切换；本地删掉 DXC 后会回退到系统目录
+ *   （C:\Windows\System32）自带的 d3dcompiler_47.dll。留 1.44 MB 作为回滚缓冲，
+ *   收益不值得再压一层。真出 GPU 白屏时，优先把 `dxcompiler.dll` 从下方
+ *   DELETE_FILES 里移除，而不是删更多 DLL。
  */
 const fs = require('fs')
 const path = require('path')
@@ -22,6 +26,9 @@ const path = require('path')
 const KEEP_LOCALES = new Set(['zh-CN.pak', 'en-US.pak'])
 
 // 要删除的大文件（对桌面应用无用）。缺失时只记 debug，不抛错。
+// 2026-10-20 随 Electron 44.9.0 复核：清单内每个文件在 44 的 dist 中仍存在，
+// 且 44 **没有新增**可清理的大文件；`libEGL.dll` / `libGLESv2.dll` 已被官方移除
+// （ANGLE 静态链入 electron.exe），不再需要在这里列。
 const DELETE_FILES = [
   'LICENSES.chromium.html',        // 19 MB
   'version',
