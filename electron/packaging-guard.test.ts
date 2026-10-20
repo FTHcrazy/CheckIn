@@ -168,6 +168,58 @@ describe("打包守卫：build.files 冗余排除", () => {
       expect(FILE_STRINGS, `build.files 缺少 ${pattern}`).toContain(pattern);
     }
   });
+
+  it("排除嵌套 @types（docx 自带一份 @types/node，顶层规则匹配不到）", () => {
+    expect(FILE_STRINGS).toContain("!**/node_modules/@types/**");
+  });
+
+  it("排除 node-addon-api（纯 C++ 头文件，运行期只 require prebuilds/*.node）", () => {
+    expect(FILE_STRINGS).toContain("!node_modules/node-addon-api/**");
+  });
+
+  /**
+   * 2.1.2：运行期依赖里大量「同一份代码的多种构建产物」—— Node `require` 只会走
+   * exports.require / main 指向的那一个，浏览器版（mammoth.browser*.js）、ESM 版
+   * （index.mjs）、IIFE/UMD 版（index.iife.js、index.umd.cjs）、以及库内自带的
+   * `dist/` 预打包副本全是死重，合计 ~8 MiB。
+   * 删错入口不会在打包期报错，只在运行期抛 `Cannot find module`，故逐条钉死。
+   */
+  it("排除运行期依赖的重复构建产物（浏览器版 / ESM / IIFE / 包内 dist 副本）", () => {
+    for (const pattern of [
+      "!node_modules/docx/dist/index.iife.js",
+      "!node_modules/docx/dist/index.mjs",
+      "!node_modules/docx/dist/index.umd.cjs",
+      "!node_modules/docx/node_modules/**",
+      "!node_modules/mammoth/mammoth.browser.js",
+      "!node_modules/mammoth/mammoth.browser.min.js",
+      "!node_modules/jszip/dist/**",
+      "!node_modules/pako/dist/**",
+      "!node_modules/bluebird/js/browser/**",
+      "!node_modules/xml-js/dist/**",
+      "!node_modules/underscore/{modules,cjs}/**",
+      "!node_modules/underscore/underscore-esm.js",
+      "!node_modules/underscore/underscore-esm-min.js",
+      "!node_modules/underscore/underscore-umd-min.js",
+      "!node_modules/underscore/underscore-min.js",
+      "!node_modules/underscore/underscore.js",
+    ]) {
+      expect(FILE_STRINGS, `build.files 缺少 ${pattern}`).toContain(pattern);
+    }
+  });
+
+  it("上一条的排除不得命中 require 真正落地的入口", () => {
+    // docx：Node 走 exports["."].require.default → dist/index.cjs
+    expect(FILE_STRINGS.some((pattern) => pattern.includes("docx/dist/index.cjs"))).toBe(false);
+    // underscore：exports["."].require.node → underscore-node.cjs → underscore-node-f.cjs
+    expect(FILE_STRINGS.some((pattern) => pattern.includes("underscore-node"))).toBe(false);
+    // 任何运行期依赖都不得被整包排除
+    for (const name of RUNTIME_DEPENDENCIES) {
+      expect(
+        FILE_STRINGS,
+        `不得整包排除运行期依赖 ${name}`,
+      ).not.toContain(`!node_modules/${name}/**`);
+    }
+  });
 });
 
 describe("打包守卫：asarUnpack 精确到原生模块", () => {

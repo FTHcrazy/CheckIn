@@ -4,6 +4,31 @@
 > （当前归档到 1.45.1，索引见 `changeLogHistory/README.md`）。  
 > 主文件只保留最近若干个次版本，超过 800 行时按 AGENTS.md §8.6 继续分流。
 
+## [2.1.2] - 2026-10-20
+
+### Changed
+
+- **打包体积：`app.asar` 13.67 → 6.50 MiB（−52.5%），安装包 99.78 → 98.82 MiB（−0.96 MiB）**。  
+  运行期依赖（`docx` / `mammoth` / `jszip` / `pako` / `bluebird` / `xml-js` / `underscore`）
+  各自带了同一份代码的多种构建产物，而 Node `require` 只走 `exports.require` / `main` 指向的
+  那一个 —— 浏览器 UMD/IIFE 版、ESM 版、包内 `dist/` 预打包副本、`node-addon-api` 纯头文件
+  全是死重，合计 ~7 MiB 原始体积。逐条写进 `build.files` 排除，`docx` 只保留
+  `dist/index.cjs`、`underscore` 只保留 `underscore-node.cjs` 链路。  
+  同时补 `!**/node_modules/@types/**`：原有 `!node_modules/@types/**` 匹配不到
+  `docx/node_modules/@types/**` 这类嵌套路径。
+- **install 与运行期无任何行为变化**：打包产物解包后按包名（走 `exports`，与运行期一致）
+  require 全部通过，并用「`docx` 生成 → `mammoth` 解析回来」的闭环 + `jszip` 往返 +
+  `better-sqlite3` 真实 SQL 验证。`electron/packaging-guard.test.ts` 新增 11 条断言，
+  含「任何运行期依赖不得被整包排除」的反向守卫。
+
+### Docs
+
+- 新增 `docs/packaging/bundle-slimming-2.1.2.md`：记录**压缩视角**的体积账
+  （`app.asar` 压缩率 7.9:1、`.pak` 1.01:1、`CheckIn.exe` 占安装包 65.4%），
+  解释「asar 再省 7.5 MiB 只换来 0.96 MiB 安装包」的原因，并列出剩余可动项
+  （`resources.pak` 里 4.8 MiB Chromium 内置 FLAC 音效、`chrome_200_percent.pak`、
+  `dxil.dll`、BCJ2 因 NSIS 内置解压器不支持而不可用）及其风险。
+
 ## [2.1.1] - 2026-10-20
 
 ### Fixed

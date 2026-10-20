@@ -1,7 +1,7 @@
 {
   "name": "checkin",
   "private": true,
-  "version": "2.1.1",
+  "version": "2.1.2",
   "description": "CheckIn Desktop Application",
   "main": "dist-electron/main.js",
   "author": "FTH",
@@ -122,7 +122,25 @@
       "!node_modules/better-sqlite3/prebuilds/darwin-*.node",
       "!node_modules/better-sqlite3/prebuilds/linux-*.node",
       "!node_modules/better-sqlite3/prebuilds/linuxmusl-*.node",
-      "!node_modules/better-sqlite3/prebuilds/win32-arm64.node"
+      "!node_modules/better-sqlite3/prebuilds/win32-arm64.node",
+      "!**/node_modules/@types/**",
+      "!node_modules/node-addon-api/**",
+      "!node_modules/docx/dist/index.iife.js",
+      "!node_modules/docx/dist/index.mjs",
+      "!node_modules/docx/dist/index.umd.cjs",
+      "!node_modules/docx/node_modules/**",
+      "!node_modules/mammoth/mammoth.browser.js",
+      "!node_modules/mammoth/mammoth.browser.min.js",
+      "!node_modules/jszip/dist/**",
+      "!node_modules/pako/dist/**",
+      "!node_modules/bluebird/js/browser/**",
+      "!node_modules/xml-js/dist/**",
+      "!node_modules/underscore/{modules,cjs}/**",
+      "!node_modules/underscore/underscore-esm.js",
+      "!node_modules/underscore/underscore-esm-min.js",
+      "!node_modules/underscore/underscore-umd-min.js",
+      "!node_modules/underscore/underscore-min.js",
+      "!node_modules/underscore/underscore.js"
     ],
     "asarUnpack": [
       "node_modules/better-sqlite3/prebuilds/win32-x64.node"
