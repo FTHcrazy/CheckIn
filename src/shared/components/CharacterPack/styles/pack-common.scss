@@ -17,11 +17,13 @@
  * 不传 `size`：面板密度由这里给 `--ant-control-height` 决定 —— 漏传 size 就变形的坑太大。
  */
 
-/* 通用按钮（面板密度；.ghost 次级操作 / .primary 主操作 / .danger 破坏性） */
+/* 通用按钮（面板密度；.ghost 次级操作 / .primary 主操作 / .danger 破坏性）。
+ * 2026-10 第二轮：密度从「紧凑」走向「舒适」——字高 12→14、盒高 22→26，
+ * 全部靠组件级变量，不散点改、不传 size。 */
 .cpk-btn.ant-btn {
-  --ant-control-height: 22px;
-  --ant-button-padding-inline: 9px;
-  --ant-button-content-font-size: 12px;
+  --ant-control-height: 26px;
+  --ant-button-padding-inline: 10px;
+  --ant-button-content-font-size: 14px;
   --ant-button-font-weight: 400;
   --ant-button-icon-gap: 4px;
   --ant-border-radius: var(--app-radius-item);
@@ -54,8 +56,8 @@
   }
 
   &.ghost {
-    --ant-control-height: 20px;
-    --ant-button-padding-inline: 7px;
+    --ant-control-height: 24px;
+    --ant-button-padding-inline: 8px;
     --ant-button-default-bg: transparent;
     --ant-button-default-color: var(--app-text-secondary-strong);
     --ant-button-default-border-color: transparent;
@@ -103,17 +105,20 @@
  * 宽度由这里给：antd 只在用了 `icon` 属性时才推 `ant-btn-icon-only` 的宽度，
  * 行囊统一把图标当 children 传，所以宽度落在自己手里。
  *
- * 这一档是**模块头 / 行内**的密度（24px 盒 + 14px 字形）：模块标题行右侧
- * 常并排 3~4 枚，放大就把标题挤到省略号。**头部工具栏要更大的图标**，
- * 但那是 `.cpk-head` 局部的事（见 PackHeader/index.scss 的覆盖），
- * 不要把这里调大 —— 这一档有十几处使用点，改它等于改整个面板的密度。
+ * 这一档是**模块头 / 行内**的密度（26px 盒 + 16px 字形）：模块标题行右侧
+ * 常并排 3~4 枚。**头部工具栏要更大的图标**，但那是 `.cpk-head` 局部的事
+ * （见 PackHeader/index.scss 的覆盖），不要把这里再单独调大 —— 这一档有
+ * 十几处使用点，改它等于改整个面板的密度。
+ *
+ * 2026-10 第二轮：盒 24→26、字形 14→16（舒适密度）。`.tiny` 行内档保持
+ * 20px 盒 + 12px 字形不动 —— 那是表格行里的迷你控件，放大会挤垮行高。
  *
  * 盒宽 = 盒高：与 `--ant-control-height` 同值，保证是正方热区
  * （非正方形会让 hover 底色看着比图标偏一边）。 */
 .cpk-iconbtn.ant-btn {
-  --ant-control-height: 24px;
+  --ant-control-height: 26px;
   --ant-button-padding-inline: 0px;
-  --ant-button-content-font-size: 14px;
+  --ant-button-content-font-size: 16px;
   --ant-border-radius: var(--app-radius-item);
   --ant-button-default-bg: transparent;
   --ant-button-default-color: var(--app-text-secondary-strong);
@@ -127,7 +132,7 @@
   --ant-button-default-shadow: none;
   --ant-button-default-bg-disabled: transparent;
   --ant-button-border-color-disabled: transparent;
-  width: 24px;
+  width: 26px;
   font-family: inherit;
 
   &.tiny {
@@ -206,9 +211,9 @@
  * 这里只把它钉成「不收缩的固定件」并把尺寸收到面板密度。
  * 配色刻意留空 → 与技能栏那个开关同色，面板里不该出现两种绿色。 */
 .cpk-sw2.ant-switch {
-  --ant-switch-track-height-sm: 15px;
-  --ant-switch-track-min-width-sm: 26px;
-  --ant-switch-handle-size-sm: 11px;
+  --ant-switch-track-height-sm: 17px;
+  --ant-switch-track-min-width-sm: 30px;
+  --ant-switch-handle-size-sm: 13px;
   flex: none;
 }
 

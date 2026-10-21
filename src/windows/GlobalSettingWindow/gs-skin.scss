@@ -1,3 +1,5 @@
+@use "../../shared/components/SettingCenter/setting-primitives";
+
 /* 全局设定中心 · 窗口皮肤层（只作用于 .gs-shell 之内）
 
    目标：让这个窗口与书架主页（BookshelfPage）读起来是同一套东西 ——
@@ -195,17 +197,19 @@
   }
 
   .nv-sc__row {
-    padding: 8px 12px;
-    border-radius: var(--app-radius-item);
+    padding: 10px 12px;
+    border-radius: 0;
     background: transparent;
+    /* 行间发丝线：21 阶平铺时，靠这条 1px 线把「一级」读成一个单位。
+       不用斑马纹 —— 每行已经有「序号签 + 小境界签」两层节奏，再铺深浅相间的
+       色块会反抢视线。hover 仍是「悬停才亮」（见下方 &:hover）。 */
+    border-bottom: 1px solid var(--app-border);
 
     /* 行内是两行（等级名 + 小境界速览）。共享的 `gap: 10px` 是**列**间距，
        抄到行间距上会把小境界签推离它所属的那一阶、读成下一阶的前缀；
        4px 才是「同一阶的第二行」。 */
     row-gap: 4px;
-    /* 斑马纹改成「悬停才亮」：一列深浅相间的色块比行内容本身更抢眼，
-       而这里每行已经有「序号签 + 小境界签」两层节奏了。
-       ⚠️ hover 必须排在 is-alt 之后：同特异性靠源码顺序分胜负。 */
+    /* ⚠️ hover 必须排在 is-alt 之后：同特异性靠源码顺序分胜负。 */
     &.is-alt {
       background: transparent;
     }
@@ -224,13 +228,15 @@
     }
 
     /* 派生段（子层级）的缩进与树线由共享样式给出：本文件晚于它打包，
-       必须把这两条**原样重申**，否则上面的 padding 会把缩进抹平、
-       下面的字号覆盖会把「子层比父层轻」的层级做掉。 */
+       必须把缩进**原样重申**，否则上面的 padding 会把缩进抹平；
+       字重 / 颜色差异见下方 `.nv-sc__row.is-child .nv-sc__col-name`。 */
     &.is-child {
       padding-left: 30px;
     }
   }
 
+  /* 子等阶行：缩进（30px）+ 树线由共享样式给，这里只把「名字」再轻一档
+     —— 400 次级文本，与主行的 600 强文本形成明确的主从关系。 */
   .nv-sc__row.is-child .nv-sc__col-name {
     font-size: 14px;
     font-weight: 400;
@@ -257,9 +263,11 @@
     font-variant-numeric: tabular-nums;
   }
 
+  /* 等阶主行：14/600 + 强文本，与子等阶的 400 次级文本拉开层级 */
   .nv-sc__col-name {
     font-size: 14px;
     font-weight: 600;
+    color: var(--app-text-strong);
   }
 
   .nv-sc__col-alias,

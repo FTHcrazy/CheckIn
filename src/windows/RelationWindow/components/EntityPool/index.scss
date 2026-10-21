@@ -65,10 +65,11 @@
   font-size: 12px;
   font-weight: 600;
   color: var(--app-text-secondary);
-  --ant-button-text-hover-bg: var(--app-surface-hover);
-  --ant-button-text-hover-color: var(--app-text);
-  --ant-button-text-active-bg: var(--app-surface-hover);
-  --ant-button-text-active-color: var(--app-text);
+  // antd 6 已弃用 --ant-button-text-* token，text 按钮状态色走 --ant-btn-*
+  --ant-btn-bg-color-hover: var(--app-surface-hover);
+  --ant-btn-bg-color-active: var(--app-surface-hover);
+  --ant-btn-text-color-hover: var(--app-text);
+  --ant-btn-text-color-active: var(--app-text);
 
   &:focus-visible {
     outline: 2px solid var(--app-primary);
@@ -151,4 +152,35 @@
   font-size: 12px;
   line-height: 1.6;
   color: var(--app-text-muted);
+}
+
+// ── 窄窗适配（窗口可缩窄到 ~720px）──
+// 池子默认 268px 是三栏里最大的固定占用；窄窗下收窄到还能放下「名称 + 状态」的
+// 最小宽度，把空间让给画布。不改可折叠：池子是「要素一个都没少」的可见证据，
+// 收窄而不是藏起来更符合它存在的理由。
+@media (max-width: 1000px) {
+  .rel-pool {
+    width: 220px;
+  }
+}
+
+@media (max-width: 820px) {
+  .rel-pool {
+    width: 184px;
+  }
+
+  // 头部「标题 + 两个计数」横排放不下：改竖排，避免计数把标题挤出池子
+  .rel-pool__title {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+
+  .rel-pool__head {
+    padding: 10px 8px 6px;
+  }
+
+  .rel-pool__foot {
+    padding: 7px 8px 8px;
+  }
 }

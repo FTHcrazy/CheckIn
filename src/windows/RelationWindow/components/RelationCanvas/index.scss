@@ -65,6 +65,26 @@
   font-size: 12px;
 }
 
+// ── 窄窗适配（窗口可缩窄到 ~720px）──
+// 工具栏最容易被长统计文案顶破：先隐掉「另有 N 个要素在左侧池子里」这句可省略
+// 的提示，再让统计条可收缩截断、动作区不被挤扁。动作区（缩放/适应/导出）本就短，
+// 无需收纳成下拉。
+@media (max-width: 960px) {
+  .rel-canvas__pool-hint {
+    display: none;
+  }
+
+  .rel-canvas__stats {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .rel-canvas__actions {
+    flex: none;
+  }
+}
+
 // 密度档提示条（>400 个要素时常驻）。刻意放在画布左上角工具栏下方而不是
 // 浮在正中：它描述的是「整张图被简化了」，不是一条需要立刻处理的错误。
 .rel-canvas__dense {
@@ -141,16 +161,15 @@
     visibility: hidden;
   }
 
-  // 选中态压回常态：外发光 / 加粗边是「正在操作」的提示，不该留在导出的图里
+  // 选中态压回常态：外发光 / 加粗边是「正在操作」的提示，不该留在导出的图里。
+  // 节点外发光靠 box-shadow，边选中态在这里清 outline / box-shadow。
+  // 边的 stroke / 线宽 / 箭头色在导出期间已在 flowEdges 里直接降级（BaseEdge 的
+  // 内联样式优先级高于样式表，CSS 压不动 —— 见 RelationCanvas/index.tsx），
+  // 这里不再重复写 stroke，避免留下一条永远不生效的死规则。
   .react-flow__node.selected,
   .react-flow__edge.selected {
     outline: none;
     box-shadow: none;
-  }
-
-  .react-flow__edge.selected {
-    stroke: var(--app-border-strong);
-    stroke-width: 1.2;
   }
 }
 

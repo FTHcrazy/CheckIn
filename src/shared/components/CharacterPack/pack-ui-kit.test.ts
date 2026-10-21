@@ -106,7 +106,6 @@ describe("行囊 UI：自带造型的控件以 .ant-btn 承载", () => {
     "cpk-emptyblock__cta",
     "cpk-board__entry",
     "cpk-board__attrrow",
-    "cpk-board__modrow",
   ];
 
   it.each(WIDGET_CLASSES)("%s 的选择器带 .ant-btn 限定", (className) => {
@@ -128,11 +127,11 @@ describe("行囊 UI：自带造型的控件以 .ant-btn 承载", () => {
  * 钉死的是一条**极容易静默退化**的约束：头部图标要比面板其它地方大一号。
  * 它靠 PackHeader 的局部覆盖实现，而覆盖对象 `.cpk-iconbtn` 是**跨模块公共原语**
  * —— 后人「顺手把基础档调大」或「把这条覆盖删掉当作冗余」，都会让头部图标
- * 悄悄缩回 14px，且**没有任何类型或构建错误**。
+ * 悄悄缩回 16px，且**没有任何类型或构建错误**。
  *
  * 为什么覆盖必须写在头部而不是改基础档：`.cpk-iconbtn` 在面板里有十几处使用点
  * （每个模块标题行右侧并排 3~4 枚），调基础档等于改整个面板的密度。
- * 故这里同时断言**两侧**：头部有覆盖 + 基础档仍是模块密度。
+ * 故这里同时断言**两侧**：头部有覆盖 + 基础档仍是舒适密度且低头部一档。
  */
 describe("行囊 UI：头部工具栏图标比面板其它地方大一号", () => {
   const headScssPath = path.resolve(
@@ -152,17 +151,17 @@ describe("行囊 UI：头部工具栏图标比面板其它地方大一号", () =
     return css.slice(at, css.indexOf("}", at) + 1);
   }
 
-  it("头部对图标按钮做了局部放大（16px 字形 / 28px 盒）", () => {
+  it("头部对图标按钮做了局部放大（18px 字形 / 30px 盒）", () => {
     const rule = block(headCss, ".cpk-head__tools .cpk-iconbtn.ant-btn");
-    expect(rule).toContain("--ant-button-content-font-size: 16px");
-    expect(rule).toContain("--ant-control-height: 28px");
-    expect(rule).toContain("width: 28px");
+    expect(rule).toContain("--ant-button-content-font-size: 18px");
+    expect(rule).toContain("--ant-control-height: 30px");
+    expect(rule).toContain("width: 30px");
   });
 
   it("窄档那枚「更多」入口也吃到同一档尺寸（它不在 __tools 里）", () => {
     // compact 时四枚工具收进 Dropdown，触发按钮是 __ops 的直接子元素
     expect(headCss).toMatch(
-      /\.cpk-head__ops\s*>\s*\.cpk-iconbtn\.ant-btn[^{]*\{[^}]*--ant-button-content-font-size:\s*16px/,
+      /\.cpk-head__ops\s*>\s*\.cpk-iconbtn\.ant-btn[^{]*\{[^}]*--ant-button-content-font-size:\s*18px/,
     );
   });
 
@@ -171,10 +170,10 @@ describe("行囊 UI：头部工具栏图标比面板其它地方大一号", () =
     expect(rule).toContain("--ant-button-default-color: var(--app-text)");
   });
 
-  it("基础档保持模块密度（24px 盒 / 14px 字形）—— 不许顺手调大", () => {
+  it("基础档保持舒适密度（26px 盒 / 16px 字形）—— 与头部仍差一号", () => {
     const rule = block(commonCss, ".cpk-iconbtn.ant-btn");
-    expect(rule).toContain("--ant-control-height: 24px");
-    expect(rule).toContain("--ant-button-content-font-size: 14px");
+    expect(rule).toContain("--ant-control-height: 26px");
+    expect(rule).toContain("--ant-button-content-font-size: 16px");
   });
 
   it("基础档仍然可被缩小（.tiny 行内档存在且更小）", () => {
@@ -273,7 +272,7 @@ describe("行囊 UI：改动角标与稀有度圆点形状可分", () => {
  * 大窗的骨架（UI-08）：**一条量尺 + 一条收口**。
  *
  * UI-05 当时钉的是「看板与模块区共用 44:56 竖向分界线」—— 那时两级都是双栏。
- * UI-08 把概览压成一条横贯带（四段发丝线分栏）、工作区改成「一块或两块面板 +
+ * UI-08 把概览压成一条横贯带（发丝线分栏）、工作区改成「一块或两块面板 +
  * 贴底页脚」，那条分界线本身不再存在，于是守卫改成钉**新的意图**：
  *   1. 三段落（概览带 / 工作区 / 页脚）共用同一条内容量尺；
  *   2. 工作区在双分区时是 44:56 两块面板，单分区时**占满整条量尺**
@@ -281,6 +280,78 @@ describe("行囊 UI：改动角标与稀有度圆点形状可分", () => {
  *   3. 宽档内容区撑满可视高度、页脚 `margin-top: auto` 贴底 —— 这两条一起
  *      决定了「内容短时窗口下半截是不是一片空底」。
  */
+/**
+ * 面板内模块的外阴影清零（2026-10 用户报障：各模块出现莫名的浮起/叠加感）。
+ *
+ * 钉的是**层级投影的归属**：模块壳基类（`.cpk-mod`）带 `--app-shadow-ambient`
+ * 是对的 —— 中/窄档单栏流里模块直接落在页面底上，需要一层轻浮起；但宽档下模块
+ * 已经坐在 `.cpk__zone`（`--app-shadow-card`）面板里，模块自己再带一层环境阴影
+ * 就成了「卡里套卡」的重复叠加。这条守卫钉死三件事：面板投影保留、面板内模块
+ * 投影清零、模块壳基类投影仍在（不能为了清模块级而把中/窄档也拍平）。
+ */
+describe("行囊 UI：面板内模块不带自己的外阴影（发丝线分节）", () => {
+  const rootCss = stripComments(
+    sass.compile(path.resolve(ROOT, "index.scss"), { style: "expanded" }).css,
+  );
+  const shellCss = stripComments(
+    sass.compile(path.resolve(ROOT, "components/PackModuleShell/index.scss"), {
+      style: "expanded",
+    }).css,
+  );
+
+  /** 取某选择器规则块的正文 */
+  function ruleOf(css: string, selector: string): string {
+    const at = css.indexOf(selector);
+    expect(at).toBeGreaterThan(-1);
+    return css.slice(at, css.indexOf("}", at) + 1);
+  }
+
+  it("面板 `.cpk__zone` 仍保留内容面浮起投影（--app-shadow-card）", () => {
+    expect(ruleOf(rootCss, ".cpk__zone {")).toContain(
+      "box-shadow: var(--app-shadow-card)",
+    );
+  });
+
+  it("面板内模块 `.cpk__zone .cpk-mod` 把外阴影清零（只留发丝线分节）", () => {
+    expect(ruleOf(rootCss, ".cpk__zone .cpk-mod")).toContain("box-shadow: none");
+  });
+
+  it("模块壳基类仍带环境阴影（中/窄档单栏流里浮在页面底上）", () => {
+    expect(ruleOf(shellCss, ".cpk-mod {")).toContain(
+      "box-shadow: var(--app-shadow-ambient)",
+    );
+  });
+});
+
+describe("行囊 UI：境界模块的选择簇与当前阶行分开（真机回归）", () => {
+  const realmCss = stripComments(
+    sass.compile(path.resolve(ROOT, "components/RealmModule/index.scss"), {
+      style: "expanded",
+    }).css,
+  );
+
+  /** 取某选择器规则块的正文 */
+  function ruleOf(css: string, selector: string): string {
+    const at = css.indexOf(selector);
+    expect(at).toBeGreaterThan(-1);
+    return css.slice(at, css.indexOf("}", at) + 1);
+  }
+
+  it("当前阶行 `.cpk-rlm__now` 有独立顶距，不再零间距贴着阶 Select / chip 行", () => {
+    // 上轮改的是 `__progress` / `__mirror`，没打中「阶选择 → 当前阶行」这一层；
+    // 这里直接编译 SCSS 断言 `__now` 真的带 margin-top，防再次把间距改到别处。
+    expect(ruleOf(realmCss, ".cpk-rlm__now")).toContain("margin-top: 8px");
+  });
+
+  it("小层分页 `.cpk-rlm__subbar` 与当前阶行保持 8–12px 节奏", () => {
+    const rule = ruleOf(realmCss, ".cpk-rlm__subbar");
+    const margin = /margin-top:\s*(\d+)px/.exec(rule)?.[1];
+    expect(margin).toBeDefined();
+    expect(Number(margin)).toBeGreaterThanOrEqual(8);
+    expect(Number(margin)).toBeLessThanOrEqual(12);
+  });
+});
+
 describe("行囊 UI：概览带与工作区同处一条量尺、页脚收口", () => {
   const SPLIT = /grid-template-columns:\s*minmax\(0,\s*44fr\)\s*minmax\(0,\s*56fr\)/;
   const rootCss = stripComments(
@@ -317,7 +388,7 @@ describe("行囊 UI：概览带与工作区同处一条量尺、页脚收口", (
     const band = ruleOf(boardCss, ".cpk-board--wide");
     expect(band).toContain("border: 1px solid var(--app-border)");
     expect(band).toContain("background: var(--app-surface)");
-    // 四段 = 四列；两列包装用 display: contents 把盒子去掉，DOM 不用改
+    // 三段 = 三列；两列包装用 display: contents 把盒子去掉，DOM 不用改
     expect(ruleOf(boardCss, ".cpk-board--wide > .cpk-board__col {")).toContain(
       "display: contents",
     );

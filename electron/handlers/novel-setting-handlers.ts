@@ -551,10 +551,27 @@ export function registerNovelSettingHandlers(): void {
       // 引用项只读（D2）
       if (isLevelInReferencedCategory(levelId)) return false;
       const row = dbGet(
-        "SELECT category_id, rank, sub_pattern FROM novel_setting_levels WHERE id = ?",
+        "SELECT category_id, rank, sub_pattern, parent_id FROM novel_setting_levels WHERE id = ?",
         [levelId],
-      ) as { category_id: string; rank: number; sub_pattern: string } | undefined;
+      ) as {
+        category_id: string;
+        rank: number;
+        sub_pattern: string;
+        parent_id: string | null;
+      } | undefined;
       if (!row) return false;
+      // 权威边界（1.39.1）：等级序列只支持两层 —— 子层级（parent_id 非空）
+      // 不能再拆，否则「初级·第1段·第1段」三层嵌套无法在境界 chip 里表达。
+      // UI 隐藏入口只是第二层，这里才是绕过 UI 也无效的拒绝。
+      if (row.parent_id !== null) return false;
+      // 收口（1.4x）：已拆出子行的根阶（parent_id 仍为 NULL 但已有行挂在本行下）
+      // 也不能再拆 —— 组阶继续拆只会再造出第二层而非第三层，是数据质量隐患。
+      // UI 对能判断的情形已禁用入口，这里连同上一道 parent_id 校验构成权威拒绝。
+      const childCount = dbGet(
+        "SELECT COUNT(*) AS count FROM novel_setting_levels WHERE parent_id = ?",
+        [levelId],
+      ) as { count: number };
+      if (childCount.count > 0) return false;
 
       const db = getDb();
       const apply = db.transaction(() => {

@@ -25,8 +25,8 @@ interface RealmModuleProps {
  * 境界（R25 联动，§9.7）
  *
  * 全部读写都走 `getRealm / getPanelRealm / setRealm` 三个口子（REQ-048）——
- * 面板上这两个读数故意同时显示，就是为了让「行囊改了、面板没跟着变」这种
- * 静默不同步一眼可见。
+ * 面板上的「实体面板显示」对照条刻意保留，就是为了让「行囊改了、面板没跟着变」
+ * 这种静默不同步一眼可见；但同源时不再重复整串等阶文案（去重，见下方 mirror）。
  */
 export default function RealmModule({ api }: RealmModuleProps) {
   const [entities, setEntities] = useState<Array<{ id: string; name: string }>>([]);
@@ -269,14 +269,21 @@ export default function RealmModule({ api }: RealmModuleProps) {
             </div>
           ) : null}
 
-          {/* 双读数对照：行囊改了、实体面板没跟上时，一眼可见「已分叉」 */}
+          {/*
+            双读数对照（去重）：同一等阶信息只完整出现一次 —— 主读数在
+            `.cpk-rlm__value`。同源时面板值与主读数逐字相同，这里只给一句
+            「同源」弱提示，不再把「凝丹 * 一层 1/3」整串重复一遍；
+            分叉时才把面板值摆出来，静默不同步仍一眼可见。
+          */}
           <div className="cpk-rlm__mirror">
             <span className="cpk-rlm__mirrorlabel">实体面板显示</span>
-            <span className="cpk-rlm__mirrorvalue">{api.panelRealmText}</span>
             {api.panelRealmText !== api.realmText ? (
-              <span className="cpk-rlm__diverge" title="两处已分叉，请检查绑定">
-                已分叉
-              </span>
+              <>
+                <span className="cpk-rlm__mirrorvalue">{api.panelRealmText}</span>
+                <span className="cpk-rlm__diverge" title="两处已分叉，请检查绑定">
+                  已分叉
+                </span>
+              </>
             ) : (
               <span className="cpk-rlm__same">同源</span>
             )}

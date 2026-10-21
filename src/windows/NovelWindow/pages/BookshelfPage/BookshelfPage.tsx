@@ -94,6 +94,20 @@ export default function BookshelfPage({
   const [createError, setCreateError] = useState("");
   const createInputRef = useRef<InputRef>(null);
 
+  /**
+   * 「正在打开全局设定中心」态（REQ-054 在全局设定中心入口上的补全）。
+   *
+   * 与编辑器顶栏行囊按钮的 `packOpening` 同一条修法：独立窗口首次创建要等整个
+   * SPA 装载（dev 下 1–3s），期间屏幕上什么都不会发生 —— 作者会以为点了没反应
+   * 再点一次，第二次恰好命中「已开」分支，于是被记成「要点两次才打开全局设定中心」。
+   * 点击即置位（按钮转「正在打开…」），主进程在窗口真正可见时回执
+   * `global-setting-window-shown` 复位；另有 8s 兜底防回执丢失把按钮永久钉住。
+   */
+  const [globalSettingOpening, setGlobalSettingOpening] = useState(false);
+  /** 回执可能永远不来（窗口装载失败且被关掉），兜底时长按 dev 最慢路径留够余量 */
+  const GLOBAL_SETTING_OPENING_TIMEOUT_MS = 8000;
+  const globalSettingOpeningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const openCreate = useCallback(() => {
     // PRD §11：Tour 不与弹窗抢焦点 —— 弹窗打开时引导让位，
     // 否则第 1 步的卡片钉在「新建作品」按钮上，正好盖住书名输入框
@@ -113,6 +127,47 @@ export default function BookshelfPage({
     closeCreate();
     useGuideStore.getState().start(1);
   }, [closeCreate]);
+
+  /**
+   * 打开全局设定中心独立窗口（REQ-041 / M13；lite 版不打包，主进程侧拦截）。
+   *
+   * 先给反馈再发 IPC：窗口装载期间屏幕上只有这颗按钮能动，没有它作者只会看到
+   * 「点了没反应」（见 globalSettingOpening 的注释）。
+   */
+  const openGlobalSetting = useCallback((): void => {
+    setGlobalSettingOpening(true);
+    if (globalSettingOpeningTimerRef.current) {
+      clearTimeout(globalSettingOpeningTimerRef.current);
+    }
+    globalSettingOpeningTimerRef.current = setTimeout(() => {
+      globalSettingOpeningTimerRef.current = null;
+      setGlobalSettingOpening(false);
+    }, GLOBAL_SETTING_OPENING_TIMEOUT_MS);
+    window.electronAPI?.send("global-setting-window-open", null);
+  }, []);
+
+  /**
+   * 全局设定中心窗口「真的可见」的回执（主进程 `notifyGlobalSettingShown` →
+   * `global-setting-window-shown`）。收到即复位 loading，并清掉兜底定时器。
+   */
+  useEffect(() => {
+    const api = window.electronAPI;
+    if (!api?.receive) return undefined;
+    const unsubscribe = api.receive("global-setting-window-shown", () => {
+      if (globalSettingOpeningTimerRef.current) {
+        clearTimeout(globalSettingOpeningTimerRef.current);
+        globalSettingOpeningTimerRef.current = null;
+      }
+      setGlobalSettingOpening(false);
+    });
+    return () => {
+      unsubscribe();
+      if (globalSettingOpeningTimerRef.current) {
+        clearTimeout(globalSettingOpeningTimerRef.current);
+        globalSettingOpeningTimerRef.current = null;
+      }
+    };
+  }, []);
 
   // 从编辑器返回书架时静默刷新统计；首次可见跳过（hook 自身已加载）
   const firstVisibleRef = useRef(true);
@@ -293,10 +348,8 @@ export default function BookshelfPage({
         onImportClick={() => void startImport()}
         importing={importing}
         importPhase={importPhase}
-        onGlobalSettingClick={() =>
-          // 打开「全局设定中心」独立窗口（M13）；lite 版不打包该窗口，主进程侧拦截
-          window.electronAPI?.send("global-setting-window-open", null)
-        }
+        onGlobalSettingClick={openGlobalSetting}
+        globalSettingOpening={globalSettingOpening}
       />
 
       <div className="bs-page__body">

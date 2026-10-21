@@ -338,20 +338,6 @@ export function dashboardAttrLimit(tier: "wide" | "mid" | "narrow"): number {
 }
 
 /**
- * E 区「关键设定」摘要行 = **当前启用的全部模块**。
- *
- * 为什么连核心几块（汇总 / 属性 / 境界）也列进来：B/C 只给只读速览，而
- * 十模块的编辑能力必须一条不少（G-04）。把它们留成摘要行，作者仍能一键进
- * L1 编辑器 —— 看板负责「看」，摘要行负责「改」，职责分开但入口不缺。
- *
- * 顺序沿用 `api.enabledModules`（含作者的拖拽排序）；不在这里重排，
- * 否则模块管理里拖出来的顺序在 E 区会看似失效。
- */
-export function dashboardSummaryModules(modules: PackModuleState[]): PackModuleState[] {
-  return modules;
-}
-
-/**
  * D 区「生效状态」：只列**当前生效**的状态效果（`active === true`）。
  *
  * 不生效的不看板上出现 —— 看板回答的是「主角现在中了什么」，未开启的持续性

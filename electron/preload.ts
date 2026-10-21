@@ -474,6 +474,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'window-maximize-state',
       // 行囊窗口「真的可见」的回执：顶栏那颗按钮据此从「正在打开」恢复
       'pack-window-shown',
+      // 全局设定中心窗口「真的可见」的回执：书架那颗按钮据此退出「正在打开」
+      'global-setting-window-shown',
     ]
     if (validChannels.includes(channel)) {
       const listener = (_event: Electron.IpcRendererEvent, ...args: unknown[]) => func(...args)

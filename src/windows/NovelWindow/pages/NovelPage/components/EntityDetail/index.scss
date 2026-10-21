@@ -655,11 +655,16 @@
   }
 
   /* REQ-045：未拆分但有多小层的阶，小层清单铺成一行 chip（与派生段那行互斥）。
-     与 __rung-segs 同缩进、同字号，只是名字来自「阶内第 N 层」而非派生段名。 */
+     与 __rung-segs 同缩进、同字号，只是名字来自「阶内第 N 层」而非派生段名。
+
+     REQ-054 视觉优化：小层多时 chip 密集堆叠、行间区分弱、名字被截断难读 ——
+     加大 gap + 给 chip 上发丝线边框与底色（不再是无边透明点），超长名走
+     .nv-edetail__rung-sub-name 的 ellipsis + title，超多时折叠为前 N 项。 */
   &__rung-subs {
     display: flex;
     flex-wrap: wrap;
-    gap: 3px;
+    align-items: center;
+    gap: 5px;
     padding-left: 22px;
   }
 
@@ -669,15 +674,15 @@
     --ant-button-content-font-size: 12px;
     --ant-border-radius: 7px;
     --ant-line-width: 1px;
-    --ant-button-default-bg: transparent;
+    --ant-button-default-bg: var(--app-surface);
     --ant-button-default-color: var(--app-text-secondary);
-    --ant-button-default-border-color: transparent;
+    --ant-button-default-border-color: var(--app-border);
     --ant-button-default-hover-bg: var(--app-surface-hover);
     --ant-button-default-hover-color: var(--app-text);
-    --ant-button-default-hover-border-color: transparent;
+    --ant-button-default-hover-border-color: var(--app-border-strong);
     --ant-button-default-active-bg: var(--app-surface-hover);
     --ant-button-default-active-color: var(--app-text);
-    --ant-button-default-active-border-color: transparent;
+    --ant-button-default-active-border-color: var(--app-border-strong);
     --ant-button-default-shadow: none;
 
     padding: 2px 7px;
@@ -685,15 +690,44 @@
     &.is-on {
       --ant-button-default-bg: var(--app-accent-blue-weak);
       --ant-button-default-color: var(--app-accent-blue);
-      --ant-button-default-border-color: transparent;
+      --ant-button-default-border-color: var(--app-accent-blue);
       --ant-button-default-hover-bg: var(--app-accent-blue-weak);
       --ant-button-default-hover-color: var(--app-accent-blue);
-      --ant-button-default-hover-border-color: transparent;
+      --ant-button-default-hover-border-color: var(--app-accent-blue);
       --ant-button-default-active-bg: var(--app-accent-blue-weak);
       --ant-button-default-active-color: var(--app-accent-blue);
-      --ant-button-default-active-border-color: transparent;
+      --ant-button-default-active-border-color: var(--app-accent-blue);
       --ant-button-font-weight: 600;
     }
+  }
+
+  /* 小层名：超长截断，完整名走 title 悬浮（antd Button 内容是 flex 容器，
+     直接截断按钮会把图标/内边距一起切掉，所以截断落在名字 span 上） */
+  &__rung-sub-name {
+    display: inline-block;
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: middle;
+  }
+
+  /* 「展开全部 N 项 / 收起」入口：与 chip 同字号、次级观感，不清空成纯图标 */
+  &__rung-subs-toggle.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: auto;
+    --ant-button-content-font-size: 12px;
+    --ant-button-font-weight: 500;
+    --ant-border-radius: 7px;
+    --ant-button-default-bg: transparent;
+    --ant-button-default-color: var(--app-primary);
+    --ant-button-default-hover-bg: var(--app-primary-weak);
+    --ant-button-default-hover-color: var(--app-primary);
+    --ant-button-default-active-bg: var(--app-primary-weak);
+    --ant-button-default-active-color: var(--app-primary);
+    --ant-button-default-shadow: none;
+
+    padding: 2px 7px;
   }
 
   /* ── 出场章节 ─────────────────────────────────────────────────── */

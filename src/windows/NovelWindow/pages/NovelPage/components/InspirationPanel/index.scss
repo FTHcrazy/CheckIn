@@ -191,17 +191,33 @@
     font-size: 12px;
   }
 
+  /* hover 操作条（REQ-054 视觉优化）：浮到卡片右上角，独立浮层条。
+     原来是 footer 里的一串 icon，和正文/时间挤成一团、还遮正文；现在给它
+     卡片底 + 发丝线边 + 阴影，悬停才出现，且不参与 footer 的文档流。 */
   &__acts {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    z-index: 1;
     display: flex;
-    gap: 1px;
-    margin-left: auto;
+    align-items: center;
+    gap: 2px;
+    padding: 2px;
+    border: 1px solid var(--app-border-strong);
+    border-radius: 8px;
+    background: var(--app-surface-elevated);
+    box-shadow: var(--app-shadow-pop);
     opacity: 0;
-    transition: opacity var(--app-t-fast) var(--app-ease-standard);
+    pointer-events: none;
+    transform: translateY(-2px);
+    transition: opacity var(--app-t-fast) var(--app-ease-standard), transform var(--app-t-fast) var(--app-ease-standard);
   }
 
   &__card:hover &__acts,
   &__acts:focus-within {
     opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
   }
 
   // 组件库 TextArea：.ant-input 与业务类同为 (0,1,0)，加载顺序不定，

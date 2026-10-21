@@ -54,8 +54,8 @@
   height: 24px;
   border-radius: 6px;
   color: var(--app-text-muted);
-  --ant-button-text-hover-bg: var(--app-surface-hover);
-  --ant-button-text-hover-color: var(--app-text);
+  --ant-btn-bg-color-hover: var(--app-surface-hover);
+  --ant-btn-text-color-hover: var(--app-text);
 }
 
 .rel-card__body {
@@ -138,9 +138,9 @@
   border: 1px solid transparent;
   color: var(--app-text);
   font-size: 12px;
-  --ant-button-text-hover-bg: var(--app-surface-hover);
-  --ant-button-text-hover-color: var(--app-text);
-  --ant-button-text-hover-border-color: var(--app-border);
+  --ant-btn-bg-color-hover: var(--app-surface-hover);
+  --ant-btn-text-color-hover: var(--app-text);
+  --ant-btn-border-color-hover: var(--app-border);
 }
 
 .rel-card__dir {
@@ -202,4 +202,23 @@
   font-size: 12px;
   line-height: 1.6;
   color: var(--app-text-muted);
+}
+
+// ── 窄窗适配（窗口可缩窄到 ~720px）──
+// 详情卡本就浮在画布右缘；窄窗下收窄宽度、贴边更近，给画布留出可视区域，
+// 正文换行 / 关系列表滚动不受影响，仍可读。
+@media (max-width: 960px) {
+  .rel-card {
+    width: 264px;
+    right: 10px;
+  }
+}
+
+@media (max-width: 800px) {
+  .rel-card {
+    width: 236px;
+    right: 8px;
+    top: 48px;
+    bottom: 8px;
+  }
 }

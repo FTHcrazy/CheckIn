@@ -196,9 +196,10 @@ export default function CharacterPackHost({
   /**
    * 每个模块的**生效折叠态**（含默认策略 / 钉选，见 `isAutoCollapsed`）。
    *
-   * 看板 E 区的箭头与「展开」判定都读它，而不是读 `api.prefs.collapsed` ——
-   * 后者只是作者显式偏好，未表态的非核心模块在默认策略下其实已折叠（UI-04）。
-   * 与 `withEffectiveCollapse` 用同一条纯函数，避免两处口径分叉。
+   * 看板「境界卡 → 调整」的导航与「展开」判定都读它，而不是读
+   * `api.prefs.collapsed` —— 后者只是作者显式偏好，未表态的非核心模块在默认
+   * 策略下其实已折叠（UI-04）。与 `withEffectiveCollapse` 用同一条纯函数，
+   * 避免两处口径分叉。
    */
   const effectiveCollapsed = useMemo(() => {
     const map: Partial<Record<PackModuleKey, boolean>> = {};
@@ -212,17 +213,6 @@ export default function CharacterPackHost({
     }
     return map;
   }, [api.enabledModules, api.prefs.collapsed, api.prefs.pinned, tier]);
-
-  /** 已展开（生效态为「不折叠」）的模块集合：看板摘要行据此显示箭头方向 */
-  const expandedKeys = useMemo(
-    () =>
-      new Set(
-        api.enabledModules
-          .filter((module) => !effectiveCollapsed[module.key])
-          .map((module) => module.key),
-      ),
-    [api.enabledModules, effectiveCollapsed],
-  );
 
   /**
    * 把 L1 里的某个模块滚进可视区。
@@ -404,7 +394,6 @@ export default function CharacterPackHost({
                 attrsExpanded={attrsExpanded}
                 onToggleAttrs={() => setAttrsExpanded((value) => !value)}
                 onExpandModule={openModuleFromBoard}
-                expandedKeys={expandedKeys}
               />
 
               {/* ── L1 编辑器区：十个模块（摘要行 / 就地展开）── */}

@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import * as sass from "sass";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { NovelEntity, SettingCategory } from "../../types";
-import EntityDetail, { APPEAR_ROW_HEIGHT } from "./index";
+import EntityDetail, { APPEAR_ROW_HEIGHT, SUB_COLLAPSE_THRESHOLD } from "./index";
 
 // jsdom 没有真实布局，Virtuoso 视口高度为 0 导致不渲染任何行；
 // 测试中用平铺渲染等价替身，只保留 data + itemContent 的行为契约。
@@ -510,6 +510,74 @@ describe("EntityDetail：当前境界可选小境界（REQ-045）", () => {
     fireEvent.click(on!);
     // 再点当前层 → 解除绑定（不落回阶本身）
     expect(onSetEntityLevel).toHaveBeenCalledWith(null);
+  });
+});
+
+/**
+ * REQ-054 视觉优化：小境界多时折叠为前 N 项 + 「展开全部」。
+ *
+ * 一阶配几十个小层时，整片 chip 把「当前境界」区撑得很长、行间区分弱。折叠后
+ * 只展示前 SUB_COLLAPSE_THRESHOLD 项，作者要设更靠后的层再点「展开全部」；
+ * 绑定落点本身超过阈值时强制全量展示 —— 不能把「当前境界」折进去看不见。
+ */
+describe("EntityDetail：小境界超长折叠（REQ-054）", () => {
+  afterEach(() => cleanup());
+
+  const ladder = (subLevels: number): SettingCategory => ({
+    ...realmCategory,
+    subLevels,
+    levels: [
+      { ...realmCategory.levels[0], subLevels, subPattern: "第{n}层" },
+      realmCategory.levels[1],
+    ],
+  });
+
+  it("默认只显示前 N 项，超出部分折叠为「展开全部」入口", () => {
+    render(<EntityDetail {...buildProps({ settings: [ladder(13)] })} />);
+
+    expect(screen.getByText("第1层")).toBeInTheDocument();
+    expect(screen.getByText(`第${SUB_COLLAPSE_THRESHOLD}层`)).toBeInTheDocument();
+    expect(screen.queryByText("第13层")).toBeNull();
+    expect(screen.getByText("展开全部 13 项")).toBeInTheDocument();
+  });
+
+  it("点「展开全部」后显示末项，并可再收起", () => {
+    render(<EntityDetail {...buildProps({ settings: [ladder(13)] })} />);
+
+    fireEvent.click(screen.getByText("展开全部 13 项"));
+    expect(screen.getByText("第13层")).toBeInTheDocument();
+
+    // 组件测试不走 ThemeProvider，antd 会给两字按钮插空格（「收 起」），按可访问名匹配
+    const collapse = screen.getByRole("button", { name: /收\s*起/ });
+    expect(collapse).toBeInTheDocument();
+
+    fireEvent.click(collapse);
+    expect(screen.queryByText("第13层")).toBeNull();
+    expect(screen.getByText("展开全部 13 项")).toBeInTheDocument();
+  });
+
+  it("绑定落点超过阈值时强制全量展示，不把当前境界折进去", () => {
+    const { container } = render(
+      <EntityDetail
+        {...buildProps({
+          settings: [ladder(13)],
+          relations: [
+            {
+              id: "l1",
+              direction: "out",
+              targetId: "r1",
+              targetName: "炼气",
+              targetType: "level",
+              relation: "当前境界",
+              note: '{"sub":12}',
+            },
+          ],
+        })}
+      />,
+    );
+
+    expect(screen.getByText("第12层")).toBeInTheDocument();
+    expect(container.querySelector(".nv-edetail__rung-sub.is-on")).not.toBeNull();
   });
 });
 

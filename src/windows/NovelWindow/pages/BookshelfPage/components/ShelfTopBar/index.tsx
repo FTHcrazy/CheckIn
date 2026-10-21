@@ -1,4 +1,4 @@
-import { ClusterOutlined, ImportOutlined, PlusOutlined, SearchOutlined } from "@ant-design/icons";
+import { ClusterOutlined, ImportOutlined, LoadingOutlined, PlusOutlined, SearchOutlined } from "@ant-design/icons";
 import { Button, Input, Tooltip } from "antd";
 import "./index.scss";
 
@@ -16,6 +16,15 @@ interface ShelfTopBarProps {
   importPhase?: string;
   /** 打开「全局设定中心」独立窗口（REQ-041；lite 版不打包该窗口） */
   onGlobalSettingClick: () => void;
+  /**
+   * 全局设定中心窗口正在打开（点过按钮、窗口尚未真正可见）。
+   *
+   * 与顶栏行囊按钮的 `packOpening` 同一条 REQ-054 修法：独立窗口首次创建要等
+   * 整个 SPA 装载（dev 下 1–3s），期间屏幕上没有任何变化，作者会以为点了没反应
+   * 再点一次。刻意不用 Button 的 `loading`（它会连 onClick 一起吞掉，而再点一次
+   * 恰是窗口落到后面时的退路），只换内容、把点击留着。
+   */
+  globalSettingOpening?: boolean;
 }
 
 /**
@@ -32,6 +41,7 @@ export default function ShelfTopBar({
   importing,
   importPhase,
   onGlobalSettingClick,
+  globalSettingOpening = false,
 }: ShelfTopBarProps) {
   return (
     <div className="bs-topbar">
@@ -53,15 +63,22 @@ export default function ShelfTopBar({
         />
         {/* 「全局设定中心」独立窗口入口：与搜索 / 导入 / 新建同一行，置于「新建作品」左侧。
             图标 + 文字标签，保证可发现性；锚点供新手引导第 6 步高亮（M14）。 */}
-        <Tooltip title="跨作品共享的设定库（引用后可随全局自动同步）">
+        <Tooltip
+          title={
+            globalSettingOpening
+              ? "正在打开全局设定中心…"
+              : "跨作品共享的设定库（引用后可随全局自动同步）"
+          }
+        >
           <Button
             className="bs-topbar__global-setting"
-            icon={<ClusterOutlined />}
+            icon={globalSettingOpening ? <LoadingOutlined spin /> : <ClusterOutlined />}
             onClick={onGlobalSettingClick}
             aria-label="全局设定中心"
+            aria-busy={globalSettingOpening || undefined}
             data-tour-target="shelf-global-setting"
           >
-            全局设定中心
+            {globalSettingOpening ? "正在打开…" : "全局设定中心"}
           </Button>
         </Tooltip>
         <Tooltip title={importing ? importPhase || "正在导入" : "导入 TXT 书籍"}>

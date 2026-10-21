@@ -26,7 +26,9 @@ import {
 import {
   buildBatchNames,
   buildCarryExample,
+  canSplitLevel,
   countSubLevels,
+  hasChildLevels,
   previewSplit,
   sortLevels,
 } from "@/shared/novel/setting-utils";
@@ -515,13 +517,17 @@ export function useSettingCenter(props: SettingCenterProps): SettingCenterContro
 
   /** 拆分：段数夹取 2–30；段名模板为空时沿用「原名 · 第N段」 */
   const startSplit = useCallback((level: SettingLevel): void => {
+    // 等级序列只支持两层（1.39.1）：子层级（parentId 非空）不能再拆。
+    // 1.4x 收口：已拆出子行的根阶（parentId 为 null 但有子行挂在下面）同样不能
+    // 再拆。菜单已隐藏入口（第二层防线之一），这里兜底防程序化调用 —— 权威在主进程。
+    if (!active || !canSplitLevel(level, hasChildLevels(active.levels, level.id))) return;
     // 默认子层级数：小层数在 2–30 内就按它拆（一阶拆满层），否则回退 2；
     // 命名模板默认沿用「原名 · 第N段」
     const suggested = Math.min(SPLIT_PARTS_MAX, Math.max(2, level.subLevels));
     setSplitTargetId(level.id);
     setSplitParts(String(suggested));
     setSplitPattern("");
-  }, []);
+  }, [active]);
 
   const closeSplit = useCallback((): void => {
     setSplitTargetId(null);
@@ -530,13 +536,21 @@ export function useSettingCenter(props: SettingCenterProps): SettingCenterContro
   }, []);
 
   const submitSplit = useCallback((): void => {
-    if (!splitTarget) return;
+    // 双层防线：子层级不能再拆；已拆出子行的根阶同样不能再拆。startSplit 已拦，
+    // 这里再兜一次防 splitTargetId 被其它路径改坏 —— 权威拒绝仍在主进程。
+    if (
+      !active ||
+      !splitTarget ||
+      !canSplitLevel(splitTarget, hasChildLevels(active.levels, splitTarget.id))
+    ) {
+      return;
+    }
     const parts = Math.max(2, Math.min(SPLIT_PARTS_MAX, Math.floor(Number(splitParts)) || 2));
     onSplitLevel(splitTarget.id, parts, splitPattern.trim() || undefined);
     setSplitTargetId(null);
     setSplitParts("2");
     setSplitPattern("");
-  }, [splitTarget, splitParts, splitPattern, onSplitLevel]);
+  }, [active, splitTarget, splitParts, splitPattern, onSplitLevel]);
 
   /** 行间插入：回车即插入，序号由主进程重排 */
   const beginInsert = useCallback((at: number): void => {

@@ -25,7 +25,9 @@ import {
   Background,
   BackgroundVariant,
   ConnectionLineType,
+  ConnectionMode,
   Controls,
+  MarkerType,
   ReactFlow,
   ReactFlowProvider,
   applyNodeChanges,
@@ -41,6 +43,7 @@ import { createTypeMetaResolver } from "@/shared/novel/entity-type-meta";
 import type { CustomEntityTypeDef } from "@/shared/novel/entity-model";
 import type { RelationGraphDoc } from "@/shared/novel/relation-graph";
 import EntityNode, { type EntityFlowNode } from "../EntityNode";
+import FloatingEdge from "../FloatingEdge";
 import { REL_NODE_DND_TYPE } from "../EntityPool";
 import type { GraphPoint, GraphViewport } from "../../utils/graph-doc";
 import { resolveDensity } from "../../utils/graph-density";
@@ -48,6 +51,9 @@ import type { LayoutPoint } from "../../utils/graph-layout";
 import "./index.scss";
 
 const NODE_TYPES = { entity: EntityNode };
+
+/** 自定义边类型：浮动边（XMind 风格，两端从最近侧连出） */
+const EDGE_TYPES = { floating: FloatingEdge };
 
 export interface RelationCanvasProps {
   doc: RelationGraphDoc;
@@ -161,17 +167,35 @@ function CanvasInner({
     () =>
       doc.edges.map((edge) => {
         const selected = edge.id === selectedEdgeId;
+        // 导出期间把「选中高亮」整体压回常态：内联 stroke / 线宽 / 箭头色同步降级。
+        // 为什么不靠 CSS（.is-exporting .react-flow__edge.selected）压：
+        // ① BaseEdge 会把 style 铺成 path 的内联样式，内联优先级高于样式表，
+        //    样式表里的 stroke 压不动它；
+        // ② 箭头 marker 挂在边的兄弟节点 .react-flow__marker 里，不是边 <g> 的
+        //    子节点，.react-flow__edge.selected 选择器根本够不到它。
+        // 所以用「导出标志」直接降级，而不是真的去清 selectedEdgeId —— 不触发
+        // onSelectEdge，不写库、不产生多余选中态变化，只在视觉层归位。
+        const highlight = selected && !exporting;
         return {
           id: edge.id,
           source: edge.source,
           target: edge.target,
           // 极简档默认不画关系名（200+ 条边时字会盖住边本身），选中那条仍然画
           label: plan.showEdgeLabel || selected ? edge.label : undefined,
-          type: "default",
+          type: "floating",
+          // XMind 风格箭头：颜色跟线走（选中主题色 / 常态强描边色）。
+          // markerUnits=userSpaceOnUse 让箭头尺寸不随线宽（选中加粗）忽大忽小
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            width: 16,
+            height: 16,
+            color: highlight ? "var(--app-primary)" : "var(--app-border-strong)",
+            markerUnits: "userSpaceOnUse",
+          },
           style: {
-            stroke: selected ? "var(--app-primary)" : "var(--app-border-strong)",
-            strokeWidth: selected ? 2 : plan.edgeWidth,
-            opacity: selected ? 1 : plan.edgeOpacity,
+            stroke: highlight ? "var(--app-primary)" : "var(--app-border-strong)",
+            strokeWidth: highlight ? 2 : plan.edgeWidth,
+            opacity: highlight ? 1 : plan.edgeOpacity,
           },
           labelStyle: { fill: "var(--app-text-secondary)", fontSize: plan.level === "compact" ? 10 : 11 },
           labelBgStyle: { fill: "var(--app-surface)", stroke: "var(--app-border)" },
@@ -179,7 +203,7 @@ function CanvasInner({
           labelBgBorderRadius: 4,
         };
       }),
-    [doc.edges, plan, selectedEdgeId],
+    [doc.edges, plan, selectedEdgeId, exporting],
   );
 
   const handleNodesChange = useCallback((changes: NodeChange<EntityFlowNode>[]) => {
@@ -354,6 +378,7 @@ function CanvasInner({
         nodes={nodes}
         edges={flowEdges}
         nodeTypes={NODE_TYPES}
+        edgeTypes={EDGE_TYPES}
         onNodesChange={handleNodesChange}
         onNodeClick={handleNodeClick}
         onNodeDoubleClick={handleNodeDoubleClick}
@@ -370,19 +395,24 @@ function CanvasInner({
           onViewportChange({ k: viewportValue.zoom, tx: viewportValue.x, ty: viewportValue.y });
         }}
         nodesConnectable
+        // 节点四边手柄都是 source，松散模式让「任意边起、任意边落」成立，
+        // onConnect 的 source/target 仍由起/落点决定（见 EntityNode 注释）
+        connectionMode={ConnectionMode.Loose}
         // RG-I-64：节点不进 tab 序（200 个节点会把 Tab 序列彻底堵死），
         // 键盘路径由左侧池子承担（行内 ↑↓ / Enter），这里只保留「选中」语义
         nodesFocusable={false}
         edgesFocusable={false}
         // 画布的键盘删除会直接删真实关系（见文件头注释），一律禁用
         deleteKeyCode={null}
+        // 去掉画布右下角的 React Flow 水印（本地桌面应用，用户明确要求）。
+        // proOptions 直接让 Attribution 组件不渲染，导出 PNG 也不会把水印截进去。
+        proOptions={{ hideAttribution: true }}
         connectionLineStyle={{
           stroke: "var(--app-primary)",
           strokeWidth: 1.6,
           strokeDasharray: "5 4",
         }}
-        connectionLineType={ConnectionLineType.SmoothStep}
-        connectionRadius={28}
+        connectionLineType={ConnectionLineType.Bezier}
         onlyRenderVisibleElements
         defaultViewport={
           restoredViewport
@@ -405,7 +435,7 @@ function CanvasInner({
           <p>{doc.diagnostics.poolCount > 0 ? "画布是空的" : "这本书还没有任何关联"}</p>
           <span>
             {doc.diagnostics.poolCount > 0
-              ? "把左侧池子里的要素拖到画布上，再从卡片右缘的小圆点拖到另一张卡，就能建一条关系。"
+              ? "把左侧池子里的要素拖到画布上，再从卡片边缘的小圆点拖到另一张卡，就能建一条关系。"
               : "在右栏的要素资料卡里给两个要素建一条关系，再回到这里就能看到结构。"}
           </span>
         </div>

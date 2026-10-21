@@ -1,10 +1,26 @@
 @use "../../../../../../shared/styles/widget" as widget;
 
 // 池子单行（就近维护：行是独立组件，样式不再挂回池子）
+// 行才是 hover / 选中的最小视觉单元：背景画在行盒上（盖住名称 + 状态 + 行尾图标），
+// 而不是只画在主按钮上——否则行尾 ⊖/⊕ 图标会悬浮在背景块之外（hover 错位）。
 .rel-pool__row {
   display: flex;
   align-items: center;
   gap: 2px;
+  border-radius: 7px;
+  transition:
+    background-color var(--app-t-normal) var(--app-ease-standard),
+    box-shadow var(--app-t-normal) var(--app-ease-standard);
+
+  &:hover {
+    background: var(--app-surface-hover);
+  }
+
+  &.is-selected {
+    background: var(--app-surface-hover);
+    // 选中环用 inset box-shadow：不占布局，行高与常态/hover 一致，图标不随态位移
+    box-shadow: inset 0 0 0 1px var(--app-border-strong);
+  }
 }
 
 // 整行可点：仍是 Button（键盘可达 / focus 环 / 禁用语义），用清零点重绘外观
@@ -20,15 +36,13 @@
   border: 1px solid transparent;
   color: var(--app-text);
   font-size: 12px;
-  --ant-button-text-hover-bg: var(--app-surface-hover);
-  --ant-button-text-active-bg: var(--app-surface-hover);
-  --ant-button-text-hover-color: var(--app-text);
-  --ant-button-text-active-color: var(--app-text);
-
-  &.is-selected {
-    background: var(--app-surface-hover);
-    border-color: var(--app-border-strong);
-  }
+  // hover / active 背景交给行盒（.rel-pool__row:hover）统一绘制，按钮自身保持透明，
+  // 否则名称区与行尾图标区会出现深浅不一致的拼接缝（图标悬浮在背景外）。
+  // 注：antd 6 已弃用 --ant-button-text-* 系列 token，text 按钮状态色走 --ant-btn-*。
+  --ant-btn-bg-color-hover: transparent;
+  --ant-btn-bg-color-active: transparent;
+  --ant-btn-text-color-hover: var(--app-text);
+  --ant-btn-text-color-active: var(--app-text);
 
   // 键盘焦点必须能看见：↑↓ 在行间移动时，用户得知道「Enter 会作用在哪一行」
   &:focus-visible {
@@ -49,8 +63,10 @@
   height: 24px;
   border-radius: 6px;
   color: var(--app-text-muted);
-  --ant-button-text-hover-bg: var(--app-surface-hover);
-  --ant-button-text-hover-color: var(--app-text);
+  // 背景由行盒统一给，图标自身只做「文字色提亮」，不与行高亮叠加出斑块
+  --ant-btn-bg-color-hover: transparent;
+  --ant-btn-bg-color-active: transparent;
+  --ant-btn-text-color-hover: var(--app-text);
 }
 
 .rel-pool__name {

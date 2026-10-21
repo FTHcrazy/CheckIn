@@ -3,11 +3,14 @@
 /**
  * 行囊 L0 看板（UI-01）
  *
- * 只读为主的信息一屏。卡片化分区：B 境界 / C 核心属性 / D 生效状态 /
- * E 关键设定摘要行。
+ * 只读为主的信息一屏。卡片化分区：B 境界 / C 核心属性 / D 生效状态。
  *
  * ⚠️ 没有身份卡：它与头部 `.cpk-head` 逐项重复（名字 / 境界 / 绑定态 /
  * 改动计数），2026-10 已删，见 index.tsx 顶部的说明。
+ *
+ * ⚠️ E 区「关键设定」摘要行 2026-10 第二轮整卡移除：卡里除了「跳到对应模块」
+ * 的快速导航外没有实际信息（模块编辑入口 L1 模块壳自己就有，模块管理入口在
+ * 头部齿轮），腾出的栅格分给「境界」「核心属性」两卡放大成视觉主角。
  *
  * ⚠️ 底色是 `--app-surface`（内容面），与 L1 的 `.cpk-mod` 同档。
  * 曾经这里写的是 `--app-surface-elevated` —— 那是**浮层专用** token（纯白），
@@ -34,20 +37,22 @@
   }
 
   /*
-    宽档：四区合成**一条横贯量尺的概览带**（UI-08）。
+    宽档：三区合成**一条横贯量尺的概览带**（UI-08）。
 
-    以前是 2×2 四张独立卡（左「境界 / 核心属性」、右「生效状态 / 关键设定」），
-    与下面的模块卡同为「描边圆角卡片」，一屏八张同等重量的卡 —— 视线没有主次，
-    而且每张卡都要自己撑一边，左右两列谁长谁短一眼就看出来。
-    改成一条带之后：外面只有一个框，四段之间用发丝线分栏，读起来是
-    「一张概览卡里的四栏读数」，与下方只画栏头的分区工作区形成两级层次。
+    以前是 2×2 四张独立卡，与下面的模块卡同为「描边圆角卡片」，一屏八张同等
+    重量的卡 —— 视线没有主次。改成一条带之后：外面只有一个框，三段之间用发丝线
+    分栏，读起来是「一张概览卡里的三栏读数」，与下方只画栏头的分区工作区形成
+    两级层次。
+
+    2026-10 第二轮：E「关键设定」卡整卡移除后，四列栅格收成三列，并把「境界 /
+    核心属性」两卡的比例放大（1fr / 1.5fr），让它们成为概览带的视觉主角。
 
     实现上不用改 DOM：两列 `.cpk-board__col` 在宽档 `display: contents`
-    退场，四张卡直接成为这条带的四段（中窄档仍按列堆叠）。
+    退场，三张卡直接成为这条带的三段（中窄档仍按列堆叠）。
   */
   &--wide {
     display: grid;
-    grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.25fr) minmax(0, 0.98fr) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) minmax(0, 0.9fr);
     gap: 0;
     border: 1px solid var(--app-border);
     border-radius: var(--app-radius-panel);
@@ -60,7 +65,7 @@
     }
 
     > .cpk-board__col > .cpk-board__card {
-      padding: 12px 16px;
+      padding: 14px 16px;
       border: 0;
       border-radius: 0;
       background: transparent;
@@ -86,7 +91,7 @@
     box-shadow: var(--app-shadow-card);
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 10px;
     min-width: 0;
   }
 
@@ -100,21 +105,21 @@
   }
 
   &__rowtitle {
-    font-size: 14px;
+    font-size: 16px;
     font-weight: 600;
     color: var(--app-text);
   }
 
   &__count {
-    font-size: 12px;
+    font-size: 14px;
     color: var(--app-text-muted);
   }
 
   &__entry.ant-btn {
     @include widget.cpk-widget;
-    height: 22px;
-    padding: 0 9px;
-    --ant-button-content-font-size: 12px;
+    height: 26px;
+    padding: 0 10px;
+    --ant-button-content-font-size: 14px;
     border: 1px solid var(--app-border);
     border-radius: var(--app-radius-item);
     color: var(--app-text-secondary-strong);
@@ -122,7 +127,7 @@
 
   /* ── B 境界卡 ── */
   &__realmbig {
-    font-size: 20px;
+    font-size: 24px;
     font-weight: 700;
     color: var(--app-text);
     font-variant-numeric: tabular-nums;
@@ -132,7 +137,7 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    font-size: 12px;
+    font-size: 14px;
     color: var(--app-text-muted);
     min-width: 0;
   }
@@ -153,14 +158,13 @@
 
   /* ── C 核心属性 ── */
   &__attrlist,
-  &__statuslist,
-  &__modlist {
+  &__statuslist {
     margin: 0;
     padding: 0;
     list-style: none;
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 4px;
   }
 
   &__attrrow.ant-btn {
@@ -169,8 +173,8 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto auto;
     align-items: center;
-    gap: 8px;
-    padding: 4px 6px;
+    gap: 10px;
+    padding: 6px 8px;
     border-radius: var(--app-radius-item);
     text-align: left;
 
@@ -184,7 +188,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 12px;
+    font-size: 14px;
     color: var(--app-text);
   }
 
@@ -197,7 +201,7 @@
   }
 
   &__num {
-    font-size: 12px;
+    font-size: 14px;
     color: var(--app-text-secondary-strong);
 
     &.is-final {
@@ -209,13 +213,13 @@
   &__unit {
     margin-left: 1px;
     font-style: normal;
-    font-size: 12px;
+    font-size: 14px;
     color: var(--app-text-muted);
   }
 
   &__arrow {
     color: var(--app-text-muted);
-    font-size: 12px;
+    font-size: 14px;
   }
 
   &__seg {
@@ -227,13 +231,13 @@
   }
 
   &__none {
-    font-size: 12px;
+    font-size: 14px;
     color: var(--app-text-muted);
   }
 
   &__more {
     margin: 0;
-    font-size: 12px;
+    font-size: 14px;
     color: var(--app-text-muted);
   }
 
@@ -242,8 +246,8 @@
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto auto;
     align-items: center;
-    gap: 8px;
-    padding: 4px 6px;
+    gap: 10px;
+    padding: 6px 8px;
     border-radius: var(--app-radius-item);
   }
 
@@ -252,61 +256,14 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 12px;
+    font-size: 14px;
     color: var(--app-text);
   }
 
   &__statusval {
-    font-size: 12px;
+    font-size: 14px;
     color: var(--app-text-secondary-strong);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
-  }
-
-  /* ── E 关键设定摘要行 ── */
-  &__modrow.ant-btn {
-    @include widget.cpk-widget;
-    width: 100%;
-    display: grid;
-    grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 8px;
-    padding: 6px;
-    border-radius: var(--app-radius-item);
-    text-align: left;
-
-    &:hover {
-      background: var(--app-surface-hover);
-    }
-
-    /* 展开态填充走"凹槽"档（surface-alt）而不是按下档（surface-active）：
-       按下档在 cream 下比内容面重 1.20，是常驻弱底里最重的一档（primary-weak
-       才 1.13），整列铺开就是一块深棕 —— 真机上一眼就和其余界面不是一个重量。
-       展开与否另有箭头方向承担，底色只需给一个"这行的槽"的暗示。 */
-    &.is-open {
-      background: var(--app-surface-alt);
-    }
-  }
-
-  &__modlabel {
-    font-size: 12px;
-    color: var(--app-text);
-    font-weight: 500;
-    white-space: nowrap;
-  }
-
-  &__modsum {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 12px;
-    color: var(--app-text-muted);
-    text-align: right;
-  }
-
-  &__modarrow {
-    color: var(--app-text-muted);
-    font-size: 12px;
   }
 }

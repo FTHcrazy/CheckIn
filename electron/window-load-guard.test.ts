@@ -157,7 +157,27 @@ describe("装载失败必须可见 + 必有窗口（守卫）", () => {
     const body = MAIN.slice(start, start + 800);
     expect(body).toContain("收到 global-setting-window-open");
     expect(body).toMatch(/if \(EDITION === "lite"\)/);
-    expect(body).toContain("createGlobalSettingWindow()");
+    // REQ-054 修法：带上发起方，窗口真可见时才有对象回执 global-setting-window-shown
+    expect(body).toContain("createGlobalSettingWindow(event.sender)");
+  });
+
+  it("global-setting-window-open：发起方透传 + show 事件回执（REQ-054）", () => {
+    const start = MAIN.indexOf('ipcMain.on("global-setting-window-open"');
+    expect(start).toBeGreaterThan(-1);
+    const handler = MAIN.slice(start, start + 800);
+    expect(handler).toContain("createGlobalSettingWindow(event.sender)");
+
+    const body = topLevelBody("function createGlobalSettingWindow(");
+    expect(body).toContain('globalWin.once("show"');
+    expect(body).toContain("notifyGlobalSettingShown(opener)");
+    // 「已开」分支也要回执：窗口落到后面时再点一次，按钮同样能退出 loading
+    expect(body.slice(0, body.indexOf("const globalWin"))).toContain(
+      "notifyGlobalSettingShown(opener)",
+    );
+
+    const notify = topLevelBody("function notifyGlobalSettingShown(");
+    expect(notify).toContain("isDestroyed()");
+    expect(notify).toContain('send("global-setting-window-shown")');
   });
 
   /**

@@ -16,7 +16,7 @@
  * 判据与色阶规则见 `src/shared/styles/themes.scss` 文件头「常驻色块阶梯」。
  *
  * 布局分三档（判据在 TS 侧 `packWidthTier`，这里只按 `data-tier` 出样式）：
- * - wide  ：三条水平带 —— 概览带（L0，四段发丝线分栏）/ 分区工作区（L1，一块或
+ * - wide  ：三条水平带 —— 概览带（L0，三段发丝线分栏）/ 分区工作区（L1，一块或
  *           两块面板）/ 页脚。工作区撑满概览带以下的全部高度，页脚贴窗口底收口。
  * - mid   ：单栏纵向流，全部模块展开
  * - narrow：单栏纵向流，次要六模块由 TS 侧折叠成标题行
@@ -151,11 +151,17 @@
     box-shadow: var(--app-shadow-card);
   }
 
-  /* 面板内的模块退化成「节」：清零卡片外观，靠发丝线分节 */
+  /*
+    面板内的模块退化成「节」：清零卡片外观，靠发丝线分节。
+    外阴影也一起清零 —— 模块壳基类自带 `--app-shadow-ambient`（中/窄档单栏流里
+    浮在页面底上是对的），但宽档下模块已经落在 `.cpk__zone` 这张 `--app-shadow-card`
+    面板里，再各自带一层环境阴影就成了「卡里套卡」的浮起叠加（真机截图圈出的残留）。
+  */
   &__zone .cpk-mod {
     border: 0;
     border-radius: 0;
     background: transparent;
+    box-shadow: none;
   }
 
   &__zone .cpk-mod__head {
@@ -299,6 +305,15 @@
   .cpk__zoneghost-line--title {
     font-weight: 600;
     color: var(--app-text-secondary);
+  }
+
+  /*
+    引导卡不是「另一个模块」，只是替对面栏占位的一句话：`.cpk__zonecol > * + *`
+    给模块之间的 12px 段距对一张说明卡偏松，这里收窄到 8px，让它紧贴上方
+    最后一个模块，不再悬出老远一截。
+  */
+  &__zonecol > &__zoneghost.ant-btn {
+    margin-top: 8px;
   }
 
   /*

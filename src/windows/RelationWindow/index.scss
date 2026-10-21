@@ -42,6 +42,9 @@ body {
   align-items: baseline;
   gap: 10px;
   min-width: 0;
+  // 占满左侧可用空间，窗口收窄时由它吸收收缩，把「刷新」按钮顶在最右、不挤扁
+  flex: 1 1 auto;
+  overflow: hidden;
 }
 
 .rel-window__work-name {
@@ -52,18 +55,26 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  // flex item 默认 min-width:auto 会按内容宽度拒绝收缩，ellipsis 就永远不触发
+  min-width: 0;
 }
 
 .rel-window__work-meta {
   font-size: 12px;
   color: var(--app-text-muted);
   white-space: nowrap;
+  // 窄窗时元信息可截断：前面「画布/池中/全书」是主信息，后面「N 条境界绑定…」
+  // 是可省略的补充，截尾优先丢补充，不影响读图所需的数字
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .rel-window__actions {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex: none;
 }
 
 .rel-window__notice {

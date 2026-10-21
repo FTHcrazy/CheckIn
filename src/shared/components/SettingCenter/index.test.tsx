@@ -291,6 +291,25 @@ describe("设定中心", () => {
     expect(onSplitLevel).toHaveBeenCalledWith("l1", 3, "{name}·{n}重");
   });
 
+  it("子层级（parentId 非空）不提供「新增子层级」入口：杜绝第三层嵌套", () => {
+    const cat: SettingCategory = {
+      ...realm,
+      levels: [
+        level("l1", "练气", 1),
+        { ...level("l1s1", "练气 · 第1段", 2), parentId: "l1", segFrom: 1, segTo: 4 },
+      ],
+    };
+    render(<SettingCenter {...buildProps({ settings: [cat] })} />);
+    const childRow = screen.getByText("练气 · 第1段", { selector: ".nv-sc__col-name" });
+    fireEvent.click(
+      childRow.closest(".nv-sc__row")!.querySelector('[aria-label="更多操作"]')!,
+    );
+    // 子层级的 ⋯ 菜单里没有拆分入口（仍保留编辑 / 删除），
+    // 从 UI 上杜绝「练气 · 第1段」再拆出第三层。
+    expect(screen.queryByText("新增子层级…")).toBeNull();
+    expect(screen.getByText("编辑名称 / 别名 / 说明")).toBeInTheDocument();
+  });
+
   it("行内编辑可写本阶小层命名：空值原样提交（空 = 沿用分类）", () => {
     const onPatchLevel = vi.fn();
     render(<SettingCenter {...buildProps({ onPatchLevel })} />);

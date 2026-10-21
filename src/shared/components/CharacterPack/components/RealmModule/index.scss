@@ -6,6 +6,12 @@
     display: flex;
     align-items: center;
     gap: 8px;
+    /*
+      与上方「阶选择」隔开（真机回归：这行此前没有 margin-top，紧贴着阶 Select /
+      阶 chip 行 —— 上轮改 `__progress` / `__mirror` 没打中这里）。当前阶行是一块
+      带底色强调的内容面，和上面的选择控件不是同一簇，8px 是这块与选择簇的分隔。
+    */
+    margin-top: 8px;
     padding: 6px 8px;
     border-radius: var(--app-radius-item);
     background: var(--app-accent-blue-weak);
@@ -35,7 +41,7 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    margin-top: 5px;
+    margin-top: 8px;
     padding: 4px 8px;
     border-radius: var(--app-radius-item);
     background: var(--app-surface-alt);
@@ -164,7 +170,10 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    margin-top: 8px;
+    /* 阶内进度是**纯读数**，与上面的「选择控件簇」（阶 chip / −1·+1 / 小层分页）
+       是一簇操作 vs 一簇结果的关系。真机反馈「挤在一起」，故这里把顶距从 8px
+       抬到 12px，让读数与操作在视觉上分得开，而不是继续糊成同一个块。 */
+    margin-top: 12px;
   }
 
   &__bar {
@@ -189,7 +198,7 @@
 
   &__progresslabel {
     flex: none;
-    font-size: 12px;
+    font-size: 14px;
     color: var(--app-text-secondary-strong);
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
@@ -214,12 +223,15 @@
   /*
     小层直选（UI-02）：层号条 / 层下拉。与下方的「阶内进度条」分开成两块
     （进度条是纯读数、层号条是可点选择），故各自有独立类名与顶距。
+    顶距 10px：等阶调整行（−1/+1）→ 小层分页 是同一簇操作，但中间隔着一块
+    带底色的当前阶行，10px 才看得出「上面是读数、下面是可选层号」两层；
+    真正的大留白放在进度条那一行（见 `__progress`）。
   */
   &__subbar {
     display: flex;
     align-items: center;
     gap: 6px;
-    margin-top: 8px;
+    margin-top: 10px;
   }
 
   &__subnums {
@@ -271,7 +283,7 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    margin-top: 7px;
+    margin-top: 6px;
   }
 
   &__bindlabel {

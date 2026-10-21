@@ -121,7 +121,7 @@ export default function NodeDetailCard({
           </span>
           {relations.length === 0 ? (
             <p className="rel-card__empty">
-              这个要素还没有任何关联。把两张卡连起来就能建一条关系：从卡片右缘的小圆点拖到另一张卡上。
+              这个要素还没有任何关联。把两张卡连起来就能建一条关系：从卡片边缘的小圆点拖到另一张卡上。
             </p>
           ) : (
             <ul className="rel-card__relations">

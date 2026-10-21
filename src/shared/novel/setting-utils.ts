@@ -266,6 +266,36 @@ export function moveLevel(
 }
 
 /**
+ * 一个等级项是否已拆出子行（存在 `parentId` 指向它的行）。
+ *
+ * 1.4x 收口：拆出子行的根阶（`parentId === null` 但已有行挂在它下面）不能再拆，
+ * 否则「凝丹 · 第1段 · 第1段」会叠成第三层。`canSplitLevel` 与 UI 第二层都靠
+ * 这个判据拿「有没有子行」—— 统一抽成纯函数，避免各写一份 `.some()`。
+ */
+export function hasChildLevels(levels: SettingLevel[], levelId: string): boolean {
+  return levels.some((level) => level.parentId === levelId);
+}
+
+/**
+ * 一个等级项是否还能继续拆分（新增子层级）。
+ *
+ * 等级序列**只支持两个层级**（1.39.1）：`parentId` 非空的行是「拆分」产生的
+ * 子层级，不能再拆 —— 否则「初级 · 第1段 · 第1段」这种三层嵌套既没法在境界
+ * chip 里表达，也没人读得懂。
+ *
+ * 1.4x 收口：即便 `parentId === null`（根阶），只要它**已拆出子行**（`hasChildren`
+ * 为真）也不能再拆 —— 组阶的 `parent_id` 仍为 NULL，继续拆只会再造出第二层，
+ * 是数据质量隐患。`hasChildren` 缺省 `false`：拿不到 children 信息的旧调用点
+ * 行为不变，权威拒绝仍在主进程（第一层）。
+ *
+ * 这是纯函数层的**唯一口径**：UI 用它在菜单里收口 / 动作层兜底（第二层），
+ * 主进程写通道用它做权威拒绝（第一层）。两个域、两个设定窗口共用这一条规则。
+ */
+export function canSplitLevel(level: SettingLevel, hasChildren = false): boolean {
+  return level.parentId === null && !hasChildren;
+}
+
+/**
  * 拆分层级的分段预览
  *
  * 1.38.1 起父阶是**纯分组**：不占用任何小层段，全部 `parts` 段都是它的

@@ -53,8 +53,9 @@
   white-space: nowrap;
 }
 
-// 连线手柄：默认隐身，悬停卡片 / 正在连线时浮现。
-// 用 opacity 而不是 display，保证命中区域一直存在（松手命中判定依赖它）。
+// 连线手柄：四边各一个（都是 source，配合 ConnectionMode.Loose 四边可起可落），
+// 默认隐身，悬停卡片 / 正在连线时才浮现。用 opacity 而不是 display，保证命中区域
+// 一直存在（松手命中判定依赖它）。
 .rel-node__handle.react-flow__handle {
   width: 9px;
   height: 9px;
@@ -62,14 +63,44 @@
   background: var(--rel-node-color);
   opacity: 0;
   transition: opacity var(--app-t-fast) var(--app-ease-standard), transform var(--app-t-fast) var(--app-ease-standard);
+}
 
-  &--in {
-    left: -5px;
-  }
+// React Flow 的基础类（.react-flow__handle-top/right/bottom/left）已把每个方向
+// 定位到边中点并居中；这里只把边距往卡片外推 5px，让圆点骑在边框上。
+// 注意：modifier 必须写 `.rel-node__handle.rel-node__handle--top` 这种完整类，
+// 若像旧代码那样嵌在 `.react-flow__handle` 下用 `&--in`，会拼出不存在的
+// `.react-flow__handle--in`，5px 偏移从未生效（属历史遗留死规则）。
+.rel-node__handle.rel-node__handle--top {
+  top: -5px;
+}
 
-  &--out {
-    right: -5px;
-  }
+.rel-node__handle.rel-node__handle--right {
+  right: -5px;
+}
+
+.rel-node__handle.rel-node__handle--bottom {
+  bottom: -5px;
+}
+
+.rel-node__handle.rel-node__handle--left {
+  left: -5px;
+}
+
+// hover 放大必须带上各自方向的 translate，否则会盖掉基础类的居中 transform
+.rel-node__handle.rel-node__handle--top:hover {
+  transform: translate(-50%, -50%) scale(1.35);
+}
+
+.rel-node__handle.rel-node__handle--right:hover {
+  transform: translate(50%, -50%) scale(1.35);
+}
+
+.rel-node__handle.rel-node__handle--bottom:hover {
+  transform: translate(-50%, 50%) scale(1.35);
+}
+
+.rel-node__handle.rel-node__handle--left:hover {
+  transform: translate(-50%, -50%) scale(1.35);
 }
 
 .rel-node:hover .rel-node__handle.react-flow__handle,
@@ -77,10 +108,6 @@
 // 拖线过程中所有卡片都亮出手柄：否则「能连到哪」只能靠猜
 .rel-canvas.is-connecting .rel-node__handle.react-flow__handle {
   opacity: 1;
-}
-
-.rel-node__handle.react-flow__handle:hover {
-  transform: scale(1.35);
 }
 
 // 缩放很小时手柄跟着变小就点不中：给一个下限，保证 0.3× 下仍有 12px 命中区

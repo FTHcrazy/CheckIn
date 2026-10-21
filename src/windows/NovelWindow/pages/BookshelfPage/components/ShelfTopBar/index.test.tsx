@@ -53,4 +53,22 @@ describe("书架顶栏 · 全局设定中心入口（T04）", () => {
     expect(actions!.contains(newWork!)).toBe(true);
     expect(actions!.querySelector(".bs-topbar__search")).not.toBeNull();
   });
+
+  it("窗口正在打开时按钮转「正在打开…」且仍可点击（REQ-054 修法对齐行囊）", () => {
+    const onGlobalSettingClick = vi.fn();
+    render(
+      <ShelfTopBar
+        {...buildProps({ onGlobalSettingClick, globalSettingOpening: true })}
+      />,
+    );
+
+    // aria-label 仍为「全局设定中心」；内容换成「正在打开…」并带 busy 标记
+    const button = screen.getByRole("button", { name: "全局设定中心" });
+    expect(button).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByText("正在打开…")).toBeInTheDocument();
+
+    // 刻意不用 antd 的 loading（它会吞 onClick）：窗口落到后面时再点一次仍是退路
+    fireEvent.click(button);
+    expect(onGlobalSettingClick).toHaveBeenCalledTimes(1);
+  });
 });

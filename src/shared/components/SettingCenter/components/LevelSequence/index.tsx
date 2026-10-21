@@ -20,7 +20,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { SettingCategory, SettingLevel } from "@/shared/novel/setting-types";
-import { listSubLevels } from "@/shared/novel/setting-utils";
+import { canSplitLevel, hasChildLevels, listSubLevels } from "@/shared/novel/setting-utils";
 import { lvlId, type LevelDraft } from "../../setting-center-shared";
 import "./index.scss";
 
@@ -334,9 +334,16 @@ export default function LevelSequence({
                                 // 挂一层子层级，子层级不能再拆 —— 否则「初级·第1段·
                                 // 第1段」这种三层嵌套既没法在境界 chip 里表达，
                                 // 也没人读得懂。子层级（parentId 非空）不给拆分入口。
-                                ...(level.parentId
-                                  ? []
-                                  : [{ key: "split", label: "新增子层级…" }]),
+                                // 1.4x 收口：已拆出子行的根阶（parentId 为 null 但
+                                // 有子行挂在下面）同样不再给拆分入口。口径收敛到纯
+                                // 函数 canSplitLevel（主进程 / UI 同一判据），子行
+                                // 信息由 hasChildLevels 从整份序列里现算。
+                                ...(canSplitLevel(
+                                  level,
+                                  hasChildLevels(orderedLevels, level.id),
+                                )
+                                  ? [{ key: "split", label: "新增子层级…" }]
+                                  : []),
                                 ...(level.parentId
                                   ? []
                                   : [

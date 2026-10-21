@@ -94,6 +94,16 @@ export const APPEAR_ROW_HEIGHT = 38;
 /** 列表封顶高度：超过就内部滚动，避免上千章把下方操作区推得很远 */
 const APPEAR_MAX_HEIGHT = 240;
 
+/**
+ * 「关联境界」小境界 chip 的默认展示条数。
+ *
+ * 一阶配几十个小层时，整片 chip 会把当前境界区撑得很长、行间区分也弱。超过
+ * 这个数先只显示前 N 项 + 「展开全部 N 项」，作者要设更靠后的层再展开。
+ * 绑定落点超过 N 时强制全量展示（不能把「当前境界」折进去看不见）。
+ * 导出供契约测试断言（`EntityDetail/index.test.tsx`）。
+ */
+export const SUB_COLLAPSE_THRESHOLD = 8;
+
 /** 要素详情：基础字段编辑 / 关联要素增删 / 当前境界（R25）/ 出场章节跳转 */
 export default function EntityDetail({
   entity,
@@ -192,6 +202,10 @@ export default function EntityDetail({
 
   const [draft, setDraft] = useState<EntityDraft | null>(null);
   const editing = draft !== null;
+  /** 已「展开全部」小境界的根阶 id（每个根阶各自记住，切卡时复位） */
+  const [expandedSubs, setExpandedSubs] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
 
   // 添加关联的内联表单状态（独立于资料卡编辑态，随时可增删关联）
   const [relAdding, setRelAdding] = useState(false);
@@ -210,10 +224,11 @@ export default function EntityDetail({
     [entities, entity.id, metaOf],
   );
 
-  // 切换查看对象时退出编辑态，避免把 A 卡的草稿写进 B 卡
+  // 切换查看对象时退出编辑态，避免把 A 卡的草稿写进 B 卡；小境界折叠态一并复位
   useEffect(() => {
     setDraft(null);
     setRelAdding(false);
+    setExpandedSubs(new Set());
   }, [entity.id]);
 
   const startEdit = (): void =>
@@ -612,6 +627,21 @@ export default function EntityDetail({
                 const boundInSubtree = boundPosition?.root.id === level.id;
                 const boundToRoot = boundInSubtree && !boundPosition?.segment;
                 const boundSegment = boundInSubtree ? boundPosition?.segment ?? null : null;
+                // 未拆分但有多小层的阶：先折叠到前 N 项，超长时给「展开全部」入口
+                const subNames =
+                  segments.length === 0 && level.subLevels > 1
+                    ? listSubLevels(level, realmCategory)
+                    : [];
+                const subOverflow = subNames.length > SUB_COLLAPSE_THRESHOLD;
+                const subExplicitExpanded = expandedSubs.has(level.id);
+                // 绑定落点折在窗口外时强制全量展示，不能让「当前境界」被折叠藏起来
+                const subBoundOverflow =
+                  boundInSubtree && boundSub > SUB_COLLAPSE_THRESHOLD;
+                const subsCollapsed =
+                  subOverflow && !subExplicitExpanded && !subBoundOverflow;
+                const visibleSubNames = subsCollapsed
+                  ? subNames.slice(0, SUB_COLLAPSE_THRESHOLD)
+                  : subNames;
                 return (
                   <div key={level.id} className="nv-edetail__rung-group">
                     <Button
@@ -699,7 +729,7 @@ export default function EntityDetail({
                     */}
                     {segments.length === 0 && level.subLevels > 1 && (
                       <div className="nv-edetail__rung-subs">
-                        {listSubLevels(level, realmCategory).map((name, index) => {
+                        {visibleSubNames.map((name, index) => {
                           const subIndex = index + 1;
                           const subBound = boundInSubtree && boundSub === subIndex;
                           return (
@@ -721,10 +751,41 @@ export default function EntityDetail({
                                 onSetEntityLevel(level.id, subIndex);
                               }}
                             >
-                              {name}
+                              {/* 超长小境界名截断，完整名走 span 的 title */}
+                              <span className="nv-edetail__rung-sub-name" title={name}>
+                                {name}
+                              </span>
                             </Button>
                           );
                         })}
+                        {subOverflow && subsCollapsed && (
+                          <Button
+                            className="nv-edetail__rung-subs-toggle"
+                            onClick={() =>
+                              setExpandedSubs((current) => {
+                                const next = new Set(current);
+                                next.add(level.id);
+                                return next;
+                              })
+                            }
+                          >
+                            展开全部 {subNames.length} 项
+                          </Button>
+                        )}
+                        {subOverflow && subExplicitExpanded && (
+                          <Button
+                            className="nv-edetail__rung-subs-toggle"
+                            onClick={() =>
+                              setExpandedSubs((current) => {
+                                const next = new Set(current);
+                                next.delete(level.id);
+                                return next;
+                              })
+                            }
+                          >
+                            收起
+                          </Button>
+                        )}
                       </div>
                     )}
                   </div>

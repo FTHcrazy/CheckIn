@@ -628,6 +628,18 @@ function notifyPackShown(opener?: WebContents): void {
 }
 
 /**
+ * 回执「全局设定中心窗口真的可见了」给发起方（书架那颗按钮据此退出 loading）。
+ *
+ * 与 `notifyPackShown` 同口径：只在窗口可见时发 —— 首次创建要等整个 SPA
+ * 装载完成（dev 下 1–3s），提前发等于把「正在打开」提前收掉，作者又会以为
+ * 没反应、再点一次（正是 REQ-054 在全局设定中心入口上的残留路径）。
+ */
+function notifyGlobalSettingShown(opener?: WebContents): void {
+  if (!opener || opener.isDestroyed()) return;
+  opener.send("global-setting-window-shown");
+}
+
+/**
  * PackWindow —— 行囊独立窗口（full / novel 版）。
  *
  * 即关即销、单实例唤起；数据全部经 novel-pack IPC（userDb 的 novel_* 表），
@@ -712,13 +724,18 @@ function createPackWindow(opener?: WebContents): BrowserWindow {
  * 无未保存改动，守卫在渲染层不武装即直接放行。
  *
  * lite 版不打包本窗口（novel 域整体缺席），`global-setting-window-open` 直接忽略。
+ *
+ * @param opener 发起本次打开的渲染进程（书架顶栏「全局设定中心」所属窗口）。
+ *   窗口**真正可见**时回一条 `global-setting-window-shown`，让那颗按钮从
+ *   「正在打开」恢复常态 —— 与 `createPackWindow` 的 REQ-054 修法对齐。
  */
-function createGlobalSettingWindow(): BrowserWindow {
+function createGlobalSettingWindow(opener?: WebContents): BrowserWindow {
   const existing = windowManager.get("globalSetting");
   if (existing) {
     // 已开：抬到最前而不是重复创建（同一类「透明无边框窗口 show 后不到前台」，
-    // 见 raiseWindow 的注释）
+    // 见 raiseWindow 的注释），并回执让按钮退出「正在打开」态
     raiseWindow(existing);
+    notifyGlobalSettingShown(opener);
     return existing;
   }
 
@@ -735,6 +752,11 @@ function createGlobalSettingWindow(): BrowserWindow {
   });
 
   globalWin.removeMenu();
+
+  // 「真的可见」的回执：钉在 `show` 事件上而不是 reveal 里 —— 正常装载、
+  // 装载失败兜底、超时兜底三条路径都会走 show，只有正常路径走 reveal。
+  // 与 `createPackWindow` 的 `packWin.once("show", ...)` 同一范式。
+  globalWin.once("show", () => notifyGlobalSettingShown(opener));
 
   attachWindowLoadGuard(globalWin, "GlobalSetting", { windowName: "globalSetting" });
 
@@ -793,7 +815,8 @@ function createRelationWindow(): BrowserWindow {
     // 画布 + 左侧资料池 + 右侧详情卡：默认按 1320 宽给足横向空间
     width: 1320,
     height: 880,
-    minWidth: 960,
+    // 窄窗可到 720：三栏在 720px 下收窄（池子 / 详情卡 / 工具栏见各自 index.scss）
+    minWidth: 720,
     minHeight: 600,
     icon: ICON_PATH,
     show: false,
@@ -1259,13 +1282,14 @@ app.whenReady().then(() => {
   // 这条日志是排查「点了没反应」的第一分界线：终端里没有它 = 点击没到达主进程
   // （preload 白名单 / 运行中的主进程是旧代码）；有它但窗口没出现 = 窗口创建环节，
   // 后面的 did-fail-load / 超时兜底日志会接着说。
-  ipcMain.on("global-setting-window-open", () => {
+  ipcMain.on("global-setting-window-open", (event) => {
     if (EDITION === "lite") {
       console.log("[main] 收到 global-setting-window-open，但当前为 lite 版（不含全局设定中心），已忽略");
       return;
     }
     console.log("[main] 收到 global-setting-window-open，开始创建全局设定中心窗口");
-    createGlobalSettingWindow();
+    // 带上发起方：窗口真正可见时回执 global-setting-window-shown（REQ-054 修法）
+    createGlobalSettingWindow(event.sender);
   });
 
   // ── RelationWindow 开关 IPC（full / novel 版：入口在右栏工具箱） ──

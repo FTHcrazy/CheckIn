@@ -37,14 +37,12 @@ export default function PoolRow({
   onKeyDown,
 }: PoolRowProps) {
   return (
-    <li className="rel-pool__row">
+    <li className={`rel-pool__row${selected ? " is-selected" : ""}`}>
       <Button
         type="text"
         block
         draggable
-        className={`rel-pool__item${selected ? " is-selected" : ""}${
-          node.linked ? "" : " is-off"
-        }`}
+        className={`rel-pool__item${node.linked ? "" : " is-off"}`}
         // 方向键导航只认这一个锚点（行尾按钮保持原生行为，不进循环）
         data-pool-row={node.id}
         onClick={() => onSelect(node.id)}

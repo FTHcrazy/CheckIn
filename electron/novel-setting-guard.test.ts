@@ -25,12 +25,18 @@ const SETTING_SHARED = readFileSync(
   "utf8",
 );
 
+/** 全局域 handler：与本书域同一套 rank / 拆分口径，拆分层级守卫要一起钉住 */
+const GLOBAL_HANDLERS = readFileSync(
+  resolve(process.cwd(), "electron/handlers/novel-global-setting-handlers.ts"),
+  "utf8",
+);
+
 /** 截取某个 ipcMain.handle 通道的回调体（到下一个 `ipcMain.handle` 为止） */
-function channelBody(channel: string): string {
-  const start = HANDLERS.indexOf(`"${channel}"`);
+function channelBody(channel: string, source: string = HANDLERS): string {
+  const start = source.indexOf(`"${channel}"`);
   if (start < 0) throw new Error(`未找到通道 ${channel}`);
-  const next = HANDLERS.indexOf("ipcMain.handle(", start);
-  return HANDLERS.slice(start, next < 0 ? HANDLERS.length : next);
+  const next = source.indexOf("ipcMain.handle(", start);
+  return source.slice(start, next < 0 ? source.length : next);
 }
 
 /** 去掉注释再匹配：说明文字里会引用被改掉的写法，不该算命中 */
@@ -148,6 +154,41 @@ describe("设定模块：插入与拆分的序号口径", () => {
     expect(stripComments(body)).not.toContain(
       "UPDATE novel_setting_levels SET name = ?, seg_from = ?, seg_to = ?, sub_levels = ? WHERE id = ?",
     );
+  });
+
+  it("拆分只允许根阶：子层级（parent_id 非空）不能再拆，否则出现三层嵌套（1.39.1）", () => {
+    const body = channelBody("novel-setting-level-split");
+    // 行必须把 parent_id 查出来，才能判「是不是子层级」
+    expect(body).toContain(
+      "SELECT category_id, rank, sub_pattern, parent_id FROM novel_setting_levels WHERE id = ?",
+    );
+    // 权威拒绝：子层级再拆即造出「初级·第1段·第1段」第三层
+    expect(body).toContain("if (row.parent_id !== null) return false;");
+  });
+
+  it("全局域同口径：拆分只允许根阶，子层级不能再拆（1.39.1）", () => {
+    const body = channelBody("novel-global-setting-level-split", GLOBAL_HANDLERS);
+    expect(body).toContain(
+      "SELECT category_id, rank, sub_pattern, parent_id FROM novel_global_setting_levels WHERE id = ?",
+    );
+    expect(body).toContain("if (row.parent_id !== null) return false;");
+  });
+
+  it("拆分拒绝已有子行的根阶：组阶继续拆只会再造第二层（1.4x 收口）", () => {
+    const body = channelBody("novel-setting-level-split");
+    // 必须在 parent_id 校验之后，再查「有没有行挂在本行下」并据此拒绝
+    expect(body).toContain(
+      "SELECT COUNT(*) AS count FROM novel_setting_levels WHERE parent_id = ?",
+    );
+    expect(body).toContain("if (childCount.count > 0) return false;");
+  });
+
+  it("全局域同口径：拆分拒绝已有子行的根阶（1.4x 收口）", () => {
+    const body = channelBody("novel-global-setting-level-split", GLOBAL_HANDLERS);
+    expect(body).toContain(
+      "SELECT COUNT(*) AS count FROM novel_global_setting_levels WHERE parent_id = ?",
+    );
+    expect(body).toContain("if (childCount.count > 0) return false;");
   });
 });
 

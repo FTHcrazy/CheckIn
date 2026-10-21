@@ -17,9 +17,10 @@ import {
  * 钉住各区的关键行为：
  * - B 境界卡：大读数 + 镜像条；「调整」是**导航入口**，恒展开语义、不出「收起」；
  * - C 核心属性：默认条数受档位限制、点行开来源明细、「展开全部」放出其余；
- * - D 生效状态：只列 active、开关可点；
- * - E 摘要行：一行一模块、点击触发导航回调、箭头随展开态。
+ * - D 生效状态：只列 active、开关可点。
  * 只读看板不改数据 —— 所有写动作都通过回调 / API 方法，断言校验调用即可。
+ *
+ * ⚠️ E「关键设定」摘要行 2026-10 第二轮整卡移除，相关用例一并删除。
  *
  * ⚠️ 曾经有一版 A 区身份卡（名字 / 境界 chip / 绑定态 / 改动角标），因与头部
  * 逐项重复已删。若有人想加回来，先看 index.tsx 顶部那段说明。
@@ -185,7 +186,6 @@ function renderBoard(over: Partial<PackPanelApi> = {}, tier: "wide" | "mid" | "n
       attrsExpanded={false}
       onToggleAttrs={onToggleAttrs}
       onExpandModule={onExpandModule}
-      expandedKeys={new Set()}
     />,
   );
   return { api, onExpandModule, onToggleAttrs, container: result.container };
@@ -225,7 +225,6 @@ describe("PackDashboard —— B 境界卡", () => {
         attrsExpanded={false}
         onToggleAttrs={vi.fn()}
         onExpandModule={onExpandModule}
-        expandedKeys={new Set(["realm"])}
       />,
     );
     const entry = document.querySelector(
@@ -277,43 +276,6 @@ describe("PackDashboard —— D 生效状态", () => {
     const toggle = document.querySelector(".cpk-board__statusrow .ant-switch") as HTMLElement;
     fireEvent.click(toggle);
     expect(api.toggleModifierActive).toHaveBeenCalledWith("pm1");
-  });
-});
-
-describe("PackDashboard —— E 关键设定摘要行", () => {
-  afterEach(cleanup);
-
-  it("一行一模块，点击触发展开回调", () => {
-    const { onExpandModule } = renderBoard();
-    const row = screen.getByText("装备栏").closest("button") as HTMLButtonElement;
-    expect(row).toBeTruthy();
-    fireEvent.click(row);
-    expect(onExpandModule).toHaveBeenCalledWith("equipment");
-  });
-
-  it("已展开的模块箭头 aria-expanded=true", () => {
-    const api = makeApi();
-    render(
-      <PackDashboard
-        api={api}
-        tier="wide"
-        attrsExpanded={false}
-        onToggleAttrs={vi.fn()}
-        onExpandModule={vi.fn()}
-        expandedKeys={new Set(["equipment"])}
-      />,
-    );
-    const row = screen.getByText("装备栏").closest("button") as HTMLButtonElement;
-    expect(row.getAttribute("aria-expanded")).toBe("true");
-    // 已展开的行提示「跳过去」，不是「收起」—— 从看板收一个视口外的模块
-    // 同样看不见反馈，语义上就只保留导航
-    expect(row.getAttribute("title")).toContain("跳过去");
-  });
-
-  it("「模块管理」按钮打开模块管理器", () => {
-    const { api } = renderBoard();
-    fireEvent.click(screen.getByText("模块管理").closest("button") as HTMLButtonElement);
-    expect(api.setModuleManagerOpen).toHaveBeenCalledWith(true);
   });
 });
 

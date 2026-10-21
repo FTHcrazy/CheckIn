@@ -9,6 +9,10 @@
  * 刻意不提供：改关系名、删边、删要素、改类型。关系名的唯一编辑入口仍是主窗口
  * 右栏 —— 图上能改名会让「一条边 = 哪一行」变得难以解释，而删除是不可逆动作，
  * 值得多一次跳转。
+ *
+ * 排版按四段分区（纯视觉，交互语义不变）：标题区 / 关系列表 / 备注编辑 / 删除区。
+ * 「关系列表」里先标两端要素，再逐条摊开关系；备注编辑是行内的独立块，编辑态下
+ * 用主色描边 + 槽底色把它与相邻关系行切开。
  */
 import { useEffect, useState } from "react";
 import { Button, Input } from "antd";
@@ -91,6 +95,7 @@ export default function EdgeDetailCard({
 
   return (
     <aside className="rel-edge" aria-label="关系详情">
+      {/* ── 标题区 ── */}
       <header className="rel-edge__head">
         <span className="rel-edge__badge">关系</span>
         <h2 className="rel-edge__title" title={edge.label}>
@@ -107,47 +112,52 @@ export default function EdgeDetailCard({
       </header>
 
       <div className="rel-edge__body">
-        <div className="rel-edge__pair">
-          <Button
-            type="text"
-            className="rel-edge__endpoint"
-            onClick={() => onSelectNode(edge.source)}
-            title={source?.name ?? "（已删除的要素）"}
-          >
-            <ArrowRightOutlined className="rel-edge__dir" />
-            <span className="rel-edge__name">{source?.name ?? "（已删除的要素）"}</span>
-            <span className="rel-edge__type">
-              {source ? typeLabelOf(source.type) : "—"}
-            </span>
-          </Button>
-          <span className="rel-edge__between" aria-hidden>
-            ————
-          </span>
-          <Button
-            type="text"
-            className="rel-edge__endpoint"
-            onClick={() => onSelectNode(edge.target)}
-            title={target?.name ?? "（已删除的要素）"}
-          >
-            <ArrowLeftOutlined className="rel-edge__dir" />
-            <span className="rel-edge__name">{target?.name ?? "（已删除的要素）"}</span>
-            <span className="rel-edge__type">
-              {target ? typeLabelOf(target.type) : "—"}
-            </span>
-          </Button>
-        </div>
-
-        <div className="rel-edge__section">
+        {/* ── 关系列表：先两端、再逐条关系 ── */}
+        <section className="rel-edge__section rel-edge__section--links">
           <span className="rel-edge__section-title">
             这条连线上的关系 <b>{edge.relations.length}</b>
           </span>
+
+          <div className="rel-edge__pair">
+            <Button
+              type="text"
+              className="rel-edge__endpoint"
+              onClick={() => onSelectNode(edge.source)}
+              title={source?.name ?? "（已删除的要素）"}
+            >
+              <ArrowRightOutlined className="rel-edge__dir" />
+              <span className="rel-edge__name">{source?.name ?? "（已删除的要素）"}</span>
+              <span className="rel-edge__type">
+                {source ? typeLabelOf(source.type) : "—"}
+              </span>
+            </Button>
+            <span className="rel-edge__between" aria-hidden>
+              ————
+            </span>
+            <Button
+              type="text"
+              className="rel-edge__endpoint"
+              onClick={() => onSelectNode(edge.target)}
+              title={target?.name ?? "（已删除的要素）"}
+            >
+              <ArrowLeftOutlined className="rel-edge__dir" />
+              <span className="rel-edge__name">{target?.name ?? "（已删除的要素）"}</span>
+              <span className="rel-edge__type">
+                {target ? typeLabelOf(target.type) : "—"}
+              </span>
+            </Button>
+          </div>
+
           <ul className="rel-edge__list">
             {edge.relations.map((relation, index) => {
               const linkId = edge.linkIds[index];
               const note = edge.notes[index];
               const editing = editingId === linkId;
               return (
-                <li key={linkId ?? `${edge.id}:${index}`} className="rel-edge__row">
+                <li
+                  key={linkId ?? `${edge.id}:${index}`}
+                  className={`rel-edge__row${editing ? " rel-edge__row--editing" : ""}`}
+                >
                   <div className="rel-edge__row-head">
                     <span className="rel-edge__relation">{relation}</span>
                     {!editing && (
@@ -166,6 +176,7 @@ export default function EdgeDetailCard({
                   </div>
 
                   {editing ? (
+                    /* ── 备注编辑区：独立槽，编辑态一眼可与相邻行切开 ── */
                     <div className="rel-edge__editor">
                       <Input.TextArea
                         value={draft}
@@ -173,6 +184,8 @@ export default function EdgeDetailCard({
                         autoSize={{ minRows: 2, maxRows: 4 }}
                         maxLength={EDGE_NOTE_MAX}
                         showCount
+                        className="rel-edge__editor-area"
+                        classNames={{ count: "rel-edge__count" }}
                         placeholder="例如：在第 12 章决裂，之前一直是同门"
                         aria-label="关系备注"
                         onChange={(event) => setDraft(event.target.value)}
@@ -199,9 +212,10 @@ export default function EdgeDetailCard({
               );
             })}
           </ul>
-        </div>
+        </section>
 
-        <div className="rel-edge__section">
+        {/* ── 删除区 ── */}
+        <section className="rel-edge__section rel-edge__section--delete">
           <span className="rel-edge__section-title">删除</span>
           <p className="rel-edge__hint">
             图的连线是「派生」出来的：删掉关系，线才会消失。删除动作在主窗口的要素资料卡里完成。
@@ -214,7 +228,7 @@ export default function EdgeDetailCard({
           >
             去右栏删除
           </Button>
-        </div>
+        </section>
       </div>
 
       <footer className="rel-edge__foot">
