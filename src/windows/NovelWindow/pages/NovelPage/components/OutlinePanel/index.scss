@@ -480,7 +480,7 @@
   &__ch-fs-chev {
     width: 9px;
     height: 9px;
-    font-size: 10px;
+    font-size: 12px;
     transition: transform var(--app-t-normal) var(--app-ease-standard);
   }
 
@@ -509,7 +509,7 @@
   }
 
   &__fs-item.is-compact &__fs-title {
-    font-size: 13px;
+    font-size: 14px;
   }
 
   /* 标识的悬浮预览（走组件库 Tooltip）：不点开也能先看清是哪几条 */

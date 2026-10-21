@@ -13,7 +13,7 @@
     border-radius: var(--app-radius-chip);
     background: var(--app-accent-purple-weak);
     color: var(--app-accent-purple);
-    font-size: 11px;
+    font-size: 12px;
 
     &.is-link {
       background: var(--app-accent-blue-weak);
@@ -83,13 +83,13 @@
   &__note {
     display: flex;
     gap: 6px;
-    font-size: 13px;
+    font-size: 14px;
     color: var(--app-text-secondary);
   }
 
   &__note-label {
     flex-shrink: 0;
-    font-size: 11px;
+    font-size: 12px;
     color: var(--app-text-muted);
   }
 
@@ -132,13 +132,13 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 500;
     color: var(--app-text);
 
     em {
       font-style: normal;
-      font-size: 11px;
+      font-size: 12px;
       font-weight: 400;
       color: var(--app-text-muted);
     }

@@ -70,7 +70,7 @@
   &__caret {
     flex: none;
     width: 14px;
-    font-size: 11px;
+    font-size: 12px;
     color: var(--app-text-muted);
     display: inline-flex;
     align-items: center;
@@ -79,7 +79,7 @@
 
   &__title {
     flex: none;
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 600;
     white-space: nowrap;
     overflow: hidden;
@@ -90,7 +90,7 @@
   &__summary {
     flex: 1;
     min-width: 0;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 400;
     color: var(--app-text-muted);
     white-space: nowrap;

@@ -47,13 +47,13 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--app-text);
 }
 
 .nv-tpl__lead {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.6;
   color: var(--app-text-secondary);
 }
@@ -81,7 +81,7 @@
   flex: none;
   padding: 1px 6px;
   border-radius: var(--app-radius-chip);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 16px;
   color: var(--app-primary);
   background: var(--app-primary-weak);
@@ -126,7 +126,7 @@
   @include widget.ant-button-reset;
   --ant-control-height: 32px;
   --ant-button-padding-inline: 14px;
-  --ant-button-content-font-size: 13px;
+  --ant-button-content-font-size: 14px;
   --ant-button-font-weight: 500;
   --ant-button-icon-gap: 6px;
   --ant-border-radius: var(--app-radius-item);

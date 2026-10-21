@@ -141,7 +141,7 @@
      红框正是数量步进与装备按钮这一排。 */
   .cpk-iconbtn.tiny.ant-btn {
     --ant-control-height: 22px;
-    --ant-button-content-font-size: 13px;
+    --ant-button-content-font-size: 14px;
     width: 22px;
     --ant-button-default-color: var(--app-text-strong);
     --ant-button-default-hover-color: var(--app-accent-blue);
@@ -150,7 +150,7 @@
   &__qty .cpk-iconbtn.tiny.ant-btn {
     /* 数量步进是盘点高频动作：再突出一号并加重字重 */
     --ant-control-height: 24px;
-    --ant-button-content-font-size: 15px;
+    --ant-button-content-font-size: 16px;
     width: 24px;
     --ant-button-font-weight: 700;
   }

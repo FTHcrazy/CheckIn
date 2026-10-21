@@ -66,7 +66,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 19px;
+    font-size: 20px;
     /* 首字是文本（不是图标），压一档字号 + 加粗才不至于在圆里显得飘 */
     font-weight: 600;
     line-height: 1;
@@ -105,11 +105,11 @@
   &__name-input.ant-input {
     --ant-input-padding-block-sm: 0px;
     --ant-input-padding-inline-sm: 6px;
-    --ant-input-input-font-size-sm: 15px;
+    --ant-input-input-font-size-sm: 14px;
     --ant-border-radius-sm: var(--app-radius-item);
     --ant-input-padding-block: 0px;
     --ant-input-padding-inline: 6px;
-    --ant-input-input-font-size: 15px;
+    --ant-input-input-font-size: 16px;
     --ant-border-radius: var(--app-radius-item);
     --ant-color-text: var(--app-text);
     --ant-color-border: var(--app-border-strong);
@@ -137,7 +137,7 @@
     border-radius: var(--app-radius-chip);
     background: var(--app-accent-blue-weak);
     color: var(--app-accent-blue);
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 600;
     white-space: nowrap;
   }
@@ -151,14 +151,14 @@
     border-radius: var(--app-radius-chip);
     background: var(--app-accent-purple-weak);
     color: var(--app-accent-purple);
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 600;
     white-space: nowrap;
   }
 
   &__bound {
     min-width: 0;
-    font-size: 11px;
+    font-size: 12px;
     color: var(--app-text-muted);
     white-space: nowrap;
     overflow: hidden;
@@ -267,13 +267,13 @@
 }
 
 /* ── 保存态（三态必须两两可分，暗色同样成立）──
- * 字号 13px 与放大后的图标（16px 字形）同一档观感：设计稿里这颗 pill
+ * 字号 14px 与放大后的图标（16px 字形）同一档观感：设计稿里这颗 pill
  * 与图标是同等醒目的，12px 配 16px 图标会明显偏轻。 */
 .cpk-savebar__state {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  font-size: 14px;
   white-space: nowrap;
   /* 窄档下先省略这段叙述文字（「已保存 · 3 分钟前」→「已保存…」），
      保全「保存」主按钮与工具入口 */

@@ -23,7 +23,7 @@
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--app-text-strong);
 }
@@ -36,7 +36,7 @@
 }
 
 .rel-pool__count {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 400;
   color: var(--app-text-muted);
 }
@@ -62,7 +62,7 @@
   padding: 0 7px;
   gap: 6px;
   border-radius: 6px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--app-text-secondary);
   --ant-button-text-hover-bg: var(--app-surface-hover);
@@ -93,7 +93,7 @@
 
 .rel-pool__group-caret {
   flex: none;
-  font-size: 9px;
+  font-size: 12px;
   color: var(--app-text-disabled);
   transition: transform var(--app-t-normal) var(--app-ease-standard);
 }
@@ -148,7 +148,7 @@
   flex: none;
   padding: 8px 12px 10px;
   border-top: 1px solid var(--app-border);
-  font-size: 10.5px;
+  font-size: 12px;
   line-height: 1.6;
   color: var(--app-text-muted);
 }

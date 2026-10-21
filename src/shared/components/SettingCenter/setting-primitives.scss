@@ -39,12 +39,12 @@
     flex-direction: column;
     gap: 4px;
     min-width: 0;
-    font-size: 11px;
+    font-size: 12px;
     color: var(--app-text-muted);
   }
 
   &__tip {
-    font-size: 11px;
+    font-size: 12px;
     color: var(--app-text-muted);
   }
 
@@ -61,7 +61,7 @@
     em {
       flex-shrink: 0;
       font-style: normal;
-      font-size: 11px;
+      font-size: 12px;
       color: var(--app-text-muted);
     }
   }

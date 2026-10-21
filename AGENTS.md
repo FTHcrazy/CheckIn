@@ -520,6 +520,32 @@ function normalizeTodo(item: Partial<TodoItem> | null): TodoItem | null {
 jsdom 不做布局计算，单测量不出来，守卫见
 `src/windows/SettingsWindow/settings-layout-guard.test.ts`。
 
+**字体规范（强制）**：所有 `font-size` 必须满足三条硬约束，适用于 `.scss` / `.css`
+与 TSX 内联样式（`style={{ fontSize: ... }}`）：
+
+1. **最小值 12px**：`font-size` 不得小于 `12px`（含 CSS 变量如
+   `--ant-button-content-font-size` / `--ant-select-font-size` / `--ant-badge-text-font-size` 的取值）。
+   需要更小字号的场景（标签角标、次要说明、超密面板）**改为 12px 起步**，用颜色/字重/间距表达层级，而不是缩字号。
+2. **禁止小数像素**：不允许出现 `12.5px`、`10.5px`、`13.5px` 这类带小数点的值，一律取整。
+3. **尽量双数**：`≥12px` 的字体尽量取**偶数**（12 / 14 / 16 / 18 …）；奇数（13 / 15 / 17 / 19）仅在
+   **确有明确视觉诉求**时允许，且要在注释里说明理由，不得作为默认随手值。
+
+```scss
+// ❌ 违规：小于 12 / 带小数 / 奇数
+.label { font-size: 11px; }
+.tip   { font-size: 12.5px; }
+.title { font-size: 13px; }
+
+// ✅ 合规
+.label { font-size: 12px; }
+.tip   { font-size: 12px; }
+.title { font-size: 14px; }
+```
+
+> 说明：本规范由「字体最小值 12px、禁止小数、尽量双数」三条约束构成；
+> 存量代码中存在大量 11px / 10px / 9px 与 `*.5px` 的写法（详见 §6.1.2 后的走查记录），
+> 改造时按第 1 条优先级逐个归位到 12px 起步，无需一次性全量清理，但同一模块内不得保留违规值。
+
 ### 6.1.1 主题与换肤规范
 
 **原则：业务样式只写 `var(--app-*)`，禁止硬编码色值**

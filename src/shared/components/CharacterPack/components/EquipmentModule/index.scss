@@ -37,14 +37,14 @@
     border-radius: var(--app-radius-pill);
     background: var(--app-surface-alt);
     color: var(--app-text-secondary-strong);
-    font-size: 11px;
+    font-size: 12px;
     font-variant-numeric: tabular-nums;
   }
 
   &__accepts {
     flex: 1;
     min-width: 0;
-    font-size: 11px;
+    font-size: 12px;
     color: var(--app-text-muted);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -58,7 +58,7 @@
   &__empty {
     margin: 0;
     padding: 2px 0;
-    font-size: 11px;
+    font-size: 12px;
     color: var(--app-text-disabled);
   }
 
@@ -104,7 +104,7 @@
 
   &__offtag {
     flex: none;
-    font-size: 11px;
+    font-size: 12px;
     color: var(--app-warning);
   }
 
@@ -136,7 +136,7 @@
   /* 候选区的一句话提示：Δ 预览是悬停触发的，不写出来没人会去悬停 */
   &__candtip {
     margin: 0 0 4px;
-    font-size: 11px;
+    font-size: 12px;
     line-height: 1.5;
     color: var(--app-text-muted);
   }
@@ -173,13 +173,13 @@
 
   &__candcat {
     flex: none;
-    font-size: 11px;
+    font-size: 12px;
     color: var(--app-text-muted);
   }
 
   &__candhint {
     flex: none;
-    font-size: 11px;
+    font-size: 12px;
     color: var(--app-warning);
   }
 

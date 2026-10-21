@@ -67,7 +67,7 @@
      分类名 17/700、小节名 14/700，对应书架的「我的书架」16/700 一族；
      共享里是 16/600 与 12/500，在大窗里偏轻。 */
   .nv-sc__cat-title {
-    font-size: 17px;
+    font-size: 18px;
     font-weight: 700;
     letter-spacing: -0.01em;
     color: var(--app-text);
@@ -101,7 +101,7 @@
   .nv-sc__note {
     align-items: flex-start;
     gap: 8px;
-    font-size: 13px;
+    font-size: 14px;
     line-height: 1.6;
     color: var(--app-text-secondary);
   }
@@ -110,7 +110,7 @@
     padding: 1px 7px;
     border-radius: var(--app-radius-pill);
     background: var(--app-surface-alt);
-    /* 19px 高的 pill 对齐 13px 正文的首行（13 × 1.6 ≈ 21）：比正文矮
+    /* 19px 高的 pill 对齐 14px 正文的首行（14 × 1.6 ≈ 22）：比正文矮
        2px 读起来是「签」不是「块」，再高就会把整行说明顶开 */
     font-size: 12px;
     line-height: 17px;
@@ -232,7 +232,7 @@
   }
 
   .nv-sc__row.is-child .nv-sc__col-name {
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 400;
     color: var(--app-text-secondary);
   }

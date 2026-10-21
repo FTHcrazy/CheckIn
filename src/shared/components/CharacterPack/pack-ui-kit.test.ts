@@ -128,7 +128,7 @@ describe("行囊 UI：自带造型的控件以 .ant-btn 承载", () => {
  * 钉死的是一条**极容易静默退化**的约束：头部图标要比面板其它地方大一号。
  * 它靠 PackHeader 的局部覆盖实现，而覆盖对象 `.cpk-iconbtn` 是**跨模块公共原语**
  * —— 后人「顺手把基础档调大」或「把这条覆盖删掉当作冗余」，都会让头部图标
- * 悄悄缩回 13px，且**没有任何类型或构建错误**。
+ * 悄悄缩回 14px，且**没有任何类型或构建错误**。
  *
  * 为什么覆盖必须写在头部而不是改基础档：`.cpk-iconbtn` 在面板里有十几处使用点
  * （每个模块标题行右侧并排 3~4 枚），调基础档等于改整个面板的密度。
@@ -171,17 +171,17 @@ describe("行囊 UI：头部工具栏图标比面板其它地方大一号", () =
     expect(rule).toContain("--ant-button-default-color: var(--app-text)");
   });
 
-  it("基础档保持模块密度（24px 盒 / 13px 字形）—— 不许顺手调大", () => {
+  it("基础档保持模块密度（24px 盒 / 14px 字形）—— 不许顺手调大", () => {
     const rule = block(commonCss, ".cpk-iconbtn.ant-btn");
     expect(rule).toContain("--ant-control-height: 24px");
-    expect(rule).toContain("--ant-button-content-font-size: 13px");
+    expect(rule).toContain("--ant-button-content-font-size: 14px");
   });
 
   it("基础档仍然可被缩小（.tiny 行内档存在且更小）", () => {
     const at = commonCss.indexOf(".cpk-iconbtn.ant-btn.tiny");
     expect(at).toBeGreaterThan(-1);
     const rule = commonCss.slice(at, commonCss.indexOf("}", at) + 1);
-    expect(rule).toContain("--ant-button-content-font-size: 11px");
+    expect(rule).toContain("--ant-button-content-font-size: 12px");
   });
 });
 

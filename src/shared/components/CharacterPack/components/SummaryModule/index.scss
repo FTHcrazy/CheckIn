@@ -65,13 +65,13 @@
 
   &__unit {
     margin-left: 1px;
-    font-size: 11px;
+    font-size: 12px;
     font-style: normal;
     color: var(--app-text-muted);
   }
 
   &__arrow {
-    font-size: 11px;
+    font-size: 12px;
     color: var(--app-text-disabled);
   }
 
@@ -85,13 +85,13 @@
   }
 
   &__none {
-    font-size: 11px;
+    font-size: 12px;
     color: var(--app-text-disabled);
   }
 
   &__count {
     flex: none;
-    font-size: 11px;
+    font-size: 12px;
     color: var(--app-text-disabled);
   }
 
@@ -106,7 +106,7 @@
     border-radius: var(--app-radius-item);
     background: var(--app-accent-amber-weak);
     color: var(--app-accent-amber);
-    font-size: 11px;
+    font-size: 12px;
     line-height: 1.6;
   }
 }

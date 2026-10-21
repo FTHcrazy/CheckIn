@@ -100,13 +100,13 @@
   }
 
   &__rowtitle {
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 600;
     color: var(--app-text);
   }
 
   &__count {
-    font-size: 11px;
+    font-size: 12px;
     color: var(--app-text-muted);
   }
 
@@ -132,7 +132,7 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    font-size: 11px;
+    font-size: 12px;
     color: var(--app-text-muted);
     min-width: 0;
   }
@@ -209,13 +209,13 @@
   &__unit {
     margin-left: 1px;
     font-style: normal;
-    font-size: 10px;
+    font-size: 12px;
     color: var(--app-text-muted);
   }
 
   &__arrow {
     color: var(--app-text-muted);
-    font-size: 11px;
+    font-size: 12px;
   }
 
   &__seg {
@@ -227,13 +227,13 @@
   }
 
   &__none {
-    font-size: 11px;
+    font-size: 12px;
     color: var(--app-text-muted);
   }
 
   &__more {
     margin: 0;
-    font-size: 11px;
+    font-size: 12px;
     color: var(--app-text-muted);
   }
 
@@ -257,7 +257,7 @@
   }
 
   &__statusval {
-    font-size: 11px;
+    font-size: 12px;
     color: var(--app-text-secondary-strong);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
@@ -300,13 +300,13 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 11px;
+    font-size: 12px;
     color: var(--app-text-muted);
     text-align: right;
   }
 
   &__modarrow {
     color: var(--app-text-muted);
-    font-size: 10px;
+    font-size: 12px;
   }
 }

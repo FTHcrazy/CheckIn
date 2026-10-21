@@ -166,7 +166,7 @@
 /* 卡片内文（Button 的子节点，不参与 antd 外观清零） */
 .cpk-ncard {
   &__label {
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 600;
     color: var(--app-text-strong);
   }
@@ -177,7 +177,7 @@
   &__hint {
     min-width: 0;
     max-width: 100%;
-    font-size: 11px;
+    font-size: 12px;
     line-height: 1.5;
     text-align: left;
     white-space: normal;

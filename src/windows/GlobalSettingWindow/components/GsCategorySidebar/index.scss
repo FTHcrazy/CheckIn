@@ -30,7 +30,7 @@
 }
 
 .gs-side__title {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
   color: var(--app-text);
 }
@@ -41,7 +41,7 @@
   border-radius: var(--app-radius-pill);
   background: var(--app-surface-alt);
   /* 12px 是下限（见 gs-skin.scss 顶部约定）：11px 的条数签在 210px 左栏里
-     几乎读不出来。行高 16 + 上下 1px = 18，与 13px 的标题同基线。 */
+     几乎读不出来。行高 16 + 上下 1px = 18，与 14px 的标题同基线。 */
   font-size: 12px;
   line-height: 16px;
   color: var(--app-text-muted);
