@@ -29,11 +29,23 @@ describe("AcAutomaton", () => {
     expect(hits).toEqual([{ from: 1, to: 3, pattern: 0 }]);
   });
 
-  it("后缀命中被折叠进更长的命中（不重叠语义）", () => {
-    // "ushers" 里 she[1,4] 与 he[2,4]、hers[2,6] 全部重叠，
-    // 按「同起点长词优先 + 丢弃被覆盖区间」只剩一条
-    const ac = new AcAutomaton(["he", "she", "his", "hers"]);
+  it("完全被长词覆盖的短词被折叠（冗余去重）", () => {
+    // "ushers" 里 she[1,4] 完全覆盖 he[2,4]：he 是冗余，只留 she
+    const ac = new AcAutomaton(["he", "she"]);
     expect(ac.matchWords("ushers")).toEqual(["she"]);
+  });
+
+  it("部分重叠但不同起点的两个词都保留（不漏报）", () => {
+    // "ushers" 里 she[1,4] 与 hers[2,6] 部分重叠（2 < 4 < 6）但都不是对方的子串，
+    // 是两个独立词，必须都报出来
+    const ac = new AcAutomaton(["she", "hers"]);
+    expect(ac.matchWords("ushers").sort()).toEqual(["hers", "she"]);
+  });
+
+  it("部分重叠的独立词不漏报：ABCD 与 CDEF", () => {
+    const ac = new AcAutomaton(["ABCD", "CDEF"]);
+    const hits = ac.match("ABCDEF");
+    expect(hits.map((h) => ac.patternAt(h.pattern)).sort()).toEqual(["ABCD", "CDEF"]);
   });
 
   it("同一段文本里重复出现的词条各自计一次", () => {
