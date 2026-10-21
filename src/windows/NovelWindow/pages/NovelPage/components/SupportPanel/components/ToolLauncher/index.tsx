@@ -16,6 +16,13 @@ interface ToolLauncherProps {
   onOpenSensitive: () => void;
   /** 轻提示：规划中的工具点了也要有回应，不能是死链 */
   onNotify: (text: string, tone?: ToastTone) => void;
+  /**
+   * 打开人物关系网络独立窗口（R27）。
+   *
+   * 不传 = 该工具仍未落地（单测 / 精简形态），卡片退回「规划中」占位；
+   * 传了 = 卡片翻成可用态。这样入口的「是否上线」只有一处开关，不必改版式。
+   */
+  onOpenRelation?: () => void;
 }
 
 interface ToolItem {
@@ -47,6 +54,7 @@ export default function ToolLauncher({
   onOpenNaming,
   onOpenSensitive,
   onNotify,
+  onOpenRelation,
 }: ToolLauncherProps) {
   const tools: ToolItem[] = [
     {
@@ -75,8 +83,9 @@ export default function ToolLauncher({
       color: "var(--app-accent-purple)",
       weak: "var(--app-accent-purple-weak)",
       name: "人物关系网络",
-      state: "规划中 · R27",
-      desc: "复用要素关联一键渲染力导向图，阵容与主线一眼看清。",
+      state: onOpenRelation ? "已上线" : "规划中 · R27",
+      desc: "把本书要素铺成一张关系图，一眼看清阵容与主线；点节点展开完整资料卡。",
+      onOpen: onOpenRelation,
       plannedHint: "「人物关系网络」还在规划中，上线后会出现在这里",
     },
     {

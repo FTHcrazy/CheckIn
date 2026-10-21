@@ -50,6 +50,8 @@ interface SupportPanelProps {
   activeChapterId: string | null;
   outlineActions: OutlineActions;
   entities: NovelEntity[];
+  /** 本书「要素 ↔ 要素」关联条数（关系图写回后随之 +1，W-15 第三处） */
+  linkCount: number;
   filter: EntityFilter;
   onFilterChange: (filter: EntityFilter) => void;
   detailEntityId: string | null;
@@ -116,6 +118,8 @@ interface SupportPanelProps {
    */
   toolSub?: "naming" | "sensitive" | null;
   onToolSubChange?: (value: "naming" | "sensitive" | null) => void;
+  /** 打开人物关系网络独立窗口（R27）；不传时工具卡退回「不可进入」占位 */
+  onOpenRelation?: () => void;
 }
 
 interface TabMeta {
@@ -156,6 +160,7 @@ export default function SupportPanel({
   activeChapterId,
   outlineActions,
   entities,
+  linkCount,
   filter,
   onFilterChange,
   detailEntityId,
@@ -189,6 +194,7 @@ export default function SupportPanel({
   chapters = [],
   toolSub: controlledToolSub,
   onToolSubChange,
+  onOpenRelation,
 }: SupportPanelProps) {
   /** 工具箱二级面板：null = 启动器首页；受控优先，否则组件内自持 */
   const [internalSub, setInternalSub] = useState<"naming" | "sensitive" | null>(
@@ -307,7 +313,7 @@ export default function SupportPanel({
       case "entity":
         return {
           title: "要素库",
-          meta: `${entities.length} 个要素`,
+          meta: `${entities.length} 个要素 · ${linkCount} 条关联`,
           action: null,
         };
       case "note":
@@ -603,6 +609,7 @@ export default function SupportPanel({
                 onOpenNaming={openTool}
                 onOpenSensitive={openSensitive}
                 onNotify={onNotify}
+                onOpenRelation={onOpenRelation}
               />
             ))}
         </div>

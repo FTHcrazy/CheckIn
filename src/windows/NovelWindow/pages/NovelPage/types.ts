@@ -8,29 +8,23 @@
  * 这一层只放类型，不放实现；渲染层与 hooks 通过它解耦。
  */
 
-/** 内置要素类型：预置五类 + custom 兜底（用户自建类型删除时的迁移落点） */
-export type BuiltinEntityType =
-  | "character"
-  | "location"
-  | "faction"
-  | "item"
-  | "level_system"
-  | "custom";
+// 要素 / 关联的类型定义已上提到 `@/shared/novel/entity-model`（R27 起关系图
+// 独立窗口也要读同一份模型，窗口之间禁止互相导入）。此处 re-export 保住既有
+// `../types` 导入路径不变。
+import type {
+  EntityType,
+  NovelEntity,
+  NovelLink,
+} from "@/shared/novel/entity-model";
 
-/**
- * 要素类型（R23 开放化）：内置六类 + 用户自建类型（id 固定 ct- 前缀）。
- * `(string & {})` 保住内置字面量的自动补全，同时放行任意自建 id；
- * 自建类型的展示 meta 由 EntityTypeContext 派生，不要直接查 ENTITY_TYPE_META。
- */
-export type EntityType = BuiltinEntityType | (string & {});
-
-/** 用户自建要素类型定义（R23）：整读整写存 config 键 novel_entity_types */
-export interface CustomEntityTypeDef {
-  id: string;
-  name: string;
-  /** 主色（具体色值，色板提供）；弱色由 color-mix 在使用处派生 */
-  color: string;
-}
+export type {
+  BuiltinEntityType,
+  CustomEntityTypeDef,
+  EntityFields,
+  EntityType,
+  NovelEntity,
+  NovelLink,
+} from "@/shared/novel/entity-model";
 
 /** 章节状态：草稿 / 完稿（PRD R1） */
 export type ChapterStatus = "draft" | "done";
@@ -149,32 +143,8 @@ export type ForeshadowPatch = Partial<Pick<OutlineEntry, "title" | "note" | "cha
 /** 新建伏笔时由调用方补齐 id 与时间戳的草稿 */
 export type OutlineEntryDraft = Omit<OutlineEntry, "id" | "createdAt">;
 
-/** 要素自定义扩展字段 */
-export type EntityFields = Record<string, string>;
-
-/** 要素实体（原「设定卡」，PRD v0.4 R23） */
-export interface NovelEntity {
-  id: string;
-  workId: string;
-  type: EntityType;
-  name: string;
-  aliases: string[];
-  summary: string;
-  content: string;
-  fields: EntityFields;
-  sort: number;
-}
-
-/** 要素多态关联（PRD R24）：任意两个要素互相关联 */
-export interface NovelLink {
-  id: string;
-  fromType: EntityType;
-  fromId: string;
-  toType: EntityType;
-  toId: string;
-  relation: string;
-  note?: string;
-}
+// 要素 / 关联本体（EntityFields / NovelEntity / NovelLink）已在文件头从
+// `@/shared/novel/entity-model` re-export，这里不再重复声明。
 
 // ── 设定类型（1.4x：迁至 shared/novel 供两个设定窗口共用） ──
 // 定义集中在 `@/shared/novel/setting-types`（跨窗口共享位，不含 React）；

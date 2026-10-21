@@ -1,10 +1,10 @@
 import { createContext, useContext } from "react";
 import {
   ENTITY_FILTER_ORDER,
-  ENTITY_TYPE_META,
-} from "../novel-config";
-import type { EntityTypeMeta } from "../novel-config";
-import type { BuiltinEntityType, CustomEntityTypeDef, EntityType } from "../types";
+  createTypeMetaResolver,
+} from "@/shared/novel/entity-type-meta";
+import type { EntityTypeMeta } from "@/shared/novel/entity-type-meta";
+import type { CustomEntityTypeDef, EntityType } from "../types";
 
 /**
  * 要素类型上下文（R23）
@@ -25,28 +25,14 @@ export interface EntityTypesContextValue {
 
 export const EntityTypesContext = createContext<EntityTypesContextValue | null>(null);
 
-/** 自建类型弱色：与卡片 / chip / 高亮底的既有观感对齐（内置弱色约 12%-16%） */
-function customTypeMeta(def: CustomEntityTypeDef): EntityTypeMeta {
-  return {
-    label: def.name,
-    color: def.color,
-    colorWeak: `color-mix(in srgb, ${def.color} 15%, transparent)`,
-  };
-}
-
 /** 由自建类型定义组装上下文值（useNovelPage 组装、Provider 消费，纯函数可测） */
 export function buildEntityTypesValue(
   customTypes: CustomEntityTypeDef[],
 ): EntityTypesContextValue {
-  const index = new Map(customTypes.map((def) => [def.id, def]));
+  const metaOf = createTypeMetaResolver(customTypes);
   return {
     customTypes,
-    metaOf: (type) => {
-      const builtin = ENTITY_TYPE_META[type as BuiltinEntityType];
-      if (builtin) return builtin;
-      const def = index.get(type);
-      return def ? customTypeMeta(def) : ENTITY_TYPE_META.custom;
-    },
+    metaOf,
     filterOrder: [...ENTITY_FILTER_ORDER, ...customTypes.map((def) => def.id)],
   };
 }

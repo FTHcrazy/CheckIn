@@ -125,6 +125,7 @@ describe("装载失败必须可见 + 必有窗口（守卫）", () => {
     ["createSettingsWindow", '"Settings"'],
     ["createPackWindow", '"Pack"'],
     ["createGlobalSettingWindow", '"GlobalSetting"'],
+    ["createRelationWindow", '"Relation"'],
     ["createLoginWindow", '"Login"'],
   ];
 

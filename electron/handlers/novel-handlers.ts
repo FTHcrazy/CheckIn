@@ -27,6 +27,7 @@ import {
   NOVEL_SESSION_KEY,
 } from "../novel-db";
 import { buildNovelTemplateBook } from "../novel-template";
+import { broadcastLinksChanged, workIdOfEntity } from "../novel-links-events";
 
 // ── 行类型（snake_case，对应表结构） ──
 
@@ -700,6 +701,11 @@ export function registerNovelHandlers(): void {
         dbRun(`DELETE FROM ${table} WHERE work_id = ?`, [id]);
       }
       dbRun("DELETE FROM novel_pack_characters WHERE work_id = ?", [id]);
+
+      // 关系图画布记忆（R27 / S2）：键 = `novel_rel_graph_v1:<workId>:<graphId>`。
+      // 按前缀删，一本书一张图（将来多视图也不用改这里）。位置固定在行囊级联
+      // 之后、作品行之前 —— 此时 work_id 仍可用，且不与 pack 的多态子查询抢顺序。
+      dbRun("DELETE FROM novel_config WHERE key LIKE ?", [`novel_rel_graph_v1:${id}:%`]);
 
       // 作品行本身也要删：漏掉会导致「删光后 reload 复活全部作品名」
       dbRun("DELETE FROM novel_works WHERE id = ?", [id]);
@@ -1411,18 +1417,44 @@ ipcMain.handle("novel-editor-reset-template", () => seedTemplateBook());
   });
 
   // 新增要素关联（多态关联表）
-  ipcMain.handle("novel-link-add", (_event, link: NovelLinkDto) => {
+  ipcMain.handle("novel-link-add", (event, link: NovelLinkDto) => {
     dbRun(
       `INSERT INTO novel_links (id, from_type, from_id, to_type, to_id, relation, note)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [link.id, link.fromType, link.fromId, link.toType, link.toId, link.relation, link.note ?? null],
     );
+    // R27 / S4 反向同步：主窗口建的关系要让图窗口立刻看见（按 id 合并，不重载）
+    broadcastLinksChanged(event.sender, {
+      workId: link.fromType === "entity" ? workIdOfEntity(link.fromId) ?? undefined : undefined,
+      created: [
+        {
+          id: link.id,
+          fromType: link.fromType,
+          fromId: link.fromId,
+          toType: link.toType,
+          toId: link.toId,
+          relation: link.relation,
+          note: link.note ?? null,
+        },
+      ],
+    });
     return true;
   });
 
   // 解除要素关联
-  ipcMain.handle("novel-link-remove", (_event, id: string) => {
+  ipcMain.handle("novel-link-remove", (event, id: string) => {
+    // 先读端点：删完就查不到这本书了（novel_links 没有 work_id）
+    const row = dbGet("SELECT from_type, from_id FROM novel_links WHERE id = ?", [id]) as
+      | { from_type?: string; from_id?: string }
+      | undefined;
     dbRun("DELETE FROM novel_links WHERE id = ?", [id]);
+    broadcastLinksChanged(event.sender, {
+      workId:
+        row?.from_type === "entity" && row.from_id
+          ? workIdOfEntity(row.from_id) ?? undefined
+          : undefined,
+      removed: [id],
+    });
     return true;
   });
 

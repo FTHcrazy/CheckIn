@@ -1,0 +1,83 @@
+@use "../../../../../../shared/styles/widget" as widget;
+
+// 池子单行（就近维护：行是独立组件，样式不再挂回池子）
+.rel-pool__row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+// 整行可点：仍是 Button（键盘可达 / focus 环 / 禁用语义），用清零点重绘外观
+.rel-pool__item.ant-btn {
+  @include widget.ant-button-reset;
+
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 7px;
+  gap: 6px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  color: var(--app-text);
+  font-size: 12.5px;
+  --ant-button-text-hover-bg: var(--app-surface-hover);
+  --ant-button-text-active-bg: var(--app-surface-hover);
+  --ant-button-text-hover-color: var(--app-text);
+  --ant-button-text-active-color: var(--app-text);
+
+  &.is-selected {
+    background: var(--app-surface-hover);
+    border-color: var(--app-border-strong);
+  }
+
+  // 键盘焦点必须能看见：↑↓ 在行间移动时，用户得知道「Enter 会作用在哪一行」
+  &:focus-visible {
+    outline: 2px solid var(--app-primary);
+    outline-offset: -2px;
+  }
+
+  &.is-off .rel-pool__name {
+    color: var(--app-text-secondary);
+  }
+}
+
+.rel-pool__act.ant-btn {
+  @include widget.ant-button-reset;
+
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  color: var(--app-text-muted);
+  --ant-button-text-hover-bg: var(--app-surface-hover);
+  --ant-button-text-hover-color: var(--app-text);
+}
+
+.rel-pool__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.rel-pool__state {
+  flex: none;
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  color: var(--app-text-muted);
+  background: var(--app-surface-alt);
+
+  &.is-on {
+    color: var(--app-primary);
+    background: var(--app-primary-weak);
+  }
+
+  // 「有关联但没上图」：这是唯一会让人以为要素丢了的状态，必须显性提示
+  &.is-related {
+    color: var(--app-accent-amber);
+    background: var(--app-accent-amber-weak);
+  }
+}

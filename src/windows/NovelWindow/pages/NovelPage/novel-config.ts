@@ -121,63 +121,10 @@ export const SETTINGS_RANGE = {
   dailyGoal: { min: 500, max: 20000, step: 500 },
 } as const;
 
-export interface EntityTypeMeta {
-  label: string;
-  /** 主色：头像底、名称、正文高亮描边 */
-  color: string;
-  /** 弱色：卡片底、筛选 chip 底、正文高亮底色 */
-  colorWeak: string;
-}
-
-/**
- * 内置要素类型语义色
- *
- * 设计方案 §02 要求「类型色在正文高亮、卡片头像、筛选 chips 三处严格一致」，
- * 这里统一映射到主窗口的四套主题变量上，换肤自动跟随。
- * 自定义类型（ct-*）的 meta 不在这里——由 EntityTypeContext 派生（R23）。
- */
-export const ENTITY_TYPE_META: Record<BuiltinEntityType, EntityTypeMeta> = {
-  character: {
-    label: "角色",
-    color: "var(--app-primary)",
-    colorWeak: "var(--app-primary-weak)",
-  },
-  location: {
-    label: "地点",
-    color: "var(--app-accent-green)",
-    colorWeak: "var(--app-accent-green-weak)",
-  },
-  faction: {
-    label: "势力",
-    color: "var(--app-accent-purple)",
-    colorWeak: "var(--app-accent-purple-weak)",
-  },
-  item: {
-    label: "物品",
-    color: "var(--app-accent-amber)",
-    colorWeak: "var(--app-accent-amber-weak)",
-  },
-  level_system: {
-    label: "等级体系",
-    color: "var(--app-accent-blue)",
-    colorWeak: "var(--app-accent-blue-weak)",
-  },
-  custom: {
-    label: "自定义",
-    color: "var(--app-text-secondary)",
-    colorWeak: "var(--app-surface-active)",
-  },
-};
-
-/** 要素库筛选顺序（内置部分）：全部在前，其余按语义分组；自定义类型追加在末尾 */
-export const ENTITY_FILTER_ORDER: BuiltinEntityType[] = [
-  "character",
-  "location",
-  "faction",
-  "item",
-  "level_system",
-  "custom",
-];
+// 要素类型语义色 / 筛选顺序已上提到 `@/shared/novel/entity-type-meta`
+// （R27 起关系图独立窗口共用同一份色表）。这里 re-export，既有导入路径不变。
+export { ENTITY_TYPE_META, ENTITY_FILTER_ORDER } from "@/shared/novel/entity-type-meta";
+export type { EntityTypeMeta } from "@/shared/novel/entity-type-meta";
 
 /** 选区标记工具条的快捷类型（O3）：保持内置四类，自定义类型走资料卡编辑 */
 export const MARK_TYPE_OPTIONS: BuiltinEntityType[] = [

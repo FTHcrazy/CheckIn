@@ -104,6 +104,31 @@ describe("ToolLauncher：规划中的工具不是死链", () => {
   });
 });
 
+describe("ToolLauncher：人物关系网络入口（R27）", () => {
+  it("传入 onOpenRelation 后卡片翻成可用态，点击开窗口且不再走「规划中」toast", () => {
+    const onOpenRelation = vi.fn();
+    const onNotify = vi.fn();
+    render(
+      <ToolLauncher
+        onOpenNaming={vi.fn()}
+        onOpenSensitive={vi.fn()}
+        onNotify={onNotify}
+        onOpenRelation={onOpenRelation}
+      />,
+    );
+
+    const card = [...document.querySelectorAll(".nv-tools__card")].find((item) =>
+      item.textContent?.includes("人物关系网络"),
+    );
+    expect(card).toBeTruthy();
+    expect(card!.className).not.toContain("is-planned");
+
+    screen.getByText("人物关系网络", { selector: "span" }).click();
+    expect(onOpenRelation).toHaveBeenCalledTimes(1);
+    expect(onNotify).not.toHaveBeenCalled();
+  });
+});
+
 describe("ToolLauncher：描述换行契约（REQ-047）", () => {
   const compiled = (): string =>
     sass

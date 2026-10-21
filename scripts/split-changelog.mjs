@@ -42,13 +42,23 @@ const blocks = heads.map((head, i) => ({
     .replace(/\s+$/, ""),
 }));
 
-/** 按次版本分组（次版本倒序，组内版本也倒序） */
+/**
+ * 按**主次版本**分组（`2.1` / `1.46` 是两个组，不能只认 minor）：
+ * 只拿 `minor` 当键会让 1.46 排到 2.x 前面 —— 1.46 被当成「最新版」留在主文件，
+ * 2.0 反而被归档，归档指针（归档到 2.0.0）比保留窗口（1.46.1 之后）还新。
+ * 排序按 (major, minor) 双键倒序，组内版本本身已是从新到旧。
+ */
 const groups = new Map();
 for (const block of blocks) {
-  if (!groups.has(block.minor)) groups.set(block.minor, []);
-  groups.get(block.minor).push(block);
+  const key = `${block.major}.${block.minor}`;
+  if (!groups.has(key)) groups.set(key, []);
+  groups.get(key).push(block);
 }
-const groupsDesc = [...groups.entries()].sort((a, b) => b[0] - a[0]);
+const groupsDesc = [...groups.entries()].sort((a, b) => {
+  const [aMajor, aMinor] = a[0].split(".").map(Number);
+  const [bMajor, bMinor] = b[0].split(".").map(Number);
+  return bMajor - aMajor || bMinor - aMinor;
+});
 
 /**
  * 保留策略：最近 2 个次版本为上限，但**以行数为准**——
@@ -59,17 +69,20 @@ const groupsDesc = [...groups.entries()].sort((a, b) => b[0] - a[0]);
 const HEADER_LINES = 6;
 let keptMinorList = [];
 let keptLineCount = HEADER_LINES;
-for (const [minor, group] of groupsDesc) {
-  const cost = group.reduce((sum, block) => sum + block.text.split("\n").length + 2, 0);
+for (const [key, group] of groupsDesc) {
+  const cost = group.reduce(
+    (sum, block) => sum + block.text.split("\n").length + 2,
+    0,
+  );
   if (keptMinorList.length > 0 && keptLineCount + cost > MAX_LINES) break;
-  keptMinorList.push(minor);
+  keptMinorList.push(key);
   keptLineCount += cost;
 }
 
 const kept = new Set(keptMinorList);
 
-const keptBlocks = blocks.filter((b) => kept.has(b.minor));
-const archived = blocks.filter((b) => !kept.has(b.minor));
+const keptBlocks = blocks.filter((b) => kept.has(`${b.major}.${b.minor}`));
+const archived = blocks.filter((b) => !kept.has(`${b.major}.${b.minor}`));
 
 // 无需分流：主文件仍在 800 行以内、所有版本都在保留窗口内。
 // 此时必须直接退出 —— 后续逻辑用 archived[0] 计算归档指针，空归档会抛 TypeError。
@@ -83,19 +96,20 @@ if (archived.length === 0) {
 
 mkdirSync(archiveDir, { recursive: true });
 
-// 按次版本分组写文件（同一文件的版本仍保持倒序）
+// 按主次版本分组写文件（同一文件的版本仍保持倒序）
 const byMinor = new Map();
 for (const block of archived) {
-  if (!byMinor.has(block.minor)) byMinor.set(block.minor, []);
-  byMinor.get(block.minor).push(block);
+  const key = `${block.major}.${block.minor}`;
+  if (!byMinor.has(key)) byMinor.set(key, []);
+  byMinor.get(key).push(block);
 }
 
 const written = [];
-for (const [minor, group] of byMinor) {
-  const name = `CHANGELOG-${group[0].major}.${minor}.md`;
+for (const [key, group] of byMinor) {
+  const name = `CHANGELOG-${key}.md`;
   const file = path.join(archiveDir, name);
   const header = [
-    `# Changelog · ${group[0].major}.${minor}.x`,
+    `# Changelog · ${key}.x`,
     "",
     "> 自 `CHANGELOG.md` 按次版本拆分归档，条目内容与拆分前逐字一致（仅补了这一行说明）。",
     "> 查历史请先看 `changeLogHistory/README.md` 的索引，再按版本号定位文件。",
@@ -121,8 +135,9 @@ const newMain = [
   `> （当前归档到 ${newestArchived}，索引见 \`changeLogHistory/README.md\`）。`,
   "> 主文件只保留最近若干个次版本，超过 800 行时按 AGENTS.md §8.6 继续分流。",
   "",
-  ...keptBlocks.map((b) => b.text),
-  "",
+  // 块之间必须留空行：块文本在切分时已去掉尾部空行，只 `join("\n")` 会让
+  // `## [x]` 紧贴上一块的末行，把两个版本糊成一段
+  ...keptBlocks.flatMap((b) => [b.text, ""]),
 ].join("\n");
 
 writeFileSync(mainPath, newMain, "utf8");

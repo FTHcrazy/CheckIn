@@ -1,0 +1,129 @@
+// 「新建关系」二次确认弹层。弹层内容自成一块，样式就近放在这里。
+// 颜色一律走 --app-*（四套主题自动跟随），不出现任何具体色值。
+//
+// ⚠️ antd v6 的卡片节点是 `.ant-modal-container`（背景 / 圆角 / 边框都挂在它身上），
+// v5 的 `.ant-modal-content` 已经不存在 —— 写成后者会「改了样式但毫无反应」。
+// 多带一层 `.ant-modal >` 是给选择器提权（antd 用 cssinjs 运行时注入，同权重时
+// 后注入者胜）。
+.rel-create-modal .ant-modal > .ant-modal-container {
+  border-radius: 12px;
+  border: 1px solid var(--app-border);
+  background: var(--app-surface-elevated);
+}
+
+.rel-create-modal .ant-modal-header {
+  background: transparent;
+  border-bottom: 1px solid var(--app-border);
+}
+
+.rel-create-modal .ant-modal-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--app-text-strong);
+}
+
+.rel-create {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 4px;
+
+  &__row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    min-height: 26px;
+
+    &--input {
+      align-items: flex-start;
+    }
+  }
+
+  &__label {
+    flex: none;
+    width: 56px;
+    padding-top: 4px;
+    font-size: 11px;
+    color: var(--app-text-muted);
+  }
+
+  &__value {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--app-text);
+    word-break: break-word;
+  }
+
+  &__name {
+    font-weight: 600;
+    color: var(--app-text-strong);
+  }
+
+  &__type {
+    margin-left: 6px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: var(--app-primary-weak);
+    color: var(--app-primary);
+    font-size: 10px;
+    line-height: 16px;
+    vertical-align: 1px;
+  }
+
+  &__arrow {
+    margin-left: 56px;
+    font-size: 10px;
+    line-height: 1;
+    color: var(--app-text-disabled);
+  }
+
+  &__hint {
+    margin: 0;
+    font-size: 11px;
+    line-height: 1.55;
+
+    &--error {
+      color: var(--app-error);
+    }
+
+    &--warn {
+      color: var(--app-accent-orange);
+    }
+
+    &--muted {
+      color: var(--app-text-muted);
+    }
+  }
+
+  &__verdict {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--app-text-strong);
+
+    &.is-merge {
+      color: var(--app-primary);
+    }
+  }
+
+  &__muted {
+    margin-left: 4px;
+    font-size: 11px;
+    color: var(--app-text-muted);
+  }
+
+  &__error {
+    margin-top: 4px;
+    border-radius: 8px;
+  }
+}
+
+// antd 输入框默认是「浮在页面上」的白底，弹层里要指回内容面
+.rel-create .ant-select-selector,
+.rel-create .ant-select-dropdown {
+  background: var(--app-surface);
+}

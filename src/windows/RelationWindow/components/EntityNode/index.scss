@@ -1,0 +1,131 @@
+// 画布节点（紧凑资料卡：类型 + 名称）。样式就近：只描述这张卡本身，
+// 画布容器 / 工具栏 / 池子各自在自己的 index.scss 里。
+.rel-node {
+  --rel-node-color: var(--app-primary);
+
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 208px;
+  min-width: 96px;
+  height: 36px;
+  padding: 0 10px 0 8px;
+  border-radius: 9px;
+  border: 1px solid var(--app-border);
+  border-left: 3px solid var(--rel-node-color);
+  background: var(--app-surface-elevated);
+  box-shadow: 0 1px 3px var(--app-mask);
+  cursor: grab;
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
+
+  &:hover {
+    border-color: var(--app-border-strong);
+    box-shadow: 0 3px 10px var(--app-mask);
+  }
+
+  &:active {
+    cursor: grabbing;
+  }
+
+  &.is-selected {
+    border-color: var(--rel-node-color);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--rel-node-color) 26%, transparent);
+  }
+}
+
+.rel-node__type {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  line-height: 15px;
+  white-space: nowrap;
+}
+
+.rel-node__name {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--app-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+// 连线手柄：默认隐身，悬停卡片 / 正在连线时浮现。
+// 用 opacity 而不是 display，保证命中区域一直存在（松手命中判定依赖它）。
+.rel-node__handle.react-flow__handle {
+  width: 9px;
+  height: 9px;
+  border: 2px solid var(--app-surface);
+  background: var(--rel-node-color);
+  opacity: 0;
+  transition: opacity 0.12s ease, transform 0.12s ease;
+
+  &--in {
+    left: -5px;
+  }
+
+  &--out {
+    right: -5px;
+  }
+}
+
+.rel-node:hover .rel-node__handle.react-flow__handle,
+.rel-node.is-selected .rel-node__handle.react-flow__handle,
+// 拖线过程中所有卡片都亮出手柄：否则「能连到哪」只能靠猜
+.rel-canvas.is-connecting .rel-node__handle.react-flow__handle {
+  opacity: 1;
+}
+
+.rel-node__handle.react-flow__handle:hover {
+  transform: scale(1.35);
+}
+
+// 缩放很小时手柄跟着变小就点不中：给一个下限，保证 0.3× 下仍有 12px 命中区
+.rel-canvas.is-zoomed-out .rel-node__handle.react-flow__handle {
+  width: 12px;
+  height: 12px;
+}
+
+// ── 密度档（S4）──
+//
+// 只改「画多少信息」，**不改节点集合**：卡片仍然是同一张，只是角标 / 文字隐了。
+// 名称在极简档里常驻隐藏但**留在 DOM**，悬停或选中时由 CSS 放出全名 ——
+// 200+ 节点下用 JS 条件卸载会让每次悬停都触发一次卡片重渲染。
+
+.rel-node--compact {
+  // 角标没了，左缘类型色条承担「这是什么类型」的全部信息，加粗一点才认得出
+  border-left-width: 4px;
+  padding-left: 9px;
+}
+
+.rel-node--minimal {
+  min-width: 0;
+  gap: 0;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 999px;
+  // 悬停时会展开成全名，起点宽度小才不至于一屏糊住
+  transition: box-shadow 0.15s ease, border-color 0.15s ease, min-width 0.12s ease;
+
+  .rel-node__name--on-hover {
+    display: none;
+  }
+
+  &:hover,
+  &.is-selected {
+    gap: 7px;
+
+    .rel-node__name--on-hover {
+      display: inline;
+    }
+  }
+}
+
+// 极简档里卡片只有色点大小，手柄的命中区要跟着收紧（否则相邻卡片的柄会叠住）
+.rel-node--minimal .rel-node__handle.react-flow__handle {
+  width: 8px;
+  height: 8px;
+}

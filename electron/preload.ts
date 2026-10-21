@@ -180,6 +180,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
       trackedInvoke('novel-entity-save', entity) as Promise<boolean>,
     addLink: (link: unknown) => trackedInvoke('novel-link-add', link) as Promise<boolean>,
     removeLink: (id: string) => trackedInvoke('novel-link-remove', id) as Promise<boolean>,
+    /**
+     * 关系图提交（R27 / S3）：新建关系 + 改备注 + 画布文档，单事务。
+     * 与 addLink 的区别：addLink 是主窗口「单条新增」的老通道，没有事务与 rev；
+     * 图窗口一次确认要写多条，必须走这条。
+     */
+    graphCommit: (request: unknown) =>
+      trackedInvoke('novel-graph-commit', request),
     saveNote: (note: unknown) => trackedInvoke('novel-note-save', note) as Promise<boolean>,
     removeNote: (id: string) => trackedInvoke('novel-note-remove', id) as Promise<boolean>,
     // 灵感归属迁移（书架全局灵感库）：归档到作品；workId 传 '' 退回未归属池
@@ -277,6 +284,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
     /** 通用文本导出：主进程弹保存框 + 写盘；取消返回 null */
     exportFile: (defaultName: string, content: string, ext?: string, filterName?: string) =>
       trackedInvoke('novel-export-file', defaultName, content, ext, filterName) as Promise<{ path: string } | null>,
+    /**
+     * 取景：把当前窗口的某一块截成 PNG（R27 / S5）。
+     * rect 单位是 DIP（= CSS px）；失败时 `code` 区分「空帧」「窗口没了」「参数错」，
+     * `message` 已经是可以直接给用户看的一句话。
+     */
+    captureWindow: (rect: { x: number; y: number; width: number; height: number }) =>
+      trackedInvoke('relation-window-export', rect) as Promise<
+        | { ok: true; png: Uint8Array; width: number; height: number }
+        | { ok: false; code: 'empty' | 'unavailable' | 'db'; message: string }
+      >,
+    /**
+     * 二进制落盘：只收字节，取消返回 null。
+     * ⚠️ 不要换成 `exportFile` —— 那条是 utf8 写，写 PNG 会坏且不报错。
+     */
+    exportBinary: (defaultName: string, data: Uint8Array, ext?: string, filterName?: string) =>
+      trackedInvoke('novel-export-binary', defaultName, data, ext, filterName) as Promise<{ path: string } | null>,
     usageToday: () =>
       trackedInvoke('novel-usage-today') as Promise<{ todayWords: number; saveCount: number; streakDays: number }>,
     usageLog: (event: string, payload: Record<string, unknown>) =>
@@ -350,6 +373,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'novel-open-setting-center',
       // 全局设定中心独立窗口开关（书架入口，full/novel 版）
       'global-setting-window-open',
+      // 人物关系网络独立窗口开关（右栏工具箱入口，full/novel 版，R27）
+      'relation-window-open',
       // 退出登录（SettingsWindow 账号区发起，主进程编排回登录窗）
       'auth-logout',
       // WindowHeader 窗口控制（最小化/最大化/关闭）与最大化状态查询
@@ -384,8 +409,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   windowAPI: {
     broadcast: (event: string, data?: unknown) =>
       trackedInvoke('window-broadcast', event, data),
-    sendTo: (target: string, event: string, data?: unknown) =>
-      trackedInvoke('window-send-to', target, event, data),
+    sendTo: (target: string, event: string, data?: unknown, raise?: boolean) =>
+      trackedInvoke('window-send-to', target, event, data, raise),
     on: (event: string, handler: (...args: unknown[]) => void) => {
       const wrapper = (_event: unknown, ...args: unknown[]) => handler(...args)
       let byChannel = listenerWrappers.get(handler)

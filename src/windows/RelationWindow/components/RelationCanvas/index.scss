@@ -1,0 +1,204 @@
+@use "../../../../shared/styles/widget" as widget;
+
+// 画布容器 + 工具栏 + React Flow 皮肤（全部吃主题变量，四套主题零色斑）
+.rel-canvas {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+  background: var(--app-surface);
+}
+
+.rel-canvas__toolbar {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  pointer-events: none;
+
+  > * {
+    pointer-events: auto;
+  }
+}
+
+.rel-canvas__stats {
+  height: 28px;
+  padding: 0 11px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 8px;
+  border: 1px solid var(--app-border);
+  background: var(--app-surface-elevated);
+  box-shadow: 0 2px 6px var(--app-mask);
+  font-size: 11.5px;
+  color: var(--app-text-secondary);
+
+  b {
+    color: var(--app-text-strong);
+    font-weight: 600;
+  }
+}
+
+.rel-canvas__sep {
+  color: var(--app-text-disabled);
+  margin: 0 2px;
+}
+
+.rel-canvas__pool-hint {
+  color: var(--app-text-muted);
+}
+
+.rel-canvas__saving {
+  margin-left: 6px;
+  color: var(--app-text-muted);
+  font-size: 10.5px;
+}
+
+// 密度档提示条（>400 个要素时常驻）。刻意放在画布左上角工具栏下方而不是
+// 浮在正中：它描述的是「整张图被简化了」，不是一条需要立刻处理的错误。
+.rel-canvas__dense {
+  position: absolute;
+  top: 48px;
+  left: 12px;
+  z-index: 4;
+  margin: 0;
+  padding: 3px 9px;
+  border-radius: 7px;
+  border: 1px solid var(--app-border);
+  background: var(--app-surface-elevated);
+  box-shadow: 0 2px 6px var(--app-mask);
+  font-size: 11px;
+  line-height: 17px;
+  color: var(--app-text-muted);
+  pointer-events: none;
+}
+
+.rel-canvas__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rel-canvas__btn.ant-btn {
+  @include widget.ant-button-reset;
+
+  height: 28px;
+  min-width: 28px;
+  padding: 0 8px;
+  border-radius: 8px;
+  border: 1px solid var(--app-border);
+  background: var(--app-surface-elevated);
+  color: var(--app-text-secondary);
+  font-size: 12px;
+  box-shadow: 0 2px 6px var(--app-mask);
+  --ant-button-default-bg: var(--app-surface-elevated);
+  --ant-button-default-border-color: var(--app-border);
+  --ant-button-default-color: var(--app-text-secondary);
+  --ant-button-default-hover-bg: var(--app-surface-hover);
+  --ant-button-default-hover-border-color: var(--app-border-strong);
+  --ant-button-default-hover-color: var(--app-text);
+}
+
+.rel-canvas__fit.ant-btn {
+  padding: 0 11px;
+  font-size: 11.5px;
+  gap: 5px;
+}
+
+.rel-canvas__export.ant-btn {
+  padding: 0 9px;
+  font-size: 11.5px;
+  gap: 5px;
+}
+
+.rel-canvas__export-caret {
+  font-size: 10px;
+  color: var(--app-text-muted);
+}
+
+// ── 导出抑制（S5）：这些是「操作辅助」，不是「图的一部分」 ──
+// 用 visibility 而不是 display：前者不触发 reflow，截图期间图面一个像素都不挪。
+// 清单在 utils/export-png.ts 的 EXPORT_HIDE_SELECTORS，export-png.test.ts 双向校验
+// 「清单里的每一条都在这里有落点」，改清单必须同步改这里。
+.rel-canvas.is-exporting {
+  .rel-canvas__toolbar,
+  .rel-canvas__dense,
+  .react-flow__controls,
+  .react-flow__attribution,
+  .rel-node__handle,
+  .react-flow__selection {
+    visibility: hidden;
+  }
+
+  // 选中态压回常态：外发光 / 加粗边是「正在操作」的提示，不该留在导出的图里
+  .react-flow__node.selected,
+  .react-flow__edge.selected {
+    outline: none;
+    box-shadow: none;
+  }
+
+  .react-flow__edge.selected {
+    stroke: var(--app-border-strong);
+    stroke-width: 1.2;
+  }
+}
+
+.rel-canvas__empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  pointer-events: none;
+  color: var(--app-text-secondary);
+
+  p {
+    margin: 0;
+    font-size: 14px;
+    color: var(--app-text-strong);
+  }
+
+  span {
+    font-size: 12px;
+    color: var(--app-text-muted);
+  }
+}
+
+// ── React Flow 皮肤 ──
+.react-flow__attribution {
+  background: transparent;
+  color: var(--app-text-disabled);
+  font-size: 9px;
+}
+
+.react-flow__controls {
+  box-shadow: 0 2px 8px var(--app-mask);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.react-flow__controls-button {
+  background: var(--app-surface-elevated);
+  border-bottom: 1px solid var(--app-border);
+  color: var(--app-text-secondary);
+  fill: currentColor;
+
+  &:hover {
+    background: var(--app-surface-hover);
+  }
+
+  svg {
+    fill: currentColor;
+  }
+}
+
+.react-flow__edge-text {
+  font-weight: 500;
+}

@@ -151,6 +151,7 @@ export default function NovelPage({
     protagonistEntityId,
     handleSetProtagonist,
     openPackWindow,
+    openRelationWindow,
     packOpening,
   } = useNovelPage();
 
@@ -607,6 +608,7 @@ export default function NovelPage({
           activeChapterId={data.activeChapterId}
           outlineActions={outlineActions}
           entities={data.entities}
+          linkCount={data.entityLinkCount}
           filter={view.entityFilter}
           onFilterChange={view.setEntityFilter}
           detailEntityId={view.detailEntityId}
@@ -643,6 +645,7 @@ export default function NovelPage({
           chapters={data.chapters}
           toolSub={view.toolSub}
           onToolSubChange={view.setToolSub}
+          onOpenRelation={openRelationWindow}
         />
 
         {/*

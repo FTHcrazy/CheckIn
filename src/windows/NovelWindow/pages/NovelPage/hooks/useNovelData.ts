@@ -166,6 +166,17 @@ export function useNovelData() {
    * 数据库，书架已落库的变更天然随它回来。
    */
   const loadInFlightRef = useRef(false);
+  /**
+   * 当前作品 id 的最新值（供 `novel-links-changed` 的 `[]` 依赖监听读取）。
+   *
+   * 为什么必须有它：图窗口可以停在 A 书，而主窗口已经切到 B 书。此时 A 的
+   * delta 若照单全收，就会把 A 的关系并进 B 的 `bundle.links`（内存串书；
+   * `entityLinkCount` 靠要素 id 过滤才没露出来）。
+   */
+  const activeWorkIdRef = useRef(activeWorkId);
+  useEffect(() => {
+    activeWorkIdRef.current = activeWorkId;
+  });
 
   const load = useCallback(async (): Promise<void> => {
     const seq = (loadSeqRef.current += 1);
@@ -388,6 +399,18 @@ export function useNovelData() {
     [allEntities, activeWorkId],
   );
   const links = useMemo(() => bundle?.links ?? [], [bundle?.links]);
+  /**
+   * 本书「要素 ↔ 要素」的关联条数（不含境界绑定 `to_type='level'`）。
+   * 面板头的「N 个要素 · M 条关联」用它：关系图窗口写回后，M 随 links 自动 +1
+   * （W-15 的第三处）。跨书边不计数 —— 与关系图的「数据不出本书」同口径。
+   */
+  const entityLinkCount = useMemo(() => {
+    if (entities.length === 0) return 0;
+    const ids = new Set(entities.map((entity) => entity.id));
+    return links.filter(
+      (link) => link.toType !== "level" && ids.has(link.fromId) && ids.has(link.toId),
+    ).length;
+  }, [entities, links]);
   /** 小说设定（按作品隔离）；境界体系是其中 kind='realm' 的那一个 */
   const settings = useMemo(
     () =>
@@ -445,6 +468,108 @@ export function useNovelData() {
         }),
       };
     });
+  }, []);
+
+  /**
+   * 关系图窗口写回（R27 / S3 / W-15）：`novel-links-changed` 带**增量**，
+   * 按 id 并进本地 links，**不重载 bundle**。
+   *
+   * 为什么不 `load()`：装载会把 chapters / entities / settings 全部换成新对象，
+   * 编辑器正在编辑的正文基线随之被顶掉（见上面 global-setting 那条的长注释）；
+   * 而这次变化只涉及 links 一张表，恰好是「按 id 合并」最安全的场景。
+   * 三处派生（EntityCard 关联数 / EntityDetail 关系列表 / 面板 meta）都从
+   * `links` 派生，合并即自动更新。
+   */
+  useEffect(() => {
+    const api = window.electronAPI?.windowAPI;
+    if (!api) return undefined;
+    const handler = (...args: unknown[]): void => {
+      const payload = args[0] as
+        | {
+            workId?: unknown;
+            created?: unknown;
+            notes?: unknown;
+            removed?: unknown;
+            relations?: unknown;
+          }
+        | undefined;
+      if (!payload || typeof payload !== "object") return;
+      // 缺省 workId（境界绑定反查不到作品）＝按 id 合并；有值就必须是本作品 ——
+      // 图窗口停在 A 书、主窗口已切到 B 书时，A 的增量不能并进 B
+      const deltaWorkId = typeof payload.workId === "string" ? payload.workId : "";
+      if (deltaWorkId && activeWorkIdRef.current && deltaWorkId !== activeWorkIdRef.current) {
+        return;
+      }
+      const created = Array.isArray(payload.created)
+        ? (payload.created as NovelLink[])
+        : [];
+      const notes = Array.isArray(payload.notes)
+        ? (payload.notes as Array<{ id: string; note: string | null }>)
+        : [];
+      // S4 反向同步：图窗口不删关系，但契约要对称 —— 将来图侧支持「解除」时
+      // 主窗口不该因为少认一个字段而卡在旧数据上
+      const removed = Array.isArray(payload.removed) ? (payload.removed as string[]) : [];
+      const relations = Array.isArray(payload.relations)
+        ? (payload.relations as Array<{ id: string; relation: string }>)
+        : [];
+      if (
+        created.length === 0 &&
+        notes.length === 0 &&
+        removed.length === 0 &&
+        relations.length === 0
+      ) {
+        return;
+      }
+
+      setBundle((current) => {
+        if (!current) return current;
+        let links = current.links;
+        let changed = false;
+
+        if (removed.length > 0) {
+          const gone = new Set(removed);
+          const kept = links.filter((link) => !gone.has(link.id));
+          if (kept.length !== links.length) {
+            links = kept;
+            changed = true;
+          }
+        }
+        if (created.length > 0) {
+          const known = new Set(links.map((link) => link.id));
+          const fresh = created.filter((link) => link.id && !known.has(link.id));
+          if (fresh.length > 0) {
+            links = [...fresh, ...links];
+            changed = true;
+          }
+        }
+        if (relations.length > 0) {
+          const byId = new Map(relations.map((item) => [item.id, item.relation]));
+          let touched = false;
+          links = links.map((link) => {
+            const next = byId.get(link.id);
+            if (next === undefined || next === link.relation) return link;
+            touched = true;
+            return { ...link, relation: next };
+          });
+          if (touched) changed = true;
+        }
+        if (notes.length > 0) {
+          const byId = new Map(notes.map((item) => [item.id, item.note]));
+          let touched = false;
+          links = links.map((link) => {
+            if (!byId.has(link.id)) return link;
+            const note = byId.get(link.id) ?? undefined;
+            if ((link.note ?? undefined) === note) return link;
+            touched = true;
+            return { ...link, note };
+          });
+          if (touched) changed = true;
+        }
+        return changed ? { ...current, links } : current;
+      });
+    };
+    api.on("novel-links-changed", handler);
+    return () => api.off("novel-links-changed", handler);
   }, []);
 
   useEffect(() => {
@@ -2022,6 +2147,7 @@ export function useNovelData() {
     chapters,
     entities,
     links,
+    entityLinkCount,
     settings,
     /** 境界体系分类：全书唯一，角色卡「当前境界」只认它 */
     realmCategory: useMemo(

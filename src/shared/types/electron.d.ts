@@ -119,6 +119,95 @@ export interface NovelLinkDTO {
   note?: string
 }
 
+/**
+ * 关系图提交（R27 / S3）：一次连线、一次备注修改都走 `novel-graph-commit`
+ * 单事务。**不要**复用 `novel-link-add`（无事务、无 rev、无去重）或
+ * `novel-link-set`（按四元组先删后插，会误删平行边）。
+ */
+export interface NovelGraphCommitLink {
+  id: string
+  fromType: NovelEntityTypeDTO
+  fromId: string
+  toType: NovelEntityTypeDTO
+  toId: string
+  relation: string
+}
+
+export interface NovelGraphCommitNote {
+  id: string
+  /** null = 清空备注 */
+  note: string | null
+  /** 打开边详情时看到的备注；与库里不一致 → 归入 rejected（不覆盖主窗口刚改的值） */
+  expectedNote?: string | null
+}
+
+export interface NovelGraphCommitRequest {
+  workId: string
+  /** 客户端装载时的 rev；与库里不一致 → `stale`，整体回滚 */
+  expectedRev: number
+  /** 序列化后的画布文档（成员 + 坐标 + 视口）。null = 本次不改画布 */
+  doc?: string | null
+  addLinks?: NovelGraphCommitLink[]
+  noteUpdates?: NovelGraphCommitNote[]
+}
+
+export type NovelGraphCommitResult =
+  | {
+      ok: true
+      /** 提交后的新 rev（= expectedRev + 1） */
+      rev: number
+      created: NovelLinkDTO[]
+      /** 已存在同一四元组 / 同一 id 已存在（重试幂等）→ 未新增 */
+      merged: string[]
+      notes: Array<{ id: string; note: string | null }>
+      rejected: Array<{ id: string; reason: "missing" | "note-changed"; note?: string | null }>
+    }
+  | {
+      ok: false
+      code: "stale" | "invalid-target" | "invalid-link" | "db"
+      message?: string
+      /** code=invalid-target：不在本书 / 已被删除的端点 id */
+      invalid?: string[]
+      /** code=stale：库里的当前 rev */
+      rev?: number
+    }
+
+/**
+ * `novel-links-changed` 的载荷（R27：S3 写回 / S4 反向同步共用）。
+ *
+ * 三个数组都是**增量**：接收方按 id 幂等合并，不重载 bundle。
+ * `workId` 可能缺省（`novel_links` 没有 work_id，境界绑定的 from 端点反查不到
+ * 本书）——此时接收方按 id 合并即可，id 全局唯一。
+ */
+export interface NovelLinksDelta {
+  workId?: string
+  /** 画布文档 rev（只有 `novel-graph-commit` 会带） */
+  rev?: number
+  created?: NovelLinkDTO[]
+  /** 已存在同一四元组 / 同一 id（重试幂等）→ 未新增 */
+  merged?: string[]
+  notes?: Array<{ id: string; note: string | null }>
+  /** 被删掉的行 id（主窗口「解除关联」→ 图窗口那条边消失） */
+  removed?: string[]
+  /** 关系名被改的行（主窗口当前无改名入口，契约先留好） */
+  relations?: Array<{ id: string; relation: string }>
+}
+
+/**
+ * 导出 PNG 的取景矩形（R27 / S5）：`capturePage(rect)` 的单位是 DIP（= CSS px），
+ * 不是设备像素 —— 像素尺寸由主进程从 PNG 头回读（= CSS × DPR）。
+ */
+export interface RelationCaptureRect {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export type RelationCaptureResult =
+  | { ok: true; png: Uint8Array; width: number; height: number }
+  | { ok: false; code: "empty" | "invalid" | "unavailable" | "db"; message: string }
+
 /** 设定分类下的一条等级项 */
 export interface NovelSettingLevelDTO {
   id: string
@@ -799,6 +888,26 @@ export interface ElectronAPI {
     saveEntity: (entity: NovelEntityDTO) => Promise<boolean>
     addLink: (link: NovelLinkDTO) => Promise<boolean>
     removeLink: (id: string) => Promise<boolean>
+    /**
+     * 关系图提交（R27 / S3）：新建关系 + 改备注 + 画布文档，**单事务**。
+     * 任一步失败整体回滚，返回 `ok:false` 与失败码（stale / invalid-target / db）。
+     */
+    graphCommit: (request: NovelGraphCommitRequest) => Promise<NovelGraphCommitResult>
+    /**
+     * 取景：把当前窗口的某一块截成 PNG（R27 / S5）。
+     * rect 单位是 DIP（= CSS px），像素尺寸由主进程从 PNG 头回读（= CSS × DPR）。
+     */
+    captureWindow: (rect: RelationCaptureRect) => Promise<RelationCaptureResult>
+    /**
+     * 二进制落盘：只收字节（PNG 等），取消返回 null。
+     * ⚠️ 不要换成 `exportFile` —— 那条按 utf8 写，写 PNG 会损坏且不报错。
+     */
+    exportBinary: (
+      defaultName: string,
+      data: Uint8Array,
+      ext?: string,
+      filterName?: string,
+    ) => Promise<{ path: string } | null>
     saveNote: (note: NovelNoteDTO) => Promise<boolean>
     removeNote: (id: string) => Promise<boolean>
     /** 灵感归属迁移（书架全局灵感库）：归档到作品；workId 传 '' 退回未归属池 */
@@ -936,7 +1045,7 @@ export interface ElectronAPI {
   // ── 跨窗口通信 ──
   windowAPI: {
     broadcast: (event: string, data?: unknown) => Promise<void>
-    sendTo: (target: string, event: string, data?: unknown) => Promise<void>
+    sendTo: (target: string, event: string, data?: unknown, raise?: boolean) => Promise<void>
     on: (event: string, handler: (...args: unknown[]) => void) => void
     off: (event: string, handler: (...args: unknown[]) => void) => void
     /** 关闭守卫：有未保存改动时武装本窗口（`electron/close-guard.ts`） */

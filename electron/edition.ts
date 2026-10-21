@@ -28,6 +28,7 @@ export type WindowEntryKey =
   | "login"
   | "novel"
   | "pack"
+  | "relation"
   | "settings"
   | "globalSetting";
 
@@ -37,6 +38,8 @@ export const RENDERER_ENTRY_PATHS: Record<WindowEntryKey, string> = {
   login: "src/windows/LoginWindow/index.html",
   novel: "src/windows/NovelWindow/index.html",
   pack: "src/windows/PackWindow/index.html",
+  // 人物关系网络独立窗口（R27）：可拖拽建模，属 novel 域（full / novel 打包）
+  relation: "src/windows/RelationWindow/index.html",
   settings: "src/windows/SettingsWindow/index.html",
   // 全局设定中心独立窗口（1.4x，属 novel 域：full / novel 打包，lite 不打包）
   globalSetting: "src/windows/GlobalSettingWindow/index.html",
@@ -44,10 +47,10 @@ export const RENDERER_ENTRY_PATHS: Record<WindowEntryKey, string> = {
 
 /** 各版本编译的窗口入口清单（vite input 与主进程可加载窗口的唯一依据） */
 export const EDITION_WINDOW_ENTRIES: Record<CheckInEdition, WindowEntryKey[]> = {
-  full: ["base", "login", "novel", "pack", "settings", "globalSetting"],
+  full: ["base", "login", "novel", "pack", "relation", "settings", "globalSetting"],
   // lite 无 novel 域：全局设定中心属 novel 域，同理不登记
   lite: ["base", "login", "settings"],
-  novel: ["login", "novel", "pack", "settings", "globalSetting"],
+  novel: ["login", "novel", "pack", "relation", "settings", "globalSetting"],
 };
 
 /** 各版本的主窗口入口：full/lite → base，novel → novel */

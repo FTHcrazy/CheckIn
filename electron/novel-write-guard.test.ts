@@ -139,3 +139,21 @@ describe("P1-10 写操作必须命中才返回成功（守卫）", () => {
     });
   }
 });
+
+describe("R27 画布记忆随作品删除级联（S2 守卫）", () => {
+  const body = channelBody("novel-work-delete");
+
+  it("按前缀清掉 novel_rel_graph_v1:<workId>:* 的记忆键", () => {
+    expect(body).toContain("DELETE FROM novel_config WHERE key LIKE ?");
+    expect(body).toContain("novel_rel_graph_v1:${id}:%");
+  });
+
+  it("清理排在行囊多态表之后（不与 pack 的子查询抢顺序）", () => {
+    const firstModifier = body.indexOf("DELETE FROM novel_pack_modifiers");
+    const graphKey = body.indexOf("novel_rel_graph_v1");
+    const worksRow = body.indexOf("DELETE FROM novel_works WHERE id = ?");
+    expect(graphKey).toBeGreaterThan(firstModifier);
+    // 作品行必须最后删：前面全靠 work_id 子查询
+    expect(worksRow).toBeGreaterThan(graphKey);
+  });
+});

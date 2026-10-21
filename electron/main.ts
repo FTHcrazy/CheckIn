@@ -30,6 +30,8 @@ import {
 import { registerNovelPackHandlers } from "./handlers/novel-pack-handlers";
 import { registerNovelSettingHandlers } from "./handlers/novel-setting-handlers";
 import { registerNovelGlobalSettingHandlers } from "./handlers/novel-global-setting-handlers";
+import { registerNovelGraphHandlers } from "./handlers/novel-graph-handlers";
+import { registerNovelExportHandlers } from "./handlers/novel-export-handlers";
 import { registerNovelDbBridge } from "./novel-db";
 import {
   getCachedUser,
@@ -754,6 +756,90 @@ function createGlobalSettingWindow(): BrowserWindow {
   return globalWin;
 }
 
+// ── RelationWindow（人物关系网络独立窗口，R27） ──
+
+/**
+ * 关系图窗口上下文：最近一次打开时携带的作品 id。
+ * 新窗口 did-finish-load 后经 `relation-window-context` 下发；
+ * 后续切换作品由 NovelWindow 的 `novel-work-changed` 广播跟进（与行囊同款）。
+ */
+let relationWindowContext: { workId: string } | null = null;
+
+/**
+ * RelationWindow —— 人物关系网络（可拖拽建模，全 / 小说版）。
+ *
+ * 与 GlobalSettingWindow 同范式：即关即销、单实例唤起。数据面读 `novel_*`
+ * （要素 / 关联 / 设定），写回走 `novel-graph-commit` 单事务（新建关系 + 备注 +
+ * 画布坐标，带 rev 乐观锁），**不要**改成 `novel-link-add`（无事务、无去重、无 rev）；
+ * 窗口本身不持有需要跨会话迁移的状态（图状态落 `novel_config` 单键）。
+ *
+ * lite 版不打包本窗口，`relation-window-open` 直接忽略。
+ */
+function createRelationWindow(): BrowserWindow {
+  const existing = windowManager.get("relation");
+  if (existing) {
+    if (relationWindowContext) {
+      windowManager.sendTo("relation", "relation-window-context", relationWindowContext);
+    }
+    raiseWindow(existing);
+    return existing;
+  }
+
+  const relationWin = new BrowserWindow({
+    // 画布 + 左侧资料池 + 右侧详情卡：默认按 1320 宽给足横向空间
+    width: 1320,
+    height: 880,
+    minWidth: 960,
+    minHeight: 600,
+    icon: ICON_PATH,
+    show: false,
+    ...ROUNDED_WINDOW_OPTIONS,
+    titleBarStyle: "hidden",
+    webPreferences: createWebPreferences(),
+  });
+
+  relationWin.removeMenu();
+
+  // 上下文必须在 did-finish-load 时下发（渲染层的监听那时才挂好）
+  relationWin.webContents.once("did-finish-load", () => {
+    if (!relationWin || relationWin.isDestroyed()) return;
+    if (relationWindowContext) {
+      windowManager.sendTo("relation", "relation-window-context", relationWindowContext);
+    }
+  });
+
+  // 兜底再发一次：React 的 useEffect 订阅可能晚于 did-finish-load 的同一拍，
+  // 错过就只能看到空窗口。show 一定在装载完成后触发，且重复下发是幂等的。
+  relationWin.once("show", () => {
+    if (!relationWin || relationWin.isDestroyed()) return;
+    if (relationWindowContext) {
+      windowManager.sendTo("relation", "relation-window-context", relationWindowContext);
+    }
+  });
+
+  attachWindowLoadGuard(relationWin, "Relation", { windowName: "relation" });
+
+  if (IS_DEV) {
+    registerDevToolsShortcuts(relationWin);
+    if (OPEN_DEVTOOLS) relationWin.webContents.openDevTools({ mode: DEVTOOLS_MODE });
+  }
+
+  forwardMaximizeState(relationWin);
+
+  windowManager.register("relation", relationWin);
+
+  // 即关即销：图状态由渲染层的去抖写库 + 关窗兜底刷新落库，主进程侧不拦
+  // （有未确认连线时，渲染层会 setCloseGuard 武装守卫，见 useGraphDoc）
+  attachCloseGuard(relationWin);
+  relationWin.on("closed", () => {
+    console.log("[main] Relation 窗口已关闭");
+  });
+
+  loadRendererEntry(relationWin, "relation");
+
+  return relationWin;
+}
+
 // ── 登录窗口 ──
 
 function getLoginWindowUrl(email?: string) {
@@ -908,6 +994,12 @@ app.whenReady().then(() => {
   // switchUserDb → register 的顺序），它会立即补开一次
   registerNovelDbBridge();
   registerNovelHandlers();
+  // 关系图提交（R27 / S3）：单事务写「新建关系 + 备注 + 画布文档」，
+  // 成功后由本 handler 广播 novel-links-changed 回主窗口（W-15）。
+  registerNovelGraphHandlers();
+  // 导出 PNG（R27 / S5）：取景（capturePage + 判空重试）与二进制落盘分两条通道，
+  // 后者只收字节 —— 复用 novel-export-file 的 utf8 写会「不报错但图坏了」。
+  registerNovelExportHandlers();
   registerNovelPackHandlers();
   registerNovelSettingHandlers();
   // 全局设定中心（1.4x）：全局库 CRUD + 引用/上架；每次全局写成功后由 handler
@@ -953,9 +1045,19 @@ app.whenReady().then(() => {
     windowManager.broadcast(event, data, senderName);
   });
 
-  ipcMain.handle("window-send-to", (_event, target: string, event: string, data?: unknown) => {
-    windowManager.sendTo(target, event, data);
-  });
+  // raise=true：投放消息的同时把目标窗口抬到最前。用于「从别的窗口跳回主窗口
+  // 某个位置」这类导航（如关系图边详情的「去右栏删除」）—— 只发消息不抬窗口
+  // 时，用户会觉得点了没反应（目标窗口被当前窗口完全遮住）。
+  ipcMain.handle(
+    "window-send-to",
+    (_event, target: string, event: string, data?: unknown, raise?: boolean) => {
+      if (raise) {
+        const win = windowManager.get(target);
+        if (win) raiseWindow(win);
+      }
+      windowManager.sendTo(target, event, data);
+    },
+  );
 
   // 注册协议处理器，将 app:// 请求映射到本地文件
   // 必须异步：每个 bundle / CSS / 字体都是一次 1~5MB 的读盘，同步读会把
@@ -1079,6 +1181,27 @@ app.whenReady().then(() => {
     createGlobalSettingWindow();
   });
 
+  // ── RelationWindow 开关 IPC（full / novel 版：入口在右栏工具箱） ──
+  // 与 global-setting-window-open 同口径：lite 版直接忽略；空 workId 拒绝开窗
+  // （图窗口没有作品上下文只能显示空壳，且后续写回会落进错误作品）。
+  ipcMain.on("relation-window-open", (_event, payload) => {
+    if (EDITION === "lite") {
+      console.log("[main] 收到 relation-window-open，但当前为 lite 版（不含小说域），已忽略");
+      return;
+    }
+    const workId =
+      payload && typeof payload === "object" && typeof (payload as { workId?: unknown }).workId === "string"
+        ? (payload as { workId: string }).workId
+        : "";
+    if (!workId) {
+      console.log("[main] 收到 relation-window-open 但缺少 workId，已忽略");
+      return;
+    }
+    console.log("[main] 收到 relation-window-open，开始唤起人物关系网络窗口");
+    relationWindowContext = { workId };
+    createRelationWindow();
+  });
+
   // ── 退出登录（SettingsWindow 账号区发起） ──
   // 主进程编排：清除缓存用户 → 关闭设置窗与主窗口（登录态下的数据随窗口
   // 销毁，防止切换账号后残留上一账号的渲染层状态）→ 回到登录窗。
@@ -1103,6 +1226,10 @@ app.whenReady().then(() => {
     // 全局设定中心同样属 novel 域（数据在用户级 novel.db）：登出后必须关掉，
     // 否则窗口会留着上一账号的全局库。同走 close()（守卫本窗口不武装，即放行）。
     windowManager.get("globalSetting")?.close();
+    // 关系图窗口属 novel 域（读同一份 novel.db）：登出后必须关掉，
+    // 否则窗口会留着上一账号的要素与关联。同走 close()（守卫未武装，即放行）。
+    windowManager.get("relation")?.close();
+    relationWindowContext = null;
     windowManager.get(PRIMARY_WINDOW_NAME)?.destroy();
 
     const loginWin = windowManager.get("login");

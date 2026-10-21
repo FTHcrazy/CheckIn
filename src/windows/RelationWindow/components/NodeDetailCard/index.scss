@@ -1,0 +1,205 @@
+@use "../../../../shared/styles/widget" as widget;
+
+// 右侧详情卡：浮在画布右缘。样式就近，只描述这张卡。
+.rel-card {
+  position: absolute;
+  top: 52px;
+  right: 14px;
+  bottom: 14px;
+  width: 320px;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  border: 1px solid var(--app-border);
+  background: var(--app-surface-elevated);
+  box-shadow: 0 12px 32px var(--app-mask);
+  overflow: hidden;
+}
+
+.rel-card__head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 10px 10px 14px;
+  border-bottom: 1px solid var(--app-border);
+}
+
+.rel-card__type {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  line-height: 17px;
+}
+
+.rel-card__name {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--app-text-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rel-card__close.ant-btn {
+  @include widget.ant-button-reset;
+
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  color: var(--app-text-muted);
+  --ant-button-text-hover-bg: var(--app-surface-hover);
+  --ant-button-text-hover-color: var(--app-text);
+}
+
+.rel-card__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+
+.rel-card__field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.rel-card__label {
+  font-size: 10.5px;
+  color: var(--app-text-muted);
+}
+
+.rel-card__value {
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: var(--app-text);
+  word-break: break-word;
+}
+
+.rel-card__muted {
+  color: var(--app-text-disabled);
+}
+
+.rel-card__section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 4px;
+  border-top: 1px dashed var(--app-border);
+}
+
+.rel-card__section-title {
+  font-size: 11px;
+  color: var(--app-text-muted);
+
+  b {
+    color: var(--app-text-strong);
+    font-weight: 600;
+  }
+}
+
+.rel-card__empty {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: var(--app-text-muted);
+}
+
+.rel-card__relations {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+
+  li {
+    display: flex;
+    flex-direction: column;
+  }
+}
+
+.rel-card__relation.ant-btn {
+  @include widget.ant-button-reset;
+
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  color: var(--app-text);
+  font-size: 12px;
+  --ant-button-text-hover-bg: var(--app-surface-hover);
+  --ant-button-text-hover-color: var(--app-text);
+  --ant-button-text-hover-border-color: var(--app-border);
+}
+
+.rel-card__dir {
+  flex: none;
+  color: var(--app-text-muted);
+  font-size: 10px;
+}
+
+.rel-card__rel-name {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--app-primary-weak);
+  color: var(--app-primary);
+  font-size: 11px;
+  line-height: 17px;
+}
+
+.rel-card__rel-target {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--app-text-secondary);
+  text-align: left;
+}
+
+.rel-card__rel-note {
+  margin: 2px 0 4px 20px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--app-text-muted);
+}
+
+.rel-card__foot {
+  flex: none;
+  padding: 9px 14px;
+  border-top: 1px solid var(--app-border);
+  background: var(--app-surface-alt);
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: var(--app-text-muted);
+}
+
+.rel-card__open.ant-btn {
+  margin-bottom: 6px;
+  font-size: 11.5px;
+  --ant-button-default-bg: var(--app-surface);
+  --ant-button-default-color: var(--app-text-strong);
+  --ant-button-default-border-color: var(--app-border-strong);
+  --ant-button-default-hover-bg: var(--app-surface-hover);
+  --ant-button-default-hover-color: var(--app-primary);
+  --ant-button-default-hover-border-color: var(--app-primary);
+}
+
+.rel-card__foot-hint {
+  margin: 0;
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: var(--app-text-muted);
+}

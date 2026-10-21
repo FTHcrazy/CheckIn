@@ -53,6 +53,7 @@ const buildProps = (
   activeChapterId: null,
   outlineActions,
   entities: [],
+  linkCount: 0,
   filter: "all",
   onFilterChange: vi.fn(),
   detailEntityId: null,

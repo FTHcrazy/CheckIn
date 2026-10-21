@@ -440,6 +440,13 @@ describe("色块阶梯：页面根铺 bg、浮层底只给浮层用", () => {
     "src/windows/NovelWindow/pages/NovelPage/components/SettingsDrawer/index.scss", // 排版抽屉
     "src/windows/NovelWindow/pages/NovelPage/components/SnapshotDrawer/index.scss", // 快照抽屉
     "src/windows/GlobalSettingWindow/components/GsRefsDrawer/index.scss", // 引用方名单抽屉
+    // 关系图窗口：画布浮层工具条 / 节点卡 / 右侧详情卡都是「浮在画布之上」的一层
+    "src/windows/RelationWindow/index.scss",
+    "src/windows/RelationWindow/components/EntityNode/index.scss", // 画布节点卡
+    "src/windows/RelationWindow/components/NodeDetailCard/index.scss", // 右侧详情卡
+    "src/windows/RelationWindow/components/RelationCanvas/index.scss", // 画布工具条 / 缩放按钮
+    "src/windows/RelationWindow/components/RelationCreateDialog/index.scss", // 新建关系确认弹层
+    "src/windows/RelationWindow/components/EdgeDetailCard/index.scss", // 边详情卡
   ]);
 
   it("窗口 / 页面根一律铺 --app-bg（铺 surface 会把页面底抬高一档）", () => {

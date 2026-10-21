@@ -1,0 +1,154 @@
+@use "../../../../shared/styles/widget" as widget;
+
+// 左侧要素资料池。样式就近：只描述池子本身，画布/节点/详情卡各自独立。
+.rel-pool {
+  flex: none;
+  width: 268px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--app-border);
+  background: var(--app-sidebar-bg);
+}
+
+.rel-pool__head {
+  flex: none;
+  padding: 12px 12px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rel-pool__title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--app-text-strong);
+}
+
+.rel-pool__counts {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-weight: 400;
+}
+
+.rel-pool__count {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--app-text-muted);
+}
+
+// 「未上图 N」是 W-07 的常驻口径，不能只在空池时出现
+.rel-pool__count--off {
+  color: var(--app-text-secondary);
+}
+
+.rel-pool__search-icon {
+  color: var(--app-text-disabled);
+}
+
+// 类型分组：整行折叠头仍是 Button（键盘可达 / aria-expanded），外观用清零点重绘
+.rel-pool__group {
+  margin-bottom: 2px;
+}
+
+.rel-pool__group-head.ant-btn {
+  @include widget.ant-button-reset;
+
+  height: 26px;
+  padding: 0 7px;
+  gap: 6px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--app-text-secondary);
+  --ant-button-text-hover-bg: var(--app-surface-hover);
+  --ant-button-text-hover-color: var(--app-text);
+  --ant-button-text-active-bg: var(--app-surface-hover);
+  --ant-button-text-active-color: var(--app-text);
+
+  &:focus-visible {
+    outline: 2px solid var(--app-primary);
+    outline-offset: -2px;
+  }
+}
+
+.rel-pool__group-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.rel-pool__group-count {
+  flex: none;
+  font-weight: 400;
+  color: var(--app-text-muted);
+}
+
+.rel-pool__group-caret {
+  flex: none;
+  font-size: 9px;
+  color: var(--app-text-disabled);
+  transition: transform 0.18s ease;
+}
+
+.rel-pool__group[data-open="1"] .rel-pool__group-caret {
+  transform: rotate(180deg);
+}
+
+// 折叠动画走 grid-template-rows（不条件渲染，展开/收起都不打断布局）
+.rel-pool__group-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.18s ease;
+}
+
+.rel-pool__group[data-open="1"] .rel-pool__group-body {
+  grid-template-rows: 1fr;
+}
+
+.rel-pool__rows {
+  min-height: 0;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rel-pool__list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0;
+  padding: 2px 8px 8px;
+  list-style: none;
+}
+
+.rel-pool__dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.rel-pool__empty {
+  margin: 0;
+  padding: 16px 8px;
+  font-size: 12px;
+  color: var(--app-text-muted);
+}
+
+.rel-pool__foot {
+  flex: none;
+  padding: 8px 12px 10px;
+  border-top: 1px solid var(--app-border);
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: var(--app-text-muted);
+}

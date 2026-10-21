@@ -70,12 +70,14 @@ CheckIn 采用 Electron 双进程架构，渲染进程（React）与主进程（
 | 模块 | 职责 | 边界 |
 |------|------|------|
 | **main.ts** | 窗口生命周期管理、IPC 通道注册、托盘图标、应用启动流程 | 仅处理窗口和系统级操作，不包含业务逻辑 |
-| **handlers/** | 语义化 IPC handler 按模块注册（`activity` / `todo` / `memo` / `ledger` / `checkin` / `user` / `novel` / `novel-pack` / `novel-setting` / `novel-global-setting` 的 `*-handlers.ts`；另有 `novel-setting-shared.ts` 供 novel 设定类 handler 复用，非注册入口），持有预定义 SQL | 每个 handler 文件只负责一个业务模块；SQL 只出现在 handlers 与 db.ts，禁止出现在渲染进程 |
+| **handlers/** | 语义化 IPC handler 按模块注册（`activity` / `todo` / `memo` / `ledger` / `checkin` / `user` / `novel` / `novel-pack` / `novel-setting` / `novel-global-setting` / `novel-graph` / `novel-export` 的 `*-handlers.ts`；另有 `novel-setting-shared.ts` 供 novel 设定类 handler 复用，非注册入口），持有预定义 SQL | 每个 handler 文件只负责一个业务模块；SQL 只出现在 handlers 与 db.ts，禁止出现在渲染进程 |
 | **preload.ts** | 通过 `contextBridge` 暴露安全的 API 给渲染进程 | 仅做 API 转发，不实现业务逻辑 |
 | **db.ts** | SQLite 数据库初始化、双库管理（authDb/userDb）、通用 CRUD 封装 | 提供底层数据库操作，不感知上层业务；**只承载 checkin 域**，不建任何 `novel_*` 表 |
 | **novel-db.ts** | 小说域独立库 `novel.db` 的初始化与 CRUD 封装（`novel_*` / `novel_pack_*` / `novel_config` / `novel_usage_log`），通过 `registerUserDbLifecycle()` 跟随 checkin 库开关 | 单向依赖 `db.ts`（ lifecycle 回调桥接），`db.ts` 不反向依赖它；novel handler 一律从这里取写通道 |
 | **activitiesTask.ts** | 后台活动提醒轮询、系统事件监听（睡眠/锁屏） | 独立后台任务，通过 IPC 通知渲染进程 |
 | **windowManager.ts** | 窗口管理池：注册/注销/广播/定点发送 | 只管理 BrowserWindow 实例，不感知业务 |
+| **novel-links-events.ts** | `novel_links` 变更的**唯一广播出口**（`broadcastLinksChanged` + `workIdOfEntity`）：图窗口单事务提交与主窗口增删关系共用一条 `novel-links-changed` | 只填 delta、不写库；排除发送者与事件名只在这里出现一次（两处各写一份必然漂移） |
+| **novel-export-handlers.ts** | 导出 PNG 的两条主进程通道：`relation-window-export`（`capturePage` 取景）+ `novel-export-binary`（弹框按字节落盘） | 二进制落盘**绝不复用** `novel-export-file`（那是 `writeFile(...,"utf8")`，写 PNG 会图坏且零报错）；`writeFile` 不带 encoding |
 
 **模块边界规则**：
 - `main.ts` 仅承担窗口生命周期、托盘、协议、窗口级 IPC（broadcast/window-control/find-in-page 等），**一切业务 IPC（user / memo / todo / activity / novel 等）一律抽到 `handlers/` 下独立模块**，禁止在 `main.ts` 内联业务逻辑或 SQL
@@ -106,6 +108,7 @@ src/windows/XxxWindow/
 | **SettingsWindow** | `windows/SettingsWindow/` | `src/windows/SettingsWindow/index.html` | 全局设置窗口（外观 / 个人资料 / 账号，后续扩展字体、快捷键），即关即销、单实例唤起；全版本构建，入口在各自主窗标题栏（base/novel 均经 WindowHeader 的 `actions` 插槽） |
 | **PackWindow** | `windows/PackWindow/` | `src/windows/PackWindow/index.html` | 行囊独立窗口（novel 域：full / novel 打包，lite 不打包）。承载 `shared/components/CharacterPack` 宿主，单实例、即关即销；上下文经 `pack-window-context` / `novel-work-changed` 投递 |
 | **GlobalSettingWindow** | `windows/GlobalSettingWindow/` | `src/windows/GlobalSettingWindow/index.html` | 全局设定中心独立窗口（novel 域：full / novel 打包，lite 不打包）。复用 `shared/components/SettingCenter`（`source="global"`）呈现跨书共享库，单实例、即关即销、数据全在主进程 |
+| **RelationWindow** | `windows/RelationWindow/` | `src/windows/RelationWindow/index.html` | 人物关系网络独立窗口（novel 域：full / novel 打包，lite 不打包）。池子 + 力导向画布 + 详情卡三栏，单实例、即关即销；上下文经 `relation-window-context` 投递，画布记忆存 `novel_config` 单键，写关系走 `novel-graph-commit` 单事务并广播 `novel-links-changed` |
 
 **构建版本（edition）**：环境变量 `CHECKIN_EDITION=full | lite | novel` 决定打包哪些窗口与业务模块，清单唯一事实源为 `electron/edition.ts`（`RENDERER_ENTRY_PATHS` / `EDITION_WINDOW_ENTRIES` / `PRIMARY_WINDOW_ENTRY`），vite.config.ts 的 `rollupOptions.input` 与 electron/main.ts 的窗口加载共用；主窗口归属（full/lite → BaseWindow，novel → NovelWindow）也由它驱动。新增窗口时必须同步该清单并跑 `electron/edition.test.ts` 护栏。
 
@@ -378,6 +381,7 @@ CheckIn/
 │   │                        完整清单以 NovelPage/components/ 目录为准）
 │   │   ├── PackWindow/                    # 行囊独立窗口（novel 域；index.html + main.tsx + App.tsx + index.scss）
 │   │   ├── GlobalSettingWindow/           # 全局设定中心独立窗口（novel 域；结构同 LoginWindow）
+│   │   ├── RelationWindow/                # 人物关系网络（novel 域；池子 + 画布 + 详情卡三栏）
 │   │   ├── SettingsWindow/                # 全局设置窗口（外观/个人资料/账号；全版本开放入口）
 │   │   │   ├── index.html
 │   │   │   ├── main.tsx
