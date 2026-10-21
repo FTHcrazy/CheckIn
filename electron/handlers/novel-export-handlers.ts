@@ -24,6 +24,15 @@ const CAPTURE_ATTEMPTS = 3;
 /** 重试间隔：给合成器一次新的帧，太短会连拿三张同一帧的空图 */
 const CAPTURE_RETRY_DELAY_MS = 90;
 /**
+ * 主动重绘后的等待时间。
+ *
+ * `capturePage` 返回的是**合成器已 present 的那一帧**，而渲染层刚把工具栏
+ * display:none 掉 —— 两者之间可能差一帧，截出来就带着「导出」按钮和下拉菜单
+ * （真机复现过）。`invalidate()` 让 Chromium 丢掉当前帧重绘，再等一小段
+ * 走完 present，取到的才是抑制之后的画面。
+ */
+const CAPTURE_REPAINT_DELAY_MS = 50;
+/**
  * 「空图」的字节下界。
  *
  * `isEmpty()` 只说明图像没有像素，但**纯色帧不是空图**——全黑/全白一样能编码出
@@ -119,6 +128,14 @@ export function registerNovelExportHandlers(): void {
       let lastError: unknown = null;
       for (let attempt = 0; attempt < CAPTURE_ATTEMPTS; attempt += 1) {
         try {
+          // 每次尝试都强制重绘一次：不能赌「渲染层那两帧已经 present 了」
+          // （invalidate 在个别平台是 no-op，失败也不该让整次导出让路）
+          try {
+            win.webContents.invalidate();
+          } catch {
+            // 忽略：直接截，最多回到「上一帧」的老问题，不影响主流程
+          }
+          await delay(CAPTURE_REPAINT_DELAY_MS);
           const buffer = await captureOnce(win, rect);
           if (buffer) {
             const size = readPngSize(buffer);

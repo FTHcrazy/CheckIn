@@ -260,7 +260,7 @@ export default function RealmModule({ api }: RealmModuleProps) {
               <div className="cpk-rlm__bar">
                 <span
                   className="cpk-rlm__fill"
-                  style={{ width: `${Math.round((api.realmPos.sub / subMax) * 100)}%` }}
+                  style={{ transform: `scaleX(${api.realmPos.sub / subMax})` }}
                 />
               </div>
               <span className="cpk-rlm__progresslabel">

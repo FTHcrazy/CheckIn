@@ -260,11 +260,22 @@ function CanvasInner({
   return (
     <div
       ref={rootRef}
-      className={`rel-canvas${connecting ? " is-connecting" : ""}${zoomedOut ? " is-zoomed-out" : ""}`}
+      // 导出态也进 className：hook 里那句 classList.add 只在首帧有效，
+      // 一旦本组件因 exporting / saving 变化重渲染，React 会按模板重写 class，
+      // 把命令式加上的类名连根抹掉 —— 工具栏于是又出现在导出的图里。
+      className={`rel-canvas${connecting ? " is-connecting" : ""}${zoomedOut ? " is-zoomed-out" : ""}${
+        exporting ? " is-exporting" : ""
+      }`}
       onDrop={handleDrop}
       onDragOver={handleDragOver}
     >
-      <div className="rel-canvas__toolbar">
+      {/* 导出期间工具栏整块不参与渲染（`hidden` → display:none）：
+          ① 用户点的就是这里的「导出」下拉，菜单挂在 body portal、退场动画 100ms+，
+             只靠画布内的 visibility 规则够不到它；
+          ② capturePage 偶尔返回「上一帧」，DOM 里根本没有工具栏时，即使帧略旧
+             也不会把按钮烧进图里。
+          工具栏是绝对定位、不参与布局，隐掉不会让图面挪位。 */}
+      <div className="rel-canvas__toolbar" hidden={exporting}>
         <div className="rel-canvas__stats">
           <b>{doc.diagnostics.nodeCount}</b> 个要素
           <span className="rel-canvas__sep">·</span>

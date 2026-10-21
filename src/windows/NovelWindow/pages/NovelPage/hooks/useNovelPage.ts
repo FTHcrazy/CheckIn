@@ -783,35 +783,6 @@ export function useNovelPage() {
     return () => api.off("pack-insert-into-chapter", handler);
   }, []);
 
-  /**
-   * 关系图窗口的「去右栏删除」（R27 / S3）：主进程 `window-send-to` 已把本窗口
-   * 抬到最前（raise），这里只负责打开那张要素资料卡。
-   *
-   * workId 不匹配时不硬跳：跳到另一本书的同一个 id 只会显示「未知要素」，
-   * 用户更困惑。给一句提示，让他先把主窗口切到那本书。
-   */
-  useEffect(() => {
-    const api = window.electronAPI?.windowAPI;
-    if (!api) return undefined;
-    const handler = (...args: unknown[]): void => {
-      const payload = args[0];
-      if (!payload || typeof payload !== "object") return;
-      const { workId: targetWorkId, entityId } = payload as {
-        workId?: unknown;
-        entityId?: unknown;
-      };
-      if (typeof entityId !== "string" || !entityId) return;
-      const currentWorkId = data.activeWorkId;
-      if (typeof targetWorkId === "string" && targetWorkId && currentWorkId && targetWorkId !== currentWorkId) {
-        view.showToast("那部作品已不在当前窗口，先切到它再删除关系", "warning");
-        return;
-      }
-      view.openEntityDetail(entityId);
-    };
-    api.on("rel-open-entity", handler);
-    return () => api.off("rel-open-entity", handler);
-  }, [data.activeWorkId, view]);
-
   // ── 行囊独立窗口（PackWindow）联动 ──────────────────────────────────────
   /**
    * 唤起行囊窗口（单实例；已开则聚焦）。上下文随打开请求携带。

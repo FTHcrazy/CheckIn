@@ -84,17 +84,32 @@ export async function commitGraph(
   }
 }
 
-/** 边详情里「去右栏删除」：把主窗口抬到最前并打开该要素的资料卡 */
-export async function focusEntityInMainWindow(workId: string, entityId: string): Promise<void> {
-  if (!workId || !entityId) return;
+/**
+ * 「去主窗口打开资料卡」：把主窗口抬到最前并投递 `rel-open-entity`。
+ *
+ * 走通用 `window-send-to`（带 `create`）：主窗口没开时由主进程先入队再拉起，
+ * 窗口装载后 preload 补投 —— 消息不会因为「窗口刚起来、React 还没订阅」而丢。
+ * 落点判定全在主窗口侧（书架 → 切书；同一本书 → 直接开卡；另一本书 → 先弹确认），
+ * 本函数只负责把意图送到，并如实返回「有没有送出去 / 排上了队」。
+ * 返回 false 时调用方要给提示 —— 静默失败会让用户以为按钮坏了。
+ */
+export async function focusEntityInMainWindow(workId: string, entityId: string): Promise<boolean> {
+  if (!workId || !entityId) return false;
+  const api = window.electronAPI?.windowAPI;
+  if (!api?.sendTo) return false;
   try {
-    await window.electronAPI?.windowAPI?.sendTo(
+    const result = await api.sendTo(
       "novel",
       "rel-open-entity",
       { workId, entityId },
       true,
+      { create: true },
     );
+    // `queued=true` 也算成功：消息已进待投递队列，窗口起来就会补投。
+    // 只认 `delivered` 会把「窗口正在拉起」误报成失败 —— 用户会收到一句
+    // 「主窗口没能打开」，而窗口其实已经在开了。
+    return Boolean(result?.delivered || result?.queued);
   } catch {
-    // 导航失败不阻断任何写入：用户仍可在主窗口自己找到这个要素
+    return false;
   }
 }

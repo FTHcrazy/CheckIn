@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Modal } from "antd";
 import ChapterJumpPalette from "./components/ChapterJumpPalette";
 import ChapterTree from "./components/ChapterTree";
 import EditorPane from "./components/EditorPane";
@@ -43,6 +44,7 @@ import {
 } from "./services/novel-service";
 import { formatNumberedLabel } from "./novel-utils";
 import { toSettingCategory } from "@/shared/novel/setting-mappers";
+import { type EntityOpenPayload, type NovelEditorBridge } from "../../utils/entity-jump";
 import type { EntityAppearance, NovelChapter, SettingCategory } from "./types";
 import "./index.scss";
 
@@ -50,6 +52,8 @@ import "./index.scss";
 export interface OpenWorkRequest {
   workId: string;
   chapterId?: string;
+  /** 关系图窗口带过来的要素：切完作品后把这张资料卡打开（R27 / S6） */
+  entityId?: string;
   token: number;
 }
 
@@ -76,6 +80,18 @@ interface NovelPageProps {
    * 由窗口根注入并转交 Tour —— 只有窗口根同时持有两个视图的显隐开关。
    */
   onGoToView?: (view: GuideView) => void;
+  /**
+   * 把「编辑器能力句柄」交给窗口根（`NovelEditorBridge`）。
+   * 关系图的消息只由窗口根监听一次，保存 / 切书 / 开卡都通过这个句柄下发；
+   * 卸载时传 null，窗口根据此退回「直接打开」的兜底路径。
+   */
+  onEditorBridge?: (bridge: NovelEditorBridge | null) => void;
+  /** 关系图要求打开另一本书的要素：非空即弹确认框（由窗口根判定，本页不自己拦消息） */
+  entityJump?: EntityOpenPayload | null;
+  /** 确认框「保存后跳转」进行中（防连点） */
+  entityJumpSaving?: boolean;
+  onConfirmEntityJump?: () => void;
+  onCancelEntityJump?: () => void;
 }
 
 /**
@@ -91,6 +107,11 @@ export default function NovelPage({
   onImportBook,
   visible = true,
   onGoToView,
+  onEditorBridge,
+  entityJump = null,
+  entityJumpSaving = false,
+  onConfirmEntityJump,
+  onCancelEntityJump,
 }: NovelPageProps = {}) {
   const {
     data,
@@ -180,13 +201,15 @@ export default function NovelPage({
     if (!openRequest || consumedTokenRef.current === openRequest.token) return;
     consumedTokenRef.current = openRequest.token;
     void (async () => {
-      const { workId, chapterId } = openRequest;
+      const { workId, chapterId, entityId } = openRequest;
       // 书架新建的作品尚未进编辑器内存 → 先重载全量再选中
       if (workId && !works.some((work) => work.id === workId)) {
         await reload();
       }
       if (workId) setActiveWorkId(workId);
       if (chapterId) selectChapter(chapterId);
+      // 资料卡放在切书之后：要素列表随 bundle 重载，提前开只会指向上一本书的 id
+      if (entityId) view.openEntityDetail(entityId);
       onOpenRequestConsumed?.();
     })();
   }, [
@@ -195,8 +218,18 @@ export default function NovelPage({
     reload,
     setActiveWorkId,
     selectChapter,
+    view,
     onOpenRequestConsumed,
   ]);
+
+  /**
+   * 关系图窗口的「在主窗口打开资料卡」（R27 / S6）· 编辑器态。
+   *
+   * ⚠️ **本页不再自己监听 `rel-open-entity`**：以前窗口根与本页各挂一个监听，
+   * 事件一到两边同时动手 —— 窗口根先切了书，这张确认框才弹出来，用户看到的
+   * 就是「先切书、再问要不要切」。现在监听只在窗口根，本页通过
+   * `onEditorBridge` 把「保存 / 切书 / 开卡」的能力交出去，确认框只负责渲染。
+   */
 
   // 快照抽屉按需加载：打开时才查该章的版本时间线
   useEffect(() => {
@@ -286,6 +319,37 @@ export default function NovelPage({
       data.works.find((work) => work.id === workId)?.name ?? "其他作品",
     [data.works],
   );
+
+  /**
+   * 把能力句柄交给窗口根（唯一监听 `rel-open-entity` 的地方）。
+   *
+   * `activeWorkId` 是**getter**：句柄在窗口根手里跨多次渲染存活，若传快照，
+   * 事件到来时会拿挂载那一刻的旧作品 id 去判定，异书确认就退化成「总是同书」。
+   */
+  useEffect(() => {
+    if (!onEditorBridge) return undefined;
+    onEditorBridge({
+      // ready：数据装载完成前 activeWorkId 恒为 ""，窗口根据此挂起跳转、
+      // 就绪后重判 —— 拿空 id 判定会把异书跳转误判成「空态直开」
+      ready: () => !data.loading,
+      activeWorkId: () => data.activeWorkId,
+      workNameOf,
+      switchWork: (workId) => data.setActiveWorkId(workId),
+      openEntity: (entityId) => view.openEntityDetail(entityId),
+      flushSave: () => editor.flushSave(),
+      toast: (text, tone) => view.showToast(text, tone),
+    });
+    return () => onEditorBridge(null);
+  }, [
+    onEditorBridge,
+    workNameOf,
+    data.loading,
+    data.activeWorkId,
+    data.setActiveWorkId,
+    editor.flushSave,
+    view.openEntityDetail,
+    view.showToast,
+  ]);
 
   /** 预设模板列表：设定中心的模板库面板按需拉取（打开时才读库） */
   const [settingTemplates, setSettingTemplates] = useState<
@@ -729,6 +793,31 @@ export default function NovelPage({
 
       {/* L1 漫游引导：第 2-5 步属编辑器页（第 1 步在书架页由那里的实例接管） */}
       <NovelGuideTour view="editor" visible={visible} onGoToView={onGoToView} />
+
+      {/*
+        关系图要求「在主窗口打开另一本书的资料卡」：只抬窗口，不替他做决定。
+        两个动作就是用户能理解的两条路：取消（继续写当前这本）/ 保存后跳转。
+        判定在窗口根（监听只此一处），本页只渲染这张确认框 —— 所以不可能出现
+        「先切了书，再问要不要切」。
+      */}
+      <Modal
+        open={entityJump !== null}
+        title="要跳转到另一部作品吗？"
+        okText="保存后跳转"
+        cancelText="取消"
+        confirmLoading={entityJumpSaving}
+        maskClosable={false}
+        destroyOnHidden
+        onOk={onConfirmEntityJump}
+        onCancel={onCancelEntityJump}
+      >
+        <p className="nv-jump__text">
+          关系图要在《{workNameOf(entityJump?.workId ?? "")}》里打开这条要素的资料卡。
+        </p>
+        <p className="nv-jump__text">
+          当前作品的正文还有没落库的修改，跳转前会先保存；保存失败就留在原处，不会丢字。
+        </p>
+      </Modal>
       </div>
     </EntityTypesProvider>
   );

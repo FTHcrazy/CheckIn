@@ -1045,7 +1045,17 @@ export interface ElectronAPI {
   // ── 跨窗口通信 ──
   windowAPI: {
     broadcast: (event: string, data?: unknown) => Promise<void>
-    sendTo: (target: string, event: string, data?: unknown, raise?: boolean) => Promise<void>
+    /**
+     * 向指定窗口投递消息。目标窗口不存在时可 `create`（先拉起）或 `queue`
+     * （入队，窗口起来后由 preload 补投）。`delivered=false` = 既送不到也拉不起来。
+     */
+    sendTo: (
+      target: string,
+      event: string,
+      data?: unknown,
+      raise?: boolean,
+      options?: { create?: boolean; queue?: boolean },
+    ) => Promise<{ delivered: boolean; queued: boolean }>
     on: (event: string, handler: (...args: unknown[]) => void) => void
     off: (event: string, handler: (...args: unknown[]) => void) => void
     /** 关闭守卫：有未保存改动时武装本窗口（`electron/close-guard.ts`） */

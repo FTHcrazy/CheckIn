@@ -21,6 +21,12 @@ import {
 import { startActivityPolling, stopActivityPolling } from "./activitiesTask";
 import { resolveAppProtocolCacheControl } from "./app-protocol-cache";
 import { windowManager } from "./windowManager";
+import {
+  pushPendingMessage,
+  takePendingMessages,
+  type PendingWindowMessage,
+} from "./window-pending";
+import { readWindowSendOptions, type WindowSendOptions } from "./window-send-options";
 import { registerActivityHandlers } from "./handlers/activity-handlers";
 import { registerTodoHandlers } from "./handlers/todo-handlers";
 import {
@@ -661,14 +667,11 @@ function createPackWindow(opener?: WebContents): BrowserWindow {
 
   packWin.removeMenu();
 
-  // 上下文必须在 did-finish-load 时下发（渲染层的 ipcRenderer 监听那时才挂好），
-  // 先注册的监听先执行 → 保证「先发上下文、再显示窗口」，与旧行为一致
-  packWin.webContents.once("did-finish-load", () => {
-    if (!packWin || packWin.isDestroyed()) return;
-    if (packWindowContext) {
-      windowManager.sendTo("pack", "pack-window-context", packWindowContext);
-    }
-  });
+  // 上下文走待投递队列：装载完成那一拍 React 常还没订阅，直发会丢
+  // （preload 在 load 后 drain，未订阅则暂存，监听注册时补投）
+  if (packWindowContext) {
+    pushPendingMessage("pack", { event: "pack-window-context", data: packWindowContext });
+  }
 
   // 「真的可见」的回执：钉在 `show` 事件上而不是 reveal 里 —— 正常装载、
   // 装载失败兜底、超时兜底三条路径都会走 show，只有正常路径走 reveal
@@ -760,8 +763,9 @@ function createGlobalSettingWindow(): BrowserWindow {
 
 /**
  * 关系图窗口上下文：最近一次打开时携带的作品 id。
- * 新窗口 did-finish-load 后经 `relation-window-context` 下发；
- * 后续切换作品由 NovelWindow 的 `novel-work-changed` 广播跟进（与行囊同款）。
+ * 新窗口装载后经 `relation-window-context` 下发（走 `window-pending` 队列，
+ * 见下方 `window-send-to`：窗口没起来时消息不会丢）；后续切换作品由
+ * NovelWindow 的 `novel-work-changed` 广播跟进（与行囊同款）。
  */
 let relationWindowContext: { workId: string } | null = null;
 
@@ -800,22 +804,14 @@ function createRelationWindow(): BrowserWindow {
 
   relationWin.removeMenu();
 
-  // 上下文必须在 did-finish-load 时下发（渲染层的监听那时才挂好）
-  relationWin.webContents.once("did-finish-load", () => {
-    if (!relationWin || relationWin.isDestroyed()) return;
-    if (relationWindowContext) {
-      windowManager.sendTo("relation", "relation-window-context", relationWindowContext);
-    }
-  });
-
-  // 兜底再发一次：React 的 useEffect 订阅可能晚于 did-finish-load 的同一拍，
-  // 错过就只能看到空窗口。show 一定在装载完成后触发，且重复下发是幂等的。
-  relationWin.once("show", () => {
-    if (!relationWin || relationWin.isDestroyed()) return;
-    if (relationWindowContext) {
-      windowManager.sendTo("relation", "relation-window-context", relationWindowContext);
-    }
-  });
+  // 上下文走待投递队列（不是 did-finish-load 直发）：窗口刚装载时 React 还没订阅，
+  // 直发会丢；preload 在 load 后 drain 一次，若监听仍未注册就先缓存，注册时补投。
+  if (relationWindowContext) {
+    pushPendingMessage("relation", {
+      event: "relation-window-context",
+      data: relationWindowContext,
+    });
+  }
 
   attachWindowLoadGuard(relationWin, "Relation", { windowName: "relation" });
 
@@ -838,6 +834,47 @@ function createRelationWindow(): BrowserWindow {
   loadRendererEntry(relationWin, "relation");
 
   return relationWin;
+}
+
+/** 给渲染层的回执：送不到也拉不起来时 `delivered=false`，调用方必须说出来 */
+interface WindowSendResult {
+  delivered: boolean;
+  queued: boolean;
+}
+
+/**
+ * 能被「消息驱动拉起」的窗口白名单。
+ *
+ * 刻意不用 `Record<string, () => void>` 动态分发：窗口创建有副作用（单例、
+ * 上下文、装载守卫），只允许这里点过名的窗口被一条跨进程消息拉起来。
+ */
+const WINDOW_CREATORS: Record<string, () => BrowserWindow> = {
+  novel: createNovelWindow,
+  relation: createRelationWindow,
+};
+
+/** 这个版本是否打包了该窗口（能被一条跨进程消息拉起来） */
+function canCreateWindow(target: string): boolean {
+  // lite 版不打包 NovelWindow / RelationWindow，拉起不存在的入口只会黑屏
+  return Boolean(WINDOW_CREATORS[target]) && EDITION !== "lite";
+}
+
+/** 真正创建窗口；返回 false = 创建失败（已记日志） */
+function createWindowFor(target: string): boolean {
+  const create = WINDOW_CREATORS[target];
+  if (!create) return false;
+  try {
+    create();
+    return true;
+  } catch (error) {
+    log(
+      "error",
+      "main",
+      "window",
+      `拉起窗口 ${target} 失败：${error instanceof Error ? error.message : String(error)}`,
+    );
+    return false;
+  }
 }
 
 // ── 登录窗口 ──
@@ -1045,19 +1082,69 @@ app.whenReady().then(() => {
     windowManager.broadcast(event, data, senderName);
   });
 
-  // raise=true：投放消息的同时把目标窗口抬到最前。用于「从别的窗口跳回主窗口
-  // 某个位置」这类导航（如关系图边详情的「去右栏删除」）—— 只发消息不抬窗口
-  // 时，用户会觉得点了没反应（目标窗口被当前窗口完全遮住）。
+  // 跨窗口投递（R27 起唯一入口）
+  //
+  // 选项（第 5 参，向后兼容旧的布尔 `raise`）：
+  // - `raise`：目标窗口在时抬到最前（「从别的窗口跳回主窗口某个位置」若只发
+  //   消息不抬窗口，用户会觉得点了没反应）；
+  // - `create`：目标窗口不在时先创建（目前只认 novel / relation）；
+  // - `queue`：目标窗口不在时**入队**，等它起来后补投。
+  //
+  // 为什么把「入队 + 拉起」放进通用通道：以前每种跳转都要在主进程单独维护一对
+  // IPC（如 `relation-entity-open` / `relation-entity-take`）+ 一份 pending 变量，
+  // 只为回答「窗口没起来这条消息存哪」。现在这件事由 `window-pending` 统一承担，
+  // 主进程只需要认识窗口名，不再认识消息类型。
+  //
+  // 返回值给渲染层一个判断依据：`delivered=false` 表示既送不到也拉不起来
+  // （如 lite 版没有该窗口），调用方要据此给可见提示，不能假装成功。
+  //
+  // ⚠️ 第 4 / 第 5 个位置参数都接受：preload 现在把选项压成一个对象传在第 4 位，
+  // 但旧产物是「第 4 位布尔 raise + 第 5 位 options」。两份产物在热重启窗口里
+  // 可能错位共存，只认其中一个形状就等于让 `create` 静默失效（本次真机故障）。
   ipcMain.handle(
     "window-send-to",
-    (_event, target: string, event: string, data?: unknown, raise?: boolean) => {
-      if (raise) {
-        const win = windowManager.get(target);
-        if (win) raiseWindow(win);
+    (
+      _event,
+      target: string,
+      event: string,
+      data?: unknown,
+      optionsOrRaise?: boolean | WindowSendOptions,
+      extraOptions?: WindowSendOptions,
+    ): WindowSendResult => {
+      const opts = readWindowSendOptions(optionsOrRaise, extraOptions);
+      const existing = windowManager.get(target);
+      if (existing) {
+        if (opts.raise) raiseWindow(existing);
+        windowManager.sendTo(target, event, data);
+        return { delivered: true, queued: false };
       }
-      windowManager.sendTo(target, event, data);
+
+      // 这个版本根本没打包该窗口（lite）：别把一条永远送不到的消息塞进队列
+      if (opts.create && !canCreateWindow(target)) {
+        return { delivered: false, queued: false };
+      }
+      if (!opts.create && !opts.queue) return { delivered: false, queued: false };
+
+      // 先入队、再创建：新窗口的 preload 会在装载后 drain，
+      // 「创建完才发现没消息」与「消息先到、窗口还没起来」两种时序都覆盖
+      pushPendingMessage(target, { event, data });
+      const created = opts.create === true ? createWindowFor(target) : false;
+      return { delivered: created, queued: true };
     },
   );
+
+  // 新窗口装载后自取待投递消息（preload 调用；取走即清，重开窗口不会又弹上次的卡）
+  // 返回 null = 主进程还不认识这个窗口（注册晚于 preload 执行），preload 会等 load 再试
+  ipcMain.handle("window-pending-drain", (event): PendingWindowMessage[] | null => {
+    const sender = BrowserWindow.fromWebContents(event.sender);
+    const name = sender ? windowManager.getNameOf(sender) : undefined;
+    if (!name) return null;
+    const list = takePendingMessages(name);
+    if (list.length > 0) {
+      log("info", "main", "window", `${name} 窗口补投 ${list.length} 条待处理消息`);
+    }
+    return list;
+  });
 
   // 注册协议处理器，将 app:// 请求映射到本地文件
   // 必须异步：每个 bundle / CSS / 字体都是一次 1~5MB 的读盘，同步读会把

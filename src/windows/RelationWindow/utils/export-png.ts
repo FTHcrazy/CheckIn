@@ -20,7 +20,12 @@
  * 会漂移，但这里没法复用主进程的实现（跨进程），所以用同一份字符集 + 单测锚定。
  */
 
-/** 导出期间挂在画布根节点上的类（纯 CSS 抑制，不触发 React 重渲染） */
+/**
+ * 导出期间挂的类名：画布根节点 + `document.body` 各挂一份。
+ *
+ * 画布那份负责图内的辅助控件；body 那份负责 antd 浮层（Dropdown / Tooltip 的
+ * portal 挂在 body 上，画布选择器够不到）。两份都用 `visibility`，不触发 reflow。
+ */
 export const EXPORT_CLASS = "is-exporting";
 
 /** 画布小于这个边长就没有导出价值（折叠态 / 未布局完成） */
@@ -32,6 +37,10 @@ export const EXPORT_MIN_SIDE = 48;
  * 顺序与重要性无关，列进来只有一条标准：它在屏幕上存在是为了「操作」，
  * 而不是为了「看图」。`visibility: hidden` 而不是 `display: none`：
  * 前者不触发 reflow / 不改变布局，截图期间图面一个像素都不会挪。
+ *
+ * 后四条是 antd 的浮层：Dropdown 的菜单挂在 `body` 的 portal 里，**不在**画布子树，
+ * 画布级抑制盖不到它 —— 而它正好压在图面右上角（用户就是从这颗「导出」按钮点的），
+ * 菜单的退场动画还没走完就会进图。所以这几条由 `body.is-exporting` 兜底。
  */
 export const EXPORT_HIDE_SELECTORS = [
   ".rel-canvas__toolbar",
@@ -40,6 +49,10 @@ export const EXPORT_HIDE_SELECTORS = [
   ".react-flow__attribution",
   ".rel-node__handle",
   ".react-flow__selection",
+  ".ant-dropdown",
+  ".ant-dropdown-menu",
+  ".ant-tooltip",
+  ".ant-popover",
 ] as const;
 
 /**

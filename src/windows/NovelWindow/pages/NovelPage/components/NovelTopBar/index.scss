@@ -38,8 +38,8 @@
     flex: none;
     cursor: pointer;
     transition:
-      background 120ms ease,
-      color 120ms ease;
+      background var(--app-t-fast) var(--app-ease-standard),
+      color var(--app-t-fast) var(--app-ease-standard);
 
     &:focus-visible {
       outline: 2px solid var(--app-primary);
@@ -181,7 +181,7 @@
     display: grid;
     place-items: center;
     cursor: pointer;
-    transition: background 120ms ease, color 120ms ease;
+    transition: background var(--app-t-fast) var(--app-ease-standard), color var(--app-t-fast) var(--app-ease-standard);
 
     /* 持久高亮态（面板已展开 / 打字机已开 / 行囊已开 …）：
        写默认变量即可，hover / active 同步保持高亮不掉色 */

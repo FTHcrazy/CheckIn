@@ -23,6 +23,12 @@
   > * {
     pointer-events: auto;
   }
+
+  // `hidden` 的 UA 规则（display:none）压不过本块的 display:flex，
+  // 必须显式声明 —— 导出期间整块从渲染树里摘掉（见组件里的注释）
+  &[hidden] {
+    display: none;
+  }
 }
 
 .rel-canvas__stats {
@@ -34,7 +40,7 @@
   border-radius: 8px;
   border: 1px solid var(--app-border);
   background: var(--app-surface-elevated);
-  box-shadow: 0 2px 6px var(--app-mask);
+  box-shadow: var(--app-shadow-card);
   font-size: 11.5px;
   color: var(--app-text-secondary);
 
@@ -71,7 +77,7 @@
   border-radius: 7px;
   border: 1px solid var(--app-border);
   background: var(--app-surface-elevated);
-  box-shadow: 0 2px 6px var(--app-mask);
+  box-shadow: var(--app-shadow-card);
   font-size: 11px;
   line-height: 17px;
   color: var(--app-text-muted);
@@ -95,7 +101,7 @@
   background: var(--app-surface-elevated);
   color: var(--app-text-secondary);
   font-size: 12px;
-  box-shadow: 0 2px 6px var(--app-mask);
+  box-shadow: var(--app-shadow-card);
   --ant-button-default-bg: var(--app-surface-elevated);
   --ant-button-default-border-color: var(--app-border);
   --ant-button-default-color: var(--app-text-secondary);
@@ -148,6 +154,19 @@
   }
 }
 
+// antd 浮层（Dropdown 菜单 / Tooltip / Popover）挂在 body 的 portal 里，**不在**
+// .rel-canvas 子树中 —— 画布级抑制盖不到它们。而用户点的正是工具栏上那颗「导出」，
+// 菜单就悬在图面右上角，退场动画没走完就会进图。故导出期间由 body 上的同名类兜住；
+// hook 的 finally 会摘掉，正常交互不受影响。
+body.is-exporting {
+  .ant-dropdown,
+  .ant-dropdown-menu,
+  .ant-tooltip,
+  .ant-popover {
+    visibility: hidden;
+  }
+}
+
 .rel-canvas__empty {
   position: absolute;
   inset: 0;
@@ -179,7 +198,7 @@
 }
 
 .react-flow__controls {
-  box-shadow: 0 2px 8px var(--app-mask);
+  box-shadow: var(--app-shadow-card);
   border-radius: 8px;
   overflow: hidden;
 }

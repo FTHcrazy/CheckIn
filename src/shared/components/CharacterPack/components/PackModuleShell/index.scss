@@ -6,6 +6,9 @@
   border-radius: var(--app-radius-item);
   background: var(--app-surface);
   overflow: hidden;
+  /* 静止态环境阴影：让模块从页面底 bg 轻轻浮起成「内容面」，
+     替代此前纯 1px 描边的平铺层次（P1 行囊立体感改造） */
+  box-shadow: var(--app-shadow-ambient);
 
   /*
     相邻间距由**外层容器**（.cpk__zonestack / .cpk__flow）的 `> * + *` 统一给，
@@ -131,7 +134,7 @@
   &__wrap {
     display: grid;
     grid-template-rows: 1fr;
-    transition: grid-template-rows 0.22s ease;
+    transition: grid-template-rows var(--app-t-slow) var(--app-ease-standard);
   }
 
   &.is-collapsed &__wrap {

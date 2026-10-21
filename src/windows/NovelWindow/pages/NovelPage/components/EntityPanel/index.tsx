@@ -16,6 +16,7 @@ import type {
   NovelEntity,
 } from "../../types";
 import { formatBoundRealmName, parseRealmNoteSub } from "../../utils/setting-utils";
+import { resolveChipsScrollDelta } from "./chips-scroll";
 import "./index.scss";
 
 interface EntityPanelProps {
@@ -117,9 +118,12 @@ export default function EntityPanel({
     return map;
   }, [entities]);
 
-  // 选中 chip 居中：chips 行是隐藏滚动条的横向容器，类型较多时选中的
-  // 可能落在两侧渐隐区里，用户不知道还能滚。切换筛选后把选中项滚到
-  // 行中间，免去手动 Shift+滚轮找；首次挂载（恢复上次筛选）不做动画
+  // 选中 chip 的可见性校正：chips 行是隐藏滚动条的横向容器，类型较多时
+  // 选中的可能落在两侧渐隐区里，用户不知道还能滚。
+  //
+  // ⚠️ **不能居中**：居中会把左邻的 chip 推到容器外、只剩半颗（「全部」被切成
+  // 半个字，用户会以为分类 tab 显示不全）。这里只在选中项**真的被遮住**时
+  // 挪动，且只挪到「刚好整颗可见 + 8px 留白」，不制造新的半颗 chip。
   const chipsMountedRef = useRef(false);
   useEffect(() => {
     const row = chipsRef.current;
@@ -129,8 +133,12 @@ export default function EntityPanel({
     // offsetLeft 会相对更外层的定位祖先解析，这里不能用它
     const rowRect = row.getBoundingClientRect();
     const onRect = on.getBoundingClientRect();
-    const target =
-      row.scrollLeft + (onRect.left + onRect.width / 2) - (rowRect.left + rowRect.width / 2);
+    const delta = resolveChipsScrollDelta(rowRect, onRect);
+    if (Math.abs(delta) < 1) return;
+    const target = Math.max(
+      0,
+      Math.min(row.scrollWidth - row.clientWidth, row.scrollLeft + delta),
+    );
     if (Math.abs(row.scrollLeft - target) <= 1) return;
     // jsdom 未实现 Element.scrollTo，守卫避免单测环境报错
     if (typeof row.scrollTo !== "function") return;

@@ -1,4 +1,8 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import {
+  buildWindowSendOptions,
+  type WindowSendOptions,
+} from './window-send-options'
 
 /**
  * `ipcRenderer.on` 注册的是包了一层的 wrapper（剥掉 Electron 的 event 首参），
@@ -65,6 +69,82 @@ function trackedInvoke(
 }
 
 // 通过 contextBridge 暴露安全的 API 给渲染进程
+/**
+ * 待投递消息的本地收件箱。
+ *
+ * 主进程的 `window-send-to` 在目标窗口不存在时会把消息入队（见
+ * `electron/window-pending.ts`）。窗口起来后本脚本主动 drain 一次；但
+ * **拉到消息 ≠ 有人能接**：React 的 useEffect 往往还没注册监听。
+ * 所以先放这儿，`windowAPI.on()` 注册时按事件名补投 —— 这样「消息先到、
+ * 监听后挂」与「监听先挂、消息后到」两条时序都不会丢。
+ */
+interface PendingWindowMessage {
+  event: string
+  data?: unknown
+}
+
+const pendingInbox: PendingWindowMessage[] = []
+/** event → 已注册的 handler（`on` 的补投要按事件名找接收方） */
+const eventHandlers = new Map<string, Set<(...args: unknown[]) => void>>()
+
+function deliverPending(event: string, data: unknown): boolean {
+  const handlers = eventHandlers.get(event)
+  if (!handlers || handlers.size === 0) return false
+  for (const handler of handlers) {
+    try {
+      handler(data)
+    } catch (error) {
+      // 一个监听器抛错不该拖垮其它监听器 / 阻塞补投
+      console.error(`[preload] 处理待投递消息 ${event} 失败`, error)
+    }
+  }
+  return true
+}
+
+/** 把收件箱里「已经有人接」的消息按**到达顺序**投出去，没人接的继续留着 */
+function flushPendingInbox(): void {
+  if (pendingInbox.length === 0) return
+  const remaining: PendingWindowMessage[] = []
+  for (const message of pendingInbox) {
+    // 顺序必须保持「老的先投」：同一种跳转连点两次时，后一次才是用户最终意图
+    if (!deliverPending(message.event, message.data)) remaining.push(message)
+  }
+  pendingInbox.length = 0
+  pendingInbox.push(...remaining)
+}
+
+let drainedPending = false
+
+/** 向主进程取本窗口的待投递消息（装载完成后拉一次） */
+function requestPendingMessages(): void {
+  if (drainedPending) return
+  void trackedInvoke('window-pending-drain')
+    .then((raw) => {
+      // null = 主进程还不认识这个窗口（注册晚于 preload 执行）：等 load 再试，
+      // 不能把「没拉到」当成「没有待办」—— 那会把关系图那条跳转静默吞掉
+      if (raw === null) return
+      drainedPending = true
+      if (!Array.isArray(raw)) return
+      for (const item of raw) {
+        if (!item || typeof item !== 'object') continue
+        const { event, data } = item as { event?: unknown; data?: unknown }
+        if (typeof event !== 'string' || event.length === 0) continue
+        pendingInbox.push({ event, data })
+      }
+      flushPendingInbox()
+    })
+    .catch(() => {
+      // 拉不到当作没有待办：一次导航失败不该拖住整个窗口
+    })
+}
+
+requestPendingMessages()
+// preload 的 tsconfig 不含 DOM lib，`window` 没有声明：从 globalThis 取即可
+const host = globalThis as unknown as {
+  addEventListener?: (type: string, listener: () => void) => void
+}
+host.addEventListener?.('load', requestPendingMessages)
+
 contextBridge.exposeInMainWorld('electronAPI', {
   // 网络会话配置（一次性）：把认证 Cookie 写入 session jar，
   // 之后渲染进程 fetch 带 credentials:'include' 自动携带。
@@ -409,8 +489,39 @@ contextBridge.exposeInMainWorld('electronAPI', {
   windowAPI: {
     broadcast: (event: string, data?: unknown) =>
       trackedInvoke('window-broadcast', event, data),
-    sendTo: (target: string, event: string, data?: unknown, raise?: boolean) =>
-      trackedInvoke('window-send-to', target, event, data, raise),
+    /**
+     * 向指定窗口投递消息。
+     *
+     * 第 4 参保持旧的布尔 `raise` 语义（兼容既有调用）；第 5 参可声明
+     * `create`（窗口没开就先拉起）与 `queue`（没开就入队，等它起来补投）。
+     *
+     * ⚠️ 进 IPC 前**压成一个选项参数**（`buildWindowSendOptions`）：主进程只该
+     * 有「一个选项参数」这个概念。曾经这里把 `raise` 与 `options` 摆在两个位置，
+     * 主进程按位读第 4 个，`{create:true}` 落在第 5 位被丢掉 —— 于是「窗口没开
+     * 就拉起」从来没生效，用户看到的是「主窗口没能打开」。契约与互逆用例见
+     * `electron/window-send-options.ts`。
+     *
+     * 返回 `{ delivered, queued }`：`delivered=false` 表示既送不到也拉不起来
+     * （如 lite 版没有该窗口），调用方必须给用户可见提示 —— 静默失败会让
+     * 用户以为按钮坏了。
+     */
+    sendTo: (
+      target: string,
+      event: string,
+      data?: unknown,
+      raise?: boolean,
+      options?: WindowSendOptions,
+    ) =>
+      trackedInvoke(
+        'window-send-to',
+        target,
+        event,
+        data,
+        buildWindowSendOptions(raise, options),
+      ) as Promise<{
+        delivered: boolean
+        queued: boolean
+      }>,
     on: (event: string, handler: (...args: unknown[]) => void) => {
       const wrapper = (_event: unknown, ...args: unknown[]) => handler(...args)
       let byChannel = listenerWrappers.get(handler)
@@ -423,8 +534,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
       if (previous) ipcRenderer.removeListener(event, previous)
       byChannel.set(event, wrapper)
       ipcRenderer.on(event, wrapper)
+
+      // 待投递消息可能早于本监听（窗口刚被拉起时）：登记完立刻补投一次
+      let handlers = eventHandlers.get(event)
+      if (!handlers) {
+        handlers = new Set()
+        eventHandlers.set(event, handlers)
+      }
+      handlers.add(handler)
+      flushPendingInbox()
     },
     off: (event: string, handler: (...args: unknown[]) => void) => {
+      const registered = eventHandlers.get(event)
+      if (registered) {
+        registered.delete(handler)
+        if (registered.size === 0) eventHandlers.delete(event)
+      }
       const byChannel = listenerWrappers.get(handler)
       const wrapper = byChannel?.get(event)
       if (wrapper) {

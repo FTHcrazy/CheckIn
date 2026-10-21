@@ -10,7 +10,7 @@
   border-right: 1px solid var(--app-border);
   background: var(--app-sidebar-bg);
   overflow: hidden;
-  transition: width 200ms ease, opacity 160ms ease;
+  transition: width var(--app-t-slow) var(--app-ease-standard), opacity var(--app-t-fast) var(--app-ease-standard);
 
   &--collapsed {
     width: 0;
@@ -29,7 +29,7 @@
     border: 1px solid transparent;
     border-radius: var(--app-radius-item);
     background: var(--app-input-bg);
-    transition: border-color 120ms ease;
+    transition: border-color var(--app-t-fast) var(--app-ease-standard);
 
     &:focus-within {
       border-color: var(--app-primary);
@@ -131,7 +131,7 @@
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: color 120ms ease, background 120ms ease;
+    transition: color var(--app-t-fast) var(--app-ease-standard), background var(--app-t-fast) var(--app-ease-standard);
 
     &:focus-visible {
       outline: 2px solid var(--app-primary);

@@ -95,7 +95,7 @@
   flex: none;
   font-size: 9px;
   color: var(--app-text-disabled);
-  transition: transform 0.18s ease;
+  transition: transform var(--app-t-normal) var(--app-ease-standard);
 }
 
 .rel-pool__group[data-open="1"] .rel-pool__group-caret {
@@ -106,7 +106,7 @@
 .rel-pool__group-body {
   display: grid;
   grid-template-rows: 0fr;
-  transition: grid-template-rows 0.18s ease;
+  transition: grid-template-rows var(--app-t-normal) var(--app-ease-standard);
 }
 
 .rel-pool__group[data-open="1"] .rel-pool__group-body {

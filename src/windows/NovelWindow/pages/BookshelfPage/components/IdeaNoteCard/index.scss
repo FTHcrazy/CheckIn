@@ -9,10 +9,12 @@
   background: var(--app-surface);
   border: 1px solid var(--app-border);
   border-radius: var(--app-radius-item);
-  transition: box-shadow 0.18s ease;
+  /* 静止态给一档 ambient，hover 抬升换 card 档（与书卡一致的层次语言） */
+  box-shadow: var(--app-shadow-ambient);
+  transition: box-shadow var(--app-t-normal) var(--app-ease-standard);
 
   &:hover {
-    box-shadow: var(--app-shadow-card);
+    box-shadow: var(--app-shadow-raised);
   }
 
   &.is-pinned {
@@ -95,7 +97,8 @@
     box-shadow: var(--app-shadow-card);
     opacity: 0;
     transform: translateY(-2px);
-    transition: opacity 0.15s ease, transform 0.15s ease;
+    transition: opacity var(--app-t-fast) var(--app-ease-standard),
+      transform var(--app-t-fast) var(--app-ease-standard);
   }
 
   &:hover &__actions,

@@ -3,9 +3,9 @@
  *
  * 把「点导出 → 抑制覆盖物 → 等一帧 → 取景 → 弹框落盘」串成一条：
  *
- * 1. `exportPng()` 先给画布根节点挂 `is-exporting`（纯 CSS 抑制，见
- *    `utils/export-png.ts` 的 `EXPORT_HIDE_SELECTORS`），**等两帧**再截 ——
- *    一帧给 React 提交类名，一帧给合成器重绘，否则截出来仍带着工具栏。
+ * 1. `exportPng()` 先给画布根节点与 `document.body` 挂 `is-exporting`（纯 CSS 抑制，
+ *    见 `utils/export-png.ts` 的 `EXPORT_HIDE_SELECTORS`），**等两帧 + 120ms 沉降**
+ *    再截 —— 两帧给 React 提交与合成器排队，沉降等这一帧真正 present。
  * 2. 取景矩形由 `resolveCaptureRect()` 从根节点 `getBoundingClientRect()` 现算，
  *    DPR 也现读（用户把窗口拖到另一块屏时两者都会变，不能缓存）。
  * 3. 拿到字节后立即 `finally` 摘掉类名，再交给 `exportBinary()` 弹框落盘。
@@ -53,6 +53,20 @@ function nextFrame(): Promise<void> {
   return new Promise((resolve) => requestAnimationFrame(() => resolve()));
 }
 
+/**
+ * 合成器沉降时间。
+ *
+ * 真机复现过：点「导出」→ 两帧 rAF → `capturePage` 拿到的仍是**点击那一帧**
+ * （工具栏、下拉菜单、甚至「正在导出」的 loading 都在图里）。rAF 只保证脚本
+ * 跑在这一帧的绘制前，不保证这一帧已经 present 给 GPU。等一小段真实时间，
+ * 让 Chromium 走完 present → capture 的往返。
+ */
+const EXPORT_SETTLE_MS = 120;
+
+function settle(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, EXPORT_SETTLE_MS));
+}
+
 export function useExportPng({ rootRef, workName }: UseExportPngOptions): UseExportPngResult {
   const [exporting, setExporting] = useState(false);
   // 防连点：state 更新是异步的，同帧点两次会用同一个 exporting=false 判断
@@ -67,10 +81,18 @@ export function useExportPng({ rootRef, workName }: UseExportPngOptions): UseExp
     try {
       if (!root) return "failed";
 
-      // 先抑制覆盖物，再等两帧让类名生效并重绘
+      // 先抑制覆盖物，再等两帧让类名生效并重绘。
+      // body 上那份是必须的：Dropdown 菜单挂在 body 的 portal 里，画布选择器够不到，
+      // 而用户正是从「导出」这颗按钮点的，菜单位置压在图面右上角。
       root.classList.add(EXPORT_CLASS);
+      document.body.classList.add(EXPORT_CLASS);
       await nextFrame();
       await nextFrame();
+      // 两帧只保证「React 提交了、合成器排了队」，不代表新帧已经 present ——
+      // 真机上 `capturePage` 偶尔仍返回点按钮那一帧（工具栏 + 下拉菜单都在）。
+      // 因此再给合成器一段固定时间；工具栏在导出态是 display:none，
+      // 这段时间之后就算帧略旧也不会带上按钮。
+      await settle();
 
       const rect = resolveCaptureRect(root.getBoundingClientRect());
       if (!isRectUsable(rect)) return "failed";
@@ -83,6 +105,7 @@ export function useExportPng({ rootRef, workName }: UseExportPngOptions): UseExp
     } finally {
       const rootNode = rootRef.current;
       rootNode?.classList.remove(EXPORT_CLASS);
+      document.body.classList.remove(EXPORT_CLASS);
       busyRef.current = false;
       setExporting(false);
     }

@@ -107,7 +107,7 @@ export default function StatusBar({
         >
           <span
             className={`nv-status__fill${progress >= 100 ? " is-done" : ""}`}
-            style={{ width: `${progress}%` }}
+            style={{ transform: `scaleX(${progress / 100})` }}
           />
         </div>
         <span className="nv-status__percent">{progress}%</span>

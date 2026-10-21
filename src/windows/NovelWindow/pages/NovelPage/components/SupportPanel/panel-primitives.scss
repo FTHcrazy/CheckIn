@@ -29,7 +29,7 @@
     border: 1px solid var(--app-border);
     border-radius: 9px;
     background: var(--app-input-bg);
-    transition: border-color 150ms ease, box-shadow 150ms ease;
+    transition: border-color var(--app-t-fast) var(--app-ease-standard), box-shadow var(--app-t-fast) var(--app-ease-standard);
 
     &:focus-within {
       border-color: var(--app-primary);

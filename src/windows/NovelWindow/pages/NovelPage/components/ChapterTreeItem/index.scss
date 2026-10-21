@@ -33,7 +33,7 @@
     color: var(--app-text-secondary);
     font-size: 12px;
     text-align: left;
-    transition: background 120ms ease, color 120ms ease;
+    transition: background var(--app-t-fast) var(--app-ease-standard), color var(--app-t-fast) var(--app-ease-standard);
 
     &:hover {
       background: var(--app-surface-hover);
@@ -103,8 +103,8 @@
       border: 1.5px solid var(--app-text-muted);
       background: transparent;
       box-sizing: content-box;
-      transition: border-color 120ms ease, background 120ms ease,
-        transform 120ms ease;
+      transition: border-color var(--app-t-fast) var(--app-ease-standard), background var(--app-t-fast) var(--app-ease-standard),
+        transform var(--app-t-fast) var(--app-ease-standard);
     }
 
     &:hover {
@@ -199,7 +199,7 @@
     justify-content: flex-end;
     margin: 0 -3.5px;
     opacity: 0;
-    transition: width 140ms ease, opacity 140ms ease, color 120ms ease;
+    transition: width var(--app-t-fast) var(--app-ease-standard), opacity var(--app-t-fast) var(--app-ease-standard), color var(--app-t-fast) var(--app-ease-standard);
     font-size: 12px;
 
     &:hover {

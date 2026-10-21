@@ -27,12 +27,15 @@
   border-radius: var(--app-radius-panel);
   overflow: hidden;
   cursor: pointer;
-  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  /* 静止态给一档 ambient 环境阴影，避免「描边卡」平铺；hover 抬升换 raised 档 */
+  box-shadow: var(--app-shadow-ambient);
+  transition: transform var(--app-t-normal) var(--app-ease-standard),
+    box-shadow var(--app-t-normal) var(--app-ease-standard);
 
   &:hover,
   &:focus-visible {
     transform: translateY(-2px);
-    box-shadow: var(--app-shadow-pop);
+    box-shadow: var(--app-shadow-raised);
   }
 
   &:focus-visible {
@@ -69,6 +72,8 @@
     align-items: center;
     gap: 12px;
     padding: 8px 12px 8px 8px;
+    /* 列表行满宽、不浮起：静止态也清掉基类的 ambient 环境阴影 */
+    box-shadow: none;
 
     &:hover,
     &:focus-visible {
@@ -126,7 +131,8 @@
     .bs-card__go {
       font-size: 12px;
       color: var(--app-text-disabled);
-      transition: color 160ms ease, transform 160ms ease;
+      transition: color var(--app-t-fast) var(--app-ease-standard),
+        transform var(--app-t-fast) var(--app-ease-standard);
     }
 
     &:hover .bs-card__go {

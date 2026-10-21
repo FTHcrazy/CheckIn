@@ -178,10 +178,13 @@
 
   &__fill {
     display: block;
+    width: 100%;
     height: 100%;
     border-radius: var(--app-radius-pill);
     background: var(--app-accent-blue);
-    transition: width 0.22s ease;
+    transform-origin: left center;
+    /* 只动 transform（合成属性），禁 transition width（触发 reflow） */
+    transition: transform var(--app-t-slow) var(--app-ease-standard);
   }
 
   &__progresslabel {

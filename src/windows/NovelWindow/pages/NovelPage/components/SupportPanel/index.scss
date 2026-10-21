@@ -31,7 +31,7 @@
   overflow: hidden;
   border-left: 1px solid var(--app-border);
   background: var(--app-surface-alt);
-  transition: width 220ms cubic-bezier(0.4, 0, 0.2, 1), opacity 160ms ease;
+  transition: width var(--app-t-slow) var(--app-ease-standard), opacity var(--app-t-fast) var(--app-ease-standard);
 
   &.is-collapsed {
     width: 0 !important;
@@ -57,7 +57,7 @@
       width: 1px;
       height: 100%;
       background: transparent;
-      transition: background 150ms ease;
+      transition: background var(--app-t-fast) var(--app-ease-standard);
     }
 
     &:hover::after,

@@ -233,11 +233,10 @@ describe("P2-1 接线（App / NovelPage / BookshelfPage 源码级）", () => {
   const strip = (s: string): string =>
     s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
 
-  it("App 的 goToView 就是 setView，并作为 onGoToView 传给 NovelPage", () => {
+  it("App 的 goToView 来自跳转 store，并作为 onGoToView 传给 NovelPage", () => {
     const app = strip(read("src/windows/NovelWindow/App.tsx"));
-    expect(app).toMatch(
-      /const goToView = useCallback\(\(target: GuideView\) => setView\(target\)/,
-    );
+    // 视图状态已收口 useEntityJumpStore：App 只订阅并透传，不再自己持 setView
+    expect(app).toContain("const goToView = useEntityJumpStore((s) => s.goToView);");
     expect(app).toContain("onGoToView={goToView}");
   });
 

@@ -64,3 +64,15 @@
     }
   }
 }
+
+/* 关系图「保存后跳转」确认框：两段说明之间留一口气，别糊成一段 */
+.nv-jump__text {
+  margin: 0 0 6px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--app-text-secondary);
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+}

@@ -175,6 +175,11 @@ describe("preload 通路", () => {
   });
 
   it("sendTo 支持 raise（「去右栏删除」要把主窗口抬起来，否则看起来像没反应）", () => {
-    expect(PRELOAD).toContain("sendTo: (target: string, event: string, data?: unknown, raise?: boolean)");
+    // 签名是多行的：只钉两个关键参数，不钉排版
+    expect(PRELOAD).toContain("sendTo: (");
+    expect(PRELOAD).toContain("raise?: boolean");
+    // 第 5 参：窗口没开时先拉起 / 先排队（R27 起的统一投递语义）。
+    // 选项类型来自 `electron/window-send-options.ts`（跨进程契约单一事实源）
+    expect(PRELOAD).toContain("options?: WindowSendOptions");
   });
 });

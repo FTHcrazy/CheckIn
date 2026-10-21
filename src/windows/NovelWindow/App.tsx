@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect } from "react";
 import {
   BookOutlined,
   QuestionCircleOutlined,
@@ -7,14 +7,16 @@ import {
 import { App as AntdApp, Badge, Button, Tooltip } from "antd";
 import HelpCenter from "@/shared/components/HelpCenter";
 import WindowHeader from "@/shared/components/WindowHeader";
-import { HELP_COPY, type GuideView } from "@/shared/novel/guide-copy";
+import { HELP_COPY } from "@/shared/novel/guide-copy";
 import { NOVEL_HELP_DOC } from "@/shared/novel/guide-doc";
 import { IS_NOVEL_EDITION } from "@/shared/edition";
 import { matchKeyEvent, useShortcutBindings } from "@/shared/shortcuts";
 // 根级样式由 main.tsx 引入（两者都引会重复插入同一份 CSS）
 import BookshelfPage from "./pages/BookshelfPage/BookshelfPage";
-import NovelPage, { type OpenWorkRequest } from "./pages/NovelPage/NovelPage";
+import NovelPage from "./pages/NovelPage/NovelPage";
 import { selectHelpBadgeVisible, useGuideStore } from "./store/useGuideStore";
+import { useEntityJumpStore } from "./store/useEntityJumpStore";
+import { readEntityOpenPayload } from "./utils/entity-jump";
 
 /**
  * NovelWindow —— CheckIn 小说窗口
@@ -73,36 +75,57 @@ function HelpEntryButton() {
 }
 
 export default function NovelWindowApp() {
-  const [view, setView] = useState<"shelf" | "editor">("shelf");
-  const [editorMounted, setEditorMounted] = useState(false);
-  const [openRequest, setOpenRequest] = useState<OpenWorkRequest | null>(null);
-  // 编辑器空书架空态的「导入书籍」请求（幂等 token）：转交书架发起导入
-  const [importRequest, setImportRequest] = useState<number | null>(null);
+  // 视图与跳转状态机收口在 store（见 store/useEntityJumpStore.ts）：
+  // IPC 监听只注册一次，判定永远读 store 的当下状态，没有过期闭包
+  const view = useEntityJumpStore((s) => s.view);
+  const editorMounted = useEntityJumpStore((s) => s.editorMounted);
+  const openRequest = useEntityJumpStore((s) => s.openRequest);
+  const importRequest = useEntityJumpStore((s) => s.importRequest);
+  const openWork = useEntityJumpStore((s) => s.openWork);
+  const consumeOpenRequest = useEntityJumpStore((s) => s.consumeOpenRequest);
+  const backToShelf = useEntityJumpStore((s) => s.backToShelf);
+  const goToView = useEntityJumpStore((s) => s.goToView);
+  const requestImport = useEntityJumpStore((s) => s.requestImport);
+  const consumeImportRequest = useEntityJumpStore((s) => s.consumeImportRequest);
+  const setBridge = useEntityJumpStore((s) => s.setBridge);
+  const pendingJump = useEntityJumpStore((s) => s.pending);
+  const jumpSaving = useEntityJumpStore((s) => s.saving);
+  const deferredJump = useEntityJumpStore((s) => s.deferred);
+  const handoff = useEntityJumpStore((s) => s.handoff);
+  const retryDeferred = useEntityJumpStore((s) => s.retryDeferred);
+  const confirmEntityJump = useEntityJumpStore((s) => s.confirmEntityJump);
+  const cancelEntityJump = useEntityJumpStore((s) => s.cancelEntityJump);
 
-  /** 书架 → 编辑器：懒挂载 + 派发打开请求 + 切视图 */
-  const openWork = useCallback((workId: string, chapterId?: string) => {
-    setEditorMounted(true);
-    setOpenRequest({ workId, chapterId, token: Date.now() });
-    setView("editor");
-  }, []);
-
-  const consumeOpenRequest = useCallback(() => setOpenRequest(null), []);
-
-  const backToShelf = useCallback(() => setView("shelf"), []);
+  // ── 关系图 → 「在主窗口打开资料卡」（R27 / S6）──
+  // 落点判定都在 store 的状态机里：书架直切（编辑器挂载过）/ 新窗口先恢复
+  // 编辑器再重判 / 同书直开卡 / 异书只弹确认框 / 句柄缺席挂起重试。
+  useEffect(() => {
+    const api = window.electronAPI?.windowAPI;
+    if (!api) return undefined;
+    const handler = (...args: unknown[]): void => {
+      const payload = readEntityOpenPayload(args[0]);
+      if (!payload) return;
+      handoff(payload);
+    };
+    // **只注册一次**：此前监听随 view 反复摘挂，「off 与 on 之间」到达的
+    // 消息会被静默丢掉 —— 表现为「只唤起窗口，什么都不发生」。
+    api.on("rel-open-entity", handler);
+    return () => api.off("rel-open-entity", handler);
+  }, [handoff]);
 
   /**
-   * 引导「下一步」跨视图回书架时的切视图收口（第 5 → 第 6 步，1.4x）。
-   * 只有窗口根同时持有两个视图的显隐开关，故由这里实现并注入编辑器页。
+   * defer 的兜底重试。
+   *
+   * 挂起的跳转靠「句柄 / 视图变化」触发重判，但稳定态下这些依赖不再变化
+   * （比如句柄恰好在一次 effect 清理的空窗里被摘走）—— 消息会永远卡住，
+   * 表现为「只唤起窗口，不切书也不弹窗」。挂起期间每 300ms 重判一次：
+   * 还没就绪就继续挂，能判定就消费掉（store 里 deferred 归零即停）。
    */
-  const goToView = useCallback((target: GuideView) => setView(target), []);
-
-  /** 编辑器 → 书架：请求发起导入。切回书架让导入进度（顶栏按钮 loading）可见 */
-  const requestImport = useCallback(() => {
-    setView("shelf");
-    setImportRequest(Date.now());
-  }, []);
-
-  const consumeImportRequest = useCallback(() => setImportRequest(null), []);
+  useEffect(() => {
+    if (view !== "editor" || !deferredJump) return undefined;
+    const timer = window.setInterval(() => retryDeferred(), 300);
+    return () => window.clearInterval(timer);
+  }, [view, deferredJump, retryDeferred]);
 
   // ── 新手引导与帮助中心（L1/L3 编排在这一层：它要同时看见两个视图）──
   const hydrateGuide = useGuideStore((state) => state.hydrate);
@@ -198,6 +221,11 @@ export default function NovelWindowApp() {
                   onImportBook={requestImport}
                   visible={view === "editor"}
                   onGoToView={goToView}
+                  onEditorBridge={setBridge}
+                  entityJump={pendingJump}
+                  entityJumpSaving={jumpSaving}
+                  onConfirmEntityJump={() => void confirmEntityJump()}
+                  onCancelEntityJump={cancelEntityJump}
                 />
               </div>
             )}

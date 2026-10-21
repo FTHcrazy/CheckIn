@@ -14,13 +14,13 @@
   border: 1px solid var(--app-border);
   border-left: 3px solid var(--rel-node-color);
   background: var(--app-surface-elevated);
-  box-shadow: 0 1px 3px var(--app-mask);
+  box-shadow: var(--app-shadow-ambient);
   cursor: grab;
-  transition: box-shadow 0.15s ease, border-color 0.15s ease;
+  transition: box-shadow var(--app-t-fast) var(--app-ease-standard), border-color var(--app-t-fast) var(--app-ease-standard);
 
   &:hover {
     border-color: var(--app-border-strong);
-    box-shadow: 0 3px 10px var(--app-mask);
+    box-shadow: var(--app-shadow-raised);
   }
 
   &:active {
@@ -61,7 +61,7 @@
   border: 2px solid var(--app-surface);
   background: var(--rel-node-color);
   opacity: 0;
-  transition: opacity 0.12s ease, transform 0.12s ease;
+  transition: opacity var(--app-t-fast) var(--app-ease-standard), transform var(--app-t-fast) var(--app-ease-standard);
 
   &--in {
     left: -5px;
@@ -108,7 +108,7 @@
   padding: 0 7px;
   border-radius: 999px;
   // 悬停时会展开成全名，起点宽度小才不至于一屏糊住
-  transition: box-shadow 0.15s ease, border-color 0.15s ease, min-width 0.12s ease;
+  transition: box-shadow var(--app-t-fast) var(--app-ease-standard), border-color var(--app-t-fast) var(--app-ease-standard), min-width var(--app-t-fast) var(--app-ease-standard);
 
   .rel-node__name--on-hover {
     display: none;

@@ -46,7 +46,7 @@
     text-decoration: underline;
     opacity: 0.85;
     cursor: pointer;
-    transition: opacity 120ms ease;
+    transition: opacity var(--app-t-fast) var(--app-ease-standard);
   }
 
   /* 只改 opacity：它不是组件库接管的属性，留给属性规则即可 */

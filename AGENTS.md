@@ -788,6 +788,102 @@ SettingsWindow 的「外观」分区是全版本共用的设置面板（full/nov
 | `CharacterPack/styles/pack-widget.scss` | 「清零点」mixin（自带造型控件复用） |
 | `CharacterPack/pack-ui-kit.test.ts` | 守卫测试：源码里不得出现原生表单控件、自带造型控件必须以 `.ant-btn` 承载 |
 
+### 6.1.3 动效与立体感规范（motion / elevation）
+
+> 完整背景见 `docs/novel-visual-polish-plan.md`。定位锚点：柔和 · 轻量 · 卡片式 · 桌面 · 写作工具。
+> 一句话原则：**立体感走「明度分层 + 细边框 + 轻阴影」三件套的「轻盈抬升」，动效走「≤260ms 克制 + 按下即反馈」，坚决避免厚重浮雕、炫技动效。**
+
+**两条不可破的红线（贯穿所有动效/立体感工作）：**
+
+1. **暗色（midnight）靠「明度 + 描边」不靠阴影**——黑底阴影打不出来，立体感由更亮的
+   `--app-surface-elevated` 面 + 描边兜底；hover 不用微弱透明度变化（人眼难察觉），
+   改用「浅灰背景 + 柔和高亮」。
+2. **动效只为确认交互、不为娱乐**——每一帧都要回答「刚才发生了什么」；**编辑正文区是「零动效区」**
+   （不做 hover 位移/阴影跳动，只保留焦点态 + 光标），立体感全交给周围面板。
+
+**（一）阴影分级（5 档，`themes.scss` 每套主题各写色值，按主题色相 tint，禁用单一纯黑）：**
+
+| Token | 用途 |
+|-------|------|
+| `--app-shadow-ambient` | 静止卡片环境阴影（最轻，解决「静止态全平」） |
+| `--app-shadow-card` | 内容面卡片基准 |
+| `--app-shadow-raised` | hover 抬升（与 `translateY(-2px)` 配套） |
+| `--app-shadow-pop` | 浮层 / 抽屉 / 右键菜单 |
+| `--app-shadow-window` | 窗口外壳（inset） |
+
+- 静止态就要有「内容面浮起」的层次，**不要把阴影只留给 `:hover`**（那是「隐藏反馈」，
+  静止时 `bg→surface` 只剩 1px 描边，Z 轴会塌）。
+- **窗口内部组件的普通外阴影是安全的**；只有窗口外壳 `.window-shell` 这一层受限
+  （透明窗口方形边界裁掉外阴影，故用 inset）。贴住窗口四角/外壳边缘的全屏面板慎用外阴影（转描边或 inset）。
+
+**（二）动效标尺（motion token，已定义在 `themes.scss` 的 `:root` 块，不随主题变）：**
+
+| Token | 值 | 用途 |
+|-------|-----|------|
+| `--app-t-instant` | 80ms | 按下（press）/ 焦点环 |
+| `--app-t-fast` | 120ms | 颜色 / 描边 / 背景微反馈、按钮 hover、图标态 |
+| `--app-t-normal` | 180ms | hover 抬升、卡片、选中态、侧栏项 |
+| `--app-t-slow` | 260ms | 抽屉 / 面板滑动、入场（上限，不用 300ms+） |
+| `--app-ease-standard` | `cubic-bezier(0.4, 0, 0.2, 1)` | 默认：hover / 状态切换 |
+| `--app-ease-emphasized` | `cubic-bezier(0.3, 1, 0.5, 1)` | 强调入场：模态 / 弹层 |
+| `--app-ease-spring` | `cubic-bezier(0.32, 0.72, 0, 1)` | 抽屉 / 面板、拖拽释放（仅拖拽允许轻微回弹） |
+
+- **散落时长必须收敛**：代码里残留的 100/140/150/160/200/220/240/320ms 一律归入上表三档
+  （`fast`/`normal`/`slow`），`ease` / 裸 `cubic-bezier` 归入 `--app-ease-*`。
+- **组合动效走 `shared/styles/motion.scss` 的 mixin**（见下），不要在每个组件里手拼
+  `transition: ... var(--app-t-*) var(--app-ease-*)`。
+- **按下即反馈（pointer-down，Apple 原则）**：`transform: scale(0.97)` 用 `--app-t-instant`，
+  反馈在按下而非释放。
+- **enter/exit 非对称**：进场用 emphasized 稍长（260ms），退场用更短更快——「来得从容、走得利落」。
+
+**（三）性能与可访问性硬约束：**
+
+- **只动 `transform / opacity`**（合成属性，不触 layout/paint）；**禁止 transition
+  `width / height / margin` 等布局属性**（历史反例：StatusBar 进度条 `width 320ms` 已修为 `transform: scaleX`）。
+- 阴影动画是重绘大户：hover 时「预置阴影层 + 只切透明度」，避免每帧重算多层阴影。
+- `will-change` 只给抽屉滑入、卡片抬升这类高频元素，**不要**给每张 hover 卡都加（内存膨胀）。
+- 窗口 resize / 内容重渲染避免 `@keyframes` 入场（会被钉在 0 帧），优先 CSS transition（可中断、可重定目标）。
+- 全局支持 `prefers-reduced-motion: reduce`：位移/缩放降级为「即时状态 + 轻微 opacity」，
+  保留内容可见性。收口在 `motion.scss`，各组件引入即可。
+
+**（四）可复用动画 mixin（`src/shared/styles/motion.scss`）**：
+
+引入方式：`@use "../../../shared/styles/motion" as motion;`（层级按目录深度算，见 §6.1）。
+提供：
+
+| Mixin | 作用 |
+|-------|------|
+| `motion.transition-fast` / `transition-normal` / `transition-slow` | 声明指定属性的 transition（用对应 token） |
+| `motion.transition-token` | 声明 transition 但只吃已 token 化的时长/缓动 |
+| `motion.hover-lift` | 卡片 hover 抬升（`translateY(-2px)` + `--app-shadow-raised`） |
+| `motion.press-feedback` | 按下回弹（`scale(0.97)`，`--app-t-instant`） |
+| `motion.rise-in` | 内容进场（`fadeRise`，配合 stagger 用） |
+| `motion.reduced-motion` | `prefers-reduced-motion` 统一降级 |
+
+### 6.1.4 图形素材主题化规范（含 Lottie）
+
+> 完整规则见 `docs/graphic-theming-spec.md`。核心一句话：
+> **图形主题化只有两条正道——要么「跟着文字色走」（`currentColor`），要么「引用语义 token」（`var(--app-*)`）。禁止把色值钉死在资源里，禁止一主题复制一份资源。**
+
+**用色三档纪律（防破碎感的根本——不是「颜色不同」而是「同一类东西用了不同策略」）：**
+
+| 等级 | 适用 | 规则 |
+|------|------|------|
+| **L1** 纯文字色 | 单色线形图标、分割线、图标默认态 | `fill/stroke = currentColor`，零成本换肤 |
+| **L2** 语义 token | 多色图标/徽标里的主色/状态色 | 只引用 `--app-primary/--app-success/--app-accent-*` 等既有 token，**禁止自造「图形专用」色值 token** |
+| **L3** 插画级多色 | 空态插画、引导图、复杂 Lottie | **只分「浅/暗」两套**（浅色三主题共用浅套、midnight 用暗套），**不做四套** |
+
+**Lottie 专项：**
+
+- **首选**：JSON 里用「哨兵色占位」→ 运行时替换成 `--app-*` 值，监听 `data-theme` 重渲染；
+- **次选**：复杂多色插画动效才用「浅/暗两套」；
+- **明确禁止**：`filter: hue-rotate()` 换肤（污染背景/阴影/透明度）、四套复制、新引入无语义色值；
+- **收口**：未来所有 Lottie 从统一 wrapper（`ThemeLottie`/`ThemedGraphic`）走，禁止每处各写一套换肤逻辑；
+- **选型门槛**：图标微动效/加载动效优先用 CSS/SVG SMIL/framer-motion（项目已有），
+  **不为几个小动效引入 lottie-web（~300KB）**，只有设计侧交付复杂 AE 导出的插画级动效才上 Lottie 运行时；
+- **性能/可访问性**：隐藏/离屏即 `pause/destroy`，空态类动效播完即停；装饰性动效加 `aria-hidden`；
+  尊重 `prefers-reduced-motion` 时降级为静态首帧。
+
 ### 6.2 状态管理规范
 
 **逻辑抽取标准**：
@@ -829,6 +925,31 @@ function TodoPage() {
    effect 反复重跑 → 加载态闪现 / 请求重复发出）；
 2. 父层任何一次重渲染都会清空子组件本应保留的结果（如跳章保存触发数据更新）；
 3. 面板按条件渲染卸载后，切回来希望保留上次的输入与结果（组件卸载会丢状态）。
+
+**出现下列任一信号时，优先把业务状态收进 Zustand，而不是继续在组件里堆 ref / effect**：
+
+1. **有跨组件闭包风险**：多个 `useEffect` / `useCallback` / `useRef` 靠彼此的身份与依赖
+   数组互相驱动，回调里读到的 state 是「挂载那一刻」的旧值（过期闭包），需要靠
+   `ref` 手动镜像才能读到最新值；
+2. **判定依赖「当下」的全局 state**：动作的落点由 `view` / 当前选中项 / 句柄是否就绪等
+   **多个全局量**共同决定，且这些量会随时间变（切换视图、数据装载完成、窗口被拉起）；
+   组件闭包抓的是快照，而判定必须用 `store.getState()` 那一刻的真实值；
+3. **同一个业务被反复报 bug、多轮都没修干净**：症状往往不是逻辑错，而是
+   「散落的 ref + 多个 effect」之间的时序竞态（挂起的消息重判在错误时机、
+   视图切换间隙被误触发、监听摘挂之间丢事件……）。**别再打补丁**——把状态机
+   收进一个 store，判定读 `get()` 的当下状态，组件只剩「订阅 + 派发」。
+
+> **反例（真实踩坑记录）**：关系图「在主窗口打开资料卡」的跳转状态机，最初散在 App 组件的
+> `editorBridgeRef` + `pendingJump` + `deferredJumpRef` + `lastJumpRef` 里，靠三个
+> `useEffect` 互相触发，连续修了四轮仍复现「先切书再弹窗 / 只唤起不切书 / 返回书架却切书」。
+> 收口成 `store/useEntityJumpStore.ts` 后，判定统一走 `get()` 的当下状态、监听只注册一次、
+> `backToShelf` 同步作废挂起项，三症状一次性消失。**教训：跨窗口事件 + 视图切换 + 句柄生命周期
+> 三者交织的状态，不要用组件 ref/effect 拼——收进 store。**
+
+**收口原则**：状态机逻辑（判定 / 去重 / 作废 / 重试）全部纯函数化进 store，
+组件**只负责订阅 + 派发**，不要留「负责同一业务的两个 effect 各自维护一部分状态」。
+IPC / 事件监听**只注册一次**，handler 里只做 `handoff(payload)` 交给 store 判定，
+不要在监听里内联业务分支。
 
 store 只存状态与调度动作，通过模块级「runner 注册」拿到数据层函数
 （不在 store 里 import hooks / service），组件挂载时注册、卸载时注销，
@@ -1485,6 +1606,6 @@ function initializeDataDb(db: Database) {
 
 ---
 
-**文档版本**: 2.3  
-**最后更新**: 2026-10-11  
+**文档版本**: 2.4  
+**最后更新**: 2026-10-21  
 **维护者**: CheckIn 开发团队

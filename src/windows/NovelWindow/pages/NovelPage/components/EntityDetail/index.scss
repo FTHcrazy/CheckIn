@@ -9,7 +9,7 @@
 .nv-edetail {
   display: flex;
   flex-direction: column;
-  animation: nv-edetail-slide-in 240ms cubic-bezier(0.3, 1, 0.5, 1);
+  animation: nv-edetail-slide-in var(--app-t-slow) var(--app-ease-emphasized);
 
   &__top {
     display: flex;

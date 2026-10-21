@@ -19,7 +19,7 @@
     border: 1px solid var(--app-border);
     border-radius: var(--app-radius-panel);
     background: var(--app-surface);
-    transition: border-color 160ms ease, box-shadow 160ms ease;
+    transition: border-color var(--app-t-fast) var(--app-ease-standard), box-shadow var(--app-t-fast) var(--app-ease-standard);
 
     &:focus-within {
       border-color: var(--app-primary);
@@ -103,7 +103,7 @@
 
     margin-left: auto;
     justify-content: center;
-    transition: background 150ms ease, transform 100ms ease;
+    transition: background var(--app-t-fast) var(--app-ease-standard), transform var(--app-t-instant) var(--app-ease-standard);
 
     &:active {
       transform: scale(0.97);
@@ -131,7 +131,7 @@
     border: 1px solid var(--app-border);
     border-radius: var(--app-radius-item);
     background: var(--app-surface);
-    transition: border-color 160ms ease, box-shadow 160ms ease;
+    transition: border-color var(--app-t-fast) var(--app-ease-standard), box-shadow var(--app-t-fast) var(--app-ease-standard);
 
     &:hover {
       border-color: var(--app-border-strong);
@@ -196,7 +196,7 @@
     gap: 1px;
     margin-left: auto;
     opacity: 0;
-    transition: opacity 150ms ease;
+    transition: opacity var(--app-t-fast) var(--app-ease-standard);
   }
 
   &__card:hover &__acts,

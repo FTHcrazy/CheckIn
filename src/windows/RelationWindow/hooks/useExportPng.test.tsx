@@ -140,4 +140,25 @@ describe("useExportPng：导出编排", () => {
     expect(outcome).toBe("failed");
     expect(rootRef.current.classList.contains(EXPORT_CLASS)).toBe(false);
   });
+
+  it("取景那一刻 body 上也挂着 is-exporting（antd 浮层 portal 不在画布子树里）", async () => {
+    // Dropdown 菜单挂在 body 上，画布级选择器够不到；body 那份是它的唯一落点
+    let bodyDuringCapture: boolean | null = null;
+    installApi({
+      captureWindow: async () => {
+        bodyDuringCapture = document.body.classList.contains(EXPORT_CLASS);
+        return { ok: true, png: new Uint8Array(8), width: 800, height: 600 };
+      },
+    });
+    const { result, rootRef } = renderExport();
+    rootRef.current = makeRoot();
+
+    await act(async () => {
+      await result.current.exportPng();
+    });
+
+    expect(bodyDuringCapture).toBe(true);
+    // 导出结束必须摘干净：body 上残留会让整个窗口的下拉/提示一起消失
+    expect(document.body.classList.contains(EXPORT_CLASS)).toBe(false);
+  });
 });

@@ -81,6 +81,22 @@
  *   2. ThemeProvider 在 <html> 上写 data-theme="aurora|cream|mint|midnight"
  */
 
+/* ── 动效标尺（motion token，随全局、不随主题）──
+ * 时长 / 缓动四套主题共用，故不放 data-theme 块（放了会四套重复且无意义）。
+ * 见 docs/novel-visual-polish-plan.md §5：收敛散落的 --nv-t-fast 等私有写法。 */
+:root {
+  /* 时长桶（写作工具偏克制，上限 260ms，不用 300ms+ 长动效） */
+  --app-t-instant: 80ms;   /* 按下 press / 焦点环 */
+  --app-t-fast: 120ms;     /* 按钮 hover / 图标态 / 颜色微反馈 */
+  --app-t-normal: 180ms;   /* 卡片 hover 抬升 / 选中态 */
+  --app-t-slow: 260ms;     /* 抽屉 / 面板滑动 / 入场 */
+
+  /* 缓动（3 条够用，与现有抽屉 / EntityDetail 入场曲线一致） */
+  --app-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);    /* 默认：hover / 状态切换 */
+  --app-ease-emphasized: cubic-bezier(0.3, 1, 0.5, 1);  /* 强调入场：模态 / 弹层 */
+  --app-ease-spring: cubic-bezier(0.32, 0.72, 0, 1);    /* 抽屉 / 面板、拖拽释放 */
+}
+
 :root,
 [data-theme="aurora"] {
   /* ── 底色与面板 ── */
@@ -155,8 +171,12 @@
   --app-radius-item: 10px;
   --app-radius-pill: 999px;
 
-  /* ── 阴影（软投影，避免生硬黑边）── */
+  /* ── 阴影（软投影，避免生硬黑边；五档分级见 docs/novel-visual-polish-plan.md）──
+   * ambient=静止卡片环境阴影（最轻）/ card=内容面卡片基准 / raised=hover 抬升 /
+   * pop=浮层·抽屉·右键菜单 / window=窗口外壳（inset） */
+  --app-shadow-ambient: 0 1px 3px rgba(53, 64, 101, 0.04);
   --app-shadow-card: 0 6px 16px rgba(53, 64, 101, 0.07);
+  --app-shadow-raised: 0 8px 20px rgba(53, 64, 101, 0.1);
   --app-shadow-pop: 0 10px 30px rgba(53, 64, 101, 0.14);
   // 窗口投影：必须是 inset（画在圆角内侧）。常规外阴影会被窗口方形边界裁掉，
   // 只剩直角残影，详见 shared/styles/window-shell.scss
@@ -242,7 +262,9 @@
   --app-radius-pill: 999px;
 
   /* ── 阴影 ── */
+  --app-shadow-ambient: 0 1px 3px rgba(120, 95, 60, 0.05);
   --app-shadow-card: 0 6px 16px rgba(120, 95, 60, 0.07);
+  --app-shadow-raised: 0 8px 20px rgba(120, 95, 60, 0.11);
   --app-shadow-pop: 0 10px 30px rgba(120, 95, 60, 0.14);
   --app-shadow-window: inset 0 1px 2px rgba(92, 72, 44, 0.08), inset 0 -2px 6px rgba(92, 72, 44, 0.07);
 
@@ -329,7 +351,9 @@
   --app-radius-pill: 999px;
 
   /* ── 阴影 ── */
+  --app-shadow-ambient: 0 1px 3px rgba(30, 90, 66, 0.04);
   --app-shadow-card: 0 6px 16px rgba(30, 90, 66, 0.07);
+  --app-shadow-raised: 0 8px 20px rgba(30, 90, 66, 0.1);
   --app-shadow-pop: 0 10px 30px rgba(30, 90, 66, 0.14);
   --app-shadow-window: inset 0 1px 2px rgba(18, 62, 46, 0.07), inset 0 -2px 6px rgba(18, 62, 46, 0.06);
 
@@ -412,8 +436,10 @@
   --app-radius-item: 10px;
   --app-radius-pill: 999px;
 
-  /* ── 阴影 ── */
+  /* ── 阴影（暗色下阴影感知弱，用更高不透明度补偿；立体感另靠明度分层+描边兜底）── */
+  --app-shadow-ambient: 0 1px 3px rgba(0, 0, 0, 0.28);
   --app-shadow-card: 0 6px 18px rgba(0, 0, 0, 0.32);
+  --app-shadow-raised: 0 8px 22px rgba(0, 0, 0, 0.42);
   --app-shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.45);
   --app-shadow-window: inset 0 1px 2px rgba(0, 0, 0, 0.45), inset 0 -2px 6px rgba(0, 0, 0, 0.35);
 

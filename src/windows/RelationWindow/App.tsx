@@ -396,9 +396,14 @@ export default function RelationWindowApp() {
   /** 跨窗口导航：抬起主窗口并打开该要素的资料卡（双击节点 / 详情卡按钮共用） */
   const openEntityInMain = useCallback(
     (entityId: string) => {
-      void focusEntityInMainWindow(data?.workId ?? "", entityId);
+      void (async () => {
+        const ok = await focusEntityInMainWindow(data?.workId ?? "", entityId);
+        if (!ok) {
+          showFeedback("error", "主窗口没能打开，请在主窗口里手动找到这条要素");
+        }
+      })();
     },
-    [data?.workId],
+    [data?.workId, showFeedback],
   );
 
   const handleSaveNote = useCallback(

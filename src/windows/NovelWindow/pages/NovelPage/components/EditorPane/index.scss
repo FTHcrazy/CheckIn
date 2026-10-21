@@ -11,6 +11,12 @@
   background: var(--app-surface);
   overflow: hidden;
   position: relative;
+  /* 内容面浮起感：编辑器是最高频主场景里最大的一块 surface，与页面底
+     --app-bg 只差 ~1.04 亮度，不给一档 ambient 环境阴影就是「平铺」。
+     静止态阴影即可（编辑区是零动效区，不做 hover 抬升），向两侧溢出的
+     部分会被左右栏（sidebar-bg / surface-alt）盖住，上下投在顶栏/状态栏
+     上仍然成立 —— 恰好构成「编辑器浮起、左右栏后退」的 Z 递进 */
+  box-shadow: var(--app-shadow-ambient);
   /* 正文栏宽的容器查询基准：拉伸窗口时按「码字区实际宽度」分档，
      不是按视口宽度——左右栏开合会直接改变可用宽度 */
   container-type: inline-size;
@@ -46,7 +52,7 @@
     /* antd 不接管的属性 */
     font-family: inherit;
     letter-spacing: 0.5px;
-    transition: background var(--nv-t-fast, 120ms) ease;
+    transition: background var(--app-t-fast) var(--app-ease-standard);
 
     &:focus-visible {
       outline: 2px solid var(--app-primary);
@@ -217,7 +223,7 @@
     cursor: default;
     background: color-mix(in srgb, var(--nv-mark-color) 14%, transparent);
     box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--nv-mark-color) 55%, transparent);
-    transition: background var(--nv-t-fast, 120ms) ease;
+    transition: background var(--app-t-fast) var(--app-ease-standard);
   }
 
   &__host [data-entity-type="character"] {
@@ -266,7 +272,7 @@
     box-shadow: inset 0 0 0 1px
       color-mix(in srgb, var(--nv-sm-color) 72%, transparent);
     cursor: help;
-    transition: background var(--nv-t-fast, 120ms) ease;
+    transition: background var(--app-t-fast) var(--app-ease-standard);
   }
 
   /* 悬停加深一档：正文里满屏圈注会吵，指到哪条才把哪条点亮 */
@@ -302,7 +308,7 @@
 
     /* antd 不接管的属性 */
     margin-top: 12px;
-    transition: background var(--nv-t-fast, 120ms) ease;
+    transition: background var(--app-t-fast) var(--app-ease-standard);
   }
 
   /* 空书架空态：主描述 + 一行灰色副提示 */

@@ -1,0 +1,104 @@
+/**
+ * 动效 mixin（跨窗口公共原语）
+ *
+ * 配套文档：docs/novel-visual-polish-plan.md §3、AGENTS.md §6.1.3。
+ * 时长 / 缓动 token（--app-t-* / --app-ease-*）定义在 themes.scss 的 :root 块，
+ * 四套主题共用、不随主题变。本文件**零 sass 依赖**（CSS 变量运行时解析，
+ * 不 @use themes.scss），可被任意组件直接 @use。
+ *
+ * 用法（组件自己的 scss 里，层级按目录深度算，见 AGENTS.md §6.1）：
+ * ```scss
+ * @use "../../../shared/styles/motion" as motion;
+ *
+ * .nv-card {
+ *   @include motion.transition-normal(box-shadow, transform);
+ *
+ *   &:hover {
+ *     @include motion.hover-lift;
+ *   }
+ *   &:active {
+ *     @include motion.press-feedback;
+ *   }
+ * }
+ * ```
+ *
+ * ⚠️ 只动 transform / opacity（合成属性），禁止 transition 布局属性（width/height/margin）。
+ * ⚠️ antd 组件的 hover/active 颜色背景边框仍走 --ant-*-hover-bg 等组件级变量
+ *    （见 AGENTS.md §6.1.2），本 mixin 只补 antd 不接管的 transform/opacity/box-shadow 反馈。
+ */
+
+/// 声明 transition，只吃已 token 化的时长与缓动（属性名由调用方逐个传入）。
+/// 这是最常用的原子 mixin：`@include motion.transition(box-shadow, transform, opacity);`
+@mixin transition($properties...) {
+  $list: ();
+  @each $prop in $properties {
+    // 时长：不区分快慢（调用方多数场景用 normal；需更快用 transition-fast）
+    $list: append($list, #{$prop} var(--app-t-normal) var(--app-ease-standard), comma);
+  }
+  transition: $list;
+}
+
+/// 快反馈（颜色 / 描边 / 背景微反馈，120ms）
+@mixin transition-fast($properties...) {
+  $list: ();
+  @each $prop in $properties {
+    $list: append($list, #{$prop} var(--app-t-fast) var(--app-ease-standard), comma);
+  }
+  transition: $list;
+}
+
+/// 标准过渡（hover 抬升 / 卡片 / 选中态，180ms）—— 即 transition 的语义别名
+@mixin transition-normal($properties...) {
+  @include transition($properties...);
+}
+
+/// 慢过渡（抽屉 / 面板滑动 / 入场，260ms）
+@mixin transition-slow($properties...) {
+  $list: ();
+  @each $prop in $properties {
+    $list: append($list, #{$prop} var(--app-t-slow) var(--app-ease-standard), comma);
+  }
+  transition: $list;
+}
+
+/// 卡片 hover 抬升：上浮 2px + raised 阴影（与 transition-normal 配套，先声明 transition）
+@mixin hover-lift {
+  transform: translateY(-2px);
+  box-shadow: var(--app-shadow-raised);
+}
+
+/// 按下回弹（pointer-down 即反馈，80ms 即时档）
+@mixin press-feedback {
+  transform: scale(0.97);
+  transition: transform var(--app-t-instant) ease-out;
+}
+
+/// 内容进场（fadeRise，配合 stagger 用；配合 nth-child 递增 30~50ms）
+@mixin rise-in {
+  animation: app-rise-in var(--app-t-slow) var(--app-ease-emphasized) both;
+}
+
+@keyframes app-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/// prefers-reduced-motion 统一降级：位移/缩放 → 即时状态 + 轻微 opacity，保留内容可见。
+/// 放在组件根选择器里即可（继承到所有子元素动画）。
+@mixin reduced-motion {
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}

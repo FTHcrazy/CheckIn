@@ -22,7 +22,8 @@
   --ant-button-default-active-bg: transparent;
   --ant-button-default-active-color: var(--app-primary);
   --ant-button-default-active-border-color: var(--app-primary);
-  --ant-button-default-shadow: none;
+  /* 静止态给一档 ambient 环境阴影（虚线卡虽轻，也让它从 bg 里浮出来一点） */
+  --ant-button-default-shadow: var(--app-shadow-ambient);
 
   /* antd 不接管的属性 */
   display: flex;
@@ -31,12 +32,13 @@
   justify-content: center;
   min-height: 232px;
   padding: 20px;
-  transition: transform 0.18s ease;
+  transition: transform var(--app-t-normal) var(--app-ease-standard),
+    box-shadow var(--app-t-normal) var(--app-ease-standard);
 
   /* 悬浮投影：antd 只有恒定的 --ant-button-default-shadow，没有 hover 阴影变量。
      这里只在 :hover 上改**变量**（不写 box-shadow 属性）保住「悬浮才投影」 */
   &:hover {
-    --ant-button-default-shadow: var(--app-shadow-card);
+    --ant-button-default-shadow: var(--app-shadow-raised);
     transform: translateY(-2px);
   }
 

@@ -13,7 +13,7 @@
   border-radius: 12px;
   border: 1px solid var(--app-border);
   background: var(--app-surface-elevated);
-  box-shadow: 0 12px 32px var(--app-mask);
+  box-shadow: var(--app-shadow-pop);
   overflow: hidden;
 }
 
