@@ -1,5 +1,9 @@
 # R27 人物关系网络 · 分批开发计划 v2（独立窗口 / React Flow / 有限写回）
 
+> 📦 **已归档**（2026-10-23）：本文属 R27 人物关系网络的**立项过程稿**，功能已于 2.x 交付，
+> 现行为准请看 `src/windows/RelationWindow/`、`AGENTS.md` 与 `CHANGELOG.md`。正文保持归档时原样；
+> 文内 `docs/prd/...` 路径已失效，实际位于 `docs/archive/prd-r27/`。
+
 > 状态：排期方案。**只写规划，不改源码、不碰 `AGENTS.md`。**
 > 输入：`r27-relationship-network-delta-v2.md`（PM 增量稿，W-01~W-18 + §4 新基线 ≈180 例）· `r27-architecture-decision-v2.md`（ADR-27-01~04）· `scope v1.6` · `preresearch v1.4` · `acceptance 167 例`
 > 已裁定、本文不重开：① 框架 = `@xyflow/react@12.12.0` + `d3-force@3.0.0`；② 窗口键 = `relation`；③ **不启用** `novelArch = "refactor"`（不建表 / 不改 `novel_links` / 不加唯一约束 / 旧库零迁移）；④ 写回 = 连线新建 + 备注编辑；⑤ 导出改用 `capturePage`（见附录 A）。

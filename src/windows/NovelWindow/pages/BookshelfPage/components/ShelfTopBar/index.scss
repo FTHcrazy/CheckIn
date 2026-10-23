@@ -1,82 +1,106 @@
 @use "../../../../../../shared/styles/widget" as widget;
 
+/* 书架顶栏（R32 / 2.5.1 布局收敛）
+ *
+ * 三段式：标题+规模摘要 │ 搜索框 │ 工具条 + 主按钮。
+ * 关键判断是「四颗独立描边胶囊 = 一排按钮；一颗容器装四颗 = 一条工具条」——
+ * 后者读作一个整体，主次立刻分得开，而入口一个没少。
+ */
 .bs-topbar {
   flex: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  min-height: 52px;
-  padding: 10px 24px;
+  min-height: 56px;
+  padding: 11px 24px;
   background: var(--app-header-bg);
   border-bottom: 1px solid var(--app-border);
   user-select: none;
 
   &__lead {
     display: flex;
-    align-items: center;
+    align-items: baseline;
     gap: 10px;
     min-width: 0;
   }
 
   &__title {
     margin: 0;
-    font-size: 18px;
+    font-size: 20px;
     font-weight: 700;
     color: var(--app-text);
+    white-space: nowrap;
   }
 
-  &__capsule {
-    padding: 3px 10px;
-    border-radius: var(--app-radius-pill);
-    background: var(--app-primary-weak);
-    color: var(--app-primary);
+  /* 规模摘要：静音小字（原先的 primary-weak 胶囊与下方统计卡重复，
+   * 且顶栏第二个紫块会跟「新建作品」抢焦点） */
+  &__meta {
+    min-width: 0;
     font-size: 12px;
-    font-weight: 500;
+    color: var(--app-text-muted);
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   &__actions {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 16px;
+    flex: none;
   }
 
   &__search {
-    width: 240px;
+    width: 256px;
     border-radius: var(--app-radius-pill);
   }
 
-  /* 两颗次级按钮（「全局设定中心」/「导入书籍」）：描边 pill。
+  /* ── 工具条 ──
+   *
+   * 试过「一个 surface 底色的胶囊容器装四颗」，暗色主题下容器底与标题栏底
+   * 差值只有一档，几乎看不出来 —— 反而更像四个孤零零的图标。改用**竖分隔线**
+   * 分组：搜索 │ 工具条 │ 主按钮，三段靠间距与一条 1px 线分开，
+   * 在四套主题下都成立（不依赖底色差值）。 */
+  &__tools {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding-left: 16px;
+    border-left: 1px solid var(--app-border);
+  }
+
+  /* ── 工具条内的四颗按钮 ──
    *
    * ⚠️ 清零点会把 antd 的 **边框宽度 / 内边距 / 高度** 一起归零
    * （`--ant-line-width: 0` + `--ant-control-height: auto` + padding 0）。
-   * 早先这里只补了圆角，于是两颗按钮在深色主题下退化成纯文字，
-   * 与主色「新建作品」挤成一串（真机截图为证）。清零之后必须把这三个
-   * 维度显式声明回来，缺一个就会变形：
-   *   --ant-line-width  → 描边（边框色由 --ant-button-default-border-color 给）
+   * 清零之后必须把这三个维度显式声明回来，缺一个就会变形：
+   *   --ant-line-width  → 描边（这一版不再描边，容器已经给了底，故意留 0）
    *   --ant-control-height / --ant-button-padding-inline → 尺寸
-   * 层级：次级描边 < 主色实底「新建作品」，两者都靠组件级变量表达，
+   * 层级：工具条内的次级入口 < 主色实底「新建作品」，两者都靠组件级变量表达，
    * 不写 :hover 属性规则（antd 的状态规则是 (0,4,0)，压不过）。 */
   &__import.ant-btn,
-  &__global-setting.ant-btn {
+  &__global-setting.ant-btn,
+  &__safety.ant-btn,
+  &__recycle.ant-btn {
     @include widget.ant-button-reset;
     --ant-control-height: 32px;
-    --ant-button-padding-inline: 14px;
-    --ant-button-content-font-size: 14px;
+    --ant-button-padding-inline: 10px;
+    --ant-button-content-font-size: 13px;
     --ant-button-font-weight: 500;
     --ant-button-icon-gap: 6px;
-    --ant-border-radius: var(--app-radius-pill);
-    --ant-line-width: 1px;
+    --ant-border-radius: var(--app-radius-item);
+    --ant-line-width: 0;
     --ant-button-default-bg: transparent;
     --ant-button-default-color: var(--app-text-secondary);
-    --ant-button-default-border-color: var(--app-border);
-    --ant-button-default-hover-bg: var(--app-surface-hover);
+    --ant-button-default-border-color: transparent;
+    /* 贴在标题栏底（alt/header 档）上，悬停必须抬到 elevated 才看得出命中 */
+    --ant-button-default-hover-bg: var(--app-surface-elevated);
     --ant-button-default-hover-color: var(--app-primary);
-    --ant-button-default-hover-border-color: var(--app-primary);
-    --ant-button-default-active-bg: var(--app-surface-active);
+    --ant-button-default-hover-border-color: transparent;
+    --ant-button-default-active-bg: var(--app-surface-hover);
     --ant-button-default-active-color: var(--app-primary);
-    --ant-button-default-active-border-color: var(--app-primary);
+    --ant-button-default-active-border-color: transparent;
     --ant-button-default-shadow: none;
     display: inline-flex;
     align-items: center;
@@ -84,23 +108,79 @@
     /* 图标与文字都是 flex 子项：JSX 里不要再留空格（AGENTS §6.1.2 第 5 条） */
     & > svg,
     & > .anticon {
-      width: 14px;
-      height: 14px;
-      font-size: 14px;
+      width: 16px;
+      height: 16px;
+      font-size: 16px;
+    }
+
+    /* 「回收站」的图标外面套了一层 Badge（条目数角标），
+       上面的 `> svg` 选择器够不到它，这里单独补同样尺寸，
+       否则这一颗的图标会比旁边两颗大一圈。
+       图标本体是 SvgIcon（`viewBox` 跟随 1em），所以给 span 定字号即可 */
+    & > .ant-badge {
+      display: inline-flex;
+      align-items: center;
+
+      .anticon {
+        width: 16px;
+        height: 16px;
+        font-size: 16px;
+      }
+
+      .svgicon {
+        font-size: 16px;
+      }
     }
   }
 
-  /* 最小窗口：搜索框让出宽度给右侧三颗按钮，避免整行挤到换行 */
-  @media (max-width: 1080px) {
+  /* 纯图标三颗：宽度锁死 32×32，并自己补居中 ——
+   * 清零点把 antd 的 `justify-content: center` 改成了 `normal`（＝左贴），
+   * 不补这一条，图标会贴在盒子左沿、看起来右偏（AGENTS §6.1.2 铁律）。 */
+  &__safety.ant-btn,
+  &__recycle.ant-btn,
+  &__import.ant-btn {
+    --ant-button-padding-inline: 0px;
+    width: 32px;
+    justify-content: center;
+  }
+
+  /* 窄窗口：搜索框让宽度，工具条收紧；规模摘要让位给标题 */
+  @media (max-width: 1240px) {
     gap: 12px;
-    padding: 10px 18px;
+    padding: 11px 18px;
 
     &__search {
-      width: 200px;
+      width: 176px;
     }
 
     &__actions {
       gap: 8px;
+    }
+
+    &__import.ant-btn,
+    &__global-setting.ant-btn,
+    &__safety.ant-btn,
+    &__recycle.ant-btn {
+      --ant-button-padding-inline: 8px;
+      --ant-button-content-font-size: 12px;
+    }
+
+    &__safety.ant-btn,
+    &__recycle.ant-btn,
+    &__import.ant-btn {
+      --ant-button-padding-inline: 0px;
+      width: 30px;
+    }
+  }
+
+  /* 最窄档（窗口下限 960）：摘要先让位，搜索框再收一档 */
+  @media (max-width: 1080px) {
+    &__meta {
+      display: none;
+    }
+
+    &__search {
+      width: 156px;
     }
   }
 }

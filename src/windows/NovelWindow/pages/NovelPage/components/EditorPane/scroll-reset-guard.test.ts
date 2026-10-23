@@ -36,7 +36,7 @@ const EDITOR = readFileSync(
 function scrollEffectBody(): string {
   const anchor = EDITOR.indexOf("换章时的滚动定位");
   if (anchor < 0) throw new Error("index.tsx 里找不到「换章时的滚动定位」effect");
-  return EDITOR.slice(anchor, anchor + 2000);
+  return EDITOR.slice(anchor, anchor + 3200);
 }
 
 describe("换章滚动复位", () => {
@@ -58,10 +58,9 @@ describe("换章滚动复位", () => {
     expect(body).not.toMatch(
       /if\s*\(!view \|\| !chapter \|\| !restore \|\| restore\.chapterId !== chapter\.id\)\s*return/,
     );
-    // 正面：归零分支必须存在，且是「有恢复点用恢复点，否则 0」的三元
-    expect(body).toMatch(
-      /scroller\.scrollTop\s*=\s*isRestore && restore \? restore\.scrollTop : 0/,
-    );
+    // 正面：归零分支必须存在——「有恢复点用恢复点，否则回顶部」；阅读模式
+    // 「加载上一章」（openAnchor='bottom'）是唯一滚到底的例外，仍以 scrollTop 赋值呈现
+    expect(body).toMatch(/scroller\.scrollTop\s*=\s*0/);
   });
 
   it("复位放进 requestAnimationFrame —— 等新正文排版完成再设，否则会被旧高度夹取", () => {
@@ -85,7 +84,8 @@ describe("换章滚动复位", () => {
       「没有恢复点 → scrollTop = 0」分支 —— 作者写一会儿正文，画面自己跳回第一行。
     */
     expect(body).not.toMatch(/\}, \[chapter, restore, onRestoreDone\]\)/);
-    // 正面：依赖必须是 chapterId（换章时变、保存正文时不变）
-    expect(body).toMatch(/\}, \[chapterId, restore, onRestoreDone\]\)/);
+    // 正面：依赖必须以 chapterId 为换章信号（换章时变、保存正文时不变）；
+    // 阅读模式新增 openAnchor / onOpenAnchorApplied 是「换章锚点」的一次性信号，允许跟随
+    expect(body).toMatch(/\}, \[chapterId, restore, onRestoreDone, openAnchor, onOpenAnchorApplied\]\)/);
   });
 });

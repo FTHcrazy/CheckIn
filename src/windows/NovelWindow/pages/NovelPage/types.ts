@@ -114,7 +114,9 @@ export interface NovelNote {
 }
 
 /** 灵感可编辑字段（内容 / 置顶 / 已转伏笔标记） */
-export type NotePatch = Partial<Pick<NovelNote, "content" | "pinned" | "foreshadowId">>;
+export type NotePatch = Partial<
+  Pick<NovelNote, "content" | "pinned" | "foreshadowId">
+>;
 
 /**
  * 大纲条目（PRD R7 大纲板）
@@ -138,7 +140,9 @@ export interface OutlineEntry {
 }
 
 /** 伏笔可编辑字段（增删由专用动作承载，不放这里）；chapterId 空串 = 退回卷级 */
-export type ForeshadowPatch = Partial<Pick<OutlineEntry, "title" | "note" | "chapterId">>;
+export type ForeshadowPatch = Partial<
+  Pick<OutlineEntry, "title" | "note" | "chapterId">
+>;
 
 /** 新建伏笔时由调用方补齐 id 与时间戳的草稿 */
 export type OutlineEntryDraft = Omit<OutlineEntry, "id" | "createdAt">;
@@ -156,7 +160,12 @@ import type {
   SettingLevel,
 } from "@/shared/novel/setting-types";
 
-export type { CarryDirection, SettingCategory, SettingCategoryKind, SettingLevel };
+export type {
+  CarryDirection,
+  SettingCategory,
+  SettingCategoryKind,
+  SettingLevel,
+};
 
 /** 关联要素的展示视图（由 NovelLink + 要素表派生） */
 export interface EntityRelationView {
@@ -296,6 +305,15 @@ export interface EditorSettings {
   volumeSuffix: string;
   /** 防误触排序：拖拽后先弹确认框展示序号变更，确认才应用（默认开启） */
   confirmReorder: boolean;
+  /** 护眼纸质感：开启后正文叠低对比微颗粒（暗色主题无颗粒、只降文字对比） */
+  paperTexture: boolean;
+  /** 正文字体 family（空串 = 跟随系统默认）；字体下载后 @font-face 挂载生效 */
+  paperFont: string;
+  /**
+   * 阅读模式：只读正文（禁编辑）+ 隐藏光标，滚动到章节首/尾时自动加载
+   * 上一章 / 下一章（连续阅读，不打断）。默认关闭（写作态）。
+   */
+  readMode: boolean;
 }
 
 /**

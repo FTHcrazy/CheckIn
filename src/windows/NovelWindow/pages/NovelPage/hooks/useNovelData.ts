@@ -22,8 +22,8 @@ import {
   removeOutlineEntry as removeOutlineEntryRemote,
   removeSettingCategory as removeSettingCategoryRemote,
   removeSettingLevel as removeSettingLevelRemote,
-  removeWork as removeWorkRemote,
   removeChapter as removeChapterRemote,
+  trashWork as trashWorkRemote,
   removeVolume as removeVolumeRemote,
   renameChapter as renameChapterRemote,
   renameVolume as renameVolumeRemote,
@@ -1046,7 +1046,9 @@ export function useNovelData() {
             }
           : current,
       );
-      void removeWorkRemote(workId);
+      // 删除兜底：远端走软删除（移入回收站），不级联销毁 —— 误删可在
+      // 书架顶栏「回收站」页面里原样恢复（卷章正文 / 要素 / 行囊从未被删）
+      void trashWorkRemote(workId);
 
       if (remaining.length > 0) {
         if (activeWorkId === workId) {

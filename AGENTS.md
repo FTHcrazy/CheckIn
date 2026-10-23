@@ -393,10 +393,18 @@ CheckIn/
 │       ├── ipc/                           # 窗口级 IPC 桥接（activityNotifyBridge.ts）
 │       ├── types/                         # 全局类型（electron.d.ts）
 │       └── styles/                        # themes.scss、variables.scss、window-shell.scss、widget.scss、scrollbars.scss
+├── docs/                                  # 文档（三级：spec 活规范 / review 审查 / archive 归档）
+│   ├── README.md                          # 文档索引（唯一导航入口）
+│   ├── spec/                              # 活规范（graphic-theming-spec.md）
+│   ├── review/                            # 审查报告（含未闭环待办）
+│   └── archive/                           # 已闭环过程稿（visual-polish/、prd-r27/）
+├── changeLogHistory/                      # CHANGELOG 历史归档（按次版本拆分，索引见 README.md）
 ├── vite.config.ts                         # rollupOptions.input 由 electron/edition.ts 清单按版本生成；主进程 external 列 Node 运行时模块（electron/better-sqlite3/mammoth/docx/jszip）
 ├── tsconfig.json
 └── package.json
 ```
+
+> `docs/` 的存储、命名、归档与死链自查规则见 §5.3。
 
 ### 5.2 页面模块内部结构规范
 
@@ -427,6 +435,91 @@ windows/BaseWindow/pages/XxxPage/
 - 每个组件目录内统一放置 `index.tsx` 与 `index.scss`，禁止使用 `Component.tsx + Component.scss` 这类命名方式。
 - 组件目录仅管理该组件自身的样式、逻辑和导出；不允许把多个无关组件的样式堆积到同一父级 `index.scss` 中。
 - 只有全局共享的 UI 才允许放在 `src/shared/components/`，页面私有组件必须保持在对应页面的 `components/` 中。
+
+### 5.3 文档存储规范（强制）
+
+**核心原则：文档按「是否还有约束力」分三级存放，一个主题一组文档，路径变了引用必须同时改。**
+
+#### 5.3.1 三级目录与生命周期
+
+| 目录 | 放什么 | 约束力 | 生命周期 |
+|------|--------|--------|----------|
+| `docs/spec/` | **活规范**：长期有效、被代码或本文档直接引用的技术规则 | 有，违反即缺陷 | 只改版，不删除 |
+| `docs/review/` | **审查报告**：设计 / 产品 / 代码的一次性审查结论 | **部分有**：清单里未闭环的待办项仍可执行 | 待办清空后整篇移入 `archive/` |
+| `docs/archive/` | **已闭环或已作废的过程稿**：需求收口、技术预研、验收方案、分批计划、改造方案 | 无，仅作历史依据 | 只读留档；内容被代码/规范完全吸收后可整篇删除 |
+
+- 还没开工的需求稿放 `docs/prd/<需求编号>-<主题>.md`，交付完成后**整组**移入
+  `docs/archive/prd-<需求编号>/`。没有进行中的需求时不保留空目录。
+- 仓库根只允许三份文档：`AGENTS.md`（本规范）、`README.md`（安装与排障）、
+  `CHANGELOG.md`（版本变更）。**禁止在根目录新增零散说明文件**——一律进 `docs/`。
+
+#### 5.3.2 命名规则
+
+1. **一个主题一组文档，组内统一前缀**：`<需求编号>-<主题>-<体裁>.md`。
+   体裁词表固定为：`scope`（需求收口）/ `preresearch`（技术预研）/ `acceptance`（验收）/
+   `analysis`（解读）/ `architecture-decision`（架构决策）/ `delta`（增量需求）/
+   `batch-plan`（分批排期）/ `review`（审查）/ `spec`（规范）。
+   ⚠️ 同一组内**不许**出现缺前缀的文件（如 `r27-architecture-decision-v2.md` 缺 `relationship-network`）。
+2. **版本用文件名后缀 `-v2`，不靠文内改版**。新方案推翻旧方案时：新建 `-v2`，
+   旧稿移入 `archive/`；**被完全取代的旧稿直接删除**，不留「两份都像有效」的状态。
+3. **每篇文档头部三行必填**，缺任何一项都无法判断它是否过时：
+
+```md
+> 状态：草案 / 定稿 / 已归档（闭环版本 X.Y.Z）
+> 输入：上游文档路径 + 版本（无则写「无」）
+> 基线：对应代码版本或提交哈希
+```
+
+#### 5.3.3 归档与删除的判定
+
+| 情形 | 动作 |
+|------|------|
+| 功能已交付、方案已沉淀成本文规范 | 移入 `docs/archive/<主题>/`，顶部补「已归档 · 闭环版本 · 现行为准的去处」 |
+| 方案被新方案整体推翻（如页内浮层 → 独立窗口） | **删除旧稿**，在索引里留一行「v1 因何作废」 |
+| 一次性审查报告仍有未闭环待办 | 留在 `docs/review/`，索引标注「待办状态」 |
+| 临时产物（截图、尖刺脚本、导出原型、`.cache-shots/`） | 不入库、不归档，用完即删；确需留证放 `docs/archive/reference/` |
+| 与代码/规范重复的说明（同一事实两处维护） | 删除文档，把结论并入本文对应章节或 CHANGELOG |
+
+#### 5.3.4 移动 / 删除文档的强制配套动作
+
+1. **同一次改动内改完所有引用**：全仓搜 `docs/` 引用，逐条确认目标存在——
+   `AGENTS.md`、`README.md`、`docs/**`、`src/**` 的注释、`*.yaml` 注释都算引用面，
+   **不许留悬空路径**：
+
+```bash
+# --exclude-dir 必须用（别用 | grep -v node_modules：那是按行过滤，扫不干净）
+grep -rn "docs/[A-Za-z0-9._/-]*\.md" \
+  --include="*.md" --include="*.ts" --include="*.tsx" --include="*.yaml" \
+  --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist \
+  --exclude-dir=dist-electron --exclude-dir=release --exclude-dir=changeLogHistory \
+  --exclude-dir=archive . | grep "docs/"
+```
+
+> 出现 MISS 时的判定：`CHANGELOG.md` / `changeLogHistory/` 里的历史路径**故意不改**；
+> `docs/archive/**` 正文保留旧路径（头部已交代迁移）；其余 MISS 一律视为未完成的引用修复。
+
+2. **同步 `docs/README.md` 索引**：新增/移动/删除文档必须改索引表，
+   索引是文档唯一导航入口，**不允许文档存在但索引里查不到**。
+3. **`CHANGELOG.md` / `changeLogHistory/` 里的历史路径不改**：那是当时的事实记录。
+   查历史时以「当时确实存在」理解，不要据此判定文档缺失。
+4. **归档不改正文**：整篇移动时只在标题下补一段归档说明，不重写结论、不合并章节、
+   不调整日期——归档的价值就是能追溯当时的判断依据。正文里失效的相对路径在归档说明里
+   一句「文内 `docs/prd/...` 已迁至 `docs/archive/prd-xxx/`」交代即可。
+
+#### 5.3.5 当前落地形态
+
+```text
+docs/
+├── README.md                              # 索引（唯一导航入口，必须与实际文件一致）
+├── spec/
+│   └── graphic-theming-spec.md            # 图形素材主题化（§6.1.4 详版）
+├── review/
+│   ├── novel-product-review.md            # 产品审查（部分待办仍开放）
+│   └── novel-design-review.md             # 设计审查（部分待办仍开放）
+└── archive/
+    ├── visual-polish/                     # 1.47.0 立体感/动效改造方案 + 验收对照
+    └── prd-r27/                           # R27 关系网络立项过程稿 7 篇（2.x 已交付）
+```
 
 ---
 
@@ -816,7 +909,7 @@ SettingsWindow 的「外观」分区是全版本共用的设置面板（full/nov
 
 ### 6.1.3 动效与立体感规范（motion / elevation）
 
-> 完整背景见 `docs/novel-visual-polish-plan.md`。定位锚点：柔和 · 轻量 · 卡片式 · 桌面 · 写作工具。
+> 完整背景见 `docs/archive/visual-polish/novel-visual-polish-plan.md`（已归档过程稿，本节为准）。定位锚点：柔和 · 轻量 · 卡片式 · 桌面 · 写作工具。
 > 一句话原则：**立体感走「明度分层 + 细边框 + 轻阴影」三件套的「轻盈抬升」，动效走「≤260ms 克制 + 按下即反馈」，坚决避免厚重浮雕、炫技动效。**
 
 **两条不可破的红线（贯穿所有动效/立体感工作）：**
@@ -888,7 +981,7 @@ SettingsWindow 的「外观」分区是全版本共用的设置面板（full/nov
 
 ### 6.1.4 图形素材主题化规范（含 Lottie）
 
-> 完整规则见 `docs/graphic-theming-spec.md`。核心一句话：
+> 完整规则见 `docs/spec/graphic-theming-spec.md`。核心一句话：
 > **图形主题化只有两条正道——要么「跟着文字色走」（`currentColor`），要么「引用语义 token」（`var(--app-*)`）。禁止把色值钉死在资源里，禁止一主题复制一份资源。**
 
 **用色三档纪律（防破碎感的根本——不是「颜色不同」而是「同一类东西用了不同策略」）：**
@@ -1316,7 +1409,8 @@ function initializeDataDb(db: Database) {
 **locale 裁减**走 `build.electronLanguages: ["zh-CN", "en-US"]` 前置完成，
 `after-pack.js` 里的 locale 清理只作兜底（配置被改回默认时仍能收口）。
 
-数据与后续见 `docs/packaging/bundle-slimming-2.0.0.md`。
+体积数据与前后对比见 `CHANGELOG.md` 的 2.0.0 / 2.1.2 条目（原 `docs/packaging/` 下的
+两份专项说明已删除，结论与数字均已并入本节与 CHANGELOG，避免同一事实两处维护）。
 
 ---
 
@@ -1596,6 +1690,17 @@ function initializeDataDb(db: Database) {
   - 编码问题已成为历史：响应由 Chromium 网络栈按 UTF-8 解码，
     不再有主进程 `Buffer.concat` 截段乱码（原 1.4.8 契约已随架构废弃）。
 
+### 8.8 新增 / 移动 / 删除文档
+
+- [ ] 判定归属：活规范 → `docs/spec/`；审查报告 → `docs/review/`；已完成/已作废 → `docs/archive/<主题>/`
+- [ ] 命名符合 §5.3.2：`<需求编号>-<主题>-<体裁>.md`，组内前缀统一，版本用 `-v2` 后缀
+- [ ] 头部补齐「状态 / 输入 / 基线」三行
+- [ ] 同步 `docs/README.md` 索引（新增一行、移动改路径、删除删行）
+- [ ] 全仓搜 `docs/` 引用并逐条改到新路径（命令见 §5.3.4）
+- [ ] 归档时在标题下补一段「已归档 · 闭环版本 · 现行为准的去处」，正文不动
+- [ ] 被完全取代的旧稿**删除**，不留在原目录
+- [ ] **不要**在根目录新增长篇说明文件；`README.md` 只留安装与排障
+
 ## 9. 附录
 
 ### 9.1 技术栈版本
@@ -1632,6 +1737,6 @@ function initializeDataDb(db: Database) {
 
 ---
 
-**文档版本**: 2.4  
-**最后更新**: 2026-10-21  
+**文档版本**: 2.5  
+**最后更新**: 2026-10-23  
 **维护者**: CheckIn 开发团队

@@ -37,7 +37,7 @@ export default function CloseGuardModal({
       centered
       width={380}
       closable={false}
-      maskClosable={false}
+      mask={{ closable: false }}
       onCancel={onCancel}
       footer={
         <div className="cpk-guard__footer">

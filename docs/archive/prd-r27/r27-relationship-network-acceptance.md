@@ -1,5 +1,9 @@
 # R27 人物关系网络 · 验收方案（QA）
 
+> 📦 **已归档**（2026-10-23）：本文属 R27 人物关系网络的**立项过程稿**，功能已于 2.x 交付，
+> 现行为准请看 `src/windows/RelationWindow/`、`AGENTS.md` 与 `CHANGELOG.md`。正文保持归档时原样；
+> 文内 `docs/prd/...` 路径已失效，实际位于 `docs/archive/prd-r27/`。
+
 > 状态：预研阶段验收设计（**不写实现代码、不写测试代码、不改仓库既有文件**）
 > 输入主源：`docs/prd/r27-relationship-network-preresearch.md`（架构师，**1097 行 / v1.3**）、`docs/prd/r27-relationship-network-scope.md`（产品，**685 行 / v1.4**，md5 `9edde25da9d7f43395afcfe1a3637f9e`）
 > 本文件回答的是「上线时怎么证明它是对的、快的、不打扰写作的」，不是「现在就把它测一遍」。

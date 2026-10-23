@@ -1,11 +1,12 @@
 /**
- * 帮助中心文档数据（与 `docs/novel-onboarding-guide.html` 同源）
+ * 帮助中心文档数据（帮助中心与新手引导的**唯一内容源**）
  *
  * 为什么结构化成数据而不是直接内嵌 HTML：帮助中心要支持关键词检索，
  * 且必须和 Tour / 弱提示共用同一套动作描述（PRD 附录 B）。散在 JSX 里
  * 就搜不了，也保证不了同源。
  *
- * 改文案时必须同步三处：本文件、`guide-copy.ts`、`docs/novel-onboarding-guide.html`。
+ * 改文案时必须同步两处：本文件、`guide-copy.ts`。
+ * （早期另有一份 onboarding 原型 HTML，已随文档治理删除，不要再去找它——文案以本文件为准。）
  * 本文件不含 React，纯数据 + 检索纯函数。
  */
 

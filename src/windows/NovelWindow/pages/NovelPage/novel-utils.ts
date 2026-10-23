@@ -21,7 +21,10 @@ import type {
   TextSegment,
 } from "./types";
 import { formatRelativeTime as relativeTime } from "@/shared/utils/format";
-import { formatNumberedLabel, toChineseOrdinal } from "@/shared/novel/number-label";
+import {
+  formatNumberedLabel,
+  toChineseOrdinal,
+} from "@/shared/novel/number-label";
 import { countWords, type WordCountMode } from "@/shared/novel/word-count";
 import {
   DEFAULT_SETTINGS,
@@ -440,7 +443,9 @@ export function buildOutlineTree(
     });
 
     // 章节 id → 章：伏笔的「埋在哪一章」标签要还原标题，不能每卷再 find 一遍
-    const chapterById = new Map(group.chapters.map((chapter) => [chapter.id, chapter]));
+    const chapterById = new Map(
+      group.chapters.map((chapter) => [chapter.id, chapter]),
+    );
 
     const foreshadowNodes: OutlineNode[] = [...owned]
       .sort(
@@ -449,7 +454,9 @@ export function buildOutlineTree(
           a.createdAt - b.createdAt,
       )
       .map((entry) => {
-        const bound = entry.chapterId ? chapterById.get(entry.chapterId) : undefined;
+        const bound = entry.chapterId
+          ? chapterById.get(entry.chapterId)
+          : undefined;
         return {
           kind: "foreshadow" as const,
           id: entry.id,
@@ -559,7 +566,8 @@ export function patchOutlineEntry(
   }
   if (patch.note !== undefined) next.note = patch.note.trim();
   // 埋设章节改绑：空串退回卷级（OutlineEntry.chapterId 缺省即卷级）
-  if (patch.chapterId !== undefined) next.chapterId = patch.chapterId || undefined;
+  if (patch.chapterId !== undefined)
+    next.chapterId = patch.chapterId || undefined;
   return entries.map((entry) => (entry.id === entryId ? next : entry));
 }
 
@@ -716,7 +724,8 @@ export function previewChapterReorder(
   return chapters.map((chapter) => {
     if (!order.has(chapter.id)) return chapter;
     const next = { ...chapter, sort: order.get(chapter.id) ?? chapter.sort };
-    if (chapter.id === fromId && movingCrossVolume) next.volumeId = movingCrossVolume;
+    if (chapter.id === fromId && movingCrossVolume)
+      next.volumeId = movingCrossVolume;
     return next;
   });
 }
@@ -810,7 +819,8 @@ function clampSetting(
   range: { min: number; max: number },
   fallback: number,
 ): number {
-  const n = typeof value === "number" && Number.isFinite(value) ? value : fallback;
+  const n =
+    typeof value === "number" && Number.isFinite(value) ? value : fallback;
   return Math.min(range.max, Math.max(range.min, n));
 }
 
@@ -841,7 +851,8 @@ export function mergeEditorSettings(raw: unknown): EditorSettings {
     : DEFAULT_SETTINGS.annotationTypes;
 
   const wordCountMode: WordCountMode =
-    source.wordCountMode === "hanOnly" || source.wordCountMode === "withPunctuation"
+    source.wordCountMode === "hanOnly" ||
+    source.wordCountMode === "withPunctuation"
       ? source.wordCountMode
       : DEFAULT_SETTINGS.wordCountMode;
   const numberStyle: LabelNumberStyle =
@@ -860,15 +871,30 @@ export function mergeEditorSettings(raw: unknown): EditorSettings {
       : DEFAULT_SETTINGS.volumeSuffix;
 
   return {
-    fontSize: clampSetting(source.fontSize, SETTINGS_RANGE.fontSize, DEFAULT_SETTINGS.fontSize),
-    lineHeight: clampSetting(source.lineHeight, SETTINGS_RANGE.lineHeight, DEFAULT_SETTINGS.lineHeight),
+    fontSize: clampSetting(
+      source.fontSize,
+      SETTINGS_RANGE.fontSize,
+      DEFAULT_SETTINGS.fontSize,
+    ),
+    lineHeight: clampSetting(
+      source.lineHeight,
+      SETTINGS_RANGE.lineHeight,
+      DEFAULT_SETTINGS.lineHeight,
+    ),
     paragraphSpacing: clampSetting(
       source.paragraphSpacing,
       SETTINGS_RANGE.paragraphSpacing,
       DEFAULT_SETTINGS.paragraphSpacing,
     ),
-    indent: typeof source.indent === "boolean" ? source.indent : DEFAULT_SETTINGS.indent,
-    dailyGoal: clampSetting(source.dailyGoal, SETTINGS_RANGE.dailyGoal, DEFAULT_SETTINGS.dailyGoal),
+    indent:
+      typeof source.indent === "boolean"
+        ? source.indent
+        : DEFAULT_SETTINGS.indent,
+    dailyGoal: clampSetting(
+      source.dailyGoal,
+      SETTINGS_RANGE.dailyGoal,
+      DEFAULT_SETTINGS.dailyGoal,
+    ),
     wordCountMode,
     annotationTypes,
     numberStyle,
@@ -878,6 +904,18 @@ export function mergeEditorSettings(raw: unknown): EditorSettings {
       typeof source.confirmReorder === "boolean"
         ? source.confirmReorder
         : DEFAULT_SETTINGS.confirmReorder,
+    paperTexture:
+      typeof source.paperTexture === "boolean"
+        ? source.paperTexture
+        : DEFAULT_SETTINGS.paperTexture,
+    paperFont:
+      typeof source.paperFont === "string"
+        ? source.paperFont
+        : DEFAULT_SETTINGS.paperFont,
+    readMode:
+      typeof source.readMode === "boolean"
+        ? source.readMode
+        : DEFAULT_SETTINGS.readMode,
   };
 }
 
@@ -909,11 +947,13 @@ export function sanitizeRestorePosition(
   works: ReadonlyArray<{ id: string }>,
   chapters: ReadonlyArray<NovelChapter>,
 ): RestorePosition | null {
-  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw))
+    return null;
   const source = raw as Record<string, unknown>;
 
   const workId = typeof source.workId === "string" ? source.workId : "";
-  const chapterId = typeof source.chapterId === "string" ? source.chapterId : "";
+  const chapterId =
+    typeof source.chapterId === "string" ? source.chapterId : "";
   if (!workId || !chapterId) return null;
   if (!works.some((work) => work.id === workId)) return null;
 
@@ -970,7 +1010,8 @@ export function sanitizeCustomTypes(raw: unknown): CustomEntityTypeDef[] {
   const seen = new Set<string>();
   const result: CustomEntityTypeDef[] = [];
   for (const item of raw) {
-    if (item === null || typeof item !== "object" || Array.isArray(item)) continue;
+    if (item === null || typeof item !== "object" || Array.isArray(item))
+      continue;
     const source = item as Record<string, unknown>;
     const id = typeof source.id === "string" ? source.id : "";
     const name = typeof source.name === "string" ? source.name.trim() : "";
@@ -1044,9 +1085,10 @@ export function buildChapterPlainText(
     options.paragraphIndent === false
       ? chapter.content
       : normalizeParagraphIndent(chapter.content);
-  return [buildChapterHeading(chapter, chapterNumber, options), body.trimEnd()].join(
-    "\n\n",
-  );
+  return [
+    buildChapterHeading(chapter, chapterNumber, options),
+    body.trimEnd(),
+  ].join("\n\n");
 }
 
 /**
@@ -1108,7 +1150,8 @@ export function buildEntityCardText(
   levelRungName?: string,
 ): string {
   const lines: string[] = [`【${entity.name}】`];
-  if (entity.aliases.length > 0) lines.push(`别名：${entity.aliases.join(" · ")}`);
+  if (entity.aliases.length > 0)
+    lines.push(`别名：${entity.aliases.join(" · ")}`);
   if (entity.summary) lines.push(`一句话：${entity.summary}`);
   for (const [key, value] of Object.entries(entity.fields)) {
     if (key === "性格" && !value.trim()) continue;
@@ -1162,19 +1205,25 @@ export function sanitizeNameFavorites(raw: unknown): NameFavorite[] {
   const seenIds = new Set<string>();
   const result: NameFavorite[] = [];
   for (const item of raw) {
-    if (item === null || typeof item !== "object" || Array.isArray(item)) continue;
+    if (item === null || typeof item !== "object" || Array.isArray(item))
+      continue;
     const source = item as Record<string, unknown>;
     const id = typeof source.id === "string" ? source.id : "";
     const workId = typeof source.workId === "string" ? source.workId : "";
     const name = typeof source.name === "string" ? source.name.trim() : "";
-    const kind = typeof source.kind === "string" ? (source.kind as NamingKind) : "person";
-    const style = typeof source.style === "string" ? (source.style as NameStyle) : "xianxia";
+    const kind =
+      typeof source.kind === "string" ? (source.kind as NamingKind) : "person";
+    const style =
+      typeof source.style === "string"
+        ? (source.style as NameStyle)
+        : "xianxia";
     const createdAt =
       typeof source.createdAt === "number" && Number.isFinite(source.createdAt)
         ? source.createdAt
         : Date.now();
     if (!id || !name || !workId) continue;
-    if (!VALID_NAMING_KINDS.has(kind) || !VALID_NAME_STYLES.has(style)) continue;
+    if (!VALID_NAMING_KINDS.has(kind) || !VALID_NAME_STYLES.has(style))
+      continue;
     if (seenIds.has(id)) continue;
     seenIds.add(id);
     result.push({ id, workId, name, kind, style, createdAt });

@@ -6,7 +6,12 @@ import {
   useRef,
   useState,
 } from "react";
-import type { CSSProperties, KeyboardEvent, MouseEvent as ReactMouseEvent, Ref } from "react";
+import type {
+  CSSProperties,
+  KeyboardEvent,
+  MouseEvent as ReactMouseEvent,
+  Ref,
+} from "react";
 import { Button, Empty, Input } from "antd";
 import {
   defaultKeymap,
@@ -17,7 +22,10 @@ import {
 import { openSearchPanel, search, searchKeymap } from "@codemirror/search";
 import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
-import { editorActions, useChapterDraft } from "../../store/useNovelEditorStore";
+import {
+  editorActions,
+  useChapterDraft,
+} from "../../store/useNovelEditorStore";
 import { GUIDE_MIN_SELECTION_LENGTH } from "@/shared/novel/guide-copy";
 import SelectionGuide, {
   type SelectionGuideAnchor,
@@ -107,6 +115,23 @@ interface EditorPaneProps {
    * 页面根因此不必订阅草稿、为每个字重渲染整棵树。
    */
   onDraftPulse?: (chapterId: string, title: string, content: string) => void;
+  /**
+   * 阅读模式：滚动到章节顶部时回调（上层切换上一章并定位到文末）。
+   * 仅 `settings.readMode` 开启时监听；无上一章时上层不动作即可。
+   */
+  onLoadPrevChapter?: () => void;
+  /**
+   * 阅读模式：滚动到章节底部时回调（上层切换下一章并定位到文首）。
+   * 仅 `settings.readMode` 开启时监听；无下一章时上层不动作即可。
+   */
+  onLoadNextChapter?: () => void;
+  /**
+   * 换章后的初始滚动锚点（一次性）：'bottom' = 定位到文末（加载上一章），
+   * 'top' = 定位到文首（默认 / 加载下一章）。EditorPane 应用后经
+   * onOpenAnchorApplied 回收，避免残留影响下一次普通切章。
+   */
+  openAnchor?: "top" | "bottom";
+  onOpenAnchorApplied?: () => void;
 }
 
 /**
@@ -140,6 +165,25 @@ export interface EditorPaneHandle {
 /** 排版相关的动态样式走独立 compartment，改字号不必重建编辑器 */
 const stylingCompartment = new Compartment();
 
+/** 阅读模式：只读 + 隐藏光标走独立 compartment，开关时热切换不重建编辑器 */
+const readModeCompartment = new Compartment();
+
+/**
+ * 阅读模式扩展集：只读（禁编辑）+ 隐藏光标。
+ *
+ * 两个维度分开：
+ * - `EditorView.editable.of(false)`：让编辑器 contentDOM 失去可编辑性
+ *   （不响应键盘输入），是「只读」的正解；
+ * - `EditorState.readOnly.of(true)`：辅助兜底，阻断 programmatic 输入
+ *   （如粘贴 / 拖拽）。
+ * 光标隐藏靠 CSS（.cm-cursor 隐藏 + caretColor transparent），而不是
+ * 移除 selection —— 选区/高亮/标注层在阅读态仍然要正常展示。
+ */
+const buildReadMode = (readMode: boolean) =>
+  readMode
+    ? [EditorView.editable.of(false), EditorState.readOnly.of(true)]
+    : [EditorView.editable.of(true), EditorState.readOnly.of(false)];
+
 const buildTheme = (settings: EditorSettings) =>
   EditorView.theme({
     "&": {
@@ -149,7 +193,7 @@ const buildTheme = (settings: EditorSettings) =>
       color: "var(--app-text)",
     },
     ".cm-content": {
-      fontFamily: 'var(--nv-paper-font, inherit)',
+      fontFamily: "var(--nv-paper-font, inherit)",
       lineHeight: String(settings.lineHeight),
       padding: "8px 0 0",
       caretColor: "var(--app-primary)",
@@ -158,7 +202,7 @@ const buildTheme = (settings: EditorSettings) =>
       padding: "0 2px",
     },
     ".cm-scroller": {
-      fontFamily: 'var(--nv-paper-font, inherit)',
+      fontFamily: "var(--nv-paper-font, inherit)",
       overflow: "auto",
     },
     ".cm-cursor, .cm-dropCursor": {
@@ -214,6 +258,10 @@ export default function EditorPane({
   focusPos = null,
   onFocusPosApplied,
   onDraftPulse,
+  onLoadPrevChapter,
+  onLoadNextChapter,
+  openAnchor = "top",
+  onOpenAnchorApplied,
   ref,
 }: EditorPaneProps & { ref?: Ref<EditorPaneHandle> }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -221,7 +269,9 @@ export default function EditorPane({
   /** 编辑器根节点：T-03 的选区锚点以它为定位基准（.nv-editor 是 position:relative） */
   const rootRef = useRef<HTMLDivElement | null>(null);
   /** T-03 锚点：非空表示「此刻有一段选区值得提示右键」 */
-  const [guideAnchor, setGuideAnchor] = useState<SelectionGuideAnchor | null>(null);
+  const [guideAnchor, setGuideAnchor] = useState<SelectionGuideAnchor | null>(
+    null,
+  );
   // SelectionGuide 的 onHide 进 effect 依赖，必须是稳定引用，否则气泡一出现就被清掉
   const clearGuideAnchor = useCallback(
     () => setGuideAnchor((prev) => (prev ? null : prev)),
@@ -372,7 +422,8 @@ export default function EditorPane({
   const handleContentChange = useCallback(
     (next: string, previous?: string, source?: "user" | "hydrate"): void => {
       const chapterId = chapterIdRef.current;
-      if (chapterId) editorActions.setContent(chapterId, next, previous, source);
+      if (chapterId)
+        editorActions.setContent(chapterId, next, previous, source);
     },
     [],
   );
@@ -466,6 +517,7 @@ export default function EditorPane({
           ]),
           EditorView.lineWrapping,
           stylingCompartment.of(buildTheme(settings)),
+          readModeCompartment.of(buildReadMode(settings.readMode)),
           annotationLayer(terms, enabled),
           // 敏感词高亮层：与要素标注层完全独立（各自 compartment / facet）
           sensitiveLayer(
@@ -492,7 +544,10 @@ export default function EditorPane({
               if (hydratingRef.current) {
                 handlersRef.current.onChange(next, next, "hydrate");
               } else {
-                handlersRef.current.onChange(next, update.startState.doc.toString());
+                handlersRef.current.onChange(
+                  next,
+                  update.startState.doc.toString(),
+                );
               }
               // 敏感词脉搏：不论用户打字还是程序化灌入（切章）都上报，
               // auto 模式由此拿到新章正文、手动扫描也总能用上最新草稿
@@ -552,10 +607,17 @@ export default function EditorPane({
        */
       const pulseId = chapterIdRef.current;
       if (pulseId) {
-        handlersRef.current.onDraftPulse(pulseId, chapterTitleRef.current, next);
+        handlersRef.current.onDraftPulse(
+          pulseId,
+          chapterTitleRef.current,
+          next,
+        );
       }
     };
-    view.contentDOM.addEventListener("compositionstart", handleCompositionStart);
+    view.contentDOM.addEventListener(
+      "compositionstart",
+      handleCompositionStart,
+    );
     view.contentDOM.addEventListener("compositionend", handleCompositionEnd);
 
     // 选区非空时右键正文 → 弹出标注菜单：坐标以鼠标为准，按菜单尺寸
@@ -572,8 +634,14 @@ export default function EditorPane({
     view.contentDOM.addEventListener("contextmenu", handleContextMenu);
 
     return () => {
-      view.contentDOM.removeEventListener("compositionstart", handleCompositionStart);
-      view.contentDOM.removeEventListener("compositionend", handleCompositionEnd);
+      view.contentDOM.removeEventListener(
+        "compositionstart",
+        handleCompositionStart,
+      );
+      view.contentDOM.removeEventListener(
+        "compositionend",
+        handleCompositionEnd,
+      );
       view.contentDOM.removeEventListener("contextmenu", handleContextMenu);
       view.destroy();
       viewRef.current = null;
@@ -608,6 +676,15 @@ export default function EditorPane({
       effects: stylingCompartment.reconfigure(buildTheme(settings)),
     });
   }, [settings]);
+
+  // 阅读模式热切换：只读 + 隐藏光标（不重建编辑器实例）
+  useEffect(() => {
+    viewRef.current?.dispatch({
+      effects: readModeCompartment.reconfigure(
+        buildReadMode(settings.readMode),
+      ),
+    });
+  }, [settings.readMode]);
 
   /**
    * 换章时的滚动定位（R6）。
@@ -646,21 +723,33 @@ export default function EditorPane({
       if (isRestore && restore) {
         // 光标越界（章节在别处被改短）按文档长度夹取
         current.dispatch({
-          selection: { anchor: Math.min(restore.cursor, current.state.doc.length) },
+          selection: {
+            anchor: Math.min(restore.cursor, current.state.doc.length),
+          },
         });
       }
-      const scroller = hostRef.current?.closest<HTMLElement>(".nv-editor__scroll");
+      const scroller =
+        hostRef.current?.closest<HTMLElement>(".nv-editor__scroll");
       if (scroller) {
-        // 有恢复点用它记下的位置，否则一律归零 —— 新章从第一行开始读是唯一
-        // 说得通的行为，没有哪一章的「合理起点」是上一章的滚动位置
-        scroller.scrollTop = isRestore && restore ? restore.scrollTop : 0;
+        if (isRestore && restore) {
+          // 有恢复点用它记下的位置
+          scroller.scrollTop = restore.scrollTop;
+        } else if (openAnchor === "bottom") {
+          // 阅读模式「加载上一章」：滚到文末，接着上一章结尾往下读
+          scroller.scrollTop = scroller.scrollHeight;
+        } else {
+          // 新章从第一行开始读
+          scroller.scrollTop = 0;
+        }
       }
       if (isRestore) onRestoreDone();
+      // openAnchor 是一次性信号：应用后回收，避免残留影响下一次普通切章
+      if (openAnchor === "bottom") onOpenAnchorApplied?.();
     });
     return () => window.cancelAnimationFrame(frame);
     // restore 是**一次性**输入：消费后由 onRestoreDone 清空，避免它在下一次
     // 换章时被误当成「这一章也有恢复点」而复用上一章的位置
-  }, [chapterId, restore, onRestoreDone]);
+  }, [chapterId, restore, onRestoreDone, openAnchor, onOpenAnchorApplied]);
 
   /**
    * 切章时补一次敏感词脉搏。
@@ -741,19 +830,113 @@ export default function EditorPane({
     return () => window.cancelAnimationFrame(frame);
   }, [chapterId, focusPos, onFocusPosApplied]);
 
+  /**
+   * 阅读模式「滚到章节首/尾继续滚，自动加载上/下一章」（类似移动端下拉/上拉加载）。
+   *
+   * ⚠️ 判定依据是**滚轮方向意图**，不是「是否停在边界」：
+   * 每一章刚进来 scrollTop 恒为 0，若把「在顶部」直接当成「要上一章」，
+   * 往下滚的第一帧（平滑滚动中间态 scrollTop 只有 1~3px）就会被判成到顶，
+   * 表现为「切到下一章刚往下滚就弹回上一章」。所以只在「已经在边界上、且
+   * 继续往边界外推」（顶部 + deltaY<0 / 底部 + deltaY>0）时才累计意图，
+   * 累计过阈值才动作；往内容里滚（deltaY 朝反方向）永远只清空累计。
+   *
+   * ⚠️ 短章（内容一屏装得下）也参与，因为此时顶/底同时成立、只有方向能区分；
+   * 但必须靠**手势消费**兜住连环跳：从长章底部切进一个短章后，同一段惯性还在
+   * 往下滚，若不加限制会「到底 → 下一章 → 又是短章 → 到底 …」一路穿过去。
+   * 因此两次滚轮事件间隔超过 GESTURE_GAP 才算「新手势」，一次手势最多切一章
+   * （读完停下再滚才是下一次意图，这也符合真人节奏）。短章阈值另取更大值，
+   * 避免一个滚轮档就误跳。
+   */
+  const readModeRef = useRef(settings.readMode);
+  /** 边界加载意图：dir = 正在往哪个边界外推，acc = 已累计的推挤距离（px） */
+  const edgeIntentRef = useRef<{ dir: "prev" | "next" | null; acc: number }>({
+    dir: null,
+    acc: 0,
+  });
+  /** 滚轮手势状态：lastAt = 上次事件时间，spent = 本次手势是否已切过章 */
+  const wheelGestureRef = useRef({ lastAt: 0, spent: false });
+
+  useEffect(() => {
+    readModeRef.current = settings.readMode;
+    // 开关阅读模式时重置意图与手势，避免上一次的残留
+    edgeIntentRef.current = { dir: null, acc: 0 };
+    wheelGestureRef.current = { lastAt: 0, spent: false };
+  }, [settings.readMode]);
+
+  const handleReadModeWheel = (el: HTMLElement, deltaY: number): void => {
+    if (!readModeRef.current) return;
+
+    const EDGE = 4;
+    /** 长章阈值：边界很明确，稍微推一点就是意图 */
+    const PULL = 32;
+    /** 短章阈值：顶/底同时成立，要求更明确的推挤，避免一个滚轮档误跳 */
+    const PULL_SHORT = 120;
+    /** 两次滚轮间隔超过它算「新手势」（惯性事件间隔在 16~50ms 量级） */
+    const GESTURE_GAP = 200;
+
+    const gesture = wheelGestureRef.current;
+    const now = Date.now();
+    if (now - gesture.lastAt > GESTURE_GAP) {
+      // 新手势：解锁触发权，并丢掉上一次手势攒下的位移
+      gesture.spent = false;
+      edgeIntentRef.current = { dir: null, acc: 0 };
+    }
+    gesture.lastAt = now;
+
+    const intent = edgeIntentRef.current;
+    const scrollable = el.scrollHeight > el.clientHeight;
+    const atTop = el.scrollTop <= EDGE;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= EDGE;
+    // 顶部继续往上推 = 要上一章；底部继续往下推 = 要下一章
+    const dir: "prev" | "next" | null =
+      atTop && deltaY < 0 ? "prev" : atBottom && deltaY > 0 ? "next" : null;
+
+    if (!dir) {
+      // 往内容里滚或已在中段：清空累计（不让位移「攒着」稍后突然爆）
+      intent.dir = null;
+      intent.acc = 0;
+      return;
+    }
+
+    if (intent.dir !== dir) {
+      intent.dir = dir;
+      intent.acc = 0;
+    }
+    intent.acc += Math.abs(deltaY);
+    if (intent.acc < (scrollable ? PULL : PULL_SHORT) || gesture.spent) return;
+
+    // 本次手势用掉：之后的惯性事件不再切章，必须停手再滚才重新获得触发权
+    gesture.spent = true;
+    intent.acc = 0;
+    if (dir === "prev") onLoadPrevChapter?.();
+    else onLoadNextChapter?.();
+  };
+
+  // 换章后边界状态复位：新章从顶部开始，意图清空（手势的 spent 故意保留，
+  // 它负责拦住「切章同一段惯性里继续连跳」）
+  useEffect(() => {
+    edgeIntentRef.current = { dir: null, acc: 0 };
+  }, [chapterId]);
+
   // 点击正文下方的空白区（纸面 / 滚动容器）也能聚焦：CodeMirror 的 content
   // 只占文档实际高度，点在其下方时命中的是容器本身——这里兜底把光标放上去
   // （posAtCoords 命中不到内容点时落到文档末尾），恢复「点哪都能接着写」的手感
-  const handleScrollAreaClick = (event: ReactMouseEvent<HTMLDivElement>): void => {
+  const handleScrollAreaClick = (
+    event: ReactMouseEvent<HTMLDivElement>,
+  ): void => {
     const view = viewRef.current;
     if (!view || !chapter) return;
     const target = event.target;
-    if (target instanceof HTMLElement && target.closest(".cm-content, .cm-panels")) {
+    if (
+      target instanceof HTMLElement &&
+      target.closest(".cm-content, .cm-panels")
+    ) {
       return;
     }
     view.focus();
     const pos =
-      view.posAtCoords({ x: event.clientX, y: event.clientY }) ?? view.state.doc.length;
+      view.posAtCoords({ x: event.clientX, y: event.clientY }) ??
+      view.state.doc.length;
     view.dispatch({ selection: { anchor: pos } });
   };
 
@@ -816,11 +999,17 @@ export default function EditorPane({
   return (
     <div
       ref={rootRef}
-      className="nv-editor"
+      className={`nv-editor${settings.paperTexture ? " is-paper" : ""}${
+        settings.readMode ? " is-readmode" : ""
+      }`}
       style={
         {
           "--nv-indent": settings.indent ? "2em" : "0",
           "--nv-paragraph-spacing": `${settings.paragraphSpacing}em`,
+          // 正文字体：空 = 不设，回退 CSS 的 inherit（跟随系统）
+          "--nv-paper-font": settings.paperFont
+            ? `"${settings.paperFont}", serif`
+            : undefined,
         } as CSSProperties
       }
     >
@@ -866,9 +1055,23 @@ export default function EditorPane({
         className="nv-editor__scroll"
         onClick={handleScrollAreaClick}
         onScroll={(event) => {
-          onScrollChange(event.currentTarget.scrollTop);
+          const el = event.currentTarget;
+          onScrollChange(el.scrollTop);
           // 滚动后选区坐标失效，气泡会飘在错位置 —— 直接撤掉
           clearGuideAnchor();
+        }}
+        onWheel={(event) => {
+          // 只有滚轮事件才带方向意图（scroll 事件在边界上根本不触发，且无法区分
+          // 「刚进章节的 scrollTop=0」和「从内容里滚回顶部」）。deltaMode 三种
+          // 单位统一折算成 px，再交给阈值判断。
+          const el = event.currentTarget;
+          const scale =
+            event.deltaMode === 1
+              ? 16
+              : event.deltaMode === 2
+                ? el.clientHeight
+                : 1;
+          handleReadModeWheel(el, event.deltaY * scale);
         }}
         data-tour-target="editor-body"
       >
@@ -901,10 +1104,7 @@ export default function EditorPane({
                   </Button>
                 )}
                 {onImportBook && (
-                  <Button
-                    className="nv-editor__import"
-                    onClick={onImportBook}
-                  >
+                  <Button className="nv-editor__import" onClick={onImportBook}>
                     导入书籍
                   </Button>
                 )}

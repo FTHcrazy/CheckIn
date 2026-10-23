@@ -88,7 +88,7 @@ function QuickAddBar({
       width={640}
       footer={null}
       closable={false}
-      maskClosable
+      mask={{ closable: true }}
       keyboard
       destroyOnHidden
     >

@@ -13,6 +13,8 @@ import type {
   LabelNumberStyle,
   WordCountMode,
 } from "./../../types";
+import FontPicker from "./FontPicker";
+import type { usePaperFonts } from "../../hooks/usePaperFonts";
 import "./index.scss";
 
 interface SettingsDrawerProps {
@@ -24,6 +26,8 @@ interface SettingsDrawerProps {
   ) => void;
   onToggleAnnotationType: (type: EntityType) => void;
   onClose: () => void;
+  /** 正文字体状态（由 NovelPage 持有，经这里转交 FontPicker） */
+  paperFonts?: ReturnType<typeof usePaperFonts>;
 }
 
 /**
@@ -39,6 +43,7 @@ export default function SettingsDrawer({
   onUpdate,
   onToggleAnnotationType,
   onClose,
+  paperFonts,
 }: SettingsDrawerProps) {
   const { metaOf, filterOrder } = useEntityTypeMeta();
   const rootRef = useRef<HTMLElement>(null);
@@ -88,164 +93,222 @@ export default function SettingsDrawer({
       </header>
 
       <div className="nv-setting__body">
-        <section className="nv-setting__row">
-          <label>字号</label>
-          <Slider
-            min={SETTINGS_RANGE.fontSize.min}
-            max={SETTINGS_RANGE.fontSize.max}
-            step={SETTINGS_RANGE.fontSize.step}
-            value={settings.fontSize}
-            onChange={(value) => onUpdate("fontSize", value)}
-          />
-          <span className="nv-setting__value">{settings.fontSize}px</span>
-        </section>
+        <section className="nv-setting__block">
+          <h6 className="nv-setting__label">排版</h6>
 
-        <section className="nv-setting__row">
-          <label>行距</label>
-          <Slider
-            min={SETTINGS_RANGE.lineHeight.min}
-            max={SETTINGS_RANGE.lineHeight.max}
-            step={SETTINGS_RANGE.lineHeight.step}
-            value={settings.lineHeight}
-            onChange={(value) => onUpdate("lineHeight", value)}
-          />
-          <span className="nv-setting__value">
-            {settings.lineHeight.toFixed(1)}
-          </span>
-        </section>
+          <section className="nv-setting__row">
+            <label>字号</label>
+            <Slider
+              min={SETTINGS_RANGE.fontSize.min}
+              max={SETTINGS_RANGE.fontSize.max}
+              step={SETTINGS_RANGE.fontSize.step}
+              value={settings.fontSize}
+              onChange={(value) => onUpdate("fontSize", value)}
+            />
+            <span className="nv-setting__value">{settings.fontSize}px</span>
+          </section>
 
-        <section className="nv-setting__row">
-          <label>段间距</label>
-          <Slider
-            min={SETTINGS_RANGE.paragraphSpacing.min}
-            max={SETTINGS_RANGE.paragraphSpacing.max}
-            step={SETTINGS_RANGE.paragraphSpacing.step}
-            value={settings.paragraphSpacing}
-            onChange={(value) => onUpdate("paragraphSpacing", value)}
-          />
-          <span className="nv-setting__value">
-            {settings.paragraphSpacing.toFixed(1)}em
-          </span>
-        </section>
+          <section className="nv-setting__row">
+            <label>行距</label>
+            <Slider
+              min={SETTINGS_RANGE.lineHeight.min}
+              max={SETTINGS_RANGE.lineHeight.max}
+              step={SETTINGS_RANGE.lineHeight.step}
+              value={settings.lineHeight}
+              onChange={(value) => onUpdate("lineHeight", value)}
+            />
+            <span className="nv-setting__value">
+              {settings.lineHeight.toFixed(1)}
+            </span>
+          </section>
 
-        <section className="nv-setting__row">
-          <label>首行缩进</label>
-          <Switch
-            checked={settings.indent}
-            onChange={(checked) => onUpdate("indent", checked)}
-          />
-        </section>
+          <section className="nv-setting__row">
+            <label>段间距</label>
+            <Slider
+              min={SETTINGS_RANGE.paragraphSpacing.min}
+              max={SETTINGS_RANGE.paragraphSpacing.max}
+              step={SETTINGS_RANGE.paragraphSpacing.step}
+              value={settings.paragraphSpacing}
+              onChange={(value) => onUpdate("paragraphSpacing", value)}
+            />
+            <span className="nv-setting__value">
+              {settings.paragraphSpacing.toFixed(1)}em
+            </span>
+          </section>
 
-        <section className="nv-setting__row">
-          <label>今日目标</label>
-          <Slider
-            min={SETTINGS_RANGE.dailyGoal.min}
-            max={SETTINGS_RANGE.dailyGoal.max}
-            step={SETTINGS_RANGE.dailyGoal.step}
-            value={settings.dailyGoal}
-            onChange={(value) => onUpdate("dailyGoal", value)}
-          />
-          <span className="nv-setting__value">
-            {formatThousands(settings.dailyGoal)}
-          </span>
-        </section>
-
-        <section className="nv-setting__row">
-          <label>字数口径</label>
-          <Segmented<WordCountMode>
-            size="small"
-            value={settings.wordCountMode}
-            options={[
-              { value: "withPunctuation", label: "含标点" },
-              { value: "hanOnly", label: "纯汉字" },
-            ]}
-            onChange={(value) => onUpdate("wordCountMode", value)}
-          />
+          <section className="nv-setting__row is-toggle">
+            <label>首行缩进</label>
+            <Switch
+              size="small"
+              checked={settings.indent}
+              onChange={(checked) => onUpdate("indent", checked)}
+            />
+          </section>
         </section>
 
         <section className="nv-setting__block">
-          <h6 className="nv-setting__label">序号数字</h6>
-          <Segmented<LabelNumberStyle>
-            size="small"
-            value={settings.numberStyle}
-            options={[
-              { value: "arabic", label: "阿拉伯（第1章）" },
-              { value: "chinese", label: "中文（第一章）" },
-            ]}
-            onChange={(value) => onUpdate("numberStyle", value)}
-          />
+          <h6 className="nv-setting__label">阅读</h6>
+
+          <section className="nv-setting__row is-toggle">
+            <div className="nv-setting__text">
+              <label>护眼纸质感</label>
+              <p className="nv-setting__hint">换纸面色并叠纸纹，文字更柔和。</p>
+            </div>
+            <Switch
+              size="small"
+              checked={settings.paperTexture}
+              onChange={(checked) => onUpdate("paperTexture", checked)}
+            />
+          </section>
+
+          <section className="nv-setting__row is-toggle">
+            <div className="nv-setting__text">
+              <label>阅读模式</label>
+              <p className="nv-setting__hint">
+                只读并隐藏光标；章节首尾继续同向滚动即翻章，一次滚动只翻一章。
+              </p>
+            </div>
+            <Switch
+              size="small"
+              checked={settings.readMode}
+              onChange={(checked) => onUpdate("readMode", checked)}
+            />
+          </section>
         </section>
 
         <section className="nv-setting__block">
-          <h6 className="nv-setting__label">章节后缀</h6>
-          <div className="nv-setting__chips">
-            {CHAPTER_SUFFIX_OPTIONS.map((suffix) => (
-              <Button
-                key={suffix}
-                className={`nv-setting__chip${
-                  settings.chapterSuffix === suffix ? " is-on" : ""
-                }`}
-                onClick={() => onUpdate("chapterSuffix", suffix)}
-              >
-                {formatNumberedLabel(settings.numberStyle, suffix, 1)}
-              </Button>
-            ))}
+          <h6 className="nv-setting__label">正文字体</h6>
+          <FontPicker fonts={paperFonts} />
+        </section>
+
+        <section className="nv-setting__block">
+          <h6 className="nv-setting__label">写作目标</h6>
+
+          <section className="nv-setting__row">
+            <label>今日目标</label>
+            <Slider
+              min={SETTINGS_RANGE.dailyGoal.min}
+              max={SETTINGS_RANGE.dailyGoal.max}
+              step={SETTINGS_RANGE.dailyGoal.step}
+              value={settings.dailyGoal}
+              onChange={(value) => onUpdate("dailyGoal", value)}
+            />
+            <span className="nv-setting__value">
+              {formatThousands(settings.dailyGoal)}
+            </span>
+          </section>
+
+          <section className="nv-setting__row is-control">
+            <label>字数口径</label>
+            <Segmented<WordCountMode>
+              size="small"
+              value={settings.wordCountMode}
+              options={[
+                { value: "withPunctuation", label: "含标点" },
+                { value: "hanOnly", label: "纯汉字" },
+              ]}
+              onChange={(value) => onUpdate("wordCountMode", value)}
+            />
+          </section>
+        </section>
+
+        <section className="nv-setting__block">
+          <h6 className="nv-setting__label">章节与卷命名</h6>
+
+          <div className="nv-setting__field">
+            <label className="nv-setting__sub">序号数字</label>
+            <Segmented<LabelNumberStyle>
+              size="small"
+              block
+              value={settings.numberStyle}
+              options={[
+                { value: "arabic", label: "阿拉伯（第1章）" },
+                { value: "chinese", label: "中文（第一章）" },
+              ]}
+              onChange={(value) => onUpdate("numberStyle", value)}
+            />
           </div>
-          <Input
-            className="nv-setting__suffix-input"
-            variant="borderless"
-            value={settings.chapterSuffix}
-            maxLength={4}
-            aria-label="自定义章节后缀"
-            placeholder="自定义后缀，如：话"
-            onChange={(event) =>
-              onUpdate("chapterSuffix", event.target.value.trim() || "章")
-            }
-          />
-        </section>
 
-        <section className="nv-setting__block">
-          <h6 className="nv-setting__label">卷名后缀</h6>
-          <div className="nv-setting__chips">
-            {VOLUME_SUFFIX_OPTIONS.map((suffix) => (
-              <Button
-                key={suffix}
-                className={`nv-setting__chip${
-                  settings.volumeSuffix === suffix ? " is-on" : ""
-                }`}
-                onClick={() => onUpdate("volumeSuffix", suffix)}
-              >
-                {formatNumberedLabel(settings.numberStyle, suffix, 1)}
-              </Button>
-            ))}
+          <div className="nv-setting__field">
+            <label className="nv-setting__sub">章节后缀</label>
+            <div className="nv-setting__chips is-even">
+              {CHAPTER_SUFFIX_OPTIONS.map((suffix) => (
+                <Button
+                  key={suffix}
+                  className={`nv-setting__chip${
+                    settings.chapterSuffix === suffix ? " is-on" : ""
+                  }`}
+                  onClick={() => onUpdate("chapterSuffix", suffix)}
+                >
+                  {formatNumberedLabel(settings.numberStyle, suffix, 1)}
+                </Button>
+              ))}
+            </div>
+            <section className="nv-setting__row is-control">
+              <label>自定义</label>
+              <Input
+                className="nv-setting__suffix-input"
+                variant="borderless"
+                value={settings.chapterSuffix}
+                maxLength={4}
+                aria-label="自定义章节后缀"
+                placeholder="如：话"
+                onChange={(event) =>
+                  onUpdate("chapterSuffix", event.target.value.trim() || "章")
+                }
+              />
+            </section>
           </div>
-          <Input
-            className="nv-setting__suffix-input"
-            variant="borderless"
-            value={settings.volumeSuffix}
-            maxLength={4}
-            aria-label="自定义卷名后缀"
-            placeholder="自定义后缀，如：册"
-            onChange={(event) =>
-              onUpdate("volumeSuffix", event.target.value.trim() || "卷")
-            }
-          />
-        </section>
 
-        <section className="nv-setting__row">
-          <label>防误触排序</label>
-          <Switch
-            checked={settings.confirmReorder}
-            onChange={(checked) => onUpdate("confirmReorder", checked)}
-          />
+          <div className="nv-setting__field">
+            <label className="nv-setting__sub">卷名后缀</label>
+            <div className="nv-setting__chips is-even">
+              {VOLUME_SUFFIX_OPTIONS.map((suffix) => (
+                <Button
+                  key={suffix}
+                  className={`nv-setting__chip${
+                    settings.volumeSuffix === suffix ? " is-on" : ""
+                  }`}
+                  onClick={() => onUpdate("volumeSuffix", suffix)}
+                >
+                  {formatNumberedLabel(settings.numberStyle, suffix, 1)}
+                </Button>
+              ))}
+            </div>
+            <section className="nv-setting__row is-control">
+              <label>自定义</label>
+              <Input
+                className="nv-setting__suffix-input"
+                variant="borderless"
+                value={settings.volumeSuffix}
+                maxLength={4}
+                aria-label="自定义卷名后缀"
+                placeholder="如：册"
+                onChange={(event) =>
+                  onUpdate("volumeSuffix", event.target.value.trim() || "卷")
+                }
+              />
+            </section>
+          </div>
+
+          <section className="nv-setting__row is-toggle">
+            <div className="nv-setting__text">
+              <label>防误触排序</label>
+              <p className="nv-setting__hint">
+                拖拽调整章节或卷的顺序时，先弹窗确认序号变化再生效。
+              </p>
+            </div>
+            <Switch
+              size="small"
+              checked={settings.confirmReorder}
+              onChange={(checked) => onUpdate("confirmReorder", checked)}
+            />
+          </section>
         </section>
-        <p className="nv-setting__hint">
-          开启后，拖拽调整章节或卷的顺序时先弹窗确认序号变化，确认后才生效。
-        </p>
 
         <section className="nv-setting__block">
           <h6 className="nv-setting__label">正文高亮类型</h6>
-          <div className="nv-setting__chips">
+          <div className="nv-setting__chips is-auto">
             {filterOrder.map((type) => {
               const meta = metaOf(type);
               const on = settings.annotationTypes.includes(type);
@@ -262,7 +325,7 @@ export default function SettingsDrawer({
             })}
           </div>
           <p className="nv-setting__hint">
-            阅读底色跟随主窗口主题；标注层全部关闭即整体降级。
+            纸面底色跟随主窗口主题；标注层全部关闭即整体降级。
           </p>
         </section>
       </div>

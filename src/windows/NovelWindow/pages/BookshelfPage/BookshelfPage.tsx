@@ -13,8 +13,10 @@ import NewWorkCard from "./components/NewWorkCard";
 import ShelfStats, { type ShelfStatItem } from "./components/ShelfStats";
 import ShelfToolbar, { type ShelfViewMode } from "./components/ShelfToolbar";
 import ShelfTopBar from "./components/ShelfTopBar";
+import DataSafetyModal from "./components/DataSafetyModal";
 import { useBookshelfData } from "./hooks/useBookshelfData";
 import { useBookImport } from "./hooks/useBookImport";
+import { listTrash } from "../NovelPage/services/novel-service";
 import NovelGuideTour from "../../components/NovelGuideTour";
 import { useGuideStore } from "../../store/useGuideStore";
 import {
@@ -41,6 +43,13 @@ interface BookshelfPageProps {
   /** 打开某部作品进入编辑器；chapterId 缺省时由编辑器落到该作品第一章 */
   onOpenWork: (workId: string, chapterId?: string) => void;
   /**
+   * 打开回收站页面（书架的数据管理面）。
+   *
+   * 回收站是**独立页面**（2.5.0 从「数据安全」弹窗里拆出）：逐条判断「捞回还是
+   * 销毁」需要横向空间，弹窗里只能靠省略号过日子。备份 / 恢复仍留在弹窗。
+   */
+  onOpenTrash: () => void;
+  /**
    * 编辑器空书架空态的「导入书籍」请求（幂等 token）：收到后在本页发起选文件
    * 导入。导入的实现（选文件 → worker 解析 → 落库）只在这里有一份，
    * 编辑器侧经窗口根转发请求，不抄第二条链路。
@@ -60,6 +69,7 @@ interface BookshelfPageProps {
 export default function BookshelfPage({
   visible = true,
   onOpenWork,
+  onOpenTrash,
   importRequest = null,
   onImportRequestConsumed,
 }: BookshelfPageProps) {
@@ -107,6 +117,23 @@ export default function BookshelfPage({
   /** 回执可能永远不来（窗口装载失败且被关掉），兜底时长按 dev 最慢路径留够余量 */
   const GLOBAL_SETTING_OPENING_TIMEOUT_MS = 8000;
   const globalSettingOpeningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /** 「数据安全」面板（备份 / 恢复）与回收站角落数量 */
+  const [safetyOpen, setSafetyOpen] = useState(false);
+  const [trashCount, setTrashCount] = useState(0);
+
+  /**
+   * 回收站数量角标：只数条数，不拉每条详情（listTrash 已带摘要，这里只取长度）。
+   * 读失败静默归零 —— 角标是锦上添花，不该因为一次查询失败弹错误提示。
+   */
+  const refreshTrashCount = useCallback(async (): Promise<void> => {
+    try {
+      const result = await listTrash();
+      setTrashCount(result.items.length);
+    } catch {
+      setTrashCount(0);
+    }
+  }, []);
 
   const openCreate = useCallback(() => {
     // PRD §11：Tour 不与弹窗抢焦点 —— 弹窗打开时引导让位，
@@ -175,10 +202,13 @@ export default function BookshelfPage({
     if (!visible) return;
     if (firstVisibleRef.current) {
       firstVisibleRef.current = false;
+      // 首帧只补回收站角标：书架数据由 useBookshelfData 自己装载
+      void refreshTrashCount();
       return;
     }
     void refresh(true);
-  }, [visible, refresh]);
+    void refreshTrashCount();
+  }, [visible, refresh, refreshTrashCount]);
 
   // ── 导入书籍（TXT）：worker 解析 + 单事务落库 + 完成后刷新书架 ──
   const {
@@ -350,6 +380,9 @@ export default function BookshelfPage({
         importPhase={importPhase}
         onGlobalSettingClick={openGlobalSetting}
         globalSettingOpening={globalSettingOpening}
+        onSafetyClick={() => setSafetyOpen(true)}
+        onTrashClick={onOpenTrash}
+        trashCount={trashCount}
       />
 
       <div className="bs-page__body">
@@ -462,6 +495,17 @@ export default function BookshelfPage({
         />
         {createError && <p className="bs-page__create-error">{createError}</p>}
       </Modal>
+
+      {/* 数据安全（P0）：一键全量备份 / 从备份恢复（回收站已拆成独立页面）。
+          整库被替换后同时刷新书架与角标 —— 恢复一部作品要立刻出现在书架上。 */}
+      <DataSafetyModal
+        open={safetyOpen}
+        onClose={() => setSafetyOpen(false)}
+        onDataChanged={() => {
+          void refresh(true);
+          void refreshTrashCount();
+        }}
+      />
 
       {/* L1 漫游引导：第 1 步属书架页（第 2-5 步属编辑器页，由 NovelPage 内的实例接管） */}
       <NovelGuideTour view="shelf" visible={visible} />

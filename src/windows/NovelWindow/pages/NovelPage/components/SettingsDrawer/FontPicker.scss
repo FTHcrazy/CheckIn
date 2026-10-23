@@ -1,0 +1,80 @@
+/* 字体选择器卡片（排版抽屉内）——按钮走 antd `Button`（AGENTS 6.1.2） */
+
+.nv-font {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  &__card {
+    padding: 8px 10px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-card);
+    background: var(--app-surface);
+
+    &.is-active {
+      border-color: var(--app-primary);
+      background: var(--app-surface-alt);
+    }
+  }
+
+  &__meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  &__label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--app-text);
+  }
+
+  &__style {
+    padding: 0 6px;
+    border-radius: var(--app-radius-pill);
+    background: var(--app-surface-alt);
+    font-size: 12px;
+    color: var(--app-text-secondary);
+  }
+
+  &__preview {
+    margin: 6px 0 2px;
+    font-size: 16px;
+    line-height: 1.6;
+    color: var(--app-text);
+  }
+
+  &__hint {
+    margin: 0;
+    font-size: 12px;
+    color: var(--app-text-muted);
+  }
+
+  &__actions {
+    margin-top: 6px;
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  /* 应用 / 下载按钮：组件库 Button，外观走组件级变量 */
+  &__apply.ant-btn,
+  &__download.ant-btn {
+    --ant-control-height: 26px;
+    --ant-button-padding-inline: 12px;
+    --ant-button-content-font-size: 12px;
+    --ant-border-radius: var(--app-radius-chip);
+    --ant-button-default-bg: var(--app-primary);
+    --ant-button-default-color: var(--app-primary-contrast);
+    --ant-button-default-hover-bg: var(--app-primary-strong);
+    --ant-button-default-hover-color: var(--app-primary-contrast);
+    --ant-button-default-active-bg: var(--app-primary-strong);
+    --ant-button-default-active-color: var(--app-primary-contrast);
+    --ant-button-default-shadow: none;
+  }
+
+  &__error {
+    margin: 0;
+    font-size: 12px;
+    color: var(--app-error);
+  }
+}

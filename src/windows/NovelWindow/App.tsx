@@ -14,6 +14,7 @@ import { matchKeyEvent, useShortcutBindings } from "@/shared/shortcuts";
 // 根级样式由 main.tsx 引入（两者都引会重复插入同一份 CSS）
 import BookshelfPage from "./pages/BookshelfPage/BookshelfPage";
 import NovelPage from "./pages/NovelPage/NovelPage";
+import RecycleBinPage from "./pages/RecycleBinPage/RecycleBinPage";
 import { selectHelpBadgeVisible, useGuideStore } from "./store/useGuideStore";
 import { useEntityJumpStore } from "./store/useEntityJumpStore";
 import { readEntityOpenPayload } from "./utils/entity-jump";
@@ -78,6 +79,8 @@ export default function NovelWindowApp() {
   // 视图与跳转状态机收口在 store（见 store/useEntityJumpStore.ts）：
   // IPC 监听只注册一次，判定永远读 store 的当下状态，没有过期闭包
   const view = useEntityJumpStore((s) => s.view);
+  const shelfScreen = useEntityJumpStore((s) => s.shelfScreen);
+  const openTrash = useEntityJumpStore((s) => s.openTrash);
   const editorMounted = useEntityJumpStore((s) => s.editorMounted);
   const openRequest = useEntityJumpStore((s) => s.openRequest);
   const importRequest = useEntityJumpStore((s) => s.importRequest);
@@ -165,8 +168,11 @@ export default function NovelWindowApp() {
    */
   useEffect(() => {
     if (!guideHydrated) return;
+    // 停在三级的书架页面（回收站）时不启动引导：书架主页此时是隐藏的，
+    // 目标元素量不出位置，Tour 会卡在一个看不见的高亮上
+    if (view === "shelf" && shelfScreen !== "main") return;
     startGuide(view === "editor" ? 2 : 1);
-  }, [guideHydrated, view, startGuide]);
+  }, [guideHydrated, view, shelfScreen, startGuide]);
 
   /** 重看引导：按当前视图定位起始步（在编辑器里重看不该跳回书架第 1 步） */
   const handleReplayGuide = useCallback(() => {
@@ -188,7 +194,16 @@ export default function NovelWindowApp() {
         <WindowHeader
           title="Novel 随笔"
           icon={<BookOutlined />}
-          badge={view === "shelf" ? <span className="novel-badge">书架</span> : null}
+          /* 标题栏徽标跟随「书架区的二级页面」：回收站虽然复用 shelf 视图
+             （数据管理面），但它是另一个页面，标题栏还写「书架」会让用户
+             以为没切过去（2.5.1 真机反馈）。 */
+          badge={
+            view === "shelf" ? (
+              <span className="novel-badge">
+                {shelfScreen === "trash" ? "回收站" : "书架"}
+              </span>
+            ) : null
+          }
           actions={
             <>
               <HelpEntryButton />
@@ -199,16 +214,27 @@ export default function NovelWindowApp() {
         <div className="window-shell__body">
           <div className="novel-views">
             <div
-              className={`novel-view${view === "shelf" ? "" : " is-hidden"}`}
-              aria-hidden={view !== "shelf"}
+              className={`novel-view${
+                view === "shelf" && shelfScreen === "main" ? "" : " is-hidden"
+              }`}
+              aria-hidden={view !== "shelf" || shelfScreen !== "main"}
             >
               <BookshelfPage
-                visible={view === "shelf"}
+                visible={view === "shelf" && shelfScreen === "main"}
                 onOpenWork={openWork}
+                onOpenTrash={openTrash}
                 importRequest={importRequest}
                 onImportRequestConsumed={consumeImportRequest}
               />
             </div>
+            {/* 回收站（书架的数据管理面）：整页替换书架，返回即回到书架主页。
+                只在真正打开时挂载 —— 每次进来都要重新读一遍回收站，
+                挂载即加载比「常驻 + 手动刷新」更不容易显示过期数据。 */}
+            {view === "shelf" && shelfScreen === "trash" && (
+              <div className="novel-view">
+                <RecycleBinPage onBack={backToShelf} />
+              </div>
+            )}
             {editorMounted && (
               <div
                 className={`novel-view${view === "editor" ? "" : " is-hidden"}`}

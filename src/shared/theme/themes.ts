@@ -41,6 +41,8 @@ export interface ThemeMeta {
   swatch: string;
   /** 暗色主题：antd 走 darkAlgorithm，弹层跟随反色 */
   isDark: boolean;
+  /** 正文纸面色（跟随主题派生，护眼开关只切纸质感、不切色相） */
+  paper: string;
   antd: ThemeAntdTokens;
 }
 
@@ -51,6 +53,7 @@ export const THEME_LIST: readonly ThemeMeta[] = [
     hint: "清透蓝紫，默认主题",
     swatch: "#5b6cf9",
     isDark: false,
+    paper: "#fbf7ed",
     antd: {
       colorPrimary: "#5b6cf9",
       colorBgLayout: "#f3f5fc",
@@ -75,6 +78,7 @@ export const THEME_LIST: readonly ThemeMeta[] = [
     hint: "暖阳奶油，柔和治愈",
     swatch: "#e8834a",
     isDark: false,
+    paper: "#fbf3e2",
     antd: {
       colorPrimary: "#e8834a",
       colorBgLayout: "#faf6ef",
@@ -99,6 +103,7 @@ export const THEME_LIST: readonly ThemeMeta[] = [
     hint: "薄荷新绿，清爽提神",
     swatch: "#2fa57e",
     isDark: false,
+    paper: "#f3f6ee",
     antd: {
       colorPrimary: "#2fa57e",
       colorBgLayout: "#f2f8f4",
@@ -123,6 +128,7 @@ export const THEME_LIST: readonly ThemeMeta[] = [
     hint: "低亮夜色，护眼专注",
     swatch: "#232842", // 之前的色值跟紫色主题的颜色相近，换一个深一点的
     isDark: true,
+    paper: "#262421",
     antd: {
       colorPrimary: "#7b8cff",
       colorBgLayout: "#15171f",

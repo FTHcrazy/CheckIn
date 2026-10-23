@@ -142,20 +142,15 @@ export default function ChapterTree({
     if (!group) return null;
     if (pendingDelete.kind === "volume") {
       const count = group.chapters.length;
+      const name = volumeDisplayName(group.volume, numberStyle, volumeSuffix);
+      // ⚠️ 文案不能再说「不可恢复」：卷与章节的删除现在是软删除（进回收站），
+      // 正文 / 历史快照 / 大纲条目全都保留，恢复后原样回来。
       return {
         title: "删除这个卷？",
         description:
           count > 0
-            ? `将删除「${volumeDisplayName(
-                group.volume,
-                numberStyle,
-                volumeSuffix,
-              )}」及其下 ${count} 章、全部历史快照与大纲条目，不可恢复。`
-            : `将删除「${volumeDisplayName(
-                group.volume,
-                numberStyle,
-                volumeSuffix,
-              )}」（空卷），不可恢复。`,
+            ? `「${name}」及其下 ${count} 章将移入回收站，可在书架「回收站」里恢复。`
+            : `「${name}」（空卷）将移入回收站，可在书架「回收站」里恢复。`,
         onConfirm: () => onDeleteVolume(pendingDelete.id),
       };
     }
@@ -165,7 +160,7 @@ export default function ChapterTree({
     if (!chapter) return null;
     return {
       title: "删除章节",
-      description: `删除「${chapter.title}」及其全部历史快照，不可恢复。`,
+      description: `「${chapter.title}」将移入回收站，可在书架「回收站」里恢复。`,
       onConfirm: () => onDeleteChapter(pendingDelete.id),
     };
   }, [
@@ -433,7 +428,7 @@ export default function ChapterTree({
           open
           title={pendingDeleteAction.title}
           description={pendingDeleteAction.description}
-          okText="删除"
+          okText="移入回收站"
           cancelText="取消"
           okButtonProps={{ danger: true }}
           onConfirm={() => {

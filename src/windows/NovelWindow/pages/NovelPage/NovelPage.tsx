@@ -23,6 +23,7 @@ import StatusBar from "./components/StatusBar";
 import SupportPanel from "./components/SupportPanel";
 import { EntityTypesProvider } from "./hooks/useEntityTypes";
 import { useNovelPage } from "./hooks/useNovelPage";
+import { usePaperFonts } from "./hooks/usePaperFonts";
 import { useSensitiveDetection } from "./hooks/useSensitiveDetection";
 import { hoverActions } from "./store/useHoverStore";
 import {
@@ -44,7 +45,10 @@ import {
 } from "./services/novel-service";
 import { formatNumberedLabel } from "./novel-utils";
 import { toSettingCategory } from "@/shared/novel/setting-mappers";
-import { type EntityOpenPayload, type NovelEditorBridge } from "../../utils/entity-jump";
+import {
+  type EntityOpenPayload,
+  type NovelEditorBridge,
+} from "../../utils/entity-jump";
 import type { EntityAppearance, NovelChapter, SettingCategory } from "./types";
 import "./index.scss";
 
@@ -179,6 +183,50 @@ export default function NovelPage({
   const { loadSnapshots, activeChapterId, searchBook } = data;
 
   /**
+   * 正文字体：下载 / 列表 / @font-face 挂载 / 预览，都由这个 hook 持有。
+   * activeFamily 直接绑定 settings.paperFont，select 回写 updateSetting。
+   */
+  const paperFonts = usePaperFonts({
+    activeFamily: editor.settings.paperFont,
+    onSelect: (family) => editor.updateSetting("paperFont", family),
+  });
+
+  /**
+   * 阅读模式「滚动到首/尾自动加载上下章」：从 data.groups（卷按 sort、卷内
+   * 章按 sort 已排好）扁平化出全书有序章节 id，据此定位当前章的 prev/next。
+   *
+   * openAnchor 是一次性信号：'bottom' 表示这次切章要定位到文末（加载上一章），
+   * 'top' 定位到文首（加载下一章 / 正常切章）。EditorPane 消费后经回调清空。
+   */
+  const orderedChapterIds = useMemo(
+    () =>
+      data.groups.flatMap((group) =>
+        group.chapters.map((chapter) => chapter.id),
+      ),
+    [data.groups],
+  );
+  const [openAnchor, setOpenAnchor] = useState<"top" | "bottom">("top");
+
+  const handleLoadPrevChapter = useCallback((): void => {
+    const index = orderedChapterIds.indexOf(data.activeChapterId ?? "");
+    const prevId = index > 0 ? orderedChapterIds[index - 1] : null;
+    if (!prevId) return;
+    setOpenAnchor("bottom");
+    handleSelectChapter(prevId);
+  }, [orderedChapterIds, data.activeChapterId, handleSelectChapter]);
+
+  const handleLoadNextChapter = useCallback((): void => {
+    const index = orderedChapterIds.indexOf(data.activeChapterId ?? "");
+    const nextId =
+      index >= 0 && index < orderedChapterIds.length - 1
+        ? orderedChapterIds[index + 1]
+        : null;
+    if (!nextId) return;
+    setOpenAnchor("top");
+    handleSelectChapter(nextId);
+  }, [orderedChapterIds, data.activeChapterId, handleSelectChapter]);
+
+  /**
    * 敏感词检测：持久化登记 / 读盘 / 跳转消费都在这个 hook 里，
    * 页面只把它暴露的两件事接给编辑器——词库与定位偏移。
    */
@@ -288,7 +336,8 @@ export default function NovelPage({
   );
 
   const detailEntity = useMemo(
-    () => (view.detailEntityId ? data.getEntityById(view.detailEntityId) : null),
+    () =>
+      view.detailEntityId ? data.getEntityById(view.detailEntityId) : null,
     [view.detailEntityId, data],
   );
 
@@ -357,11 +406,13 @@ export default function NovelPage({
   >([]);
   const refreshTemplates = useCallback(() => {
     void listSettingTemplates().then((list) =>
-      setSettingTemplates(list.map((item) => ({
-        id: item.id,
-        name: item.name,
-        createdAt: item.createdAt,
-      }))),
+      setSettingTemplates(
+        list.map((item) => ({
+          id: item.id,
+          name: item.name,
+          createdAt: item.createdAt,
+        })),
+      ),
     );
   }, []);
 
@@ -405,8 +456,13 @@ export default function NovelPage({
         const lines: string[] = [`# ${category.name}`, ""];
         if (category.note) lines.push(category.note, "");
         for (const level of category.levels) {
-          const alias = level.aliases.length > 0 ? `（别名：${level.aliases.join("、")}）` : "";
-          lines.push(`- **${level.rank}. ${level.name}**${alias} ${level.note}`);
+          const alias =
+            level.aliases.length > 0
+              ? `（别名：${level.aliases.join("、")}）`
+              : "";
+          lines.push(
+            `- **${level.rank}. ${level.name}**${alias} ${level.note}`,
+          );
         }
         await exportTextFile(base, lines.join("\n"), "md", "Markdown 文件");
       })();
@@ -416,12 +472,9 @@ export default function NovelPage({
 
   const handleSaveSettingTemplate = useCallback(
     (categoryId: string, name: string) => {
-      void saveSettingTemplate(
-        createNovelId("st"),
-        name,
-        data.activeWorkId,
-        [categoryId],
-      ).then((ok) => {
+      void saveSettingTemplate(createNovelId("st"), name, data.activeWorkId, [
+        categoryId,
+      ]).then((ok) => {
         if (ok) void refreshTemplates();
       });
     },
@@ -455,7 +508,9 @@ export default function NovelPage({
   const refreshGlobalCategories = useCallback(() => {
     void loadGlobalSettingCategories().then((list) =>
       setGlobalSettingCategories(
-        list.map((item) => toSettingCategory(item, { workId: "", withRefCount: true })),
+        list.map((item) =>
+          toSettingCategory(item, { workId: "", withRefCount: true }),
+        ),
       ),
     );
   }, []);
@@ -466,7 +521,10 @@ export default function NovelPage({
    */
   const handleReferenceGlobal = useCallback(
     async (globalCategoryId: string): Promise<boolean> => {
-      const ok = await referenceGlobalCategory(data.activeWorkId, globalCategoryId);
+      const ok = await referenceGlobalCategory(
+        data.activeWorkId,
+        globalCategoryId,
+      );
       if (ok) await data.reload();
       return ok;
     },
@@ -493,7 +551,8 @@ export default function NovelPage({
 
   /** 删除类型弹框用：该自建类型下现有多少张要素卡（当前作品口径） */
   const usageCountOf = useCallback(
-    (typeId: string) => data.entities.filter((entity) => entity.type === typeId).length,
+    (typeId: string) =>
+      data.entities.filter((entity) => entity.type === typeId).length,
     [data.entities],
   );
 
@@ -504,320 +563,335 @@ export default function NovelPage({
           view.pageOverlayOpen ? " is-overlay" : ""
         }`}
       >
-      <div className="nv-page__head">
-        {editor.recoveryVisible && data.recovery && (
-          <RestoreBanner
-            recovery={data.recovery}
-            onAcknowledge={handleRestoreRecovery}
-          />
-        )}
-        <NovelTopBar
-          works={data.works}
-          activeWorkId={data.activeWorkId}
-          workMeta={workMeta}
-          onBackToShelf={onBackToShelf}
-          menuRef={workMenuRef}
-          volumeName={breadcrumb.volumeName}
-          chapterName={breadcrumb.chapterName}
-          leftOpen={view.leftOpen}
-          rightOpen={view.rightOpen}
-          settingsOpen={view.settingsOpen}
-          settingCenterOpen={view.settingCenterOpen}
-          onSelectWork={(workId) => void handleSelectWork(workId)}
-          onCreateWork={handleCreateWork}
-          onRenameWork={handleRenameWork}
-          onDeleteWork={handleDeleteWork}
-          onResetTemplate={() => void handleResetTemplate()}
-          onExportBook={() => void handleExportBook()}
-          onExportVolume={() => void handleExportVolume()}
-          onExportChapter={() => void handleExportChapter()}
-          onToggleLeft={view.toggleLeft}
-          onToggleRight={view.toggleRight}
-          onToggleSettings={view.toggleSettings}
-          snapshotOpen={view.snapshotOpen}
-          onOpenPack={openPackWindow}
-          packOpening={packOpening}
-          onToggleSettingCenter={view.toggleSettingCenter}
-          onToggleHistory={view.toggleSnapshot}
-          /* REQ-053：浮层（设定中心 / 类型管理 Modal）开着时，点击顶栏即离开浮层 ——
-             它们铺满视口的 wrap 会吃掉同一次点击，让「行囊 / 小说设定」需要点两次 */
-          onDismissOverlays={view.dismissPageOverlays}
-        />
-      </div>
-
-      <div className="nv-page__body">
-        <ChapterTree
-          collapsed={!view.leftOpen}
-          groups={data.groups}
-          chapterNumbers={data.chapterNumbers}
-          numberStyle={editor.settings.numberStyle}
-          volumeSuffix={editor.settings.volumeSuffix}
-          activeChapterId={data.activeChapterId}
-          onSelect={handleSelectChapter}
-          onToggleStatus={data.toggleChapterStatus}
-          onCreate={handleNewChapter}
-          onCreateChapterInVolume={handleCreateChapterInVolume}
-          onCreateVolume={handleNewVolume}
-          onRenameChapter={data.renameChapter}
-          onDeleteChapter={handleDeleteChapter}
-          onReorderChapter={handleReorderChapter}
-          onMoveChapterToVolume={handleMoveChapterToVolume}
-          onReorderVolume={handleReorderVolume}
-          onRenameVolume={handleRenameVolume}
-          onDeleteVolume={handleDeleteVolume}
-        />
-
-        <div className="nv-page__stage">
-          <EditorPane
-            ref={editorPaneRef}
-            chapter={data.activeChapter}
-            chapterNumber={
-              data.activeChapterId
-                ? (data.chapterNumbers.get(data.activeChapterId) ?? 0)
-                : 0
-            }
-            settings={editor.settings}
-            terms={terms}
-            annotationOn={view.annotationOn}
-            onSelectionChange={editor.setSelection}
-            onContextMenu={handleEditorContextMenu}
-            onTermHover={hoverActions.enter}
-            onTermLeave={hoverActions.leave}
-            onTermClick={handleOpenEntity}
-            onCreateChapter={handleNewChapter}
-            emptyKind={works.length === 0 ? "no-work" : "no-chapter"}
-            onCreateWork={() => workMenuRef.current?.openCreate()}
-            onImportBook={onImportBook}
-            onRenameChapter={data.renameChapter}
-            restore={data.lastPosition}
-            onRestoreDone={data.consumeLastPosition}
-            onCursorChange={handleCursorChange}
-            onScrollChange={handleScrollChange}
-            sensitiveWords={sensitive.words}
-            sensitiveOn={sensitive.enabled}
-            sensitiveRanges={sensitive.ranges}
-            focusPos={sensitive.focusPos}
-            onFocusPosApplied={sensitive.clearFocusPos}
-            onDraftPulse={sensitive.handleDraftPulse}
-            onSensitiveRangesMapped={sensitive.handleRangesMapped}
-          />
-
-          <StatusBar
-            annotationOn={view.annotationOn}
-            onToggleAnnotation={view.toggleAnnotation}
-            onOpenSensitive={() => view.openToolSub("sensitive")}
-          />
-
-          {/* 选区右键菜单：手动绑定路线的标注入口（新建 / 绑定为别名） */}
-          {editor.selection && ctxMenu && (
-            <EntityContextMenu
-              x={ctxMenu.x}
-              y={ctxMenu.y}
-              text={editor.selection.text}
-              entities={data.entities}
-              onAddToPack={() => void handleCtxToPack()}
-              onMark={handleCtxMark}
-              onBind={handleCtxBind}
-              onClose={closeCtxMenu}
+        <div className="nv-page__head">
+          {editor.recoveryVisible && data.recovery && (
+            <RestoreBanner
+              recovery={data.recovery}
+              onAcknowledge={handleRestoreRecovery}
             />
           )}
-
-          {/* 悬浮卡自己订阅 hover store：指针扫过正文不再推整棵树 */}
-          <HoverEntityCard onOpenDetail={handleOpenEntity} />
-
-          <ChapterJumpPalette
-            open={view.jumpOpen}
-            chapters={data.chapters}
-            onSelect={handleSelectChapter}
-            onClose={view.closeJump}
-          />
-
-          <SnapshotDrawer
-            open={view.snapshotOpen}
-            snapshots={data.snapshots}
-            activeChapterId={data.activeChapterId}
-            onClose={view.closeSnapshot}
-            onRollback={(snapshotId, snapshotTime) =>
-              void handleRollback(snapshotId, snapshotTime)
-            }
-          />
-
-          <SettingsDrawer
-            open={view.settingsOpen}
-            settings={editor.settings}
-            onUpdate={editor.updateSetting}
-            onToggleAnnotationType={editor.toggleAnnotationType}
-            onClose={view.closeSettings}
-          />
-
-          <NovelToast toast={view.toast} />
-
-          <ReorderConfirmModal
-            open={reorderPreview !== null}
-            title={reorderPreview?.title ?? ""}
-            changes={reorderPreview?.changes ?? []}
-            onConfirm={confirmReorder}
-            onCancel={cancelReorder}
+          <NovelTopBar
+            works={data.works}
+            activeWorkId={data.activeWorkId}
+            workMeta={workMeta}
+            onBackToShelf={onBackToShelf}
+            menuRef={workMenuRef}
+            volumeName={breadcrumb.volumeName}
+            chapterName={breadcrumb.chapterName}
+            leftOpen={view.leftOpen}
+            rightOpen={view.rightOpen}
+            settingsOpen={view.settingsOpen}
+            settingCenterOpen={view.settingCenterOpen}
+            onSelectWork={(workId) => void handleSelectWork(workId)}
+            onCreateWork={handleCreateWork}
+            onRenameWork={handleRenameWork}
+            onDeleteWork={handleDeleteWork}
+            onResetTemplate={() => void handleResetTemplate()}
+            onExportBook={() => void handleExportBook()}
+            onExportVolume={() => void handleExportVolume()}
+            onExportChapter={() => void handleExportChapter()}
+            onToggleLeft={view.toggleLeft}
+            onToggleRight={view.toggleRight}
+            onToggleSettings={view.toggleSettings}
+            snapshotOpen={view.snapshotOpen}
+            onOpenPack={openPackWindow}
+            packOpening={packOpening}
+            onToggleSettingCenter={view.toggleSettingCenter}
+            onToggleHistory={view.toggleSnapshot}
+            /* REQ-053：浮层（设定中心 / 类型管理 Modal）开着时，点击顶栏即离开浮层 ——
+             它们铺满视口的 wrap 会吃掉同一次点击，让「行囊 / 小说设定」需要点两次 */
+            onDismissOverlays={view.dismissPageOverlays}
           />
         </div>
 
-        <SupportPanel
-          open={view.rightOpen}
-          activeTab={view.panelTab}
-          onTabChange={view.selectPanelTab}
-          width={view.rightWidth}
-          onWidthChange={view.setRightWidth}
-          onCollapse={view.toggleRight}
-          outline={outline}
-          activeChapterId={data.activeChapterId}
-          outlineActions={outlineActions}
-          entities={data.entities}
-          linkCount={data.entityLinkCount}
-          filter={view.entityFilter}
-          onFilterChange={view.setEntityFilter}
-          detailEntityId={view.detailEntityId}
-          onOpenEntity={handleOpenEntity}
-          onCloseEntity={view.closeEntityDetail}
-          getEntityRelations={data.getEntityRelations}
-          getAppearances={getAppearances}
-          settings={data.settings}
-          notes={data.notes}
-          globalNotes={data.allNotes}
-          activeWorkId={data.activeWorkId}
-          workNameOf={workNameOf}
-          inspirationActions={inspirationActions}
-          onSearch={handleSearch}
-          onSelectChapter={handleSelectChapter}
-          highlighted={detailHighlighted}
-          onToggleHighlight={handleToggleHighlight}
-          onExportCard={triggerExportCard}
-          onSaveEntity={handleSaveEntity}
-          onAddRelation={handleAddRelation}
-          onRemoveRelation={handleRemoveRelation}
-          onSetEntityLevel={(entityId, levelId, sub) => {
-            const target = data.getEntityById(entityId);
-            if (target) handleSetEntityLevel(entityId, target.type, levelId, sub);
-          }}
-          onOpenSettings={openSettingCenterForRealm}
-          onOpenTypeManager={view.openTypeManager}
-          protagonistEntityId={protagonistEntityId}
-          onSetProtagonist={handleSetProtagonist}
-          namingActions={namingActions}
-          namingExclude={namingExclude}
-          namingFavorites={namingFavorites}
-          onNotify={view.showToast}
-          chapters={data.chapters}
-          toolSub={view.toolSub}
-          onToolSubChange={view.setToolSub}
-          onOpenRelation={openRelationWindow}
-        />
+        <div className="nv-page__body">
+          <ChapterTree
+            collapsed={!view.leftOpen}
+            groups={data.groups}
+            chapterNumbers={data.chapterNumbers}
+            numberStyle={editor.settings.numberStyle}
+            volumeSuffix={editor.settings.volumeSuffix}
+            activeChapterId={data.activeChapterId}
+            onSelect={handleSelectChapter}
+            onToggleStatus={data.toggleChapterStatus}
+            onCreate={handleNewChapter}
+            onCreateChapterInVolume={handleCreateChapterInVolume}
+            onCreateVolume={handleNewVolume}
+            onRenameChapter={data.renameChapter}
+            onDeleteChapter={handleDeleteChapter}
+            onReorderChapter={handleReorderChapter}
+            onMoveChapterToVolume={handleMoveChapterToVolume}
+            onReorderVolume={handleReorderVolume}
+            onRenameVolume={handleRenameVolume}
+            onDeleteVolume={handleDeleteVolume}
+          />
 
-        {/*
+          <div className="nv-page__stage">
+            <EditorPane
+              ref={editorPaneRef}
+              chapter={data.activeChapter}
+              chapterNumber={
+                data.activeChapterId
+                  ? (data.chapterNumbers.get(data.activeChapterId) ?? 0)
+                  : 0
+              }
+              settings={editor.settings}
+              terms={terms}
+              annotationOn={view.annotationOn}
+              onSelectionChange={editor.setSelection}
+              onContextMenu={handleEditorContextMenu}
+              onTermHover={hoverActions.enter}
+              onTermLeave={hoverActions.leave}
+              onTermClick={handleOpenEntity}
+              onCreateChapter={handleNewChapter}
+              emptyKind={works.length === 0 ? "no-work" : "no-chapter"}
+              onCreateWork={() => workMenuRef.current?.openCreate()}
+              onImportBook={onImportBook}
+              onRenameChapter={data.renameChapter}
+              restore={data.lastPosition}
+              onRestoreDone={data.consumeLastPosition}
+              onCursorChange={handleCursorChange}
+              onScrollChange={handleScrollChange}
+              sensitiveWords={sensitive.words}
+              sensitiveOn={sensitive.enabled}
+              sensitiveRanges={sensitive.ranges}
+              focusPos={sensitive.focusPos}
+              onFocusPosApplied={sensitive.clearFocusPos}
+              onDraftPulse={sensitive.handleDraftPulse}
+              onSensitiveRangesMapped={sensitive.handleRangesMapped}
+              onLoadPrevChapter={handleLoadPrevChapter}
+              onLoadNextChapter={handleLoadNextChapter}
+              openAnchor={openAnchor}
+              onOpenAnchorApplied={() => setOpenAnchor("top")}
+            />
+
+            <StatusBar
+              annotationOn={view.annotationOn}
+              onToggleAnnotation={view.toggleAnnotation}
+              onOpenSensitive={() => view.openToolSub("sensitive")}
+            />
+
+            {/* 选区右键菜单：手动绑定路线的标注入口（新建 / 绑定为别名） */}
+            {editor.selection && ctxMenu && (
+              <EntityContextMenu
+                x={ctxMenu.x}
+                y={ctxMenu.y}
+                text={editor.selection.text}
+                entities={data.entities}
+                onAddToPack={() => void handleCtxToPack()}
+                onMark={handleCtxMark}
+                onBind={handleCtxBind}
+                onClose={closeCtxMenu}
+              />
+            )}
+
+            {/* 悬浮卡自己订阅 hover store：指针扫过正文不再推整棵树 */}
+            <HoverEntityCard onOpenDetail={handleOpenEntity} />
+
+            <ChapterJumpPalette
+              open={view.jumpOpen}
+              chapters={data.chapters}
+              onSelect={handleSelectChapter}
+              onClose={view.closeJump}
+            />
+
+            <SnapshotDrawer
+              open={view.snapshotOpen}
+              snapshots={data.snapshots}
+              activeChapterId={data.activeChapterId}
+              onClose={view.closeSnapshot}
+              onRollback={(snapshotId, snapshotTime) =>
+                void handleRollback(snapshotId, snapshotTime)
+              }
+            />
+
+            <SettingsDrawer
+              open={view.settingsOpen}
+              settings={editor.settings}
+              onUpdate={editor.updateSetting}
+              onToggleAnnotationType={editor.toggleAnnotationType}
+              onClose={view.closeSettings}
+              paperFonts={paperFonts}
+            />
+
+            <NovelToast toast={view.toast} />
+
+            <ReorderConfirmModal
+              open={reorderPreview !== null}
+              title={reorderPreview?.title ?? ""}
+              changes={reorderPreview?.changes ?? []}
+              onConfirm={confirmReorder}
+              onCancel={cancelReorder}
+            />
+          </div>
+
+          <SupportPanel
+            open={view.rightOpen}
+            activeTab={view.panelTab}
+            onTabChange={view.selectPanelTab}
+            width={view.rightWidth}
+            onWidthChange={view.setRightWidth}
+            onCollapse={view.toggleRight}
+            outline={outline}
+            activeChapterId={data.activeChapterId}
+            outlineActions={outlineActions}
+            entities={data.entities}
+            linkCount={data.entityLinkCount}
+            filter={view.entityFilter}
+            onFilterChange={view.setEntityFilter}
+            detailEntityId={view.detailEntityId}
+            onOpenEntity={handleOpenEntity}
+            onCloseEntity={view.closeEntityDetail}
+            getEntityRelations={data.getEntityRelations}
+            getAppearances={getAppearances}
+            settings={data.settings}
+            notes={data.notes}
+            globalNotes={data.allNotes}
+            activeWorkId={data.activeWorkId}
+            workNameOf={workNameOf}
+            inspirationActions={inspirationActions}
+            onSearch={handleSearch}
+            onSelectChapter={handleSelectChapter}
+            highlighted={detailHighlighted}
+            onToggleHighlight={handleToggleHighlight}
+            onExportCard={triggerExportCard}
+            onSaveEntity={handleSaveEntity}
+            onAddRelation={handleAddRelation}
+            onRemoveRelation={handleRemoveRelation}
+            onSetEntityLevel={(entityId, levelId, sub) => {
+              const target = data.getEntityById(entityId);
+              if (target)
+                handleSetEntityLevel(entityId, target.type, levelId, sub);
+            }}
+            onOpenSettings={openSettingCenterForRealm}
+            onOpenTypeManager={view.openTypeManager}
+            protagonistEntityId={protagonistEntityId}
+            onSetProtagonist={handleSetProtagonist}
+            namingActions={namingActions}
+            namingExclude={namingExclude}
+            namingFavorites={namingFavorites}
+            onNotify={view.showToast}
+            chapters={data.chapters}
+            toolSub={view.toolSub}
+            onToolSubChange={view.setToolSub}
+            onOpenRelation={openRelationWindow}
+          />
+
+          {/*
           行囊已迁独立窗口（PackWindow）：顶栏按钮 / Ctrl+Shift+B 唤起，
           本页面不再内嵌渲染面板。作品 / 章节变化经 `novel-work-changed`
           广播由行囊窗口主动跟进（见 useNovelPage）。
         */}
-      </div>
+        </div>
 
-      {/* 设定中心（1.36.0 取代原「等级体系管理」弹框）/ 自定义类型管理（R23） */}
-      <SettingCenter
-        open={view.settingCenterOpen}
-        workName={workNameOf(data.activeWorkId)}
-        settings={data.settings}
-        focusCategoryId={view.settingFocusId}
-        source="book"
-        onClose={view.closeSettingCenter}
-        onCreateCategory={(name) => data.createSettingCategory(name, "custom")}
-        onPatchCategory={data.patchSettingCategory}
-        onDeleteCategory={data.deleteSettingCategory}
-        onReorderCategories={data.reorderSettingCategories}
-        onAddLevel={(categoryId, name, index) =>
-          data.addSettingLevel(categoryId, name, index)
-        }
-        onBatchAddLevels={(categoryId, names) => {
-          data.batchAddSettingLevels(
-            categoryId,
-            names.map((name) => ({ name })),
-          );
-        }}
-        onPatchLevel={data.patchSettingLevel}
-        onDeleteLevel={data.deleteSettingLevel}
-        onReorderLevels={data.reorderSettingLevels}
-        onSplitLevel={data.splitSettingLevel}
-        onMergeLevel={data.mergeSettingLevel}
-        onExport={handleExportSetting}
-        onSaveTemplate={handleSaveSettingTemplate}
-        templates={settingTemplates}
-        onRefreshTemplates={refreshTemplates}
-        onApplyTemplate={handleApplySettingTemplate}
-        onDeleteTemplate={(templateId) => {
-          void removeSettingTemplate(templateId).then(() => void refreshTemplates());
-        }}
-        onApplyPreset={(presetId) => {
-          const preset = SETTING_PRESETS.find((item) => item.id === presetId);
-          if (!preset) return;
-          // 一次性建分类 + 灌入等级（含分类级进位规则）。此前拆成
-          // createSettingCategory + batchAddSettingLevels 两连调：batchAdd 从
-          // 当前闭包的 bundle 里找刚建的分类，而 setBundle 是异步的，同一事件
-          // 循环里它还不在里面 → 静默返回 0，表现为「应用模板后只有分类壳、
-          // 等级序列永远是空的」。
-          data.createSettingCategoryWithLevels(
-            preset.name,
-            preset.kind,
-            preset.levels,
-            {
-              note: preset.note,
-              subLevels: preset.subLevels,
-              carryDir: preset.carryDir,
-              subPattern: preset.subPattern,
-            },
-          );
-        }}
-        // ── 全局设定中心联动（1.4x，REQ-041 / REQ-042）：本书域引用 / 上架 ──
-        globalCategories={globalSettingCategories}
-        onRefreshGlobalCategories={refreshGlobalCategories}
-        onReferenceGlobal={handleReferenceGlobal}
-        onPublishGlobal={handlePublishGlobal}
-        onNotify={handleSettingNotify}
-      />
-      <EntityTypeManager
-        open={view.typeManagerOpen}
-        customTypes={entityTypesValue.customTypes}
-        usageCountOf={usageCountOf}
-        onClose={view.closeTypeManager}
-        onAdd={handleAddCustomType}
-        onRename={handleRenameCustomType}
-        onRecolor={handleRecolorCustomType}
-        onRemove={handleRemoveCustomType}
-      />
+        {/* 设定中心（1.36.0 取代原「等级体系管理」弹框）/ 自定义类型管理（R23） */}
+        <SettingCenter
+          open={view.settingCenterOpen}
+          workName={workNameOf(data.activeWorkId)}
+          settings={data.settings}
+          focusCategoryId={view.settingFocusId}
+          source="book"
+          onClose={view.closeSettingCenter}
+          onCreateCategory={(name) =>
+            data.createSettingCategory(name, "custom")
+          }
+          onPatchCategory={data.patchSettingCategory}
+          onDeleteCategory={data.deleteSettingCategory}
+          onReorderCategories={data.reorderSettingCategories}
+          onAddLevel={(categoryId, name, index) =>
+            data.addSettingLevel(categoryId, name, index)
+          }
+          onBatchAddLevels={(categoryId, names) => {
+            data.batchAddSettingLevels(
+              categoryId,
+              names.map((name) => ({ name })),
+            );
+          }}
+          onPatchLevel={data.patchSettingLevel}
+          onDeleteLevel={data.deleteSettingLevel}
+          onReorderLevels={data.reorderSettingLevels}
+          onSplitLevel={data.splitSettingLevel}
+          onMergeLevel={data.mergeSettingLevel}
+          onExport={handleExportSetting}
+          onSaveTemplate={handleSaveSettingTemplate}
+          templates={settingTemplates}
+          onRefreshTemplates={refreshTemplates}
+          onApplyTemplate={handleApplySettingTemplate}
+          onDeleteTemplate={(templateId) => {
+            void removeSettingTemplate(templateId).then(
+              () => void refreshTemplates(),
+            );
+          }}
+          onApplyPreset={(presetId) => {
+            const preset = SETTING_PRESETS.find((item) => item.id === presetId);
+            if (!preset) return;
+            // 一次性建分类 + 灌入等级（含分类级进位规则）。此前拆成
+            // createSettingCategory + batchAddSettingLevels 两连调：batchAdd 从
+            // 当前闭包的 bundle 里找刚建的分类，而 setBundle 是异步的，同一事件
+            // 循环里它还不在里面 → 静默返回 0，表现为「应用模板后只有分类壳、
+            // 等级序列永远是空的」。
+            data.createSettingCategoryWithLevels(
+              preset.name,
+              preset.kind,
+              preset.levels,
+              {
+                note: preset.note,
+                subLevels: preset.subLevels,
+                carryDir: preset.carryDir,
+                subPattern: preset.subPattern,
+              },
+            );
+          }}
+          // ── 全局设定中心联动（1.4x，REQ-041 / REQ-042）：本书域引用 / 上架 ──
+          globalCategories={globalSettingCategories}
+          onRefreshGlobalCategories={refreshGlobalCategories}
+          onReferenceGlobal={handleReferenceGlobal}
+          onPublishGlobal={handlePublishGlobal}
+          onNotify={handleSettingNotify}
+        />
+        <EntityTypeManager
+          open={view.typeManagerOpen}
+          customTypes={entityTypesValue.customTypes}
+          usageCountOf={usageCountOf}
+          onClose={view.closeTypeManager}
+          onAdd={handleAddCustomType}
+          onRename={handleRenameCustomType}
+          onRecolor={handleRecolorCustomType}
+          onRemove={handleRemoveCustomType}
+        />
 
-      {/* L1 漫游引导：第 2-5 步属编辑器页（第 1 步在书架页由那里的实例接管） */}
-      <NovelGuideTour view="editor" visible={visible} onGoToView={onGoToView} />
+        {/* L1 漫游引导：第 2-5 步属编辑器页（第 1 步在书架页由那里的实例接管） */}
+        <NovelGuideTour
+          view="editor"
+          visible={visible}
+          onGoToView={onGoToView}
+        />
 
-      {/*
+        {/*
         关系图要求「在主窗口打开另一本书的资料卡」：只抬窗口，不替他做决定。
         两个动作就是用户能理解的两条路：取消（继续写当前这本）/ 保存后跳转。
         判定在窗口根（监听只此一处），本页只渲染这张确认框 —— 所以不可能出现
         「先切了书，再问要不要切」。
       */}
-      <Modal
-        open={entityJump !== null}
-        title="要跳转到另一部作品吗？"
-        okText="保存后跳转"
-        cancelText="取消"
-        confirmLoading={entityJumpSaving}
-        maskClosable={false}
-        destroyOnHidden
-        onOk={onConfirmEntityJump}
-        onCancel={onCancelEntityJump}
-      >
-        <p className="nv-jump__text">
-          关系图要在《{workNameOf(entityJump?.workId ?? "")}》里打开这条要素的资料卡。
-        </p>
-        <p className="nv-jump__text">
-          当前作品的正文还有没落库的修改，跳转前会先保存；保存失败就留在原处，不会丢字。
-        </p>
-      </Modal>
+        <Modal
+          open={entityJump !== null}
+          title="要跳转到另一部作品吗？"
+          okText="保存后跳转"
+          cancelText="取消"
+          confirmLoading={entityJumpSaving}
+          mask={{ closable: false }}
+          destroyOnHidden
+          onOk={onConfirmEntityJump}
+          onCancel={onCancelEntityJump}
+        >
+          <p className="nv-jump__text">
+            关系图要在《{workNameOf(entityJump?.workId ?? "")}
+            》里打开这条要素的资料卡。
+          </p>
+          <p className="nv-jump__text">
+            当前作品的正文还有没落库的修改，跳转前会先保存；保存失败就留在原处，不会丢字。
+          </p>
+        </Modal>
       </div>
     </EntityTypesProvider>
   );

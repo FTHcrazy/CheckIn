@@ -1,6 +1,6 @@
 # CheckIn 图形素材主题化规范（Graphic Theming Spec）
 
-> 配套文档：《novel 域视觉改造方案》`docs/novel-visual-polish-plan.md`。
+> 配套文档：《novel 域视觉改造方案》`docs/archive/visual-polish/novel-visual-polish-plan.md`（已归档过程稿）。
 > 本文回答的是那篇方案未覆盖的另一半空白：**图形 / 动画素材（SVG 图标、插画、Lottie 等）如何随四套主题切换**。
 > 现状：项目已有一套管用的**图标主题化范式**（`fill="currentColor"` + `SvgIcon` 内联），但**尚未引入任何 Lottie / 动图资源**，也从未给「图形素材如何换肤」立过统一规则。
 > 这正是破碎感的隐患点——趁现在零包袱，先立规矩再铺资源。

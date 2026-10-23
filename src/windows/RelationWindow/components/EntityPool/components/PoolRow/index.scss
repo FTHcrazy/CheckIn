@@ -62,11 +62,29 @@
   width: 24px;
   height: 24px;
   border-radius: 6px;
+  // 清零点把 antd 的 `justify-content: center` 改成了 `normal`（整行文字要左贴），
+  // 纯图标按钮必须自己推回居中 —— 否则 14px 的图标贴在 24px 盒子的左沿、
+  // 右侧空出 10px，hover 时看起来就是「背景相对图标整体右偏」。
+  justify-content: center;
   color: var(--app-text-muted);
   // 背景由行盒统一给，图标自身只做「文字色提亮」，不与行高亮叠加出斑块
+  --ant-btn-text-color-hover: var(--app-text);
+
+  // 键盘 Tab 到行尾图标时也要看得见焦点（自身背景已交给行盒，只剩描边可依赖）
+  &:focus-visible {
+    outline: 2px solid var(--app-primary);
+    outline-offset: -2px;
+  }
+}
+
+// ⚠️ 清零 `--ant-btn-bg-color-hover` 必须抬特异性：antd 会在
+// `.ant-btn-color-default.ant-btn-variant-text`（0,2,0）上**重新声明**这个变量，
+// 与 `.rel-pool__act.ant-btn`（0,2,0）同特异性 —— 谁后注入谁赢。写在同级里会时灵时不灵，
+// 表现就是图标区多出一块与行高亮不同色的圆角块（hover 背景与图标错位的观感来源之一）。
+// 用祖先类抬到 (0,3,0) 后与注入顺序无关。变量声明不是状态规则，仍符合 §6.1.2。
+.rel-pool__row .rel-pool__act.ant-btn {
   --ant-btn-bg-color-hover: transparent;
   --ant-btn-bg-color-active: transparent;
-  --ant-btn-text-color-hover: var(--app-text);
 }
 
 .rel-pool__name {

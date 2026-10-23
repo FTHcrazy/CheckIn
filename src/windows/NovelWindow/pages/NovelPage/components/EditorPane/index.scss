@@ -11,6 +11,25 @@
   background: var(--app-surface);
   overflow: hidden;
   position: relative;
+
+  /* 纸面色只在护眼开启（.is-paper）时生效：护眼开关 = 「纸面色 + 纸质感」
+     的整体切换，关闭时正文回到与界面一致的 surface（用户看到的就是原主题）。
+     底色之上叠两层极淡的大块明暗晕（仿纸张抄造时的厚薄不均），
+     让纸面不是「一块死平的色」。 */
+  &.is-paper {
+    background-color: var(--app-paper);
+    background-image:
+      radial-gradient(
+        ellipse 480px 360px at 18% 12%,
+        rgba(255, 250, 235, 0.28),
+        transparent 70%
+      ),
+      radial-gradient(
+        ellipse 560px 420px at 82% 78%,
+        rgba(160, 145, 110, 0.08),
+        transparent 70%
+      );
+  }
   /* 内容面浮起感：编辑器是最高频主场景里最大的一块 surface，与页面底
      --app-bg 只差 ~1.04 亮度，不给一档 ambient 环境阴影就是「平铺」。
      静止态阴影即可（编辑区是零动效区，不做 hover 抬升），向两侧溢出的
@@ -130,6 +149,57 @@
     color: var(--app-text);
   }
 
+  /**
+   * 护眼纸质感（.is-paper）——「护眼」的核心是纸质感，不是换色相。
+   *
+   * 颗粒采用业界成熟方案：SVG feTurbulence 分形噪声（grainy 效果的标准做法）。
+   * 之前用多层 radial-gradient 点阵的教训：径向渐变天然是规则网格，怎么错位
+   * 叠加都是「织物感」而不是纸感；feTurbulence 是纯随机的连续噪声，没有网格
+   * 周期，低透明度下观感就是纸张纤维。fractalNoise + 去饱和（灰度）+ 6% 整体
+   * 透明度，黑白点混在同一层里，明暗双向抖动——这正是真实纸面的物理特征。
+   *
+   * 铺在 .nv-editor 外层容器的 ::before 上（不是正文层）：CodeMirror 正文是
+   * 逐行虚拟化渲染的，纹理若铺在 .cm-content / 行元素上，每次滚动都要随行
+   * 重绘，长章会卡；铺在容器层与正文不在同一合成层，滚动不重算纹理。
+   * pointer-events:none 让它不挡正文点击。噪声图 240px 平铺，stitchTiles 保证
+   * 接缝无痕。降对比仍由下方 .cm-content 的 90% 透明度承担。
+   *
+   * 暗色主题（midnight）不铺颗粒：暗底里噪点是噪声源而非纸感，暗色护眼
+   * 靠「暖黑纸面 + 降对比」即可（见 [data-theme="midnight"] 分支）。
+   */
+  &.is-paper::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.06;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-size: 240px 240px;
+    /* 6% 在浅色纸面上肉眼不可辨（实机验证），纸感要求 10%+ 才成立；
+       fractalNoise 无网格周期，调大也不会退回「织物感」 */
+    opacity: 0.12;
+  }
+
+  &.is-paper &__scroll {
+    position: relative;
+    z-index: 1;
+  }
+
+  &.is-paper &__host .cm-content {
+    color: color-mix(in srgb, var(--app-text) 90%, transparent);
+  }
+
+  /* 暗色主题（midnight）：明暗晕在暗底上会变成可见「光晕」（实机验证），
+     暗色只要纯色暖黑纸面 + 降对比；颗粒同样不铺（噪声在暗底是噪声源）。 */
+  [data-theme="midnight"] &.is-paper {
+    background-image: none;
+  }
+
+  [data-theme="midnight"] &.is-paper::before {
+    background-image: none;
+  }
+
   &__host {
     .cm-editor {
       background: transparent;
@@ -161,6 +231,16 @@
       border-left-width: 2px;
       border-left-color: var(--app-primary);
       animation: nv-caret-blink 1.05s steps(1) infinite;
+    }
+
+    /* 阅读模式：隐藏光标与插入符，正文仍可选中/高亮/悬浮标注。
+       只在 .is-readmode 挂到 .nv-editor 根节点时生效（见 index.tsx）。 */
+    .nv-editor.is-readmode & {
+      .cm-cursor,
+      .cm-dropCursor {
+        display: none;
+      }
+      caret-color: transparent;
     }
 
     /* 查找替换面板（R10）：search({top:true}) 渲染在编辑器顶部，随主题变色 */

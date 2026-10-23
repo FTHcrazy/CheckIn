@@ -1,21 +1,26 @@
 # Check In
 
+## 文档导航
+
+| 想了解 | 去哪看 |
+|--------|--------|
+| 架构、模块边界、开发规范 | [`AGENTS.md`](AGENTS.md)（主文档，改代码前必读） |
+| 历史文档（规范 / 审查报告 / 归档过程稿） | [`docs/README.md`](docs/README.md) |
+| 版本变更 | [`CHANGELOG.md`](CHANGELOG.md)，更早的在 [`changeLogHistory/`](changeLogHistory/README.md) |
+
 ## 开发环境
 
-安装依赖并为 Electron 编译 `better-sqlite3`：
+安装依赖并启动：
 
 ```bash
-pnpm electron:setup
-```
-
-之后启动开发环境：
-
-```bash
+pnpm install     # postinstall 会做依赖体检 + 补装 Electron 二进制
 pnpm dev
 ```
 
+也可一步到位：`pnpm electron:setup`（= `pnpm install && pnpm ensure:electron`）。
+
 > `better-sqlite3` 自 **13.0** 起改用 Node-API（N-API）预编译二进制，随 npm 包分发、
-> 跨 Node / Electron ABI 通用，**不再需要 `pnpm electron:rebuild` 这一步**。
+> 跨 Node / Electron ABI 通用，**不需要也不存在 `pnpm electron:rebuild` 这一步**。
 > 若原生模块加载失败（`Could not locate the bindings file` 等），执行 `pnpm install`
 > 重装即可，它会重新解压 `node_modules/better-sqlite3/prebuilds/`。
 
@@ -29,30 +34,29 @@ pnpm dev
 
 **处理**：`scripts/start-electron.js` 已在 spawn 前自动剔除该变量，正常走 `pnpm dev` 即可；若手动启动 Electron，先 `unset ELECTRON_RUN_AS_NODE`（PowerShell：`Remove-Item Env:ELECTRON_RUN_AS_NODE`）。
 
-### 2. 报错「Electron 二进制缺失」或 `node_modules/electron/dist` 不存在
+### 2. 报错「Electron 二进制缺失」/ `pnpm dev` 卡住不动
 
-**现象**：`pnpm dev` 报 Electron 可执行文件不存在。
+**现象**：`pnpm dev` 报 Electron 可执行文件不存在；或终端停在 `pnpm dev` 后**毫无输出、看起来卡死**。
 
-**原因**：pnpm ≥10 默认拦截依赖的构建脚本，electron 的 postinstall（下载运行时二进制）没有执行。pnpm 11 还**不再读取** `package.json` 的 `pnpm` 字段，只认 `pnpm-workspace.yaml`。
+**真正原因**（1.47.0 定位，别再按「pnpm 拦截 postinstall」处理）：
+Electron ≥41（本项目 44.x）的包**已经没有 postinstall 脚本**，二进制的安装被推迟到
+**首次 `require('electron')`** —— 没有 `path.txt` 时，它会在同步调用栈里 spawnSync
+下载 ~140MB，默认直连 github、**无超时无进度**，于是表现为「卡死」。而 `.npmrc` 的
+`electron_mirror` 只在包管理器执行安装脚本时才转成 `ELECTRON_MIRROR`，被内部 spawn
+时一个环境变量都没有。
 
 **处理**：
 
-1. 确认 `pnpm-workspace.yaml` 的 `allowBuilds` 里 `electron: true`、`esbuild: true`、
-   **`better-sqlite3: false`**（13.x 用包内预编译，本地编译必失败，见「4. pnpm 9 装不上」）；
-   pnpm 9/10 走 `package.json` 的 `pnpm.onlyBuiltDependencies`，**两处都要维护，别只改一边**；
-2. 改完后普通 `pnpm install` 可能因 "Already up to date" 跳过构建脚本，用以下方式强制补齐：
-
 ```bash
-# 方式一：强制重建
-pnpm rebuild electron
-
-# 方式二（rebuild 无效时）：直接执行安装脚本，国内可命中镜像缓存
-# PowerShell:
-$env:ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"
-node node_modules\electron\install.js
+pnpm ensure:electron   # 自动读 .npmrc 注入 ELECTRON_MIRROR 并补装（已装好则毫秒返回）
+pnpm dev:doctor        # 完整体检：二进制 / locales / default_app.asar / 依赖链接
 ```
 
-3. 验证：`node_modules/electron/dist/electron.exe` 与 `node_modules/electron/path.txt` 必须同时存在。
+> 二进制「看着齐全」但 Electron 仍在几十毫秒内 `exit(1)` 且零输出 = **解压不完整**
+> （常见是只剩 19 个根文件，缺 `dist/locales/*.pak` 与 `resources/default_app.asar`）。
+> 此时 `install.js` 因 `path.txt` 已存在而判定「已安装」，`pnpm install` 永远说
+> Already up to date —— 用 `pnpm ensure:electron` 强制重解压，别手动删了又装。
+> 另外：`pnpm install` / `ensure:electron` 执行中途**不要中断**，否则就会留下这种半份 dist。
 
 ### 3. 数据库报错 / `Cannot locate the bindings file`
 
@@ -85,14 +89,21 @@ ELIFECYCLE  Command failed with exit code 1.
 而 `pnpm-workspace.yaml` 里的 `allowBuilds` / `onlyBuiltDependencies` **pnpm 9 完全不读**
 （实测 9.15.9：pnpm 设置只有 pnpm 10 之后才从 `pnpm-workspace.yaml` 读）。
 
-**处理**：仓库已在 `package.json` 里补了 pnpm 9 认的那一份：
+**处理**：仓库已在 `.npmrc` 里补了 pnpm 9 认的那一份（`key[]=value` 数组语法，
+是 pnpm 9 / 11 都能正确解析的唯一位置）：
 
-```json
-"pnpm": { "onlyBuiltDependencies": ["@parcel/watcher", "electron-winstaller", "electron", "esbuild"] }
+```ini
+only-built-dependencies[]=@parcel/watcher
+only-built-dependencies[]=electron-winstaller
+only-built-dependencies[]=electron
+only-built-dependencies[]=esbuild
 ```
 
 `better-sqlite3` **故意不在列表里** → pnpm 9 会打印
 `The following dependencies have build scripts that were ignored: better-sqlite3` 并安装成功。拉最新代码后重跑 `pnpm install` 即可。
+
+> 不要试图把这份名单写进 `package.json` 的 `pnpm` 字段：pnpm 11 **完全不读**它，
+> 而 pnpm 9 实测同样只认 `.npmrc`，写在那里两头都不生效。
 
 **两个附带注意**：
 
@@ -115,11 +126,13 @@ $env:ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"
 
 > 注意：独立子进程（如 `node install.js`）不继承 `.npmrc` 的镜像配置，必须显式带 `ELECTRON_MIRROR` 环境变量。
 
-### 5. 团队 pnpm 版本差异须知
+### 6. 团队 pnpm 版本差异须知
 
-- **pnpm 9**：读取 `package.json` 的 `pnpm` 字段，默认执行构建脚本，装完即用；
-- **pnpm ≥10**：默认拦截构建脚本，依赖 `pnpm-workspace.yaml` 白名单；
+- **pnpm 9**：**只认 `.npmrc`** 的 `only-built-dependencies[]` / `node-linker`，
+  完全忽略 `pnpm-workspace.yaml` 里的 pnpm 设置（无任何报错）；
+- **pnpm ≥10**：默认拦截构建脚本，依赖 `pnpm-workspace.yaml` 的 `onlyBuiltDependencies` 白名单，并读 `.npmrc`；
 - **pnpm ≥10.26 / 11**：`onlyBuiltDependencies` 被移除，统一改用 `allowBuilds` 映射，且忽略 `package.json` 的 `pnpm` 字段（安装时有 `ignored` 警告，可忽略）。
 
-新增带 install 脚本的依赖时，`allowBuilds` 与 `pnpm.onlyBuiltDependencies` **两处需同步添加**，否则不同版本的 pnpm 用户会各自踩坑。另外 pnpm 11 默认启用 1 天发布冷却期（`minimumReleaseAge: 1440`），刚发布的依赖装不上时可用 `minimumReleaseAgeExclude` 放行。
+新增带 install 脚本的依赖时，**`pnpm-workspace.yaml` 的 `allowBuilds` 与 `.npmrc` 的
+`only-built-dependencies[]` 两处需同步添加**，否则不同版本的 pnpm 用户会各自踩坑。另外 pnpm 11 默认启用 1 天发布冷却期（`minimumReleaseAge: 1440`），刚发布的依赖装不上时可用 `minimumReleaseAgeExclude` 放行。
 

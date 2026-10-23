@@ -20,6 +20,8 @@ const buildProps = (
   onImportClick: vi.fn(),
   importing: false,
   onGlobalSettingClick: vi.fn(),
+  onSafetyClick: vi.fn(),
+  onTrashClick: vi.fn(),
   ...over,
 });
 
@@ -70,5 +72,32 @@ describe("书架顶栏 · 全局设定中心入口（T04）", () => {
     // 刻意不用 antd 的 loading（它会吞 onClick）：窗口落到后面时再点一次仍是退路
     fireEvent.click(button);
     expect(onGlobalSettingClick).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("书架顶栏 · 回收站入口（2.5.0 独立页面）", () => {
+  afterEach(() => cleanup());
+
+  it("图标是设计给的 recycle-bin.svg，且**内联**进 DOM（换肤才能跟着文字色走）", () => {
+    render(<ShelfTopBar {...buildProps()} />);
+    const button = screen.getByRole("button", { name: "回收站" });
+    // `<img src>` 会把 fill=currentColor 钉死在文件里，暗色主题下仍是浅蓝
+    expect(button.querySelector(".svgicon svg")).not.toBeNull();
+  });
+
+  it("角标显示回收站条数，点击打开回收站页面", () => {
+    const onTrashClick = vi.fn();
+    render(<ShelfTopBar {...buildProps({ onTrashClick, trashCount: 4 })} />);
+    const button = screen.getByRole("button", { name: "回收站" });
+    expect(button.textContent).toContain("4");
+
+    fireEvent.click(button);
+    expect(onTrashClick).toHaveBeenCalledTimes(1);
+  });
+
+  it("回收站与数据安全是两个入口：备份 / 恢复不再混着回收站", () => {
+    render(<ShelfTopBar {...buildProps()} />);
+    expect(screen.getByRole("button", { name: "数据安全" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "回收站" })).toBeInTheDocument();
   });
 });

@@ -1,5 +1,9 @@
 # R27 人物关系网络 · 技术预研与落点方案
 
+> 📦 **已归档**（2026-10-23）：本文属 R27 人物关系网络的**立项过程稿**，功能已于 2.x 交付，
+> 现行为准请看 `src/windows/RelationWindow/`、`AGENTS.md` 与 `CHANGELOG.md`。正文保持归档时原样；
+> 文内 `docs/prd/...` 路径已失效，实际位于 `docs/archive/prd-r27/`。
+
 > 状态：预研（不落地业务代码）／**v1.4 已按需求稿 v1.4 + QA 验收稿的 7 处冲突裁决对齐**
 > 输入：`docs/prd/r27-relationship-network-scope.md`（需求稿 v1.4，691 行）+ `docs/prd/r27-relationship-network-acceptance.md`（QA 验收稿，133 用例）+ 仓库现状代码核对 + 本机实测尖刺
 > 实测环境：Node v22.22.2 / Chromium（系统 Chrome，headless，视口 1000×720 画布）/ Windows

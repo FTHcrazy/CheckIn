@@ -208,7 +208,7 @@ export default forwardRef<WorkManageMenuHandle, WorkManageMenuProps>(
       <Modal
         open={deleting}
         title="删除作品"
-        okText="删除"
+        okText="移入回收站"
         cancelText="取消"
         width={420}
         okButtonProps={{ danger: true }}
@@ -220,13 +220,15 @@ export default forwardRef<WorkManageMenuHandle, WorkManageMenuProps>(
       >
         <p className="nv-work-menu__delete-name">「{activeWorkName}」</p>
         <p>
-          将删除该作品的{" "}
+          将把该作品（
           <strong>
             {activeMeta ? `${activeMeta.volumes} 卷 / ${activeMeta.chapters} 章（约 ${formatThousands(activeMeta.words)} 字）` : "全部卷章"}
           </strong>
-          ，以及全部要素卡、灵感、伏笔与历史快照。
+          ）连同全部要素卡、灵感、伏笔与历史快照一起移入回收站。
         </p>
-        <p className="nv-work-menu__delete-warn">此操作不可恢复，请确认。</p>
+        <p className="nv-work-menu__delete-hint">
+          可在书架顶栏「回收站」里 30 天内原样恢复；超过保留期才会彻底删除。
+        </p>
       </Modal>
 
       <Modal

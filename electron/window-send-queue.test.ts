@@ -50,9 +50,11 @@ describe("主进程：window-send-to 统一承接「送不到就排队 / 先拉�
   });
 
   it("待投递消息由窗口自己 drain；窗口还没注册时返回 null（让 preload 重试）", () => {
-    const start = MAIN.indexOf('ipcMain.handle("window-pending-drain"');
+    // 只认频道名：`ipcMain.handle(` 与频道名之间的换行 / 缩进随格式化变动，
+    // 断死 `ipcMain.handle("xxx"` 这一整行会在纯排版调整时假红
+    const start = MAIN.indexOf('"window-pending-drain"');
     expect(start).toBeGreaterThan(-1);
-    const body = MAIN.slice(start, start + 700);
+    const body = MAIN.slice(start, start + 800);
     expect(body).toContain("takePendingMessages(name)");
     expect(body).toContain("return null");
   });

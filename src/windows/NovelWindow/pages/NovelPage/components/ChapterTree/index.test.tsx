@@ -186,10 +186,10 @@ describe("ChapterTree 删除二次确认（共享 Popconfirm）", () => {
 
     // 二次确认浮层出现（不是点了就删）
     expect(await screen.findByText(/删\s*除\s*这\s*个\s*卷/)).toBeTruthy();
-    // 级联影响写进 description：章数 + 快照 + 大纲条目
-    expect(screen.getByText(/及其下 3 章、全部历史快照与大纲条目/)).toBeTruthy();
+    // 级联影响写进 description：章数 + 「可恢复」的出口
+    expect(screen.getByText(/及其下 3 章将移入回收站/)).toBeTruthy();
 
-    fireEvent.click(popupButton(/删\s*除/));
+    fireEvent.click(popupButton(/移入回收站/));
 
     expect(onDeleteVolume).toHaveBeenCalledTimes(1);
     expect(onDeleteVolume).toHaveBeenCalledWith("v1");
@@ -210,7 +210,7 @@ describe("ChapterTree 删除二次确认（共享 Popconfirm）", () => {
     fireEvent.click(dels[dels.length - 1]!);
 
     expect(await screen.findByText(/删\s*除\s*这\s*个\s*卷/)).toBeTruthy();
-    expect(screen.getByText(/（空卷），不可恢复。/)).toBeTruthy();
+    expect(screen.getByText(/（空卷）将移入回收站/)).toBeTruthy();
   });
 
   it("取消确认则不触发任何删除回调", async () => {
@@ -241,9 +241,9 @@ describe("ChapterTree 删除二次确认（共享 Popconfirm）", () => {
     fireEvent.click(container.querySelector<HTMLElement>(".nv-chapter__del")!);
 
     expect(await screen.findByText(/删\s*除\s*章\s*节/)).toBeTruthy();
-    expect(screen.getByText(/及其全部历史快照，不可恢复。/)).toBeTruthy();
+    expect(screen.getByText(/将移入回收站/)).toBeTruthy();
 
-    fireEvent.click(popupButton(/删\s*除/));
+    fireEvent.click(popupButton(/移入回收站/));
 
     expect(onDeleteChapter).toHaveBeenCalledTimes(1);
     expect(onDeleteChapter).toHaveBeenCalledWith("c1");

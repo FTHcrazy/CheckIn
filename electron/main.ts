@@ -26,7 +26,10 @@ import {
   takePendingMessages,
   type PendingWindowMessage,
 } from "./window-pending";
-import { readWindowSendOptions, type WindowSendOptions } from "./window-send-options";
+import {
+  readWindowSendOptions,
+  type WindowSendOptions,
+} from "./window-send-options";
 import { registerActivityHandlers } from "./handlers/activity-handlers";
 import { registerTodoHandlers } from "./handlers/todo-handlers";
 import {
@@ -35,6 +38,7 @@ import {
 } from "./handlers/novel-handlers";
 import { registerNovelPackHandlers } from "./handlers/novel-pack-handlers";
 import { registerNovelSettingHandlers } from "./handlers/novel-setting-handlers";
+import { registerNovelSafetyHandlers } from "./handlers/novel-safety-handlers";
 import { registerNovelGlobalSettingHandlers } from "./handlers/novel-global-setting-handlers";
 import { registerNovelGraphHandlers } from "./handlers/novel-graph-handlers";
 import { registerNovelExportHandlers } from "./handlers/novel-export-handlers";
@@ -48,11 +52,15 @@ import { registerShortcutHandlers } from "./handlers/shortcut-handlers";
 import { registerMemoHandlers } from "./handlers/memo-handlers";
 import { registerLedgerHandlers } from "./handlers/ledger-handlers";
 import { registerCheckinHandlers } from "./handlers/checkin-handlers";
-import { registerHttpSessionHandlers, setupRendererHttpSession } from "./httpSession";
 import {
-  registerLogHandlers,
-  loadLogSettings,
-} from "./handlers/log-handlers";
+  registerHttpSessionHandlers,
+  setupRendererHttpSession,
+} from "./httpSession";
+import {
+  registerNovelFontHandlers,
+  registerNovelFontProtocol,
+} from "./handlers/novel-font-handlers";
+import { registerLogHandlers, loadLogSettings } from "./handlers/log-handlers";
 import {
   bootstrapLogger,
   closeLogger,
@@ -122,9 +130,15 @@ let tray: Tray | null = null;
  */
 process.on("uncaughtException", (error) => {
   console.error("[main] 未捕获异常：", error);
-  log("error", "main", "process", `未捕获异常：${error?.message ?? String(error)}`, {
-    stack: error?.stack,
-  });
+  log(
+    "error",
+    "main",
+    "process",
+    `未捕获异常：${error?.message ?? String(error)}`,
+    {
+      stack: error?.stack,
+    },
+  );
 });
 
 process.on("unhandledRejection", (reason) => {
@@ -161,6 +175,21 @@ protocol.registerSchemesAsPrivileged([
       codeCache: true,
     },
   },
+  {
+    // 正文字体：app:// 页面加载 file:// 字体会被 webSecurity 拦截
+    // （cross-origin local resource），字体一律经本协议出（见 novel-font-handlers）。
+    // ⚠️ standard + corsEnabled 必须与 app 对齐：缺 standard 时从 http（dev）
+    // 源跨协议加载会在 scheme 层直接被拒（"only supported for protocol
+    // schemes: app, chrome..."），CORS 响应头根本没有出场机会。
+    scheme: "novel-font",
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      stream: true,
+    },
+  },
 ]);
 
 let isQuitting = false;
@@ -191,7 +220,8 @@ function registerDevToolsShortcuts(win: BrowserWindow): void {
     if (input.type !== "keyDown") return;
 
     const isToggleKey =
-      input.key === "F12" || (input.control && input.shift && input.key.toLowerCase() === "i");
+      input.key === "F12" ||
+      (input.control && input.shift && input.key.toLowerCase() === "i");
     if (!isToggleKey) return;
 
     event.preventDefault();
@@ -247,7 +277,11 @@ function forwardMaximizeState(win: BrowserWindow): void {
 }
 
 /** 按入口 key 加载渲染层页面（dev 走 vite server，生产走 app:// 协议） */
-function loadRendererEntry(win: BrowserWindow, entry: WindowEntryKey, query = ""): void {
+function loadRendererEntry(
+  win: BrowserWindow,
+  entry: WindowEntryKey,
+  query = "",
+): void {
   const relPath = RENDERER_ENTRY_PATHS[entry];
   if (VITE_DEV_SERVER_URL) {
     win.loadURL(`${VITE_DEV_SERVER_URL}/${relPath}${query}`);
@@ -426,7 +460,9 @@ function createBaseWindow(): BrowserWindow {
       if (reason === "did-finish-load") {
         console.log(`[main] 页面加载完成: ${Date.now() - t0}ms`);
       } else {
-        console.warn(`[main] Base 窗口未经 did-finish-load 就绪（${reason}），仍按就绪处理`);
+        console.warn(
+          `[main] Base 窗口未经 did-finish-load 就绪（${reason}），仍按就绪处理`,
+        );
       }
       isPrimaryReady = true;
       if (canShowMainWindow) {
@@ -494,7 +530,9 @@ function createNovelWindow(): BrowserWindow {
       windowName: "novel",
       reveal: (reason) => {
         if (reason !== "did-finish-load") {
-          console.warn(`[main] Novel 主窗口未经 did-finish-load 就绪（${reason}），仍按就绪处理`);
+          console.warn(
+            `[main] Novel 主窗口未经 did-finish-load 就绪（${reason}），仍按就绪处理`,
+          );
         }
         isPrimaryReady = true;
         if (canShowMainWindow) {
@@ -509,7 +547,8 @@ function createNovelWindow(): BrowserWindow {
 
   if (IS_DEV) {
     registerDevToolsShortcuts(novelWin);
-    if (OPEN_DEVTOOLS) novelWin.webContents.openDevTools({ mode: DEVTOOLS_MODE });
+    if (OPEN_DEVTOOLS)
+      novelWin.webContents.openDevTools({ mode: DEVTOOLS_MODE });
   }
 
   // 标题栏的最小化/最大化按钮需要最大化状态推送
@@ -585,7 +624,8 @@ function createSettingsWindow(): BrowserWindow {
 
   if (IS_DEV) {
     registerDevToolsShortcuts(settingsWin);
-    if (OPEN_DEVTOOLS) settingsWin.webContents.openDevTools({ mode: DEVTOOLS_MODE });
+    if (OPEN_DEVTOOLS)
+      settingsWin.webContents.openDevTools({ mode: DEVTOOLS_MODE });
   }
 
   windowManager.register("settings", settingsWin);
@@ -682,7 +722,10 @@ function createPackWindow(opener?: WebContents): BrowserWindow {
   // 上下文走待投递队列：装载完成那一拍 React 常还没订阅，直发会丢
   // （preload 在 load 后 drain，未订阅则暂存，监听注册时补投）
   if (packWindowContext) {
-    pushPendingMessage("pack", { event: "pack-window-context", data: packWindowContext });
+    pushPendingMessage("pack", {
+      event: "pack-window-context",
+      data: packWindowContext,
+    });
   }
 
   // 「真的可见」的回执：钉在 `show` 事件上而不是 reveal 里 —— 正常装载、
@@ -693,7 +736,8 @@ function createPackWindow(opener?: WebContents): BrowserWindow {
 
   if (IS_DEV) {
     registerDevToolsShortcuts(packWin);
-    if (OPEN_DEVTOOLS) packWin.webContents.openDevTools({ mode: DEVTOOLS_MODE });
+    if (OPEN_DEVTOOLS)
+      packWin.webContents.openDevTools({ mode: DEVTOOLS_MODE });
   }
 
   // 标题栏的最小化/最大化按钮需要最大化状态推送
@@ -758,11 +802,14 @@ function createGlobalSettingWindow(opener?: WebContents): BrowserWindow {
   // 与 `createPackWindow` 的 `packWin.once("show", ...)` 同一范式。
   globalWin.once("show", () => notifyGlobalSettingShown(opener));
 
-  attachWindowLoadGuard(globalWin, "GlobalSetting", { windowName: "globalSetting" });
+  attachWindowLoadGuard(globalWin, "GlobalSetting", {
+    windowName: "globalSetting",
+  });
 
   if (IS_DEV) {
     registerDevToolsShortcuts(globalWin);
-    if (OPEN_DEVTOOLS) globalWin.webContents.openDevTools({ mode: DEVTOOLS_MODE });
+    if (OPEN_DEVTOOLS)
+      globalWin.webContents.openDevTools({ mode: DEVTOOLS_MODE });
   }
 
   // 标题栏的最小化/最大化按钮需要最大化状态推送
@@ -805,7 +852,11 @@ function createRelationWindow(): BrowserWindow {
   const existing = windowManager.get("relation");
   if (existing) {
     if (relationWindowContext) {
-      windowManager.sendTo("relation", "relation-window-context", relationWindowContext);
+      windowManager.sendTo(
+        "relation",
+        "relation-window-context",
+        relationWindowContext,
+      );
     }
     raiseWindow(existing);
     return existing;
@@ -840,7 +891,8 @@ function createRelationWindow(): BrowserWindow {
 
   if (IS_DEV) {
     registerDevToolsShortcuts(relationWin);
-    if (OPEN_DEVTOOLS) relationWin.webContents.openDevTools({ mode: DEVTOOLS_MODE });
+    if (OPEN_DEVTOOLS)
+      relationWin.webContents.openDevTools({ mode: DEVTOOLS_MODE });
   }
 
   forwardMaximizeState(relationWin);
@@ -947,7 +999,8 @@ function createLoginWindow(user?: { email: string } | null) {
   // 登录窗口同样支持调试快捷键（frame:false 无菜单栏，更需要显式注册）
   if (IS_DEV) {
     registerDevToolsShortcuts(loginWin);
-    if (OPEN_DEVTOOLS) loginWin.webContents.openDevTools({ mode: DEVTOOLS_MODE });
+    if (OPEN_DEVTOOLS)
+      loginWin.webContents.openDevTools({ mode: DEVTOOLS_MODE });
   }
 
   // 注册到窗口管理池（自动处理 closed 事件清理）
@@ -1062,6 +1115,13 @@ app.whenReady().then(() => {
   registerNovelExportHandlers();
   registerNovelPackHandlers();
   registerNovelSettingHandlers();
+  // 数据安全（P0）：novel 域一键全量备份 / 恢复 + 删除兜底（回收站）。
+  // 恢复会整库覆盖并重开连接，必须在 novel.db 生命周期桥接之后注册。
+  registerNovelSafetyHandlers();
+  // 正文字体（novel 域）：下载/列出/删除字体文件（应用级资源，不装系统）；
+  // 并注册 novel-font:// 协议供渲染层 @font-face 加载（file:// 会被拦）
+  registerNovelFontHandlers();
+  registerNovelFontProtocol();
   // 全局设定中心（1.4x）：全局库 CRUD + 引用/上架；每次全局写成功后由 handler
   // 广播 `global-setting-changed`（书窗口订阅后重载设定，REQ-041 ③）。
   registerNovelGlobalSettingHandlers();
@@ -1098,12 +1158,15 @@ app.whenReady().then(() => {
   }
 
   // 注册跨窗口通信 IPC handler
-  ipcMain.handle("window-broadcast", (_event, event: string, data?: unknown) => {
-    const sender = BrowserWindow.fromWebContents(_event.sender);
-    // 广播时排除发送者自己（按窗口实例反查注册名，覆盖全部窗口）
-    const senderName = sender ? windowManager.getNameOf(sender) : undefined;
-    windowManager.broadcast(event, data, senderName);
-  });
+  ipcMain.handle(
+    "window-broadcast",
+    (_event, event: string, data?: unknown) => {
+      const sender = BrowserWindow.fromWebContents(_event.sender);
+      // 广播时排除发送者自己（按窗口实例反查注册名，覆盖全部窗口）
+      const senderName = sender ? windowManager.getNameOf(sender) : undefined;
+      windowManager.broadcast(event, data, senderName);
+    },
+  );
 
   // 跨窗口投递（R27 起唯一入口）
   //
@@ -1146,7 +1209,8 @@ app.whenReady().then(() => {
       if (opts.create && !canCreateWindow(target)) {
         return { delivered: false, queued: false };
       }
-      if (!opts.create && !opts.queue) return { delivered: false, queued: false };
+      if (!opts.create && !opts.queue)
+        return { delivered: false, queued: false };
 
       // 先入队、再创建：新窗口的 preload 会在装载后 drain，
       // 「创建完才发现没消息」与「消息先到、窗口还没起来」两种时序都覆盖
@@ -1158,16 +1222,24 @@ app.whenReady().then(() => {
 
   // 新窗口装载后自取待投递消息（preload 调用；取走即清，重开窗口不会又弹上次的卡）
   // 返回 null = 主进程还不认识这个窗口（注册晚于 preload 执行），preload 会等 load 再试
-  ipcMain.handle("window-pending-drain", (event): PendingWindowMessage[] | null => {
-    const sender = BrowserWindow.fromWebContents(event.sender);
-    const name = sender ? windowManager.getNameOf(sender) : undefined;
-    if (!name) return null;
-    const list = takePendingMessages(name);
-    if (list.length > 0) {
-      log("info", "main", "window", `${name} 窗口补投 ${list.length} 条待处理消息`);
-    }
-    return list;
-  });
+  ipcMain.handle(
+    "window-pending-drain",
+    (event): PendingWindowMessage[] | null => {
+      const sender = BrowserWindow.fromWebContents(event.sender);
+      const name = sender ? windowManager.getNameOf(sender) : undefined;
+      if (!name) return null;
+      const list = takePendingMessages(name);
+      if (list.length > 0) {
+        log(
+          "info",
+          "main",
+          "window",
+          `${name} 窗口补投 ${list.length} 条待处理消息`,
+        );
+      }
+      return list;
+    },
+  );
 
   // 注册协议处理器，将 app:// 请求映射到本地文件
   // 必须异步：每个 bundle / CSS / 字体都是一次 1~5MB 的读盘，同步读会把
@@ -1231,7 +1303,8 @@ app.whenReady().then(() => {
     console.log("[main] 收到 pack-window-open，开始唤起行囊窗口");
     if (payload && typeof payload === "object") {
       const workId =
-        "workId" in payload && typeof (payload as { workId: unknown }).workId === "string"
+        "workId" in payload &&
+        typeof (payload as { workId: unknown }).workId === "string"
           ? (payload as { workId: string }).workId
           : "";
       // 零作品拒绝开窗（P2-5 双保险，渲染层 openPackWindow 已有同款守卫）：
@@ -1245,7 +1318,8 @@ app.whenReady().then(() => {
           ? (payload as { chapterId: string }).chapterId
           : "";
       const nonce =
-        "nonce" in payload && typeof (payload as { nonce: unknown }).nonce === "number"
+        "nonce" in payload &&
+        typeof (payload as { nonce: unknown }).nonce === "number"
           ? (payload as { nonce: number }).nonce
           : undefined;
       packWindowContext = { workId, chapterId, nonce };
@@ -1284,10 +1358,14 @@ app.whenReady().then(() => {
   // 后面的 did-fail-load / 超时兜底日志会接着说。
   ipcMain.on("global-setting-window-open", (event) => {
     if (EDITION === "lite") {
-      console.log("[main] 收到 global-setting-window-open，但当前为 lite 版（不含全局设定中心），已忽略");
+      console.log(
+        "[main] 收到 global-setting-window-open，但当前为 lite 版（不含全局设定中心），已忽略",
+      );
       return;
     }
-    console.log("[main] 收到 global-setting-window-open，开始创建全局设定中心窗口");
+    console.log(
+      "[main] 收到 global-setting-window-open，开始创建全局设定中心窗口",
+    );
     // 带上发起方：窗口真正可见时回执 global-setting-window-shown（REQ-054 修法）
     createGlobalSettingWindow(event.sender);
   });
@@ -1297,11 +1375,15 @@ app.whenReady().then(() => {
   // （图窗口没有作品上下文只能显示空壳，且后续写回会落进错误作品）。
   ipcMain.on("relation-window-open", (_event, payload) => {
     if (EDITION === "lite") {
-      console.log("[main] 收到 relation-window-open，但当前为 lite 版（不含小说域），已忽略");
+      console.log(
+        "[main] 收到 relation-window-open，但当前为 lite 版（不含小说域），已忽略",
+      );
       return;
     }
     const workId =
-      payload && typeof payload === "object" && typeof (payload as { workId?: unknown }).workId === "string"
+      payload &&
+      typeof payload === "object" &&
+      typeof (payload as { workId?: unknown }).workId === "string"
         ? (payload as { workId: string }).workId
         : "";
     if (!workId) {
@@ -1397,7 +1479,8 @@ app.whenReady().then(() => {
       "type" in data &&
       data.type === "user-login-confirmed"
     ) {
-      const email = "email" in data && typeof data.email === "string" ? data.email : "";
+      const email =
+        "email" in data && typeof data.email === "string" ? data.email : "";
       if (email) {
         switchUserDb(email);
       }
@@ -1419,7 +1502,11 @@ app.whenReady().then(() => {
   if (IS_DEV) {
     const toggleFocused = () => {
       const focused = BrowserWindow.getFocusedWindow();
-      toggleDevTools(focused ?? windowManager.get(PRIMARY_WINDOW_NAME) ?? windowManager.get("login"));
+      toggleDevTools(
+        focused ??
+          windowManager.get(PRIMARY_WINDOW_NAME) ??
+          windowManager.get("login"),
+      );
     };
     globalShortcut.register("CommandOrControl+Shift+I", toggleFocused);
     globalShortcut.register("F12", toggleFocused);
@@ -1457,7 +1544,10 @@ app.whenReady().then(() => {
   });
 
   app.on("activate", () => {
-    if (!windowManager.has(PRIMARY_WINDOW_NAME) && !windowManager.has("login")) {
+    if (
+      !windowManager.has(PRIMARY_WINDOW_NAME) &&
+      !windowManager.has("login")
+    ) {
       createLoginWindow(getCachedUser());
     }
     showPrimaryWindow();

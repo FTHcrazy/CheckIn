@@ -53,6 +53,8 @@
   width: 24px;
   height: 24px;
   border-radius: 6px;
+  // 同 PoolRow 的行尾图标按钮：纯图标必须自己居中，否则 hover 背景相对图标右偏
+  justify-content: center;
   color: var(--app-text-muted);
   --ant-btn-bg-color-hover: var(--app-surface-hover);
   --ant-btn-text-color-hover: var(--app-text);

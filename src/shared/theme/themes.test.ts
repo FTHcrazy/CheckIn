@@ -203,6 +203,24 @@ describe("面板分层（浅色也不能与浮层同色）", () => {
     });
   });
 
+  it("正文纸面色 theme.paper 与 themes.scss 的 --app-paper 逐值同步", () => {
+    THEME_LIST.forEach((theme) => {
+      const block = themeBlocks.get(theme.id)!;
+      const paper = readVar(block, "app-paper");
+      expect(paper).toMatch(/^#[0-9a-f]{6}$/);
+      expect(theme.paper.toLowerCase()).toBe(paper);
+    });
+  });
+
+  it("纸面色与内容面分得开（纸面是内容区 elevated 一档，不能与 surface 同色）", () => {
+    THEME_LIST.forEach((theme) => {
+      const block = themeBlocks.get(theme.id)!;
+      const surface = readVar(block, "app-surface");
+      const paper = readVar(block, "app-paper");
+      expect(paper).not.toBe(surface);
+    });
+  });
+
   /**
    * 顶栏 chip 的层次（UI-07）同样靠 token 值撑起来：
    * 默认底要从顶栏底色里「浮」出来，hover 再沉一档，持久激活换主色弱底。
@@ -437,6 +455,7 @@ describe("色块阶梯：页面根铺 bg、浮层底只给浮层用", () => {
     "src/windows/NovelWindow/pages/NovelPage/components/ChapterTree/index.scss", // 拖拽随动 chip（portal）
     "src/windows/NovelWindow/pages/NovelPage/components/EntityContextMenu/index.scss", // 右键菜单
     "src/windows/NovelWindow/pages/NovelPage/components/HoverEntityCard/index.scss", // 悬浮卡
+    "src/windows/NovelWindow/pages/NovelPage/components/InspirationPanel/index.scss", // 灵感卡片 hover 操作条（浮在 surface 卡之上）
     "src/windows/NovelWindow/pages/NovelPage/components/SettingsDrawer/index.scss", // 排版抽屉
     "src/windows/NovelWindow/pages/NovelPage/components/SnapshotDrawer/index.scss", // 快照抽屉
     "src/windows/GlobalSettingWindow/components/GsRefsDrawer/index.scss", // 引用方名单抽屉

@@ -42,6 +42,15 @@ interface TodoRow {
 // 本文件因 export interface ElectronAPI 已是模块环境：DTO 必须显式 export，
 // 渲染进程各页面（NovelPage / BookshelfPage 等）才能 import type 共用同一契约。
 
+/** 已下载正文字体条目（应用级资源，novel-font-list 返回） */
+export interface NovelFontEntry {
+  family: string
+  fileName: string
+  size: number
+  /** file:// URL，渲染层 @font-face 挂载用 */
+  fileUrl: string
+}
+
 export interface NovelWorkDTO {
   id: string
   name: string
@@ -757,6 +766,84 @@ export interface BackupImportResult {
   skipped: string[];
 }
 
+// ── 小说数据安全 DTO（P0：一键全量备份 / 恢复 + 回收站，与 electron/novel-safety-utils.ts 一致） ──
+
+/** 备份包规模摘要（导出时统计，恢复前展示） */
+export interface NovelBackupCountsDTO {
+  works: number
+  volumes: number
+  chapters: number
+  words: number
+  entities: number
+  settings: number
+  packCharacters: number
+}
+
+export interface NovelBackupManifestDTO {
+  app: "checkin"
+  kind: "novel-db"
+  format: number
+  exportedAt: string
+  email?: string
+  appVersion?: string
+  counts: NovelBackupCountsDTO
+}
+
+/** 一键备份结果：canceled=true 时 filePath 为 null */
+export interface NovelBackupExportResult {
+  canceled: boolean
+  filePath: string | null
+  counts: NovelBackupCountsDTO
+  /** 备份包字节数（仅成功时返回，用于提示） */
+  bytes?: number
+}
+
+/** 选包预览结果：只读清单，不动数据 */
+export interface NovelBackupPickResult {
+  canceled: boolean
+  filePath: string | null
+  manifest: NovelBackupManifestDTO | null
+  /** 包内 novel.db 的字节数 */
+  bytes?: number
+}
+
+export interface NovelBackupRestoreResult {
+  ok: boolean
+  /** 备份包内的规模摘要（恢复后的数据规模） */
+  counts: NovelBackupCountsDTO
+  exportedAt: string
+  /** 覆盖前自动留底的库文件路径（恢复错了可以从这里捞回） */
+  safetyCopy: string
+}
+
+/** 回收站条目类型 */
+export type NovelTrashKind = "work" | "volume" | "chapter"
+
+/** 回收站条目 */
+export interface NovelTrashItemDTO {
+  kind: NovelTrashKind
+  id: string
+  name: string
+  /** 移入回收站的时间戳（ms） */
+  deletedAt: number
+  /** 所属作品名（卷 / 章用；作品本身为空串） */
+  workName: string
+  /** 所属卷名（仅章用） */
+  volumeName: string
+  volumes: number
+  chapters: number
+  words: number
+  /** 剩余可恢复天数（0 = 今天内到期） */
+  daysLeft: number
+  /** 是否已过保留期（渲染层打开面板时自动彻底删除） */
+  expired: boolean
+}
+
+export interface NovelTrashListResult {
+  items: NovelTrashItemDTO[]
+  retentionDays: number
+}
+
 // ── 打卡 DTO（与 electron/handlers/checkin-handlers.ts 保持一致） ──
 
 /** 当前业务日打卡状态；凌晨 0-5 点归属前一个业务日，跨过 5 点自动重置 */
@@ -871,20 +958,38 @@ export interface ElectronAPI {
     addWork: (work: NovelWorkDTO) => Promise<boolean>
     renameWork: (id: string, name: string) => Promise<boolean>
     deleteWork: (id: string) => Promise<boolean>
+    /** 删除兜底：作品移入回收站（软删除，子数据保留，可恢复） */
+    trashWork: (id: string) => Promise<boolean>
+    /** 回收站列表（作品 / 卷 / 章三类，含规模与剩余可恢复天数） */
+    listTrash: () => Promise<NovelTrashListResult>
+    /** 从回收站恢复（清掉删除标记；卷 / 章会处理原位置被占的情况） */
+    restoreTrash: (kind: NovelTrashKind, id: string) => Promise<boolean>
+    /** 一键全量备份：打包 novel.db + manifest，弹保存框 */
+    exportBackup: () => Promise<NovelBackupExportResult>
+    /** 选备份包并校验清单，返回规模摘要（不落盘） */
+    pickBackup: () => Promise<NovelBackupPickResult>
+    /** 用备份包覆盖整库（先自动留底，失败回滚） */
+    restoreBackup: (filePath: string) => Promise<NovelBackupRestoreResult>
     /** 一键重置为模板书籍（调试）：清空全部 novel_* 表并重新播种，返回摘要 */
     resetTemplate: () => Promise<{ volumes: number; chapters: number; words: number; entities: number }>
     saveChapter: (id: string, content: string, wordCount: number) => Promise<boolean>
     listSnapshots: (chapterId: string) => Promise<NovelSnapshotDTO[]>
     addChapter: (chapter: NovelChapterDTO) => Promise<boolean>
     renameChapter: (id: string, title: string) => Promise<boolean>
+    /** 删除章节 = 移入回收站（软删除，正文与快照都保留，可恢复） */
     deleteChapter: (id: string) => Promise<boolean>
+    /** 彻底删除章节（级联清理历史快照，不可恢复） */
+    purgeChapter: (id: string) => Promise<boolean>
     setChapterStatus: (id: string, status: "draft" | "done") => Promise<boolean>
     saveChapterOutline: (id: string, note: string) => Promise<boolean>
     saveChapterOrder: (updates: Array<{ id: string; sort: number; volumeId: string }>) => Promise<boolean>
     addVolume: (volume: NovelVolumeDTO) => Promise<boolean>
     renameVolume: (id: string, name: string) => Promise<boolean>
     saveVolumeOrder: (updates: Array<{ id: string; sort: number }>) => Promise<boolean>
+    /** 删除卷 = 移入回收站（卷与卷内章节同批打标，可恢复） */
     deleteVolume: (id: string) => Promise<boolean>
+    /** 彻底删除卷（级联清理章节 / 快照 / 大纲条目，不可恢复） */
+    purgeVolume: (id: string) => Promise<boolean>
     saveEntity: (entity: NovelEntityDTO) => Promise<boolean>
     addLink: (link: NovelLinkDTO) => Promise<boolean>
     removeLink: (id: string) => Promise<boolean>
@@ -1035,6 +1140,18 @@ export interface ElectronAPI {
         chapterId: string,
         category: string,
       ) => Promise<{ id: string; characterId: string } | null>
+    }
+    /** 正文字体（应用级资源；下载 → @font-face 挂载，不装系统字体） */
+    font: {
+      download: (
+        url: string,
+        family: string,
+      ) => Promise<
+        | { ok: true; entry: NovelFontEntry }
+        | { ok: false; error: string }
+      >
+      list: () => Promise<NovelFontEntry[]>
+      delete: (fileName: string) => Promise<boolean>
     }
   }
 

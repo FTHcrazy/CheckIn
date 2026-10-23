@@ -30,9 +30,21 @@ import {
   type NovelEditorBridge,
 } from "../utils/entity-jump";
 
+/** 书架区的二级页面：主页 / 回收站（编辑器不是二级页面，由 `view` 管） */
+export type ShelfScreen = "main" | "trash";
+
 interface EntityJumpState {
   /** 视图：书架主页 / 编辑器（整个 NovelWindow 的显隐开关都在这） */
   view: GuideView;
+  /**
+   * 书架区的二级页面：主页 / 回收站。
+   *
+   * 回收站挂在书架**下面**而不是第三条 `view` —— 它是「书架的数据管理面」，
+   * 与编辑器不是并列关系；放进 `view` 会让 `onShelf` 判定（关系图跳转）在
+   * 回收站页面上误判成「不在书架」。所有会离开书架的入口（打开作品 / 返回书架 /
+   * 导入）都在这里同步归零，避免回到书架时还停在上次的二级页面。
+   */
+  shelfScreen: ShelfScreen;
   /** 编辑器是否挂载过（懒挂载；一旦挂载就常驻，只切显隐） */
   editorMounted: boolean;
   /** 书架 → 编辑器的打开请求（幂等 token，NovelPage 消费） */
@@ -65,6 +77,8 @@ interface EntityJumpState {
   consumeOpenRequest: () => void;
   backToShelf: () => void;
   goToView: (target: GuideView) => void;
+  /** 进书架区的回收站页面（书架数据管理面，不是弹窗） */
+  openTrash: () => void;
   requestImport: () => void;
   consumeImportRequest: () => void;
 }
@@ -102,11 +116,12 @@ function decide(
         deferred: payload,
         pending: null,
         editorMounted: true,
+        shelfScreen: "main",
         view: "editor",
       });
       return;
     }
-    set({ pending: null, deferred: null });
+    set({ pending: null, deferred: null, shelfScreen: "main" });
     state.openWork(payload.workId, undefined, payload.entityId);
     return;
   }
@@ -124,6 +139,7 @@ function decide(
 
 export const useEntityJumpStore = create<EntityJumpState>((set, get) => ({
   view: "shelf",
+  shelfScreen: "main",
   editorMounted: false,
   openRequest: null,
   importRequest: null,
@@ -181,11 +197,12 @@ export const useEntityJumpStore = create<EntityJumpState>((set, get) => ({
   cancelEntityJump: () => set({ pending: null }),
 
   openWork: (workId, chapterId, entityId) => {
-    // 用户主动打开 = 新意图：残留的跳转全部作废
+    // 用户主动打开 = 新意图：残留的跳转、书架二级页面全部作废
     set({
       editorMounted: true,
       openRequest: { workId, chapterId, entityId, token: Date.now() },
       view: "editor",
+      shelfScreen: "main",
       pending: null,
       deferred: null,
     });
@@ -195,20 +212,31 @@ export const useEntityJumpStore = create<EntityJumpState>((set, get) => ({
 
   backToShelf: () => {
     // 返回书架 = 明确放弃挂起 / 待确认的跳转。**同步**清（不等 effect）：
-    // 否则残留消息在书架态被重判，就是真机复现过的「返回书架却切书」
-    set({ view: "shelf", pending: null, deferred: null });
+    // 否则残留消息在书架态被重判，就是真机复现过的「返回书架却切书」；
+    // 同时回到书架主页 —— 「返回」不该落在回收站上。
+    set({ view: "shelf", shelfScreen: "main", pending: null, deferred: null });
+  },
+
+  openTrash: () => {
+    set({ view: "shelf", shelfScreen: "trash", pending: null, deferred: null });
   },
 
   goToView: (target) => {
     if (target === "shelf") {
-      set({ view: "shelf", pending: null, deferred: null });
+      set({ view: "shelf", shelfScreen: "main", pending: null, deferred: null });
       return;
     }
-    set({ view: target });
+    set({ view: target, shelfScreen: "main" });
   },
 
   requestImport: () => {
-    set({ view: "shelf", pending: null, deferred: null, importRequest: Date.now() });
+    set({
+      view: "shelf",
+      shelfScreen: "main",
+      pending: null,
+      deferred: null,
+      importRequest: Date.now(),
+    });
   },
 
   consumeImportRequest: () => set({ importRequest: null }),
@@ -218,6 +246,7 @@ export const useEntityJumpStore = create<EntityJumpState>((set, get) => ({
 export function resetEntityJumpStore(): void {
   useEntityJumpStore.setState({
     view: "shelf",
+    shelfScreen: "main",
     editorMounted: false,
     openRequest: null,
     importRequest: null,

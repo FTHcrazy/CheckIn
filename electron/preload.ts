@@ -229,6 +229,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
       trackedInvoke('novel-work-rename', id, name) as Promise<boolean>,
     deleteWork: (id: string) =>
       trackedInvoke('novel-work-delete', id) as Promise<boolean>,
+    // ── 数据安全（P0）：一键全量备份 / 恢复 + 删除兜底（回收站） ──
+    // 注意以下三组「日常删除 vs 彻底删除」的差别：
+    //   trashWork / deleteChapter / deleteVolume  = 软删除（进回收站，可恢复）
+    //   deleteWork / purgeChapter / purgeVolume   = 物理级联（不可恢复）
+    trashWork: (id: string) =>
+      trackedInvoke('novel-work-trash', id) as Promise<boolean>,
+    listTrash: () => trackedInvoke('novel-trash-list'),
+    restoreTrash: (kind: string, id: string) =>
+      trackedInvoke('novel-trash-restore', kind, id) as Promise<boolean>,
+    exportBackup: () => trackedInvoke('novel-backup-export'),
+    pickBackup: () => trackedInvoke('novel-backup-pick'),
+    restoreBackup: (filePath: string) =>
+      trackedInvoke('novel-backup-restore', filePath),
     // 一键重置为模板书籍（调试）：清空全部 novel_* 表并重新播种模板数据
     resetTemplate: () =>
       trackedInvoke('novel-editor-reset-template') as Promise<{ volumes: number; chapters: number; words: number; entities: number }>,
@@ -242,6 +255,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       trackedInvoke('novel-chapter-rename', id, title) as Promise<boolean>,
     deleteChapter: (id: string) =>
       trackedInvoke('novel-chapter-delete', id) as Promise<boolean>,
+    purgeChapter: (id: string) =>
+      trackedInvoke('novel-chapter-purge', id) as Promise<boolean>,
     setChapterStatus: (id: string, status: string) =>
       trackedInvoke('novel-chapter-status', id, status) as Promise<boolean>,
     saveChapterOutline: (id: string, note: string) =>
@@ -256,6 +271,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       trackedInvoke('novel-volume-order', updates) as Promise<boolean>,
     deleteVolume: (id: string) =>
       trackedInvoke('novel-volume-delete', id) as Promise<boolean>,
+    purgeVolume: (id: string) =>
+      trackedInvoke('novel-volume-purge', id) as Promise<boolean>,
     saveEntity: (entity: unknown) =>
       trackedInvoke('novel-entity-save', entity) as Promise<boolean>,
     addLink: (link: unknown) => trackedInvoke('novel-link-add', link) as Promise<boolean>,
@@ -421,6 +438,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
         trackedInvoke('novel-pack-quick-add', workId, name, chapterId, category) as Promise<
           { id: string; characterId: string } | null
         >,
+    },
+    // ── 正文字体（应用级资源，跨用户共享；下载→@font-face 挂载） ──
+    font: {
+      download: (url: string, family: string) =>
+        trackedInvoke('novel-font-download', { url, family }) as Promise<
+          | { ok: true; entry: { family: string; fileName: string; size: number; fileUrl: string } }
+          | { ok: false; error: string }
+        >,
+      list: () =>
+        trackedInvoke('novel-font-list') as Promise<
+          Array<{ family: string; fileName: string; size: number; fileUrl: string }>
+        >,
+      delete: (fileName: string) =>
+        trackedInvoke('novel-font-delete', fileName) as Promise<boolean>,
     },
   },
 

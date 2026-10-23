@@ -67,16 +67,25 @@ function initializeNovelDb(database: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_novel_usage_event ON novel_usage_log(event, created_at);
 
     -- ── 作品 / 卷 / 章 / 快照 ──
+    -- deleted_at：回收站（删除兜底）。NULL = 正常在架；有值 = 已移入回收站
+    -- 的时间戳（ms）。删除只打标记、不动子表，恢复就是把这一列清空 ——
+    -- 卷章正文 / 要素 / 设定 / 行囊全都还在原处，不需要任何重建逻辑。
+    --
+    -- 卷与章同样带这一列（2.4.0 起）。**删卷时卷与其内章节打同一个时间戳**，
+    -- 这个相同值就是「同一批」的判据（见 novel-safety-handlers 的恢复逻辑）：
+    -- 恢复卷只带回这一批，删卷之前单独删掉的章节仍留在回收站里，各归各的。
     CREATE TABLE IF NOT EXISTS novel_works (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
-      created_at INTEGER NOT NULL
+      created_at INTEGER NOT NULL,
+      deleted_at INTEGER
     );
     CREATE TABLE IF NOT EXISTS novel_volumes (
       id TEXT PRIMARY KEY,
       work_id TEXT NOT NULL,
       name TEXT NOT NULL DEFAULT '未命名卷',
-      sort INTEGER NOT NULL DEFAULT 1
+      sort INTEGER NOT NULL DEFAULT 1,
+      deleted_at INTEGER
     );
     CREATE INDEX IF NOT EXISTS idx_novel_volumes_work ON novel_volumes(work_id, sort);
     CREATE TABLE IF NOT EXISTS novel_chapters (
@@ -89,7 +98,8 @@ function initializeNovelDb(database: Database.Database): void {
       status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'done')),
       sort INTEGER NOT NULL DEFAULT 1,
       outline_note TEXT,
-      updated_at INTEGER NOT NULL
+      updated_at INTEGER NOT NULL,
+      deleted_at INTEGER
     );
     CREATE INDEX IF NOT EXISTS idx_novel_chapters_work
       ON novel_chapters(work_id, volume_id, sort);
@@ -478,6 +488,33 @@ function initializeNovelDb(database: Database.Database): void {
   `);
 
   // ── 增量迁移（§6.5）───────────────────────────────────────────────
+  // 2.2.x 回收站（删除兜底）：老库的 novel_works 没有 deleted_at，补一列可空
+  // 时间戳。可空即「全部作品都在架」，老数据语义天然正确、无需回填。
+  const workColumns = database.pragma("table_info(novel_works)") as Array<{
+    name: string;
+  }>;
+  if (!workColumns.some((column) => column.name === "deleted_at")) {
+    database.exec("ALTER TABLE novel_works ADD COLUMN deleted_at INTEGER");
+  }
+  // 在架作品列表是启动即跑的热查询，回收站面板也按删除时间倒序扫
+  database.exec(`
+    CREATE INDEX IF NOT EXISTS idx_novel_works_deleted
+      ON novel_works(deleted_at);
+  `);
+
+  // 2.4.0 回收站扩展到卷 / 章：同样只补可空时间戳列，老数据全部视为在架。
+  // ⚠️ 必须逐表 pragma 探测再 ALTER —— `CREATE TABLE IF NOT EXISTS` 对**已存在**
+  // 的表是空操作，光改建表语句不会给老库补列（表现为查 deleted_at 直接报错）。
+  for (const table of ["novel_volumes", "novel_chapters"]) {
+    const columns = database.pragma(`table_info(${table})`) as Array<{ name: string }>;
+    if (!columns.some((column) => column.name === "deleted_at")) {
+      database.exec(`ALTER TABLE ${table} ADD COLUMN deleted_at INTEGER`);
+    }
+    database.exec(
+      `CREATE INDEX IF NOT EXISTS idx_${table}_deleted ON ${table}(deleted_at)`,
+    );
+  }
+
   // 1.36.0 建的 novel.db 没有 sub_pattern 列（1.37.0 逐级小层命名）：
   // PRAGMA 探测后再 ALTER，幂等可重复执行。
   const levelColumns = database.pragma("table_info(novel_setting_levels)") as Array<{

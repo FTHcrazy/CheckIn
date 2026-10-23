@@ -190,7 +190,10 @@ describe("装载失败必须可见 + 必有窗口（守卫）", () => {
   it("pack-window-open：到达日志 + 发起方透传 + show 事件回执", () => {
     const start = MAIN.indexOf('ipcMain.on("pack-window-open"');
     expect(start).toBeGreaterThan(-1);
-    const handler = MAIN.slice(start, start + 1200);
+    // 截到下一个 ipcMain.on 为止，而不是固定字数：这个 handler 里全是「为什么」
+    // 注释，注释一长就会把 createPackWindow 挤出 1200 字的窗口 → 假红
+    const next = MAIN.indexOf("ipcMain.on(", start + 1);
+    const handler = MAIN.slice(start, next > -1 ? next : start + 4000);
     expect(handler).toContain("收到 pack-window-open");
     expect(handler).toContain("createPackWindow(event.sender)");
 

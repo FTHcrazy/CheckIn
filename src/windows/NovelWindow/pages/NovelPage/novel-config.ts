@@ -102,6 +102,9 @@ export const DEFAULT_SETTINGS: EditorSettings = {
   chapterSuffix: "章",
   volumeSuffix: "卷",
   confirmReorder: true,
+  paperTexture: false,
+  paperFont: "",
+  readMode: false,
 };
 
 /**
@@ -123,7 +126,10 @@ export const SETTINGS_RANGE = {
 
 // 要素类型语义色 / 筛选顺序已上提到 `@/shared/novel/entity-type-meta`
 // （R27 起关系图独立窗口共用同一份色表）。这里 re-export，既有导入路径不变。
-export { ENTITY_TYPE_META, ENTITY_FILTER_ORDER } from "@/shared/novel/entity-type-meta";
+export {
+  ENTITY_TYPE_META,
+  ENTITY_FILTER_ORDER,
+} from "@/shared/novel/entity-type-meta";
 export type { EntityTypeMeta } from "@/shared/novel/entity-type-meta";
 
 /** 选区标记工具条的快捷类型（O3）：保持内置四类，自定义类型走资料卡编辑 */

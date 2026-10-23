@@ -714,8 +714,26 @@ export function registerNovelHandlers(): void {
     return true;
   });
 
-  // 删除章节：历史快照同事务清理
-  ipcMain.handle("novel-chapter-delete", (_event, id: string) => {
+  /*
+   * 删除章节 = 移入回收站（软删除，2.4.0）。
+   *
+   * 只打 deleted_at 标记：正文 / 历史快照 / 大纲条目全都留在原处，恢复就是
+   * 把这一列清空，不需要任何重建。物理销毁走 `novel-chapter-purge`。
+   *
+   * ⚠️ 快照这里**不删**（旧实现是 `DELETE FROM novel_snapshots`）：软删除期
+   * 用户随时可能恢复，删了快照就等于「恢复回来的章节没有历史版本」。
+   */
+  ipcMain.handle(
+    "novel-chapter-delete",
+    (_event, id: string) =>
+      dbRun(
+        "UPDATE novel_chapters SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL",
+        [Date.now(), id],
+      ).changes > 0,
+  );
+
+  // 删除章节（彻底）：历史快照同事务清理，不可恢复
+  ipcMain.handle("novel-chapter-purge", (_event, id: string) => {
     const db = getDb();
     const apply = db.transaction(() => {
       dbRun("DELETE FROM novel_snapshots WHERE chapter_id = ?", [id]);
@@ -1105,11 +1123,23 @@ ipcMain.handle("novel-editor-reset-template", () => seedTemplateBook());
   //    他们删光自己的作品的下一刻就会触发一次清库，表现为「删掉的书全回来了，
   //    还多出一本模板书」。判据天生不可靠，不如不判。
   ipcMain.handle("novel-editor-load", (_event, includeContent: boolean = true) => {
-    const works = dbAll("SELECT * FROM novel_works ORDER BY created_at") as NovelWorkRow[];
+    // ⚠️ 回收站（deleted_at）必须在装载层就过滤掉：卷章 / 要素 / 行囊都还在库里
+    // （软删除只标记作品行），漏掉这条会让「已删除的作品」照旧出现在书架，
+    // 并且它的章节还会参与续写位置与统计。彻底删除 see novel-work-delete。
+    const works = dbAll(
+      "SELECT * FROM novel_works WHERE deleted_at IS NULL ORDER BY created_at",
+    ) as NovelWorkRow[];
 
-    const volumes = (dbAll("SELECT * FROM novel_volumes ORDER BY sort") as NovelVolumeRow[]).map(
-      (row) => ({ id: row.id, workId: row.work_id, name: row.name, sort: row.sort }),
-    );
+    /*
+     * ⚠️ 卷 / 章同样要在这里过滤回收站（2.4.0）。软删除只给卷章行打时间戳，
+     * 正文与快照仍在库里 —— 漏掉这两条，删掉的章节会照旧出现在章节目录里，
+     * 而且还会参与卷章计数与「续写位置」的定位。
+     */
+    const volumes = (
+      dbAll(
+        "SELECT * FROM novel_volumes WHERE deleted_at IS NULL ORDER BY sort",
+      ) as NovelVolumeRow[]
+    ).map((row) => ({ id: row.id, workId: row.work_id, name: row.name, sort: row.sort }));
     /*
      * ⚠️ 正文是这条通道里唯一的大字段，且**书架根本不用它**（只算章节数 / 字数 /
      * 状态）。原先无条件 `SELECT *`，打开一次书架要把全书正文拉过 IPC：
@@ -1119,8 +1149,8 @@ ipcMain.handle("novel-editor-reset-template", () => seedTemplateBook());
      */
     const chapters = (dbAll(
       includeContent
-        ? "SELECT * FROM novel_chapters"
-        : "SELECT id, work_id, volume_id, title, word_count, status, sort, updated_at, outline_note FROM novel_chapters",
+        ? "SELECT * FROM novel_chapters WHERE deleted_at IS NULL"
+        : "SELECT id, work_id, volume_id, title, word_count, status, sort, updated_at, outline_note FROM novel_chapters WHERE deleted_at IS NULL",
     ) as NovelChapterRow[]).map((row) => toChapterDto(row, includeContent));
     const entities = (dbAll("SELECT * FROM novel_entities ORDER BY sort") as NovelEntityRow[]).map(
       toEntityDto,
@@ -1178,19 +1208,35 @@ ipcMain.handle("novel-editor-reset-template", () => seedTemplateBook());
       ...(row.foreshadow_id !== null ? { foreshadowId: row.foreshadow_id } : {}),
     }));
 
+    /*
+     * ⚠️ 指向已删卷 / 已删章节的大纲条目必须挡在装载层之外：伏笔挂在具体卷章上，
+     * 卷章进了回收站却在面板里照旧列着，点进去就是一个不存在的目标。
+     *
+     * 数据本身**不删**（软删除时没动这张表）—— 卷章恢复后条目自动重现。
+     * 这里用已装载的在架集合做内存过滤，而不是再写一条带子查询的 SQL：卷章两个
+     * 集合本来就在手上，多打一遍库没有收益。
+     */
+    const liveVolumeIds = new Set(volumes.map((volume) => volume.id));
+    const liveChapterIds = new Set(chapters.map((chapter) => chapter.id));
     const outlineEntries = (dbAll(
       "SELECT * FROM novel_outline_entries",
-    ) as NovelOutlineEntryRow[]).map((row) => ({
-      id: row.id,
-      workId: row.work_id,
-      kind: "foreshadow" as const,
-      volumeId: row.volume_id,
-      ...(row.chapter_id !== null ? { chapterId: row.chapter_id } : {}),
-      title: row.title,
-      note: row.note,
-      status: isEntryStatus(row.status) ? row.status : "open",
-      createdAt: row.created_at,
-    }));
+    ) as NovelOutlineEntryRow[])
+      .filter(
+        (row) =>
+          liveVolumeIds.has(row.volume_id) &&
+          (row.chapter_id == null || liveChapterIds.has(row.chapter_id)),
+      )
+      .map((row) => ({
+        id: row.id,
+        workId: row.work_id,
+        kind: "foreshadow" as const,
+        volumeId: row.volume_id,
+        ...(row.chapter_id !== null ? { chapterId: row.chapter_id } : {}),
+        title: row.title,
+        note: row.note,
+        status: isEntryStatus(row.status) ? row.status : "open",
+        createdAt: row.created_at,
+      }));
 
     /**
      * ⚠️ 这里**不再**置会话标记、也不再上报 `editor_open`。
@@ -1225,12 +1271,15 @@ ipcMain.handle("novel-editor-reset-template", () => seedTemplateBook());
       const db = getDb();
       const now = Date.now();
       const save = db.transaction(() => {
-        const chapter = dbGet("SELECT word_count FROM novel_chapters WHERE id = ?", [
-          id,
-        ]) as { word_count?: number | null } | undefined;
+        const chapter = dbGet(
+          "SELECT word_count FROM novel_chapters WHERE id = ? AND deleted_at IS NULL",
+          [id],
+        ) as { word_count?: number | null } | undefined;
         // ⚠️ 章节不存在就中止：继续跑会写一条 chapter_id 悬空的孤儿快照，
         // 而崩溃恢复挑的是「最新一条快照」—— 孤儿快照时间戳最新，会把真正
         // 需要恢复的那次改动屏蔽掉。宁可报错也不能污染恢复链路。
+        // 已进回收站的章节同样按「不存在」处理：删除瞬间压在队列里的自动保存
+        // 不能把回收站里的正文改掉，否则恢复出来的就不是删除那一刻的样子了。
         if (!chapter) return false;
         const delta = wordCount - (chapter.word_count ?? 0);
         // 只取用到的两列：这里是每次自动保存都要跑的高频路径，
@@ -1365,8 +1414,31 @@ ipcMain.handle("novel-editor-reset-template", () => seedTemplateBook());
     return true;
   });
 
-  // 删除卷：章节 / 快照 / 大纲条目级联清理，单事务（叶 → 根，仿 novel-work-delete）
+  /*
+   * 删除卷 = 移入回收站（软删除，2.4.0）。卷与其内章节打**同一个时间戳**，
+   * 这个相同值就是「同一批」的判据：恢复卷时只带回这一批，删卷之前单独删掉的
+   * 章节仍留在回收站里单独一条，不会被顺手复活。
+   *
+   * 大纲条目 / 快照一概不动 —— 恢复后它们还挂在原来的卷章上。
+   */
   ipcMain.handle("novel-volume-delete", (_event, id: string) => {
+    const db = getDb();
+    const now = Date.now();
+    const apply = db.transaction(() => {
+      dbRun(
+        "UPDATE novel_chapters SET deleted_at = ? WHERE volume_id = ? AND deleted_at IS NULL",
+        [now, id],
+      );
+      return dbRun(
+        "UPDATE novel_volumes SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL",
+        [now, id],
+      ).changes;
+    });
+    return Number(apply()) > 0;
+  });
+
+  // 删除卷（彻底）：章节 / 快照 / 大纲条目级联清理，单事务（叶 → 根，仿 novel-work-delete）
+  ipcMain.handle("novel-volume-purge", (_event, id: string) => {
     const db = getDb();
     const apply = db.transaction(() => {
       // 大纲条目必须先行：它的 chapter_id 子查询依赖 novel_chapters，
