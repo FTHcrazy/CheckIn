@@ -1,16 +1,8 @@
 @use "../../../../shared/styles/widget" as widget;
 
 /* AI 配置页（窗口私有）
-   结构与其它页一致：若干 `.settings-section` 卡片 + 底部常驻操作条。
-   页面自身是一列（卡片间距 12），并显式 `flex: none` —— 它是 `.settings-page`
-   这个定高 flex column 的唯一子项，不写就会在内容超高时被整体压扁而不是滚动。 */
-
-.settings-ai {
-  display: flex;
-  flex: none;
-  flex-direction: column;
-  gap: 12px;
-}
+   卡片直接摊在 `.settings-page__stack` 上（组件根是 fragment），页间距与
+   「操作条贴底」都由那层栈负责；底部操作条已上收为 SettingsActionBar。 */
 
 .settings-ai__loading {
   display: flex;
@@ -146,86 +138,4 @@
     background: var(--app-error-weak);
     color: var(--app-error);
   }
-}
-
-/* ── 底部常驻操作条 ──
-   固定在滚动区底部：AI 表单在 900×680 下会略高于可视区，按钮不跟着滚走。 */
-.settings-ai__footer {
-  position: sticky;
-  bottom: 0;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 2px 2px;
-  border-top: 1px solid var(--app-splitter);
-  /* 必须是不透明底：卡片从下方滚过时不能透出来 */
-  background: var(--app-bg);
-}
-
-.settings-ai__state {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--app-text-secondary);
-
-  &.is-dirty {
-    color: var(--app-warning);
-  }
-}
-
-.settings-ai__state-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentcolor;
-}
-
-.settings-ai__state.is-saved .settings-ai__state-dot {
-  background: var(--app-success);
-}
-
-.settings-ai__footer-actions {
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  gap: 8px;
-}
-
-/* 次级描边按钮（清零后补齐高度 / 内边距 / 描边） */
-.settings-ai__btn.ant-btn {
-  @include widget.ant-button-reset;
-  --ant-control-height: 32px;
-  --ant-button-padding-inline: 14px;
-  --ant-button-content-font-size: 14px;
-  --ant-button-font-weight: 500;
-  --ant-border-radius: var(--app-radius-item);
-  --ant-line-width: 1px;
-  --ant-button-default-bg: var(--app-surface);
-  --ant-button-default-color: var(--app-text);
-  --ant-button-default-border-color: var(--app-border);
-  --ant-button-default-hover-bg: var(--app-surface-hover);
-  --ant-button-default-hover-color: var(--app-primary);
-  --ant-button-default-hover-border-color: var(--app-primary);
-  --ant-button-default-active-bg: var(--app-surface-active);
-  --ant-button-default-active-color: var(--app-primary);
-  --ant-button-default-active-border-color: var(--app-primary);
-  --ant-button-default-shadow: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-/**
- * 主操作按钮（保存）：走组件库自带的 `type="primary"`，只对齐圆角。
- * 不照抄上面那套清零变量 —— 主色按钮的 hover / 按下 / **禁用**三态由 antd
- * 按主题 token 派生，手写变量最容易在「禁用态」翻车（清零后的禁底色是透明，
- * 白底上的白字＝按钮消失）。组件库优先的另一半就是这个意思。
- */
-.settings-ai__primary.ant-btn {
-  --ant-border-radius: var(--app-radius-item);
-  flex-shrink: 0;
 }

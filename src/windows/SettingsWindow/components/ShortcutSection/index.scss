@@ -1,6 +1,6 @@
-@use "../../../../shared/styles/widget" as widget;
-
-/* 快捷键分区：沿用 .settings-item 的行框架，只补三列布局与说明文案 */
+/* 快捷键分区：沿用 .settings-item 的行框架，只补三列布局与说明文案。
+   底部「恢复默认」已上移到页面级操作条（与其它页同位置），
+   原先卡内的 footer 与私有描边按钮样式一并删除。 */
 
 .settings-shortcut__lead {
   margin: 0;
@@ -69,37 +69,4 @@
   line-height: 16px;
   color: var(--app-text-secondary);
   background: var(--app-surface-alt);
-}
-
-.settings-shortcut__footer {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  padding: 12px 16px;
-  border-top: 1px solid var(--app-border);
-}
-
-/* 恢复默认：次级描边按钮（清零后补齐高度 / 内边距 / 描边） */
-.settings-shortcut__reset.ant-btn {
-  @include widget.ant-button-reset;
-  --ant-control-height: 32px;
-  --ant-button-padding-inline: 14px;
-  --ant-button-content-font-size: 14px;
-  --ant-button-font-weight: 500;
-  --ant-border-radius: var(--app-radius-item);
-  --ant-line-width: 1px;
-  --ant-button-default-bg: transparent;
-  --ant-button-default-color: var(--app-text-secondary);
-  --ant-button-default-border-color: var(--app-border);
-  --ant-button-default-hover-bg: var(--app-surface-hover);
-  --ant-button-default-hover-color: var(--app-primary);
-  --ant-button-default-hover-border-color: var(--app-primary);
-  --ant-button-default-active-bg: var(--app-surface-active);
-  --ant-button-default-active-color: var(--app-primary);
-  --ant-button-default-active-border-color: var(--app-primary);
-  --ant-button-default-shadow: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
 }

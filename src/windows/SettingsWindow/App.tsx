@@ -186,7 +186,9 @@ export default function SettingsWindowApp() {
                 role="region"
                 aria-label={page.title}
               >
-                {page.render()}
+                {/* 内容栈：卡片与底部操作条都摊在这一层，操作条靠 margin-top:auto
+                    贴底，切页时位置恒定（详见 index.scss 的 .settings-page__stack） */}
+                <div className="settings-page__stack">{page.render()}</div>
               </div>
             ))}
           </div>

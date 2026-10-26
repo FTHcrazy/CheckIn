@@ -1,0 +1,65 @@
+/* 页面底部常驻操作条（窗口私有公共原语，五页共用）
+   样式原先只存在于 AISection，个人资料 / 诊断 / 快捷键各写各的。
+   上收到组件目录后，`margin-top: auto` 与不透明底只有一处实现。 */
+
+.settings-actionbar {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  /* ⚠️ 不能收缩：它是 `.settings-page__stack` 这个定高 flex column 的子项，
+     默认 `flex-shrink: 1` 会让它在内容超高时被压成一条线 */
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  box-sizing: border-box;
+  /* 左右 16px = 卡片行的内边距：状态点与按钮因此和卡片内控件落在同一条竖线上，
+     否则底条的按钮会比上方的「打开日志目录 / 恢复默认」整体右移 15px */
+  padding: 10px 16px 2px;
+  border-top: 1px solid var(--app-splitter);
+  /* 必须不透明：卡片从下方滚过时不能透出来 */
+  background: var(--app-bg);
+  /* 内容不足一屏时压到页面底部，与内容超屏时的 sticky 位置保持一致 */
+  margin-top: auto;
+}
+
+.settings-actionbar__state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--app-text-secondary);
+
+  &.is-dirty {
+    color: var(--app-warning);
+  }
+}
+
+.settings-actionbar__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentcolor;
+}
+
+.settings-actionbar__state.is-saved .settings-actionbar__dot {
+  background: var(--app-success);
+}
+
+/* 「立即生效」这类说明：不带状态点，免得被读成「已保存」 */
+.settings-actionbar__hint {
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--app-text-secondary);
+}
+
+.settings-actionbar__actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  /* 只有动作、没有左侧状态时靠右贴齐 */
+  margin-inline-start: auto;
+}

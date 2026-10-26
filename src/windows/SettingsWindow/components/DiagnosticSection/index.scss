@@ -1,6 +1,6 @@
-@use "../../../../shared/styles/widget" as widget;
-
-/* 诊断分区：按钮与控件尺寸跟着 .settings-item 的行高（48px）走 */
+/* 诊断分区：窄控件宽度跟着 .settings-item 的行高走。
+   按钮已改用窗口级 .settings-btn（原先这里有一份 20 行的描边样式拷贝，
+   与 AI 页 / 快捷键页三处重复，2.6.0 上收到 styles/settings-controls.scss）。 */
 
 .settings-diag__select {
   width: 168px;
@@ -9,30 +9,5 @@
 
 .settings-diag__number {
   width: 88px;
-  flex-shrink: 0;
-}
-
-/* 次级描边按钮（清零后补齐高度 / 内边距 / 描边，否则退化成纯文字） */
-.settings-diag__btn.ant-btn {
-  @include widget.ant-button-reset;
-  --ant-control-height: 32px;
-  --ant-button-padding-inline: 14px;
-  --ant-button-content-font-size: 14px;
-  --ant-button-font-weight: 500;
-  --ant-border-radius: var(--app-radius-item);
-  --ant-line-width: 1px;
-  --ant-button-default-bg: transparent;
-  --ant-button-default-color: var(--app-text-secondary);
-  --ant-button-default-border-color: var(--app-border);
-  --ant-button-default-hover-bg: var(--app-surface-hover);
-  --ant-button-default-hover-color: var(--app-primary);
-  --ant-button-default-hover-border-color: var(--app-primary);
-  --ant-button-default-active-bg: var(--app-surface-active);
-  --ant-button-default-active-color: var(--app-primary);
-  --ant-button-default-active-border-color: var(--app-primary);
-  --ant-button-default-shadow: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   flex-shrink: 0;
 }

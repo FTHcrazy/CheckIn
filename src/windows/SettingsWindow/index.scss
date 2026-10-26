@@ -1,5 +1,7 @@
 @use "../../shared/styles/window-shell";
 @use "../../shared/styles/scrollbars";
+/* 窗口级按钮原语（次级 / 危险 / 主色三态），各分区只挂类名 */
+@use "./styles/settings-controls";
 
 html,
 body,
@@ -99,6 +101,22 @@ body {
   display: none;
 }
 
+/**
+ * 页面内容栈：每页的卡片与底部操作条都直接摊在这一层上。
+ *
+ * `min-height: 100%` 是「操作条贴底」的关键：内容不足一屏时（个人资料、账号、
+ * 诊断），栈仍然撑满滚动区，配合操作条自己的 `margin-top: auto` 把条压到页面
+ * 底部；内容超一屏时栈按内容长高，操作条退回 `position: sticky` 继续贴在
+ * 滚动区底边。两种情况下条的位置一致，切页不会上下跳。
+ */
+.settings-page__stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 100%;
+  box-sizing: border-box;
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
    分区（卡片）与行
    ══════════════════════════════════════════════════════════════════════════ */
@@ -184,13 +202,17 @@ body {
  * 用于「控件自己占满整行」的字段（接口地址、模型名、API Key）——左右分栏
  * 会把输入框压到 200px 出头、文案折成三行，且长地址看不全。开关、选择器这类
  * 窄控件仍走 `.settings-item` 的左右分栏。
+ *
+ * 上下内边距取 12px，与 `.settings-item` 同节奏：两者常在同一张卡里相邻
+ * （AI 页的「连接方式」是 field，切到 Ollama 后的字段也是 field），
+ * 差 2px 会让行距看起来忽紧忽松。
  */
 .settings-field {
   display: flex;
   flex-direction: column;
   gap: 6px;
   box-sizing: border-box;
-  padding: 10px 16px;
+  padding: 12px 16px;
 }
 
 .settings-field__label {

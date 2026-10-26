@@ -16,6 +16,7 @@ import {
 } from "@ant-design/icons";
 import { useAiConfig } from "../../hooks/useAiConfig";
 import type { AiProvider } from "@/shared/ai/ai-types";
+import SettingsActionBar from "../SettingsActionBar";
 import "./index.scss";
 
 /**
@@ -175,7 +176,8 @@ export default function AISection() {
       apiKey: draft.provider === "openai" ? draft.apiKey : "",
     });
     if (ok) {
-      message.success("AI 设置已保存");
+      // 文案与其它页统一为「已保存」；左侧状态点同时转绿，两处反馈说的是同一件事
+      message.success("已保存");
       setDraft((prev) => ({ ...prev, apiKey: "" }));
     }
   };
@@ -213,8 +215,15 @@ export default function AISection() {
   const providerLabel =
     draft.provider === "ollama" ? "本地 Ollama" : (activePreset?.label ?? "自定义接口");
 
+  /**
+   * 底条左侧状态：配置读不到（主进程通道异常）时不给状态，免得把「读失败」
+   * 谎报成「已保存」。卡片与操作条直接摊在页面内容栈上（fragment 不带包裹层），
+   * 这样操作条的 `margin-top: auto` 才能作用到栈，切页时位置恒定。
+   */
+  const saveState = config ? (isDirty ? "dirty" : "saved") : undefined;
+
   return (
-    <div className="settings-ai">
+    <>
       {/* ① 总开关：唯一的「要不要用」 */}
       <section className="settings-section">
         <h2 className="settings-section__title">AI 助手</h2>
@@ -449,35 +458,26 @@ export default function AISection() {
       ) : null}
 
       {/* 底部常驻操作条：内容再长也够得着，左侧常显「存了没」 */}
-      <div className="settings-ai__footer">
-        <span
-          className={`settings-ai__state is-${isDirty ? "dirty" : "saved"}`}
-          role="status"
+      <SettingsActionBar state={saveState}>
+        <Button
+          className="settings-btn"
+          onClick={() => void handleTest()}
+          loading={testing}
+          title="测试会先保存当前填写内容，再按已保存的配置发起一次真实请求"
         >
-          <span className="settings-ai__state-dot" aria-hidden="true" />
-          {isDirty ? "有未保存的更改" : "已保存"}
-        </span>
-        <div className="settings-ai__footer-actions">
-          <Button
-            className="settings-ai__btn"
-            onClick={() => void handleTest()}
-            loading={testing}
-            title="测试会先保存当前填写内容，再按已保存的配置发起一次真实请求"
-          >
-            测试连接
-          </Button>
-          <Button
-            className="settings-ai__primary"
-            type="primary"
-            onClick={() => void handleSave()}
-            loading={saving}
-            disabled={!canSave}
-          >
-            保存
-          </Button>
-        </div>
-      </div>
-    </div>
+          测试连接
+        </Button>
+        <Button
+          className="settings-btn--primary"
+          type="primary"
+          onClick={() => void handleSave()}
+          loading={saving}
+          disabled={!canSave}
+        >
+          保存
+        </Button>
+      </SettingsActionBar>
+    </>
   );
 }
 

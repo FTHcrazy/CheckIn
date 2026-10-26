@@ -4,6 +4,41 @@
 > （当前归档到 1.46.2，索引见 `changeLogHistory/README.md`）。
 > 主文件只保留最近若干个次版本，超过 800 行时按 AGENTS.md §8.6 继续分流。
 
+## [2.6.1] - 2026-10-26
+
+### Added
+
+- **设置窗口抽出两条公共原语**：`components/SettingsActionBar`（页面底部常驻操作条，
+  左侧状态 / 右侧动作插槽）与 `styles/settings-controls.scss`（次级 / 危险 / 主色三态按钮）。
+  此前「次级描边按钮」在 AI、诊断、快捷键三处各写 20 行组件变量，账号页的危险按钮是
+  第四份拷贝 —— 改一次圆角要改四个文件，先漏的通常是 hover 描边色。
+- `SettingsWindow/index.scss` 新增 `.settings-page__stack`：卡片与操作条摊在同一层，
+  `min-height: 100%` 让内容不足一屏时操作条也贴页面底部。
+
+### Changed
+
+- **保存手感收敛为一条规则**：只要这一页存在「需要确认 / 可重置」的动作，动作就落在
+  底部常驻条上，位置在 900×680 下切页不跳。
+  - 诊断页从「改一项立即落库、调三次保留天数弹三个『已保存』」改为草稿 + 一次提交；
+  - 个人资料改为「无改动不可保存」，判据是**值比较**而非 `isFieldsTouched`
+    （改了又改回去不该显示未保存）；
+  - 快捷键页用 `state="hint"` 模式：左侧写「修改后立即生效，无需保存」，右侧放「恢复默认」，
+    原先卡内的 footer 与「应用外」说明一并上移；
+  - 账号页不放操作条（退出登录是动作不是配置，常驻条上容易被误点）；
+  - 保存成功的 toast 统一为「已保存」。
+- 操作条左右内边距取 16px（= 卡片行内边距），状态点与按钮因此和上方行内控件落在
+  同一条竖线上（原先按钮整体右移 15px）；字段内边距 10px → 12px，与 `.settings-item`
+  的行节奏对齐。
+- 删除 `AccountSection/index.scss`（唯一内容就是那份危险按钮拷贝）。
+
+### Fixed
+
+- 新增「统一手感」守卫四条：`.settings-page__stack` 必须 `min-height: 100%`、
+  操作条必须 sticky + `bottom: 0` + `margin-top: auto` + `flex: none` 且底不透明、
+  各分区样式**不许再出现** `--ant-control-height`（即不许再手写按钮造型）、
+  状态文案只允许出现在 `SettingsActionBar` 一处。
+- 新增 `SettingsActionBar` 组件测试（dirty / saved / hint / 无状态四态）。
+
 ## [2.6.0] - 2026-10-26
 
 ### Added

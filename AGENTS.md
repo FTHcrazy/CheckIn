@@ -409,7 +409,9 @@ CheckIn/
 │   │   │   ├── index.html
 │   │   │   ├── main.tsx
 │   │   │   ├── App.tsx
-│   │   │   └── index.scss
+│   │   │   ├── index.scss
+│   │   │   ├── components/                # 各页分区 + 两条公共原语（SettingsNav 导航 / SettingsActionBar 底部操作条）
+│   │   │   └── styles/settings-controls.scss  # 窗口级按钮原语（次级 / 危险 / 主色三态，分区只挂类名）
 │   └── shared/                            # 跨窗口共享层
 │       ├── components/                    # 共享 UI（Page、NavHeader、WindowHeader、ThemeSwitcher…）
 │       ├── services/                      # 数据服务（daily.ts、code.ts、checkin.ts、ledger.ts、news.ts、novel-shared.ts）
@@ -635,6 +637,12 @@ function normalizeTodo(item: Partial<TodoItem> | null): TodoItem | null {
 页面级滚动容器（`.settings-page` 这类）务必给每张卡补 `flex: none`。
 jsdom 不做布局计算，单测量不出来，守卫见
 `src/windows/SettingsWindow/settings-layout-guard.test.ts`。
+
+**同一窗口内跨分区复用的控件造型放窗口级 `styles/`（2.6.0）**：窗口私有但多页共用的
+控件（按钮造型、页脚条）不要在每个分区各写一份 —— 20 行组件变量的拷贝，第四次改
+圆角时必定漏一处。参考 `SettingsWindow/styles/settings-controls.scss`（次级 / 危险 /
+主色三态）与 `SettingsActionBar`，分区只挂类名；清零点 mixin 与控件变量仍须写在同一个
+`.xxx.ant-btn` 选择器里（见 §6.1.2）。
 
 **字体规范（强制）**：所有 `font-size` 必须满足三条硬约束，适用于 `.scss` / `.css`
 与 TSX 内联样式（`style={{ fontSize: ... }}`）：

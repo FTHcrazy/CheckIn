@@ -36,6 +36,36 @@ const NAV_SCSS_PATH = path.resolve(
 );
 const NAV_SCSS = readFileSync(NAV_SCSS_PATH, "utf8").replace(/\r\n/g, "\n");
 
+/** 底部操作条与按钮原语（2.6.0 上收的窗口级公共层） */
+const readWindowScss = (relative: string): string =>
+  readFileSync(path.resolve(process.cwd(), relative), "utf8").replace(/\r\n/g, "\n");
+
+const ACTIONBAR_SCSS = readWindowScss(
+  "src/windows/SettingsWindow/components/SettingsActionBar/index.scss",
+);
+const CONTROLS_SCSS = readWindowScss("src/windows/SettingsWindow/styles/settings-controls.scss");
+
+/** 各分区自己的样式：用来反向断言「不许再手写一份描边按钮」 */
+const SECTION_SCSS: Record<string, string> = {
+  "AISection/index.scss": readWindowScss(
+    "src/windows/SettingsWindow/components/AISection/index.scss",
+  ),
+  "DiagnosticSection/index.scss": readWindowScss(
+    "src/windows/SettingsWindow/components/DiagnosticSection/index.scss",
+  ),
+  "ShortcutSection/index.scss": readWindowScss(
+    "src/windows/SettingsWindow/components/ShortcutSection/index.scss",
+  ),
+};
+
+const readSectionTsx = (name: string): string =>
+  readWindowScss(`src/windows/SettingsWindow/components/${name}/index.tsx`);
+
+/** 注释里常引用选择器原文/旧文案，反向断言前先去掉 */
+function stripComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|\s)\/\/[^\n]*/g, "$1");
+}
+
 /** 取出某个选择器的声明块（只认「类名后紧跟 `{`」，不会误吞 `__title` 之类） */
 function blockOf(source: string, selector: string): string {
   const match = new RegExp(`\\${selector}\\s*\\{([^}]*)\\}`).exec(source);
@@ -78,5 +108,77 @@ describe("双栏骨架：左导航定宽、右内容可收缩", () => {
     const content = blockOf(SCSS, ".settings-content");
     expect(content).toMatch(/min-width:\s*0/);
     expect(content).toMatch(/min-height:\s*0/);
+  });
+});
+
+/**
+ * 统一手感（2.6.0）：保存范式只允许一套。
+ *
+ * 现状是「每页各有一套」——AI 有状态点、个人资料把按钮塞在表单里、
+ * 诊断改一项弹一次「已保存」、快捷键把「恢复默认」放在卡片内部。
+ * 用户每切一页都要重新找按钮，看到亮着的保存按钮还得猜「是不是坏了」。
+ *
+ * 这组断言钉住三件事，防止下一次改动又散开：
+ * 1. 操作条的位置恒定（栈撑满 + sticky + margin-top:auto）；
+ * 2. 按钮造型只有一份实现，各分区不许再手写；
+ * 3. 状态文案只有一处定义，各分区不许自己编。
+ */
+describe("统一手感：保存范式只有一套", () => {
+  it(".settings-page__stack 撑满滚动区 —— 操作条贴底的前提", () => {
+    const stack = blockOf(SCSS, ".settings-page__stack");
+    expect(stack).toMatch(/display:\s*flex/);
+    expect(stack).toMatch(/flex-direction:\s*column/);
+    // 少了它，内容不足一屏时操作条会紧跟最后一张卡，切页时位置忽高忽低
+    expect(stack).toMatch(/min-height:\s*100%/);
+  });
+
+  it(".settings-actionbar 的四件事缺一不可：sticky / bottom:0 / margin-top:auto / flex:none", () => {
+    const bar = blockOf(ACTIONBAR_SCSS, ".settings-actionbar");
+    expect(bar).toMatch(/position:\s*sticky/);
+    expect(bar).toMatch(/bottom:\s*0/);
+    expect(bar).toMatch(/margin-top:\s*auto/);
+    expect(bar).toMatch(/flex:\s*none/);
+    // 不透明底：卡片从下方滚过时会穿帮
+    expect(bar).toMatch(/background:\s*var\(--app-bg\)/);
+  });
+
+  it("描边按钮只有一份实现（第四份拷贝会让某一处的 hover 静默漂移）", () => {
+    // 清零点与控件变量必须写在同一个选择器里（AGENTS §6.1.2）
+    const btn = blockOf(CONTROLS_SCSS, ".settings-btn.ant-btn");
+    expect(btn).toContain("ant-button-reset");
+    expect(btn).toMatch(/--ant-control-height:\s*32px/);
+    // 危险变体只改变量、不重画结构
+    expect(blockOf(CONTROLS_SCSS, ".settings-btn--danger.ant-btn")).toMatch(/--app-error/);
+  });
+
+  it("各分区不再自己写按钮造型", () => {
+    for (const [name, css] of Object.entries(SECTION_SCSS)) {
+      expect(stripComments(css), `${name} 又手写了一份按钮造型`).not.toMatch(
+        /--ant-control-height/,
+      );
+    }
+  });
+
+  it("状态文案只有一处定义 —— 三页共用同一句话", () => {
+    const actionbar = stripComments(readSectionTsx("SettingsActionBar"));
+    expect(actionbar).toContain("有未保存的更改");
+    expect(actionbar).toContain("已保存");
+    for (const name of ["AISection", "DiagnosticSection", "ProfileSection", "ShortcutSection"]) {
+      expect(stripComments(readSectionTsx(name)), `${name} 自己编了一套状态文案`).not.toContain(
+        "有未保存的更改",
+      );
+    }
+  });
+
+  it("有保存动作的三页都接入操作条；账号页不放（动作不是配置）", () => {
+    for (const name of ["AISection", "DiagnosticSection", "ProfileSection"]) {
+      expect(readSectionTsx(name), `${name} 没接入 SettingsActionBar`).toContain(
+        "<SettingsActionBar",
+      );
+    }
+    // 快捷键页是 hint 模式：立即生效，没有「保存」
+    expect(readSectionTsx("ShortcutSection")).toContain('state="hint"');
+    // 账号页：退出登录留在行内，避免常驻条被误点
+    expect(readSectionTsx("AccountSection")).not.toContain("<SettingsActionBar");
   });
 });

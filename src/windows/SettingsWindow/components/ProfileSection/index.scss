@@ -1,13 +1,20 @@
 // 个人资料分区：表单内容（原 BaseWindow UserPage 迁移而来）
 .settings-profile {
-  padding: 12px 16px 16px;
+  /* 上下都取 12px：与 .settings-item / .settings-field 的行内边距同一节奏。
+     原先底部多留 4px 是为了给卡内的保存按钮留白，按钮已移到页面底部操作条。 */
+  padding: 12px 16px;
 
   .ant-alert {
     margin-bottom: 12px;
   }
 }
 
-/* 邮箱字段宽度收在 400px：短字段铺满 640px 宽的卡片会让人以为要填很长一串 */
+/* 邮箱字段宽度收在 400px：短字段铺满卡片会让人以为要填很长一串 */
 .settings-profile__form {
   max-width: 400px;
+
+  /* 卡片里只剩一个字段，antd 默认的 24px 行距会在底部多出一条空带 */
+  .ant-form-item {
+    margin-bottom: 0;
+  }
 }
