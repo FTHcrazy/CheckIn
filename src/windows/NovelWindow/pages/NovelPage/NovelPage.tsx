@@ -5,6 +5,7 @@ import ChapterTree from "./components/ChapterTree";
 import EditorPane from "./components/EditorPane";
 import EntityContextMenu from "./components/EntityContextMenu";
 import EntityTypeManager from "./components/EntityTypeManager";
+import PolishPreview from "./components/PolishPreview";
 import HoverEntityCard from "./components/HoverEntityCard";
 import NovelGuideTour from "../../components/NovelGuideTour";
 import type { GuideView } from "@/shared/novel/guide-copy";
@@ -146,6 +147,11 @@ export default function NovelPage({
     handleCtxMark,
     handleCtxBind,
     handleCtxToPack,
+    polish,
+    handleCtxPolish,
+    handlePolishConfirm,
+    handlePolishClose,
+    runPolish,
     handleNewVolume,
     handleSaveEntity,
     handleRenameVolume,
@@ -206,6 +212,15 @@ export default function NovelPage({
     [data.groups],
   );
   const [openAnchor, setOpenAnchor] = useState<"top" | "bottom">("top");
+  /**
+   * 回收换章锚点的一次性信号。必须是稳定引用：EditorPane 的「换章滚动定位」
+   * effect 把它放在依赖数组里，若像之前那样传内联箭头函数，每次重渲染都会换
+   * 一个新引用 → effect 被反复触发 → 走到 `scrollTop = 0` 分支，表现为「选中
+   * 文字（setSelection 引起页面根重渲染）后正文自动跳回顶部」。
+   */
+  const handleOpenAnchorApplied = useCallback((): void => {
+    setOpenAnchor("top");
+  }, []);
 
   const handleLoadPrevChapter = useCallback((): void => {
     const index = orderedChapterIds.indexOf(data.activeChapterId ?? "");
@@ -662,7 +677,7 @@ export default function NovelPage({
               onLoadPrevChapter={handleLoadPrevChapter}
               onLoadNextChapter={handleLoadNextChapter}
               openAnchor={openAnchor}
-              onOpenAnchorApplied={() => setOpenAnchor("top")}
+              onOpenAnchorApplied={handleOpenAnchorApplied}
             />
 
             <StatusBar
@@ -681,7 +696,21 @@ export default function NovelPage({
                 onAddToPack={() => void handleCtxToPack()}
                 onMark={handleCtxMark}
                 onBind={handleCtxBind}
+                onPolish={handleCtxPolish}
                 onClose={closeCtxMenu}
+              />
+            )}
+
+            {/* AI 润色预览：划词右键「润色这段文字」后弹出，确认才替换 */}
+            {polish && (
+              <PolishPreview
+                original={polish.text}
+                polished={polish.polished}
+                loading={polish.loading}
+                error={polish.error}
+                onConfirm={handlePolishConfirm}
+                onRetry={() => void runPolish()}
+                onClose={handlePolishClose}
               />
             )}
 

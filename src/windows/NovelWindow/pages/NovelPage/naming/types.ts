@@ -118,6 +118,9 @@ export interface NamingOptions {
   customPool?: NamingCustomPool;
 }
 
+/** 名字来源：ai = AI 语义生成；local = 本地规则引擎（R-AI-02 FR-05） */
+export type NamingSource = "ai" | "local";
+
 /** 生成结果条目 */
 export interface NamingResult {
   /** 生成名字 */
@@ -126,6 +129,8 @@ export interface NamingResult {
   kind: NamingKind;
   style: NameStyle;
   gender: NameGender;
+  /** 生成来源（AI / 本地）；本地引擎生成恒为 "local" */
+  source: NamingSource;
 }
 
 /**
@@ -146,6 +151,8 @@ export interface NameFavorite {
   name: string;
   kind: NamingKind;
   style: NameStyle;
+  /** 来源（AI / 本地）；旧数据缺省视为 local（R-AI-02 FR-05 向后兼容） */
+  source?: NamingSource;
   /** 用户备注（可空） */
   note?: string;
   createdAt: number;

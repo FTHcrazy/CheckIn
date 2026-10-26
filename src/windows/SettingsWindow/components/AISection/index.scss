@@ -1,0 +1,97 @@
+@use "../../../../shared/styles/widget" as widget;
+
+/* AI 助手分区：控件尺寸跟着 .settings-item 行高（48px）走 */
+
+.settings-ai__lead {
+  margin: 0;
+  padding: 12px 16px 4px;
+  font-size: 12px;
+  color: var(--app-text-secondary);
+  line-height: 1.6;
+}
+
+/* 左文案 + 右控件的「竖排」变体：输入框 / 下拉框堆叠，适合地址、Key 这类长字段 */
+.settings-ai__stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px 16px;
+
+  & + & {
+    border-top: 1px solid var(--app-border);
+  }
+}
+
+.settings-ai__stack-label {
+  font-size: 13px;
+  color: var(--app-text-strong);
+}
+
+.settings-ai__stack-hint {
+  font-size: 12px;
+  color: var(--app-text-secondary);
+}
+
+.settings-ai__select {
+  width: 100%;
+}
+
+.settings-ai__input {
+  width: 100%;
+}
+
+/* 行内按钮组（获取 Key / 测试连接） */
+.settings-ai__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* 测试连接结果状态条：内联反馈，不打断填写流 */
+.settings-ai__result {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 16px;
+  padding: 8px 12px;
+  border-radius: var(--app-radius-item);
+  font-size: 12px;
+  line-height: 1.5;
+
+  &--ok {
+    background: var(--app-success-weak);
+    color: var(--app-success);
+  }
+
+  &--fail {
+    background: var(--app-error-weak);
+    color: var(--app-error);
+  }
+}
+
+/* 次级描边按钮（清零后补齐高度 / 内边距 / 描边） */
+.settings-ai__btn.ant-btn {
+  @include widget.ant-button-reset;
+  --ant-control-height: 30px;
+  --ant-button-padding-inline: 14px;
+  --ant-button-content-font-size: 14px;
+  --ant-button-font-weight: 500;
+  --ant-border-radius: var(--app-radius-item);
+  --ant-line-width: 1px;
+  --ant-button-default-bg: transparent;
+  --ant-button-default-color: var(--app-text-secondary);
+  --ant-button-default-border-color: var(--app-border);
+  --ant-button-default-hover-bg: var(--app-surface-hover);
+  --ant-button-default-hover-color: var(--app-primary);
+  --ant-button-default-hover-border-color: var(--app-primary);
+  --ant-button-default-active-bg: var(--app-surface-active);
+  --ant-button-default-active-color: var(--app-primary);
+  --ant-button-default-active-border-color: var(--app-primary);
+  --ant-button-default-shadow: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}

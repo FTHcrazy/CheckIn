@@ -14,7 +14,16 @@
 | `docs/archive/` | **已完成或已作废的过程稿**：需求收口、技术预研、分批计划、验收方案、改造方案与验收对照 | 只读留档，不再修改 | 唯一允许整篇删除的目录（确认内容已被代码/规范完全吸收后） |
 
 新增需求稿（还没开始的）放 `docs/prd/<需求编号>-<主题>.md`，交付完成后整组移入
-`docs/archive/prd-<需求编号>/`。当前没有进行中的需求，故无 `prd/` 目录。
+`docs/archive/prd-<需求编号>/`。
+
+### 进行中的需求（docs/prd/）
+
+| 需求编号 | 主题 | 文档 | 状态 |
+|----------|------|------|------|
+| R-AI-01 | AI 模型配置层（无后端，BYOK + 本地模型，独立 ai.db 随用户隔离） | [prd-ai-config/ai-model-config-scope.md](prd/ai-model-config-scope.md) | 已落地（配置 UI + ai.db + ai-handlers） |
+| R-AI-02 | 起名增强（AI 试点功能，叠加降级） | [prd-ai-config/ai-naming-enhancement-prd.md](prd/ai-naming-enhancement-prd.md) | 已落地（AI 起名入口 + 降级 + 来源标识） |
+| R-AI-03 | AI 服务层架构（独立 shared/ai/ 横向层，零重构） | [prd-ai-config/ai-architecture-decision.md](prd/ai-architecture-decision.md) | 已落地（服务层 + ai.db + ai-handlers） |
+| R-AI-04 | AI 接入技术预研（net.fetch + ai.db + safeStorage + 流式 + Ollama） | [prd-ai-config/ai-technical-preresearch.md](prd/ai-technical-preresearch.md) | 已落地（方案验证通过） |
 
 ---
 

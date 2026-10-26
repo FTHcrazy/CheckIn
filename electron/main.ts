@@ -43,6 +43,8 @@ import { registerNovelGlobalSettingHandlers } from "./handlers/novel-global-sett
 import { registerNovelGraphHandlers } from "./handlers/novel-graph-handlers";
 import { registerNovelExportHandlers } from "./handlers/novel-export-handlers";
 import { registerNovelDbBridge } from "./novel-db";
+import { registerAiDbBridge } from "./ai-db";
+import { registerAiHandlers } from "./handlers/ai-handlers";
 import {
   getCachedUser,
   logoutUser,
@@ -1107,6 +1109,14 @@ app.whenReady().then(() => {
   // switchUserDb → register 的顺序），它会立即补开一次
   registerNovelDbBridge();
   registerNovelHandlers();
+  // AI 助手（ai.db 独立库）：仅 full/novel 版初始化 —— lite 无 novel 域，
+  // AI 入口先落在 novel 侧（起名增强），故随 edition 开关；后续 checkin 接入
+  // AI 时删掉这个判断放开到全版本（R-AI-04 预研点 2）。bridge 必须在 handler
+  // 之前注册（同 novel-db 的启动顺序约束）。
+  if (EDITION !== "lite") {
+    registerAiDbBridge();
+    registerAiHandlers();
+  }
   // 关系图提交（R27 / S3）：单事务写「新建关系 + 备注 + 画布文档」，
   // 成功后由本 handler 广播 novel-links-changed 回主窗口（W-15）。
   registerNovelGraphHandlers();

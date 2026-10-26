@@ -1,11 +1,12 @@
 import { SettingOutlined } from "@ant-design/icons";
 import WindowHeader from "@/shared/components/WindowHeader";
-import { IS_NOVEL_EDITION } from "@/shared/edition";
+import { IS_LITE_EDITION, IS_NOVEL_EDITION } from "@/shared/edition";
 import AppearanceSection from "./components/AppearanceSection";
 import ProfileSection from "./components/ProfileSection";
 import AccountSection from "./components/AccountSection";
 import ShortcutSection from "./components/ShortcutSection";
 import DiagnosticSection from "./components/DiagnosticSection";
+import AISection from "./components/AISection";
 
 /**
  * SettingsWindow —— 全局设置窗口（全版本开放入口）。
@@ -15,6 +16,7 @@ import DiagnosticSection from "./components/DiagnosticSection";
  *
  * 本文件只做窗口壳组装（标题栏 + 分区清单），分区逻辑与样式各自归位：
  * - components/AppearanceSection  外观（主题色）
+ * - components/AISection          AI 助手（**仅 full/novel 版**，见下方门控）
  * - components/ProfileSection     个人资料（邮箱编辑，原 BaseWindow UserPage 迁移）
  * - components/AccountSection     账号（邮箱展示 / 退出登录）
  * - components/ShortcutSection    快捷键（**仅开发版与小说版**，见下方门控）
@@ -22,12 +24,18 @@ import DiagnosticSection from "./components/DiagnosticSection";
  * - hooks/useProfileForm          表单逻辑
  * - hooks/useAccountSession       会话展示与退出动作
  *
+ * AI 分区的门控规则（R-AI-01）：只有 **full / novel 版** 才展示 —— 与主进程
+ * `ai.db` 的 edition 开关（`EDITION !== "lite"`）对齐，lite 版既无 ai.db 存储、
+ * 也无 novel 侧的 AI 入口，展示空分区会让用户「看得见但用不了」。
+ *
  * 快捷键分区的门控规则（1.47.0，需求明确）：只有 **dev 构建** 或 **novel 版**
  * 才展示。full / lite 正式版里小说窗口是主窗的一个子窗口，快捷键属专家配置，
  * 不该在通用设置里占主位；主进程侧的应用级快捷键注册用同一套判定
  * （`electron/handlers/shortcut-handlers.ts` 的 `SHORTCUTS_ENABLED`）。
  */
 const SHOW_SHORTCUTS = import.meta.env.DEV || IS_NOVEL_EDITION;
+/** AI 分区：仅 full/novel 版（与 ai.db 的 `EDITION !== "lite"` 开关对齐） */
+const SHOW_AI = !IS_LITE_EDITION;
 
 export default function SettingsWindowApp() {
   return (
@@ -36,6 +44,7 @@ export default function SettingsWindowApp() {
       <div className="window-shell__body">
         <div className="settings-page">
           <AppearanceSection />
+          {SHOW_AI ? <AISection /> : null}
           {SHOW_SHORTCUTS ? <ShortcutSection /> : null}
           <ProfileSection />
           <AccountSection />

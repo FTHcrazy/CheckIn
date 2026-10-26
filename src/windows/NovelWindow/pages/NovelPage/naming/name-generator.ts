@@ -194,7 +194,7 @@ export function generateNames(options: NamingOptions): NamingResult[] {
     if (seen.has(name)) continue;
     if (excludeSet.has(name)) continue;
     seen.add(name);
-    results.push({ name, kind, style, gender });
+    results.push({ name, kind, style, gender, source: "local" });
   }
 
   return results;

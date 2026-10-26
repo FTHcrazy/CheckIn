@@ -455,6 +455,32 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
   },
 
+  // ── AI 助手（语义化 IPC，数据存独立 ai.db，仅 full/novel 版注册） ──
+  // 对 §8.7「主进程不代理 HTTP」契约的刻意豁免（凭据安全 + 端点无法枚举），
+  // 理由见 docs/prd/prd-ai-config/ai-architecture-decision.md 第五节·A。
+  // Key 经 safeStorage 加密存主进程，渲染层只拿 hasApiKey 布尔，绝无明文 Key。
+  ai: {
+    getConfig: () => trackedInvoke('ai-config-get'),
+    saveConfig: (payload: {
+      enabled?: boolean
+      provider?: 'openai' | 'ollama'
+      endpoint?: string
+      model?: string
+      apiKey?: string
+      contextLen?: number
+    }) => trackedInvoke('ai-config-save', payload) as Promise<{ ok: boolean; error?: string }>,
+    test: () => trackedInvoke('ai-config-test'),
+    generate: (payload: {
+      system?: string
+      prompt: string
+      count?: number
+      temperature?: number
+    }) => trackedInvoke('ai-generate', payload),
+    listLogs: (payload?: { limit?: number; offset?: number }) =>
+      trackedInvoke('ai-log-list', payload),
+    clearLogs: () => trackedInvoke('ai-log-clear'),
+  },
+
   // ── 记账（语义化 IPC，数据存 userDb 的 ledger_* 表） ──
   ledger: {
     listTransactions: (range?: { start?: string; end?: string }) =>

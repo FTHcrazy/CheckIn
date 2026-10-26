@@ -455,6 +455,7 @@ describe("色块阶梯：页面根铺 bg、浮层底只给浮层用", () => {
     "src/windows/NovelWindow/pages/NovelPage/components/ChapterTree/index.scss", // 拖拽随动 chip（portal）
     "src/windows/NovelWindow/pages/NovelPage/components/EntityContextMenu/index.scss", // 右键菜单
     "src/windows/NovelWindow/pages/NovelPage/components/HoverEntityCard/index.scss", // 悬浮卡
+    "src/windows/NovelWindow/pages/NovelPage/components/PolishPreview/index.scss", // AI 润色预览浮层
     "src/windows/NovelWindow/pages/NovelPage/components/InspirationPanel/index.scss", // 灵感卡片 hover 操作条（浮在 surface 卡之上）
     "src/windows/NovelWindow/pages/NovelPage/components/SettingsDrawer/index.scss", // 排版抽屉
     "src/windows/NovelWindow/pages/NovelPage/components/SnapshotDrawer/index.scss", // 快照抽屉

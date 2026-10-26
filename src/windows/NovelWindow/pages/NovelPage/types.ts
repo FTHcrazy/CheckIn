@@ -337,6 +337,7 @@ export type {
   NameFavorite,
   NamingCustomPool,
   NamingKind,
+  NamingSource,
   NameStyle,
   NameStyleFamily,
   NameGender,

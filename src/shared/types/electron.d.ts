@@ -904,10 +904,106 @@ export interface LedgerRangeDTO {
   end?: string;
 }
 
+// ── AI 助手 DTO（与 electron/handlers/ai-handlers.ts 保持一致） ──
+
+/** 模型服务类型：openai = 任意 OpenAI 兼容接口；ollama = 本地 Ollama */
+export type AiProvider = 'openai' | 'ollama'
+
+/** 归一化错误码（主进程错误归一后下发，渲染层按 code 走专属交互） */
+export type AiErrorCode =
+  | 'not_configured'
+  | 'missing_key'
+  | 'invalid_endpoint'
+  | 'auth_invalid'
+  | 'quota_exceeded'
+  | 'rate_limited'
+  | 'model_not_found'
+  | 'timeout'
+  | 'network'
+  | 'ollama_unavailable'
+  | 'internal'
+
+/** AI 配置（渲染层可见；不含明文 Key） */
+export interface AiConfigDTO {
+  enabled: boolean
+  provider: AiProvider
+  endpoint: string
+  model: string
+  /** 是否已填 API Key（不返回明文） */
+  hasApiKey: boolean
+  contextLen: number
+}
+
+/** 保存配置载荷；apiKey 传空串 = 清空，传非空 = 覆盖 */
+export interface AiConfigSavePayloadDTO {
+  enabled?: boolean
+  provider?: AiProvider
+  endpoint?: string
+  model?: string
+  apiKey?: string
+  contextLen?: number
+}
+
+/** 统一结果：ok=true 带 data；ok=false 带归一化错误 */
+export type AiResultDTO<T> =
+  | { ok: true; data: T }
+  | { ok: false; code: AiErrorCode; message: string }
+
+/** 生成请求（首版非流式） */
+export interface AiGenerateRequestDTO {
+  system?: string
+  prompt: string
+  count?: number
+  temperature?: number
+}
+
+/** 生成结果 */
+export interface AiGenerateDataDTO {
+  text: string
+  items: string[]
+}
+
+/** 测试连接结果 */
+export interface AiTestResultDTO {
+  message: string
+}
+
+/** 一条 AI 调用日志（与 ai-handlers.ts 的 AiLogRow 保持一致） */
+export interface AiLogRowDTO {
+  id: number
+  intent: string
+  provider: string
+  model: string
+  system_prompt: string | null
+  user_prompt: string | null
+  raw_output: string | null
+  parsed_output: string | null
+  error_code: string | null
+  error_message: string | null
+  duration_ms: number
+  created_at: string
+}
+
 export interface ElectronAPI {
   /** 网络会话配置（一次性）：写入认证 Cookie 到 session jar */
   httpSession: {
     setCookie: (url: string, cookie: string) => Promise<boolean>
+  }
+
+  // ── AI 助手（数据存独立 ai.db，仅 full/novel 版注册） ──
+  ai: {
+    /** 读当前 AI 配置（不含明文 Key） */
+    getConfig: () => Promise<AiConfigDTO>
+    /** 保存配置；apiKey 传空串 = 清空 */
+    saveConfig: (payload: AiConfigSavePayloadDTO) => Promise<{ ok: boolean; error?: string }>
+    /** 测试连接 */
+    test: () => Promise<AiResultDTO<AiTestResultDTO>>
+    /** 非流式生成（起名增强） */
+    generate: (payload: AiGenerateRequestDTO) => Promise<AiResultDTO<AiGenerateDataDTO>>
+    /** 分页查询调用日志（倒序） */
+    listLogs: (payload?: { limit?: number; offset?: number }) => Promise<{ items: AiLogRowDTO[]; total: number }>
+    /** 清空调用日志 */
+    clearLogs: () => Promise<{ ok: boolean }>
   }
 
   // ── 活动管理 ──

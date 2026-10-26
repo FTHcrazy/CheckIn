@@ -68,6 +68,70 @@
     --ant-button-content-font-size: 12px;
     --ant-button-icon-gap: 5px;
     --ant-border-radius: 9px;
+    --ant-button-default-bg: var(--app-surface-alt);
+    --ant-button-default-color: var(--app-text-secondary);
+    --ant-button-default-border-color: var(--app-border);
+    --ant-button-default-hover-bg: var(--app-surface-hover);
+    --ant-button-default-hover-color: var(--app-primary);
+    --ant-button-default-hover-border-color: var(--app-primary);
+    --ant-button-default-active-bg: var(--app-surface-active);
+    --ant-button-default-active-color: var(--app-primary);
+    --ant-button-default-active-border-color: var(--app-primary);
+    --ant-button-default-shadow: none;
+
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background var(--app-t-fast) var(--app-ease-standard), transform var(--app-t-instant) var(--app-ease-standard);
+
+    &:active {
+      transform: scale(0.98);
+    }
+  }
+
+  /* AI 起名区域（R-AI-02）：描述输入 + 主按钮 */
+  &__ai {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 10px;
+  }
+
+  &__ai-input.ant-input {
+    font-size: 12px;
+    line-height: 1.6;
+    padding: 8px 10px;
+    border-radius: 9px;
+    --ant-color-border: var(--app-border);
+    --ant-input-bg: var(--app-input-bg);
+    background: var(--app-input-bg);
+    color: var(--app-text);
+
+    &::placeholder {
+      color: var(--app-text-muted);
+    }
+
+    &:hover,
+    &:focus {
+      --ant-color-border: var(--app-primary);
+      border-color: var(--app-primary);
+    }
+  }
+
+  &__ai-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  &__ai-btn.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 30px;
+    --ant-button-padding-inline: 14px;
+    --ant-button-content-font-size: 12px;
+    --ant-button-icon-gap: 5px;
+    --ant-border-radius: 9px;
     --ant-button-default-bg: var(--app-primary);
     --ant-button-default-color: var(--app-primary-contrast);
     --ant-button-default-border-color: var(--app-primary);
@@ -82,13 +146,37 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 100%;
-    margin-top: 8px;
-    transition: background var(--app-t-fast) var(--app-ease-standard), transform var(--app-t-instant) var(--app-ease-standard);
+    flex-shrink: 0;
 
     &:active {
       transform: scale(0.98);
     }
+  }
+
+  /* AI 降级提示条 */
+  &__fallback {
+    margin-top: 8px;
+    padding: 6px 10px;
+    border-radius: var(--app-radius-item);
+    font-size: 12px;
+    line-height: 1.5;
+    background: var(--app-warning-weak);
+    color: var(--app-warning);
+  }
+
+  /* AI 来源角标 */
+  &__badge {
+    display: inline-block;
+    margin-left: 4px;
+    padding: 0 4px;
+    font-size: 10px;
+    font-style: normal;
+    font-weight: 600;
+    line-height: 1.5;
+    border-radius: 4px;
+    vertical-align: 1px;
+    background: var(--app-primary-weak);
+    color: var(--app-primary);
   }
 
   &__grid {

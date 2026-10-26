@@ -83,6 +83,7 @@ import type {
   ForeshadowPatch,
   NameFavorite,
   NamingKind,
+  NamingSource,
   NameStyle,
   NotePatch,
   NovelBundle,
@@ -1883,6 +1884,7 @@ export function useNovelData() {
       name: string,
       kind: NamingKind,
       style: NameStyle,
+      source?: NamingSource,
     ): void => {
       const trimmed = name.trim();
       if (!workId || !trimmed) return;
@@ -1890,17 +1892,17 @@ export function useNovelData() {
         if (current.some((f) => f.workId === workId && f.name === trimmed)) {
           return current;
         }
-        const next: NameFavorite[] = [
-          {
-            id: `nf-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
-            workId,
-            name: trimmed,
-            kind,
-            style,
-            createdAt: Date.now(),
-          },
-          ...current,
-        ];
+        const favorite: NameFavorite = {
+          id: `nf-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+          workId,
+          name: trimmed,
+          kind,
+          style,
+          createdAt: Date.now(),
+        };
+        // 仅 AI 来源显式落 source；本地起名不写（缺省即 local，与 sanitize 口径一致）
+        if (source === "ai") favorite.source = "ai";
+        const next: NameFavorite[] = [favorite, ...current];
         // 落库交给上面的 effect：updater 只做纯计算
         return next;
       });

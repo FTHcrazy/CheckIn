@@ -158,6 +158,29 @@ src/windows/XxxWindow/
 - Service 层不包含 UI 逻辑，不导入 React
 - Pages 通过 Service 层访问数据，不直接调用 `window.electronAPI.db`
 
+#### 2.2.2.1 AI 服务层 (`shared/ai/`)
+
+横向复用的 AI 能力层（R-AI 系列落地，详见 `docs/prd/prd-ai-config/ai-architecture-decision.md`）。
+
+| 文件 | 职责 |
+|------|------|
+| `ai-client.ts` | 唯一调用入口：`getAiConfig` / `saveAiConfig` / `testAiConnection` / `aiGenerate`，转交 `window.electronAPI.ai` |
+| `ai-context.ts` | 纯函数拼装提示词（`buildNamingPrompt` / `buildPolishPrompt` 等），**不 import novel、不解释业务语义** |
+| `ai-types.ts` | 渲染层可见的 IPC 类型契约（与主进程 `ai-handlers.ts` DTO 一对一） |
+| `ai-errors.ts` | 错误码 → 文案映射 + 是否「配置类错误」归类 |
+
+**铁律（后续每个 AI 功能都必须遵守）**：
+- **功能面板只 import `shared/ai/`，不直接触碰 `window.electronAPI.ai`**。
+- **AI 服务层不 import novel 任何模块**：上下文（选中文本 / 人物设定 / 风格等）
+  由**调用方（最懂业务处）以纯字符串传入**，服务层只做「拼 prompt + 调模型 + 错误归一」。
+- **AI 服务层不碰 Key、不发 HTTP、不读 ai.db**：网络请求永远在主进程
+  `ai-handlers`（对 §8.7「主进程不代理 HTTP」的**刻意豁免**，理由见
+  `ai-architecture-decision.md` 五·A：凭据安全 + 端点无法枚举 + 长时流式）。
+- **编辑器不感知 AI**：`EditorPane` 只暴露通用、中性的命令式 API
+  （`insertText` / `appendText` / `replaceAll` / `replaceRange`），AI 逻辑
+  全部放在编辑器之外的入口组件与 `useNovelPage` 编排里，通过 `editorPaneRef`
+  调用这些通用命令。编辑器内核里不得出现「润色 / 起名」等 AI 业务字样。
+
 #### 2.2.3 页面模块 (`windows/BaseWindow/pages/`)
 
 页面模块只属于 BaseWindow 主窗口，路径为 `src/windows/BaseWindow/pages/`：
@@ -1689,6 +1712,16 @@ function initializeDataDb(db: Database) {
     禁止在业务里裸调 `fetch`，以免各窗口标准不一；
   - 编码问题已成为历史：响应由 Chromium 网络栈按 UTF-8 解码，
     不再有主进程 `Buffer.concat` 截段乱码（原 1.4.8 契约已随架构废弃）。
+
+  > **AI 业务的刻意豁免（R-AI 系列，2026-10 落地）**：AI 请求（`ai-handlers`）
+  > **仍在主进程发起**，不适用上面的「渲染进程发起」契约。豁免的是「谁发 HTTP」
+  > 这一条，理由（详见 `docs/prd/prd-ai-config/ai-architecture-decision.md` 五·A）：
+  > ① API Key 永不下放渲染进程（`safeStorage` 加密存 ai.db，解密只发生在主进程），
+  > ② AI 端点由用户自填、无法像已知 API 那样在会话层统一放行 CORS，
+  > ③ 长时流式（`protocol.handle` 内部端点）需要主进程统一管理连接生命周期。
+  > **不豁免**的部分：AI 请求仍走 `net.fetch`（复用既有先例）、仍做错误归一、
+  > 仍不新增逐请求转发的普通 IPC 通道（流式兜底除外）。除 AI 外的所有业务
+  > HTTP 请求继续严格遵守上面的渲染进程契约。
 
 ### 8.8 新增 / 移动 / 删除文档
 

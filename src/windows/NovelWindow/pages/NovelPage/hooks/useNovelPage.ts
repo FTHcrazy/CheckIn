@@ -49,6 +49,8 @@ import type { InspirationActions } from "../components/InspirationPanel";
 import type { NamingActions } from "../components/NameGeneratorPanel";
 import type { EditorPaneHandle } from "../components/EditorPane";
 import type { OutlineActions } from "../components/OutlinePanel";
+import { aiGenerate } from "@/shared/ai/ai-client";
+import { buildPolishPrompt } from "@/shared/ai/ai-context";
 import {
   editorActions,
   needsFlushSave,
@@ -673,11 +675,91 @@ export function useNovelPage() {
     [data, editor, view],
   );
 
+  // ── AI 润色（R-AI-03 对比预览形态）─────────────────────────────
+  /** 润色预览浮层状态：open 时持有原选区快照（text + 绝对偏移）与结果 */
+  const [polish, setPolish] = useState<{
+    text: string;
+    from: number;
+    to: number;
+    polished: string | null;
+    loading: boolean;
+    error: string | null;
+  } | null>(null);
+
+  /** 发起一次润色请求（首次与「换一种 / 重试」共用） */
+  const runPolish = useCallback(async (): Promise<void> => {
+    const selection = editor.selection;
+    if (!selection) return;
+    const text = selection.text.trim();
+    if (!text) {
+      view.showToast("先选中要润色的文字", "warning");
+      return;
+    }
+
+    // 打开（或重置）预览为加载态，快照原选区（from/to 供确认时精确替换）
+    setPolish({
+      text,
+      from: selection.from,
+      to: selection.to,
+      polished: null,
+      loading: true,
+      error: null,
+    });
+
+    const { system, prompt } = buildPolishPrompt({ text });
+    const result = await aiGenerate({ system, prompt });
+
+    if (result.ok) {
+      const polishedText = result.data.text.trim();
+      // 模型可能原样返回或返回空串，视为未润色成功
+      if (!polishedText || polishedText === text) {
+        setPolish((prev) =>
+          prev
+            ? { ...prev, loading: false, error: "这次没有产出有效润色，换个说法再试" }
+            : prev,
+        );
+        return;
+      }
+      setPolish((prev) =>
+        prev ? { ...prev, polished: polishedText, loading: false, error: null } : prev,
+      );
+      return;
+    }
+
+    // AI 失败：预览浮层内展示错误，不替换原文
+    setPolish((prev) =>
+      prev ? { ...prev, loading: false, error: result.message } : prev,
+    );
+  }, [editor, view]);
+
+  /** 右键「润色这段文字」：记录选区并进入预览 */
+  const handleCtxPolish = useCallback((): void => {
+    const selection = editor.selection;
+    if (!selection) return;
+    // 关闭右键菜单，但**保留选区**（预览要显示原句，确认要按偏移替换）
+    setCtxMenu(null);
+    void runPolish();
+  }, [editor, runPolish]);
+
+  /** 确认替换：按快照的绝对偏移回填润色结果 */
+  const handlePolishConfirm = useCallback((): void => {
+    if (!polish?.polished) return;
+    editorPaneRef.current?.replaceRange(polish.from, polish.to, polish.polished);
+    editor.setSelection(null);
+    setPolish(null);
+    view.showToast("已替换为润色后的文字");
+  }, [polish, editor, view]);
+
+  /** 关闭预览：不替换，清空状态（选区一并清除） */
+  const handlePolishClose = useCallback((): void => {
+    setPolish(null);
+    editor.setSelection(null);
+  }, [editor]);
+
   const handleNewVolume = useCallback((): void => {
     const id = data.createVolume();
     if (id) view.showToast("已新建一卷，可把章节拖到卷头归入");
   }, [data, view]);
-
   /** 卷命名：与章节重命名一致静默生效 */
   const handleRenameVolume = useCallback(
     (volumeId: string, name: string): void => {
@@ -904,8 +986,8 @@ export function useNovelPage() {
     () => ({
       onInsertToEditor: handleInsertName,
       onCreateCharacter: handleCreateEntityFromName,
-      onAddFavorite: (name, kind, style) =>
-        data.addNameFavorite(data.activeWorkId, name, kind, style),
+      onAddFavorite: (name, kind, style, source) =>
+        data.addNameFavorite(data.activeWorkId, name, kind, style, source),
       onRemoveFavorite: data.removeNameFavorite,
     }),
     [handleInsertName, handleCreateEntityFromName, data],
@@ -1365,6 +1447,12 @@ export function useNovelPage() {
     handleCtxMark,
     handleCtxBind,
     handleCtxToPack,
+    // AI 润色（R-AI-03）
+    polish,
+    handleCtxPolish,
+    handlePolishConfirm,
+    handlePolishClose,
+    runPolish,
     handleNewVolume,
     handleSaveEntity,
     handleRenameVolume,

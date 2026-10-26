@@ -359,8 +359,9 @@ describe("REQ-027 快速记账（守卫）", () => {
     expect(body).toContain("item.sourceChapterId || null");
   });
 
-  it("右键菜单把「记入背包」放在最前，且它是一次点击完成的独立动作", () => {
+  it("右键菜单「记入背包」先于「新建资料卡」，且它是一次点击完成的独立动作", () => {
     // 只看 JSX 本体：组件顶部的注释里也写着「新建资料卡」，从头 indexOf 会被注释骗到
+    // （AI 润色 R-AI-03 是菜单最前的独立分组，不影响「记入背包 < 新建资料卡」的相对顺序）
     const jsx = CTXMENU.slice(CTXMENU.indexOf("return ("));
     const packAt = jsx.indexOf("记入背包");
     const markAt = jsx.indexOf("新建资料卡");

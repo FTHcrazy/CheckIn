@@ -1,5 +1,9 @@
 import { Button } from "antd";
-import { ImportOutlined, RightOutlined } from "@ant-design/icons";
+import {
+  EditOutlined,
+  ImportOutlined,
+  RightOutlined,
+} from "@ant-design/icons";
 import { MARK_TYPE_OPTIONS } from "../../novel-config";
 import { useEntityTypeMeta } from "../../hooks/entity-types-context";
 import { truncate } from "../../novel-utils";
@@ -19,6 +23,8 @@ interface EntityContextMenuProps {
   onMark: (type: EntityType) => void;
   /** 绑定到现有资料卡（关联为别名） */
   onBind: (entityId: string) => void;
+  /** AI 润色选中文本（R-AI-03）：打开润色预览，确认后替换 */
+  onPolish: () => void;
   onClose: () => void;
 }
 
@@ -37,6 +43,7 @@ export default function EntityContextMenu({
   onAddToPack,
   onMark,
   onBind,
+  onPolish,
   onClose,
 }: EntityContextMenuProps) {
   const { metaOf } = useEntityTypeMeta();
@@ -49,6 +56,20 @@ export default function EntityContextMenu({
         <p className="nv-ctxmenu__selection" title={text}>
           {truncate(text, 16)}
         </p>
+
+        {/* AI 润色（R-AI-03）排在最前：划词最高频意图是改文字，一次点击进入预览 */}
+        <p className="nv-ctxmenu__label">AI 润色</p>
+        <div className="nv-ctxmenu__types">
+          <Button
+            role="menuitem"
+            className="nv-ctxmenu__item"
+            onClick={onPolish}
+            title="对选中文字做润色，先预览再替换"
+          >
+            <EditOutlined className="nv-ctxmenu__go" />
+            润色这段文字
+          </Button>
+        </div>
 
         {/* 快捷记账（REQ-027）排在最前：一次点击就完成，没有二级选择，
             与下面两组「先选类型 / 先选卡」的层级结构明显不同 */}

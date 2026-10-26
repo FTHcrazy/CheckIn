@@ -160,6 +160,17 @@ export interface EditorPaneHandle {
    * 与正常打字同一条链路（updateListener → 防抖保存），且能 Ctrl+Z 撤销。
    */
   replaceAll: (from: string, to: string) => number;
+  /**
+   * 按绝对偏移精确替换一段文本（通用命令式 API，与 insertText / replaceAll 并列）。
+   *
+   * 与 `insertText`（替换**当前选区**）不同：本方法用 `from/to` 绝对偏移，
+   * 替换的是**当初记录的某个区间**，不依赖「此刻的当前选区」。调用方（如外部
+   * 面板先取选区、用户中途点击别处后）仍能精确回填到原区间。
+   * 走 dispatch + userEvent，与正常打字同链，支持 Ctrl+Z 撤销。
+   *
+   * 编辑器不关心调用方是谁——这里只是把「替换指定区间」这个通用能力暴露出去。
+   */
+  replaceRange: (from: number, to: number, text: string) => void;
 }
 
 /** 排版相关的动态样式走独立 compartment，改字号不必重建编辑器 */
@@ -375,6 +386,21 @@ export default function EditorPane({
         if (changes.length === 0) return 0;
         view.dispatch({ changes, userEvent: "input.replace" });
         return changes.length;
+      },
+      replaceRange: (from: number, to: number, text: string): void => {
+        const view = viewRef.current;
+        if (!view || !text) return;
+        const docLen = view.state.doc.length;
+        // 偏移越界（章节在别处被改短）时夹取，避免越界报错
+        const safeFrom = Math.min(Math.max(from, 0), docLen);
+        const safeTo = Math.min(Math.max(to, safeFrom), docLen);
+        if (safeFrom === safeTo && !text) return;
+        view.dispatch({
+          changes: { from: safeFrom, to: safeTo, insert: text },
+          selection: { anchor: safeFrom + text.length },
+          userEvent: "input.replace",
+        });
+        view.focus();
       },
     }),
     [],

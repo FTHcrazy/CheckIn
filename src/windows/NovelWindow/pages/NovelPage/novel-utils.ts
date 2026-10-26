@@ -1226,7 +1226,10 @@ export function sanitizeNameFavorites(raw: unknown): NameFavorite[] {
       continue;
     if (seenIds.has(id)) continue;
     seenIds.add(id);
-    result.push({ id, workId, name, kind, style, createdAt });
+    // source 仅在确为 ai 时落字段；旧数据无该字段，缺省即 local（向后兼容）
+    const favorite: NameFavorite = { id, workId, name, kind, style, createdAt };
+    if (source.source === "ai") favorite.source = "ai";
+    result.push(favorite);
   }
   return result;
 }

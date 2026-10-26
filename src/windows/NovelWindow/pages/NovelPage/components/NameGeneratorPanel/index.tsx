@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button, Select } from "antd";
+import { App, Button, Input, Select } from "antd";
 import {
   CopyOutlined,
   PlusOutlined,
@@ -24,7 +24,10 @@ import type {
   NameStyle,
   NamingKind,
   NamingResult,
+  NamingSource,
 } from "../../naming/types";
+import { aiGenerate } from "@/shared/ai/ai-client";
+import { buildNamingPrompt } from "@/shared/ai/ai-context";
 import "./index.scss";
 
 /**
@@ -36,8 +39,8 @@ export interface NamingActions {
   onInsertToEditor: (name: string) => void;
   /** 把名字建为角色卡（type=character，名字带入；复用 handleSaveEntity） */
   onCreateCharacter: (name: string) => void;
-  /** 加入收藏夹（按作品持久化） */
-  onAddFavorite: (name: string, kind: NamingKind, style: NameStyle) => void;
+  /** 加入收藏夹（按作品持久化；source 标记 AI/本地来源） */
+  onAddFavorite: (name: string, kind: NamingKind, style: NameStyle, source?: NamingSource) => void;
   /** 移除收藏夹 */
   onRemoveFavorite: (favoriteId: string) => void;
 }
@@ -120,6 +123,12 @@ export default function NameGeneratorPanel({
   const [seed, setSeed] = useState<number>(0);
   const didInitRef = useRef(false);
 
+  // ── AI 起名（R-AI-02）：描述输入 + 加载态 + 降级提示 ──
+  const [description, setDescription] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [fallbackNote, setFallbackNote] = useState<string | null>(null);
+  const { message } = App.useApp();
+
   /**
    * 按「显式传入的参数」生成一批
    *
@@ -158,6 +167,107 @@ export default function NameGeneratorPanel({
     setResults(next.results);
     setSeed(next.seed);
   }, [effectiveKind, style, effectiveGender, count, exclude, seed]);
+
+  /** 描述为空时走本地引擎（无提示） */
+  const fallbackToLocal = useCallback(
+    (note?: string) => {
+      const local = generateNames({
+        kind: effectiveKind,
+        style,
+        gender: effectiveGender,
+        count,
+        exclude,
+        seed: Date.now() >>> 0,
+      });
+      setResults(local);
+      setFallbackNote(note ?? null);
+    },
+    [effectiveKind, style, effectiveGender, count, exclude],
+  );
+
+  /** AI 起名（R-AI-02 FR-02）：语义生成，失败降级本地引擎 */
+  const handleAiGenerate = useCallback(async () => {
+    const desc = description.trim();
+    // 描述为空 → 等价于本地起名（FR-01 业务规则）
+    if (!desc) {
+      fallbackToLocal();
+      return;
+    }
+
+    setAiLoading(true);
+    setFallbackNote(null);
+
+    // 拼装语义上下文：描述 + 类型/风格/性别 + 避开已用
+    const kindLabel = NAMING_KINDS.find((k) => k.id === effectiveKind)?.label;
+    const styleLabel = NAMING_STYLES.find((s) => s.id === style)?.label;
+    const genderLabel =
+      effectiveGender === "male"
+        ? "男"
+        : effectiveGender === "female"
+          ? "女"
+          : undefined;
+    const { system, prompt } = buildNamingPrompt({
+      description: desc,
+      kind: kindLabel,
+      style: styleLabel,
+      gender: genderLabel,
+      count,
+      avoid: exclude,
+    });
+
+    const result = await aiGenerate({ system, prompt, count });
+    setAiLoading(false);
+
+    if (result.ok) {
+      // 模型返回的名字：过滤掉已用名，标注 AI 来源；不足数量由本地引擎补齐
+      const excludeSet = new Set(exclude.map((n) => n.trim()));
+      const aiNames = result.data.items
+        .map((n) => n.trim())
+        .filter((n) => n && !excludeSet.has(n));
+      const deduped: string[] = [];
+      for (const n of aiNames) {
+        if (!deduped.includes(n)) deduped.push(n);
+      }
+      const aiResults: NamingResult[] = deduped
+        .slice(0, count)
+        .map((name) => ({
+          name,
+          kind: effectiveKind,
+          style,
+          gender: effectiveGender,
+          source: "ai" as NamingSource,
+        }));
+
+      // 数量不足：用本地引擎补齐（FR-02 客户端过滤补齐）
+      if (aiResults.length < count) {
+        const local = generateNames({
+          kind: effectiveKind,
+          style,
+          gender: effectiveGender,
+          count: count - aiResults.length,
+          exclude: [...exclude, ...deduped],
+          seed: Date.now() >>> 0,
+        });
+        setResults([...aiResults, ...local]);
+      } else {
+        setResults(aiResults);
+      }
+      return;
+    }
+
+    // AI 失败 → 降级本地引擎 + 明确提示（FR-04）
+    fallbackToLocal(result.message);
+    message.warning(result.message);
+  }, [
+    description,
+    effectiveKind,
+    effectiveGender,
+    style,
+    count,
+    exclude,
+    fallbackToLocal,
+    message,
+  ]);
 
   // 复制到剪贴板（兜底出口：不依赖 EditorPane ref）
   const handleCopy = useCallback(async (name: string) => {
@@ -308,13 +418,33 @@ export default function NameGeneratorPanel({
         </div>
       </div>
 
-      <Button
-        className="nv-name__regen"
-        onClick={handleNextBatch}
-        title="换一批（避开本书已用名）"
-      >
-        <ReloadOutlined />换一批（避开本书已用名）
-      </Button>
+      <div className="nv-name__ai">
+        <Input.TextArea
+          className="nv-name__ai-input"
+          value={description}
+          placeholder="描述你想要的名字，如「清冷孤傲的剑修女侠」"
+          autoSize={{ minRows: 2, maxRows: 4 }}
+          onChange={(e) => setDescription(e.target.value)}
+        />
+        <div className="nv-name__ai-actions">
+          <Button
+            className="nv-name__ai-btn"
+            onClick={() => void handleAiGenerate()}
+            loading={aiLoading}
+            disabled={aiLoading}
+          >
+            <ThunderboltOutlined />
+            AI 起名
+          </Button>
+          <Button className="nv-name__regen" onClick={handleNextBatch} title="换一批（避开本书已用名）">
+            <ReloadOutlined />换一批（本地）
+          </Button>
+        </div>
+      </div>
+
+      {fallbackNote ? (
+        <div className="nv-name__fallback">{fallbackNote}</div>
+      ) : null}
 
       <div className="nv-sechead">
         结果<em>{results.length}</em>
@@ -341,7 +471,14 @@ export default function NameGeneratorPanel({
                 className="nv-name__card"
                 style={{ animationDelay: `${index * 18}ms` }}
               >
-                <span className="nv-name__text">{r.name}</span>
+                <span className="nv-name__text">
+                  {r.name}
+                  {r.source === "ai" ? (
+                    <em className="nv-name__badge" title="AI 生成">
+                      AI
+                    </em>
+                  ) : null}
+                </span>
                 <span className="nv-name__acts">
                   <Button
                     className="nv-mini"
@@ -365,7 +502,7 @@ export default function NameGeneratorPanel({
                     title={favorited ? "已收藏" : "加入收藏"}
                     aria-pressed={favorited}
                     disabled={favorited}
-                    onClick={() => actions.onAddFavorite(r.name, r.kind, r.style)}
+                    onClick={() => actions.onAddFavorite(r.name, r.kind, r.style, r.source)}
                   >
                     {favorited ? <StarFilled /> : <StarOutlined />}
                   </Button>
@@ -399,6 +536,11 @@ export default function NameGeneratorPanel({
             <li key={f.id} className="nv-name__fav">
               <span className="nv-name__fav-name" title={f.name}>
                 {f.name}
+                {f.source === "ai" ? (
+                  <em className="nv-name__badge" title="AI 生成">
+                    AI
+                  </em>
+                ) : null}
               </span>
               <span className="nv-name__fav-meta">
                 {NAMING_DICTIONARY.styles.find((s) => s.id === f.style)?.label} ·{" "}
