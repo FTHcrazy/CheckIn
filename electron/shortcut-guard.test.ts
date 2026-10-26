@@ -62,7 +62,20 @@ describe("快捷键：只在 dev 与 novel 版开放", () => {
     expect(appSource).toContain(
       "const SHOW_SHORTCUTS = import.meta.env.DEV || IS_NOVEL_EDITION",
     );
-    expect(appSource).toContain("SHOW_SHORTCUTS ? <ShortcutSection /> : null");
+
+    // 2.6.0 起设置页改成「页面清单 + 导航」，渲染入口从行内三元变成
+    // `SHORTCUT_PAGES` 这个条件数组 —— 钉的仍是同一个意图：**快捷键页只在
+    // SHOW_SHORTCUTS 为真时进入清单**。所以断言落在「门控块内部」而不是
+    // 旧写法的字面量（改一次骨架就红的那种守卫，只会逼人去改断言）。
+    const gatedBlock = appSource.slice(
+      appSource.indexOf("const SHORTCUT_PAGES"),
+      appSource.indexOf("const PROFILE_PAGE"),
+    );
+    expect(gatedBlock).toContain("SHOW_SHORTCUTS");
+    expect(gatedBlock).toContain("<ShortcutSection />");
+
+    // 反面：全文件只能有这一处渲染 ShortcutSection，否则等于留了绕过门控的后门
+    expect(appSource.match(/<ShortcutSection \/>/g)?.length).toBe(1);
   });
 });
 

@@ -4,19 +4,28 @@ import {
   Button,
   Input,
   InputNumber,
-  Radio,
   Select,
   Spin,
   Switch,
 } from "antd";
+import {
+  CheckCircleFilled,
+  CloseCircleFilled,
+  CloudServerOutlined,
+  LaptopOutlined,
+} from "@ant-design/icons";
 import { useAiConfig } from "../../hooks/useAiConfig";
 import type { AiProvider } from "@/shared/ai/ai-types";
 import "./index.scss";
 
 /**
- * 服务商模板（R-AI-01）：选中后**不覆盖**用户已填的地址 / 模型名，只在
- * 输入框的 placeholder 里弱提示该厂商的参考地址与默认模型——用户填了什么
- * 就保留什么，切换厂商不改用户意图。
+ * 服务商模板（R-AI-01）。
+ *
+ * 与上一版（「选中只改 placeholder，从不覆盖用户已填内容」）的差别：**选中即填**。
+ * 用户点「DeepSeek」这个动作本身就是「我要用 DeepSeek」，只把参考地址塞进占位符
+ * 等于让他照着提示再手抄一遍；而 Cursor / Continue / VS Code 这类成熟配置页都是
+ * 选中即写入。写入后用户仍可随意改，改了之后 `matchPreset` 会把下拉反查成
+ * 「自定义」，不会出现「选了 DeepSeek 但地址是别家」的假状态。
  *
  * 端点与默认模型以 2026-10 官方文档为准；用户可随时改，故无需热更新。
  */
@@ -33,15 +42,21 @@ const PROVIDER_PRESETS: ProviderPreset[] = [
   { label: "OpenAI", endpoint: "https://api.openai.com/v1", model: "gpt-4o-mini" },
 ];
 
-/** 自定义模板（不在预设里）：地址/模型名交给用户自己填 */
+/** 自定义模板（不在预设里）：地址 / 模型名交给用户自己填 */
 const CUSTOM_PRESET = "custom";
 
 /**
- * AI 助手分区（R-AI-01）。
+ * AI 配置页（R-AI-01）。
  *
- * 分层配置：默认只露「总开关 + 模式」，高级项（上下文长度）折叠。小白走
- * 「选模板 → 填 Key → 测试 → 保存」，资深走「自定义 → 填任意 OpenAI 兼容
- * 地址/模型/Key」。本地 Ollama 免 Key、数据不出本机。
+ * 布局参考成熟 AI 配置面板（Cursor 的 Models / Copilot 的设置页）的三段式：
+ * **是否启用 → 用哪个服务 → 连接凭据 → 高级参数**，操作按钮收进底部常驻条，
+ * 不再随内容滚走（固定 900×680 窗口里，按钮沉在长表单底部等于藏起来）。
+ *
+ * 交互取舍：
+ * - 「保存」只在**真的改了东西**时可点，左侧状态点同时告诉用户「有未保存的更改 /
+ *   已保存」—— 这是 Codex / Cursor 那类配置页的常规反馈，避免盲点保存；
+ * - 「测试连接」在主进程侧读的是**已落库**的配置，所以草稿有改动时先存再测，
+ *   按钮 title 直接说明这一点，不做悄悄保存。
  *
  * ⚠️ Key 只在用户输入的那一刻短暂驻留内存，提交后即弃；`getConfig` 只返回
  * `hasApiKey` 布尔，Key 永不回流渲染层（安全边界见 ai-handlers.ts）。
@@ -68,9 +83,8 @@ export default function AISection() {
     apiKey: "",
     contextLen: 32000,
   });
-  const [showAdvanced, setShowAdvanced] = useState(false);
 
-  // 首次载入：把主进程配置映射进草稿
+  // 首次载入 / 保存后回读：把主进程配置映射进草稿
   useEffect(() => {
     if (!config) return;
     setDraft((prev) => ({
@@ -87,39 +101,67 @@ export default function AISection() {
 
   const presetOptions = useMemo(
     () => [
-      ...PROVIDER_PRESETS.map((p) => ({ value: p.label, label: p.label })),
+      ...PROVIDER_PRESETS.map((preset) => ({ value: preset.label, label: preset.label })),
       { value: CUSTOM_PRESET, label: "自定义（任意 OpenAI 兼容接口）" },
     ],
     [],
   );
 
-  /** 当前选中模板（用于 placeholder 弱提示参考地址/模型；custom 时为 null） */
+  /** 当前选中模板（用于 Ollama 之外的服务商名称展示；custom 时为 null） */
   const activePreset = useMemo(
-    () => PROVIDER_PRESETS.find((p) => p.label === draft.preset) ?? null,
+    () => PROVIDER_PRESETS.find((preset) => preset.label === draft.preset) ?? null,
     [draft.preset],
   );
 
-  const isConfigured = Boolean(config && config.enabled);
-
-  /** 已保存的 Key 是否已填（用于「Key 已填」提示，不返回明文） */
+  /** 已保存的 Key 是否已填（用于「已保存」提示，不返回明文） */
   const hasSavedKey = Boolean(config?.hasApiKey);
 
-  const handleSelectPreset = (value: string) => {
-    // 只记录选中态；不覆盖用户已填的地址 / 模型名（意图交给用户）
-    setDraft((prev) => ({ ...prev, preset: value }));
-  };
+  /**
+   * 草稿与已保存配置是否有差异。
+   * 逐字段比较（不比对象引用）：`useEffect` 每次回读都会产出新对象，
+   * 比引用会让「刚保存完」也一直显示有未保存的更改。
+   */
+  const isDirty = useMemo(() => {
+    if (!config) return false;
+    return (
+      config.enabled !== draft.enabled ||
+      config.provider !== draft.provider ||
+      config.endpoint !== draft.endpoint ||
+      config.model !== draft.model ||
+      config.contextLen !== draft.contextLen ||
+      (draft.provider === "openai" && draft.apiKey.length > 0)
+    );
+  }, [config, draft]);
+
+  const canSave =
+    isDirty && draft.endpoint.trim().length > 0 && draft.model.trim().length > 0;
 
   const handleProviderChange = (provider: AiProvider) => {
-    setDraft((prev) => ({ ...prev, provider }));
-    // 切到 Ollama：清掉 Key 语义（Ollama 免 Key），地址给默认本地端点
-    if (provider === "ollama") {
-      setDraft((prev) => ({
-        ...prev,
-        provider,
-        endpoint: prev.endpoint || "http://localhost:11434",
-        apiKey: "",
-      }));
+    if (provider === draft.provider) return;
+    setDraft((prev) => ({
+      ...prev,
+      provider,
+      // 切到 Ollama：清掉 Key 语义（Ollama 免 Key），地址给默认本地端点
+      ...(provider === "ollama"
+        ? { endpoint: prev.endpoint || "http://localhost:11434", apiKey: "" }
+        : {}),
+    }));
+  };
+
+  /** 选服务商 = 直说要它：把推荐地址与模型填进草稿（可再改） */
+  const handleSelectPreset = (value: string) => {
+    if (value === CUSTOM_PRESET) {
+      setDraft((prev) => ({ ...prev, preset: value }));
+      return;
     }
+    const preset = PROVIDER_PRESETS.find((item) => item.label === value);
+    if (!preset) return;
+    setDraft((prev) => ({
+      ...prev,
+      preset: preset.label,
+      endpoint: preset.endpoint,
+      model: preset.model,
+    }));
   };
 
   const handleSave = async () => {
@@ -139,17 +181,10 @@ export default function AISection() {
   };
 
   const handleTest = async () => {
-    // 草稿与已保存配置不一致时，先保存再测，保证测的是「当前填的」而非旧配置
-    const dirty =
-      !config ||
-      config.enabled !== draft.enabled ||
-      config.provider !== draft.provider ||
-      config.endpoint !== draft.endpoint ||
-      config.model !== draft.model ||
-      (draft.provider === "openai" && draft.apiKey.length > 0);
-    if (dirty) {
+    // 主进程测试读的是已落库配置：草稿有改动就先保存，测的才是「当前填的」
+    if (isDirty) {
       const ok = await save({
-        enabled: true,
+        enabled: draft.enabled,
         provider: draft.provider,
         endpoint: draft.endpoint,
         model: draft.model,
@@ -166,179 +201,228 @@ export default function AISection() {
       <section className="settings-section">
         <h2 className="settings-section__title">AI 助手</h2>
         <div className="settings-section__body">
-          <div className="settings-ai__lead" style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center", padding: 24 }}>
+          <div className="settings-ai__loading">
             <Spin size="small" />
-            <span>加载中…</span>
+            <span>正在读取配置…</span>
           </div>
         </div>
       </section>
     );
   }
 
+  const providerLabel =
+    draft.provider === "ollama" ? "本地 Ollama" : (activePreset?.label ?? "自定义接口");
+
   return (
-    <section className="settings-section">
-      <h2 className="settings-section__title">AI 助手</h2>
-      <div className="settings-section__body">
-        {/* 总开关 */}
-        <div className="settings-item">
-          <div className="settings-item__text">
-            <span className="settings-item__label">启用 AI 助手</span>
-            <span className="settings-item__hint">
-              开启后可在写作工具（起名、后续润色续写）中调用 AI
-            </span>
+    <div className="settings-ai">
+      {/* ① 总开关：唯一的「要不要用」 */}
+      <section className="settings-section">
+        <h2 className="settings-section__title">AI 助手</h2>
+        <div className="settings-section__body">
+          <div className="settings-item">
+            <div className="settings-item__text">
+              <span className="settings-item__label">启用 AI 助手</span>
+              <span className="settings-item__hint">
+                {draft.enabled
+                  ? `开启中：写作工具将调用 ${providerLabel}${draft.model ? ` · ${draft.model}` : ""}`
+                  : "开启后，写作工具中的起名等能力才会调用模型"}
+              </span>
+            </div>
+            <Switch
+              checked={draft.enabled}
+              onChange={(checked) => setDraft((prev) => ({ ...prev, enabled: checked }))}
+            />
           </div>
-          <Switch
-            checked={draft.enabled}
-            onChange={(checked) => setDraft((prev) => ({ ...prev, enabled: checked }))}
-          />
         </div>
+      </section>
 
-        {/* 模式选择 */}
-        <div className="settings-item">
-          <div className="settings-item__text">
-            <span className="settings-item__label">模型服务</span>
-            <span className="settings-item__hint">
-              使用自己的模型：任意 OpenAI 兼容接口；本地 Ollama 免 Key、数据不出本机
-            </span>
+      {/* ② 用哪个服务：两张大按钮当单选，比一行 Radio 更容易扫读 */}
+      <section className="settings-section">
+        <h2 className="settings-section__title">模型服务</h2>
+        <div className="settings-section__body">
+          <div className="settings-field">
+            <span className="settings-field__label">连接方式</span>
+            {/* 两张大按钮而不是 Antd Segmented：每张要带一行「是否免 Key / 数据去哪」
+                的说明，Segmented 的选项只放得下标签。语义上它们是互斥的两态，
+                所以用 aria-pressed 标选中态（键盘走原生 Tab，不假造 radiogroup）。 */}
+            <div className="settings-ai__tiles">
+              <Button
+                className={`settings-ai__tile${draft.provider === "openai" ? " is-active" : ""}`}
+                aria-pressed={draft.provider === "openai"}
+                onClick={() => handleProviderChange("openai")}
+              >
+                <span className="settings-ai__tile-icon" aria-hidden="true">
+                  <CloudServerOutlined />
+                </span>
+                <span className="settings-ai__tile-text">
+                  <span className="settings-ai__tile-title">自定义接口</span>
+                  <span className="settings-ai__tile-desc">任意 OpenAI 兼容服务，需自备 API Key</span>
+                </span>
+              </Button>
+
+              <Button
+                className={`settings-ai__tile${draft.provider === "ollama" ? " is-active" : ""}`}
+                aria-pressed={draft.provider === "ollama"}
+                onClick={() => handleProviderChange("ollama")}
+              >
+                <span className="settings-ai__tile-icon" aria-hidden="true">
+                  <LaptopOutlined />
+                </span>
+                <span className="settings-ai__tile-text">
+                  <span className="settings-ai__tile-title">本地 Ollama</span>
+                  <span className="settings-ai__tile-desc">免 Key，数据不出本机</span>
+                </span>
+              </Button>
+            </div>
           </div>
-          <Radio.Group
-            value={draft.provider}
-            onChange={(e) => handleProviderChange(e.target.value as AiProvider)}
-            size="small"
-          >
-            <Radio.Button value="openai">自己的模型</Radio.Button>
-            <Radio.Button value="ollama">本地 Ollama</Radio.Button>
-          </Radio.Group>
+
+          {/* ③ 连接凭据：竖排字段（长地址要占满整行，左右分栏会看不全） */}
+          {draft.provider === "openai" ? (
+            <>
+              <div className="settings-field">
+                <span className="settings-field__label">服务商</span>
+                <div className="settings-field__control">
+                  <Select
+                    className="settings-ai__preset"
+                    aria-label="服务商"
+                    value={draft.preset}
+                    options={presetOptions}
+                    onChange={handleSelectPreset}
+                  />
+                </div>
+                <span className="settings-field__hint">
+                  选一家会填入它的推荐地址与模型，之后仍可自行修改；改过就回到「自定义」
+                </span>
+              </div>
+
+              <div className="settings-field">
+                <span className="settings-field__label">接口地址</span>
+                <div className="settings-field__control">
+                  <Input
+                    aria-label="接口地址"
+                    value={draft.endpoint}
+                    placeholder={activePreset ? activePreset.endpoint : "https://api.example.com/v1"}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setDraft((prev) => ({
+                        ...prev,
+                        endpoint: value,
+                        preset: matchPreset(value, prev.model),
+                      }));
+                    }}
+                  />
+                </div>
+                <span className="settings-field__hint">
+                  OpenAI 兼容的 base 地址，一般以 <code>/v1</code> 结尾
+                </span>
+              </div>
+
+              <div className="settings-field">
+                <span className="settings-field__label">模型名</span>
+                <div className="settings-field__control">
+                  <Input
+                    aria-label="模型名"
+                    value={draft.model}
+                    placeholder={
+                      activePreset ? activePreset.model : "deepseek-chat / qwen-plus / glm-4 / gpt-4o-mini"
+                    }
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setDraft((prev) => ({
+                        ...prev,
+                        model: value,
+                        preset: matchPreset(prev.endpoint, value),
+                      }));
+                    }}
+                  />
+                </div>
+                <span className="settings-field__hint">填你账号下可用的模型名，写错会在测试时报「模型不存在」</span>
+              </div>
+
+              <div className="settings-field">
+                <span className="settings-field__label">
+                  API Key
+                  {hasSavedKey ? <span className="settings-ai__chip">已保存</span> : null}
+                </span>
+                <div className="settings-field__control">
+                  <Input.Password
+                    aria-label="API Key"
+                    value={draft.apiKey}
+                    placeholder={hasSavedKey ? "••••••••（已保存；输入新值可覆盖）" : "粘贴你的 API Key"}
+                    onChange={(event) =>
+                      setDraft((prev) => ({ ...prev, apiKey: event.target.value }))
+                    }
+                    autoComplete="off"
+                  />
+                </div>
+                <span className="settings-field__hint">
+                  {hasSavedKey
+                    ? "已加密保存在本机。留空保存则保持原 Key 不变，输入新值可覆盖"
+                    : "仅本机加密保存，请求直连所选服务商"}
+                </span>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="settings-field">
+                <span className="settings-field__label">服务地址</span>
+                <div className="settings-field__control">
+                  <Input
+                    aria-label="Ollama 服务地址"
+                    value={draft.endpoint}
+                    placeholder="http://localhost:11434"
+                    onChange={(event) =>
+                      setDraft((prev) => ({ ...prev, endpoint: event.target.value }))
+                    }
+                  />
+                </div>
+                <span className="settings-field__hint">
+                  本地默认 http://localhost:11434，也可填局域网内其它机器
+                </span>
+              </div>
+
+              <div className="settings-field">
+                <span className="settings-field__label">模型名</span>
+                <div className="settings-field__control">
+                  <Input
+                    aria-label="Ollama 模型名"
+                    value={draft.model}
+                    placeholder="qwen2.5"
+                    onChange={(event) =>
+                      setDraft((prev) => ({ ...prev, model: event.target.value }))
+                    }
+                  />
+                </div>
+                <span className="settings-field__hint">
+                  填 Ollama 里已下载的模型名（如 qwen2.5、llama3.1、deepseek-r1）
+                </span>
+              </div>
+
+              <div className="settings-field">
+                <span className="settings-field__label">API Key</span>
+                <span className="settings-field__hint">
+                  本地模型无需 Key，数据不出本机
+                </span>
+              </div>
+            </>
+          )}
         </div>
+      </section>
 
-        {/* OpenAI 兼容：服务商模板 + 地址 + 模型 + Key */}
-        {draft.provider === "openai" ? (
-          <>
-            <div className="settings-ai__stack">
-              <span className="settings-ai__stack-label">服务商</span>
-              <Select
-                className="settings-ai__select"
-                value={draft.preset}
-                options={presetOptions}
-                onChange={handleSelectPreset}
-              />
-            </div>
-
-            <div className="settings-ai__stack">
-              <span className="settings-ai__stack-label">接口地址</span>
-              <span className="settings-ai__stack-hint">
-                填所选厂商的 OpenAI 兼容 base 地址；切换服务商会在占位提示里给出参考，不覆盖你已填内容
-              </span>
-              <Input
-                className="settings-ai__input"
-                value={draft.endpoint}
-                placeholder={activePreset ? activePreset.endpoint : "https://api.example.com/v1"}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setDraft((prev) => ({
-                    ...prev,
-                    endpoint: value,
-                    preset: matchPreset(value, prev.model),
-                  }));
-                }}
-              />
-            </div>
-
-            <div className="settings-ai__stack">
-              <span className="settings-ai__stack-label">模型名</span>
-              <span className="settings-ai__stack-hint">
-                填你账号下可用的模型名；切换服务商同样只作占位提示
-              </span>
-              <Input
-                className="settings-ai__input"
-                value={draft.model}
-                placeholder={activePreset ? activePreset.model : "deepseek-chat / qwen-plus / glm-4 / gpt-4o-mini"}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setDraft((prev) => ({
-                    ...prev,
-                    model: value,
-                    preset: matchPreset(prev.endpoint, value),
-                  }));
-                }}
-              />
-            </div>
-
-            <div className="settings-ai__stack">
-              <span className="settings-ai__stack-label">API Key</span>
-              <span className="settings-ai__stack-hint">
-                {hasSavedKey
-                  ? "已保存一个 Key（以掩码示意，不显示明文）；输入新 Key 可覆盖，清空输入框保存则保持不变"
-                  : "仅本机加密保存，直连所选模型服务，请妥善保管"}
-              </span>
-              <Input.Password
-                className="settings-ai__input"
-                value={draft.apiKey}
-                placeholder={hasSavedKey ? "••••••••（已保存；输入新值可覆盖）" : "粘贴你的 API Key"}
-                onChange={(e) => setDraft((prev) => ({ ...prev, apiKey: e.target.value }))}
-                autoComplete="off"
-              />
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="settings-ai__stack">
-              <span className="settings-ai__stack-label">Ollama 地址</span>
-              <span className="settings-ai__stack-hint">
-                本地默认 http://localhost:11434，也可填局域网内其它机器
-              </span>
-              <Input
-                className="settings-ai__input"
-                value={draft.endpoint}
-                placeholder="http://localhost:11434"
-                onChange={(e) => setDraft((prev) => ({ ...prev, endpoint: e.target.value }))}
-              />
-            </div>
-
-            <div className="settings-ai__stack">
-              <span className="settings-ai__stack-label">模型名</span>
-              <span className="settings-ai__stack-hint">
-                填 Ollama 里已下载的模型名（如 qwen2.5、llama3.1、deepseek-r1）
-              </span>
-              <Input
-                className="settings-ai__input"
-                value={draft.model}
-                placeholder="qwen2.5"
-                onChange={(e) => setDraft((prev) => ({ ...prev, model: e.target.value }))}
-              />
-            </div>
-
-            <div className="settings-ai__stack">
-              <span className="settings-ai__stack-hint">
-                本地模型无需 API Key，数据不出本机
+      {/* ④ 高级参数：只有一项，不再折叠 —— 独立页里没有「收起」的必要 */}
+      <section className="settings-section">
+        <h2 className="settings-section__title">高级</h2>
+        <div className="settings-section__body">
+          <div className="settings-item">
+            <div className="settings-item__text">
+              <span className="settings-item__label">上下文长度</span>
+              <span className="settings-item__hint">
+                模型可处理的最大 token 数，超长输入按此截断；不确定就留默认值
               </span>
             </div>
-          </>
-        )}
-
-        {/* 高级参数（折叠） */}
-        <div className="settings-item">
-          <div className="settings-item__text">
-            <span className="settings-item__label">高级参数</span>
-            <span className="settings-item__hint">上下文长度、采样参数等</span>
-          </div>
-          <Button
-            className="settings-ai__btn"
-            type="text"
-            onClick={() => setShowAdvanced((v) => !v)}
-          >
-            {showAdvanced ? "收起" : "展开"}
-          </Button>
-        </div>
-
-        {showAdvanced ? (
-          <div className="settings-ai__stack">
-            <span className="settings-ai__stack-label">上下文长度</span>
-            <span className="settings-ai__stack-hint">
-              模型可处理的最大上下文（token），用于超长输入自动截断
-            </span>
             <InputNumber
-              className="settings-ai__input"
+              className="settings-ai__number"
+              aria-label="上下文长度"
               value={draft.contextLen}
               min={1000}
               max={2_000_000}
@@ -350,55 +434,57 @@ export default function AISection() {
               }
             />
           </div>
-        ) : null}
-
-        {/* 测试结果状态条 */}
-        {testResult ? (
-          <div
-            className={`settings-ai__result settings-ai__result--${testResult.ok ? "ok" : "fail"}`}
-          >
-            {testResult.ok ? "✓ " : "✕ "}
-            {testResult.message}
-          </div>
-        ) : null}
-
-        {/* 操作区 */}
-        <div className="settings-item">
-          <div className="settings-item__text">
-            <span className="settings-item__label">验证与保存</span>
-            <span className="settings-item__hint">
-              建议先「测试连接」确认 Key / 地址 / 模型可用，再保存
-            </span>
-          </div>
-          <div className="settings-ai__actions">
-            <Button className="settings-ai__btn" onClick={() => void handleTest()} loading={testing}>
-              测试连接
-            </Button>
-            <Button
-              type="primary"
-              onClick={() => void handleSave()}
-              loading={saving}
-              disabled={!draft.endpoint.trim() || !draft.model.trim()}
-            >
-              保存
-            </Button>
-          </div>
         </div>
+      </section>
 
-        {!isConfigured ? (
-          <div className="settings-ai__result settings-ai__result--fail">
-            尚未启用：打开顶部开关并保存后，写作工具里才会出现 AI 入口
-          </div>
-        ) : null}
+      {/* 测试结果：内联状态条（成功 / 失败都留在原地，不弹窗打断填写） */}
+      {testResult ? (
+        <div
+          className={`settings-ai__result is-${testResult.ok ? "ok" : "fail"}`}
+          role="status"
+        >
+          {testResult.ok ? <CheckCircleFilled /> : <CloseCircleFilled />}
+          <span>{testResult.message}</span>
+        </div>
+      ) : null}
+
+      {/* 底部常驻操作条：内容再长也够得着，左侧常显「存了没」 */}
+      <div className="settings-ai__footer">
+        <span
+          className={`settings-ai__state is-${isDirty ? "dirty" : "saved"}`}
+          role="status"
+        >
+          <span className="settings-ai__state-dot" aria-hidden="true" />
+          {isDirty ? "有未保存的更改" : "已保存"}
+        </span>
+        <div className="settings-ai__footer-actions">
+          <Button
+            className="settings-ai__btn"
+            onClick={() => void handleTest()}
+            loading={testing}
+            title="测试会先保存当前填写内容，再按已保存的配置发起一次真实请求"
+          >
+            测试连接
+          </Button>
+          <Button
+            className="settings-ai__primary"
+            type="primary"
+            onClick={() => void handleSave()}
+            loading={saving}
+            disabled={!canSave}
+          >
+            保存
+          </Button>
+        </div>
       </div>
-    </section>
+    </div>
   );
 }
 
 /** 反查某「地址 + 模型」是否命中预设模板（命中返回 label，否则 custom） */
 function matchPreset(endpoint: string, model: string): string {
   const hit = PROVIDER_PRESETS.find(
-    (p) => p.endpoint === endpoint.trim() && p.model === model.trim(),
+    (preset) => preset.endpoint === endpoint.trim() && preset.model === model.trim(),
   );
   return hit ? hit.label : CUSTOM_PRESET;
 }

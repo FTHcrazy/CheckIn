@@ -6,3 +6,8 @@
     margin-bottom: 12px;
   }
 }
+
+/* 邮箱字段宽度收在 400px：短字段铺满 640px 宽的卡片会让人以为要填很长一串 */
+.settings-profile__form {
+  max-width: 400px;
+}

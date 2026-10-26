@@ -102,11 +102,9 @@ export default function ShortcutSection() {
 
   return (
     <section className="settings-section">
-      <h2 className="settings-section__title">快捷键</h2>
       <div className="settings-section__body">
         <p className="settings-shortcut__lead">
-          点击右侧键位后按下新的组合键即可修改，<kbd>Esc</kbd> 取消、
-          <kbd>Backspace</kbd> 回退默认。改动即时生效。
+          按 <kbd>Esc</kbd> 取消录制、<kbd>Backspace</kbd> 回退默认。
         </p>
 
         {grouped.map((entry) => (

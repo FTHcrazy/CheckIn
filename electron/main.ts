@@ -594,10 +594,16 @@ function createNovelWindow(): BrowserWindow {
 // ── SettingsWindow（全局设置，全版本开放入口） ──
 
 /**
- * SettingsWindow —— 全局设置窗口（外观 / 账号 / 个人资料，后续扩展字体、快捷键等）。
+ * SettingsWindow —— 全局设置窗口（双栏：左分类导航 + 右内容页）。
  *
  * 即关即销、单实例唤起：设置项即时生效（主题经广播同步到各窗口，
  * 账号操作直接走 IPC），窗口本身不持有草稿状态。
+ *
+ * **固定尺寸**（1.48.0）：左侧导航 + 右侧内容页的双栏骨架需要确定的宽度预算
+ * （导航 184 + 间距 + 内容），窗口可自由拉伸时窄到 480 会把 AI 配置页的表单
+ * 挤成两行、宽到 1400 又让每行文案离控件太远。这里锁死 900×680 ——
+ * 与「光标 / Codex 一类工具」的设置窗同量级，页面内部各自滚动，不靠改窗口尺寸
+ * 去容纳内容（与 LoginWindow 的 `resizable: false` 同一思路）。
  */
 function createSettingsWindow(): BrowserWindow {
   const existing = windowManager.get("settings");
@@ -609,10 +615,11 @@ function createSettingsWindow(): BrowserWindow {
   }
 
   const settingsWin = new BrowserWindow({
-    width: 560,
-    height: 640,
-    minWidth: 480,
-    minHeight: 420,
+    width: 900,
+    height: 680,
+    // 固定宽高：最大化会把双栏骨架拉成大面积留白，且标题栏隐藏了最大化按钮
+    resizable: false,
+    maximizable: false,
     icon: ICON_PATH,
     show: false,
     ...ROUNDED_WINDOW_OPTIONS,

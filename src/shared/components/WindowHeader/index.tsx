@@ -13,6 +13,12 @@ interface WindowHeaderProps {
   badge?: ReactNode;
   /** 控制按钮左侧的动作插槽（可选，如小说版主窗的「设置」入口）；不传不渲染 */
   actions?: ReactNode;
+  /**
+   * 是否渲染「最大化 / 还原」按钮，默认 true。
+   * 固定尺寸窗口（设置窗口：`resizable: false`）传 false —— 按钮点了没有效果，
+   * 留着只会让人以为窗口能拉大。
+   */
+  maximizable?: boolean;
 }
 
 /**
@@ -28,7 +34,13 @@ interface WindowHeaderProps {
  * （"minimize" | "maximize-toggle" | "close"），不是包了一层的对象。
  * close 走 win.close()，由各窗口自己的 close 语义决定行为。
  */
-export default function WindowHeader({ title, icon, badge, actions }: WindowHeaderProps) {
+export default function WindowHeader({
+  title,
+  icon,
+  badge,
+  actions,
+  maximizable = true,
+}: WindowHeaderProps) {
   const [isMaximized, setIsMaximized] = useState(false);
 
   useEffect(() => {
@@ -74,23 +86,25 @@ export default function WindowHeader({ title, icon, badge, actions }: WindowHead
             <path d="M0 5h10" stroke="currentColor" strokeWidth="1" />
           </svg>
         </button>
-        <button
-          type="button"
-          className="window-header__btn"
-          aria-label={isMaximized ? "还原" : "最大化"}
-          onClick={() => handleControl("maximize-toggle")}
-        >
-          {isMaximized ? (
-            <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
-              <path d="M3 3V1h6v6H7" fill="none" stroke="currentColor" strokeWidth="1" />
-              <rect x="1" y="3" width="6" height="6" fill="none" stroke="currentColor" strokeWidth="1" />
-            </svg>
-          ) : (
-            <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
-              <rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor" strokeWidth="1" />
-            </svg>
-          )}
-        </button>
+        {maximizable ? (
+          <button
+            type="button"
+            className="window-header__btn"
+            aria-label={isMaximized ? "还原" : "最大化"}
+            onClick={() => handleControl("maximize-toggle")}
+          >
+            {isMaximized ? (
+              <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+                <path d="M3 3V1h6v6H7" fill="none" stroke="currentColor" strokeWidth="1" />
+                <rect x="1" y="3" width="6" height="6" fill="none" stroke="currentColor" strokeWidth="1" />
+              </svg>
+            ) : (
+              <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+                <rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor" strokeWidth="1" />
+              </svg>
+            )}
+          </button>
+        ) : null}
         <button
           type="button"
           className="window-header__btn window-header__btn--close"

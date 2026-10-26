@@ -1,9 +1,28 @@
-// 账号分区专属：危险动作按钮态（退出登录）
-// 基础 .settings-item__action 样式在窗口级 index.scss（与外观分区共用）
-.settings-item__action--danger {
-  color: var(--app-error);
+@use "../../../../shared/styles/widget" as widget;
 
-  &:hover {
-    border-color: currentcolor;
-  }
+/* 账号分区：危险动作按钮（退出登录）。
+   用组件库 Button 承载 + 清零点 mixin 重画 —— 原生按钮在暗色主题下不跟随
+   antd 的 darkAlgorithm，也没有焦点环与禁用语义（AGENTS §6.1.2）。 */
+.settings-account__logout.ant-btn {
+  @include widget.ant-button-reset;
+  --ant-control-height: 32px;
+  --ant-button-padding-inline: 14px;
+  --ant-button-content-font-size: 14px;
+  --ant-button-font-weight: 500;
+  --ant-border-radius: var(--app-radius-item);
+  --ant-line-width: 1px;
+  --ant-button-default-bg: var(--app-surface);
+  --ant-button-default-color: var(--app-error);
+  --ant-button-default-border-color: var(--app-border);
+  --ant-button-default-hover-bg: var(--app-error-weak);
+  --ant-button-default-hover-color: var(--app-error);
+  --ant-button-default-hover-border-color: var(--app-error);
+  --ant-button-default-active-bg: var(--app-error-weak);
+  --ant-button-default-active-color: var(--app-error);
+  --ant-button-default-active-border-color: var(--app-error);
+  --ant-button-default-shadow: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }

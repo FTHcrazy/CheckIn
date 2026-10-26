@@ -46,7 +46,6 @@ export default function DiagnosticSection() {
 
   return (
     <section className="settings-section">
-      <h2 className="settings-section__title">诊断</h2>
       <div className="settings-section__body">
         <div className="settings-item">
           <div className="settings-item__text">

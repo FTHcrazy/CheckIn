@@ -105,7 +105,7 @@ src/windows/XxxWindow/
 | **BaseWindow** | `windows/BaseWindow/` | `src/windows/BaseWindow/index.html` | 主窗口（full/lite 版），承载全部业务页面（路由在 `App.tsx`） |
 | **LoginWindow** | `windows/LoginWindow/` | `src/windows/LoginWindow/index.html` | 登录/欢迎窗口 |
 | **NovelWindow** | `windows/NovelWindow/` | `src/windows/NovelWindow/index.html` | 小说窗口（书架 + 编辑器）。形态随构建版本分叉：full 版即关即销、重新打开即全新实例；novel 版为主窗口，登录后唤起、关闭进托盘。数据由 `novel_*` 表持久化，崩溃恢复由会话标记驱动 |
-| **SettingsWindow** | `windows/SettingsWindow/` | `src/windows/SettingsWindow/index.html` | 全局设置窗口（外观 / 个人资料 / 账号，后续扩展字体、快捷键），即关即销、单实例唤起；全版本构建，入口在各自主窗标题栏（base/novel 均经 WindowHeader 的 `actions` 插槽） |
+| **SettingsWindow** | `windows/SettingsWindow/` | `src/windows/SettingsWindow/index.html` | 全局设置窗口（**左分类导航 + 右内容页**，固定 900×680，分区：外观 / AI 配置 / 快捷键 / 个人资料 / 账号 / 诊断），即关即销、单实例唤起；全版本构建，入口在各自主窗标题栏（base/novel 均经 WindowHeader 的 `actions` 插槽）。页面清单与页头文案的唯一事实源是 `App.tsx` 的 `PAGES` |
 | **PackWindow** | `windows/PackWindow/` | `src/windows/PackWindow/index.html` | 行囊独立窗口（novel 域：full / novel 打包，lite 不打包）。承载 `shared/components/CharacterPack` 宿主，单实例、即关即销；上下文经 `pack-window-context` / `novel-work-changed` 投递 |
 | **GlobalSettingWindow** | `windows/GlobalSettingWindow/` | `src/windows/GlobalSettingWindow/index.html` | 全局设定中心独立窗口（novel 域：full / novel 打包，lite 不打包）。复用 `shared/components/SettingCenter`（`source="global"`）呈现跨书共享库，单实例、即关即销、数据全在主进程 |
 | **RelationWindow** | `windows/RelationWindow/` | `src/windows/RelationWindow/index.html` | 人物关系网络独立窗口（novel 域：full / novel 打包，lite 不打包）。池子 + 力导向画布 + 详情卡三栏，单实例、即关即销；上下文经 `relation-window-context` 投递，画布记忆存 `novel_config` 单键，写关系走 `novel-graph-commit` 单事务并广播 `novel-links-changed` |
@@ -405,7 +405,7 @@ CheckIn/
 │   │   ├── PackWindow/                    # 行囊独立窗口（novel 域；index.html + main.tsx + App.tsx + index.scss）
 │   │   ├── GlobalSettingWindow/           # 全局设定中心独立窗口（novel 域；结构同 LoginWindow）
 │   │   ├── RelationWindow/                # 人物关系网络（novel 域；池子 + 画布 + 详情卡三栏）
-│   │   ├── SettingsWindow/                # 全局设置窗口（外观/个人资料/账号；全版本开放入口）
+│   │   ├── SettingsWindow/                # 全局设置窗口（双栏：左侧导航 + 外观/AI 配置/账号等页；固定 900×680）
 │   │   │   ├── index.html
 │   │   │   ├── main.tsx
 │   │   │   ├── App.tsx

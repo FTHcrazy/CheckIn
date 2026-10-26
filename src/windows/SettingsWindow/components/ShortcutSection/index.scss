@@ -83,7 +83,7 @@
 /* 恢复默认：次级描边按钮（清零后补齐高度 / 内边距 / 描边） */
 .settings-shortcut__reset.ant-btn {
   @include widget.ant-button-reset;
-  --ant-control-height: 30px;
+  --ant-control-height: 32px;
   --ant-button-padding-inline: 14px;
   --ant-button-content-font-size: 14px;
   --ant-button-font-weight: 500;
