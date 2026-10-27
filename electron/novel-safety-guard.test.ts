@@ -194,3 +194,33 @@ describe("整库备份 / 恢复的顺序约束（守卫）", () => {
     expect(write).toBeGreaterThan(guard);
   });
 });
+
+/**
+ * 作品题材（2.7.1）
+ *
+ * 题材是可选的 AI 风格锚点，最容易出的错不是「界面没有输入框」，而是
+ * **选了却没落库 / 落库了却没读回**（AI 拿到 undefined，界面看着又是选过的）。
+ * 这两处都没有任何报错，只能在源码级钉住。
+ */
+describe("作品题材：可空字段的全链路（守卫）", () => {
+  it("老库补 genre 列，且建表语句本身也带这一列", () => {
+    expect(DB).toContain("ALTER TABLE novel_works ADD COLUMN genre TEXT");
+    expect(DB).toMatch(/CREATE TABLE IF NOT EXISTS novel_works[\s\S]*?\bgenre TEXT/);
+  });
+
+  it("新建作品落 genre、装载读回 genre（中间断一环 = 选了也白选）", () => {
+    const add = channelBody(HANDLERS, "novel-work-add");
+    expect(add).toContain("INSERT INTO novel_works");
+    expect(add).toMatch(/normalizeGenre\(work\.genre\)/);
+
+    const load = channelBody(HANDLERS, "novel-editor-load");
+    expect(load).toMatch(/genre:\s*row\.genre/);
+  });
+
+  it("空题材归一为 NULL：'' 与「未设置」不能是两种状态", () => {
+    expect(HANDLERS).toMatch(/function normalizeGenre\(/);
+    expect(channelBody(HANDLERS, "novel-work-set-genre")).toContain(
+      "normalizeGenre(genre)",
+    );
+  });
+});

@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import {
   BgColorsOutlined,
   BugOutlined,
   ControlOutlined,
+  HistoryOutlined,
   IdcardOutlined,
   RobotOutlined,
   SafetyOutlined,
@@ -18,6 +19,7 @@ import AccountSection from "./components/AccountSection";
 import ShortcutSection from "./components/ShortcutSection";
 import DiagnosticSection from "./components/DiagnosticSection";
 import AISection from "./components/AISection";
+import AILogSection from "./components/AILogSection";
 
 /**
  * SettingsWindow —— 全局设置窗口（全版本开放入口）。
@@ -35,6 +37,7 @@ import AISection from "./components/AISection";
  * 各页职责：
  * - components/AppearanceSection  外观（主题色）
  * - components/AISection          AI 配置（**仅 full/novel 版**，见下方门控）
+ * - components/AILogSection       AI 调用记录（同上；只读，用来调 prompt）
  * - components/ProfileSection     个人资料（邮箱编辑，原 BaseWindow UserPage 迁移）
  * - components/AccountSection     账号（邮箱展示 / 退出登录）
  * - components/ShortcutSection    快捷键（**仅开发版与小说版**，见下方门控）
@@ -95,6 +98,17 @@ const AI_PAGES: SettingsPageDef[] = SHOW_AI
         group: "通用",
         render: () => <AISection />,
       },
+      {
+        // 记录与配置拆成两页：配置是「设一次」的动作，记录是「反复回看」的动作，
+        // 混在一页会让长列表把保存按钮淹掉（见 AILogSection 的注释）
+        id: "ai-log",
+        label: "AI 记录",
+        title: "AI 调用记录",
+        description: "每次起名 / 润色的提示词与输出回看，用来对比调优。记录只存本机。",
+        icon: <HistoryOutlined />,
+        group: "通用",
+        render: () => <AILogSection />,
+      },
     ]
   : [];
 
@@ -136,7 +150,7 @@ const DIAGNOSTIC_PAGE: SettingsPageDef = {
   id: "diagnostic",
   label: "诊断",
   title: "诊断",
-  description: "本地日志与 IPC 记录，排查问题时用来留证据。",
+  description: "本地日志（含 IPC 通信与 AI 调用记录），排查问题时用来留证据。",
   icon: <BugOutlined />,
   group: "高级",
   render: () => <DiagnosticSection />,
@@ -165,6 +179,28 @@ const NAV_GROUPS: SettingsNavGroup[] = GROUP_ORDER.map((title) => ({
 export default function SettingsWindowApp() {
   const [activeId, setActiveId] = useState(PAGES[0].id);
   const active = PAGES.find((page) => page.id === activeId) ?? PAGES[0];
+
+  /**
+   * 跨窗口跳页：其它窗口发 `settings-section-jump`（起名面板的「去设置」用它）。
+   *
+   * 只接受 `PAGES` 里真实存在的 id —— lite 版没有 AI 页，一条指向 `ai` 的消息
+   * 落下来会变成一个空白内容区，所以无效 id 一律忽略（保持当前页）。
+   * preload 的 `windowAPI.on` 会在挂载时补投一次待投递消息，因此窗口刚被拉起
+   * 也不会丢掉这条跳转。
+   */
+  useEffect(() => {
+    const api = window.electronAPI?.windowAPI;
+    if (!api) return;
+    const handler = (...args: unknown[]) => {
+      const payload = args[0] as { section?: unknown } | undefined;
+      const section = typeof payload?.section === "string" ? payload.section : "";
+      if (!section) return;
+      if (!PAGES.some((page) => page.id === section)) return;
+      setActiveId(section);
+    };
+    api.on("settings-section-jump", handler);
+    return () => api.off("settings-section-jump", handler);
+  }, []);
 
   return (
     <div className="window-shell">

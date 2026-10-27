@@ -156,7 +156,9 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
-    flex: 0 0 auto;
+    // 撑满主区剩余高度：底部不再留白，卡片行均分拉伸
+    flex: 1 1 auto;
+    min-height: 0;
   }
 
   &__section-title {
@@ -164,17 +166,137 @@
     font-size: 14px;
     font-weight: 600;
     color: var(--app-text-secondary);
+    flex: 0 0 auto;
   }
 
   &__grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     gap: 14px;
+    flex: 1 1 auto;
+    min-height: 0;
+    // 行高均分剩余空间：既保底 min-content，又把空余高度摊给各卡片行
+    grid-auto-rows: minmax(min-content, 1fr);
   }
 
   &__empty {
     padding: 24px 0;
     background: var(--app-surface);
     border-radius: var(--app-radius-panel);
+  }
+}
+
+// ── 最小窗口尺寸（960×600）下的紧凑化：不出现滚动条 ──
+// 宽度收窄：压缩留白与字号，统计卡/功能卡保持单行密度
+@media (max-width: 1024px) {
+  .home-page {
+    padding: 8px;
+    gap: 10px;
+
+    &__main {
+      gap: 10px;
+      padding: 4px 8px 8px;
+      overflow: auto; // 紧凑后内容应完整容纳；放得下就不会出现滚动条
+    }
+
+    &__greeting {
+      font-size: 17px;
+    }
+
+    &__date {
+      margin-top: 2px;
+    }
+
+    &__search {
+      width: 200px;
+    }
+
+    &__quick {
+      gap: 8px;
+    }
+
+    &__quick-btn {
+      height: 30px;
+      padding: 0 12px;
+      font-size: 13px;
+    }
+
+    &__section {
+      gap: 8px;
+    }
+
+    &__grid {
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 10px;
+    }
+  }
+
+  .feature-card {
+    padding: 12px;
+    gap: 10px;
+
+    &__icon {
+      width: 34px;
+      height: 34px;
+      font-size: 17px;
+    }
+
+    &__title {
+      font-size: 14px;
+    }
+  }
+}
+
+// 高度受限：适度压缩纵向密度，确保 600px 高度内完整容纳且不过分空旷
+@media (max-height: 680px) {
+  .home-page {
+    padding: 10px;
+    gap: 12px;
+
+    &__main {
+      gap: 14px;
+      padding: 6px 10px 10px;
+      overflow: auto; // 紧凑后内容应完整容纳；放得下就不会出现滚动条
+    }
+
+    &__greeting {
+      font-size: 18px;
+    }
+
+    &__date {
+      margin-top: 2px;
+    }
+
+    &__quick-btn {
+      height: 32px;
+      padding: 0 14px;
+      font-size: 13px;
+    }
+
+    &__section {
+      gap: 10px;
+    }
+
+    &__grid {
+      gap: 12px;
+    }
+  }
+
+  .home-stats__item {
+    padding: 10px 12px;
+  }
+
+  .feature-card {
+    padding: 14px;
+
+    &__icon {
+      width: 36px;
+      height: 36px;
+      font-size: 18px;
+    }
+
+    &__desc {
+      font-size: 12px;
+    }
   }
 }

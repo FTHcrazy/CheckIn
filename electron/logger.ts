@@ -6,7 +6,9 @@
  *   不同登录用户的日志永远不混在一个目录里。
  * - **按窗口分目录**：`{logsRoot}/{窗口名}/YYYY-MM-DD.log`，排查时先按窗口收敛范围。
  * - **每行自带定位标识**：`时间(毫秒) [级别] [窗口] [模块] 正文 {meta}`。
- * - **IPC 通信单独一个文件**：`ipc.log`，避免高频通信把业务日志淹没。
+ * - **一个窗口一个文件**：IPC 通信记录不再单独成 `ipc.log`，而是按 DEBUG 级别
+ *   并入所属窗口当天的 `YYYY-MM-DD.log`——排查时「业务日志 + 通信日志」在同一条
+ *   时间轴上，不必再对着两个文件拼时序。
  *
  * 为什么不用 log4js：主进程产物是单文件 CJS bundle，引入第三方库要么打进 bundle
  * 增加体积、要么进 external 后必须随 asar 一起分发；而这里只需要「按天分文件 +
@@ -46,7 +48,7 @@ const LEVEL_WEIGHT: Record<LogLevel, number> = {
 export interface LogSettings {
   /** 主日志文件的最低级别 */
   level: LogLevel;
-  /** 是否记录 IPC 通信（写 ipc.log，与主日志分开） */
+  /** 是否记录 IPC 通信（DEBUG 级别，并入所属窗口当天日志） */
   ipc: boolean;
   /** 日志保留天数，超期文件在启动/跨天时清理 */
   retentionDays: number;
@@ -101,7 +103,7 @@ function streamFor(dir: string, fileName: string): fs.WriteStream {
   return stream;
 }
 
-/** 跨天时把旧句柄关掉，避免句柄一直指向昨天的文件（`ipc.log` 不按天切，始终保留） */
+/** 跨天时把旧句柄关掉，避免句柄一直指向昨天的文件 */
 function dropStaleStreams(dir: string, keepFileNames: readonly string[]): void {
   for (const [key, handle] of streams) {
     if (path.dirname(key) !== dir) continue;
@@ -140,15 +142,14 @@ function writeLine(
   moduleName: string,
   message: string,
   meta: unknown,
-  target: "main" | "ipc",
 ): void {
   try {
     const root = resolveLogRoot();
     const now = new Date();
     const dir = path.join(root, sanitizeSegment(windowName));
-    const fileName = target === "ipc" ? "ipc.log" : formatLogFileName(now);
+    const fileName = formatLogFileName(now);
     pruneIfNeeded(root, now);
-    dropStaleStreams(dir, [formatLogFileName(now), "ipc.log"]);
+    dropStaleStreams(dir, [fileName]);
     streamFor(dir, fileName).write(
       `${formatLogLine({
         date: now,
@@ -167,7 +168,13 @@ function writeLine(
 
 // ── 对外 API ────────────────────────────────────────────────────
 
-/** 主日志：受 `settings.level` 控制 */
+/**
+ * 主日志：受 `settings.level` 控制
+ *
+ * 绝大多数场景用它。「高价值但默认级别看不见」的线索（IPC / AI 调用）走
+ * `logAlways`，别把 `level` 调成 debug 当成唯一出路 —— 那会顺手把所有模块的
+ * 流水都打开，一天几十万行。
+ */
 export function log(
   level: LogLevel,
   windowName: string,
@@ -176,10 +183,32 @@ export function log(
   meta?: unknown,
 ): void {
   if (LEVEL_WEIGHT[level] < LEVEL_WEIGHT[settings.level]) return;
-  writeLine(level, windowName, moduleName, message, meta, "main");
+  writeLine(level, windowName, moduleName, message, meta);
 }
 
-/** IPC 通信日志：写 `ipc.log`，不受主日志级别影响，只看 `settings.ipc` 开关 */
+/**
+ * 无视 `settings.level` 阈值的一条记录（仍写进所属窗口当天日志）。
+ *
+ * 用量极克制：目前只有 IPC 与 AI 调用用它，理由是「默认 info 级别下如果它们
+ * 全消失，排查调不通 / 模型乱答时就没有任何线索」。**不要**拿它当普通日志用——
+ * 它绕过了用户亲手设的级别，滥用等于把级别设置废掉。
+ */
+export function logAlways(
+  level: LogLevel,
+  windowName: string,
+  moduleName: string,
+  message: string,
+  meta?: unknown,
+): void {
+  writeLine(level, windowName, moduleName, message, meta);
+}
+
+/**
+ * IPC 通信日志：并入所属窗口当天日志，模块名固定 `ipc`。
+ *
+ * 不受主日志级别阈值过滤（只看 `settings.ipc` 开关）——否则默认 info 级别下
+ * 通信记录会全部消失，而它恰恰是排查「渲染层调不通主进程」的唯一线索。
+ */
 export function logIpc(params: {
   window: string;
   channel: string;
@@ -193,14 +222,8 @@ export function logIpc(params: {
   const parts = [`${direction} ${channel}`];
   if (ok === false) parts.push("FAILED");
   if (typeof durationMs === "number") parts.push(`${Math.round(durationMs)}ms`);
-  writeLine(
-    ok === false ? "warn" : "debug",
-    win,
-    "ipc",
-    parts.join(" "),
-    detail,
-    "ipc",
-  );
+  // 与 AI 记录共用同一条「绕过 level 阈值」的出口，别再各写一份
+  logAlways(ok === false ? "warn" : "debug", win, "ipc", parts.join(" "), detail);
 }
 
 /** 生成绑定了窗口名的便捷 logger（窗口创建处用它，省得每处都传窗口） */

@@ -63,6 +63,8 @@ export interface NovelWork {
   id: string;
   name: string;
   createdAt: number;
+  /** 题材（可选）：AI 起名 / 润色的风格锚点；未设置时 AI 层按书名 + 要素弱兜底 */
+  genre?: string;
 }
 
 /** 分卷（PRD R9） */

@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { fireEvent, render, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { generateNames } from "../../naming/name-generator";
@@ -12,6 +14,7 @@ vi.mock("../../naming/name-generator", async (importOriginal) => {
 
 const buildActions = (): NamingActions => ({
   onInsertToEditor: vi.fn(),
+  onInsertMeaning: vi.fn(),
   onCreateCharacter: vi.fn(),
   onAddFavorite: vi.fn(),
   onRemoveFavorite: vi.fn(),
@@ -75,5 +78,42 @@ describe("NameGeneratorPanel 组件", () => {
     const calls = vi.mocked(generateNames).mock.calls;
     const last = calls[calls.length - 1][0];
     expect(last.style).toBe("westernModern");
+  });
+});
+
+/**
+ * 窄面板布局守卫。
+ *
+ * 真缺陷：侧栏最窄 280px（内容区约 255px）时，结果栅格死写两列 → 每列约 124px，
+ * 卡内 5 颗 24px 图标按钮恰好需要 124px，再加内边距必然溢出，被 `__scroll` 的
+ * `overflow-x: hidden` 直接裁掉（名字与按钮都被切一半）。这类问题 jsdom 量不出来
+ * （没有真实排版），只能在源码上钉住「不许写死列数」。
+ */
+describe("起名面板：窄面板不得截断结果卡（布局守卫）", () => {
+  const scss = readFileSync(path.resolve(__dirname, "index.scss"), "utf8").replace(
+    /\r\n/g,
+    "\n",
+  );
+
+  /** 取某个 `&__x {` 规则的声明体（到缩进两格的 `}` 为止） */
+  const blockOf = (selector: string): string => {
+    const start = scss.indexOf(selector);
+    expect(start).toBeGreaterThan(-1);
+    const open = scss.indexOf("{", start);
+    const end = scss.indexOf("\n  }", open);
+    return scss.slice(open, end);
+  };
+
+  it("结果栅格按可用宽度自适应，不写死两列", () => {
+    const grid = blockOf("&__grid {");
+    expect(grid).toMatch(/repeat\(auto-fill, minmax\(\d+px, 1fr\)\)/);
+    expect(grid).not.toContain("repeat(2, 1fr)");
+    expect(grid).not.toContain("1fr 1fr");
+  });
+
+  it("操作行允许折行兜底，按钮不被压缩", () => {
+    const acts = blockOf("&__acts {");
+    expect(acts).toContain("flex-wrap: wrap");
+    expect(acts).toContain("flex: none");
   });
 });

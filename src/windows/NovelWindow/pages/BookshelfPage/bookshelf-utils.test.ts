@@ -7,6 +7,7 @@ import {
   filterIdeaNotes,
   filterWorkCards,
   formatDayLabel,
+  formatGenreLabel,
   formatNumberedLabel,
   formatRelativeTime,
   formatWordsCompact,
@@ -115,6 +116,25 @@ describe("buildWorkCards", () => {
 
     const w2 = cards.find((card) => card.id === "w2")!;
     expect(w2.status).toBe("finished");
+  });
+
+  it("题材透传到书卡；未设置的作品不产出 genre 字段", () => {
+    const cards = buildWorkCards(
+      makeBundle({
+        works: [
+          { id: "w1", name: "山海拔迹", createdAt: 1, genre: "仙侠" },
+          { id: "w2", name: "测试协议", createdAt: 2 },
+          { id: "w3", name: "空白题材", createdAt: 3, genre: "  " },
+        ],
+      }),
+    );
+    expect(cards.find((card) => card.id === "w1")!.genre).toBe("仙侠");
+    // 空串 / 纯空格都不算「有题材」，书卡走「未归属」口径
+    expect(cards.find((card) => card.id === "w2")!.genre).toBeUndefined();
+    expect(cards.find((card) => card.id === "w3")!.genre).toBe("  ");
+    expect(formatGenreLabel(cards.find((card) => card.id === "w3")!.genre)).toBe(
+      "题材：未归属",
+    );
   });
 
   it("排序：最近更新沉底未动笔作品，创建时间与字数可切换", () => {

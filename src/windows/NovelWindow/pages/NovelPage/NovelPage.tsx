@@ -162,6 +162,7 @@ export default function NovelPage({
     handleScrollChange,
     handleCreateWork,
     handleRenameWork,
+    handleSetWorkGenre,
     handleDeleteWork,
     handleResetTemplate,
     handleDeleteChapter,
@@ -179,6 +180,7 @@ export default function NovelPage({
     namingActions,
     namingExclude,
     namingFavorites,
+    namingBook,
     protagonistEntityId,
     handleSetProtagonist,
     openPackWindow,
@@ -600,6 +602,7 @@ export default function NovelPage({
             onSelectWork={(workId) => void handleSelectWork(workId)}
             onCreateWork={handleCreateWork}
             onRenameWork={handleRenameWork}
+            onSetWorkGenre={handleSetWorkGenre}
             onDeleteWork={handleDeleteWork}
             onResetTemplate={() => void handleResetTemplate()}
             onExportBook={() => void handleExportBook()}
@@ -799,6 +802,7 @@ export default function NovelPage({
             namingActions={namingActions}
             namingExclude={namingExclude}
             namingFavorites={namingFavorites}
+            namingBook={namingBook}
             onNotify={view.showToast}
             chapters={data.chapters}
             toolSub={view.toolSub}

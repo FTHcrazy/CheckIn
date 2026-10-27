@@ -935,12 +935,22 @@ interface WindowSendResult {
 const WINDOW_CREATORS: Record<string, () => BrowserWindow> = {
   novel: createNovelWindow,
   relation: createRelationWindow,
+  // settings 全版本都打包：起名面板的「去设置」（R-AI-02 FR-04）要能从其它窗口
+  // 直接唤起并跳到 AI 页，走的就是 sendTo 的「没开就先拉起 + 入队补投」这条路
+  settings: createSettingsWindow,
 };
+
+/**
+ * 全版本都可被拉起的窗口（lite 版也打包）。
+ * 其余窗口（novel / relation）在 lite 版不存在，假装拉起只会得到黑屏。
+ */
+const CROSS_EDITION_WINDOWS: ReadonlySet<string> = new Set(["settings"]);
 
 /** 这个版本是否打包了该窗口（能被一条跨进程消息拉起来） */
 function canCreateWindow(target: string): boolean {
-  // lite 版不打包 NovelWindow / RelationWindow，拉起不存在的入口只会黑屏
-  return Boolean(WINDOW_CREATORS[target]) && EDITION !== "lite";
+  if (!WINDOW_CREATORS[target]) return false;
+  if (CROSS_EDITION_WINDOWS.has(target)) return true;
+  return EDITION !== "lite";
 }
 
 /** 真正创建窗口；返回 false = 创建失败（已记日志） */

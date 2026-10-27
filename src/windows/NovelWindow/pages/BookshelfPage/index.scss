@@ -117,6 +117,23 @@
     line-height: 1.5;
   }
 
+  // 新建作品两步（2.7.1）：步骤条只作进度提示，不与弹窗标题抢注意力
+  &__create-steps {
+    margin-bottom: 16px;
+  }
+
+  // 题材输入：与弹窗同宽（预设下拉的浮层由 antd 自己贴到输入框上）
+  &__create-genre {
+    width: 100%;
+  }
+
+  &__create-hint {
+    margin: 8px 0 0;
+    color: var(--app-text-muted);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
   &__status {
     display: flex;
     align-items: center;

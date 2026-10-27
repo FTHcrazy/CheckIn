@@ -39,6 +39,7 @@ import {
   saveSettingCategoryOrder as saveSettingCategoryOrderRemote,
   saveSettingLevelOrder as saveSettingLevelOrderRemote,
   saveVolumeOrder,
+  setWorkGenre as setWorkGenreRemote,
   searchAcrossBook,
   setChapterStatus,
   splitSettingLevel as splitSettingLevelRemote,
@@ -966,15 +967,22 @@ export function useNovelData() {
 
   // ── 作品管理（R29） ────────────────────────────────────────────────
 
-  /** 新建作品：本地先建并切为当前作品（空作品由「写下第一章」兜底），异步落库 */
+  /**
+   * 新建作品：本地先建并切为当前作品（空作品由「写下第一章」兜底），异步落库。
+   *
+   * `genre` 是有值才写的可选字段：不传 / 空串 = 未设置题材，AI 层按书名 +
+   * 要素弱兜底（题材不是建书的必经步骤）。
+   */
   const createWork = useCallback(
-    (name: string): NovelWork | null => {
+    (name: string, genre?: string): NovelWork | null => {
       const trimmed = name.trim();
       if (!trimmed || !bundle) return null;
+      const genreDraft = genre?.replace(/\s+/g, " ").trim();
       const work: NovelWork = {
         id: createNovelId("w"),
         name: trimmed,
         createdAt: Date.now(),
+        ...(genreDraft ? { genre: genreDraft } : {}),
       };
       setBundle((current) =>
         current ? { ...current, works: [...current.works, work] } : current,
@@ -1002,6 +1010,28 @@ export function useNovelData() {
         : current,
     );
     void renameWorkRemote(workId, trimmed);
+    return true;
+  }, []);
+
+  /**
+   * 设置作品题材（空串 = 清空）。
+   * 题材是 AI 起名 / 润色的风格锚点，**允许建书时跳过、之后随时补** —— 所以
+   * 它单独一条通道，而不是塞进「重命名」里连带保存。
+   */
+  const setWorkGenre = useCallback((workId: string, genre: string): boolean => {
+    if (!workId) return false;
+    const trimmed = genre.replace(/\s+/g, " ").trim();
+    setBundle((current) =>
+      current
+        ? {
+            ...current,
+            works: current.works.map((work) =>
+              work.id === workId ? { ...work, genre: trimmed || undefined } : work,
+            ),
+          }
+        : current,
+    );
+    void setWorkGenreRemote(workId, trimmed || null);
     return true;
   }, []);
 
@@ -2176,6 +2206,7 @@ export function useNovelData() {
     consumeLastPosition,
     createWork,
     renameWork,
+    setWorkGenre,
     deleteWork,
     resetTemplate,
     updateChapterContent,

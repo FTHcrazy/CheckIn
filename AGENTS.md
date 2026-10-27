@@ -123,7 +123,7 @@ src/windows/XxxWindow/
 
 | 模块 | 路径 | 职责 |
 |------|------|------|
-| **components** | `shared/components/` | 跨窗口共享 UI：Page（页面容器）、NavHeader（导航栏）、WindowHeader（窗口标题栏）、ThemeSwitcher、SettingCenter、CharacterPack 等（完整清单以目录为准） |
+| **components** | `shared/components/` | 跨窗口共享 UI：Page（页面容器）、WindowHeader（窗口标题栏，含左侧 `leading` 导航插槽）、ThemeSwitcher、SettingCenter、CharacterPack 等（完整清单以目录为准） |
 | **services** | `shared/services/` | 数据访问：daily.ts、code.ts、checkin.ts、ledger.ts、news.ts、novel-shared.ts（完整清单以目录为准） |
 | **ipc** | `shared/ipc/` | 窗口级 IPC 桥接注册（显式调用，带防重复守卫） |
 | **types** | `shared/types/` | 全局类型：electron.d.ts（window.electronAPI） |
@@ -135,7 +135,7 @@ src/windows/XxxWindow/
 
 #### 2.2.1.1 组件分层规范：全局组件 vs 当前模块组件
 
-- **全局组件**：放置于 `src/shared/components/`，用于跨窗口/跨页面复用的通用 UI，如 `Page`、`NavHeader`、`WindowHeader` 等。
+- **全局组件**：放置于 `src/shared/components/`，用于跨窗口/跨页面复用的通用 UI，如 `Page`、`WindowHeader` 等。
 - **当前模块组件**：放置于各页面目录内的 `components/`，仅供该页面或该模块内部使用，如 `TodoPage/components/NoteModal/`。
 - **组件必须以文件夹形式存在**：每个组件都应为独立目录，目录内统一管理其逻辑、样式和入口，禁止出现“单文件组件 + 兄弟样式文件”的散乱结构。
 - **样式统一命名**：组件目录中的样式文件必须统一命名为 `index.scss`，并在组件入口文件中统一引入。
@@ -160,14 +160,36 @@ src/windows/XxxWindow/
 
 #### 2.2.2.1 AI 服务层 (`shared/ai/`)
 
-横向复用的 AI 能力层（R-AI 系列落地，详见 `docs/prd/prd-ai-config/ai-architecture-decision.md`）。
+横向复用的 AI 能力层（R-AI 系列落地，详见 `docs/archive/prd-ai/ai-architecture-decision.md`）。
 
 | 文件 | 职责 |
 |------|------|
-| `ai-client.ts` | 唯一调用入口：`getAiConfig` / `saveAiConfig` / `testAiConnection` / `aiGenerate`，转交 `window.electronAPI.ai` |
-| `ai-context.ts` | 纯函数拼装提示词（`buildNamingPrompt` / `buildPolishPrompt` 等），**不 import novel、不解释业务语义** |
+| `ai-client.ts` | 唯一调用入口：`getAiConfig` / `saveAiConfig` / `testAiConnection` / `aiGenerate` / `aiGenerateStructured`，转交 `window.electronAPI.ai`；结构化解析在本层完成（主进程不感知业务结构） |
+| `context/collector.ts` | 纯函数采集：`BookSnapshot → AiBookContext`，按 intent 裁剪与截断；`matchEntitiesInText` 反向匹配命中人物卡 |
+| `context/prompt/` | **提示词唯一产地**：`sections.ts` 公共段落（角色 / 作品背景 / 要素 / 境界 / 人物 / 章节片段 / 约束 / 输出契约）+ `naming.ts` / `polish.ts` 各功能模板 + `registry.ts` 注册表（`PROMPT_BUILDERS` / `buildPromptSpec`） |
+| `context/output-spec.ts` | 输出契约：`OutputFormat`（text / json-array）+ 格式指令生成 + 三层解析兜底 |
 | `ai-types.ts` | 渲染层可见的 IPC 类型契约（与主进程 `ai-handlers.ts` DTO 一对一） |
 | `ai-errors.ts` | 错误码 → 文案映射 + 是否「配置类错误」归类 |
+
+**扩展方式（强烈约束）**：新增 AI 功能 = 新增一个 `context/prompt/xxx.ts` 模板
+（并在 `prompt/registry.ts` 登记一行）+ 一个 `collectBookContext` 的 intent 分支。
+**服务层、`ai-client`、主进程 `ai-handlers` 一行不改**；若发现要改它们，说明抽象漏了，
+先修抽象再写功能。
+
+**⚠️ 提示词只许有一个产地（2.8.0）**：早期 `ai-context.ts` 的
+`buildNamingPrompt` / `buildPolishPrompt` 已并入 `context/prompt/`，文件本身删除
+（原 `assembler.ts` 也一并拆入该目录）。**禁止在业务组件里手拼 system prompt，
+也禁止再开第二套模板文件**——两套 prompt 必然漂移（改了一处忘另一处，线上表现是
+「同一个功能换个入口就换个说话方式」）。调 prompt 时改 `prompt/sections.ts`（公共段落）
+或对应模板文件；调用方统一经 `buildPromptSpec(intent, context, payload)` 取 spec，
+新增意图只需在 `prompt/registry.ts` 登记一行（守卫 `prompt/prompt.test.ts`）。
+
+**⚠️ 模型返回的自由文本必须先过一遍后处理再用（2.8.1）**：`output-spec.ts` 的
+`alignParagraphBreaks(text, original)` 按**原文**的分段习惯归一空行——润色结果是按选区
+整段回填的，模型爱在段间插空行，多出来的空行只能由作者一行行手删。**禁止把
+`result.data.text.trim()` 直接回填正文**；同理禁止在业务层自己写一套正则收敛空行
+（口径会分叉：有的一行行删、有的干脆并段）。`text` 类输出契约另有
+`parseOutput` 负责结构化，两者互不替代。
 
 **铁律（后续每个 AI 功能都必须遵守）**：
 - **功能面板只 import `shared/ai/`，不直接触碰 `window.electronAPI.ai`**。
@@ -201,7 +223,7 @@ src/windows/XxxWindow/
 **页面模块边界**：
 - 页面之间**无直接依赖**，通过路由跳转
 - 页面私有子组件**禁止**被其他页面导入
-- 共享组件（Page, NavHeader）放在 `shared/components/`，所有页面可用
+- 共享组件（Page, WindowHeader）放在 `shared/components/`，所有页面可用
 
 ---
 
@@ -413,7 +435,7 @@ CheckIn/
 │   │   │   ├── components/                # 各页分区 + 两条公共原语（SettingsNav 导航 / SettingsActionBar 底部操作条）
 │   │   │   └── styles/settings-controls.scss  # 窗口级按钮原语（次级 / 危险 / 主色三态，分区只挂类名）
 │   └── shared/                            # 跨窗口共享层
-│       ├── components/                    # 共享 UI（Page、NavHeader、WindowHeader、ThemeSwitcher…）
+│       ├── components/                    # 共享 UI（Page、WindowHeader、ThemeSwitcher…）
 │       ├── services/                      # 数据服务（daily.ts、code.ts、checkin.ts、ledger.ts、news.ts、novel-shared.ts）
 │       ├── ipc/                           # 窗口级 IPC 桥接（activityNotifyBridge.ts）
 │       ├── types/                         # 全局类型（electron.d.ts）
@@ -938,6 +960,30 @@ SettingsWindow 的「外观」分区是全版本共用的设置面板（full/nov
 | `CharacterPack/styles/pack-widget.scss` | 「清零点」mixin（自带造型控件复用） |
 | `CharacterPack/pack-ui-kit.test.ts` | 守卫测试：源码里不得出现原生表单控件、自带造型控件必须以 `.ant-btn` 承载 |
 
+#### 可伸缩容器内的栅格：禁止写死列数（2.8.1 新增）
+
+右栏支撑面板的宽度是用户可拖的（`SupportPanel` 280–460px），**任何放在里面的栅格都不能写
+`repeat(2, 1fr)`**。死写列数在窄宽度下会把每格压到内容最小宽度以下，而外层滚动区是
+`overflow-x: hidden` —— 溢出部分被**静默裁掉**，不报错、不出滚动条，只是「按钮少了一半」。
+
+统一写法：
+
+```scss
+&__grid {
+  display: grid;
+  /* 显式下限挡住内容反向撑列；1fr 等价 minmax(auto, 1fr)，auto 会取内容最小尺寸 */
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: 6px;
+}
+```
+
+判定口径：列宽的**下限要 ≥ 卡片内最刚性那一行**（一排 5 颗 24px 图标按钮 + `gap` ≈ 124px，
+加上卡片左右内边距 19px 与边框 2px → 145px）。再给该行补 `flex-wrap: wrap` + 子项
+`flex: none` 作第二道兜底：宁可折行，也不要横向溢出。
+
+⚠️ jsdom 量不出布局，这类问题只能靠「源码守卫 + 真实宽度实测」兜住
+（`NameGeneratorPanel/index.test.tsx`「窄面板不得截断结果卡」两例钉死写法）。
+
 ### 6.1.3 动效与立体感规范（motion / elevation）
 
 > 完整背景见 `docs/archive/visual-polish/novel-visual-polish-plan.md`（已归档过程稿，本节为准）。定位锚点：柔和 · 轻量 · 卡片式 · 桌面 · 写作工具。
@@ -1191,6 +1237,19 @@ ipcMain.handle('memo-read', async (_event, filename: string) => { ... });
 | 渲染层（组件、hook） | `rendererLog.info/warn/error(module, msg, meta)`（`src/shared/log/renderer-logger.ts`） |
 | 渲染期异常 | `ErrorBoundary`（已装在六个窗口入口） |
 | IPC | 不要手写 —— `preload` 的 `trackedInvoke` 已统一记失败与慢调用 |
+| AI 调用 | `ai-handlers` 已内置：`ai_log` 表 + 本地 `DEBUG` 级日志（模块名 `ai`） |
+
+**⚠️ 只有一个日志文件（2.7.0 起）**：早先 IPC 通信单独写 `ipc.log`，排查时要拿
+「业务流水」和「通信流水」两处对时序，反而更慢。现在**一律并入所属窗口当天的
+`YYYY-MM-DD.log`**，靠模块列区分来源：`[ipc]` / `[ai]` / 业务模块名。新增日志类型
+不要再开新文件，加模块名即可。
+
+**⚠️ 绕过 level 阈值只有一个出口：`logAlways`（2.8.0 起）**。IPC 与 AI 调用按 **DEBUG**
+级用 `logAlways` 写入，**不受 `settings.level` 过滤**（IPC 另受「记录 IPC」开关控制，AI 恒记）
+——否则默认 `info` 下它们会整批消失，而那正是排查「调不通 / 模型乱答」的唯一线索。
+这是**刻意让用户设的级别失效**的一处例外，只给这两类线索用：普通业务日志一律走 `log()`，
+把 `level` 调成 `debug` 不是「看到 AI 日志」的办法（那会顺手打开所有模块的流水）。
+详见守卫 `electron/ai-log-guard.test.ts`。
 
 **硬性约束**：
 
@@ -1207,7 +1266,8 @@ ipcMain.handle('memo-read', async (_event, filename: string) => { ... });
 5. ⚠️ **`registerLogHandlers()` 里不许读用户配置**：它注册在 `switchUserDb` **之前**，
    此时用户库还没打开。配置读取走导出的 `loadLogSettings()`，由 `main.ts` 在切库后调。
 6. **量控制**：默认 `level: info`，IPC 只记失败 + 耗时 > 300ms（`SLOW_IPC_MS`），
-   否则 `ipc.log` 会被正常流水刷爆。新增高频路径日志前先问「这条每天都打几万次吗」。
+   否则窗口日志会被正常流水刷爆。新增高频路径日志前先问「这条每天都打几万次吗」。
+   AI 调用日志同理：prompt / output 各只留 600 字预览，禁止整段落盘。
 7. 进程级 `uncaughtException` / `unhandledRejection` **只记录不退出** —— 直接退出会丢掉
    用户未保存的正文，比崩溃本身更严重。
 
@@ -1723,7 +1783,7 @@ function initializeDataDb(db: Database) {
 
   > **AI 业务的刻意豁免（R-AI 系列，2026-10 落地）**：AI 请求（`ai-handlers`）
   > **仍在主进程发起**，不适用上面的「渲染进程发起」契约。豁免的是「谁发 HTTP」
-  > 这一条，理由（详见 `docs/prd/prd-ai-config/ai-architecture-decision.md` 五·A）：
+  > 这一条，理由（详见 `docs/archive/prd-ai/ai-architecture-decision.md` 五·A）：
   > ① API Key 永不下放渲染进程（`safeStorage` 加密存 ai.db，解密只发生在主进程），
   > ② AI 端点由用户自填、无法像已知 API 那样在会话层统一放行 CORS，
   > ③ 长时流式（`protocol.handle` 内部端点）需要主进程统一管理连接生命周期。

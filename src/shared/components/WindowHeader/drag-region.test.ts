@@ -45,7 +45,9 @@ describe("窗口拖动带（构建前提）", () => {
     expect(source).toMatch(/\.window-header\s*\{[^}]*-webkit-app-region:\s*drag/);
   });
 
-  it("标题栏自带的两处 no-drag 仍在（别被顺手删掉）", () => {
+  it("标题栏自带的 no-drag 区域仍在（别被顺手删掉）", () => {
+    // leading 里放的是页间导航按钮，漏掉 no-drag 会变成「点了没反应」
+    expect(css).toMatch(/\.window-header__leading[^{]*\{[^}]*-webkit-app-region: no-drag/);
     expect(css).toMatch(/\.window-header__actions[^{]*\{[^}]*-webkit-app-region: no-drag/);
     expect(css).toMatch(
       /\.window-header__controls[^{]*\{[^}]*-webkit-app-region: no-drag/,

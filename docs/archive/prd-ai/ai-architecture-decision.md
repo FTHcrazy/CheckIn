@@ -1,5 +1,11 @@
 # AI 服务层架构决策
 
+> **已归档 · 2026-10-27 · 闭环版本 2.8.1**
+> 本文为过程留档，**不再修改**（结论与当时的判断依据原样保留）。
+> 现行为准的去处：代码本身；后续 AI 功能排期见
+> [`ai-roadmap-batch-plan.md`](../../prd/prd-ai-roadmap/ai-roadmap-batch-plan.md)。
+
+
 - **状态**：草案
 - **输入**：`prd-ai-config/ai-model-config-scope.md`（R-AI-01 配置层）；`prd-ai-config/ai-naming-enhancement-prd.md`（R-AI-02 起名增强）；`prd-ai-config/ai-technical-preresearch.md`（R-AI-04 技术预研）；对话决策「AI 能力独立拆出」「流式主方案 protocol.handle、兜底 IPC」
 - **基线**：代码版本 2.5.1；现有分层见 `AGENTS.md` §1

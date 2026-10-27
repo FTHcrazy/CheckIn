@@ -1,26 +1,31 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   App,
+  AutoComplete,
   Button,
   Input,
   InputNumber,
   Select,
   Spin,
   Switch,
+  Typography,
 } from "antd";
 import {
   CheckCircleFilled,
   CloseCircleFilled,
   CloudServerOutlined,
   LaptopOutlined,
+  ReloadOutlined,
 } from "@ant-design/icons";
 import { useAiConfig } from "../../hooks/useAiConfig";
+import { listOllamaModels, openAiKeyPage } from "@/shared/ai/ai-client";
+import { AI_PROVIDER_PRESETS, keyPageOf } from "@/shared/ai/ai-providers";
 import type { AiProvider } from "@/shared/ai/ai-types";
 import SettingsActionBar from "../SettingsActionBar";
 import "./index.scss";
 
 /**
- * 服务商模板（R-AI-01）。
+ * 服务商模板（R-AI-01 FR-03）。
  *
  * 与上一版（「选中只改 placeholder，从不覆盖用户已填内容」）的差别：**选中即填**。
  * 用户点「DeepSeek」这个动作本身就是「我要用 DeepSeek」，只把参考地址塞进占位符
@@ -28,23 +33,16 @@ import "./index.scss";
  * 选中即写入。写入后用户仍可随意改，改了之后 `matchPreset` 会把下拉反查成
  * 「自定义」，不会出现「选了 DeepSeek 但地址是别家」的假状态。
  *
- * 端点与默认模型以 2026-10 官方文档为准；用户可随时改，故无需热更新。
+ * 预设数据在 `shared/ai/ai-providers.ts` —— 主进程要用同一份反查 Key 申请页，
+ * 各存一份必然漂移（改了预设忘了改主进程，表现是「点获取 Key 没反应」）。
  */
-interface ProviderPreset {
-  label: string;
-  endpoint: string;
-  model: string;
-}
-
-const PROVIDER_PRESETS: ProviderPreset[] = [
-  { label: "DeepSeek", endpoint: "https://api.deepseek.com/v1", model: "deepseek-chat" },
-  { label: "通义千问", endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-plus" },
-  { label: "智谱 GLM", endpoint: "https://open.bigmodel.cn/api/paas/v4", model: "glm-4" },
-  { label: "OpenAI", endpoint: "https://api.openai.com/v1", model: "gpt-4o-mini" },
-];
+const PROVIDER_PRESETS = AI_PROVIDER_PRESETS;
 
 /** 自定义模板（不在预设里）：地址 / 模型名交给用户自己填 */
 const CUSTOM_PRESET = "custom";
+
+/** Ollama 默认本地端点（切到本地模式时用它兜底，也是自动探测的地址） */
+const OLLAMA_DEFAULT_ENDPOINT = "http://localhost:11434";
 
 /**
  * AI 配置页（R-AI-01）。
@@ -117,6 +115,63 @@ export default function AISection() {
   /** 已保存的 Key 是否已填（用于「已保存」提示，不返回明文） */
   const hasSavedKey = Boolean(config?.hasApiKey);
 
+  // ── 本地 Ollama：已下载模型列表（FR-06）──
+  // 让用户从列表里选，而不是手打模型名：打错一个字符要到「测试连接」才报
+  // 「模型不存在」，而且很难看出错在哪。
+  const [ollamaModels, setOllamaModels] = useState<string[]>([]);
+  const [loadingModels, setLoadingModels] = useState(false);
+
+  const refreshOllamaModels = useCallback(
+    async (endpoint: string) => {
+      setLoadingModels(true);
+      try {
+        const result = await listOllamaModels(endpoint);
+        if (result.ok) {
+          setOllamaModels(result.models);
+          if (result.models.length === 0) {
+            message.warning("本地 Ollama 没有已下载的模型，请先 ollama pull 一个");
+          }
+        } else {
+          setOllamaModels([]);
+          message.warning(result.error);
+        }
+      } catch {
+        setOllamaModels([]);
+        message.warning("读取模型列表失败，可直接手动填写模型名");
+      } finally {
+        setLoadingModels(false);
+      }
+    },
+    [message],
+  );
+
+  const handleProviderChange = (provider: AiProvider) => {
+    if (provider === draft.provider) return;
+    // 切到 Ollama：清掉 Key 语义（Ollama 免 Key），地址给默认本地端点
+    const nextEndpoint =
+      provider === "ollama" ? draft.endpoint || OLLAMA_DEFAULT_ENDPOINT : draft.endpoint;
+    setDraft((prev) => ({
+      ...prev,
+      provider,
+      ...(provider === "ollama" ? { endpoint: nextEndpoint, apiKey: "" } : {}),
+    }));
+    // 自动探测一次已下载模型；之后由「刷新」按钮触发（用户可能刚 pull 完）。
+    // 刻意放在事件里而不是 effect 里观察 provider：端点是可编辑字段，
+    // 挂在 effect 依赖上会变成「边打字边发请求」。
+    if (provider === "ollama") void refreshOllamaModels(nextEndpoint);
+  };
+
+  /** 当前 endpoint 是否收录了 Key 申请页（未收录则不显示入口，不给猜的链接） */
+  const keyPage = useMemo(
+    () => (draft.provider === "openai" ? keyPageOf(draft.endpoint) : null),
+    [draft.provider, draft.endpoint],
+  );
+
+  const handleOpenKeyPage = useCallback(async () => {
+    const result = await openAiKeyPage(draft.endpoint);
+    if (!result.ok) message.warning("没能打开申请页，请到服务商控制台手动获取");
+  }, [draft.endpoint, message]);
+
   /**
    * 草稿与已保存配置是否有差异。
    * 逐字段比较（不比对象引用）：`useEffect` 每次回读都会产出新对象，
@@ -136,18 +191,6 @@ export default function AISection() {
 
   const canSave =
     isDirty && draft.endpoint.trim().length > 0 && draft.model.trim().length > 0;
-
-  const handleProviderChange = (provider: AiProvider) => {
-    if (provider === draft.provider) return;
-    setDraft((prev) => ({
-      ...prev,
-      provider,
-      // 切到 Ollama：清掉 Key 语义（Ollama 免 Key），地址给默认本地端点
-      ...(provider === "ollama"
-        ? { endpoint: prev.endpoint || "http://localhost:11434", apiKey: "" }
-        : {}),
-    }));
-  };
 
   /** 选服务商 = 直说要它：把推荐地址与模型填进草稿（可再改） */
   const handleSelectPreset = (value: string) => {
@@ -352,6 +395,16 @@ export default function AISection() {
                 <span className="settings-field__label">
                   API Key
                   {hasSavedKey ? <span className="settings-ai__chip">已保存</span> : null}
+                  {/* 「去哪申请 Key」是 BYOK 的第一道坎：收录了申请页才显示，
+                      未收录（自定义接口）宁可不出入口，也不给一个猜的链接 */}
+                  {keyPage ? (
+                    <Typography.Link
+                      className="settings-ai__key-link"
+                      onClick={() => void handleOpenKeyPage()}
+                    >
+                      获取 Key
+                    </Typography.Link>
+                  ) : null}
                 </span>
                 <div className="settings-field__control">
                   <Input.Password
@@ -393,17 +446,31 @@ export default function AISection() {
               <div className="settings-field">
                 <span className="settings-field__label">模型名</span>
                 <div className="settings-field__control">
-                  <Input
+                  {/* 可手填 + 可下拉：探测成功就给列表，失败仍可手打（不阻断配置） */}
+                  <AutoComplete
+                    className="settings-ai__model"
                     aria-label="Ollama 模型名"
                     value={draft.model}
+                    options={ollamaModels.map((name) => ({ value: name }))}
                     placeholder="qwen2.5"
-                    onChange={(event) =>
-                      setDraft((prev) => ({ ...prev, model: event.target.value }))
+                    onChange={(value) =>
+                      setDraft((prev) => ({ ...prev, model: value }))
                     }
                   />
+                  <Button
+                    className="settings-btn settings-ai__refresh"
+                    aria-label="刷新模型列表"
+                    title="重新读取 Ollama 已下载的模型"
+                    loading={loadingModels}
+                    onClick={() => void refreshOllamaModels(draft.endpoint)}
+                  >
+                    <ReloadOutlined />
+                  </Button>
                 </div>
                 <span className="settings-field__hint">
-                  填 Ollama 里已下载的模型名（如 qwen2.5、llama3.1、deepseek-r1）
+                  {ollamaModels.length > 0
+                    ? `已读取 ${ollamaModels.length} 个已下载模型，也可以手动填写`
+                    : "填 Ollama 里已下载的模型名（如 qwen2.5、llama3.1、deepseek-r1）"}
                 </span>
               </div>
 

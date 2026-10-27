@@ -59,6 +59,11 @@ export interface AiGenerateRequest {
   count?: number;
   /** 采样温度 */
   temperature?: number;
+  /**
+   * 功能意图，仅用于调用日志归类（naming / polish / test …）。
+   * 服务层原样透传，不解释其业务含义。
+   */
+  intent?: string;
 }
 
 /** 生成结果 */

@@ -1,13 +1,15 @@
 .home-stats {
+  // auto-fit + 较大列宽：统计卡与功能卡同样参与换行，
+  // 最小窗口下排 3+2 两行，卡片更大、填满纵向空间
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
   gap: 12px;
 
   &__item {
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 12px 14px;
+    padding: 14px 16px;
     border-radius: var(--app-radius-panel);
     background: var(--app-surface);
     border: 1px solid var(--app-border);

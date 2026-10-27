@@ -41,6 +41,7 @@ function buildProps(over: Partial<Parameters<typeof NovelTopBar>[0]> = {}) {
     onSelectWork: vi.fn(),
     onCreateWork: vi.fn(() => true),
     onRenameWork: vi.fn(() => true),
+    onSetWorkGenre: vi.fn(() => true),
     onDeleteWork: vi.fn(),
     onResetTemplate: vi.fn(),
     onExportBook: vi.fn(),

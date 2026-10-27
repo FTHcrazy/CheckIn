@@ -4,7 +4,7 @@ import {
   useImperativeHandle,
   useState,
 } from "react";
-import { Button, Dropdown, Input, Modal } from "antd";
+import { AutoComplete, Button, Dropdown, Input, Modal } from "antd";
 import {
   DeleteOutlined,
   EditOutlined,
@@ -14,11 +14,19 @@ import {
   FolderOpenOutlined,
   PlusOutlined,
   ReloadOutlined,
+  TagsOutlined,
 } from "@ant-design/icons";
 import { formatThousands, type WorkMeta } from "../../novel-utils";
+import { GENRE_MAX_LENGTH, GENRE_OPTIONS } from "@/shared/novel/genres";
 import "./index.scss";
 
-export type WorkModalKind = "create" | "rename" | "delete" | "reset-template" | null;
+export type WorkModalKind =
+  | "create"
+  | "rename"
+  | "genre"
+  | "delete"
+  | "reset-template"
+  | null;
 
 /** 命令式 API：空书架引导处点「新建作品」要复用这里的创建弹框 */
 export interface WorkManageMenuHandle {
@@ -29,14 +37,18 @@ export interface WorkManageMenuHandle {
 interface WorkManageMenuProps {
   /** 当前作品名（重命名 / 删除确认里展示） */
   activeWorkName: string;
+  /** 当前作品题材（2.7.1）：可空 = 未设置 */
+  activeGenre?: string;
   /** 当前作品聚合信息：删除确认的级联提示用 */
   activeMeta: WorkMeta | undefined;
   /** 是否存在章节：导出当前卷 / 当前章的可用性 */
   hasActiveChapter: boolean;
-  /** 新建作品：返回 false 表示校验失败，弹框不关闭 */
-  onCreate: (name: string) => boolean;
+  /** 新建作品：返回 false 表示校验失败，弹框不关闭；genre 可空 */
+  onCreate: (name: string, genre?: string) => boolean;
   /** 重命名当前作品：返回 false 表示校验失败，弹框不关闭 */
   onRename: (name: string) => boolean;
+  /** 设置当前作品题材（空串 = 清空）：AI 起名 / 润色的风格锚点 */
+  onSetGenre: (genre: string) => boolean;
   /** 删除当前作品（确认后调用） */
   onDelete: () => void;
   /** 一键重置为模板书籍（调试，确认后调用） */
@@ -59,10 +71,12 @@ export default forwardRef<WorkManageMenuHandle, WorkManageMenuProps>(
   function WorkManageMenu(
     {
       activeWorkName,
+      activeGenre,
       activeMeta,
       hasActiveChapter,
       onCreate,
       onRename,
+      onSetGenre,
       onDelete,
       onResetTemplate,
       onExportBook,
@@ -73,9 +87,12 @@ export default forwardRef<WorkManageMenuHandle, WorkManageMenuProps>(
   ) {
   const [modalKind, setModalKind] = useState<WorkModalKind>(null);
   const [nameDraft, setNameDraft] = useState("");
+  /** 题材草稿：新建时为空（可跳过），编辑时带入当前作品题材 */
+  const [genreDraft, setGenreDraft] = useState("");
 
   const openCreate = (): void => {
     setNameDraft("");
+    setGenreDraft("");
     setModalKind("create");
   };
 
@@ -86,16 +103,31 @@ export default forwardRef<WorkManageMenuHandle, WorkManageMenuProps>(
     setModalKind("rename");
   };
 
+  const openGenre = (): void => {
+    setGenreDraft(activeGenre ?? "");
+    setModalKind("genre");
+  };
+
   const confirmName = (): void => {
     const trimmed = nameDraft.trim();
     if (!trimmed) return;
-    const ok = modalKind === "create" ? onCreate(trimmed) : onRename(trimmed);
+    const ok =
+      modalKind === "create" ? onCreate(trimmed, genreDraft) : onRename(trimmed);
+    if (ok) setModalKind(null);
+  };
+
+  /** 题材弹框：允许提交空串（= 清空题材），因为「不想标了」也是正常诉求 */
+  const confirmGenre = (): void => {
+    const ok = onSetGenre(genreDraft);
     if (ok) setModalKind(null);
   };
 
   // 弹框关闭后立刻失焦归还焦点，避免残留焦点打断码字输入
   useEffect(() => {
-    if (modalKind === null) setNameDraft("");
+    if (modalKind === null) {
+      setNameDraft("");
+      setGenreDraft("");
+    }
   }, [modalKind]);
 
   const deleting = modalKind === "delete";
@@ -112,6 +144,13 @@ export default forwardRef<WorkManageMenuHandle, WorkManageMenuProps>(
               key: "rename",
               icon: <EditOutlined />,
               label: "重命名当前作品",
+              disabled: !activeWorkName,
+            },
+            {
+              // 题材：AI 起名 / 润色的风格锚点。建书时可跳过，所以必须能事后补
+              key: "genre",
+              icon: <TagsOutlined />,
+              label: activeGenre ? `题材：${activeGenre}` : "设置题材",
               disabled: !activeWorkName,
             },
             { type: "divider" as const },
@@ -167,6 +206,7 @@ export default forwardRef<WorkManageMenuHandle, WorkManageMenuProps>(
           onClick: ({ key }) => {
             if (key === "create") openCreate();
             else if (key === "rename") openRename();
+            else if (key === "genre") openGenre();
             else if (key === "export-book") onExportBook();
             else if (key === "export-volume") onExportVolume();
             else if (key === "export-chapter") onExportChapter();
@@ -187,7 +227,7 @@ export default forwardRef<WorkManageMenuHandle, WorkManageMenuProps>(
       <Modal
         open={modalKind === "create" || modalKind === "rename"}
         title={modalKind === "create" ? "新建作品" : "重命名作品"}
-        okText="确定"
+        okText={modalKind === "create" ? "创建并开写" : "确定"}
         cancelText="取消"
         width={380}
         onOk={confirmName}
@@ -203,6 +243,51 @@ export default forwardRef<WorkManageMenuHandle, WorkManageMenuProps>(
           onChange={(event) => setNameDraft(event.target.value)}
           onPressEnter={confirmName}
         />
+        {/* 编辑器的「新建作品」是码字途中的顺手动作，不给它上两步流程：
+            题材在这里只是一个可留空的输入框，空着就是「未设置」 */}
+        {modalKind === "create" ? (
+          <>
+            <AutoComplete
+              className="nv-work-menu__genre"
+              value={genreDraft}
+              options={[...GENRE_OPTIONS]}
+              placeholder="题材（可不填，之后也能补）"
+              aria-label="作品题材"
+              onChange={(value: string) => setGenreDraft(value.slice(0, GENRE_MAX_LENGTH))}
+              filterOption={(input, option) =>
+                String(option?.value ?? "").includes(input.trim())
+              }
+            />
+            <p className="nv-work-menu__genre-hint">
+              题材用于 AI 起名与润色的风格参考，跳过不影响写作
+            </p>
+          </>
+        ) : null}
+      </Modal>
+
+      <Modal
+        open={modalKind === "genre"}
+        title="作品题材"
+        okText="保存"
+        cancelText="取消"
+        width={380}
+        onOk={confirmGenre}
+        onCancel={() => setModalKind(null)}
+        destroyOnHidden
+      >
+        <AutoComplete
+          className="nv-work-menu__genre"
+          value={genreDraft}
+          options={[...GENRE_OPTIONS]}
+          placeholder="选一个题材，或直接填写"
+          aria-label="作品题材"
+          onChange={(value: string) => setGenreDraft(value.slice(0, GENRE_MAX_LENGTH))}
+          filterOption={(input, option) => String(option?.value ?? "").includes(input.trim())}
+          autoFocus
+        />
+        <p className="nv-work-menu__genre-hint">
+          AI 起名与润色会参考题材调整用字风格；留空保存即清除题材
+        </p>
       </Modal>
 
       <Modal

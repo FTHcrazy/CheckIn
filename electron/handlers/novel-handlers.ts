@@ -35,6 +35,8 @@ interface NovelWorkRow {
   id: string;
   name: string;
   created_at: number;
+  /** 题材（2.7.1 起）：可空，作者建书时可选可跳过 */
+  genre: string | null;
 }
 
 interface NovelVolumeRow {
@@ -160,6 +162,20 @@ export interface NovelWorkDto {
   id: string;
   name: string;
   createdAt: number;
+  /** 题材（可选）：空 = 未设置，AI 层按书名 + 要素弱兜底 */
+  genre?: string | null;
+}
+
+/**
+ * 题材归一：压空格 + 截断 + 空串归一为 `NULL`。
+ *
+ * 为什么空串要变 NULL：`''` 与「未设置」在 SQL 里是两回事（`IS NULL` 查不到
+ * 空串），AI 层判断「有没有题材」只想要一个判据。存 NULL，读出来就是 undefined。
+ */
+function normalizeGenre(value?: string | null): string | null {
+  const trimmed = (value ?? "").replace(/\s+/g, " ").trim();
+  if (!trimmed) return null;
+  return trimmed.slice(0, 30);
 }
 
 export interface NovelVolumeDto {
@@ -600,11 +616,10 @@ export function registerNovelHandlers(): void {
   ipcMain.handle("novel-work-add", (_event, work: NovelWorkDto) => {
     const name = work.name.trim();
     if (!name) return false;
-    dbRun("INSERT INTO novel_works (id, name, created_at) VALUES (?, ?, ?)", [
-      work.id,
-      name,
-      work.createdAt,
-    ]);
+    dbRun(
+      "INSERT INTO novel_works (id, name, created_at, genre) VALUES (?, ?, ?, ?)",
+      [work.id, name, work.createdAt, normalizeGenre(work.genre)],
+    );
     return true;
   });
 
@@ -613,6 +628,17 @@ export function registerNovelHandlers(): void {
     const trimmed = name.trim();
     if (!trimmed) return false;
     return dbRun("UPDATE novel_works SET name = ? WHERE id = ?", [trimmed, id]).changes > 0;
+  });
+
+  // 设置作品题材（传空即清空）：建书时允许跳过，之后随时可补
+  ipcMain.handle("novel-work-set-genre", (_event, id: string, genre: string | null) => {
+    if (!id) return false;
+    return (
+      dbRun("UPDATE novel_works SET genre = ? WHERE id = ?", [
+        normalizeGenre(genre),
+        id,
+      ]).changes > 0
+    );
   });
 
   // 删除作品：卷章快照 / 要素关联 / 灵感伏笔 / 等级体系 / 行囊级联清理，单事务
@@ -1251,7 +1277,13 @@ ipcMain.handle("novel-editor-reset-template", () => seedTemplateBook());
     const recovery = buildRecovery();
 
     const bundle: NovelBundleDto = {
-      works: works.map((row) => ({ id: row.id, name: row.name, createdAt: row.created_at })),
+      works: works.map((row) => ({
+        id: row.id,
+        name: row.name,
+        createdAt: row.created_at,
+        // 题材：老库该列为 NULL → 归一成 undefined，渲染层只需判真值
+        genre: row.genre ?? undefined,
+      })),
       volumes,
       chapters,
       entities,

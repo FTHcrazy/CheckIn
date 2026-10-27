@@ -131,6 +131,8 @@ export interface NamingResult {
   gender: NameGender;
   /** 生成来源（AI / 本地）；本地引擎生成恒为 "local" */
   source: NamingSource;
+  /** 寓意（仅 AI 按 JSON 契约返回时才有；本地引擎不产） */
+  meaning?: string;
 }
 
 /**

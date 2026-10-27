@@ -218,6 +218,19 @@
     white-space: nowrap;
   }
 
+  /* 题材行：已设置 → 常规次要色；未设置 → 压到 disabled 档，读成「待补」。
+     不加 chip 底色/描边：书卡本身已有描边 + 环境阴影，再叠一块色会发闷。 */
+  &__genre {
+    margin: 0;
+    font-size: 12px;
+    color: var(--app-text-secondary);
+    white-space: nowrap;
+
+    &.is-unset {
+      color: var(--app-text-disabled);
+    }
+  }
+
   &__updated {
     margin: 0;
     font-size: 12px;

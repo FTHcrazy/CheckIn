@@ -20,10 +20,17 @@
 
 | 需求编号 | 主题 | 文档 | 状态 |
 |----------|------|------|------|
-| R-AI-01 | AI 模型配置层（无后端，BYOK + 本地模型，独立 ai.db 随用户隔离） | [prd-ai-config/ai-model-config-scope.md](prd/ai-model-config-scope.md) | 已落地（配置 UI + ai.db + ai-handlers） |
-| R-AI-02 | 起名增强（AI 试点功能，叠加降级） | [prd-ai-config/ai-naming-enhancement-prd.md](prd/ai-naming-enhancement-prd.md) | 已落地（AI 起名入口 + 降级 + 来源标识） |
-| R-AI-03 | AI 服务层架构（独立 shared/ai/ 横向层，零重构） | [prd-ai-config/ai-architecture-decision.md](prd/ai-architecture-decision.md) | 已落地（服务层 + ai.db + ai-handlers） |
-| R-AI-04 | AI 接入技术预研（net.fetch + ai.db + safeStorage + 流式 + Ollama） | [prd-ai-config/ai-technical-preresearch.md](prd/ai-technical-preresearch.md) | 已落地（方案验证通过） |
+| R-AI 路线图 | AI 能力未来方向与架构复核（长期参考，非单次需求） | [prd-ai-roadmap/ai-future-directions-prd.md](prd/prd-ai-roadmap/ai-future-directions-prd.md) · [ai-roadmap-architecture-review.md](prd/prd-ai-roadmap/ai-roadmap-architecture-review.md) | 参考稿；「上下文层未落地」的结论已被 2.7.0 推翻 |
+| **R-AI 排期** | **做什么、什么顺序、做完怎么算完**（B1–B8 批次 + 准入纪律 + 编号裁决） | [prd-ai-roadmap/ai-roadmap-batch-plan.md](prd/prd-ai-roadmap/ai-roadmap-batch-plan.md) | **定稿（基线 2.8.1）**，后续 AI 排期以它为准 |
+
+> R-AI-01 ~ R-AI-05 已于 **2.8.1** 全部闭环，整组移入
+> [`archive/prd-ai/`](archive/prd-ai/)（归档不改正文，详见下表）。
+> 其中两条以「有意收敛」关闭，不是欠账：
+> ① **FR-08 高级参数**首版只暴露「上下文长度」，`temperature` / `top-p` / 自定义 system 待有实测需求再开；
+> ② **6 个埋点事件**不塞进 R-AI-01，转元能力 **M1a**（intent 契约 + `ai_event` 表）统一做。
+>
+> 2.8.1 补齐的三处：AI 配置页「获取 Key」外链引导（FR-05）、Ollama 自动列出已下载模型（FR-06）、
+> 起名降级提示补「去设置」跳转（R-AI-02 FR-04）。
 
 ---
 
@@ -55,10 +62,21 @@
 | [prd-r27/r27-relationship-network-delta-v2.md](archive/prd-r27/r27-relationship-network-delta-v2.md) | 增量需求 v2：改独立窗口 + 资料卡画布 + 有限写回（推翻浮层方案） | 2.x |
 | [prd-r27/r27-relationship-network-architecture-decision-v2.md](archive/prd-r27/r27-relationship-network-architecture-decision-v2.md) | 架构决策 v2：`@xyflow/react` + `d3-force`，`relation` 窗口，画布落 `novel_config` | 2.x |
 | [prd-r27/r27-relationship-network-batch-plan-v2.md](archive/prd-r27/r27-relationship-network-batch-plan-v2.md) | 分批计划 v2（S0~S5）；v1 因沿用浮层方案已删除 | 2.x |
+| [prd-ai/ai-architecture-decision.md](archive/prd-ai/ai-architecture-decision.md) | **R-AI-03** 架构决策：独立 `shared/ai/` 横向层，零重构接入 | 2.8.1 |
+| [prd-ai/ai-technical-preresearch.md](archive/prd-ai/ai-technical-preresearch.md) | **R-AI-04** 预研：`net.fetch` + `ai.db` + `safeStorage` + 流式 + Ollama 五点结论 | 2.8.1 |
+| [prd-ai/ai-model-config-scope.md](archive/prd-ai/ai-model-config-scope.md) | **R-AI-01** 模型配置层：BYOK + 本地模型，`ai.db` 随用户隔离 | 2.8.1 |
+| [prd-ai/ai-naming-enhancement-prd.md](archive/prd-ai/ai-naming-enhancement-prd.md) | **R-AI-02** 起名增强：AI 试点功能，带降级与来源标识 | 2.8.1 |
+| [prd-ai/ai-context-and-output-spec.md](archive/prd-ai/ai-context-and-output-spec.md) | **R-AI-05** 上下文加工层 & 输出模板契约（collector / 模板注册表 / JSON 三层保险） | 2.8.0 |
+| [prd-ai/ai-review-report.md](archive/prd-ai/ai-review-report.md) | AI 域产品/设计/技术三视角审查与处置结论 | 2.8.1 |
 
 > R27 已交付：`src/windows/RelationWindow/`（见 `CHANGELOG.md` 2.x「人物关系网络独立窗口」）。
 > 已删除的 `r27-relationship-network-batch-plan.md`（v1）基于**已作废的页内浮层方案**，
 > 其排期与工作量为无效数据，判断依据见 delta-v2 §1 与 architecture-decision-v2 §1。
+>
+> R-AI-01 ~ R-AI-05 六篇于 **2.8.1** 整组闭环归档（`archive/prd-ai/`）。
+> 这批是「AI 从 0 到可用」的完整过程稿：需求 → 预研 → 架构决策 → 契约 → 审查，
+> 归档后不再修改；**AI 接下来做什么一律看 [排期文档](prd/prd-ai-roadmap/ai-roadmap-batch-plan.md)**，
+> 不要从这批旧稿里翻待办（它们描述的是 2.8.x 之前的缺口）。
 
 ---
 

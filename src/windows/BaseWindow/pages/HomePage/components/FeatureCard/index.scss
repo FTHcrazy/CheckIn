@@ -1,8 +1,9 @@
 .feature-card {
   display: flex;
-  align-items: flex-start;
+  align-items: center; // 卡片行拉伸变高后内容垂直居中，避免下半空荡
   gap: 12px;
   width: 100%;
+  height: 100%; // 网格同行拉伸等高：描述行数不同也不再参差
   padding: 16px;
   border: 1px solid var(--app-border);
   border-radius: var(--app-radius-card);

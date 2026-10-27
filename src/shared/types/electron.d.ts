@@ -55,6 +55,8 @@ export interface NovelWorkDTO {
   id: string
   name: string
   createdAt: number
+  /** 题材（可选）：空 = 未设置，AI 起名 / 润色按书名 + 要素弱兜底 */
+  genre?: string
 }
 
 export interface NovelVolumeDTO {
@@ -955,6 +957,8 @@ export interface AiGenerateRequestDTO {
   prompt: string
   count?: number
   temperature?: number
+  /** 功能意图（仅用于调用日志归类，服务层不解释） */
+  intent?: string
 }
 
 /** 生成结果 */
@@ -1001,9 +1005,20 @@ export interface ElectronAPI {
     /** 非流式生成（起名增强） */
     generate: (payload: AiGenerateRequestDTO) => Promise<AiResultDTO<AiGenerateDataDTO>>
     /** 分页查询调用日志（倒序） */
-    listLogs: (payload?: { limit?: number; offset?: number }) => Promise<{ items: AiLogRowDTO[]; total: number }>
+    listLogs: (payload?: {
+      limit?: number
+      offset?: number
+      /** 按意图过滤（naming / polish / test …）；为空表示全部 */
+      intent?: string
+    }) => Promise<{ items: AiLogRowDTO[]; total: number }>
     /** 清空调用日志 */
     clearLogs: () => Promise<{ ok: boolean }>
+    /** 列出本地 Ollama 已下载的模型（FR-06） */
+    listOllamaModels: (payload?: { endpoint?: string }) => Promise<
+      { ok: true; models: string[] } | { ok: false; error: string }
+    >
+    /** 打开服务商 Key 申请页（FR-05）；未收录的服务商返回 ok:false，界面据此不显示入口 */
+    openKeyPage: (payload?: { endpoint?: string }) => Promise<{ ok: boolean }>
   }
 
   // ── 活动管理 ──
@@ -1053,6 +1068,8 @@ export interface ElectronAPI {
     configSet: (key: string, value: string) => Promise<boolean>
     addWork: (work: NovelWorkDTO) => Promise<boolean>
     renameWork: (id: string, name: string) => Promise<boolean>
+    /** 设置作品题材（传 null / 空串即清空）；建书时可跳过，之后随时可补 */
+    setWorkGenre: (id: string, genre: string | null) => Promise<boolean>
     deleteWork: (id: string) => Promise<boolean>
     /** 删除兜底：作品移入回收站（软删除，子数据保留，可恢复） */
     trashWork: (id: string) => Promise<boolean>
@@ -1356,9 +1373,9 @@ export interface ShortcutConfigDTO {
 
 /** 日志配置（存 userDb 的 config 表，键 log_settings） */
 export interface LogSettingsDTO {
-  /** 主日志文件的最低级别；ipc.log 不受它限制 */
+  /** 主日志文件的最低级别；IPC / AI 调用记录按 DEBUG 级写入，不受它限制 */
   level: "debug" | "info" | "warn" | "error"
-  /** 是否记录 IPC 失败 / 慢调用 */
+  /** 是否记录 IPC 失败 / 慢调用（并入所属窗口当天日志） */
   ipc: boolean
   /** 日志保留天数（1–90） */
   retentionDays: number

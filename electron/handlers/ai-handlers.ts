@@ -18,8 +18,11 @@
  *
  * 边界：SQL 只出现在本文件与 ai-db.ts；不导入 novel 任何模块。
  */
-import { ipcMain, net, safeStorage } from "electron";
+import { ipcMain, net, safeStorage, shell } from "electron";
 import { aiAll, aiGet, aiRun } from "../ai-db";
+import { logAlways } from "../logger";
+import { resolveWindowName } from "./log-handlers";
+import { keyPageOf } from "../../src/shared/ai/ai-providers";
 
 // ── 配置项 key 约定（ai_config.key）──
 const KEY_PROVIDER = "provider"; // "openai" | "ollama"
@@ -72,6 +75,8 @@ export interface AiGenerateRequest {
   count?: number;
   /** 采样温度（可空，用默认） */
   temperature?: number;
+  /** 功能意图（naming / polish / test …），仅用于调用日志归类 */
+  intent?: string;
 }
 
 export interface AiGenerateData {
@@ -267,13 +272,28 @@ function truncateForLog(text: string | undefined): string {
   return text.length > LOG_TEXT_LIMIT ? `${text.slice(0, LOG_TEXT_LIMIT)}…` : text;
 }
 
+/** 本地日志里的 prompt/output 预览长度（DEBUG 级，够复盘又不至于把文件撑爆） */
+const LOG_PREVIEW_CHARS = 600;
+
+function preview(text: string | undefined): string | undefined {
+  if (!text) return undefined;
+  return text.length > LOG_PREVIEW_CHARS ? `${text.slice(0, LOG_PREVIEW_CHARS)}…` : text;
+}
+
 /**
  * 落一条 AI 调用日志（成功/失败都记）。
+ *
+ * 双通道：
+ * - `ai_log` 表：结构化、可查询（设置页「调用日志」用）；
+ * - **本地日志（DEBUG 级）**：并入所属窗口当天的 `YYYY-MM-DD.log`，
+ *   与业务日志同一时间轴，排查「AI 慢 / 失败」时不必再对两个文件。
  *
  * ⚠️ 脱敏铁律：日志绝不含明文 API Key——Key 在请求 header 里，不在 body，
  * 这里的 system/prompt/output 天然不含 Key；只做长度截断。
  */
 function appendAiLog(entry: {
+  /** 发起调用的窗口名（由 IPC 事件反查，渲染层不自报） */
+  window: string;
   intent: string;
   provider: string;
   model: string;
@@ -285,6 +305,31 @@ function appendAiLog(entry: {
   errorMessage?: string;
   durationMs: number;
 }): void {
+  const ok = !entry.errorCode;
+
+  // 本地 DEBUG 日志：与窗口业务日志同一时间轴。
+  // 用 logAlways 而不是 log：默认 info 级别下，AI 调用的提示词与输出会全部消失，
+  // 而那正是「模型为什么答歪了」的唯一线索（与 §6.3.1 的 IPC 记录同一口径）。
+  logAlways(
+    "debug",
+    entry.window,
+    "ai",
+    `${ok ? "ok" : "fail"} ${entry.intent} ${entry.provider}/${entry.model} ${entry.durationMs}ms`,
+    {
+      ...(ok ? {} : { code: entry.errorCode, message: entry.errorMessage }),
+      system: preview(entry.systemPrompt),
+      prompt: preview(entry.userPrompt),
+      output: preview(entry.rawOutput),
+      ...(entry.parsedOutput ? { parsed: preview(entry.parsedOutput) } : {}),
+    },
+  );
+  // 失败额外提一级：调 prompt 时最常看的就是「哪几次挂了、挂在哪」
+  if (!ok) {
+    logAlways("warn", entry.window, "ai", `调用失败 ${entry.intent}：${entry.errorMessage ?? ""}`, {
+      code: entry.errorCode,
+    });
+  }
+
   try {
     aiRun(
       `INSERT INTO ai_log
@@ -313,18 +358,52 @@ function appendAiLog(entry: {
 
 // ── 内部：核心调用（非流式）──
 
-async function generateInternal(req: AiGenerateRequest): Promise<AiResult<AiGenerateData>> {
+async function generateInternal(
+  req: AiGenerateRequest,
+  windowName: string,
+): Promise<AiResult<AiGenerateData>> {
   const startedAt = Date.now();
+  const intent = req.intent?.trim() || "generate";
   const cfg = readConfigInternal();
-  if (!cfg.enabled) return { ok: false, code: "not_configured", message: aiErrorMessage("not_configured") };
+
+  /** 统一的落日志入口：成功/失败都记，字段按需覆盖 */
+  const writeLog = (fields: {
+    rawOutput?: string;
+    parsedOutput?: string;
+    errorCode?: AiErrorCode;
+    errorMessage?: string;
+  }): void =>
+    appendAiLog({
+      window: windowName,
+      intent,
+      provider: cfg.provider,
+      model: cfg.model || "(未设置)",
+      systemPrompt: req.system,
+      userPrompt: req.prompt,
+      durationMs: Date.now() - startedAt,
+      ...fields,
+    });
+
+  if (!cfg.enabled) {
+    const code: AiErrorCode = "not_configured";
+    writeLog({ errorCode: code, errorMessage: aiErrorMessage(code) });
+    return { ok: false, code, message: aiErrorMessage(code) };
+  }
   if (!cfg.endpoint.trim()) {
-    return { ok: false, code: "invalid_endpoint", message: aiErrorMessage("invalid_endpoint") };
+    const code: AiErrorCode = "invalid_endpoint";
+    writeLog({ errorCode: code, errorMessage: aiErrorMessage(code) });
+    return { ok: false, code, message: aiErrorMessage(code) };
   }
   if (cfg.provider === "openai" && !cfg.apiKey) {
-    return { ok: false, code: "missing_key", message: aiErrorMessage("missing_key") };
+    const code: AiErrorCode = "missing_key";
+    writeLog({ errorCode: code, errorMessage: aiErrorMessage(code) });
+    return { ok: false, code, message: aiErrorMessage(code) };
   }
   if (!cfg.model.trim()) {
-    return { ok: false, code: "model_not_found", message: "未指定模型名，请先在设置里配置" };
+    const code: AiErrorCode = "model_not_found";
+    const message = "未指定模型名，请先在设置里配置";
+    writeLog({ errorCode: code, errorMessage: message });
+    return { ok: false, code, message };
   }
 
   const reqSpec =
@@ -343,49 +422,22 @@ async function generateInternal(req: AiGenerateRequest): Promise<AiResult<AiGene
 
     if (!response.ok) {
       const code = httpStatusToError(response.status);
-      appendAiLog({
-        intent: "generate",
-        provider: cfg.provider,
-        model: cfg.model,
-        systemPrompt: req.system,
-        userPrompt: req.prompt,
-        errorCode: code,
-        errorMessage: aiErrorMessage(code),
-        durationMs: Date.now() - startedAt,
-      });
+      writeLog({ errorCode: code, errorMessage: aiErrorMessage(code) });
       return { ok: false, code, message: aiErrorMessage(code) };
     }
 
     const raw = await response.text();
     const text = cfg.provider === "ollama" ? parseOllamaResponse(raw) : parseOpenAiResponse(raw);
     const items = splitNameItems(text);
-    appendAiLog({
-      intent: "generate",
-      provider: cfg.provider,
-      model: cfg.model,
-      systemPrompt: req.system,
-      userPrompt: req.prompt,
-      rawOutput: text,
-      parsedOutput: JSON.stringify(items),
-      durationMs: Date.now() - startedAt,
-    });
+    writeLog({ rawOutput: text, parsedOutput: JSON.stringify(items) });
     return { ok: true, data: { text, items } };
   } catch (error) {
     const rawMsg = error instanceof Error ? error.message : String(error);
-    const code =
+    const code: AiErrorCode =
       cfg.provider === "ollama" && /ECONNREFUSED|fetch failed/i.test(rawMsg)
         ? "ollama_unavailable"
         : networkErrorToCode(rawMsg);
-    appendAiLog({
-      intent: "generate",
-      provider: cfg.provider,
-      model: cfg.model,
-      systemPrompt: req.system,
-      userPrompt: req.prompt,
-      errorCode: code,
-      errorMessage: aiErrorMessage(code),
-      durationMs: Date.now() - startedAt,
-    });
+    writeLog({ errorCode: code, errorMessage: aiErrorMessage(code) });
     return { ok: false, code, message: aiErrorMessage(code) };
   }
 }
@@ -434,15 +486,31 @@ function splitNameItems(text: string): string[] {
 
 // ── 内部：测试连接 ──
 
-async function testConnectionInternal(): Promise<AiResult<{ message: string }>> {
+async function testConnectionInternal(windowName: string): Promise<AiResult<{ message: string }>> {
   const startedAt = Date.now();
   const cfg = readConfigInternal();
   const model = cfg.model || "(未设置)";
+
+  /** 测试连接同样落日志（intent=test），便于排查「配置看着对却连不上」 */
+  const writeLog = (fields: { errorCode?: AiErrorCode; errorMessage?: string }): void =>
+    appendAiLog({
+      window: windowName,
+      intent: "test",
+      provider: cfg.provider,
+      model,
+      durationMs: Date.now() - startedAt,
+      ...fields,
+    });
+
   if (!cfg.endpoint.trim()) {
-    return { ok: false, code: "invalid_endpoint", message: aiErrorMessage("invalid_endpoint") };
+    const code: AiErrorCode = "invalid_endpoint";
+    writeLog({ errorCode: code, errorMessage: aiErrorMessage(code) });
+    return { ok: false, code, message: aiErrorMessage(code) };
   }
   if (cfg.provider === "openai" && !cfg.apiKey) {
-    return { ok: false, code: "missing_key", message: aiErrorMessage("missing_key") };
+    const code: AiErrorCode = "missing_key";
+    writeLog({ errorCode: code, errorMessage: aiErrorMessage(code) });
+    return { ok: false, code, message: aiErrorMessage(code) };
   }
 
   try {
@@ -453,17 +521,13 @@ async function testConnectionInternal(): Promise<AiResult<{ message: string }>> 
         signal: AbortSignal.timeout(2_000),
       });
       if (!response.ok) {
-        appendAiLog({
-          intent: "test",
-          provider: cfg.provider,
-          model,
+        writeLog({
           errorCode: "ollama_unavailable",
           errorMessage: aiErrorMessage("ollama_unavailable"),
-          durationMs: Date.now() - startedAt,
         });
         return { ok: false, code: "ollama_unavailable", message: aiErrorMessage("ollama_unavailable") };
       }
-      appendAiLog({ intent: "test", provider: cfg.provider, model, durationMs: Date.now() - startedAt });
+      writeLog({});
       return { ok: true, data: { message: "已连接到本地 Ollama" } };
     }
 
@@ -484,32 +548,18 @@ async function testConnectionInternal(): Promise<AiResult<{ message: string }>> 
     });
     if (!response.ok) {
       const code = httpStatusToError(response.status);
-      appendAiLog({
-        intent: "test",
-        provider: cfg.provider,
-        model,
-        errorCode: code,
-        errorMessage: aiErrorMessage(code),
-        durationMs: Date.now() - startedAt,
-      });
+      writeLog({ errorCode: code, errorMessage: aiErrorMessage(code) });
       return { ok: false, code, message: aiErrorMessage(code) };
     }
-    appendAiLog({ intent: "test", provider: cfg.provider, model, durationMs: Date.now() - startedAt });
+    writeLog({});
     return { ok: true, data: { message: "连接成功" } };
   } catch (error) {
     const rawMsg = error instanceof Error ? error.message : String(error);
-    const code =
+    const code: AiErrorCode =
       cfg.provider === "ollama" && /ECONNREFUSED|fetch failed/i.test(rawMsg)
         ? "ollama_unavailable"
         : networkErrorToCode(rawMsg);
-    appendAiLog({
-      intent: "test",
-      provider: cfg.provider,
-      model,
-      errorCode: code,
-      errorMessage: aiErrorMessage(code),
-      durationMs: Date.now() - startedAt,
-    });
+    writeLog({ errorCode: code, errorMessage: aiErrorMessage(code) });
     return { ok: false, code, message: aiErrorMessage(code) };
   }
 }
@@ -578,23 +628,30 @@ export function registerAiHandlers(): void {
   );
 
   // 测试连接
-  ipcMain.handle("ai-config-test", async (): Promise<AiResult<{ message: string }>> => {
-    return testConnectionInternal();
-  });
+  ipcMain.handle(
+    "ai-config-test",
+    async (event): Promise<AiResult<{ message: string }>> =>
+      testConnectionInternal(resolveWindowName(event.sender)),
+  );
 
   // 非流式生成（起名增强）
   ipcMain.handle(
     "ai-generate",
-    async (_event, payload: AiGenerateRequest | undefined): Promise<AiResult<AiGenerateData>> => {
+    async (event, payload: AiGenerateRequest | undefined): Promise<AiResult<AiGenerateData>> => {
+      const windowName = resolveWindowName(event.sender);
       if (!payload || typeof payload.prompt !== "string" || payload.prompt.trim().length === 0) {
         return { ok: false, code: "internal", message: "生成描述不能为空" };
       }
-      return generateInternal({
-        system: typeof payload.system === "string" ? payload.system : undefined,
-        prompt: payload.prompt,
-        count: typeof payload.count === "number" ? payload.count : undefined,
-        temperature: typeof payload.temperature === "number" ? payload.temperature : undefined,
-      });
+      return generateInternal(
+        {
+          system: typeof payload.system === "string" ? payload.system : undefined,
+          prompt: payload.prompt,
+          count: typeof payload.count === "number" ? payload.count : undefined,
+          temperature: typeof payload.temperature === "number" ? payload.temperature : undefined,
+          intent: typeof payload.intent === "string" ? payload.intent : undefined,
+        },
+        windowName,
+      );
     },
   );
 
@@ -603,15 +660,24 @@ export function registerAiHandlers(): void {
     "ai-log-list",
     async (
       _event,
-      payload: { limit?: number; offset?: number } | undefined,
+      payload: { limit?: number; offset?: number; intent?: string } | undefined,
     ): Promise<{ items: AiLogRow[]; total: number }> => {
       const limit = Math.min(Math.max(Number(payload?.limit) || 50, 1), 200);
       const offset = Math.max(Number(payload?.offset) || 0, 0);
-      const totalRow = aiGet("SELECT COUNT(*) AS c FROM ai_log") as { c: number } | undefined;
+      /*
+       * 按 intent 过滤在 SQL 里做而不是取回前端再筛：日志是分页的，
+       * 前端筛选只能筛「当前这一页」，会得到「筛完只剩 2 条」的假空态。
+       */
+      const intent = typeof payload?.intent === "string" ? payload.intent.trim() : "";
+      const where = intent ? "WHERE intent = ?" : "";
+      const filterArgs: unknown[] = intent ? [intent] : [];
+      const totalRow = aiGet(`SELECT COUNT(*) AS c FROM ai_log ${where}`, filterArgs) as
+        | { c: number }
+        | undefined;
       const total = totalRow?.c ?? 0;
       const items = aiAll(
-        "SELECT id, intent, provider, model, system_prompt, user_prompt, raw_output, parsed_output, error_code, error_message, duration_ms, created_at FROM ai_log ORDER BY id DESC LIMIT ? OFFSET ?",
-        [limit, offset],
+        `SELECT id, intent, provider, model, system_prompt, user_prompt, raw_output, parsed_output, error_code, error_message, duration_ms, created_at FROM ai_log ${where} ORDER BY id DESC LIMIT ? OFFSET ?`,
+        [...filterArgs, limit, offset],
       ) as AiLogRow[];
       return { items, total };
     },
@@ -628,4 +694,78 @@ export function registerAiHandlers(): void {
       return { ok: false };
     }
   });
+
+  /**
+   * 列出本地 Ollama 已下载的模型（R-AI-01 FR-06）。
+   *
+   * 走 Ollama 原生 `/api/tags`（不是 OpenAI 兼容端点，返回结构不同）。
+   * 让用户从列表里选而不是手打模型名：手打错一个字符，要到「测试连接」
+   * 才报「模型不存在」，而且很难看出错在哪。
+   *
+   * 只读探测，不读配置里的 Key、不写 ai_log（它不属于「AI 调用」，
+   * 进了日志会污染耗时统计）。
+   */
+  ipcMain.handle(
+    "ai-ollama-models",
+    async (
+      event,
+      payload?: { endpoint?: string },
+    ): Promise<{ ok: true; models: string[] } | { ok: false; error: string }> => {
+      const endpoint =
+        (payload?.endpoint ?? "").trim() ||
+        readConfigInternal().endpoint ||
+        "http://localhost:11434";
+      const url = `${endpoint.replace(/\/+$/, "")}/api/tags`;
+      try {
+        const response = await net.fetch(url, {
+          method: "GET",
+          redirect: "follow",
+          signal: AbortSignal.timeout(8_000),
+        });
+        if (!response.ok) {
+          return { ok: false, error: `本地服务返回 ${response.status}` };
+        }
+        const json = (await response.json()) as {
+          models?: Array<{ name?: string; model?: string }>;
+        };
+        const models = (json.models ?? [])
+          .map((item) => (item.name ?? item.model ?? "").trim())
+          .filter((name) => name.length > 0);
+        return { ok: true, models };
+      } catch (error) {
+        const raw = error instanceof Error ? error.message : String(error);
+        logAlways("debug", resolveWindowName(event.sender), "ai", `[ollama] 列模型失败: ${raw}`);
+        return {
+          ok: false,
+          error: /ECONNREFUSED|fetch failed/i.test(raw)
+            ? "未检测到本地 Ollama 服务，请先启动 Ollama"
+            : "读取模型列表超时，请检查服务地址",
+        };
+      }
+    },
+  );
+
+  /**
+   * 打开服务商的「申请 API Key」页面（R-AI-01 FR-05）。
+   *
+   * 渲染层只传 endpoint，URL 由主进程用 `keyPageOf` 查表得到 ——
+   * `shell.openExternal` 的入参永远来自受控常量，不是调用方给的任意地址。
+   * 未收录的服务商返回 `ok:false`，界面据此不显示入口。
+   */
+  ipcMain.handle(
+    "ai-open-key-page",
+    async (event, payload?: { endpoint?: string }): Promise<{ ok: boolean }> => {
+      const endpoint = (payload?.endpoint ?? "").trim() || readConfigInternal().endpoint;
+      const url = keyPageOf(endpoint);
+      if (!url) return { ok: false };
+      try {
+        await shell.openExternal(url);
+        return { ok: true };
+      } catch (error) {
+        const raw = error instanceof Error ? error.message : String(error);
+        logAlways("warn", resolveWindowName(event.sender), "ai", `[key-page] 打开失败: ${raw}`);
+        return { ok: false };
+      }
+    },
+  );
 }

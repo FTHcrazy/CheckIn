@@ -34,6 +34,7 @@ const inspirationActions: InspirationActions = {
 
 const namingActions: NamingActions = {
   onInsertToEditor: vi.fn(),
+  onInsertMeaning: vi.fn(),
   onCreateCharacter: vi.fn(),
   onAddFavorite: vi.fn(),
   onRemoveFavorite: vi.fn(),

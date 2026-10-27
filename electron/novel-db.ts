@@ -78,7 +78,12 @@ function initializeNovelDb(database: Database.Database): void {
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       created_at INTEGER NOT NULL,
-      deleted_at INTEGER
+      deleted_at INTEGER,
+      -- 题材（2.7.1 起）：AI 起名 / 润色的风格锚点。
+      -- **可空且非必填** —— 建书时可以跳过；为空时由 AI 层按书名 + 要素弱兜底。
+      -- 存中文自由文本（「仙侠」「赛博朋克」…），不做枚举约束：网络分类一直在变，
+      -- 用 CHECK 限制只会让作者填不进自己想写的类型。
+      genre TEXT
     );
     CREATE TABLE IF NOT EXISTS novel_volumes (
       id TEXT PRIMARY KEY,
@@ -495,6 +500,11 @@ function initializeNovelDb(database: Database.Database): void {
   }>;
   if (!workColumns.some((column) => column.name === "deleted_at")) {
     database.exec("ALTER TABLE novel_works ADD COLUMN deleted_at INTEGER");
+  }
+  // 2.7.1 题材：可空列，老作品一律视为「未设置」（AI 层按书名 + 要素弱兜底），
+  // 因此不需要任何回填 / 默认值 —— 只有当用户真的在「新建作品」时选了才写。
+  if (!workColumns.some((column) => column.name === "genre")) {
+    database.exec("ALTER TABLE novel_works ADD COLUMN genre TEXT");
   }
   // 在架作品列表是启动即跑的热查询，回收站面板也按删除时间倒序扫
   database.exec(`

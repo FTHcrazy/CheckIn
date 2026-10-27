@@ -1,10 +1,25 @@
 # AI 路线图 · 架构复核与实现优先级重排
 
-- **状态**：已复核（待评审）
+> **状态变更（2.7.0，2026-10-27）**：本文 §〇 K-01 / K-02 / K-03 与 §四 D2 所述的
+> 「`context/` 不存在、润色只吃选中文本、PRD 待动工」**已闭环**——`shared/ai/context/`
+> 的 `collector` / `output-spec` 与提示词层已落地，起名走 JSON + 寓意，
+> 润色已注入命中人物卡与章节片段。
+>
+> **状态变更（2.8.0，2026-10-27）**：剩余两项也已闭环——`novel_works.genre` 已补（可空、
+> 建书两步可跳过、作品菜单可事后补），调用日志查看面板已落地为设置窗口「AI 记录」页；
+> 同时提示词收敛到 `context/prompt/`（原 `assembler.ts` 拆入、`ai-context.ts` 删除）。
+> 以下正文保留当时判断依据，**勿据此排期**。
+>
+> **状态变更（2.8.1，2026-10-27）**：R-AI-01 ~ R-AI-05 已整组归档（`docs/archive/prd-ai/`）。
+> 本文提出的元能力编号已在 [`ai-roadmap-batch-plan.md`](ai-roadmap-batch-plan.md) 做过裁决：
+> 「用量看板」并入 **M1b**（不新占功能号），埋点事件走 **M1a**；本文的 M1–M8 定义仍然有效，
+> 但**执行顺序与批次以排期文档为准**。
+
+- **状态**：已复核（结论已被 2.7.0 / 2.8.0 实现超越）；**执行顺序见排期文档**
 - **输入**：
   - `AGENTS.md`（架构与开发规范，重点 §1 分层 / §2 模块边界 / §2.2.2.1 AI 服务层铁律 / §6.1.2 / §6.5 / §6.7 / §6.8 / §8.4~§8.8）
-  - `docs/prd/prd-ai-config/ai-architecture-decision.md`（R-AI-03）
-  - `docs/prd/prd-ai-config/ai-context-and-output-spec.md`（状态：已评审**待动工**）
+  - `docs/archive/prd-ai/ai-architecture-decision.md`（R-AI-03）
+  - `docs/archive/prd-ai/ai-context-and-output-spec.md`（状态：已评审**待动工**）
   - `docs/prd/prd-ai-roadmap/ai-future-directions-prd.md`（许清楚产出，12 项 + R-AI-17）
   - **代码实测**（本次复核的全部结论均以 `grep` / 读源码为准，见 §一）
 - **基线版本**：**2.6.0**（`package.json`）
@@ -545,7 +560,7 @@ ALTER TABLE novel_works ADD COLUMN genre TEXT;
 | `src/shared/ai/ai-client.ts` | 改：`aiGenerateStream(request, onChunk, signal)` |
 | `electron/preload.ts` / `src/shared/types/electron.d.ts` | 改 |
 | `ContinuationPreview` | 改：流式渲染 + 中断按钮 |
-| `docs/prd/prd-ai-config/ai-architecture-decision.md` | 改：五·A 追加「流式端点」的豁免边界说明（**红线 D 的文档同步**） |
+| `docs/archive/prd-ai/ai-architecture-decision.md` | 改：五·A 追加「流式端点」的豁免边界说明（**红线 D 的文档同步**） |
 | `CHANGELOG.md` / `package.json` | 改：2.10.0 |
 
 **可验证状态**：① 首次触发 L3 功能弹出授权弹窗，展示将发送字数与范围选择，关掉总开关后所有 L3 入口隐藏且**给出原因**；② 章节摘要生成后带「AI 生成」标记与模型名，删章后摘要不残留；③ 续写流式逐字输出，可中断，中断后主进程连接被释放（守卫断言）。
@@ -641,8 +656,8 @@ ALTER TABLE novel_works ADD COLUMN genre TEXT;
 | 文档 | 需修订内容 |
 |---|---|
 | `docs/prd/prd-ai-roadmap/ai-future-directions-prd.md` | §十一 第 5 行「R-AI-08/10/15 依赖 collector/assembler/json-array 输出契约（**已落地，直接复用**）」→ 改为「**待建，见元能力 M3**」；§六 横向表的成本列按本文重排 |
-| `docs/prd/prd-ai-config/ai-context-and-output-spec.md` | 文首状态「已评审（待动工）」建议保留，但补一行「截至 2.6.0 **未动工**，本文件是施工图」 |
-| `docs/prd/prd-ai-config/ai-architecture-decision.md` | 五·A 追加「流式端点（`protocol.handle`）」的豁免边界（2.10.0 时）；§七 RK-01 的流式方案状态从「预研」改为「未实现」 |
+| `docs/archive/prd-ai/ai-context-and-output-spec.md` | 文首状态「已评审（待动工）」建议保留，但补一行「截至 2.6.0 **未动工**，本文件是施工图」 |
+| `docs/archive/prd-ai/ai-architecture-decision.md` | 五·A 追加「流式端点（`protocol.handle`）」的豁免边界（2.10.0 时）；§七 RK-01 的流式方案状态从「预研」改为「未实现」 |
 | `AGENTS.md` | 见 §九 |
 | `docs/README.md` | 按 §8.8 补本文索引行（**本次未改**，因复核任务限定「只产出文档」） |
 

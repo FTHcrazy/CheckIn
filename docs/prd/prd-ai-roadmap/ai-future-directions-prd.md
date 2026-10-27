@@ -1,13 +1,16 @@
 # AI 增强功能未来方向 · 增量规划 PRD
 
-- **状态**：草案（待评审）
+- **状态**：参考稿（长期方向，非单次需求）。**截至 2.8.1 已部分过时**——
+  文中「AI 上下文层未落地」「起名是唯一 AI 功能」等判断已被 2.7.0–2.8.1 推翻；
+  **现行为准的优先级与批次见 [`ai-roadmap-batch-plan.md`](ai-roadmap-batch-plan.md)**，
+  本文只作方向与推演依据留档，不要照着它排期。
 - **输入**：
-  - `docs/prd/prd-ai-config/ai-model-config-scope.md`（R-AI-01 配置层）
-  - `docs/prd/prd-ai-config/ai-naming-enhancement-prd.md`（R-AI-02 起名增强）
-  - `docs/prd/prd-ai-config/ai-architecture-decision.md`（R-AI-03 服务层架构决策）
-  - `docs/prd/prd-ai-config/ai-technical-preresearch.md`（R-AI-04 技术预研）
-  - `docs/prd/prd-ai-config/ai-context-and-output-spec.md`（上下文加工层 & 输出契约）
-  - `docs/prd/prd-ai-config/ai-review-report.md`（三份 PRD 评审报告）
+  - `docs/archive/prd-ai/ai-model-config-scope.md`（R-AI-01 配置层）
+  - `docs/archive/prd-ai/ai-naming-enhancement-prd.md`（R-AI-02 起名增强）
+  - `docs/archive/prd-ai/ai-architecture-decision.md`（R-AI-03 服务层架构决策）
+  - `docs/archive/prd-ai/ai-technical-preresearch.md`（R-AI-04 技术预研）
+  - `docs/archive/prd-ai/ai-context-and-output-spec.md`（上下文加工层 & 输出契约）
+  - `docs/archive/prd-ai/ai-review-report.md`（三份 PRD 评审报告）
   - `AGENTS.md`（架构规范，重点 §1 分层 / §2 模块边界 / §2.2.2.1 AI 服务层铁律 / §8.7 网络请求契约）
 - **基线版本**：**2.6.0**
 - **作者**：许清楚（产品经理）

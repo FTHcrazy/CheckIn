@@ -28,7 +28,7 @@ const SETTINGS_KEY = "log_settings";
 const VALID_LEVELS: readonly LogLevel[] = ["debug", "info", "warn", "error"];
 
 /** 从 IPC 事件反查窗口注册名；未注册（或窗口已销毁）时回退到 webContents id */
-function resolveWindowName(sender: WebContents): string {
+export function resolveWindowName(sender: WebContents): string {
   const win = BrowserWindow.fromWebContents(sender);
   const name = win ? windowManager.getNameOf(win) : undefined;
   return name ?? `renderer-${sender.id}`;

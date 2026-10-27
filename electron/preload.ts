@@ -23,7 +23,7 @@ const listenerWrappers = new WeakMap<
  * 为什么不在主进程统一 hook：`ipcMain.handle` 没有全局拦截点，逐个包一层会
  * 散落 100+ 处；而 preload 是所有渲染层调用的唯一出口，在这里包一次就全覆盖。
  *
- * ⚠️ 只上报「失败」与「慢于阈值」——全量上报会让 ipc.log 一天几十万行，
+ * ⚠️ 只上报「失败」与「慢于阈值」——全量上报会在窗口日志里一天刷几十万行，
  * 真正要排查的异常反而被淹没。阈值 300ms 是按本项目的本地 SQLite 往返定的
  * （正常调用普遍 <20ms）。
  */
@@ -227,6 +227,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       trackedInvoke('novel-work-add', work) as Promise<boolean>,
     renameWork: (id: string, name: string) =>
       trackedInvoke('novel-work-rename', id, name) as Promise<boolean>,
+    setWorkGenre: (id: string, genre: string | null) =>
+      trackedInvoke('novel-work-set-genre', id, genre) as Promise<boolean>,
     deleteWork: (id: string) =>
       trackedInvoke('novel-work-delete', id) as Promise<boolean>,
     // ── 数据安全（P0）：一键全量备份 / 恢复 + 删除兜底（回收站） ──
@@ -457,7 +459,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // ── AI 助手（语义化 IPC，数据存独立 ai.db，仅 full/novel 版注册） ──
   // 对 §8.7「主进程不代理 HTTP」契约的刻意豁免（凭据安全 + 端点无法枚举），
-  // 理由见 docs/prd/prd-ai-config/ai-architecture-decision.md 第五节·A。
+  // 理由见 docs/archive/prd-ai/ai-architecture-decision.md 第五节·A。
   // Key 经 safeStorage 加密存主进程，渲染层只拿 hasApiKey 布尔，绝无明文 Key。
   ai: {
     getConfig: () => trackedInvoke('ai-config-get'),
@@ -475,10 +477,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
       prompt: string
       count?: number
       temperature?: number
+      intent?: string
     }) => trackedInvoke('ai-generate', payload),
-    listLogs: (payload?: { limit?: number; offset?: number }) =>
+    listLogs: (payload?: { limit?: number; offset?: number; intent?: string }) =>
       trackedInvoke('ai-log-list', payload),
     clearLogs: () => trackedInvoke('ai-log-clear'),
+    // 本地 Ollama 已下载模型列表（R-AI-01 FR-06，只读探测，不写 ai_log）
+    listOllamaModels: (payload?: { endpoint?: string }) =>
+      trackedInvoke('ai-ollama-models', payload),
+    // 打开服务商 Key 申请页（FR-05）：URL 由主进程查表，渲染层传不了任意地址
+    openKeyPage: (payload?: { endpoint?: string }) =>
+      trackedInvoke('ai-open-key-page', payload),
   },
 
   // ── 记账（语义化 IPC，数据存 userDb 的 ledger_* 表） ──

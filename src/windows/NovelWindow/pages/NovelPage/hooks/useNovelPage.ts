@@ -50,7 +50,13 @@ import type { NamingActions } from "../components/NameGeneratorPanel";
 import type { EditorPaneHandle } from "../components/EditorPane";
 import type { OutlineActions } from "../components/OutlinePanel";
 import { aiGenerate } from "@/shared/ai/ai-client";
-import { buildPolishPrompt } from "@/shared/ai/ai-context";
+import {
+  alignParagraphBreaks,
+  buildPromptSpec,
+  collectBookContext,
+  matchEntitiesInText,
+  type BookSnapshot,
+} from "@/shared/ai/context";
 import {
   editorActions,
   needsFlushSave,
@@ -382,10 +388,15 @@ export function useNovelPage() {
   );
 
   const handleCreateWork = useCallback(
-    (name: string): boolean => {
-      const work = data.createWork(name);
+    (name: string, genre?: string): boolean => {
+      const work = data.createWork(name, genre);
       if (!work) return false;
-      view.showToast(`已创建「${work.name}」，写下第一章吧`);
+      // 题材是可选步骤：选了就顺手确认一句，让作者知道自己填的东西确实生效了
+      view.showToast(
+        work.genre
+          ? `已创建「${work.name}」（题材：${work.genre}），写下第一章吧`
+          : `已创建「${work.name}」，写下第一章吧`,
+      );
       return true;
     },
     [data, view],
@@ -395,6 +406,18 @@ export function useNovelPage() {
     (name: string): boolean => {
       const ok = data.renameWork(data.activeWorkId, name);
       if (ok) view.showToast("作品已重命名");
+      return ok;
+    },
+    [data, view],
+  );
+
+  /** 设置当前作品题材（空串 = 清空）：AI 起名 / 润色的风格锚点 */
+  const handleSetWorkGenre = useCallback(
+    (genre: string): boolean => {
+      const ok = data.setWorkGenre(data.activeWorkId, genre);
+      if (ok) {
+        view.showToast(genre.trim() ? `题材已设为「${genre.trim()}」` : "已清空题材");
+      }
       return ok;
     },
     [data, view],
@@ -675,6 +698,43 @@ export function useNovelPage() {
     [data, editor, view],
   );
 
+  // ── AI 上下文快照（R-AI-05）：起名与润色共用一份，由采集层按 intent 裁剪 ──
+  /**
+   * 本书上下文快照：页面层负责「取数」，AI 层负责「裁剪 + 拼 prompt」。
+   * 一次组装、两处复用（起名 / 润色），避免两套取数口径漂移。
+   */
+  const bookSnapshot = useMemo<BookSnapshot>(() => {
+    const work = data.works.find((item) => item.id === data.activeWorkId);
+    const levels = data.realmCategory?.levels
+      ? [...data.realmCategory.levels]
+          .sort((a, b) => a.rank - b.rank)
+          .map((level) => level.name)
+          .filter((name) => name.trim().length > 0)
+      : [];
+
+    return {
+      workName: work?.name ?? "",
+      // 题材（2.7.1）：建书时可选，未设置时由 AI 层按书名 + 要素弱兜底
+      workGenre: work?.genre,
+      entities: data.entities
+        .filter((entity) => entity.workId === data.activeWorkId)
+        .map((entity) => ({
+          type: entity.type,
+          name: entity.name,
+          aliases: entity.aliases,
+          summary: entity.summary,
+        })),
+      realmLevels: levels,
+      chapterSnippet: data.activeChapter?.content ?? "",
+    };
+  }, [
+    data.works,
+    data.activeWorkId,
+    data.entities,
+    data.realmCategory,
+    data.activeChapter,
+  ]);
+
   // ── AI 润色（R-AI-03 对比预览形态）─────────────────────────────
   /** 润色预览浮层状态：open 时持有原选区快照（text + 绝对偏移）与结果 */
   const [polish, setPolish] = useState<{
@@ -706,11 +766,20 @@ export function useNovelPage() {
       error: null,
     });
 
-    const { system, prompt } = buildPolishPrompt({ text });
-    const result = await aiGenerate({ system, prompt });
+    // 上下文：书名 / 题材 / 命中的人物卡 / 章节片段（润色必须知道「这段话里是谁」）
+    const characters = matchEntitiesInText(text, bookSnapshot.entities);
+    const context = collectBookContext(bookSnapshot, "polish");
+    const spec = buildPromptSpec("polish", context, { text, characters });
+
+    const result = await aiGenerate({
+      system: spec.system,
+      prompt: spec.prompt,
+      intent: "polish",
+    });
 
     if (result.ok) {
-      const polishedText = result.data.text.trim();
+      // 段落分隔跟原文对齐：模型爱在段间插空行，整段回填后要作者手删（2.8.1）
+      const polishedText = alignParagraphBreaks(result.data.text, text);
       // 模型可能原样返回或返回空串，视为未润色成功
       if (!polishedText || polishedText === text) {
         setPolish((prev) =>
@@ -730,7 +799,7 @@ export function useNovelPage() {
     setPolish((prev) =>
       prev ? { ...prev, loading: false, error: result.message } : prev,
     );
-  }, [editor, view]);
+  }, [editor, view, bookSnapshot]);
 
   /** 右键「润色这段文字」：记录选区并进入预览 */
   const handleCtxPolish = useCallback((): void => {
@@ -841,6 +910,19 @@ export function useNovelPage() {
   /** 把名字插入正文光标处（不依赖选区；选区非空则替换） */
   const handleInsertName = useCallback((name: string): void => {
     editorPaneRef.current?.insertText(name);
+  }, []);
+
+  /**
+   * 起名结果「寓意」插入正文（2.8.1）
+   *
+   * 寓意本身就是一句命名释义，作者常直接写进人物出场段或设定清单。
+   * 拼成 `名字：寓意` 而不是只丢寓意：单看一句话读者不知道说的是谁，
+   * 而插入后就地编辑的成本远低于重新补名字。
+   */
+  const handleInsertMeaning = useCallback((name: string, meaning: string): void => {
+    const text = meaning.trim();
+    if (!text) return;
+    editorPaneRef.current?.insertText(`${name}：${text}`);
   }, []);
 
   /**
@@ -985,12 +1067,26 @@ export function useNovelPage() {
   const namingActions = useMemo<NamingActions>(
     () => ({
       onInsertToEditor: handleInsertName,
+      onInsertMeaning: handleInsertMeaning,
       onCreateCharacter: handleCreateEntityFromName,
       onAddFavorite: (name, kind, style, source) =>
         data.addNameFavorite(data.activeWorkId, name, kind, style, source),
       onRemoveFavorite: data.removeNameFavorite,
+      // 「去设置」：面板不碰窗口层，由这里发跨窗口消息。用 sendTo 而不是
+      // settings-window-open 是为了带 section —— 只把设置窗口拉到首页，
+      // 用户还要自己再找「AI 配置」，等于把「去配置」的摩擦推后一步。
+      // `create` + `queue`：窗口没开会先拉起、消息入队，preload 挂载后补投。
+      onOpenAiSettings: () => {
+        void window.electronAPI?.windowAPI.sendTo(
+          "settings",
+          "settings-section-jump",
+          { section: "ai" },
+          true,
+          { create: true, queue: true },
+        );
+      },
     }),
-    [handleInsertName, handleCreateEntityFromName, data],
+    [handleInsertName, handleInsertMeaning, handleCreateEntityFromName, data],
   );
 
   /** 起名工具避开已用名：当前作品的要素 name + aliases 去重 */
@@ -1463,6 +1559,7 @@ export function useNovelPage() {
     handleScrollChange,
     handleCreateWork,
     handleRenameWork,
+    handleSetWorkGenre,
     handleDeleteWork,
     handleResetTemplate,
     handleDeleteChapter,
@@ -1480,6 +1577,7 @@ export function useNovelPage() {
     namingActions,
     namingExclude,
     namingFavorites,
+    namingBook: bookSnapshot,
     // 行囊主角绑定（右侧要素栏）
     protagonistEntityId,
     handleSetProtagonist,

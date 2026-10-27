@@ -119,6 +119,30 @@
   line-height: 18px;
 }
 
+/* 「获取 Key」：与「已保存」小签同一行，做成文字链而不是按钮 ——
+   它的位置在 Key 输入框上方，抢视觉会让人以为它才是主操作。
+   用组件库 `Typography.Link`（语义就是「去另一个页面」），不自造按钮造型
+   （窗口内按钮只有 settings-controls.scss 一份实现，守卫会拦）。 */
+.settings-ai__key-link.ant-typography {
+  /* 靠右：左半是字段名与状态签，右侧留给动作 */
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+/* 刷新模型列表：造型全部交给 .settings-btn，这里只把它压成正方形图标钮 */
+.settings-ai__refresh.ant-btn {
+  --ant-button-padding-inline: 0;
+  width: 32px;
+  flex: none;
+}
+
+/* 模型名：可手填可下拉，宽度跟着字段走（与接口地址等长） */
+.settings-ai__model.ant-select {
+  flex: 1;
+  min-width: 0;
+}
+
 /* ── 测试结果：内联状态条，不弹窗打断填写 ── */
 .settings-ai__result {
   display: flex;

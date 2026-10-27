@@ -5,6 +5,11 @@ import "./index.scss";
 type WindowAction = "minimize" | "maximize-toggle" | "close";
 
 interface WindowHeaderProps {
+  /**
+   * 左侧导航插槽（可选）：放置「返回上一页」这类页间动作；
+   * 不传则不渲染（插槽内是可点击控件，自带 no-drag）。
+   */
+  leading?: ReactNode;
   /** 左侧标题（可选）；不传则左侧仅作为拖动留白 */
   title?: string;
   /** 标题左侧图标（可选），随 title 一起显示 */
@@ -26,6 +31,7 @@ interface WindowHeaderProps {
  *
  * 职责：
  * - 提供整条拖动区（窗口级职责，禁止挂到页面级组件上）
+ * - 左侧 `leading` 插槽（页间导航，如 BaseWindow 子页面的「返回上一页」）
  * - 右侧最小化 / 最大化(还原) / 关闭三个控制按钮
  * - 最大化状态由主进程推送（window-maximize-state），挂载时先主动查询一次；
  *   同时在 <html> 上同步 is-window-maximized 类，供 window-shell 切换方角样式
@@ -35,6 +41,7 @@ interface WindowHeaderProps {
  * close 走 win.close()，由各窗口自己的 close 语义决定行为。
  */
 export default function WindowHeader({
+  leading,
   title,
   icon,
   badge,
@@ -67,6 +74,7 @@ export default function WindowHeader({
 
   return (
     <div className="window-header">
+      {leading && <div className="window-header__leading">{leading}</div>}
       {(title || icon) && (
         <div className="window-header__title">
           {icon}

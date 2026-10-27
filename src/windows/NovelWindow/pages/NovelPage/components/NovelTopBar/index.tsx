@@ -35,8 +35,10 @@ interface NovelTopBarProps {
   /** 设定中心（本书设定）开合状态：按钮呈高亮开关态 */
   settingCenterOpen: boolean;
   onSelectWork: (workId: string) => void;
-  onCreateWork: (name: string) => boolean;
+  onCreateWork: (name: string, genre?: string) => boolean;
   onRenameWork: (name: string) => boolean;
+  /** 设置当前作品题材（2.7.1，空串 = 清空） */
+  onSetWorkGenre: (genre: string) => boolean;
   onDeleteWork: () => void;
   onResetTemplate: () => void;
   onExportBook: () => void;
@@ -103,6 +105,7 @@ export default function NovelTopBar({
   onSelectWork,
   onCreateWork,
   onRenameWork,
+  onSetWorkGenre,
   onDeleteWork,
   onResetTemplate,
   onExportBook,
@@ -186,10 +189,12 @@ export default function NovelTopBar({
       <WorkManageMenu
         ref={menuRef}
         activeWorkName={activeWork?.name ?? ""}
+        activeGenre={activeWork?.genre}
         activeMeta={activeMeta}
         hasActiveChapter={hasActiveChapter}
         onCreate={onCreateWork}
         onRename={onRenameWork}
+        onSetGenre={onSetWorkGenre}
         onDelete={onDeleteWork}
         onResetTemplate={onResetTemplate}
         onExportBook={onExportBook}

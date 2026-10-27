@@ -17,6 +17,25 @@
   -webkit-app-region: drag;
 }
 
+// 左侧导航插槽（如 BaseWindow 子页面的「返回上一页」）：
+// 里面放的是可点击控件，必须排除拖动区——否则按下会被系统当成拖动窗口，
+// 连 `:hover` 都不会触发（原因见文件末尾「拖动带的浮层豁免」）。
+.window-header__leading {
+  display: flex;
+  align-items: center;
+  // 8px 是「返回 │ 页面名」三段之间的呼吸量：4px 时竖线会贴着文字，
+  // 看起来像标点而不是分隔
+  gap: 8px;
+  padding-left: 6px;
+  -webkit-app-region: no-drag;
+
+  // 与左侧标题同屏时收窄间距：标题自带的 12px 是「贴着窗口边缘」的量，
+  // 前面已经有导航插槽时再留 12px 会显得两块互不相干。
+  + .window-header__title {
+    padding-left: 6px;
+  }
+}
+
 .window-header__title {
   display: flex;
   align-items: center;

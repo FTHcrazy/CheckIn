@@ -104,6 +104,11 @@ export async function renameWork(workId: string, name: string): Promise<boolean>
   return window.electronAPI!.novel.renameWork(workId, name);
 }
 
+/** 设置作品题材（novel-work-set-genre；传 null 即清空） */
+export async function setWorkGenre(workId: string, genre: string | null): Promise<boolean> {
+  return window.electronAPI!.novel.setWorkGenre(workId, genre);
+}
+
 /** 删除作品（novel-work-delete，主进程级联清理全部关联数据） */
 export async function removeWork(workId: string): Promise<boolean> {
   return window.electronAPI!.novel.deleteWork(workId);

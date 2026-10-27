@@ -20,7 +20,7 @@ const DEFAULT_SETTINGS: LogSettingsDTO = { level: "info", ipc: true, retentionDa
  * 刻意保持很小：日志的定位是「出问题时能拿出证据」，不是给用户调参玩。
  * 三个可调项（级别 / IPC 记录 / 保留天数）对应三种排查场景：
  * - 复现偶发 bug → 调到 debug；
- * - 怀疑主进程与渲染层通信失败 → 打开 IPC 记录（写独立的 ipc.log）；
+ * - 怀疑主进程与渲染层通信失败 → 打开 IPC 记录（按 DEBUG 级并入窗口日志）；
  * - 磁盘吃紧 → 缩短保留天数。
  *
  * **保存范式与其它页已统一（2.6.0）**：上一版是「改一项立刻落库」，
@@ -116,7 +116,7 @@ export default function DiagnosticSection() {
             <div className="settings-item__text">
               <span className="settings-item__label">日志级别</span>
               <span className="settings-item__hint">
-                低于该级别的记录不落盘；IPC 通信日志单独存 ipc.log
+                低于该级别的记录不落盘；IPC 调用与 AI 调用按 DEBUG 级强制写入同一份窗口日志
               </span>
             </div>
             <Select
@@ -130,9 +130,9 @@ export default function DiagnosticSection() {
 
           <div className="settings-item">
             <div className="settings-item__text">
-              <span className="settings-item__label">记录 IPC 通信</span>
+              <span className="settings-item__label">记录 IPC 调用</span>
               <span className="settings-item__hint">
-                只记失败与慢于 300ms 的调用，正常高频调用不会刷屏
+                只记失败与慢于 300ms 的调用；与业务日志同一个文件，按时间轴对齐
               </span>
             </div>
             <Switch checked={draft.ipc} onChange={(ipc) => patchDraft({ ipc })} />

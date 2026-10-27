@@ -20,4 +20,17 @@
     line-height: 1.6;
     color: var(--app-text-muted);
   }
+
+  /* 题材输入（2.7.1）：弹窗内占满整行，下拉浮层由 antd 贴到输入框上 */
+  &__genre {
+    width: 100%;
+    margin-top: 8px;
+  }
+
+  &__genre-hint {
+    margin: 8px 0 0;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--app-text-muted);
+  }
 }

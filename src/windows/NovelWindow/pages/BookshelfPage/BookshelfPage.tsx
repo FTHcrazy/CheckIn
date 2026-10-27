@@ -5,7 +5,7 @@ import {
   EditOutlined,
   ThunderboltOutlined,
 } from "@ant-design/icons";
-import { Input, Modal, Button, type InputRef } from "antd";
+import { AutoComplete, Input, Modal, Button, Steps, type InputRef } from "antd";
 import ContinueHero from "./components/ContinueHero";
 import BookCard from "./components/BookCard";
 import IdeaRail from "./components/IdeaRail";
@@ -32,6 +32,7 @@ import {
   type ShelfStatusFilter,
 } from "./bookshelf-utils";
 import { TODAY_ADDED_LABEL, WORD_UNIT } from "@/shared/novel/today-stats";
+import { GENRE_MAX_LENGTH, GENRE_OPTIONS } from "@/shared/novel/genres";
 import "./index.scss";
 
 interface BookshelfPageProps {
@@ -102,6 +103,15 @@ export default function BookshelfPage({
   const [createName, setCreateName] = useState("");
   /** 书名校验提示（L-03：空名点「创建并开写」曾静默无反应，现在明确告诉你差什么） */
   const [createError, setCreateError] = useState("");
+  /**
+   * 建书分两步：① 书名（必填）→ ② 题材（可选，可跳过）。
+   *
+   * 为什么拆成步骤而不是一屏两个输入框：书名是**必填且要动脑**的，题材是
+   * **可跳过**的辅助信息。并排会让「题材」看起来同样必填，作者在列表里纠结
+   * 半天才敢点确定；拆开之后第二步明确写着「可以跳过」，负担反而更轻。
+   */
+  const [createStep, setCreateStep] = useState<1 | 2>(1);
+  const [createGenre, setCreateGenre] = useState("");
   const createInputRef = useRef<InputRef>(null);
 
   /**
@@ -140,6 +150,8 @@ export default function BookshelfPage({
     // 否则第 1 步的卡片钉在「新建作品」按钮上，正好盖住书名输入框
     useGuideStore.getState().pause();
     setCreateError("");
+    setCreateStep(1);
+    setCreateGenre("");
     setCreateOpen(true);
   }, []);
 
@@ -147,6 +159,8 @@ export default function BookshelfPage({
     setCreateOpen(false);
     setCreateName("");
     setCreateError("");
+    setCreateStep(1);
+    setCreateGenre("");
   }, []);
 
   /** 取消关闭：把刚才让位的引导续播回来（创建成功走 closeCreate，由视图切换接到第 2 步） */
@@ -292,21 +306,42 @@ export default function BookshelfPage({
     if (hero) onOpenWork(hero.workId, hero.chapterId);
   }, [hero, onOpenWork]);
 
-  const handleCreateOk = useCallback(() => {
+  /** 第 1 步 → 第 2 步：只校验书名，先不落库（作者还能退回去改） */
+  const handleCreateNext = useCallback(() => {
     // L-03：书名留空时明确报错并聚焦输入框，绝不静默返回
-    // （旧行为：createWork 返回 null 就 return，弹窗不动也不提示，像卡住）
     const error = validateWorkName(createName);
     if (error) {
       setCreateError(error);
       createInputRef.current?.focus();
       return;
     }
-    const workId = createWork(createName);
-    if (!workId) return;
-    closeCreate();
-    // 空作品直接进编辑器：空态引导「写下第一章」
-    onOpenWork(workId);
-  }, [createName, closeCreate, createWork, onOpenWork]);
+    setCreateError("");
+    setCreateStep(2);
+  }, [createName]);
+
+  /**
+   * 第 2 步落库并进编辑器。
+   *
+   * `skipGenre` = 点「跳过」：题材不写库（AI 层按书名 + 要素弱兜底）。
+   * 建书不该被「想不出题材」卡住 —— 这是把题材拆成独立步骤的前提。
+   */
+  const finishCreate = useCallback(
+    (skipGenre: boolean) => {
+      const error = validateWorkName(createName);
+      if (error) {
+        // 从第 2 步退回第 1 步时书名可能已被清空，回到第 1 步报错而不是静默失败
+        setCreateError(error);
+        setCreateStep(1);
+        return;
+      }
+      const workId = createWork(createName, skipGenre ? undefined : createGenre);
+      if (!workId) return;
+      closeCreate();
+      // 空作品直接进编辑器：空态引导「写下第一章」
+      onOpenWork(workId);
+    },
+    [createGenre, createName, closeCreate, createWork, onOpenWork],
+  );
 
   const statsItems = useMemo<ShelfStatItem[]>(
     () => [
@@ -470,30 +505,78 @@ export default function BookshelfPage({
         <span>本地优先 · 数据存储于本机</span>
       </footer>
 
+      {/* 新建作品（2.7.1 起两步）：① 书名必填 → ② 题材可选、可跳过。
+          题材只服务 AI 风格锚定，不该成为建书的门槛，所以它单独占一步而不是
+          和书名并排；第二步显式提供「跳过」，跳过即视为「未设置」。 */}
       <Modal
         open={createOpen}
         title="新建作品"
-        okText="创建并开写"
         cancelText="取消"
-        onOk={handleCreateOk}
         onCancel={cancelCreate}
-        width={380}
+        width={400}
+        footer={
+          createStep === 1 ? (
+            <>
+              <Button onClick={cancelCreate}>取消</Button>
+              <Button type="primary" onClick={handleCreateNext}>
+                下一步
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button onClick={() => setCreateStep(1)}>上一步</Button>
+              <Button onClick={() => finishCreate(true)}>跳过</Button>
+              <Button type="primary" onClick={() => finishCreate(false)}>
+                创建并开写
+              </Button>
+            </>
+          )
+        }
       >
-        <Input
-          ref={createInputRef}
-          value={createName}
-          status={createError ? "error" : undefined}
-          onChange={(event) => {
-            setCreateName(event.target.value);
-            // 一敲字就撤掉报错：作者已经在处理了，红框不该挂着不走
-            setCreateError("");
-          }}
-          onPressEnter={handleCreateOk}
-          placeholder="给这本书起个名字"
-          maxLength={50}
-          autoFocus
+        <Steps
+          className="bs-page__create-steps"
+          size="small"
+          current={createStep - 1}
+          items={[{ title: "书名" }, { title: "题材" }]}
         />
-        {createError && <p className="bs-page__create-error">{createError}</p>}
+
+        {createStep === 1 ? (
+          <>
+            <Input
+              ref={createInputRef}
+              value={createName}
+              status={createError ? "error" : undefined}
+              onChange={(event) => {
+                setCreateName(event.target.value);
+                // 一敲字就撤掉报错：作者已经在处理了，红框不该挂着不走
+                setCreateError("");
+              }}
+              onPressEnter={handleCreateNext}
+              placeholder="给这本书起个名字"
+              maxLength={50}
+              autoFocus
+            />
+            {createError && <p className="bs-page__create-error">{createError}</p>}
+          </>
+        ) : (
+          <>
+            <AutoComplete
+              className="bs-page__create-genre"
+              value={createGenre}
+              options={[...GENRE_OPTIONS]}
+              placeholder="选一个题材，或直接填写（可不填）"
+              aria-label="作品题材"
+              onChange={(value: string) => setCreateGenre(value.slice(0, GENRE_MAX_LENGTH))}
+              filterOption={(input, option) =>
+                String(option?.value ?? "").includes(input.trim())
+              }
+              autoFocus
+            />
+            <p className="bs-page__create-hint">
+              题材只作 AI 起名、润色的风格参考，也可以直接跳过，之后在作品管理里补
+            </p>
+          </>
+        )}
       </Modal>
 
       {/* 数据安全（P0）：一键全量备份 / 从备份恢复（回收站已拆成独立页面）。

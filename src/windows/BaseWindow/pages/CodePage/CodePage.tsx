@@ -26,6 +26,7 @@ import dayjs from "dayjs";
 import Page from "@/shared/components/Page";
 import type { GitWebhookLogItem } from "@/shared/services/code";
 import { useCodePage } from "./hooks/useCodePage";
+import { DAILY_TARGET } from "./code-utils";
 import "./index.scss";
 
 const { RangePicker } = DatePicker;
@@ -131,7 +132,7 @@ export default function CodePage() {
     summaryStats,
     monthlyDailyNeeded,
     dailyOutput,
-    selectedRangeDailyNeeded,
+    selectedRangeDailyOutput,
     selectedRangeHint,
     dailyOutputTrend,
     trendMax,
@@ -150,7 +151,7 @@ export default function CodePage() {
                 }
               }}
               disabledDate={(current) =>
-                current && current.isAfter(dayjs().endOf("day"))
+                current && current.isAfter(dayjs().endOf("month"))
               }
             />
             <Tooltip
@@ -181,7 +182,7 @@ export default function CodePage() {
               icon={<CalendarOutlined />}
               onClick={loadThisMonth}
               loading={loading}
-              title="将日期范围选为本月 1 号至今日并查询"
+              title="将日期范围选为本月 1 号至月底并查询"
             >
               查询当月
             </Button>
@@ -279,7 +280,7 @@ export default function CodePage() {
               {monthlyDailyNeeded !== null ? (
                 <Statistic
                   title={
-                    <Tooltip title="以200行/天为月度目标，从今日起到本月底每个工作日平均需产出的有效代码行数">
+                    <Tooltip title="目标：本月累计写够 200 行 × 全月工作日。此处显示「缺口 ÷ 剩余工作日」= 从明天起到月底，平均每个工作日还需产出多少行才能达标；已达标则显示 0">
                       <span style={{ cursor: "help" }}>
                         本月剩余日均 <AimOutlined />
                       </span>
@@ -311,27 +312,21 @@ export default function CodePage() {
 
           <Col xs={12} sm={12} md={8} lg={6} xl={6}>
             <Card size="small">
-              {selectedRangeDailyNeeded !== null ? (
+              {selectedRangeDailyOutput !== null ? (
                 <Statistic
                   title={
-                    <Tooltip
-                      /* 文案由 useCodePage 记忆化提供：原先写在这里的 IIFE
-                         会在每次渲染同步跑一遍近万条数据的过滤 */
-                      title={selectedRangeHint}
-                    >
+                    <Tooltip title={selectedRangeHint}>
                       <span style={{ cursor: "help" }}>
-                        选中区间剩余日均 <AimOutlined />
+                        选中区间日均产出 <AimOutlined />
                       </span>
                     </Tooltip>
                   }
-                  value={selectedRangeDailyNeeded}
+                  value={selectedRangeDailyOutput}
+                  precision={1}
                   suffix="行/天"
                   styles={{
                     content: {
-                      color:
-                        selectedRangeDailyNeeded === 0
-                          ? "var(--app-success)"
-                          : "var(--app-accent-purple)",
+                      color: "var(--app-accent-purple)",
                       fontWeight: 700,
                     },
                   }}
@@ -339,7 +334,7 @@ export default function CodePage() {
               ) : (
                 <div>
                   <Text type="secondary" style={{ fontSize: 14 }}>
-                    选中区间剩余日均
+                    选中区间日均产出
                   </Text>
                   <div
                     style={{
@@ -361,7 +356,7 @@ export default function CodePage() {
           size="small"
           className="trend-card"
           title="选中日期日均代码产出趋势"
-          extra={<Text type="secondary">目标 200 行/天</Text>}
+          extra={<Text type="secondary">目标 {DAILY_TARGET} 行/天</Text>}
         >
           <div className="trend-chart" aria-label="选中日期日均代码产出趋势">
             <div className="trend-values">
@@ -374,7 +369,7 @@ export default function CodePage() {
             <div className="trend-bars">
               <div
                 className="trend-target-line"
-                style={{ bottom: `${(200 / trendMax) * 100}%` }}
+                style={{ bottom: `${(DAILY_TARGET / trendMax) * 100}%` }}
               />
               {dailyOutputTrend.map((item) => (
                 <div className="trend-bar-area" key={item.date}>

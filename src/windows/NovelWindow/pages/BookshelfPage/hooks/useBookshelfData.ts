@@ -168,15 +168,21 @@ export function useBookshelfData() {
 
   // ── 作品 ────────────────────────────────────────────────────────
 
-  /** 新建作品：本地先建并返回 id（书架随后跳编辑器开写），异步落库 */
+  /**
+   * 新建作品：本地先建并返回 id（书架随后跳编辑器开写），异步落库。
+   *
+   * `genre` 为可选：建书第二步可以「跳过」（不传 = 未设置题材）。
+   */
   const createWork = useCallback(
-    (name: string): string | null => {
+    (name: string, genre?: string): string | null => {
       const trimmed = name.trim();
       if (!trimmed || !bundle) return null;
+      const genreDraft = genre?.replace(/\s+/g, " ").trim();
       const work: NovelWorkDTO = {
         id: createShelfId("w"),
         name: trimmed,
         createdAt: Date.now(),
+        ...(genreDraft ? { genre: genreDraft } : {}),
       };
       setBundle((current) =>
         current ? { ...current, works: [...current.works, work] } : current,

@@ -1,8 +1,25 @@
 # AI 上下文加工层 & 输出模板规范 · 预研设计
 
-- **状态**：已评审（待动工）
+> **已归档 · 2026-10-27 · 闭环版本 2.8.1**
+> 本文为过程留档，**不再修改**（结论与当时的判断依据原样保留）。
+> 现行为准的去处：代码本身；后续 AI 功能排期见
+> [`ai-roadmap-batch-plan.md`](../../prd/prd-ai-roadmap/ai-roadmap-batch-plan.md)。
+
+
+- **状态**：**全部落地（Phase 1 = 2.7.0，Phase 2 = 2.8.0）**
 - **输入**：R-AI-02（起名增强已落地）、R-AI-03（润色已落地）、`ai-architecture-decision.md`（服务层分层）、`ai-technical-preresearch.md`
-- **基线**：代码版本 2.5.1
+- **基线**：代码版本 2.8.0
+- **落地对照（2.8.0 实测）**：
+  - `src/shared/ai/context/output-spec.ts` — `OutputFormat` / `buildOutputInstruction` / `parseOutput`（三层保险）✅
+  - `src/shared/ai/context/collector.ts` — `collectBookContext` / `matchEntitiesInText` ✅
+  - `src/shared/ai/context/prompt/` — **提示词唯一产地**（2.8.0）：`sections.ts` 公共段落 + `naming.ts` / `polish.ts` 模板 + `registry.ts`（`PROMPT_BUILDERS` / `buildPromptSpec`）。
+    原 `assembler.ts` 已拆入此目录，早期 `ai-context.ts`（`buildNamingPrompt` / `buildPolishPrompt`）已删除 ✅
+  - `ai-client.aiGenerateStructured` — 按契约解析（解析在渲染层，主进程不感知）✅
+  - 起名：自动灌入上下文 + JSON 寓意展示 + 描述可选 ✅
+  - 润色：命中人物卡 + 章节片段注入 ✅
+  - AI 调用日志：`ai.db.ai_log` 表 + 本地 **DEBUG** 级日志（`logAlways`，不受级别阈值过滤）✅
+  - `work.genre` 题材字段（Phase 2，2.8.0）：可空列 + 书架两步建书 + 作品菜单可补 ✅
+  - 调用日志查看面板（2.8.0）：设置窗口「AI 记录」独立页（分页 / 意图筛选 / 展开看 prompt 与输出 / 清空）✅
 - **目标**：解决三个当前痛点——① 每次 AI 调用都要作者手工输入要求（类型/风格/书名等），不智能；② AI 输出靠 `split("\n")` + 正则切分，无契约、脆弱；③ 缺 AI 调用日志，无法复盘/调优 prompt。
 
 ## 决策记录（已拍板，替换第七节「待拍板」）
@@ -43,9 +60,10 @@
                            ▼
 ┌──────────────────────────────────────────────────────────────┐
 │ ★ AI 上下文加工层（新增 src/shared/ai/context/）               │
-│   ① collector.ts   纯函数：bookSnapshot → AiBookContext       │
-│   ② assembler.ts   纯函数：AiBookContext + intent → PromptSpec│
-│   ③ output-spec.ts 输出契约：OutputFormat 枚举 + 模板          │
+│   ① collector.ts     纯函数：bookSnapshot → AiBookContext     │
+│   ② prompt/（2.8.0）  唯一产地：sections 公共段 + naming /     │
+│                      polish 模板 + registry（buildPromptSpec）│
+│   ③ output-spec.ts   输出契约：OutputFormat + 三层解析保险      │
 └──────────────────────────┬───────────────────────────────────┘
                            ▼
 ┌──────────────────────────────────────────────────────────────┐
@@ -79,23 +97,23 @@
 | 当前章节片段 | `activeChapter.content` | ✅ 已有 | — | ✅ 看前后文 | P1 |
 | 卷/章节名 | `volumes`/`chapters` | ✅ 已有 | ✅ 避地名冲突 | — | P1 |
 | 大纲 | `outlineEntries` | ✅ 已有 | — | ✅ 情节走向（续写） | P2 |
-| **题材/风格** | `work.genre` | ❌ **缺失** | ✅ 自动匹配风格 | ✅ | ⚠️ 需补字段 |
+| **题材/风格** | `work.genre` | ✅ **已有（2.8.0）** | ✅ 自动匹配风格 | ✅ | 可空；缺失时弱兜底 |
 
 ### 3.2 题材字段：两条路 + 结论
 
 - **A. 补 `genre` 字段**：作者建书时选一次题材（仙侠/都市/西幻…），后续起名/润色自动复用。最干净、零推理开销，但要改 `NovelWork` schema + 建书 UI。
 - **B. 模型推断**：把书名+要素卡+章节样本喂给 AI 先推断题材。零改 schema，但多一次调用、首版就有不确定性、且推理结果无法持久复用。
 
-> **预研结论**：**采用 A（补字段）**，作为 Phase 2 的明确动作；首版 Phase 1 在 `genre` 缺失时用「书名 + 要素卡类型」做**弱兜底**（不阻塞、不猜错）。理由：题材是「建书时的一次性输入、全书长期复用」的高价值元数据，补字段一劳永逸，符合「小白免输入」目标。
+> **预研结论**：**采用 A（补字段）**，2.8.0 已落地：`novel_works.genre`（可空）+ 书架两步建书 + 作品菜单「设置题材」事后可补。`genre` 缺失时仍用「书名 + 要素卡类型」做**弱兜底**（不阻塞、不猜错）。理由：题材是「建书时的一次性输入、全书长期复用」的高价值元数据，补字段一劳永逸，符合「小白免输入」目标。
 
 ### 3.3 `AiBookContext`（归一化产物，collector 输出）
 
 ```ts
-/** 归一后的本书上下文（collector 的输出，assembler 的输入） */
+/** 归一后的本书上下文（collector 的输出，prompt 模板的输入） */
 export interface AiBookContext {
   work: {
     name: string;
-    genre?: string;           // 题材，Phase 2 补字段后才有
+    genre?: string;           // 题材（2.8.0 起有，可空）
   };
   /** 要素卡摘要（起名避重 + 风格锚点；润色理解人物） */
   entities: Array<{
@@ -199,9 +217,9 @@ export type OutputFormat =
 
 ---
 
-## 五、PromptSpec 与 assembler
+## 五、PromptSpec 与 prompt 模板层
 
-`assembler` 把「归一上下文 + 用户意图」拼成服务层可直接消费的 `PromptSpec`：
+模板层把「归一上下文 + 用户意图」拼成服务层可直接消费的 `PromptSpec`：
 
 ```ts
 export interface PromptSpec {
@@ -213,7 +231,11 @@ export interface PromptSpec {
 }
 ```
 
-各功能一个 assembler 模板（`assembleNamingSpec` / `assemblePolishSpec` / 未来 `assembleContinuationSpec`），**新功能只新增模板，不改服务层**——这是「扩展性强」的落点。
+各功能一个模板（`prompt/naming.ts` / `prompt/polish.ts` / 未来 `continuation.ts`），
+在 `prompt/registry.ts` 登记一行即可按意图分发（`buildPromptSpec`）——
+**新功能只新增模板，不改服务层**，这是「扩展性强」的落点。
+`prompt/sections.ts` 收了所有公共段落（角色 / 作品背景 / 要素 / 境界 / 人物 / 章节片段 / 约束 /
+输出契约），保证「改一处 = 所有功能同步」，不会再出现两套 prompt 漂移。
 
 ---
 
@@ -225,16 +247,17 @@ export interface PromptSpec {
 |---|---|---|
 | 新增 `output-spec.ts` | `src/shared/ai/context/output-spec.ts` | `OutputFormat` 类型 + JSON 指令模板 + 解析器 + 降级兜底 |
 | 新增 `collector.ts` | `src/shared/ai/context/collector.ts` | `BookSnapshot → AiBookContext`，纯函数 |
-| 新增 `assembler.ts` | `src/shared/ai/context/assembler.ts` | `assembleNamingSpec` / `assemblePolishSpec` |
+| 新增 `prompt/` | `src/shared/ai/context/prompt/`（2.8.0 定稿）| `sections.ts` 公共段落 + `naming.ts` / `polish.ts` + `registry.ts`（`buildPromptSpec`）；原 `assembler.ts` 已并入，`ai-context.ts` 已删除 |
 | 改 `ai-types.ts` | `AiGenerateRequest` / `AiGenerateData` | 请求加 `outputFormat`；响应 `items` 改 `Array<{name, meaning}>`（或泛型） |
 | 改 `ai-client.ts` | 解析逻辑 | 按 `outputFormat` 解析 + 兜底，替换 `splitNameItems` |
 | 改 `NameGeneratorPanel` | 起名面板 | 从 `useNovelData` 取 `BookSnapshot`，自动灌入书名/类型/已用名；作者描述变「可选」；结果展示「寓意」 |
 | 改 `PolishPreview` / 润色链 | 润色 | 自动带书名 + 相关人物卡 + 章节片段 |
 
-### Phase 2（需补字段）
+### Phase 2（需补字段，2.8.0 已完成）
 
-- `NovelWork` 加 `genre`，建书 UI 选一次题材；起名/润色自动匹配风格，彻底免输入。
-- 润色上下文正式接入章节片段 + 人物卡（token 成本换智能，需确认）。
+- ✅ `NovelWork` 加 `genre`（可空），书架建书第二步选题材（可跳过），作品菜单可事后补；
+  起名/润色自动匹配风格。
+- ✅ 润色上下文正式接入章节片段 + 人物卡。
 
 ### Phase 3（进阶，复用同一层）
 
@@ -283,9 +306,14 @@ CREATE INDEX IF NOT EXISTS idx_ai_log_intent ON ai_log(intent);
 
 ### 8.4 查询通道
 
-- 新增 IPC：`ai-log-list`（分页查询，倒序）、`ai-log-clear`（清空）。
-- 渲染层入口暂放 **AI 设置分区**加一个「查看调用日志」入口（轻量抽屉/列表），首版只读展示，供调优；不做复杂的筛选面板。
+- 新增 IPC：`ai-log-list`（分页查询，倒序，可按 `intent` 过滤）、`ai-log-clear`（清空）。
+- 渲染层入口（2.8.0 定稿）：**设置窗口 → 「AI 记录」独立页**，而不是塞进 AI 配置分区。
+  理由：配置是「设一次」的动作，记录是「调 prompt 时反复回看」的动作，混在一页会让长列表
+  把「保存」按钮淹掉。页面提供分页、按意图筛选、展开看三段（系统提示词 / 用户输入 / 模型输出）、
+  一键清空；筛选在 SQL 层做（前端只筛当前页会造成「筛完变空」的假象）。
 - 数据随用户隔离（`ai.db` 本身已随用户），无额外工作。
+- **写入不受日志级别阈值过滤**（`logAlways`）：AI 记录与 IPC 记录走同一个绕过出口，
+  否则默认 `info` 级别下整批消失——而那正是排查「模型为什么答歪」的唯一线索。
 
 ### 8.5 对「调优」的价值
 
