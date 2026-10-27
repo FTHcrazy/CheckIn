@@ -3,6 +3,7 @@ import path from "node:path";
 import { fireEvent, render, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { generateNames } from "../../naming/name-generator";
+import { aiGenerateStructured } from "@/shared/ai/ai-client";
 import NameGeneratorPanel, { type NamingActions } from "./index";
 
 // 只监视生成器的入参（行为回归：切换选项必须带「新值」调用，不能带旧闭包值）
@@ -11,6 +12,11 @@ vi.mock("../../naming/name-generator", async (importOriginal) => {
     await importOriginal<typeof import("../../naming/name-generator")>();
   return { ...actual, generateNames: vi.fn(actual.generateNames) };
 });
+
+// AI 调用整块替换：面板只关心「拿回来的条目怎么落地」
+vi.mock("@/shared/ai/ai-client", () => ({
+  aiGenerateStructured: vi.fn(),
+}));
 
 const buildActions = (): NamingActions => ({
   onInsertToEditor: vi.fn(),
@@ -78,6 +84,38 @@ describe("NameGeneratorPanel 组件", () => {
     const calls = vi.mocked(generateNames).mock.calls;
     const last = calls[calls.length - 1][0];
     expect(last.style).toBe("westernModern");
+  });
+
+  /**
+   * 真实事故（2026-10-27）：模型把 `}` 写成 `]`，旧解析退回行切，面板第一张卡就是
+   * `[{"name"`。解析层已修（output-spec 逐条抢救）；这里钉的是**面板这一侧**的底线：
+   * 无论 AI 回来什么，作者看到的只能是名字，不能是 JSON 残片。
+   */
+  it("AI 返回不可用数据：面板只留本地结果，不显示任何 JSON 残片", async () => {
+    vi.mocked(aiGenerateStructured).mockResolvedValue({
+      ok: true,
+      data: {
+        text: '[{"name":"江长青","meaning":"寓意寿命长青，直接呼应书名',
+        entries: [],
+        usedFallback: true,
+      },
+    });
+
+    const { container, queryByText } = render(
+      <NameGeneratorPanel exclude={[]} favorites={[]} actions={buildActions()} />,
+    );
+    await waitFor(() => expect(generateNames).toHaveBeenCalled());
+
+    const aiButton = container.querySelector<HTMLElement>(".nv-name__ai-btn");
+    expect(aiButton).not.toBeNull();
+    fireEvent.click(aiButton as HTMLElement);
+    await waitFor(() => expect(queryByText(/已切回本地起名/)).not.toBeNull());
+
+    const grid = container.querySelector(".nv-name__grid");
+    expect(grid).not.toBeNull();
+    // 结果卡里不许出现任何 JSON 标点（`[{"name"` 这类残片）
+    expect(grid?.textContent ?? "").not.toMatch(/[[\]{}"]/);
+    expect(grid?.querySelectorAll(".nv-name__card").length).toBeGreaterThan(0);
   });
 });
 

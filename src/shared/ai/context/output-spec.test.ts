@@ -79,6 +79,83 @@ describe("parseOutput", () => {
       { name: "苏白衣", meaning: "温润如玉" },
     ]);
   });
+
+  // 真实事故（2026-10-27 ai_log#9）：模型在第 5 条把 `}` 写成 `]`，整串非法，
+  // 旧逻辑退回行切 → 单行坏数组把 `[{"name"` 当成了第一个名字。
+  it("数组中间分隔符写错（} 写成 ]）→ 逐条抢救出全部条目，且不弹兜底提示", () => {
+    const raw =
+      '[{"name":"江长青","meaning":"寓意寿命长青，道心坚固。"},' +
+      '{"name":"叶万古","meaning":"气吞万古，格局宏大。"},' +
+      '{"name":"慕不朽","meaning":"追求不朽大道。"},' +
+      '{"name":"顾长生","meaning":"求得一世长存。"},' +
+      '{"name":"凌千劫","meaning":"凌驾于千般劫难之上。"],' +
+      '{"name":"沈延寿","meaning":"寿元无尽。"},' +
+      '{"name":"陆青松","meaning":"生命力顽强。"}]';
+    const parsed = parseOutput(raw, NAMING_OUTPUT_FORMAT);
+    expect(parsed.usedFallback).toBe(false);
+    expect(parsed.entries).toHaveLength(7);
+    expect(parsed.entries[0]).toEqual({
+      name: "江长青",
+      meaning: "寓意寿命长青，道心坚固。",
+    });
+    expect(parsed.entries.map((e) => e.name)).toEqual([
+      "江长青",
+      "叶万古",
+      "慕不朽",
+      "顾长生",
+      "凌千劫",
+      "沈延寿",
+      "陆青松",
+    ]);
+  });
+
+  it("输出被 max_tokens 截断（缺尾部 ]）→ 已完整的条目照常可用", () => {
+    const raw =
+      '[{"name":"江长青","meaning":"寿命长青。"},{"name":"叶万古","meaning":"气吞万古。"},{"name":"慕不朽","mean';
+    const parsed = parseOutput(raw, NAMING_OUTPUT_FORMAT);
+    expect(parsed.usedFallback).toBe(false);
+    expect(parsed.entries.map((e) => e.name)).toEqual(["江长青", "叶万古"]);
+  });
+
+  it("单条对象键名漏引号 → 按字段正则救回，不牵连其余", () => {
+    const raw =
+      '[{"name":"江长青","meaning":"寿命长青。"},{"name":"坏条目",meaning:"缺引号"},' +
+      '{"name":"叶万古","meaning":"气吞万古。"}]';
+    const parsed = parseOutput(raw, NAMING_OUTPUT_FORMAT);
+    expect(parsed.usedFallback).toBe(false);
+    expect(parsed.entries).toEqual([
+      { name: "江长青", meaning: "寿命长青。" },
+      { name: "坏条目", meaning: "缺引号" },
+      { name: "叶万古", meaning: "气吞万古。" },
+    ]);
+  });
+
+  it("主字段是 JSON 残片（`[{\"name\"`）→ 整条丢弃，绝不进结果卡", () => {
+    const raw = JSON.stringify([
+      { name: '[{"name"', meaning: "半截数组" },
+      { name: "江长青", meaning: "寿命长青。" },
+    ]);
+    const parsed = parseOutput(raw, NAMING_OUTPUT_FORMAT);
+    expect(parsed.entries).toEqual([{ name: "江长青", meaning: "寿命长青。" }]);
+  });
+
+  it("坏到无法抢救（字段残缺）→ 判定本次无产出，绝不把 JSON 残片当名字", () => {
+    const raw = '[{"name":"江长青"';
+    const parsed = parseOutput(raw, NAMING_OUTPUT_FORMAT);
+    expect(parsed.entries).toEqual([]);
+    expect(parsed.usedFallback).toBe(true);
+  });
+
+  it("坏返回里的 JSON 残片永远不进结果（回归：`[{\"name\"` 曾被当成名字）", () => {
+    const raw = '[{"name":"江长青","meaning":"寿命长青。"},{"缺东西"}]';
+    const parsed = parseOutput(raw, NAMING_OUTPUT_FORMAT);
+    expect(parsed.entries).toEqual([{ name: "江长青", meaning: "寿命长青。" }]);
+    for (const entry of parsed.entries) {
+      expect(entry.name).not.toContain("[");
+      expect(entry.name).not.toContain("{");
+      expect(entry.name).not.toContain('"');
+    }
+  });
 });
 
 describe("alignParagraphBreaks", () => {
