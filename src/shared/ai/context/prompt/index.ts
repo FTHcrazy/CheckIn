@@ -13,12 +13,27 @@ export {
   buildPromptSpec,
   PROMPT_BUILDERS,
   PROMPT_INTENTS,
+  PROMPT_VERSIONS,
+  promptVersionOf,
   type PromptIntent,
   type PromptIntentMap,
 } from "./registry";
 
 export { assembleNamingSpec, type NamingIntent } from "./naming";
 export { assemblePolishSpec, type PolishIntent } from "./polish";
+export {
+  assembleTransformSpec,
+  TRANSFORM_KIND_LABELS,
+  TRANSFORM_INTENT_SUB,
+  type TransformIntent,
+  type TransformKind,
+} from "./transform";
+export {
+  assembleContinuationSpec,
+  CONTINUATION_OUTPUT_FORMAT,
+  type ContinuationIntent,
+} from "./continuation";
+export { assembleSummarySpec, type SummaryIntent } from "./summary";
 
 export {
   chapterBlock,

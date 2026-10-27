@@ -525,6 +525,28 @@ function initializeNovelDb(database: Database.Database): void {
     );
   }
 
+  // R-AI-09（2.10.0）：章节 AI 摘要加三列。加列而非 KV 映射 / 独立表——随
+  // `novel-chapter-purge` 的物理 DELETE 自动清理，零孤儿、零额外删除逻辑。
+  // 老章节三列均为 NULL = 未生成过摘要。
+  {
+    const chapterColumns = database.pragma("table_info(novel_chapters)") as Array<{
+      name: string;
+    }>;
+    if (!chapterColumns.some((column) => column.name === "ai_summary")) {
+      database.exec("ALTER TABLE novel_chapters ADD COLUMN ai_summary TEXT");
+    }
+    if (!chapterColumns.some((column) => column.name === "ai_summary_at")) {
+      database.exec("ALTER TABLE novel_chapters ADD COLUMN ai_summary_at INTEGER");
+    }
+    if (!chapterColumns.some((column) => column.name === "ai_summary_model")) {
+      database.exec("ALTER TABLE novel_chapters ADD COLUMN ai_summary_model TEXT");
+    }
+    database.exec(
+      `CREATE INDEX IF NOT EXISTS idx_novel_chapters_summary_at
+        ON novel_chapters(work_id, ai_summary_at)`,
+    );
+  }
+
   // 1.36.0 建的 novel.db 没有 sub_pattern 列（1.37.0 逐级小层命名）：
   // PRAGMA 探测后再 ALTER，幂等可重复执行。
   const levelColumns = database.pragma("table_info(novel_setting_levels)") as Array<{

@@ -67,7 +67,36 @@ function initializeAiDb(database: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_ai_log_created ON ai_log(created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_ai_log_intent ON ai_log(intent);
+
+    -- 产品维度事件表（与技术日志 ai_log 分工，见 prd-ai-roadmap 架构复核 §5.1）
+    -- 只记元数据，绝不记正文 / 作品名 / 邮箱。
+    CREATE TABLE IF NOT EXISTS ai_event (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      intent       TEXT    NOT NULL,   -- naming/polish/transform/continuation/extract/
+                                       --   summary/consistency/branch/report/qa/card/fill/test
+      step         TEXT    NOT NULL,   -- trigger|success|fallback|adopt|edit|cancel
+      provider     TEXT,               -- openai/ollama（trigger 时可能为空）
+      model        TEXT,
+      prompt_ver   TEXT,               -- prompt 模板版本（M7，用于效果归因）
+      duration_ms  INTEGER,
+      error_code   TEXT,               -- 归一化错误码；成功为空
+      item_count   INTEGER,            -- 产出条数（json-array 场景）
+      char_count   INTEGER,            -- 送模型的正文字数（只记字数，不记正文）
+      scope        TEXT,               -- selection|chapter|book —— L3 范围，用于授权拒绝率统计
+      created_at   TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_ai_event_intent_step ON ai_event(intent, step);
+    CREATE INDEX IF NOT EXISTS idx_ai_event_created     ON ai_event(created_at DESC);
   `);
+
+  // ── 增量迁移（§6.5）───────────────────────────────────────────────
+  // M7：ai_log 补 prompt_version 列（改 prompt 后对比前后效果用）。可空，
+  // 老日志一律视为「版本未知」，无需回填。
+  const logColumns = database.pragma("table_info(ai_log)") as Array<{ name: string }>;
+  if (!logColumns.some((column) => column.name === "prompt_version")) {
+    database.exec("ALTER TABLE ai_log ADD COLUMN prompt_version TEXT");
+  }
 }
 
 /** 打开 / 切换用户的 ai.db（用户库生命周期回调，见 registerAiDbBridge） */
@@ -138,4 +167,84 @@ export function aiRun(
 
 export function aiExec(sql: string): void {
   getAiDb().exec(sql);
+}
+
+// ── AI 事件（产品度量）───────────────────────────────────────────────
+
+/** ai_event 滚动清理：默认最近 5000 条 **且** 90 天内（见 prd 架构复核 §5.1） */
+const AI_EVENT_RETAIN_COUNT = 5000;
+const AI_EVENT_RETAIN_DAYS = 90;
+
+/** 一条 AI 产品事件（只记元数据，见 AiEventEntry 的字段约定） */
+export interface AiEventEntry {
+  intent: string;
+  step: "trigger" | "success" | "fallback" | "adopt" | "edit" | "cancel";
+  provider?: string;
+  model?: string;
+  promptVer?: string;
+  durationMs?: number;
+  errorCode?: string;
+  itemCount?: number;
+  charCount?: number;
+  scope?: string;
+}
+
+/**
+ * 落一条 AI 产品事件（M1a）。
+ *
+ * 与 `ai_log` 严格分工：本表只存元数据（intent / step / 耗时 / 错误码 / 条数 /
+ * 字数 / 范围），**不存任何正文、作品名、章节标题、邮箱**（合规白名单，见守卫）。
+ *
+ * 失败静默（同 `logUsageEvent` 范式）：埋点绝不能阻塞写作主链路。
+ * 每次写入顺带做滚动清理，避免事件表无限增长撑爆磁盘。
+ */
+export function logAiEvent(entry: AiEventEntry): void {
+  if (!aiDb) return; // 未初始化（lite 版 / 未登录）时静默跳过
+  try {
+    aiRun(
+      `INSERT INTO ai_event
+        (intent, step, provider, model, prompt_ver, duration_ms,
+         error_code, item_count, char_count, scope)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        entry.intent,
+        entry.step,
+        entry.provider ?? null,
+        entry.model ?? null,
+        entry.promptVer ?? null,
+        entry.durationMs ?? null,
+        entry.errorCode ?? null,
+        entry.itemCount ?? null,
+        entry.charCount ?? null,
+        entry.scope ?? null,
+      ],
+    );
+    trimAiEvents();
+  } catch (error) {
+    const raw = error instanceof Error ? error.message : String(error);
+    console.warn(`[ai-event] 写入失败: ${raw}`);
+  }
+}
+
+/** 滚动清理：超出条数上限或时间下界的老事件，批量删到界限内 */
+export function trimAiEvents(): void {
+  if (!aiDb) return;
+  try {
+    aiRun(
+      `DELETE FROM ai_event
+        WHERE id NOT IN (
+          SELECT id FROM ai_event
+          ORDER BY id DESC LIMIT ?
+        )`,
+      [AI_EVENT_RETAIN_COUNT],
+    );
+    aiRun(
+      `DELETE FROM ai_event
+        WHERE created_at < datetime('now', 'localtime', ?)`,
+      [`-${AI_EVENT_RETAIN_DAYS} days`],
+    );
+  } catch (error) {
+    const raw = error instanceof Error ? error.message : String(error);
+    console.warn(`[ai-event] 清理失败: ${raw}`);
+  }
 }

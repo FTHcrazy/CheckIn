@@ -83,6 +83,7 @@ const baseProps = {
   onReorderVolume: vi.fn(),
   onRenameVolume: vi.fn(),
   onDeleteVolume: vi.fn(),
+  onOpenSummary: vi.fn(),
 };
 
 describe("ChapterTree 激活章自动滚动（跳转正文时左栏定位）", () => {

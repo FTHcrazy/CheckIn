@@ -6,6 +6,9 @@ import EditorPane from "./components/EditorPane";
 import EntityContextMenu from "./components/EntityContextMenu";
 import EntityTypeManager from "./components/EntityTypeManager";
 import PolishPreview from "./components/PolishPreview";
+import ContinuationPreview from "./components/ContinuationPreview";
+import SummaryPreview from "./components/SummaryPreview";
+import AiConsentDialog from "@/shared/components/AiConsentDialog";
 import HoverEntityCard from "./components/HoverEntityCard";
 import NovelGuideTour from "../../components/NovelGuideTour";
 import type { GuideView } from "@/shared/novel/guide-copy";
@@ -149,9 +152,24 @@ export default function NovelPage({
     handleCtxToPack,
     polish,
     handleCtxPolish,
+    handleCtxTransform,
     handlePolishConfirm,
     handlePolishClose,
-    runPolish,
+    handlePolishRetry,
+    // AI 续写（R-AI-07）
+    continuation,
+    runContinuation,
+    handleContinuationConfirm,
+    handleContinuationClose,
+    handleContinuationRetry,
+    // AI 章节摘要（R-AI-09）
+    summary,
+    summaryPending,
+    aiConsent,
+    runChapterSummary,
+    handleSummaryConsentConfirm,
+    handleSummaryConsentCancel,
+    handleSummaryClose,
     handleNewVolume,
     handleSaveEntity,
     handleRenameVolume,
@@ -616,6 +634,7 @@ export default function NovelPage({
             packOpening={packOpening}
             onToggleSettingCenter={view.toggleSettingCenter}
             onToggleHistory={view.toggleSnapshot}
+            onContinue={() => void runContinuation()}
             /* REQ-053：浮层（设定中心 / 类型管理 Modal）开着时，点击顶栏即离开浮层 ——
              它们铺满视口的 wrap 会吃掉同一次点击，让「行囊 / 小说设定」需要点两次 */
             onDismissOverlays={view.dismissPageOverlays}
@@ -642,6 +661,7 @@ export default function NovelPage({
             onReorderVolume={handleReorderVolume}
             onRenameVolume={handleRenameVolume}
             onDeleteVolume={handleDeleteVolume}
+            onOpenSummary={runChapterSummary}
           />
 
           <div className="nv-page__stage">
@@ -700,22 +720,62 @@ export default function NovelPage({
                 onMark={handleCtxMark}
                 onBind={handleCtxBind}
                 onPolish={handleCtxPolish}
+                onTransform={handleCtxTransform}
                 onClose={closeCtxMenu}
               />
             )}
 
-            {/* AI 润色预览：划词右键「润色这段文字」后弹出，确认才替换 */}
+            {/* AI 润色 / 文本变换预览：划词右键后弹出，确认才替换 */}
             {polish && (
               <PolishPreview
                 original={polish.text}
                 polished={polish.polished}
                 loading={polish.loading}
                 error={polish.error}
+                mode={polish.mode}
                 onConfirm={handlePolishConfirm}
-                onRetry={() => void runPolish()}
+                onRetry={handlePolishRetry}
                 onClose={handlePolishClose}
               />
             )}
+
+            {/* AI 续写候选：光标处触发，点候选插入光标处 */}
+            {continuation && (
+              <ContinuationPreview
+                candidates={continuation.candidates}
+                loading={continuation.loading}
+                error={continuation.error}
+                onConfirm={handleContinuationConfirm}
+                onRetry={handleContinuationRetry}
+                onClose={handleContinuationClose}
+              />
+            )}
+
+            {/* AI 章节摘要浮层（R-AI-09）：生成后已落库，这里只展示 + 告知来源 */}
+            {summary && (
+              <SummaryPreview
+                result={summary.result}
+                loading={summary.loading}
+                error={summary.error}
+                model={data.chapters.find((c) => c.id === summary.chapterId)?.aiSummaryModel}
+                onRegenerate={() => runChapterSummary(summary.chapterId)}
+                onClose={handleSummaryClose}
+              />
+            )}
+
+            {/* L3 授权弹窗（M5）：首次触发摘要等 L3 功能时弹出 */}
+            <AiConsentDialog
+              open={summaryPending !== null}
+              estimate={{
+                chars: summaryPending?.chars ?? 0,
+                tokens: summaryPending?.tokens ?? 0,
+              }}
+              scope={aiConsent.scope}
+              onScopeChange={aiConsent.setScope}
+              provider={aiConsent.provider}
+              onConfirm={() => void handleSummaryConsentConfirm()}
+              onCancel={handleSummaryConsentCancel}
+            />
 
             {/* 悬浮卡自己订阅 hover store：指针扫过正文不再推整棵树 */}
             <HoverEntityCard onOpenDetail={handleOpenEntity} />

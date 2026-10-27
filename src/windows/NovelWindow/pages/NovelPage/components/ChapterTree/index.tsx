@@ -49,6 +49,8 @@ interface ChapterTreeProps {
   onRenameVolume: (volumeId: string, name: string) => void;
   /** 删除卷（共享 Popconfirm 确认后触发） */
   onDeleteVolume: (volumeId: string) => void;
+  /** 生成 / 查看本章 AI 摘要（R-AI-09） */
+  onOpenSummary: (chapterId: string) => void;
 }
 
 /** 扁平行模型：卷头行 + 已展开的章行（Virtuoso 只接受一维列表） */
@@ -88,6 +90,7 @@ export default function ChapterTree({
   onReorderVolume,
   onRenameVolume,
   onDeleteVolume,
+  onOpenSummary,
 }: ChapterTreeProps) {
   const [keyword, setKeyword] = useState("");
   /** 折叠的卷 id 集合（默认全部展开） */
@@ -385,6 +388,7 @@ export default function ChapterTree({
                   onToggleStatus={onToggleStatus}
                   onRename={onRenameChapter}
                   onRequestDelete={handleRequestDelete}
+                  onOpenSummary={onOpenSummary}
                 />
               )
             }

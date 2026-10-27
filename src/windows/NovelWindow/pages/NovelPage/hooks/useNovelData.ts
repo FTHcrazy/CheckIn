@@ -32,6 +32,7 @@ import {
   saveChapterContent,
   saveChapterOrder,
   saveChapterOutline,
+  saveChapterSummary,
   saveEntity,
   saveNameFavorites,
   saveNote as saveNoteRemote,
@@ -65,6 +66,7 @@ import {
   buildChapterNumbersFromGroups,
   buildSortOrder,
   patchChapterOutlineNote,
+  patchChapterSummary,
   patchNote,
   patchOutlineEntry,
   parseJsonOrNull,
@@ -2064,6 +2066,29 @@ export function useNovelData() {
   );
 
   /**
+   * 章节 AI 摘要落库 + 本地乐观更新（R-AI-09）。
+   * `model` 空串 = 手工编辑清空来源标记（M6 溯源）。
+   */
+  const updateChapterSummary = useCallback(
+    (chapterId: string, summary: string, model?: string): void => {
+      setBundle((current) => {
+        if (!current) return current;
+        const next = patchChapterSummary(
+          current.chapters,
+          chapterId,
+          summary,
+          model,
+          Date.now(),
+        );
+        if (next === current.chapters) return current;
+        void saveChapterSummary(chapterId, summary.trim(), model);
+        return { ...current, chapters: next };
+      });
+    },
+    [],
+  );
+
+  /**
    * 新建伏笔条目（R7 大纲板 / 灵感一键转化共用入口）。
    * 新条目插到列表头部，返回创建结果供调用方回填「已转为伏笔」标记。
    */
@@ -2211,6 +2236,7 @@ export function useNovelData() {
     resetTemplate,
     updateChapterContent,
     updateChapterOutlineNote,
+    updateChapterSummary,
     createChapter,
     createVolume,
     renameChapter,

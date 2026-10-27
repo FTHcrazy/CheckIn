@@ -263,6 +263,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       trackedInvoke('novel-chapter-status', id, status) as Promise<boolean>,
     saveChapterOutline: (id: string, note: string) =>
       trackedInvoke('novel-chapter-outline', id, note) as Promise<boolean>,
+    saveChapterSummary: (id: string, payload: { summary: string; model?: string }) =>
+      trackedInvoke('novel-chapter-summary-save', id, payload) as Promise<boolean>,
     saveChapterOrder: (updates: Array<{ id: string; sort: number; volumeId: string }>) =>
       trackedInvoke('novel-chapter-order', updates) as Promise<boolean>,
     addVolume: (volume: unknown) =>
@@ -482,6 +484,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
     listLogs: (payload?: { limit?: number; offset?: number; intent?: string }) =>
       trackedInvoke('ai-log-list', payload),
     clearLogs: () => trackedInvoke('ai-log-clear'),
+    // 产品事件（M1a：采纳/编辑/放弃等事后动作，由渲染层回传）
+    logEvent: (payload: {
+      intent?: string
+      step?: string
+      provider?: string
+      model?: string
+      promptVer?: string
+      durationMs?: number
+      errorCode?: string
+      itemCount?: number
+      charCount?: number
+      scope?: string
+    }) => trackedInvoke('ai-event-log', payload) as Promise<{ ok: boolean; error?: string }>,
+    // 看板聚合（M1b）
+    stats: (payload?: { since?: string }) => trackedInvoke('ai-event-stats', payload),
+    // 诊断包导出（M1b：只出脱敏元数据）
+    exportDiagnostics: () =>
+      trackedInvoke('ai-export-diagnostics') as Promise<{ path: string } | null>,
     // 本地 Ollama 已下载模型列表（R-AI-01 FR-06，只读探测，不写 ai_log）
     listOllamaModels: (payload?: { endpoint?: string }) =>
       trackedInvoke('ai-ollama-models', payload),

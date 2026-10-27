@@ -550,6 +550,32 @@ export function patchChapterOutlineNote(
   );
 }
 
+/**
+ * 章节 AI 摘要局部更新（R-AI-09）。
+ * `model` 传空串 = 手工编辑清空来源标记；不修改入参。
+ */
+export function patchChapterSummary(
+  chapters: NovelChapter[],
+  chapterId: string,
+  summary: string,
+  model?: string,
+  at?: number,
+): NovelChapter[] {
+  const trimmed = summary.trim();
+  const target = chapters.find((chapter) => chapter.id === chapterId);
+  if (!target || (target.aiSummary ?? "") === trimmed) return chapters;
+  return chapters.map((chapter) =>
+    chapter.id === chapterId
+      ? {
+          ...chapter,
+          aiSummary: trimmed,
+          aiSummaryAt: at,
+          aiSummaryModel: model?.trim() ? model.trim() : undefined,
+        }
+      : chapter,
+  );
+}
+
 /** 伏笔条目局部更新；标题去空白后为空、或条目不存在时返回原引用 */
 export function patchOutlineEntry(
   entries: OutlineEntry[],

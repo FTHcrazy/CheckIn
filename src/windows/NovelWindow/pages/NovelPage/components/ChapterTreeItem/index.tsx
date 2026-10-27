@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { KeyboardEvent } from "react";
-import { DeleteOutlined } from "@ant-design/icons";
+import { DeleteOutlined, ThunderboltOutlined } from "@ant-design/icons";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { CHAPTER_STATUS_META } from "../../novel-config";
 import { formatThousands, padIndex } from "../../novel-utils";
@@ -31,6 +31,8 @@ interface ChapterTreeItemProps {
    * 所以这里没有 `onDelete`，避免两条删除路径并存。
    */
   onRequestDelete: (chapterId: string, anchor: HTMLElement | null) => void;
+  /** 生成 / 查看本章 AI 摘要（R-AI-09） */
+  onOpenSummary: (chapterId: string) => void;
 }
 
 /**
@@ -67,6 +69,7 @@ export default function ChapterTreeItem({
   onToggleStatus,
   onRename,
   onRequestDelete,
+  onOpenSummary,
 }: ChapterTreeItemProps) {
   const status = CHAPTER_STATUS_META[chapter.status];
   const [titleEditing, setTitleEditing] = useState(false);
@@ -179,6 +182,22 @@ export default function ChapterTreeItem({
         >
           <span className="nv-chapter__index">{padIndex(chapterNumber)}</span>
           <span className="nv-chapter__title">{chapter.title}</span>
+        </button>
+        {/* AI 摘要入口：有摘要时实心（点击查看），无摘要时空心（点击生成）。
+            悬浮展开与删除按钮同范式 */}
+        <button
+          type="button"
+          className={`nv-chapter__summary${chapter.aiSummary ? " has-summary" : ""}`}
+          aria-label={
+            chapter.aiSummary ? `查看本章 AI 摘要` : `生成本章 AI 摘要`
+          }
+          title={chapter.aiSummary ? "查看 AI 摘要" : "生成 AI 摘要"}
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpenSummary(chapter.id);
+          }}
+        >
+          <ThunderboltOutlined />
         </button>
         {/* 删除按钮行内排在字数之前：悬浮时宽度展开，字数只平移不被遮盖。
             确认浮层由 ChapterTree 的唯一 Popconfirm 承担（本行只上报意图） */}

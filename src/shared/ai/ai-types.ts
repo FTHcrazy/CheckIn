@@ -32,6 +32,8 @@ export interface AiConfig {
   /** 是否已填 API Key（不返回明文） */
   hasApiKey: boolean;
   contextLen: number;
+  /** L3 总开关（允许 AI 读取整章内容，M5；默认关） */
+  l3Enabled: boolean;
 }
 
 /** 保存配置的载荷；apiKey 传空串 = 清空，传非空 = 覆盖 */
@@ -42,6 +44,8 @@ export interface AiConfigSavePayload {
   model?: string;
   apiKey?: string;
   contextLen?: number;
+  /** L3 总开关（M5） */
+  l3Enabled?: boolean;
 }
 
 /** 统一结果：ok=true 带 data；ok=false 带归一化错误 */
@@ -77,4 +81,27 @@ export interface AiGenerateData {
 /** 测试连接结果 */
 export interface AiTestResult {
   message: string;
+}
+
+/** AI 产品事件上报载荷（M1a；与主进程 ai-event-log 通道一致） */
+export interface AiEventLogDTO {
+  intent?: string;
+  step?: string;
+  provider?: string;
+  model?: string;
+  promptVer?: string;
+  durationMs?: number;
+  errorCode?: string;
+  itemCount?: number;
+  charCount?: number;
+  scope?: string;
+}
+
+/** 看板聚合结果（M1b；与主进程 ai-event-stats 通道一致） */
+export interface AiEventStatsDTO {
+  totalCalls: number;
+  adoptCount: number;
+  adoptRate: number;
+  avgDurationMs: number;
+  byIntent: Array<{ intent: string; calls: number; adopts: number }>;
 }

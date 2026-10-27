@@ -171,6 +171,15 @@ export interface EditorPaneHandle {
    * 编辑器不关心调用方是谁——这里只是把「替换指定区间」这个通用能力暴露出去。
    */
   replaceRange: (from: number, to: number, text: string) => void;
+  /**
+   * 取「光标前 N 字」作为续写（R-AI-07）的前文。
+   *
+   * 与 `selection`（选区）不同：续写发生在**光标停着、无选区**的时候，要的是
+   * 光标左侧的一段正文。返回 `{ text, cursor }`：`text` 是从文档开头到光标的
+   * 末尾截断，`cursor` 是光标绝对偏移（确认插入时用它定位，避免取文与插入
+   * 之间作者又动了光标）。
+   */
+  getTextBeforeCursor: (maxChars: number) => { text: string; cursor: number };
 }
 
 /** 排版相关的动态样式走独立 compartment，改字号不必重建编辑器 */
@@ -401,6 +410,13 @@ export default function EditorPane({
           userEvent: "input.replace",
         });
         view.focus();
+      },
+      getTextBeforeCursor: (maxChars: number): { text: string; cursor: number } => {
+        const view = viewRef.current;
+        const cursor = view?.state.selection.main.head ?? 0;
+        if (!view || maxChars <= 0) return { text: "", cursor };
+        const start = Math.max(0, cursor - maxChars);
+        return { text: view.state.sliceDoc(start, cursor), cursor };
       },
     }),
     [],

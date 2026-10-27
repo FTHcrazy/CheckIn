@@ -1,14 +1,33 @@
 import { Button } from "antd";
+import type { ReactNode } from "react";
 import {
+  ColumnWidthOutlined,
   EditOutlined,
+  EyeOutlined,
+  ExpandOutlined,
   ImportOutlined,
+  RetweetOutlined,
   RightOutlined,
+  SoundOutlined,
 } from "@ant-design/icons";
 import { MARK_TYPE_OPTIONS } from "../../novel-config";
 import { useEntityTypeMeta } from "../../hooks/entity-types-context";
 import { truncate } from "../../novel-utils";
+import { TRANSFORM_KIND_LABELS, type TransformKind } from "@/shared/ai/context";
 import type { EntityType, NovelEntity } from "../../types";
 import "./index.scss";
+
+/** 变换类型 → 图标（润色独立，五种变换各配一个，菜单一眼可辨） */
+const TRANSFORM_ICONS: Record<TransformKind, ReactNode> = {
+  expand: <ExpandOutlined />,
+  condense: <ColumnWidthOutlined />,
+  rewrite: <RetweetOutlined />,
+  tone: <SoundOutlined />,
+  pov: <EyeOutlined />,
+};
+
+/** 菜单里五种变换的展示顺序（润色单列在最前，其余按 PRD 顺序） */
+const TRANSFORM_KINDS: TransformKind[] = ["expand", "condense", "rewrite", "tone", "pov"];
 
 interface EntityContextMenuProps {
   /** 相对 .nv-page__stage 的坐标（EditorPane 已按菜单尺寸 clamp） */
@@ -25,6 +44,8 @@ interface EntityContextMenuProps {
   onBind: (entityId: string) => void;
   /** AI 润色选中文本（R-AI-03）：打开润色预览，确认后替换 */
   onPolish: () => void;
+  /** AI 文本变换选中文本（R-AI-06）：扩写 / 精简 / 改写 / 换语气 / 转视角 */
+  onTransform: (kind: TransformKind) => void;
   onClose: () => void;
 }
 
@@ -44,6 +65,7 @@ export default function EntityContextMenu({
   onMark,
   onBind,
   onPolish,
+  onTransform,
   onClose,
 }: EntityContextMenuProps) {
   const { metaOf } = useEntityTypeMeta();
@@ -57,8 +79,9 @@ export default function EntityContextMenu({
           {truncate(text, 16)}
         </p>
 
-        {/* AI 润色（R-AI-03）排在最前：划词最高频意图是改文字，一次点击进入预览 */}
-        <p className="nv-ctxmenu__label">AI 润色</p>
+        {/* AI 文本变换（R-AI-03 + R-AI-06）排在最前：划词最高频意图是改文字，
+            润色单列，五种变换分列，一次点击进入预览 */}
+        <p className="nv-ctxmenu__label">文本变换</p>
         <div className="nv-ctxmenu__types">
           <Button
             role="menuitem"
@@ -69,6 +92,18 @@ export default function EntityContextMenu({
             <EditOutlined className="nv-ctxmenu__go" />
             润色这段文字
           </Button>
+          {TRANSFORM_KINDS.map((kind) => (
+            <Button
+              key={kind}
+              role="menuitem"
+              className="nv-ctxmenu__item"
+              onClick={() => onTransform(kind)}
+              title={`对选中文字做「${TRANSFORM_KIND_LABELS[kind]}」，先预览再替换`}
+            >
+              <span className="nv-ctxmenu__go">{TRANSFORM_ICONS[kind]}</span>
+              {TRANSFORM_KIND_LABELS[kind]}
+            </Button>
+          ))}
         </div>
 
         {/* 快捷记账（REQ-027）排在最前：一次点击就完成，没有二级选择，

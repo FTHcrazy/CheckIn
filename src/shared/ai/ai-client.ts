@@ -14,6 +14,8 @@
 import type {
   AiConfig,
   AiConfigSavePayload,
+  AiEventLogDTO,
+  AiEventStatsDTO,
   AiGenerateData,
   AiGenerateRequest,
   AiResult,
@@ -99,4 +101,24 @@ export async function aiGenerateStructured(
       usedFallback: parsed.usedFallback,
     },
   };
+}
+
+/**
+ * 写一条 AI 产品事件（M1a）。
+ *
+ * 供渲染层上报主进程请求出口看不到的**事后动作**：`adopt`（采纳）/ `edit`
+ * （采纳后编辑）/ `cancel`（放弃）。失败静默，绝不阻塞写作主链路。
+ */
+export function logAiEvent(payload: AiEventLogDTO): Promise<{ ok: boolean; error?: string }> {
+  return window.electronAPI!.ai.logEvent(payload);
+}
+
+/** 看板聚合（M1b）：本月调用次数 / 各 intent 分布 / 采纳率 / 平均耗时 */
+export function getAiEventStats(since?: string): Promise<AiEventStatsDTO> {
+  return window.electronAPI!.ai.stats(since ? { since } : undefined);
+}
+
+/** 导出 AI 诊断包（M1b）；用户取消或失败返回 null */
+export function exportAiDiagnostics(): Promise<{ path: string } | null> {
+  return window.electronAPI!.ai.exportDiagnostics();
 }

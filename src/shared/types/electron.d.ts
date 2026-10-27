@@ -77,6 +77,12 @@ export interface NovelChapterDTO {
   sort: number
   updatedAt: number
   outlineNote?: string
+  /** AI 摘要正文（R-AI-09；无则未生成） */
+  aiSummary?: string
+  /** AI 摘要生成时间戳（无则未生成） */
+  aiSummaryAt?: number
+  /** AI 摘要来源模型（手工编辑后为空 → 区分来源） */
+  aiSummaryModel?: string
 }
 
 export interface NovelSnapshotDTO {
@@ -934,6 +940,8 @@ export interface AiConfigDTO {
   /** 是否已填 API Key（不返回明文） */
   hasApiKey: boolean
   contextLen: number
+  /** L3 总开关（允许 AI 读取整章内容，M5） */
+  l3Enabled: boolean
 }
 
 /** 保存配置载荷；apiKey 传空串 = 清空，传非空 = 覆盖 */
@@ -944,6 +952,8 @@ export interface AiConfigSavePayloadDTO {
   model?: string
   apiKey?: string
   contextLen?: number
+  /** L3 总开关（M5） */
+  l3Enabled?: boolean
 }
 
 /** 统一结果：ok=true 带 data；ok=false 带归一化错误 */
@@ -985,7 +995,31 @@ export interface AiLogRowDTO {
   error_code: string | null
   error_message: string | null
   duration_ms: number
+  prompt_version: string | null
   created_at: string
+}
+
+/** AI 产品事件上报载荷（M1a） */
+export interface AiEventLogDTO {
+  intent?: string
+  step?: string
+  provider?: string
+  model?: string
+  promptVer?: string
+  durationMs?: number
+  errorCode?: string
+  itemCount?: number
+  charCount?: number
+  scope?: string
+}
+
+/** 看板聚合结果（M1b） */
+export interface AiEventStatsDTO {
+  totalCalls: number
+  adoptCount: number
+  adoptRate: number
+  avgDurationMs: number
+  byIntent: Array<{ intent: string; calls: number; adopts: number }>
 }
 
 export interface ElectronAPI {
@@ -1013,6 +1047,12 @@ export interface ElectronAPI {
     }) => Promise<{ items: AiLogRowDTO[]; total: number }>
     /** 清空调用日志 */
     clearLogs: () => Promise<{ ok: boolean }>
+    /** 写一条 AI 产品事件（M1a：采纳/编辑/放弃等事后动作） */
+    logEvent: (payload: AiEventLogDTO) => Promise<{ ok: boolean; error?: string }>
+    /** 看板聚合查询（M1b） */
+    stats: (payload?: { since?: string }) => Promise<AiEventStatsDTO>
+    /** 导出 AI 诊断包（M1b：只出脱敏元数据，不含正文/作品名/Key） */
+    exportDiagnostics: () => Promise<{ path: string } | null>
     /** 列出本地 Ollama 已下载的模型（FR-06） */
     listOllamaModels: (payload?: { endpoint?: string }) => Promise<
       { ok: true; models: string[] } | { ok: false; error: string }
@@ -1095,6 +1135,7 @@ export interface ElectronAPI {
     purgeChapter: (id: string) => Promise<boolean>
     setChapterStatus: (id: string, status: "draft" | "done") => Promise<boolean>
     saveChapterOutline: (id: string, note: string) => Promise<boolean>
+    saveChapterSummary: (id: string, payload: { summary: string; model?: string }) => Promise<boolean>
     saveChapterOrder: (updates: Array<{ id: string; sort: number; volumeId: string }>) => Promise<boolean>
     addVolume: (volume: NovelVolumeDTO) => Promise<boolean>
     renameVolume: (id: string, name: string) => Promise<boolean>

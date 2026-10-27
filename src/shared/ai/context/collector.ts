@@ -10,7 +10,7 @@
  */
 
 /** AI 功能意图：决定采集哪些上下文、截断多长 */
-export type AiIntent = "naming" | "polish" | "continuation";
+export type AiIntent = "naming" | "polish" | "transform" | "continuation" | "summary";
 
 /** 调用方传入的本书原始快照（页面层组装，允许字段缺失） */
 export interface BookSnapshot {
@@ -72,7 +72,10 @@ export function entityTypeLabel(type: string): string {
 const LIMITS = {
   naming: { entities: 40, realmLevels: 12, exclude: 40, summaryChars: 0 },
   polish: { entities: 20, realmLevels: 0, exclude: 0, summaryChars: 120 },
+  transform: { entities: 20, realmLevels: 0, exclude: 0, summaryChars: 120 },
   continuation: { entities: 30, realmLevels: 8, exclude: 20, summaryChars: 160 },
+  // 摘要只靠「单章全文 + 作品背景」就能写，要素卡是噪音（梗概不需要逐个人物卡）
+  summary: { entities: 0, realmLevels: 0, exclude: 0, summaryChars: 0 },
 } as const;
 
 /** 章节片段截断上限（字） */
@@ -105,7 +108,7 @@ export function deriveExcludeNames(entities: BookSnapshot["entities"]): string[]
  * 采集本书上下文。
  *
  * naming：要素只留 type+name（起名只需避重 + 风格锚点），带已用名与境界；
- * polish：要素带 summary（理解人设），带章节片段（理解上下文）；不带已用名。
+ * polish / transform：要素带 summary（理解人设），带章节片段（理解上下文）；不带已用名。
  */
 export function collectBookContext(snapshot: BookSnapshot, intent: AiIntent): AiBookContext {
   const limits = LIMITS[intent];
@@ -134,7 +137,7 @@ export function collectBookContext(snapshot: BookSnapshot, intent: AiIntent): Ai
     if (levels.length > 0) context.realmLevels = levels.slice(0, limits.realmLevels);
   }
 
-  if (intent !== "naming") {
+  if (intent !== "naming" && intent !== "summary") {
     context.chapterSnippet = clipText(snapshot.chapterSnippet, CHAPTER_SNIPPET_CHARS);
   }
 

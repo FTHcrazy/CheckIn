@@ -1,0 +1,159 @@
+// AI 续写候选浮层：居中弹层，mask 铺满 stage 抓取点击。
+// 层级同润色预览（预览是右键/工具栏的下一级操作）。
+@use "../../../../../../shared/styles/widget" as widget;
+
+.nv-cont__mask {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  background: rgba(0, 0, 0, 0.24);
+}
+
+.nv-cont {
+  position: absolute;
+  z-index: 51;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(560px, calc(100% - 48px));
+  max-height: calc(100% - 96px);
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-panel);
+  background: var(--app-surface-elevated);
+  box-shadow: var(--app-shadow-pop);
+
+  &__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 4px;
+  }
+
+  &__title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--app-text);
+  }
+
+  &__close.ant-btn {
+    @include widget.ant-button-reset;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--app-text-secondary);
+    --ant-button-default-hover-bg: var(--app-surface-hover);
+    --ant-border-radius: 5px;
+  }
+
+  &__hint {
+    margin: 0 0 8px;
+    font-size: 12px;
+    color: var(--app-text-muted);
+  }
+
+  &__body {
+    min-height: 0;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+
+  &__list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    overflow-y: auto;
+    max-height: 40vh;
+  }
+
+  &__candidate {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 10px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-chip);
+    background: var(--app-surface-alt);
+    cursor: pointer;
+    text-align: left;
+    transition: border-color 0.15s, background 0.15s;
+
+    &:hover {
+      border-color: var(--app-primary);
+      background: var(--app-surface);
+    }
+
+    &-text {
+      flex: 1;
+      min-width: 0;
+      font-size: 13px;
+      line-height: 1.7;
+      color: var(--app-text);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    &-go {
+      flex: none;
+      align-self: center;
+      font-size: 12px;
+      color: var(--app-primary);
+      white-space: nowrap;
+    }
+  }
+
+  &__text {
+    min-height: 120px;
+    max-height: 40vh;
+    overflow-y: auto;
+    padding: 10px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-chip);
+    background: var(--app-surface-alt);
+    color: var(--app-text);
+    font-size: 13px;
+    line-height: 1.7;
+    white-space: pre-wrap;
+    word-break: break-word;
+
+    &.is-loading {
+      color: var(--app-text-muted);
+    }
+
+    &.is-error {
+      color: var(--app-error);
+    }
+  }
+
+  &__foot {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  &__spacer {
+    flex: 1;
+  }
+
+  &__regen.ant-btn,
+  &__retry.ant-btn,
+  &__cancel.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 30px;
+    --ant-border-radius: 6px;
+    --ant-button-content-font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 0 10px;
+  }
+}

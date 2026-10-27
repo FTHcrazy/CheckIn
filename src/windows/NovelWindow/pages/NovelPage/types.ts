@@ -91,6 +91,12 @@ export interface NovelChapter {
    * 增量迁移列，历史数据缺失时按空串处理；空串表示尚未填写。
    */
   outlineNote?: string;
+  /** AI 摘要正文（R-AI-09；无则未生成） */
+  aiSummary?: string;
+  /** AI 摘要生成时间戳（无则未生成） */
+  aiSummaryAt?: number;
+  /** AI 摘要来源模型（手工编辑后为空 → 区分来源） */
+  aiSummaryModel?: string;
 }
 
 /** 章节快照：每章环形保留 20 版（PRD R3） */

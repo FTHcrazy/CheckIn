@@ -18,11 +18,13 @@
  *
  * 边界：SQL 只出现在本文件与 ai-db.ts；不导入 novel 任何模块。
  */
-import { ipcMain, net, safeStorage, shell } from "electron";
-import { aiAll, aiGet, aiRun } from "../ai-db";
+import { BrowserWindow, dialog, ipcMain, net, safeStorage, shell } from "electron";
+import fsp from "node:fs/promises";
+import { aiAll, aiGet, aiRun, logAiEvent } from "../ai-db";
 import { logAlways } from "../logger";
 import { resolveWindowName } from "./log-handlers";
 import { keyPageOf } from "../../src/shared/ai/ai-providers";
+import { promptVersionOf } from "../../src/shared/ai/context/prompt/registry";
 
 // ── 配置项 key 约定（ai_config.key）──
 const KEY_PROVIDER = "provider"; // "openai" | "ollama"
@@ -30,6 +32,7 @@ const KEY_ENDPOINT = "endpoint"; // OpenAI 兼容地址（含 /v1）或 Ollama �
 const KEY_MODEL = "model"; // 模型名
 const KEY_API_KEY_ENC = "api_key_enc"; // safeStorage 加密串，无 Key（Ollama）时为空
 const KEY_CONTEXT_LEN = "context_len"; // 上下文长度（用于截断策略）
+const KEY_L3_ENABLED = "l3_enabled"; // L3 总开关（允许 AI 读取整章内容，M5）
 
 // ── DTO（与 preload / electron.d.ts 保持一致）──
 
@@ -44,6 +47,8 @@ export interface AiConfig {
   /** 是否已填 API Key（不返回明文；Ollama 无需 Key 恒为 false） */
   hasApiKey: boolean;
   contextLen: number;
+  /** L3 总开关（允许 AI 读取整章内容，M5；默认关，首次触发 L3 功能时引导开启） */
+  l3Enabled: boolean;
 }
 
 /** 统一调用结果：ok=true 带结果；ok=false 带归一化错误 */
@@ -99,6 +104,7 @@ export interface AiLogRow {
   error_code: string | null;
   error_message: string | null;
   duration_ms: number;
+  prompt_version: string | null;
   created_at: string;
 }
 
@@ -126,6 +132,7 @@ function readConfigInternal(): {
   model: string;
   apiKey: string;
   contextLen: number;
+  l3Enabled: boolean;
 } {
   const provider = (getConfig(KEY_PROVIDER) ?? "openai") as AiProvider;
   const endpoint = getConfig(KEY_ENDPOINT) ?? "";
@@ -133,6 +140,7 @@ function readConfigInternal(): {
   const apiKeyEnc = getConfig(KEY_API_KEY_ENC) ?? "";
   const contextLen = Number(getConfig(KEY_CONTEXT_LEN) ?? "32000");
   const enabled = getConfig("enabled") === "1";
+  const l3Enabled = getConfig(KEY_L3_ENABLED) === "1";
   let apiKey = "";
   if (apiKeyEnc) {
     try {
@@ -142,7 +150,7 @@ function readConfigInternal(): {
       apiKey = "";
     }
   }
-  return { enabled, provider, endpoint, model, apiKey, contextLen };
+    return { enabled, provider, endpoint, model, apiKey, contextLen, l3Enabled };
 }
 
 /** 把 API Key 加密后落库（空串表示清空 Key） */
@@ -306,6 +314,7 @@ function appendAiLog(entry: {
   durationMs: number;
 }): void {
   const ok = !entry.errorCode;
+  const promptVersion = promptVersionOf(entry.intent) || null;
 
   // 本地 DEBUG 日志：与窗口业务日志同一时间轴。
   // 用 logAlways 而不是 log：默认 info 级别下，AI 调用的提示词与输出会全部消失，
@@ -334,8 +343,8 @@ function appendAiLog(entry: {
     aiRun(
       `INSERT INTO ai_log
         (intent, provider, model, system_prompt, user_prompt, raw_output,
-         parsed_output, error_code, error_message, duration_ms)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         parsed_output, error_code, error_message, duration_ms, prompt_version)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         entry.intent,
         entry.provider,
@@ -347,6 +356,7 @@ function appendAiLog(entry: {
         entry.errorCode ?? null,
         entry.errorMessage ?? null,
         entry.durationMs,
+        promptVersion,
       ],
     );
   } catch (error) {
@@ -384,25 +394,55 @@ async function generateInternal(
       ...fields,
     });
 
+  /** 统一的落产品事件入口（M1a）：trigger 一次 + 终态一次，均只记元数据 */
+  const writeEvent = (step: "trigger" | "success" | "fallback", fields?: {
+    durationMs?: number;
+    errorCode?: string;
+    itemCount?: number;
+    charCount?: number;
+    scope?: string;
+  }): void =>
+    logAiEvent({
+      intent,
+      step,
+      provider: cfg.provider || undefined,
+      model: cfg.model?.trim() || undefined,
+      promptVer: promptVersionOf(intent) || undefined,
+      durationMs: fields?.durationMs,
+      errorCode: fields?.errorCode,
+      itemCount: fields?.itemCount,
+      charCount: fields?.charCount,
+      scope: fields?.scope,
+    });
+
+  writeEvent("trigger", {
+    // 只记字数不记正文（合规白名单，见 ai-domain-guard.test.ts）
+    charCount: req.prompt.length,
+  });
+
   if (!cfg.enabled) {
     const code: AiErrorCode = "not_configured";
     writeLog({ errorCode: code, errorMessage: aiErrorMessage(code) });
+    writeEvent("fallback", { durationMs: Date.now() - startedAt, errorCode: code });
     return { ok: false, code, message: aiErrorMessage(code) };
   }
   if (!cfg.endpoint.trim()) {
     const code: AiErrorCode = "invalid_endpoint";
     writeLog({ errorCode: code, errorMessage: aiErrorMessage(code) });
+    writeEvent("fallback", { durationMs: Date.now() - startedAt, errorCode: code });
     return { ok: false, code, message: aiErrorMessage(code) };
   }
   if (cfg.provider === "openai" && !cfg.apiKey) {
     const code: AiErrorCode = "missing_key";
     writeLog({ errorCode: code, errorMessage: aiErrorMessage(code) });
+    writeEvent("fallback", { durationMs: Date.now() - startedAt, errorCode: code });
     return { ok: false, code, message: aiErrorMessage(code) };
   }
   if (!cfg.model.trim()) {
     const code: AiErrorCode = "model_not_found";
     const message = "未指定模型名，请先在设置里配置";
     writeLog({ errorCode: code, errorMessage: message });
+    writeEvent("fallback", { durationMs: Date.now() - startedAt, errorCode: code });
     return { ok: false, code, message };
   }
 
@@ -423,6 +463,7 @@ async function generateInternal(
     if (!response.ok) {
       const code = httpStatusToError(response.status);
       writeLog({ errorCode: code, errorMessage: aiErrorMessage(code) });
+      writeEvent("fallback", { durationMs: Date.now() - startedAt, errorCode: code });
       return { ok: false, code, message: aiErrorMessage(code) };
     }
 
@@ -430,6 +471,10 @@ async function generateInternal(
     const text = cfg.provider === "ollama" ? parseOllamaResponse(raw) : parseOpenAiResponse(raw);
     const items = splitNameItems(text);
     writeLog({ rawOutput: text, parsedOutput: JSON.stringify(items) });
+    writeEvent("success", {
+      durationMs: Date.now() - startedAt,
+      itemCount: items.length,
+    });
     return { ok: true, data: { text, items } };
   } catch (error) {
     const rawMsg = error instanceof Error ? error.message : String(error);
@@ -438,6 +483,7 @@ async function generateInternal(
         ? "ollama_unavailable"
         : networkErrorToCode(rawMsg);
     writeLog({ errorCode: code, errorMessage: aiErrorMessage(code) });
+    writeEvent("fallback", { durationMs: Date.now() - startedAt, errorCode: code });
     return { ok: false, code, message: aiErrorMessage(code) };
   }
 }
@@ -577,6 +623,7 @@ export function registerAiHandlers(): void {
       model: cfg.model,
       hasApiKey: cfg.apiKey.length > 0,
       contextLen: cfg.contextLen,
+      l3Enabled: cfg.l3Enabled,
     };
   });
 
@@ -592,6 +639,7 @@ export function registerAiHandlers(): void {
         model?: string;
         apiKey?: string;
         contextLen?: number;
+        l3Enabled?: boolean;
       } | undefined,
     ): Promise<{ ok: boolean; error?: string }> => {
       if (!payload || typeof payload !== "object") {
@@ -618,6 +666,9 @@ export function registerAiHandlers(): void {
         }
         if (typeof payload.contextLen === "number" && payload.contextLen > 0) {
           setConfig(KEY_CONTEXT_LEN, String(Math.floor(payload.contextLen)));
+        }
+        if (typeof payload.l3Enabled === "boolean") {
+          setConfig(KEY_L3_ENABLED, payload.l3Enabled ? "1" : "0");
         }
         return { ok: true };
       } catch (error) {
@@ -676,7 +727,7 @@ export function registerAiHandlers(): void {
         | undefined;
       const total = totalRow?.c ?? 0;
       const items = aiAll(
-        `SELECT id, intent, provider, model, system_prompt, user_prompt, raw_output, parsed_output, error_code, error_message, duration_ms, created_at FROM ai_log ${where} ORDER BY id DESC LIMIT ? OFFSET ?`,
+        `SELECT id, intent, provider, model, system_prompt, user_prompt, raw_output, parsed_output, error_code, error_message, duration_ms, prompt_version, created_at FROM ai_log ${where} ORDER BY id DESC LIMIT ? OFFSET ?`,
         [...filterArgs, limit, offset],
       ) as AiLogRow[];
       return { items, total };
@@ -766,6 +817,181 @@ export function registerAiHandlers(): void {
         logAlways("warn", resolveWindowName(event.sender), "ai", `[key-page] 打开失败: ${raw}`);
         return { ok: false };
       }
+    },
+  );
+
+  // ── M1a / M1b：产品事件落库与看板聚合 ────────────────────────────────
+
+  /**
+   * 写一条 AI 产品事件（M1a）。
+   *
+   * 供渲染层上报**主进程请求出口看不到的事后动作**：`adopt`（采纳）/ `edit`
+   * （采纳后编辑）/ `cancel`（放弃）。这些发生在请求返回之后数秒到数分钟，
+   * 只能由渲染层主动回传；主进程侧只做白名单校验 + 落库，不信任任意字段。
+   */
+  ipcMain.handle(
+    "ai-event-log",
+    async (
+      _event,
+      payload:
+        | {
+            intent?: unknown;
+            step?: unknown;
+            provider?: unknown;
+            model?: unknown;
+            promptVer?: unknown;
+            durationMs?: unknown;
+            errorCode?: unknown;
+            itemCount?: unknown;
+            charCount?: unknown;
+            scope?: unknown;
+          }
+        | undefined,
+    ): Promise<{ ok: boolean; error?: string }> => {
+      if (!payload || typeof payload !== "object") {
+        return { ok: false, error: "参数无效" };
+      }
+      const intent = typeof payload.intent === "string" ? payload.intent.trim() : "";
+      const step = typeof payload.step === "string" ? payload.step.trim() : "";
+      if (!intent || !step) return { ok: false, error: "事件意图或步骤缺失" };
+
+      // 只白名单 step，防止渲染层塞入任意枚举值污染聚合
+      const STEPS = new Set(["trigger", "success", "fallback", "adopt", "edit", "cancel"]);
+      if (!STEPS.has(step)) return { ok: false, error: "未知事件步骤" };
+
+      const asOptionalString = (value: unknown): string | undefined =>
+        typeof value === "string" && value.trim() ? value.trim() : undefined;
+      const asOptionalNumber = (value: unknown): number | undefined =>
+        typeof value === "number" && Number.isFinite(value) ? Math.floor(value) : undefined;
+
+      logAiEvent({
+        intent,
+        step: step as "trigger" | "success" | "fallback" | "adopt" | "edit" | "cancel",
+        provider: asOptionalString(payload.provider),
+        model: asOptionalString(payload.model),
+        promptVer: asOptionalString(payload.promptVer),
+        durationMs: asOptionalNumber(payload.durationMs),
+        errorCode: asOptionalString(payload.errorCode),
+        itemCount: asOptionalNumber(payload.itemCount),
+        charCount: asOptionalNumber(payload.charCount),
+        scope: asOptionalString(payload.scope),
+      });
+      return { ok: true };
+    },
+  );
+
+  /**
+   * 看板聚合查询（M1b）。
+   *
+   * 回答看板四个问题：本月调用次数、各 intent 分布、采纳率、平均耗时。
+   * 全部下推到 SQL（不整表捞回前端算）；时间窗只取 `ai_event`，`trigger`
+   * 算「一次调用」，`adopt` 算「一次采纳」。
+   */
+  ipcMain.handle(
+    "ai-event-stats",
+    async (
+      _event,
+      payload?: { since?: string },
+    ): Promise<{
+      totalCalls: number;
+      adoptCount: number;
+      adoptRate: number;
+      avgDurationMs: number;
+      byIntent: Array<{ intent: string; calls: number; adopts: number }>;
+    }> => {
+      // 默认最近 30 天；`since` 由看板传时间下界（`datetime('now','-30 days','localtime')`）
+      const since = typeof payload?.since === "string" && payload.since.trim()
+        ? payload.since.trim()
+        : null;
+      // 参数绑定（防 SQL 注入）：时间下界一律走 `?`，绝不拼接用户输入
+      const sinceArgs = since ? [since] : [];
+      const sinceCond = since ? "AND created_at >= ?" : "";
+
+      const callRow = aiGet(
+        `SELECT COUNT(*) AS c, COALESCE(AVG(duration_ms), 0) AS avg_dur
+         FROM ai_event WHERE step = 'trigger' ${sinceCond}`,
+        sinceArgs,
+      ) as { c: number; avg_dur: number } | undefined;
+
+      const adoptRow = aiGet(
+        `SELECT COUNT(*) AS c FROM ai_event WHERE step = 'adopt' ${sinceCond}`,
+        sinceArgs,
+      ) as { c: number } | undefined;
+
+      const totalCalls = callRow?.c ?? 0;
+      const adoptCount = adoptRow?.c ?? 0;
+
+      const byIntent = aiAll(
+        `SELECT intent,
+                SUM(CASE WHEN step = 'trigger' THEN 1 ELSE 0 END) AS calls,
+                SUM(CASE WHEN step = 'adopt' THEN 1 ELSE 0 END) AS adopts
+         FROM ai_event
+         WHERE step IN ('trigger', 'adopt') ${sinceCond}
+         GROUP BY intent
+         ORDER BY calls DESC`,
+        sinceArgs,
+      ) as Array<{ intent: string; calls: number; adopts: number }>;
+
+      return {
+        totalCalls,
+        adoptCount,
+        adoptRate: totalCalls > 0 ? adoptCount / totalCalls : 0,
+        avgDurationMs: Math.round(callRow?.avg_dur ?? 0),
+        byIntent: byIntent.map((row) => ({
+          intent: row.intent,
+          calls: Number(row.calls) || 0,
+          adopts: Number(row.adopts) || 0,
+        })),
+      };
+    },
+  );
+
+  /**
+   * 导出 AI 诊断包（M1b）。
+   *
+   * 只出 `ai_event` + 脱敏的 `ai_log` 元数据（intent / model / duration_ms /
+   * error_code），**绝不含正文截断、作品名、邮箱、Key**（字段白名单，见
+   * `ai-domain-guard.test.ts`）。这是语义化单通道（只导出 AI 诊断包），不享有
+   * §8.7 的网络豁免，也不复用 novel 域的保存通道（域边界）。
+   */
+  ipcMain.handle(
+    "ai-export-diagnostics",
+    async (event): Promise<{ path: string } | null> => {
+      const events = aiAll(
+        `SELECT intent, step, provider, model, prompt_ver, duration_ms,
+                error_code, item_count, char_count, scope, created_at
+         FROM ai_event ORDER BY id DESC LIMIT 5000`,
+      );
+      const logs = aiAll(
+        `SELECT intent, provider, model, duration_ms, error_code, prompt_version, created_at
+         FROM ai_log ORDER BY id DESC LIMIT 2000`,
+      );
+
+      const payload = JSON.stringify(
+        {
+          exported_at: new Date().toISOString(),
+          schema: "checkin-ai-diagnostics-v1",
+          ai_event: events,
+          ai_log: logs,
+        },
+        null,
+        2,
+      );
+
+      const options = {
+        title: "导出 AI 诊断包",
+        defaultPath: `ai-diagnostics-${new Date().toISOString().slice(0, 10)}.json`,
+        filters: [{ name: "JSON 文件", extensions: ["json"] }],
+      };
+      const win = BrowserWindow.fromWebContents(event.sender);
+      const result =
+        win && !win.isDestroyed()
+          ? await dialog.showSaveDialog(win, options)
+          : await dialog.showSaveDialog(options);
+      if (result.canceled || !result.filePath) return null;
+
+      await fsp.writeFile(result.filePath, payload, "utf8");
+      return { path: result.filePath };
     },
   );
 }

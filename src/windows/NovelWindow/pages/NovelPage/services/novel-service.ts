@@ -265,6 +265,15 @@ export async function saveChapterOutline(
   return window.electronAPI!.novel.saveChapterOutline(chapterId, note);
 }
 
+/** 章节 AI 摘要保存（novel-chapter-summary-save；model 空串 = 手工编辑清空来源标记） */
+export async function saveChapterSummary(
+  chapterId: string,
+  summary: string,
+  model?: string,
+): Promise<boolean> {
+  return window.electronAPI!.novel.saveChapterSummary(chapterId, { summary, model });
+}
+
 /** 章节批量重排 / 跨卷移动落库（novel-chapter-order） */
 export async function saveChapterOrder(
   updates: Array<{ id: string; sort: number; volumeId: string }>,

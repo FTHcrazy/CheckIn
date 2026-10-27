@@ -4,9 +4,76 @@
 > （当前归档到 1.46.2，索引见 `changeLogHistory/README.md`）。
 > 主文件只保留最近若干个次版本，超过 800 行时按 AGENTS.md §8.6 继续分流。
 
-## [2.8.1] - 2026-10-27
+## [2.10.0] - 2026-10-27
 
 ### Added
+
+- **L3 数据出境授权（M5）**：新增 `ai-consent.ts` 分级常量（L1/L2/L3）、`ai-estimate.ts`
+  token 估算纯函数（中文字符 ×1.5 + 英文词 ×1.3，自研、零新依赖）、`useAiConsent` hook、
+  共享授权弹窗 `AiConsentDialog`。`ai_config` 加 `l3_enabled` 总开关（复用既有 KV，
+  零新表零新 IPC）。
+  - 首次触发 L3 功能弹授权：展示将发送字数 / token 估算 + 范围选择
+    （仅本章 / 选中段落 / 最近 3 章，**不提供「全书」档**，Q4 拍板）。
+  - 本地模型（Ollama）时明确提示「内容不出本机」；合规提示位
+    （「不中转、不存储作品内容」）文案唯一产地。
+- **AI 产出来源标记（M6）**：新增 `ai-provenance.ts` 来源标记构造器
+  （`source=ai` + 模型 + 时间戳 + 批次 id），摘要落库带 `ai_summary_model`
+  来源标记，手工编辑清空标记以区分「AI 生成」与「自己写的」。
+- **章节 AI 摘要（R-AI-09）**：`novel_chapters` 加 `ai_summary` / `ai_summary_at` /
+  `ai_summary_model` 三列（PRAGMA 探测增量迁移，随删章物理清理，零孤儿）；
+  新增 `novel-chapter-summary-save` 通道 + `assembleSummarySpec` 模板（text 输出）；
+  章节行悬浮闪电按钮触发生成，`SummaryPreview` 浮层展示并显眼标注「AI 生成 · 模型名」，
+  支持重新生成。摘要可被续写复用为「上一章摘要」上下文。
+
+## [2.9.2] - 2026-10-27
+
+### Added
+
+- **AI 就地续写**（R-AI-07 非流式版）：光标停在卡住的地方，点顶栏「续写」，
+  让 AI 顺着光标前文（截断 1000 字）往下写 2–3 个候选，点某一条即插入光标处
+  （走编辑器 `insertText`，可 Ctrl+Z 撤销）。候选浮层显眼标注「AI 建议，请自行改写」，
+  定位是**跳板而非代笔**；失败在浮层内报错、绝不写入原文。
+  - 上下文：书名 / 题材 / 命中人物卡（复用 `matchEntitiesInText`），前文走独立的
+    【前文】段（非 chapterSnippet——续写要的是光标前，不是章头）。
+  - 输出契约：新增 `CONTINUATION_OUTPUT_FORMAT`（json-array `{text}`），复用 M3 的
+    三层保险解析，弱模型返回坏 JSON 也能救回候选。
+  - `ai_log.intent` 落库 `continuation`，AI 记录页可筛选「续写」。
+  - 编辑器新增 `getTextBeforeCursor` 能力（取光标前 N 字 + 光标偏移，供确认时精确定位）。
+
+## [2.9.1] - 2026-10-27
+
+### Added
+
+- **文本变换工具箱**（R-AI-06）：把「润色」从一个按钮升级成一组动词——选中一段字，一键
+  **扩写 / 精简 / 改写 / 换语气 / 转视角**。完全复用润色的「选中 → 预览 → 确认」链路，
+  差别只在 `buildPromptSpec("transform")` 的角色定位与约束清单；右键菜单「AI 润色」分组
+  泛化为「文本变换」分组（润色单列 + 五种变换分列），预览浮层标题与「换一种」文案按
+  变换类型自适应。替换仍走编辑器 undo，失败仍在浮层内报错不替换原文。
+- **变换的度量可区分**：`ai_log.intent` 落库为 `transform:expand` / `transform:condense` /
+  `transform:rewrite` / `transform:tone` / `transform:pov`（子类型由 `TRANSFORM_INTENT_SUB`
+  单一产地映射），AI 记录页的意图标签与筛选下拉同步识别这五种变换，看板能看出各变换的
+  使用分布。润色仍走 `polish` 意图，不与变换混用。
+
+## [2.9.0] - 2026-10-27
+
+### Added
+
+- **AI 产品事件表 `ai_event`**（M1a）：在 `ai.db` 新增与 `ai_log`（技术排障日志）严格分工的
+  产品度量表——只记元数据（intent / step / provider / model / prompt 版本 / 耗时 / 错误码 /
+  产出条数 / 正文字数 / L3 范围），**绝不记正文、作品名、邮箱**。`trigger` / `success` /
+  `fallback` 由主进程在请求出口自动落；`adopt` / `edit` / `cancel` 这类请求返回之后的事后
+  动作由渲染层经 `ai-event-log` 回传（白名单校验）。写入带滚动清理（5000 条 / 90 天），
+  失败静默，绝不阻塞写作主链路。
+- **prompt 版本落库**（M7）：`ai_log` 增量迁移补 `prompt_version` 列，`context/prompt/registry.ts`
+  新增 `PROMPT_VERSIONS` 常量与 `promptVersionOf`，落日志时自动带上版本——改了 prompt 之后
+  前后效果终于可对照归因。
+- **AI 可用性门控 hook `useAiAvailability`**（M8）：统一「AI 现在能不能用、为什么不能用」的
+  判断口径（disabled / no_model / missing_key / no_endpoint / unavailable），配纯函数
+  `deriveAvailability` 供单测。后续每个新 AI 入口据此决定隐藏 / 禁用并说明 / 本地兜底，
+  不再各写一遍散装判断。
+- **用量与效果看板**（M1b）：设置窗口新增「用量与效果」页，展示近 30 天调用次数、各 intent
+  分布、采纳率、平均耗时（全部下推 SQL 聚合），并配「导出诊断包」——只出脱敏的 `ai_event`
+  与 `ai_log` 元数据（intent / model / 耗时 / 错误码），不含正文与密钥，供用户主动回传排查。
 
 - **起名结果的寓意可插入正文**：卡片新增「插入寓意」按钮（仅 AI 起名有寓意时出现），
   按 `名字：寓意` 插到光标处。此前寓意只能复制出来手动拼，而它本身就是一句现成的命名释义，

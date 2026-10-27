@@ -57,6 +57,9 @@ interface NovelChapterRow {
   sort: number;
   outline_note: string | null;
   updated_at: number;
+  ai_summary: string | null;
+  ai_summary_at: number | null;
+  ai_summary_model: string | null;
 }
 
 interface NovelSnapshotRow {
@@ -469,6 +472,9 @@ function toChapterDto(row: NovelChapterRow, includeContent = true): NovelChapter
     sort: row.sort,
     updatedAt: row.updated_at,
     ...(row.outline_note !== null ? { outlineNote: row.outline_note } : {}),
+    ...(row.ai_summary !== null ? { aiSummary: row.ai_summary } : {}),
+    ...(row.ai_summary_at !== null ? { aiSummaryAt: row.ai_summary_at } : {}),
+    ...(row.ai_summary_model !== null ? { aiSummaryModel: row.ai_summary_model } : {}),
   };
 }
 
@@ -1176,7 +1182,7 @@ ipcMain.handle("novel-editor-reset-template", () => seedTemplateBook());
     const chapters = (dbAll(
       includeContent
         ? "SELECT * FROM novel_chapters WHERE deleted_at IS NULL"
-        : "SELECT id, work_id, volume_id, title, word_count, status, sort, updated_at, outline_note FROM novel_chapters WHERE deleted_at IS NULL",
+        : "SELECT id, work_id, volume_id, title, word_count, status, sort, updated_at, outline_note, ai_summary, ai_summary_at, ai_summary_model FROM novel_chapters WHERE deleted_at IS NULL",
     ) as NovelChapterRow[]).map((row) => toChapterDto(row, includeContent));
     const entities = (dbAll("SELECT * FROM novel_entities ORDER BY sort") as NovelEntityRow[]).map(
       toEntityDto,
@@ -1405,6 +1411,43 @@ ipcMain.handle("novel-editor-reset-template", () => seedTemplateBook());
       ]).changes > 0
     );
   });
+
+  // R-AI-09：章节 AI 摘要落库。三列同写（正文 / 生成时间 / 来源模型），
+  // 来源标记（model）是 M6 溯源的一部分——手工编辑摘要时上层传空 model
+  // 以清空来源标记，区分「AI 生成」与「自己写的」。
+  ipcMain.handle(
+    "novel-chapter-summary-save",
+    (
+      _event,
+      id: string,
+      payload: {
+        summary: string;
+        /** 来源模型名；空串 = 手工编辑，清空来源标记 */
+        model?: string;
+      },
+    ): boolean => {
+      const summary = typeof payload?.summary === "string" ? payload.summary.trim() : "";
+      const model = typeof payload?.model === "string" && payload.model.trim()
+        ? payload.model.trim()
+        : null;
+      // 清空摘要（summary 为空）时三列一并置空，不留半截来源标记
+      if (!summary) {
+        return (
+          dbRun(
+            "UPDATE novel_chapters SET ai_summary = NULL, ai_summary_at = NULL, ai_summary_model = NULL WHERE id = ?",
+            [id],
+          ).changes > 0
+        );
+      }
+      const now = Date.now();
+      return (
+        dbRun(
+          "UPDATE novel_chapters SET ai_summary = ?, ai_summary_at = ?, ai_summary_model = ? WHERE id = ?",
+          [summary, now, model, id],
+        ).changes > 0
+      );
+    },
+  );
 
   // 章节批量重排 / 跨卷移动（单事务落库）
   ipcMain.handle("novel-chapter-order", (_event, updates: ChapterOrderUpdate[]) => {

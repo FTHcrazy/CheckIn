@@ -7,6 +7,7 @@ import {
   LayoutOutlined,
   LoadingOutlined,
   MenuOutlined,
+  ThunderboltOutlined,
 } from "@ant-design/icons";
 import SvgIcon from "@/shared/components/SvgIcon";
 import bookSettingSvg from "@/assets/novel/book-setting.svg?raw";
@@ -47,6 +48,11 @@ interface NovelTopBarProps {
   onToggleLeft: () => void;
   onToggleRight: () => void;
   onToggleSettings: () => void;
+  /**
+   * AI 续写（R-AI-07）：光标处顺着前文出 2–3 个候选。
+   * 未配置 AI 时点了会在浮层内报错（不写入原文），符合「入口可消失」。
+   */
+  onContinue?: () => void;
   /** 历史快照按钮即开关：开 → 关 → 开 循环切换 */
   onToggleHistory: () => void;
   /** 行囊：唤起独立行囊窗口（单实例，重复点击仅聚焦），Ctrl+Shift+B 同效 */
@@ -119,6 +125,7 @@ export default function NovelTopBar({
   onOpenPack,
   onBackToShelf,
   onDismissOverlays,
+  onContinue,
   packOpening = false,
 }: NovelTopBarProps) {
   const { saveState, lastSavedAt } = useSaveState();
@@ -265,6 +272,17 @@ export default function NovelTopBar({
             <HistoryOutlined />
           </Button>
         </Tooltip>
+        {onContinue && (
+          <Tooltip title="AI 续写（光标处顺着前文接着写）">
+            <Button
+              className="nv-topbar__icon"
+              onClick={onContinue}
+              aria-label="AI 续写"
+            >
+              <ThunderboltOutlined />
+            </Button>
+          </Tooltip>
+        )}
         <Tooltip title={settingCenterOpen ? "收起小说设定" : "小说设定（Ctrl+Shift+S）"}>
           <Button
             className={`nv-topbar__icon${settingCenterOpen ? " is-on" : ""}`}

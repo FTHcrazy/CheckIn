@@ -20,6 +20,7 @@ import ShortcutSection from "./components/ShortcutSection";
 import DiagnosticSection from "./components/DiagnosticSection";
 import AISection from "./components/AISection";
 import AILogSection from "./components/AILogSection";
+import UsagePanel from "./components/UsagePanel";
 
 /**
  * SettingsWindow —— 全局设置窗口（全版本开放入口）。
@@ -108,6 +109,17 @@ const AI_PAGES: SettingsPageDef[] = SHOW_AI
         icon: <HistoryOutlined />,
         group: "通用",
         render: () => <AILogSection />,
+      },
+      {
+        // 用量看板（M1b）：与「记录」再拆一页——记录看单次、看板看趋势，
+        // 聚合指标与诊断导出是「偶尔看一眼 + 有问题才导」的动作，不混进调用列表
+        id: "ai-usage",
+        label: "用量与效果",
+        title: "用量与效果",
+        description: "AI 帮你处理了多少次、采纳了多少，以及一键导出诊断包回传。",
+        icon: <RobotOutlined />,
+        group: "通用",
+        render: () => <UsagePanel />,
       },
     ]
   : [];

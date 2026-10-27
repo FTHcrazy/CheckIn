@@ -63,6 +63,13 @@ describe("collectBookContext", () => {
     expect(ctx.excludeNames).toBeUndefined();
   });
 
+  it("transform：与 polish 同口径（带 summary 与章节片段，不带已用名）", () => {
+    const ctx = collectBookContext(snapshot, "transform");
+    expect(ctx.entities.find((e) => e.name === "林晚照")?.summary).toContain("清冷孤傲");
+    expect(ctx.chapterSnippet).toContain("青云山巅");
+    expect(ctx.excludeNames).toBeUndefined();
+  });
+
   it("题材缺失时不伪造，书名缺失给可读兜底", () => {
     const ctx = collectBookContext({ workName: "  ", entities: [] }, "naming");
     expect(ctx.work.name).toBe("未命名作品");

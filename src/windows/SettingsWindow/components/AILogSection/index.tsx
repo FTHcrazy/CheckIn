@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { App, Button, Collapse, Empty, Popconfirm, Select, Spin, Tag } from "antd";
 import { DeleteOutlined, ReloadOutlined } from "@ant-design/icons";
 import type { AiLogRowDTO } from "@/shared/types/electron";
+import { TRANSFORM_INTENT_SUB, TRANSFORM_KIND_LABELS } from "@/shared/ai/context";
+import type { TransformKind } from "@/shared/ai/context";
 import "./index.scss";
 
 /**
@@ -23,19 +25,36 @@ import "./index.scss";
 /** 每页条数：一屏能看完一次调优对比即可，不必提供可调 */
 const PAGE_SIZE = 20;
 
+/** 变换类型 → 完整 intent（`transform:expand` 等，与 ai_log.intent 落库值一致） */
+const TRANSFORM_INTENTS = (
+  Object.keys(TRANSFORM_INTENT_SUB) as TransformKind[]
+).map((kind) => `transform:${TRANSFORM_INTENT_SUB[kind]}`);
+
 /** 意图 → 中文（含 2.7.0 之前的旧值 `generate`，老日志也要能读） */
 const INTENT_LABEL: Record<string, string> = {
   naming: "起名",
   polish: "润色",
+  continuation: "续写",
   test: "连接测试",
   generate: "生成（旧）",
+  ...Object.fromEntries(
+    (Object.keys(TRANSFORM_INTENT_SUB) as TransformKind[]).map((kind) => [
+      `transform:${TRANSFORM_INTENT_SUB[kind]}`,
+      TRANSFORM_KIND_LABELS[kind],
+    ]),
+  ),
 };
 
 const INTENT_OPTIONS = [
   { value: "", label: "全部意图" },
   { value: "naming", label: "起名" },
   { value: "polish", label: "润色" },
+  { value: "continuation", label: "续写" },
   { value: "test", label: "连接测试" },
+  ...TRANSFORM_INTENTS.map((value) => ({
+    value,
+    label: INTENT_LABEL[value],
+  })),
 ];
 
 /** 时间列只显示到分钟（同一分钟内的两次调用靠 id 排序区分），hover 看全量 */

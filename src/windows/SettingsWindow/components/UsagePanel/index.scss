@@ -1,0 +1,110 @@
+/* AI 用量与效果看板（M1b，窗口私有）
+   四项核心指标用网格平铺，intent 分布用紧凑行列表，风格与 AILogSection 对齐。 */
+
+.settings-usage__loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 28px 16px;
+  font-size: 12px;
+  color: var(--app-text-secondary);
+}
+
+.settings-usage__empty {
+  padding: 20px 0 8px;
+}
+
+/* 四项指标：三列网格，数值大、标签小，一眼扫到「用了多少次 / 采纳多少」 */
+.settings-usage__metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  padding-bottom: 14px;
+}
+
+.settings-usage__metric {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 12px 14px;
+  border-radius: var(--app-radius-item);
+  background: var(--app-surface-alt);
+}
+
+.settings-usage__metric-value {
+  color: var(--app-text);
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.settings-usage__metric-label {
+  overflow: hidden;
+  color: var(--app-text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* intent 分布：一行一个意图，右对齐次数 */
+.settings-usage__breakdown {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--app-border);
+}
+
+.settings-usage__breakdown-empty {
+  padding: 16px 0;
+  color: var(--app-text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.settings-usage__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--app-border);
+  font-size: 12px;
+  line-height: 1.6;
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.settings-usage__intent.ant-tag {
+  margin: 0;
+  padding: 0 6px;
+  border: none;
+  background: var(--app-primary-weak);
+  color: var(--app-primary-strong);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.settings-usage__row-count {
+  margin-left: auto;
+  color: var(--app-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.settings-usage__row-adopts {
+  min-width: 56px;
+  color: var(--app-text-secondary);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.settings-usage__tools {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+}

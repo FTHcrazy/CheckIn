@@ -14,12 +14,18 @@
 import type { AiBookContext } from "../collector";
 import { assembleNamingSpec, type NamingIntent } from "./naming";
 import { assemblePolishSpec, type PolishIntent } from "./polish";
+import { assembleTransformSpec, type TransformIntent } from "./transform";
+import { assembleContinuationSpec, type ContinuationIntent } from "./continuation";
+import { assembleSummarySpec, type SummaryIntent } from "./summary";
 import type { PromptSpec } from "./types";
 
 /** 各意图的参数类型（新功能在这里扩一行，`PromptIntent` 自动跟着变） */
 export interface PromptIntentMap {
   naming: NamingIntent;
   polish: PolishIntent;
+  transform: TransformIntent;
+  continuation: ContinuationIntent;
+  summary: SummaryIntent;
 }
 
 /** 已实现模板的意图名 */
@@ -31,12 +37,38 @@ export const PROMPT_BUILDERS: {
 } = {
   naming: assembleNamingSpec,
   polish: assemblePolishSpec,
+  transform: assembleTransformSpec,
+  continuation: assembleContinuationSpec,
+  summary: assembleSummarySpec,
 };
 
 /** 运行期遍历用（顺序 = 清单顺序，便于日志 / 调试图标） */
 export const PROMPT_INTENTS: readonly PromptIntent[] = Object.keys(
   PROMPT_BUILDERS,
 ) as PromptIntent[];
+
+/**
+ * 各意图的 prompt 模板版本（M7）。
+ *
+ * 落进 `ai_log.prompt_version` / `ai_event.prompt_ver`，让「改了 prompt 之后
+ * 采纳率 / 效果变没变」可对照。**改任何一个模板时，必须同步 bump 对应版本号**，
+ * 否则归因会把新旧 prompt 的效果混在一起。
+ *
+ * 版本规则：纯数字次版本，格式 `v<N>`；与 `package.json` 解耦（prompt 可以比
+ * 应用更频繁地迭代）。新功能登记进 `PROMPT_BUILDERS` 时，同时在这里补一行。
+ */
+export const PROMPT_VERSIONS: Record<PromptIntent, string> = {
+  naming: "v1",
+  polish: "v1",
+  transform: "v1",
+  continuation: "v1",
+  summary: "v1",
+};
+
+/** 按意图取 prompt 版本（未登记时返回空串，调用方按「版本未知」处理） */
+export function promptVersionOf(intent: string): string {
+  return (PROMPT_VERSIONS as Record<string, string>)[intent] ?? "";
+}
 
 /**
  * 按意图组装 Prompt。
