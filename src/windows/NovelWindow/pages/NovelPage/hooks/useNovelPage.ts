@@ -49,19 +49,37 @@ import type { InspirationActions } from "../components/InspirationPanel";
 import type { NamingActions } from "../components/NameGeneratorPanel";
 import type { EditorPaneHandle } from "../components/EditorPane";
 import type { OutlineActions } from "../components/OutlinePanel";
-import { aiGenerate, aiGenerateStructured, getAiConfig } from "@/shared/ai/ai-client";
+import {
+  aiGenerate,
+  aiGenerateStream,
+  getAiConfig,
+  logAiEvent,
+  type AiStreamHandle,
+} from "@/shared/ai/ai-client";
+import {
+  createOllamaAccumulator,
+  createOpenAiSseAccumulator,
+} from "@/shared/ai/ai-stream-parse";
+import { useAiAvailability } from "@/shared/ai/hooks/useAiAvailability";
+import { makeAiProvenance, newBatchId } from "@/shared/ai/ai-provenance";
 import {
   alignParagraphBreaks,
+  assembleContinuationStreamSpec,
+  buildChapterScopePayload,
   buildPromptSpec,
   collectBookContext,
-  CONTINUATION_OUTPUT_FORMAT,
+  inputCharBudget,
   matchEntitiesInText,
+  parseSummaryReply,
+  snippetBudget,
   TRANSFORM_INTENT_SUB,
   TRANSFORM_KIND_LABELS,
   type BookSnapshot,
+  type ChapterScopePayload,
   type TransformKind,
 } from "@/shared/ai/context";
 import { estimateText } from "@/shared/ai/ai-estimate";
+import type { L3Scope } from "@/shared/ai/ai-consent";
 import { useAiConsent } from "@/shared/hooks/useAiConsent";
 import {
   editorActions,
@@ -704,10 +722,22 @@ export function useNovelPage() {
     [data, editor, view],
   );
 
+  // ── AI 可用性门控（M8）─────────────────────────────
+  // 统一口径：AI 不可用时，各入口据此决定「禁用并说明 / 走本地兜底」，杜绝
+  // 「点了没反应」。声明在上下文与编排之前：contextLen 预算与入口禁用都从它取。
+  const aiAvailability = useAiAvailability();
+
+  /** EditorPane 命令式 ref：起名插入 / 润色回填 / 续写确认共用 */
+  const editorPaneRef = useRef<EditorPaneHandle>(null);
+
   // ── AI 上下文快照（R-AI-05）：起名与润色共用一份，由采集层按 intent 裁剪 ──
   /**
    * 本书上下文快照：页面层负责「取数」，AI 层负责「裁剪 + 拼 prompt」。
-   * 一次组装、两处复用（起名 / 润色），避免两套取数口径漂移。
+   * 一次组装、多处复用，避免两套取数口径漂移。
+   *
+   * ⚠️ 不含 `chapterSnippet`（2.10.1）：章节片段的**位置**只有调用方知道
+   * （选区在哪、光标在哪），整章塞进快照再被前向截断，会让章末润色拿到章首上下文。
+   * 需要片段的调用方用下面的 `chapterSnippetAround` 现场切片。
    */
   const bookSnapshot = useMemo<BookSnapshot>(() => {
     const work = data.works.find((item) => item.id === data.activeWorkId);
@@ -731,15 +761,36 @@ export function useNovelPage() {
           summary: entity.summary,
         })),
       realmLevels: levels,
-      chapterSnippet: data.activeChapter?.content ?? "",
     };
-  }, [
-    data.works,
-    data.activeWorkId,
-    data.entities,
-    data.realmCategory,
-    data.activeChapter,
-  ]);
+  }, [data.works, data.activeWorkId, data.entities, data.realmCategory]);
+
+  /**
+   * 取「以选区为中心」的章节片段（前后各半，按预算裁）。
+   *
+   * 为什么不是整章前向截断：润色第 5000 字处的段落时，前向截断送上去的是
+   * 章首 800 字 —— 标注写着「本段所在章节」，实际与选区毫无关系，既烧 token
+   * 又误导模型。预算由 `snippetBudget(contextLen, 正文长度)` 算出。
+   */
+  const chapterSnippetAround = useCallback(
+    (from: number, to: number, budget: number): string => {
+      const content = data.activeChapter?.content ?? "";
+      if (!content || budget <= 0) return "";
+      const half = Math.max(200, Math.floor(budget / 2));
+      const start = Math.max(0, from - half);
+      const end = Math.min(content.length, Math.max(to, from) + half);
+      return content.slice(start, end);
+    },
+    [data.activeChapter],
+  );
+
+  /** 当前活动章对应的大纲节点标题（续写 / 摘要共用，锚定剧情走向） */
+  const activeOutlineNode = useMemo(
+    () =>
+      outline.find(
+        (node) => node.kind === "chapter" && node.chapterId === data.activeChapterId,
+      )?.title,
+    [outline, data.activeChapterId],
+  );
 
   // ── AI 润色（R-AI-03 对比预览形态）─────────────────────────────
   /** 润色预览浮层状态：open 时持有原选区快照（text + 绝对偏移）与结果 */
@@ -755,20 +806,28 @@ export function useNovelPage() {
   } | null>(null);
 
   /**
-   * 发起一次文本变换请求（扩写 / 精简 / 改写 / 换语气 / 转视角）。
+   * 发起一次「选中文本改写」：润色与五种变换共用一条链路。
    *
-   * 五种变换与润色是同一动作的不同意图：共用这条「选中 → 预览 → 确认」链路，
-   * 差别只在 `kind` 决定 system prompt 与日志 intent（`transform:${kind}`）。
+   * 五个变换 + 润色本质是同一动作的不同意图：选中 → 预览 → 确认替换，
+   * 差别只在模板（`polish` / `transform`）与日志 intent。
    *
-   * 首次与「换一种 / 重试」共用。
+   * 三条容易漏掉的守卫（2.10.1）：
+   * 1. **reject 兜底**：`aiGenerate` 走 IPC，主进程侧异常（如 ai.db 未就绪）
+   *    会 reject —— 不接住就是浮层永久 loading、没有一行错误提示；
+   * 2. **在途结果不越权**：只有当前面板仍属于本次 mode 才写回，否则用户
+   *    换了选段/换了变换时，旧请求回来会把新面板的结果覆盖掉；
+   * 3. **章节片段居中**：按选区位置切，不再送章首 800 字（见 `chapterSnippetAround`）。
    */
-  const runTransform = useCallback(
-    async (kind: TransformKind): Promise<void> => {
+  const runRewrite = useCallback(
+    async (mode: "polish" | TransformKind): Promise<void> => {
       const selection = editor.selection;
       if (!selection) return;
       const text = selection.text.trim();
       if (!text) {
-        view.showToast("先选中要变换的文字", "warning");
+        view.showToast(
+          mode === "polish" ? "先选中要润色的文字" : "先选中要变换的文字",
+          "warning",
+        );
         return;
       }
 
@@ -777,104 +836,71 @@ export function useNovelPage() {
         text,
         from: selection.from,
         to: selection.to,
-        mode: kind,
+        mode,
         polished: null,
         loading: true,
         error: null,
       });
 
-      // 上下文：书名 / 题材 / 命中的人物卡 / 章节片段（变换必须知道「这段话里是谁」）
-      const characters = matchEntitiesInText(text, bookSnapshot.entities);
-      const context = collectBookContext(bookSnapshot, "transform");
-      const spec = buildPromptSpec("transform", context, { kind, text, characters });
+      /** 只更新「还是本次请求」的面板 */
+      const patch = (next: { polished?: string; loading: boolean; error: string | null }): void =>
+        setPolish((prev) => (prev && prev.mode === mode ? { ...prev, ...next } : prev));
 
-      const result = await aiGenerate({
-        system: spec.system,
-        prompt: spec.prompt,
-        intent: `transform:${TRANSFORM_INTENT_SUB[kind]}`,
-      });
+      try {
+        // 上下文：书名 / 题材 / 命中的人物卡 / 选区所在章节片段
+        const characters = matchEntitiesInText(text, bookSnapshot.entities);
+        const snippet = chapterSnippetAround(
+          selection.from,
+          selection.to,
+          snippetBudget(aiAvailability.config?.contextLen, text.length),
+        );
+        const context = collectBookContext(
+          { ...bookSnapshot, chapterSnippet: snippet },
+          mode === "polish" ? "polish" : "transform",
+        );
 
-      if (result.ok) {
-        // 段落分隔跟原文对齐：模型爱在段间插空行，整段回填后要作者手删（2.8.1）
-        const polishedText = alignParagraphBreaks(result.data.text, text);
-        // 模型可能原样返回或返回空串，视为未变换成功
-        if (!polishedText || polishedText === text) {
-          setPolish((prev) =>
-            prev
-              ? { ...prev, loading: false, error: "这次没有产出有效变换，换个说法再试" }
-              : prev,
-          );
+        const spec =
+          mode === "polish"
+            ? buildPromptSpec("polish", context, { text, characters })
+            : buildPromptSpec("transform", context, { kind: mode, text, characters });
+
+        const result = await aiGenerate({
+          system: spec.system,
+          prompt: spec.prompt,
+          intent: mode === "polish" ? "polish" : `transform:${TRANSFORM_INTENT_SUB[mode]}`,
+        });
+
+        if (!result.ok) {
+          // AI 失败：预览浮层内展示错误，不替换原文
+          patch({ loading: false, error: result.message });
           return;
         }
-        setPolish((prev) =>
-          prev ? { ...prev, polished: polishedText, loading: false, error: null } : prev,
-        );
-        return;
-      }
 
-      // AI 失败：预览浮层内展示错误，不替换原文
-      setPolish((prev) =>
-        prev ? { ...prev, loading: false, error: result.message } : prev,
-      );
+        // 段落分隔跟原文对齐：模型爱在段间插空行，整段回填后要作者手删（2.8.1）
+        const rewritten = alignParagraphBreaks(result.data.text, text);
+        const label = mode === "polish" ? "润色" : TRANSFORM_KIND_LABELS[mode];
+        // 模型可能原样返回或返回空串，视为未改写成功
+        if (!rewritten || rewritten === text) {
+          patch({ loading: false, error: `这次没有产出有效${label}，换个说法再试` });
+          return;
+        }
+        patch({ polished: rewritten, loading: false, error: null });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        patch({ loading: false, error: message || "AI 调用失败，请重试" });
+      }
     },
-    [editor, view, bookSnapshot],
+    [editor, view, bookSnapshot, chapterSnippetAround, aiAvailability.config?.contextLen],
   );
 
-  /** 发起一次润色请求（保留润色专用入口，语义与 PRD R-AI-03 一致） */
-  const runPolish = useCallback(async (): Promise<void> => {
-    const selection = editor.selection;
-    if (!selection) return;
-    const text = selection.text.trim();
-    if (!text) {
-      view.showToast("先选中要润色的文字", "warning");
-      return;
-    }
+  /** 润色入口（PRD R-AI-03）：语义与「文本变换」并列，便于右键菜单分开调用 */
+  const runPolish = useCallback((): Promise<void> => runRewrite("polish"), [runRewrite]);
 
-    // 打开（或重置）预览为加载态，快照原选区（from/to 供确认时精确替换）
-    setPolish({
-      text,
-      from: selection.from,
-      to: selection.to,
-      mode: "polish",
-      polished: null,
-      loading: true,
-      error: null,
-    });
-
-    // 上下文：书名 / 题材 / 命中的人物卡 / 章节片段（润色必须知道「这段话里是谁」）
-    const characters = matchEntitiesInText(text, bookSnapshot.entities);
-    const context = collectBookContext(bookSnapshot, "polish");
-    const spec = buildPromptSpec("polish", context, { text, characters });
-
-    const result = await aiGenerate({
-      system: spec.system,
-      prompt: spec.prompt,
-      intent: "polish",
-    });
-
-    if (result.ok) {
-      // 段落分隔跟原文对齐：模型爱在段间插空行，整段回填后要作者手删（2.8.1）
-      const polishedText = alignParagraphBreaks(result.data.text, text);
-      // 模型可能原样返回或返回空串，视为未润色成功
-      if (!polishedText || polishedText === text) {
-        setPolish((prev) =>
-          prev
-            ? { ...prev, loading: false, error: "这次没有产出有效润色，换个说法再试" }
-            : prev,
-        );
-        return;
-      }
-      setPolish((prev) =>
-        prev ? { ...prev, polished: polishedText, loading: false, error: null } : prev,
-      );
-      return;
-    }
-
-    // AI 失败：预览浮层内展示错误，不替换原文
-    setPolish((prev) =>
-      prev ? { ...prev, loading: false, error: result.message } : prev,
-    );
-  }, [editor, view, bookSnapshot]);
+  /** 文本变换入口：扩写 / 精简 / 改写 / 换语气 / 转视角 */
+  const runTransform = useCallback(
+    (kind: TransformKind): Promise<void> => runRewrite(kind),
+    [runRewrite],
+  );
 
   /** 右键「文本变换」：记录选区并进入预览 */
   const handleCtxTransform = useCallback(
@@ -900,19 +926,37 @@ export function useNovelPage() {
   /** 确认替换：按快照的绝对偏移回填变换结果 */
   const handlePolishConfirm = useCallback((): void => {
     if (!polish?.polished) return;
-    editorPaneRef.current?.replaceRange(polish.from, polish.to, polish.polished);
+    const pane = editorPaneRef.current;
+    // 编辑器不在（切到书架 / 章节被关）时不能上报采纳：没发生就是没发生
+    if (!pane) {
+      view.showToast("编辑器还没就绪，暂时无法替换", "warning");
+      return;
+    }
+    pane.replaceRange(polish.from, polish.to, polish.polished);
     editor.setSelection(null);
     setPolish(null);
     const label =
       polish.mode === "polish" ? "润色" : TRANSFORM_KIND_LABELS[polish.mode];
     view.showToast(`已替换为${label}后的文字`);
+    // 采纳上报（M1a）：度量闭环的最后一公里，失败静默不阻塞写作
+    void logAiEvent({
+      intent: polish.mode === "polish" ? "polish" : `transform:${TRANSFORM_INTENT_SUB[polish.mode]}`,
+      step: "adopt",
+    });
   }, [polish, editor, view]);
 
   /** 关闭预览：不替换，清空状态（选区一并清除） */
   const handlePolishClose = useCallback((): void => {
+    // 预览浮层关闭即「放弃」（cancel）；生成失败已在主进程落 fallback，此处只补人为关闭
+    if (polish?.polished) {
+      void logAiEvent({
+        intent: polish.mode === "polish" ? "polish" : `transform:${TRANSFORM_INTENT_SUB[polish.mode]}`,
+        step: "cancel",
+      });
+    }
     setPolish(null);
     editor.setSelection(null);
-  }, [editor]);
+  }, [polish, editor]);
 
   /** 「换一种 / 重试」：按当前预览身份回退到对应编排（润色或某种变换） */
   const handlePolishRetry = useCallback((): void => {
@@ -924,24 +968,46 @@ export function useNovelPage() {
     }
   }, [polish, runPolish, runTransform]);
 
-  /** 续写候选浮层状态（R-AI-07）：null = 未打开 */
+  /** 续写浮层状态（R-AI-07 / B5 流式）：null = 未打开 */
   const [continuation, setContinuation] = useState<{
     /** 光标绝对偏移（确认插入时用它定位） */
     cursor: number;
-    /** 候选列表；空 = 加载中或已失败 */
-    candidates: string[];
+    /** 已流式生成的正文；空 = 尚未产出或生成中 */
+    text: string;
+    /** 是否正在流式生成（逐字输出中） */
+    streaming: boolean;
     loading: boolean;
     error: string | null;
   } | null>(null);
+
+  /** 当前流式句柄（用于中断）：切换 / 关闭 / 重试时 abort 上一个 */
+  const continuationStreamRef = useRef<AiStreamHandle | null>(null);
 
   /** 前文截断上限（字）：续写只带光标前一段，不把整章塞进 prompt */
   const CONTINUATION_BEFORE_CHARS = 1000;
 
   /**
-   * 发起一次续写请求（首次与「换一批 / 重试」共用）。
+   * 流序号：每次发起 / 中断自增。
    *
-   * 光标停在卡住的地方（无选区），取光标前 N 字作前文，让 AI 顺着往下写
-   * 2–3 个候选。候选不自动写入，确认后才 `insertText`（可 Ctrl+Z 撤销）。
+   * 为什么需要它：单 `continuationStreamRef` + 单状态在多流重入时会串味 ——
+   * 重试时旧流的 catch 会把**新流**的 `streaming` 置 false；旧流收尾还会把
+   * ref 清空，让新流再也 abort 不掉。序号让「旧流的后续写入」整体作废。
+   */
+  const continuationSeqRef = useRef(0);
+
+  /** 中断当前续写流（B5）：释放连接，保留已生成部分 */
+  const abortContinuation = useCallback((): void => {
+    continuationStreamRef.current?.abort();
+    continuationStreamRef.current = null;
+    continuationSeqRef.current += 1;
+  }, []);
+
+  /**
+   * 发起一次续写请求（B5 流式版）。
+   *
+   * 光标停在卡住的地方（无选区），取光标前 N 字作前文，AI 顺着往下写一段，
+   * **逐字流式输出**（打字机），作者可随时中断保留已生成部分。确认后才
+   * `insertText`（可 Ctrl+Z 撤销）。
    */
   const runContinuation = useCallback(async (): Promise<void> => {
     const before = editorPaneRef.current?.getTextBeforeCursor(CONTINUATION_BEFORE_CHARS);
@@ -950,76 +1016,141 @@ export function useNovelPage() {
       return;
     }
 
-    // 打开（或重置）浮层为加载态，快照光标偏移（确认时用它精确定位）
+    // 中断上一个在途流（重试 / 换一批时先断开旧的），并作废旧流的后续写入
+    abortContinuation();
+    const seq = continuationSeqRef.current;
+    /** 本次流的句柄：catch 里据此区分「主动中断」与「真失败」 */
+    let streamed: AiStreamHandle | null = null;
+
+    // 打开（或重置）浮层为流式态，快照光标偏移（确认时用它精确定位）
     setContinuation({
       cursor: before.cursor,
-      candidates: [],
-      loading: true,
+      text: "",
+      streaming: true,
+      loading: false,
       error: null,
     });
 
+    /** 只接受「本次流」的状态写入：旧的 catch / 旧块回来时一律丢弃 */
+    const patch = (next: Partial<{ text: string; streaming: boolean; error: string | null }>): void => {
+      if (continuationSeqRef.current !== seq) return;
+      setContinuation((prev) => (prev ? { ...prev, ...next } : prev));
+    };
+
     // 前文命中的人物卡（续写必须知道「接着写的是谁的戏」）
     const characters = matchEntitiesInText(before.text, bookSnapshot.entities);
+    // 上一章的 AI 摘要（R-AI-09 的第二消费方）：章节顺序以卷分组为准，
+    // 与摘要 / 目录同源。这里只负责「取」，是否真注入由模板层按前文长度决定
+    // （`CONTINUATION_SUMMARY_MIN_BEFORE_CHARS`）——阈值只能有一个产地。
+    const orderedChapters = data.groups.flatMap((group) => group.chapters);
+    const activeIndex = orderedChapters.findIndex((item) => item.id === data.activeChapterId);
+    const previousSummary =
+      activeIndex > 0 ? orderedChapters[activeIndex - 1]?.aiSummary?.trim() : undefined;
     const context = collectBookContext(bookSnapshot, "continuation");
-    const spec = buildPromptSpec("continuation", context, {
+    const spec = assembleContinuationStreamSpec(context, {
       before: before.text,
       characters,
+      // 大纲节点（2.10.1 接线）：模板早就支持，此前调用方没传，等于白写
+      ...(activeOutlineNode ? { outlineNode: activeOutlineNode } : {}),
+      ...(previousSummary ? { previousSummary } : {}),
     });
 
-    const result = await aiGenerateStructured({
-      system: spec.system,
-      prompt: spec.prompt,
-      intent: "continuation",
-      outputFormat: CONTINUATION_OUTPUT_FORMAT,
-    });
-
-    if (result.ok) {
-      // 候选 = json-array 的 `text` 字段；去空、去与原文重复
-      const candidates = result.data.entries
-        .map((entry) => (entry.text ?? "").trim())
-        .filter((text) => text && text !== before.text);
-      if (candidates.length === 0) {
-        setContinuation((prev) =>
-          prev
-            ? { ...prev, loading: false, error: "这次没有产出有效续写，换个位置或重试" }
-            : prev,
-        );
+    try {
+      const handle = await aiGenerateStream({
+        system: spec.system,
+        prompt: spec.prompt,
+        intent: "continuation",
+      });
+      streamed = handle;
+      if (continuationSeqRef.current !== seq) {
+        // 等首个响应期间已被新一次续写/关闭取代：立刻释放这条连接
+        handle.abort();
         return;
       }
-      setContinuation((prev) =>
-        prev ? { ...prev, candidates, loading: false, error: null } : prev,
-      );
-      return;
+      continuationStreamRef.current = handle;
+
+      // 按 provider 选解析器：OpenAI SSE / Ollama 逐行 JSON
+      const provider = (await getAiConfig()).provider;
+      const accumulator =
+        provider === "ollama"
+          ? createOllamaAccumulator()
+          : createOpenAiSseAccumulator();
+
+      let accText = "";
+      // 逐段读流，把增量 append 到浮层（打字机）
+      for (;;) {
+        if (continuationSeqRef.current !== seq) return;
+        const chunk = await handle.readChunk();
+        if (chunk === null) break;
+        const delta = accumulator.push(chunk);
+        if (delta) {
+          accText += delta;
+          patch({ text: accText, streaming: true });
+        }
+      }
+      // 冲刷残留缓冲
+      const tail = accumulator.flush();
+      if (tail) accText += tail;
+      if (continuationSeqRef.current !== seq) return;
+
+      continuationStreamRef.current = null;
+
+      if (!accText.trim() || accText.trim() === before.text.trim()) {
+        patch({ text: accText, streaming: false, error: "这次没有产出有效续写，换个位置或重试" });
+        return;
+      }
+      patch({ text: accText, streaming: false, error: null });
+    } catch (error) {
+      // 被新一次续写 / 关闭取代：本次结果整体作废，不要碰当前浮层
+      if (continuationSeqRef.current !== seq) return;
+      continuationStreamRef.current = null;
+      // 主动中断（abort）不算错误：已生成部分保留，浮层进入「可确认」态
+      if (streamed?.done) {
+        patch({ streaming: false });
+        return;
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      patch({ streaming: false, error: message || "续写失败，请重试" });
     }
+  }, [view, bookSnapshot, abortContinuation, activeOutlineNode, data.groups, data.activeChapterId]);
 
-    // AI 失败：浮层内展示错误，不写入任何文字
-    setContinuation((prev) =>
-      prev ? { ...prev, loading: false, error: result.message } : prev,
-    );
-  }, [view, bookSnapshot]);
-
-  /** 确认某个候选：插到光标处，光标落到插入末尾 */
+  /** 确认流式续写结果：插到**快照光标**处，光标落到插入末尾 */
   const handleContinuationConfirm = useCallback(
     (text: string): void => {
       if (!continuation || !text) return;
-      editorPaneRef.current?.insertText(text);
+      const pane = editorPaneRef.current;
+      if (!pane) {
+        view.showToast("编辑器还没就绪，暂时无法插入", "warning");
+        return;
+      }
+      // 用快照光标而不是「当前选区」：流式期间作者可能随手选中别的段落，
+      // 走 insertText 会命中 replaceSelection 分支，把那一段覆盖掉（2.10.1）。
+      pane.replaceRange(continuation.cursor, continuation.cursor, text);
       setContinuation(null);
       view.showToast("已插入续写，可直接修改或继续");
+      // 采纳上报（M1a）：续写确认插入即采纳
+      void logAiEvent({ intent: "continuation", step: "adopt" });
     },
     [continuation, view],
   );
 
-  /** 关闭候选浮层：不写入，清空状态 */
+  /** 关闭续写浮层：不写入，清空状态 */
   const handleContinuationClose = useCallback((): void => {
+    // 有产出而关闭 = 放弃（cancel）
+    if (continuation && continuation.text.trim()) {
+      void logAiEvent({ intent: "continuation", step: "cancel" });
+    }
+    abortContinuation();
     setContinuation(null);
-  }, []);
+  }, [continuation, abortContinuation]);
 
-  /** 「换一批」：重新发起续写（沿用光标处） */
+  /** 「重新生成」：中断当前流，重新发起续写（沿用光标处） */
   const handleContinuationRetry = useCallback((): void => {
     void runContinuation();
   }, [runContinuation]);
 
   // ── AI 章节摘要（R-AI-09）─────────────────────────────
+  // 可用性门控（M8）已在上文 `aiAvailability` 统一声明，摘要入口复用它。
   /** L3 授权状态（M5）：摘要 = 整章全文 = L3 级，必须走统一授权 */
   const aiConsent = useAiConsent();
 
@@ -1030,36 +1161,137 @@ export function useNovelPage() {
     error: string | null;
     /** 生成出的摘要正文（成功后直接落库，这里仅作瞬时展示） */
     result: string | null;
+    /** 模型给的「一句话梗概」（用于回填大纲）；空 = 本次没产出，不动大纲 */
+    oneLiner: string;
+    /** 本章已有手写梗概：非空 = 待用户确认覆盖，此时**未写入** */
+    noteConflict: string;
+    /** 一句话已写进大纲梗概（自动填 / 确认覆盖 / 原本就一致） */
+    noteApplied: boolean;
   } | null>(null);
 
   /** 待授权确认的摘要请求：授权弹窗点「同意」后真正发起生成 */
   const [summaryPending, setSummaryPending] = useState<{
     chapterId: string;
     chapterTitle: string;
-    chars: number;
-    tokens: number;
   } | null>(null);
 
-  /** 真正发起摘要生成（授权已通过后调用） */
+  /**
+   * 按当前 L3 授权范围，算出「真正要发给模型的那段正文」。
+   *
+   * 唯一构造点：弹窗字数估算、实际发送、事件上报都从这里取。三条路径各算一遍
+   * 必然漂移——review G4 的成因就是「估算按整章、发送按整章、范围没人读」。
+   */
+  const buildSummaryPayload = useCallback(
+    (chapterId: string, scope: L3Scope): ChapterScopePayload | null => {
+      // 章节顺序以卷分组为准（与大纲/目录一致），扁平 chapters 不带卷序
+      const ordered = data.groups.flatMap((group) => group.chapters);
+      const index = ordered.findIndex((item) => item.id === chapterId);
+      if (index < 0) return null;
+      const chapter = ordered[index];
+      // 选区只对「正在编辑的那一章」有效：别的章的选区是上一次编辑留下的
+      const selection =
+        chapterId === data.activeChapterId ? (editor.selection?.text ?? "") : "";
+      return buildChapterScopePayload({
+        scope,
+        chapter: { title: chapter.title, content: chapter.content },
+        previousChapters: ordered
+          .slice(Math.max(0, index - 2), index)
+          .map((item) => ({ title: item.title, content: item.content })),
+        selection,
+        // 预算与其余 intent 同源：把「上下文长度」配小，这里就真的少发
+        budget: inputCharBudget(aiAvailability.config?.contextLen),
+      });
+    },
+    [data.groups, data.activeChapterId, editor.selection, aiAvailability.config?.contextLen],
+  );
+
+  /**
+   * 弹窗里的「本次将发送约 N 字」——必须随范围实时重算。
+   *
+   * 恒按整章算等于骗人：选了「选中段落」却告诉用户「约 3000 字」，
+   * 用户会以为自己授权了 3000 字。空范围内显示 0 并给出说明，弹窗据此禁用「同意」。
+   */
+  const summaryPendingScope = useMemo((): {
+    chars: number;
+    tokens: number;
+    notice: string | null;
+  } => {
+    if (!summaryPending) return { chars: 0, tokens: 0, notice: null };
+    const payload = buildSummaryPayload(summaryPending.chapterId, aiConsent.scope);
+    if (!payload?.ok) {
+      return {
+        chars: 0,
+        tokens: 0,
+        notice:
+          payload?.reason === "no-selection"
+            ? "当前范围是「选中段落」，请先在正文里选中要发送的内容"
+            : null,
+      };
+    }
+    return {
+      ...estimateText(`${payload.chapterText}\n${payload.contextText ?? ""}`),
+      notice: null,
+    };
+  }, [summaryPending, aiConsent.scope, buildSummaryPayload]);
+
+  /**
+   * 真正发起摘要生成（授权已通过后调用）。
+   *
+   * `scope` 是**入参**而不是读 hook 里的最新值：授权弹窗点「同意」时用户选的是哪档，
+   * 就按哪档发——用最新值会让「弹窗还开着、范围被改过」这类竞态悄悄换内容。
+   */
   const doGenerateSummary = useCallback(
-    async (chapterId: string, chapterTitle: string): Promise<void> => {
+    async (chapterId: string, chapterTitle: string, scope: L3Scope): Promise<void> => {
       const chapter = data.chapters.find((item) => item.id === chapterId);
       if (!chapter) return;
 
+      // 先按范围取「真实要发的正文」：范围不是埋点字段，它决定发送内容（G4）
+      const payload = buildSummaryPayload(chapterId, scope);
+      if (!payload) return; // 章节已被删除 / 换作品
+      if (!payload.ok) {
+        // 选了「选中段落」却什么都没选：必须明说并停手，不能悄悄退回整章
+        const message = "当前范围是「选中段落」，请先在正文里选中要发送的内容";
+        setSummary((prev) =>
+          prev && prev.chapterId === chapterId
+            ? { ...prev, loading: false, error: message }
+            : prev,
+        );
+        view.showToast(message, "warning");
+        return;
+      }
+
       const context = collectBookContext(bookSnapshot, "summary");
-      const outlineNode = outline.find(
-        (node) => node.kind === "chapter" && node.chapterId === chapterId,
-      )?.title;
+      const outlineNode =
+        activeOutlineNode && chapterId === data.activeChapterId
+          ? activeOutlineNode
+          : outline.find(
+              (node) => node.kind === "chapter" && node.chapterId === chapterId,
+            )?.title;
+      // 「整章」不等于「无上限」：导入的书单章可能几十万字，直接塞进 prompt 会撞
+      // 上下文上限并静默失败。裁剪已在 buildSummaryPayload 按 contextLen 做完
+      // （首尾拼接、中间标注省略），这里不再二次截断。
       const spec = buildPromptSpec("summary", context, {
-        chapter: chapter.content,
+        chapter: payload.chapterText,
         chapterTitle,
         outlineNode,
+        scope,
+        ...(payload.contextText ? { contextText: payload.contextText } : {}),
       });
 
       const result = await aiGenerate({
         system: spec.system,
         prompt: spec.prompt,
         intent: "summary",
+        // 范围随请求下发：主进程写 trigger / success 事件时落 ai_event.scope
+        scope,
+      }).catch((error: unknown) => {
+        // IPC 侧异常（主进程 ai.db 未就绪等）不能让面板永久 loading
+        const message = error instanceof Error ? error.message : String(error);
+        return {
+          ok: false as const,
+          code: "internal" as const,
+          message: message || "AI 调用失败，请重试",
+        };
       });
 
       if (result.ok) {
@@ -1072,10 +1304,54 @@ export function useNovelPage() {
           );
           return;
         }
-        // 落库 + 本地乐观更新，带来源标记（M6 溯源：模型名 + 时间戳）
-        const model = (await getAiConfig()).model;
-        data.updateChapterSummary(chapterId, text, model);
-        setSummary({ chapterId, loading: false, error: null, result: text });
+        // 拆「一句话」与「长摘要」：一句话回填大纲梗概（大纲回流），长摘要落库。
+        // 模型没按标记返回时 oneLiner 为空——此时只落摘要，绝不动作者的大纲。
+        const reply = parseSummaryReply(text);
+        const bodyText = reply.summary || text;
+        // 落库 + 本地乐观更新，带来源标记（M6 溯源：模型名 + 时间戳 + 批次）。
+        // 模型名随生成响应回带（G8-③），省去一次 getAiConfig 的二次 IPC 往返。
+        const model = result.data.model;
+        const provenance = makeAiProvenance(model, Date.now(), newBatchId());
+        data.updateChapterSummary(
+          chapterId,
+          bodyText,
+          provenance?.model ?? model,
+          provenance?.batchId,
+        );
+
+        // 大纲回流：无手写梗概就直接填；已有手写先不写，等用户在浮层确认覆盖
+        // （覆盖会抹掉作者自己写的字，不能由 AI 单方面决定）
+        const existingNote = (
+          data.chapters.find((item) => item.id === chapterId)?.outlineNote ?? ""
+        ).trim();
+        let noteConflict = "";
+        let noteApplied = false;
+        if (reply.oneLiner) {
+          if (!existingNote || existingNote === reply.oneLiner) {
+            data.updateChapterOutlineNote(chapterId, reply.oneLiner);
+            noteApplied = true;
+          } else {
+            noteConflict = existingNote;
+          }
+        }
+
+        setSummary({
+          chapterId,
+          loading: false,
+          error: null,
+          result: bodyText,
+          oneLiner: reply.oneLiner,
+          noteConflict,
+          noteApplied,
+        });
+        // 采纳上报（M1a）：摘要生成成功即「采纳」（text 输出无确认步骤，生成即落库）
+        void logAiEvent({
+          intent: "summary",
+          step: "adopt",
+          itemCount: 1,
+          scope,
+          ...(provenance ? { model: provenance.model } : {}),
+        });
         return;
       }
 
@@ -1086,7 +1362,14 @@ export function useNovelPage() {
           : prev,
       );
     },
-    [data, bookSnapshot, outline],
+    [
+      data,
+      bookSnapshot,
+      outline,
+      activeOutlineNode,
+      buildSummaryPayload,
+      view,
+    ],
   );
 
   /**
@@ -1094,39 +1377,69 @@ export function useNovelPage() {
    *
    * 摘要是 text 输出（非 json-array），落库到 `novel_chapters.ai_summary`，
    * 带来源标记（模型名 + 时间戳，M6 溯源）。失败不动原文，浮层报错。
+   *
+   * `force = false`（默认）时，已有摘要**只展示不重生成**；浮层里的「重新生成」
+   * 走 `force = true`，那是唯一会再次调用模型的入口。
    */
   const runChapterSummary = useCallback(
-    (chapterId: string): void => {
+    (chapterId: string, force = false): void => {
       const chapter = data.chapters.find((item) => item.id === chapterId);
+
+      // 「查看」不等于「重新生成」：已存摘要直接展示，不调模型。
+      // 章节行图标写的是「查看 AI 摘要」（实心 = 已有），点一下就扣一次 token
+      // 是最伤信任的那种不一致；这里也刻意不看 AI 可用性——本地读库不该被门控拦。
+      if (!force && chapter?.aiSummary) {
+        setSummary({
+          chapterId,
+          loading: false,
+          error: null,
+          result: chapter.aiSummary,
+          // 老数据没有「一句话」，区块整体不渲染，别冒充 AI 填过大纲
+          oneLiner: "",
+          noteConflict: "",
+          noteApplied: false,
+        });
+        return;
+      }
+
+      // AI 不可用：直接说明原因，不弹空面板（M8 门控，B1 判据③「入口可消失」）
+      if (!aiAvailability.available) {
+        view.showToast(aiAvailability.reasonText || "AI 功能当前不可用", "warning");
+        return;
+      }
       if (!chapter || !chapter.content.trim()) {
         view.showToast("这一章还没有正文，写点内容再生成摘要", "warning");
         return;
       }
 
       // 打开摘要面板为加载态（授权未决时也先展示，避免「点了没反应」）
-      setSummary({ chapterId, loading: true, error: null, result: null });
+      setSummary({
+        chapterId,
+        loading: true,
+        error: null,
+        result: null,
+        oneLiner: "",
+        noteConflict: "",
+        noteApplied: false,
+      });
 
-      // 未开 L3 总开关 → 先弹授权弹窗（M5 强制），确认后再真正生成
+      // 未开 L3 总开关 → 先弹授权弹窗（M5 强制），确认后再真正生成。
+      // 弹窗里同时选「本次范围」：范围决定发送内容，不只是埋点字段。
       if (!aiConsent.l3Enabled) {
-        const estimate = estimateText(chapter.content);
-        setSummaryPending({
-          chapterId,
-          chapterTitle: chapter.title,
-          chars: estimate.chars,
-          tokens: estimate.tokens,
-        });
+        setSummaryPending({ chapterId, chapterTitle: chapter.title });
         return;
       }
 
-      void doGenerateSummary(chapterId, chapter.title);
+      void doGenerateSummary(chapterId, chapter.title, aiConsent.scope);
     },
-    [data.chapters, view, aiConsent.l3Enabled, doGenerateSummary],
+    [data.chapters, view, aiConsent.l3Enabled, aiConsent.scope, doGenerateSummary, aiAvailability],
   );
 
-  /** 授权弹窗「同意并继续」：开总开关 + 真正生成 */
+  /** 授权弹窗「同意并继续」：开总开关 + 真正生成（按弹窗里选定的范围发） */
   const handleSummaryConsentConfirm = useCallback(async (): Promise<void> => {
     if (!summaryPending) return;
     const { chapterId, chapterTitle } = summaryPending;
+    const scope = aiConsent.scope;
     setSummaryPending(null);
     const ok = await aiConsent.enableL3();
     if (!ok) {
@@ -1137,20 +1450,42 @@ export function useNovelPage() {
       );
       return;
     }
-    void doGenerateSummary(chapterId, chapterTitle);
+    void doGenerateSummary(chapterId, chapterTitle, scope);
   }, [summaryPending, aiConsent, doGenerateSummary]);
 
   /** 关闭摘要面板 */
   const handleSummaryClose = useCallback((): void => {
+    // 生成中关闭 = 主动放弃（cancel）；空态关闭无意义不上报。
+    // 带 scope：授权拒绝率 / 中断率要能按「用户敢发多大范围」切片
+    if (summary?.loading) {
+      void logAiEvent({ intent: "summary", step: "cancel", scope: aiConsent.scope });
+    }
     setSummary(null);
     setSummaryPending(null);
-  }, []);
+  }, [summary, aiConsent.scope]);
 
-  /** 授权弹窗取消 */
+  /**
+   * 浮层「覆盖为这句」：把 AI 一句话写进本章的大纲梗概。
+   *
+   * 只有「本章已有手写梗概」时才走到这里（无手写时生成完就已自动填入）。
+   * 按钮本身就是这一次确认，不再弹第二次窗——覆盖的对象是作者自己写的字，
+   * 让他亲手点一下就够了，多一层「确定要覆盖吗」只会变成无脑回车。
+   */
+  const handleApplySummaryNote = useCallback((): void => {
+    if (!summary || !summary.oneLiner) return;
+    data.updateChapterOutlineNote(summary.chapterId, summary.oneLiner);
+    setSummary((prev) =>
+      prev ? { ...prev, noteConflict: "", noteApplied: true } : prev,
+    );
+    view.showToast("已用 AI 一句话替换大纲梗概", "info");
+  }, [summary, data, view]);
+
+  /** 授权弹窗取消（= 拒绝本次 L3 授权）：拒绝本身是最需要被计数的信号 */
   const handleSummaryConsentCancel = useCallback((): void => {
+    void logAiEvent({ intent: "summary", step: "cancel", scope: aiConsent.scope });
     setSummaryPending(null);
     setSummary((prev) => (prev ? { ...prev, loading: false, error: null } : prev));
-  }, []);
+  }, [aiConsent.scope]);
 
   const handleNewVolume = useCallback((): void => {
     const id = data.createVolume();
@@ -1231,13 +1566,27 @@ export function useNovelPage() {
   );
 
   // ── 起名工具（R18 / 步骤三）：双出口 + 收藏夹编排 ──────────────────────────
-  /** EditorPane 命令式 ref：用于「插入正文光标处」出口 */
-  const editorPaneRef = useRef<EditorPaneHandle>(null);
+  // (editorPaneRef 已在 AI 上下文段上方声明，供润色 / 续写共用)
 
-  /** 把名字插入正文光标处（不依赖选区；选区非空则替换） */
-  const handleInsertName = useCallback((name: string): void => {
-    editorPaneRef.current?.insertText(name);
-  }, []);
+  /**
+   * 把名字插入正文光标处（不依赖选区；选区非空则替换）。
+   *
+   * ⚠️ 只有真的插进去才上报 adopt：编辑器未挂载（书架视图 / 章节还没起来）时
+   * 上报会把「采纳率」抬高成假数据 —— 度量必须跟着真实副作用走。
+   */
+  const handleInsertName = useCallback(
+    (name: string): void => {
+      const pane = editorPaneRef.current;
+      if (!pane) {
+        view.showToast("编辑器还没就绪，先把光标放到正文里", "warning");
+        return;
+      }
+      pane.insertText(name);
+      // 起名采纳上报（M1a）：B1 判据②「起名 → 插入正文 落一条 adopt」
+      void logAiEvent({ intent: "naming", step: "adopt" });
+    },
+    [view],
+  );
 
   /**
    * 起名结果「寓意」插入正文（2.8.1）
@@ -1246,11 +1595,21 @@ export function useNovelPage() {
    * 拼成 `名字：寓意` 而不是只丢寓意：单看一句话读者不知道说的是谁，
    * 而插入后就地编辑的成本远低于重新补名字。
    */
-  const handleInsertMeaning = useCallback((name: string, meaning: string): void => {
-    const text = meaning.trim();
-    if (!text) return;
-    editorPaneRef.current?.insertText(`${name}：${text}`);
-  }, []);
+  const handleInsertMeaning = useCallback(
+    (name: string, meaning: string): void => {
+      const text = meaning.trim();
+      if (!text) return;
+      const pane = editorPaneRef.current;
+      if (!pane) {
+        view.showToast("编辑器还没就绪，先把光标放到正文里", "warning");
+        return;
+      }
+      pane.insertText(`${name}：${text}`);
+      // 寓意插入正文同样算「采纳」
+      void logAiEvent({ intent: "naming", step: "adopt" });
+    },
+    [view],
+  );
 
   /**
    * 行囊表格「插入本章末尾」（REQ-034）：跨窗口桥。
@@ -1386,6 +1745,8 @@ export function useNovelPage() {
       } else {
         view.showToast(`「${result.entity.name}」已在设定库中`, "info");
       }
+      // 起名 → 建角色卡同样算「采纳」（M1a）
+      void logAiEvent({ intent: "naming", step: "adopt" });
     },
     [data, view],
   );
@@ -1878,20 +2239,26 @@ export function useNovelPage() {
     handlePolishClose,
     handlePolishRetry,
     runPolish,
-    // AI 续写（R-AI-07）
+    // AI 续写（R-AI-07 / B5 流式）
     continuation,
     runContinuation,
     handleContinuationConfirm,
     handleContinuationClose,
     handleContinuationRetry,
+    handleContinuationStop: abortContinuation,
     // AI 章节摘要（R-AI-09）
     summary,
     summaryPending,
+    /** 弹窗里的「将发送约 N 字」+ 范围提示：随授权范围实时重算，与实际发送同源 */
+    summaryPendingScope,
     aiConsent,
+    // AI 可用性门控（M8）：六个入口据此禁用并说明 / 走本地兜底
+    aiAvailability,
     runChapterSummary,
     handleSummaryConsentConfirm,
     handleSummaryConsentCancel,
     handleSummaryClose,
+    handleApplySummaryNote,
     handleNewVolume,
     handleSaveEntity,
     handleRenameVolume,

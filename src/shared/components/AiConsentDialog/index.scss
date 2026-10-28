@@ -45,6 +45,11 @@
     color: var(--app-success, #52c41a);
   }
 
+  /* 范围提示（如「选中段落」但没选中任何内容）：用告警色，别和普通说明混在一起 */
+  .aic__hint--notice {
+    color: var(--app-warning, #f5a623);
+  }
+
   .aic__notice {
     margin: 0;
     padding: 8px 10px;

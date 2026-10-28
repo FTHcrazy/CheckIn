@@ -15,7 +15,7 @@ import type { AiBookContext } from "../collector";
 import { assembleNamingSpec, type NamingIntent } from "./naming";
 import { assemblePolishSpec, type PolishIntent } from "./polish";
 import { assembleTransformSpec, type TransformIntent } from "./transform";
-import { assembleContinuationSpec, type ContinuationIntent } from "./continuation";
+import { assembleContinuationStreamSpec, type ContinuationIntent } from "./continuation";
 import { assembleSummarySpec, type SummaryIntent } from "./summary";
 import type { PromptSpec } from "./types";
 
@@ -38,7 +38,7 @@ export const PROMPT_BUILDERS: {
   naming: assembleNamingSpec,
   polish: assemblePolishSpec,
   transform: assembleTransformSpec,
-  continuation: assembleContinuationSpec,
+  continuation: assembleContinuationStreamSpec,
   summary: assembleSummarySpec,
 };
 
@@ -48,7 +48,25 @@ export const PROMPT_INTENTS: readonly PromptIntent[] = Object.keys(
 ) as PromptIntent[];
 
 /**
- * 各意图的 prompt 模板版本（M7）。
+ * 意图 → 中文标签（看板 / 调用记录共用的单一产地，G7）。
+ *
+ * 为什么放这里而不是散在 UsagePanel / AILogSection：`PROMPT_BUILDERS` 有
+ * 守卫强制登记，但消费侧的意图标签表没有——每加一个功能就漂移一次（review G7
+ * 实证：2.10.0 的 summary 在 UsagePanel 上显示为原始英文）。
+ * 与 `PROMPT_INTENTS` 同源，由 `prompt.test.ts` 断言覆盖全量。
+ *
+ * 注意：`transform` 在落库时带子类型（`transform:expand` 等），这里只给笼统
+ * 标签；子类型的中文在 `TRANSFORM_KIND_LABELS`，消费侧自行展开。
+ */
+export const AI_INTENT_LABELS: Record<PromptIntent, string> = {
+  naming: "起名",
+  polish: "润色",
+  transform: "文本变换",
+  continuation: "续写",
+  summary: "摘要",
+};
+
+/** 各意图的 prompt 模板版本（M7）。
  *
  * 落进 `ai_log.prompt_version` / `ai_event.prompt_ver`，让「改了 prompt 之后
  * 采纳率 / 效果变没变」可对照。**改任何一个模板时，必须同步 bump 对应版本号**，
@@ -61,8 +79,11 @@ export const PROMPT_VERSIONS: Record<PromptIntent, string> = {
   naming: "v1",
   polish: "v1",
   transform: "v1",
-  continuation: "v1",
-  summary: "v1",
+  // v2（2.10.3）：前文够短时注入【上一章摘要】（R-AI-09 摘要的第二消费方）
+  continuation: "v2",
+  // v2（2.10.1）：摘要支持 L3 授权范围——新增【前情】块与「只看选中段落」约束
+  // v3（2.10.2）：摘要同一次产出【一句话】+【摘要】两段，一句话回填大纲梗概（大纲回流）
+  summary: "v3",
 };
 
 /** 按意图取 prompt 版本（未登记时返回空串，调用方按「版本未知」处理） */

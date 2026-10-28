@@ -50,9 +50,14 @@ interface NovelTopBarProps {
   onToggleSettings: () => void;
   /**
    * AI 续写（R-AI-07）：光标处顺着前文出 2–3 个候选。
-   * 未配置 AI 时点了会在浮层内报错（不写入原文），符合「入口可消失」。
+   * AI 未配置时（`aiAvailable=false`）按钮禁用，`aiUnavailableText` 说明原因 ——
+   * 不出现「点了没反应」（B1 判据③「入口可消失」）。
    */
   onContinue?: () => void;
+  /** AI 是否可用（M8 门控）；false 时续写按钮禁用 */
+  aiAvailable?: boolean;
+  /** AI 不可用的一句话说明（挂在按钮 Tooltip 上） */
+  aiUnavailableText?: string;
   /** 历史快照按钮即开关：开 → 关 → 开 循环切换 */
   onToggleHistory: () => void;
   /** 行囊：唤起独立行囊窗口（单实例，重复点击仅聚焦），Ctrl+Shift+B 同效 */
@@ -126,6 +131,8 @@ export default function NovelTopBar({
   onBackToShelf,
   onDismissOverlays,
   onContinue,
+  aiAvailable = true,
+  aiUnavailableText = "",
   packOpening = false,
 }: NovelTopBarProps) {
   const { saveState, lastSavedAt } = useSaveState();
@@ -273,10 +280,11 @@ export default function NovelTopBar({
           </Button>
         </Tooltip>
         {onContinue && (
-          <Tooltip title="AI 续写（光标处顺着前文接着写）">
+          <Tooltip title={aiAvailable ? "AI 续写（光标处顺着前文接着写）" : aiUnavailableText}>
             <Button
               className="nv-topbar__icon"
               onClick={onContinue}
+              disabled={!aiAvailable}
               aria-label="AI 续写"
             >
               <ThunderboltOutlined />

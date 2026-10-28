@@ -97,6 +97,8 @@ export interface NovelChapter {
   aiSummaryAt?: number;
   /** AI 摘要来源模型（手工编辑后为空 → 区分来源） */
   aiSummaryModel?: string;
+  /** AI 摘要来源批次（M6 溯源，供「按批次撤销」；手工编辑后为空） */
+  aiSummaryBatch?: string;
 }
 
 /** 章节快照：每章环形保留 20 版（PRD R3） */

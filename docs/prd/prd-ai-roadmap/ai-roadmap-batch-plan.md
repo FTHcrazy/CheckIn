@@ -1,8 +1,8 @@
 # AI 功能排期与落地批次（执行版）
 
-- **状态**：执行中（B1–B4 已交付，见 §2.1；待拍板 4 项，见 §六）
+- **状态**：执行中（B1–B5 已交付，见 §2.1；下一个未开工批次是 **B6**；待拍板 4 项，见 §六）
 - **输入**：`ai-future-directions-prd.md`（12 项功能方向）、`ai-roadmap-architecture-review.md`（成本重估、元能力 M1–M8、优先级重排）
-- **基线**：代码版本 **2.10.0**（B1–B4 批次已交付：M1a/M7/M8/M1b + R-AI-06 + R-AI-07 + M5/M6/R-AI-09）
+- **基线**：代码版本 **2.10.3**（B1–B5 批次已交付：M1a/M7/M8/M1b + R-AI-06 + R-AI-07 + M5/M6/R-AI-09 + M4 流式）
 
 > 本文只做一件事：**把「有哪些功能」变成「下一版做什么」**。
 > 上游两篇保留原文不改（判断依据要能追溯），两者与本文冲突时**以本文为准**，
@@ -12,10 +12,23 @@
 > （含 Key 引导、Ollama 模型列表、降级「去设置」三处补齐）。归档稿只作判断依据追溯，
 > **不要从里面翻待办**——欠什么、先做什么，只看本文。
 >
-> **批次落地进度（截至 2.10.0）**：B1（M1a/M7/M8/M1b）→ 2.9.0 ✅；B2（R-AI-06）→ 2.9.1 ✅；
-> B3（R-AI-07 非流式）→ 2.9.2 ✅；B4（M5/M6/R-AI-09）→ 2.10.0 ⚠️ 判据②未完成
-> （设置页 AI 分区缺「L3 总开关」Switch，当前 L3 只能经首次触发弹窗打开，无法手动关闭）。
-> **下一个未开工批次是 B5（M4 流式 + 续写升级流式版）**，开工前先补 B4 遗留的 L3 开关。
+> **批次落地进度（截至 2.10.3）**：B1（M1a/M7/M8/M1b）→ 2.9.0 ✅；B2（R-AI-06）→ 2.9.1 ✅；
+> B3（R-AI-07 非流式）→ 2.9.2 ✅；B4（M5/M6/R-AI-09）→ 2.10.0 ✅（判据②的 L3 总开关于 2.10.x 补齐）；
+> B5（M4 流式 + 续写升级流式版）→ 2.10.1 ✅；R-AI-09 收尾（大纲回流 2.10.2 / 续写复用摘要 2.10.3）✅。
+> **下一个未开工批次是 B6（R-AI-10a 本地一致性校对 + R-AI-08 实体抽取）**，开工前先拍板 Q1（长任务
+> Worker / 分片）与 Q2（FTS5），因为 10a 的全书扫描直接跑会卡 UI。
+>
+> **2.10.x 收尾修复（review `ai-implementation-review-2.10.0.md` 差距清单，已全部落地）**：
+> - **G1** 采纳/放弃事件上报：起名插入 / 润色替换 / 变换替换 / 续写确认 / 摘要落库五处补
+>   `adopt`，浮层关闭补 `cancel`；新增守卫 `useNovelPage-adopt-guard.test.ts`。采纳率不再恒 0。
+> - **G2** AI 可用性门控落地：页面层挂载 `useAiAvailability`，六个入口（起名/润色/变换/续写/摘要）
+>   据 `available` 禁用并说明原因（起名保留本地引擎兜底）；新增守卫 `useNovelPage-availability-guard.test.ts`。
+> - **G3** 设置页补「L3 总开关」Switch（`AISection` 加 `l3Enabled` 草稿字段 + 回读 + isDirty + 保存链路）。
+> - **G4** 摘要场景收敛范围选择器：`AiConsentDialog` 加 `hideScope`，摘要只支持「仅本章」；`scope` 落 `ai_event.scope`。
+> - **G5** M6 溯源接上：`doGenerateSummary` 走 `makeAiProvenance` + `newBatchId`，`novel_chapters` 新增 `ai_summary_batch` 列（增量迁移），批次撤销有了数据基础。
+> - **G6** `item_count` 按 intent 分流：主进程只在 `naming` 意图切名单，text 输出不再污染条数。
+> - **G7** 意图标签提单一产地：`AI_INTENT_LABELS`（`registry.ts`）覆盖 `PROMPT_INTENTS` 全量含 `summary`，`AILogSection` / `UsagePanel` 共用。
+> - **G8** 三处小口径已清理（见下「已闭环」清单 N/A）：① 删除 `estimateCost` 死代码 + `AiConsentDialog` 的 `cost` 分支/prop/用例；② `char_count` 口径修正为「送模型总输入字数（用户提示词 + system 上下文）」；③ 生成响应回带 `model`，`doGenerateSummary` 改读 `result.data.model`，省去二次 `getAiConfig` IPC。
 
 ---
 
@@ -47,29 +60,37 @@
 | — | 起名降级提示「去设置」直达（2.8.1 补） | `settings-section-jump` + `WINDOW_CREATORS` / `CROSS_EDITION_WINDOWS` |
 | **M1a** | `ai_event` 表（纯元数据白名单）+ `logAiEvent`（静默）+ 滚动清理（5000 条/90 天） | `electron/ai-db.ts` |
 | **M7** | `ai_log` 加 `prompt_version` 列 + `PROMPT_VERSIONS` / `promptVersionOf` | `electron/ai-db.ts` + `context/prompt/registry.ts` |
-| **M8** | AI 可用性门控 hook（`useAiAvailability` + `deriveAvailability`） | `src/shared/ai/hooks/useAiAvailability.ts` |
+| **M8** | AI 可用性门控 hook（`useAiAvailability` + `deriveAvailability`；2.10.x 接进页面层六入口） | `src/shared/ai/hooks/useAiAvailability.ts` |
+| **M4** | 流式能力（`ai-stream` scheme 端点 + `aiGenerateStream` + 中断 + SSE 解析；2.10.x） | `electron/handlers/ai-stream.ts` + `src/shared/ai/ai-stream-parse.ts` |
 | **M1b** | 用量与效果看板 + 诊断包导出（`ai-event-log` / `ai-event-stats` / `ai-export-diagnostics`） | `SettingsWindow/components/UsagePanel/` + `ai-handlers.ts` |
 | **R-AI-06** | 文本变换工具箱（扩写/精简/改写/换语气/转视角，`runTransform` + `PolishPreview` 泛化） | `context/prompt/transform.ts` + `useNovelPage.ts` |
-| **R-AI-07** | 就地续写（非流式，`runContinuation` + `ContinuationPreview` + `getTextBeforeCursor`） | `context/prompt/continuation.ts` + `useNovelPage.ts` |
+| **R-AI-07** | 就地续写（2.9.2 非流式 2–3 候选；2.10.x 升级流式单段打字机 + 可中断） | `context/prompt/continuation.ts` + `useNovelPage.ts` |
 | **M5** | L3 授权（L1/L2/L3 分级 + `ai-estimate` token 估算 + `useAiConsent` + `AiConsentDialog`；`ai_config.l3_enabled`） | `src/shared/ai/ai-consent.ts` + `ai-estimate.ts` |
-| **M6** | AI 产出溯源（`source=ai` + 模型 + 时间戳 + 批次） | `src/shared/ai/ai-provenance.ts` |
-| **R-AI-09** | 章节摘要（`novel_chapters` 三列 + `novel-chapter-summary-save` + `SummaryPreview`） | `electron/novel-db.ts` + `context/prompt/summary.ts` |
+| **M6** | AI 产出溯源（`source=ai` + 模型 + 时间戳 + 批次，`ai_summary_batch` 列） | `src/shared/ai/ai-provenance.ts` |
+| **R-AI-09** | 章节摘要（`novel_chapters` 四列 + `novel-chapter-summary-save` + `SummaryPreview`；2.10.2 补「一句话」回填大纲梗概，2.10.3 补续写复用上一章摘要） | `electron/novel-db.ts` + `context/prompt/summary.ts` + `context/prompt/continuation.ts` |
 
-> ⚠️ **B4 遗留缺口**：设置页 AI 分区的「L3 总开关」Switch 未加（判据②未完成）。当前 L3 开关
-> 只能经首次触发弹窗「同意并继续」打开，用户无法在设置页手动关闭。B5 开工前先补此 Switch。
+> ⚠️ **B4 遗留缺口（2.10.x 已修复）**：设置页 AI 分区的「L3 总开关」Switch 已补
+> （判据②完成）；摘要场景的范围选择器已收敛为「仅本章」（G4）。B5 开工前提已满足。
 
 ### 2.2 半完成（已有一半，收尾成本极小 —— 优先级最高）
 
+> 2.10.x 收尾修复后，M5 的「L3 总开关」缺口已补齐（G3），本表已无遗留项；
+> 保留本节标题以记录「曾有一半、已补完」的路径，M5 现视同 2.1 已完成。
+
 | 编号 | 已完成的一半 | 缺的一半 | 缺口影响 |
 |------|--------------|----------|----------|
-| **M5** | L3 分级常量 + 授权弹窗 + 范围选择 + token 估算 + `l3_enabled` KV 开关均已落地 | **设置页缺「L3 总开关」Switch**：开关只能经首次触发弹窗打开，用户无法手动关闭 | 「关闭总开关后所有 L3 入口隐藏并说明原因」这条可撤销承诺在设置页无法兑现 |
+| ~~M5~~ | L3 分级常量 + 授权弹窗 + token 估算 + `l3_enabled` KV 开关 + **设置页 L3 总开关 Switch（2.10.x 补）** | 无 | 已闭合 |
 
 ### 2.3 未开始
 
 | 类型 | 编号 |
 |------|------|
-| 元能力 | **M4**（流式） |
 | 功能 | **R-AI-08** 实体抽取、**R-AI-10a/10b** 一致性校对、**R-AI-11** 卡文救援、**R-AI-12** 创作日报、**R-AI-13** 起名 v2、**R-AI-14** 卡片补全、**R-AI-15** 关系建议、**R-AI-16a/16b** checkin 域、**R-AI-17** 就地问答 |
+| 交互 | **M6 的「按批次一键撤销」**：`ai_summary_batch` 列已落库并可查，但缺「按 batchId 批量清空」的 IPC 与入口（Q3 的粒度裁决已定：按批次删，不做通用 undo） |
+
+> R-AI-09 已于 **2.10.3 整条闭合**：摘要本体（2.10.0）→ 一句话回填大纲梗概（2.10.2）→
+> 续写复用为「上一章摘要」上下文（2.10.3，前文短于 300 字才注入）。仅一处形态与 PRD 不同：
+> 入口是章节行内 ⚡ 悬浮按钮，未做「章节右键菜单」。
 
 ---
 
@@ -80,17 +101,17 @@
 | 顺序 | 编号 | 功能 | 分 | P 级 | 一句话理由 |
 |:---:|---|---|:---:|:---:|---|
 | 1 | **M1a** | intent 契约收尾 + `ai_event` 表 | — | **P0** | ✅ 已交付（2.9.0） |
-| 2 | **M8** | AI 可用性门控 hook | — | **P0** | ✅ 已交付（2.9.0） |
+| 2 | **M8** | AI 可用性门控 hook | — | **P0** | ✅ 已交付（2.9.0；2.10.x 接进六入口，G2 闭合） |
 | 3 | **M7** | prompt version 落库 | — | **P0** | ✅ 已交付（2.9.0） |
 | 4 | **M1b** | 用量与效果看板 | 6.0 | **P0** | ✅ 已交付（2.9.0） |
 | 5 | **R-AI-06** | 文本变换工具箱（5 种） | 7.5 | **P0** | ✅ 已交付（2.9.1） |
 | 6 | **R-AI-07** | 就地续写（非流式） | 7.5 | **P0** | ✅ 已交付（2.9.2，非流式版） |
-| 7 | **R-AI-09** | 章节摘要与大纲回流 | 6.0 | **P1** | ✅ 已交付（2.10.0） |
-| 8 | **M5** | L3 授权与范围选择器 | — | **P1** | ⚠️ 已交付但缺设置页 L3 总开关 Switch（2.10.0，遗留缺口） |
-| 9 | **M6** | AI 产出溯源与撤销 | — | **P1** | ✅ 已交付（2.10.0，来源标记落地；「按批次撤销」交互待结构化功能首用） |
+| 7 | **R-AI-09** | 章节摘要与大纲回流 | 6.0 | **P1** | ✅ 已交付（2.10.0；收尾 2.10.3） |
+| 8 | **M5** | L3 授权与范围选择器 | — | **P1** | ✅ 已交付（2.10.0；2.10.x 补 L3 总开关 Switch，缺口闭合） |
+| 9 | **M6** | AI 产出溯源与撤销 | — | **P1** | ✅ 已交付（2.10.0 来源标记落地 + 2.10.x 接上 batchId；「按批次撤销」交互待结构化功能首用） |
 | 10 | **R-AI-10a** | 一致性校对·纯本地版 | 6.0 | **P1** | 零 token、零授权摩擦，`aliases` 表就是为它准备的词表；能给出 10b 的误报基线 |
 | 11 | **R-AI-11** | 卡文救援 · 剧情分支 | 4.0 | **P1** | 情绪价值高，依赖 09 的摘要上下文 |
-| 12 | **M4** | 流式能力 | — | **P1** | 07 的体验上限；独立排期，不与新功能捆一版 |
+| 12 | **M4** | 流式能力 | — | **P1** | ✅ 已交付（2.10.x，续写升级流式版，B5） |
 | 13 | **R-AI-16a** | 记账分类建议（本地规则） | 3.0 | **P1** | 关键词匹配就能做到七八成，零成本收益，不碰 edition 门控 |
 | 14 | **R-AI-10b** | 一致性校对 · AI 档 | 5.0 | **P2** | 在 10a 的误报基线之上收敛，否则会被误报淹没 |
 | 15 | **R-AI-08** | 实体抽取 → 一键建卡 | 3.3 | **P2** | 成本 L（批量写 IPC + 最大新面板 + 去重 + L3）；且 10a 靠手工建卡就能跑，抽取是加速器不是前置 |
@@ -155,31 +176,46 @@
 
 ---
 
-### B4 · 「趟出 L3 基建」（P1 元能力 + 第一个 L3 功能）—— ⚠️ 基本完成（2.10.0），判据②遗留
+### B4 · 「趟出 L3 基建」（P1 元能力 + 第一个 L3 功能）—— ✅ 已完成（2.10.0，判据②于 2.10.x 补齐）
 
-**做**：M5（L1/L2/L3 分级 + 授权弹窗 + 范围选择 + 成本估算）、M6（来源标记 + 按批次撤销 + 占比统计口径）、R-AI-09（章节摘要 + `novel_chapters` 三列）。
+**做**：M5（L1/L2/L3 分级 + 授权弹窗 + 范围选择 + 成本估算）、M6（来源标记 + 按批次撤销 + 占比统计口径）、R-AI-09（章节摘要 + `novel_chapters` 四列）。
 
 **为什么这批**：09 是**最便宜的 L3 消费者**（text 输出、无批量写、无候选确认），用它趟 L3 与落地通道两条元能力，成本最低。M5 必须早于任何 L3 功能，否则会散出多份不一致的授权文案。
 
 **完成判据**
 1. 首次触发 L3 弹授权：显示将发送字数 + 范围选择（默认「仅本章」，不提供「全书」档）；✅
-2. 关闭总开关后所有 L3 入口隐藏**并说明原因**；⚠️ **未完成**——设置页 AI 分区缺「L3 总开关」Switch，用户无法手动关闭
+2. 关闭总开关后所有 L3 入口隐藏**并说明原因**；✅（2.10.x 在设置页补「L3 总开关」Switch，G3）
 3. 摘要带「AI 生成」标记与模型名；用户手工编辑后来源标记清空；删章不残留摘要。✅
 
 **依赖**：B1（M8 门控是 L3 授权的前置）。
 
-> ⚠️ **遗留收尾**：判据②的「L3 总开关」Switch 需在设置页 `AISection` 加一个受 `l3Enabled`
-> 绑定的 Switch（改动很小）。B5 开工前先补上，否则「可撤销」承诺无法兑现。
+> ✅ **遗留收尾已闭环（2.10.x）**：判据②的「L3 总开关」Switch 已在设置页 `AISection`
+> 补齐（受 `l3Enabled` 绑定，含草稿字段 + isDirty + 保存链路）；摘要场景范围选择器
+> 收敛为「仅本章」（`AiConsentDialog.hideScope`，G4）。B5 开工前提已满足。
 
 ---
 
-### B5 · 「流式」（P1 元能力）—— 🔜 下一个批次
+### B5 · 「流式」（P1 元能力）—— ✅ 已完成（2.10.x）
 
-**做**：M4（`protocol.handle` 流式端点 + IPC 兜底 + `aiGenerateStream` + 中断），并把 R-AI-07 升级为流式版。
+**做**：M4（`protocol.handle` 流式端点 + `aiGenerateStream` + 中断），并把 R-AI-07 升级为流式版。
 
 **为什么单独一批**：新增主进程网络能力，风险独立。同时要同步 `ai-architecture-decision.md` 五·A 的豁免边界（流式端点属于同一豁免，必须写清楚）。
 
-**完成判据**：续写逐字输出、可中断；中断后主进程连接释放（守卫断言）；端点 URL 不含 Key。
+**完成判据**：续写逐字输出、可中断；中断后主进程连接释放（守卫断言）；端点 URL 不含 Key。✅
+
+**落地**：
+- 主进程新增 `electron/handlers/ai-stream.ts`：独立 `ai-stream://local/api/chat` scheme 流式端点，
+  `initiatorOrigin` 校验 + `net.fetch`（`stream: true`）原样桥接模型 SSE 流给渲染层；
+- 渲染层 `aiGenerateStream`（`ai-client.ts`）拿标准 `ReadableStream` 逐块读，`abort()` 经
+  `AbortController` 联动释放主进程连接；
+- SSE 解析抽纯函数 `ai-stream-parse.ts`（OpenAI SSE / Ollama 逐行 JSON 两路累加器，可单测）；
+- 续写升级流式：`assembleContinuationStreamSpec`（text 契约，单段打字机）+ `ContinuationPreview`
+  逐字渲染 + 「停止」（保留已生成）+ 「插入」。
+
+> ⚠️ **范围收窄说明**：B5 判据只要求「逐字输出、可中断」，故续写从「2–3 候选一次性返回」改为
+> **单段流式输出**（打字机），这是流式的最直接形态；「多候选」属非流式（B3）形态，二者互斥。
+> 预研点 4 的「IPC 逐块转发兜底（流派 1）」未实现——`protocol.handle` 流桥接在 Electron 44
+> 已验证可用，兜底属「个别平台兼容性」的保险，留待实测遇到兼容问题时再补，避免未验证的死代码。
 
 **依赖**：B3（升级对象已存在）。
 

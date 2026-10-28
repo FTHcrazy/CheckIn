@@ -465,6 +465,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Key 经 safeStorage 加密存主进程，渲染层只拿 hasApiKey 布尔，绝无明文 Key。
   ai: {
     getConfig: () => trackedInvoke('ai-config-get'),
+    // 流式端点一次性令牌（PRD 红线 C）：每发起一次流式请求前领一张，
+    // 主进程 protocol.handle 核销即失效。
+    streamToken: () => trackedInvoke('ai-stream-token') as Promise<string>,
     saveConfig: (payload: {
       enabled?: boolean
       provider?: 'openai' | 'ollama'

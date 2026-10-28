@@ -24,6 +24,7 @@
 import Database from "better-sqlite3";
 import path from "path";
 import { getCurrentUserEmail, getUserDataDir, registerUserDbLifecycle } from "./db";
+import { log, logAlways } from "./logger";
 
 let aiDb: Database.Database | null = null;
 
@@ -81,8 +82,8 @@ function initializeAiDb(database: Database.Database): void {
       duration_ms  INTEGER,
       error_code   TEXT,               -- 归一化错误码；成功为空
       item_count   INTEGER,            -- 产出条数（json-array 场景）
-      char_count   INTEGER,            -- 送模型的正文字数（只记字数，不记正文）
-      scope        TEXT,               -- selection|chapter|book —— L3 范围，用于授权拒绝率统计
+      char_count   INTEGER,            -- 送模型的总输入字数（用户提示词 + system 上下文，只记字数不记正文）
+      scope        TEXT,               -- chapter|selection|recent3 —— L3 授权范围（授权拒绝率 / 范围分布）
       created_at   TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
     );
 
@@ -108,7 +109,9 @@ function switchAiDb(email: string): void {
   const dbPath = getAiDbPath(email);
   aiDb = new Database(dbPath);
   initializeAiDb(aiDb);
-  console.log(`[ai-db] 已就绪: ${dbPath}`);
+  log("info", "main", "ai", `ai.db 已就绪: ${dbPath}`);
+  // 启动即清一次过期调用日志：不走写入路径也能保证 30 天保留期生效
+  trimAiLogs(true);
 }
 
 /** 获取 ai.db 实例（未初始化时抛错） */
@@ -144,7 +147,9 @@ export function closeAiDb(): void {
   if (!aiDb) return;
   aiDb.close();
   aiDb = null;
-  console.log("[ai-db] 已关闭");
+  // 换用户 / 退出后重新打开时，节流窗口从头算（新库该立刻清一次）
+  aiLogTrimmedAt = 0;
+  log("info", "main", "ai", "ai.db 已关闭");
 }
 
 // ── CRUD 封装（与 novel-db.ts 同签名，便于 handlers 平移）──
@@ -222,7 +227,7 @@ export function logAiEvent(entry: AiEventEntry): void {
     trimAiEvents();
   } catch (error) {
     const raw = error instanceof Error ? error.message : String(error);
-    console.warn(`[ai-event] 写入失败: ${raw}`);
+    logAlways("warn", "main", "ai", `ai_event 写入失败: ${raw}`);
   }
 }
 
@@ -245,6 +250,66 @@ export function trimAiEvents(): void {
     );
   } catch (error) {
     const raw = error instanceof Error ? error.message : String(error);
-    console.warn(`[ai-event] 清理失败: ${raw}`);
+    logAlways("warn", "main", "ai", `ai_event 清理失败: ${raw}`);
+  }
+}
+
+// ── AI 技术日志（ai_log）保留期 ──────────────────────────────────────
+
+/**
+ * ai_log 保留期：**只保留最近 30 天**。
+ *
+ * 与 ai_event 的「条数 + 天数」双限不同，本表只按天数淘汰：
+ * 每行含截断后的 system / user prompt 与模型输出（各上限 4000 字），
+ * 真实体量比事件表大两个量级；而它的用途是「刚调完 prompt 时回看那次答歪的
+ * 原文」，属一次性排障资料，30 天足够复盘一个版本周期。
+ *
+ * 不设条数上限：密集调 prompt 的一天可能有几百条，条数上限会把昨天的有效记录
+ * 挤掉，而按天淘汰的语义对用户可解释（「一个月前的记录会被清掉」）。
+ */
+const AI_LOG_RETAIN_DAYS = 30;
+
+/**
+ * 上次清理的时间戳（节流用）。
+ *
+ * 清理挂在写入路径上，但不必每条日志都扫一遍索引——一小时最多一次足够：
+ * 保留期以「天」为单位，秒级延迟毫无意义，而 ai_log 的行很宽，删除代价不为零。
+ */
+const AI_LOG_TRIM_INTERVAL_MS = 60 * 60 * 1000;
+let aiLogTrimmedAt = 0;
+
+/**
+ * 删掉 `ai_log` 里超过 30 天的记录。
+ *
+ * 调用时机：
+ * - 每次写入调用日志后（节流：1 小时内至多一次），见 `appendAiLog`；
+ * - 每次切库 / 启动时 `force = true`，见 `switchAiDb` ——
+ *   只有在「一直不调 AI」的场景下写入路径不会触发，而那种场景下记录同样
+ *   在变旧，靠启动补一次才能保证保留期真的生效。
+ *
+ * 失败静默（warn 走 `logAlways`）：清理不该影响任何主链路。
+ * `created_at` 上有 DESC 索引，这条 DELETE 是索引范围扫描，不是全表扫。
+ */
+export function trimAiLogs(force = false): void {
+  if (!aiDb) return;
+  const now = Date.now();
+  if (!force && now - aiLogTrimmedAt < AI_LOG_TRIM_INTERVAL_MS) return;
+  aiLogTrimmedAt = now;
+  try {
+    const { changes } = aiRun(
+      `DELETE FROM ai_log WHERE created_at < datetime('now', 'localtime', ?)`,
+      [`-${AI_LOG_RETAIN_DAYS} days`],
+    );
+    if (changes > 0) {
+      log(
+        "info",
+        "main",
+        "ai",
+        `ai_log 清理：删除 ${changes} 条超过 ${AI_LOG_RETAIN_DAYS} 天的调用记录`,
+      );
+    }
+  } catch (error) {
+    const raw = error instanceof Error ? error.message : String(error);
+    logAlways("warn", "main", "ai", `ai_log 清理失败: ${raw}`);
   }
 }

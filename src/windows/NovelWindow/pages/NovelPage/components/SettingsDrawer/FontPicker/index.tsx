@@ -4,9 +4,9 @@ import {
   FONT_PREVIEW_TEXT,
   PAPER_FONT_CANDIDATES,
   type PaperFontCandidate,
-} from "../../paper-fonts";
-import type { usePaperFonts } from "../../hooks/usePaperFonts";
-import "./FontPicker.scss";
+} from "../../../paper-fonts";
+import type { usePaperFonts } from "../../../hooks/usePaperFonts";
+import "./index.scss";
 
 type PaperFonts = ReturnType<typeof usePaperFonts>;
 

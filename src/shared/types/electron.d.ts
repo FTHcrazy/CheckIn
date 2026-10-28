@@ -83,6 +83,8 @@ export interface NovelChapterDTO {
   aiSummaryAt?: number
   /** AI 摘要来源模型（手工编辑后为空 → 区分来源） */
   aiSummaryModel?: string
+  /** AI 摘要来源批次（M6 溯源；手工编辑后为空） */
+  aiSummaryBatch?: string
 }
 
 export interface NovelSnapshotDTO {
@@ -975,6 +977,8 @@ export interface AiGenerateRequestDTO {
 export interface AiGenerateDataDTO {
   text: string
   items: string[]
+  /** 实际使用的模型名（随生成响应回带，供溯源/采纳上报，无需二次取配置） */
+  model: string
 }
 
 /** 测试连接结果 */
@@ -1032,6 +1036,13 @@ export interface ElectronAPI {
   ai: {
     /** 读当前 AI 配置（不含明文 Key） */
     getConfig: () => Promise<AiConfigDTO>
+    /**
+     * 领取一张 AI 流式端点的一次性令牌（PRD 红线 C）。
+     *
+     * 每次发起流式请求前调用一次；主进程端点核销即失效（重放无效）。
+     * 缺失令牌的请求一律 403，因此**不要**缓存复用同一个令牌。
+     */
+    streamToken: () => Promise<string>
     /** 保存配置；apiKey 传空串 = 清空 */
     saveConfig: (payload: AiConfigSavePayloadDTO) => Promise<{ ok: boolean; error?: string }>
     /** 测试连接 */
@@ -1135,7 +1146,7 @@ export interface ElectronAPI {
     purgeChapter: (id: string) => Promise<boolean>
     setChapterStatus: (id: string, status: "draft" | "done") => Promise<boolean>
     saveChapterOutline: (id: string, note: string) => Promise<boolean>
-    saveChapterSummary: (id: string, payload: { summary: string; model?: string }) => Promise<boolean>
+    saveChapterSummary: (id: string, payload: { summary: string; model?: string; batch?: string }) => Promise<boolean>
     saveChapterOrder: (updates: Array<{ id: string; sort: number; volumeId: string }>) => Promise<boolean>
     addVolume: (volume: NovelVolumeDTO) => Promise<boolean>
     renameVolume: (id: string, name: string) => Promise<boolean>

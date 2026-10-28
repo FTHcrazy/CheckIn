@@ -29,11 +29,18 @@ export {
   type TransformKind,
 } from "./transform";
 export {
-  assembleContinuationSpec,
-  CONTINUATION_OUTPUT_FORMAT,
+  assembleContinuationStreamSpec,
+  CONTINUATION_STREAM_OUTPUT_FORMAT,
   type ContinuationIntent,
 } from "./continuation";
-export { assembleSummarySpec, type SummaryIntent } from "./summary";
+export {
+  assembleSummarySpec,
+  parseSummaryReply,
+  SUMMARY_BODY_HEAD,
+  SUMMARY_ONE_LINER_HEAD,
+  type SummaryIntent,
+  type SummaryReply,
+} from "./summary";
 
 export {
   chapterBlock,

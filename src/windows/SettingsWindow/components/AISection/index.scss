@@ -108,6 +108,15 @@
   flex: none;
 }
 
+/* L3 合规提示：挂在「高级」卡底部，与授权弹窗同一份文案（单一产地） */
+.settings-ai__compliance {
+  margin: 4px 0 0;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--app-text-secondary);
+}
+
 /* 「Key 已保存」小签：只标状态，不承担交互 */
 .settings-ai__chip {
   padding: 0 6px;

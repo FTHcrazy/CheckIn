@@ -27,7 +27,7 @@ const stubAiGenerate = (text: string) => {
   const generate = vi.fn(
     async (): Promise<AiResult<AiGenerateData>> => ({
       ok: true,
-      data: { text, items: [] },
+      data: { text, items: [], model: "gpt-4o-mini" },
     }),
   );
   (window as unknown as { electronAPI: unknown }).electronAPI = { ai: { generate } };

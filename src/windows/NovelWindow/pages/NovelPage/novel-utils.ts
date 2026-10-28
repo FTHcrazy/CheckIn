@@ -552,7 +552,7 @@ export function patchChapterOutlineNote(
 
 /**
  * 章节 AI 摘要局部更新（R-AI-09）。
- * `model` 传空串 = 手工编辑清空来源标记；不修改入参。
+ * `model` / `batch` 传空串 = 手工编辑清空来源标记；不修改入参。
  */
 export function patchChapterSummary(
   chapters: NovelChapter[],
@@ -560,6 +560,7 @@ export function patchChapterSummary(
   summary: string,
   model?: string,
   at?: number,
+  batch?: string,
 ): NovelChapter[] {
   const trimmed = summary.trim();
   const target = chapters.find((chapter) => chapter.id === chapterId);
@@ -571,6 +572,7 @@ export function patchChapterSummary(
           aiSummary: trimmed,
           aiSummaryAt: at,
           aiSummaryModel: model?.trim() ? model.trim() : undefined,
+          aiSummaryBatch: batch?.trim() ? batch.trim() : undefined,
         }
       : chapter,
   );

@@ -81,6 +81,14 @@ describe("AI 事件的双库边界（守卫）", () => {
     expect(AI_HANDLERS).not.toMatch(/intent:\s*"generate"/);
     expect(AI_HANDLERS).toMatch(/req\.intent\?\.trim\(\)\s*\|\|\s*"generate"/);
   });
+
+  it("item_count 只在 naming 意图计算，不把 text 输出当名单切（G6）", () => {
+    // splitNameItems 是起名专用；润色/变换/续写/摘要的 text 输出不该被切「条」
+    expect(AI_HANDLERS).toMatch(/isNaming\s*=\s*intent\s*===\s*"naming"/);
+    expect(AI_HANDLERS).toMatch(/isNaming\s*\?\s*splitNameItems\(text\)\s*:\s*\[\]/);
+    // success 事件的 itemCount 必须带 isNaming 条件，不能无条件 items.length
+    expect(AI_HANDLERS).toMatch(/\.\.\.\(isNaming\s*\?\s*\{\s*itemCount:\s*items\.length\s*\}\s*:\s*\{\}\)/);
+  });
 });
 
 describe("prompt 版本归因（M7，守卫）", () => {

@@ -9,6 +9,7 @@ import PolishPreview from "./components/PolishPreview";
 import ContinuationPreview from "./components/ContinuationPreview";
 import SummaryPreview from "./components/SummaryPreview";
 import AiConsentDialog from "@/shared/components/AiConsentDialog";
+import { L3_SCOPE_LABELS } from "@/shared/ai/ai-consent";
 import HoverEntityCard from "./components/HoverEntityCard";
 import NovelGuideTour from "../../components/NovelGuideTour";
 import type { GuideView } from "@/shared/novel/guide-copy";
@@ -162,14 +163,18 @@ export default function NovelPage({
     handleContinuationConfirm,
     handleContinuationClose,
     handleContinuationRetry,
+    handleContinuationStop,
     // AI 章节摘要（R-AI-09）
     summary,
     summaryPending,
+    summaryPendingScope,
     aiConsent,
+    aiAvailability,
     runChapterSummary,
     handleSummaryConsentConfirm,
     handleSummaryConsentCancel,
     handleSummaryClose,
+    handleApplySummaryNote,
     handleNewVolume,
     handleSaveEntity,
     handleRenameVolume,
@@ -635,6 +640,8 @@ export default function NovelPage({
             onToggleSettingCenter={view.toggleSettingCenter}
             onToggleHistory={view.toggleSnapshot}
             onContinue={() => void runContinuation()}
+            aiAvailable={aiAvailability.available}
+            aiUnavailableText={aiAvailability.reasonText}
             /* REQ-053：浮层（设定中心 / 类型管理 Modal）开着时，点击顶栏即离开浮层 ——
              它们铺满视口的 wrap 会吃掉同一次点击，让「行囊 / 小说设定」需要点两次 */
             onDismissOverlays={view.dismissPageOverlays}
@@ -721,6 +728,8 @@ export default function NovelPage({
                 onBind={handleCtxBind}
                 onPolish={handleCtxPolish}
                 onTransform={handleCtxTransform}
+                aiAvailable={aiAvailability.available}
+                aiUnavailableText={aiAvailability.reasonText}
                 onClose={closeCtxMenu}
               />
             )}
@@ -739,13 +748,15 @@ export default function NovelPage({
               />
             )}
 
-            {/* AI 续写候选：光标处触发，点候选插入光标处 */}
+            {/* AI 续写候选：光标处触发，逐字流式输出，点「插入」写入光标处 */}
             {continuation && (
               <ContinuationPreview
-                candidates={continuation.candidates}
+                text={continuation.text}
+                streaming={continuation.streaming}
                 loading={continuation.loading}
                 error={continuation.error}
                 onConfirm={handleContinuationConfirm}
+                onStop={handleContinuationStop}
                 onRetry={handleContinuationRetry}
                 onClose={handleContinuationClose}
               />
@@ -758,20 +769,25 @@ export default function NovelPage({
                 loading={summary.loading}
                 error={summary.error}
                 model={data.chapters.find((c) => c.id === summary.chapterId)?.aiSummaryModel}
-                onRegenerate={() => runChapterSummary(summary.chapterId)}
+                scopeLabel={L3_SCOPE_LABELS[aiConsent.scope]}
+                oneLiner={summary.oneLiner}
+                noteConflict={summary.noteConflict}
+                noteApplied={summary.noteApplied}
+                onApplyNote={handleApplySummaryNote}
+                onRegenerate={() => runChapterSummary(summary.chapterId, true)}
                 onClose={handleSummaryClose}
               />
             )}
 
-            {/* L3 授权弹窗（M5）：首次触发摘要等 L3 功能时弹出 */}
+            {/* L3 授权弹窗（M5）：首次触发摘要等 L3 功能时弹出。
+                范围选择器已真正生效（发送内容随档变化），因此不再隐藏。 */}
             <AiConsentDialog
               open={summaryPending !== null}
-              estimate={{
-                chars: summaryPending?.chars ?? 0,
-                tokens: summaryPending?.tokens ?? 0,
-              }}
+              estimate={summaryPendingScope}
               scope={aiConsent.scope}
               onScopeChange={aiConsent.setScope}
+              notice={summaryPendingScope.notice}
+              confirmDisabled={summaryPendingScope.chars === 0}
               provider={aiConsent.provider}
               onConfirm={() => void handleSummaryConsentConfirm()}
               onCancel={handleSummaryConsentCancel}
@@ -863,6 +879,8 @@ export default function NovelPage({
             namingExclude={namingExclude}
             namingFavorites={namingFavorites}
             namingBook={namingBook}
+            aiAvailable={aiAvailability.available}
+            aiUnavailableText={aiAvailability.reasonText}
             onNotify={view.showToast}
             chapters={data.chapters}
             toolSub={view.toolSub}

@@ -9,6 +9,16 @@ interface SummaryPreviewProps {
   error: string | null;
   /** 来源模型名（M6 溯源标记；空 = 未知） */
   model?: string;
+  /** 本次摘要采用的数据范围（L3 授权范围标签）；空 = 未记录 */
+  scopeLabel?: string;
+  /** 模型给的「一句话梗概」（回填大纲用）；空 = 本次没产出 */
+  oneLiner?: string;
+  /** 本章已有手写梗概（非空 = 待确认覆盖，此时尚未写入） */
+  noteConflict?: string;
+  /** 一句话是否已写进大纲梗概 */
+  noteApplied?: boolean;
+  /** 确认用 AI 一句话覆盖已有手写梗概 */
+  onApplyNote?: () => void;
   /** 重新生成 */
   onRegenerate: () => void;
   /** 关闭（结果已落库，关闭只是收起浮层） */
@@ -27,6 +37,11 @@ export default function SummaryPreview({
   loading,
   error,
   model,
+  scopeLabel,
+  oneLiner,
+  noteConflict,
+  noteApplied,
+  onApplyNote,
   onRegenerate,
   onClose,
 }: SummaryPreviewProps) {
@@ -55,7 +70,31 @@ export default function SummaryPreview({
               <p className="nv-summary__meta">
                 <ThunderboltOutlined /> AI 生成
                 {model ? ` · 模型 ${model}` : ""}
+                {scopeLabel ? ` · 范围 ${scopeLabel}` : ""}
               </p>
+
+              {/* 大纲回流：一句话梗概展示 + 手写冲突确认。
+                  长摘要留在这里，一句话落进右栏大纲，两个粒度各归其位 */}
+              {oneLiner ? (
+                <div className="nv-summary__note">
+                  <p className="nv-summary__note-head">一句话梗概</p>
+                  <p className="nv-summary__note-text">{oneLiner}</p>
+                  {noteConflict ? (
+                    <div className="nv-summary__note-conflict">
+                      <span className="nv-summary__note-existing">
+                        本章已有手写梗概：{noteConflict}
+                      </span>
+                      <Button className="nv-summary__note-apply" onClick={onApplyNote}>
+                        覆盖为这句
+                      </Button>
+                    </div>
+                  ) : noteApplied ? (
+                    <p className="nv-summary__note-done">
+                      已填入大纲 · 可在右栏「大纲」直接改
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           ) : null}
         </div>

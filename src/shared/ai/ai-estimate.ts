@@ -1,7 +1,7 @@
 /**
- * token / 费用估算纯函数（M5 的成本与范围控制，PRD §5.3）
+ * token 估算纯函数（M5 的成本与范围控制，PRD §5.3）
  *
- * 每次 L3 调用前要展示「本次将发送约 N 字 ≈ M tokens，费用约 ¥X」。
+ * 每次 L3 调用前要展示「本次将发送约 N 字 ≈ M tokens」。
  * 禁止引入 `tiktoken` / `js-tiktoken` / `gpt-tokenizer`（架构复核红线 I：
  * 渲染层依赖必须放 devDependencies，且 wasm/词表会进 asar）。这里用
  * 自研纯函数：中文字符 ×1.5 + 英文词 ×1.3 + JSON 结构开销常数。
@@ -62,18 +62,4 @@ export interface TokenEstimate {
 export function estimateText(text: string | undefined, options: EstimateOptions = {}): TokenEstimate {
   const chars = text?.length ?? 0;
   return { chars, tokens: estimateTokens(text, options) };
-}
-
-/**
- * 按估算 token 数给出费用估算（元）。
- *
- * 单价（每千 token）缺省给一个保守占位值，调用方应传入服务商实际单价；
- * 返回保留 4 位小数（小额费用也要能看到「¥0.0034」而不是被四舍五入成 0）。
- */
-export function estimateCost(
-  tokens: number,
-  pricePerThousand: number,
-): number {
-  if (tokens <= 0) return 0;
-  return Number(((tokens / 1000) * pricePerThousand).toFixed(4));
 }

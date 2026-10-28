@@ -16,6 +16,7 @@ const AI_HANDLERS = readFileSync(
   resolve(process.cwd(), "electron/handlers/ai-handlers.ts"),
   "utf8",
 );
+const AI_DB = readFileSync(resolve(process.cwd(), "electron/ai-db.ts"), "utf8");
 const LOGGER = readFileSync(resolve(process.cwd(), "electron/logger.ts"), "utf8");
 
 describe("AI 调用日志（守卫）", () => {
@@ -51,5 +52,26 @@ describe("AI 调用日志（守卫）", () => {
   it("日志侧一并截断，长章节不会把 ai_log 撑爆", () => {
     expect(AI_HANDLERS).toMatch(/truncateForLog\(/);
     expect(AI_HANDLERS).toMatch(/preview\(/);
+  });
+});
+
+describe("AI 调用日志保留期（守卫）", () => {
+  it("ai_log 只保留 30 天，且按时间淘汰（不设条数上限）", () => {
+    expect(AI_DB).toContain("AI_LOG_RETAIN_DAYS = 30");
+    expect(AI_DB).toMatch(/export function trimAiLogs\(/);
+    expect(AI_DB).toMatch(/DELETE FROM ai_log\s+WHERE created_at </);
+    // 条数上限会让密集调 prompt 的那天挤掉前一天的记录，故本表不设 LIMIT 清理
+    const start = AI_DB.indexOf("export function trimAiLogs");
+    const body = AI_DB.slice(start, AI_DB.indexOf("\n}", start));
+    expect(body).not.toMatch(/LIMIT \?/);
+  });
+
+  it("清理挂在「写入后 + 启动」两处：不调 AI 时保留期同样生效", () => {
+    // 写入路径：appendAiLog 落库后顺带兜一次
+    expect(AI_HANDLERS).toMatch(/trimAiLogs\(\s*\)/);
+    // 启动 / 切库：强制清一次（此时节流窗口未开始，force 才有意义）
+    expect(AI_DB).toMatch(/trimAiLogs\(true\)/);
+    // 节流：ai_log 行宽，不能每条日志都做一次删除
+    expect(AI_DB).toContain("AI_LOG_TRIM_INTERVAL_MS");
   });
 });

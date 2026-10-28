@@ -165,16 +165,40 @@ src/windows/XxxWindow/
 | 文件 | 职责 |
 |------|------|
 | `ai-client.ts` | 唯一调用入口：`getAiConfig` / `saveAiConfig` / `testAiConnection` / `aiGenerate` / `aiGenerateStructured`，转交 `window.electronAPI.ai`；结构化解析在本层完成（主进程不感知业务结构） |
-| `context/collector.ts` | 纯函数采集：`BookSnapshot → AiBookContext`，按 intent 裁剪与截断；`matchEntitiesInText` 反向匹配命中人物卡 |
+| `context/collector.ts` | 纯函数采集：`BookSnapshot → AiBookContext`，按 intent 裁剪与截断；`matchEntitiesInText` 反向匹配命中人物卡；`buildChapterScopePayload` 按 L3 授权范围（仅本章 / 选中段落 / 最近 3 章）决定**实际发送哪段正文** |
 | `context/prompt/` | **提示词唯一产地**：`sections.ts` 公共段落（角色 / 作品背景 / 要素 / 境界 / 人物 / 章节片段 / 约束 / 输出契约）+ `naming.ts` / `polish.ts` 各功能模板 + `registry.ts` 注册表（`PROMPT_BUILDERS` / `buildPromptSpec`） |
 | `context/output-spec.ts` | 输出契约：`OutputFormat`（text / json-array）+ 格式指令生成 + 三层解析兜底 |
 | `ai-types.ts` | 渲染层可见的 IPC 类型契约（与主进程 `ai-handlers.ts` DTO 一对一） |
 | `ai-errors.ts` | 错误码 → 文案映射 + 是否「配置类错误」归类 |
 
-**扩展方式（强烈约束）**：新增 AI 功能 = 新增一个 `context/prompt/xxx.ts` 模板
-（并在 `prompt/registry.ts` 登记一行）+ 一个 `collectBookContext` 的 intent 分支。
+**扩展方式（强烈约束）**：新增 AI 功能 = 新增一个 `context/prompt/xxx.ts` 模板，并同步
+**以下几处登记**。2.10.1 起**意图联合类型只有一个产地**（`PromptIntentMap` 的键），
+其余登记点都由 `Record<PromptIntent, …>` 兜住——漏改一律是**编译错误**，不再靠记性：
+
+1. `prompt/registry.ts` 的 `PromptIntentMap` + `PROMPT_BUILDERS`（漏了 → 类型报错）；
+2. `prompt/registry.ts` 的 `PROMPT_VERSIONS`（`Record<PromptIntent, string>`，漏了 → 类型报错；
+   不填则归因时新旧 prompt 混在一起）；
+3. `prompt/registry.ts` 的 `AI_INTENT_LABELS`（同上，漏了 → 看板显示英文 key）；
+4. `collector.ts` 的 `LIMITS`（`Record<PromptIntent, CollectLimits>`，漏了 → 类型报错；
+   ⚠️ 不要再写成 `as const` 字面量——那样漏了要到运行期才炸）。
+
+`collector.ts` **不再有 `AiIntent`**：它直接 `import type { PromptIntent }`（type-only，
+运行期无循环依赖）。**不要新开第二个意图联合类型**——两个联合类型必然漂移，
+而漂移的表现是「某个意图的采集上限静默取到 undefined」。
+
 **服务层、`ai-client`、主进程 `ai-handlers` 一行不改**；若发现要改它们，说明抽象漏了，
 先修抽象再写功能。
+
+**⚠️ L3 授权范围必须真的约束发送内容（2.10.1 起）**：`scope` 不是埋点字段。
+历史上弹窗给了「仅本章 / 选中段落 / 最近 3 章」三档，发送端却恒发整章
+（review G4：控件点了没效果）。现在的固定口径：
+
+1. `collector.buildChapterScopePayload` 是**唯一**的「范围 → 发送正文」构造点；
+   弹窗字数估算、实际请求、`ai_event.scope` 三处同源，各算一遍必然漂移；
+2. 「选中段落」没有选区时**拒绝发送**并明说，绝不退回整章——退回即超发；
+3. 范围要进 prompt（`SummaryIntent.scope` / `contextText`），否则拿到片段的模型
+   会照常写「本章」，把没看到的情节补出来；
+4. 新增 L3 功能照抄这条链路，守卫 `useNovelPage-consent-scope-guard.test.ts`。
 
 **⚠️ 提示词只许有一个产地（2.8.0）**：早期 `ai-context.ts` 的
 `buildNamingPrompt` / `buildPolishPrompt` 已并入 `context/prompt/`，文件本身删除
@@ -1801,6 +1825,21 @@ function initializeDataDb(db: Database) {
 - [ ] 归档时在标题下补一段「已归档 · 闭环版本 · 现行为准的去处」，正文不动
 - [ ] 被完全取代的旧稿**删除**，不留在原目录
 - [ ] **不要**在根目录新增长篇说明文件；`README.md` 只留安装与排障
+
+### 8.9 新增用户可见功能（帮助手册同步，强制）
+
+> 帮助中心（F1）是**功能的唯一用户侧索引**。功能做了但手册里查不到 = 用户不知道它存在。
+> 这条不靠自觉：`guide-doc.test.ts` 会遍历 `AI_INTENT_LABELS`（AI 能力的单一产地），
+> 要求每个意图在「AI 创作助手」分区里都有一条命中词条，缺一条就红。
+
+- [ ] 在 `src/shared/novel/guide-doc.ts` 的对应 `sections` 分区补一条词条：
+      `term` 用**用户会搜的说法**（不是内部命名），`desc` 写清「点哪里 + 会发生什么」
+- [ ] 新增的是 AI 功能时：确认 `AI_INTENT_LABELS` 里有该意图（没有就先在 prompt 注册表登记），
+      词条需包含该标签原文，否则守卫直接红
+- [ ] 有高频困惑（为什么灰的 / 会不会上传 / 会不会重复扣费）再补一条 `faq`
+- [ ] 词条 `term` 全局唯一（重复会同时污染检索结果与列表 key）
+- [ ] 新增窗口/页面的常驻入口同理：先看该窗口是否已挂 `HelpCenter`，没挂就先挂上
+- [ ] 改了已有功能的入口位置或文案，**同步改词条**——手册写错比不写更糟
 
 ## 9. 附录
 

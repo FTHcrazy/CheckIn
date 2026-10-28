@@ -2070,7 +2070,7 @@ export function useNovelData() {
    * `model` 空串 = 手工编辑清空来源标记（M6 溯源）。
    */
   const updateChapterSummary = useCallback(
-    (chapterId: string, summary: string, model?: string): void => {
+    (chapterId: string, summary: string, model?: string, batch?: string): void => {
       setBundle((current) => {
         if (!current) return current;
         const next = patchChapterSummary(
@@ -2079,9 +2079,10 @@ export function useNovelData() {
           summary,
           model,
           Date.now(),
+          batch,
         );
         if (next === current.chapters) return current;
-        void saveChapterSummary(chapterId, summary.trim(), model);
+        void saveChapterSummary(chapterId, summary.trim(), model, batch);
         return { ...current, chapters: next };
       });
     },

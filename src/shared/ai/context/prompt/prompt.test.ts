@@ -9,11 +9,18 @@ import {
   type TransformKind,
 } from "./transform";
 import {
-  assembleContinuationSpec,
-  CONTINUATION_OUTPUT_FORMAT,
+  assembleContinuationStreamSpec,
+  CONTINUATION_STREAM_OUTPUT_FORMAT,
+  CONTINUATION_SUMMARY_MIN_BEFORE_CHARS,
 } from "./continuation";
-import { assembleSummarySpec } from "./summary";
 import {
+  assembleSummarySpec,
+  parseSummaryReply,
+  SUMMARY_BODY_HEAD,
+  SUMMARY_ONE_LINER_HEAD,
+} from "./summary";
+import {
+  AI_INTENT_LABELS,
   buildPromptSpec,
   PROMPT_BUILDERS,
   PROMPT_INTENTS,
@@ -166,9 +173,9 @@ describe("assembleTransformSpec", () => {
   });
 });
 
-describe("assembleContinuationSpec", () => {
+describe("assembleContinuationStreamSpec", () => {
   it("注入作品背景 / 前文 / 命中人物卡，前文用独立段（非 chapterSnippet）", () => {
-    const spec = assembleContinuationSpec(collectBookContext(snapshot, "continuation"), {
+    const spec = assembleContinuationStreamSpec(collectBookContext(snapshot, "continuation"), {
       before: "林晚照握紧剑柄，冷风掠过山巅。",
       characters: [{ name: "林晚照", type: "人物", summary: "清冷孤傲" }],
     });
@@ -177,38 +184,71 @@ describe("assembleContinuationSpec", () => {
     expect(spec.system).toContain("林晚照握紧剑柄");
     expect(spec.system).toContain("本段涉及的人物");
     expect(spec.system).toContain("林晚照（人物）：清冷孤傲");
-    expect(spec.outputFormat).toEqual(CONTINUATION_OUTPUT_FORMAT);
+    expect(spec.outputFormat).toEqual(CONTINUATION_STREAM_OUTPUT_FORMAT);
   });
 
-  it("输出契约要求 2–3 个候选，且只续写不重复前文", () => {
-    const spec = assembleContinuationSpec(collectBookContext(snapshot, "continuation"), {
+  it("流式输出契约为单段正文（text），直接顺着前文往下写、不重复前文", () => {
+    const spec = assembleContinuationStreamSpec(collectBookContext(snapshot, "continuation"), {
       before: "前文。",
     });
-    expect(spec.prompt).toContain("2");
-    expect(spec.prompt).toContain("3");
+    expect(spec.outputFormat.kind).toBe("text");
+    expect(spec.prompt).toContain("接着往下写一段");
+    expect(spec.system).toContain("直接顺着前文往下写一段");
     expect(spec.system).toContain("不要重复");
     expect(spec.system).toContain("保持前文的叙事视角");
   });
 
   it("有 outlineNode 时注入当前剧情节点，缺失时静默省略（降级而非报错）", () => {
-    const withNode = assembleContinuationSpec(collectBookContext(snapshot, "continuation"), {
+    const withNode = assembleContinuationStreamSpec(collectBookContext(snapshot, "continuation"), {
       before: "前文。",
       outlineNode: "林晚照在青云山巅决战",
     });
     expect(withNode.system).toContain("当前剧情节点");
     expect(withNode.system).toContain("决战");
 
-    const withoutNode = assembleContinuationSpec(collectBookContext(snapshot, "continuation"), {
+    const withoutNode = assembleContinuationStreamSpec(collectBookContext(snapshot, "continuation"), {
       before: "前文。",
     });
     expect(withoutNode.system).not.toContain("当前剧情节点");
   });
 
   it("前文为空时给可读兜底，不产出空 prompt", () => {
-    const spec = assembleContinuationSpec(collectBookContext(snapshot, "continuation"), {
+    const spec = assembleContinuationStreamSpec(collectBookContext(snapshot, "continuation"), {
       before: "",
     });
     expect(spec.system).toContain("（前文为空");
+  });
+
+  // ── 上一章摘要（R-AI-09 的第二消费方）────────────────────────────
+  it("前文短（断更回来 / 新章开头）时注入上一章摘要，并给出「已发生、不得矛盾」约束", () => {
+    const spec = assembleContinuationStreamSpec(collectBookContext(snapshot, "continuation"), {
+      before: "林晚照推开牢门。",
+      previousSummary: "上一章：掌门被废去修为，关入后山牢房。",
+    });
+    expect(spec.system).toContain("【上一章摘要】");
+    expect(spec.system).toContain("掌门被废去修为");
+    expect(spec.system).toContain("不得让已死的角色复活");
+    // 摘要段必须排在前文之前：先给背景再给「写到这里」，读起来才顺
+    expect(spec.system.indexOf("【上一章摘要】")).toBeLessThan(spec.system.indexOf("【前文】"));
+  });
+
+  it("前文足够长时不注入摘要（连续写作时前文就是上下文，摘要只会打架）", () => {
+    const spec = assembleContinuationStreamSpec(collectBookContext(snapshot, "continuation"), {
+      before: "林".repeat(CONTINUATION_SUMMARY_MIN_BEFORE_CHARS),
+      previousSummary: "上一章：掌门被废去修为。",
+    });
+    expect(spec.system).not.toContain("【上一章摘要】");
+    expect(spec.system).not.toContain("掌门被废去修为");
+  });
+
+  it("摘要缺失 / 空白时静默省略（不产出空的【上一章摘要】残段）", () => {
+    for (const previousSummary of ["", "   ", undefined]) {
+      const spec = assembleContinuationStreamSpec(collectBookContext(snapshot, "continuation"), {
+        before: "林晚照推开牢门。",
+        ...(previousSummary === undefined ? {} : { previousSummary }),
+      });
+      expect(spec.system).not.toContain("【上一章摘要】");
+    }
   });
 });
 
@@ -254,6 +294,60 @@ describe("assembleSummarySpec", () => {
     });
     expect(spec.system).toContain("（本章无正文内容）");
   });
+
+  it("要求两段式输出（一句话 + 摘要），供大纲回流拆分", () => {
+    const spec = assembleSummarySpec(collectBookContext(snapshot, "summary"), {
+      chapter: "正文。",
+    });
+    expect(spec.system).toContain(SUMMARY_ONE_LINER_HEAD);
+    expect(spec.system).toContain(SUMMARY_BODY_HEAD);
+    expect(spec.system).toContain("30 字");
+    // 仍是 text 契约：加一段不等于换成 json
+    expect(spec.outputFormat).toEqual(TEXT_OUTPUT_FORMAT);
+  });
+});
+
+describe("parseSummaryReply", () => {
+  it("标准两段：一句话进大纲，长摘要落库", () => {
+    const reply = parseSummaryReply(
+      "【一句话】林晚照击退来敌，掌门失踪的线索浮出水面。\n\n【摘要】本章写林晚照在青云山巅迎战……（略）",
+    );
+    expect(reply.oneLiner).toBe("林晚照击退来敌，掌门失踪的线索浮出水面。");
+    expect(reply.summary).toContain("青云山巅迎战");
+    // 长摘要里不该再带标记
+    expect(reply.summary).not.toContain(SUMMARY_BODY_HEAD);
+  });
+
+  it("标记与内容同在一行也能拆", () => {
+    const reply = parseSummaryReply("【一句话】主角入门。【摘要】他在山门领了牌子。");
+    expect(reply.oneLiner).toBe("主角入门。");
+    expect(reply.summary).toBe("他在山门领了牌子。");
+  });
+
+  it("模型不按格式返回：整段当摘要，一句话留空（不猜）", () => {
+    const reply = parseSummaryReply("本章讲了一个很长的故事，没有任何标记。");
+    expect(reply.oneLiner).toBe("");
+    expect(reply.summary).toBe("本章讲了一个很长的故事，没有任何标记。");
+  });
+
+  it("只给了一句话没给摘要：兜底成摘要，不让本次生成作废", () => {
+    const reply = parseSummaryReply("【一句话】主角入门。");
+    expect(reply.oneLiner).toBe("主角入门。");
+    expect(reply.summary).toBe("主角入门。");
+  });
+
+  it("一句话超长或带多余行：取第一行并截断到 60 字", () => {
+    const long = "甲".repeat(120);
+    const reply = parseSummaryReply(`【一句话】- ${long}\n第二行不该要\n【摘要】正文。`);
+    expect(reply.oneLiner.length).toBeLessThanOrEqual(61); // 60 + 省略号
+    expect(reply.oneLiner.startsWith("甲")).toBe(true);
+    expect(reply.oneLiner).not.toContain("第二行");
+    expect(reply.summary).toBe("正文。");
+  });
+
+  it("空回复不产出任何东西（不写大纲也不落库）", () => {
+    expect(parseSummaryReply("   \n ")).toEqual({ oneLiner: "", summary: "" });
+  });
 });
 
 /**
@@ -297,7 +391,7 @@ describe("Prompt 模板注册表", () => {
     expect(viaTransform).toEqual(directTransform);
 
     const viaContinuation = buildPromptSpec("continuation", context, { before: "前文。" });
-    const directContinuation = assembleContinuationSpec(context, { before: "前文。" });
+    const directContinuation = assembleContinuationStreamSpec(context, { before: "前文。" });
     expect(viaContinuation).toEqual(directContinuation);
 
     const viaSummary = buildPromptSpec("summary", context, { chapter: "正文。" });
@@ -315,5 +409,13 @@ describe("Prompt 模板注册表", () => {
     expect(promptVersionOf("naming")).toBe(PROMPT_VERSIONS.naming);
     expect(promptVersionOf("polish")).toBe(PROMPT_VERSIONS.polish);
     expect(promptVersionOf("不存在的意图")).toBe("");
+  });
+
+  it("AI_INTENT_LABELS 覆盖 PROMPT_INTENTS 全量（消费侧意图标签单一产地，G7）", () => {
+    for (const intent of PROMPT_INTENTS) {
+      expect(AI_INTENT_LABELS[intent], `${intent} 缺中文标签`).toBeTruthy();
+    }
+    // summary 是 2.10.0 新增，历史上被 UsagePanel 漏掉（review G7）
+    expect(AI_INTENT_LABELS.summary).toBe("摘要");
   });
 });

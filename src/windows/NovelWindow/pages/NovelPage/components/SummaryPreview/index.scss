@@ -1,3 +1,7 @@
+// AI 章节摘要浮层：居中弹层，mask 铺满 stage 抓取点击。
+// 按钮统一走 antd `Button`，外观在 `.类名.ant-btn` 同一条规则里清零（AGENTS §6.1.2）。
+@use "../../../../../../shared/styles/widget" as widget;
+
 .nv-summary__mask {
   position: absolute;
   inset: 0;
@@ -12,7 +16,7 @@
   z-index: 31;
   width: 460px;
   max-width: calc(100% - 48px);
-  background: var(--app-bg-elevated, #ffffff);
+  background: var(--app-surface-elevated);
   border: 1px solid var(--app-border, #e5e6eb);
   border-radius: 10px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.16);
@@ -38,8 +42,17 @@
   color: var(--app-text, #1f2329);
 }
 
-.nv-summary__close {
+.nv-summary__close.ant-btn {
+  @include widget.ant-button-reset;
   flex: none;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--app-text-secondary);
+  --ant-button-default-hover-bg: var(--app-surface-hover);
+  --ant-border-radius: 5px;
 }
 
 .nv-summary__body {
@@ -55,7 +68,7 @@
 }
 
 .nv-summary__error {
-  color: var(--app-danger, #d4380d);
+  color: var(--app-error, #d4380d);
 }
 
 .nv-summary__content {
@@ -90,4 +103,79 @@
 
 .nv-summary__spacer {
   flex: 1;
+}
+
+.nv-summary__regen.ant-btn,
+.nv-summary__retry.ant-btn,
+.nv-summary__confirm.ant-btn {
+  @include widget.ant-button-reset;
+  --ant-control-height: 30px;
+  --ant-border-radius: 6px;
+  --ant-button-content-font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 10px;
+}
+
+// ── 大纲回流：一句话梗概 ─────────────────────────────────────────────
+// 浮层是 elevated，内部这块要"凹"下去 → 回退一档用 surface（AGENTS §6.1.3 分层）
+.nv-summary__note {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border, #e5e6eb);
+  border-radius: 8px;
+}
+
+.nv-summary__note-head {
+  margin: 0;
+  font-size: 12px;
+  color: var(--app-text-secondary, #646a73);
+}
+
+.nv-summary__note-text {
+  margin: 0;
+  color: var(--app-text, #1f2329);
+  font-weight: 500;
+  line-height: 1.6;
+}
+
+.nv-summary__note-conflict {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.nv-summary__note-existing {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--app-text-secondary, #646a73);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nv-summary__note-done {
+  margin: 0;
+  font-size: 12px;
+  color: var(--app-text-secondary, #646a73);
+}
+
+.nv-summary__note-apply.ant-btn {
+  @include widget.ant-button-reset;
+  flex: none;
+  --ant-control-height: 26px;
+  --ant-border-radius: 6px;
+  --ant-button-content-font-size: 12px;
+  padding: 0 10px;
+  color: var(--app-primary);
+  --ant-button-default-color: var(--app-primary);
+  --ant-button-default-border-color: var(--app-primary);
+  --ant-button-default-hover-color: var(--app-primary);
+  --ant-button-default-hover-border-color: var(--app-primary);
 }

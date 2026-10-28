@@ -133,6 +133,17 @@
     }
   }
 
+  // 流式进行中的闪烁光标：暗示「还在写」
+  &__caret {
+    display: inline-block;
+    width: 2px;
+    height: 1em;
+    margin-left: 2px;
+    vertical-align: -2px;
+    background: var(--app-primary);
+    animation: nv-cont-caret 0.9s steps(2, start) infinite;
+  }
+
   &__foot {
     display: flex;
     align-items: center;
@@ -146,6 +157,7 @@
 
   &__regen.ant-btn,
   &__retry.ant-btn,
+  &__confirm.ant-btn,
   &__cancel.ant-btn {
     @include widget.ant-button-reset;
     --ant-control-height: 30px;
@@ -155,5 +167,21 @@
     align-items: center;
     gap: 5px;
     padding: 0 10px;
+  }
+
+  // 确认插入是主操作：主色描边，与「重新生成 / 取消」拉开层级
+  &__confirm.ant-btn {
+    color: var(--app-primary);
+    border: 1px solid var(--app-primary);
+  }
+}
+
+@keyframes nv-cont-caret {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
   }
 }

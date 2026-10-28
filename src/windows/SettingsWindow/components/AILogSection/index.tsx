@@ -3,6 +3,7 @@ import { App, Button, Collapse, Empty, Popconfirm, Select, Spin, Tag } from "ant
 import { DeleteOutlined, ReloadOutlined } from "@ant-design/icons";
 import type { AiLogRowDTO } from "@/shared/types/electron";
 import { TRANSFORM_INTENT_SUB, TRANSFORM_KIND_LABELS } from "@/shared/ai/context";
+import { AI_INTENT_LABELS } from "@/shared/ai/context/prompt/registry";
 import type { TransformKind } from "@/shared/ai/context";
 import "./index.scss";
 
@@ -30,11 +31,10 @@ const TRANSFORM_INTENTS = (
   Object.keys(TRANSFORM_INTENT_SUB) as TransformKind[]
 ).map((kind) => `transform:${TRANSFORM_INTENT_SUB[kind]}`);
 
-/** 意图 → 中文（含 2.7.0 之前的旧值 `generate`，老日志也要能读） */
+/** 意图 → 中文（含 2.7.0 之前的旧值 `generate`，老日志也要能读）。
+ *  主标签从 AI_INTENT_LABELS 取（单一产地，G7），这里只补历史旧值与变换子类型展开。 */
 const INTENT_LABEL: Record<string, string> = {
-  naming: "起名",
-  polish: "润色",
-  continuation: "续写",
+  ...AI_INTENT_LABELS,
   test: "连接测试",
   generate: "生成（旧）",
   ...Object.fromEntries(
@@ -50,6 +50,7 @@ const INTENT_OPTIONS = [
   { value: "naming", label: "起名" },
   { value: "polish", label: "润色" },
   { value: "continuation", label: "续写" },
+  { value: "summary", label: "摘要" },
   { value: "test", label: "连接测试" },
   ...TRANSFORM_INTENTS.map((value) => ({
     value,
@@ -181,7 +182,8 @@ export default function AILogSection() {
             <div className="settings-item__text">
               <span className="settings-item__label">最近调用</span>
               <span className="settings-item__hint">
-                共 {total} 条；每条含提示词与输出的前 600 字，用于对比调优
+                共 {total} 条；每条含提示词与输出的前 600 字，用于对比调优。
+                只保留最近 30 天，超期记录在下次调用或启动时自动清理
               </span>
             </div>
             <div className="settings-ailog__tools">

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { estimateCost, estimateText, estimateTokens } from "./ai-estimate";
+import { estimateText, estimateTokens } from "./ai-estimate";
 
 describe("estimateTokens", () => {
   it("空串 / undefined 返回 0，不加结构开销", () => {
@@ -40,15 +40,5 @@ describe("estimateText", () => {
     const result = estimateText("你好 world");
     expect(result.chars).toBe(8); // 你好(2) + 空格(1) + world(5)
     expect(result.tokens).toBeGreaterThan(0);
-  });
-});
-
-describe("estimateCost", () => {
-  it("按每千 token 单价线性计费，保留 4 位小数", () => {
-    expect(estimateCost(0, 10)).toBe(0);
-    expect(estimateCost(1000, 10)).toBe(10);
-    expect(estimateCost(4500, 10)).toBe(45);
-    // 小额费用不被四舍五入成 0
-    expect(estimateCost(1, 10)).toBe(0.01);
   });
 });

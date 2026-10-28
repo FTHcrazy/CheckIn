@@ -144,7 +144,7 @@
   |---|---|
   | 端点 URL 泄漏 Key | 新增 `electron/ai-stream-guard.test.ts`：断言端点构造不出现 `apiKey` / `Authorization` 拼接；断言端点带一次性令牌且可失效 |
   | 流式中断后连接泄漏 | 断言 `aiGenerateStream` 的 `AbortSignal` 路径会关闭 `ReadableStream` 并撤销端点 |
-  | 续写偏离剧情 | 断言 `assembleContinuationSpec` 输出里**必须**含大纲节点与命中人物卡（纯函数单测，传入缺失字段时应产出降级 prompt 而非静默省略） |
+  | 续写偏离剧情 | 断言 `assembleContinuationStreamSpec` 输出里**必须**含大纲节点与命中人物卡（纯函数单测，传入缺失字段时应产出降级 prompt 而非静默省略；B5 已实现） |
   | 协议注册时机错误（静默 404） | 守卫断言 `main.ts` 中 `protocol.handle` 调用位于 `app.whenReady` **之前** |
 
 ---
@@ -514,7 +514,7 @@ ALTER TABLE novel_works ADD COLUMN genre TEXT;
 |---|---|
 | `src/shared/ai/context/types.ts` | 新增：`BookSnapshot` / `AiBookContext` / `PromptSpec`（**结构类型，不 import novel**） |
 | `src/shared/ai/context/collector.ts` + `.test.ts` | 新增：按 intent 最小化采集 + 截断 |
-| `src/shared/ai/context/assembler.ts` + `.test.ts` | 新增：`assembleNamingSpec` / `assemblePolishSpec` / `assembleTransformSpec` / `assembleContinuationSpec` |
+| `src/shared/ai/context/assembler.ts` + `.test.ts` | 新增：`assembleNamingSpec` / `assemblePolishSpec` / `assembleTransformSpec` / `assembleContinuationStreamSpec`（续写实际落地为流式版，原 `assembleContinuationSpec` 非流式变体已废弃） |
 | `src/shared/ai/context/chunker.ts` + `.test.ts` | 新增：长文本分块 |
 | `src/shared/ai/context/output-spec.ts` + `.test.ts` | 新增：`OutputFormat` + JSON 指令模板 + 三层保险解析 |
 | `src/shared/ai/prompts/registry.ts` + `.test.ts` | 新增（M7）：意图 → 模板 + version |

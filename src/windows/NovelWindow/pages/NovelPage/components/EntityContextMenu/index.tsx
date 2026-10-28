@@ -46,6 +46,10 @@ interface EntityContextMenuProps {
   onPolish: () => void;
   /** AI 文本变换选中文本（R-AI-06）：扩写 / 精简 / 改写 / 换语气 / 转视角 */
   onTransform: (kind: TransformKind) => void;
+  /** AI 是否可用（M8 门控）；false 时润色/变换菜单项禁用并说明原因 */
+  aiAvailable?: boolean;
+  /** AI 不可用的一句话说明（挂菜单项 title） */
+  aiUnavailableText?: string;
   onClose: () => void;
 }
 
@@ -66,6 +70,8 @@ export default function EntityContextMenu({
   onBind,
   onPolish,
   onTransform,
+  aiAvailable = true,
+  aiUnavailableText = "",
   onClose,
 }: EntityContextMenuProps) {
   const { metaOf } = useEntityTypeMeta();
@@ -87,7 +93,10 @@ export default function EntityContextMenu({
             role="menuitem"
             className="nv-ctxmenu__item"
             onClick={onPolish}
-            title="对选中文字做润色，先预览再替换"
+            disabled={!aiAvailable}
+            title={
+              aiAvailable ? "对选中文字做润色，先预览再替换" : aiUnavailableText
+            }
           >
             <EditOutlined className="nv-ctxmenu__go" />
             润色这段文字
@@ -98,7 +107,12 @@ export default function EntityContextMenu({
               role="menuitem"
               className="nv-ctxmenu__item"
               onClick={() => onTransform(kind)}
-              title={`对选中文字做「${TRANSFORM_KIND_LABELS[kind]}」，先预览再替换`}
+              disabled={!aiAvailable}
+              title={
+                aiAvailable
+                  ? `对选中文字做「${TRANSFORM_KIND_LABELS[kind]}」，先预览再替换`
+                  : aiUnavailableText
+              }
             >
               <span className="nv-ctxmenu__go">{TRANSFORM_ICONS[kind]}</span>
               {TRANSFORM_KIND_LABELS[kind]}

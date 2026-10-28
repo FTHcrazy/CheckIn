@@ -68,6 +68,13 @@ export interface AiGenerateRequest {
    * 服务层原样透传，不解释其业务含义。
    */
   intent?: string;
+  /**
+   * L3 授权范围（chapter / selection / recent3），仅 L3 功能传。
+   *
+   * 服务层原样写进 `ai_event.scope`：范围决定「实际发了多少正文」，
+   * 只有落进台账，授权拒绝率与范围选择才能统计（M5 / review G4）。
+   */
+  scope?: string;
 }
 
 /** 生成结果 */
@@ -76,6 +83,8 @@ export interface AiGenerateData {
   text: string;
   /** 解析出的条目列表（起名场景为名字列表） */
   items: string[];
+  /** 实际使用的模型名（随生成响应回带，供溯源/采纳上报，无需二次取配置） */
+  model: string;
 }
 
 /** 测试连接结果 */

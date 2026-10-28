@@ -208,7 +208,7 @@ AI 润色已落地但**未单独编号**。本文新方向从 **R-AI-05** 起编
 - **依赖关系**：
   - 复用：`shared/ai`、`EditorPane.insertText`、润色的浮层范式。
   - **需要新上下文**：① 光标前文（截断 ~1000 字）；② 上一章摘要 —— **依赖 R-AI-09 先有摘要能力**（否则退化为「只带本章前文」）；③ 当前大纲节点（`OutlinePanel` 数据已存在）；④ 命中人物卡。
-  - 需要 `assembleContinuationSpec` 模板（`ai-context-and-output-spec.md` Phase 3 已预留位置，正好落位）。
+  - 需要 `assembleContinuationStreamSpec` 模板（续写已落地为 B5 流式版，B3 非流式 `assembleContinuationSpec` 已废弃）。
   - 需要流式输出（R-AI-04 预研的 `protocol.handle` / IPC 兜底）——**这是本项目第一个真正需要流式的场景**。
 
 - **主要风险与降级路径**：

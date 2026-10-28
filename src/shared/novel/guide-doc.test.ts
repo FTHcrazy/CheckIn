@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { AI_INTENT_LABELS } from "../ai/context/prompt/registry";
 import { NOVEL_HELP_DOC, searchHelpDoc } from "./guide-doc";
 
 /**
@@ -95,5 +96,75 @@ describe("文档结构", () => {
     const ids = NOVEL_HELP_DOC.faq.map((item) => item.id);
     expect(ids).toContain("ctx-menu");
     expect(ids).toContain("no-character-section");
+  });
+});
+
+/**
+ * AI 功能覆盖（维护契约）
+ *
+ * 「功能做了但用户不知道在哪」等价于没做。这条契约把帮助手册钉在**能力的单一
+ * 产地**上：`AI_INTENT_LABELS` 里每多一个意图，这里就红一次，逼着当次就把手册补上
+ * ——而不是等半年后有人问「AI 到底能做几件事」再回头翻代码。
+ *
+ * 同理，配置 / 授权 / 记录这类「非 prompt 的基础设施」也单列断言：它们没有意图，
+ * 但缺了任何一条，用户都会卡在「按钮在哪 / 为什么灰的 / 我的稿子上传到哪」。
+ */
+describe("AI 功能覆盖（新增功能必须同步本手册）", () => {
+  const aiSection = NOVEL_HELP_DOC.sections.find((section) => section.id === "ai");
+  const aiTerms = aiSection?.entries.map((entry) => entry.term) ?? [];
+  const aiText = (aiSection?.entries ?? [])
+    .map((entry) => `${entry.term}\n${entry.desc}`)
+    .join("\n");
+
+  it("存在「AI 创作助手」分区", () => {
+    expect(aiSection).toBeTruthy();
+    expect(aiTerms.length).toBeGreaterThan(0);
+  });
+
+  it("每个 AI 意图都有可检索词条（漏写 = 新功能等于不存在）", () => {
+    for (const [intent, label] of Object.entries(AI_INTENT_LABELS)) {
+      expect(aiText, `AI 意图「${intent}」(${label}) 在帮助手册里没有词条`).toContain(label);
+    }
+  });
+
+  it("配置 / 授权 / 记录这类基础设施也各有词条", () => {
+    for (const term of ["配置 AI 服务", "本地模型", "整章内容授权", "AI 记录", "用量与效果"]) {
+      expect(aiTerms, `缺少词条「${term}」`).toContain(term);
+    }
+  });
+
+  it("AI 分区每条词条都能被搜索命中（作者是靠搜索找功能的）", () => {
+    for (const entry of aiSection?.entries ?? []) {
+      const hits = searchHelpDoc(NOVEL_HELP_DOC, entry.term);
+      expect(hits.some((hit) => hit.title === entry.term), `搜不到「${entry.term}」`).toBe(true);
+    }
+  });
+
+  it("AI FAQ 覆盖最高频的三个疑问：不可用 / 隐私 / 是否重复扣费", () => {
+    const ids = NOVEL_HELP_DOC.faq.map((item) => item.id);
+    expect(ids).toEqual(
+      expect.arrayContaining(["ai-not-configured", "ai-privacy", "ai-summary-charge"]),
+    );
+  });
+
+  it("全库词条名唯一（重复会让检索结果与列表 key 一起出问题）", () => {
+    const seen = new Set<string>();
+    for (const section of NOVEL_HELP_DOC.sections) {
+      for (const entry of section.entries) {
+        expect(seen.has(entry.term), `词条重复：${entry.term}`).toBe(false);
+        seen.add(entry.term);
+      }
+    }
+  });
+
+  it("词条名不超过 8 字（索引列定宽 96px，超了会换成竖条）", () => {
+    for (const section of NOVEL_HELP_DOC.sections) {
+      for (const entry of section.entries) {
+        expect(
+          entry.term.length,
+          `词条「${entry.term}」过长，细节请写进 desc`,
+        ).toBeLessThanOrEqual(8);
+      }
+    }
   });
 });

@@ -60,6 +60,7 @@ interface NovelChapterRow {
   ai_summary: string | null;
   ai_summary_at: number | null;
   ai_summary_model: string | null;
+  ai_summary_batch: string | null;
 }
 
 interface NovelSnapshotRow {
@@ -475,6 +476,7 @@ function toChapterDto(row: NovelChapterRow, includeContent = true): NovelChapter
     ...(row.ai_summary !== null ? { aiSummary: row.ai_summary } : {}),
     ...(row.ai_summary_at !== null ? { aiSummaryAt: row.ai_summary_at } : {}),
     ...(row.ai_summary_model !== null ? { aiSummaryModel: row.ai_summary_model } : {}),
+    ...(row.ai_summary_batch !== null ? { aiSummaryBatch: row.ai_summary_batch } : {}),
   };
 }
 
@@ -1182,7 +1184,7 @@ ipcMain.handle("novel-editor-reset-template", () => seedTemplateBook());
     const chapters = (dbAll(
       includeContent
         ? "SELECT * FROM novel_chapters WHERE deleted_at IS NULL"
-        : "SELECT id, work_id, volume_id, title, word_count, status, sort, updated_at, outline_note, ai_summary, ai_summary_at, ai_summary_model FROM novel_chapters WHERE deleted_at IS NULL",
+        : "SELECT id, work_id, volume_id, title, word_count, status, sort, updated_at, outline_note, ai_summary, ai_summary_at, ai_summary_model, ai_summary_batch FROM novel_chapters WHERE deleted_at IS NULL",
     ) as NovelChapterRow[]).map((row) => toChapterDto(row, includeContent));
     const entities = (dbAll("SELECT * FROM novel_entities ORDER BY sort") as NovelEntityRow[]).map(
       toEntityDto,
@@ -1412,8 +1414,8 @@ ipcMain.handle("novel-editor-reset-template", () => seedTemplateBook());
     );
   });
 
-  // R-AI-09：章节 AI 摘要落库。三列同写（正文 / 生成时间 / 来源模型），
-  // 来源标记（model）是 M6 溯源的一部分——手工编辑摘要时上层传空 model
+  // R-AI-09：章节 AI 摘要落库。四列同写（正文 / 生成时间 / 来源模型 / 批次），
+  // 来源标记（model + batch）是 M6 溯源的一部分——手工编辑摘要时上层传空 model
   // 以清空来源标记，区分「AI 生成」与「自己写的」。
   ipcMain.handle(
     "novel-chapter-summary-save",
@@ -1424,17 +1426,22 @@ ipcMain.handle("novel-editor-reset-template", () => seedTemplateBook());
         summary: string;
         /** 来源模型名；空串 = 手工编辑，清空来源标记 */
         model?: string;
+        /** 来源批次 id（M6 溯源，供「按批次撤销」）；空串 = 手工编辑 */
+        batch?: string;
       },
     ): boolean => {
       const summary = typeof payload?.summary === "string" ? payload.summary.trim() : "";
       const model = typeof payload?.model === "string" && payload.model.trim()
         ? payload.model.trim()
         : null;
-      // 清空摘要（summary 为空）时三列一并置空，不留半截来源标记
+      const batch = typeof payload?.batch === "string" && payload.batch.trim()
+        ? payload.batch.trim()
+        : null;
+      // 清空摘要（summary 为空）时四列一并置空，不留半截来源标记
       if (!summary) {
         return (
           dbRun(
-            "UPDATE novel_chapters SET ai_summary = NULL, ai_summary_at = NULL, ai_summary_model = NULL WHERE id = ?",
+            "UPDATE novel_chapters SET ai_summary = NULL, ai_summary_at = NULL, ai_summary_model = NULL, ai_summary_batch = NULL WHERE id = ?",
             [id],
           ).changes > 0
         );
@@ -1442,8 +1449,8 @@ ipcMain.handle("novel-editor-reset-template", () => seedTemplateBook());
       const now = Date.now();
       return (
         dbRun(
-          "UPDATE novel_chapters SET ai_summary = ?, ai_summary_at = ?, ai_summary_model = ? WHERE id = ?",
-          [summary, now, model, id],
+          "UPDATE novel_chapters SET ai_summary = ?, ai_summary_at = ?, ai_summary_model = ?, ai_summary_batch = ? WHERE id = ?",
+          [summary, now, model, batch, id],
         ).changes > 0
       );
     },

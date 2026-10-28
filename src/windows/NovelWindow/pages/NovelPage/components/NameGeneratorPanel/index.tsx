@@ -75,6 +75,13 @@ interface NameGeneratorPanelProps {
    * 由页面层组装传入，AI 起名时自动灌入 prompt —— 作者不必每次手填要求。
    */
   book?: BookSnapshot;
+  /**
+   * AI 是否可用（M8 门控）。false 时「AI 起名」按钮禁用并说明原因，
+   * 但**本地起名引擎照常可用**（起名有本地兜底，不整块隐藏）。
+   */
+  aiAvailable?: boolean;
+  /** AI 不可用的一句话说明（挂按钮 title） */
+  aiUnavailableText?: string;
 }
 
 /** 性别选项（仅 person 生效；其它类型自动锁定 any） */
@@ -121,6 +128,8 @@ export default function NameGeneratorPanel({
   favorites,
   actions,
   book,
+  aiAvailable = true,
+  aiUnavailableText = "",
 }: NameGeneratorPanelProps) {
   // 选项状态：组件局部短生命周期状态，不进全局（与 InspirationPanel 范式一致）
   const [kind, setKind] = useState<NamingKind>(INITIAL_OPTIONS.kind);
@@ -220,92 +229,101 @@ export default function NameGeneratorPanel({
     setAiLoading(true);
     setFallbackNote(null);
 
-    const kindLabel = NAMING_KINDS.find((k) => k.id === effectiveKind)?.label;
-    const styleLabel = NAMING_STYLES.find((s) => s.id === style)?.label;
-    const genderLabel =
-      effectiveGender === "male"
-        ? "男"
-        : effectiveGender === "female"
-          ? "女"
-          : undefined;
+    try {
+      const kindLabel = NAMING_KINDS.find((k) => k.id === effectiveKind)?.label;
+      const styleLabel = NAMING_STYLES.find((s) => s.id === style)?.label;
+      const genderLabel =
+        effectiveGender === "male"
+          ? "男"
+          : effectiveGender === "female"
+            ? "女"
+            : undefined;
 
-    // 采集本书上下文：面板传进来的 exclude 是当前作品口径，优先于快照派生结果
-    const collected = collectBookContext(
-      book ?? { workName: "", entities: [] },
-      "naming",
-    );
-    const context = {
-      ...collected,
-      ...(exclude.length > 0 ? { excludeNames: exclude.slice(0, 40) } : {}),
-    };
+      // 采集本书上下文：面板传进来的 exclude 是当前作品口径，优先于快照派生结果
+      const collected = collectBookContext(
+        book ?? { workName: "", entities: [] },
+        "naming",
+      );
+      const context = {
+        ...collected,
+        ...(exclude.length > 0 ? { excludeNames: exclude.slice(0, 40) } : {}),
+      };
 
-    const spec = buildPromptSpec("naming", context, {
-      description,
-      kind: kindLabel,
-      style: styleLabel,
-      gender: genderLabel,
-      count,
-    });
-
-    const result = await aiGenerateStructured({
-      system: spec.system,
-      prompt: spec.prompt,
-      count: spec.count,
-      intent: "naming",
-      outputFormat: spec.outputFormat,
-    });
-    setAiLoading(false);
-
-    if (!result.ok) {
-      // AI 失败 → 降级本地引擎 + 明确提示（FR-04）
-      fallbackToLocal(result.message);
-      message.warning(result.message);
-      return;
-    }
-
-    // 模型返回的名字：过滤已用名 + 同批去重，保留寓意
-    const excludeSet = new Set(exclude.map((n) => n.trim()));
-    const seen = new Set<string>();
-    const aiResults: NamingResult[] = [];
-    for (const entry of result.data.entries) {
-      const name = (entry.name ?? "").trim();
-      if (!name || excludeSet.has(name) || seen.has(name)) continue;
-      seen.add(name);
-      aiResults.push({
-        name,
-        kind: effectiveKind,
-        style,
-        gender: effectiveGender,
-        source: "ai" as NamingSource,
-        ...(entry.meaning?.trim() ? { meaning: entry.meaning.trim() } : {}),
+      const spec = buildPromptSpec("naming", context, {
+        description,
+        kind: kindLabel,
+        style: styleLabel,
+        gender: genderLabel,
+        count,
       });
-      if (aiResults.length >= count) break;
-    }
 
-    // 一个可用名字都没有：视为本次生成无效，切回本地（不静默留空列表）
-    if (aiResults.length === 0) {
-      fallbackToLocal("AI 这次没有产出可用名字，已切回本地起名");
-      return;
-    }
-
-    // 数量不足：用本地引擎补齐（FR-02 客户端过滤补齐）
-    if (aiResults.length < count) {
-      const local = generateNames({
-        kind: effectiveKind,
-        style,
-        gender: effectiveGender,
-        count: count - aiResults.length,
-        exclude: [...exclude, ...Array.from(seen)],
-        seed: Date.now() >>> 0,
+      const result = await aiGenerateStructured({
+        system: spec.system,
+        prompt: spec.prompt,
+        count: spec.count,
+        intent: "naming",
+        outputFormat: spec.outputFormat,
       });
-      setResults([...aiResults, ...local]);
-    } else {
-      setResults(aiResults);
-    }
 
-    // JSON 不成立但兜底解析出了结果：如实告知，便于作者判断质量
-    if (result.data.usedFallback) {
-      setFallbackNote("模型未按约定格式返回，已按文本解析（寓意可能缺失）");
+      if (!result.ok) {
+        // AI 失败 → 降级本地引擎 + 明确提示（FR-04）
+        fallbackToLocal(result.message);
+        message.warning(result.message);
+        return;
+      }
+
+      // 模型返回的名字：过滤已用名 + 同批去重，保留寓意
+      const excludeSet = new Set(exclude.map((n) => n.trim()));
+      const seen = new Set<string>();
+      const aiResults: NamingResult[] = [];
+      for (const entry of result.data.entries) {
+        const name = (entry.name ?? "").trim();
+        if (!name || excludeSet.has(name) || seen.has(name)) continue;
+        seen.add(name);
+        aiResults.push({
+          name,
+          kind: effectiveKind,
+          style,
+          gender: effectiveGender,
+          source: "ai" as NamingSource,
+          ...(entry.meaning?.trim() ? { meaning: entry.meaning.trim() } : {}),
+        });
+        if (aiResults.length >= count) break;
+      }
+
+      // 一个可用名字都没有：视为本次生成无效，切回本地（不静默留空列表）
+      if (aiResults.length === 0) {
+        fallbackToLocal("AI 这次没有产出可用名字，已切回本地起名");
+        return;
+      }
+
+      // 数量不足：用本地引擎补齐（FR-02 客户端过滤补齐）
+      if (aiResults.length < count) {
+        const local = generateNames({
+          kind: effectiveKind,
+          style,
+          gender: effectiveGender,
+          count: count - aiResults.length,
+          exclude: [...exclude, ...Array.from(seen)],
+          seed: Date.now() >>> 0,
+        });
+        setResults([...aiResults, ...local]);
+      } else {
+        setResults(aiResults);
+      }
+
+      // JSON 不成立但兜底解析出了结果：如实告知，便于作者判断质量
+      if (result.data.usedFallback) {
+        setFallbackNote("模型未按约定格式返回，已按文本解析（寓意可能缺失）");
+      }
+    } catch (error) {
+      // IPC / 主进程侧异常（如 ai.db 未就绪）会 reject：不接住就是按钮永久 loading
+      const text = error instanceof Error ? error.message : String(error);
+      fallbackToLocal(text || "AI 调用失败");
+      message.warning(text || "AI 调用失败，已切回本地起名");
+    } finally {
+      // 无论成功、失败还是抛错都要复位，否则「AI 生成」按钮再也点不动
+      setAiLoading(false);
     }
   }, [
     description,
@@ -481,7 +499,8 @@ export default function NameGeneratorPanel({
             className="nv-name__ai-btn"
             onClick={() => void handleAiGenerate()}
             loading={aiLoading}
-            disabled={aiLoading}
+            disabled={aiLoading || !aiAvailable}
+            title={aiAvailable ? undefined : aiUnavailableText}
           >
             <ThunderboltOutlined />
             AI 起名

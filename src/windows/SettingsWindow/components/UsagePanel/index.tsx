@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { App, Button, Empty, Spin, Tag } from "antd";
 import { DownloadOutlined, ReloadOutlined } from "@ant-design/icons";
 import { exportAiDiagnostics, getAiEventStats } from "@/shared/ai/ai-client";
+import { AI_INTENT_LABELS } from "@/shared/ai/context/prompt/registry";
 import type { AiEventStatsDTO } from "@/shared/ai/ai-types";
 import "./index.scss";
 
@@ -16,14 +17,11 @@ import "./index.scss";
  * 若还没接采纳上报的功能，采纳率会显示为 0 —— 这是**真实数据**，不伪造。
  */
 
-/** 意图 → 中文（与 AILogSection 的 INTENT_LABEL 同源，这里只展示已有功能的意图） */
+/** 意图 → 中文（单一产地 AI_INTENT_LABELS，G7；补历史旧值兜底） */
 const INTENT_LABEL: Record<string, string> = {
-  naming: "起名",
-  polish: "润色",
+  ...AI_INTENT_LABELS,
   test: "连接测试",
   generate: "生成（旧）",
-  transform: "文本变换",
-  continuation: "续写",
 };
 
 /** 百分比展示：0.333 → 33%；NaN / 空值归一为 0 */

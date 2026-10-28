@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildChapterScopePayload,
   clipText,
   collectBookContext,
   deriveExcludeNames,
@@ -111,5 +112,96 @@ describe("matchEntitiesInText", () => {
       { type: "character", name: "李" },
     ]);
     expect(hits).toEqual([]);
+  });
+});
+
+describe("L3 授权范围 → 实际发送内容（buildChapterScopePayload）", () => {
+  // 每章 3000 字：足以让 recent3 的三段预算（60/25/15）都真的触发裁剪
+  const chapter = { title: "第三章 落霞", content: "甲".repeat(3000) };
+  const prev2 = { title: "第一章 入山", content: "乙".repeat(3000) };
+  const prev1 = { title: "第二章 试剑", content: "丙".repeat(3000) };
+
+  it("chapter：只发本章，按预算裁剪，不带前情", () => {
+    const payload = buildChapterScopePayload({
+      scope: "chapter",
+      chapter,
+      previousChapters: [prev2, prev1],
+      budget: 4000,
+    });
+    expect(payload.ok).toBe(true);
+    if (!payload.ok) return;
+    expect(payload.contextText).toBeUndefined();
+    expect(payload.chars).toBe(payload.chapterText.length);
+    expect(payload.chapterText).toBe(chapter.content);
+  });
+
+  it("selection：只发选中段落（不是整章），chars 即选区长度", () => {
+    const payload = buildChapterScopePayload({
+      scope: "selection",
+      chapter,
+      selection: "  只有这一段会被发出去。  ",
+      budget: 4000,
+    });
+    expect(payload.ok).toBe(true);
+    if (!payload.ok) return;
+    expect(payload.chapterText).toBe("只有这一段会被发出去。");
+    expect(payload.chars).toBe("只有这一段会被发出去。".length);
+  });
+
+  it("selection 但什么都没选中：拒绝发送，绝不退回整章", () => {
+    for (const selection of [undefined, "", "   "]) {
+      const payload = buildChapterScopePayload({
+        scope: "selection",
+        chapter,
+        selection,
+        budget: 4000,
+      });
+      expect(payload).toEqual({ ok: false, reason: "no-selection" });
+    }
+  });
+
+  it("recent3：本章 + 前两章，前情按故事时间正序（远的在前）", () => {
+    const payload = buildChapterScopePayload({
+      scope: "recent3",
+      chapter,
+      previousChapters: [prev2, prev1],
+      budget: 4000,
+    });
+    expect(payload.ok).toBe(true);
+    if (!payload.ok) return;
+    expect(payload.chapterText.length).toBeLessThanOrEqual(2400); // 60% 预算为上限
+    expect(payload.chapterText.length).toBeGreaterThan(2000);
+    expect(payload.contextText).toBeDefined();
+    // 前情按「章」切成两块，顺序按故事时间（远的在前）
+    const parts = payload.contextText!.split(/\n\n(?=【)/);
+    expect(parts).toHaveLength(2);
+    expect(parts[0]).toContain("第一章 入山");
+    expect(parts[1]).toContain("第二章 试剑");
+    // 越近的章留得越多：第二章 25% 预算 > 第一章 15%
+    expect(parts[1].length).toBeGreaterThan(parts[0].length);
+    expect(payload.chars).toBe(payload.chapterText.length + payload.contextText!.length);
+  });
+
+  it("recent3 但本章是第一章：有几章发几章，不报错", () => {
+    const payload = buildChapterScopePayload({
+      scope: "recent3",
+      chapter,
+      previousChapters: [],
+      budget: 4000,
+    });
+    expect(payload.ok).toBe(true);
+    if (!payload.ok) return;
+    expect(payload.contextText).toBeUndefined();
+    expect(payload.chapterText.length).toBeLessThanOrEqual(2400);
+    expect(payload.chapterText.length).toBeGreaterThan(2000);
+  });
+
+  it("预算变小 → 实际发送跟着变少（contextLen 不是摆设）", () => {
+    const wide = buildChapterScopePayload({ scope: "chapter", chapter, budget: 4000 });
+    const narrow = buildChapterScopePayload({ scope: "chapter", chapter, budget: 600 });
+    expect(wide.ok && narrow.ok).toBe(true);
+    if (!wide.ok || !narrow.ok) return;
+    expect(narrow.chars).toBeLessThan(wide.chars);
+    expect(narrow.chapterText).toContain("中间省略");
   });
 });

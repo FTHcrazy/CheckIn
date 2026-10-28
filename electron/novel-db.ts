@@ -541,6 +541,9 @@ function initializeNovelDb(database: Database.Database): void {
     if (!chapterColumns.some((column) => column.name === "ai_summary_model")) {
       database.exec("ALTER TABLE novel_chapters ADD COLUMN ai_summary_model TEXT");
     }
+    if (!chapterColumns.some((column) => column.name === "ai_summary_batch")) {
+      database.exec("ALTER TABLE novel_chapters ADD COLUMN ai_summary_batch TEXT");
+    }
     database.exec(
       `CREATE INDEX IF NOT EXISTS idx_novel_chapters_summary_at
         ON novel_chapters(work_id, ai_summary_at)`,

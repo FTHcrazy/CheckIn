@@ -20,6 +20,7 @@ import {
 import { useAiConfig } from "../../hooks/useAiConfig";
 import { listOllamaModels, openAiKeyPage } from "@/shared/ai/ai-client";
 import { AI_PROVIDER_PRESETS, keyPageOf } from "@/shared/ai/ai-providers";
+import { COMPLIANCE_NOTICE, DATA_LEVEL_LABELS } from "@/shared/ai/ai-consent";
 import type { AiProvider } from "@/shared/ai/ai-types";
 import SettingsActionBar from "../SettingsActionBar";
 import "./index.scss";
@@ -73,6 +74,7 @@ export default function AISection() {
     model: string;
     apiKey: string;
     contextLen: number;
+    l3Enabled: boolean;
   }>({
     enabled: false,
     provider: "openai",
@@ -81,6 +83,7 @@ export default function AISection() {
     model: "",
     apiKey: "",
     contextLen: 32000,
+    l3Enabled: false,
   });
 
   // 首次载入 / 保存后回读：把主进程配置映射进草稿
@@ -93,6 +96,7 @@ export default function AISection() {
       endpoint: config.endpoint,
       model: config.model,
       contextLen: config.contextLen,
+      l3Enabled: config.l3Enabled,
       apiKey: "", // 明文 Key 永不回流，这里恒空，保存时留空 = 不改 Key
       preset: matchPreset(config.endpoint, config.model),
     }));
@@ -185,6 +189,7 @@ export default function AISection() {
       config.endpoint !== draft.endpoint ||
       config.model !== draft.model ||
       config.contextLen !== draft.contextLen ||
+      config.l3Enabled !== draft.l3Enabled ||
       (draft.provider === "openai" && draft.apiKey.length > 0)
     );
   }, [config, draft]);
@@ -215,6 +220,7 @@ export default function AISection() {
       endpoint: draft.endpoint,
       model: draft.model,
       contextLen: draft.contextLen,
+      l3Enabled: draft.l3Enabled,
       // 草稿 apiKey 非空才提交（空 = 不改 Key；Ollama 恒空）
       apiKey: draft.provider === "openai" ? draft.apiKey : "",
     });
@@ -234,6 +240,7 @@ export default function AISection() {
         endpoint: draft.endpoint,
         model: draft.model,
         contextLen: draft.contextLen,
+        l3Enabled: draft.l3Enabled,
         apiKey: draft.provider === "openai" ? draft.apiKey : "",
       });
       if (!ok) return;
@@ -510,6 +517,22 @@ export default function AISection() {
               }
             />
           </div>
+
+          {/* L3 总开关（M5）：允许 AI 读取整章内容，是「可撤销承诺」在设置页的唯一兑现处 */}
+          <div className="settings-item">
+            <div className="settings-item__text">
+              <span className="settings-item__label">允许 AI 读取整章内容</span>
+              <span className="settings-item__hint">
+                {DATA_LEVEL_LABELS.L3}。关闭后，章节摘要等需整章数据的功能将隐藏并说明原因
+              </span>
+            </div>
+            <Switch
+              checked={draft.l3Enabled}
+              onChange={(checked) => setDraft((prev) => ({ ...prev, l3Enabled: checked }))}
+            />
+          </div>
+
+          <p className="settings-ai__compliance">{COMPLIANCE_NOTICE}</p>
         </div>
       </section>
 

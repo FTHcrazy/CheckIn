@@ -20,11 +20,13 @@
  */
 import { BrowserWindow, dialog, ipcMain, net, safeStorage, shell } from "electron";
 import fsp from "node:fs/promises";
-import { aiAll, aiGet, aiRun, logAiEvent } from "../ai-db";
+import { aiAll, aiGet, aiRun, logAiEvent, trimAiLogs } from "../ai-db";
 import { logAlways } from "../logger";
 import { resolveWindowName } from "./log-handlers";
 import { keyPageOf } from "../../src/shared/ai/ai-providers";
 import { promptVersionOf } from "../../src/shared/ai/context/prompt/registry";
+import { AiStreamError, setAiStreamRequester } from "./ai-stream";
+import { issueAiStreamToken } from "../ai-stream-token";
 
 // ── 配置项 key 约定（ai_config.key）──
 const KEY_PROVIDER = "provider"; // "openai" | "ollama"
@@ -82,6 +84,12 @@ export interface AiGenerateRequest {
   temperature?: number;
   /** 功能意图（naming / polish / test …），仅用于调用日志归类 */
   intent?: string;
+  /**
+   * L3 授权范围（chapter / selection / recent3），仅 L3 功能传。
+   * 与 `src/shared/ai/ai-types.ts` 的 `AiGenerateRequest` 保持一致（两份 DTO 一对一）。
+   * 原样落 `ai_event.scope`：范围决定实际发多少正文，不落台账就没法统计。
+   */
+  scope?: string;
 }
 
 export interface AiGenerateData {
@@ -89,6 +97,8 @@ export interface AiGenerateData {
   text: string;
   /** 起名场景：解析出的名字列表；非起名场景为空数组 */
   items: string[];
+  /** 实际使用的模型名（G8-③：随生成响应回带，省去渲染层二次 getAiConfig 取 model） */
+  model: string;
 }
 
 /** 一条 AI 调用日志（ai_log 表行，见 ai-context-and-output-spec.md 第八节） */
@@ -150,7 +160,7 @@ function readConfigInternal(): {
       apiKey = "";
     }
   }
-    return { enabled, provider, endpoint, model, apiKey, contextLen, l3Enabled };
+  return { enabled, provider, endpoint, model, apiKey, contextLen, l3Enabled };
 }
 
 /** 把 API Key 加密后落库（空串表示清空 Key） */
@@ -223,6 +233,53 @@ function buildOllamaRequest(cfg: ReturnType<typeof readConfigInternal>, req: AiG
       stream: false,
       options: req.temperature != null ? { temperature: req.temperature } : undefined,
     }),
+  };
+}
+
+/**
+ * 构造流式请求（M4 / B5）：与 buildOpenAiRequest / buildOllamaRequest 同构，
+ * 唯一差别是 `stream: true`（OpenAI 走 SSE；Ollama 走逐行 JSON 流）。
+ *
+ * 端点 URL 与 body 均不含 Key —— Key 只在 Authorization header（OpenAI）或
+ * 根本无需（Ollama），守卫断言钉死「端点 URL 不含 Key」这条不变量。
+ */
+function buildStreamRequest(
+  cfg: ReturnType<typeof readConfigInternal>,
+  req: { system?: string; prompt: string; temperature?: number },
+): { url: string; headers: Record<string, string>; body: string; provider: AiProvider } {
+  if (cfg.provider === "ollama") {
+    const base = cfg.endpoint.trim().replace(/\/+$/, "");
+    const prompt = req.system ? `${req.system}\n\n${req.prompt}` : req.prompt;
+    return {
+      url: `${base}/api/generate`,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: cfg.model,
+        prompt,
+        stream: true,
+        options: req.temperature != null ? { temperature: req.temperature } : undefined,
+      }),
+      provider: "ollama",
+    };
+  }
+  const endpoint = normalizeOpenAiEndpoint(cfg.endpoint);
+  const messages: Array<{ role: string; content: string }> = [];
+  if (req.system) messages.push({ role: "system", content: req.system });
+  messages.push({ role: "user", content: req.prompt });
+  return {
+    url: `${endpoint}/chat/completions`,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${cfg.apiKey}`,
+      "User-Agent": "CheckIn",
+    },
+    body: JSON.stringify({
+      model: cfg.model,
+      messages,
+      temperature: req.temperature,
+      stream: true,
+    }),
+    provider: "openai",
   };
 }
 
@@ -359,10 +416,12 @@ function appendAiLog(entry: {
         promptVersion,
       ],
     );
+    // 保留期（30 天）在写入后顺带兜一次，内部按小时节流，不会每条都扫索引
+    trimAiLogs();
   } catch (error) {
-    // 日志写入失败不应影响主调用结果，静默忽略（但留一行 console 便于排查）
+    // 日志写入失败不应影响主调用结果，降级成一条 warn（走 logAlways，不受 level 过滤）
     const raw = error instanceof Error ? error.message : String(error);
-    console.warn(`[ai-log] 写入失败: ${raw}`);
+    logAlways("warn", entry.window, "ai", `ai_log 写入失败: ${raw}`);
   }
 }
 
@@ -415,9 +474,14 @@ async function generateInternal(
       scope: fields?.scope,
     });
 
+  // L3 授权范围由调用方给（仅 L3 功能有值），原样落 ai_event.scope
+  const scope = req.scope?.trim() || undefined;
+
   writeEvent("trigger", {
-    // 只记字数不记正文（合规白名单，见 ai-domain-guard.test.ts）
-    charCount: req.prompt.length,
+    // 只记字数不记正文（合规白名单，见 ai-domain-guard.test.ts）。
+    // 口径 = 实际送模型的全部输入字数：用户提示词 + 装着书本上下文的 system 提示词。
+    charCount: (req.prompt?.length ?? 0) + (req.system?.length ?? 0),
+    scope,
   });
 
   if (!cfg.enabled) {
@@ -469,13 +533,18 @@ async function generateInternal(
 
     const raw = await response.text();
     const text = cfg.provider === "ollama" ? parseOllamaResponse(raw) : parseOpenAiResponse(raw);
-    const items = splitNameItems(text);
-    writeLog({ rawOutput: text, parsedOutput: JSON.stringify(items) });
+    // item_count 只对起名（json-array 语义）有意义：润色/变换/续写/摘要都是 text
+    // 输出，用 splitNameItems 去切会产生无意义噪声（review G6）。结构化条数应由
+    // 渲染层 aiGenerateStructured 回传，主进程不该替 text 输出猜「条数」。
+    const isNaming = intent === "naming";
+    const items = isNaming ? splitNameItems(text) : [];
+    writeLog({ rawOutput: text, parsedOutput: isNaming ? JSON.stringify(items) : undefined });
     writeEvent("success", {
       durationMs: Date.now() - startedAt,
-      itemCount: items.length,
+      ...(isNaming ? { itemCount: items.length } : {}),
+      scope,
     });
-    return { ok: true, data: { text, items } };
+    return { ok: true, data: { text, items, model: cfg.model } };
   } catch (error) {
     const rawMsg = error instanceof Error ? error.message : String(error);
     const code: AiErrorCode =
@@ -613,6 +682,122 @@ async function testConnectionInternal(windowName: string): Promise<AiResult<{ me
 // ── 注册 ──
 
 export function registerAiHandlers(): void {
+  // ── 流式端点的一次性令牌（PRD 红线 C）──────────────────────────────
+  // 渲染层每次发起流式请求前领一张，`ai-stream.ts` 的 protocol.handle
+  // 核销即失效。**不要**改成「读配置时顺带下发」—— 令牌必须现领现用。
+  ipcMain.handle("ai-stream-token", () => issueAiStreamToken());
+
+  // ── 注入流式请求器（M4 / B5）：ai-stream.ts 的 protocol.handle 端点
+  // 通过这里拿到「读配置 + 发流式请求」的能力，Key 解密全程在本文件内。
+  // 复用 readConfigInternal + buildStreamRequest，与主进程非流式通道同源。
+  //
+  // 观测（2.10.1 补）：流式与非流式必须落同一套 `ai_log` / `ai_event`，
+  // 否则「AI 记录」页看不到续写、看板上 continuation 只有 adopt/cancel
+  // 没有 trigger → 采纳率的分母凭空消失。这里负责 trigger 与失败；
+  // 「流什么时候读完 / 被中断」只有 ai-stream 知道，经 `onStreamEnd` 回传。
+  setAiStreamRequester(async (body) => {
+    const intent = body.intent?.trim() || "continuation";
+    const startedAt = Date.now();
+
+    let cfg: ReturnType<typeof readConfigInternal>;
+    try {
+      cfg = readConfigInternal();
+    } catch {
+      // ai.db 未就绪（未登录 / 正在退出）：此时 logAiEvent 也是 no-op，直接归一
+      throw new AiStreamError("not_configured", aiErrorMessage("not_configured"), 503);
+    }
+
+    /** 统一的落日志入口（与 generateInternal 的 writeLog 同字段口径） */
+    const writeLog = (fields: {
+      rawOutput?: string;
+      errorCode?: string;
+      errorMessage?: string;
+    }): void =>
+      appendAiLog({
+        window: body.windowName,
+        intent,
+        provider: cfg.provider,
+        model: cfg.model || "(未设置)",
+        systemPrompt: body.system,
+        userPrompt: body.prompt,
+        durationMs: Date.now() - startedAt,
+        ...fields,
+      });
+
+    /** 统一的落事件入口（只记元数据） */
+    const writeEvent = (
+      step: "trigger" | "success" | "fallback" | "cancel",
+      fields?: { durationMs?: number; errorCode?: string; charCount?: number },
+    ): void =>
+      logAiEvent({
+        intent,
+        step,
+        provider: cfg.provider || undefined,
+        model: cfg.model?.trim() || undefined,
+        promptVer: promptVersionOf(intent) || undefined,
+        durationMs: fields?.durationMs,
+        errorCode: fields?.errorCode,
+        charCount: fields?.charCount,
+      });
+
+    /** 归一失败：记日志 + 记 fallback，再把「带 code 的中文错误」抛给 ai-stream */
+    const fail = (code: AiErrorCode, message = aiErrorMessage(code)): never => {
+      writeLog({ errorCode: code, errorMessage: message });
+      writeEvent("fallback", { durationMs: Date.now() - startedAt, errorCode: code });
+      throw new AiStreamError(code, message, code === "not_configured" ? 400 : 502);
+    };
+
+    writeEvent("trigger", {
+      // 与非流式同口径：送模型的总输入字数（用户提示词 + system 上下文）
+      charCount: (body.prompt?.length ?? 0) + (body.system?.length ?? 0),
+    });
+
+    if (!cfg.enabled) fail("not_configured");
+    if (!cfg.endpoint.trim()) fail("invalid_endpoint");
+    if (cfg.provider === "openai" && !cfg.apiKey) fail("missing_key");
+    if (!cfg.model.trim()) fail("model_not_found", "未指定模型名，请先在设置里配置");
+
+    const spec = buildStreamRequest(cfg, body);
+    let response: Response;
+    try {
+      // 复用 net.fetch（Chromium 网络栈，自动跟随系统代理）。不设
+      // AbortSignal.timeout：模型逐字输出期间不能按总时长截断；中断由渲染层
+      // AbortController 经 protocol.handle 请求生命周期联动释放连接。
+      response = await net.fetch(spec.url, {
+        method: "POST",
+        headers: spec.headers,
+        body: spec.body,
+        redirect: "follow",
+      });
+    } catch (error) {
+      const rawMsg = error instanceof Error ? error.message : String(error);
+      const code: AiErrorCode =
+        cfg.provider === "ollama" && /ECONNREFUSED|fetch failed/i.test(rawMsg)
+          ? "ollama_unavailable"
+          : networkErrorToCode(rawMsg);
+      return fail(code);
+    }
+
+    if (!response.ok) {
+      fail(httpStatusToError(response.status));
+    }
+
+    return {
+      response,
+      provider: spec.provider,
+      onStreamEnd: (outcome, output) => {
+        const durationMs = Date.now() - startedAt;
+        if (outcome === "cancelled") {
+          // 用户主动中断不算失败：只记事件，不进 ai_log（输出不完整，没有排障价值）
+          writeEvent("cancel", { durationMs });
+          return;
+        }
+        writeLog({ rawOutput: output });
+        writeEvent("success", { durationMs });
+      },
+    };
+  });
+
   // 读配置（Key 永不返回：只回 hasApiKey 布尔）
   ipcMain.handle("ai-config-get", async (): Promise<AiConfig> => {
     const cfg = readConfigInternal();
@@ -741,7 +926,7 @@ export function registerAiHandlers(): void {
       return { ok: true };
     } catch (error) {
       const raw = error instanceof Error ? error.message : String(error);
-      console.warn(`[ai-log] 清空失败: ${raw}`);
+      logAlways("warn", "main", "ai", `ai_log 清空失败: ${raw}`);
       return { ok: false };
     }
   });

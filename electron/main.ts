@@ -45,6 +45,7 @@ import { registerNovelExportHandlers } from "./handlers/novel-export-handlers";
 import { registerNovelDbBridge } from "./novel-db";
 import { registerAiDbBridge } from "./ai-db";
 import { registerAiHandlers } from "./handlers/ai-handlers";
+import { registerAiStreamEndpoint } from "./handlers/ai-stream";
 import {
   getCachedUser,
   logoutUser,
@@ -184,6 +185,23 @@ protocol.registerSchemesAsPrivileged([
     // 源跨协议加载会在 scheme 层直接被拒（"only supported for protocol
     // schemes: app, chrome..."），CORS 响应头根本没有出场机会。
     scheme: "novel-font",
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      stream: true,
+    },
+  },
+  {
+    // AI 流式端点（M4 / B5）：渲染层 fetch `ai-stream://local/api/chat` 拿标准
+    // ReadableStream 读 SSE，主进程 protocol.handle 把 net.fetch 的模型响应流
+    // 原样桥接（预研点 4「流派 3」）。独立 scheme 不污染 app:// 的文件读取热路径。
+    // `stream: true` 是流式响应体的前置；standard + supportFetchAPI 让渲染层
+    // 能用标准 fetch 读流。corsEnabled 只为「非 app:// 来源（dev 的 vite）也能
+    // 发请求」，**不作为身份凭证**：实测 protocol.handle 收到的请求根本不含
+    // Origin 头，端点身份一律由一次性令牌判定（见 electron/ai-stream-token.ts）。
+    scheme: "ai-stream",
     privileges: {
       standard: true,
       secure: true,
@@ -1133,6 +1151,10 @@ app.whenReady().then(() => {
   if (EDITION !== "lite") {
     registerAiDbBridge();
     registerAiHandlers();
+    // AI 流式端点（M4 / B5）：在 registerAiHandlers 之后注册 —— 它依赖
+    // ai-handlers 注入的流式请求器（setAiStreamRequester）。必须在 app ready
+    // 后调用（protocol.handle 前置），本注册段在 whenReady 内。
+    registerAiStreamEndpoint();
   }
   // 关系图提交（R27 / S3）：单事务写「新建关系 + 备注 + 画布文档」，
   // 成功后由本 handler 广播 novel-links-changed 回主窗口（W-15）。

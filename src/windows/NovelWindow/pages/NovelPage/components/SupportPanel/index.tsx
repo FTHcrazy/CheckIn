@@ -103,6 +103,10 @@ interface SupportPanelProps {
   namingFavorites: import("../../types").NameFavorite[];
   /** AI 起名的本书上下文快照（书名 / 要素 / 境界）；缺省时退化为仅用已用名 */
   namingBook?: import("@/shared/ai/context").BookSnapshot;
+  /** AI 是否可用（M8 门控）：false 时「AI 起名」按钮禁用并说明原因（本地起名照常） */
+  aiAvailable?: boolean;
+  /** AI 不可用的一句话说明 */
+  aiUnavailableText?: string;
   /** 轻提示：规划中的工具点了也要有回应（UI-09），复用页面级 toast */
   onNotify: (text: string, tone?: import("@/shared/novel/use-auto-toast").ToastTone) => void;
   /**
@@ -193,6 +197,8 @@ export default function SupportPanel({
   namingExclude,
   namingFavorites,
   namingBook,
+  aiAvailable = true,
+  aiUnavailableText = "",
   onNotify,
   chapters = [],
   toolSub: controlledToolSub,
@@ -601,6 +607,8 @@ export default function SupportPanel({
                 favorites={namingFavorites}
                 actions={namingActions}
                 book={namingBook}
+                aiAvailable={aiAvailable}
+                aiUnavailableText={aiUnavailableText}
               />
             ) : toolSub === "sensitive" ? (
               <SensitivePanel
