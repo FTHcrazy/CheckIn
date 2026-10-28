@@ -187,15 +187,29 @@ describe("assembleContinuationStreamSpec", () => {
     expect(spec.outputFormat).toEqual(CONTINUATION_STREAM_OUTPUT_FORMAT);
   });
 
-  it("流式输出契约为单段正文（text），直接顺着前文往下写、不重复前文", () => {
+  it("流式输出契约为正文（text），直接顺着前文往下写、不重复前文", () => {
     const spec = assembleContinuationStreamSpec(collectBookContext(snapshot, "continuation"), {
       before: "前文。",
     });
     expect(spec.outputFormat.kind).toBe("text");
-    expect(spec.prompt).toContain("接着往下写一段");
-    expect(spec.system).toContain("直接顺着前文往下写一段");
+    expect(spec.prompt).toContain("接着往下写正文");
+    expect(spec.system).toContain("直接顺着前文往下写正文");
     expect(spec.system).toContain("不要重复");
     expect(spec.system).toContain("保持前文的叙事视角");
+  });
+
+  it("分段口径与正文一致：多段、单换行、不空行、不手动缩进（R-AI-11）", () => {
+    // 事故：模板只写「单段 300–600 字」→ 续写恒为一大整段，
+    // 插进按「一段一行」排版的正文里，缩进与段距全错。
+    const spec = assembleContinuationStreamSpec(collectBookContext(snapshot, "continuation"), {
+      before: "前文。",
+    });
+    expect(spec.system).toContain("2–4 个自然段");
+    expect(spec.system).toContain("一个换行");
+    expect(spec.system).toContain("不要空行");
+    expect(spec.system).toContain("不要手动缩进");
+    // 反向断言：旧的「单段」口径不许回来
+    expect(spec.system).not.toContain("单段控制在");
   });
 
   it("有 outlineNode 时注入当前剧情节点，缺失时静默省略（降级而非报错）", () => {

@@ -51,6 +51,11 @@ interface ChapterTreeProps {
   onDeleteVolume: (volumeId: string) => void;
   /** 生成 / 查看本章 AI 摘要（R-AI-09） */
   onOpenSummary: (chapterId: string) => void;
+  /**
+   * 是否在行内渲染 AI 摘要入口（REQ-063）：由页面层按「AI 是否该出现」透传，
+   * 默认 true 保持既有行为。见 `ChapterTreeItem` 的同名 prop。
+   */
+  showSummary?: boolean;
 }
 
 /** 扁平行模型：卷头行 + 已展开的章行（Virtuoso 只接受一维列表） */
@@ -91,6 +96,7 @@ export default function ChapterTree({
   onRenameVolume,
   onDeleteVolume,
   onOpenSummary,
+  showSummary = true,
 }: ChapterTreeProps) {
   const [keyword, setKeyword] = useState("");
   /** 折叠的卷 id 集合（默认全部展开） */
@@ -389,6 +395,7 @@ export default function ChapterTree({
                   onRename={onRenameChapter}
                   onRequestDelete={handleRequestDelete}
                   onOpenSummary={onOpenSummary}
+                  showSummary={showSummary}
                 />
               )
             }

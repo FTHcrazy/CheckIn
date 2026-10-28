@@ -33,6 +33,14 @@ interface ChapterTreeItemProps {
   onRequestDelete: (chapterId: string, anchor: HTMLElement | null) => void;
   /** 生成 / 查看本章 AI 摘要（R-AI-09） */
   onOpenSummary: (chapterId: string) => void;
+  /**
+   * 是否渲染行内 AI 摘要入口（REQ-063）。false 时这颗闪电整个不渲染。
+   *
+   * 为什么不是「禁用」：AI 总开关关掉后，用户要的是一个没有 AI 的编辑器；
+   * 每行留一颗灰闪电（长篇里是几千颗）既不美观也误导 —— 它看起来像坏了。
+   * 默认 true：独立使用本行组件时行为不变。
+   */
+  showSummary?: boolean;
 }
 
 /**
@@ -70,6 +78,7 @@ export default function ChapterTreeItem({
   onRename,
   onRequestDelete,
   onOpenSummary,
+  showSummary = true,
 }: ChapterTreeItemProps) {
   const status = CHAPTER_STATUS_META[chapter.status];
   const [titleEditing, setTitleEditing] = useState(false);
@@ -184,21 +193,24 @@ export default function ChapterTreeItem({
           <span className="nv-chapter__title">{chapter.title}</span>
         </button>
         {/* AI 摘要入口：有摘要时实心（点击查看），无摘要时空心（点击生成）。
-            悬浮展开与删除按钮同范式 */}
-        <button
-          type="button"
-          className={`nv-chapter__summary${chapter.aiSummary ? " has-summary" : ""}`}
-          aria-label={
-            chapter.aiSummary ? `查看本章 AI 摘要` : `生成本章 AI 摘要`
-          }
-          title={chapter.aiSummary ? "查看 AI 摘要" : "生成 AI 摘要"}
-          onClick={(event) => {
-            event.stopPropagation();
-            onOpenSummary(chapter.id);
-          }}
-        >
-          <ThunderboltOutlined />
-        </button>
+            悬浮展开与删除按钮同范式。REQ-063：`showSummary=false` 时整颗不渲染
+            （AI 关掉后不留灰按钮 —— 一行一颗、长篇几千颗，看着像坏了） */}
+        {showSummary ? (
+          <button
+            type="button"
+            className={`nv-chapter__summary${chapter.aiSummary ? " has-summary" : ""}`}
+            aria-label={
+              chapter.aiSummary ? `查看本章 AI 摘要` : `生成本章 AI 摘要`
+            }
+            title={chapter.aiSummary ? "查看 AI 摘要" : "生成 AI 摘要"}
+            onClick={(event) => {
+              event.stopPropagation();
+              onOpenSummary(chapter.id);
+            }}
+          >
+            <ThunderboltOutlined />
+          </button>
+        ) : null}
         {/* 删除按钮行内排在字数之前：悬浮时宽度展开，字数只平移不被遮盖。
             确认浮层由 ChapterTree 的唯一 Popconfirm 承担（本行只上报意图） */}
         <button

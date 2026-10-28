@@ -103,6 +103,8 @@ interface SupportPanelProps {
   namingFavorites: import("../../types").NameFavorite[];
   /** AI 起名的本书上下文快照（书名 / 要素 / 境界）；缺省时退化为仅用已用名 */
   namingBook?: import("@/shared/ai/context").BookSnapshot;
+  /** AI 入口是否**存在**（REQ-063）：透传给起名面板，false 时「AI 起名」按钮不渲染 */
+  aiVisible?: boolean;
   /** AI 是否可用（M8 门控）：false 时「AI 起名」按钮禁用并说明原因（本地起名照常） */
   aiAvailable?: boolean;
   /** AI 不可用的一句话说明 */
@@ -197,6 +199,7 @@ export default function SupportPanel({
   namingExclude,
   namingFavorites,
   namingBook,
+  aiVisible = true,
   aiAvailable = true,
   aiUnavailableText = "",
   onNotify,
@@ -607,6 +610,7 @@ export default function SupportPanel({
                 favorites={namingFavorites}
                 actions={namingActions}
                 book={namingBook}
+                aiVisible={aiVisible}
                 aiAvailable={aiAvailable}
                 aiUnavailableText={aiUnavailableText}
               />

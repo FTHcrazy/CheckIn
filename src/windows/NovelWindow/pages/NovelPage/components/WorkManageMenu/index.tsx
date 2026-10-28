@@ -49,6 +49,14 @@ interface WorkManageMenuProps {
   onRename: (name: string) => boolean;
   /** 设置当前作品题材（空串 = 清空）：AI 起名 / 润色的风格锚点 */
   onSetGenre: (genre: string) => boolean;
+  /**
+   * AI 入口是否**存在**（REQ-063）：false 时题材相关文案不再提 AI。
+   *
+   * 题材这项设置本身与 AI 无关（它仍会影响用字风格），所以不隐藏题材项，
+   * 只把「题材用于 AI 起名与润色的风格参考」这类**提示**改成中性说法 ——
+   * 总开关关掉后，页面上不该再有任何一句提示暗示这里会调模型。
+   */
+  aiVisible?: boolean;
   /** 删除当前作品（确认后调用） */
   onDelete: () => void;
   /** 一键重置为模板书籍（调试，确认后调用） */
@@ -82,6 +90,7 @@ export default forwardRef<WorkManageMenuHandle, WorkManageMenuProps>(
       onExportBook,
       onExportVolume,
       onExportChapter,
+      aiVisible = true,
     }: WorkManageMenuProps,
     ref,
   ) {
@@ -259,7 +268,9 @@ export default forwardRef<WorkManageMenuHandle, WorkManageMenuProps>(
               }
             />
             <p className="nv-work-menu__genre-hint">
-              题材用于 AI 起名与润色的风格参考，跳过不影响写作
+              {aiVisible
+                ? "题材用于 AI 起名与润色的风格参考，跳过不影响写作"
+                : "题材用于统一用字风格，跳过不影响写作"}
             </p>
           </>
         ) : null}
@@ -286,7 +297,9 @@ export default forwardRef<WorkManageMenuHandle, WorkManageMenuProps>(
           autoFocus
         />
         <p className="nv-work-menu__genre-hint">
-          AI 起名与润色会参考题材调整用字风格；留空保存即清除题材
+          {aiVisible
+            ? "AI 起名与润色会参考题材调整用字风格；留空保存即清除题材"
+            : "用字风格会参考题材；留空保存即清除题材"}
         </p>
       </Modal>
 

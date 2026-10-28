@@ -65,15 +65,21 @@
   text-align: center;
 }
 
+/* 行内左右内边距 = 上方指标卡的内文内边距（14px）。
+   曾经是 `padding: 8px 0`：于是意图标签的左缘紧贴卡片边框、右侧「采纳 N」
+   顶到边，与上方的指标卡（内文离边框 14px）错开一截 —— 看起来像「这行缺边距」。
+   分隔线仍然拉满整行宽（padding 在行盒内部，border 不受影响），
+   上下留 8px 保证行高与列表密度不变。 */
 .settings-usage__row {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 0;
+  padding: 8px 14px;
   border-bottom: 1px solid var(--app-border);
   font-size: 12px;
   line-height: 1.6;
 
+  /* 末行不再画分隔线：否则它下面紧跟着卡片下沿，会读成「多出一条没内容的行」 */
   &:last-child {
     border-bottom: none;
   }

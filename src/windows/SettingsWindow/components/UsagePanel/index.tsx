@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { App, Button, Empty, Spin, Tag } from "antd";
 import { DownloadOutlined, ReloadOutlined } from "@ant-design/icons";
 import { exportAiDiagnostics, getAiEventStats } from "@/shared/ai/ai-client";
-import { AI_INTENT_LABELS } from "@/shared/ai/context/prompt/registry";
+import { intentLabel } from "@/shared/ai/intent-labels";
 import type { AiEventStatsDTO } from "@/shared/ai/ai-types";
 import "./index.scss";
 
@@ -15,14 +15,11 @@ import "./index.scss";
  *
  * ⚠️ 采纳率的含义：`adopt` 事件由各 AI 入口在「用户确认采纳产出」时上报，
  * 若还没接采纳上报的功能，采纳率会显示为 0 —— 这是**真实数据**，不伪造。
+ *
+ * ⚠️ 意图中文一律走 `shared/ai/intent-labels`（REQ-064）：`ai_event.intent` 里
+ * 会出现 `transform:tone` 这类带子类型的值，本页只认基础意图时会直接显示原始
+ * 字符串。这份表与「AI 记录」页必须同源，否则两页对同一条记录的叫法会分叉。
  */
-
-/** 意图 → 中文（单一产地 AI_INTENT_LABELS，G7；补历史旧值兜底） */
-const INTENT_LABEL: Record<string, string> = {
-  ...AI_INTENT_LABELS,
-  test: "连接测试",
-  generate: "生成（旧）",
-};
 
 /** 百分比展示：0.333 → 33%；NaN / 空值归一为 0 */
 function percent(rate: number): string {
@@ -128,7 +125,7 @@ export default function UsagePanel() {
                   stats.byIntent.map((row) => (
                     <div className="settings-usage__row" key={row.intent}>
                       <Tag className="settings-usage__intent">
-                        {INTENT_LABEL[row.intent] ?? row.intent}
+                        {intentLabel(row.intent)}
                       </Tag>
                       <span className="settings-usage__row-count">{row.calls} 次</span>
                       <span className="settings-usage__row-adopts">

@@ -68,7 +68,7 @@ interface EditorPaneProps {
   /** 全局标注层开关（PRD §2 风险对策）：关闭时即使有词库也不渲染高亮/悬浮卡 */
   annotationOn: boolean;
   onSelectionChange: (selection: EditorSelection | null) => void;
-  /** 选区非空时右键正文：坐标相对 .nv-page__stage，已按菜单尺寸 clamp */
+  /** 选区非空时右键正文：坐标相对 .nv-page__stage（落位由 EntityContextMenu 实测夹取） */
   onContextMenu: (x: number, y: number) => void;
   onTermHover: (entityId: string, x: number, y: number) => void;
   onTermLeave: () => void;
@@ -662,15 +662,16 @@ export default function EditorPane({
     );
     view.contentDOM.addEventListener("compositionend", handleCompositionEnd);
 
-    // 选区非空时右键正文 → 弹出标注菜单：坐标以鼠标为准，按菜单尺寸
-    // （约 190×320）clamp 进 stage，交给上层渲染 EntityContextMenu
+    // 选区非空时右键正文 → 弹出标注菜单：坐标以鼠标为准（相对 stage），
+    // 具体落位交给 EntityContextMenu 按实测尺寸自行夹取——这里不再按
+    // 「约 190×320」估算，菜单长到近 500px 后估算值会把底部菜单项顶出 stage
     const handleContextMenu = (event: MouseEvent): void => {
       if (view.state.selection.main.empty) return;
       event.preventDefault();
       const stageRect = stageRectOf(host);
       handlersRef.current.onContextMenu(
-        clamp(event.clientX - stageRect.left, 8, stageRect.width - 208),
-        clamp(event.clientY - stageRect.top, 44, stageRect.height - 320),
+        event.clientX - stageRect.left,
+        event.clientY - stageRect.top,
       );
     };
     view.contentDOM.addEventListener("contextmenu", handleContextMenu);

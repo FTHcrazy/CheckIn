@@ -5,6 +5,7 @@ import {
   alignParagraphBreaks,
   buildOutputInstruction,
   extractJsonArray,
+  normalizeContinuationText,
   parseOutput,
   stripCodeFence,
 } from "./output-spec";
@@ -182,5 +183,42 @@ describe("alignParagraphBreaks", () => {
 
   it("空串 → 空串（调用方据此判定「这次没产出」）", () => {
     expect(alignParagraphBreaks("   \n\n  ", original)).toBe("");
+  });
+});
+
+describe("normalizeContinuationText", () => {
+  const original = "第一段。\n第二段。";
+
+  it("剥掉模型自己加的全角/半角缩进（首行缩进由编辑器 CSS 负责）", () => {
+    const raw = "　　他推门而入。\n  风从窗缝里灌进来。";
+    expect(normalizeContinuationText(raw, original)).toBe(
+      "他推门而入。\n风从窗缝里灌进来。",
+    );
+  });
+
+  it("空行口径跟前文一致：前文单换行分段 → 输出也折叠成单换行", () => {
+    const raw = "　　他推门而入。\n\n　　风从窗缝里灌进来。";
+    expect(normalizeContinuationText(raw, original)).toBe(
+      "他推门而入。\n风从窗缝里灌进来。",
+    );
+  });
+
+  it("前文本来就空行分段 → 保留空行（那是作者自己的写法）", () => {
+    const raw = "他推门而入。\n\n风从窗缝里灌进来。";
+    expect(normalizeContinuationText(raw, "第一段。\n\n第二段。")).toBe(raw);
+  });
+
+  it("只有全角空格的「空行」也算空行，不会留一段空白正文", () => {
+    const raw = "他推门而入。\n　　\n风从窗缝里灌进来。";
+    expect(normalizeContinuationText(raw, original)).toBe(
+      "他推门而入。\n风从窗缝里灌进来。",
+    );
+  });
+
+  it("只动空白，不动文字：标点与句子原样保留", () => {
+    const raw = "　　「你来了。」他说，\n　　把伞靠在门边。";
+    expect(normalizeContinuationText(raw, original)).toBe(
+      "「你来了。」他说，\n把伞靠在门边。",
+    );
   });
 });

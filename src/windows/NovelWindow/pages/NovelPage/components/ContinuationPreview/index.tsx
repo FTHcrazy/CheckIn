@@ -4,6 +4,7 @@ import {
   ReloadOutlined,
   ThunderboltOutlined,
 } from "@ant-design/icons";
+import { useTypewriter } from "./useTypewriter";
 import "./index.scss";
 
 interface ContinuationPreviewProps {
@@ -46,6 +47,11 @@ export default function ContinuationPreview({
   onClose,
 }: ContinuationPreviewProps) {
   const hasText = text.trim().length > 0;
+  // 逐字上屏：网络块可能一次就是半段，这里摊平成打字机（REQ-058）
+  const { shown, revealing } = useTypewriter(text);
+  // 还没揭示完（或流还在跑）就显示光标；插入按钮等全部揭示完才可用，
+  // 否则作者点了「插入」会看到浮层里只有半截字、正文却整段插进去
+  const writing = streaming || revealing;
 
   return (
     <>
@@ -72,9 +78,9 @@ export default function ContinuationPreview({
             <div className="nv-cont__text">
               {hasText ? (
                 <>
-                  {text}
-                  {/* 流式进行中：末尾给一个闪烁光标，暗示「还在写」 */}
-                  {streaming && <span className="nv-cont__caret" aria-hidden="true" />}
+                  {shown}
+                  {/* 还在上屏：末尾给一个闪烁光标，暗示「还在写」 */}
+                  {writing && <span className="nv-cont__caret" aria-hidden="true" />}
                 </>
               ) : (
                 "（本次没有产出续写内容）"
@@ -108,8 +114,14 @@ export default function ContinuationPreview({
           <Button
             className="nv-cont__confirm"
             onClick={() => onConfirm(text)}
-            disabled={!hasText || streaming}
-            title={hasText ? "插入到光标处" : "还没有可插入的内容"}
+            disabled={!hasText || writing}
+            title={
+              !hasText
+                ? "还没有可插入的内容"
+                : writing
+                  ? "等文字上屏完再插入"
+                  : "插入到光标处"
+            }
           >
             插入
           </Button>

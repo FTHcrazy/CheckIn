@@ -30,6 +30,13 @@ const TOP_BAR = readFileSync(
   ),
   "utf8",
 );
+const CONTINUE_FAB = readFileSync(
+  path.resolve(
+    process.cwd(),
+    "src/windows/NovelWindow/pages/NovelPage/components/ContinueFab/index.tsx",
+  ),
+  "utf8",
+);
 const CTX_MENU = readFileSync(
   path.resolve(
     process.cwd(),
@@ -56,9 +63,23 @@ describe("AI 可用性门控接线（G2 守卫）", () => {
     expect(NOVEL_PAGE).toContain("aiAvailability");
   });
 
-  it("续写入口（顶栏）接收 aiAvailable 并据其禁用", () => {
-    expect(TOP_BAR).toContain("aiAvailable");
-    expect(TOP_BAR).toMatch(/disabled=\{!aiAvailable\}/);
+  it("续写入口（正文右下角悬浮按钮，REQ-061）接收 aiAvailable 并据其禁用", () => {
+    // 入口从顶栏搬到悬浮按钮，但「不可用即禁用 + 说明原因」的判据不变
+    expect(CONTINUE_FAB).toContain("aiAvailable");
+    expect(CONTINUE_FAB).toMatch(/disabled=\{!aiAvailable\}/);
+    expect(CONTINUE_FAB).toContain("aiUnavailableText");
+    // 顶栏不再放这颗闪电（否则等于两个入口、两份门控）
+    expect(TOP_BAR).not.toContain("onContinue");
+    expect(TOP_BAR).not.toContain("ThunderboltOutlined");
+    // 页面层真的把它挂上了，而且走的是「先确认再发起」的入口
+    expect(NOVEL_PAGE).toContain("<ContinueFab");
+    expect(NOVEL_PAGE).toContain("requestContinuation");
+    // 阅读模式 / 无章节时不挂载：这两种情况下没有「光标前的前文」，
+    // 留一颗点了只会提示「先到正文里点一下」的按钮是噪音。
+    // （REQ-063 又加了一层「AI 关掉就整颗不渲染」，判据是 hidden —— 见
+    // `ai-hidden-guard.test.ts`；这里只钉「三个不出现的情形并列在同一个条件里」）
+    expect(NOVEL_PAGE).toMatch(/!aiAvailability\.hidden\s*&&\s*!editor\.settings\.readMode/);
+    expect(NOVEL_PAGE).toMatch(/!editor\.settings\.readMode\s*&&\s*data\.activeChapter/);
   });
 
   it("润色 / 变换入口（右键菜单）接收 aiAvailable 并据其禁用", () => {

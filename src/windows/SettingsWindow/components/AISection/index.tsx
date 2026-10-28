@@ -284,7 +284,7 @@ export default function AISection() {
               <span className="settings-item__hint">
                 {draft.enabled
                   ? `开启中：写作工具将调用 ${providerLabel}${draft.model ? ` · ${draft.model}` : ""}`
-                  : "开启后，写作工具中的起名等能力才会调用模型"}
+                  : "关闭中：写作工具里的 AI 入口与提示全部不显示；开启后才会调用模型"}
               </span>
             </div>
             <Switch

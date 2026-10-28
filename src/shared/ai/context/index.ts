@@ -71,6 +71,7 @@ export {
   alignParagraphBreaks,
   buildOutputInstruction,
   extractJsonArray,
+  normalizeContinuationText,
   parseOutput,
   stripCodeFence,
   type AiEntry,

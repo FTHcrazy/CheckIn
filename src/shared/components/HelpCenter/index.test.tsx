@@ -29,6 +29,12 @@ describe("HelpCenter", () => {
       target: { value: "续写" },
     });
     expect(screen.getByText("AI 续写")).toBeTruthy();
-    expect(screen.getByText("AI 创作助手")).toBeTruthy(); // 结果里带所属分区
+    // 结果里带所属分区。
+    //
+    // 这里**不能**用 `getByText`（唯一性）：2.12.0 给「AI 总开关」补了一句
+    // 「正文右下角的续写按钮…」，于是「续写」在同一个分区里多命中了一条，
+    // 分区标签会随每条命中各出现一次 —— 那是搜索本来就该有的行为，不是缺陷。
+    // 断言改钉「至少出现一次分区标签」，意图（结果能看出属于哪个分区）不变。
+    expect(screen.getAllByText("AI 创作助手").length).toBeGreaterThan(0);
   });
 });

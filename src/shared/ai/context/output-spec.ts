@@ -310,6 +310,36 @@ export function alignParagraphBreaks(text: string, original: string): string {
 }
 
 /**
+ * 续写正文的格式规整（R-AI-11）
+ *
+ * 续写结果要直接插进正文，格式必须与作者原文**同构**——模型的默认习惯
+ * 恰好两处都不对：
+ *
+ * 1. **手动缩进**：模型爱在每段开头打两个全角空格（`\u3000\u3000`）。本项目的
+ *    首行缩进由编辑器 CSS（`.cm-line { text-indent: 2em }`）统一负责，
+ *    文本里再带一份就是「两个缩进」——导入的书也踩同一个坑；
+ * 2. **空行分段**：模型爱在段与段之间空一行，而本项目的段落是单换行分段
+ *    （「导出 → 再导入」也按单换行切）。多出来的空行会变成正文里的空段落。
+ *
+ * 处理口径：逐行剥掉首尾空白（含全角空格 / 各种 Unicode 空白）后，
+ * 再交给 {@link alignParagraphBreaks} 按**前文**的分段习惯收敛空行。
+ * 只动空白，不合并段落、不增删句子。
+ */
+export function normalizeContinuationText(text: string, original = ""): string {
+  const stripped = text
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((line) =>
+      line
+        // \s 在 JS 里已覆盖 \u3000 / \u00a0 / \u2000-\u200a / \u202f / \u205f / \ufeff
+        .replace(/^[\s\u200b]+/, "")
+        .replace(/\s+$/, ""),
+    )
+    .join("\n");
+  return alignParagraphBreaks(stripped, original);
+}
+
+/**
  * 解析模型返回文本。
  *
  * text 格式无结构需求，entries 恒为空数组（调用方直接用 `raw`）。

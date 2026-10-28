@@ -1287,36 +1287,6 @@ export function useNovelData() {
     [entities],
   );
 
-  /** 手动绑定（R20 ③右键菜单版）：把选中文本绑定到指定资料卡（关联为别名） */
-  const bindTextToEntity = useCallback(
-    (text: string, entityId: string): MarkResult | null => {
-      const name = text.trim();
-      const target = bundle?.entities.find((entity) => entity.id === entityId);
-      if (!name || !target) return null;
-
-      if (target.name === name || target.aliases.includes(name)) {
-        return { entity: target, mode: "existing" };
-      }
-      const linked: NovelEntity = {
-        ...target,
-        aliases: [...target.aliases, name],
-      };
-      setBundle((current) =>
-        current
-          ? {
-              ...current,
-              entities: current.entities.map((entity) =>
-                entity.id === entityId ? linked : entity,
-              ),
-            }
-          : current,
-      );
-      void saveEntity(linked);
-      return { entity: linked, mode: "linked" };
-    },
-    [bundle],
-  );
-
   /**
    * 添加要素关联（R24）：人物关系等任意两要素互相关联。
    * 同对要素 + 同关系名不重复建；NovelLink 多态表天然支撑后期关系网络图。
@@ -2250,7 +2220,6 @@ export function useNovelData() {
     toggleChapterStatus,
     markSelectionAsEntity,
     updateEntity,
-    bindTextToEntity,
     addLink,
     removeLink,
     createSettingCategory,

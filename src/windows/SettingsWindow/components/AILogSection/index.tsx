@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { App, Button, Collapse, Empty, Popconfirm, Select, Spin, Tag } from "antd";
 import { DeleteOutlined, ReloadOutlined } from "@ant-design/icons";
 import type { AiLogRowDTO } from "@/shared/types/electron";
-import { TRANSFORM_INTENT_SUB, TRANSFORM_KIND_LABELS } from "@/shared/ai/context";
-import { AI_INTENT_LABELS } from "@/shared/ai/context/prompt/registry";
+import { TRANSFORM_INTENT_SUB } from "@/shared/ai/context";
+import { AI_EVENT_INTENT_LABELS, intentLabel } from "@/shared/ai/intent-labels";
 import type { TransformKind } from "@/shared/ai/context";
 import "./index.scss";
 
@@ -21,6 +21,10 @@ import "./index.scss";
  *
  * ⚠️ 这里能看到的 prompt / 输出都是**截断后的预览**（主进程落库时各截 600 字），
  * 不含任何明文 API Key（Key 在请求头里，从不进日志）。
+ *
+ * ⚠️ 意图中文走 `shared/ai/intent-labels`（REQ-064）：本页原先自带一份含
+ * 变换子类型的映射，「用量与效果」页只有基础表，两页对同一条记录叫法不同。
+ * 现在两页共用一张表，本页只保留「筛选下拉」这份派生清单。
  */
 
 /** 每页条数：一屏能看完一次调优对比即可，不必提供可调 */
@@ -31,30 +35,27 @@ const TRANSFORM_INTENTS = (
   Object.keys(TRANSFORM_INTENT_SUB) as TransformKind[]
 ).map((kind) => `transform:${TRANSFORM_INTENT_SUB[kind]}`);
 
-/** 意图 → 中文（含 2.7.0 之前的旧值 `generate`，老日志也要能读）。
- *  主标签从 AI_INTENT_LABELS 取（单一产地，G7），这里只补历史旧值与变换子类型展开。 */
-const INTENT_LABEL: Record<string, string> = {
-  ...AI_INTENT_LABELS,
-  test: "连接测试",
-  generate: "生成（旧）",
-  ...Object.fromEntries(
-    (Object.keys(TRANSFORM_INTENT_SUB) as TransformKind[]).map((kind) => [
-      `transform:${TRANSFORM_INTENT_SUB[kind]}`,
-      TRANSFORM_KIND_LABELS[kind],
-    ]),
-  ),
-};
+/**
+ * 筛选下拉的选项：基础意图逐一列出 + 变换子类型展开。
+ *
+ * 从 `AI_EVENT_INTENT_LABELS` 派生而不是手抄一份：新增意图时只有产地要改，
+ * 这里跟着长出来，不会出现「看板认识、筛选里却没有」的漏斗。
+ * 顺序按「高频使用 → 低频」固定，`test`（连接测试）放最后。
+ */
+const INTENT_FILTER_ORDER = [
+  "naming",
+  "polish",
+  "continuation",
+  "summary",
+  ...TRANSFORM_INTENTS,
+  "test",
+];
 
 const INTENT_OPTIONS = [
   { value: "", label: "全部意图" },
-  { value: "naming", label: "起名" },
-  { value: "polish", label: "润色" },
-  { value: "continuation", label: "续写" },
-  { value: "summary", label: "摘要" },
-  { value: "test", label: "连接测试" },
-  ...TRANSFORM_INTENTS.map((value) => ({
+  ...INTENT_FILTER_ORDER.filter((value) => value in AI_EVENT_INTENT_LABELS).map((value) => ({
     value,
-    label: INTENT_LABEL[value],
+    label: intentLabel(value),
   })),
 ];
 
@@ -137,7 +138,7 @@ export default function AILogSection() {
               <span className="settings-ailog__time" title={row.created_at}>
                 {shortTime(row.created_at)}
               </span>
-              <Tag className="settings-ailog__intent">{INTENT_LABEL[row.intent] ?? row.intent}</Tag>
+              <Tag className="settings-ailog__intent">{intentLabel(row.intent)}</Tag>
               <span className="settings-ailog__model" title={row.model}>
                 {row.model || "-"}
               </span>

@@ -126,4 +126,16 @@
     height: 16px;
     font-size: 16px;
   }
+
+  /* 图标必须跟文字同色（REQ-057）。
+     实测链路：组件库只把选中色写在 `.ant-segmented-item-label` 上（主色
+     rgb(123,140,255)），而 `.anticon` 的基样式是 `color: inherit`，它继承的是
+     **外面那层 `.ant-badge`**——Badge 根节点自带 `color: --ant-color-text`
+     （午夜主题下 #e8eaf2，近白）。于是选中态「只有文字变蓝、图标还是白的」。
+     修法：把 Badge 与图标都拉回继承，颜色仍由组件库写在 label 上驱动，
+     选中 / 悬停都不用另写状态规则。 */
+  .nv-seg__label .ant-badge,
+  .nv-seg__label .anticon {
+    color: inherit;
+  }
 }

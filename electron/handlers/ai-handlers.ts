@@ -22,6 +22,7 @@ import { BrowserWindow, dialog, ipcMain, net, safeStorage, shell } from "electro
 import fsp from "node:fs/promises";
 import { aiAll, aiGet, aiRun, logAiEvent, trimAiLogs } from "../ai-db";
 import { logAlways } from "../logger";
+import { windowManager } from "../windowManager";
 import { resolveWindowName } from "./log-handlers";
 import { keyPageOf } from "../../src/shared/ai/ai-providers";
 import { promptVersionOf } from "../../src/shared/ai/context/prompt/registry";
@@ -681,6 +682,31 @@ async function testConnectionInternal(windowName: string): Promise<AiResult<{ me
 
 // ── 注册 ──
 
+/**
+ * 配置落库成功 → 告诉所有窗口「AI 配置变了」（REQ-063）。
+ *
+ * 为什么必须有这条广播：AI 总开关关掉之后，**所有 AI 入口都不再渲染**，
+ * 而入口散布在作品窗口的六个位置、以及设置窗口自己的导航里。这些窗口早就
+ * 开着了，只在挂载时读一次配置的话，用户改完开关得重开窗口才看得到效果
+ * —— 表现就是「开关点了没用」。
+ *
+ * 为什么不排除发送窗口（与 `global-setting-changed` 的防回声惯例不同）：
+ * 设置窗口**本身**也是这条事件的消费者 —— 它要靠重读来收掉「AI 记录 /
+ * 用量与效果」两页。监听方只做「重读配置」这一件幂等的事（不写库、不改草稿），
+ * 回声不可能形成回环；而排掉发送方，就等于让设置窗口自己停在旧状态。
+ *
+ * 载荷只带 `enabled`（唯一决定「全量收束与否」的字段），监听方拿它记日志 /
+ * 早退即可，其余字段一律以 `ai-config-get` 重读为准 —— 载荷里塞完整配置会
+ * 造出「两份配置」的第二事实源。
+ */
+function notifyConfigChanged(event: Electron.IpcMainInvokeEvent): void {
+  const senderWin = BrowserWindow.fromWebContents(event.sender);
+  const sender = senderWin ? windowManager.getNameOf(senderWin) : undefined;
+  const enabled = getConfig("enabled") === "1";
+  windowManager.broadcast("ai-config-changed", { enabled });
+  logAlways("debug", sender ?? "main", "ai", `配置已保存，广播 ai-config-changed（enabled=${enabled}）`);
+}
+
 export function registerAiHandlers(): void {
   // ── 流式端点的一次性令牌（PRD 红线 C）──────────────────────────────
   // 渲染层每次发起流式请求前领一张，`ai-stream.ts` 的 protocol.handle
@@ -816,7 +842,7 @@ export function registerAiHandlers(): void {
   ipcMain.handle(
     "ai-config-save",
     async (
-      _event,
+      event,
       payload: {
         enabled?: boolean;
         provider?: AiProvider;
@@ -855,6 +881,7 @@ export function registerAiHandlers(): void {
         if (typeof payload.l3Enabled === "boolean") {
           setConfig(KEY_L3_ENABLED, payload.l3Enabled ? "1" : "0");
         }
+        notifyConfigChanged(event);
         return { ok: true };
       } catch (error) {
         const raw = error instanceof Error ? error.message : String(error);
@@ -1071,6 +1098,13 @@ export function registerAiHandlers(): void {
    * 回答看板四个问题：本月调用次数、各 intent 分布、采纳率、平均耗时。
    * 全部下推到 SQL（不整表捞回前端算）；时间窗只取 `ai_event`，`trigger`
    * 算「一次调用」，`adopt` 算「一次采纳」。
+   *
+   * ⚠️ 平均耗时**不能**按 `trigger` 聚合（REQ-064 修的真实缺陷）：
+   * `trigger` 是在**发起请求那一刻**落的，`writeEvent("trigger", …)` 从来不传
+   * `durationMs`（只有 success / fallback / cancel 这些终态事件带耗时），
+   * 于是 `AVG(duration_ms)` 恒等于 0 —— UI 上永远显示「-」。
+   * 现在的口径：调用次数仍按 `trigger` 数（一次请求一次），耗时改按终态事件
+   * `success` / `fallback` 聚合（cancel 不算，它没有「跑完」的含义）。
    */
   ipcMain.handle(
     "ai-event-stats",
@@ -1093,10 +1127,15 @@ export function registerAiHandlers(): void {
       const sinceCond = since ? "AND created_at >= ?" : "";
 
       const callRow = aiGet(
-        `SELECT COUNT(*) AS c, COALESCE(AVG(duration_ms), 0) AS avg_dur
-         FROM ai_event WHERE step = 'trigger' ${sinceCond}`,
+        `SELECT COUNT(*) AS c FROM ai_event WHERE step = 'trigger' ${sinceCond}`,
         sinceArgs,
-      ) as { c: number; avg_dur: number } | undefined;
+      ) as { c: number } | undefined;
+
+      const durationRow = aiGet(
+        `SELECT COALESCE(AVG(duration_ms), 0) AS avg_dur
+         FROM ai_event WHERE step IN ('success', 'fallback') ${sinceCond}`,
+        sinceArgs,
+      ) as { avg_dur: number } | undefined;
 
       const adoptRow = aiGet(
         `SELECT COUNT(*) AS c FROM ai_event WHERE step = 'adopt' ${sinceCond}`,
@@ -1121,7 +1160,7 @@ export function registerAiHandlers(): void {
         totalCalls,
         adoptCount,
         adoptRate: totalCalls > 0 ? adoptCount / totalCalls : 0,
-        avgDurationMs: Math.round(callRow?.avg_dur ?? 0),
+        avgDurationMs: Math.round(durationRow?.avg_dur ?? 0),
         byIntent: byIntent.map((row) => ({
           intent: row.intent,
           calls: Number(row.calls) || 0,

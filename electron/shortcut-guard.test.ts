@@ -58,7 +58,7 @@ describe("快捷键：只在 dev 与 novel 版开放", () => {
     const handlerSource = read("electron/handlers/shortcut-handlers.ts");
     expect(handlerSource).toContain('const SHORTCUTS_ENABLED = IS_DEV || EDITION === "novel"');
 
-    const appSource = read("src/windows/SettingsWindow/App.tsx");
+    const appSource = read("src/windows/SettingsWindow/settings-pages.tsx");
     expect(appSource).toContain(
       "const SHOW_SHORTCUTS = import.meta.env.DEV || IS_NOVEL_EDITION",
     );
@@ -67,6 +67,9 @@ describe("快捷键：只在 dev 与 novel 版开放", () => {
     // `SHORTCUT_PAGES` 这个条件数组 —— 钉的仍是同一个意图：**快捷键页只在
     // SHOW_SHORTCUTS 为真时进入清单**。所以断言落在「门控块内部」而不是
     // 旧写法的字面量（改一次骨架就红的那种守卫，只会逼人去改断言）。
+    //
+    // 2.12.0：清单搬到了 `settings-pages.tsx`（它要随 AI 总开关在运行期派生，
+    // 不能留在组件文件里），门控块原样搬过去，读的文件跟着换。
     const gatedBlock = appSource.slice(
       appSource.indexOf("const SHORTCUT_PAGES"),
       appSource.indexOf("const PROFILE_PAGE"),

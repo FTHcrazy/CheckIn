@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { App } from "antd";
 import { POSITION } from "../novel-config";
 import {
   applyCustomTypeColors,
@@ -70,6 +71,7 @@ import {
   collectBookContext,
   inputCharBudget,
   matchEntitiesInText,
+  normalizeContinuationText,
   parseSummaryReply,
   snippetBudget,
   TRANSFORM_INTENT_SUB,
@@ -114,6 +116,15 @@ interface ReorderPreview {
  * 折叠与浮层在 useNovelViewState，本层不重复实现它们的逻辑。
  */
 export function useNovelPage() {
+  /**
+   * antd 上下文内的确认框（REQ-060）。
+   *
+   * 不用静态 `Modal.confirm`：那会新建独立 React root，脱离 `ConfigProvider`
+   * 主题（暗色下会掉成白底）。`App.useApp()` 拿到的 `modal` 挂在
+   * `<AntdApp>`（`src/windows/NovelWindow/App.tsx`）之下，主题与 z-index 都对。
+   */
+  const { modal } = App.useApp();
+
   /**
    * 行囊窗口上下文的「代号」：重置模板 / 清库重播后 +1。
    *
@@ -701,27 +712,6 @@ export function useNovelPage() {
     [handleMark],
   );
 
-  /** 把选中文本绑定到指定资料卡（关联为别名，手动绑定路线的核心动作） */
-  const handleCtxBind = useCallback(
-    (entityId: string): void => {
-      const text = editor.selection?.text;
-      setCtxMenu(null);
-      editor.setSelection(null);
-      if (!text) return;
-      const result = data.bindTextToEntity(text, entityId);
-      if (!result) {
-        view.showToast("绑定失败，请重试", "warning");
-        return;
-      }
-      if (result.mode === "linked") {
-        view.showToast(`已关联为「${result.entity.name}」的别名`);
-      } else {
-        view.showToast(`「${result.entity.name}」已包含该称呼`, "info");
-      }
-    },
-    [data, editor, view],
-  );
-
   // ── AI 可用性门控（M8）─────────────────────────────
   // 统一口径：AI 不可用时，各入口据此决定「禁用并说明 / 走本地兜底」，杜绝
   // 「点了没反应」。声明在上下文与编排之前：contextLen 预算与入口禁用都从它取。
@@ -1022,17 +1012,26 @@ export function useNovelPage() {
     /** 本次流的句柄：catch 里据此区分「主动中断」与「真失败」 */
     let streamed: AiStreamHandle | null = null;
 
-    // 打开（或重置）浮层为流式态，快照光标偏移（确认时用它精确定位）
+    // 打开（或重置）浮层为流式态，快照光标偏移（确认时用它精确定位）。
+    // `loading` 必须为 true：首字到达前浮层要显示「正在续写…」，
+    // 否则会先闪一句「（本次没有产出续写内容）」，看着像没在生成。
     setContinuation({
       cursor: before.cursor,
       text: "",
       streaming: true,
-      loading: false,
+      loading: true,
       error: null,
     });
 
     /** 只接受「本次流」的状态写入：旧的 catch / 旧块回来时一律丢弃 */
-    const patch = (next: Partial<{ text: string; streaming: boolean; error: string | null }>): void => {
+    const patch = (
+      next: Partial<{
+        text: string;
+        streaming: boolean;
+        loading: boolean;
+        error: string | null;
+      }>,
+    ): void => {
       if (continuationSeqRef.current !== seq) return;
       setContinuation((prev) => (prev ? { ...prev, ...next } : prev));
     };
@@ -1056,6 +1055,10 @@ export function useNovelPage() {
     });
 
     try {
+      // ⚠️ provider 必须在建立流**之前**取到：放在流建立之后会让首块在
+      // 等待这次 IPC 的时间里攒起来，第一个 delta 一次吐出好几句，
+      // 观感就是「不是流式，一段一段蹦」。
+      const provider = (await getAiConfig()).provider;
       const handle = await aiGenerateStream({
         system: spec.system,
         prompt: spec.prompt,
@@ -1070,47 +1073,58 @@ export function useNovelPage() {
       continuationStreamRef.current = handle;
 
       // 按 provider 选解析器：OpenAI SSE / Ollama 逐行 JSON
-      const provider = (await getAiConfig()).provider;
       const accumulator =
         provider === "ollama"
           ? createOllamaAccumulator()
           : createOpenAiSseAccumulator();
 
       let accText = "";
-      // 逐段读流，把增量 append 到浮层（打字机）
+      // 逐段读流，把增量 append 到浮层（打字机）。展示的是**规整后**的文本：
+      // 行首缩进空格剥掉、空行口径跟前文对齐，避免预览与插入结果不一致
+      const push = (delta: string): void => {
+        accText += delta;
+        patch({
+          text: normalizeContinuationText(accText, before.text),
+          streaming: true,
+          loading: false,
+        });
+      };
       for (;;) {
         if (continuationSeqRef.current !== seq) return;
         const chunk = await handle.readChunk();
         if (chunk === null) break;
         const delta = accumulator.push(chunk);
-        if (delta) {
-          accText += delta;
-          patch({ text: accText, streaming: true });
-        }
+        if (delta) push(delta);
       }
       // 冲刷残留缓冲
       const tail = accumulator.flush();
-      if (tail) accText += tail;
+      if (tail) push(tail);
       if (continuationSeqRef.current !== seq) return;
 
       continuationStreamRef.current = null;
 
-      if (!accText.trim() || accText.trim() === before.text.trim()) {
-        patch({ text: accText, streaming: false, error: "这次没有产出有效续写，换个位置或重试" });
+      const finalText = normalizeContinuationText(accText, before.text);
+      if (!finalText.trim() || finalText.trim() === before.text.trim()) {
+        patch({
+          text: finalText,
+          streaming: false,
+          loading: false,
+          error: "这次没有产出有效续写，换个位置或重试",
+        });
         return;
       }
-      patch({ text: accText, streaming: false, error: null });
+      patch({ text: finalText, streaming: false, loading: false, error: null });
     } catch (error) {
       // 被新一次续写 / 关闭取代：本次结果整体作废，不要碰当前浮层
       if (continuationSeqRef.current !== seq) return;
       continuationStreamRef.current = null;
       // 主动中断（abort）不算错误：已生成部分保留，浮层进入「可确认」态
       if (streamed?.done) {
-        patch({ streaming: false });
+        patch({ streaming: false, loading: false });
         return;
       }
       const message = error instanceof Error ? error.message : String(error);
-      patch({ streaming: false, error: message || "续写失败，请重试" });
+      patch({ streaming: false, loading: false, error: message || "续写失败，请重试" });
     }
   }, [view, bookSnapshot, abortContinuation, activeOutlineNode, data.groups, data.activeChapterId]);
 
@@ -1146,8 +1160,33 @@ export function useNovelPage() {
 
   /** 「重新生成」：中断当前流，重新发起续写（沿用光标处） */
   const handleContinuationRetry = useCallback((): void => {
+    // 浮层里的「重新生成 / 重试」不再二次确认：作者刚刚已经确认过一次
     void runContinuation();
   }, [runContinuation]);
+
+  /**
+   * 续写入口（顶栏 / 悬浮按钮）：**先确认再发起**（REQ-060）。
+   *
+   * 之前点一下就直接发请求：误触即烧额度、正文前文也会立刻发到模型服务，
+   * 而作者连「这一次要发多少字、模型是谁」都没看见。确认框里写清这三件事，
+   * 一次点击换一次知情。
+   */
+  const requestContinuation = useCallback((): void => {
+    const before = editorPaneRef.current?.getTextBeforeCursor(CONTINUATION_BEFORE_CHARS);
+    if (!before || !before.text.trim()) {
+      view.showToast("先到正文里点一下要续写的位置", "warning");
+      return;
+    }
+    modal.confirm({
+      title: "开始 AI 续写？",
+      content: `将把光标前的约 ${formatThousands(before.text.length)} 字发送给你配置的模型服务；生成结果先预览，确认后才插入正文。`,
+      okText: "开始续写",
+      cancelText: "取消",
+      onOk: () => {
+        void runContinuation();
+      },
+    });
+  }, [modal, runContinuation, view]);
 
   // ── AI 章节摘要（R-AI-09）─────────────────────────────
   // 可用性门控（M8）已在上文 `aiAvailability` 统一声明，摘要入口复用它。
@@ -1430,9 +1469,48 @@ export function useNovelPage() {
         return;
       }
 
-      void doGenerateSummary(chapterId, chapter.title, aiConsent.scope);
+      /** 真正发起生成（确认框的 onOk 与「重新生成」共用） */
+      const start = (): void => {
+        void doGenerateSummary(chapterId, chapter.title, aiConsent.scope);
+      };
+
+      // 浮层里的「重新生成」（force = true）不再确认：作者看着这一章的摘要
+      // 亲手点的「重新生成」，本身就是这一次知情同意，再问一遍只是多一次回车。
+      // 与续写「浮层里的重试不重复确认」同一口径。
+      if (force) {
+        start();
+        return;
+      }
+
+      // 已授权也**每次**确认（REQ-060）。
+      // 旧行为是「授权过一次之后，此后每章点图标就直接生成并落库」——
+      // 作者以为只是「看看」，实际已经在扣额度、也在发整章正文。
+      // 授权弹窗回答的是「允不允许」，这里回答的是「这一次要不要」。
+      modal.confirm({
+        title: "生成这一章的 AI 摘要？",
+        content: `将把「${chapter.title}」全章约 ${formatThousands(
+          estimateText(chapter.content).chars,
+        )} 字发送给你配置的模型服务，生成后直接保存到本章。`,
+        okText: "开始生成",
+        cancelText: "取消",
+        onOk: start,
+        onCancel: () => {
+          // 取消 = 这次不生成：把面板从加载态退回来，不留一个永远转圈的面板
+          setSummary((prev) =>
+            prev && prev.chapterId === chapterId ? { ...prev, loading: false } : prev,
+          );
+        },
+      });
     },
-    [data.chapters, view, aiConsent.l3Enabled, aiConsent.scope, doGenerateSummary, aiAvailability],
+    [
+      data.chapters,
+      view,
+      aiConsent.l3Enabled,
+      aiConsent.scope,
+      doGenerateSummary,
+      aiAvailability,
+      modal,
+    ],
   );
 
   /** 授权弹窗「同意并继续」：开总开关 + 真正生成（按弹窗里选定的范围发） */
@@ -2229,7 +2307,6 @@ export function useNovelPage() {
     handleEditorContextMenu,
     closeCtxMenu,
     handleCtxMark,
-    handleCtxBind,
     handleCtxToPack,
     // AI 润色 / 文本变换（R-AI-03 / R-AI-06）
     polish,
@@ -2241,6 +2318,8 @@ export function useNovelPage() {
     runPolish,
     // AI 续写（R-AI-07 / B5 流式）
     continuation,
+    /** 入口：先确认再发起（REQ-060）；重试走 runContinuation，不再二次确认 */
+    requestContinuation,
     runContinuation,
     handleContinuationConfirm,
     handleContinuationClose,

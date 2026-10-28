@@ -76,6 +76,15 @@ interface NameGeneratorPanelProps {
    */
   book?: BookSnapshot;
   /**
+   * AI 入口是否**存在**（REQ-063）。false 时「AI 起名」按钮与它的描述输入框
+   * 都不渲染 —— 本地起名引擎（换一批）照常可用，这个面板本来就是本地优先。
+   *
+   * 与 `aiAvailable` 的分工：`aiVisible` 管「这个功能该不该出现」（总开关关 /
+   * 本版本没有 AI 通道）；`aiAvailable` 管「出现了但这次用不了」（开关开着还没
+   * 配全），那种情况留可点的禁用按钮 + 原因，用户才知道去补配置。
+   */
+  aiVisible?: boolean;
+  /**
    * AI 是否可用（M8 门控）。false 时「AI 起名」按钮禁用并说明原因，
    * 但**本地起名引擎照常可用**（起名有本地兜底，不整块隐藏）。
    */
@@ -128,6 +137,7 @@ export default function NameGeneratorPanel({
   favorites,
   actions,
   book,
+  aiVisible = true,
   aiAvailable = true,
   aiUnavailableText = "",
 }: NameGeneratorPanelProps) {
@@ -487,31 +497,39 @@ export default function NameGeneratorPanel({
       </div>
 
       <div className="nv-name__ai">
-        <Input.TextArea
-          className="nv-name__ai-input"
-          value={description}
-          placeholder="可选：补充你的想法（不填也能按本书设定起名）"
-          autoSize={{ minRows: 2, maxRows: 4 }}
-          onChange={(e) => setDescription(e.target.value)}
-        />
+        {/* REQ-063：描述输入框只服务于 AI 起名（本地引擎不读它），
+            AI 不该出现时一并收掉 —— 否则留一个「填了也不生效」的输入框 */}
+        {aiVisible ? (
+          <Input.TextArea
+            className="nv-name__ai-input"
+            value={description}
+            placeholder="可选：补充你的想法（不填也能按本书设定起名）"
+            autoSize={{ minRows: 2, maxRows: 4 }}
+            onChange={(e) => setDescription(e.target.value)}
+          />
+        ) : null}
         <div className="nv-name__ai-actions">
-          <Button
-            className="nv-name__ai-btn"
-            onClick={() => void handleAiGenerate()}
-            loading={aiLoading}
-            disabled={aiLoading || !aiAvailable}
-            title={aiAvailable ? undefined : aiUnavailableText}
-          >
-            <ThunderboltOutlined />
-            AI 起名
-          </Button>
+          {/* AI 起名：总开关关掉时整颗不渲染；开着但没配全时禁用 + 说明 */}
+          {aiVisible ? (
+            <Button
+              className="nv-name__ai-btn"
+              onClick={() => void handleAiGenerate()}
+              loading={aiLoading}
+              disabled={aiLoading || !aiAvailable}
+              title={aiAvailable ? undefined : aiUnavailableText}
+            >
+              <ThunderboltOutlined />
+              AI 起名
+            </Button>
+          ) : null}
+          {/* 本地起名入口：不随 AI 出现与否变化（起名有本地兜底，AI 只是增强） */}
           <Button className="nv-name__regen" onClick={handleNextBatch} title="换一批（避开本书已用名）">
             <ReloadOutlined />换一批（本地）
           </Button>
         </div>
       </div>
 
-      {fallbackNote ? (
+      {aiVisible && fallbackNote ? (
         <div className="nv-name__fallback">
           <span>{fallbackNote}</span>
           {/* R-AI-02 FR-04：降级提示必须「可恢复」——只告诉作者「AI 没成」而不给

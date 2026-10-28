@@ -7,7 +7,6 @@ import {
   LayoutOutlined,
   LoadingOutlined,
   MenuOutlined,
-  ThunderboltOutlined,
 } from "@ant-design/icons";
 import SvgIcon from "@/shared/components/SvgIcon";
 import bookSettingSvg from "@/assets/novel/book-setting.svg?raw";
@@ -40,6 +39,12 @@ interface NovelTopBarProps {
   onRenameWork: (name: string) => boolean;
   /** 设置当前作品题材（2.7.1，空串 = 清空） */
   onSetWorkGenre: (genre: string) => boolean;
+  /**
+   * AI 入口是否**存在**（REQ-063）。顶栏本身没有 AI 按钮（续写已搬到正文区
+   * 悬浮按钮），这里只是把口径透传给作品管理菜单 —— 它里面有两句「题材用于
+   * AI 起名与润色」的提示，总开关关掉后要换成不提 AI 的说法。
+   */
+  aiVisible?: boolean;
   onDeleteWork: () => void;
   onResetTemplate: () => void;
   onExportBook: () => void;
@@ -48,16 +53,6 @@ interface NovelTopBarProps {
   onToggleLeft: () => void;
   onToggleRight: () => void;
   onToggleSettings: () => void;
-  /**
-   * AI 续写（R-AI-07）：光标处顺着前文出 2–3 个候选。
-   * AI 未配置时（`aiAvailable=false`）按钮禁用，`aiUnavailableText` 说明原因 ——
-   * 不出现「点了没反应」（B1 判据③「入口可消失」）。
-   */
-  onContinue?: () => void;
-  /** AI 是否可用（M8 门控）；false 时续写按钮禁用 */
-  aiAvailable?: boolean;
-  /** AI 不可用的一句话说明（挂在按钮 Tooltip 上） */
-  aiUnavailableText?: string;
   /** 历史快照按钮即开关：开 → 关 → 开 循环切换 */
   onToggleHistory: () => void;
   /** 行囊：唤起独立行囊窗口（单实例，重复点击仅聚焦），Ctrl+Shift+B 同效 */
@@ -130,10 +125,8 @@ export default function NovelTopBar({
   onOpenPack,
   onBackToShelf,
   onDismissOverlays,
-  onContinue,
-  aiAvailable = true,
-  aiUnavailableText = "",
   packOpening = false,
+  aiVisible = true,
 }: NovelTopBarProps) {
   const { saveState, lastSavedAt } = useSaveState();
   const activeWork = works.find((work) => work.id === activeWorkId) ?? null;
@@ -214,6 +207,7 @@ export default function NovelTopBar({
         onExportBook={onExportBook}
         onExportVolume={onExportVolume}
         onExportChapter={onExportChapter}
+        aiVisible={aiVisible}
       />
 
       {/* 语义分组：左侧是「哪部作品」的切换与管理，右侧是「读到哪」的位置 */}
@@ -279,18 +273,6 @@ export default function NovelTopBar({
             <HistoryOutlined />
           </Button>
         </Tooltip>
-        {onContinue && (
-          <Tooltip title={aiAvailable ? "AI 续写（光标处顺着前文接着写）" : aiUnavailableText}>
-            <Button
-              className="nv-topbar__icon"
-              onClick={onContinue}
-              disabled={!aiAvailable}
-              aria-label="AI 续写"
-            >
-              <ThunderboltOutlined />
-            </Button>
-          </Tooltip>
-        )}
         <Tooltip title={settingCenterOpen ? "收起小说设定" : "小说设定（Ctrl+Shift+S）"}>
           <Button
             className={`nv-topbar__icon${settingCenterOpen ? " is-on" : ""}`}

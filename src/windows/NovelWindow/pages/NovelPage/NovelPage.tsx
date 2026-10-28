@@ -17,6 +17,7 @@ import type { GuideView } from "@/shared/novel/guide-copy";
 // 这里直接引 shared，不再经 NovelPage 本地垫片。
 import SettingCenter from "@/shared/components/SettingCenter";
 import { SETTING_PRESETS } from "./utils/setting-presets";
+import ContinueFab from "./components/ContinueFab";
 import NovelToast from "./components/NovelToast";
 import NovelTopBar from "./components/NovelTopBar";
 import type { WorkManageMenuHandle } from "./components/WorkManageMenu";
@@ -149,7 +150,6 @@ export default function NovelPage({
     handleEditorContextMenu,
     closeCtxMenu,
     handleCtxMark,
-    handleCtxBind,
     handleCtxToPack,
     polish,
     handleCtxPolish,
@@ -159,7 +159,7 @@ export default function NovelPage({
     handlePolishRetry,
     // AI 续写（R-AI-07）
     continuation,
-    runContinuation,
+    requestContinuation,
     handleContinuationConfirm,
     handleContinuationClose,
     handleContinuationRetry,
@@ -212,6 +212,17 @@ export default function NovelPage({
   } = useNovelPage();
 
   const { loadSnapshots, activeChapterId, searchBook } = data;
+
+  /**
+   * AI 入口是否该**出现**（REQ-063）。
+   *
+   * 与 `aiAvailability.available` 是两个问题：`available=false` 但原因是
+   * 「开关开着、只是没配全模型 / Key」时，入口要留着（禁用 + 说明原因），
+   * 否则用户不知道该去补配置；只有总开关被关掉、或本版本根本没有 AI 通道
+   * （lite / 未登录）才整块收掉，连灰按钮和提示文案都不留。
+   * 判据的推导在 `useAiAvailability` 的 `isAiHidden` 里（纯函数，有单测）。
+   */
+  const aiVisible = !aiAvailability.hidden;
 
   /**
    * 正文字体：下载 / 列表 / @font-face 挂载 / 预览，都由这个 hook 持有。
@@ -626,6 +637,7 @@ export default function NovelPage({
             onCreateWork={handleCreateWork}
             onRenameWork={handleRenameWork}
             onSetWorkGenre={handleSetWorkGenre}
+            aiVisible={aiVisible}
             onDeleteWork={handleDeleteWork}
             onResetTemplate={() => void handleResetTemplate()}
             onExportBook={() => void handleExportBook()}
@@ -639,9 +651,7 @@ export default function NovelPage({
             packOpening={packOpening}
             onToggleSettingCenter={view.toggleSettingCenter}
             onToggleHistory={view.toggleSnapshot}
-            onContinue={() => void runContinuation()}
-            aiAvailable={aiAvailability.available}
-            aiUnavailableText={aiAvailability.reasonText}
+            /* REQ-061：AI 续写已搬到正文区右下角的悬浮按钮，顶栏不再放这颗闪电 */
             /* REQ-053：浮层（设定中心 / 类型管理 Modal）开着时，点击顶栏即离开浮层 ——
              它们铺满视口的 wrap 会吃掉同一次点击，让「行囊 / 小说设定」需要点两次 */
             onDismissOverlays={view.dismissPageOverlays}
@@ -669,6 +679,7 @@ export default function NovelPage({
             onRenameVolume={handleRenameVolume}
             onDeleteVolume={handleDeleteVolume}
             onOpenSummary={runChapterSummary}
+            showSummary={aiVisible}
           />
 
           <div className="nv-page__stage">
@@ -716,18 +727,35 @@ export default function NovelPage({
               onOpenSensitive={() => view.openToolSub("sensitive")}
             />
 
-            {/* 选区右键菜单：手动绑定路线的标注入口（新建 / 绑定为别名） */}
+            {/* AI 续写悬浮按钮（REQ-061）：贴着正文区右下角，比顶栏那一排图标
+                更贴近「在光标处接着写」的语义，也给顶栏腾出空间。
+                点击只是入口，真正发起前还有一次确认（useNovelPage.requestContinuation）。
+                阅读模式 / 还没有章节时不出现：这两种情况下没有「光标前的前文」，
+                浮一颗点了只会提示「先到正文里点一下」的按钮，属于噪音。
+                REQ-063：AI 总开关关掉时整颗不渲染（`aiAvailability.hidden`）——
+                留一颗灰按钮等于告诉用户「这里本来有 AI」。 */}
+            {!aiAvailability.hidden &&
+              !editor.settings.readMode &&
+              data.activeChapter && (
+                <ContinueFab
+                  onContinue={requestContinuation}
+                  aiAvailable={aiAvailability.available}
+                  aiUnavailableText={aiAvailability.reasonText}
+                  busy={continuation?.streaming ?? false}
+                />
+              )}
+
+            {/* 选区右键菜单：文本变换 / 记入行囊 / 新建资料卡（REQ-062 已下线「绑定到现有资料卡」） */}
             {editor.selection && ctxMenu && (
               <EntityContextMenu
                 x={ctxMenu.x}
                 y={ctxMenu.y}
                 text={editor.selection.text}
-                entities={data.entities}
                 onAddToPack={() => void handleCtxToPack()}
                 onMark={handleCtxMark}
-                onBind={handleCtxBind}
                 onPolish={handleCtxPolish}
                 onTransform={handleCtxTransform}
+                aiVisible={aiVisible}
                 aiAvailable={aiAvailability.available}
                 aiUnavailableText={aiAvailability.reasonText}
                 onClose={closeCtxMenu}
@@ -879,6 +907,7 @@ export default function NovelPage({
             namingExclude={namingExclude}
             namingFavorites={namingFavorites}
             namingBook={namingBook}
+            aiVisible={aiVisible}
             aiAvailable={aiAvailability.available}
             aiUnavailableText={aiAvailability.reasonText}
             onNotify={view.showToast}

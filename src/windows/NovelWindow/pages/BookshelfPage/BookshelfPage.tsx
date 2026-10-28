@@ -33,6 +33,7 @@ import {
 } from "./bookshelf-utils";
 import { TODAY_ADDED_LABEL, WORD_UNIT } from "@/shared/novel/today-stats";
 import { GENRE_MAX_LENGTH, GENRE_OPTIONS } from "@/shared/novel/genres";
+import { useAiAvailability } from "@/shared/ai/hooks/useAiAvailability";
 import "./index.scss";
 
 interface BookshelfPageProps {
@@ -98,6 +99,16 @@ export default function BookshelfPage({
   const [status, setStatus] = useState<ShelfStatusFilter>("all");
   const [sortKey, setSortKey] = useState<ShelfSortKey>("recent");
   const [viewMode, setViewMode] = useState<ShelfViewMode>("grid");
+
+  /**
+   * AI 是否该整块隐去（REQ-063）。
+   *
+   * 书架本身没有 AI 入口（续写 / 润色 / 摘要都在编辑器里），但「新建作品」的
+   * 题材提示会提 AI —— 那是用户会看到的**提示**，总开关关掉后要换成不提 AI 的
+   * 说法，否则同一句「题材只作 AI 起名、润色的风格参考」会留成一条孤零零的
+   * 承诺。判据与编辑器侧同源（`useAiAvailability` 的 `hidden`），不各判一套。
+   */
+  const { hidden: aiHidden } = useAiAvailability();
   const [ideaFilter, setIdeaFilter] = useState<IdeaFilter>("all");
   const [createOpen, setCreateOpen] = useState(false);
   const [createName, setCreateName] = useState("");
@@ -573,7 +584,9 @@ export default function BookshelfPage({
               autoFocus
             />
             <p className="bs-page__create-hint">
-              题材只作 AI 起名、润色的风格参考，也可以直接跳过，之后在作品管理里补
+              {aiHidden
+                ? "题材只作统一用字风格的参考，也可以直接跳过，之后在作品管理里补"
+                : "题材只作 AI 起名、润色的风格参考，也可以直接跳过，之后在作品管理里补"}
             </p>
           </>
         )}
