@@ -32,6 +32,7 @@ import { useNovelPage } from "./hooks/useNovelPage";
 import { usePaperFonts } from "./hooks/usePaperFonts";
 import { useSensitiveDetection } from "./hooks/useSensitiveDetection";
 import { hoverActions } from "./store/useHoverStore";
+import { useConsistencyStore } from "./store/useConsistencyStore";
 import {
   appearancesOf,
   resetAppearances,
@@ -175,6 +176,17 @@ export default function NovelPage({
     handleSummaryConsentCancel,
     handleSummaryClose,
     handleApplySummaryNote,
+    // AI 实体抽取（R-AI-08）
+    extract,
+    extractPending,
+    extractPendingScope,
+    runEntityExtract,
+    handleExtractConsentConfirm,
+    handleExtractConsentCancel,
+    handleExtractToggle,
+    handleExtractTypeChange,
+    handleExtractConfirm,
+    handleExtractClose,
     handleNewVolume,
     handleSaveEntity,
     handleRenameVolume,
@@ -286,6 +298,25 @@ export default function NovelPage({
     currentChapterId: activeChapterId,
     onSelectChapter: handleSelectChapter,
   });
+
+  /**
+   * 一致性校对（R-AI-10a）的跳转：与敏感词走**同一条** focusPos 通道。
+   *
+   * 编辑器只有一个 `focusPos` prop（一次性、应用后回收），所以两处跳转共用它：
+   * `onFocusPosApplied` 里把两个来源一起清掉，避免「上一个面板的旧偏移」被
+   * 下一次切章误用。
+   */
+  const consistencyJump = useConsistencyStore((state) => state.jumpTarget);
+  const consumeConsistencyJump = useConsistencyStore((state) => state.consumeJump);
+  const [consistencyFocusPos, setConsistencyFocusPos] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!consistencyJump) return;
+    // 顺序不能反：先切章，偏移交给编辑器在新章正文灌入后消费
+    handleSelectChapter(consistencyJump.chapterId);
+    setConsistencyFocusPos(consistencyJump.from);
+    consumeConsistencyJump();
+  }, [consistencyJump, handleSelectChapter, consumeConsistencyJump]);
 
   // 书架 → 编辑器：消费打开请求（token 守卫，StrictMode 双执行只消费一次）
   const consumedTokenRef = useRef<number | null>(null);
@@ -418,6 +449,15 @@ export default function NovelPage({
     (workId: string): string =>
       data.works.find((work) => work.id === workId)?.name ?? "其他作品",
     [data.works],
+  );
+
+  /**
+   * 当前作品题材：只给「AI 排阶梯」用（R-AI-18）—— 让生成的境界名贴合
+   * 本书世界观。未设置时传 null，prompt 走中性口径（不硬猜）。
+   */
+  const activeWorkGenre = useMemo(
+    () => data.works.find((work) => work.id === data.activeWorkId)?.genre ?? null,
+    [data.works, data.activeWorkId],
   );
 
   /**
@@ -711,8 +751,11 @@ export default function NovelPage({
               sensitiveWords={sensitive.words}
               sensitiveOn={sensitive.enabled}
               sensitiveRanges={sensitive.ranges}
-              focusPos={sensitive.focusPos}
-              onFocusPosApplied={sensitive.clearFocusPos}
+              focusPos={sensitive.focusPos ?? consistencyFocusPos}
+              onFocusPosApplied={() => {
+                sensitive.clearFocusPos();
+                setConsistencyFocusPos(null);
+              }}
               onDraftPulse={sensitive.handleDraftPulse}
               onSensitiveRangesMapped={sensitive.handleRangesMapped}
               onLoadPrevChapter={handleLoadPrevChapter}
@@ -807,18 +850,29 @@ export default function NovelPage({
               />
             )}
 
-            {/* L3 授权弹窗（M5）：首次触发摘要等 L3 功能时弹出。
-                范围选择器已真正生效（发送内容随档变化），因此不再隐藏。 */}
+            {/* L3 授权弹窗（M5）：摘要 / 实体抽取共用同一份授权状态与范围选择
+                （G4：范围与发送量必须同源，两个入口各写一套必然漂移）。
+                `open` 看两个 pending，确认 / 取消按「谁在等」分派。 */}
             <AiConsentDialog
-              open={summaryPending !== null}
-              estimate={summaryPendingScope}
+              open={summaryPending !== null || extractPending !== null}
+              estimate={extractPending ? extractPendingScope : summaryPendingScope}
               scope={aiConsent.scope}
               onScopeChange={aiConsent.setScope}
-              notice={summaryPendingScope.notice}
-              confirmDisabled={summaryPendingScope.chars === 0}
+              notice={
+                (extractPending ? extractPendingScope : summaryPendingScope).notice
+              }
+              confirmDisabled={
+                (extractPending ? extractPendingScope : summaryPendingScope).chars === 0
+              }
               provider={aiConsent.provider}
-              onConfirm={() => void handleSummaryConsentConfirm()}
-              onCancel={handleSummaryConsentCancel}
+              onConfirm={() => {
+                if (extractPending) void handleExtractConsentConfirm();
+                else void handleSummaryConsentConfirm();
+              }}
+              onCancel={() => {
+                if (extractPending) handleExtractConsentCancel();
+                else handleSummaryConsentCancel();
+              }}
             />
 
             {/* 悬浮卡自己订阅 hover store：指针扫过正文不再推整棵树 */}
@@ -915,6 +969,14 @@ export default function NovelPage({
             toolSub={view.toolSub}
             onToolSubChange={view.setToolSub}
             onOpenRelation={openRelationWindow}
+            extractActions={{
+              session: extract,
+              onRun: runEntityExtract,
+              onToggle: handleExtractToggle,
+              onTypeChange: handleExtractTypeChange,
+              onConfirm: handleExtractConfirm,
+              onClose: handleExtractClose,
+            }}
           />
 
           {/*
@@ -928,6 +990,7 @@ export default function NovelPage({
         <SettingCenter
           open={view.settingCenterOpen}
           workName={workNameOf(data.activeWorkId)}
+          workGenre={activeWorkGenre}
           settings={data.settings}
           focusCategoryId={view.settingFocusId}
           source="book"
@@ -941,10 +1004,13 @@ export default function NovelPage({
           onAddLevel={(categoryId, name, index) =>
             data.addSettingLevel(categoryId, name, index)
           }
-          onBatchAddLevels={(categoryId, names) => {
+          onBatchAddLevels={(categoryId, items) => {
             data.batchAddSettingLevels(
               categoryId,
-              names.map((name) => ({ name })),
+              items.map((item) => ({
+                name: item.name,
+                ...(item.note ? { note: item.note } : {}),
+              })),
             );
           }}
           onPatchLevel={data.patchSettingLevel}

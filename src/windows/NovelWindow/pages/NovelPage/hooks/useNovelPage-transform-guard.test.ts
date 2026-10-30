@@ -58,9 +58,16 @@ describe("就地续写（B5 流式守卫）", () => {
 
   it("续写走流式传输 aiGenerateStream（SSE 打字机），非结构化候选", () => {
     expect(USE_NOVEL_PAGE).toContain("aiGenerateStream");
-    // 续写不再用结构化候选（B3 的 aiGenerateStructured + CONTINUATION_OUTPUT_FORMAT）
-    expect(USE_NOVEL_PAGE).not.toContain("aiGenerateStructured");
-    expect(USE_NOVEL_PAGE).not.toContain("CONTINUATION_OUTPUT_FORMAT");
+    // 续写不再用结构化候选（B3 的 aiGenerateStructured + CONTINUATION_OUTPUT_FORMAT）。
+    // ⚠️ 不能断言「全文件没有 aiGenerateStructured」：2.13.0 起实体抽取（R-AI-08）
+    // 合法地用它（json-array 契约），全文件级断言会把抽取误判成续写回潮。
+    // 所以只检查续写那一段（intent: "continuation" 前后各 600 字）。
+    const at = USE_NOVEL_PAGE.indexOf('intent: "continuation"');
+    expect(at).toBeGreaterThan(-1);
+    const region = USE_NOVEL_PAGE.slice(Math.max(0, at - 600), at + 600);
+    expect(region).toContain("aiGenerateStream");
+    expect(region).not.toContain("aiGenerateStructured");
+    expect(region).not.toContain("CONTINUATION_OUTPUT_FORMAT");
   });
 
   it("续写取光标前文（getTextBeforeCursor），不依赖选区", () => {

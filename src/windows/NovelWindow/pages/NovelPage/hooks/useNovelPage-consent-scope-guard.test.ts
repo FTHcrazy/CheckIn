@@ -71,8 +71,20 @@ describe("L3 授权范围真正约束发送内容（守卫）", () => {
     expect(DIALOG).not.toContain("hideScope");
     expect(DIALOG).toContain("confirmDisabled");
     // 估算来自 hook 的派生值（随范围重算），不是 pending 一次算死的数字
-    expect(NOVEL_PAGE).toMatch(/estimate=\{summaryPendingScope\}/);
-    expect(NOVEL_PAGE).toContain("confirmDisabled={summaryPendingScope.chars === 0}");
+    expect(NOVEL_PAGE).toMatch(/estimate=\{[^}]*PendingScope\}/);
+    expect(NOVEL_PAGE).toMatch(/confirmDisabled=\{[\s\S]{0,160}\.chars === 0\s*\}/);
+  });
+
+  it("摘要与实体抽取共用同一个弹窗与同一套估算（2.13.0：两个 L3 入口不能各算一套）", () => {
+    // 弹窗对两个 pending 都开（抽取没入口时它就永远不弹）
+    expect(NOVEL_PAGE).toMatch(/open=\{summaryPending !== null \|\| extractPending !== null\}/);
+    // 确认 / 取消按「谁在等」分派，不能恒调摘要那一个
+    expect(NOVEL_PAGE).toContain("handleExtractConsentConfirm");
+    expect(NOVEL_PAGE).toContain("handleExtractConsentCancel");
+    // 口径单一：两个 scope 都由 estimateScopePayload 派生，且都喂给同一个弹窗
+    expect(USE_NOVEL_PAGE).toMatch(/extractPendingScope = useMemo/);
+    expect(USE_NOVEL_PAGE).toMatch(/estimateScopePayload\(\s*\n?\s*extractPending \? buildL3Payload/);
+    expect(USE_NOVEL_PAGE).toMatch(/estimate=\{|summaryPendingScope = useMemo/);
   });
 
   it("范围进 prompt：选中段落 / 最近 3 章各有对应段落与约束", () => {

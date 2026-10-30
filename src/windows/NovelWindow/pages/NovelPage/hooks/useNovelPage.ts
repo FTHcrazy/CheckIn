@@ -45,6 +45,10 @@ import type {
   EntityType,
   ForeshadowPatch,
 } from "../types";
+import {
+  buildExtractCandidates,
+  type ExtractSession,
+} from "../utils/entity-extract";
 import type { ReorderChange } from "../components/ReorderConfirmModal";
 import type { InspirationActions } from "../components/InspirationPanel";
 import type { NamingActions } from "../components/NameGeneratorPanel";
@@ -53,6 +57,7 @@ import type { OutlineActions } from "../components/OutlinePanel";
 import {
   aiGenerate,
   aiGenerateStream,
+  aiGenerateStructured,
   getAiConfig,
   logAiEvent,
   type AiStreamHandle,
@@ -1217,10 +1222,11 @@ export function useNovelPage() {
   /**
    * 按当前 L3 授权范围，算出「真正要发给模型的那段正文」。
    *
-   * 唯一构造点：弹窗字数估算、实际发送、事件上报都从这里取。三条路径各算一遍
-   * 必然漂移——review G4 的成因就是「估算按整章、发送按整章、范围没人读」。
+   * **所有 L3 功能共用**（摘要 / 实体抽取，将来的一致性校对 AI 档也走它）：
+   * 弹窗字数估算、实际发送、事件上报必须同源。三条路径各算一遍必然漂移——
+   * review G4 的成因就是「估算按整章、发送按整章、范围没人读」。
    */
-  const buildSummaryPayload = useCallback(
+  const buildL3Payload = useCallback(
     (chapterId: string, scope: L3Scope): ChapterScopePayload | null => {
       // 章节顺序以卷分组为准（与大纲/目录一致），扁平 chapters 不带卷序
       const ordered = data.groups.flatMap((group) => group.chapters);
@@ -1245,33 +1251,41 @@ export function useNovelPage() {
   );
 
   /**
-   * 弹窗里的「本次将发送约 N 字」——必须随范围实时重算。
+   * 授权弹窗里的「本次将发送约 N 字」——必须随范围实时重算。
    *
    * 恒按整章算等于骗人：选了「选中段落」却告诉用户「约 3000 字」，
    * 用户会以为自己授权了 3000 字。空范围内显示 0 并给出说明，弹窗据此禁用「同意」。
+   * 摘要与实体抽取共用一个实现：两者都是「按范围取正文」，估算口径不能各写一份。
    */
-  const summaryPendingScope = useMemo((): {
-    chars: number;
-    tokens: number;
-    notice: string | null;
-  } => {
-    if (!summaryPending) return { chars: 0, tokens: 0, notice: null };
-    const payload = buildSummaryPayload(summaryPending.chapterId, aiConsent.scope);
-    if (!payload?.ok) {
+  const estimateScopePayload = useCallback(
+    (
+      payload: ChapterScopePayload | null,
+    ): { chars: number; tokens: number; notice: string | null } => {
+      if (!payload?.ok) {
+        return {
+          chars: 0,
+          tokens: 0,
+          notice:
+            payload?.reason === "no-selection"
+              ? "当前范围是「选中段落」，请先在正文里选中要发送的内容"
+              : null,
+        };
+      }
       return {
-        chars: 0,
-        tokens: 0,
-        notice:
-          payload?.reason === "no-selection"
-            ? "当前范围是「选中段落」，请先在正文里选中要发送的内容"
-            : null,
+        ...estimateText(`${payload.chapterText}\n${payload.contextText ?? ""}`),
+        notice: null,
       };
-    }
-    return {
-      ...estimateText(`${payload.chapterText}\n${payload.contextText ?? ""}`),
-      notice: null,
-    };
-  }, [summaryPending, aiConsent.scope, buildSummaryPayload]);
+    },
+    [],
+  );
+
+  const summaryPendingScope = useMemo(
+    () =>
+      estimateScopePayload(
+        summaryPending ? buildL3Payload(summaryPending.chapterId, aiConsent.scope) : null,
+      ),
+    [summaryPending, aiConsent.scope, buildL3Payload, estimateScopePayload],
+  );
 
   /**
    * 真正发起摘要生成（授权已通过后调用）。
@@ -1285,7 +1299,7 @@ export function useNovelPage() {
       if (!chapter) return;
 
       // 先按范围取「真实要发的正文」：范围不是埋点字段，它决定发送内容（G4）
-      const payload = buildSummaryPayload(chapterId, scope);
+      const payload = buildL3Payload(chapterId, scope);
       if (!payload) return; // 章节已被删除 / 换作品
       if (!payload.ok) {
         // 选了「选中段落」却什么都没选：必须明说并停手，不能悄悄退回整章
@@ -1307,7 +1321,7 @@ export function useNovelPage() {
               (node) => node.kind === "chapter" && node.chapterId === chapterId,
             )?.title;
       // 「整章」不等于「无上限」：导入的书单章可能几十万字，直接塞进 prompt 会撞
-      // 上下文上限并静默失败。裁剪已在 buildSummaryPayload 按 contextLen 做完
+      // 上下文上限并静默失败。裁剪已在 buildL3Payload 按 contextLen 做完
       // （首尾拼接、中间标注省略），这里不再二次截断。
       const spec = buildPromptSpec("summary", context, {
         chapter: payload.chapterText,
@@ -1406,7 +1420,7 @@ export function useNovelPage() {
       bookSnapshot,
       outline,
       activeOutlineNode,
-      buildSummaryPayload,
+      buildL3Payload,
       view,
     ],
   );
@@ -1564,6 +1578,262 @@ export function useNovelPage() {
     setSummaryPending(null);
     setSummary((prev) => (prev ? { ...prev, loading: false, error: null } : prev));
   }, [aiConsent.scope]);
+
+  // ── AI 实体抽取（R-AI-08）─────────────────────────────
+  /** 抽取结果状态：null = 面板空态；loading 时 chapterId 仍保留（显示抽的是哪一章） */
+  const [extract, setExtract] = useState<ExtractSession | null>(null);
+
+  /** 待授权确认的抽取请求（L3：整章正文要出境） */
+  const [extractPending, setExtractPending] = useState<{
+    chapterId: string;
+    chapterTitle: string;
+  } | null>(null);
+
+  /** 授权弹窗的发送量估算：与摘要同源（同一章、同一范围口径） */
+  const extractPendingScope = useMemo(
+    () =>
+      estimateScopePayload(
+        extractPending ? buildL3Payload(extractPending.chapterId, aiConsent.scope) : null,
+      ),
+    [extractPending, aiConsent.scope, buildL3Payload, estimateScopePayload],
+  );
+
+  /**
+   * 真正发起抽取（授权已通过后调用）。
+   *
+   * 与摘要的差别只有一处：产出是 json-array（要人工勾选），所以**不落库**——
+   * 落库发生在 `handleExtractConfirm`。这一点是 PRD 判据②的核心：
+   * 「候选必须人工勾选才入库，不存在自动入库分支」。
+   */
+  const doExtract = useCallback(
+    async (chapterId: string, chapterTitle: string, scope: L3Scope): Promise<void> => {
+      const payload = buildL3Payload(chapterId, scope);
+      if (!payload) return;
+      if (!payload.ok) {
+        const message = "当前范围是「选中段落」，请先在正文里选中要抽取的内容";
+        setExtract((prev) => (prev ? { ...prev, loading: false, error: message } : prev));
+        view.showToast(message, "warning");
+        return;
+      }
+
+      const context = collectBookContext(bookSnapshot, "extract");
+      const limit = 20;
+      const spec = buildPromptSpec("extract", context, {
+        chapter: payload.chapterText,
+        chapterTitle,
+        scope,
+        limit,
+        ...(payload.contextText ? { contextText: payload.contextText } : {}),
+      });
+
+      const result = await aiGenerateStructured({
+        system: spec.system,
+        prompt: spec.prompt,
+        intent: "extract",
+        scope,
+        count: limit,
+        outputFormat: spec.outputFormat,
+      }).catch((error: unknown) => {
+        // 与其余 AI 入口同一条纪律：IPC 侧异常不能留下永远转圈的面板
+        const message = error instanceof Error ? error.message : String(error);
+        return { ok: false as const, code: "internal" as const, message: message || "AI 调用失败，请重试" };
+      });
+
+      if (!result.ok) {
+        setExtract((prev) => (prev ? { ...prev, loading: false, error: result.message } : prev));
+        return;
+      }
+
+      const candidates = buildExtractCandidates(result.data.entries, {
+        existing: data.entities.filter((entity) => entity.workId === data.activeWorkId),
+        customTypes,
+        limit,
+      });
+
+      if (candidates.length === 0) {
+        setExtract((prev) =>
+          prev
+            ? {
+                ...prev,
+                loading: false,
+                candidates: [],
+                usedFallback: result.data.usedFallback,
+                error: result.data.entries.length
+                  ? "抽到的条目都已建过卡，或名字无法辨认，换一章或先补正文"
+                  : "这一章没抽到值得建卡的设定，可能是出场人物都已建档",
+              }
+            : prev,
+        );
+        return;
+      }
+
+      setExtract({
+        chapterId,
+        chapterTitle,
+        loading: false,
+        error: null,
+        candidates,
+        usedFallback: result.data.usedFallback,
+        applied: null,
+      });
+    },
+    [buildL3Payload, bookSnapshot, customTypes, data.entities, data.activeWorkId, view],
+  );
+
+  /**
+   * 打开抽取面板并发起一次抽取（首次触发先弹 L3 授权）。
+   *
+   * `force = true` 供面板里的「重新抽取」用：那一下本身就是知情同意，不再确认。
+   */
+  const runEntityExtract = useCallback(
+    (chapterId: string, force = false): void => {
+      const chapter = data.chapters.find((item) => item.id === chapterId);
+      if (!chapter || !chapter.content.trim()) {
+        view.showToast("这一章还没有正文，写点内容再抽取设定", "warning");
+        return;
+      }
+      // AI 不可用：说明原因，不开面板（M8 门控；抽取没有本地兜底）
+      if (!aiAvailability.available) {
+        view.showToast(aiAvailability.reasonText || "AI 功能当前不可用", "warning");
+        return;
+      }
+
+      setExtract({
+        chapterId,
+        chapterTitle: chapter.title,
+        loading: true,
+        error: null,
+        candidates: [],
+        usedFallback: false,
+        applied: null,
+      });
+
+      if (!aiConsent.l3Enabled) {
+        setExtractPending({ chapterId, chapterTitle: chapter.title });
+        return;
+      }
+
+      const start = (): void => {
+        void doExtract(chapterId, chapter.title, aiConsent.scope);
+      };
+      if (force) {
+        start();
+        return;
+      }
+
+      // 已授权也每次确认（REQ-060）：授权回答「允不允许」，这里回答「这一次要不要」
+      modal.confirm({
+        title: "从这一章抽取设定？",
+        content: `将把「${chapter.title}」全章约 ${formatThousands(
+          estimateText(chapter.content).chars,
+        )} 字发送给你配置的模型服务；抽出的候选要你勾选后才建卡。`,
+        okText: "开始抽取",
+        cancelText: "取消",
+        onOk: start,
+        onCancel: () => {
+          setExtract(null);
+        },
+      });
+    },
+    [data.chapters, view, aiAvailability, aiConsent.l3Enabled, aiConsent.scope, doExtract, modal],
+  );
+
+  /** 授权弹窗「同意并继续」：开总开关 + 真正抽取（按弹窗里选定的范围发） */
+  const handleExtractConsentConfirm = useCallback(async (): Promise<void> => {
+    if (!extractPending) return;
+    const { chapterId, chapterTitle } = extractPending;
+    const scope = aiConsent.scope;
+    setExtractPending(null);
+    const ok = await aiConsent.enableL3();
+    if (!ok) {
+      setExtract((prev) =>
+        prev ? { ...prev, loading: false, error: "授权开启失败，请稍后重试" } : prev,
+      );
+      return;
+    }
+    void doExtract(chapterId, chapterTitle, scope);
+  }, [extractPending, aiConsent, doExtract]);
+
+  /** 授权弹窗取消 = 拒绝本次 L3 授权（最需要被计数的信号） */
+  const handleExtractConsentCancel = useCallback((): void => {
+    void logAiEvent({ intent: "extract", step: "cancel", scope: aiConsent.scope });
+    setExtractPending(null);
+    setExtract(null);
+  }, [aiConsent.scope]);
+
+  /** 勾选 / 取消勾选一条候选 */
+  const handleExtractToggle = useCallback((key: string): void => {
+    setExtract((prev) =>
+      prev
+        ? {
+            ...prev,
+            candidates: prev.candidates.map((item) =>
+              item.key === key ? { ...item, selected: !item.selected } : item,
+            ),
+          }
+        : prev,
+    );
+  }, []);
+
+  /** 改一条候选的类型（模型认错类型时，作者就地改，不必先建卡再改） */
+  const handleExtractTypeChange = useCallback((key: string, type: EntityType): void => {
+    setExtract((prev) =>
+      prev
+        ? {
+            ...prev,
+            candidates: prev.candidates.map((item) =>
+              item.key === key ? { ...item, type } : item,
+            ),
+          }
+        : prev,
+    );
+  }, []);
+
+  /**
+   * 确认建卡：只写「勾选且不重名」的那些，整批单事务。
+   *
+   * 重名项**一律跳过**（`existingId` 非空），即便被勾上也不写：覆盖作者手写的
+   * 简介是不可逆的损失，而补一句简介只需要点开卡片改一次。
+   */
+  const handleExtractConfirm = useCallback((): void => {
+    if (!extract) return;
+    const picked = extract.candidates.filter((item) => item.selected && !item.existingId);
+    if (picked.length === 0) {
+      view.showToast("先勾选要建卡的条目（已存在的不会重复建）", "info");
+      return;
+    }
+    const created = data.addEntitiesBatch(
+      picked.map((item) => ({ name: item.name, type: item.type, summary: item.summary })),
+    );
+    setExtract((prev) =>
+      prev
+        ? {
+            ...prev,
+            applied: created,
+            // 建过的条目从候选里摘掉：留在列表里再点一次「建卡」只会让人以为没成功
+            candidates: prev.candidates.filter(
+              (item) => item.existingId !== null || !item.selected,
+            ),
+          }
+        : prev,
+    );
+    void logAiEvent({
+      intent: "extract",
+      step: "adopt",
+      itemCount: created,
+      scope: aiConsent.scope,
+    });
+    view.showToast(created > 0 ? `已建 ${created} 张卡` : "没有新增（都已存在）");
+  }, [extract, data, view, aiConsent.scope]);
+
+  /** 关闭抽取面板（生成中关闭 = 主动放弃，记 cancel） */
+  const handleExtractClose = useCallback((): void => {
+    if (extract?.loading) {
+      void logAiEvent({ intent: "extract", step: "cancel", scope: aiConsent.scope });
+    }
+    setExtract(null);
+    setExtractPending(null);
+  }, [extract, aiConsent.scope]);
 
   const handleNewVolume = useCallback((): void => {
     const id = data.createVolume();
@@ -2337,6 +2607,17 @@ export function useNovelPage() {
     handleSummaryConsentConfirm,
     handleSummaryConsentCancel,
     handleSummaryClose,
+    // AI 实体抽取（R-AI-08）
+    extract,
+    extractPending,
+    extractPendingScope,
+    runEntityExtract,
+    handleExtractConsentConfirm,
+    handleExtractConsentCancel,
+    handleExtractToggle,
+    handleExtractTypeChange,
+    handleExtractConfirm,
+    handleExtractClose,
     handleApplySummaryNote,
     handleNewVolume,
     handleSaveEntity,

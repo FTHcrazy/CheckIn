@@ -12,6 +12,8 @@ import { CalendarOutlined } from "@ant-design/icons";
 import type { LedgerCategoryDTO } from "@/shared/services/ledger";
 import { colorVar, renderCategoryIcon, weakColorVar } from "../../constants/categories";
 import { categoriesForType } from "../../ledger-utils";
+import type { CategorySuggestion } from "../../ledger-suggest";
+import CategorySuggest from "../CategorySuggest";
 import "./index.scss";
 
 interface QuickAddBarProps {
@@ -27,6 +29,8 @@ interface QuickAddBarProps {
   categories: readonly LedgerCategoryDTO[];
   note: string;
   onNoteChange: (note: string) => void;
+  /** 分类建议（按备注实时算好，空数组即不渲染建议条） */
+  suggestions: readonly CategorySuggestion[];
   error: string | null;
   submitting: boolean;
   onClose: () => void;
@@ -53,6 +57,7 @@ function QuickAddBar({
   categories,
   note,
   onNoteChange,
+  suggestions,
   error,
   submitting,
   onClose,
@@ -161,6 +166,18 @@ function QuickAddBar({
             })}
           </div>
         </div>
+
+        {/* 行2.5：分类建议（有把握时才出现，点一下才生效） */}
+        {suggestions.length > 0 ? (
+          <div className="ld-quick__row">
+            <CategorySuggest
+              suggestions={suggestions}
+              categories={categories}
+              activeId={categoryId}
+              onPick={onCategoryChange}
+            />
+          </div>
+        ) : null}
 
         {/* 行3：备注 + 今天 + 提示 + 保存 */}
         <div className="ld-quick__row">

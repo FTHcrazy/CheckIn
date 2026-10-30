@@ -1,0 +1,179 @@
+@use "../../../../../../shared/styles/widget" as widget;
+
+/* 一致性校对面板（工具箱二级面板，R-AI-10a）
+
+   按钮一律由 antd `Button` 承载：外观只通过组件级 CSS 变量配置，不写
+   `:hover` / `:disabled` 属性规则（AGENTS §6.1.2）—— antd 的状态选择器
+   特异性更高，自写属性规则永远压不过它。
+   色值与间距全部走 `var(--app-*)` / `var(--app-space-*)`，换肤自动跟随。 */
+
+/* 作用域收在 .nv-panel 之下：`.nv-cc` 这种短类名一旦泄漏到全局，
+   会命中任何同名节点（敏感词面板曾因 `.nv-sm` 泄漏撑断正文段落）。 */
+.nv-panel .nv-cc {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: hidden;
+
+  &__actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  &__hint {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--app-text-muted);
+
+    &--warn {
+      color: var(--app-warning);
+    }
+  }
+
+  &__summary {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--app-text-secondary);
+  }
+
+  &__stat {
+    font-weight: 500;
+  }
+
+  &__time {
+    margin-left: auto;
+    color: var(--app-text-disabled);
+  }
+
+  /* 结果列表：自己滚，不把整块面板撑长（面板高度由右栏决定） */
+  &__list {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    overflow-y: auto;
+    padding-right: 2px;
+
+    /* 滚动条只在悬停时显现（与其余面板一致，避免常驻一条灰杠） */
+    &::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    &::-webkit-scrollbar-thumb {
+      border-radius: 3px;
+      background: transparent;
+    }
+
+    &:hover::-webkit-scrollbar-thumb {
+      background: var(--app-border);
+    }
+  }
+}
+
+/* 一条问题：整行可点（跳到正文首处），因此是一个 Button 而不是 div。
+   ⚠️ 内部 span 的类名是 `.nv-cc-hit__xxx`，与 `.ant-btn` 复合的那条规则
+   必须单独写——把子元素嵌进 `.nv-cc-hit.ant-btn` 会拼成
+   `.nv-cc-hit.ant-btn__head`，永远命中不到。 */
+.nv-panel .nv-cc-hit.ant-btn {
+  @include widget.ant-button-reset;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  width: 100%;
+  height: auto;
+  padding: 9px 10px;
+  text-align: left;
+  --ant-border-radius: 9px;
+  --ant-line-width: 1px;
+  --ant-button-padding-inline: 10px;
+  --ant-button-default-bg: var(--app-surface);
+  --ant-button-default-color: var(--app-text);
+  --ant-button-default-border-color: var(--app-border);
+  --ant-button-default-hover-bg: var(--app-surface-alt);
+  --ant-button-default-hover-color: var(--app-text);
+  --ant-button-default-hover-border-color: var(--app-primary);
+  --ant-button-default-active-bg: var(--app-surface-alt);
+
+  /* 「确定」的那几条用左侧色条区分强弱，不整块染色：
+     整块红底会让 20 条结果变成一片警告色，反而看不出哪条更该先看 */
+  &.nv-cc-hit--sure {
+    border-left: 3px solid var(--app-error);
+  }
+
+  &.nv-cc-hit--suspect {
+    border-left: 3px solid var(--app-warning);
+  }
+}
+
+.nv-panel .nv-cc-hit__head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.nv-panel .nv-cc-hit__found {
+  font-weight: 600;
+  color: var(--app-text);
+  text-decoration: line-through;
+  text-decoration-color: var(--app-text-disabled);
+}
+
+.nv-panel .nv-cc-hit__arrow {
+  color: var(--app-text-disabled);
+  font-size: 12px;
+}
+
+.nv-panel .nv-cc-hit__expected {
+  font-weight: 600;
+  color: var(--app-primary);
+}
+
+.nv-panel .nv-cc-hit__tag {
+  flex: none;
+  padding: 0 5px;
+  border-radius: 5px;
+  font-size: 11px;
+  line-height: 16px;
+
+  &.nv-cc-hit__tag--sure {
+    color: var(--app-error);
+    background: var(--app-error-weak);
+  }
+
+  &.nv-cc-hit__tag--suspect {
+    color: var(--app-warning);
+    background: var(--app-warning-weak);
+  }
+}
+
+.nv-panel .nv-cc-hit__count {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--app-text-disabled);
+}
+
+.nv-panel .nv-cc-hit__chapter {
+  font-size: 11px;
+  color: var(--app-text-secondary);
+}
+
+.nv-panel .nv-cc-hit__snippet {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--app-text-muted);
+  /* 证据句是给判断用的，不是给人读的：两行封顶 */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}

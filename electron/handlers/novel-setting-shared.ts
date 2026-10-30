@@ -125,6 +125,21 @@ export function maxRank(domain: SettingDomain, categoryId: string): number {
 }
 
 /**
+ * 取分类内当前最小 rank（没有等级项时为 0）。
+ *
+ * `desc`（由高到低）阶梯的「显示末尾」是 rank 最小的一端，批量追加要落在那里
+ * 就得先知道低端在哪（2.17.1 修：desc 下追加原先插到了视觉顶部）。
+ */
+export function minRank(domain: SettingDomain, categoryId: string): number {
+  const sql =
+    domain === "book"
+      ? "SELECT COALESCE(MIN(rank), 0) AS min FROM novel_setting_levels WHERE category_id = ?"
+      : "SELECT COALESCE(MIN(rank), 0) AS min FROM novel_global_setting_levels WHERE category_id = ?";
+  const row = dbGet(sql, [categoryId]) as { min: number };
+  return row.min;
+}
+
+/**
  * 取分类内当前的等级行数（不是 max(rank)）。
  *
  * 删除 / 拆分 / 旧数据裁剪都会让 rank 出现空洞，此时 `max(rank) > count`；

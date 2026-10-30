@@ -17,6 +17,9 @@ import { assemblePolishSpec, type PolishIntent } from "./polish";
 import { assembleTransformSpec, type TransformIntent } from "./transform";
 import { assembleContinuationStreamSpec, type ContinuationIntent } from "./continuation";
 import { assembleSummarySpec, type SummaryIntent } from "./summary";
+import { assembleExtractSpec, type ExtractIntent } from "./extract";
+import { assembleRelationSpec, type RelationIntent } from "./relation";
+import { assembleLevelGenSpec, type LevelGenIntent } from "./level-gen";
 import type { PromptSpec } from "./types";
 
 /** 各意图的参数类型（新功能在这里扩一行，`PromptIntent` 自动跟着变） */
@@ -26,6 +29,9 @@ export interface PromptIntentMap {
   transform: TransformIntent;
   continuation: ContinuationIntent;
   summary: SummaryIntent;
+  extract: ExtractIntent;
+  relation: RelationIntent;
+  levelGen: LevelGenIntent;
 }
 
 /** 已实现模板的意图名 */
@@ -40,6 +46,9 @@ export const PROMPT_BUILDERS: {
   transform: assembleTransformSpec,
   continuation: assembleContinuationStreamSpec,
   summary: assembleSummarySpec,
+  extract: assembleExtractSpec,
+  relation: assembleRelationSpec,
+  levelGen: assembleLevelGenSpec,
 };
 
 /** 运行期遍历用（顺序 = 清单顺序，便于日志 / 调试图标） */
@@ -64,6 +73,9 @@ export const AI_INTENT_LABELS: Record<PromptIntent, string> = {
   transform: "文本变换",
   continuation: "续写",
   summary: "摘要",
+  extract: "实体抽取",
+  relation: "关系推断",
+  levelGen: "等级生成",
 };
 
 /** 各意图的 prompt 模板版本（M7）。
@@ -84,6 +96,12 @@ export const PROMPT_VERSIONS: Record<PromptIntent, string> = {
   // v2（2.10.1）：摘要支持 L3 授权范围——新增【前情】块与「只看选中段落」约束
   // v3（2.10.2）：摘要同一次产出【一句话】+【摘要】两段，一句话回填大纲梗概（大纲回流）
   summary: "v3",
+  // v1（2.11.0）：R-AI-08 实体抽取首版（json-array，四字段）
+  extract: "v1",
+  // v1（2.14.0）：R-AI-15 关系推断首版（json-array，五字段 + 端点白名单）
+  relation: "v1",
+  // v1（2.15.0）：R-AI-18 等级体系生成 / 拓展首版（json-array，两字段 + 双模式）
+  levelGen: "v1",
 };
 
 /** 按意图取 prompt 版本（未登记时返回空串，调用方按「版本未知」处理） */

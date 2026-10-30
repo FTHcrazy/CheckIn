@@ -33,6 +33,7 @@ import {
   listGlobalRefs,
   maxRank,
   maxSortOrder,
+  minRank,
   normalizeAliases,
   normalizeSubPattern,
   rankAt,
@@ -44,6 +45,8 @@ import {
   type SettingExportPayload,
   type SettingLevelRow,
 } from "./novel-setting-shared";
+// 与渲染层共用同一套「显示行序 ↔ rank」换算：两端各算一套必然错位
+import { toRankIndex } from "../../src/shared/novel/setting-utils";
 
 // ── DTO（camelCase，IPC 线格式；库表列 snake_case 见 novel-db） ────────
 
@@ -387,12 +390,18 @@ export function registerNovelGlobalSettingHandlers(): void {
       const trimmed = name.trim();
       if (!trimmed) return null;
       const category = dbGet(
-        "SELECT sub_levels, sub_pattern FROM novel_global_setting_categories WHERE id = ?",
+        "SELECT sub_levels, sub_pattern, carry_dir FROM novel_global_setting_categories WHERE id = ?",
         [categoryId],
-      ) as { sub_levels: number; sub_pattern: string } | undefined;
+      ) as { sub_levels: number; sub_pattern: string; carry_dir: string } | undefined;
       if (!category) return null;
       const total = levelCount("global", categoryId);
-      const at = index < 0 ? total : Math.min(index, total);
+      // ⚠️ `index` 是**显示行序**，`rankAt` 按 rank 升序取 —— desc 下两者相反，
+      // 必须换算（2.17.1，与 book 域共用 `toRankIndex`）
+      const at = toRankIndex(
+        total,
+        index < 0 ? total : Math.min(index, total),
+        isCarryDir(category.carry_dir) ? category.carry_dir : "asc",
+      );
       const rank = at >= total ? maxRank("global", categoryId) + 1 : rankAt("global", categoryId, at);
       const db = getDb();
       const apply = db.transaction(() => {
@@ -428,9 +437,21 @@ export function registerNovelGlobalSettingHandlers(): void {
     (
       _event,
       categoryId: string,
-      items: Array<{ id: string; name: string; subLevels?: number; subPattern?: string }>,
+      items: Array<{ id: string; name: string; note?: string; subLevels?: number; subPattern?: string }>,
     ): number => {
       if (!Array.isArray(items) || items.length === 0) return 0;
+
+      // 与单条新增同口径（2.17.1）：未显式给出的小层回落到**分类默认**，
+      // 不是 1；note（等级说明）随条目写入而不是硬编码空串。
+      const category = dbGet(
+        "SELECT id, sub_levels, sub_pattern, carry_dir FROM novel_global_setting_categories WHERE id = ?",
+        [categoryId],
+      ) as { id: string; sub_levels: number; sub_pattern: string; carry_dir: string } | undefined;
+      if (!category) return 0;
+      const categorySubLevels = Math.max(1, Math.floor(Number(category.sub_levels)) || 1);
+      const categorySubPattern = category.sub_pattern ?? "";
+      const isDesc = (isCarryDir(category.carry_dir) ? category.carry_dir : "asc") === "desc";
+
       const batch = items.slice(0, 99);
       const cleaned = batch
         .map((item) => ({
@@ -439,33 +460,43 @@ export function registerNovelGlobalSettingHandlers(): void {
               ? item.id.trim()
               : createSettingId("gsl"),
           name: typeof item?.name === "string" ? item.name.trim().slice(0, 60) : "",
+          note: typeof item?.note === "string" ? item.note.trim().slice(0, 200) : "",
           subLevels:
             typeof item?.subLevels === "number" && item.subLevels >= 1
               ? Math.min(999, Math.floor(item.subLevels))
-              : 1,
-          subPattern: normalizeSubPattern(item?.subPattern),
+              : categorySubLevels,
+          subPattern: normalizeSubPattern(item?.subPattern) || categorySubPattern,
         }))
         .filter((item) => item.name);
       if (cleaned.length === 0) return 0;
 
-      const category = dbGet(
-        "SELECT id FROM novel_global_setting_categories WHERE id = ?",
-        [categoryId],
-      ) as { id: string } | undefined;
-      if (!category) return 0;
-
       const db = getDb();
       const apply = db.transaction(() => {
-        let rank = maxRank("global", categoryId);
+        /**
+         * 追加落点随进位方向走（2.17.1，与 book 域同口径）：
+         * `asc` 接 max(rank) 之后；`desc` 的显示末尾是 rank 最小的一端 ——
+         * 现有整体上移、新条目占住低端。`base` 必须在上移之前取，否则撞 rank。
+         */
+        const base = isDesc ? (minRank("global", categoryId) || 1) : maxRank("global", categoryId);
+        const total = levelCount("global", categoryId);
+        if (isDesc) {
+          dbRun("UPDATE novel_global_setting_levels SET rank = rank + ? WHERE category_id = ?", [
+            cleaned.length,
+            categoryId,
+          ]);
+        }
+        // 传入顺序 = 从现有末端往外的显示顺序；desc 且已有阶梯时整块反转（与 book 域同口径）
+        const ordered = isDesc && total > 0 ? [...cleaned].reverse() : cleaned;
+        let rank = isDesc ? base - 1 : base;
         const stmt = db.prepare(
           `INSERT INTO novel_global_setting_levels
              (id, category_id, name, rank, aliases, note, sub_levels, power,
               parent_id, seg_from, seg_to, sub_pattern)
-           VALUES (?, ?, ?, ?, '[]', '', ?, NULL, NULL, NULL, NULL, ?)`,
+           VALUES (?, ?, ?, ?, '[]', ?, ?, NULL, NULL, NULL, NULL, ?)`,
         );
-        for (const item of cleaned) {
+        for (const item of ordered) {
           rank += 1;
-          stmt.run(item.id, categoryId, item.name, rank, item.subLevels, item.subPattern);
+          stmt.run(item.id, categoryId, item.name, rank, item.note, item.subLevels, item.subPattern);
         }
       });
       apply();

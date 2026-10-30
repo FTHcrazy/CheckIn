@@ -41,6 +41,7 @@ import {
   saveSettingLevelOrder as saveSettingLevelOrderRemote,
   saveVolumeOrder,
   setWorkGenre as setWorkGenreRemote,
+  saveEntitiesBatch,
   searchAcrossBook,
   setChapterStatus,
   splitSettingLevel as splitSettingLevelRemote,
@@ -1245,6 +1246,38 @@ export function useNovelData() {
     [bundle, activeWorkId],
   );
 
+  /**
+   * 批量建卡（R-AI-08）：AI 抽取确认后一次写入。
+   *
+   * 乐观更新 + 单事务落库：先本地插进 bundle（面板立刻能看到「已建 N 张」），
+   * 再交给主进程整批写；主进程失败时返回 false，调用方负责提示，
+   * 下次 reload 会把乐观插入的假数据纠正回来（不做本地回滚：那会让作者
+   * 看到列表里的条目「闪现又消失」，比等一次刷新更吓人）。
+   */
+  const addEntitiesBatch = useCallback(
+    (items: Array<{ name: string; type: EntityType; summary: string }>): number => {
+      if (!bundle || items.length === 0) return 0;
+      const baseSort = bundle.entities.length;
+      const created: NovelEntity[] = items.map((item, index) => ({
+        id: createNovelId("e"),
+        workId: activeWorkId,
+        type: item.type,
+        name: item.name,
+        aliases: [],
+        summary: item.summary,
+        content: "",
+        fields: {},
+        sort: baseSort + index + 1,
+      }));
+      setBundle((current) =>
+        current ? { ...current, entities: [...current.entities, ...created] } : current,
+      );
+      void saveEntitiesBatch(created);
+      return created.length;
+    },
+    [bundle, activeWorkId],
+  );
+
   const getEntityById = useCallback(
     (entityId: string): NovelEntity | null =>
       entities.find((entity) => entity.id === entityId) ?? null,
@@ -1580,7 +1613,7 @@ export function useNovelData() {
         segFrom: null,
         segTo: null,
       };
-      const next = insertLevel(category.levels, at, draft);
+      const next = insertLevel(category.levels, at, draft, category.carryDir);
       patchCategoryLocal(categoryId, (item) => ({ ...item, levels: next }));
       void addSettingLevelRemote(categoryId, id, trimmed, at);
       return next.find((level) => level.id === id) ?? null;
@@ -1598,7 +1631,7 @@ export function useNovelData() {
   const batchAddSettingLevels = useCallback(
     (
       categoryId: string,
-      drafts: Array<{ name: string; subLevels?: number; subPattern?: string }>,
+      drafts: Array<{ name: string; note?: string; subLevels?: number; subPattern?: string }>,
     ): number => {
       if (!bundle) return 0;
       const category = bundle.settings.find((item) => item.id === categoryId);
@@ -1606,11 +1639,14 @@ export function useNovelData() {
       const cleaned = drafts
         .map((draft) => ({
           name: draft.name.trim().slice(0, 60),
+          // 等级说明随条目走（AI 排阶梯会给出每级说明，丢掉它等于白生成）
+          note: (draft.note ?? "").trim().slice(0, 200),
           subLevels:
             draft.subLevels !== undefined && draft.subLevels >= 1
               ? Math.floor(draft.subLevels)
               : category.subLevels,
-          subPattern: (draft.subPattern ?? "").trim().slice(0, 60),
+          // 小层命名同样回落到分类默认，与主进程 batch-add 同口径
+          subPattern: (draft.subPattern ?? "").trim().slice(0, 60) || category.subPattern,
         }))
         .filter((draft) => draft.name)
         .slice(0, 99);
@@ -1619,26 +1655,45 @@ export function useNovelData() {
         ...draft,
         id: createNovelId("sl"),
       }));
-      patchCategoryLocal(categoryId, (item) => ({
-        ...item,
-        levels: [
-          ...item.levels,
-          ...items.map((draft, index) => ({
-            id: draft.id,
-            categoryId,
-            name: draft.name,
-            aliases: [],
-            note: "",
-            subLevels: draft.subLevels,
-            subPattern: draft.subPattern,
-            power: null,
-            parentId: null,
-            segFrom: null,
-            segTo: null,
-            rank: item.levels.length + index + 1,
-          })),
-        ],
-      }));
+      patchCategoryLocal(categoryId, (item) => {
+        /**
+         * 追加落点随进位方向走（与主进程 batch-add 同口径，2.17.1）：
+         * `asc` 接在 max(rank) 之后；`desc` 的显示末尾是 rank **最小**的一端 ——
+         * 现有整体上移、新条目占住低端。两端算错一个方向，刷新前后就会跳位。
+         */
+        const isDesc = category.carryDir === "desc";
+        const ordered = [...item.levels].sort((a, b) => a.rank - b.rank);
+        const hasExisting = ordered.length > 0;
+        const base = !hasExisting
+          ? 1
+          : isDesc
+            ? ordered[0].rank
+            : ordered[ordered.length - 1].rank + 1;
+        const shifted =
+          isDesc && hasExisting
+            ? ordered.map((level) => ({ ...level, rank: level.rank + items.length }))
+            : ordered;
+        // 传入顺序 = 从现有末端往外的显示顺序；desc 有现有行时整块反转（与主进程同口径）
+        const list = isDesc && hasExisting ? [...items].reverse() : items;
+        const added = list.map((draft, index) => ({
+          id: draft.id,
+          categoryId,
+          name: draft.name,
+          aliases: [],
+          note: draft.note,
+          subLevels: draft.subLevels,
+          subPattern: draft.subPattern,
+          power: null,
+          parentId: null,
+          segFrom: null,
+          segTo: null,
+          rank: base + index,
+        }));
+        return {
+          ...item,
+          levels: [...shifted, ...added].sort((a, b) => a.rank - b.rank),
+        };
+      });
       void batchAddSettingLevelsRemote(categoryId, items);
       return items.length;
     },
@@ -2220,6 +2275,7 @@ export function useNovelData() {
     toggleChapterStatus,
     markSelectionAsEntity,
     updateEntity,
+    addEntitiesBatch,
     addLink,
     removeLink,
     createSettingCategory,

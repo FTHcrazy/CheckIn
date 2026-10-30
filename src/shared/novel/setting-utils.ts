@@ -183,17 +183,36 @@ export function sortLevels(
 }
 
 /**
+ * 显示行序 → rank 升序下标
+ *
+ * `insertLevel` 与主进程 `rankAt` 都按 **rank 升序**解释落点（rank 1 排最前），
+ * 而 UI 给的是**显示行序**（第几行之前）。两者在 `asc` 下相同；`desc` 下
+ * `sortLevels` 会把展示数组反转，两者正好相反 —— 不换算就会「往末尾追加」
+ * 实际插到视觉顶部（2.17.1 修，AI 排阶梯的「拓展后续」因此插反）。
+ *
+ * 换算表（`desc`）：显示顶部（0）→ rank 升序末尾（total）；显示底部（total）→ 0。
+ */
+export function toRankIndex(
+  total: number,
+  displayIndex: number,
+  carryDir: CarryDirection,
+): number {
+  const clamped = Math.max(0, Math.min(displayIndex, total));
+  return carryDir === "desc" ? total - clamped : clamped;
+}
+
+/**
  * 在落点插入一条新等级，返回重排后的完整序列
  *
- * `insertAt` 是**行序落点**（第几行之前），0 = 最前，`>= 行数` = 追加到末尾。
- * 落点一律换算成「目标行的 rank」，再把该 rank 及之后的全部 +1 ——
+ * `insertAt` 是**显示行序落点**（第几行之前），0 = 最前，`>= 行数` = 追加到末尾。
+ * 落点经 `toRankIndex` 换算成「目标行的 rank」，再把该 rank 及之后的全部 +1 ——
  * rank 是阶梯的唯一顺序依据，出现两条同 rank 的行，「第 N 阶」就与顺序脱钩。
  *
  * ⚠️ **落点必须按 rank 算，不能按数组下标 / 行数直接当 rank**（1.38.0 修）：
  * - 中间插入：目标行的 rank 就是落点（rank 有空洞时目标 rank 可能是 5，
  *   而不是 3）；
- * - 末尾追加：落点是 `max(rank) + 1`，不是 `行数 + 1` —— 历史数据里
- *   rank 是 1、2、5（行数 3）时，旧的 `长度 + 1 = 4` 会**插到金丹之前**，
+ * - 末尾追加：落点是 `max(rank) + 1`（asc）/ `min(rank)`（desc），不是 `行数 + 1`
+ *   —— 历史数据里 rank 是 1、2、5（行数 3）时，旧的 `长度 + 1 = 4` 会**插到金丹之前**，
  *   这正是「在末尾插入无效」的现象。
  *
  * 为此 rank 空洞也会被**顺带压实**（落点之后整体 +1 后重新按 rank 排序），
@@ -203,10 +222,11 @@ export function insertLevel(
   levels: SettingLevel[],
   insertAt: number,
   draft: Omit<SettingLevel, "rank">,
+  carryDir: CarryDirection = "asc",
 ): SettingLevel[] {
   const ordered = [...levels].sort((a, b) => a.rank - b.rank);
   const endpoint = ordered.length === 0 ? 1 : ordered[ordered.length - 1].rank + 1;
-  const target = Math.max(0, Math.min(insertAt, ordered.length));
+  const target = toRankIndex(ordered.length, insertAt, carryDir);
   const rank = target >= ordered.length ? endpoint : ordered[target].rank;
   const shifted = ordered.map((level) =>
     level.rank >= rank ? { ...level, rank: level.rank + 1 } : level,

@@ -18,7 +18,14 @@ export type PanelTab =
  * 提升到视图状态（原先是 SupportPanel 内部 state）是为了让底部状态条上的
  * 敏感词角标能一键直达面板 —— 不必先切到「工具」Tab 再点卡片。
  */
-export type ToolSub = "naming" | "sensitive" | null;
+export type ToolSub =
+  | "naming"
+  | "sensitive"
+  /** 一致性校对（R-AI-10a，纯本地） */
+  | "consistency"
+  /** 从本章抽取设定（R-AI-08） */
+  | "extract"
+  | null;
 export type EntityFilter = EntityType | "all";
 // 类型出处已收口到共享 hook（P3-3）；此处 re-export 保持 NovelToast 的 import 路径不变
 export type { ToastPayload } from "@/shared/novel/use-auto-toast";

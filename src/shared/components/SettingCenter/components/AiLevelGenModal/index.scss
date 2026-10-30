@@ -1,0 +1,118 @@
+@use "../../../../styles/widget" as widget;
+
+/* 等级体系 AI 生成 / 拓展弹窗（R-AI-18）
+ *
+ * 自包含作用域 `.ai-lvl`：弹窗挂在 body portal 上，拿不到 `.nv-sc` / `.gs-shell`
+ * 这类父级类名 —— 挂父级就只有其中一个形态能生效。
+ *
+ * 控件一律由组件库承载（Button / Input / Segmented），外观只走组件级变量，
+ * 不写 `:hover` / `:disabled` 属性规则（AGENTS §6.1.2）：antd 的状态选择器
+ * 特异性更高，自写属性规则永远压不过它。 */
+
+.ai-lvl__body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ai-lvl__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* 窄窗下「条数 + 生成按钮」会挤成两行而不是溢出后被裁掉 */
+  flex-wrap: wrap;
+}
+
+.ai-lvl__field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--app-text-secondary);
+}
+
+/* 条数输入：只定宽度，外观跟随输入框自己的主题变量 */
+.ai-lvl__input {
+  width: 64px;
+}
+
+.ai-lvl__spacer {
+  flex: 1;
+}
+
+.ai-lvl__list {
+  display: flex;
+  flex-direction: column;
+  /* 一屏能看 5–6 条，再多滚动 —— 弹窗高度不能随模型给的条数乱跳 */
+  max-height: 320px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.ai-lvl__empty {
+  margin: 0;
+  padding: 14px 12px;
+  border: 1px dashed var(--app-border);
+  border-radius: 9px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--app-text-secondary);
+  background: var(--app-surface-alt);
+}
+
+.ai-lvl__hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--app-text-secondary);
+
+  &.is-warn {
+    color: var(--app-warning);
+  }
+
+  &.is-error {
+    color: var(--app-error);
+  }
+
+  &.is-ok {
+    color: var(--app-success);
+  }
+}
+
+/* 底部提示：说明「发什么 / 不发什么」，与 L3 授权弹窗的口径一致 */
+.ai-lvl__tip {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--app-text-muted);
+}
+
+.ai-lvl__footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.ai-lvl__count {
+  font-size: 12px;
+  color: var(--app-text-secondary);
+}
+
+/* 两个小按钮：先清零再声明尺寸（§6.1.2 的清零点约定，守卫
+   `novel-ui-kit.test.ts` 会遍历 SettingCenter 树检查 `--ant-control-height`）。
+   颜色不覆盖：`type="primary"` 走 antd 主题 token，自动跟随换肤。 */
+.ai-lvl__run.ant-btn,
+.ai-lvl__apply.ant-btn {
+  @include widget.ant-button-reset;
+  --ant-control-height: 28px;
+  --ant-border-radius: 8px;
+  --ant-button-padding-inline: 12px;
+  --ant-button-content-font-size: 12px;
+  display: flex;
+  align-items: center;
+  /* 纯图标 + 文字的按钮清零后必须自己居中（否则图标贴左、文字被挤） */
+  justify-content: center;
+  gap: 4px;
+  padding: 0 12px;
+}

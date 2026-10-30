@@ -100,10 +100,26 @@ const LIMITS: Record<PromptIntent, CollectLimits> = {
   continuation: { entities: 30, realmLevels: 8, exclude: 20, summaryChars: 160 },
   // 摘要只靠「单章全文 + 作品背景」就能写，要素卡是噪音（梗概不需要逐个人物卡）
   summary: { entities: 0, realmLevels: 0, exclude: 0, summaryChars: 0 },
+  // 抽取：要素清单只用来**去重**（类型 + 名字足够），所以带上限放宽到 60 张；
+  // 正文由调用方按 L3 授权范围传入，不走 chapterSnippet
+  extract: { entities: 60, realmLevels: 0, exclude: 0, summaryChars: 0 },
+  // 关系推断：要素清单是**端点白名单**（不是背景），必须尽量全；
+  // 关系边由调用方另传 `existingEdges` 做去重，不在采集层
+  relation: { entities: 80, realmLevels: 0, exclude: 0, summaryChars: 0 },
+  // 等级体系生成：只需作品名 + 题材（workBlock），已有阶梯由 intent 传入。
+  // 要素卡对「排一条阶梯」是纯噪音，一个都不送 —— 这是全表最省的意图之一。
+  levelGen: { entities: 0, realmLevels: 0, exclude: 0, summaryChars: 0 },
 };
 
 /** 章节片段的安全上限（字）。**位置由调用方决定**，本层只防呆截断。 */
 const CHAPTER_SNIPPET_CHARS = 4000;
+
+/** 需要 `chapterSnippet` 的意图（白名单，见下方采集处的论证） */
+const SNIPPET_INTENTS: ReadonlySet<PromptIntent> = new Set<PromptIntent>([
+  "polish",
+  "transform",
+  "continuation",
+]);
 
 /** 截断加省略号；空值原样返回 */
 export function clipText(text: string | undefined, maxChars: number): string | undefined {
@@ -194,7 +210,11 @@ export function collectBookContext(snapshot: BookSnapshot, intent: PromptIntent)
     if (levels.length > 0) context.realmLevels = levels.slice(0, limits.realmLevels);
   }
 
-  if (intent !== "naming" && intent !== "summary") {
+  // 正文经 `chapterSnippet` 采集的意图：polish / transform 要「本段所在章节」做风格锚点，
+  // continuation 要前文接续。其余（naming / summary / extract / relation）的正文都由
+  // 调用方经 intent 参数传入（不受片段截断），这里再塞一份只会重复占用 prompt。
+  // 用白名单而不是黑名单：新增意图默认不采集片段，避免「加一个功能悄悄把 prompt 翻倍」。
+  if (SNIPPET_INTENTS.has(intent)) {
     context.chapterSnippet = clipText(snapshot.chapterSnippet, CHAPTER_SNIPPET_CHARS);
   }
 

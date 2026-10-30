@@ -31,6 +31,7 @@ import { Button, Empty, Modal } from "antd";
 import { EMPTY_CTA_COPY } from "@/shared/novel/guide-copy";
 import { SETTING_PUBLISH_CONFLICT_HINT } from "@/shared/novel/setting-reference";
 import BatchGenerateModal from "./components/BatchGenerateModal";
+import AiLevelGenModal from "./components/AiLevelGenModal";
 import CategoryCard from "./components/CategoryCard";
 import CategoryList from "./components/CategoryList";
 import GlobalCategoryPicker from "./components/GlobalCategoryPicker";
@@ -40,11 +41,24 @@ import SettingPanelHead from "./components/SettingPanelHead";
 import SplitLevelModal from "./components/SplitLevelModal";
 import TemplateLibraryModal from "./components/TemplateLibraryModal";
 import { useSettingCenter } from "./hooks/useSettingCenter";
+import { useAiLevelGen } from "./hooks/useAiLevelGen";
 import type { SettingCenterProps } from "./setting-center-shared";
 import "./index.scss";
 
 export default function SettingCenter(props: SettingCenterProps) {
   const c = useSettingCenter(props);
+
+  /**
+   * AI 排阶梯（R-AI-18）：写在既有批量追加通道上（`onBatchAddLevels`），
+   * 不新增写路径。作品题材由调用方传（本书域有，全局库没有）。
+   */
+  const aiGen = useAiLevelGen({
+    categories: props.settings,
+    workName: props.workName,
+    genre: props.workGenre,
+    onBatchAddLevels: props.onBatchAddLevels,
+    onNotify: props.onNotify,
+  });
 
   /**
    * 模板能力是否齐备（N-04）。
@@ -164,6 +178,14 @@ export default function SettingCenter(props: SettingCenterProps) {
                   dropIndex={c.dropIndex}
                   subLevelTotal={c.subLevelTotal}
                   onOpenBatch={c.openBatch}
+                  // AI 被关掉 / 本版本没有通道 → 不传，卡头不出现死按钮（M8 门控）
+                  onOpenAiGen={
+                    aiGen.hidden
+                      ? undefined
+                      : () => {
+                          if (c.active) aiGen.openDialog(c.active);
+                        }
+                  }
                   onStartSplit={c.startSplit}
                   onMergeLevel={props.onMergeLevel}
                   onDeleteLevel={props.onDeleteLevel}
@@ -217,6 +239,25 @@ export default function SettingCenter(props: SettingCenterProps) {
         names={c.batchNames}
         onSubmit={c.submitBatch}
         onCancel={c.closeBatch}
+      />
+
+      {/* AI 排阶梯：与「批量生成」共用同一写入通道，只是候选由模型产出（R-AI-18） */}
+      <AiLevelGenModal
+        open={aiGen.dialogOpen}
+        categoryName={aiGen.categoryName}
+        session={aiGen.session}
+        mode={aiGen.mode}
+        onModeChange={aiGen.setMode}
+        countText={aiGen.countText}
+        onCountChange={aiGen.setCountText}
+        count={aiGen.count}
+        pickedCount={aiGen.pickedCount}
+        generateBlockedReason={aiGen.generateBlockedReason}
+        unavailableText={aiGen.unavailableText}
+        onRun={aiGen.run}
+        onToggle={aiGen.toggle}
+        onApply={aiGen.apply}
+        onClose={aiGen.close}
       />
 
       <SplitLevelModal

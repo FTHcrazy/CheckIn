@@ -18,6 +18,14 @@ export interface LedgerDataResult {
   loading: boolean;
   categories: LedgerCategoryDTO[];
   transactions: LedgerTransactionDTO[];
+  /**
+   * 上一同期的流水（原始行）。
+   *
+   * 原本只 reduce 成环比合计就丢掉，2.16.0 起也交给分类建议当历史样本：
+   * 月初刚切到「本月」时当前区间可能只有两三条记录，光靠它学不出备注习惯，
+   * 而这份数据本来就已经查回来了，留着不花任何额外查询。
+   */
+  previousTransactions: LedgerTransactionDTO[];
   /** 上一同期支出合计，用于环比 */
   previousExpense: number;
   reload: () => void;
@@ -33,6 +41,7 @@ export function useLedgerData(range: LedgerRange): LedgerDataResult {
   const [loading, setLoading] = useState(true);
   const [categories, setCategories] = useState<LedgerCategoryDTO[]>([]);
   const [transactions, setTransactions] = useState<LedgerTransactionDTO[]>([]);
+  const [previousTransactions, setPreviousTransactions] = useState<LedgerTransactionDTO[]>([]);
   const [previousExpense, setPreviousExpense] = useState(0);
 
   /**
@@ -61,6 +70,7 @@ export function useLedgerData(range: LedgerRange): LedgerDataResult {
       if (!aliveRef.current || seq !== seqRef.current) return;
       setCategories(categoryRows);
       setTransactions(txRows);
+      setPreviousTransactions(previousRows);
       setPreviousExpense(
         previousRows.reduce(
           (sum, tx) => (tx.type === "expense" ? sum + tx.amount : sum),
@@ -102,6 +112,7 @@ export function useLedgerData(range: LedgerRange): LedgerDataResult {
     loading,
     categories,
     transactions,
+    previousTransactions,
     previousExpense,
     reload: load,
     removeTransaction,

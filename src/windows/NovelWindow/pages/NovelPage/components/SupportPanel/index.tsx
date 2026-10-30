@@ -16,13 +16,15 @@ import EntityPanel from "../EntityPanel";
 import type { EntitySavePatch } from "../EntityDetail";
 import InspirationPanel, { type InspirationActions } from "../InspirationPanel";
 import NameGeneratorPanel, { type NamingActions } from "../NameGeneratorPanel";
+import ConsistencyPanel from "../ConsistencyPanel";
+import ExtractPanel, { type ExtractActions } from "../ExtractPanel";
 import OutlinePanel, { type OutlineActions } from "../OutlinePanel";
 import SearchPanel from "../SearchPanel";
 import SensitivePanel from "../SensitivePanel";
 import NvSegmented from "../NvSegmented";
 import { LAYOUT } from "../../novel-config";
 import { useSearchStore } from "../../store/useSearchStore";
-import type { PanelTab, EntityFilter } from "../../hooks/useNovelViewState";
+import type { PanelTab, EntityFilter, ToolSub } from "../../hooks/useNovelViewState";
 import type {
   EntityAppearance,
   EntityRelationView,
@@ -124,10 +126,17 @@ interface SupportPanelProps {
    * 不传时退回组件内部 state —— 单测直接渲染本组件不必接这份状态；
    * 页面侧传入是为了让底部状态条的计数角标能一键直达敏感词面板。
    */
-  toolSub?: "naming" | "sensitive" | null;
-  onToolSubChange?: (value: "naming" | "sensitive" | null) => void;
+  toolSub?: ToolSub;
+  onToolSubChange?: (value: ToolSub) => void;
   /** 打开人物关系网络独立窗口（R27）；不传时工具卡退回「不可进入」占位 */
   onOpenRelation?: () => void;
+  /**
+   * 抽取设定动作组（R-AI-08）。
+   *
+   * 会话状态由页面持有：候选与「已建 N 张」在切 Tab 后仍要留在面板上，
+   * 放在面板内部 state 里一关就没。
+   */
+  extractActions: ExtractActions;
 }
 
 interface TabMeta {
@@ -207,11 +216,10 @@ export default function SupportPanel({
   toolSub: controlledToolSub,
   onToolSubChange,
   onOpenRelation,
+  extractActions,
 }: SupportPanelProps) {
   /** 工具箱二级面板：null = 启动器首页；受控优先，否则组件内自持 */
-  const [internalSub, setInternalSub] = useState<"naming" | "sensitive" | null>(
-    null,
-  );
+  const [internalSub, setInternalSub] = useState<ToolSub>(null);
   const toolSub = controlledToolSub !== undefined ? controlledToolSub : internalSub;
   const setToolSub = onToolSubChange ?? setInternalSub;
   /** 面板头「＋ 伏笔」触发次数：OutlinePanel 据此打开首卷的新增表单 */
@@ -302,7 +310,40 @@ export default function SupportPanel({
 
   const openTool = useCallback(() => setToolSub("naming"), [setToolSub]);
   const openSensitive = useCallback(() => setToolSub("sensitive"), [setToolSub]);
+  const openConsistency = useCallback(
+    () => setToolSub("consistency"),
+    [setToolSub],
+  );
+  const openExtract = useCallback(() => setToolSub("extract"), [setToolSub]);
   const backToTools = useCallback(() => setToolSub(null), [setToolSub]);
+
+  /**
+   * 抽取入口不可用的原因（未配置 AI / 当前版本不含 AI）。
+   *
+   * 与起名同一个口径：**不隐藏**卡片，只在状态位与点击回应里说明原因——
+   * 「设定库怎么填满」是作者迟早要问的问题，藏起来等于告诉他这软件没有这个能力。
+   */
+  const extractUnavailableText = useMemo(() => {
+    if (!aiVisible) return "当前版本不含 AI 功能";
+    if (!aiAvailable) return aiUnavailableText || "AI 当前不可用，先在设置里配置模型";
+    return undefined;
+  }, [aiVisible, aiAvailable, aiUnavailableText]);
+
+  /**
+   * 工具箱头部的「N 项可用 · M 项规划中」。
+   *
+   * 原先写死「2 项可用 · 2 项规划中」：关系网络上线后它仍说 2 项，属于
+   * 面板自己在说谎。改成按真实的入口开关算，新增工具不必再回来改文案。
+   */
+  const toolStats = useMemo(() => {
+    const relationLive = Boolean(onOpenRelation);
+    const extractLive = !extractUnavailableText;
+    const live = 3 + (extractLive ? 1 : 0) + (relationLive ? 1 : 0);
+    const planned = 1 + (relationLive ? 0 : 1);
+    const parts = [`${live} 项可用`, `${planned} 项规划中`];
+    if (!extractLive) parts.push("抽取需配置 AI");
+    return parts.join(" · ");
+  }, [onOpenRelation, extractUnavailableText]);
 
   // 工具箱二级面板直接顶替 Tab 名：head / foot / 滚动策略都按它分支
   const namedActive = toolSub ?? activeTab;
@@ -352,8 +393,20 @@ export default function SupportPanel({
           meta: "涉黄涉暴等通用红线",
           action: null,
         };
+      case "consistency":
+        return {
+          title: "一致性校对",
+          meta: "纯本地 · 不耗 AI 额度",
+          action: null,
+        };
+      case "extract":
+        return {
+          title: "抽取设定",
+          meta: `已有 ${entities.length} 张卡 · 勾选后才入库`,
+          action: null,
+        };
       default:
-        return { title: "工具箱", meta: "2 项可用 · 2 项规划中", action: null };
+        return { title: "工具箱", meta: toolStats, action: null };
     }
   }, [
     namedActive,
@@ -363,6 +416,7 @@ export default function SupportPanel({
     namingExclude.length,
     wordText,
     onTabChange,
+    toolStats,
   ]);
 
   const foot = useMemo(() => {
@@ -416,6 +470,20 @@ export default function SupportPanel({
             <span>点命中结果跳到正文第一处</span>
           </>
         );
+      case "consistency":
+        return (
+          <>
+            <KeyOutlined />
+            <span>点问题跳到正文第一处 · 只提示不改正文</span>
+          </>
+        );
+      case "extract":
+        return (
+          <>
+            <KeyOutlined />
+            <span>勾选后批量建卡 · 重名会标「已存在」</span>
+          </>
+        );
       default:
         return (
           <>
@@ -439,8 +507,10 @@ export default function SupportPanel({
     namedActive === "note" ||
     namedActive === "search" ||
     namedActive === "outline" ||
-    // 敏感词面板：工具栏常驻、结果列表自持滚动
-    namedActive === "sensitive";
+    // 敏感词 / 一致性校对：工具栏常驻、结果列表自持滚动
+    namedActive === "sensitive" ||
+    namedActive === "consistency" ||
+    namedActive === "extract";
 
   return (
     <div className={`nv-panel-region${open ? "" : " is-collapsed"}`}>
@@ -620,10 +690,36 @@ export default function SupportPanel({
                 chapters={chapters}
                 onNotify={onNotify}
               />
+            ) : toolSub === "consistency" ? (
+              <ConsistencyPanel
+                workId={activeWorkId}
+                chapters={chapters}
+                entities={entities}
+                realmCategory={
+                  settings.find((category) => category.kind === "realm") ?? null
+                }
+                onNotify={onNotify}
+              />
+            ) : toolSub === "extract" ? (
+              <ExtractPanel
+                chapterId={activeChapterId}
+                chapters={chapters}
+                session={extractActions.session}
+                onRun={extractActions.onRun}
+                onToggle={extractActions.onToggle}
+                onTypeChange={extractActions.onTypeChange}
+                onConfirm={extractActions.onConfirm}
+                onClose={extractActions.onClose}
+                onNotify={onNotify}
+                unavailableText={extractUnavailableText}
+              />
             ) : (
               <ToolLauncher
                 onOpenNaming={openTool}
                 onOpenSensitive={openSensitive}
+                onOpenConsistency={openConsistency}
+                onOpenExtract={openExtract}
+                extractUnavailableText={extractUnavailableText}
                 onNotify={onNotify}
                 onOpenRelation={onOpenRelation}
               />

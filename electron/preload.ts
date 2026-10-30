@@ -279,6 +279,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
       trackedInvoke('novel-volume-purge', id) as Promise<boolean>,
     saveEntity: (entity: unknown) =>
       trackedInvoke('novel-entity-save', entity) as Promise<boolean>,
+    /** 批量建卡（R-AI-08）：主进程单事务写完整批，再广播 novel-entities-changed */
+    saveEntitiesBatch: (entities: unknown[]) =>
+      trackedInvoke('novel-entity-batch-save', entities) as Promise<boolean>,
     addLink: (link: unknown) => trackedInvoke('novel-link-add', link) as Promise<boolean>,
     removeLink: (id: string) => trackedInvoke('novel-link-remove', id) as Promise<boolean>,
     /**

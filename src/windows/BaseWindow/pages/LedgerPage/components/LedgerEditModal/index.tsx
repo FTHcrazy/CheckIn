@@ -3,7 +3,9 @@ import { DatePicker, Input, Modal, Segmented } from "antd";
 import dayjs from "dayjs";
 import type { LedgerCategoryDTO } from "@/shared/services/ledger";
 import CategoryPicker from "../CategoryPicker";
+import CategorySuggest from "../CategorySuggest";
 import { categoriesForType } from "../../ledger-utils";
+import type { CategorySuggestion } from "../../ledger-suggest";
 import "./index.scss";
 
 /** 编辑草稿（由 useLedgerEditorState 持有，弹层只做渲染） */
@@ -19,6 +21,8 @@ interface LedgerEditModalProps {
   open: boolean;
   draft: LedgerEditDraft;
   categories: readonly LedgerCategoryDTO[];
+  /** 分类建议（按备注实时算好，空数组即不渲染建议条） */
+  suggestions: readonly CategorySuggestion[];
   error: string | null;
   submitting: boolean;
   onDraftChange: (patch: Partial<LedgerEditDraft>) => void;
@@ -31,6 +35,7 @@ function LedgerEditModal({
   open,
   draft,
   categories,
+  suggestions,
   error,
   submitting,
   onDraftChange,
@@ -102,6 +107,15 @@ function LedgerEditModal({
           maxLength={60}
           aria-label="备注"
         />
+
+        {suggestions.length > 0 ? (
+          <CategorySuggest
+            suggestions={suggestions}
+            categories={categories}
+            activeId={draft.categoryId}
+            onPick={(categoryId) => onDraftChange({ categoryId })}
+          />
+        ) : null}
       </div>
     </Modal>
   );

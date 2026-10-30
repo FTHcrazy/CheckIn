@@ -42,6 +42,19 @@ export interface SettingLevel {
 }
 
 /**
+ * 批量追加的一条等级（`onBatchAddLevels` 的入参）。
+ *
+ * `note` 是**等级说明**：AI 排阶梯会给每级一句「这一级大致能做什么」，
+ * 候选里看得见就必须能落进 `note` 列 —— 否则等于白生成（2.17.1 修）。
+ * 小层数 / 小层命名不在这层给：不显式传时主进程回落到**分类默认**，
+ * 与单条新增同口径。
+ */
+export interface LevelBatchItem {
+  name: string;
+  note?: string;
+}
+
+/**
  * 设定分类：境界体系 / 功法等级 / 丹药稀有度…一个分类挂一条等级序列。
  *
  * 1.4x 全局设定中心：`sourceGlobalId` 非空表示本分类是「引用自全局中心的镜像」

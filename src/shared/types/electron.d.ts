@@ -1156,6 +1156,11 @@ export interface ElectronAPI {
     /** 彻底删除卷（级联清理章节 / 快照 / 大纲条目，不可恢复） */
     purgeVolume: (id: string) => Promise<boolean>
     saveEntity: (entity: NovelEntityDTO) => Promise<boolean>
+    /**
+     * 批量建卡（R-AI-08）：整批**单事务**写入，写完广播 `novel-entities-changed`。
+     * 返回 false = 事务失败，此时一张都没写入（不存在「建了一半」）。
+     */
+    saveEntitiesBatch: (entities: NovelEntityDTO[]) => Promise<boolean>
     addLink: (link: NovelLinkDTO) => Promise<boolean>
     removeLink: (id: string) => Promise<boolean>
     /**
@@ -1195,7 +1200,7 @@ export interface ElectronAPI {
     settingLevelAdd: (categoryId: string, id: string, name: string, index: number) =>
       Promise<{ id: string; rank: number } | null>
     /** 批量新增等级项：全部追加到末尾，返回实际插入条数（1.37.0） */
-    settingLevelBatchAdd: (categoryId: string, items: Array<{ id: string; name: string; subLevels?: number; subPattern?: string }>) =>
+    settingLevelBatchAdd: (categoryId: string, items: Array<{ id: string; name: string; note?: string; subLevels?: number; subPattern?: string }>) =>
       Promise<number>
     settingLevelUpdate: (id: string, patch: NovelSettingLevelPatch) => Promise<boolean>
     settingLevelDelete: (id: string) => Promise<boolean>
@@ -1221,7 +1226,7 @@ export interface ElectronAPI {
     globalCategoryOrder: (updates: Array<{ id: string; sortOrder: number }>) => Promise<boolean>
     globalLevelAdd: (categoryId: string, id: string, name: string, index: number) =>
       Promise<{ id: string; rank: number } | null>
-    globalLevelBatchAdd: (categoryId: string, items: Array<{ id: string; name: string; subLevels?: number; subPattern?: string }>) =>
+    globalLevelBatchAdd: (categoryId: string, items: Array<{ id: string; name: string; note?: string; subLevels?: number; subPattern?: string }>) =>
       Promise<number>
     globalLevelUpdate: (id: string, patch: NovelGlobalSettingLevelPatch) => Promise<boolean>
     globalLevelDelete: (id: string) => Promise<boolean>

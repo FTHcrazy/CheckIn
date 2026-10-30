@@ -14,7 +14,7 @@
  * 本文件的 `dbAll / dbGet / dbRun / getDb` 都是 novel.db 的封装别名 ——
  * 改动时不要从 checkin 的 `../db` 导入写通道，那会把数据写回 checkin 库里去。
  */
-import { ipcMain, dialog } from "electron";
+import { BrowserWindow, ipcMain, dialog } from "electron";
 import { promises as fsp } from "node:fs";
 import path from "node:path";
 import mammoth from "mammoth";
@@ -28,6 +28,7 @@ import {
 } from "../novel-db";
 import { buildNovelTemplateBook } from "../novel-template";
 import { broadcastLinksChanged, workIdOfEntity } from "../novel-links-events";
+import { windowManager } from "../windowManager";
 
 // ── 行类型（snake_case，对应表结构） ──
 
@@ -1566,6 +1567,68 @@ ipcMain.handle("novel-editor-reset-template", () => seedTemplateBook());
         now,
         now,
       ],
+    );
+    return true;
+  });
+
+  /**
+   * 批量建卡（R-AI-08 判据③：单事务 + 广播）
+   *
+   * 为什么不能循环调 `novel-entity-save`：AI 抽取一次给 10~20 张卡，逐个 IPC
+   * 会写成 20 个事务、20 条广播；中途失败就留下「建了一半」的设定库，
+   * 作者无法判断该重来哪些。这里整批一个事务，要么全在、要么全不在。
+   *
+   * 广播载荷只带 id 与名字：接收方（行囊 / 关系窗口）按 id 幂等合并即可，
+   * 不需要整份 bundle（重载会把主窗口正在编辑的正文基线顶掉）。
+   */
+  ipcMain.handle("novel-entity-batch-save", (event, entities: NovelEntityDto[]) => {
+    if (!Array.isArray(entities) || entities.length === 0) return true;
+    const now = Date.now();
+    const db = getDb();
+    const apply = db.transaction(() => {
+      const stmt = db.prepare(
+        `INSERT INTO novel_entities (id, work_id, type, name, aliases, summary, content, fields, sort, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           type = excluded.type, name = excluded.name, aliases = excluded.aliases,
+           summary = excluded.summary, content = excluded.content,
+           fields = excluded.fields, sort = excluded.sort, updated_at = excluded.updated_at`,
+      );
+      for (const entity of entities) {
+        stmt.run(
+          entity.id,
+          entity.workId,
+          entity.type,
+          entity.name,
+          JSON.stringify(entity.aliases ?? []),
+          entity.summary ?? "",
+          entity.content ?? "",
+          JSON.stringify(entity.fields ?? {}),
+          entity.sort,
+          now,
+          now,
+        );
+      }
+    });
+    apply();
+
+    // 排除发送者：它已经乐观更新过，再收一次会重复插入（与 links 广播同口径）
+    let exclude: string | undefined;
+    if (!event.sender.isDestroyed()) {
+      const win = BrowserWindow.fromWebContents(event.sender);
+      if (win) exclude = windowManager.getNameOf(win);
+    }
+    windowManager.broadcast(
+      "novel-entities-changed",
+      {
+        workId: entities[0]?.workId,
+        created: entities.map((entity) => ({
+          id: entity.id,
+          name: entity.name,
+          type: entity.type,
+        })),
+      },
+      exclude,
     );
     return true;
   });

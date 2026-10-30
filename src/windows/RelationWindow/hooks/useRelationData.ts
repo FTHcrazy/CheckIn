@@ -19,6 +19,8 @@ import type { NovelBundleDTO, NovelLinksDelta } from "@/shared/types/electron";
 export interface RelationGraphData {
   workId: string;
   workName: string;
+  /** 题材（可空）：关系推断的 prompt 背景用（作品窗口那边同样按这个口径喂） */
+  workGenre?: string;
   /** 全部作品（只有 id/name）：切书横幅要显示「主窗口已切到《B》」 */
   works: WorksOption[];
   /** 原始数据：画布记忆变更后要按新成员集合重新派生，所以原件必须留在手里 */
@@ -127,6 +129,7 @@ export function useRelationData(workId: string | null | undefined): UseRelationD
         data: {
           workId: targetWorkId,
           workName: work.name,
+          ...(work.genre ? { workGenre: work.genre } : {}),
           works: bundle.works.map((item) => ({ id: item.id, name: item.name })),
           entities,
           links,

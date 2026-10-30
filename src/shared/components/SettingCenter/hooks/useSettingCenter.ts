@@ -508,7 +508,8 @@ export function useSettingCenter(props: SettingCenterProps): SettingCenterContro
 
   const submitBatch = useCallback((): void => {
     if (!active || batchNames.length === 0) return;
-    onBatchAddLevels(active.id, batchNames);
+    // 手动批量生成没有「等级说明」，只给名字；小层回落分类默认（主进程侧）
+    onBatchAddLevels(active.id, batchNames.map((name) => ({ name })));
     setBatchOpen(false);
     setBatchLines("");
     setBatchPattern("");

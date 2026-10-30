@@ -205,7 +205,7 @@
 - **架构红线**：
   - ⚠️ **红线 I（§6.8）**：**绝不引入向量库 / embedding / 分词器生产依赖**。语义检索若真要做，路径是 **SQLite FTS5**（`better-sqlite3` 自带编译，无需新包），但要在 novel.db 建 FTS5 虚表 + 同步触发器（触及 §6.5 迁移与 novel-safety 清库逻辑），**必须先预研**（见 §八 Q13）。本路线图不立项。
   - ⚠️ **性能红线（新提出）**：`searchAcrossBook` 是**同步全量扫描**（其源码注释已警告「防抖每触发一次就是一遍全书级同步 CPU，会卡住输入法」）。一致性校对是全书级任务，直接在渲染线程跑必然卡 UI。
-    → **规避方案二选一**（需拍板，Q12）：① Web Worker（Vite `?worker`，零新依赖）；② 分片 + `await` 让出（改动小、但仍有掉帧）。**禁止**为了省事把它搬进主进程逐章读库 —— 那会让小说正文经 IPC 全量往返。
+    → **已落地（2.16.x，Q1 改判）**：走 **Web Worker**（`workers/consistency.worker.ts` + `store/consistency-runner.ts`，零新依赖），主线程分片保留为降级路径（无 Worker / 构造失败 / 线程崩溃）。**禁止**为了省事把它搬进主进程逐章读库 —— 那会让小说正文经 IPC 全量往返。
   - ⚠️ **红线 G**：结果列表若达数百条需虚拟化，遵守确定高度 + 共享 Portal 条款。
 - **主要风险与验证抓手**：
   | 风险 | 抓手 |
@@ -580,7 +580,8 @@ ALTER TABLE novel_works ADD COLUMN genre TEXT;
 | `electron/preload.ts` / `src/shared/types/electron.d.ts` | 改 |
 | `src/windows/NovelWindow/pages/NovelPage/utils/consistency-local.ts` + `.test.ts` | 新增（10a）：人名/别名近似匹配 + 境界别名归并，纯函数 |
 | `src/windows/NovelWindow/pages/NovelPage/components/ConsistencyPanel/index.tsx` + `index.scss` + `index.test.tsx` | 新增：问题列表 + 跳转定位 + 忽略记忆 |
-| `src/windows/NovelWindow/pages/NovelPage/workers/consistency.worker.ts` | 条件新增（取决于 Q12） |
+| `src/windows/NovelWindow/pages/NovelPage/workers/consistency.worker.ts` | 已新增（2.16.x）：start/chapters/finish 三段协议，50 章一批 |
+| `src/windows/NovelWindow/pages/NovelPage/store/consistency-runner.ts` + `.test.ts` | 已新增（2.16.x）：Worker 编排 + 主线程分片降级 |
 | `electron/novel-db.ts` | 改（若需 `source` 列）：`ALTER TABLE novel_entities ADD COLUMN source` |
 | `CHANGELOG.md` / `package.json` | 改：2.11.0 |
 

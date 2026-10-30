@@ -11,11 +11,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { Alert, AutoComplete, Button, Input, Modal } from "antd";
 import { ArrowRightOutlined } from "@ant-design/icons";
+import { RELATION_NAME_MAX } from "@/shared/novel/relation-suggest";
 import { checkDraft, type DraftEndpoint } from "../../utils/relation-draft";
 import "./index.scss";
 
-/** 关系名上限：一句话能写清楚的长度，超出就是备注而不是关系名 */
-export const RELATION_NAME_MAX = 24;
+/**
+ * 关系名上限：**单一产地**在 `shared/novel/relation-suggest.ts`。
+ *
+ * 关系推断（R-AI-15）产出的关系名按同一个上限截断 —— 两处各写一个 24 的话，
+ * AI 能写进库里的标签会比作者手工能输入的长，图上就会出现一条「作者无法编辑
+ * 成同款」的边。这里重新导出只是因为历史调用方从本文件 import。
+ */
+export { RELATION_NAME_MAX };
 
 export interface RelationCreateDialogProps {
   open: boolean;

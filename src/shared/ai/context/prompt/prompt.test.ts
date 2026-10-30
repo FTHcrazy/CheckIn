@@ -20,6 +20,21 @@ import {
   SUMMARY_ONE_LINER_HEAD,
 } from "./summary";
 import {
+  assembleExtractSpec,
+  EXTRACT_OUTPUT_FORMAT,
+  EXTRACT_TYPE_LABELS,
+} from "./extract";
+import {
+  assembleRelationSpec,
+  RELATION_CONFIDENCE_VALUES,
+  RELATION_OUTPUT_FORMAT,
+} from "./relation";
+import {
+  assembleLevelGenSpec,
+  clampLevelCount,
+  LEVEL_OUTPUT_FORMAT,
+} from "./level-gen";
+import {
   AI_INTENT_LABELS,
   buildPromptSpec,
   PROMPT_BUILDERS,
@@ -368,14 +383,175 @@ describe("parseSummaryReply", () => {
  * 注册表守卫：这里钉的是「模板层的统一性」。
  * 新功能漏登记、漏声明 outputFormat、角色定位不在首句，都会在这里红。
  */
+describe("assembleExtractSpec", () => {
+  const extractContext = () => collectBookContext(snapshot, "extract");
+
+  it("json-array 契约：四个字段都在，供候选列表逐条渲染", () => {
+    const spec = assembleExtractSpec(extractContext(), {
+      chapter: "李玄握刀而立，青冥宗的山门在雾里。",
+      chapterTitle: "第一章 山门",
+    });
+    expect(spec.outputFormat.kind).toBe("json-array");
+    expect(spec.outputFormat).toEqual(EXTRACT_OUTPUT_FORMAT);
+    // OutputFormat 是判别联合，取字段前必须先按 kind 收窄
+    const format = spec.outputFormat;
+    const keys = format.kind === "json-array" ? format.fields.map((field) => field.key) : [];
+    expect(keys).toEqual(["name", "type", "summary", "evidence"]);
+  });
+
+  it("注入作品背景 / 章节标题 / 章节正文", () => {
+    const spec = assembleExtractSpec(extractContext(), {
+      chapter: "李玄握刀而立。",
+      chapterTitle: "第一章 山门",
+    });
+    expect(spec.system).toContain("《青云志》");
+    expect(spec.system).toContain("【章节】第一章 山门");
+    expect(spec.system).toContain("【章节正文】");
+    expect(spec.system).toContain("李玄握刀而立");
+  });
+
+  it("已有要素是硬约束段：名字列进去并要求跳过（否则每次抽一半是老面孔）", () => {
+    const spec = assembleExtractSpec(extractContext(), { chapter: "正文。" });
+    expect(spec.system).toContain("【已有要素（不要再抽，也不要换个说法重抽）】");
+    expect(spec.system).toContain("林晚照");
+    // 注释里承诺的「含别名」必须真的写进约束
+    expect(spec.system).toContain("含别名");
+  });
+
+  it("类型只能取枚举里的六个中文值", () => {
+    const spec = assembleExtractSpec(extractContext(), { chapter: "正文。" });
+    for (const label of EXTRACT_TYPE_LABELS) {
+      expect(spec.system).toContain(label);
+    }
+  });
+
+  it("选中段落范围：换成【选中段落】段并禁止补写没看到的段落", () => {
+    const spec = assembleExtractSpec(extractContext(), {
+      chapter: "他抬头看山门。",
+      scope: "selection",
+    });
+    expect(spec.system).toContain("【选中段落】");
+    expect(spec.system).not.toContain("【章节正文】");
+    expect(spec.system).toContain("只从【选中段落】里抽");
+  });
+
+  it("前情只作背景：有 contextText 才出现，且明说不从这里抽", () => {
+    const withContext = assembleExtractSpec(extractContext(), {
+      chapter: "正文。",
+      contextText: "上一章他刚下山。",
+    });
+    expect(withContext.system).toContain("【前情（只作背景，不要从这里抽取）】");
+    expect(withContext.system).toContain("上一章他刚下山");
+
+    const without = assembleExtractSpec(extractContext(), { chapter: "正文。" });
+    expect(without.system).not.toContain("【前情");
+  });
+
+  it("条数夹在 5–30：0 / 负数 / 离谱值都退回合理区间", () => {
+    expect(assembleExtractSpec(extractContext(), { chapter: "正文。", limit: 0 }).prompt).toContain(
+      "最多 20 条",
+    );
+    expect(assembleExtractSpec(extractContext(), { chapter: "正文。", limit: 2 }).prompt).toContain(
+      "最多 5 条",
+    );
+    expect(
+      assembleExtractSpec(extractContext(), { chapter: "正文。", limit: 999 }).prompt,
+    ).toContain("最多 30 条");
+  });
+
+  it("正文为空时给可读兜底，且要求空数组而不是编造", () => {
+    const spec = assembleExtractSpec(extractContext(), { chapter: "" });
+    expect(spec.system).toContain("（本章无正文内容）");
+    expect(spec.system).toContain("输出空数组");
+  });
+});
+
+describe("assembleRelationSpec", () => {
+  const relationContext = () => collectBookContext(snapshot, "relation");
+
+  it("json-array 契约：五字段（两端 + 关系名 + 置信度 + 出处）", () => {
+    const spec = assembleRelationSpec(relationContext(), {
+      chapter: "林晚照收下他做弟子。",
+      chapterTitle: "第二章 拜师",
+    });
+    expect(spec.outputFormat.kind).toBe("json-array");
+    expect(spec.outputFormat).toEqual(RELATION_OUTPUT_FORMAT);
+    const format = spec.outputFormat;
+    const keys = format.kind === "json-array" ? format.fields.map((field) => field.key) : [];
+    expect(keys).toEqual(["from", "to", "relation", "confidence", "evidence"]);
+  });
+
+  it("端点白名单写进 prompt：只能用已有要素的名字（编出来的名字会被渲染层丢掉）", () => {
+    const spec = assembleRelationSpec(relationContext(), { chapter: "正文。" });
+    expect(spec.system).toContain("【已有要素】");
+    expect(spec.system).toContain("林晚照");
+    expect(spec.system).toContain("必须");
+    expect(spec.system).toContain("逐字照抄");
+  });
+
+  it("已有关系逐条列出并要求不重复输出（同一对要素的平行关系仍可建）", () => {
+    const withEdges = assembleRelationSpec(relationContext(), {
+      chapter: "正文。",
+      existingEdges: ["林晚照 —师徒— 李玄"],
+    });
+    expect(withEdges.system).toContain("【已有关系（不要重复输出）】");
+    expect(withEdges.system).toContain("林晚照 —师徒— 李玄");
+
+    const without = assembleRelationSpec(relationContext(), { chapter: "正文。" });
+    expect(without.system).not.toContain("【已有关系");
+  });
+
+  it("置信度只允许三档，且约束里说清何时用哪档", () => {
+    const spec = assembleRelationSpec(relationContext(), { chapter: "正文。" });
+    for (const value of RELATION_CONFIDENCE_VALUES) {
+      expect(spec.system).toContain(value);
+    }
+    expect(spec.system).toContain("拜师");
+  });
+
+  it("选中段落范围：换成【选中段落】段并禁止补写没看到的段落", () => {
+    const spec = assembleRelationSpec(relationContext(), {
+      chapter: "他跪下叫了一声师父。",
+      scope: "selection",
+    });
+    expect(spec.system).toContain("【选中段落】");
+    expect(spec.system).not.toContain("【章节正文】");
+    expect(spec.system).toContain("只从【选中段落】里推断");
+  });
+
+  it("前情只作背景：有 contextText 才出现，且明说不从这里推断", () => {
+    const withContext = assembleRelationSpec(relationContext(), {
+      chapter: "正文。",
+      contextText: "上一章他们刚结拜。",
+    });
+    expect(withContext.system).toContain("【前情（只作背景，不要从这里推断）】");
+    expect(withContext.system).toContain("上一章他们刚结拜");
+  });
+
+  it("条数夹在 5–40，空正文要求空数组而不是编造", () => {
+    expect(assembleRelationSpec(relationContext(), { chapter: "正文。", limit: 1 }).prompt).toContain(
+      "最多 5 条",
+    );
+    expect(
+      assembleRelationSpec(relationContext(), { chapter: "正文。", limit: 999 }).prompt,
+    ).toContain("最多 40 条");
+
+    const empty = assembleRelationSpec(relationContext(), { chapter: "" });
+    expect(empty.system).toContain("（本章无正文内容）");
+    expect(empty.system).toContain("输出空数组");
+  });
+});
+
 describe("Prompt 模板注册表", () => {
-  it("清单与注册表一致，且起名 / 润色 / 变换 / 续写 / 摘要都在册", () => {
+  it("清单与注册表一致，且起名 / 润色 / 变换 / 续写 / 摘要 / 抽取 / 关系都在册", () => {
     expect([...PROMPT_INTENTS].sort()).toEqual(Object.keys(PROMPT_BUILDERS).sort());
     expect(PROMPT_INTENTS).toContain("naming");
     expect(PROMPT_INTENTS).toContain("polish");
     expect(PROMPT_INTENTS).toContain("transform");
     expect(PROMPT_INTENTS).toContain("continuation");
     expect(PROMPT_INTENTS).toContain("summary");
+    expect(PROMPT_INTENTS).toContain("extract");
+    expect(PROMPT_INTENTS).toContain("relation");
   });
 
   it("每个模板都产出完整 PromptSpec：角色句在首句、system 非空、声明了输出契约", () => {
@@ -385,8 +561,10 @@ describe("Prompt 模板注册表", () => {
     const transform = PROMPT_BUILDERS.transform(context, { kind: "rewrite", text: "一句原文。" });
     const continuation = PROMPT_BUILDERS.continuation(context, { before: "前文。" });
     const summary = PROMPT_BUILDERS.summary(context, { chapter: "正文。" });
+    const extract = PROMPT_BUILDERS.extract(context, { chapter: "正文。" });
+    const relation = PROMPT_BUILDERS.relation(context, { chapter: "正文。" });
 
-    for (const spec of [naming, polish, transform, continuation, summary]) {
+    for (const spec of [naming, polish, transform, continuation, summary, extract, relation]) {
       expect(spec.system.startsWith("你是")).toBe(true);
       expect(spec.system.length).toBeGreaterThan(20);
       expect(spec.prompt.trim().length).toBeGreaterThan(0);
@@ -411,6 +589,25 @@ describe("Prompt 模板注册表", () => {
     const viaSummary = buildPromptSpec("summary", context, { chapter: "正文。" });
     const directSummary = assembleSummarySpec(context, { chapter: "正文。" });
     expect(viaSummary).toEqual(directSummary);
+
+    const viaExtract = buildPromptSpec("extract", context, { chapter: "正文。" });
+    const directExtract = assembleExtractSpec(context, { chapter: "正文。" });
+    expect(viaExtract).toEqual(directExtract);
+
+    const viaRelation = buildPromptSpec("relation", context, { chapter: "正文。" });
+    const directRelation = assembleRelationSpec(context, { chapter: "正文。" });
+    expect(viaRelation).toEqual(directRelation);
+
+    const levelIntent = {
+      categoryName: "境界体系",
+      kind: "realm" as const,
+      existing: ["炼气"],
+      mode: "extend" as const,
+      count: 4,
+    };
+    const viaLevelGen = buildPromptSpec("levelGen", context, levelIntent);
+    const directLevelGen = assembleLevelGenSpec(context, levelIntent);
+    expect(viaLevelGen).toEqual(directLevelGen);
   });
 
   it("每个已登记意图都有 prompt 版本（M7：效果归因的对照基准）", () => {
@@ -431,5 +628,144 @@ describe("Prompt 模板注册表", () => {
     }
     // summary 是 2.10.0 新增，历史上被 UsagePanel 漏掉（review G7）
     expect(AI_INTENT_LABELS.summary).toBe("摘要");
+  });
+});
+
+describe("assembleLevelGenSpec", () => {
+  const levelContext = () => collectBookContext(snapshot, "levelGen");
+
+  it("json-array 契约：等级名 + 一句话说明两列", () => {
+    const spec = assembleLevelGenSpec(levelContext(), {
+      categoryName: "境界体系",
+      kind: "realm",
+      existing: [],
+      mode: "generate",
+      count: 9,
+    });
+    expect(spec.outputFormat).toEqual(LEVEL_OUTPUT_FORMAT);
+    const format = spec.outputFormat;
+    const keys = format.kind === "json-array" ? format.fields.map((field) => field.key) : [];
+    expect(keys).toEqual(["name", "note"]);
+  });
+
+  it("注入作品背景 / 体系名 / 分类说明", () => {
+    const spec = assembleLevelGenSpec(levelContext(), {
+      categoryName: "功法品阶",
+      categoryNote: "武道一途，共分九品",
+      kind: "custom",
+      existing: [],
+      mode: "generate",
+      count: 9,
+    });
+    expect(spec.system).toContain("《青云志》");
+    expect(spec.system).toContain("仙侠");
+    expect(spec.system).toContain("【体系】功法品阶（自定义体系）");
+    expect(spec.system).toContain("【体系说明】武道一途，共分九品");
+  });
+
+  it("整理整套：要求从入门到顶端、条数进 system 与 prompt", () => {
+    const spec = assembleLevelGenSpec(levelContext(), {
+      categoryName: "境界体系",
+      kind: "realm",
+      existing: [],
+      mode: "generate",
+      count: 8,
+    });
+    expect(spec.system).toContain("从入门到顶端");
+    expect(spec.system).toContain("只输出 8 条");
+    expect(spec.prompt).toContain("8 级");
+  });
+
+  it("拓展后续：以现有末条为起点、不许重排、方向跟着作者", () => {
+    const spec = assembleLevelGenSpec(levelContext(), {
+      categoryName: "境界体系",
+      kind: "realm",
+      existing: ["炼气", "筑基"],
+      mode: "extend",
+      count: 3,
+    });
+    // 起点是「最后一条」（末条在 desc 阶梯上也成立），而不是「最高一级」
+    expect(spec.system).toContain("现有阶梯的最后一条是「筑基」");
+    expect(spec.system).toContain("不要把现有级别重排");
+    expect(spec.system).toContain("不要替作者翻转阶梯");
+    expect(spec.system).toContain("【现有阶梯（按作者的排列顺序，第一条在最上）】炼气 → 筑基");
+    expect(spec.prompt).toContain("接着「筑基」往下");
+    // 拓展模式不该出现「从入门到顶端」那套整套口径
+    expect(spec.system).not.toContain("从入门到顶端");
+  });
+
+  it("有现有阶梯时才叮嘱重名；空阶梯不出现该段与空标签", () => {
+    const withExisting = assembleLevelGenSpec(levelContext(), {
+      categoryName: "境界体系",
+      kind: "realm",
+      existing: ["炼气"],
+      mode: "extend",
+      count: 2,
+    });
+    expect(withExisting.system).toContain("不得与【现有阶梯】里任何一级重名");
+
+    const empty = assembleLevelGenSpec(levelContext(), {
+      categoryName: "境界体系",
+      kind: "realm",
+      existing: [],
+      mode: "generate",
+      count: 5,
+    });
+    expect(empty.system).not.toContain("不得与【现有阶梯】");
+    // 空数据必须整段丢弃，不能留下「【现有阶梯】」后面什么都没有的残句
+    expect(empty.system).not.toContain("【现有阶梯");
+  });
+
+  it("只有境界体系才加题材口径约束（自定义体系不该被塞进修炼词汇）", () => {
+    const realm = assembleLevelGenSpec(levelContext(), {
+      categoryName: "境界体系",
+      kind: "realm",
+      existing: [],
+      mode: "generate",
+      count: 5,
+    });
+    expect(realm.system).toContain("东方玄幻口径");
+
+    const custom = assembleLevelGenSpec(levelContext(), {
+      categoryName: "丹药稀有度",
+      kind: "custom",
+      existing: [],
+      mode: "generate",
+      count: 5,
+    });
+    expect(custom.system).not.toContain("东方玄幻口径");
+  });
+
+  it("不发送任何正文（L1/L2：不需要整章授权）", () => {
+    const spec = assembleLevelGenSpec(levelContext(), {
+      categoryName: "境界体系",
+      kind: "realm",
+      existing: ["炼气"],
+      mode: "extend",
+      count: 3,
+    });
+    // snapshot 里带了 chapterSnippet；levelGen 的采集上限是全 0，绝不能出现在 prompt 里
+    expect(spec.system).not.toContain("林晚照立于青云山巅");
+    expect(spec.system).not.toContain("【本段所在章节片段");
+  });
+
+  it("条数夹取：未填回落默认、越界夹到区间", () => {
+    expect(clampLevelCount("generate", undefined)).toBe(9);
+    expect(clampLevelCount("extend", undefined)).toBe(4);
+    expect(clampLevelCount("generate", 0)).toBe(9);
+    expect(clampLevelCount("generate", 1)).toBe(3);
+    expect(clampLevelCount("generate", 999)).toBe(20);
+    expect(clampLevelCount("extend", 999)).toBe(12);
+  });
+
+  it("空分类名也有兜底，不拼出「【体系】（境界体系）」这种残句", () => {
+    const spec = assembleLevelGenSpec(levelContext(), {
+      categoryName: "   ",
+      kind: "realm",
+      existing: [],
+      mode: "generate",
+      count: 5,
+    });
+    expect(spec.system).toContain("【体系】等级体系（境界体系）");
   });
 });

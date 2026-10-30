@@ -229,6 +229,16 @@ function countOccurrences(haystack: string, needle: string): number {
   return count;
 }
 
+/**
+ * 批量建卡（R-AI-08）：主进程单事务写完再广播 `novel-entities-changed`。
+ *
+ * 与逐张 `saveEntity` 的区别只在原子性：AI 抽取一次给十几张，逐张写会留下
+ * 「建了一半」的设定库，作者无法判断该重做哪些。
+ */
+export async function saveEntitiesBatch(entities: NovelEntity[]): Promise<boolean> {
+  return window.electronAPI!.novel.saveEntitiesBatch(entities);
+}
+
 /** 新建章节落库（novel-chapter-add；id 已由渲染层生成） */
 export async function addChapter(chapter: NovelChapter): Promise<boolean> {
   return window.electronAPI!.novel.addChapter(chapter);
@@ -433,7 +443,7 @@ export async function addSettingLevel(
 /** 批量新增等级项：全部追加到末尾，返回实际插入条数（1.37.0） */
 export async function batchAddSettingLevels(
   categoryId: string,
-  items: Array<{ id: string; name: string; subLevels?: number; subPattern?: string }>,
+  items: Array<{ id: string; name: string; note?: string; subLevels?: number; subPattern?: string }>,
 ): Promise<number> {
   return window.electronAPI!.novel.settingLevelBatchAdd(categoryId, items);
 }

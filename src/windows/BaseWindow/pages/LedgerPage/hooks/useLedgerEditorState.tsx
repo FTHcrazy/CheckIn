@@ -9,6 +9,7 @@ import { addTransaction } from "@/shared/services/ledger";
 import type { LedgerCategoryDTO, LedgerTransactionDTO } from "@/shared/services/ledger";
 import type { LedgerEditDraft } from "../components/LedgerEditModal";
 import { formatSignedAmount, guessDefaultCategory, parseAmountInput } from "../ledger-utils";
+import { buildSuggestHistory, suggestCategories } from "../ledger-suggest";
 
 /** 当前本地时间 HH:mm:ss（与 addTransaction 内部 nowLocal 的时分秒格式一致） */
 function nowTimePart(): string {
@@ -29,6 +30,8 @@ interface QuickDraft {
 interface UseLedgerEditorParams {
   categories: readonly LedgerCategoryDTO[];
   transactions: readonly LedgerTransactionDTO[];
+  /** 上一同期流水：分类建议的历史样本（月初样本不足时全靠它） */
+  previousTransactions: readonly LedgerTransactionDTO[];
   removeTransaction: (id: string) => Promise<void>;
   restore: (tx: LedgerTransactionDTO) => Promise<void>;
   saveTransaction: (
@@ -43,6 +46,7 @@ const UNDO_DURATION = 5;
 export function useLedgerEditorState({
   categories,
   transactions,
+  previousTransactions,
   removeTransaction,
   restore,
   saveTransaction,
@@ -159,6 +163,42 @@ export function useLedgerEditorState({
     [editDraft],
   );
 
+  /**
+   * 分类建议（R-AI-16a）
+   *
+   * 索引按「历史样本」建一次（当前区间 + 上一同期），按键时只算待建议备注的
+   * bigram —— 否则每敲一个字都要把整本流水重新归一化。
+   * 建议只是提示：不改 `draft.categoryId`，用户点一下才生效。
+   */
+  const suggestIndex = useMemo(
+    () => buildSuggestHistory([...transactions, ...previousTransactions]),
+    [transactions, previousTransactions],
+  );
+
+  const quickSuggestions = useMemo(
+    () =>
+      suggestCategories({
+        note: draft.note,
+        type: draft.type,
+        categories,
+        index: suggestIndex,
+      }),
+    [draft.note, draft.type, categories, suggestIndex],
+  );
+
+  const editSuggestions = useMemo(
+    () =>
+      editDraft
+        ? suggestCategories({
+            note: editDraft.note,
+            type: editDraft.type,
+            categories,
+            index: suggestIndex,
+          })
+        : [],
+    [editDraft, categories, suggestIndex],
+  );
+
   const submitEdit = useCallback(async () => {
     if (!editTarget || !editDraft) return;
     const parsed = parseAmountInput(editDraft.amountText);
@@ -228,6 +268,8 @@ export function useLedgerEditorState({
     setQuickCategory,
     setQuickDate,
     submitQuick,
+    editSuggestions,
+    quickSuggestions,
     editTarget,
     editDraft,
     editError,

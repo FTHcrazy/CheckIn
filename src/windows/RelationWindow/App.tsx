@@ -15,8 +15,10 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Button, Modal } from "antd";
-import { ApartmentOutlined, ReloadOutlined } from "@ant-design/icons";
+import { ApartmentOutlined, ReloadOutlined, ThunderboltOutlined } from "@ant-design/icons";
 import WindowHeader from "@/shared/components/WindowHeader";
+import AiConsentDialog from "@/shared/components/AiConsentDialog";
+import type { NovelEntity, NovelLink } from "@/shared/novel/entity-model";
 import { createTypeMetaResolver } from "@/shared/novel/entity-type-meta";
 import type { RelationGraphNode } from "@/shared/novel/relation-graph";
 import EdgeDetailCard from "./components/EdgeDetailCard";
@@ -24,12 +26,14 @@ import EntityPool from "./components/EntityPool";
 import NodeDetailCard from "./components/NodeDetailCard";
 import RelationCanvas from "./components/RelationCanvas";
 import RelationCreateDialog from "./components/RelationCreateDialog";
+import RelationSuggestDialog from "./components/RelationSuggestDialog";
 import WorkSwitchBanner from "./components/WorkSwitchBanner";
 import { useGraphCommit, toNovelLinks } from "./hooks/useGraphCommit";
 import { useGraphDoc, type GraphSource } from "./hooks/useGraphDoc";
 import { useExportPng } from "./hooks/useExportPng";
 import { useRelationContext } from "./hooks/useRelationContext";
 import { useRelationData } from "./hooks/useRelationData";
+import { useRelationSuggest } from "./hooks/useRelationSuggest";
 import { focusEntityInMainWindow } from "./services/relation-service";
 import { buildDraftLink, type DraftEndpoint } from "./utils/relation-draft";
 import { failReasonOf, logLinkCreated, relationLenOf } from "./utils/link-telemetry";
@@ -37,6 +41,10 @@ import { suggestNodeSpot } from "./utils/graph-layout";
 
 /** 创建成功后的提示停留时间（够看清，又不挡住下一次连线） */
 const FEEDBACK_TTL_MS = 2600;
+
+/** 稳定空数组：数据未就绪时传它，避免每帧新建引用把下游 useMemo 全部打穿 */
+const EMPTY_ENTITIES: NovelEntity[] = [];
+const EMPTY_LINKS: NovelLink[] = [];
 
 interface PendingLink {
   sourceId: string;
@@ -218,11 +226,44 @@ export default function RelationWindowApp() {
     },
   });
 
+  /**
+   * 关系推断（R-AI-15）的写入口。
+   *
+   * 复用同一条 `commit()`（内部 `novel-graph-commit` 单事务 + rev 乐观锁），
+   * 不另起写入路径：图与库不一致的成因九成是「存在第二条写通道」。
+   * 提交前 `flush` 坐标这一步由 `commit()` 自带，这里不再重复。
+   */
+  const commitSuggestion = useCallback(
+    async (links: readonly NovelLink[]): Promise<boolean> => {
+      if (links.length === 0) return false;
+      const result = await commit.commit({
+        addLinks: links.map((link) => ({
+          id: link.id,
+          fromType: link.fromType,
+          fromId: link.fromId,
+          toType: link.toType,
+          toId: link.toId,
+          relation: link.relation,
+        })),
+      });
+      return Boolean(result);
+    },
+    [commit],
+  );
+
+  const suggest = useRelationSuggest({
+    workId: data?.workId ?? "",
+    workName: data?.workName ?? "",
+    ...(data?.workGenre ? { workGenre: data.workGenre } : {}),
+    entities: data?.entities ?? EMPTY_ENTITIES,
+    links: data?.links ?? EMPTY_LINKS,
+    commitLinks: commitSuggestion,
+    onNotify: showFeedback,
+  });
+
   const handleSelect = useCallback((nodeId: string | null) => {
     setSelectedId((current) => (current === nodeId ? current : nodeId));
-  }, []);
-
-  const handleSelectEdge = useCallback((edgeId: string | null) => {
+  }, []);  const handleSelectEdge = useCallback((edgeId: string | null) => {
     setSelectedEdgeId((current) => (current === edgeId ? current : edgeId));
   }, []);
 
@@ -460,6 +501,19 @@ export default function RelationWindowApp() {
           )}
         </div>
         <div className="rel-window__actions">
+          {/* 关系推断（R-AI-15）：AI 关掉的人整块看不见（M8），开着但没配全的
+              仍然显示，点下去说明缺哪一项配置 —— 藏起来他们永远不知道该补什么 */}
+          {!suggest.hidden && (
+            <Button
+              size="small"
+              icon={<ThunderboltOutlined />}
+              onClick={suggest.openDialog}
+              disabled={!workId || state.status !== "ready"}
+              title={suggest.unavailableText || undefined}
+            >
+              从正文推断关系
+            </Button>
+          )}
           <Button
             size="small"
             icon={<ReloadOutlined />}
@@ -599,6 +653,36 @@ export default function RelationWindowApp() {
         onSubmit={handleSubmitDraft}
         onBlocked={handleBlockedDraft}
         onReload={handleReload}
+      />
+
+      <RelationSuggestDialog
+        open={suggest.open}
+        chapters={suggest.chapters}
+        chaptersLoading={suggest.chaptersLoading}
+        chapterId={suggest.chapterId}
+        onChapterChange={suggest.setChapterId}
+        session={suggest.session}
+        onSubmit={suggest.run}
+        onToggle={suggest.toggle}
+        onApply={() => void suggest.apply()}
+        onReset={suggest.reset}
+        onClose={suggest.closeDialog}
+        pickedCount={suggest.pickedCount}
+        unavailableText={suggest.unavailableText}
+        submitting={commit.submitting}
+      />
+
+      {/* L3 授权（M5）：正文出境前必须过这一层；估算与实际发送同源（同一份 payload） */}
+      <AiConsentDialog
+        open={suggest.consentOpen}
+        estimate={suggest.consentEstimate}
+        scope={suggest.consentScope}
+        onScopeChange={suggest.setConsentScope}
+        notice={suggest.consentNotice}
+        confirmDisabled={suggest.consentEstimate.chars === 0}
+        provider={suggest.consentProvider}
+        onConfirm={() => void suggest.confirmConsent()}
+        onCancel={suggest.cancelConsent}
       />
 
       <Modal

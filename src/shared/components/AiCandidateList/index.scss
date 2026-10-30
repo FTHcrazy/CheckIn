@@ -1,0 +1,89 @@
+/* AI 候选列表（B7 共用组件）
+ *
+ * 自包含作用域：既出现在右栏面板（`.nv-panel` 内），也出现在关系网络的弹层里，
+ * 所以不挂任何父级选择器 —— 挂上去就只能在其中一个场景生效。
+ *
+ * 颜色一律走主题变量；标签只改文字色、不加底色：候选行本身在 surface 与
+ * surface-alt 两档之间切换（已存在压暗），带底色的标签在其中一档上必然对不上，
+ * 而主题分层只允许三档常驻色块（AGENTS §6.1.2 / themes.test.ts）。 */
+
+.ai-cand {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ai-cand__row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--app-border);
+  border-radius: 9px;
+  background: var(--app-surface);
+
+  /* 不可勾选（已存在）：整行压暗 + 虚线，一眼分出「这条不用管」 */
+  &.is-disabled {
+    background: var(--app-surface-alt);
+    border-style: dashed;
+  }
+}
+
+.ai-cand__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ai-cand__check {
+  flex: none;
+}
+
+.ai-cand__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--app-text);
+  /* 长名字先省略，不要挤掉右侧的下拉 / 标签 */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-cand__tag {
+  flex: none;
+  margin-left: auto;
+  padding: 0 5px;
+  border-radius: 5px;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--app-text-disabled);
+
+  &.is-success {
+    color: var(--app-success);
+  }
+
+  &.is-warning {
+    color: var(--app-warning);
+  }
+}
+
+.ai-cand__subtitle {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--app-text-secondary);
+}
+
+/* 证据句是给作者核对用的，不是正文：两行封顶 */
+.ai-cand__evidence {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--app-text-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}

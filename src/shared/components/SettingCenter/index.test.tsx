@@ -258,7 +258,10 @@ describe("设定中心", () => {
     const textarea = screen.getByLabelText("批量等级名（每行一个）");
     fireEvent.change(textarea, { target: { value: "练气\n\n筑基\n金丹\n" } });
     clickButton("生成");
-    expect(onBatchAddLevels).toHaveBeenCalledWith("c1", ["练气", "筑基", "金丹"]);
+    // 契约（2.17.1）起传 { name, note } 条目而不是裸名字 —— 断言仍钉「顺序即提交顺序」
+    expect(
+      onBatchAddLevels.mock.calls[0][1].map((item: { name: string }) => item.name),
+    ).toEqual(["练气", "筑基", "金丹"]);
   });
 
   it("批量生成（模板生成）：按数量 + 模板渲染，预览先行", () => {
@@ -272,7 +275,9 @@ describe("设定中心", () => {
     });
     expect(screen.getByText(/预览/)).toBeInTheDocument();
     clickButton("生成");
-    expect(onBatchAddLevels).toHaveBeenCalledWith("c1", ["第1重", "第2重", "第3重"]);
+    expect(
+      onBatchAddLevels.mock.calls[0][1].map((item: { name: string }) => item.name),
+    ).toEqual(["第1重", "第2重", "第3重"]);
   });
 
   it("子层级弹窗：命名模板一并提交（首个子层级 id 复用的口径由数据层保证）", () => {

@@ -41,6 +41,25 @@ export {
   type SummaryIntent,
   type SummaryReply,
 } from "./summary";
+export {
+  assembleExtractSpec,
+  EXTRACT_OUTPUT_FORMAT,
+  EXTRACT_TYPE_LABELS,
+  type ExtractIntent,
+} from "./extract";
+export {
+  assembleRelationSpec,
+  RELATION_CONFIDENCE_VALUES,
+  RELATION_OUTPUT_FORMAT,
+  type RelationIntent,
+} from "./relation";
+export {
+  assembleLevelGenSpec,
+  clampLevelCount,
+  LEVEL_OUTPUT_FORMAT,
+  type LevelGenIntent,
+  type LevelGenMode,
+} from "./level-gen";
 
 export {
   chapterBlock,

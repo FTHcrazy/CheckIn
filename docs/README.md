@@ -22,6 +22,7 @@
 |----------|------|------|------|
 | R-AI 路线图 | AI 能力未来方向与架构复核（长期参考，非单次需求） | [prd-ai-roadmap/ai-future-directions-prd.md](prd/prd-ai-roadmap/ai-future-directions-prd.md) · [ai-roadmap-architecture-review.md](prd/prd-ai-roadmap/ai-roadmap-architecture-review.md) | 参考稿；「上下文层未落地」的结论已被 2.7.0 推翻 |
 | **R-AI 排期** | **做什么、什么顺序、做完怎么算完**（B1–B8 批次 + 准入纪律 + 编号裁决） | [prd-ai-roadmap/ai-roadmap-batch-plan.md](prd/prd-ai-roadmap/ai-roadmap-batch-plan.md) | **定稿（基线 2.8.1）**，后续 AI 排期以它为准 |
+| **R-MAP-16 ~ 20** | **地图渲染观感对齐改造**（陆地海岸 / 区块降级 / 文字层 / 风格预设 / 缓存与导出），基线 `origin/map2` | [prd-map-render/prd-map-render-alignment.md](prd/prd-map-render/prd-map-render-alignment.md) | 草稿待评审；只覆盖渲染，v1 PRD 的标记/连线不在范围内 |
 
 > R-AI-01 ~ R-AI-05 已于 **2.8.1** 全部闭环，整组移入
 > [`archive/prd-ai/`](archive/prd-ai/)（归档不改正文，详见下表）。

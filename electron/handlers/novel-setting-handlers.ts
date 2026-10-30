@@ -36,6 +36,7 @@ import {
   levelCount,
   maxRank,
   maxSortOrder,
+  minRank,
   normalizeAliases,
   normalizeSubPattern,
   parseSnapshot,
@@ -48,6 +49,8 @@ import {
   type SettingExportPayload,
   type SettingLevelRow,
 } from "./novel-setting-shared";
+// 与渲染层共用同一套「显示行序 ↔ rank」换算：两端各算一套必然错位
+import { toRankIndex } from "../../src/shared/novel/setting-utils";
 
 // 既有的快照 / 载荷类型经 shared 落地，这里 re-export 保持既有 import 路径可用
 export type { SettingCategorySnapshot, SettingExportPayload };
@@ -356,12 +359,19 @@ export function registerNovelSettingHandlers(): void {
       // 引用项只读（D2）：引用分类的等级由全局同步独占改写
       if (isReferencedCategory(categoryId)) return null;
       const category = dbGet(
-        "SELECT sub_levels, sub_pattern FROM novel_setting_categories WHERE id = ?",
+        "SELECT sub_levels, sub_pattern, carry_dir FROM novel_setting_categories WHERE id = ?",
         [categoryId],
-      ) as { sub_levels: number; sub_pattern: string } | undefined;
+      ) as { sub_levels: number; sub_pattern: string; carry_dir: string } | undefined;
       if (!category) return null;
       const total = levelCount("book", categoryId);
-      const at = index < 0 ? total : Math.min(index, total);
+      // ⚠️ `index` 是**显示行序**（第几行之前），而 `rankAt` 按 rank 升序取。
+      // desc（由高到低）下两者相反，必须换算 —— 否则「往末尾追加」会插到视觉顶部
+      // （2.17.1 修）。换算与渲染层 `insertLevel` 共用 `toRankIndex`，两端不会错位。
+      const at = toRankIndex(
+        total,
+        index < 0 ? total : Math.min(index, total),
+        isCarryDir(category.carry_dir) ? category.carry_dir : "asc",
+      );
       // 末尾追加时用 max(rank)+1，中间插入时用该行的 rank —— 两种落点都要能
       // 让「新 rank 起后面全部 +1」正确执行
       const rank = at >= total ? maxRank("book", categoryId) + 1 : rankAt("book", categoryId, at);
@@ -392,55 +402,93 @@ export function registerNovelSettingHandlers(): void {
   );
 
   /**
-   * 批量新增等级项（1.37.0）：模板生成 / 逐行粘贴 / 预设套用共用这一个通道。
+   * 批量新增等级项（1.37.0）：模板生成 / 逐行粘贴 / 预设套用 / AI 排阶梯共用这一个通道。
    *
    * 全部**追加到末尾** —— 批量生成的语义是「一次造出一段阶梯」，行间精确
    * 插入走单条的 novel-setting-level-add。单事务写入：中途一条脏数据让
    * 整批回滚，而不是留下半截阶梯。
+   *
+   * ⚠️ 两处字段与单条新增**必须同口径**（2.17.1 修）：
+   * 1. `subLevels` / `subPattern` 未显式给出时回落到**分类默认**，不是 1 ——
+   *    否则「每阶小三层」的体系里，批量加进来的阶会缺小层，与单条新增不一致；
+   * 2. `note`（等级说明）随条目写入 —— AI 排阶梯会给出每级的说明，丢掉它
+   *    等于白生成（用户在候选里看得见、落库后没了）。
    */
   ipcMain.handle(
     "novel-setting-level-batch-add",
     (
       _event,
       categoryId: string,
-      items: Array<{ id: string; name: string; subLevels?: number; subPattern?: string }>,
+      items: Array<{ id: string; name: string; note?: string; subLevels?: number; subPattern?: string }>,
     ): number => {
       if (!Array.isArray(items) || items.length === 0) return 0;
       // 引用项只读（D2）
       if (isReferencedCategory(categoryId)) return 0;
+
+      const category = dbGet(
+        "SELECT id, sub_levels, sub_pattern, carry_dir FROM novel_setting_categories WHERE id = ?",
+        [categoryId],
+      ) as { id: string; sub_levels: number; sub_pattern: string; carry_dir: string } | undefined;
+      if (!category) return 0;
+      const categorySubLevels = Math.max(1, Math.floor(Number(category.sub_levels)) || 1);
+      const categorySubPattern = category.sub_pattern ?? "";
+      const isDesc = (isCarryDir(category.carry_dir) ? category.carry_dir : "asc") === "desc";
+
       // 上限 99：批量生成是「造一阶阶梯」，不是灌整本书的名词表
       const batch = items.slice(0, 99);
       const cleaned = batch
         .map((item) => ({
           id: typeof item?.id === "string" && item.id.trim() ? item.id.trim() : createSettingId("sl"),
           name: typeof item?.name === "string" ? item.name.trim().slice(0, 60) : "",
+          // 等级说明：AI 产出的「这一级大致能做什么」，原样落进 note 列
+          note: typeof item?.note === "string" ? item.note.trim().slice(0, 200) : "",
           subLevels:
             typeof item?.subLevels === "number" && item.subLevels >= 1
               ? Math.min(999, Math.floor(item.subLevels))
-              : 1,
-          subPattern: normalizeSubPattern(item?.subPattern),
+              : categorySubLevels,
+          subPattern: normalizeSubPattern(item?.subPattern) || categorySubPattern,
         }))
         .filter((item) => item.name);
       if (cleaned.length === 0) return 0;
 
-      const category = dbGet(
-        "SELECT id FROM novel_setting_categories WHERE id = ?",
-        [categoryId],
-      ) as { id: string } | undefined;
-      if (!category) return 0;
-
       const db = getDb();
       const apply = db.transaction(() => {
-        let rank = maxRank("book", categoryId);
+        /**
+         * 追加落点随进位方向走（2.17.1）：
+         * - `asc`：接在 max(rank) 之后 = 显示末尾；
+         * - `desc`：显示末尾是 **rank 最小**的一端 —— 现有整体上移，新条目占住低端。
+         *   不换算就会插到视觉顶部（「拓展后续」给的明明是更低的等级，却浮到最上面）。
+         *
+         * ⚠️ `base` 必须在上移**之前**取：上移后 min 会跟着 +k，再拿它当起点
+         * 就会与刚被上移的行撞 rank。
+         */
+        const base = isDesc ? (minRank("book", categoryId) || 1) : maxRank("book", categoryId);
+        const total = levelCount("book", categoryId);
+        if (isDesc) {
+          dbRun("UPDATE novel_setting_levels SET rank = rank + ? WHERE category_id = ?", [
+            cleaned.length,
+            categoryId,
+          ]);
+        }
+        /**
+         * 传入顺序 = 「从现有阶梯的末端往外」的显示顺序（第一条紧贴现有内容）。
+         * `desc` 下显示末尾在 **rank 低端**，整块要反转：否则 AI 给的第一条
+         * （最靠近现有末端的那一级）会被排到新块的最外侧。
+         * 空阶梯不反转 —— 那时整块就是全部内容，rank 升序映射到 desc 显示
+         * 之后正好是「强在上、弱在下」（2.17.1）。
+         */
+        const ordered = isDesc && total > 0 ? [...cleaned].reverse() : cleaned;
+        let rank = isDesc ? base - 1 : base;
         const stmt = db.prepare(
           `INSERT INTO novel_setting_levels
              (id, category_id, name, rank, aliases, note, sub_levels, power,
               parent_id, seg_from, seg_to, sub_pattern)
-           VALUES (?, ?, ?, ?, '[]', '', ?, NULL, NULL, NULL, NULL, ?)`,
+           VALUES (?, ?, ?, ?, '[]', ?, ?, NULL, NULL, NULL, NULL, ?)`,
         );
-        for (const item of cleaned) {
+        for (const item of ordered) {
+          // asc：base = max，故先 +1 再写；desc：base = min，同样先 +1 再写
           rank += 1;
-          stmt.run(item.id, categoryId, item.name, rank, item.subLevels, item.subPattern);
+          stmt.run(item.id, categoryId, item.name, rank, item.note, item.subLevels, item.subPattern);
         }
       });
       apply();

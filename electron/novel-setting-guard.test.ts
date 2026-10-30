@@ -130,8 +130,44 @@ describe("设定模块：插入与拆分的序号口径", () => {
 
   it("新阶继承分类的小层数与小层命名，不再硬编码 1 层", () => {
     const body = channelBody("novel-setting-level-add");
-    expect(body).toContain("SELECT sub_levels, sub_pattern FROM novel_setting_categories");
+    // 钉语义不钉一行：SQL 后续可能加 carry_dir 等列（2.17.1），
+    // 只要还从分类行取这两个字段就算没退化
+    expect(body).toMatch(/SELECT[\s\S]{0,80}sub_levels[\s\S]{0,40}sub_pattern[\s\S]{0,40}FROM novel_setting_categories/);
     expect(body).not.toContain("'[]', '', 1, NULL, NULL, NULL, NULL)");
+  });
+
+  it("批量新增与单条同口径：等级说明写入、小层数回落分类默认（两个域）", () => {
+    const channels = [
+      ["novel-setting-level-batch-add", HANDLERS],
+      ["novel-global-setting-level-batch-add", GLOBAL_HANDLERS],
+    ] as const;
+    for (const [channel, source] of channels) {
+      const body = stripComments(channelBody(channel, source));
+      // AI 排阶梯会给每级一句说明：候选里看得见，落库就必须跟着走
+      expect(body).toMatch(/note:\s*typeof item\?\.note === "string"/);
+      // 未显式给出小层时回落到**分类默认**，不是硬编码 1（「每阶小三层」的体系
+      // 批量加进来的阶会缺小层，与单条新增不一致）
+      expect(body).toContain("categorySubLevels");
+      expect(body).not.toMatch(/subLevels:\s*1\s*,/);
+      // INSERT 的说明占位用 item.note，不是空串
+      expect(body).toContain("item.note");
+      expect(body).not.toContain("'[]', '', ?, NULL, NULL, NULL, NULL)");
+    }
+  });
+
+  it("批量追加落到**显示末尾**：desc 下现有整体上移、条目整块反转（两个域）", () => {
+    const channels = [
+      ["novel-setting-level-batch-add", HANDLERS],
+      ["novel-global-setting-level-batch-add", GLOBAL_HANDLERS],
+    ] as const;
+    for (const [channel, source] of channels) {
+      const body = stripComments(channelBody(channel, source));
+      // desc：显示末尾是 rank 最小的一端 ⇒ 先整体上移，新条目占住低端
+      expect(body).toContain("SET rank = rank + ?");
+      // 反转只在**已有阶梯**时做：空阶梯整块就是全部内容，反转会把强弱颠倒
+      expect(body).toMatch(/isDesc && total > 0 \? \[\.\.\.cleaned\]\.reverse\(\) : cleaned/);
+      expect(body).toContain("for (const item of ordered)");
+    }
   });
 
   it("拆分（1.38.1）：原阶降级为分组、id 不变 —— 绑在这一阶上的「当前境界」不失效", () => {
