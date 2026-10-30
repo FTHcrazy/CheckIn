@@ -5,9 +5,9 @@
   min-height: 0;
   flex-direction: column;
   gap: 12px;
-  // 左右 24px 与 NavHeader 卡片（padding 12px 24px 0）对齐，
-  // 避免内容比页头宽一圈的错位观感
-  padding: 0 24px 20px;
+  // 左右 24px 是内容自身的呼吸量；顶部 12px 与其它子页面统一
+  // （页内导航条已上移到窗口标题栏，这段间距原先由它提供）
+  padding: 12px 24px 20px;
 
   &__mid {
     display: grid;

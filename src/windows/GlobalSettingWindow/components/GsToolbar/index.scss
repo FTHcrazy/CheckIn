@@ -1,0 +1,84 @@
+/* 全局设定中心 · 工具头（窗口私有）
+
+   与书架顶栏同一套动作分级：一颗实底 pill 主命令 + 其余纯文字按钮。
+   四颗 outlined 小按钮并排时，没有任何一颗读起来像「下一步」。 */
+
+.gs-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-sizing: border-box;
+  /* 固定高：下面 .gs-body 走 flex:1 分配剩余高度，工具头不该参与伸缩。
+     28 = 动作行的统一高度，工具头不再比动作区高一档（30 时按钮在
+     一行里会显得贴顶）。 */
+  flex: 0 0 auto;
+  min-height: 28px;
+}
+
+.gs-toolbar__hint {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--app-text-muted);
+}
+
+.gs-toolbar__spacer {
+  flex: 1;
+  min-width: 0;
+}
+
+.gs-toolbar__actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  /* 4px 时两颗文字按钮的 hover 底几乎相接，四颗读成一整块而不是四颗；
+     8px 才让「一个主命令 + 三个次级动作」分得开。 */
+  gap: 8px;
+}
+
+/* 四颗动作同高同基线：文字按钮此前吃 antd 默认高度（与 28px 的主命令
+   并排时上下各错半格），这是截图红框里「间距不齐」的主因。
+   高度与图标间距在这里统一，各自的颜色 / 内边距仍在下面覆盖。 */
+.gs-toolbar .ant-btn {
+  height: 28px;
+  box-sizing: border-box;
+  --ant-button-icon-gap: 6px;
+  padding-inline: 9px;
+}
+
+/* 主命令：实底 pill。高度压到 28px 是为了让它比卡片标题略重、但不比
+   下方的内容更抢眼（书架「＋ 新建作品」也是这一档）。
+   ⚠️ 只改几何 + 读 antd 的变量，不改背景色属性：primary 的底色由主题
+   `--ant-color-primary` 给出，写死 background 会在换肤时掉队。 */
+.gs-toolbar__cta.ant-btn {
+  height: 28px;
+  padding-inline: 14px;
+  --ant-border-radius: var(--app-radius-pill);
+  --ant-button-content-font-size: 12px;
+  --ant-button-icon-gap: 5px;
+  --ant-button-font-weight: 600;
+  box-sizing: border-box;
+  /* 一颗实底按钮需要一点点「浮起来」的重量，但不能是硬边框：
+     cream 主题下纯白边只会显脏 */
+  box-shadow: 0 4px 10px color-mix(in srgb, var(--app-primary) 20%, transparent);
+}
+
+/* 次级动作用 text 变体，但文字色从「灰」提到「主文本」——
+   灰到与提示语同色时，它们看起来像说明而不是按钮。 */
+.gs-toolbar .ant-btn-text {
+  --ant-button-text-color: var(--app-text-secondary);
+  --ant-button-text-hover-color: var(--app-text);
+  --ant-button-text-hover-bg: var(--app-surface-hover);
+  border-radius: var(--app-radius-pill);
+  font-size: 12px;
+}
+
+/* 批量选择处于开启态：常驻弱主色底，明确「现在正处在这个模式里」 */
+.gs-toolbar__ghost.is-on.ant-btn {
+  --ant-button-text-color: var(--app-primary);
+  --ant-button-text-hover-color: var(--app-primary);
+  --ant-button-text-hover-bg: var(--app-primary-weak);
+  background: var(--app-primary-weak);
+}

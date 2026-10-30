@@ -1,0 +1,96 @@
+.cpk-unit {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 9px 0;
+
+  & + & {
+    border-top: 1px solid var(--app-border);
+    margin-top: 6px;
+  }
+
+  &__head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  &__title {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--app-text-strong);
+  }
+
+  &__switch {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    color: var(--app-text-secondary-strong);
+  }
+
+  &__sub {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--app-text-muted);
+  }
+
+  &__rows {
+    margin: 4px 0 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  &__row {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+
+    .ant-input {
+      flex: 1;
+      min-width: 0;
+      font-size: 12px;
+    }
+
+    .ant-input-number-group-addon {
+      padding: 0 5px;
+      font-size: 12px;
+    }
+  }
+
+  &__actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+  }
+
+  /* ── 量纲 JSON 的出入（REQ-022）：两套量纲共用一组入口 ── */
+  &__io {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+    padding-top: 9px;
+    border-top: 1px solid var(--app-border);
+  }
+
+  &__iohead {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--app-text-strong);
+  }
+
+  &__ioacts {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+}

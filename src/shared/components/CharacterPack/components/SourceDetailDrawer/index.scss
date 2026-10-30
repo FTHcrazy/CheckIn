@@ -1,0 +1,102 @@
+.cpk-src {
+  margin: 0 0 4px;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 320px;
+  overflow-y: auto;
+
+  &__row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 7px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-item);
+    /* 本组件是 antd Modal（浮层，底 = `--app-surface-elevated`）：里面的块
+       回退一档就是 `--app-surface`，不能再往下取 `--app-surface-alt` —— 那是
+       「相对内容面」的档位，直接贴白浮层会跨过 surface 一层，比同屏兄弟块重一倍
+       （aurora 1.071 vs 1.043），而且丢掉蓝味。规则见 themes.scss 文件头。 */
+    background: var(--app-surface);
+    font-size: 12px;
+
+    /* 基础值行是这张列表的「锚」：在行内再凹一档（alt 贴 surface，1.03）——
+       surface 上的 alt 才是合法的一档，与「阶段容器铺 surface、斑马行铺 alt」同法 */
+    &.is-base {
+      background: var(--app-surface-alt);
+    }
+
+    &.is-sustained {
+      border-left: 3px solid var(--app-accent-blue);
+    }
+
+    /* 映射来源：与效果行同骨架，靠左侧紫条 + 徽标「映」区分 —— 它不是谁给的效果，
+       而是别的属性加点折算过来的量 */
+    &.is-mapped {
+      border-left: 3px solid var(--app-accent-purple);
+    }
+  }
+
+  &__who {
+    flex: 1;
+    min-width: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--app-text-strong);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__what {
+    flex: none;
+    color: var(--app-text);
+    font-variant-numeric: tabular-nums;
+
+    &--muted {
+      color: var(--app-text-disabled);
+    }
+  }
+
+  /* 映射来源名 + 换算率：名字可截断，系数是不收缩的尾缀 */
+  &__mapname {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 3px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__rate {
+    flex: none;
+    font-size: 12px;
+    font-style: normal;
+    color: var(--app-accent-purple);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__total {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 8px;
+    padding: 6px 8px;
+    border-radius: var(--app-radius-item);
+    background: var(--app-primary-weak);
+    font-size: 12px;
+    color: var(--app-text-secondary-strong);
+  }
+
+  &__totalnum {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--app-text-strong);
+    font-variant-numeric: tabular-nums;
+  }
+}

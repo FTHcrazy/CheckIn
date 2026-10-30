@@ -1,0 +1,48 @@
+/* 设定中心 · 从全局库选择（D2 picker） */
+
+.nv-sc {
+  &__picker {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 360px;
+    overflow-y: auto;
+  }
+
+  &__picker-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-item);
+    cursor: pointer;
+
+    &:hover {
+      background: var(--app-surface-hover);
+    }
+  }
+
+  &__picker-name {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--app-text);
+  }
+
+  &__picker-kind,
+  &__picker-count {
+    font-size: 12px;
+    color: var(--app-text-muted);
+  }
+
+  &__picker-count {
+    margin-left: auto;
+  }
+
+  // U6：本书已有境界体系时，全局 realm 降级为普通分类的行内提示
+  &__picker-note {
+    width: 100%;
+    font-size: 12px;
+    color: var(--app-warning);
+  }
+}

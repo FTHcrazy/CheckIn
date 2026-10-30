@@ -1,0 +1,164 @@
+/* 回收站条目行。
+ *
+ * 外观全走 `var(--app-*)`，不写任何硬编码色值；两颗按钮用组件库承载 +
+ * 「清零点」mixin 重绘（AGENTS §6.1.2 第 3 条），hover / active 只改变量。
+ */
+@use "../../../../../../shared/styles/widget" as widget;
+
+.rb-row {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  transition: background-color var(--app-t-fast) var(--app-ease-standard);
+
+  /* 行间分隔：条目多时靠它分家，不靠留白（4 行以上留白会失效） */
+  & + & {
+    border-top: 1px solid var(--app-border);
+  }
+
+  &.is-selected {
+    background: var(--app-primary-weak);
+  }
+
+  &__pick {
+    flex: none;
+  }
+
+  /* 类型标签：作品 / 卷 / 章节三种语义色，一眼分辨「这是什么东西」 */
+  &__kind {
+    flex: none;
+    padding: 1px 8px;
+    border-radius: var(--app-radius-chip);
+    font-size: 12px;
+    line-height: 18px;
+    white-space: nowrap;
+
+    &--work {
+      background: var(--app-primary-weak);
+      color: var(--app-primary);
+    }
+
+    &--volume {
+      background: var(--app-success-weak);
+      color: var(--app-success);
+    }
+
+    &--chapter {
+      background: var(--app-accent-purple-weak);
+      color: var(--app-accent-purple);
+    }
+  }
+
+  &__main {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  &__name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--app-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__meta {
+    font-size: 12px;
+    color: var(--app-text-muted);
+    font-variant-numeric: tabular-nums;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* 剩余可恢复天数：这一列是「再不捞就真没了」的唯一提示，
+     全用灰色会让快到期的条目和刚删的看起来一样 */
+  &__days {
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    color: var(--app-text-muted);
+
+    &--soon {
+      color: var(--app-warning);
+    }
+
+    &--urgent {
+      color: var(--app-error);
+      font-weight: 500;
+    }
+  }
+
+  &__actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  /* 两颗按钮共用同一套尺寸：清零后必须把
+     border-width / control-height / padding 三个维度显式声明回来，
+     少一个就会变形（见 ShelfTopBar 的同款注释） */
+  &__restore.ant-btn,
+  &__purge.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 26px;
+    --ant-button-padding-inline: 10px;
+    --ant-button-content-font-size: 12px;
+    --ant-button-font-weight: 500;
+    --ant-button-icon-gap: 4px;
+    --ant-border-radius: var(--app-radius-pill);
+    --ant-line-width: 1px;
+    --ant-button-default-shadow: none;
+    display: inline-flex;
+    align-items: center;
+    /* 清零把 antd 的 center 改成了 normal：不补回来图标会贴着左沿 */
+    justify-content: center;
+
+    & > svg,
+    & > .anticon {
+      width: 12px;
+      height: 12px;
+      font-size: 12px;
+    }
+  }
+
+  &__restore.ant-btn {
+    --ant-button-default-bg: var(--app-primary-weak);
+    --ant-button-default-color: var(--app-primary);
+    --ant-button-default-border-color: transparent;
+    --ant-button-default-hover-bg: var(--app-primary-weak);
+    --ant-button-default-hover-color: var(--app-primary-strong);
+    --ant-button-default-hover-border-color: var(--app-primary);
+    --ant-button-default-active-bg: var(--app-primary-weak);
+    --ant-button-default-active-color: var(--app-primary-active);
+    --ant-button-default-active-border-color: var(--app-primary);
+  }
+
+  &__purge.ant-btn {
+    --ant-button-default-bg: transparent;
+    --ant-button-default-color: var(--app-error);
+    --ant-button-default-border-color: var(--app-border);
+    --ant-button-default-hover-bg: var(--app-error-weak);
+    --ant-button-default-hover-color: var(--app-error);
+    --ant-button-default-hover-border-color: var(--app-error);
+    --ant-button-default-active-bg: var(--app-error-weak);
+    --ant-button-default-active-color: var(--app-error);
+    --ant-button-default-active-border-color: var(--app-error);
+  }
+
+  /* 窄窗口：把「彻底删除」收成图标，避免整行被按钮挤到换行 */
+  @media (max-width: 980px) {
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
+
+    &__actions {
+      grid-column: 1 / -1;
+      justify-content: flex-end;
+      padding-top: 2px;
+    }
+  }
+}

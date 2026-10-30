@@ -1,0 +1,257 @@
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import SummaryModule from "./index";
+import EquipDeltaPreview from "../DeltaPreview";
+import type { PackPanelApi } from "../../hooks/usePackPanel";
+import type { PackDoc } from "../../hooks/usePackData";
+import {
+  buildActiveCarriersFrom,
+  computeHypotheticalSummary,
+  computeSummary,
+  summaryDeltas,
+} from "../../pack-utils";
+import type { PackAttrDef, PackAttrValue, PackAttribute, PackItem, PackModifier, PackSlot } from "../../types";
+
+/**
+ * 穿戴 Δ 预览（REQ-018）的 DOM 不变量。
+ *
+ * 数值口径已经在 `pack-utils.test.ts` 里钉过（预览只是 `computeHypotheticalSummary`
+ * 的展示层）。这里钉**组件结构**上会静默出错的事：
+ *  1. 属性行是 `<button>`，里面不得再出现任何交互控件。
+ *  2. Δ 预览只列真的会变的属性；没变的行不占位。
+ * （REQ-037 估算模式已下线，相关用例随组件一并移除。）
+ */
+
+const attributes: PackAttribute[] = [
+  {
+    id: "a1",
+    characterId: "c1",
+    groupName: "战斗属性",
+    name: "攻击力",
+    defaultValue: 100,
+    baseValue: 100,
+    decimals: 0,
+    unit: "",
+    sortOrder: 1,
+    updatedAt: 0,
+  },
+  {
+    id: "a2",
+    characterId: "c1",
+    groupName: "战斗属性",
+    name: "防御力",
+    defaultValue: 50,
+    baseValue: 50,
+    decimals: 0,
+    unit: "",
+    sortOrder: 2,
+    updatedAt: 0,
+  },
+];
+
+/** 测试里只写一份「视图」，defs / values 由它投影 —— 与运行时 composeAttributes 互为镜像 */
+const attrDefs: PackAttrDef[] = attributes.map((a) => ({
+  id: a.id,
+  key: "",
+  workId: "w1",
+  name: a.name,
+  groupName: a.groupName,
+  unit: a.unit,
+  decimals: a.decimals,
+  defaultValue: a.defaultValue,
+  sortOrder: a.sortOrder,
+}));
+const attrValues: PackAttrValue[] = attributes.map((a) => ({
+  id: `v-${a.id}`,
+  characterId: a.characterId,
+  defId: a.id,
+  baseValue: a.baseValue,
+  updatedAt: a.updatedAt,
+}));
+
+const slots: PackSlot[] = [
+  {
+    id: "s1",
+    characterId: "c1",
+    name: "武器",
+    capacity: 1,
+    accepts: [],
+    enabled: true,
+    note: "",
+    sortOrder: 1,
+  },
+];
+
+const items: PackItem[] = [
+  {
+    id: "i1",
+    characterId: "c1",
+    name: "玄铁剑",
+    category: "装备",
+    qty: 1,
+    rarity: "rare",
+    icon: "",
+    desc: "",
+    tags: [],
+    equippedSlotId: "",
+    groupId: "",
+    gradeId: "",
+    slotIndex: null,
+    sourceChapterId: "",
+    updatedAt: 0,
+  },
+];
+
+const modifiers: PackModifier[] = [
+  {
+    id: "m1",
+    ownerType: "item",
+    ownerId: "i1",
+    nature: "passive",
+    name: "剑锋",
+    targetAttrId: "a1",
+    op: "add",
+    value: 30,
+    valueUnit: "",
+    scaleByProficiency: false,
+    active: false,
+    defaultOn: false,
+    cost: "",
+    cooldown: null,
+    duration: "",
+    roundsLeft: null,
+    target: "",
+    trigger: "",
+    condition: "",
+    note: "",
+    disabled: false,
+    sortOrder: 1,
+  },
+];
+
+const doc: PackDoc = {
+  character: {
+    id: "c1",
+    workId: "w1",
+    name: "主角",
+    displayName: "主角",
+    avatar: "",
+    isProtagonist: true,
+    entityId: "",
+    realmAt: "",
+    note: "",
+    sortOrder: 1,
+  },
+  attrDefs,
+  attributes: attrValues,
+  slots,
+  items,
+  skills: [],
+  groups: [],
+  categories: [],
+  modifiers,
+  unitSystems: [],
+  layouts: [],
+  presets: [],
+  realmLink: null,
+  mappings: [],
+};
+
+function makeApi(over: Partial<PackPanelApi> = {}): PackPanelApi {
+  const summary = computeSummary({
+    attributes,
+    modifiers,
+    activeCarriers: buildActiveCarriersFrom(doc),
+    proficiency: {},
+  });
+
+  return {
+    doc,
+    attrView: attributes,
+    summary,
+    dirty: 0,
+    prefs: { collapsed: {} },
+    toggleModuleCollapsed: vi.fn(),
+    setDetailAttrId: vi.fn(),
+    previewEquipDeltas: (itemId: string, slotId: string) =>
+      summaryDeltas(summary, computeHypotheticalSummary({ ...doc, attributes, proficiency: {} }, { equip: { itemId, slotId } })),
+    ...over,
+  } as unknown as PackPanelApi;
+}
+
+describe("SummaryModule —— 属性行结构", () => {
+  afterEach(cleanup);
+
+  it("属性行是 button，行内不得嵌套任何交互控件", () => {
+    render(<SummaryModule api={makeApi()} />);
+    const rowButtons = document.querySelectorAll(".cpk-sum__row");
+    expect(rowButtons.length).toBe(2);
+    rowButtons.forEach((row) => {
+      expect(row.querySelectorAll("button, input, [role='combobox']").length).toBe(0);
+    });
+  });
+});
+
+describe("EquipDeltaPreview —— 穿戴 Δ（REQ-018）", () => {
+  afterEach(cleanup);
+
+  it("只列真的会变的属性，未变的属性不占位", () => {
+    render(<EquipDeltaPreview api={makeApi()} itemId="i1" slotId="s1" />);
+    expect(screen.getByText("攻击力")).toBeInTheDocument();
+    // 防御力没有任何加成变化 → 不该出现在 Δ 清单里
+    expect(screen.queryByText("防御力")).toBeNull();
+    // 100 → 130
+    expect(screen.getByText("130")).toBeInTheDocument();
+  });
+
+  it("穿上后属性不变时给一句话，而不是空白浮层", () => {
+    render(<EquipDeltaPreview api={makeApi()} itemId="missing" slotId="s1" />);
+    expect(screen.getByText("穿上后总属性不变")).toBeInTheDocument();
+  });
+});
+
+describe("SummaryModule —— 属性映射分段（1.35.0）", () => {
+  afterEach(cleanup);
+
+  // 「每 1 点攻击力 → 防御力 +2」：攻击力本身不是目标，不该有映射段；
+  // 防御力拿到 130(基础 100 + 剑锋 30) × 2 = 260，单独成一段 is-mapped。
+  // 玄铁剑必须真的穿上 —— 「剑锋 +30」挂在装备上，没穿就不计入，
+  // 这条用例要验的恰恰是「源取的是含装备加成的最终值」。
+  const mappedDoc: PackDoc = {
+    ...doc,
+    items: doc.items.map((item) => ({ ...item, equippedSlotId: "s1", slotIndex: 0 })),
+    mappings: [
+      {
+        id: "pm1",
+        characterId: "c1",
+        sourceAttrId: "a1",
+        targetAttrId: "a2",
+        rate: 2,
+        note: "",
+        sortOrder: 1,
+        updatedAt: 0,
+      },
+    ],
+  };
+  const mappedSummary = computeSummary({
+    attributes,
+    modifiers,
+    activeCarriers: buildActiveCarriersFrom(mappedDoc),
+    proficiency: {},
+    mappings: mappedDoc.mappings,
+  });
+
+  it("映射折算量单独成段，且不混进被动段", () => {
+    render(<SummaryModule api={makeApi({ doc: mappedDoc, summary: mappedSummary })} />);
+    const mapped = document.querySelectorAll(".cpk-seg.is-mapped");
+    expect(mapped.length).toBe(1);
+    expect(mapped[0].textContent).toBe("+260");
+  });
+
+  it("映射的输入是源的最终值（含装备加成），不是基础值", () => {
+    render(<SummaryModule api={makeApi({ doc: mappedDoc, summary: mappedSummary })} />);
+    // 防御力 50 → 310（50 + 260），若错用基础值会得到 50 + 200 = 250
+    expect(mappedSummary.byAttr.get("a2")?.addMapped).toBe(260);
+    expect(mappedSummary.byAttr.get("a2")?.final).toBe(310);
+  });
+});

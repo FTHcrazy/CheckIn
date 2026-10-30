@@ -1,3 +1,12 @@
+// 章节树行（§6.1.2「超长虚拟化列表行」例外）：
+// 行内是语义化原生 <button> / <input>，不套 antd Button/Tooltip/Popconfirm。
+// 该例外只放开「必须用组件库组件」一条 —— 键盘可达性、aria、`<button>` 不嵌套、
+// 主题变量三条照旧。因此这里的状态选择器（:hover / :focus-visible）是
+// **例外条款明确允许**的写法，色值一律走 var(--app-*)。
+//
+// 为什么不用组件库：左栏在长篇里数千行且已虚拟化，滚动时行被反复
+// mount/unmount，重组件（Context + Portal + 状态机）撑不住。
+
 .nv-chapter {
   position: relative;
   /* 章行相对卷头缩进（原型 .vol__body > ul 的 padding-left 6px）；
@@ -8,8 +17,8 @@
 
   &__row {
     width: 100%;
-    /* div 默认 content-box（button 是 border-box）：不加会把左右 padding
-       加到 100% 之外，行溢出容器 18px——高亮右侧圆角被裁、字数被推出可视区 */
+    /* 行容器是普通 div：div 默认 content-box（button 是 border-box），
+       不加会把左右 padding 加到 100% 之外，行溢出容器 18px */
     box-sizing: border-box;
     min-width: 0;
     position: relative;
@@ -23,9 +32,8 @@
     border-radius: var(--app-radius-item);
     color: var(--app-text-secondary);
     font-size: 12px;
-    cursor: pointer;
     text-align: left;
-    transition: background 120ms ease, color 120ms ease;
+    transition: background var(--app-t-fast) var(--app-ease-standard), color var(--app-t-fast) var(--app-ease-standard);
 
     &:hover {
       background: var(--app-surface-hover);
@@ -49,16 +57,26 @@
       }
     }
 
-    /* 拖拽 drop 目标高亮（R9）：inset 阴影做上缘指示线 */
+    /* 拖拽 drop 目标高亮（R9 → 1.39.1 @dnd-kit）：inset 阴影做上缘指示线 */
     &.is-drop {
       background: var(--app-primary-weak);
       box-shadow: inset 0 2px 0 var(--app-primary);
     }
 
-    &:focus-visible {
-      outline: 2px solid var(--app-primary);
-      outline-offset: -2px;
+    /* 拖拽源压暗：内容已经浮在 DragOverlay 卡片上，原位留个残影即可 */
+    &.is-drag {
+      opacity: 0.4;
     }
+  }
+
+  /* 原生按钮统一清零：字体继承、无内边距、无默认背景 */
+  button {
+    font: inherit;
+    color: inherit;
+    background: transparent;
+    border: none;
+    padding: 0;
+    cursor: pointer;
   }
 
   .is-active &__title {
@@ -76,7 +94,6 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    cursor: pointer;
 
     &::before {
       content: "";
@@ -86,13 +103,17 @@
       border: 1.5px solid var(--app-text-muted);
       background: transparent;
       box-sizing: content-box;
-      transition: border-color 120ms ease, background 120ms ease,
-        transform 120ms ease;
+      transition: border-color var(--app-t-fast) var(--app-ease-standard), background var(--app-t-fast) var(--app-ease-standard),
+        transform var(--app-t-fast) var(--app-ease-standard);
     }
 
-    &:hover::before {
-      border-color: var(--app-success);
-      transform: scale(1.15);
+    &:hover {
+      background: var(--app-surface-hover);
+
+      &::before {
+        border-color: var(--app-success);
+        transform: scale(1.15);
+      }
     }
 
     &[data-s="done"]::before {
@@ -103,6 +124,21 @@
     &:focus-visible {
       outline: 2px solid var(--app-primary);
       outline-offset: -1px;
+    }
+  }
+
+  /* 「序号 + 标题」的激活区：行容器不承担点击，cursor 与命中区都在它身上 */
+  &__hit {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    overflow: hidden;
+
+    &:focus-visible {
+      outline: 2px solid var(--app-primary);
+      outline-offset: -2px;
     }
   }
 
@@ -130,14 +166,9 @@
     border-radius: 4px;
     background: var(--app-surface);
     color: var(--app-text);
+    font: inherit;
     font-size: 12px;
 
-    // antd Input（AGENTS 6.1.2）：复合选择器压过组件库默认内边距
-    &.ant-input {
-      padding: 1px 5px;
-    }
-
-    // antd v6 borderless 聚焦自带 focus-visible outline，与自身边框叠两层
     &:focus,
     &:focus-visible {
       outline: none;
@@ -161,25 +192,54 @@
   &__del {
     width: 0;
     min-width: 0;
-    height: 22px;
-    padding: 0;
-    flex: none;
     overflow: hidden;
-    display: flex;
+    flex: none;
+    display: inline-flex;
     align-items: center;
     justify-content: flex-end;
     margin: 0 -3.5px;
-    border: none;
-    border-radius: 4px;
-    background: transparent;
-    color: var(--app-text-muted);
-    font-size: 12px;
-    cursor: pointer;
     opacity: 0;
-    transition: width 140ms ease, opacity 140ms ease, color 120ms ease;
+    transition: width var(--app-t-fast) var(--app-ease-standard), opacity var(--app-t-fast) var(--app-ease-standard), color var(--app-t-fast) var(--app-ease-standard);
+    font-size: 12px;
 
     &:hover {
-      color: var(--app-danger, #d4380d);
+      color: var(--app-error);
+    }
+
+    /* 悬浮/聚焦时宽度 0→18px 展开：比常驻更省空间，且聚焦也能撑开 */
+    &:focus-visible {
+      width: 18px;
+      opacity: 1;
+      outline: 2px solid var(--app-primary);
+      outline-offset: -1px;
+    }
+  }
+
+  &:hover &__del {
+    width: 18px;
+    opacity: 1;
+  }
+
+  /* AI 摘要按钮：与删除按钮同悬浮展开范式；有摘要时实心主色以示「已有」 */
+  &__summary {
+    width: 0;
+    min-width: 0;
+    overflow: hidden;
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    margin: 0 -3.5px;
+    opacity: 0;
+    transition: width var(--app-t-fast) var(--app-ease-standard), opacity var(--app-t-fast) var(--app-ease-standard), color var(--app-t-fast) var(--app-ease-standard);
+    font-size: 12px;
+
+    &:hover {
+      color: var(--app-primary);
+    }
+
+    &.has-summary {
+      color: var(--app-primary);
     }
 
     &:focus-visible {
@@ -190,7 +250,7 @@
     }
   }
 
-  &:hover &__del {
+  &:hover &__summary {
     width: 18px;
     opacity: 1;
   }

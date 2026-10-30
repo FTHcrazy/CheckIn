@@ -1,0 +1,62 @@
+.aic {
+  .aic__title {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .aic__icon {
+    color: var(--app-accent, #1677ff);
+  }
+
+  .aic__body {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .aic__amount {
+    margin: 0;
+    color: var(--app-text, #1f2329);
+
+    strong {
+      font-weight: 600;
+    }
+  }
+
+  .aic__scope {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .aic__scope-label {
+    font-size: 13px;
+    color: var(--app-text-secondary, #646a73);
+  }
+
+  .aic__hint {
+    margin: 0;
+    font-size: 13px;
+    color: var(--app-text-secondary, #646a73);
+  }
+
+  .aic__hint--local {
+    color: var(--app-success, #52c41a);
+  }
+
+  /* 范围提示（如「选中段落」但没选中任何内容）：用告警色，别和普通说明混在一起 */
+  .aic__hint--notice {
+    color: var(--app-warning, #f5a623);
+  }
+
+  .aic__notice {
+    margin: 0;
+    padding: 8px 10px;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--app-text-secondary, #646a73);
+    background: var(--app-fill-quaternary, rgba(0, 0, 0, 0.04));
+    border-radius: 6px;
+  }
+}

@@ -1,0 +1,824 @@
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import path from "node:path";
+import * as sass from "sass";
+import { describe, expect, it } from "vitest";
+
+/**
+ * Novel 窗口的「组件库优先」守卫（AGENTS.md §6.1.2）。
+ *
+ * 与行囊那份 `CharacterPack/pack-ui-kit.test.ts` 的关系：那份钉的是行囊内部，
+ * 这一份钉的是**小说窗口 + 设定中心组件树**（两个扫描根，见下方 `ROOTS`）——
+ * 迁移完 105 处原生 `<button>` 之后，回潮的入口从「行囊内部新增」变成了
+ * 「窗口里任何一个新面板顺手写一个原生按钮」；1.45.1 起设定中心从 NovelWindow
+ * 迁到 `src/shared/components/SettingCenter`，那一整棵组件树也纳入同一份守卫。
+ *
+ * 三条断言各自对应一类**不会自己报错**的退化：
+ * 1. 原生表单控件：功能照跑、类型也过，但不跟随主题的组件级变量、没有键盘与
+ *    焦点可达性，改主题时总有一两处漏掉；
+ * 2. `<Button>` 嵌套 `<Button>`：浏览器会把结构拆坏，只有打开 DOM 才看得见；
+ * 3. 只换了标签、没在样式里补「清零点」：按钮会带上 antd 默认的高度 / 内边距 /
+ *    圆角 / 边框，视觉全乱——而这一步**没有任何类型或构建错误**提示你漏了。
+ *
+ * 第 3 条因此编译全部 SCSS 后断言 `.类名.ant-btn` 规则存在且带清零点签名
+ * `--ant-control-height`，而不是搜源码文本（BEM 嵌套的字面量在源码里不存在）。
+ */
+
+const ROOT = path.resolve(process.cwd(), "src/windows/NovelWindow");
+
+/**
+ * 第二个扫描根（1.45.1 P1-1）：设定中心组件树。
+ *
+ * UI-10 拆分时，设定中心（浮层标题 / 左分类列表 / 分类卡 / 等级序列 / 两个弹窗）
+ * 从 `pages/NovelPage/components` 迁到了 `src/shared/components/SettingCenter`，
+ * 供「本书设定面板」与「全局设定中心窗口」两处共用。
+ *
+ * 迁出之后它**掉出了这份守卫的扫描根** —— 那是一整棵组件树从此不再受 §6.1.2
+ * 约束（原生控件、`<Button>` 嵌 `<Button>`、漏清零点都不会报），而它恰恰是本域
+ * 控件最密集的面板区。所以扫描根扩成两处。
+ *
+ * 不并入 `CharacterPack`：那份有自己独立的 `pack-ui-kit.test.ts`，一起扫只会把
+ * 同一批违规重复报两遍，还要改一处跑两份。
+ */
+const SETTING_CENTER_ROOT = path.resolve(
+  process.cwd(),
+  "src/shared/components/SettingCenter",
+);
+
+/** 本守卫覆盖的全部扫描根 */
+const ROOTS = [ROOT, SETTING_CENTER_ROOT];
+
+function walk(dir: string, out: string[] = []): string[] {
+  for (const entry of readdirSync(dir)) {
+    const full = path.join(dir, entry);
+    if (statSync(full).isDirectory()) walk(full, out);
+    else out.push(full);
+  }
+  return out;
+}
+
+/** 去掉注释后再匹配：说明文字里会引用 `<button>` 这种标签名，不该算命中 */
+function stripComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+}
+
+/**
+ * 相对**最近的那个**扫描根取显示路径。
+ * 跨根文件不能一律拿 ROOT 去 relative（会得到 `../../../shared/...` 这种噪声），
+ * 报出来的路径要能直接拿去定位文件。
+ */
+function relFromRoot(file: string): string {
+  const root =
+    ROOTS.find(
+      (candidate) => !path.relative(candidate, file).startsWith(".."),
+    ) ?? ROOT;
+  return path.relative(root, file).replace(/\\/g, "/");
+}
+
+const files = ROOTS.flatMap((root) => walk(root));
+const tsxFiles = files.filter((file) => file.endsWith(".tsx"));
+const scssFiles = files.filter((file) => file.endsWith(".scss"));
+
+const compiledCss = scssFiles
+  .map((file) => sass.compile(file, { style: "expanded" }).css)
+  .join("\n");
+
+const NATIVE_CONTROL = /<(button|input|textarea|select)(?=[\s/>])/;
+
+/** 可访问名签名：任一 `aria-*` 或 `title=`（例外组件的原生控件必须自带） */
+const A11Y = /aria-[a-z]+=|title=/;
+
+/**
+ * 「超长虚拟化列表行」例外白名单（AGENTS.md §6.1.2，1.32.0 新增）。
+ *
+ * 这些组件在**已被虚拟化、行数可达数千**的列表里，滚动时会被反复
+ * mount / unmount。用 antd 组件承载行内控件时，每行都带 Context + Portal +
+ * 状态机，滚动一次要反复创建/销毁上万个组件 —— 这正是「切章卡、滚动卡」的源头。
+ *
+ * 例外**只**放开「必须用组件库组件」一条；下面三条仍然由本测试守护：
+ * - 语义化标签与键盘可达（原生 `<button>` / `<input>` 本身即满足，
+ *   且必须带 `aria-*` 或 `title`）
+ * - 不得 `<Button>` 嵌 `<Button>`（对原生标签同样成立，见下方嵌套检查）
+ * - 外观必须走 `var(--app-*)`（由 §6.1.1 的主题守卫与本文件的 scss 断言覆盖）
+ *
+ * 白名单是**路径后缀**匹配，新增条目必须同时在本文件的说明与 AGENTS.md 里
+ * 补上理由 —— 别把它当成绕过守卫的快捷键。
+ */
+const VIRTUALIZED_ROW_EXCEPTION = [
+  "components/ChapterTreeItem/index.tsx",
+  "components/VolumeNode/index.tsx",
+];
+
+const isExemptFromComponentLibrary = (file: string): boolean => {
+  // 路径分隔符在 Windows 上是 `\`，先归一化成 `/` 再比对后缀
+  const normalized = file.replace(/\\/g, "/");
+  return VIRTUALIZED_ROW_EXCEPTION.some((suffix) => normalized.endsWith(suffix));
+};
+
+/**
+ * 扫出所有 `<Button` 开标签（含自闭合），返回它们在源码里的位置与是否自闭合。
+ * 必须手写到「匹配的 `>`」为止：属性里有 `onClick={() => ...}` 这种带 `>` 的箭头，
+ * 用正则 `<Button[^>]*>` 会在箭头处提前截断。
+ */
+function scanButtonTags(source: string) {
+  const tokens: Array<{ type: "open" | "self" | "close"; line: number }> = [];
+  const re = /<Button\b|<\/Button>/g;
+  let m: RegExpExecArray | null;
+
+  while ((m = re.exec(source))) {
+    if (m[0] === "</Button>") {
+      tokens.push({ type: "close", line: 0 });
+      continue;
+    }
+    let j = m.index + "<Button".length;
+    let brace = 0;
+    let quote: string | null = null;
+    while (j < source.length) {
+      const c = source[j];
+      if (quote) {
+        if (c === quote) quote = null;
+      } else if (c === '"' || c === "'" || c === "`") {
+        quote = c;
+      } else if (c === "{") brace++;
+      else if (c === "}") brace--;
+      else if (c === ">" && brace === 0) break;
+      j++;
+    }
+    tokens.push({
+      type: source[j - 1] === "/" ? "self" : "open",
+      line: source.slice(0, m.index).split("\n").length,
+    });
+  }
+  return tokens;
+}
+
+/** 从 `<Button>` 开标签里取出业务类名（模板字符串里的条件后缀会被剥掉） */
+function buttonClasses(source: string): Set<string> {
+  const out = new Set<string>();
+  const stripped = stripComments(source);
+  const re = /<Button\b/g;
+  let m: RegExpExecArray | null;
+
+  while ((m = re.exec(stripped))) {
+    let j = m.index + "<Button".length;
+    let brace = 0;
+    let quote: string | null = null;
+    while (j < stripped.length) {
+      const c = stripped[j];
+      if (quote) {
+        if (c === quote) quote = null;
+      } else if (c === '"' || c === "'" || c === "`") {
+        quote = c;
+      } else if (c === "{") brace++;
+      else if (c === "}") brace--;
+      else if (c === ">" && brace === 0) break;
+      j++;
+    }
+    const tag = stripped.slice(m.index, j + 1);
+    const cm = tag.match(/className=(?:"([^"]*)"|\{([\s\S]*)\})/);
+    if (!cm) continue;
+    const raw = (cm[1] ?? cm[2] ?? "").replace(/\$\{[\s\S]*?\}/g, "");
+    for (const token of raw.split(/[\s+"]/)) {
+      const cls = token.replace(/[^A-Za-z0-9_-]/g, "");
+      if (/^(nv|bs|cpk|novel)-/.test(cls)) out.add(cls);
+    }
+  }
+  return out;
+}
+
+/**
+ * 刻意走组件库自带造型、**不需要清零点**的按钮类。
+ *
+ * 这些类名挂在 `Button` 上，但不是为了「自绘造型」，而是为了改一两个组件级变量
+ * 或补一条 antd 不接管的布局属性。它们要保留 `size` / `type` 给出的整套尺寸与
+ * 描边 —— 清零反而得把高度 / 内边距 / 圆角手工复刻一遍，而同排没挂类名的按钮
+ * 跟着 antd 走，复刻出来的数字一升版就不齐。所以豁免「必须有 `.类.ant-btn`
+ * 清零点规则 + 块内带 `--ant-control-height`」这两条。
+ *
+ * 收录门槛：**不得有任何自绘尺寸或外观**，只允许「组件级变量覆盖」与
+ * 「antd 不接管的布局属性」。新增条目必须写清理由，别当成绕过守卫的快捷键。
+ */
+const NO_RESET_NEEDED = new Set([
+  // 书架首屏 CTA：`type="primary"` + `size="large"`，整套造型由组件库给
+  "bs-hero__cta",
+  // 设定中心 · 分类卡「放置到全局」：只覆盖 default 变体的文字色变量
+  // （`--ant-button-default-color` ×3），尺寸仍由 `size="small"` 给
+  "nv-sc__publish",
+  // 设定中心 · 左栏「从全局库选择」：只补一条 `margin-top`（antd 不接管），
+  // 造型完全交给组件库
+  "nv-sc__from-global",
+]);
+
+/**
+ * 扫描范围守卫（1.45.1 P1-1）。
+ *
+ * 扫描根本身就是易退化项：根写错了（组件搬家、路径写成目录前缀、改名）不会报
+ * 任何错，只会让下面所有断言在**更小的样本**上静默通过 —— 守卫还在，覆盖面没了。
+ * 这里正面钉住两个根各自都真的贡献了样本。
+ */
+describe("Novel 窗口 / 设定中心：扫描范围", () => {
+  it("设定中心组件树在扫描范围内（迁出 NovelWindow 后不再脱离守卫）", () => {
+    const covered = new Set(files);
+    for (const relative of [
+      "src/shared/components/SettingCenter/index.tsx",
+      "src/shared/components/SettingCenter/index.scss",
+      "src/shared/components/SettingCenter/components/CategoryCard/index.tsx",
+      "src/shared/components/SettingCenter/components/CategoryCard/index.scss",
+      "src/shared/components/SettingCenter/components/LevelSequence/index.tsx",
+    ]) {
+      const absolute = path.resolve(process.cwd(), relative);
+      expect(covered.has(absolute), `${relative} 不在扫描范围内`).toBe(true);
+    }
+  });
+
+  it("两个根都真的贡献样本（任一根路径写错时这条先红，而不是整段空转）", () => {
+    const counts = ROOTS.map((root) => ({
+      tsx: tsxFiles.filter((file) => file.startsWith(root)).length,
+      scss: scssFiles.filter((file) => file.startsWith(root)).length,
+    }));
+    // 根 1：小说窗口本体（当前 61 个 .tsx / 40 个 .scss，取保守下限）
+    expect(counts[0]?.tsx).toBeGreaterThan(40);
+    expect(counts[0]?.scss).toBeGreaterThan(20);
+    // 根 2：设定中心组件树（当前 11 个 .tsx / 8 个 .scss）
+    expect(counts[1]?.tsx).toBeGreaterThan(8);
+    expect(counts[1]?.scss).toBeGreaterThan(4);
+  });
+
+  it("显示路径可定位（跨根文件报成从各自根起的相对路径，不带 ../ 噪声）", () => {
+    const settingCenterFile = path.resolve(
+      process.cwd(),
+      "src/shared/components/SettingCenter/components/CategoryCard/index.tsx",
+    );
+    expect(relFromRoot(settingCenterFile)).toBe("components/CategoryCard/index.tsx");
+    expect(relFromRoot(path.join(ROOT, "pages/NovelPage/NovelPage.tsx"))).toBe(
+      "pages/NovelPage/NovelPage.tsx",
+    );
+  });
+});
+
+describe("Novel 窗口：原生表单控件清零", () => {
+  it("编译到了窗口全部样式（产物非空，否则下面的断言会全部假通过）", () => {
+    expect(scssFiles.length).toBeGreaterThan(30);
+    expect(compiledCss.length).toBeGreaterThan(10000);
+  });
+
+  it("窗口内没有任何原生表单控件（虚拟化列表行白名单除外）", () => {
+    const offenders: string[] = [];
+    for (const file of tsxFiles) {
+      // 白名单组件豁免「必须用组件库组件」，但下面的可访问性断言仍会检查它们
+      if (isExemptFromComponentLibrary(file)) continue;
+      stripComments(readFileSync(file, "utf8"))
+        .split("\n")
+        .forEach((line, index) => {
+          if (NATIVE_CONTROL.test(line)) {
+            offenders.push(`${relFromRoot(file)}:${index + 1}`);
+          }
+        });
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  /**
+   * 白名单组件的**补偿性**守卫：放开组件库不等于放开可访问性。
+   * 每个原生控件都必须自带可访问名（aria-label / aria-selected / title /
+   * aria-current / aria-expanded / aria-pressed 之一），否则它就是
+   * 「看不见的按钮」—— 键盘用户与屏幕阅读器完全无法理解。
+   *
+   * 只看开标签本身（到该标签的 `>` 为止），不设置行窗口：
+   * 可访问名与控件之间隔着几行属性是**写法差异**，不是可访问性差异，
+   * 用「向下看 N 行」当判据既会漏（属性写远了）也会误放行（下一行的邻居
+   * 控件带了 aria-label）。取真开标签才是这条断言的语义。
+   */
+  it("例外组件里的原生控件仍带可访问名（aria-* / title）", () => {
+    const offenders: string[] = [];
+    for (const file of tsxFiles) {
+      if (!isExemptFromComponentLibrary(file)) continue;
+      const lines = stripComments(readFileSync(file, "utf8")).split("\n");
+      lines.forEach((line, index) => {
+        const start = NATIVE_CONTROL.exec(line);
+        if (!start) return;
+        // 从 `<` 起花括号配平地找到真开标签的 `>`，把整段属性当作可访问名的搜索域
+        const source = lines.slice(index).join("\n");
+        let j = start.index;
+        let brace = 0;
+        let quote: string | null = null;
+        while (j < source.length) {
+          const ch = source[j];
+          if (quote) {
+            if (ch === quote) quote = null;
+          } else if (ch === '"' || ch === "'" || ch === "`") {
+            quote = ch;
+          } else if (ch === "{") brace++;
+          else if (ch === "}") brace--;
+          else if (ch === ">" && brace === 0) break;
+          j++;
+        }
+        const openTag = source.slice(start.index, j + 1);
+        if (!A11Y.test(openTag)) {
+          offenders.push(`${relFromRoot(file)}:${index + 1}`);
+        }
+      });
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  /**
+   * 例外组件必须**自带完整造型**：这是它换掉组件库之后要付的账。
+   *
+   * 走 antd `Button` 时，高度 / 内边距 / 圆角 / 边框 / 背景全由组件库给，
+   * 清零只需覆盖差异项。换成原生标签后这些基础样式**全部消失**——
+   * 浏览器会给出 `buttonface` 灰底 + 原生边框 + 默认字体，
+   * 而这一步没有任何类型或构建错误提示你漏了。
+   *
+   * 因此对白名单文件反过来提要求：它们的 index.scss 必须真的声明外观，
+   * 而不是靠"反正 antd 会给"的空壳。否则白名单就成了"少写样式也没人管"的后门。
+   */
+  it("例外组件的样式自带完整造型（height/border/padding 不能靠组件库兜底）", () => {
+    const offenders: string[] = [];
+    for (const suffix of VIRTUALIZED_ROW_EXCEPTION) {
+      const dir = path.join(ROOT, "pages/NovelPage", path.dirname(suffix));
+      const scss = path.join(dir, "index.scss");
+      const source = stripComments(readFileSync(scss, "utf8"));
+      // 原生控件的"看得见"三件套：盒子尺寸、可见边界、内边距
+      const missing = (["height", "border", "padding"] as const).filter(
+        (prop) => !new RegExp(`(^|[\\s;{(])${prop}\\s*:`, "m").test(source),
+      );
+      if (missing.length > 0) {
+        offenders.push(`${relFromRoot(scss)} 缺少 ${missing.join(" / ")}`);
+      }
+      // 豁免组件不得再残留指向组件库的清零规则：那是死 CSS，
+      // 会让人误以为"这里还是 antd 按钮"而照抄回组件库写法
+      if (/ant-btn/.test(source)) {
+        offenders.push(`${relFromRoot(scss)} 残留 .ant-btn 规则（已是原生标签）`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  /**
+   * 白名单只准收「已被虚拟化、行数可达数千」的**行组件**。
+   * 后缀匹配很容易写宽（比如误写成 `components/`），一旦放宽，
+   * 整个目录的组件都会失去组件库优先约束而不自知。
+   * 这里反向钉两条：条目必须是具体文件、且确实处在虚拟化列表路径下。
+   */
+  it("白名单收得很紧（具体文件 + 虚拟化列表行，不会误放行整目录）", () => {
+    expect(VIRTUALIZED_ROW_EXCEPTION.length).toBeGreaterThan(0);
+    for (const suffix of VIRTUALIZED_ROW_EXCEPTION) {
+      // 必须精确到某个组件的 index.tsx，不能是目录前缀
+      expect(suffix.endsWith("/index.tsx")).toBe(true);
+      expect(suffix.startsWith("components/")).toBe(true);
+      // 必须真实存在，避免改名后留下一条永远匹配不到的僵尸条目
+      const abs = path.join(ROOT, "pages/NovelPage", suffix);
+      expect(statSync(abs).isFile()).toBe(true);
+      // 反向验证：匹配必须落在该文件上，且不会顺带命中同目录的兄弟文件
+      expect(isExemptFromComponentLibrary(abs)).toBe(true);
+      // 兄弟文件（同目录的 index.scss）不得被后缀顺带命中 ——
+      // 注意 path.join 在 Windows 上给的是 `\`，替换时要先把分隔符归一化
+      const sibling = abs.replace(/[\\/]index\.tsx$/, "/index.scss");
+      expect(sibling.endsWith("index.scss")).toBe(true);
+      expect(isExemptFromComponentLibrary(sibling)).toBe(false);
+    }
+  });
+
+  it("没有 Button 嵌 Button（浏览器会拆坏 DOM）", () => {
+    const offenders: string[] = [];
+    for (const file of tsxFiles) {
+      const source = stripComments(readFileSync(file, "utf8"));
+      let depth = 0;
+      for (const token of scanButtonTags(source)) {
+        if (token.type === "open") {
+          depth++;
+          if (depth > 1) {
+            offenders.push(`${relFromRoot(file)}:${token.line}`);
+          }
+        } else if (token.type === "close" && depth > 0) {
+          depth--;
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+});
+
+/**
+ * 虚拟化列表容器的**尺寸守卫**。
+ *
+ * 起因是一个真实事故：出场章节列表的 Virtuoso 容器写了 `max-height: 240px`
+ * 却没有确定高度。Virtuoso 的行是**绝对定位**、不参与父级尺寸计算，容器高度
+ * 因此由 auto 塌成 0 —— 列表整个不可见，只剩标题上的章数。
+ * 这个 bug 不会报错、不会抛异常、测试也查不到「元素缺失」（行确实渲染了，
+ * 只是渲染在一个 0 高的盒子里），只能靠人眼看出来。
+ *
+ * 所以对每个用到 Virtuoso 的组件反过来提要求：承载它的那条规则必须给出
+ * **确定高度**（`height` 或 flex 的 `flex: 1` + `min-height: 0`），
+ * 只写 `max-height` 一律视为违规。
+ */
+describe("Novel 窗口：虚拟化列表容器必须有确定高度", () => {
+  /** 用到 Virtuoso 的组件目录（相对 ROOT） */
+  const VIRTUALIZED_DIRS = [
+    "pages/NovelPage/components/ChapterTree",
+    "pages/NovelPage/components/EntityDetail",
+    "pages/NovelPage/components/OutlinePanel",
+    "pages/NovelPage/components/InspirationPanel",
+  ];
+
+  it("每个虚拟列表的样式都给了确定高度（不能只写 max-height）", () => {
+    const offenders: string[] = [];
+    for (const dir of VIRTUALIZED_DIRS) {
+      const tsx = readFileSync(path.join(ROOT, dir, "index.tsx"), "utf8");
+      // 目录里没用 Virtuoso 就跳过（清单比实现先列出来时不假红）
+      if (!tsx.includes("Virtuoso")) continue;
+
+      const scss = stripComments(
+        readFileSync(path.join(ROOT, dir, "index.scss"), "utf8"),
+      );
+      // 确定高度 = 显式 height，或 flex: 1 配合 min-height: 0
+      const hasDefiniteHeight = /\bheight\s*:/.test(scss) || /\bflex\s*:\s*1/.test(scss);
+      const hasMinHeightZero = /min-height\s*:\s*0/.test(scss);
+
+      if (!hasDefiniteHeight) {
+        offenders.push(`${dir}/index.scss 没有任何确定高度（height / flex: 1）`);
+      } else if (!hasMinHeightZero && /flex\s*:\s*1/.test(scss)) {
+        // flex: 1 单独用不足以收缩：父级 flex 项的默认 min-height 是 auto，
+        // 长内容会把容器顶高而不是内部滚动
+        offenders.push(`${dir}/index.scss 用了 flex: 1 但缺 min-height: 0`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("清单本身有效（目录存在，避免路径写错导致整段空转）", () => {
+    for (const dir of VIRTUALIZED_DIRS) {
+      expect(statSync(path.join(ROOT, dir)).isDirectory()).toBe(true);
+    }
+  });
+});
+
+describe("Novel 窗口：自带造型的按钮都配了清零点", () => {
+  const classes = new Set<string>();
+  for (const file of tsxFiles) {
+    for (const cls of buttonClasses(readFileSync(file, "utf8"))) {
+      classes.add(cls);
+    }
+  }
+
+  it("样本非空（扫不到类说明解析失效，下面的断言会假通过）", () => {
+    expect(classes.size).toBeGreaterThan(40);
+  });
+
+  /**
+   * 编译产物里的规则（选择器 → 声明块）。清零块常常写成
+   * `.a.ant-btn, .b.ant-btn { @include ... }`，按类名逐个搜会把这种合并写法漏掉，
+   * 所以按「规则」而不是「选择器字符串」来判。
+   */
+  const rules: Array<{ selector: string; body: string }> = [];
+  const ruleRe = /([^{}]+)\{([^{}]*)\}/g;
+  let rm: RegExpExecArray | null;
+  while ((rm = ruleRe.exec(compiledCss))) {
+    rules.push({ selector: rm[1], body: rm[2] });
+  }
+
+  const hasRule = (cls: string): boolean =>
+    rules.some((rule) => rule.selector.includes(`.${cls}.ant-btn`));
+
+  /** 该类所在的规则块里是否有清零点 mixin 的签名声明 */
+  const hasReset = (cls: string): boolean =>
+    rules.some(
+      (rule) =>
+        rule.selector.includes(`.${cls}.ant-btn`) &&
+        rule.body.includes("--ant-control-height"),
+    );
+
+  it.each([...classes].sort())("%s 有 .ant-btn 规则（换标签后没漏清零）", (cls) => {
+    if (NO_RESET_NEEDED.has(cls)) return;
+    // `--x` 修饰符可以只挂基类（如 `nv-mini--warn` 靠 `.nv-mini.ant-btn`）
+    const base = cls.includes("--") ? cls.split("--")[0] : cls;
+    expect(hasRule(cls) || hasRule(base)).toBe(true);
+  });
+
+  it.each([...classes].sort())("%s 的清零点里带 --ant-control-height", (cls) => {
+    if (NO_RESET_NEEDED.has(cls)) return;
+    const base = cls.includes("--") ? cls.split("--")[0] : cls;
+    // `--x` 修饰符可以只挂基类（如 `nv-mini--warn` 靠 `.nv-mini.ant-btn`）
+    expect(hasReset(cls) || hasReset(base)).toBe(true);
+  });
+});
+
+describe("Novel 窗口：角标走组件库", () => {
+  const supportPanel = stripComments(
+    readFileSync(
+      path.join(ROOT, "pages/NovelPage/components/SupportPanel/index.tsx"),
+      "utf8",
+    ),
+  );
+
+  it("右栏 tab 角标用 antd Badge（不再手搓 <i> 角标）", () => {
+    expect(supportPanel).toContain("<Badge");
+    // 旧实现是自绘的 `<i className="nv-panel__badge">`：位置 / 圆角 / 描边
+    // 全靠自己算，面板拖窄时会压住图标。类名不得回潮
+    expect(supportPanel).not.toContain("nv-panel__badge");
+    expect(compiledCss).not.toContain(".nv-panel__badge");
+  });
+
+  it("角标只调组件级变量（编译产物里能查到 .nv-panel__tab-badge.ant-badge）", () => {
+    expect(compiledCss).toContain(".nv-panel__tab-badge.ant-badge");
+    expect(compiledCss).toContain("--ant-badge-indicator-height");
+  });
+});
+
+describe("Novel 窗口：主题变量", () => {
+  it("样式里不引用不存在的 --app-danger（真名是 --app-error）", () => {
+    const offenders = scssFiles.filter((file) =>
+      stripComments(readFileSync(file, "utf8")).includes("var(--app-danger"),
+    );
+    expect(offenders.map((f) => relFromRoot(f))).toEqual([]);
+  });
+});
+
+/**
+ * 右栏分段切换统一到组件库（§6.1.2）。
+ *
+ * 收敛前右栏有四处手搓分段条（`.nv-sub` + 清零 Button + `.is-on`）外加一条
+ * 自带绝对定位滑块与 ResizeObserver 的 Tab 条。它们的共同问题是**视觉靠人肉
+ * 对齐、键盘语义缺失**：没有 radio 角色、左右键不能切换、滑块宽度要自己量。
+ *
+ * 现在统一走 `NvSegmented`（antd `Segmented`）。这条守卫钉三件事：
+ * 1. `.nv-sub` 不能回潮（否则两种分段条并存，改一处另一处必然漂移）；
+ * 2. 四处调用点仍然用 `NvSegmented`（有人直接写 `<Segmented>` 就会丢掉
+ *    与右栏一致的外观变量）；
+ * 3. 外观等价的关键变量还在（轨道档位、滑块高度算式、计数 Badge）。
+ */
+describe("Novel 窗口：右栏分段切换统一走组件库 Segmented", () => {
+  const segScss = path.join(
+    ROOT,
+    "pages/NovelPage/components/NvSegmented/index.scss",
+  );
+  const segCss = sass
+    .compile(segScss, { style: "expanded" })
+    .css.replace(/\/\*[\s\S]*?\*\//g, "");
+
+  it("手搓分段条彻底下线（源码与编译产物都不得再有 .nv-sub）", () => {
+    const offenders = tsxFiles.filter((file) =>
+      /nv-sub/.test(stripComments(readFileSync(file, "utf8"))),
+    );
+    expect(offenders.map((f) => relFromRoot(f))).toEqual([]);
+    // 编译产物里还要排除**注释**：说明文字里会引用旧类名（sass 的 /* */ 会保留）
+    expect(compiledCss.replace(/\/\*[\s\S]*?\*\//g, "")).not.toContain(".nv-sub");
+  });
+
+  it("四处切换都经 NvSegmented 渲染（不直接裸用 Segmented）", () => {
+    for (const relative of [
+      "pages/NovelPage/components/OutlinePanel/index.tsx",
+      "pages/NovelPage/components/SearchPanel/index.tsx",
+      "pages/NovelPage/components/SensitivePanel/index.tsx",
+      "pages/NovelPage/components/SupportPanel/index.tsx",
+    ]) {
+      const source = stripComments(
+        readFileSync(path.join(ROOT, relative), "utf8"),
+      );
+      expect(source, relative).toContain("<NvSegmented");
+      expect(source, relative).not.toContain("<Segmented");
+    }
+  });
+
+  it("轨道 / 滑块 / 高度算式仍在（复刻改前外观，缺一条就变形）", () => {
+    // 轨道取 --app-surface-hover：.nv-panel 本身是 alt 档，再深一档才是凹槽
+    expect(segCss).toContain("--ant-segmented-track-bg: var(--app-surface-hover)");
+    expect(segCss).toContain("--ant-segmented-item-selected-bg: var(--app-surface)");
+    // 滑块 25px = control-height 31 − 2 × track-padding 3
+    expect(segCss).toContain("--ant-control-height: 31px");
+    expect(segCss).toContain("--ant-segmented-track-padding: 3px");
+    // 五 Tab 变体：40px 格 = 48 − 2 × 4
+    expect(segCss).toContain("--ant-control-height: 48px");
+  });
+
+  it("计数走组件库 Badge（不再自绘计数 span）", () => {
+    const source = stripComments(readFileSync(segScss.replace(/\.scss$/, ".tsx"), "utf8"));
+    expect(source).toContain("<Badge");
+    expect(source).not.toContain("nv-seg__count");
+  });
+});
+
+/**
+ * 要素类型 chips 不得被 flex 压扁（真机反馈：第一个分类名展示不全）。
+ *
+ * `.nv-chips` 是 `display: flex` + 横向滚动。flex 子项缺省 `flex-shrink: 1`，
+ * 于是宽度不够时浏览器**先压扁第一颗 chip**（内容被裁成只剩计数），而不是让
+ * 整行横向滚动 —— 面板拖到 280 宽时「全部 6」只剩一个「6」。
+ * 修法是 `flex: none`：宽度回归内容，溢出交给容器的滚动 + 两端渐隐。
+ */
+describe("Novel 窗口：要素类型 chips 不被挤扁", () => {
+  const css = sass
+    .compile(
+      path.join(ROOT, "pages/NovelPage/components/SupportPanel/panel-primitives.scss"),
+      { style: "expanded" },
+    )
+    .css.replace(/\/\*[\s\S]*?\*\//g, "");
+
+  const ruleBlock = (source: string, selector: string) => {
+    const at = source.indexOf(`${selector} {`);
+    expect(at, `缺少规则 ${selector}`).toBeGreaterThan(-1);
+    const open = source.indexOf("{", at);
+    let depth = 0;
+    let end = open;
+    for (; end < source.length; end++) {
+      if (source[end] === "{") depth++;
+      else if (source[end] === "}" && --depth === 0) break;
+    }
+    return source.slice(open + 1, end);
+  };
+
+  it("chips 不参与收缩，溢出交给横向滚动", () => {
+    const block = ruleBlock(css, ".nv-panel .nv-chip.ant-btn");
+    expect(block).toContain("flex: none");
+    // 容器必须仍可横向滚动，否则 flex: none 会把内容顶出面板
+    const row = ruleBlock(css, ".nv-panel .nv-chips");
+    expect(row).toContain("overflow-x: auto");
+  });
+});
+
+describe("Novel 窗口：虚拟化行内 width:100% 的普通元素必须显式 border-box", () => {
+  it("OutlinePanel 章节行容器不把横向滚动条带进虚拟列表（1.34.0 回归守卫）", () => {
+    // 应用没有全局 box-sizing 重置：普通 div 默认 content-box，
+    // `width: 100% + padding + border` 会比容器宽出 2×padding + 2×border。
+    // antd 按钮由 ant-button-reset 的 border-box 兜住，**普通 div 得自己声明**。
+    // OutlinePanel.__line（34px 槽位 + 1px 描边）漏声明时恰好宽出 36px：
+    // 虚拟列表滚动容器 overflow-y:auto 连带 overflow-x:auto，这 36px 直接
+    // 变成横向滚动条 + 激活高亮框右侧被裁（表现为「标题宽度不自适应」）。
+    const css = sass.compile(
+      path.join(ROOT, "pages/NovelPage/components/OutlinePanel/index.scss"),
+      { style: "expanded" },
+    ).css;
+    const rule = css
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .match(/\.nv-outline__line\s*\{([^}]*)\}/);
+    expect(rule).not.toBeNull();
+    expect(rule![1]).toContain("box-sizing: border-box");
+    // 行宽自适应的两个前提也要在：width:100% 与槽位 padding 仍存在，
+    // 断言才真的钉住了「这个元素会溢出」这件事本身
+    expect(rule![1]).toContain("width: 100%");
+    expect(rule![1]).toContain("padding-inline-end");
+  });
+});
+
+describe("Novel 窗口：大纲章节行不渲染 antd 点击涟漪", () => {
+  it("__row 按钮上关掉了 .ant-wave（1.34.0「点击效果只有一半」回归守卫）", () => {
+    // antd 把 `.ant-wave` div **插进被点的按钮内部**
+    // （_util/wave/WaveEffect.js: `target.insertBefore(holder, target.firstChild)`），
+    // 规则 `box-shadow: 0 0 0 6px currentcolor; opacity: .2`，且 opacity 过渡长达 2s。
+    // OutlinePanel 的 __row 按钮只占整行里「标题那一段」——行尾的伏笔标识 /
+    // 字数 / 状态点 / ＋伏笔 都是**并列在按钮之外**的真按钮，于是这圈涟漪只罩住
+    // 标题，与 __line 的整行高亮叠起来，就是用户连报三次的「内层框 / 只有一半」。
+    //
+    // 这条守卫钉两件事：
+    //  (a) 规则存在且 display: none（编译产出，不搜源码文本）；
+    //  (b) 选择器特异性 ≥ 3 个类 —— antd 自己的 `.ant-wave` 是 (0,1,0)，
+    //      本仓若把它降成 (0,1,0) 会因 cssinjs 注入顺序输掉，环又回来。
+    const css = sass
+      .compile(
+        path.join(ROOT, "pages/NovelPage/components/OutlinePanel/index.scss"),
+        { style: "expanded" },
+      )
+      .css.replace(/\/\*[\s\S]*?\*\//g, "");
+
+    const selector = ".nv-outline__row.ant-btn .ant-wave";
+    const at = css.indexOf(`${selector} {`);
+    expect(at, `缺少规则 ${selector}`).toBeGreaterThan(-1);
+    // 花括号配平取块体（块内可能有 color-mix(...) 之类，不能只找下一个 }）
+    const open = css.indexOf("{", at);
+    let depth = 0;
+    let end = open;
+    for (; end < css.length; end++) {
+      if (css[end] === "{") depth++;
+      else if (css[end] === "}" && --depth === 0) break;
+    }
+    expect(css.slice(open + 1, end)).toContain("display: none");
+
+    // 特异性：选择器里应当有 3 个类名（nv-outline__row / ant-btn / ant-wave）
+    const classCount = (selector.match(/\./g) ?? []).length;
+    expect(classCount).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe("Novel 窗口：顶栏图标三档层次（UI-07 收尾）", () => {
+  /** 花括号配平取规则块体（块内嵌着 `&.is-on`，不能只找下一个 `}`） */
+  const ruleBlock = (css: string, selector: string) => {
+    const at = css.indexOf(`${selector} {`);
+    expect(at, `缺少规则 ${selector}`).toBeGreaterThan(-1);
+    const open = css.indexOf("{", at);
+    let depth = 0;
+    let end = open;
+    for (; end < css.length; end++) {
+      if (css[end] === "{") depth++;
+      else if (css[end] === "}" && --depth === 0) break;
+    }
+    return css.slice(open + 1, end);
+  };
+
+  /**
+   * 取某个组件级变量的**最后一次**声明。
+   * 清零点 mixin 会先把这些变量全部置成 `transparent` / `currentColor`，
+   * 控件再靠源码顺序覆盖 —— 所以「有没有清零」这一层必须看最后一条，
+   * 用 `toContain` 会被 mixin 自己写下的那行糊弄过去。
+   */
+  const lastDecl = (block: string, name: string) => {
+    const matches = [...block.matchAll(new RegExp(`--${name}:\\s*([^;]+);`, "g"))];
+    return matches.at(-1)?.[1]?.trim() ?? "";
+  };
+
+  it("默认 chip 底 / hover 加深 / 持久激活主色弱底，三档都在且不退化", () => {
+    // 1.42.0 之前六颗图标是**纯透明底**，一排扫过去就是一团灰点，
+    // 点下去才知道是按钮（PX-07）。这条把「三档」钉在编译产物上：
+    // 只搜源码文本会漏掉 BEM 嵌套与 mixin 展开。
+    const css = sass
+      .compile(
+        path.join(ROOT, "pages/NovelPage/components/NovelTopBar/index.scss"),
+        { style: "expanded" },
+      )
+      .css.replace(/\/\*[\s\S]*?\*\//g, "");
+
+    // 档 1 + 档 2：默认底不能停在透明，hover / active 各再沉一档
+    const base = ruleBlock(css, ".nv-topbar__icon.ant-btn");
+    expect(lastDecl(base, "ant-button-default-bg")).toBe("var(--app-surface-hover)");
+    expect(lastDecl(base, "ant-button-default-hover-bg")).toBe("var(--app-surface-active)");
+    expect(lastDecl(base, "ant-button-default-active-bg")).toBe("var(--app-surface-active)");
+    // 默认态不描边（描边只属于激活态）
+    expect(lastDecl(base, "ant-button-default-shadow")).toBe("none");
+
+    // 档 3：持久激活走主色弱底 + 主色字 + 主色内描边，
+    // 且必须把 hover / active 一起覆盖（只改默认态的话，鼠标一掠过就掉回灰底，
+    // 看着像「点了没生效」）
+    const on = ruleBlock(css, ".nv-topbar__icon.ant-btn.is-on");
+    expect(lastDecl(on, "ant-button-default-bg")).toBe("var(--app-primary-weak)");
+    expect(lastDecl(on, "ant-button-default-color")).toBe("var(--app-primary)");
+    expect(lastDecl(on, "ant-button-default-hover-bg")).toBe("var(--app-primary-weak)");
+    expect(lastDecl(on, "ant-button-default-active-bg")).toBe("var(--app-primary-weak)");
+    // 主色弱底与默认底亮度太近，激活与否必须另有一个不依赖亮度的信号
+    const onShadow = lastDecl(on, "ant-button-default-shadow");
+    expect(onShadow).toContain("inset");
+    expect(onShadow).toContain("var(--app-primary)");
+  });
+});
+
+/**
+ * 设定中心 · 分类卡「放置到全局」的文字色必须**跟着主题走**（1.45.1 真机反馈）。
+ *
+ * 这颗按钮的颜色踩过两个**都不会报错**的坑，两条都要钉住：
+ *
+ * 1. 写成 `&__publish { color: …; &:hover { color: … } }`：hover 那条特异性只有
+ *    (0,1,0)+伪类，会被 antd 的
+ *    `.ant-btn-color-default.ant-btn-variant-outlined:not(:disabled):hover`（0,4,0）
+ *    压掉 —— 鼠标一掠过就变回默认字色，类型检查与构建全绿。
+ *
+ * 2. 改挂 `.ant-btn` 变量后取 `--app-accent-teal`：那是「强调色」，按 §6.1.1 供
+ *    「数据卡 / 功能卡的彩色标识」，**跨主题基本恒定** —— 四套主题实测
+ *    `#2fa57e / #4fa88c / #2fa57e / #4fd0a5`（aurora 与 mint **完全相同**），
+ *    于是换肤时这颗按钮看着不动（真机反馈「并没有因为主题切换而变化」）。
+ *
+ * 现在取 `--app-primary`（各主题的**身份色**：蓝 / 橘 / 绿 / 淡紫），并钉住
+ * base / hover / active 三态 —— 只声明默认态的话，hover 一样会掉回默认字色。
+ */
+describe("设定中心：分类卡「放置到全局」的文字色跟随主题", () => {
+  const css = sass
+    .compile(
+      path.join(SETTING_CENTER_ROOT, "components/CategoryCard/index.scss"),
+      { style: "expanded" },
+    )
+    .css.replace(/\/\*[\s\S]*?\*\//g, "");
+
+  /** 花括号配平取规则块体（与顶栏那条同款，独立声明避免跨 describe 依赖） */
+  const ruleBlock = (source: string, selector: string) => {
+    const at = source.indexOf(`${selector} {`);
+    expect(at, `缺少规则 ${selector}`).toBeGreaterThan(-1);
+    const open = source.indexOf("{", at);
+    let depth = 0;
+    let end = open;
+    for (; end < source.length; end++) {
+      if (source[end] === "{") depth++;
+      else if (source[end] === "}" && --depth === 0) break;
+    }
+    return source.slice(open + 1, end);
+  };
+
+  /** 取某个组件级变量的最后一次声明（清零点会先写一遍，必须看最后一条） */
+  const lastDecl = (block: string, name: string) => {
+    const matches = [...block.matchAll(new RegExp(`--${name}:\\s*([^;]+);`, "g"))];
+    return matches.at(-1)?.[1]?.trim() ?? "";
+  };
+
+  it("三态都取主题身份色 --app-primary 一族（退回恒定强调色会红）", () => {
+    const block = ruleBlock(css, ".nv-sc__publish.ant-btn");
+    expect(lastDecl(block, "ant-button-default-color")).toBe("var(--app-primary)");
+    expect(lastDecl(block, "ant-button-default-hover-color")).toBe(
+      "var(--app-primary-strong)",
+    );
+    expect(lastDecl(block, "ant-button-default-active-color")).toBe(
+      "var(--app-primary-active)",
+    );
+  });
+
+  it("不自写 color 属性（会被 antd (0,4,0) 的状态规则压掉）", () => {
+    const block = ruleBlock(css, ".nv-sc__publish.ant-btn");
+    // 属性名恰好是 `color`；组件级变量 `--ant-button-…-color` 前面是 `-`，不算命中
+    expect(/(^|[;{]\s*)color\s*:/.test(block)).toBe(false);
+  });
+});

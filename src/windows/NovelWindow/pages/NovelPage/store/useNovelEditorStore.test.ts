@@ -17,12 +17,12 @@ function reset(): void {
   useNovelEditorStore.setState({
     draftMap: {},
     activeChapterId: null,
+    activeBaseWords: 0,
     saveState: "idle",
     lastSavedAt: null,
     settings: DEFAULT_SETTINGS,
     selection: null,
     recoveryDismissed: false,
-    todayAdded: 0,
     todayTotal: 0,
     speed: 0,
   });
@@ -65,7 +65,6 @@ describe("useNovelEditorStore（编辑器交互状态）", () => {
 
     expect(state().draftMap.c1).toBe("苏晚走进灵潮");
     expect(state().activeChapterId).toBe("c1");
-    expect(state().todayAdded).toBe(words);
     expect(state().todayTotal).toBe(words);
     expect(state().saveState).toBe("pending");
   });
@@ -98,10 +97,28 @@ describe("useNovelEditorStore（编辑器交互状态）", () => {
     state().setContent("c1", "第一章正文", "第一章正文");
 
     expect(state().draftMap.c1).toBeUndefined();
-    expect(state().todayAdded).toBe(0);
     expect(state().todayTotal).toBe(0);
     expect(state().saveState).toBe("idle");
     expect(state().activeChapterId).toBe("c1");
+  });
+
+  it("切章灌入记录本章落库字数：没打过字的章（导入书）状态条不再是 0", () => {
+    state().setContent("c1", "第一章正文", "第一章正文");
+
+    expect(state().activeBaseWords).toBe(
+      countWords("第一章正文", DEFAULT_SETTINGS.wordCountMode),
+    );
+
+    // 同章重复 dispatch（输入法中间态）不重算；切到别的章换成新值
+    state().setContent("c1", "第一章正文", "第一章正文");
+    expect(state().activeBaseWords).toBe(
+      countWords("第一章正文", DEFAULT_SETTINGS.wordCountMode),
+    );
+
+    state().setContent("c2", "第二章正文更长一些", "第二章正文更长一些");
+    expect(state().activeBaseWords).toBe(
+      countWords("第二章正文更长一些", DEFAULT_SETTINGS.wordCountMode),
+    );
   });
 
   it("带基线的真实输入：增量按基线算，而不是按空串", () => {
@@ -115,7 +132,6 @@ describe("useNovelEditorStore（编辑器交互状态）", () => {
     state().setContent("c1", "第一章正文更多", "第一章正文");
     const delta = countWords("更多", DEFAULT_SETTINGS.wordCountMode);
 
-    expect(state().todayAdded).toBe(delta);
     expect(state().todayTotal).toBe(delta);
   });
 
@@ -131,12 +147,12 @@ describe("useNovelEditorStore（编辑器交互状态）", () => {
 
     // 先在 c1 写到 200 字
     state().setContent("c1", longChapter);
-    const wordsAfterC1 = state().todayAdded;
+    const wordsAfterC1 = state().todayTotal;
     expect(wordsAfterC1).toBe(countWords(longChapter, DEFAULT_SETTINGS.wordCountMode));
 
     // ✅ 正确契约：切到 c2 时 EditorPane 的 hydratingRef 把 next 自身当基线
     state().setContent("c2", shortChapter, shortChapter);
-    expect(state().todayAdded).toBe(wordsAfterC1);
+    expect(state().todayTotal).toBe(wordsAfterC1);
     expect(state().draftMap.c2).toBeUndefined();
 
     reset();
@@ -144,12 +160,12 @@ describe("useNovelEditorStore（编辑器交互状态）", () => {
     // ❌ 历史缺陷：灌入时传的是 update.startState.doc（变更前的 c1 正文）
     // 50 - 200 = -150，表现为「今日字数倒退」；反过来短章切长章则凭空多出整章字数
     state().setContent("c1", longChapter);
-    const before = state().todayAdded;
+    const before = state().todayTotal;
     state().setContent("c2", shortChapter, longChapter);
-    expect(state().todayAdded).toBe(
+    expect(state().todayTotal).toBe(
       before + countWords(shortChapter, DEFAULT_SETTINGS.wordCountMode) - before,
     );
-    expect(state().todayAdded).toBeLessThan(before);
+    expect(state().todayTotal).toBeLessThan(before);
   });
 
   it("换章后立刻输入：旧章在途保存立即落库，不被新章防抖吞掉", async () => {
@@ -351,6 +367,104 @@ describe("useNovelEditorStore（编辑器交互状态）", () => {
     expect(saved).toBe("回滚后的正文");
   });
 
+  it("删章后草稿与在途防抖一起撤掉（否则保存态永久 failed）", async () => {
+    const saved: string[] = [];
+    registerEditorRunner({
+      persistChapter: async (id) => {
+        saved.push(id);
+        return true;
+      },
+      markSelectionAsEntity: () => null,
+      persistSettings: () => {},
+    });
+
+    state().setContent("c1", "待删除章的正文");
+    expect(state().saveState).toBe("pending");
+
+    // 章节在库里已被删除：store 必须同步放弃它的草稿与在途防抖
+    editorActions.dropChapterDraft("c1");
+    expect(state().draftMap.c1).toBeUndefined();
+    expect(state().saveState).toBe("idle");
+
+    // 关键：防抖到点后不再拿已删除的 id 去落库。
+    // 若照旧落库，novel-chapter-save 找不到章节返回 false → saveState
+    // 停在 failed → 30s 兜底每半分钟重试一次注定失败的请求，顶栏一直红
+    await vi.advanceTimersByTimeAsync(SAVE.debounceMs * 2);
+    expect(saved).toEqual([]);
+    expect(state().saveState).toBe("idle");
+    expect(needsFlushSave()).toBe(false);
+  });
+
+  it("删章撤草稿只影响该章，别的章节草稿照旧可存", async () => {
+    const saved: Array<[string, string]> = [];
+    registerEditorRunner({
+      persistChapter: async (id, content) => {
+        saved.push([id, content]);
+        return true;
+      },
+      markSelectionAsEntity: () => null,
+      persistSettings: () => {},
+    });
+
+    state().setContent("c1", "保留的正文");
+    state().setContent("c2", "要删的正文");
+    editorActions.dropChapterDraft("c2");
+
+    await editorActions.flushSave();
+    expect(saved).toEqual([["c1", "保留的正文"]]);
+  });
+
+  it("删作品 / 重置模板库清空全部草稿，不在途的保存也一并撤掉", async () => {
+    const saved: string[] = [];
+    registerEditorRunner({
+      persistChapter: async (id) => {
+        saved.push(id);
+        return true;
+      },
+      markSelectionAsEntity: () => null,
+      persistSettings: () => {},
+    });
+
+    // c1 先正常落库，随后在 c2 上打字（换章会把 c1 的在途防抖立即落库，
+    // 所以这里让 c1 走完防抖，只留 c2 在途）
+    state().setContent("c1", "旧作品正文");
+    await vi.advanceTimersByTimeAsync(SAVE.debounceMs + 1);
+    state().setContent("c2", "旧作品另一章");
+    expect(state().saveState).toBe("pending");
+
+    editorActions.clearDrafts();
+    expect(state().draftMap).toEqual({});
+    expect(state().activeChapterId).toBeNull();
+    expect(state().saveState).toBe("idle");
+
+    // 只有换章前已落库的 c1：c2 的在途防抖被 clearDrafts 撤掉，不再补写
+    await vi.advanceTimersByTimeAsync(SAVE.debounceMs * 2);
+    expect(saved).toEqual(["c1"]);
+  });
+
+  it("回滚灌入的正文要跟着回退今日字数（与库里的负 delta 对齐）", async () => {
+    registerEditorRunner({
+      persistChapter: async () => true,
+      markSelectionAsEntity: () => null,
+      persistSettings: () => {},
+    });
+
+    state().setContent("c1", "苏晚走进灵潮再补一段");
+    const afterTyped = state().todayTotal;
+
+    // 回滚到更短的旧正文：主进程按负 delta 记 chapter_save，库里今日字数
+    // 会回退；渲染层必须同步回退，否则状态条一直错到下次重启
+    editorActions.applyExternalContent("c1", "苏晚");
+    const expected =
+      afterTyped +
+      countWords("苏晚", DEFAULT_SETTINGS.wordCountMode) -
+      countWords("苏晚走进灵潮再补一段", DEFAULT_SETTINGS.wordCountMode);
+
+    expect(state().todayTotal).toBe(expected);
+    expect(state().todayTotal).toBeLessThan(afterTyped);
+    expect(state().draftMap.c1).toBe("苏晚");
+  });
+
   it("改排版设置即时持久化，且不动草稿", () => {
     let persisted = 0;
     registerEditorRunner({
@@ -395,18 +509,16 @@ describe("useNovelEditorStore（编辑器交互状态）", () => {
     expect(state().markSelection("character")).toBeNull();
   });
 
-  it("今日累计与恢复横幅的开关各自独立", () => {
+  it("今日累计水合只写 todayTotal，不动恢复横幅开关", () => {
     registerEditorRunner({
       persistChapter: async () => true,
       markSelectionAsEntity: () => null,
       persistSettings: () => {},
     });
 
+    state().dismissRecovery();
     state().hydrateUsage(1200);
     expect(state().todayTotal).toBe(1200);
-    expect(state().todayAdded).toBe(0);
-
-    state().dismissRecovery();
     expect(state().recoveryDismissed).toBe(true);
   });
 });

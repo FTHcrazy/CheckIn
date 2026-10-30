@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { App } from "antd";
 import { POSITION } from "../novel-config";
 import {
+  applyCustomTypeColors,
   buildBreadcrumb,
   buildBookPlainText,
   buildChapterNumbers,
@@ -29,7 +31,13 @@ import {
   saveCustomEntityTypes,
   saveLastPosition,
 } from "../services/novel-service";
-import { requestClosePackPanel } from "../components/CharacterPack/pack-config";
+import { quickAddPackItem } from "@/shared/components/CharacterPack/services/pack-service";
+import { notifyQuickAdded } from "@/shared/components/CharacterPack/pack-config";
+import { subscribeDualChannel } from "@/shared/novel/dual-channel";
+import {
+  NOVEL_OPEN_SETTING_CENTER_CHANNEL,
+  parseOpenSettingCenterRequest,
+} from "@/shared/novel/open-setting-center";
 import { buildEntityTypesValue, type EntityTypesContextValue } from "./entity-types-context";
 import type {
   CustomEntityTypeDef,
@@ -37,11 +45,49 @@ import type {
   EntityType,
   ForeshadowPatch,
 } from "../types";
+import {
+  buildExtractCandidates,
+  type ExtractSession,
+} from "../utils/entity-extract";
 import type { ReorderChange } from "../components/ReorderConfirmModal";
 import type { InspirationActions } from "../components/InspirationPanel";
 import type { NamingActions } from "../components/NameGeneratorPanel";
 import type { EditorPaneHandle } from "../components/EditorPane";
 import type { OutlineActions } from "../components/OutlinePanel";
+import {
+  aiGenerate,
+  aiGenerateStream,
+  aiGenerateStructured,
+  getAiConfig,
+  logAiEvent,
+  type AiStreamHandle,
+} from "@/shared/ai/ai-client";
+import {
+  createOllamaAccumulator,
+  createOpenAiSseAccumulator,
+} from "@/shared/ai/ai-stream-parse";
+import { useAiAvailability } from "@/shared/ai/hooks/useAiAvailability";
+import { makeAiProvenance, newBatchId } from "@/shared/ai/ai-provenance";
+import {
+  alignParagraphBreaks,
+  assembleContinuationStreamSpec,
+  buildChapterScopePayload,
+  buildPromptSpec,
+  collectBookContext,
+  inputCharBudget,
+  matchEntitiesInText,
+  normalizeContinuationText,
+  parseSummaryReply,
+  snippetBudget,
+  TRANSFORM_INTENT_SUB,
+  TRANSFORM_KIND_LABELS,
+  type BookSnapshot,
+  type ChapterScopePayload,
+  type TransformKind,
+} from "@/shared/ai/context";
+import { estimateText } from "@/shared/ai/ai-estimate";
+import type { L3Scope } from "@/shared/ai/ai-consent";
+import { useAiConsent } from "@/shared/hooks/useAiConsent";
 import {
   editorActions,
   needsFlushSave,
@@ -75,6 +121,42 @@ interface ReorderPreview {
  * 折叠与浮层在 useNovelViewState，本层不重复实现它们的逻辑。
  */
 export function useNovelPage() {
+  /**
+   * antd 上下文内的确认框（REQ-060）。
+   *
+   * 不用静态 `Modal.confirm`：那会新建独立 React root，脱离 `ConfigProvider`
+   * 主题（暗色下会掉成白底）。`App.useApp()` 拿到的 `modal` 挂在
+   * `<AntdApp>`（`src/windows/NovelWindow/App.tsx`）之下，主题与 z-index 都对。
+   */
+  const { modal } = App.useApp();
+
+  /**
+   * 行囊窗口上下文的「代号」：重置模板 / 清库重播后 +1。
+   *
+   * 为什么需要它：`seedTemplateBook` 是**同 workId**（模板书 id 固定为
+   * `tpl-w`）的清库重播种，行囊数据被连库清掉重播。PackWindow 的宿主按
+   * `workId#nonce` 做 key，同 workId 不会重挂载 —— 它持重置前内存文档，
+   * 下一次保存（手动 / 自动）会把旧文档盖回重播种数据（角色行都已重建，
+   * 写回去的还是旧 characterId 的孤儿数据）。代号变化强制重挂载 → 重新装载。
+   *
+   * 声明在顶部：`handleResetTemplate`（下方）要 set它，setState 必须先声明。
+   */
+  const [packNonce, setPackNonce] = useState(0);
+  /**
+   * 「正在打开行囊」态（REQ-054）。
+   *
+   * 行囊是**独立窗口**：首次创建要等整个 SPA 装载完（dev 下 1–3s），这段时间
+   * 屏幕上什么都不会发生 —— 作者会以为点了没反应，于是再点一次；第二次恰好命中
+   * 装载完成前后，就成了「要点两次才弹出行囊窗口」。
+   *
+   * 所以点击即置位（顶栏那颗按钮转 loading），主进程在窗口**真正可见**时回执
+   * `pack-window-shown` 复位。另有超时兜底：回执丢了也不要把按钮永久钉住。
+   */
+  const [packOpening, setPackOpening] = useState(false);
+  /** 回执可能永远不来（窗口装载失败且被关掉），兜底时长按 dev 最慢路径留够余量 */
+  const PACK_OPENING_TIMEOUT_MS = 8000;
+  const packOpeningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const data = useNovelData();
   const editor = useNovelEditorState(data);
   const view = useNovelViewState();
@@ -172,6 +254,21 @@ export function useNovelPage() {
   );
 
   /**
+   * 自建类型改色：正文高亮、chip、圆点共用 `def.color` 这一份，
+   * 改完经 terms 的 useMemo 自动重算词条色，标注层热更新即可换色。
+   */
+  const handleRecolorCustomType = useCallback(
+    (typeId: string, color: string): void => {
+      const next = color.trim();
+      if (!next) return;
+      setCustomTypes((current) =>
+        current.map((def) => (def.id === typeId ? { ...def, color: next } : def)),
+      );
+    },
+    [],
+  );
+
+  /**
    * 删除自建类型：该类型要素卡先全部迁回 custom 兜底（数据不丢），返回
    * 迁移数量供 toast 汇报；未删除任何实体时返回 0。
    */
@@ -190,15 +287,14 @@ export function useNovelPage() {
   );
 
   /** 标注层词库：随要素保存即时刷新（PRD §7）；自建类型词条带注入色（R23） */
-  const terms = useMemo(() => {
-    const colorOf = new Map(customTypes.map((def) => [def.id, def.color]));
-    return buildEntityTerms(data.entities, settings.annotationTypes).map(
-      (term) => {
-        const color = colorOf.get(term.type);
-        return color ? { ...term, color } : term;
-      },
-    );
-  }, [data.entities, settings.annotationTypes, customTypes]);
+  const terms = useMemo(
+    () =>
+      applyCustomTypeColors(
+        buildEntityTerms(data.entities, settings.annotationTypes),
+        customTypes,
+      ),
+    [data.entities, settings.annotationTypes, customTypes],
+  );
 
   const breadcrumb = useMemo(
     () =>
@@ -212,15 +308,23 @@ export function useNovelPage() {
   /**
    * 大纲树：骨架取自真实卷章（大纲里点章节 = 真跳转），伏笔来自 outlineEntries。
    * 序号标签随「数字样式 + 章节/卷后缀」配置派生，与左栏章节树严格一致。
+   *
+   * 依赖 data.groups（而非 volumes/chapters 各自重算）：useNovelData 已经为
+   * 左栏章节树建好了分组，大纲直接复用同一份，避免同一轮渲染里建两遍。
    */
   const outline = useMemo(
     () =>
-      buildOutlineTree(data.volumes, data.chapters, data.outlineEntries, {
-        numberStyle: settings.numberStyle,
-        chapterSuffix: settings.chapterSuffix,
-        volumeSuffix: settings.volumeSuffix,
-      }),
-    [data.volumes, data.chapters, data.outlineEntries, settings],
+      buildOutlineTree(
+        data.groups,
+        data.chapters,
+        data.outlineEntries,
+        {
+          numberStyle: settings.numberStyle,
+          chapterSuffix: settings.chapterSuffix,
+          volumeSuffix: settings.volumeSuffix,
+        },
+      ),
+    [data.groups, data.chapters, data.outlineEntries, settings],
   );
 
   const handleSaveNow = useCallback(async (): Promise<void> => {
@@ -247,10 +351,26 @@ export function useNovelPage() {
     [data, view],
   );
 
+  /**
+   * 切章 / 切作品：行囊已是独立窗口（PackWindow），由 `novel-work-changed`
+   * 广播主动跟进 —— 它会先 flush 旧作品的草稿再重载 bundle，无需页面侧拦截。
+   */
   const handleSelectChapter = useCallback(
     (chapterId: string): void => {
+      if (chapterId === data.activeChapterId) {
+        dismiss();
+        return;
+      }
       data.selectChapter(chapterId);
       dismiss();
+    },
+    [data, dismiss],
+  );
+
+  const handleSelectWork = useCallback(
+    (workId: string): void => {
+      if (workId === data.activeWorkId) return;
+      data.setActiveWorkId(workId);
     },
     [data],
   );
@@ -308,10 +428,15 @@ export function useNovelPage() {
   );
 
   const handleCreateWork = useCallback(
-    (name: string): boolean => {
-      const work = data.createWork(name);
+    (name: string, genre?: string): boolean => {
+      const work = data.createWork(name, genre);
       if (!work) return false;
-      view.showToast(`已创建「${work.name}」，写下第一章吧`);
+      // 题材是可选步骤：选了就顺手确认一句，让作者知道自己填的东西确实生效了
+      view.showToast(
+        work.genre
+          ? `已创建「${work.name}」（题材：${work.genre}），写下第一章吧`
+          : `已创建「${work.name}」，写下第一章吧`,
+      );
       return true;
     },
     [data, view],
@@ -326,26 +451,47 @@ export function useNovelPage() {
     [data, view],
   );
 
+  /** 设置当前作品题材（空串 = 清空）：AI 起名 / 润色的风格锚点 */
+  const handleSetWorkGenre = useCallback(
+    (genre: string): boolean => {
+      const ok = data.setWorkGenre(data.activeWorkId, genre);
+      if (ok) {
+        view.showToast(genre.trim() ? `题材已设为「${genre.trim()}」` : "已清空题材");
+      }
+      return ok;
+    },
+    [data, view],
+  );
+
   const handleDeleteWork = useCallback((): void => {
+    // 整部作品的章节 id 全部失效：草稿与在途防抖一并清空，
+    // 否则防抖会拿已删除的 chapterId 落库 → 保存态永久 failed
+    editor.clearDrafts();
     data.deleteWork(data.activeWorkId);
     view.showToast("作品及其关联数据已删除", "info");
-  }, [data, view]);
+  }, [data, editor, view]);
 
   /** 一键重置为模板书籍（调试）：重载后回到模板第一章 */
   const handleResetTemplate = useCallback(async (): Promise<void> => {
+    // 清库重播会把章节 id 整批换掉：旧草稿与在途防抖全部失效，先撤掉，
+    // 免得防抖拿已删除的 chapterId 落库把保存态钉死在 failed
+    editor.clearDrafts();
     const summary = await data.resetTemplate();
     if (!summary) {
       view.showToast("重置失败，请重试", "warning");
       return;
     }
     // 重置会连行囊一起清空重播（模板行囊的主角是沈青梧），
-    // 而作品 id 不变、hook 的 workId 依赖不会触发重读 → 显式刷一次
+    // 而作品 id 不变（模板书 id 固定）、hook 的 workId 依赖不会触发重读 → 显式刷一次
     await refreshProtagonist();
+    // 行囊数据被连库重播：+1 代号让行囊窗口按 key 重挂载重新装载，
+    // 否则它持重置前内存文档，下一次保存会把旧文档盖回重播种数据
+    setPackNonce((n) => n + 1);
     view.showToast(
       `已重置为模板书籍 · ${summary.chapters} 章 / 约 ${formatThousands(summary.words)} 字`,
       "info",
     );
-  }, [data, view, refreshProtagonist]);
+  }, [data, editor, view, refreshProtagonist]);
 
   // ── TXT 导出（R13）：标题序号按 numberStyle + 后缀派生，与界面所见一致 ──
 
@@ -354,8 +500,11 @@ export function useNovelPage() {
       numberStyle: settings.numberStyle,
       chapterSuffix: settings.chapterSuffix,
       volumeSuffix: settings.volumeSuffix,
+      // 段首缩进（1.40.0）：导出跟随「首行缩进」设置 —— 编辑器开着缩进，
+      // 导出的 txt 也该每段都缩进（含每章第一段）
+      paragraphIndent: settings.indent,
     }),
-    [settings.numberStyle, settings.chapterSuffix, settings.volumeSuffix],
+    [settings.numberStyle, settings.chapterSuffix, settings.volumeSuffix, settings.indent],
   );
 
   const finishExport = useCallback(
@@ -451,8 +600,13 @@ export function useNovelPage() {
 
   /** 设定 / 替换 / 取消当前境界（R25）：数据层先摘旧绑定再落新绑定 */
   const handleSetEntityLevel = useCallback(
-    (entityId: string, entityType: EntityType, rungId: string | null): void => {
-      data.setEntityLevel(entityId, entityType, rungId);
+    (
+      entityId: string,
+      entityType: EntityType,
+      rungId: string | null,
+      sub?: number,
+    ): void => {
+      data.setEntityLevel(entityId, entityType, rungId, sub);
       view.showToast(
         rungId === null ? "已取消当前境界绑定" : "已更新当前境界",
         "info",
@@ -464,10 +618,14 @@ export function useNovelPage() {
   /** 删除章节（行内已 Popconfirm 确认）：删当前章由数据层自动切邻居 */
   const handleDeleteChapter = useCallback(
     (chapterId: string): void => {
+      // 先撤草稿与在途防抖，再删章节：顺序反了的话，800ms 后的防抖会拿
+      // 一个已删除的 chapterId 去落库，主进程如实返回 false，保存态就
+      // 永久停在 failed（30s 兜底会一直重试这个注定失败的请求）
+      editor.dropChapterDraft(chapterId);
       data.deleteChapter(chapterId);
       view.showToast("章节及其历史快照已删除", "info");
     },
-    [data, view],
+    [data, editor, view],
   );
 
   const handleRollback = useCallback(
@@ -517,6 +675,40 @@ export function useNovelPage() {
 
   const closeCtxMenu = useCallback(() => setCtxMenu(null), []);
 
+  /** 物品名长度上限：正文里选中的常常是整句，超过这个长度当物品名没有意义 */
+  const QUICK_ADD_NAME_MAX = 40;
+
+  /**
+   * 选区右键 → 记入背包（REQ-027）。
+   *
+   * 面板开着时由面板改它自己的内存文档（脏计数 +1，需保存），没开则落主进程
+   * （它会自己判断要不要并进草稿）—— 两边的选择封装在 `quickAddPackItem` 里，
+   * 这里只负责取文本、给出反馈。
+   *
+   * 落主进程那条路**必须广播** `notifyQuickAdded`：行囊窗口是另一个渲染进程，
+   * 不通知它，下一次整文档保存就会把刚记的物品连草稿一起清掉。
+   */
+  const handleCtxToPack = useCallback(async (): Promise<void> => {
+    const text = (editor.selection?.text ?? "").trim();
+    setCtxMenu(null);
+    editor.setSelection(null);
+    if (!text) {
+      view.showToast("先选中要记入的物品名", "warning");
+      return;
+    }
+    const name = text.slice(0, QUICK_ADD_NAME_MAX);
+    const itemId = await quickAddPackItem(data.activeWorkId, {
+      name,
+      chapterId: data.activeChapterId ?? "",
+    });
+    if (itemId) {
+      notifyQuickAdded(data.activeWorkId, itemId);
+      view.showToast(`已记入背包：${name}${text.length > name.length ? "…" : ""}`);
+    } else {
+      view.showToast("记入背包失败，请重试", "warning");
+    }
+  }, [data, editor, view]);
+
   const handleCtxMark = useCallback(
     (type: EntityType): void => {
       setCtxMenu(null);
@@ -525,38 +717,1158 @@ export function useNovelPage() {
     [handleMark],
   );
 
-  /** 把选中文本绑定到指定资料卡（关联为别名，手动绑定路线的核心动作） */
-  const handleCtxBind = useCallback(
-    (entityId: string): void => {
-      const text = editor.selection?.text;
-      setCtxMenu(null);
-      editor.setSelection(null);
-      if (!text) return;
-      const result = data.bindTextToEntity(text, entityId);
-      if (!result) {
-        view.showToast("绑定失败，请重试", "warning");
+  // ── AI 可用性门控（M8）─────────────────────────────
+  // 统一口径：AI 不可用时，各入口据此决定「禁用并说明 / 走本地兜底」，杜绝
+  // 「点了没反应」。声明在上下文与编排之前：contextLen 预算与入口禁用都从它取。
+  const aiAvailability = useAiAvailability();
+
+  /** EditorPane 命令式 ref：起名插入 / 润色回填 / 续写确认共用 */
+  const editorPaneRef = useRef<EditorPaneHandle>(null);
+
+  // ── AI 上下文快照（R-AI-05）：起名与润色共用一份，由采集层按 intent 裁剪 ──
+  /**
+   * 本书上下文快照：页面层负责「取数」，AI 层负责「裁剪 + 拼 prompt」。
+   * 一次组装、多处复用，避免两套取数口径漂移。
+   *
+   * ⚠️ 不含 `chapterSnippet`（2.10.1）：章节片段的**位置**只有调用方知道
+   * （选区在哪、光标在哪），整章塞进快照再被前向截断，会让章末润色拿到章首上下文。
+   * 需要片段的调用方用下面的 `chapterSnippetAround` 现场切片。
+   */
+  const bookSnapshot = useMemo<BookSnapshot>(() => {
+    const work = data.works.find((item) => item.id === data.activeWorkId);
+    const levels = data.realmCategory?.levels
+      ? [...data.realmCategory.levels]
+          .sort((a, b) => a.rank - b.rank)
+          .map((level) => level.name)
+          .filter((name) => name.trim().length > 0)
+      : [];
+
+    return {
+      workName: work?.name ?? "",
+      // 题材（2.7.1）：建书时可选，未设置时由 AI 层按书名 + 要素弱兜底
+      workGenre: work?.genre,
+      entities: data.entities
+        .filter((entity) => entity.workId === data.activeWorkId)
+        .map((entity) => ({
+          type: entity.type,
+          name: entity.name,
+          aliases: entity.aliases,
+          summary: entity.summary,
+        })),
+      realmLevels: levels,
+    };
+  }, [data.works, data.activeWorkId, data.entities, data.realmCategory]);
+
+  /**
+   * 取「以选区为中心」的章节片段（前后各半，按预算裁）。
+   *
+   * 为什么不是整章前向截断：润色第 5000 字处的段落时，前向截断送上去的是
+   * 章首 800 字 —— 标注写着「本段所在章节」，实际与选区毫无关系，既烧 token
+   * 又误导模型。预算由 `snippetBudget(contextLen, 正文长度)` 算出。
+   */
+  const chapterSnippetAround = useCallback(
+    (from: number, to: number, budget: number): string => {
+      const content = data.activeChapter?.content ?? "";
+      if (!content || budget <= 0) return "";
+      const half = Math.max(200, Math.floor(budget / 2));
+      const start = Math.max(0, from - half);
+      const end = Math.min(content.length, Math.max(to, from) + half);
+      return content.slice(start, end);
+    },
+    [data.activeChapter],
+  );
+
+  /** 当前活动章对应的大纲节点标题（续写 / 摘要共用，锚定剧情走向） */
+  const activeOutlineNode = useMemo(
+    () =>
+      outline.find(
+        (node) => node.kind === "chapter" && node.chapterId === data.activeChapterId,
+      )?.title,
+    [outline, data.activeChapterId],
+  );
+
+  // ── AI 润色（R-AI-03 对比预览形态）─────────────────────────────
+  /** 润色预览浮层状态：open 时持有原选区快照（text + 绝对偏移）与结果 */
+  const [polish, setPolish] = useState<{
+    text: string;
+    from: number;
+    to: number;
+    /** 当前预览的身份：`"polish"` = 润色，其余 = 某种文本变换（决定 retry / 标题 / 文案） */
+    mode: "polish" | TransformKind;
+    polished: string | null;
+    loading: boolean;
+    error: string | null;
+  } | null>(null);
+
+  /**
+   * 发起一次「选中文本改写」：润色与五种变换共用一条链路。
+   *
+   * 五个变换 + 润色本质是同一动作的不同意图：选中 → 预览 → 确认替换，
+   * 差别只在模板（`polish` / `transform`）与日志 intent。
+   *
+   * 三条容易漏掉的守卫（2.10.1）：
+   * 1. **reject 兜底**：`aiGenerate` 走 IPC，主进程侧异常（如 ai.db 未就绪）
+   *    会 reject —— 不接住就是浮层永久 loading、没有一行错误提示；
+   * 2. **在途结果不越权**：只有当前面板仍属于本次 mode 才写回，否则用户
+   *    换了选段/换了变换时，旧请求回来会把新面板的结果覆盖掉；
+   * 3. **章节片段居中**：按选区位置切，不再送章首 800 字（见 `chapterSnippetAround`）。
+   */
+  const runRewrite = useCallback(
+    async (mode: "polish" | TransformKind): Promise<void> => {
+      const selection = editor.selection;
+      if (!selection) return;
+      const text = selection.text.trim();
+      if (!text) {
+        view.showToast(
+          mode === "polish" ? "先选中要润色的文字" : "先选中要变换的文字",
+          "warning",
+        );
         return;
       }
-      if (result.mode === "linked") {
-        view.showToast(`已关联为「${result.entity.name}」的别名`);
-      } else {
-        view.showToast(`「${result.entity.name}」已包含该称呼`, "info");
+
+      // 打开（或重置）预览为加载态，快照原选区（from/to 供确认时精确替换）
+      setPolish({
+        text,
+        from: selection.from,
+        to: selection.to,
+        mode,
+        polished: null,
+        loading: true,
+        error: null,
+      });
+
+      /** 只更新「还是本次请求」的面板 */
+      const patch = (next: { polished?: string; loading: boolean; error: string | null }): void =>
+        setPolish((prev) => (prev && prev.mode === mode ? { ...prev, ...next } : prev));
+
+      try {
+        // 上下文：书名 / 题材 / 命中的人物卡 / 选区所在章节片段
+        const characters = matchEntitiesInText(text, bookSnapshot.entities);
+        const snippet = chapterSnippetAround(
+          selection.from,
+          selection.to,
+          snippetBudget(aiAvailability.config?.contextLen, text.length),
+        );
+        const context = collectBookContext(
+          { ...bookSnapshot, chapterSnippet: snippet },
+          mode === "polish" ? "polish" : "transform",
+        );
+
+        const spec =
+          mode === "polish"
+            ? buildPromptSpec("polish", context, { text, characters })
+            : buildPromptSpec("transform", context, { kind: mode, text, characters });
+
+        const result = await aiGenerate({
+          system: spec.system,
+          prompt: spec.prompt,
+          intent: mode === "polish" ? "polish" : `transform:${TRANSFORM_INTENT_SUB[mode]}`,
+        });
+
+        if (!result.ok) {
+          // AI 失败：预览浮层内展示错误，不替换原文
+          patch({ loading: false, error: result.message });
+          return;
+        }
+
+        // 段落分隔跟原文对齐：模型爱在段间插空行，整段回填后要作者手删（2.8.1）
+        const rewritten = alignParagraphBreaks(result.data.text, text);
+        const label = mode === "polish" ? "润色" : TRANSFORM_KIND_LABELS[mode];
+        // 模型可能原样返回或返回空串，视为未改写成功
+        if (!rewritten || rewritten === text) {
+          patch({ loading: false, error: `这次没有产出有效${label}，换个说法再试` });
+          return;
+        }
+        patch({ polished: rewritten, loading: false, error: null });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        patch({ loading: false, error: message || "AI 调用失败，请重试" });
       }
     },
-    [data, editor, view],
+    [editor, view, bookSnapshot, chapterSnippetAround, aiAvailability.config?.contextLen],
   );
+
+  /** 润色入口（PRD R-AI-03）：语义与「文本变换」并列，便于右键菜单分开调用 */
+  const runPolish = useCallback((): Promise<void> => runRewrite("polish"), [runRewrite]);
+
+  /** 文本变换入口：扩写 / 精简 / 改写 / 换语气 / 转视角 */
+  const runTransform = useCallback(
+    (kind: TransformKind): Promise<void> => runRewrite(kind),
+    [runRewrite],
+  );
+
+  /** 右键「文本变换」：记录选区并进入预览 */
+  const handleCtxTransform = useCallback(
+    (kind: TransformKind): void => {
+      const selection = editor.selection;
+      if (!selection) return;
+      // 关闭右键菜单，但**保留选区**（预览要显示原句，确认要按偏移替换）
+      setCtxMenu(null);
+      void runTransform(kind);
+    },
+    [editor, runTransform],
+  );
+
+  /** 右键「润色这段文字」：记录选区并进入预览 */
+  const handleCtxPolish = useCallback((): void => {
+    const selection = editor.selection;
+    if (!selection) return;
+    // 关闭右键菜单，但**保留选区**（预览要显示原句，确认要按偏移替换）
+    setCtxMenu(null);
+    void runPolish();
+  }, [editor, runPolish]);
+
+  /** 确认替换：按快照的绝对偏移回填变换结果 */
+  const handlePolishConfirm = useCallback((): void => {
+    if (!polish?.polished) return;
+    const pane = editorPaneRef.current;
+    // 编辑器不在（切到书架 / 章节被关）时不能上报采纳：没发生就是没发生
+    if (!pane) {
+      view.showToast("编辑器还没就绪，暂时无法替换", "warning");
+      return;
+    }
+    pane.replaceRange(polish.from, polish.to, polish.polished);
+    editor.setSelection(null);
+    setPolish(null);
+    const label =
+      polish.mode === "polish" ? "润色" : TRANSFORM_KIND_LABELS[polish.mode];
+    view.showToast(`已替换为${label}后的文字`);
+    // 采纳上报（M1a）：度量闭环的最后一公里，失败静默不阻塞写作
+    void logAiEvent({
+      intent: polish.mode === "polish" ? "polish" : `transform:${TRANSFORM_INTENT_SUB[polish.mode]}`,
+      step: "adopt",
+    });
+  }, [polish, editor, view]);
+
+  /** 关闭预览：不替换，清空状态（选区一并清除） */
+  const handlePolishClose = useCallback((): void => {
+    // 预览浮层关闭即「放弃」（cancel）；生成失败已在主进程落 fallback，此处只补人为关闭
+    if (polish?.polished) {
+      void logAiEvent({
+        intent: polish.mode === "polish" ? "polish" : `transform:${TRANSFORM_INTENT_SUB[polish.mode]}`,
+        step: "cancel",
+      });
+    }
+    setPolish(null);
+    editor.setSelection(null);
+  }, [polish, editor]);
+
+  /** 「换一种 / 重试」：按当前预览身份回退到对应编排（润色或某种变换） */
+  const handlePolishRetry = useCallback((): void => {
+    if (!polish) return;
+    if (polish.mode === "polish") {
+      void runPolish();
+    } else {
+      void runTransform(polish.mode);
+    }
+  }, [polish, runPolish, runTransform]);
+
+  /** 续写浮层状态（R-AI-07 / B5 流式）：null = 未打开 */
+  const [continuation, setContinuation] = useState<{
+    /** 光标绝对偏移（确认插入时用它定位） */
+    cursor: number;
+    /** 已流式生成的正文；空 = 尚未产出或生成中 */
+    text: string;
+    /** 是否正在流式生成（逐字输出中） */
+    streaming: boolean;
+    loading: boolean;
+    error: string | null;
+  } | null>(null);
+
+  /** 当前流式句柄（用于中断）：切换 / 关闭 / 重试时 abort 上一个 */
+  const continuationStreamRef = useRef<AiStreamHandle | null>(null);
+
+  /** 前文截断上限（字）：续写只带光标前一段，不把整章塞进 prompt */
+  const CONTINUATION_BEFORE_CHARS = 1000;
+
+  /**
+   * 流序号：每次发起 / 中断自增。
+   *
+   * 为什么需要它：单 `continuationStreamRef` + 单状态在多流重入时会串味 ——
+   * 重试时旧流的 catch 会把**新流**的 `streaming` 置 false；旧流收尾还会把
+   * ref 清空，让新流再也 abort 不掉。序号让「旧流的后续写入」整体作废。
+   */
+  const continuationSeqRef = useRef(0);
+
+  /** 中断当前续写流（B5）：释放连接，保留已生成部分 */
+  const abortContinuation = useCallback((): void => {
+    continuationStreamRef.current?.abort();
+    continuationStreamRef.current = null;
+    continuationSeqRef.current += 1;
+  }, []);
+
+  /**
+   * 发起一次续写请求（B5 流式版）。
+   *
+   * 光标停在卡住的地方（无选区），取光标前 N 字作前文，AI 顺着往下写一段，
+   * **逐字流式输出**（打字机），作者可随时中断保留已生成部分。确认后才
+   * `insertText`（可 Ctrl+Z 撤销）。
+   */
+  const runContinuation = useCallback(async (): Promise<void> => {
+    const before = editorPaneRef.current?.getTextBeforeCursor(CONTINUATION_BEFORE_CHARS);
+    if (!before || !before.text.trim()) {
+      view.showToast("先到正文里点一下要续写的位置", "warning");
+      return;
+    }
+
+    // 中断上一个在途流（重试 / 换一批时先断开旧的），并作废旧流的后续写入
+    abortContinuation();
+    const seq = continuationSeqRef.current;
+    /** 本次流的句柄：catch 里据此区分「主动中断」与「真失败」 */
+    let streamed: AiStreamHandle | null = null;
+
+    // 打开（或重置）浮层为流式态，快照光标偏移（确认时用它精确定位）。
+    // `loading` 必须为 true：首字到达前浮层要显示「正在续写…」，
+    // 否则会先闪一句「（本次没有产出续写内容）」，看着像没在生成。
+    setContinuation({
+      cursor: before.cursor,
+      text: "",
+      streaming: true,
+      loading: true,
+      error: null,
+    });
+
+    /** 只接受「本次流」的状态写入：旧的 catch / 旧块回来时一律丢弃 */
+    const patch = (
+      next: Partial<{
+        text: string;
+        streaming: boolean;
+        loading: boolean;
+        error: string | null;
+      }>,
+    ): void => {
+      if (continuationSeqRef.current !== seq) return;
+      setContinuation((prev) => (prev ? { ...prev, ...next } : prev));
+    };
+
+    // 前文命中的人物卡（续写必须知道「接着写的是谁的戏」）
+    const characters = matchEntitiesInText(before.text, bookSnapshot.entities);
+    // 上一章的 AI 摘要（R-AI-09 的第二消费方）：章节顺序以卷分组为准，
+    // 与摘要 / 目录同源。这里只负责「取」，是否真注入由模板层按前文长度决定
+    // （`CONTINUATION_SUMMARY_MIN_BEFORE_CHARS`）——阈值只能有一个产地。
+    const orderedChapters = data.groups.flatMap((group) => group.chapters);
+    const activeIndex = orderedChapters.findIndex((item) => item.id === data.activeChapterId);
+    const previousSummary =
+      activeIndex > 0 ? orderedChapters[activeIndex - 1]?.aiSummary?.trim() : undefined;
+    const context = collectBookContext(bookSnapshot, "continuation");
+    const spec = assembleContinuationStreamSpec(context, {
+      before: before.text,
+      characters,
+      // 大纲节点（2.10.1 接线）：模板早就支持，此前调用方没传，等于白写
+      ...(activeOutlineNode ? { outlineNode: activeOutlineNode } : {}),
+      ...(previousSummary ? { previousSummary } : {}),
+    });
+
+    try {
+      // ⚠️ provider 必须在建立流**之前**取到：放在流建立之后会让首块在
+      // 等待这次 IPC 的时间里攒起来，第一个 delta 一次吐出好几句，
+      // 观感就是「不是流式，一段一段蹦」。
+      const provider = (await getAiConfig()).provider;
+      const handle = await aiGenerateStream({
+        system: spec.system,
+        prompt: spec.prompt,
+        intent: "continuation",
+      });
+      streamed = handle;
+      if (continuationSeqRef.current !== seq) {
+        // 等首个响应期间已被新一次续写/关闭取代：立刻释放这条连接
+        handle.abort();
+        return;
+      }
+      continuationStreamRef.current = handle;
+
+      // 按 provider 选解析器：OpenAI SSE / Ollama 逐行 JSON
+      const accumulator =
+        provider === "ollama"
+          ? createOllamaAccumulator()
+          : createOpenAiSseAccumulator();
+
+      let accText = "";
+      // 逐段读流，把增量 append 到浮层（打字机）。展示的是**规整后**的文本：
+      // 行首缩进空格剥掉、空行口径跟前文对齐，避免预览与插入结果不一致
+      const push = (delta: string): void => {
+        accText += delta;
+        patch({
+          text: normalizeContinuationText(accText, before.text),
+          streaming: true,
+          loading: false,
+        });
+      };
+      for (;;) {
+        if (continuationSeqRef.current !== seq) return;
+        const chunk = await handle.readChunk();
+        if (chunk === null) break;
+        const delta = accumulator.push(chunk);
+        if (delta) push(delta);
+      }
+      // 冲刷残留缓冲
+      const tail = accumulator.flush();
+      if (tail) push(tail);
+      if (continuationSeqRef.current !== seq) return;
+
+      continuationStreamRef.current = null;
+
+      const finalText = normalizeContinuationText(accText, before.text);
+      if (!finalText.trim() || finalText.trim() === before.text.trim()) {
+        patch({
+          text: finalText,
+          streaming: false,
+          loading: false,
+          error: "这次没有产出有效续写，换个位置或重试",
+        });
+        return;
+      }
+      patch({ text: finalText, streaming: false, loading: false, error: null });
+    } catch (error) {
+      // 被新一次续写 / 关闭取代：本次结果整体作废，不要碰当前浮层
+      if (continuationSeqRef.current !== seq) return;
+      continuationStreamRef.current = null;
+      // 主动中断（abort）不算错误：已生成部分保留，浮层进入「可确认」态
+      if (streamed?.done) {
+        patch({ streaming: false, loading: false });
+        return;
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      patch({ streaming: false, loading: false, error: message || "续写失败，请重试" });
+    }
+  }, [view, bookSnapshot, abortContinuation, activeOutlineNode, data.groups, data.activeChapterId]);
+
+  /** 确认流式续写结果：插到**快照光标**处，光标落到插入末尾 */
+  const handleContinuationConfirm = useCallback(
+    (text: string): void => {
+      if (!continuation || !text) return;
+      const pane = editorPaneRef.current;
+      if (!pane) {
+        view.showToast("编辑器还没就绪，暂时无法插入", "warning");
+        return;
+      }
+      // 用快照光标而不是「当前选区」：流式期间作者可能随手选中别的段落，
+      // 走 insertText 会命中 replaceSelection 分支，把那一段覆盖掉（2.10.1）。
+      pane.replaceRange(continuation.cursor, continuation.cursor, text);
+      setContinuation(null);
+      view.showToast("已插入续写，可直接修改或继续");
+      // 采纳上报（M1a）：续写确认插入即采纳
+      void logAiEvent({ intent: "continuation", step: "adopt" });
+    },
+    [continuation, view],
+  );
+
+  /** 关闭续写浮层：不写入，清空状态 */
+  const handleContinuationClose = useCallback((): void => {
+    // 有产出而关闭 = 放弃（cancel）
+    if (continuation && continuation.text.trim()) {
+      void logAiEvent({ intent: "continuation", step: "cancel" });
+    }
+    abortContinuation();
+    setContinuation(null);
+  }, [continuation, abortContinuation]);
+
+  /** 「重新生成」：中断当前流，重新发起续写（沿用光标处） */
+  const handleContinuationRetry = useCallback((): void => {
+    // 浮层里的「重新生成 / 重试」不再二次确认：作者刚刚已经确认过一次
+    void runContinuation();
+  }, [runContinuation]);
+
+  /**
+   * 续写入口（顶栏 / 悬浮按钮）：**先确认再发起**（REQ-060）。
+   *
+   * 之前点一下就直接发请求：误触即烧额度、正文前文也会立刻发到模型服务，
+   * 而作者连「这一次要发多少字、模型是谁」都没看见。确认框里写清这三件事，
+   * 一次点击换一次知情。
+   */
+  const requestContinuation = useCallback((): void => {
+    const before = editorPaneRef.current?.getTextBeforeCursor(CONTINUATION_BEFORE_CHARS);
+    if (!before || !before.text.trim()) {
+      view.showToast("先到正文里点一下要续写的位置", "warning");
+      return;
+    }
+    modal.confirm({
+      title: "开始 AI 续写？",
+      content: `将把光标前的约 ${formatThousands(before.text.length)} 字发送给你配置的模型服务；生成结果先预览，确认后才插入正文。`,
+      okText: "开始续写",
+      cancelText: "取消",
+      onOk: () => {
+        void runContinuation();
+      },
+    });
+  }, [modal, runContinuation, view]);
+
+  // ── AI 章节摘要（R-AI-09）─────────────────────────────
+  // 可用性门控（M8）已在上文 `aiAvailability` 统一声明，摘要入口复用它。
+  /** L3 授权状态（M5）：摘要 = 整章全文 = L3 级，必须走统一授权 */
+  const aiConsent = useAiConsent();
+
+  /** 摘要生成状态：open 时持有目标章 id（授权前 / 生成中 / 结果） */
+  const [summary, setSummary] = useState<{
+    chapterId: string;
+    loading: boolean;
+    error: string | null;
+    /** 生成出的摘要正文（成功后直接落库，这里仅作瞬时展示） */
+    result: string | null;
+    /** 模型给的「一句话梗概」（用于回填大纲）；空 = 本次没产出，不动大纲 */
+    oneLiner: string;
+    /** 本章已有手写梗概：非空 = 待用户确认覆盖，此时**未写入** */
+    noteConflict: string;
+    /** 一句话已写进大纲梗概（自动填 / 确认覆盖 / 原本就一致） */
+    noteApplied: boolean;
+  } | null>(null);
+
+  /** 待授权确认的摘要请求：授权弹窗点「同意」后真正发起生成 */
+  const [summaryPending, setSummaryPending] = useState<{
+    chapterId: string;
+    chapterTitle: string;
+  } | null>(null);
+
+  /**
+   * 按当前 L3 授权范围，算出「真正要发给模型的那段正文」。
+   *
+   * **所有 L3 功能共用**（摘要 / 实体抽取，将来的一致性校对 AI 档也走它）：
+   * 弹窗字数估算、实际发送、事件上报必须同源。三条路径各算一遍必然漂移——
+   * review G4 的成因就是「估算按整章、发送按整章、范围没人读」。
+   */
+  const buildL3Payload = useCallback(
+    (chapterId: string, scope: L3Scope): ChapterScopePayload | null => {
+      // 章节顺序以卷分组为准（与大纲/目录一致），扁平 chapters 不带卷序
+      const ordered = data.groups.flatMap((group) => group.chapters);
+      const index = ordered.findIndex((item) => item.id === chapterId);
+      if (index < 0) return null;
+      const chapter = ordered[index];
+      // 选区只对「正在编辑的那一章」有效：别的章的选区是上一次编辑留下的
+      const selection =
+        chapterId === data.activeChapterId ? (editor.selection?.text ?? "") : "";
+      return buildChapterScopePayload({
+        scope,
+        chapter: { title: chapter.title, content: chapter.content },
+        previousChapters: ordered
+          .slice(Math.max(0, index - 2), index)
+          .map((item) => ({ title: item.title, content: item.content })),
+        selection,
+        // 预算与其余 intent 同源：把「上下文长度」配小，这里就真的少发
+        budget: inputCharBudget(aiAvailability.config?.contextLen),
+      });
+    },
+    [data.groups, data.activeChapterId, editor.selection, aiAvailability.config?.contextLen],
+  );
+
+  /**
+   * 授权弹窗里的「本次将发送约 N 字」——必须随范围实时重算。
+   *
+   * 恒按整章算等于骗人：选了「选中段落」却告诉用户「约 3000 字」，
+   * 用户会以为自己授权了 3000 字。空范围内显示 0 并给出说明，弹窗据此禁用「同意」。
+   * 摘要与实体抽取共用一个实现：两者都是「按范围取正文」，估算口径不能各写一份。
+   */
+  const estimateScopePayload = useCallback(
+    (
+      payload: ChapterScopePayload | null,
+    ): { chars: number; tokens: number; notice: string | null } => {
+      if (!payload?.ok) {
+        return {
+          chars: 0,
+          tokens: 0,
+          notice:
+            payload?.reason === "no-selection"
+              ? "当前范围是「选中段落」，请先在正文里选中要发送的内容"
+              : null,
+        };
+      }
+      return {
+        ...estimateText(`${payload.chapterText}\n${payload.contextText ?? ""}`),
+        notice: null,
+      };
+    },
+    [],
+  );
+
+  const summaryPendingScope = useMemo(
+    () =>
+      estimateScopePayload(
+        summaryPending ? buildL3Payload(summaryPending.chapterId, aiConsent.scope) : null,
+      ),
+    [summaryPending, aiConsent.scope, buildL3Payload, estimateScopePayload],
+  );
+
+  /**
+   * 真正发起摘要生成（授权已通过后调用）。
+   *
+   * `scope` 是**入参**而不是读 hook 里的最新值：授权弹窗点「同意」时用户选的是哪档，
+   * 就按哪档发——用最新值会让「弹窗还开着、范围被改过」这类竞态悄悄换内容。
+   */
+  const doGenerateSummary = useCallback(
+    async (chapterId: string, chapterTitle: string, scope: L3Scope): Promise<void> => {
+      const chapter = data.chapters.find((item) => item.id === chapterId);
+      if (!chapter) return;
+
+      // 先按范围取「真实要发的正文」：范围不是埋点字段，它决定发送内容（G4）
+      const payload = buildL3Payload(chapterId, scope);
+      if (!payload) return; // 章节已被删除 / 换作品
+      if (!payload.ok) {
+        // 选了「选中段落」却什么都没选：必须明说并停手，不能悄悄退回整章
+        const message = "当前范围是「选中段落」，请先在正文里选中要发送的内容";
+        setSummary((prev) =>
+          prev && prev.chapterId === chapterId
+            ? { ...prev, loading: false, error: message }
+            : prev,
+        );
+        view.showToast(message, "warning");
+        return;
+      }
+
+      const context = collectBookContext(bookSnapshot, "summary");
+      const outlineNode =
+        activeOutlineNode && chapterId === data.activeChapterId
+          ? activeOutlineNode
+          : outline.find(
+              (node) => node.kind === "chapter" && node.chapterId === chapterId,
+            )?.title;
+      // 「整章」不等于「无上限」：导入的书单章可能几十万字，直接塞进 prompt 会撞
+      // 上下文上限并静默失败。裁剪已在 buildL3Payload 按 contextLen 做完
+      // （首尾拼接、中间标注省略），这里不再二次截断。
+      const spec = buildPromptSpec("summary", context, {
+        chapter: payload.chapterText,
+        chapterTitle,
+        outlineNode,
+        scope,
+        ...(payload.contextText ? { contextText: payload.contextText } : {}),
+      });
+
+      const result = await aiGenerate({
+        system: spec.system,
+        prompt: spec.prompt,
+        intent: "summary",
+        // 范围随请求下发：主进程写 trigger / success 事件时落 ai_event.scope
+        scope,
+      }).catch((error: unknown) => {
+        // IPC 侧异常（主进程 ai.db 未就绪等）不能让面板永久 loading
+        const message = error instanceof Error ? error.message : String(error);
+        return {
+          ok: false as const,
+          code: "internal" as const,
+          message: message || "AI 调用失败，请重试",
+        };
+      });
+
+      if (result.ok) {
+        const text = result.data.text.trim();
+        if (!text) {
+          setSummary((prev) =>
+            prev && prev.chapterId === chapterId
+              ? { ...prev, loading: false, error: "这次没有产出有效摘要，重试一次" }
+              : prev,
+          );
+          return;
+        }
+        // 拆「一句话」与「长摘要」：一句话回填大纲梗概（大纲回流），长摘要落库。
+        // 模型没按标记返回时 oneLiner 为空——此时只落摘要，绝不动作者的大纲。
+        const reply = parseSummaryReply(text);
+        const bodyText = reply.summary || text;
+        // 落库 + 本地乐观更新，带来源标记（M6 溯源：模型名 + 时间戳 + 批次）。
+        // 模型名随生成响应回带（G8-③），省去一次 getAiConfig 的二次 IPC 往返。
+        const model = result.data.model;
+        const provenance = makeAiProvenance(model, Date.now(), newBatchId());
+        data.updateChapterSummary(
+          chapterId,
+          bodyText,
+          provenance?.model ?? model,
+          provenance?.batchId,
+        );
+
+        // 大纲回流：无手写梗概就直接填；已有手写先不写，等用户在浮层确认覆盖
+        // （覆盖会抹掉作者自己写的字，不能由 AI 单方面决定）
+        const existingNote = (
+          data.chapters.find((item) => item.id === chapterId)?.outlineNote ?? ""
+        ).trim();
+        let noteConflict = "";
+        let noteApplied = false;
+        if (reply.oneLiner) {
+          if (!existingNote || existingNote === reply.oneLiner) {
+            data.updateChapterOutlineNote(chapterId, reply.oneLiner);
+            noteApplied = true;
+          } else {
+            noteConflict = existingNote;
+          }
+        }
+
+        setSummary({
+          chapterId,
+          loading: false,
+          error: null,
+          result: bodyText,
+          oneLiner: reply.oneLiner,
+          noteConflict,
+          noteApplied,
+        });
+        // 采纳上报（M1a）：摘要生成成功即「采纳」（text 输出无确认步骤，生成即落库）
+        void logAiEvent({
+          intent: "summary",
+          step: "adopt",
+          itemCount: 1,
+          scope,
+          ...(provenance ? { model: provenance.model } : {}),
+        });
+        return;
+      }
+
+      // AI 失败：浮层报错，不写任何摘要
+      setSummary((prev) =>
+        prev && prev.chapterId === chapterId
+          ? { ...prev, loading: false, error: result.message }
+          : prev,
+      );
+    },
+    [
+      data,
+      bookSnapshot,
+      outline,
+      activeOutlineNode,
+      buildL3Payload,
+      view,
+    ],
+  );
+
+  /**
+   * 发起一次章节摘要（首次触发会先弹 L3 授权，确认后生成）。
+   *
+   * 摘要是 text 输出（非 json-array），落库到 `novel_chapters.ai_summary`，
+   * 带来源标记（模型名 + 时间戳，M6 溯源）。失败不动原文，浮层报错。
+   *
+   * `force = false`（默认）时，已有摘要**只展示不重生成**；浮层里的「重新生成」
+   * 走 `force = true`，那是唯一会再次调用模型的入口。
+   */
+  const runChapterSummary = useCallback(
+    (chapterId: string, force = false): void => {
+      const chapter = data.chapters.find((item) => item.id === chapterId);
+
+      // 「查看」不等于「重新生成」：已存摘要直接展示，不调模型。
+      // 章节行图标写的是「查看 AI 摘要」（实心 = 已有），点一下就扣一次 token
+      // 是最伤信任的那种不一致；这里也刻意不看 AI 可用性——本地读库不该被门控拦。
+      if (!force && chapter?.aiSummary) {
+        setSummary({
+          chapterId,
+          loading: false,
+          error: null,
+          result: chapter.aiSummary,
+          // 老数据没有「一句话」，区块整体不渲染，别冒充 AI 填过大纲
+          oneLiner: "",
+          noteConflict: "",
+          noteApplied: false,
+        });
+        return;
+      }
+
+      // AI 不可用：直接说明原因，不弹空面板（M8 门控，B1 判据③「入口可消失」）
+      if (!aiAvailability.available) {
+        view.showToast(aiAvailability.reasonText || "AI 功能当前不可用", "warning");
+        return;
+      }
+      if (!chapter || !chapter.content.trim()) {
+        view.showToast("这一章还没有正文，写点内容再生成摘要", "warning");
+        return;
+      }
+
+      // 打开摘要面板为加载态（授权未决时也先展示，避免「点了没反应」）
+      setSummary({
+        chapterId,
+        loading: true,
+        error: null,
+        result: null,
+        oneLiner: "",
+        noteConflict: "",
+        noteApplied: false,
+      });
+
+      // 未开 L3 总开关 → 先弹授权弹窗（M5 强制），确认后再真正生成。
+      // 弹窗里同时选「本次范围」：范围决定发送内容，不只是埋点字段。
+      if (!aiConsent.l3Enabled) {
+        setSummaryPending({ chapterId, chapterTitle: chapter.title });
+        return;
+      }
+
+      /** 真正发起生成（确认框的 onOk 与「重新生成」共用） */
+      const start = (): void => {
+        void doGenerateSummary(chapterId, chapter.title, aiConsent.scope);
+      };
+
+      // 浮层里的「重新生成」（force = true）不再确认：作者看着这一章的摘要
+      // 亲手点的「重新生成」，本身就是这一次知情同意，再问一遍只是多一次回车。
+      // 与续写「浮层里的重试不重复确认」同一口径。
+      if (force) {
+        start();
+        return;
+      }
+
+      // 已授权也**每次**确认（REQ-060）。
+      // 旧行为是「授权过一次之后，此后每章点图标就直接生成并落库」——
+      // 作者以为只是「看看」，实际已经在扣额度、也在发整章正文。
+      // 授权弹窗回答的是「允不允许」，这里回答的是「这一次要不要」。
+      modal.confirm({
+        title: "生成这一章的 AI 摘要？",
+        content: `将把「${chapter.title}」全章约 ${formatThousands(
+          estimateText(chapter.content).chars,
+        )} 字发送给你配置的模型服务，生成后直接保存到本章。`,
+        okText: "开始生成",
+        cancelText: "取消",
+        onOk: start,
+        onCancel: () => {
+          // 取消 = 这次不生成：把面板从加载态退回来，不留一个永远转圈的面板
+          setSummary((prev) =>
+            prev && prev.chapterId === chapterId ? { ...prev, loading: false } : prev,
+          );
+        },
+      });
+    },
+    [
+      data.chapters,
+      view,
+      aiConsent.l3Enabled,
+      aiConsent.scope,
+      doGenerateSummary,
+      aiAvailability,
+      modal,
+    ],
+  );
+
+  /** 授权弹窗「同意并继续」：开总开关 + 真正生成（按弹窗里选定的范围发） */
+  const handleSummaryConsentConfirm = useCallback(async (): Promise<void> => {
+    if (!summaryPending) return;
+    const { chapterId, chapterTitle } = summaryPending;
+    const scope = aiConsent.scope;
+    setSummaryPending(null);
+    const ok = await aiConsent.enableL3();
+    if (!ok) {
+      setSummary((prev) =>
+        prev && prev.chapterId === chapterId
+          ? { ...prev, loading: false, error: "授权开启失败，请稍后重试" }
+          : prev,
+      );
+      return;
+    }
+    void doGenerateSummary(chapterId, chapterTitle, scope);
+  }, [summaryPending, aiConsent, doGenerateSummary]);
+
+  /** 关闭摘要面板 */
+  const handleSummaryClose = useCallback((): void => {
+    // 生成中关闭 = 主动放弃（cancel）；空态关闭无意义不上报。
+    // 带 scope：授权拒绝率 / 中断率要能按「用户敢发多大范围」切片
+    if (summary?.loading) {
+      void logAiEvent({ intent: "summary", step: "cancel", scope: aiConsent.scope });
+    }
+    setSummary(null);
+    setSummaryPending(null);
+  }, [summary, aiConsent.scope]);
+
+  /**
+   * 浮层「覆盖为这句」：把 AI 一句话写进本章的大纲梗概。
+   *
+   * 只有「本章已有手写梗概」时才走到这里（无手写时生成完就已自动填入）。
+   * 按钮本身就是这一次确认，不再弹第二次窗——覆盖的对象是作者自己写的字，
+   * 让他亲手点一下就够了，多一层「确定要覆盖吗」只会变成无脑回车。
+   */
+  const handleApplySummaryNote = useCallback((): void => {
+    if (!summary || !summary.oneLiner) return;
+    data.updateChapterOutlineNote(summary.chapterId, summary.oneLiner);
+    setSummary((prev) =>
+      prev ? { ...prev, noteConflict: "", noteApplied: true } : prev,
+    );
+    view.showToast("已用 AI 一句话替换大纲梗概", "info");
+  }, [summary, data, view]);
+
+  /** 授权弹窗取消（= 拒绝本次 L3 授权）：拒绝本身是最需要被计数的信号 */
+  const handleSummaryConsentCancel = useCallback((): void => {
+    void logAiEvent({ intent: "summary", step: "cancel", scope: aiConsent.scope });
+    setSummaryPending(null);
+    setSummary((prev) => (prev ? { ...prev, loading: false, error: null } : prev));
+  }, [aiConsent.scope]);
+
+  // ── AI 实体抽取（R-AI-08）─────────────────────────────
+  /** 抽取结果状态：null = 面板空态；loading 时 chapterId 仍保留（显示抽的是哪一章） */
+  const [extract, setExtract] = useState<ExtractSession | null>(null);
+
+  /** 待授权确认的抽取请求（L3：整章正文要出境） */
+  const [extractPending, setExtractPending] = useState<{
+    chapterId: string;
+    chapterTitle: string;
+  } | null>(null);
+
+  /** 授权弹窗的发送量估算：与摘要同源（同一章、同一范围口径） */
+  const extractPendingScope = useMemo(
+    () =>
+      estimateScopePayload(
+        extractPending ? buildL3Payload(extractPending.chapterId, aiConsent.scope) : null,
+      ),
+    [extractPending, aiConsent.scope, buildL3Payload, estimateScopePayload],
+  );
+
+  /**
+   * 真正发起抽取（授权已通过后调用）。
+   *
+   * 与摘要的差别只有一处：产出是 json-array（要人工勾选），所以**不落库**——
+   * 落库发生在 `handleExtractConfirm`。这一点是 PRD 判据②的核心：
+   * 「候选必须人工勾选才入库，不存在自动入库分支」。
+   */
+  const doExtract = useCallback(
+    async (chapterId: string, chapterTitle: string, scope: L3Scope): Promise<void> => {
+      const payload = buildL3Payload(chapterId, scope);
+      if (!payload) return;
+      if (!payload.ok) {
+        const message = "当前范围是「选中段落」，请先在正文里选中要抽取的内容";
+        setExtract((prev) => (prev ? { ...prev, loading: false, error: message } : prev));
+        view.showToast(message, "warning");
+        return;
+      }
+
+      const context = collectBookContext(bookSnapshot, "extract");
+      const limit = 20;
+      const spec = buildPromptSpec("extract", context, {
+        chapter: payload.chapterText,
+        chapterTitle,
+        scope,
+        limit,
+        ...(payload.contextText ? { contextText: payload.contextText } : {}),
+      });
+
+      const result = await aiGenerateStructured({
+        system: spec.system,
+        prompt: spec.prompt,
+        intent: "extract",
+        scope,
+        count: limit,
+        outputFormat: spec.outputFormat,
+      }).catch((error: unknown) => {
+        // 与其余 AI 入口同一条纪律：IPC 侧异常不能留下永远转圈的面板
+        const message = error instanceof Error ? error.message : String(error);
+        return { ok: false as const, code: "internal" as const, message: message || "AI 调用失败，请重试" };
+      });
+
+      if (!result.ok) {
+        setExtract((prev) => (prev ? { ...prev, loading: false, error: result.message } : prev));
+        return;
+      }
+
+      const candidates = buildExtractCandidates(result.data.entries, {
+        existing: data.entities.filter((entity) => entity.workId === data.activeWorkId),
+        customTypes,
+        limit,
+      });
+
+      if (candidates.length === 0) {
+        setExtract((prev) =>
+          prev
+            ? {
+                ...prev,
+                loading: false,
+                candidates: [],
+                usedFallback: result.data.usedFallback,
+                error: result.data.entries.length
+                  ? "抽到的条目都已建过卡，或名字无法辨认，换一章或先补正文"
+                  : "这一章没抽到值得建卡的设定，可能是出场人物都已建档",
+              }
+            : prev,
+        );
+        return;
+      }
+
+      setExtract({
+        chapterId,
+        chapterTitle,
+        loading: false,
+        error: null,
+        candidates,
+        usedFallback: result.data.usedFallback,
+        applied: null,
+      });
+    },
+    [buildL3Payload, bookSnapshot, customTypes, data.entities, data.activeWorkId, view],
+  );
+
+  /**
+   * 打开抽取面板并发起一次抽取（首次触发先弹 L3 授权）。
+   *
+   * `force = true` 供面板里的「重新抽取」用：那一下本身就是知情同意，不再确认。
+   */
+  const runEntityExtract = useCallback(
+    (chapterId: string, force = false): void => {
+      const chapter = data.chapters.find((item) => item.id === chapterId);
+      if (!chapter || !chapter.content.trim()) {
+        view.showToast("这一章还没有正文，写点内容再抽取设定", "warning");
+        return;
+      }
+      // AI 不可用：说明原因，不开面板（M8 门控；抽取没有本地兜底）
+      if (!aiAvailability.available) {
+        view.showToast(aiAvailability.reasonText || "AI 功能当前不可用", "warning");
+        return;
+      }
+
+      setExtract({
+        chapterId,
+        chapterTitle: chapter.title,
+        loading: true,
+        error: null,
+        candidates: [],
+        usedFallback: false,
+        applied: null,
+      });
+
+      if (!aiConsent.l3Enabled) {
+        setExtractPending({ chapterId, chapterTitle: chapter.title });
+        return;
+      }
+
+      const start = (): void => {
+        void doExtract(chapterId, chapter.title, aiConsent.scope);
+      };
+      if (force) {
+        start();
+        return;
+      }
+
+      // 已授权也每次确认（REQ-060）：授权回答「允不允许」，这里回答「这一次要不要」
+      modal.confirm({
+        title: "从这一章抽取设定？",
+        content: `将把「${chapter.title}」全章约 ${formatThousands(
+          estimateText(chapter.content).chars,
+        )} 字发送给你配置的模型服务；抽出的候选要你勾选后才建卡。`,
+        okText: "开始抽取",
+        cancelText: "取消",
+        onOk: start,
+        onCancel: () => {
+          setExtract(null);
+        },
+      });
+    },
+    [data.chapters, view, aiAvailability, aiConsent.l3Enabled, aiConsent.scope, doExtract, modal],
+  );
+
+  /** 授权弹窗「同意并继续」：开总开关 + 真正抽取（按弹窗里选定的范围发） */
+  const handleExtractConsentConfirm = useCallback(async (): Promise<void> => {
+    if (!extractPending) return;
+    const { chapterId, chapterTitle } = extractPending;
+    const scope = aiConsent.scope;
+    setExtractPending(null);
+    const ok = await aiConsent.enableL3();
+    if (!ok) {
+      setExtract((prev) =>
+        prev ? { ...prev, loading: false, error: "授权开启失败，请稍后重试" } : prev,
+      );
+      return;
+    }
+    void doExtract(chapterId, chapterTitle, scope);
+  }, [extractPending, aiConsent, doExtract]);
+
+  /** 授权弹窗取消 = 拒绝本次 L3 授权（最需要被计数的信号） */
+  const handleExtractConsentCancel = useCallback((): void => {
+    void logAiEvent({ intent: "extract", step: "cancel", scope: aiConsent.scope });
+    setExtractPending(null);
+    setExtract(null);
+  }, [aiConsent.scope]);
+
+  /** 勾选 / 取消勾选一条候选 */
+  const handleExtractToggle = useCallback((key: string): void => {
+    setExtract((prev) =>
+      prev
+        ? {
+            ...prev,
+            candidates: prev.candidates.map((item) =>
+              item.key === key ? { ...item, selected: !item.selected } : item,
+            ),
+          }
+        : prev,
+    );
+  }, []);
+
+  /** 改一条候选的类型（模型认错类型时，作者就地改，不必先建卡再改） */
+  const handleExtractTypeChange = useCallback((key: string, type: EntityType): void => {
+    setExtract((prev) =>
+      prev
+        ? {
+            ...prev,
+            candidates: prev.candidates.map((item) =>
+              item.key === key ? { ...item, type } : item,
+            ),
+          }
+        : prev,
+    );
+  }, []);
+
+  /**
+   * 确认建卡：只写「勾选且不重名」的那些，整批单事务。
+   *
+   * 重名项**一律跳过**（`existingId` 非空），即便被勾上也不写：覆盖作者手写的
+   * 简介是不可逆的损失，而补一句简介只需要点开卡片改一次。
+   */
+  const handleExtractConfirm = useCallback((): void => {
+    if (!extract) return;
+    const picked = extract.candidates.filter((item) => item.selected && !item.existingId);
+    if (picked.length === 0) {
+      view.showToast("先勾选要建卡的条目（已存在的不会重复建）", "info");
+      return;
+    }
+    const created = data.addEntitiesBatch(
+      picked.map((item) => ({ name: item.name, type: item.type, summary: item.summary })),
+    );
+    setExtract((prev) =>
+      prev
+        ? {
+            ...prev,
+            applied: created,
+            // 建过的条目从候选里摘掉：留在列表里再点一次「建卡」只会让人以为没成功
+            candidates: prev.candidates.filter(
+              (item) => item.existingId !== null || !item.selected,
+            ),
+          }
+        : prev,
+    );
+    void logAiEvent({
+      intent: "extract",
+      step: "adopt",
+      itemCount: created,
+      scope: aiConsent.scope,
+    });
+    view.showToast(created > 0 ? `已建 ${created} 张卡` : "没有新增（都已存在）");
+  }, [extract, data, view, aiConsent.scope]);
+
+  /** 关闭抽取面板（生成中关闭 = 主动放弃，记 cancel） */
+  const handleExtractClose = useCallback((): void => {
+    if (extract?.loading) {
+      void logAiEvent({ intent: "extract", step: "cancel", scope: aiConsent.scope });
+    }
+    setExtract(null);
+    setExtractPending(null);
+  }, [extract, aiConsent.scope]);
 
   const handleNewVolume = useCallback((): void => {
     const id = data.createVolume();
     if (id) view.showToast("已新建一卷，可把章节拖到卷头归入");
   }, [data, view]);
-
   /** 卷命名：与章节重命名一致静默生效 */
   const handleRenameVolume = useCallback(
     (volumeId: string, name: string): void => {
       data.renameVolume(volumeId, name);
     },
     [data],
+  );
+
+  /**
+   * 删除卷（卷头悬浮删除，弹层里已二次确认）。
+   *
+   * 先逐章撤草稿与在途防抖再删（理由同删单章：防抖拿已删 id 落库会把保存态
+   * 永久卡在 failed）。逐章 drop 而不是 clearDrafts——后者清空全作品草稿，
+   * 删一卷不该连累其他卷里还没存的内容。
+   */
+  const handleDeleteVolume = useCallback(
+    (volumeId: string): void => {
+      const group = data.groups.find((item) => item.volume.id === volumeId);
+      if (!group) return;
+      for (const chapter of group.chapters) {
+        editor.dropChapterDraft(chapter.id);
+      }
+      const count = group.chapters.length;
+      data.deleteVolume(volumeId);
+      view.showToast(
+        count > 0 ? `本卷及其下 ${count} 章已删除` : "空卷已删除",
+        "info",
+      );
+    },
+    [data, editor, view],
   );
 
   /** 添加要素关联（人物关系等）：重复关联给出提示 */
@@ -602,13 +1914,167 @@ export function useNovelPage() {
   );
 
   // ── 起名工具（R18 / 步骤三）：双出口 + 收藏夹编排 ──────────────────────────
-  /** EditorPane 命令式 ref：用于「插入正文光标处」出口 */
-  const editorPaneRef = useRef<EditorPaneHandle>(null);
+  // (editorPaneRef 已在 AI 上下文段上方声明，供润色 / 续写共用)
 
-  /** 把名字插入正文光标处（不依赖选区；选区非空则替换） */
-  const handleInsertName = useCallback((name: string): void => {
-    editorPaneRef.current?.insertText(name);
+  /**
+   * 把名字插入正文光标处（不依赖选区；选区非空则替换）。
+   *
+   * ⚠️ 只有真的插进去才上报 adopt：编辑器未挂载（书架视图 / 章节还没起来）时
+   * 上报会把「采纳率」抬高成假数据 —— 度量必须跟着真实副作用走。
+   */
+  const handleInsertName = useCallback(
+    (name: string): void => {
+      const pane = editorPaneRef.current;
+      if (!pane) {
+        view.showToast("编辑器还没就绪，先把光标放到正文里", "warning");
+        return;
+      }
+      pane.insertText(name);
+      // 起名采纳上报（M1a）：B1 判据②「起名 → 插入正文 落一条 adopt」
+      void logAiEvent({ intent: "naming", step: "adopt" });
+    },
+    [view],
+  );
+
+  /**
+   * 起名结果「寓意」插入正文（2.8.1）
+   *
+   * 寓意本身就是一句命名释义，作者常直接写进人物出场段或设定清单。
+   * 拼成 `名字：寓意` 而不是只丢寓意：单看一句话读者不知道说的是谁，
+   * 而插入后就地编辑的成本远低于重新补名字。
+   */
+  const handleInsertMeaning = useCallback(
+    (name: string, meaning: string): void => {
+      const text = meaning.trim();
+      if (!text) return;
+      const pane = editorPaneRef.current;
+      if (!pane) {
+        view.showToast("编辑器还没就绪，先把光标放到正文里", "warning");
+        return;
+      }
+      pane.insertText(`${name}：${text}`);
+      // 寓意插入正文同样算「采纳」
+      void logAiEvent({ intent: "naming", step: "adopt" });
+    },
+    [view],
+  );
+
+  /**
+   * 行囊表格「插入本章末尾」（REQ-034）：跨窗口桥。
+   *
+   * 行囊已迁独立窗口（PackWindow），它把 Markdown 文本经
+   * `pack-insert-into-chapter` 广播发过来，本窗口订阅后写入当前章末尾。
+   * 广播会送达所有窗口，但只有本窗口注册了写入能力，其余窗口忽略。
+   *
+   * 不在这里调 flushSave：`appendText` 走的是 CodeMirror 的 dispatch，
+   * 会经 updateListener → `setContent` → 编辑器自己的防抖保存落库。
+   */
+  useEffect(() => {
+    const api = window.electronAPI?.windowAPI;
+    if (!api) return undefined;
+    const handler = (...args: unknown[]): void => {
+      const text = args[0];
+      if (typeof text !== "string" || !text) return;
+      editorPaneRef.current?.appendText(text);
+    };
+    api.on("pack-insert-into-chapter", handler);
+    return () => api.off("pack-insert-into-chapter", handler);
   }, []);
+
+  // ── 行囊独立窗口（PackWindow）联动 ──────────────────────────────────────
+  /**
+   * 唤起行囊窗口（单实例；已开则聚焦）。上下文随打开请求携带。
+   *
+   * 零作品必须有守卫（P2-5）：空 workId 一路放行的话，主进程会播种
+   * `work_id=''` 的垃圾角色行（下次打开还复用它），行囊窗口也只能显示
+   * 一份空壳。这里给出明确提示，快捷键（Ctrl+Shift+B）与顶栏按钮都走本入口，
+   * 一个口子拦全。
+   */
+  const openPackWindow = useCallback((): void => {
+    if (!data.activeWorkId) {
+      view.showToast("先创建一部作品，再打开行囊", "warning");
+      return;
+    }
+    // 先给反馈再发 IPC：窗口装载期间屏幕上只有这颗按钮能动，
+    // 没有它作者只会看到「点了没反应」（见 packOpening 的注释）
+    setPackOpening(true);
+    if (packOpeningTimerRef.current) clearTimeout(packOpeningTimerRef.current);
+    packOpeningTimerRef.current = setTimeout(() => {
+      packOpeningTimerRef.current = null;
+      setPackOpening(false);
+    }, PACK_OPENING_TIMEOUT_MS);
+    window.electronAPI?.send("pack-window-open", {
+      workId: data.activeWorkId,
+      chapterId: data.activeChapterId ?? "",
+      nonce: packNonce,
+    });
+  }, [data.activeWorkId, data.activeChapterId, packNonce, view]);
+
+  /**
+   * 唤起人物关系网络独立窗口（R27，单实例；已开则聚焦）。
+   *
+   * 零作品同样必须拦：图窗口没有 workId 只能显示空壳，后续写回还会落错书。
+   * 与行囊窗口同一条守卫口径（一个口子拦全）。
+   */
+  const openRelationWindow = useCallback((): void => {
+    if (!data.activeWorkId) {
+      view.showToast("先创建一部作品，再打开人物关系网络", "warning");
+      return;
+    }
+    window.electronAPI?.send("relation-window-open", {
+      workId: data.activeWorkId,
+    });
+  }, [data.activeWorkId, view]);
+
+  /**
+   * 行囊窗口「真的可见」的回执（主进程 `notifyPackShown` → `pack-window-shown`）。
+   *
+   * 收到即复位 loading；同时清掉兜底定时器 —— 两者谁先到都行，
+   * 但都必须保证不残留一个「8 秒后才复位」的幽灵定时器。
+   */
+  useEffect(() => {
+    const api = window.electronAPI;
+    if (!api?.receive) return undefined;
+    const unsubscribe = api.receive("pack-window-shown", () => {
+      if (packOpeningTimerRef.current) {
+        clearTimeout(packOpeningTimerRef.current);
+        packOpeningTimerRef.current = null;
+      }
+      setPackOpening(false);
+    });
+    return () => {
+      unsubscribe();
+      if (packOpeningTimerRef.current) {
+        clearTimeout(packOpeningTimerRef.current);
+        packOpeningTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  /**
+   * 行囊窗口主动跟进：作品 / 章节变化（含编辑器首挂载）即广播新上下文。
+   * PackWindow 收到后 flush 旧作品草稿（重挂载兜底）并重新装载 bundle。
+   * 签名去重：同一上下文不重复广播，避免数据 hook 的中间态抖动连发。
+   *
+   * `nonce` 参与签名与依赖：重置后 workId / chapterId 可能都没变，只有它
+   * 能区分「真的换了书」与「同一本书被清库重播了」。
+   *
+   * 空 workId 也广播（作品被删光）：行囊窗口据此退回占位态，而不是一直
+   * 显示已删作品的旧文档；App 侧按空串不装载，不会触发建行。
+   */
+  const workContextRef = useRef("");
+  useEffect(() => {
+    const workId = data.activeWorkId;
+    const chapterId = data.activeChapterId ?? "";
+    const signature = `${workId}\u0000${chapterId}\u0000${packNonce}`;
+    if (workContextRef.current === signature) return;
+    workContextRef.current = signature;
+    void window.electronAPI?.windowAPI?.broadcast("novel-work-changed", {
+      workId,
+      chapterId,
+      nonce: packNonce,
+    });
+  }, [data.activeWorkId, data.activeChapterId, packNonce]);
 
   /** 把名字建为角色卡（type=character，名字带入；复用 markSelectionAsEntity 走查重 + 落库） */
   const handleCreateEntityFromName = useCallback(
@@ -627,6 +2093,8 @@ export function useNovelPage() {
       } else {
         view.showToast(`「${result.entity.name}」已在设定库中`, "info");
       }
+      // 起名 → 建角色卡同样算「采纳」（M1a）
+      void logAiEvent({ intent: "naming", step: "adopt" });
     },
     [data, view],
   );
@@ -635,12 +2103,26 @@ export function useNovelPage() {
   const namingActions = useMemo<NamingActions>(
     () => ({
       onInsertToEditor: handleInsertName,
+      onInsertMeaning: handleInsertMeaning,
       onCreateCharacter: handleCreateEntityFromName,
-      onAddFavorite: (name, kind, style) =>
-        data.addNameFavorite(data.activeWorkId, name, kind, style),
+      onAddFavorite: (name, kind, style, source) =>
+        data.addNameFavorite(data.activeWorkId, name, kind, style, source),
       onRemoveFavorite: data.removeNameFavorite,
+      // 「去设置」：面板不碰窗口层，由这里发跨窗口消息。用 sendTo 而不是
+      // settings-window-open 是为了带 section —— 只把设置窗口拉到首页，
+      // 用户还要自己再找「AI 配置」，等于把「去配置」的摩擦推后一步。
+      // `create` + `queue`：窗口没开会先拉起、消息入队，preload 挂载后补投。
+      onOpenAiSettings: () => {
+        void window.electronAPI?.windowAPI.sendTo(
+          "settings",
+          "settings-section-jump",
+          { section: "ai" },
+          true,
+          { create: true, queue: true },
+        );
+      },
     }),
-    [handleInsertName, handleCreateEntityFromName, data],
+    [handleInsertName, handleInsertMeaning, handleCreateEntityFromName, data],
   );
 
   /** 起名工具避开已用名：当前作品的要素 name + aliases 去重 */
@@ -957,17 +2439,17 @@ export function useNovelPage() {
     ],
   );
 
-  // Esc 关闭链：设置 → 行囊 → 快照 → 专注模式（逐层退出，章节跳转面板自己处理 Esc；
-  // 行囊面板内部优先处理自己的浮层与未保存改动，见 CharacterPackHost）
+  // Esc 关闭链：设置 → 快照 → 专注模式（逐层退出，章节跳转面板自己处理 Esc；
+  // 行囊已是独立窗口，本窗口的 Esc 不再越界管它）
   const handleEscape = useCallback((): void => {
-    if (view.settingsOpen) {
-      view.closeSettings();
+    // 设定中心是最上层浮层，先关它：否则 Esc 会穿透去关排版抽屉，
+    // 作者以为关的是眼前这个大面板
+    if (view.settingCenterOpen) {
+      view.closeSettingCenter();
       return;
     }
-    if (view.packOpen) {
-      // 走面板自己的关闭流程（未保存拦截 + 草稿 flush），不能直接翻状态位；
-      // 面板不在（理论上不会）时才退回老办法
-      if (!requestClosePackPanel()) view.closePack();
+    if (view.settingsOpen) {
+      view.closeSettings();
       return;
     }
     if (view.snapshotOpen) {
@@ -984,7 +2466,8 @@ export function useNovelPage() {
     onJump: () => (view.jumpOpen ? view.closeJump() : view.openJump()),
     onNewChapter: handleNewChapter,
     onToggleFocus: view.toggleFocus,
-    onTogglePack: view.togglePack,
+    onTogglePack: openPackWindow,
+    onOpenSettings: () => view.openSettingCenter(null),
     onEscape: handleEscape,
   });
 
@@ -1024,6 +2507,30 @@ export function useNovelPage() {
     return unsubscribe;
   }, []);
 
+  // ── 跨窗口导航：行囊窗口 → 本窗口设定中心（UI-03） ──
+  // 行囊窗口的空态引导「去设定中心创建等级体系」自己开不了设定中心（它不是
+  // NovelWindow 的组件），靠这条频道把请求送过来。主进程已把本窗口拉到前面并
+  // 转发负载，这里只负责落地：打开设定中心 + 定位到目标分类。
+  //
+  // 防串书：行囊窗口可能开着另一本书（多作品场景），负载带 workId，不是当前
+  // 作品就忽略 —— 否则会把作者正在写的书拽到别的书的设定中心。
+  //
+  // 定位失败（分类被删 / 传了 null）回落默认态，不报错：导航失败不该把作者
+  // 卡在错误上（见 open-setting-center.ts 的 categoryId 语义）。
+  //
+  // 依赖 openSettingCenter 这个 useCallback([]) 稳定引用，而非整个 view 对象
+  // （view 是每渲染新建的字面量，会白订阅一遍）。
+  const openSettingCenter = view.openSettingCenter;
+  useEffect(() => {
+    const handler = (...args: unknown[]) => {
+      const req = parseOpenSettingCenterRequest(args);
+      if (!req) return;
+      if (req.workId && req.workId !== data.activeWorkId) return;
+      openSettingCenter(req.categoryId);
+    };
+    return subscribeDualChannel(NOVEL_OPEN_SETTING_CENTER_CHANNEL, handler);
+  }, [data.activeWorkId, openSettingCenter]);
+
   // 关窗前的最后一次 flush（PRD §2：关窗永不询问，数据由持久化兜底）；
   // 位置记忆同步落库，下次打开原位续写（R6）
   useEffect(() => {
@@ -1058,6 +2565,10 @@ export function useNovelPage() {
     handleNewChapter,
     handleCreateChapterInVolume,
     handleSelectChapter,
+    handleSelectWork,
+    openPackWindow,
+    openRelationWindow,
+    packOpening,
     handleRollback,
     handleMark,
     handleOpenEntity,
@@ -1066,16 +2577,59 @@ export function useNovelPage() {
     handleEditorContextMenu,
     closeCtxMenu,
     handleCtxMark,
-    handleCtxBind,
+    handleCtxToPack,
+    // AI 润色 / 文本变换（R-AI-03 / R-AI-06）
+    polish,
+    handleCtxPolish,
+    handleCtxTransform,
+    handlePolishConfirm,
+    handlePolishClose,
+    handlePolishRetry,
+    runPolish,
+    // AI 续写（R-AI-07 / B5 流式）
+    continuation,
+    /** 入口：先确认再发起（REQ-060）；重试走 runContinuation，不再二次确认 */
+    requestContinuation,
+    runContinuation,
+    handleContinuationConfirm,
+    handleContinuationClose,
+    handleContinuationRetry,
+    handleContinuationStop: abortContinuation,
+    // AI 章节摘要（R-AI-09）
+    summary,
+    summaryPending,
+    /** 弹窗里的「将发送约 N 字」+ 范围提示：随授权范围实时重算，与实际发送同源 */
+    summaryPendingScope,
+    aiConsent,
+    // AI 可用性门控（M8）：六个入口据此禁用并说明 / 走本地兜底
+    aiAvailability,
+    runChapterSummary,
+    handleSummaryConsentConfirm,
+    handleSummaryConsentCancel,
+    handleSummaryClose,
+    // AI 实体抽取（R-AI-08）
+    extract,
+    extractPending,
+    extractPendingScope,
+    runEntityExtract,
+    handleExtractConsentConfirm,
+    handleExtractConsentCancel,
+    handleExtractToggle,
+    handleExtractTypeChange,
+    handleExtractConfirm,
+    handleExtractClose,
+    handleApplySummaryNote,
     handleNewVolume,
     handleSaveEntity,
     handleRenameVolume,
+    handleDeleteVolume,
     handleAddRelation,
     handleRemoveRelation,
     handleCursorChange,
     handleScrollChange,
     handleCreateWork,
     handleRenameWork,
+    handleSetWorkGenre,
     handleDeleteWork,
     handleResetTemplate,
     handleDeleteChapter,
@@ -1086,12 +2640,14 @@ export function useNovelPage() {
     handleSetEntityLevel,
     handleAddCustomType,
     handleRenameCustomType,
+    handleRecolorCustomType,
     handleRemoveCustomType,
     // 起名工具（R18 / 步骤三）
     editorPaneRef,
     namingActions,
     namingExclude,
     namingFavorites,
+    namingBook: bookSnapshot,
     // 行囊主角绑定（右侧要素栏）
     protagonistEntityId,
     handleSetProtagonist,

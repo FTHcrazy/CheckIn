@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS, LAYOUT, UNNAMED_VOLUME } from "./novel-config";
 import {
+  applyCustomTypeColors,
   buildBreadcrumb,
   buildChapterGroups,
   buildChapterNumbers,
@@ -11,7 +12,6 @@ import {
   buildSortOrder,
   buildWorkMeta,
   calcGoalProgress,
-  calcSpeed,
   clampPanelWidth,
   countWords,
   filterNotes,
@@ -32,6 +32,7 @@ import {
   previewChapterReorder,
   previewChapterToVolume,
   previewVolumeReorder,
+  sanitizeNameFavorites,
   sanitizeRestorePosition,
   sortNotes,
   splitByKeyword,
@@ -140,6 +141,54 @@ describe("buildEntityTerms", () => {
   });
 });
 
+describe("applyCustomTypeColors —— 自建类型标识色注入词库（R23）", () => {
+  const built = () =>
+    buildEntityTerms(
+      [
+        entity({ id: "e1", type: "ct-1", name: "九幽诀" }),
+        entity({ id: "e2", type: "character", name: "沈砚" }),
+      ],
+      ["ct-1", "character"],
+    );
+
+  it("自建类型词条带上该类型的颜色", () => {
+    const terms = applyCustomTypeColors(built(), [
+      { id: "ct-1", color: "#e0559a" },
+    ]);
+    expect(terms.find((t) => t.type === "ct-1")?.color).toBe("#e0559a");
+  });
+
+  it("内置类型不注入（颜色由 SCSS 静态定义给，注入会覆盖主题）", () => {
+    const terms = applyCustomTypeColors(built(), [
+      { id: "ct-1", color: "#e0559a" },
+    ]);
+    expect(terms.find((t) => t.type === "character")?.color).toBeUndefined();
+  });
+
+  it("改色后同一批词条拿到新颜色（改色即时生效的前提）", () => {
+    const before = applyCustomTypeColors(built(), [
+      { id: "ct-1", color: "#e0559a" },
+    ]);
+    const after = applyCustomTypeColors(built(), [
+      { id: "ct-1", color: "#8b5cf6" },
+    ]);
+    expect(before.find((t) => t.type === "ct-1")?.color).toBe("#e0559a");
+    expect(after.find((t) => t.type === "ct-1")?.color).toBe("#8b5cf6");
+  });
+
+  it("没有自建类型时原样返回（省掉一次 map）", () => {
+    const terms = built();
+    expect(applyCustomTypeColors(terms, [])).toBe(terms);
+  });
+
+  it("类型已删除时词条不带色（不残留旧颜色）", () => {
+    const terms = applyCustomTypeColors(built(), [
+      { id: "ct-other", color: "#e0559a" },
+    ]);
+    expect(terms.find((t) => t.type === "ct-1")?.color).toBeUndefined();
+  });
+});
+
 describe("findTermMatches", () => {
   it("命中区间不重叠且长词优先", () => {
     const terms = [
@@ -157,18 +206,46 @@ describe("findTermMatches", () => {
     expect(findTermMatches("任意文本", [])).toEqual([]);
     expect(findTermMatches("", [{ term: "沈砚", entityId: "a", type: "character" }])).toEqual([]);
   });
+
+  it("调用方传入的未排序词库同样长词优先（索引按首字分桶时保证）", () => {
+    // 索引缓存以数组身份为键：同一数组二次调用必须结果一致
+    const terms = [
+      { term: "青梧", entityId: "a", type: "location" as const },
+      { term: "青梧山", entityId: "b", type: "location" as const },
+    ];
+    const first = findTermMatches("远望青梧山", terms);
+    const second = findTermMatches("远望青梧山", terms);
+    expect(first).toEqual(second);
+    expect(first[0].term).toBe("青梧山");
+  });
+
+  it("首字不在词库的位置不产生命中，但同首字的短词照常命中", () => {
+    const terms = [
+      { term: "沈砚", entityId: "a", type: "character" as const },
+      { term: "沈", entityId: "b", type: "character" as const },
+    ];
+    // 「沈砚」长词优先；「沈」单独出现时仍能命中
+    const matches = findTermMatches("沈砚来了，沈家上下", terms);
+    expect(matches.map((m) => m.term)).toEqual(["沈砚", "沈"]);
+    expect(matches[1].from).toBe(5);
+  });
+
+  it("空词条（term 为空串）不产生命中也不污染索引", () => {
+    const terms = [
+      { term: "", entityId: "a", type: "character" as const },
+      { term: "青梧", entityId: "b", type: "location" as const },
+    ];
+    const matches = findTermMatches("青梧山下", terms);
+    expect(matches).toHaveLength(1);
+    expect(matches[0].term).toBe("青梧");
+  });
 });
 
-describe("目标与速度", () => {
+describe("目标进度", () => {
   it("进度封顶 100，目标为 0 时返回 0", () => {
     expect(calcGoalProgress(3200, 3000)).toBe(100);
     expect(calcGoalProgress(1500, 3000)).toBe(50);
     expect(calcGoalProgress(1500, 0)).toBe(0);
-  });
-
-  it("速度为每分钟字数，时间非法返回 0", () => {
-    expect(calcSpeed(600, 10)).toBe(60);
-    expect(calcSpeed(600, 0)).toBe(0);
   });
 });
 
@@ -621,6 +698,42 @@ describe("buildOutlineTree", () => {
   it("没有卷时返回空数组，不抛错", () => {
     expect(buildOutlineTree([], [], [entry({})], options)).toEqual([]);
   });
+
+  it("章节节点带本章伏笔计数：绑了章的才算，卷级伏笔不计入任何章", () => {
+    const entries: OutlineEntry[] = [
+      entry({ id: "f-a", chapterId: "c1", status: "open" }),
+      entry({ id: "f-b", chapterId: "c1", status: "resolved" }),
+      entry({ id: "f-c", chapterId: "c2", status: "resolved" }),
+      // 卷级伏笔（无 chapterId）：只进卷头计数
+      entry({ id: "f-vol", chapterId: undefined }),
+      // 绑了不存在的章：不该凭空造出标识
+      entry({ id: "f-ghost", chapterId: "c-nope", status: "resolved" }),
+    ];
+    const vol1 = asVolume(
+      buildOutlineTree(outlineVolumes, outlineChapters, entries, options)[0],
+    );
+    // children 是「章节在前、伏笔在后」，取章节要按 kind 过滤
+    const [c1, c2] = vol1.children
+      .filter((child) => child.kind === "chapter")
+      .map(asChapter);
+
+    expect(c1.foreshadows).toBe(2);
+    expect(c1.openForeshadows).toBe(1);
+    expect(c2.foreshadows).toBe(1);
+    expect(c2.openForeshadows).toBe(0);
+    // 卷头计数仍然统计全部未回收（含卷级）
+    expect(vol1.openForeshadows).toBe(2);
+  });
+
+  it("没有伏笔时两个计数都是 0（章节行不出标识）", () => {
+    const tree = buildOutlineTree(outlineVolumes, outlineChapters, [], options);
+    for (const node of asVolume(tree[0]).children.filter(
+      (child) => child.kind === "chapter",
+    )) {
+      expect(asChapter(node).foreshadows).toBe(0);
+      expect(asChapter(node).openForeshadows).toBe(0);
+    }
+  });
 });
 
 describe("灵感排序与过滤", () => {
@@ -711,6 +824,21 @@ describe("梗概 / 伏笔 / 灵感的局部更新", () => {
     const entries: OutlineEntry[] = [entry({ id: "f1" })];
     expect(patchOutlineEntry(entries, "f1", { title: "   " })).toBe(entries);
     expect(patchOutlineEntry(entries, "nope", { title: "x" })).toBe(entries);
+  });
+
+  it("patchOutlineEntry 改绑埋设章节：空串退回卷级，非空写入章节 id", () => {
+    const bound: OutlineEntry[] = [entry({ id: "f1", chapterId: "c1" })];
+    const unbound: OutlineEntry[] = [entry({ id: "f1" })];
+
+    // 改绑到第二章
+    expect(patchOutlineEntry(bound, "f1", { chapterId: "c2" })[0].chapterId).toBe("c2");
+    // 空串 = 退回卷级（chapterId 归一化为 undefined）
+    const reverted = patchOutlineEntry(bound, "f1", { chapterId: "" });
+    expect(reverted[0].chapterId).toBeUndefined();
+    // 卷级伏笔绑定到章
+    expect(patchOutlineEntry(unbound, "f1", { chapterId: "c1" })[0].chapterId).toBe("c1");
+    // patch 不含 chapterId 时原值不动
+    expect(patchOutlineEntry(bound, "f1", { note: "x" })[0].chapterId).toBe("c1");
   });
 
   it("patchNote 支持内容 / 置顶 / 已转伏笔标记", () => {
@@ -882,5 +1010,71 @@ describe("buildWorkMeta", () => {
       [],
     );
     expect(meta.get("w1")).toEqual({ volumes: 1, chapters: 0, words: 0 });
+  });
+});
+
+/**
+ * 收藏夹是**外部输入**（config 表里的 JSON 字符串，可能来自旧版本或被手改过），
+ * 这一组断言钉死「不抛错 + 脏条目逐条丢弃 + 不静默清空已有数据」：
+ * 少了任何一条，用户看到的就是「收藏夹莫名空了」或者整个装载失败。
+ */
+describe("sanitizeNameFavorites —— 收藏夹外部输入守卫（R18 ④）", () => {
+  const base = {
+    id: "f1",
+    workId: "w1",
+    name: "青梧",
+    kind: "person",
+    style: "xianxia",
+    createdAt: 1_700_000_000_000,
+  };
+
+  it("非数组（含未 parse 的 JSON 字符串）一律安全返回空数组", () => {
+    expect(sanitizeNameFavorites(undefined)).toEqual([]);
+    expect(sanitizeNameFavorites(null)).toEqual([]);
+    expect(sanitizeNameFavorites(JSON.stringify([base]))).toEqual([]);
+    expect(sanitizeNameFavorites({})).toEqual([]);
+  });
+
+  it("合法条目原样通过", () => {
+    expect(sanitizeNameFavorites([base])).toEqual([base]);
+  });
+
+  it("缺 id / workId / name 的条目丢弃", () => {
+    expect(sanitizeNameFavorites([{ ...base, id: "" }])).toEqual([]);
+    expect(sanitizeNameFavorites([{ ...base, workId: "" }])).toEqual([]);
+    expect(sanitizeNameFavorites([{ ...base, name: "   " }])).toEqual([]);
+  });
+
+  it("kind / style 不在合法集合内的条目丢弃（旧版本残留值）", () => {
+    expect(sanitizeNameFavorites([{ ...base, kind: "dragon" }])).toEqual([]);
+    expect(sanitizeNameFavorites([{ ...base, style: "cyberpunk" }])).toEqual([]);
+  });
+
+  it("缺 kind / style 回落到默认值而不是丢条目", () => {
+    const [item] = sanitizeNameFavorites([{ id: "f1", workId: "w1", name: "青梧" }]);
+    expect(item.kind).toBe("person");
+    expect(item.style).toBe("xianxia");
+  });
+
+  it("id 重复只保留第一条；createdAt 非有限数回落成数字", () => {
+    const dup = [
+      base,
+      { ...base, name: "青梧二号" },
+      { ...base, id: "f2", createdAt: Number.NaN },
+    ];
+    const list = sanitizeNameFavorites(dup);
+    expect(list).toHaveLength(2);
+    expect(list[0].name).toBe("青梧");
+    expect(typeof list[1].createdAt).toBe("number");
+    expect(Number.isFinite(list[1].createdAt)).toBe(true);
+  });
+
+  it("数组里的 null / 字符串 / 嵌套数组被跳过", () => {
+    expect(sanitizeNameFavorites([null, "x", [], base])).toEqual([base]);
+  });
+
+  it("name 两端空白被修剪", () => {
+    const [item] = sanitizeNameFavorites([{ ...base, name: "  青梧  " }]);
+    expect(item.name).toBe("青梧");
   });
 });

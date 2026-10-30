@@ -1,0 +1,242 @@
+@use "../../../../shared/styles/widget" as widget;
+
+// 画布容器 + 工具栏 + React Flow 皮肤（全部吃主题变量，四套主题零色斑）
+.rel-canvas {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+  background: var(--app-surface);
+}
+
+.rel-canvas__toolbar {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  pointer-events: none;
+
+  > * {
+    pointer-events: auto;
+  }
+
+  // `hidden` 的 UA 规则（display:none）压不过本块的 display:flex，
+  // 必须显式声明 —— 导出期间整块从渲染树里摘掉（见组件里的注释）
+  &[hidden] {
+    display: none;
+  }
+}
+
+.rel-canvas__stats {
+  height: 28px;
+  padding: 0 11px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 8px;
+  border: 1px solid var(--app-border);
+  background: var(--app-surface-elevated);
+  box-shadow: var(--app-shadow-card);
+  font-size: 12px;
+  color: var(--app-text-secondary);
+
+  b {
+    color: var(--app-text-strong);
+    font-weight: 600;
+  }
+}
+
+.rel-canvas__sep {
+  color: var(--app-text-disabled);
+  margin: 0 2px;
+}
+
+.rel-canvas__pool-hint {
+  color: var(--app-text-muted);
+}
+
+.rel-canvas__saving {
+  margin-left: 6px;
+  color: var(--app-text-muted);
+  font-size: 12px;
+}
+
+// ── 窄窗适配（窗口可缩窄到 ~720px）──
+// 工具栏最容易被长统计文案顶破：先隐掉「另有 N 个要素在左侧池子里」这句可省略
+// 的提示，再让统计条可收缩截断、动作区不被挤扁。动作区（缩放/适应/导出）本就短，
+// 无需收纳成下拉。
+@media (max-width: 960px) {
+  .rel-canvas__pool-hint {
+    display: none;
+  }
+
+  .rel-canvas__stats {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .rel-canvas__actions {
+    flex: none;
+  }
+}
+
+// 密度档提示条（>400 个要素时常驻）。刻意放在画布左上角工具栏下方而不是
+// 浮在正中：它描述的是「整张图被简化了」，不是一条需要立刻处理的错误。
+.rel-canvas__dense {
+  position: absolute;
+  top: 48px;
+  left: 12px;
+  z-index: 4;
+  margin: 0;
+  padding: 3px 9px;
+  border-radius: 7px;
+  border: 1px solid var(--app-border);
+  background: var(--app-surface-elevated);
+  box-shadow: var(--app-shadow-card);
+  font-size: 12px;
+  line-height: 17px;
+  color: var(--app-text-muted);
+  pointer-events: none;
+}
+
+.rel-canvas__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rel-canvas__btn.ant-btn {
+  @include widget.ant-button-reset;
+
+  height: 28px;
+  min-width: 28px;
+  padding: 0 8px;
+  border-radius: 8px;
+  border: 1px solid var(--app-border);
+  background: var(--app-surface-elevated);
+  color: var(--app-text-secondary);
+  font-size: 12px;
+  box-shadow: var(--app-shadow-card);
+  --ant-button-default-bg: var(--app-surface-elevated);
+  --ant-button-default-border-color: var(--app-border);
+  --ant-button-default-color: var(--app-text-secondary);
+  --ant-button-default-hover-bg: var(--app-surface-hover);
+  --ant-button-default-hover-border-color: var(--app-border-strong);
+  --ant-button-default-hover-color: var(--app-text);
+}
+
+.rel-canvas__fit.ant-btn {
+  padding: 0 11px;
+  font-size: 12px;
+  gap: 5px;
+}
+
+.rel-canvas__export.ant-btn {
+  padding: 0 9px;
+  font-size: 12px;
+  gap: 5px;
+}
+
+.rel-canvas__export-caret {
+  font-size: 12px;
+  color: var(--app-text-muted);
+}
+
+// ── 导出抑制（S5）：这些是「操作辅助」，不是「图的一部分」 ──
+// 用 visibility 而不是 display：前者不触发 reflow，截图期间图面一个像素都不挪。
+// 清单在 utils/export-png.ts 的 EXPORT_HIDE_SELECTORS，export-png.test.ts 双向校验
+// 「清单里的每一条都在这里有落点」，改清单必须同步改这里。
+.rel-canvas.is-exporting {
+  .rel-canvas__toolbar,
+  .rel-canvas__dense,
+  .react-flow__controls,
+  .react-flow__attribution,
+  .rel-node__handle,
+  .react-flow__selection {
+    visibility: hidden;
+  }
+
+  // 选中态压回常态：外发光 / 加粗边是「正在操作」的提示，不该留在导出的图里。
+  // 节点外发光靠 box-shadow，边选中态在这里清 outline / box-shadow。
+  // 边的 stroke / 线宽 / 箭头色在导出期间已在 flowEdges 里直接降级（BaseEdge 的
+  // 内联样式优先级高于样式表，CSS 压不动 —— 见 RelationCanvas/index.tsx），
+  // 这里不再重复写 stroke，避免留下一条永远不生效的死规则。
+  .react-flow__node.selected,
+  .react-flow__edge.selected {
+    outline: none;
+    box-shadow: none;
+  }
+}
+
+// antd 浮层（Dropdown 菜单 / Tooltip / Popover）挂在 body 的 portal 里，**不在**
+// .rel-canvas 子树中 —— 画布级抑制盖不到它们。而用户点的正是工具栏上那颗「导出」，
+// 菜单就悬在图面右上角，退场动画没走完就会进图。故导出期间由 body 上的同名类兜住；
+// hook 的 finally 会摘掉，正常交互不受影响。
+body.is-exporting {
+  .ant-dropdown,
+  .ant-dropdown-menu,
+  .ant-tooltip,
+  .ant-popover {
+    visibility: hidden;
+  }
+}
+
+.rel-canvas__empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  pointer-events: none;
+  color: var(--app-text-secondary);
+
+  p {
+    margin: 0;
+    font-size: 14px;
+    color: var(--app-text-strong);
+  }
+
+  span {
+    font-size: 12px;
+    color: var(--app-text-muted);
+  }
+}
+
+// ── React Flow 皮肤 ──
+.react-flow__attribution {
+  background: transparent;
+  color: var(--app-text-disabled);
+  font-size: 12px;
+}
+
+.react-flow__controls {
+  box-shadow: var(--app-shadow-card);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.react-flow__controls-button {
+  background: var(--app-surface-elevated);
+  border-bottom: 1px solid var(--app-border);
+  color: var(--app-text-secondary);
+  fill: currentColor;
+
+  &:hover {
+    background: var(--app-surface-hover);
+  }
+
+  svg {
+    fill: currentColor;
+  }
+}
+
+.react-flow__edge-text {
+  font-weight: 500;
+}

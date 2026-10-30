@@ -1,0 +1,251 @@
+@use "../../../../../../shared/styles/widget" as widget;
+
+/* 敏感词检测面板（工具箱二级面板）
+
+   按钮类一律由 antd `Button` 承载：外观只通过组件级 CSS 变量配置，
+   不写 `:hover` / `:disabled` 属性规则 —— antd 的状态选择器特异性更高，
+   自写规则压不过它们（AGENTS §6.1.2）。
+   色值全部走 `var(--app-*)`，换肤自动跟随（§6.1.1）。 */
+
+/* 挂在面板容器下而不是裸 `.nv-sm`：这里的 `display: flex` 一旦泄漏到
+   全局，会作用到任何同名节点上（编辑器里的敏感词标记一度就被它撑成
+   块级元素，段落被顶断）。作用域收窄后，面板样式不可能再跑到正文去。 */
+.nv-panel .nv-sm {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: hidden;
+
+  &__label {
+    font-size: 12px;
+    color: var(--app-text-secondary);
+  }
+
+  &__hint {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--app-text-muted);
+
+    &--warn {
+      color: var(--app-warning);
+    }
+  }
+
+  &__actions {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  &__summary {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  /* 范围切换是附属控件，不该和「检测结果 / 词库」「检测机制」争同一份宽度：
+     那两处整行等分（NvSegmented 默认 block），这里用 `block={false}` 收成
+     内容宽、靠右。宽度由组件自己决定，父级只负责对齐。 */
+  &__scope {
+    flex: none;
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  &__stat {
+    min-width: 0;
+    font-size: 12px;
+    color: var(--app-text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* ── 结果区滚动容器 ───────────────────────────────────────────── */
+  &__list {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 2px;
+    scrollbar-width: thin;
+
+    &::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    &::-webkit-scrollbar-thumb {
+      border: 2px solid transparent;
+      border-radius: 8px;
+      background: var(--app-scrollbar);
+      background-clip: content-box;
+    }
+  }
+
+  /* ── 扫描动作 ─────────────────────────────────────────────────── */
+  /* 外观交给通用 .nv-ghost（与要素详情的底部动作同一套）；等宽伸展纯属布局，
+     走容器子选择器，不额外挂一个只有 flex 的类名——那样会多出一个
+     「有 .ant-btn 规则但没有清零点」的类，触发 novel-ui-kit 守卫 */
+  /* 「导入词库」等宽伸展；格式说明是纯图标按钮（`.nv-ghost--icon`），
+     不能被拉成一条。窄化内边距在通用原语里做（panel-primitives.scss），
+     这里只管布局，不给它单开一个 `.ant-btn` 规则 —— 那会与 `.nv-ghost`
+     同权重、胜负取决于打包顺序。 */
+  &__actions > .ant-btn:not(.nv-ghost--icon) {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__icon-btn.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 22px;
+    --ant-button-padding-inline: 4px;
+    --ant-button-content-font-size: 12px;
+    --ant-border-radius: var(--app-radius-chip);
+    --ant-button-default-bg: transparent;
+    --ant-button-default-color: var(--app-text-secondary);
+    --ant-button-default-hover-bg: var(--app-surface-hover);
+    --ant-button-default-hover-color: var(--app-text);
+    --ant-button-default-active-bg: var(--app-surface-active);
+    --ant-button-default-active-color: var(--app-text);
+  }
+
+  /* ── 命中结果行 ───────────────────────────────────────────────── */
+  &-hit.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-border-radius: var(--app-radius-item);
+    --ant-line-width: 1px;
+    --ant-button-default-bg: var(--app-surface);
+    --ant-button-default-color: var(--app-text);
+    --ant-button-default-border-color: var(--app-border);
+    --ant-button-default-hover-bg: var(--app-surface);
+    --ant-button-default-hover-color: var(--app-text);
+    --ant-button-default-hover-border-color: var(--app-primary);
+    --ant-button-default-active-bg: var(--app-surface);
+    --ant-button-default-active-color: var(--app-text);
+    --ant-button-default-active-border-color: var(--app-primary);
+    display: flex;
+    flex-direction: column;
+    /* antd 的 .ant-btn 是「居中排版」的按钮：不清掉 align-items 的话
+       词条 / 章节 / 片段三行都会各自按内容宽度居中，整张卡看起来像标题卡。
+       命中卡是列表项，必须整行铺满、左对齐（text-align 只治行内文本，
+       治不了 flex 子项的交叉轴对齐） */
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 3px;
+    width: 100%;
+    padding: 8px 10px;
+    text-align: left;
+    white-space: normal;
+  }
+
+  &-hit__head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  &-hit__word {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--app-error);
+  }
+
+  &-hit__count {
+    flex: none;
+    font-size: 12px;
+    color: var(--app-text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &-hit__chapter {
+    font-size: 12px;
+    color: var(--app-text-secondary);
+  }
+
+  &-hit__snippet {
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--app-text-muted);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* ── 词库行 ───────────────────────────────────────────────────── */
+  &-word {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 8px;
+    border-radius: var(--app-radius-item);
+    background: var(--app-surface-alt);
+    min-height: 30px;
+  }
+
+  &-word__term {
+    flex: 1;
+    min-width: 0;
+    font-size: 14px;
+    color: var(--app-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &-word__origin {
+    flex: none;
+    font-size: 12px;
+    color: var(--app-text-muted);
+
+    &.is-user {
+      color: var(--app-primary);
+    }
+  }
+
+  &-word__ops {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+
+  /* ── 已屏蔽词条 ───────────────────────────────────────────────── */
+  &__muted {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-top: 8px;
+    border-top: 1px dashed var(--app-border);
+  }
+
+  &__muted-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  &__muted-chip.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 22px;
+    --ant-button-padding-inline: 8px;
+    --ant-button-content-font-size: 12px;
+    --ant-border-radius: var(--app-radius-pill);
+    --ant-button-default-bg: var(--app-surface-hover);
+    --ant-button-default-color: var(--app-text-secondary);
+    --ant-button-default-hover-bg: var(--app-surface-active);
+    --ant-button-default-hover-color: var(--app-text);
+  }
+}

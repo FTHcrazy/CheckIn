@@ -17,6 +17,25 @@
   -webkit-app-region: drag;
 }
 
+// 左侧导航插槽（如 BaseWindow 子页面的「返回上一页」）：
+// 里面放的是可点击控件，必须排除拖动区——否则按下会被系统当成拖动窗口，
+// 连 `:hover` 都不会触发（原因见文件末尾「拖动带的浮层豁免」）。
+.window-header__leading {
+  display: flex;
+  align-items: center;
+  // 8px 是「返回 │ 页面名」三段之间的呼吸量：4px 时竖线会贴着文字，
+  // 看起来像标点而不是分隔
+  gap: 8px;
+  padding-left: 6px;
+  -webkit-app-region: no-drag;
+
+  // 与左侧标题同屏时收窄间距：标题自带的 12px 是「贴着窗口边缘」的量，
+  // 前面已经有导航插槽时再留 12px 会显得两块互不相干。
+  + .window-header__title {
+    padding-left: 6px;
+  }
+}
+
 .window-header__title {
   display: flex;
   align-items: center;
@@ -43,11 +62,13 @@
   margin-left: 8px;
 }
 
-// 控制按钮左侧的动作插槽（如小说版主窗的「设置」入口）：
+// 控制按钮左侧的动作插槽（如 base 主窗的「地图 / 设置」入口）：
 // 内部是可点击按钮，必须排除拖动区
 .window-header__actions {
   display: flex;
   align-items: center;
+  // 多个动作入口并排时不至于粘在一起（单入口时 gap 不产生任何间距）
+  gap: 4px;
   margin-left: auto;
   margin-right: 4px;
   -webkit-app-region: no-drag;
@@ -104,4 +125,32 @@
     background: #c50f1f;
     color: #fff;
   }
+}
+
+/**
+ * 拖动带的浮层豁免（缺陷回归：弹窗右上角的 × 点不动）。
+ *
+ * 上面那条 `-webkit-app-region: drag` 不是「优先级较低的命中目标」，而是
+ * **整块矩形在系统命中测试阶段就被判成标题栏**（Windows 走
+ * `WM_NCHITTEST → HTCAPTION`）：落在带内的像素收不到任何鼠标消息 ——
+ * 连 `:hover` 都不会触发，click 更没有。关键是**与 z-index / 绘制层级无关**，
+ * 把浮层画在它「上面」照样点不动（这也是 Electron 官方文档特别提示的一点）。
+ *
+ * antd 的浮层一律 portal 到 `document.body`，落在 `.window-shell` 之外 ——
+ * 所以它们不在上面 `.window-header__actions` / `__controls` 那两处 no-drag 的
+ * 覆盖范围内。后果随「弹窗有多高」出现：居中布局下 × 的纵坐标是
+ * `(窗口高 − 弹窗高) / 2 + 17`，弹窗越高 × 越靠上，掉进这 34px 之后的表现
+ * 就正好是「看得见、能拖动窗口、但点不出反应」，而点遮罩与 Esc 照常
+ * （那两条不走指针，所以不露馅）。
+ *
+ * 这里按「浮层自己的盒子」扣除：弹窗本体与各类下拉浮层整体可点，拖动带其余
+ * 部分（含标题栏空白）照旧能拖窗口。**新增浮层记得补进这一组。**
+ */
+.ant-modal-container,
+.ant-modal-render,
+.ant-dropdown,
+.ant-select-dropdown,
+.ant-picker-dropdown,
+.ant-popover {
+  -webkit-app-region: no-drag;
 }

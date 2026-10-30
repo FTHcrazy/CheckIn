@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addChapter as addChapterRemote,
-  addLevel as addLevelRemote,
-  addLevelSystem as addLevelSystemRemote,
   addLink as addLinkRemote,
+  addSettingCategory as addSettingCategoryRemote,
+  addSettingLevel as addSettingLevelRemote,
+  batchAddSettingLevels as batchAddSettingLevelsRemote,
   addVolume as addVolumeRemote,
   addWork as addWorkRemote,
   createNovelId,
@@ -11,36 +12,62 @@ import {
   fetchLastPosition,
   fetchNameFavorites,
   fetchNovelBundle,
-  removeLevel as removeLevelRemote,
-  removeLevelSystem as removeLevelSystemRemote,
+  fetchSettingMirror,
+  mergeSettingLevel as mergeSettingLevelRemote,
+  openEditorSession,
+  patchSettingCategory as patchSettingCategoryRemote,
+  patchSettingLevel as patchSettingLevelRemote,
   removeLink as removeLinkRemote,
   removeNote as removeNoteRemote,
   removeOutlineEntry as removeOutlineEntryRemote,
-  removeWork as removeWorkRemote,
+  removeSettingCategory as removeSettingCategoryRemote,
+  removeSettingLevel as removeSettingLevelRemote,
   removeChapter as removeChapterRemote,
+  trashWork as trashWorkRemote,
+  removeVolume as removeVolumeRemote,
   renameChapter as renameChapterRemote,
-  renameLevel as renameLevelRemote,
-  renameLevelSystem as renameLevelSystemRemote,
   renameVolume as renameVolumeRemote,
   renameWork as renameWorkRemote,
   resetTemplateBook,
   saveChapterContent,
   saveChapterOrder,
   saveChapterOutline,
+  saveChapterSummary,
   saveEntity,
-  saveLevelOrder,
   saveNameFavorites,
   saveNote as saveNoteRemote,
   saveOutlineEntry,
+  saveSettingCategoryOrder as saveSettingCategoryOrderRemote,
+  saveSettingLevelOrder as saveSettingLevelOrderRemote,
   saveVolumeOrder,
+  setWorkGenre as setWorkGenreRemote,
+  saveEntitiesBatch,
   searchAcrossBook,
   setChapterStatus,
+  splitSettingLevel as splitSettingLevelRemote,
 } from "../services/novel-service";
-import { LEVEL_RELATION, UNNAMED_VOLUME } from "../novel-config";
+import {
+  applyMerge,
+  applySplit,
+  insertLevel,
+  moveLevel,
+  parseRealmNoteSub,
+  previewSplit,
+  removeLevels,
+} from "../utils/setting-utils";
+import {
+  DEFAULT_CATEGORY_COLOR,
+  DEFAULT_SUB_LEVELS,
+  DEFAULT_SUB_PATTERN,
+  LEVEL_RELATION,
+  UNNAMED_VOLUME,
+} from "../novel-config";
 import {
   buildChapterGroups,
-  buildChapterNumbers,
+  buildChapterNumbersFromGroups,
+  buildSortOrder,
   patchChapterOutlineNote,
+  patchChapterSummary,
   patchNote,
   patchOutlineEntry,
   parseJsonOrNull,
@@ -54,13 +81,13 @@ import {
   type RestorePosition,
 } from "../novel-utils";
 import type {
+  CarryDirection,
   EntityRelationView,
   EntityType,
   ForeshadowPatch,
-  LevelRung,
-  LevelSystem,
   NameFavorite,
   NamingKind,
+  NamingSource,
   NameStyle,
   NotePatch,
   NovelBundle,
@@ -74,17 +101,34 @@ import type {
   OutlineEntry,
   OutlineEntryDraft,
   SearchHit,
+  SettingCategory,
+  SettingCategoryKind,
+  SettingLevel,
 } from "../types";
+import type {
+  NovelSettingCategoryPatch,
+  NovelSettingLevelPatch,
+} from "@/shared/types/electron";
 import {
+  notifyNameChanged,
   notifyRealmLinkChanged,
+  PACK_NAME_EVENT,
   PACK_REALM_EVENT,
   readEventDetail,
+  type PackNameEventDetail,
   type PackRealmEventDetail,
-} from "../components/CharacterPack/pack-config";
+} from "@/shared/components/CharacterPack/pack-config";
+import {
+  NOVEL_NOTE_EVENT,
+  type NovelNoteChangedDetail,
+} from "@/shared/novel/note-events";
+import { subscribeDualChannel } from "@/shared/novel/dual-channel";
 
 /** 选区标记的结果：新建要素 / 关联为别名 / 已存在 */
-export type MarkResult =
-  | { entity: NovelEntity; mode: "created" | "linked" | "existing" };
+export type MarkResult = {
+  entity: NovelEntity;
+  mode: "created" | "linked" | "existing";
+};
 
 /**
  * 小说编辑器数据层 Hook
@@ -101,9 +145,19 @@ export function useNovelData() {
   const [activeChapterId, setActiveChapterId] = useState<string | null>(null);
   const [snapshots, setSnapshots] = useState<NovelSnapshot[]>([]);
   /** 上次续写位置（R6）：仅启动恢复用，消费一次后清空 */
-  const [lastPosition, setLastPosition] = useState<RestorePosition | null>(null);
+  const [lastPosition, setLastPosition] = useState<RestorePosition | null>(
+    null,
+  );
   /** 起名工具收藏夹（R18 ④）：跨作品单键存储，UI 按 workId 过滤 */
   const [nameFavorites, setNameFavorites] = useState<NameFavorite[]>([]);
+  /**
+   * 已落库的收藏夹快照。
+   *
+   * 收藏夹的落库由 effect 以 `nameFavorites` 为唯一触发（见下方「收藏夹落库」），
+   * 这个 ref 用来区分「刚从库里读出来的」和「用户真的改过的」——
+   * 装载那一次与库内必然一致，不该再回写一遍。
+   */
+  const favoritesSavedRef = useRef<NameFavorite[] | null>(null);
   /** 装载失败提示：异常时编辑器不能停在永久空态，要给用户可重试的错误态 */
   const [loadError, setLoadError] = useState("");
   /**
@@ -111,15 +165,39 @@ export function useNovelData() {
    * 旧响应后到会把新 bundle 覆盖回去 —— 只认最后一次发起的请求。
    */
   const loadSeqRef = useRef(0);
+  /**
+   * 装载在途标记（灵感补丁的闸门，与 loadSeqRef 同一范式）：装载进行中
+   * bundle 马上要被整体替换，此刻打补丁纯属浪费 —— 装载响应本身就来自
+   * 数据库，书架已落库的变更天然随它回来。
+   */
+  const loadInFlightRef = useRef(false);
+  /**
+   * 当前作品 id 的最新值（供 `novel-links-changed` 的 `[]` 依赖监听读取）。
+   *
+   * 为什么必须有它：图窗口可以停在 A 书，而主窗口已经切到 B 书。此时 A 的
+   * delta 若照单全收，就会把 A 的关系并进 B 的 `bundle.links`（内存串书；
+   * `entityLinkCount` 靠要素 id 过滤才没露出来）。
+   */
+  const activeWorkIdRef = useRef(activeWorkId);
+  useEffect(() => {
+    activeWorkIdRef.current = activeWorkId;
+  });
 
   const load = useCallback(async (): Promise<void> => {
     const seq = (loadSeqRef.current += 1);
+    loadInFlightRef.current = true;
     setLoading(true);
     try {
-      const next = await fetchNovelBundle();
+      // 三个请求互不依赖，串行会把首屏拖成三倍往返（且 bundle 要等位置记忆
+      // 那一次 IPC 才落地，注释里写的「并行加载」才名副其实）
+      const [next, positionJson, favoritesJson] = await Promise.all([
+        fetchNovelBundle(),
+        fetchLastPosition(),
+        fetchNameFavorites(),
+      ]);
       if (seq !== loadSeqRef.current) return;
       const saved = sanitizeRestorePosition(
-        parseJsonOrNull(await fetchLastPosition()),
+        parseJsonOrNull(positionJson),
         next.works,
         next.chapters,
       );
@@ -131,22 +209,33 @@ export function useNovelData() {
         setActiveChapterId((current) => current ?? saved.chapterId);
         setLastPosition(saved);
       } else {
-        setActiveChapterId((current) => current ?? next.chapters[0]?.id ?? null);
+        setActiveChapterId(
+          (current) => current ?? next.chapters[0]?.id ?? null,
+        );
       }
       // 收藏夹在库里是 JSON 字符串（config 整读整写），必须先 parse 再交给
       // sanitize —— 少了 parseJsonOrNull 时 Array.isArray(字符串) 恒为 false，
       // 表现为「每次启动收藏夹都是空的」，且首次收藏会用空数组覆盖历史数据
-      const favoritesJson = await fetchNameFavorites();
-      if (seq !== loadSeqRef.current) return;
-      setNameFavorites(sanitizeNameFavorites(parseJsonOrNull(favoritesJson)));
+      const loadedFavorites = sanitizeNameFavorites(
+        parseJsonOrNull(favoritesJson),
+      );
+      setNameFavorites(loadedFavorites);
+      // 与库内一致：下方落库 effect 因此不会把刚读出来的原样再写一遍
+      favoritesSavedRef.current = loadedFavorites;
       setLoadError("");
+      // 崩溃恢复标记与 editor_open 埋点都在这里开启：本 Hook 只有编辑器在用，
+      // 书架 / 行囊走的是各自的装载通道，不该被算成「编辑器会话进行中」
+      void openEditorSession();
     } catch {
       // 没有 catch 的话 rejection 会一路冒到 `void load()` 成为未捕获错误，
       // bundle 保持 null → 编辑器永远空态、也没有任何重试入口
       if (seq !== loadSeqRef.current) return;
       setLoadError("小说数据装载失败，请重试");
     } finally {
-      if (seq === loadSeqRef.current) setLoading(false);
+      if (seq === loadSeqRef.current) {
+        loadInFlightRef.current = false;
+        setLoading(false);
+      }
     }
   }, []);
 
@@ -198,18 +287,111 @@ export function useNovelData() {
       if (detail.workId && detail.workId !== activeWorkId) return;
       applyRealmLinkChange(detail.link);
     };
-    window.addEventListener(PACK_REALM_EVENT, handler as EventListener);
-
-    const api = window.electronAPI?.windowAPI;
-    api?.on(PACK_REALM_EVENT, handler);
-    return () => {
-      window.removeEventListener(PACK_REALM_EVENT, handler as EventListener);
-      api?.off(PACK_REALM_EVENT, handler);
-    };
+    return subscribeDualChannel(PACK_REALM_EVENT, handler);
   }, [applyRealmLinkChange, activeWorkId]);
 
+  /**
+   * 行囊（或另一个窗口）改了主角名：把本地 bundle 里那个要素的名字同步过来。
+   *
+   * 为什么需要：名字的单一事实源是实体，但本地的 `bundle.entities` 是**一份内存
+   * 快照** —— 行囊窗口改的是库里的行，这个窗口的内存副本不会自己变。
+   * 不跟进的话，右侧要素栏会一直显示旧名（行囊头部已是新名，同屏两个名字）。
+   *
+   * 定位靠事件里的 `entityId`，不靠名字猜：同名要素是真实存在的，
+   * 「按旧名找」会改错人。
+   *
+   * `origin === "panel"` 的是本窗口自己发的（`updateEntity` 里），
+   * 内存已经改过，跳过避免重复 setState。
+   */
+  useEffect(() => {
+    const handler = (...args: unknown[]) => {
+      const detail = readEventDetail<PackNameEventDetail & { origin?: string }>(
+        args,
+      );
+      if (!detail || typeof detail !== "object") return;
+      if (detail.workId && detail.workId !== activeWorkId) return;
+      if (detail.origin === "panel") return;
+      const displayName = detail.displayName ?? "";
+      const entityId = detail.entityId ?? "";
+      if (!displayName || !entityId) return;
+      setBundle((current) => {
+        if (!current) return current;
+        const index = current.entities.findIndex(
+          (entity) => entity.id === entityId,
+        );
+        if (index < 0) return current;
+        const target = current.entities[index];
+        if (target.name === displayName) return current;
+        const entities = [...current.entities];
+        entities[index] = { ...target, name: displayName };
+        return { ...current, entities };
+      });
+    };
+    return subscribeDualChannel(PACK_NAME_EVENT, handler);
+  }, [activeWorkId]);
+
+  /**
+   * 书架（或别的窗口）改了灵感 → 就地 patch `bundle.notes`（P2-4）。
+   *
+   * 书架与编辑器同窗常驻、各自持一份内存快照，不跟进的话灵感面板会一直
+   * 显示旧内容。补丁按 id 定位：已有该行 → 整行替换（书架发的是改完的完整
+   * 行，含 content / pinned / workId / foreshadowId）；没有 → 插到最前
+   * （与 addNote 的落点一致）。不重载 —— 整体重载会打断正在编辑的正文。
+   *
+   * 装载在途时不打：bundle 即将被整体替换，装载响应来自数据库，
+   * 书架已落库的变更天然随它回来。
+   */
+  useEffect(() => {
+    const handler = (...args: unknown[]) => {
+      if (loadInFlightRef.current) return;
+      const detail = readEventDetail<NovelNoteChangedDetail>(args);
+      if (!detail || typeof detail !== "object") return;
+      setBundle((current) => {
+        if (!current) return current;
+        if (detail.action === "remove") {
+          const noteId = detail.noteId ?? "";
+          if (!noteId || !current.notes.some((note) => note.id === noteId)) {
+            return current;
+          }
+          return {
+            ...current,
+            notes: current.notes.filter((note) => note.id !== noteId),
+          };
+        }
+        const note = detail.note;
+        if (!note || !note.id) return current;
+        if (current.notes.some((existing) => existing.id === note.id)) {
+          // 整行替换前先比一次内容，相同就返回原引用，避免无谓的下游重算
+          const unchanged = current.notes.find(
+            (existing) => existing.id === note.id,
+          );
+          if (
+            unchanged &&
+            unchanged.content === note.content &&
+            unchanged.pinned === note.pinned &&
+            unchanged.workId === note.workId &&
+            unchanged.foreshadowId === note.foreshadowId
+          ) {
+            return current;
+          }
+          return {
+            ...current,
+            notes: current.notes.map((existing) =>
+              existing.id === note.id ? note : existing,
+            ),
+          };
+        }
+        return { ...current, notes: [note, ...current.notes] };
+      });
+    };
+    return subscribeDualChannel(NOVEL_NOTE_EVENT, handler);
+  }, []);
+
   /** 光标 / 滚动恢复完成后由编辑器回调清空，避免切章时误用旧位置 */
-  const consumeLastPosition = useCallback((): void => setLastPosition(null), []);
+  const consumeLastPosition = useCallback(
+    (): void => setLastPosition(null),
+    [],
+  );
 
   // ── 派生切片 ──────────────────────────────────────────────────────
   // 依赖一律写成「这一张表的引用」而不是整个 bundle。
@@ -222,34 +404,248 @@ export function useNovelData() {
     [allEntities, activeWorkId],
   );
   const links = useMemo(() => bundle?.links ?? [], [bundle?.links]);
-  const levelSystems = useMemo(
-    () => (bundle?.levelSystems ?? []).filter((item) => item.workId === activeWorkId),
-    [bundle?.levelSystems, activeWorkId],
+  /**
+   * 本书「要素 ↔ 要素」的关联条数（不含境界绑定 `to_type='level'`）。
+   * 面板头的「N 个要素 · M 条关联」用它：关系图窗口写回后，M 随 links 自动 +1
+   * （W-15 的第三处）。跨书边不计数 —— 与关系图的「数据不出本书」同口径。
+   */
+  const entityLinkCount = useMemo(() => {
+    if (entities.length === 0) return 0;
+    const ids = new Set(entities.map((entity) => entity.id));
+    return links.filter(
+      (link) => link.toType !== "level" && ids.has(link.fromId) && ids.has(link.toId),
+    ).length;
+  }, [entities, links]);
+  /** 小说设定（按作品隔离）；境界体系是其中 kind='realm' 的那一个 */
+  const settings = useMemo(
+    () =>
+      (bundle?.settings ?? []).filter((item) => item.workId === activeWorkId),
+    [bundle?.settings, activeWorkId],
   );
-  /** 等级项索引（R25）：关联视图与当前境界绑定把 novel_levels.id 翻译成可读名 */
+
+  // ── 全局库变更 → 就地刷新本书的引用镜像（1.45.1，H7 / REQ-041 ③） ──────
+  //
+  // 主进程在每次全局写成功后已同步 `novel_setting_*` 的镜像行（syncReferences），
+  // **数据是对的**；但本窗口的 `bundle` 是一份内存快照，不跟进就仍显示旧值 ——
+  // 用户必须切作品或重开窗口才看得到，1.45.0 CHANGELOG 写的「即时跟随」因此不成立。
+  //
+  // 判据：本书**有引用项**（`sourceGlobalId` 非空）才需要跟随。书内自建分类不受
+  // 全局写影响，没有引用项时整条链路纯属空转（还要白跑一次 IPC）。
+  // 不判广播负载里的 `kinds`：该事件只在「全局库写入」与「本书建立 / 上架引用」
+  // 之后发出，而 `kinds` 只区分改的是分类还是等级，不改变「要不要刷新」的结论。
+  //
+  // 订阅只挂一次：preload 的 `on/off` 按 handler 引用配对，把 settings 放进
+  // effect 依赖会让 handler 每次渲染换引用 → 旧监听摘不掉，所以判据走 ref。
+  const settingsRef = useRef<SettingCategory[]>([]);
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
+
+  const refreshSettingMirror = useCallback(async (): Promise<void> => {
+    let mirror: SettingCategory[];
+    try {
+      mirror = await fetchSettingMirror();
+    } catch {
+      // 刷新失败保留旧值：下一次广播 / 下次装载会再试。这里不弹错 ——
+      // 用户什么都没操作，弹「设定刷新失败」只会被当成新 bug 报上来。
+      return;
+    }
+    setBundle((current) => {
+      if (!current) return current;
+      const byId = new Map(mirror.map((category) => [category.id, category]));
+      return {
+        ...current,
+        // ⚠️ 只换 `settings` 一张表，且只换「引用态」行：
+        // - 只换 settings（chapters / links / 草稿一律不动）保住的是「本章 chapter
+        //   **对象引用不变**」这条不变量：`NovelPage` 把它作为 activeChapter 传给
+        //   **没有 key** 的 EditorPane，而 EditorPane 取的是 `draft ?? chapter?.content`
+        //   —— 引用一变就可能重挂载 / 重新灌入，正在编辑的正文基线随之被顶掉。
+        //   整体 `load()` 会把 chapters 的每个对象都换掉，正是这样踩的雷。
+        // - 只换引用行：引用项在书侧是**只读**的（10 个写通道都被主进程拒），
+        //   不存在会被这次替换覆盖掉的本地乐观编辑；书内自建分类的编辑照旧。
+        // 判据看「当前行是不是引用」而不是「新行是不是引用」：全局项被删时镜像
+        // 会被就地固化成本书副本（`sourceGlobalId` → null），那一行同样要跟。
+        settings: current.settings.map((category) => {
+          const incoming = byId.get(category.id);
+          if (!incoming) return category;
+          if (!category.sourceGlobalId && !incoming.sourceGlobalId) return category;
+          return incoming;
+        }),
+      };
+    });
+  }, []);
+
+  /**
+   * 关系图窗口写回（R27 / S3 / W-15）：`novel-links-changed` 带**增量**，
+   * 按 id 并进本地 links，**不重载 bundle**。
+   *
+   * 为什么不 `load()`：装载会把 chapters / entities / settings 全部换成新对象，
+   * 编辑器正在编辑的正文基线随之被顶掉（见上面 global-setting 那条的长注释）；
+   * 而这次变化只涉及 links 一张表，恰好是「按 id 合并」最安全的场景。
+   * 三处派生（EntityCard 关联数 / EntityDetail 关系列表 / 面板 meta）都从
+   * `links` 派生，合并即自动更新。
+   */
+  useEffect(() => {
+    const api = window.electronAPI?.windowAPI;
+    if (!api) return undefined;
+    const handler = (...args: unknown[]): void => {
+      const payload = args[0] as
+        | {
+            workId?: unknown;
+            created?: unknown;
+            notes?: unknown;
+            removed?: unknown;
+            relations?: unknown;
+          }
+        | undefined;
+      if (!payload || typeof payload !== "object") return;
+      // 缺省 workId（境界绑定反查不到作品）＝按 id 合并；有值就必须是本作品 ——
+      // 图窗口停在 A 书、主窗口已切到 B 书时，A 的增量不能并进 B
+      const deltaWorkId = typeof payload.workId === "string" ? payload.workId : "";
+      if (deltaWorkId && activeWorkIdRef.current && deltaWorkId !== activeWorkIdRef.current) {
+        return;
+      }
+      const created = Array.isArray(payload.created)
+        ? (payload.created as NovelLink[])
+        : [];
+      const notes = Array.isArray(payload.notes)
+        ? (payload.notes as Array<{ id: string; note: string | null }>)
+        : [];
+      // S4 反向同步：图窗口不删关系，但契约要对称 —— 将来图侧支持「解除」时
+      // 主窗口不该因为少认一个字段而卡在旧数据上
+      const removed = Array.isArray(payload.removed) ? (payload.removed as string[]) : [];
+      const relations = Array.isArray(payload.relations)
+        ? (payload.relations as Array<{ id: string; relation: string }>)
+        : [];
+      if (
+        created.length === 0 &&
+        notes.length === 0 &&
+        removed.length === 0 &&
+        relations.length === 0
+      ) {
+        return;
+      }
+
+      setBundle((current) => {
+        if (!current) return current;
+        let links = current.links;
+        let changed = false;
+
+        if (removed.length > 0) {
+          const gone = new Set(removed);
+          const kept = links.filter((link) => !gone.has(link.id));
+          if (kept.length !== links.length) {
+            links = kept;
+            changed = true;
+          }
+        }
+        if (created.length > 0) {
+          const known = new Set(links.map((link) => link.id));
+          const fresh = created.filter((link) => link.id && !known.has(link.id));
+          if (fresh.length > 0) {
+            links = [...fresh, ...links];
+            changed = true;
+          }
+        }
+        if (relations.length > 0) {
+          const byId = new Map(relations.map((item) => [item.id, item.relation]));
+          let touched = false;
+          links = links.map((link) => {
+            const next = byId.get(link.id);
+            if (next === undefined || next === link.relation) return link;
+            touched = true;
+            return { ...link, relation: next };
+          });
+          if (touched) changed = true;
+        }
+        if (notes.length > 0) {
+          const byId = new Map(notes.map((item) => [item.id, item.note]));
+          let touched = false;
+          links = links.map((link) => {
+            if (!byId.has(link.id)) return link;
+            const note = byId.get(link.id) ?? undefined;
+            if ((link.note ?? undefined) === note) return link;
+            touched = true;
+            return { ...link, note };
+          });
+          if (touched) changed = true;
+        }
+        return changed ? { ...current, links } : current;
+      });
+    };
+    api.on("novel-links-changed", handler);
+    return () => api.off("novel-links-changed", handler);
+  }, []);
+
+  useEffect(() => {
+    const handler = (): void => {
+      // 装载在途时不刷：装载响应本身就来自数据库，天然带最新镜像，
+      // 此刻再读一次纯属浪费（同 novel-note-changed 那条补丁的取舍）
+      if (loadInFlightRef.current) return;
+      if (!settingsRef.current.some((category) => category.sourceGlobalId)) return;
+      void refreshSettingMirror();
+    };
+    const api = window.electronAPI?.windowAPI;
+    if (!api) return undefined;
+    // ⚠️ `off` 必须传**同一个 handler 引用**：preload 的 on/off 按引用配对，
+    // 传一个新箭头函数等于没摘掉监听（每次重订阅都会多积一条）
+    api.on("global-setting-changed", handler);
+    return () => api.off("global-setting-changed", handler);
+  }, [refreshSettingMirror]);
+  /** 等级项索引：关联视图与当前境界绑定把 novel_setting_levels.id 翻译成可读名。
+   *  派生段的名字补上父阶前缀（「第4段」→「练气 · 第4段」）：单看一行也要
+   *  能看出是哪一阶的进度；默认命名自带父前缀时原样保留（1.38.1） */
   const levelRungIndex = useMemo(() => {
     const index = new Map<string, { name: string; systemName: string }>();
-    for (const system of bundle?.levelSystems ?? []) {
-      for (const rung of system.rungs) {
-        index.set(rung.id, { name: rung.name, systemName: system.name });
+    for (const category of bundle?.settings ?? []) {
+      const byId = new Map(category.levels.map((level) => [level.id, level]));
+      for (const level of category.levels) {
+        let name = level.name;
+        if (level.parentId) {
+          const parent = byId.get(level.parentId);
+          if (parent && !name.startsWith(parent.name)) {
+            name = `${parent.name} · ${name}`;
+          }
+        }
+        index.set(level.id, { name, systemName: category.name });
       }
     }
     return index;
-  }, [bundle?.levelSystems]);
+  }, [bundle?.settings]);
   const volumes = useMemo(
-    () => (bundle?.volumes ?? []).filter((volume) => volume.workId === activeWorkId),
+    () =>
+      (bundle?.volumes ?? []).filter(
+        (volume) => volume.workId === activeWorkId,
+      ),
     [bundle?.volumes, activeWorkId],
   );
   const chapters = useMemo(
-    () => (bundle?.chapters ?? []).filter((chapter) => chapter.workId === activeWorkId),
+    () =>
+      (bundle?.chapters ?? []).filter(
+        (chapter) => chapter.workId === activeWorkId,
+      ),
     [bundle?.chapters, activeWorkId],
   );
+  /**
+   * 当前作品的灵感（1.41.0 起并入「未分组」）：workId 为空串的灵感是
+   * 跨作品收集池（书架灵感库的「未归属」），此前被 workId 过滤排掉 ——
+   * 书架里记了一条未归属灵感，回到编辑器灵感面板却一片空白（用户报障）。
+   * 未归属灵感对当前作品同样可见可编辑；搜索时它不带来源标签。
+   */
   const notes = useMemo(
-    () => sortNotes((bundle?.notes ?? []).filter((note) => note.workId === activeWorkId)),
+    () =>
+      sortNotes(
+        (bundle?.notes ?? []).filter(
+          (note) => note.workId === activeWorkId || !note.workId,
+        ),
+      ),
     [bundle?.notes, activeWorkId],
   );
   /** 全部作品的灵感（bundle 原始全量）：灵感面板全局搜索的数据源 */
-  const allNotes = useMemo(() => sortNotes(bundle?.notes ?? []), [bundle?.notes]);
+  const allNotes = useMemo(
+    () => sortNotes(bundle?.notes ?? []),
+    [bundle?.notes],
+  );
   const outlineEntries = useMemo(
     () =>
       (bundle?.outlineEntries ?? []).filter(
@@ -265,10 +661,16 @@ export function useNovelData() {
     [volumes, chapters],
   );
 
-  /** 全书章节序号（拖拽重排后自动跟随的派生属性） */
+  /**
+   * 全书章节序号（拖拽重排后自动跟随的派生属性）。
+   *
+   * 复用上面那份 groups，而不是让 buildChapterNumbers 内部再建一遍分组：
+   * 3000 章 / 60 卷时建分组是 O(章 + 卷) 的实打实开销，而这两个派生值
+   * 每次保存正文（chapters 换新数组）都会一起重算。
+   */
   const chapterNumbers = useMemo(
-    () => buildChapterNumbers(volumes, chapters),
-    [volumes, chapters],
+    () => buildChapterNumbersFromGroups(groups),
+    [groups],
   );
 
   const activeChapter = useMemo(
@@ -294,7 +696,11 @@ export function useNovelData() {
 
   /** 保存正文并同步本地字数 / 更新时间（novel-chapter-save，主进程同事务写快照） */
   const updateChapterContent = useCallback(
-    async (chapterId: string, content: string, wordCount: number): Promise<boolean> => {
+    async (
+      chapterId: string,
+      content: string,
+      wordCount: number,
+    ): Promise<boolean> => {
       setBundle((current) =>
         current
           ? {
@@ -356,7 +762,9 @@ export function useNovelData() {
       };
 
       setBundle((current) =>
-        current ? { ...current, chapters: [...current.chapters, chapter] } : current,
+        current
+          ? { ...current, chapters: [...current.chapters, chapter] }
+          : current,
       );
       setActiveChapterId(id);
       void addChapterRemote(chapter);
@@ -368,7 +776,10 @@ export function useNovelData() {
   /** 新建卷（左栏底部入口）：排序追加到当前作品末尾 */
   const createVolume = useCallback((): string | null => {
     if (!bundle) return null;
-    const maxSort = volumes.reduce((max, volume) => Math.max(max, volume.sort), 0);
+    const maxSort = volumes.reduce(
+      (max, volume) => Math.max(max, volume.sort),
+      0,
+    );
     const volume: NovelVolume = {
       id: createNovelId("v"),
       workId: activeWorkId,
@@ -410,7 +821,11 @@ export function useNovelData() {
   const moveChapterToVolume = useCallback(
     (chapterId: string, volumeId: string) => {
       if (!bundle) return;
-      const nextChapters = previewChapterToVolume(bundle.chapters, chapterId, volumeId);
+      const nextChapters = previewChapterToVolume(
+        bundle.chapters,
+        chapterId,
+        volumeId,
+      );
       if (nextChapters === bundle.chapters) return;
       setBundle({ ...bundle, chapters: nextChapters });
       void saveChapterOrder(
@@ -448,58 +863,129 @@ export function useNovelData() {
   );
 
   /** 章节重命名（R1）：空标题与同名不落 */
-  const renameChapter = useCallback(
-    (chapterId: string, title: string) => {
-      const trimmed = title.trim();
-      if (!trimmed) return;
-      setBundle((current) =>
-        current
-          ? {
-              ...current,
-              chapters: current.chapters.map((chapter) =>
-                chapter.id === chapterId
-                  ? { ...chapter, title: trimmed, updatedAt: Date.now() }
-                  : chapter,
-              ),
-            }
-          : current,
-      );
-      void renameChapterRemote(chapterId, trimmed);
-    },
-    [],
-  );
+  const renameChapter = useCallback((chapterId: string, title: string) => {
+    const trimmed = title.trim();
+    if (!trimmed) return;
+    setBundle((current) =>
+      current
+        ? {
+            ...current,
+            chapters: current.chapters.map((chapter) =>
+              chapter.id === chapterId
+                ? { ...chapter, title: trimmed, updatedAt: Date.now() }
+                : chapter,
+            ),
+          }
+        : current,
+    );
+    void renameChapterRemote(chapterId, trimmed);
+  }, []);
 
   /** 卷命名（R9 扩展）：卷头展示为「第N卷 - 名字」，序号仍由 sort 派生 */
-  const renameVolume = useCallback(
-    (volumeId: string, name: string) => {
-      const trimmed = name.trim();
-      if (!trimmed) return;
+  const renameVolume = useCallback((volumeId: string, name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setBundle((current) =>
+      current
+        ? {
+            ...current,
+            volumes: current.volumes.map((volume) =>
+              volume.id === volumeId ? { ...volume, name: trimmed } : volume,
+            ),
+          }
+        : current,
+    );
+    void renameVolumeRemote(volumeId, trimmed);
+  }, []);
+
+  /**
+   * 删除卷（卷头悬浮删除，弹层里已二次确认）。
+   *
+   * 卷下章节 / 快照 / 大纲条目由主进程同事务级联清理；本地摘除后把同作品
+   * 其余卷的 sort 紧实——卷头「第N卷」由 sort 派生，删掉中间卷不紧实会
+   * 显示成「第1卷 / 第3卷」跳号。紧实复用拖拽重排同一套 buildSortOrder
+   * （1 基、稠密），变更量走既有 novel-volume-order 批量落库。
+   *
+   * ⚠️ 调用方（useNovelPage.handleDeleteVolume）必须先对该卷下每一章
+   * `editor.dropChapterDraft(chapterId)`：草稿与在途防抖活在编辑器 store 里，
+   * 留着它们，800ms 后的防抖会拿已删除的 chapterId 去落库，主进程如实返回
+   * false，保存态就永久停在 failed（30s 兜底会一直重试这个注定失败的请求）。
+   */
+  const deleteVolume = useCallback(
+    (volumeId: string): void => {
+      if (!bundle) return;
+      const removed = bundle.volumes.find((volume) => volume.id === volumeId);
+      if (!removed) return;
+      const survivors = bundle.volumes
+        .filter(
+          (volume) => volume.id !== volumeId && volume.workId === activeWorkId,
+        )
+        .sort((a, b) => a.sort - b.sort);
+      const compact = buildSortOrder(survivors);
       setBundle((current) =>
         current
           ? {
               ...current,
-              volumes: current.volumes.map((volume) =>
-                volume.id === volumeId ? { ...volume, name: trimmed } : volume,
+              volumes: current.volumes
+                .filter((volume) => volume.id !== volumeId)
+                .map((volume) =>
+                  compact.has(volume.id)
+                    ? { ...volume, sort: compact.get(volume.id) ?? volume.sort }
+                    : volume,
+                ),
+              chapters: current.chapters.filter(
+                (chapter) => chapter.volumeId !== volumeId,
               ),
             }
           : current,
       );
-      void renameVolumeRemote(volumeId, trimmed);
+      // 激活章在被删卷里 → 切到邻卷（先下一卷首章，再上一卷末章），口径同删单章
+      const activeInside = groups.some(
+        (group) =>
+          group.volume.id === volumeId &&
+          group.chapters.some((chapter) => chapter.id === activeChapterId),
+      );
+      if (activeInside) {
+        const rest = groups
+          .filter((group) => group.volume.id !== volumeId)
+          .sort((a, b) => a.volume.sort - b.volume.sort);
+        const nextGroup = rest.find((group) => group.volume.sort > removed.sort);
+        const prevGroups = rest.filter(
+          (group) => group.volume.sort < removed.sort,
+        );
+        const fallbackId =
+          nextGroup?.chapters[0]?.id ??
+          prevGroups[prevGroups.length - 1]?.chapters.slice(-1)[0]?.id ??
+          null;
+        setActiveChapterId(fallbackId);
+      }
+      void removeVolumeRemote(volumeId);
+      const orderUpdates = survivors
+        .filter((volume) => volume.sort !== compact.get(volume.id))
+        .map((volume) => ({ id: volume.id, sort: compact.get(volume.id)! }));
+      if (orderUpdates.length > 0) void saveVolumeOrder(orderUpdates);
     },
-    [],
+    [bundle, groups, activeChapterId, activeWorkId],
   );
 
   // ── 作品管理（R29） ────────────────────────────────────────────────
 
-  /** 新建作品：本地先建并切为当前作品（空作品由「写下第一章」兜底），异步落库 */
+  /**
+   * 新建作品：本地先建并切为当前作品（空作品由「写下第一章」兜底），异步落库。
+   *
+   * `genre` 是有值才写的可选字段：不传 / 空串 = 未设置题材，AI 层按书名 +
+   * 要素弱兜底（题材不是建书的必经步骤）。
+   */
   const createWork = useCallback(
-    (name: string): NovelWork | null => {
+    (name: string, genre?: string): NovelWork | null => {
       const trimmed = name.trim();
       if (!trimmed || !bundle) return null;
+      const genreDraft = genre?.replace(/\s+/g, " ").trim();
       const work: NovelWork = {
         id: createNovelId("w"),
         name: trimmed,
         createdAt: Date.now(),
+        ...(genreDraft ? { genre: genreDraft } : {}),
       };
       setBundle((current) =>
         current ? { ...current, works: [...current.works, work] } : current,
@@ -531,8 +1017,31 @@ export function useNovelData() {
   }, []);
 
   /**
+   * 设置作品题材（空串 = 清空）。
+   * 题材是 AI 起名 / 润色的风格锚点，**允许建书时跳过、之后随时补** —— 所以
+   * 它单独一条通道，而不是塞进「重命名」里连带保存。
+   */
+  const setWorkGenre = useCallback((workId: string, genre: string): boolean => {
+    if (!workId) return false;
+    const trimmed = genre.replace(/\s+/g, " ").trim();
+    setBundle((current) =>
+      current
+        ? {
+            ...current,
+            works: current.works.map((work) =>
+              work.id === workId ? { ...work, genre: trimmed || undefined } : work,
+            ),
+          }
+        : current,
+    );
+    void setWorkGenreRemote(workId, trimmed || null);
+    return true;
+  }, []);
+
+  /**
    * 删除作品（R29）：本地级联摘除 + 远端事务级联删除。
-   * 删的是当前作品 → 切到剩余第一部；全部删完 → 重新装载（主进程重新播种模板书籍）。
+   * 删的是当前作品 → 切到剩余第一部；全部删完 → 清空活动态并重载，
+   * **停在空态**（主进程不再自动播种模板书，新用户默认就是空书架）。
    */
   const deleteWork = useCallback(
     (workId: string): void => {
@@ -548,14 +1057,21 @@ export function useNovelData() {
           ? {
               ...current,
               works: current.works.filter((work) => work.id !== workId),
-              volumes: current.volumes.filter((volume) => volume.workId !== workId),
-              chapters: current.chapters.filter((chapter) => chapter.workId !== workId),
-              entities: current.entities.filter((entity) => entity.workId !== workId),
-              links: current.links.filter(
-                (link) => !entityIds.has(link.fromId) && !entityIds.has(link.toId),
+              volumes: current.volumes.filter(
+                (volume) => volume.workId !== workId,
               ),
-              levelSystems: current.levelSystems.filter(
-                (system) => system.workId !== workId,
+              chapters: current.chapters.filter(
+                (chapter) => chapter.workId !== workId,
+              ),
+              entities: current.entities.filter(
+                (entity) => entity.workId !== workId,
+              ),
+              links: current.links.filter(
+                (link) =>
+                  !entityIds.has(link.fromId) && !entityIds.has(link.toId),
+              ),
+              settings: current.settings.filter(
+                (item) => item.workId !== workId,
               ),
               notes: current.notes.filter((note) => note.workId !== workId),
               outlineEntries: current.outlineEntries.filter(
@@ -564,20 +1080,26 @@ export function useNovelData() {
             }
           : current,
       );
-      void removeWorkRemote(workId);
+      // 删除兜底：远端走软删除（移入回收站），不级联销毁 —— 误删可在
+      // 书架顶栏「回收站」页面里原样恢复（卷章正文 / 要素 / 行囊从未被删）
+      void trashWorkRemote(workId);
 
       if (remaining.length > 0) {
         if (activeWorkId === workId) {
           const nextWorkId = remaining[0].id;
           setActiveWorkId(nextWorkId);
           setActiveChapterId(
-            bundle.chapters.find((chapter) => chapter.workId === nextWorkId)?.id ?? null,
+            bundle.chapters.find((chapter) => chapter.workId === nextWorkId)
+              ?.id ?? null,
           );
         }
         return;
       }
 
-      // 最后一部也被删除：清掉活动态后重新装载，主进程会重新播种「未命名作品」
+      // 最后一部也被删除：清掉活动态后重新装载。
+      // ⚠️ 这里必须先把 activeWorkId / activeChapterId 清空 —— load 只在
+      // current 为空时才接受远端首选项，残留旧 id 会让编辑器停在已不存在的作品上。
+      // 重载后 works 为空是**正常终态**：编辑器显示空态引导「新建作品」。
       setActiveWorkId("");
       setActiveChapterId(null);
       void load();
@@ -621,7 +1143,9 @@ export function useNovelData() {
           ? {
               ...current,
               chapters: current.chapters.map((chapter) =>
-                chapter.id === chapterId ? { ...chapter, status: nextStatus } : chapter,
+                chapter.id === chapterId
+                  ? { ...chapter, status: nextStatus }
+                  : chapter,
               ),
             }
           : current,
@@ -634,7 +1158,12 @@ export function useNovelData() {
   /**
    * 删除章节：本地摘除 + 远端同事务清理快照。
    * 删的是当前章节 → 按展示顺序自动切到后一个，没有后一个切前一个；
-   * 快照由主进程随章节一并删除，本地草稿残留无害（同 id 不会复用）。
+   * 快照由主进程随章节一并删除。
+   *
+   * ⚠️ 调用方（useNovelPage.handleDeleteChapter）必须**先**调
+   * `editor.dropChapterDraft(chapterId)`：本函数只管数据层，而草稿与在途
+   * 防抖活在 store 里——留着它们，800ms 后的防抖会拿已删除的 chapterId
+   * 落库，主进程找不到章节如实返回 false，保存态就永久停在 failed。
    */
   const deleteChapter = useCallback(
     (chapterId: string): void => {
@@ -647,7 +1176,9 @@ export function useNovelData() {
         current
           ? {
               ...current,
-              chapters: current.chapters.filter((chapter) => chapter.id !== chapterId),
+              chapters: current.chapters.filter(
+                (chapter) => chapter.id !== chapterId,
+              ),
             }
           : current,
       );
@@ -715,6 +1246,38 @@ export function useNovelData() {
     [bundle, activeWorkId],
   );
 
+  /**
+   * 批量建卡（R-AI-08）：AI 抽取确认后一次写入。
+   *
+   * 乐观更新 + 单事务落库：先本地插进 bundle（面板立刻能看到「已建 N 张」），
+   * 再交给主进程整批写；主进程失败时返回 false，调用方负责提示，
+   * 下次 reload 会把乐观插入的假数据纠正回来（不做本地回滚：那会让作者
+   * 看到列表里的条目「闪现又消失」，比等一次刷新更吓人）。
+   */
+  const addEntitiesBatch = useCallback(
+    (items: Array<{ name: string; type: EntityType; summary: string }>): number => {
+      if (!bundle || items.length === 0) return 0;
+      const baseSort = bundle.entities.length;
+      const created: NovelEntity[] = items.map((item, index) => ({
+        id: createNovelId("e"),
+        workId: activeWorkId,
+        type: item.type,
+        name: item.name,
+        aliases: [],
+        summary: item.summary,
+        content: "",
+        fields: {},
+        sort: baseSort + index + 1,
+      }));
+      setBundle((current) =>
+        current ? { ...current, entities: [...current.entities, ...created] } : current,
+      );
+      void saveEntitiesBatch(created);
+      return created.length;
+    },
+    [bundle, activeWorkId],
+  );
+
   const getEntityById = useCallback(
     (entityId: string): NovelEntity | null =>
       entities.find((entity) => entity.id === entityId) ?? null,
@@ -723,7 +1286,10 @@ export function useNovelData() {
 
   /** 资料卡编辑（R23）：合并保存名称 / 类型 / 别名 / 简介等字段 */
   const updateEntity = useCallback(
-    (entityId: string, patch: Partial<Omit<NovelEntity, "id" | "workId">>): void => {
+    (
+      entityId: string,
+      patch: Partial<Omit<NovelEntity, "id" | "workId">>,
+    ): void => {
       const target = entities.find((entity) => entity.id === entityId);
       if (!target) return;
       const merged: NovelEntity = { ...target, ...patch };
@@ -738,38 +1304,20 @@ export function useNovelData() {
           : current,
       );
       void saveEntity(merged);
+      /**
+       * 改名要通知行囊 —— 名字的单一事实源是实体，行囊头部显示的正是它。
+       *
+       * 不通知的话：在要素库把「陆长安」改成别的名字，行囊头部仍是「陆长安」，
+       * 直到下次重载（同屏两个名字打架）。
+       *
+       * 只有**名字真的变了**才广播：updateEntity 也承载摘要 / 正文等编辑，
+       * 那些改动跑一遍广播纯属噪音（行囊会平白 mutate 一次）。
+       */
+      if (merged.name !== target.name) {
+        notifyNameChanged(merged.workId, merged.name, "panel", merged.id);
+      }
     },
     [entities],
-  );
-
-  /** 手动绑定（R20 ③右键菜单版）：把选中文本绑定到指定资料卡（关联为别名） */
-  const bindTextToEntity = useCallback(
-    (text: string, entityId: string): MarkResult | null => {
-      const name = text.trim();
-      const target = bundle?.entities.find((entity) => entity.id === entityId);
-      if (!name || !target) return null;
-
-      if (target.name === name || target.aliases.includes(name)) {
-        return { entity: target, mode: "existing" };
-      }
-      const linked: NovelEntity = {
-        ...target,
-        aliases: [...target.aliases, name],
-      };
-      setBundle((current) =>
-        current
-          ? {
-              ...current,
-              entities: current.entities.map((entity) =>
-                entity.id === entityId ? linked : entity,
-              ),
-            }
-          : current,
-      );
-      void saveEntity(linked);
-      return { entity: linked, mode: "linked" };
-    },
-    [bundle],
   );
 
   /**
@@ -823,179 +1371,473 @@ export function useNovelData() {
     void removeLinkRemote(linkId);
   }, []);
 
-  // ── 等级体系管理（R25）：体系 / 等级项 CRUD + 当前境界绑定 ──────────
+  // ── 小说设定：分类 / 等级项 CRUD（1.36.0 起取代「等级体系管理」） ──────────
+  //
+  // 境界体系不再是独立实体，而是 `kind='realm'` 的设定分类。角色卡「当前境界」
+  // 仍绑在 `novel_setting_levels.id` 上，语义不变 —— 只是换了个容器。
 
-  /** 新建体系：本地先建空体系并乐观落库，返回 null 表示名称非法 */
-  const createLevelSystem = useCallback(
-    (name: string): LevelSystem | null => {
+  /** 本地改写某个分类（乐观更新 + 远端回写共用的补丁口） */
+  const patchCategoryLocal = useCallback(
+    (
+      categoryId: string,
+      patch: (category: SettingCategory) => SettingCategory,
+    ): void => {
+      setBundle((current) =>
+        current
+          ? {
+              ...current,
+              settings: current.settings.map((category) =>
+                category.id === categoryId ? patch(category) : category,
+              ),
+            }
+          : current,
+      );
+    },
+    [],
+  );
+
+  /**
+   * 新建设定分类
+   *
+   * `kind='realm'` 时主进程可能降级为 custom（境界体系全书唯一），所以本地
+   * 要以**远端返回值**修正 kind —— 直接采信入参会造出第二个境界体系。
+   */
+  const createSettingCategory = useCallback(
+    (
+      name: string,
+      kind: SettingCategoryKind = "custom",
+      color?: string,
+    ): SettingCategory | null => {
       const trimmed = name.trim();
       if (!trimmed || !bundle) return null;
-      const system: LevelSystem = {
-        id: createNovelId("ls"),
+      const id = createNovelId("sc");
+      const draft: SettingCategory = {
+        id,
         workId: activeWorkId,
         name: trimmed,
-        rungs: [],
+        color: color ?? DEFAULT_CATEGORY_COLOR,
+        kind,
+        sortOrder: settings.length + 1,
+        note: "",
+        subLevels: DEFAULT_SUB_LEVELS,
+        carryDir: "asc",
+        subPattern: DEFAULT_SUB_PATTERN,
+        levels: [],
       };
       setBundle((current) =>
         current
-          ? { ...current, levelSystems: [...current.levelSystems, system] }
+          ? { ...current, settings: [...current.settings, draft] }
           : current,
       );
-      void addLevelSystemRemote({
-        id: system.id,
-        workId: system.workId,
-        name: system.name,
+      void addSettingCategoryRemote(
+        activeWorkId,
+        id,
+        trimmed,
+        kind,
+        color,
+      ).then((saved) => {
+        // 主进程是唯一裁判：它说降级了就是降级了
+        if (saved && saved.kind !== kind) {
+          patchCategoryLocal(id, (category) => ({
+            ...category,
+            kind: saved.kind,
+          }));
+        }
       });
-      return system;
+      return draft;
     },
-    [bundle, activeWorkId],
+    [bundle, activeWorkId, settings.length, patchCategoryLocal],
   );
 
-  /** 体系重命名：空名不落 */
-  const renameLevelSystem = useCallback((systemId: string, name: string): void => {
-    const trimmed = name.trim();
-    if (!trimmed) return;
-    setBundle((current) =>
-      current
-        ? {
-            ...current,
-            levelSystems: current.levelSystems.map((system) =>
-              system.id === systemId ? { ...system, name: trimmed } : system,
-            ),
-          }
-        : current,
-    );
-    void renameLevelSystemRemote(systemId, trimmed);
-  }, []);
-
-  /** 删除体系：本地级联摘除该体系全部等级项的当前境界绑定（主进程同事务级联） */
-  const deleteLevelSystem = useCallback(
-    (systemId: string): void => {
-      if (!bundle) return;
-      const system = bundle.levelSystems.find((item) => item.id === systemId);
-      if (!system) return;
-      const rungIds = new Set(system.rungs.map((rung) => rung.id));
-      setBundle((current) =>
-        current
-          ? {
-              ...current,
-              levelSystems: current.levelSystems.filter(
-                (item) => item.id !== systemId,
-              ),
-              links: current.links.filter((link) => !rungIds.has(link.toId)),
-            }
-          : current,
-      );
-      void removeLevelSystemRemote(systemId);
-    },
-    [bundle],
-  );
-
-  /** 追加等级项：rank 取该体系当前最大值 + 1，与主进程 MAX(rank)+1 同口径 */
-  const addLevel = useCallback(
-    (systemId: string, name: string): LevelRung | null => {
+  /**
+   * 一次性新建分类并灌入等级（预设套用专用）。
+   *
+   * 为什么不让调用方「createSettingCategory + batchAddSettingLevels」两连调：
+   * batchAdd 从**当前闭包的 bundle** 里 find 目标分类，而 setBundle 是异步的，
+   * 同一次点击里刚建好的分类还不在里面 → find 失败、静默返回 0，
+   * 表现为「预设应用成功、等级序列却永远是空的」（分类壳 0 级）。
+   * 这里把分类与等级放进**同一次** setBundle，远端也各发一条
+   * （category-add 后对该新分类 batch level-add，顺序天然安全）。
+   */
+  const createSettingCategoryWithLevels = useCallback(
+    (
+      name: string,
+      kind: SettingCategoryKind,
+      drafts: Array<{ name: string; subLevels?: number; subPattern?: string }>,
+      meta?: {
+        note?: string;
+        subLevels?: number;
+        carryDir?: CarryDirection;
+        subPattern?: string;
+      },
+    ): SettingCategory | null => {
       const trimmed = name.trim();
       if (!trimmed || !bundle) return null;
-      const system = bundle.levelSystems.find((item) => item.id === systemId);
-      if (!system) return null;
-      const rung: LevelRung = {
-        id: createNovelId("lr"),
+      const id = createNovelId("sc");
+      const cleaned = drafts
+        .map((draft) => ({
+          name: draft.name.trim().slice(0, 60),
+          subLevels:
+            draft.subLevels !== undefined && draft.subLevels >= 1
+              ? Math.floor(draft.subLevels)
+              : DEFAULT_SUB_LEVELS,
+          subPattern: (draft.subPattern ?? "").trim().slice(0, 60),
+        }))
+        .filter((draft) => draft.name)
+        .slice(0, 99);
+      const items = cleaned.map((draft) => ({ ...draft, id: createNovelId("sl") }));
+      const category: SettingCategory = {
+        id,
+        workId: activeWorkId,
         name: trimmed,
-        rank: system.rungs.reduce((max, rung) => Math.max(max, rung.rank), 0) + 1,
+        color: DEFAULT_CATEGORY_COLOR,
+        kind,
+        sortOrder: settings.length + 1,
+        note: meta?.note ?? "",
+        subLevels:
+          meta?.subLevels !== undefined && meta.subLevels >= 1
+            ? Math.floor(meta.subLevels)
+            : DEFAULT_SUB_LEVELS,
+        carryDir: meta?.carryDir ?? "asc",
+        subPattern: meta?.subPattern ?? DEFAULT_SUB_PATTERN,
+        levels: items.map((item, index) => ({
+          id: item.id,
+          categoryId: id,
+          name: item.name,
+          aliases: [],
+          note: "",
+          subLevels: item.subLevels,
+          subPattern: item.subPattern,
+          power: null,
+          parentId: null,
+          segFrom: null,
+          segTo: null,
+          rank: index + 1,
+        })),
       };
       setBundle((current) =>
         current
-          ? {
-              ...current,
-              levelSystems: current.levelSystems.map((item) =>
-                item.id === systemId
-                  ? { ...item, rungs: [...item.rungs, rung] }
-                  : item,
-              ),
-            }
+          ? { ...current, settings: [...current.settings, category] }
           : current,
       );
-      void addLevelRemote(systemId, rung.id, trimmed);
-      return rung;
+      void addSettingCategoryRemote(activeWorkId, id, trimmed, kind).then((saved) => {
+        // 主进程是唯一裁判：它说降级了就是降级了
+        if (saved && saved.kind !== kind) {
+          patchCategoryLocal(id, (current) => ({ ...current, kind: saved.kind }));
+        }
+      });
+      // 等级名单清洗后为空（全空名）就不发 batch：主进程对空数组纯属白跑
+      if (items.length > 0) {
+        void batchAddSettingLevelsRemote(id, items);
+      }
+      return category;
     },
-    [bundle],
+    [bundle, activeWorkId, settings.length, patchCategoryLocal],
   );
 
-  /** 等级项重命名：空名不落 */
-  const renameLevel = useCallback((rungId: string, name: string): void => {
-    const trimmed = name.trim();
-    if (!trimmed) return;
+  /** 改分类：重命名 / 改色 / 说明 / 进位规则。空名不落 */
+  const patchSettingCategory = useCallback(
+    (categoryId: string, patch: NovelSettingCategoryPatch): void => {
+      if (patch.name !== undefined && !patch.name.trim()) return;
+      patchCategoryLocal(categoryId, (category) => ({ ...category, ...patch }));
+      void patchSettingCategoryRemote(categoryId, patch);
+    },
+    [patchCategoryLocal],
+  );
+
+  /** 删除分类：本地级联摘除该分类全部等级项的当前境界绑定（主进程同事务级联） */
+  const deleteSettingCategory = useCallback((categoryId: string): void => {
+    setBundle((current) => {
+      if (!current) return current;
+      const category = current.settings.find((item) => item.id === categoryId);
+      const levelIds = new Set(category?.levels.map((level) => level.id) ?? []);
+      return {
+        ...current,
+        settings: current.settings.filter((item) => item.id !== categoryId),
+        links: current.links.filter((link) => !levelIds.has(link.toId)),
+      };
+    });
+    void removeSettingCategoryRemote(categoryId);
+  }, []);
+
+  /** 分类重排：orderedIds 为目标顺序（sortOrder 从 1 起） */
+  const reorderSettingCategories = useCallback((orderedIds: string[]): void => {
+    const orderOf = new Map(orderedIds.map((id, index) => [id, index + 1]));
     setBundle((current) =>
       current
         ? {
             ...current,
-            levelSystems: current.levelSystems.map((system) => ({
-              ...system,
-              rungs: system.rungs.map((rung) =>
-                rung.id === rungId ? { ...rung, name: trimmed } : rung,
-              ),
-            })),
+            settings: current.settings
+              .map((category) => ({
+                ...category,
+                sortOrder: orderOf.get(category.id) ?? category.sortOrder,
+              }))
+              .sort((a, b) => a.sortOrder - b.sortOrder),
           }
         : current,
     );
-    void renameLevelRemote(rungId, trimmed);
-  }, []);
-
-  /** 删除等级项：本地摘除 + 摘掉指向它的当前境界绑定（主进程级联） */
-  const deleteLevel = useCallback((rungId: string): void => {
-    setBundle((current) =>
-      current
-        ? {
-            ...current,
-            levelSystems: current.levelSystems.map((system) => ({
-              ...system,
-              rungs: system.rungs.filter((rung) => rung.id !== rungId),
-            })),
-            links: current.links.filter(
-              (link) => !(link.toType === "level" && link.toId === rungId),
-            ),
-          }
-        : current,
+    void saveSettingCategoryOrderRemote(
+      orderedIds.map((id, index) => ({ id, sortOrder: index + 1 })),
     );
-    void removeLevelRemote(rungId);
   }, []);
 
-  /** 等级项重排：orderedIds 为目标顺序（rank 从 1 起），本地排序 + 全量回写 */
-  const reorderLevels = useCallback(
-    (systemId: string, orderedIds: string[]): void => {
-      if (!bundle) return;
-      const rankOf = new Map(orderedIds.map((id, index) => [id, index + 1]));
+  /**
+   * 新增 / 插入等级项
+   *
+   * `index` 为行序落点（0 = 最前，省略 = 追加到末尾）。重排用 `insertLevel`
+   * 的口径，与主进程保持一致 —— 两边各算一套必然错位。
+   *
+   * 小层数 / 小层命名继承分类：新阶立刻带上该体系的常规小层。此前硬编码
+   * `subLevels: category.subLevels` 而 `subPattern: ""` 本身是对的（空 = 沿用
+   * 分类模板），但阶梯里**看不出来**小层到底有哪些 —— 所以 1.38.0 在行内补了
+   * 小层清单（见 SettingCenter 的 `nv-sc__sub`）。
+   */
+  const addSettingLevel = useCallback(
+    (categoryId: string, name: string, index?: number): SettingLevel | null => {
+      const trimmed = name.trim();
+      if (!trimmed || !bundle) return null;
+      const category = bundle.settings.find((item) => item.id === categoryId);
+      if (!category) return null;
+      const id = createNovelId("sl");
+      const at = index ?? category.levels.length;
+      const draft: Omit<SettingLevel, "rank"> = {
+        id,
+        categoryId,
+        name: trimmed,
+        aliases: [],
+        note: "",
+        subLevels: category.subLevels,
+        subPattern: "",
+        power: null,
+        parentId: null,
+        segFrom: null,
+        segTo: null,
+      };
+      const next = insertLevel(category.levels, at, draft, category.carryDir);
+      patchCategoryLocal(categoryId, (item) => ({ ...item, levels: next }));
+      void addSettingLevelRemote(categoryId, id, trimmed, at);
+      return next.find((level) => level.id === id) ?? null;
+    },
+    [bundle, patchCategoryLocal],
+  );
+
+  /**
+   * 批量新增等级项（1.37.0）：模板生成 / 逐行粘贴 / 预设套用共用。
+   *
+   * 全部追加到末尾；小层数缺省继承分类，小层命名缺省为空（沿用分类模板）。
+   * 本地一次 patch、远端一次事务 —— 与单条新增「本地 insertLevel + 远端重排」
+   * 的口径一致，序号两头各算但规则相同。
+   */
+  const batchAddSettingLevels = useCallback(
+    (
+      categoryId: string,
+      drafts: Array<{ name: string; note?: string; subLevels?: number; subPattern?: string }>,
+    ): number => {
+      if (!bundle) return 0;
+      const category = bundle.settings.find((item) => item.id === categoryId);
+      if (!category) return 0;
+      const cleaned = drafts
+        .map((draft) => ({
+          name: draft.name.trim().slice(0, 60),
+          // 等级说明随条目走（AI 排阶梯会给出每级说明，丢掉它等于白生成）
+          note: (draft.note ?? "").trim().slice(0, 200),
+          subLevels:
+            draft.subLevels !== undefined && draft.subLevels >= 1
+              ? Math.floor(draft.subLevels)
+              : category.subLevels,
+          // 小层命名同样回落到分类默认，与主进程 batch-add 同口径
+          subPattern: (draft.subPattern ?? "").trim().slice(0, 60) || category.subPattern,
+        }))
+        .filter((draft) => draft.name)
+        .slice(0, 99);
+      if (cleaned.length === 0) return 0;
+      const items = cleaned.map((draft) => ({
+        ...draft,
+        id: createNovelId("sl"),
+      }));
+      patchCategoryLocal(categoryId, (item) => {
+        /**
+         * 追加落点随进位方向走（与主进程 batch-add 同口径，2.17.1）：
+         * `asc` 接在 max(rank) 之后；`desc` 的显示末尾是 rank **最小**的一端 ——
+         * 现有整体上移、新条目占住低端。两端算错一个方向，刷新前后就会跳位。
+         */
+        const isDesc = category.carryDir === "desc";
+        const ordered = [...item.levels].sort((a, b) => a.rank - b.rank);
+        const hasExisting = ordered.length > 0;
+        const base = !hasExisting
+          ? 1
+          : isDesc
+            ? ordered[0].rank
+            : ordered[ordered.length - 1].rank + 1;
+        const shifted =
+          isDesc && hasExisting
+            ? ordered.map((level) => ({ ...level, rank: level.rank + items.length }))
+            : ordered;
+        // 传入顺序 = 从现有末端往外的显示顺序；desc 有现有行时整块反转（与主进程同口径）
+        const list = isDesc && hasExisting ? [...items].reverse() : items;
+        const added = list.map((draft, index) => ({
+          id: draft.id,
+          categoryId,
+          name: draft.name,
+          aliases: [],
+          note: draft.note,
+          subLevels: draft.subLevels,
+          subPattern: draft.subPattern,
+          power: null,
+          parentId: null,
+          segFrom: null,
+          segTo: null,
+          rank: base + index,
+        }));
+        return {
+          ...item,
+          levels: [...shifted, ...added].sort((a, b) => a.rank - b.rank),
+        };
+      });
+      void batchAddSettingLevelsRemote(categoryId, items);
+      return items.length;
+    },
+    [bundle, patchCategoryLocal],
+  );
+
+  /** 改等级项：重命名 / 别名 / 说明 / 小层数 / 小层命名 / 战力当量。空名不落 */
+  const patchSettingLevel = useCallback(
+    (levelId: string, patch: NovelSettingLevelPatch): void => {
+      if (patch.name !== undefined && !patch.name.trim()) return;
       setBundle((current) =>
         current
           ? {
               ...current,
-              levelSystems: current.levelSystems.map((system) =>
-                system.id === systemId
-                  ? {
-                      ...system,
-                      rungs: system.rungs
-                        .map((rung) => ({
-                          ...rung,
-                          rank: rankOf.get(rung.id) ?? rung.rank,
-                        }))
-                        .sort((a, b) => a.rank - b.rank),
-                    }
-                  : system,
-              ),
+              settings: current.settings.map((category) => ({
+                ...category,
+                levels: category.levels.map((level) =>
+                  level.id === levelId ? { ...level, ...patch } : level,
+                ),
+              })),
             }
           : current,
       );
-      void saveLevelOrder(
-        orderedIds.map((id, index) => ({ id, rank: index + 1 })),
+      void patchSettingLevelRemote(levelId, patch);
+    },
+    [],
+  );
+
+  /** 删除等级项：连同它的派生分段一起删，并摘掉指向它们的境界绑定 */
+  const deleteSettingLevel = useCallback((levelId: string): void => {
+    setBundle((current) => {
+      if (!current) return current;
+      // 派生段的 id 由「父 id + __segN」派生，按前缀收口
+      const doomed = new Set<string>([levelId]);
+      return {
+        ...current,
+        settings: current.settings.map((category) => {
+          for (const level of category.levels) {
+            if (level.parentId === levelId) doomed.add(level.id);
+          }
+          return {
+            ...category,
+            levels: removeLevels(category.levels, [...doomed]),
+          };
+        }),
+        links: current.links.filter((link) => !doomed.has(link.toId)),
+      };
+    });
+    void removeSettingLevelRemote(levelId);
+  }, []);
+
+  /** 等级项重排：按拖拽落点重算 rank 后全量回写 */
+  const reorderSettingLevels = useCallback(
+    (categoryId: string, fromId: string, toIndex: number): void => {
+      if (!bundle) return;
+      const category = bundle.settings.find((item) => item.id === categoryId);
+      if (!category) return;
+      const next = moveLevel(category.levels, fromId, toIndex);
+      patchCategoryLocal(categoryId, (item) => ({ ...item, levels: next }));
+      void saveSettingLevelOrderRemote(
+        next.map((level) => ({ id: level.id, rank: level.rank })),
       );
     },
-    [bundle],
+    [bundle, patchCategoryLocal],
+  );
+
+  /**
+   * 拆分层级：原阶降级为分组（不占段），全部子层级从第 1 段起挂在它下面
+   *
+   * `namePattern` 为段名模板（{name} 原名 / {n} 段号 / 固定名单），缺省沿用
+   * 「原名 · 第N段」。主进程是唯一裁判（它要写 parent_id / 层段），本地只做
+   * 同一口径的乐观更新，落库失败时下次装载会被纠正回来。
+   */
+  const splitSettingLevel = useCallback(
+    (levelId: string, parts: number, namePattern?: string): void => {
+      if (!bundle) return;
+      const owner = bundle.settings.find((category) =>
+        category.levels.some((level) => level.id === levelId),
+      );
+      const target = owner?.levels.find((level) => level.id === levelId);
+      if (!owner || !target) return;
+      // 等级序列只支持两个层级（1.39.1）：子层级不允许再拆，否则会出现
+      // 「初级·第1段·第1段」式的三层嵌套，境界 chip 与层级下拉都表达不了。
+      if (target.parentId) return;
+      const segments = previewSplit(
+        target,
+        parts,
+        target.subLevels * 1,
+        namePattern,
+      );
+      const next = applySplit(owner.levels, levelId, segments);
+      patchCategoryLocal(owner.id, (category) => ({
+        ...category,
+        levels: next,
+      }));
+      void splitSettingLevelRemote(
+        levelId,
+        segments.map((segment) => ({
+          name: segment.name,
+          from: segment.segFrom,
+          to: segment.segTo,
+        })),
+      );
+    },
+    [bundle, patchCategoryLocal],
+  );
+
+  /** 合并层级：摘掉派生段、还原小层总数并前移后续 rank */
+  const mergeSettingLevel = useCallback(
+    (levelId: string): void => {
+      if (!bundle) return;
+      const owner = bundle.settings.find((category) =>
+        category.levels.some((level) => level.id === levelId),
+      );
+      if (!owner) return;
+      const next = applyMerge(owner.levels, levelId);
+      const removed = new Set(
+        owner.levels
+          .filter((level) => level.parentId === levelId)
+          .map((level) => level.id),
+      );
+      patchCategoryLocal(owner.id, (category) => ({
+        ...category,
+        levels: next,
+      }));
+      setBundle((current) =>
+        current
+          ? {
+              ...current,
+              links: current.links.filter((link) => !removed.has(link.toId)),
+            }
+          : current,
+      );
+      void mergeSettingLevelRemote(levelId);
+    },
+    [bundle, patchCategoryLocal],
   );
 
   /**
    * 设定 / 替换 / 取消要素的「当前境界」（R25）。
-   * 绑定存 novel_links：toType='level'、toId=novel_levels.id、relation 固定
-   * 「当前境界」；一个要素同时只持有一条——先摘旧绑定再落新绑定。
+   * 绑定存 novel_links：toType='level'、toId=根阶 id、relation 固定
+   * 「当前境界」、note 写 {sub}（阶内第几层）—— 父阶是「组」（1.38.1），
+   * 面板与行囊共用同一坐标：行囊读 note.sub 就是进度条位置，无需换算。
+   * 一个要素同时只持有一条——先摘旧绑定再落新绑定。
    * rungId 传 null 即取消绑定。
    */
   const setEntityLevel = useCallback(
@@ -1003,6 +1845,7 @@ export function useNovelData() {
       entityId: string,
       entityType: EntityType,
       rungId: string | null,
+      sub?: number,
     ): void => {
       if (!bundle) return;
       const binding = bundle.links.find(
@@ -1011,8 +1854,13 @@ export function useNovelData() {
           link.fromType === entityType &&
           link.toType === "level",
       );
+      const samePosition =
+        rungId !== null &&
+        binding?.toId === rungId &&
+        parseRealmNoteSub(binding.note) ===
+          Math.max(1, Math.floor(sub ?? 1) || 1);
       const created: NovelLink | null =
-        rungId === null || rungId === binding?.toId
+        rungId === null || samePosition
           ? null
           : {
               id: createNovelId("l"),
@@ -1021,6 +1869,9 @@ export function useNovelData() {
               toType: "level",
               toId: rungId,
               relation: LEVEL_RELATION,
+              // 阶内小层进度：行囊与实体卡都从这格读（缺省第 1 层不写）
+              note:
+                sub && sub > 1 ? JSON.stringify({ sub: Math.floor(sub) }) : "",
             };
       setBundle((current) => {
         if (!current) return current;
@@ -1069,31 +1920,47 @@ export function useNovelData() {
 
   // ── 起名工具收藏夹（R18 ④）：跨作品单键存储，按 workId 过滤 ────────────
 
+  /**
+   * 收藏夹落库（唯一的写入口）。
+   *
+   * ⚠️ 这份副作用原先写在 `setNameFavorites` 的 **updater 里** —— state updater
+   * 必须是纯函数，本窗口启用了 StrictMode，开发态会双调用，等于每次收藏都
+   * 发两次 `saveNameFavorites` IPC（config 整读整写，第二次纯属浪费）。
+   * 移到 effect 后，写入次数由数据本身决定，与渲染次数无关。
+   */
+  useEffect(() => {
+    if (favoritesSavedRef.current === nameFavorites) return;
+    favoritesSavedRef.current = nameFavorites;
+    void saveNameFavorites(nameFavorites);
+  }, [nameFavorites]);
+
   /** 加入收藏夹（防抖落库；同作品同名不重复入） */
   const addNameFavorite = useCallback(
-    (workId: string, name: string, kind: NamingKind, style: NameStyle): void => {
+    (
+      workId: string,
+      name: string,
+      kind: NamingKind,
+      style: NameStyle,
+      source?: NamingSource,
+    ): void => {
       const trimmed = name.trim();
       if (!workId || !trimmed) return;
       setNameFavorites((current) => {
-        if (
-          current.some(
-            (f) => f.workId === workId && f.name === trimmed,
-          )
-        ) {
+        if (current.some((f) => f.workId === workId && f.name === trimmed)) {
           return current;
         }
-        const next: NameFavorite[] = [
-          {
-            id: `nf-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
-            workId,
-            name: trimmed,
-            kind,
-            style,
-            createdAt: Date.now(),
-          },
-          ...current,
-        ];
-        void saveNameFavorites(next);
+        const favorite: NameFavorite = {
+          id: `nf-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+          workId,
+          name: trimmed,
+          kind,
+          style,
+          createdAt: Date.now(),
+        };
+        // 仅 AI 来源显式落 source；本地起名不写（缺省即 local，与 sanitize 口径一致）
+        if (source === "ai") favorite.source = "ai";
+        const next: NameFavorite[] = [favorite, ...current];
+        // 落库交给上面的 effect：updater 只做纯计算
         return next;
       });
     },
@@ -1105,7 +1972,6 @@ export function useNovelData() {
     setNameFavorites((current) => {
       const next = current.filter((f) => f.id !== favoriteId);
       if (next.length === current.length) return current;
-      void saveNameFavorites(next);
       return next;
     });
   }, []);
@@ -1225,6 +2091,30 @@ export function useNovelData() {
   );
 
   /**
+   * 章节 AI 摘要落库 + 本地乐观更新（R-AI-09）。
+   * `model` 空串 = 手工编辑清空来源标记（M6 溯源）。
+   */
+  const updateChapterSummary = useCallback(
+    (chapterId: string, summary: string, model?: string, batch?: string): void => {
+      setBundle((current) => {
+        if (!current) return current;
+        const next = patchChapterSummary(
+          current.chapters,
+          chapterId,
+          summary,
+          model,
+          Date.now(),
+          batch,
+        );
+        if (next === current.chapters) return current;
+        void saveChapterSummary(chapterId, summary.trim(), model, batch);
+        return { ...current, chapters: next };
+      });
+    },
+    [],
+  );
+
+  /**
    * 新建伏笔条目（R7 大纲板 / 灵感一键转化共用入口）。
    * 新条目插到列表头部，返回创建结果供调用方回填「已转为伏笔」标记。
    */
@@ -1269,7 +2159,9 @@ export function useNovelData() {
   const toggleOutlineEntryStatus = useCallback((entryId: string): void => {
     setBundle((current) => {
       if (!current) return current;
-      const target = current.outlineEntries.find((entry) => entry.id === entryId);
+      const target = current.outlineEntries.find(
+        (entry) => entry.id === entryId,
+      );
       if (!target) return current;
       const next: OutlineEntry = {
         ...target,
@@ -1302,16 +2194,19 @@ export function useNovelData() {
   /** 快照请求序号：抽屉开着时切章会有两个请求并发，先发的 A 章响应后到会把列表覆盖成 A 的 */
   const snapshotSeqRef = useRef(0);
 
-  const loadSnapshots = useCallback(async (chapterId: string): Promise<void> => {
-    const seq = (snapshotSeqRef.current += 1);
-    try {
-      const list = await fetchChapterSnapshots(chapterId);
-      if (seq !== snapshotSeqRef.current) return;
-      setSnapshots(list);
-    } catch {
-      // 装载失败不清空列表：抽屉会显示上一次的时间线，好过凭空白屏
-    }
-  }, []);
+  const loadSnapshots = useCallback(
+    async (chapterId: string): Promise<void> => {
+      const seq = (snapshotSeqRef.current += 1);
+      try {
+        const list = await fetchChapterSnapshots(chapterId);
+        if (seq !== snapshotSeqRef.current) return;
+        setSnapshots(list);
+      } catch {
+        // 装载失败不清空列表：抽屉会显示上一次的时间线，好过凭空白屏
+      }
+    },
+    [],
+  );
 
   /** 回滚：返回该快照的正文，由上层灌入编辑器（PRD R3） */
   const rollbackSnapshot = useCallback(
@@ -1337,7 +2232,13 @@ export function useNovelData() {
     chapters,
     entities,
     links,
-    levelSystems,
+    entityLinkCount,
+    settings,
+    /** 境界体系分类：全书唯一，角色卡「当前境界」只认它 */
+    realmCategory: useMemo(
+      () => settings.find((category) => category.kind === "realm") ?? null,
+      [settings],
+    ),
     notes,
     allNotes,
     outlineEntries,
@@ -1356,31 +2257,39 @@ export function useNovelData() {
     consumeLastPosition,
     createWork,
     renameWork,
+    setWorkGenre,
     deleteWork,
     resetTemplate,
     updateChapterContent,
     updateChapterOutlineNote,
+    updateChapterSummary,
     createChapter,
     createVolume,
     renameChapter,
     deleteChapter,
     renameVolume,
+    deleteVolume,
     reorderChapters,
     moveChapterToVolume,
     reorderVolumes,
     toggleChapterStatus,
     markSelectionAsEntity,
     updateEntity,
-    bindTextToEntity,
+    addEntitiesBatch,
     addLink,
     removeLink,
-    createLevelSystem,
-    renameLevelSystem,
-    deleteLevelSystem,
-    addLevel,
-    renameLevel,
-    deleteLevel,
-    reorderLevels,
+    createSettingCategory,
+    createSettingCategoryWithLevels,
+    patchSettingCategory,
+    deleteSettingCategory,
+    reorderSettingCategories,
+    addSettingLevel,
+    batchAddSettingLevels,
+    patchSettingLevel,
+    deleteSettingLevel,
+    reorderSettingLevels,
+    splitSettingLevel,
+    mergeSettingLevel,
     setEntityLevel,
     migrateEntityType,
     getEntityById,

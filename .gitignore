@@ -15,6 +15,9 @@ dist
 dist-ssr
 dist-electron
 release
+# 备用打包输出目录（electron-builder -c.directories.output=release-xxx），
+# 用于 release/ 被占用时另开目录取证；产物不应进版本库
+release-*
 *.local
 .workbuddy
 .cache-shots

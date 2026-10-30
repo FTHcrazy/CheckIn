@@ -1,5 +1,5 @@
 import { AppstoreOutlined, SortAscendingOutlined, UnorderedListOutlined } from "@ant-design/icons";
-import { Select } from "antd";
+import { Button, Segmented, Select } from "antd";
 import type { ShelfSortKey, ShelfStatusFilter } from "../../bookshelf-utils";
 import "./index.scss";
 
@@ -41,9 +41,8 @@ export default function ShelfToolbar({
     <div className="bs-toolbar">
       <div className="bs-toolbar__chips" role="tablist" aria-label="作品状态筛选">
         {STATUS_CHIPS.map((chip) => (
-          <button
+          <Button
             key={chip.key}
-            type="button"
             role="tab"
             aria-selected={status === chip.key}
             className={`bs-toolbar__chip${status === chip.key ? " is-active" : ""}`}
@@ -51,7 +50,7 @@ export default function ShelfToolbar({
           >
             {chip.label}
             <span className="bs-toolbar__chip-count">{counts[chip.key]}</span>
-          </button>
+          </Button>
         ))}
       </div>
 
@@ -66,24 +65,21 @@ export default function ShelfToolbar({
           suffixIcon={<SortAscendingOutlined />}
           popupMatchSelectWidth={false}
         />
-        <div className="bs-toolbar__views" role="group" aria-label="视图切换">
-          <button
-            type="button"
-            className={`bs-toolbar__view${viewMode === "grid" ? " is-active" : ""}`}
-            onClick={() => onViewModeChange("grid")}
-            aria-label="网格视图"
-          >
-            <AppstoreOutlined />
-          </button>
-          <button
-            type="button"
-            className={`bs-toolbar__view${viewMode === "list" ? " is-active" : ""}`}
-            onClick={() => onViewModeChange("list")}
-            aria-label="列表视图"
-          >
-            <UnorderedListOutlined />
-          </button>
-        </div>
+        {/* 视图切换：antd Segmented（AGENTS §6.1.2 分段切换一律走组件库）。
+            改前是两颗 antd Button 手搓的「轨道 + 选中格」，交互语义与键盘行为
+            都要自己维护；Segmented 原生带滑块动画与 radio 语义，外观靠
+            `--ant-segmented-*` 变量复刻成同一套（见 index.scss）。
+            icon 选项不传 label，标题由 option.title 提供原生 title 提示。 */}
+        <Segmented<ShelfViewMode>
+          className="bs-toolbar__views"
+          value={viewMode}
+          onChange={onViewModeChange}
+          aria-label="视图切换"
+          options={[
+            { value: "grid", icon: <AppstoreOutlined />, title: "网格视图" },
+            { value: "list", icon: <UnorderedListOutlined />, title: "列表视图" },
+          ]}
+        />
       </div>
     </div>
   );

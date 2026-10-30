@@ -1,0 +1,68 @@
+/*
+ * 分类管理弹窗（1.40.0）。按钮全部复用 `cpk-btn` / `cpk-iconbtn`
+ * （清零点已由它们自带），这里只管弹窗内部的排版。
+ */
+.cpk-catmgr {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cpk-catmgr__row {
+  display: grid;
+  gap: 2px;
+  padding: 6px 8px;
+  border: 1px solid var(--app-border);
+  border-radius: 6px;
+}
+
+.cpk-catmgr__line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.cpk-catmgr__name {
+  flex: 1;
+  min-width: 0;
+}
+
+.cpk-catmgr__system {
+  flex: 1.2;
+  min-width: 0;
+}
+
+.cpk-catmgr__sub {
+  display: flex;
+  min-width: 0;
+}
+
+.cpk-catmgr__count {
+  font-size: 12px;
+  color: var(--app-text-secondary);
+}
+
+.cpk-catmgr__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+/* 「没有小说体系」的引导：给一条弱底色提示条，指引去设定中心 */
+.cpk-catmgr__guide {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--app-border);
+  border-radius: 6px;
+  /* 本组件是 antd Modal（浮层，底 = 纯白）：提示条要「弱」就只能弱到
+     `--app-surface` 这一档。曾经写的是 `--app-surface-elevated` —— 与弹窗
+     自身同色（1.00），提示条其实完全没显形、只剩一圈描边。 */
+  background: var(--app-surface);
+  font-size: 12px;
+  color: var(--app-text-secondary);
+}

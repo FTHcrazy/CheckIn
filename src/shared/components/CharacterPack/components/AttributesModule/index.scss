@@ -1,0 +1,53 @@
+/** 人物属性：单列「当前角色属性」行内编辑（1.39.1 两段合一） */
+.cpk-attr {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  &__rows {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  &__row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 0;
+  }
+
+  /* 名称刻意用**带边框**的 antd Input（不写 variant="borderless"）：
+     此前无边框样式让「属性名可编辑」完全不可见 —— 这正是报障点。
+     这里只管布局，边框 / hover 态全部交给组件库自己的变量体系 */
+  &__name {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__unit.ant-input {
+    width: 56px;
+    flex: none;
+    text-align: center;
+    color: var(--app-text-secondary-strong);
+  }
+
+  &__decimals {
+    width: 92px;
+    flex: none;
+  }
+
+  &__base {
+    flex: none;
+  }
+
+  &__ops {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0;
+  }
+}

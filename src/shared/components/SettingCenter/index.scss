@@ -1,0 +1,55 @@
+/** 设定中心（1.36.0）
+
+    左分类列表 + 右「分类头 / 进位规则 / 等级序列」三块。浮层尺寸偏大，
+    所以这里的两栏宽度用固定 + minmax(0, 1fr)：等级序列表有 6 列，
+    给 `1fr` 下限是内容宽时，antd Button 的 nowrap 会把整行撑出容器。
+
+    UI-10 拆分后本文件只保留父组件自己渲染的骨架（浮层标题 / 两栏网格 /
+    右栏容器）；卡片外壳、字段、提示条等跨子组件复用的零件在
+    `setting-primitives.scss`，其余各归其子组件目录。 */
+@use "./setting-primitives.scss";
+
+.nv-sc {
+  &__title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--app-text);
+  }
+
+  &__pill {
+    padding: 1px 8px;
+    border-radius: var(--app-radius-chip);
+    background: var(--app-accent-blue-weak);
+    color: var(--app-accent-blue);
+    font-size: 12px;
+    font-weight: 400;
+  }
+
+  &__body-grid {
+    display: grid;
+    grid-template-columns: 220px minmax(0, 1fr);
+    // 行轨道同样要 minmax(0, 1fr)：auto 行按内容计高，height 钳不住它
+    grid-template-rows: minmax(0, 1fr);
+    gap: 16px;
+    margin-top: 12px;
+    // 等级序列长到几十条时只让右栏内部滚，整个浮层不跟着长高。
+    // ⚠️ 必须是确定高度（height）而非 max-height：grid 的隐式行轨道按内容
+    // 计算，容器 max-height 只钳住盒子、钳不住轨道 —— 内容超高时两栏
+    // 会整体溢出 grid 盒子往下画，而弹层底色只画到盒子为止，看起来就是
+    // 「弹层下半截透明、正文透出来」。height 定死 + minmax(0,1fr) 轨道，
+    // 内部的 __list / __rows 滚动链才真正生效。
+    height: calc(100vh - 260px);
+    min-height: 320px;
+  }
+
+  &__main {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+    min-height: 0;
+  }
+}

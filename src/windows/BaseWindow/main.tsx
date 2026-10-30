@@ -3,6 +3,8 @@ import { createRoot } from 'react-dom/client'
 import { HashRouter } from 'react-router-dom'
 import { registerActivityNotifyBridge } from '@/shared/ipc/activityNotifyBridge'
 import { initThemeFromStorage } from '@/shared/theme'
+import ErrorBoundary from '@/shared/components/ErrorBoundary'
+import { installRendererLogger } from '@/shared/log/renderer-logger'
 import '@/shared/styles/themes.scss'
 import '@/shared/styles/window-shell.scss'
 import './index.scss'
@@ -14,10 +16,15 @@ registerActivityNotifyBridge()
 // 首帧同步落主题：必须在 createRoot 之前，避免「先亮后暗」闪一下
 initThemeFromStorage()
 
+// 全局错误捕获（未捕获错误 / 未处理的 Promise 拒绝 → 本地日志）
+installRendererLogger('main')
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <HashRouter>
-      <App />
-    </HashRouter>
+    <ErrorBoundary windowName="main">
+      <HashRouter>
+        <App />
+      </HashRouter>
+    </ErrorBoundary>
   </StrictMode>,
 )

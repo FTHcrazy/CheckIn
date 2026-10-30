@@ -4,11 +4,12 @@ import {
   notifyProtagonistChanged,
   readEventDetail,
   type PackProtagonistEventDetail,
-} from "../components/CharacterPack/pack-config";
+} from "@/shared/components/CharacterPack/pack-config";
 import {
   fetchProtagonistBinding,
   writeProtagonistBinding,
-} from "../components/CharacterPack/services/pack-service";
+} from "@/shared/components/CharacterPack/services/pack-service";
+import { subscribeDualChannel } from "@/shared/novel/dual-channel";
 
 /**
  * 行囊主角绑定（右侧要素栏 ↔ 行囊面板的交叉点）。
@@ -58,14 +59,7 @@ export function usePackProtagonist(workId: string) {
       if (detail.workId && detail.workId !== workId) return;
       setEntityId(detail.entityId ?? "");
     };
-    window.addEventListener(PACK_PROTAGONIST_EVENT, handler as EventListener);
-
-    const api = window.electronAPI?.windowAPI;
-    api?.on(PACK_PROTAGONIST_EVENT, handler);
-    return () => {
-      window.removeEventListener(PACK_PROTAGONIST_EVENT, handler as EventListener);
-      api?.off(PACK_PROTAGONIST_EVENT, handler);
-    };
+    return subscribeDualChannel(PACK_PROTAGONIST_EVENT, handler);
   }, [workId]);
 
   /**

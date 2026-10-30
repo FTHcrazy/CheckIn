@@ -26,7 +26,19 @@ export interface CanvasSize {
 }
 
 /** 缩放上下限（PRD §4.7） */
-export const ZOOM_LIMITS = { min: 0.1, max: 8 } as const;
+export interface ZoomLimits {
+  min: number;
+  max: number;
+}
+
+/**
+ * 默认缩放上下限。
+ *
+ * 不要写成 `as const`：那样推导出的是字面量类型 `{ readonly min: 0.1; max: 8 }`，
+ * 一旦它被用作默认参数，函数签名就只接受「恰好等于这两个字面量」的对象，
+ * 而 `zoomLimitsFor()` 按层级反推出的 `{ min: number; max: number }` 会被拒。
+ */
+export const ZOOM_LIMITS: ZoomLimits = { min: 0.1, max: 8 };
 
 function clamp(v: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, v));
@@ -72,7 +84,7 @@ export function zoomAt(
   screenAnchor: { x: number; y: number },
   factor: number,
   size: CanvasSize,
-  limits = ZOOM_LIMITS,
+  limits: ZoomLimits = ZOOM_LIMITS,
 ): Viewport {
   const nextScale = clamp(viewport.scale * factor, limits.min, limits.max);
   if (nextScale === viewport.scale) return viewport;
@@ -135,7 +147,7 @@ export function fitToRect(
   rect: { x: number; y: number; width: number; height: number },
   size: CanvasSize,
   padding = FIT_PADDING,
-  limits = ZOOM_LIMITS,
+  limits: ZoomLimits = ZOOM_LIMITS,
 ): Viewport {
   if (rect.width <= 0 || rect.height <= 0 || size.width <= 0 || size.height <= 0) {
     return { x: 0, y: 0, scale: 1 };

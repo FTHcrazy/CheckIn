@@ -112,7 +112,7 @@ export default function DailyPage() {
           </div>
           <div className="calendar-scroll">
             <div className="calendar-grid">
-              {calendarDays.map((d, i) => {
+              {calendarDays.map((d) => {
                 const dateStr = d.format('YYYY-MM-DD')
                 const isCurrentMonth = d.month() === currentMonth.month()
                 const isSelected = d.isSame(selectedDate, 'day')
@@ -124,7 +124,9 @@ export default function DailyPage() {
 
                 return (
                   <div
-                    key={i}
+                    /* 翻月时格子整体换人（长度在 35/42 间跳变），用下标当 key
+                       会让 React 按位置复用 DOM，className 逐格 diff 出一帧错位 */
+                    key={dateStr}
                     className={`calendar-cell ${!isCurrentMonth ? 'other-month' : ''} ${isSelected ? 'selected' : ''} ${isToday ? 'today' : ''}`}
                     onClick={() => setSelectedDate(d)}
                   >

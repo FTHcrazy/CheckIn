@@ -10,7 +10,7 @@
 import { ipcMain, dialog, BrowserWindow, type IpcMainInvokeEvent } from 'electron';
 import fs from 'fs';
 import JSZip from 'jszip';
-import { dbAll, dbExec, dbRun, getCurrentUserEmail } from '../db';
+import { dbAll, dbExec, dbGet, dbRun, getDb, getCurrentUserEmail } from '../db';
 import {
   BACKUP_MANIFEST_FILE,
   BACKUP_TODOS_FILE,
@@ -141,17 +141,33 @@ async function handleToggleChildLogic(id: number, checked: boolean): Promise<voi
   const doneVal = checked ? 1 : 0;
   const doneAt = checked ? nowLocalISO() : null;
 
-  // 切换自身
-  dbRun('UPDATE todos SET done = ?, done_at = ? WHERE id = ?', [doneVal, doneAt, id]);
+  /*
+   * ⚠️ 必须整段包事务：「父项 done 必须等于所有子项都 done」是一条跨行不变量。
+   * 原先这里连发 3 条裸 SQL，中途失败就会留下「父项已完成而子项没有」的
+   * 对不上勾的数据，UI 上没有任何提示。
+   */
+  getDb().transaction(() => {
+    // 切换自身
+    dbRun('UPDATE todos SET done = ?, done_at = ? WHERE id = ?', [doneVal, doneAt, id]);
 
-  // 查询父项
-  const child = dbAll('SELECT parent_id FROM todos WHERE id = ?', [id]) as TodoRow[];
-  if (child.length > 0 && child[0].parent_id !== null) {
-    const parentId = child[0].parent_id;
+    // 查询父项
+    const child = dbGet('SELECT parent_id FROM todos WHERE id = ?', [id]) as
+      | { parent_id: number | null }
+      | undefined;
+    const parentId = child?.parent_id;
+    if (parentId == null) return;
 
-    // 检查所有兄弟项是否全部完成
-    const siblings = dbAll('SELECT done FROM todos WHERE parent_id = ?', [parentId]) as TodoRow[];
-    const allDone = siblings.length > 0 && siblings.every((s) => s.done === 1);
+    /*
+     * 聚合下推到 SQL：一次 COUNT/SUM 代替「把全部兄弟行捞回 JS 再 every」。
+     * 兄弟项可以有几百条，捞回来只为判一个布尔值不划算。
+     */
+    const agg = dbGet(
+      `SELECT COUNT(*) AS total,
+              COALESCE(SUM(CASE WHEN done = 1 THEN 1 ELSE 0 END), 0) AS doneCount
+         FROM todos WHERE parent_id = ?`,
+      [parentId],
+    ) as { total: number; doneCount: number };
+    const allDone = agg.total > 0 && agg.doneCount === agg.total;
 
     if (allDone) {
       // 全部完成 → 父项也完成
@@ -160,7 +176,7 @@ async function handleToggleChildLogic(id: number, checked: boolean): Promise<voi
       // 取消勾选 → 父项也取消
       dbRun('UPDATE todos SET done = 0, done_at = NULL WHERE id = ?', [parentId]);
     }
-  }
+  })();
 }
 
 /**
@@ -171,16 +187,19 @@ async function handleToggleParentLogic(id: number, checked: boolean): Promise<vo
   const doneVal = checked ? 1 : 0;
   const doneAt = checked ? nowLocalISO() : null;
 
-  // 切换自身
-  dbRun('UPDATE todos SET done = ?, done_at = ? WHERE id = ?', [doneVal, doneAt, id]);
+  // 同上：父项自身与全部子项必须同进同退，两条写操作包在一个事务里
+  getDb().transaction(() => {
+    // 切换自身
+    dbRun('UPDATE todos SET done = ?, done_at = ? WHERE id = ?', [doneVal, doneAt, id]);
 
-  if (checked) {
-    // 勾选父项 → 所有未完成子项也完成
-    dbRun('UPDATE todos SET done = 1, done_at = ? WHERE parent_id = ? AND done = 0', [nowLocalISO(), id]);
-  } else {
-    // 取消父项 → 所有子项取消
-    dbRun('UPDATE todos SET done = 0, done_at = NULL WHERE parent_id = ?', [id]);
-  }
+    if (checked) {
+      // 勾选父项 → 所有未完成子项也完成
+      dbRun('UPDATE todos SET done = 1, done_at = ? WHERE parent_id = ? AND done = 0', [nowLocalISO(), id]);
+    } else {
+      // 取消父项 → 所有子项取消
+      dbRun('UPDATE todos SET done = 0, done_at = NULL WHERE parent_id = ?', [id]);
+    }
+  })();
 }
 
 export function registerTodoHandlers(): void {

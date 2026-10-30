@@ -165,7 +165,7 @@ function runHoistedHealthCheck() {
 
   console.error("[fix-pnpm-links] hoisted 布局体检发现问题：");
   for (const line of bad) console.error(`  - ${line}`);
-  console.error("\n请执行：rm -rf node_modules && pnpm install && pnpm electron:rebuild");
+  console.error("\n请执行：rm -rf node_modules && pnpm install && pnpm ensure:electron");
   process.exit(WARN_ONLY ? 0 : 1);
 }
 
@@ -504,7 +504,7 @@ if (missing.length > 0) {
     "补丁式修复不再可靠。请按 AGENTS.md §8.7 彻底重建：\n" +
       "  1. 删除 node_modules（依赖目录，可由 lockfile 完整恢复）\n" +
       "  2. pnpm install\n" +
-      "  3. pnpm electron:rebuild",
+      "  3. pnpm ensure:electron（校验 Electron 运行时二进制）",
   );
 }
 

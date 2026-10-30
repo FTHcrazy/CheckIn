@@ -1,0 +1,159 @@
+@use "../../../../../../../../shared/styles/widget" as widget;
+
+/* 词库导入格式说明（Modal 挂在 body portal）
+
+   ⚠️ 命名空间必须是独立的 `.nv-tpl-modal` / `.nv-tpl`，不能 scope 在 `.nv-panel`
+   下 —— Modal 的 DOM 不在右栏里，那样写一条都选不中（且会给人「已经限定了
+   作用域」的错觉）。
+   颜色全部走 `--app-*`，浮层底色交给 antd Modal 的组件变量。 */
+
+.nv-tpl-modal {
+  /* ⚠️ antd v6 的「卡片」节点是 `.ant-modal-container`（背景 / 圆角 / 阴影 /
+     内边距都挂在它身上），v5 的 `.ant-modal-content` **已经不存在** ——
+     写 `.ant-modal-content` 一条都命中不了，表现是「样式改了却毫无反应」。
+
+     小窗口适配：Novel 窗口最矮 640，而这块内容（三种格式 + 规则清单）
+     本身就有 600 上下 —— 不夹住高度的话整块 Modal 比视口还高，底部
+     「复制模板 / 下载模板 / 知道了」直接被裁到窗口外。
+
+     做法：标题与 footer 固定，正文自己滚。高度按「顶部 antd 默认 top:100
+     + 窗口底部留 40px」推算，滚到底时 footer 不会贴住窗口下沿。 */
+  .ant-modal > .ant-modal-container {
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100vh - 140px);
+    border-radius: var(--app-radius-panel);
+  }
+
+  /* 加一层 `.ant-modal-container` 是给选择器提权（antd 的 cssinjs 运行时注入，
+     同权重时后注入者胜出，覆盖会静默失效）。 */
+  .ant-modal-container > .ant-modal-header,
+  .ant-modal-container > .ant-modal-footer {
+    flex: none;
+  }
+
+  .ant-modal-container > .ant-modal-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    /* 正文滚到底不把外层一起滚走 */
+    overscroll-behavior: contain;
+    /* 出滚动条时正文不横向跳动 */
+    scrollbar-gutter: stable;
+  }
+}
+
+.nv-tpl {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-size: 14px;
+  color: var(--app-text);
+}
+
+.nv-tpl__lead {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--app-text-secondary);
+}
+
+.nv-tpl__block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.nv-tpl__block-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.nv-tpl__block-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--app-text-strong);
+}
+
+.nv-tpl__tag {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: var(--app-radius-chip);
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--app-primary);
+  background: var(--app-primary-weak);
+
+  &--muted {
+    color: var(--app-text-secondary);
+    background: var(--app-surface-alt);
+  }
+}
+
+/* 模板代码块：等宽 + 可横向滚动，长行不撑破 Modal。
+   竖向**不**单独限高：外层 `.ant-modal-body` 已经是滚动容器，这里再夹一个
+   max-height 会形成嵌套滚动区（滚到代码块上先滚代码、之后才滚正文），
+   小窗口里尤其别扭。 */
+.nv-tpl__code {
+  margin: 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-item);
+  background: var(--app-surface-alt);
+  color: var(--app-text-secondary);
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.65;
+  white-space: pre;
+  tab-size: 2;
+}
+
+.nv-tpl__rules {
+  margin: 0;
+  padding: 10px 12px 10px 28px;
+  border-radius: var(--app-radius-item);
+  background: var(--app-surface-alt);
+  color: var(--app-text-secondary);
+  font-size: 12px;
+  line-height: 1.75;
+}
+
+/* footer 按钮：清零后必须显式补回高度 / 内边距 / 描边（同书架顶栏那两颗） */
+.nv-tpl__btn.ant-btn {
+  @include widget.ant-button-reset;
+  --ant-control-height: 32px;
+  --ant-button-padding-inline: 14px;
+  --ant-button-content-font-size: 14px;
+  --ant-button-font-weight: 500;
+  --ant-button-icon-gap: 6px;
+  --ant-border-radius: var(--app-radius-item);
+  --ant-line-width: 1px;
+  --ant-button-default-bg: transparent;
+  --ant-button-default-color: var(--app-text-secondary);
+  --ant-button-default-border-color: var(--app-border);
+  --ant-button-default-hover-bg: var(--app-surface-hover);
+  --ant-button-default-hover-color: var(--app-primary);
+  --ant-button-default-hover-border-color: var(--app-primary);
+  --ant-button-default-active-bg: var(--app-surface-active);
+  --ant-button-default-active-color: var(--app-primary);
+  --ant-button-default-active-border-color: var(--app-primary);
+  --ant-button-default-shadow: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  &--primary {
+    --ant-button-default-bg: var(--app-primary);
+    --ant-button-default-color: var(--app-primary-contrast);
+    --ant-button-default-border-color: var(--app-primary);
+    --ant-button-default-hover-bg: var(--app-primary-strong);
+    --ant-button-default-hover-color: var(--app-primary-contrast);
+    --ant-button-default-hover-border-color: var(--app-primary-strong);
+    --ant-button-default-active-bg: var(--app-primary-active);
+    --ant-button-default-active-color: var(--app-primary-contrast);
+    --ant-button-default-active-border-color: var(--app-primary-active);
+  }
+}

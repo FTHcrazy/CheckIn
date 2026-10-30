@@ -1,9 +1,11 @@
-/* 点外部关闭的透明捕获层：不暗化正文（保持「零打断」），只拦一次点击 */
-.nv-setting__mask {
-  position: absolute;
-  inset: 0;
-  z-index: 45;
-}
+/* 抽屉里的按钮一律是 antd `Button`（AGENTS 6.1.2）：先清零再声明组件级变量。
+ * 选中态（.is-on）是持久高亮态 → 写默认变量，不写 :hover 属性规则。
+ *
+ * 「点外部关闭」不再用覆盖式透明捕获层（原 `.nv-setting__mask`）：那是 REQ-050
+ * 「第一击被关闭路径消耗」的回归来源，且几何上够不到顶栏。现改为文档级 `mousedown`
+ * 分流（见 index.tsx），落点在抽屉外即 `onClose()`，绝不拦截事件。
+ */
+@use "../../../../../../shared/styles/widget" as widget;
 
 .nv-setting {
   position: absolute;
@@ -18,7 +20,26 @@
   border-left: 1px solid var(--app-border);
   box-shadow: var(--app-shadow-pop);
   transform: translateX(100%);
-  transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform var(--app-t-slow) var(--app-ease-standard);
+
+  /* ── 组件槽位：滑块轨道 / 分段底 ──
+   * 这一层是浮层（底 = `--app-surface-elevated` 纯白），里面的「槽」只回退一档
+   * = `--app-surface`，与同面板的 chip 按钮（`--ant-button-default-bg`）同档。
+   *
+   * antd 出厂值两个都落在别处，在纯白浮层上会重一倍、还丢掉蓝味：
+   *   Slider    railBg = colorFillTertiary = rgba(0,0,0,.04) → 白底上退化成
+   *             中性灰 #f5f5f5（1.090），是全仓唯一的「无彩度」元素；
+   *   Segmented trackBg = colorBgLayout = `--app-bg`（页面底，比内容面还深一档）
+   *             → 1.089。
+   * 两者都比这里应有的 1.043 重一倍 —— 真机反馈的「面板里的底色跟其余模块
+   * 对比度不一致」。规则见 `src/shared/styles/themes.scss` 文件头「常驻色块阶梯」。
+   */
+  --ant-slider-rail-bg: var(--app-surface);
+  /* 轨道悬停只允许在常驻色阶内加深一档（alt 贴 surface），
+     不让 4px 的轨道靠交互态色反超常驻块 */
+  --ant-slider-rail-hover-bg: var(--app-surface-alt);
+  --ant-segmented-track-bg: var(--app-surface);
+  --ant-segmented-item-hover-bg: var(--app-surface-alt);
 
   &.is-open {
     transform: none;
@@ -36,23 +57,24 @@
       color: var(--app-text);
     }
 
-    button {
+    // 关闭按钮：无业务类，用组件库根类命中，hover 的底色 / 字色写成变量
+    .ant-btn {
+      @include widget.ant-button-reset;
+      --ant-control-height: 22px;
+      --ant-button-padding-inline: 0px;
+      --ant-button-content-font-size: 12px;
+      --ant-border-radius: 4px;
+      --ant-button-default-color: var(--app-text-muted);
+      --ant-button-default-hover-bg: var(--app-surface-hover);
+      --ant-button-default-hover-color: var(--app-text);
+      --ant-button-default-active-bg: var(--app-surface-hover);
+      --ant-button-default-active-color: var(--app-text);
+      --ant-button-default-shadow: none;
+
       margin-left: auto;
       width: 22px;
-      height: 22px;
       display: grid;
       place-items: center;
-      border: none;
-      border-radius: 4px;
-      background: transparent;
-      color: var(--app-text-muted);
-      font-size: 12px;
-      cursor: pointer;
-
-      &:hover {
-        background: var(--app-surface-hover);
-        color: var(--app-text);
-      }
     }
   }
 
@@ -60,17 +82,95 @@
     flex: 1;
     min-height: 0;
     overflow: auto;
-    padding: 12px 13px;
+    padding: 14px 14px 20px;
   }
 
+  /* ── 分组 ──
+   * 面板很长（排版 / 阅读 / 字体 / 目标 / 命名 / 标注），原先只有部分块带虚线分隔，
+   * 行、说明、块混在一起读不出层次。现在每组统一「实线 + 16px 上留白」，
+   * 组内行距紧凑 —— 分块清楚但整体不散。
+   */
+  &__block {
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid var(--app-border);
+
+    &:first-child {
+      margin-top: 0;
+      padding-top: 0;
+      border-top: 0;
+    }
+  }
+
+  &__label {
+    margin: 0 0 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--app-text-secondary);
+  }
+
+  /* 组内的次级标题（序号数字 / 章节后缀 / 卷名后缀） */
+  &__sub {
+    display: block;
+    margin-bottom: 7px;
+    font-size: 12px;
+    color: var(--app-text-secondary);
+  }
+
+  &__field + &__field {
+    margin-top: 14px;
+  }
+
+  /* ── 行 ──
+   * 三列：标签定宽 / 控件 / 数值右对齐。标签列固定 60px，几行滑块的起点才对齐。
+   */
   &__row {
     display: grid;
-    grid-template-columns: 56px 1fr 48px;
+    grid-template-columns: 60px 1fr 52px;
     align-items: center;
     gap: 8px;
-    padding: 6px 0;
+    padding: 5px 0;
 
     label {
+      font-size: 12px;
+      color: var(--app-text-secondary);
+    }
+
+    /* 开关行：标签吃满剩余、开关贴右。
+     * ⚠️ 开关必须落在 `auto` 列 + `justify-self: end`：Grid 子项默认
+     * `justify-self: stretch`，之前把它放进 `1fr` 列就被拉成整列宽，
+     * 于是出现那条 200px 的「长条开关」。这里只调整布局，不碰 Switch 自身尺寸
+     * —— 尺寸属于组件库（AGENTS 6.1.2），要改走 token，不在业务样式里写死宽高。 */
+    &.is-toggle {
+      grid-template-columns: 1fr auto;
+      padding: 7px 0;
+
+      .ant-switch {
+        justify-self: end;
+      }
+
+      /* 带说明的开关行：开关对齐**标题行**，不与整块文字垂直居中。
+       * 说明两行时居中会让开关停在说明中段，和标题读不出是一对。
+       * 开关用 antd `size="small"`（28×16），比 12px 标题行矮 1px，
+       * 顶对齐后中线基本重合，不需要额外补偿。 */
+      &:has(> .nv-setting__text) {
+        align-items: start;
+      }
+    }
+
+    /* 控件行（分段控件 / 输入框）：没有右侧数值列 */
+    &.is-control {
+      grid-template-columns: 60px 1fr;
+    }
+  }
+
+  /* 开关行左侧的「标题 + 说明」：说明贴在标题正下方，
+   * 不再整行甩到行外，也不再和下一个开关的说明连成一堵墙。 */
+  &__text {
+    min-width: 0;
+
+    label {
+      display: block;
       font-size: 12px;
       color: var(--app-text-secondary);
     }
@@ -83,45 +183,64 @@
     color: var(--app-text-muted);
   }
 
-  &__block {
-    margin-top: 12px;
-    padding-top: 12px;
-    border-top: 1px dashed var(--app-border);
-  }
-
-  &__label {
-    margin: 0 0 8px;
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.6px;
-    text-transform: uppercase;
-    color: var(--app-text-muted);
-  }
-
   &__chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 5px;
-  }
+    display: grid;
+    gap: 6px;
 
-  &__chip {
-    padding: 3px 9px;
-    border: 1px solid var(--app-border);
-    border-radius: var(--app-radius-pill);
-    background: var(--app-surface);
-    color: var(--app-text-secondary);
-    font-size: 12px;
-    cursor: pointer;
-    transition: border-color 120ms ease, background 120ms ease;
-
-    &:hover {
-      border-color: var(--app-primary);
+    /* 后缀：固定 4 个选项 → 等分一行，不再 3+1 锯齿 */
+    &.is-even {
+      grid-template-columns: repeat(4, 1fr);
     }
 
+    /* 高亮类型：数量不定且标签长短不一 → 按最小宽度等分换行，每行都齐整 */
+    &.is-auto {
+      grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
+    }
+  }
+
+  &__chips + &__hint {
+    margin-top: 8px;
+  }
+
+  /* 胶囊组下面的「自定义」行：留一档呼吸，否则输入框像贴着胶囊的补丁 */
+  &__chips + &__row {
+    margin-top: 8px;
+  }
+
+  /* 选项胶囊：hover 只描边转主色 → --ant-button-default-hover-border-color；
+     选中（.is-on）是持久态 → 写默认变量，hover / active 一并对齐，避免被 antd 盖回去。
+     正文高亮类型的胶囊在未选中时用内联 style 带类型色，内联样式优先级最高，不受影响 */
+  &__chip.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: auto;
+    --ant-button-padding-inline: 9px;
+    --ant-button-content-font-size: 12px;
+    --ant-border-radius: var(--app-radius-pill);
+    --ant-line-width: 1px;
+    --ant-button-default-bg: var(--app-surface);
+    --ant-button-default-border-color: var(--app-border);
+    --ant-button-default-color: var(--app-text-secondary);
+    --ant-button-default-hover-border-color: var(--app-primary);
+    --ant-button-default-active-border-color: var(--app-primary);
+    --ant-button-default-shadow: none;
+
+    padding-block: 3px;
+    justify-content: center;
+    /* 等分网格里按钮撑满格子；标签不换行（宽度已按最长的选项留够） */
+    min-width: 0;
+    white-space: nowrap;
+    transition: border-color var(--app-t-fast) var(--app-ease-standard), background var(--app-t-fast) var(--app-ease-standard);
+
     &.is-on {
-      background: var(--app-primary);
-      border-color: var(--app-primary);
-      color: var(--app-primary-contrast);
+      --ant-button-default-bg: var(--app-primary);
+      --ant-button-default-border-color: var(--app-primary);
+      --ant-button-default-color: var(--app-primary-contrast);
+      --ant-button-default-hover-bg: var(--app-primary);
+      --ant-button-default-hover-border-color: var(--app-primary);
+      --ant-button-default-hover-color: var(--app-primary-contrast);
+      --ant-button-default-active-bg: var(--app-primary);
+      --ant-button-default-active-border-color: var(--app-primary);
+      --ant-button-default-active-color: var(--app-primary-contrast);
     }
 
     &:focus-visible {
@@ -130,40 +249,39 @@
     }
   }
 
+  /* 自定义后缀输入框：现在是「自定义」行里的控件（不再是一行游离文字），
+     边框 / 底色按输入框声明在复合选择器里 —— antd 的 borderless 规则是 (0,1,0)，
+     单类选择器压不过它 */
   &__suffix-input {
     width: 100%;
-    margin-top: 6px;
-    padding: 4px 8px;
-    border: 1px solid var(--app-border);
-    border-radius: var(--app-radius-chip);
-    background: var(--app-input-bg);
-    color: var(--app-text);
-    font-size: 12px;
-    outline: none;
-    transition: border-color 120ms ease;
 
-    // antd Input（AGENTS 6.1.2）：复合选择器压过组件库默认内边距与字号
     &.ant-input {
-      padding: 4px 8px;
+      padding: 3px 8px;
       font-size: 12px;
-    }
-
-    &::placeholder {
-      color: var(--app-text-muted);
-    }
-
-    // antd v6 borderless 聚焦自带 focus-visible outline，与自身边框叠两层
-    &:focus,
-    &:focus-visible {
+      color: var(--app-text);
+      border: 1px solid var(--app-border);
+      border-radius: var(--app-radius-chip);
+      background: var(--app-input-bg);
       outline: none;
-      border-color: var(--app-primary);
+      transition: border-color var(--app-t-fast) var(--app-ease-standard);
+
+      &::placeholder {
+        color: var(--app-text-muted);
+      }
+
+      // antd v6 borderless 聚焦自带 focus-visible outline，与自身边框叠两层
+      &:focus,
+      &:focus-visible {
+        outline: none;
+        border-color: var(--app-primary);
+      }
     }
   }
 
   &__hint {
-    margin: 10px 0 0;
+    margin: 3px 0 0;
     font-size: 12px;
-    line-height: 1.6;
+    line-height: 1.5;
     color: var(--app-text-muted);
   }
 }

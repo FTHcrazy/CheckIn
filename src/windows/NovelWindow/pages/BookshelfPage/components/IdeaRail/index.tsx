@@ -1,7 +1,8 @@
-import { ArrowUpOutlined, PlusOutlined } from "@ant-design/icons";
+import { ArrowUpOutlined } from "@ant-design/icons";
 import { useRef, useState } from "react";
 import { Button, Input, Select } from "antd";
 import type { InputRef } from "antd";
+import { Virtuoso } from "react-virtuoso";
 import type { IdeaFilter } from "../../bookshelf-utils";
 import IdeaNoteCard from "../IdeaNoteCard";
 import type { NovelNoteDTO } from "@/shared/types/electron";
@@ -18,6 +19,7 @@ interface IdeaRailProps {
   onAdd: (content: string, workId: string) => boolean;
   onTogglePin: (noteId: string) => void;
   onMove: (noteId: string, workId: string) => void;
+  onUpdateContent: (noteId: string, content: string) => void;
   onRemove: (noteId: string) => void;
 }
 
@@ -31,7 +33,10 @@ const FILTER_CHIPS: Array<{ key: IdeaFilter; label: string }> = [
 /**
  * 全局灵感库右栏（R32）：跨作品收集池。
  * 捕捉框 Enter 直接记录（Shift+Enter 换行），归属可选「未归属」或任一作品；
- * 灵感卡支持置顶 / 归档到作品 / 退回灵感池 / 删除。
+ * 灵感卡支持置顶 / 编辑 / 归档到作品 / 退回灵感池 / 删除。
+ *
+ * 列表虚拟化（1.41.0）：此前是 `.map` 全量挂载，灵感攒到上千条会把右栏
+ * 拖垮 —— 与编辑器灵感面板（InspirationPanel）同款 Virtuoso 方案。
  */
 export default function IdeaRail({
   counts,
@@ -43,6 +48,7 @@ export default function IdeaRail({
   onAdd,
   onTogglePin,
   onMove,
+  onUpdateContent,
   onRemove,
 }: IdeaRailProps) {
   const [draft, setDraft] = useState("");
@@ -62,14 +68,6 @@ export default function IdeaRail({
       <div className="bs-rail__head">
         <span className="bs-rail__title">灵感库</span>
         <span className="bs-rail__total">全部 {counts.all}</span>
-        <button
-          type="button"
-          className="bs-rail__plus"
-          onClick={() => textareaRef.current?.focus()}
-          aria-label="记一条灵感"
-        >
-          <PlusOutlined />
-        </button>
       </div>
       <p className="bs-rail__subtitle">跨作品收集，随时归纳到作品或回编辑器转为伏笔</p>
 
@@ -116,9 +114,8 @@ export default function IdeaRail({
 
       <div className="bs-rail__chips" role="tablist" aria-label="灵感筛选">
         {FILTER_CHIPS.map((chip) => (
-          <button
+          <Button
             key={chip.key}
-            type="button"
             role="tab"
             aria-selected={filter === chip.key}
             className={`bs-rail__chip${filter === chip.key ? " is-active" : ""}`}
@@ -126,31 +123,37 @@ export default function IdeaRail({
           >
             {chip.label}
             <span className="bs-rail__chip-count">{counts[chip.key]}</span>
-          </button>
+          </Button>
         ))}
       </div>
 
-      <div className="bs-rail__list">
-        {visibleNotes.length === 0 ? (
-          <div className="bs-rail__empty">还没有符合条件的灵感，随手记一条吧</div>
-        ) : (
-          visibleNotes.map((note) => {
+      {visibleNotes.length === 0 ? (
+        <div className="bs-rail__empty">还没有符合条件的灵感，随手记一条吧</div>
+      ) : (
+        <Virtuoso
+          className="bs-rail__list"
+          data={visibleNotes}
+          overscan={8}
+          computeItemKey={(_, note) => note.id}
+          itemContent={(_, note) => {
             const workName = note.workId ? workNameOf(note.workId) : null;
             return (
-              <IdeaNoteCard
-                key={note.id}
-                note={note}
-                workName={note.workId ? workName ?? "未知作品" : null}
-                workOptions={workOptions}
-                onTogglePin={() => onTogglePin(note.id)}
-                onArchiveTo={(workId) => onMove(note.id, workId)}
-                onUnassign={() => onMove(note.id, "")}
-                onRemove={() => onRemove(note.id)}
-              />
+              <div className="bs-rail__cell">
+                <IdeaNoteCard
+                  note={note}
+                  workName={note.workId ? workName ?? "未知作品" : null}
+                  workOptions={workOptions}
+                  onTogglePin={() => onTogglePin(note.id)}
+                  onArchiveTo={(workId) => onMove(note.id, workId)}
+                  onUnassign={() => onMove(note.id, "")}
+                  onUpdateContent={(content) => onUpdateContent(note.id, content)}
+                  onRemove={() => onRemove(note.id)}
+                />
+              </div>
             );
-          })
-        )}
-      </div>
+          }}
+        />
+      )}
     </aside>
   );
 }

@@ -11,8 +11,9 @@
  * 版本语义：
  * - full  ：完整版。base 为主窗口（隐藏到托盘），novel 为即关即销的子窗口；
  *           SettingsWindow 承载外观 / 账号 / 个人资料（base 头部入口唤起）；
- *           MapWindow 为即关即销的地图编辑器子窗口
- * - lite  ：精简版。不打包 novel / map 窗口，主窗口隐藏对应入口
+ *           附 PackWindow / GlobalSettingWindow（均属 novel 域）；
+ *           MapWindow 为即关即销的地图编辑器子窗口（base 头部入口唤起）
+ * - lite  ：精简版。不打包 novel / map 窗口，主窗口隐藏对应入口（全局设定窗亦缺席）
  * - novel ：小说版。NovelWindow 升级为主窗口（登录后唤起，关闭进托盘），
  *           附带 SettingsWindow（外观 / 账号 / 个人资料）；不打包 base
  *
@@ -23,22 +24,46 @@
 export type CheckInEdition = "full" | "lite" | "novel";
 
 /** 窗口入口 key，与 windowManager 注册名保持一致（base 例外：注册名为 "main"） */
-export type WindowEntryKey = "base" | "login" | "novel" | "settings" | "map";
+export type WindowEntryKey =
+  | "base"
+  | "login"
+  | "novel"
+  | "pack"
+  | "relation"
+  | "settings"
+  | "globalSetting"
+  | "map";
 
 /** 入口 key → 渲染层 HTML 路径（相对项目根，dev 与 app:// 协议同用该相对路径） */
 export const RENDERER_ENTRY_PATHS: Record<WindowEntryKey, string> = {
   base: "src/windows/BaseWindow/index.html",
   login: "src/windows/LoginWindow/index.html",
   novel: "src/windows/NovelWindow/index.html",
+  pack: "src/windows/PackWindow/index.html",
+  // 人物关系网络独立窗口（R27）：可拖拽建模，属 novel 域（full / novel 打包）
+  relation: "src/windows/RelationWindow/index.html",
   settings: "src/windows/SettingsWindow/index.html",
+  // 全局设定中心独立窗口（1.4x，属 novel 域：full / novel 打包，lite 不打包）
+  globalSetting: "src/windows/GlobalSettingWindow/index.html",
+  // 地图编辑器独立窗口（checkin 域：仅 full 打包，lite / novel 不打包）
   map: "src/windows/MapWindow/index.html",
 };
 
 /** 各版本编译的窗口入口清单（vite input 与主进程可加载窗口的唯一依据） */
 export const EDITION_WINDOW_ENTRIES: Record<CheckInEdition, WindowEntryKey[]> = {
-  full: ["base", "login", "novel", "settings", "map"],
+  full: [
+    "base",
+    "login",
+    "novel",
+    "pack",
+    "relation",
+    "settings",
+    "globalSetting",
+    "map",
+  ],
+  // lite 无 novel 域：全局设定中心属 novel 域，同理不登记
   lite: ["base", "login", "settings"],
-  novel: ["login", "novel", "settings"],
+  novel: ["login", "novel", "pack", "relation", "settings", "globalSetting"],
 };
 
 /** 各版本的主窗口入口：full/lite → base，novel → novel */

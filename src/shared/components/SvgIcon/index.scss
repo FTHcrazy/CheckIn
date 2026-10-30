@@ -1,0 +1,13 @@
+/* 内联 SVG 图标：尺寸随 font-size，颜色随 currentColor（SVG 内 fill=currentColor） */
+.svgicon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+
+  > svg {
+    width: 1em;
+    height: 1em;
+    display: block;
+  }
+}

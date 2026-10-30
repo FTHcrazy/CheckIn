@@ -8,6 +8,7 @@
   border: 1px solid var(--app-border);
   border-radius: var(--app-radius-panel);
   box-shadow: var(--app-shadow-card);
+  user-select: none;
 
   &__cover {
     position: relative;
@@ -73,7 +74,8 @@
     max-width: 280px;
     height: 6px;
     border-radius: var(--app-radius-pill);
-    background: var(--app-surface-active);
+    /* 轨道 = 槽，宿主 .bs-hero 铺 --app-surface，故取低一档的 alt；按下档（cream 1.20）比填充还抢眼 */
+    background: var(--app-surface-alt);
     overflow: hidden;
   }
 
@@ -85,7 +87,7 @@
     border-radius: inherit;
     background: var(--app-primary-gradient);
     transform-origin: left center;
-    transition: transform 0.3s ease;
+    transition: transform var(--app-t-slow) var(--app-ease-emphasized);
   }
 
   &__goal {
@@ -97,5 +99,21 @@
 
   &__cta {
     flex: none;
+  }
+
+  /* 最小窗口：Hero 与统计条、书架头同处一屏，纵向留白要跟着收一档，
+     否则 640 高的窗里首屏连一排书卡都露不全。封面等比缩，比例不变。 */
+  @media (max-width: 1080px) {
+    gap: 14px;
+    padding: 14px 16px;
+
+    &__cover {
+      width: 48px;
+      height: 64px;
+    }
+
+    &__title {
+      font-size: 16px;
+    }
   }
 }

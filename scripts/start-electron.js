@@ -10,6 +10,15 @@
  * 因此这里必须先校验二进制，缺失就给出明确指引并立刻退出，
  * **绝不**让 require 偷偷触发下载。二进制补装请走 scripts/ensure-electron.mjs
  * （它在 dev 前置钩子里自动执行）。
+ *
+ * 【主进程产物热重启】（1.45.1）
+ * vite.config.ts 里两处 `onstart` 都是空函数（不自动启动 Electron / 不 reload），
+ * 而 vite-plugin-electron 仍会以 watch 模式把 `electron/*.ts` 编译进 dist-electron/。
+ * 结果是：**渲染层靠 HMR 已经是新代码，运行中的主进程却还是旧的**。
+ * 表现与「功能坏了」完全一样 —— 新增的 IPC 通道 / 新窗口点了没反应，终端却一行日志
+ * 都没有（1.45.0「全局设定中心打不开」就有这一路）。
+ *
+ * 所以这里自己盯 dist-electron/*.js：产物一变就带防抖重启子进程。
  */
 const fs = require('fs')
 const path = require('path')
@@ -17,6 +26,15 @@ const { spawn } = require('child_process')
 
 const DEV_URL = 'http://127.0.0.1:5173'
 const ELECTRON_DIR = path.join(__dirname, '..', 'node_modules', 'electron')
+const ARTIFACT_DIR = path.join(__dirname, '..', 'dist-electron')
+
+/** 热重启防抖：main.js 与 preload.js 是两次独立构建，会连着各写一次 */
+const RESTART_DEBOUNCE_MS = 400
+/** 「静默秒退」判定的时间窗 */
+const SILENT_EXIT_WINDOW_MS = 5000
+/** dist-electron 尚未产出时的监视重试（vite 与插件仍在写盘） */
+const WATCH_RETRY_MS = 500
+const WATCH_RETRY_MAX = 20
 
 function resolveElectronExe() {
   let rel
@@ -49,15 +67,6 @@ const {
   ...cleanEnv
 } = process.env
 
-const startedAt = Date.now()
-const child = spawn(electronPath, ['.'], {
-  env: {
-    ...cleanEnv,
-    VITE_DEV_SERVER_URL: DEV_URL,
-  },
-  stdio: 'inherit',
-})
-
 /**
  * 「秒退且零输出」诊断。
  *
@@ -84,18 +93,102 @@ function printSilentExitHint(code) {
   console.error('      快速自检：pnpm doctor\n')
 }
 
-// 我们自己:#发出 SIGINT/SIGTERM 时（concurrently -k 联动关闭、用户 Ctrl+C）
+// 我们自己发出 SIGINT/SIGTERM 时（concurrently -k 联动关闭、用户 Ctrl+C）
 // 不要把退出算作「环境层失败」，否则每次正常关窗都会甩一段误导性的排查清单。
 let shuttingDown = false
-function shutdown() {
-  shuttingDown = true
-  child.kill('SIGTERM')
+let startedAt = 0
+/** 当前子进程 */
+let child = null
+/** 已排定的热重启定时器 */
+let restartTimer = null
+/** 子进程退出是因为「产物变了要重启」，而不是失败 */
+let restartPending = false
+
+function launch(isHotRestart) {
+  startedAt = Date.now()
+  child = spawn(electronPath, ['.'], {
+    env: {
+      ...cleanEnv,
+      VITE_DEV_SERVER_URL: DEV_URL,
+    },
+    stdio: 'inherit',
+  })
+  child.on('close', (code) => onChildClose(code, isHotRestart))
 }
 
-child.on('close', (code) => {
+function onChildClose(code, isHotRestart) {
+  // ⚠️ 关机竞态（1.45.1 修）：防抖定时器已经触发过（restartPending = true、
+  // 已经 kill 了子进程），此时用户按 Ctrl+C 或 concurrently -k 发来 SIGTERM ——
+  // 子进程的 close 事件还是会走到这里。不复位这个标记的话会把 Electron **又拉起来**，
+  // 终端表现为「Ctrl+C 之后窗口又冒出来」，还得再杀一次。
+  if (restartPending && !shuttingDown) {
+    restartPending = false
+    console.log('[dev] 按新的主进程产物重新启动 Electron …')
+    launch(true)
+    return
+  }
+
   // ≤5s 内失败 + 非 0 退出码 + 不是我们自己关的：几乎可以断定没走到 main.js
-  if (!shuttingDown && code !== 0 && Date.now() - startedAt < 5000) printSilentExitHint(code)
+  if (!shuttingDown && code !== 0 && Date.now() - startedAt < SILENT_EXIT_WINDOW_MS) {
+    if (isHotRestart) {
+      console.error('\n[dev] 这次是**热重启后的第一次启动**就退出：')
+      console.error('      优先看上面 vite 打印的主进程编译 / 语法报错，再看下面这份环境排查清单。')
+    }
+    printSilentExitHint(code)
+  }
   process.exit(code)
-})
+}
+
+/**
+ * 排定一次热重启。
+ *
+ * 只对主进程 / preload 的产物（`dist-electron/*.js`）生效；`.map` 与临时文件忽略
+ * （写成一次产物会连发多条 fs 事件，防抖把同一轮构建合并成一次重启）。
+ */
+function scheduleRestart(fileName) {
+  if (shuttingDown) return
+  if (restartTimer) clearTimeout(restartTimer)
+  restartTimer = setTimeout(() => {
+    restartTimer = null
+    if (shuttingDown || !child || child.killed) return
+    restartPending = true
+    console.log(`\n[dev] 主进程产物已更新（dist-electron/${fileName}），重启 Electron …`)
+    child.kill('SIGTERM')
+  }, RESTART_DEBOUNCE_MS)
+}
+
+function watchArtifacts(attempt = 1) {
+  try {
+    fs.watch(ARTIFACT_DIR, (_eventType, fileName) => {
+      if (typeof fileName !== 'string' || !fileName.endsWith('.js')) return
+      scheduleRestart(fileName)
+    })
+    console.log('[dev] 已监视 dist-electron/：主进程 / preload 变更后自动重启')
+  } catch (error) {
+    // 冷启动时插件可能还没写完 dist-electron，等一会儿再试（否则这项保护会静默失效）
+    if (error.code === 'ENOENT' && attempt <= WATCH_RETRY_MAX) {
+      setTimeout(() => watchArtifacts(attempt + 1), WATCH_RETRY_MS)
+      return
+    }
+    console.warn(`[dev] 无法监视 dist-electron/：${error.message}`)
+    console.warn('      主进程 / preload 变更后请手动重启：Ctrl+C → pnpm dev')
+  }
+}
+
+function shutdown() {
+  shuttingDown = true
+  // 作废「已经排定/已经触发」的热重启：否则子进程的 close 回调会走重启分支，
+  // 在用户明确要求退出之后再把 Electron 拉起来（见 onChildClose 的注释）
+  restartPending = false
+  if (restartTimer) {
+    clearTimeout(restartTimer)
+    restartTimer = null
+  }
+  if (child) child.kill('SIGTERM')
+}
+
+launch(false)
+watchArtifacts()
+
 process.on('SIGINT', shutdown)
 process.on('SIGTERM', shutdown)

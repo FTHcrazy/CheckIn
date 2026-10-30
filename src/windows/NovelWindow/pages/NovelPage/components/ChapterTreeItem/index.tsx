@@ -1,8 +1,8 @@
 import { useState } from "react";
-import type { DragEvent, KeyboardEvent, MouseEvent, ReactElement } from "react";
-import { Input, Popconfirm, Tooltip } from "antd";
-import { DeleteOutlined } from "@ant-design/icons";
-import { CHAPTER_STATUS_META, DRAG_MIME_CHAPTER } from "../../novel-config";
+import type { KeyboardEvent } from "react";
+import { DeleteOutlined, ThunderboltOutlined } from "@ant-design/icons";
+import { useDraggable, useDroppable } from "@dnd-kit/core";
+import { CHAPTER_STATUS_META } from "../../novel-config";
 import { formatThousands, padIndex } from "../../novel-utils";
 import type { NovelChapter } from "../../types";
 import "./index.scss";
@@ -12,49 +12,90 @@ interface ChapterTreeItemProps {
   /** 全书序号（跨卷连续，随拖拽重排自动变动） */
   chapterNumber: number;
   active: boolean;
+  /** 正在被拖拽的行 id（"ch:…" / "vol:…"）；null = 当前没有拖拽 */
+  dragActiveId: string | null;
   onSelect: (chapterId: string) => void;
   /** 点击状态圆点：草稿 ⇄ 完稿 */
   onToggleStatus: (chapterId: string) => void;
-  /** 拖拽放下：fromId 落到本章节（chapter.id）的位置，同卷重排 / 跨卷移动 */
-  onReorder: (fromId: string, toId: string) => void;
   /** 双击标题快捷重命名：空名 / 同名不落 */
   onRename: (chapterId: string, title: string) => void;
-  /** 删除章节（Popconfirm 确认后回调，快照级联清理） */
-  onDelete: (chapterId: string) => void;
+  /**
+   * 请求列表容器打开「删除本章」的确认浮层（§6.1.2 超长虚拟化列表行例外）。
+   *
+   * 行自己不挂 Popconfirm：3000 行里每行一个浮层 = 3000 个 Portal + 状态机，
+   * 滚动时反复 mount/unmount 是主要抖动源。改为行只上报意图与锚点 DOM，
+   * 由容器渲染**唯一**一个 Popconfirm。
+   *
+   * 注意：行**不再**直接持删除回调 —— 真正执行删除的是容器里那个共享
+   * Popconfirm 的 `onConfirm`（见 ChapterTree）。行只负责「请求确认」，
+   * 所以这里没有 `onDelete`，避免两条删除路径并存。
+   */
+  onRequestDelete: (chapterId: string, anchor: HTMLElement | null) => void;
+  /** 生成 / 查看本章 AI 摘要（R-AI-09） */
+  onOpenSummary: (chapterId: string) => void;
+  /**
+   * 是否渲染行内 AI 摘要入口（REQ-063）。false 时这颗闪电整个不渲染。
+   *
+   * 为什么不是「禁用」：AI 总开关关掉后，用户要的是一个没有 AI 的编辑器；
+   * 每行留一颗灰闪电（长篇里是几千颗）既不美观也误导 —— 它看起来像坏了。
+   * 默认 true：独立使用本行组件时行为不变。
+   */
+  showSummary?: boolean;
 }
 
 /**
  * 章节列表项（R1：标题 / 状态圆点 / 字数）
  *
- * 拖拽（R9）由行自己承载：dragstart 写入 MIME，dragover/drop 消费，
- * 「是否悬浮在自身上方」是本行的短生命周期状态，不提升到页面。
- * 排序的实际应用在页面层（防误触确认后），这里只发起 onReorder 请求。
- * 双击标题快捷重命名；编辑态行不渲染删除按钮。
+ * ── 为什么行内控件是语义化原生标签（§6.1.2「超长虚拟化列表行」例外）──
  *
- * 状态点对齐 UI 稿（原型 .chap__st）：草稿空心描边、完稿实心语义色，
- * 状态点在序号之前（st → no → 标题 → 删除 → 字数）。
- * 状态点可点击切换（草稿 ⇄ 完稿）——数据层 toggleChapterStatus 的唯一 UI 入口，
- * 点击只切状态不选中章节。
- * 空章节字数显示「—」而非 0（对齐原型 renderTree 的 w === '0' ? '—'）。
+ * 左栏在长篇里是数千行，且已由 Virtuoso 虚拟化：滚动时行会被反复
+ * mount / unmount。原先每行由 antd `Button` + `Tooltip` + `Popconfirm` + `Input`
+ * 组成，一次滚动要反复创建/销毁上万个带 Context 与 Portal 的组件，
+ * 表现就是「滚一下卡一下、切章卡一下」。
  *
- * 行用 div[role=button] 而非 <button>：删除按钮需要行内排在字数之前
- * （原型右端只有干净的字数，悬浮删除按钮浮现时不遮盖字数），
- * button 内不能嵌套 button；键盘语义由 role/tabIndex/onKeyDown 补齐。
+ * 本条例外**只**放开「必须用组件库组件」这一条，其它约束照旧：
+ *   - 仍是语义化 `<button>` / `<input>`，键盘可达、带 `aria-*`
+ *   - 行容器（非交互元素）承载外观，里面放**并列**的真按钮 ——
+ *     不出现 `<button>` 嵌 `<button>`（§6.1.2 第 4 条）
+ *   - 外观全部走 `var(--app-*)`，状态选择器写在 index.scss（例外允许处）
+ *
+ * ── 拖拽（1.39.1 起用 @dnd-kit，替换 HTML5 dataTransfer）──
+ *
+ * 行容器同时是 draggable 与 droppable（同一个 id，dnd-kit 允许并存）：
+ * 拖它 = 移动本章，别人拖到它上面 = 落到本章的位置（同卷重排 / 跨卷移动）。
+ * 只挂 `listeners` 不挂 `attributes`：attributes 会给行容器塞 `role="button"`
+ * 和 tabIndex，与行内三个真按钮叠成嵌套交互语义；拖拽本就只有指针一种
+ * 输入（HTML5 时代也没有键盘路径），可达性仍由行内按钮承担。
+ * PointerSensor 带 distance 约束（见 ChapterTree），行上点按不误触拖拽。
  */
 export default function ChapterTreeItem({
   chapter,
   chapterNumber,
   active,
+  dragActiveId,
   onSelect,
   onToggleStatus,
-  onReorder,
   onRename,
-  onDelete,
+  onRequestDelete,
+  onOpenSummary,
+  showSummary = true,
 }: ChapterTreeItemProps) {
   const status = CHAPTER_STATUS_META[chapter.status];
-  const [dropActive, setDropActive] = useState(false);
   const [titleEditing, setTitleEditing] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
+
+  const dragId = `ch:${chapter.id}`;
+  const {
+    setNodeRef: setDragRef,
+    listeners,
+    isDragging,
+  } = useDraggable({ id: dragId, data: { kind: "chapter" } });
+  const { setNodeRef: setDropRef, isOver } = useDroppable({
+    id: dragId,
+    data: { kind: "chapter" },
+  });
+  /** 落点高亮：悬停在本行上、且拖的不是本行自己 */
+  const dropActive = isOver && dragActiveId !== null && dragActiveId !== dragId;
 
   const startTitleEdit = (): void => {
     setTitleDraft(chapter.title);
@@ -80,134 +121,114 @@ export default function ChapterTreeItem({
     }
   };
 
-  const handleStatusClick = (event: MouseEvent<HTMLSpanElement>): void => {
-    event.stopPropagation();
-    onToggleStatus(chapter.id);
-  };
-
-  const handleDragStart = (event: DragEvent<HTMLDivElement>): void => {
-    event.dataTransfer.setData(DRAG_MIME_CHAPTER, chapter.id);
-    event.dataTransfer.effectAllowed = "move";
-  };
-
-  const handleDragOver = (event: DragEvent<HTMLDivElement>): void => {
-    if (!event.dataTransfer.types.includes(DRAG_MIME_CHAPTER)) return;
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "move";
-    setDropActive(true);
-  };
-
-  const handleDragLeave = (event: DragEvent<HTMLDivElement>): void => {
-    if (event.currentTarget === event.target) setDropActive(false);
-  };
-
-  const handleDrop = (event: DragEvent<HTMLDivElement>): void => {
-    event.preventDefault();
-    setDropActive(false);
-    const fromId = event.dataTransfer.getData(DRAG_MIME_CHAPTER);
-    if (fromId && fromId !== chapter.id) onReorder(fromId, chapter.id);
-  };
-
-  const handleDragEnd = (): void => setDropActive(false);
-
-  const handleRowKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
-    if (event.nativeEvent.isComposing) return;
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      onSelect(chapter.id);
-    }
-  };
-
   const rowClass = `nv-chapter__row${active ? " is-active" : ""}${
     dropActive ? " is-drop" : ""
-  }`;
+  }${isDragging ? " is-drag" : ""}`;
 
   const statusHint =
-    chapter.status === "done"
-      ? "完稿 · 点击改回草稿"
-      : "草稿 · 点击标记完稿";
+    chapter.status === "done" ? "完稿 · 点击改回草稿" : "草稿 · 点击标记完稿";
 
-  const renderStatus = (): ReactElement => (
-    <Tooltip title={statusHint}>
-      <span
-        className="nv-chapter__status"
-        data-s={chapter.status}
-        role="button"
-        aria-label={`章节状态：${status.label}，点击切换`}
-        onClick={handleStatusClick}
-      />
-    </Tooltip>
-  );
-
-  return (
-    <div className="nv-chapter" role="treeitem" aria-selected={active}>
-      {titleEditing ? (
+  if (titleEditing) {
+    return (
+      <div className="nv-chapter" role="treeitem" aria-selected={active}>
         <div className={`${rowClass} is-editing`}>
-          {renderStatus()}
+          <button
+            type="button"
+            className="nv-chapter__status"
+            data-s={chapter.status}
+            aria-label={`章节状态：${status.label}，点击切换`}
+            onClick={() => onToggleStatus(chapter.id)}
+          />
           <span className="nv-chapter__index">{padIndex(chapterNumber)}</span>
-          <Input
+          <input
             className="nv-chapter__title-input"
-            variant="borderless"
-            value={titleDraft}
-            autoFocus
-            maxLength={60}
             aria-label="章节名称"
+            maxLength={60}
+            value={titleDraft}
             onChange={(event) => setTitleDraft(event.target.value)}
             onBlur={commitTitleEdit}
             onKeyDown={handleTitleKeyDown}
           />
         </div>
-      ) : (
-        <div
-          role="button"
-          tabIndex={0}
-          className={rowClass}
-          draggable
-          onDragStart={handleDragStart}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-          onDragEnd={handleDragEnd}
+      </div>
+    );
+  }
+
+  return (
+    <div className="nv-chapter" role="treeitem" aria-selected={active}>
+      {/* 行容器只承载外观与拖拽：点击由内部 __hit 按钮承担。
+          「整行可点 + 行尾删除」拆成「行容器 + 两个并列真按钮」——
+          直接整行做成 button 会包住删除按钮，形成 <button> 嵌 <button> */}
+      <div
+        className={rowClass}
+        ref={(node) => {
+          setDragRef(node);
+          setDropRef(node);
+        }}
+        {...listeners}
+      >
+        <button
+          type="button"
+          className="nv-chapter__status"
+          data-s={chapter.status}
+          aria-label={`章节状态：${status.label}，点击切换`}
+          title={statusHint}
+          onClick={(event) => {
+            event.stopPropagation();
+            onToggleStatus(chapter.id);
+          }}
+        />
+        <button
+          type="button"
+          className="nv-chapter__hit"
+          aria-current={active}
           onClick={() => onSelect(chapter.id)}
-          onKeyDown={handleRowKeyDown}
+          onDoubleClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            startTitleEdit();
+          }}
         >
-          {renderStatus()}
           <span className="nv-chapter__index">{padIndex(chapterNumber)}</span>
-          <span
-            className="nv-chapter__title"
-            title="双击修改章节名称"
-            onDoubleClick={(event) => {
-              event.preventDefault();
+          <span className="nv-chapter__title">{chapter.title}</span>
+        </button>
+        {/* AI 摘要入口：有摘要时实心（点击查看），无摘要时空心（点击生成）。
+            悬浮展开与删除按钮同范式。REQ-063：`showSummary=false` 时整颗不渲染
+            （AI 关掉后不留灰按钮 —— 一行一颗、长篇几千颗，看着像坏了） */}
+        {showSummary ? (
+          <button
+            type="button"
+            className={`nv-chapter__summary${chapter.aiSummary ? " has-summary" : ""}`}
+            aria-label={
+              chapter.aiSummary ? `查看本章 AI 摘要` : `生成本章 AI 摘要`
+            }
+            title={chapter.aiSummary ? "查看 AI 摘要" : "生成 AI 摘要"}
+            onClick={(event) => {
               event.stopPropagation();
-              startTitleEdit();
+              onOpenSummary(chapter.id);
             }}
           >
-            {chapter.title}
-          </span>
-          {/* 删除按钮行内排在字数之前：悬浮时宽度展开，字数只平移不被遮盖 */}
-          <Popconfirm
-            title="删除章节"
-            description={`删除「${chapter.title}」及其全部历史快照，不可恢复。`}
-            okText="删除"
-            cancelText="取消"
-            okButtonProps={{ danger: true }}
-            onConfirm={() => onDelete(chapter.id)}
-          >
-            <button
-              type="button"
-              className="nv-chapter__del"
-              aria-label={`删除章节 ${chapter.title}`}
-              title="删除章节"
-              onClick={(event) => event.stopPropagation()}
-            >
-              <DeleteOutlined />
-            </button>
-          </Popconfirm>
-          <span className="nv-chapter__words">
-            {chapter.wordCount === 0 ? "—" : formatThousands(chapter.wordCount)}
-          </span>
-        </div>
-      )}
+            <ThunderboltOutlined />
+          </button>
+        ) : null}
+        {/* 删除按钮行内排在字数之前：悬浮时宽度展开，字数只平移不被遮盖。
+            确认浮层由 ChapterTree 的唯一 Popconfirm 承担（本行只上报意图） */}
+        <button
+          type="button"
+          className="nv-chapter__del"
+          aria-label={`删除章节 ${chapter.title}`}
+          title="删除章节"
+          onClick={(event) => {
+            event.stopPropagation();
+            onRequestDelete(chapter.id, event.currentTarget);
+          }}
+        >
+          <DeleteOutlined />
+        </button>
+        <span className="nv-chapter__words">
+          {chapter.wordCount === 0 ? "—" : formatThousands(chapter.wordCount)}
+        </span>
+      </div>
     </div>
   );
 }

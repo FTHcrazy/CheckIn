@@ -1,0 +1,13 @@
+/* 诊断分区：窄控件宽度跟着 .settings-item 的行高走。
+   按钮已改用窗口级 .settings-btn（原先这里有一份 20 行的描边样式拷贝，
+   与 AI 页 / 快捷键页三处重复，2.6.0 上收到 styles/settings-controls.scss）。 */
+
+.settings-diag__select {
+  width: 168px;
+  flex-shrink: 0;
+}
+
+.settings-diag__number {
+  width: 88px;
+  flex-shrink: 0;
+}

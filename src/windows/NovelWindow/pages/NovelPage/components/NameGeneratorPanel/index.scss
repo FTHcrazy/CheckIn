@@ -2,7 +2,11 @@
  * 起名工具面板样式（PRD R18 / 步骤三；版式见 NL 设计稿 §3·工具·起名器）
  *
  * 全部走 var(--app-*) 主题变量，禁止硬编码色值（AGENTS 6.1.1）。
+ *
+ * 按钮是 antd `Button`（AGENTS 6.1.2）：先清零再声明组件级变量，
+ * 不写 :hover / :active 属性规则（antd 状态规则特异性更高，自写压不过）。
  */
+@use "../../../../../../shared/styles/widget" as widget;
 
 .nv-name {
   display: flex;
@@ -55,45 +59,181 @@
     }
   }
 
-  &__regen {
+  /* 「换一批」主操作：图标与文字同为 children，间距走 --ant-button-icon-gap
+     （JSX 里不再留空格，否则间距翻倍，见 AGENTS 6.1.2） */
+  &__regen.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 30px;
+    --ant-button-padding-inline: 12px;
+    --ant-button-content-font-size: 12px;
+    --ant-button-icon-gap: 5px;
+    --ant-border-radius: 9px;
+    --ant-button-default-bg: var(--app-surface-alt);
+    --ant-button-default-color: var(--app-text-secondary);
+    --ant-button-default-border-color: var(--app-border);
+    --ant-button-default-hover-bg: var(--app-surface-hover);
+    --ant-button-default-hover-color: var(--app-primary);
+    --ant-button-default-hover-border-color: var(--app-primary);
+    --ant-button-default-active-bg: var(--app-surface-active);
+    --ant-button-default-active-color: var(--app-primary);
+    --ant-button-default-active-border-color: var(--app-primary);
+    --ant-button-default-shadow: none;
+
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 5px;
-    width: 100%;
-    height: 30px;
-    margin-top: 8px;
-    border: none;
-    border-radius: 9px;
-    background: var(--app-primary);
-    color: var(--app-primary-contrast);
-    font-family: inherit;
-    font-size: 12px;
-    cursor: pointer;
-    transition: background 150ms ease, transform 100ms ease;
-
-    &:hover {
-      background: var(--app-primary-strong);
-    }
+    flex-shrink: 0;
+    transition: background var(--app-t-fast) var(--app-ease-standard), transform var(--app-t-instant) var(--app-ease-standard);
 
     &:active {
       transform: scale(0.98);
     }
   }
 
+  /* AI 起名区域（R-AI-02）：描述输入 + 主按钮 */
+  &__ai {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 10px;
+  }
+
+  &__ai-input.ant-input {
+    font-size: 12px;
+    line-height: 1.6;
+    padding: 8px 10px;
+    border-radius: 9px;
+    --ant-color-border: var(--app-border);
+    --ant-input-bg: var(--app-input-bg);
+    background: var(--app-input-bg);
+    color: var(--app-text);
+
+    &::placeholder {
+      color: var(--app-text-muted);
+    }
+
+    &:hover,
+    &:focus {
+      --ant-color-border: var(--app-primary);
+      border-color: var(--app-primary);
+    }
+  }
+
+  &__ai-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  &__ai-btn.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 30px;
+    --ant-button-padding-inline: 14px;
+    --ant-button-content-font-size: 12px;
+    --ant-button-icon-gap: 5px;
+    --ant-border-radius: 9px;
+    --ant-button-default-bg: var(--app-primary);
+    --ant-button-default-color: var(--app-primary-contrast);
+    --ant-button-default-border-color: var(--app-primary);
+    --ant-button-default-hover-bg: var(--app-primary-strong);
+    --ant-button-default-hover-color: var(--app-primary-contrast);
+    --ant-button-default-hover-border-color: var(--app-primary-strong);
+    --ant-button-default-active-bg: var(--app-primary-strong);
+    --ant-button-default-active-color: var(--app-primary-contrast);
+    --ant-button-default-active-border-color: var(--app-primary-strong);
+    --ant-button-default-shadow: none;
+
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+
+    &:active {
+      transform: scale(0.98);
+    }
+  }
+
+  /* AI 降级提示条 */
+  &__fallback {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-top: 8px;
+    padding: 6px 10px;
+    border-radius: var(--app-radius-item);
+    font-size: 12px;
+    line-height: 1.5;
+    background: var(--app-warning-weak);
+    color: var(--app-warning);
+  }
+
+  /* 提示条里的「去设置」：沿用警示色，做成描边小按钮，
+     与提示条同高但可点区域够大（纯文字链在 12px 字号下太难点） */
+  &__fallback-link.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 22px;
+    --ant-button-padding-inline: 8px;
+    --ant-button-content-font-size: 12px;
+    --ant-button-font-weight: 500;
+    --ant-border-radius: var(--app-radius-chip);
+    --ant-button-default-bg: transparent;
+    --ant-button-default-color: var(--app-warning);
+    --ant-button-default-border-color: var(--app-warning);
+    --ant-button-default-hover-bg: var(--app-warning);
+    --ant-button-default-hover-color: var(--app-warning-weak);
+    --ant-button-default-hover-border-color: var(--app-warning);
+    --ant-button-default-active-bg: var(--app-warning);
+    --ant-button-default-active-color: var(--app-warning-weak);
+    --ant-button-default-active-border-color: var(--app-warning);
+    --ant-button-default-shadow: none;
+    margin-left: auto;
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* AI 来源角标 */
+  &__badge {
+    display: inline-block;
+    margin-left: 4px;
+    padding: 0 4px;
+    font-size: 12px;
+    font-style: normal;
+    font-weight: 600;
+    line-height: 1.5;
+    border-radius: 4px;
+    vertical-align: 1px;
+    background: var(--app-primary-weak);
+    color: var(--app-primary);
+  }
+
+  /*
+   * 结果栅格：列数按可用宽度自适应，不再写死 2 列。
+   *
+   * 面板宽度由 JS 给（280–460 可拖），最窄 280px 时内容区只有约 255px ——
+   * 死写两列会把每张卡压到 ~124px，而卡内 5 颗 24px 图标按钮最少要 124px，
+   * 加上内边距必然溢出，被 `__scroll` 的 overflow-x:hidden 裁掉（表现为名字
+   * 和按钮被切）。`minmax(148px, 1fr)` 让 auto-fill 自己算：容器 < 约 302px
+   * 时降为单列，默认 340px 面板仍是两列。
+   *
+   * 用 `minmax(<固定下限>, 1fr)` 而不是单纯 `1fr`：显式下限能挡住卡片内容
+   * 反向把列撑宽（`1fr` 等价 `minmax(auto,1fr)`，auto 会取内容最小尺寸）。
+   */
   &__grid {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
     gap: 6px;
   }
 
   &__card {
     position: relative;
+    min-width: 0;
     padding: 9px 9px 9px 10px;
     border: 1px solid var(--app-border);
     border-radius: var(--app-radius-item);
     background: var(--app-surface);
-    animation: nv-name-pop-in 260ms ease backwards;
+    animation: nv-name-pop-in var(--app-t-slow) var(--app-ease-standard) backwards;
 
     &:hover {
       border-color: var(--app-primary);
@@ -105,14 +245,39 @@
     font-size: 14px;
     font-weight: 500;
     margin-right: 4px;
+    /* 生僻长名（少数复姓 + 三字名）不撑破卡片 */
+    overflow-wrap: anywhere;
   }
 
+  /* AI 按 JSON 契约返回的寓意（本地引擎不产） */
+  &__meaning {
+    display: -webkit-box;
+    margin-top: 2px;
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--app-text-secondary);
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+  }
+
+  /*
+   * 操作行：5 颗 24px 图标按钮 = 124px，是卡片里唯一有刚性下限的行。
+   * 栅格已经把最窄列宽兜住，这里再给一道 `wrap` 保险 —— 万一将来加按钮或
+   * 主题把图标放大，宁可折行也不要横向溢出被裁掉（用户看得到才点得到）。
+   * 按钮自身 `flex: none`，禁止被压缩成一条缝。
+   */
   &__acts {
     display: flex;
+    flex-wrap: wrap;
     gap: 1px;
     margin-top: 4px;
     opacity: 0.35;
-    transition: opacity 150ms ease;
+    transition: opacity var(--app-t-fast) var(--app-ease-standard);
+
+    .nv-mini.ant-btn {
+      flex: none;
+    }
   }
 
   &__card:hover &__acts {

@@ -1,0 +1,50 @@
+// AI 续写悬浮按钮（REQ-061）：贴在正文区右下角，压在状态栏上方。
+//
+// 它是 antd Button：先用清零点 mixin 归零组件级变量，再声明自己的值。
+// hover / disabled 不写属性规则 —— antd 的状态选择器是 (0,4,0)，自写规则压不过，
+// 只能改它读取的 --ant-button-* 变量（与 EntityContextMenu 的菜单项同款手法）。
+@use "../../../../../../shared/styles/widget" as widget;
+
+.nv-contfab.ant-btn {
+  @include widget.ant-button-reset;
+  --ant-control-height: 38px;
+  --ant-border-radius: 19px;
+  --ant-button-content-font-size: 13px;
+  --ant-button-default-color: var(--app-primary);
+  --ant-button-default-hover-bg: var(--app-surface-hover);
+  --ant-button-default-active-bg: var(--app-surface-hover);
+  --ant-button-default-bg-disabled: var(--app-surface);
+  --ant-button-default-shadow: none;
+
+  position: absolute;
+  right: 20px;
+  /* 让开底部状态栏（实高 32px）+ 24px 呼吸位，不压住「今日目标 / 字数」 */
+  bottom: 56px;
+  /* 低于 stage 内的各个浮层（续写预览 mask 是 50/51、抽屉更高），
+     高于正文与状态栏（20）：预览开着时按钮被 mask 挡住，不会重复触发 */
+  z-index: 20;
+
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 38px;
+  padding: 0 15px 0 13px;
+  border: 1px solid var(--app-border);
+  background: var(--app-surface-elevated);
+  box-shadow: var(--app-shadow-pop);
+
+  &__text {
+    font-size: 13px;
+    letter-spacing: 0.02em;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--app-primary);
+    outline-offset: 2px;
+  }
+
+  /* 只读模式（阅读）不提供续写入口：没有光标位置可续 */
+  .nv-editor.is-readmode ~ & {
+    display: none;
+  }
+}

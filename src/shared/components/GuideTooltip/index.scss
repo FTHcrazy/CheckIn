@@ -1,0 +1,28 @@
+/**
+ * 弱提示气泡样式
+ *
+ * 关键约束：`pointer-events: none` —— 气泡不拦截点击，作者可以直接无视它
+ * 操作被它盖住的目标（PRD FR-02 R2）。这是弱提示与 Tour 遮罩的根本区别。
+ */
+
+.guide-tooltip {
+  pointer-events: none;
+  max-width: 260px;
+}
+
+.guide-tooltip__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.guide-tooltip__title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.guide-tooltip__desc {
+  font-size: 12px;
+  line-height: 1.6;
+  opacity: 0.9;
+}

@@ -1,0 +1,72 @@
+/* 快捷键分区：沿用 .settings-item 的行框架，只补三列布局与说明文案。
+   底部「恢复默认」已上移到页面级操作条（与其它页同位置），
+   原先卡内的 footer 与私有描边按钮样式一并删除。 */
+
+.settings-shortcut__lead {
+  margin: 0;
+  padding: 10px 16px 2px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--app-text-secondary);
+
+  kbd {
+    display: inline-block;
+    margin: 0 2px;
+    padding: 0 5px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-chip);
+    background: var(--app-surface-alt);
+    color: var(--app-text);
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 12px;
+    line-height: 18px;
+  }
+}
+
+.settings-shortcut__group {
+  border-top: 1px solid var(--app-border);
+}
+
+.settings-shortcut__group-title {
+  margin: 0;
+  padding: 8px 16px 4px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--app-text-muted);
+  background: var(--app-surface-alt);
+}
+
+.settings-shortcut__row {
+  /* 键位与开关同一行的右侧组合，窄窗时整体换行而不是压扁键位 */
+  flex-wrap: wrap;
+}
+
+.settings-shortcut__controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.settings-shortcut__global {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--app-text-secondary);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.settings-shortcut__tag.ant-tag {
+  margin-inline-start: 6px;
+  margin-inline-end: 0;
+  padding-inline: 6px;
+  border: none;
+  border-radius: var(--app-radius-chip);
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--app-text-secondary);
+  background: var(--app-surface-alt);
+}

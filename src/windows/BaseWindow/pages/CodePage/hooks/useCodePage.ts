@@ -1,15 +1,29 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { App } from "antd";
 import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
 import { fetchGitWebhookLogs } from "@/shared/services/code";
 import type { GitWebhookLogItem } from "@/shared/services/code";
 import {
-  calcWorkdays,
+  calcWorkdaysWith,
+  DAILY_TARGET,
   getCommitOutput,
   getThisMonthRange,
-  isWorkday,
+  isWorkdayWith,
 } from "../code-utils";
+import type { HolidayData } from "../code-utils";
+import { fetchHolidayData, getCachedHoliday } from "../code-holiday";
+
+/** 趋势条最多铺多少天：超过就截断，避免极端区间拖死页面 */
+const MAX_TREND_DAYS = 366;
+
+/** 按年份聚合动态节假日数据：key=年份，value=该年动态数据（null 表示拉取失败用硬编码兜底） */
+type HolidayByYear = Map<number, HolidayData | null>;
+
+/** 取某日所在年份的动态数据；无则返回 null（走硬编码兜底） */
+function holidayOf(byYear: HolidayByYear, d: Dayjs): HolidayData | null {
+  return byYear.get(d.year()) ?? null;
+}
 
 /** CodePage 业务逻辑：Git 提交数据查询、工作日统计与产出趋势计算 */
 export function useCodePage() {
@@ -32,7 +46,47 @@ export function useCodePage() {
   // 本月累计有效产出（独立于表格查询区间）
   const [monthOutput, setMonthOutput] = useState(0);
 
+  /**
+   * 动态节假日数据（按年份）。空 Map = 尚未填充完成。
+   * 挂载时先用本地缓存同步填充（立即生效，不等网络），随后每日静默拉取「今年 + 明年」
+   * 刷新缓存并更新状态；拉取失败保持缓存/回退硬编码表兜底。
+   */
+  const [holidayByYear, setHolidayByYear] = useState<HolidayByYear>(() => {
+    const now = new Date();
+    const years = [now.getFullYear(), now.getFullYear() + 1];
+    const m = new Map<number, HolidayData | null>();
+    years.forEach((y) => m.set(y, getCachedHoliday(y)));
+    return m;
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    const now = new Date();
+    const years = [now.getFullYear(), now.getFullYear() + 1];
+    years.forEach((y) => {
+      void fetchHolidayData(y, (data) => {
+        if (cancelled) return;
+        setHolidayByYear((prev) => {
+          const next = new Map(prev);
+          next.set(y, data);
+          return next;
+        });
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /**
+   * 月度统计请求序号。
+   *
+   * 连续换邮箱查询时，先发的不一定先回；不判序号会把上一个邮箱的月度产出
+   * 写进新邮箱的视图（「本月剩余日均」显示的是别人的数据）。
+   */
+  const monthSeqRef = useRef(0);
   const loadMonthOutput = useCallback(async (target: string) => {
+    const seq = (monthSeqRef.current += 1);
     try {
       const today = dayjs().startOf("day");
       const monthStart = today.startOf("month");
@@ -52,9 +106,11 @@ export function useCodePage() {
       const list = res.gitwebhooklog?.pageInfo?.list ?? [];
       const output = list.reduce((acc, item) => acc + getCommitOutput(item), 0);
 
+      if (seq !== monthSeqRef.current) return;
       setMonthOutput(output);
     } catch {
       // 月度统计请求失败不影响主流程，静默处理或置零
+      if (seq !== monthSeqRef.current) return;
       setMonthOutput(0);
     }
   }, []);
@@ -147,9 +203,8 @@ export function useCodePage() {
 
   useEffect(() => {
     const [from, to] = dateRange;
-    setWorkdays(calcWorkdays(from, to) || 1);
-  }, [dateRange]);
-
+    setWorkdays(calcWorkdaysWith(from, to, holidayOf(holidayByYear, from)) || 1);
+  }, [dateRange, holidayByYear]);
   // 数据未变化时避免每次渲染都对最多 9999 条记录重新 reduce
   const summaryStats = useMemo(
     () =>
@@ -166,25 +221,41 @@ export function useCodePage() {
   );
 
   /**
-   * 本月剩余工作日（含今日）平均每天需要多少行才能达成 200行/天
-   * 基于【本月1号至今日】的真实累计产出计算，不受表格筛选区间影响
+   * 本月剩余日均所需产出（存量缺口模型）
+   *
+   * 目标：本月累计写够 DAILY_TARGET × 全月工作日。
+   * 结果：把「目标总量 - 已产出」的缺口，摊到【明天 → 月底】的剩余工作日上，
+   *       得出剩余每个工作日平均还需产出多少行。
+   *
+   * 关键口径（修复点）：
+   * - 「已产出」= monthOutput，覆盖【本月 1 号 ~ 今天结束】；
+   * - 「剩余工作日」从【明天】起算，不含今天 —— 今天已发生的产出既不能
+   *   被重复扣减，也不能再被当作「还没写、需要补足」的一个工作日；
+   *   否则今天没写满 200 时，缺口会被多算一整天的量。
    */
   const monthlyDailyNeeded = useMemo(() => {
-    const TARGET = 200;
     const today = dayjs().startOf("day");
     const monthEnd = today.endOf("month").startOf("day");
     const monthStart = today.startOf("month");
 
-    const totalMonthWorkdays = calcWorkdays(monthStart, monthEnd);
-    const remainingWorkdays = calcWorkdays(today, monthEnd);
+    const totalMonthWorkdays = calcWorkdaysWith(
+      monthStart,
+      monthEnd,
+      holidayOf(holidayByYear, today),
+    );
+    // 剩余工作日从明天起算（今天已计入 monthOutput）
+    const remainingWorkdays = calcWorkdaysWith(
+      today.add(1, "day"),
+      monthEnd,
+      holidayOf(holidayByYear, today),
+    );
 
     if (remainingWorkdays <= 0 || totalMonthWorkdays <= 0) return 0;
 
-    // 使用独立请求的 monthOutput，而非 summaryStats
     const required =
-      (TARGET * totalMonthWorkdays - monthOutput) / remainingWorkdays;
+      (DAILY_TARGET * totalMonthWorkdays - monthOutput) / remainingWorkdays;
     return Math.max(0, Math.ceil(required));
-  }, [monthOutput]);
+  }, [monthOutput, holidayByYear]);
 
   // 日均代码产出 = (总增加行 + 总删除行 * 0.3) / 工作日
   const dailyOutput = useMemo(() => {
@@ -193,59 +264,58 @@ export function useCodePage() {
   }, [summaryStats.insertions, summaryStats.deletions, workdays]);
 
   /**
-   * 选中区间剩余日均所需产出
+   * 选中区间日均产出（行/天）
    *
-   * 计算规则：
-   *   总目标 = 200 × [选中起始日 ~ 本月底最后工作日] 的工作日数
-   *   已产出 = dateRange 整个区间的累计代码产出
-   *   剩余工作日 = [选中截止日 ~ 本月底最后工作日] 的工作日数
-   *              （包含截止日当天，因其产出已在"已产出"中被部分扣减，
-   *               若当日不足200行则仍需继续补足）
-   *   结果 = max(0, ceil((总目标 - 已产出) / 剩余工作日))
+   * 只回答「所选区间内，平均每个工作日产出了多少行」，不再做缺口/剩余预测。
+   * 与「本月剩余日均」彻底解耦：那个卡片关注「本月还要追多少」，这个卡片
+   * 关注「这段区间产出效率如何」。
+   *
+   * 产出 = 区间内累计有效产出（新增行 + 删除行 × 0.3）；
+   * 分母 = 区间内工作日数（调休补班算工作日、节假日不算）。
    */
-  const selectedRangeDailyNeeded = useMemo(() => {
-    const TARGET = 200;
+  const selectedRangeDailyOutput = useMemo(() => {
     const [rangeFrom, rangeTo] = dateRange;
     const startDate = rangeFrom.startOf("day");
-    const monthEnd = dayjs().endOf("month").startOf("day");
+    const endDate = rangeTo.startOf("day");
 
-    // 选中起始日超出本月 → 无意义
-    if (startDate.isAfter(monthEnd)) return null;
+    // 起始晚于结束（理论不会发生，RangePicker 保证有序）→ 无意义
+    if (startDate.isAfter(endDate)) return null;
 
-    // 有效截止日 = min(选中截止日, 本月底)
-    const effectiveEnd = rangeTo.isBefore(monthEnd)
-      ? rangeTo.startOf("day")
-      : monthEnd;
+    const workdays = calcWorkdaysWith(
+      startDate,
+      endDate,
+      holidayOf(holidayByYear, startDate),
+    );
+    if (workdays <= 0) return null;
 
-    if (startDate.isAfter(effectiveEnd)) return null;
+    // 只聚合 [startDate, endDate] 区间内的产出
+    const fromTs = startDate.valueOf();
+    const endTs = endDate.endOf("day").valueOf();
+    let output = 0;
+    for (const item of data) {
+      const ts = new Date(item.commitTime).getTime();
+      if (ts >= fromTs && ts <= endTs) output += getCommitOutput(item);
+    }
 
-    // 总工作日：选中起始日 → 本月底最后工作日
-    const totalWorkdays = calcWorkdays(startDate, monthEnd);
-    if (totalWorkdays <= 0) return 0;
+    return output / workdays;
+  }, [dateRange, data, holidayByYear]);
 
-    // 剩余工作日：选中截止日 → 本月底最后工作日（含截止日当天）
-    const remainingWorkdays = calcWorkdays(effectiveEnd, monthEnd);
-    if (remainingWorkdays <= 0) return 0;
-
-    // 只聚合 [startDate, effectiveEnd前一天] 的产出
-    // 因为截止日当天计入剩余工作日，其产出不应被提前扣减
-    const outputEndDate = effectiveEnd.subtract(1, "day");
-    const rangeOutput = data
-      .filter((item) => {
-        const d = dayjs(item.commitTime).startOf("day");
-        return (
-          (d.isSame(startDate) || d.isAfter(startDate)) &&
-          (d.isSame(outputEndDate) || d.isBefore(outputEndDate))
-        );
-      })
-      .reduce((sum, item) => sum + getCommitOutput(item), 0);
-
-    const totalTarget = TARGET * totalWorkdays;
-    const gap = totalTarget - rangeOutput;
-
-    if (gap <= 0) return 0;
-    return Math.ceil(gap / remainingWorkdays);
-  }, [dateRange, data]);
+  /**
+   * 选中区间的目标提示文案（Tooltip 用）。
+   *
+   * 说明这个区间日均产出是怎么算的：产出口径 + 工作日口径。
+   */
+  const selectedRangeHint = useMemo(() => {
+    const [rangeFrom, rangeTo] = dateRange;
+    const startDate = rangeFrom.startOf("day");
+    const endDate = rangeTo.startOf("day");
+    const wd = calcWorkdaysWith(
+      startDate,
+      endDate,
+      holidayOf(holidayByYear, startDate),
+    );
+    return `所选区间共 ${wd} 个工作日；产出 = (新增行 + 删除行 × 0.3) 之和 ÷ 工作日数，反映该区间的日均产出效率。`;
+  }, [dateRange, holidayByYear]);
 
   const dailyOutputTrend = useMemo(() => {
     const [rangeFrom, rangeTo] = dateRange;
@@ -258,21 +328,31 @@ export function useCodePage() {
     const trend: { date: string; output: number; isWorkday: boolean }[] = [];
     let current = rangeFrom.startOf("day");
     const end = rangeTo.startOf("day");
-    while (current.isBefore(end) || current.isSame(end)) {
+    // 区间只禁未来、不禁过去，选到几年前就是几千天 → 趋势条几千个节点，
+    // 页面直接失去响应。这里兜底截断，避免极端区间把页面拖死。
+    let guard = 0;
+    while ((current.isBefore(end) || current.isSame(end)) && guard < MAX_TREND_DAYS) {
       const date = current.format("YYYY-MM-DD");
       trend.push({
         date,
         output: outputByDate.get(date) ?? 0,
-        isWorkday: isWorkday(current),
+        isWorkday: isWorkdayWith(current, holidayOf(holidayByYear, current)),
       });
       current = current.add(1, "day");
+      guard += 1;
     }
     return trend;
-  }, [dateRange, data]);
+  }, [dateRange, data, holidayByYear]);
 
-  const trendMax = Math.max(
-    200,
-    ...dailyOutputTrend.map((item) => item.output),
+  // reduce 而非 Math.max(...arr)：展开 6 万+ 元素会抛 RangeError（栈溢出），
+  // 且原本没有 memo，每次渲染都重跑一遍
+  const trendMax = useMemo(
+    () =>
+      dailyOutputTrend.reduce(
+        (max, item) => (item.output > max ? item.output : max),
+        DAILY_TARGET,
+      ),
+    [dailyOutputTrend],
   );
 
   return {
@@ -293,7 +373,9 @@ export function useCodePage() {
     summaryStats,
     monthlyDailyNeeded,
     dailyOutput,
-    selectedRangeDailyNeeded,
+    selectedRangeDailyOutput,
+    /** 选中区间日均产出的说明（Tooltip 文案） */
+    selectedRangeHint,
     dailyOutputTrend,
     trendMax,
   };

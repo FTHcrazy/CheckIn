@@ -48,18 +48,39 @@ describe("edition manifest", () => {
     }
   });
 
-  it("版本差异语义：lite 不含 novel；novel 不含 base；full 最全；settings 全版本包含", () => {
+  it("版本差异语义：lite 不含 novel/pack/globalSetting；novel 不含 base；full 最全；settings 全版本包含", () => {
     for (const edition of ["full", "lite", "novel"] as const) {
       expect(EDITION_WINDOW_ENTRIES[edition]).toContain("settings");
     }
 
     expect(EDITION_WINDOW_ENTRIES.lite).not.toContain("novel");
+    expect(EDITION_WINDOW_ENTRIES.lite).not.toContain("pack");
+    // 全局设定中心属 novel 域：lite 不登记（与 novel/pack 同口径）
+    expect(EDITION_WINDOW_ENTRIES.lite).not.toContain("globalSetting");
 
     expect(EDITION_WINDOW_ENTRIES.novel).not.toContain("base");
 
     expect(EDITION_WINDOW_ENTRIES.full).toEqual(
-      expect.arrayContaining<WindowEntryKey>(["base", "login", "novel", "settings"]),
+      expect.arrayContaining<WindowEntryKey>([
+        "base",
+        "login",
+        "novel",
+        "pack",
+        "settings",
+        "globalSetting",
+      ]),
     );
+  });
+
+  it("行囊独立窗口随小说域打包：full 与 novel 版都包含 pack 入口", () => {
+    expect(EDITION_WINDOW_ENTRIES.full).toContain("pack");
+    expect(EDITION_WINDOW_ENTRIES.novel).toContain("pack");
+  });
+
+  it("全局设定中心独立窗口随小说域打包：full 与 novel 版都包含 globalSetting，lite 不含", () => {
+    expect(EDITION_WINDOW_ENTRIES.full).toContain("globalSetting");
+    expect(EDITION_WINDOW_ENTRIES.novel).toContain("globalSetting");
+    expect(EDITION_WINDOW_ENTRIES.lite).not.toContain("globalSetting");
   });
 
   it("主窗口归属：full/lite → base，novel → novel", () => {

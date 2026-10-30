@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CloseOutlined, SearchOutlined } from "@ant-design/icons";
-import { Input } from "antd";
+import { CloseOutlined, SearchOutlined, TagsOutlined } from "@ant-design/icons";
+import { Button, Input } from "antd";
 import EntityCard from "../EntityCard";
 import EntityDetail from "../EntityDetail";
 import type { EntitySavePatch } from "../EntityDetail";
@@ -12,9 +12,11 @@ import type {
   EntityAppearance,
   EntityRelationView,
   EntityType,
-  LevelSystem,
+  SettingCategory,
   NovelEntity,
 } from "../../types";
+import { formatBoundRealmName, parseRealmNoteSub } from "../../utils/setting-utils";
+import { resolveChipsScrollDelta } from "./chips-scroll";
 import "./index.scss";
 
 interface EntityPanelProps {
@@ -29,7 +31,8 @@ interface EntityPanelProps {
     type: EntityType,
   ) => EntityRelationView[];
   getAppearances: (entityId: string) => EntityAppearance[];
-  levelSystems: LevelSystem[];
+  /** 小说设定：卡片上的「当前境界」从 realm 分类的阶梯里取 */
+  settings: SettingCategory[];
   highlighted: boolean;
   onToggleHighlight: () => void;
   onExportCard: () => void;
@@ -42,10 +45,12 @@ interface EntityPanelProps {
     relation: string,
   ) => void;
   onRemoveRelation: (linkId: string, targetName: string) => void;
-  /** 设定 / 取消当前境界（R25） */
-  onSetEntityLevel: (entityId: string, rungId: string | null) => void;
-  /** 打开等级体系管理弹框（R25） */
-  onOpenLevelManager: () => void;
+  /** 设定 / 取消当前境界 */
+  onSetEntityLevel: (entityId: string, levelId: string | null, sub?: number) => void;
+  /** 打开设定中心 */
+  onOpenSettings: () => void;
+  /** 打开自定义要素类型管理（REQ-049：空态 CTA 直达） */
+  onOpenTypeManager: () => void;
   /** 行囊主角绑定的要素 id（空串 = 尚未指定） */
   protagonistEntityId: string;
   /** 设为主角 / 换一个 / 再点一次取消（与行囊面板的「绑定实体」同源） */
@@ -78,7 +83,7 @@ export default function EntityPanel({
   onCloseEntity,
   getEntityRelations,
   getAppearances,
-  levelSystems,
+  settings,
   highlighted,
   onToggleHighlight,
   onExportCard,
@@ -87,7 +92,8 @@ export default function EntityPanel({
   onAddRelation,
   onRemoveRelation,
   onSetEntityLevel,
-  onOpenLevelManager,
+  onOpenSettings,
+  onOpenTypeManager,
   protagonistEntityId,
   onSetProtagonist,
   onInsertName,
@@ -97,6 +103,9 @@ export default function EntityPanel({
   // 出场章数索引由 store 增量维护：本面板订阅它，角标更新时才重渲染，
   // 页面根不再为了这个数字被保存动作推一遍
   const appearanceCounts = useAppearanceStore((state) => state.counts);
+  // 首次导入长篇（数千章）时冷扫已改为分批：统计期间角标显示占位，
+  // 否则用户看到的是一个会跳动的小数字，误以为「出场 3 章」是真实结果
+  const appearancePending = useAppearanceStore((state) => state.pending);
   // 类型 chips 行横向溢出时两端渐隐提示（滚动条为隐藏设计）
   const { ref: chipsRef, fadeLeft, fadeRight } = useEdgeFade<HTMLDivElement>();
 
@@ -109,9 +118,12 @@ export default function EntityPanel({
     return map;
   }, [entities]);
 
-  // 选中 chip 居中：chips 行是隐藏滚动条的横向容器，类型较多时选中的
-  // 可能落在两侧渐隐区里，用户不知道还能滚。切换筛选后把选中项滚到
-  // 行中间，免去手动 Shift+滚轮找；首次挂载（恢复上次筛选）不做动画
+  // 选中 chip 的可见性校正：chips 行是隐藏滚动条的横向容器，类型较多时
+  // 选中的可能落在两侧渐隐区里，用户不知道还能滚。
+  //
+  // ⚠️ **不能居中**：居中会把左邻的 chip 推到容器外、只剩半颗（「全部」被切成
+  // 半个字，用户会以为分类 tab 显示不全）。这里只在选中项**真的被遮住**时
+  // 挪动，且只挪到「刚好整颗可见 + 8px 留白」，不制造新的半颗 chip。
   const chipsMountedRef = useRef(false);
   useEffect(() => {
     const row = chipsRef.current;
@@ -121,8 +133,12 @@ export default function EntityPanel({
     // offsetLeft 会相对更外层的定位祖先解析，这里不能用它
     const rowRect = row.getBoundingClientRect();
     const onRect = on.getBoundingClientRect();
-    const target =
-      row.scrollLeft + (onRect.left + onRect.width / 2) - (rowRect.left + rowRect.width / 2);
+    const delta = resolveChipsScrollDelta(rowRect, onRect);
+    if (Math.abs(delta) < 1) return;
+    const target = Math.max(
+      0,
+      Math.min(row.scrollWidth - row.clientWidth, row.scrollLeft + delta),
+    );
     if (Math.abs(row.scrollLeft - target) <= 1) return;
     // jsdom 未实现 Element.scrollTo，守卫避免单测环境报错
     if (typeof row.scrollTo !== "function") return;
@@ -145,18 +161,27 @@ export default function EntityPanel({
     [entities, filter, trimmed],
   );
 
-  // 卡片的关联数与当前境界：列表级一次性算好，避免逐卡重复扫关联表
+  // 卡片的关联数与当前境界：只为**当前可见**的要素算，而不是全量。
+  // 原实现对 entities（全量）逐个 getEntityRelations + 遍历全部等级体系，
+  // 长篇里要素数以百计、关联更多，切一次筛选/输一个关键词就整表重算。
+  // 可见集通常远小于全量，且贴边卡片才有必要知道这些数字。
   const statsOf = useMemo(() => {
     const map = new Map<string, { relations: number; levelName: string }>();
-    for (const entity of entities) {
+    for (const entity of visible) {
       const relations = getEntityRelations(entity.id, entity.type);
       const binding = relations.find((item) => item.targetType === "level");
       let levelName = "";
       if (binding) {
-        for (const system of levelSystems) {
-          const rung = system.rungs.find((item) => item.id === binding.targetId);
-          if (rung) {
-            levelName = rung.name;
+        for (const category of settings) {
+          // 父阶优先：绑在根阶 + note.sub 时显示「父阶 · 层名」，
+          // 绑在派生段上（旧数据）显示「父阶 · 段名」
+          const name = formatBoundRealmName(
+            category.levels,
+            binding.targetId,
+            parseRealmNoteSub(binding.note),
+          );
+          if (name) {
+            levelName = name;
             break;
           }
         }
@@ -164,7 +189,7 @@ export default function EntityPanel({
       map.set(entity.id, { relations: relations.length, levelName });
     }
     return map;
-  }, [entities, getEntityRelations, levelSystems]);
+  }, [visible, getEntityRelations, settings]);
 
   const detail = entities.find((entity) => entity.id === detailEntityId) ?? null;
 
@@ -175,7 +200,7 @@ export default function EntityPanel({
         entities={entities}
         relations={getEntityRelations(detail.id, detail.type)}
         appearances={getAppearances(detail.id)}
-        levelSystems={levelSystems}
+        settings={settings}
         highlighted={highlighted}
         onToggleHighlight={onToggleHighlight}
         onExportCard={onExportCard}
@@ -183,8 +208,10 @@ export default function EntityPanel({
         onSelectChapter={onSelectChapter}
         onAddRelation={onAddRelation}
         onRemoveRelation={onRemoveRelation}
-        onSetEntityLevel={(rungId) => onSetEntityLevel(detail.id, rungId)}
-        onOpenLevelManager={onOpenLevelManager}
+        onSetEntityLevel={(levelId, sub) =>
+          onSetEntityLevel(detail.id, levelId, sub)
+        }
+        onOpenSettings={onOpenSettings}
         isProtagonist={Boolean(protagonistEntityId) && detail.id === protagonistEntityId}
         onSetProtagonist={() => onSetProtagonist(detail.id)}
         onBack={onCloseEntity}
@@ -210,6 +237,7 @@ export default function EntityPanel({
           entity={entity}
           relationCount={stats?.relations ?? 0}
           appearanceCount={appearanceCounts.get(entity.id) ?? 0}
+          appearancePending={appearancePending}
           levelName={stats?.levelName ?? ""}
           isProtagonist={isProtagonist}
           onOpen={onOpenEntity}
@@ -232,14 +260,13 @@ export default function EntityPanel({
           onChange={(event) => setKeyword(event.target.value)}
         />
         {keyword && (
-          <button
-            type="button"
+          <Button
             className="nv-field__clear"
             aria-label="清空搜索"
             onClick={() => setKeyword("")}
           >
             <CloseOutlined />
-          </button>
+          </Button>
         )}
       </div>
 
@@ -249,30 +276,28 @@ export default function EntityPanel({
           fadeRight ? " is-fade-right" : ""
         }`}
       >
-        <button
-          type="button"
+        <Button
           className={`nv-chip${filter === "all" ? " is-on" : ""}`}
           style={filter === "all" ? { color: "var(--app-primary)" } : undefined}
           onClick={() => onFilterChange("all")}
         >
           全部<em>{entities.length}</em>
-        </button>
+        </Button>
         {filterOrder.map((type) => {
           const count = counts.get(type) ?? 0;
           if (count === 0) return null;
           const meta = metaOf(type);
           const on = filter === type;
           return (
-            <button
+            <Button
               key={type}
-              type="button"
               className={`nv-chip${on ? " is-on" : ""}`}
               style={on ? { color: meta.color } : undefined}
               onClick={() => onFilterChange(type)}
             >
               {meta.label}
               <em>{count}</em>
-            </button>
+            </Button>
           );
         })}
       </div>
@@ -281,6 +306,15 @@ export default function EntityPanel({
         <div className="nv-empty">
           <b>没有匹配的要素</b>
           <span>换个关键词，或切回「全部」</span>
+          {/* REQ-049：空态正好是「想建个新类型但找不到入口」的高发场景，
+              在这里给一条直达类型管理的引导，而不是让作者去面板头找图标 */}
+          <span className="nv-empty__hint">
+            还没有自定义类型？点「类型管理」新建
+          </span>
+          <Button className="nv-empty__cta" onClick={onOpenTypeManager}>
+            <TagsOutlined />
+            <span>类型管理</span>
+          </Button>
         </div>
       ) : filter === "all" ? (
         <>

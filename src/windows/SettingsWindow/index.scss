@@ -1,5 +1,7 @@
 @use "../../shared/styles/window-shell";
 @use "../../shared/styles/scrollbars";
+/* 窗口级按钮原语（次级 / 危险 / 主色三态），各分区只挂类名 */
+@use "./styles/settings-controls";
 
 html,
 body,
@@ -23,21 +25,113 @@ body {
   min-height: 0;
 }
 
-.settings-page {
-  height: 100%;
+/* ══════════════════════════════════════════════════════════════════════════
+   双栏骨架：左导航（定宽、永不滚走）+ 右内容（固定页头 + 各自滚动）
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.settings-layout {
+  display: flex;
+  flex: 1;
+  gap: 12px;
   box-sizing: border-box;
-  padding: 16px 20px;
+  /* 顶部不留白：34px 标题栏已经给了呼吸，正文再压 14px 会显得松垮 */
+  padding: 0 14px 14px;
+  min-height: 0;
+}
+
+.settings-content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  /* ⚠️ 两个 min-* 归零是「内容不溢出窗口」的前提：flex 项默认
+     `min-width/min-height: auto`，右栏会被子项（长文案 / 宽表格）顶开，
+     把窗口撑出横向滚动条或让页头被挤出可视区 */
+  min-width: 0;
+  min-height: 0;
+}
+
+/* 页头：只说明「这一页在管什么」，不承载控件；固定不滚动，切页即有反馈 */
+.settings-page__head {
+  flex: none;
+  padding: 2px 2px 12px;
+}
+
+.settings-page__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--app-text-strong);
+}
+
+.settings-page__desc {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--app-text-secondary);
+}
+
+/**
+ * 页面滚动区（定高 flex column + 自身滚动）。
+ *
+ * ⚠️ 分区一律 `flex: none`（见 `.settings-section`）：本容器是定高 flex column，
+ * 子项默认 `flex-shrink: 1`，内容超高时会先按比例压扁子项而不是滚动。
+ * `flex: 1 + min-height: 0` 是它在定高父容器里拿到确定高度的写法 ——
+ * 只写 `height: 100%` 会和上面固定高度的页头叠加，把内容顶出窗口底部。
+ *
+ * `scrollbar-gutter: stable`：切到会滚动的页面（快捷键 / AI）时给滚动条预留
+ * 轨道，否则卡片宽度会在切页瞬间缩进 8px，看起来像「页面抖了一下」。
+ */
+.settings-page {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  box-sizing: border-box;
+  padding: 0 2px 8px;
+  min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+}
+
+/* 非当前页：保留组件状态（AI 页草稿 / 资料表单），但不参与布局与无障碍树。
+   写成独立选择器而不是嵌套，便于布局守卫按块断言。 */
+.settings-page.is-hidden {
+  display: none;
+}
+
+/**
+ * 页面内容栈：每页的卡片与底部操作条都直接摊在这一层上。
+ *
+ * `min-height: 100%` 是「操作条贴底」的关键：内容不足一屏时（个人资料、账号、
+ * 诊断），栈仍然撑满滚动区，配合操作条自己的 `margin-top: auto` 把条压到页面
+ * 底部；内容超一屏时栈按内容长高，操作条退回 `position: sticky` 继续贴在
+ * 滚动区底边。两种情况下条的位置一致，切页不会上下跳。
+ */
+.settings-page__stack {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
+  min-height: 100%;
+  box-sizing: border-box;
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   分区（卡片）与行
+   ══════════════════════════════════════════════════════════════════════════ */
 
 .settings-section {
   background: var(--app-surface);
   border: 1px solid var(--app-border);
   border-radius: var(--app-radius-panel);
   overflow: hidden;
+  /* ⚠️ 必须禁止收缩。`.settings-page` 是定高的 flex column：分区的默认
+     `flex-shrink: 1` 会在内容超高时把它们按比例压扁，而 `overflow: hidden`
+     又把 `min-height: auto` 变成了 0 —— 于是每个分区都被裁成一截（表现为
+     「设置项显示不全 / 外观区一片空白」），页面反而不滚动。
+     加了这条之后超高只由 `.settings-page` 的 overflow-y 承担。 */
+  flex: none;
 }
 
 .settings-section__title {
@@ -47,11 +141,20 @@ body {
   font-weight: 600;
   color: var(--app-text-strong);
   border-bottom: 1px solid var(--app-border);
-  background: var(--app-surface-hover);
+  background: var(--app-surface-alt);
 }
 
+/**
+ * 分区体内的分隔线统一由「相邻兄弟」发放，而不是让每种行自己写 `& + &`。
+ * 这样 `.settings-item`（左文右控件）、`.settings-field`（竖排表单）、
+ * `.settings-field__control` 混排时也不会漏线或断线。
+ */
 .settings-section__body {
   padding: 4px 0;
+
+  > * + * {
+    border-top: 1px solid var(--app-border);
+  }
 }
 
 // 单条设置项：左侧文案、右侧控件
@@ -63,10 +166,6 @@ body {
   padding: 12px 16px;
   min-height: 48px;
   box-sizing: border-box;
-
-  & + & {
-    border-top: 1px solid var(--app-border);
-  }
 }
 
 .settings-item__text {
@@ -88,31 +187,64 @@ body {
 
 .settings-item__icon {
   color: var(--app-text-secondary);
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .settings-item__hint {
   font-size: 12px;
   color: var(--app-text-secondary);
+  line-height: 1.6;
 }
 
-.settings-item__action {
-  flex-shrink: 0;
-  padding: 5px 14px;
-  border: 1px solid var(--app-border);
-  border-radius: var(--app-radius-item);
-  background: var(--app-surface);
-  color: var(--app-text);
-  font-size: 13px;
-  cursor: pointer;
-  transition: background-color 0.15s ease, color 0.15s ease,
-    border-color 0.15s ease;
+/**
+ * 竖排表单字段：标签 / 说明 / 控件三行。
+ *
+ * 用于「控件自己占满整行」的字段（接口地址、模型名、API Key）——左右分栏
+ * 会把输入框压到 200px 出头、文案折成三行，且长地址看不全。开关、选择器这类
+ * 窄控件仍走 `.settings-item` 的左右分栏。
+ *
+ * 上下内边距取 12px，与 `.settings-item` 同节奏：两者常在同一张卡里相邻
+ * （AI 页的「连接方式」是 field，切到 Ollama 后的字段也是 field），
+ * 差 2px 会让行距看起来忽紧忽松。
+ */
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-sizing: border-box;
+  padding: 12px 16px;
+}
 
-  &:hover {
-    background: var(--app-surface-hover);
+.settings-field__label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--app-text-strong);
+}
+
+.settings-field__hint {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--app-text-secondary);
+
+  /* 说明文案里的等宽片段（如接口地址的 `/v1`） */
+  code {
+    padding: 0 4px;
+    border-radius: 4px;
+    background: var(--app-surface-alt);
+    font-family: Consolas, "Courier New", monospace;
   }
+}
+
+.settings-field__control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
 // 个人资料区样式已就近至 components/ProfileSection/index.scss，
 // 账号区危险按钮态已就近至 components/AccountSection/index.scss；
-// 此处仅保留各分区共用的 section / item 基础框架样式。
+// 此处仅保留各分区共用的骨架（布局 / section / item / field）样式。

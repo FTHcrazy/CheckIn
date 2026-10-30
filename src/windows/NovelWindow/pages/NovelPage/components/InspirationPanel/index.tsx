@@ -8,7 +8,7 @@ import {
   PushpinOutlined,
   SearchOutlined,
 } from "@ant-design/icons";
-import { Input } from "antd";
+import { Button, Input } from "antd";
 import { Virtuoso } from "react-virtuoso";
 import { filterNotes, formatRelativeTime } from "../../novel-utils";
 import type { NovelNote } from "../../types";
@@ -83,9 +83,13 @@ export default function InspirationPanel({
       }`
     : `${notes.length} 条${pinnedCount > 0 ? ` · 置顶 ${pinnedCount}` : ""}`;
 
-  /** 其他书籍的灵感：全局搜索结果中只读展示，操作留给归属作品 */
+  /**
+   * 其他书籍的灵感：全局搜索结果中只读展示，操作留给归属作品。
+   * 「未归属」（workId 为空）不算外部 —— 1.41.0 起它直接进当前列表，
+   * 置顶 / 编辑 / 转伏笔都可用（它是跨作品收集池，不属于任何一本书管）。
+   */
   const isExternal = (note: NovelNote): boolean =>
-    Boolean(activeWorkId) && note.workId !== activeWorkId;
+    Boolean(activeWorkId) && Boolean(note.workId) && note.workId !== activeWorkId;
 
   const submit = (): void => {
     const value = draft.trim();
@@ -175,6 +179,51 @@ export default function InspirationPanel({
             </>
           ) : (
             <>
+              {/* hover 操作条：浮到卡片右上角（REQ-054 视觉优化）。不再塞进 footer
+                  与时间/来源/伏笔角标挤作一行 —— 那里按钮横向压成一条、和正文重叠。
+                  现在它是独立的浮层条（卡片底 + 发丝线边 + 阴影），只在悬停时出现。 */}
+              {!external && (
+                <span className="nv-note__acts">
+                  <Button
+                    className={`nv-mini${note.pinned ? " is-on" : ""}`}
+                    aria-pressed={note.pinned}
+                    aria-label={note.pinned ? "取消置顶" : "置顶"}
+                    title={note.pinned ? "取消置顶" : "置顶"}
+                    onClick={() => actions.onTogglePin(note.id, !note.pinned)}
+                  >
+                    {note.pinned ? <PushpinFilled /> : <PushpinOutlined />}
+                  </Button>
+                  <Button
+                    className="nv-mini"
+                    disabled={Boolean(note.foreshadowId)}
+                    aria-label="转为伏笔"
+                    title={
+                      note.foreshadowId
+                        ? "已转为伏笔"
+                        : "转为伏笔（写入大纲）"
+                    }
+                    onClick={() => actions.onPromoteNote(note.id)}
+                  >
+                    <FlagOutlined />
+                  </Button>
+                  <Button
+                    className="nv-mini"
+                    aria-label="编辑灵感"
+                    title="编辑灵感"
+                    onClick={() => startEdit(note)}
+                  >
+                    <EditOutlined />
+                  </Button>
+                  <Button
+                    className="nv-mini nv-mini--warn"
+                    aria-label="删除灵感"
+                    title="删除灵感"
+                    onClick={() => actions.onRemoveNote(note.id)}
+                  >
+                    <CloseOutlined />
+                  </Button>
+                </span>
+              )}
               <p className="nv-note__text">{note.content}</p>
               <footer className="nv-note__foot">
                 <span className="nv-note__time">
@@ -191,52 +240,6 @@ export default function InspirationPanel({
                 {note.foreshadowId && (
                   <span className="nv-note__flag" title="已写入大纲为伏笔">
                     <FlagOutlined /> 已转为伏笔
-                  </span>
-                )}
-                {!external && (
-                  <span className="nv-note__acts">
-                    <button
-                      type="button"
-                      className={`nv-mini${note.pinned ? " is-on" : ""}`}
-                      aria-pressed={note.pinned}
-                      aria-label={note.pinned ? "取消置顶" : "置顶"}
-                      title={note.pinned ? "取消置顶" : "置顶"}
-                      onClick={() => actions.onTogglePin(note.id, !note.pinned)}
-                    >
-                      {note.pinned ? <PushpinFilled /> : <PushpinOutlined />}
-                    </button>
-                    <button
-                      type="button"
-                      className="nv-mini"
-                      disabled={Boolean(note.foreshadowId)}
-                      aria-label="转为伏笔"
-                      title={
-                        note.foreshadowId
-                          ? "已转为伏笔"
-                          : "转为伏笔（写入大纲）"
-                      }
-                      onClick={() => actions.onPromoteNote(note.id)}
-                    >
-                      <FlagOutlined />
-                    </button>
-                    <button
-                      type="button"
-                      className="nv-mini"
-                      aria-label="编辑灵感"
-                      title="编辑灵感"
-                      onClick={() => startEdit(note)}
-                    >
-                      <EditOutlined />
-                    </button>
-                    <button
-                      type="button"
-                      className="nv-mini nv-mini--warn"
-                      aria-label="删除灵感"
-                      title="删除灵感"
-                      onClick={() => actions.onRemoveNote(note.id)}
-                    >
-                      <CloseOutlined />
-                    </button>
                   </span>
                 )}
               </footer>
@@ -274,14 +277,13 @@ export default function InspirationPanel({
           <span className="nv-note__tip">
             <kbd>Enter</kbd> 记录 · <kbd>Shift</kbd>+<kbd>Enter</kbd> 换行
           </span>
-          <button
-            type="button"
+          <Button
             className="nv-note__send"
             onClick={submit}
             disabled={draft.trim().length === 0}
           >
             记录
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -295,14 +297,13 @@ export default function InspirationPanel({
           onChange={(event) => setKeyword(event.target.value)}
         />
         {filtering && (
-          <button
-            type="button"
+          <Button
             className="nv-field__clear"
             aria-label="清空搜索"
             onClick={() => setKeyword("")}
           >
             <CloseOutlined />
-          </button>
+          </Button>
         )}
       </div>
 

@@ -1,4 +1,9 @@
-/* 灵感速记面板（NL 设计稿 §3·灵感） */
+/* 灵感速记面板（NL 设计稿 §3·灵感）
+ *
+ * 面板内的按钮是 antd `Button`（AGENTS 6.1.2）：外观只用组件级变量声明——
+ * antd 的 :hover / :active / :disabled 规则特异性 (0,4,0)，自写属性压不过。
+ */
+@use "../../../../../../shared/styles/widget" as widget;
 
 .nv-note {
   flex: 1;
@@ -14,7 +19,7 @@
     border: 1px solid var(--app-border);
     border-radius: var(--app-radius-panel);
     background: var(--app-surface);
-    transition: border-color 160ms ease, box-shadow 160ms ease;
+    transition: border-color var(--app-t-fast) var(--app-ease-standard), box-shadow var(--app-t-fast) var(--app-ease-standard);
 
     &:focus-within {
       border-color: var(--app-primary);
@@ -73,33 +78,35 @@
     }
   }
 
-  &__send {
-    margin-left: auto;
-    height: 27px;
-    padding: 0 9px;
-    border: none;
-    border-radius: 8px;
-    background: var(--app-primary);
-    color: var(--app-primary-contrast);
-    font-family: inherit;
-    font-size: 12px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: background 150ms ease, transform 100ms ease;
+  /* 「记录」主操作：hover / active / disabled 全部走变量（disabled 的底色用
+     --ant-button-default-bg-disabled，字色由 antd 的 --ant-color-text-disabled 接管） */
+  &__send.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 27px;
+    --ant-button-padding-inline: 9px;
+    --ant-button-content-font-size: 12px;
+    --ant-button-font-weight: 500;
+    --ant-border-radius: 8px;
+    --ant-button-default-bg: var(--app-primary);
+    --ant-button-default-color: var(--app-primary-contrast);
+    --ant-button-default-border-color: var(--app-primary);
+    --ant-button-default-hover-bg: var(--app-primary-strong);
+    --ant-button-default-hover-color: var(--app-primary-contrast);
+    --ant-button-default-hover-border-color: var(--app-primary-strong);
+    --ant-button-default-active-bg: var(--app-primary-strong);
+    --ant-button-default-active-color: var(--app-primary-contrast);
+    --ant-button-default-active-border-color: var(--app-primary-strong);
+    /* 禁用态属于常驻：应该比常态更**弱**，而不是更深（原来是按下档 1.20） */
+    --ant-button-default-bg-disabled: var(--app-surface-alt);
+    --ant-button-border-color-disabled: transparent;
+    --ant-button-default-shadow: none;
 
-    &:hover {
-      background: var(--app-primary-strong);
-    }
+    margin-left: auto;
+    justify-content: center;
+    transition: background var(--app-t-fast) var(--app-ease-standard), transform var(--app-t-instant) var(--app-ease-standard);
 
     &:active {
       transform: scale(0.97);
-    }
-
-    &:disabled {
-      background: var(--app-surface-active);
-      color: var(--app-text-disabled);
-      cursor: default;
-      transform: none;
     }
   }
 
@@ -124,7 +131,7 @@
     border: 1px solid var(--app-border);
     border-radius: var(--app-radius-item);
     background: var(--app-surface);
-    transition: border-color 160ms ease, box-shadow 160ms ease;
+    transition: border-color var(--app-t-fast) var(--app-ease-standard), box-shadow var(--app-t-fast) var(--app-ease-standard);
 
     &:hover {
       border-color: var(--app-border-strong);
@@ -184,17 +191,33 @@
     font-size: 12px;
   }
 
+  /* hover 操作条（REQ-054 视觉优化）：浮到卡片右上角，独立浮层条。
+     原来是 footer 里的一串 icon，和正文/时间挤成一团、还遮正文；现在给它
+     卡片底 + 发丝线边 + 阴影，悬停才出现，且不参与 footer 的文档流。 */
   &__acts {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    z-index: 1;
     display: flex;
-    gap: 1px;
-    margin-left: auto;
+    align-items: center;
+    gap: 2px;
+    padding: 2px;
+    border: 1px solid var(--app-border-strong);
+    border-radius: 8px;
+    background: var(--app-surface-elevated);
+    box-shadow: var(--app-shadow-pop);
     opacity: 0;
-    transition: opacity 150ms ease;
+    pointer-events: none;
+    transform: translateY(-2px);
+    transition: opacity var(--app-t-fast) var(--app-ease-standard), transform var(--app-t-fast) var(--app-ease-standard);
   }
 
   &__card:hover &__acts,
   &__acts:focus-within {
     opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
   }
 
   // 组件库 TextArea：.ant-input 与业务类同为 (0,1,0)，加载顺序不定，

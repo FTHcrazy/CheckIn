@@ -1,3 +1,8 @@
+// 章节标题（点击改名）与空态 CTA 都由 antd `Button` 承载（AGENTS §6.1.2）：
+// 先清零组件级变量再声明；hover 也必须写成变量，自写 `:hover` 压不过
+// antd 的状态选择器 `.ant-btn-color-default.ant-btn-variant-outlined:not(:disabled):hover`（0,4,0）
+@use "../../../../../../shared/styles/widget" as widget;
+
 .nv-editor {
   flex: 1;
   min-width: 0;
@@ -6,18 +11,35 @@
   background: var(--app-surface);
   overflow: hidden;
   position: relative;
+
+  /* 纸面色只在护眼开启（.is-paper）时生效：护眼开关 = 「纸面色 + 纸质感」
+     的整体切换，关闭时正文回到与界面一致的 surface（用户看到的就是原主题）。
+     底色之上叠两层极淡的大块明暗晕（仿纸张抄造时的厚薄不均），
+     让纸面不是「一块死平的色」。 */
+  &.is-paper {
+    background-color: var(--app-paper);
+    background-image:
+      radial-gradient(
+        ellipse 480px 360px at 18% 12%,
+        rgba(255, 250, 235, 0.28),
+        transparent 70%
+      ),
+      radial-gradient(
+        ellipse 560px 420px at 82% 78%,
+        rgba(160, 145, 110, 0.08),
+        transparent 70%
+      );
+  }
+  /* 内容面浮起感：编辑器是最高频主场景里最大的一块 surface，与页面底
+     --app-bg 只差 ~1.04 亮度，不给一档 ambient 环境阴影就是「平铺」。
+     静止态阴影即可（编辑区是零动效区，不做 hover 抬升），向两侧溢出的
+     部分会被左右栏（sidebar-bg / surface-alt）盖住，上下投在顶栏/状态栏
+     上仍然成立 —— 恰好构成「编辑器浮起、左右栏后退」的 Z 递进 */
+  box-shadow: var(--app-shadow-ambient);
   /* 正文栏宽的容器查询基准：拉伸窗口时按「码字区实际宽度」分档，
      不是按视口宽度——左右栏开合会直接改变可用宽度 */
   container-type: inline-size;
   container-name: nv-editor;
-
-  /* 打字机模式：上下留白把当前行挤到视口中线 */
-  &--typewriter {
-    .cm-content {
-      padding-top: 40%;
-      padding-bottom: 45%;
-    }
-  }
 
   &__title {
     flex: none;
@@ -30,21 +52,26 @@
     gap: 3px;
   }
 
-  &__title-text {
-    border: none;
-    background: transparent;
-    padding: 2px 10px;
-    font-size: 16px;
-    font-weight: 600;
-    letter-spacing: 0.5px;
-    color: var(--app-text);
-    font-family: inherit;
-    border-radius: var(--app-radius-chip);
-    transition: background var(--nv-t-fast, 120ms) ease;
+  /* 标题即改名入口：幽灵外观全部交给组件级变量，hover 底也写成变量 */
+  &__title-text.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 24px;
+    --ant-button-padding-inline: 10px;
+    --ant-button-content-font-size: 16px;
+    --ant-button-font-weight: 600;
+    --ant-border-radius: var(--app-radius-chip);
+    --ant-button-default-bg: transparent;
+    --ant-button-default-color: var(--app-text);
+    --ant-button-default-hover-bg: var(--app-surface-hover);
+    --ant-button-default-hover-color: var(--app-text);
+    --ant-button-default-active-bg: var(--app-surface-hover);
+    --ant-button-default-active-color: var(--app-text);
+    --ant-button-default-shadow: none;
 
-    &:hover {
-      background: var(--app-surface-hover);
-    }
+    /* antd 不接管的属性 */
+    font-family: inherit;
+    letter-spacing: 0.5px;
+    transition: background var(--app-t-fast) var(--app-ease-standard);
 
     &:focus-visible {
       outline: 2px solid var(--app-primary);
@@ -59,12 +86,17 @@
     color: var(--app-text-muted);
   }
 
+  /* 章节名输入框：下划线式行内编辑。
+     ⚠️ 必须显式 `border-radius: 0`：antd Input 自带 6px 圆角，只画
+     `border-bottom` 时圆角会作用在不可见的边框盒上，把下划线两端顶成
+      「圆不圆方不方」的翘角。清零后才是一条干净的直线 */
   &__title-input {
     width: 22em;
     max-width: 80%;
     padding: 2px 10px;
     border: none;
     border-bottom: 2px solid var(--app-primary);
+    border-radius: 0;
     background: transparent;
     outline: none;
     text-align: center;
@@ -117,6 +149,57 @@
     color: var(--app-text);
   }
 
+  /**
+   * 护眼纸质感（.is-paper）——「护眼」的核心是纸质感，不是换色相。
+   *
+   * 颗粒采用业界成熟方案：SVG feTurbulence 分形噪声（grainy 效果的标准做法）。
+   * 之前用多层 radial-gradient 点阵的教训：径向渐变天然是规则网格，怎么错位
+   * 叠加都是「织物感」而不是纸感；feTurbulence 是纯随机的连续噪声，没有网格
+   * 周期，低透明度下观感就是纸张纤维。fractalNoise + 去饱和（灰度）+ 6% 整体
+   * 透明度，黑白点混在同一层里，明暗双向抖动——这正是真实纸面的物理特征。
+   *
+   * 铺在 .nv-editor 外层容器的 ::before 上（不是正文层）：CodeMirror 正文是
+   * 逐行虚拟化渲染的，纹理若铺在 .cm-content / 行元素上，每次滚动都要随行
+   * 重绘，长章会卡；铺在容器层与正文不在同一合成层，滚动不重算纹理。
+   * pointer-events:none 让它不挡正文点击。噪声图 240px 平铺，stitchTiles 保证
+   * 接缝无痕。降对比仍由下方 .cm-content 的 90% 透明度承担。
+   *
+   * 暗色主题（midnight）不铺颗粒：暗底里噪点是噪声源而非纸感，暗色护眼
+   * 靠「暖黑纸面 + 降对比」即可（见 [data-theme="midnight"] 分支）。
+   */
+  &.is-paper::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.06;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-size: 240px 240px;
+    /* 6% 在浅色纸面上肉眼不可辨（实机验证），纸感要求 10%+ 才成立；
+       fractalNoise 无网格周期，调大也不会退回「织物感」 */
+    opacity: 0.12;
+  }
+
+  &.is-paper &__scroll {
+    position: relative;
+    z-index: 1;
+  }
+
+  &.is-paper &__host .cm-content {
+    color: color-mix(in srgb, var(--app-text) 90%, transparent);
+  }
+
+  /* 暗色主题（midnight）：明暗晕在暗底上会变成可见「光晕」（实机验证），
+     暗色只要纯色暖黑纸面 + 降对比；颗粒同样不铺（噪声在暗底是噪声源）。 */
+  [data-theme="midnight"] &.is-paper {
+    background-image: none;
+  }
+
+  [data-theme="midnight"] &.is-paper::before {
+    background-image: none;
+  }
+
   &__host {
     .cm-editor {
       background: transparent;
@@ -150,6 +233,16 @@
       animation: nv-caret-blink 1.05s steps(1) infinite;
     }
 
+    /* 阅读模式：隐藏光标与插入符，正文仍可选中/高亮/悬浮标注。
+       只在 .is-readmode 挂到 .nv-editor 根节点时生效（见 index.tsx）。 */
+    .nv-editor.is-readmode & {
+      .cm-cursor,
+      .cm-dropCursor {
+        display: none;
+      }
+      caret-color: transparent;
+    }
+
     /* 查找替换面板（R10）：search({top:true}) 渲染在编辑器顶部，随主题变色 */
     .cm-panels {
       background: var(--app-surface);
@@ -170,7 +263,7 @@
       input {
         padding: 3px 8px;
         border: 1px solid var(--app-border);
-        background: var(--app-surface-active);
+        background: var(--app-surface-alt);
         color: var(--app-text);
 
         &:focus {
@@ -210,7 +303,7 @@
     cursor: default;
     background: color-mix(in srgb, var(--nv-mark-color) 14%, transparent);
     box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--nv-mark-color) 55%, transparent);
-    transition: background var(--nv-t-fast, 120ms) ease;
+    transition: background var(--app-t-fast) var(--app-ease-standard);
   }
 
   &__host [data-entity-type="character"] {
@@ -237,6 +330,36 @@
     --nv-mark-color: var(--app-text-secondary);
   }
 
+  /*
+   * 敏感词：**描边圈注**，与要素标注（填充色块 + 底部实线）在形态上分开。
+   *
+   * 要素标注回答「这是谁」（按类型着色、整块填充，读起来像标签）；
+   * 敏感词回答「这里要改」（统一警示色、只描一圈细边，读起来像红笔圈出来的）。
+   * 两层同时开着时靠**形态**区分而不是靠色相：满屏都是人名的情况下，
+   * 再来一堆同形状的色块，谁也认不出哪个是风险词。
+   *
+   * 硬约束同标注层：不动 padding-inline、不换字体、不加 border ——
+   * 描边走 inset box-shadow（不参与布局），圈注不会把行高或折行位置顶开。
+   *
+   * `--nv-sm-color` 本轮固定为 error：将来做分级（block / warn / review）时
+   * 只需给 decoration 注入这个变量，样式不用再动。
+   */
+  &__host [data-sensitive-word] {
+    --nv-sm-color: var(--app-error);
+    border-radius: 4px;
+    padding: 1px 0;
+    background: color-mix(in srgb, var(--nv-sm-color) 14%, transparent);
+    box-shadow: inset 0 0 0 1px
+      color-mix(in srgb, var(--nv-sm-color) 72%, transparent);
+    cursor: help;
+    transition: background var(--app-t-fast) var(--app-ease-standard);
+  }
+
+  /* 悬停加深一档：正文里满屏圈注会吵，指到哪条才把哪条点亮 */
+  &__host [data-sensitive-word]:hover {
+    background: color-mix(in srgb, var(--nv-sm-color) 22%, transparent);
+  }
+
   /* 未选中章节时的空态覆盖层：遮住常驻编辑器而不是卸载它 */
   &__veil {
     position: absolute;
@@ -248,19 +371,59 @@
     background: var(--app-surface);
   }
 
-  &__create {
-    margin-top: 12px;
-    padding: 7px 16px;
-    border-radius: var(--app-radius-chip);
-    border: none;
-    background: var(--app-primary);
-    color: var(--app-primary-contrast);
-    font-size: 14px;
-    transition: background var(--nv-t-fast, 120ms) ease;
+  /* 空态 CTA：主色实底，hover / active 走组件级变量 */
+  &__create.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 32px;
+    --ant-button-padding-inline: 16px;
+    --ant-button-content-font-size: 14px;
+    --ant-border-radius: var(--app-radius-chip);
+    --ant-button-default-bg: var(--app-primary);
+    --ant-button-default-color: var(--app-primary-contrast);
+    --ant-button-default-hover-bg: var(--app-primary-strong);
+    --ant-button-default-hover-color: var(--app-primary-contrast);
+    --ant-button-default-active-bg: var(--app-primary-strong);
+    --ant-button-default-active-color: var(--app-primary-contrast);
+    --ant-button-default-shadow: none;
 
-    &:hover {
-      background: var(--app-primary-strong);
-    }
+    /* antd 不接管的属性 */
+    margin-top: 12px;
+    transition: background var(--app-t-fast) var(--app-ease-standard);
+  }
+
+  /* 空书架空态：主描述 + 一行灰色副提示 */
+  &__empty-desc {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    color: var(--app-text);
+    font-size: 14px;
+  }
+
+  &__empty-hint {
+    /* 小字号禁用 text-muted 承载正文（AGENTS §6.1）：走 secondary */
+    color: var(--app-text-secondary);
+    font-size: 12px;
+  }
+
+  &__empty-actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 4px;
+  }
+
+  /* 空态次按钮（导入书籍）：描边样式，与主色 CTA 拉开层级 */
+  &__import.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 32px;
+    --ant-button-padding-inline: 16px;
+    --ant-button-content-font-size: 14px;
+    --ant-border-radius: var(--app-radius-chip);
+
+    /* antd 不接管的属性 */
+    margin-top: 12px;
   }
 }
 
@@ -285,20 +448,20 @@
 
 @container nv-editor (min-width: 900px) {
   .nv-editor__paper {
-    --nv-paper-width: 46em;
+    --nv-paper-width: 50em;
     --nv-paper-gutter: 40px;
   }
 }
 
 @container nv-editor (min-width: 1200px) {
   .nv-editor__paper {
-    --nv-paper-width: 50em;
+    --nv-paper-width: 60em;
   }
 }
 
 @container nv-editor (min-width: 1500px) {
   .nv-editor__paper {
-    --nv-paper-width: 54em;
+    --nv-paper-width: 72em;
     --nv-paper-gutter: 48px;
   }
 }

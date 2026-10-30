@@ -7,6 +7,7 @@ import {
   filterIdeaNotes,
   filterWorkCards,
   formatDayLabel,
+  formatGenreLabel,
   formatNumberedLabel,
   formatRelativeTime,
   formatWordsCompact,
@@ -14,6 +15,8 @@ import {
   sortIdeaNotes,
   sortWorkCards,
   toChineseOrdinal,
+  validateWorkName,
+  EMPTY_WORK_NAME_HINT,
 } from "./bookshelf-utils";
 import type { NovelBundleDTO, NovelChapterDTO } from "@/shared/types/electron";
 
@@ -27,7 +30,7 @@ function makeBundle(overrides?: Partial<NovelBundleDTO>): NovelBundleDTO {
     chapters: [],
     entities: [],
     links: [],
-    levelSystems: [],
+    settings: [],
     notes: [],
     outlineEntries: [],
     recovery: null,
@@ -113,6 +116,25 @@ describe("buildWorkCards", () => {
 
     const w2 = cards.find((card) => card.id === "w2")!;
     expect(w2.status).toBe("finished");
+  });
+
+  it("题材透传到书卡；未设置的作品不产出 genre 字段", () => {
+    const cards = buildWorkCards(
+      makeBundle({
+        works: [
+          { id: "w1", name: "山海拔迹", createdAt: 1, genre: "仙侠" },
+          { id: "w2", name: "测试协议", createdAt: 2 },
+          { id: "w3", name: "空白题材", createdAt: 3, genre: "  " },
+        ],
+      }),
+    );
+    expect(cards.find((card) => card.id === "w1")!.genre).toBe("仙侠");
+    // 空串 / 纯空格都不算「有题材」，书卡走「未归属」口径
+    expect(cards.find((card) => card.id === "w2")!.genre).toBeUndefined();
+    expect(cards.find((card) => card.id === "w3")!.genre).toBe("  ");
+    expect(formatGenreLabel(cards.find((card) => card.id === "w3")!.genre)).toBe(
+      "题材：未归属",
+    );
   });
 
   it("排序：最近更新沉底未动笔作品，创建时间与字数可切换", () => {
@@ -263,5 +285,29 @@ describe("coverPaletteOf", () => {
     const first = coverPaletteOf("w-abc-123");
     expect(coverPaletteOf("w-abc-123")).toBe(first);
     expect(coverPaletteOf("w-xyz-999")).toBeTruthy();
+  });
+});
+
+// L-03：书名留空点「创建并开写」曾经静默无反应（弹窗不动也不提示）。
+// 校验必须是「有明确返回值」的函数，页面才说得清楚差什么。
+describe("validateWorkName", () => {
+  it("正常书名通过（返回 null，不挡路）", () => {
+    expect(validateWorkName("灵潮纪元")).toBeNull();
+    expect(validateWorkName("A")).toBeNull();
+  });
+
+  it("空串与纯空白都不通过 —— trim 之后才算数", () => {
+    expect(validateWorkName("")).toBe(EMPTY_WORK_NAME_HINT);
+    expect(validateWorkName("   ")).toBe(EMPTY_WORK_NAME_HINT);
+    expect(validateWorkName("\u3000\t\n")).toBe(EMPTY_WORK_NAME_HINT);
+  });
+
+  it("提示语是给人看的话，不是字段名", () => {
+    expect(EMPTY_WORK_NAME_HINT).not.toMatch(/不能为空|required|invalid/i);
+    expect(EMPTY_WORK_NAME_HINT).toContain("名字");
+  });
+
+  it("两端空格不影响判定（书名本身由 createWork 负责 trim）", () => {
+    expect(validateWorkName("  灵潮  ")).toBeNull();
   });
 });

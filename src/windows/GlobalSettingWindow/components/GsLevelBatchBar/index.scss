@@ -1,0 +1,28 @@
+/* 全局设定中心 · 等级批量工具条
+
+   它是一条**模式提示**，不是警告：底色取 warning-weak 已足够把它从卡片面上
+   分出来，再描一圈 border-strong 会显得像出错了。 */
+
+.gs-batch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  padding: 6px 10px 6px 14px;
+  border-radius: var(--app-radius-chip);
+  background: var(--app-warning-weak);
+}
+
+.gs-batch__count {
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--app-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.gs-batch__spacer {
+  flex: 1;
+  min-width: 0;
+}

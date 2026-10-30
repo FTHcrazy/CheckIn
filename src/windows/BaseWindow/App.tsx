@@ -1,10 +1,11 @@
 import { lazy, Suspense, useEffect, useRef } from "react";
-import { Routes, Route, useNavigate } from "react-router-dom";
+import { Routes, Route, useLocation, useNavigate } from "react-router-dom";
 import { notification, App as AntdApp, Spin } from "antd";
 import { ClockCircleOutlined } from "@ant-design/icons";
 import { ThemeProvider } from "@/shared/theme";
 import type { ActivityNotifyData } from "@/shared/ipc/activityNotifyBridge";
 import WindowHeader from "@/shared/components/WindowHeader";
+import HeaderNav from "./components/HeaderNav";
 import SettingsEntry from "./components/SettingsEntry";
 import MapEntry from "./components/MapEntry";
 import HomePage from "./pages/HomePage";
@@ -64,6 +65,45 @@ function ActivityNotifier() {
   return <>{contextHolder}</>;
 }
 
+/**
+ * 子页面在窗口标题栏左侧显示的名称（**与下方 Routes 一一对应，
+ * 新增路由时要同步补一行**，缺了只是标题栏不显示名称，不会报错）。
+ * 命名对齐首页侧栏与功能卡，避免同一页面出现两个叫法。
+ */
+const PAGE_TITLES: Record<string, string> = {
+  "/todo": "待办清单",
+  "/daily": "日期活动",
+  "/memo": "备忘笔记",
+  "/ledger": "记账本",
+  "/code": "代码记录",
+  "/news": "资讯",
+};
+
+/**
+ * 主窗标题栏。
+ *
+ * 左侧 `leading`：返回入口 + 当前页面名称，回首页时不给——首页既没有上一页，
+ * 也不需要「我在哪」的提示，摆上去只会制造无效点击；右侧 `actions`：地图与
+ * 全局设置入口（分别唤起 MapWindow / SettingsWindow，均单实例）。
+ * 路由判定留在窗口层——WindowHeader 被多个窗口共用，其中有些并不挂 Router。
+ */
+function BaseWindowHeader() {
+  const { pathname } = useLocation();
+  const title = PAGE_TITLES[pathname];
+
+  return (
+    <WindowHeader
+      leading={title ? <HeaderNav title={title} /> : null}
+      actions={
+        <>
+          <MapEntry />
+          <SettingsEntry />
+        </>
+      }
+    />
+  );
+}
+
 export default function App() {
   return (
     // ThemeProvider 内部已包含 ConfigProvider，并额外负责 data-theme 落盘与跨窗口同步
@@ -71,16 +111,9 @@ export default function App() {
       <AntdApp>
         {/* 圆角窗口外壳：负责圆角裁剪与描边，内容全部装在其中 */}
         <div className="window-shell">
-          {/* 窗口级标题栏：拖动区 + 最小化/最大化/关闭，替代 NavHeader 的窗口职责；
-              actions 挂「地图」与全局「设置」入口（分别唤起 MapWindow / SettingsWindow，单实例） */}
-          <WindowHeader
-            actions={
-              <>
-                <MapEntry />
-                <SettingsEntry />
-              </>
-            }
-          />
+          {/* 窗口级标题栏：拖动区 + 最小化/最大化/关闭 + 左侧返回入口与右侧设置入口。
+              页内不再保留任何顶部导航条，纵向空间全部还给内容区 */}
+          <BaseWindowHeader />
           <div className="window-shell__body">
             <ActivityNotifier />
             <Suspense fallback={<RouteFallback />}>

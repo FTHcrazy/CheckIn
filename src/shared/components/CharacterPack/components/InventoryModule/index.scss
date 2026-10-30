@@ -1,0 +1,192 @@
+/** 物品栏：列表视图（1.41.0 起唯一视图，宫格与切换入口已删），行内直改 */
+.cpk-inv {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+
+  &__search {
+    width: 96px;
+    font-size: 12px;
+  }
+
+  /* 一条物品 = 「控制行 +（可选）详情块」两段。
+     不要靠 `flex-wrap` 让详情块换行到第二行：wrap 的触发条件是「行内放不下」，
+     面板缩到 340px 时会把「装备」按钮一起挤到第二行（同一份样式在两种宽度下
+     表现不同）。列向布局 + 行容器才是稳定的（同 SkillsModule 的做法）。 */
+  &__item {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 3px 4px;
+    border: 1px solid transparent;
+    border-radius: var(--app-radius-item);
+
+    &:hover {
+      border-color: var(--app-border);
+      background: var(--app-surface-hover);
+    }
+
+    &.is-equipped {
+      border-color: var(--app-accent-blue-weak);
+      background: var(--app-accent-blue-weak);
+    }
+  }
+
+  &__line {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  &__name {
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* 品阶 chip（1.40.0）：「小刀 · 神器」的「神器」。非交互（改品阶在「更多」
+     菜单里），所以是 span 不是按钮，不进 ui-kit 的清零点清单 */
+  &__grade {
+    flex: none;
+    max-width: 64px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 0 6px;
+    border: 1px solid var(--app-accent-purple-weak);
+    border-radius: 999px;
+    background: var(--app-accent-purple-weak);
+    color: var(--app-accent-purple);
+    font-size: 12px;
+    line-height: 18px;
+  }
+
+  /* 菜单里品阶行的引导文案：分类未绑体系 / 设定域没有体系时替代下拉 */
+  &__gradehint {
+    min-width: 84px;
+    font-size: 12px;
+    color: var(--app-text-secondary);
+  }
+
+  &__raropt {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  /* 菜单里的「分类」行：标签 + 内嵌下拉（下拉自己处理点击，不关外层菜单） */
+  &__catopt {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 150px;
+    justify-content: space-between;
+  }
+
+  &__catopt-label {
+    color: var(--app-text-secondary-strong);
+  }
+
+  &__catopt-select.ant-select {
+    min-width: 84px;
+    font-size: 12px;
+  }
+
+  &__rarchk {
+    margin-left: auto;
+    padding-left: 10px;
+    color: var(--app-accent-blue);
+    font-size: 12px;
+  }
+
+  /* ── 详情行（描述 / 标签）：仅展开时占一行，缩进对齐物品名 ── */
+  &__detail {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding-left: 24px;
+  }
+
+  &__desc.ant-input {
+    font-size: 12px;
+    line-height: 18px;
+    resize: none;
+  }
+
+  &__tags.ant-input {
+    font-size: 12px;
+  }
+
+  &__qty {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 1px;
+  }
+
+  &__qtynum {
+    min-width: 30px;
+    text-align: center;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: var(--app-text-strong);
+  }
+
+  /* ── 行内可见性（1.41.0）：tiny 档是全面板密度（pack-common 不许动），
+     物品行在模块**内容区**里，行高余量比模块头大 —— 这里局部放大一号，
+     并把 −/+ 从次级文字色提到主文字色：用户反馈「行内 icon 太小不明显」，
+     红框正是数量步进与装备按钮这一排。 */
+  .cpk-iconbtn.tiny.ant-btn {
+    --ant-control-height: 22px;
+    --ant-button-content-font-size: 14px;
+    width: 22px;
+    --ant-button-default-color: var(--app-text-strong);
+    --ant-button-default-hover-color: var(--app-accent-blue);
+  }
+
+  &__qty .cpk-iconbtn.tiny.ant-btn {
+    /* 数量步进是盘点高频动作：再突出一号并加重字重 */
+    --ant-control-height: 24px;
+    --ant-button-content-font-size: 16px;
+    width: 24px;
+    --ant-button-font-weight: 700;
+  }
+
+  &__line > .cpk-btn.ant-btn {
+    /* 装备 / 已穿戴：文字按钮配一圈弱描边，从「一行小字」变成「一眼可点的按钮」 */
+    --ant-button-content-font-size: 12px;
+    --ant-button-default-border-color: var(--app-border);
+    --ant-button-default-hover-border-color: var(--app-accent-blue);
+    padding-inline: 6px;
+  }
+
+  /* ── 渲染窗口的「显示更多」（REQ-019）：只在超过窗口时才出现 ── */
+  &__more {
+    display: flex;
+    justify-content: center;
+    margin-top: 6px;
+  }
+
+  &__confirm {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 7px;
+    padding: 6px 8px;
+    border: 1px solid var(--app-error);
+    border-radius: var(--app-radius-item);
+    background: var(--app-error-weak);
+    font-size: 12px;
+    color: var(--app-text-strong);
+  }
+
+  &__confirmactions {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+}

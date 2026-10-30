@@ -1,0 +1,69 @@
+@use "../../styles/widget";
+
+/* 渲染层兜底页：只在 React 渲染异常时出现，保持极简（不依赖任何业务样式） */
+.err-boundary {
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 240px;
+  padding: 32px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-align: center;
+  background: var(--app-bg);
+  color: var(--app-text);
+}
+
+.err-boundary__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--app-text-strong);
+}
+
+.err-boundary__hint {
+  margin: 0;
+  max-width: 420px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--app-text-secondary);
+}
+
+.err-boundary__detail {
+  margin: 0;
+  max-width: 520px;
+  max-height: 120px;
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: var(--app-radius-item);
+  background: var(--app-surface-alt);
+  color: var(--app-text-secondary);
+  font-size: 12px;
+  font-family: Consolas, "Courier New", monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.err-boundary__retry.ant-btn {
+  @include widget.ant-button-reset;
+  --ant-control-height: 32px;
+  --ant-button-padding-inline: 16px;
+  --ant-button-content-font-size: 14px;
+  --ant-button-font-weight: 500;
+  --ant-border-radius: var(--app-radius-item);
+  --ant-button-default-bg: var(--app-primary);
+  --ant-button-default-color: var(--app-primary-contrast);
+  --ant-button-default-border-color: transparent;
+  --ant-button-default-hover-bg: var(--app-primary-strong);
+  --ant-button-default-hover-color: var(--app-primary-contrast);
+  --ant-button-default-hover-border-color: transparent;
+  --ant-button-default-active-bg: var(--app-primary-active);
+  --ant-button-default-active-color: var(--app-primary-contrast);
+  --ant-button-default-active-border-color: transparent;
+  --ant-button-default-shadow: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}

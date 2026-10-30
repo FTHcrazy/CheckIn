@@ -1,3 +1,8 @@
+// 顶栏入口（返回书架 / 图标按钮）由 antd `Button` 承载（AGENTS §6.1.2）：
+// 先清零组件级变量再声明。hover 与 `.is-on` 持久高亮态都必须写成变量 ——
+// 自写 `.x:hover`（0,2,0）/ `.x.is-on`（0,2,0）压不过 antd 的状态规则（0,4,0）
+@use "../../../../../../shared/styles/widget" as widget;
+
 .nv-topbar {
   height: 44px;
   flex: none;
@@ -9,28 +14,32 @@
   background: var(--app-header-bg);
 
   /* 返回书架（R32）：书架主页接入后显示在作品下拉左侧 */
-  &__back {
+  &__back.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 28px;
+    /* 原「左 8px / 右 10px」的不对称内边距组件级变量表达不了，取中值 9px
+       （图标与文字间距另由 --ant-button-icon-gap 给） */
+    --ant-button-padding-inline: 9px;
+    --ant-button-content-font-size: 12px;
+    --ant-button-font-weight: 500;
+    --ant-button-icon-gap: 4px;
+    --ant-border-radius: var(--app-radius-chip);
+    --ant-button-default-bg: transparent;
+    --ant-button-default-color: var(--app-text-secondary);
+    --ant-button-default-hover-bg: var(--app-surface-hover);
+    --ant-button-default-hover-color: var(--app-text);
+    --ant-button-default-active-bg: var(--app-surface-hover);
+    --ant-button-default-active-color: var(--app-text);
+    --ant-button-default-shadow: none;
+
+    /* antd 不接管的属性 */
     display: inline-flex;
     align-items: center;
-    gap: 4px;
     flex: none;
-    height: 28px;
-    padding: 0 10px 0 8px;
-    border: none;
-    border-radius: var(--app-radius-chip);
-    background: transparent;
-    color: var(--app-text-secondary);
-    font-size: 12px;
-    font-weight: 500;
     cursor: pointer;
     transition:
-      background 120ms ease,
-      color 120ms ease;
-
-    &:hover {
-      background: var(--app-surface-hover);
-      color: var(--app-text);
-    }
+      background var(--app-t-fast) var(--app-ease-standard),
+      color var(--app-t-fast) var(--app-ease-standard);
 
     &:focus-visible {
       outline: 2px solid var(--app-primary);
@@ -38,8 +47,11 @@
     }
   }
 
+  /* 作品名自适应内容宽度（上限内不截断）——书名是顶栏的主信息，
+     死宽 108px 会把「我在修仙 simulation」这类标题拦腰截成「我在修仙…」 */
   &__work {
-    width: 108px;
+    min-width: 0;
+    max-width: 220px;
     flex: none;
     font-weight: 600;
   }
@@ -65,6 +77,7 @@
     color: var(--app-text-muted);
   }
 
+  /* 位置面包屑：卷是次要定位、章名是「我读到哪」的主信息，字号与字重分层 */
   &__crumb {
     display: flex;
     align-items: center;
@@ -74,11 +87,21 @@
     color: var(--app-text-secondary);
   }
 
+  &__crumb-volume {
+    flex: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 140px;
+  }
+
   &__crumb-sep {
     color: var(--app-text-muted);
   }
 
   &__crumb-chapter {
+    font-size: 14px;
+    font-weight: 500;
     color: var(--app-text);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -126,27 +149,55 @@
     flex: none;
   }
 
-  &__icon {
+  /* 动作区分组线：布局开关（章节栏/面板）｜窗口级入口（行囊/快照/设置） */
+  &__divider {
+    width: 1px;
+    height: 16px;
+    margin: 0 5px;
+    background: var(--app-splitter);
+    flex: none;
+  }
+
+  /* 右上角动作图标：常驻浅色 chip 底（不再是纯透明）—— 六颗图标一排
+     不加边界时，「布局开关」与「功能入口」扫过去都是一团灰点，点下去
+     才知道是按钮。默认底用 --app-surface-hover，hover / active 加深一档，
+     .is-on 持久高亮仍走主色弱底，三档层次分明 */
+  &__icon.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 28px;
+    --ant-button-padding-inline: 0px;
+    --ant-button-content-font-size: 14px;
+    --ant-border-radius: var(--app-radius-chip);
+    --ant-button-default-bg: var(--app-surface-hover);
+    --ant-button-default-color: var(--app-text-secondary);
+    --ant-button-default-hover-bg: var(--app-surface-active);
+    --ant-button-default-hover-color: var(--app-text);
+    --ant-button-default-active-bg: var(--app-surface-active);
+    --ant-button-default-active-color: var(--app-text);
+    --ant-button-default-shadow: none;
+
+    /* antd 不接管的属性 */
     width: 28px;
-    height: 28px;
-    border-radius: var(--app-radius-chip);
     display: grid;
     place-items: center;
-    border: none;
-    background: transparent;
-    color: var(--app-text-secondary);
-    font-size: 14px;
     cursor: pointer;
-    transition: background 120ms ease, color 120ms ease;
+    transition: background var(--app-t-fast) var(--app-ease-standard), color var(--app-t-fast) var(--app-ease-standard);
 
-    &:hover {
-      background: var(--app-surface-hover);
-      color: var(--app-text);
-    }
-
+    /* 持久高亮态（面板已展开 / 打字机已开 / 行囊已开 …）：
+       写默认变量即可，hover / active 同步保持高亮不掉色 */
     &.is-on {
-      background: var(--app-primary-weak);
-      color: var(--app-primary);
+      --ant-button-default-bg: var(--app-primary-weak);
+      --ant-button-default-color: var(--app-primary);
+      --ant-button-default-hover-bg: var(--app-primary-weak);
+      --ant-button-default-hover-color: var(--app-primary);
+      --ant-button-default-active-bg: var(--app-primary-weak);
+      --ant-button-default-active-color: var(--app-primary);
+      /* 主色内描边。为什么光靠底色不够：默认底与主色弱底都是「极浅底」，
+         aurora 下两者亮度只差 ~1.2%（实测），激活与否只能靠图标换色分辨，
+         一眼扫过去仍然糊。1px 内描边走 `--ant-button-default-shadow`
+         （antd 只在 outlined/solid/dashed 变体上把它落成 box-shadow，
+         且**不分状态**，所以 hover / active 也不会掉），是确定的几何信号。 */
+      --ant-button-default-shadow: inset 0 0 0 1px var(--app-primary);
     }
 
     &:focus-visible {

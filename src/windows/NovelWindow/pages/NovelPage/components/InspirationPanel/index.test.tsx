@@ -70,7 +70,12 @@ describe("InspirationPanel 组件", () => {
     const onAddNote = vi.fn();
     render(<InspirationPanel notes={[]} actions={buildActions({ onAddNote })} />);
 
-    const send = screen.getByRole("button", { name: "记录" });
+    // antd 默认给两字中文按钮插字间距空格（应用内由 ThemeProvider 关掉）；
+    // 组件测试不走 ThemeProvider，这里按去空白后的名字匹配
+    const send = screen.getByRole("button", {
+      name: (accessibleName: string) =>
+        accessibleName.replace(/\s+/g, "") === "记录",
+    });
     expect(send).toBeDisabled();
 
     fireEvent.change(screen.getByLabelText("新增灵感"), {
@@ -184,5 +189,42 @@ describe("InspirationPanel 组件", () => {
     fireEvent.click(screen.getByLabelText("清空搜索"));
     expect(screen.getByText("2 条 · 置顶 1")).toBeInTheDocument();
     expect(screen.queryByText("另一本书的灵感：刀七娘的前朝暗器")).toBeNull();
+  });
+
+  /**
+   * 未归属灵感（1.41.0，用户报障）：workId 为空串的灵感是书架灵感库的
+   * 「未归属」池 —— 此前被 workId 过滤排掉，书架里记了一条、编辑器里
+   * 一片空白。现在并入当前列表且**可编辑**（它不属于任何一本书，
+   * 不走「外部灵感只读」路径，也不带来源标签）。
+   */
+  it("未归属灵感并入当前列表：可见、可编辑、不标来源", () => {
+    const withUnassigned: NovelNote[] = [
+      ...notes,
+      { id: "n8", workId: "", content: "随手记的：北境雪崩伏笔", createdAt: now - 30_000, pinned: false },
+    ];
+    const onUpdateNote = vi.fn();
+    render(
+      <InspirationPanel
+        notes={withUnassigned}
+        activeWorkId="w1"
+        workNameOf={() => "当前书"}
+        actions={buildActions({ onUpdateNote })}
+      />,
+    );
+
+    expect(screen.getByText("随手记的：北境雪崩伏笔")).toBeInTheDocument();
+    expect(screen.getByText("3 条 · 置顶 1")).toBeInTheDocument();
+    // 未归属不显示「来自《xx》」来源 chip
+    expect(screen.queryByText(/来自《/)).not.toBeInTheDocument();
+    // 可编辑：与本书灵感同一套操作
+    const card = screen.getAllByRole("group").find((node) =>
+      node.textContent?.includes("北境雪崩伏笔"),
+    ) as HTMLElement;
+    fireEvent.click(within(card).getByLabelText("编辑灵感"));
+    fireEvent.change(screen.getByLabelText("编辑灵感内容"), {
+      target: { value: "北境雪崩伏笔（改）" },
+    });
+    fireEvent.keyDown(screen.getByLabelText("编辑灵感内容"), { key: "Enter" });
+    expect(onUpdateNote).toHaveBeenCalledWith("n8", "北境雪崩伏笔（改）");
   });
 });

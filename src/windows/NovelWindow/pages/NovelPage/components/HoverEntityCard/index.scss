@@ -1,3 +1,7 @@
+/* 悬浮资料卡底部的「查看完整设定」是 antd Button（无自定义类名，这里用
+   复合选择器命中）：先清零组件级变量再声明自己的值，hover 走变量而非属性规则 */
+@use "../../../../../../shared/styles/widget" as widget;
+
 .nv-pop {
   position: absolute;
   z-index: 40;
@@ -9,7 +13,7 @@
   border-radius: var(--app-radius-chip);
   box-shadow: var(--app-shadow-pop);
   pointer-events: none;
-  animation: nv-pop-in 120ms ease;
+  animation: nv-pop-in var(--app-t-fast) var(--app-ease-standard);
 
   /* 只有卡片本体可交互，容器保持穿透以免挡住正文点击 */
   &__head {
@@ -66,7 +70,7 @@
     padding: 2px 8px;
     border-radius: var(--app-radius-pill);
     border: 1px solid var(--app-border);
-    background: var(--app-surface-hover);
+    background: var(--app-surface);
     color: var(--app-text-secondary);
     font-size: 12px;
   }
@@ -77,21 +81,26 @@
     margin-top: 10px;
     pointer-events: auto;
 
-    button {
+    .ant-btn {
+      @include widget.ant-button-reset;
+      --ant-control-height: auto;
+      --ant-button-content-font-size: 12px;
+      --ant-border-radius: 4px;
+      --ant-line-width: 1px;
+      --ant-button-default-bg: transparent;
+      --ant-button-default-color: var(--app-text-secondary);
+      --ant-button-default-border-color: var(--app-border);
+      --ant-button-default-hover-bg: transparent;
+      --ant-button-default-hover-color: var(--app-primary);
+      --ant-button-default-hover-border-color: var(--app-primary);
+      --ant-button-default-active-bg: transparent;
+      --ant-button-default-active-color: var(--app-primary);
+      --ant-button-default-active-border-color: var(--app-primary);
+      --ant-button-default-shadow: none;
+
       flex: 1;
       padding: 5px;
-      border: 1px solid var(--app-border);
-      border-radius: 4px;
-      background: transparent;
-      color: var(--app-text-secondary);
-      font-size: 12px;
-      cursor: pointer;
-      transition: border-color 120ms ease, color 120ms ease;
-
-      &:hover {
-        border-color: var(--app-primary);
-        color: var(--app-primary);
-      }
+      justify-content: center;
     }
   }
 }

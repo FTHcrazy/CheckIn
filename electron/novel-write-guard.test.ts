@@ -26,13 +26,14 @@ function channelBody(channel: string): string {
 describe("P1-3 删作品级联清理行囊（守卫）", () => {
   const body = channelBody("novel-work-delete");
 
-  it("定位到角色行再按 character_id 清九张子表", () => {
+  it("定位到角色行再按 character_id 清全部子表", () => {
     expect(body).toContain("SELECT id FROM novel_pack_characters WHERE work_id = ?");
     expect(body).toContain("DELETE FROM novel_pack_characters WHERE work_id = ?");
     for (const table of [
       "novel_pack_items",
       "novel_pack_skills",
       "novel_pack_attributes",
+      "novel_pack_mappings",
       "novel_pack_slots",
       "novel_pack_unit_systems",
       "novel_pack_layouts",
@@ -53,7 +54,10 @@ describe("P1-3 删作品级联清理行囊（守卫）", () => {
   });
 
   it("status 类载体用 owner_type 限定，不能拿 character_id 直接比对 owner_id", () => {
-    expect(body).toContain("owner_type = 'status' AND owner_id = ?");
+    // 集合删除后 id 来源是子查询而不是参数，但「先按 owner_type 分流」这条
+    // 顺序约束不能丢：多态表的 owner_id 在不同 owner_type 下是不同表的主键
+    expect(body).toContain("owner_type = 'status'");
+    expect(body).toContain("owner_id IN (SELECT id FROM novel_pack_characters");
   });
 });
 
@@ -61,14 +65,18 @@ const PACK_TABLES = (HANDLERS.match(/novel_pack_\w+/g) ?? []).filter(
   (name) => name !== "novel_pack_characters" && name !== "novel_pack_modifiers",
 );
 
-const CHILD_LIST_SOURCE = HANDLERS.slice(
+// 1.39.0 起注册表拆成两张：character 级（PACK_CHILD_TABLES）+ 作品级
+//（PACK_WORK_TABLES）。守卫窗口必须把两张都罩住 —— 任何一张漏登记，
+// 对应的 DELETE 循环就删不到那张表
+const REGISTRY_SOURCE = HANDLERS.slice(
   HANDLERS.indexOf("const PACK_CHILD_TABLES"),
+  HANDLERS.indexOf("PACK_WORK_TABLES = [") + 120,
 );
 
 describe("PACK_CHILD_TABLES 清单完整", () => {
-  it("覆盖全部非宿主、非多态的行囊表", () => {
+  it("覆盖全部非宿主、非多态的行囊表（含作品级 PACK_WORK_TABLES）", () => {
     for (const name of new Set(PACK_TABLES)) {
-      expect(CHILD_LIST_SOURCE.slice(0, 400)).toContain(name);
+      expect(REGISTRY_SOURCE).toContain(name);
     }
   });
 });
@@ -86,12 +94,26 @@ describe("P1-9 崩溃恢复判定（守卫）", () => {
     const start = HANDLERS.indexOf("function buildRecovery");
     const body = HANDLERS.slice(start, start + 1400);
     expect(body).toContain("JOIN novel_chapters c ON c.id = s.chapter_id");
-    expect(body).toContain("WHERE c.content <> s.content");
+    expect(body).toContain("c.content <> s.content");
     expect(body).toContain("ORDER BY s.created_at DESC LIMIT 1");
     // 老写法：只取全局最新快照，会被孤儿快照或「恰好最后写快照那一章」带偏
     expect(body).not.toContain(
       "SELECT * FROM novel_snapshots ORDER BY created_at DESC LIMIT 1",
     );
+  });
+
+  it("崩溃恢复的快照查询必须带时间下界 —— 否则每次装载全表扫 4 万条正文", () => {
+    const start = HANDLERS.indexOf("function buildRecovery");
+    const body = HANDLERS.slice(start, start + 1400);
+    // 必须先把时间下界写进 WHERE，再让 content 比较参与过滤
+    expect(body).toContain("s.created_at >= ?");
+    expect(body).toContain("RECOVERY_SNAPSHOT_WINDOW_MS");
+  });
+
+  it("novel-chapter-save 取最近一条快照时不读 content（高频路径只用到两个标量）", () => {
+    const body = channelBody("novel-chapter-save");
+    expect(body).toContain("SELECT word_count, created_at FROM novel_snapshots");
+    expect(body).not.toContain("SELECT * FROM novel_snapshots WHERE chapter_id");
   });
 });
 
@@ -103,9 +125,10 @@ describe("P1-10 写操作必须命中才返回成功（守卫）", () => {
     ["novel-chapter-outline", "UPDATE novel_chapters SET outline_note"],
     ["novel-volume-rename", "UPDATE novel_volumes SET name"],
     ["novel-note-move", "UPDATE novel_notes SET work_id"],
-    ["novel-level-system-rename", "UPDATE novel_level_systems SET name"],
-    ["novel-level-rename", "UPDATE novel_levels SET name"],
   ] as const;
+
+  // 小说设定的改名通道在 `novel-setting-handlers.ts`，由
+  // `novel-setting-guard.test.ts` 单独守卫（本文件只读 novel-handlers.ts）。
 
   for (const [channel, sql] of mustHit) {
     it(`${channel} 返回 changes > 0，命中 0 行不再谎报成功`, () => {
@@ -115,4 +138,22 @@ describe("P1-10 写操作必须命中才返回成功（守卫）", () => {
       expect(body).not.toContain("return true;");
     });
   }
+});
+
+describe("R27 画布记忆随作品删除级联（S2 守卫）", () => {
+  const body = channelBody("novel-work-delete");
+
+  it("按前缀清掉 novel_rel_graph_v1:<workId>:* 的记忆键", () => {
+    expect(body).toContain("DELETE FROM novel_config WHERE key LIKE ?");
+    expect(body).toContain("novel_rel_graph_v1:${id}:%");
+  });
+
+  it("清理排在行囊多态表之后（不与 pack 的子查询抢顺序）", () => {
+    const firstModifier = body.indexOf("DELETE FROM novel_pack_modifiers");
+    const graphKey = body.indexOf("novel_rel_graph_v1");
+    const worksRow = body.indexOf("DELETE FROM novel_works WHERE id = ?");
+    expect(graphKey).toBeGreaterThan(firstModifier);
+    // 作品行必须最后删：前面全靠 work_id 子查询
+    expect(worksRow).toBeGreaterThan(graphKey);
+  });
 });

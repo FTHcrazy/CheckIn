@@ -1,35 +1,51 @@
+// 卷头行（§6.1.2「超长虚拟化列表行」例外）：行内是语义化原生 <button> / <input>，
+// 不套 antd Button。该例外只放开「必须用组件库组件」一条 —— 键盘可达性、aria、
+// `<button>` 不嵌套、主题变量三条照旧。状态选择器写在本文件是例外明确允许的，
+// 色值一律走 var(--app-*)。
+//
+// 为什么不用组件库：左栏在长篇里数千行且已虚拟化，滚动时行被反复
+// mount/unmount，重组件（Context + Portal + 状态机）撑不住。
+
 .nv-volume {
   position: relative;
   min-width: 0;
 
+  /* 卷头（展示态是 button、编辑态是 div）：布局属性两层共用，
+     外观写在通用选择器上（不再依赖 antd 的组件级变量） */
   &__head {
     width: 100%;
     min-width: 0;
-    /* 编辑态行是 div（非 button），UA 不再默认 border-box：
-       width:100% + padding 会左右各撑出 8px 顶满面板边，须显式声明 */
+    /* 显式 border-box：width:100% + padding 在 content-box 下会左右撑出面板边 */
     box-sizing: border-box;
     display: flex;
     align-items: center;
     gap: 6px;
     height: 28px;
     padding: 0 8px;
-    border: none;
-    background: transparent;
-    color: var(--app-text-secondary);
+    font: inherit;
     font-size: 12px;
     font-weight: 600;
-    cursor: pointer;
+    color: var(--app-text-secondary);
+    background: transparent;
+    border: none;
     border-radius: var(--app-radius-item);
-    transition: background 120ms ease;
+    text-align: left;
+    cursor: pointer;
+    transition: background var(--app-t-fast) var(--app-ease-standard);
 
     &:hover {
       background: var(--app-surface-hover);
     }
 
-    /* 拖拽 drop 目标高亮（R9）：章节移入 / 卷重排共用 */
+    /* 拖拽 drop 目标高亮（R9 → 1.39.1 @dnd-kit）：章节移入 / 卷重排共用 */
     &.is-drop {
       background: var(--app-primary-weak);
       box-shadow: inset 0 2px 0 var(--app-primary);
+    }
+
+    /* 拖拽源压暗：卷名已浮在 DragOverlay 卡片上，原位留个残影即可 */
+    &.is-drag {
+      opacity: 0.4;
     }
 
     &:focus-visible {
@@ -58,15 +74,10 @@
     border-radius: 4px;
     background: var(--app-surface);
     color: var(--app-text);
+    font: inherit;
     font-size: 12px;
     font-weight: 600;
 
-    // antd Input（AGENTS 6.1.2）：复合选择器压过组件库默认内边距
-    &.ant-input {
-      padding: 2px 6px;
-    }
-
-    // antd v6 borderless 聚焦自带 focus-visible outline，与自身边框叠两层
     &:focus,
     &:focus-visible {
       outline: none;
@@ -84,7 +95,7 @@
     font-size: 12px;
     font-variant-numeric: tabular-nums;
     color: var(--app-text-muted);
-    transition: opacity 120ms ease;
+    transition: opacity var(--app-t-fast) var(--app-ease-standard);
   }
 
   /* 在本卷新建章节：卷头悬浮时浮现并盖住章数，避免布局抖动 */
@@ -98,18 +109,18 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    font-size: 12px;
+    color: var(--app-text-muted);
+    background: transparent;
     border: none;
     border-radius: 4px;
-    background: transparent;
-    color: var(--app-text-muted);
-    font-size: 12px;
     cursor: pointer;
     opacity: 0;
-    transition: opacity 120ms ease, color 120ms ease, background 120ms ease;
+    transition: opacity var(--app-t-fast) var(--app-ease-standard), color var(--app-t-fast) var(--app-ease-standard), background var(--app-t-fast) var(--app-ease-standard);
 
     &:hover {
-      color: var(--app-primary);
       background: var(--app-surface-hover);
+      color: var(--app-primary);
     }
 
     &:focus-visible {
@@ -125,5 +136,42 @@
 
   &:hover &__count {
     opacity: 0;
+  }
+
+  /* 删除卷：紧贴「＋」左侧浮现，与 __add 同一套显隐规则；
+     危险色只在 hover 时出现（日常状态不恐吓用户） */
+  &__del {
+    position: absolute;
+    right: 26px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    color: var(--app-text-muted);
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity var(--app-t-fast) var(--app-ease-standard), color var(--app-t-fast) var(--app-ease-standard), background var(--app-t-fast) var(--app-ease-standard);
+
+    &:hover {
+      background: var(--app-surface-hover);
+      color: var(--app-error);
+    }
+
+    &:focus-visible {
+      opacity: 1;
+      outline: 2px solid var(--app-primary);
+      outline-offset: -1px;
+    }
+  }
+
+  &:hover &__del {
+    opacity: 1;
   }
 }

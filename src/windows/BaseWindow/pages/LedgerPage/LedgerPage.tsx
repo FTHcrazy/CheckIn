@@ -46,6 +46,7 @@ export default function LedgerPage() {
   const editor = useLedgerEditorState({
     categories: data.categories,
     transactions: data.transactions,
+    previousTransactions: data.previousTransactions,
     removeTransaction: data.removeTransaction,
     restore: data.restore,
     saveTransaction: data.saveTransaction,
@@ -165,6 +166,7 @@ export default function LedgerPage() {
         categories={data.categories}
         note={editor.draft.note}
         onNoteChange={editor.setQuickNote}
+        suggestions={editor.quickSuggestions}
         error={editor.amountError}
         submitting={editor.submitting}
         onClose={editor.closeQuick}
@@ -175,6 +177,7 @@ export default function LedgerPage() {
         open={Boolean(editor.editTarget)}
         draft={editor.editDraft ?? EMPTY_EDIT_DRAFT}
         categories={data.categories}
+        suggestions={editor.editSuggestions}
         error={editor.editError}
         submitting={editor.submitting}
         onDraftChange={editor.patchEditDraft}

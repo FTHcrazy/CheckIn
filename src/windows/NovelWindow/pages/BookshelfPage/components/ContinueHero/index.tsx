@@ -1,5 +1,7 @@
 import { CaretRightOutlined } from "@ant-design/icons";
 import { Button } from "antd";
+import { TODAY_ADDED_LABEL, WORD_UNIT } from "@/shared/novel/today-stats";
+import { formatThousands } from "@/shared/utils/format";
 import { coverPaletteOf, type HeroView } from "../../bookshelf-utils";
 import "./index.scss";
 
@@ -58,7 +60,8 @@ export default function ContinueHero({
             />
           </div>
           <span className="bs-hero__goal">
-            今日 {todayWords.toLocaleString()} / {dailyGoal.toLocaleString()} 字
+            {TODAY_ADDED_LABEL} {formatThousands(todayWords)} /{" "}
+            {formatThousands(dailyGoal)} {WORD_UNIT}
           </span>
         </div>
       </div>

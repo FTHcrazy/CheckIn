@@ -1,5 +1,18 @@
 import type { Dayjs } from "dayjs";
 
+/** 每日代码产出目标（行/天）：所有「剩余缺口/目标线」共用这一份事实源 */
+export const DAILY_TARGET = 200;
+
+/**
+ * 动态节假日数据（由接口拉取后注入，覆盖硬编码表）。
+ * 结构对齐 jieri8.com 接口：rest_days=放假日、work_days=调休补班日。
+ * 为空表示尚未拉取 / 拉取失败，回退到下方硬编码表兜底。
+ */
+export interface HolidayData {
+  holidays: Set<string>;
+  makeupWorkdays: Set<string>;
+}
+
 /** 法定节假日（放假日期，含调休放假） */
 export const HOLIDAYS = new Set([
   // 2026 年
@@ -72,6 +85,7 @@ export const MAKEUP_WORKDAYS = new Set([
   "2026-02-28",
   "2026-04-26",
   "2026-09-28",
+  "2026-10-10",
   // 2025 年
   "2025-01-26",
   "2025-02-08",
@@ -84,6 +98,26 @@ export const MAKEUP_WORKDAYS = new Set([
 export function isWorkday(d: Dayjs): boolean {
   const key = d.format("YYYY-MM-DD");
   return MAKEUP_WORKDAYS.has(key) || (!HOLIDAYS.has(key) && d.day() >= 1 && d.day() <= 5);
+}
+
+/**
+ * 判断日期是否为工作日（支持动态节假日数据优先、硬编码表兜底）。
+ *
+ * @param d 日期
+ * @param dynamic 接口拉取的动态数据；不传或为空则用内置硬编码表
+ */
+export function isWorkdayWith(
+  d: Dayjs,
+  dynamic?: HolidayData | null,
+): boolean {
+  if (dynamic && (dynamic.holidays.size > 0 || dynamic.makeupWorkdays.size > 0)) {
+    const key = d.format("YYYY-MM-DD");
+    return (
+      dynamic.makeupWorkdays.has(key) ||
+      (!dynamic.holidays.has(key) && d.day() >= 1 && d.day() <= 5)
+    );
+  }
+  return isWorkday(d);
 }
 
 /** 计算区间内的工作日数量（含两端） */
@@ -100,13 +134,34 @@ export function calcWorkdays(from: Dayjs, to: Dayjs): number {
   return count;
 }
 
+/**
+ * 计算区间内的工作日数量（支持动态节假日数据优先）。
+ * 与 calcWorkdays 的区别：工作日判定走 isWorkdayWith 的动态数据源。
+ */
+export function calcWorkdaysWith(
+  from: Dayjs,
+  to: Dayjs,
+  dynamic?: HolidayData | null,
+): number {
+  let count = 0;
+  let cur = from.startOf("day");
+  const end = to.startOf("day");
+  while (cur.isBefore(end) || cur.isSame(end)) {
+    if (isWorkdayWith(cur, dynamic)) {
+      count++;
+    }
+    cur = cur.add(1, "day");
+  }
+  return count;
+}
+
 /** 单次提交的有效产出行数：新增行 + 删除行 × 0.3 */
 export function getCommitOutput(item: { insertions: string; deletions: string }): number {
   return (parseInt(item.insertions) || 0) + (parseInt(item.deletions) || 0) * 0.3;
 }
 
-/** 「查询当月」区间：本月 1 号 ~ 今天（含今天）；月初当天时两端为同一天 */
+/** 「查询当月」区间：本月 1 号 ~ 本月最后一天（含两端） */
 export function getThisMonthRange(now: Dayjs): [Dayjs, Dayjs] {
-  const today = now.startOf("day");
-  return [today.startOf("month"), today];
+  const base = now.startOf("day");
+  return [base.startOf("month"), base.endOf("month").startOf("day")];
 }

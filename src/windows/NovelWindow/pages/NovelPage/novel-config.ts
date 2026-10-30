@@ -31,31 +31,25 @@ export const LAYOUT = {
 /** 新建卷的默认存储名：展示时视为「未命名」不追加显示（左栏卷头与大纲板共用） */
 export const UNNAMED_VOLUME = "未命名卷";
 
+// ── 小说设定的默认值（定义已提升到 shared，见文件头 re-export） ──
+//
+// 设定中心组件被提升到 `src/shared/components/SettingCenter` 后跨窗口复用，
+// 这三个默认值 + 色板随之下沉到 `@/shared/novel/setting-defaults`
+// （shared 不允许 import windows）。这里 re-export 保持既有 import 路径不变。
+// 与主进程常量的一致性守卫见 `electron/novel-setting-defaults-guard.test.ts`。
+
+export {
+  CATEGORY_PALETTE,
+  DEFAULT_CATEGORY_COLOR,
+  DEFAULT_SUB_LEVELS,
+  DEFAULT_SUB_PATTERN,
+} from "@/shared/novel/setting-defaults";
+
 /**
- * userDb config 表存储键（PRD v0.5 步骤一）
- *
- * 设置与续写位置都是「单用户、低频写、整读整写」的小数据，
- * 复用既有 config 表（key-value）而不是为它们建新表。
+ * userDb config 表存储键 —— 定义已提升到 shared（行囊模块跨窗口共用），
+ * 这里 re-export 保持既有引用路径不变。
  */
-export const STORAGE_KEYS = {
-  /** 排版与写作设置（R5 持久化） */
-  settings: "novel_editor_settings",
-  /** 上次续写位置：作品 / 章节 / 光标 / 滚动（R6） */
-  position: "novel_editor_position",
-  /** 自定义要素类型（R23）：CustomEntityTypeDef[] 整读整写 */
-  entityTypes: "novel_entity_types",
-  /** 起名工具收藏夹（R18 ④）：NameFavorite[] 整读整写，按作品持久化 */
-  namingFavorites: "novel_naming_favorites",
-  /** 起名工具自定义用字池（R18 ①）：NamingCustomPool 整读整写 */
-  namingCustomPools: "novel_naming_custom_pools",
-  /** 右栏宽度（支撑面板改版）：单个数字整读整写，270ms 防抖后落库 */
-  panelWidth: "novel_panel_width",
-  /**
-   * 行囊界面偏好（CharacterPack，PRD §8.6.2）：形态 / 宽度 / 模块折叠 /
-   * 物品栏视图 / 展示熟练度 / 自动保存 —— 全部「即改即存」，不进草稿。
-   */
-  packUi: "novel_pack_ui",
-} as const;
+export { LEVEL_RELATION, STORAGE_KEYS } from "@/shared/novel/constants";
 
 /** 续写位置记忆（R6）：变化后防抖落库 */
 export const POSITION = {
@@ -95,15 +89,6 @@ export const ANNOTATION = {
 /** 轻提示自动消失时长（设计方案 §06 Toast） */
 export const TOAST_DURATION_MS = 2400;
 
-/**
- * 左栏拖拽排序的 dataTransfer MIME 标记（R9）
- *
- * 用自定义 MIME 而非 text/plain，drop 目标在 dragover 阶段
- * 仅凭 types 即可判断拖的是章节还是卷（getData 在 drop 前不可读）。
- */
-export const DRAG_MIME_CHAPTER = "application/x-nv-chapter";
-export const DRAG_MIME_VOLUME = "application/x-nv-volume";
-
 /** 排版默认值（PRD §2 中文排版默认值） */
 export const DEFAULT_SETTINGS: EditorSettings = {
   fontSize: 17,
@@ -117,6 +102,9 @@ export const DEFAULT_SETTINGS: EditorSettings = {
   chapterSuffix: "章",
   volumeSuffix: "卷",
   confirmReorder: true,
+  paperTexture: false,
+  paperFont: "",
+  readMode: false,
 };
 
 /**
@@ -136,63 +124,13 @@ export const SETTINGS_RANGE = {
   dailyGoal: { min: 500, max: 20000, step: 500 },
 } as const;
 
-export interface EntityTypeMeta {
-  label: string;
-  /** 主色：头像底、名称、正文高亮描边 */
-  color: string;
-  /** 弱色：卡片底、筛选 chip 底、正文高亮底色 */
-  colorWeak: string;
-}
-
-/**
- * 内置要素类型语义色
- *
- * 设计方案 §02 要求「类型色在正文高亮、卡片头像、筛选 chips 三处严格一致」，
- * 这里统一映射到主窗口的四套主题变量上，换肤自动跟随。
- * 自定义类型（ct-*）的 meta 不在这里——由 EntityTypeContext 派生（R23）。
- */
-export const ENTITY_TYPE_META: Record<BuiltinEntityType, EntityTypeMeta> = {
-  character: {
-    label: "角色",
-    color: "var(--app-primary)",
-    colorWeak: "var(--app-primary-weak)",
-  },
-  location: {
-    label: "地点",
-    color: "var(--app-accent-green)",
-    colorWeak: "var(--app-accent-green-weak)",
-  },
-  faction: {
-    label: "势力",
-    color: "var(--app-accent-purple)",
-    colorWeak: "var(--app-accent-purple-weak)",
-  },
-  item: {
-    label: "物品",
-    color: "var(--app-accent-amber)",
-    colorWeak: "var(--app-accent-amber-weak)",
-  },
-  level_system: {
-    label: "等级体系",
-    color: "var(--app-accent-blue)",
-    colorWeak: "var(--app-accent-blue-weak)",
-  },
-  custom: {
-    label: "自定义",
-    color: "var(--app-text-secondary)",
-    colorWeak: "var(--app-surface-active)",
-  },
-};
-
-/** 要素库筛选顺序（内置部分）：全部在前，其余按语义分组；自定义类型追加在末尾 */
-export const ENTITY_FILTER_ORDER: BuiltinEntityType[] = [
-  "character",
-  "location",
-  "faction",
-  "item",
-  "level_system",
-  "custom",
-];
+// 要素类型语义色 / 筛选顺序已上提到 `@/shared/novel/entity-type-meta`
+// （R27 起关系图独立窗口共用同一份色表）。这里 re-export，既有导入路径不变。
+export {
+  ENTITY_TYPE_META,
+  ENTITY_FILTER_ORDER,
+} from "@/shared/novel/entity-type-meta";
+export type { EntityTypeMeta } from "@/shared/novel/entity-type-meta";
 
 /** 选区标记工具条的快捷类型（O3）：保持内置四类，自定义类型走资料卡编辑 */
 export const MARK_TYPE_OPTIONS: BuiltinEntityType[] = [
@@ -203,14 +141,17 @@ export const MARK_TYPE_OPTIONS: BuiltinEntityType[] = [
 ];
 
 /**
- * 「当前境界」关联名（R25）：绑定存 novel_links（toType='level' 指向
- * novel_levels.id），一个要素同时只持有一条当前境界绑定。
+ * 「当前境界」关联名（R25）：定义已提升到 shared（与行囊模块共用），见文件头 re-export。
  */
-export const LEVEL_RELATION = "当前境界";
 
 /**
- * 自定义类型色板（R23）：具体色值，与四套主题的 var(--app-*) 解耦。
+ * 自定义类型推荐配色（R23）：具体色值，与四套主题的 var(--app-*) 解耦。
  * 取与内置语义色错开的中饱和色，弱色在使用处 color-mix 派生。
+ *
+ * 定位是**快捷起点**而非可选范围：取色已改用组件库 ColorPicker，
+ * 用户可以自选任意色并直接填 hex。这份数组同时承担两个职责：
+ *   ① ColorPicker 的「推荐」presets 分组
+ *   ② 新建类型时自动挑一个还没被占用的颜色做默认值
  */
 export const CUSTOM_TYPE_PALETTE: readonly string[] = [
   "#e0559a",

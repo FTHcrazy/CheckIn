@@ -1,0 +1,202 @@
+/**
+ * 帮助中心样式
+ *
+ * 全部走 var(--app-*)，暗色主题（midnight）下跟随 darkAlgorithm，不硬编码色值。
+ */
+
+.help-center__body {
+  max-height: min(70vh, 680px);
+  overflow-y: auto;
+}
+
+.help-center__top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.help-center__hint {
+  font-size: 12px;
+  color: var(--app-text-muted);
+  line-height: 1.6;
+}
+
+.help-center__search {
+  margin-bottom: 16px;
+}
+
+/* ── 快速上手五步 ── */
+
+.help-center__flow {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.help-center__flow-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--app-border);
+  border-radius: 10px;
+  background: var(--app-surface-alt);
+}
+
+.help-center__flow-num {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--app-primary-contrast);
+  background: var(--app-primary);
+}
+
+.help-center__flow-body {
+  min-width: 0;
+}
+
+.help-center__flow-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--app-text-strong);
+  line-height: 1.5;
+}
+
+.help-center__flow-desc {
+  margin-top: 2px;
+  font-size: 14px;
+  color: var(--app-text-secondary);
+  line-height: 1.65;
+}
+
+/* ── 功能索引 / 快捷键 ── */
+
+.help-center__groups {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.help-center__group-title {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--app-primary-strong);
+}
+
+.help-center__list {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.help-center__row {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--app-border);
+}
+
+.help-center__row:last-child {
+  border-bottom: none;
+}
+
+.help-center__term {
+  flex: none;
+  width: 96px;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--app-text-strong);
+}
+
+.help-center__term--key {
+  width: 120px;
+}
+
+.help-center__term kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  border: 1px solid var(--app-border-strong);
+  border-radius: 4px;
+  background: var(--app-surface);
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--app-text-strong);
+}
+
+.help-center__desc {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  color: var(--app-text-secondary);
+  line-height: 1.65;
+}
+
+/* ── 常见问题 ── */
+
+.help-center__answer {
+  margin: 0;
+  font-size: 14px;
+  color: var(--app-text-secondary);
+  line-height: 1.7;
+}
+
+/* ── 检索结果 ── */
+
+.help-center__hits {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.help-center__hit {
+  padding: 10px 12px;
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  background: var(--app-surface);
+}
+
+.help-center__hit-group {
+  display: inline-block;
+  margin-bottom: 4px;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--app-primary-weak);
+  font-size: 12px;
+  color: var(--app-primary-strong);
+}
+
+.help-center__hit-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--app-text-strong);
+  line-height: 1.5;
+}
+
+.help-center__hit-detail {
+  margin-top: 2px;
+  font-size: 14px;
+  color: var(--app-text-secondary);
+  line-height: 1.65;
+}
+
+.help-center__empty {
+  padding: 24px 0;
+}

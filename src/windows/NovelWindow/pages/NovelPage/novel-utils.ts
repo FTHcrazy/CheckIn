@@ -19,8 +19,13 @@ import type {
   OutlineNode,
   TermMatch,
   TextSegment,
-  WordCountMode,
 } from "./types";
+import { formatRelativeTime as relativeTime } from "@/shared/utils/format";
+import {
+  formatNumberedLabel,
+  toChineseOrdinal,
+} from "@/shared/novel/number-label";
+import { countWords, type WordCountMode } from "@/shared/novel/word-count";
 import {
   DEFAULT_SETTINGS,
   ENTITY_TYPE_META,
@@ -36,30 +41,14 @@ import {
  * 模糊检索、片段高亮。IME 与 CodeMirror 交互留在 hooks / 编辑器扩展层。
  */
 
-/** 中日韩统一表意文字 + 扩展 A + 兼容表意文字 */
-const HAN_PATTERN = /[㐀-䶿一-鿿豈-﫿]/g;
-
-/** 统计字数。默认口径含标点（与主流平台一致），可切纯汉字 */
-export function countWords(text: string, mode: WordCountMode): number {
-  if (!text) return 0;
-  if (mode === "hanOnly") {
-    const matched = text.match(HAN_PATTERN);
-    return matched ? matched.length : 0;
-  }
-  let count = 0;
-  for (const ch of text) {
-    if (!/\s/.test(ch)) count += 1;
-  }
-  return count;
-}
+// ── 字数统计（N-07）──
+// 单一实现迁至 @/shared/novel/word-count，与书架导入解析器共用同一口径（按码点）。
+// 此前这里的实现与 novel-import-parser 那份并存，星平面字符会各算各的。
+// 此处 re-export 保持既有 import 路径（useNovelEditorStore / SettingsDrawer…）不变。
+export { countWords };
 
 /** 千分位分隔，用于状态条与章节树右侧字数 */
-export function formatThousands(value: number): string {
-  return String(Math.max(0, Math.round(value))).replace(
-    /\B(?=(\d{3})+(?!\d))/g,
-    ",",
-  );
-}
+export { formatThousands } from "@/shared/utils/format";
 
 /** 章节序号补零：7 → "07" */
 export function padIndex(index: number): string {
@@ -78,15 +67,7 @@ export function formatRelativeTime(
   timestamp: number,
   now: number = Date.now(),
 ): string {
-  const diff = now - timestamp;
-  if (diff < 0) return "刚刚";
-  const minutes = Math.floor(diff / 60_000);
-  if (minutes < 1) return "刚刚";
-  if (minutes < 60) return `${minutes} 分钟前`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} 小时前`;
-  const date = new Date(timestamp);
-  return `${date.getMonth() + 1}月${date.getDate()}日`;
+  return relativeTime(timestamp, now);
 }
 
 /**
@@ -115,49 +96,108 @@ export function buildEntityTerms(
 }
 
 /**
+ * 词条索引：首字符 → 该首字开头的候选词条（已按词长倒序）。
+ *
+ * 为什么按首字分桶：原实现是「文本逐字符推进，每个位置遍历**全部**词条跑
+ * `startsWith`」——单章 3000 字 × 300 词条实测 8ms，3000 章冷扫 9 秒。
+ * 分桶后每个位置只在「首字相同的少数词条」里比对，命中率越低收益越大。
+ *
+ * `WeakMap` 以词条数组身份为键：`terms` 由 `buildEntityTerms` 每次重建新数组，
+ * 旧索引随数组一起被 GC，无需手动清理，也不会串到别的书。
+ */
+interface TermIndex {
+  /** 首字符 → 候选词条（长词优先） */
+  byFirstChar: Map<string, EntityTerm[]>;
+}
+
+const termIndexCache = new WeakMap<EntityTerm[], TermIndex>();
+
+function indexOfTerms(terms: EntityTerm[]): TermIndex {
+  const cached = termIndexCache.get(terms);
+  if (cached) return cached;
+
+  const byFirstChar = new Map<string, EntityTerm[]>();
+  for (const item of terms) {
+    if (!item.term) continue;
+    const first = item.term[0];
+    const bucket = byFirstChar.get(first);
+    if (bucket) bucket.push(item);
+    else byFirstChar.set(first, [item]);
+  }
+  // 每个桶内按词长倒序：长词优先，避免「青梧」吃掉「青梧山」
+  for (const bucket of byFirstChar.values()) {
+    bucket.sort((a, b) => b.term.length - a.term.length);
+  }
+
+  const index: TermIndex = { byFirstChar };
+  termIndexCache.set(terms, index);
+  return index;
+}
+
+/**
  * 在给定文本中做白名单匹配，返回互不重叠、（同起点）最长的命中区间。
  * 只扫传入文本，不做全文档扫描——调用方负责切成可视区片段。
+ *
+ * 调用方**无需**预先排序：候选桶在索引构建时已按词长倒序。
+ * 早先这里每次都 `[...terms].sort()`，而它被标注层按可视区、按防抖高频调用，
+ * 等于每次重建都白白重排一遍全量词库。
  */
 export function findTermMatches(
   text: string,
   terms: EntityTerm[],
 ): TermMatch[] {
   if (!text || terms.length === 0) return [];
-  const sorted = [...terms].sort((a, b) => b.term.length - a.term.length);
+  const { byFirstChar } = indexOfTerms(terms);
   const matches: TermMatch[] = [];
   let index = 0;
 
   while (index < text.length) {
-    const hit = sorted.find(
-      (item) => item.term.length > 0 && text.startsWith(item.term, index),
-    );
-    if (hit) {
-      matches.push({
-        from: index,
-        to: index + hit.term.length,
-        term: hit.term,
-        entityId: hit.entityId,
-        type: hit.type,
-      });
-      index += hit.term.length;
-    } else {
-      index += 1;
+    // 首字不在词库里 → 这个位置不可能有命中，直接推进一字符
+    const bucket = byFirstChar.get(text[index]);
+    if (bucket) {
+      const hit = bucket.find((item) => text.startsWith(item.term, index));
+      if (hit) {
+        matches.push({
+          from: index,
+          to: index + hit.term.length,
+          term: hit.term,
+          entityId: hit.entityId,
+          type: hit.type,
+        });
+        index += hit.term.length;
+        continue;
+      }
     }
+    index += 1;
   }
 
   return matches;
+}
+
+/**
+ * 把自建类型的标识色合并进标注层词条（R23）。
+ *
+ * 内置六类的颜色由 SCSS 静态定义给出，`ct-*` 是动态 id、没有静态规则，
+ * 只能把颜色随词条带下去（再经 novel-editor 注入成 inline CSS 变量）。
+ * 抽成纯函数是为了能直接断言「改色后词条颜色跟着变」这条契约 ——
+ * 原先写在 useNovelPage 的 useMemo 里，只能靠组件测试间接覆盖。
+ */
+export function applyCustomTypeColors(
+  terms: EntityTerm[],
+  customTypes: { id: string; color: string }[],
+): EntityTerm[] {
+  if (customTypes.length === 0) return terms;
+  const colorOf = new Map(customTypes.map((def) => [def.id, def.color]));
+  return terms.map((term) => {
+    const color = colorOf.get(term.type);
+    return color ? { ...term, color } : term;
+  });
 }
 
 /** 今日目标进度百分比，上限 100 */
 export function calcGoalProgress(todayTotal: number, goal: number): number {
   if (goal <= 0) return 0;
   return Math.min(100, Math.round((todayTotal / goal) * 100));
-}
-
-/** 码字速度（字 / 分钟） */
-export function calcSpeed(words: number, minutes: number): number {
-  if (minutes <= 0) return 0;
-  return Math.round(words / minutes);
 }
 
 /** 按关键词切分文本，供检索 / 快照 diff 高亮渲染 */
@@ -318,6 +358,18 @@ export interface OutlineBuildOptions {
 }
 
 /**
+ * 区分 buildOutlineTree 的两种首参：分组带 `volume` 字段，卷本身没有。
+ * 用 `in` 做结构判别，不依赖调用方传标记位（调用方传错了也不会静默出错数据）。
+ */
+function isChapterGroupList(
+  value: NovelVolume[] | ChapterGroup[],
+): value is ChapterGroup[] {
+  const first = value[0];
+  if (!first) return false;
+  return "volume" in first;
+}
+
+/**
  * 由真实卷 / 章 + 用户手写的伏笔派生大纲树（PRD R7）
  *
  * 骨架永远来自 volumes / chapters，不落库、也不允许与左栏不一致——
@@ -325,32 +377,76 @@ export interface OutlineBuildOptions {
  * 用「o-c7」这类假 id，点了编辑器直接空态）。
  * 伏笔统一挂到所属卷末尾（待回收在前、同级内按写入时间），不插进章序中间，
  * 避免「大纲顺序 ≠ 章节顺序」的误导。
+ *
+ * 首参可传**已建好的分组**（`ChapterGroup[]`，useNovelPage 走这条，复用左栏那份），
+ * 也可传卷数组（`NovelVolume[]`，纯函数测试与其它调用方走这条，内部现建分组）。
+ * 两种入参在行为上完全等价 —— 传入分组只是省掉一次 O(章 + 卷) 的重复建组。
  */
 export function buildOutlineTree(
-  volumes: NovelVolume[],
+  volumesOrGroups: NovelVolume[] | ChapterGroup[],
   chapters: NovelChapter[],
   entries: OutlineEntry[],
   options: OutlineBuildOptions,
 ): OutlineNode[] {
-  const numbers = buildChapterNumbers(volumes, chapters);
+  const groups = isChapterGroupList(volumesOrGroups)
+    ? volumesOrGroups
+    : buildChapterGroups(volumesOrGroups, chapters);
 
-  return buildChapterGroups(volumes, chapters).map((group, index) => {
-    const chapterNodes: OutlineNode[] = group.chapters.map((chapter) => ({
-      kind: "chapter",
-      id: chapter.id,
-      chapterId: chapter.id,
-      title: chapter.title,
-      label: formatNumberedLabel(
-        options.numberStyle,
-        options.chapterSuffix,
-        numbers.get(chapter.id) ?? 1,
-      ),
-      note: chapter.outlineNote ?? "",
-      wordCount: chapter.wordCount,
-      status: chapter.status,
-    }));
+  // 序号与骨架都从同一份分组派生。原实现内部走 buildChapterNumbers →
+  // 再建一次同样的分组，长篇里是白白多跑一遍 O(章 + 卷)。
+  const numbers = buildChapterNumbersFromGroups(groups);
 
-    const owned = entries.filter((entry) => entry.volumeId === group.volume.id);
+  // 伏笔按卷预分桶：原实现是「每个卷各 filter 一遍全量伏笔」，
+  // 卷数 × 伏笔数 的乘积在长篇里不可忽略（60 卷 × 数百条 = 数万次比较，
+  // 且每次切章都要重算一遍）。分桶后整体降到 O(伏笔)。
+  const entriesByVolume = new Map<string, OutlineEntry[]>();
+  for (const entry of entries) {
+    const bucket = entriesByVolume.get(entry.volumeId);
+    if (bucket) bucket.push(entry);
+    else entriesByVolume.set(entry.volumeId, [entry]);
+  }
+
+  return groups.map((group, index) => {
+    const owned = entriesByVolume.get(group.volume.id) ?? [];
+
+    // 章节行要标出「本章埋了伏笔」：先按 chapterId 归并一次，
+    // 避免「每章各扫一遍全量伏笔」的 O(章 × 伏笔)
+    const planted = new Map<string, { total: number; open: number }>();
+    let openCount = 0;
+    for (const item of owned) {
+      if (item.status === "open") openCount += 1;
+      if (!item.chapterId) continue; // 卷级伏笔不绑章，由卷头计数承载
+      const record = planted.get(item.chapterId) ?? { total: 0, open: 0 };
+      record.total += 1;
+      if (item.status === "open") record.open += 1;
+      planted.set(item.chapterId, record);
+    }
+
+    const chapterNodes: OutlineNode[] = group.chapters.map((chapter) => {
+      const own = planted.get(chapter.id);
+      return {
+        kind: "chapter",
+        id: chapter.id,
+        chapterId: chapter.id,
+        title: chapter.title,
+        label: formatNumberedLabel(
+          options.numberStyle,
+          options.chapterSuffix,
+          numbers.get(chapter.id) ?? 1,
+        ),
+        note: chapter.outlineNote ?? "",
+        wordCount: chapter.wordCount,
+        status: chapter.status,
+        foreshadows: own?.total ?? 0,
+        openForeshadows: own?.open ?? 0,
+      };
+    });
+
+    // 章节 id → 章：伏笔的「埋在哪一章」标签要还原标题，不能每卷再 find 一遍
+    const chapterById = new Map(
+      group.chapters.map((chapter) => [chapter.id, chapter]),
+    );
+
     const foreshadowNodes: OutlineNode[] = [...owned]
       .sort(
         (a, b) =>
@@ -359,12 +455,14 @@ export function buildOutlineTree(
       )
       .map((entry) => {
         const bound = entry.chapterId
-          ? group.chapters.find((chapter) => chapter.id === entry.chapterId)
+          ? chapterById.get(entry.chapterId)
           : undefined;
         return {
           kind: "foreshadow" as const,
           id: entry.id,
           entryId: entry.id,
+          volumeId: group.volume.id,
+          chapterId: entry.chapterId ?? "",
           title: entry.title,
           note: entry.note,
           resolved: entry.status === "resolved",
@@ -383,7 +481,7 @@ export function buildOutlineTree(
         index + 1,
       ),
       note: group.volume.name === UNNAMED_VOLUME ? "" : group.volume.name,
-      openForeshadows: owned.filter((entry) => entry.status === "open").length,
+      openForeshadows: openCount,
       children: [...chapterNodes, ...foreshadowNodes],
     };
   });
@@ -452,6 +550,34 @@ export function patchChapterOutlineNote(
   );
 }
 
+/**
+ * 章节 AI 摘要局部更新（R-AI-09）。
+ * `model` / `batch` 传空串 = 手工编辑清空来源标记；不修改入参。
+ */
+export function patchChapterSummary(
+  chapters: NovelChapter[],
+  chapterId: string,
+  summary: string,
+  model?: string,
+  at?: number,
+  batch?: string,
+): NovelChapter[] {
+  const trimmed = summary.trim();
+  const target = chapters.find((chapter) => chapter.id === chapterId);
+  if (!target || (target.aiSummary ?? "") === trimmed) return chapters;
+  return chapters.map((chapter) =>
+    chapter.id === chapterId
+      ? {
+          ...chapter,
+          aiSummary: trimmed,
+          aiSummaryAt: at,
+          aiSummaryModel: model?.trim() ? model.trim() : undefined,
+          aiSummaryBatch: batch?.trim() ? batch.trim() : undefined,
+        }
+      : chapter,
+  );
+}
+
 /** 伏笔条目局部更新；标题去空白后为空、或条目不存在时返回原引用 */
 export function patchOutlineEntry(
   entries: OutlineEntry[],
@@ -467,6 +593,9 @@ export function patchOutlineEntry(
     next.title = trimmed;
   }
   if (patch.note !== undefined) next.note = patch.note.trim();
+  // 埋设章节改绑：空串退回卷级（OutlineEntry.chapterId 缺省即卷级）
+  if (patch.chapterId !== undefined)
+    next.chapterId = patch.chapterId || undefined;
   return entries.map((entry) => (entry.id === entryId ? next : entry));
 }
 
@@ -499,13 +628,22 @@ export function buildChapterGroups(
   volumes: NovelVolume[],
   chapters: NovelChapter[],
 ): ChapterGroup[] {
+  // 先按 volumeId 分桶再排序：原实现是「每个卷各 filter 一遍全量章节」，
+  // 复杂度 O(卷 × 章)。3000 章 / 60 卷时是 18 万次比较，而它每次切章、
+  // 每次保存正文（chapters 换新数组）都会被调用，且 buildChapterNumbers 里
+  // 还会再调一次 —— 分桶后降为 O(章 + 卷)，排序只作用于卷内子集。
+  const byVolume = new Map<string, NovelChapter[]>();
+  for (const chapter of chapters) {
+    const bucket = byVolume.get(chapter.volumeId);
+    if (bucket) bucket.push(chapter);
+    else byVolume.set(chapter.volumeId, [chapter]);
+  }
+
   return [...volumes]
     .sort((a, b) => a.sort - b.sort)
     .map((volume) => ({
       volume,
-      chapters: chapters
-        .filter((chapter) => chapter.volumeId === volume.id)
-        .sort((a, b) => a.sort - b.sort),
+      chapters: (byVolume.get(volume.id) ?? []).sort((a, b) => a.sort - b.sort),
     }));
 }
 
@@ -517,9 +655,19 @@ export function buildChapterNumbers(
   volumes: NovelVolume[],
   chapters: NovelChapter[],
 ): Map<string, number> {
+  return buildChapterNumbersFromGroups(buildChapterGroups(volumes, chapters));
+}
+
+/**
+ * 序号派生的内部入口：接受**已建好**的分组，避免调用方已经算过 groups 时
+ * 再建一遍（buildOutlineTree 同时要 groups 与 numbers，原本建了两遍）。
+ */
+export function buildChapterNumbersFromGroups(
+  groups: ChapterGroup[],
+): Map<string, number> {
   const numbers = new Map<string, number>();
   let seq = 0;
-  for (const group of buildChapterGroups(volumes, chapters)) {
+  for (const group of groups) {
     for (const chapter of group.chapters) {
       seq += 1;
       numbers.set(chapter.id, seq);
@@ -528,65 +676,11 @@ export function buildChapterNumbers(
   return numbers;
 }
 
-/** 中文数字位权（个十百千），配合 CN_DIGITS 支持到万级 */
-const CN_DIGITS = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九"];
-const CN_UNITS = ["", "十", "百", "千"];
-
-/** 0-9999 节内转换（不做零压缩边界，由 toChineseOrdinal 编排） */
-function fourDigitToChinese(n: number): string {
-  // 10-19 规范写法省略「一」：10 → 十、12 → 十二（口语「一十二」不采用）
-  if (n >= 10 && n < 20) {
-    const tail = n % 10;
-    return tail > 0 ? `十${CN_DIGITS[tail]}` : "十";
-  }
-  let result = "";
-  let zeroPending = false;
-  for (let i = 3; i >= 0; i -= 1) {
-    const digit = Math.floor(n / 10 ** i) % 10;
-    if (digit === 0) {
-      if (result) zeroPending = true;
-    } else {
-      if (zeroPending) {
-        result += "零";
-        zeroPending = false;
-      }
-      result += CN_DIGITS[digit] + CN_UNITS[i];
-    }
-  }
-  return result;
-}
-
-/** 阿拉伯数字 → 中文序号：1→一、11→十一、123→一百二十三、10001→一万零一 */
-export function toChineseOrdinal(value: number): string {
-  const n = Math.max(1, Math.round(value));
-  if (n >= 100_000_000) return String(n); // 超出常规序号范围回退阿拉伯数字
-
-  const wan = Math.floor(n / 10_000);
-  const rest = n % 10_000;
-  if (wan === 0) return fourDigitToChinese(rest);
-
-  let result = fourDigitToChinese(wan) + "万";
-  if (rest > 0) {
-    // 万节不足一千必须补零：10500 → 一万零五百
-    result += rest < 1000 ? `零${fourDigitToChinese(rest)}` : fourDigitToChinese(rest);
-  }
-  return result;
-}
-
-/**
- * 按数字样式与后缀格式化序号标签："章" + 12 → 第十二章 / 第12章。
- * 数字样式与后缀是两个独立配置（numberStyle / chapterSuffix / volumeSuffix），
- * 在此自由组合；后缀为空时退化为纯序号。
- */
-export function formatNumberedLabel(
-  style: LabelNumberStyle,
-  suffix: string,
-  value: number,
-): string {
-  const n = Math.max(1, Math.round(value));
-  const numberText = style === "chinese" ? toChineseOrdinal(n) : String(n);
-  return `第${numberText}${suffix}`;
-}
+// ── 中文序号（与书架 bookshelf-utils 共用同一实现） ──
+// 单一实现迁至 @/shared/novel/number-label（N11 / M31）。此处 re-export 保持
+// 既有 import 路径（NovelPage.tsx / EditorPane / SettingsDrawer / useNovelPage…）
+// 不变 —— 「数字 → 中文」在渲染层只有一处口径。
+export { formatNumberedLabel, toChineseOrdinal };
 
 /**
  * 卷展示名：存储名为「未命名卷」时不裸显兜底名，
@@ -658,7 +752,8 @@ export function previewChapterReorder(
   return chapters.map((chapter) => {
     if (!order.has(chapter.id)) return chapter;
     const next = { ...chapter, sort: order.get(chapter.id) ?? chapter.sort };
-    if (chapter.id === fromId && movingCrossVolume) next.volumeId = movingCrossVolume;
+    if (chapter.id === fromId && movingCrossVolume)
+      next.volumeId = movingCrossVolume;
     return next;
   });
 }
@@ -752,7 +847,8 @@ function clampSetting(
   range: { min: number; max: number },
   fallback: number,
 ): number {
-  const n = typeof value === "number" && Number.isFinite(value) ? value : fallback;
+  const n =
+    typeof value === "number" && Number.isFinite(value) ? value : fallback;
   return Math.min(range.max, Math.max(range.min, n));
 }
 
@@ -783,7 +879,8 @@ export function mergeEditorSettings(raw: unknown): EditorSettings {
     : DEFAULT_SETTINGS.annotationTypes;
 
   const wordCountMode: WordCountMode =
-    source.wordCountMode === "hanOnly" || source.wordCountMode === "withPunctuation"
+    source.wordCountMode === "hanOnly" ||
+    source.wordCountMode === "withPunctuation"
       ? source.wordCountMode
       : DEFAULT_SETTINGS.wordCountMode;
   const numberStyle: LabelNumberStyle =
@@ -802,15 +899,30 @@ export function mergeEditorSettings(raw: unknown): EditorSettings {
       : DEFAULT_SETTINGS.volumeSuffix;
 
   return {
-    fontSize: clampSetting(source.fontSize, SETTINGS_RANGE.fontSize, DEFAULT_SETTINGS.fontSize),
-    lineHeight: clampSetting(source.lineHeight, SETTINGS_RANGE.lineHeight, DEFAULT_SETTINGS.lineHeight),
+    fontSize: clampSetting(
+      source.fontSize,
+      SETTINGS_RANGE.fontSize,
+      DEFAULT_SETTINGS.fontSize,
+    ),
+    lineHeight: clampSetting(
+      source.lineHeight,
+      SETTINGS_RANGE.lineHeight,
+      DEFAULT_SETTINGS.lineHeight,
+    ),
     paragraphSpacing: clampSetting(
       source.paragraphSpacing,
       SETTINGS_RANGE.paragraphSpacing,
       DEFAULT_SETTINGS.paragraphSpacing,
     ),
-    indent: typeof source.indent === "boolean" ? source.indent : DEFAULT_SETTINGS.indent,
-    dailyGoal: clampSetting(source.dailyGoal, SETTINGS_RANGE.dailyGoal, DEFAULT_SETTINGS.dailyGoal),
+    indent:
+      typeof source.indent === "boolean"
+        ? source.indent
+        : DEFAULT_SETTINGS.indent,
+    dailyGoal: clampSetting(
+      source.dailyGoal,
+      SETTINGS_RANGE.dailyGoal,
+      DEFAULT_SETTINGS.dailyGoal,
+    ),
     wordCountMode,
     annotationTypes,
     numberStyle,
@@ -820,6 +932,18 @@ export function mergeEditorSettings(raw: unknown): EditorSettings {
       typeof source.confirmReorder === "boolean"
         ? source.confirmReorder
         : DEFAULT_SETTINGS.confirmReorder,
+    paperTexture:
+      typeof source.paperTexture === "boolean"
+        ? source.paperTexture
+        : DEFAULT_SETTINGS.paperTexture,
+    paperFont:
+      typeof source.paperFont === "string"
+        ? source.paperFont
+        : DEFAULT_SETTINGS.paperFont,
+    readMode:
+      typeof source.readMode === "boolean"
+        ? source.readMode
+        : DEFAULT_SETTINGS.readMode,
   };
 }
 
@@ -851,11 +975,13 @@ export function sanitizeRestorePosition(
   works: ReadonlyArray<{ id: string }>,
   chapters: ReadonlyArray<NovelChapter>,
 ): RestorePosition | null {
-  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw))
+    return null;
   const source = raw as Record<string, unknown>;
 
   const workId = typeof source.workId === "string" ? source.workId : "";
-  const chapterId = typeof source.chapterId === "string" ? source.chapterId : "";
+  const chapterId =
+    typeof source.chapterId === "string" ? source.chapterId : "";
   if (!workId || !chapterId) return null;
   if (!works.some((work) => work.id === workId)) return null;
 
@@ -912,7 +1038,8 @@ export function sanitizeCustomTypes(raw: unknown): CustomEntityTypeDef[] {
   const seen = new Set<string>();
   const result: CustomEntityTypeDef[] = [];
   for (const item of raw) {
-    if (item === null || typeof item !== "object" || Array.isArray(item)) continue;
+    if (item === null || typeof item !== "object" || Array.isArray(item))
+      continue;
     const source = item as Record<string, unknown>;
     const id = typeof source.id === "string" ? source.id : "";
     const name = typeof source.name === "string" ? source.name.trim() : "";
@@ -932,6 +1059,31 @@ export interface ExportNumberingOptions {
   numberStyle: LabelNumberStyle;
   chapterSuffix: string;
   volumeSuffix: string;
+  /**
+   * 段首缩进（1.40.0）：导出时把每段正文规范化为全角两格缩进（\u3000\u3000）。
+   * 编辑器里的缩进是 CSS `text-indent`（不落在文本上），而作者手工补的
+   * 空格往往只有第二段起才有 —— 首段因此「导出不缩进」。缺省开启
+   * （中文小说 txt 的通行排版）；作者在设置里关掉「首行缩进」视为
+   * 自己管排版，导出保持原文不动。
+   */
+  paragraphIndent?: boolean;
+}
+
+/**
+ * 段落规范化缩进（1.40.0）：每个非空行剥掉既有行首空白后统一补全角两格（\u3000\u3000）。
+ *
+ * 为什么是「剥了再补」而不是「缺了才补」：作者手工补的缩进五花八门
+ * （全角两格 / 四格 / 半角空格 / 制表符），只补缺的话同一章里会出现
+ * 2 格与 4 格并存的行；剥了再补幂等，跑多少遍都是同一份文本。
+ */
+export function normalizeParagraphIndent(content: string): string {
+  return content
+    .split("\n")
+    .map((line) => {
+      const stripped = line.replace(/^[\s\u3000]+/, "");
+      return stripped ? `\u3000\u3000${stripped}` : "";
+    })
+    .join("\n");
 }
 
 /** 章节标题行：「第一章 灵潮起」；章节名为空时退化为纯序号「第一章」 */
@@ -955,9 +1107,15 @@ export function buildChapterPlainText(
   chapterNumber: number,
   options: ExportNumberingOptions,
 ): string {
+  // 缩进规范化（1.40.0）：修「每章第一段不缩进」。设置里关掉缩进的作者
+  // 被视为自己在管排版，导出保持原文不动（paragraphIndent 缺省开启）。
+  const body =
+    options.paragraphIndent === false
+      ? chapter.content
+      : normalizeParagraphIndent(chapter.content);
   return [
     buildChapterHeading(chapter, chapterNumber, options),
-    chapter.content.trimEnd(),
+    body.trimEnd(),
   ].join("\n\n");
 }
 
@@ -1020,7 +1178,8 @@ export function buildEntityCardText(
   levelRungName?: string,
 ): string {
   const lines: string[] = [`【${entity.name}】`];
-  if (entity.aliases.length > 0) lines.push(`别名：${entity.aliases.join(" · ")}`);
+  if (entity.aliases.length > 0)
+    lines.push(`别名：${entity.aliases.join(" · ")}`);
   if (entity.summary) lines.push(`一句话：${entity.summary}`);
   for (const [key, value] of Object.entries(entity.fields)) {
     if (key === "性格" && !value.trim()) continue;
@@ -1074,22 +1233,31 @@ export function sanitizeNameFavorites(raw: unknown): NameFavorite[] {
   const seenIds = new Set<string>();
   const result: NameFavorite[] = [];
   for (const item of raw) {
-    if (item === null || typeof item !== "object" || Array.isArray(item)) continue;
+    if (item === null || typeof item !== "object" || Array.isArray(item))
+      continue;
     const source = item as Record<string, unknown>;
     const id = typeof source.id === "string" ? source.id : "";
     const workId = typeof source.workId === "string" ? source.workId : "";
     const name = typeof source.name === "string" ? source.name.trim() : "";
-    const kind = typeof source.kind === "string" ? (source.kind as NamingKind) : "person";
-    const style = typeof source.style === "string" ? (source.style as NameStyle) : "xianxia";
+    const kind =
+      typeof source.kind === "string" ? (source.kind as NamingKind) : "person";
+    const style =
+      typeof source.style === "string"
+        ? (source.style as NameStyle)
+        : "xianxia";
     const createdAt =
       typeof source.createdAt === "number" && Number.isFinite(source.createdAt)
         ? source.createdAt
         : Date.now();
     if (!id || !name || !workId) continue;
-    if (!VALID_NAMING_KINDS.has(kind) || !VALID_NAME_STYLES.has(style)) continue;
+    if (!VALID_NAMING_KINDS.has(kind) || !VALID_NAME_STYLES.has(style))
+      continue;
     if (seenIds.has(id)) continue;
     seenIds.add(id);
-    result.push({ id, workId, name, kind, style, createdAt });
+    // source 仅在确为 ai 时落字段；旧数据无该字段，缺省即 local（向后兼容）
+    const favorite: NameFavorite = { id, workId, name, kind, style, createdAt };
+    if (source.source === "ai") favorite.source = "ai";
+    result.push(favorite);
   }
   return result;
 }

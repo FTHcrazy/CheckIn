@@ -14,7 +14,7 @@
   font-size: 12px;
   box-shadow: var(--app-shadow-pop);
   pointer-events: none;
-  animation: nv-toast-in 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  animation: nv-toast-in var(--app-t-slow) var(--app-ease-standard);
 
   &--success svg {
     color: var(--app-success);
@@ -26,6 +26,11 @@
 
   &--info svg {
     color: var(--app-info);
+  }
+
+  // 编辑器当前不弹 error（共享 hook 的 tone 并集里有），配色随错误色
+  &--error svg {
+    color: var(--app-error);
   }
 }
 

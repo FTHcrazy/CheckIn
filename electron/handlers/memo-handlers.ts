@@ -85,15 +85,22 @@ function toDocxParagraphs(markdown: string): Paragraph[] {
 }
 
 export function registerMemoHandlers(): void {
-  ipcMain.handle("memo-list", () => {
+  ipcMain.handle("memo-list", async () => {
     const memosDir = ensureMemosDir();
-    const files = fs.readdirSync(memosDir).filter((f) => f.endsWith(".md"));
-    return files
-      .map((name) => {
-        const stat = fs.statSync(path.join(memosDir, name));
+    const files = (await fs.promises.readdir(memosDir)).filter((f) =>
+      f.endsWith(".md"),
+    );
+    /*
+     * 逐个 stat 必须并发 + 异步：同步版是 N 次串行系统调用全压在主进程上，
+     * 备忘上百条时挂载页面会阻塞几十到几百毫秒，期间所有窗口无响应。
+     */
+    const entries = await Promise.all(
+      files.map(async (name) => {
+        const stat = await fs.promises.stat(path.join(memosDir, name));
         return { name, updatedAt: stat.mtime.toISOString() };
-      })
-      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+      }),
+    );
+    return entries.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   });
 
   ipcMain.handle("memo-read", (_event, filename: string) => {
@@ -230,11 +237,21 @@ export function registerMemoHandlers(): void {
     "memo-backup-export",
     async (event): Promise<MemoBackupExportResult> => {
       const memosDir = ensureMemosDir();
-      const files = fs.readdirSync(memosDir).filter((name) => name.endsWith(".md"));
+      const files = (await fs.promises.readdir(memosDir)).filter((name) =>
+        name.endsWith(".md"),
+      );
+
+      // 同上：N 次同步 readFileSync 会在大批量备忘时卡住主进程
+      const contents = await Promise.all(
+        files.map(async (name) => ({
+          name,
+          data: await fs.promises.readFile(path.join(memosDir, name)),
+        })),
+      );
 
       const zip = new JSZip();
-      for (const name of files) {
-        zip.file(`${BACKUP_MEMOS_DIR}/${name}`, fs.readFileSync(path.join(memosDir, name)));
+      for (const { name, data } of contents) {
+        zip.file(`${BACKUP_MEMOS_DIR}/${name}`, data);
       }
       zip.file(
         BACKUP_MANIFEST_FILE,

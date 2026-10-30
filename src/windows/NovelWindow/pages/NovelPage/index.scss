@@ -13,6 +13,31 @@
     flex-direction: column;
   }
 
+  /**
+   * 页内浮层打开时，把顶栏抬到浮层遮罩之上（REQ-053）。
+   *
+   * 症状：设定中心（或自定义类型管理）开着时，点顶栏「行囊 / 小说设定」，
+   * 第一击没反应、要点第二次。
+   *
+   * 真因不在按钮，而在 antd 6 Modal 的外壳：`.ant-modal-wrap` 是
+   * `position: fixed; inset: 0` + **行内 `z-index`**（`zIndexPopupBase` 1000 +
+   * Modal 容器偏移 100 = 1100，嵌套弹窗再各 +100），顶栏也在它的命中范围里。
+   * wrap 自己「点空白即关」，于是第一击被它收走，按钮根本没收到 click。
+   * （REQ-050 只修了**无遮罩抽屉**那条路径，Modal 这条当时没覆盖。）
+   *
+   * 不改成「遮罩点击穿透」：那会让「点空白处关浮层」顺手误触正文编辑区 /
+   * 章节树（浮层是不透明的，用户看不见自己点到了什么）。这里只把
+   * **窗口级常驻导航**抬上去 —— 浮层照旧挡住正文，顶栏照旧可用。
+   *
+   * 1600 的口径：高于 Modal wrap 的 1100，也高于它嵌套一层后的 1200，
+   * 但低于 antd 容器层上限（1000 + 10×100 + 100 = 2100），
+   * 与 `GlobalSettingWindow/index.scss` 里「标题栏抬到子浮层之上」同思路。
+   */
+  &.is-overlay .nv-page__head {
+    position: relative;
+    z-index: 1600;
+  }
+
   &__body {
     flex: 1;
     min-height: 0;
@@ -37,5 +62,17 @@
     .nv-status {
       display: none;
     }
+  }
+}
+
+/* 关系图「保存后跳转」确认框：两段说明之间留一口气，别糊成一段 */
+.nv-jump__text {
+  margin: 0 0 6px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--app-text-secondary);
+
+  &:last-child {
+    margin-bottom: 0;
   }
 }

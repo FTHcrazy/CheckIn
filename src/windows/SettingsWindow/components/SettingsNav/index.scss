@@ -1,0 +1,88 @@
+@use "../../../../shared/styles/widget" as widget;
+
+/* 设置窗口左栏：一张卡里的分组导航。
+   与 GlobalSettingWindow 的 `.gs-side` 同一套读法（导航卡 + 右侧内容卡），
+   所以窗口里看到的不是「一条被竖线切开的表格」，而是「一张导航 + 若干内容卡」。 */
+
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  /* 定宽且不参与收缩：内容区的宽度预算必须可预期（AI 配置页的表单按它排版） */
+  flex: 0 0 184px;
+  gap: 18px;
+  min-height: 0;
+  box-sizing: border-box;
+  padding: 12px 8px;
+  overflow-y: auto;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-panel);
+  background: var(--app-surface);
+}
+
+.settings-nav__group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* 分组标题：12px 是本仓的下限（11px 在 184px 栏里糊成一条灰线） */
+.settings-nav__group-title {
+  padding: 0 8px 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--app-text-muted);
+}
+
+/* 导航项：清零 antd 造型后按行重画（复用它的 focus 环 / 键盘语义） */
+.settings-nav__item.ant-btn {
+  @include widget.ant-button-reset;
+  --ant-control-height: 32px;
+  --ant-button-padding-inline: 8px;
+  --ant-button-content-font-size: 14px;
+  --ant-button-font-weight: 500;
+  --ant-border-radius: var(--app-radius-item);
+  --ant-button-default-bg: transparent;
+  --ant-button-default-color: var(--app-text-secondary);
+  --ant-button-default-hover-bg: var(--app-surface-hover);
+  --ant-button-default-hover-color: var(--app-text);
+  --ant-button-default-active-bg: var(--app-surface-active);
+  --ant-button-default-active-color: var(--app-text);
+  --ant-button-default-shadow: none;
+  /* reset 会把 justify-content 改成 normal（= flex-start 而非居中），
+     这里显式左对齐 + 撑满，图标才贴在同一条竖线上 */
+  justify-content: flex-start;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+
+  /* 选中态：与首页侧栏同一口径（primary-weak 底 + primary-strong 字）。
+     hover / active 四档一起写 —— antd 的状态规则读的就是这些变量，
+     只改 default 会在鼠标移上去时闪回未选中样式。 */
+  &.is-active {
+    --ant-button-default-bg: var(--app-primary-weak);
+    --ant-button-default-color: var(--app-primary-strong);
+    --ant-button-default-hover-bg: var(--app-primary-weak);
+    --ant-button-default-hover-color: var(--app-primary-strong);
+    --ant-button-default-active-bg: var(--app-primary-weak);
+    --ant-button-default-active-color: var(--app-primary-strong);
+    --ant-button-font-weight: 600;
+  }
+}
+
+.settings-nav__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 16px;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.settings-nav__label {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

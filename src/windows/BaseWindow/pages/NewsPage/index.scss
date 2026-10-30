@@ -4,6 +4,7 @@
   gap: 20px;
   flex: 1;
   min-height: 0;
-  padding: 18px 24px 20px;
+  // 顶部 12px 与其它子页面统一（页内导航条已上移到窗口标题栏）
+  padding: 12px 24px 20px;
   background: var(--app-bg);
 }

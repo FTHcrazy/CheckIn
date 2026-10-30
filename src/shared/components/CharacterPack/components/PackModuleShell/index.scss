@@ -1,0 +1,171 @@
+@use "../../styles/pack-widget" as widget;
+
+/** 行囊模块壳：标题行 + 可折叠内容（grid 0fr/1fr 过渡，不打断动画） */
+.cpk-mod {
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-item);
+  background: var(--app-surface);
+  overflow: hidden;
+  /* 静止态环境阴影：让模块从页面底 bg 轻轻浮起成「内容面」，
+     替代此前纯 1px 描边的平铺层次（P1 行囊立体感改造） */
+  box-shadow: var(--app-shadow-ambient);
+
+  /*
+    相邻间距由**外层容器**（.cpk__zonestack / .cpk__flow）的 `> * + *` 统一给，
+    这里不再写 `& + &` —— 分栏之后模块壳会分别落在两个容器里，
+    自身相邻选择器管不到跨栏的首尾间距，两处各写一份必然漂移。
+  */
+
+  &__head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 9px 10px;
+    background: var(--app-surface-alt);
+    border-bottom: 1px solid var(--app-border);
+  }
+
+  &.is-collapsed &__head {
+    border-bottom-color: transparent;
+  }
+
+  /* 折叠头：整行可点，造型自带 → 先清零 antd 外观再声明 */
+  &__toggle.ant-btn {
+    @include widget.cpk-widget;
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0;
+    color: var(--app-text-strong);
+    /* 涟漪的定位与裁剪基准（涟漪 span 绝对定位在按钮内） */
+    position: relative;
+    overflow: hidden;
+
+    /* antd 自带 wave 在这颗按钮上必须关掉：标题是占满整行的透明段，
+       wave 环（6px currentcolor 描边 + 2s 淡出）罩上去就是「点了挂两秒的
+       色框」——OutlinePanel 1.34.0「点击效果只有一半」的同构问题。
+       替代的自绘涟漪见 __ripple。 */
+    .ant-wave {
+      display: none;
+    }
+  }
+
+  /* 自绘点击涟漪：从点击位置扩散的淡主色圆，0.45s 收场。
+     起始 8px、scale(26) ≈ 208px，足够漫过最窄档的头部整行。 */
+  &__ripple {
+    position: absolute;
+    top: 50%;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--app-primary);
+    opacity: 0.22;
+    transform: translate(-50%, -50%) scale(0);
+    animation: cpk-mod-ripple 0.45s ease-out forwards;
+    pointer-events: none;
+  }
+
+  &__caret {
+    flex: none;
+    width: 14px;
+    font-size: 12px;
+    color: var(--app-text-muted);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__title {
+    flex: none;
+    font-size: 14px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* 派生摘要：贴着标题右侧、吃掉剩余宽度，过长省略而不是换行 */
+  &__summary {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--app-text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: right;
+    padding-left: 6px;
+  }
+
+  &__actions {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  /* 钉选按钮（UI-04）：自带造型 → 先清零 antd 外观再声明。
+     默认浅灰、hover 转主色、钉选态常亮主色（实心钉）。 */
+  &__pin.ant-btn {
+    @include widget.cpk-widget;
+    flex: none;
+    width: 22px;
+    height: 22px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--app-radius-item);
+    font-size: 12px;
+    color: var(--app-text-muted);
+
+    &:hover {
+      color: var(--app-text-strong);
+      background: var(--app-surface);
+    }
+  }
+
+  &.is-pinned &__pin.ant-btn {
+    color: var(--app-primary);
+  }
+
+  &__wrap {
+    display: grid;
+    grid-template-rows: 1fr;
+    transition: grid-template-rows var(--app-t-slow) var(--app-ease-standard);
+  }
+
+  &.is-collapsed &__wrap {
+    grid-template-rows: 0fr;
+  }
+
+  &__inner {
+    min-height: 0;
+    overflow: hidden;
+    padding: 10px;
+  }
+
+  &.is-collapsed &__inner {
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+
+  &__hint {
+    margin: 0 0 8px;
+    padding: 6px 8px;
+    border-radius: var(--app-radius-item);
+    background: var(--app-primary-weak);
+    color: var(--app-text-secondary-strong);
+    font-size: 12px;
+    line-height: 1.55;
+  }
+}
+
+@keyframes cpk-mod-ripple {
+  to {
+    transform: translate(-50%, -50%) scale(26);
+    opacity: 0;
+  }
+}

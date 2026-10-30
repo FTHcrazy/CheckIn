@@ -64,7 +64,7 @@ const critical = [
   // install.js 据此认定已安装、不再自愈 —— 只能靠这里点破
   ['electron/dist/locales', 'dist/locales(ICU语言包)', 'pnpm ensure:electron'],
   ['electron/dist/resources/default_app.asar', 'dist/resources/default_app.asar', 'pnpm ensure:electron'],
-  ['better-sqlite3/build/Release/better_sqlite3.node', 'better-sqlite3 原生模块', 'pnpm electron:rebuild'],
+  ['better-sqlite3/prebuilds/win32-x64.node', 'better-sqlite3 原生模块', 'pnpm install'],
   ['vite/package.json', 'vite', 'pnpm install'],
   ['wait-on/package.json', 'wait-on', 'pnpm install'],
   ['concurrently/package.json', 'concurrently', 'pnpm install'],

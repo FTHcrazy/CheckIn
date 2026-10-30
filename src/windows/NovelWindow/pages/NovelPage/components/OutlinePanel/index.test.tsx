@@ -1,14 +1,32 @@
 import {
+  act,
   cleanup,
   fireEvent,
   render,
   screen,
   waitFor,
-  within,
 } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import type { ReactNode } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OutlineNode } from "../../types";
+import { useGuideStore } from "../../../../store/useGuideStore";
 import OutlinePanel, { type OutlineActions } from "./index";
+
+// jsdom 没有真实布局，Virtuoso 视口高度为 0 导致不渲染任何行；
+// 测试中用平铺渲染等价替身，只保留 data + itemContent 的行为契约。
+// 真组件用 computeItemKey 给 item wrapper 上 key，替身同样按索引兜一个。
+vi.mock("react-virtuoso", () => ({
+  Virtuoso: <T,>(props: {
+    data: T[];
+    itemContent: (index: number, item: T) => ReactNode;
+  }) => (
+    <>
+      {props.data.map((item, index) => (
+        <div key={index}>{props.itemContent(index, item)}</div>
+      ))}
+    </>
+  ),
+}));
 
 const buildActions = (over: Partial<OutlineActions> = {}): OutlineActions => ({
   onEditChapterNote: vi.fn(),
@@ -36,6 +54,8 @@ const outline: OutlineNode[] = [
         note: "沈砚雨夜回山。",
         wordCount: 3200,
         status: "done",
+        foreshadows: 1,
+        openForeshadows: 1,
       },
       {
         kind: "chapter",
@@ -46,11 +66,15 @@ const outline: OutlineNode[] = [
         note: "",
         wordCount: 1200,
         status: "draft",
+        foreshadows: 0,
+        openForeshadows: 0,
       },
       {
         kind: "foreshadow",
         id: "f1",
         entryId: "f1",
+        volumeId: "v1",
+        chapterId: "c1",
         title: "断伞骨",
         note: "回收时让陆昭修伞",
         resolved: false,
@@ -60,6 +84,8 @@ const outline: OutlineNode[] = [
         kind: "foreshadow",
         id: "f2",
         entryId: "f2",
+        volumeId: "v1",
+        chapterId: "",
         title: "旧剑铭",
         note: "",
         resolved: true,
@@ -69,11 +95,30 @@ const outline: OutlineNode[] = [
   },
 ];
 
-/** 子视图切换器里的按钮：大纲内多处同名文本，必须限定作用域 */
+/**
+ * 分段切换（antd `Segmented`）的选中动作。
+ *
+ * 可点面是 label 里那颗**视觉隐藏**的 radio（`.ant-segmented-item-input`）：
+ * 外层 label 只负责排版，jsdom 不会替我们把 label 的点击转发给控件，
+ * 点 input 才会触发 change → onChange。
+ */
+const clickSegment = (root: HTMLElement, label: string): void => {
+  const item = Array.from(
+    root.querySelectorAll<HTMLElement>(".ant-segmented-item"),
+  ).find((node) => stripped(node.textContent).startsWith(label));
+  expect(item, `分段项「${label}」不存在`).toBeDefined();
+  const input = item?.querySelector<HTMLInputElement>(
+    "input.ant-segmented-item-input",
+  );
+  expect(input).not.toBeNull();
+  fireEvent.click(input as HTMLInputElement);
+};
+
+/** 子视图切换器里的分段项：大纲内多处同名文本，必须限定作用域 */
 const clickView = (container: HTMLElement, label: string): void => {
   const switcher = container.querySelector<HTMLElement>(".nv-outline__switch");
   expect(switcher).not.toBeNull();
-  fireEvent.click(within(switcher as HTMLElement).getByText(label));
+  clickSegment(switcher as HTMLElement, label);
 };
 
 /**
@@ -104,9 +149,34 @@ const pickSelectOption = async (
   fireEvent.click(target as HTMLElement);
 };
 
+/**
+ * antd 默认给两字中文按钮插一个字间距空格（「记录」→「记 录」）。
+ * 应用里由 ThemeProvider 的 ConfigProvider 关掉了，但组件测试直接 render、
+ * 不走 ThemeProvider —— 所以按「去掉空白后相等」匹配，而不是把断言改成
+ * 带空格的怪写法（那样以后关掉字间距又会全红）。
+ */
+const stripped = (text: string | null | undefined): string =>
+  (text ?? "").replace(/\s+/g, "");
+
+/**
+ * 按「按钮」查文本：限定 tagName 是必须的 —— antd 的 Button 会把文字包一层
+ * `<span>`，不限制的话按钮与它的内层 span 会同时命中（Found multiple elements）。
+ */
+const looseText = (text: string): HTMLElement =>
+  screen.getByText(
+    (_content, element) =>
+      element?.tagName === "BUTTON" &&
+      stripped(element.textContent) === stripped(text),
+  );
+
 const switcherButton = (container: HTMLElement, label: string): HTMLElement => {
   const switcher = container.querySelector<HTMLElement>(".nv-outline__switch");
-  return within(switcher as HTMLElement).getByText(label);
+  // 计数角标是组件库 Badge，仍是文字节点（「章节」+「2」），按前缀匹配整格
+  const hit = Array.from(
+    switcher?.querySelectorAll<HTMLElement>(".ant-segmented-item") ?? [],
+  ).find((item) => stripped(item.textContent).startsWith(label));
+  expect(hit).toBeDefined();
+  return hit as HTMLElement;
 };
 
 describe("OutlinePanel 组件", () => {
@@ -139,8 +209,8 @@ describe("OutlinePanel 组件", () => {
       />,
     );
 
-    expect(switcherButton(container, "章节").textContent).toBe("章节2");
-    expect(switcherButton(container, "伏笔").textContent).toBe("伏笔2");
+    expect(stripped(switcherButton(container, "章节").textContent)).toBe("章节2");
+    expect(stripped(switcherButton(container, "伏笔").textContent)).toBe("伏笔2");
   });
 
   it("点击章节行带真实 chapterId 跳转（回归：不能再用桩 id）", () => {
@@ -206,8 +276,8 @@ describe("OutlinePanel 组件", () => {
       />,
     );
 
-    fireEvent.click(screen.getByTitle("在本卷添加伏笔"));
-    fireEvent.click(screen.getByText("记录"));
+    fireEvent.click(screen.getByTitle("在本卷添加卷级伏笔（不绑具体章）"));
+    fireEvent.click(looseText("记录"));
     expect(onAddForeshadow).not.toHaveBeenCalled();
 
     fireEvent.change(screen.getByLabelText("伏笔标题"), {
@@ -216,7 +286,7 @@ describe("OutlinePanel 组件", () => {
     fireEvent.change(screen.getByLabelText("伏笔说明"), {
       target: { value: "第十章回收" },
     });
-    fireEvent.click(screen.getByText("记录"));
+    fireEvent.click(looseText("记录"));
 
     expect(onAddForeshadow).toHaveBeenCalledWith("v1", "三年之约", "第十章回收", undefined);
     expect(screen.queryByLabelText("伏笔标题")).toBeNull();
@@ -233,7 +303,7 @@ describe("OutlinePanel 组件", () => {
       />,
     );
 
-    fireEvent.click(screen.getByTitle("在本卷添加伏笔"));
+    fireEvent.click(screen.getByTitle("在本卷添加卷级伏笔（不绑具体章）"));
     fireEvent.change(screen.getByLabelText("伏笔标题"), {
       target: { value: "断碑" },
     });
@@ -245,7 +315,7 @@ describe("OutlinePanel 组件", () => {
     expect(chapterSelect).not.toBeNull();
     await pickSelectOption(chapterSelect as HTMLElement, "第二章 旧剑");
 
-    fireEvent.click(screen.getByText("记录"));
+    fireEvent.click(looseText("记录"));
 
     expect(onAddForeshadow).toHaveBeenCalledWith("v1", "断碑", "", "c2");
   });
@@ -264,7 +334,11 @@ describe("OutlinePanel 组件", () => {
     expect(screen.getByText("断伞骨")).toBeInTheDocument();
     expect(screen.queryByText("旧剑铭")).toBeNull();
 
-    fireEvent.click(screen.getByText("全部"));
+    // 伏笔三态筛选也是分段切换：切到「全部」才出现已回收的那条
+    clickSegment(
+      container.querySelector<HTMLElement>(".nv-outline__filter") as HTMLElement,
+      "全部",
+    );
     expect(screen.getByText("旧剑铭")).toBeInTheDocument();
   });
 
@@ -283,6 +357,38 @@ describe("OutlinePanel 组件", () => {
 
     fireEvent.click(screen.getByText("全部"));
     expect(screen.getByText("卷级伏笔 · 不绑定具体章")).toBeInTheDocument();
+  });
+
+  it("绑定章节的伏笔来源是可点跳转入口（REQ-048），卷级伏笔保持纯文本", () => {
+    const onSelectChapter = vi.fn();
+    const { container } = render(
+      <OutlinePanel
+        outline={outline}
+        activeChapterId={null}
+        onSelectChapter={onSelectChapter}
+        actions={buildActions()}
+      />,
+    );
+
+    clickView(container, "伏笔");
+
+    // 绑定章节的伏笔（f1 → c1）：来源文案是可点按钮，点了跳该章
+    const link = container.querySelector<HTMLElement>(".nv-outline__fs-src.is-link");
+    expect(link).not.toBeNull();
+    expect(link!.tagName).toBe("BUTTON");
+    fireEvent.click(link!);
+    expect(onSelectChapter).toHaveBeenCalledWith("c1");
+
+    // 卷级伏笔（f2 无 chapterId）：纯文本，不挂 onClick —— 点了不跳
+    fireEvent.click(screen.getByText("全部"));
+    const statics = container.querySelectorAll<HTMLElement>(
+      ".nv-outline__fs-src.is-static",
+    );
+    expect(statics.length).toBeGreaterThan(0);
+    expect(statics[0].tagName).toBe("SPAN");
+    onSelectChapter.mockClear();
+    fireEvent.click(statics[0]);
+    expect(onSelectChapter).not.toHaveBeenCalled();
   });
 
   it("伏笔可切换回收状态与删除", () => {
@@ -305,7 +411,7 @@ describe("OutlinePanel 组件", () => {
     expect(onRemoveForeshadow).toHaveBeenCalledWith("f1", "断伞骨");
   });
 
-  it("伏笔可就地编辑标题与说明", () => {
+  it("伏笔可就地编辑标题与说明，绑定章节随草稿一起提交", () => {
     const onUpdateForeshadow = vi.fn();
     const { container } = render(
       <OutlinePanel
@@ -321,12 +427,78 @@ describe("OutlinePanel 组件", () => {
     fireEvent.change(screen.getByLabelText("伏笔标题"), {
       target: { value: "断伞骨（改）" },
     });
-    fireEvent.click(screen.getByText("保存"));
+    // 编辑表单带埋设章节下拉：把 f1 从「第一章」改绑到「第二章」
+    const chapterSelect = container.querySelector<HTMLElement>(
+      ".nv-outline__select",
+    );
+    expect(chapterSelect).not.toBeNull();
+    fireEvent.click(looseText("保存"));
 
     expect(onUpdateForeshadow).toHaveBeenCalledWith("f1", {
       title: "断伞骨（改）",
       note: "回收时让陆昭修伞",
+      chapterId: "c1",
     });
+  });
+
+  it("章节行加号：表单内联在该章下方，绑定预设为本章", async () => {
+    const onAddForeshadow = vi.fn();
+    const { container } = render(
+      <OutlinePanel
+        outline={outline}
+        activeChapterId={null}
+        onSelectChapter={vi.fn()}
+        actions={buildActions({ onAddForeshadow })}
+      />,
+    );
+
+    // 第一颗「＋」属于第一章的行容器（悬停浮现，但 jsdom 里直接可点）
+    fireEvent.click(screen.getAllByTitle("在本章添加伏笔")[0]);
+
+    // 表单内联在对应 li 里，而不是挂在卷尾
+    const form = container.querySelector<HTMLElement>(
+      ".nv-outline__item .nv-outline__form",
+    );
+    expect(form).not.toBeNull();
+
+    fireEvent.change(screen.getByLabelText("伏笔标题"), {
+      target: { value: "伞骨裂缝" },
+    });
+    // 预设绑定 = 第一章：下拉直接显示该章（未打开下拉、未手动选择）
+    const chapterSelect = container.querySelector<HTMLElement>(
+      ".nv-outline__select",
+    );
+    expect(chapterSelect?.textContent).toContain("雨夜叩门");
+
+    fireEvent.click(looseText("记录"));
+    expect(onAddForeshadow).toHaveBeenCalledWith("v1", "伞骨裂缝", "", "c1");
+  });
+
+  it("编辑表单可改绑埋设章节", async () => {
+    const onUpdateForeshadow = vi.fn();
+    const { container } = render(
+      <OutlinePanel
+        outline={outline}
+        activeChapterId={null}
+        onSelectChapter={vi.fn()}
+        actions={buildActions({ onUpdateForeshadow })}
+      />,
+    );
+
+    clickView(container, "伏笔");
+    fireEvent.click(screen.getByTitle("编辑伏笔"));
+
+    const chapterSelect = container.querySelector<HTMLElement>(
+      ".nv-outline__select",
+    );
+    expect(chapterSelect).not.toBeNull();
+    await pickSelectOption(chapterSelect as HTMLElement, "第二章 旧剑");
+    fireEvent.click(looseText("保存"));
+
+    expect(onUpdateForeshadow).toHaveBeenCalledWith(
+      "f1",
+      expect.objectContaining({ chapterId: "c2" }),
+    );
   });
 
   it("面板头「＋ 伏笔」信号：切回章节视图并在首卷展开表单", () => {
@@ -364,5 +536,412 @@ describe("OutlinePanel 组件", () => {
     );
 
     expect(screen.getByText(/在左栏新建一卷/)).toBeInTheDocument();
+  });
+
+  it("章节行标出本章埋了几条伏笔（绑了章的才标）", () => {
+    const { container } = render(
+      <OutlinePanel
+        outline={outline}
+        activeChapterId={null}
+        onSelectChapter={vi.fn()}
+        actions={buildActions()}
+      />,
+    );
+
+    const pills = Array.from(
+      container.querySelectorAll<HTMLElement>(".nv-outline__ch-fs"),
+    );
+    // 只有 c1 埋了伏笔；卷级伏笔（f2）不该标到任何章节上
+    expect(pills).toHaveLength(1);
+    expect(stripped(pills[0].textContent)).toBe("1");
+    expect(pills[0].className).toContain("is-open");
+    // 标识是**按钮**：白底上是 span 就点不开（点开清单才是这轮要解决的事）；
+    // 而且它必须与整行按钮并列 —— 嵌在里面浏览器会拆坏 DOM
+    expect(pills[0].tagName).toBe("BUTTON");
+    expect(pills[0].closest("button")).toBe(pills[0]);
+    expect(pills[0].getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("悬浮标识先给一份预览：不点开也能看清埋的是哪几条", async () => {
+    const { container } = render(
+      <OutlinePanel
+        outline={outline}
+        activeChapterId={null}
+        onSelectChapter={vi.fn()}
+        actions={buildActions()}
+      />,
+    );
+
+    const pill = container.querySelector<HTMLElement>(".nv-outline__ch-fs");
+    expect(pill).not.toBeNull();
+    // React 的 onMouseEnter 是由 mouseover 合成出来的，mouseenter 事件不冒泡、触发不到
+    fireEvent.mouseOver(pill as HTMLElement);
+
+    // 组件库 Tooltip 的弹层挂在 body 的 portal 上（必须查 document）：
+    // antd 6 的内容容器是 .ant-tooltip-container[role=tooltip]
+    const inner = await waitFor(() => {
+      const el = document.querySelector<HTMLElement>('[role="tooltip"]');
+      expect(el).not.toBeNull();
+      return el as HTMLElement;
+    });
+
+    expect(stripped(inner.textContent)).toContain("本章埋了1条伏笔，其中1条待回收");
+    expect(stripped(inner.textContent)).toContain("断伞骨");
+    expect(stripped(inner.textContent)).toContain("点击在本章下方展开");
+  });
+
+  it("点章节行标识就在本章下方列出是哪几条，回收 / 编辑都在原地做", () => {
+    const onToggleForeshadow = vi.fn();
+    const { container } = render(
+      <OutlinePanel
+        outline={outline}
+        activeChapterId={null}
+        onSelectChapter={vi.fn()}
+        actions={buildActions({ onToggleForeshadow })}
+      />,
+    );
+
+    const pill = container.querySelector<HTMLElement>(".nv-outline__ch-fs");
+    expect(pill).not.toBeNull();
+    // 默认收起：清单不进 DOM，骨架不被长出来的内容挤乱
+    expect(container.querySelector(".nv-outline__ch-fs-list")).toBeNull();
+
+    fireEvent.click(pill as HTMLElement);
+
+    const list = container.querySelector(".nv-outline__ch-fs-list");
+    expect(list).not.toBeNull();
+    const text = stripped(list?.textContent);
+    // 只列本章那条；卷级伏笔「旧剑铭」不该混进来
+    expect(text).toContain("断伞骨");
+    expect(text).not.toContain("旧剑铭");
+    // 行内清单不再重复标「埋在哪一章」（它就在那一章下面）
+    expect(text).not.toContain("第一章雨夜叩门");
+    expect(pill?.getAttribute("aria-expanded")).toBe("true");
+    expect(pill?.className).toContain("is-expanded");
+
+    // 就地回收，不用切到「伏笔」页
+    fireEvent.click(screen.getByTitle("标记为已回收"));
+    expect(onToggleForeshadow).toHaveBeenCalledWith("f1", true);
+
+    // 再点一次收起
+    fireEvent.click(pill as HTMLElement);
+    expect(container.querySelector(".nv-outline__ch-fs-list")).toBeNull();
+    expect(pill?.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("在章节行新增伏笔后自动展开该章清单（否则只多一个数字，还是不知道是哪条）", () => {
+    const onAddForeshadow = vi.fn();
+    const { container } = render(
+      <OutlinePanel
+        outline={outline}
+        activeChapterId={null}
+        onSelectChapter={vi.fn()}
+        actions={buildActions({ onAddForeshadow })}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText("在本章（第一章 雨夜叩门）添加伏笔"));
+    const title = screen.getByLabelText("伏笔标题");
+    fireEvent.change(title, { target: { value: "断伞骨后续" } });
+    fireEvent.keyDown(title, { key: "Enter" });
+
+    expect(onAddForeshadow).toHaveBeenCalledWith("v1", "断伞骨后续", "", "c1");
+    expect(container.querySelector(".nv-outline__ch-fs-list")).not.toBeNull();
+  });
+
+  it("章节的伏笔全部回收后标识降为中性色但仍保留，清单照旧能点开", () => {
+    const resolved: OutlineNode[] = [
+      {
+        kind: "volume",
+        id: "v1",
+        title: "第一卷",
+        note: "",
+        openForeshadows: 0,
+        children: [
+          {
+            kind: "chapter",
+            id: "c1",
+            chapterId: "c1",
+            title: "雨夜叩门",
+            label: "第一章",
+            note: "",
+            wordCount: 0,
+            status: "done",
+            foreshadows: 2,
+            openForeshadows: 0,
+          },
+          {
+            kind: "foreshadow",
+            id: "f1",
+            entryId: "f1",
+            volumeId: "v1",
+            chapterId: "c1",
+            title: "断伞骨",
+            note: "",
+            resolved: true,
+            source: "第一章 雨夜叩门",
+          },
+          {
+            kind: "foreshadow",
+            id: "f2",
+            entryId: "f2",
+            volumeId: "v1",
+            chapterId: "c1",
+            title: "旧剑铭",
+            note: "",
+            resolved: true,
+            source: "第一章 雨夜叩门",
+          },
+        ],
+      },
+    ];
+    const { container } = render(
+      <OutlinePanel
+        outline={resolved}
+        activeChapterId={null}
+        onSelectChapter={vi.fn()}
+        actions={buildActions()}
+      />,
+    );
+
+    const pill = container.querySelector<HTMLElement>(".nv-outline__ch-fs");
+    expect(pill).not.toBeNull();
+    expect(stripped(pill?.textContent)).toBe("2");
+    // 中性态标记是 `.is-open` 的缺席（配色在同选择器里按它换），标识本身仍在
+    expect(pill?.className).not.toContain("is-open");
+
+    fireEvent.click(pill as HTMLElement);
+    const text = stripped(
+      container.querySelector(".nv-outline__ch-fs-list")?.textContent,
+    );
+    expect(text).toContain("断伞骨");
+    expect(text).toContain("旧剑铭");
+    // 已回收的条目在清单里也是划线态
+    expect(
+      container.querySelectorAll(".nv-outline__fs-item.is-resolved").length,
+    ).toBe(2);
+  });
+});
+
+/**
+ * 章节视图虚拟化后的**行模型**守卫。
+ *
+ * 章节视图原先直接 `volumeNodes.map` 渲染「卷 → 章」两层，三千章 = 3000 个
+ * `<li>` 一次挂载。改成压平成一维行交给 Virtuoso 之后，有两类语义是靠
+ * 「压平时跳过 / 追加哪一行」实现的，不再由 JSX 的嵌套条件表达 ——
+ * 它们不会自己报错，必须钉住：
+ * 1. 折叠的卷不产生任何章行（原先靠 `.is-fold` 隐藏列表）；
+ * 2. 卷级伏笔表单排在**该卷所有章行之后**（原先挂在卷 section 尾部）。
+ */
+describe("OutlinePanel：章节视图的行模型（虚拟化后）", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("折叠某一卷后，该卷的章节行整体消失，其它卷不受影响", () => {
+    const twoVolumes: OutlineNode[] = [
+      {
+        kind: "volume",
+        id: "v1",
+        title: "第一卷",
+        note: "",
+        openForeshadows: 0,
+        children: [
+          {
+            kind: "chapter",
+            id: "a1",
+            chapterId: "a1",
+            title: "甲章",
+            label: "第一章",
+            note: "",
+            wordCount: 0,
+            status: "draft",
+            foreshadows: 0,
+            openForeshadows: 0,
+          },
+        ],
+      },
+      {
+        kind: "volume",
+        id: "v2",
+        title: "第二卷",
+        note: "",
+        openForeshadows: 0,
+        children: [
+          {
+            kind: "chapter",
+            id: "b1",
+            chapterId: "b1",
+            title: "乙章",
+            label: "第二章",
+            note: "",
+            wordCount: 0,
+            status: "draft",
+            foreshadows: 0,
+            openForeshadows: 0,
+          },
+        ],
+      },
+    ];
+
+    const { container } = render(
+      <OutlinePanel
+        outline={twoVolumes}
+        activeChapterId={null}
+        onSelectChapter={vi.fn()}
+        actions={buildActions()}
+      />,
+    );
+
+    expect(screen.getByText("甲章")).toBeInTheDocument();
+    expect(screen.getByText("乙章")).toBeInTheDocument();
+
+    // 点第一卷卷头折叠它
+    const heads = container.querySelectorAll<HTMLElement>(".nv-outline__vol-toggle");
+    fireEvent.click(heads[0]);
+
+    // 甲章消失，乙章仍在：折叠只影响自己那一卷
+    expect(screen.queryByText("甲章")).toBeNull();
+    expect(screen.getByText("乙章")).toBeInTheDocument();
+    // 卷头本身不会被折叠掉（折叠的是它的章行）
+    expect(screen.getByText("第一卷")).toBeInTheDocument();
+  });
+
+  it("卷级伏笔表单排在章行之后（不再靠卷 section 尾部占位）", () => {
+    const { container } = render(
+      <OutlinePanel
+        outline={outline}
+        activeChapterId={null}
+        onSelectChapter={vi.fn()}
+        actions={buildActions()}
+      />,
+    );
+
+    // 点卷头「＋」开卷级表单
+    const volAdd = container.querySelector<HTMLElement>(".nv-outline__vol-add");
+    expect(volAdd).not.toBeNull();
+    fireEvent.click(volAdd as HTMLElement);
+
+    expect(screen.getByLabelText("伏笔标题")).toBeInTheDocument();
+    // 表单容器必须排在所有章节行之后：虚拟化后它们成了并列行，
+    // 顺序由行模型的 push 次序决定
+    const form = container.querySelector<HTMLElement>(".nv-outline__form");
+    expect(form).not.toBeNull();
+    const item = container.querySelector<HTMLElement>(".nv-outline__item");
+    if (item && form) {
+      const position = item.compareDocumentPosition(form);
+      expect(position & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+  });
+});
+
+/**
+ * T-05 弱提示（UI-06）。
+ *
+ * 验收点不是「某个按钮外面包了一层 Tooltip」——包裹本身在 DOM 上留不下痕迹
+ * （antd Tooltip 不 open 时不渲染浮层），而是「**全屏只有一个气泡**」：
+ * 章行来自虚拟列表，若把锚点挂在每一行、又用了 `GuideTooltip` 默认的
+ * 异步持久化判定，十几个气泡会同时起跳（谁先落盘之前谁都抢得到）。
+ */
+describe("OutlinePanel：T-05 弱提示（UI-06）", () => {
+  // 引导 store 是模块级单例：「已看过」标记会跨用例残留，不清就会串味
+  // （第一条用例消费掉 T-05，后面几条就再也弹不出来了）
+  beforeEach(() => {
+    useGuideStore.setState((state) => ({
+      record: { ...state.record, tooltipSeen: [] },
+      playingStep: null,
+      lastTypingAt: 0,
+    }));
+  });
+
+  afterEach(() => {
+    cleanup();
+    document.body.innerHTML = "";
+  });
+
+  /** 造一份大纲副本，用来在用例里改梗概（不污染共享 fixture） */
+  const outlineCopy = (): OutlineNode[] =>
+    JSON.parse(JSON.stringify(outline)) as OutlineNode[];
+
+  /**
+   * 把每一条章节行的梗概改成同一个值。
+   * 只改 `chapter` 变体：`foreshadow` 的 `note` 是伏笔备注，不是章节梗概。
+   * 递归是因为卷的 `children` 里还会嵌卷（TS 联合类型只在收窄后才有 `children`）。
+   */
+  const fillChapterNotes = (nodes: OutlineNode[], note: string): void => {
+    for (const node of nodes) {
+      if (node.kind === "chapter") node.note = note;
+      else if (node.kind === "volume") fillChapterNotes(node.children, note);
+    }
+  };
+
+  it("挂在第一个「梗概还空着」的章行上，全屏只弹一个气泡", async () => {
+    vi.useFakeTimers();
+    try {
+      render(
+        <OutlinePanel
+          outline={outline}
+          activeChapterId={null}
+          onSelectChapter={vi.fn()}
+          actions={buildActions()}
+        />,
+      );
+      // 气泡延迟 ENTER_DELAY_MS（400ms）才出现：让目标先完成布局
+      await act(async () => {
+        vi.advanceTimersByTime(1000);
+      });
+
+      const bubbles = document.querySelectorAll(".guide-tooltip__title");
+      expect(bubbles).toHaveLength(1);
+      expect(bubbles[0].textContent).toBe("给这章留个梗概");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("多章都空着梗概时也只弹一个（消费判定必须是同步的）", async () => {
+    const nodes = outlineCopy();
+    fillChapterNotes(nodes, "");
+
+    vi.useFakeTimers();
+    try {
+      render(
+        <OutlinePanel
+          outline={nodes}
+          activeChapterId={null}
+          onSelectChapter={vi.fn()}
+          actions={buildActions()}
+        />,
+      );
+      await act(async () => {
+        vi.advanceTimersByTime(1000);
+      });
+      expect(document.querySelectorAll(".guide-tooltip__title")).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("梗概都写满时不挂锚点（没有「＋ 一句话梗概」可指）", async () => {
+    const nodes = outlineCopy();
+    fillChapterNotes(nodes, "都填好了");
+
+    vi.useFakeTimers();
+    try {
+      render(
+        <OutlinePanel
+          outline={nodes}
+          activeChapterId={null}
+          onSelectChapter={vi.fn()}
+          actions={buildActions()}
+        />,
+      );
+      await act(async () => {
+        vi.advanceTimersByTime(1000);
+      });
+      expect(document.querySelectorAll(".guide-tooltip__title")).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

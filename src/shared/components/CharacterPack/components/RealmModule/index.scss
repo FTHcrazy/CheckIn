@@ -1,0 +1,301 @@
+@use "../../styles/pack-widget" as widget;
+
+/** 境界：当前值 / 双读数对照 / 阶梯 / 小层进位 / 绑定实体 */
+.cpk-rlm {
+  &__now {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    /*
+      与上方「阶选择」隔开（真机回归：这行此前没有 margin-top，紧贴着阶 Select /
+      阶 chip 行 —— 上轮改 `__progress` / `__mirror` 没打中这里）。当前阶行是一块
+      带底色强调的内容面，和上面的选择控件不是同一簇，8px 是这块与选择簇的分隔。
+    */
+    margin-top: 8px;
+    padding: 6px 8px;
+    border-radius: var(--app-radius-item);
+    background: var(--app-accent-blue-weak);
+  }
+
+  &__value {
+    /* 不吃满剩余宽（flex:none）：境界文案（已含小层名，如「筑基 * 初期 1/4」）
+       自然宽度展示，剩余空间由 stepper 的 margin-left:auto 吃掉 */
+    flex: none;
+    min-width: 0;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--app-accent-blue);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__stepper {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    /* 吃掉「境界文案」以外的剩余宽度：stepper 靠右 */
+    margin-left: auto;
+  }
+
+  &__mirror {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8px;
+    padding: 4px 8px;
+    border-radius: var(--app-radius-item);
+    background: var(--app-surface-alt);
+    font-size: 12px;
+  }
+
+  &__mirrorlabel {
+    flex: none;
+    color: var(--app-text-muted);
+  }
+
+  &__mirrorvalue {
+    flex: 1;
+    min-width: 0;
+    color: var(--app-text-secondary-strong);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__same,
+  &__diverge {
+    flex: none;
+    padding: 0 5px;
+    border-radius: var(--app-radius-pill);
+    line-height: 16px;
+  }
+
+  &__same {
+    background: var(--app-accent-green-weak);
+    color: var(--app-accent-green);
+  }
+
+  &__diverge {
+    background: var(--app-warning-weak);
+    color: var(--app-warning);
+    font-weight: 600;
+  }
+
+  /*
+    阶梯行：横向不换行 + 可滚动（对齐设计稿的「一条尺子」读法）。
+    内层 ul 撑开宽度、外层负责滚动 —— 这样 chip 之间不会被压扁，
+    窄窗口下拖横向滚动条即可看到后面几阶。
+  */
+  &__ladderwrap {
+    margin-top: 2px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+  }
+
+  &__ladder {
+    margin: 0;
+    padding: 0 0 4px;
+    list-style: none;
+    display: flex;
+    gap: 4px;
+    width: max-content;
+  }
+
+  /* 阶梯格子：一颗可点的 chip，造型自带 → 先清零 antd 外观再声明 */
+  &__rung.ant-btn {
+    @include widget.cpk-widget;
+    --ant-line-width: 1px;
+    --ant-border-radius: var(--app-radius-chip);
+    --ant-button-default-bg: var(--app-surface);
+    --ant-button-default-color: var(--app-text-secondary-strong);
+    --ant-button-default-hover-color: var(--app-text-secondary-strong);
+    --ant-button-default-active-color: var(--app-text-secondary-strong);
+    --ant-button-default-border-color: var(--app-border-strong);
+    --ant-button-default-hover-border-color: var(--app-border-strong);
+    --ant-button-default-active-border-color: var(--app-border-strong);
+    --ant-button-default-hover-bg: var(--app-surface-hover);
+    --ant-button-default-active-bg: var(--app-surface-hover);
+    display: inline-flex;
+    align-items: baseline;
+    gap: 3px;
+    padding: 2px 8px;
+    font-size: 12px;
+
+    em {
+      font-size: 12px;
+      font-style: normal;
+      color: var(--app-text-disabled);
+    }
+
+    /* 已经走过的阶：压暗，但仍可点回去 */
+    &.is-passed {
+      --ant-button-default-color: var(--app-text-muted);
+      --ant-button-default-hover-color: var(--app-text-muted);
+      --ant-button-default-active-color: var(--app-text-muted);
+    }
+
+    /* 当前所在阶：实心蓝 */
+    &.is-on {
+      --ant-button-default-bg: var(--app-accent-blue);
+      --ant-button-default-color: var(--app-primary-contrast);
+      --ant-button-default-hover-bg: var(--app-accent-blue);
+      --ant-button-default-hover-color: var(--app-primary-contrast);
+      --ant-button-default-active-bg: var(--app-accent-blue);
+      --ant-button-default-active-color: var(--app-primary-contrast);
+      --ant-button-default-border-color: var(--app-accent-blue);
+      --ant-button-default-hover-border-color: var(--app-accent-blue);
+      --ant-button-default-active-border-color: var(--app-accent-blue);
+      --ant-button-font-weight: 600;
+
+      em {
+        color: var(--app-primary-contrast);
+        opacity: 0.8;
+      }
+    }
+  }
+
+  &__sub {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 7px;
+  }
+
+  /*
+    阶内进度：一条横向进度条 + 「阶内 n / m」+ 进位按钮。
+    进度条画的是**当前阶内已走的层数**，不是阶数 —— 作者关心的是
+    「还差几层破境」，用阶数画对这条尺子就没意义了。
+  */
+  &__progress {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    /* 阶内进度是**纯读数**，与上面的「选择控件簇」（阶 chip / −1·+1 / 小层分页）
+       是一簇操作 vs 一簇结果的关系。真机反馈「挤在一起」，故这里把顶距从 8px
+       抬到 12px，让读数与操作在视觉上分得开，而不是继续糊成同一个块。 */
+    margin-top: 12px;
+  }
+
+  &__bar {
+    flex: 1;
+    min-width: 0;
+    height: 6px;
+    border-radius: var(--app-radius-pill);
+    background: var(--app-surface-alt);
+    overflow: hidden;
+  }
+
+  &__fill {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: var(--app-radius-pill);
+    background: var(--app-accent-blue);
+    transform-origin: left center;
+    /* 只动 transform（合成属性），禁 transition width（触发 reflow） */
+    transition: transform var(--app-t-slow) var(--app-ease-standard);
+  }
+
+  &__progresslabel {
+    flex: none;
+    font-size: 14px;
+    color: var(--app-text-secondary-strong);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__sublabel {
+    font-size: 12px;
+    color: var(--app-text-secondary-strong);
+  }
+
+  /*
+    阶下拉（UI-02）：阶数 > 阈值时取代 chip 行。与 chip 行占同一位置，
+    所以这里也给它一个浅浅的顶距，视觉节奏一致。
+  */
+  &__rungdrop {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 2px;
+  }
+
+  /*
+    小层直选（UI-02）：层号条 / 层下拉。与下方的「阶内进度条」分开成两块
+    （进度条是纯读数、层号条是可点选择），故各自有独立类名与顶距。
+    顶距 10px：等阶调整行（−1/+1）→ 小层分页 是同一簇操作，但中间隔着一块
+    带底色的当前阶行，10px 才看得出「上面是读数、下面是可选层号」两层；
+    真正的大留白放在进度条那一行（见 `__progress`）。
+  */
+  &__subbar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 10px;
+  }
+
+  &__subnums {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  /* 层号按钮：一颗可点的数字 chip，造型自带 → 先清零 antd 外观再声明 */
+  &__subnum.ant-btn {
+    @include widget.cpk-widget;
+    --ant-line-width: 1px;
+    --ant-border-radius: var(--app-radius-chip);
+    --ant-button-default-bg: var(--app-surface);
+    --ant-button-default-color: var(--app-text-secondary-strong);
+    --ant-button-default-hover-color: var(--app-text-strong);
+    --ant-button-default-active-color: var(--app-text-strong);
+    --ant-button-default-border-color: var(--app-border-strong);
+    --ant-button-default-hover-border-color: var(--app-accent-blue);
+    --ant-button-default-active-border-color: var(--app-accent-blue);
+    --ant-button-default-hover-bg: var(--app-surface-hover);
+    --ant-button-default-active-bg: var(--app-surface-hover);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 24px;
+    padding: 2px 6px;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+
+    /* 当前层：实心蓝（与阶梯 chip 的 is-on 同一套语义色） */
+    &.is-on {
+      --ant-button-default-bg: var(--app-accent-blue);
+      --ant-button-default-color: var(--app-primary-contrast);
+      --ant-button-default-hover-bg: var(--app-accent-blue);
+      --ant-button-default-hover-color: var(--app-primary-contrast);
+      --ant-button-default-active-bg: var(--app-accent-blue);
+      --ant-button-default-active-color: var(--app-primary-contrast);
+      --ant-button-default-border-color: var(--app-accent-blue);
+      --ant-button-default-hover-border-color: var(--app-accent-blue);
+      --ant-button-default-active-border-color: var(--app-accent-blue);
+      --ant-button-font-weight: 600;
+    }
+  }
+
+  &__bind {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+  }
+
+  &__bindlabel {
+    flex: none;
+    font-size: 12px;
+    color: var(--app-text-secondary-strong);
+  }
+
+  &__hint {
+    margin: 5px 0 0;
+    font-size: 12px;
+    line-height: 1.55;
+    color: var(--app-warning);
+  }
+}

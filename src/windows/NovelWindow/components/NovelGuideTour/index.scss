@@ -1,0 +1,38 @@
+/**
+ * 漫游引导卡片样式
+ *
+ * 只做「文案排版」的最小定制，配色全部走 var(--app-*) 与 antd 的
+ * `--ant-*` 组件变量，不覆盖 :hover / :active 属性规则（见 AGENTS.md §6.1.2）。
+ */
+
+.novel-guide {
+  // RK-05：Tour 层级低于关闭守卫等危险弹窗，冲突时由守卫抢占
+  z-index: 1010;
+}
+
+.novel-guide__head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.novel-guide__step {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--app-primary-strong);
+}
+
+.novel-guide__name {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--app-text-strong);
+}
+
+.novel-guide__footer {
+  align-items: center;
+}
+
+.novel-guide__indicator {
+  font-size: 12px;
+  color: var(--app-text-muted);
+}

@@ -1,0 +1,18 @@
+/**
+ * 造型控件的「清零点」mixin（行囊 → 跨窗口公共原语）
+ *
+ * 真正的实现已经移到跨窗口公共层 `src/shared/styles/widget.scss`，这份文件只是
+ * **转发**：行囊里 8 个组件样式写的是 `@use ".../pack-widget" as widget` +
+ * `@include widget.cpk-widget`，保持原样即可拿到同一份清零。
+ *
+ * 为什么要转发而不是就地留一份副本：清零点是「怎么压过 antd」这条规则的唯一答案，
+ * 一旦出现两份，改主题时必然只改到其中一份（这正是 review 里
+ * `formatRelativeTime` 三份实现那种事故的同构形态）。
+ *
+ * 新写的行囊控件也建议直接引公共层，不要再经这个别名。
+ */
+@use "../../../styles/widget" as shared;
+
+@mixin cpk-widget {
+  @include shared.ant-button-reset;
+}

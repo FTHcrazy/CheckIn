@@ -7,6 +7,11 @@
  * 数据契约以 preload 暴露的线格式（DTO）为准。
  */
 
+import {
+  formatRelativeTime as relativeTime,
+  formatThousands,
+} from "@/shared/utils/format";
+import { formatNumberedLabel, toChineseOrdinal } from "@/shared/novel/number-label";
 import type {
   NovelBundleDTO,
   NovelChapterDTO,
@@ -20,6 +25,8 @@ import type {
 export interface WorkCardView {
   id: string;
   name: string;
+  /** 题材（可空：建书第二步可跳过）；展示口径见 `formatGenreLabel` */
+  genre?: string;
   createdAt: number;
   /** 全部章节字数之和 */
   totalWords: number;
@@ -60,12 +67,7 @@ export interface ShelfPosition {
 // ── 格式化 ──────────────────────────────────────────────────────────
 
 /** 千分位（今日新增 1,284） */
-export function formatThousands(value: number): string {
-  return String(Math.max(0, Math.round(value))).replace(
-    /\B(?=(\d{3})+(?!\d))/g,
-    ",",
-  );
-}
+export { formatThousands } from "@/shared/utils/format";
 
 /** 字数紧凑展示：≥1 万 → 「48.2 万」（去尾 .0），否则千分位 */
 export function formatWordsCompact(words: number): string {
@@ -76,17 +78,24 @@ export function formatWordsCompact(words: number): string {
   return `${text} 万`;
 }
 
+/**
+ * 题材展示文案：空 = 未归属。
+ *
+ * 建书第二步允许跳过题材，跳过不等于「没有这一栏」——书卡上把话说明白
+ * （`题材：未归属`）作者才知道这里还能补，留空只会让人以为没做这个字段。
+ */
+export function formatGenreLabel(genre?: string): string {
+  const trimmed = genre?.trim();
+  return `题材：${trimmed ? trimmed : "未归属"}`;
+}
+
 /** 相对时间（Hero「上次写到 · 12 分钟前」） */
 export function formatRelativeTime(timestamp: number, now: number = Date.now()): string {
-  if (!timestamp) return "尚未动笔";
-  const diff = now - timestamp;
-  if (diff < 0) return "刚刚";
-  const minutes = Math.floor(diff / 60_000);
-  if (minutes < 1) return "刚刚";
-  if (minutes < 60) return `${minutes} 分钟前`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} 小时前`;
-  return formatDayLabel(timestamp, now);
+  // 书架的口径：没有时间戳 = 尚未动笔；超过一天走 formatDayLabel（今天/昨天/上周…）
+  return relativeTime(timestamp, now, {
+    empty: "尚未动笔",
+    beyondDay: (at, current) => formatDayLabel(at, current),
+  });
 }
 
 const clockOf = (timestamp: number): string => {
@@ -116,41 +125,10 @@ export function formatDayLabel(timestamp: number, now: number = Date.now()): str
 }
 
 // ── 中文序号（卷/章标签派生，与编辑器 formatNumberedLabel 同口径） ──
-
-const CHINESE_DIGITS = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九"];
-
-/** 中文序数：1-9999（八十七 / 三百零六），超界回退阿拉伯数字 */
-export function toChineseOrdinal(value: number): string {
-  const n = Math.max(1, Math.round(value));
-  if (n >= 10_000) return String(n);
-  if (n < 10) return CHINESE_DIGITS[n];
-
-  const digits = Array.from(String(n), Number);
-  const units = ["", "十", "百", "千"];
-  let result = "";
-  const length = digits.length;
-  digits.forEach((digit, index) => {
-    const unit = units[length - 1 - index];
-    if (digit === 0) {
-      // 防止「三百零」「一千零十」式尾零：仅在中间补「零」
-      if (result && !result.endsWith("零") && index < length - 1) result += "零";
-      return;
-    }
-    result += (n < 20 && n >= 10 && index === 0) ? "" : CHINESE_DIGITS[digit];
-    result += unit;
-  });
-  return result.replace(/零+$/, "");
-}
-
-/** 第N后缀：chinese → 第八十七章，arabic → 第87章 */
-export function formatNumberedLabel(
-  style: "arabic" | "chinese",
-  suffix: string,
-  value: number,
-): string {
-  const n = Math.max(1, Math.round(value));
-  return `第${style === "chinese" ? toChineseOrdinal(n) : n}${suffix}`;
-}
+// 单一实现迁至 @/shared/novel/number-label（N11 / M30）：书架 / 编辑器 / 全局
+// 设定窗口共用一处口径（REQ-052 ③「不另写一份」）。这里 re-export 保持既有
+// import 路径（bookshelf-service、bookshelf-utils.test 等）不变。
+export { formatNumberedLabel, toChineseOrdinal };
 
 /** 按卷序 → 章序派生全书章节序号（书架侧独立实现，不跨页复用编辑器工具） */
 export function buildWorkOrdinals(
@@ -187,6 +165,7 @@ export function buildWorkCards(bundle: NovelBundleDTO): WorkCardView[] {
     return {
       id: work.id,
       name: work.name,
+      ...(work.genre ? { genre: work.genre } : {}),
       createdAt: work.createdAt,
       totalWords,
       chapterCount: chapters.length,
@@ -236,6 +215,8 @@ export function resolveHero(
   position: ShelfPosition | null,
   style: ShelfNumberStyle,
   now: number = Date.now(),
+  /** 按书取序号规则（1.34.0）；不传则全书共用 `style` */
+  styleForWork?: (workId: string) => ShelfNumberStyle,
 ): HeroView | null {
   let workId = "";
   let chapterId = "";
@@ -266,12 +247,14 @@ export function resolveHero(
   const workChapters = bundle.chapters.filter((item) => item.workId === workId);
   const ordinals = buildWorkOrdinals(workVolumes, workChapters);
   const volume = workVolumes.find((item) => item.id === chapter.volumeId);
+  // 「继续写作」展示的是这一本书的序号规则，不是全局设置（1.34.0 按书独立）
+  const workStyle = styleForWork?.(workId) ?? style;
   const volumeLabel = volume
-    ? formatNumberedLabel(style.numberStyle, style.volumeSuffix, Math.max(1, volume.sort))
+    ? formatNumberedLabel(workStyle.numberStyle, workStyle.volumeSuffix, Math.max(1, volume.sort))
     : "";
   const chapterLabel = `${formatNumberedLabel(
-    style.numberStyle,
-    style.chapterSuffix,
+    workStyle.numberStyle,
+    workStyle.chapterSuffix,
     ordinals.get(chapter.id) ?? 1,
   )} ${chapter.title}`.trim();
 
@@ -350,4 +333,23 @@ export function coverPaletteOf(seed: string): CoverPalette {
     hash = (hash * 31 + seed.charCodeAt(i)) | 0;
   }
   return COVER_PALETTES[Math.abs(hash) % COVER_PALETTES.length];
+}
+
+// ── 新建作品校验（L-03） ────────────────────────────────────────────
+
+/**
+ * 书名不能为空的提示。
+ *
+ * 原先书名留空点「创建并开写」是**静默无反应**——`createWork` 直接 return null，
+ * 弹窗不关也不提示，作者只会以为软件卡了（PRD 遗留问题 L-03）。
+ * 现在校验在这里做，错误文案唯一事实源，页面只负责渲染。
+ */
+export const EMPTY_WORK_NAME_HINT = "先给书起个名字（后面随时能改）";
+
+/**
+ * 校验书名：通过返回 null，不通过返回给作者看的提示。
+ * 只看 trim 后的结果——纯空格同样是不合格输入。
+ */
+export function validateWorkName(name: string): string | null {
+  return name.trim() ? null : EMPTY_WORK_NAME_HINT;
 }

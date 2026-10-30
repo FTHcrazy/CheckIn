@@ -1,0 +1,163 @@
+@use "../../shared/styles/window-shell";
+@use "../../shared/styles/scrollbars";
+
+/* ⚠️ 必须自己 @use 共享的「零件」层（1.46.1 修）
+ *
+ * `setting-primitives.scss` 原本只被 `SettingCenter/index.scss` 引入，而
+ * `@use` 是编译期行为 —— 本窗口**不渲染 `<SettingCenter>`**（只复用它的
+ * hook，外壳是私有的 GsBody），那条链根本不会走到，于是这份 CSS 一字节
+ * 都没进 bundle。
+ *
+ * 后果是静默的、且只在真机可见（jsdom 与原型都看不出来）：
+ *   `.nv-sc__card`      → 丢了 display:flex / flex-direction，卡片里的
+ *                         卡头、说明、进位条退化成块级流，`gap` 全部失效；
+ *   `.nv-sc__card-head` → 丢了 display:flex，「标题 + 徽标 + 按钮」只能
+ *                         靠行内空白挤着排（真机反馈「挤在一起没边距」）；
+ *   `.nv-sc__spacer`    → 丢了 flex:1，编辑 / 删除不再靠右；
+ *   `.nv-sc__field`     → 编辑表单的标签与输入框竖排失效；
+ *   `.nv-sc__carry-example` → 丢了 display:flex，「进位示例」与正文粘死。
+ *
+ * 位置必须在 gs-skin **之前**：皮肤用的是 `.gs-shell .nv-sc__*`（0,2,0），
+ * 特异性本就压过零件层的单类规则，但保持「零件 → 皮肤」的先后才是对的
+ * 语义（皮肤只负责改，零件负责存在）。 */
+@use "../../shared/components/SettingCenter/setting-primitives";
+
+// 窗口皮肤层：只覆盖 `.gs-shell` 内的共享节点（卡片 / 阶梯），
+// 书本侧设定中心不受影响。放在最前，下面的三档窄窗规则才能压过它。
+@use "./gs-skin";
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Microsoft YaHei", sans-serif;
+  // 圆角窗口：背景交给 .window-shell，dom 层保持透明
+  background: transparent;
+  color: var(--app-text);
+  -webkit-font-smoothing: antialiased;
+}
+
+// 标题栏：「跨书共享」徽标（原浮层标题里的 pill，去掉浮层后移到这里）。
+// 与设定中心的 `nv-sc__pill` 同款配色的弱底 + 同色文字；刻意不复用那个类名，
+// 避免窗口样式反向依赖设定中心目录。
+.gs-window__badge {
+  padding: 1px 8px;
+  border-radius: var(--app-radius-chip);
+  background: var(--app-accent-blue-weak);
+  color: var(--app-accent-blue);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+/* ══ 窄窗三档（R8）══════════════════════════════════════════════════════
+   为什么改 shared 的类名却写在窗口自己的 scss 里：这是**本窗口私有**的响应式
+   策略 —— 书本弹窗固定 width={1180}，永远不会进这两档断点。全部挂在 `.gs-body`
+   作用域内，对 shared 零侵入、对其它窗口零影响；写进 shared 等于给 book 形态
+   加两条永不生效的媒体查询。
+
+   ⚠️ 特异性：`.gs-shell .gs-body`（0,2,0）压过 `GsBody/index.scss` 里的
+   `.gs-body`（0,1,0），`.gs-body .nv-sc__*`（0,2,0）压过 shared 的
+   `.nv-sc__*`（0,1,0）—— 都**不依赖**打包顺序，谁先谁后都一样生效。   */
+
+// 第二档 960–1079px：左栏收到 210px，等级序列砍掉「别名」列
+// （左栏现在是卡片，左右各 12px 内边距要从列宽里补回来，否则内容比原来还窄）
+@media (max-width: 1079px) {
+  .gs-shell .gs-body {
+    grid-template-columns: 210px minmax(0, 1fr);
+  }
+
+  // 「别名」列整列收走（说明与别名仍可从行尾「⋯ → 编辑名称 / 别名 / 说明」进入）
+  .gs-body .nv-sc__col-alias:not(.ant-input) {
+    display: none;
+  }
+
+  .gs-body .nv-sc__thead,
+  .gs-body .nv-sc__row {
+    grid-template-columns: 16px 28px minmax(0, 1.2fr) minmax(0, 2fr) 72px;
+  }
+}
+
+// 第三档 ≤959px（含窗口 minWidth 920）：左栏收到 180px，再砍掉「说明」列
+@media (max-width: 959px) {
+  .gs-shell .gs-body {
+    grid-template-columns: 180px minmax(0, 1fr);
+  }
+
+  // 180px 栏里两颗下拉各剩 75px，「自定义顺序」只能折行或省略 ——
+  // 竖排让它们各占整栏，代价是 32px 高度
+  .gs-shell .gs-side__controls {
+    flex-direction: column;
+  }
+
+  .gs-body .nv-sc__col-alias:not(.ant-input),
+  .gs-body .nv-sc__col-note:not(.ant-input) {
+    display: none;
+  }
+
+  .gs-body .nv-sc__thead,
+  .gs-body .nv-sc__row {
+    grid-template-columns: 16px 28px minmax(0, 1fr) 72px;
+  }
+
+  // 进位规则条换行：它由 3 个 「em + 值」 横排，窄窗下会撑出横向滚动条
+  .gs-main .nv-sc__carry-row {
+    flex-wrap: wrap;
+  }
+}
+
+/* 编辑态兜底：含输入框的行恢复 6 轨 —— 否则别名 / 说明的编辑框会被挤没
+   （`:has()` 让本规则特异性高于上面两档，故不受断点影响） */
+.gs-body .nv-sc__row:has(.ant-input) {
+  grid-template-columns: 16px 28px minmax(0, 1.2fr) minmax(0, 1.4fr) minmax(0, 2fr) 72px;
+}
+
+// 设定中心直接铺在内容区（**不套 Modal**，1.45.1 起），
+// 所以没有整窗遮罩要对抗。这条 z-index 现在只服务于「面板里弹出的子浮层」
+// （模板库 / 批量生成 / 拆分 / 冲突确认，经 portal 挂在 body 下，z-index 1000）：
+// 抬到它们之上，最小化 / 最大化 / 关闭三键在子浮层打开时仍然点得到。
+.window-header {
+  position: relative;
+  z-index: 1100;
+}
+
+// 内容区：装载期间显示占位；装载完成后由设定中心直接铺满
+// （不再是「交给 SettingCenter 的 Modal（portal）」）
+.window-shell__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+
+  > * {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+  }
+}
+
+// 装载占位（globalSettingLoad 通常很快，一闪而过）
+.gs-window__loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--app-text-secondary);
+  font-size: 14px;
+}
+
+// 装载失败错误态：居中一张错误提示卡 + 「重试」。
+// 出现这一屏说明数据没读上来（而不是「库是空的」），因此不能退化成设定中心的空态。
+.gs-window__error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 24px;
+
+  .ant-alert {
+    width: 100%;
+    max-width: 560px;
+  }
+}

@@ -1,0 +1,116 @@
+@use "../../styles/pack-widget" as widget;
+
+/** 总属性汇总：每行「基础 → 总览」+ 增量分段 */
+.cpk-sum {
+  &__rows {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  /* 属性行：整行可点开明细，造型自带（平时无框，悬停才浮出一层）→ 先清零再声明 */
+  &__row.ant-btn {
+    @include widget.cpk-widget;
+    --ant-line-width: 1px;
+    --ant-border-radius: var(--app-radius-item);
+    --ant-button-default-border-color: transparent;
+    --ant-button-default-hover-border-color: var(--app-border);
+    --ant-button-default-active-border-color: var(--app-border);
+    --ant-button-default-hover-bg: var(--app-surface-hover);
+    --ant-button-default-active-bg: var(--app-surface-hover);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 4px 6px;
+    box-sizing: border-box;
+  }
+
+  &__name {
+    flex: none;
+    min-width: 62px;
+    max-width: 96px;
+    font-size: 12px;
+    color: var(--app-text-secondary-strong);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__calc {
+    flex: none;
+    display: inline-flex;
+    align-items: baseline;
+    gap: 5px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__num {
+    font-size: 12px;
+    color: var(--app-text-muted);
+
+    &.is-final {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--app-text-strong);
+    }
+
+    &.is-override {
+      color: var(--app-warning);
+    }
+  }
+
+  &__unit {
+    margin-left: 1px;
+    font-size: 12px;
+    font-style: normal;
+    color: var(--app-text-muted);
+  }
+
+  &__arrow {
+    font-size: 12px;
+    color: var(--app-text-disabled);
+  }
+
+  &__seg {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 3px;
+  }
+
+  &__none {
+    font-size: 12px;
+    color: var(--app-text-disabled);
+  }
+
+  &__count {
+    flex: none;
+    font-size: 12px;
+    color: var(--app-text-disabled);
+  }
+
+  /* 估算值列：与真实总览值并列时必须在视觉上退后一档，
+     否则「哪个数才是现在真的」要读位置才能判断 */
+  &__note {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    margin: 8px 0 0;
+    padding: 5px 7px;
+    border-radius: var(--app-radius-item);
+    background: var(--app-accent-amber-weak);
+    color: var(--app-accent-amber);
+    font-size: 12px;
+    line-height: 1.6;
+  }
+}
+
+/* 增量分段：被动灰 / 持续蓝 / 映射紫 / 覆盖警示。
+ * 已提到公共原语（pack-common.scss）—— 看板 C 区与总属性模块共用同一份，
+ * 避免「同一项属性两处色/文不一致」的静默分叉。 */

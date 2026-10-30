@@ -1,1446 +1,1055 @@
 # Changelog
 
-## [1.21.2] - 2026-10-08
+> 历史归档：2.3.0 之前的版本已按次版本拆到 `changeLogHistory/`
+> （当前归档到 2.2.2，索引见 `changeLogHistory/README.md`）。
+> 主文件只保留最近若干个次版本，超过 800 行时按 AGENTS.md §8.6 继续分流。
 
-> 依据 `docs/novel-window-review.md` 修复的第二批（`正确性`：P1-3 / P1-4 / P1-5 / P1-8 / P1-9 / P1-10~13）。
-
-### Fixed
-
-- **删除作品不清行囊，留下一整棵孤儿**（主进程 `novel-handlers.ts`）：`novel-work-delete` 的事务清了卷章快照 / 要素 / 灵感 / 等级体系，唯独没有碰任何 `novel_pack_*` 表 —— 而同一个文件里播种那段的注释明确写着「行囊随作品一起清空，角色留着会成孤儿」，可知这条约束是知道的，只是删除路径漏了。`novel_pack_characters` 连同 9 张子表全部残留，`entity_id` 指向已删要素，且**删了作品后再无任何入口能查到或删掉它们**；多态表 `novel_pack_modifiers` 的 `owner_id` 仍指向存在的 item/skill，所以保存侧的孤儿清理也扫不到。现改为同事务内先按 `work_id` 定位角色行，再按 `character_id` 清 8 张子表；顺序与 pack-save 一致 —— `modifiers` 必须先于 `items` / `skills`（它靠子查询从宿主反查归属，宿主先删子查询就变成空集，一条都删不掉）
-- **状态效果共用一个载体键，passive 被误杀 / sustained 开关串扰**（`hooks/usePackPanel.ts`）：所有 `ownerType === "status"` 的效果按约定共用 `ownerId = 角色 id`，而 `buildActiveCarriers` 把这个 `ownerId` 当载体键用，于是整组状态折叠成同一个 `status:<charId>` 键 —— 全部状态关闭时组里没有这个键，**所有 passive 状态被静默丢弃**（passive 本就是「计入」档，不该受开关影响）；任一条 sustained 开着时键在集合里，**所有 passive 的开关彻底失效**。现改为取效果自己的 `mod.id` 作键，每条状态独立成键
-- **熟练度缩放对装备 / 状态宿主静默 ×0.5**（`pack-utils.ts` + `EffectEditor` + `ModifierList`）：`proficiency` 的键只有技能 id，`computeSummary` 里却是 `input.proficiency[mod.ownerId] ?? 0` —— 非技能宿主必然落空 → ratio 0 → 系数取下界 0.5 → **贡献值腰斩**。而列表仍显示原始数值，只有对着总属性与「来源明细」才看得出。现改为宿主不是技能时一律不缩放，效果编辑器不再给非技能宿主这个开关，列表也不再给失效条目挂「按熟练度缩放」标签
-- **行囊关闭链路三洞**：
-  - **保存失败照样关闭**（`usePackPanel.ts`）：「保存并关闭」里 `await data.save()` 后**无条件** `onClose()`，失败也关，且 `saveFailed` 状态随组件卸载消失 —— 用户只看到「改动没了」，从未被告知保存失败。现检查返回值，失败时留在面板内并给出提示（草稿仍在）
-  - **卸载 / 切作品没有 flush 兜底**（`usePackData.ts`）：草稿是 800ms 防抖，连续打字时计时器每帧重置，组件若在这期间被卸载（切作品、进专注模式、面板形态切换都会卸载它）整段连续输入就没机会落库。现增加一条依赖含 `workId` 的 effect —— 让 cleanup 在换书那一帧（此时 `docRef` 还是旧作品文档）与卸载时各跑一次 `flushDraft()`
-  - **外部关闭路径全部绕过未保存拦截**（新增 `pack-config.ts` 关闭桥）：除面板自己的关闭按钮外，还有三条路径能收起面板 —— 顶栏「行囊」图标、`Ctrl+Shift+B`、页面级 Esc 优先级链，它们过去都直接 `setPackOpen(false)`，跳过 CloseGuard（G-2）与草稿 flush。现由面板挂载时注册自己的 `requestClose`，外部统一经 `requestClosePackPanel()` 桥进入同一条受保护路径
-- **崩溃恢复的两处判定缺陷**（`novel-handlers.ts`）：
-  - 对不存在的章节保存时仍会写一条 `chapter_id` 悬空的孤儿快照，而 `buildRecovery()` 取的是**全局最新**快照 —— 这条孤儿时间戳最新，**崩溃恢复提示被彻底屏蔽**。现章节查不到就直接中止、`return false`
-  - `buildRecovery()` 只检测「恰好拥有全局最新快照的那一章」：A 章写满 500 字触发快照 → 切 B 章写几十字（不足快照阈值）→ 崩溃，查到的是 A 章快照且 `A.content === snapshot.content` → `return null`，**B 章的未保存改动被完全忽略**。现把判定下推到「快照与当前正文不一致」的最新一条（`JOIN novel_chapters ... WHERE c.content <> s.content`），同时顺带排除了 `chapter_id` 已悬空的孤儿快照
-- **写操作命中 0 行仍返回成功**（`novel-handlers.ts` 8 处）：`rename` / `status` / `outline` / `note-move` / `volume-rename` / `level-rename` 等 8 个通道原本一律 `return true`。渲染层大多是 `void xxxRemote(...)` 且已乐观更新 —— 用户以为改成功，下次启动数据悄悄回滚且没有任何提示。现改为返回 `dbRun(...).changes > 0`
-- **快照列表无并发守卫，回滚可能把 A 章正文写进 B 章**（`useNovelData.ts` + `useNovelPage.ts`）：快照抽屉开着时切章会并发两个请求，先发的 A 章响应后到会把列表覆盖成 A 的；而 `handleRollback` 不校验快照属于哪一章。现给 `loadSnapshots` 加请求序号，`rollbackSnapshot` 校验 `snapshot.chapterId === activeChapterId` 后才返回正文
-- **`load()` 无 catch、无并发序号**（`useNovelData.ts`）：只有 `finally` 没有 `catch`，`fetchNovelBundle()` reject 时 bundle 保持 `null` → 编辑器停在**永久空态且无任何提示**（`void load()` 还产生未捕获 rejection）；挂载 / 删最后一部作品 / resetTemplate / `reload()` 四个入口可能并发，旧响应后到会覆盖新 bundle。现加请求序号 + `catch` 落到可提示的错误态（页面给一次 toast，`reload` 入口照常可用）
-- **跨窗口境界事件不校验 `workId`**（`useNovelData.ts`）：主角事件有 `detail.workId !== workId` 的防串书守卫，境界事件没有。而 bundle 的 `entities` 是**全部作品**的要素，只校验 `fromId` 存在不足以挡住跨作品 —— 别窗口 / 别作品的境界变更会被打进当前内存 links。补上同样的守卫
-
-### Added
-
-- 守卫测试 `electron/novel-write-guard.test.ts`（14 例）：源码断言「删作品必须清理全部 9 张行囊表、`modifiers` 必须先于 `PACK_CHILD_TABLES` 循环、`status` 必须用 `owner_type` 限定」；「8 个写通道必须返回 `changes > 0` 且不再残留裸 `return true`」；「章节不存在不写孤儿快照」与「恢复判定必须是 JOIN + content 不一致」
-- 守卫测试 `CharacterPack/pack-close-guard.test.ts`（9 例）：钉住「载体键取 `mod.id` 而非 `ownerId`」「写入侧的 `ownerId` 仍必须是角色 id」「缩放以 `ownerType === 'skill'` 收窄」「三条外部关闭路径都走桥」「保存失败不关闭」「卸载与切作品都有 flush」
-- `pack-config.test.ts` 补 3 例行为单测：关闭桥的返回值语义（未挂载返回 false 由调用方兜底；已挂载返回 true 只表示「已接管」，面板可能选择不关 —— 有未保存改动时弹拦截）
-- `pack-utils.test.ts` 补 2 例：「熟练度缩放只对技能宿主生效」同时算技能与装备两条路径，钉死非技能宿主不再是旧的 1250；「每条状态各自成键」
-
-## [1.21.1] - 2026-10-08
-
-> 依据 `docs/novel-window-review.md`（Novel 窗口全量代码审查）修复的第一批缺陷，全部为 P0 / P1 级数据正确性问题。
+## [2.17.1] - 2026-10-30
 
 ### Fixed
 
-- **删光作品后自动播种会误删全局灵感池**（主进程 `novel-handlers.ts`）：播种判据原本是「作品数为 0」，而 `seedTemplateBook()` 是清库重播种，内含一条全表 `DELETE FROM novel_notes`。灵感里 `work_id = ''` 是合法业务状态（`novel-note-move(id, '')` = 退回未归属的全局池），与任何作品都无关。于是「删除最后一部作品 → 下次装载」这条链会静默清空用户原创灵感、行囊草稿与盘点记录，无确认无备份。现改为：判据加 `config.novel_seeded` 标记（只在确凿的首次使用播种一次，此后书架为空是正常的空态、`NewWorkCard` 照常引导新建）；灵感删除加 `WHERE work_id <> ''`
-- **跨窗口订阅注销不掉**（`electron/preload.ts`，全应用级）：`windowAPI.on` 注册的是剥掉 event 首参的匿名 wrapper，`off` 却按原始 handler 调 `removeListener`（按引用比对）→ 永远删不掉。每次开关行囊面板泄漏 2 个 `ipcRenderer` 监听与整条闭包链，开合 N 次后一次主角/境界变更会触发 N 次全表重载。现用 `WeakMap<handler, Map<channel, wrapper>>` 记住真 wrapper，`off` 按它删除；顺带对「同一 handler 重复注册同一频道」做了去重，避免叠加两条
-- **正文保存失败后永不重试**（`store/useNovelEditorStore.ts`）：一次 IPC 抖动后 `saveState` 变成 `failed`，而 30s 兜底与关窗 flush 的判断条件都是 `=== "pending"` → 此后再无自动落库机会，正文只留在内存草稿里，关窗即丢。同时 `await runner.persistChapter()` 没有 try/catch，IPC reject 时整个 async 抛给 `void` 调用（unhandled rejection），`set({saveState})` 永不执行 → 顶栏永久卡在「保存中」。现改为：落库逻辑收住异常并返回成败；新增统一判据 `needsFlushSave()`（`pending || failed` 都要重试）；`flushSave` 返回是否全部成功，`handleSaveNow` 据此选提示文案
-- 修正保存失败时的顶栏文案：原为「已转入快照」，但快照是主进程在保存事务里写的 —— 保存失败根本不会有快照，会让用户误以为已妥善落库。改为「保存失败，待重试」
-- **字数统计被章节灌入污染**（`components/EditorPane` + store）：CodeMirror 的 `updateListener` 分不清用户敲的字与我们 `dispatch` 灌进去的整篇正文，而 `update.startState.doc` 是**变更前**的文档——切章时那是上一章正文。结果是打开一本 4200 字的章节立刻「今日 +4200」，长章切短章则出现负增长、进度条倒退。现加 `hydratingRef` 区分两条上报通道：程序化灌入以 `next` 自身为基线（走 store 的「内容没变」早返回分支，不写草稿、不计字数、不断掉旧章在途保存），只有真实输入才传变更前后两份文档
-- **起名收藏夹永远读不回来**（`hooks/useNovelData.ts`）：`config` 里存的是 JSON 字符串，`sanitizeNameFavorites()` 却直接收到它就判定 `Array.isArray(字符串) === false` → 每次启动恒为空；更糟的是首次「加收藏」会拿这个空数组去整读整写，把库里原有收藏全部覆盖。补上 `parseJsonOrNull`
-
-### Added
-
-- 守卫测试 `electron/novel-seed-guard.test.ts`（6 例）：源码断言「播种必须带 SEEDED_KEY 判据、播种后必须落标记、灵感删除必须带 `work_id <> ''` 过滤」。better-sqlite3 的 native 按 Electron ABI 编译、vitest 下无法 require，故这类 SQL 不变量沿用仓库既有的源码断言做法
-- 守卫测试 `electron/preload-listener.test.ts`（4 例）：钉住 `on` 必须先登记 wrapper 再注册、`off` 必须删映射表里的 wrapper 而不是原始 handler
-- store 单测 4 例：runner 抛错时不得卡在 `saving`；`flushSave` 如实返回成败；`needsFlushSave` 必须涵盖 `failed`；「切章灌入必须传 `next` 自身作基线」（用例里同时演示了传上一章正文时的负增长后果）
-
-## [1.21.0] - 2026-10-08
+- **「由高到低」的阶梯里，AI 排的等级插到了最上面**：`批量追加` 与 `单条插入` 的落点
+  都按 **rank 升序**解释，而界面给的是**显示行序**；`desc`（由高到低）下 `sortLevels`
+  会把展示数组反转，两者正好相反 —— 于是「接着末端往下」的等级浮到视觉顶部。
+  - 修法：抽出 `toRankIndex(total, displayIndex, carryDir)` 做唯一换算，渲染层
+    `insertLevel` 与主进程 `rankAt` 共用；末尾追加在 `desc` 下改为「现有整体上移、
+    新条目占住低端」，并**整块反转条目顺序**（传入顺序 = 从现有末端往外的显示顺序）。
+  - 空阶梯不反转：那时整块就是全部内容，rank 升序映射到 desc 展示正好「强在上、弱在下」。
+  - 本地乐观更新（`useNovelData`）同步同一口径，避免刷新前后跳位。
+- **AI 生成的等级说明不落库**：`批量追加` 的 `note` 原先硬编码空串，候选里看得见
+  的「这一级能做什么」，加进阶梯后全变成「—」。现在 `note` 随条目一路带到 SQL。
+- **AI 生成的等级缺小层**：`批量追加` 的 `subLevels` 原先默认 1，而单条新增是回落到
+  **分类默认**（每阶小层数 / 小层命名）。两者现在同口径，AI 加的阶也能自带小层。
+  弹窗里补一句提示说清「新阶继承分类的小层设置」。
+- **全局设定左栏双击改名后输入框关不掉**：提交路径绕过了 `view.commitRename`
+  （唯一会清 `renamingId` 的函数），直接 patch 分类，于是改名态永远留着 —— 输入框
+  既不消失，点空白也只会再提交一次。改为提交走 `commitRename`，回车 / 失焦 / Esc
+  三条路径现在都能正常退出。
+- **一开弹窗窗口就变方**：antd 的 Modal / Drawer 挂 `body` portal，落在 `.window-shell`
+  之外，不被圆角裁剪；遮罩是 `inset: 0` 的矩形，把靠透明像素画出来的四角填成实色。
+  给 `.ant-modal-mask` / `.ant-drawer-mask` 同一个半径（`--window-shell-radius`，
+  跟最大化状态走），全局设定与 novel 窗口同时生效。
 
 ### Changed
 
-- **行囊（`CharacterPack`）全量切换到组件库控件，原生表单控件清零**：面板内 68 处原生控件（7 个 `<input>`、1 个 `<textarea>`、60 个 `<button>`；下拉本来就是 antd `Select`）全部换成 antd 组件。外观一律**只改组件级 CSS 变量**（`--ant-button-*` / `--ant-input-*` / `--ant-switch-*`），不写 `:hover` / `:active` 属性规则——antd 的状态规则（如 `.ant-btn-color-default.ant-btn-variant-outlined:not(:disabled):hover`，特异性 (0,4,0)）自写规则压不过，而那些规则读的正是这些变量，**改状态只需改变量**。所有色值仍走 `var(--app-*)`，四套主题与暗色算法自动跟随
-- **新增「清零点」mixin `CharacterPack/styles/pack-widget.scss`**：行囊里有一批视觉是设计定的控件（阶梯格子、候选物品行、折叠头、性质卡、属性汇总行、释放提示条、属性引用胶囊、角色名、效果选择行）。做法是仍用 `Button` 承载（拿到波纹 / 键盘 / 禁用语义 / focus 环），再用 mixin 把 antd 自带外观通过变量清零后重绘。**必须是 mixin 而非公共类**：清零与控件自己的变量要写在同一个选择器里才能靠源码顺序决定胜负；写成两个类则要靠文件先后，而组件样式先于 `pack-common.scss` 打包，顺序恰好是反的 —— 会静默失效
-- 三处自绘开关（`.cpk-sw2` 的 `span` + 圆点）改为 antd `Switch size="small"`，`aria` / 键盘 / 禁用语义改由组件库提供；配色刻意留空以与技能栏那个开关同色
-- 效果编辑器的「删除该条」改为**行容器 + 两个并列真按钮**：原先它是嵌在选择按钮内部的 `span[role=button]`，改成组件库按钮后 `<button>` 里再嵌 `<button>` 会被浏览器拆坏 DOM（React 不报错、类型也过）。行容器承载药丸外观，悬停整行高亮，视觉不变
-- `AGENTS.md` §6.1.2 由「描述性偏好」升级为**强制条款**：选型表补齐 `Input` / `Input.TextArea` / `InputNumber` / `Button` / `Switch` 等行，例外收敛到三条并须写明理由；新增「覆盖组件库外观的规范」九条（为什么只该改变量、变量名以实际产物为准、清零点为什么必须是 mixin、按钮不可嵌套、图标作 `icon` 属性与作 children 的间距规则不同、行囊一律不传 `size` 的约定、弹层挂类与 `.ant-select` 根元素覆盖），§8.3 检查清单同步加项
-- 顺带修掉 `UnitSystemManager` 重复的 `import "./index.scss"`
+- 等级 AI 弹窗里「整理整套」的禁用说明改写：落点已修，问题不再是「顺序相反」，
+  而是「整套只能接在末尾，顶点会落到最下面」。
 
-### Added
-
-- 守卫测试 `CharacterPack/pack-ui-kit.test.ts`（22 例）：源码断言行囊目录内不得出现原生表单控件、不得残留旧自绘开关 DOM、每个组件的 `index.scss` 必须被同目录 `index.tsx` 引入；并**编译 SCSS 后断言** 9 个自带造型控件都以 `.xxx.ant-btn` 承载且确实展开了清零点（`--ant-control-height: auto`）。之所以断言编译产物而不是源码文本——控件样式都写成 `&__xxx.ant-btn` 的嵌套形式，字面量在源码里根本不存在
-
-### Fixed
-
-- **修复三份「无论如何都不生效」的行囊样式**：`NoteModule` / `StatusModule` / `SummaryModule` 的 `index.scss` 从未被任何地方引用（构建产物里连 `cpk-note__area` / `cpk-stt__top` / `cpk-sum__rows` 这些类名都不存在），即「改了样式、界面毫无反应」。现按 §8.3 补上 `import "./index.scss"`，并把这条加进守卫测试
-- 修正 `AGENTS.md` §6.1.2 中已废弃的 `popupClassName` 代码示例（antd 6.6+ 统一改用 `classNames.popup.root`）
-
-## [1.20.0] - 2026-10-08
-
-### Added
-
-- **开发规范新增「架构重构模式开关」（`AGENTS.md` §6.7）**：用一个显式声明的 `novelArch` 值（`compat` / `refactor`）表示「本阶段是否允许对 novel 窗口的存储与前端结构做从零重构」，默认 `compat`。开启 `refactor` 时授权：表结构可直接重设（拆表 / 改列 / 换主键）、**不必**写 §6.5 的增量迁移、旧数据可丢弃；同时硬性禁止写「同时兼容新旧两套结构」的适配层（那是把同一笔债务推迟一次）。开关附「AI 行为条款」六条，其中最关键的一条是：**重构完成后必须把开关改回 `compat` 仍能完整运行**，不允许留下「只有开着开关才成立」的分支
-- 开关**不参与代码运行**——仓库内任何运行时代码不得读取它、不得做成 `CHECKIN_EDITION` 那样的环境变量分支或 `define` 注入。理由写进了规范：环境变量只在本机、只对当前进程生效，而「是否放弃兼容承诺」是跨多次提交的设计决策，必须版本化并对所有协作者（含 AI 会话）可见
-
-> 本次为规范与登记变更，**无运行时代码改动**。
-
-## [1.19.2] - 2026-10-08
-
-### Fixed
-
-- **修复行囊保存从第二次起必然失败**：报 `SqliteError: UNIQUE constraint failed: novel_pack_modifiers.id`，事务整体回滚、表现为「改了存不上」。根因是整文档保存的**删除顺序**写反了——`novel_pack_modifiers` 是多态表（只有 `owner_type` / `owner_id`，没有 `character_id`），只能靠子查询从 `novel_pack_items` / `novel_pack_skills` 反查归属，而这段删除排在了宿主表删除**之后**：宿主一删，反查子查询立刻变成空集 → 加成一条也删不掉 → 紧接着重新插入同 id 直接撞主键。用模板行囊（固定 id `tpl-pm-*`）时必现，因为每次保存的 id 完全一样。现改为**加成先删、宿主后删**，并顺带清理历史上因此残留的孤儿加成（宿主已不存在、既不显示也不参与汇总，只会在将来某次 id 复用时突然报冲突）
-- 补 `electron/novel-pack-save-order.test.ts`（4 例）：把「加成先于宿主被删除」「宿主循环确实含 items / skills」「加成删除覆盖 item / skill / status 三类 owner」「孤儿清理存在」钉在源码上。better-sqlite3 的 native 模块按 Electron ABI 编译、vitest 下加载不了，所以这类顺序不变量只能靠源码断言守
-
-## [1.19.1] - 2026-10-08
-
-### Fixed
-
-- **修复「设为主角」点了没反应、以及行囊与右侧要素栏都不互相同步**（1.19.0 引入的静默失效，根因只有一个）。同一个跨模块事件有两条投递路径，负载形状**不同**——同窗口 `window.dispatchEvent(new CustomEvent(name, { detail }))` 的第一个参数是 `CustomEvent`（负载在 `.detail` 上），跨窗口经 `ipcRenderer` 的第一个参数就是负载本身。而所有监听器都写成 `args[0] as Detail`，于是**同窗口这条路径永远读出 `undefined`**：
-  - 读主角的那处 `setEntityId(detail.entityId ?? "")` 直接把值**清空** → 点「设为主角」角标一闪就没；
-  - 读境界的两处因为 `workId` 是 `undefined` 直接 `return` → 行囊与右侧面板各说各话。
-  而 `window-broadcast` 又刻意**排除发送者**（`broadcast(event, data, senderName)`），同窗口没有任何一条路能兜住它。现统一由 `pack-config.ts` 的 `readEventDetail()` 归一化负载，四个订阅点全部改用它，并补 4 例回归测试
-- **修复整文档保存会覆盖刚设好的主角**：`novel-pack-save` 的 upsert 此前会连带回写 `entity_id`，而草稿里存的那份 `entityId` 可能是设主角之前的快照 → 保存一次就把右侧栏刚设的绑定冲掉。现令主角绑定只有一个写入口（`novel-pack-protagonist-set`），保存不再参与写该列
-- **修复行囊「主角」下拉读不到当前主角名**：角色选项原本只在用户展开下拉时才加载，未展开时 `Select` 处于「value 有值 + options 为空」的形态，antd 会把裸 id（模板书里就是一串 `tpl-e-char-shen`）显示出来，看着和「没设主角」几乎一样。现改为模块挂载即加载
+## [2.17.0] - 2026-10-30
 
 ### Changed
 
-- 行囊装载与「撤销全部改动」时，**主角绑定一律以库中的正式行为准**，不取草稿、也不被撤销回退——它属于跨模块共享数据（判据 PRD §8.6.2「改了这个值别人的书会变吗」），写入口唯一、即时落库，不属于「可撤销的设定数据」
+- **一致性校对改在 Web Worker 里跑（R-AI-10a 性能）**：几千章的书不再占着主线程扫。
+  - **问题**：原先 `useConsistencyStore` 是「每 8 章一批 + `requestIdleCallback` 让出」，
+    让出只是把**一次**大卡顿摊薄成**几千次**小卡顿 —— 扫描期间敲字与输入法仍会掉帧，
+    而校对是纯函数（不碰 DOM、不碰 IPC），本来没有任何必须留在主线程的理由。
+  - **做法**：新增 `workers/consistency.worker.ts`（`start` 建索引 → 逐批 `chapters` →
+    `finish` 出结果）与 `store/consistency-runner.ts`（编排 + 降级）。每批 50 章，
+    **收到上一批的 `progress` 才投下一批**，形成背压：worker 没消化完，主线程不会继续灌。
+    分批而非一次投全书，是为了让结构化克隆的峰值只有一批（一次投几十 MB 正文等于让
+    渲染进程瞬间多背一份内存）。
+  - **降级不降级功能**：无 `Worker`（jsdom / 极老内核）、构造抛错（打包后脚本加载失败）、
+    线程中途崩溃三种情况，都退回主线程分片并**从头重扫**，只降速度。降级是静默的
+    （控制台一条 warn），作者不需要知道校对跑在哪条线程。
+  - 取消改为 `terminate()`：取消了就不该在后台继续扫。
+  - 与 `import.worker.ts`（书籍导入）同一套形态，未新增任何约定或依赖。
 
-## [1.19.0] - 2026-09-29
+### 说明
+
+- 一致性扫描**结果与判据完全没变**，这次只换了执行线程；`consistency.test.ts` 一行未动。
+- 打包已验证：`vite build` 产出独立 `consistency.worker-*.js`（6.2 KB），`app://` 协议
+  已带 `standard + secure` 权限，生产环境同样可起 Worker。
+- **边界确定**：base 窗口（checkin 域）的业务不接入 AI，R-AI-16b 及「备忘摘要 /
+  待办拆解」两个方向不立项，`ai.db` 门控维持 `EDITION !== "lite"`。2.16.0 的
+  记账分类建议属纯本地规则（不 import `shared/ai`），不受此边界影响。
+
+## [2.16.0] - 2026-10-30
 
 ### Added
 
-- **新增「主角」设定，打通右侧要素栏与行囊的境界联动**：右侧「要素」栏的角色卡（列表卡与详情页）新增「设为主角 / 取消主角」入口（皇冠图标），主角卡带皇冠角标与左侧 accent 竖条并自动置顶。主角是**唯一事实源的一格数据**——直接复用 `novel_pack_characters.entity_id`（不另建表、不另加列），设为主角即把该角色实体绑成行囊主角，换一个即改写同一格，取消即解绑。此前行囊只能在自身面板里手动选实体，两侧认知断开，这才是「右侧栏的境界跟行囊联不上」的根因
-- **境界双向实时联动（四个方向全通）**：过去只有行囊 → 要素栏单向通知，右侧栏改境界行囊不跟随；现补上要素栏 → 行囊方向，两侧任一处改动都即时同步，且用「打内存补丁 + 重读元数据」而非整体重载（避免吃掉未保存编辑）
-- **主进程新增两条主角通道**：`novel-pack-protagonist-get`（只读、不建行——作者从没打开过行囊时右侧栏就不该出现角标）/ `novel-pack-protagonist-set`（复用抽出的 `ensurePackCharacterRow(workId)`，保证「第一次就在右侧栏设主角」也能建出骨架，否则会写到不存在的 `character_id` 上静默丢绑定）。行囊 IPC 通道数由 9 条增至 11 条
-- **模板书籍新增预设「模板行囊」范例**：`electron/novel-template.ts` 的 `buildTemplatePack()` 纯函数（固定 id 前缀、无随机/时间，两次构建逐字段一致）播种一份填满的行囊——角色「沈青梧」绑定到模板真实角色要素、当前境界挂在有效等级项上形成活演示；6 条属性 / 12 个部位（戒指 capacity=2）/ 8 件物品（含同部位两枚戒指与三件已穿戴）/ 3 个技能（含一个停用）/ 14 条效果（5 被动 + 5 持续 + 2 释放 + 2 边界）/ 2 套量纲 / 9 个模块。刻意覆盖每一条容易被误用的能力：持续型开/关各一条、被动+触发条件、停用技能下的被动、熟练度满值缩放、释放型不指向属性
-- **模板等级阶梯补齐两个缺口**：`novel_levels.sub_levels`（阶内小层）与 `novel_levels.power`（战力当量）在模板播种时写入（引气 9 层、聚元/通脉/凝丹各 3 层，当量 10→65610、器阶 1→64）
+- **记账分类建议（R-AI-16a，纯本地规则）**：记一笔 / 编辑这笔的弹窗里，输入备注后
+  在分类下方给出最多 3 条候选分类，**点一下才生效**。
+  - **两条证据**：① **历史**——同一备注以前记过什么；或备注有 ≥50% 的二字片段
+    重合（bigram，中文无分词器时的零依赖做法），按证据条数升分（1 条 0.55 →
+    4 条 0.85，完全一致给 1.0）；② **内置关键词表**兜底（地铁 → 交通、外卖 → 餐饮、
+    房租 → 居住…），按词长加权（0.66 ~ 0.9）。两者同时指向同一分类时只留一条，
+    取更强的来源。
+  - **零 AI、零授权、零新 IPC / 新表**：不碰 `ai.db` 的 edition 门控，lite 版同样
+    可用（这正是 16a 与 16b 拆开的原因）。建议只是提示，**不自动改**用户已选的分类，
+    也不自动写库。
+  - **样本 = 当前区间 + 上一同期**：`useLedgerData` 原先把上一同期流水 reduce 成
+    环比合计就丢掉了，现在保留原始行当历史样本——月初刚切到「本月」时当前区间
+    可能只有两三条，光靠它学不出备注习惯，而这份数据本来就已经查回来了。
+  - **不硬猜**：备注归一后不足 2 字、类型不匹配（支出里记「工资到账」）、分类已归档、
+    分数 < 0.4，一律不出建议。分类被改名也能命中：预设分类按 id 匹配（`food` 改成
+    「吃饭」不影响），自定义分类按名称兜底。
+  - 实现：`ledger-suggest.ts`（纯函数 + 词表，15 条单测）、`CategorySuggest` 组件
+    （4 条测试，antd Button 承载 + `ant-button-reset` 清零点），接入 `QuickAddBar`、
+    `LedgerEditModal` 与 `useLedgerEditorState`。
+  - **已知未做**：`QuickAddBar` / `CategoryPicker` 的分类胶囊仍是原生 `<button>`
+    （存量违规）。本轮新增组件已按 §6.1.2 用组件库承载；清存量需要实机比对视觉，
+    单独一轮做，不在本次范围内混改。
+
+### 说明
+
+- 帮助手册不适用：§8.9 要求「用户可见功能进帮助中心」，而 `HelpCenter` 目前只挂在
+  NovelWindow 与行囊，BaseWindow（checkin 域）没有这个常驻入口。为一条记账建议
+  单独给 BaseWindow 引入帮助中心属于超范围改动，等 BaseWindow 有手册时一并补。
+
+## [2.15.1] - 2026-10-30
 
 ### Fixed
 
-- 修复 `EntityPanel` / `SearchPanel` 中 `useEdgeFade()` 返回值被整体读取导致的 3 条 `react-hooks/refs` 报错（渲染期访问 ref），改为解构 `{ ref, fadeLeft, fadeRight }`，行为不变
+- **一致性校对的误报率（R-AI-10a）**：2.15.0 在真实长篇上给出 99 条「确定」，
+  逐条核对后发现几乎全是**词内碎片**，不是错字。三类证据都指向同一个缺陷——
+  判据只看「等长 + 差一字 + 首/尾字命中」，于是 `布`+任何常用字都算 `布偶`
+  的近似写法：
+  - `布偶` ← 布游 / 布控 / 布鬼 / 布身 / 布家 / 布间 / 布将 / 布白…（16 种）
+  - `恐怖屋` ← 恐怖了 / 恐怖感 / 恐怖和 / 恐怖吗 / 恐怖转 / 恐怖放…（10 种）
+  - `陈歌` ← 陈医（「陈医生」）/ 陈育 / 陈列（「陈列室」）（3 种）
 
-## [1.18.0] - 2026-09-29
+  修法三条：
+  1. **按名字看写法种数**（主判据）：真错字是**同一种错法反复出现**（`李元`
+     出现 2~10 次，写法始终是那一个），而误报的特征是**同一个名字同时冒出
+     多种错法**。同一名字的写法种数 ≥3 ⇒ 它的首/尾字是高频字，整组丢弃
+     （`FRAGMENT_SOURCE_VARIANTS`），不再逐条报。
+  2. **两种写法只降级为「疑似」**：写法种数 =2 时仍显示，但不再标「确定」。
+     「确定」的含义收紧为「这个名**只有这一种**错法，且反复出现」。
+  3. **数字对数字的替换不算错字**：`第二病栋` / `第三病栋` 是两个真实地名，
+     差异字都是数字时直接跳过。
+  - 代价（明确接受）：同一名字真被写成三种不同错法时会漏报，由 10b（AI 档）
+    兜底。10a 的价值在信噪比——「满屏 99 条全错」会让作者永久关掉面板，
+    连真错字也看不见。
+  - 单测补 4 条回归用例，数据照抄这次实机误报清单（碎片源整组不报、数字不报、
+    真错字照旧报、两种写法降疑似）。
+
+## [2.15.0] - 2026-10-29
 
 ### Added
 
-- **新增「行囊」（CharacterPack）—— 小说编辑器的角色随身盘点面板**（PRD `docs/character-pack-prd.md` v1.5）。入口独立于侧边栏（顶栏「行囊」按钮 + `Ctrl+Shift+B`），默认形态为**右侧让位**：面板作为 `.nv-page__body` 内的 flex 兄弟项占位，正文重排收窄而非被覆盖；窗口宽 < 1100px 时自动降级为「全屏浮层 + 遮罩」。九个可拼装模块：总属性汇总 / 人物属性 / 装备栏 / 物品栏 / 技能栏 / 境界 / 货币 / 状态效果 / 备注速记
-- **效果性质三档模型（`passive` / `sustained` / `cast`）**：直接修复「主动效果被错误累加进总属性」这一核心缺陷。被动与持续是同一个运算池（先加算、再百分比、最后乘算），**只在展示层分段**；释放型永不参与汇总，只记录参数。汇总管线用两道闸门 `isCounted()`（载体在效 + 性质允许）落地，卡片上以 `被` 灰 / `持` 蓝+独立开关 / `放` 橙+折叠 三色区分
-- **持续型效果自带独立开关**，与载体开关（佩戴 / 技能启用）完全分离；关掉持续开关不影响同一载体下的被动效果
-- **面板级保存与回退**：`保存 (N)` 显示未提交改动数、无改动时禁用；**保存前先对「改动前」状态生成一条盘点记录**作为回退点（滚动保留 20 条），并提供「撤销全部改动」与「撤销到上次保存」两条撤销路径。草稿落主进程表 `novel_pack_drafts`（跨窗口一致、崩溃不丢，800ms 防抖 + 关闭面板必写），有未保存改动时关闭面板弹三选一（默认焦点在安全侧）
-- **自动保存兜底**（默认开、5 分钟无操作），可关闭；关闭后关闭拦截仍然生效
-- **境界与 R25 等级体系双向联动**：复用 `novel_levels` / `novel_links` 不另建表，补齐三个缺口——`novel_levels.sub_levels`（阶内小层）、`novel_levels.power`（战力当量）、渲染层纯函数 `carryRealm()`（阶内进位）。行囊面板同时显示「行囊读数」与「实体面板读数」，分叉一眼可见
-- **数据层新增 10 张 `novel_pack_*` 表 + 运行期菜单/自动保存的 `novel_pack_ui` config 键**：全部按 `character_id` 维度设计、加成表多态（`owner_type` + `owner_id`），为 P2 的多角色与未来新增加成来源预留，无需迁移
-- **主进程新增 `electron/handlers/novel-pack-handlers.ts`**（9 条 IPC 通道）：整文档装载 / 事务保存（写前落回退点 + 失败整体回滚）/ 草稿读写 / 盘点记录 / 境界关系幂等 upsert / 等级项补列。新表一并纳入模板重置的清理链，避免模板重置后行囊数据成孤儿
-- **纯函数层与单测**：`pack-utils.ts`（两道闸门、汇总管线、熟练度缩放、阶内进位、进制/阈值换算）+ `pack-realm.ts`（境界读写口子），配套 45 例单测
-- **功能登记表 `docs/character-pack-progress.md`**：逐条登记 REQ-001~048 的完成状态、落点文件、缺口与下一批建议顺序
-
-### Fixed
-
-- 修复行囊「已绑定实体时小层读不出」——`novel_links.note` 只存 `{sub}`，此前复用了要求 `levelId` 存在的解析函数，导致小层永远回落成 1（表现为「小层改了、重开面板又回到第 1 层」）；现由专职的 `parseSub()` 解析并加 4 例回归测试
-- 修复槽位替换时同一槽位出现两件装备——`replaceInSlot` 此前只改新物品的槽位、不卸下原占用者，`isItemActive` 判定 `同类件数 > 容量` 会让**两件双双失效**（界面无异常，只有总属性悄悄回落）；现改为先卸原占用者再放新物品
+- **设定体系的 AI 生成 / 拓展（R-AI-18，B7.5 插入项）**：设定中心（作品窗口右栏 →
+  设定）与全局设定中心（跨书共享库）的「阶梯」卡头新增「AI 生成」，给一个分类名
+  就能排出一条有序阶梯。
+  - **两档模式**：「整理整套」（空分类的场景，从入门排到顶端）与「拓展后续」
+    （接着现有末端往下排）。不提供「覆盖现有」——等级行会被角色卡「当前境界」与
+    行囊境界换算按名字引用，覆盖式重写会让这些引用悬空。
+  - **候选不自动入库**：与实体抽取、关系建议同一纪律。生成只产候选，
+    勾选后点「加入阶梯」才追加，写入走既有的批量追加通道
+    （`onBatchAddLevels`），**没有新增 IPC、没有第二条写通道**。
+  - **重名禁勾**：名字先归一（剥序号前缀「1. / ① / 第三级」、剥书名号引号），
+    再与现有阶梯比对；重名项标「已有」且不可勾，勾了也会被过滤掉。
+  - **不发送正文**：只送分类名、分类说明、现有阶梯名与作品题材，
+    因此属 L1/L2，**不弹整章授权**（弹窗底部如实写明「不发送正文」）。
+  - **由高到低排列的阶梯只给拓展**：「整理整套」按升序产出，而批量追加只会落在
+    末尾 —— 在 desc 阶梯上接上去正好把顺序颠倒。此时选项禁用并把原因写在面板上，
+    而不是让它变灰了却不说为什么。
+  - 全局库不传作品题材：库里没有「这一本书的题材」这回事，硬猜会把某本书的口径
+    塞进公共库。
+  - AI 不可用时（总开关关闭 / 未配置模型）入口整块不渲染；只是没配全时按钮禁用
+    并说明缺哪一项。降级路径是既有的「批量生成（逐行输入 / 模板）」，无功能缺口。
+- **prompt 意图 `levelGen`**：`assembleLevelGenSpec` + `json-array` 两字段契约
+  （`name` / `note`）。`LIMITS.levelGen` 的采集上限是**全 0**：排一条阶梯只需要
+  作品名与题材，要素卡在这里是纯噪音，一张都不送。
+- **`src/shared/novel/level-gen.ts`（候选纯函数）**：归一、列表内去重、
+  与现有阶梯查重、序号接着现有往下排、条数夹取。18 条单测覆盖
+  「剥序号但不误伤『三层』『九品』」「重名判定先归一」「条数越界」等口径。
+- **帮助手册补「等级生成」词条**：`AI_INTENT_LABELS` 新增 `levelGen` 后
+  `guide-doc.test.ts` 的「每个 AI 意图都有可检索词条」会立刻红——这条守卫逼着
+  新功能当次进手册。
 
 ### Changed
 
-- `NovelPage` 的 Esc 优先级链接入行囊：**设置 → 行囊 → 快照 → 专注模式**；行囊面板内部用自己的捕获阶段监听先处理「自己的浮层 / 未保存改动」，避免一次 Esc 触发两件事
-- `.nv-page__body` 增加 `position: relative`，作为行囊窄窗浮层形态的定位参照
+- **名字归一上移到 `src/shared/novel/name-normalize.ts`**：实体抽取（R-AI-08）与
+  等级生成（R-AI-18）都要剥「模型爱加的包裹符号」，原先那份私有实现在
+  `entity-extract.ts` 里。两处各写一份正则必然漂移，历史教训是
+  「李玄（青冥宗）」被削成「李玄（青冥宗」——卡名肉眼正常、检索与去重全对不上。
+  现在剥包裹逻辑只有一份，`normalizeExtractName` 保留为语义包装，调用点不变。
+- **`LevelSequence` 增加可选 `onOpenAiGen`**：不传就不渲染入口（与模板能力
+  「不传而不是传空实现」同一纪律）。AI 关闭、引用自全局的只读分类都不传，
+  卡头不会出现点了没反应的按钮。
+- **`SettingCenterProps` 增加 `workGenre`**：只给 AI 排阶梯用；全局设定中心不传。
 
-## [1.17.0] - 2026-09-29
+### Fixed
+
+- **条数口径只有一处定义**：面板的 `LEVEL_COUNT_RANGE` 与提示词的
+  `clampLevelCount` 是两份实现（受「AI 层不 import novel 域」的分层约束），
+  单测按采样点逐一比对两者，漂移即红；同时钉住「清空输入框（0）回落默认值，
+  而不是夹到下限」这一容易被写成两种行为的细节。
+
+## [2.14.0] - 2026-10-29
 
 ### Added
 
-- **新增小说版构建（`pnpm electron:build:novel` / `pnpm dev:novel`）**：以 `CHECKIN_EDITION=novel` 构建的小说专用形态——NovelWindow 为主窗口（登录后唤起、关闭进托盘），附 SettingsWindow；不打包 BaseWindow。`electron/edition.ts` 成为版本清单唯一事实源（入口路径 / 各版本窗口 / 主窗口归属），vite input 与主进程运行时共用同一份清单，并新增 `electron/edition.test.ts` 护栏测试（入口文件存在性、版本差异语义、主窗口归属、env 解析）
-- **新增 SettingsWindow（全局设置窗口）**：外观（主题切换，经既有广播机制全窗口同步换肤）+ 账号（当前邮箱展示 / 退出登录）两个分区；后续字体、快捷键等设置项按「一个 section + 一个条目组件」增量追加。窗口即关即销、单实例唤起，入口在 NovelWindow 标题栏（novel 版专属，经 WindowHeader 新增的 `actions` 插槽）
-- **新增退出登录链路**：`user-handlers.ts` 导出 `logoutUser()`（清除 authDb 缓存用户）；主进程 `auth-logout` 通道负责编排——销毁设置窗与主窗口（防止切换账号后残留上一账号的渲染层状态）后回到登录窗
-- **SettingsWindow 全版本开放 + 吸收用户页**：原 BaseWindow `UserPage`（邮箱编辑）迁移为 SettingsWindow 的「个人资料」分区（外观 / 个人资料 / 账号三区），`/user` 路由与侧边栏「我的」入口移除；SettingsWindow 纳入全版本窗口清单（含 lite），BaseWindow 标题栏新增「设置」入口（`WindowHeader` 的 `actions` 插槽，`BaseWindow/components/SettingsEntry`）唤起同一设置窗口
+- **关系推断（R-AI-15，B7 判据）**：人物关系网络窗口顶栏新增「从正文推断关系」。
+  选来源章节 → 模型从这一章里读出「谁和谁是什么关系」→ 候选边列表（两端 +
+  关系名 + 置信度 + 出处句）→ 勾选 → 一次写入并同步回主窗口。
+  - **候选一律不上图**：写入只发生在点「写入关系图」，走的是既有的
+    `novel-graph-commit` 单事务（rev 乐观锁 + 唯一广播出口 `novel-links-changed`），
+    不另起写入路径——图与库不一致的成因九成是「存在第二条写通道」。
+  - **低置信默认不勾**：误判关系（把仇人判成恋人）会直接画在图上给作者难堪，
+    而漏一条只是回去再点一次；这个不对称决定了高 / 中置信默认勾、低置信留空。
+  - 端点必须在要素库里解析得到（含别名）：模型爱顺手编名字，解析不到的计入
+    「另有 N 条提到的人物还没建卡」并如实告诉作者，不静默丢弃。
+  - 去重键是「端点对 + 关系名」而不是端点对：`novel_links` 允许平行关系
+    （既是师徒又是父子是合法的），只看端点对会把它们错杀；端点对本身无向，
+    正反向算同一对。
+  - 章节正文**懒加载**：关系窗口平时只取元数据（`editorLoad(false)`），
+    只在打开弹层时才拉正文——否则「打开关系图」等于「打开一本书」。
+  - 与摘要 / 抽取共用同一个 L3 授权弹窗，字数估算与实际发送同源（同一份
+    `buildChapterScopePayload` 产出）。
+- **共用候选列表 `AiCandidateList`（B7 判据①）**：抽取设定与关系推断的候选
+  行收敛成一个组件（勾选框 + 标题 + 右侧标签/下拉 + 一句话说明 + 出处句）。
+  此前每处各写一遍，结果是三处候选行的 aria-label 叫法、禁用态样式、证据句
+  截断口径都不一致。组件**不做空态、不改状态**：空态文案差异极大（「还没扫」与
+  「扫完 0 条」混用会让作者以为已经查过了），勾选态一律由调用方持有。
+- **prompt 意图 `relation`**：`assembleRelationSpec` + `json-array` 五字段契约
+  （`from` / `to` / `relation` / `confidence` / `evidence`）。system 里带**端点
+  白名单**（只能用已有要素的名字，逐字照抄）与**已有关系清单**（别重复输出），
+  置信度只允许 `high / medium / low` 三档并写明何时用哪档。
+- **帮助手册补「关系推断」词条**：`AI_INTENT_LABELS` 新增 `relation` 后，
+  `guide-doc.test.ts` 的「每个 AI 意图都有可检索词条」会立刻红——这条守卫的
+  用意就是逼着新功能当次进手册。
 
 ### Changed
 
-- **构建开关由 `CHECKIN_LITE` 升级为 `CHECKIN_EDITION`（full | lite | novel）**：三处 define（vite 渲染层 / 主进程 / preload）从布尔对齐改为取值对齐；渲染层经 `src/shared/edition.ts` 的派生布尔使用，业务代码不再直接引用编译常量。`electron:build:lite` 脚本同步改为 `CHECKIN_EDITION=lite`，lite 版行为不变（不打包小说窗口、主窗口隐藏入口）
-- **主进程主窗口语义参数化（primary window）**：main.ts 抽出 `PRIMARY_ENTRY` / `PRIMARY_WINDOW_NAME`，登录落点（login-confirm）、托盘点击、second-instance、activate、DevTools 兜底全部指向主窗口——full/lite 版为 BaseWindow（注册名 "main"），novel 版为 NovelWindow（注册名 "novel"）。NovelWindow 形态随版本分叉：novel 版为主窗（close 进托盘、启动预创建、登录后唤起），full 版保持即关即销子窗口
-- **IPC handler 注册按版本过滤**：novel 版只注册 novel / user / httpSession（todo / memo / activity / checkin / ledger 随 BaseWindow 一并不打包），活动提醒轮询仅在含 DailyPage 的版本启动
-- **`worker-window-open` 通道更名为 `novel-window-open`**，仅在 full 版响应；preload 白名单同步新增 `settings-window-open` / `auth-logout`
-- **WorkerWindow 更名 NovelWindow、WorkerFloatButton 更名 NovelFloatButton**：目录、窗口注册名、CSS 类名（`worker-*` → `novel-*`）、注释与测试路径引用全部同步；`vitest.config.ts` 的 define 对齐改为 `__CHECKIN_EDITION__: 'full'`
+- **`ExtractPanel` 改用共用候选列表**：面板只留来源选择、动作、空态与底部确认，
+  行结构交给 `AiCandidateList`；类型下拉仍走 `EntityTypeContext`（自建类型在内）。
+  已存在的条目依旧禁用勾选、不给类型下拉——它根本不会被写入。
+- **collector 的章节片段改为白名单**：原先用「排除 naming / summary / extract」
+  的黑名单，每加一个自带正文的意图就要记得补一行，漏了就悄悄把 prompt 翻倍。
+  现在只有 `polish` / `transform` / `continuation` 采集 `chapterSnippet`，
+  新增意图默认不采集。
+- **关系名字数上限收敛成一份**：`RELATION_NAME_MAX` 移到
+  `shared/novel/relation-suggest.ts`，手工连线的输入框与 AI 产出的关系名共用同一个
+  上限。两处各写一个 24 的话，AI 能写进库里的标签会比作者手工能输入的长，图上就会
+  出现一条「作者改不回同款」的边。
+- **关系窗口的数据带上题材**：`useRelationData` 增加 `workGenre`，让关系推断的
+  prompt 与作品窗口的其它 AI 入口用同一个作品背景（缺了会退化成「题材未设置」，
+  推断出的关系名也跟着走味）。
 
 ### Fixed
 
-- 修复 ThemeSwitcher 气泡在设置窗口顶部被窗口边界截断——为侧边栏图标形态调的 `align offset [20,-20]`（上提贴合按钮）此前被所有形态共用，现仅 icon 形态保留；button 形态（设置窗口）改用无竖向偏移，避免面板被推出窗口外
-- 修复登出后重启时主进程刷「尚未初始化当前用户数据」报错——登出清除了缓存用户，重启时 userDb 未初始化但主窗口仍被无条件预创建，页面挂载即请求 todo/checkin/ledger 数据全部失败；现改为有缓存用户才预创建主窗口，无缓存时等 `login-confirm` 切换完 userDb 后再创建
+- **关系推断失败时不清候选**：`commitLinks` 返回 false（stale / 端点已删 / 写库
+  失败）时保留候选与勾选态，作者重按即可；清掉会让人以为已经写进去了。
 
-### 兼容性说明
-
-- productName / appId / userData 目录均未改动：novel 版与 full/lite 版共享同一用户数据目录，novel_* 表等数据天然互通，无需迁移
-- 未登录（缓存用户为空）时三版本行为一致：先展示登录窗，确认后唤起各自的主窗口
-
-## [1.16.0] - 2026-09-23
-
-### 性能优化
-
-- **性能优化**：NovelPage 编辑器草稿与打字统计抽到 `NovelPage/store/useNovelEditorStore.ts`（P0-1）：`EditorPane` 只订阅 `draft[activeId]`，`ChapterTree`／`SupportPanel`／`NovelTopBar`／各常驻抽屉不再因每次按键重渲染；打字重渲染组件数由整棵编辑器树（20–30+）降为编辑器壳 + 状态栏
-- **性能优化**：NovelPage 术语悬停状态抽到 `NovelPage/store/useHoverStore.ts`（P0-2）：仅 `HoverEntityCard` 订阅 `target`，`NovelPage` 根不再读取 `hover.target`；鼠标扫过高亮正文时由「每秒数十次 × 整树」降为仅 1 个浮层组件，`EditorPane` 的 term hover/leave/click effect 依赖比较随之简化
-- **性能优化**：NovelPage 要素出场章数索引增量缓存 `NovelPage/store/useAppearanceStore.ts`（P0-3）：原 `useMemo` 依赖 `[chapters, terms]`，自动保存每写一次就全书重扫 `findTermMatches`；改为按章内容级缓存，只重扫 `content` 引用真变的章（通常 1 章），无任何变化连 `set` 都不做；`terms` 按引用守卫（引用不变即整表复用），CodeMirror 标注层不再被无意义重建
-- **性能优化**：MemoPage 编辑与筛选状态抽到 `MemoPage/store/useMemoStore.ts` + `useMemoSearchStore.ts`（P1-1）：`content` 上提到 store，`MemoEditor` 只订阅 `content`、`MemoSidebar` 只订阅 `files/selected`；全文转义高亮改为订阅组件内按「已执行查找词」派生（逐字输入搜索词不再触发全文转义）；删去 `useMemoPage.ts`，根不再汇集高频状态，逐字输入不再带动侧栏虚拟列表与全文高亮
-- **性能优化**：LedgerPage 筛选状态抽到 `LedgerPage/store/useLedgerViewStore.ts`（P1-2）：周期/区间/关键词/类型/分类/饼图口径进 store，配合 `LedgerTimeline`/趋势/饼图组件 `memo()`（筛选结果以 props 传入、身份稳定），与关键词输入彻底解耦，逐字筛选不再重绘三张图表
-- **性能优化**：CodePage 邮箱查询改为显式「查询」动作调度（P1-3）：`useCodePage` 移除「输入 → effect → fetch」链，月度统计与列表查询统一收敛到 `loadData` 显式入口；输入 `zhangsan@example.com` 不再发 15+ 次请求，月度统计改按「已提交邮箱」而非输入框草稿刷新
-- **性能优化**：路由切换保活（P1-4）：上述 store 均为模块级单例，跨路由天然保活；MemoPage 的 `selected`/未保存 `content`、LedgerPage 的 `keyword/type/categoryId/pieType` 切走再切回不再丢失
+## [2.13.0] - 2026-10-29
 
 ### Added
 
-- **新增 6 个模块级 Zustand store 及配套单测**：`useNovelEditorStore`（14 例）、`useHoverStore`（7 例）、`useAppearanceStore`（7 例）、`useMemoStore`（12 例）、`useMemoSearchStore`（7 例）、`useLedgerViewStore`（6 例）；覆盖增量缓存（无变化不 set）、悬停订阅隔离、筛选解耦、显式调度防抖与换章保存等回归点
+- **一致性校对（R-AI-10a，B6 判据①）**：右栏「工具」新增一张**纯本地**工具卡。
+  拿要素卡的人名 / 别名与境界阶梯去核全书正文，报出两类问题：差一个字的人名
+  （`李玄` / `李元` 这种同姓近形）与没登记过的境界写法（`金丹后期` 没进别名表）。
+  每条带出现次数与前后文证据句，点一行跳到正文第一处。
+  - 设计前提是「人名与境界都有明确比对基准」——所以它**不依赖 AI**：不配置模型
+    也能用。这不是「AI 不可用时的降级」，而是这类判定交给模型更贵、更不可复现。
+  - 近似匹配用对称删除索引（SymSpell 思路）做等长「差一字」检索，前置过滤靠
+    「首字或尾字必相同」做到零漏判。60 万字（200 章 × 3000 字）/ 60 张卡实测：
+    单章 < 16ms、全书 < 6s。扫描按 8 章一片让出主线程（不引 Web Worker：打包、
+    几百 MB 字符串的结构化克隆、取消语义的成本都高于收益）。
+  - **只提示、绝不自动改正文**（PRD 风险应对①）：一条误报如果自动改了一个字，
+    作者要花十倍时间去核对那些自己没写错的地方。
+  - 「没扫过」与「扫完 0 问题」是两个空态，文案分开写——前者说「点扫描」，
+    后者说「扫完 N 章，人名写法与境界档位都对得上」。
+- **抽取设定 / 实体抽取（R-AI-08，B6 判据②）**：右栏「工具」新增第四张卡。
+  选来源章节（默认当前编辑章）→ 抽取 → 模型把章内的人物 / 地点 / 势力 / 物品 /
+  境界扒成候选卡，作者勾选后一次建卡。
+  - **候选一律不落库**：落库只发生在点「建卡并入库」，由
+    `handleExtractConfirm` 过滤「勾选 且 不重名」后调新的批量接口。重名项即便被
+    勾上也写不进去——覆盖作者手写的简介不可逆，而补一句简介只要点开卡片改一次。
+  - 已存在同名（含别名）要素的条目在列表里标「已存在」并禁用勾选，右侧不再给
+    类型下拉：它根本不会被写。
+  - 候选可**就地改类型**（模型认错类型时不必先建卡再改）；类型下拉走
+    `EntityTypeContext`，自建类型也在其中。
+  - 输出用 `json-array` 契约（`name` / `type` / `summary` / `evidence`）：一屏
+    十几条候选各带出处句，自由文本没法稳定解析。模型没给标准 JSON 时如实标
+    「已按文本兜底解析，条目可能不全」。
+  - 与摘要共用 L3 授权：整章正文出境前先弹同一个授权弹窗（范围选择真正生效），
+    已授权后每次抽取仍确认一次（REQ-060）；同一章点「重新抽取」不再重复确认。
+- **IPC `novel-entity-batch-save`**：一批要素卡单事务写入（`db.transaction` 内
+  预编译一次语句再循环 upsert），成功后向其余窗口广播 `novel-entities-changed`。
+  为什么不用「循环调 `novel-entity-save`」：20 条候选 = 20 次 IPC + 20 个事务，
+  中途失败会留下建了一半的卡，而作者此时看到的是一屏「已建卡」的候选。
 
 ### Changed
 
-- **docs/zustand-store-review.md 同步更新**：现状由「仅 1 处 store（useSearchStore）」刷新为全项目 7+ 处落地，并在文末列出已落地清单
-- **AGENTS.md 6.2 补充「已落地 store 清单」**：登记各页面模块级 store 的路径与职责，便于后续页面沿用 runner 注册范式
-- **Worker 书页输入控件全面接入组件库（AGENTS 6.1.2）**：右栏 12 处（大纲梗概行内编辑、伏笔标题 / 说明、要素搜索框与详情页名称 / 别名 / 一句话 / 性格 / 关系名、灵感速记框 / 行内编辑 / 搜索框、检索全书检索框）+ 范围外扫尾 8 处（左栏章节 / 卷改名、章节树搜索、章节快速跳转浮层、编辑器标题改名、设置抽屉章节 / 卷后缀、书架灵感速记框）原生 `input` / `textarea` 全部换为 antd `Input` / `Input.TextArea`；统一 `variant="borderless"`，外观继续由既有面板类以 `.类名.ant-input` 复合选择器承载（与 `.ant-select` 变量覆盖同思路，规避与组件库样式加载顺序的耦合），输入法守卫、Enter / Esc / ↑↓ 快捷键、受控值与 aria 标签行为不变；要素详情页输入顺带补齐面板密度外观（原为浏览器默认样式）。编辑器内查找（Ctrl+F）为 CodeMirror search panel 自渲染 DOM，不在 React 层，维持原生
+- **L3 授权弹窗改为摘要 / 抽取共用一份**：`buildSummaryPayload` 更名
+  `buildL3Payload`，发送量估算抽成 `estimateScopePayload` 供两个入口复用。
+  原因与 review G4 同一条：授权弹窗承诺的「本次将发送约 N 字」必须与实际发送
+  内容同源，两个功能各算一套必然漂移。弹窗的 `open` 现在看两个 pending，
+  确认 / 取消按「谁在等」分派。
+- **工具箱头部计数不再写死**：「2 项可用 · 2 项规划中」改成按真实入口开关计算
+  （AI 不可用时追加「抽取需配置 AI」）。原先是关系网络上线后仍说 2 项，
+  属于面板自己在说谎。
+- **`ExtractPanel` 的会话状态由页面持有**（`ExtractActions` 动作组，与
+  `NamingActions` / `InspirationActions` 同一约定）：候选与「已建 N 张」在切 Tab
+  后仍留在面板上；放在面板内部 state 里一关就没。
 
 ### Fixed
 
-- **字号规范全项目扫尾**：BaseWindow / LoginWindow / shared 其余 20 个 scss 完成 ≥12px、无小数、尽量双数映射（含 CodePage 两处内联 `fontSize: 11` → 12），全项目 grep 复核零残留
-- **要素库类型 chips 选中项自动居中**：chips 行是隐藏滚动条的横向容器，类型较多时选中项可能落在两侧渐隐区。`EntityPanel` 切换筛选后按视口矩形差值把选中 chip 滚动到行中间（首次挂载恢复筛选不做动画，jsdom 环境守卫跳过），无需再手动 Shift+滚轮寻找
-- **修复 useNovelEditorStore 测试用例缺步**：「flushSave 在换章后仍能落库旧章的在途草稿」用例首轮 flush 已清掉在途防抖，后续切章时并无在途可 flush（store 行为正确）；补一次 c1 真实输入制造在途，还原用例本意，14/14 通过
-- **主题系统新增「高对比辅助」变量组（四主题同步）**：`--app-text-strong` / `--app-text-secondary-strong`（比 text / secondary 深（暗色亮）一档，用于 11px 上下的侧栏 / 抽屉小字）与 `--app-primary-weak-strong` / `--app-success-weak-strong`（高饱和弱底，用于折叠面板头）。修复 mint（薄荷）主题下 TodoPage 两个折叠板头完全同色——mint 的 primary 与 success 原本同为 `#2fa57e`，弱底 `primary-weak` / `success-weak` 均为 `#dcf2e8`；现 mint success 偏移为叶绿 `#4f9d5f`（antd `colorSuccess` 同步），两板从根上可分辨。Worker 书页右栏（大纲 / 灵感 / 检索 tab、章节行、一句话梗概、字数）与历史快照抽屉的小字号文本由 `text-muted` / `text-disabled` 升到高对比档，浅色主题下对比度由约 2~3:1 提升至 8:1 以上
-- **WorkerWindow + TodoSection 字号规范化（≥12px、无小数、尽量双数）**：全窗口 35 个 scss 统一映射（9~12.5→12、13/13.5→14、15→16、19→20），消除 10.5px / 11px 级别的费眼小字；新规范已记入 AGENTS 约定，后续页面沿用
-- **NovelPage 换章丢保存与今日字数虚增**（P0-1 收尾，修复抽 store 过程引入的回归）：
-  - 程序化文档同步（切章灌入正文）现携带「变更前正文」作为字数基线——此前基线退化为空串，首次切到无草稿的章节会把整章字数误计入今日新增/今日累计
-  - 防抖保存记录所属章节：换章后第一次真实输入时，旧章的在途保存立即落库，不再被新章的防抖重置悄悄取消；关窗/手动 flush 同样按章节定位，不再依赖「当前活动章」
-- **修复右栏要素库类型 chips 行导致的列表高度跳动**：全局滚动条样式的未悬停规则（`scrollbar-width: thin`，特异性 0,2,0）会压过 `.nv-chips` 自己的 `scrollbar-width: none`（0,1,0），而悬停时页面规则又胜出——横向溢出的 chips 行（类型较多放不下时）随指针进出反复出现/消失滚动条占位，下方列表跟着频繁弹跳。现把标准属性 `scrollbar-width` 收敛为 `*` 上的一次性恒定声明（宽度永远 thin、页面覆盖两种状态下都生效），滚动条只按悬停切换颜色，不再切换占位；`SearchPanel` 最近搜索 chips 的同类隐患一并消除
-- **chips 行溢出边缘渐隐提示**：chips 行滚动条为隐藏设计，溢出内容此前只能靠 Shift+滚轮盲滚到达。新增 `SupportPanel/useEdgeFade.ts` 按滚动位置探测两端不可见内容（scroll + ResizeObserver + MutationObserver，状态不变不触发渲染），配合 `.nv-chips` 的 `mask-image` 渐变遮罩，左侧/右侧还有内容时对应边缘渐隐 18px；要素库类型筛选与最近搜索两处 chips 行均已接入
+- **`normalizeExtractName` 会把「李玄（青冥宗）」削成「李玄（青冥宗」**：
+  原实现是「剥首部开符号」+「剥尾部闭符号」两个正则，尾部的 `）` 被单独削掉、
+  头部的 `（` 却留着，于是卡名肉眼看着没问题、检索与去重全对不上。这类名字并不
+  罕见（模型爱把「名字（身份）」写成一条）。改为按「整串是否被一对包裹符号包住」
+  判断，单端孤立符号才单独剥，多层嵌套（`《『青云志』》`）逐层剥。
+- **帮助手册补两条词条**：「一致性校对」「实体抽取」。`AI_INTENT_LABELS` 新增
+  `extract` 后，`guide-doc.test.ts` 的「每个 AI 意图都有可检索词条」会立刻红——
+  这条守卫的用意就是逼着新功能当次进手册，而不是等半年后有人问「AI 能做什么」。
 
-## [1.15.0] - 2026-09-22
+## [2.12.0] - 2026-10-28
 
 ### Added
-- **全书检索状态抽到模块级 Zustand store**：新增 `NovelPage/store/useSearchStore.ts`
-  （依赖 `zustand ^5.0.15`），持有 keyword / scope / hits / loading / recent 与防抖
-  调度动作（300ms、请求票据丢弃过期响应、同关键词复用缓存）；检索实现由组件挂载时
-  经 `registerSearchRunner()` 注册、卸载时注销，注册本身不触发任何请求
-- **检索 store 单测**：`store/useSearchStore.test.ts` 5 例（防抖时机、过期响应丢弃、
-  同关键词切作用域零重查、要素名作用域零往返、清空作废在途请求）
 
-### Fixed
-- **检索跳章仍会闪一次**：根因不是 `activeChapterId`，而是点命中后编辑器失焦保存 →
-  bundle 更新 → `chapters` 数组重建 → `searchBook` 身份变化 → SearchPanel 检索
-  effect 重跑 → 骨架屏闪现。检索动作从 effect 依赖数组里彻底移出后，父层任何重渲染
-  都不会再发起检索；顺带修掉「切走 Tab 再回来关键词与结果丢失」
-- **起名器切换类型/风格/性别/数量后列表仍是旧类型**：四个 onChange 里用
-  `setTimeout(() => regenerate(...), 0)` 读的是上一次渲染的闭包（`effectiveKind`
-  仍是旧值）。改为 `buildBatch(显式参数)`：把变更后的值当参数传入，不再读闭包
+- **AI 意图中文的单一产地 `shared/ai/intent-labels.ts`（REQ-064）**：意图落库时
+  不止基础形态（`naming` / `polish` / `transform` / `continuation` / `summary`），
+  还有变换子类型（`transform:tone` 等）与 2.7.0 之前的历史值（`generate`）。
+  「AI 记录」与「用量与效果」两页原先各维护一份映射，必然漂移——实际表现就是
+  看板上赤裸裸显示 `transform:tone`。现在把「基础意图表 + 变换子类型 + 历史值」
+  摊平成 `AI_EVENT_INTENT_LABELS`，并提供带兜底的 `intentLabel()`（未登记时回落
+  原始值，只读页面不会因一条陌生记录崩掉）。基础意图的中文仍只有
+  `prompt/registry.ts` 一份、变换子类型仍只有 `TRANSFORM_KIND_LABELS` 一份，
+  本文件只做派生，不另抄文案。
+- **`ai-config-changed` 广播（REQ-063）**：`ai-config-save` 成功后由主进程
+  `windowManager.broadcast` 通知全部窗口，`useAiAvailability` 订阅后重读配置。
+  原因：AI 入口散布在作品窗口（六个）与设置窗口（导航两页）里，而这些窗口在
+  用户改开关时早就开着——只靠「挂载时读一次」，用户看到的是「开关点了没反应，
+  要重开窗口才生效」。这里**刻意不排除发送窗口**（与 `global-setting-changed`
+  的防回声惯例相反）：设置窗口自己也是消费者，排掉它就会停在一个旧状态上；
+  回声无害的依据是监听方只做「重读配置」这件幂等的事。
 
 ### Changed
-- **起名器四个原生 `<select>` 换成 antd `Select`**（类型／风格／性别／数量）：
-  带禁用项（当前风格不支持的类型置灰）、`popupClassName="nv-name__dropdown"`
-  单独声明弹层样式（portal 不继承组件根选择器），尺寸与配色覆盖为面板密度 +
-  `var(--app-*)`；同步移除 select 上的 Enter 拦截（组件库自带键盘交互）
-- **全部原生 `<select>` 换成 antd `Select`**（共 7 处）：起名器 4 处（类型／风格／
-  性别／数量，当前风格不支持的类型置灰）、要素详情 2 处（关联要素／等级体系）、
-  大纲 1 处（伏笔埋设章节）。均带 `popupClassName` 声明弹层样式（portal 不继承
-  组件根选择器），尺寸与配色覆盖为面板密度 + `var(--app-*)`；空值改用
-  `placeholder` 表达（「选择要素…」「卷级伏笔（不绑具体章）」）而不再是空 option
-- **测试环境补齐 jsdom 缺失 API**：`vitest.setup.ts` 增加 `ResizeObserver` 与
-  `matchMedia` 兜底——antd 6 的 Select / 虚拟列表挂载即用到，缺失会直接抛
-  `ReferenceError`；同时新增起名器组件回归测试（切换类型必须带新 kind 调用生成器，
-  锁定「旧闭包」这一回归点），大纲埋设章节用例改为走组件库 Select 交互
-- **AGENTS.md 新增 6.1.2「UI 组件库优先规范」**：下拉/日期/弹层/开关等一律用
-  Ant Design，禁止原生控件替代；列出三类例外（编辑器、面板即时输入、行内自增
-  输入）；明确弹层必须用 `popupClassName` 命中样式
-- **AGENTS.md 6.2 补充 Zustand 适用信号**：子组件 effect 依赖父层回调、父层重渲染
-  清空子状态、面板卸载丢状态——命中任一即建模块级 store，且注册动作不得触发请求
-- **换作品时清空检索缓存**：检索 store 是模块级的，`SupportPanel` 监听
-  `activeWorkId` 变化调用 `clear()`，避免把上一本书的命中带到新作品
 
-## [1.14.0] - 2026-09-22
+- **AI 总开关关闭后，所有 AI 功能点一律不渲染（REQ-063）**：原先是「禁用 +
+  Tooltip 说明原因」，用户要的是一个没有 AI 的编辑器，灰按钮本身就是一句
+  「这里本来有 AI」的提示。新增统一口径 `AiAvailability.hidden`（纯函数
+  `isAiHidden`）：总开关关闭、或主进程 AI 通道不在（lite 版 / 未登录）→
+  **不渲染**；开关开着只是没配全模型 / Key / 地址 → 仍保留「禁用 + 说明」，
+  因为那时用户恰恰需要看见入口才知道去补哪一项。首次加载中也算 hidden，
+  宁可晚一拍出现也不要「先显示再消失」的闪动。落地位置：
+  - 作品窗口：正文右下角的续写悬浮按钮、右键菜单的「文本变换」整块（标签 +
+    润色 + 五个变换，菜单只剩「记入行囊」「新建资料卡」）、章节树行内闪电
+    （AI 摘要，新增 `showSummary`）、起名面板的「AI 起名」与其描述输入框
+    （**本地「换一批」照常可用**）、作品管理菜单里两处「题材用于 AI 起名与
+    润色」的提示、书架「新建作品」的题材提示，都改成不提 AI 的中性说法。
+  - 设置窗口：「AI 记录」「用量与效果」两页从导航与渲染里消失（只读视图，
+    卸载无损）；「AI 配置」页**必须保留**——开关就在那一页上，收掉它用户
+    再也开不回来。页面清单从模块级常量改成随状态派生的 `buildPages()`；
+    当前页正好落在被收起的页时回退到「AI 配置」，不留空白内容区。
+- **设置页「启用 AI 助手」关闭态文案**：改成「关闭中：写作工具里的 AI 入口与
+  提示全部不显示；开启后才会调用模型」，让开关的后果在关闭前就可见。
+
+### Fixed
+
+- **「平均耗时」恒为 `-`（REQ-064）**：`ai-event-stats` 把 `COUNT(*)` 与
+  `AVG(duration_ms)` 写在同一条 `WHERE step = 'trigger'` 里，而 `trigger` 是在
+  发起请求那一刻落的、**从不带 `durationMs`**（只有 success / fallback 带），
+  于是平均值恒为 0、前端 `durationText(0)` 显示 `-`，看上去像指标没做完。
+  现在调用次数仍按 `trigger` 数（一次请求算一次），耗时改按终态事件
+  `step IN ('success', 'fallback')` 聚合（`cancel` 不算：它没有「跑完」的含义）。
+- **「用量与效果」的 intent 分布每行缺左右边距（REQ-064）**：
+  `.settings-usage__row` 原为 `padding: 8px 0`，而上方指标卡是
+  `padding: 12px 14px`，于是分布行的标签左缘贴着卡片边框、右边次数顶到边。
+  改为 `padding: 8px 14px` 与指标卡内文对齐，行间分隔线保留、末行不画。
+  守卫以「编译 SCSS 后断言两处水平内边距相等」的形式钉住（jsdom 量不出布局）。
+
+## [2.11.0] - 2026-10-28
 
 ### Added
-- **右栏支撑面板宽度可调并记忆**：新增纯函数 `clampPanelWidth()`（`novel-utils.ts`，
-  区间 280–460，非法值回退基准），`LAYOUT` 新增 `rightRailMinWidth` /
-  `rightRailMaxWidth`，基准宽度 322 → 340；`useNovelViewState` 新增 `rightWidth` /
-  `setRightWidth`，挂载时经 `novel-config-get`（键 `novel_panel_width`）恢复、
-  变更后 300ms 防抖写回（`novel-service.ts` 的 `fetchPanelWidth` / `savePanelWidth`）
-- **工具箱启动器**：新增 `components/SupportPanel/components/ToolLauncher/`，工具
-  Tab 改为二级面板——起名器可直接进入，人物关系网络（R27）/ 架空地图（R28）以
-  「规划中」占位卡呈现，避免拿不可用的入口占版面
-- **大纲伏笔来源**：`OutlineNode` 的 foreshadow 节点新增 `source` 字段，
-  `buildOutlineTree` 绑定章时拼「第三章 断碑」标签，卷级伏笔回退
-  「卷级伏笔 · 不绑定具体章」
-- **面板通用零件**：新增 `SupportPanel/panel-primitives.scss`（`.nv-field` /
-  `.nv-sub` / `.nv-chips` / `.nv-sechead` / `.nv-empty` / `.nv-mini` / `.nv-kv` /
-  `.nv-ghost`），供五个 Tab 与二级面板复用，避免各面板各写一份
+
+- **AI 续写改成正文右下角的悬浮按钮（REQ-061）**：顶栏右侧挤了行囊 / 快照 /
+  设定 / 排版 / 导出之后，再加一颗闪电已经分不清哪颗是「写作时高频」；
+  而续写本来就是「对着正文、在光标处接着写」，贴着正文区右下角更符合直觉。
+  新组件 `ContinueFab`（`nv-contfab`）：胶囊形、38px 高、让开 32px 状态栏；
+  AI 不可用时禁用并在 Tooltip 说明原因；生成中显示 loading 态；阅读模式下自动隐藏。
+  顶栏那颗闪电与其 `onContinue` / `aiAvailable` / `aiUnavailableText` 三个 props 一并删除。
+- **续写逐字上屏（REQ-058）**：`ContinuationPreview` 新增 `useTypewriter`——
+  已到达的文本按 24ms/字的节奏揭示，落后超过 8 字时按比例追赶。
+  原因：网络是「一块一块到」的，服务商一次可能吐 30–80 字符，一帧糊上屏
+  在作者看来就是「不是流式，一段一段蹦」。落后再多也只会「快进」，不会丢字。
+  「插入」按钮在上屏完成前保持禁用（避免浮层只有半截字、正文却整段插入）。
 
 ### Changed
-- **右栏骨架改为四段式**（面板头／分段 Tab／内容滚动区／常驻提示条）：面板头按
-  Tab 显示语境计数与主操作（大纲「＋ 伏笔」、要素库齿轮进类型管理）；Tab 改为分段
-  控件 + 白色滑块指示器（ResizeObserver 测量 + `transform` 滑动）；底部常驻快捷键
-  提示条；左边界新增拖拽把手，收起后右边缘留竖向重开把手
-- **大纲拆双视图**：章节与伏笔不再交错混排（长卷里伏笔会被章节挤到看不见），改由
-  子分段切换并各自带计数；伏笔支持待回收／已回收／全部过滤与就地编辑，卷可折叠
-- **要素卡与详情改版**：卡片显示别名／一句话／关联数／出场章数／当前境界，悬停浮出
-  「插入正文／编辑」；详情改 hero 卡 + 基础字段／关联／境界阶梯／出场章节分区
-- **要素库**：顶部搜索（名称／别名／简介）+ 带计数类型 chips（横向滚动），全部视图
-  按类型分组；出场章数由页面层 `appearanceCountOf` 聚合下发
-- **灵感面板**：速记框改为 Enter 记录 / Shift+Enter 换行且空草稿禁用「记录」，
-  置顶独立成段，行内操作悬停浮出，其他书籍的灵感只读并标注来源
-- **检索面板**：新增作用域（全书／本章／要素名），要素名作用域走内存比对零往返，
-  最近搜索 chips，检索中骨架屏，命中高亮
-- **起名器**：二维选项网格 + 结果卡 + 收藏夹，悬停浮出快捷操作
 
-## [1.13.1] - 2026-09-22
+- **续写 / 摘要每次生成前都要确认（REQ-060）**：续写点击后先弹确认框
+  （写明将发送前文约 N 字、结果需确认才插入）；摘要改为**每次**确认，
+  不再「授权过一次就此后自动生成并落库」。首次（未授权）仍先走 L3 合规授权弹窗，
+  授权回答「允不允许」，确认框回答「这一次要不要」。确认框走 `App.useApp()`
+  的实例方法（静态 `Modal.confirm` 会脱离主题，暗色下掉成白底）。
+  浮层内的「重新生成 / 重试」不重复确认。
+- **续写模板改为多段（R-AI-11）**：原约束是「单段控制在 300–600 字」，
+  模型据此从不换行，插进按「一段一行」排版的正文后缩进与段距全错。
+  现在要求 2–4 个自然段、**单换行分段、不空行、不手动缩进**；
+  调用方再过一遍新增的 `normalizeContinuationText`（逐行剥行首空白 +
+  按前文的分段习惯收敛空行），即使模型不听话也不会插入带缩进的整段。
 
 ### Fixed
-- **备忘编辑器高亮层错位**（透明 TextArea + 底层高亮 div 镜像结构），修复两个
-  独立根因，两层在任意滚动位置/任意内容下恢复逐像素对齐：
-  - **滚动条槽位宽度差（主因）**：全局自定义滚动条是 classic 布局槽（8px 常驻），
-    textarea 内容溢出时内容区比高亮层窄 8px；中文逐字断行 → 两层换行点/折行数
-    不同且随深度累计漂移（实测 20 行临界内容偏移 476px）。修复：textarea 加
-    `scrollbar-gutter: stable` 恒定预留槽位，高亮层 `padding-right: 20px` 补齐同宽
-  - **末尾换行行盒缺失（次因）**：内容以 `\n` 结尾时 pre-wrap 的高亮 div 比
-    textarea 少渲染最后一行空行盒，scrollHeight 矮一行，滚到底部时被 clamp 产生
-    一行永久偏移。修复：高亮 HTML 恒追加 `<br />`（react-simple-code-editor
-    同款手法），保证行盒数不少于 textarea
-  - 根因均经独立 Chromium 复现页对照实验证实（现状 CSS 复现偏移、修复后全场景
-    scrollHeight/底部 clamp 差值为 0）
 
-## [1.13.0] - 2026-09-22
-
-### Added
-- **每日打卡**：首页「开始今日打卡」按钮改为直接打卡——点击记录打卡落库并
-  message 反馈，**不再跳转日历页**；已打卡后按钮置为「今日已打卡」成功色态并
-  禁点，**次日 5:00 业务日切换后自动重置**（应用跨夜常开时按主进程下发的
-  `resetAt` 定时恢复），凌晨 0-5 点的打卡归属前一个业务日
-- **打卡数据层**：userDb 新增 `checkins` 表（`checkin_date` 业务日 UNIQUE，
-  `INSERT OR IGNORE` 幂等吸收重复点击）；新增 `electron/checkin-utils.ts`
-  （业务日切分 / 下次重置时刻纯函数）与 `electron/handlers/checkin-handlers.ts`
-  （`checkin-status` / `checkin-today` / `checkin-dates` 三通道）并在 main.ts 注册；
-  `preload.ts` 暴露 `electronAPI.checkin` 命名空间，渲染层语义化服务
-  `shared/services/checkin.ts`；首页按钮逻辑抽 `HomePage/hooks/useCheckin.ts`
-- **统计口径**：首页「本月打卡」改从 checkins 表取数（原为「有活动的天数」）
-- **日历打卡提示点**：日程页日历对应日期渲染打卡提示点，配色走新主题变量
-  `--app-checkin-dot`（四主题同步新增，按主题与主色校准区分度），与活动点并存
-  可区分——活动点改用主题色 `--app-primary`（原同为绿色，无法区分「已打卡」
-  与「有日程」）
-
-### Changed
-- **数据迁移模块下线，功能并入待办/备忘页**：删除 `/migration` 路由、
-  `MigrationPage/`、`electron/handlers/migration-handlers.ts` 与
-  `electron/migration-utils.ts`；备份能力按业务拆入两个 handler——
-  `todo-backup-export/import`（manifest + todos.json，导入重新分配自增 id 并修复
-  父子指向）与 `memo-backup-export/import`（manifest + memos/*.md，导入重名自动
-  追加序号）；zip 包格式与旧迁移包完全兼容（清单 `scopes` 数组保留）
-  - 待办页工具栏新增「导出备份包 / 导入备份包」按钮：导入前弹确认说明追加合并
-    语义（不覆盖现有数据），完成后刷新列表
-  - 备忘页侧栏导入/导出按钮升级为下拉：导出 TXT / DOCX / 备份包（zip 全部备忘），
-    导入文件（MD/TXT/DOCX）/ 导入备份包（zip）；备份导入同样弹确认
-  - `electron/migration-utils.ts` 重构为 `electron/backup-utils.ts`（清单按单范围
-    构造，`buildExportFilename` 带 `checkin-todo-` / `checkin-memo-` 前缀），
-    测试同步迁移；`useHomeOverview` 与 HomePage 移除迁移入口
-- 首页功能卡移除「数据迁移」（`/migration` 已删除）
-- **全局滚动条改为 hover 展示**：三个窗口统一引入新共享样式
-  `shared/styles/scrollbars.scss`——滑块默认透明，指针悬停到滚动容器（或容器内
-  持有焦点）时才浮现（主题 token `--app-scrollbar` / `--app-scrollbar-hover`
-  兜底）。实现上用 `:not(:hover):not(:focus-within)` 高特异性规则压过页面局部
-  「常显」配色，hover 时与局部规则同特异性、页面样式后加载胜出，故 HomeSidebar /
-  LedgerTimeline / LedgerCategoryPie 的局部滑块配色无需改动即自动兼容该交互
-
-### Fixed
-- **打卡提示点撞色**：mint 主题 `--app-primary` 与 `--app-success` 同为绿色，
-  打卡点在主题色日历格上无法分辨——`--app-checkin-dot` 在 mint 下改用琥珀色
-  `#d9a514`；选中格为实心主色底时，活动点 / 打卡点统一加一圈
-  `--app-primary-contrast` 对比描边，避免主色系圆点隐形
-
-### Verified
-- 单测（vitest 直调）：300/300 通过（23 个测试文件；新增 checkin-utils 10 条，
-  migration-utils → backup-utils 28 条，删除 useMigration 7 条）
-- `tsc --noEmit`：tsconfig.app.json / tsconfig.node.json 双侧 0 错误
-- 本轮样式改动（themes.scss / scrollbars.scss / DailyPage / 三窗口入口 scss）
-  经 sass compile 逐一验证无语法错误；无 TS/TSX 改动，eslint 无目标文件
-
-## [1.12.0] - 2026-09-22
-
-### Added
-- **记账模块（M1 + M2）**：新增 `/ledger` 页面与侧栏「记账」入口
-  （`HomeSidebar` 置于「日程」之后）、首页功能卡「记账本」
-  与首页统计「本月支出」迷你卡
-- **数据层**：`electron/db.ts` 迁移式建 `ledger_transactions /
-  ledger_categories / ledger_accounts / ledger_tags / ledger_budgets`
-  五张表（含 `happened_at` 倒序索引）；新增
-  `electron/handlers/ledger-handlers.ts` 导出 `registerLedgerHandlers()`
-  并在 `main.ts` 注册；`preload.ts` 暴露 `electronAPI.ledger` 命名空间，
-  DTO 同步进 `shared/types/electron.d.ts`
-- **服务层**：`shared/services/ledger.ts` 提供语义化 API
-  （listCategories / listTransactions / addTransaction / updateTransaction /
-  deleteTransaction / restoreTransaction / upsertCategory / deleteCategory /
-  sumExpense）与 10 类预设分类；分类预设由渲染进程持有，首次拉取为空时
-  播种到主进程，避免两处各写一份而漂移
-- **交互**：快捷记一笔走 antd `Modal` 居中弹层（⌘/Ctrl+Shift+L 唤起），
-  行内编辑走 `Modal`，周期「自选」走 `Popover` + `RangePicker`，
-  分类筛选走 `Popover`，删除走 `Popconfirm` + 5 秒可撤销 Toast；
-  全部弹层均为标准组件，未自绘 mask
-- **性能优化**：流水时间线用 `react-virtuoso` 的 `GroupedVirtuoso`
-  虚拟化（日期分组 + 扁平行数组），长账目下只挂载可视行；行组件
-  `LedgerTxRow` 用 `memo()` 且回调稳定；hover 只改 `box-shadow` 与 `opacity`
-- **图表零依赖**：分类占比环图（stroke-dasharray）与近 30 天趋势折线
-  （polyline + `vector-effect`）均为纯 SVG，未引入图表库
-- **配色合规**：支出 `--app-error`、收入 `--app-success`，金额一律带
-  `+ / −` 前缀与箭头，不依赖颜色单独传达信息；分类色板复用既有
-  `--app-accent-*`，四主题自动跟随，`themes.scss` 零改动
-
-### Fixed
-- **记账页三处视觉问题**：
-  - 快捷记一笔金额框聚焦出现「双圈」：antd 6 已废弃 `bordered={false}`（实际不生效），
-    内层输入框自带边框与聚焦光晕叠加外层容器描边；改为 `variant="borderless"`，
-    聚焦/错误态统一由外层容器表达（primary-weak / error-weak 软光圈）
-  - 流水区底部冒出默认粗横滚条：Virtuoso 滚动容器的绝对定位 viewport 按
-    padding-box 解析宽度，容器上 `padding: 0 4px` 恰好横向溢出 8px；
-    移除容器水平内边距（内边距下沉到行/分组头）并显式 `overflow-x: hidden`，
-    滚动条横竖两轴统一收细为 8px
-  - 内容比页头宽一圈：`.ledger-page` 左右留白 12px 而 NavHeader 卡片是 24px，
-    对齐为左右 24px + 底部 20px，FAB 右缘随之与内容边对齐
-  - 流水行 hover 底色通栏顶到卡片边缘：行元素自带 `margin: 0 8px` 内收
-    （水平内边距不可加回 Virtuoso 滚动容器，否则横向溢出复现横滚条），
-    分组头与筛选条内边距同步对齐 16px，三者左缘一致
-  - **最小窗口（高 600px）下左侧栏主题切换被挤出不可见**：侧栏导航 8 项在矮窗口
-    超出卡片高度，底部工具区（`margin-top:auto`）因无剩余空间而溢出被祖先
-    `overflow:hidden` 裁掉；改为导航区 `flex:1 1 auto; min-height:0; overflow-y:auto`
-    （4px 细滚条），footer 设 `flex:0 0 auto` 永不被压缩，并加
-    `@media (max-height:680px)` 压缩导航间距让最小尺寸下基本无需滚动
-  - **快捷记一笔弹窗与设计稿差距过大**：原 `Drawer` 把控件纵向堆叠且带标题栏，
-    与设计稿的「三行紧凑布局」不符；改为 antd `Modal`（`centered` 屏幕居中、
-    `width=640`、`max-width: calc(100vw - 48px)`、无标题栏/无关闭钮，
-    遮罩点击与 Esc 关闭），三行对齐设计稿：行1 支出/收入分段 + ¥ 金额胶囊 + 行内错误；
-    行2 紧凑胶囊分类（30px pill，选中态 `inset 0 0 0 1px currentColor` 描边）；
-    行3 备注 + 今天胶囊（`Popover` + `DatePicker` 可改期，今天显示「今天」否则 MM-DD）
-    + Enter/Esc 提示 + 保存按钮，保存时按所选日期落库
-
-### Changed
-- **首页统计**：`useHomeOverview` 新增 `monthExpense`（本月支出，取整），
-  与待办 / 备忘 / 打卡 / 代码并行拉取，任一项失败只置 `null` 渲染为「—」
-- **主题色板扩展**：`FeatureCard` 新增 `green` tone、`HomeStats` 新增 `rose`
-  tone，均取自既有 `--app-accent-*`，新增变量零成本
-
-### Verified
-- `pnpm test`：23 个文件 / 296 个用例全绿（新增 `ledger-utils.test.ts` 18 例
-  覆盖金额校验、周期区间、环比、日期分组、>7 类折叠、趋势补桶、筛选；
-  `LedgerPage.test.tsx` 2 例冒烟覆盖有数据态与空态）
-- `tsc --noEmit -p tsconfig.app.json` 与 `tsconfig.node.json`：0 错误
-- `eslint .`：0 error（仅剩 `useHttpClient.ts` 既有 warning）
-## [1.11.1] - 2026-09-22
-
-### Added
-- **小说编辑器 · 起名工具（R18 + R31，零新表）**：右栏新增「工具」Tab，
-  承载组合式随机起名器，服务网文作者「卡名字」高频场景。
-  - **八类名称 × 东西方六风格**：人名 / 地名 / 门派名 / 法宝名 / 境界名 /
-    丹药名 / 系统名 / 神名 × 东方四风格（仙侠 / 武侠 / 现代都市 / 日式）+
-    西方两风格（西幻 · 史诗奇幻 / 西式现代）；不同 kind 用独立前缀 / 后缀
-    双桶避免「天魔丹」「天魔宗」撞名；风格元信息 `applicableKinds`
-    标注每个风格可生成的类型（如「现代都市」不产门派 / 法宝 / 境界）
-  - **生成器纯函数 + 单测**：`naming/name-generator.ts` —— `generateNames`
-    四维过滤（风格 × 类型 × 性别 × 避开本书已用名）、10 个 / 批、
-    `generateNextBatch` 换批、带 seed 可复现；`name-generator.test.ts`
-    覆盖去重 / 避开已用 / 空池降级 / 可复现性，23 例全绿
-  - **双出口**：EditorPane `forwardRef` + `useImperativeHandle` 暴露
-    `insertText(text)`，名字一键插入正文光标处；另一出口复用
-    `handleSaveEntity` 一键建为角色卡（名称带入）
-  - **收藏夹按作品持久化**：复用 `configGet / set`（零新 IPC、零新表），
-    `sanitizeNameFavorites` 纯函数清洗防 config 损坏；`useNovelData`
-    暴露 `nameFavorites` 状态与 `addNameFavorite / removeNameFavorite` 动作
-  - **内置静态词库**：`naming/data/dictionary.ts` 静态资源随应用分发
-    （姓氏池 + 男 / 女名用字 + 西方姓 / given 名 + 按风格 × kind 双桶）
-- **PRD 同步更新**：R18 描述扩展为「八类 × 东西方六风格」；§9 步骤三
-  标 ✅ 已完成；§6.5.1 M2 表 R31 状态更新；§6.5.3 从未实现清单移除
-  R18；§10 开放问题 9 起名词库来源现状更新
-
-## [1.11.0] - 2026-09-21
-
-### Added
-- **应用图标体系**：全新 CheckIn 品牌图标，取代 Electron 模板默认的紫色闪电。
-  视觉语言为「单一笔势」——钢笔笔身与勾选长臂共用同一个笔尖端点，
-  一条笔画同时表达「写作」与「待办」；配色取自主题变量
-  （`#8E9CFF → #5B6CF9 → #7449E0` 对应 `--app-primary` 一系）
-- **两套图标，按物理尺寸分流**：
-  - 应用图标（桌面 / 窗口 / 安装包）：`public/icon.ico`（内嵌 16/20/24/32/40/
-    48/64/128/256 九帧）、`public/icon.svg`（矢量母版）、`public/icon.png`（512）
-  - 托盘图标（独立一套）：`public/tray/tray{,-16,-20,-24,-32,-48,-64}.png` +
-    `public/tray.svg`，笔身与勾均加粗约 16%，笔尖缝改为实心底板色
-- **小尺寸分级渲染**：<128px 的帧用实心笔身单独渲染（笔尖缝宽约
-  0.0075×尺寸，64px 下不足 0.5px，切开后经 LANCZOS 降采样只会糊成灰线）；
-  ≥128px 才保留真实笔尖缝
-- **打包链路补齐**：
-  - `electron/main.ts` 新增 `TRAY_ICON_PATH`，托盘改用 tray 专用图
-    （原先与应用图标共用同一文件）
-  - `package.json` 的 `build.icon` / `build.win.icon` 由 `icon.png` 改为
-    `icon.ico`
-  - `scripts/after-pack.js` 新增 rcedit 步骤写入多尺寸 exe 图标；
-    rcedit 为可选依赖，缺失时跳过不影响打包
-  - 确认 Vite 会递归复制 `public/` 子目录，`dist/tray/` 无需额外 copy 插件
-
-### Fixed
-- **任务栏图标勾选变紫（小尺寸帧丢白）**：`render_small()` 重建笔尖缝时
-  色键遮罩用了 `CHROMA = 255`，与字形填充值完全相同，于是「选中色键区域」
-  实际选中了**整个字形**，紧接着被刷成底板色 `#7449E0`。结果 16/20/24/32/40px
-  五帧近白像素为 0%，而 Windows 任务栏恰好取这几帧。已彻底移除色键机制，
-  小尺寸直接实心纯白渲染；现九帧白色占比随尺寸 4.7% → 8.1% 平滑递增
-- **矢量母版笔尾凹陷**：`svg_app()` 里封住笔尾的半圆把扫掠标志写成了 `1`。
-  该弧半径恰为 `hw_pen`、圆心就是 T1T2 中点，两条候选弧只有扫掠方向之别——
-  取 1 时弧朝笔身内部凹进去，笔尾成了月牙缺口（位图无此问题，圆头是用
-  `ellipse` 画的）。改为 `sweep=0` 后弧中点落在笔身外侧极值点上。
-  同时把托盘矢量母版也改为由几何参数生成（原先手写坐标，同样是 sweep=1）
-
-### Verified
-- `pnpm build`（tsc -b + vite build）：0 错误
-- 图标产物逐帧校验：`public/icon.ico` 九帧、`public/tray/*` 七件齐备，
-  各帧白色字形占比随尺寸平滑递增，无丢白帧
-- 待办：`pnpm electron:build` 需重跑一次，安装包 exe 图标通过
-  `scripts/after-pack.js` 的 rcedit 步骤写入，未在本轮验证
-
-## [1.10.1] - 2026-09-21
-
-### Added
-- **模板书籍预设化**：新用户（novel_* 空库）首次进入书架 / 编辑器时，
-  主进程自动播种一部完整模板书籍《山海拾遗（模板示例）》（15 章 / 约 5 万字 +
-  要素卡 / 关联 / 等级体系 / 灵感 / 伏笔），取代原先的空白「未命名作品」；
-  播种逻辑抽为 `seedTemplateBook()`（novel-handlers.ts），与「一键重置为
-  模板书籍」共用同一事务，删除全部作品后重新装载同样回到模板书
-- **历史快照抽屉开关化**：顶栏「历史快照」按钮改为开关式——再点一次收起
-  抽屉，按钮带高亮态与 aria-pressed，Tooltip 随开合切换
-- **灵感全局搜索**：编辑器灵感面板搜索升级为全局口径——关键词命中全部
-  书籍的灵感（含书架未归属池之外的已归档灵感），其他书籍的灵感只读展示
-  并带来源书名标签；清空关键词回到当前作品列表，计数随口径切换
-
-### Verified
-- `pnpm typecheck`：0 错误
-- `pnpm lint`：0 错误（仅 useHttpClient 既有警告）
-- `pnpm test`：276/276 通过（21 个测试文件；新增 InspirationPanel
-  全局搜索 1 条：命中外部书籍灵感 / 来源标签 / 只读 / 清空回退）
-
-## [1.10.0] - 2026-09-21
-
-### Added
-- **数据迁移（导出 / 导入 zip）**：首页第 5 张卡片「数据迁移」进入新页面，
-  可勾选「待办清单」「备忘笔记」两部分——导出打包为一个 zip 备份包
-  （`manifest.json` + `todos.json` + `memos/*.md`，清单带应用标识与格式版本），
-  导入选择一个 zip 后按**追加合并**落到当前账号
-- 导出 / 导入全部在主进程完成（系统弹窗 + 文件 IO + zip 编解码走 jszip），
-  渲染层只传勾选范围、拿结果；入口：`registerMigrationHandlers()`
-  （`electron/handlers/migration-handlers.ts`，在 main.ts 注册）
-- 导入语义：todo 重新分配自增 id 并保持父子结构（`planTodoInserts` 先父后子 +
-  旧 id→新 id 映射修复 parent_id；父子成环或父项缺失时退化顶层，不丢数据）；
-  备忘重名自动追加序号，绝不覆盖已有文件
-- 清单校验：拒绝非 CheckIn 来源、缺失版本、版本高于当前、无有效范围的包
-- 备忘目录路径抽到 `electron/user-paths.ts`，memo-handlers 与 migration-handlers 共用
-
-### Verified
-- `pnpm typecheck`（app + node 两段，strict）：0 错误
-- `pnpm lint`：0 错误（仅 useHttpClient 既有警告）
-- `pnpm test`：275/275 通过（20 个测试文件；新增 migration-utils 27 条 +
-  useMigration 7 条）
-- `vite build`：渲染层产出 MigrationPage chunk，主进程 jszip 保持 external
-- zip 往返冒烟（node + jszip）：中文文件名与 emoji 备忘内容存取无损
-
-## [1.9.5] - 2026-09-21
-
-### Fixed
-- **正文选中高亮滚动后偏移**：段距用 `.cm-line { margin-bottom }` 实现，而
-  CodeMirror 6 的行高测量（heightMap）不含 margin——「文档位置估算 ↔ DOM
-  实际位置」的偏差随行数线性累积：文档开头正常，滚动到下方后选中高亮 /
-  点击落点 / 光标全部错位。段距改为 `padding-bottom`（计入 border-box
-  高度、被测量捕获；`.cm-line` 是整段一个元素，段内软折行行距与段间距
-  视觉均不变）；新增 EditorPane 样式契约单测（cm-line 禁止垂直 margin +
-  段距必须走 padding-bottom）防回归
-
-### Verified
-- `pnpm typecheck`（app）：0 错误
-- `pnpm test`：NovelPage 范围 99/99 通过（含新增 2 条样式契约）
-
-## [1.9.4] - 2026-09-21
-
-### Added
-- **精简构建（lite）**：新增 `electron:build:lite` 脚本与 `CHECKIN_LITE=1`
-  构建开关（vite.config.ts 顶部 `isLite`）——vite 不产出 WorkerWindow 入口
-  （dist 无 worker 页面产物），主窗口侧栏隐藏 Worker 入口按钮与分隔线
-  （HomeSidebar），主进程 `worker-window-open` 打开请求被编译期常量
-  `__CHECKIN_LITE__` 屏蔽；常量声明见 `src/env.d.ts`（渲染层）与
-  `electron/globals.d.ts`（主进程），vitest.config.ts 的 define 对齐为
-  完整构建；常规构建不受影响
-
-### Verified
-- `pnpm typecheck`（app + node 两段，strict）：0 错误
-- `pnpm lint`：0 错误（仅 useHttpClient 既有警告）
-- `pnpm test`：239/239 通过（18 个测试文件）
-- `CHECKIN_LITE=1 vite build`：dist 仅产出 BaseWindow/LoginWindow 两个入口，
-  无任何 worker 产物；main.js 中 `worker-window-open` handler 被编译为空实现；
-  渲染层产物无「打开 Worker 窗口」按钮文案
-- 常规 `vite build`：三入口齐全，默认路径不受影响
-
-## [1.9.3] - 2026-09-21
-
-### Added
-- **等级体系管理（R25）**：`novel-level-system-add/rename/delete` 与
-  `novel-level-add/rename/delete/order` 六个 IPC（主进程事务 + 渲染层
-  乐观同步）；新增 LevelSystemManager 弹框（体系增删改、等级项增删改 /
-  上下移 / 拖序回写 rank）；EntityDetail 要素卡新增「当前境界」区块——
-  体系下拉 + 境界按钮点选绑定，绑定为一条 `novel_links` 行
-  （`toType: "level"` + `relation: "当前境界"`，一要素同时仅一条，先摘旧再落新），
-  删除体系 / 等级项时级联摘除关联；模板书籍预置沈孤舟→凝丹境示例
-- **TXT 导出（R13）**：作品管理菜单新增「导出整本 / 导出本卷 / 导出本章」；
-  渲染层纯函数组装文本（`buildBookPlainText` / `buildVolumePlainText` /
-  `buildChapterPlainText` / `buildEntityCardText`），主进程只做
-  saveDialog + 写文件。章节标题按序号设置派生（`第一章 灵潮起` /
-  `第12回 xxx`，与界面所见一致，章序号全书连续），卷标题对齐
-  volumeDisplayName 口径；整本首行 `《书名》`。EntityDetail
-  「导出设定卡」由 toast 占位做实（含当前境界单列一条）
-- **使用统计埋点（R14）**：`novel-usage-log` / `novel-usage-today` IPC +
-  `novel_usage_log` 表；editor_open / chapter_save / snapshot / goal_reach
-  四类事件，goal_reach 在今日目标达成时上报；「今日累计」改为启动时
-  从埋点表取净增字数（SUM delta）+ 会话内 delta 续加，替换原会话级内存口径
-- **自定义要素类型（R23）**：用户新建类型（命名 + 8 色板选色，id 固定
-  `ct-` 前缀），定义存 config 键 `novel_entity_types`（整读整写 +
-  sanitizeCustomTypes 校验）；新增 EntityTypesProvider Context 运行期
-  派生 meta（自建类型弱色 `color-mix` 派生），六组件改经
-  `useEntityTypeMeta()` 查 meta；CodeMirror 标注层对自建类型经
-  Decoration.mark 内联注入 `--nv-mark-color`；新增 EntityTypeManager
-  弹框（增删改 + 各类型张数统计，删除类型时该类型要素迁移回「自定义」）
-
-### Verified
-- `pnpm typecheck`（app + node 两段，strict）：0 错误
-- `pnpm lint`：0 错误（仅剩 `useHttpClient.ts` 既有 eslint-disable 警告）
-- `pnpm test`：227/227 通过（17 个测试文件；新增 novel-export 4 组用例：
-  章节标题序号派生 / 卷与整本组装 / 设定卡 / sanitizeCustomTypes）
-- `vite build` 通过
-
-## [1.9.2] - 2026-09-21
-
-### Added
-- **模板书籍 + 一键重置（调试功能）**：新增 `electron/novel-template.ts`
-  确定性生成器——单作品「山海拾遗（模板示例）」3 卷 15 章，每章 ≥3200 字
-  （全书约 6 万字，压测 CodeMirror 虚拟滚动 / 全书检索 / 快照 / 标注层预算），
-  正文按 seed 伪随机织入要素名与别名（驱动高亮与悬浮卡）；覆盖全部功能面：
-  六类要素卡（含别名、自定义字段）、8 条要素关联、两条等级体系（灵徒九境 /
-  器阶七品）、灵感速记（置顶 / 已转伏笔）、伏笔（待回收 / 已回收、卷级 /
-  章级挂载）、章节梗概与草稿 / 完稿混合状态
-- **`novel-editor-reset-template` IPC**：主进程单事务清空全部 novel_* 表后
-  重新播种模板（生成器每次实时构建，改模板定义后重置即生效）；排版设置保留，
-  续写位置一并清除；preload / electron.d.ts 同步暴露 `novel.resetTemplate()`
-- **作品管理菜单新增「重置为模板书籍（调试）」**：确认弹框明示清空范围；
-  重置后渲染层清空活动作品 / 章节 id 并全量重载，toast 汇报章数与字数
-
-### Fixed
-- **mammoth / docx 幽灵依赖显式化**：1.7.1 备忘导入导出使用的两个包从未
-  进入 package.json / lockfile（换机重装后 node_modules 缺失），删除
-  tsbuildinfo 缓存后 `tsc --noEmit -p tsconfig.node.json` 暴露 TS2307。
-  已显式声明进 dependencies 并补装
-
-### Verified
-- `pnpm typecheck`（app + node 两段，strict）：0 错误
-- `pnpm lint`：0 错误（仅剩 `useHttpClient.ts` 既有 eslint-disable 警告）
-- `pnpm test`：215/215 通过（16 个测试文件；新增 novel-template 12 例：
-  结构 / 字数口径 / 类型覆盖 / 引用合法性 / 确定性幂等 / id 唯一）
-- `vite build` 通过
-
-## [1.9.1] - 2026-09-20
-
-### Fixed
-- **删除作品后作品名复活**：`novel-work-delete` 事务漏删 `novel_works` 行本身
-  （只清了卷章 / 要素 / 灵感伏笔 / 快照），删光全部作品后重新装载时，
-  库里残留的作品名全部回来。已在同一事务内补上 `DELETE FROM novel_works`
-
-### Added
-- **章节删除**：`novel-chapter-delete` IPC（同事务清理该章历史快照）；
-  左栏章节行悬浮浮现删除按钮，Popconfirm 确认后删除；删除当前章节时
-  按展示顺序自动切换到后一章（无后一章则前一章）
-
-### Changed
-- **点击正文下方空白也能聚焦**：CodeMirror content 只占文档实际高度，
-  点击其下方（纸面 / 滚动容器）此前无响应；现在兜底聚焦并把光标落到
-  点击坐标对应位置（命中不到内容点时落到文档末尾）
-- **未命名卷展示统一**：新增 `volumeDisplayName` 纯函数，存储名为
-  「未命名卷」时各处一律展示按 sort 派生的「第N卷」（此前面包屑、
-  重排确认弹框裸显「未命名卷」）；VolumeNode 卷头改用同一口径
-
-### Verified
-- `pnpm typecheck`：0 错误；`pnpm lint`：0 错误；`pnpm test`：203/203 通过
-  （新增 volumeDisplayName / 未命名卷面包屑用例）；`pnpm build` 通过
-
-## [1.9.0] - 2026-09-20
-
-### Added
-- **小说编辑器 M1 收尾（PRD v0.5 §9 步骤一）**，四项缺口一次补齐：
-  - **设置持久化（R5）**：排版 / 目标 / 字数口径 / 标注类型 / 序号后缀等全部
-    `EditorSettings` 经 `novel-config-get/set` IPC 写入 userDb `config` 表，
-    启动恢复；`mergeEditorSettings` 纯函数逐字段类型守卫（区间夹取、枚举校验、
-    annotationTypes 过滤去重），损坏数据安全回退默认值
-  - **续写位置记忆（R6）**：持久化「作品 / 章节 / 光标偏移 / 滚动位置」四元组
-    （500ms 防抖 + 关窗 flush），启动时 `sanitizeRestorePosition` 校验归属后
-    原位恢复（此前只回第一个章节）
-  - **作品 CRUD（R29）**：`novel-work-add/rename/delete` 三个 IPC，删除在
-    主进程单事务级联清理（卷章快照 / 要素关联 / 灵感伏笔 / 等级体系与转换）；
-    顶栏新增「作品管理」下拉（新建 / 重命名 / 删除确认，删除弹框明示级联范围），
-    作品下拉选项展示章节数与字数；删空后自动重新播种默认作品
-  - **章节内查找替换（R10）**：接入 `@codemirror/search`（Ctrl+F 查找、
-    Ctrl+H 打开替换面板，面板跟随四套主题变量）；窗口级快捷键增加
-    `defaultPrevented` 守卫，避免编辑器已消费的 Esc / Ctrl+F 双跳
-
-### Changed
-- `useNovelShortcuts`：跳过已被编辑器消费的按键（`event.defaultPrevented`）
-- `useNovelData.load()` 启动装载改为串联读取上次位置并校验恢复
-- `package.json` 显式声明 `@codemirror/search@^6.7.2`（hoisted 布局下不得依赖幽灵依赖）
-
-### Verified
-- `pnpm typecheck`（tsc -b，strict）：0 错误
-- `pnpm lint`：0 错误（仅剩 `useHttpClient.ts` 既有 eslint-disable 警告）
-- `pnpm test`：201/201 通过（15 个测试文件；新增 mergeEditorSettings /
-  sanitizeRestorePosition / parseJsonOrNull / buildWorkMeta 用例）
-
-## [1.8.0] - 2026-09-20
-
-### Added
-- **小说编辑器数据 DB 本地化（PRD v0.4 §7 M1 落地）**：WorkerWindow/NovelPage
-  的数据源由内存演示数据（`novel-demo-source.ts`）全量替换为 SQLite 持久化。
-  `electron/db.ts` 新增 `novel_*` 全套表（works / volumes / chapters /
-  snapshots / notes / outline_entries / entities / links / level_systems /
-  levels / level_conversions），时间戳统一存毫秒整数对齐渲染层 `Date.now()`
-- **主进程 `novel-handlers.ts`**：语义化 IPC（章节增删改、快照环形保留 +
-  崩溃恢复标记、要素/关联/灵感/大纲/等级体系 CRUD、全书检索）。会话级崩溃
-  恢复——窗口正常关闭与 `before-quit` 双路径清除 `running` 标记，异常退出
-  下次启动触发恢复横幅
-- **渲染层 `novel-service.ts`**：封装 IPC 调用，提供与原演示数据源一致的
-  语义化 API；`useNovelData` 全量接线持久化，页面与组件层零改动即生效
-- **类型契约**：`electron.d.ts` 补齐 `NovelBundleDTO` / `NovelRecoveryDTO`
-  等 DTO 与 `electronAPI.novel.*` 接口
-- **主进程 `user-handlers.ts` / `memo-handlers.ts`**：将此前散落在 `main.ts`
-  的 user / memo 业务 IPC 全部抽出为独立 handler 模块，`main.ts` 回归
-  「仅窗口生命周期 + 系统级」职责
-- `db.ts` 新增 `getCurrentUserEmail()` 与 `initDb()` 内建 `user` 表，
-  handler 不再依赖 `main.ts` 闭包变量
-
-### Fixed
-- **`pnpm build` 失败**：主进程打包时 rolldown 试图打包 `mammoth` / `docx`
-  的传递依赖，撞上 pnpm 非扁平结构下 `core-util-is` 无法解析。
-  `vite.config.ts` 的 electron `external` 补入 `mammoth` / `docx`
-  （主进程 Node 运行时模块保持 require，不打入 bundle）
-
-### Changed
-- 删除 `src/windows/WorkerWindow/pages/NovelPage/services/novel-demo-source.ts`
-  （演示数据源已被 DB 本地化取代）
-- `AGENTS.md` 同步：handlers 模块表补齐 novel/user/memo 三模块；
-  新增 WorkerWindow/NovelPage 数据层约定与崩溃恢复说明
-
-### Verified
-- `pnpm typecheck`（tsc -b，strict）：0 错误
-- `pnpm lint`：0 错误（仅剩 `useHttpClient.ts` 既有 eslint-disable 警告）
-- `pnpm test`：189/189 通过（15 个测试文件）
-- `pnpm build`：渲染层 + 主进程 + preload 三段构建均通过
-
-## [1.7.1] - 2026-09-20
-
-### Added
-- **备忘文章导入导出（.txt / .docx）**：导入文件选择器扩展为
-  Markdown / TXT / DOCX 三种格式——txt 直读、docx 由主进程用 mammoth
-  抽取段落文本，全部统一转存为 .md 备忘（重名自动追加序号，不再覆盖）；
-  备忘列表头部新增导出下拉，可将当前选中的备忘导出为 TXT（markdown
-  剥离标题 / 列表 / 引用 / 行内标记的纯文本）或 DOCX（docx 包生成，
-  保留标题层级 / 无序列表 / 正文段落，保存位置由系统对话框决定）
-- **新增 IPC 通道** `memo-export`，preload 与 `ElectronAPI` 类型同步暴露
-  `memo.exportFile(filename, format)`
-- **纯函数与单测**：`electron/memo-doc-utils.ts`（stripInlineMarkdown /
-  collapseBlankLines / markdownToPlainText / markdownToDocxBlocks），
-  vitest include 纳入 `electron/**/*.test.ts`
-
-### Fixed
-- **左栏拖拽相邻两章无法交换顺序**：`moveItemBefore` 先移除后插到
-  `to-1`，当目标是被拖项的下一个相邻项时正好插回原位，顺序不变；
-  改为移除后统一插在 `to`（向上拖 = 落在目标之前，向下拖 = 落在目标
-  之后，相邻即交换），补齐相邻两方向的回归测试
-
-### Changed
-- **长列表全量虚拟化**（react-virtuoso）：左栏章节树扁平化为
-  卷头行 + 章行（折叠状态提升到 ChapterTree，离屏行可安全卸载）、
-  Ctrl+P 章节跳转面板（顺带把行内 `indexOf` O(n²) 序号改为 O(1) 查表，
-  键盘移动光标自动滚入可视区）、全书检索命中列表、灵感速记卡片列表；
-  BaseWindow 各列表此前已虚拟化，NewsList（固定 Top10）与 CodePage
-  表格（分页）为有界列表无需处理
-
-## [1.7.0] - 2026-09-20
-
-### Added
-- **大纲板升级为可编辑（R7）**：骨架改由真实卷 / 章派生（章节节点携带
-  真实 chapterId，点击即跳转且高亮当前章，展示序号 / 字数 / 状态）；
-  每章可写「一句话梗概」（行内编辑，Enter 保存 / Esc 取消 / IME 守卫，
-  未改动不落库）；伏笔支持新增（可绑卷级或指定埋设章）、行内改名与说明、
-  删除、待回收 ⇄ 已回收切换；卷头显示待回收计数，面板顶部汇总卷章数
-- **灵感速记补齐（R7）**：行内编辑（Enter 保存 / Shift+Enter 换行 /
-  Esc 取消）；置顶（置顶优先排序）；关键词过滤（计数切换为命中 / 总数）；
-  **一键「转为伏笔」**——落到当前章所在卷并绑定当前章，写入后自动切到
-  大纲面板，卡片标记「已转为伏笔」且不可重复转化
-- **数据层占位接口**（对应未来 IPC）：`saveChapterOutline` / `saveOutlineEntry`
-  / `removeOutlineEntry` / `saveNote` / `removeNote`，替换时页面层无需改动
-- **纯函数与单测**：`buildOutlineTree`（卷章骨架 + 伏笔挂载 / 排序）、
-  `sortNotes`、`filterNotes`、`firstLineTitle`、`buildForeshadowDraft`、
-  `patchChapterOutlineNote` / `patchOutlineEntry` / `patchNote`
-- **组件测试**：`OutlinePanel` 7 例、`InspirationPanel` 6 例，覆盖跳转 id、
-  梗概与伏笔增删改、置顶、过滤、转伏笔与禁用态
-
-### Changed
-- **码字区栏宽改为按容器自适应**：正文栏以码字区实际宽度分档
-  （<760px 吃满并收边距、≥900px 46em、≥1200px 50em、≥1500px 54em），
-  宽屏不再把正文悬在正中、两侧空出 300px+ 白边，窄屏一行仍有 25~30 字
-- **小屏自动让位**：可用宽度（窗口宽 − 当前已开栏宽）低于 560px 时自动
-  收起左栏给码字区让位，窗口变宽自动还原；手动开合过左栏后本机制失效，
-  改由用户决定
-- `LAYOUT.autoCollapseWidth`（声明后从未使用）换成 `minStageWidth`，
-  判据从「窗口宽度写死阈值」改为「窗口宽 − 已开栏宽」
-
-### Fixed
-- **大纲点击章节跳不到正文**：桩数据用「o-c7」这类假 id，与章节真实 id
-  不通；现由真实卷章派生，章节节点自带 chapterId
-- **新建章节时自动建卷的卷名写死「第一卷」**：卷头序号本就由 sort 派生，
-  结果显示成「第一卷 · 第一卷」；改为存默认名「未命名卷」
-
-## [1.6.10] - 2026-09-20
-
-### Added
-- **左栏双击快捷编辑章节名**：双击章节标题原位进入编辑（序号与状态圆点
-  保持可见），Enter / 失焦保存、Esc 取消、IME 守卫，空名与同名不落；
-  编辑态行渲染为 div，避免按钮嵌套输入框
-
-### Changed
-- **序号数字默认中文**：新会话默认「第一章 / 第一卷」样式（设置中仍可
-  切回阿拉伯数字，与后缀自由组合）
-- **卷名展示分隔符改为「·」**：命名后卷头显示「第一卷 · 风起云涌」
-- **悬浮资料卡统一在文字下方展示**：移除触底翻转（flip）——此前中间
-  段落的高亮词会从下到上缓动覆盖正文，现与首段行为一致，一律在词的
-  下方展开
-
-### Fixed
-- **性格标签出现空白圆片**：历史数据「沉默寡言 · 重诺」这类分隔符带
-  空格的格式，按「·」拆分后产生空白段直接渲染成空 chip；详情页与
-  悬浮卡两处拆分均已 trim + 过滤空段
-
-## [1.6.9] - 2026-09-20
-
-### Added
-- **卷命名**：左栏双击卷名进入编辑（「第2卷 - 风起云涌」），序号仍由 sort
-  派生不受命名影响；默认名「未命名卷」只显示序号，Enter / 失焦保存、
-  Esc 取消、IME 守卫，空名与同名不落
-- **性格标签可编辑**：资料卡编辑态新增「性格」行（顿号 / 逗号分隔多标签），
-  保存写入 `fields["性格"]`，只读态标签 chips 随之更新；清空即移除该字段
-- **关联要素增删（R24 落地）**：详情页「关联要素」区支持——每行 hover
-  显示 × 解除关联；「+ 添加关联」内联表单（下拉选目标要素 + 关系名，
-  关系名留空记为「相关」）；同一对要素 + 同关系名不重复建，操作均有
-  toast 反馈。数据走 NovelLink 多态关联表，为后期「一键生成人物关系
-  网络图」预留结构（双向查询视图已就绪）
-
-### Changed
-- **支撑面板点击空白收起**：点击右栏内容区的空白处（列表未铺满的区域）
-  即收起面板，与顶栏开合按钮等效；点击面板内内容不触发
-
-## [1.6.8] - 2026-09-20
-
-### Added
-- **左栏底部「新卷」按钮**：一键在当前作品末尾追加一卷（默认名「未命名卷」，
-  卷头展示序号随 sort 派生），配合拖拽把章节归入新卷
-- **资料卡编辑**：详情页右上角「编辑」进入编辑态，支持修改名称、类型
-  （六类可选）、别名（顿号 / 逗号分隔，自动去重且剔除与名称重复项）、
-  一句话简介；名称必填，Esc 取消，切换查看对象自动退出编辑
-- **出场章节升级为可跳转**：资料卡详情展示全部出场章节（不再截断前 6 个），
-  每项为「序号标签 + 章节名」胶囊，点击即跳转该章；序号标签随
-  「序号数字 + 章节后缀」配置实时派生（第3章 / 第三章…）
-- **选区右键菜单标注**：选中正文后右键弹出标注菜单（替代原悬浮工具条）——
-  上半部分按四类型一键新建资料卡，下半部分「绑定到现有资料卡」列表
-  （已包含该称呼的卡禁用并标记「已绑定」），点击即把选中文本关联为
-  该卡别名；菜单位置以鼠标为准并按菜单尺寸 clamp 在正文区内
-
-### Changed
-- **资料卡标注改走手动绑定路线**：选区标注由悬浮工具条改为右键菜单，
-  识别与绑定完全由用户驱动；选区不再携带坐标（右键时以鼠标事件定位）
-- SelectionToolbar 悬浮工具条组件下线，由 EntityContextMenu 接替
-
-## [1.6.7] - 2026-09-20
-
-### Changed
-- **序号标签配置重组**：原「章节序号 / 卷名样式」组合预设拆为两个独立配置——
-  「序号数字」（阿拉伯「第1章」/ 中文「第一章」）与「章节后缀 / 卷名后缀」，
-  两者自由组合；后缀提供快捷项（章 / 张 / 回 / 节，卷 / 部 / 篇 / 集）并支持
-  自定义输入，正文标题前缀、左栏卷头、防误触确认弹框实时跟随
-
-## [1.6.6] - 2026-09-20
-
-### Added
-- **章节序号 / 卷名标签预设**：设置抽屉新增「章节序号」（第1章 / 第一章 /
-  第1回 / 第一回 / Chapter 1）与「卷名样式」（第一卷 / 第1卷 / 第一部 /
-  第1部 / Volume 1）便捷预设，选择即生效；序号是排序的派生属性，
-  拖拽重排后自动跟随新样式
-- **中文序号展示**：新增 `toChineseOrdinal`（1→一、12→十二、123→一百二十三、
-  12345→一万二千三百四十五），预设中的中文样式据此渲染
-- **防误触排序模式（默认开启）**：拖拽调整章节 / 卷顺序后，先弹确认框
-  展示「谁的序号从几变成几」的完整变更清单，确认后才应用；可在设置关闭。
-  重排计算抽为 `previewChapterReorder` 等纯函数，弹框预览与实际应用共用
-
-### Fixed
-- **跨卷拖拽到章节上未真正换卷**：`reorderChapters` 只回写了 `sort`，
-  没有更新 `volumeId`，导致跨卷移动实际只改了序号（v1.6.2 引入的潜在缺陷，
-  由新增单测捕获）
-
-### Changed
-- **左栏底部「排序」按钮与行内上下移按钮下线**：拖拽已成为唯一排序入口
-
-## [1.6.5] - 2026-09-20
-
-### Fixed
-- **切换作品后无法创建第一章**：空作品（无卷无章）下 `createChapter` 因无
-  目标卷直接返回 null——「写下第一章」永远失败。现无卷时自动创建「第一卷」；
-  切换作品后旧的章节 id 不属于当前作品，已重置到该作品第一章
-- **中文输入拼音候选期间字数按拼音递增**：IME 组合期间的文档中间态不再
-  上报草稿与统计，确认（compositionend）后一次性上报最终文本，
-  字数增量只按确认后的真实字数计算
-- **设置抽屉打开后缺少关闭途径的感知**：抽屉本身关闭按钮正常，但无遮罩、
-  点外部不关、顶栏齿轮只开不关。现补齐三种关闭方式：点抽屉外部（透明
-  捕获层）、顶栏齿轮再点一次（toggle）、Esc 逐层关闭（设置 → 快照 → 专注）
-
-### Changed
-- 章节标题下方徽标只在「完稿」状态显示；草稿为默认态不再常驻显示
-
-## [1.6.4] - 2026-09-20
-
-### Improved
-- **章节标题编辑输入框原地居中出现**：标题区为 column flex 布局，固定宽度的
-  输入框此前落在交叉轴起点（最左侧），现显式 `align-items: center` 原地居中
-- **章节序号改为排序的派生属性**：新增 `buildChapterNumbers` 全书连续编号
-  （卷按 sort、卷内章按 sort），标题不再写死「第N章」前缀——左栏序号徽标与
-  正文标题前缀均由序号派生，拖拽重排 / 跨卷移动后自动跟随变动；
-  重命名只编辑章节名本身
-- **标记要素后正文立即高亮**：词库 compartment 热更新时同事务携带
-  `refreshAnnotation` 强制信号——此前标注插件不响应单纯的 facet 变化，
-  新标记的词要等切章 / 滚动才出现高亮
-
-## [1.6.3] - 2026-09-20
-
-### Fixed
-- **修复选区工具条 / 悬浮资料卡位置错误与超出视口**：坐标此前以编辑器 host
-  （滚动容器内部）为基准计算，而弹层实际相对 `.nv-page__stage` 绝对定位——
-  水平方向差正文栏内边距，垂直方向在滚动后 host 顶点变负导致弹层飘出可视区。
-  现统一以 stage 为定位基准，并按弹层自身尺寸做边界 clamp（不再裁切出界）
-- **修复切换章节后残留上一章正文高亮（闪一下才消失）**：外部灌文触发的标注层
-  重建此前要走 300ms 防抖，旧 decoration 残留一个防抖周期。现在切章 / 回滚的
-  灌文事务直接携带 `refreshAnnotation` 强制信号，标注层立即重建
-  （连续输入的 300ms 防抖保持不变，不受影响）
-
-### Added
-- **章节名称可修改（PRD R1）**：点击正文区顶部章节标题进入编辑态，
-  Enter / 失焦提交，Esc 取消，带 IME 组合输入守卫（拼音候选期间 Enter 不提交）；
-  切换章节自动退出编辑态，避免标题草稿串章。数据层新增 `renameChapter`
-
-## [1.6.2] - 2026-09-20
-
-### Fixed
-- **修复 NovelPage 正文编辑区完全不可用**：EditorPane 的 CodeMirror 初始化
-  effect 只在首帧执行，而首帧时章节尚未加载（走空态分支、host 容器未挂载），
-  编辑器实例永远不会创建，码字区空白无法输入。改为编辑器实例常驻渲染 +
-  空态覆盖层（`__veil`），加载完成后即可正常输入
-- **章节切换 / 快照回滚时撤销栈隔离**：外部灌入正文走
-  `isolateHistory.of("full")`，避免 Ctrl+Z 跨章节回退出上一章正文（R2 撤销可靠性）
-
-### Added
-- **左栏拖拽排序（PRD R9）**：章节行与卷头均可拖拽——章节拖到章节上实现
-  卷内重排或跨卷移动（落到目标章节位置），章节拖到卷头移入该卷末尾，
-  卷拖到卷头重排卷顺序；drop 目标用 inset 阴影做指示线，颜色跟随主题变量。
-  数据层新增 `reorderChapters` / `moveChapterToVolume` / `reorderVolumes`，
-  排序算法抽为纯函数（`moveItemBefore` / `insertItemBefore` / `buildSortOrder`）
-  并补充 5 组单测；原「排序模式」上下移按钮保留
-
-## [1.6.1] - 2026-09-20
-
-### Added
-- **补建 `scripts/rebuild-native.mjs`（`pnpm electron:rebuild`）**：此前
-  `package.json` 引用的 `scripts/rebuild-native.js` 文件缺失，该命令实际不可用。
-  新脚本对 `better-sqlite3` 优先用 `prebuild-install -r electron` 下载与 Electron
-  版本匹配的预编译二进制（命中缓存秒级完成，无需 MSVC 工具链），失败自动回退
-  `@electron/rebuild` 源码编译；已端到端验证（exit 0）
-
-### Fixed
-- **修复 `pnpm dev` 主进程报 `better_sqlite3.node was compiled against
-  NODE_MODULE_VERSION 127, requires 146`**：better-sqlite3 安装时下载的是系统
-  Node ABI 的预编译包，Electron 42（ABI 146）加载即崩。执行
-  `pnpm electron:rebuild` 重装 electron-v146 预编译二进制后恢复正常；
-  以后升级 Electron 出现同类 ABI 报错直接跑该命令即可
-
-### Changed
-- **首页 news 提醒（右下角报纸）生命周期重构**：由「窗口生命周期内探测一次 +
-  点击后永久消失」改为「**应用启动后展示一次，隔天 9 点重置状态后再展示一次**」。
-  拉取成功（live）才展示，失败静默（下次进入首页或下个周期重试）；点击跳转
-  资讯页后本周期内不再展示。实现为「周期 key」状态机（9 点前属昨天周期、
-  9 点起属今天，状态随 key 翻转自动重置），抽取为
-  `HomePage/hooks/usePosterVisibility.ts`，HomePage 仅保留渲染编排。
-  新增 7 例单测：周期 key 9 点边界、live/非 live、点击后本周期静默、
-  路由往返恢复、StrictMode 双挂载探测去重、隔天 9 点翻转重探
-
-## [1.6.0] - 2026-09-19
-
-### Added
-- **WorkerWindow 改造为「CheckIn 小说编辑器」窗口**：新增窗口私有页面模块
-  `src/windows/WorkerWindow/pages/NovelPage/`，按 PRD v0.4 与 UI 设计方案
-  v0.4 落地 W1 主窗口（顶栏 44px / 左栏章节树 236px / 中央码字区 42em /
-  右栏支撑面板 322px / 状态条 32px）、D1 快照抽屉、D2 设置抽屉、
-  O1 Ctrl+P 章节跳转浮层、O2 悬浮资料卡、O3 选区标记工具条
-- 码字区内核采用 **CodeMirror 6**（新增依赖 `codemirror` /
-  `@codemirror/state` / `@codemirror/view` / `@codemirror/commands`）：
-  虚拟滚动支撑三万字章节，IME 组合输入由内核原生处理
-- 标注层扩展 `novel-editor.ts`：名称+别名白名单高亮，仅扫可视区，
-  compositionstart 期间冻结计算、compositionend 与文档变化各 300ms 防抖，
-  刷新走 `addToHistory(false)` 空事务不污染撤销栈（PRD §2 / 设计方案 §05）
-- 右栏四支撑面板：大纲（卷/章/伏笔）、要素库（类型 chips + 卡片 + 详情，
-  含自定义字段 / 关联要素 / 等级体系 / 出场章节）、灵感速记（Enter 提交 +
-  IME 守卫）、全书检索（300ms 防抖 + 片段高亮）
-- 数据层为占位实现：`pages/NovelPage/services/novel-demo-source.ts`
-  按未来 IPC 的返回形态提供本地数据，`hooks/useNovelData.ts` 只依赖其函数签名，
-  真数据接入时替换实现即可，页面与组件层无需改动
-- `novel-utils.ts` 纯函数与 25 例单测：字数统计（含标点/纯汉字双口径）、
-  词库构建、标注匹配、模糊检索、片段高亮
-- **依赖链接自愈工具 `scripts/fix-pnpm-links.mjs`**：应对 pnpm 在 Windows 上
-  把条目重命名为 `.ignored_*` 后搬迁中断、留下空壳且 `pnpm install` 不再自愈的
-  问题。可重建断裂的顶层链接、清理 `.ignored` 空壳、纠正顶层误指向 peer 变体的
-  链接（electron 的 `dist/` 二进制只在主变体，指到 peer 变体会「能 import
-  但没二进制」）。配套 `pnpm check:deps`（体检，CI 可用）与
-  `pnpm fix:deps`（应急修复），并挂在 `postinstall` 上自动体检
-
-### Changed
-- WorkerWindow 默认尺寸 720×520 → **1200×760**，最小 420×320 → **800×560**
-- 移除 WorkerWindow 的 Esc 关窗（PRD §2 零打断原则）：Esc 现在只用于
-  退出专注模式（F11 进入），关窗永不询问、由持久化兜底
-- 锁定包管理器版本：`package.json` 新增 `"packageManager": "pnpm@11.25.0"`，
-  避免跨 pnpm 大版本复用同一 `node_modules`（这是 `.ignored` 半损坏的诱因）
-
-### Fixed
-- **根治 `pnpm dev` 反复卡死**（自 1.4.7 起的老问题，此前归因均不准确）：
-  根因是 Electron **42.4.1 已移除 `postinstall` 脚本**（实测 `pkg.scripts` 为
-  undefined），二进制安装被推迟到首次 `require('electron')` ——`index.js` 会在
-  require 的**同步调用栈里** spawnSync 跑 `install.js` 下载 ~140MB，且 **无超时、
-  无进度、默认直连 github.com**，终端表现就是「卡住不动」。补充坑：`.npmrc` 的
-  `electron_mirror` 只有在包管理器执行安装脚本时才会转成 `ELECTRON_MIRROR`，
-  被 `index.js` 内部 spawn 时一个环境变量都没有。
-  - 新增 `scripts/ensure-electron.mjs`：自行读取 `.npmrc` 镜像并**显式注入
-    `ELECTRON_MIRROR`**，再带超时上限补装二进制；命中本地缓存时实测 **2.1s**
-    （此前无镜像 >300s 无响应）
-  - 挂到 `dev` / `dev:debug` / `dev:debug:log` / `electron:dev` / `postinstall`
-    最前面，已装好时毫秒级返回，不影响启动手感
-  - `scripts/start-electron.js` 补上此前只写在文档里、实际并不存在的 fail-fast
-    守卫：二进制缺失时拒绝掉进无超时下载，直接输出修复指引
-  - `start-electron.js` 额外剔除继承来的 `ELECTRON_RUN_AS_NODE` /
-    `ELECTRON_NO_ATTACH_CONSOLE`：该变量会让 electron.exe 退化成普通 Node，
-    `require('electron')` 返回路径字符串而非 API，主进程直接崩在
-    `Cannot read properties of undefined (reading 'app')`（VS Code / WorkBuddy
-    等 Electron 宿主的集成终端会泄漏该变量）
-- 新增 `pnpm dev:doctor`（`scripts/dev-doctor.mjs`，**不能叫 `doctor`** —— 会被
-  pnpm 自带的 `pnpm doctor` 内置命令吞掉）：体检关键依赖 + 实测 vite 能否在 5173
-  提供服务 + 实测 wait-on 能否判定就绪 + **Electron GUI 冒烟测试**
-- 诊断「`start-electron.js exited with code 1` 且零输出」的场景：Windows 上
-  electron.exe 是 **GUI 子系统程序、不挂控制台**，连崩溃栈都看不到。改用「最小
-  Electron 应用能否写出标记文件」作判据，`dev:doctor` 第 4 步给出明确结论，
-  避免每次都靠猜
-- **修复 Electron 解压不完整导致的秒退（本轮真正的元凶）**：`dist/electron.exe`
-  与 `path.txt` 都在的情况下 Electron 仍在几十毫秒内 `exit(1)` 且零输出，原因是
-  解压被中断后只剩 19 个根文件，**缺了 `locales/*.pak`（55 个 ICU 语言包）与
-  `resources/default_app.asar`**（官方 zip 共 75 条目）。而 `install.js` 因
-  `path.txt` 已写好而认定「已安装」，`pnpm install` 永远 Already up to date，
-  不会自愈。`scripts/ensure-electron.mjs` 现在：
-  - 体检新增 `dist/locales` 与 `dist/resources/default_app.asar` 两项
-  - 识别出「仅这两项残缺」= 解压中断，**自动清空 dist 重新解压**（缓存命中约 2s）
-  - `dev:doctor` 第 1 步同步加入这两项校验
-
-## [1.5.0] - 2026-09-18
-
-### Changed
-- **HTTP 请求架构重构：主进程不再代理任何网络请求**。新增 `src/shared/http/`
-  统一客户端（内部 `fetch` 封装，零第三方依赖），提供超时、重试（网络错误/5xx
-  指数退避）、中断、错误归一（`HttpError`）、`{code,data}` 响应剥壳标准；
-  各窗口按 `getScopedHttpClient(scope)` 持有独立实例，请求彼此隔离，
-  页面卸载自动中断在途请求（`useHttpClient` / `abortScope`），
-  多窗口高频请求不再影响主进程稳定性
-- 移除 `http-request` IPC 通道与 `preload.httpRequest`（同步更新
-  `src/shared/types/electron.d.ts`）；资讯与 Git 接口改为渲染进程直连
-- 认证 Cookie 改为 session jar 播种：`ensureSessionCookie()` 一次性写入，
-  请求带 `credentials: "include"` 由网络栈自动携带（Cookie 是 forbidden
-  header，渲染进程无法手动设置）
-- CORS 由主进程 session 级 `onHeadersReceived` 注入响应头放行（新文件
-  `electron/httpSession.ts`），属启动期一次性注册，不参与逐请求链路
-
-### Fixed
-- 顺带消除主进程转发时代的 chunk 截断乱码隐患：响应改由 Chromium 网络栈
-  按 UTF-8 解码（原 1.4.8 Buffer 契约随架构废弃）
-
-## [1.4.8] - 2026-09-18
-
-### Fixed
-- 修复主进程 `http-request` 转发响应的中文/emoji 乱码：逐块 `data += chunk`
-  隐式 utf8 解码会把跨 chunk 边界的多字节字符截成 U+FFFD（资讯标题
-  "AI 🤖占比超九成" 的 emoji 被截成两个问号）。改为 Buffer 收集后
-  `Buffer.concat(...).toString("utf8")` 统一解码
-
-### Changed
-- pnpm ≥10 兼容加固补全：`scripts/start-electron.js` 新增 fail-fast 守卫，
-  electron 二进制缺失时直接输出修复指引（`pnpm install` / `pnpm rebuild
-  electron`），不再以晦涩报错或静默卡住呈现；AGENTS.md 8.7 同步补充
-  rebuild 修复路径与 http-request 编码契约
-
-## [1.4.7] - 2026-09-18
-
-### Fixed
-- 修复 dev（StrictMode）下首页海报永不出现：探测标记在首次挂载即置位，StrictMode
-  重挂载跳过订阅而首个挂载的回调又因 cleanup 判死，接口结果永远无法落到
-  `setShowPoster`。改为模块级 Promise 缓存（同窗口仍只探测一次，每次挂载
-  独立订阅），与 PosterWidget 的 loseContext 修复同属 StrictMode 双执行陷阱
-
-### Changed
-- 依赖管理加固：`package.json` 新增 `pnpm.onlyBuiltDependencies`
-  （electron / better-sqlite3 / esbuild）——pnpm ≥10 默认拦截依赖构建脚本，
-  新机器装完依赖 electron 二进制不会下载（dev 启动报缺二进制）；`.npmrc` 补
-  `electron_builder_binaries_mirror`；AGENTS.md 新增 8.7「新机器环境搭建与依赖管理」
-  （标准安装流程与 electron 二进制校验方法）
-
-## [1.4.6] - 2026-09-18
-
-### Added
-- 代码记录页新增「查询当月」按钮（位于「查询」按钮后）：点击将日期范围自动选为
-  本月 1 号至今日并立即查询，省去手动调整起止日期
-  - 新增纯函数 `getThisMonthRange`（`code-utils.ts`）并补 3 条单测
-    （月中 / 月初当天 / 跨年月切换）
-  - `loadData` 支持显式传入日期区间（`setDateRange` 后同轮闭包读不到新 state，
-    编程式查询必须带参）
-
-### Verified
-- `pnpm test`：91/91 通过（9 个测试文件）
-- `pnpm typecheck`（tsc strict）：0 错误
-- `pnpm lint`：0 错误（仅剩 CodePage 既有 exhaustive-deps 警告）
-
-## [1.4.5] - 2026-09-18
-
-### Added
-- 新增「今日资讯」页（NewsPage，`/news`），承接首页海报与侧栏入口：
-  - 左栏为今日热点 Top 10（热度前三按金/橙/铜高亮，热度固定条目右下角）
-  - 右栏为摸鱼日报风格栏目：渐变日期卡（含农历）、打鱼状态与工作日徽标、
-    周/月/年进度条、假期倒计时（≤1 天红标）、摸鱼计划表（当前时段背景高亮、
-    单行省略）、每日语录
-  - 侧栏导航最下方新增「资讯」入口
-- 接入 60s API 真实数据源（数据层 `src/shared/services/news.ts`，首页探活与资讯页共用）：
-  - `/v2/60s`（每天 60 秒读懂世界要闻）+ `/v2/moyu`（摸鱼日报进度/工作日/农历/语录）
-    双端点并发，经主进程 `httpRequest` 转发防 CORS
-  - 任一端点失败不影响另一端点；全部失败回退本地样例与本地文案，页面不空
-- 首页海报改为**条件展示**：首次进入首页时探测一次新闻接口，成功才展示右下角海报；
-  点击跳转资讯页后本窗口生命周期内不再出现；接口失败静默隐藏
-
-### Fixed
-- 修复 dev（React StrictMode）下海报完全不渲染：`dispose()` 不再调用
-  `WEBGL_lose_context.loseContext()`——同一 canvas 重建时会拿到丢失上下文，
-  导致着色器全部编译失败而静默降级
-- 修复 midnight 主题下海报 NEWS 报头白字白底不可见（油墨色改为每主题固定深墨，
-  新增纸色明度契约测试防回归），海报视觉同步现代化（无衬线报头、纸色去黄、噪点减半）
-- 资讯真实接口无摘要/时间时不再渲染空摘要行与孤立分隔点
-
-### Changed
-- 首页海报显示尺寸缩小为 130×180（内部分辨率 260×360 超采样不变），
-  不再遮挡统计卡与功能卡
-
-### Verified
-- `pnpm test`：88/88 通过（9 个测试文件；NewsPage 新增 15 条：假期倒计时边界、
-  60s API 映射/兜底/单端点失败隔离/live 标识；海报新增纸色明度契约）
-- `pnpm typecheck`（tsc strict）：0 错误（清 tsbuildinfo 缓存后全量确认）
-- `pnpm lint`：0 错误（仅剩 CodePage 既有 exhaustive-deps 警告）
-
-## [1.4.4] - 2026-09-18
-
-### Added
-- 新增首页右下角海报装饰件
-
-### Verified
-- `pnpm test`：72/72 通过（8 个测试文件，PosterWidget 新增 9 条：色板解析 4、
-  手感/贴图契约 3、引擎降级与组件卸载 2）
-- `pnpm typecheck`（tsc -b，strict 开启）：0 错误
-- `pnpm lint`：0 错误（仅剩 CodePage 既有 exhaustive-deps 警告）
-- `vite build` 通过
-
-## [1.4.3] - 2026-09-17
-
-### Added
-- 首页「新建待办」支持快捷建立工时：输入内容后追加 `#2h` 即可同时写入工时
-  （支持小数 `#1.5h`、大小写 `#2H`、`# 2 h` 等写法）。
-  - 复用待办页的 `parseWorkHourTag`，两个入口行为完全一致，不新增第二套语法
-  - 弹窗内实时预览解析结果（将记录工时 `2h` + 清洗后的内容），未输入标签时给出语法提示
-- Todo 子项排序：**未完成子项排前面、已完成子项沉底**，同组内保持原有顺序
-  - 新增纯函数 `sortChildrenByDone`（`todo-utils.ts`），全未完成 / 全已完成时短路复用原数组引用，避免无谓重渲染
-  - 补齐 7 条单测覆盖沉底、稳定性、短路与不可变性
-
-### Fixed
-- 修复日程页**窗口拖拽 resize 时日期组件高度不变导致变形**（格子被拉成扁矩形）：
-  - 根因是循环依赖：`.calendar-panel` 是 flex 容器，`.calendar-grid` 的 `flex: 1`
-    只是 `flex-basis: 0`，其高度取决于内容；而内容高度又由格子宽度经
-    `aspect-ratio: 1` 反推。窗口纵向拖拽时这条链不会重算，格子高度被冻结在旧值
-  - 改为 grid 行高 `1fr`（`grid-auto-rows: 1fr`）平分面板高度，格子本身不再设宽高，
-    彻底移除 `aspect-ratio` —— 高度由 grid 直接算出，resize 时必然跟随
-  - 日历区新增 `.calendar-scroll` 滚动容器 + `min-height: 264px` 下限：
-    窗口压得过矮时改为滚动，而不是把格子继续压扁到不可读
-- 修复**窗口边缘残留直角阴影**（截图红框处四角与边缘的淡色直角）：
-  - 根因：`.window-shell` 满视口，其常规（非 inset）`box-shadow` 全部落在元素矩形之外，
-    被窗口的方形边界裁掉，只剩沿直角边缘的一圈残影
-  - 改为 `inset` 内阴影：投影画进窗口内部，圆角处自然跟随 `border-radius` 收边
-  - `--app-shadow-window` 同步从 `0 8px 32px rgba(...)` 改为 inset 形式，四套主题各自校准深浅
-- 日程页高度不再使用 `calc(100% - 48px)` 魔法数，改为 `flex: 1` 吃满 `.page` 剩余高度，
-  与 `Page` 的 flex 列布局对齐（此前该值在导航头部高度变化时即失配）
+- **右栏五个 Tab 选中时只有文字变蓝、图标仍是白的（REQ-057）**：组件库把选中色
+  写在 `.ant-segmented-item-label` 上，而图标外面包着 `Badge`，Badge 根节点自带
+  `color: --ant-color-text`（午夜主题 #e8eaf2），`.anticon` 的 `color: inherit`
+  继承到的是它。实测（像素采样 + 计算样式）确认后，把 `.ant-badge` 与 `.anticon`
+  一起拉回 `inherit`，颜色重新由 label 的选中 / 悬停色驱动。
+- **导入图书每段残留首行空格（REQ-059）**：解析器逐行拼接时对正文行零清理，
+  只有整章首尾各 `trim()` 一次 —— 源文件自带的 `　　`／`&emsp;` 全被原样入库，
+  再叠上编辑器 CSS 的 `text-indent: 2em`，手写段 2 字宽、导入段 4 字宽，
+  字体缺该空白字形时还会显示成一排空方块。现在入库前逐行剥掉行首行尾的
+  Unicode 空白（含 U+3000 / U+00A0 / U+2000–200A / U+FEFF / U+200B），
+  缩进统一交给编辑器；空行结构保持不变。
+- **续写首字前误显「（本次没有产出续写内容）」**：`runContinuation` 把 `loading`
+  写死为 `false`，「正在续写…」那段是死代码。现在开流即为 loading，
+  首块到达才转成正文。
+- **续写首个 delta 会一次吐出好几句**：`getAiConfig()` 被放在流建立**之后**，
+  等待这次 IPC 期间到达的数据块会在第一个 `readChunk` 合并。现在先取 provider 再开流。
 
 ### Removed
-- 移除首页底部的**账号管理卡片条**（头像 + 邮箱 + 「修改」入口）：
-  账号信息统一从侧边栏「我的」进入，避免首页出现第二个冗余入口。
-  同时清理 `.home-page__user*` / `__avatar` 共 5 组样式
 
-### Verified
-- `pnpm test`：63/63 通过（6 个测试文件，新增 `sortChildrenByDone` 7 条用例）
-- `pnpm typecheck`（tsc -b，strict 开启）：0 错误
-- `pnpm lint`：0 错误（仅剩 CodePage 既有 exhaustive-deps 警告）
-- `vite build` 通过
+- **右键菜单「绑定到现有资料卡」（REQ-062）**：它只是把选中文字追加成某张卡的
+  别名，收益与「新建资料卡」高度重叠，却随资料卡数量线性增长、占了菜单一半以上
+  篇幅。连同 `onBind` / `entities` 两个 props、`bindTextToEntity` 数据能力和
+  对应的 4 段样式一并删除；补别名改在要素详情的别名输入框里做。
+  菜单高度实测从 512px 降到约 300px 以内，底部功能不再需要滚动。
 
-## [1.4.2] - 2026-09-17
-
-### Changed
-- 首页侧边栏改为方案二的**圆角浮动**形态（此前是贴左边缘 + 右边框的实心栏）：
-  - 去掉 `border-right`，改为 20px 圆角 + 软投影 + 主题描边
-  - `.home-page` 四周留白 12px、栏间距 12px，让侧栏与内容区都浮在 `--app-bg` 之上
-  - 内容区内边距由 20/24 拆为「外层 12 + 内层补 8/12」，总留白与改版前一致
-  - 侧栏宽度 76 → 72px，导航项 60 → 56px
-- WorkerWindow 入口从右下角悬浮按钮**集成进侧边栏底部**（主题切换器上方，中间用分隔线隔开）：
-  - `WorkerFloatButton` 新增 `variant`：`float`（右下角悬浮圆钮，默认）/ `inline`（36px 圆角图标钮，不脱离文档流）
-  - 类名由 `worker-float-btn` 统一为 `worker-btn` + `--float` / `--inline`
-  - 首页不再有两个悬浮入口
+## [2.10.6] - 2026-10-28
 
 ### Fixed
-- 修复窗口圆角在桌面底色接近时**显示为方角**（两处根因，先后修复）：
-  - `roundedCorners: true` 在 Windows 上让 DWM 按**固定 8px** 系统圆角裁剪窗口，
-    把 CSS 画的 12px 圆角和描边的四角切掉，四角只剩一段弧度很小、接近直角的边缘，
-    叠加透明区透出的桌面浅色，表现为「圆角外还有一圈淡淡的直角底」→ 改为 `roundedCorners: false`，
-    圆角完全交给 CSS
-  - 根因是圆角外为透明（露出桌面壁纸），而描边用的是主题色 `--app-border`
-    （如 aurora 的 `#e2e6f4`），在浅色桌面上几乎不可见
-  - `.window-shell` 描边改为**刻意不跟随主题**的中性双层描边：
-    外层 `rgba(0,0,0,0.12)`（浅色桌面）+ 内层 inset `rgba(255,255,255,0.1)`（深色桌面），
-    保证四种「桌面深浅 × 主题深浅」组合下圆角轮廓都可见
 
-### Verified
-- `pnpm test`：56/56 通过
-- `pnpm typecheck`（tsc -b，strict 开启）：0 错误
-- `pnpm lint`：0 错误（仅剩 CodePage 既有 exhaustive-deps 警告）
-- `vite build` 通过
+- **划词右键菜单在正文底部被截断，下半截功能点不到**：菜单项随「文本变换 /
+  记入行囊 / 新建资料卡 / 绑定到现有资料卡」一路增加到近 500px 高，而落位仍在
+  沿用早期的「约 190×320」估算夹取。菜单是 `.nv-page__stage`（`overflow: hidden`）
+  里的绝对定位浮层，底边一越过 stage 下沿就整块被裁，且没有滚动条——
+  实测（760×550 的 stage、10 条绑定项）：旧实现把菜单底推到 742px，
+  **超出 192px**，最后一条绑定项完全落在裁切区外。
+  - **改为实测落位**：`EntityContextMenu` 在 layout effect 里量自己的
+    `scrollHeight`（不用 `offsetHeight`，否则套了 `max-height` 之后会量到压缩高度、
+    越算越矮），连同 stage 的 `clientWidth/clientHeight` 交给新的纯函数
+    `placeContextMenu`：下方放得下就地展开 → 放不下翻到光标上方 → 上下都放不下
+    才夹到底部留白并给 `max-height` 让菜单内部滚动。同一组几何用例下六种位置
+    全部 `overflowsBottom: false`，最后一项可被 `elementFromPoint` 命中。
+  - **去掉 EditorPane 里的估算常数**（`stageRect.height - 320` /
+    `width - 208`）：坐标只负责「相对 stage」，落位责任单一归菜单组件。
+  - **样式兜底**：`.nv-ctxmenu` 补 `max-height: calc(100% - 16px)` +
+    `overflow-y: auto` + `box-sizing: border-box`，即使 JS 量不到 stage 尺寸，
+    菜单也不会再被 `overflow: hidden` 切掉（不计 border-box 会多出 14px 顶出下沿）。
+  - 新增 `placement.test.ts`（9 条几何用例）与 `ctx-menu-placement-guard.test.ts`
+    （实测高度 / 落位收口 / 旧常数反向断言 / 样式兜底），防止「菜单再加几项
+    就复发」。
 
-## [1.4.1] - 2026-09-17
+## [2.10.5] - 2026-10-28
 
-### Changed
-- 主题色值枚举扩充至 55 项（较 1.4.0 增加 14 项），四套主题保持同一变量集合：
-  - 新增底色 `surface-active`（按下态）、`sidebar-bg`、`input-bg`、`splitter`（分隔线）
-  - 新增文本 `text-disabled`；主色新增 `primary-active`（按下态）
-  - 新增语义色 8 项：`success` / `warning` / `error` / `info` 及各自的 `-weak` 弱底
-  - antd token 同步补齐 `colorTextDisabled` / `colorSplit` / `colorSuccess` / `colorWarning` /
-    `colorError` / `colorInfo` / `colorLink`，弹层与表单不再沿用 antd 默认蓝
-- 全量页面样式变量化，消除暗色主题下的割裂（此前仅共享层接入主题，业务页仍为浅色硬编码）：
-  - Todo：`TodoListItem` / `TodoOutlineSidebar` / `TodoSection` / `TodoToolbar`
-  - Memo：`MemoPage` / `MemoSidebar` / `MemoListItem` / `MemoHeader` / `MemoEditor` / `MemoPreview`
-  - Daily：`index.scss` 日历面板与时间带的白底、分割线、选中态全部改为主题变量
-  - Code：趋势图基线、柱体、数值与日期文字改为主题变量
-  - 共享：`WorkerFloatButton` 改用 `--app-primary` 系列与主题阴影；`ThemeSwitcher` 色块描边改用 `--app-border-strong`
-  - TSX 内联色一并收敛（`CodePage` 增减行/统计值、`TodoOutlineSidebar` 分组色、
-    `MemoListItem` 图标色、`TodoToolbar` 搜索图标、活动提醒默认色）
-- `shared/styles/variables.scss` 标注颜色变量已废弃：新样式一律用 `--app-*`，避免暗色下残留浅色
+### Fixed
 
-### Removed
-- 移除 `WindowHeader` 与 `LoginWindow` 的主题切换器：主题切换入口统一收敛到首页侧边栏底部，
-  避免同一功能在多处出现且与窗口标题栏职责混淆
+- **AI 续写每次都被自己的端点拒成 403（弹窗里显示一句英文 `Forbidden`）**：
+  `ai-stream://` 端点的身份校验读的是请求头 `Origin`，但自定义 scheme 的跨
+  scheme fetch **根本不会发送这个头**（实测 `protocol.handle` 收到的只有
+  accept / content-type / user-agent；Electron 原生的 `request.initiatorOrigin`
+  才有值）。于是 `isTrustedInitiator("")` 恒为 false，打包版（页面 origin 为
+  `app://`）的每一次续写都 403；dev 下页面 origin 是 `http://localhost:5173`，
+  恰好命中放行分支，所以开发期一直看不出来。主进程日志留痕是那句尾随空值的
+  「拒绝非本应用来源的流式请求: 」。
+  - **改成一次性令牌**：渲染层每次发起前经 `ai-stream-token` IPC 领一张 32 字节
+    随机令牌，随 `x-ai-stream-token` 头下发，端点在路径校验之后核销（命中即删，
+    重放无效、60s 过期、未核销数量有上限）。这正是 PRD 红线 C 原本要求的
+    「端点带一次性令牌且可失效」，此前只落到 Origin 上。
+  - **Origin 彻底退出放行判断**，只留在拒绝日志里作排障线索；守卫
+    `ai-stream-guard.test.ts` 补反向断言（源码里不许再出现 `isTrustedInitiator`
+    与 `startsWith("app://")`）。
+  - **端点常量收口**：scheme / host / path / 令牌头名统一到
+    `src/shared/ai/ai-stream-protocol.ts`，主进程与渲染层同源引用，不再靠注释
+    「保持一致」。
+  - 拒绝时的响应体改成中文（「AI 通道校验失败，请重启应用后重试」），浮层不再
+    把英文状态词当错误文案展示。
+  - 新增行为单测 `electron/ai-stream-token.test.ts`（单次有效 / 过期 / 伪造 /
+    上限淘汰）与 `src/shared/ai/ai-client-stream-token.test.ts`（每次现领令牌、
+    非 2xx 文案原样抛出）。
 
-### Verified
-- `pnpm test`：56/56 通过（6 个测试文件，含四套主题变量集合一致性校验）
-- `pnpm typecheck`（tsc -b，strict 开启）：0 错误
-- `pnpm lint`：0 错误（仅剩 CodePage 既有 exhaustive-deps 警告）
-- `vite build` 通过
-
-## [1.4.0] - 2026-09-17
+## [2.10.4] - 2026-10-28
 
 ### Added
-- 新增四套主题（柔雾紫蓝 aurora / 奶油暖橘 cream / 薄荷清新 mint / 月夜暗色 midnight）
-  - `shared/styles/themes.scss` 统一 `--app-*` CSS 变量（底色、描边、文本、主色、强调色、圆角、阴影、滚动条），
-    业务样式一律写 `var(--app-*)`，切换 `<html data-theme>` 即整体换肤
-  - `shared/theme/` 主题模块：`themes.ts`（主题清单与 antd 色板）、`theme-storage.ts`（读写/落盘/首帧初始化）、
-    `ThemeProvider.tsx`（内聚 ConfigProvider，暗色走 `darkAlgorithm`）、`theme-context.ts`（`useTheme`）
-- 新增 `shared/components/ThemeSwitcher/`：色块式主题切换器，切换后写 localStorage 并通过
-  `windowAPI.broadcast('theme-changed')` 广播，三个窗口实时同步
-  - 主窗口 / Worker 窗口挂在 `WindowHeader` 右侧；登录窗口无标题栏，固定在右上角
-- 首页改造为侧边导航布局：图标导航栏 + 问候/搜索 + 快捷操作行（含首页直建待办）+ 数据概览 + 功能卡网格 + 用户信息横条
-  - 数据概览取真实数据：待办未完成数、今日代码产出、备忘篇数、本月打卡天数（任一项失败只该项显示「—」）
-- 新增 15 个主题单测（`themes.test.ts` / `theme-storage.test.ts`），其中一项校验
-  `THEME_LIST` 与 `themes.scss` 的变量集合完全一致，防止新增主题漏写变量导致换肤后局部掉色
+
+- **帮助中心新增「AI 创作助手」分区（11 条词条）**：AI 相关能力此前只存在于按钮与
+  快捷键里，帮助中心（F1）一条都查不到——配置在哪、续写怎么停、摘要的闪电图标
+  藏哪、为什么按钮是灰的，全得靠试。现在按「配置 → 用法 → 隐私与记录」排列：
+  配置 AI 服务 / 本地模型 / AI 起名 / 润色选中段落 / 文本变换 / AI 续写 /
+  章节摘要 / 整章内容授权 / AI 记录 / 用量与效果 / AI 不可用。
+- **AI 相关 FAQ 补 4 条**：按钮灰了怎么办、内容传到哪（含「本地 Ollama 不出本机」）、
+  点闪电图标会不会重复扣费、AI 起名失败为什么还给一批名字。
+- **维护契约（防回退）**：`guide-doc.test.ts` 遍历 `AI_INTENT_LABELS`（AI 能力的
+  单一产地）要求每个意图在手册里都有可检索词条，另校验词条名全局唯一、每条都能
+  被搜索命中、词条名不超过 8 字（索引列定宽 96px）。新增 AI 功能只在代码里落地、
+  不写手册，测试直接红。
 
 ### Changed
-- 三个窗口入口统一接入 `ThemeProvider`（内部已含 ConfigProvider），并在 `createRoot` 前调用
-  `initThemeFromStorage()`，避免暗色主题首帧白闪
-- 共享样式变量化：`window-shell.scss`、`NavHeader`、`WindowHeader`、Login/Worker/Base 的 `index.scss`
-  全部改用主题变量，移除硬编码色值
-- `HomePage` 业务逻辑下沉到 `hooks/useHomeOverview.ts`（数据）与 `hooks/useHomeActions.ts`（交互），
-  卡片拆为 `components/HomeSidebar` / `components/HomeStats` / `components/FeatureCard`
 
-### Removed
-- 移除 `shared/styles/antd-theme.ts`：其职责已由 `ThemeProvider` 接管，避免两套 ConfigProvider 配置并存
+- `AGENTS.md` 新增 §8.9「新增用户可见功能（帮助手册同步，强制）」：词条要用用户会搜
+  的说法、入口或文案变了要同步改词条、新窗口没挂 `HelpCenter` 就先挂上。
+- 「工具」词条补上「可选 AI 起名」，指向新分区。
 
-### Verified
-- `pnpm test`：56/56 通过（6 个测试文件）
-- `pnpm typecheck`（tsc -b，strict 开启）：0 错误
-- `pnpm lint`：0 错误（仅剩 CodePage 既有 exhaustive-deps 警告）
-- `vite build` 通过，主题样式随各窗口 chunk 正确产出
-
-## [1.3.0] - 2026-09-17
+## [2.10.3] - 2026-10-28
 
 ### Added
-- 新增单元测试能力（vitest 4 + @testing-library/react + jsdom）
-  - 新增 `vitest.config.ts`（独立于 `vite.config.ts`，测试环境不引入 Electron 插件）与 `vitest.setup.ts`
-  - 新增 `pnpm test`（全量运行）与 `pnpm test:watch`（watch 模式）
-  - 新增 41 个单元测试：`todo-utils`（工时标签解析/格式化）、`memo-utils`（HTML 转义/搜索高亮）、`code-utils`（工作日/节假日/调休计算）、`daily`（时间换算），测试文件与被测代码同目录就近存放
-  - `AGENTS.md` 新增「6.6 单元测试规范」与「8.7 修改与交付检查」：修改功能前后必须运行对应单测，防止修复引入回归
-- `tsconfig.app.json` / `tsconfig.node.json` 开启 `strict` 模式，全量代码零错误通过
+
+- **续写复用「上一章摘要」**（R-AI-09 的第二消费方）：摘要此前只给作者看——点 ⚡
+  弹一次浮层，然后躺在 `novel_chapters.ai_summary` 里没有第二个消费方。断更回来
+  在新章开头续写时，模型只拿到「光标前 1000 字」，而那里几乎是空的，于是会把已死
+  的角色写活、把上一章刚揭穿的秘密再当悬念讲一遍。现在续写模板多一段
+  【上一章摘要】，与「已经发生、不得矛盾、不要复述」的约束。
+  - **按需注入**：仅当前文短于 `CONTINUATION_SUMMARY_MIN_BEFORE_CHARS`（300 字）
+    时才带摘要。连续写作时光标前就是上一段的剧情，摘要不但冗余还会与前文打架。
+  - **阈值只有一个产地**：调用方只管「有就传」，丢弃判断留在模板层，
+    避免每个入口各配一套口径。
+  - **降级安全**：摘要为空 / 上一章不存在（当前是第一章）/ 连写多章未生成摘要，
+    都静默省略该段，不产出空的【上一章摘要】残段。
 
 ### Changed
-- `shared/services/code.ts` 的 Git Webhook 请求由渲染进程 `fetch` 改走主进程 `httpRequest`
-  - `Cookie` 是浏览器 forbidden request header，渲染进程设置会被静默忽略导致请求未认证；主进程 `https.request` 可正常携带
-- `typecheck` 脚本由 `tsc --noEmit` 修正为 `tsc -b`：根 tsconfig 为 solution-style（`files: []`），原命令实际未检查任何文件
-- `AGENTS.md` 同步现状：登记 `WorkerWindow` 窗口与 `electron/handlers/` 拆分；页面表更新为分层 hooks（Todo/Memo/Daily/Code）；技术债务表移除已解决项
-- ESLint 重新开启 `react-hooks/exhaustive-deps` 并修复全部 5 处警告（`useCodePage` 的 `loadMonthOutput`/`loadData` useCallback 化、`useTodoEditorState` 解构稳定引用）
-- **性能优化**：`useCodePage` 的 `summaryStats` 统计由每次渲染重算改为 `useMemo`（数据最多 9999 条，此前每次 Table 渲染都全量 reduce）
+
+- `continuation` 模板 v1 → **v2**（历史 AI 记录里可区分「带摘要」与「不带摘要」的分界）。
+- `runContinuation` 取上一章的方式与摘要 / 目录同源：按 `data.groups`（卷序 + 卷内
+  章序）扁平化后取前一位，不用扁平 `chapters`——后者不带卷序，会跨卷错位。
+- 新增守卫 `useNovelPage-continuation-summary-guard.test.ts`（5 条：取 `aiSummary` →
+  下发模板 → 阈值不许复制到调用方 → 卷序取章 → 不拿 `outlineNote` 冒充摘要），
+  `prompt.test.ts` 增 3 条（注入 / 前文长则丢弃 / 空摘要静默省略）。
+
+## [2.10.2] - 2026-10-28
 
 ### Fixed
-- 修复 Memo 搜索高亮破坏 HTML 实体的问题：搜索词含 `&` / `<` 等字符时会命中转义实体（如 `&amp;`）的中间片段，把 `&amp;` 切断为 `&` + `amp;`；现在搜索词先做 HTML 转义再匹配，`<mark>` 始终包裹完整实体
-- 修复 `window-broadcast` 不识别 Worker 窗口的问题：发送者名称只匹配 main/login，Worker 窗口广播时不会排除自己；改为 `windowManager.getNameOf()` 按实例反查
-- 统一 `activitiesTask` 轮询间隔：启动 30s、睡眠唤醒恢复后 10s 且注释互相矛盾，收敛为常量 `POLL_INTERVAL_MS = 30s`（恢复时立即检查一次，不丢通知）
-- `LoginWindow/main.tsx` 导入路径统一为 `@/` 别名（原为相对路径，与其他窗口不一致）
 
-### Removed
-- 移除 `todo-utils.ts` 中无任何使用方的 `getTotalRemainingWorkHour`（O(n²) 递归实现，`useTodoData` 已有 Map 索引版同逻辑）
-
-### Verified
-- `pnpm test`：41/41 通过（4 个测试文件）
-- `pnpm typecheck`（tsc -b，strict 开启）：0 错误
-- `pnpm lint`：0 错误、0 警告
-
-## [1.2.0] - 2026-09-16
+- **「查看 AI 摘要」不再偷偷重新生成**：章节行图标在已有摘要时文案是「查看 AI 摘要」，
+  实际却无条件发起一次新的 AI 调用——扣一次 token、覆盖原有摘要，还会把刚回填的
+  一句话梗概再改一遍。现在 `runChapterSummary(chapterId, force = false)`：已有摘要
+  只展示已存内容（本地读库，连 AI 可用性门控都不看，AI 停用了也能翻旧摘要）；
+  浮层里的「重新生成」是唯一的 `force = true` 入口。
 
 ### Added
-- 新增 `WorkerWindow` 临时工作窗口
-  - 独立窗口目录 `src/windows/WorkerWindow/`，与其他窗口保持隔离，互不导入
-  - 标准窗口行为：显示在任务栏，标题栏由通用 `WindowHeader` 提供（拖动 + 最小化/最大化/关闭），支持 `Esc` 快捷关闭
-  - 不拦截 close 事件，关闭即随实例销毁，重新打开即全新实例
-  - 重复触发打开时聚焦已有实例，避免重复创建
-- 主页右下角新增 `WorkerFloatButton` 悬浮按钮，点击打开 Worker 窗口
-  - 挂载于 `HomePage` 内，仅主页展示，切换到子页面后不再出现
-  - 悬浮按钮沿用项目性能规范，仅过渡 `transform` / `box-shadow` / `background-color`
-- 新增通用 `WindowHeader` 窗口级标题栏组件（`shared/components/WindowHeader/`）
-  - 整条标题栏为拖动区，右侧提供最小化 / 最大化(还原) / 关闭三个控制按钮，支持可选 `title` / `icon` 标题
-  - 主窗口与 Worker 窗口均已接入：BaseWindow 不传标题（页面有自己的头部），Worker 传 `title="Worker"`
-  - 最大化状态由主进程推送（`window-maximize-state`），挂载时主动查询一次，图标随状态切换
-  - 最大化时 `<html>` 挂 `is-window-maximized` 类，`.window-shell` 自动切换为方角（避免屏幕四角露出透明缺口）
-  - 双击标题栏可直接切换最大化（Electron 拖动区的系统行为）
-  - 新增 `window-control` / `window-maximize-query` IPC 通道；`window-control` 的 payload 为动作字符串本身；`close` 走 `win.close()`，由各窗口自身 close 语义决定行为（主窗口隐藏到托盘）
-  - `preload.receive` 现返回取消订阅函数，组件卸载时可移除监听，避免重复注册
-- 新增本地调试便捷入口
-  - `Ctrl+Shift+I` / `F12` 可随时切换 DevTools（主窗口、登录窗口、Worker 窗口均支持）
-  - 应用级 `globalShortcut` 兜底，窗口失焦时仍可唤出调试面板
-  - 新增 `pnpm dev:debug`（启动即开 DevTools）与 `pnpm dev:debug:log`（附带主进程轮询日志）
-  - 支持 `VITE_DEVTOOLS_MODE` 控制 DevTools 打开方式（默认 `detach` 独立窗口）
+
+- **章节摘要的「大纲回流」**：AI 摘要与大纲板每章的「一句话梗概」本是同一个信息位
+  （`ai_summary` vs `outline_note`），却长期各写一份——摘要只在左栏 ⚡ 浮层里，
+  回到大纲 tab 仍是空白虚线框，作者得自己再写一遍。现在摘要模板一次产出两段
+  （`【一句话】` + `【摘要】`，由 `parseSummaryReply` 拆分）：一句话回填
+  `novel_chapters.outline_note`，长摘要仍落 `ai_summary`，两个粒度各归其位。
+  - **本章无手写梗概**：生成完直接填入，浮层提示「已填入大纲 · 可在右栏「大纲」直接改」；
+  - **已有手写梗概**：不覆盖，浮层并列显示手写原文与 AI 的一句话，由用户点
+    「覆盖为这句」决定——覆盖的是作者自己写的字，按钮本身就是确认，不再叠一层弹窗；
+  - **模型没按标记返回**：一句话留空、整段当摘要，不猜一句话去污染大纲板
+    （大纲是「扫一眼看整卷走向」的地方，错一行比空一行更糟）；
+  - **只给了一句话没给摘要**：仍按摘要落库，不让一次已付费的生成作废。
 
 ### Changed
-- **性能优化**：路由级懒加载，`BaseWindow/App.tsx` 六个页面改为 `lazy()` + `Suspense`
-  - 入口 chunk 由整体体积降至 46KB，`DailyPage`(307KB)、`TodoPage`(148KB) 转为按需加载
-- **性能优化**：antd 主题开启 `cssVar` 变量模式并关闭 `hashed`
-  - antd 样式表体积从数百 KB 降至约 3KB
-- **性能优化**：列表渲染链路优化
-  - `TodoListItem`、`TodoSection`、`TodoOutlineSidebar` 增加 `memo()`，稳定回调引用
-  - `TodoPage` 将 `data`/`editor`/`view` 收敛至 ref，避免 Virtuoso 全量重渲染
-  - `renderItem`、`itemContent`、`groupContent` 全部改用 `useCallback` 固定引用
-- **性能优化**：数据计算去重与索引化
-  - `useTodoData` 剩余工时递归由 `Array.find` 改为 `Map` 索引，消除 O(n²)
-  - `TodoOutlineSidebar` 组偏移量由 `slice + reduce` 改为预计算前缀和
-  - `useTodoViewState` 复用 `previousDoneRef` Map，不再每次重建
-  - `DailyPage` 农历与节日结果增加模块级缓存，避免每次渲染重复计算 42+ 次
-- **性能优化**：动画属性改为仅使用合成层属性
-  - 大纲收起由过渡 `width` 改为 `transform: translateX()`，消除布局抖动
-  - Todo 分区折叠移除 `flex` / `max-height` 过渡，仅保留 `opacity`
-  - `todo-flash` 由 `background` 改为 `box-shadow`，`todo-enter` 时长收紧
-  - 首页 `BorderBeam` 默认暂停动画，指针进入才播放，空闲时零动画开销
-- **性能优化**：Memo 编辑器输入路径优化
-  - `highlightText` 在无搜索词时短路返回，避免每次按键对全文执行 `escapeHtml`
-  - `MemoPreview` 代码块按钮重构 effect 依赖收窄至 `html`
-- **窗口外观**：三个窗口（BaseWindow / LoginWindow / WorkerWindow）统一改为圆角窗口
-  - 主进程侧抽出 `ROUNDED_WINDOW_OPTIONS`，统一应用 `frame: false` + `transparent: true` + `backgroundColor: "#00000000"` + `hasShadow: false` + `roundedCorners: true`
-  - 抽出 `createWebPreferences()`，避免三处 `webPreferences` 重复定义
-  - 新增共享样式 `src/shared/styles/window-shell.scss`（`$window-radius: 12px`），提供 `.window-shell` / `.window-shell__body` 外壳，负责圆角、边框与投影
-  - 三个窗口的 `index.html` 根节点统一加 `class="has-window-shell"`，`body` / `#root` 背景改为 `transparent`，圆角交由外壳绘制
-  - 拖动区适配：`NavHeader`（主窗口）、`.login-window`（登录窗口）、`.worker-titlebar`（Worker 窗口）声明 `-webkit-app-region: drag`，内部可点击元素补 `no-drag`；窗口整体圆角继承自外壳（`border-radius: inherit`）
-- `CodePage` 表格 `columns` 提升为模块级常量，避免每次渲染重建
-- `scripts/start-electron.js` 显式透传 `VITE_OPEN_DEVTOOLS` 与 `VITE_DEVTOOLS_MODE`
-- `activitiesTask` 高频日志收敛至 `debugLog()`，由 `CHECKIN_ACTIVITY_DEBUG=1` 控制
+
+- `summary` 模板 v2 → **v3**：约束改为两段式（`【一句话】` ≤30 字 + `【摘要】` 150–300 字），
+  并把原来的「不要输出标题」改成「除这两个标记外不要其它标题」——否则模型会把
+  刚要求的分段标记一起省掉。
+- `SummaryPreview` 增加一句话梗概区块：浮层是 elevated，这块要「凹」下去，回退一档
+  用 `--app-surface`（§6.1.3 分层）。
+- 新增守卫 `useNovelPage-outline-backflow-guard.test.ts`（7 条：拆分 → 条件写入 →
+  冲突不覆盖 → 覆盖回调接线 → 浮层状态 → prompt 两段式）与
+  `SummaryPreview/index.test.tsx`（4 条浮层行为）。
+
+## [2.10.1] - 2026-10-28
 
 ### Fixed
-- 修复上一轮性能优化引入的 Todo 交互失效问题
-  - `renderItem` 把 `editingId` / `childInputFor` / `flashIds` / `enterIds` 等显示状态藏进 ref，
-    依赖里只剩稳定 handler，导致点击「新增子项」、双击编辑等纯 UI 状态变化不产生任何新 props，
-    Virtuoso 不重渲染可见行——按钮看似无效，直到下一次数据变化（如保存备注）才把滞留状态一次性吐出
-  - 修复：显示状态改为 `renderItem` 的真实依赖（基础类型/Set 引用，仅状态变化时重建），
-    数据 handler 仍走 ref 保持稳定；Esc 关闭输入框等交互随之恢复正常
-- 修复 WindowHeader 控制按钮在不带标题的窗口（BaseWindow）下显示在左侧的问题
-  - `space-between` 布局在唯一子元素时落在起点，`.window-header__controls` 补 `margin-left: auto` 保证始终靠右
-- 修复主窗口从托盘恢复时闪烁的问题
-  - 透明窗口（`transparent: true`）在 `hide()` → `show()` 切换时 Chromium 重放窗口动画导致可见闪烁（Electron/Chromium 已知渲染问题）
-  - Windows 下禁用窗口管理器动画：`app.commandLine.appendSwitch("wm-window-animations-disabled")`
-- 修复 WindowHeader 三个控制按钮点击无效的问题
-  - 渲染层发送 `{ action }` 对象，主进程 `switch` 按字符串匹配导致永远不命中
-  - 统一约定：`window-control` 的 payload 为动作字符串本身，主进程同时兼容两种形式
-- 修复主窗口主页无法拖动的问题
-  - 根因：HomePage 自带头部不含拖动区，NavHeader 仅存在于子页面，主页没有任何可拖动区域
-  - `NavHeader` 回归纯页面级头部（移除 `-webkit-app-region` 拖动声明），窗口拖动职责上移至 `WindowHeader`
-- 修复引入窗口标题栏后页面高度溢出的问题
-  - WindowHeader 占用 34px 后 `.window-shell__body` 不再等于视口高度，
-    `Page`、HomePage、`app-route-fallback` 由 `100vh` 改为 `100%`，
-    DailyPage / TodoPage 的 `calc(100vh - Xpx)` 同步改为 `calc(100% - Xpx)`，避免页面底部被裁剪 34px
-- 修复在渲染期写 ref 的隐患（`TodoPage`、`useTodoData`、`MemoPreview` 三处）
-  - React 19 并发渲染下，被丢弃的渲染可能将 ref 写入过期数据，导致难复现的状态不一致
-  - 统一改为在 `useEffect` 中同步 ref
-- 修复新增任务的入场动画定时器未清理导致的卸载后 setState 问题
-- 修复 `useDailyPage` 的 `refreshData` 未记忆化导致每次渲染重复拉取数据的问题
-- 修复 `TodoOutlineSidebar` 在大纲条目缺失时可能读取空对象属性的问题
 
-### Verified
-- `npx tsc --noEmit`、`npx eslint src electron scripts`、`npm run build` 均通过
-- 构建产物确认三个 HTML 入口齐全：`BaseWindow/index.html`、`LoginWindow/index.html`、`WorkerWindow/index.html`
-
-## [1.1.0] - 2026-09-15
-
-### Changed
-- Memo 文件列表支持双击文件名进入输入框并重命名文件。
-- **状态管理规范落地**：TodoPage 和 MemoPage 直接组合分层 Hook，并将页面局部交互状态与复制逻辑下沉到直接使用组件。
-- **开发规范**：补充状态管理约束，要求 Hook 状态优先在直接使用组件中消费，减少不必要的父组件状态透传。
-- **架构重构**：将所有数据库操作从渲染进程迁移至主进程，消除 SQL 注入风险
-  - 新增语义化 IPC 通道：`activity-list/add/update/delete`、`todo-list/add/update/toggle` 等
-  - 移除通用 `db-all/get/run/exec` 通道，渲染进程不再直接传递 SQL
-  - 主进程 handlers 模块化管理：`electron/handlers/activity-handlers.ts`、`electron/handlers/todo-handlers.ts`
-- **窗口管理**：引入 `WindowManager` 统一管理所有窗口实例
-  - 替换散落的 `mainWindow`/`loginWindow` 模块级变量
-  - 支持跨窗口通信：`windowAPI.broadcast()`、`windowAPI.sendTo()`
-  - 活动提醒改用 `windowManager.broadcast('activity-notify', ...)` 广播
-- **类型定义**：重构 `electron.d.ts`，新增 `activity`、`todo`、`windowAPI` 语义化接口
-
-### Removed
-- 删除 `src/windows/BaseWindow/pages/TodoPage/todo-db.ts`（类型已迁移至 `types.ts`，初始化逻辑已在主进程完成）
+- **流式续写不再绕过 AI 观测**：此前 `ai-stream://` 通道既不写 `ai_log` 也不写
+  `ai_event` 的 trigger / success —— 「AI 记录」页看不到续写、看板只剩渲染层的
+  adopt / cancel，采纳率的分母凭空消失。现在主进程按与非流式同一套口径落库
+  （trigger 于发起、success 于流读完、cancel 于用户中断），流式失败也走
+  `httpStatusToError` + `aiErrorMessage` 归一文案与 `x-ai-error-code` 响应头。
+- **`contextLen` 从装饰配置变成真预算**：`collector` 新增 `inputCharBudget` /
+  `snippetBudget` / `clipChapterForPrompt`。摘要按 `contextLen` 对整章做首尾裁剪
+  （导入书的超长单章不再直接撞上下文上限），润色 / 变换的片段预算随配置缩放。
+- **润色的「章节片段」不再恒定取章首**：快照不再携带整章，改由调用方以选区为中心
+  前后各半切片（`chapterSnippetAround`）—— 章末段落润色终于能看到自己那一段的上下文。
+- **续写「当前剧情节点」接线**：`assembleContinuationStreamSpec` 的 `outlineNode`
+  早已支持（含单测），但调用方一直没传；现在按当前章对应的大纲节点注入。
+- **续写确认按快照光标插入**：改用 `replaceRange(cursor, cursor, text)`，流式期间
+  随手选中别的段落不会被当成「替换目标」覆盖掉。
+- **AI 编排补 reject 兜底**：起名 / 润色 / 变换三处裸 `await` 加 try / catch / finally，
+  `ai.db` 未就绪导致的 IPC reject 不再让按钮或浮层永久 loading。
+- **多流重入竞态**：续写引入流序号 `continuationSeqRef`，旧流的 catch / 旧块回来
+  不再污染新流状态，也不会把新流的 ref 清空导致无法中断。
+- **采纳埋点跟着真实副作用走**：编辑器 ref 为空（书架视图 / 章节未挂载）时不再上报 adopt。
+- **`ai-client` 入口全部 async 化**：窗口未就绪时 `window.electronAPI.ai` 是同步
+  TypeError，调用方的 `.catch` 接不住（qa 的 Esc 分层关闭测试直接崩在这条上）。
+- **SummaryPreview 的 token 与按钮清零**：`--app-danger` → `--app-error`；
+  `--app-bg-elevated`（不存在的 token，深色主题下白底浅字）→ `--app-surface-elevated`；
+  四个按钮补 `.ant-btn` 清零点（§6.1.2），并把 `SummaryPreview` / `ContinuationPreview`
+  登记进 elevated 白名单。
+- `electron/ai-db.ts` / `handlers/ai-handlers.ts` 的写库失败日志改用
+  `logAlways`（§6.3.1：主进程不再用裸 `console`）。
 
 ### Added
-- 新增 Memo 页面左侧文件列表名称支持双击修改
-- Todo 备注支持点击复制，并在复制成功后显示短暂提示。
-- 优化 Todo 标题和备注的长文本展示，超过可配置字数后省略，并可通过悬停查看全文。
+
+- **`ai_log` 增加 30 天保留期**：调用记录含提示词与模型输出（各截断 4000 字），
+  此前永久留存且只增不减。现在按 `created_at` 淘汰超过 30 天的行 —— 写入后顺带
+  清理（1 小时节流，`ai_log` 行宽，不必每条都扫索引）+ 启动 / 切库时强制清一次
+  （长时间不调 AI 也能生效）。只按天数、不设条数上限：密集调 prompt 的那天不该
+  把前一天的记录挤掉。设置页「调用记录」的说明同步标注保留期。
+- **`ai_event.scope` 有真实数据**：`AiGenerateRequest` 新增可选 `scope`，摘要等 L3
+  功能随请求下发，主进程写 trigger / success 时一并落库；渲染层的 adopt / cancel
+  （含「取消授权」）也带范围。授权范围分布与拒绝率终于可统计。摘要浮层同时显示
+  「范围 仅本章 / 选中段落 / 最近 3 章」，事后能看出这条摘要是按什么范围生成的。
+
+### Changed
+
+- **L3 授权范围真正约束发送内容**：弹窗的「仅本章 / 选中段落 / 最近 3 章」此前只写进
+  `useAiConsent` 的 useState 就断了——发送端恒发整章、估算恒按整章算，「控件点了没效果」
+  （review G4）。现在 `collector.buildChapterScopePayload` 是唯一的「范围 → 发送正文」
+  构造点：`chapter` 发本章、`selection` 只发选中段落、`recent3` 发本章 + 前两章（预算
+  60/25/15）。「选中段落」没有选区时**拒绝发送**并说明，绝不退回整章。范围同时进 prompt
+  （`【选中段落】` / `【前情】` 段落 + 对应约束，`summary` 模板 v2），否则模型会拿片段
+  编全书。弹窗不再隐藏选择器、标题随范围变、估算随范围实时重算、无内容可发时禁用「同意」。
+- **意图联合类型收敛为一处**：删掉 `collector.AiIntent`，改用 `PromptIntent`
+  （`PromptIntentMap` 的键，type-only import）。`LIMITS` 从 `as const` 改为
+  `Record<PromptIntent, CollectLimits>`——新增意图漏登记现在是**编译错误**，
+  不再是运行期 `LIMITS[intent]` 取到 undefined 静默炸采集。
+- **润色与五种文本变换合并为一条编排**（`runRewrite`）：消除两段近乎逐行重复的
+  「选段 → 预览 → 回填」逻辑，顺带获得「在途结果不覆盖新面板」的守卫。
+- `collector` 的 `BookSnapshot.chapterSnippet` 语义改为「调用方已定位的片段」，
+  本层只保留 4000 字防呆截断。
+- `SettingsDrawer/FontPicker` 改为目录组件（`FontPicker/index.tsx` + `index.scss`，§5.2）。
+
+## [2.10.0] - 2026-10-27
+
+### Added
+
+- **L3 数据出境授权（M5）**：新增 `ai-consent.ts` 分级常量（L1/L2/L3）、`ai-estimate.ts`
+  token 估算纯函数（中文字符 ×1.5 + 英文词 ×1.3，自研、零新依赖）、`useAiConsent` hook、
+  共享授权弹窗 `AiConsentDialog`。`ai_config` 加 `l3_enabled` 总开关（复用既有 KV，
+  零新表零新 IPC）。
+  - 首次触发 L3 功能弹授权：展示将发送字数 / token 估算 + 范围选择
+    （仅本章 / 选中段落 / 最近 3 章，**不提供「全书」档**，Q4 拍板）。
+  - 本地模型（Ollama）时明确提示「内容不出本机」；合规提示位
+    （「不中转、不存储作品内容」）文案唯一产地。
+- **AI 产出来源标记（M6）**：新增 `ai-provenance.ts` 来源标记构造器
+  （`source=ai` + 模型 + 时间戳 + 批次 id），摘要落库带 `ai_summary_model`
+  来源标记，手工编辑清空标记以区分「AI 生成」与「自己写的」。
+- **章节 AI 摘要（R-AI-09）**：`novel_chapters` 加 `ai_summary` / `ai_summary_at` /
+  `ai_summary_model` 三列（PRAGMA 探测增量迁移，随删章物理清理，零孤儿）；
+  新增 `novel-chapter-summary-save` 通道 + `assembleSummarySpec` 模板（text 输出）；
+  章节行悬浮闪电按钮触发生成，`SummaryPreview` 浮层展示并显眼标注「AI 生成 · 模型名」，
+  支持重新生成。摘要可被续写复用为「上一章摘要」上下文。
+
+## [2.9.2] - 2026-10-27
+
+### Added
+
+- **AI 就地续写**（R-AI-07 非流式版）：光标停在卡住的地方，点顶栏「续写」，
+  让 AI 顺着光标前文（截断 1000 字）往下写 2–3 个候选，点某一条即插入光标处
+  （走编辑器 `insertText`，可 Ctrl+Z 撤销）。候选浮层显眼标注「AI 建议，请自行改写」，
+  定位是**跳板而非代笔**；失败在浮层内报错、绝不写入原文。
+  - 上下文：书名 / 题材 / 命中人物卡（复用 `matchEntitiesInText`），前文走独立的
+    【前文】段（非 chapterSnippet——续写要的是光标前，不是章头）。
+  - 输出契约：新增 `CONTINUATION_OUTPUT_FORMAT`（json-array `{text}`），复用 M3 的
+    三层保险解析，弱模型返回坏 JSON 也能救回候选。
+  - `ai_log.intent` 落库 `continuation`，AI 记录页可筛选「续写」。
+  - 编辑器新增 `getTextBeforeCursor` 能力（取光标前 N 字 + 光标偏移，供确认时精确定位）。
+
+## [2.9.1] - 2026-10-27
+
+### Added
+
+- **文本变换工具箱**（R-AI-06）：把「润色」从一个按钮升级成一组动词——选中一段字，一键
+  **扩写 / 精简 / 改写 / 换语气 / 转视角**。完全复用润色的「选中 → 预览 → 确认」链路，
+  差别只在 `buildPromptSpec("transform")` 的角色定位与约束清单；右键菜单「AI 润色」分组
+  泛化为「文本变换」分组（润色单列 + 五种变换分列），预览浮层标题与「换一种」文案按
+  变换类型自适应。替换仍走编辑器 undo，失败仍在浮层内报错不替换原文。
+- **变换的度量可区分**：`ai_log.intent` 落库为 `transform:expand` / `transform:condense` /
+  `transform:rewrite` / `transform:tone` / `transform:pov`（子类型由 `TRANSFORM_INTENT_SUB`
+  单一产地映射），AI 记录页的意图标签与筛选下拉同步识别这五种变换，看板能看出各变换的
+  使用分布。润色仍走 `polish` 意图，不与变换混用。
+
+## [2.9.0] - 2026-10-27
+
+### Added
+
+- **AI 产品事件表 `ai_event`**（M1a）：在 `ai.db` 新增与 `ai_log`（技术排障日志）严格分工的
+  产品度量表——只记元数据（intent / step / provider / model / prompt 版本 / 耗时 / 错误码 /
+  产出条数 / 正文字数 / L3 范围），**绝不记正文、作品名、邮箱**。`trigger` / `success` /
+  `fallback` 由主进程在请求出口自动落；`adopt` / `edit` / `cancel` 这类请求返回之后的事后
+  动作由渲染层经 `ai-event-log` 回传（白名单校验）。写入带滚动清理（5000 条 / 90 天），
+  失败静默，绝不阻塞写作主链路。
+- **prompt 版本落库**（M7）：`ai_log` 增量迁移补 `prompt_version` 列，`context/prompt/registry.ts`
+  新增 `PROMPT_VERSIONS` 常量与 `promptVersionOf`，落日志时自动带上版本——改了 prompt 之后
+  前后效果终于可对照归因。
+- **AI 可用性门控 hook `useAiAvailability`**（M8）：统一「AI 现在能不能用、为什么不能用」的
+  判断口径（disabled / no_model / missing_key / no_endpoint / unavailable），配纯函数
+  `deriveAvailability` 供单测。后续每个新 AI 入口据此决定隐藏 / 禁用并说明 / 本地兜底，
+  不再各写一遍散装判断。
+- **用量与效果看板**（M1b）：设置窗口新增「用量与效果」页，展示近 30 天调用次数、各 intent
+  分布、采纳率、平均耗时（全部下推 SQL 聚合），并配「导出诊断包」——只出脱敏的 `ai_event`
+  与 `ai_log` 元数据（intent / model / 耗时 / 错误码），不含正文与密钥，供用户主动回传排查。
+
+- **起名结果的寓意可插入正文**：卡片新增「插入寓意」按钮（仅 AI 起名有寓意时出现），
+  按 `名字：寓意` 插到光标处。此前寓意只能复制出来手动拼，而它本身就是一句现成的命名释义，
+  作者常要写进人物出场段或设定清单。
+- **书架书卡展示题材**：网格视图单独一行、列表视图并进信息行（列表行高是硬约束，不能多一行）；
+  未设置题材显示「题材：未归属」并压一档色。跳过题材不等于没有这一栏，留空只会让人以为没做这个字段。
+- **AI 配置页「获取 Key」外链引导**：Key 输入框右侧按端点域名给出「获取 Key」，点开直达厂商的密钥页
+  （DeepSeek / 通义千问 / 智谱 GLM / OpenAI）。预设与 Key 页地址收敛到 `shared/ai/ai-providers.ts`
+  单一产地，渲染层与主进程共用；外链 URL 永远来自受控常量、不接受任意输入，
+  不让 `shell.openExternal` 变成协议跳板。
+- **Ollama 自动列出已下载模型**：切到本地模型时自动探测一次 `/api/tags`（8s 超时，
+  「未启动」与「超时」分开提示），模型名改为可输入可选的下拉框并配刷新按钮。
+  此前只能手填，拼错表现为「连接成功但模型不存在」，错误要到调用期才暴露。
+- **起名降级提示补「去设置」**：AI 未配置或调用失败时，提示条右侧给一个直达入口，
+  跳到设置窗口的「AI 配置」分区。原本文案只说要配置，用户还得自己找窗口再找分区。
+- **设置窗口可被其他窗口拉起**：`sendTo("settings", …)` 支持按需建窗
+  （`WINDOW_CREATORS` + `CROSS_EDITION_WINDOWS` 放行，lite 版其余窗口仍受黑屏防护），
+  窗口未就绪时按 `queue` 补投；设置窗口新增 `settings-section-jump` 事件，
+  只接受 `PAGES` 中真实存在的分区 id（lite 版没有 AI 页，非法 id 一律忽略）。
 
 ### Fixed
-- 修复开发模式自动打开 DevTools 导致页面渲染和弹窗响应明显变慢的问题，保留 `VITE_OPEN_DEVTOOLS=1` 调试开关。
-- 优化 Todo 列表渲染：稳定数据与编辑状态回调，缓存子任务索引和剩余工时，减少列表项重复计算与重渲染。
-- 修复 Todo 分区展开时已完成列表被卸载并从顶部闪动收缩的问题，保留列表位置并平滑过渡内容高度。
-- 修复编辑 Todo 标题时未输入工时标签会清空原工时的问题，并确保备注、完成状态和特别关注等附属信息保持不变。
-- 修复 Markdown 预览中单个 Enter 换行被合并为同一行的问题。
-- 将 Todo 单项递归渲染逻辑抽离为独立的 `TodoListItem` 组件。
-- 拆分 Todo 页面数据、编辑状态和视图状态，降低 `useTodoPage` 与页面组件的职责耦合。
-- 移除仅负责转发的 `TodoModals` 包装组件，直接在 TodoPage 中使用备注和工时弹窗。
-- 按通用页面规范拆分 MemoPage 的数据、编辑和视图状态，收缩 `useMemoPage` 为组合层。
 
-## [1.0.2] - 2026-09-15
+- **AI 起名的合法数组被判成「格式不对」**：模型把某条的 `}` 写成 `]`
+  （`…无上手段。"],{"name":"沈延寿" …`）导致整串 `JSON.parse` 失败，旧逻辑退回「按行切」，
+  而坏数组是一整行 → 第一张卡成了名字 `[{"name"`，其余全是本地补齐。解析层补第 2.5 层保险：
+  字符串感知地逐个抠 `{…}` 切片单独 parse（`]` 误写、末尾截断、键名漏引号都能救回），
+  坏对象只丢自己；彻底救不回来时，主字段含 JSON 标点的记录一律判废、按行兜底也拒绝切
+  JSON 残片，面板只留本地结果 —— 半截数组不再出现在作者眼前。
+- **润色结果段落间多出空行**：模型输出习惯段间空一行，而结果是按选区**整段回填**的，
+  多出来的空行只能由作者一行行手删。现在两头治：prompt 里钉死「沿用原文换行与分段，
+  不得加空行」，客户端再用 `alignParagraphBreaks` 按**原文**的分段习惯归一
+  （原文单换行分段 → 结果也不留空行；原文本来就空行分段 → 保留）。只动换行，不碰文字。
+- **AI 记录页折叠箭头贴死卡片左缘**：给 header 补左内边距 + 箭头右间距，展开后的正文
+  按「内边距 + 箭头 + 间距」对齐摘要列。顺带修掉一处**静默失效**的样式：
+  v6 的内容容器是 `.ant-collapse-body`，`.ant-collapse-content-box` 是 v5 的名字，
+  写了等于没写（表现就是「内边距怎么调都不生效」）。
+- **起名结果卡在窄侧栏被截断**：结果栅格原写死两列，而侧栏最窄 280px（内容区约 255px），
+  每列被压到约 124px，卡内 5 颗 24px 图标按钮正好要 124px，再加内边距必然溢出，
+  被滚动区的 `overflow-x: hidden` 直接裁掉（名字与按钮都被切一半）。改为
+  `repeat(auto-fill, minmax(148px, 1fr))` 让列数跟着宽度走：窄面板降为单列，默认 340px
+  仍是两列；操作行再补 `flex-wrap: wrap` 兜底，宁可折行也不横向溢出。
+
+## [2.8.0] - 2026-10-27
+
+### Added
+
+- **作品题材 `genre`**（可空、非必填）：AI 起名 / 润色的风格锚点。
+  - `novel_works` 增量补列（`ALTER TABLE … ADD COLUMN genre TEXT`，PRAGMA 判列后执行），
+    老作品一律视为「未设置」，无需回填。
+  - **书架「新建作品」改两步**：① 书名（必填）→ ② 题材（可从常见分类里选，也可手动填写，
+    可「跳过」）。拆成两步是因为并排会让「题材」看起来同样必填，作者要纠结半天才敢点确定。
+  - **编辑器作品菜单新增「设置题材」**：建书时跳过、事后想补也能补；菜单项直接显示当前题材。
+    编辑器内的「新建作品」是码字途中的顺手动作，题材以可留空的输入框给出，不套两步流程。
+  - 题材缺失时，AI 层按「书名 + 已有要素的用字风格」弱兜底，并在 prompt 里**如实说明**
+    「题材未设置」，不伪造风格。
+- **设置窗口新增「AI 记录」页**（R-AI-05 收尾）：分页列出 `ai_log` 每次调用
+  （时间 / 意图 / 模型 / 耗时 / 成功或错误原因），展开可看系统提示词、用户输入、模型输出；
+  支持按意图筛选与一键清空。与「AI 配置」分开成两页——配置是设一次的动作，
+  记录是调 prompt 时反复回看的动作，混在一页会让长列表把保存按钮淹掉。
+  `ai-log-list` 新增 `intent` 过滤参数（在 SQL 里过滤，避免「只筛当前页」的假空态）。
+
+### Changed
+
+- **提示词收敛为唯一产地 `src/shared/ai/context/prompt/`**：
+  `sections.ts`（公共段落：角色 / 作品背景 / 要素 / 境界 / 人物 / 章节片段 / 约束 / 输出契约）
+  + `naming.ts` / `polish.ts`（各功能模板）+ `registry.ts`（`PROMPT_BUILDERS` / `buildPromptSpec`）。
+  - **删除 `ai-context.ts`**：早期单轮模板 `buildNamingPrompt` / `buildPolishPrompt` 的语义
+    已并入新模板（类型 / 风格 / 性别 / 数量 / 避重 + 润色四条基本约束一条不少）。
+  - 原 `assembler.ts` 拆入 `prompt/`，调用方改用 `buildPromptSpec("naming" | "polish", …)`；
+    新增功能仍是「写一个模板 + 注册表登记一行」，服务层与主进程零改动。
+  - 注册表加了守卫：模板漏声明输出契约、角色句不在首句、意图漏登记都会直接红。
+- **AI 调用日志不再受日志级别过滤**：改用 `logAlways` 写出（与 IPC 记录同一个绕过出口）。
+  此前 AI 记录走 `log("debug", …)`，默认 `info` 级别下**整批消失**——而这正是排查
+  「模型为什么答歪了」的唯一线索。失败行同时提一级到 `warn`。
+- **诊断页文案统一**：去掉「IPC 通信单独存文件」的旧口径，改为「IPC 调用与 AI 调用按 DEBUG 级
+  强制写入同一份窗口日志」，开关名由「记录 IPC 通信」改为「记录 IPC 调用」并说明同文件对齐。
+
+## [2.7.0] - 2026-10-27
+
+### Added
+
+- **AI 上下文加工层 `src/shared/ai/context/`**（R-AI-05）：把「作者每次手填要求」升级为
+  「系统自动聚合本书设定」。
+  - `collector.ts`：`BookSnapshot → AiBookContext`，按意图（naming / polish）决定采集字段与
+    截断长度（要素 40/20 条、章节片段 800 字、已用名 40 条），避免把整本书塞进 prompt；
+    并新增 `matchEntitiesInText` **反向匹配**——拿人物卡的名字/别名去句子里找，
+    解决「划词是一整句、正向等值匹配命中率极低」的问题（单字名不参与，人物优先）。
+  - `assembler.ts`：`assembleNamingSpec` / `assemblePolishSpec` 产出 `PromptSpec`
+    （角色 / 上下文 / 约束 / 输出契约四段）。**新增 AI 功能 = 新增一个模板**，
+    服务层与主进程零改动。
+  - `output-spec.ts`：`OutputFormat`（text / json-array）契约 + 格式指令生成 +
+    三层解析保险（prompt 强约束 → 最小 `[`~`]` 切片 JSON 解析 → 启发式兜底）。
+- **起名结果带「寓意」**：输出改为 `json-array {"name","meaning"}`，结果卡在名字下方显示
+  寓意（两行截断，hover 看全文）；模型不遵 JSON 时走文本兜底并在面板提示「寓意可能缺失」。
+- **起名上下文自动灌入**：书名 / 题材 / 本书要素 / 境界体系 / 已用名自动进 prompt，
+  描述输入框降级为「可选补充」（不填也能按本书设定起名）。
+- **润色识别人物卡**：选区（及章节片段）中出现的角色自动带 `姓名 + 类型 + 简介` 注入
+  prompt，并追加「保持人物性格与称呼」约束；一次最多 6 张，未命中不注入。
+- **AI 调用日志**：`ai.db` 新增 `ai_log` 表（意图 / 模型 / prompt / 输出 / 错误码 / 耗时），
+  IPC 通道 `ai-log-list`、`ai-log-clear` 已就绪（查看面板待接）。
+
+### Changed
+
+- **日志不再拆 `ipc.log`**：IPC 通信记录按 **DEBUG** 级别并入所属窗口当天的
+  `YYYY-MM-DD.log`（模块名 `ipc`），与业务日志同一时间轴；仍只记失败与 >300ms 慢调用，
+  仍受「记录 IPC」开关控制。
+- **AI 调用同时写入本地日志**（模块名 `ai`，DEBUG 级）：prompt / output 各留 600 字预览，
+  失败额外提一级到 `warn`，避免调高日志级别后看不见失败。
+- `ai-context.ts` 标记为历史遗留：早期单轮模板保留但不再扩展，
+  新增功能一律走 `context/assembler`（两套 prompt 并存必然漂移）。
+- `AiGenerateRequest` 新增可选 `intent`（仅用于日志归类，服务层不解释）。
+
+### 说明
+
+- `ai_log` 表用 `CREATE TABLE IF NOT EXISTS` 幂等建表，存量 `ai.db` 下次打开自动补表，
+  无需迁移脚本。
+- 未落地：`novel_works.genre` 题材字段（Phase 2，需改建书 UI，可跳过）、调用日志查看面板。
+
+## [2.6.3] - 2026-10-27
+
+### Changed
+
+- **子页面顶部导航条下线，返回入口收进窗口标题栏**：待办 / 日期活动 / 备忘 / 记账 /
+  代码 / 资讯六个页面的 `Page` 不再渲染 52px 高的 NavHeader 卡片，那条栏只有一个
+  「返回」功能却把内容区往下压了 76px。纵向空间全部归还内容区，六个页面容器顶部
+  统一补 12px 内边距（原先由导航条提供），横向与底部间距不变；
+  `TodoPage` 的 `height: calc(100% - 80px)` 魔法高度一并改为 `flex: 1; min-height: 0`。
+- **`WindowHeader` 新增左侧 `leading` 插槽**（`no-drag` 区）：主窗用它承载
+  「返回首页 ｜ 当前页面名称」——原先左侧只有一颗小按钮、右边一大片空白，
+  现在补上页面名称后成为「动作 │ 位置」的完整信息对，右侧设置与窗口按钮也有了配重。
+  页面名称表 `PAGE_TITLES` 与路由表同文件维护，首页不渲染该区。
+- 删除 `shared/components/NavHeader`（唯一使用方 `Page` 已不再需要）。
 
 ### Fixed
-- 修复 Todo 子任务输入框在中文输入法（IME）下被提前提交或失焦的问题。
-- 修复新增任务输入框在中文输入时被误触发 Enter / Blur 导致拼音中断的问题。
-- 为新建任务和子任务输入框增加 composition 状态保护，避免中文输入过程被中断。
-- 验证通过：`pnpm exec tsc -p tsconfig.app.json --noEmit`。
+
+- **子页面被直接打开 / 刷新后点返回会落到空白页**：history 里没有上一页时
+  （初始 location 的 `key` 恒为 `default`）改为退回首页兜底。
+- 标题栏 `text` 变体按钮的取色变量按 antd v6 实测产物修正为
+  `--ant-button-text-text-*` 一族（单 `text` 的旧名在 text 变体下不被读取，
+  写了静默无效），hover 背景仍走 `--ant-button-text-hover-bg`。
+
+## [2.6.2] - 2026-10-27
+
+### Changed
+
+- **「查询当月」按钮日期范围**：从「本月 1 号 ~ 今天」改为「本月 1 号 ~ 月底最后一天」，
+  与日期选择器「可选到当月月底」的放开保持一致（`getThisMonthRange` 返回整月区间）。
+
+### Fixed
+
+- **CodePage 工作日统计口径修正**：
+  - 「本月剩余日均」改用存量缺口模型，剩余工作日从「明天」起算，修掉「今天产出既计入
+    已产出、又占一个剩余工作日」导致的缺口虚高；
+  - 「选中区间剩余日均」改名为「选中区间日均产出」，只展示区间日均产出效率，删除原先
+    与「本月剩余日均」口径自相矛盾的缺口预测；
+  - 魔法数字 200 抽成 `DAILY_TARGET` 常量（趋势线 / 目标文案 / 两卡片统一引用）；
+  - 补登记 2026-10-10 国庆调休补班日，10 月工作日由 17 修正为 18。
+
+### Added
+
+- **动态节假日数据源**：新增 `code-holiday.ts`，联网拉取 jieri8.com 免费节假日接口
+  （渲染进程 fetch，符合 §8.7 契约，不新增 IPC 通道），按年缓存到 localStorage，
+  拉取失败 / 未公布年份回退内置硬编码表兜底。`isWorkdayWith` / `calcWorkdaysWith`
+  支持「动态数据优先、硬编码兜底」，所有工作日统计（日均产出 / 剩余日均 / 趋势图）
+  统一走动态数据源，无需每年手工更新调休表。
+
+## [2.6.1] - 2026-10-26
+
+### Added
+
+- **设置窗口抽出两条公共原语**：`components/SettingsActionBar`（页面底部常驻操作条，
+  左侧状态 / 右侧动作插槽）与 `styles/settings-controls.scss`（次级 / 危险 / 主色三态按钮）。
+  此前「次级描边按钮」在 AI、诊断、快捷键三处各写 20 行组件变量，账号页的危险按钮是
+  第四份拷贝 —— 改一次圆角要改四个文件，先漏的通常是 hover 描边色。
+- `SettingsWindow/index.scss` 新增 `.settings-page__stack`：卡片与操作条摊在同一层，
+  `min-height: 100%` 让内容不足一屏时操作条也贴页面底部。
+
+### Changed
+
+- **保存手感收敛为一条规则**：只要这一页存在「需要确认 / 可重置」的动作，动作就落在
+  底部常驻条上，位置在 900×680 下切页不跳。
+  - 诊断页从「改一项立即落库、调三次保留天数弹三个『已保存』」改为草稿 + 一次提交；
+  - 个人资料改为「无改动不可保存」，判据是**值比较**而非 `isFieldsTouched`
+    （改了又改回去不该显示未保存）；
+  - 快捷键页用 `state="hint"` 模式：左侧写「修改后立即生效，无需保存」，右侧放「恢复默认」，
+    原先卡内的 footer 与「应用外」说明一并上移；
+  - 账号页不放操作条（退出登录是动作不是配置，常驻条上容易被误点）；
+  - 保存成功的 toast 统一为「已保存」。
+- 操作条左右内边距取 16px（= 卡片行内边距），状态点与按钮因此和上方行内控件落在
+  同一条竖线上（原先按钮整体右移 15px）；字段内边距 10px → 12px，与 `.settings-item`
+  的行节奏对齐。
+- 删除 `AccountSection/index.scss`（唯一内容就是那份危险按钮拷贝）。
+
+### Fixed
+
+- 新增「统一手感」守卫四条：`.settings-page__stack` 必须 `min-height: 100%`、
+  操作条必须 sticky + `bottom: 0` + `margin-top: auto` + `flex: none` 且底不透明、
+  各分区样式**不许再出现** `--ant-control-height`（即不许再手写按钮造型）、
+  状态文案只允许出现在 `SettingsActionBar` 一处。
+- 新增 `SettingsActionBar` 组件测试（dirty / saved / hint / 无状态四态）。
+
+## [2.6.0] - 2026-10-26
+
+### Added
+
+- **设置窗口新增「AI 配置」页**：原 AI 分区挤在一条长滚动流里（服务商 / 地址 / 模型 /
+  Key / 折叠的高级参数混排），现在独立成页并按「总开关 → 连接方式 → 连接凭据 →
+  高级参数」四段组织。连接方式改成两张大按钮单选（自定义接口 / 本地 Ollama），
+  服务商下拉**选中即填入**推荐地址与模型（改过任一项即回「自定义」，不出现
+  「选了 DeepSeek 但地址是别家」的假状态）；Key 旁常显「已保存」小签。
+  操作按钮收进底部常驻条：左侧常显「有未保存的更改 / 已保存」，`保存` 仅在有改动
+  时可点，「测试连接」仍走「先落库再测」并在 title 里明示。
+- `shared/components/WindowHeader` 新增 `maximizable` 属性（默认 `true`）：
+  固定尺寸窗口可以隐藏「最大化」按钮，避免点了没有反应的假入口。
+
+### Changed
+
+- **设置窗口骨架从「单列分区长滚动」改为「左分类导航 + 右内容页」，窗口固定 900×680**
+  （`resizable: false` / `maximizable: false`）。左栏按「通用 3 / 账户 2 / 高级 1」
+  分组，右栏页头（标题 + 一句话说明）固定、只有页面内容各自滚动；非当前页用
+  `display: none` 隐藏**而不卸载**，切页不丢 AI 配置草稿与资料表单。
+  理由：6 个入口纵向堆叠时总高度远超窗口，滚动位置与「我在改哪一类」无关。
+- 分区卡片不再重复页头标题（外观 / 个人资料 / 账号 / 诊断 / 快捷键去掉标题条），
+  分隔线统一由 `.settings-section__body > * + *` 发放，`.settings-item`（左文右控件）
+  与新增的 `.settings-field`（竖排字段）混排不再断线。
+- 个人资料表单宽度收在 400px、保存按钮从铺满整行的 block 改回常规尺寸；
+  初始载入只置禁用，转圈只表示「保存中」。
+- 账号「退出登录」由原生 `<button>` 换成组件库 `Button` + 清零点 mixin（AGENTS §6.1.2）；
+  诊断 / 快捷键的次级按钮高度与同行 Select / InputNumber 统一为 32px。
+- 快捷键页顶部说明去重：页头已说明「点键位即改、即时生效」，卡内只留 Esc / Backspace。
+
+### Fixed
+
+- 设置页布局守卫按新骨架重写：定高滚动区改判 `flex: 1` + `min-height: 0`
+  （`height: 100%` 会与固定页头叠加、把内容顶出窗口），并补「非当前页 display:none」
+  「左栏定宽不收缩」「右栏 min-width/min-height 归零」三条断言，钉住的是
+  「内容超高只由滚动区承担」这个意图，而不是旧写法的字面量。
+
+## [2.5.1] - 2026-10-23
+
+### Changed
+
+- **文档治理：`docs/` 按「是否还有约束力」三级重排**（规范落 `AGENTS.md` §5.3 / §8.8）。
+  原 13 份文档平铺在 `docs/` 与 `docs/prd/`，活规范、一次性审查报告、已交付过程稿混在一起，
+  无法判断哪份还能约束代码。现分三级：`docs/spec/`（活规范，违反即缺陷）、
+  `docs/review/`（审查报告，清单里未闭环的待办仍可执行）、`docs/archive/`（已闭环/已作废，
+  只读留档），并新增 `docs/README.md` 作唯一导航索引（每篇标注一句话结论与闭环版本）。
+  新增需求稿约定放 `docs/prd/<需求编号>-<主题>.md`，交付后整组移入 `docs/archive/prd-<编号>/`。
+- R27 关系网络 7 篇立项过程稿（scope / preresearch / acceptance / analysis / delta-v2 /
+  architecture-decision-v2 / batch-plan-v2）归档至 `docs/archive/prd-r27/`，
+  `r27-architecture-decision-v2.md` 补齐组内前缀；1.47.0 视觉改造方案与验收对照归档至
+  `docs/archive/visual-polish/`；图形主题化规范移至 `docs/spec/`。
+  归档时只在标题下补「已归档 · 闭环版本 · 现行为准的去处」，正文未改。
+- `AGENTS.md` 目录树补 `docs/` 与 `changeLogHistory/`，并新增 §5.3（三级目录、命名规则、
+  归档与删除判定、移动文档的引用自查）、§8.8（文档变更检查清单）。
+
+### Removed
+
+- 删除 `docs/prd/r27-relationship-network-batch-plan.md`（v1 排期）：方案基线是**已作废的
+  页内浮层**（后续 delta-v2 改为独立窗口 `RelationWindow`），工作量 19.0 人日与 6 批划分
+  均为无效数据，正文已无任何可执行条款。
+- 删除 `.cache-shots/`（16 张 2026-09-29 的临时界面截图，`.gitignore` 已忽略、无任何引用）。
+- 删除 `AGENTS.md` §6.8 中对 `docs/packaging/bundle-slimming-2.0.0.md` 的引用
+  （该文件此前已删，体积数据与结论本就在本节与 CHANGELOG 内），
+  明确改为指向 CHANGELOG 对应条目，避免「同一事实两处维护」。
+
+### Fixed
+
+- `README.md` 三处过时内容：① 「`pnpm electron:setup` 为 Electron 编译 better-sqlite3」
+  已不成立（13.x 起 Node-API 免编译）；② 把「Electron 二进制缺失 / `pnpm dev` 卡住」
+  归因为「pnpm ≥10 拦截 electron postinstall」是**已被证伪的旧结论**（Electron 42+ 无
+  postinstall，真因是首次 `require` 时无镜像无超时的同步下载），改为 `pnpm ensure:electron` /
+  `pnpm dev:doctor` 的正确处置，并补「二进制看着齐全仍秒退 = 解压不完整」的形态；
+  ③ pnpm 9 的构建脚本白名单位置写错（写成 `package.json` 的 `pnpm` 字段，实际在
+  `.npmrc` 的 `only-built-dependencies[]`）。顺带修重复的小节编号（两个「5.」）。
+- `pnpm-workspace.yaml` 注释称「`package.json` 的 `pnpm.onlyBuiltDependencies` 是 pnpm 9
+  唯一认的位置」，与 `.npmrc` 注释及实测矛盾，改为 `.npmrc`。
+- `src/shared/novel/guide-doc.ts` 文件头仍指向已删除的 `docs/novel-onboarding-guide.html`
+  （「改文案同步三处」实为两处），改为以本文件为唯一内容源。
+- `docs/spec/graphic-theming-spec.md` 的配套文档路径随归档更新。
+
+## [2.5.0] - 2026-10-23
+
+### Added
+
+- **回收站从「数据安全」弹窗拆成独立页面**（`pages/RecycleBinPage`，设计稿见 Ardot
+  「CheckIn · 回收站页面设计」的默认 / 空态两屏）。书架顶栏新增「回收站」入口，图标用
+  设计给的 `recycle-bin.svg`（`?raw` 内联，`fill=currentColor` 才能跟着主题色走），带条目数
+  角标。弹窗只留「全量备份 / 从备份恢复」—— 回收站要逐条判断「捞回还是销毁」，需要类型 /
+  归属作品 / 规模 / 剩余天数 / 两个动作的横向空间，560px 的弹窗里每行只能靠省略号过日子。
+- 页面能力：类型分段（全部 / 作品 / 卷 / 章节，各带计数）、关键词搜索（同时匹配条目名与
+  所属作品名 —— 章节名往往认不出来，作者记得的是书名）、按删除时间倒序、剩余天数分档
+  （≤3 天转警示色、今天到期与已过期转错误色）、勾选后批量恢复 / 批量彻底删除、清空回收站、
+  进入页面即清理过期条目并提示清理了几项。
+- 统计条：可恢复条目（按类型拆分）/ 保留期 / 最近一次删除；页面底部「恢复规则」写明
+  同批删除、原位置被占时落到同级末位、过期自动清理，减少「点恢复之前」的犹豫。
+- 书架区新增二级页面状态 `shelfScreen`（`useEntityJumpStore`）：进回收站不再借道 `view`，
+  关系图跳转的 `onShelf` 判定不会被误判成「不在书架」；打开作品 / 返回书架 / 导入三个出口
+  都会把它同步归零，不会回到书架时还停在上次的二级页面。
+
+### Changed
+
+- 书架顶栏「数据安全」与「回收站」拆成两颗入口按钮，角标从前者移到后者。
+- 卷 / 章节删除确认框里的恢复路径改为「书架「回收站」里恢复」（旧文案指向的弹窗已不含回收站）。
+- **书架顶栏布局收敛**（真机反馈「头部按钮太密集」）：原先右侧是「搜索 + 四颗带文字的描边
+  胶囊 + 主按钮」六件平铺，视觉上像一排并列的按钮、主次全糊在一起。现在收成三段 ——
+  `书架·规模摘要 │ 搜索 │ 工具条 + 新建作品`，工具条用一条竖分隔线分组。其中只有
+  「全局设定中心」保留文字（跨书共享库是本页最需要被发现的次级入口，也是新手引导第 6 步的
+  锚点），数据安全 / 回收站 / 导入降为 32px 纯图标，语义交给 Tooltip 与 `aria-label`；
+  规模摘要从 primary-weak 胶囊降为静音小字 —— 它与下方四张统计卡是同一个数字，顶栏再放一颗
+  同色色块只会跟主按钮抢焦点。
+- **窗口标题栏徽标跟随二级页面**：进回收站后标题栏显示「回收站」，不再一直写「书架」
+  （`badge` 由只读 `view` 改为同时读 `shelfScreen`）。
+- **回收站页头固定**：改为「页头 + 滚动区」两段结构，页头（返回 / 刷新 / 清空回收站）
+  不随列表滚动 —— 条目一多，滚到列表底部还想动它时不必先滚回顶部。试过 `position: sticky`
+  配负 margin 抵消父 padding：实测吸附点会偏一个 padding 高度，且窄窗改了 padding 之后
+  负 margin 要跟着改，漏一处就从页头两侧漏出滚动内容，耦合更脆。
+- 窄窗口（≤1240px）下搜索框与工具条同步收紧内边距与图标位宽度，摘要文字在 ≤1080px 让位。
+
+### Removed
+
+- `DataSafetyModal` 里的回收站列表、批量操作与过期清理逻辑（连同其单测）全部迁到
+  `RecycleBinPage`；彻底删除仍按类型分派到各自既有的级联通道，渲染层没有新增任何删除顺序。
+
+## [2.4.0] - 2026-10-23
+
+### Added
+
+- **删除兜底扩展到卷 / 章：章节 / 卷删除也进回收站（2.3.0 只做了作品级）**：
+  `novel_volumes` / `novel_chapters` 各增列 `deleted_at`（逐表 pragma 探测后 ALTER，
+  可空即「全部在架」，老库无需回填）。日常删除从物理级联改为软删除 —— 正文、历史快照、
+  大纲条目全部留在原处，恢复只清标记，不需要任何重建逻辑。
+- **删卷时卷与其内章节写同一个时间戳**，这个相同值就是「同一批」的判据：恢复卷只带回
+  这一批，删卷之前单独删掉的章节仍留在回收站里各归各的；回收站列表也不把随卷删掉的章节
+  重复列一遍（卷条目已经代表它们了）。
+- 回收站面板支持三类条目：类型标签（作品 / 卷 / 章节）+ 所属作品与卷名，
+  恢复与彻底删除按类型分派到各自的级联通道。
+
+### Changed
+
+- 装载层 `novel-editor-load` 过滤已删卷章；指向已删卷章的大纲条目（伏笔）同样挡在装载层之外
+  （数据不删，卷章恢复后条目自动重现）。
+- `novel-chapter-save` 拒绝写入已进回收站的章节：删除瞬间压在队列里的自动保存不能改掉
+  回收站里的正文，否则恢复出来的就不是删除那一刻的样子。
+- 恢复时原位置若已被占（软删除期间剩余卷章被重排成紧凑序号），自动落到同级末位 ——
+  直接写回原 sort 会造成两章同号，目录顺序变得不确定。
+- 恢复单章时若父卷也在回收站（「先单独删了这一章、随后删了整个卷」），先把卷本身放出来，
+  否则恢复出来的章挂在一个不存在的卷上等于「恢复了但看不见」。
+- 章节树删除确认文案改为「将移入回收站，可在书架「数据安全」里恢复」，主按钮「移入回收站」，
+  并去掉「不可恢复」的旧措辞（软删除下它已经是错的）。
+
+## [2.3.0] - 2026-10-23
+
+### Added
+
+- **novel 域一键全量备份 / 恢复（产品走查 P0 · 数据安全）**：书架顶栏新增「数据安全」入口，
+  把整库（作品 / 卷章正文 / 要素 / 设定 / 行囊 / 关系图 / 全局设定引用）打成一个 zip
+  （`manifest.json` + `novel.db`）。备份前先 `PRAGMA wal_checkpoint(TRUNCATE)`，否则 WAL 里
+  尚未合并的写入（往往是最后几章）会缺席备份包。恢复分两步：选包后**只读清单做预览**
+  （导出时间 / 作品 / 卷章 / 字数 / 包大小），确认后才覆盖；覆盖前校验清单
+  （`app` / `kind` / `format`）与 SQLite 文件头，再**先关库 → 自动留底
+  `novel.db.before-restore-<时间戳>` → 写新库 → 重开库跑增量迁移**，写失败自动把留底回滚
+  回去（「恢复失败」不等于「数据没了」）。
+- **删除兜底：作品回收站（软删除 + 30 天可恢复）**：`novel_works` 增列 `deleted_at`
+  （增量迁移，可空即「全部在架」，老库无需回填）；删除作品从物理级联改为移入回收站 ——
+  卷章正文 / 要素 / 设定 / 行囊全部留在原处，恢复只清标记，不需要任何重建逻辑。
+  书架顶栏按钮挂回收站角标，面板内可恢复 / 彻底删除 / 清空，超过 30 天的条目在打开面板时
+  自动清除。彻底删除复用既有 `novel-work-delete` 单事务级联通道，不另写第二份删除顺序。
+- 守卫 `electron/novel-safety-guard.test.ts`：钉住「装载必须过滤回收站」「日常删除必须是
+  软删除」「恢复必须先关库再写文件、先留底后删旧文件、失败回滚」「备份先 checkpoint 再读文件」；
+  `electron/novel-safety-utils.test.ts` 覆盖清单校验 / SQLite 文件头 / 保留期边界；
+  `DataSafetyModal/index.test.tsx` 覆盖备份、恢复预览、回收站恢复与过期清理。
+
+### Changed
+
+- 删除作品的确认文案改为「移入回收站，30 天内可原样恢复」，不再写「此操作不可恢复」；
+  主按钮文案由「删除」改为「移入回收站」。

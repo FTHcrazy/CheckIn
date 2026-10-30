@@ -1,5 +1,8 @@
+import { Button } from "antd";
+import GuideTooltip from "@/shared/components/GuideTooltip";
 import { useEntityTypeMeta } from "../../hooks/entity-types-context";
 import { useHoverStore } from "../../store/useHoverStore";
+import { consumeGuideTooltip } from "../../../../store/useGuideStore";
 import "./index.scss";
 
 interface HoverEntityCardProps {
@@ -37,41 +40,44 @@ export default function HoverEntityCard({
   const tags = entity.fields["性格"] ? splitTags(entity.fields["性格"]) : [];
 
   return (
-    <div className="nv-pop" style={{ left: target.x, top: target.y }}>
-      <div className="nv-pop__head">
-        <span
-          className="nv-pop__avatar"
-          style={{ color: meta.color, background: meta.colorWeak }}
-        >
-          {Array.from(entity.name)[0] ?? "?"}
-        </span>
-        <span className="nv-pop__names">
-          <span className="nv-pop__name">{entity.name}</span>
-          {entity.aliases.length > 0 && (
-            <span className="nv-pop__alias">
-              别名：{entity.aliases.join(" · ")}
-            </span>
-          )}
-        </span>
-      </div>
-
-      <p className="nv-pop__summary">{entity.summary || "暂无简介"}</p>
-
-      {tags.length > 0 && (
-        <div className="nv-pop__tags">
-          {tags.map((tag) => (
-            <span key={tag} className="nv-pop__tag">
-              {tag}
-            </span>
-          ))}
+    /* T-06：标注层第一次高亮出词、悬浮卡首次挂上去时，就地补一句「高亮词能点」。
+       锚点就是悬浮卡自己 —— 它出现的地方正是这句话要解释的对象。
+       消费走窗口 store（内存判定 + 打字保护），见 consumeGuideTooltip */
+    <GuideTooltip id="T-06" consume={() => consumeGuideTooltip("T-06")}>
+      <div className="nv-pop" style={{ left: target.x, top: target.y }}>
+        <div className="nv-pop__head">
+          <span
+            className="nv-pop__avatar"
+            style={{ color: meta.color, background: meta.colorWeak }}
+          >
+            {Array.from(entity.name)[0] ?? "?"}
+          </span>
+          <span className="nv-pop__names">
+            <span className="nv-pop__name">{entity.name}</span>
+            {entity.aliases.length > 0 && (
+              <span className="nv-pop__alias">
+                别名：{entity.aliases.join(" · ")}
+              </span>
+            )}
+          </span>
         </div>
-      )}
 
-      <div className="nv-pop__foot">
-        <button type="button" onClick={() => onOpenDetail(entity.id)}>
-          查看完整设定
-        </button>
+        <p className="nv-pop__summary">{entity.summary || "暂无简介"}</p>
+
+        {tags.length > 0 && (
+          <div className="nv-pop__tags">
+            {tags.map((tag) => (
+              <span key={tag} className="nv-pop__tag">
+                {tag}
+              </span>
+            ))}
+          </div>
+        )}
+
+        <div className="nv-pop__foot">
+          <Button onClick={() => onOpenDetail(entity.id)}>查看完整设定</Button>
+        </div>
       </div>
-    </div>
+    </GuideTooltip>
   );
 }

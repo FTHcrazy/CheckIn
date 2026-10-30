@@ -1,13 +1,20 @@
+// 悬浮操作（置顶 / 归档 / 退回灵感池 / 删除）由 antd `Button` 承载（AGENTS §6.1.2）：
+// 先清零组件级变量再声明自己的外观；hover / 激活态一律写成变量 ——
+// 自写 `:hover` 属性规则压不过 `.ant-btn:not(:disabled):not(.ant-btn-disabled):hover`（0,4,0）
+@use "../../../../../../shared/styles/widget" as widget;
+
 .bs-idea {
   position: relative;
   padding: 10px 12px;
   background: var(--app-surface);
   border: 1px solid var(--app-border);
   border-radius: var(--app-radius-item);
-  transition: box-shadow 0.18s ease;
+  /* 静止态给一档 ambient，hover 抬升换 card 档（与书卡一致的层次语言） */
+  box-shadow: var(--app-shadow-ambient);
+  transition: box-shadow var(--app-t-normal) var(--app-ease-standard);
 
   &:hover {
-    box-shadow: var(--app-shadow-card);
+    box-shadow: var(--app-shadow-raised);
   }
 
   &.is-pinned {
@@ -24,6 +31,18 @@
     -webkit-box-orient: vertical;
     overflow: hidden;
     overflow-wrap: anywhere;
+  }
+
+  /* 编辑态（1.41.0）：TextArea + 快捷键提示，与编辑器灵感面板同口径 */
+  &__edit {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  &__edittip {
+    font-size: 12px;
+    color: var(--app-text-muted);
   }
 
   &__footer {
@@ -61,7 +80,9 @@
     color: var(--app-text-muted);
   }
 
-  /* 悬浮操作：右上角淡入（opacity 过渡），不占布局位 */
+  /* 悬浮操作：右上角淡入（opacity 过渡），不占布局位。
+     底色用 --app-surface-alt 而不是与卡片同色的 elevated：白卡白底浮上去
+     只剩一层投影，扫一眼看不出「这里有一排按钮」 */
   &__actions {
     position: absolute;
     top: 6px;
@@ -69,13 +90,15 @@
     display: flex;
     align-items: center;
     gap: 2px;
-    padding: 1px 2px;
+    padding: 2px;
+    border: 1px solid var(--app-border);
     border-radius: var(--app-radius-item);
-    background: var(--app-surface-elevated);
+    background: var(--app-surface-alt);
     box-shadow: var(--app-shadow-card);
     opacity: 0;
     transform: translateY(-2px);
-    transition: opacity 0.15s ease, transform 0.15s ease;
+    transition: opacity var(--app-t-fast) var(--app-ease-standard),
+      transform var(--app-t-fast) var(--app-ease-standard);
   }
 
   &:hover &__actions,
@@ -84,27 +107,36 @@
     transform: translateY(0);
   }
 
-  &__action {
+  &__action.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 22px;
+    --ant-button-content-font-size: 12px;
+    --ant-border-radius: 6px;
+    /* 原来的 hover 描边是 `box-shadow: 0 0 0 1px inset`：antd 没有 hover 阴影变量，
+       改用真实边框承接（默认透明，hover / active 才染色），观感一致且能写成变量 */
+    --ant-line-width: 1px;
+    --ant-button-default-bg: transparent;
+    --ant-button-default-color: var(--app-text-secondary);
+    --ant-button-default-border-color: transparent;
+    --ant-button-default-hover-bg: var(--app-primary-weak);
+    --ant-button-default-hover-color: var(--app-primary);
+    --ant-button-default-hover-border-color: transparent;
+    --ant-button-default-active-bg: var(--app-primary-weak);
+    --ant-button-default-active-color: var(--app-primary);
+    --ant-button-default-active-border-color: transparent;
+    --ant-button-default-shadow: none;
+
+    /* antd 不接管的属性 */
     display: inline-flex;
     align-items: center;
     justify-content: center;
     width: 22px;
-    height: 22px;
-    border: none;
-    border-radius: 6px;
-    background: transparent;
-    color: var(--app-text-muted);
-    font-size: 12px;
-    cursor: pointer;
-    transition: box-shadow 0.15s ease;
 
-    &:hover {
-      color: var(--app-primary);
-      box-shadow: 0 0 0 1px var(--app-border) inset;
-    }
-
+    /* 已置顶：图标转琥珀色，hover / active 同步不掉色 */
     &.is-on {
-      color: var(--app-warning);
+      --ant-button-default-color: var(--app-warning);
+      --ant-button-default-hover-color: var(--app-warning);
+      --ant-button-default-active-color: var(--app-warning);
     }
   }
 }

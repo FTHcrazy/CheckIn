@@ -1,4 +1,9 @@
-import { CheckCircleFilled, InfoCircleFilled, WarningFilled } from "@ant-design/icons";
+import {
+  CheckCircleFilled,
+  CloseCircleFilled,
+  InfoCircleFilled,
+  WarningFilled,
+} from "@ant-design/icons";
 import type { ToastPayload } from "../../hooks/useNovelViewState";
 import "./index.scss";
 
@@ -6,10 +11,13 @@ interface NovelToastProps {
   toast: ToastPayload | null;
 }
 
+// tone 集合随共享 hook 收口后含 error（P3-3）；编辑器当前不弹 error，
+// 图标先备齐，样式走 warning 同色系
 const ICONS = {
   success: <CheckCircleFilled />,
   info: <InfoCircleFilled />,
   warning: <WarningFilled />,
+  error: <CloseCircleFilled />,
 };
 
 /**

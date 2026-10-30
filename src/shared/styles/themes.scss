@@ -13,6 +13,18 @@
  * 变量分组（新增变量时四套主题必须同步补齐，themes.test.ts 会校验一致性）：
  *   底色面板 11 项：bg / surface / surface-alt / surface-hover / surface-active /
  *                  surface-elevated / header-bg / sidebar-bg / input-bg / splitter / mask
+ *
+ * ⚠️ 分层铁律（themes.test.ts「面板分层」守卫会数值校验）：
+ *   - `--app-surface-elevated` 是**浮层专用**（下拉 / 弹窗 / 抽屉 / 悬浮卡），
+ *     任何主题下都必须是「最接近观察者」的那一层 —— 暗色最亮、浅色纯白。
+ *   - `--app-surface` 是**非浮层内容面**（卡片 / 面板 / 编辑器），必须与 elevated
+ *     拉开可感知的一档，否则浅色下卡片与浮层同为 #ffffff，只剩描边分家。
+ *   - header / sidebar / input 都是 surface 的**同层变体**，跟随 surface 一起动；
+ *     浅色主题下 sidebar 比 surface 再退一档（暗色主题下 sidebar 本就比 surface 深）。
+ *   - 浅色主题的层次方向是「越低越深」：elevated(纯白) > surface > alt/header(同层退档) > bg。
+ *   - 窗口 / 页面根一律铺 `--app-bg`（不是 surface），否则每张卡片都少一档 ——
+ *     见下面「常驻色块阶梯」第 1 条。
+ *
  *   描边     2 项：border / border-strong
  *   文本     5 项：text / text-secondary / text-muted / text-disabled / text-inverse
  *   高对比   4 项：text-strong / text-secondary-strong（小字号可读性）+
@@ -24,23 +36,80 @@
  *   强调色  14 项：7 个 accent 及其 -weak（图标底 / 数据卡 / 标签）
  *   圆角     4 项 / 阴影 3 项 / 滚动条 2 项
  *
+ * ⚠️ 常驻色块阶梯（themes.test.ts 两组守卫会全仓扫描 + 数值校验）
+ *
+ * 底色 token 都是**绝对色**，可「差多少档」取决于它贴在谁身上。同一支 `alt`
+ * 贴 surface 只差 1.03、贴纯白浮层就变成 1.07（跨过 surface 一整层）。
+ * 所以规矩要按**基面**记，而不是按 token 记：
+ *
+ *   基面（谁在底下）        「块」= 高一档              「槽」= 低一档
+ *   ─────────────────────────────────────────────────────────────────────
+ *   页面底 --app-bg         --app-surface  1.042~1.044  --app-surface-hover 1.035~1.052
+ *                                                       （alt 与 bg 近乎同色会消失）
+ *   内容面 --app-surface    --app-surface-elevated       --app-surface-alt 1.027~1.052
+ *                           （**仅浮层**：下拉/弹窗/抽屉/悬浮卡）
+ *   浮层  --app-surface-    ——（已是最贴观察者）          --app-surface 1.033~1.043
+ *         elevated
+ *
+ *   语义上限：`--app-primary-weak`（1.094~1.135）=「选中 / 当前 / 已展开」，
+ *   常驻块永远不许超过它。
+ *
+ * 由此派生的三条硬规矩（本仓踩过三次，都是真机反馈「跟其它模块不是一个风格」）：
+ *   1. **窗口 / 页面根一律铺 `--app-bg`**，不许铺 `--app-surface`。铺成 surface
+ *      等于把「页面底」抬到内容面那一层，之后每张卡片都少一档、只剩描边撑着，
+ *      并逼着某些卡片越级去借浮层 token。（先例：行囊窗口 `.cpk`）
+ *   2. **`--app-surface-alt` 只允许贴在 `--app-surface` 上**。贴浮层（elevated）
+ *      会跨过 surface 一档、比同屏兄弟块重一倍且丢色相；贴页面底（bg）会直接消失。
+ *      浮层里的槽一律用 `--app-surface`。
+ *   3. **浮层里的组件级槽位必须显式指回**：antd 出厂的 `railBg = colorFillTertiary`
+ *      （黑透明 4%，在白浮层上退化成**无彩度**中性灰 #f5f5f5 = 1.090）、
+ *      `Segmented.trackBg = colorBgLayout`（= 页面底，比内容面还深一档 = 1.089）——
+ *      两者都比浮层应有的 1.043 重一倍。用到哪个组件就在浮层作用域里补哪个
+ *      （先例：`.nv-setting` 补 `--ant-slider-rail-bg` / `--ant-segmented-track-bg`）。
+ *
+ * 交互态与常驻的界线：`--app-surface-hover` / `--app-surface-active` 的本义是
+ * **相对所在面的交互态**（hover 加深、按下更深），不是色阶里的一档：cream 下
+ * `surface-active` 达 1.20，越过全站最重的常驻弱底；大面积铺开会让整屏比其它
+ * 界面重一档（真机反馈：行囊「已展开的模块行」曾是一列深棕），而中性加深在暖色
+ * 主题下还会变成浑浊的棕黄 —— 没有语义，只剩重量。这两个 token 只允许出现在
+ * `:hover / :active / :focus` 里，或写在属性名自带状态的 `--ant-*-hover-bg /
+ * *-active-bg` 上；禁用态（`*-disabled`）算常驻，应当更**弱**而不是更深。
+ * （暗色主题不套用这套数值：暗底需要更大的亮度差才可感知，hover / active 天然更重。）
+ *
  * 使用方式：
  *   1. 窗口入口 `import "@/shared/styles/themes.scss"`（三个窗口都要引）
  *   2. ThemeProvider 在 <html> 上写 data-theme="aurora|cream|mint|midnight"
  */
 
+/* ── 动效标尺（motion token，随全局、不随主题）──
+ * 时长 / 缓动四套主题共用，故不放 data-theme 块（放了会四套重复且无意义）。
+ * 见 docs/novel-visual-polish-plan.md §5：收敛散落的 --nv-t-fast 等私有写法。 */
+:root {
+  /* 时长桶（写作工具偏克制，上限 260ms，不用 300ms+ 长动效） */
+  --app-t-instant: 80ms;   /* 按下 press / 焦点环 */
+  --app-t-fast: 120ms;     /* 按钮 hover / 图标态 / 颜色微反馈 */
+  --app-t-normal: 180ms;   /* 卡片 hover 抬升 / 选中态 */
+  --app-t-slow: 260ms;     /* 抽屉 / 面板滑动 / 入场 */
+
+  /* 缓动（3 条够用，与现有抽屉 / EntityDetail 入场曲线一致） */
+  --app-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);    /* 默认：hover / 状态切换 */
+  --app-ease-emphasized: cubic-bezier(0.3, 1, 0.5, 1);  /* 强调入场：模态 / 弹层 */
+  --app-ease-spring: cubic-bezier(0.32, 0.72, 0, 1);    /* 抽屉 / 面板、拖拽释放 */
+}
+
 :root,
 [data-theme="aurora"] {
   /* ── 底色与面板 ── */
   --app-bg: #f3f5fc;
-  --app-surface: #ffffff;
-  --app-surface-alt: #f7f8fe;
+  --app-surface: #f9fafe;
+  --app-surface-alt: #f5f7fd;
   --app-surface-hover: #eef1fc;
   --app-surface-active: #e4e9fa;
   --app-surface-elevated: #ffffff;
-  --app-header-bg: #ffffff;
-  --app-sidebar-bg: #ffffff;
-  --app-input-bg: #ffffff;
+  --app-paper: #fbf7ed;
+  --app-header-bg: #f9fafe;
+  --app-sidebar-bg: #f5f7fd;
+  --app-input-bg: #f9fafe;
   --app-splitter: #edf0fa;
   --app-mask: rgba(43, 47, 74, 0.35);
 
@@ -103,8 +172,12 @@
   --app-radius-item: 10px;
   --app-radius-pill: 999px;
 
-  /* ── 阴影（软投影，避免生硬黑边）── */
+  /* ── 阴影（软投影，避免生硬黑边；五档分级见 docs/novel-visual-polish-plan.md）──
+   * ambient=静止卡片环境阴影（最轻）/ card=内容面卡片基准 / raised=hover 抬升 /
+   * pop=浮层·抽屉·右键菜单 / window=窗口外壳（inset） */
+  --app-shadow-ambient: 0 1px 3px rgba(53, 64, 101, 0.04);
   --app-shadow-card: 0 6px 16px rgba(53, 64, 101, 0.07);
+  --app-shadow-raised: 0 8px 20px rgba(53, 64, 101, 0.1);
   --app-shadow-pop: 0 10px 30px rgba(53, 64, 101, 0.14);
   // 窗口投影：必须是 inset（画在圆角内侧）。常规外阴影会被窗口方形边界裁掉，
   // 只剩直角残影，详见 shared/styles/window-shell.scss
@@ -119,14 +192,15 @@
 [data-theme="cream"] {
   /* ── 底色与面板 ── */
   --app-bg: #faf6ef;
-  --app-surface: #ffffff;
-  --app-surface-alt: #fcf9f4;
+  --app-surface: #fdfbf7;
+  --app-surface-alt: #faf5ea;
   --app-surface-hover: #f6f0e6;
   --app-surface-active: #f0e6d4;
   --app-surface-elevated: #ffffff;
-  --app-header-bg: #ffffff;
-  --app-sidebar-bg: #fffdf9;
-  --app-input-bg: #ffffff;
+  --app-paper: #fbf3e2;
+  --app-header-bg: #fdfbf7;
+  --app-sidebar-bg: #faf5ea;
+  --app-input-bg: #fdfbf7;
   --app-splitter: #f3ebdc;
   --app-mask: rgba(61, 54, 41, 0.35);
 
@@ -190,7 +264,9 @@
   --app-radius-pill: 999px;
 
   /* ── 阴影 ── */
+  --app-shadow-ambient: 0 1px 3px rgba(120, 95, 60, 0.05);
   --app-shadow-card: 0 6px 16px rgba(120, 95, 60, 0.07);
+  --app-shadow-raised: 0 8px 20px rgba(120, 95, 60, 0.11);
   --app-shadow-pop: 0 10px 30px rgba(120, 95, 60, 0.14);
   --app-shadow-window: inset 0 1px 2px rgba(92, 72, 44, 0.08), inset 0 -2px 6px rgba(92, 72, 44, 0.07);
 
@@ -203,14 +279,15 @@
 [data-theme="mint"] {
   /* ── 底色与面板 ── */
   --app-bg: #f2f8f4;
-  --app-surface: #ffffff;
-  --app-surface-alt: #f5faf7;
+  --app-surface: #f9fcfa;
+  --app-surface-alt: #f4f9f7;
   --app-surface-hover: #e9f4ee;
   --app-surface-active: #dcf0e5;
   --app-surface-elevated: #ffffff;
-  --app-header-bg: #ffffff;
-  --app-sidebar-bg: #fbfefc;
-  --app-input-bg: #ffffff;
+  --app-paper: #f3f6ee;
+  --app-header-bg: #f9fcfa;
+  --app-sidebar-bg: #f4f9f7;
+  --app-input-bg: #f9fcfa;
   --app-splitter: #e6f2eb;
   --app-mask: rgba(36, 53, 45, 0.35);
 
@@ -277,7 +354,9 @@
   --app-radius-pill: 999px;
 
   /* ── 阴影 ── */
+  --app-shadow-ambient: 0 1px 3px rgba(30, 90, 66, 0.04);
   --app-shadow-card: 0 6px 16px rgba(30, 90, 66, 0.07);
+  --app-shadow-raised: 0 8px 20px rgba(30, 90, 66, 0.1);
   --app-shadow-pop: 0 10px 30px rgba(30, 90, 66, 0.14);
   --app-shadow-window: inset 0 1px 2px rgba(18, 62, 46, 0.07), inset 0 -2px 6px rgba(18, 62, 46, 0.06);
 
@@ -295,6 +374,7 @@
   --app-surface-hover: #2a2f3c;
   --app-surface-active: #323848;
   --app-surface-elevated: #262b38;
+  --app-paper: #262421;
   --app-header-bg: #1d2029;
   --app-sidebar-bg: #191c26;
   --app-input-bg: #232733;
@@ -360,8 +440,10 @@
   --app-radius-item: 10px;
   --app-radius-pill: 999px;
 
-  /* ── 阴影 ── */
+  /* ── 阴影（暗色下阴影感知弱，用更高不透明度补偿；立体感另靠明度分层+描边兜底）── */
+  --app-shadow-ambient: 0 1px 3px rgba(0, 0, 0, 0.28);
   --app-shadow-card: 0 6px 18px rgba(0, 0, 0, 0.32);
+  --app-shadow-raised: 0 8px 22px rgba(0, 0, 0, 0.42);
   --app-shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.45);
   --app-shadow-window: inset 0 1px 2px rgba(0, 0, 0, 0.45), inset 0 -2px 6px rgba(0, 0, 0, 0.35);
 

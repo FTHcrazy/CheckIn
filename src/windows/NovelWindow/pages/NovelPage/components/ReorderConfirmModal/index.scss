@@ -1,4 +1,17 @@
 .nv-reorder {
+  /* 标题行：标题 + 常驻说明图标（T-07 的气泡锚点） */
+  &__title {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  &__title-hint {
+    font-size: 12px;
+    color: var(--app-text-muted);
+    cursor: help;
+  }
+
   &__hint {
     margin: 0 0 10px;
     font-size: 12px;

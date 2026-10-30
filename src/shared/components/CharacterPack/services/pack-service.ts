@@ -1,0 +1,136 @@
+/**
+ * 行囊数据服务（IPC 封装层）
+ *
+ * 只做语义化转发，不含业务逻辑、不导入 React。
+ * 全部通道集中在 `window.electronAPI.novel.pack.*`，便于未来把整个模块
+ * 迁到独立窗口时只换入口、不动调用方。
+ */
+import type {
+  PackBundleDTO,
+  PackRecordDTO,
+  PackRealmLinkDTO,
+  PackSavePayloadDTO,
+} from "../types";
+import { PACK_UI_KEY, runPackQuickAdd, type PackQuickAddRequest } from "../pack-config";
+
+export interface PackSaveInput extends Omit<PackSavePayloadDTO, "reason" | "chapterId"> {
+  reason: string;
+  chapterId: string;
+}
+
+/** 全量装载行囊（含 R25 等级体系与当前境界绑定） */
+export async function loadPackBundle(workId: string): Promise<PackBundleDTO> {
+  return window.electronAPI!.novel.pack.load(workId);
+}
+
+/** 整文档事务保存：写前先落回退点，成功后清空草稿；false 表示已整体回滚 */
+export async function savePackDocument(input: PackSaveInput): Promise<boolean> {
+  return window.electronAPI!.novel.pack.save(input);
+}
+
+/** 写入草稿（编辑防抖 800ms + 关闭面板时必写） */
+export async function putPackDraft(
+  characterId: string,
+  payload: string,
+  dirtyCount: number,
+): Promise<boolean> {
+  return window.electronAPI!.novel.pack.draftSet(characterId, payload, dirtyCount);
+}
+
+export async function clearPackDraft(characterId: string): Promise<boolean> {
+  return window.electronAPI!.novel.pack.draftClear(characterId);
+}
+
+export async function fetchPackRecords(
+  characterId: string,
+  limit?: number,
+): Promise<PackRecordDTO[]> {
+  return window.electronAPI!.novel.pack.recordList(characterId, limit);
+}
+
+/** 境界幂等写入（同一来源+关系只保留一行） */
+export async function writeRealmLink(link: PackRealmLinkDTO): Promise<boolean> {
+  return window.electronAPI!.novel.pack.linkSet(link);
+}
+
+// 1.39.1 起阶设置弹窗已删（writeLevelMeta 一并撤下）：境界层级统一在
+// 「设定中心 → 等级序列」里改，行囊只读。设定域的 novel-setting-level-update
+// 通道本身保留，SettingCenter 仍在用。
+
+// ── 主角绑定（行囊面板与右侧要素栏共用同一格数据） ──
+
+/**
+ * 读取「谁是主角」。null = 该作品还没建过行囊角色，此时右侧要素栏
+ * 不显示任何主角角标（而不是伪造一个空主角）。
+ */
+export async function fetchProtagonistBinding(
+  workId: string,
+): Promise<{ characterId: string; entityId: string } | null> {
+  return window.electronAPI!.novel.pack.protagonistGet(workId);
+}
+
+/** 设为主角 / 换一个主角 / 传空串解除主角 */
+export async function writeProtagonistBinding(
+  workId: string,
+  entityId: string,
+): Promise<boolean> {
+  return window.electronAPI!.novel.pack.protagonistSet(workId, entityId);
+}
+
+/**
+ * 改主角名。
+ *
+ * 绑定了主角实体时改的是**实体名**（名字的单一事实源在要素库），否则改行囊
+ * 内那格。返回真实落点，调用方据此渲染 —— 不在本地猜「到底哪个名字生效了」。
+ */
+export async function renamePackCharacter(
+  workId: string,
+  name: string,
+): Promise<{ ok: boolean; displayName: string; target: "entity" | "character" }> {
+  return window.electronAPI!.novel.pack.rename(workId, name);
+}
+
+// ── 界面偏好（即改即存，走 config 整读整写；不进草稿，见 PRD §8.6.2） ──
+
+/** 读取行囊界面偏好 JSON（键不存在返回 null，由上层合并默认值） */
+export async function fetchPackUiPrefsRaw(): Promise<string | null> {
+  return window.electronAPI!.novel.configGet(PACK_UI_KEY);
+}
+
+/** 保存行囊界面偏好（防抖由调用方负责） */
+export async function savePackUiPrefsRaw(value: string): Promise<boolean> {
+  return window.electronAPI!.novel.configSet(PACK_UI_KEY, value);
+}
+
+// ── 快速记账（REQ-027：正文选区 → 记入背包） ──
+
+/**
+ * 把一段正文记入背包。**面板开着时由面板处理，否则落主进程。**
+ *
+ * 两条路的差异不是「快慢」而是「谁是数据主人」：面板开着的整个会话里，
+ * 真正的当前状态是它的内存文档 + 草稿，直接写库会被下一次整文档草稿覆盖；
+ * 面板没开时主进程才是唯一写入方（且它自己会判断要不要并进草稿）。
+ *
+ * 返回新建物品的 id（失败 / 无作品返回 null）。**调用方拿到 id 后要广播
+ * `notifyQuickAdded`**：拆窗后主进程那条路对行囊窗口是「别人写的」，
+ * 不广播它下一次整文档保存就会把这条物品覆盖掉（见 PACK_QUICK_ADDED_EVENT）。
+ */
+export async function quickAddPackItem(
+  workId: string,
+  request: PackQuickAddRequest,
+): Promise<string | null> {
+  const local = runPackQuickAdd(request);
+  if (local.handled) return local.itemId;
+  if (!workId) return null;
+  try {
+    const created = await window.electronAPI!.novel.pack.quickAdd(
+      workId,
+      request.name,
+      request.chapterId,
+      request.category ?? "杂物",
+    );
+    return created ? created.id : null;
+  } catch {
+    return null;
+  }
+}

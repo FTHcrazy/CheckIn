@@ -1,0 +1,46 @@
+@use "../../../../shared/styles/widget" as widget;
+
+/* 快捷键录制按钮：清零后必须显式补回高度 / 内边距 / 描边 ——
+   `ant-button-reset` 会把三者一起归零，只补圆角的话按钮会退化成纯文字
+   （书架顶栏那两颗按钮踩过同一个坑）。 */
+.settings-shortcut__key.ant-btn {
+  @include widget.ant-button-reset;
+  --ant-control-height: 28px;
+  --ant-button-padding-inline: 10px;
+  --ant-button-content-font-size: 12px;
+  --ant-button-font-weight: 500;
+  --ant-border-radius: var(--app-radius-item);
+  --ant-line-width: 1px;
+  --ant-button-default-bg: var(--app-surface);
+  --ant-button-default-color: var(--app-text);
+  --ant-button-default-border-color: var(--app-border);
+  --ant-button-default-hover-bg: var(--app-surface-hover);
+  --ant-button-default-hover-color: var(--app-primary);
+  --ant-button-default-hover-border-color: var(--app-primary);
+  --ant-button-default-active-bg: var(--app-surface-active);
+  --ant-button-default-active-color: var(--app-primary);
+  --ant-button-default-active-border-color: var(--app-primary);
+  --ant-button-default-shadow: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 88px;
+  font-family: Consolas, "Courier New", monospace;
+  white-space: nowrap;
+
+  /* 录制态：主色描边 + 弱底，明确"正在接收按键" */
+  &.is-recording {
+    --ant-button-default-bg: var(--app-primary-weak);
+    --ant-button-default-color: var(--app-primary);
+    --ant-button-default-border-color: var(--app-primary);
+    --ant-button-default-hover-bg: var(--app-primary-weak);
+    --ant-button-default-hover-color: var(--app-primary);
+    --ant-button-default-hover-border-color: var(--app-primary);
+  }
+
+  &:disabled {
+    --ant-button-default-bg: transparent;
+    --ant-button-default-color: var(--app-text-disabled);
+    --ant-button-default-border-color: var(--app-border);
+  }
+}

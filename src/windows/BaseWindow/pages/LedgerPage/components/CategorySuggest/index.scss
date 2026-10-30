@@ -1,0 +1,48 @@
+@use "../../../../../../shared/styles/widget" as widget;
+
+/* 分类建议条（R-AI-16a）
+   视觉上刻意比分类行「轻一档」：它是可点的提示，不是必选项，
+   所以字号 12、底色只到 surface-alt、没有选中态的强调色块。 */
+.ld-suggest {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+
+  &__label {
+    font-size: 12px;
+    color: var(--app-text-muted);
+  }
+
+  &__chip.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 24px;
+    --ant-button-padding-inline: 8px;
+    --ant-button-content-font-size: 12px;
+    --ant-border-radius: var(--app-radius-pill);
+    --ant-button-default-color: var(--app-text-secondary);
+    --ant-button-default-hover-color: var(--app-text);
+    --ant-button-default-hover-bg: var(--app-surface-hover);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    border: 1px solid var(--app-border);
+    background: var(--app-surface-alt);
+  }
+
+  &__chip.is-current {
+    border-color: var(--app-primary);
+    --ant-button-default-color: var(--app-text-strong);
+  }
+
+  &__icon {
+    display: inline-flex;
+    font-size: 14px;
+    line-height: 1;
+  }
+
+  &__name {
+    line-height: 1;
+  }
+}

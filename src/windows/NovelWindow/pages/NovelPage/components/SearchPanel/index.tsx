@@ -1,10 +1,11 @@
 import { useEffect, useMemo } from "react";
 import { CloseOutlined, SearchOutlined } from "@ant-design/icons";
-import { Input } from "antd";
+import { Button, Input } from "antd";
 import { Virtuoso } from "react-virtuoso";
 import { useEntityTypeMeta } from "../../hooks/entity-types-context";
 import { splitByKeyword } from "../../novel-utils";
 import { registerSearchRunner, useSearchStore } from "../../store/useSearchStore";
+import NvSegmented from "../NvSegmented";
 import { useEdgeFade } from "../SupportPanel/useEdgeFade";
 import type { SearchScope } from "../../store/useSearchStore";
 import type { NovelEntity, SearchHit } from "../../types";
@@ -126,31 +127,29 @@ export default function SearchPanel({
           </span>
         )}
         {keyword && (
-          <button
-            type="button"
+          <Button
             className="nv-field__clear"
             aria-label="清空检索"
             onClick={clear}
           >
             <CloseOutlined />
-          </button>
+          </Button>
         )}
       </div>
 
-      <div className="nv-sub nv-search__scopes">
-        {SCOPES.map((item) => (
-          <button
-            key={item.key}
-            type="button"
-            className={`nv-sub__btn${scope === item.key ? " is-on" : ""}`}
-            disabled={item.key === "chapter" && !activeChapterId}
-            title={item.key === "chapter" && !activeChapterId ? "先选一章" : undefined}
-            onClick={() => setScope(item.key)}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
+      <NvSegmented<SearchScope>
+        className="nv-search__scopes"
+        ariaLabel="检索范围"
+        value={scope}
+        onChange={setScope}
+        options={SCOPES.map((item) => ({
+          value: item.key,
+          label: item.label,
+          // 未选章时「本章」没有可检索范围：禁用并说明原因，而不是让它查空
+          disabled: item.key === "chapter" && !activeChapterId,
+          title: item.key === "chapter" && !activeChapterId ? "先选一章" : undefined,
+        }))}
+      />
 
       {loading ? (
         <>
@@ -173,14 +172,13 @@ export default function SearchPanel({
                 }`}
               >
                 {recent.map((item) => (
-                  <button
+                  <Button
                     key={item}
-                    type="button"
                     className="nv-chip"
                     onClick={() => setKeyword(item)}
                   >
                     {item}
-                  </button>
+                  </Button>
                 ))}
               </div>
             </>
@@ -226,8 +224,7 @@ export default function SearchPanel({
                 : null;
               return (
                 <div className="nv-search__item">
-                  <button
-                    type="button"
+                  <Button
                     className="nv-search__hit"
                     onClick={() =>
                       isEntityScope
@@ -260,7 +257,7 @@ export default function SearchPanel({
                         ),
                       )}
                     </span>
-                  </button>
+                  </Button>
                 </div>
               );
             }}
