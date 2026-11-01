@@ -43,7 +43,8 @@ interface FakeApp {
   init: ReturnType<typeof vi.fn>;
   destroy: ReturnType<typeof vi.fn>;
   canvas: HTMLCanvasElement;
-  stage: { addChild: ReturnType<typeof vi.fn> };
+  /** `stage` 只挂一个 `world` —— 选中框用例要沿着它往下找到 overlay */
+  stage: { children: unknown[]; addChild: ReturnType<typeof vi.fn> };
 }
 
 /** 本次渲染期间创建的全部假精灵 —— 用于断言"它挂在哪个容器下、那个容器多透明" */
@@ -55,6 +56,10 @@ interface FakeSpriteRef {
 interface FakeContainerRef {
   alpha: number;
   children: unknown[];
+}
+/** 假 Graphics：`rects` 记录每次 `rect(x, y, w, h)` 的参数（选中框断言用） */
+interface FakeGraphicsRef {
+  rects: number[][];
 }
 
 let apps: FakeApp[] = [];
@@ -68,6 +73,10 @@ vi.mock("pixi.js", () => {
     parent: FakeContainer | null = null;
     /** 容器透明度：素材层靠它做层级交叉淡化 */
     alpha = 1;
+    /** 剔除写的就是它 */
+    visible = true;
+    /** 风格滤镜挂载点 */
+    filters: unknown[] = [];
     addChild(...kids: unknown[]) {
       for (const kid of kids) {
         const child = kid as FakeContainer;
@@ -85,6 +94,21 @@ vi.mock("pixi.js", () => {
     destroy() {}
     scale = { set: vi.fn() };
     position = { set: vi.fn() };
+    /**
+     * 剔除读的**局部**包围盒（与视口无关，可缓存）：原点零矩形 ⇒ 与含原点的
+     * 视野框恒相交 ⇒ 默认不剔任何层。本文件断言的是"素材挂在哪个层级容器、
+     * 容器多透明"，剔除不该插手；剔除自身的行为在 `cull.test.ts` 里测。
+     */
+    getLocalBounds() {
+      return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+    }
+    /** 局部 → 舞台：jsdom 无真实变换，恒等即可 */
+    toGlobal(point: { x: number; y: number }) {
+      return { x: point.x, y: point.y };
+    }
+    /** 静态层缓存（jsdom 无 WebGL）：只记"调过" */
+    cacheAsTexture = vi.fn();
+    updateCacheTexture = vi.fn();
   }
 
   class FakeSprite extends FakeContainer {
@@ -100,8 +124,20 @@ vi.mock("pixi.js", () => {
   }
 
   class FakeGraphics extends FakeContainer {
-    clear() {}
-    rect() {
+    /**
+     * 每次 `rect(x, y, w, h)` 的参数。
+     *
+     * 选中框是画在 overlay 这个 Graphics 上的**唯一**东西，所以 `rects.at(-1)`
+     * 就是"当前选中框的宽高" —— 这是在不真渲一张图的条件下，唯一能钉住
+     * "选中框尺寸也必须乘层级因子"的探针（漏乘时它会变成视觉尺寸的 8 倍）。
+     */
+    rects: number[][] = [];
+    clear() {
+      // 与真实 Graphics 一致：clear() 会把之前画的全丢掉
+      this.rects.length = 0;
+    }
+    rect(x: number, y: number, w: number, h: number) {
+      this.rects.push([x, y, w, h]);
       return this;
     }
     poly() {
@@ -118,6 +154,11 @@ vi.mock("pixi.js", () => {
   class Application {
     canvas = document.createElement("canvas");
     stage = new FakeContainer();
+    /**
+     * 渲染器替身：烘焙 effect 会调 `renderer.render({container, target, clear})`。
+     * 不建模任何真实渲染 —— 这里只需要"它被调用过"这一事实。
+     */
+    renderer = { render: vi.fn() };
     init = vi.fn(async () => {
       // 模拟 await autoDetectRenderer()：此刻插件字段（_cancelResize）尚不存在
       await initDeferred.promise;
@@ -134,25 +175,113 @@ vi.mock("pixi.js", () => {
     }
   }
 
+  /**
+   * RenderTexture 替身。
+   *
+   * 【为什么必须在这里补】`vi.mock` 的工厂**缺导出会在 import 阶段直接抛错**
+   * （不是"取到 undefined"）。coastBake.ts 在模块顶层就 import 了它，
+   * 因此只要 MapCanvas 引入海岸烘焙，这个导出就必须存在 ——
+   * 否则 5 个既有用例会集体在 import 阶段红，且报错指向 mock 工厂，
+   * 极易被误判成"测试环境问题"。
+   */
+  class RenderTexture {
+    /** 记录每次烘焙的参数，供断言"同指纹不重建" */
+    static create = vi.fn((options: { width: number; height: number }) => ({
+      ...options,
+      destroy: vi.fn(),
+    }));
+    destroy = vi.fn();
+  }
+
+  /** 模糊滤镜替身：只记录参数，不做任何事 */
+  class BlurFilter {
+    options: unknown;
+    constructor(options?: unknown) {
+      this.options = options;
+    }
+  }
+
+  /** 色彩矩阵滤镜替身（B4 风格预设用；本批先占位） */
+  class ColorMatrixFilter {
+    matrix: number[] = [];
+    saturate = vi.fn();
+    brightness = vi.fn();
+    /** 切风格时旧实例要被销毁（累乘会让来回切换不可逆） */
+    destroy = vi.fn();
+  }
+
+  /**
+   * 文字与样式替身（B3 标注层）。
+   *
+   * `anchor` 必须补：`labelSync` 建节点时会 `anchor.set(0.5, 0.5)`（居中锚点，
+   * 避让往上让才对称）。缺了它会在标注同步那一刻抛
+   * "node.anchor is undefined"，而报错栈指向 effect，容易被误判成渲染时序问题。
+   */
+  class TextStyle {
+    constructor(options?: unknown) {
+      void options;
+    }
+  }
+  class Text extends FakeContainer {
+    text = "";
+    resolution = 1;
+    style: unknown = null;
+    anchor = { set: vi.fn() };
+    constructor(options?: unknown) {
+      super();
+      const o = options as { text?: string } | undefined;
+      this.text = typeof o?.text === "string" ? o.text : "";
+    }
+  }
+
   const initDeferred = createDeferred<void>();
   // 暴露给测试，用于放行 init
   (globalThis as Record<string, unknown>).__releaseInit = () => initDeferred.resolve();
 
   const Texture = { EMPTY: Symbol("empty") };
-  return { Application, Container: FakeContainer, Sprite: FakeSprite, Graphics: FakeGraphics, Texture };
+  return {
+    Application,
+    Container: FakeContainer,
+    Sprite: FakeSprite,
+    Graphics: FakeGraphics,
+    Texture,
+    RenderTexture,
+    BlurFilter,
+    ColorMatrixFilter,
+    TextStyle,
+    Text,
+  };
 });
 
 // 依赖 mock 之后再导入被测组件
 import MapCanvas from "./index";
 import type { MapDocument } from "../../types";
+import { elementSizeFactor } from "../../lod";
+import { SPRITE_MAP } from "../../sprites";
 
 function makeDoc(elements: MapDocument["elements"] = []): MapDocument {
-  return { version: 1, baseImageId: "base-1", elements, regions: [] };
+  return {
+    version: 2,
+    baseImageId: "base-1",
+    land: null,
+    style: "none",
+    labels: [],
+    showRegions: true,
+    elements,
+    regions: [],
+  };
 }
 
 const noop = () => {};
 
-function canvasTree(options: { doc?: MapDocument; levelAlphas?: number[] } = {}) {
+function canvasTree(
+  options: {
+    doc?: MapDocument;
+    levelAlphas?: number[];
+    /** 选中态：`drawOverlay` 只在这个 id 非空时才画框 */
+    selectedId?: string | null;
+  } = {},
+) {
   return (
     <div style={{ width: 800, height: 600 }}>
       <MapCanvas
@@ -160,7 +289,7 @@ function canvasTree(options: { doc?: MapDocument; levelAlphas?: number[] } = {})
         viewport={{ x: 0, y: 0, scale: 1 }}
         textures={{}}
         texturesReady={false}
-        selectedId={null}
+        selectedId={options.selectedId ?? null}
         pendingSpriteId={null}
         levelAlphas={options.levelAlphas}
         onSizeChange={noop}
@@ -176,7 +305,11 @@ function canvasTree(options: { doc?: MapDocument; levelAlphas?: number[] } = {})
 
 function renderCanvas(
   strict: boolean,
-  options: { doc?: MapDocument; levelAlphas?: number[] } = {},
+  options: {
+    doc?: MapDocument;
+    levelAlphas?: number[];
+    selectedId?: string | null;
+  } = {},
 ) {
   const tree = canvasTree(options);
   return render(strict ? <StrictMode>{tree}</StrictMode> : tree);
@@ -261,9 +394,20 @@ describe("MapCanvas Pixi 生命周期", () => {
  * 那边覆盖不到这层。
  */
 describe("MapCanvas 素材层级显隐", () => {
-  /** 山脉（mountain-20）baseWidth = 120，森林（forest-1）= 90，据此认出各自精灵 */
-  const MOUNTAIN_W = 120;
-  const FOREST_W = 90;
+  /**
+   * 山脉（mountain-20）baseWidth = 120，森林（forest-1）= 90，据此认出各自精灵。
+   *
+   * ⚠️ 精灵的**实际宽度**不再是 baseWidth：素材按层级自动缩小（每级减半，
+   * 见 `lod.elementSizeFactor`）。所以认精灵时要按"基准宽 × 层级因子"算，
+   * `drawWidth` 就是这条换算的唯一出处 —— 它同时顺带验证了尺寸本身，
+   * 若因子丢了（恒为 1），下面的 `findSprite` 会立刻找不到精灵。
+   */
+  const MOUNTAIN_BASE = 120;
+  const FOREST_BASE = 90;
+
+  /** 绘制宽度（元素自身 scale 恒为 1） */
+  const drawWidth = (base: number, level: number | null, levelCount: number) =>
+    base * elementSizeFactor(level, levelCount);
 
   const findSprite = (width: number) => {
     const hit = sprites.find((s) => s.width === width);
@@ -281,18 +425,20 @@ describe("MapCanvas 素材层级显隐", () => {
     await flushInit();
 
     // 郡权重为 1 → 山可见；层级无关 → 恒为 1
-    expect(findSprite(MOUNTAIN_W).parent?.alpha).toBe(1);
-    expect(findSprite(FOREST_W).parent?.alpha).toBe(1);
+    expect(findSprite(drawWidth(MOUNTAIN_BASE, 3, 4)).parent?.alpha).toBe(1);
+    expect(findSprite(drawWidth(FOREST_BASE, null, 4)).parent?.alpha).toBe(1);
     // 两个素材必须在**不同**容器里，否则"按层级显隐"无从谈起
-    expect(findSprite(MOUNTAIN_W).parent).not.toBe(findSprite(FOREST_W).parent);
+    expect(findSprite(drawWidth(MOUNTAIN_BASE, 3, 4)).parent).not.toBe(
+      findSprite(drawWidth(FOREST_BASE, null, 4)).parent,
+    );
 
     // ── 缩到「洲」那一级：郡的权重归 0，山随之消失 ──
     rerender(canvasTree({ doc, levelAlphas: [0, 1, 0, 0] }));
     await act(async () => {});
 
-    expect(findSprite(MOUNTAIN_W).parent?.alpha).toBe(0);
+    expect(findSprite(drawWidth(MOUNTAIN_BASE, 3, 4)).parent?.alpha).toBe(0);
     // 层级无关的素材不受任何层级切换影响
-    expect(findSprite(FOREST_W).parent?.alpha).toBe(1);
+    expect(findSprite(drawWidth(FOREST_BASE, null, 4)).parent?.alpha).toBe(1);
   });
 
   it("交叉带里两级各半：素材按自己的层级权重呈现，不会一档全亮一档全灭", async () => {
@@ -301,8 +447,8 @@ describe("MapCanvas 素材层级显隐", () => {
     await flushInit();
 
     // 国家级素材 50%、郡级素材 50% —— 正是"上一级淡出的同时下一级淡入"
-    expect(findSprite(MOUNTAIN_W).parent?.alpha).toBeCloseTo(0.5, 6);
-    expect(findSprite(FOREST_W).parent?.alpha).toBeCloseTo(0.5, 6);
+    expect(findSprite(drawWidth(MOUNTAIN_BASE, 2, 4)).parent?.alpha).toBeCloseTo(0.5, 6);
+    expect(findSprite(drawWidth(FOREST_BASE, 3, 4)).parent?.alpha).toBeCloseTo(0.5, 6);
   });
 
   it("层级数变少时越界素材并入最细一级，不会永久消失", async () => {
@@ -311,9 +457,67 @@ describe("MapCanvas 素材层级显隐", () => {
     renderCanvas(false, { doc, levelAlphas: [0.5, 0.5] });
     await flushInit();
 
-    const mountain = findSprite(MOUNTAIN_W);
+    // 并入第 1 级 ⇒ 尺寸因子是 0.5（不是 4 级时的 0.125）
+    const mountain = findSprite(drawWidth(MOUNTAIN_BASE, 1, 2));
     expect(mountain.parent?.alpha).toBeCloseTo(0.5, 6);
     // 且它必须挂在"层级 1"的容器下，而不是那个已经不在场景里的旧容器
     expect(mountain.parent).not.toBeNull();
+  });
+
+  /**
+   * 尺寸本身：**素材必须比它所属的区块小**。
+   *
+   * 用户报障的后半段：「最小的单位尺寸太小了，根本无法添加几个要素」——
+   * 郡的长边实测 70~90 世界单位，而素材基准宽是 80~160，比郡还大。
+   * 素材与区块同在 world 容器下、同倍缩放，所以放大多少倍都不改变这个比例，
+   * 必须在世界里就按层级把素材缩小。
+   */
+  it("郡级素材宽 = 基准 × 1/8（郡的长边 ≈ 88 世界单位，山占约 1/6~1/4）", async () => {
+    const doc = makeDoc([elem("a", "mountain-20", 3), elem("b", "forest-1", null)]);
+    renderCanvas(false, { doc, levelAlphas: [0, 0, 0, 1] });
+    await flushInit();
+
+    const mountain = findSprite(drawWidth(MOUNTAIN_BASE, 3, 4));
+    expect(mountain.width).toBeCloseTo(MOUNTAIN_BASE / 8, 6); // 120 → 15
+    expect(mountain.height).toBeCloseTo(70 / 8, 6);
+
+    // 层级无关的老素材（生成区块之前放的）尺寸一点不变 —— 老文档观感不变
+    expect(findSprite(FOREST_BASE).width).toBe(FOREST_BASE);
+    expect(findSprite(FOREST_BASE).height).toBe(FOREST_BASE);
+  });
+
+  /**
+   * 选中框必须与**视觉尺寸**同源缩放（尺寸三处中的第三处）。
+   *
+   * 【为什么单独钉一条】另两处（精灵尺寸、命中测试）都有用例，唯独选中框没有：
+   * 把 `drawOverlay` 里的层级因子删掉，郡级素材的框会变成 `120 × 70`
+   * —— 视觉尺寸的 8 倍，框比素材大出几圈 —— 而**其它用例全绿**。
+   * 这种"改坏了没人红"的位置，正是变异测试要抓的盲区。
+   *
+   * 断言的取值路径：`world` 的第 6 个（最后一个）子节点就是 `overlay`
+   * （z 序见 `render-stack-guard.test.ts`），选中框是它上面**唯一**的
+   * `rect(...)` 调用。
+   */
+  it("选中框跟着素材一起缩：郡级框宽 = 基准宽 × 1/8（漏乘就是 8 倍）", async () => {
+    const def = SPRITE_MAP["mountain-20"];
+    const doc = makeDoc([elem("a", "mountain-20", 3)]);
+    renderCanvas(false, { doc, levelAlphas: [0, 0, 0, 1], selectedId: "a" });
+    await flushInit();
+
+    const world = apps[0].stage.children[0] as FakeContainerRef;
+    // 6 层 z 序的最后一层是 overlay；这里顺带证明了它确实被挂上了
+    expect(world.children).toHaveLength(6);
+    const overlay = world.children.at(-1) as FakeGraphicsRef;
+
+    const rect = overlay.rects.at(-1);
+    expect(rect, "overlay 上没有画过选中框").toBeDefined();
+    const [, , w, h] = rect as [number, number, number, number];
+
+    const factor = elementSizeFactor(3, 4); // 郡级 ⇒ 0.125
+    expect(w).toBeCloseTo(def.baseWidth * factor, 6);
+    expect(h).toBeCloseTo(def.baseHeight * factor, 6);
+    // 反向断言：漏乘层级因子时 w 恰好是 baseWidth，这一条必须因此变红
+    expect(w).not.toBeCloseTo(def.baseWidth, 6);
+    expect(h).not.toBeCloseTo(def.baseHeight, 6);
   });
 });

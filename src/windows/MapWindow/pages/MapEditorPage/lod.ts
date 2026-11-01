@@ -45,6 +45,13 @@ export interface LodBounds {
   height: number;
 }
 
+/** 只读的点（多边形的顶点）。刻意不 import `regions.ts` 的 `Point`：
+ *  本模块要能被任何地方引用而不带上区块生成器（那里有噪声与裁剪算法）。 */
+export interface LodPoint {
+  x: number;
+  y: number;
+}
+
 /**
  * 一个层级区块在屏幕上占多大像素时算"这一级的自然缩放"。
  *
@@ -175,13 +182,20 @@ export function visibleLevels(
  * 后一条是刻意为之：若越界直接判 0，那些素材会永久不可见、也永远点不中，
  * 用户只能靠"撤销回生成之前"来救 —— 那是数据丢失级别的坑。并入最细一级后，
  * 缩进去仍能看到它们，行为可预期。
+ *
+ * 【有限性校验（AGENTS §6.0）】`levelCount` 来自渲染层的 `levelAlphas.length`、
+ * 也可能来自外部数据，因此 `NaN` / `±Infinity` 一律当作"没有层级"处理。
+ * 若放过去：`Math.min(…, NaN - 1)` 会得到 `NaN`，一路传进 `elementSizeFactor`
+ * 就是 `0.5 ** NaN = NaN` —— 精灵宽高变成 `NaN` 后**既不显示也点不中**，
+ * 且报错出现在 Pixi 内部，排查成本极高。
  */
 export function resolveElementLevel(
   level: number | null | undefined,
   levelCount: number,
 ): number | null {
-  if (typeof level !== "number" || !Number.isFinite(level) || levelCount <= 0) return null;
-  return Math.min(Math.max(0, Math.trunc(level)), levelCount - 1);
+  if (typeof level !== "number" || !Number.isFinite(level)) return null;
+  if (!Number.isFinite(levelCount) || levelCount <= 0) return null;
+  return Math.min(Math.max(0, Math.trunc(level)), Math.trunc(levelCount) - 1);
 }
 
 /**
@@ -200,6 +214,59 @@ export function elementWeight(
 }
 
 /**
+ * 素材世界尺寸的"每级减半"倍率。
+ *
+ * 见 `elementSizeFactor` 的推导。抽成常量是为了让单测和注释引用同一个数。
+ */
+export const ELEMENT_SIZE_PER_LEVEL = 0.5;
+
+/**
+ * 素材的世界尺寸乘数 —— **它归属的层级越细，素材越小**。
+ *
+ * 【要解决的问题】素材的基准宽 `SPRITES[].baseWidth` 是 80~160 世界单位，而
+ * 一个 **郡**（4 级时的 level 3）多边形的长边只有 70~90 —— 素材比它所属的区块
+ * 还大。素材与区块同在 `world` 容器下、同倍缩放，所以**放大多少倍都不改变这个
+ * 比例**：只放开缩放上限，用户照样塞不进几个要素（这正是用户报障的根因之二）。
+ *
+ * 【为什么是"每级减半"】目标层级每多一级，块的长边就约减半。实测（`generateLand`
+ * + 逐岛加权切分、1024² 地图、seed 42 单种子）每一级块长边的中位数是
+ * **507 / 301 / 150 / 88** 世界单位 —— 每级恰好 0.59/0.50/0.59 倍。尺寸也必须
+ * 按同一比例减半，`素材宽 : 该级块长边` 才能恒定：
+ *
+ *   | level | 档位 | 块长边 p50（seed 42 单种子） | 山（大）的宽（baseWidth 160 × 因子） | 占比 |
+ *   |---|---|---|---|---|
+ *   | 0 | 大陆 | 507 | 160 | 32%（与改动前**完全一致**） |
+ *   | 1 | 洲   | 301 | 80  | 27% |
+ *   | 2 | 国家 | 150 | 40  | 27% |
+ *   | 3 | 郡   | 88  | 20  | 23% |
+ *
+ * 表中是**单个种子**（seed 42）的 p50，便于复现；跨 6 个种子的郡级 p50 实测为
+ * **81.1~88.2**，占比 23%~25%，结论不变（仍是"每级减半 ⇒ 占比恒定"）。
+ * 郡级 23%（山（中）17%、森林 13~18%）意味着"一个郡里横向能摆 4 个左右山、
+ * 纵向 3 层"（郡的包围盒高只有 35~37，山（大）高 11.6；留 20% 边距后约 3×2 = 6 个），
+ * 疏密与最粗一级一致 —— 既不会一个郡只能放一个山，也不会把郡铺满贴纸。
+ * 素材之间 13%~32% 的差异来自 `baseWidth` 本身的视觉归一（山 160 / 小山 80），
+ * 改动前就是这样，本次不改素材表。
+ *
+ * 【两种"对不上"的层级沿用 `resolveElementLevel` 的口径】
+ *   · `level` 为 `null`（生成区块之前放的）→ 返回 `1`，**行为与改动前完全一致**；
+ *   · `level` 超出当前层级数（先用 4 级放、之后改成 2 级）→ 并入最细一级，
+ *     而不是"缩到 1/16"这种无意义的数。
+ *
+ * 【为什么不动 `el.scale`】`scale` 是**文档数据**（用户将来可能用滑杆调），
+ * 把层级因子乘进去会污染存储、并让"改了层级数"变成一次数据迁移。因子只在
+ * 渲染与命中的出口乘一次（`MapCanvas` 三处 + `useMapEditor.pickElement`）。
+ */
+export function elementSizeFactor(
+  level: number | null | undefined,
+  levelCount: number,
+): number {
+  const resolved = resolveElementLevel(level, levelCount);
+  if (resolved === null) return 1;
+  return ELEMENT_SIZE_PER_LEVEL ** resolved;
+}
+
+/**
  * 低于此权重的素材视为"不可见"，不参与命中测试。
  *
  * 取 0.2 而不是渲染阈值 0.004：权重只有一两成的素材在画面上只是一层几乎看不见的
@@ -209,24 +276,234 @@ export function elementWeight(
 export const ELEMENT_PICK_MIN_WEIGHT = 0.2;
 
 /**
- * 由层级反推视口的缩放上下限。
+ * 由层级反推视口的缩放上下限（**不含真实块大小**，只用每级数量推出来的自然缩放）。
  *
  * 下限：比最粗一级的自然缩放再退一点，保证整张地图铺得下（实际下限还会与
  *       `fitToRect` 算出的适配缩放取小者，在渲染层处理）。
  * 上限：最细一级的自然缩放再放大若干倍，留出"贴近看单个郡"的余量。
+ *
+ * 【上限为什么不够用】`fineIn = 4` 只是"自然缩放的 4 倍"，而自然缩放是按
+ * `LOD_BLOCK_PX`（一块在屏幕上 360px）反推的 —— 它保证"读得清"，不保证
+ * "一块能铺满屏幕"。实测（1024×900 画布、6 个种子）：上限 8.89，而让**中位郡**
+ * 铺满画布短边需要 10~11 倍、让 p05 的郡铺满需要 19 倍左右。
+ * 因此真实上限改由 `zoomLimitsForBlocks` 按**实际块长边**反推；本函数保留为
+ * 它的下限基线（`Math.max` 里的那一项），也保留给"只想知道自然缩放区间"的调用方。
  */
 export function zoomLimitsFor(scales: readonly number[]): { min: number; max: number } {
-  if (scales.length === 0) return { min: 0.05, max: 4 };
+  /**
+   * 【先过滤再取首尾（AGENTS §6.0）】本函数只读 `scales[0]` 与 `scales[last]`，
+   * 因此脏值出现在**任何位置**都会直接进乘法：`NaN` 传染成 `NaN` 上限，
+   * `Infinity` 会把上限变成 `Infinity`（滚轮直接飞到底）。
+   * 过滤掉非有限/非正的值之后，"首尾"才真的等于"最粗一级 / 最细一级"——
+   * 这是本函数的**契约**，由单测直接钉住（而不是靠调用方恰好只传干净数组）。
+   */
+  const valid = scales.filter((s) => Number.isFinite(s) && s > 0);
+  if (valid.length === 0) return { min: 0.05, max: 4 };
   return {
-    min: scales[0] * LOD_ZOOM_RANGE.coarseOut,
-    max: scales[scales.length - 1] * LOD_ZOOM_RANGE.fineIn,
+    min: valid[0] * LOD_ZOOM_RANGE.coarseOut,
+    max: valid[valid.length - 1] * LOD_ZOOM_RANGE.fineIn,
   };
 }
 
-/** 从已生成的区块列表统计每级数量（自然缩放要用实际数量而不是常量表） */
+/**
+ * "铺满屏幕"的过采样系数：上限处让块的长边比画布短边再长 15%。
+ *
+ * 取 1 会得到一个"刚好贴边"的上限 —— 那时块的边角仍在屏幕内，用户会觉得
+ * "再往里一点点就好了"。15% 的余量让最大缩放时块**明确地铺满并溢出**短边，
+ * 同时又不至于把溢出做得太大（那样中位块在 max 下会被放得过分）。
+ */
+export const ZOOM_FILL_OVERSCAN = 1.15;
+
+/**
+ * "最细一级块长边"的地板值（世界单位）。
+ *
+ * 防御退化数据：若某个种子的最细一级全是碎块（或者层级数量被调到极大），
+ * `finestBlockLongEdge` 可能返回 1~2，反推出的上限会变成几百倍。
+ * 8 世界单位 = 整张纸（1024）的 0.8%，比任何"还想往里放素材"的块都小得多。
+ */
+export const ZOOM_MIN_BLOCK_LONG = 8;
+
+/**
+ * 缩放上限的硬顶。
+ *
+ * 实测：让"p05 的郡"铺满 900px 短边需要 18.6~20.8 倍（6 个种子）；让**最小**
+ * 的碎块铺满需要 26~40 倍。40 因此足够覆盖全部实测情形，同时把海面底图的
+ * 拉伸限制在 40/3 ≈ 13 倍（缓存倍率封顶 `STATIC_CACHE_MAX_RES = 3`，
+ * 见 `docs/prd/prd-map-render/architecture.md` §9 的 L-7）——
+ * 再高也不会有更多细节，只会更糊、且滚轮要走更多格。
+ */
+export const ZOOM_ABS_MAX = 40;
+
+/**
+ * 取最细一级块长边的分位点（见 `finestBlockLongEdge` 的说明）。
+ *
+ * 0.05 = 忽略最细一级里最碎的那 5%（160 个郡里的 8 块），换来"上限不被单个
+ * 退化窄条牵着走"。实测跨 6 个种子 p05 ∈ [49.7, 55.6]，而 `min` ∈ [26.3, 40.6]。
+ */
+export const ZOOM_FINEST_PERCENTILE = 0.05;
+
+/**
+ * 多边形（不要求凸）的**长边**：轴对齐包围盒的长边。
+ *
+ * 为什么用包围盒而不是"最长的一条边"或"任意两顶点的最长距离"：
+ *   · 最长的一条**边**没有意义 —— 区块的边被崎岖化成几十段折线，单段只有
+ *     采样步长那么长（约 R/24 ≈ 4 世界单位），与"这块有多大"完全无关；
+ *   · 最长**对角线**（直径）要用 O(n²) 两两比较，而崎岖化的多边形顶点可达
+ *     数百个；它只比包围盒大 10% 左右（实测 p10：57.7 vs 64.1），
+ *     对"反推缩放上限"这种量级判断毫无价值。
+ * 包围盒长边是 O(n)、口径直观（"这块东西占多宽"），且与用户"铺满屏幕"的
+ * 直觉一致。
+ */
+export function polygonLongEdge(polygon: readonly LodPoint[]): number {
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  /** 有效顶点数：外部数据里可能有 `NaN` 顶点（序列化损坏 / 旧版本写入） */
+  let valid = 0;
+  for (const p of polygon) {
+    // 有限性校验（AGENTS §6.0）：一个 NaN 顶点就足以让整块的长边变成 NaN，
+    // 而 NaN 会顺着 `zoomLimitsForBlocks` 把缩放上限变成 NaN（滚轮直接失灵）。
+    if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
+    valid += 1;
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.y > maxY) maxY = p.y;
+  }
+  if (valid === 0) return 0;
+  return Math.max(maxX - minX, maxY - minY);
+}
+
+/** 升序数组里的分位值（`p` ∈ [0,1]，最近邻取点；空数组返回 0） */
+function percentileOf(sorted: readonly number[], p: number): number {
+  if (sorted.length === 0) return 0;
+  const clamped = Math.min(1, Math.max(0, p));
+  const idx = Math.min(sorted.length - 1, Math.max(0, Math.round((sorted.length - 1) * clamped)));
+  return sorted[idx];
+}
+
+/**
+ * 某一级所有区块"长边"的**低分位**值（世界单位）。空集合返回 0。
+ *
+ * 【为什么要分位而不是直接取 min】最细一级里总有几块退化成窄条（实测 6 个种子、
+ * 160 个郡：最小长边 26.3~40.6 世界单位，只有中位 81~88 的 1/3 ~ 1/2）。若按 `min`
+ * 反推上限，整张图的缩放上限就被**单个碎块**牵着走；更极端的种子能给出更小的碎块，
+ * 上限会直接爆到几百倍（此时海面已被拉伸十几倍，画面只剩糊）。
+ *
+ * 【为什么是 p05】实测 6 个种子的 p05 落在 49.7~55.6（跨种子波动 <12%，很稳），
+ * 它保证 **95% 的郡都能在缩放上限处把长边铺满画布短边**；剩下 5%（约 8 块/
+ * 160 个郡）是退化窄条，本就不适合放要素。对照：p10 只能覆盖 90%，而 `min`
+ * 会让上限跟着碎块乱跳 —— 见 `lod.test.ts` 里对这三者的对照断言。
+ */
+export function finestBlockLongEdge(
+  regions: ReadonlyArray<{ level: number; polygon: readonly LodPoint[] }>,
+  level: number,
+  percentile = ZOOM_FINEST_PERCENTILE,
+): number {
+  const longs: number[] = [];
+  for (const r of regions) {
+    if (r.level !== level) continue;
+    const long = polygonLongEdge(r.polygon);
+    if (long > 0) longs.push(long);
+  }
+  longs.sort((a, b) => a - b);
+  return percentileOf(longs, percentile);
+}
+
+/**
+ * 由"层级 + **实际块大小** + 画布尺寸"反推缩放上下限。
+ *
+ * 【上限的语义】"最细一级的一块能把画布**短边**铺满"。用短边而不是长边，是因为
+ * "铺满全屏"不该以块溢出屏幕为代价 —— 短边铺满时，块在长边方向上还剩一点
+ * 视野，用户看得到这块的边界在哪（与 `FIT_PADDING` 同一取舍：要看得见"这是一块
+ * 地"，而不是"一块无边的色块"）。乘 `ZOOM_FILL_OVERSCAN` 留 15% 余量。
+ *
+ * 【三条护栏，缺一条就出回归】
+ *   1. **不得小于旧公式**：`Math.max(zoomLimitsFor(scales).max, 反推值)`。
+ *      层级数调成 1~2 级时，最细一级就是大陆/洲（长边 700/350），反推值只有
+ *      1.5/3 倍，会比旧公式小 —— 那会让"上限随配置变少而变小"，用户改配置后
+ *      连原来能到达的深度都到不了。
+ *   2. **块长边有地板**（`ZOOM_MIN_BLOCK_LONG`）且**上限有硬顶**
+ *      （`ZOOM_ABS_MAX`）：一起防"退化碎块把上限炸到几百倍"。
+ *   3. **画布还没量出来时退回旧公式**：`width` / `height` 只要有一个不是有限正数
+ *      （首帧 0×0、`NaN`、只量出一边）就不反推 —— 不能因此把上限压成 0，
+ *      也不该把半量出来的尺寸当成真画布。
+ *
+ * 【下限】语义不变（可缩回整图），并且**必须与适配缩放取小者** —— 否则层级
+ * 配置一变（自然缩放下限被抬高），用户就再也缩不回整张地图了。这里是它唯一的
+ * 计算出处，`fitScale` 因此是入参。
+ *
+ * @param fitScale  "整图适配"的缩放（`fitScaleFor`），用于封住下限
+ * @param absMax    硬上限，缺省 `ZOOM_ABS_MAX`
+ */
+export function zoomLimitsForBlocks(input: {
+  scales: readonly number[];
+  fitScale: number;
+  finestBlockLong: number;
+  canvas: { width: number; height: number };
+  absMax?: number;
+}): { min: number; max: number } {
+  /**
+   * 【边界一律先做有限性校验（AGENTS §6.0）】这里是**外部数据的最后一站**：
+   * `scales` 由区块数量算出、`canvas` 来自 DOM 测量、`fitScale` 来自几何换算。
+   * 任何一个混进 `NaN` / `Infinity`，`Math.max/min` 都会把它污染成 `NaN` ——
+   * 而 `zoomAt` 拿到 `NaN` 上限后每一次缩放都会得到 `NaN` 视口，
+   * 表现是"画面直接消失、滚轮彻底失灵"，且没有任何异常可抓。
+   */
+  // `zoomLimitsFor` 自己会过滤脏 `scales`（见其注释），这里不再重复一遍，
+  // 保证"过滤"只有一处实现、一处断言。
+  const fromLevels = zoomLimitsFor(input.scales);
+
+  // 下限：层级推出来的下限与"整图适配"取小者（缺了这条就缩不回整图）
+  const fitScale =
+    Number.isFinite(input.fitScale) && input.fitScale > 0 ? input.fitScale : fromLevels.min;
+  const min = Math.min(fromLevels.min, fitScale);
+
+  // 硬顶：非有限/非正一律退回默认值，再与旧公式取大（护栏 1 优先于硬顶）
+  const absMaxInput = input.absMax;
+  const absMaxSafe =
+    typeof absMaxInput === "number" && Number.isFinite(absMaxInput) && absMaxInput > 0
+      ? absMaxInput
+      : ZOOM_ABS_MAX;
+  const absMax = Math.max(fromLevels.max, absMaxSafe);
+
+  /**
+   * 画布必须**两个维度都量全**才反推，只看 `Math.min(width, height)` 不够。
+   *
+   * `Math.min(Infinity, 900)` 会静悄悄给出 900，于是"宽没量出来"这种坏输入被当成
+   * 正常画布算出 20.7：数学上没错，但它掩盖了一次测量失败，而且现实中不存在
+   * "半量出来的画布"。因此 `width` 与 `height` **各自**都要求有限且 > 0，
+   * 只要有一边不满足就按"还没量出来"处理，退回旧公式（护栏 3）。
+   */
+  const { width, height } = input.canvas;
+  const measured =
+    Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0;
+  // 画布未量出（首帧 0×0）/ 块长边非有限或非正 ⇒ 退回旧公式（护栏 3）
+  if (!measured || !Number.isFinite(input.finestBlockLong) || !(input.finestBlockLong > 0)) {
+    return { min, max: Math.min(fromLevels.max, absMax) };
+  }
+
+  const shortSide = Math.min(width, height);
+
+  const blockLong = Math.max(ZOOM_MIN_BLOCK_LONG, input.finestBlockLong);
+  const fill = (shortSide * ZOOM_FILL_OVERSCAN) / blockLong;
+  if (!(fill > 0) || !Number.isFinite(fill)) return { min, max: fromLevels.max };
+
+  return { min, max: Math.min(absMax, Math.max(fromLevels.max, fill)) };
+}
+
+/**
+ * 从已生成的区块列表统计每级数量（自然缩放要用实际数量而不是常量表）。
+ *
+ * 【只认非负整数层级】`level` 若混进 `NaN` / `Infinity` / 负数（外部数据损坏），
+ * 前者会写出一个 `counts["NaN"]` 的幽灵键、后者会让下面的 `while` **死循环**
+ * （`counts.length <= Infinity` 恒真）。丢掉这些行比让编辑器卡死好。
+ */
 export function levelCountsOf(regions: ReadonlyArray<{ level: number }>): number[] {
   const counts: number[] = [];
   for (const r of regions) {
+    if (!Number.isInteger(r.level) || r.level < 0) continue;
     while (counts.length <= r.level) counts.push(0);
     counts[r.level] += 1;
   }

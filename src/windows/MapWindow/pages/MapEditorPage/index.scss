@@ -56,6 +56,32 @@
 }
 
 /**
+ * 陆地种子显示。
+ *
+ * 用等宽数字并单独成块：评审要靠它复现同一块陆地（PRD §8.3），
+ * 数字跳宽会让人抄错，也会让"改前 / 改后"两张截图看起来不是同一块地。
+ */
+.map-editor__land-seed {
+  font-size: 12px;
+  color: var(--app-text-secondary);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/**
+ * 地名计数。
+ *
+ * 与"素材 N"并列显示，但**放在工具栏中段**（紧跟加标注按钮）：标注是"这一层
+ * 有没有内容"的即时反馈，放到最右边的统计区会离操作点太远，用户点完按钮要找一眼。
+ */
+.map-editor__label-count {
+  font-size: 12px;
+  color: var(--app-text-secondary);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/**
  * 当前层级指示。
  *
  * 做成"胶囊"而不是普通文字：它是一个**状态**而不是统计数字，

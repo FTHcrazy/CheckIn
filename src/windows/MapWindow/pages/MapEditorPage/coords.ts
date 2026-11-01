@@ -34,6 +34,12 @@ export interface ZoomLimits {
 /**
  * 默认缩放上下限。
  *
+ * 【它只是"还没有区块"时的兜底】一旦生成了区块，真实上下限由 `lod.ts` 的
+ * `zoomLimitsForBlocks` 按「层级 + 最细一级的实际块长边 + 画布尺寸」反推
+ * （上限 = 让最细一级的一块铺满画布短边所需缩放）—— 那时本常量就不参与了。
+ * 这里保留 0.1~8 是为了：打开编辑器但还没点"生成区块"时仍能正常缩放，
+ * 且这个区间与"整图适配 0.7~0.8 倍"在同一量级（能缩回整图、能放大 10 倍）。
+ *
  * 不要写成 `as const`：那样推导出的是字面量类型 `{ readonly min: 0.1; max: 8 }`，
  * 一旦它被用作默认参数，函数签名就只接受「恰好等于这两个字面量」的对象，
  * 而 `zoomLimitsFor()` 按层级反推出的 `{ min: number; max: number }` 会被拒。
@@ -97,7 +103,57 @@ export function zoomAt(
   };
 }
 
-/** 平移：按屏幕像素位移换算成世界坐标位移 */
+/**
+ * 一档缩放的倍率。
+ *
+ * 1.1 是"小格微调"的精度基准：在郡那一级（≈200%）一格只走 20 个百分点，
+ * 用户能停在"两个郡之间的恰好位置"。
+ */
+export const ZOOM_STEP = 1.1;
+
+/**
+ * 一档滚轮对应的逻辑像素数。
+ *
+ * 【为什么需要它】缩放上限从 8.9 抬到 20 左右之后，若一格滚轮只走 1.1 倍，
+ * 从适配缩放（0.70）滚到上限要走 35 格（实测）—— 用户会以为"滚不动了"。
+ * 触控板一次滑动能给出 300~800 的 deltaY，正是"大 delta 一次到位"的机会。
+ *
+ * 【为什么是 50 而不是 100】Chrome/Windows 一格鼠标滚轮的 `deltaY` 恰好是
+ * 100，按 100 折算等于"什么也没改"（仍是 35 格）。取 50 ⇒ 一格 = 2 档 = 1.21 倍，
+ * 全程 17 格（见 `useMapEditor.test.tsx` 附近的实测），与 Google Maps 一类
+ * 应用的手感（每格 1.2~1.25）一致，而小 delta（3~10）仍被下面的地板钳到 1 档。
+ */
+export const WHEEL_NOTCH_PX = 50;
+
+/**
+ * 单个滚轮事件最多折算成几档。
+ *
+ * 触控板"甩"一下能给出四位数 deltaY；不封顶会一步从整图跳到上限、中间细节
+ * 全被跳过（且无法再复现"我停在哪一格"）。
+ */
+export const WHEEL_MAX_STEPS = 6;
+
+/**
+ * 把滚轮事件的 `deltaY` 折算成缩放倍率。
+ *
+ * 三条约束，缺一条手感就坏：
+ *   · **方向**：`deltaY < 0`（向上滚）= 放大，与操作系统一致；
+ *   · **地板 1 档**：小 delta（触控板慢速、工具栏按钮传的 ±1）永远走满一档，
+ *     否则"轻轻推一下滚轮"会变成 1.001 倍，看起来像没反应；
+ *   · **上限 `WHEEL_MAX_STEPS` 档**：见上。
+ *
+ * 纯函数、无 DOM，单测在 `coords.test.ts`。
+ */
+export function wheelZoomFactor(deltaY: number): number {
+  if (!Number.isFinite(deltaY) || deltaY === 0) return 1;
+  const steps = Math.min(WHEEL_MAX_STEPS, Math.max(1, Math.abs(deltaY) / WHEEL_NOTCH_PX));
+  const factor = ZOOM_STEP ** steps;
+  return deltaY < 0 ? factor : 1 / factor;
+}
+
+/**
+ * 平移：按屏幕像素位移换算成世界坐标位移
+ */
 export function panByScreenDelta(
   viewport: Viewport,
   dxScreen: number,

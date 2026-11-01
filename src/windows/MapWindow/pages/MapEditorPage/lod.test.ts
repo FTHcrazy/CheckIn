@@ -4,17 +4,25 @@ import {
   LOD_ALPHA_EPSILON,
   LOD_BAND_OCTAVES,
   LOD_BLOCK_PX,
+  LOD_ZOOM_RANGE,
+  ZOOM_ABS_MAX,
+  ZOOM_FILL_OVERSCAN,
+  ZOOM_MIN_BLOCK_LONG,
   activeLevel,
   bandEdges,
   bandProgress,
+  elementSizeFactor,
   elementWeight,
+  finestBlockLongEdge,
   levelAlphas,
   levelBlockRadius,
   levelCountsOf,
   naturalScales,
+  polygonLongEdge,
   resolveElementLevel,
   visibleLevels,
   zoomLimitsFor,
+  zoomLimitsForBlocks,
   type LodBounds,
 } from "./lod";
 
@@ -219,6 +227,25 @@ describe("zoomLimitsFor", () => {
     expect(min).toBeGreaterThan(0);
     expect(max).toBeGreaterThan(min);
   });
+
+  /**
+   * 过滤脏 `scales` 是**本函数的契约**，不是调用方的义务。
+   *
+   * 本函数只读首尾两个元素，所以脏值落在数组中间时，若不过滤就会被"跳过"而不自知
+   * —— 这条用例把脏值同时插在首、中、尾，确保任何位置都被忽略。
+   */
+  it("脏值不分位置一律忽略：取首尾之前先过滤", () => {
+    const clean = [0.3, 0.6, 1.2];
+    const dirty = [Number.NaN, 0.3, Number.POSITIVE_INFINITY, 0.6, -1, 1.2];
+    expect(zoomLimitsFor(dirty)).toEqual(zoomLimitsFor(clean));
+    expect(zoomLimitsFor([Number.NaN, 0.3])).toEqual(zoomLimitsFor([0.3]));
+  });
+
+  it("全是脏值时退回空表兜底，长度判断用的是过滤后的长度", () => {
+    expect(zoomLimitsFor([Number.NaN, Number.POSITIVE_INFINITY, -1, 0])).toEqual(
+      zoomLimitsFor([]),
+    );
+  });
 });
 
 describe("levelCountsOf", () => {
@@ -232,6 +259,26 @@ describe("levelCountsOf", () => {
       [0, 0, 0, 1, 1, 1, 1, 2, 3].map((level) => ({ level })),
     );
     expect(counts).toEqual([3, 4, 1, 1]);
+  });
+
+  /**
+   * 外部数据损坏时的护栏（AGENTS §6.0）。
+   *
+   * `Infinity` 那条尤其要紧：旧实现的 `while (counts.length <= r.level) counts.push(0)`
+   * 在 `level = Infinity` 时**永不退出**（编辑器直接卡死、且没有异常可抓）。
+   * 这里断言"脏行被丢掉、干净行照常计数"，同时用例本身能跑完就说明没有死循环。
+   */
+  it("非法层级（NaN / Infinity / 负数 / 小数）被忽略，不会死循环", () => {
+    const counts = levelCountsOf([
+      { level: 0 },
+      { level: Number.POSITIVE_INFINITY },
+      { level: Number.NaN },
+      { level: -1 },
+      { level: 1.5 },
+      { level: Number.NEGATIVE_INFINITY },
+      { level: 1 },
+    ]);
+    expect(counts).toEqual([1, 1]);
   });
 });
 
@@ -349,5 +396,435 @@ describe("elementWeight：素材可见权重 = 它所属层级的权重", () => 
 describe("ELEMENT_PICK_MIN_WEIGHT", () => {
   it("高于渲染裁剪阈值：避免「看不见却点得中」", () => {
     expect(ELEMENT_PICK_MIN_WEIGHT).toBeGreaterThan(LOD_ALPHA_EPSILON);
+  });
+});
+
+/**
+ * 素材尺寸随层级递减 —— 「最小的单位太小、塞不进几个要素」的第二半根因。
+ *
+ * 第一半是缩放上限（见下面的 `zoomLimitsForBlocks`）；这一半是**比例**：
+ * 素材与区块同在 `world` 容器下、同倍缩放，所以"素材的基准宽 80~160 反而比
+ * 它所属的郡（长边 70~90）还大"这个比例，放大多少倍都不会改变。
+ */
+describe("elementSizeFactor：素材按层级自动缩小", () => {
+  it("四级下每级减半：1 / 0.5 / 0.25 / 0.125", () => {
+    expect(elementSizeFactor(0, 4)).toBe(1);
+    expect(elementSizeFactor(1, 4)).toBe(0.5);
+    expect(elementSizeFactor(2, 4)).toBe(0.25);
+    expect(elementSizeFactor(3, 4)).toBe(0.125);
+  });
+
+  it("相邻两级的比值恒为 0.5 —— 因为块的长边也约每级减半", () => {
+    // 默认数量 3/12/48/160 ⇒ 块长边约 700 / 350 / 175 / 83（实测 p50）
+    for (let level = 0; level < 3; level += 1) {
+      expect(elementSizeFactor(level, 4) / elementSizeFactor(level + 1, 4)).toBe(2);
+    }
+  });
+
+  it("层级无关（null / undefined / 没生成区块）⇒ 恒为 1，行为与改动前完全一致", () => {
+    expect(elementSizeFactor(null, 4)).toBe(1);
+    expect(elementSizeFactor(undefined, 4)).toBe(1);
+    expect(elementSizeFactor(3, 0)).toBe(1);
+    expect(elementSizeFactor(null, 0)).toBe(1);
+  });
+
+  it("层级越界 ⇒ 并入最细一级（与 resolveElementLevel 同一口径）", () => {
+    expect(elementSizeFactor(99, 4)).toBe(0.125);
+    expect(elementSizeFactor(3, 2)).toBe(0.5);
+    expect(elementSizeFactor(-5, 4)).toBe(1);
+  });
+
+  it("随层级单调不增，且恒为正（渲染层拿去乘宽高不会得到 0 或负）", () => {
+    let prev = Infinity;
+    for (let level = 0; level < 4; level += 1) {
+      const f = elementSizeFactor(level, 4);
+      expect(f).toBeGreaterThan(0);
+      expect(f).toBeLessThanOrEqual(prev);
+      prev = f;
+    }
+  });
+
+  it("层级数 1 / 2 / 4 都成立：最粗一级因子恒为 1，最细一级 = 0.5^(n-1)", () => {
+    expect(elementSizeFactor(0, 1)).toBe(1); // 只有一级（大陆）⇒ 不缩
+    expect(elementSizeFactor(0, 2)).toBe(1);
+    expect(elementSizeFactor(1, 2)).toBe(0.5); // 2 级时最细一级是"洲"
+    expect(elementSizeFactor(0, 4)).toBe(1);
+    expect(elementSizeFactor(3, 4)).toBe(0.125);
+  });
+
+  it("层级数非有限（NaN / Infinity）⇒ 按「层级无关」处理，不产生 NaN 尺寸", () => {
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      const f = elementSizeFactor(3, bad);
+      expect(f).toBe(1);
+      expect(Number.isFinite(f)).toBe(true);
+    }
+  });
+});
+
+describe("polygonLongEdge：多边形的长边 = 包围盒长边", () => {
+  it("横长取宽、竖长取高", () => {
+    expect(
+      polygonLongEdge([
+        { x: 0, y: 0 },
+        { x: 100, y: 0 },
+        { x: 100, y: 40 },
+        { x: 0, y: 40 },
+      ]),
+    ).toBe(100);
+    expect(
+      polygonLongEdge([
+        { x: 0, y: 0 },
+        { x: 30, y: 0 },
+        { x: 30, y: 90 },
+        { x: 0, y: 90 },
+      ]),
+    ).toBe(90);
+  });
+
+  it("空多边形为 0", () => {
+    expect(polygonLongEdge([])).toBe(0);
+  });
+
+  it("与顶点顺序、绕向无关（凸包算法换不来更多信息）", () => {
+    const square = [
+      { x: -5, y: -5 },
+      { x: 5, y: -5 },
+      { x: 5, y: 5 },
+      { x: -5, y: 5 },
+    ];
+    expect(polygonLongEdge(square)).toBe(10);
+    expect(polygonLongEdge([...square].reverse())).toBe(10);
+  });
+
+  it("混进 NaN / Infinity 顶点时只按有效顶点算（不让整块变成 NaN）", () => {
+    const dirty = [
+      { x: Number.NaN, y: 0 },
+      { x: 0, y: 0 },
+      { x: 40, y: 0 },
+      { x: 40, y: Number.POSITIVE_INFINITY },
+      { x: 0, y: 10 },
+    ];
+    expect(polygonLongEdge(dirty)).toBe(40);
+    // 全是脏顶点 ⇒ 0（调用方据此走兜底）
+    expect(polygonLongEdge([{ x: Number.NaN, y: Number.NaN }])).toBe(0);
+  });
+});
+
+describe("finestBlockLongEdge：按层级取低分位，不被退化碎块牵着走", () => {
+  /** 造一批方块：long 依次为 100 / 90 / ... / 10（10 个） */
+  const blocks = Array.from({ length: 10 }, (_, i) => ({
+    level: 3,
+    polygon: [
+      { x: 0, y: 0 },
+      { x: 100 - i * 10, y: 0 },
+      { x: 100 - i * 10, y: 5 },
+      { x: 0, y: 5 },
+    ],
+  }));
+
+  it("只统计指定层级", () => {
+    const mixed = [...blocks, { level: 2, polygon: [{ x: 0, y: 0 }, { x: 999, y: 0 }, { x: 999, y: 9 }] }];
+    // 若把 level 2 也算进来，分位值会被 999 抬高 —— 这里必须看不到它
+    expect(finestBlockLongEdge(mixed, 3, 0)).toBe(10);
+    expect(finestBlockLongEdge(mixed, 2, 0)).toBe(999);
+  });
+
+  it("分位越低越贴近最小值；p05 明显高于 min（碎块讨论的量化依据）", () => {
+    const min = finestBlockLongEdge(blocks, 3, 0);
+    const p05 = finestBlockLongEdge(blocks, 3, 0.05);
+    const p50 = finestBlockLongEdge(blocks, 3, 0.5);
+    expect(min).toBe(10);
+    // 10 个样本：p05 落在第 0~1 个之间（最近邻取点），必然 ≥ min
+    expect(p05).toBeGreaterThanOrEqual(min);
+    expect(p50).toBeGreaterThan(p05);
+  });
+
+  it("空集合返回 0（调用方据此退回旧公式）", () => {
+    expect(finestBlockLongEdge([], 3)).toBe(0);
+    expect(finestBlockLongEdge(blocks, 0)).toBe(0);
+  });
+});
+
+/**
+ * 缩放上限 =「最细一级的一块长边铺满画布短边」。
+ *
+ * 用户原话：「最小的单位尺寸太小了，根本无法添加几个要素，能不能将最小的单位的
+ * 尺寸支持放大到全屏为止」。旧的 `scales[last] * fineIn` 只保证"读得清"，
+ * 实测 8.89，而中位郡铺满 900px 短边需要 10~11 倍、p05 的郡需要 20 倍左右。
+ */
+describe("zoomLimitsForBlocks：按实际块大小反推上限", () => {
+  const scales = naturalScales(COUNTS, BOUNDS); // [0.304, 0.609, 1.218, 2.223]
+  const canvas = { width: 1024, height: 900 };
+  const fitScale = (900 / 1024) * 0.8; // 1024 底图适配 1024×900 画布
+
+  it("上限 = 让块长边铺满短边（含 15% 余量）所需的缩放", () => {
+    const { max } = zoomLimitsForBlocks({
+      scales,
+      fitScale,
+      finestBlockLong: 50,
+      canvas,
+    });
+    // 900 × 1.15 / 50 = 20.7
+    expect(max).toBeCloseTo((900 * ZOOM_FILL_OVERSCAN) / 50, 6);
+    expect(max).toBeGreaterThan(zoomLimitsFor(scales).max); // 旧的 8.89
+  });
+
+  it("用短边而不是长边：块不该以溢出屏幕为代价「铺满」", () => {
+    const wide = zoomLimitsForBlocks({
+      scales,
+      fitScale,
+      finestBlockLong: 50,
+      canvas: { width: 1600, height: 900 },
+    });
+    expect(wide.max).toBeCloseTo((900 * ZOOM_FILL_OVERSCAN) / 50, 6);
+  });
+
+  it("下限 = min(层级推出来的下限, 整图适配) —— 永远缩得回整图", () => {
+    const { min } = zoomLimitsForBlocks({
+      scales,
+      fitScale,
+      finestBlockLong: 50,
+      canvas,
+    });
+    expect(min).toBe(Math.min(scales[0] * LOD_ZOOM_RANGE.coarseOut, fitScale));
+    expect(min).toBeLessThanOrEqual(fitScale);
+  });
+
+  it("绝不比旧公式更小：2 级配置下上限不回归", () => {
+    const twoLevels = scales.slice(0, 2); // [0.304, 0.609]
+    const oldMax = zoomLimitsFor(twoLevels).max; // 0.609 × 4 = 2.44
+    const { max } = zoomLimitsForBlocks({
+      scales: twoLevels,
+      fitScale,
+      // 洲级块长边 ≈ 261（实测 p05，seed 42）
+      finestBlockLong: 261,
+      canvas,
+    });
+    // 反推值 900×1.15/261 = 3.97 > 2.44 —— 取大者
+    expect(max).toBeGreaterThan(oldMax);
+    // 反推值比旧公式小的情形（长边很大）也必须退回旧公式
+    const huge = zoomLimitsForBlocks({
+      scales: twoLevels,
+      fitScale,
+      finestBlockLong: 5000,
+      canvas,
+    });
+    expect(huge.max).toBe(oldMax);
+  });
+
+  it("超碎块（远小于地板）：上限被硬顶 ZOOM_ABS_MAX 夹住 —— 这条守的是**硬顶**", () => {
+    const sliver = zoomLimitsForBlocks({ scales, fitScale, finestBlockLong: 0.5, canvas });
+    // 地板 8 世界单位 ⇒ 900×1.15/8 = 129 —— 再被硬顶夹住
+    expect(sliver.max).toBe(ZOOM_ABS_MAX);
+    expect(sliver.max).toBeLessThanOrEqual(ZOOM_ABS_MAX);
+  });
+
+  /**
+   * 块长边地板（`ZOOM_MIN_BLOCK_LONG`）单独一条 —— 上一条用例**遮住了它**。
+   *
+   * 上一条里"有地板 129 → 夹到 40"和"没地板 2070 → 夹到 40"结果一模一样，
+   * 所以删掉 `Math.max(ZOOM_MIN_BLOCK_LONG, …)` 它照样绿。这里换一组
+   * 让**地板与硬顶不重叠**的数字：
+   *
+   *   画布 240×160（短边 160）、最细块长边 2（比地板 8 还小）
+   *     有地板 ⇒ 160 × 1.15 ÷ 8  = 23   ← 在地板生效、离硬顶 40 还远
+   *     没地板 ⇒ 160 × 1.15 ÷ 2  = 92   → 被硬顶夹成 40
+   * 23 ≠ 40，于是"删掉地板"必然红；末尾再加一条 `max < ZOOM_ABS_MAX`，
+   * 把"这条断言的是地板、不是硬顶"写进用例本身。
+   */
+  it("块长边地板 8 世界单位：地板先于硬顶生效，删掉地板这条必红", () => {
+    const { max } = zoomLimitsForBlocks({
+      scales,
+      fitScale: 0.5,
+      finestBlockLong: 2,
+      canvas: { width: 240, height: 160 },
+    });
+    expect(max).toBeCloseTo((160 * ZOOM_FILL_OVERSCAN) / ZOOM_MIN_BLOCK_LONG, 6); // 23
+    // 硬顶没参与 ⇒ 证明这里断言的是地板而不是硬顶
+    expect(max).toBeLessThan(ZOOM_ABS_MAX);
+  });
+
+  it("画布还没量出来（0×0）时退回旧公式，不会把上限压成 0", () => {
+    const { max } = zoomLimitsForBlocks({
+      scales,
+      fitScale,
+      finestBlockLong: 50,
+      canvas: { width: 0, height: 0 },
+    });
+    expect(max).toBe(zoomLimitsFor(scales).max);
+  });
+
+  it("没有块信息（finestBlockLong = 0）时同样退回旧公式", () => {
+    const { max } = zoomLimitsForBlocks({
+      scales,
+      fitScale,
+      finestBlockLong: 0,
+      canvas,
+    });
+    expect(max).toBe(zoomLimitsFor(scales).max);
+  });
+
+  it("absMax 只能收紧、不能放宽到比旧公式更小", () => {
+    const tight = zoomLimitsForBlocks({
+      scales,
+      fitScale,
+      finestBlockLong: 50,
+      canvas,
+      absMax: 12,
+    });
+    expect(tight.max).toBe(12);
+    // 传入一个比旧上限还小的 absMax ⇒ 仍以旧公式为地板（护栏 1 优先）
+    const silly = zoomLimitsForBlocks({
+      scales,
+      fitScale,
+      finestBlockLong: 50,
+      canvas,
+      absMax: 1,
+    });
+    expect(silly.max).toBe(zoomLimitsFor(scales).max);
+  });
+
+  it("上限随画布变大而变大（同一个郡在更大的窗口里要放得更大）", () => {
+    const small = zoomLimitsForBlocks({
+      scales,
+      fitScale,
+      finestBlockLong: 50,
+      canvas: { width: 800, height: 600 },
+    });
+    const big = zoomLimitsForBlocks({
+      scales,
+      fitScale,
+      finestBlockLong: 50,
+      canvas: { width: 1600, height: 1200 },
+    });
+    expect(big.max).toBeGreaterThan(small.max);
+  });
+
+  /**
+   * 外部数据的有限性校验（AGENTS §6.0）。
+   *
+   * 这些值任何一个是 `NaN` / `Infinity`，`Math.max/min` 都会把**上限**污染成
+   * `NaN`，而 `zoomAt` 拿到 `NaN` 上限后每次缩放都会产出 `NaN` 视口 ——
+   * 画面消失、滚轮失灵，且不抛异常。所以这里逐项钉「退化输入必须退回旧公式」。
+   */
+  describe("退化输入（NaN / Infinity / 负数）不得污染上限", () => {
+    const finite = (v: number) => expect(Number.isFinite(v)).toBe(true);
+    const oldMax = zoomLimitsFor(scales).max;
+
+    it.each([
+      ["NaN", Number.NaN],
+      ["Infinity", Number.POSITIVE_INFINITY],
+      ["-Infinity", Number.NEGATIVE_INFINITY],
+      ["负数", -50],
+      ["0", 0],
+    ])("finestBlockLong = %s ⇒ 退回旧公式", (_label, value) => {
+      const { min, max } = zoomLimitsForBlocks({
+        scales,
+        fitScale,
+        finestBlockLong: value,
+        canvas,
+      });
+      expect(max).toBe(oldMax);
+      finite(max);
+      finite(min);
+      expect(min).toBeGreaterThan(0);
+    });
+
+    it.each([
+      ["NaN", Number.NaN],
+      ["Infinity", Number.POSITIVE_INFINITY],
+      ["-Infinity", Number.NEGATIVE_INFINITY],
+      ["负数", -100],
+    ])("画布宽高都是 %s ⇒ 退回旧公式", (_label, value) => {
+      const { max } = zoomLimitsForBlocks({
+        scales,
+        fitScale,
+        finestBlockLong: 50,
+        canvas: { width: value, height: value },
+      });
+      expect(max).toBe(oldMax);
+      finite(max);
+    });
+
+    /**
+     * 只量出一半的画布（宽 `Infinity`、高 900）**不得**被当成正常画布。
+     *
+     * `Math.min(Infinity, 900)` 会得出 900，反推出 20.7 —— 算术没错，但它把一次
+     * 测量失败当成了正常输入。守卫的口径是"两个维度各自都必须有限且 > 0"，
+     * 所以这里期望退回旧公式；现实中也不存在"半量出来的画布"。
+     */
+    it.each([
+      ["宽", Number.POSITIVE_INFINITY, 900],
+      ["高", 900, Number.POSITIVE_INFINITY],
+    ])("画布宽高 = Infinity ⇒ 退回旧公式（%s 一边没量出来）", (_side, width, height) => {
+      const { max } = zoomLimitsForBlocks({
+        scales,
+        fitScale,
+        finestBlockLong: 50,
+        canvas: { width, height },
+      });
+      expect(max).toBe(oldMax);
+      finite(max);
+    });
+
+    it("absMax 非有限 / 非正 ⇒ 用默认硬顶（仍不小于旧公式）", () => {
+      for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, 0, -5]) {
+        const { max } = zoomLimitsForBlocks({
+          scales,
+          fitScale,
+          finestBlockLong: 0.5,
+          canvas,
+          absMax: bad,
+        });
+        expect(max).toBe(ZOOM_ABS_MAX);
+      }
+    });
+
+    it("scales 里混进 NaN / Infinity / 负数 ⇒ 忽略它们，结果与干净输入等价", () => {
+      // 干净输入与脏输入必须由**同一个数组**派生：否则两边差的可能只是取整误差
+      // （0.304 vs 0.30446…），断言的就不是"脏值被忽略"这件事了。
+      // 脏值分别插在**首、中、尾**：`zoomLimitsFor` 只读首尾，插在中间就会漏测。
+      const base = [...scales];
+      const dirty = [...base];
+      dirty.splice(0, 0, Number.NaN);
+      dirty.splice(2, 0, Number.POSITIVE_INFINITY);
+      dirty.push(-1);
+
+      const clean = zoomLimitsForBlocks({ scales: base, fitScale, finestBlockLong: 50, canvas });
+      const fromDirty = zoomLimitsForBlocks({
+        scales: dirty,
+        fitScale,
+        finestBlockLong: 50,
+        canvas,
+      });
+      expect(dirty.length).toBe(base.length + 3);
+      expect(fromDirty.min).toBe(clean.min);
+      expect(fromDirty.max).toBe(clean.max);
+      finite(fromDirty.min);
+      finite(fromDirty.max);
+    });
+
+    it("fitScale 非有限 ⇒ 下限退回层级公式（不会变成 NaN）", () => {
+      const { min } = zoomLimitsForBlocks({
+        scales,
+        fitScale: Number.NaN,
+        finestBlockLong: 50,
+        canvas,
+      });
+      expect(min).toBe(scales[0] * LOD_ZOOM_RANGE.coarseOut);
+      finite(min);
+    });
+
+    it("scales 全是脏值 ⇒ 落到 zoomLimitsFor([]) 的兜底区间，仍可用", () => {
+      const { min, max } = zoomLimitsForBlocks({
+        scales: [Number.NaN, Number.POSITIVE_INFINITY],
+        fitScale,
+        finestBlockLong: 50,
+        canvas,
+      });
+      expect(Number.isFinite(min)).toBe(true);
+      expect(Number.isFinite(max)).toBe(true);
+      expect(max).toBeGreaterThan(min);
+    });
   });
 });

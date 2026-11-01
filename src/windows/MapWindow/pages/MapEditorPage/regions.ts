@@ -97,8 +97,18 @@ export const REGION_LEVEL_COUNT_LIMITS = {
   default: REGION_MAX_LEVELS,
 } as const;
 
-/** 区块填充不透明度（保持较低，让底图地形仍可透出） */
-export const REGION_FILL_ALPHA = 0.32;
+/**
+ * 区块填充不透明度。
+ *
+ * 【0.10 而不是 0.32】区块的唯一职责是让人**读得出"这里有一条分界"**，不是把
+ * 地图切成一块块彩色拼图。0.32 时整张纸被色块铺满，底图的山川、海岸的层层
+ * 晕染、地名的白描边全被压掉 —— 远处看是一张行政区划图，不是古地图。
+ *
+ * 降下来之后信息层级才对：海岸/地形（主体）> 地名（点名）> 区块（参考线）。
+ * 与 `REGION_BORDER_ALPHA` 是同一件事的两面，要一起调，否则会出现
+ * "线比面还淡"的怪画面（边界读不出来、色块却糊在图上）。
+ */
+export const REGION_FILL_ALPHA = 0.1;
 
 /**
  * 区块边界线宽 —— 单位是**屏幕像素**。
@@ -106,17 +116,24 @@ export const REGION_FILL_ALPHA = 0.32;
  * 渲染时换算成世界单位（`px / viewport.scale`）：区块的可见缩放跨了 40 倍
  * （最远一级到最近一级），用世界单位做线宽会导致缩远了线细到看不见、
  * 放到最大线比山脉还宽。
+ *
+ * 1.2 px 比最初的 1.6 px 更细：填充淡到 0.10 之后，边界成了区块唯一的载体，
+ * 此时再画 1.6 px 会显得"线与面不成比例"（面上几乎看不见颜色、线却很重）。
+ * 1.2 px 是高 DPI 下仍不断线的最细值，也是 100% 缩放下肉眼刚好连续的宽度。
  */
-export const REGION_BORDER_PX = 1.6;
+export const REGION_BORDER_PX = 1.2;
 
 /**
  * 区块边界的不透明度。
  *
- * 取值偏轻（0.6）：边界是用来"读出分区"的，不该盖过底图的地形。
+ * 0.32 —— 边界要能"读出来"，但不能抢戏。0.6 时每个区块都镶着一圈深墨绿的实线，
+ * 缩远看密密麻麻像蛛网；降到 0.32 后，远看只是若隐若现的肌理，凑近才看得清分界，
+ * 这正是古地图上"手绘界线"的分量。
+ *
  * 交叉淡化时渲染层会再乘上该层级的权重，因此过渡带里两条边界各自只有一半浓度，
  * 合起来仍是一根连续的线，不会出现"两倍黑"的接缝。
  */
-export const REGION_BORDER_ALPHA = 0.6;
+export const REGION_BORDER_ALPHA = 0.32;
 
 /** 区块边界颜色（深墨绿，压在底图上清晰但不刺眼） */
 export const REGION_BORDER_COLOR = 0x27352e;
@@ -208,8 +225,18 @@ export const REGION_WOBBLE = {
    * 乃至多边形自交。1.25 倍是留出的安全余量。
    */
   seedInsetAmpRatio: 1.25,
-  /** 子级相对父级的色相偏移（度）：让"父块裂开成子块"读起来像同一个色系的深浅 */
-  hueSpread: 15,
+  /**
+   * 子级相对父级的色相偏移（度）：让"父块裂开成子块"读起来像同一个色系的深浅。
+   *
+   * 【3 而不是 15】15° 时同一父级下的兄弟块会跨过肉眼可辨的色相界线
+   * （绿 → 黄绿 → 青），看起来是**不相干的几块**，而不是"一块被分成了几份"；
+   * 配合 0.10 的低填充，还会出现"某块偏黄、旁边那块偏蓝"的错觉，
+   * 因为透明度低时人眼对色相的判断更依赖相邻对比。
+   *
+   * 3° 时整棵子树只是同一色系的极缓渐变，区块之间的差异改由**边界线**承担 ——
+   * 这也正是本批 B2 降级的核心思路：面负责氛围，线负责信息。
+   */
+  hueSpread: 3,
   /**
    * 同父块内两个种子点的最小间距 = 这一比例 × 子块尺度 R。
    *
@@ -850,6 +877,26 @@ export interface GenerateHierarchyOptions {
   bounds: RegionBounds;
   /** 每级区块数（长度即层级数）；缺省用 REGION_LEVELS 的默认值 */
   levelCounts?: readonly number[];
+  /**
+   * 切分容器（陆地多边形的某一个环）。
+   *
+   * 【为什么需要】陆地生成之后，区块必须只在**陆地内**划分，否则会有一半区块
+   * 飘在海里。这里只把根容器从 `bounds` 矩形换成陆地多边形，其余层级逻辑一行
+   * 不改 —— 更深层级用的是 Voronoi 单元（恒凸），只有 level 0 会拿到非凸容器。
+   *
+   * 【缺省 = 老行为】不传时按 `bounds` 的四角走矩形路径，
+   * `regions.test.ts` 的全部判据都不受影响。
+   */
+  container?: Point[];
+  /**
+   * id 前缀。**多岛时必须逐岛传不同的值**，否则 id 会重号。
+   *
+   * 【为什么】`nextId` 的计数器是**每次调用**新建的闭包变量（见下方），
+   * 多个岛各调一次 `generateHierarchy` 就会各自从 1 开始编号，
+   * 于是两岛的第 1 块都叫 `rg_<seed>_1` —— React key 冲突、撤销栈错乱，
+   * 而且**测试不一定报**。缺省为空串 ⇒ 单次调用的 id 与改动前**一字不差**。
+   */
+  idPrefix?: string;
 }
 
 /** 把 total 尽量平均分给 parts 份 */
@@ -1005,7 +1052,20 @@ function buildChildren(
       name: `${label} ${id.slice(id.lastIndexOf("_") + 1)}`,
       seed: seedPoint,
       polygon: display,
-      color: hslToRgb(hue, 0.3 + rng() * 0.2, 0.56 + rng() * 0.14),
+      /**
+       * 取色：低饱和 + 高明度 + 小抖动。
+       *
+       * 三个数一起决定"区块有多抢戏"：
+       *   · 饱和 0.10~0.16（原 0.30~0.50）：0.3 以上就带"塑料色卡"的味道了；
+       *   · 明度 0.58~0.66（原 0.56~0.70）：收到一个窄带里，兄弟块之间只差一点点；
+       *   · 明度抖动用 `(rng()-0.5)*0.08`，围绕 0.62 双向摆 —— 原来 `0.56+rng()*0.14`
+       *     只会往亮里偏，整片图会逐渐发白。
+       *
+       * 【`rng()` 的调用次数必须与改前一致（这里恰好两次）】rng 是**串行**的伪随机流：
+       * 中途多取或少取一个数，后面所有区块的种子点、色相、抖动会全部错位。
+       * 改值可以，改"取几个随机数"等于把整张图重排一遍。
+       */
+      color: hslToRgb(hue, 0.1 + rng() * 0.06, 0.62 + (rng() - 0.5) * 0.08),
     });
     out.push(node);
   }
@@ -1042,31 +1102,34 @@ export function generateHierarchy(options: GenerateHierarchyOptions): MapRegion[
 
   const rng = createRng(seed);
   let counter = 0;
+  const prefix = options.idPrefix ?? "";
   const nextId = () => {
     counter += 1;
-    return `rg_${(seed >>> 0).toString(36)}_${counter}`;
+    return `rg_${prefix}${(seed >>> 0).toString(36)}_${counter}`;
   };
 
-  // 虚拟根：整张地图，四条边都是画框（笔直）
+  // 虚拟根：缺省是整张地图的四条画框边（笔直）；传了 container 就按陆地多边形切。
+  // 两种路径共用后面全部逻辑 —— 区别只在"根容器是矩形还是多边形"。
   const rect: Point[] = [
     { x: bounds.x, y: bounds.y },
     { x: bounds.x + bounds.width, y: bounds.y },
     { x: bounds.x + bounds.width, y: bounds.y + bounds.height },
     { x: bounds.x, y: bounds.y + bounds.height },
   ];
+  const rootPoly: Point[] = options.container ?? rect;
   let frontier: LocalNode[] = [
     {
       id: "root",
       level: -1,
       seed: { x: 0, y: 0 },
       hue: 0,
-      base: rect,
-      edges: rect.map((p, i) => {
-        const q = rect[(i + 1) % rect.length];
+      base: rootPoly,
+      edges: rootPoly.map((p, i) => {
+        const q = rootPoly[(i + 1) % rootPoly.length];
         const host = makeFrameHost(p, q);
         return { host, from: p, to: q };
       }),
-      display: rect,
+      display: rootPoly,
     },
   ];
 

@@ -26,5 +26,32 @@ export default defineConfig({
     // electron/ 下仅纳入纯函数模块的测试（不 import electron 模块，jsdom 可运行）。
     include: ["src/**/*.test.{ts,tsx}", "electron/**/*.test.ts"],
     setupFiles: ["./vitest.setup.ts"],
+    server: {
+      deps: {
+        /**
+         * 把 `@testing-library/jest-dom` 标记为 external —— **保留它是划算的，
+         * 但不要把它当成硬约束**。
+         *
+         * 【来历】这条是在排查一次"全仓收集到 0 个用例、每个文件都在 `initSuite`
+         * 抛 `Cannot read properties of undefined (reading 'config')`"的故障时加的。
+         * 当时的猜测是：它的 `/vitest` 入口（`vitest.setup.ts` 引用）会
+         * `import { expect } from "vitest"`，被内联后可能出现第二份 `@vitest/runner`
+         * 实例，于是模块级的 `runner` 从未被赋值。
+         *
+         * 【当前证据不足以支持那条因果】去掉本项后连跑多次（4/4）仍然全绿，
+         * 独立复核也跑通了一次。所以**真正的原因很可能只是当时用了 `npx vitest run`**
+         * （解析到错误的 root / 另一份 vitest），而不是模块内联。
+         *
+         * 【保留的理由】它仍有可观测的收益：少内联一个包、收集阶段更快，而且
+         * 万一那条内联风险真的存在，这里已经挡住了。代价为零。
+         *
+         * 【以后又见到那个报错时，按这个顺序查】
+         *   1. 先确认命令**不是** `npx vitest run`，而是 `pnpm exec vitest run`；
+         *   2. 再确认 `vitest` 只有一份实例（`pnpm why vitest`）；
+         *   3. 最后才怀疑配置。
+         */
+        external: ["@testing-library/jest-dom"],
+      },
+    },
   },
 });

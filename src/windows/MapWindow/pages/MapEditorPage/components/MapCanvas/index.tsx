@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Application, Container, Graphics, Sprite, Texture } from "pixi.js";
+import type { ColorMatrixFilter, RenderTexture } from "pixi.js";
 import { BASE_IMAGE, SPRITE_MAP } from "../../sprites";
 import {
   REGION_BORDER_ALPHA,
@@ -7,11 +8,50 @@ import {
   REGION_BORDER_PX,
   REGION_FILL_ALPHA,
 } from "../../regions";
-import { elementWeight, resolveElementLevel } from "../../lod";
+import { elementSizeFactor, elementWeight, resolveElementLevel } from "../../lod";
 import type { MapDocument } from "../../types";
-import { hitTestElement, type CanvasSize, type Viewport } from "../../coords";
+import type { MapLabel, MapLand, MapStyle } from "../../types";
+import { BAKE_MARGIN, bakeCoast, bakeKeyOf } from "../../coastBake";
+import { filterFor } from "../../style";
+import {
+  applyLabelWeights,
+  labelAt,
+  setLabelScale,
+  syncLabels,
+  type LabelHandle,
+} from "./labelSync";
+import { cullLayers, createCullCache, screenCullRect } from "./cull";
+import {
+  hitTestElement,
+  screenToWorld,
+  worldToScreen,
+  type CanvasSize,
+  type Viewport,
+} from "../../coords";
 import type { TextureMap } from "../../hooks/useTextureCache";
 import "./index.scss";
+
+/**
+ * 场景句柄 —— 渲染层交出去的**最小**能力集（只给导出用）。
+ *
+ * 刻意不把 `app` 整个交出去：一旦页面拿到 `Application`，就会出现"在组件外
+ * `addChild`"这类拿不到 z 序纪律的代码。这里只给导出真正需要的四项 + 两个
+ * 选中框钩子。
+ */
+export interface MapSceneHandle {
+  /** 取图能力（`renderer.extract`） */
+  renderer: Application["renderer"];
+  /** ⚠️ 必须是 `app.stage`：`world` 之上还有投影等外层内容 */
+  stage: Container;
+  /** 承载视口变换的容器（导出期间会被临时改写，之后必须复原） */
+  world: Container;
+  /** 纸张在世界坐标里的矩形 */
+  rect: { x: number; y: number; width: number; height: number };
+  /** 导出前清空选中框（它是交互指示，不是地图内容） */
+  clearOverlay: () => void;
+  /** 导出后把选中框重绘回来（`clear()` 之后不重绘，框会消失到下次点选） */
+  redrawOverlay: () => void;
+}
 
 interface MapCanvasProps {
   doc: MapDocument;
@@ -32,6 +72,59 @@ interface MapCanvasProps {
    * 不该因为少传一个可选项就直接抛异常。
    */
   levelAlphas?: number[];
+  /**
+   * 陆地几何；`null` / 缺省 = 不画海岸四层（老用法照常渲染）。
+   *
+   * 【为什么走 prop 而不是直接读 doc.land】画布是纯消费组件：所有输入都从
+   * props 进，才能在单测里用最小文档驱动它，不必构造一整份 MapDocument。
+   */
+  land?: MapLand | null;
+  /**
+   * 全局风格预设（缺省 "none"）。
+   *
+   * 它参与 `bakeKey`：切风格要重建海岸纹理，而其余图层只换 `filters`（B4 再做）。
+   */
+  style?: MapStyle;
+  /**
+   * 分区显隐（缺省 true，= 老用法）。
+   *
+   * 只改 `regionLayer.alpha`，不改几何、不做条件渲染 —— 关掉是"给读者看的成品图"，
+   * 用户会频繁切换，必须零成本。
+   */
+  showRegions?: boolean;
+  /**
+   * 地名标注；缺省 `[]` = 一个文字对象都不建（老用法照常渲染）。
+   *
+   * 【为什么是 `readonly`】渲染层只读它，绝不写回 —— 避让偏移只活在渲染句柄上
+   * （见 `labelSync.ts` 的 `applyAvoidance`）。
+   */
+  labels?: readonly MapLabel[];
+  /**
+   * 双击标注请求编辑，回调收到**画布本地屏幕坐标**。
+   *
+   * 【为什么给屏幕坐标而不是世界坐标】编辑用的是一个绝对定位的 DOM `<input>`，
+   * 它活在 CSS 像素空间里；换算在这里做（画布持有真实像素几何），页面直接拿去
+   * 定位即可。反过来让页面自己换算，就会出现"页面按 canvasSize 算、画布按
+   * clientRect 算"的两套几何 —— 两处差一点，输入框就会偏出光标。
+   */
+  onLabelEditRequest?: (id: string, screen: { x: number; y: number }) => void;
+  /**
+   * 场景就绪回调（导出用）。
+   *
+   * 【为什么要把 stage/world 交出去】导出要做三件只有渲染层才做得到的事：
+   * 取图（`renderer.extract`）、临时改写 `world` 的变换、清空选中框。
+   * 让页面自己去 `new Application()` 拿这些东西是不可能的 —— 画布是纯消费组件，
+   * 唯一的出口就是这个回调。卸载时回调 `null`，页面据此禁用导出按钮。
+   */
+  onSceneReady?: (scene: MapSceneHandle | null) => void;
+  /**
+   * 视口粗剔除开关（缺省 `true`）。
+   *
+   * 单独给一个开关是为了**测试**：剔除会把容器的 `visible` 改成 false，
+   * 与"层级权重 / 子节点数"这类断言混在一起时，谁把谁弄红了很难分辨。
+   * 渲染断言里显式关掉它，剔除自己另有专门的用例。
+   */
+  enableCulling?: boolean;
   onSizeChange: (size: CanvasSize) => void;
   onWheel: (deltaY: number, anchor: { x: number; y: number }) => void;
   onPan: (dx: number, dy: number) => void;
@@ -97,8 +190,23 @@ const SHEET_SHADOW = {
  * 这里把缩放量化到 1.06 的幂次档位上，只有跨档才重建：线宽最多差 3%（肉眼不可辨），
  * 重建频率却降到原来的十几分之一。**注意只量化线宽** —— 交叉淡化的权重走的是
  * 容器 `alpha`（零成本），不参与量化，否则过渡会出现台阶。
+ *
+ * 【与缩放上限无关，已手算】线宽 = `REGION_BORDER_PX / quantize(scale)`，屏幕上
+ * 恒为 `1.2 × (scale / quantize(scale))`。量化误差的相对上界是 `√1.06 = 1.0296`
+ * （最坏落在档位的中点），因此**无论缩放上限抬到 21 还是 40**，屏显线宽都落在
+ * 1.166~1.235 px —— 抬上限不会让边界线变粗/变细，这条常量不需要跟着调。
  */
 const BORDER_WIDTH_QUANTIZE = 1.06;
+
+/**
+ * 静态层缓存的倍率上限。
+ *
+ * 【为什么跟着缩放走】`cacheAsTexture` 会把整组内容烤成一张**固定分辨率**的纹理，
+ * 之后由世界变换放大。若只用 1 倍，放到郡级（≈350%）时底图与海岸就是一张被拉大
+ * 3.5 倍的图 —— 变软是必然的。所以缓存倍率取 `ceil(缩放)` 并封顶 3：
+ * 1024² 的纸最大烤成 3072²（约 36MB），既能覆盖最深的缩放档，也不会无上限地涨。
+ */
+const STATIC_CACHE_MAX_RES = 3;
 
 /** 把缩放吸附到最近的量化档（用于线宽，见上） */
 function quantizeScale(scale: number): number {
@@ -154,23 +262,41 @@ function elementKeyOf(level: number | null | undefined, levelCount: number): num
 /** 缺省权重（不画任何区块）。用模块级常量避免每次渲染都造一个新数组引用。 */
 const NO_LEVELS: number[] = [];
 
+/** 缺省标注（同上：稳定引用，否则标注同步 effect 每次渲染都会重跑一遍） */
+const NO_LABELS: readonly MapLabel[] = [];
+
 /**
  * 地图画布（PixiJS / WebGL 渲染）。
  *
  * 【架构】单一 viewport 事实源 → 驱动一个 Pixi 场景图根容器：
  *   stage
  *   └─ world            ← 承载 viewport 变换（position + scale）
- *      ├─ sheetShadow   图纸投影（底图之下，撑起四周留白）
- *      ├─ baseSprite    底图
- *      ├─ regionLayer   区块层（容器，内部按层级分若干子容器）
+ *      ├─ staticLayer    z0 静态层（**整体 cacheAsTexture**，内容永不变化）
+ *      │   ├─ sheet        ← 图纸投影（底图之下，撑起四周留白）
+ *      │   └─ sea          ← 海面（底图纹理；陆地生成前它就是"整张底图"）
+ *      ├─ coast          z2 海岸烘焙层（容器，内部挂一张 RenderTexture 精灵）
+ *      │   └─ coastSprite   ← bakeCoast 的产出，随「陆地/风格/分辨率」重建
+ *      ├─ regionLayer    z3 区块层（容器，内部按层级分若干子容器）
  *      │   ├─ L0 容器     ├─ 填充 Graphics
  *      │   │              └─ 边界 Graphics  ← 屏幕恒定线宽
  *      │   └─ L1 / L2 / L3 …（同上）
- *      ├─ elementLayer  素材层（容器，同样按层级分若干子容器）
+ *      ├─ elementLayer   z4 素材层（容器，同样按层级分若干子容器）
  *      │   ├─ L0 容器    ← 在"大陆"那一级放置的素材，alpha = α_0
  *      │   ├─ L1 / L2 / L3 …（同上）
  *      │   └─ LOOSE 容器 ← 层级无关的素材（生成区块之前放的），alpha 恒为 1
- *      └─ overlayLayer  选中框等交互指示（Graphics）
+ *      ├─ labelLayer     z5 标注层（容器，按层级分容器，与 elementLayer 同构）
+ *      │   ├─ L0 容器    ← 在"大陆"那一级起的地名，alpha = α_0
+ *      │   ├─ L1 / L2 / L3 …（同上）
+ *      │   └─ LOOSE 容器 ← 层级无关的地名（生成区块之前起的），alpha 恒为 1
+ *      └─ overlay        z6 选中框等交互指示（Graphics，不挂滤镜）
+ *
+ * 【新增节点的挂载纪律】一律在**初始化 effect 里一次性**按数组顺序 addChild；
+ * 后续 effect 禁止再 addChild —— 否则 z 序会变成 effect 执行顺序的函数，
+ * 表现为"素材钻进区块底下"且**不报错**，极难排查。
+ * `render-stack-guard.test.ts` 守着这个顺序。
+ *
+ * 【海岸为什么在区块之下】区块是"地表的划分"，要能透出陆地材质；反过来盖住
+ * 就成了色块图。素材在区块之上：山是"长在地表上的东西"，不能被分区线切断。
  *
  * 区块层为什么按"层级的容器"而不是"一个 Graphics"：
  * 无极缩放要求相邻两级**同时可见**、此消彼长（见 lod.ts）。把权重落在容器 alpha
@@ -201,6 +327,13 @@ export default function MapCanvas({
   selectedId,
   pendingSpriteId,
   levelAlphas = NO_LEVELS,
+  land = null,
+  style = "none",
+  showRegions = true,
+  labels = NO_LABELS,
+  onLabelEditRequest,
+  onSceneReady,
+  enableCulling = true,
   onSizeChange,
   onWheel,
   onPan,
@@ -214,17 +347,122 @@ export default function MapCanvas({
 
   /** 场景图层（ref 持有，避免 effect 依赖抖动） */
   const worldRef = useRef<Container | null>(null);
+  /**
+   * 静态层：图纸投影 + 海面（`sheet` / `sea`）。
+   *
+   * 这两样在编辑过程中**永远不变**，缓存成一张纹理后整组只剩一次 draw call。
+   * 不把 `coast` 一起放进来：PRD §6.4 要求"海面不挂滤镜、海岸挂滤镜"，
+   * 而缓存会把这一组烤成一张图 —— 两者共用一个缓存就必然一起被染色。
+   * 详见 `staticLayer` 初始化处与 `styleFilter` effect 的注释。
+   */
+  const staticLayerRef = useRef<Container | null>(null);
+  /** 静态层缓存是否已建（首帧不调 `updateCacheTexture`，只能 `cacheAsTexture`） */
+  const staticCachedRef = useRef(false);
+  /** 上次烘焙缓存用的倍率；跨档才重烤（见常量 `STATIC_CACHE_MAX_RES`） */
+  const staticResRef = useRef(0);
+  /** 上次烤进缓存时的纸纹；纹理晚到时靠它触发 `updateCacheTexture()` */
+  const staticPaperRef = useRef<unknown>(undefined);
   const sheetRef = useRef<Graphics | null>(null);
-  const baseRef = useRef<Sprite | null>(null);
+  /** 海面（底图纹理）。未生成陆地时它就是"整张底图"，老观感不变 */
+  const seaRef = useRef<Sprite | null>(null);
+  /**
+   * 海岸烘焙层：容器 + 一张承接 RenderTexture 的精灵。
+   * 容器而不是裸精灵 —— 风格滤镜要挂在"整组静态层"上（B4），且未来
+   * `cacheAsTexture` 需要一个稳定的容器句柄。一层 Container 成本可忽略。
+   */
+  const coastRef = useRef<Container | null>(null);
+  const coastSpriteRef = useRef<Sprite | null>(null);
   const regionLayerRef = useRef<Container | null>(null);
   /** 每个层级一份「容器 + 填充 + 边界」，索引即层级序号 */
   const levelLayersRef = useRef<LevelLayers[]>([]);
   const elementLayerRef = useRef<Container | null>(null);
   /** 素材按层级分容器（键见 `LOOSE_LEVEL_KEY`），容器 alpha 跟该层级权重走 */
   const elementLayersRef = useRef<Map<number, Container>>(new Map());
+  /** 标注层（按层级分容器，与素材层同构） */
+  const labelLayerRef = useRef<Container | null>(null);
+  /**
+   * 标注的渲染句柄（id → Text）。由 `syncLabels` 原地维护，这里只是持有引用：
+   * 视口 effect 要拿它遍历（`setLabelScale`），而它**不能**成为视口 effect 的依赖，
+   * 否则会退化成"每格重建"。
+   */
+  const labelHandlesRef = useRef<Map<string, LabelHandle>>(new Map());
+  /**
+   * 当前视口缩放 —— 给"新建标注"兜底用。
+   *
+   * 【为什么要有这个 ref】`syncLabels` 新建出来的 `Text` 默认 scale 是 1，
+   * 而屏幕恒定字号要求它是 `1/viewport.scale`。若让同步 effect 依赖 `viewport.scale`，
+   * 滚轮每格都要跑一遍全量同步（"视口变化不触碰标注"直接被破坏）。
+   * 因此同步 effect 从 ref 里读**当前**缩放，而 ref 由下面的视口 effect 维护。
+   */
+  const labelScaleRef = useRef(viewport.scale);
+  /**
+   * 当前风格滤镜。
+   *
+   * 【为什么每次换新实例】`ColorMatrixFilter` 的 `saturate()` / `brightness()`
+   * 是**就地累乘**：在同一个实例上反复切换，"原色 → 墨色 → 原色"回不到原色
+   * （矩阵变换不可逆）。所以 `filterFor` 每次都 new，旧的在赋新之后销毁。
+   */
+  const styleFilterRef = useRef<ColorMatrixFilter | null>(null);
   const overlayRef = useRef<Graphics | null>(null);
   /** 实例 id → 渲染句柄，增量同步用（避免每帧重建全部精灵） */
   const spriteByIdRef = useRef<Map<string, ElementSprite>>(new Map());
+
+  /**
+   * 当前已烘焙的内容指纹；`undefined` = 还没跑过第一次。
+   *
+   * 【初值为什么是 undefined 而不是 null】`null` 是"无陆地"这个**合法**指纹。
+   * 若初值也是 null，首次挂载且没有陆地时会被"指纹未变"短路掉，
+   * 于是 coast 容器停在默认 visible = true 上 —— 空精灵虽然画不出东西，
+   * 但这个短路会让人误以为"清空逻辑跑过了"。undefined 保证首次一定执行。
+   */
+  const bakeKeyRef = useRef<string | null | undefined>(undefined);
+  /** 当前烘焙用的纸纹；纹理晚于陆地加载时要补烘一次 */
+  const bakePaperRef = useRef<unknown>(undefined);
+  /** 当前挂在 coastSprite 上的 RenderTexture（替换成功后才销毁旧的） */
+  const bakeRtRef = useRef<RenderTexture | null>(null);
+
+  /**
+   * 剔除用的包围盒缓存（见 `cull.ts` 的 `CullCache`）。
+   *
+   * 内容变化时整表清空；视口变化时复用 —— 滚轮每一格都重算 600 个多边形的
+   * 并集，剔除省下的绘制还不够付自己的账。
+   */
+  const cullCacheRef = useRef(createCullCache());
+  /**
+   * 上一次剔除时的内容指纹（只用来判断"要不要清包围盒缓存"）。
+   *
+   * 用**引用**比较而不是版本号：`doc.regions` / `doc.elements` / `labels` 在
+   * 数据层都是不可变更新（改一次换一个数组），引用相等就等于"内容没动"，
+   * 不需要任何一方记得自增版本号 —— 忘自增的那种缺陷只在特定顺序下复现。
+   */
+  const cullContentRef = useRef<{
+    regions: readonly unknown[];
+    elements: readonly unknown[];
+    labels: readonly unknown[];
+    levelCount: number;
+  } | null>(null);
+
+  /**
+   * 烘焙分辨率：跟随设备像素比，但封顶 2。
+   *
+   * 用 `useMemo` 而不是每次渲染重算：`devicePixelRatio` 读的是 window，
+   * 放进 `bakeKey` 的依赖项时必须引用稳定，否则每次渲染都是"新分辨率"。
+   */
+  const bakeResolution = useMemo(() => Math.min(window.devicePixelRatio || 1, 2), []);
+
+  /**
+   * 烘焙指纹 —— 烘焙的唯一触发源。
+   *
+   * 只由「陆地几何 + 风格 + 分辨率」决定，**不含 viewport**：
+   * 滚轮缩放绝不能触发重烘（那会让每滚一格都做三次高斯模糊）。
+   */
+  const bakeKey = useMemo(
+    () => bakeKeyOf(land ?? null, style, bakeResolution),
+    [land, style, bakeResolution],
+  );
+
+  /** 当前底图纹理（纸纹）：给海岸叠 multiply 用，未加载时为 undefined */
+  const paperTexture = textures[BASE_IMAGE.id];
 
   /**
    * 线宽用的量化缩放。
@@ -233,6 +471,17 @@ export default function MapCanvas({
    * 于是下面的边界重建 effect 不会因为滚轮每一格都跑一遍。
    */
   const borderScale = useMemo(() => quantizeScale(viewport.scale), [viewport.scale]);
+
+  /**
+   * 缩放档（2 的幂次档，与 PRD §6.6.2 一致）。
+   *
+   * 只在跨档时才重烤静态层缓存 —— 每格都重烤等于把缓存变成纯损耗（每滚一格
+   * 多一次全屏离屏渲染，比不缓存还慢）。
+   */
+  const zoomTier = useMemo(
+    () => Math.round(Math.log2(Math.max(1e-6, viewport.scale))),
+    [viewport.scale],
+  );
 
   /**
    * 手势态。
@@ -250,6 +499,49 @@ export default function MapCanvas({
   const CLICK_SLOP = 4;
 
   /**
+   * 选中框重绘函数（供"选中态"effect 与导出后的 `redrawOverlay` 共用）。
+   *
+   * 【为什么抽成函数而不是继续用 effect 内联】导出前必须 `overlay.clear()`
+   * （成品图里不能有选中框），但 `Graphics` 清了就是清了 —— 那个 effect 的依赖
+   * 一个都没变，不会自己重画，于是导完之后选中框会一直消失到下次点选。
+   * 早期用一个自增的 state 令牌去"戳"它重跑，但令牌不参与任何计算，
+   * 依赖数组里就会多出一个"多余依赖"，是把时序缺陷藏进 lint 豁免里的写法。
+   * 抽成一个函数后，导出侧直接调用它，语义直白、也没有多余的重渲染。
+   */
+  const drawOverlay = useCallback(() => {
+    const overlay = overlayRef.current;
+    if (!overlay) return;
+    overlay.clear();
+
+    if (!selectedId) return;
+    const el = doc.elements.find((e) => e.id === selectedId);
+    const def = el ? SPRITE_MAP[el.spriteId] : undefined;
+    if (!el || !def) return;
+
+    // 尺寸三处之一（另两处：精灵同步、命中测试）：
+    // 素材按层级缩小（见 `lod.ts` 的 `elementSizeFactor`），选中框必须跟着缩，
+    // 否则郡级素材的框会是它视觉尺寸的 8 倍。
+    const factor = elementSizeFactor(el.level, levelAlphas.length);
+    const w = def.baseWidth * el.scale * factor;
+    const h = def.baseHeight * el.scale * factor;
+    // 选中框画在 world 之外的 overlay 上（不随素材所在的层级容器淡出），
+    // 所以这里要手动乘上该素材的层级权重，否则会出现"框还在、素材已经淡没了"。
+    const weight = elementWeight(el.level, levelAlphas);
+    if (weight <= 0) return;
+
+    // 元素锚点是底部中心；选中框用世界坐标绘制，随 world 一起缩放
+    overlay
+      .rect(el.x - w / 2, el.y - h, w, h)
+      .stroke({ width: 2, color: 0x5b6cf9, alignment: 0.5, alpha: weight });
+  }, [selectedId, doc.elements, levelAlphas]);
+
+  /** 上面那个函数的最新引用：给初始化 effect 里的 `redrawOverlay` 与选中态 effect 取用 */
+  const drawOverlayRef = useRef(drawOverlay);
+  useEffect(() => {
+    drawOverlayRef.current = drawOverlay;
+  }, [drawOverlay]);
+
+  /**
    * 把 onSizeChange 存进 ref。
    *
    * Pixi Application 的初始化必须**只执行一次** —— 若把它作为 effect 依赖，
@@ -260,6 +552,12 @@ export default function MapCanvas({
   useEffect(() => {
     onSizeChangeRef.current = onSizeChange;
   }, [onSizeChange]);
+
+  /** 同上：导出回调也只经 ref 取用，免得它一变就重建 WebGL 上下文 */
+  const onSceneReadyRef = useRef(onSceneReady);
+  useEffect(() => {
+    onSceneReadyRef.current = onSceneReady;
+  }, [onSceneReady]);
 
   // ── 初始化 Pixi Application ──
   useEffect(() => {
@@ -317,21 +615,54 @@ export default function MapCanvas({
 
       // 场景图：world 承载全部视口变换
       const world = new Container();
+      /**
+       * 静态层：图纸投影 + 海面。
+       *
+       * 这两样在编辑过程中永远不变（投影是常量几何、海面是底图纹理），
+       * 缓存成一张纹理后整组只剩一次 draw call。换纸张尺寸/换底图时才需要
+       * `updateCacheTexture()`。
+       *
+       * 【为什么海岸不在这组里】PRD §6.6.2 想把「投影 / 海面 / 海岸」整组缓存，
+       * 但 §6.4 又要求"海面不挂滤镜、海岸挂滤镜"。整组缓存会把它们烤成一张图，
+       * 于是滤镜只能二选一：要么海面被染色（§6.4 明令禁止），要么海岸不变色
+       * （用户看到的是"切风格海岸没反应"）。两条要求在这里互斥 ——
+       * 取 §6.4：滤镜纪律是本批的硬约束，而海岸本身只是一张烘焙好的精灵
+       * （1 次 draw call），缓存它并不会省下什么。
+       */
+      const staticLayer = new Container();
       const sheet = new Graphics();
-      const baseSprite = new Sprite();
+      const sea = new Sprite();
+      staticLayer.addChild(sheet, sea);
+      /**
+       * 海岸层：容器 + 一张精灵（承接烘焙出的 RenderTexture）。
+       *
+       * 为什么不是直接把四层 Graphics 挂上来：其中三层带 BlurFilter，
+       * 挂在每帧重绘的容器上等于每帧三次高斯模糊。四层在**烘焙期**才存在，
+       * 运行期只剩这一张纹理（见 coastBake.ts 文件头）。
+       */
+      const coast = new Container();
+      const coastSprite = new Sprite();
+      coast.addChild(coastSprite);
       // 区块层本身是个容器：真正的内容按层级分成若干子容器（见下方各 effect），
       // 这样"交叉淡化"只需要改子容器的 alpha，不必重建任何几何。
       const regionLayer = new Container();
       const elementLayer = new Container();
+      const labelLayer = new Container();
       const overlay = new Graphics();
-      world.addChild(sheet, baseSprite, regionLayer, elementLayer, overlay);
+      // ★ 六个节点一次性按 z 序加入；后续 effect 一律不得再 addChild
+      //   （staticLayer 内部是 sheet → sea，见上）
+      world.addChild(staticLayer, coast, regionLayer, elementLayer, labelLayer, overlay);
       instance.stage.addChild(world);
 
       worldRef.current = world;
+      staticLayerRef.current = staticLayer;
       sheetRef.current = sheet;
-      baseRef.current = baseSprite;
+      seaRef.current = sea;
+      coastRef.current = coast;
+      coastSpriteRef.current = coastSprite;
       regionLayerRef.current = regionLayer;
       elementLayerRef.current = elementLayer;
+      labelLayerRef.current = labelLayer;
       overlayRef.current = overlay;
 
       setApp(instance);
@@ -339,19 +670,38 @@ export default function MapCanvas({
       const next = { width: Math.round(rect.width), height: Math.round(rect.height) };
       setSize(next);
       onSizeChangeRef.current(next);
+      // 交出场景句柄（导出用）。注意 `clearOverlay` 只清 Graphics，
+      // 重绘由 `redrawOverlay` 令牌驱动 —— 两者必须成对使用，否则框会一直消失。
+      onSceneReadyRef.current?.({
+        renderer: instance.renderer,
+        stage: instance.stage,
+        world,
+        rect: BASE_RECT,
+        clearOverlay: () => {
+          overlayRef.current?.clear();
+        },
+        // 直接调同一个绘制函数（不靠 state 令牌戳 effect，见 `drawOverlay`）
+        redrawOverlay: () => drawOverlayRef.current(),
+      });
     })();
 
     return () => {
       disposed = true;
+      onSceneReadyRef.current?.(null);
       spriteByIdRef.current.clear();
       worldRef.current = null;
+      staticLayerRef.current = null;
       sheetRef.current = null;
-      baseRef.current = null;
+      seaRef.current = null;
+      coastRef.current = null;
+      coastSpriteRef.current = null;
       regionLayerRef.current = null;
       // 子容器随 world 一起被 destroy(true, {children:true}) 回收，这里只清引用
       levelLayersRef.current = [];
       elementLayerRef.current = null;
       elementLayersRef.current.clear();
+      labelLayerRef.current = null;
+      labelHandlesRef.current.clear();
       overlayRef.current = null;
 
       if (initDone) {
@@ -413,20 +763,207 @@ export default function MapCanvas({
     sheet.stroke({ width: 1.5, color: 0x0f1a15, alpha: 0.26, alignment: 0.5 });
   }, [app]);
 
-  // ── 底图纹理 ──
+  // ── 海面（底图纹理铺满整张纸）──
   useEffect(() => {
-    const baseSprite = baseRef.current;
-    if (!baseSprite) return;
+    const sea = seaRef.current;
+    if (!sea) return;
     const tex = textures[BASE_IMAGE.id];
     if (tex) {
-      baseSprite.texture = tex;
-      baseSprite.width = BASE_IMAGE.width;
-      baseSprite.height = BASE_IMAGE.height;
-      // 底图以世界原点为中心铺开（世界原点在地图中心）
-      baseSprite.anchor.set(0.5);
-      baseSprite.position.set(0, 0);
+      sea.texture = tex;
+      sea.width = BASE_IMAGE.width;
+      sea.height = BASE_IMAGE.height;
+      // 海面以世界原点为中心铺开（世界原点在地图中心）
+      sea.anchor.set(0.5);
+      sea.position.set(0, 0);
     }
   }, [textures, app]);
+
+  // ── 静态层缓存（投影 + 海面，整组烤成一张纹理）──
+  //
+  // 【为什么声明在"海岸烘焙"与"剔除"之前】本批有一条硬顺序：**先更新缓存，
+  // 再做剔除**。剔除读的是容器的局部包围盒，而 `cacheAsTexture` 会把子树折叠成
+  // 一个精灵 —— 那个时刻的包围盒与"未缓存"时不同。先剔除后建缓存，那一帧的
+  // `visible` 就是按旧布局算的，缓存建好后没人再来重算（表现是偶尔错一帧）。
+  // 目前 `staticLayer` 自己**不参与剔除**（见剔除 effect 的 ⚠️），所以这条顺序
+  // 暂时不会出事；但它是本组 effect 的纪律，别等改了剔除范围才发现踩空。
+  //
+  // 【为什么只在跨档时重烤】`cacheAsTexture` 烤出的是一张**固定分辨率**的纹理，
+  // 之后由世界变换放大。分辨率必须跟着缩放走（否则放到郡级就是 1 倍图拉 3.5 倍，
+  // 海面与投影边缘会糊），但每格都重烤等于每滚一格多一次全屏离屏渲染 ——
+  // 比不缓存还慢。折中：倍率量化到 2 的幂次档（`zoomTier`），只在跨档时重烤。
+  //
+  // ⚠️ **不要把 `filters` 挂在这个被缓存的节点上**：pixi 的缓存是"先把子树渲染
+  // 成纹理、再把纹理画出来"，节点自己的滤镜会被烤进纹理之前的那一步吃掉。
+  // 滤镜一律挂在 `regionLayer` / `elementLayer` / `labelLayer` 上
+  // （见下面的风格 effect）；`staticLayer` 则永远不挂 —— 它里面的海面本来也不该变色。
+  useEffect(() => {
+    const layer = staticLayerRef.current;
+    if (!layer) return;
+
+    // 目标倍率 = 2^tier 封顶 STATIC_CACHE_MAX_RES；tier < 0（缩小）时用 1 倍
+    const resolution = Math.min(
+      STATIC_CACHE_MAX_RES,
+      Math.max(1, 2 ** Math.max(0, zoomTier)),
+    );
+
+    // 纸纹变化也要重烤：缓存烤的是"此刻的画面"，海面纹理晚于初始化到达时
+    // 不重烤就会把一张空精灵烤进去，之后无论怎么缩放都是空白。
+    const paperChanged = staticPaperRef.current !== paperTexture;
+    const resChanged = staticResRef.current !== resolution;
+    if (staticCachedRef.current && !paperChanged && !resChanged) return;
+
+    staticPaperRef.current = paperTexture;
+    staticResRef.current = resolution;
+
+    if (!staticCachedRef.current || resChanged) {
+      // 首次建缓存，或倍率跨档：重复调用 `cacheAsTexture` = 以新参数重建，
+      // 不会叠出第二层缓存（pixi 内部会先释放旧的 RenderTexture）
+      layer.cacheAsTexture({ resolution, antialias: true });
+      staticCachedRef.current = true;
+    } else {
+      // 只是内容变了（纸纹到位）：按当前参数重新烤一遍，比重建整个缓存便宜
+      layer.updateCacheTexture();
+    }
+  }, [zoomTier, paperTexture, app]);
+
+  // ── 海岸烘焙（只随「陆地几何 / 风格 / 纸纹」变，绝不随 viewport 变）──
+  //
+  // 【为什么用指纹而不是布尔脏标记】指纹是派生的，改完不用记得"置脏"；
+  // 布尔标记漏置位就表现为"改了但画面没变"，排查成本极高。
+  useEffect(() => {
+    const coast = coastRef.current;
+    const sprite = coastSpriteRef.current;
+    if (!coast || !sprite) return;
+
+    // 指纹与纸纹都没变 ⇒ 完全跳过（连 RenderTexture.create 都不会调）
+    if (bakeKeyRef.current === bakeKey && bakePaperRef.current === paperTexture) return;
+    bakeKeyRef.current = bakeKey;
+    bakePaperRef.current = paperTexture;
+
+    // 没有陆地：清空并隐藏（不销毁容器，下次生成陆地时直接复用）
+    if (bakeKey === null || !land) {
+      const stale = bakeRtRef.current;
+      bakeRtRef.current = null;
+      sprite.texture = Texture.EMPTY;
+      coast.visible = false;
+      stale?.destroy(true);
+      return;
+    }
+
+    const renderer = app?.renderer;
+    if (!renderer) {
+      // app 还没就绪：把指纹退回"未跑过"，等下一次 effect 再试
+      bakeKeyRef.current = undefined;
+      return;
+    }
+
+    // 先算出新的 → 成功后原子替换 → 再销毁旧的（避免闪一帧空白）
+    const next = bakeCoast({
+      renderer,
+      land,
+      // 【风格在这里乘一次】海岸的观感（含配色）全部由烘焙产出，见 coastBake
+      // 文件头：`bakeKey` 含 style，所以切风格本来就要重烘一次 —— 那次重烘
+      // 必须真的改变像素，否则就是白付三次高斯模糊。
+      style,
+      paperTexture,
+      paperRect: BASE_RECT,
+      resolution: bakeResolution,
+    });
+    const prev = bakeRtRef.current;
+    sprite.texture = next;
+    // 纹理覆盖的是「陆地包围盒外扩 BAKE_MARGIN」这块世界矩形
+    sprite.position.set(land.bounds.x - BAKE_MARGIN, land.bounds.y - BAKE_MARGIN);
+    sprite.width = land.bounds.width + BAKE_MARGIN * 2;
+    sprite.height = land.bounds.height + BAKE_MARGIN * 2;
+    coast.visible = true;
+    bakeRtRef.current = next;
+    prev?.destroy(true);
+    // `style` 与 `bakeKey` 的重合是刻意的：`bakeKey` 已经含 style（它是唯一的
+    // 触发源），但 effect 体里直接读了 `style`，显式列出来才不用为 lint 开口子。
+  }, [bakeKey, land, style, paperTexture, bakeResolution, app]);
+
+  // ── 卸载时释放最后一张烘焙纹理 ──
+  //
+  // 单独一个空依赖 effect：上面那个 effect 刻意**不在** cleanup 里销毁纹理
+  // （React 会先跑旧 effect 的 cleanup 再跑新 effect，那样就变成"先销毁再重建"，
+  // 会闪一帧空白）。因此销毁只放在这里（真正的卸载）与"指纹变 null"分支。
+  useEffect(
+    () => () => {
+      const rt = bakeRtRef.current;
+      bakeRtRef.current = null;
+      bakeKeyRef.current = undefined;
+      bakePaperRef.current = undefined;
+      rt?.destroy(true);
+    },
+    [],
+  );
+
+  // ── 全局风格滤镜（B4 / PRD §6.4）──
+  //
+  // 【分工：海岸在烘焙期上色，其余三层在运行期换 filters】
+  //   `coast`              ✘ **不挂**：风格已经在 `bakeCoast` 里乘进纹理了。
+  //                           再挂一次 = 同一个矩阵乘两遍（羊皮纸会明显发暗发黄）。
+  //                           而且 `bakeKey` 含 style，切风格必然重烘 —— 那次
+  //                           重烘是有效产出，不需要运行期再补一次。
+  //   `regionLayer`        ✔ 挂：分区填充色
+  //   `elementLayer`       ✔ 挂：素材色
+  //   `labelLayer`         ✔ 挂：地名色
+  //   `sea`（在静态层里）  ✘ 不挂：海面就是底图本身，染色等于把整张图改色
+  //   `staticLayer`        ✘ 不挂：被 `cacheAsTexture` 烤成一张图，而**被缓存的
+  //                           节点会吞掉自己的滤镜**（缓存是"先渲染成纹理再画纹理"，
+  //                           滤镜在更外层那一步才生效）。挂在它上面只会得到
+  //                           "切风格海面/投影不变色"的假象。
+  //   `overlay`            ✘ **绝不**挂：选中框是交互指示，染色会让"选中"看起来变淡
+  //   `world`              ✘ **绝不**挂：会把上面全部（含 overlay、含四周留白）
+  //                           一起过滤
+  //
+  // 【为什么每次切风格都换新实例】`ColorMatrixFilter` 的 `saturate()` /
+  // `brightness()` 是**就地累乘**：在旧实例上再叠一次，"原色 → 墨色 → 原色"
+  // 回不到原色（矩阵不可逆），来回切几次画面就废了。见 `style.ts` 的 `filterFor`。
+  useEffect(() => {
+    if (!app) return;
+    const filter = filterFor(style);
+    const prev = styleFilterRef.current;
+    styleFilterRef.current = filter;
+
+    const targets = [
+      regionLayerRef.current,
+      elementLayerRef.current,
+      labelLayerRef.current,
+    ];
+    for (const target of targets) {
+      if (!target) continue;
+      // `"none"` 时赋空数组（而不是保留旧数组）：这是"原色"真正生效的地方，
+      // 少了这一句，切回原色会残留上一档的颜色。
+      target.filters = filter ? [filter] : [];
+    }
+
+    // 先赋新的、再销毁旧的：反过来的话两者之间有一步 filters 指向已销毁对象
+    prev?.destroy();
+  }, [style, app]);
+
+  // ── 卸载时销毁最后一个风格滤镜 ──
+  //
+  // 单独一个空依赖 effect：上面的 effect 没有 cleanup（它靠"赋新后销毁旧"保证
+  // 不累乘、不泄漏增量），真正的最后一个只能在这里销毁，否则每个画布实例
+  // 都会漏一个 Filter 的 uniform group。
+  useEffect(
+    () => () => {
+      styleFilterRef.current?.destroy();
+      styleFilterRef.current = null;
+    },
+    [],
+  );
+
+  // ── 分区显隐：只改容器 alpha，不动几何 ──
+  //
+  // 关掉分区 = "给读者看的成品图"，用户会频繁切换，因此必须是零成本的
+  // 一次赋值；条件渲染会让区块几何反复重建（223 个多边形 × 1.5 万顶点）。
+  useEffect(() => {
+    const layer = regionLayerRef.current;
+    if (!layer) return;
+    layer.alpha = showRegions ? 1 : 0;
+  }, [showRegions, app]);
 
   // ── 区块层 · 第一步：按层级建/拆子容器 ──
   //
@@ -548,6 +1085,13 @@ export default function MapCanvas({
 
     const existing = spriteByIdRef.current;
     const seen = new Set<string>();
+    /**
+     * 层级数 = 权重表长度（`0` = 还没生成区块，此时所有素材层级无关、因子恒为 1）。
+     *
+     * 因子在这里**按元素算**（`elementSizeFactor` 是一次幂运算，成本可忽略），
+     * 但取值规则只有这一份 —— 与选中框、命中测试共用同一个函数，三处不可能错开。
+     */
+    const levelCount = levelAlphas.length;
 
     for (const el of doc.elements) {
       seen.add(el.id);
@@ -578,8 +1122,12 @@ export default function MapCanvas({
       if (tex && sprite.texture !== tex) sprite.texture = tex;
 
       sprite.position.set(el.x, el.y);
-      sprite.width = def.baseWidth * el.scale;
-      sprite.height = def.baseHeight * el.scale;
+      // 尺寸三处之二：绘制尺寸 = 基准尺寸 × 元素自身 scale × 层级因子。
+      // 素材与区块同在 `world` 容器下、同倍缩放，所以"素材比郡还大"这个比例
+      // 不会因为放大而改变 —— 必须在世界里就把它缩小（见 `elementSizeFactor`）。
+      const factor = elementSizeFactor(el.level, levelCount);
+      sprite.width = def.baseWidth * el.scale * factor;
+      sprite.height = def.baseHeight * el.scale * factor;
       sprite.rotation = (el.rotation * Math.PI) / 180;
     }
 
@@ -605,6 +1153,45 @@ export default function MapCanvas({
     });
   }, [levelAlphas, app]);
 
+  // ── 标注层 · 第一步：视口缩放（只改每个 Text 的 scale，不重建）──
+  //
+  // 【必须声明在同步 effect **之前**】两个 effect 在同一提交里都会跑，执行顺序
+  // 就是声明顺序：先更新 ref 里的当前缩放，后面同步新建的 `Text` 才能立刻拿到
+  // 正确的 `1/scale`。反过来（先同步后改 ref）新标注会以"字号 12 世界单位"的
+  // 原始尺寸出现一帧，也就是在屏幕上被放大 `scale` 倍 —— 缩到郡那一级时
+  // 会看到一行横贯画面的巨字。
+  //
+  // 【为什么只改 scale，不把 labelLayer 挪到 world 之外】挪出去就得每格用
+  // `worldToScreen` 改写 300 个 position（更贵，且坐标换算散到渲染层）；
+  // 改 scale 只是一个标量赋值，Pixi 的变换是懒计算的。
+  useEffect(() => {
+    labelScaleRef.current = viewport.scale;
+    setLabelScale(labelHandlesRef.current.values(), viewport.scale);
+  }, [viewport.scale, app]);
+
+  // ── 标注层 · 第二步：内容同步（层级容器 + 按 id 增量增删）──
+  //
+  // 依赖里没有 `viewport.scale`：视口变化绝不能触发全量同步（见上一条）。
+  // `levelAlphas.length` 必须在：层级数变了要重建容器分组。
+  useEffect(() => {
+    const root = labelLayerRef.current;
+    if (!root) return;
+    labelHandlesRef.current = syncLabels(root, labels, levelAlphas.length);
+    // 新建的 Text 默认 scale = 1，这里补一次屏幕恒定字号（用 ref 里的当前缩放）
+    setLabelScale(labelHandlesRef.current.values(), labelScaleRef.current);
+  }, [labels, levelAlphas.length, app]);
+
+  // ── 标注层 · 第三步：权重（与区块、素材共用同一份 levelAlphas，因此同呼吸）──
+  //
+  // 依赖里必须有 app，理由与区块层、素材层的权重 effect 完全一致
+  // （见上方 `:506` 那段注释）：少了它，层级容器会一直停在默认 alpha 1，
+  // 也就是"所有层级的地名同时可见"，层级归属形同虚设。
+  useEffect(() => {
+    const root = labelLayerRef.current;
+    if (!root) return;
+    applyLabelWeights(root, levelAlphas);
+  }, [levelAlphas, app]);
+
   // ── 视口变换（每次 viewport 变化只改 world 容器的两个属性）──
   useEffect(() => {
     const world = worldRef.current;
@@ -616,43 +1203,109 @@ export default function MapCanvas({
     );
   }, [viewport, size, app]);
 
-  // ── 选中态（Graphics 重绘）──
+  // ── 视口粗剔除（B5 / PRD §6.6.1）──
+  //
+  // 【坐标系】比较的两边都在**屏幕空间**：视野框是画布矩形（`screenCullRect`），
+  // 包围盒是容器局部矩形经 `toGlobal` 现算出的舞台矩形（见 `cull.ts` 文件头）。
+  // 缓存的是**局部**矩形（与视口无关），所以视口怎么变都不会读到旧变换的结果。
+  //
+  // 【为什么按"层级容器"粗剔，不做逐块】逐块要遍历 600 个多边形、每个算一次
+  // 相交，省下的绘制反而更少 —— 同一层级的区块在屏幕上本来就成簇出现。
+  //
+  // ⚠️ **绝不剔除 `coast` / `staticLayer` / `overlay`**：
+  //   · `staticLayer` 是整张纸（全屏且被缓存）；把缓存节点 `visible = false`
+  //     会让下一次 `updateCacheTexture()` 烤出一张空纹理 —— 之后即使恢复可见也是白的；
+  //   · `coast` 与 `overlay` 都是全幅内容，判了也永远是"相交"，白花一次遍历。
+  //   这里只遍历三层里**按层级分出来的子容器**，父容器本身不碰。
+  //
+  // 【为什么还要 `enableCulling` 开关】剔除改的是 `visible`，与"层级权重 / 子节点数"
+  // 这类断言混在一个用例里时，谁把谁弄红了很难分辨。渲染断言里显式关掉，
+  // 剔除自身另有专门的用例（关闭时必须把 `visible` 复原，而不是一关了事）。
   useEffect(() => {
-    const overlay = overlayRef.current;
-    if (!overlay) return;
-    overlay.clear();
+    const regionLayer = regionLayerRef.current;
+    const elementLayer = elementLayerRef.current;
+    const labelLayer = labelLayerRef.current;
+    if (!regionLayer || !elementLayer || !labelLayer) return;
 
-    if (!selectedId) return;
-    const el = doc.elements.find((e) => e.id === selectedId);
-    const def = el ? SPRITE_MAP[el.spriteId] : undefined;
-    if (!el || !def) return;
+    // 三层各自的层级容器 —— 直接读 `children` 而不是各存一份列表：
+    // 层级容器由上面几个 effect 增删，另存一份就是第二处需要同步的状态。
+    const levelContainers: Container[] = [
+      ...levelLayersRef.current.map((lv) => lv.container),
+      ...elementLayersRef.current.values(),
+      ...labelLayer.children,
+    ];
 
-    const w = def.baseWidth * el.scale;
-    const h = def.baseHeight * el.scale;
-    // 选中框画在 world 之外的 overlay 上（不随素材所在的层级容器淡出），
-    // 所以这里要手动乘上该素材的层级权重，否则会出现"框还在、素材已经淡没了"。
-    const weight = elementWeight(el.level, levelAlphas);
-    if (weight <= 0) return;
+    if (!enableCulling) {
+      // 关掉剔除要把上一轮写下的 `visible` **复原**：写 false 很容易，
+      // 忘了复原就是"某几层永久隐身"，且只在"先开过后关"的顺序下复现。
+      for (const container of levelContainers) container.visible = true;
+      cullCacheRef.current.clear();
+      cullContentRef.current = null;
+      return;
+    }
 
-    // 元素锚点是底部中心；选中框用世界坐标绘制，随 world 一起缩放
-    overlay
-      .rect(el.x - w / 2, el.y - h, w, h)
-      .stroke({ width: 2, color: 0x5b6cf9, alignment: 0.5, alpha: weight });
-  }, [selectedId, doc.elements, levelAlphas, app]);
+    // 内容变了才清包围盒缓存：视口变化（滚轮每一格、拖拽每一帧）复用上一轮结果。
+    const fingerprint = cullContentRef.current;
+    const contentChanged =
+      fingerprint === null ||
+      fingerprint.regions !== doc.regions ||
+      fingerprint.elements !== doc.elements ||
+      fingerprint.labels !== labels ||
+      fingerprint.levelCount !== levelAlphas.length;
+    if (contentChanged) {
+      cullContentRef.current = {
+        regions: doc.regions,
+        elements: doc.elements,
+        labels,
+        levelCount: levelAlphas.length,
+      };
+      cullCacheRef.current.clear();
+    }
+
+    // 画布还没有尺寸时包围盒全是相对原点的点，判"相交"没有意义，直接跳过
+    if (size.width === 0 || size.height === 0) return;
+    cullLayers(levelContainers, screenCullRect(size, viewport), cullCacheRef.current);
+  }, [
+    viewport,
+    size,
+    enableCulling,
+    app,
+    doc.regions,
+    doc.elements,
+    labels,
+    levelAlphas.length,
+  ]);
+
+  // ── 选中态（Graphics 重绘）──
+  //
+  // 绘制本身在 `drawOverlay` 里（导出后要复用它，见该函数的注释）；
+  // 这个 effect 只负责"什么时候重画"：选中项 / 素材 / 层级权重 / 场景就绪
+  // 任一变化都要重画。`app` 必须在依赖里 —— 首次挂载时 `overlay` 还是 null，
+  // 只依赖选中项的话，"打开编辑器时已经选中了某个素材"这种情况永远画不出框。
+  useEffect(() => {
+    if (!app) return;
+    drawOverlayRef.current();
+  }, [drawOverlay, app]);
 
   // ── 指针事件 ──
-  const getLocalPoint = useCallback((e: React.PointerEvent | PointerEvent) => {
+
+  /** 事件对象只用到 clientX/clientY：收窄成最小结构，pointer / mouse / wheel 事件通用 */
+  const getLocalPoint = useCallback((e: { clientX: number; clientY: number }) => {
     const host = hostRef.current;
     if (!host) return { x: 0, y: 0 };
     const rect = host.getBoundingClientRect();
     return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   }, []);
 
+  /**
+   * 屏幕 → 世界。
+   *
+   * 【换算只说一遍】以前这里手写了一遍 `screenToWorld` 的公式，与 `coords.ts`
+   * 各维护一份 —— 改任一处都会让"点在哪、落哪"错位，且错误是渐进的（缩放越小
+   * 偏得越远），排查成本极高。现在一律转调 `coords.ts`。
+   */
   const worldAt = useCallback(
-    (screen: { x: number; y: number }) => ({
-      x: (screen.x - size.width / 2) / viewport.scale + viewport.x,
-      y: (screen.y - size.height / 2) / viewport.scale + viewport.y,
-    }),
+    (screen: { x: number; y: number }) => screenToWorld(screen, viewport, size),
     [size, viewport],
   );
 
@@ -669,12 +1322,14 @@ export default function MapCanvas({
         if (
           el &&
           def &&
+          // 尺寸三处之三：命中区与绘制尺寸必须是同一个数（否则"点得中的地方看不见、
+          // 看见的地方点不中"）。因子与精灵同步用的是同一个 `elementSizeFactor`。
           hitTestElement(world, {
             x: el.x,
             y: el.y,
             width: def.baseWidth,
             height: def.baseHeight,
-            scale: el.scale,
+            scale: el.scale * elementSizeFactor(el.level, levelAlphas.length),
           })
         ) {
           // 记录按下的世界坐标：后续按增量移动，抓取点不会跳
@@ -686,7 +1341,7 @@ export default function MapCanvas({
 
       gesture.current = { kind: "pan", lastX: e.clientX, lastY: e.clientY, travel: 0 };
     },
-    [selectedId, doc.elements, getLocalPoint, worldAt, onElementDragStart],
+    [selectedId, doc.elements, levelAlphas, getLocalPoint, worldAt, onElementDragStart],
   );
 
   const handlePointerMove = useCallback(
@@ -725,6 +1380,27 @@ export default function MapCanvas({
     [onCanvasClickWorld, worldAt, getLocalPoint],
   );
 
+  /**
+   * 双击标注 → 请求编辑。
+   *
+   * 【为什么用原生 dblclick 而不是在 pointerup 里数点击次数】浏览器已经处理好了
+   * 双击间隔与移动容差（系统设置里调过的那套），自己数会与用户预期不一致。
+   *
+   * 【为什么回调给屏幕坐标】编辑框是 DOM `<input>`，活在 CSS 像素空间里；
+   * `worldToScreen` 是唯一权威换算（AGENTS 硬约定 1），在这里做掉，
+   * 页面只管绝对定位。
+   */
+  const handleDoubleClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (!onLabelEditRequest) return;
+      const world = worldAt(getLocalPoint(e));
+      const hit = labelAt(labels, levelAlphas, world);
+      if (!hit) return;
+      onLabelEditRequest(hit.id, worldToScreen(hit, viewport, size));
+    },
+    [onLabelEditRequest, labels, levelAlphas, worldAt, getLocalPoint, viewport, size],
+  );
+
   // ── 滚轮（原生监听，passive:false 才能 preventDefault）──
   useEffect(() => {
     const host = hostRef.current;
@@ -746,6 +1422,7 @@ export default function MapCanvas({
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
+      onDoubleClick={handleDoubleClick}
     >
       {!texturesReady && <div className="map-canvas__loading">素材加载中…</div>}
     </div>

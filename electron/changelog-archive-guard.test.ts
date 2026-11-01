@@ -49,6 +49,21 @@ function compareMinor(a: Version, b: Version): number {
   return a.major - b.major || a.minor - b.minor;
 }
 
+/**
+ * 版本序：major → minor → patch 三段都比。
+ *
+ * 【为什么必须有它】指针测试要找"主文件里**最旧的那个版本**"，而 `compareMinor`
+ * 在补丁号上判平 —— `reduce` 遇到并列时保留**先出现的**（即同一 minor 里最高补丁），
+ * 于是主文件里最旧的次版本若有多个补丁（实测 2.9.2 / 2.9.1 / 2.9.0），指针会被
+ * 要求写成「2.9.2 之前」，而归档边界实际是 **2.9.0**（2.9.0 与 2.9.1 都还在主文件里）。
+ * 那不是"更严格的断言"，而是断言了错的东西：`scripts/split-changelog.mjs` 写的是
+ * `keptBlocks[last].version`，即 2.9.0，本来就是对的口径。
+ * 这条 bug 只有在「最旧次版本含多个补丁」时才暴露 —— 2.17.2 这一批正好踩到。
+ */
+function compareVersion(a: Version, b: Version): number {
+  return a.major - b.major || a.minor - b.minor || a.patch - b.patch;
+}
+
 const MAIN = read("CHANGELOG.md");
 const MAIN_VERSIONS = versions(MAIN);
 
@@ -86,11 +101,12 @@ describe("CHANGELOG 分流产物（守卫）", () => {
   });
 
   it("主文件顶部的归档指针与真实边界一致", () => {
+    // 指针的"归档边界"是主文件里**最旧的那个版本**（含补丁号），见 compareVersion
     const oldestKept = MAIN_VERSIONS.reduce((min, item) =>
-      compareMinor(item, min) < 0 ? item : min,
+      compareVersion(item, min) < 0 ? item : min,
     );
     const newestArchived = ARCHIVES.flatMap((archive) => archive.versions).reduce((max, item) =>
-      compareMinor(item, max) > 0 ? item : max,
+      compareVersion(item, max) > 0 ? item : max,
     );
     expect(MAIN).toContain(`历史归档：${oldestKept.raw} 之前的版本`);
     expect(MAIN).toContain(`当前归档到 ${newestArchived.raw}`);

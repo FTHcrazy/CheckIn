@@ -36,3 +36,28 @@
   background: var(--app-bg);
   pointer-events: none;
 }
+
+/**
+ * 地名编辑覆盖层（B3）。
+ *
+ * 它是**绝对定位在画布上的 DOM 输入框**，不是 Pixi 里的文字：
+ * 光标、选区、IME 候选框全交给浏览器，自己实现一遍纯属浪费
+ * （PRD §6.3.3 明确要求走 DOM 覆盖层）。
+ *
+ * 定位约定：`left/top` 是**标注锚点**的画布本地像素（由 `worldToScreen` 算出），
+ * 这里用 `translate(-50%, -100%)` 把它变成"水平居中、整体坐在锚点之上"——
+ * 于是输入框正好长在原来那行字的位置，不会跑到光标下方把字盖住。
+ *
+ * `z-index` 要高于 `.map-editor__canvas-hint`（同级、后渲染），
+ * 否则缩到画布底部时提示条会盖住输入框。
+ */
+.map-canvas__label-input {
+  position: absolute;
+  z-index: 3;
+  width: 132px;
+  transform: translate(-50%, -100%);
+  // 白底 + 深字：覆盖层是"正在编辑"的状态，必须一眼可辨于纸面
+  background: var(--app-surface);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 18%);
+  text-align: center;
+}
