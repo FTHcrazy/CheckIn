@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { Assets, Texture } from "pixi.js";
-import { BASE_IMAGE, SPRITES } from "../sprites";
+import { BASE_IMAGES, SPRITES } from "../sprites";
 
-/** 已加载纹理表：key = 素材 id（底图用 BASE_IMAGE.id） */
+/** 已加载纹理表：key = 素材 id / 底图 id（BASE_IMAGES[].id） */
 export type TextureMap = Record<string, Texture>;
 
 /**
@@ -12,7 +12,7 @@ export type TextureMap = Record<string, Texture>;
  * Pixi v8 的 `Assets.load` 自带缓存，同一 URL 重复加载不会重复解码，
  * 所以切窗口/重挂载的开销很小。
  *
- * 全部素材共 6 张（含底图），总量约 270KB，一次性加载即可。
+ * 全部素材 = 4 张底图 + 53 张符号（B3 起），整批一次预载，换底图零等待。
  *
  * ── 生命周期（重要）──
  * 这里**故意不使用「只跑一次」的 ref 守卫**。
@@ -33,8 +33,9 @@ export function useTextureCache() {
     // 只标记「本次挂载」是否有效；重挂载会产生新的闭包，互不干扰
     let alive = true;
 
+    // 底图家族整批预载（B3）：换底图只是切换 texture 引用，零等待
     const targets: { id: string; src: string }[] = [
-      { id: BASE_IMAGE.id, src: BASE_IMAGE.src },
+      ...BASE_IMAGES.map((b) => ({ id: b.id, src: b.src })),
       ...SPRITES.map((s) => ({ id: s.id, src: s.src })),
     ];
 

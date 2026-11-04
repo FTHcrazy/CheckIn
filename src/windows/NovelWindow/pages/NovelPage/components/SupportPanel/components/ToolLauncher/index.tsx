@@ -37,6 +37,13 @@ interface ToolLauncherProps {
    * 传了 = 卡片翻成可用态。这样入口的「是否上线」只有一处开关，不必改版式。
    */
   onOpenRelation?: () => void;
+  /**
+   * 打开架空地图独立窗口（R28，即 MapWindow）。
+   *
+   * 与 onOpenRelation 同一开关语义：传了 = 「架空地图」卡翻成可用态，
+   * 点击后经主进程唤起 MapWindow（单实例，已开则聚焦）。
+   */
+  onOpenMap?: () => void;
 }
 
 interface ToolItem {
@@ -57,7 +64,8 @@ interface ToolItem {
  * 工具箱启动器（PRD R31：工具入口统一收在右栏，不往顶栏堆按钮）
  *
  * 起名器、敏感词、一致性校对、实体抽取都是可进入的二级面板；关系网络（R27）
- * 与架空地图（R28）尚在规划中，以「规划中」占位卡同构呈现——新工具接入只需
+ * 与架空地图（R28）是独立窗口，通过 onOpenRelation / onOpenMap 回调接入——
+ * 传了回调卡片翻成「已上线」，不传退回「规划中」占位。新工具接入只需
  * 在下面的清单里加一项，不必再改一次容器版式。
  *
  * ⚠️ 规划中的卡**也必须是真按钮**（UI-09）。此前它是 `<div>`，样式上只比可用卡
@@ -72,6 +80,7 @@ export default function ToolLauncher({
   extractUnavailableText,
   onNotify,
   onOpenRelation,
+  onOpenMap,
 }: ToolLauncherProps) {
   const tools: ToolItem[] = [
     {
@@ -133,8 +142,9 @@ export default function ToolLauncher({
       color: "var(--app-accent-green)",
       weak: "var(--app-accent-green-weak)",
       name: "架空地图",
-      state: "规划中 · R28",
+      state: onOpenMap ? "已上线" : "规划中 · R28",
       desc: "轻量画布：节点 + 连线标距离 + 导出 PNG，不触真实地理数据。",
+      onOpen: onOpenMap,
       plannedHint: "「架空地图」还在规划中，上线后会出现在这里",
     },
   ];

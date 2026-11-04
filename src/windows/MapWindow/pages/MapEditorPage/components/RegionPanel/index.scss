@@ -1,0 +1,123 @@
+/**
+ * RegionPanel 局部样式（区块操作浮出面板）
+ *
+ * 颜色走主题变量 var(--app-*)，禁止硬编码（AGENTS §6.1）。
+ */
+
+.region-panel {
+  position: absolute;
+  right: 16px;
+  top: 16px;
+  z-index: 10;
+  width: 224px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-panel, 8px);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
+}
+
+.region-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.region-panel__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--app-text);
+}
+
+.region-panel__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.region-panel__tag {
+  margin-inline-end: 0;
+}
+
+/**
+ * 层级面包屑（`大陆 1 / 洲 3 / 国家 12`）。
+ *
+ * 【只在**非叶子**选中时出现】非叶子在画布上是"容器态"（只有一圈描边、不铺面），
+ * 光有描边不足以说明"我在树的哪一层"，面包屑补上这个信息；叶子有面高亮，位置
+ * 一目了然，再加一行路径只是噪声。
+ *
+ * 【断链时不留空段】空名段由组件过滤，CSS 这里不做 `:empty` 之类的兜底 ——
+ * 布局不应该承担数据校验的职责。
+ */
+.region-panel__breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--app-text-secondary);
+}
+
+.region-panel__breadcrumb-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  white-space: nowrap;
+}
+
+.region-panel__breadcrumb-sep {
+  color: var(--app-border);
+}
+
+/** 祖先段弱化、自身段加重：读起来像"路径 → 当前位置" */
+.region-panel__breadcrumb-ancestor {
+  color: var(--app-text-secondary);
+}
+
+.region-panel__breadcrumb-self {
+  color: var(--app-text);
+  font-weight: 600;
+}
+
+.region-panel__name {
+  font-size: 12px;
+  color: var(--app-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.region-panel__submap-hint {
+  font-size: 12px;
+  color: var(--app-text-secondary);
+  margin-bottom: 2px;
+}
+
+/**
+ * 「后续版本补齐」的说明。
+ * 用弱化色 + 左侧竖线，读起来像"注脚"而不是警告 —— 它是信息，不是错误。
+ */
+.region-panel__todo {
+  padding-left: 8px;
+  border-left: 2px solid var(--app-border);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--app-text-secondary);
+}
+
+/**
+ * 「合并子区域」按钮的外壳。
+ *
+ * 【为什么需要它】按钮在叶子态是 `disabled`，而 antd 的禁用按钮不派发鼠标事件 ⇒
+ * 外层的「该区块没有子区域」Tooltip 永远不出现。这层 span 只负责"接住事件"，
+ * 顺便把 `block` 按钮撑满一行（span 默认 inline，块级按钮会退化成无宽度的贴字块）。
+ */
+.region-panel__merge-wrap {
+  display: block;
+  width: 100%;
+}
+

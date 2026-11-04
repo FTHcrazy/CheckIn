@@ -15,7 +15,8 @@
  *           MapWindow 为即关即销的地图编辑器子窗口（base 头部入口唤起）
  * - lite  ：精简版。不打包 novel / map 窗口，主窗口隐藏对应入口（全局设定窗亦缺席）
  * - novel ：小说版。NovelWindow 升级为主窗口（登录后唤起，关闭进托盘），
- *           附带 SettingsWindow（外观 / 账号 / 个人资料）；不打包 base
+ *           附带 SettingsWindow（外观 / 账号 / 个人资料）、MapWindow（架空地图，
+ *           属 novel 域，从工具箱唤起）；不打包 base
  *
  * 注意：novel 版与 full 版共享同一 userData 目录（productName 未变），
  * 用户数据 / novel_* 表天然互通，无需任何数据迁移。
@@ -45,7 +46,7 @@ export const RENDERER_ENTRY_PATHS: Record<WindowEntryKey, string> = {
   settings: "src/windows/SettingsWindow/index.html",
   // 全局设定中心独立窗口（1.4x，属 novel 域：full / novel 打包，lite 不打包）
   globalSetting: "src/windows/GlobalSettingWindow/index.html",
-  // 地图编辑器独立窗口（checkin 域：仅 full 打包，lite / novel 不打包）
+  // 地图编辑器独立窗口（checkin 域：full / novel 打包，lite 不打包）
   map: "src/windows/MapWindow/index.html",
 };
 
@@ -63,7 +64,8 @@ export const EDITION_WINDOW_ENTRIES: Record<CheckInEdition, WindowEntryKey[]> = 
   ],
   // lite 无 novel 域：全局设定中心属 novel 域，同理不登记
   lite: ["base", "login", "settings"],
-  novel: ["login", "novel", "pack", "relation", "settings", "globalSetting"],
+  // novel 版：小说窗口为主窗口，附带 pack / relation / map（地图编辑器，属 novel 域）
+  novel: ["login", "novel", "pack", "relation", "map", "settings", "globalSetting"],
 };
 
 /** 各版本的主窗口入口：full/lite → base，novel → novel */

@@ -449,8 +449,7 @@ describe("色块阶梯：页面根铺 bg、浮层底只给浮层用", () => {
     "src/shared/components/CharacterPack/components/PackToast/index.scss", // 提示条
     "src/shared/components/CharacterPack/styles/pack-common.scss", // .cpk-dropdown
     "src/shared/components/ThemeSwitcher/index.scss", // 主题下拉
-    "src/windows/BaseWindow/pages/LedgerPage/components/LedgerTrendChart/index.scss", // 图表气泡
-    "src/windows/BaseWindow/pages/LedgerPage/components/QuickAddBar/index.scss", // 快捷记账浮层
+    "src/windows/BaseWindow/pages/HomePage/components/PosterWidget/index.scss", // 海报
     "src/windows/NovelWindow/pages/NovelPage/components/ChapterJumpPalette/index.scss", // 跳章面板
     "src/windows/NovelWindow/pages/NovelPage/components/ChapterTree/index.scss", // 拖拽随动 chip（portal）
     "src/windows/NovelWindow/pages/NovelPage/components/EntityContextMenu/index.scss", // 右键菜单

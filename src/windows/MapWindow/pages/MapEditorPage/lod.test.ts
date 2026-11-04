@@ -20,6 +20,9 @@ import {
   naturalScales,
   polygonLongEdge,
   resolveElementLevel,
+  submapEffectiveScale,
+  submapEnterWeight,
+  enterScaleForRegion,
   visibleLevels,
   zoomLimitsFor,
   zoomLimitsForBlocks,
@@ -826,5 +829,64 @@ describe("zoomLimitsForBlocks：按实际块大小反推上限", () => {
       expect(Number.isFinite(max)).toBe(true);
       expect(max).toBeGreaterThan(min);
     });
+  });
+});
+
+/* ───────────────── 嵌套子图 LOD（Phase 2） ───────────────── */
+
+describe("submapEffectiveScale：父图缩放 × 子图贴合缩放", () => {
+  it("等效缩放 = 两者相乘", () => {
+    expect(submapEffectiveScale(0.8, 1.5)).toBeCloseTo(1.2, 12);
+    expect(submapEffectiveScale(2, 0.5)).toBeCloseTo(1, 12);
+  });
+
+  it("任一入参非有限 ⇒ 退回 0（子图不可见，不产出 NaN）", () => {
+    expect(submapEffectiveScale(Number.NaN, 1.5)).toBe(0);
+    expect(submapEffectiveScale(0.8, Number.POSITIVE_INFINITY)).toBe(0);
+    expect(submapEffectiveScale(0.8, -1)).toBe(0); // 负缩放无意义
+  });
+});
+
+describe("submapEnterWeight：父图尺度下子图的渐入门控", () => {
+  it("父图缩放远低于阈值 ⇒ 权重接近 0（只露绑定态轮廓）", () => {
+    // enterScale = 1，父图 0.2：log2(0.2/1) = -2.32，带宽 0.5 → smoothstep 得 0
+    expect(submapEnterWeight(0.2, 1)).toBe(0);
+  });
+
+  it("父图缩放远高于阈值 ⇒ 权重为 1（子图完全淡入）", () => {
+    expect(submapEnterWeight(4, 1)).toBe(1);
+  });
+
+  it("阈值处权重 = 0.5（smoothstep 中点）", () => {
+    expect(submapEnterWeight(1, 1)).toBeCloseTo(0.5, 6);
+  });
+
+  it("权重单调不减，且始终 ∈ [0,1]", () => {
+    let prev = -1;
+    for (let z = 0.05; z <= 20; z *= 1.2) {
+      const w = submapEnterWeight(z, 1);
+      expect(w).toBeGreaterThanOrEqual(0);
+      expect(w).toBeLessThanOrEqual(1);
+      expect(w).toBeGreaterThanOrEqual(prev);
+      prev = w;
+    }
+  });
+
+  it("阈值非法（非有限 / 非正）⇒ 恒为 1（不退化成永不可见）", () => {
+    expect(submapEnterWeight(1, 0)).toBe(1);
+    expect(submapEnterWeight(1, Number.NaN)).toBe(1);
+  });
+});
+
+describe("enterScaleForRegion：按区块屏幕长边反推渐入阈值", () => {
+  it("阈值 = LOD_BLOCK_PX / 区块长边（长边越大阈值越小）", () => {
+    expect(enterScaleForRegion(360)).toBeCloseTo(1, 12);
+    expect(enterScaleForRegion(720)).toBeCloseTo(0.5, 12);
+    expect(enterScaleForRegion(180)).toBeCloseTo(2, 12);
+  });
+
+  it("区块长边非法 / 非正 ⇒ Infinity（永不自动淡入）", () => {
+    expect(enterScaleForRegion(0)).toBe(Infinity);
+    expect(enterScaleForRegion(Number.NaN)).toBe(Infinity);
   });
 });

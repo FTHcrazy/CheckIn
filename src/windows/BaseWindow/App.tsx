@@ -18,7 +18,11 @@ const CodePage = lazy(() => import("./pages/CodePage/CodePage"));
 const MemoPage = lazy(() => import("./pages/MemoPage/MemoPage"));
 const TodoPage = lazy(() => import("./pages/TodoPage/TodoPage"));
 const NewsPage = lazy(() => import("./pages/NewsPage/NewsPage"));
-const LedgerPage = lazy(() => import("./pages/LedgerPage/LedgerPage"));
+const ImageCompressPage = lazy(
+  () => import("./pages/ImageCompressPage/ImageCompressPage"),
+);
+const ChromaKeyPage = lazy(() => import("./pages/ChromaKeyPage/ChromaKeyPage"));
+const IdPhotoPage = lazy(() => import("./pages/IdPhotoPage/IdPhotoPage"));
 
 /** 懒加载路由的占位，保持与页面一致的高度避免布局跳动 */
 function RouteFallback() {
@@ -74,9 +78,11 @@ const PAGE_TITLES: Record<string, string> = {
   "/todo": "待办清单",
   "/daily": "日期活动",
   "/memo": "备忘笔记",
-  "/ledger": "记账本",
   "/code": "代码记录",
   "/news": "资讯",
+  "/compress": "图片压缩",
+  "/cutout": "色键抠图",
+  "/idphoto": "证件照换底色",
 };
 
 /**
@@ -124,7 +130,9 @@ export default function App() {
                 <Route path="/memo" element={<MemoPage />} />
                 <Route path="/todo" element={<TodoPage />} />
                 <Route path="/news" element={<NewsPage />} />
-                <Route path="/ledger" element={<LedgerPage />} />
+                <Route path="/compress" element={<ImageCompressPage />} />
+                <Route path="/cutout" element={<ChromaKeyPage />} />
+                <Route path="/idphoto" element={<IdPhotoPage />} />
               </Routes>
             </Suspense>
           </div>

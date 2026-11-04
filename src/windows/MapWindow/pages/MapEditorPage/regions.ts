@@ -66,6 +66,30 @@ export interface MapRegion {
   polygon: Point[];
   /** 填充色（0xRRGGBB，供 Pixi 直接使用） */
   color: number;
+  /**
+   * 区块内嵌的子地图；`undefined` = 该区块没有子图（老数据兼容）。
+   *
+   * 【为什么是可选字段而不是放进 polygon 同级】子图是「另一张完整地图」，
+   * 与区块几何无耦合；缺字段的老文档读作 `undefined`，migrateDoc 的「未知字段
+   * 原样保留」策略天然覆盖，无需迁移。
+   */
+  submap?: import("./types").MapSubmap;
+  /**
+   * 子图「渐入」的父图缩放阈值（可选）。父图缩放 ≥ 此值，子图才开始淡入；
+   * 低于它时只显示「绑定态轮廓」。缺省 = 按区块屏幕尺寸自动反推
+   * （见 `enterScaleForRegion`）。
+   */
+  submapEnterScale?: number;
+  /**
+   * 来源标记：`"generated"`（一键生成）/ `"manual"`（手画落库）。
+   *
+   * 【缺省读作 `"generated"`】老数据全是生成的，缺字段即老数据，不需要迁移；
+   * 只有手画落库时才写值（`useMapEditor.addManualRegion`，T5）。
+   *
+   * 【为什么要它】① 重新生成区块时"手画成果要不要保留"必须有判据（PRD §8-Q4）；
+   * ② 后续"顶点微调"只对手画区块开放时也要靠它分流（R-REG-06）。
+   */
+  origin?: "generated" | "manual";
 }
 
 /** 世界矩形范围 */
@@ -76,7 +100,13 @@ export interface RegionBounds {
   height: number;
 }
 
-/** 层级定义与默认数量：每级把上一级再切约 4 份 */
+/**
+ * 层级定义与默认数量：每级把上一级再切约 4 份。
+ *
+ * 【字段叫 `label` 是历史包袱】面向用户的读写一律走 `RegionLevelDef.name` /
+ * `levelLabelOf(schema, level)`；本常量只作为**默认值的单一出处**继续存在
+ * （`DEFAULT_REGION_SCHEMA` 由它派生，那条注释里有完整说明）。
+ */
 export const REGION_LEVELS = [
   { label: "大陆", count: 3 },
   { label: "洲", count: 12 },
@@ -86,6 +116,93 @@ export const REGION_LEVELS = [
 
 /** 最多支持的层级数 */
 export const REGION_MAX_LEVELS = REGION_LEVELS.length;
+
+/**
+ * 一级区域的定义（顺序即层级序号，0 起）。字段名按 PRD §5.1 用 `name`。
+ *
+ * 【与 `REGION_LEVELS` 的关系】`REGION_LEVELS` 是**生成器的默认值来源**（历史常量，
+ * 字段叫 `label`），本类型是**文档级可配置的层级定义**（字段叫 `name`）。
+ * 两者的唯一适配点是 `DEFAULT_REGION_SCHEMA`（下一行），见那里的注释。
+ */
+export interface RegionLevelDef {
+  /** 展示名：进 `region.name` 前缀、工具栏层级胶囊、面板文案。空串回落为 `L{level+1}` */
+  name: string;
+  /** 目标数量：生成时用；手画模式下仅作参考（不参与校验） */
+  count: number;
+}
+
+/**
+ * 默认层级定义（老文档的回落值，也是"未改过 schema"的等价基准）。
+ *
+ * 【label ↔ name 的唯一适配点】`REGION_LEVELS` 的字段叫 `label`（历史），PRD 的
+ * `RegionLevelDef` 叫 `name`。改字段名要动 9 个消费点 + `regions.test.ts` 的断言，
+ * 风险远大于收益 —— 保留双名，只在这一行做适配，两处注释互指（见 `REGION_LEVELS`）。
+ *
+ * 【为什么是常量数组而不是函数】它同时被 `regionSchemaOf` 的回落与测试当作
+ * "改前的等价基准"；每次新数组会让 `===` 断言失效，也让 `useMemo` 的依赖白抖动。
+ */
+export const DEFAULT_REGION_SCHEMA: readonly RegionLevelDef[] = REGION_LEVELS.map((l) => ({
+  name: l.label,
+  count: l.count,
+}));
+
+/**
+ * 规范化外部数据（落库文档 / 子图 / 用户输入）。
+ *
+ * 合法 → 返回**新数组**（调用方拿到的一定是可安全持有的副本）；任一不合法 → `null`。
+ * 校验：数组、长度 ∈ [1, REGION_MAX_LEVELS]、每项 `count` 为正整数、`name` 为 string
+ * （空串合法 —— 读时回落 `L{n}`）。
+ *
+ * 【为什么要它】`migrateDoc` 不做白名单校验，脏 schema 会一路穿到生成器
+ * （`count: NaN` ⇒ `generateHierarchy` 直接返回空数组，"点了生成没反应"）。
+ */
+export function normalizeRegionSchema(raw: unknown): RegionLevelDef[] | null {
+  if (!Array.isArray(raw)) return null;
+  if (raw.length < 1 || raw.length > REGION_MAX_LEVELS) return null;
+  const out: RegionLevelDef[] = [];
+  for (const item of raw) {
+    if (typeof item !== "object" || item === null) return null;
+    const rec = item as { name?: unknown; count?: unknown };
+    if (typeof rec.name !== "string") return null;
+    if (typeof rec.count !== "number" || !Number.isInteger(rec.count) || rec.count <= 0) {
+      return null;
+    }
+    out.push({ name: rec.name, count: rec.count });
+  }
+  return out;
+}
+
+/**
+ * **读时回落的唯一出口**：文档 / 子图 → 有效 schema。
+ *
+ * 缺失、非数组、非法 ⇒ `DEFAULT_REGION_SCHEMA`（**同一份引用**，避免每次新数组）。
+ *
+ * 【为什么回落放在这里而不是 store 初始化】
+ *   ① 回落只有一处实现、一处断言；
+ *   ② 老文档 `doc` 形状一字不改（不写 `regionSchema`），"改前逐字节一致"才可证；
+ *   ③ 子图缺 schema 时继承调用方传进来的那份，不需要第二条回落链。
+ */
+export function regionSchemaOf(
+  source: { regionSchema?: readonly RegionLevelDef[] } | null | undefined,
+): readonly RegionLevelDef[] {
+  return normalizeRegionSchema(source?.regionSchema) ?? DEFAULT_REGION_SCHEMA;
+}
+
+/**
+ * 层级名：越界 / 空名一律回落 `L{level+1}`（不抛错、不留空白段）。
+ *
+ * 【为什么统一回落而不是返回空串】它进 `region.name` 前缀、工具栏胶囊、面板文案；
+ * 空串会让界面出现"「 」 3"这种读不出东西的标签，也让面包屑出现空段（PRD §6-A-④）。
+ */
+export function levelLabelOf(
+  schema: readonly RegionLevelDef[] | undefined,
+  level: number,
+): string {
+  const fallback = `L${Math.max(0, Math.floor(Number.isFinite(level) ? level : 0)) + 1}`;
+  if (!schema || !Number.isFinite(level) || level < 0) return fallback;
+  const name = schema[Math.floor(level)]?.name;
+  return typeof name === "string" && name.trim() ? name.trim() : fallback;
+}
 
 /** 单张地图的区块总数上限（渲染与内存的护栏） */
 export const REGION_TOTAL_LIMIT = 600;
@@ -377,8 +494,14 @@ function paramOnSegment(a: Point, b: Point, p: Point): number {
   return ((p.x - a.x) * dx + (p.y - a.y) * dy) / d2;
 }
 
-/** HSL → 0xRRGGBB（h 单位为度，s/l 为 0~1） */
-function hslToRgb(h: number, s: number, l: number): number {
+/**
+ * HSL → 0xRRGGBB（h 单位为度，s/l 为 0~1）。
+ *
+ * 【为什么导出】手画落库的取色规则（`regionEdit.manualRegionColor`）必须与生成器
+ * **同一口径**，否则同一张图上"生成的块"和"手画的块"会是两种色系。
+ * 复制一份实现会让两边悄悄漂移，所以只留这一处。
+ */
+export function hslToRgb(h: number, s: number, l: number): number {
   const c = (1 - Math.abs(2 * l - 1)) * s;
   const hp = (((h % 360) + 360) % 360) / 60;
   const x = c * (1 - Math.abs((hp % 2) - 1));
@@ -875,8 +998,18 @@ export interface GenerateHierarchyOptions {
   seed: number;
   /** 地图世界范围 */
   bounds: RegionBounds;
-  /** 每级区块数（长度即层级数）；缺省用 REGION_LEVELS 的默认值 */
+  /**
+   * 每级区块数（长度即层级数）；**优先级高于 `schema.count`**
+   * （多岛加权分配要用它逐岛缩放数量）。
+   */
   levelCounts?: readonly number[];
+  /**
+   * 层级定义（**只为取名字**）。缺省 = `DEFAULT_REGION_SCHEMA`。
+   *
+   * 【为什么不从它读数量】数量的事实源是 `levelCounts`（上面的优先级说明）：
+   * 多岛时每级数量要按面积份额缩放，`schema.count` 只是"用户设定的一整张图的目标数"。
+   */
+  schema?: readonly RegionLevelDef[];
   /**
    * 切分容器（陆地多边形的某一个环）。
    *
@@ -933,6 +1066,7 @@ function buildChildren(
   rng: () => number,
   ctx: WobbleCtx,
   nextId: () => string,
+  schema: readonly RegionLevelDef[],
 ): LocalNode[] {
   const parentAmp = maxBoundaryAmp(parent);
   const area = polygonArea(parent.base);
@@ -949,7 +1083,9 @@ function buildChildren(
   const seeds = sampleSeeds(parent.base, count, inset, rng, seed + level * 7919);
   if (seeds.length === 0) return [];
 
-  const label = REGION_LEVELS[level]?.label ?? `L${level}`;
+  // 名字只来自 schema（缺省 = DEFAULT_REGION_SCHEMA ⇒ 与改前逐字相同）。
+  // ⚠️ 这里**不碰 rng**：多取/少取一个随机数会把整张图重排（见下方 color 的注释）。
+  const label = levelLabelOf(schema, level);
   // 父块显示多边形的质心：把"落进父块内凹湾里"的内部顶点拉回来的目标点
   const parentInner = polygonCentroid(parent.display);
   const out: LocalNode[] = [];
@@ -1084,6 +1220,9 @@ function buildChildren(
 export function generateHierarchy(options: GenerateHierarchyOptions): MapRegion[] {
   const { seed, bounds } = options;
   const counts = [...(options.levelCounts ?? REGION_LEVELS.map((l) => l.count))];
+  // 名字来源：显式 schema 优先，缺省 = 与 `REGION_LEVELS` 逐项等价的默认 schema。
+  // 这就是"改前逐字节一致"的实现依据（不传 schema 与传 DEFAULT_REGION_SCHEMA 同一条路径）。
+  const schema = options.schema ?? DEFAULT_REGION_SCHEMA;
 
   if (counts.length === 0) return [];
   if (counts.some((c) => !Number.isFinite(c) || c <= 0)) return [];
@@ -1147,7 +1286,7 @@ export function generateHierarchy(options: GenerateHierarchyOptions): MapRegion[
       const parent = frontier[i];
       const n = per[i];
       if (n <= 0) continue;
-      next.push(...buildChildren(parent, level, n, regions, seed, rng, ctx, nextId));
+      next.push(...buildChildren(parent, level, n, regions, seed, rng, ctx, nextId, schema));
     }
     frontier = next;
   }

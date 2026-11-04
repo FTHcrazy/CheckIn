@@ -130,6 +130,9 @@ importers:
       marked:
         specifier: ^18.0.7
         version: 18.0.7
+      pako:
+        specifier: ^3.0.3
+        version: 3.0.3
       pixi.js:
         specifier: ^8.22.0
         version: 8.22.0
@@ -157,6 +160,9 @@ importers:
       typescript-eslint:
         specifier: ^8.59.2
         version: 8.61.1(eslint@10.5.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)
+      upng-js:
+        specifier: ^2.1.0
+        version: 2.1.0
       vite:
         specifier: ^8.0.12
         version: 8.0.16(@types/node@24.13.2)(jiti@2.7.0)(sass@1.101.0)
@@ -2683,6 +2689,9 @@ packages:
   pako@1.0.11:
     resolution: {integrity: sha512-4hLB8Py4zZce5s4yd9XzopqwVv/yGNhV1Bl8NTmCq1763HeK2+EwVTv+leGeL13Dnh2wfbqowVPXCIO0z4taYw==}
 
+  pako@3.0.3:
+    resolution: {integrity: sha512-tmrebBBYI5FOw8QICGwJNqE8fotC8R+gwcxOvoFNv+GKehOI6Lc6YBolNcQNnC4v96l1wt7rh102ifD4kVeZAQ==}
+
   parse-svg-path@0.2.0:
     resolution: {integrity: sha512-Tf7FFIrguPKQwzD4pWnYkR2VOv3raoHeKED80Bm+BYHI3KxC8KsgsGC5+fSMzAGDA6UEk4bHvmi+RsjmL3khpg==}
 
@@ -3200,6 +3209,9 @@ packages:
     hasBin: true
     peerDependencies:
       browserslist: '>= 4.21.0'
+
+  upng-js@2.1.0:
+    resolution: {integrity: sha512-d3xzZzpMP64YkjP5pr8gNyvBt7dLk/uGI67EctzDuVp4lCZyVMo0aJO6l/VDlgbInJYDY6cnClLoBp29eKWI6g==}
 
   uri-js@4.4.1:
     resolution: {integrity: sha512-7rKUyy33Q1yc98pQ1DAmLtwX109F7TIfWlW1Ydo8Wl1ii1SeHieeh0HHfPeL2fMXK6z0s8ecKs9frCuLJvndBg==}
@@ -6296,6 +6308,8 @@ snapshots:
 
   pako@1.0.11: {}
 
+  pako@3.0.3: {}
+
   parse-svg-path@0.2.0: {}
 
   parse5@8.0.1:
@@ -6799,6 +6813,10 @@ snapshots:
       browserslist: 4.28.2
       escalade: 3.2.0
       picocolors: 1.1.1
+
+  upng-js@2.1.0:
+    dependencies:
+      pako: 1.0.11
 
   uri-js@4.4.1:
     dependencies:

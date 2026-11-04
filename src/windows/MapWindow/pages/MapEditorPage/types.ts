@@ -4,7 +4,8 @@
  * 与 PRD §7 的 `novel_maps.content` JSON 结构对齐，便于后续接持久化。
  * 本阶段仅内存态（不落库），但结构保持一致，避免后续迁移。
  */
-import type { MapRegion, Point } from "./regions";
+import { hslToRgb, normalizeRegionSchema } from "./regions";
+import type { MapRegion, Point, RegionLevelDef } from "./regions";
 
 /**
  * 世界坐标点。
@@ -87,6 +88,44 @@ export interface MapLabel {
   offsetY?: number;
 }
 
+/**
+ * 一张嵌套子地图（区块内嵌的独立地图）。
+ *
+ * 【为什么是「独立坐标系 + 独立内容」而不是「把父图一部分切开复用」】
+ * 子图的 land / regions / elements / labels 全部在**子图本地坐标**里表达，
+ * 与父图零耦合 —— 它是另一张完整的小地图，只是被「装进」了父图的某个区块里。
+ * 这样它才能独立编辑、独立换风格、独立换底图，也能被任意复用（同一张子图
+ * 贴到多个区块）。
+ *
+ * 【递归定义】`regions` 里的每个区块又可以有 `submap`，于是「无级嵌套」——
+ * 大陆里嵌洲图、洲图里嵌国家图、国家图里嵌郡图…… 理论上无限深。
+ */
+export interface MapSubmap {
+  /** 实例唯一 id（`sm_` 前缀） */
+  id: string;
+  /** 子图自己的世界范围（相对子图本地坐标），子图内部一切几何以此为参照 */
+  bounds: Rect;
+  /** 子图自己的陆地（null = 只有底图海面，未生成陆地） */
+  land: MapLand | null;
+  /** 子图自己的区块树（递归：子图的区块还能再嵌子图） */
+  regions: MapRegion[];
+  /** 子图自己的素材 / 标注（复用 MapElement / MapLabel，level 语义在子图局部） */
+  elements: MapElement[];
+  labels: MapLabel[];
+  /** 子图可独立换风格 */
+  style: MapStyle;
+  /** 子图可独立换底图（默认继承父图） */
+  baseImageId: string;
+  /**
+   * 子图自己的层级定义（长度 = 层数，1~4）。
+   *
+   * 【缺省继承父文档 schema】读时回落（`regionSchemaOf(submap)` 会拿到**子图自己**的；
+   * 子图缺字段时调用方传父文档那份进来，不写值 —— 避免复制漂移）。
+   * 本轮**只加字段，不加消费逻辑**：子图内部的区域编辑没有可达路径（架构 §6-9）。
+   */
+  regionSchema?: RegionLevelDef[];
+}
+
 /** 画布文档 */
 export interface MapDocument {
   /** 文档结构版本号，便于后续迁移（2 = 本次渲染观感改造，见 PRD §6.5） */
@@ -110,6 +149,19 @@ export interface MapDocument {
   elements: MapElement[];
   /** 随机生成的区块划分（空数组 = 未分区） */
   regions: MapRegion[];
+  /**
+   * 层级定义（长度 = 层数，1~4）。**可选**：老文档不写值，读时回落默认 4 级。
+   *
+   * 【为什么必须放文档而不是常量】
+   *   ① 需求要求用户可改且要持久化（关掉窗口再打开配置还在）；
+   *   ② 手画模式下 `regions` 可能是空数组，此时没有任何地方能推导出"层数/层级名"
+   *      （`levelCountsOf([])` 返回 `[]`）—— 零区块状态下层级定义必须有独立宿主；
+   *   ③ 子图内嵌自己的 `regions`，也应能内嵌自己的 schema。
+   *
+   * 【零写入原则】`createEmptyDocument()` / `migrateDoc` 都**不写**这个字段
+   * （只做"非法则剔除"），老文档形状因此逐字节不变；写值只发生在用户真的改了配置之后。
+   */
+  regionSchema?: RegionLevelDef[];
 }
 
 /** 已放置的素材实例 */
@@ -126,6 +178,23 @@ export interface MapElement {
   scale: number;
   /** 旋转角度（度），本阶段恒为 0，预留给后续 */
   rotation: number;
+  /**
+   * 不透明度（0.1 ~ 1）。
+   *
+   * 【为什么可选而不是必填】v2.20 之前的文档没有这个字段：落库的 `doc_json` 一定
+   * 比"当前代码"老，老素材必须按 `1` 读 —— 在**读点**兜底（`elementOpacityOf`）
+   * 而不是迁移时补值，是本模型"宁可多带一个字段、迁移不替用户重排数据"原则的
+   * 延续（见 `migrateDoc`）。
+   */
+  opacity?: number;
+  /**
+   * 色相（度，0 ~ 360）。
+   *
+   * `0` 与缺省都读作**原色**（渲染时 tint 白 = 不改色）。用"色相"而不是 RGB 值：
+   * 一个滑杆就能表达"染成什么颜色"，且同一素材换个色相就是变体（生成器 B3
+   * 靠它做"同素材不同色"的抖动）。
+   */
+  tint?: number;
   /**
    * 放置时所处的层级序号（0 = 大陆 … 3 = 郡，见 lod.ts 的 `activeLevel`）。
    *
@@ -161,12 +230,23 @@ export function createEmptyDocument(): MapDocument {
  * 【为什么不做 strict 白名单】文档将来要落库（`novel_maps.doc_json` 单列），
  * 而落库的数据一定比代码"老"：某个版本多出来的字段若被这里丢掉，
  * 用户升级后打开旧地图就会静默丢失内容。宁可多带一个字段，不可少带一个。
+ *
+ * 【唯一的例外：`regionSchema` 非法则剔除】它是本模型里唯一有"合法形状"判据的
+ * 可选字段（1~4 级、每级 `name: string` / `count: 正整数`）。非法值若原样带过，
+ * 就会**被写回存档**——存档里躺着脏数据，将来任何一处裸读 `doc.regionSchema`
+ * 的代码都会炸，而"读路径都走 `regionSchemaOf`"只是一条口头约定，不是类型保证。
+ * 因此这里用 `normalizeRegionSchema` 判一次：非法则 `delete`。
+ *
+ * ⚠️ 这**不违反零写入原则**：只删不加。没有该字段的老文档，迁移后
+ * `hasOwnProperty('regionSchema') === false` 仍然成立（写值只发生在用户真的改了
+ * 配置之后）。合法的值也**原样保留**（不替换成 `normalizeRegionSchema` 的规范化
+ * 副本）——迁移函数不替用户重排数据。
  */
 export function migrateDoc(raw: unknown): MapDocument {
   const src: Record<string, unknown> =
     typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
   const style = src.style;
-  return {
+  const out: MapDocument = {
     ...(src as unknown as MapDocument),
     version: 2,
     baseImageId: typeof src.baseImageId === "string" ? src.baseImageId : "base-1",
@@ -177,6 +257,15 @@ export function migrateDoc(raw: unknown): MapDocument {
     elements: Array.isArray(src.elements) ? (src.elements as MapElement[]) : [],
     regions: Array.isArray(src.regions) ? (src.regions as MapRegion[]) : [],
   };
+  // `hasOwnProperty` 先判一次：没有该字段的文档到此为止，`out` 的形状逐字节不变。
+  // （`delete` 一个不存在的键虽然无害，但显式判一次让"零写入"在代码上可见。）
+  if (
+    Object.prototype.hasOwnProperty.call(out, "regionSchema") &&
+    normalizeRegionSchema(out.regionSchema) === null
+  ) {
+    delete out.regionSchema;
+  }
+  return out;
 }
 
 /** 生成实例 id（时间戳 + 随机后缀，会话内足够唯一） */
@@ -187,6 +276,11 @@ export function createElementId(): string {
 /** 生成标注 id（与 `createElementId` 同款，前缀区分 `lb_`） */
 export function createLabelId(): string {
   return `lb_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+}
+
+/** 生成子地图 id（`sm_` 前缀，与 `createElementId` 同款） */
+export function createSubmapId(): string {
+  return `sm_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 }
 
 /**
@@ -206,3 +300,45 @@ export const LABEL_DEFAULT_SIZE: MapLabelSize = 12;
  * 正好一个字的行高 —— 贴着但不压住贴图。
  */
 export const LABEL_ABOVE_ELEMENT = 8;
+
+/* ───────────────── 素材外观属性（R-MAP-23：属性面板四件套的数据侧） ───────────────── */
+
+/** 不透明度下限。不给 0：全透明的素材点不中、找不到、删不掉，是个陷阱 */
+export const ELEMENT_OPACITY_MIN = 0.1;
+/** 不透明度上限 */
+export const ELEMENT_OPACITY_MAX = 1;
+/** 色相"原色"值（0° = 未染色，渲染层据此跳过 tint） */
+export const ELEMENT_TINT_NONE = 0;
+
+/**
+ * 素材的**有效**不透明度（读点兜底的唯一出口）。
+ *
+ * 非法值（缺字段 / 越界 / NaN）一律回落 1：素材出现在画面上却看不见，
+ * 比"稍透明一点"严重得多 —— 兜底方向永远朝"可见"。
+ */
+export function elementOpacityOf(el: Pick<MapElement, "opacity">): number {
+  const v = el.opacity;
+  if (typeof v !== "number" || !Number.isFinite(v)) return ELEMENT_OPACITY_MAX;
+  return Math.min(ELEMENT_OPACITY_MAX, Math.max(ELEMENT_OPACITY_MIN, v));
+}
+
+/** 素材的**有效**色相（缺字段 / 非法值 → 原色 0） */
+export function elementTintHueOf(el: Pick<MapElement, "tint">): number {
+  const v = el.tint;
+  if (typeof v !== "number" || !Number.isFinite(v)) return ELEMENT_TINT_NONE;
+  return Math.min(360, Math.max(0, v));
+}
+
+/**
+ * 色相 → Pixi tint 颜色值（0xRRGGBB）。
+ *
+ * 【为什么在数据层而不是渲染层】`elementWeight` / `elementSizeFactor` 同款理由：
+ * 选中框、命中测试与渲染共用同一套取值规则，规则写在任何"其中一处"都会漂移。
+ * 【为什么固定 s=0.62 / l=0.5】全饱和（s=1）会把素材染成荧光色；0.62 在
+ * 深色底图上是"清晰可辨但不刺眼"的着色强度 —— 与 `manualRegionColor` 的
+ * 取值经验一致（见 regions.ts）。
+ */
+export function tintColorOf(hue: number): number {
+  if (hue <= 0) return 0xffffff;
+  return hslToRgb(hue, 0.62, 0.5);
+}

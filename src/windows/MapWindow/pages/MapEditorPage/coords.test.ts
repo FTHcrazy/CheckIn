@@ -6,8 +6,10 @@ import {
   ZOOM_LIMITS,
   ZOOM_STEP,
   fitScaleFor,
+  fitSubmapTransform,
   fitToRect,
   hitTestElement,
+  hitTestPolygon,
   wheelZoomFactor,
   worldToScreen,
   zoomAt,
@@ -125,5 +127,98 @@ describe("hitTestElement：命中区 = 绘制尺寸", () => {
     const unscaled = { ...el, scale: 1 };
     expect(hitTestElement({ x: 60, y: -5 }, unscaled)).toBe(true);
     expect(hitTestElement({ x: 60, y: -5 }, { ...el, scale: scaleAtCounty })).toBe(false);
+  });
+});
+
+describe("hitTestPolygon：区块点选命中（射线法，凹多边形也成立）", () => {
+  /** 一个凹多边形（"U" 形凹口朝下），顶点逆时针 */
+  const concave = [
+    { x: 0, y: 0 },
+    { x: 4, y: 0 },
+    { x: 4, y: 2 },
+    { x: 3, y: 2 },
+    { x: 3, y: 1 },
+    { x: 1, y: 1 },
+    { x: 1, y: 2 },
+    { x: 0, y: 2 },
+  ];
+
+  it("顶点在内部 / 外部 / 凹口里各自判对", () => {
+    expect(hitTestPolygon({ x: 2, y: 0.5 }, concave)).toBe(true); // 内部
+    expect(hitTestPolygon({ x: 5, y: 1 }, concave)).toBe(false); // 外部
+    expect(hitTestPolygon({ x: 2, y: 1.5 }, concave)).toBe(false); // 凹口（在包围盒内、多边形外）
+  });
+
+  it("边界与顶点：落在边上/顶点上视为命中（点选宽容）", () => {
+    expect(hitTestPolygon({ x: 0, y: 0 }, concave)).toBe(true); // 顶点
+    expect(hitTestPolygon({ x: 2, y: 0 }, concave)).toBe(true); // 上边
+  });
+
+  it("退化输入：顶点不足 3 个 / NaN 坐标 / 非有限点一律 false，不抛错", () => {
+    expect(hitTestPolygon({ x: 0, y: 0 }, [])).toBe(false);
+    expect(hitTestPolygon({ x: 0, y: 0 }, [{ x: 0, y: 0 }, { x: 1, y: 1 }])).toBe(false);
+    expect(hitTestPolygon({ x: 0, y: 0 }, [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: Number.NaN, y: 1 }])).toBe(false);
+    expect(hitTestPolygon({ x: Number.NaN, y: 0 }, concave)).toBe(false);
+  });
+});
+
+describe("fitSubmapTransform：子图贴合到父图区块包围盒", () => {
+  /**
+   * 子图是一张独立地图（本地坐标、原点在中心），贴合进父图区块时：
+   * 等比缩放铺满区块包围盒 + 居中。等比保证不变形，居中保证重心对齐。
+   */
+  const submapBounds = { x: -256, y: -256, width: 512, height: 512 };
+
+  it("正方形子图贴合进同比例矩形：等比缩放 = 宽比 = 高比", () => {
+    const target = { x: 100, y: 200, width: 512, height: 512 };
+    const fit = fitSubmapTransform(submapBounds, target);
+    expect(fit.scale).toBeCloseTo(1, 12);
+    expect(fit.x).toBeCloseTo(100 + 256, 12);
+    expect(fit.y).toBeCloseTo(200 + 256, 12);
+  });
+
+  it("目标矩形更扁：取宽比与高比的较小者，子图完整落在目标内且不变形", () => {
+    // 目标宽 256、高 512：宽比 0.5、高比 1.0 → 取 0.5，子图缩到 256 宽、居中
+    const fit = fitSubmapTransform(submapBounds, { x: 0, y: 0, width: 256, height: 512 });
+    expect(fit.scale).toBeCloseTo(0.5, 12);
+    expect(fit.x).toBeCloseTo(128, 12);
+    expect(fit.y).toBeCloseTo(256, 12);
+  });
+
+  it("子图 bounds 的**中心**映射到目标矩形中心（bounds 偏心时要补位移）", () => {
+    // 【为什么这条断言改过】旧版断言「fit 与 bounds 的 x/y 无关」，即把目标中心
+    // 直接当位移 —— 那等于假设"子图内容一定以坐标原点为中心"。bounds 居中时这个
+    // 巧合成立（所以一直没暴露），一旦绑定一张内容偏在一侧的地图，整个子图就会
+    // 整体平移出去，且不报错、只在画面上"看起来偏了"。
+    const target = { x: 40, y: 60, width: 1024, height: 1024 };
+    for (const bounds of [
+      { x: -256, y: -256, width: 512, height: 512 },
+      { x: -512, y: -768, width: 512, height: 512 },
+      { x: 1000, y: 2000, width: 512, height: 512 },
+    ]) {
+      const fit = fitSubmapTransform(bounds, target);
+      const mappedCx = (bounds.x + bounds.width / 2) * fit.scale + fit.x;
+      const mappedCy = (bounds.y + bounds.height / 2) * fit.scale + fit.y;
+      expect(mappedCx).toBeCloseTo(target.x + target.width / 2, 9);
+      expect(mappedCy).toBeCloseTo(target.y + target.height / 2, 9);
+    }
+  });
+
+  it("bounds 居中（原点在中心）时位移就等于目标中心，与旧行为一致", () => {
+    const target = { x: 40, y: 60, width: 1024, height: 1024 };
+    const fit = fitSubmapTransform({ x: -512, y: -512, width: 1024, height: 1024 }, target);
+    expect(fit.x).toBeCloseTo(40 + 512, 12);
+    expect(fit.y).toBeCloseTo(60 + 512, 12);
+  });
+
+  it("脏入参（NaN / 非正尺寸）退回恒等变换 + 目标中心，不产出 Infinity", () => {
+    const fit = fitSubmapTransform({ x: 0, y: 0, width: 0, height: 512 }, { x: 0, y: 0, width: 100, height: 100 });
+    expect(Number.isFinite(fit.scale)).toBe(true);
+    expect(fit.scale).toBe(1);
+    expect(fit.x).toBeCloseTo(50, 12);
+    expect(fit.y).toBeCloseTo(50, 12);
+
+    const nan = fitSubmapTransform({ x: 0, y: 0, width: Number.NaN, height: 512 }, { x: 0, y: 0, width: 100, height: 100 });
+    expect(nan.scale).toBe(1);
   });
 });

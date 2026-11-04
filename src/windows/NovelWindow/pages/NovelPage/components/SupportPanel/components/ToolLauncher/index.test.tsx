@@ -145,6 +145,33 @@ describe("ToolLauncher：人物关系网络入口（R27）", () => {
   });
 });
 
+describe("ToolLauncher：架空地图入口（R28）", () => {
+  it("传入 onOpenMap 后卡片翻成可用态，点击开窗口且不再走「规划中」toast", () => {
+    const onOpenMap = vi.fn();
+    const onNotify = vi.fn();
+    render(
+      <ToolLauncher
+        onOpenNaming={vi.fn()}
+        onOpenSensitive={vi.fn()}
+        onOpenConsistency={vi.fn()}
+        onOpenExtract={vi.fn()}
+        onNotify={onNotify}
+        onOpenMap={onOpenMap}
+      />,
+    );
+
+    const card = [...document.querySelectorAll(".nv-tools__card")].find((item) =>
+      item.textContent?.includes("架空地图"),
+    );
+    expect(card).toBeTruthy();
+    expect(card!.className).not.toContain("is-planned");
+
+    screen.getByText("架空地图", { selector: "span" }).click();
+    expect(onOpenMap).toHaveBeenCalledTimes(1);
+    expect(onNotify).not.toHaveBeenCalled();
+  });
+});
+
 describe("ToolLauncher：描述换行契约（REQ-047）", () => {
   const compiled = (): string =>
     sass

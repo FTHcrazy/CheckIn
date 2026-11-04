@@ -1,12 +1,29 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { App as AntApp, Button, Divider, Input, InputNumber, Select, Switch, Tooltip } from "antd";
 import {
+  App as AntApp,
+  Button,
+  Divider,
+  Dropdown,
+  Input,
+  Popover,
+  Select,
+  Switch,
+  Tooltip,
+} from "antd";
+import {
+  ApartmentOutlined,
+  BorderOutlined,
   ClearOutlined,
+  DatabaseOutlined,
   DeleteOutlined,
+  DownOutlined,
   DownloadOutlined,
   EditOutlined,
   GlobalOutlined,
+  HighlightOutlined,
   MinusCircleOutlined,
+  MoreOutlined,
+  PictureOutlined,
   RedoOutlined,
   ThunderboltOutlined,
   UndoOutlined,
@@ -14,19 +31,120 @@ import {
   ZoomOutOutlined,
   ExpandOutlined,
 } from "@ant-design/icons";
-import { worldToScreen, type CanvasSize } from "./coords";
-import { REGION_LEVELS, REGION_LEVEL_COUNT_LIMITS } from "./regions";
+import { worldToScreen, hitTestPolygon, type CanvasSize } from "./coords";
+import { REGION_TOTAL_LIMIT, levelLabelOf, type Point, type RegionLevelDef } from "./regions";
+import { planMerge, type ManualRegionRejectCode } from "./regionEdit";
 import { resolveElementLevel } from "./lod";
 import { MAP_STYLES } from "./style";
 import { EXPORT_DEFAULT_SIZE, EXPORT_SIZES, exportMapPng, savePng, type ExportSize } from "./export";
+import type { GeneratorGear, GeneratorParams } from "./domain/generator";
 import { useMapEditor } from "./hooks/useMapEditor";
-import MapCanvas, { type MapSceneHandle } from "./components/MapCanvas";
+import MapCanvas, { DRAFT_CLOSE_PX, type MapSceneHandle } from "./components/MapCanvas";
 import SpritePanel from "./components/SpritePanel";
+import ElementPanel from "./components/ElementPanel";
+import { BASE_IMAGES, SPRITE_MAP } from "./sprites";
+import RegionPanel from "./components/RegionPanel";
+import RegionSchemaPanel from "./components/RegionSchemaPanel";
+import MapLibraryModal from "./components/MapLibraryModal";
+import MapGeneratorModal from "./components/MapGeneratorModal";
+import { useMapPersistence } from "./persistence/useMapPersistence";
+import type { MapSaveStatus } from "./store/useMapFileStore";
 import { LABEL_DEFAULT_SIZE, LABEL_SIZES, type MapLabelSize, type MapStyle } from "./types";
 import "./index.scss";
 
 /** 权重低于此值的层级不再出现在工具栏的指示里（与渲染层的阈值同源） */
 const LEVEL_CHIP_EPSILON = 0.004;
+
+/**
+ * 方向键 / WASD 的方向表（微移，R-MAP-25）。
+ *
+ * 值是**单位方向**（乘步长后用）：步长档位（精调 4 / 加速 16）与方向解耦，
+ * 改步长不用回来动这张表。世界坐标 y 向下为正，所以"上"是 -1。
+ */
+const NUDGE_DIRS: Readonly<Record<string, readonly [number, number]>> = {
+  ArrowLeft: [-1, 0],
+  ArrowRight: [1, 0],
+  ArrowUp: [0, -1],
+  ArrowDown: [0, 1],
+  a: [-1, 0],
+  d: [1, 0],
+  w: [0, -1],
+  s: [0, 1],
+};
+
+/** 微移步长：精调（默认）与加速（Shift）两档，世界单位 */
+const NUDGE_STEP_FINE = 4;
+const NUDGE_STEP_FAST = 16;
+
+/**
+ * 存档状态 → 一句话说明（工具栏保存指示的 title）。
+ *
+ * 【为什么集中在一张表】状态机有 6 个值，散在 JSX 的三元里必然漏一个
+ * （最典型的是漏掉 `conflict`，于是"冲突"显示成"已保存"——正好相反）。
+ */
+const MAP_SAVE_STATUS_TEXT: Record<MapSaveStatus, string> = {
+  idle: "还没有装载地图",
+  dirty: "有改动，正在等待自动保存…",
+  saving: "正在保存…",
+  saved: "已保存到本地",
+  conflict: "库里的版本比当前画面新（点保存可选择覆盖）",
+  error: "保存失败，请检查磁盘空间后重试",
+};
+
+/**
+ * 画布当前的工具（R-REG-03）。
+ *
+ * 【为什么是"工具"而不是一个 `drawMode` 布尔】画区与选择是**互斥的两种指针语义**：
+ * 同一个左键，在 select 下是"点选/拖拽"，在 draw 下只有"落一个顶点"。
+ * 布尔只能表达"画区开着"，表达不了"选择也开着"；多一个值就不可能同时成立。
+ *
+ * 第三个落位意图（「加标注」`pendingLabel` / 待放置素材 `pendingSpriteId`）没有并进来：
+ * 它们的生命周期由各自面板决定（选素材即进入、落位即退出），而 tool 是工具栏状态。
+ * 三者互斥靠"进入任一个就清掉另外两个"保证（见 `handlePickTool` / `handlePickSprite`）。
+ */
+type MapTool = "select" | "draw";
+
+/**
+ * 手画拒绝原因 → 中文提示（架构 §5「文案映射（唯一出处）」）。
+ *
+ * 【为什么在页面这一层】`checkManualRegion` 返回的是**枚举**（`ManualRegionRejectCode`），
+ * 纯函数层不该产出面向用户的句子 —— 否则改一句文案要动纯函数、还要改它的用例。
+ *
+ * 【为什么是函数而不是常量表】三条文案要插值（区块名 / 层级数 / 总数上限），
+ * 常量表做不到；用 `switch` 还能让 TS 在新增 code 时**报错**（`never` 兜底），
+ * 而 `Record<Code, string>` 只能保证键齐、保证不了插值正确。
+ */
+function rejectTextOf(
+  code: ManualRegionRejectCode,
+  conflict: { id: string; name: string } | undefined,
+  levelCount: number,
+): string {
+  // 名字可能为空串（脏数据 / 老文档）：那样文案里出现「」比直接缺字更像 bug
+  const name = conflict?.name?.trim() || "上级区块";
+  switch (code) {
+    case "too-few-points":
+      return "至少需要 3 个顶点";
+    case "degenerate-edge":
+      return "有两个顶点重合了，请撤销上一点重画";
+    case "self-intersect":
+      return "边线交叉了（区块不能自交），请撤销后重画";
+    case "overlap-sibling":
+      return `与「${name}」重叠`;
+    case "overlap-ancestor":
+      return `与上级区块「${name}」重叠`;
+    case "outside-parent":
+      return `超出「${name}」的范围`;
+    case "level-out-of-range":
+      return `已达最深层级（共 ${levelCount} 级）`;
+    case "total-limit":
+      return `区块总数已达上限 ${REGION_TOTAL_LIMIT}，请先合并或清除`;
+    default: {
+      // 穷尽性检查：新增 code 而忘了加文案时，这里会编译失败
+      const exhaustive: never = code;
+      return `无法创建区块（${String(exhaustive)}）`;
+    }
+  }
+}
 
 /**
  * 正在编辑的地名草稿。
@@ -55,18 +173,34 @@ interface LabelDraft {
 export default function MapEditorPage() {
   const { message, modal } = AntApp.useApp();
   const [canvasSize, setCanvasSize] = useState<CanvasSize>({ width: 0, height: 0 });
-  /** 下次生成区块用几个层级（工具栏可调，不影响已生成的区块） */
-  const [levelDepth, setLevelDepth] = useState<number>(REGION_LEVEL_COUNT_LIMITS.default);
+  /**
+   * 层级配置浮层是否展开。
+   *
+   * 【为什么要受控】「应用并生成区块」点完必须把它收起来 —— 浮层盖在画布上，
+   * 生成结果全在浮层底下，用户看不到就以为没生效。另外收起 = 一次连续调参结束，
+   * 正是断快照合并键的时机（架构 §2.4.1）。
+   */
+  const [schemaPanelOpen, setSchemaPanelOpen] = useState(false);
+  /**
+   * 「生成陆地」是否**同时划出区块**（R-REG-02）。
+   *
+   * 【为什么默认 false】用户诉求是"生成大地图后地图上保持干净"，而旧版「生成陆地」
+   * 会连带把区块一起切出来 —— 病根在入口而不在生成算法：`doc.regions = []` 这个
+   * 状态数据层与渲染层早已支持（`createEmptyDocument()` 初始就是空数组）。
+   *
+   * 【为什么是组件状态而不是文档字段】它是"下一次点击的行为"，不是成品内容；
+   * 进文档会白占一步撤销栈，也会让"关掉窗口再打开"这种无关紧要的偏好变成数据。
+   */
+  const [splitRegions, setSplitRegions] = useState(false);
   /**
    * 手填的陆地种子（文本态）。
    *
    * 【为什么要能手填】评审要靠截图判断观感变化（PRD §8.3 要求"每张都带同一
    * 随机种子"），而随机种子每次都不一样，改前改后根本不可比。留空 = 随机。
    *
-   * 【为什么用 Input 而不是 InputNumber】工具栏里已经有一个层级数的
-   * InputNumber；再加一个数字框会让"唯一的 spinbutton"不再唯一，
-   * 按 role 取层级数的既有用例会被迫改判据。种子本来就是"抄一个数"的场景，
-   * 文本框足够。
+   * 【为什么用 Input 而不是 InputNumber】种子是"抄一个数进来复现同一块陆地"的场景，
+   * 文本框足够；而 `InputNumber` 在这个页面里只属于层级配置浮层（层数 / 每级数量），
+   * 混进一个"长得一样但不是层级"的数字框会让 aria-label 与肉眼都难分辨。
    */
   const [seedText, setSeedText] = useState<string>("");
   /**
@@ -89,6 +223,31 @@ export default function MapEditorPage() {
    */
   const [labelSize, setLabelSize] = useState<MapLabelSize>(LABEL_DEFAULT_SIZE);
 
+  /** 地图库弹窗是否展开（切换 / 新建 / 改名 / 绑定作品 / 回收站） */
+  const [libraryOpen, setLibraryOpen] = useState(false);
+
+  /** 一键成图弹层（B3）与其最近一次摘要 */
+  const [generatorOpen, setGeneratorOpen] = useState(false);
+  const [genSummary, setGenSummary] = useState<string | null>(null);
+
+  /* ───────────────── 画区状态机（R-REG-03 / 架构 §2.7） ───────────────── */
+
+  /** 当前工具（缺省"选择"）。与 `pendingLabel` / `pendingSpriteId` 三者互斥 */
+  const [tool, setTool] = useState<MapTool>("select");
+  /**
+   * 已落顶点（世界坐标，首尾**不重复**）。
+   *
+   * 【为什么顶点进 state、光标预览点不进】顶点是**低频且已确定**的（一次单击一个），
+   * 它还必须参与工具栏「已画 N 点」的渲染；而光标预览点跟着 `pointermove` 每像素
+   * 变一次，进 state 等于每像素一次 React 提交 + 一次 200 多块区块容器的 diff
+   * （架构 §2.6.1 的性能底线）。因此预览点只活在画布的 `draftCursorRef` 里。
+   *
+   * 【为什么是 `Point[]` 而不是 `readonly Point[]`】只有页面写它，且写的方式是
+   * "整体换新数组"（`[...prev, world]` / `slice(0, -1)`）—— 不可变更新的前提是
+   * 可变类型，否则 `push` 也编得过。
+   */
+  const [draftPoints, setDraftPoints] = useState<Point[]>([]);
+
   /* ───────────────── 导出（B5 / PRD §6.6.3） ───────────────── */
 
   /** 导出长边像素档（1024 / 2048 / 4096，默认 2048） */
@@ -107,6 +266,24 @@ export default function MapEditorPage() {
     sceneRef.current = scene;
     setSceneReady(scene !== null);
   }, []);
+
+  /**
+   * 已经为**哪个目标层数**弹过「减少层级」确认框（`null` = 当前没有弹过）。
+   *
+   * 【为什么需要它】`rc-input-number` 在失焦时会把输入框里的文本再 flush 一次
+   * （`changeOnBlur`），于是 `handleSchemaChange` 被连调两遍，两遍都满足
+   * "新区块数 < 旧层数 ⇒ 先确认"，各弹一个**一模一样**的确认框。用户会看到
+   * 两层叠着的弹层，点掉一层还有一层 —— 与"一次动作一个确认"直接冲突。
+   *
+   * 【为什么记"目标层数"而不是一个布尔】布尔会在"弹着 4→2 的时候用户又改成
+   * 4→1"时把第二次也吞掉（虽然模态框本来就挡住了输入，但那是 antd 的实现细节，
+   * 不该成为正确性的前提）。记目标层数则只吞**同一个意图**的重复调用。
+   *
+   * 【为什么不 `Modal.destroyAll()`】那会把用户此前打开的其它确认框（清空画布 /
+   * 生成陆地 / 合并子区域）一起关掉 —— 用"消灭别人的弹层"来治自己的重复，
+   * 代价远大于问题。
+   */
+  const pendingPruneRef = useRef<number | null>(null);
 
   /**
    * 导出 PNG。
@@ -157,6 +334,14 @@ export default function MapEditorPage() {
     doc,
     viewport,
     selectedId,
+    selectedRegionId,
+    selectedRegion,
+    /** 当前文档的**有效**层级定义（读时回落；层数的唯一事实源 = `schema.length`） */
+    schema,
+    /** 选中区块的祖先链 + 自身（供面板面包屑；非叶子才显示） */
+    regionPath,
+    /** 选中区块是否叶子（决定画布三笔 / 容器态，以及面板是否给面包屑） */
+    selectedIsLeaf,
     pendingSpriteId,
     images: textures,
     imagesReady,
@@ -166,6 +351,191 @@ export default function MapEditorPage() {
     /** 当前主导层级（`null` = 还没生成区块）。新放置的素材就归到这一级 */
     currentLevel,
   } = editor;
+
+  /* ───────────────── 存档（map.db）：自动保存 / 启动恢复 ───────────────── */
+
+  /**
+   * 地图存档编排：启动打开最近一张（没有就新建）、800ms 防抖自动保存、
+   * 乐观锁冲突处理、关窗 flush。页面只消费它的状态与动作。
+   */
+  const persistence = useMapPersistence();
+
+  /**
+   * 切到某张图之后：有存档视口就恢复「上次看到哪」，没有就适应窗口。
+   *
+   * 【为什么不能在 hook 里直接落位】视口要过 `zoomLimits`（它由该图的区块数反推），
+   * 而 zoomLimits 是 `useMapEditor` 的派生值 —— 只有页面同时握着两者。
+   * 【依赖只列 docId 与画布宽度】`editor` / `persistence` 每次渲染都是新对象，
+   * 放进依赖会让这个 effect 每渲染跑一次（每次都"恢复视口"，等于画面锁死）。
+   */
+  useEffect(() => {
+    if (!persistence.docId || canvasSize.width === 0) return;
+    const saved = persistence.takePendingViewport();
+    if (saved) editor.applyViewport(saved);
+    else editor.fitView();
+  }, [persistence.docId, canvasSize.width]);
+
+  /**
+   * 打开地图库（先在当前场景上抓一张 320px 缩略图给列表用）。
+   *
+   * 【为什么抓图放在开库之前】列表卡片靠缩略图区分"东洲全图"与"北境详图"，
+   * 而缩略图只有在场景就绪时才生成得出。一次 320px extract 只要几十毫秒；
+   * 失败静默（列表回落占位图），绝不允许它挡住开库。
+   */
+  const handleOpenLibrary = useCallback(async () => {
+    const scene = sceneRef.current;
+    if (scene && persistence.docId) {
+      try {
+        const bytes = await exportMapPng(
+          {
+            renderer: scene.renderer,
+            stage: scene.stage,
+            world: scene.world,
+            worldRect: scene.rect,
+            clearOverlay: scene.clearOverlay,
+            redrawOverlay: scene.redrawOverlay,
+          },
+          320,
+        );
+        if (bytes) await persistence.saveThumb(bytes);
+      } catch {
+        // 缩略图是可选项：失败不提示、不阻塞
+      }
+    }
+    setLibraryOpen(true);
+  }, [persistence]);
+
+  /**
+   * 手画区块数量（`origin === "manual"`，缺省读作生成块）。
+   *
+   * 【为什么页面要关心它】重新生成区块时手画成果与生成块的几何会叠在一张图上
+   * （生成器不知道手画块存在）。这类"看起来只是多了一层色块"的后果不该静默发生，
+   * 所以确认弹窗里要先报数量（PRD §6-D / 架构 §6-5）。
+   */
+  const manualCount = useMemo(
+    () => doc.regions.reduce((n, r) => (r.origin === "manual" ? n + 1 : n), 0),
+    [doc.regions],
+  );
+
+  /**
+   * 自动生成的区块数量（总数 − 手画数）。
+   *
+   * 【为什么要分开数】「生成陆地」「重新生成区块」这两条路径**只替换自动块**，
+   * 手画块原样保留（主理人裁决 1）。所以文案里"会被清掉的 N 个"必须只数自动块 ——
+   * 报总数会让用户以为手画成果也要没了，从而不敢点。
+   */
+  const autoCount = doc.regions.length - manualCount;
+
+  /**
+   * 选中区块的子树摘要（供面板按钮文案与 `disabled`）。
+   *
+   * 【为什么在页面算而不是面板算】`RegionPanel` 是纯展示组件（不读 store、不碰文档），
+   * 子树信息要遍历 `doc.regions`，只有页面拿得到（架构 §6-2）。
+   * 叶子 ⇒ `count = 0`（`planMerge` 返回 `null`），面板据此 disabled。
+   */
+  const subtreeInfo = useMemo(() => {
+    if (!selectedRegion) return { count: 0, withSubmap: 0 };
+    const plan = planMerge(doc.regions, selectedRegion.id);
+    return plan
+      ? { count: plan.descendantIds.length, withSubmap: plan.withSubmap.length }
+      : { count: 0, withSubmap: 0 };
+  }, [selectedRegion, doc.regions]);
+
+  /* ───────────────── 画区：层级判定与闭合 ───────────────── */
+
+  /**
+   * 新块将要落在的层级。
+   *
+   * 【层级与父块**只有这一处**判定】有选中区块 P ⇒ `parentId = P.id`、`level = P.level + 1`；
+   * 无选中 ⇒ `parentId = null`、`level = 0`。三处（工具栏指示、落点前的封顶拦截、
+   * `addManualRegion` 里真正构造记录）读的都是这一条规则 —— 各算一遍必然出现
+   * "指示说在画洲、落库成了国家"这类只在边界复现的错。
+   *
+   * 落库那次计算在 hook 里（`addManualRegion` 从 store 现取 `selectedRegionId`），
+   * 本变量只服务界面上的**预告**；两者同式，因为父块在"进入画区 → 落点 → 闭合"
+   * 之间不会变（画区态下左键不改变选中，见裁决 4）。
+   */
+  const targetLevel = selectedRegion ? selectedRegion.level + 1 : 0;
+
+  /** 目标层级是否已越过 schema 的最后一层（工具栏标红 + 落点前拦截） */
+  const targetLevelOverflow = targetLevel > schema.length - 1;
+
+  /**
+   * 闭合草稿：校验 → 落库 → 清空并**留在画区模式**（便于连续画）。
+   *
+   * 【失败时草稿必须保留】用户画了 12 个点，跨出父边界被打回，草稿若被清掉就等于
+   * 让他从第 1 个点重画 —— 这是"提示了但更糟"。`checkManualRegion` 的所有拒绝分支
+   * 都会走到 `return`，`setDraftPoints([])` 只在成功之后执行。
+   *
+   * 【< 3 点静默返回，不弹「至少需要 3 个顶点」】四条入口里「完成」是 disabled、
+   * Enter 有 ≥3 门槛，但**双击不等 3 点**（判定只看时间差与屏幕距离）：刚落 1~2 个
+   * 点就在原地连点两下，是"我在定位"而不是"我要收尾"，此时弹一句红字纯属噪音。
+   * 点数现状由工具栏的「已画 N 点」持续表达，不需要一次性的告警。
+   *
+   * 【成功也不改动选中】画完一块不自动选中它：自动选中会让**下一次**落点的层级
+   * 悄悄变成"刚画的这块的子级"（因为层级跟着选中走），而用户的心智是"我还在这层
+   * 继续画"。要往下画一层，明确点选父块即可。
+   */
+  const closeDraft = useCallback(() => {
+    if (draftPoints.length < 3) return;
+    const result = editor.addManualRegion(draftPoints);
+    if (!result.ok) {
+      message.error(rejectTextOf(result.code, result.conflict, schema.length));
+      return;
+    }
+    setDraftPoints([]);
+    message.success(`已创建区块「${result.region.name}」（可撤销）`);
+  }, [draftPoints, editor, message, schema.length]);
+
+  /**
+   * 切工具。
+   *
+   * 【切换到任一工具都要清掉另外两个落位意图】三种"左键要干什么"同时开着时，
+   * 一次点击该落顶点、该放素材还是该起名就说不清了。选择 store 里的
+   * `pendingSpriteId` 也一并清（它来自素材面板的点击）。
+   *
+   * 【离开画区要丢草稿，且**不产生快照**】草稿从来没进过文档，丢它不影响撤销栈；
+   * 留着的话下次进画区会看到上次的残线，用户会以为"上次已经画上了"。
+   */
+  const handlePickTool = useCallback(
+    (next: MapTool) => {
+      // 已经在该工具上：什么都不做。
+      // 【为什么必须提前返回】用户画到第 5 个顶点时手滑再点一次「画区」，
+      // 若无条件 `setDraftPoints([])`，那 5 个点就没了 —— 而"再点一次同一个按钮"
+      // 在心智上更像"确认"而不是"重来"。要重来有明确的「取消」。
+      if (next === tool) return;
+      if (next === "draw") {
+        setPendingLabel(false);
+        editor.setPendingSpriteId(null);
+      }
+      // 换工具一律丢草稿，且**不产生快照**（草稿从没进过文档）；
+      // 留着的话下次进画区会看到上次的残线，用户会以为"上次已经画上了"。
+      setDraftPoints([]);
+      setTool(next);
+    },
+    [editor, tool],
+  );
+
+  /** 撤销上一点（退到 0 点仍留在画区模式：用户只是画错了第一笔） */
+  const handleUndoDraftPoint = useCallback(() => {
+    setDraftPoints((prev) => prev.slice(0, -1));
+  }, []);
+
+  /**
+   * 取消画区（与 `Esc` 完全同一套退让顺序，一个按钮一个快捷键，语义不会分叉）：
+   *   ① 有草稿 ⇒ 只丢草稿（留在画区，可重画）；
+   *   ② 没草稿 ⇒ 退出画区回选择模式。
+   *
+   * 【为什么按钮永远可点】"没画任何点"时它承担"退出画区"的职责 —— 若按点数
+   * disabled，用户就只能再去点一次顶部的「选择」，而且会以为按钮坏了。
+   */
+  const handleCancelDraft = useCallback(() => {
+    if (draftPoints.length > 0) {
+      setDraftPoints([]);
+      return;
+    }
+    handlePickTool("select");
+  }, [draftPoints.length, handlePickTool]);
 
   /* ───────────────── 文字标注（B3 / PRD §6.3.3） ───────────────── */
 
@@ -286,11 +656,11 @@ export default function MapEditorPage() {
       else counts[level] = (counts[level] ?? 0) + 1;
     }
     const parts = counts
-      .map((n, level) => (n > 0 ? `${REGION_LEVELS[level]?.label ?? `L${level}`} ${n}` : ""))
+      .map((n, level) => (n > 0 ? `${levelLabelOf(schema, level)} ${n}` : ""))
       .filter(Boolean);
     if (loose > 0) parts.push(`层级无关 ${loose}`);
     return parts.join(" · ");
-  }, [doc.elements, levelAlphas.length]);
+  }, [doc.elements, levelAlphas.length, schema]);
 
   /**
    * 画布点击。
@@ -303,6 +673,43 @@ export default function MapEditorPage() {
    */
   const handleCanvasClickWorld = useCallback(
     (world: { x: number; y: number }) => {
+      // ── 画区分支（必须最先）─────────────────────────────────────────────
+      //
+      // 【为什么必须在 pendingLabel / pendingSpriteId 之前】画区态下左键的语义
+      // **只有一种**：落一个顶点。若把落顶点排在后面，"上次开过加标注还没落位"
+      // 的一次点击会去起名、把顶点吞掉 —— 表现为"画区模式下点哪儿都不落点"。
+      // 进入画区时已经清掉了那两个意图（`handlePickTool`），这里的顺序是第二道保险。
+      //
+      // ⚠️ 本分支内**不得**调用任何选中动作（`pickRegion` / `setSelectedId`）：
+      // 画区态在已有区块上点一下，选区必须纹丝不动（裁决 4 / 模式隔离用例）。
+      //
+      // 【闭合判定不在这里】"双击 / 命中首顶点"是画布在 `pointerdown` 里判的，
+      // 一旦命中就不会再回调到这里（见 MapCanvas 的 `handlePointerDown`）。
+      // 本分支只负责**落一个顶点**，于是"闭合"在整条链路上只有一个出口
+      // ——`closeDraft`（双击 / 首顶点 / Enter / 「完成」四条入口都通向它）。
+      if (tool === "draw") {
+        const px = 1 / Math.max(1e-6, viewport.scale);
+
+        // 同点去重：手抖在同一位置点两下（间隔 > 350ms，所以没被判成双击）不该
+        // 多出一个重合顶点 —— 那会让闭合校验以 `degenerate-edge` 把整条草稿打回。
+        // 容差复用 `DRAFT_CLOSE_PX`：与"能不能点到首顶点""算不算双击"同一把尺子
+        // （理由见该常量注释：这个距离以下，用户自己也分不清是不是同一个点）。
+        const last = draftPoints[draftPoints.length - 1];
+        if (last && Math.hypot(world.x - last.x, world.y - last.y) <= DRAFT_CLOSE_PX * px) {
+          return;
+        }
+
+        // 层级封顶：**落点前**拦，不等闭合。
+        // 等到闭合再拦意味着用户花了 12 次点击才被告知"这一层根本不能再画"。
+        if (targetLevelOverflow) {
+          message.warning(`已达最深层级（共 ${schema.length} 级）`);
+          return;
+        }
+
+        setDraftPoints((prev) => [...prev, world]);
+        return;
+      }
+
       // 「加标注」优先：此刻用户的心智是"给这个地方起名"，不是"选/放素材"
       if (pendingLabel) {
         setDraft({
@@ -320,10 +727,43 @@ export default function MapEditorPage() {
         editor.setPendingSpriteId(null);
         return;
       }
+
+      // 素材命中优先于区块命中：素材是"面上的点"、z 序在区块之上，且比区块更具体，
+      // 点在一个素材上时用户的心智是"选这个素材"，而不是"选它底下的那块地"。
+      // 只有没点中素材时，才退而求其次判断"是否点中了某块地"。
       const hit = editor.pickElement(world);
-      editor.setSelectedId(hit ? hit.id : null);
+      if (hit) {
+        editor.setSelectedRegionId(null);
+        editor.setSelectedId(hit.id);
+        return;
+      }
+
+      // 没点中素材：判断是否命中区块（区块是"面"），命中则选中该区块、清素材选中。
+      for (let i = doc.regions.length - 1; i >= 0; i -= 1) {
+        const region = doc.regions[i];
+        if (hitTestPolygon(world, region.polygon)) {
+          editor.pickRegion(region.id);
+          return;
+        }
+      }
+
+      // 素材与区块都没命中（点空白）：清空两类选中
+      editor.setSelectedRegionId(null);
+      editor.setSelectedId(null);
     },
-    [editor, pendingLabel, pendingSpriteId, viewport, canvasSize],
+    [
+      editor,
+      pendingLabel,
+      pendingSpriteId,
+      viewport,
+      canvasSize,
+      doc.regions,
+      tool,
+      draftPoints,
+      targetLevelOverflow,
+      schema.length,
+      message,
+    ],
   );
 
   /** 开始拖拽已选中元素：把当前快照压入撤销栈（全程只记一次） */
@@ -383,23 +823,121 @@ export default function MapEditorPage() {
     });
   }, [editor, doc.elements.length, modal, message]);
 
-  /** 用新的随机种子重新生成一棵层级区块树（每次结果都不同） */
+  /**
+   * 用新的随机种子重新生成一棵层级区块树（每次结果都不同）。
+   *
+   * 【不再传层级数】层数的唯一事实源是 `regionSchemaOf(doc).length`
+   * （架构 §4-T3）。工具栏的 `levelDepth` 组件状态已删除 —— 两处各存一份层数，
+   * 迟早出现"面板显示 2 级、生成出 4 级"。
+   */
   const handleGenerateRegions = useCallback(() => {
-    editor.regenerateHierarchy(levelDepth);
-  }, [editor, levelDepth]);
+    editor.regenerateHierarchy();
+  }, [editor]);
+
+  /**
+   * 层级配置面板：任一字段变化。
+   *
+   * 【减少层数要二次确认】把层数从 4 调到 2，意味着 `level >= 2` 的区块（国家、郡）
+   * 已经失去了层级归属。它们是**删除**，不是"看不见"，必须说清楚数量再动手，
+   * 且这个删除要和 schema 变更**同一次 commit**（撤销一步两样一起回来）。
+   * 其余编辑（改名 / 数量 / 加层）直接写，靠合并键压成一步。
+   *
+   * 【同一个目标层数只弹一次】见 `pendingPruneRef`：失焦会触发第二遍 `onChange`，
+   * 不去重就会叠出两个一模一样的确认框。
+   */
+  const handleSchemaChange = useCallback(
+    (next: RegionLevelDef[]) => {
+      const nextLength = next.length;
+      if (nextLength < schema.length) {
+        // 已经为这个目标层数弹过窗 ⇒ 这次的调用是失焦重复，直接吞掉。
+        // （注意：这里必须在 `pruned.length > 0` 之前拦，否则第二遍会走到
+        //  `editor.setRegionSchema(next)` 把层数**静默改掉** —— 那比多弹一个窗更糟。）
+        if (pendingPruneRef.current === nextLength) return;
+
+        const pruned = doc.regions.filter((r) => r.level >= nextLength);
+        if (pruned.length > 0) {
+          pendingPruneRef.current = nextLength;
+          /**
+           * 释放标记。
+           *
+           * 【三处都挂上，可靠性靠 `afterClose` 兜底】`onOk` / `onCancel` 是按钮路径；
+           * 用户按 **Esc** 或点遮罩关闭时，antd 6 的 `Modal.method` 也会走 `onCancel`，
+           * 但那是实现细节 —— `afterClose` 才是"弹层无论怎么关，关完一定调一次"的
+           * 唯一承诺（按钮 / Esc / 遮罩 / 程序化 destroy 全覆盖）。三处都调同一个
+           * 幂等的 `release()`，多调一次没有副作用。
+           *
+           * 【不清空会怎样】取消之后用户再改一次层数，`pendingPruneRef` 还停在旧值 ⇒
+           * 第二次真改也被吞掉，表现为"确认框再也不弹，层数也不动"。
+           */
+          const release = () => {
+            if (pendingPruneRef.current === nextLength) pendingPruneRef.current = null;
+          };
+          modal.confirm({
+            title: "减少层级",
+            content: `将删除 ${pruned.length} 个超出层级的区块，此操作可撤销。`,
+            okText: "删除并应用",
+            okButtonProps: { danger: true },
+            cancelText: "取消",
+            onOk: () => {
+              release();
+              editor.setRegionSchema(next, nextLength);
+            },
+            onCancel: release,
+            afterClose: release,
+          });
+          return;
+        }
+      }
+      editor.setRegionSchema(next);
+    },
+    [editor, schema.length, doc.regions, modal],
+  );
+
+  /** 一次连续调参结束（失焦 / 重置 / 松开滑块）：断掉快照合并键 */
+  const handleSchemaEditEnd = useCallback(() => {
+    editor.breakCommitKey();
+  }, [editor]);
+
+  /**
+   * 「应用并生成区块」= 改 schema（已即时写入）+ 生成区块，**一次撤销快照**。
+   *
+   * 【为什么生成要读 store 现取的 schema】`doc` 订阅要等下一次渲染；
+   * 同一个事件里紧接着生成时，闭包里的 `schema` 可能还是旧的（见 hook 的 `liveDoc`）。
+   */
+  const handleApplySchemaAndGenerate = useCallback(() => {
+    editor.regenerateHierarchy();
+    setSchemaPanelOpen(false);
+    message.success(`已按当前 ${schema.length} 级配置重新生成区块（可撤销）`);
+  }, [editor, message, schema.length]);
 
   /**
    * 生成陆地。
    *
-   * 【为什么要先确认】生成陆地会**连带重划区块**（否则区块会铺满整张纸、
-   * 一半落在海里）。已有的区块会被替换，这一步必须让用户知道。
+   * 【为什么要先确认】生成陆地会**改写区块状态**：自动生成的区块按勾选态决定
+   * "重划"还是"清空"，而**手动区块一律保留**（主理人裁决 1 —— 手画成果是最贵的
+   * 用户成果，不能被一次生成抹掉）。文案因此三分：
+   *   · 勾选「同时划出区块」⇒「重新划分（现有 N 个自动区块会被替换 [，保留 M 个手动区块]）」；
+   *   · 不勾且存在自动块 ⇒「将清除 N 个自动生成的区块 [，保留 M 个手动区块]」；
+   *   · 不勾且全是手动块 ⇒「现有区块都是手动区块，将原样保留」。
+   * 只要 `manualCount > 0`，无论勾不勾都**必须**追加那句坐标系提醒：手画块是按
+   * **旧陆地**画的，新陆地一到，它可能整体落在海面上 —— 这一步静默发生最伤。
    */
   const handleGenerateLand = useCallback(() => {
-    const run = () => editor.generateLand(landSeed ?? undefined, levelDepth);
+    const run = () => editor.generateLand(landSeed ?? undefined, { splitRegions });
     if (doc.regions.length > 0) {
+      const keepNote = manualCount > 0 ? `，保留 ${manualCount} 个手动区块` : "";
+      let content = splitRegions
+        ? `将重新划分区块（现有 ${autoCount} 个自动生成的区块会被替换${keepNote}），此操作可撤销。`
+        : autoCount > 0
+          ? `将清除 ${autoCount} 个自动生成的区块${keepNote}，此操作可撤销。`
+          : "现有区块都是手动区块，将原样保留，此操作可撤销。";
+      if (manualCount > 0) {
+        content +=
+          "注意：手动区块是基于当前陆地绘制的，重新生成陆地后可能不在新大陆范围内。";
+      }
       modal.confirm({
         title: "生成陆地",
-        content: `将重新划分区块（现有 ${doc.regions.length} 块会被替换），此操作可撤销。`,
+        content,
         okText: "生成",
         cancelText: "取消",
         onOk: run,
@@ -407,12 +945,168 @@ export default function MapEditorPage() {
       return;
     }
     run();
-  }, [editor, landSeed, levelDepth, doc.regions.length, modal]);
+  }, [editor, landSeed, splitRegions, doc.regions.length, autoCount, manualCount, modal]);
 
   /** 清除陆地：海岸四层随之消失 */
   const handleClearLand = useCallback(() => {
     editor.clearLand();
   }, [editor]);
+
+  /* ───────────────── 一键成图（B3 / R-MAP-21） ───────────────── */
+
+  /**
+   * 生成 / 局部重掷的入口（弹层转来）。
+   *
+   * 【首次生成前的确认】画布已有内容、且这些内容**不是**本会话生成器产出时
+   * （`!editor.hasGenerated`），「生成一张」会整体替换陆地 / 素材 / 地名 ——
+   * 必须先说清楚。局部重掷按钮只在 hasGenerated 后可用，天然不进这条确认；
+   * 生成器自己产出的图被再次重掷不再确认，否则"换一张"会被确认框打断节奏。
+   */
+  const handleGenerate = useCallback(
+    (params: GeneratorParams, gear: GeneratorGear): string => {
+      const hasContent = doc.elements.length > 0 || doc.regions.length > 0 || doc.land !== null;
+      const run = (): string => {
+        const summary = editor.generateFullMap(params, gear);
+        if (summary) setGenSummary(summary);
+        return summary;
+      };
+      if (gear === "all" && hasContent && !editor.hasGenerated) {
+        modal.confirm({
+          title: "一键成图",
+          content: "将替换当前陆地、素材与地名（区块按弹层开关处理），此操作可撤销。",
+          okText: "生成",
+          cancelText: "取消",
+          onOk: run,
+        });
+        // 确认框路径下摘要由 onOk 里更新；这里返回空串 = 弹层摘要保持原值
+        return "";
+      }
+      return run();
+    },
+    [doc.elements.length, doc.regions.length, doc.land, editor, modal],
+  );
+
+  /* ───────────────── 嵌套子地图（区块操作面板） ───────────────── */
+
+  /** 圈定生成子图（路径 B） */
+  /**
+   * 圈定生成子图（路径 B）。
+   *
+   * 【为什么生成完立刻把视口推进去】子图生成后**画面上几乎看不出变化** ——
+   * 它只在原区块内部多了一层更细的分区线，而此刻视口可能还停在整张纸上，
+   * 那些线细到看不见。用户点完按钮会以为"没反应"。所以这里一步到位：
+   * 生成 → 聚焦 → 面板切换成"已嵌入子图"，让"进入子图"这个动作有明确结果。
+   */
+  const handleCarveSubmap = useCallback(
+    (regionId: string) => {
+      editor.carveSubmap(regionId);
+      editor.focusRegion(regionId);
+      message.success("已生成子图并进入该区域，可继续放大查看分区细节");
+    },
+    [editor, message],
+  );
+
+  /** 把视口推进到某个区块（进入子图 / 从子图回到该区域） */
+  const handleFocusRegion = useCallback(
+    (regionId: string) => {
+      editor.focusRegion(regionId);
+    },
+    [editor],
+  );
+
+  /** 回到整张纸（退出子图视野） */
+  const handleFocusWorld = useCallback(() => {
+    editor.fitView();
+  }, [editor]);
+
+  /** 绑定已有子图（路径 A，预留） */
+  const handleEmbedSubmap = useCallback(
+    (regionId: string) => {
+      void regionId;
+      message.info("绑定已有子图将在后续版本接入");
+    },
+    [message],
+  );
+
+  /** 移除区块上的子图 */
+  const handleRemoveSubmap = useCallback(
+    (regionId: string) => {
+      editor.removeSubmap(regionId);
+      message.success("已移除子图");
+    },
+    [editor, message],
+  );
+
+  /**
+   * 合并子树（PRD §4.3 / §6-C）：把选中区块的**全部后代**删掉，它自己成为叶子。
+   *
+   * 【四段文案，一段都不能省】
+   *   ① 总数 + 最多 3 个名字（再多就「…等 N 个」）—— 让用户能认出是不是自己想的那几块；
+   *   ② ⚠ 段：被删子树里带子图的数量 + 名字。子图会**一起消失**且没有回收站，
+   *      这是本操作唯一不可逆的副作用（能撤销，但用户可能已经连按了几次 Ctrl+Z）；
+   *   ③ P 自身有子图时额外一行"子图保留"—— 否则用户会以为连自己也清了；
+   *   ④ 结尾两句固定文案：边界不变 + 可一步撤销。
+   *
+   * 【为什么先 `planMerge` 再让 store 再算一遍】预览是为了显示数字，执行是为了真的删。
+   * 让执行信任传入的计划，等于把"文档可能已被改动"的责任推给调用方（架构 §3.4）。
+   */
+  const handleMergeRegion = useCallback(
+    (regionId: string) => {
+      const plan = planMerge(doc.regions, regionId);
+      if (!plan) {
+        message.info("该区块没有子区域");
+        return;
+      }
+      const root = plan.root;
+      const rootName = root.name.trim() || "未命名区块";
+      const total = plan.descendantIds.length;
+      const names = plan.descendants
+        .slice(0, 3)
+        .map((r) => r.name.trim())
+        .filter(Boolean);
+      const nameLine = names.length > 0 ? names.join("、") : `共 ${total} 个子区块`;
+      const withSubmap = plan.withSubmap.length;
+      const submapNames = plan.withSubmap
+        .slice(0, 3)
+        .map((r) => r.name.trim())
+        .filter(Boolean);
+
+      const content = (
+        <div className="map-editor__merge-confirm">
+          <p>{`将「${rootName}」下的 ${total} 个子区块合并为一个：`}</p>
+          <p>{`${nameLine}${total > 3 ? ` …等 ${total} 个` : ""}`}</p>
+          {withSubmap > 0 && (
+            <p className="map-editor__merge-warn">
+              {`⚠ 其中 ${withSubmap} 个区块关联了子地图（${submapNames.join(" / ")}${
+                withSubmap > 3 ? ` …等 ${withSubmap} 个` : ""
+              }）。`}
+              <br />
+              {`合并后这 ${withSubmap} 张子地图的内容会一并删除。`}
+            </p>
+          )}
+          {root.submap && <p>该区块已关联子地图，合并后子地图保留。</p>}
+          <p className="map-editor__merge-note">
+            {`合并后「${rootName}」成为最小单位，其边界保持原样。`}
+            <br />
+            此操作可撤销（Ctrl+Z 一步恢复）。
+          </p>
+        </div>
+      );
+
+      modal.confirm({
+        title: "合并子区域",
+        content,
+        okText: "仍要合并",
+        okButtonProps: { danger: true },
+        cancelText: "取消",
+        onOk: () => {
+          const result = editor.mergeSubtree(regionId);
+          message.success(`已合并 ${result.removed} 个子区块（可撤销）`);
+        },
+      });
+    },
+    [doc.regions, editor, message, modal],
+  );
 
   // ── 键盘快捷键：Ctrl/Cmd+Z 撤销、Ctrl/Cmd+Shift+Z 重做、Delete 删除 ──
   useEffect(() => {
@@ -421,8 +1115,18 @@ export default function MapEditorPage() {
       // 输入框内不劫持快捷键（后续加入重命名等输入场景时必要）
       if (target && /^(INPUT|TEXTAREA)$/.test(target.tagName)) return;
       if (target?.isContentEditable) return;
+      // 焦点在滑杆上时，方向键属于滑杆本身（antd 内建键盘步进）：
+      // 不拦会"滑杆动一格、素材也挪一步"，两个消费者抢同一组键
+      if (target?.closest?.("[role='slider']")) return;
 
       const mod = e.ctrlKey || e.metaKey;
+      // Ctrl/Cmd+S：显式存一次（自动保存之外的唯一手动出口；不弹提示，
+      // 因为工具栏的保存指示本身就是反馈 —— 再弹一个"已保存"会打断画图）
+      if (mod && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        void persistence.saveNow();
+        return;
+      }
       if (mod && e.key.toLowerCase() === "z") {
         e.preventDefault();
         if (e.shiftKey) editor.redo();
@@ -431,26 +1135,107 @@ export default function MapEditorPage() {
         // Windows 习惯的重做键
         e.preventDefault();
         editor.redo();
+      } else if (mod && e.key.toLowerCase() === "c") {
+        // ── 剪贴板（R-MAP-25）：应用内剪贴板，不与系统剪贴板互通 ──
+        if (!selectedId) return;
+        e.preventDefault();
+        editor.copySelected();
+      } else if (mod && e.key.toLowerCase() === "x") {
+        if (!selectedId) return;
+        e.preventDefault();
+        editor.cutSelected();
+      } else if (mod && e.key.toLowerCase() === "v") {
+        // 粘贴不要求选中（贴到剪贴板源位置附近再拖）；空剪贴板由 store 静默拦
+        e.preventDefault();
+        editor.pasteClipboard();
+      } else if (mod && e.key.toLowerCase() === "d") {
+        if (!selectedId) return;
+        e.preventDefault();
+        editor.duplicateSelected();
+      } else if (e.key === "Enter" && tool === "draw") {
+        // Enter 闭合草稿（与「完成」按钮同一动作）。< 3 点由 `closeDraft` 静默拦掉
+        e.preventDefault();
+        closeDraft();
+      } else if (!mod && (e.key === "Delete" || e.key === "Backspace")) {
+        // Enter 闭合草稿（与「完成」按钮同一动作）。< 3 点由 `closeDraft` 静默拦掉
+        e.preventDefault();
+        closeDraft();
       } else if (e.key === "Delete" || e.key === "Backspace") {
         if (!selectedId) return;
         e.preventDefault();
         editor.removeSelected();
       } else if (e.key === "Escape") {
+        // ── Esc 的三级退让（架构 §2.7）────────────────────────────────
+        //   ① 有草稿 ⇒ 只清草稿，**不动选中**：画到一半按 Esc 不该把父块选丢了，
+        //      否则"进入/退出子级"这件事会在一次误按后静默重置；
+        //   ② 无草稿但在画区 ⇒ 回选择模式（真退出）；
+        //   ③ 否则走既有 Esc 分支（清各种中间态与选中）。
+        if (draftPoints.length > 0) {
+          setDraftPoints([]);
+          return;
+        }
+        if (tool === "draw") {
+          setTool("select");
+          return;
+        }
         editor.setPendingSpriteId(null);
         editor.setSelectedId(null);
+        editor.setSelectedRegionId(null);
         // 标注的两种中间态也一起收掉：Esc 的语义是"退出当前操作"
         setPendingLabel(false);
         setDraft(null);
+      } else {
+        // ── 方向键 / WASD 微移（R-MAP-25，无修饰键时）─────────────────
+        // 精调档 4 个世界单位；Shift 加速档 16（大图上跨半个郡用）。
+        // 画区态不微移：那时左键在落顶点，键盘微移只添乱。
+        const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+        const dir = NUDGE_DIRS[key];
+        if (dir && selectedId && tool !== "draw") {
+          e.preventDefault();
+          const step = e.shiftKey ? NUDGE_STEP_FAST : NUDGE_STEP_FINE;
+          editor.nudgeSelected(dir[0] * step, dir[1] * step);
+        }
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [editor, selectedId]);
+  }, [editor, selectedId, tool, draftPoints.length, closeDraft, persistence.saveNow]);
 
   return (
     <div className="map-editor">
       {/* ── 工具栏 ── */}
       <div className="map-editor__toolbar">
+        {/*
+          地图库入口（最左）：显示"我在改哪张图" + 存档状态。
+          【为什么放最左而不是收进「更多」】切图是低频但高权重的动作
+          （改错图 = 一下午白干），当前文件名必须一直在眼前。
+        */}
+        <div className="map-editor__toolbar-group">
+          <Tooltip title="地图库：切换 / 新建 / 重命名 / 绑定作品">
+            <Button
+              size="small"
+              icon={<DatabaseOutlined />}
+              onClick={() => void handleOpenLibrary()}
+            >
+              {/*
+                标题自己包一层 span 做省略：地图名可到 40 字，直接让按钮撑开会把
+                工具栏后半截挤到换行；而 antd Button 内部结构不是稳定契约，
+                不去给它里面的节点写选择器。
+              */}
+              <span className="map-editor__library-title">{persistence.title || "地图库"}</span>
+            </Button>
+          </Tooltip>
+          <Tooltip title={MAP_SAVE_STATUS_TEXT[persistence.status]}>
+            <span
+              className={`map-editor__save-dot map-editor__save-dot--${persistence.status}`}
+              role="status"
+              aria-label={MAP_SAVE_STATUS_TEXT[persistence.status]}
+            />
+          </Tooltip>
+        </div>
+
+        <Divider orientation="vertical" />
+
         <div className="map-editor__toolbar-group">
           <Tooltip title="撤销 (Ctrl+Z)">
             <Button
@@ -473,6 +1258,125 @@ export default function MapEditorPage() {
         <Divider orientation="vertical" />
 
         <div className="map-editor__toolbar-group">
+          <Tooltip title="删除选中 (Delete)">
+            <Button
+              size="small"
+              icon={<DeleteOutlined />}
+              disabled={!selectedId}
+              onClick={handleDelete}
+            />
+          </Tooltip>
+        </div>
+
+        <Divider orientation="vertical" />
+
+        {/*
+          工具切换：选择 / 画区（R-REG-03）。
+          【为什么是两个 Button 而不是 Segmented】`Segmented` 渲染的是 radio，
+          键盘与读屏语义是"选项"；这里切换的是**指针语义**（点一下会发生什么），
+          按按钮理解才对，也更便于按可访问名取用（`getByRole("button", {name:"画区"})`）。
+        */}
+        <div className="map-editor__toolbar-group">
+          {/*
+            三个模式按钮图标化（B1）：文字版曾把工具栏挤到换行，而模式的含义
+            Tooltip 一句话就够。可访问名不丢 —— aria-label 与原文案一致，
+            测试与读屏都按名字取用。
+          */}
+          <Tooltip title="选择：点击区块 / 素材进行选中与拖动">
+            <Button
+              size="small"
+              type={tool === "select" ? "primary" : "default"}
+              icon={<BorderOutlined />}
+              aria-label="选择"
+              aria-pressed={tool === "select"}
+              onClick={() => handlePickTool("select")}
+            />
+          </Tooltip>
+          <Tooltip title="画区：在画布上逐点勾勒一个区块（Enter 闭合、Esc 取消、双击闭合）">
+            <Button
+              size="small"
+              type={tool === "draw" ? "primary" : "default"}
+              icon={<HighlightOutlined />}
+              aria-label="画区"
+              aria-pressed={tool === "draw"}
+              onClick={() => handlePickTool("draw")}
+            />
+          </Tooltip>
+        </div>
+
+        {/*
+          画区动作区：只在画区态出现。
+          【为什么"层级"是只读指示】新块的层级由"当前选中哪一块"唯一决定（裁决 5），
+          让用户在这里改层级就等于引入第二个事实源 —— 想换层级，去点选父块。
+          【为什么「完成」在 <3 点时 disabled】三点才能构成面；给一个点了没反应的
+          按钮比不给更糟（用户会反复点）。
+        */}
+        {tool === "draw" && (
+          <>
+            <Divider orientation="vertical" />
+            <div className="map-editor__toolbar-group map-editor__draw-actions">
+              <span
+                className={
+                  targetLevelOverflow
+                    ? "map-editor__draw-level map-editor__draw-level--overflow"
+                    : "map-editor__draw-level"
+                }
+                title={
+                  targetLevelOverflow
+                    ? `已达最深层级（共 ${schema.length} 级）：选一个更浅的区块再画`
+                    : selectedRegion
+                      ? `将作为「${selectedRegion.name}」的子区块`
+                      : "未选中区块：将画在顶层"
+                }
+              >
+                {/*
+                  【层级文案为什么带 L 序号】只显示名称时，两个层级同名（用户可能把
+                  两级都叫"区域"）就看不出自己在画第几层。`levelLabelOf` 对空名回落
+                  成 `L{n}`，两者拼起来任何配置下都可读。
+                */}
+                {`层级 L${targetLevel + 1} ${levelLabelOf(schema, targetLevel)}`}
+              </span>
+              <span className="map-editor__draw-count">
+                {`已画 ${draftPoints.length} 点 · 已用 ${doc.regions.length}/${REGION_TOTAL_LIMIT}`}
+              </span>
+              <Tooltip title="撤掉最后落下的那个顶点">
+                <Button
+                  size="small"
+                  icon={<UndoOutlined />}
+                  disabled={draftPoints.length === 0}
+                  onClick={handleUndoDraftPoint}
+                >
+                  撤销上一点
+                </Button>
+              </Tooltip>
+              <Tooltip
+                title={
+                  draftPoints.length < 3
+                    ? "至少需要 3 个顶点才能闭合"
+                    : "闭合多边形并创建区块（Enter）"
+                }
+              >
+                <Button
+                  size="small"
+                  type="primary"
+                  disabled={draftPoints.length < 3}
+                  onClick={closeDraft}
+                >
+                  完成
+                </Button>
+              </Tooltip>
+              <Tooltip title={draftPoints.length > 0 ? "丢弃草稿（Esc）" : "退出画区"}>
+                <Button size="small" onClick={handleCancelDraft}>
+                  取消
+                </Button>
+              </Tooltip>
+            </div>
+          </>
+        )}
+
+        <Divider orientation="vertical" />
+
+        <div className="map-editor__toolbar-group">
           <Tooltip title="缩小">
             <Button size="small" icon={<ZoomOutOutlined />} onClick={() => handleZoom("out")} />
           </Tooltip>
@@ -487,236 +1391,290 @@ export default function MapEditorPage() {
           </Tooltip>
         </div>
 
-        <Divider orientation="vertical" />
-
-        <div className="map-editor__toolbar-group">
-          <Tooltip title="删除选中 (Delete)">
-            <Button
-              size="small"
-              icon={<DeleteOutlined />}
-              disabled={!selectedId}
-              onClick={handleDelete}
-            />
-          </Tooltip>
-          <Tooltip title="清空画布">
-            <Button
-              size="small"
-              icon={<ClearOutlined />}
-              disabled={doc.elements.length === 0}
-              onClick={handleClear}
-            />
-          </Tooltip>
-        </div>
-
-        <Divider orientation="vertical" />
-
-        {/* ── 陆地与海岸 ── */}
-        <div className="map-editor__toolbar-group">
-          <Tooltip title="陆地种子：留空 = 随机；填了可复现同一块陆地（截图比对用）">
-            <Input
-              size="small"
-              value={seedText}
-              placeholder="种子"
-              style={{ width: 84 }}
-              onChange={(e) => setSeedText(e.target.value)}
-            />
-          </Tooltip>
-          <Tooltip title="生成陆地，并在陆地内部重新划分区块（可撤销）">
-            <Button size="small" icon={<GlobalOutlined />} onClick={handleGenerateLand}>
-              生成陆地
-            </Button>
-          </Tooltip>
-          {doc.land && (
-            <>
-              <span className="map-editor__land-seed">seed {doc.land.seed}</span>
-              <Tooltip title="清除陆地（海岸四层随之消失，区块保留）">
-                <Button
-                  size="small"
-                  icon={<MinusCircleOutlined />}
-                  onClick={handleClearLand}
-                />
-              </Tooltip>
-            </>
-          )}
-        </div>
-
-        <Divider orientation="vertical" />
-
-        {/* ── 层级区块划分 ── */}
-        <div className="map-editor__toolbar-group">
-          <Tooltip title="生成几级行政区划：1 = 只切大陆，4 = 大陆 / 洲 / 国家 / 郡">
-            <InputNumber
-              size="small"
-              min={REGION_LEVEL_COUNT_LIMITS.min}
-              max={REGION_LEVEL_COUNT_LIMITS.max}
-              value={levelDepth}
-              style={{ width: 46 }}
-              onChange={(v) =>
-                setLevelDepth(typeof v === "number" ? v : REGION_LEVEL_COUNT_LIMITS.default)
-              }
-            />
-          </Tooltip>
-          <Tooltip title="随机生成层级区块（每次结果都不同，可撤销）">
-            <Button size="small" icon={<ThunderboltOutlined />} onClick={handleGenerateRegions}>
-              生成区块
-            </Button>
-          </Tooltip>
-          {doc.regions.length > 0 && (
-            <span className="map-editor__region-count">已生成 {doc.regions.length} 块</span>
-          )}
-          {currentLevel !== null && (
+        {currentLevel !== null && (
+          <>
+            <Divider orientation="vertical" />
             <Tooltip
               title={
                 `缩放 ${Math.round(viewport.scale * 100)}% · ` +
                 visibleLevels
-                  .map((v) => `${REGION_LEVELS[v.level].label} ${Math.round(v.alpha * 100)}%`)
+                  .map((v) => `${levelLabelOf(schema, v.level)} ${Math.round(v.alpha * 100)}%`)
                   .join(" · ") +
                 (elementCountsByLevel ? `｜素材：${elementCountsByLevel}` : "")
               }
             >
               <span className="map-editor__level-chip">
                 {visibleLevels.length > 1
-                  ? visibleLevels.map((v) => REGION_LEVELS[v.level].label).join(" ↔ ")
-                  : REGION_LEVELS[currentLevel].label}
+                  ? visibleLevels.map((v) => levelLabelOf(schema, v.level)).join(" ↔ ")
+                  : levelLabelOf(schema, currentLevel)}
               </span>
             </Tooltip>
-          )}
-          <Tooltip title="清除全部区块">
+          </>
+        )}
+
+        <Divider orientation="vertical" />
+
+        {/*
+          一键成图（B3 / R-MAP-21）：生成器入口。
+          【为什么在「生成陆地」左边】它是"从零到一张图"的主路径（新用户第一下
+          该点的按钮），「生成陆地」等手动动作降为进阶路径。
+        */}
+        <div className="map-editor__toolbar-group">
+          <Tooltip title="按热门地图配方一键生成整张图（陆地 + 素材 + 地名，可撤销）">
             <Button
               size="small"
-              icon={<MinusCircleOutlined />}
-              disabled={doc.regions.length === 0}
-              onClick={editor.clearRegions}
-            />
-          </Tooltip>
-          {/*
-            「显示分区」开关。
-            【为什么是 Switch 而不是按钮】它是一个**状态**（开/关），按钮是**动作**；
-            用开关能让人一眼看出当前是开还是关，不必点一下才知道。
-            【为什么不在这里额外 commit】`toggleRegions` 内部已经 commit（它进撤销栈，
-            PRD §6.2 要求"切错了能撤销"）；外面再提交一次会让一次点击产生两个撤销步。
-          */}
-          <Tooltip title="显示分区色块与界线（关掉 = 给读者看的成品图，可撤销）">
-            <Switch
-              size="small"
-              checked={doc.showRegions}
-              onChange={editor.toggleRegions}
-              checkedChildren="分区"
-              unCheckedChildren="分区"
-            />
+              icon={<PictureOutlined />}
+              onClick={() => setGeneratorOpen(true)}
+            >
+              一键成图
+            </Button>
           </Tooltip>
         </div>
 
         <Divider orientation="vertical" />
 
-        {/* ── 文字标注 ── */}
+        <div className="map-editor__toolbar-group">
+          <Tooltip
+            title={
+              splitRegions
+                ? "生成陆地，并在陆地内部重新划分区块（手动区块保留，可撤销）"
+                : "只生成陆地，不划分区块（自动区块清除，手动区块保留，可撤销）"
+            }
+          >
+            <Button size="small" icon={<GlobalOutlined />} onClick={handleGenerateLand}>
+              生成陆地
+            </Button>
+          </Tooltip>
+          {/*
+            「同时划出区块」（R-REG-02）：默认关。
+            做成「生成陆地」的**配套下拉**而不是第二个按钮 —— 它是同一个动作的一个选项，
+            分开放会让人以为是两条命令。用 `Switch` 而不是勾选菜单项：
+            菜单项点一下就关闭，用户看不到"当前是开还是关"。
+          */}
+          <Dropdown
+            trigger={["click"]}
+            placement="bottomLeft"
+            popupRender={() => (
+              <div className="map-editor__land-options">
+                <div className="map-editor__more-row map-editor__more-row--between">
+                  <span className="map-editor__more-label">同时划出区块</span>
+                  <Switch
+                    size="small"
+                    aria-label="同时划出区块"
+                    checked={splitRegions}
+                    onChange={setSplitRegions}
+                  />
+                </div>
+                <div className="map-editor__land-options-hint">
+                  勾选后与旧版一致（在陆地内逐岛切分）；默认只生成陆地，分区留给你手动划分。
+                </div>
+              </div>
+            )}
+          >
+            {/*
+              ⚠️ 可访问名不能含"生成陆地"（否则按 name=/生成陆地/ 取按钮会命中两个，
+              既有页面用例会以 "found multiple elements" 变红，且那与被测行为无关）。
+            */}
+            <Button size="small" icon={<DownOutlined />} aria-label="陆地选项" />
+          </Dropdown>
+          {/*
+            陆地种子（状态指示，保留在主栏）：生成陆地后紧跟按钮显示，评审/截图
+            比对要靠它复现同一块陆地，收进「更多」会让它脱离操作上下文。
+          */}
+          {doc.land && <span className="map-editor__land-seed">seed {doc.land.seed}</span>}
+          <Tooltip title="随机生成层级区块（每次结果都不同，可撤销）">
+            <Button size="small" icon={<ThunderboltOutlined />} onClick={handleGenerateRegions}>
+              生成区块
+            </Button>
+          </Tooltip>
+          {/*
+            层级配置（R-REG-01）：从「更多」搬到主栏。
+            【为什么不能放在 Dropdown 里】浮层内容挂 body portal ⇒ 点它等于点在
+            Dropdown 外面 ⇒ Dropdown 立刻收起 ⇒ 浮层随触发器一起卸载，输入框
+            刚聚焦就消失。这不是"体验差"，是根本没法编辑。
+          */}
+          <Popover
+            trigger={["click"]}
+            placement="bottomLeft"
+            open={schemaPanelOpen}
+            onOpenChange={(open) => {
+              setSchemaPanelOpen(open);
+              // 收起 = 一次连续调参结束 ⇒ 断键（下次编辑独立成步，架构 §2.4.1）
+              if (!open) editor.breakCommitKey();
+            }}
+            content={
+              <RegionSchemaPanel
+                schema={schema}
+                onChange={handleSchemaChange}
+                onEditEnd={handleSchemaEditEnd}
+                onApplyAndGenerate={handleApplySchemaAndGenerate}
+              />
+            }
+          >
+            <Button size="small" icon={<ApartmentOutlined />}>
+              {`层级 ${schema.length}`}
+            </Button>
+          </Popover>
+          {/*
+            区块数（状态指示，保留在主栏）：这是「生成区块」后最重要的即时反馈，
+            且多个端到端用例靠它确认生成完成，收进「更多」反而打断操作节奏。
+          */}
+          {doc.regions.length > 0 && (
+            <span className="map-editor__region-count">已生成 {doc.regions.length} 块</span>
+          )}
+        </div>
+
+        <Divider orientation="vertical" />
+
         <div className="map-editor__toolbar-group">
           <Tooltip title="在画布上单击落位，然后输入地名（回车确认、Esc 取消、空文本不创建）">
             <Button
               size="small"
               type={pendingLabel ? "primary" : "default"}
               icon={<EditOutlined />}
+              aria-label="加标注"
               onClick={() => {
-                // 与"待放置素材"互斥：一次点击只能有一种落位意图
+                // 与"待放置素材""画区"三者互斥：一次点击只能有一种落位意图
                 setPendingLabel((v) => !v);
                 editor.setPendingSpriteId(null);
+                handlePickTool("select");
               }}
-            >
-              加标注
-            </Button>
-          </Tooltip>
-          {/*
-            字号档（PRD §4.4：手动选，不按层级自动绑）。
-            【为什么放在这个位置】它紧挨着「加标注」，人一眼就能读出"我现在用多大字"。
-            【为什么只有一个下拉】三档互斥、长期有效，是典型的"从固定集合里选一个"；
-            三个并排按钮会把工具栏撑宽，也看不出当前是哪一档。
-          */}
-          <Tooltip title="地名字号：作用于新建标注与选中素材的联动地名">
-            <Select<MapLabelSize>
-              className="map-editor__select map-editor__select--label-size"
-              size="small"
-              value={labelSize}
-              style={{ width: 72 }}
-              options={LABEL_SIZES.map((size) => ({ value: size, label: `${size} 号` }))}
-              onChange={handleLabelSizeChange}
             />
           </Tooltip>
           {/*
-            素材地名：选中素材时才出现。
-            它的"位置"不是这里填的 —— 地名固定浮在素材头顶 8 单位，
-            之后跟着素材一起拖动、一起删除（见 useMapEditor 的 moveElementBy /
-            removeSelected）。人只需要管文字。
+            地名计数（状态指示，保留在主栏）：与「素材 N」同理，是「加标注」后
+            的即时反馈，紧跟操作点。
+            【素材的「地名」输入框已迁入属性面板（B1）】它是"选中对象的属性"，
+            跟尺寸 / 旋转同一语境 —— 放工具栏等于把属性拆在两处。
           */}
-          {selectedElement && (
-            <Tooltip title="给选中的素材起个地名：会浮在它头顶，并随它移动、一起删除">
-              <Input
-                size="small"
-                value={elementNameValue}
-                placeholder="地名"
-                style={{ width: 92 }}
-                onChange={(e) => setNameDraft(e.target.value)}
-                onBlur={handleElementNameCommit}
-                onKeyDown={(e) => {
-                  // IME 组字中的回车属于输入法（确认候选词），不是"提交"
-                  if (e.nativeEvent.isComposing) return;
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    handleElementNameCommit();
-                  }
-                }}
-              />
-            </Tooltip>
-          )}
           <span className="map-editor__label-count">地名 {doc.labels.length}</span>
         </div>
 
-        <Divider orientation="vertical" />
-
-        {/* ── 风格预设 + 导出 PNG（B4 / B5） ── */}
-        <div className="map-editor__toolbar-group">
-          {/*
-            风格下拉。
-            【为什么用 Select】三档互斥且长期有效，是典型的"从固定集合里选一个"；
-            三个并排按钮会把工具栏撑宽，且看不出"当前是哪一档"。
-            【为什么 onChange 走 editor.setStyle】它内部 commit（进撤销栈）——
-            风格是成品的一部分，选错了应当能撤销回来；同值重复选择不会产生
-            空撤销步（见 useMapEditor 的 setStyle）。
-          */}
-          <Tooltip title="全局配色：羊皮纸 / 墨色会连海岸一起重烘；切换可撤销">
-            <Select<MapStyle>
-              className="map-editor__select map-editor__select--style"
-              size="small"
-              value={doc.style}
-              style={{ width: 88 }}
-              options={MAP_STYLES.map((item) => ({ value: item.key, label: item.label }))}
-              onChange={editor.setStyle}
-            />
-          </Tooltip>
-          <Tooltip title="导出长边像素：1024 适合预览、2048 适合分享、4096 适合印刷">
-            <Select<ExportSize>
-              className="map-editor__select map-editor__select--export"
-              size="small"
-              value={exportSize}
-              style={{ width: 84 }}
-              options={EXPORT_SIZES.map((size) => ({ value: size, label: `${size}px` }))}
-              onChange={setExportSize}
-            />
-          </Tooltip>
-          <Tooltip title="把当前地图导出成 PNG（成品图，不含选中框）">
-            <Button
-              size="small"
-              type="primary"
-              icon={<DownloadOutlined />}
-              loading={exporting}
-              disabled={!sceneReady}
-              onClick={handleExport}
-            >
-              导出 PNG
-            </Button>
-          </Tooltip>
-        </div>
-
         <div className="map-editor__toolbar-spacer" />
+
+        <Tooltip title="把当前地图导出成 PNG（成品图，不含选中框）">
+          <Button
+            size="small"
+            type="primary"
+            icon={<DownloadOutlined />}
+            loading={exporting}
+            disabled={!sceneReady}
+            onClick={handleExport}
+          >
+            导出 PNG
+          </Button>
+        </Tooltip>
+
+        {/*
+          「更多」收纳面板：低频 / 需要状态说明的操作收进来，主工具栏只留高频，
+          避免窗口较窄时工具栏换行错乱。用 popupRender 放 Select/Switch/Input
+          （menu items 只适合纯按钮动作）。
+        */}
+        <Dropdown
+          trigger={["click"]}
+          placement="bottomRight"
+          popupRender={() => (
+            <div className="map-editor__more-panel">
+              <div className="map-editor__more-row">
+                <span className="map-editor__more-label">风格</span>
+                <Select<MapStyle>
+                  className="map-editor__select map-editor__select--style"
+                  size="small"
+                  value={doc.style}
+                  style={{ width: 108 }}
+                  options={MAP_STYLES.map((item) => ({ value: item.key, label: item.label }))}
+                  onChange={editor.setStyle}
+                />
+              </div>
+              <div className="map-editor__more-row">
+                <span className="map-editor__more-label">底图</span>
+                {/*
+                  底图家族（B3）：4 档同风格海面/羊皮纸纹理，切换即时生效。
+                  换底图走撤销栈（与风格同档）——切错了 Ctrl+Z 能回来。
+                */}
+                <Select
+                  className="map-editor__select map-editor__select--base"
+                  size="small"
+                  value={doc.baseImageId}
+                  style={{ width: 108 }}
+                  options={BASE_IMAGES.map((b) => ({ value: b.id, label: b.label }))}
+                  onChange={editor.setBaseImage}
+                />
+              </div>
+              <div className="map-editor__more-row">
+                <span className="map-editor__more-label">导出尺寸</span>
+                <Select<ExportSize>
+                  className="map-editor__select map-editor__select--export"
+                  size="small"
+                  value={exportSize}
+                  style={{ width: 108 }}
+                  options={EXPORT_SIZES.map((size) => ({ value: size, label: `${size}px` }))}
+                  onChange={setExportSize}
+                />
+              </div>
+              <div className="map-editor__more-row">
+                <span className="map-editor__more-label">地名字号</span>
+                <Select<MapLabelSize>
+                  className="map-editor__select map-editor__select--label-size"
+                  size="small"
+                  value={labelSize}
+                  style={{ width: 108 }}
+                  options={LABEL_SIZES.map((size) => ({ value: size, label: `${size} 号` }))}
+                  onChange={handleLabelSizeChange}
+                />
+              </div>
+              <div className="map-editor__more-row">
+                <span className="map-editor__more-label">陆地种子</span>
+                <Input
+                  size="small"
+                  value={seedText}
+                  placeholder="留空 = 随机"
+                  style={{ width: 108 }}
+                  onChange={(e) => setSeedText(e.target.value)}
+                />
+              </div>
+              <div className="map-editor__more-row map-editor__more-row--between">
+                <span className="map-editor__more-label">显示分区</span>
+                <Switch
+                  size="small"
+                  checked={doc.showRegions}
+                  onChange={editor.toggleRegions}
+                />
+              </div>
+              <Divider style={{ margin: "8px 0" }} />
+              <div className="map-editor__more-actions">
+                <Button
+                  size="small"
+                  icon={<MinusCircleOutlined />}
+                  disabled={!doc.land}
+                  onClick={handleClearLand}
+                >
+                  清除陆地
+                </Button>
+                <Button
+                  size="small"
+                  icon={<MinusCircleOutlined />}
+                  disabled={doc.regions.length === 0}
+                  onClick={editor.clearRegions}
+                >
+                  清除区块
+                </Button>
+                <Button
+                  size="small"
+                  danger
+                  icon={<ClearOutlined />}
+                  disabled={doc.elements.length === 0}
+                  onClick={handleClear}
+                >
+                  清空画布
+                </Button>
+              </div>
+            </div>
+          )}
+        >
+          <Button size="small" icon={<MoreOutlined />} />
+        </Dropdown>
+
         <span className="map-editor__count">素材 {doc.elements.length}</span>
       </div>
 
@@ -725,8 +1683,9 @@ export default function MapEditorPage() {
         <SpritePanel
           pendingSpriteId={pendingSpriteId}
           onPick={(id) => {
-            // 选素材即退出「加标注」态：两种落位意图不能同时开着
+            // 选素材即退出「加标注」态与画区态：三种落位意图不能同时开着
             setPendingLabel(false);
+            handlePickTool("select");
             editor.setPendingSpriteId(id);
           }}
         />
@@ -742,6 +1701,13 @@ export default function MapEditorPage() {
             land={doc.land}
             style={doc.style}
             showRegions={doc.showRegions}
+            selectedRegionId={selectedRegionId}
+            /*
+              画区草稿：`null` = 不在画区模式（画布据此区分"模式里但没落点"与"不在模式里"）。
+              顶点以世界坐标直传 —— 画布持有真实像素几何，页面不再换算一次。
+            */
+            draftPoints={tool === "draw" ? draftPoints : null}
+            onDraftClose={closeDraft}
             labels={doc.labels}
             onLabelEditRequest={handleLabelEditRequest}
             onSceneReady={handleSceneReady}
@@ -752,6 +1718,45 @@ export default function MapEditorPage() {
             onElementDragStart={handleElementDragStart}
             onElementDragDelta={handleElementDragDelta}
           />
+          {/*
+            区块操作面板：选中区块后浮出，提供「圈定生成子图 / 绑定子图 / 移除子图」。
+            只在 `selectedRegion` 非空时渲染（否则返回 null，见 RegionPanel）。
+          */}
+          <RegionPanel
+            region={selectedRegion}
+            schema={schema}
+            regionPath={regionPath}
+            isLeaf={selectedIsLeaf}
+            subtreeInfo={subtreeInfo}
+            onCarve={handleCarveSubmap}
+            onEmbed={handleEmbedSubmap}
+            onMerge={handleMergeRegion}
+            onRemove={handleRemoveSubmap}
+            onFocus={handleFocusRegion}
+            onFocusWorld={handleFocusWorld}
+            onClose={() => editor.setSelectedRegionId(null)}
+          />
+          {/*
+            素材属性面板（R-MAP-23）：选中素材后浮出，"这个对象长什么样"的语境。
+            与 RegionPanel 同位但互斥 —— 素材选中与区块选中本来就互斥（pickRegion /
+            placeSprite 各自清对方），不会出现两块面板叠在一起。
+          */}
+          {selectedElement && (
+            <ElementPanel
+              element={selectedElement}
+              spriteName={SPRITE_MAP[selectedElement.spriteId]?.label ?? selectedElement.spriteId}
+              label={selectedElementLabel}
+              schema={schema}
+              nameDraft={nameDraft}
+              onNameDraftChange={setNameDraft}
+              onNameCommit={handleElementNameCommit}
+              onUpdate={(patch, key) => editor.updateElement(selectedElement.id, patch, key)}
+              onReorder={editor.reorderSelected}
+              onDuplicate={() => editor.duplicateSelected()}
+              onDelete={handleDelete}
+              onClose={() => editor.setSelectedId(null)}
+            />
+          )}
           {/*
             地名编辑覆盖层。
             【为什么用 DOM 而不是 Pixi Text】Pixi 没有输入控件，光标、选区、IME
@@ -793,14 +1798,57 @@ export default function MapEditorPage() {
             />
           )}
           <div className="map-editor__canvas-hint">
-            滚轮缩放（大陆 → 洲 → 国家 → 郡 连续衔接）· 拖动空白平移 · 点击素材选中后拖动可移动
-            {" · 双击地名可改名"}
-            {currentLevel === null
-              ? " · 素材不归属层级（未生成区块）"
-              : ` · 新素材归入「${REGION_LEVELS[currentLevel].label}」级，缩放到别级会淡出`}
+            {tool === "draw" ? (
+              // 画区态换一套提示：此时"点击素材选中后拖动"是**错的**（左键只落顶点），
+              // 留着原提示会让人以为画区坏了
+              `画区：单击落一个顶点 · 点首顶点 / 双击 / Enter 闭合 · 「撤销上一点」退一格 · Esc 取消${
+                targetLevelOverflow ? ` · ⚠ 已达最深层级（共 ${schema.length} 级）` : ""
+              }`
+            ) : (
+              <>
+                滚轮缩放（大陆 → 洲 → 国家 → 郡 连续衔接）· 拖动空白平移 · 点击素材选中后拖动可移动
+                {" · 方向键 / WASD 微移（Shift 加速）· Ctrl+C/V 复制粘贴 · Ctrl+D 复制一份"}
+                {" · 双击地名可改名 · 点击区块 → 圈定生成子图并自动进入（Esc 取消选中）"}
+                {currentLevel === null
+                  ? " · 素材不归属层级（未生成区块）"
+                  : ` · 新素材归入「${levelLabelOf(schema, currentLevel)}」级，缩放到别级会淡出`}
+              </>
+            )}
           </div>
         </div>
       </div>
+
+      {/*
+        地图库（弹窗）。所有写操作转给 `persistence`，弹窗自身只负责列表与局部交互；
+        关掉弹窗不会中断编辑（它盖在画布上，画布状态原地保留）。
+      */}
+      <MapLibraryModal
+        open={libraryOpen}
+        currentId={persistence.docId}
+        onClose={() => setLibraryOpen(false)}
+        actions={{
+          open: (id) => persistence.openDoc(id),
+          create: (options) => persistence.createDoc(options),
+          rename: (id, title) => persistence.renameDoc(id, title),
+          remove: (id) => persistence.deleteDoc(id),
+          restore: (id) => persistence.restoreDoc(id),
+          purge: (id) => persistence.purgeDoc(id),
+          bind: (id, workId) => persistence.bindWork(id, workId),
+        }}
+      />
+
+      {/*
+        一键成图弹层（B3）。摘要与五档重掷就地展示：生成完不把用户扔回工具栏
+        （review §5.3 反馈断点）。弹层保持挂载 —— 关掉再开，参数与摘要还在。
+      */}
+      <MapGeneratorModal
+        open={generatorOpen}
+        onClose={() => setGeneratorOpen(false)}
+        onGenerate={handleGenerate}
+        summary={genSummary}
+        hasGenerated={editor.hasGenerated}
+        lastParams={editor.lastGeneratorParams}
+      />
     </div>
   );
 }

@@ -1,0 +1,11 @@
+// 证件照换底色页：左预览（吃满剩余宽度）+ 右控制栏
+.idp-page {
+  display: flex;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+  // 与其它子页面统一的页边距（页内导航条已上移到窗口标题栏）
+  padding: 12px 24px 20px;
+  background: var(--app-bg);
+  overflow: hidden;
+}

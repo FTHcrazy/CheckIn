@@ -6,12 +6,18 @@
  * 做不出海岸。区块是"地表的划分"，陆地是"地表本身"，两者必须解耦：
  * 陆地由本模块生成，区块再由 `regions.ts` 在陆地多边形**内部**切分（见 PRD §6.1.3）。
  *
- * 【形状算法：极坐标半径扰动 + fbm】
- *   r(θ) = 1 · (0.72 + 0.28 · fbm(cosθ·f, sinθ·f, seed))   再按半轴 (ax, ay) 拉伸
+ * 【形状算法：域扭曲 fbm + 极坐标半径】
+ *   r(θ) = floor + amp · fbm(w(θ)) + detail · fbm(3.9·单位圆)
+ *   其中 w(θ) = 单位圆·freq + warp · 两层低频噪声       ← 域扭曲
  * 选它而不是"撒点 + 形态学腐蚀膨胀"，理由有三：
  *   · 一次成型，顶点数可控（= 采样数），不需要额外做去自交；
- *   · θ 单调递增 ⇒ 多边形**恒为简单闭合环**，不会出现打结的填充空洞；
+ *   · θ 单调递增且 r 恒正 ⇒ 多边形**恒为简单闭合环**，不会出现打结的填充空洞；
  *   · 噪声场是位置的连续函数，同一个 θ 永远得到同一个 r ⇒ 天然可复现。
+ *
+ * ⚠️ **历次"太圆润"的根因都在参数，不在算法**：早期把 `floor` 定在 0.72，
+ * 半径只能内缩 28%，画出来就是"带轻微起伏的椭圆"；后来加域扭曲才真正摆脱圆形。
+ * 要更"碎"就调 `warp` / `freq`，要更深的海湾就调低 `floor` —— 但 `floor` 低于
+ * 0.3 会出现细颈自咬的观感（数学上仍无自交，但视觉上像断成两截）。
  *
  * 【两个比例常量的分工】`0.72` 是"最窄处不能细成长条"的下限，`0.28` 是"海岸要有湾"
  * 的振幅。两者必须一起调：只调大振幅会让陆地碎成群岛，只调小则退化成圆形。
@@ -35,33 +41,64 @@ import type { MapLand, Rect } from "./types";
 /**
  * 每岛的方向角采样数。
  *
- * PRD 写的是 64，这里取 96：64 点在适应窗口（scale ≈ 0.8）下约 31 屏幕像素一条弦，
- * 直边肉眼可辨 —— 正是 PRD §2.1 明确不要的"多边形的折线感"。96 点让
- * `drawLandPath` 的贝塞尔控制点更贴形状，成本可忽略（生成是一次性的）。
+ * PRD 写的是 64，中途取过 96。现在取 160 —— 原因变了：**不是**为了消折线
+ * （贝塞尔已经把折线磨平了），而是为了容下 `LAND_RADIUS.detail` 那一层碎齿。
+ * 碎齿绕一圈跨 54 个噪声格，按采样定理至少要 108 个点才不混叠；96 点会让
+ * 高频细节退化成随机抖动，岸线看着"毛"而不"碎"。160 点成本可忽略（生成一次）。
  */
-export const LAND_SAMPLES = 96;
+export const LAND_SAMPLES = 160;
 
 /**
- * **单岛**陆地占纸面积的目标区间（不是"所有岛加起来"的目标）。
+ * **单岛**陆地占纸面积的**排布目标**（不是"最终画面必须落在 55%~70%"）。
  *
- * ⚠️ 名字里的 `LAND_AREA_RATIO` 容易让人读成"总面积必须落在 55%~70%"，实际口径是：
- * `fitExtents` 只**收缩**不放大，所以多岛时每个岛各自被压进自己的格子，总面积
- * 一定低于单岛均值。实测（seed 20261009）：单岛 56.2%，2 岛 51.8%，3 岛 36.2%。
+ * ⚠️ 两个容易被误读的口径，先说清：
  *
- * PRD §6.1.6 的验收区间是 25%~85%（针对最终画面里的陆地占比），所以多岛也
- * **验收通过**；但如果你想让"任何岛数都到 55%"，需要改的是 `planIslands` 的
- * 格子划分与 `fitExtents` 的放大策略，不是这个常量。见架构文档 §9 的 L-2。
+ * 1. 这是给 `planIslands` 反解半轴用的**初值**。`fitExtents` 之后会按实测包围盒
+ *    重算统一系数，所以最终占纸比例由**形状本身的紧凑度**决定，不由这个常量决定。
+ * 2. 有机海岸的紧凑度天然低（轮廓在自己的包围盒里只占 40%~55%，圆是 78%），
+ *    因此实际占纸比例约 **36%~51%**（seed 实测）。想让它更满只能把轮廓做圆 ——
+ *    那正是本轮要修掉的毛病，所以**不要**为了凑百分比把 `lobe` / `rough` 调小。
+ *
+ * PRD §6.1.6 的验收区间是 15%~85%（针对最终画面里的陆地占比），多岛时更低
+ * （主陆 + 卫星岛约 16%~33%），仍在该区间内。
  *
  * 格子放不下时会按几何上限退化（见 `planIslands`）。
  */
 export const LAND_AREA_RATIO = { min: 0.55, max: 0.7 } as const;
 
 /**
- * 极坐标半径的两个系数 + 噪声频率。
- * `floor` / `amp` 见文件头；`freq` 决定绕一圈跨过几个噪声格（2π·1.6 ≈ 10，
- * 叠三层倍频后最细一层约 42 个格），于是既有大走向也有小锯齿。
+ * 陆地轮廓的四层参数。
+ *
+ * 【三次调参的教训，写下来免得再走一遍】
+ *   ① v1 `floor 0.72 / amp 0.28`：半径只能内缩 28% ⇒ 画出来是**带轻微起伏的椭圆**
+ *      —— 用户反馈的"太过于圆润"就是它。
+ *   ② v2 把振幅放到 0.58 并加域扭曲：椭圆没了，但每一段岸线的起伏幅度都差不多，
+ *      画出来是**边缘毛糙的土豆** —— 缺大尺度结构，没有"一条伸出去的半岛"。
+ *   ③ v3（当前）把"大尺度"交给**低频谐波**（几个 k=2/3/5/7 的正弦，随机相位与幅度），
+ *      域扭曲只负责把岸线拧出海湾，高频碎齿再加一层**受低频调制的**毛边 ——
+ *      于是有的岸段平滑、有的破碎，主次分明。
+ *
+ * 各参数的分工：
+ *   · `base`  —— 基线半径，直接决定陆地占纸比例（面积 ∝ E[r²]）。
+ *   · `lobe`  —— 低频谐波总振幅，决定"有几个大湾/几条大半岛"。
+ *   · `rough` —— 域扭曲 fbm 的振幅，半岛与海湾的细节。
+ *   · `warp`  —— 域扭曲强度（单位：噪声格）。这是把"圆"推成"岸"的关键。
+ *   · `freq`  —— 绕一圈跨过的噪声格数。
+ *   · `detail`—— 高频碎齿振幅，近看岸线才不"光"。
+ *
+ * ⚠️ 不要只调 `rough`：它的能量均匀分布在整圈，调大只会越来越像云；
+ * 想要"有主次的岸线"应该加 `lobe`、想加深海湾应该加 `warp`。
  */
-export const LAND_RADIUS = { floor: 0.72, amp: 0.28, freq: 1.6 } as const;
+export const LAND_RADIUS = {
+  base: 0.82,
+  lobe: 0.12,
+  rough: 0.13,
+  freq: 2.2,
+  warp: 1.4,
+  detail: 0.026,
+  /** 海岸特征（海岬 / 深湾）数量：2~4 个，是"地图感"的主要来源 */
+  features: 3,
+} as const;
 
 /** 相邻两岛之间的最小海峡宽度（= 两圈海岸可见外扩的量级） */
 export const LAND_ISLAND_GAP = 24;
@@ -73,8 +110,8 @@ export const LAND_SIMPLIFY_TOL = 1.5;
  * 抽稀的触发阈值：顶点数超过它才抽稀。
  *
  * 【为什么必须有阈值】按 1.5 的容差对一条半径 450 的环抽稀，弦长 30 对应的矢高
- * 只有 0.16 —— 远小于容差，结果会把 96 个点全部并掉，环退化成一个多边形块。
- * 抽稀是给"将来支持手绘超多点环"准备的逃生阀，默认 96 点的路径根本用不到。
+ * 只有 0.16 —— 远小于容差，结果会把采样点全部并掉，环退化成一个多边形块。
+ * 抽稀是给"将来支持手绘超多点环"准备的逃生阀，默认 `LAND_SAMPLES` 的路径用不到。
  */
 export const LAND_SIMPLIFY_MIN_POINTS = 512;
 
@@ -89,21 +126,22 @@ export const LAND_PAPER_MARGIN = 56;
 /**
  * 环的实际最大半径相对半轴的**名义**比例。
  *
- * r(θ) 的上界是 1，但 fbm 极少取到 1 —— 96 点里最大值实测约 0.94。用这个名义值
- * 做排布，而不是保守地按 1 排，是为了让单岛陆地能占到纸面的一半以上（PRD §2.1
- * "占纸面的一半多一点"）。生成之后 `fitExtents` 会按实测包围盒再校正一次，
- * 因此这个近似不会让陆地越出纸面 —— 只会让它小两三个百分点。
+ * 【为什么从 0.94 改成 1.0】旧参数下 r 的上界几乎取不到（fbm 尖峰极窄），
+ * 所以用 0.94 做排布能多榨出几个百分点。新参数里海岬特征会把局部半径推到
+ * `base + lobe + 特征幅度 ≈ 1.1`，按 0.94 排布会让岛直接顶出格子、吃掉海峡。
+ * 宁可排布时保守（1.0），让 `fitExtents` 按实测去放大。
  */
-export const LAND_EXTENT_NOMINAL = 0.94;
+export const LAND_EXTENT_NOMINAL = 1;
 
 /**
  * 面积系数：A ≈ LAND_AREA_FACTOR · π · ax · ay。
  *
- * 由 A = ½∫r²dθ 与 fbm 的均值/方差推出（E[f]≈0.5、E[f²]≈0.33），
- * 用来把"目标面积"反解成半轴。它只是**初值** —— 生成后会按实测面积与可用
- * 空间再校正，所以这里的误差不致命。
+ * 由 A = ½∫r²dθ 推出：E[r²] = base² + Var(谐波) + Var(域扭曲) + Var(特征)。
+ * 当前参数（base 0.82 / lobe 0.12 / rough 0.13 / 特征 ±0.12~0.32）实测 ≈ 0.70。
+ * 它只是**初值** —— 生成后 `fitExtents` 会按实测包围盒校正，误差不致命；
+ * 但估得太离谱会让 k 撞上限、陆地明显偏小，所以要跟着参数一起改。
  */
-export const LAND_AREA_FACTOR = 0.746;
+export const LAND_AREA_FACTOR = 0.7;
 
 /** 万一仍然相交时的收缩系数（PRD §6.1.2 写"缩小 8%"） */
 export const LAND_SHRINK = 0.92;
@@ -177,6 +215,8 @@ interface IslandPlan {
   ax: number;
   /** y 方向半轴 */
   ay: number;
+  /** 主轴倾角（弧度）。0 = 正南北，真实大陆极少摆得这么正 */
+  angle: number;
   /** 本格在 x 上可用的半幅（已扣掉纸边留海与邻岛海峡） */
   spanX: number;
   /** 本格在 y 上可用的半幅 */
@@ -189,11 +229,19 @@ interface IslandPlan {
  * 步骤：
  *   1) 纸内缩 `LAND_PAPER_MARGIN` 得到可用区，按岛数切成 cols × rows 个格子；
  *   2) 每格的可用半幅 = 半格宽 −（该方向上有邻居才扣）海峡的一半；
- *   3) 每个岛的**长半轴沿格子更长的那个方向**，短半轴按格子长宽比压缩
- *      —— 于是岛的形状跟着格子走，两岛时是两条南北向的大岛，而不是两个圆点；
- *   4) 半轴再按"实测外扩 ≤ 可用半幅"封顶，最后在**格子内的余量**里抖动岛心。
+ *   3) 每个岛的长半轴沿格子更长的那个方向，短半轴按**格子长宽比与 1 之间的随机值**
+ *      压缩 —— 格子只给出"上限"，不再决定形状（见下方注释）；
+ *   4) 半轴再按"名义外扩 ≤ 可用半幅"封顶，最后在**格子内的余量**里抖动岛心，
+ *      并给主轴一个 ±22° 的倾角。
+ *
+ * 【为什么短半轴不再严格等于格子的比例】旧实现里 `ax : ay` 就是格子长宽比，
+ * 两岛时格子是 456×912 的竖条，于是岛上画出来就是两条**竖长的圆角矩形** ——
+ * 形状跟着排版走，而不是跟着地貌走。现在格子只负责"不许越过海峡"，真实长宽比
+ * 在 `格子比例 ~ 1` 之间随机，岛才有胖瘦之分。
  *
  * 抖动只允许在余量内：格子就是"岛与邻岛的分界"，越界抖动等于把海峡吃掉。
+ * 倾角同理受半轴封顶约束（封顶用的是保守的 `LAND_EXTENT_NOMINAL = 1`，旋转不会让
+ * 实测外扩超出格子太多），最终仍由 `fitExtents` 按实测收口。
  */
 function planIslands(areas: number[], bounds: Rect, rng: () => number): IslandPlan[] {
   const n = areas.length;
@@ -208,30 +256,49 @@ function planIslands(areas: number[], bounds: Rect, rng: () => number): IslandPl
   const usableH = bounds.height - LAND_PAPER_MARGIN * 2;
   if (usableW <= 0 || usableH <= 0) return [];
 
-  const cellW = usableW / cols;
-  const cellH = usableH / rows;
-  const spanX = cellW / 2 - (cols > 1 ? LAND_ISLAND_GAP / 2 : 0);
-  const spanY = cellH / 2 - (rows > 1 ? LAND_ISLAND_GAP / 2 : 0);
-  // 格子退化（岛数太多）时不再生成，免得排出一堆零面积的碎屑
-  if (spanX <= 1 || spanY <= 1) return [];
+  // ── 列宽按"列内各岛面积和"分配，而不是等分 ──
+  //
+  // 【为什么必须这样】等分时两岛各拿半张纸宽，主陆被压成竖条 —— 而首块岛的
+  // 权重是其余的 2~4 倍（见 generateLand），面积却和它一样宽，画出来就是
+  // "一块大陆挤在小格子里"。按面积分配后，主陆能拿到接近整张纸宽的空格，
+  // 小岛则退到窄列里当点缀，这才是地图上该有的主次。
+  const colArea = new Array<number>(cols).fill(0);
+  for (let i = 0; i < n; i += 1) colArea[i % cols] += Math.max(areas[i], 1);
+  const colAreaSum = colArea.reduce((s, v) => s + v, 0) || 1;
+  const colW = colArea.map((a) => (usableW * a) / colAreaSum);
+  const colX: number[] = [];
+  let accX = usableX;
+  for (let c = 0; c < cols; c += 1) {
+    colX.push(accX);
+    accX += colW[c];
+  }
 
-  const longIsY = spanY >= spanX;
-  const squash = Math.min(spanX, spanY) / Math.max(spanX, spanY);
+  const cellH = usableH / rows;
 
   const out: IslandPlan[] = [];
   for (let i = 0; i < n; i += 1) {
     const gx = i % cols;
     const gy = Math.floor(i / cols) % rows;
-    const cellCx = usableX + (gx + 0.5) * cellW;
-    const cellCy = usableY + (gy + 0.5) * cellH;
+    const cellX = colX[gx];
+    const cellY = usableY + gy * cellH;
+    const cellCx = cellX + colW[gx] / 2;
+    const cellCy = cellY + cellH / 2;
+    const spanX = colW[gx] / 2 - (cols > 1 ? LAND_ISLAND_GAP / 2 : 0);
+    const spanY = cellH / 2 - (rows > 1 ? LAND_ISLAND_GAP / 2 : 0);
+    // 格子退化（岛数太多）时不再生成，免得排出一堆零面积的碎屑
+    if (spanX <= 1 || spanY <= 1) continue;
 
-    // 目标面积 → 半轴：A = FACTOR · π · ax · ay，且 ax : ay = 格子长宽比
+    const longIsY = spanY >= spanX;
+    const cellRatio = Math.min(spanX, spanY) / Math.max(spanX, spanY);
+
+    // 长宽比：格子比例是下限，1 是上限，中间随机 —— 岛不再被排版"刻"成长条
+    const ratio = cellRatio + (1 - cellRatio) * (0.3 + rng() * 0.55);
     const target = Math.max(areas[i], 1);
-    const long = Math.sqrt(target / (Math.PI * LAND_AREA_FACTOR * Math.max(squash, 1e-3)));
-    let ax = longIsY ? long * squash : long;
-    let ay = longIsY ? long : long * squash;
+    const long = Math.sqrt(target / (Math.PI * LAND_AREA_FACTOR * Math.max(ratio, 1e-3)));
+    let ax = longIsY ? long * ratio : long;
+    let ay = longIsY ? long : long * ratio;
 
-    // 封顶：实测外扩（≈ 名义比例 × 半轴）不得超出格子可用半幅
+    // 封顶：名义外扩不得超出格子可用半幅
     const k = Math.min(
       1,
       spanX / (LAND_EXTENT_NOMINAL * ax),
@@ -249,6 +316,8 @@ function planIslands(areas: number[], bounds: Rect, rng: () => number): IslandPl
       },
       ax,
       ay,
+      // ±22°：足够破掉"正南正北"的排版感，又不至于让长轴顶出格子
+      angle: (rng() - 0.5) * ((22 * Math.PI) / 180) * 2,
       spanX,
       spanY,
     });
@@ -256,27 +325,95 @@ function planIslands(areas: number[], bounds: Rect, rng: () => number): IslandPl
   return out;
 }
 
-/** 生成一个岛的闭合环（按半轴做各向异性拉伸） */
+/**
+ * 单岛形状函数：`t`（方向角）→ 半径倍数。
+ *
+ * 五层叠加（见 `LAND_RADIUS` 的注释）：
+ *   ① 海岸特征 —— 每个岛随机 2~4 个**高斯型凸起/凹陷**，即"海岬"与"深湾"。
+ *      这是"地图感"的主力：人看海岸线时认的是"那里伸出来一个半岛""这里凹进去
+ *      一个湾"，而不是"边缘有随机毛刺"。纯噪声永远给不出可指认的半岛。
+ *   ② 低频谐波 —— 几个 k=2/3/5/7 的正弦，随机相位与幅度，决定整体的胖瘦走向。
+ *   ③ 域扭曲 fbm —— 用另一层低频噪声偏移**采样坐标本身**，把岸线拧成舌状。
+ *   ④ 高频碎齿 —— 振幅被另一层低频调制，于是有的岸段平滑、有的破碎。
+ *
+ * 【为什么返回闭包而不是每次现算随机数】谐波相位、特征位置必须整岛一致：若在
+ * 每个采样点重新取随机数，形状就变成白噪声，且与 seed 无关。
+ *
+ * 【无自交为什么是必然】结果恒为正 ⇒ r(θ) 是单值函数 ⇒ θ 单调采样出的环不自交。
+ * 测试里那条"无自交"断言不是碰运气，是被这个结构保证的。
+ */
+function makeRadius(seed: number): (t: number) => number {
+  const { base, lobe, rough, freq, warp, detail, features } = LAND_RADIUS;
+
+  // ① 海岸特征：位置随机分布在整圈，宽度 0.12~0.38 弧度（太窄会成"尖刺"），
+  //    约四成是湾（负值）、六成是岬（正值）—— 有湾的岸线才不像"一块色块"。
+  const featRng = createRng(seed ^ 0x27d4eb2d);
+  const caps: { theta: number; width: number; amp: number }[] = [];
+  for (let i = 0; i < features; i += 1) {
+    caps.push({
+      theta: featRng() * Math.PI * 2,
+      width: 0.12 + featRng() * 0.26,
+      amp: (0.12 + featRng() * 0.2) * (featRng() < 0.42 ? -1 : 1),
+    });
+  }
+
+  // ② 低频谐波：k 越大振幅越小（1/k 加权），总振幅归一到 lobe
+  const rng = createRng(seed ^ 0x85ebca6b);
+  const ks = [2, 3, 5, 7];
+  const raw = ks.map((k) => (0.45 + rng() * 0.85) / k);
+  const rawSum = raw.reduce((s, v) => s + v, 0);
+  const amps = raw.map((v) => (v / rawSum) * lobe);
+  const phases = ks.map(() => rng() * Math.PI * 2);
+
+  return (t: number) => {
+    const cos = Math.cos(t);
+    const sin = Math.sin(t);
+
+    let big = 0;
+    for (let i = 0; i < ks.length; i += 1) big += amps[i] * Math.sin(ks[i] * t + phases[i]);
+
+    // ① 特征：角度距离取最短弧（否则 θ 在 0/2π 处会断开一个口子）
+    let cape = 0;
+    for (const f of caps) {
+      let d = t - f.theta;
+      if (d > Math.PI) d -= Math.PI * 2;
+      else if (d < -Math.PI) d += Math.PI * 2;
+      const x = d / f.width;
+      cape += f.amp * Math.exp(-x * x);
+    }
+
+    // ③ 域扭曲：低频、x / y 各一层，把岸线整体"拧"出海湾
+    const lx = cos * freq;
+    const ly = sin * freq;
+    const wx = lx + warp * (fbm(lx * 0.45 + 13.1, ly * 0.45 + 4.7, seed + 911, 2) - 0.5) * 2;
+    const wy = ly + warp * (fbm(lx * 0.45 - 7.3, ly * 0.45 + 9.2, seed + 577, 2) - 0.5) * 2;
+    const mid = (fbm(wx, wy, seed, 4, 2.05, 0.5) - 0.5) * 2;
+
+    // ④ 碎齿：用低频 mask 调制振幅 —— 全圈一样毛糙会像云，有的段光滑才像岸
+    const mask = 0.2 + 0.8 * fbm(lx * 0.8 + 3.3, ly * 0.8 - 2.1, seed + 733, 2);
+    const grit = (fbm(lx * 9.1, ly * 9.1, seed + 313, 2) - 0.5) * 2 * mask;
+
+    return base + cape + big + mid * rough + grit * detail;
+  };
+}
+
+/** 生成一个岛的闭合环（各向异性拉伸 + 主轴旋转） */
 function makeRing(plan: IslandPlan, seed: number, samples: number): Point[] {
   const n = Math.max(8, Math.round(samples));
+  const cosA = Math.cos(plan.angle);
+  const sinA = Math.sin(plan.angle);
+  const radius = makeRadius(seed);
   const ring: Point[] = [];
   for (let k = 0; k < n; k += 1) {
     const t = (k / n) * Math.PI * 2;
-    const cos = Math.cos(t);
-    const sin = Math.sin(t);
-    // 噪声坐标取单位圆上的点 × 频率：绕一圈走过的噪声格数 = 2π·freq
-    const noise = fbm(
-      cos * LAND_RADIUS.freq,
-      sin * LAND_RADIUS.freq,
-      seed,
-      3,
-      2.05,
-      0.5,
-    );
-    const rn = LAND_RADIUS.floor + LAND_RADIUS.amp * noise;
+    const r = radius(t);
+    // 先在"未旋转的椭圆系"里算，再整体旋转 —— 否则拉伸与旋转的顺序会让
+    // 长轴被拉长成 1/sin 倍，形状失控
+    const lx = r * plan.ax * Math.cos(t);
+    const ly = r * plan.ay * Math.sin(t);
     ring.push({
-      x: plan.center.x + rn * plan.ax * cos,
-      y: plan.center.y + rn * plan.ay * sin,
+      x: plan.center.x + lx * cosA - ly * sinA,
+      y: plan.center.y + lx * sinA + ly * cosA,
     });
   }
   return ring;
@@ -319,7 +456,10 @@ function fitExtents(islands: { plan: IslandPlan; ring: Point[] }[]): Point[][] {
     }
   }
   if (!Number.isFinite(k)) k = 1;
-  k = clamp(k, 0.5, 1.25);
+  // 上限从 1.25 放开到 1.6：新形状的初始半轴估得比旧参数保守（`floor` 从 0.72 降到
+  // 0.42，面积系数也随之从 0.746 降到 0.52），实测常常需要放大才能贴住格子。
+  // 下限 0.5 保留 —— 异常输入时宁可小一圈，也不要吹成气球盖住海峡。
+  k = clamp(k, 0.5, 1.6);
 
   return measured.map((it) => scaleRing(it.ring, it.plan.center, k));
 }
@@ -337,19 +477,25 @@ export function generateLand(options: LandOptions): MapLand {
   const paperArea = Math.max(0, bounds.width) * Math.max(0, bounds.height);
   if (paperArea <= 0) return { seed, polygons: [], bounds };
 
-  const count = clamp(
-    Math.round(options.islands ?? 1 + Math.floor(rng() * 3)),
-    1,
-    8,
-  );
+  // 单陆 55% / 双陆 30% / 三陆 15%。
+  // 【为什么不均匀取 1~3】一块完整大陆是奇幻地图的主力构图；均匀撒 1~3 会让
+  // "两块挤在一起的小岛"成为三分之一的默认结果 —— 用户点一次生成就得到一张
+  // 零碎的图。想多岛就多点几次，或显式传 `islands`。
+  const islandRoll = rng();
+  const autoIslands = islandRoll < 0.55 ? 1 : islandRoll < 0.85 ? 2 : 3;
+  const count = clamp(Math.round(options.islands ?? autoIslands), 1, 8);
 
-  // 目标总面积与逐岛面积权重（0.7~1.3，让多岛时大小不一）
+  // 目标总面积与逐岛面积权重。
+  //
+  // 【为什么第一块要占主导】旧权重是 0.7~1.3 —— 多岛时画出来是"两条一样大的
+  // 长圆"，读起来像复制粘贴，而不是地图。真实地形几乎总是"一块主陆 + 若干小岛"，
+  // 所以首块固定为 1，其余 0.22~0.5：主陆撑住画面，小岛做点缀与航线节点。
   const targetRatio = LAND_AREA_RATIO.min + rng() * (LAND_AREA_RATIO.max - LAND_AREA_RATIO.min);
   const targetArea = paperArea * targetRatio;
   const weights: number[] = [];
   let weightSum = 0;
   for (let i = 0; i < count; i += 1) {
-    const w = 0.7 + rng() * 0.6;
+    const w = i === 0 ? 1 : 0.22 + rng() * 0.28;
     weights.push(w);
     weightSum += w;
   }

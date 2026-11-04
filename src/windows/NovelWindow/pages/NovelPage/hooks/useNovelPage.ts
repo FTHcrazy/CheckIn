@@ -2027,6 +2027,17 @@ export function useNovelPage() {
   }, [data.activeWorkId, view]);
 
   /**
+   * 唤起架空地图独立窗口（R28 / MapWindow，单实例；已开则聚焦）。
+   *
+   * 与 openRelationWindow 不同，这里**不拦零作品**：MapWindow 当前是纯独立
+   * 编辑器（数据模型尚无 workId 绑定），先画地图再绑定作品是合法路径。
+   * 作品绑定留待数据模型接入 workId 后（Phase 2+）再加守卫。
+   */
+  const openMapWindow = useCallback((): void => {
+    window.electronAPI?.send("map-window-open", null);
+  }, []);
+
+  /**
    * 行囊窗口「真的可见」的回执（主进程 `notifyPackShown` → `pack-window-shown`）。
    *
    * 收到即复位 loading；同时清掉兜底定时器 —— 两者谁先到都行，
@@ -2568,6 +2579,7 @@ export function useNovelPage() {
     handleSelectWork,
     openPackWindow,
     openRelationWindow,
+    openMapWindow,
     packOpening,
     handleRollback,
     handleMark,

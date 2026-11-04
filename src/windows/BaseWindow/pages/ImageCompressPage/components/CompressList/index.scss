@@ -1,0 +1,20 @@
+// 结果列表容器：自身吃满剩余高度，滚动交给内层（父级是定高 flex column）
+.imgc-list {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+
+  &__scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    // 列表自持滚动后外层不再重复出滚动条
+    overflow-x: hidden;
+  }
+
+  &__empty {
+    margin: auto;
+    padding: 24px 0;
+  }
+}

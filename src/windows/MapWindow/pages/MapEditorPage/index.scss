@@ -48,6 +48,51 @@
   color: var(--app-text-secondary);
 }
 
+/**
+ * 地图名（工具栏最左那颗按钮的文本）。
+ *
+ * 省略号交给这层 span：地图名上限 40 字，直接让按钮按内容撑开会把工具栏挤到换行。
+ */
+.map-editor__library-title {
+  display: inline-block;
+  max-width: 148px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+/**
+ * 存档状态点（工具栏最左，紧挨地图名）。
+ *
+ * 【为什么是一个点而不是一行字】保存是 800ms 一次的高频后台动作，写成
+ * 「正在保存…」会让工具栏每几秒抖一下；一个点 + Tooltip 说明既够用又不打扰。
+ * 四档颜色只取主题 token：进行中 = 主色，成功 = 主色淡，冲突/失败 = 警示。
+ */
+.map-editor__save-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--app-text-secondary);
+  transition: background-color 0.2s ease;
+
+  &.map-editor__save-dot--dirty,
+  &.map-editor__save-dot--saving {
+    background: var(--app-primary);
+  }
+
+  &.map-editor__save-dot--saved {
+    background: var(--app-primary);
+    opacity: 0.45;
+  }
+
+  &.map-editor__save-dot--conflict,
+  &.map-editor__save-dot--error {
+    background: var(--app-error);
+  }
+}
+
 .map-editor__region-count {
   font-size: 12px;
   color: var(--app-text-secondary);
@@ -92,10 +137,55 @@
   white-space: nowrap;
   padding: 1px 8px;
   border-radius: 9px;
-  color: var(--app-accent, #5b6cf9);
-  background: color-mix(in srgb, var(--app-accent, #5b6cf9) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--app-accent, #5b6cf9) 28%, transparent);
+  color: var(--app-primary);
+  background: color-mix(in srgb, var(--app-primary) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--app-primary) 28%, transparent);
   cursor: default;
+}
+
+/**
+ * 画区动作区（R-REG-03）。
+ *
+ * 整段用一条左侧竖线 + 淡底色圈起来：画区态是**临时进入的模态**，
+ * 它与两侧的常驻按钮（撤销 / 缩放）不是同一类东西，靠背景区分比靠位置可靠
+ * —— 工具栏在窄窗口下会换行，位置随时可能变。
+ */
+.map-editor__draw-actions {
+  padding: 2px 8px;
+  border-radius: var(--app-radius-panel, 8px);
+  background: color-mix(in srgb, var(--app-primary) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--app-primary) 22%, transparent);
+}
+
+/**
+ * 画区目标层级（只读指示）。
+ *
+ * 用等宽数字：层号会从 L1 变到 L4，宽度跳变会让右侧「已画 N 点」跟着抖。
+ */
+.map-editor__draw-level {
+  font-size: 12px;
+  white-space: nowrap;
+  color: var(--app-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/**
+ * 层级已封顶：标红。
+ *
+ * 此刻画布上的每一次点击都只会弹「已达最深层级」而不会落点，
+ * 指示器必须先变红 —— 否则用户会以为画布卡了。
+ */
+.map-editor__draw-level--overflow {
+  color: var(--app-error);
+  font-weight: 600;
+}
+
+/** 已画点数 / 已用区块数：等宽数字，避免逐点跳动时整行抖动 */
+.map-editor__draw-count {
+  font-size: 12px;
+  white-space: nowrap;
+  color: var(--app-text-secondary);
+  font-variant-numeric: tabular-nums;
 }
 
 // ── 主体 ──
@@ -103,6 +193,103 @@
   flex: 1;
   min-height: 0;
   display: flex;
+}
+
+// ── 「更多」收纳面板 ──
+.map-editor__more-panel {
+  padding: 10px 12px;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-panel, 8px);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 224px;
+}
+
+.map-editor__more-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.map-editor__more-label {
+  font-size: 12px;
+  color: var(--app-text-secondary);
+  white-space: nowrap;
+}
+
+.map-editor__more-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+
+  // 按钮在面板里拉满，点选更容易
+  .ant-btn {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
+
+// ── 「生成陆地」配套选项浮层 ──
+/**
+ * 「同时划出区块」下拉面板。
+ *
+ * 与「更多」收纳面板同款外观，但**更窄**：它只放一个开关，宽度跟着内容走，
+ * 不设 min-width —— 一个开关撑出 224px 的空白会显得像加载失败的浮层。
+ */
+.map-editor__land-options {
+  width: 232px;
+  padding: 10px 12px;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-panel, 8px);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.map-editor__land-options-hint {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--app-text-secondary);
+}
+
+// ── 合并子区域的确认内容（PRD §4.3） ──
+/**
+ * 弹窗正文按"四段"排：数量与名字 / ⚠ 子图警告 / P 自身有子图 / 结尾两句。
+ *
+ * 【为什么行距比页面正文大一点】这段文字是**一次不可逆删除的最后一道关**，
+ * 挤成一团会让人略过 ⚠ 段直接点确认。段落之间留白就是"请读一下"的视觉提示。
+ */
+.map-editor__merge-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  line-height: 1.6;
+
+  p {
+    margin: 0;
+  }
+}
+
+/**
+ * ⚠ 段：被删子树里带子图的区块。
+ *
+ * 用警示色而不是纯加粗：这是本次操作唯一"删了就没"的副作用，
+ * 必须比"删了 N 个区块"（可撤销的普通删除）更抓眼。
+ */
+.map-editor__merge-warn {
+  color: var(--app-error);
+}
+
+/** 结尾两句：边界不变 + 可一步撤销 —— 弱化，读起来像"保证"而不是命令 */
+.map-editor__merge-note {
+  color: var(--app-text-secondary);
 }
 
 .map-editor__canvas-area {

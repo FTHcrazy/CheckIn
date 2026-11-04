@@ -1,0 +1,119 @@
+// 预览舞台：顶部视图切换条 + 居中的画布，空态覆盖一层提示
+.idp-stage {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-panel);
+  background: var(--app-surface);
+  overflow: hidden;
+
+  &__bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex: none;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--app-border);
+  }
+
+  &__info {
+    font-size: 12px;
+    color: var(--app-text-muted);
+    font-variant-numeric: tabular-nums;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__canvas-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    // 定高 flex 容器里的滚动区必须有下限，否则内容多时把父级压扁
+    min-height: 0;
+    // 底部留出拖动提示的位置，画布不会被提示条压住
+    padding: 12px 12px 32px;
+    overflow: auto;
+  }
+
+  &__canvas {
+    border-radius: var(--app-radius-item);
+    box-shadow: var(--app-shadow-card);
+    // 拖动期间避开浏览器的原生手势与文字选择
+    touch-action: none;
+
+    // 空图时留在 DOM 里占位但不显形（ref 必须始终有效）
+    &.is-empty {
+      display: none;
+    }
+
+    // 可拖动构图时给手型光标，画布本身没有可聚焦的控件语义
+    &.is-draggable {
+      cursor: grab;
+    }
+
+    &.is-dragging {
+      cursor: grabbing;
+    }
+  }
+
+  &__pan-tip {
+    position: absolute;
+    bottom: 8px;
+    left: 50%;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin: 0;
+    padding: 2px 8px;
+    border-radius: var(--app-radius-pill);
+    background: var(--app-surface-alt);
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--app-text-muted);
+    transform: translateX(-50%);
+    // 提示条浮在画布上方，不能挡住拖动
+    pointer-events: none;
+    white-space: nowrap;
+  }
+
+  &__placeholder {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 24px;
+    text-align: center;
+    pointer-events: none;
+  }
+
+  &__icon {
+    margin: 0;
+    font-size: 28px;
+    color: var(--app-primary);
+  }
+
+  &__title {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--app-text);
+  }
+
+  &__hint {
+    margin: 0;
+    max-width: 320px;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--app-text-muted);
+  }
+}

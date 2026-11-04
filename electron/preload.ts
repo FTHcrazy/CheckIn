@@ -516,21 +516,34 @@ contextBridge.exposeInMainWorld('electronAPI', {
       trackedInvoke('ai-open-key-page', payload),
   },
 
-  // ── 记账（语义化 IPC，数据存 userDb 的 ledger_* 表） ──
-  ledger: {
-    listTransactions: (range?: { start?: string; end?: string }) =>
-      trackedInvoke('ledger-transaction-list', range),
-    addTransaction: (tx: unknown) =>
-      trackedInvoke('ledger-transaction-add', tx),
-    updateTransaction: (id: string, updates: Record<string, unknown>) =>
-      trackedInvoke('ledger-transaction-update', id, updates) as Promise<boolean>,
-    deleteTransaction: (id: string) =>
-      trackedInvoke('ledger-transaction-delete', id) as Promise<boolean>,
-    listCategories: () => trackedInvoke('ledger-category-list'),
-    upsertCategory: (category: unknown) =>
-      trackedInvoke('ledger-category-upsert', category) as Promise<boolean>,
-    deleteCategory: (id: string, fallbackId: string) =>
-      trackedInvoke('ledger-category-delete', id, fallbackId) as Promise<boolean>,
+  // ── 地图（map.db 独立库：存档 / 列表 / 版本 / 作品绑定） ──
+  // 与 novel 同一套约定：invoke 走 trackedInvoke（失败与慢调用会被观测），
+  // 入参一律压成**一个对象**，主进程按字段读 —— 位置参数在加字段时最容易错位。
+  map: {
+    /** 列表：不含 doc_json，只给元信息 + 缩略图 data URL；includeDeleted 用于回收站 */
+    docsList: (workId?: string | null, includeDeleted?: boolean) =>
+      trackedInvoke('map-docs-list', { workId: workId ?? null, includeDeleted: includeDeleted === true }),
+    get: (id: string) => trackedInvoke('map-doc-get', { id }),
+    create: (payload: { title?: string; workId?: string | null; doc?: unknown }) =>
+      trackedInvoke('map-doc-create', payload),
+    save: (payload: { id: string; doc: unknown; baseRev: number; viewport?: unknown }) =>
+      trackedInvoke('map-doc-save', payload),
+    /** 关窗 flush：忽略乐观锁直接写（唯一的强写口，见 map-handlers） */
+    flush: (payload: { id: string; doc: unknown; baseRev: number; viewport?: unknown }) =>
+      trackedInvoke('map-doc-flush', payload),
+    rename: (id: string, title: string) => trackedInvoke('map-doc-rename', { id, title }),
+    /** 软删（进回收站，可 restore） */
+    remove: (id: string) => trackedInvoke('map-doc-delete', { id }),
+    restore: (id: string) => trackedInvoke('map-doc-restore', { id }),
+    /** 彻底删除（含历史版本与资源目录，不可恢复） */
+    purge: (id: string) => trackedInvoke('map-doc-purge', { id }),
+    /** 绑定 / 解绑作品（null = 解绑，不删图） */
+    bind: (id: string, workId: string | null) => trackedInvoke('map-doc-bind', { id, workId }),
+    thumb: (id: string, png: Uint8Array) => trackedInvoke('map-doc-thumb', { id, png }),
+    revisions: (id: string) => trackedInvoke('map-doc-revisions', { id }),
+    restoreRev: (id: string, rev: number) => trackedInvoke('map-doc-restore-rev', { id, rev }),
+    /** 可绑定的作品选项（只读 novel.db 的 id + name 两列） */
+    workOptions: () => trackedInvoke('map-work-options'),
   },
 
   send: (channel: string, data: unknown) => {
@@ -539,8 +552,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'novel-window-open',
       // 设置窗口开关（novel 版主窗标题栏的设置入口）
       'settings-window-open',
-      // 地图窗口开关（full 版主窗的地图入口）
+      // 地图窗口开关（full 版 base 头 / novel 版工具箱的架空地图入口）
       'map-window-open',
+      // 地图关窗 flush 回执：渲染层写完存档后通知主进程可以真正关闭窗口
+      // （主进程侧 close 拦截见 main.ts 的 registerMapFlushGuard）
+      'map-doc-flush-done',
       // 行囊独立窗口开关（小说窗口顶栏入口，full/novel 版）
       'pack-window-open',
       // 跨窗口导航：行囊窗口请求打开小说窗口的设定中心（UI-03）
@@ -570,6 +586,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'pack-window-shown',
       // 全局设定中心窗口「真的可见」的回执：书架那颗按钮据此退出「正在打开」
       'global-setting-window-shown',
+      // 地图关窗前的取快照请求：渲染层收到后立刻 flush，再回 map-doc-flush-done
+      'map-doc-request-snapshot',
     ]
     if (validChannels.includes(channel)) {
       const listener = (_event: Electron.IpcRendererEvent, ...args: unknown[]) => func(...args)

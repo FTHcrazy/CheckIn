@@ -1,5 +1,6 @@
 import { act, render } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { WORLD_LAYER_ORDER, worldLayerIndexOf, type WorldLayerName } from "./layers";
 
 /**
  * 海岸烘焙在组件层的回归测试（PRD §6.1.4 / 架构 T03 第 5 步）。
@@ -22,6 +23,16 @@ interface FakeNode {
   height: number;
   /** 风格滤镜挂载点：本文件要断言"哪些节点挂了、哪些一个都没挂" */
   filters: unknown[];
+}
+
+/**
+ * 按**名字**取 world 的某个图层。
+ *
+ * 禁止裸下标：加一层不该让一堆断言连带变红（架构 §6-1）。
+ * 顺序的唯一定义处是 `layers.ts` 的 `WORLD_LAYER_ORDER`。
+ */
+function layerOf(world: FakeNode, name: WorldLayerName): FakeNode {
+  return world.children[worldLayerIndexOf(name)];
 }
 
 /** 每次 RenderTexture.create 的参数（用来数"重建了几次"） */
@@ -286,14 +297,13 @@ function stubCanvasRect() {
 /**
  * 场景图上的 world → coast → coastSprite。
  *
- * 【索引为什么是 1】world 的子节点按 z 序一次性加入：
- *   [0] staticLayer（投影 + 海面）  [1] coast  [2] regionLayer
- *   [3] elementLayer              [4] labelLayer  [5] overlay
- * 顺序由 `render-stack-guard.test.ts` 守着。
+ * 【为什么按名字取图层】以前这里写的是 `world.children[1]` 加一句"索引为什么是 1"
+ * 的注释 —— 加一层（T5 的 `draftLayer`）就要回来改注释和所有裸下标，而失败信息
+ * 只是"长度不对"。现在一律走 `layerOf()`，顺序的唯一定义处是 `layers.ts`。
  */
 function nodes() {
   const world = apps[0].stage.children[0] as unknown as FakeNode;
-  const coast = world.children[1] as unknown as FakeNode;
+  const coast = layerOf(world, "coast");
   const sprite = coast.children[0] as unknown as FakeNode;
   return { world, coast, sprite };
 }
@@ -305,13 +315,13 @@ beforeEach(() => {
 });
 
 describe("MapCanvas 海岸烘焙", () => {
-  it("首次有陆地：烘一次，coast 可见，场景图六层（投影与海面合进静态层）", async () => {
+  it("首次有陆地：烘一次，coast 可见，图层数与 WORLD_LAYER_ORDER 一致", async () => {
     render(tree({ land: LAND_A }));
     await flush();
 
     expect(created).toHaveLength(1);
     const { world, coast, sprite } = nodes();
-    expect(world.children).toHaveLength(6);
+    expect(world.children).toHaveLength(WORLD_LAYER_ORDER.length);
     expect(coast.visible).toBe(true);
     expect(sprite.texture).toBe(textures[0]);
     expect((apps[0].renderer.render as unknown as { mock: { calls: unknown[] } }).mock.calls)
@@ -423,8 +433,7 @@ describe("MapCanvas 海岸烘焙", () => {
     await flush();
 
     const world = apps[0].stage.children[0] as unknown as FakeNode;
-    // z2 = regionLayer（[0] 静态层、[1] coast、[2] regionLayer，见 `nodes()`）
-    const regionLayer = world.children[2];
+    const regionLayer = layerOf(world, "regionLayer");
     expect(regionLayer.alpha).toBe(1);
     expect(regionLayer.children).toHaveLength(1);
     const childCount = regionLayer.children[0].children.length;
@@ -460,8 +469,15 @@ describe("MapCanvas 海岸烘焙", () => {
     await flush();
 
     const { world } = nodes();
-    const [staticLayer, coast, regionLayer, elementLayer, labelLayer, overlay] =
-      world.children as FakeNode[];
+    const staticLayer = layerOf(world, "staticLayer");
+    const coast = layerOf(world, "coast");
+    const regionLayer = layerOf(world, "regionLayer");
+    const elementLayer = layerOf(world, "elementLayer");
+    const submapLayer = layerOf(world, "submapLayer");
+    const labelLayer = layerOf(world, "labelLayer");
+    const overlay = layerOf(world, "overlay");
+    // submapLayer 属 z 序之一，本用例只关心滤镜挂载，不逐个断言它
+    void submapLayer;
 
     // 原色：三层都是空数组（不是 undefined —— 说明确实赋过空值）
     for (const node of [regionLayer, elementLayer, labelLayer]) {
@@ -512,7 +528,7 @@ describe("MapCanvas 海岸烘焙", () => {
     const first = render(tree({ land: LAND_A, levelAlphas: [1] }));
     await flush();
     const before = apps[0].stage.children[0] as unknown as FakeNode;
-    expect(before.children[2].children[0].visible).toBe(true);
+    expect(layerOf(before, "regionLayer").children[0].visible).toBe(true);
     first.unmount();
 
     // 把所有包围盒挪到"远在天边"，重新挂一次 —— 层级容器必须被藏起来
@@ -522,8 +538,13 @@ describe("MapCanvas 海岸烘焙", () => {
     await flush();
 
     const world = apps[0].stage.children[0] as unknown as FakeNode;
-    const [staticLayer, coast, regionLayer, elementLayer, labelLayer, overlay] =
-      world.children as FakeNode[];
+    const staticLayer = layerOf(world, "staticLayer");
+    const coast = layerOf(world, "coast");
+    const regionLayer = layerOf(world, "regionLayer");
+    const elementLayer = layerOf(world, "elementLayer");
+    const submapLayer = layerOf(world, "submapLayer");
+    const labelLayer = layerOf(world, "labelLayer");
+    const overlay = layerOf(world, "overlay");
     // 层级容器（regionLayer 的子容器）被剔掉
     expect(regionLayer.children[0].visible).toBe(false);
     // 但父容器与三层全幅内容必须原样可见
@@ -532,6 +553,7 @@ describe("MapCanvas 海岸烘焙", () => {
     expect(coast.visible).toBe(true);
     expect(overlay.visible).toBe(true);
     expect(elementLayer.visible).toBe(true);
+    expect(submapLayer.visible).toBe(true);
     expect(labelLayer.visible).toBe(true);
     second.unmount();
     boundsOverride.value = null;
@@ -546,7 +568,7 @@ describe("MapCanvas 海岸烘焙", () => {
     await flush();
 
     const world = apps[0].stage.children[0] as unknown as FakeNode;
-    const regionLayer = world.children[2] as unknown as FakeNode;
+    const regionLayer = layerOf(world, "regionLayer");
     expect(regionLayer.children[0].visible).toBe(true);
     boundsOverride.value = null;
     restoreRect();

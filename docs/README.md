@@ -23,6 +23,12 @@
 | R-AI 路线图 | AI 能力未来方向与架构复核（长期参考，非单次需求） | [prd-ai-roadmap/ai-future-directions-prd.md](prd/prd-ai-roadmap/ai-future-directions-prd.md) · [ai-roadmap-architecture-review.md](prd/prd-ai-roadmap/ai-roadmap-architecture-review.md) | 参考稿；「上下文层未落地」的结论已被 2.7.0 推翻 |
 | **R-AI 排期** | **做什么、什么顺序、做完怎么算完**（B1–B8 批次 + 准入纪律 + 编号裁决） | [prd-ai-roadmap/ai-roadmap-batch-plan.md](prd/prd-ai-roadmap/ai-roadmap-batch-plan.md) | **定稿（基线 2.8.1）**，后续 AI 排期以它为准 |
 | **R-MAP-16 ~ 20** | **地图渲染观感对齐改造**（陆地海岸 / 区块降级 / 文字层 / 风格预设 / 缓存与导出），基线 `origin/map2` | [prd-map-render/prd-map-render-alignment.md](prd/prd-map-render/prd-map-render-alignment.md) | 草稿待评审；只覆盖渲染，v1 PRD 的标记/连线不在范围内 |
+| **R-MAP 嵌套子图** | **区块内嵌子地图（单图/多图无级嵌套）主方案**（数据模型 `MapSubmap` / 递归场景图 / 两条生成路径 / 无级缩放 / 缓存扩展） | [prd-map-render/nested-submap-main.md](prd/prd-map-render/nested-submap-main.md) | **实现中**：Phase 2 数据/渲染/两条路径与 Phase 2.4 子图内容已落地（2.18.0）；剩余「绑定已有子图」的跨地图选择器（依赖地图文档落库） |
+| **R-MAP 嵌套子图·边界** | 无级缩放丝滑度与**边界割裂感**的成熟方案选型（共享几何 / 羽化 / 岛屿形态；自然地貌边界为可选增强非强制） | [prd-map-render/nested-submap-boundary.md](prd/prd-map-render/nested-submap-boundary.md) | 方案稿待评审；为嵌套子图主方案的「边界过渡」专篇 |
+| **R-MAP 嵌套子图·道路** | **道路自动生成与层级归属**（地点要素自动连路 / 独立 roadLayer / 多种线条 / 子图只显示子图道路） | [prd-map-render/nested-submap-road.md](prd/prd-map-render/nested-submap-road.md) | 方案稿待评审；为嵌套子图主方案的「道路层」专篇（数据结构已升级为通用折线 `MapPolyline`） |
+| **R-MAP 嵌套子图·要素** | **要素预留清单与架构分层**（素材散布区离散实例 / 通用折线 / 渲染铁律贴 PNG / DB+zustand+UI 三层） | [prd-map-render/nested-submap-elements.md](prd/prd-map-render/nested-submap-elements.md) | 方案稿待评审；为嵌套子图主方案的「要素扩展 + 状态架构」专篇 |
+| **R-MAP 区域编辑** | **区域层级自定义 / 手动划分 / 子区域合并 / 叶子高亮**（四点增量；`regionSchema` 进文档、合并语义与子图提示、选中与高亮解耦） | [prd-map-render/region-editing.md](prd/prd-map-render/region-editing.md) · [region-editing-architecture.md](prd/prd-map-render/region-editing-architecture.md) | **已实现**（2.19.0）：R-REG-01~05 五条 P0 全落地；P1（顶点微调 / 删单块 / 改名改色 / 裁剪 / 子图内编辑）待排 |
+| **R-MAP-21 ~ 28** | **与逆向目标的交互/体验差距收口**（一键成图生成器 / 素材体系 / 对象属性面板 / 图层面板 / 剪贴板与微移 / 折线与面 / 文字排版 / **map.db 持久化**） | [review/map-vs-reference-interaction-review.md](review/map-vs-reference-interaction-review.md) · [spec/map-db-spec.md](spec/map-db-spec.md) · [prd-map-render/map-asset-system-architecture.md](prd/prd-map-render/map-asset-system-architecture.md)（素材体系架构：地形枚举/选材引擎/导入/热门地图/AI 接口） | **B0 已落地（2.20.0）**：`map.db` 独立库 + 自动保存 + 关窗 flush + 地图库（多图/改名/回收站/绑定）；**B1 已落地（2.21.0）**：素材属性面板（四件套/层级/置顶置底）+ 剪贴板与微移 + 工具栏图标化；**B2 已落地（2.22.0）**：素材 6→45（6 分类，AI 生成 + MANIFEST 记录）+ 点要素落位自带地名；**S1+B3 已落地（2.25.0）**：地形语义层（20 枚举/回退链）+ 53 张素材标注 + 选材引擎 + 热门地图预设，**一键成图生成器**（预设/丰度/成图-骨架/五档重掷/结果摘要/底图选择器）；B4（图层 + 折线）仍开放，顺序见 review §9 |
 
 > R-AI-01 ~ R-AI-05 已于 **2.8.1** 全部闭环，整组移入
 > [`archive/prd-ai/`](archive/prd-ai/)（归档不改正文，详见下表）。
@@ -42,6 +48,7 @@
 | 文档 | 结论一句话 | 被谁引用 |
 |------|-----------|---------|
 | [graphic-theming-spec.md](spec/graphic-theming-spec.md) | 图形素材主题化只有两条正道：`currentColor` 或语义 token；禁止钉死色值、禁止一主题一份资源 | `AGENTS.md` §6.1.4 |
+| [map-db-spec.md](spec/map-db-spec.md) | 地图用独立 `map.db`（与 checkin/novel 平级）：`doc_json` 整存 + `rev` 乐观锁 + 防抖 800ms 自动保存 + 关窗 flush；`work_id` 可空、先建图后绑定、删作品不级联删图 | `electron/map-db.ts`、`map-handlers.ts`、`map-db-guard.test.ts`、MapWindow |
 
 ### docs/review/ — 审查报告（含未闭环待办）
 
@@ -49,6 +56,7 @@
 |------|-----------|---------|
 | [novel-product-review.md](review/novel-product-review.md) | novel 域产品视角审查，11 项改进清单（P0 数据安全 → P2 导入/洞察） | 备份恢复、回收站、章节树虚拟化已落地（2.3.0 / 2.5.0 / 2.x）；每章位置记忆、EPUB 导出/导入、跨书全文搜索、产品级埋点仍开放 |
 | [novel-design-review.md](review/novel-design-review.md) | novel 域设计视角审查，10 项改进清单（阅读模式、底色解耦、字体选择…） | 底色解耦、字体选择、阅读模式（含滚动到章节边缘切上下章）已落地；每章位置记忆、编辑器加载失败态、保存失败重试、抽屉焦点管理仍开放 |
+| [map-vs-reference-interaction-review.md](review/map-vs-reference-interaction-review.md) | 地图与逆向目标（易制地图）的交互/体验差距：**渲染已对齐九成，差的是「内容」**——生成器只产陆地+区块，素材 5 张、无属性面板/图层/持久化；给出 R-MAP-21~28 与 B0–B4 分批 | B0（`map.db` 持久化）已落地 2.20.0；B1（属性面板 + 剪贴板/微移）已落地 2.21.0；B2（素材 6→45 + 点要素地名联动，AI 生成见 `assets/sprites/MANIFEST.json`）已落地 2.22.0；B3 一键成图、B4 图层/折线仍开放 |
 
 ### docs/archive/ — 已闭环留档
 

@@ -1,5 +1,6 @@
 import { act, fireEvent, render } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { worldLayerIndexOf } from "./layers";
 
 /**
  * 标注层的渲染契约（PRD §6.3.4 四条 + 两条纪律）。
@@ -261,15 +262,14 @@ async function flush() {
 /**
  * 场景图上的 world → labelLayer。
  *
- * 【索引为什么是 4】world 的六个子节点按 z 序一次性加入：
- *   [0] staticLayer（投影 + 海面）  [1] coast  [2] regionLayer
- *   [3] elementLayer              [4] labelLayer  [5] overlay
- * 这一条 z 序由 `render-stack-guard.test.ts` 单独守着（源码级断言），
- * 所以这里按索引取是安全的；若那边改了顺序，那个文件会先红。
+ * 【为什么按名字取】以前写的是 `world.children[5]` 加一段"索引为什么是 5"的注释。
+ * T5 在 overlay 之后插了 `draftLayer`，任何"从后往前数"的取法都会静默指错层；
+ * 而 `labelLayer` 恰好还在第 6 个位置上，这种"这次碰巧没坏"的写法最危险。
+ * 顺序的唯一定义处是 `layers.ts` 的 `WORLD_LAYER_ORDER`。
  */
 function labelLayer() {
   const world = (apps[0] as { stage: FakeNode }).stage.children[0];
-  return world.children[4];
+  return world.children[worldLayerIndexOf("labelLayer")];
 }
 
 /** 造 n 条标注，默认都是"层级无关" */

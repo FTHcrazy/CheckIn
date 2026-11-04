@@ -7,10 +7,14 @@ import {
   REGION_BORDER_COLOR,
   REGION_BORDER_PX,
   REGION_FILL_ALPHA,
+  type Point,
 } from "../../regions";
 import { elementSizeFactor, elementWeight, resolveElementLevel } from "../../lod";
+import { buildParentIdSet } from "../../regionEdit";
+import { WORLD_LAYER_ORDER, type WorldLayerName } from "./layers";
 import type { MapDocument } from "../../types";
 import type { MapLabel, MapLand, MapStyle } from "../../types";
+import { elementOpacityOf, elementTintHueOf, tintColorOf } from "../../types";
 import { BAKE_MARGIN, bakeCoast, bakeKeyOf } from "../../coastBake";
 import { filterFor } from "../../style";
 import {
@@ -21,6 +25,7 @@ import {
   type LabelHandle,
 } from "./labelSync";
 import { cullLayers, createCullCache, screenCullRect } from "./cull";
+import { buildSubmapNode, type SubmapNode, type SubmapRenderEnv } from "./submapRender";
 import {
   hitTestElement,
   screenToWorld,
@@ -92,6 +97,38 @@ interface MapCanvasProps {
    * 用户会频繁切换，必须零成本。
    */
   showRegions?: boolean;
+  /**
+   * 当前选中的区块 id；`null` / 缺省 = 无高亮。
+   *
+   * 【为什么必须有视觉高亮】区块是"面"，点中它时**画面本身没有任何变化** ——
+   * 用户只能靠右侧浮出的操作面板去猜"我到底选中了哪一块"。高亮是选区反馈的
+   * 唯一载体，不能省。
+   */
+  selectedRegionId?: string | null;
+  /**
+   * 手画草稿的已落顶点（世界坐标，首尾不重复）。
+   *
+   * 【为什么 `null` 表示"不在画区模式"】画区模式本身没有第二个需要渲染的状态：
+   * "在模式里但一个点都没落"与"不在模式里"在画布上**完全一样**（都是什么都不画），
+   * 但指针行为不同。用 `null` 把两者区分开，就不必再加一个 `drafting` 布尔
+   * （两个 prop 迟早会不同步，例如退出模式时忘了把数组清空）。
+   */
+  draftPoints?: readonly Point[] | null;
+  /**
+   * 请求闭合草稿（**画布判定、页面执行**）。
+   *
+   * 画布在两处调它，都是"这一下不落点"的判定已经成立之后：
+   *   ① 双击 —— 与上一次 down 的时间差 < 350ms 且屏幕距离在 `DRAFT_CLOSE_PX` 内；
+   *   ② 命中首顶点 —— 已落 ≥3 点，且这一下落在首顶点的命中圈里。
+   *
+   * 【为什么判定放在画布、落库放在页面】判定需要的是像素几何（屏幕距离 ×
+   * 1/scale）与 `draftPoints`，那两样画布都有；而"校验 + 写文档 + 弹提示"是页面的
+   * 职责。画布只回答"这一下算不算闭合"，不碰 `doc`。
+   *
+   * 【为什么不挂在 dblclick 上】`dblclick` 在两次 down/up **之后**才派发 ——
+   * 那时顶点已经落下了，只能事后补救（多一个顶点 / 残留一个孤立点）。
+   */
+  onDraftClose?: () => void;
   /**
    * 地名标注；缺省 `[]` = 一个文字对象都不建（老用法照常渲染）。
    *
@@ -180,6 +217,88 @@ const SHEET_SHADOW = {
 } as const;
 
 /**
+ * 选中区块的高亮参数。
+ *
+ * 【为什么和素材选中框不同色】素材框是 `0x5b6cf9`（偏紫蓝），区块高亮用
+ * `0x5b8def`（偏天蓝）—— 同色系但能区分"我选中的是一个点"还是"一片地"。
+ *
+ * 【为什么描边分两笔】区块面积大、底色从米黄陆地到深绿海面都有，一条细线在
+ * 米黄上几乎消失。宽而淡的外发光负责"远处也看得见"，细白线负责"近处边界清楚"。
+ * 两者都是**屏幕恒定**宽度（`px / scale`），与区块边界同一口径。
+ */
+const REGION_PICK_COLOR = 0x5b8def;
+const REGION_PICK_PX = 2.2;
+const REGION_PICK_GLOW_PX = 8;
+
+/**
+ * **非叶子**选中时的容器描边宽度（屏幕像素，PRD §4.4 的 1.6px）。
+ *
+ * 【为什么非叶子只有一笔】面高亮（填充 + 外发光）只对**叶子**（最小可操作单位）
+ * 生效。大区域铺满整屏会"糊成一片"，把内部所有子区块的边界线压掉 —— 用户看不出
+ * 自己在操作哪一块。容器态只沿 `P.polygon` 描一笔强调边：信息量足够（"范围在这里"），
+ * 且不遮内部子边界（PRD §6-A 的第 2 条论据）。
+ */
+const REGION_CONTAINER_PX = 1.6;
+
+/* ───────────────────── 手画草稿（R-REG-03）的常量 ───────────────────── */
+
+/**
+ * 「两个屏幕点算不算同一个点」的容差（**屏幕像素**）。
+ *
+ * 【一个语义，三个消费者】这个数回答的永远只有一个问题：**这两个屏幕位置
+ * 算同一个位置吗**。三处用它，各自问的是同一句话：
+ *   ① 首顶点命中 —— "我按下的这一点，算按在首顶点上了吗"（瞄准误差）；
+ *   ② 双击判定 —— "这两下 down 算同一个位置吗"（手抖 / 触控板抖动）；
+ *   ③ 同点去重 —— "这个新顶点和上一个算同一个位置吗"（手抖，见页面 `index.tsx`）。
+ *
+ * 【为什么可以共用，而且是**必须**共用】①② 若用两个不同的半径，就会出现
+ * "这一下既在双击窗口内、又在首顶点命中圈外"这类**判定打架**：同一个物理动作
+ * 在两种走法下给出不同结论（一次闭合、一次只落点），用户看到的是"有时候要点两下
+ * 才收尾、有时候点一下就收尾"。共用一个数之后，两条分支在同一处必然给出同一个
+ * 结论 —— 都通向 `closeDraft()`。
+ *
+ * 【③ 为什么也用它，而不另立一个更小的数】小于 10px 的两个顶点在屏幕上本来就
+ * 点不准（顶点视觉半径 3.5px、首顶点命中圈 10px），用户无法有意画出那样的边；
+ * 而"手抖在同一位置点两下（间隔 > 350ms，所以没被双击吃掉）"是真实场景。
+ * 换句话说：这个距离以下，**用户自己也分不清**那是不是同一个点。
+ *
+ * 【为什么导出】页面要在 `onCanvasClickWorld` 里做同点去重（③），画布要在
+ * `drawDraft` 里把首顶点画成"可闭合"的样子（①）。三处必须是**同一个数**。
+ *
+ * 【为什么按屏幕像素而不是世界单位】世界单位的阈值会随缩放变化：放大到郡级时
+ * 10 世界单位只有几像素（几乎点不中），缩到全景时又大得能误吃掉相邻的顶点。
+ */
+export const DRAFT_CLOSE_PX = 10;
+
+/**
+ * 双击判定窗口（毫秒）。
+ *
+ * 【为什么是 350 而不是系统的 500】这里判的不是"打开文件"那种双击，而是
+ * "我要结束这个多边形"—— 用户在收尾时是**有意识**地快点两下的，窗口越宽越容易
+ * 把"两个相邻的顶点"误判成收尾。350ms 比 Windows 默认 500 更严，且仍远宽于
+ * 正常人的 double-click（150~250ms）。
+ *
+ * 【为什么必须落在 `pointerdown` 而不是 `dblclick`】`dblclick` 是浏览器在**两次
+ * down/up 之后**才派发的事件 —— 那时顶点已经落下了，只能补救（多一个顶点或残留
+ * 一个孤立点）。在 `pointerdown` 里判，第二次 down 根本不会进入落点分支。
+ */
+const DRAFT_DOUBLE_CLICK_MS = 350;
+/** 草稿连线宽度（屏幕像素） */
+const DRAFT_LINE_PX = 1.5;
+/** 已落顶点的半径（屏幕像素） */
+const DRAFT_POINT_PX = 3.5;
+/** 首顶点在"可以闭合"时的半径（屏幕像素）—— 变大即"这里能点" */
+const DRAFT_SNAP_PX = 6;
+/** 草稿色（与区块选中同色系，但草稿全程更亮/更细） */
+const DRAFT_COLOR = 0x5b8def;
+/** 预览虚线的实/虚长度（屏幕像素） */
+const DRAFT_DASH_ON_PX = 6;
+const DRAFT_DASH_OFF_PX = 4;
+/** 虚线段数上限（防御：极端缩放下长度/步长会很大，不能让 for 循环无限跑） */
+const DRAFT_DASH_MAX = 400;
+
+
+/**
  * 边界线宽的"量化档"倍率。
  *
  * 【为什么需要】区块边界是**屏幕恒定线宽**（`REGION_BORDER_PX` 个像素），换算成
@@ -224,6 +343,34 @@ function toFlatPoints(polygon: Array<{ x: number; y: number }>): number[] {
   const out: number[] = [];
   for (const p of polygon) out.push(p.x, p.y);
   return out;
+}
+
+/**
+ * 在 Graphics 上追加一条**虚线**（多段子路径，调用方统一 `stroke()` 一次）。
+ *
+ * 【为什么自己切段】Pixi v8 的 Graphics 没有原生 dash 样式（`stroke` 只认实线）。
+ * 用 `moveTo/lineTo` 画若干独立子路径、最后一次 stroke，等价于"一条虚线"，
+ * 且**只产生一次描边调用**（不是 20 次 stroke）—— 后者在每帧重画时是白付的。
+ *
+ * @param px 世界单位 / 屏幕像素（= 1 / scale）；所有"屏幕像素"常量都要乘它
+ */
+function appendDashedLine(g: Graphics, a: Point, b: Point, px: number): void {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len = Math.hypot(dx, dy);
+  if (!(len > 1e-9)) return;
+  const ux = dx / len;
+  const uy = dy / len;
+  const on = DRAFT_DASH_ON_PX * px;
+  const off = DRAFT_DASH_OFF_PX * px;
+  const step = on + off;
+  for (let i = 0; i < DRAFT_DASH_MAX; i += 1) {
+    const start = i * step;
+    if (start >= len) break;
+    const end = Math.min(len, start + on);
+    g.moveTo(a.x + ux * start, a.y + uy * start);
+    g.lineTo(a.x + ux * end, a.y + uy * end);
+  }
 }
 
 /** 一个层级的渲染容器：填充与边界分两份 Graphics，边界按需重建、填充只建一次 */
@@ -290,6 +437,10 @@ const NO_LABELS: readonly MapLabel[] = [];
  *      │   └─ LOOSE 容器 ← 层级无关的地名（生成区块之前起的），alpha 恒为 1
  *      └─ overlay        z6 选中框等交互指示（Graphics，不挂滤镜）
  *
+ *  z 序的**唯一定义处**是 `./layers.ts` 的 `WORLD_LAYER_ORDER`（初始化时按它建层，
+ *  测试按它取索引）。`draftLayer`（手画草稿）排在最后，即压在所有交互指示之上。
+ *  上面这张图只是给读者的地图，改顺序请只改那个数组。
+ *
  * 【新增节点的挂载纪律】一律在**初始化 effect 里一次性**按数组顺序 addChild；
  * 后续 effect 禁止再 addChild —— 否则 z 序会变成 effect 执行顺序的函数，
  * 表现为"素材钻进区块底下"且**不报错**，极难排查。
@@ -330,6 +481,9 @@ export default function MapCanvas({
   land = null,
   style = "none",
   showRegions = true,
+  selectedRegionId = null,
+  draftPoints = null,
+  onDraftClose,
   labels = NO_LABELS,
   onLabelEditRequest,
   onSceneReady,
@@ -341,6 +495,15 @@ export default function MapCanvas({
   onElementDragStart,
   onElementDragDelta,
 }: MapCanvasProps) {
+  /**
+   * 是否处于画区模式。
+   *
+   * 【为什么从 `draftPoints` 派生而不是另设一个 prop】两者不同步的唯一表现是
+   * "在模式里但草稿是空的" —— 那个状态在画布上与"不在模式里"完全一样，
+   * 但指针行为不同。派生值不可能不同步，多加一个 prop 就可能。
+   */
+  const drafting = draftPoints !== null;
+
   const hostRef = useRef<HTMLDivElement>(null);
   const [app, setApp] = useState<Application | null>(null);
   const [size, setSize] = useState<CanvasSize>({ width: 0, height: 0 });
@@ -378,6 +541,28 @@ export default function MapCanvas({
   const elementLayerRef = useRef<Container | null>(null);
   /** 素材按层级分容器（键见 `LOOSE_LEVEL_KEY`），容器 alpha 跟该层级权重走 */
   const elementLayersRef = useRef<Map<number, Container>>(new Map());
+  /**
+   * 嵌套子地图层：承载「区块内嵌子图」的递归子树（Phase 2）。
+   *
+   * z 序插在素材层与标注层之间（子图内容读作「地表之上、地名之下」）。
+   * 每棵子树 = 一个带 submap 的区块对应一个节点（见 `submapRender.ts`）。
+   */
+  const submapLayerRef = useRef<Container | null>(null);
+  /** 区块 id → 已挂载的子图句柄，增量同步用（避免每次 regions 变化重建全部） */
+  const submapNodeByIdRef = useRef<Map<string, SubmapNode>>(new Map());
+  /**
+   * 子图渲染环境（渲染器 + 纹理表 + 烘焙分辨率）。
+   *
+   * 【为什么是 ref 而不是直接传快照】子图节点只构建一次，而 `app` 与纹理是随后
+   * 才就绪的。传 ref 后，节点在真正烘焙（或 `refreshCoast`）时读到的是**当时**
+   * 的环境，晚到的纹理自然被用上；传快照则会让"纹理晚于子图创建"这一常见时序
+   * 永久留下空白海面与缺失海岸。
+   */
+  const submapEnvRef = useRef<SubmapRenderEnv>({
+    renderer: null,
+    textures: {},
+    baseResolution: 1,
+  });
   /** 标注层（按层级分容器，与素材层同构） */
   const labelLayerRef = useRef<Container | null>(null);
   /**
@@ -396,6 +581,15 @@ export default function MapCanvas({
    */
   const labelScaleRef = useRef(viewport.scale);
   /**
+   * 当前视口缩放的**只读影子**（供子图结构 effect 取初值）。
+   *
+   * 【为什么要多一个 ref】子图结构 effect 只该随 `doc.regions` 重建，不能把
+   * `viewport.scale` 放进依赖（那会让滚轮每格都整棵重建子树）。但建节点时又需要
+   * 一个"当前缩放"来算首帧的渐入权重与内部层级权重 —— 从 ref 读即避开依赖，
+   * 而首帧权重哪怕略旧也会被紧随其后的权重 effect 在同一提交里改正。
+   */
+  const viewportScaleRef = useRef(viewport.scale);
+  /**
    * 当前风格滤镜。
    *
    * 【为什么每次换新实例】`ColorMatrixFilter` 的 `saturate()` / `brightness()`
@@ -404,6 +598,36 @@ export default function MapCanvas({
    */
   const styleFilterRef = useRef<ColorMatrixFilter | null>(null);
   const overlayRef = useRef<Graphics | null>(null);
+  /**
+   * 手画草稿层（world 的最后一层，压在 overlay 之上）。
+   *
+   * 【为什么是独立 Graphics 而不是复用 overlay】三个理由，缺一都会出问题：
+   *   · `clearOverlay()`（导出用）会清掉 overlay 的全部内容 —— 复用它等于导出时
+   *     顺手把用户画到一半的线抹掉；
+   *   · 每次指针移动只该重画草稿。复用时会把选中框与整片高亮一起重画一遍，
+   *     而那是 O(顶点数) 的重建（与"只重画草稿层"直接冲突）；
+   *   · z 序：草稿必须压在高亮之上（见 `layers.ts`）。
+   */
+  const draftLayerRef = useRef<Graphics | null>(null);
+  /**
+   * 光标预览点（世界坐标）。
+   *
+   * ❗**只进 ref，绝不再进 React state**：它跟着 `pointermove` 每像素变一次，
+   * 进 state 就是每像素一次 React 提交 + 一次 200 多块区块容器的 diff。
+   * 已落顶点（低频、且是文档的候选内容）才进 state。
+   */
+  const draftCursorRef = useRef<Point | null>(null);
+  /**
+   * 上一次 `pointerdown` 的时刻与世界坐标（**画区态专用**，用于双击判定）。
+   *
+   * 【为什么不进 state】它只在指针事件里读、只有"和这次比一下"这一个用途 ——
+   * 进 state 等于每次按下都触发一次 React 提交，而它一帧都不会被渲染出来。
+   *
+   * 【为什么记世界坐标而不是屏幕坐标】双击的第二个条件要与 `draftPoints`
+   * （世界坐标）比距离，统一在世界域里比可以省一次换算，也避免"缩放变了之后
+   * 旧屏幕坐标失效"这类只在缩放中双击才复现的错。
+   */
+  const lastDownRef = useRef<{ at: number; world: Point } | null>(null);
   /** 实例 id → 渲染句柄，增量同步用（避免每帧重建全部精灵） */
   const spriteByIdRef = useRef<Map<string, ElementSprite>>(new Map());
 
@@ -461,8 +685,11 @@ export default function MapCanvas({
     [land, style, bakeResolution],
   );
 
-  /** 当前底图纹理（纸纹）：给海岸叠 multiply 用，未加载时为 undefined */
-  const paperTexture = textures[BASE_IMAGE.id];
+  /**
+   * 当前底图纹理（纸纹）：按文档底图 id 取（B3 底图选择器），
+   * 未加载 / 老存档指向已不存在的 id 时回落默认海面，不白屏。
+   */
+  const paperTexture = textures[doc.baseImageId] ?? textures[BASE_IMAGE.id];
 
   /**
    * 线宽用的量化缩放。
@@ -499,6 +726,14 @@ export default function MapCanvas({
   const CLICK_SLOP = 4;
 
   /**
+   * 叶子判定索引（`parentId → 有子节点`）：只在 `doc.regions` 变时重算 O(n)。
+   *
+   * ❗**绝不放进 `drawOverlay` 内部**：它的依赖含 `viewport.scale`，滚轮每格都会跑，
+   * 在里面遍历 600 块建集合等于给缩放路径加一个 O(n) 的税（架构 §5-6）。
+   */
+  const parentIdSet = useMemo(() => buildParentIdSet(doc.regions), [doc.regions]);
+
+  /**
    * 选中框重绘函数（供"选中态"effect 与导出后的 `redrawOverlay` 共用）。
    *
    * 【为什么抽成函数而不是继续用 effect 内联】导出前必须 `overlay.clear()`
@@ -512,6 +747,57 @@ export default function MapCanvas({
     const overlay = overlayRef.current;
     if (!overlay) return;
     overlay.clear();
+
+    // ── 选中区块的高亮（画在素材选中框之前，让更细的素材框压在上层）──
+    //
+    // 【三笔叠加，而不是一笔】区块动辄几百个顶点、覆盖面积很大，单描一条边在
+    // 米黄陆地上几乎看不见。这里用「淡填充 + 宽而虚的外发光 + 细白内描边」，
+    // 在任何底色上都读得出来是"这块被选中了"。
+    //
+    // 【线宽按屏幕像素换算】和区块边界同一个口径（`px / scale`）：缩远了不至于
+    // 细到看不见，放大了也不会粗成一条带子。
+    //
+    // 【分级：叶子三笔 / 非叶子一笔】判据是"运行时有没有子节点"（`parentIdSet`），
+    // **不是** `level === maxLevel` —— 合并会造出 `level` 更浅的叶子（PRD §6-A）。
+    const picked = selectedRegionId
+      ? doc.regions.find((r) => r.id === selectedRegionId)
+      : undefined;
+    if (picked && picked.polygon.length >= 3) {
+      // 层级淡出时高亮一起淡：否则会出现"区块已经看不见了，高亮框还挂在空中"
+      const weight = levelAlphas[picked.level] ?? 1;
+      if (weight > 0.02) {
+        const px = 1 / Math.max(1e-6, viewport.scale);
+        const flat = toFlatPoints(picked.polygon);
+        if (!parentIdSet.has(picked.id)) {
+          // ── 叶子：现状三笔，**逐参数不变**（这是 R-REG-05 的回归基线）──
+          // 淡填充 α0.16 / 外发光 8px α0.28 / 白内描边 2.2px α0.95。
+          // "顺手优化"其中任何一个参数都会让 `MapCanvas/index.test.tsx` 的
+          // 既有高亮用例失去意义 —— 那条用例正是"没改坏"的证明。
+          overlay.poly(flat);
+          overlay.fill({ color: REGION_PICK_COLOR, alpha: 0.16 * weight });
+          overlay.poly(flat);
+          overlay.stroke({
+            width: REGION_PICK_GLOW_PX * px,
+            color: REGION_PICK_COLOR,
+            alpha: 0.28 * weight,
+            alignment: 0.5,
+          });
+          overlay.poly(flat);
+          overlay.stroke({ width: REGION_PICK_PX * px, color: 0xffffff, alpha: 0.95 * weight });
+        } else {
+          // ── 非叶子：容器态，只一笔强调描边（不铺面、不加外发光）──
+          // 不铺面的理由：淡填充铺满整屏会把内部子区块的边界压掉，用户看不出
+          // 自己在操作哪一块；而"面高亮只对最小可操作单位生效"正是 PRD §4.4 的裁决。
+          overlay.poly(flat);
+          overlay.stroke({
+            width: REGION_CONTAINER_PX * px,
+            color: REGION_PICK_COLOR,
+            alpha: 0.9 * weight,
+            alignment: 0.5,
+          });
+        }
+      }
+    }
 
     if (!selectedId) return;
     const el = doc.elements.find((e) => e.id === selectedId);
@@ -533,13 +819,114 @@ export default function MapCanvas({
     overlay
       .rect(el.x - w / 2, el.y - h, w, h)
       .stroke({ width: 2, color: 0x5b6cf9, alignment: 0.5, alpha: weight });
-  }, [selectedId, doc.elements, levelAlphas]);
+  }, [selectedId, selectedRegionId, doc.elements, doc.regions, levelAlphas, viewport.scale, parentIdSet]);
 
   /** 上面那个函数的最新引用：给初始化 effect 里的 `redrawOverlay` 与选中态 effect 取用 */
   const drawOverlayRef = useRef(drawOverlay);
   useEffect(() => {
     drawOverlayRef.current = drawOverlay;
   }, [drawOverlay]);
+
+  /**
+   * 重画草稿层。
+   *
+   * 【性能底线（架构 §2.6.1）】一次重画只做 `draftLayer.clear()` + 重写
+   * 「n 个顶点圈 + 1 条折线 + ≤ 2 条虚线」，**不碰** `doc.regions`、不重跑任何
+   * 区块几何、不触发 React 提交。这条由 `index.test.tsx` 的
+   * 「连续 20 次 pointermove 不重建区块几何」用例守着。
+   *
+   * 【为什么顶点用 `circle` 而不是 `poly` 画方块】`circle` 在顶点数上千时才是
+   * 性能负担，而草稿顶点几十个；圆点在任意缩放/旋转下都比方块像"顶点"。
+   *
+   * 【为什么所有尺寸都乘 px】线宽与半径都是**屏幕恒定**的：不除 scale 的话，
+   * 放大到郡级（≈350%）时草稿会粗成一条带子、顶点圈大得盖住整块地。
+   */
+  const drawDraft = useCallback(() => {
+    const layer = draftLayerRef.current;
+    if (!layer) return;
+    layer.clear();
+    if (!draftPoints || draftPoints.length === 0) return;
+
+    const px = 1 / Math.max(1e-6, viewport.scale);
+    const cursor = draftCursorRef.current;
+
+    // ① 已确定的边：一条**开链**折线（用 moveTo/lineTo 而不是 poly —— poly 会
+    //    自动把首尾连起来，画到第二个点时就出现一条"假闭合边"）。
+    if (draftPoints.length >= 2) {
+      layer.moveTo(draftPoints[0].x, draftPoints[0].y);
+      for (let i = 1; i < draftPoints.length; i += 1) {
+        layer.lineTo(draftPoints[i].x, draftPoints[i].y);
+      }
+      layer.stroke({
+        width: DRAFT_LINE_PX * px,
+        color: DRAFT_COLOR,
+        alpha: 0.9,
+        alignment: 0.5,
+      });
+    }
+
+    // ② 顶点：首顶点白心 + 大一圈；光标靠近且已够 3 点时再放大（"能点了"的提示）
+    for (let i = 0; i < draftPoints.length; i += 1) {
+      const p = draftPoints[i];
+      const first = i === 0;
+      const snapable =
+        first &&
+        cursor !== null &&
+        draftPoints.length >= 3 &&
+        Math.hypot(cursor.x - p.x, cursor.y - p.y) <= DRAFT_CLOSE_PX * px;
+      const radius = (snapable ? DRAFT_SNAP_PX : DRAFT_POINT_PX) * px;
+      layer.circle(p.x, p.y, radius);
+      layer.fill({ color: first ? 0xffffff : DRAFT_COLOR, alpha: 0.95 });
+      layer.circle(p.x, p.y, radius);
+      layer.stroke({ width: px, color: DRAFT_COLOR, alpha: 0.9 });
+    }
+
+    // ③ 光标预览：末点 → 光标（虚线）；够 3 点后补 光标 → 首顶点（收口提示）
+    if (cursor) {
+      appendDashedLine(layer, draftPoints[draftPoints.length - 1], cursor, px);
+      if (draftPoints.length >= 3) {
+        appendDashedLine(layer, cursor, draftPoints[0], px);
+      }
+      layer.stroke({ width: DRAFT_LINE_PX * px, color: DRAFT_COLOR, alpha: 0.55 });
+      layer.circle(cursor.x, cursor.y, DRAFT_POINT_PX * 0.8 * px);
+      layer.stroke({ width: px, color: DRAFT_COLOR, alpha: 0.7 });
+    }
+  }, [draftPoints, viewport.scale]);
+
+  /** 同上：事件回调里要用最新那份（不把它塞进每个 handler 的依赖） */
+  const drawDraftRef = useRef(drawDraft);
+  useEffect(() => {
+    drawDraftRef.current = drawDraft;
+  }, [drawDraft]);
+
+  /**
+   * 草稿重绘的时机：草稿点变化、场景就绪。
+   *
+   * 【为什么缩放不进这里】缩放已由 `drawDraft` 的依赖覆盖（`viewport.scale`），
+   * 但"缩放后光标的世界坐标"会变 —— 见下一条 effect。
+   */
+  useEffect(() => {
+    if (!app) return;
+    drawDraftRef.current();
+  }, [drawDraft, app]);
+
+  /**
+   * 缩放后丢掉光标预览点。
+   *
+   * 【为什么必须丢】`draftCursorRef` 存的是世界坐标，而缩放后光标下的世界坐标
+   * 已经变了（同一个屏幕位置对应另一个世界点）。不丢的话会看到一条**指向错误位置**
+   * 的预览线，且它会一直挂在那里直到下一次移动 —— 用户会以为"鼠标卡住了"。
+   *
+   * 【双击历史一起丢】判定用的是 `DRAFT_CLOSE_PX / scale` 换算出来的世界距离，
+   * 缩放一变这个距离的含义就变了。跨缩放的双击本来就不是双击，留着它只会让
+   * "缩放到一半又点了一下"被误判成收尾。
+   */
+  useEffect(() => {
+    draftCursorRef.current = null;
+    lastDownRef.current = null;
+    if (!app) return;
+    drawDraftRef.current();
+  }, [viewport.scale, app]);
 
   /**
    * 把 onSizeChange 存进 ref。
@@ -647,11 +1034,30 @@ export default function MapCanvas({
       // 这样"交叉淡化"只需要改子容器的 alpha，不必重建任何几何。
       const regionLayer = new Container();
       const elementLayer = new Container();
+      const submapLayer = new Container();
       const labelLayer = new Container();
       const overlay = new Graphics();
-      // ★ 六个节点一次性按 z 序加入；后续 effect 一律不得再 addChild
-      //   （staticLayer 内部是 sheet → sea，见上）
-      world.addChild(staticLayer, coast, regionLayer, elementLayer, labelLayer, overlay);
+      // ★ 手画草稿层（R-REG-03）：压在 overlay 之上，见 `layers.ts` 的顺序表
+      const draftLayer = new Graphics();
+      /**
+       * ★ 一次性按 `WORLD_LAYER_ORDER` 的顺序加入；后续 effect 一律不得再 addChild
+       *   （staticLayer 内部是 sheet → sea，见上）。
+       *
+       * 【为什么用"具名清单 + 映射"而不是一串实参】z 序一旦散在实参顺序里，
+       * "再加一层"就必然打掉几个测试文件的裸下标（`children[4]`、`at(-1)`、
+       * `toHaveLength(7)`），而失败信息只是"长度不对"。抽成常量后，插层只改一处。
+       */
+      const layersByName: Record<WorldLayerName, Container> = {
+        staticLayer,
+        coast,
+        regionLayer,
+        elementLayer,
+        submapLayer,
+        labelLayer,
+        overlay,
+        draftLayer,
+      };
+      world.addChild(...WORLD_LAYER_ORDER.map((name) => layersByName[name]));
       instance.stage.addChild(world);
 
       worldRef.current = world;
@@ -662,8 +1068,10 @@ export default function MapCanvas({
       coastSpriteRef.current = coastSprite;
       regionLayerRef.current = regionLayer;
       elementLayerRef.current = elementLayer;
+      submapLayerRef.current = submapLayer;
       labelLayerRef.current = labelLayer;
       overlayRef.current = overlay;
+      draftLayerRef.current = draftLayer;
 
       setApp(instance);
       const rect = host.getBoundingClientRect();
@@ -700,9 +1108,18 @@ export default function MapCanvas({
       levelLayersRef.current = [];
       elementLayerRef.current = null;
       elementLayersRef.current.clear();
+      submapLayerRef.current = null;
+      // 子图节点持有烘焙出的 RenderTexture（不是显示对象，不会随 world 一起回收），
+      // 必须显式销毁；`destroy()` 对已销毁的容器是幂等的，随后的
+      // `instance.destroy(true, {children:true})` 不会因此报错。
+      for (const handle of submapNodeByIdRef.current.values()) handle.destroy();
+      submapNodeByIdRef.current.clear();
       labelLayerRef.current = null;
       labelHandlesRef.current.clear();
       overlayRef.current = null;
+      draftLayerRef.current = null;
+      draftCursorRef.current = null;
+      lastDownRef.current = null;
 
       if (initDone) {
         // init 已完成：插件字段齐备，可直接销毁
@@ -767,7 +1184,7 @@ export default function MapCanvas({
   useEffect(() => {
     const sea = seaRef.current;
     if (!sea) return;
-    const tex = textures[BASE_IMAGE.id];
+    const tex = textures[doc.baseImageId] ?? textures[BASE_IMAGE.id];
     if (tex) {
       sea.texture = tex;
       sea.width = BASE_IMAGE.width;
@@ -776,7 +1193,7 @@ export default function MapCanvas({
       sea.anchor.set(0.5);
       sea.position.set(0, 0);
     }
-  }, [textures, app]);
+  }, [textures, app, doc.baseImageId]);
 
   // ── 静态层缓存（投影 + 海面，整组烤成一张纹理）──
   //
@@ -1129,6 +1546,10 @@ export default function MapCanvas({
       sprite.width = def.baseWidth * el.scale * factor;
       sprite.height = def.baseHeight * el.scale * factor;
       sprite.rotation = (el.rotation * Math.PI) / 180;
+      // 外观属性（R-MAP-23）：不透明度与色相。取值一律走 types 的兜底函数 ——
+      // 老文档没有这两个字段，读点回落"不透明 + 原色"，迁移函数不补值
+      sprite.alpha = elementOpacityOf(el);
+      sprite.tint = tintColorOf(elementTintHueOf(el));
     }
 
     // 移除已删除的元素精灵
@@ -1166,6 +1587,8 @@ export default function MapCanvas({
   // 改 scale 只是一个标量赋值，Pixi 的变换是懒计算的。
   useEffect(() => {
     labelScaleRef.current = viewport.scale;
+    // 子图结构 effect（声明在本条之后）建节点时要一个"当前缩放"，见 `viewportScaleRef`
+    viewportScaleRef.current = viewport.scale;
     setLabelScale(labelHandlesRef.current.values(), viewport.scale);
   }, [viewport.scale, app]);
 
@@ -1191,6 +1614,84 @@ export default function MapCanvas({
     if (!root) return;
     applyLabelWeights(root, levelAlphas);
   }, [levelAlphas, app]);
+
+  // ── 嵌套子地图 · 第一步：结构同步（只随「区块 + 子图」变化，增量增删子树）──
+  //
+  // 【为什么结构同步与权重同步拆成两个 effect】
+  // 子树的结构（区块有没有 submap、贴合变换怎么算）只随 `doc.regions` 变；
+  // 而渐入权重随 `viewport.scale` 高频变。若合在一个 effect、依赖里塞 viewport，
+  // 滚轮每格都会整棵重建子树（mask Graphics + 子图分区 + 海岸烘焙全部重来一遍）——
+  // 违反「视口变化不重建几何」的底线。拆开后：结构只在数据变时建一次，
+  // 缩放只走 `handle.sync()`（改几个 alpha 与一次标注缩放）。
+  //
+  // 【为什么用「子图对象引用」判断要不要重建】`doc` 是不可变更新，重新圈定 / 撤销
+  // 重做都会给出**新的** `submap` 对象；引用没变就等于内容没动。早期只判断
+  // 「这个区块有没有节点」，于是重新圈定之后画面还停在旧分区上（不报错、不刷新）。
+  useEffect(() => {
+    const layer = submapLayerRef.current;
+    if (!layer) return;
+
+    const existing = submapNodeByIdRef.current;
+    const seen = new Set<string>();
+
+    for (const region of doc.regions) {
+      if (!region.submap) continue;
+      seen.add(region.id);
+
+      const prev = existing.get(region.id);
+      if (prev && prev.submap === region.submap) continue;
+
+      // 内容变了（重新圈定 / 撤销重做 / 剥离子图后再绑）：整棵重建
+      if (prev) {
+        layer.removeChild(prev.container);
+        prev.destroy();
+        existing.delete(region.id);
+      }
+
+      const handle = buildSubmapNode(
+        layer,
+        region,
+        viewportScaleRef.current,
+        submapEnvRef,
+      );
+      if (handle) existing.set(region.id, handle);
+    }
+
+    // 移除已删除/已剥离子图的区块对应子树
+    for (const [id, handle] of existing) {
+      if (seen.has(id)) continue;
+      layer.removeChild(handle.container);
+      handle.destroy();
+      existing.delete(id);
+    }
+  }, [doc.regions, app]);
+
+  // ── 嵌套子地图 · 第二步：权重同步（视口缩放只改 alpha，不重建）──
+  //
+  // 两件事一起做，但都是"改浮点数"级别的成本：
+  //   ① 子图整体渐入权重 `submapEnterWeight(父图缩放, 阈值)`；
+  //   ② 子图**内部**的层级权重（用它自己的等效缩放查它自己的 levelAlphas）。
+  // ② 是「缩进去逐级显露洲/国家/郡」的全部来源 —— 少了它，子图内部所有层级会
+  // 同时全亮，看起来像一堆叠在一起的分区线。
+  useEffect(() => {
+    const existing = submapNodeByIdRef.current;
+    if (existing.size === 0) return;
+    for (const handle of existing.values()) handle.sync(viewport.scale);
+  }, [viewport.scale, doc.regions, app]);
+
+  // ── 嵌套子地图 · 第三步：纹理/渲染器晚到 → 补烘一次海岸 ──
+  //
+  // 依赖 `textures` / `app`：子图可能在纹理加载完之前就建好了（打开即有子图），
+  // 那时 `bake` 拿不到渲染器与纸纹，只能停在"隐藏"。这个 effect 让它在资源到位后
+  // 补一次 —— 否则用户会看到"子图有分区线但底下一片空白"。
+  useEffect(() => {
+    submapEnvRef.current = {
+      renderer: app?.renderer ?? null,
+      textures,
+      baseResolution: bakeResolution,
+    };
+    for (const handle of submapNodeByIdRef.current.values()) handle.refreshCoast();
+  }, [app, textures, bakeResolution]);
 
   // ── 视口变换（每次 viewport 变化只改 world 容器的两个属性）──
   useEffect(() => {
@@ -1233,6 +1734,10 @@ export default function MapCanvas({
       ...levelLayersRef.current.map((lv) => lv.container),
       ...elementLayersRef.current.values(),
       ...labelLayer.children,
+      // 子图子树：整棵一票（视口外整棵剪掉，进视野才画）。
+      // 【为什么可以按"整棵"剔】子图内容被 clipMask 限制在区块多边形内，
+      // 它的包围盒就是那块地；逐层递归下去省下的绘制还不够付自己的遍历成本。
+      ...(submapLayerRef.current?.children ?? []),
     ];
 
     if (!enableCulling) {
@@ -1314,8 +1819,69 @@ export default function MapCanvas({
       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
       const local = getLocalPoint(e);
 
+      // ── 画区态：闭合判定全部落在 pointerdown ────────────────────────────
+      //
+      // 【为什么必须在这里而不是 dblclick】`dblclick` 是浏览器在**两次 down/up
+      // 之后**才派发的事件 —— 那时顶点已经落下了。旧实现只能事后补救，症状是
+      // "双击收尾多出一个顶点"或"双击首顶点后残留一个孤立点"。在 down 里判，
+      // 第二次 down 根本不会进入落点分支（`gesture` 保持 none，pointerup 不会
+      // 再回调 `onCanvasClickWorld`）。
+      //
+      // 判定顺序（短路）：
+      //   ① 双击 —— 与上一次 down 的时间差 < DRAFT_DOUBLE_CLICK_MS 且屏幕距离
+      //      在 DRAFT_CLOSE_PX 内 ⇒ 闭合，**不落点**；
+      //   ② 命中首顶点 —— 已落 ≥3 点且本次 down 落在首顶点的命中圈内 ⇒ 闭合，
+      //      **不落点**；
+      //   ③ 都不是 ⇒ 走下面的原有逻辑，由 pointerup 落点（页面里的同点去重仍在）。
+      //
+      // ⚠️ 为什么落点不在 down 里做：画区态仍然允许"拖空白平移"，落点放在 down
+      // 会让每次拖动都先撒一个顶点。down 只负责**判定**，up 才负责**提交**。
+      if (drafting) {
+        const world = worldAt(local);
+        const px = 1 / Math.max(1e-6, viewport.scale);
+        const at = Number.isFinite(e.timeStamp) && e.timeStamp > 0 ? e.timeStamp : performance.now();
+        const prev = lastDownRef.current;
+        // 先记下这次 down：即使下面命中了闭合分支也要记 ——
+        // 双击的**第二下**正是靠"上一笔就是第一下"才被判成双击的。
+        // （如果命中 ① 之后把它清空，第二下就会落点，孤立顶点又回来了。）
+        lastDownRef.current = { at, world };
+
+        const isDouble =
+          prev !== null &&
+          // `at >= prev.at` 是时钟护栏：`e.timeStamp` 与 `performance.now()` 在
+          // 浏览器里同源（都是"导航起点的毫秒数"），但测试环境可能只提供其中一个；
+          // 万一拿到倒流的时刻，负差值会让"每次点击都算双击"——宁可判成不是双击。
+          at >= prev.at &&
+          at - prev.at < DRAFT_DOUBLE_CLICK_MS &&
+          Math.hypot(world.x - prev.world.x, world.y - prev.world.y) <= DRAFT_CLOSE_PX * px;
+        const hitsFirst =
+          draftPoints !== null &&
+          draftPoints.length >= 3 &&
+          Math.hypot(world.x - draftPoints[0].x, world.y - draftPoints[0].y) <=
+            DRAFT_CLOSE_PX * px;
+
+        if (isDouble || hitsFirst) {
+          // ① 双击命中后**清掉上一笔**：草稿已空，下一次点击必须是"新多边形的
+          //    第一个顶点"。留着它会让 350ms 内在同一处的第三下又被判成双击、
+          //    被静默吞掉（表现：新多边形的第一个点点了没反应）。
+          //    ② 命中首顶点时则**必须保留** —— 紧接着的第二下要靠它判双击。
+          if (isDouble) lastDownRef.current = null;
+          gesture.current = { kind: "none" };
+          onDraftClose?.();
+          return;
+        }
+      } else {
+        // 非画区态不留双击历史：切走再切回来时，"上一次 down"早已过期，
+        // 留着只会让进模式后的第一下被误判成双击。
+        lastDownRef.current = null;
+      }
+
       // 左键按在已选中元素上 = 拖拽该元素，否则 = 平移画布
-      if (selectedId) {
+      //
+      // ⚠️ 画区模式下**不做**素材命中：左键在那时的语义只有"落一个顶点"。
+      // 否则按在一个已选中的素材上会变成拖素材（还顺带进撤销栈），而用户以为
+      // 自己在画的第一个点根本没落下 —— 表现为"画区模式下点哪儿都没反应"。
+      if (!drafting && selectedId) {
         const world = worldAt(local);
         const el = doc.elements.find((x) => x.id === selectedId);
         const def = el ? SPRITE_MAP[el.spriteId] : undefined;
@@ -1341,11 +1907,29 @@ export default function MapCanvas({
 
       gesture.current = { kind: "pan", lastX: e.clientX, lastY: e.clientY, travel: 0 };
     },
-    [selectedId, doc.elements, levelAlphas, getLocalPoint, worldAt, onElementDragStart],
+    [
+      drafting,
+      draftPoints,
+      onDraftClose,
+      viewport.scale,
+      selectedId,
+      doc.elements,
+      levelAlphas,
+      getLocalPoint,
+      worldAt,
+      onElementDragStart,
+    ],
   );
 
   const handlePointerMove = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
+      // 画区态：光标预览点只进 ref 并直接重画草稿层 —— 不触发任何 React 提交。
+      // （这条在 `handlePointerUp` 之前，因为一次"拖动平移"里也会持续 mousemove。）
+      if (drafting) {
+        draftCursorRef.current = worldAt(getLocalPoint(e));
+        drawDraftRef.current();
+      }
+
       const g = gesture.current;
       if (g.kind === "pan") {
         const dx = e.clientX - g.lastX;
@@ -1365,7 +1949,7 @@ export default function MapCanvas({
         onElementDragDelta(dxWorld, dyWorld);
       }
     },
-    [onPan, onElementDragDelta, worldAt, getLocalPoint],
+    [drafting, onPan, onElementDragDelta, worldAt, getLocalPoint],
   );
 
   const handlePointerUp = useCallback(
@@ -1385,6 +1969,12 @@ export default function MapCanvas({
    *
    * 【为什么用原生 dblclick 而不是在 pointerup 里数点击次数】浏览器已经处理好了
    * 双击间隔与移动容差（系统设置里调过的那套），自己数会与用户预期不一致。
+   * 地名编辑是"选中式"操作，误判的代价只是多开一次输入框 —— 交给浏览器最省事。
+   *
+   * 【画区态直接不响应】草稿的闭合判定已经整体搬到 `handlePointerDown`（见那里
+   * 的注释），`dblclick` 不再是闭合的第二条路径。这里留一个显式 return 而不是
+   * "依靠闭合后草稿恰好为空"，是因为**空草稿画区态**（刚进模式 / 刚闭合完）依然
+   * 会走到这里 —— 那时双击画布不该弹出地名编辑框。
    *
    * 【为什么回调给屏幕坐标】编辑框是 DOM `<input>`，活在 CSS 像素空间里；
    * `worldToScreen` 是唯一权威换算（AGENTS 硬约定 1），在这里做掉，
@@ -1392,13 +1982,23 @@ export default function MapCanvas({
    */
   const handleDoubleClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
+      if (drafting) return;
       if (!onLabelEditRequest) return;
       const world = worldAt(getLocalPoint(e));
       const hit = labelAt(labels, levelAlphas, world);
       if (!hit) return;
       onLabelEditRequest(hit.id, worldToScreen(hit, viewport, size));
     },
-    [onLabelEditRequest, labels, levelAlphas, worldAt, getLocalPoint, viewport, size],
+    [
+      drafting,
+      onLabelEditRequest,
+      labels,
+      levelAlphas,
+      worldAt,
+      getLocalPoint,
+      viewport,
+      size,
+    ],
   );
 
   // ── 滚轮（原生监听，passive:false 才能 preventDefault）──
@@ -1417,7 +2017,10 @@ export default function MapCanvas({
     <div
       ref={hostRef}
       className="map-canvas"
-      style={{ cursor: pendingSpriteId ? "crosshair" : "grab" }}
+      style={{
+        // 画区模式的指针语义是"放点"，十字星比抓手准确（抓手会让人以为能拖动画面）
+        cursor: drafting || pendingSpriteId ? "crosshair" : "grab",
+      }}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}

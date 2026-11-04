@@ -220,6 +220,7 @@ export default function NovelPage({
     handleSetProtagonist,
     openPackWindow,
     openRelationWindow,
+    openMapWindow,
     packOpening,
   } = useNovelPage();
 
@@ -969,6 +970,7 @@ export default function NovelPage({
             toolSub={view.toolSub}
             onToolSubChange={view.setToolSub}
             onOpenRelation={openRelationWindow}
+            onOpenMap={openMapWindow}
             extractActions={{
               session: extract,
               onRun: runEntityExtract,

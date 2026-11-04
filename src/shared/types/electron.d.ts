@@ -873,47 +873,6 @@ export interface CheckinResultDTO {
   created: boolean;
 }
 
-// ── 记账 DTO（与 electron/handlers/ledger-handlers.ts 保持一致） ──
-
-/** v1 仅暴露支出 / 收入；transfer 为数据模型预留，UI 不提供入口 */
-export type LedgerTxTypeDTO = "expense" | "income" | "transfer";
-
-export interface LedgerTransactionDTO {
-  id: string;
-  type: LedgerTxTypeDTO;
-  /** 金额恒为正数（元），方向由 type 决定 */
-  amount: number;
-  currency: string;
-  categoryId: string | null;
-  accountId: string | null;
-  toAccountId: string | null;
-  note: string;
-  /** 本地时间 `YYYY-MM-DD HH:mm:ss` */
-  happenedAt: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface LedgerCategoryDTO {
-  id: string;
-  name: string;
-  /** antd 图标名，渲染进程映射为组件 */
-  icon: string;
-  /** `--app-*` 变量名，四主题自动跟随 */
-  color: string;
-  type: "expense" | "income" | "both";
-  /** 内置预设分类不可删除 */
-  builtin: boolean;
-  sort: number;
-  archived: boolean;
-}
-
-/** 周期查询区间（YYYY-MM-DD，闭区间） */
-export interface LedgerRangeDTO {
-  start?: string;
-  end?: string;
-}
-
 // ── AI 助手 DTO（与 electron/handlers/ai-handlers.ts 保持一致） ──
 
 /** 模型服务类型：openai = 任意 OpenAI 兼容接口；ollama = 本地 Ollama */
@@ -1367,21 +1326,6 @@ export interface ElectronAPI {
 
   findInPage: (value?: string) => Promise<boolean>
 
-  // ── 记账 ──
-  ledger: {
-    /** 列出流水；传区间时按发生日期过滤，倒序返回 */
-    listTransactions: (range?: LedgerRangeDTO) => Promise<LedgerTransactionDTO[]>
-    /** 记一笔，返回写库后的完整记录 */
-    addTransaction: (tx: LedgerTransactionDTO) => Promise<LedgerTransactionDTO | null>
-    /** 局部更新，键见 handler 白名单（type/amount/categoryId/note/happenedAt…） */
-    updateTransaction: (id: string, updates: Record<string, unknown>) => Promise<boolean>
-    deleteTransaction: (id: string) => Promise<boolean>
-    listCategories: () => Promise<LedgerCategoryDTO[]>
-    upsertCategory: (category: LedgerCategoryDTO) => Promise<boolean>
-    /** 删除分类，历史流水重指派到 fallbackId（「其他」） */
-    deleteCategory: (id: string, fallbackId: string) => Promise<boolean>
-  }
-
   // ── 打卡 ──
   checkin: {
     /** 查询当前业务日打卡状态（含下次重置时刻 resetAt） */
@@ -1418,6 +1362,89 @@ export interface ElectronAPI {
       globalFailures: string[]
     }>
   }
+
+  // ── 地图（map.db 独立库：存档 / 列表 / 版本 / 作品绑定） ──
+  map: {
+    /** 列表：不含 doc_json，只给元信息 + 缩略图 data URL（null = 尚无缩略图） */
+    docsList: (workId?: string | null, includeDeleted?: boolean) => Promise<MapDocSummaryDTO[]>
+    /** 打开一张图：返回完整文档（未知结构，由渲染层 migrateDoc 归一） */
+    get: (id: string) => Promise<MapDocPayloadDTO | null>
+    /** 新建：失败只会是作品绑定被拒（工作副本在回收站 / 不存在） */
+    create: (payload: {
+      title?: string
+      workId?: string | null
+      doc?: unknown
+    }) => Promise<{ id: string; rev: number } | MapBindFailDTO | null>
+    save: (payload: {
+      id: string
+      doc: unknown
+      baseRev: number
+      viewport?: unknown
+    }) => Promise<MapSaveResultDTO>
+    /** 关窗 flush：忽略乐观锁强写（唯一的强写口） */
+    flush: (payload: {
+      id: string
+      doc: unknown
+      baseRev: number
+      viewport?: unknown
+    }) => Promise<MapSaveResultDTO>
+    rename: (id: string, title: string) => Promise<{ ok: boolean; title: string }>
+    /** 软删（进回收站，可 restore） */
+    remove: (id: string) => Promise<{ ok: boolean }>
+    restore: (id: string) => Promise<{ ok: boolean }>
+    /** 彻底删除（含历史版本与资源目录，不可恢复） */
+    purge: (id: string) => Promise<{ ok: boolean }>
+    /** 绑定 / 解绑作品（null = 解绑，不删图） */
+    bind: (id: string, workId: string | null) => Promise<{ ok: true } | MapBindFailDTO>
+    thumb: (id: string, png: Uint8Array) => Promise<{ ok: boolean }>
+    revisions: (id: string) => Promise<Array<{ rev: number; createdAt: number }>>
+    restoreRev: (id: string, rev: number) => Promise<{ ok: boolean; rev?: number }>
+    /** 可绑定作品（只读 novel.db 的 id + name） */
+    workOptions: () => Promise<Array<{ id: string; name: string }>>
+  }
+}
+
+/** 地图列表项（不含文档正文） */
+export interface MapDocSummaryDTO {
+  id: string
+  title: string
+  /** NULL = 独立地图（未绑定作品） */
+  workId: string | null
+  rev: number
+  /** PNG data URL；null = 还没有缩略图，列表用占位图 */
+  thumb: string | null
+  createdAt: number
+  updatedAt: number
+  openedAt: number | null
+  /** 非空 = 在回收站（只有 includeDeleted 查询才会带出这种行） */
+  deletedAt: number | null
+}
+
+/** 打开地图返回的完整载荷 */
+export interface MapDocPayloadDTO {
+  id: string
+  title: string
+  workId: string | null
+  /** 文档结构（旧版/坏档都可能是残缺的，一律过 migrateDoc） */
+  doc: unknown
+  rev: number
+  schemaVersion: number
+  /** 上次视口；null = 从未保存或数据非法（回落「适应窗口」） */
+  viewport: { x: number; y: number; scale: number } | null
+  /** doc_json 解析失败（按空文档打开，界面应提示） */
+  corrupt: boolean
+}
+
+/** 保存结果：冲突时回传最新 rev，由界面在「载入最新 / 覆盖保存」之间选 */
+export type MapSaveResultDTO =
+  | { ok: true; rev: number }
+  | { ok: false; conflict: true; rev: number }
+  | { ok: false; conflict: false; reason: 'not_found' | 'unserializable' }
+
+/** 作品绑定失败原因（枚举；文案归渲染层） */
+export interface MapBindFailDTO {
+  ok: false
+  reason: 'work_not_found' | 'work_deleted' | 'doc_not_found'
 }
 
 /** 快捷键持久化载荷（键 novel_shortcuts） */

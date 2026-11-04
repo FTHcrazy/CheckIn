@@ -1,14 +1,19 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_REGION_SCHEMA,
   REGION_LEVELS,
   REGION_LEVEL_COUNT_LIMITS,
+  REGION_MAX_LEVELS,
   REGION_TOTAL_LIMIT,
   createRng,
   fbm,
   generateHierarchy,
+  levelLabelOf,
+  normalizeRegionSchema,
   pointInPolygon,
   polygonArea,
   polygonCentroid,
+  regionSchemaOf,
   valueNoise,
   type MapRegion,
   type Point,
@@ -627,5 +632,119 @@ describe("polygonCentroid / polygonArea", () => {
     expect(polygonCentroid([])).toEqual({ x: 0, y: 0 });
     expect(polygonCentroid([{ x: 3, y: 4 }])).toEqual({ x: 3, y: 4 });
     expect(polygonArea([])).toBe(0);
+  });
+});
+
+/* ─────────────────── 层级定义（RegionLevelDef / schema） ─────────────────── */
+
+/**
+ * 【这一组是"改前逐字节一致"的可执行证明】
+ *
+ * R-REG-01 把硬编码的 `REGION_LEVELS` 换成文档级 `regionSchema`，而老文档不写这个
+ * 字段、读时回落默认值。于是"渲染与生成结果与改前逐字节一致"必须能被断言，
+ * 否则无法区分"回落正确"与"回落时悄悄改了默认值"。
+ */
+describe("DEFAULT_REGION_SCHEMA：与 REGION_LEVELS 逐项等价", () => {
+  it("长度 4、[1].name === 洲、[3].count === 160（label ↔ name 适配点）", () => {
+    expect(DEFAULT_REGION_SCHEMA).toHaveLength(4);
+    expect(DEFAULT_REGION_SCHEMA).toHaveLength(REGION_MAX_LEVELS);
+    expect(DEFAULT_REGION_SCHEMA[1].name).toBe("洲");
+    expect(DEFAULT_REGION_SCHEMA[3].count).toBe(160);
+    DEFAULT_REGION_SCHEMA.forEach((def, level) => {
+      expect(def.name).toBe(REGION_LEVELS[level].label);
+      expect(def.count).toBe(REGION_LEVELS[level].count);
+    });
+  });
+
+  it("generateHierarchy：不传 schema 与显式传 DEFAULT_REGION_SCHEMA 产出完全相等", () => {
+    // `toEqual` 递归比较全部顶点浮点值 —— 这是"逐字节一致"在本项目里的可执行版本
+    const implicit = generateHierarchy({ seed: 42, bounds: BOUNDS });
+    const explicit = generateHierarchy({
+      seed: 42,
+      bounds: BOUNDS,
+      schema: DEFAULT_REGION_SCHEMA,
+    });
+    expect(explicit).toEqual(implicit);
+  });
+
+  it("自定义 schema 只改名字，不改几何、id 与数量", () => {
+    const schema = [
+      { name: "界", count: 3 },
+      { name: "域", count: 12 },
+      { name: "城", count: 48 },
+      { name: "坊", count: 160 },
+    ];
+    const base = generateHierarchy({ seed: 42, bounds: BOUNDS });
+    const named = generateHierarchy({ seed: 42, bounds: BOUNDS, schema });
+
+    expect(named.map((r) => r.id)).toEqual(base.map((r) => r.id));
+    expect(named.map((r) => r.polygon)).toEqual(base.map((r) => r.polygon));
+    expect(named.map((r) => r.color)).toEqual(base.map((r) => r.color));
+    for (const r of named) {
+      expect(r.name.startsWith(schema[r.level].name)).toBe(true);
+    }
+  });
+});
+
+describe("normalizeRegionSchema：脏 schema 必须被挡住", () => {
+  it("null / [] / 5 项 / count:0 / count:NaN / name:123 一律返回 null", () => {
+    expect(normalizeRegionSchema(null)).toBeNull();
+    expect(normalizeRegionSchema(undefined)).toBeNull();
+    expect(normalizeRegionSchema("nope")).toBeNull();
+    expect(normalizeRegionSchema([])).toBeNull();
+    expect(
+      normalizeRegionSchema([
+        { name: "a", count: 1 },
+        { name: "b", count: 1 },
+        { name: "c", count: 1 },
+        { name: "d", count: 1 },
+        { name: "e", count: 1 },
+      ]),
+    ).toBeNull();
+    expect(normalizeRegionSchema([{ name: "a", count: 0 }])).toBeNull();
+    expect(normalizeRegionSchema([{ name: "a", count: Number.NaN }])).toBeNull();
+    expect(normalizeRegionSchema([{ name: "a", count: 1.5 }])).toBeNull();
+    expect(normalizeRegionSchema([{ name: 123, count: 3 }])).toBeNull();
+    expect(normalizeRegionSchema([{ count: 3 }])).toBeNull();
+  });
+
+  it("合法 3 项返回等值新数组（空 name 合法，读时回落 L{n}）", () => {
+    const raw = [
+      { name: "界", count: 1 },
+      { name: "", count: 3 },
+      { name: "城", count: 9 },
+    ];
+    const out = normalizeRegionSchema(raw);
+    expect(out).toEqual(raw);
+    // ⚠️ 必须是新数组 / 新对象：调用方持有它之后，外部再改入参不得影响文档
+    expect(out).not.toBe(raw);
+    expect(out?.[0]).not.toBe(raw[0]);
+  });
+});
+
+describe("regionSchemaOf / levelLabelOf：读时回落的唯一出口", () => {
+  it("缺失 / 非法 ⇒ DEFAULT_REGION_SCHEMA（同一份引用，不每次新数组）", () => {
+    expect(regionSchemaOf(null)).toBe(DEFAULT_REGION_SCHEMA);
+    expect(regionSchemaOf(undefined)).toBe(DEFAULT_REGION_SCHEMA);
+    expect(regionSchemaOf({})).toBe(DEFAULT_REGION_SCHEMA);
+    expect(regionSchemaOf({ regionSchema: [] })).toBe(DEFAULT_REGION_SCHEMA);
+    expect(regionSchemaOf({ regionSchema: [{ name: "a", count: 0 }] })).toBe(
+      DEFAULT_REGION_SCHEMA,
+    );
+    // 合法则用文档里那一份（子图继承同理）
+    const own = [
+      { name: "界", count: 1 },
+      { name: "域", count: 3 },
+    ];
+    expect(regionSchemaOf({ regionSchema: own })).toEqual(own);
+  });
+
+  it("levelLabelOf：越界 / 空名回落 L{n+1}，不抛错也不留空段", () => {
+    expect(levelLabelOf(DEFAULT_REGION_SCHEMA, 0)).toBe("大陆");
+    expect(levelLabelOf(DEFAULT_REGION_SCHEMA, 3)).toBe("郡");
+    expect(levelLabelOf(DEFAULT_REGION_SCHEMA, 9)).toBe("L10");
+    expect(levelLabelOf(DEFAULT_REGION_SCHEMA, -1)).toBe("L1");
+    expect(levelLabelOf([{ name: "   ", count: 1 }], 0)).toBe("L1");
+    expect(levelLabelOf(undefined, 2)).toBe("L3");
   });
 });

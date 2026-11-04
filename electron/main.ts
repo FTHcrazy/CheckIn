@@ -43,6 +43,8 @@ import { registerNovelGlobalSettingHandlers } from "./handlers/novel-global-sett
 import { registerNovelGraphHandlers } from "./handlers/novel-graph-handlers";
 import { registerNovelExportHandlers } from "./handlers/novel-export-handlers";
 import { registerNovelDbBridge } from "./novel-db";
+import { registerMapDbBridge } from "./map-db";
+import { registerMapHandlers } from "./handlers/map-handlers";
 import { registerAiDbBridge } from "./ai-db";
 import { registerAiHandlers } from "./handlers/ai-handlers";
 import { registerAiStreamEndpoint } from "./handlers/ai-stream";
@@ -53,7 +55,6 @@ import {
 } from "./handlers/user-handlers";
 import { registerShortcutHandlers } from "./handlers/shortcut-handlers";
 import { registerMemoHandlers } from "./handlers/memo-handlers";
-import { registerLedgerHandlers } from "./handlers/ledger-handlers";
 import { registerCheckinHandlers } from "./handlers/checkin-handlers";
 import {
   registerHttpSessionHandlers,
@@ -669,11 +670,46 @@ function createSettingsWindow(): BrowserWindow {
 
 // ── MapWindow（地图编辑器，full 版开放入口） ──
 
+/** 关窗 flush 的等待上限：超时强制关（宁可丢最后一次改动，也不能关不掉窗口） */
+const MAP_FLUSH_TIMEOUT_MS = 1500;
+
+/**
+ * 每个地图窗口的关窗 flush 状态。
+ *
+ * 【为什么按窗口 id 存而不是模块级一个布尔】窗口是即关即销的：一个布尔会在
+ * 「关掉 → 再开」之后永远停在 done=true，新窗口的 close 事件直接被放过 ——
+ * 表现是「第二次开地图窗口，改的东西全丢了」，且完全静默。
+ */
+interface MapFlushState {
+  requested: boolean;
+  done: boolean;
+}
+const mapFlushStates = new Map<number, MapFlushState>();
+
+/**
+ * 关窗 flush 的回执通道（只注册一次）。
+ *
+ * 时序：close → preventDefault → 通知渲染层取快照 → 渲染层 `map-doc-flush`
+ * 写完 → 回 `map-doc-flush-done` → 这里放行真正关闭。
+ * 渲染层崩了 / 没装监听 / 写库卡住，都由 createMapWindow 里的 1.5s 超时兜底。
+ */
+function registerMapFlushGuard(): void {
+  ipcMain.on("map-doc-flush-done", (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return;
+    const state = mapFlushStates.get(win.id);
+    if (!state || state.done) return;
+    state.done = true;
+    if (!win.isDestroyed()) win.close();
+  });
+}
+
 /**
  * MapWindow —— 地图编辑器窗口（即关即销、单实例唤起）。
  *
- * 形态与 SettingsWindow 一致：无草稿状态跨窗口，关闭即销毁。
- * 仅在打包了 map 入口的版本（full）可创建；其它版本调用直接返回。
+ * 形态与 SettingsWindow 一致（无草稿状态跨窗口），但**关窗前要 flush 一次地图存档**：
+ * 自动保存是 800ms 防抖，直接销毁窗口会把最后那几笔吃掉。
+ * 仅在打包了 map 入口的版本（full / novel）可创建；其它版本调用直接返回。
  * 装载守卫 / 最大化状态推送与 `createSettingsWindow` 同范式（同一套
  * `attachWindowLoadGuard` + `forwardMaximizeState`），不要退回裸
  * `did-finish-load` 手写 show —— 那条路径在装载失败时窗口永远不出现。
@@ -716,7 +752,31 @@ function createMapWindow(): BrowserWindow | undefined {
 
   windowManager.register("map", mapWin);
 
+  const winId = mapWin.id;
+  const flushState: MapFlushState = { requested: false, done: false };
+  mapFlushStates.set(winId, flushState);
+
+  /*
+    【关窗为什么拦】自动保存是 800ms 防抖，用户改完最后一笔就点关闭是常态；
+    不拦这一下，那几笔改动会随窗口一起销毁，且用户完全无从知道。
+    渲染层写完（或 1.5s 超时）才真正 close。
+  */
+  mapWin.on("close", (event) => {
+    if (flushState.done || mapWin.webContents.isDestroyed()) return;
+    event.preventDefault();
+    if (flushState.requested) return;
+    flushState.requested = true;
+    mapWin.webContents.send("map-doc-request-snapshot");
+    setTimeout(() => {
+      if (mapWin.isDestroyed() || flushState.done) return;
+      flushState.done = true;
+      log("warn", "map", "main", "地图关窗 flush 超时，强制关闭（最后改动可能未落库）");
+      mapWin.close();
+    }, MAP_FLUSH_TIMEOUT_MS);
+  });
+
   mapWin.on("closed", () => {
+    mapFlushStates.delete(winId);
     console.log("[main] Map 窗口已关闭");
   });
 
@@ -1196,13 +1256,21 @@ app.whenReady().then(() => {
 
   // 注册语义化 IPC handlers。
   // 全版本注册：小说（novel 版的唯一业务域）与用户登录；
-  // 仅 full/lite 注册：todo/memo/activity/checkin/ledger
+  // 仅 full/lite 注册：todo/memo/activity/checkin
   // （novel 版不打包对应窗口，省启动开销，也缩小可触达的 IPC 面）。
   // novel.db 挂在用户库的生命周期上：切用户 / 退出登录 / 退出应用时同步开关。
   // 必须早于 novel handler 注册 —— 注册时若已有当前用户（启动期走的是
   // switchUserDb → register 的顺序），它会立即补开一次
   registerNovelDbBridge();
   registerNovelHandlers();
+  // 地图域（map.db 独立库）：lite 版不打包 map 窗口，整组跳过（省连接与启动开销）。
+  // bridge 必须早于 handler 注册 —— 理由同 novel.db；flush 回执通道只注册一次，
+  // 由 createMapWindow 里的 close 拦截配合使用。
+  if (EDITION !== "lite") {
+    registerMapDbBridge();
+    registerMapHandlers();
+    registerMapFlushGuard();
+  }
   // AI 助手（ai.db 独立库）：仅 full/novel 版初始化 —— lite 无 novel 域，
   // AI 入口先落在 novel 侧（起名增强），故随 edition 开关；后续 checkin 接入
   // AI 时删掉这个判断放开到全版本（R-AI-04 预研点 2）。bridge 必须在 handler
@@ -1262,7 +1330,6 @@ app.whenReady().then(() => {
     registerTodoHandlers();
     registerMemoHandlers();
     registerCheckinHandlers();
-    registerLedgerHandlers();
   }
 
   // 注册跨窗口通信 IPC handler
@@ -1603,7 +1670,7 @@ app.whenReady().then(() => {
 
   createLoginWindow(cachedUser);
   // 有缓存用户才预创建主窗口：登出后的重启没有缓存用户（userDb 未初始化），
-  // 此时预创建 BaseWindow 会让页面挂载即请求 todo/checkin/ledger 等数据，
+  // 此时预创建 BaseWindow 会让页面挂载即请求 todo/checkin 等数据，
   // 全部命中「尚未初始化当前用户数据」。无缓存时等 login-confirm 切换完
   // userDb 后经 allowAndShowPrimaryWindow → ensurePrimaryWindow 再创建。
   if (cachedUser) {

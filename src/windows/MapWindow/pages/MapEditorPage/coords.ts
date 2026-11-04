@@ -235,3 +235,120 @@ export function hitTestElement(
     worldPoint.y <= bottom
   );
 }
+
+/**
+ * 多边形命中测试（射线法，不要求凸多边形）。
+ *
+ * 【为什么单列一个函数】区块多边形是崎岖化的凹多边形（regions.ts §2 的产物），
+ * 不能用「点到各边同侧」的凸多边形判据。射线法（point-in-polygon）对任意简单
+ * 多边形都成立，O(n) 即可，供「点选区块 → 圈定生成子图」用。
+ *
+ * 【有限性】`NaN` 顶点直接跳过（一条边含 NaN 时射线交点在 NaN 里丢失，结果仍
+ * 是"不在内/在外"的稳定判断，不会抛错）；顶点少于 3 个恒为 false。
+ */
+export function hitTestPolygon(
+  point: { x: number; y: number },
+  polygon: readonly { x: number; y: number }[],
+): boolean {
+  if (polygon.length < 3) return false;
+  if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) return false;
+
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i, i += 1) {
+    const xi = polygon[i].x;
+    const yi = polygon[i].y;
+    const xj = polygon[j].x;
+    const yj = polygon[j].y;
+    // 含 NaN 的边不参与判定（否则比较结果为 false，可能整体判错一次）
+    if (
+      !Number.isFinite(xi) ||
+      !Number.isFinite(yi) ||
+      !Number.isFinite(xj) ||
+      !Number.isFinite(yj)
+    ) {
+      continue;
+    }
+    const intersect =
+      yi > point.y !== yj > point.y &&
+      point.x < ((xj - xi) * (point.y - yi)) / (yj - yi) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+/**
+ * 子图「贴合变换」—— 把子图本地坐标映射到父图世界坐标的仿射变换。
+ *
+ * 【为什么是「外接矩形等比缩放 + 居中」而不是「旋转/非等比拉伸」】
+ * 子图是一张独立地图，塞进父图区块时最自然的方式是「等比缩放铺满区块包围盒、
+ * 居中放置」。等比保证子图内容不变形；居中保证子图中心落在区块包围盒中心。
+ * 旋转/非等比贴合（boundary 篇的 A2 方案）是可选增强，本函数只做最稳的 A1。
+ *
+ * 【子图 bounds 与区块包围盒的坐标域】子图的 `bounds` 是**子图本地坐标**里的
+ * 世界范围（原点在子图中心）；区块的 `polygon` 是**父图世界坐标**。本函数输入
+ * 「子图 bounds」与「父图里的目标矩形（通常是区块包围盒）」，输出一个
+ * `{ x, y, scale }`：子图本地点 p 映射到父图世界 = `p × scale + (x, y)`。
+ *
+ * 【无级缩放如何继承】这个 scale 是**常数**（不随视口缩放变）。真正驱动子图
+ * 无级缩放的仍是根 `world.scale`——子图子树挂在这个常数变换之下，再被根
+ * 缩放连带变换，于是「等效缩放 = 根缩放 × 本常数」，子图 LOD 用等效值查表。
+ *
+ * 纯函数、无 DOM，单测在 `coords.test.ts`。
+ */
+export interface SubmapFit {
+  /** 子图本地**原点**在父图世界坐标里的位置 */
+  x: number;
+  y: number;
+  /** 子图本地 → 父图世界的等比缩放 */
+  scale: number;
+}
+
+export function fitSubmapTransform(
+  submapBounds: { x: number; y: number; width: number; height: number },
+  targetRect: { x: number; y: number; width: number; height: number },
+): SubmapFit {
+  /**
+   * 【有限性校验（AGENTS §6.0）】子图 bounds 与目标矩形都来自文档数据 / 区块
+   * 几何，可能混入 `NaN` / 非正尺寸（序列化损坏）。等比缩放 = 目标宽 / 子图宽，
+   * 一旦分母为 0 或 NaN，`scale` 就是 `Infinity` / `NaN`，子图子树直接消失且
+   * 报错埋在 Pixi 内部。这里任何一边非法就退回「恒等变换 + 目标中心」，
+   * 至少让子图以原始尺寸出现在正确位置，而不是整棵消失。
+   */
+  const sw = submapBounds.width;
+  const sh = submapBounds.height;
+  const tw = targetRect.width;
+  const th = targetRect.height;
+  const centerX = Number.isFinite(targetRect.x) ? targetRect.x + tw / 2 : 0;
+  const centerY = Number.isFinite(targetRect.y) ? targetRect.y + th / 2 : 0;
+
+  if (
+    !Number.isFinite(sw) ||
+    !Number.isFinite(sh) ||
+    !Number.isFinite(tw) ||
+    !Number.isFinite(th) ||
+    sw <= 0 ||
+    sh <= 0 ||
+    tw <= 0 ||
+    th <= 0
+  ) {
+    return { x: centerX, y: centerY, scale: 1 };
+  }
+
+  // 等比缩放：取「宽比」与「高比」的较小者，子图完整落在目标矩形内且不变形
+  const scale = Math.min(tw / sw, th / sh);
+  const s = Number.isFinite(scale) && scale > 0 ? scale : 1;
+
+  /**
+   * 位移 = 目标中心 − **子图 bounds 中心** × s。
+   *
+   * 【为什么必须减 bounds 中心，而不是直接返回目标中心】映射是
+   * `世界 = 本地点 × s + (x, y)`，即 `p = 0`（子图**坐标系原点**）落在 `(x, y)`。
+   * 而子图内容的包围盒中心是 `bounds.x + w/2`，通常**不是 0** —— 早期版本直接
+   * 把目标中心当 `(x, y)`，等于假设"子图内容一定以原点为中心"。bounds 居中时
+   * 这个巧合成立（所以一直没暴露），一旦绑定一张内容偏在一侧的地图（路径 A′），
+   * 整个子图就会整体平移出去，且**不报错、只在画面上"看起来偏了"**。
+   */
+  const scx = Number.isFinite(submapBounds.x) ? submapBounds.x + sw / 2 : 0;
+  const scy = Number.isFinite(submapBounds.y) ? submapBounds.y + sh / 2 : 0;
+  return { x: centerX - scx * s, y: centerY - scy * s, scale: s };
+}

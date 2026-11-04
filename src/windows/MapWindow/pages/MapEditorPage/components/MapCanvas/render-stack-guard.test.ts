@@ -1,6 +1,9 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+// 顺序的**唯一定义处**在实现里，测试只消费它 —— 早期这里手抄了一份 7 项数组，
+// 结果 T5 加 `draftLayer` 时两份清单同时要改，忘一处就变成"测试说 7 层、代码有 8 层"。
+import { WORLD_LAYER_ORDER, worldLayerIndexOf } from "./layers";
 
 /**
  * MapCanvas 场景图 z 序守卫（源码级）。
@@ -14,6 +17,10 @@ import { describe, expect, it } from "vitest";
  *      这里一律用 `[\s\S]{0,N}?` 这种**容错**连接。
  *   2. 读源码用 `path.resolve(process.cwd(), ...)`，不要用 `new URL(..., import.meta.url)`
  *      —— 沙箱的 fs 代理只认 file scheme。
+ *
+ * 【禁止裸下标】不要再出现 `toHaveLength(7)` / `children[4]` / `at(-1)` 这类魔数位置。
+ * 加一层就必然连带红，而失败信息只是"长度不对"，很容易被误判成新功能写错
+ * （架构 §6-1 已点名）。取图层一律走 `worldLayerIndexOf(name)`。
  */
 
 const SOURCE_PATH = path.resolve(
@@ -24,33 +31,47 @@ const SOURCE_PATH = path.resolve(
 /** CRLF 归一化：跨行断言前必须先做，否则 Windows 上必然假红 */
 const SRC = readFileSync(SOURCE_PATH, "utf8").replace(/\r\n/g, "\n");
 
-/**
- * 约定的 6 层顺序（PRD §4.1 / 架构修订点 1：四层海岸在烘焙期，运行期只 1 个节点）。
- *
- * `staticLayer` 是 B5 新增的**缓存组**（投影 + 海面），它自己是一个节点，
- * 内部才是 `sheet` → `sea`。于是 world 的直接子节点从 7 个变成 6 个 —— 这不是
- * 少画了一层，而是把两个"永远不变"的节点折叠成一次 draw call。
- */
-const STACK = [
-  "staticLayer",
-  "coast",
-  "regionLayer",
-  "elementLayer",
-  "labelLayer",
-  "overlay",
-] as const;
-
 /** 缓存组内部的顺序：投影在下、海面在上（海面不透明，投影靠四周留白透出来） */
 const STATIC_STACK = ["sheet", "sea"] as const;
 
 describe("MapCanvas 场景图 z 序", () => {
-  it("world.addChild 按 staticLayer → coast → region → element → label → overlay 一次性加入", () => {
-    // 容错正则：节点名之间允许任意空白与换行，且用 {0,240} 限制跨度，
-    // 避免"匹配到文件后面同名变量"这种假绿。
-    const pattern = new RegExp(
-      `world\\.addChild\\(${STACK.map((name) => `[\\s\\S]{0,240}?${name}`).join(",")}[\\s\\S]{0,240}?\\)`,
-    );
-    expect(SRC).toMatch(pattern);
+  it("图层顺序的唯一定义处是 layers.ts（不是测试里手抄的一份）", () => {
+    // 8 层：static / coast / region / element / submap / label / overlay / draft
+    expect(WORLD_LAYER_ORDER).toHaveLength(8);
+    // 无重复（重复会让 addChild 拿到同一个 Container 两次，z 序静默错位）
+    expect(new Set(WORLD_LAYER_ORDER).size).toBe(WORLD_LAYER_ORDER.length);
+    // 海岸必须在区块**之下**（区块是"地表的划分"，要透出陆地材质）
+    expect(worldLayerIndexOf("coast")).toBeLessThan(worldLayerIndexOf("regionLayer"));
+    // 素材必须在区块之上（山是"长在地表上的东西"，不能被分区线切断）
+    expect(worldLayerIndexOf("elementLayer")).toBeGreaterThan(worldLayerIndexOf("regionLayer"));
+  });
+
+  it("草稿层排在 overlay 之后（用户正在画的线必须压过选中高亮）", () => {
+    // 画子区块时父块常处于选中态（0.16 的淡填充会盖淡草稿线）
+    expect(worldLayerIndexOf("draftLayer")).toBeGreaterThan(worldLayerIndexOf("overlay"));
+    expect(worldLayerIndexOf("draftLayer")).toBe(WORLD_LAYER_ORDER.length - 1);
+  });
+
+  it("world.addChild 按 WORLD_LAYER_ORDER 一次性加入，且清单里每个名字都在映射表上", () => {
+    // ① 唯一一次挂载必须是"按清单映射"，而不是一串实参 ——
+    //    后者每加一层都要改测试，而失败信息读不出"谁排错了谁"
+    expect(SRC).toMatch(/world\.addChild\(\.\.\.WORLD_LAYER_ORDER\.map\(/);
+
+    // ② `layersByName` 字面量里每个名字都要出现，且**书写顺序与清单一致**。
+    //    对象字面量的键序就是求值顺序，所以这一条等价于"映射表没接错线"。
+    //    用 indexOf 递进比较而不是断死整段：格式化随便换行都不会假红。
+    const literal = SRC.match(/const layersByName[\s\S]{0,600}?\};/);
+    expect(literal).not.toBeNull();
+    const text = literal?.[0] ?? "";
+    let cursor = -1;
+    for (const name of WORLD_LAYER_ORDER) {
+      const at = text.indexOf(name);
+      expect(at, `layersByName 里缺少 ${name}`).toBeGreaterThan(-1);
+      expect(at, `layersByName 里 ${name} 的书写顺序与 WORLD_LAYER_ORDER 不一致`).toBeGreaterThan(
+        cursor,
+      );
+      cursor = at;
+    }
   });
 
   it("缓存组内部是 sheet → sea（且只能加入一次）", () => {

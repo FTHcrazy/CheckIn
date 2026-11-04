@@ -1,0 +1,151 @@
+/**
+ * MapLibraryModal 局部样式
+ *
+ * 层级取舍：弹窗本体是 elevated 层，列表行是它内部的**凹槽**，
+ * 因此行底色用 `--app-surface-alt`（常驻色块允许的三档之一），hover 只改边框
+ * 与文字层级，不再叠第三层底色 —— 叠了会在深色主题下糊成一片。
+ */
+
+.map-library {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.map-library__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.map-library__tabs,
+.map-library__bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.map-library__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 420px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.map-library__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-item, 8px);
+  background: var(--app-surface-alt);
+  transition: border-color 0.15s ease;
+
+  &:hover {
+    border-color: var(--app-primary);
+  }
+}
+
+/* 当前正在编辑的那张：左侧一条主色竖线，扫一眼就知道"我在改哪张" */
+.map-library__row--current {
+  border-color: var(--app-primary);
+  box-shadow: inset 2px 0 0 var(--app-primary);
+}
+
+.map-library__thumb {
+  width: 92px;
+  height: 58px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-chip, 6px);
+  background: var(--app-surface);
+  overflow: hidden;
+}
+
+.map-library__thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.map-library__thumb-empty {
+  font-size: 20px;
+  color: var(--app-text-secondary);
+}
+
+.map-library__info {
+  /* flex 子项必须给 min-width:0，否则长标题会把右侧按钮挤出去（不出滚动条） */
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.map-library__title-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.map-library__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--app-text-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.map-library__badge {
+  flex-shrink: 0;
+  font-size: 11px;
+  line-height: 16px;
+  padding: 0 6px;
+  border-radius: var(--app-radius-pill, 999px);
+  color: var(--app-primary);
+  background: var(--app-primary-weak);
+}
+
+.map-library__badge--warn {
+  color: var(--app-text-secondary);
+  background: var(--app-surface-hover);
+}
+
+.map-library__meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--app-text-secondary);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.map-library__dot {
+  opacity: 0.6;
+}
+
+.map-library__row-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.map-library__hint {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--app-text-secondary);
+}

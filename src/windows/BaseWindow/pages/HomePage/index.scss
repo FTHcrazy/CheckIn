@@ -156,9 +156,8 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
-    // 撑满主区剩余高度：底部不再留白，卡片行均分拉伸
-    flex: 1 1 auto;
-    min-height: 0;
+    // 不再撑满剩余高度：卡片高度由宽度档位定死，余下的留白就让它空着
+    flex: 0 0 auto;
   }
 
   &__section-title {
@@ -171,18 +170,45 @@
 
   &__grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    // 一行最多 4 张卡：下限取「四分之一可用宽度」与 240px 的较大者。
+    // 大屏时前者更大 → auto-fit 排满 4 列就再无空间放第 5 列，
+    // 7 张卡不会再挤成一整行；窄窗口时退回 240px 下限，列数自然减到 3。
+    // ⚠️ 42px = 列间距 14px × 3，下面 gap 改动时必须同步
+    grid-template-columns: repeat(
+      auto-fit,
+      minmax(max(240px, calc((100% - 42px) / 4)), 1fr)
+    );
     gap: 14px;
-    flex: 1 1 auto;
-    min-height: 0;
-    // 行高均分剩余空间：既保底 min-content，又把空余高度摊给各卡片行
-    grid-auto-rows: minmax(min-content, 1fr);
+    // 行高固定。之前用 minmax(min-content, 1fr) + flex:1 让行去填满整页，
+    // 结果 7 张卡在大屏上被拉到近 400px 高、内容吊在中间，完全是变形
+    grid-auto-rows: 116px;
   }
 
   &__empty {
     padding: 24px 0;
     background: var(--app-surface);
     border-radius: var(--app-radius-panel);
+  }
+}
+
+// ── 功能卡高度分档 ──
+// 卡片宽度随列数变化（列数由 `auto-fit` 决定），描述能折几行也跟着变，
+// 因此行高按窗口宽度分档定死，而不是让网格去均分剩余空间。
+@media (max-width: 1439px) {
+  .home-page__grid {
+    grid-auto-rows: 112px;
+  }
+}
+
+@media (max-width: 1199px) {
+  .home-page__grid {
+    grid-auto-rows: 108px;
+  }
+
+  // 窄窗口下卡片本来就窄，「进入 >」这几个字要占掉描述 40px 的行宽。
+  // 整张卡都可点、hover 也有位移反馈，收起它比让描述断成四行划算
+  .feature-card__enter {
+    display: none;
   }
 }
 
@@ -228,6 +254,10 @@
     &__grid {
       grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
       gap: 10px;
+      // 紧凑档：内边距与字号同步缩小，三行描述仍放得下。
+      // 960px 最小窗口下降到 3 列（3 行卡），比 4 列的 205px 宽卡更易读，
+      // 代价是内容略高于可视区、需要滚动；宁可滚，也不压扁描述
+      grid-auto-rows: 108px;
     }
   }
 

@@ -509,3 +509,70 @@ export function levelCountsOf(regions: ReadonlyArray<{ level: number }>): number
   }
   return counts;
 }
+
+/* ───────────────── 嵌套子地图（Phase 2）的 LOD 扩展 ─────────────────
+ *
+ * 子图是「父图区块里嵌的一张独立地图」，它的无级缩放复用上面整套 `levelAlphas`
+ * 机制，但多了一层「父图缩放 → 子图局部缩放」的换算，以及一个「父图尺度下只露
+ * 轮廓、缩进去才淡入内容」的门控。见 `nested-submap-main.md` §5。
+ */
+
+/**
+ * 子图局部的「等效缩放」= 父图缩放 × 子图贴合变换的常数缩放。
+ *
+ * 【为什么需要它】子图的 LOD（`naturalScales` / `levelAlphas`）是用**子图自己的
+ * bounds + 区块数量**算出来的，单位是「子图局部坐标里的缩放」。但驱动整个场景的
+ * 只有根 `world.scale`（= 父图缩放）。子图子树挂在 `submapTransform.scale` 这个
+ * 常数之下，所以「子图内容在屏幕上的真实放大倍率」= `父图缩放 × transformScale`。
+ * 只有拿这个等效值去查子图自己的 `levelAlphas`，子图才会在「缩进去看它」时无级
+ * 显露它的洲/国家/郡 —— 否则子图层级权重会停在父图缩放口径，错位一整档。
+ *
+ * 【有限性】两个入参都可能来自文档/变换数据，任一非有限即退回 0（子图不可见），
+ * 不能让 NaN 传染进 `levelAlphas`（那里会给出全 NaN 的权重，子图内容集体消失且
+ * 无从排查）。
+ */
+export function submapEffectiveScale(parentScale: number, transformScale: number): number {
+  if (!Number.isFinite(parentScale) || !Number.isFinite(transformScale)) return 0;
+  const s = parentScale * transformScale;
+  return Number.isFinite(s) && s > 0 ? s : 0;
+}
+
+/**
+ * 子图「渐入」权重 —— 父图尺度下只在 `enterScale` 附近平滑淡入，∈ [0,1]。
+ *
+ * 【解决的问题】「县城尺度只看小溪村大致轮廓」不能靠「子图 LOD 缩到最粗」实现
+ * （最粗一级已是小溪村自己的陆地，不是轮廓）。正确做法：父图缩放低于
+ * `enterScale` 时子图**整体不显示**（只露出父图区块的「绑定态轮廓」），越过阈值
+ * 才在 `enterScale ~ detailScale` 之间淡入，之后才由等效缩放驱动子图内部无级 LOD。
+ *
+ * 这里复用 `bandProgress`（log2 域 smoothstep）：以 `enterScale` 为交界、带宽
+ * `bandOctaves` 做平滑过渡，与父图层级交叉淡化共用同一条曲线，观感一致。
+ *
+ * 【带宽取 1/2 倍频程】子图淡入是「从无到有」的单一过渡，比层级间交叉淡化
+ * 稍宽一点（1/2 > 1/3），让「轮廓 → 内容」的转折更柔和。
+ */
+export function submapEnterWeight(
+  parentScale: number,
+  enterScale: number,
+  bandOctaves = 1 / 2,
+): number {
+  if (!Number.isFinite(enterScale) || enterScale <= 0) return 1;
+  return bandProgress(parentScale, enterScale, bandOctaves);
+}
+
+/**
+ * 子图「渐入」的自动阈值 —— 按「区块在屏幕上约 `blockPx` 长」反推父图缩放。
+ *
+ * 【为什么区块长边 ≈ 360px 时才开始淡入子图】与父图层级用同一个 `LOD_BLOCK_PX`
+ * 口径：当这个区块在屏幕上大到「读得清它是独立的一块地」（≈360px）时，用户才会
+ * 有「钻进去看里面」的意图，此时让子图内容淡入才不突兀。太早淡入会在俯瞰时把
+ * 一堆子图细节糊在画面上。
+ *
+ * 【长边而非短边】区块形状各异，取包围盒长边（`polygonLongEdge`）反推，保证
+ * 「这块东西在屏幕上占多大」口径与缩放上限的推导一致。
+ */
+export function enterScaleForRegion(blockLongEdgeWorld: number, blockPx = LOD_BLOCK_PX): number {
+  if (!Number.isFinite(blockLongEdgeWorld) || blockLongEdgeWorld <= 0) return Infinity;
+  const s = blockPx / blockLongEdgeWorld;
+  return Number.isFinite(s) && s > 0 ? s : Infinity;
+}

@@ -2,11 +2,13 @@ import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { Empty, Input, Modal } from "antd";
 import {
-  AccountBookOutlined,
+  BgColorsOutlined,
   CalendarOutlined,
   CheckSquareOutlined,
   CodeOutlined,
+  CompressOutlined,
   EditOutlined,
+  IdcardOutlined,
   SearchOutlined,
 } from "@ant-design/icons";
 import HomeSidebar from "./components/HomeSidebar";
@@ -58,20 +60,36 @@ const FEATURES: HomeFeature[] = [
     tone: "purple",
   },
   {
-    key: "ledger",
-    icon: <AccountBookOutlined />,
-    title: "记账本",
-    desc: "3 步记一笔，月度收支与分类占比",
-    path: "/ledger",
-    tone: "rose",
-  },
-  {
     key: "code",
     icon: <CodeOutlined />,
     title: "代码记录",
     desc: "按日统计提交产出，追踪日均行数",
     path: "/code",
     tone: "amber",
+  },
+  {
+    key: "compress",
+    icon: <CompressOutlined />,
+    title: "图片压缩",
+    desc: "PNG 量化与批量转码，本地处理不上传",
+    path: "/compress",
+    tone: "green",
+  },
+  {
+    key: "cutout",
+    icon: <BgColorsOutlined />,
+    title: "色键抠图",
+    desc: "点选背景色一键抠除，导出透明 PNG",
+    path: "/cutout",
+    tone: "orange",
+  },
+  {
+    key: "idphoto",
+    icon: <IdcardOutlined />,
+    title: "证件照换底色",
+    desc: "一键换白/红/蓝底，按寸输出带 DPI",
+    path: "/idphoto",
+    tone: "rose",
   },
 ];
 
@@ -122,21 +140,8 @@ export default function HomePage() {
       { key: "code", label: "今日代码", value: overview.codeLines, unit: "行", tone: "amber" },
       { key: "memo", label: "备忘文件", value: overview.memoCount, unit: "篇", tone: "purple" },
       { key: "daily", label: "本月打卡", value: overview.checkinDays, unit: "天", tone: "teal" },
-      {
-        key: "ledger",
-        label: "本月支出",
-        value: overview.monthExpense,
-        unit: "元",
-        tone: "rose",
-      },
     ],
-    [
-      overview.checkinDays,
-      overview.codeLines,
-      overview.memoCount,
-      overview.monthExpense,
-      overview.todoCount,
-    ],
+    [overview.checkinDays, overview.codeLines, overview.memoCount, overview.todoCount],
   );
 
   const displayName = displayNameFromEmail(overview.email);

@@ -1,0 +1,83 @@
+/**
+ * ElementPanel 局部样式（素材属性浮出面板）
+ *
+ * 定位与 RegionPanel 同位（画布右上角）：素材选中与区块选中互斥，两者不可能
+ * 同时出现。颜色走主题变量 var(--app-*)，禁止硬编码（AGENTS §6.1）。
+ */
+
+.element-panel {
+  position: absolute;
+  right: 16px;
+  top: 16px;
+  z-index: 10;
+  width: 232px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-panel, 8px);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
+}
+
+.element-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.element-panel__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--app-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/**
+ * 属性行：标签 + 滑杆 + 当前值。
+ * 【为什么标签定宽】四行的标签字数不同（"不透明"3 字 / "尺寸"2 字），
+ * 不定宽会让滑杆起点参差，扫读时对不齐。
+ */
+.element-panel__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.element-panel__label {
+  flex: none;
+  width: 44px;
+  font-size: 12px;
+  color: var(--app-text-secondary);
+}
+
+.element-panel__slider {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  /* antd Slider 自带上下 margin，行内对齐要压掉 */
+  padding: 0;
+}
+
+.element-panel__value {
+  flex: none;
+  width: 40px;
+  text-align: right;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--app-text-secondary);
+}
+
+.element-panel__level {
+  flex: 1;
+  min-width: 0;
+}
+
+.element-panel__actions {
+  display: flex;
+  gap: 8px;
+}

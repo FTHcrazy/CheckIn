@@ -44,9 +44,10 @@ CheckIn 采用 Electron 双进程架构，渲染进程（React）与主进程（
 ├─────────────────────────────────────────────────────────────┤
 │  IPC Handlers (electron/main.ts + electron/handlers/)       │
 ├─────────────────────────────────────────────────────────────┤
-│  Database Layer (electron/db.ts + novel-db.ts)              │
+│  Database Layer (electron/db.ts + novel-db.ts + map-db.ts)  │
 │  └─ authDb (应用级) + userDb (用户级)                       │
 │     novel.db：novel_* / novel_pack_*（1.33.0 拆库）         │
+│     map.db：map_docs / map_revisions（2.20.0 拆库）         │
 ├─────────────────────────────────────────────────────────────┤
 │  System Services                                            │
 │  └─ File System / Tray / Notifications / Background Tasks   │
@@ -74,6 +75,8 @@ CheckIn 采用 Electron 双进程架构，渲染进程（React）与主进程（
 | **preload.ts** | 通过 `contextBridge` 暴露安全的 API 给渲染进程 | 仅做 API 转发，不实现业务逻辑 |
 | **db.ts** | SQLite 数据库初始化、双库管理（authDb/userDb）、通用 CRUD 封装 | 提供底层数据库操作，不感知上层业务；**只承载 checkin 域**，不建任何 `novel_*` 表 |
 | **novel-db.ts** | 小说域独立库 `novel.db` 的初始化与 CRUD 封装（`novel_*` / `novel_pack_*` / `novel_config` / `novel_usage_log`），通过 `registerUserDbLifecycle()` 跟随 checkin 库开关 | 单向依赖 `db.ts`（ lifecycle 回调桥接），`db.ts` 不反向依赖它；novel handler 一律从这里取写通道 |
+| **map-db.ts** | 地图域独立库 `map.db` 的初始化与 CRUD 封装（`map_docs` / `map_revisions` / `map_assets` / `map_config`），同样挂 `registerUserDbLifecycle()`；另提供 `getMapAssetsDir()`（资源本体走文件系统） | 与 novel.db **平级、互不 import**；`map-handlers` 只从这里取写通道（`electron/map-db-guard.test.ts` 守卫）。三本库互不越界：checkin/novel 不建 `map_*`，map 不建 `novel_*` |
+| **map-utils.ts** | 地图存档的纯函数（标题归一 / rev 冲突 / 版本快照节奏 / 视口解析 / 缩略图 data URL） | 主进程与 handler 共用一份规则；无 IO、可在 vitest 直接跑 |
 | **activitiesTask.ts** | 后台活动提醒轮询、系统事件监听（睡眠/锁屏） | 独立后台任务，通过 IPC 通知渲染进程 |
 | **windowManager.ts** | 窗口管理池：注册/注销/广播/定点发送 | 只管理 BrowserWindow 实例，不感知业务 |
 | **novel-links-events.ts** | `novel_links` 变更的**唯一广播出口**（`broadcastLinksChanged` + `workIdOfEntity`）：图窗口单事务提交与主窗口增删关系共用一条 `novel-links-changed` | 只填 delta、不写库；排除发送者与事件名只在这里出现一次（两处各写一份必然漂移） |
@@ -82,7 +85,7 @@ CheckIn 采用 Electron 双进程架构，渲染进程（React）与主进程（
 **模块边界规则**：
 - `main.ts` 仅承担窗口生命周期、托盘、协议、窗口级 IPC（broadcast/window-control/find-in-page 等），**一切业务 IPC（user / memo / todo / activity / novel 等）一律抽到 `handlers/` 下独立模块**，禁止在 `main.ts` 内联业务逻辑或 SQL
 - `db.ts` 不导入 `main.ts` 的任何内容；`db.ts` 维护当前用户邮箱（`getCurrentUserEmail()`），业务 handler 通过它定位用户数据目录，不依赖 `main.ts` 闭包
-- **两个数据域两本库**：checkin 域（`db.ts` → `checkin.db`）与 novel 域（`novel-db.ts` → `novel.db`，与 `checkin.db` 同目录）。novel handler 只能从 `novel-db.ts` 取写通道，**禁止** import `../db` 的 `dbRun` 写 `novel_*` 表；`db.ts` 只通过 lifecycle 回调通知 novel 库切换/关闭，不 import `novel-db.ts`（否则循环依赖）。由 `electron/novel-db-split.test.ts` 源码守卫
+- **三个数据域三本库**：checkin 域（`db.ts` → `checkin.db`）、novel 域（`novel-db.ts` → `novel.db`）、map 域（`map-db.ts` → `map.db`），三本同目录、平级。novel / map handler 只能从各自的 db 模块取写通道，**禁止** import `../db` 的 `dbRun` 写业务表；`db.ts` 只通过 lifecycle 回调通知另外两本库切换/关闭，不反向 import 它们（否则循环依赖）。由 `electron/novel-db-split.test.ts` 与 `electron/map-db-guard.test.ts` 源码守卫
 - `activitiesTask.ts` 通过 `ipcMain` 注册通道，不直接调用 `main.ts` 函数
 - `preload.ts` 仅读取 `db.ts` 和 `main.ts` 暴露的 IPC 通道
 
@@ -109,6 +112,7 @@ src/windows/XxxWindow/
 | **PackWindow** | `windows/PackWindow/` | `src/windows/PackWindow/index.html` | 行囊独立窗口（novel 域：full / novel 打包，lite 不打包）。承载 `shared/components/CharacterPack` 宿主，单实例、即关即销；上下文经 `pack-window-context` / `novel-work-changed` 投递 |
 | **GlobalSettingWindow** | `windows/GlobalSettingWindow/` | `src/windows/GlobalSettingWindow/index.html` | 全局设定中心独立窗口（novel 域：full / novel 打包，lite 不打包）。复用 `shared/components/SettingCenter`（`source="global"`）呈现跨书共享库，单实例、即关即销、数据全在主进程 |
 | **RelationWindow** | `windows/RelationWindow/` | `src/windows/RelationWindow/index.html` | 人物关系网络独立窗口（novel 域：full / novel 打包，lite 不打包）。池子 + 力导向画布 + 详情卡三栏，单实例、即关即销；上下文经 `relation-window-context` 投递，画布记忆存 `novel_config` 单键，写关系走 `novel-graph-commit` 单事务并广播 `novel-links-changed` |
+| **MapWindow** | `windows/MapWindow/` | `src/windows/MapWindow/index.html` | 地图编辑器窗口（novel 域：full / novel 打包，lite 不打包）。单实例、**关窗前先 flush 存档**（主进程拦 `close` → 取快照 → `map-doc-flush` → 回执 → 1.5s 超时兜底）；数据在独立库 `map.db`，`work_id` 可空（先建图、后绑定作品） |
 
 **构建版本（edition）**：环境变量 `CHECKIN_EDITION=full | lite | novel` 决定打包哪些窗口与业务模块，清单唯一事实源为 `electron/edition.ts`（`RENDERER_ENTRY_PATHS` / `EDITION_WINDOW_ENTRIES` / `PRIMARY_WINDOW_ENTRY`），vite.config.ts 的 `rollupOptions.input` 与 electron/main.ts 的窗口加载共用；主窗口归属（full/lite → BaseWindow，novel → NovelWindow）也由它驱动。新增窗口时必须同步该清单并跑 `electron/edition.test.ts` 护栏。
 
@@ -381,6 +385,8 @@ CheckIn/
 │   ├── preload.ts                         # API 暴露
 │   ├── db.ts                              # checkin 域数据库管理（authDb / userDb）
 │   ├── novel-db.ts                        # novel 域独立库 novel.db（初始化 + CRUD）
+│   ├── map-db.ts                          # map 域独立库 map.db（存档 / 版本 / 资源索引）
+│   ├── map-utils.ts                       # 地图存档纯函数（标题归一 / rev / 缩略图）
 │   ├── edition.ts                         # 构建版本与窗口入口清单（唯一事实源）
 │   ├── httpSession.ts                     # 主进程 session 级 CORS / Cookie 注入
 │   ├── windowManager.ts                   # 窗口管理池
@@ -1590,7 +1596,7 @@ function initializeDataDb(db: Database) {
 ### 8.4 新增数据表
 
 - [ ] **若是 novel 窗口的表（`novel_*` 前缀），先看 §6.7 开关的当前值**：`refactor` 可直接重设结构、不写迁移；`compat` 必须走增量迁移
-- [ ] 在对应数据域的建表函数中创建表：checkin 域在 `electron/db.ts` 的 `initializeDataDb()`，novel 域在 `electron/novel-db.ts`（**不要**写进 `db.ts`）
+- [ ] 在对应数据域的建表函数中创建表：checkin 域在 `electron/db.ts` 的 `initializeDataDb()`，novel 域在 `electron/novel-db.ts`，地图域在 `electron/map-db.ts`（**不要**写进 `db.ts`）
 - [ ] 编写增量迁移逻辑（检查列是否存在）
 - [ ] 在 `shared/services/` 或页面 `services/` 中封装 IPC 调用（渲染层不内联 SQL）
 - [ ] 定义 TypeScript 接口（如 `XxxItem`）
@@ -1865,6 +1871,7 @@ function initializeDataDb(db: Database) {
 | 主进程入口 | `electron/main.ts` | 窗口管理、IPC 注册 |
 | 数据库初始化 | `electron/db.ts` | 双库管理、表结构迁移（checkin 域） |
 | 小说库初始化 | `electron/novel-db.ts` | `novel.db`：小说与行囊全部表，跟随用户切换开关 |
+| 地图库初始化 | `electron/map-db.ts` | `map.db`：地图存档 / 历史版本 / 资源索引 / 配置，跟随用户切换开关 |
 | 会话配置 | `electron/httpSession.ts` | 主进程 session 级 CORS / Cookie 注入（一次性） |
 | API 暴露 | `electron/preload.ts` | contextBridge 白名单 |
 | 路由配置 | `src/windows/BaseWindow/App.tsx` | HashRouter + Routes |

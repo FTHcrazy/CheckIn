@@ -130,6 +130,8 @@ interface SupportPanelProps {
   onToolSubChange?: (value: ToolSub) => void;
   /** 打开人物关系网络独立窗口（R27）；不传时工具卡退回「不可进入」占位 */
   onOpenRelation?: () => void;
+  /** 打开架空地图独立窗口（R28 / MapWindow）；不传时工具卡退回「规划中」占位 */
+  onOpenMap?: () => void;
   /**
    * 抽取设定动作组（R-AI-08）。
    *
@@ -216,6 +218,7 @@ export default function SupportPanel({
   toolSub: controlledToolSub,
   onToolSubChange,
   onOpenRelation,
+  onOpenMap,
   extractActions,
 }: SupportPanelProps) {
   /** 工具箱二级面板：null = 启动器首页；受控优先，否则组件内自持 */
@@ -722,6 +725,7 @@ export default function SupportPanel({
                 extractUnavailableText={extractUnavailableText}
                 onNotify={onNotify}
                 onOpenRelation={onOpenRelation}
+                onOpenMap={onOpenMap}
               />
             ))}
         </div>

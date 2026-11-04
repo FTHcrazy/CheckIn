@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
-  AccountBookOutlined,
   CalendarOutlined,
   CheckSquareOutlined,
   CodeOutlined,
@@ -27,7 +26,6 @@ const NAV_ITEMS: NavItem[] = [
   { path: "/todo", label: "待办", icon: <CheckSquareOutlined /> },
   { path: "/memo", label: "备忘", icon: <EditOutlined /> },
   { path: "/daily", label: "日程", icon: <CalendarOutlined /> },
-  { path: "/ledger", label: "记账", icon: <AccountBookOutlined /> },
   { path: "/code", label: "代码", icon: <CodeOutlined /> },
   { path: "/news", label: "资讯", icon: <ReadOutlined /> },
 ];

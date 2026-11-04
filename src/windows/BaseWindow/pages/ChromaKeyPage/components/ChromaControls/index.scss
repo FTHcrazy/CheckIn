@@ -1,0 +1,117 @@
+// 右侧控制栏：定宽、可收缩，自身滚动
+.ck-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  flex: 0 1 300px;
+  min-width: 260px;
+  padding: 14px;
+  overflow-y: auto;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-panel);
+  background: var(--app-surface);
+  box-shadow: var(--app-shadow-card);
+
+  // antd Upload 默认是行内块，撑不满这一列
+  &__pick {
+    display: block;
+    width: 100%;
+
+    .ant-upload-select {
+      display: block;
+      width: 100%;
+    }
+  }
+
+  &__meta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  &__name {
+    font-size: 14px;
+    color: var(--app-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__size {
+    font-size: 12px;
+    color: var(--app-text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  &__label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--app-text-secondary);
+  }
+
+  &__help {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    border-radius: var(--app-radius-pill);
+    border: 1px solid var(--app-border-strong);
+    font-size: 12px;
+    line-height: 1;
+    color: var(--app-text-muted);
+    cursor: help;
+  }
+
+  &__value {
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--app-text);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__color {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  &__hex {
+    font-size: 12px;
+    color: var(--app-text);
+    font-variant-numeric: tabular-nums;
+    text-transform: uppercase;
+    cursor: help;
+  }
+
+  &__tip {
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--app-text-muted);
+  }
+
+  &__stats {
+    display: flex;
+    flex-direction: column;
+    // 不让 Tag 被拉伸成整行色条
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  &__actions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: auto;
+  }
+}

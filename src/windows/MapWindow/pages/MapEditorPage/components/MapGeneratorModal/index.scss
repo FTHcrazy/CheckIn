@@ -1,0 +1,60 @@
+/** 一键成图弹层（B3）—— 行式表单 + 摘要区，风格对齐「更多」面板的行距 */
+.map-generator {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 2px;
+}
+
+.map-generator__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.map-generator__label {
+  flex: none;
+  min-width: 56px;
+  color: var(--ant-color-text-secondary, rgba(0 0 0 / 0.66));
+
+  &--gap {
+    margin-left: auto;
+  }
+}
+
+.map-generator__control {
+  width: 140px;
+
+  &--narrow {
+    width: 88px;
+  }
+}
+
+.map-generator__result {
+  margin-top: 4px;
+  padding: 10px 12px;
+  border-radius: var(--app-radius-card, 8px);
+  background: var(--app-surface-alt, rgba(0 0 0 / 0.03));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.map-generator__summary {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ant-color-text, rgba(0 0 0 / 0.88));
+  word-break: break-all;
+}
+
+.map-generator__gears {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.map-generator__hint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ant-color-text-tertiary, rgba(0 0 0 / 0.45));
+}

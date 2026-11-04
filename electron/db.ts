@@ -121,52 +121,6 @@ function initializeDataDb(database: Database.Database): void {
       done_at TEXT DEFAULT NULL
     );
 
-    -- ── 记账（PRD v0.1 数据模型）──
-    -- 金额统一 REAL（元），时间统一本地字符串 YYYY-MM-DD HH:mm:ss
-    CREATE TABLE IF NOT EXISTS ledger_categories (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      icon TEXT NOT NULL DEFAULT 'EllipsisOutlined',
-      color TEXT NOT NULL DEFAULT '--app-text-muted',
-      type TEXT NOT NULL DEFAULT 'expense' CHECK (type IN ('expense', 'income', 'both')),
-      builtin INTEGER NOT NULL DEFAULT 0,
-      sort INTEGER NOT NULL DEFAULT 0,
-      archived INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT DEFAULT (datetime('now', 'localtime')),
-      updated_at TEXT DEFAULT (datetime('now', 'localtime'))
-    );
-    CREATE TABLE IF NOT EXISTS ledger_accounts (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      kind TEXT NOT NULL DEFAULT 'cash',
-      balance REAL NOT NULL DEFAULT 0,
-      currency TEXT NOT NULL DEFAULT 'CNY',
-      sort INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT DEFAULT (datetime('now', 'localtime'))
-    );
-    CREATE TABLE IF NOT EXISTS ledger_tags (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      color TEXT NOT NULL DEFAULT '--app-text-muted'
-    );
-    CREATE TABLE IF NOT EXISTS ledger_transactions (
-      id TEXT PRIMARY KEY,
-      type TEXT NOT NULL DEFAULT 'expense' CHECK (type IN ('expense', 'income', 'transfer')),
-      amount REAL NOT NULL,
-      currency TEXT NOT NULL DEFAULT 'CNY',
-      category_id TEXT,
-      account_id TEXT,
-      to_account_id TEXT,
-      note TEXT NOT NULL DEFAULT '',
-      happened_at TEXT NOT NULL,
-      created_at TEXT DEFAULT (datetime('now', 'localtime')),
-      updated_at TEXT DEFAULT (datetime('now', 'localtime'))
-    );
-    CREATE INDEX IF NOT EXISTS idx_ledger_tx_happened
-      ON ledger_transactions(happened_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_ledger_tx_category
-      ON ledger_transactions(category_id);
-
     -- ── 每日打卡 ──
     -- checkin_date 为「业务日」YYYY-MM-DD：凌晨 0-5 点的打卡归属前一天（次日 5 点切日），
     -- UNIQUE 保证一个业务日只有一条打卡记录，重复点击由 INSERT OR IGNORE 幂等吸收
@@ -176,13 +130,6 @@ function initializeDataDb(database: Database.Database): void {
       created_at TEXT DEFAULT (datetime('now', 'localtime'))
     );
     CREATE INDEX IF NOT EXISTS idx_checkins_date ON checkins(checkin_date);
-    CREATE TABLE IF NOT EXISTS ledger_budgets (
-      id TEXT PRIMARY KEY,
-      category_id TEXT,
-      period TEXT NOT NULL,
-      amount REAL NOT NULL DEFAULT 0,
-      created_at TEXT DEFAULT (datetime('now', 'localtime'))
-    );
   `)
 }
 

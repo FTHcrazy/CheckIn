@@ -83,6 +83,12 @@ describe("edition manifest", () => {
     expect(EDITION_WINDOW_ENTRIES.lite).not.toContain("globalSetting");
   });
 
+  it("地图编辑器窗口随小说域打包：full 与 novel 版都包含 map，lite 不含", () => {
+    expect(EDITION_WINDOW_ENTRIES.full).toContain("map");
+    expect(EDITION_WINDOW_ENTRIES.novel).toContain("map");
+    expect(EDITION_WINDOW_ENTRIES.lite).not.toContain("map");
+  });
+
   it("主窗口归属：full/lite → base，novel → novel", () => {
     expect(PRIMARY_WINDOW_ENTRY.full).toBe("base");
     expect(PRIMARY_WINDOW_ENTRY.lite).toBe("base");

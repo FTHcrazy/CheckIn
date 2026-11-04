@@ -1,0 +1,63 @@
+// 对比弹窗：两张图同位置叠放，后图按分割比例裁切
+.imgc-compare {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+
+  &__stage {
+    position: relative;
+    display: block;
+    width: fit-content;
+    max-width: 100%;
+    margin: 0 auto;
+    border-radius: var(--app-radius-item);
+    overflow: hidden;
+    background: var(--app-surface-alt);
+  }
+
+  &__base {
+    display: block;
+    max-width: 100%;
+    max-height: 56vh;
+  }
+
+  &__over {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    // 两张图长宽比一致，fill 即精确重合
+    object-fit: fill;
+  }
+
+  &__divider {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--app-primary);
+    transform: translateX(-1px);
+    pointer-events: none;
+  }
+
+  &__labels {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    color: var(--app-text-muted);
+
+    b {
+      font-size: 14px;
+      color: var(--app-text);
+      font-variant-numeric: tabular-nums;
+    }
+  }
+
+  &__hint {
+    margin: 0;
+    font-size: 12px;
+    color: var(--app-text-muted);
+    text-align: center;
+  }
+}
