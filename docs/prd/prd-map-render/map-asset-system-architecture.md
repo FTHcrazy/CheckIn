@@ -27,15 +27,28 @@ B2 之后素材已达 45 张（6 分类）+ 4 张底图，全部 AI 生成；2.2
 
 ---
 
-## 二、核心决策：展示分类与地形语义双轴分离
+## 二、核心决策：展示分类 / 地形语义 / 地貌带三轴分离
 
 这是全方案的根基。**目录、登记表、生成引擎各管一件事，不互相越位。**
 
 | 轴 | 载体 | 面向谁 | 归属关系 |
 |----|------|--------|----------|
 | 展示分类 `category`（现有 6 类） | `SpriteDef.category` + 面板分组 | **人**（素材面板找图） | 单归属：一张素材只进一个分组 |
-| 地形语义 `terrains`（新增） | `SpriteDef.terrains: TerrainKind[]` | **机器**（生成器选材） | **多标签**：雪峰 ∈ 高山 + 雪原 |
+| 地形语义 `terrains`（S1） | `SpriteDef.terrains: TerrainKind[]` | **机器**（生成器选材） | **多标签**：雪峰 ∈ 高山 + 雪原 |
+| **地貌带** `zones`（2.26.0，第三轴） | `SpriteDef.zones: SpriteZone[]` + `domain/zones.ts` | **机器**（同一地形换哪一族画风） | **多标签**：松树 ∈ 主带 + 雪带 |
 | 物理目录 | `assets/sprites/`（现状不动） | 打包器 | 不表达任何语义 |
+
+**为什么需要第三轴**（`docs/review/map-vs-reference-render-analysis.md` P0-1）：
+地形语义只回答「画什么」——`mountain` 配方里既有雪峰也有连绵山岭。只有两个轴时，
+一张温带图的南缘也会长雪峰、雪原图的腹地也会长阔叶树，整张图「处处同款」。
+第三轴回答「用哪一族画风」：同一 `mountain` 地形，北带取雪峰、主带取山岭、
+南带取风蚀石林。参考实现把山体素材拆成 主池/丘陵/沙漠/雪原 四池，就是这一轴。
+
+**带的口径**（`core` 是全带通用池，不是"中间那条带"）：
+人文 / 港渡 / 遗迹只标 `core`（任何气候都成立）；沙丘/绿洲/风蚀岩/石林只标
+`desert`；雪峰/雪岭/雪松/雪丘只标 `snow`；圆丘/梯田/阔叶/草丛/疏树只标 `grass`；
+其余山地林木标 `core`（主池，全带首选）。选材时**本带优先、core 兜底**——
+只要本带有货就绝不跨带。
 
 **为什么目录不按地形类型分子目录**：地形是多标签（一张「雪松林」同时服务
 雪原/山地/林地三种地形），按地形建目录会逼出单归属，出现「复制三份」或
@@ -139,6 +152,7 @@ export interface SpriteSource {          // 本地与导入素材的公共形状
   id: string;
   src: string;
   terrains: TerrainKind[];
+  zones?: SpriteZone[];                  // 缺省 ["core"]（导入素材未标注 = 全带通用）
   weight?: number;                       // 缺省 1
   // …其余与 SpriteDef 对齐
 }
@@ -147,7 +161,7 @@ export interface SpriteSource {          // 本地与导入素材的公共形状
 export function pickTerrainSprites(
   pool: SpriteSource[],
   terrain: TerrainKind,
-  opts: { count: number; seed: number; excludeIds?: string[] },
+  opts: { count: number; seed: number; excludeIds?: string[]; zone?: SpriteZone },
 ): SpriteSource[];
 ```
 
@@ -155,9 +169,15 @@ export function pickTerrainSprites(
 - **过滤 + 补位**：先在 `terrains` 含 terrain 的素材里抽（且不在 `excludeIds`）；
   不足 count 时按回退链逐级补满（如 `tundra` 主池不足时由 `snowfield` →
   `grassland` → `plain` 补位，链写在 `TERRAIN_META`；有多少给多少，不抛错）；
+- **分带（2.26.0）**：给了 `zone` 就按序收窄 —— ① 同地形 + 本带 → ② 同地形 +
+  `core`（通用池）→ ③ 地形回退链。只有 ①② **一张都没有**时才放开「同地形任意带」
+  （`core` 带里的 `desert` 地形就该铺沙，分带不该把它饿死）；**只要本带有货，
+  绝不跨带**——跨带就等于没分带；
 - **加权抽样**：`weight` 加权不放回抽取，rng 用 mulberry32（同 seed 全链路一致）；
 - **守卫测试**：`terrain-assets.test.ts` 钉住「seed 确定性 / 多标签命中 / 回退链
-  补位 / exclude 生效 / 不改写入参」五条，另加 §十二.3 三条体系守卫；
+  补位 / exclude 生效 / 不改写入参」五条，另加 §十二.3 三条体系守卫 +
+  2.26.0 新增的分带四条（本带独占 / core 补位不跨带 / 只在天生缺料时跨带 /
+  不传 zone 保持老行为），以及素材侧两条（`zones` 非空合法、三带各有专属素材）；
   `terrain.test.ts` 钉住 META 完整性与回退链无环。
 
 ---
@@ -196,6 +216,7 @@ export interface MapPresetDef {
   id: string;                              // "shiwandashan"
   label: string;                           // 十万大山
   terrainMix: { terrain: TerrainKind; share: number }[];  // share 合计 = 1
+  climate?: SpriteZone;                    // 2.26.0：锁定气候带；缺省按纬度渐变
   namePools?: Partial<Record<TerrainKind, string[]>>;     // 覆盖默认地名池
   seed?: number;                           // 缺省由生成器注入
 }
@@ -203,10 +224,12 @@ export interface MapPresetDef {
 
 首版占位 3 个：十万大山（mountain 0.55 / forest 0.30 / river 0.10 / landmark 0.05）、
 南疆沼泽（swamp 0.50 / jungle 0.30 / river 0.15 / settlement 0.05）、
-万里雪原（snowfield 0.60 / mountain 0.25 / tundra 0.15）。
+万里雪原（snowfield 0.60 / mountain 0.25 / tundra 0.15，**`climate: "snow"`**）。
 
 - 生成器（B3）的职责边界：**预设只回答「铺什么地形、占多少」，怎么摊到画布上
   是 B3 生成算法的事**（区块 schema 复用现有 regionSchema + LOD 体系）。
+  布点骨架（格网边长反解 / 区域生长 / 丛簇 / 分带 / z 序）见
+  `docs/review/map-vs-reference-render-analysis.md` §6 与 `domain/generator.ts` 头注。
 - 热门地图 ≠ 新代码路径：它只是「预设驱动的批量 pickTerrainSprites +
   落位」，与用户手点素材面板共用同一套 SpriteDef。
 

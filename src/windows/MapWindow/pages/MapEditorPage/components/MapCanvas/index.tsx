@@ -17,6 +17,7 @@ import type { MapLabel, MapLand, MapStyle } from "../../types";
 import { elementOpacityOf, elementTintHueOf, tintColorOf } from "../../types";
 import { BAKE_MARGIN, bakeCoast, bakeKeyOf } from "../../coastBake";
 import { filterFor } from "../../style";
+import { getPaperGrainTexture } from "../../paperGrain";
 import {
   applyLabelWeights,
   labelAt,
@@ -214,6 +215,28 @@ const SHEET_SHADOW = {
   color: 0x0a1410,
   /** 整体下移，模拟顶光，纸面才有"浮起来"的立体感 */
   offsetY: BASE_IMAGE.width * 0.0035,
+} as const;
+
+/**
+ * 海面暗角：纸缘向内一圈圈加深。
+ *
+ * 【为什么需要】海面只有一张平铺纹理时，画面是"一块均匀的布"—— 没有光、
+ * 没有纵深。参考实现的海面四角明显比中心沉，读起来才像"一张被拍下来的纸"。
+ *
+ * 【为什么用一组窄环而不是一次径向渐变】Pixi 的径向渐变要 `FillGradient`
+ * （8.x 各小版本签名不一致），而这组环只是 14 次 `stroke`，烘一次就进缓存；
+ * 每环不透明度只差 0.002，肉眼看不出分层。
+ */
+const SEA_VIGNETTE = {
+  /** 环数（= 渐变的分段数） */
+  bands: 14,
+  /** 单环宽度（世界单位）：14 × 14 ≈ 196，占纸宽的 19%，只压四周不碰中心 */
+  step: 14,
+  /** 最内环不透明度 */
+  alphaFrom: 0.004,
+  /** 最外环不透明度 */
+  alphaTo: 0.026,
+  color: 0x06171c,
 } as const;
 
 /**
@@ -528,6 +551,8 @@ export default function MapCanvas({
   const sheetRef = useRef<Graphics | null>(null);
   /** 海面（底图纹理）。未生成陆地时它就是"整张底图"，老观感不变 */
   const seaRef = useRef<Sprite | null>(null);
+  /** 海面暗角（纸缘向内压暗，见 SEA_VIGNETTE） */
+  const seaShadeRef = useRef<Graphics | null>(null);
   /**
    * 海岸烘焙层：容器 + 一张承接 RenderTexture 的精灵。
    * 容器而不是裸精灵 —— 风格滤镜要挂在"整组静态层"上（B4），且未来
@@ -690,6 +715,22 @@ export default function MapCanvas({
    * 未加载 / 老存档指向已不存在的 id 时回落默认海面，不白屏。
    */
   const paperTexture = textures[doc.baseImageId] ?? textures[BASE_IMAGE.id];
+
+  /**
+   * 陆地纸纹（中性灰颗粒）。
+   *
+   * 【为什么不再用底图当纸纹】底图是**海**（青绿水纹漩涡）。把它 multiply 到
+   * 陆地上，陆地会带上一层青灰旋纹、整体发暗 —— 参考实现的陆地是米黄纸 +
+   * 细颗粒。纸纹与海面是两回事，各用各的（见 `paperGrain.ts`）。
+   *
+   * 【只取用，不拥有；**绝对不要在卸载时 destroy 它**】
+   * 它是模块级单例。`Texture.destroy(true)` 会把 `_source` 置成 null，而
+   * StrictMode 的「挂载 → cleanup → 再挂载」里 `useMemo` **不会重算** ——
+   * 第二轮拿到的就是同一张已销毁的纹理，Sprite 进 batcher 时读
+   * `_source.alphaMode` 直接抛 null，整个画布一片空白（2.27.0 的事故）。
+   * 生命周期归进程/渲染器，不归组件（守卫见 `render-stack-guard.test.ts`）。
+   */
+  const landGrain = useMemo(() => getPaperGrainTexture(), []);
 
   /**
    * 线宽用的量化缩放。
@@ -1019,7 +1060,8 @@ export default function MapCanvas({
       const staticLayer = new Container();
       const sheet = new Graphics();
       const sea = new Sprite();
-      staticLayer.addChild(sheet, sea);
+      const seaShade = new Graphics();
+      staticLayer.addChild(sheet, sea, seaShade);
       /**
        * 海岸层：容器 + 一张精灵（承接烘焙出的 RenderTexture）。
        *
@@ -1041,7 +1083,7 @@ export default function MapCanvas({
       const draftLayer = new Graphics();
       /**
        * ★ 一次性按 `WORLD_LAYER_ORDER` 的顺序加入；后续 effect 一律不得再 addChild
-       *   （staticLayer 内部是 sheet → sea，见上）。
+       *   （staticLayer 内部是 sheet → sea → seaShade，见上）。
        *
        * 【为什么用"具名清单 + 映射"而不是一串实参】z 序一旦散在实参顺序里，
        * "再加一层"就必然打掉几个测试文件的裸下标（`children[4]`、`at(-1)`、
@@ -1064,6 +1106,7 @@ export default function MapCanvas({
       staticLayerRef.current = staticLayer;
       sheetRef.current = sheet;
       seaRef.current = sea;
+      seaShadeRef.current = seaShade;
       coastRef.current = coast;
       coastSpriteRef.current = coastSprite;
       regionLayerRef.current = regionLayer;
@@ -1101,6 +1144,7 @@ export default function MapCanvas({
       staticLayerRef.current = null;
       sheetRef.current = null;
       seaRef.current = null;
+      seaShadeRef.current = null;
       coastRef.current = null;
       coastSpriteRef.current = null;
       regionLayerRef.current = null;
@@ -1178,6 +1222,24 @@ export default function MapCanvas({
     // 不必为屏幕恒定线宽引入额外的重绘。
     sheet.rect(BASE_RECT.x, BASE_RECT.y, BASE_RECT.width, BASE_RECT.height);
     sheet.stroke({ width: 1.5, color: 0x0f1a15, alpha: 0.26, alignment: 0.5 });
+
+    // ── 海面暗角（画在海面**之上**，所以是独立节点，见 SEA_VIGNETTE）──
+    const shade = seaShadeRef.current;
+    if (!shade) return;
+    shade.clear();
+    for (let i = 1; i <= SEA_VIGNETTE.bands; i += 1) {
+      const inset = SEA_VIGNETTE.step * i;
+      // t = 0（最内环）→ 1（最外环）：环越靠外越沉，累加成平滑的四周压暗
+      const t = i / SEA_VIGNETTE.bands;
+      const alpha = SEA_VIGNETTE.alphaFrom + (SEA_VIGNETTE.alphaTo - SEA_VIGNETTE.alphaFrom) * t;
+      shade.rect(
+        BASE_RECT.x + inset,
+        BASE_RECT.y + inset,
+        BASE_RECT.width - inset * 2,
+        BASE_RECT.height - inset * 2,
+      );
+      shade.stroke({ width: SEA_VIGNETTE.step, color: SEA_VIGNETTE.color, alpha, alignment: 0.5 });
+    }
   }, [app]);
 
   // ── 海面（底图纹理铺满整张纸）──
@@ -1253,9 +1315,9 @@ export default function MapCanvas({
     if (!coast || !sprite) return;
 
     // 指纹与纸纹都没变 ⇒ 完全跳过（连 RenderTexture.create 都不会调）
-    if (bakeKeyRef.current === bakeKey && bakePaperRef.current === paperTexture) return;
+    if (bakeKeyRef.current === bakeKey && bakePaperRef.current === landGrain) return;
     bakeKeyRef.current = bakeKey;
-    bakePaperRef.current = paperTexture;
+    bakePaperRef.current = landGrain;
 
     // 没有陆地：清空并隐藏（不销毁容器，下次生成陆地时直接复用）
     if (bakeKey === null || !land) {
@@ -1282,7 +1344,9 @@ export default function MapCanvas({
       // 文件头：`bakeKey` 含 style，所以切风格本来就要重烘一次 —— 那次重烘
       // 必须真的改变像素，否则就是白付三次高斯模糊。
       style,
-      paperTexture,
+      // 【纸纹只喂纸，不喂海】中性灰颗粒（见 paperGrain.ts）；`landGrain` 在
+      // jsdom 下为 null，此时烘焙退化成纯米黄陆地，不抛错。
+      paperTexture: landGrain,
       paperRect: BASE_RECT,
       resolution: bakeResolution,
     });
@@ -1297,7 +1361,7 @@ export default function MapCanvas({
     prev?.destroy(true);
     // `style` 与 `bakeKey` 的重合是刻意的：`bakeKey` 已经含 style（它是唯一的
     // 触发源），但 effect 体里直接读了 `style`，显式列出来才不用为 lint 开口子。
-  }, [bakeKey, land, style, paperTexture, bakeResolution, app]);
+  }, [bakeKey, land, style, landGrain, bakeResolution, app]);
 
   // ── 卸载时释放最后一张烘焙纹理 ──
   //

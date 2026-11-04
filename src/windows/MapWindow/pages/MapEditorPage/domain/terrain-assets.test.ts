@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { MAP_PRESETS, expandTerrainMix } from "./mapPresets";
 import { mulberry32, pickTerrainSprites, type SpriteSource } from "./terrain-assets";
 import { isTerrainKind, TERRAIN_KINDS, TERRAIN_META, type TerrainKind } from "./terrain";
+import { isSpriteZone } from "./zones";
 import { SPRITES } from "../sprites";
 
 /**
@@ -125,6 +126,63 @@ describe("pickTerrainSprites", () => {
   });
 });
 
+/**
+ * 地貌带（第三轴，review §6 P0-1）。
+ *
+ * 三级顺序：① 本带（凑得成"一族"，即 ≥ `MIN_ZONE_POOL` 张）→ ② core 通用池
+ * → ③ 地形回退链。①② 都空时才放开「同地形任意带」。
+ */
+describe("pickTerrainSprites × 地貌带", () => {
+  const ZONED: SpriteSource[] = [
+    { id: "peak-snow-a", src: "a.png", terrains: ["mountain"], zones: ["snow"] },
+    { id: "peak-snow-b", src: "bb.png", terrains: ["mountain"], zones: ["snow"] },
+    { id: "peak-core", src: "b.png", terrains: ["mountain"], zones: ["core"] },
+    { id: "peak-desert", src: "c.png", terrains: ["mountain"], zones: ["desert"] },
+    { id: "peak-legacy", src: "d.png", terrains: ["mountain"] }, // 未标带 = core
+  ];
+
+  it("带内素材够用时只用本带（不掺主池，否则等于没分带）", () => {
+    const pool: SpriteSource[] = [
+      { id: "snow-a", src: "a.png", terrains: ["mountain"], zones: ["snow"] },
+      { id: "snow-b", src: "b.png", terrains: ["mountain"], zones: ["snow"] },
+      { id: "core-a", src: "c.png", terrains: ["mountain"], zones: ["core"] },
+    ];
+    const picked = pickTerrainSprites(pool, "mountain", { count: 2, seed: 4, zone: "snow" });
+    expect(picked.map((s) => s.id).sort()).toEqual(["snow-a", "snow-b"]);
+  });
+
+  it("本带只凑到两张时用 core 补位，绝不跨到别的带", () => {
+    const picked = pickTerrainSprites(ZONED, "mountain", { count: 3, seed: 4, zone: "snow" });
+    const ids = picked.map((s) => s.id);
+    expect(ids).toHaveLength(3); // 两张雪 + 一张 core（core / 未标带的 legacy 之一）
+    expect(ids.filter((id) => id.startsWith("peak-snow"))).toHaveLength(2);
+    expect(ids.filter((id) => id === "peak-desert")).toHaveLength(0);
+    expect(ids.some((id) => id === "peak-core" || id === "peak-legacy")).toBe(true);
+  });
+
+  it("本带只有一张 ≠ 一族：不用它，退回通用池（否则整片地铺同一张图）", () => {
+    const lonely: SpriteSource[] = [
+      { id: "only-snow", src: "a.png", terrains: ["mountain"], zones: ["snow"] },
+      { id: "core-a", src: "b.png", terrains: ["mountain"], zones: ["core"] },
+    ];
+    const picked = pickTerrainSprites(lonely, "mountain", { count: 2, seed: 2, zone: "snow" });
+    expect(picked.map((s) => s.id)).toEqual(["core-a"]);
+  });
+
+  it("本带 + core 都不够时才放开全带（小池不饿死）", () => {
+    const tiny: SpriteSource[] = [
+      { id: "only-desert", src: "d.png", terrains: ["mountain"], zones: ["desert"] },
+    ];
+    const picked = pickTerrainSprites(tiny, "mountain", { count: 2, seed: 1, zone: "snow" });
+    expect(picked.map((s) => s.id)).toEqual(["only-desert"]);
+  });
+
+  it("不传 zone = 老行为（五张全可用）", () => {
+    const picked = pickTerrainSprites(ZONED, "mountain", { count: 5, seed: 9 });
+    expect(picked).toHaveLength(5);
+  });
+});
+
 // ── 守卫（架构 §十二.3）────────────────────────────────────────
 
 describe("守卫：素材标注完整性", () => {
@@ -143,6 +201,22 @@ describe("守卫：素材标注完整性", () => {
   it("id 唯一（存档存 id，重复 id = 存档错乱）", () => {
     const ids = SPRITES.map((s) => s.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("SPRITES 每条 zones 非空且合法（漏标 = 分带静默失效）", () => {
+    for (const sprite of SPRITES) {
+      expect(sprite.zones.length, `${sprite.id} 未标注 zones`).toBeGreaterThan(0);
+      for (const z of sprite.zones) {
+        expect(isSpriteZone(z), `${sprite.id} 含非法地貌带 ${String(z)}`).toBe(true);
+      }
+    }
+  });
+
+  it("三个带都有专属素材（否则分带等于只有主池）", () => {
+    for (const zone of ["snow", "grass", "desert"] as const) {
+      const own = SPRITES.filter((s) => !s.zones.includes("core") && s.zones.includes(zone));
+      expect(own.length, `${zone} 带没有专属素材`).toBeGreaterThanOrEqual(2);
+    }
   });
 
   it("每个地形要么有素材、要么回退链可达有素材的地形（防空转枚举）", () => {

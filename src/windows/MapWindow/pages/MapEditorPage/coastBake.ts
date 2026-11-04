@@ -42,21 +42,62 @@ export const BAKE_MARGIN = 64;
 /** WebGL 纹理的保守长边上限；超过就降采样并告警（不要静默） */
 export const BAKE_MAX_SIDE = 4096;
 
-/** 浅海大陆架：比海略亮一档的绿带，海陆之间的过渡（没有它陆地像剪贴画） */
+/**
+ * 浅海带：比深海**亮**一档的浅滩，海陆之间的过渡。
+ *
+ * 【方向曾经反了】旧值是深绿 `0x2f4a3c`（比海更暗），画出来是陆地外面套一圈
+ * **暗环** —— 像贴纸的影子，不像浅滩。参考实现（以及任何地形图）的浅滩都
+ * 比深海亮：水浅 → 反射海底 → 明度上升。三档底色（青绿/蔚蓝/墨海）都适用
+ * 这个方向，风格矩阵只改色相不改明暗关系。
+ */
 export const COAST_SHELF = {
-  width: 28,
-  color: 0x2f4a3c,
-  alpha: 0.35,
-  blur: 12,
+  width: 20,
+  color: 0x9dbfae,
+  alpha: 0.22,
+  blur: 9,
   quality: 3,
 } as const;
 
+/**
+ * 等深线：与海岸平行的细线，离岸越远越淡。
+ *
+ * 【为什么值得画】海面只有一张平铺纹理时，岸外没有任何"深度信息"，海看起来
+ * 是块布；参考实现的海面靠 2~3 圈等深线立刻有了"离岸越来越深"的层次。
+ * 这是本次背景质感里性价比最高的一笔 —— 烘焙期算完就烤进纹理，运行期零成本。
+ *
+ * `distance` 是离岸的**世界单位**（经陆地半幅换算成缩放系数，见 `ringScaleK`）。
+ */
+export const COAST_ISOBATHS = [
+  { distance: 16, width: 2.2, alpha: 0.32 },
+  { distance: 40, width: 1.7, alpha: 0.2 },
+  { distance: 70, width: 1.3, alpha: 0.12 },
+] as const;
+
+/** 等深线颜色：比深海浅一档的青灰（与浅滩同族，不引入新色相） */
+export const COAST_ISOBATH_COLOR = 0x9dbfae;
+
 /** 海岸外发光：让陆地"浮"在海面上，而不是"贴"上去 */
 export const COAST_GLOW = {
-  width: 10,
+  width: 8,
   color: 0xf2ead6,
-  alpha: 0.5,
-  blur: 6,
+  alpha: 0.3,
+  blur: 5,
+  quality: 3,
+} as const;
+
+/**
+ * 陆岸**内**阴影：沿海岸线往陆地内侧压一道暖暗边。
+ *
+ * 【为什么加】参考实现的陆地不是一块均匀的米黄：岸线内侧 10~20 像素明显偏
+ * 深偏暖（像纸被水浸过）。这一道用 `alignment: 1`（描边全画在路径内侧）
+ * 实现，模糊后就是"陆地从边缘往中心逐渐变亮"的立体感；没有它，陆地就是
+ * 一张剪下来的色卡。
+ */
+export const COAST_INNER_SHADE = {
+  width: 22,
+  color: 0x8a7350,
+  alpha: 0.2,
+  blur: 7,
   quality: 3,
 } as const;
 
@@ -64,10 +105,10 @@ export const COAST_GLOW = {
 export const COAST_FILL = { color: 0xc8bd9d, blur: 1.6, quality: 2 } as const;
 
 /** 海岸白边：整张图最亮最锐的线，它断不断决定这张图成不成立 */
-export const COAST_STROKE = { width: 2.4, color: 0xf6f0e0, alpha: 0.92 } as const;
+export const COAST_STROKE = { width: 1.8, color: 0xf6f0e0, alpha: 0.86 } as const;
 
-/** 纸纹以 multiply 叠在陆地上的强度 */
-export const LAND_TEXTURE_ALPHA = 0.35;
+/** 纸纹以 multiply 叠在陆地上的强度（纸纹已换成中性颗粒，见 paperGrain.ts） */
+export const LAND_TEXTURE_ALPHA = 0.55;
 
 /** 烘焙结果的尺寸与缩放（纯几何，可单测） */
 export interface BakeSize {
@@ -159,9 +200,81 @@ export function bakeKeyOf(land: MapLand | null, style: MapStyle, resolution: num
 }
 
 /**
+ * 陆地轮廓的近似中心（所有环顶点的均值）。
+ *
+ * 【为什么用均值而不是面积重心】这里只拿它当"外扩的缩放原点"，对形状精度
+ * 没有要求；面积重心要算环积分（还得处理自交与多环），成本高出一个量级。
+ */
+function ringsCenter(polygons: readonly { x: number; y: number }[][]): { x: number; y: number } {
+  let sx = 0;
+  let sy = 0;
+  let n = 0;
+  for (const ring of polygons) {
+    for (const p of ring) {
+      sx += p.x;
+      sy += p.y;
+      n += 1;
+    }
+  }
+  return n === 0 ? { x: 0, y: 0 } : { x: sx / n, y: sy / n };
+}
+
+/**
+ * 离岸 `distance` 世界单位对应的缩放系数。
+ *
+ * 【为什么用"从中心放大"而不是真的做多边形外扩】真正的 offset 曲线要在
+ * 每个顶点求法线、处理自交，几百个顶点的弯折岸线很容易翻边；而陆地是
+ * 团块状（不是细长条），从中心等比放大的误差只有一二十个百分点 ——
+ * 对"离岸十几像素的一圈淡线"完全够用，且绝不会自交。
+ */
+function ringScaleK(bounds: Rect, distance: number): number {
+  const half = Math.max(1, Math.max(bounds.width, bounds.height) / 2);
+  return 1 + distance / half;
+}
+
+/** 按中心等比放大后描边（等深线专用；曲线控制点同倍放大即可保持形状） */
+function strokeScaledRings(
+  g: Graphics,
+  polygons: readonly { x: number; y: number }[][],
+  center: { x: number; y: number },
+  k: number,
+  width: number,
+  color: number,
+  alpha: number,
+): void {
+  for (const ring of polygons) {
+    const n = ring.length;
+    if (n < 3) continue;
+    const at = (p: { x: number; y: number }) => ({
+      x: center.x + (p.x - center.x) * k,
+      y: center.y + (p.y - center.y) * k,
+    });
+    const start = at(ring[0]);
+    g.moveTo(start.x, start.y);
+    for (let i = 0; i < n; i += 1) {
+      const a = at(ring[(i - 1 + n) % n]);
+      const b = at(ring[i]);
+      const c = at(ring[(i + 1) % n]);
+      const d = at(ring[(i + 2) % n]);
+      g.bezierCurveTo(
+        b.x + (c.x - a.x) / 6,
+        b.y + (c.y - a.y) / 6,
+        c.x - (d.x - b.x) / 6,
+        c.y - (d.y - b.y) / 6,
+        c.x,
+        c.y,
+      );
+    }
+    g.closePath();
+    g.stroke({ width, color, alpha, alignment: 0.5 });
+  }
+}
+
+/**
  * 烘一张海岸纹理。
  *
- * 四层在 holder 内仍是四个独立 Graphics（顺序 `shelf → glow → fill → tex → stroke`）：
+ * 六层在 holder 内是六个独立 Graphics：
+ * `shelf → isobaths → glow → fill → tex → stroke`（自下而上）。
  * 填充与描边必须分开，否则后画的填充会压掉前一段描边的一半，海岸白边会断断续续。
  *
  * 调用方负责：把返回的 RT 挂到 `coast` 容器的 Sprite 上，
@@ -169,7 +282,12 @@ export function bakeKeyOf(land: MapLand | null, style: MapStyle, resolution: num
  */
 export function bakeCoast(input: BakeInput): RenderTexture {
   const { renderer, land, resolution } = input;
-  const paper = input.paperTexture ?? null;
+  // 已销毁的纹理一律当"没有"处理：`Texture.destroy(true)` 之后 `_source` 是 null，
+  // 而 batcher 会读 `getAdjustedBlendModeBlend(texture._source)` → 解 null 的
+  // `alphaMode` 直接抛，**整张画布白屏**（2.27.0 的事故）。
+  // 这是第二道闸；第一道是纸纹做成单例、永不销毁（见 `paperGrain.ts`）。
+  // 退化成 `Texture.EMPTY` 总比把死引用交给渲染管线好。
+  const paper = input.paperTexture && !input.paperTexture.destroyed ? input.paperTexture : null;
   const paperRect = input.paperRect ?? land.bounds;
   const size = bakeTextureSize(land.bounds, resolution);
 
@@ -207,7 +325,22 @@ export function bakeCoast(input: BakeInput): RenderTexture {
   });
   shelf.filters = [new BlurFilter({ strength: COAST_SHELF.blur, quality: COAST_SHELF.quality })];
 
-  // ── 2) 海岸外发光：白色窄带，模糊后让陆地边缘微微发亮 ──
+  // ── 2) 等深线：与海岸平行、向外递减的细线，给海面"深度"层次 ──
+  const isobaths = new Graphics();
+  const center = ringsCenter(land.polygons);
+  for (const line of COAST_ISOBATHS) {
+    strokeScaledRings(
+      isobaths,
+      land.polygons,
+      center,
+      ringScaleK(land.bounds, line.distance),
+      line.width,
+      COAST_ISOBATH_COLOR,
+      line.alpha,
+    );
+  }
+
+  // ── 3) 海岸外发光：白色窄带，模糊后让陆地边缘微微发亮 ──
   const glow = new Graphics();
   drawLandPath(glow, land.polygons);
   glow.stroke({
@@ -238,7 +371,23 @@ export function bakeCoast(input: BakeInput): RenderTexture {
   texSprite.alpha = LAND_TEXTURE_ALPHA;
   texSprite.blendMode = "multiply";
 
-  // ── 5) 海岸白边：实心、不带滤镜，整张图最锐的一笔 ──
+  // ── 5) 陆岸内阴影：描边只画在路径**内侧**（alignment 1），模糊后是"岸线附近
+  //    略深、往内陆逐渐变亮"的立体感。必须 mask 到陆地：模糊会把 22px 的描边
+  //    洇到海面上，那会在浅滩里压出一圈脏边（与"浅滩比深海亮"直接冲突）。──
+  const innerShade = new Graphics();
+  drawLandPath(innerShade, land.polygons);
+  innerShade.stroke({
+    width: COAST_INNER_SHADE.width,
+    color: COAST_INNER_SHADE.color,
+    alpha: COAST_INNER_SHADE.alpha,
+    alignment: 1,
+  });
+  innerShade.filters = [
+    new BlurFilter({ strength: COAST_INNER_SHADE.blur, quality: COAST_INNER_SHADE.quality }),
+  ];
+  innerShade.mask = mask;
+
+  // ── 6) 海岸白边：实心、不带滤镜，整张图最锐的一笔 ──
   const stroke = new Graphics();
   drawLandPath(stroke, land.polygons);
   stroke.stroke({
@@ -248,7 +397,7 @@ export function bakeCoast(input: BakeInput): RenderTexture {
     alignment: 0.5,
   });
 
-  holder.addChild(shelf, glow, fill, texSprite, mask, stroke);
+  holder.addChild(shelf, isobaths, glow, fill, texSprite, innerShade, mask, stroke);
 
   // ── 6) 风格矩阵：只乘一次，烤进纹理 ──
   //
@@ -270,7 +419,7 @@ export function bakeCoast(input: BakeInput): RenderTexture {
   // 让模糊核在色域里做混合，暖色带边缘会发灰。
   const styleFilter = filterFor(input.style);
   if (styleFilter) {
-    for (const node of [shelf, glow, fill, stroke]) {
+    for (const node of [shelf, isobaths, glow, fill, innerShade, stroke]) {
       node.filters = [...(node.filters ?? []), styleFilter];
     }
   }

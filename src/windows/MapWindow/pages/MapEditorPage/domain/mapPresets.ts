@@ -10,6 +10,7 @@
  */
 
 import type { TerrainKind } from "./terrain";
+import type { SpriteZone } from "./zones";
 
 /** 单个热门地图预设 */
 export interface MapPresetDef {
@@ -19,6 +20,13 @@ export interface MapPresetDef {
   label: string;
   /** 地形配比（share 合计 = 1，浮点容差内） */
   terrainMix: { terrain: TerrainKind; share: number }[];
+  /**
+   * 气候带锁定（缺省 = 按纬度渐变）。
+   *
+   * 缺省时整张图分四带（北雪 / 主 / 草 / 南沙），一张图上读得出"南北有差别"；
+   * 声明后全图只用这一带 —— 「万里雪原」不该在南缘长出沙丘。
+   */
+  climate?: SpriteZone;
   /** 覆盖 TERRAIN_META 默认地名池（缺省的地形用默认池） */
   namePools?: Partial<Record<TerrainKind, string[]>>;
 }
@@ -56,6 +64,8 @@ export const MAP_PRESETS: MapPresetDef[] = [
   {
     id: "wanli-snowfield",
     label: "万里雪原",
+    // 全图锁雪带：南缘若按纬度渐变跑成沙带，雪原上会冒出沙丘
+    climate: "snow",
     terrainMix: [
       { terrain: "snowfield", share: 0.6 },
       { terrain: "mountain", share: 0.25 },

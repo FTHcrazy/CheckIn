@@ -5,7 +5,7 @@
  * 遵循窗口隔离规范 AGENTS §2.2.0）。经 Vite 静态导入后自动带 hash 落盘，
  * 开发与打包期路径一致。
  *
- * 素材来源（B2 / 2.22.1 重制批 / 2.22.2 补缺批，R-MAP-22）：**53 张符号 + 4 张底图全部为 AI 生成**
+ * 素材来源（B2 / 2.22.1 重制批 / 2.22.2 补缺批，R-MAP-22）：**52 张符号 + 4 张底图全部为 AI 生成**
  * （统一手绘水彩风格，详见同目录 `MANIFEST.json` 的逐张 prompt 与处理记录；
  * 原 6 张手绘素材已于 2.22.1 用 AI 重制替换，id 保持不变，老存档自动继承新图；
  * 2.22.2 补缺批新增沼泽/草原/雪原 8 张——地形 = 素材配方交叉渲染，
@@ -76,6 +76,7 @@ import snowPine from "../../assets/sprites/snow-pine.png";
 import waterWeeds from "../../assets/sprites/water-weeds.png";
 
 import type { TerrainKind } from "./domain/terrain";
+import type { SpriteZone } from "./domain/zones";
 
 /** 素材分类（决定左侧面板分组） */
 export type SpriteCategory =
@@ -117,6 +118,19 @@ export interface SpriteDef {
    */
   terrains: TerrainKind[];
   /**
+   * 地貌带多标签（第三轴，见 `domain/zones.ts` 与 review §6 P0-1）：
+   * 同一地形在不同气候下用哪一族画风。**必填且非空**——缺省会让「雪原长
+   * 阔叶树、沙漠长针叶林」重新出现（守卫测试钉住）。
+   *
+   * 标注口径：
+   *   · 人文 / 港渡 / 遗迹 → 只标 `core`（任何气候都成立，core 即通用池）；
+   *   · 沙丘 / 绿洲 / 风蚀岩 / 石林 → `desert`；
+   *   · 雪峰 / 雪岭 / 雪松 / 雪丘 → `snow`；
+   *   · 圆丘 / 梯田 / 阔叶 / 草丛 / 疏树 → `grass`；
+   *   · 其余山地林木 → `core`（主池，全带首选）。
+   */
+  zones: SpriteZone[];
+  /**
    * 在地形配方中的出现倾向（选材加权），缺省 1。仅当某素材应明显
    * 高频于同类时才标注，避免无依据的噪声权重。
    */
@@ -137,78 +151,78 @@ export const SPRITE_CATEGORIES: { key: SpriteCategory; label: string }[] = [
 ];
 
 /**
- * 素材总表（53 个符号，全部 AI 生成）。
+ * 素材总表（52 个符号，全部 AI 生成）。
  *
  * baseWidth/baseHeight 做了统一缩放：原始 PNG 尺寸不一，直接按原尺寸摆会
  * 出现严重比例失衡。这里按"视觉重量"手工归一：山 > 建筑 > 树 > 人造小品。
  */
 export const SPRITES: SpriteDef[] = [
   // ── 山岳（14）──────────────────────────────────────────────
-  { id: "mountain-19", label: "山（大）", category: "mountain", src: mountainLarge, baseWidth: 160, baseHeight: 93, terrains: ["mountain", "highland"] },
-  { id: "mountain-20", label: "山（中）", category: "mountain", src: mountainMedium, baseWidth: 120, baseHeight: 70, terrains: ["mountain", "hill"] },
-  { id: "hill-1", label: "小山", category: "mountain", src: hillSmall, baseWidth: 80, baseHeight: 35, terrains: ["hill", "valley"] },
-  { id: "mountain-peak", label: "尖峰", category: "mountain", src: mountainPeak, baseWidth: 140, baseHeight: 135, terrains: ["mountain", "highland"] },
-  { id: "mountain-twin", label: "双峰", category: "mountain", src: mountainTwin, baseWidth: 150, baseHeight: 100, terrains: ["mountain"] },
-  { id: "mountain-range", label: "连绵山岭", category: "mountain", src: mountainRange, baseWidth: 200, baseHeight: 127, terrains: ["mountain", "highland"], weight: 1.5 },
-  { id: "mountain-volcano", label: "火山", category: "mountain", src: mountainVolcano, baseWidth: 150, baseHeight: 120, terrains: ["volcano", "mountain"] },
-  { id: "mountain-stoneforest", label: "石林", category: "mountain", src: mountainStoneforest, baseWidth: 130, baseHeight: 127, terrains: ["valley", "mountain"] },
-  { id: "snow-peak-a", label: "雪峰（大）", category: "mountain", src: snowPeakA, baseWidth: 160, baseHeight: 125, terrains: ["mountain", "snowfield"] },
-  { id: "snow-peak-b", label: "雪峰（中）", category: "mountain", src: snowPeakB, baseWidth: 125, baseHeight: 83, terrains: ["mountain", "snowfield"] },
-  { id: "snow-ridge", label: "雪岭", category: "mountain", src: snowRidge, baseWidth: 190, baseHeight: 73, terrains: ["mountain", "snowfield"] },
-  { id: "hill-round-a", label: "圆丘（大）", category: "mountain", src: hillRoundA, baseWidth: 100, baseHeight: 61, terrains: ["hill"] },
-  { id: "hill-round-b", label: "圆丘（小）", category: "mountain", src: hillRoundB, baseWidth: 75, baseHeight: 34, terrains: ["hill"] },
-  { id: "hill-terraced", label: "梯田丘陵", category: "mountain", src: hillTerraced, baseWidth: 115, baseHeight: 82, terrains: ["hill", "plain"] },
+  { id: "mountain-19", label: "山（大）", category: "mountain", src: mountainLarge, baseWidth: 160, baseHeight: 93, terrains: ["mountain", "highland"], zones: ["core"] },
+  { id: "mountain-20", label: "山（中）", category: "mountain", src: mountainMedium, baseWidth: 120, baseHeight: 70, terrains: ["mountain", "hill"], zones: ["core"] },
+  { id: "hill-1", label: "小山", category: "mountain", src: hillSmall, baseWidth: 80, baseHeight: 35, terrains: ["hill", "valley"], zones: ["grass"] },
+  { id: "mountain-peak", label: "尖峰", category: "mountain", src: mountainPeak, baseWidth: 140, baseHeight: 135, terrains: ["mountain", "highland"], zones: ["core"] },
+  { id: "mountain-twin", label: "双峰", category: "mountain", src: mountainTwin, baseWidth: 150, baseHeight: 100, terrains: ["mountain"], zones: ["core"] },
+  { id: "mountain-range", label: "连绵山岭", category: "mountain", src: mountainRange, baseWidth: 200, baseHeight: 127, terrains: ["mountain", "highland"], zones: ["core"], weight: 1.5 },
+  { id: "mountain-volcano", label: "火山", category: "mountain", src: mountainVolcano, baseWidth: 150, baseHeight: 120, terrains: ["volcano", "mountain"], zones: ["core"] },
+  { id: "mountain-stoneforest", label: "石林", category: "mountain", src: mountainStoneforest, baseWidth: 130, baseHeight: 127, terrains: ["valley", "mountain"], zones: ["desert"] },
+  { id: "snow-peak-a", label: "雪峰（大）", category: "mountain", src: snowPeakA, baseWidth: 160, baseHeight: 125, terrains: ["mountain", "snowfield"], zones: ["snow"] },
+  { id: "snow-peak-b", label: "雪峰（中）", category: "mountain", src: snowPeakB, baseWidth: 125, baseHeight: 83, terrains: ["mountain", "snowfield"], zones: ["snow"] },
+  { id: "snow-ridge", label: "雪岭", category: "mountain", src: snowRidge, baseWidth: 190, baseHeight: 73, terrains: ["mountain", "snowfield"], zones: ["snow"] },
+  { id: "hill-round-a", label: "圆丘（大）", category: "mountain", src: hillRoundA, baseWidth: 100, baseHeight: 61, terrains: ["hill"], zones: ["grass"] },
+  { id: "hill-round-b", label: "圆丘（小）", category: "mountain", src: hillRoundB, baseWidth: 75, baseHeight: 34, terrains: ["hill"], zones: ["grass"] },
+  { id: "hill-terraced", label: "梯田丘陵", category: "mountain", src: hillTerraced, baseWidth: 115, baseHeight: 82, terrains: ["hill", "plain"], zones: ["grass"] },
 
   // ── 林木（6）──────────────────────────────────────────────
-  { id: "forest-1", label: "森林", category: "forest", src: forestGrove, baseWidth: 90, baseHeight: 90, terrains: ["forest", "grassland"] },
-  { id: "forest-2", label: "森林（大）", category: "forest", src: forestLarge, baseWidth: 130, baseHeight: 130, terrains: ["forest", "jungle"] },
-  { id: "forest-thin", label: "森林（稀疏）", category: "forest", src: forestThin, baseWidth: 190, baseHeight: 119, terrains: ["forest", "grassland"] },
-  { id: "forest-dense", label: "森林（繁密）", category: "forest", src: forestDense, baseWidth: 170, baseHeight: 159, terrains: ["forest", "jungle"] },
-  { id: "tree-pine", label: "松树", category: "forest", src: treePine, baseWidth: 42, baseHeight: 86, terrains: ["forest", "snowfield"] },
-  { id: "tree-broad", label: "阔叶树", category: "forest", src: treeBroad, baseWidth: 48, baseHeight: 51, terrains: ["forest", "grassland", "jungle"] },
+  { id: "forest-1", label: "森林", category: "forest", src: forestGrove, baseWidth: 90, baseHeight: 90, terrains: ["forest", "grassland"], zones: ["core"] },
+  { id: "forest-2", label: "森林（大）", category: "forest", src: forestLarge, baseWidth: 130, baseHeight: 130, terrains: ["forest", "jungle"], zones: ["core"] },
+  { id: "forest-thin", label: "森林（稀疏）", category: "forest", src: forestThin, baseWidth: 190, baseHeight: 119, terrains: ["forest", "grassland"], zones: ["core"] },
+  { id: "forest-dense", label: "森林（繁密）", category: "forest", src: forestDense, baseWidth: 170, baseHeight: 159, terrains: ["forest", "jungle"], zones: ["core"] },
+  { id: "tree-pine", label: "松树", category: "forest", src: treePine, baseWidth: 42, baseHeight: 86, terrains: ["forest", "snowfield"], zones: ["core", "snow"] },
+  { id: "tree-broad", label: "阔叶树", category: "forest", src: treeBroad, baseWidth: 48, baseHeight: 51, terrains: ["forest", "grassland", "jungle"], zones: ["grass"] },
 
   // ── 荒漠（6）──────────────────────────────────────────────
-  { id: "dune-a", label: "沙丘（大）", category: "desert", src: duneA, baseWidth: 140, baseHeight: 115, terrains: ["desert"], weight: 1.5 },
-  { id: "dune-b", label: "沙丘（中）", category: "desert", src: duneB, baseWidth: 110, baseHeight: 61, terrains: ["desert"] },
-  { id: "dune-c", label: "新月沙丘", category: "desert", src: duneC, baseWidth: 90, baseHeight: 37, terrains: ["desert"] },
-  { id: "oasis", label: "绿洲", category: "desert", src: oasis, baseWidth: 130, baseHeight: 103, terrains: ["oasis", "desert"] },
-  { id: "yardang", label: "风蚀岩", category: "desert", src: yardang, baseWidth: 110, baseHeight: 97, terrains: ["desert"] },
-  { id: "gravel-barren", label: "碎石荒地", category: "desert", src: gravelBarren, baseWidth: 140, baseHeight: 72, terrains: ["desert", "tundra"] },
+  { id: "dune-a", label: "沙丘（大）", category: "desert", src: duneA, baseWidth: 140, baseHeight: 115, terrains: ["desert"], zones: ["desert"], weight: 1.5 },
+  { id: "dune-b", label: "沙丘（中）", category: "desert", src: duneB, baseWidth: 110, baseHeight: 61, terrains: ["desert"], zones: ["desert"] },
+  { id: "dune-c", label: "新月沙丘", category: "desert", src: duneC, baseWidth: 90, baseHeight: 37, terrains: ["desert"], zones: ["desert"] },
+  { id: "oasis", label: "绿洲", category: "desert", src: oasis, baseWidth: 130, baseHeight: 103, terrains: ["oasis", "desert"], zones: ["desert"] },
+  { id: "yardang", label: "风蚀岩", category: "desert", src: yardang, baseWidth: 110, baseHeight: 97, terrains: ["desert"], zones: ["desert"] },
+  { id: "gravel-barren", label: "碎石荒地", category: "desert", src: gravelBarren, baseWidth: 140, baseHeight: 72, terrains: ["desert", "tundra"], zones: ["desert", "snow"] },
 
   // ── 城郭（7，点要素：落位自带地名）─────────────────────────
-  { id: "city-major", label: "大城", category: "settlement", src: cityMajor, baseWidth: 135, baseHeight: 130, names: ["临江城", "云中城", "青石城"], terrains: ["settlement", "plain"] },
-  { id: "city-mid", label: "城镇", category: "settlement", src: cityMid, baseWidth: 105, baseHeight: 66, names: ["青石镇", "柳荫镇", "河口镇"], terrains: ["settlement", "plain"] },
-  { id: "citadel", label: "要塞", category: "settlement", src: citadel, baseWidth: 115, baseHeight: 82, names: ["磐石要塞", "鹰堡"], terrains: ["settlement", "mountain"] },
-  { id: "village-a", label: "村落（大）", category: "settlement", src: villageA, baseWidth: 85, baseHeight: 60, names: ["杏花村", "柳溪村"], terrains: ["settlement", "plain", "grassland"] },
-  { id: "village-b", label: "村落（小）", category: "settlement", src: villageB, baseWidth: 65, baseHeight: 54, names: ["石桥村", "上河村"], terrains: ["settlement", "plain", "grassland"] },
-  { id: "village-hut", label: "茅屋", category: "settlement", src: villageHut, baseWidth: 45, baseHeight: 45, names: ["野店", "山间小筑"], terrains: ["settlement", "grassland", "mountain"] },
-  { id: "military-camp", label: "营地", category: "settlement", src: militaryCamp, baseWidth: 95, baseHeight: 52, names: ["驻马营", "南坪大营"], terrains: ["settlement", "grassland", "plain"] },
+  { id: "city-major", label: "大城", category: "settlement", src: cityMajor, baseWidth: 135, baseHeight: 130, names: ["临江城", "云中城", "青石城"], terrains: ["settlement", "plain"], zones: ["core"] },
+  { id: "city-mid", label: "城镇", category: "settlement", src: cityMid, baseWidth: 105, baseHeight: 66, names: ["青石镇", "柳荫镇", "河口镇"], terrains: ["settlement", "plain"], zones: ["core"] },
+  { id: "citadel", label: "要塞", category: "settlement", src: citadel, baseWidth: 115, baseHeight: 82, names: ["磐石要塞", "鹰堡"], terrains: ["settlement", "mountain"], zones: ["core"] },
+  { id: "village-a", label: "村落（大）", category: "settlement", src: villageA, baseWidth: 85, baseHeight: 60, names: ["杏花村", "柳溪村"], terrains: ["settlement", "plain", "grassland"], zones: ["core"] },
+  { id: "village-b", label: "村落（小）", category: "settlement", src: villageB, baseWidth: 65, baseHeight: 54, names: ["石桥村", "上河村"], terrains: ["settlement", "plain", "grassland"], zones: ["core"] },
+  { id: "village-hut", label: "茅屋", category: "settlement", src: villageHut, baseWidth: 45, baseHeight: 45, names: ["野店", "山间小筑"], terrains: ["settlement", "grassland", "mountain"], zones: ["core"] },
+  { id: "military-camp", label: "营地", category: "settlement", src: militaryCamp, baseWidth: 95, baseHeight: 52, names: ["驻马营", "南坪大营"], terrains: ["settlement", "grassland", "plain"], zones: ["core"] },
 
   // ── 港渡（5，点要素；帆船是纯物件不带名）────────────────────
-  { id: "port-dock", label: "码头", category: "harbor", src: portDock, baseWidth: 120, baseHeight: 98, names: ["望潮港", "白沙港"], terrains: ["coast", "river", "settlement"] },
-  { id: "port-harbor", label: "海港", category: "harbor", src: portHarbor, baseWidth: 140, baseHeight: 110, names: ["鱼盐港", "千帆港"], terrains: ["coast", "sea"] },
-  { id: "lighthouse", label: "灯塔", category: "harbor", src: lighthouse, baseWidth: 45, baseHeight: 148, names: ["望灯塔", "孤灯崖"], terrains: ["coast", "sea"] },
-  { id: "bridge-arch", label: "石桥", category: "harbor", src: bridgeArch, baseWidth: 95, baseHeight: 65, names: ["长虹桥", "落雁桥"], terrains: ["river", "settlement"] },
-  { id: "sailing-ship", label: "帆船", category: "harbor", src: sailingShip, baseWidth: 95, baseHeight: 109, terrains: ["sea", "coast", "lake"] },
+  { id: "port-dock", label: "码头", category: "harbor", src: portDock, baseWidth: 120, baseHeight: 98, names: ["望潮港", "白沙港"], terrains: ["coast", "river", "settlement"], zones: ["core"] },
+  { id: "port-harbor", label: "海港", category: "harbor", src: portHarbor, baseWidth: 140, baseHeight: 110, names: ["鱼盐港", "千帆港"], terrains: ["coast", "sea"], zones: ["core"] },
+  { id: "lighthouse", label: "灯塔", category: "harbor", src: lighthouse, baseWidth: 45, baseHeight: 148, names: ["望灯塔", "孤灯崖"], terrains: ["coast", "sea"], zones: ["core"] },
+  { id: "bridge-arch", label: "石桥", category: "harbor", src: bridgeArch, baseWidth: 95, baseHeight: 65, names: ["长虹桥", "落雁桥"], terrains: ["river", "settlement"], zones: ["core"] },
+  { id: "sailing-ship", label: "帆船", category: "harbor", src: sailingShip, baseWidth: 95, baseHeight: 109, terrains: ["sea", "coast", "lake"], zones: ["core"] },
 
   // ── 遗迹（7，点要素）───────────────────────────────────────
-  { id: "ruins-wall", label: "断壁残垣", category: "ruin", src: ruinsWall, baseWidth: 95, baseHeight: 69, names: ["无名废墟", "故城遗址"], terrains: ["landmark"] },
-  { id: "ruins-arch", label: "荒废石门", category: "ruin", src: ruinsArch, baseWidth: 75, baseHeight: 72, names: ["荒废石门", "旧邦之门"], terrains: ["landmark"] },
-  { id: "mountain-pass", label: "关隘", category: "ruin", src: mountainPass, baseWidth: 115, baseHeight: 125, names: ["雁回关", "寒风关"], terrains: ["landmark", "mountain"] },
-  { id: "great-gate", label: "雄关", category: "ruin", src: greatGate, baseWidth: 135, baseHeight: 133, names: ["铁门关", "天险雄关"], terrains: ["landmark", "mountain"] },
-  { id: "watchtower", label: "哨塔", category: "ruin", src: watchtower, baseWidth: 50, baseHeight: 77, names: ["戍北哨塔", "望北台"], terrains: ["landmark", "settlement", "mountain"] },
-  { id: "temple", label: "山神庙", category: "ruin", src: temple, baseWidth: 80, baseHeight: 75, names: ["山神庙", "古刹"], terrains: ["landmark", "mountain", "settlement"] },
+  { id: "ruins-wall", label: "断壁残垣", category: "ruin", src: ruinsWall, baseWidth: 95, baseHeight: 69, names: ["无名废墟", "故城遗址"], terrains: ["landmark"], zones: ["core"] },
+  { id: "ruins-arch", label: "荒废石门", category: "ruin", src: ruinsArch, baseWidth: 75, baseHeight: 72, names: ["荒废石门", "旧邦之门"], terrains: ["landmark"], zones: ["core"] },
+  { id: "mountain-pass", label: "关隘", category: "ruin", src: mountainPass, baseWidth: 115, baseHeight: 125, names: ["雁回关", "寒风关"], terrains: ["landmark", "mountain"], zones: ["core"] },
+  { id: "great-gate", label: "雄关", category: "ruin", src: greatGate, baseWidth: 135, baseHeight: 133, names: ["铁门关", "天险雄关"], terrains: ["landmark", "mountain"], zones: ["core"] },
+  { id: "watchtower", label: "哨塔", category: "ruin", src: watchtower, baseWidth: 50, baseHeight: 77, names: ["戍北哨塔", "望北台"], terrains: ["landmark", "settlement", "mountain"], zones: ["core"] },
+  { id: "temple", label: "山神庙", category: "ruin", src: temple, baseWidth: 80, baseHeight: 75, names: ["山神庙", "古刹"], terrains: ["landmark", "mountain", "settlement"], zones: ["core"] },
 
   // ── 2.22.2 补缺批：沼泽 / 草原 / 雪原（地形配方选材引擎的原料缺口，见
   // docs/prd/prd-map-render/map-asset-system-architecture.md §3）──
-  { id: "reeds-cluster", label: "芦苇丛", category: "wetland", src: reedsCluster, baseWidth: 110, baseHeight: 115, terrains: ["swamp", "lake", "river"], weight: 1.3 },
-  { id: "water-weeds", label: "水草滩", category: "wetland", src: waterWeeds, baseWidth: 150, baseHeight: 97, terrains: ["swamp", "lake"] },
-  { id: "shoal-pool", label: "浅滩水洼", category: "wetland", src: shoalPool, baseWidth: 140, baseHeight: 116, terrains: ["swamp", "lake", "river"] },
-  { id: "dead-tree", label: "沼泽枯木", category: "wetland", src: deadTree, baseWidth: 95, baseHeight: 105, terrains: ["swamp"] },
-  { id: "grass-tuft", label: "草丛", category: "grassland", src: grassTuft, baseWidth: 90, baseHeight: 59, terrains: ["grassland", "plain", "tundra"] },
-  { id: "lone-tree", label: "疏树", category: "grassland", src: loneTree, baseWidth: 135, baseHeight: 87, terrains: ["grassland", "plain"] },
-  { id: "snow-pine", label: "雪松", category: "snow", src: snowPine, baseWidth: 85, baseHeight: 125, terrains: ["snowfield", "tundra"] },
-  { id: "snow-mound", label: "雪丘", category: "snow", src: snowMound, baseWidth: 130, baseHeight: 69, terrains: ["snowfield", "tundra"] },
+  { id: "reeds-cluster", label: "芦苇丛", category: "wetland", src: reedsCluster, baseWidth: 110, baseHeight: 115, terrains: ["swamp", "lake", "river"], zones: ["core"], weight: 1.3 },
+  { id: "water-weeds", label: "水草滩", category: "wetland", src: waterWeeds, baseWidth: 150, baseHeight: 97, terrains: ["swamp", "lake"], zones: ["core"] },
+  { id: "shoal-pool", label: "浅滩水洼", category: "wetland", src: shoalPool, baseWidth: 140, baseHeight: 116, terrains: ["swamp", "lake", "river"], zones: ["core"] },
+  { id: "dead-tree", label: "沼泽枯木", category: "wetland", src: deadTree, baseWidth: 95, baseHeight: 105, terrains: ["swamp"], zones: ["core"] },
+  { id: "grass-tuft", label: "草丛", category: "grassland", src: grassTuft, baseWidth: 90, baseHeight: 59, terrains: ["grassland", "plain", "tundra"], zones: ["grass"] },
+  { id: "lone-tree", label: "疏树", category: "grassland", src: loneTree, baseWidth: 135, baseHeight: 87, terrains: ["grassland", "plain"], zones: ["grass"] },
+  { id: "snow-pine", label: "雪松", category: "snow", src: snowPine, baseWidth: 85, baseHeight: 125, terrains: ["snowfield", "tundra"], zones: ["snow"] },
+  { id: "snow-mound", label: "雪丘", category: "snow", src: snowMound, baseWidth: 130, baseHeight: 69, terrains: ["snowfield", "tundra"], zones: ["snow"] },
 ];
 
 /** 单条底图定义 */

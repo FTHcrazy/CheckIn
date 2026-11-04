@@ -23,11 +23,12 @@
  * ./terrain ./terrain-assets ./mapPresets ../types ../land ../regions（后两者纯几何）。
  */
 
-import { generateLand as buildLand, pointInLand } from "../land";
+import { generateLand as buildLand, landAreaRatio, pointInLand } from "../land";
 import type { MapLand, Rect } from "../types";
 import { expandTerrainMix, type MapPresetDef } from "./mapPresets";
 import { TERRAIN_META, type TerrainKind } from "./terrain";
 import { mulberry32, pickTerrainSprites, type SpriteSource } from "./terrain-assets";
+import { zoneAtY, type SpriteZone } from "./zones";
 
 /* ─────────────────── 子流盐值 ─────────────────── */
 
@@ -46,7 +47,14 @@ export function nameSeedOf(seed: number): number {
 
 /* ─────────────────── 参数与产物 ─────────────────── */
 
-/** 丰度档：决定素材目标总数（实际数量受陆地面积 / 碰撞拒绝约束，只少不多） */
+/**
+ * 丰度档：目标实例总数。
+ *
+ * 【它是「密度」的入口，但不是「密度」本身】生成器拿它反解格边长
+ * （`格边长 = √(陆地面积 / 格数)`），格内实例数恒在 1~3 —— 所以换档改的是
+ * "同一片地铺多密"，而不是"总数堆多少"。实际数量仍受陆地面积 / 留白 /
+ * 碰撞拒绝约束，只少不多。
+ */
 export type GeneratorRichness = "sparse" | "standard" | "dense";
 
 export const RICHNESS_TOTALS: Record<GeneratorRichness, number> = {
@@ -80,7 +88,8 @@ export interface GeneratorParams {
 
 /**
  * 一条素材布点（MapElement 的前身，尚无实例 id）。
- * `terrain` 记录它来自哪个配方——「只换地名」按它重查名池。
+ * `terrain` 记录它来自哪个配方——「只换地名」按它重查名池；
+ * `zone` 记录它取用的地貌带，摘要按带统计（雪带/主带/草带/沙带各多少）。
  */
 export interface SpritePlacement {
   spriteId: string;
@@ -91,6 +100,8 @@ export interface SpritePlacement {
   /** 角度（度）。小幅抖动破"复制粘贴感"（review §5.4 变换） */
   rotation: number;
   terrain: TerrainKind;
+  /** 取用的地貌带（见 zones.ts） */
+  zone: SpriteZone;
 }
 
 export interface GenerateMapOptions {
@@ -119,39 +130,150 @@ export interface GeneratedMap {
   placements: SpritePlacement[];
 }
 
-/* ─────────────────── 布点几何 ─────────────────── */
+/* ─────────────────── 布点骨架：网格 + 丛簇（review §6 P0-2） ─────────────────── */
 
-/** 分区中心之间的最小距离（保证配方在空间上成片，读者才读得出"这是沼泽"） */
-const ZONE_MIN_DIST = 130;
-/** 单个布点的最大尝试次数；全失败则放弃该实例（密度自适应） */
-const PLACE_ATTEMPTS = 28;
-/** 分区中心找点尝试次数 */
-const ZONE_ATTEMPTS = 48;
 /**
- * 碰撞盒收缩系数：只拦"深叠"，允许层叠。
+ * 每格平均实例数（格内 2~4、主地形 3~5 的均值）。
  *
- * 【为什么不是 1（完全不重叠）】手绘奇幻地图的山脉/森林本来就是**层叠着画**的
- * （连绵山岭的观感来自前后山峰互相压边）；实测 120 个目标素材按原尺寸零重叠
- * 在陆地面积里物理上放不下，落点会被碰撞拒绝砍到只剩十来个。收缩到 55% 后
- * "前后压边"放行、"几乎整个压住"仍拒绝 —— 与手绘观感一致。
+ * 【密度为什么改「格子边长」而不是「目标总数」】参考实现的丰度档改的是
+ * **格网边长**，相对间距恒定 —— 大图小图都铺得一样密，只是格子多少不同。
+ * 本项目早期直接按目标总数撒点，于是小图挤成一坨、大图稀得能跑马。
+ * 现在反过来解：`目标总数 → 需要的格数 → 格边长`，格内实例数停在 2~5。
+ *
+ * 【为什么是 3 而不是 2】2 的话格网密、每簇只有一两张，全图变成"均匀地毯"；
+ * 3 让格子变稀、每簇变厚，才有手绘地图的"一坨一坨，中间留白"。
  */
-const CORE = 0.55;
+const INSTANCES_PER_CELL = 3;
+
+/**
+ * 平原格占比：**目标**，只用来反解格边长（见 `generateMap` 第 2 步）。
+ *
+ * 【它不再是"随机丢弃"】旧实现按这个概率逐格 `continue`，丢掉的格虽不铺素材，
+ * 但格网仍被主地形认领，读者看到的是"稀疏的满铺"而不是"成片的平原"。
+ * 现在留白由「配额之外没被认领的格」产生（见 `assignTerrainByGrowth`）：
+ * 同样是 30%，前者是随机麻点，后者是连成片的空地 —— 后者才是手绘地图的呼吸感。
+ */
+const PLAIN_CELL_RATIO = 0.18;
+
+/**
+ * 「标准档」的格边长基准（世界单位）。
+ *
+ * 【素材尺寸为什么要跟着格边长走】参考实现的丰度档改的是**格网边长**，并给
+ * 素材尺寸补偿 `grid>50 → w+=0.1` —— 素材与格子的比例恒定，换档只是"同样的
+ * 画放大/缩小"。本项目此前素材尺寸与格子脱钩：繁密档格子变小、素材不变，
+ * 结果整张图糊成一片山墙；稀疏档反之，图就散了。这里把两者绑起来。
+ */
+const BASE_CELL = 92;
+
+/** 孤立格（8 邻域无同类地形）的保留概率：连通性先验，决定"成片"还是"撒芝麻" */
+const ISOLATED_KEEP = 0.25;
+
+/** 格边长夹取（世界单位）：下界防糊成一团，上界防一个格大得读不出成团 */
+const CELL_MIN = 56;
+const CELL_MAX = 180;
+
+/** 格内抖动半径 = 格边长 × 该比例（丛簇的"散开度"） */
+const JITTER_RATIO = 0.34;
+
+/**
+ * 分带接缝的过渡带宽度（相对陆地高度，两侧各一半）。
+ *
+ * 【为什么需要它】纬度硬切会在整张图上留一道**水平直线**——颜色/画风沿着
+ * 一条 1 像素的线突变，比不分带更扎眼。接缝两侧按比例随机落到相邻带，
+ * 一条硬线就摊成了 8% 高度的渐变。
+ */
+const ZONE_BLEND = 0.08;
+
+/** 单个实例的落位尝试次数；耗尽就少一个（拥挤时密度自适应回落） */
+const PLACE_ATTEMPTS = 12;
+
+/** 旋转幅度：大体量素材稳、小体量素材活（参考实现 丘陵 ±15° / 主池 ±5~7°） */
+const ROT_LARGE = 7;
+const ROT_SMALL = 15;
+
+/** 「大体量」分界（基准宽度，世界单位） */
+const LARGE_SPRITE_WIDTH = 120;
+
+/**
+ * 地形配方 → 体量系数（**比例和谐的执行点**）。
+ *
+ * 【为什么需要它】素材的 `baseWidth` 是"这张图本身画多大"，不是"它在图上该多大"：
+ * 一座城的贴图（135×130）和一条山脉（200×127）体量相当，按原尺寸摆出来，
+ * 城堡会和山一样高 —— 参考实现里城郭只有山峰的三分之一高，因为它的素材池
+ * 按**用途**分组后再各自归一，而不是全池共用一个尺度。
+ *
+ * 这些系数就是"各组各自的归一"：山地/高原是主景（1.0），丘陵次之，森林成片
+ * 但要低于山脊，河流湖泊是地表纹理（更小），聚落与遗迹是**点符号**（最小，
+ * 只需认得出、放得下地名）。改这里就能整体调"什么该大、什么该小"。
+ */
+const TERRAIN_SCALE: Record<TerrainKind, number> = {
+  mountain: 1,
+  highland: 0.95,
+  volcano: 0.95,
+  hill: 0.75,
+  valley: 0.8,
+  forest: 0.72,
+  jungle: 0.72,
+  desert: 0.85,
+  oasis: 0.62,
+  swamp: 0.78,
+  lake: 0.8,
+  river: 0.7,
+  coast: 0.72,
+  sea: 0.78,
+  plain: 0.55,
+  grassland: 0.55,
+  snowfield: 0.58,
+  tundra: 0.55,
+  settlement: 0.52,
+  landmark: 0.48,
+};
+
+/**
+ * 每格的调色板容量（同格最多几种素材轮换）。
+ *
+ * 【为什么是 4】池子按地形分下来，一个配方的"一族"往往只有三四张（沼泽 4 张）。
+ * 3 的话同一格内必有重复，4 至少让一簇里的 3~4 个实例各不相同 —— 素材总量
+ * 不够时，这是"少一点贴纸感"最便宜的一招。
+ */
+const PALETTE_SIZE = 4;
+
+/** 黄金角（弧度）：簇内螺旋落位的角步长，保证相邻实例不重合 */
+const GOLDEN_ANGLE = 2.399963229728653;
+
+/**
+ * 跨格防呆碰撞盒收缩系数。
+ *
+ * 【为什么是 0.35 且**同簇不参与**】手绘山脉本来就层叠着画：同一个丛簇里
+ * 三座山互相压边才出厚度，所以同簇一律放行。跨格才拦，且只拦"几乎整个
+ * 压住"——0.35 意味着两个核心盒中心拉开即可，边缘怎么叠都行。
+ */
+const CORE = 0.35;
 /** 碰撞盒外扩（呼吸边，作用在收缩后的核心盒上） */
 const COLLIDE_PAD = 2;
 
 /** 碰撞注册表：均匀网格，cell 尺寸按最大素材近似取常量 */
 const GRID_CELL = 64;
 
+interface ColliderEntry {
+  /** 所属丛簇：同簇不参与碰撞（刻意层叠） */
+  cluster: number;
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
 interface Collider {
-  add(x0: number, y0: number, x1: number, y1: number): void;
-  hits(x0: number, y0: number, x1: number, y1: number): boolean;
+  add(cluster: number, x0: number, y0: number, x1: number, y1: number): void;
+  hits(cluster: number, x0: number, y0: number, x1: number, y1: number): boolean;
 }
 
 function createCollider(): Collider {
-  const cells = new Map<number, { x0: number; y0: number; x1: number; y1: number }[]>();
+  const cells = new Map<number, ColliderEntry[]>();
   const key = (cx: number, cy: number) => cx * 100000 + cy;
   return {
-    add(x0, y0, x1, y1) {
+    add(cluster, x0, y0, x1, y1) {
       const cx0 = Math.floor(x0 / GRID_CELL);
       const cx1 = Math.floor(x1 / GRID_CELL);
       const cy0 = Math.floor(y0 / GRID_CELL);
@@ -160,12 +282,12 @@ function createCollider(): Collider {
         for (let cy = cy0; cy <= cy1; cy++) {
           const k = key(cx, cy);
           const list = cells.get(k);
-          if (list) list.push({ x0, y0, x1, y1 });
-          else cells.set(k, [{ x0, y0, x1, y1 }]);
+          if (list) list.push({ cluster, x0, y0, x1, y1 });
+          else cells.set(k, [{ cluster, x0, y0, x1, y1 }]);
         }
       }
     },
-    hits(x0, y0, x1, y1) {
+    hits(cluster, x0, y0, x1, y1) {
       const cx0 = Math.floor(x0 / GRID_CELL);
       const cx1 = Math.floor(x1 / GRID_CELL);
       const cy0 = Math.floor(y0 / GRID_CELL);
@@ -175,6 +297,7 @@ function createCollider(): Collider {
           const list = cells.get(key(cx, cy));
           if (!list) continue;
           for (const r of list) {
+            if (r.cluster === cluster) continue;
             if (x0 < r.x1 && x1 > r.x0 && y0 < r.y1 && y1 > r.y0) return true;
           }
         }
@@ -184,18 +307,236 @@ function createCollider(): Collider {
   };
 }
 
-/** 陆地内随机取点（拒绝采样；上限内找不到返回 null） */
-function randomLandPoint(
-  land: MapLand,
-  rng: () => number,
-  attempts: number,
-): { x: number; y: number } | null {
-  const b = land.bounds;
-  for (let i = 0; i < attempts; i++) {
-    const p = { x: b.x + rng() * b.width, y: b.y + rng() * b.height };
-    if (pointInLand(p, land)) return p;
+/* ─────────────────── 格网 ─────────────────── */
+
+/** 一个网格单元 = 一个丛簇的容器 */
+interface Cell {
+  /** 格中心（世界坐标） */
+  x: number;
+  y: number;
+  col: number;
+  row: number;
+  /** 是否含陆地：中心或四角任一落在陆地内（沿海格的中心常落在海上） */
+  land: boolean;
+  /** 区域生长分配到的地形；null = 无陆地 */
+  terrain: TerrainKind | null;
+}
+
+/** 探针内缩比例（相对格边长）：用四角探针认领「中心在海上但压着海岸」的格 */
+const CELL_PROBE = 0.3;
+
+function clamp(v: number, lo: number, hi: number): number {
+  return v < lo ? lo : v > hi ? hi : v;
+}
+
+/**
+ * 陆地实测包围盒。
+ *
+ * 【为什么不用 `land.bounds`】那是整张纸，陆地面通常只占中部 55%~70%；
+ * 拿纸张当分带基准会把雪带整个压在海上，南北两头永远用不到 ——
+ * 分带与格网都必须跟着陆地走。
+ */
+function landBBox(land: MapLand): Rect {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const ring of land.polygons) {
+    for (const p of ring) {
+      if (p.x < minX) minX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y > maxY) maxY = p.y;
+    }
   }
-  return null;
+  if (!Number.isFinite(minX)) return land.bounds;
+  return {
+    x: minX,
+    y: minY,
+    width: Math.max(1, maxX - minX),
+    height: Math.max(1, maxY - minY),
+  };
+}
+
+function cellHasLand(land: MapLand, x: number, y: number, size: number): boolean {
+  if (pointInLand({ x, y }, land)) return true;
+  const d = size * CELL_PROBE;
+  return (
+    pointInLand({ x: x - d, y: y - d }, land) ||
+    pointInLand({ x: x + d, y: y - d }, land) ||
+    pointInLand({ x: x - d, y: y + d }, land) ||
+    pointInLand({ x: x + d, y: y + d }, land)
+  );
+}
+
+function buildGrid(
+  land: MapLand,
+  box: Rect,
+  cellSize: number,
+): { cells: Cell[]; cols: number; rows: number } {
+  const cols = Math.max(1, Math.ceil(box.width / cellSize));
+  const rows = Math.max(1, Math.ceil(box.height / cellSize));
+  const cells: Cell[] = [];
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const x = box.x + (col + 0.5) * cellSize;
+      const y = box.y + (row + 0.5) * cellSize;
+      cells.push({ x, y, col, row, land: cellHasLand(land, x, y, cellSize), terrain: null });
+    }
+  }
+  return { cells, cols, rows };
+}
+
+function neighborsOf(cells: readonly Cell[], cols: number, rows: number, cell: Cell): Cell[] {
+  const out: Cell[] = [];
+  for (let dr = -1; dr <= 1; dr++) {
+    for (let dc = -1; dc <= 1; dc++) {
+      if (dc === 0 && dr === 0) continue;
+      const c = cell.col + dc;
+      const r = cell.row + dr;
+      if (c < 0 || r < 0 || c >= cols || r >= rows) continue;
+      out.push(cells[r * cols + c]);
+    }
+  }
+  return out;
+}
+
+/** 8 邻域里同类地形的格数（连通性先验） */
+function sameNeighborCount(
+  cells: readonly Cell[],
+  cols: number,
+  rows: number,
+  cell: Cell,
+): number {
+  let n = 0;
+  for (const nb of neighborsOf(cells, cols, rows, cell)) {
+    if (nb.terrain !== null && nb.terrain === cell.terrain) n++;
+  }
+  return n;
+}
+
+/**
+ * 一片地形平均铺几格就另起一片（决定「几条山脉」而不是「一整块山地」）。
+ *
+ * 【为什么要多片而不是一片】单一区域生长会长出**一整块**主地形，读者看到的是
+ * 「左边全是山、右边全是林」这种两分天下；参考实现的一张图里有 5~6 条互不相连
+ * 的山脉，中间夹着平原。拆片之后，同一地形分散成几片，页面上才有「山脉」这个
+ * 层级（片与片之间就是平原）。
+ */
+const CELLS_PER_PATCH = 7;
+
+/** 同一地形最多拆几片（上限防碎：份额再大也不会碎成芝麻） */
+const MAX_PATCHES = 4;
+
+/**
+ * 区域生长分配地形（「配方成片 + 平原留白」的机制）。
+ *
+ * 每种地形按配额**长出若干片互不相连的斑块**（`CELLS_PER_PATCH`），
+ * 每片从随机种子格起步、沿边界吞格，边界因此自然咬合（不是参考实现那种
+ * 圆形半径边界）。
+ *
+ * 【未认领的格一律留空 —— 这是本项目之前最缺的一环】旧实现把剩余格全部
+ * 归给主地形（份额最大者），于是"预留 30% 留白"被主地形填满：预设写
+ * mountain 55%，实际产出 83% 的山，整张纸看不到一块平原。现在剩余格
+ * `terrain` 保持 `null`（= 平原），留白才真的留得下来。
+ *
+ * @returns 无返回值：主地形的"多铺一个"已由配额接管（见 `generateMap` 的 `budget`）
+ */
+function assignTerrainByGrowth(
+  cells: Cell[],
+  cols: number,
+  rows: number,
+  slots: readonly { terrain: TerrainKind; count: number }[],
+  rng: () => number,
+): void {
+  const free = new Set<Cell>(cells.filter((c) => c.land));
+  const ranked = [...slots].sort((a, b) => b.count - a.count);
+  /** 已落地的斑块种子：新种子要尽量远离它们，片与片才不会粘成一片 */
+  const seeds: Cell[] = [];
+
+  for (const slot of ranked) {
+    // 实例数 → 格数：一格平均承载 INSTANCES_PER_CELL 个实例
+    const quota = Math.max(1, Math.round(slot.count / INSTANCES_PER_CELL));
+    const patches = Math.max(1, Math.min(MAX_PATCHES, Math.round(quota / CELLS_PER_PATCH)));
+    let left = quota;
+
+    for (let p = 0; p < patches && left > 0 && free.size > 0; p++) {
+      const seed = pickPatchSeed(free, seeds, rng);
+      if (!seed) break;
+      seeds.push(seed);
+      const want = Math.min(left, Math.ceil(left / (patches - p)));
+      left -= growPatch(cells, cols, rows, free, seed, want, slot.terrain, rng);
+    }
+
+    // 斑块被海/别的地形卡住、配额没长满：把剩余格就近追加到已有斑块边界上
+    let guard = quota * 4;
+    while (left > 0 && free.size > 0 && guard-- > 0) {
+      const pool = [...free].filter((c) =>
+        neighborsOf(cells, cols, rows, c).some((nb) => nb.terrain === slot.terrain),
+      );
+      if (pool.length === 0) break;
+      const cell = pool[Math.floor(rng() * pool.length)];
+      free.delete(cell);
+      cell.terrain = slot.terrain;
+      left -= 1;
+    }
+  }
+}
+
+/**
+ * 挑一个斑块种子：随机候选中取「离已有种子最远」的那个。
+ *
+ * 纯随机种子会让两片地形挨在一起，看上去仍是一整块；采几个候选再挑最远的，
+ * 成本 O(候选数 × 种子数)，却能把山脉摊开在整张图上。
+ */
+function pickPatchSeed(free: Set<Cell>, seeds: readonly Cell[], rng: () => number): Cell | null {
+  if (free.size === 0) return null;
+  const all = [...free];
+  if (seeds.length === 0) return all[Math.floor(rng() * all.length)];
+
+  let best: Cell | null = null;
+  let bestDist = -1;
+  for (let i = 0; i < 16; i++) {
+    const cand = all[Math.floor(rng() * all.length)];
+    let near = Infinity;
+    for (const s of seeds) near = Math.min(near, Math.hypot(s.x - cand.x, s.y - cand.y));
+    if (near > bestDist) {
+      bestDist = near;
+      best = cand;
+    }
+  }
+  return best;
+}
+
+/** 从种子格按 4 邻域吞格，最多 `want` 格；返回实际吞下的格数 */
+function growPatch(
+  cells: readonly Cell[],
+  cols: number,
+  rows: number,
+  free: Set<Cell>,
+  seed: Cell,
+  want: number,
+  terrain: TerrainKind,
+  rng: () => number,
+): number {
+  if (!free.has(seed)) return 0;
+  free.delete(seed);
+  seed.terrain = terrain;
+  if (want <= 1) return 1;
+
+  let grown = 1;
+  const frontier: Cell[] = neighborsOf(cells, cols, rows, seed).filter((c) => free.has(c));
+  while (grown < want && frontier.length > 0) {
+    const [cell] = frontier.splice(Math.floor(rng() * frontier.length), 1);
+    if (!free.has(cell)) continue;
+    free.delete(cell);
+    cell.terrain = terrain;
+    grown += 1;
+    for (const nb of neighborsOf(cells, cols, rows, cell)) {
+      if (free.has(nb)) frontier.push(nb);
+    }
+  }
+  return grown;
 }
 
 /* ─────────────────── 主入口 ─────────────────── */
@@ -203,15 +544,15 @@ function randomLandPoint(
 /**
  * 生成一张图（陆地 + 素材布点）。
  *
- * 算法（地形 = 素材配方交叉渲染，见架构 §三）：
+ * 算法（地形 = 素材配方交叉渲染，见架构 §三；骨架见 review §6 P0-2）：
  *   1. 陆地：`buildLand`（既有形状算法，landSeed 子流）；
- *   2. 配比展开：`expandTerrainMix` 把预设份额换算成各配方的目标数量；
- *   3. 分区：每个配方在陆地里落一个**中心**（相互拉开距离），
- *      素材围绕中心撒布——配方成片，读者才读得出"这是沼泽"；
- *   4. 选材：`pickTerrainSprites`（主地形优先、回退链补位）得到配方的
- *      素材调色板，实例按调色板循环 + 随机补位（池小量大，靠抖动出变体）；
- *   5. 落点：极坐标均匀撒在中心邻域，陆地外 / 碰撞盒重叠即拒绝，
- *      尝试耗尽放弃该实例（实际数量 ≤ 目标，摘要如实统计）。
+ *   2. 格网：目标总数反解格边长（密度靠格子大小调，不靠实例数）；
+ *   3. 分地形：区域生长，让每个配方连成一片；
+ *   4. 分带：按纬度取地貌带（北雪/主/草/南沙，或预设锁定的气候带），
+ *      同地形按带换画风 —— 雪原不长阔叶树、沙漠不长针叶林；
+ *   5. 铺实例：每格 2~4 个（主地形 3~5），同簇共享基准大小 + 黄金角螺旋，
+ *      孤立格大概率放弃（连通性先验），跨格只拦深叠；
+ *   6. 收尾：按脚底 y 升序（Pixi 按加入顺序绘制，排序即 z 序）。
  *
  * 骨架档（`mode: "skeleton"`）只返回陆地，`placements` 为空。
  */
@@ -224,96 +565,163 @@ export function generateMap(options: GenerateMapOptions): GeneratedMap {
   const rng = mulberry32(options.elementSeed ?? elementSeedOf(options.seed));
   const total = RICHNESS_TOTALS[options.richness];
   const slots = expandTerrainMix(options.preset, total);
-  const collider = createCollider();
+  if (slots.length === 0) return { land, placements: [] };
 
-  /** spriteId → 渲染尺寸（碰撞与调色板循环都要用） */
-  const sizeOf =
-    options.sizeOf ??
-    (() => ({ width: 90, height: 70 }));
+  /** spriteId → 渲染尺寸（抖动幅度与碰撞都要用） */
+  const sizeOf = options.sizeOf ?? (() => ({ width: 90, height: 70 }));
 
-  /** 布点失败（找不到合法位置）时返回 false */
-  const tryPlace = (p: SpritePlacement): boolean => {
-    const { width, height } = sizeOf(p.spriteId);
-    const w = width * p.scale * CORE;
-    const h = height * p.scale * CORE;
-    const x0 = p.x - w / 2 - COLLIDE_PAD;
-    const x1 = p.x + w / 2 + COLLIDE_PAD;
-    const y0 = p.y - h - COLLIDE_PAD;
-    const y1 = p.y + COLLIDE_PAD;
-    if (collider.hits(x0, y0, x1, y1)) return false;
-    collider.add(x0, y0, x1, y1);
-    return true;
+  // ── 格网：目标总数 → 格数 → 格边长 ──
+  const box = landBBox(land);
+  const paperArea = Math.max(1, land.bounds.width * land.bounds.height);
+  const landArea = Math.max(1, landAreaRatio(land) * paperArea);
+  const wantCells = Math.max(
+    1,
+    total / INSTANCES_PER_CELL / (1 - PLAIN_CELL_RATIO),
+  );
+  const cellSize = clamp(Math.sqrt(landArea / wantCells), CELL_MIN, CELL_MAX);
+  const { cells, cols, rows } = buildGrid(land, box, cellSize);
+  /** 素材尺寸随格边长补偿：换档只换精细度，不改"素材 : 地块"的比例 */
+  const sizeScale = clamp(cellSize / BASE_CELL, 0.72, 1.32);
+
+  // ── 地形分布（区域生长，多片）──
+  assignTerrainByGrowth(cells, cols, rows, slots, rng);
+
+  /** 纬度取带；预设锁定气候时不看纬度（「万里雪原」南缘不该冒沙丘） */
+  const climate = options.preset.climate;
+  const zoneOfY = (y: number): SpriteZone => {
+    if (climate) return climate;
+    // 接缝抖动：把纬度硬切成的那条水平线摊成 ~8% 高度的过渡带（见 ZONE_BLEND）
+    const jitter = (rng() - 0.5) * ZONE_BLEND * box.height;
+    return zoneAtY(y + jitter, box.y, box.height);
   };
 
+  const collider = createCollider();
   const placements: SpritePlacement[] = [];
-  const centers: { x: number; y: number }[] = [];
+  let cluster = 0;
 
-  for (const slot of slots) {
-    // ── 分区中心：陆地里找一个与其它中心拉开距离的点 ──
-    let center: { x: number; y: number } | null = null;
-    let fallback: { x: number; y: number } | null = null;
-    for (let i = 0; i < ZONE_ATTEMPTS; i++) {
-      const p = randomLandPoint(land, rng, 8);
-      if (!p) continue;
-      fallback = p;
-      const ok = centers.every((c) => Math.hypot(c.x - p.x, c.y - p.y) >= ZONE_MIN_DIST);
-      if (ok) {
-        center = p;
-        break;
-      }
-    }
-    if (!center) center = fallback;
-    // 陆地已经小到 rejection 都找不到点（极端 seed）：放弃该配方
-    if (!center) continue;
-    centers.push(center);
+  /**
+   * 各配方的剩余配额（地形 → 还能铺几个实例）。
+   *
+   * 【为什么必须有它】旧实现只按"每格 2~4 个"铺，格数由主地形占满，于是预设写
+   * `mountain 0.55 / forest 0.30` 却产出 83% 的山。配额是**预设配比的唯一执行点**：
+   * 配额用尽的地形不再开簇，剩下的空间自然变成平原。
+   */
+  const budget = new Map<TerrainKind, number>(slots.map((s) => [s.terrain, s.count]));
 
-    // ── 调色板：配方内加权不放回（池不足时回退链补位）──
-    const palette = pickTerrainSprites(options.pool, slot.terrain, {
-      count: slot.count,
+  /**
+   * 铺格顺序**打乱**再迭代。
+   *
+   * 【为什么不是从上到下】目标总数是硬上限，顺序迭代会在到达上限时把
+   * 南半边整片截掉（"北密南秃"，且分带统计里沙带恒为 0）。打乱后超额部分
+   * 均匀摊到全图，等价于整体稀释一档。
+   */
+  const order = [...cells];
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+
+  for (const cell of order) {
+    if (placements.length >= total) break;
+    const terrain = cell.terrain;
+    if (!cell.land || terrain === null) continue;
+    const left = budget.get(terrain) ?? 0;
+    // 配额用尽（该配方已经铺满自己的份额）→ 这一格就是平原
+    if (left <= 0) continue;
+    // 连通性：孤零零一格大概率不成丛（孤立点出现率 ≈ 1/4，内部点接近 100%）
+    if (sameNeighborCount(cells, cols, rows, cell) === 0 && rng() > ISOLATED_KEEP) continue;
+
+    const zone = zoneOfY(cell.y);
+    const palette = pickTerrainSprites(options.pool, terrain, {
+      count: PALETTE_SIZE,
       seed: Math.floor(rng() * 0x7fffffff),
+      zone,
     });
     if (palette.length === 0) continue;
 
-    // 邻域半径：按目标数量开方摊开（配方份额越大占地越大）
-    const zoneR = 46 * Math.sqrt(slot.count) + 40;
+    cluster += 1;
+    // 每簇 2~4 个：簇的大小本身就是"密度变化"的一部分（参考实现同簇 1~3 层）
+    const count = Math.min(left, 2 + Math.floor(rng() * 3));
+    // 同簇共享基准大小：一簇里几座山大小相近，读起来才"是一座山群"。
+    // 区间刻意收窄（0.88~1.14）：素材池小的时候，"同一张图缩放不同"
+    // 是唯一能把重复品读成"另一处同类地形"的手段，但跨簇差异过大就会
+    // 变成"贴纸大小没统一"。
+    const clusterScale = (0.88 + rng() * 0.26) * sizeScale * TERRAIN_SCALE[terrain];
+    const jitter = cellSize * JITTER_RATIO;
+    /** 本簇已落位的锚点（同簇不参与碰撞，但要防"同一张贴图叠画"） */
+    const anchors: { x: number; y: number; sep: number }[] = [];
 
-    // 首轮：调色板每张至少出现一次（前 min(count, palette.length) 个实例）
-    // 余量：带权重随机补位（同符号复用 + 抖动出变体，review §5.4）
-    const sequence: SpriteSource[] = [];
-    for (let i = 0; i < slot.count; i++) {
-      sequence.push(
-        i < palette.length
-          ? palette[i]
-          : palette[Math.floor(rng() * palette.length)],
+    for (let i = 0; i < count && placements.length < total; i++) {
+      const src =
+        i < palette.length ? palette[i] : palette[Math.floor(rng() * palette.length)];
+      const size = sizeOf(src.id);
+      // 实例微调 0.9~1.1：一簇里"同一张贴图摆两次"是最刺眼的重复，尺寸错开
+      // 一成以上，人眼就不再把它读成复制粘贴（旋转只有几度，扛不住这个任务）。
+      const scale = Math.round(clusterScale * (0.9 + rng() * 0.2) * 100) / 100;
+      const rotAmp = size.width >= LARGE_SPRITE_WIDTH ? ROT_LARGE : ROT_SMALL;
+      const sep = Math.min(
+        Math.max(5, Math.min(size.width, size.height) * 0.22 * scale),
+        // 上界跟着格子走：繁密档格子变小，绝对间距若不变会把实例一个个拒掉，
+        // 结果是"繁密"与"标准"数量几乎一样（实测 96 vs 106）
+        jitter * 0.9,
       );
-    }
+      // 簇内落位用**黄金角螺旋**而不是纯随机：随机坐标会撞在一起（两个实例
+      // 相距 2 单位 = 同一张贴图叠画），螺旋保证「同簇相邻、但不重合」，
+      // 观感上又比等距环更自然。
+      const angle = i * GOLDEN_ANGLE + rng() * 0.5;
+      const radius = jitter * (0.4 + 0.5 * (i / Math.max(1, count - 1))) * (0.7 + rng() * 0.6);
 
-    for (const src of sequence) {
-      let placed = false;
-      for (let a = 0; a < PLACE_ATTEMPTS && !placed; a++) {
-        const angle = rng() * Math.PI * 2;
-        const rad = Math.sqrt(rng()) * zoneR;
-        const x = center.x + Math.cos(angle) * rad;
-        const y = center.y + Math.sin(angle) * rad;
+      for (let attempt = 0; attempt < PLACE_ATTEMPTS; attempt++) {
+        // 前几次贴着螺旋位微扰；落海时才放大到整格随机
+        const spread = attempt < 3 ? jitter * 0.18 : jitter;
+        const x = cell.x + Math.cos(angle) * radius + (rng() - 0.5) * 2 * spread;
+        const y = cell.y + Math.sin(angle) * radius * 0.75 + (rng() - 0.5) * 2 * spread;
+        // 锚点是"脚底"，必须在陆地上（素材漂在海面上比稀疏更扎眼）
         if (!pointInLand({ x, y }, land)) continue;
+        if (anchors.some((a) => Math.hypot(a.x - x, a.y - y) < Math.max(sep, a.sep))) continue;
         const p: SpritePlacement = {
           spriteId: src.id,
           x,
           y,
-          scale: Math.round((0.85 + rng() * 0.35) * 100) / 100,
-          rotation: Math.round((rng() - 0.5) * 14 * 10) / 10,
-          terrain: slot.terrain,
+          scale,
+          rotation: Math.round((rng() - 0.5) * 2 * rotAmp * 10) / 10,
+          terrain,
+          zone,
         };
-        if (tryPlace(p)) {
+        if (colliderHitsFree(collider, p, cluster, sizeOf)) {
           placements.push(p);
-          placed = true;
+          anchors.push({ x, y, sep });
+          budget.set(terrain, (budget.get(terrain) ?? 1) - 1);
+          break;
         }
       }
-      // 尝试耗尽：放弃该实例（拥挤时密度自适应回落，摘要如实统计）
+      // 尝试耗尽：少一个实例（拥挤时密度自适应回落，摘要如实统计）
     }
   }
 
+  // 脚底 y 升序：Pixi 按加入顺序绘制，排序即 z 序 —— 后排的山被前排压住
+  placements.sort((a, b) => a.y - b.y);
+
   return { land, placements };
+}
+
+/** 登记 + 判定合一：命中别的簇就返回 false，否则占位并返回 true */
+function colliderHitsFree(
+  collider: Collider,
+  p: SpritePlacement,
+  cluster: number,
+  sizeOf: (spriteId: string) => { width: number; height: number },
+): boolean {
+  const { width, height } = sizeOf(p.spriteId);
+  const w = width * p.scale * CORE;
+  const h = height * p.scale * CORE;
+  const x0 = p.x - w / 2 - COLLIDE_PAD;
+  const x1 = p.x + w / 2 + COLLIDE_PAD;
+  const y0 = p.y - h - COLLIDE_PAD;
+  const y1 = p.y + COLLIDE_PAD;
+  if (collider.hits(cluster, x0, y0, x1, y1)) return false;
+  collider.add(cluster, x0, y0, x1, y1);
+  return true;
 }
 
 /* ─────────────────── 地名分配（独立档） ─────────────────── */
@@ -412,6 +820,8 @@ export interface GenerationSummary {
   landCount: number;
   /** 分类 key → 数量（未分类素材归入 "other"） */
   byCategory: Record<string, number>;
+  /** 地貌带 key → 数量（zone 直接挂在布点上，不需要注入） */
+  byZone: Record<string, number>;
   namedCount: number;
 }
 
@@ -426,9 +836,11 @@ export function summarizeGeneration(
   categoryOf: (spriteId: string) => string | undefined,
 ): GenerationSummary {
   const byCategory: Record<string, number> = {};
+  const byZone: Record<string, number> = {};
   for (const p of placements) {
     const key = categoryOf(p.spriteId) ?? "other";
     byCategory[key] = (byCategory[key] ?? 0) + 1;
+    byZone[p.zone] = (byZone[p.zone] ?? 0) + 1;
   }
-  return { landCount: land.polygons.length, byCategory, namedCount };
+  return { landCount: land.polygons.length, byCategory, byZone, namedCount };
 }

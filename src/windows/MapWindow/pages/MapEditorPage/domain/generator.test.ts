@@ -5,8 +5,9 @@
  * 区间 —— 具体值一旦变了，说明有人动了算法或参数，必须是有意的。
  */
 import { describe, expect, it } from "vitest";
-import { generateLand, pointInLand } from "../land";
+import { generateLand, landAreaRatio, pointInLand } from "../land";
 import {
+  RICHNESS_TOTALS,
   assignPlacementNames,
   elementSeedOf,
   generateMap,
@@ -131,51 +132,115 @@ describe("generateMap 布点合法性", () => {
     expect(standard).toBeGreaterThan(sparse);
   });
 
-  it("scale/rotation 在抖动区间内", () => {
+  it("scale = 格边长补偿 × 地形体量 × 簇抖动；rotation 按素材体量分级", () => {
     for (const p of gen.placements) {
-      expect(p.scale).toBeGreaterThanOrEqual(0.85);
-      expect(p.scale).toBeLessThanOrEqual(1.2);
-      expect(p.rotation).toBeGreaterThanOrEqual(-7);
-      expect(p.rotation).toBeLessThanOrEqual(7);
+      // 下界：dense 档格子最小（~0.72）× 点符号体量（0.48）× 簇 0.88 × 微调 0.94
+      // 上界：sparse 档格子最大（~1.32）× 山地 1.0 × 簇 1.14 × 微调 1.06
+      expect(p.scale).toBeGreaterThan(0.2);
+      expect(p.scale).toBeLessThanOrEqual(1.7);
+      // 参考实现：丘陵一类小体量 ±15°、主池大体量 ±5~7°。这里按基准宽度分级
+      const amp = sizeOf(p.spriteId).width >= 120 ? 7 : 15;
+      expect(Math.abs(p.rotation), `${p.spriteId} 转得太多`).toBeLessThanOrEqual(amp);
     }
   });
 
-  it("布点不深叠（核心盒两两相离；允许手绘式的边缘层叠）", () => {
-    // 与引擎同款核心系数：55% 收缩 + 2 呼吸边
-    const CORE = 0.55;
-    const boxes = gen.placements.map((p) => {
-      const { width, height } = sizeOf(p.spriteId);
-      const w = width * p.scale * CORE;
-      const h = height * p.scale * CORE;
-      return { x0: p.x - w / 2 - 2, x1: p.x + w / 2 + 2, y0: p.y - h - 2, y1: p.y + 2 };
-    });
-    for (let i = 0; i < boxes.length; i++) {
-      for (let j = i + 1; j < boxes.length; j++) {
-        const a = boxes[i];
-        const b = boxes[j];
-        const overlap = a.x0 < b.x1 && a.x1 > b.x0 && a.y0 < b.y1 && a.y1 > b.y0;
-        expect(overlap, `#${i} 与 #${j} 深叠`).toBe(false);
+  /**
+   * 比例和谐的硬契约：**点符号必须明显小于地貌**。
+   *
+   * 【为什么钉这条】素材的 `baseWidth` 是"这张图原来画多大"，不是"它在图上该多大"：
+   * 城郭贴图（135×130）与一条山脉（200×127）体量相当，若共用一个尺度，城堡会和
+   * 山峰一样高。参考实现里城郭只有山峰的三分之一 —— 它的素材池是按用途分组后
+   * 各自归一的（`TERRAIN_SCALE`）。这条一红，说明"什么该大什么该小"又被拉平了。
+   */
+  it("点符号（遗迹/聚落）的渲染宽度明显小于山地 —— 城堡不该和山一样高", () => {
+    const medianWidthOf = (terrain: TerrainKind): number => {
+      const widths = gen.placements
+        .filter((p) => p.terrain === terrain)
+        .map((p) => sizeOf(p.spriteId).width * p.scale)
+        .sort((a, b) => a - b);
+      return widths.length === 0 ? 0 : widths[Math.floor(widths.length / 2)];
+    };
+    const mountain = medianWidthOf("mountain");
+    expect(mountain).toBeGreaterThan(0);
+    expect(medianWidthOf("landmark")).toBeLessThan(mountain * 0.6);
+    // 森林成片但要低于山脊（不然一张图会被林子糊住）
+    expect(medianWidthOf("forest")).toBeLessThan(mountain * 0.95);
+  });
+
+  it("不重合、不超发（总数是上限；同簇内允许层叠）", () => {
+    // 【为什么不再断言「两两相离」】手绘山脉就是叠着画的：同一丛簇里几座山
+    // 互相压边才出厚度。旧断言把「均匀撒点」这个实现固化了，反而挡住了 P0-2。
+    // 现在要钉的是**渲染级的糊**：两个实例不许落在同一点。
+    const anchors = new Set(gen.placements.map((p) => `${p.x.toFixed(3)},${p.y.toFixed(3)}`));
+    expect(anchors.size).toBe(gen.placements.length);
+    let minDist = Infinity;
+    for (let i = 0; i < gen.placements.length; i++) {
+      for (let j = i + 1; j < gen.placements.length; j++) {
+        const a = gen.placements[i];
+        const b = gen.placements[j];
+        minDist = Math.min(minDist, Math.hypot(a.x - b.x, a.y - b.y));
       }
     }
+    expect(minDist).toBeGreaterThan(4);
+    expect(gen.placements.length).toBeLessThanOrEqual(RICHNESS_TOTALS.standard);
   });
 
-  it("配方成片：同一配方的布点聚在各自中心邻域（空间上读得出地形）", () => {
-    // 十万大山 mountain 占 55%：mountain 配方的点云半径应明显小于整张纸
+  it("成团：多数实例在格内半径内挨着同类（不是均匀撒点）", () => {
+    // 丛簇的判据：一个布点在 `cellSize*0.32*2` 内应当能找到同伴。
+    // 用「同类最近邻距离中位数」表达，比数格子稳健（不依赖内部实现）。
+    const pts = gen.placements;
+    const nn: number[] = [];
+    for (const p of pts) {
+      let best = Infinity;
+      for (const q of pts) {
+        if (q === p) continue;
+        best = Math.min(best, Math.hypot(p.x - q.x, p.y - q.y));
+      }
+      nn.push(best);
+    }
+    nn.sort((a, b) => a - b);
+    const median = nn[Math.floor(nn.length / 2)];
+    // 均匀撒点的最近邻中位数 ≈ 0.5·√(陆地面积/实例数) ≈ 45+；
+    // 成团后应明显更小（实测见下方注释），给足余量防 flake
+    expect(median, `最近邻中位数 ${median.toFixed(1)} 太大 = 又变成均匀撒点`).toBeLessThan(34);
+  });
+
+  it("配方成片：非主地形的同类最近邻明显小于「均匀撒点」的理论值", () => {
+    // 【为什么换掉旧判据】旧断言比的是「点云直径 ≤ 纸宽」，那是"中心 + 半径"
+    // 撒点法的特征值 —— 区域生长必然把主地形铺满全图（它就是那张纸的底色），
+    // 直径必然超标。真正要钉的是**成团**：同类布点的最近邻距离应当远小于
+    // 在同样面积里均匀撒同样多点的理论距离 `0.5·√(面积/数量)`。
+    const area = landAreaRatio(land) * BOUNDS.width * BOUNDS.height;
     const byTerrain = new Map<TerrainKind, { x: number; y: number }[]>();
     for (const p of gen.placements) {
       const list = byTerrain.get(p.terrain) ?? [];
       list.push({ x: p.x, y: p.y });
       byTerrain.set(p.terrain, list);
     }
+    let mainShare = 0;
     for (const [terrain, pts] of byTerrain) {
-      const cx = pts.reduce((s, p) => s + p.x, 0) / pts.length;
-      const cy = pts.reduce((s, p) => s + p.y, 0) / pts.length;
-      const maxDist = Math.max(...pts.map((p) => Math.hypot(p.x - cx, p.y - cy)));
-      // 配方点云直径不超过纸宽（成片而非满地乱撒）；主地形（份额 ≥0.5）放宽到 1.1 倍
       const share = PRESET.terrainMix.find((m) => m.terrain === terrain)?.share ?? 0;
-      const limit = share >= 0.5 ? 1024 * 1.1 : 1024;
-      expect(maxDist * 2, `${terrain} 点云过散`).toBeLessThan(limit);
+      // 主地形是画面的骨架：它应当铺得最广（不是成团，是"底色"）
+      if (share >= 0.5) {
+        mainShare = pts.length / gen.placements.length;
+        continue;
+      }
+      if (pts.length < 6) continue; // 样本太小，中位数没有意义
+      const nn = pts.map((p) => {
+        let best = Infinity;
+        for (const q of pts) if (q !== p) best = Math.min(best, Math.hypot(p.x - q.x, p.y - q.y));
+        return best;
+      });
+      nn.sort((a, b) => a - b);
+      const nnMedian = nn[Math.floor(nn.length / 2)];
+      const uniform = 0.5 * Math.sqrt(area / pts.length);
+      expect(
+        nnMedian,
+        `${terrain} 最近邻中位数 ${nnMedian.toFixed(1)} 接近均匀撒点 ${uniform.toFixed(1)}`,
+      ).toBeLessThan(uniform * 0.7);
     }
+    // 主地形占半数以上：整张图读起来是「一座大山系 + 嵌在其中的林与水」
+    expect(mainShare).toBeGreaterThan(0.45);
   });
 
   it("骨架档：只出陆地，布点为空", () => {
@@ -185,23 +250,91 @@ describe("generateMap 布点合法性", () => {
   });
 });
 
+/**
+ * 地貌带（第三轴，review §6 P0-1）。
+ *
+ * 分带最容易"看起来改了、其实没生效"：带标签加了但选材没传 zone，
+ * 或者 zone 传了但格网全落在同一纬度。所以这里用**互斥池**做判据 ——
+ * 每个素材只属于一个带，任何一条错配都立刻被抓到。
+ */
+describe("generateMap 地貌带", () => {
+  /** 互斥池：同地形、三个带各一张，谁被抽到就说明那格是哪个带 */
+  const ZONE_POOL: SpriteSource[] = [
+    { id: "z-snow", src: "s.png", terrains: ["mountain"], zones: ["snow"] },
+    { id: "z-core", src: "c.png", terrains: ["mountain"], zones: ["core"] },
+    { id: "z-desert", src: "d.png", terrains: ["mountain"], zones: ["desert"] },
+  ];
+  const MOUNTAIN_ONLY = {
+    id: "zone-probe",
+    label: "分带探针",
+    terrainMix: [{ terrain: "mountain" as TerrainKind, share: 1 }],
+  };
+
+  const gen = generateMap({
+    seed: 20261104,
+    bounds: BOUNDS,
+    preset: MOUNTAIN_ONLY,
+    richness: "standard",
+    mode: "full",
+    pool: ZONE_POOL,
+    sizeOf,
+  });
+
+  it("每条布点都带带标签，且四个带都出得来（纬度分带真的在分）", () => {
+    expect(gen.placements.length).toBeGreaterThan(20);
+    const zones = new Set(gen.placements.map((p) => p.zone));
+    expect(zones.has("snow")).toBe(true);
+    expect(zones.has("desert")).toBe(true);
+    expect(zones.has("core") || zones.has("grass")).toBe(true);
+  });
+
+  it("雪带不抽沙带素材（分带的全部意义）", () => {
+    for (const p of gen.placements) {
+      if (p.zone === "snow") expect(p.spriteId, "雪带抽到了沙带素材").not.toBe("z-desert");
+      if (p.zone === "desert") expect(p.spriteId, "沙带抽到了雪带素材").not.toBe("z-snow");
+    }
+  });
+
+  it("预设锁定气候时全图只用该带（「万里雪原」南缘不该冒沙丘）", () => {
+    const locked = generateMap({
+      seed: 20261104,
+      bounds: BOUNDS,
+      preset: { ...MOUNTAIN_ONLY, climate: "snow" },
+      richness: "sparse",
+      mode: "full",
+      pool: ZONE_POOL,
+      sizeOf,
+    });
+    expect(locked.placements.length).toBeGreaterThan(0);
+    expect(new Set(locked.placements.map((p) => p.zone))).toEqual(new Set(["snow"]));
+    for (const p of locked.placements) expect(p.spriteId).not.toBe("z-desert");
+  });
+});
+
 describe("assignPlacementNames", () => {
   /**
    * 合成布点（不依赖 generateMap 的产出构成）：
    * 6 座山（无 names，纯地貌）+ 4 个聚落（s1/s2 自带 names）。
    * PRESET = 十万大山（mountain 有预设池，但山不带名 → 不吃池点名）。
    */
+  const at = (
+    spriteId: string,
+    x: number,
+    y: number,
+    terrain: TerrainKind,
+  ): SpritePlacement => ({ spriteId, x, y, scale: 1, rotation: 0, terrain, zone: "core" });
+
   const synthetic = (): SpritePlacement[] => [
-    { spriteId: "m1", x: 0, y: 0, scale: 1, rotation: 0, terrain: "mountain" },
-    { spriteId: "m2", x: 40, y: 0, scale: 1, rotation: 0, terrain: "mountain" },
-    { spriteId: "m3", x: 80, y: 0, scale: 1, rotation: 0, terrain: "mountain" },
-    { spriteId: "m1", x: 120, y: 0, scale: 1, rotation: 0, terrain: "mountain" },
-    { spriteId: "m2", x: 160, y: 0, scale: 1, rotation: 0, terrain: "mountain" },
-    { spriteId: "m3", x: 200, y: 0, scale: 1, rotation: 0, terrain: "mountain" },
-    { spriteId: "s1", x: 0, y: 300, scale: 1, rotation: 0, terrain: "settlement" },
-    { spriteId: "s2", x: 60, y: 300, scale: 1, rotation: 0, terrain: "settlement" },
-    { spriteId: "s1", x: 120, y: 300, scale: 1, rotation: 0, terrain: "settlement" },
-    { spriteId: "s2", x: 180, y: 300, scale: 1, rotation: 0, terrain: "settlement" },
+    at("m1", 0, 0, "mountain"),
+    at("m2", 40, 0, "mountain"),
+    at("m3", 80, 0, "mountain"),
+    at("m1", 120, 0, "mountain"),
+    at("m2", 160, 0, "mountain"),
+    at("m3", 200, 0, "mountain"),
+    at("s1", 0, 300, "settlement"),
+    at("s2", 60, 300, "settlement"),
+    at("s1", 120, 300, "settlement"),
+    at("s2", 180, 300, "settlement"),
   ];
 
   it("同 seed 同名；只换名档（nameSeed 覆盖）能摇出不同组合", () => {
@@ -238,13 +371,19 @@ describe("assignPlacementNames", () => {
 });
 
 describe("summarizeGeneration", () => {
+  const at = (spriteId: string, x: number, y: number, terrain: TerrainKind): SpritePlacement => ({
+    spriteId,
+    x,
+    y,
+    scale: 1,
+    rotation: 0,
+    terrain,
+    zone: "core",
+  });
+
   it("按分类聚合计数（categoryOf 注入）", () => {
     const land = generateLand({ seed: 1, bounds: BOUNDS });
-    const placements = [
-      { spriteId: "m1", x: 0, y: 0, scale: 1, rotation: 0, terrain: "mountain" as TerrainKind },
-      { spriteId: "m1", x: 5, y: 5, scale: 1, rotation: 0, terrain: "mountain" as TerrainKind },
-      { spriteId: "s1", x: 9, y: 9, scale: 1, rotation: 0, terrain: "settlement" as TerrainKind },
-    ];
+    const placements = [at("m1", 0, 0, "mountain"), at("m1", 5, 5, "mountain"), at("s1", 9, 9, "settlement")];
     const s = summarizeGeneration(land, placements, 2, (id) =>
       id.startsWith("m") ? "mountain" : "settlement",
     );
@@ -253,14 +392,24 @@ describe("summarizeGeneration", () => {
     expect(s.landCount).toBe(land.polygons.length);
   });
 
-  it("未登记分类归入 other（不丢数）", () => {
+  it("按地貌带聚合（分带失效时摘要立刻现形）", () => {
     const land = generateLand({ seed: 1, bounds: BOUNDS });
     const s = summarizeGeneration(
       land,
-      [{ spriteId: "x1", x: 0, y: 0, scale: 1, rotation: 0, terrain: "plain" as TerrainKind }],
+      [
+        { ...at("m1", 0, 0, "mountain"), zone: "snow" },
+        { ...at("m2", 5, 5, "mountain"), zone: "snow" },
+        { ...at("m3", 9, 9, "mountain"), zone: "desert" },
+      ],
       0,
-      () => undefined,
+      () => "mountain",
     );
+    expect(s.byZone).toEqual({ snow: 2, desert: 1 });
+  });
+
+  it("未登记分类归入 other（不丢数）", () => {
+    const land = generateLand({ seed: 1, bounds: BOUNDS });
+    const s = summarizeGeneration(land, [at("x1", 0, 0, "plain")], 0, () => undefined);
     expect(s.byCategory.other).toBe(1);
   });
 });

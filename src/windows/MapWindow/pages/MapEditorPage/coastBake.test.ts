@@ -182,6 +182,8 @@ import {
 } from "./coastBake";
 import { generateLand } from "./land";
 import type { MapLand, Rect, MapStyle } from "./types";
+// 上面 vi.mock 过的那个 pixi（`{ EMPTY: Symbol("empty") }`）
+import { Texture } from "pixi.js";
 
 const BOUNDS: Rect = { x: -512, y: -512, width: 1024, height: 1024 };
 const LAND: MapLand = generateLand({ seed: 20261009, bounds: BOUNDS, islands: 2 });
@@ -300,35 +302,64 @@ describe("bakeCoast：装配与坐标搬运", () => {
     expect(holder.position.y).toBeCloseTo(-(LAND.bounds.y - BAKE_MARGIN) * want.scale, 6);
   });
 
-  it("四层各自独立 Graphics，顺序为 shelf → glow → fill → 纸纹 → 掩膜 → 描边", () => {
+  it("六层各自独立节点，顺序为 浅滩 → 等深线 → 外发光 → 底色 → 纸纹 → 内阴影 → 掩膜 → 白边", () => {
     const { renderer } = fakeRenderer();
     bakeCoast({ renderer, land: LAND, style: "none", paperTexture: null, resolution: 1 });
     const holder = captured as Fake;
 
     expect(holder.children.map((c) => c.kind)).toEqual([
-      "graphics",
-      "graphics",
-      "graphics",
-      "sprite",
-      "graphics",
-      "graphics",
+      "graphics", // shelf
+      "graphics", // isobaths
+      "graphics", // glow
+      "graphics", // fill
+      "sprite", // 纸纹
+      "graphics", // 内阴影
+      "graphics", // 掩膜
+      "graphics", // 白边
     ]);
-    const [shelf, glow, fill, tex, mask, stroke] = holder.children;
+    const [shelf, isobaths, glow, fill, tex, innerShade, mask, stroke] = holder.children;
     // 填充与描边必须分开：先全填再全描，否则白边会断断续续（PRD §8.2 第 2 条）
     expect(fill.calls.filter((c) => c === "fill")).toHaveLength(1);
     expect(fill.calls.filter((c) => c === "stroke")).toHaveLength(0);
     expect(stroke.calls.filter((c) => c === "stroke")).toHaveLength(1);
-    // 三层带模糊、白边不带
+    // 等深线每条一段描边（3 条 × 每个环一次）
+    expect(isobaths.calls.filter((c) => c === "stroke")).toHaveLength(
+      3 * LAND.polygons.length,
+    );
+    // 三层带模糊、白边与等深线不带
     expect(shelf.filters).toHaveLength(1);
     expect(glow.filters).toHaveLength(1);
     expect(fill.filters).toHaveLength(1);
+    expect(innerShade.filters).toHaveLength(1);
     expect(stroke.filters).toHaveLength(0);
-    // 纸纹被陆地掩膜，且用 multiply 叠
+    expect(isobaths.filters).toHaveLength(0);
+    // 纸纹与内阴影都被陆地掩膜（内阴影必须遮：模糊会把描边洇到浅滩上）
     expect(tex.mask).toBe(mask);
+    expect(innerShade.mask).toBe(mask);
+    // 纸纹用 multiply 叠
     expect(tex.alpha).toBeCloseTo(LAND_TEXTURE_ALPHA, 6);
     expect(tex.blendMode).toBe("multiply");
     // 掩膜必须真的填过，否则遮罩区域是空的
     expect(mask.calls.filter((c) => c === "fill")).toHaveLength(1);
+  });
+
+  it("纸纹纹理已被销毁时退回 EMPTY，绝不把死纹理交给渲染管线", () => {
+    const { renderer } = fakeRenderer();
+    // 【复现 2.27.0 白屏事故】`Texture.destroy(true)` 之后 `_source` 是 null，
+    // Sprite 进 batcher 时 `getAdjustedBlendModeBlend(texture._source)` 解 null 的
+    // `alphaMode` 直接抛 —— 报错在 pixi 深处，画面表现却是"地图窗口起来了但全白"。
+    // 所以烘焙层必须自己把死纹理认出来。
+    bakeCoast({
+      renderer,
+      land: LAND,
+      style: "none",
+      paperTexture: { destroyed: true } as never,
+      resolution: 1,
+    });
+    const holder = captured as Fake;
+    const tex = holder.children[4];
+    expect(tex.kind).toBe("sprite");
+    expect(tex.texture).toBe(Texture.EMPTY);
   });
 
   it("每个环都走 moveTo + n 段贝塞尔 + closePath（不是 poly 直弦）", () => {
@@ -357,7 +388,8 @@ describe("bakeCoast：装配与坐标搬运", () => {
     const { renderer } = fakeRenderer();
     bakeCoast({ renderer, land: LAND, style: "none", resolution: 1 });
     const strengths = (blurOptions as Array<{ strength: number }>).map((o) => o.strength);
-    expect(strengths).toEqual([12, 6, 1.6]);
+    // 创建顺序：浅滩 → 外发光 → 陆地底色 → 陆岸内阴影
+    expect(strengths).toEqual([9, 5, 1.6, 7]);
     // margin 必须 ≥ 最大模糊半径 × 3，否则模糊会被纹理边缘裁掉
     expect(BAKE_MARGIN).toBeGreaterThanOrEqual(Math.max(...strengths) * 3);
   });
@@ -382,31 +414,36 @@ describe("bakeCoast：装配与坐标搬运", () => {
    * - `tex`：**不上色**（下面单独一条钉死）——纸纹是 multiply 纹理，不是颜色；
    * - `mask`：**不上色** —— 遮罩乘矩阵会污染它的 alpha。
    */
-  it("风格矩阵在烘焙期乘上：三层模糊之后上色、白边也上色、纸纹与遮罩都不上色", () => {
+  it("风格矩阵在烘焙期乘上：模糊层之后上色、白边与等深线也上色、纸纹与遮罩都不上色", () => {
     colorMatrixInstances.length = 0;
     const { renderer } = fakeRenderer();
     bakeCoast({ renderer, land: LAND, style: "ink", resolution: 1 });
 
     const holder = captured as Fake;
-    const [shelf, glow, fill, tex, mask, stroke] = holder.children;
+    const [shelf, isobaths, glow, fill, tex, innerShade, mask, stroke] = holder.children;
 
     // 三层带模糊的：`[blur, matrix]` —— 先模糊后上色
     for (const node of [shelf, glow, fill]) {
       expect(node.filters).toHaveLength(2);
     }
-    // 本来没模糊的白边：只有矩阵
+    // 内阴影自己带模糊，也是 `[blur, matrix]`
+    expect(innerShade.filters).toHaveLength(2);
+    // 本来没模糊的白边与等深线：只有矩阵
     expect(stroke.filters).toHaveLength(1);
+    expect(isobaths.filters).toHaveLength(1);
     // 纸纹不上色：multiply 是非线性的，"先乘后上色"会把暖度乘两遍
     expect(tex.filters).toHaveLength(0);
     // 遮罩不是"画出来的颜色"，乘矩阵只会污染它的 alpha
     expect(mask.filters).toHaveLength(0);
 
-    // 一次烘焙只造一个滤镜实例，四个节点共用
+    // 一次烘焙只造一个滤镜实例，六个节点共用
     expect(colorMatrixInstances).toHaveLength(1);
     const filter = colorMatrixInstances[0];
     expect(shelf.filters[1]).toBe(filter);
     expect(glow.filters[1]).toBe(filter);
     expect(fill.filters[1]).toBe(filter);
+    expect(innerShade.filters[1]).toBe(filter);
+    expect(isobaths.filters[0]).toBe(filter);
     expect(stroke.filters[0]).toBe(filter);
     // 矩阵是真的填进去了（空矩阵 = 全黑，比"没生效"更糟）
     expect(filter.matrix).toHaveLength(20);
@@ -442,17 +479,19 @@ describe("bakeCoast：装配与坐标搬运", () => {
     expect((captured as Fake).destroyed).toEqual({ children: true });
   });
 
-  it("原色：不造滤镜、不挂任何矩阵（只剩三层模糊）", () => {
+  it("原色：不造滤镜、不挂任何矩阵（只剩四层模糊）", () => {
     colorMatrixInstances.length = 0;
     const { renderer } = fakeRenderer();
     bakeCoast({ renderer, land: LAND, style: "none", resolution: 1 });
 
     expect(colorMatrixInstances).toHaveLength(0);
-    const [shelf, glow, fill, tex, , stroke] = (captured as Fake).children;
+    const [shelf, isobaths, glow, fill, tex, innerShade, , stroke] = (captured as Fake).children;
     expect(shelf.filters).toHaveLength(1);
     expect(glow.filters).toHaveLength(1);
     expect(fill.filters).toHaveLength(1);
+    expect(innerShade.filters).toHaveLength(1);
     expect(tex.filters).toHaveLength(0);
+    expect(isobaths.filters).toHaveLength(0);
     expect(stroke.filters).toHaveLength(0);
   });
 });

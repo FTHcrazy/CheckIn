@@ -12,6 +12,7 @@ import {
   type SpritePlacement,
 } from "../domain/generator";
 import { MAP_PRESETS } from "../domain/mapPresets";
+import { SPRITE_ZONES, ZONE_LABELS } from "../domain/zones";
 import {
   FIT_PADDING,
   ZOOM_LIMITS,
@@ -1146,5 +1147,10 @@ function summaryTextOf(
     s.byCategory[c.key] ? `${c.label} ${s.byCategory[c.key]}` : "",
   ).filter(Boolean);
   if (s.byCategory.other) parts.push(`其他 ${s.byCategory.other}`);
-  return `已生成：陆地 ${s.landCount} 块 · ${parts.join(" · ")} · 地名 ${s.namedCount}（seed ${seed}，可撤销）`;
+  // 地貌带分布（P0-1 的可核对产物）：分带失效会在这里立刻现形 ——
+  // 如果一张温带图「沙带」占了大半，说明带过滤没生效或格网跨了纬度
+  const bands = SPRITE_ZONES.map((z) => (s.byZone[z] ? `${ZONE_LABELS[z]} ${s.byZone[z]}` : ""))
+    .filter(Boolean)
+    .join(" / ");
+  return `已生成：陆地 ${s.landCount} 块 · ${parts.join(" · ")} · 地名 ${s.namedCount}${bands ? ` · 分带 ${bands}` : ""}（seed ${seed}，可撤销）`;
 }

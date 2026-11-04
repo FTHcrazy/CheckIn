@@ -31,8 +31,13 @@ const SOURCE_PATH = path.resolve(
 /** CRLF 归一化：跨行断言前必须先做，否则 Windows 上必然假红 */
 const SRC = readFileSync(SOURCE_PATH, "utf8").replace(/\r\n/g, "\n");
 
-/** 缓存组内部的顺序：投影在下、海面在上（海面不透明，投影靠四周留白透出来） */
-const STATIC_STACK = ["sheet", "sea"] as const;
+/**
+ * 缓存组内部的顺序：投影在下、海面居中、海面暗角**盖在海面之上**。
+ *
+ * 暗角必须在 `sea` 之后：它画的是一圈压暗的窄环，若排在海面之前会被不透明的
+ * 海面整块盖掉（症状是"加了暗角但画面一点没变"，且不报错）。
+ */
+const STATIC_STACK = ["sheet", "sea", "seaShade"] as const;
 
 describe("MapCanvas 场景图 z 序", () => {
   it("图层顺序的唯一定义处是 layers.ts（不是测试里手抄的一份）", () => {
@@ -174,5 +179,48 @@ describe("MapCanvas 场景图 z 序", () => {
     expect(cullSrc).not.toMatch(/container\.getBounds\(\)/);
     // 局部矩形必须经容器的当前全局变换搬到舞台空间再比较
     expect(cullSrc).toMatch(/container\.toGlobal\(/);
+  });
+});
+
+/**
+ * 纹理归属守卫。
+ *
+ * 【为什么单独定这一组】2.27.0 上线当天地图窗口全白，报错是
+ * `Cannot read properties of null (reading 'alphaMode')` —— 看起来在 pixi 深处，
+ * 实际根因是这层「谁有权销毁这张纹理」：
+ *   `Texture.destroy(true)` 会把 `_source` 置 null；而 StrictMode 的
+ *   「挂载 → cleanup → 再挂载」序列里 `useMemo` 不会重算，第二轮用的还是那张
+ *   已销毁的纹理 → batcher 读到 `_source === null` → 整个 canvas 渲染中断。
+ *
+ * 结论：**自造的静态纹理归渲染器/进程管，不归组件的卸载管。**
+ * 这条只能靠源码级钉住 —— 运行期要真跑一次 StrictMode + 真 WebGL 才复现。
+ */
+describe("MapCanvas 纹理归属", () => {
+  /**
+   * 只测**代码**：注释里本来就会写满 "destroy" / "Texture.destroy(true)" 这类
+   * 说明文字，直接在源码上匹配等于把注释也算成实现（假红的最佳来源）。
+   */
+  const CODE = SRC.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+
+  it("纸纹走模块级单例（getPaperGrainTexture），不是每次挂载再造一张", () => {
+    expect(CODE).toMatch(/getPaperGrainTexture\s*\(/);
+    // 组件里直接调 createPaperGrainTexture = 每次挂载一张新纹理，绕过了单例缓存
+    expect(CODE).not.toMatch(/createPaperGrainTexture\s*\(/);
+  });
+
+  it("组件不得销毁纸纹纹理（销毁 → StrictMode 第二轮拿到死纹理 → 全白）", () => {
+    // 语义：MapCanvas 只「取」纸纹，不「拥有」它。归属在进程（见 paperGrain.ts）。
+    expect(CODE).not.toMatch(/landGrain\s*\??\.\s*destroy\s*\(/);
+  });
+
+  it("单例取用口保留「已销毁则重建」的兜底（外部误销毁时不能把死纹理交回去）", () => {
+    const grainSrc = readFileSync(
+      path.resolve(process.cwd(), "src/windows/MapWindow/pages/MapEditorPage/paperGrain.ts"),
+      "utf8",
+    ).replace(/\r\n/g, "\n");
+    const fn = grainSrc.match(/export function getPaperGrainTexture[\s\S]{0,600}?\n\}/);
+    expect(fn).not.toBeNull();
+    // 读到 `destroyed` 才会重建；去掉这一句 = 死纹理一路传到 batcher
+    expect(fn?.[0]).toMatch(/destroyed/);
   });
 });

@@ -1,7 +1,7 @@
 {
   "name": "checkin",
   "private": true,
-  "version": "2.25.0",
+  "version": "2.27.0",
   "description": "CheckIn Desktop Application",
   "main": "dist-electron/main.js",
   "author": "FTH",
@@ -28,6 +28,7 @@
     "fix:deps": "node scripts/fix-pnpm-links.mjs",
     "check:deps": "node scripts/fix-pnpm-links.mjs --check",
     "analyze:asar": "node scripts/analyze-asar.mjs",
+    "count:sprites": "node scripts/count-map-sprites.mjs",
     "postinstall": "node scripts/fix-pnpm-links.mjs --check --warn-only && node scripts/ensure-electron.mjs --timeout-ms=600000"
   },
   "packageManager": "pnpm@11.25.0",
