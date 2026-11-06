@@ -357,7 +357,8 @@ describe("MapCanvas 海岸烘焙", () => {
 
     expect(created).toHaveLength(1);
     const { world, coast, sprite } = nodes();
-    expect(world.children).toHaveLength(WORLD_LAYER_ORDER.length);
+    // +1：regionMask（区块层陆地掩膜）挂在 world 末尾，不占 WORLD_LAYER_ORDER 槽位
+    expect(world.children).toHaveLength(WORLD_LAYER_ORDER.length + 1);
     expect(coast.visible).toBe(true);
     expect(sprite.texture).toBe(textures[0]);
     expect((apps[0].renderer.render as unknown as { mock: { calls: unknown[] } }).mock.calls)

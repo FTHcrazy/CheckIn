@@ -671,6 +671,16 @@ interface WobbleCtx {
   step: number;
   /** 最细一级的尺度基准 R（振幅封顶用） */
   finestR: number;
+  /**
+   * 陆地基线环（根容器为陆地多边形时非空，矩形根为 null）。
+   *
+   * 非空时 `hostLine` 会对折线做**越湾修复**（见 `repairBayCrossings`）：
+   * 两个岸上点之间的直弦会横穿深湾落到海面，修复让这段折线贴着海岸绕行 ——
+   * 这就是"区块线贴合区块边界"的生成期保证。
+   */
+  ring: Point[] | null;
+  /** 环的粗格网「深内」场（越湾修复的 O(1) 预筛）；ring 为 null 时恒 null */
+  field: RingField | null;
 }
 
 /**
@@ -690,10 +700,20 @@ interface HostEdge {
   freq: number;
   /** 振幅向地图画框收敛的距离 */
   frameTaper: number;
-  /** 采样段数（折线共 n+1 个点） */
+  /** 采样段数（折线共 n+1 个点）；越湾修复补点后与折线长度**同步更新** */
   n: number;
   /** 崎岖化后的折线，惰性计算一次 */
   line: Point[] | null;
+  /**
+   * 折线每个点的**基线参数**（u ∈ [0,1]，沿 a→b 直线投影）。
+   *
+   * 【为什么需要它】越湾修复会往折线里插入岸上绕行点 —— 插点之后"索引 ÷ n"
+   * 不再等于基线参数，`pointAtU` / `arcBetween` 若还按索引均匀取点，子块切片
+   * 会拿到**错位的几何**（实测越岸点反而变多）。参数表让"折线上有插点"这件事
+   * 对所有消费方透明：u → 点的映射由表内插值给出，切片窗口 (lo,hi) 语义不变。
+   * 恒与 line 同长；null 等价于均匀（frameHost 等不修复的场合）。
+   */
+  us: number[] | null;
 }
 
 /** 一条边的引用：用哪条基线边、从哪点走到哪点 */
@@ -747,7 +767,178 @@ function clampToBounds(p: Point, bounds: RegionBounds): Point {
 
 /** 画框边：地图矩形的四条边，不崎岖化（它是画框，不是区块之间的界） */
 function makeFrameHost(a: Point, b: Point): HostEdge {
-  return { a, b, amp: 0, freq: 1, frameTaper: 1, n: 1, line: [a, b] };
+  return { a, b, amp: 0, freq: 1, frameTaper: 1, n: 1, line: [a, b], us: [0, 1] };
+}
+
+/* ── 越湾修复（对齐逆向目标：区块边界要贴着海岸绕过海湾，而不是直线横穿）── */
+
+/** 段采样点在环外、且距环边界超过该值（世界单位）→ 判为穿湾弦 */
+const BAY_CROSS_EPS = 1.5;
+/** 单次穿湾的环上绕行点数上限；超过视为病态环，放弃补点、交给径向钳制兜底 */
+const BAY_WALK_MAX = 256;
+/** 段内检测点（中点易漏对角切凹岸的弦，四分点三点连检） */
+const BAY_PROBE_TS = [0.25, 0.5, 0.75] as const;
+
+/** 环上离 p 最近的顶点序号（用于把穿湾弦的两个端点锚到环上） */
+function nearestRingVertexIndex(ring: Point[], p: Point): number {
+  let best = 0;
+  let bestD = Infinity;
+  for (let i = 0; i < ring.length; i += 1) {
+    const dx = ring[i].x - p.x;
+    const dy = ring[i].y - p.y;
+    const d = dx * dx + dy * dy;
+    if (d < bestD) {
+      bestD = d;
+      best = i;
+    }
+  }
+  return best;
+}
+
+/** 段 a→b 是否以超过 `BAY_CROSS_EPS` 的幅度离开陆地基线环（三点连检） */
+function segmentLeavesRing(a: Point, b: Point, ring: Point[]): boolean {
+  for (const t of BAY_PROBE_TS) {
+    const p = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+    if (!pointInPolygon(p, ring) && distToPolygonBoundary(p, ring) > BAY_CROSS_EPS) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * 就地修复折线里的「穿湾弦」。
+ *
+ * 【为什么会有穿湾弦】折线的相邻两点各自都在陆地环内/环上，但两点之间的
+ * **直弦**会横穿深湾落到海面（v4 调参后湾变深，修复前实测最远越岸 24.6 单位 ——
+ * 审计测试 `region-land-audit.test.ts` 的数字）。逐点钳制（`makeRadialClamp`）
+ * 只能修点、修不了"两点之间"，径向投影还会把湾两侧的弧点塌到对岸岬角上，
+ * 留下一根横跨湾口的跳线。
+ *
+ * 【怎么修】三点连检（四分点）发现段离开环超过 `BAY_CROSS_EPS`，就把两端各自
+ * 锚到环上最近顶点，沿**较短方向**把环上中间顶点整段插进来 —— 折线改为
+ * 贴着海岸绕过湾口。这与逆向目标的表现一致：区块线沿湾岸走，跟海岸白边贴合。
+ *
+ * 【为什么在 hostLine 里做而不是在 display 里做】host 折线是**共享缓存**：
+ * 相邻两块对同一条边取同一条折线、子块从父块折线上切片。在这里修一次，
+ * 所有消费方（父/子/兄弟）看到的是同一条贴岸路径 —— 严丝合缝不破。
+ * 在 display 里逐块修，兄弟两侧会各自插入不同锚点的绕行点，边界必然裂开。
+ *
+ * 【性能】粗格网预筛：只有"非深内"格子里的段才做逐环检测（见 `buildRingField`），
+ * 深入内陆的绝大多数段是 O(1) 跳过。
+ */
+function repairBayCrossings(
+  pts: Point[],
+  us: number[],
+  ring: Point[],
+  field: RingField | null,
+): void {
+  for (let i = 0; i < pts.length - 1; ) {
+    const a = pts[i];
+    const b = pts[i + 1];
+    const mx = (a.x + b.x) / 2;
+    const my = (a.y + b.y) / 2;
+    if (field) {
+      const col = Math.floor((mx - field.x0) / field.cell);
+      const row = Math.floor((my - field.y0) / field.cell);
+      if (col >= 0 && row >= 0 && col < field.cols && row < field.rows) {
+        const at = row * field.cols + col;
+        if (field.deepInside[at] === 1) {
+          i += 1;
+          continue;
+        }
+      }
+    }
+    if (!segmentLeavesRing(a, b, ring)) {
+      i += 1;
+      continue;
+    }
+    const L = ring.length;
+    const i1 = nearestRingVertexIndex(ring, a);
+    const i2 = nearestRingVertexIndex(ring, b);
+    const forward = (i2 - i1 + L) % L;
+    const backward = (i1 - i2 + L) % L;
+    // 沿较短方向绕行：穿湾弦的两端是同一处海岸的两个岬角，湾岸是它们之间
+    // 较短的那段环；较长的一侧会绕整座岛一圈，绝不能选。
+    const walk = Math.min(forward, backward);
+    if (walk >= 2 && walk <= BAY_WALK_MAX) {
+      const step = forward <= backward ? 1 : -1;
+      const inserted: Point[] = [];
+      for (let k = 1; k < walk; k += 1) inserted.push(ring[(i1 + step * k + L) % L]);
+      // 补点的基线参数：在穿湾段两端点的参数之间线性铺开（参数表保持严格递增，
+      // pointAtU / arcBetween 的窗口语义不变 —— 见 HostEdge.us 的注释）。
+      const u0 = us[i];
+      const u1 = us[i + 1];
+      const du = (u1 - u0) / (inserted.length + 1);
+      const insertedUs = inserted.map((_, k) => u0 + du * (k + 1));
+      pts.splice(i + 1, 0, ...inserted);
+      us.splice(i + 1, 0, ...insertedUs);
+      // 只前进 1：新补进来的 (a,w1)、(w1,w2)… 各对还要复检 —— 环上绕行点之间的
+      // 弦是岸线本身不会再触发，但 (a,w1)（原点 → 第一个岸点）仍可能擦到凹岸。
+      i += 1;
+      continue;
+    }
+    // 绕行不可用（两端最近顶点相邻 / 绕行超长）：放弃补点。
+    // 【为什么不退化为"弦中点投影细分"】径向投影在非星形湾里会落到**对岸**
+    // （星形假设被破坏），细分不但收不敛，还会把对岸的点插进边界里，越修越糟
+    // （实测最大越岸从 9.7 恶化到 36.4）。这里的残余弦交给渲染期的陆地掩膜裁剪。
+    i += 1;
+  }
+}
+
+/**
+ * 陆地基线环的粗格网「深内」场：格中心深入环内（距边界 > `FIELD_MARGIN`）的格子
+ * 标 1 —— 落在这种格子里的段中点，其所在段不可能越出环 `BAY_CROSS_EPS` 以上
+ * （段长 ≤ 采样步长，够不到边界），可以 O(1) 跳过逐环检测。
+ */
+interface RingField {
+  cell: number;
+  x0: number;
+  y0: number;
+  cols: number;
+  rows: number;
+  deepInside: Uint8Array;
+}
+
+const FIELD_CELL = 16;
+/** ≥ 半格对角 11.3 + BAY_CROSS_EPS 2，取 16：格中心深内 ⇒ 格内任意点至多贴边，免检安全 */
+const FIELD_MARGIN = 16;
+
+function buildRingField(ring: Point[], bounds: RegionBounds): RingField | null {
+  if (ring.length < 3) return null;
+  const cols = Math.max(1, Math.ceil(bounds.width / FIELD_CELL));
+  const rows = Math.max(1, Math.ceil(bounds.height / FIELD_CELL));
+  const deepInside = new Uint8Array(cols * rows);
+  for (let row = 0; row < rows; row += 1) {
+    for (let col = 0; col < cols; col += 1) {
+      const x = bounds.x + (col + 0.5) * FIELD_CELL;
+      const y = bounds.y + (row + 0.5) * FIELD_CELL;
+      if (!pointInPolygon({ x, y }, ring)) continue;
+      if (distToPolygonBoundary({ x, y }, ring) <= FIELD_MARGIN) continue;
+      deepInside[row * cols + col] = 1;
+    }
+  }
+  return { cell: FIELD_CELL, x0: bounds.x, y0: bounds.y, cols, rows, deepInside };
+}
+
+/**
+ * display 多边形的**接缝兜底**：与 hostLine 同一套越湾修复，但作用于拼装完成的
+ * 显示多边形。
+ *
+ * 【为什么还需要它】hostLine 修复保证的是"每条边内部的折线贴岸"，但 display 里
+ * 还有一类弦不属于任何一条边：相邻两条边的**拼接缝**（edge k 的弧尾 →
+ * edge k+1 的钳制角点，实测能拉出 67 单位的跨湾裸弦）。缝是区块本地的几何，
+ * 不影响兄弟一致性 —— 共享边上的点在两侧逐位相同，两侧各自对同一段做绕行，
+ * 插入的岸点也逐位相同。
+ */
+function repairPolygonSeams(poly: Point[], ring: Point[], field: RingField | null): void {
+  if (poly.length < 3) return;
+  const us: number[] = [];
+  for (let k = 0; k < poly.length; k += 1) us.push(k / (poly.length - 1));
+  // 【已知残余】收口边（末点 → 首点）不在修复范围内：给收口对做环上绕行时，
+  // "较短方向"可能绕出一段与区块无关的远岸路径（实测最大越岸反而从 9.7 恶化到
+  // 29.9）。收口弦与普通拼接缝同级别（≤ ~10 单位），交给渲染期陆地掩膜裁剪。
+  repairBayCrossings(poly, us, ring, field);
 }
 
 /**
@@ -776,7 +967,7 @@ function makeHost(
   const dx = b.x - a.x;
   const dy = b.y - a.y;
   const len = Math.hypot(dx, dy);
-  if (len < 1e-9) return { a, b, amp: 0, freq: 1, frameTaper: 1, n: 1, line: [a, b] };
+  if (len < 1e-9) return { a, b, amp: 0, freq: 1, frameTaper: 1, n: 1, line: [a, b], us: [0, 1] };
 
   const freq = 1 / (R * REGION_WOBBLE.wavelength);
   // 缓变调制：同样一条边，落在噪声高值区就扭得厉害，落在低值区就接近直线
@@ -797,7 +988,7 @@ function makeHost(
   );
 
   const n = Math.max(1, Math.min(REGION_WOBBLE.maxSegments, Math.ceil(len / ctx.step)));
-  return { a, b, amp, freq, frameTaper: Math.max(amp * 2.4, 1e-6), n, line: null };
+  return { a, b, amp, freq, frameTaper: Math.max(amp * 2.4, 1e-6), n, line: null, us: null };
 }
 
 /** 基线边在参数 u ∈ [0,1] 处的显示点（位移沿边的法线） */
@@ -841,21 +1032,77 @@ function hostLine(h: HostEdge, ctx: WobbleCtx): Point[] {
   // 这一点是"父子边界严丝合缝"的前提：基线端点必须逐位相等。
   pts[0] = { x: h.a.x, y: h.a.y };
   pts[h.n] = { x: h.b.x, y: h.b.y };
+  // 采样点的基线参数本来是均匀的 k/n；越湾修复插点后由参数表接管（见 HostEdge.us）
+  const us: number[] = [];
+  for (let k = 0; k <= h.n; k += 1) us.push(k / h.n);
+  // 陆地根容器的两步贴岸修复（必须在**缓存之前**做：父/子/兄弟共享同一条
+  // 缓存折线，这里修一次，所有消费方看到的就是同一条贴岸路径）：
+  //
+  // ① 径向投影：抖动位移会把贴岸的弧整段推到**海面里**（与岸平行地跑在外海，
+  //    实测越岸 24.6 单位）。把折线上每个越环的点投影回岸线 —— 平行外海的弧
+  //    投影后沿岸单调排列，天然贴合；只有"跨湾弦"会投影出跳线，交给 ② 修。
+  // ② 越湾绕行：投影后仍存在的跨湾弦（中点在环外 >2），沿较短方向把环上
+  //    岸点插进来，让折线贴着湾岸绕过去（见 repairBayCrossings）。
+  //
+  // 补点后 n 同步成"折线段数"，保证 line/us/n 三者长度口径一致。
+  if (ctx.ring && ctx.field) {
+    const ring = ctx.ring;
+    const project = makeRadialClamp(ring);
+    if (project) {
+      for (let k = 0; k < pts.length; k += 1) {
+        const p = pts[k];
+        const col = Math.floor((p.x - ctx.field.x0) / ctx.field.cell);
+        const row = Math.floor((p.y - ctx.field.y0) / ctx.field.cell);
+        if (
+          col >= 0 &&
+          row >= 0 &&
+          col < ctx.field.cols &&
+          row < ctx.field.rows &&
+          ctx.field.deepInside[row * ctx.field.cols + col] === 1
+        ) {
+          continue; // 深入内陆：不可能越环，免检
+        }
+        pts[k] = project(p);
+      }
+    }
+    repairBayCrossings(pts, us, ring, ctx.field);
+    if (pts.length - 1 !== h.n) h.n = pts.length - 1;
+  }
   h.line = pts;
+  h.us = us;
   return pts;
 }
 
-/** 折线上按参数 u 取点（落在折线的线段上，因此与父级逐点一致） */
+/** 折线上按基线参数 u 取点（落在折线的线段上，因此与父级逐点一致） */
 function pointAtU(h: HostEdge, u: number, ctx: WobbleCtx): Point {
   const line = hostLine(h, ctx);
   if (u <= 0) return { x: line[0].x, y: line[0].y };
   if (u >= 1) return { x: line[h.n].x, y: line[h.n].y };
-  const pos = u * h.n;
-  const i = Math.min(h.n - 1, Math.floor(pos));
-  const f = pos - i;
+  const us = h.us;
+  if (!us) {
+    // 未修复的折线：参数均匀，索引直取（与历史行为逐位一致）
+    const pos = u * h.n;
+    const i = Math.min(h.n - 1, Math.floor(pos));
+    const f = pos - i;
+    return {
+      x: line[i].x + (line[i + 1].x - line[i].x) * f,
+      y: line[i].y + (line[i + 1].y - line[i].y) * f,
+    };
+  }
+  // 修复过的折线：按基线参数表二分定位线段，段内线性插值。
+  // 同一条缓存折线 + 同一个 u → 同一个点，父子/兄弟的一致性不受插点影响。
+  let lo = 0;
+  let hi = us.length - 1;
+  while (hi - lo > 1) {
+    const m = (lo + hi) >> 1;
+    if (us[m] <= u) lo = m;
+    else hi = m;
+  }
+  const span = us[hi] - us[lo];
+  const f = span > 1e-12 ? (u - us[lo]) / span : 0;
   return {
-    x: line[i].x + (line[i + 1].x - line[i].x) * f,
-    y: line[i].y + (line[i + 1].y - line[i].y) * f,
+    x: line[lo].x + (line[hi].x - line[lo].x) * f,
+    y: line[lo].y + (line[hi].y - line[lo].y) * f,
   };
 }
 
@@ -872,8 +1119,12 @@ function arcBetween(h: HostEdge, from: Point, to: Point, ctx: WobbleCtx): Point[
   const lo = Math.min(uf, ut);
   const hi = Math.max(uf, ut);
   const mid: Point[] = [];
-  for (let k = 1; k < h.n; k += 1) {
-    const u = k / h.n;
+  // 有参数表（越湾修复过）就按表取窗口内的点；没有（未修复）则参数 = k/n，
+  // 与历史行为逐位一致。两种取法都是"同一条缓存折线上的同一段切片"。
+  const us = h.us;
+  const last = us ? us.length - 1 : h.n;
+  for (let k = 1; k < last; k += 1) {
+    const u = us ? us[k] : k / h.n;
     if (u > lo + 1e-9 && u < hi - 1e-9) mid.push(line[k]);
   }
   return uf <= ut ? mid : mid.reverse();
@@ -1260,6 +1511,8 @@ function buildChildren(
       }
     }
     if (display.length < 3) continue;
+    // 接缝兜底：把 hostLine 修不到的拼接缝 / 收口弦也修到贴岸（见函数注释）
+    if (clampPoint && ctx.ring) repairPolygonSeams(display, ctx.ring, ctx.field);
 
     // 种子自己的显示多边形也可能内凹（它同样继承了父级的曲线）：种子若正好落在
     // 这个内凹湾里，标签就会飘到自块外。朝自块质心拉一点即可。父块用的是自己的
@@ -1334,11 +1587,15 @@ export function generateHierarchy(options: GenerateHierarchyOptions): MapRegion[
   // 若按父级自己的尺度采样，缩到最深处那段折线会是一根根显眼的直线段。
   const finest = Math.max(1, counts[counts.length - 1]);
   const finestR = Math.sqrt((bounds.width * bounds.height) / finest);
+  // 陆地根容器：hostLine 的越湾修复以此为贴岸依据（矩形根无湾可穿，恒 null）
+  const rootRing = options.container ?? null;
   const ctx: WobbleCtx = {
     bounds,
     noiseSeed: seed,
     step: finestR / REGION_WOBBLE.segmentsPerRadius,
     finestR,
+    ring: rootRing,
+    field: rootRing ? buildRingField(rootRing, bounds) : null,
   };
 
   const rng = createRng(seed);

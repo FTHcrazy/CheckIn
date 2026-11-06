@@ -19,9 +19,10 @@ import {
   historyKeymap,
   isolateHistory,
 } from "@codemirror/commands";
-import { openSearchPanel, search, searchKeymap } from "@codemirror/search";
+import { search, searchKeymap } from "@codemirror/search";
 import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
+import { createFindPanel, findPanelMargins, findPanelScroll, openFindPanel } from "./find-panel";
 import {
   editorActions,
   useChapterDraft,
@@ -215,7 +216,9 @@ const buildTheme = (settings: EditorSettings) =>
     ".cm-content": {
       fontFamily: "var(--nv-paper-font, inherit)",
       lineHeight: String(settings.lineHeight),
-      padding: "8px 0 0",
+      // 首行上方的留白**必须**放在内容层：纸面层（.nv-editor__paper）顶部留白
+      // 会把查找浮层的 sticky 起点往下推，滚动初期卡片会滑一下（见 index.scss）
+      padding: "16px 0 0",
       caretColor: "var(--app-primary)",
     },
     ".cm-line": {
@@ -548,11 +551,17 @@ export default function EditorPane({
         doc: content,
         extensions: [
           history(),
-          // 章节内查找替换（R10）：Ctrl+F 查找、Ctrl+H 打开含替换字段的面板；
-          // Mod-h 需要显式绑定（searchKeymap 默认不含），面板置于编辑器顶部
-          search({ top: true }),
+          // 章节内查找替换（R10）：Ctrl+F 查找、Ctrl+H 带上替换行。
+          // 面板是自己做的（find-panel.ts），浮在编辑区右上角、不占排版；
+          // Mod-f 要在 searchKeymap 之前拦一道，才收得起已经展开的替换行
+          search({ top: true, createPanel: createFindPanel }),
+          // 浮层盖住视口顶部那一条 → 跳转滚动要让出来，否则命中可能被压住
+          findPanelMargins,
+          // 跳转落点自己算（卡片下沿以下才算「看见」），不走默认的最小滚动
+          findPanelScroll,
           keymap.of([
-            { key: "Mod-h", run: openSearchPanel },
+            { key: "Mod-f", run: (target) => openFindPanel(target, { replace: false }) },
+            { key: "Mod-h", run: (target) => openFindPanel(target, { replace: true }) },
             ...searchKeymap,
             ...defaultKeymap,
             ...historyKeymap,

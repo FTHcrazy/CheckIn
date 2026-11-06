@@ -54,7 +54,10 @@
   /* ── 列表视图：细长虚线条，与书卡行同一套内边距节奏 ── */
   &.bs-newcard--list {
     flex-direction: row;
-    min-height: 0;
+    /* 行高唯一出处见 .bs-page__grid--list 的 `--bs-row-height`。
+       列表里这一条自成一行、没有同伴可拉伸，`height: 100%` 会退化成 content
+       高度（26px 的加号 + 单行标题），比书卡矮一截；必须显式认这个行高。 */
+    min-height: var(--bs-row-height, 68px);
     padding: 8px 12px 8px 8px;
     justify-content: flex-start;
 

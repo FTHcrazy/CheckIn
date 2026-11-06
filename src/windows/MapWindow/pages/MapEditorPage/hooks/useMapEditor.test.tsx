@@ -245,9 +245,11 @@ describe("useMapEditor · 嵌套子地图（embedSubmap / carveSubmap / removeSu
     const mappedCx = mappedMinX + (localW * fit.scale) / 2;
     const mappedCy = mappedMinY + (localH * fit.scale) / 2;
 
-    // 中心必须与区块包围盒中心重合（坐标域搞错时这里会差半个区块）
-    expect(mappedCx).toBeCloseTo(worldRect.x + worldRect.width / 2, 1);
-    expect(mappedCy).toBeCloseTo(worldRect.y + worldRect.height / 2, 1);
+    // 中心必须与区块包围盒中心重合（坐标域搞错时这里会差半个区块 —— 几十单位）。
+    // 贴岸口径（越湾修复）下区块多边形沿海岸绕行，分区裁剪质心与包围盒中心
+    // 允许 ≤ 2 单位的偏移；0.05 的旧容差是直弦多边形时代的口径。
+    expect(Math.abs(mappedCx - (worldRect.x + worldRect.width / 2))).toBeLessThan(2);
+    expect(Math.abs(mappedCy - (worldRect.y + worldRect.height / 2))).toBeLessThan(2);
     // 尺寸同量级（分区被裁在多边形内，允许略小于包围盒）
     expect(localW * fit.scale).toBeGreaterThan(worldRect.width * 0.6);
     expect(localH * fit.scale).toBeGreaterThan(worldRect.height * 0.6);

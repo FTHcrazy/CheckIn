@@ -125,9 +125,11 @@ describe("generateMap 布点合法性", () => {
     }
   });
 
-  it("最大素材渲染宽度 ≤ 陆地包围盒宽度的 35%（陆地不该像小岛）", () => {
+  it("最大素材渲染宽度 ≤ 陆地包围盒宽度的 15%（陆地不该像小岛）", () => {
     // 问题 1 验收：同 seed 下，最大的山（baseWidth × scale）不得超过陆地实测宽度的
-    // 约三成；修复前最坏可达 63%~90%（一座山占陆宽近半）。
+    // 约一成半。总闸 0.6→0.42 时上限 35%；对齐逆向目标（素材≈陆宽 8~12%）后
+    // 总闸再收到 0.32，实测最大 ≈12%，阈值收到 15%（审计守卫 region-land-audit
+    // 用"最长陆轴"口径再钉一次，两处口径互补）。
     let minX = Infinity;
     let maxX = -Infinity;
     for (const ring of land.polygons) {
@@ -143,7 +145,7 @@ describe("generateMap 布点合法性", () => {
     expect(
       maxRenderWidth,
       `最大渲染宽 ${maxRenderWidth.toFixed(1)} / 陆地宽 ${landWidth.toFixed(1)}`,
-    ).toBeLessThanOrEqual(landWidth * 0.35);
+    ).toBeLessThanOrEqual(landWidth * 0.15);
   });
 
   it("丰度档单调：dense ≥ standard ≥ sparse", () => {

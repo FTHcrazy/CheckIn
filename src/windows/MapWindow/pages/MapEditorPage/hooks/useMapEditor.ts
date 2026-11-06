@@ -682,11 +682,15 @@ export function useMapEditor(canvasSize: CanvasSize) {
       const out: MapRegion[] = [];
       for (let i = 0; i < land.polygons.length; i += 1) {
         const share = areas[i] / Math.max(1e-9, total);
+        // level0（大陆）**每块陆地恰好 1 个**，不再按面积分摊全局数量 ——
+        // "一块大陆"就该是一块完整的大陆区块，国家（洲/郡）挂它下面按面积分摊。
+        // 旧口径 round(count0 × share) 会把一座主岛切成 2~3 个"大陆"，读起来
+        // 就成了"一个大陆是一个国家"的碎片（用户实测反馈）。
         out.push(
           ...generateHierarchy({
             seed,
             bounds: BASE_BOUNDS,
-            levelCounts: counts.map((c) => Math.max(1, Math.round(c * share))),
+            levelCounts: [1, ...counts.slice(1).map((c) => Math.max(1, Math.round(c * share)))],
             schema: active,
             container: land.polygons[i],
             idPrefix: `i${i}_`,

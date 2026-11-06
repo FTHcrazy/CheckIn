@@ -451,6 +451,7 @@ describe("色块阶梯：页面根铺 bg、浮层底只给浮层用", () => {
     "src/shared/components/ThemeSwitcher/index.scss", // 主题下拉
     "src/windows/BaseWindow/pages/HomePage/components/PosterWidget/index.scss", // 海报
     "src/windows/NovelWindow/pages/NovelPage/components/ChapterJumpPalette/index.scss", // 跳章面板
+    "src/windows/NovelWindow/pages/NovelPage/components/EditorPane/index.scss", // 章节内查找面板（浮在正文之上）
     "src/windows/NovelWindow/pages/NovelPage/components/ChapterTree/index.scss", // 拖拽随动 chip（portal）
     "src/windows/NovelWindow/pages/NovelPage/components/EntityContextMenu/index.scss", // 右键菜单
     "src/windows/NovelWindow/pages/NovelPage/components/HoverEntityCard/index.scss", // 悬浮卡

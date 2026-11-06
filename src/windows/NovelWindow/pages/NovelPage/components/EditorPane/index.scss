@@ -144,7 +144,12 @@
     width: 100%;
     max-width: var(--nv-paper-width, 42em);
     margin: 0 auto;
-    padding: 8px var(--nv-paper-gutter, 24px) 120px;
+    /* ⚠️ 顶部**不许**留内边距。查找浮层是 sticky（见下方 .cm-panels），
+       sticky 之前的「静态位置」= 这一层的 padding-top：留 8px 就等于浮层起始
+       位置比钉住位置低 8px，滚动到第 8px 时卡片会一路滑上去（实测 18px → 10px），
+       肉眼看就是「一开始滚动浮层抖一下」。首行上方的留白改由 .cm-content 的
+       padding-top 承担（buildTheme），它滚在里面，不影响浮层。 */
+    padding: 0 var(--nv-paper-gutter, 24px) 120px;
     box-sizing: border-box;
     color: var(--app-text);
   }
@@ -243,57 +248,256 @@
       caret-color: transparent;
     }
 
-    /* 查找替换面板（R10）：search({top:true}) 渲染在编辑器顶部，随主题变色 */
-    .cm-panels {
-      background: var(--app-surface);
-      color: var(--app-text);
-      border-bottom: 1px solid var(--app-border);
+    /* ── 章节内查找 / 替换（R10）：视口级浮动卡片，贴编辑区右上角 ──
+       成熟编辑器（VS Code / Typora）的范式：面板浮在正文之上、不参与排版，
+       开合不把正文顶下去；卡片只占右上一条，不遮满整行。
+       面板 DOM 由 CodeMirror 掌管（React 树之外），类名见 find-panel.ts。
+
+       ⚠️ 定位有两件必须同时成立的事，改样式前先读完：
+       ① **必须留在 sticky 上**。CodeMirror 给 `.cm-panels` 的默认定位就是
+          `position: sticky; top: 0`，作用对象是「最近的滚动祖先」——
+          本项目的滚动容器是 `.nv-editor__scroll`（不是 `.cm-scroller`），
+          所以面板跟着视口钉住，跳到命中处（滚动）也不会被滚走。
+          改成 `position: absolute` 就变成相对 `.cm-editor`（**整篇文档高度**）
+          定位，浮层会随正文一起滚出视野——2.36.2 的 bug 就是这么来的。
+       ② **必须不占排版**。sticky 仍在普通流里，一打开就把正文顶下去一行；
+          所以外层收成零高度容器（height: 0 + overflow: visible），卡片自己
+          绝对定位到这条零高度线上：空间不占，位置照钉。
+       ③ **sticky 的静态位置必须等于钉住位置**。这条容易忽略：容器在文档流里的
+          起点由祖先的内边距决定（.nv-editor__paper 的 padding-top），起点比
+          scrollport 顶低多少，滚动到该距离前卡片就会一路往上滑多少 —— 表现为
+          「刚开始滚动浮层抖一下」。所以纸面顶部内边距为 0（见 __paper 注释），
+          别在 .cm-editor 之上再加任何纵向间距。
+       两层都靠 pointer-events 分流：卡片外的空白透给正文，只有卡片收事件。 */
+    .cm-panels.cm-panels-top {
+      position: sticky;
+      top: 0;
+      z-index: 30;
+      /* flex 子项默认 min-height: auto，会被内容撑开，显式清零 */
+      flex: none;
+      width: 100%;
+      height: 0;
+      padding: 0;
+      overflow: visible;
+      background: transparent;
+      border: none;
+      pointer-events: none;
     }
 
-    .cm-panel.cm-search {
-      padding: 6px 12px;
-      font-size: 14px;
+    .nv-find {
+      /* 定位基准是上面那条零高度 sticky 线（position: sticky 也算定位元素） */
+      position: absolute;
+      top: 10px;
+      /* 横向落点是**编辑区视口**的右上角（VS Code / Typora 的位置），不是纸面
+         栏的右上角：sticky 容器只有纸面栏那么宽，纸面栏居中留出的空白得补回来，
+         否则宽窗口下卡片会缩在正文右边缘、看着像正文的一部分。
+         100cqw = .nv-editor 宽度（本文件开头的 .nv-editor 规则声明了 container-type），
+         100% 是纸面栏宽，两者之差的一半正是单侧留白；max() 兜住「纸面栏吃满」
+         的窄窗口。 */
+      right: calc(20px - max(0px, (100cqw - 100%) / 2));
+      pointer-events: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      width: min(432px, calc(100% - 24px));
+      padding: 8px;
+      border: 1px solid var(--app-border-strong);
+      border-radius: var(--app-radius-panel);
+      background: var(--app-surface-elevated);
+      box-shadow: var(--app-shadow-pop);
+      color: var(--app-text);
+      font-size: 13px;
+    }
 
-      input,
-      button {
-        font-family: inherit;
-        border-radius: var(--app-radius-chip);
+    .nv-find__row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .nv-find__field {
+      display: flex;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .nv-find__input {
+      width: 100%;
+      height: 28px;
+      padding: 0 8px;
+      border: 1px solid var(--app-border);
+      border-radius: var(--app-radius-chip);
+      background: var(--app-surface);
+      color: var(--app-text);
+      font: inherit;
+      font-size: 13px;
+      outline: none;
+      transition: border-color var(--app-t-fast) var(--app-ease-standard),
+        box-shadow var(--app-t-fast) var(--app-ease-standard);
+
+      &::placeholder {
+        color: var(--app-text-disabled);
       }
 
-      input {
-        padding: 3px 8px;
-        border: 1px solid var(--app-border);
-        background: var(--app-surface-alt);
+      &:focus,
+      &:focus-visible {
+        border-color: var(--app-primary);
+        box-shadow: 0 0 0 2px var(--app-primary-weak);
+      }
+    }
+
+    /* 「第几个 / 共几处」：定宽 + 等宽数字，数字跳动时不推着按钮左右挪 */
+    .nv-find__count {
+      flex: none;
+      min-width: 46px;
+      text-align: right;
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+      color: var(--app-text-muted);
+      white-space: nowrap;
+
+      &.is-empty,
+      &.is-error {
+        color: var(--app-error);
+      }
+    }
+
+    .nv-find__group {
+      flex: none;
+      display: flex;
+      align-items: center;
+      gap: 2px;
+
+      &--nav {
+        padding-left: 6px;
+        border-left: 1px solid var(--app-border);
+      }
+    }
+
+    .nv-find__opt,
+    .nv-find__navbtn,
+    .nv-find__expand {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      padding: 0;
+      border: 1px solid transparent;
+      border-radius: var(--app-radius-chip);
+      background: transparent;
+      color: var(--app-text-secondary);
+      font: inherit;
+      font-size: 12px;
+      line-height: 1;
+      cursor: pointer;
+      transition: background var(--app-t-fast) var(--app-ease-standard),
+        color var(--app-t-fast) var(--app-ease-standard);
+
+      &:hover {
+        background: var(--app-surface-hover);
+        color: var(--app-text);
+      }
+
+      &:focus-visible {
+        outline: 2px solid var(--app-primary);
+        outline-offset: 1px;
+      }
+    }
+
+    /* 选项开关：字形即标签（Aa / ab| / .*）；等宽字体让三枚按钮的字面宽度一致，
+       按下态用主色底，不用「打勾」——与 VS Code 的开关排一致 */
+    .nv-find__opt {
+      width: 26px;
+      font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+      font-size: 11px;
+      font-weight: 700;
+
+      &.is-active {
+        background: var(--app-primary-weak);
+        border-color: color-mix(in srgb, var(--app-primary) 34%, transparent);
+        color: var(--app-primary);
+      }
+    }
+
+    .nv-find__expand {
+      color: var(--app-text-muted);
+
+      svg {
+        transition: transform var(--app-t-fast) var(--app-ease-standard);
+      }
+
+      &.is-open {
         color: var(--app-text);
 
-        &:focus {
-          outline: none;
+        svg {
+          transform: rotate(90deg);
+        }
+      }
+    }
+
+    /* 替换行：左侧留出与展开箭头同宽的空槽，两个输入框左缘对齐 */
+    .nv-find__gutter {
+      flex: none;
+      width: 24px;
+    }
+
+    .nv-find__actions {
+      flex: none;
+      display: flex;
+      gap: 6px;
+    }
+
+    .nv-find__btn {
+      height: 26px;
+      padding: 0 10px;
+      border: 1px solid var(--app-border);
+      border-radius: var(--app-radius-chip);
+      background: var(--app-surface);
+      color: var(--app-text);
+      font: inherit;
+      font-size: 12px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background var(--app-t-fast) var(--app-ease-standard),
+        border-color var(--app-t-fast) var(--app-ease-standard);
+
+      &:hover {
+        background: var(--app-surface-hover);
+        border-color: var(--app-border-strong);
+      }
+
+      &:focus-visible {
+        outline: 2px solid var(--app-primary);
+        outline-offset: 1px;
+      }
+
+      /* 「全部替换」是不可撤销的批量动作，给主色把它和「替换」分开 */
+      &.is-strong {
+        background: var(--app-primary-weak);
+        border-color: color-mix(in srgb, var(--app-primary) 40%, transparent);
+        color: var(--app-primary);
+        font-weight: 600;
+
+        &:hover {
+          background: color-mix(in srgb, var(--app-primary) 24%, transparent);
           border-color: var(--app-primary);
         }
       }
-
-      button {
-        padding: 3px 10px;
-        border: 1px solid var(--app-border);
-        background: var(--app-surface);
-        color: var(--app-text);
-        cursor: pointer;
-
-        &:hover {
-          background: var(--app-surface-hover);
-        }
-
-        &:focus-visible {
-          outline: 2px solid var(--app-primary);
-          outline-offset: 1px;
-        }
-      }
-
-      label {
-        font-size: 12px;
-        color: var(--app-text-secondary);
-      }
     }
+  }
+
+  /* 命中高亮：走主题的琥珀色（与敏感词的红、标注层的彩色区分开）。
+     选择器多带一层 `.nv-editor`：CodeMirror 的 baseTheme 是运行期注入的
+     class 选择器（0,2,0），同权重时后注入者赢，必须比它高一级才压得住 */
+  .nv-editor__host .cm-searchMatch {
+    background: color-mix(in srgb, var(--app-accent-amber) 28%, transparent);
+    border-radius: 2px;
+  }
+
+  .nv-editor__host .cm-searchMatch-selected {
+    background: color-mix(in srgb, var(--app-accent-amber) 62%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--app-accent-amber) 80%, transparent);
   }
 
   /* 标注层：底色 + inset 下划线，不改字宽、不引起重排（设计方案 §05 ③） */

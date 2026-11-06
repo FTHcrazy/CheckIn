@@ -718,6 +718,15 @@ export default function MapCanvas({
   const coastRef = useRef<Container | null>(null);
   const coastSpriteRef = useRef<Sprite | null>(null);
   const regionLayerRef = useRef<Container | null>(null);
+  /**
+   * 区块层的**陆地掩膜**：区块填充/边界只允许出现在陆地多边形内部。
+   *
+   * 【为什么需要】生成器侧的越湾修复（regions.ts）把区块线修到贴岸，但仍留有
+   * ≤ ~10 单位的拼接缝级残余弦；旧存档 / 手画块更可能有整段横跨海面的边界。
+   * 用陆地多边形做掩膜一次裁净 —— 区块线在海里的部分直接消失，岸上部分与
+   * 海岸白边贴合，与逆向目标的观感一致（掩膜外扩见 effect 里的注释）。
+   */
+  const regionMaskRef = useRef<Graphics | null>(null);
   /** 每个层级一份「容器 + 填充 + 边界」，索引即层级序号 */
   const levelLayersRef = useRef<LevelLayers[]>([]);
   /**
@@ -1309,6 +1318,9 @@ export default function MapCanvas({
       // 区块层本身是个容器：真正的内容按层级分成若干子容器（见下方各 effect），
       // 这样"交叉淡化"只需要改子容器的 alpha，不必重建任何几何。
       const regionLayer = new Container();
+      // 区块层的陆地掩膜（见 regionMaskRef 的注释）。掩膜对象只在遮罩通道里
+      // 被渲染，不占正常绘制；挂在 world 最上层不影响 z 序语义。
+      const regionMask = new Graphics();
       // 折线层：与区块层同样是个空容器，真正的内容按层级分成子容器（见折线 effect）
       const polylineLayer = new Container();
       const elementLayer = new Container();
@@ -1336,7 +1348,7 @@ export default function MapCanvas({
         overlay,
         draftLayer,
       };
-      world.addChild(...WORLD_LAYER_ORDER.map((name) => layersByName[name]));
+      world.addChild(...WORLD_LAYER_ORDER.map((name) => layersByName[name]), regionMask);
       instance.stage.addChild(world);
 
       worldRef.current = world;
@@ -1347,6 +1359,7 @@ export default function MapCanvas({
       coastRef.current = coast;
       coastSpriteRef.current = coastSprite;
       regionLayerRef.current = regionLayer;
+      regionMaskRef.current = regionMask;
       polylineLayerRef.current = polylineLayer;
       elementLayerRef.current = elementLayer;
       submapLayerRef.current = submapLayer;
@@ -1386,6 +1399,7 @@ export default function MapCanvas({
       coastRef.current = null;
       coastSpriteRef.current = null;
       regionLayerRef.current = null;
+      regionMaskRef.current = null;
       // 子容器随 world 一起被 destroy(true, {children:true}) 回收，这里只清引用
       levelLayersRef.current = [];
       polylineLayerRef.current = null;
@@ -1738,6 +1752,37 @@ export default function MapCanvas({
     }
   }, [levelAlphas.length, app]);
 
+  // ── 区块层 · 陆地掩膜（区块填充/边界只画在陆地内）──
+  //
+  // 【为什么用掩膜而不是逐块裁剪】生成器已把区块线修到贴岸（regions.ts 的越湾
+  // 修复），但拼接缝级残余弦（≤ ~10 单位）和旧存档/手画块的跨海边界仍在。掩膜
+  // 是一次性的矢量裁剪：doc.land 变化才重建，运行期零成本，对未来任何来源的
+  // 区块几何都成立。
+  //
+  // 【为什么向外扩 3 单位】区块多边形贴的是海岸环的**弦多边形**，渲染期海岸是
+  // Chaikin/Catmull-Rom 平滑曲线，两者之间有 ±3 单位的矢高差；边界线还有一半
+  // 线宽压在环外。不外扩的话，贴岸的区块线会被掩膜削掉一条边。
+  useEffect(() => {
+    const mask = regionMaskRef.current;
+    const layer = regionLayerRef.current;
+    if (!mask || !layer || !app) return;
+    const land = doc.land;
+    if (!land || land.polygons.length === 0) {
+      if (layer.mask) layer.mask = null;
+      mask.clear();
+      return;
+    }
+    mask.clear();
+    for (const ring of land.polygons) {
+      if (ring.length < 3) continue;
+      mask.poly(toFlatPoints(ring));
+      mask.fill({ color: 0xffffff });
+      // alignment 0 = 描边全部落在多边形外侧：width 6 → 向外扩 3 单位
+      mask.stroke({ width: 6, color: 0xffffff, alignment: 0 });
+    }
+    if (layer.mask !== mask) layer.mask = mask;
+  }, [doc.land, app]);
+
   // ── 区块层 · 填充（只随区块变化重建）──
   //
   // 填充与描边必须是两份独立 Graphics（而不是"填一块、描一块"地交替）：
@@ -1765,23 +1810,66 @@ export default function MapCanvas({
   //
   // 线宽换算成世界单位 = 像素 / 缩放。早期版本用固定世界单位，结果缩远了细到
   // 看不见、放到最大比山脉还宽 —— 区块的可见缩放跨了 40 倍，这个换算不能省。
+  //
+  // 【共享边去重】相邻区块的公共边在两侧多边形里**逐位相同**，整圈各描一遍时
+  // alpha 叠成 1-(1-α)² ≈ 0.54 —— 内部边比岸线深一倍，读起来像蛛网（逆向目标
+  // 的区块线内外深浅一致）。这里把边按端点归一化建索引，每条边只由首次遇到它的
+  // 区块描一次：深浅统一，路径量还省近一半。共享边以"连续链"为单位描
+  // （moveTo/lineTo 累积一段再 stroke），draw call 数量保持在几百的量级。
+  //
+  // 【为什么不去重跨层级的边】父子边界本来就重合（子级外轮廓继承父级），且两级
+  // 的可见性由 LOD 帽函数此消彼长 —— 那层叠加是"过渡带里边界保持可见"的设计
+  // 的一部分，去重反而会让缩放时边界忽隐忽现。
   useEffect(() => {
     const levels = levelLayersRef.current;
     if (levels.length === 0) return;
     const width = REGION_BORDER_PX / borderScale;
     for (const lv of levels) lv.border.clear();
+    const drawnByLevel = levels.map(() => new Set<string>());
+    const keyOf = (a: { x: number; y: number }, b: { x: number; y: number }): string => {
+      const ax = Math.round(a.x * 100);
+      const ay = Math.round(a.y * 100);
+      const bx = Math.round(b.x * 100);
+      const by = Math.round(b.y * 100);
+      // 端点按字典序归一化：同一条边在两个区块里方向相反，键必须一致
+      return ax < bx || (ax === bx && ay <= by)
+        ? `${ax},${ay}|${bx},${by}`
+        : `${bx},${by}|${ax},${ay}`;
+    };
     for (const region of doc.regions) {
       const lv = levels[region.level];
       if (!lv || region.polygon.length < 3) continue;
-      lv.border.poly(toFlatPoints(region.polygon));
-      lv.border.stroke({
-        width,
-        color: REGION_BORDER_COLOR,
-        // 边界与填充共用同一张静态系数表（P2-2）：两者必须同比例衰减，
-        // 否则"线比面还淡"。见 regions.ts 的 regionBorderAlphaOf。
-        alpha: regionBorderAlphaOf(region.level),
-        alignment: 0.5,
-      });
+      const drawn = drawnByLevel[region.level];
+      const poly = region.polygon;
+      let chain: number[] = [];
+      const flushChain = () => {
+        if (chain.length >= 2) {
+          lv.border.moveTo(poly[chain[0]].x, poly[chain[0]].y);
+          for (let q = 1; q < chain.length; q += 1) {
+            lv.border.lineTo(poly[chain[q]].x, poly[chain[q]].y);
+          }
+          lv.border.stroke({
+            width,
+            color: REGION_BORDER_COLOR,
+            // 边界与填充共用同一张静态系数表（P2-2）：两者必须同比例衰减，
+            // 否则"线比面还淡"。见 regions.ts 的 regionBorderAlphaOf。
+            alpha: regionBorderAlphaOf(region.level),
+            alignment: 0.5,
+          });
+        }
+        chain = [];
+      };
+      for (let k = 0; k < poly.length; k += 1) {
+        const key = keyOf(poly[k], poly[(k + 1) % poly.length]);
+        if (drawn.has(key)) {
+          flushChain();
+          continue;
+        }
+        drawn.add(key);
+        if (chain.length === 0) chain.push(k);
+        chain.push((k + 1) % poly.length);
+      }
+      flushChain();
     }
   }, [doc.regions, borderScale, levelAlphas.length, app]);
 

@@ -77,6 +77,9 @@
     align-items: center;
     gap: 12px;
     padding: 8px 12px 8px 8px;
+    /* 行高唯一出处见 .bs-page__grid--list 的 `--bs-row-height`
+       （封面 50 + 内边距 16 + 描边 2）。这里只**认**这个值，不自算一份 */
+    min-height: var(--bs-row-height, 68px);
     /* 列表行满宽、不浮起：静止态也清掉基类的 ambient 环境阴影 */
     box-shadow: none;
 
