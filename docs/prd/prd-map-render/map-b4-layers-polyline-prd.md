@@ -1,9 +1,10 @@
 # B4 需求：图层面板 + 折线要素（R-MAP-24 / R-MAP-26）
 
 > 状态：**B4-1 已实施（2.29.0）、B4-2 已实施（2.30.0）、B4-3 已实施（2.31.0）**——B4 三批全部闭环。
-> 基线：CheckIn **2.31.0**（工作区）
-> 上游：[`map-window-overview.md`](map-window-overview.md) §3.5「推荐开工顺序」第 1 条 ·
-> [`review/map-vs-reference-interaction-review.md`](../../review/map-vs-reference-interaction-review.md) §7/§9 的 B4
+> 输入：[`map-window-overview.md`](map-window-overview.md) §3.5「推荐开工顺序」（模块总览）、
+> [`review/map-vs-reference-interaction-review.md`](../../review/map-vs-reference-interaction-review.md) §7/§9（B4 缺口与批次）、
+> [`review/map-vs-reference-render-analysis.md`](../../review/map-vs-reference-render-analysis.md) §9（渲染栈与守卫口径）
+> 基线：CheckIn **2.36.0**（工作区）｜本篇事实冻结于 B4 闭环版本 2.29.0~2.31.0；`MapWindow` 44 文件 / 750 用例（2026-11-06 校核）
 > 采纳来源：[`nested-submap-elements.md`](nested-submap-elements.md) §3（`MapPolyline` 数据模型 + 线纹理笔刷）、
 > [`nested-submap-road.md`](nested-submap-road.md) §3（道路层与样式）、
 > [`nested-submap-elements.md`](nested-submap-elements.md) §3.4（水系不做自动生成的业界结论）
@@ -30,7 +31,7 @@
 
 ## 1. 为什么是这两件事（而不是继续调观感）
 
-现状（`map-window-overview.md` §1）：10 个能力域已闭环，观感已对齐九成（`render-analysis` §9 只剩 3 条待办且都要等口径）。
+现状（`map-window-overview.md` §1，**口径以该文 §1 为准**）：**14 个能力域 / 13 已闭环 + 1 部分（素材体系）**，观感已对齐九成（`render-analysis` §9 执行序 1~6 全闭环，只剩并行轨 2 条：P1-5 素材池 / P2-4 分组 folder，均阻塞在外部输入）。
 真正卡住用户的是**对象管不住**：
 
 - 一键成图（2.25.0）一次产出几十个素材，**只能一个点点删**，不能「把森林整层关掉看看地形」；

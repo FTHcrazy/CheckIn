@@ -5,10 +5,11 @@
 > 状态：**已实现**（2.19.0）：R-REG-01~05 五条 P0 全部落地并通过独立验证（QA 9 处变异 8 红，
 > 第 9 处揪出一个"改了源码也不红"的假守卫并已补强）。实现期有两处对本文的修订，见
 > R-REG-02 的「裁决补充」与 §8-Q1；P1（R-REG-06~10）待排。
+> **R-REG-10（子图内区域编辑）已立项**：见 [R-REG-10-submap-region-editing-scope.md](R-REG-10-submap-region-editing-scope.md)（本文 §3.2 该行的"需先补齐主视角"已核实为串行前置，不改本行原文）。
 > 本文只描述**增量**，不重写 `nested-submap-main.md` 的整体架构。
 > 输入：`nested-submap-main.md`（区块内嵌子地图模型，已实现 Phase 2 + 2.4）、
 > `nested-submap-elements.md`（要素的 `level` 语义）、代码基线 `MapEditorPage/{regions,types,lod}.ts`。
-> 基线：**2.18.0**（嵌套子图 Phase 2 / 2.4 已落地）。
+> 基线：CheckIn **2.36.0**（工作区）｜本篇 P0 闭环于 2.19.0，P1/P2 未开工
 > 归属 R-MAP 系列的**增量**：区域（区块）的**编辑能力**——从"只能一键随机切"扩到
 > "可配置层级 / 可手画 / 可合并 / 高亮分级"。
 >

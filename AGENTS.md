@@ -585,18 +585,32 @@ grep -rn "docs/[A-Za-z0-9._/-]*\.md" \
 
 #### 5.3.5 当前落地形态
 
+> **本文与实物的一致性由 `electron/docs-index-guard.test.ts` 断言**（索引双向 / 头部三行 / 体裁词表 / 无新增悬空）。
+> `spec/` 逐篇列出（篇数少且需被直接检索）；`review/`、`prd/`、`archive/` 只给篇数——逐个列名会变成第二份要维护的索引。
+
 ```text
-docs/
-├── README.md                              # 索引（唯一导航入口，必须与实际文件一致）
-├── spec/
-│   └── graphic-theming-spec.md            # 图形素材主题化（§6.1.4 详版）
-├── review/
-│   ├── novel-product-review.md            # 产品审查（部分待办仍开放）
-│   └── novel-design-review.md             # 设计审查（部分待办仍开放）
-└── archive/
-    ├── visual-polish/                     # 1.47.0 立体感/动效改造方案 + 验收对照
-    └── prd-r27/                           # R27 关系网络立项过程稿 7 篇（2.x 已交付）
+docs/                                  # 合计 48 篇 md（2026-11-06 实测，`docs-index-guard.test.ts` 断言此数）
+├── README.md                          # 索引（唯一导航入口，必须与实际文件一致）
+├── spec/                              # 活规范 5 篇（违反即缺陷；只改版，不删除）
+│   ├── map-db-spec.md                 # 地图数据层（改 map.db 前必读）
+│   ├── map-interaction-spec.md        # 地图交互与快捷键（键位 / 选中态唯一口径）
+│   ├── map-export-spec.md             # 地图导出（§6.1 是基线图命名的唯一来源）
+│   ├── map-perf-spec.md               # 地图性能口径（产品线 / 压力线两层判据）
+│   └── graphic-theming-spec.md        # 图形素材主题化
+├── review/                            # 审查报告 6 篇（待办清空后整篇归档）
+├── prd/                               # 未闭环需求稿（交付后整组移入 archive/prd-<编号>/）
+│   ├── prd-map-render/                # 地图模块 13 篇
+│   └── prd-ai-roadmap/                # AI 方向 3 篇
+└── archive/                           # 已闭环 / 已作废过程稿（只读）
+    ├── prd-map/                       # 地图 2.18.0~2.31.0 闭环（6 个文件：5 篇 md + 1 个 .ts）
+    ├── prd-ai/                        # AI 6 篇
+    ├── prd-r27/                       # R27 关系网络 7 篇
+    └── visual-polish/                 # 1.47.0 立体感 / 动效改造 2 篇
 ```
+
+> **已知例外**：地图模块长期迭代，未闭环稿按模块归集在 `prd/prd-map-render/` 而非 §5.3.1 的
+> `prd/<需求编号>-<主题>.md`（见 `docs/README.md` 的「长期模块例外」）。新增地图文档沿用该目录，
+> 文件名仍遵守 §5.3.2 的体裁词表。
 
 ---
 

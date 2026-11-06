@@ -1,8 +1,8 @@
 # 地图窗口 · 模块总览（唯一入口）
 
 > 状态：**维护中**（每次地图功能落地、闭环或改期后更新本文件）
-> 基线：CheckIn **2.32.0**（工作区）｜`src/windows/MapWindow/`｜**44 文件 / 712 用例全绿**（约 312s）
-> 输入：本模块现存 7 篇 + 已归档 6 篇（见 §4）、`CHANGELOG.md` 2.18.0~2.32.0、代码实测
+> 基线：CheckIn **2.36.0**（工作区）｜`src/windows/MapWindow/`｜**44 文件 / 750 用例全绿**（2026-11-06 校核，`pnpm exec vitest run src/windows/MapWindow`）
+> 输入：本模块现存 12 篇 + 已归档 6 个文件（5 篇 md + 1 个 `.ts` 参考实现，逐项见 §4.3）、`CHANGELOG.md` 2.18.0~2.36.0、代码实测
 > 职责：**只此一份呈现全貌** —— 整体进度、已完成、未完成、文档去向、仍缺什么。
 > 冲突时的优先级：**状态与去向看本文**；观感执行序看
 > [`review/map-vs-reference-render-analysis.md` §9](../../review/map-vs-reference-render-analysis.md#9-执行总表交接用)；
@@ -14,15 +14,15 @@
 
 1. **渲染与编辑内核已经成型**：与逆向目标（易制地图）的差距从「渲染参数」转到「内容的组织方式」——
    2026-11 之后的所有工作都是在补**对象、素材、图层、折线**，而不是再调海岸颜色。
-2. **14 个能力域：12 个已闭环、2 个部分落地**（嵌套子图、素材体系）；另有 **2 类能力尚未动工**
+2. **14 个能力域：13 个已闭环、1 个部分落地**（素材体系 #9）；另有 **2 类能力尚未动工**
    （文字排版增强、搜索/要素绑定），见 §3.1。
-3. **最近一批（2.33.0）**：**海岸观感修复** —— 等深线（波浪线）一侧消失的根因修复
-   （旧实现绕全图包围盒中心统一放大，多岛时朝向中心一侧的间隙被压到 0、线被填色
-   盖住；改逐环外扩 `isobathRingPlan`）+ 陆地轮廓 v4 调参（特征 3→4、谐波/扭曲/
-   碎齿能量整体上调一档，对齐逆向目标的锯齿层次感；占纸下限守卫 15%→12%）。
-   上一批（2.32.0）是子图收口：A′ 跨图选择器「拷贝绑定」+ 边界羽化带。
-4. **文档已收口**：闭环的 6 篇已进 `docs/archive/prd-map/`，未闭环的 6 篇留在
-   `docs/prd/prd-map-render/`，散落在 `docs/` 根目录的三份旧稿已全部归档（§4）。
+3. **最近一批（2.36.0 观感批次 D 收口）**：**区块按层级静态衰减**（`REGION_LEVEL_FILL_SCALE
+   = [1, 0.75, 0.58, 0.45]`，填充/边界共用同一张表，主图 + 子图四处落点）+ **手工落位 AABB
+   避让**（`isCenterCovered`：中心落进已有素材命中盒 +30 呼吸边则拒绝落位）。
+   上一批（2.35.0）是**镜像翻转破重复**（`flipX` + `flippable` 登记表 + 确定性去重）。
+   更早是 2.33.0 海岸观感修复（等深线逐环外扩 + 陆地轮廓 v4 调参）。
+4. **文档已收口**：闭环的 6 个文件已进 `docs/archive/prd-map/`，未闭环的 12 篇留在
+   `docs/prd/prd-map-render/`（含本批新写的 3 篇过程稿 + 1 篇批次排期；闭环后整组归档），散落在 `docs/` 根目录的三份旧稿已全部归档（§4）。
 
 ---
 
@@ -49,7 +49,7 @@
 | 14 | **图层面板与折线要素**：6 行结构（底图只读 + 区块/折线/素材/子图/地名）、显隐、锁定、计数、折叠；折线（河流/道路/山脊/边界）绘制、平滑渲染、节点编辑、5 档样式、属性面板、河流变宽、山脊影线笔刷、闭合折线、复制粘贴/微移；`layerState` / `polylines` 零写入 + 撤销 | ✅ | 2.29.0 / 2.30.0 / 2.31.0 | `layerState.ts`、`LayerPanel/`、`polylineGeometry.ts`、`polylineStyle.ts`、`polylineRender.ts`、`PolylinePanel/`、`useMapDocStore` | [`map-b4-layers-polyline-prd.md`](map-b4-layers-polyline-prd.md)（D1~D8 / §3 / §4 / §6.1~6.3） |
 
 > **怎么验证"能不能用"**：`MapWindow` 的用例数是唯一自动化回归基线（当前数字见文首）；
-> 观感与性能目前靠人眼与真机，没有截图比对（见 §5-3）。
+> 观感与性能目前靠人眼与真机，没有截图比对（见 §5.3）。
 
 ---
 
@@ -106,21 +106,22 @@
 
 | 事项 | 阻塞点 | 现状数字 |
 |------|--------|----------|
-| **素材池扩充（P1-5）** | 需美术出图 | 沼泽档 7 种、雪原档 7 种，均低于验收线 ≥12；目标「同屏同一素材 ≤2 次」达不到 |
-| **自动生成分组 folder（P2-4）** | 原阻塞点是「依赖图层面板」——**已解除**（2.29.0 类型层落地）。现按 B4 PRD D9 的判断另立需求号（预留 R-MAP-29），需产品决定是否立 | 一键成图产物与手绘元素仍混在同一层，但已可整层显隐（"把素材层关掉看地形"已能做到） |
+| **素材池扩充（P1-5）** | 需美术出图 | 沼泽档 7 种、雪原档 7 种，均低于验收线 ≥12；目标「同屏同一素材 ≤2 次」达不到（口径：沼泽档 = `terrains` 的 `swamp` + `jungle`；雪原档 = `zones` 含 `snow`；见 render-analysis §9.2 · P1-5） |
+| **自动生成分组 folder（P2-4）** | 原阻塞点「依赖图层面板」已于 2.29.0 解除；**产品已裁定不立项**（2026-11-06，见 [`R-MAP-DOC-legacy-disposition-scope.md`](R-MAP-DOC-legacy-disposition-scope.md) §B1；重新开案条件：素材 ≥120 张，或用户明确反馈「分类不够用」并能举出具体场景） | 一键成图产物与手绘元素仍混在同一层，但已可整层显隐（"把素材层关掉看地形"已能做到） |
 
 ### 3.4 无主遗留（v1 PRD 未实现，且没有任何现行文档承接）
 
-> 这批**不是"待排期"，而是"没人认领"**。处置方式只有两种：立新需求号，或明确写「不做」。
+> **已于 2026-11-06 全部处置完毕**：**2 条不立、3 条立号**（均 P2 不排期）。逐条依据、
+> 解锁条件与归属文档见 [`R-MAP-DOC-legacy-disposition-scope.md`](R-MAP-DOC-legacy-disposition-scope.md) §A。
 > 归档后的 v1 PRD 见 [`archive/prd-map/map-v1-prd.md`](../../archive/prd-map/map-v1-prd.md)。
 
-| v1 编号 | 需求 | 现状 | 建议 |
+| v1 编号 | 需求 | 现状 | 处置 |
 |---------|------|------|------|
-| R-MAP-06 | **地点连线**（可标距离/关系） | 无。若只想要「两点之间的路」，可并入 R-MAP-26 折线；若要「关系标注」，是独立需求 | **并入 26 或明确不做** |
-| R-MAP-11 | **素材库面板**：分类浏览 ✅、搜索 ✗、收藏 ✗ | `SpritePanel` 只有分类 | 低优先级，可随 S2「我的素材」一起做 |
-| R-MAP-12 | **地点绑定小说要素**（改地名双向同步） | 完全无承接。现在只有「整张图绑定作品」（`work_id`） | 与 novel 域联动，需单独立项 |
-| R-MAP-13 | **导出为设定文档 / 插入灵感速记** | 完全无承接 | 与 R-MAP-09 导出不是一回事，需产品决策 |
-| R-MAP-15 | **地图内搜索与定位** | 无入口 | 素材/地名多了以后才有价值，P2 |
+| R-MAP-06 | **地点连线**（可标距离/关系） | 无。若只想要「两点之间的路」，可并入 R-MAP-26 折线；若要「关系标注」，是独立需求 | **不立（B4 折线覆盖）** |
+| R-MAP-11 | **素材库面板**：分类浏览 ✅、搜索 ✗、收藏 ✗ | `SpritePanel` 只有分类 | **不立（挂 R-MAP-22·S2）** |
+| R-MAP-12 | **地点绑定小说要素**（改地名双向同步） | 完全无承接。现在只有「整张图绑定作品」（`work_id`） | **立 R-MAP-30·P2** |
+| R-MAP-13 | **导出为设定文档 / 插入灵感速记** | 完全无承接 | **立 R-MAP-31·P2** |
+| R-MAP-15 | **地图内搜索与定位** | 无入口 | **立 R-MAP-32·P2** |
 
 ### 3.5 推荐开工顺序（本文的判断，非排期承诺）
 
@@ -149,20 +150,26 @@
 |------|------|------|-----------|
 | **map-window-overview.md**（本文） | 模块总览 | 维护中 | ✅ 唯一入口 |
 | [map-b4-layers-polyline-prd.md](map-b4-layers-polyline-prd.md) | 需求 + 设计决策（B4） | **B4-1 / B4-2 / B4-3 已全部实施**（2.29.0 / 2.30.0 / 2.31.0，B4 闭环） | ✅ 有效；**图层面板与折线的执行口径以它为准**，两篇 `nested-submap-*` 降为素材/算法依据 |
-| [nested-submap-main.md](nested-submap-main.md) | 主方案 | 实现中（Phase 2/2.4 已落地） | ✅ 有效；A′ 与缓存未收口 |
-| [nested-submap-boundary.md](nested-submap-boundary.md) | 方案专篇 | 待评审 | ✅ 有效；选型已定（共享几何 + 羽化），羽化未实现 |
+| [nested-submap-main.md](nested-submap-main.md) | 主方案 | 已实施（Phase 2/2.4 已落地） | ✅ 有效；A′ 已于 2.32.0 闭环（拷贝绑定）；**静态层缓存未做**（P2） |
+| [nested-submap-boundary.md](nested-submap-boundary.md) | 方案专篇 | 待评审 | ✅ 有效；羽化带已于 2.32.0 落地（`erase` 混合 + `AlphaFilter` 隔离）；**缺验收判据**（见 §5.1-6） |
 | [nested-submap-road.md](nested-submap-road.md) | 方案专篇 | 待评审（未实现） | ◐ 折线部分**已并入 B4 PRD**，本文只留道路算法依据 |
 | [nested-submap-elements.md](nested-submap-elements.md) | 方案专篇 | 待评审（未实现） | ◐ 折线部分已并入 B4 PRD；渲染铁律与「水系不自动生成」结论继续引用 |
 | [region-editing.md](region-editing.md) | 增量需求 | P0 已实现 / P1 待排 | ✅ 有效 |
 | [map-asset-system-architecture.md](map-asset-system-architecture.md) | 架构 | S1 落地 / S2~S4 预留 | ✅ 有效；素材数量口径已在本次整理中订正为 **52** |
+| [R-MAP-DOC-batch-plan.md](R-MAP-DOC-batch-plan.md) | 批次排期（batch-plan） | **定稿** | ✅ 有效；本批 14 个执行单元的交付清单、依赖图、三批完成判定 |
+| [R-MAP-DOC-line-autogen-analysis.md](R-MAP-DOC-line-autogen-analysis.md) | 口径裁定（analysis） | **定稿** | ✅ 有效；四类线「自动 vs 手画」唯一裁定稿，road / elements 两篇冲突时以它为准 |
+| [R-MAP-DOC-submap-boundary-acceptance.md](R-MAP-DOC-submap-boundary-acceptance.md) | 验收判据（acceptance） | **定稿** | ✅ 有效；边界羽化四组判据 + 递归深度用例清单（§4） |
+| [R-MAP-DOC-legacy-disposition-scope.md](R-MAP-DOC-legacy-disposition-scope.md) | 遗留处置（scope） | **定稿** | ✅ 有效；五条无主 + R-MAP-29 + S2 排期 + A′ 三问的处置结论（§A~§C） |
+
+> **现存 12 篇**（上表 12 行 = `ls docs/prd/prd-map-render/*.md | wc -l` 实测）；闭环后整组移入 `docs/archive/prd-map/`。
 
 ### 4.2 活规范与审查（`docs/spec/`、`docs/review/`）
 
 | 文档 | 类型 | 状态 | 说明 |
 |------|------|------|------|
-| [spec/map-db-spec.md](../../spec/map-db-spec.md) | 活规范 | 已实施（B0 / 2.20.0） | 改 `map.db` 前必读；§9 四条仍开放 |
+| [spec/map-db-spec.md](../../spec/map-db-spec.md) | 活规范 | 已实施（B0 / 2.20.0） | 改 `map.db` 前必读；§9 四条已收口 |
 | [review/map-vs-reference-interaction-review.md](../../review/map-vs-reference-interaction-review.md) | 审查 | 含未闭环待办 | B0~B3 已闭环；B4 与 R-MAP-27 开放 |
-| [review/map-vs-reference-render-analysis.md](../../review/map-vs-reference-render-analysis.md) | 逆向分析 | 执行中 | **观感的状态与执行序唯一事实源＝§9**；已完成 14 项 / 待办 3 条 / 阻塞 2 条 |
+| [review/map-vs-reference-render-analysis.md](../../review/map-vs-reference-render-analysis.md) | 逆向分析 | 执行中 | **观感的状态与执行序唯一事实源＝§9**；已完成 18 项 / 待办 0 条 / 并行轨阻塞 2 条（P1-5 / P2-4，**不计入待办**） |
 
 ### 4.3 已归档（`docs/archive/prd-map/`，2026-11-05 整理）
 
@@ -193,10 +200,14 @@
 
 1. **没有「交互与快捷键」活规范**：放置态/选中态、右键、快捷键（`Ctrl+C/X/V/D`、方向键/WASD、
    `Esc`）散落在 review §2.3 与代码里，新人无法从文档确认"按这个键应该发生什么"。
+   → **已补**：[`spec/map-interaction-spec.md`](../../spec/map-interaction-spec.md)（七类口径，每行带守卫落点；无守卫的登记在 §8）。
 2. **没有「导出规格」文档**：现只有 PNG 分块导出，DPR、目标尺寸、透明底、是否支持 SVG/PDF、命名规则
    均未定义（原 §6.6 已随 alignment 归档，且本身不完整）。
-3. **没有性能验收记录**：v1 PRD §6 的「2000+ 元素 / 60fps / 首屏 <2s」基线在 `map2` 重写后**从未复测**，
-   当前只有"体感流畅"和 548 条功能用例，没有数字。
+   → **已补**：[`spec/map-export-spec.md`](../../spec/map-export-spec.md)（六项规格 + 差异逐条处置；基线图命名 §6.1）。
+3. **没有性能验收记录**：v1 PRD §6 的「2000+ 元素同屏 / ≥55fps / 首屏 <1s」基线在 `map2` 重写后**从未复测**（口径以
+   [`spec/map-perf-spec.md`](../../spec/map-perf-spec.md) 为准），
+   当前只有"体感流畅"和 750 条用例（`pnpm exec vitest run src/windows/MapWindow`），没有数字。
+   → **口径已补、数字仍缺**：`spec/map-perf-spec.md` 定了样本 / 方法 / 通过线 / 脚本名，但本批不实测（见 §5.3-2）。
 4. **B4 的需求文档已补（2026-11-05）**：[`map-b4-layers-polyline-prd.md`](map-b4-layers-polyline-prd.md)
    给出了 7 条拍板项（类型即图层、面板位置、`layerState` 零写入、`showRegions` 归属、单一 `MapPolyline`、
    面要素暂缓、插层位置）与三批验收判据；**原始缺口记录保留在此**：
@@ -207,17 +218,19 @@
    后续凡涉及数量，**以脚本输出为准**。
 6. **子图边界过渡缺验收判据**：boundary 篇给了选型与实现要点，但没有"什么算通过"（渐隐宽度、色差阈值、
    截图基线），无法验收。
+   → **已补**：[`R-MAP-DOC-submap-boundary-acceptance.md`](R-MAP-DOC-submap-boundary-acceptance.md)（四组判据，各标自动 / 人眼）。
 7. **2.28.0 缺同 seed 对照图**：render-analysis 序 1 的验收要求"同 seed 前后对照"，当前只有实机口述结论。
+   → **路线已定、图仍缺**：[`review/R-MAP-DOC-render-seed-review.md`](../../review/R-MAP-DOC-render-seed-review.md)（只核现状、不重建"前"图；"前"组无 2.x tag 可回退，补图前涉观感验收一律记「未验证」）。
 
 ### 5.2 业务层面（6 条）
 
-1. **§3.4 五条无主遗留**没有处置结论。
-2. **素材导入（S2）无排期**，而它是一键成图"用久了就腻"的主要解法。
+1. **§3.4 五条无主遗留**没有处置结论。 → **已处置**（2026-11-06）：2 不立 + 3 立号（R-MAP-30/31/32，均 P2 不排期），见 §3.4 与[处置稿](R-MAP-DOC-legacy-disposition-scope.md) §A。
+2. **素材导入（S2）无排期**，而它是一键成图"用久了就腻"的主要解法。 → **已排期**：R-MAP-22 批内**首位（P1）**，三个前置见[处置稿](R-MAP-DOC-legacy-disposition-scope.md) §B2。
 3. **`map.db` 四条开放项**：缩略图抓取时机、`map_revisions` 无 UI（无法"回到上一版"）、
-   `map_assets` 表已建未用、删作品后的「降级为独立地图」钩子未接（现留悬空 `work_id`）。
-4. **A′ 的交互未设计**：跨图选择器要回答「引用还是拷贝」「子图能否反向跳转」「绑定的图被删除怎么办」。
+   `map_assets` 表已建未用、删作品后的「降级为独立地图」钩子未接（现留悬空 `work_id`）。 → **已收口**：四条均有「结论 / 归属 / 可判定触发条件」，见 [`spec/map-db-spec.md`](../../spec/map-db-spec.md) §9。
+4. **A′ 的交互未设计**：跨图选择器要回答「引用还是拷贝」「子图能否反向跳转」「绑定的图被删除怎么办」。 → **已闭环（降级）**：2.32.0 的拷贝语义把三问答完（拷贝 / 源图被删零影响 / 反向跳转不适用），见[处置稿](R-MAP-DOC-legacy-disposition-scope.md) §C。
 5. **道路 vs 水系边界未合并**：road 篇说"地点自动连路"，elements 篇说"水系只预留不自动生成"，
-   两篇各自成立，但没有一张表说清"哪些线自动、哪些手画"。
+   两篇各自成立，但没有一张表说清"哪些线自动、哪些手画"。 → **已归并**：四类线一律手画、生成器对折线零产出，见 [`R-MAP-DOC-line-autogen-analysis.md`](R-MAP-DOC-line-autogen-analysis.md)。
 6. ~~**图层与现有 7 层静态栈的关系未定**~~ —— **已定**（B4 PRD D7）：`doc.layers` 是「类型容器状态」，
    物理栈仍在 `layers.ts` 里固定；本批只在 `regionLayer` 与 `elementLayer` 之间**插一层** `polylineLayer`（8 → 9），
    其余不映射、不前移。
@@ -225,8 +238,13 @@
 ### 5.3 验证层面（3 条）
 
 1. **观感回归无自动化**：无截图比对/像素基线，2.27~2.28 的调参全靠人眼，回退风险隐性。
+   → 阈值与基线图口径已定（[`spec/map-export-spec.md`](../../spec/map-export-spec.md) §6.1 命名、
+   [`R-MAP-DOC-submap-boundary-acceptance.md`](R-MAP-DOC-submap-boundary-acceptance.md) §2.3 的 ΔE），**比对脚本未做**。
 2. **性能无压测脚本**：素材 2000+ 的视口剔除与 draw call 数没有度量口径。
-3. **子图递归深度无上限测试**：现状允许无限嵌套，深链（4 层以上）的缩放/剔除/导出没有用例。
+   → 口径与脚本名已定（[`spec/map-perf-spec.md`](../../spec/map-perf-spec.md)），**脚本未实现**。
+3. **子图递归深度无用例**：有 **16 层护栏**（`SUBMAP_MAX_DEPTH`，防爆栈用，`submapRender.ts:78`），
+   无产品上限约定；深链（4 层以上）的缩放/剔除/导出没有用例。
+   → **用例清单已给**：[`R-MAP-DOC-submap-boundary-acceptance.md`](R-MAP-DOC-submap-boundary-acceptance.md) §4（4 层 4 条 + 5 层 3 条）。
 
 ---
 
@@ -279,4 +297,4 @@
 - 状态细节：`review/map-vs-reference-render-analysis.md` §9（观感）、
   `review/map-vs-reference-interaction-review.md` §9（交互批次）、`spec/map-db-spec.md` §9（数据层开放项）
 - 未闭环需求：`nested-submap-*.md`、`region-editing.md`、`map-asset-system-architecture.md`
-- 已归档依据：`archive/prd-map/`（6 篇）
+- 已归档依据：`archive/prd-map/`（6 个文件：5 篇 md + 1 个 `.ts`）

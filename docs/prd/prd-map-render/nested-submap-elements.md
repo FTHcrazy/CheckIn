@@ -2,10 +2,14 @@
 
 > 模块全貌与进度见 [map-window-overview.md](map-window-overview.md)（地图模块唯一入口）。
 
-> 状态：方案稿（待评审）。归属 R-MAP 系列（地图渲染改造）的**增量**，是 `nested-submap-main.md`
+> 状态：**待评审（部分已并入 B4）**｜方案稿；折线部分已并入 B4 PRD（2.30.0 落地），渲染铁律与「水系不自动生成」结论继续有效。归属 R-MAP 系列（地图渲染改造）的**增量**，是 `nested-submap-main.md`
 > 的「要素扩展 + 状态架构」专篇。解决两件事：① 盘点用户后续可能需要的要素，**现在就在数据模型里
 > 预留位置**（避免将来加要素触发文档迁移）；② 确立**数据层 / 状态层 / 渲染层的边界纪律**，防止
 > 功能耦合与状态不统一。
+> 输入：[`map-window-overview.md`](map-window-overview.md)（模块总览）、[`map-b4-layers-polyline-prd.md`](map-b4-layers-polyline-prd.md)（B4 折线执行口径）
+> 基线：CheckIn **2.36.0**（工作区）｜折线（`MapPolyline`）已于 2.30.0 落地；面要素按 B4 D6 明确不做
+>
+> 线要素「自动 vs 手画」口径见 [`R-MAP-DOC-line-autogen-analysis.md`](R-MAP-DOC-line-autogen-analysis.md)（冲突时以该文裁定为准）。
 >
 > 两条用户已确认的关键决策（本文据此定稿）：
 > - **素材散布区采用「离散实例」**（圈定区域 → 散布一批同种素材实例），**不做**连续纹理平铺；

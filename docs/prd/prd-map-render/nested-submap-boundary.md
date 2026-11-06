@@ -2,9 +2,13 @@
 
 > 模块全貌与进度见 [map-window-overview.md](map-window-overview.md)（地图模块唯一入口）。
 
-> 状态：**羽化带已落地（2.32.0）**，其余条目维持本稿结论。归属需求 R-MAP 系列（地图渲染改造）的**增量**：
+> 状态：**待评审（部分已并入 B4）**｜羽化带已落地（2.32.0），其余条目维持本稿结论。归属需求 R-MAP 系列（地图渲染改造）的**增量**：
 > `区块内嵌子地图`（单图/多图无级嵌套）的能力设计。本文只解决其中两个**最影响观感**的问题：
 > ① 无级缩放如何做到「高德地图那样丝滑」；② 子地图嵌进父地图时如何消除**边界割裂感**。
+> 输入：[`map-window-overview.md`](map-window-overview.md)（模块总览）、[`map-b4-layers-polyline-prd.md`](map-b4-layers-polyline-prd.md)（B4 折线执行口径）
+> 基线：CheckIn **2.36.0**（工作区）｜羽化带（`erase` 混合 + `AlphaFilter` 隔离）已于 2.32.0 落地；岛屿形态/过渡地貌仍为可选增强
+>
+> 本节能力的验收判据见 [`R-MAP-DOC-submap-boundary-acceptance.md`](R-MAP-DOC-submap-boundary-acceptance.md)（渐隐宽度 / 色差阈值 / 递归深度）。
 >
 > 与本文平级的文档：
 > - `nested-submap-main.md` —— **嵌套子图主方案**（数据模型 `MapSubmap` / 递归场景图 / 两条生成路径 /

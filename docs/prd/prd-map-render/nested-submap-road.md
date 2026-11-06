@@ -2,9 +2,13 @@
 
 > 模块全貌与进度见 [map-window-overview.md](map-window-overview.md)（地图模块唯一入口）。
 
-> 状态：方案稿（待评审）。归属 R-MAP 系列（地图渲染改造）的**增量**，是 `nested-submap-main.md`
+> 状态：**待评审（部分已并入 B4）**｜方案稿；道路/折线执行口径已并入 B4 PRD（2.30.0 落地），本文只留道路算法依据。归属 R-MAP 系列（地图渲染改造）的**增量**，是 `nested-submap-main.md`
 > 的「道路层」专篇。解决两件事：① 在地点要素之间**自动生成道路**；② 道路作为**独立绘制层**，
 > 支持多种线条、用户手动调整，且**缩放时子图只显示子图自己的道路、父图只显示父图自己的道路**。
+> 输入：[`map-window-overview.md`](map-window-overview.md)（模块总览）、[`map-b4-layers-polyline-prd.md`](map-b4-layers-polyline-prd.md)（B4 折线执行口径）
+> 基线：CheckIn **2.36.0**（工作区）｜折线能力已于 2.30.0 落地；「沿地势自动画河/自动连路」仍未设计（R-MAP-21 取舍②）
+>
+> 线要素「自动 vs 手画」口径见 [`R-MAP-DOC-line-autogen-analysis.md`](R-MAP-DOC-line-autogen-analysis.md)（冲突时以该文裁定为准）。
 >
 > 本文默认方案已按用户确认采用（「按你的默认来」）。文内标注了四个可调决策点（D1~D4）及其
 > 默认取值，后续如需改，只动对应决策点即可。

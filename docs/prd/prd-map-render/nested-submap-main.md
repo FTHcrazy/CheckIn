@@ -2,9 +2,12 @@
 
 > 模块全貌与进度见 [map-window-overview.md](map-window-overview.md)（地图模块唯一入口）。
 
-> 状态：**实现中**（主方案已落地到 2.18.0；路径 A′ 与边界羽化已落地到 2.32.0，见 §4.1.2）。
+> 状态：**已实施**（主方案已落地到 2.18.0；路径 A′ 与边界羽化已落地到 2.32.0，见 §4.1.2）；折线/图层部分已并入 B4。
 > Phase 2（数据模型 / 递归场景图 / 两条生成路径 / 子图渐入与内部 LOD）与 Phase 2.4（子图自己的海岸、
 > 海面、分区、素材、地名、剔除）已实现；仍开放：子图内部的静态层缓存、子图内编辑（R-REG-10）。
+> 输入：[`map-window-overview.md`](map-window-overview.md)（模块总览）、[`map-b4-layers-polyline-prd.md`](map-b4-layers-polyline-prd.md)（B4 折线执行口径）
+> 基线：CheckIn **2.36.0**（工作区）｜Phase 2/2.4 于 2.18.0、A′ 与边界羽化于 2.32.0 闭环；静态层缓存未做（P2）
+> A′ 交互三问（引用/删除/反向跳转）已于 2.32.0 由拷贝语义答完，处置结论见 [`R-MAP-DOC-legacy-disposition-scope.md`](R-MAP-DOC-legacy-disposition-scope.md) §C。
 > 归属 R-MAP 系列（地图渲染改造）的**增量**：新增「区块内嵌子地图」
 > （单图/多图**无级嵌套**）能力。
 >

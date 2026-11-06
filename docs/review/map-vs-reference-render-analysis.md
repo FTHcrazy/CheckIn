@@ -1,7 +1,7 @@
 # 地图素材「和谐分布」机制逆向分析与差距归因
 
 > 状态：**分析定稿 + 执行中**（静态分析结论，未做运行时捕获）。落地进度以
-> [§9 执行总表](#9-执行总表交接用) 为准：已完成 17 项、执行序 1~6 全部闭环；剩余 2 条均为并行轨（阻塞中）。
+> [§9 执行总表](#9-执行总表交接用) 为准：已完成 18 项、执行序 1~6 全部闭环；剩余 2 条均为并行轨（阻塞中）。
 > 输入：`docs/archive/prd-map/map-render-alignment-architecture.md`、
 > `prd-map-render/map-asset-system-architecture.md`、`docs/archive/prd-map/map-render-alignment-prd.md`；
 > 目标站点公开前端产物 `all_model_base.js`（模块版本 1.122）
@@ -734,7 +734,7 @@ zone?: ("core" | "grass" | "desert" | "snow")[];
 | — | **海面暗角** `SEA_VIGNETTE`（14 环，0.004→0.026） | 2.27.0 | `MapCanvas/index.tsx` | `render-stack-guard.test.ts`：`STATIC_STACK = ["sheet","sea","seaShade"]` |
 | — | **程序纸纹** `paperGrain.ts`（中性灰，哑光 0.88，只压暗） | 2.27.0 | 新增文件 | `paperGrain.test.ts` 6 条（灰度 / 只压暗 / 同 seed 复现 / 接缝无断裂 / jsdom 返回 null） |
 | — | **`P2-2` 的一半**：`REGION_FILL_ALPHA` 0.32 → **0.10** | 2.27.0 | `regions.ts:228` | 全局值已到位；「按层级衰减」仍未做，见 9.2 序 5 |
-| **P1-1** | 海岸内缩带：`insetLand`（每环各自中心等比内缩 14）+ 素材**锚点与四角**都判在内缩轮廓内 | 2.28.0 | `land.ts`、`domain/generator.ts`（`footprintInLand`） | `land.test.ts` 6 条（顶点在内 / 面积变小 / 包围盒收缩 / 退化输入）；`generator.test.ts` 素材锚点全落在内缩轮廓内 |
+| **P1-1** | 海岸内缩带：`insetLand`（每环各自中心等比内缩 14）+ 素材**锚点与四角**都判在内缩轮廓内 | 2.28.0 | `land.ts`、`domain/generator.ts`（`footprintInLand`） | `land.test.ts` 6 条（顶点在内 / 面积变小 / 包围盒收缩 / 退化输入）；`generator.test.ts` 素材锚点全落在内缩轮廓内。**同 seed 对照记录见 [`docs/review/R-MAP-DOC-render-seed-review.md`](R-MAP-DOC-render-seed-review.md)**（2.28.0 当场未留 seed、未存图；补图口径与逐项结论表在该篇） |
 | **P1-3** | z 分层基线：`TERRAIN_LAYER` 覆盖 20 地形的档位表 + 「先按层、同层再按 y」二级排序 | 2.28.0 | `generator.ts`（`TERRAIN_LAYER` / `placements.sort`） | `generator.test.ts`：任一森林实例下标 < 任一山地实例下标；同档内 y 单调不减 |
 | **P2-1** | 陆地纹理**平铺 + 边缘羽化**：`TilingSprite` 按 512² 原尺寸重复（不再拉伸 2.25 倍），5 层内缩遮罩逐层降 alpha 形成 40 单位淡出 | 2.28.0 | `coastBake.ts`（`LAND_TEXTURE_FEATHER` / `LAND_TEXTURE_STEPS` / `textureMaskPolygons`）、`__pixi-mock.ts`、`bake.test.tsx` | `coastBake.test.ts` 26 条：装配 17 节点、平铺相位对齐世界坐标、逐层内缩顶点全在陆地内、包围盒逐层递减、最内层收缩跨度 ∈ (FEATHER, 3×FEATHER)、各层 alpha×STEPS ≈ `LAND_TEXTURE_ALPHA`、退化岛退回原轮廓 |
 | **P1-4** | 镜像翻转破重复：`MapElement.flipX`（可选 + 读点兜底）+ `flippable` 登记表（7 张有朝向人造物不可翻）+ 生成器按素材子流随机翻面 + 渲染 `scale.x` 取反 | 2.35.0 | `types.ts`（`elementFlipXOf`）、`sprites.ts`、`domain/terrain-assets.ts`（`flippableOf`）、`domain/generator.ts`、`MapCanvas/index.tsx`、`submapRender.ts` | `generator.test.ts`（同 seed 复现 / 不可翻恒正 / **验收① 像素完全一致对数 = 0**）、`types.test.ts`（旧档回落 false / 脏数据不翻 / migrate 保留）、`index.test.tsx`（翻面符号 / 不位移 / 撤销不重建）、`terrain-assets.test.ts`（不可翻白名单） |

@@ -1,12 +1,12 @@
 # map.db 数据层规范（地图独立库 + 作品可绑定）
 
-> 状态：**已实施（2.20.0 / B0）**。本文件是活规范，实施后随代码演进改版；
+> 状态：**已实施**（B0 / 2.20.0；§9 四条已于 2026-11-06 收口）
 > 落地实现在 `electron/map-db.ts`、`electron/handlers/map-handlers.ts`、
 > `src/windows/MapWindow/pages/MapEditorPage/persistence/useMapPersistence.ts`，
 > 架构不变量由 `electron/map-db-guard.test.ts` 钉住。
-> 输入：[map-vs-reference-interaction-review.md](../review/map-vs-reference-interaction-review.md) §7 R-MAP-28、
+> 输入：[`../review/map-vs-reference-interaction-review.md`](../review/map-vs-reference-interaction-review.md) §7 R-MAP-28、
 > `electron/novel-db.ts`（双库范式先例）、`AGENTS.md` §2.1（SQL 只出现在 db 与 handlers）
-> 基线：**2.18.0**（当时地图无任何持久化）
+> 基线：CheckIn **2.36.0**（工作区）｜`src/windows/MapWindow/` 44 文件 / 750 用例
 
 ---
 
@@ -222,14 +222,18 @@ CREATE TABLE IF NOT EXISTS map_config (
 
 ---
 
-## 9. 待确认（实施后仍开放）
+## 9. 四条开放项收口（结论 / 归属 / 触发条件）
 
-1. **缩略图生成时机**：当前"开库前抓一张"，理想是关窗时也抓（走 flush 之后的
-   短暂窗口，成本一次 extract）。若列表长期出现占位图，改这里。
-2. **历史版本保留份数**：现为 10 份（`MAP_REVISION_KEEP`），每 10 版留一档
-   （`MAP_REVISION_EVERY`）。`map_revisions` 暂无 UI 入口（通道已通），B1 之后再考虑"回到上一版"。
-3. **`map_assets` 是否首期就做**：表已建、通道未开。B2（素材体系）时启用，
-   避免届时再动一次 schema。
-4. **删除作品后的降级**：当前 spec 写"作品 purge 后把 `work_id` 置 NULL"，
-   该钩子还没接（novel 侧 purge 尚未调用 map 库）。在那之前，列表按
-   `workId` 查不到作品名时显示「独立地图」，行为上等价，只是库里留着一个悬空 id。
+> 本节原为四条自由文本，2026-11-06 收口为表格。**每一行都必须同时有「归属」与「可判定的触发条件」**，
+> 只写「以后再优化」的条目视为未收口。代码事实均给到 文件:行号，可逐条 `grep -n` 复核。
+
+| # | 开放项 | 结论 | 归属 | 触发条件（可判定，不是「以后再看」） | 代码证据 |
+|---|---|---|---|---|---|
+| **1** | 缩略图生成时机 | **维持「开库前抓一张」**（320px）；「关窗 flush 之后也抓一张」判为**不立** —— 关窗窗口只有 1.5s 兜底（§6 硬约束 3），在关窗路径里再插一次 `extract` 会把「关不掉窗口」的风险抬高，收益（少几张占位图）与风险不成比例 | **不立**（当前实现即终态）。若日后列表质量成为问题时，随素材/列表优化批重开 | 列表里**实际出现占位图**且用户对此反馈 **≥3 次**（同一条反馈重复计一次） | `pages/MapEditorPage/index.tsx:410-425`（开库前 320px 抓图 + `saveThumb`）；`persistence/useMapPersistence.ts:339-348`；无「关窗抓图」调用点（`grep saveThumb src/windows/MapWindow` 仅 2 处：`:425`、`:339`） |
+| **2** | 历史版本保留份数 / `map_revisions` 无 UI | **保留份数不变**：`MAP_REVISION_KEEP = 10`、`MAP_REVISION_EVERY = 10`（每 10 版留一档）。**通道已通、UI 不做** —— 渲染层对 `revisions` / `restoreRev` **零引用**，做一个「回到上一版」面板属功能开发，不是数据层欠账 | **B1 之后**（功能批），需另立需求号（本批不立） | 用户提出「回到上一版 / 上一稿」诉求 **≥1 次** | `electron/map-utils.ts:23`（`MAP_REVISION_KEEP = 10`）、`:32`（`MAP_REVISION_EVERY = 10`）、`:74`（`shouldSnapshotRevision`）、`:139`（`revisionsToDrop`）；调用点 `electron/handlers/map-handlers.ts:169`（判定）、`:172`（INSERT）、`:178`（裁剪）。⚠️ 常量**在 `map-utils.ts`，不在 `map-db.ts`**。渲染层零引用：`grep -rn "revisions" src/windows/MapWindow --include=*.ts --include=*.tsx` 无输出 |
+| **3** | `map_assets` 已建未用 | **保留表不删**。表已随首建库一次到位，删掉等于下次接素材导入时**再动一次 schema + 迁移**；空表的成本是零。这是「已建未用」的**刻意状态**，不是遗漏 | **S2 素材导入批**启用（届时写入 `file_path` 索引行） | S2 排期启动（素材导入需要跨图复用的资源索引） | 建表 `electron/map-db.ts:99`、索引 `:109`；SQL 使用面：**只有 purge 的 DELETE**（`map-handlers.ts:361`），全仓**没有** `INSERT INTO map_assets` / `FROM map_assets`（`grep -rn "INSERT INTO map_assets\|FROM map_assets" electron/` 仅命中 guard 测试的字符串断言） |
+| **4** | 删作品后的降级钩子 | **钩子未接**是硬事实：novel 侧 purge 只删自己的表，**不调用 map 库**。**显示层已兜底**：列表按 `workId` 查不到作品时显示「独立地图」，**用户可见行为与「已置 NULL」等价**，差别只是库里留一个悬空 `work_id` | **novel 侧 purge 统一处理**（跨库事务那一批） | novel 侧把「删作品」改成统一事务 / 级联清理时一并接（届时在同一个事务里把 `map_docs.work_id` 置 NULL） | `grep -rn "purge" electron/` 的 map 侧只有 `map-handlers.ts:355`（`map-doc-purge`，删地图自己，与作品无关）；`novel-handlers.ts` 的 `novel-chapter-purge:771` / `novel-volume-purge:1524` 均不引用 map 库。行为等价的显示兜底见 §5「作品被彻底删除」行 |
+
+**收口后的总账**：4 条里 **1 条不立（序 1）**、**1 条待功能批立号（序 2）**、**2 条已挂到具体批次（序 3 → S2；序 4 → novel purge 统一事务）**。
+没有「无承接」条目，也没有「等以后再说」的表述。
+

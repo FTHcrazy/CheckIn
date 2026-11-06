@@ -2,10 +2,11 @@
 
 > 模块全貌与进度见 [map-window-overview.md](map-window-overview.md)（地图模块唯一入口）。
 
+> 状态：**S1 已落地 / S2~S4 预留**（S1 素材体系 2.22.0 / 2.25.0~2.26.0 闭环；S2 素材导入、S3 热门地图扩容、S4 AI 接口未动工）
+> 输入：`review/map-vs-reference-interaction-review.md` §R-MAP-22（上游需求）、`assets/sprites/MANIFEST.json`（素材登记）、[`map-window-overview.md`](map-window-overview.md)（模块总览）
+> 基线：CheckIn **2.36.0**（工作区）｜素材 **52** 张符号 + 4 张底图（`pnpm count:sprites`）；S1 落地时点为 2.22.x
 > 版本：v1.2（S1 已落地） · 日期：2026-11-04
-> 基线：2.22.x（B0 持久化 / B1 属性面板 / B2 素材落地；2.22.2 补缺批后共 **52** 张符号 + 4 张底图）
 > 服务对象：B3 一键成图生成器（R-MAP-21）、后续热门地图生成与 AI 接线
-> 上游依据：`review/map-vs-reference-interaction-review.md` §R-MAP-22 / `assets/sprites/MANIFEST.json`
 
 ---
 
