@@ -96,7 +96,7 @@ export default function ImportTemplateModal({
         <div className="nv-tpl__block">
           <div className="nv-tpl__block-head">
             <span className="nv-tpl__tag nv-tpl__tag--muted">兼容</span>
-            <span className="nv-tpl__block-title">JSON · 字符串数组或 words 字段（.json）</span>
+            <span className="nv-tpl__block-title">JSON · 词条数组（.json）</span>
           </div>
           <pre className="nv-tpl__code">{IMPORT_TEMPLATE_JSON_ARRAY}</pre>
           <pre className="nv-tpl__code">{IMPORT_TEMPLATE_JSON_OBJECT}</pre>

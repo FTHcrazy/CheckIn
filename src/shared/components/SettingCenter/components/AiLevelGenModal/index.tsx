@@ -149,7 +149,7 @@ export default function AiLevelGenModal({
         {session?.error && <p className="ai-lvl__hint is-error">{session.error}</p>}
         {session?.usedFallback && !loading && (
           <p className="ai-lvl__hint">
-            模型这次没给标准 JSON，已按文本兜底解析，条目可能不全
+            模型这次的返回不太规整，已尽量从文字里提取，条目可能不全
           </p>
         )}
         {applied !== null && !loading && (

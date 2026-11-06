@@ -148,7 +148,7 @@ export default function UsagePanel() {
             <div className="settings-item__text">
               <span className="settings-item__label">导出诊断包</span>
               <span className="settings-item__hint">
-                只含调用次数、耗时、错误码等元数据，不含正文、作品名与密钥；可回传给开发者排查
+                只含调用次数、耗时、失败原因等统计信息，不含正文、作品名与密钥；反馈问题时可以一并提供
               </span>
             </div>
             <div className="settings-usage__tools">

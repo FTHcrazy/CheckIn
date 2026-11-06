@@ -153,9 +153,9 @@ export default function ShelfTopBar({
               aria-label="回收站"
             />
           </Tooltip>
-          {/* 导入书籍（TXT）：导入中换成 loading 图标，进度文案退到 aria-label
-              与 Tooltip —— 图标位放不下一行字，而这一格又必须稳定不撑宽。 */}
-          <Tooltip title={importing ? importPhase || "正在导入" : "导入 TXT 书籍"}>
+          {/* 导入书籍（TXT / DOCX）：导入中换成 loading 图标，进度文案退到
+              aria-label 与 Tooltip —— 图标位放不下一行字，而这一格又必须稳定不撑宽。 */}
+          <Tooltip title={importing ? importPhase || "正在导入" : "导入 TXT / DOCX 书籍"}>
             <Button
               className="bs-topbar__import"
               icon={<ImportOutlined />}

@@ -64,8 +64,20 @@ describe("续写 / 摘要的二次确认（REQ-060）", () => {
     // 那是旧行为）；请求本体收在 `start`，确认框只负责放行
     expect(runChapterSummary).toMatch(/const start = \(\): void => \{[\s\S]*doGenerateSummary\(/);
     expect(runChapterSummary).toMatch(/onOk: start/);
-    // 取消要把加载态退回来，否则面板永远转圈
-    expect(runChapterSummary).toMatch(/onCancel:[\s\S]*loading: false/);
+  });
+
+  it("确认框出现之前不打开摘要面板（回归：确认框后面浮着「正在生成摘要…」）", () => {
+    // 面板的加载态只能在 `start` 里产生 —— 旧实现把它挪到了弹确认框之前，
+    // 于是作者还没点「开始生成」，屏幕上已经浮着一块「正在生成摘要…」，
+    // 既像已经开始扣额度，又挡住正文。
+    const startIndex = runChapterSummary.indexOf("const start = ()");
+    const loadingIndex = runChapterSummary.indexOf("loading: true");
+    expect(startIndex).toBeGreaterThan(-1);
+    expect(loadingIndex).toBeGreaterThan(startIndex);
+    // 全函数只有 start 里那一处置加载态（若有第二处，说明又提前打开了面板）
+    expect(runChapterSummary.match(/loading: true/g) ?? []).toHaveLength(1);
+    // 取消不需要回退加载态（此刻它还没被置起来）
+    expect(runChapterSummary).not.toMatch(/onCancel:[\s\S]*loading: false/);
   });
 
   it("浮层里的「重新生成」不再重复确认（点这个按钮本身就是这一次同意）", () => {
@@ -85,6 +97,14 @@ describe("续写 / 摘要的二次确认（REQ-060）", () => {
     expect(runChapterSummary).toContain("setSummaryPending");
     // 授权分支在前，确认框在后：先合规、再逐次确认
     expect(confirmIndex).toBeGreaterThan(consentIndex);
+  });
+
+  it("授权弹窗开着时同样不打开面板：同意之后才置加载态", () => {
+    const consentConfirm = bodyOf("handleSummaryConsentConfirm", "const handleSummaryClose");
+    const loadingIndex = consentConfirm.indexOf("loading: true");
+    const generateIndex = consentConfirm.indexOf("doGenerateSummary(");
+    expect(loadingIndex).toBeGreaterThan(-1);
+    expect(generateIndex).toBeGreaterThan(loadingIndex);
   });
 
   it("确认框用上下文内的实例（App.useApp），不用静态 Modal.confirm", () => {

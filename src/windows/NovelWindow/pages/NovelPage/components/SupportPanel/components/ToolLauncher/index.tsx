@@ -52,7 +52,12 @@ interface ToolItem {
   color: string;
   weak: string;
   name: string;
-  state: string;
+  /**
+   * 可选状态标签。只在「用户需要知道为什么点不动」时才给（如抽取设定缺 AI 配置）；
+   * 可用的工具**不带**任何状态标签 —— 「已上线」是研发视角的进度标记，
+   * 对作者是纯噪音。
+   */
+  state?: string;
   desc: string;
   /** 可进入的工具：点击打开二级面板 */
   onOpen?: () => void;
@@ -89,7 +94,6 @@ export default function ToolLauncher({
       color: "var(--app-primary)",
       weak: "var(--app-primary-weak)",
       name: "起名器",
-      state: "已上线",
       desc: "八类名称 × 东西方多风格，避开本书已用名，可插入正文或直接建卡。",
       onOpen: onOpenNaming,
     },
@@ -99,8 +103,7 @@ export default function ToolLauncher({
       color: "var(--app-error)",
       weak: "var(--app-error-weak)",
       name: "敏感词检测",
-      state: "已上线",
-      desc: "AC 自动机扫全书，内置涉黄涉暴等红线词，可自建词库与批量导入。",
+      desc: "整本扫描，内置涉黄涉暴等红线词，可自建词库与批量导入。",
       onOpen: onOpenSensitive,
     },
     {
@@ -109,8 +112,7 @@ export default function ToolLauncher({
       color: "var(--app-accent-teal)",
       weak: "var(--app-accent-teal-weak)",
       name: "一致性校对",
-      state: "已上线",
-      desc: "拿要素卡人名与境界阶梯核全书，挑出错字式的名字不一致与未登记档位。纯本地，不耗 AI 额度。",
+      desc: "拿要素卡人名与境界阶梯核全书，挑出错字式的名字不一致与未登记档位。只在本机比对，不联网。",
       onOpen: onOpenConsistency,
     },
     {
@@ -119,7 +121,7 @@ export default function ToolLauncher({
       color: "var(--app-accent-blue)",
       weak: "var(--app-accent-blue-weak)",
       name: "抽取设定",
-      state: extractUnavailableText ? "需先配置 AI" : "已上线",
+      state: extractUnavailableText ? "需先配置 AI" : undefined,
       desc: "把本章出现的人物 / 地点 / 势力 / 物品扒成候选卡，勾选后才入库。",
       // 不可用时**只解释原因**：onOpen 摘掉 → 走 plannedHint 分支的 toast
       onOpen: extractUnavailableText ? undefined : onOpenExtract,
@@ -131,10 +133,9 @@ export default function ToolLauncher({
       color: "var(--app-accent-purple)",
       weak: "var(--app-accent-purple-weak)",
       name: "人物关系网络",
-      state: onOpenRelation ? "已上线" : "规划中 · R27",
       desc: "把本书要素铺成一张关系图，一眼看清阵容与主线；点节点展开完整资料卡。",
       onOpen: onOpenRelation,
-      plannedHint: "「人物关系网络」还在规划中，上线后会出现在这里",
+      plannedHint: "「人物关系网络」还没上线，上线后会出现在这里",
     },
     {
       id: "map",
@@ -142,10 +143,9 @@ export default function ToolLauncher({
       color: "var(--app-accent-green)",
       weak: "var(--app-accent-green-weak)",
       name: "架空地图",
-      state: onOpenMap ? "已上线" : "规划中 · R28",
       desc: "轻量画布：节点 + 连线标距离 + 导出 PNG，不触真实地理数据。",
       onOpen: onOpenMap,
-      plannedHint: "「架空地图」还在规划中，上线后会出现在这里",
+      plannedHint: "「架空地图」还没上线，上线后会出现在这里",
     },
   ];
 
@@ -173,9 +173,11 @@ export default function ToolLauncher({
               <span className="nv-tools__body">
                 <span className="nv-tools__name">
                   {tool.name}
-                  <span className={`nv-tools__state${live ? " is-live" : ""}`}>
-                    {tool.state}
-                  </span>
+                  {tool.state ? (
+                    <span className={`nv-tools__state${live ? " is-live" : ""}`}>
+                      {tool.state}
+                    </span>
+                  ) : null}
                 </span>
                 <span className="nv-tools__desc">{tool.desc}</span>
               </span>

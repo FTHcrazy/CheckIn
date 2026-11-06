@@ -65,7 +65,7 @@ describe("ToolLauncher：规划中的工具不是死链", () => {
     expect(onNotify).toHaveBeenCalledTimes(1);
     const [text, tone] = onNotify.mock.calls[0] as [string, string];
     expect(text).toContain("人物关系网络");
-    expect(text).toContain("规划中");
+    expect(text).toContain("还没上线");
     expect(tone).toBe("info");
 
     screen.getByText("架空地图", { selector: "span" }).click();
@@ -74,6 +74,13 @@ describe("ToolLauncher：规划中的工具不是死链", () => {
 
     // 规划中的卡不该顺手把起名器也打开
     expect(onOpenNaming).not.toHaveBeenCalled();
+  });
+
+  it("卡面不出现研发视角的进度标注（已上线 / 需求编号）", () => {
+    setup();
+    const text = document.querySelector(".nv-tools")?.textContent ?? "";
+    expect(text).not.toContain("已上线");
+    expect(text).not.toMatch(/R\d{2}/);
   });
 
   it("可用的工具正常进入二级面板，且不触发「规划中」提示", () => {

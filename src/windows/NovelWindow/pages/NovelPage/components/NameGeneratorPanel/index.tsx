@@ -643,7 +643,7 @@ export default function NameGeneratorPanel({
       {favorites.length === 0 ? (
         <div className="nv-empty">
           <b>还没有收藏的名字</b>
-          <span>在结果卡上点星标即可收藏（按作品持久化）</span>
+          <span>在结果卡上点星标即可收藏（收藏会保存在这本书里）</span>
         </div>
       ) : (
         <ul className="nv-name__favorites">

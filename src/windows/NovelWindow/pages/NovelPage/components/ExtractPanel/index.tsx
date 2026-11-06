@@ -199,7 +199,7 @@ export default function ExtractPanel({
 
       {session?.usedFallback && !loading && (
         <p className="nv-xp__hint nv-xp__hint--warn">
-          模型这次没给标准 JSON，已按文本兜底解析，条目可能不全
+          模型这次的返回不太规整，已尽量从文字里提取，条目可能不全
         </p>
       )}
 

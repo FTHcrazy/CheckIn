@@ -93,10 +93,16 @@
   }
 
   // 书卡网格：宽屏约 4 列起，随窗口宽度自动伸缩；列表视图退化为单列
+  //
+  // ⚠️ `align-items` 必须是 `stretch`（默认值，不要再写 `start`）：
+  // 书卡高度由「封面 4/5 宽 + 信息区」算出，会随列宽变化；新建作品虚线卡用的是
+  // 固定 `min-height`。`start` 让两张卡各按各的高度落位 → 底边错开几像素。
+  // 拉伸后同一行取最高者，两类卡底边天然对齐（见 BookCard / NewWorkCard 的
+  // `height: 100%`）。
   &__grid {
     display: grid;
     gap: 14px;
-    align-items: start;
+    align-items: stretch;
 
     &--grid {
       grid-template-columns: repeat(auto-fill, minmax(178px, 1fr));

@@ -30,6 +30,10 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  /* 与书卡同高：行高由网格决定（书卡内容更高时本卡撑满整行）。
+     `min-height` 只在书架为空 / 行内只有本卡时兜住一个体面的高度，
+     不能拿它当「与书卡对齐」的手段 —— 书卡高度随列宽变化，写死必然错开。 */
+  height: 100%;
   min-height: 232px;
   padding: 20px;
   transition: transform var(--app-t-normal) var(--app-ease-standard),

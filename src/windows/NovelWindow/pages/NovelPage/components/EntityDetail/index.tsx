@@ -351,7 +351,7 @@ export default function EntityDetail({
         </div>
       </div>
 
-      <div className="nv-sechead">基础字段</div>
+      <div className="nv-sechead">基础信息</div>
       {editing ? (
         <>
           <div className="nv-edetail__form-row">

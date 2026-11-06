@@ -168,7 +168,7 @@ describe("如实说明", () => {
 
   it("走了兜底解析时明确提示（结果可能不全）", async () => {
     renderDialog({ session: session({ usedFallback: true }) });
-    expect(await screen.findByText(/兜底解析/)).toBeTruthy();
+    expect(await screen.findByText(/尽量从文字里提取/)).toBeTruthy();
   });
 
   it("AI 不可用时按钮禁用并给出原因（点了也不会没反应）", async () => {

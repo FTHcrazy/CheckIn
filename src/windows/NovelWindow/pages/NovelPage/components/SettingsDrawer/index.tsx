@@ -202,6 +202,9 @@ export default function SettingsDrawer({
             <label>字数口径</label>
             <Segmented<WordCountMode>
               size="small"
+              // block：两档等分整列宽度。不加时轨道被 Grid 拉满、选项却按内容宽
+              // 挤在左边，右半边空一截（与上面「序号数字」同一范式）
+              block
               value={settings.wordCountMode}
               options={[
                 { value: "withPunctuation", label: "含标点" },
@@ -325,7 +328,7 @@ export default function SettingsDrawer({
             })}
           </div>
           <p className="nv-setting__hint">
-            纸面底色跟随主窗口主题；标注层全部关闭即整体降级。
+            纸面底色跟随主窗口主题；标注层全部关闭后，正文不再高亮。
           </p>
         </section>
       </div>

@@ -386,7 +386,7 @@ export default function UnitSystemManager({ api }: UnitSystemManagerProps) {
       </div>
 
       <div className="cpk-unit__io">
-        <span className="cpk-unit__iohead">量纲 JSON</span>
+        <span className="cpk-unit__iohead">导出 / 导入</span>
         <span className="cpk-unit__ioacts">
           <Button size="small" onClick={() => void handleCopyUnits()} title="复制这段 JSON">
             复制

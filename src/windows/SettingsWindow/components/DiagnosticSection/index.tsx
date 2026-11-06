@@ -5,10 +5,10 @@ import SettingsActionBar from "../SettingsActionBar";
 import "./index.scss";
 
 const LEVEL_OPTIONS = [
-  { value: "debug", label: "详细（debug）" },
-  { value: "info", label: "常规（info）" },
-  { value: "warn", label: "仅警告（warn）" },
-  { value: "error", label: "仅错误（error）" },
+  { value: "debug", label: "详细" },
+  { value: "info", label: "常规" },
+  { value: "warn", label: "仅警告" },
+  { value: "error", label: "仅错误" },
 ] as const;
 
 /** 读不到主进程配置时的展示值（与主进程默认一致，不伪造用户的选择） */
@@ -104,7 +104,7 @@ export default function DiagnosticSection() {
             <div className="settings-item__text">
               <span className="settings-item__label">本地日志</span>
               <span className="settings-item__hint">
-                按登录用户与窗口分目录存放，每行带时间 / 级别 / 模块，便于定位问题
+                按账号与窗口分目录保存，每行带时间与级别，便于定位问题
               </span>
             </div>
             <Button className="settings-btn" onClick={() => void openDir()}>
@@ -116,7 +116,7 @@ export default function DiagnosticSection() {
             <div className="settings-item__text">
               <span className="settings-item__label">日志级别</span>
               <span className="settings-item__hint">
-                低于该级别的记录不落盘；IPC 调用与 AI 调用按 DEBUG 级强制写入同一份窗口日志
+                低于该级别的记录不写入文件；AI 调用记录会一并写入同一份日志
               </span>
             </div>
             <Select
@@ -130,9 +130,9 @@ export default function DiagnosticSection() {
 
           <div className="settings-item">
             <div className="settings-item__text">
-              <span className="settings-item__label">记录 IPC 调用</span>
+              <span className="settings-item__label">记录操作细节</span>
               <span className="settings-item__hint">
-                只记失败与慢于 300ms 的调用；与业务日志同一个文件，按时间轴对齐
+                只记失败与明显卡顿的操作；与其它记录写在同一个文件里，按时间对齐
               </span>
             </div>
             <Switch checked={draft.ipc} onChange={(ipc) => patchDraft({ ipc })} />

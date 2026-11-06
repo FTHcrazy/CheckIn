@@ -19,6 +19,8 @@
   padding: 0;
   text-align: left;
   cursor: pointer;
+  /* 与新建作品虚线卡同高：网格行高取整行最高者，本卡撑满该行 */
+  height: 100%;
 }
 
 .bs-card {
@@ -49,11 +51,14 @@
     flex-direction: column;
 
     .bs-card__cover {
+      flex: none; /* 封面高度只由 aspect-ratio 决定，被行高拉伸时不吃掉信息区 */
       width: 100%;
       aspect-ratio: 5 / 4;
     }
 
     .bs-card__info {
+      /* 行被拉高时多出来的空间落在信息区（文字仍贴顶），保证底边与虚线卡齐平 */
+      flex: 1;
       padding: 10px 12px 12px;
     }
   }

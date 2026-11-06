@@ -102,7 +102,7 @@ export default function RealmModule({ api }: RealmModuleProps) {
       {rungs.length === 0 ? (
         <div className="cpk-emptyblock">
           <p className="cpk-empty">
-            这本书还没有等级体系。境界复用「设定中心」的等级序列（R25），
+            这本书还没有等级体系。境界复用「设定中心」的等级序列，
             先在那里建好阶梯，这里就能用了。
           </p>
           <div className="cpk-emptyblock__actions">

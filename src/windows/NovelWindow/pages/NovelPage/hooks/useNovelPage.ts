@@ -1296,11 +1296,19 @@ export function useNovelPage() {
   const doGenerateSummary = useCallback(
     async (chapterId: string, chapterTitle: string, scope: L3Scope): Promise<void> => {
       const chapter = data.chapters.find((item) => item.id === chapterId);
-      if (!chapter) return;
+      // 走到这里时面板已经是加载态：任一「发不出去」的早退都必须把面板收掉，
+      // 否则会留一个永远转圈的浮层（该章刚被删 / 换了作品）
+      if (!chapter) {
+        setSummary(null);
+        return;
+      }
 
       // 先按范围取「真实要发的正文」：范围不是埋点字段，它决定发送内容（G4）
       const payload = buildL3Payload(chapterId, scope);
-      if (!payload) return; // 章节已被删除 / 换作品
+      if (!payload) {
+        setSummary(null); // 章节已被删除 / 换作品
+        return;
+      }
       if (!payload.ok) {
         // 选了「选中段落」却什么都没选：必须明说并停手，不能悄悄退回整章
         const message = "当前范围是「选中段落」，请先在正文里选中要发送的内容";
@@ -1465,16 +1473,26 @@ export function useNovelPage() {
         return;
       }
 
-      // 打开摘要面板为加载态（授权未决时也先展示，避免「点了没反应」）
-      setSummary({
-        chapterId,
-        loading: true,
-        error: null,
-        result: null,
-        oneLiner: "",
-        noteConflict: "",
-        noteApplied: false,
-      });
+      /**
+       * 真正开始生成时才打开摘要面板，并置为加载态。
+       *
+       * ⚠️ 不能像旧实现那样「一点图标就先把面板摆出来」：确认框 / 授权弹窗还
+       * 悬在上面时，背后已经浮着一个「正在生成摘要…」的面板（作者会以为已经
+       * 在发请求了，也遮住了正文）。此刻给反馈的是确认框本身，面板登场时机
+       * 应当是「用户按下开始生成」之后。
+       */
+      const start = (): void => {
+        setSummary({
+          chapterId,
+          loading: true,
+          error: null,
+          result: null,
+          oneLiner: "",
+          noteConflict: "",
+          noteApplied: false,
+        });
+        void doGenerateSummary(chapterId, chapter.title, aiConsent.scope);
+      };
 
       // 未开 L3 总开关 → 先弹授权弹窗（M5 强制），确认后再真正生成。
       // 弹窗里同时选「本次范围」：范围决定发送内容，不只是埋点字段。
@@ -1482,11 +1500,6 @@ export function useNovelPage() {
         setSummaryPending({ chapterId, chapterTitle: chapter.title });
         return;
       }
-
-      /** 真正发起生成（确认框的 onOk 与「重新生成」共用） */
-      const start = (): void => {
-        void doGenerateSummary(chapterId, chapter.title, aiConsent.scope);
-      };
 
       // 浮层里的「重新生成」（force = true）不再确认：作者看着这一章的摘要
       // 亲手点的「重新生成」，本身就是这一次知情同意，再问一遍只是多一次回车。
@@ -1508,12 +1521,6 @@ export function useNovelPage() {
         okText: "开始生成",
         cancelText: "取消",
         onOk: start,
-        onCancel: () => {
-          // 取消 = 这次不生成：把面板从加载态退回来，不留一个永远转圈的面板
-          setSummary((prev) =>
-            prev && prev.chapterId === chapterId ? { ...prev, loading: false } : prev,
-          );
-        },
       });
     },
     [
@@ -1533,17 +1540,28 @@ export function useNovelPage() {
     const { chapterId, chapterTitle } = summaryPending;
     const scope = aiConsent.scope;
     setSummaryPending(null);
+
+    // 用户已经在授权弹窗里点头，此刻才让摘要面板登场（弹窗期间不摆面板）。
+    // 放在 await 之前：授权写入是一次 IPC，等它回来再开面板会有一段「点了没反应」。
+    setSummary({
+      chapterId,
+      loading: true,
+      error: null,
+      result: null,
+      oneLiner: "",
+      noteConflict: "",
+      noteApplied: false,
+    });
+
     const ok = await aiConsent.enableL3();
     if (!ok) {
-      setSummary((prev) =>
-        prev && prev.chapterId === chapterId
-          ? { ...prev, loading: false, error: "授权开启失败，请稍后重试" }
-          : prev,
-      );
+      // 授权没开成：这次没有生成，把面板收掉，别留一个永远转圈的浮层
+      setSummary(null);
+      view.showToast("授权开启失败，请稍后重试", "warning");
       return;
     }
     void doGenerateSummary(chapterId, chapterTitle, scope);
-  }, [summaryPending, aiConsent, doGenerateSummary]);
+  }, [summaryPending, aiConsent, doGenerateSummary, view]);
 
   /** 关闭摘要面板 */
   const handleSummaryClose = useCallback((): void => {
@@ -1576,7 +1594,8 @@ export function useNovelPage() {
   const handleSummaryConsentCancel = useCallback((): void => {
     void logAiEvent({ intent: "summary", step: "cancel", scope: aiConsent.scope });
     setSummaryPending(null);
-    setSummary((prev) => (prev ? { ...prev, loading: false, error: null } : prev));
+    // 授权被拒时还没有开始生成，把面板整个收起（而不是留一个空壳）
+    setSummary(null);
   }, [aiConsent.scope]);
 
   // ── AI 实体抽取（R-AI-08）─────────────────────────────

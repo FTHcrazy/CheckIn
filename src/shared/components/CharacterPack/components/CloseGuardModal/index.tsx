@@ -55,7 +55,7 @@ export default function CloseGuardModal({
         {reason}前有 <b>{dirty}</b> 处改动尚未提交。
       </p>
       <p className="cpk-guard__sub">
-        草稿已持久化，即使直接丢弃也可以从「盘点记录」找回上一次保存的版本。
+        草稿已经保存下来，即使直接丢弃也可以从「盘点记录」找回上一次保存的版本。
       </p>
     </Modal>
   );
