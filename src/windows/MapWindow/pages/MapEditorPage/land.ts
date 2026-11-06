@@ -6,26 +6,32 @@
  * 做不出海岸。区块是"地表的划分"，陆地是"地表本身"，两者必须解耦：
  * 陆地由本模块生成，区块再由 `regions.ts` 在陆地多边形**内部**切分（见 PRD §6.1.3）。
  *
- * 【形状算法：域扭曲 fbm + 极坐标半径】
- *   r(θ) = floor + amp · fbm(w(θ)) + detail · fbm(3.9·单位圆)
- *   其中 w(θ) = 单位圆·freq + warp · 两层低频噪声       ← 域扭曲
- * 选它而不是"撒点 + 形态学腐蚀膨胀"，理由有三：
- *   · 一次成型，顶点数可控（= 采样数），不需要额外做去自交；
- *   · θ 单调递增且 r 恒正 ⇒ 多边形**恒为简单闭合环**，不会出现打结的填充空洞；
- *   · 噪声场是位置的连续函数，同一个 θ 永远得到同一个 r ⇒ 天然可复现。
+ * 【形状算法：SDF 侵蚀管线 —— 逆向目标 erodeGeoJSON 的参数化重建】
+ * 2.34.0 起，海岸形状不再用极坐标 r(θ)（历次"太圆润"都根因于它：全域等强噪声
+ * 给不出"边缘毛糙、内陆干净"的层次），改为直接采用逆向分析
+ * （`docs/review/map-vs-reference-render-analysis.md` §3.6，`decoded.js@747732`）
+ * 的算法与参数：
  *
- * ⚠️ **历次"太圆润"的根因都在参数，不在算法**：早期把 `floor` 定在 0.72，
- * 半径只能内缩 28%，画出来就是"带轻微起伏的椭圆"；后来加域扭曲才真正摆脱圆形。
- * 要更"碎"就调 `warp` / `freq`，要更深的海湾就调低 `floor` —— 但 `floor` 低于
- * 0.3 会出现细颈自咬的观感（数学上仍无自交，但视觉上像断成两截）。
+ *   1. 母形栅格化 → 有符号距离场 SDF（Felzenszwalb 双向距离变换）；
+ *   2. 域扭曲：fx = x + fbm(x·0.012, y·0.012, 5 octaves)·115（warpAmp），
+ *      把整条岸线"甩"出半岛与深湾 —— 这是大尺度结构的主力；
+ *   3. 距离衰减细节：d += fbm(x·0.085, y·0.085, 3 octaves)·26·exp(−d²/(2·28²))
+ *      —— **离岸越近细节越强、深入内陆迅速归零**，海岸有手绘碎边而内陆平整，
+ *      素材落上去不会与岸线纹理互相干扰（逆向目标"和谐"的关键一条）；
+ *   4. marching squares at iso=0 → 轮廓 → 角切平滑 ×2（Chaikin）→ Douglas–Peucker 抽稀。
  *
- * 【两个比例常量的分工】`0.72` 是"最窄处不能细成长条"的下限，`0.28` 是"海岸要有湾"
- * 的振幅。两者必须一起调：只调大振幅会让陆地碎成群岛，只调小则退化成圆形。
+ * 母形（第 1 步的输入）由轻微起伏的极坐标环给出（`makeRadius`，能量压得很低）——
+ * 它只负责"这块陆地的胖瘦与走向"，海岸的全部性格交给侵蚀管线。这与逆向目标
+ * 用 GeoJSON 大陆轮廓当输入是同一分工。
+ *
+ * 【无自交】marching squares 在标量场 iso=0 上追踪出的环天然互不相交；
+ * Chaikin / Douglas–Peucker 都是保序收缩变换，不引入交叉。
  *
  * 【多岛靠"格子"而不是靠随机撒点】随机撒点 + 收缩重试在两岛以上时几乎必然失败：
- * 第一个岛会把纸心占满，第二个岛无论怎么缩都塞不进剩下的环形边角（实测 12 轮
- * ×64 次撒点无一命中，岛被静默丢弃）。改成"先按岛数分格、再让每个岛填满自己的
- * 格子"，排布就变成**必然成功**的确定性过程，且格子长宽比天然给出岛的走向。
+ * 第一个岛会把纸心占满，第二个岛无论怎么缩都塞不进剩下的环形边角。改成"先按岛数
+ * 分格、再让每个岛填满自己的格子"，排布就是**必然成功**的确定性过程。
+ * 侵蚀在**每岛局部栅格**上独立进行：扭曲场再猛也不会把两座岛"焊"到一起，
+ * 最终按格子半幅贴合（`fitRingToSpan`）结构性保证海峡宽度。
  *
  * 【噪声不重写】`createRng` / `fbm` 一律从 `regions.ts` 引入 —— 那边的值噪声是
  * "位置连续函数"，正是"边界严丝合缝"的前提；各写一套会让陆地与区块的噪声场错位。
@@ -39,12 +45,11 @@ import { createRng, fbm, pointInPolygon, polygonArea, type Point } from "./regio
 import type { MapLand, Rect } from "./types";
 
 /**
- * 每岛的方向角采样数。
+ * 母形环的方向角采样数。
  *
- * PRD 写的是 64，中途取过 96。现在取 160 —— 原因变了：**不是**为了消折线
- * （贝塞尔已经把折线磨平了），而是为了容下 `LAND_RADIUS.detail` 那一层碎齿。
- * 碎齿绕一圈跨 54 个噪声格，按采样定理至少要 108 个点才不混叠；96 点会让
- * 高频细节退化成随机抖动，岸线看着"毛"而不"碎"。160 点成本可忽略（生成一次）。
+ * 母形只是侵蚀管线的输入（栅格化成掩码就丢），160 点远密于栅格分辨率
+ * （母形周长 ≈ 2400 世界单位 ÷ 160 ≈ 15 单位/弦，栅格 1 像素 ≈ 2 单位），
+ * 足够扫描线填充不出锯齿漏洞；再密只是浪费。
  */
 export const LAND_SAMPLES = 160;
 
@@ -53,67 +58,92 @@ export const LAND_SAMPLES = 160;
  *
  * ⚠️ 两个容易被误读的口径，先说清：
  *
- * 1. 这是给 `planIslands` 反解半轴用的**初值**。`fitExtents` 之后会按实测包围盒
- *    重算统一系数，所以最终占纸比例由**形状本身的紧凑度**决定，不由这个常量决定。
- * 2. 有机海岸的紧凑度天然低（轮廓在自己的包围盒里只占 40%~55%，圆是 78%），
- *    因此实际占纸比例约 **36%~51%**（seed 实测）。想让它更满只能把轮廓做圆 ——
- *    那正是本轮要修掉的毛病，所以**不要**为了凑百分比把 `lobe` / `rough` 调小。
+ * 1. 这是给 `planIslands` 反解半轴用的**初值**。`fitRingToSpan` 之后会按侵蚀后的
+ *    实测轮廓重算统一系数，最终占纸比例由**形状本身的紧凑度**决定。
+ * 2. 有机海岸的紧凑度天然低（轮廓在自己的包围盒里只占四成上下，圆是 78%），
+ *    侵蚀扭曲越猛紧凑度越低 —— 占纸比例随之下调是**观感优先**的取舍，不是退化。
  *
  * PRD §6.1.6 的验收区间是 15%~85%（针对最终画面里的陆地占比），多岛时更低
- * （主陆 + 卫星岛约 16%~33%），仍在该区间内。
- *
- * 格子放不下时会按几何上限退化（见 `planIslands`）。
+ * （主陆 + 卫星岛约 16%~30%），仍在该区间内。
  */
 export const LAND_AREA_RATIO = { min: 0.55, max: 0.7 } as const;
 
 /**
- * 陆地轮廓的四层参数。
+ * 母形环的四层参数 —— **能量刻意压低**。
  *
- * 【三次调参的教训，写下来免得再走一遍】
- *   ① v1 `floor 0.72 / amp 0.28`：半径只能内缩 28% ⇒ 画出来是**带轻微起伏的椭圆**
- *      —— 用户反馈的"太过于圆润"就是它。
- *   ② v2 把振幅放到 0.58 并加域扭曲：椭圆没了，但每一段岸线的起伏幅度都差不多，
- *      画出来是**边缘毛糙的土豆** —— 缺大尺度结构，没有"一条伸出去的半岛"。
- *   ③ v3（当前）把"大尺度"交给**低频谐波**（几个 k=2/3/5/7 的正弦，随机相位与幅度），
- *      域扭曲只负责把岸线拧出海湾，高频碎齿再加一层**受低频调制的**毛边 ——
- *      于是有的岸段平滑、有的破碎，主次分明。
+ * 【分工变迁】v1~v4 时代这四层承担全部海岸性格（湾/岬/毛边都在这里调）；
+ * 2.34.0 起大尺度结构归域扭曲（`LAND_ERODE.warpAmp`）、碎边归距离衰减细节
+ * （`detAmp`/`detRadius`），母形只负责"胖瘦与走向"，所以各层振幅都是轻描淡写。
+ * ⚠️ 不要再在这里加能量 —— 母形锯齿会被侵蚀管线原样放大成"双重毛边"。
  *
- * 各参数的分工：
- *   · `base`  —— 基线半径，直接决定陆地占纸比例（面积 ∝ E[r²]）。
- *   · `lobe`  —— 低频谐波总振幅，决定"有几个大湾/几条大半岛"。
- *   · `rough` —— 域扭曲 fbm 的振幅，半岛与海湾的细节。
- *   · `warp`  —— 域扭曲强度（单位：噪声格）。这是把"圆"推成"岸"的关键。
- *   · `freq`  —— 绕一圈跨过的噪声格数。
- *   · `detail`—— 高频碎齿振幅，近看岸线才不"光"。
- *
- * ⚠️ 不要只调 `rough`：它的能量均匀分布在整圈，调大只会越来越像云；
- * 想要"有主次的岸线"应该加 `lobe`、想加深海湾应该加 `warp`。
+ * `base − (特征 + lobe + rough 的同号叠加)` ≈ 0.6 > 0，r(θ) 恒正，无自交。
  */
 export const LAND_RADIUS = {
-  base: 0.82,
-  lobe: 0.12,
-  rough: 0.13,
-  freq: 2.2,
-  warp: 1.4,
-  detail: 0.026,
-  /** 海岸特征（海岬 / 深湾）数量：2~4 个，是"地图感"的主要来源 */
-  features: 3,
+  base: 0.86,
+  lobe: 0.1,
+  rough: 0.08,
+  freq: 1.6,
+  warp: 0.6,
+  detail: 0,
+  /** 海岸特征（海岬 / 深湾）数量：给母形一点大尺度走向的随机性 */
+  features: 4,
+} as const;
+
+/**
+ * 侵蚀管线参数 —— **逆向目标 `erodeGeoJSON` 的原始口径**（世界单位 1:1）。
+ *
+ * 证据：`decoded.js@747732`（见 `docs/review/map-vs-reference-render-analysis.md`
+ * §3.6）。原实现工作在 1200×800 画布上（1 px ≈ 1 世界单位），因此这里的
+ * 幅度/半径/频率可以**逐字照抄**；`pad` / `gridLong` 是我们逐岛局部栅格的
+ * 工程参数，不是逆向值。
+ */
+export const LAND_ERODE = {
+  /**
+   * 局部栅格长边上限（像素）。逆向目标整图 1200×800；我们逐岛计算，
+   * 主陆局部栅格 ≈ 1250 世界单位宽，640 px 时 1 px ≈ 2 世界单位，
+   * 细节噪声波长（≈ 12 单位）仍有 6 px/波长，marching squares 精度足够。
+   */
+  gridLong: 640,
+  /**
+   * 岛包围盒之外的栅格外扩（世界单位）。≥ warpAmp + detAmp（= 141）才有余量：
+   * 岸线在扭曲下最多游移 ±141，栅格必须盖住游移后的零线，否则轮廓切边。
+   */
+  pad: 176,
+  /** 域扭曲幅度（世界单位）。岸线游移的主引擎 —— 半岛与深湾的来源。 */
+  warpAmp: 115,
+  /** 域扭曲噪声频率（每世界单位）。波长 ≈ 83 单位，低频、空间连贯。 */
+  noiseScale: 0.012,
+  /** 域扭曲 fbm 层数 */
+  warpOctaves: 5,
+  /** 细节噪声频率（每世界单位）。波长 ≈ 11.8 单位，近看岸线的碎边。 */
+  detScale: 0.085,
+  /** 细节 fbm 层数 */
+  detOctaves: 3,
+  /** 细节噪声幅度（世界单位） */
+  detAmp: 26,
+  /**
+   * 细节衰减半径（世界单位）：幅度权重 exp(−d²/(2·detRadius²))，
+   * 离岸 ≈28 单位处减半、≈60 单位处归零 —— "边缘毛糙、内陆干净"。
+   */
+  detRadius: 28,
+  /** 追踪出的环面积下限（世界单位²，参考实现 700 px² 同量级）：碎屑环直接丢弃 */
+  minArea: 1500,
+  /** 角切平滑（Chaikin）次数，参考实现 smooth: 2 */
+  smooth: 2,
+  /** Douglas–Peucker 抽稀起步容差（世界单位） */
+  simplifyTol: 1.5,
+  /** 单环顶点数上限：超过则加倍容差重抽（下游烘焙/描边/命中的成本护栏） */
+  maxPoints: 720,
+  /**
+   * 小岛的扭曲幅度封顶比例：warpEff = min(warpAmp, 母形半径 × 该值)。
+   * 主陆半径 ≈ 390 时拿到全额 115；卫星岛（半径 ≈ 150）按比例收到 ~45 ——
+   * 否则固定 115 会把小岛拧成一团没有"岛"样的碎渣。
+   */
+  warpCapRatio: 0.3,
 } as const;
 
 /** 相邻两岛之间的最小海峡宽度（= 两圈海岸可见外扩的量级） */
 export const LAND_ISLAND_GAP = 24;
-
-/** Douglas–Peucker 抽稀容差（世界单位） */
-export const LAND_SIMPLIFY_TOL = 1.5;
-
-/**
- * 抽稀的触发阈值：顶点数超过它才抽稀。
- *
- * 【为什么必须有阈值】按 1.5 的容差对一条半径 450 的环抽稀，弦长 30 对应的矢高
- * 只有 0.16 —— 远小于容差，结果会把采样点全部并掉，环退化成一个多边形块。
- * 抽稀是给"将来支持手绘超多点环"准备的逃生阀，默认 `LAND_SAMPLES` 的路径用不到。
- */
-export const LAND_SIMPLIFY_MIN_POINTS = 512;
 
 /**
  * 陆地与纸边之间必须留出的海面宽度（世界单位）。
@@ -126,10 +156,8 @@ export const LAND_PAPER_MARGIN = 56;
 /**
  * 环的实际最大半径相对半轴的**名义**比例。
  *
- * 【为什么从 0.94 改成 1.0】旧参数下 r 的上界几乎取不到（fbm 尖峰极窄），
- * 所以用 0.94 做排布能多榨出几个百分点。新参数里海岬特征会把局部半径推到
- * `base + lobe + 特征幅度 ≈ 1.1`，按 0.94 排布会让岛直接顶出格子、吃掉海峡。
- * 宁可排布时保守（1.0），让 `fitExtents` 按实测去放大。
+ * 母形 r 的上界（base + 特征 + lobe + rough ≈ 1.12）乘上它就是排布时的保守
+ * 外扩估计；侵蚀后的实测贴合交给 `fitRingToSpan`。
  */
 export const LAND_EXTENT_NOMINAL = 1;
 
@@ -137,16 +165,15 @@ export const LAND_EXTENT_NOMINAL = 1;
  * 面积系数：A ≈ LAND_AREA_FACTOR · π · ax · ay。
  *
  * 由 A = ½∫r²dθ 推出：E[r²] = base² + Var(谐波) + Var(域扭曲) + Var(特征)。
- * 当前参数（base 0.82 / lobe 0.12 / rough 0.13 / 特征 ±0.12~0.32）实测 ≈ 0.70。
- * 它只是**初值** —— 生成后 `fitExtents` 会按实测包围盒校正，误差不致命；
- * 但估得太离谱会让 k 撞上限、陆地明显偏小，所以要跟着参数一起改。
+ * 母形参数（base 0.86 / lobe 0.1 / rough 0.08 / 特征 ±0.08~0.2）实测 ≈ 0.74。
+ * 它只是**初值** —— 侵蚀后 `fitRingToSpan` 会按实测轮廓校正，误差不致命。
  */
-export const LAND_AREA_FACTOR = 0.7;
+export const LAND_AREA_FACTOR = 0.74;
 
-/** 万一仍然相交时的收缩系数（PRD §6.1.2 写"缩小 8%"） */
+/** 相交兜底时的单次收缩系数 */
 export const LAND_SHRINK = 0.92;
 
-/** 万一仍然相交时的重试次数（PRD §6.1.2 写"最多 5 次"） */
+/** 相交兜底时的重试次数 */
 export const LAND_OVERLAP_RETRIES = 5;
 
 export interface LandOptions {
@@ -156,7 +183,7 @@ export interface LandOptions {
   bounds: Rect;
   /** 岛数；缺省由 rng 取 1~3 */
   islands?: number;
-  /** 每岛方向角采样数；缺省 `LAND_SAMPLES` */
+  /** 母形方向角采样数；缺省 `LAND_SAMPLES` */
   samples?: number;
 }
 
@@ -224,24 +251,20 @@ interface IslandPlan {
 }
 
 /**
- * 把岛摆进纸面 —— **格子排布**（见文件头"多岛靠格子"）。
+ * 把岛摆进纸面 —— **格子排布**。
  *
  * 步骤：
  *   1) 纸内缩 `LAND_PAPER_MARGIN` 得到可用区，按岛数切成 cols × rows 个格子；
  *   2) 每格的可用半幅 = 半格宽 −（该方向上有邻居才扣）海峡的一半；
  *   3) 每个岛的长半轴沿格子更长的那个方向，短半轴按**格子长宽比与 1 之间的随机值**
- *      压缩 —— 格子只给出"上限"，不再决定形状（见下方注释）；
+ *      压缩 —— 格子只给出"上限"，不再决定形状；
  *   4) 半轴再按"名义外扩 ≤ 可用半幅"封顶，最后在**格子内的余量**里抖动岛心，
  *      并给主轴一个 ±22° 的倾角。
  *
- * 【为什么短半轴不再严格等于格子的比例】旧实现里 `ax : ay` 就是格子长宽比，
- * 两岛时格子是 456×912 的竖条，于是岛上画出来就是两条**竖长的圆角矩形** ——
- * 形状跟着排版走，而不是跟着地貌走。现在格子只负责"不许越过海峡"，真实长宽比
- * 在 `格子比例 ~ 1` 之间随机，岛才有胖瘦之分。
+ * 【列宽按面积分配】等分时两岛各拿半张纸宽，主陆被压成竖条。按面积分配后，
+ * 主陆能拿到接近整张纸宽的空格，小岛退到窄列里当点缀 —— 这才是地图上的主次。
  *
  * 抖动只允许在余量内：格子就是"岛与邻岛的分界"，越界抖动等于把海峡吃掉。
- * 倾角同理受半轴封顶约束（封顶用的是保守的 `LAND_EXTENT_NOMINAL = 1`，旋转不会让
- * 实测外扩超出格子太多），最终仍由 `fitExtents` 按实测收口。
  */
 function planIslands(areas: number[], bounds: Rect, rng: () => number): IslandPlan[] {
   const n = areas.length;
@@ -256,12 +279,6 @@ function planIslands(areas: number[], bounds: Rect, rng: () => number): IslandPl
   const usableH = bounds.height - LAND_PAPER_MARGIN * 2;
   if (usableW <= 0 || usableH <= 0) return [];
 
-  // ── 列宽按"列内各岛面积和"分配，而不是等分 ──
-  //
-  // 【为什么必须这样】等分时两岛各拿半张纸宽，主陆被压成竖条 —— 而首块岛的
-  // 权重是其余的 2~4 倍（见 generateLand），面积却和它一样宽，画出来就是
-  // "一块大陆挤在小格子里"。按面积分配后，主陆能拿到接近整张纸宽的空格，
-  // 小岛则退到窄列里当点缀，这才是地图上该有的主次。
   const colArea = new Array<number>(cols).fill(0);
   for (let i = 0; i < n; i += 1) colArea[i % cols] += Math.max(areas[i], 1);
   const colAreaSum = colArea.reduce((s, v) => s + v, 0) || 1;
@@ -326,34 +343,27 @@ function planIslands(areas: number[], bounds: Rect, rng: () => number): IslandPl
 }
 
 /**
- * 单岛形状函数：`t`（方向角）→ 半径倍数。
+ * 母形形状函数：`t`（方向角）→ 半径倍数。
  *
- * 五层叠加（见 `LAND_RADIUS` 的注释）：
- *   ① 海岸特征 —— 每个岛随机 2~4 个**高斯型凸起/凹陷**，即"海岬"与"深湾"。
- *      这是"地图感"的主力：人看海岸线时认的是"那里伸出来一个半岛""这里凹进去
- *      一个湾"，而不是"边缘有随机毛刺"。纯噪声永远给不出可指认的半岛。
- *   ② 低频谐波 —— 几个 k=2/3/5/7 的正弦，随机相位与幅度，决定整体的胖瘦走向。
- *   ③ 域扭曲 fbm —— 用另一层低频噪声偏移**采样坐标本身**，把岸线拧成舌状。
- *   ④ 高频碎齿 —— 振幅被另一层低频调制，于是有的岸段平滑、有的破碎。
+ * 四层叠加（见 `LAND_RADIUS` 注释）：特征（岬/湾的低能量雏形）、低频谐波、
+ * 域扭曲 fbm、高频碎齿（当前 detail=0 关闭）。母形只管"胖瘦与走向"，
+ * 海岸性格由 `LAND_ERODE` 的侵蚀管线负责 —— **别在这里加能量**。
  *
- * 【为什么返回闭包而不是每次现算随机数】谐波相位、特征位置必须整岛一致：若在
- * 每个采样点重新取随机数，形状就变成白噪声，且与 seed 无关。
- *
- * 【无自交为什么是必然】结果恒为正 ⇒ r(θ) 是单值函数 ⇒ θ 单调采样出的环不自交。
- * 测试里那条"无自交"断言不是碰运气，是被这个结构保证的。
+ * 【为什么返回闭包而不是每次现算随机数】谐波相位、特征位置必须整岛一致。
+ * 【无自交】结果恒为正 ⇒ r(θ) 单值 ⇒ θ 单调采样出的环不自交。
  */
 function makeRadius(seed: number): (t: number) => number {
   const { base, lobe, rough, freq, warp, detail, features } = LAND_RADIUS;
 
-  // ① 海岸特征：位置随机分布在整圈，宽度 0.12~0.38 弧度（太窄会成"尖刺"），
-  //    约四成是湾（负值）、六成是岬（正值）—— 有湾的岸线才不像"一块色块"。
+  // ① 海岸特征：位置随机分布在整圈，宽度 0.12~0.38 弧度，约一半是湾一半是岬。
+  //    母形上只留"大尺度走向"的雏形（幅度 0.08~0.2），深湾长岬交给扭曲。
   const featRng = createRng(seed ^ 0x27d4eb2d);
   const caps: { theta: number; width: number; amp: number }[] = [];
   for (let i = 0; i < features; i += 1) {
     caps.push({
       theta: featRng() * Math.PI * 2,
       width: 0.12 + featRng() * 0.26,
-      amp: (0.12 + featRng() * 0.2) * (featRng() < 0.42 ? -1 : 1),
+      amp: (0.08 + featRng() * 0.12) * (featRng() < 0.5 ? -1 : 1),
     });
   }
 
@@ -382,14 +392,14 @@ function makeRadius(seed: number): (t: number) => number {
       cape += f.amp * Math.exp(-x * x);
     }
 
-    // ③ 域扭曲：低频、x / y 各一层，把岸线整体"拧"出海湾
+    // ③ 域扭曲（低能量）：把母形从"椭圆"拧成"有机的胖瘦"
     const lx = cos * freq;
     const ly = sin * freq;
     const wx = lx + warp * (fbm(lx * 0.45 + 13.1, ly * 0.45 + 4.7, seed + 911, 2) - 0.5) * 2;
     const wy = ly + warp * (fbm(lx * 0.45 - 7.3, ly * 0.45 + 9.2, seed + 577, 2) - 0.5) * 2;
     const mid = (fbm(wx, wy, seed, 4, 2.05, 0.5) - 0.5) * 2;
 
-    // ④ 碎齿：用低频 mask 调制振幅 —— 全圈一样毛糙会像云，有的段光滑才像岸
+    // ④ 碎齿：当前 detail = 0（侵蚀管线的 detAmp/detRadius 负责碎边）
     const mask = 0.2 + 0.8 * fbm(lx * 0.8 + 3.3, ly * 0.8 - 2.1, seed + 733, 2);
     const grit = (fbm(lx * 9.1, ly * 9.1, seed + 313, 2) - 0.5) * 2 * mask;
 
@@ -397,7 +407,7 @@ function makeRadius(seed: number): (t: number) => number {
   };
 }
 
-/** 生成一个岛的闭合环（各向异性拉伸 + 主轴旋转） */
+/** 生成母形闭合环（各向异性拉伸 + 主轴旋转） */
 function makeRing(plan: IslandPlan, seed: number, samples: number): Point[] {
   const n = Math.max(8, Math.round(samples));
   const cosA = Math.cos(plan.angle);
@@ -420,49 +430,678 @@ function makeRing(plan: IslandPlan, seed: number, samples: number): Point[] {
 }
 
 /**
- * 按实测几何统一缩放全部岛。
+ * 按格子半幅贴合侵蚀后的海岸轮廓。
  *
- * 排布用的是**名义**外扩系数，实测会有几个百分点的出入；这里按实测半幅与岛心
- * 间距反解一个统一系数 k，让陆地"刚好"贴住可用区 —— 既不会越出纸面，也不会
- * 因为估计保守而白白小一圈。k 夹在 [0.5, 1.25]，避免异常输入把陆地吹成气球。
- *
- * 【间距约束为什么按轴判定】岛是各向异性的：两岛南北向并排时，它们的**半径**
- * 明明互相重叠，水平半幅却留出了一条完整的海峡。按直径判会把这种情况误判成
- * "必须缩一半"，因此只在**岛心偏移更大的那个轴**上要求"半幅之和 + 海峡 ≤ 间距"。
+ * 侵蚀会把岸线甩出母形包围盒（最多 ±(warpAmp + detAmp) ≈ ±141），排布格子
+ * 不知道这件事；这里按实测半幅与 `plan.center` 反解统一系数 k，让每个岛
+ * **"刚好"贴住自己格子的可用半幅** —— 海峡宽度由格子结构保证，不靠运气。
+ * k 夹在 [0.5, 1.25]：异常退化时宁可小一圈，也不吹成气球。
  */
-function fitExtents(islands: { plan: IslandPlan; ring: Point[] }[]): Point[][] {
-  const measured = islands.map((it) => ({
-    ...it,
-    span: ringHalfSpan(it.ring, it.plan.center),
-  }));
+function fitRingToSpan(ring: Point[], plan: IslandPlan): Point[] {
+  const { hx, hy } = ringHalfSpan(ring, plan.center);
+  const k = clamp(Math.min(plan.spanX / hx, plan.spanY / hy), 0.5, 1.25);
+  return k === 1 ? ring : scaleRing(ring, plan.center, k);
+}
 
-  let k = Number.POSITIVE_INFINITY;
-  for (const it of measured) {
-    k = Math.min(k, it.plan.spanX / it.span.hx, it.plan.spanY / it.span.hy);
+/* ────────────────────── SDF 侵蚀管线（逆向目标 §3.6） ────────────────────── */
+
+/**
+ * 多边形掩码的扫描线栅格化（偶奇规则）。
+ *
+ * 逐行求多边形各边与"像素行中心"水平线的交点 x，排序后成对填充 ——
+ * 偶奇规则对凸/凹多边形都成立，且与 `pointInPolygon` 同一判据。
+ * `ox` / `oy` 是像素 (0,0) **中心**的世界坐标，`cell` 是像素边长（世界单位）。
+ */
+function rasterizeRing(
+  ring: readonly Point[],
+  ox: number,
+  oy: number,
+  cell: number,
+  gw: number,
+  gh: number,
+): Uint8Array {
+  const mask = new Uint8Array(gw * gh);
+  for (let j = 0; j < gh; j += 1) {
+    const y = oy + j * cell;
+    const xs: number[] = [];
+    for (let i = 0; i < ring.length; i += 1) {
+      const a = ring[i];
+      const b = ring[(i + 1) % ring.length];
+      if ((a.y <= y && b.y > y) || (b.y <= y && a.y > y)) {
+        const t = (y - a.y) / (b.y - a.y);
+        xs.push(a.x + (b.x - a.x) * t);
+      }
+    }
+    xs.sort((p, q) => p - q);
+    for (let k = 0; k + 1 < xs.length; k += 2) {
+      let i0 = Math.ceil((xs[k] - ox) / cell);
+      let i1 = Math.floor((xs[k + 1] - ox) / cell);
+      if (i0 < 0) i0 = 0;
+      if (i1 > gw - 1) i1 = gw - 1;
+      for (let i = i0; i <= i1; i += 1) mask[j * gw + i] = 1;
+    }
   }
-  for (let i = 0; i < measured.length; i += 1) {
-    for (let j = i + 1; j < measured.length; j += 1) {
-      const a = measured[i];
-      const b = measured[j];
-      const dx = Math.abs(a.plan.center.x - b.plan.center.x);
-      const dy = Math.abs(a.plan.center.y - b.plan.center.y);
-      if (dx >= dy) {
-        const room = dx - LAND_ISLAND_GAP;
-        if (room > 0) k = Math.min(k, room / (a.span.hx + b.span.hx));
-      } else {
-        const room = dy - LAND_ISLAND_GAP;
-        if (room > 0) k = Math.min(k, room / (a.span.hy + b.span.hy));
+  return mask;
+}
+
+/**
+ * 一维欧氏距离变换的平方域下包络（Felzenszwalb & Huttenlocher）。
+ *
+ * `f[q]` 是该位置的"源代价"（源 = 0，其余 = 大有限值），输出 `out[q]` =
+ * min_p (f[p] + (q−p)²)。O(n) 两趟（列 / 行）即得二维距离变换的平方值。
+ * 用 1e12 当"无穷"（不是 Infinity）：下包络的交点运算是减法除法，
+ * Infinity 会产生 NaN，大有限值行为等价且数值安全。
+ */
+function edt1d(f: Float64Array, n: number, out: Float64Array): void {
+  const v = new Int32Array(n);
+  const z = new Float64Array(n + 1);
+  let k = 0;
+  v[0] = 0;
+  z[0] = -Infinity;
+  z[1] = Infinity;
+  for (let q = 1; q < n; q += 1) {
+    let s =
+      ((f[q] + q * q) - (f[v[k]] + v[k] * v[k])) / (2 * q - 2 * v[k]);
+    while (s <= z[k]) {
+      k -= 1;
+      s =
+        ((f[q] + q * q) - (f[v[k]] + v[k] * v[k])) / (2 * q - 2 * v[k]);
+    }
+    k += 1;
+    v[k] = q;
+    z[k] = s;
+    z[k + 1] = Infinity;
+  }
+  k = 0;
+  for (let q = 0; q < n; q += 1) {
+    while (z[k + 1] < q) k += 1;
+    const d = q - v[k];
+    out[q] = f[v[k]] + d * d;
+  }
+}
+
+/** 到"掩码 = want 的最近像素"的欧氏距离场（像素中心采样） */
+function distanceToSet(
+  mask: Uint8Array,
+  gw: number,
+  gh: number,
+  want: boolean,
+): Float32Array {
+  const INF = 1e12;
+  const m = Math.max(gw, gh);
+  const f = new Float64Array(m);
+  const d = new Float64Array(m);
+  const sq = new Float64Array(gw * gh);
+
+  for (let i = 0; i < gw; i += 1) {
+    for (let j = 0; j < gh; j += 1) {
+      f[j] = (mask[j * gw + i] === 1) === want ? 0 : INF;
+    }
+    edt1d(f, gh, d);
+    for (let j = 0; j < gh; j += 1) sq[j * gw + i] = d[j];
+  }
+  for (let j = 0; j < gh; j += 1) {
+    for (let i = 0; i < gw; i += 1) f[i] = sq[j * gw + i];
+    edt1d(f, gw, d);
+    for (let i = 0; i < gw; i += 1) sq[j * gw + i] = d[i];
+  }
+  const out = new Float32Array(gw * gh);
+  for (let p = 0; p < sq.length; p += 1) out[p] = Math.sqrt(sq[p]);
+  return out;
+}
+
+/**
+ * 环 → 有符号距离场（外正内负）。像素中心采样（与 `rasterizeRing` 同一坐标系），
+ * 但**返回值是世界单位**：EDT 输出是像素距离，必须乘 `cell` 归一 ——
+ * 否则 iso=±distance 的等值线偏移量被放大 ~cell 倍、detAmp/detRadius 与 φ 的
+ * 单位也互相错位（2.34.0 曾因此 offset(16) 实测 ≈24）。
+ */
+function sdfOfRing(
+  ring: readonly Point[],
+  ox: number,
+  oy: number,
+  cell: number,
+  gw: number,
+  gh: number,
+): Float32Array {
+  const mask = rasterizeRing(ring, ox, oy, cell, gw, gh);
+  const phi = new Float32Array(gw * gh);
+  const dIn = distanceToSet(mask, gw, gh, true);
+  const dOut = distanceToSet(mask, gw, gh, false);
+  for (let p = 0; p < phi.length; p += 1) phi[p] = (dIn[p] - dOut[p]) * cell;
+  return phi;
+}
+
+/** 已建好的偏移距离场（栅格 + SDF）。一次建场、多次取等值线（见 `createRingOffset`）。 */
+interface OffsetField {
+  ox: number;
+  oy: number;
+  cell: number;
+  gw: number;
+  gh: number;
+  phi: Float32Array;
+}
+
+/** 环 → 偏移距离场。栅格 = 环包围盒向四周扩 `margin` 世界单位。 */
+function buildOffsetField(ring: readonly Point[], margin: number): OffsetField | null {
+  if (ring.length < 3) return null;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const p of ring) {
+    if (p.x < minX) minX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y > maxY) maxY = p.y;
+  }
+  const ox = minX - margin;
+  const oy = minY - margin;
+  const worldW = maxX - minX + margin * 2;
+  const worldH = maxY - minY + margin * 2;
+  const cell = Math.max(0.75, Math.max(worldW, worldH) / LAND_ERODE.gridLong);
+  const gw = Math.max(8, Math.ceil(worldW / cell));
+  const gh = Math.max(8, Math.ceil(worldH / cell));
+  return { ox, oy, cell, gw, gh, phi: sdfOfRing(ring, ox, oy, cell, gw, gh) };
+}
+
+/** 在偏移场上取等值线：distance > 0 外扩（φ > d 一侧为内部）、< 0 内缩（φ < d） */
+function traceOffsetField(field: OffsetField, distance: number): Point[] | null {
+  const loops = marchingSquaresLoops(field.phi, field.gw, field.gh, distance, distance > 0);
+  let best: Point[] | null = null;
+  let bestArea = 1;
+  for (const loop of loops) {
+    const world = loop.map((q) => ({
+      x: field.ox + q.x * field.cell,
+      y: field.oy + q.y * field.cell,
+    }));
+    const area = Math.abs(polygonArea(world));
+    if (area > bestArea) {
+      bestArea = area;
+      best = world;
+    }
+  }
+  if (!best) return null;
+  return simplifyClosed(chaikinClosed(best, LAND_ERODE.smooth), LAND_ERODE.simplifyTol, LAND_ERODE.maxPoints);
+}
+
+/** 单次偏移的便捷入口（`insetLand` 用；调用方要取多条等值线时用 `createRingOffset`） */
+function offsetRing(ring: readonly Point[], offset: number): Point[] | null {
+  const field = buildOffsetField(ring, Math.abs(offset) + 4);
+  if (!field) return null;
+  return traceOffsetField(field, offset);
+}
+
+/** 偏移场的公开句柄 */
+export interface RingOffsetField {
+  /**
+   * 精确偏移（世界单位）：> 0 向外扩（朝海）、< 0 向内缩（朝陆）。
+   * 偏移后无剩余面积（内缩量 ≥ 环半幅）或距离非法（0 / NaN）时返回 null。
+   */
+  offset(distance: number): Point[] | null;
+}
+
+/**
+ * 为一个环建偏移距离场 —— **一次建场、多次取等值线**。
+ *
+ * 【为什么开放这个 API】烘焙期同一张海岸要从同一场里取很多条等值线：
+ * 3 圈等深线（外扩 16/40/70）+ 纸纹羽化的 N 层内缩遮罩。栅格化 + 双向
+ * 距离变换每次约几十毫秒，重复建场会把烘焙时间乘上层数；建一次场之后，
+ * 每取一条线只是一次 marching squares（毫秒级）。
+ *
+ * `maxOffset` 是本次会话要取的最大**外扩**距离：它决定栅格向外扩多少余量
+ * （等值线最多游移到离岸 maxOffset 处，栅格必须盖住）；内缩方向天然被
+ * 环包围盒覆盖，不受此参数约束。环退化（顶点 < 3）或参数非法时返回 null。
+ */
+export function createRingOffset(
+  ring: readonly Point[],
+  maxOffset: number,
+): RingOffsetField | null {
+  if (ring.length < 3 || !(maxOffset > 0) || !Number.isFinite(maxOffset)) return null;
+  const field = buildOffsetField(ring, maxOffset + 4);
+  if (!field) return null;
+  return {
+    offset(distance: number): Point[] | null {
+      if (!Number.isFinite(distance) || distance === 0) return null;
+      return traceOffsetField(field, distance);
+    },
+  };
+}
+
+/**
+ * 把偏移环的个别越界顶点拉回原环内。
+ *
+ * Chaikin / Douglas–Peucker 都是原等值线上的 ±1~2 世界单位近似；在岸线的
+ * 尖凹角处这半点偏差会让顶点落回原环外。沿「顶点 → 环顶点均值中心」二分
+ * 收拉（均值中心经全 seed 实测恒在环内），每个问题顶点 ≤ 12 次
+ * `pointInPolygon`，正常环一个都不触发。
+ */
+function pullIntoRing(ring: Point[], offset: Point[]): Point[] {
+  let cx = 0;
+  let cy = 0;
+  for (const p of ring) {
+    cx += p.x;
+    cy += p.y;
+  }
+  cx /= ring.length;
+  cy /= ring.length;
+  return offset.map((p) => {
+    if (pointInPolygon(p, ring)) return p;
+    let lo = 0;
+    let hi = 1;
+    for (let i = 0; i < 12; i += 1) {
+      const mid = (lo + hi) / 2;
+      const q = { x: cx + (p.x - cx) * mid, y: cy + (p.y - cy) * mid };
+      if (pointInPolygon(q, ring)) hi = mid;
+      else lo = mid;
+    }
+    // hi 只在二分中验证过才可信；极端退化时直接落到均值中心（恒在环内）
+    const q = { x: cx + (p.x - cx) * hi, y: cy + (p.y - cy) * hi };
+    return pointInPolygon(q, ring) ? q : { x: cx, y: cy };
+  });
+}
+
+/** 双线性采样标量场（坐标 = 像素中心连续坐标，越界钳到边缘） */
+function sampleField(
+  field: Float32Array,
+  gw: number,
+  gh: number,
+  u: number,
+  v: number,
+): number {
+  const x = clamp(u, 0, gw - 1);
+  const y = clamp(v, 0, gh - 1);
+  const i0 = Math.floor(x);
+  const j0 = Math.floor(y);
+  const i1 = Math.min(i0 + 1, gw - 1);
+  const j1 = Math.min(j0 + 1, gh - 1);
+  const fx = x - i0;
+  const fy = y - j0;
+  const a = field[j0 * gw + i0];
+  const b = field[j0 * gw + i1];
+  const c = field[j1 * gw + i0];
+  const e = field[j1 * gw + i1];
+  const top = a + (b - a) * fx;
+  const bottom = c + (e - c) * fx;
+  return top + (bottom - top) * fy;
+}
+
+/**
+ * marching squares 追踪等值线（多环）。
+ *
+ * 每个非鞍点格子输出 1 段、鞍点格子（5 / 10）按**格子中心均值**消歧，
+ * 段的两端用"边 id"标记（水平边 = 像素索引 ×2，垂直边 = ×2+1），同一条边
+ * 被相邻两格共享 ⇒ 沿边 id 串接必然成环。贴栅格边界的开链（理论上被
+ * pad 排除）无法闭合，直接丢弃。
+ *
+ * `iso` 是等值线水平：`insideAbove = true` 时「> iso」一侧算内部（海岸外扩、
+ * 主生成用），`false` 时「< iso」一侧算内部（海岸内缩用）。
+ */
+function marchingSquaresLoops(
+  field: Float32Array,
+  gw: number,
+  gh: number,
+  iso = 0,
+  insideAbove = true,
+): Point[][] {
+  const isIn = (v: number) => (insideAbove ? v > iso : v < iso);
+  const segs: Array<[number, number]> = [];
+  for (let j = 0; j + 1 < gh; j += 1) {
+    for (let i = 0; i + 1 < gw; i += 1) {
+      const a = field[j * gw + i]; // 左上
+      const b = field[j * gw + i + 1]; // 右上
+      const c = field[(j + 1) * gw + i + 1]; // 右下
+      const d = field[(j + 1) * gw + i]; // 左下
+      let code = 0;
+      if (isIn(a)) code |= 1;
+      if (isIn(b)) code |= 2;
+      if (isIn(c)) code |= 4;
+      if (isIn(d)) code |= 8;
+      if (code === 0 || code === 15) continue;
+
+      // 边 id：水平边（(i,j)-(i+1,j) 之间）= (j·gw+i)·2；垂直边 = +1
+      const topE = (j * gw + i) * 2;
+      const bottomE = ((j + 1) * gw + i) * 2;
+      const leftE = (j * gw + i) * 2 + 1;
+      const rightE = (j * gw + i + 1) * 2 + 1;
+
+      const push = (e1: number, e2: number) => segs.push([e1, e2]);
+      switch (code) {
+        case 1:
+        case 14:
+          push(leftE, topE);
+          break;
+        case 2:
+        case 13:
+          push(topE, rightE);
+          break;
+        case 3:
+        case 12:
+          push(leftE, rightE);
+          break;
+        case 4:
+        case 11:
+          push(rightE, bottomE);
+          break;
+        case 6:
+        case 9:
+          push(topE, bottomE);
+          break;
+        case 7:
+        case 8:
+          push(leftE, bottomE);
+          break;
+        case 5: {
+          // 鞍点：a/c 同侧。中心在内部侧 ⇒ a-c 连通 ⇒ 段绕开 b、d；
+          // 中心在外部侧 ⇒ a、c 各自孤立 ⇒ 段绕开它们
+          const centerIn = isIn((a + b + c + d) / 4);
+          if (centerIn) {
+            push(topE, rightE);
+            push(bottomE, leftE);
+          } else {
+            push(leftE, topE);
+            push(rightE, bottomE);
+          }
+          break;
+        }
+        case 10: {
+          const centerIn = isIn((a + b + c + d) / 4);
+          if (centerIn) {
+            push(leftE, topE);
+            push(rightE, bottomE);
+          } else {
+            push(topE, rightE);
+            push(bottomE, leftE);
+          }
+          break;
+        }
+        default:
+          break;
       }
     }
   }
-  if (!Number.isFinite(k)) k = 1;
-  // 上限从 1.25 放开到 1.6：新形状的初始半轴估得比旧参数保守（`floor` 从 0.72 降到
-  // 0.42，面积系数也随之从 0.746 降到 0.52），实测常常需要放大才能贴住格子。
-  // 下限 0.5 保留 —— 异常输入时宁可小一圈，也不要吹成气球盖住海峡。
-  k = clamp(k, 0.5, 1.6);
 
-  return measured.map((it) => scaleRing(it.ring, it.plan.center, k));
+  // 串接成环：每条边恰被 2 段共享（开链在边界处只有 1 段，走不通即弃）
+  const at = new Map<number, number[]>();
+  const add = (e: number, s: number) => {
+    const list = at.get(e);
+    if (list) list.push(s);
+    else at.set(e, [s]);
+  };
+  segs.forEach(([e1, e2], idx) => {
+    add(e1, idx);
+    add(e2, idx);
+  });
+
+  const edgePoint = (id: number): Point => {
+    const idx = id >> 1;
+    const i = idx % gw;
+    const j = (idx - i) / gw;
+    if ((id & 1) === 0) {
+      const va = field[j * gw + i];
+      const vb = field[j * gw + i + 1];
+      const t = (iso - va) / (vb - va);
+      return { x: i + t, y: j };
+    }
+    const va = field[j * gw + i];
+    const vb = field[(j + 1) * gw + i];
+    const t = (iso - va) / (vb - va);
+    return { x: i, y: j + t };
+  };
+
+  const used = new Uint8Array(segs.length);
+  const loops: Point[][] = [];
+  for (let s0 = 0; s0 < segs.length; s0 += 1) {
+    if (used[s0]) continue;
+    used[s0] = 1;
+    const first = segs[s0][0];
+    const loop: Point[] = [edgePoint(first)];
+    let cur = segs[s0][1];
+    let seg = s0;
+    let closed = false;
+    for (let guard = segs.length + 1; guard > 0; guard -= 1) {
+      if (cur === first) {
+        closed = true;
+        break;
+      }
+      loop.push(edgePoint(cur));
+      const cands = at.get(cur) ?? [];
+      const nxt = cands[0] === seg ? cands[1] : cands[0];
+      if (nxt === undefined || used[nxt]) break;
+      used[nxt] = 1;
+      const [e1, e2] = segs[nxt];
+      seg = nxt;
+      cur = e1 === cur ? e2 : e1;
+    }
+    if (closed && loop.length >= 3) loops.push(loop);
+  }
+  return loops;
 }
+
+/** 闭合环的 Chaikin 角切平滑：每个角切成 25% / 75% 两点，顶点数翻倍 */
+function chaikinClosed(ring: Point[], passes: number): Point[] {
+  let pts = ring;
+  for (let p = 0; p < passes; p += 1) {
+    const out: Point[] = [];
+    const n = pts.length;
+    for (let i = 0; i < n; i += 1) {
+      const a = pts[i];
+      const b = pts[(i + 1) % n];
+      out.push({ x: a.x * 0.75 + b.x * 0.25, y: a.y * 0.75 + b.y * 0.25 });
+      out.push({ x: a.x * 0.25 + b.x * 0.75, y: a.y * 0.25 + b.y * 0.75 });
+    }
+    pts = out;
+  }
+  return pts;
+}
+
+/**
+ * 环是否自交（朴素 O(n²)，只给抽稀校验用 —— 输入 ≤ maxPoints，最坏 26 万次叉积）。
+ * 相邻边共享端点不算相交； Chaikin 角切是收缩变换、输出必然简单，本函数
+ * 只需要审"抽稀有没有把细颈切成交叉"这一种情况。
+ */
+function ringSelfIntersects(ring: Point[]): boolean {
+  const n = ring.length;
+  if (n < 4) return false;
+  const cross = (
+    a1: Point,
+    a2: Point,
+    b1: Point,
+    b2: Point,
+  ): boolean => {
+    const d1x = a2.x - a1.x;
+    const d1y = a2.y - a1.y;
+    const d2x = b2.x - b1.x;
+    const d2y = b2.y - b1.y;
+    const den = d1x * d2y - d1y * d2x;
+    if (Math.abs(den) < 1e-12) return false;
+    const s = ((b1.x - a1.x) * d2y - (b1.y - a1.y) * d2x) / den;
+    const t = ((b1.x - a1.x) * d1y - (b1.y - a1.y) * d1x) / den;
+    const eps = 1e-9;
+    return s > eps && s < 1 - eps && t > eps && t < 1 - eps;
+  };
+  for (let i = 0; i < n; i += 1) {
+    for (let j = i + 1; j < n; j += 1) {
+      if (j === i + 1 || (i === 0 && j === n - 1)) continue;
+      if (cross(ring[i], ring[(i + 1) % n], ring[j], ring[(j + 1) % n])) return true;
+    }
+  }
+  return false;
+}
+
+/** 对闭合环跑一次 Douglas–Peucker（从最左点断开，首尾复制后走 `simplifyRing`） */
+function dpClosedOnce(ring: Point[], t: number): Point[] {
+  let start = 0;
+  for (let i = 1; i < ring.length; i += 1) {
+    if (ring[i].x < ring[start].x) start = i;
+  }
+  const rotated = ring.slice(start).concat(ring.slice(0, start));
+  const simplified = simplifyRing(rotated.concat([rotated[0]]), t);
+  simplified.pop(); // 首尾复制补出来的重复点
+  return simplified;
+}
+
+/**
+ * 闭合环抽稀：Douglas–Peucker，顶点数超过 `maxPoints` 时容差 ×1.6 加压。
+ *
+ * 【自交校验】抽稀会把细颈（窄半岛的根部）两侧各取几个点，若切得过狠，
+ * 两岸直接接通成环上交叉 —— 渲染填充会出现一个洞，点在多边形内判定也会错。
+ * 所以每次抽稀结果都过一遍 `ringSelfIntersects`。
+ *
+ * 【容差只朝一个方向走】自交 ⇒ 收紧（÷1.6）；简单但超护栏 ⇒ 加压（×1.6）。
+ * 两个方向来回切会**震荡死循环**（收紧后简单但超护栏、加压后超护栏但自交 ——
+ * 同一个环两种修正方向互相抵消，实测 seed=7 单岛在 1.5/0.94 之间无限往复，
+ * 每轮还是对 1.8 万点的 Chaikin 输出跑 DP + O(n²) 校验）。因此：一旦经历过
+ * 自交，护栏让位于正确性 —— 收紧方向上第一个"简单"的结果直接采用（顶点数
+ * 允许超出软护栏）；从未自交才允许加压省顶点。收敛保证：t 单调。
+ * 容差收到 0.05 以下仍自交（理论上不可能）就放弃抽稀，返回 Chaikin 输出 ——
+ * 角切是保简变换，它一定干净。
+ */
+function simplifyClosed(ring: Point[], tol: number, maxPoints: number): Point[] {
+  let t = tol;
+  let sawIntersect = false;
+  for (;;) {
+    const simplified = dpClosedOnce(ring, t);
+    if (ringSelfIntersects(simplified)) {
+      sawIntersect = true;
+      if (t < 0.05) return ring;
+      t /= 1.6;
+      continue;
+    }
+    if (simplified.length <= maxPoints || t > 64 || sawIntersect) {
+      return simplified.length >= 8 ? simplified : ring;
+    }
+    t *= 1.6;
+  }
+}
+
+/**
+ * 单岛侵蚀：母形环 → SDF + 域扭曲 + 距离衰减细节 → marching squares → 平滑抽稀。
+ *
+ * 返回**世界坐标**海岸环；栅格化失败 / 追踪不到环（理论上 pad 保证不发生）时
+ * 返回 null，调用方回退母形 —— 生成是点击一次的交互，任何输入都不许抛异常。
+ *
+ * 性能口径：栅格 ≤ 640² ≈ 41 万像素。域扭曲是低频场（波长 ≈ 83 单位），
+ * 按 stride 4 预采样 + 双线性还原（计算量 ÷16）；细节 fbm 只对「|φ₀| < 扭曲
+ * 幅度 + 细节幅度 + 余量」的零线带像素计算 —— 岛心与远海直接沿用 φ₀，
+ * 两者合计单岛 ≈ 0.2s，多岛同 seed 线性叠加。
+ */
+function erodeIslandCoast(base: Point[], seed: number): Point[] | null {
+  const E = LAND_ERODE;
+
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const p of base) {
+    if (p.x < minX) minX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y > maxY) maxY = p.y;
+  }
+  // 像素 (0,0) 中心的世界坐标：包围盒向外扩 pad
+  const ox = minX - E.pad;
+  const oy = minY - E.pad;
+  const worldW = maxX - minX + E.pad * 2;
+  const worldH = maxY - minY + E.pad * 2;
+  const long = Math.max(worldW, worldH);
+  const cell = long / E.gridLong;
+  const gw = Math.max(8, Math.ceil(worldW / cell));
+  const gh = Math.max(8, Math.ceil(worldH / cell));
+
+  // 母形半径（绕顶点均值中心）→ 本岛扭曲幅度（小岛按比例封顶）
+  let sx = 0;
+  let sy = 0;
+  for (const p of base) {
+    sx += p.x;
+    sy += p.y;
+  }
+  const center = { x: sx / base.length, y: sy / base.length };
+  const { hx, hy } = ringHalfSpan(base, center);
+  const warpEff = Math.min(E.warpAmp, Math.max(hx, hy) * E.warpCapRatio);
+
+  // ① 掩码 → 有符号距离场（外正内负）
+  const phi = sdfOfRing(base, ox, oy, cell, gw, gh);
+
+  // ② 域扭曲场预采样（stride 4）：波长 ≈ 1/noiseScale ≈ 83 世界单位，
+  //    栅格上 ≈ 40 px，stride 4 双线性的还原误差远小于 detAmp，视觉无差
+  const stride = 4;
+  const lw = Math.ceil(gw / stride) + 2;
+  const lh = Math.ceil(gh / stride) + 2;
+  const latW = new Float32Array(lw * lh);
+  const latH = new Float32Array(lw * lh);
+  const seedWx = seed ^ 0x9e3779b9;
+  const seedWy = seed ^ 0x85ebca6b;
+  for (let b = 0; b < lh; b += 1) {
+    for (let a = 0; a < lw; a += 1) {
+      const i = a * stride;
+      const j = b * stride;
+      const wx = ox + i * cell;
+      const wy = oy + j * cell;
+      const nx = wx * E.noiseScale;
+      const ny = wy * E.noiseScale;
+      latW[b * lw + a] =
+        (fbm(nx, ny, seedWx, E.warpOctaves, 2.05, 0.5) - 0.5) * 2 * warpEff;
+      latH[b * lw + a] =
+        (fbm(nx + 31.7, ny - 17.3, seedWy, E.warpOctaves, 2.05, 0.5) - 0.5) * 2 * warpEff;
+    }
+  }
+  const sampleLat = (lat: Float32Array, i: number, j: number): number => {
+    const u = i / stride;
+    const v = j / stride;
+    const a0 = Math.floor(u);
+    const b0 = Math.floor(v);
+    const fx = u - a0;
+    const fy = v - b0;
+    const i1 = Math.min(a0 + 1, lw - 1);
+    const b1 = Math.min(b0 + 1, lh - 1);
+    const top = lat[b0 * lw + a0] + (lat[b0 * lw + i1] - lat[b0 * lw + a0]) * fx;
+    const bottom = lat[b1 * lw + a0] + (lat[b1 * lw + i1] - lat[b1 * lw + a0]) * fx;
+    return top + (bottom - top) * fy;
+  };
+
+  // ③ 逐像素：φ(x + w(x)) + 细节·exp(−φ²/2σ²)。零线带之外的像素符号已定，
+  //    直接沿用 φ₀（|φ(x+w)| ≥ |φ(x)| − warpEff，SDF 梯度恒为 1）
+  const final = new Float32Array(gw * gh);
+  const thr = warpEff + E.detAmp + 8;
+  const seedDet = seed ^ 0x27d4eb2d;
+  const twoSigma2 = 2 * E.detRadius * E.detRadius;
+  for (let j = 0; j < gh; j += 1) {
+    const wy = oy + j * cell;
+    for (let i = 0; i < gw; i += 1) {
+      const p = j * gw + i;
+      const phi0 = phi[p];
+      if (phi0 > thr || phi0 < -thr) {
+        final[p] = phi0;
+        continue;
+      }
+      const wx = ox + i * cell;
+      const dx = sampleLat(latW, i, j);
+      const dy = sampleLat(latH, i, j);
+      // 扭曲后的采样位置（像素中心连续坐标）
+      const phiW = sampleField(phi, gw, gh, i + dx / cell, j + dy / cell);
+      const det = (fbm(wx * E.detScale, wy * E.detScale, seedDet, E.detOctaves, 2.05, 0.5) - 0.5) * 2;
+      final[p] = phiW + det * E.detAmp * Math.exp(-(phiW * phiW) / twoSigma2);
+    }
+  }
+
+  // ④ 追踪 → 取最大环 → 世界坐标 → 角切平滑 → 抽稀
+  const loops = marchingSquaresLoops(final, gw, gh);
+  let best: Point[] | null = null;
+  let bestArea: number = E.minArea;
+  for (const loop of loops) {
+    const world = loop.map((q) => ({ x: ox + q.x * cell, y: oy + q.y * cell }));
+    const area = Math.abs(polygonArea(world));
+    if (area > bestArea) {
+      bestArea = area;
+      best = world;
+    }
+  }
+  if (!best) return null;
+  return simplifyClosed(chaikinClosed(best, E.smooth), E.simplifyTol, E.maxPoints);
+}
+
+/* ────────────────────────────── 主流程 ────────────────────────────── */
 
 /**
  * 生成陆地。
@@ -485,11 +1124,8 @@ export function generateLand(options: LandOptions): MapLand {
   const autoIslands = islandRoll < 0.55 ? 1 : islandRoll < 0.85 ? 2 : 3;
   const count = clamp(Math.round(options.islands ?? autoIslands), 1, 8);
 
-  // 目标总面积与逐岛面积权重。
-  //
-  // 【为什么第一块要占主导】旧权重是 0.7~1.3 —— 多岛时画出来是"两条一样大的
-  // 长圆"，读起来像复制粘贴，而不是地图。真实地形几乎总是"一块主陆 + 若干小岛"，
-  // 所以首块固定为 1，其余 0.22~0.5：主陆撑住画面，小岛做点缀与航线节点。
+  // 目标总面积与逐岛面积权重：首块固定 1，其余 0.22~0.5 ——
+  // 主陆撑住画面，小岛做点缀与航线节点。
   const targetRatio = LAND_AREA_RATIO.min + rng() * (LAND_AREA_RATIO.max - LAND_AREA_RATIO.min);
   const targetArea = paperArea * targetRatio;
   const weights: number[] = [];
@@ -502,47 +1138,39 @@ export function generateLand(options: LandOptions): MapLand {
   const areas = weights.map((w) => (targetArea * w) / Math.max(1e-9, weightSum));
 
   const plans = planIslands(areas, bounds, rng);
-  const islands: { plan: IslandPlan; ring: Point[] }[] = [];
+  const polygons: Point[][] = [];
 
   for (let i = 0; i < plans.length; i += 1) {
     const plan = plans[i];
-    let ring = makeRing(plan, seed + i * 7919, samples);
+    const base = makeRing(plan, seed + i * 7919, samples);
 
-    // 相交则缩 8% 重来（PRD §6.1.2）。格子排布已经按可用半幅保证了海峡，
-    // 正常走不到这里；留着它是为了兜住"fbm 恰好取到接近 1"的极端形状。
+    // 侵蚀：海岸性格（半岛 / 深湾 / 碎边）全部来自这里。失败回退母形。
+    const coast = erodeIslandCoast(base, seed + i * 7919 + 31);
+    let ring = fitRingToSpan(coast ?? base, plan);
+
+    // 相交兜底（格子排布 + 半幅贴合在结构上已保证海峡；这里只兜 fbm 极端值）。
     for (let retry = 0; retry < LAND_OVERLAP_RETRIES; retry += 1) {
       let hit = false;
-      for (const other of islands) {
-        if (ringsIntersect(ring, other.ring)) {
+      for (const other of polygons) {
+        if (ringsIntersect(ring, other)) {
           hit = true;
           break;
         }
       }
       if (!hit) break;
-      const factor = LAND_SHRINK ** (retry + 1);
-      ring = makeRing(
-        { ...plan, ax: plan.ax * factor, ay: plan.ay * factor },
-        seed + i * 7919,
-        samples,
-      );
+      ring = scaleRing(ring, plan.center, LAND_SHRINK);
     }
     // 仍然相交：丢弃这个岛（宁可少一块，也不要两块糊在一起）
     let dropped = false;
-    for (const other of islands) {
-      if (ringsIntersect(ring, other.ring)) dropped = true;
+    for (const other of polygons) {
+      if (ringsIntersect(ring, other)) dropped = true;
     }
     if (dropped) continue;
 
-    // 抽稀：默认 96 点用不到，留给将来手绘的超多点环
-    if (ring.length > LAND_SIMPLIFY_MIN_POINTS) {
-      const simplified = simplifyRing(ring, LAND_SIMPLIFY_TOL);
-      if (simplified.length >= 8) ring = simplified;
-    }
-
-    islands.push({ plan, ring });
+    polygons.push(ring);
   }
 
-  return { seed, polygons: fitExtents(islands), bounds };
+  return { seed, polygons, bounds };
 }
 
 /**
@@ -557,6 +1185,54 @@ export function pointInLand(p: Point, land: MapLand | null): boolean {
     if (ring.length >= 3 && pointInPolygon(p, ring)) return true;
   }
   return false;
+}
+
+/**
+ * 素材落位的最小离岸距离（世界单位）：锚点不得压进陆岸 14 单位。
+ *
+ * 【为什么是 14 而不是更小/更大】海岸四层里的「陆岸内阴影」宽 22
+ * （`COAST_INNER_SHADE`），但它朝内陆一侧是模糊渐隐的，锚点压到 ~14 单位以内
+ * 才会明显"吃掉"岸线层次；再小（如 8）会让沿湖/沿岸的素材贴住白边，再大
+ * （如 24）会把窄岛内缩成一条缝，可落位面积白白少一圈。14 是「岸线层次」与
+ * 「可铺面积」之间的折中。
+ */
+export const COAST_INSET = 14;
+
+/**
+ * 把陆地各环向内**精确偏移** `inset` 世界单位，返回新 `MapLand`
+ * （SDF 等值线法，见 `offsetRing`）。
+ *
+ * 【为什么必须是真偏移而不是等比缩放】内缩结果要当**落位边界**用，必须保证
+ * 新环 ⊆ 原环。旧实现绕各环顶点均值中心等比收缩，对星形环恒成立；海岸改
+ * SDF 侵蚀后凹段更深，等比缩放的顶点会跨过湾口落到对岸之外（实测 seed=1
+ * 内缩顶点越出原岸线）。现改为真偏移曲线，个别平滑偏差顶点再由
+ * `pullIntoRing` 拉回 —— 对任意简单闭环 ⊆ 原环成立；卫星岛也不再被
+ * 朝主陆方向拖移。
+ *
+ * 环比 2×inset 还窄时偏移无解：兜底按「均值中心等比收缩」塌到中心（旧路径，
+ * 绝不自交）。`inset ≤ 0` 原样返回；`seed` / `bounds` 原样带回。
+ */
+export function insetLand(land: MapLand, inset: number = COAST_INSET): MapLand {
+  if (inset <= 0) return { seed: land.seed, polygons: land.polygons, bounds: land.bounds };
+  const polygons = land.polygons.map((ring) => {
+    if (ring.length < 3) return ring;
+    const offset = offsetRing(ring, -inset);
+    if (offset) return pullIntoRing(ring, offset);
+
+    // 偏移无解（环太窄）：旧路径兜底 —— 朝均值中心等比收缩
+    let sx = 0;
+    let sy = 0;
+    for (const p of ring) {
+      sx += p.x;
+      sy += p.y;
+    }
+    const center: Point = { x: sx / ring.length, y: sy / ring.length };
+    const { hx, hy } = ringHalfSpan(ring, center);
+    const half = Math.max(1, Math.max(hx, hy));
+    return scaleRing(ring, center, Math.max(0, 1 - inset / half));
+  });
+
+  return { seed: land.seed, polygons, bounds: land.bounds };
 }
 
 /** 陆地占纸面积的比例（0 = 无陆地 / 纸面退化） */
@@ -605,11 +1281,9 @@ function segmentsCross(a1: Point, a2: Point, b1: Point, b2: Point): boolean {
 /**
  * 两个闭合环是否相交（重叠或边界交叉）。
  *
- * 三级判定，由便宜到贵：
- *   1) 包围盒分离 ⇒ 必不相交（格子排布下绝大多数情形在此返回）；
- *   2) 任一方有顶点落在对方内 ⇒ 相交（覆盖"一个套一个"）；
- *   3) 任一对边**交叉** ⇒ 相交（覆盖顶点互不在对方内的"咬合"情形）。
- * 第 3 步是 O(n·m)，n = m = 96 时约 9 千次叉积，只在生成期跑几次，可接受。
+ * 三级判定，由便宜到贵：包围盒分离 ⇒ 必不相交；顶点互入 ⇒ 相交；
+ * 边交叉 ⇒ 相交。第 3 步 O(n·m)，n = m ≈ 500 时 25 万次叉积，
+ * 只在生成期兜底跑，可接受。
  */
 export function ringsIntersect(a: Point[], b: Point[]): boolean {
   if (a.length < 3 || b.length < 3) return false;
@@ -636,10 +1310,9 @@ export function ringsIntersect(a: Point[], b: Point[]): boolean {
 }
 
 /**
- * Douglas–Peucker 抽稀（闭合环：把首点也当作末点，两端点必保留）。
+ * Douglas–Peucker 抽稀（闭合链：把首点也当作末点，两端点必保留）。
  *
  * 用显式栈而非递归，避免长环把调用栈打爆。
- * 调用方应在顶点数很多时才用它 —— 对平滑环用小容差会把环并成多边形。
  */
 export function simplifyRing(pts: Point[], tolerance: number): Point[] {
   const n = pts.length;
@@ -669,7 +1342,6 @@ export function simplifyRing(pts: Point[], tolerance: number): Point[] {
       if (len2 < 1e-18) {
         d = Math.hypot(p.x - a.x, p.y - a.y);
       } else {
-        // 闭弦上的最大偏离点必然落在投影区间内，因此 t 不必钳制
         const t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2;
         d = Math.hypot(p.x - (a.x + dx * t), p.y - (a.y + dy * t));
       }
@@ -692,11 +1364,7 @@ export function simplifyRing(pts: Point[], tolerance: number): Point[] {
 /**
  * 把陆地路径写进绘图目标 —— **Catmull-Rom → 三次贝塞尔**。
  *
- * 【为什么不用 `Graphics.poly()`】按 96 点直弦算，适应窗口下一条弦约 20 世界单位
- * ≈ 16 屏幕像素；而 PRD §6.1.2 原本写的 64 点更粗（约 31 像素）。那正是
- * §2.1 明令禁止的"折线感"。Catmull-Rom 的控制点只由相邻四点决定，
  * 曲线**穿过**每个采样点，且首尾自动闭合，一次遍历即可写完。
- *
  * 控制点（标准 Catmull-Rom 的贝塞尔形式）：
  *   a = P[i-1], b = P[i], c = P[i+1], d = P[i+2]
  *   cp1 = b + (c - a) / 6
@@ -732,10 +1400,9 @@ export function drawLandPath(g: LandPathTarget, polygons: readonly Point[][]): v
 /**
  * 陆地各环的凸包（Andrew monotone chain）—— **凸性逃生开关**。
  *
- * 【什么时候用它】`regions.ts` 的 `voronoiCellIn` 用半平面裁剪，严格来说只对
- * **凸**裁剪框成立。而 r(θ) 生成的是星形多边形（0.72 的下限保证湾很浅），
- * 实测风险极低。若某天真的出现"区块跑到海里"，把传给 `generateHierarchy` 的
- * `container` 换成这里的凸包即可（改一行），代价是陆地边界被拉直成凸壳。
+ * 星形环导致的"区块跑到海里"已由 `regions.ts` 的 `makeRadialClamp` 解决
+ * （显示多边形逐点径向投影回岸线，贴着海岸走），本函数退居纯工具
+ * （`land.test.ts` 仍在验证它的正确性）。
  */
 export function landHull(land: MapLand): Point[][] {
   return land.polygons.filter((ring) => ring.length >= 3).map((ring) => convexHull(ring));

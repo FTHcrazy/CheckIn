@@ -1,7 +1,9 @@
 # 地形素材体系架构设计（R-MAP-22 续）
 
+> 模块全貌与进度见 [map-window-overview.md](map-window-overview.md)（地图模块唯一入口）。
+
 > 版本：v1.2（S1 已落地） · 日期：2026-11-04
-> 基线：2.22.x（B0 持久化 / B1 属性面板 / B2 素材落地；2.22.2 补缺批后共 53 张符号 + 4 张底图）
+> 基线：2.22.x（B0 持久化 / B1 属性面板 / B2 素材落地；2.22.2 补缺批后共 **52** 张符号 + 4 张底图）
 > 服务对象：B3 一键成图生成器（R-MAP-21）、后续热门地图生成与 AI 接线
 > 上游依据：`review/map-vs-reference-interaction-review.md` §R-MAP-22 / `assets/sprites/MANIFEST.json`
 
@@ -10,10 +12,10 @@
 ## 一、背景与目标
 
 B2 之后素材已达 45 张（6 分类）+ 4 张底图，全部 AI 生成；2.22.2 补缺批又新增
-沼泽/草原/雪原 8 张（现 53 张、9 分类），专门补齐地形配方的原料缺口——
+沼泽/草原/雪原 8 张（现 **52** 张、9 分类；口径以 `node scripts/count-map-sprites.mjs` 为准），专门补齐地形配方的原料缺口——
 **地形不是一个「地形图」，而是一份「素材配方」**：沼泽 = 芦苇丛 + 水草滩 +
 浅滩水洼 + 沼泽枯木交叉渲染，读者自然读出「这是沼泽」。生成器（B3）要的
-不是「53 张素材」，而是「给我一种地形，还我一批合适的素材」。当前体系缺三块：
+不是「52 张素材」，而是「给我一种地形，还我一批合适的素材」。当前体系缺三块：
 
 1. 素材只有**面板展示分类**（mountain/forest/…），没有**地形语义标签**，机器无法按地形选材；
 2. 没有用户导入通道（`map_assets` 表已建、未启用）；
@@ -108,7 +110,7 @@ export type TerrainKind =
 | city-major | settlement | settlement, plain, grassland |
 | ruins-arch | ruin | landmark |
 
-> 53 张一次性标注是体力活：按 MANIFEST 的 subject 半自动初标 + 目检终审，
+> 52 张一次性标注是体力活：按 MANIFEST 的 subject 半自动初标 + 目检终审，
 > 标注结果直接写进 `sprites.ts` 登记表（与 id 同处，diff 可审）。
 
 ---
@@ -279,7 +281,7 @@ sprites.ts（本地池）   map-assets IPC（导入池）   mapPresets.ts / MapA
 
 | 阶段 | 内容 | 对应批次 |
 |------|------|----------|
-| S1（**已落地 2.25.0**） | `domain/terrain.ts`（TerrainKind 20 项 + TERRAIN_META + isTerrainKind 收敛口）+ 53 张 terrains/weight 标注 + `domain/terrain-assets.ts` 引擎（pickTerrainSprites：seed 确定性 / 加权不放回 / exclude / 回退链补位——语义为主地形优先、不足按链补满）+ `domain/mapPresets.ts`（3 预设 + expandTerrainMix 最大余数法）+ 守卫测试（terrains 非空 / id 唯一 / 回退链无环可达 / 预设 share=1 / 真实池冒烟） | R-MAP-21 前置 |
+| S1（**已落地 2.25.0**） | `domain/terrain.ts`（TerrainKind 20 项 + TERRAIN_META + isTerrainKind 收敛口）+ 52 张 terrains/weight 标注 + `domain/terrain-assets.ts` 引擎（pickTerrainSprites：seed 确定性 / 加权不放回 / exclude / 回退链补位——语义为主地形优先、不足按链补满）+ `domain/mapPresets.ts`（3 预设 + expandTerrainMix 最大余数法）+ 守卫测试（terrains 非空 / id 唯一 / 回退链无环可达 / 预设 share=1 / 真实池冒烟） | R-MAP-21 前置 |
 | B3（**已落地 2.25.0**） | `domain/generator.ts`（三子流确定性引擎：分区配方成片布点 / 核心盒碰撞允许层叠 / 地名三档名池）+ `MapGeneratorModal`（预设/丰度/成图-骨架/含地名/划分区块）+ 五档重掷 + 结果摘要 + 底图选择器（`doc.baseImageId` 进撤销栈） | R-MAP-21 |
 | S2 | 导入三通道（import/list/delete）+ 标注弹层 + 「我的素材」分组 | 独立批次，S1 后任意时点 |
 | S3 | 热门地图预设扩容 + 预设选择 UI | B3 之后的迭代 |

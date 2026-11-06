@@ -237,6 +237,52 @@ export function hitTestElement(
 }
 
 /**
+ * 手工落位避让的 AABB 外扩量（世界单位，参考实现口径 +30px）。
+ *
+ * 【为什么是外扩而不是严格 AABB】严格的"中心落在已有素材的命中盒内"只拦
+ * 深叠；+30 的呼吸边把"贴着边摆"也拦下来 —— 摆出来的图才是"一坨一坨、
+ * 边缘留白"，而不是贴纸拼边。参考实现 `@142908` 用 30px（屏幕像素），
+ * 我们在**世界单位**上取同一个数：落位避让关心的是素材与素材的相对关系
+ * （素材自身就是世界单位标定的），与视口缩放无关。
+ */
+export const ELEMENT_PLACE_PAD = 30;
+
+/**
+ * 手工落位避让（P2-3）：`center` 是否落进任一已有元素命中盒的外扩区内。
+ *
+ * 【语义】参考实现 `@142908`：手拖**新**素材落位时，AABB(+30px) 拦住"中心
+ * 被已有素材压住"的落点 —— 不拦就可能出现"聚落被压在山体正中间，
+ * 看得见但选不到"。盒的形状与 `hitTestElement` 完全同构（底部锚点、
+ * width×scale 外接盒），`boxes` 直接复用命中测试的参数形状。
+ *
+ * 【只拦"新落位"，不拦"移动既有素材"】拦截如果作用于拖拽，用户就永远
+ * 无法把压住的素材拖开解围 —— 调用方（useMapEditor.placeSprite）只在
+ * 新建素材时调用本函数；`moveElementBy` 路径不设防。
+ *
+ * 【外扩只在水平两侧 + 竖直两端各一次】即呼吸边加在盒外围一圈，
+ * 不是把 scale 放大。
+ */
+export function isCenterCovered(
+  center: { x: number; y: number },
+  boxes: readonly { x: number; y: number; width: number; height: number; scale: number }[],
+): boolean {
+  for (const el of boxes) {
+    const halfW = (el.width * el.scale) / 2 + ELEMENT_PLACE_PAD;
+    const top = el.y - el.height * el.scale - ELEMENT_PLACE_PAD;
+    const bottom = el.y + ELEMENT_PLACE_PAD;
+    if (
+      center.x >= el.x - halfW &&
+      center.x <= el.x + halfW &&
+      center.y >= top &&
+      center.y <= bottom
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * 多边形命中测试（射线法，不要求凸多边形）。
  *
  * 【为什么单列一个函数】区块多边形是崎岖化的凹多边形（regions.ts §2 的产物），

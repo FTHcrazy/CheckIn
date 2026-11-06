@@ -329,7 +329,7 @@ export const ZOOM_MIN_BLOCK_LONG = 8;
  * 实测：让"p05 的郡"铺满 900px 短边需要 18.6~20.8 倍（6 个种子）；让**最小**
  * 的碎块铺满需要 26~40 倍。40 因此足够覆盖全部实测情形，同时把海面底图的
  * 拉伸限制在 40/3 ≈ 13 倍（缓存倍率封顶 `STATIC_CACHE_MAX_RES = 3`，
- * 见 `docs/prd/prd-map-render/architecture.md` §9 的 L-7）——
+ * 见 `docs/archive/prd-map/map-render-alignment-architecture.md` §9 的 L-7）——
  * 再高也不会有更多细节，只会更糊、且滚轮要走更多格。
  */
 export const ZOOM_ABS_MAX = 40;

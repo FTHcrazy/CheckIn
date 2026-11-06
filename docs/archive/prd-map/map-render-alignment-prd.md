@@ -1,5 +1,12 @@
 # PRD：地图渲染观感对齐改造（R-MAP-16 ~ R-MAP-20）
 
+> **已归档 · 2026-11-05**：R-MAP-16~20 已于 **2.17.x 前置 + 2.18.0** 全部落地并闭环
+> （海岸三件套 / 区块降级 / 文字标注层 / 三档风格 / 剔除·缓存·分块导出）。
+> 观感参数的**现行出处是代码常量**：`style.ts`（三档矩阵）、`coastBake.ts`（海岸与纸纹）、
+> `generator.ts`（配额与体量）、`lod.ts`（层级权重），本文 §4 的数值表只作对照。
+> 后续观感调整见 [`map-window-overview.md`](../../prd/prd-map-render/map-window-overview.md) §3，
+> 落地细节见同目录 `map-render-alignment-architecture.md`。归档后不再修改正文。
+
 ---
 
 **文档负责人：** 前端 / 地图模块

@@ -104,6 +104,10 @@ vi.mock("pixi.js", () => {
     rect() {
       return this;
     }
+    /** 折线节点手柄 / 绘制态顶点用（B4-2）：缺方法同样是 TypeError */
+    circle() {
+      return this;
+    }
     poly() {
       return this;
     }
@@ -114,6 +118,14 @@ vi.mock("pixi.js", () => {
       return this;
     }
     moveTo() {
+      return this;
+    }
+    /**
+     * 折线绘制（B4-2）会走 `moveTo` / `lineTo` + `stroke`。
+     * 替身**缺方法不是静默跳过，是 TypeError** —— 折线层一接进来，
+     * 所有挂载画布的文件都会在 effect 里炸，而报错指向折线而不是替身。
+     */
+    lineTo() {
       return this;
     }
     bezierCurveTo() {
@@ -197,6 +209,10 @@ vi.mock("pixi.js", () => {
     RenderTexture,
     BlurFilter,
     ColorMatrixFilter,
+    /* 子图羽化的隔离滤镜替身（submapRender 给 content 挂它，让 erase 只擦子图纹理） */
+    AlphaFilter: class {
+      alpha = 1;
+    },
     Texture,
   };
 });

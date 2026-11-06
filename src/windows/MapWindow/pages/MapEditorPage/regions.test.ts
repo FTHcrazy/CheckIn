@@ -1,6 +1,11 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_REGION_SCHEMA,
+  REGION_BORDER_ALPHA,
+  REGION_FILL_ALPHA,
+  REGION_LEVEL_FILL_SCALE,
   REGION_LEVELS,
   REGION_LEVEL_COUNT_LIMITS,
   REGION_MAX_LEVELS,
@@ -13,6 +18,9 @@ import {
   pointInPolygon,
   polygonArea,
   polygonCentroid,
+  regionBorderAlphaOf,
+  regionFillAlphaOf,
+  regionLevelScaleOf,
   regionSchemaOf,
   valueNoise,
   type MapRegion,
@@ -746,5 +754,78 @@ describe("regionSchemaOf / levelLabelOf：读时回落的唯一出口", () => {
     expect(levelLabelOf(DEFAULT_REGION_SCHEMA, -1)).toBe("L1");
     expect(levelLabelOf([{ name: "   ", count: 1 }], 0)).toBe("L1");
     expect(levelLabelOf(undefined, 2)).toBe("L3");
+  });
+});
+
+/* ─────────────── 静态层次衰减（观感批次 D · P2-2） ─────────────── */
+
+/**
+ * `REGION_LEVEL_FILL_SCALE` 是**与视口无关的静态层次系数**，与 `lod.ts` 的
+ * `levelAlphas`（缩放驱动的 LOD 权重，帽函数 Σα≡1、已写进容器 alpha）正交：
+ * 再乘 levelAlphas 就是双重衰减（当前活跃层级被压淡，「线比面还淡」换个方向
+ * 复发）。勘误口径的验收 =「同一视口下各级填充 alpha 按 level 单调递减 +
+ * 边界面同步衰减」—— 钉静态系数表本身，不钉某组 levelAlphas 下的绝对值。
+ */
+describe("REGION_LEVEL_FILL_SCALE · 静态层次衰减（P2-2）", () => {
+  it("系数表按 level 单调递减、首项 = 1、全部落在 (0,1]，覆盖全部层级", () => {
+    expect(REGION_LEVEL_FILL_SCALE).toHaveLength(REGION_MAX_LEVELS);
+    expect(REGION_LEVEL_FILL_SCALE[0]).toBe(1);
+    for (let i = 0; i < REGION_LEVEL_FILL_SCALE.length; i++) {
+      const s = REGION_LEVEL_FILL_SCALE[i];
+      expect(s, `第 ${i} 级系数`).toBeGreaterThan(0);
+      expect(s, `第 ${i} 级系数`).toBeLessThanOrEqual(1);
+      if (i > 0) {
+        expect(s, "必须严格单调递减（越深的层级越淡）").toBeLessThan(
+          REGION_LEVEL_FILL_SCALE[i - 1],
+        );
+      }
+    }
+  });
+
+  it("regionLevelScaleOf：表内取值，越界 / 非有限回落 1（朝『不衰减』兜底）", () => {
+    expect(regionLevelScaleOf(0)).toBe(REGION_LEVEL_FILL_SCALE[0]);
+    expect(regionLevelScaleOf(3)).toBe(REGION_LEVEL_FILL_SCALE[3]);
+    expect(regionLevelScaleOf(-1)).toBe(1);
+    expect(regionLevelScaleOf(REGION_MAX_LEVELS)).toBe(1);
+    expect(regionLevelScaleOf(Number.NaN)).toBe(1);
+  });
+
+  it("regionLevelScaleOf：小数 level 取 Math.trunc（1.9 → 落 1 档，不是四舍五入）", () => {
+    // QA 备忘的边缘口径：层级是整数索引，脏档若塞小数应「向下取整」而非进到更淡的一档
+    expect(regionLevelScaleOf(1.9)).toBe(REGION_LEVEL_FILL_SCALE[1]);
+    expect(regionLevelScaleOf(1.9)).not.toBe(REGION_LEVEL_FILL_SCALE[2]);
+    expect(regionLevelScaleOf(0.99)).toBe(REGION_LEVEL_FILL_SCALE[0]);
+  });
+
+  it("填充与边界共用同一张表：任一层级的『边界 : 填充』浓度比恒等", () => {
+    // 「边界面一起调」的执行点：比值漂移 = 线与面的视觉关系漂移
+    for (let level = 0; level < REGION_MAX_LEVELS; level++) {
+      expect(regionBorderAlphaOf(level) / regionFillAlphaOf(level)).toBeCloseTo(
+        REGION_BORDER_ALPHA / REGION_FILL_ALPHA,
+        12,
+      );
+    }
+  });
+
+  /**
+   * 渲染落点守卫（源码型，正则容忍排版换行）：主图与子图两处区块填充/边界
+   * 都必须走这对助手 —— 有人回退成裸常量（只乘一边或都不乘）时这里变红。
+   */
+  it("渲染落点守卫：主图与子图的填充/边界 alpha 都走 regionXxxAlphaOf", () => {
+    // cwd 相对路径（同 render-stack-guard 的做法；fs shim 不认 URL 对象）
+    const sources = ["components/MapCanvas/index.tsx", "components/MapCanvas/submapRender.ts"].map(
+      (rel) =>
+        readFileSync(
+          path.resolve(process.cwd(), "src/windows/MapWindow/pages/MapEditorPage", rel),
+          "utf8",
+        ).replace(/\r\n/g, "\n"),
+    );
+    for (const src of sources) {
+      expect(src).toMatch(/regionFillAlphaOf\(/);
+      expect(src).toMatch(/regionBorderAlphaOf\(/);
+      // 裸常量直填 alpha = "只乘一边或都不乘"的回退形态，一律不许回来
+      expect(src).not.toMatch(/alpha:\s*REGION_FILL_ALPHA/);
+      expect(src).not.toMatch(/alpha:\s*REGION_BORDER_ALPHA/);
+    }
   });
 });

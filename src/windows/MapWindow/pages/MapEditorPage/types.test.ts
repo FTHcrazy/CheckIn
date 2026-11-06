@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createEmptyDocument, migrateDoc } from "./types";
+import { createEmptyDocument, elementFlipXOf, migrateDoc } from "./types";
 import { DEFAULT_REGION_SCHEMA, normalizeRegionSchema, regionSchemaOf } from "./regions";
 
 /**
@@ -113,5 +113,57 @@ describe("migrateDoc · regionSchema 老文档兼容", () => {
       { name: "界", count: 1 },
       { name: "域", count: 3 },
     ]);
+  });
+});
+
+/* ─────────────────── 镜像翻转读点兜底（观感批次 C · P1-4） ─────────────────── */
+
+/**
+ * `elementFlipXOf` 是 flipX 的唯一读点：旧存档没有这个字段，渲染层靠它在
+ * 读点回落"原样"（不翻）。与 `elementOpacityOf` / `elementTintHueOf` 同一
+ * 模式 —— 迁移函数不补值，兜底只在读点发生。
+ */
+describe("elementFlipXOf · 镜像翻转读点兜底（P1-4）", () => {
+  it("旧存档素材没有 flipX 字段：读作 false（原样渲染，不报错）", () => {
+    const legacy = {
+      id: "el_1",
+      spriteId: "mountain-20",
+      x: 0,
+      y: 0,
+      scale: 1,
+      rotation: 0,
+      level: null,
+      flipX: undefined, // 2.34.0 及之前的存档没有这个字段（undefined = 不存在）
+    };
+    expect(elementFlipXOf(legacy)).toBe(false);
+  });
+
+  it("只有布尔 true 才翻：脏数据（字符串 / 数字 / null）一律按 false", () => {
+    expect(elementFlipXOf({ flipX: true })).toBe(true);
+    expect(elementFlipXOf({ flipX: false })).toBe(false);
+    expect(elementFlipXOf({ flipX: "true" as unknown as boolean })).toBe(false);
+    expect(elementFlipXOf({ flipX: 1 as unknown as boolean })).toBe(false);
+    expect(elementFlipXOf({ flipX: null as unknown as boolean })).toBe(false);
+    expect(elementFlipXOf({ flipX: undefined })).toBe(false);
+  });
+
+  it("migrateDoc 不丢元素的 flipX：未知字段随 elements 原样保留", () => {
+    const raw = {
+      version: 2,
+      baseImageId: "base-1",
+      land: null,
+      style: "none",
+      labels: [],
+      showRegions: true,
+      regions: [],
+      elements: [
+        { id: "el_1", spriteId: "swamp-1", x: 10, y: 20, scale: 1, rotation: 0, level: null, flipX: true },
+      ],
+    };
+    const out = migrateDoc(raw);
+    expect(out.elements[0].flipX).toBe(true);
+    // 布尔 false 也原样保留（不删不补）：落库形状 = 用户写过的形状
+    const rawFalse = { ...raw, elements: [{ ...raw.elements[0], flipX: false }] };
+    expect(migrateDoc(rawFalse).elements[0].flipX).toBe(false);
   });
 });

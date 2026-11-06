@@ -149,7 +149,11 @@ describe("generateHierarchy.container：陆地内切分", () => {
     }
   });
 
-  it("最粗一级铺满陆地（面积和 ≈ 陆地面积，误差 < 3%）", () => {
+  it("最粗一级铺满陆地（面积和 ≈ 陆地面积，误差 < 5%）", () => {
+    // 阈值 3%→5%（2.34.0）：海岸改 SDF 侵蚀后湾更深，径向钳制把凹湾处的
+    // 越岸顶点拉到最近岸点，区块只会在凹段收缩（越岸恒为 0，见上一条用例），
+    // 面积和 ≤ 陆地面积、缺口 ≤ 5% 属于"钳制的固有损耗"，不是塌陷 ——
+    // 填充 alpha 0.10 下这段缺口肉眼不可见。
     const land = generateLand({ seed: 9176, bounds: BOUNDS, islands: 1 });
     const container = land.polygons[0];
     const all = generateHierarchy({
@@ -161,7 +165,7 @@ describe("generateHierarchy.container：陆地内切分", () => {
     });
     const sum = all.reduce((s, r) => s + polygonArea(r.polygon), 0);
     const landArea = polygonArea(container);
-    expect(Math.abs(sum - landArea) / landArea).toBeLessThan(0.03);
+    expect(Math.abs(sum - landArea) / landArea).toBeLessThan(0.05);
   });
 
   it("层级数与请求一致（容器换了不影响层级结构）", () => {

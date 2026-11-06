@@ -19,7 +19,7 @@
  *      施加在 scale 之后**，所以平移量必须也乘上 scale（PRD §6.1.4 的写法漏了这一步，
  *      症状是"烘焙成功但画面上什么都没有"，且不报错）。
  *   4. 纹理叠加不能一次 `fill()` 搞定：Graphics 一次填充只接受一种样式，
- *      「底色 + 纸纹」要拆成两条子节点（底色 Graphics + 纹理 Sprite + mask）。
+ *      「底色 + 纸纹」要拆成两条子节点（底色 Graphics + 平铺精灵 + 掩膜）。
  *   5. `holder.destroy()` **不能**带 `texture: true`：底图纹理是共享资源，
  *      跟着销毁会让整张地图的底图消失。
  *
@@ -31,8 +31,8 @@
  * 现在矩阵只在这里乘一次、烤进纹理，运行期海岸就是一张图。
  */
 
-import { BlurFilter, Container, Graphics, RenderTexture, Sprite, Texture } from "pixi.js";
-import { drawLandPath } from "./land";
+import { BlurFilter, Container, Graphics, RenderTexture, Texture, TilingSprite } from "pixi.js";
+import { createRingOffset, drawLandPath, type RingOffsetField } from "./land";
 import { filterFor } from "./style";
 import type { MapLand, MapStyle, Rect } from "./types";
 
@@ -65,7 +65,7 @@ export const COAST_SHELF = {
  * 是块布；参考实现的海面靠 2~3 圈等深线立刻有了"离岸越来越深"的层次。
  * 这是本次背景质感里性价比最高的一笔 —— 烘焙期算完就烤进纹理，运行期零成本。
  *
- * `distance` 是离岸的**世界单位**（经陆地半幅换算成缩放系数，见 `ringScaleK`）。
+ * `distance` 是离岸的**世界单位**（SDF 等值线真偏移，见 `createRingOffset`）。
  */
 export const COAST_ISOBATHS = [
   { distance: 16, width: 2.2, alpha: 0.32 },
@@ -107,8 +107,48 @@ export const COAST_FILL = { color: 0xc8bd9d, blur: 1.6, quality: 2 } as const;
 /** 海岸白边：整张图最亮最锐的线，它断不断决定这张图成不成立 */
 export const COAST_STROKE = { width: 1.8, color: 0xf6f0e0, alpha: 0.86 } as const;
 
-/** 纸纹以 multiply 叠在陆地上的强度（纸纹已换成中性颗粒，见 paperGrain.ts） */
-export const LAND_TEXTURE_ALPHA = 0.55;
+/**
+ * 纸纹以 multiply 叠在陆地上的强度（纸纹已换成中性颗粒，见 paperGrain.ts）。
+ *
+ * 从 0.55 提到 0.7：旧值下中性颗粒被 fill 的米黄"稀释"得几乎看不出，陆地底部
+ * 观感接近一块死板的纯色；提强度后纸纹的磨砂质感才真正透出来。
+ */
+export const LAND_TEXTURE_ALPHA = 0.7;
+
+/**
+ * 纸纹从岸线向内淡出的宽度（世界单位）。
+ *
+ * 纸纹是一层 multiply 的中性颗粒：它必须**在岸线处就已经淡到看不见**，
+ * 否则颗粒会在海岸白边上硬截断，陆地边缘会出现一条「磨砂纸被裁了一刀」的
+ * 生硬接缝。40 的选择：比 `COAST_INNER_SHADE.width`(22) 宽一档，让内阴影
+ * 完整落在这段空窗里（它负责把过渡柔化），又不到陆地半幅的量级（不会把
+ * 纹理挤成中心一小块）。
+ */
+export const LAND_TEXTURE_FEATHER = 40;
+
+/**
+ * 纸纹羽化的**台阶数**（沿 `LAND_TEXTURE_FEATHER` 均分成这么多层）。
+ *
+ * 【为什么是"分台阶"而不是一条软边】pixi v8 里给 Graphics 遮罩挂 `BlurFilter`
+ * 并不会得到软边，而是**整块遮罩失效**：
+ *   1. `MaskEffectManager` 按类型选遮罩：`StencilMask.test = mask instanceof Container`
+ *      ⇒ Graphics 遮罩走的是 **stencil**（0/1，没有 alpha）；
+ *   2. 而遮罩节点一旦带 `filters`，`effectsMixin` 会把 `isSimple` 置 false，
+ *      `StencilMaskPipe.push` 里那句 `maskContainer.collectRenderables(...)` 就
+ *      走到 `collectRenderablesWithEffects` 分支 —— 遮罩几何被 FilterEffect
+ *      渲进一张**临时纹理**（此时 `colorMask` 还是 0），主目标的 stencil 缓冲
+ *      始终是空的 ⇒ `MASK_ACTIVE` 区域为空 ⇒ 被遮罩的纸纹**整块消失**
+ *      （比"硬边内缩"更糟，而且不报错）。
+ *   3. 想让 Graphics 遮罩真的带 alpha，只能改用 `Sprite` 作遮罩（AlphaMask 路径，
+ *      采样其纹理 alpha）—— 那需要先烘一张遮罩 RT，且 `calculateSpriteMatrix`
+ *      依赖遮罩精灵的**世界变换**（不在场景图里的精灵拿不到更新），对齐风险高。
+ *
+ * 于是改成"用透明度做羽化"：第 i 层内缩 `i × FEATHER/STEPS`、各自
+ * `alpha = LAND_TEXTURE_ALPHA / STEPS`。岸线附近只有最外层（1/5 强度）的颗粒，
+ * 越往里叠加的层数越多 → 一条 5 级的线性淡出。台阶落差 ≈ 全强度的 20%
+ * ≈ 2.5% 明度，而纸纹自身的噪声幅度有 ±13%，台阶被噪声完全盖住。
+ */
+export const LAND_TEXTURE_STEPS = 5;
 
 /** 烘焙结果的尺寸与缩放（纯几何，可单测） */
 export interface BakeSize {
@@ -200,72 +240,75 @@ export function bakeKeyOf(land: MapLand | null, style: MapStyle, resolution: num
 }
 
 /**
- * 陆地轮廓的近似中心（所有环顶点的均值）。
+ * 陆地顶点到纸边框的最小余量（世界单位）。
  *
- * 【为什么用均值而不是面积重心】这里只拿它当"外扩的缩放原点"，对形状精度
- * 没有要求；面积重心要算环积分（还得处理自交与多环），成本高出一个量级。
+ * 【为什么需要它】海岸外扩层里最远的是等深线（`COAST_ISOBATHS[2].distance = 70`），
+ * 它离岸若超过这个余量，就会越过 `land.bounds` 的纸边框、溢出到留白/背景 ——
+ * 海岬指向纸边时尤其明显（截图里东北角的发光弧线越界）。用它 clamp 等深线的
+ * 离岸距离，保证海岸装饰永远停在纸内。浅滩/外发光画在岸线上、模糊拖尾 ≤ 27，
+ * 而陆地离纸边 ≥ 56（见 land.ts 的 `LAND_PAPER_MARGIN`），本来就不会越界，不用 clamp。
  */
-function ringsCenter(polygons: readonly { x: number; y: number }[][]): { x: number; y: number } {
-  let sx = 0;
-  let sy = 0;
-  let n = 0;
-  for (const ring of polygons) {
+export function minLandToPaperClearance(land: MapLand): number {
+  const { x, y, width, height } = land.bounds;
+  const right = x + width;
+  const bottom = y + height;
+  let min = Infinity;
+  for (const ring of land.polygons) {
     for (const p of ring) {
-      sx += p.x;
-      sy += p.y;
-      n += 1;
+      min = Math.min(min, p.x - x, right - p.x, p.y - y, bottom - p.y);
     }
   }
-  return n === 0 ? { x: 0, y: 0 } : { x: sx / n, y: sy / n };
+  return Number.isFinite(min) ? Math.max(0, min) : 0;
 }
 
 /**
- * 离岸 `distance` 世界单位对应的缩放系数。
+ * 等深线的离岸距离 clamp 到「陆地到纸边的最小余量」。
  *
- * 【为什么用"从中心放大"而不是真的做多边形外扩】真正的 offset 曲线要在
- * 每个顶点求法线、处理自交，几百个顶点的弯折岸线很容易翻边；而陆地是
- * 团块状（不是细长条），从中心等比放大的误差只有一二十个百分点 ——
- * 对"离岸十几像素的一圈淡线"完全够用，且绝不会自交。
+ * 【为什么单独抽成可测的纯函数】bakeCoast 里只有一次 `Math.min`，但"外扩层
+ * 永不越纸边"是本批的硬验收，必须能直接对结果断言，而不是只能靠看画面。
  */
-function ringScaleK(bounds: Rect, distance: number): number {
-  const half = Math.max(1, Math.max(bounds.width, bounds.height) / 2);
-  return 1 + distance / half;
+export function clampIsobathDistance(land: MapLand, distance: number): number {
+  return Math.min(distance, minLandToPaperClearance(land));
 }
 
-/** 按中心等比放大后描边（等深线专用；曲线控制点同倍放大即可保持形状） */
-function strokeScaledRings(
+/**
+ * 纸纹某一层遮罩用的多边形 = 陆地各环**精确内缩** `inset` 世界单位
+ * （SDF 等值线，`createRingOffset`）。`inset <= 0`（最外层）直接返回原始轮廓 ——
+ * 纸纹的硬边就停在岸线上，由海岸白边与内阴影盖住，这一层负责"岸线处还剩
+ * 1/STEPS 强度的颗粒"，不是"完全没有"。
+ *
+ * 【为什么逐环内缩，而不是一次 `insetLand(land, inset)`】逐环才能做**逐环的
+ * 退化兜底**：小岛（半幅 < inset）内缩后无剩余面积（offset 返回 null），
+ * 那一层遮罩就什么都画不出来 —— 一块岛会整块失去质感。偏移失败的环退回
+ * 原轮廓：宁可保留硬边纹理，也不要岛心出现一块"光板"。
+ */
+function textureMaskPolygons(
+  land: MapLand,
+  fields: readonly (RingOffsetField | null)[],
+  inset: number,
+): readonly { x: number; y: number }[][] {
+  if (inset <= 0) return land.polygons;
+  return land.polygons.map((ring, i) => {
+    if (ring.length < 3) return ring;
+    // 内缩无剩余面积（小岛坍缩）→ 退回原轮廓，这一层保留硬边纹理
+    return fields[i]?.offset(-inset) ?? ring;
+  });
+}
+
+/** 逐环取精确偏移等值线后描边（等深线专用；等值线即真偏移曲线） */
+function strokeOffsetRings(
   g: Graphics,
-  polygons: readonly { x: number; y: number }[][],
-  center: { x: number; y: number },
-  k: number,
+  fields: readonly (RingOffsetField | null)[],
+  distance: number,
   width: number,
   color: number,
   alpha: number,
 ): void {
-  for (const ring of polygons) {
-    const n = ring.length;
-    if (n < 3) continue;
-    const at = (p: { x: number; y: number }) => ({
-      x: center.x + (p.x - center.x) * k,
-      y: center.y + (p.y - center.y) * k,
-    });
-    const start = at(ring[0]);
-    g.moveTo(start.x, start.y);
-    for (let i = 0; i < n; i += 1) {
-      const a = at(ring[(i - 1 + n) % n]);
-      const b = at(ring[i]);
-      const c = at(ring[(i + 1) % n]);
-      const d = at(ring[(i + 2) % n]);
-      g.bezierCurveTo(
-        b.x + (c.x - a.x) / 6,
-        b.y + (c.y - a.y) / 6,
-        c.x - (d.x - b.x) / 6,
-        c.y - (d.y - b.y) / 6,
-        c.x,
-        c.y,
-      );
-    }
-    g.closePath();
+  if (!(distance > 0)) return;
+  for (const field of fields) {
+    const ring = field?.offset(distance);
+    if (!ring) continue;
+    drawLandPath(g, [ring]);
     g.stroke({ width, color, alpha, alignment: 0.5 });
   }
 }
@@ -273,9 +316,10 @@ function strokeScaledRings(
 /**
  * 烘一张海岸纹理。
  *
- * 六层在 holder 内是六个独立 Graphics：
- * `shelf → isobaths → glow → fill → tex → stroke`（自下而上）。
+ * 各层在 holder 内是互相独立的节点（自下而上）：
+ * `shelf → isobaths → glow → fill → 纸纹层×N（精灵 + 掩膜）→ innerShade → mask → stroke`。
  * 填充与描边必须分开，否则后画的填充会压掉前一段描边的一半，海岸白边会断断续续。
+ * 纸纹之所以是"精灵 + 掩膜"成对出现、而且有 N 层，见 `LAND_TEXTURE_STEPS`。
  *
  * 调用方负责：把返回的 RT 挂到 `coast` 容器的 Sprite 上，
  * 并在替换成功后**再**销毁旧 RT（先建后换，避免闪一帧空白）。
@@ -326,14 +370,19 @@ export function bakeCoast(input: BakeInput): RenderTexture {
   shelf.filters = [new BlurFilter({ strength: COAST_SHELF.blur, quality: COAST_SHELF.quality })];
 
   // ── 2) 等深线：与海岸平行、向外递减的细线，给海面"深度"层次 ──
+  // 离岸距离先 clamp 到「陆地到纸边的最小余量」：否则最外圈等深线（70）会
+  // 越过纸边框溢出到留白（见 clampIsobathDistance）。偏移是 SDF 等值线
+  // （createRingOffset 一次建场、三圈复用）—— SDF 海岸更凹，「绕中心缩放」
+  // 在凹段会把等深线顶点推进陆地（2.34.0 实测），等值线才是真偏移。
+  const offsetFields = land.polygons.map((ring) =>
+    createRingOffset(ring, COAST_ISOBATHS[COAST_ISOBATHS.length - 1].distance + 8),
+  );
   const isobaths = new Graphics();
-  const center = ringsCenter(land.polygons);
   for (const line of COAST_ISOBATHS) {
-    strokeScaledRings(
+    strokeOffsetRings(
       isobaths,
-      land.polygons,
-      center,
-      ringScaleK(land.bounds, line.distance),
+      offsetFields,
+      clampIsobathDistance(land, line.distance),
       line.width,
       COAST_ISOBATH_COLOR,
       line.alpha,
@@ -351,27 +400,53 @@ export function bakeCoast(input: BakeInput): RenderTexture {
   });
   glow.filters = [new BlurFilter({ strength: COAST_GLOW.blur, quality: COAST_GLOW.quality })];
 
-  // ── 3) 陆地底色：米黄 + 极轻模糊（复刻参考实现的柔边）──
+  // ── 4) 陆地底色：米黄 + 极轻模糊（复刻参考实现的柔边）──
   const fill = new Graphics();
   drawLandPath(fill, land.polygons);
   fill.fill({ color: COAST_FILL.color });
   fill.filters = [new BlurFilter({ strength: COAST_FILL.blur, quality: COAST_FILL.quality })];
 
-  // ── 4) 纸纹：mask 到陆地、multiply 叠一层，让陆地不是一块死板的纯色 ──
-  const texSprite = new Sprite(paper ?? Texture.EMPTY);
-  texSprite.anchor.set(0);
-  texSprite.position.set(paperRect.x, paperRect.y);
-  texSprite.width = Math.max(1, paperRect.width);
-  texSprite.height = Math.max(1, paperRect.height);
-  const mask = new Graphics();
-  drawLandPath(mask, land.polygons);
-  // 掩膜必须真的"填"出来：只有路径没有填充时，遮罩区域就是空的
-  mask.fill({ color: 0xffffff });
-  texSprite.mask = mask;
-  texSprite.alpha = LAND_TEXTURE_ALPHA;
-  texSprite.blendMode = "multiply";
+  // ── 5) 纸纹：平铺 + 分台阶内缩遮罩（羽化），multiply 叠一层 ──
+  //
+  // 【为什么是 TilingSprite 而不是 Sprite】纸纹纹理只有 512²（PAPER_GRAIN_SIZE），
+  // 而烘焙矩形约 1152²（陆地包围盒 + BAKE_MARGIN×2）。用 Sprite 拉伸到铺满是
+  // 放大 2.25 倍 —— 颗粒从「沙粒」糊成「色块」，放大到 2 倍时最明显。
+  // 纸纹由 `tileableNoise` 按 period 取模生成，**本身就是无缝的**，平铺才是它的
+  // 正确用法：颗粒永远保持 512² 下的原始大小。
+  //
+  // 【羽化为什么是一叠精灵，见 `LAND_TEXTURE_STEPS` 的注释】stencil 遮罩没有 alpha，
+  // 给遮罩挂模糊会让它整个失效；用"逐层内缩 + 逐层降 alpha"换到同一条淡出曲线。
+  // 所有层共用同一张纹理与同一相位，叠出来的颗粒完全重合，不会互相打架。
+  const step = LAND_TEXTURE_FEATHER / LAND_TEXTURE_STEPS;
+  const textureLayers: Container[] = [];
+  for (let i = 0; i < LAND_TEXTURE_STEPS; i += 1) {
+    const texSprite = new TilingSprite({
+      texture: paper ?? Texture.EMPTY,
+      width: Math.max(1, paperRect.width),
+      height: Math.max(1, paperRect.height),
+    });
+    texSprite.position.set(paperRect.x, paperRect.y);
+    // 相位对齐**世界坐标**而不是纹理自身：同一张图重烘（切风格/重生成）时
+    // paperRect 会变，若相位跟着 paperRect 走，纸纹会在原地「跳一下」。
+    // 取负号让「世界坐标 x 处的颗粒」恒等于「纹理 x 处的颗粒」。
+    texSprite.tilePosition.set(-paperRect.x, -paperRect.y);
+    // 分层降 alpha：N 层叠加后与"一层 LAND_TEXTURE_ALPHA"基本等价
+    // （multiply 的 alpha 合成是 (1-a+a·src)^N，取 a=α/N 时两者只差 ~5% 的相对强度）
+    texSprite.alpha = LAND_TEXTURE_ALPHA / LAND_TEXTURE_STEPS;
+    texSprite.blendMode = "multiply";
 
-  // ── 5) 陆岸内阴影：描边只画在路径**内侧**（alignment 1），模糊后是"岸线附近
+    // 该层的遮罩：内缩 i×step 的陆地填充。i = 0 的层就是完整陆地，
+    // 所以岸线处的颗粒强度是 1/STEPS，越往里叠加得越多。
+    const textureMask = new Graphics();
+    drawLandPath(textureMask, textureMaskPolygons(land, offsetFields, i * step));
+    // 掩膜必须真的"填"出来：只有路径没有填充时，遮罩区域就是空的
+    textureMask.fill({ color: 0xffffff });
+    texSprite.mask = textureMask;
+
+    textureLayers.push(texSprite, textureMask);
+  }
+
+  // ── 6) 陆岸内阴影：描边只画在路径**内侧**（alignment 1），模糊后是"岸线附近
   //    略深、往内陆逐渐变亮"的立体感。必须 mask 到陆地：模糊会把 22px 的描边
   //    洇到海面上，那会在浅滩里压出一圈脏边（与"浅滩比深海亮"直接冲突）。──
   const innerShade = new Graphics();
@@ -385,9 +460,14 @@ export function bakeCoast(input: BakeInput): RenderTexture {
   innerShade.filters = [
     new BlurFilter({ strength: COAST_INNER_SHADE.blur, quality: COAST_INNER_SHADE.quality }),
   ];
+  // 陆地掩膜：只覆盖"实际画出来的陆地"，纸纹分层各自带遮罩，不共用这一份 ——
+  // 内阴影用的仍是**未内缩**的轮廓（它要贴着岸线压暗），所以必须单独建一份。
+  const mask = new Graphics();
+  drawLandPath(mask, land.polygons);
+  mask.fill({ color: 0xffffff });
   innerShade.mask = mask;
 
-  // ── 6) 海岸白边：实心、不带滤镜，整张图最锐的一笔 ──
+  // ── 7) 海岸白边：实心、不带滤镜，整张图最锐的一笔 ──
   const stroke = new Graphics();
   drawLandPath(stroke, land.polygons);
   stroke.stroke({
@@ -397,18 +477,29 @@ export function bakeCoast(input: BakeInput): RenderTexture {
     alignment: 0.5,
   });
 
-  holder.addChild(shelf, isobaths, glow, fill, texSprite, innerShade, mask, stroke);
+  holder.addChild(
+    shelf,
+    isobaths,
+    glow,
+    fill,
+    ...textureLayers,
+    innerShade,
+    mask,
+    stroke,
+  );
 
-  // ── 6) 风格矩阵：只乘一次，烤进纹理 ──
+  // ── 8) 风格矩阵：只乘一次，烤进纹理 ──
   //
-  // 【挂在四个"画颜色"的节点上，不挂 holder】holder 是 `renderer.render` 的根容器，
+  // 【挂在"画颜色"的内容节点上，不挂 holder】holder 是 `renderer.render` 的根容器，
   // 给根容器挂滤镜会在"渲染到 RT"这条路径上多绕一圈；而挂到内容节点上，
-  // 滤镜就是这个节点自身的一部分，语义与"直接给这四笔画上色"完全等价。
+  // 滤镜就是这个节点自身的一部分，语义与"直接给每一笔上色"完全等价。
   //
-  // 【为什么不挂 `mask`】它是遮罩、不是被画出来的颜色。矩阵会改写 alpha 行，
-  // 遮罩的软边会被一起改写 —— 抠形边缘发脏，而且改的是几何不是色相。
+  // 【为什么不挂任何 `mask`（陆地掩膜 + N 层纸纹遮罩）】它是遮罩、不是被画出来的
+  // 颜色。矩阵会改写 alpha 行，遮罩的软边会被一起改写 —— 抠形边缘发脏，而且改的是
+  // 几何不是色相。更要紧的是：遮罩节点一旦带 `filters`，它就不再走"直接画进
+  // stencil"的简单路径（见 `LAND_TEXTURE_STEPS` 的坑），整块遮罩会失效。
   //
-  // 【为什么不挂 `texSprite`（QA 第二轮逐通道核算出来的真实偏差）】纸纹是
+  // 【为什么不挂纸纹层（QA 第二轮逐通道核算出来的真实偏差）】纸纹是
   // `blendMode="multiply"` 的**纹理**，不是颜色。multiply 是非线性运算，
   // 「先乘后上色」≠「先上色后乘」：fill 已经被矩阵上过一次色，纸纹若也上色，
   // 暖度就乘了两遍。实测偏差是羊皮纸档陆地整体偏暗、偏饱和约 4.3%

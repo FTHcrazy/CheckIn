@@ -23,6 +23,7 @@ import {
   HighlightOutlined,
   MinusCircleOutlined,
   MoreOutlined,
+  NodeIndexOutlined,
   PictureOutlined,
   RedoOutlined,
   ThunderboltOutlined,
@@ -35,19 +36,25 @@ import { worldToScreen, hitTestPolygon, type CanvasSize } from "./coords";
 import { REGION_TOTAL_LIMIT, levelLabelOf, type Point, type RegionLevelDef } from "./regions";
 import { planMerge, type ManualRegionRejectCode } from "./regionEdit";
 import { resolveElementLevel } from "./lod";
+import { layerLockedOf } from "./layerState";
 import { MAP_STYLES } from "./style";
 import { EXPORT_DEFAULT_SIZE, EXPORT_SIZES, exportMapPng, savePng, type ExportSize } from "./export";
 import type { GeneratorGear, GeneratorParams } from "./domain/generator";
 import { useMapEditor } from "./hooks/useMapEditor";
 import MapCanvas, { DRAFT_CLOSE_PX, type MapSceneHandle } from "./components/MapCanvas";
 import SpritePanel from "./components/SpritePanel";
+import LayerPanel from "./components/LayerPanel";
 import ElementPanel from "./components/ElementPanel";
+import PolylinePanel from "./components/PolylinePanel";
+import { DEFAULT_POLYLINE_STYLE_ID, POLYLINE_STYLES } from "./polylineStyle";
 import { BASE_IMAGES, SPRITE_MAP } from "./sprites";
 import RegionPanel from "./components/RegionPanel";
 import RegionSchemaPanel from "./components/RegionSchemaPanel";
 import MapLibraryModal from "./components/MapLibraryModal";
 import MapGeneratorModal from "./components/MapGeneratorModal";
-import { useMapPersistence } from "./persistence/useMapPersistence";
+import SubmapPickerModal from "./components/SubmapPickerModal";
+import { useMapPersistence, loadMapDocById } from "./persistence/useMapPersistence";
+import { submapFromDoc } from "./submapBind";
 import type { MapSaveStatus } from "./store/useMapFileStore";
 import { LABEL_DEFAULT_SIZE, LABEL_SIZES, type MapLabelSize, type MapStyle } from "./types";
 import "./index.scss";
@@ -92,17 +99,18 @@ const MAP_SAVE_STATUS_TEXT: Record<MapSaveStatus, string> = {
 };
 
 /**
- * 画布当前的工具（R-REG-03）。
+ * 画布当前的工具（R-REG-03 / B4-2）。
  *
- * 【为什么是"工具"而不是一个 `drawMode` 布尔】画区与选择是**互斥的两种指针语义**：
- * 同一个左键，在 select 下是"点选/拖拽"，在 draw 下只有"落一个顶点"。
- * 布尔只能表达"画区开着"，表达不了"选择也开着"；多一个值就不可能同时成立。
+ * 【为什么是"工具"而不是一个 `drawMode` 布尔】画区、画折线与选择是**互斥的指针语义**：
+ * 同一个左键，在 select 下是"点选/拖拽"，在 draw 下是"落一个顶点"（构成一个面），
+ * 在 polyline 下是"落一个控制点"（构成一条线）。布尔只能表达"某种绘制开着"，
+ * 表达不了"三种里现在是哪一种"；多一个值就不可能同时成立。
  *
  * 第三个落位意图（「加标注」`pendingLabel` / 待放置素材 `pendingSpriteId`）没有并进来：
  * 它们的生命周期由各自面板决定（选素材即进入、落位即退出），而 tool 是工具栏状态。
  * 三者互斥靠"进入任一个就清掉另外两个"保证（见 `handlePickTool` / `handlePickSprite`）。
  */
-type MapTool = "select" | "draw";
+type MapTool = "select" | "draw" | "polyline";
 
 /**
  * 手画拒绝原因 → 中文提示（架构 §5「文案映射（唯一出处）」）。
@@ -247,6 +255,20 @@ export default function MapEditorPage() {
    * 可变类型，否则 `push` 也编得过。
    */
   const [draftPoints, setDraftPoints] = useState<Point[]>([]);
+  /**
+   * 折线绘制态的已落控制点（世界坐标）。与 `draftPoints` 同构 —— 两者互斥
+   * （工具只有一个），但**不能共用一个数组**：画区是"闭合的面"、折线是"开放的线"，
+   * 同一串点在两种语义下的校验、预览、落库方式完全不同。
+   */
+  const [polylinePoints, setPolylinePoints] = useState<Point[]>([]);
+  /**
+   * 当前折线样式档（绘制态与属性面板共用）。
+   *
+   * 【为什么在页面而不是文档】它是"下一次落笔用哪档"的工具状态，不是任何一条线的
+   * 属性；线自身的样式存在 `MapPolyline.styleId` 里。放文档会让"换个样式"变成
+   * 一次需要撤销的文档编辑。
+   */
+  const [polylineStyleId, setPolylineStyleId] = useState(DEFAULT_POLYLINE_STYLE_ID);
 
   /* ───────────────── 导出（B5 / PRD §6.6.3） ───────────────── */
 
@@ -336,6 +358,9 @@ export default function MapEditorPage() {
     selectedId,
     selectedRegionId,
     selectedRegion,
+    /** 选中的折线（B4-2）：属性面板与节点编辑都只认它 */
+    selectedPolylineId,
+    selectedPolyline,
     /** 当前文档的**有效**层级定义（读时回落；层数的唯一事实源 = `schema.length`） */
     schema,
     /** 选中区块的祖先链 + 自身（供面板面包屑；非叶子才显示） */
@@ -504,13 +529,14 @@ export default function MapEditorPage() {
       // 若无条件 `setDraftPoints([])`，那 5 个点就没了 —— 而"再点一次同一个按钮"
       // 在心智上更像"确认"而不是"重来"。要重来有明确的「取消」。
       if (next === tool) return;
-      if (next === "draw") {
+      if (next === "draw" || next === "polyline") {
         setPendingLabel(false);
         editor.setPendingSpriteId(null);
       }
       // 换工具一律丢草稿，且**不产生快照**（草稿从没进过文档）；
       // 留着的话下次进画区会看到上次的残线，用户会以为"上次已经画上了"。
       setDraftPoints([]);
+      setPolylinePoints([]);
       setTool(next);
     },
     [editor, tool],
@@ -536,6 +562,50 @@ export default function MapEditorPage() {
     }
     handlePickTool("select");
   }, [draftPoints.length, handlePickTool]);
+
+  /* ───────────────── 折线（B4-2 / R-MAP-26） ───────────────── */
+
+  /**
+   * 收尾折线：≥2 点落库（并自动选中，属性面板随即浮出），<2 点直接丢弃，两者都退出绘制态。
+   *
+   * 【为什么 <2 点也算"收尾"而不是留在模式里】用户点了一下就按 Enter，意图是
+   * "我画完了"（只是画错了），不是"我还要接着画"。留在模式里会让他下一次点击
+   * 变成给这条残线续点，而画面上什么都没有 —— 表现为"点了没反应"。
+   *
+   * 【为什么不弹成功提示】画线是高频动作（一张图几十条），每条都弹一句会把画布
+   * 下方的提示区刷满。落库后线立刻可见 + 属性面板浮出，本身就是最直接的反馈。
+   *
+   * @param options `closed: true` = 首尾相连（湖岸/轮廓）。只在"点回起点"这条
+   *   路径里传；按钮 / Enter 的调用即便误传事件对象，`options?.closed` 也是
+   *   undefined，不会意外闭合 —— 这是用对象参数而不是布尔参数的原因。
+   */
+  const finishPolyline = useCallback(
+    (options?: { closed?: boolean }) => {
+      if (polylinePoints.length >= 2) {
+        editor.addPolyline(polylinePoints, {
+          styleId: polylineStyleId,
+          closed: options?.closed === true,
+        });
+      }
+      setPolylinePoints([]);
+      setTool("select");
+    },
+    [polylinePoints, polylineStyleId, editor],
+  );
+
+  /** 退一个控制点（画错了往回退，不影响已落库的线） */
+  const handleUndoPolylinePoint = useCallback(() => {
+    setPolylinePoints((prev) => prev.slice(0, -1));
+  }, []);
+
+  /** 取消折线绘制（与「画区」同款两级退让：有草稿只丢草稿，没草稿退出工具） */
+  const handleCancelPolyline = useCallback(() => {
+    if (polylinePoints.length > 0) {
+      setPolylinePoints([]);
+      return;
+    }
+    handlePickTool("select");
+  }, [polylinePoints.length, handlePickTool]);
 
   /* ───────────────── 文字标注（B3 / PRD §6.3.3） ───────────────── */
 
@@ -710,6 +780,30 @@ export default function MapEditorPage() {
         return;
       }
 
+      // ── 折线绘制态（B4-2）─────────────────────────────────────────────
+      //
+      // 与画区态同一套"落一个点 / 同点去重"的规矩，但**不做层级封顶**：
+      // 折线没有"必须比父块小一级"的语义（一条路可以横穿几个郡），硬套层级校验
+      // 会让用户在郡这一级根本画不出跨区的主路。
+      if (tool === "polyline") {
+        const px = 1 / Math.max(1e-6, viewport.scale);
+        // 点回起点附近（≥3 点）= 闭合收尾（B4-3）：湖岸 / 势力轮廓的正确画法
+        // 就是绕一圈回到出发点，容差与"同点去重"同一把尺子（DRAFT_CLOSE_PX）
+        if (polylinePoints.length >= 3) {
+          const first = polylinePoints[0];
+          if (Math.hypot(world.x - first.x, world.y - first.y) <= DRAFT_CLOSE_PX * px) {
+            finishPolyline({ closed: true });
+            return;
+          }
+        }
+        const last = polylinePoints[polylinePoints.length - 1];
+        if (last && Math.hypot(world.x - last.x, world.y - last.y) <= DRAFT_CLOSE_PX * px) {
+          return;
+        }
+        setPolylinePoints((prev) => [...prev, world]);
+        return;
+      }
+
       // 「加标注」优先：此刻用户的心智是"给这个地方起名"，不是"选/放素材"
       if (pendingLabel) {
         setDraft({
@@ -723,8 +817,14 @@ export default function MapEditorPage() {
         return;
       }
       if (pendingSpriteId) {
-        editor.placeSprite(pendingSpriteId, world);
-        editor.setPendingSpriteId(null);
+        // 手工落位避让（P2-3）：落点被已有素材"看得见的盒 + 呼吸边"压住时拒绝
+        // 落位。待放素材**保持选中**（不清 pendingSpriteId），用户换个位置再点
+        // 即可 —— 这比"吞掉这一次点击"友好，也比"把已有素材挤开"克制。
+        if (editor.placeSprite(pendingSpriteId, world)) {
+          editor.setPendingSpriteId(null);
+        } else {
+          message.warning("落点与已有素材重叠：换个位置，或先把压住的素材拖开");
+        }
         return;
       }
 
@@ -734,22 +834,61 @@ export default function MapEditorPage() {
       const hit = editor.pickElement(world);
       if (hit) {
         editor.setSelectedRegionId(null);
+        editor.setSelectedPolylineId(null);
         editor.setSelectedId(hit.id);
         return;
       }
 
-      // 没点中素材：判断是否命中区块（区块是"面"），命中则选中该区块、清素材选中。
-      for (let i = doc.regions.length - 1; i >= 0; i -= 1) {
-        const region = doc.regions[i];
-        if (hitTestPolygon(world, region.polygon)) {
-          editor.pickRegion(region.id);
-          return;
-        }
+      // 素材层被锁时的**明确提示**（B4-1）。
+      //
+      // 【为什么再问一次】`pickElement` 在锁定时一律返回 null —— 用户点在自己的
+      // 山上却"什么都没发生"，只会认为功能坏了。这里用 ignoreLock 复问一次，
+      // 确认"确实点中了东西、只是被锁住了"，然后说清楚而不是静默。
+      // 除提示外，任何编辑路径都不得传 ignoreLock。
+      if (layerLockedOf(doc, "element") && editor.pickElement(world, { ignoreLock: true })) {
+        message.info("「素材」层已锁定，先解锁再编辑");
+        return;
       }
 
-      // 素材与区块都没命中（点空白）：清空两类选中
+      // ── 折线命中（B4-2）：排在素材之后、区块之前 ──
+      //
+      // z 序就是答案：线在素材之下、区块之上，命中也按这个顺序问一遍
+      // （否则"点在一条穿过素材的河上"会选中底下的区块，与画面上看到的不一致）。
+      const lineHit = editor.pickPolyline(world);
+      if (lineHit) {
+        editor.setSelectedId(null);
+        editor.setSelectedRegionId(null);
+        editor.setSelectedPolylineId(lineHit.id);
+        // 属性面板里的"样式"回填这条线自己的样式，接着画新线也沿用它 ——
+        // 用户改完一条官道的粗细，下一条默认还是官道
+        setPolylineStyleId(lineHit.styleId);
+        return;
+      }
+      if (editor.polylineLayerLocked && editor.pickPolyline(world, { ignoreLock: true })) {
+        message.info("「折线」层已锁定，先解锁再编辑");
+        return;
+      }
+
+      // 没点中素材：判断是否命中区块（区块是"面"），命中则选中该区块、清素材选中。
+      // 区块层锁定同理：命中但不可选，给一次提示。
+      const regionLocked = layerLockedOf(doc, "region");
+      for (let i = doc.regions.length - 1; i >= 0; i -= 1) {
+        const region = doc.regions[i];
+        if (!hitTestPolygon(world, region.polygon)) continue;
+        if (regionLocked) {
+          message.info("「区块」层已锁定，先解锁再编辑");
+          return;
+        }
+        editor.pickRegion(region.id);
+        // 选中区块时清掉另外两类选中（三者互斥）
+        editor.setSelectedPolylineId(null);
+        return;
+      }
+
+      // 素材、折线、区块都没命中（点空白）：清空三类选中
       editor.setSelectedRegionId(null);
       editor.setSelectedId(null);
+      editor.setSelectedPolylineId(null);
     },
     [
       editor,
@@ -758,8 +897,11 @@ export default function MapEditorPage() {
       viewport,
       canvasSize,
       doc.regions,
+      doc.layerState,
       tool,
       draftPoints,
+      polylinePoints,
+      finishPolyline,
       targetLevelOverflow,
       schema.length,
       message,
@@ -770,6 +912,43 @@ export default function MapEditorPage() {
   const handleElementDragStart = useCallback(() => {
     editor.commitDragStart(doc);
   }, [editor, doc]);
+
+  /* ───────────────── 折线节点的拖拽 / 增删（B4-2） ───────────────── */
+
+  /**
+   * 开始拖折线节点：同样只压一次快照。
+   *
+   * 【为什么复用 `commitDragStart(doc)` 而不是另立一个】撤销账目只该有一种记法：
+   * "拖拽开始时把当前文档拍一张"。素材与折线若各写一套，迟早出现一个入了栈、
+   * 一个忘了，表现为"拖完按 Ctrl+Z，线没退回去"。
+   */
+  const handlePolylineNodeDragStart = useCallback(() => {
+    editor.commitDragStart(doc);
+  }, [editor, doc]);
+
+  const handlePolylineNodeMove = useCallback(
+    (index: number, world: Point) => {
+      if (!selectedPolylineId) return;
+      editor.movePolylinePoint(selectedPolylineId, index, world);
+    },
+    [editor, selectedPolylineId],
+  );
+
+  const handlePolylinePointInsert = useCallback(
+    (index: number, world: Point) => {
+      if (!selectedPolylineId) return;
+      editor.insertPolylinePoint(selectedPolylineId, index, world);
+    },
+    [editor, selectedPolylineId],
+  );
+
+  const handlePolylinePointDelete = useCallback(
+    (index: number) => {
+      if (!selectedPolylineId) return;
+      editor.deletePolylinePoint(selectedPolylineId, index);
+    },
+    [editor, selectedPolylineId],
+  );
 
   /** 拖拽中：按世界坐标增量移动，保持抓取点与元素的相对位置不变 */
   const handleElementDragDelta = useCallback(
@@ -805,12 +984,23 @@ export default function MapEditorPage() {
       message.info("请先选中一个素材");
       return;
     }
+    // 锁定层的删除按钮仍然可点（面板外的入口），但要说清楚为什么没删 ——
+    // 静默无反应是最差的结果（B4-1 §3.4）
+    if (layerLockedOf(doc, "element")) {
+      message.info("「素材」层已锁定，先解锁再编辑");
+      return;
+    }
     editor.removeSelected();
-  }, [editor, selectedId, message]);
+  }, [editor, selectedId, doc.layerState, message]);
 
   const handleClear = useCallback(() => {
     if (doc.elements.length === 0) {
       message.info("画布已是空的");
+      return;
+    }
+    // 锁定层不能被整批清掉（`editor.clearAll` 里还有一道守卫，这里是给提示的）
+    if (layerLockedOf(doc, "element")) {
+      message.info("「素材」层已锁定，先解锁再清空");
       return;
     }
     modal.confirm({
@@ -821,7 +1011,7 @@ export default function MapEditorPage() {
       cancelText: "取消",
       onOk: () => editor.clearAll(),
     });
-  }, [editor, doc.elements.length, modal, message]);
+  }, [editor, doc.elements.length, doc.layerState, modal, message]);
 
   /**
    * 用新的随机种子重新生成一棵层级区块树（每次结果都不同）。
@@ -1019,13 +1209,40 @@ export default function MapEditorPage() {
     editor.fitView();
   }, [editor]);
 
-  /** 绑定已有子图（路径 A，预留） */
+  /**
+   * 绑定已有子图（路径 A′，nested-submap-main §4.1.1）：
+   * 先弹跨图选择器挑一张图，确认后再拉全量文档、拷贝构造、落库。
+   *
+   * 【为什么分两步而不是点击即绑】绑定要用户在多张图里做选择（语义上是个
+   * 「打开文件」动作），一步到位的隐式绑定（比如绑最近一张）几乎一定不是
+   * 用户想要的。
+   */
+  const [submapPickerOpen, setSubmapPickerOpen] = useState(false);
+  const [embedTargetRegionId, setEmbedTargetRegionId] = useState<string | null>(null);
   const handleEmbedSubmap = useCallback(
     (regionId: string) => {
-      void regionId;
-      message.info("绑定已有子图将在后续版本接入");
+      setEmbedTargetRegionId(regionId);
+      setSubmapPickerOpen(true);
     },
-    [message],
+    [setEmbedTargetRegionId, setSubmapPickerOpen],
+  );
+
+  /** 选择器确认：拉全量 → 拷贝构造 → 绑定落库（embedSubmap 自带一步撤销） */
+  const handleSubmapPick = useCallback(
+    async (docId: string, title: string) => {
+      setSubmapPickerOpen(false);
+      const regionId = embedTargetRegionId;
+      setEmbedTargetRegionId(null);
+      if (!regionId) return;
+      const loaded = await loadMapDocById(docId);
+      if (!loaded) {
+        message.error("这张地图打不开了（可能已被删除）");
+        return;
+      }
+      editor.embedSubmap(regionId, submapFromDoc(loaded.doc));
+      message.success(`已绑定「${title}」（拷贝快照，可撤销）`);
+    },
+    [editor, embedTargetRegionId, message, setEmbedTargetRegionId, setSubmapPickerOpen],
   );
 
   /** 移除区块上的子图 */
@@ -1136,12 +1353,12 @@ export default function MapEditorPage() {
         e.preventDefault();
         editor.redo();
       } else if (mod && e.key.toLowerCase() === "c") {
-        // ── 剪贴板（R-MAP-25）：应用内剪贴板，不与系统剪贴板互通 ──
-        if (!selectedId) return;
+        // ── 剪贴板（R-MAP-25；B4-3 起折线同享）：应用内剪贴板，不与系统剪贴板互通 ──
+        if (!selectedId && !selectedPolylineId) return;
         e.preventDefault();
         editor.copySelected();
       } else if (mod && e.key.toLowerCase() === "x") {
-        if (!selectedId) return;
+        if (!selectedId && !selectedPolylineId) return;
         e.preventDefault();
         editor.cutSelected();
       } else if (mod && e.key.toLowerCase() === "v") {
@@ -1149,48 +1366,68 @@ export default function MapEditorPage() {
         e.preventDefault();
         editor.pasteClipboard();
       } else if (mod && e.key.toLowerCase() === "d") {
-        if (!selectedId) return;
+        if (!selectedId && !selectedPolylineId) return;
         e.preventDefault();
         editor.duplicateSelected();
       } else if (e.key === "Enter" && tool === "draw") {
         // Enter 闭合草稿（与「完成」按钮同一动作）。< 3 点由 `closeDraft` 静默拦掉
         e.preventDefault();
         closeDraft();
-      } else if (!mod && (e.key === "Delete" || e.key === "Backspace")) {
-        // Enter 闭合草稿（与「完成」按钮同一动作）。< 3 点由 `closeDraft` 静默拦掉
+      } else if (e.key === "Enter" && tool === "polyline") {
+        // Enter 收尾折线（与「完成」按钮同一动作）。< 2 点由 `finishPolyline` 丢弃
         e.preventDefault();
-        closeDraft();
+        finishPolyline();
+      } else if (!mod && (e.key === "Delete" || e.key === "Backspace") && tool === "polyline") {
+        // 折线绘制中：退一个控制点。**线还没落库**，所以这里不能走文档撤销 ——
+        // 那会把用户上一步的素材操作撤掉，而草稿上的点纹丝不动。
+        //
+        // 【这条以前是个 bug 的来源】早期这里写成了"Delete 一律 closeDraft()"，
+        // 于是选择素材后按 Delete 只会去关一个不存在的草稿（<3 点直接 return），
+        // 素材永远删不掉。撤点与删对象是两个动作，必须靠 `tool` 分清。
+        e.preventDefault();
+        handleUndoPolylinePoint();
       } else if (e.key === "Delete" || e.key === "Backspace") {
+        // 折线优先：选中折线时 Delete 删的是这条线（属性面板的删除按钮同款）
+        if (selectedPolylineId) {
+          e.preventDefault();
+          editor.removePolyline(selectedPolylineId);
+          return;
+        }
         if (!selectedId) return;
         e.preventDefault();
         editor.removeSelected();
       } else if (e.key === "Escape") {
-        // ── Esc 的三级退让（架构 §2.7）────────────────────────────────
+        // ── Esc 的四级退让（架构 §2.7 + B4-2）──────────────────────────
         //   ① 有草稿 ⇒ 只清草稿，**不动选中**：画到一半按 Esc 不该把父块选丢了，
         //      否则"进入/退出子级"这件事会在一次误按后静默重置；
-        //   ② 无草稿但在画区 ⇒ 回选择模式（真退出）；
+        //   ② 无草稿但还在画区 / 折线 ⇒ 回选择模式（真退出）；
         //   ③ 否则走既有 Esc 分支（清各种中间态与选中）。
         if (draftPoints.length > 0) {
           setDraftPoints([]);
           return;
         }
-        if (tool === "draw") {
+        if (polylinePoints.length > 0) {
+          setPolylinePoints([]);
+          return;
+        }
+        if (tool !== "select") {
           setTool("select");
           return;
         }
         editor.setPendingSpriteId(null);
         editor.setSelectedId(null);
         editor.setSelectedRegionId(null);
+        editor.setSelectedPolylineId(null);
         // 标注的两种中间态也一起收掉：Esc 的语义是"退出当前操作"
         setPendingLabel(false);
         setDraft(null);
       } else {
         // ── 方向键 / WASD 微移（R-MAP-25，无修饰键时）─────────────────
         // 精调档 4 个世界单位；Shift 加速档 16（大图上跨半个郡用）。
-        // 画区态不微移：那时左键在落顶点，键盘微移只添乱。
+        // 绘制态不微移：那时左键在落顶点，键盘微移只添乱。
         const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
         const dir = NUDGE_DIRS[key];
-        if (dir && selectedId && tool !== "draw") {
+        if (dir && (selectedId || selectedPolylineId) && tool === "select") {
           e.preventDefault();
           const step = e.shiftKey ? NUDGE_STEP_FAST : NUDGE_STEP_FINE;
           editor.nudgeSelected(dir[0] * step, dir[1] * step);
@@ -1199,7 +1436,18 @@ export default function MapEditorPage() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [editor, selectedId, tool, draftPoints.length, closeDraft, persistence.saveNow]);
+  }, [
+    editor,
+    selectedId,
+    selectedPolylineId,
+    tool,
+    draftPoints.length,
+    polylinePoints.length,
+    closeDraft,
+    finishPolyline,
+    handleUndoPolylinePoint,
+    persistence.saveNow,
+  ]);
 
   return (
     <div className="map-editor">
@@ -1302,7 +1550,80 @@ export default function MapEditorPage() {
               onClick={() => handlePickTool("draw")}
             />
           </Tooltip>
+          <Tooltip title="折线：逐点画道路 / 河流 / 山脊 / 势力边界（Enter 收尾、Esc 取消、双击收尾）">
+            <Button
+              size="small"
+              type={tool === "polyline" ? "primary" : "default"}
+              icon={<NodeIndexOutlined />}
+              aria-label="折线"
+              aria-pressed={tool === "polyline"}
+              onClick={() => handlePickTool("polyline")}
+            />
+          </Tooltip>
         </div>
+
+        {/*
+          折线动作区：只在折线态出现。
+          样式下拉放在这里而不是属性面板里 —— "画之前先选档"比"画完再一个个改"顺，
+          而属性面板负责的是"这条线现在长什么样"（两条入口改的是同一个 `styleId`）。
+          【为什么没有"层级"指示】折线的层级取落笔时的主导层级（与素材同规则），
+          但**不做**区块那种"父块决定层级"的约束：一条官道可以横穿几个郡。
+        */}
+        {tool === "polyline" && (
+          <>
+            <Divider orientation="vertical" />
+            <div className="map-editor__toolbar-group map-editor__draw-actions">
+              <Select
+                size="small"
+                className="map-editor__polyline-style"
+                value={polylineStyleId}
+                aria-label="折线样式"
+                onChange={(v) => setPolylineStyleId(v)}
+                options={POLYLINE_STYLES.map((s) => ({
+                  value: s.id,
+                  // 档名 + "什么时候用它"的一句话（下拉里就能选对，不必先画一条试试）
+                  label: (
+                    <span title={s.hint}>
+                      {s.label}
+                    </span>
+                  ),
+                }))}
+              />
+              <span className="map-editor__draw-count">{`已画 ${polylinePoints.length} 点`}</span>
+              <Tooltip title="撤掉最后落下的那个控制点（Backspace）">
+                <Button
+                  size="small"
+                  icon={<UndoOutlined />}
+                  disabled={polylinePoints.length === 0}
+                  aria-label="撤销一个折线控制点"
+                  onClick={handleUndoPolylinePoint}
+                >
+                  撤销上一点
+                </Button>
+              </Tooltip>
+              <Tooltip
+                title={
+                  polylinePoints.length < 2 ? "至少需要 2 个点才能成一条线" : "落库并选中（Enter）"
+                }
+              >
+                <Button
+                  size="small"
+                  type="primary"
+                  disabled={polylinePoints.length < 2}
+                  aria-label="完成折线"
+                  onClick={() => finishPolyline()}
+                >
+                  完成
+                </Button>
+              </Tooltip>
+              <Tooltip title={polylinePoints.length > 0 ? "丢弃草稿（Esc）" : "退出折线"}>
+                <Button size="small" aria-label="取消折线" onClick={handleCancelPolyline}>
+                  取消
+                </Button>
+              </Tooltip>
+            </div>
+          </>
+        )}
 
         {/*
           画区动作区：只在画区态出现。
@@ -1678,17 +1999,29 @@ export default function MapEditorPage() {
         <span className="map-editor__count">素材 {doc.elements.length}</span>
       </div>
 
-      {/* ── 主体：左素材区 + 右画布 ── */}
+      {/* ── 主体：左栏（素材库 + 图层）+ 右画布 ── */}
       <div className="map-editor__body">
-        <SpritePanel
-          pendingSpriteId={pendingSpriteId}
-          onPick={(id) => {
-            // 选素材即退出「加标注」态与画区态：三种落位意图不能同时开着
-            setPendingLabel(false);
-            handlePickTool("select");
-            editor.setPendingSpriteId(id);
-          }}
-        />
+        {/*
+          左栏上下两段：上面"用什么画"（素材库，吃满剩余高度），下面"画在哪一层"
+          （图层面板，固定 6 行）。同一栏内堆叠而不是新开一栏 —— 见 B4 PRD D2：
+          逆向目标的图层组也在左栏，且 3 栏会把画布压窄。
+        */}
+        <div className="map-editor__left">
+          <SpritePanel
+            pendingSpriteId={pendingSpriteId}
+            onPick={(id) => {
+              // 选素材即退出「加标注」态与画区态：三种落位意图不能同时开着
+              setPendingLabel(false);
+              handlePickTool("select");
+              editor.setPendingSpriteId(id);
+            }}
+          />
+          <LayerPanel
+            doc={doc}
+            onToggleVisible={editor.toggleLayerVisible}
+            onToggleLock={editor.toggleLayerLock}
+          />
+        </div>
         <div className="map-editor__canvas-area">
           <MapCanvas
             doc={doc}
@@ -1697,6 +2030,8 @@ export default function MapEditorPage() {
             texturesReady={imagesReady}
             selectedId={selectedId}
             pendingSpriteId={pendingSpriteId}
+            elementLocked={layerLockedOf(doc, "element")}
+            labelLocked={layerLockedOf(doc, "label")}
             levelAlphas={levelAlphas}
             land={doc.land}
             style={doc.style}
@@ -1708,6 +2043,20 @@ export default function MapEditorPage() {
             */
             draftPoints={tool === "draw" ? draftPoints : null}
             onDraftClose={closeDraft}
+            /*
+              折线（B4-2）：数据、选中、锁定、绘制草稿四件事一起下去。
+              `polylineDraft` 用 `null` 表示"不在折线模式"（同 `draftPoints` 的约定）。
+            */
+            polylines={editor.polylines}
+            polylinesLocked={editor.polylineLayerLocked}
+            selectedPolylineId={selectedPolylineId}
+            polylineDraft={tool === "polyline" ? polylinePoints : null}
+            polylineDraftStyleId={polylineStyleId}
+            onPolylineDraftFinish={finishPolyline}
+            onPolylineNodeDragStart={handlePolylineNodeDragStart}
+            onPolylineNodeMove={handlePolylineNodeMove}
+            onPolylinePointInsert={handlePolylinePointInsert}
+            onPolylinePointDelete={handlePolylinePointDelete}
             labels={doc.labels}
             onLabelEditRequest={handleLabelEditRequest}
             onSceneReady={handleSceneReady}
@@ -1755,6 +2104,20 @@ export default function MapEditorPage() {
               onDuplicate={() => editor.duplicateSelected()}
               onDelete={handleDelete}
               onClose={() => editor.setSelectedId(null)}
+            />
+          )}
+          {/*
+            折线属性面板（B4-2）：选中一条线后浮出，与素材面板同位、同样互斥。
+            【为什么不在绘制态出现】绘制态下没有"选中的那条线" —— 草稿还没落库，
+            改样式改的是"下一笔用哪档"，那是工具栏下拉的职责。
+          */}
+          {selectedPolyline && (
+            <PolylinePanel
+              polyline={selectedPolyline}
+              schema={schema}
+              onUpdate={(patch, key) => editor.updatePolyline(selectedPolyline.id, patch, key)}
+              onDelete={() => editor.removePolyline(selectedPolyline.id)}
+              onClose={() => editor.setSelectedPolylineId(null)}
             />
           )}
           {/*
@@ -1848,6 +2211,17 @@ export default function MapEditorPage() {
         summary={genSummary}
         hasGenerated={editor.hasGenerated}
         lastParams={editor.lastGeneratorParams}
+      />
+
+      {/*
+        跨图选择器（路径 A′）。onPick 收摘要、页面拉全量并落库；
+        关闭只收起弹窗，不动已选的区块（用户可能想换个区块再绑）。
+      */}
+      <SubmapPickerModal
+        open={submapPickerOpen}
+        currentDocId={persistence.docId}
+        onClose={() => setSubmapPickerOpen(false)}
+        onPick={(item) => void handleSubmapPick(item.id, item.title)}
       />
     </div>
   );

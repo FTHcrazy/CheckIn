@@ -1,0 +1,88 @@
+/**
+ * PolylinePanel 局部样式（折线属性浮出面板）
+ *
+ * 定位与 ElementPanel / RegionPanel 同位（画布右上角）：三者互斥，永远不会叠。
+ * 颜色走主题变量 var(--app-*)，禁止硬编码（AGENTS §6.1）。
+ */
+
+.polyline-panel {
+  position: absolute;
+  right: 16px;
+  top: 16px;
+  z-index: 10;
+  width: 232px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-panel, 8px);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
+}
+
+.polyline-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.polyline-panel__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--app-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.polyline-panel__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 标签定宽：三行标签字数不同，不定宽会让控件起点参差（与 ElementPanel 同口径） */
+.polyline-panel__label {
+  flex: none;
+  width: 32px;
+  font-size: 12px;
+  color: var(--app-text-secondary);
+}
+
+.polyline-panel__slider {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.polyline-panel__value {
+  flex: none;
+  width: 40px;
+  text-align: right;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--app-text-secondary);
+}
+
+.polyline-panel__control {
+  flex: 1;
+  min-width: 0;
+}
+
+.polyline-panel__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 操作提示：12px 是项目字号下限（AGENTS §6.1），再小就不可读 */
+.polyline-panel__hint {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--app-text-secondary);
+}

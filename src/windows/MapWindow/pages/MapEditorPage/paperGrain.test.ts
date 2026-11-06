@@ -56,6 +56,26 @@ describe("writePaperGrainPixels", () => {
     expect(max - min).toBeGreaterThan(8);
   });
 
+  /**
+   * 磨砂质感：颗粒必须"够深、够有对比"，而不是若有若无的均匀灰。
+   *
+   * 【为什么用统计量】multiply 叠到米黄 fill 上之后，颗粒太弱会把陆地拉成"死板纯色"
+   * （本轮"陆地底部光秃秃"的根因）。均值越低于 255 表示越暗，标准差越大表示颗粒
+   * 起伏越明显。旧参数（粗 0.5 / 细 0.32 / 网点 0.18 + LUMA 0.88）实测均值 ≈238、std ≈3.7；
+   * 新参数（0.62 / 0.26 / 0.12 + LUMA 0.82）实测均值 ≈229、std ≈5.8。
+   */
+  it("颗粒更深、对比更强（均值偏暗且标准差可见）", () => {
+    const size = 96;
+    const data = grain(size);
+    const values: number[] = [];
+    for (let i = 0; i < data.length; i += 4) values.push(data[i]);
+    const mean = values.reduce((s, v) => s + v, 0) / values.length;
+    const variance = values.reduce((s, v) => s + (v - mean) * (v - mean), 0) / values.length;
+    const std = Math.sqrt(variance);
+    expect(mean).toBeLessThan(235);
+    expect(std).toBeGreaterThan(5);
+  });
+
   it("同 seed 逐字节相同（可复现），换 seed 不同", () => {
     const a = grain(32, 7);
     const b = grain(32, 7);

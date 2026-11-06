@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MAP_PRESETS, expandTerrainMix } from "./mapPresets";
-import { mulberry32, pickTerrainSprites, type SpriteSource } from "./terrain-assets";
+import { flippableOf, mulberry32, pickTerrainSprites, type SpriteSource } from "./terrain-assets";
 import { isTerrainKind, TERRAIN_KINDS, TERRAIN_META, type TerrainKind } from "./terrain";
 import { isSpriteZone } from "./zones";
 import { SPRITES } from "../sprites";
@@ -286,5 +286,39 @@ describe("守卫：热门地图预设", () => {
         ).toBe(count);
       }
     }
+  });
+});
+
+describe("flippableOf · 镜像翻转元数据（P1-4）", () => {
+  it("缺省即可翻（自然地貌没有『正面』，逐条登记 flippable 是负担）", () => {
+    expect(flippableOf({ id: "m1", src: "m1.png", terrains: ["mountain"] })).toBe(true);
+  });
+
+  it("显式 false 才不可翻（有朝向的人造物 / 文字类）；其余值一律按可翻", () => {
+    expect(flippableOf({ id: "ship", src: "s.png", terrains: ["sea"], flippable: false })).toBe(
+      false,
+    );
+    // 语义是"缺省开、显式 false 关"：素材登记表是源码受控数据，不是用户数据，
+    // 与 elementFlipXOf（读旧存档、严格 === true）的兜底方向刻意不同 ——
+    // 脏值宁多翻不漏翻，漏翻会让"破重复"静默失效。
+    expect(
+      flippableOf({ id: "x", src: "x.png", terrains: ["mountain"], flippable: 0 as unknown as boolean }),
+    ).toBe(true);
+  });
+
+  it("真实素材池守卫：不可翻的只能是有朝向的人造物（港渡 / 门洞类）", () => {
+    // 白名单钉住意图：谁不可翻必须是有意的（新增素材默认可翻，
+    // 要登记 false 就得来这里改白名单，防止"随手一标"把整族地貌钉死）
+    const NON_FLIPPABLE = new Set([
+      "port-dock",
+      "port-harbor",
+      "bridge-arch",
+      "sailing-ship",
+      "ruins-arch",
+      "mountain-pass",
+      "great-gate",
+    ]);
+    const actual = new Set(SPRITES.filter((s) => s.flippable === false).map((s) => s.id));
+    expect([...actual].sort()).toEqual([...NON_FLIPPABLE].sort());
   });
 });

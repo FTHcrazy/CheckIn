@@ -20,6 +20,8 @@ import {
   createElementId,
   createEmptyDocument,
   createLabelId,
+  createPolylineId,
+  docPolylines,
   ELEMENT_OPACITY_MAX,
   ELEMENT_OPACITY_MIN,
   ELEMENT_TINT_NONE,
@@ -30,11 +32,14 @@ import {
   type MapLabel,
   type MapLabelSize,
   type MapLand,
+  type MapPolyline,
   type MapStyle,
   type MapSubmap,
 } from "../types";
 import type { MapRegion, RegionLevelDef } from "../regions";
 import { applyMerge, planMerge } from "../regionEdit";
+import { layerLockedOf, layerVisibleOf } from "../layerState";
+import type { MapLayerId, MapLayerState } from "../layerState";
 
 /** 撤销栈最大深度（PRD §4.8） */
 const HISTORY_LIMIT = 50;
@@ -90,6 +95,27 @@ export interface DocSnapshot {
    * 与 `style` / `showRegions` 同一档。
    */
   regionSchema: MapDocument["regionSchema"];
+  /**
+   * 图层显隐 / 锁定（★ B4-1 新增）。
+   *
+   * 【为什么进撤销栈】PRD §3.4 明写"眼睛切换记一步"：关掉素材层是**看得见**的
+   * 画面变化，切错了要能撤销 —— 与 `showRegions` 同一档。
+   *
+   * 【但它是唯一一个"UI 状态"进历史的字段】它不像对象那样参与成批快照
+   * （没有"选中一批改属性"的语义），每次切换就是独立一步，因此不需要合并键。
+   */
+  layerState: MapDocument["layerState"];
+  /**
+   * 折线（★ B4-2 新增）。
+   *
+   * 【为什么必须进快照】PRD §6-B4-2 验收⑤明确要求"落线一步、拖节点一步、删线一步"：
+   * 折线是**文档内容**（会落库、会导出），漏进快照就会出现"画了一条河，
+   * Ctrl+Z 之后线还在、素材却回退了"这种半截撤销。
+   *
+   * 【与 `layerState` 的相同点】同样是可选字段：撤销可能回到"根本没有折线这一项"
+   * 的老文档形状，写回时按 `undefined` 删键（见 `applySnapshot`）。
+   */
+  polylines: MapDocument["polylines"];
 }
 
 function snapshotOf(doc: MapDocument): DocSnapshot {
@@ -102,12 +128,14 @@ function snapshotOf(doc: MapDocument): DocSnapshot {
     showRegions: doc.showRegions,
     baseImageId: doc.baseImageId,
     regionSchema: doc.regionSchema,
+    layerState: doc.layerState,
+    polylines: doc.polylines,
   };
 }
 
 /** 把快照写回文档（撤销 / 重做共用） */
 function applySnapshot(doc: MapDocument, snap: DocSnapshot): MapDocument {
-  return {
+  const next: MapDocument = {
     ...doc,
     elements: snap.elements,
     regions: snap.regions,
@@ -120,6 +148,46 @@ function applySnapshot(doc: MapDocument, snap: DocSnapshot): MapDocument {
     // 不能用 `?? DEFAULT_REGION_SCHEMA` 兜底 —— 那会凭空造出一次"文档内容变更"。
     regionSchema: snap.regionSchema,
   };
+  if (snap.layerState === undefined) {
+    // 展开语法会把 `layerState: undefined` 写成**存在的键**。落库时 JSON 会把它
+    // 丢掉，所以字节不变；但"有没有这个键"本身就是零写入判据，内存里也不该
+    // 出现一个假的空字段（`Object.keys(doc)` 会因此多一项）。
+    delete next.layerState;
+  } else {
+    next.layerState = snap.layerState;
+  }
+  // 折线同理：撤销回"从没画过线"的文档时，`polylines` 键必须整个消失（零写入）。
+  if (snap.polylines === undefined) delete next.polylines;
+  else next.polylines = snap.polylines;
+  return next;
+}
+
+/**
+ * 改一个逻辑层的状态，并**顺手清掉恢复默认的字段**。
+ *
+ * 【为什么要清】面板上"眼睛点两下"回到可见、"锁点两下"回到未锁，是用户眼里
+ * 的"什么也没做"。若照写 `{visible: true}`，文档会凭空多出一个字段 ——
+ * 一两次无所谓，成百次切换后每份存档都躺着一堆 `{visible: true}`。
+ * 语义上 `visible` 缺省就是 `true`（见 `MapLayerState`），删掉与写 `true` 等价。
+ *
+ * 整份 `layerState` 空掉时连字段一起删：老文档形状与"从没碰过面板"保持一致。
+ */
+function withLayerState(
+  doc: MapDocument,
+  id: MapLayerId,
+  patch: MapLayerState,
+): MapDocument {
+  const next: MapLayerState = { ...doc.layerState?.[id], ...patch };
+  if (next.visible !== false) delete next.visible;
+  if (next.locked !== true) delete next.locked;
+
+  const map = { ...doc.layerState };
+  if (next.visible === undefined && next.locked === undefined) delete map[id];
+  else map[id] = next;
+
+  const out: MapDocument = { ...doc, layerState: map };
+  if (Object.keys(map).length === 0) delete out.layerState;
+  return out;
 }
 
 interface MapDocState {
@@ -187,14 +255,14 @@ interface MapDocState {
    * 一座山，去聊天框 Ctrl+V 出来的应该是山还是文字？系统语义是文字。
    * 应用内剪贴板只服务本窗口，也天然随窗口销毁。
    */
-  clipboard: MapElement | null;
+  clipboard: MapElement | MapPolyline | null;
   copyElement: (id: string) => void;
   /** 剪切 = 复制 + 删除（删除那一半自带快照，可撤销） */
   cutElement: (id: string) => void;
-  /** 粘贴：落位斜移（见 `ELEMENT_PASTE_OFFSET`），返回新素材 id；剪贴板为空返回 null */
+  /** 粘贴：落位斜移（见 `ELEMENT_PASTE_OFFSET`），返回新对象（素材或折线）的 id；剪贴板为空返回 null */
   pasteElement: () => string | null;
   /**
-   * 方向键 / WASD 微移（R-MAP-25）。
+   * 方向键 / WASD 微移（R-MAP-25；B4-3 起折线同享）。
    *
    * 走 `moveElementBy`（联动地名一起动、不入快照）+ 合并键压撤销步：
    * 连按十次方向键应该是"一次移动"，Ctrl+Z 一步回到起点。
@@ -238,6 +306,62 @@ interface MapDocState {
   generateLand: (land: MapLand, regions: MapDocument["regions"]) => void;
   clearLand: () => void;
   toggleRegions: () => void;
+  /**
+   * 设置某逻辑层的可见性。
+   *
+   * `region` **不写 `layerState`**，而是转成 `showRegions`（B4 PRD D4）：
+   * 它已经是区块可见性的唯一事实源（工具栏开关、导出、老测试都认它），
+   * 双写必然漂移 —— 表现为"面板眼睛是开的，画布上区块却不见了"。
+   */
+  setLayerVisible: (id: MapLayerId, visible: boolean) => void;
+  /** 切换某逻辑层的可见性（面板眼睛的唯一出口） */
+  toggleLayerVisible: (id: MapLayerId) => void;
+  /**
+   * 设置某逻辑层的锁定。
+   *
+   * 锁定**不改变渲染**（PRD §8-4）：它只让命中测试、框选、删除跳过该层。
+   */
+  setLayerLocked: (id: MapLayerId, locked: boolean) => void;
+
+  /* ───────────── 折线（B4-2 / R-MAP-26）───────────── */
+
+  /**
+   * 追加一条折线。
+   *
+   * 【为什么 id 与几何都由调用方给定】与 `addRegion` 同一分工：构造（id、
+   * 控制点、默认样式）是编排层的职责，store 只做"追加 + 记一步快照"。
+   */
+  addPolyline: (polyline: MapPolyline) => void;
+  /**
+   * 改折线的非几何属性（样式 / 语义 / 层级 / 标签 / 线宽倍数）。
+   *
+   * @param coalesceKey 属性面板连续拖动传同一个键，让"一次拖动"只占一步撤销。
+   *   几何（`points` / `closed`）**不从这里改** —— 拖节点走 `movePolylinePoint`
+   *   （高频、不入快照），增删点走下面两个专用动作（低频、各记一步）。
+   */
+  updatePolyline: (
+    id: string,
+    patch: Partial<Pick<MapPolyline, "styleId" | "kind" | "level" | "label" | "closed" | "widthScale">>,
+    coalesceKey?: string,
+  ) => void;
+  removePolyline: (id: string) => void;
+  /**
+   * 移动一个控制点（拖拽中高频调用，**不入撤销栈**）。
+   *
+   * 快照在拖拽开始时由 `commitDragStart(doc)` 记一次 —— 与素材拖拽完全同款：
+   * 若每个 pointermove 都压快照，一次拖动会吃掉 50 步撤销深度（栈上限）。
+   */
+  movePolylinePoint: (id: string, index: number, world: { x: number; y: number }) => void;
+  /** 在 `index` 位置**插入**一个控制点（双击线段；一步撤销） */
+  insertPolylinePoint: (id: string, index: number, point: { x: number; y: number }) => void;
+  /**
+   * 删除第 `index` 个控制点（双击节点；一步撤销）。
+   *
+   * 删到只剩 < 2 点时**整条线一起删**：一个点的"线"画不出来，留着它只会在
+   * 面板计数里变成一个点不中、看不见的幽灵对象。
+   */
+  deletePolylinePoint: (id: string, index: number) => void;
+
   setStyle: (next: MapStyle) => void;
   addLabel: (input: {
     x: number;
@@ -465,6 +589,17 @@ export const useMapDocStore = create<MapDocState>()((set, get) => ({
   },
 
   duplicateElement: (id) => {
+    // B4-3：折线与素材同一套「复制一份」（新 id + 斜移，进撤销栈一步）
+    const srcLine = docPolylines(get().doc).find((p) => p.id === id);
+    if (srcLine) {
+      const copy: MapPolyline = {
+        ...srcLine,
+        id: createPolylineId(),
+        points: srcLine.points.map((p) => ({ x: p.x + ELEMENT_PASTE_OFFSET, y: p.y + ELEMENT_PASTE_OFFSET })),
+      };
+      get().commit((d) => ({ ...d, polylines: [...docPolylines(d), copy] }));
+      return copy.id;
+    }
     const src = get().doc.elements.find((el) => el.id === id);
     if (!src) return null;
     const copy: MapElement = {
@@ -478,6 +613,15 @@ export const useMapDocStore = create<MapDocState>()((set, get) => ({
   },
 
   copyElement: (id) => {
+    // B4-3：素材优先（两套 id 空间不重叠，`pl_` 前缀折线不会撞上）
+    const srcLine = docPolylines(get().doc).find((p) => p.id === id);
+    if (srcLine) {
+      // 点列要克隆：剪贴板必须与文档对象**解引用**，之后拖节点不能把剪贴板一起拖变形
+      set({
+        clipboard: { ...srcLine, points: srcLine.points.map((p) => ({ x: p.x, y: p.y })) },
+      });
+      return;
+    }
     const src = get().doc.elements.find((el) => el.id === id);
     if (!src) return;
     // 浅拷贝足够：素材字段全是原始值，且文档里的元素本就不可变更新
@@ -486,12 +630,30 @@ export const useMapDocStore = create<MapDocState>()((set, get) => ({
 
   cutElement: (id) => {
     get().copyElement(id);
+    // 复制到了才删：剪贴板为空说明 id 两边都不是（切一半会留下一半的困惑）
+    if (!get().clipboard) return;
+    if (docPolylines(get().doc).some((p) => p.id === id)) {
+      get().removePolyline(id);
+      return;
+    }
     get().removeSelected(id);
   },
 
   pasteElement: () => {
     const clip = get().clipboard;
     if (!clip) return null;
+    if ("points" in clip) {
+      const copy: MapPolyline = {
+        ...clip,
+        id: createPolylineId(),
+        points: clip.points.map((p) => ({
+          x: p.x + ELEMENT_PASTE_OFFSET,
+          y: p.y + ELEMENT_PASTE_OFFSET,
+        })),
+      };
+      get().commit((d) => ({ ...d, polylines: [...docPolylines(d), copy] }));
+      return copy.id;
+    }
     const copy: MapElement = {
       ...clip,
       id: createElementId(),
@@ -503,6 +665,21 @@ export const useMapDocStore = create<MapDocState>()((set, get) => ({
   },
 
   nudgeElement: (id, dxWorld, dyWorld) => {
+    // B4-3：折线整体平移 = 所有点一起动（没有"联动地名"一说 —— 折线没有联动标注）
+    if (docPolylines(get().doc).some((p) => p.id === id)) {
+      get().commit(
+        (d) => ({
+          ...d,
+          polylines: docPolylines(d).map((p) =>
+            p.id === id
+              ? { ...p, points: p.points.map((pt) => ({ x: pt.x + dxWorld, y: pt.y + dyWorld })) }
+              : p,
+          ),
+        }),
+        `nudge:${id}`,
+      );
+      return;
+    }
     get().commit((d) => {
       let touched = false;
       const elements = d.elements.map((el) => {
@@ -591,6 +768,105 @@ export const useMapDocStore = create<MapDocState>()((set, get) => ({
 
   toggleRegions: () => {
     get().commit((d) => ({ ...d, showRegions: !d.showRegions }));
+  },
+
+  setLayerVisible: (id, visible) => {
+    const doc = get().doc;
+    // 值没变就不进 commit：面板可能被"回车 + 点击"双触发，空步白占一格撤销栈
+    if (layerVisibleOf(doc, id) === visible) return;
+    if (id === "region") {
+      get().commit((d) => ({ ...d, showRegions: visible }));
+      return;
+    }
+    get().commit((d) => withLayerState(d, id, { visible }));
+  },
+
+  toggleLayerVisible: (id) => {
+    get().setLayerVisible(id, !layerVisibleOf(get().doc, id));
+  },
+
+  setLayerLocked: (id, locked) => {
+    if (layerLockedOf(get().doc, id) === locked) return;
+    get().commit((d) => withLayerState(d, id, { locked }));
+  },
+
+  /* ───────────── 折线（B4-2）───────────── */
+
+  addPolyline: (polyline) => {
+    // 少于 2 点的"线"画不出来，也不该进文档（绘制态已拦一次，这里是最后一道）
+    if (polyline.points.length < 2) return;
+    get().commit((d) => ({ ...d, polylines: [...docPolylines(d), polyline] }));
+  },
+
+  updatePolyline: (id, patch, coalesceKey) => {
+    if (!docPolylines(get().doc).some((p) => p.id === id)) return;
+    get().commit((d) => ({
+      ...d,
+      polylines: docPolylines(d).map((p) => {
+        if (p.id !== id) return p;
+        const next = { ...p, ...patch };
+        // 清标签 / 把线宽调回 1 倍 ⇒ **删键**而不是写空值（零写入原则的延伸）：
+        // 否则每份存档都会带上 `label: undefined` 这类"用户其实没设过"的痕迹。
+        if (next.label === undefined || next.label === "") delete next.label;
+        if (next.widthScale === 1) delete next.widthScale;
+        return next;
+      }),
+    }), coalesceKey);
+  },
+
+  removePolyline: (id) => {
+    if (!docPolylines(get().doc).some((p) => p.id === id)) return;
+    get().commit((d) => ({ ...d, polylines: docPolylines(d).filter((p) => p.id !== id) }));
+  },
+
+  movePolylinePoint: (id, index, world) => {
+    set((state) => {
+      const list = docPolylines(state.doc);
+      if (!list.some((p) => p.id === id)) return {};
+      return {
+        doc: {
+          ...state.doc,
+          polylines: list.map((p) =>
+            p.id === id
+              ? { ...p, points: p.points.map((pt, i) => (i === index ? { x: world.x, y: world.y } : pt)) }
+              : p,
+          ),
+        },
+      };
+    });
+  },
+
+  insertPolylinePoint: (id, index, point) => {
+    if (!docPolylines(get().doc).some((p) => p.id === id)) return;
+    get().commit((d) => ({
+      ...d,
+      polylines: docPolylines(d).map((p) => {
+        if (p.id !== id) return p;
+        // 钳到合法插入位（双击判定与采样换算之间可能差一格）
+        const at = Math.min(Math.max(index, 1), p.points.length);
+        const points = [...p.points.slice(0, at), { x: point.x, y: point.y }, ...p.points.slice(at)];
+        return { ...p, points };
+      }),
+    }));
+  },
+
+  deletePolylinePoint: (id, index) => {
+    const target = docPolylines(get().doc).find((p) => p.id === id);
+    if (!target) return;
+    const remain = target.points.filter((_, i) => i !== index);
+    if (remain.length < 2) {
+      get().commit((d) => ({ ...d, polylines: docPolylines(d).filter((p) => p.id !== id) }));
+      return;
+    }
+    // 闭合线删到只剩 2 点：闭环退化成零面积的来回线，自动改回开链
+    //（只在真发生变化时写键，不给本来就开着的线添 `closed:false` 的痕迹）
+    const openIt = target.closed && remain.length < 3;
+    get().commit((d) => ({
+      ...d,
+      polylines: docPolylines(d).map((p) =>
+        p.id === id ? { ...p, points: remain, ...(openIt ? { closed: false } : {}) } : p,
+      ),
+    }));
   },
 
   setStyle: (next) => {

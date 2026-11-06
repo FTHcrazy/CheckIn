@@ -15,23 +15,33 @@ interface MapSelectionState {
   selectedId: string | null;
   /** 当前选中的区块 id；null = 未选中。与 `selectedId` 互斥（选素材则清区块，反之亦然） */
   selectedRegionId: string | null;
+  /** 当前选中的折线 id；null = 未选中。与 `selectedId` / `selectedRegionId` 三者互斥 */
+  selectedPolylineId: string | null;
   /** 当前待放置的素材（点击面板后进入「待放置」态，再点画布落位） */
   pendingSpriteId: string | null;
   setSelectedId: (id: string | null) => void;
   setSelectedRegionId: (id: string | null) => void;
+  setSelectedPolylineId: (id: string | null) => void;
   setPendingSpriteId: (id: string | null) => void;
 }
 
 export const useMapSelectionStore = create<MapSelectionState>()((set) => ({
   selectedId: null,
   selectedRegionId: null,
+  selectedPolylineId: null,
   pendingSpriteId: null,
   setSelectedId: (id) => set({ selectedId: id }),
   setSelectedRegionId: (id) => set({ selectedRegionId: id }),
+  setSelectedPolylineId: (id) => set({ selectedPolylineId: id }),
   setPendingSpriteId: (id) => set({ pendingSpriteId: id }),
 }));
 
 /** 复位选择 store（测试隔离 + 窗口即关即销时清空） */
 export function resetMapSelectionStore(): void {
-  useMapSelectionStore.setState({ selectedId: null, selectedRegionId: null, pendingSpriteId: null });
+  useMapSelectionStore.setState({
+    selectedId: null,
+    selectedRegionId: null,
+    selectedPolylineId: null,
+    pendingSpriteId: null,
+  });
 }

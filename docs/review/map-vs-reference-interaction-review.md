@@ -2,7 +2,7 @@
 
 > 状态：**审查稿**（含未闭环待办，清空后归档）
 > 输入：`docs/prd/prd-map-render/`（7 篇）、WorkBuddy 资料库《makeamap_渲染逻辑分析.md》、
-> 2026-09-28 / 10-30 项目内竞品调研记录、`docs/novel-map-prd.md`（v1，R-MAP-01~15）
+> 2026-09-28 / 10-30 项目内竞品调研记录、`docs/archive/prd-map/map-v1-prd.md`（v1，R-MAP-01~15，已归档）
 > 基线：**2.18.0**，代码基线 `MapWindow/pages/MapEditorPage/`（map2 线）
 
 ---
@@ -272,9 +272,9 @@ POLYGON(面) → LINE(线) → POINT(点) → TEXT(文字)
 | **R-MAP-21** | 一键成图生成器：分层落对象（素材实例 + 地名 + 可选分区 + 可选河流），五档重掷，参数面板，结果摘要 | **P0** | L | 新增 `generate/`（纯函数）+ 生成面板组件 |
 | **R-MAP-22** | 素材体系：≥40 符号 + 变体 + AI 生产流程 | **P0** | L（含美术） | `assets/sprites/` + `sprites.ts` 登记表 |
 | **R-MAP-23** | 对象属性面板：尺寸/旋转/透明度/色相/层级/删除/置顶置底 | **P0** | M | `components/ElementPanel/` |
-| **R-MAP-24** | 图层面板：按类型分层 + 显隐 + 锁定 + 排序 | P1 | M | `components/LayerPanel/` + `doc.layers` |
+| **R-MAP-24** | 图层面板：按类型分层 + 显隐 + 锁定 + 排序 | P1 | M | `components/LayerPanel/` + `doc.layerState`（口径见 B4 PRD D1/D3/D4） |
 | **R-MAP-25** | 剪贴板与微移：Ctrl+C/V、方向键、Delete、框选 | P1 | S~M | `hooks/useMapEditor.ts` + 键盘处理 |
-| **R-MAP-26** | 折线与面要素：河流/道路（折线、可拖节点）、区域填充 | P1 | L | `types.ts` + `polylines/`（承接 `nested-submap-road`） |
+| **R-MAP-26** | 折线与面要素：河流/道路（折线、可拖节点）、区域填充 | P1 | L | `types.ts` 的 `MapPolyline` + `polylineLayer`（v1 不做填充面，见 B4 PRD D6） |
 | **R-MAP-27** | 文字排版增强：竖排 / 沿线 / 角度 / 字距 / 阴影 | P2 | M | `label` 渲染/编辑 |
 | **R-MAP-28** | 地图持久化与多图管理（`map.db`） | **P0（阻塞一切）** | M | 见 `docs/spec/map-db-spec.md` |
 | — | 海洋修饰层（浪花） | P2 | S | `coastBake.ts` |
@@ -286,13 +286,18 @@ POLYGON(面) → LINE(线) → POINT(点) → TEXT(文字)
 
 | 能力段 | 现行文档 | 状态 |
 |---|---|---|
-| 渲染观感（R-MAP-16~20） | `prd-map-render-alignment.md` | 已闭环，**不再扩写** |
+| 渲染观感（R-MAP-16~20） | `archive/prd-map/map-render-alignment-prd.md`（已归档） | 已闭环，**不再扩写** |
 | 嵌套子图 / 边界 / 道路 / 要素 | `nested-submap-*.md` | 主方案已落地 Phase 2/2.4；道路与要素为方案稿 |
-| 区域编辑 | `region-editing.md` | 方案稿（架构定稿，未实施） |
-| **一键成图 / 素材 / 属性面板 / 图层 / 剪贴板** | **无** | ← 本审查新增，R-MAP-21~27 |
+| 区域编辑 | `region-editing.md` | **已实现（2.19.0，R-REG-01~05）**；P1/P2 待排 |
+| **一键成图 / 素材 / 属性面板 / 剪贴板** | **无**（已交付的见 §9 的 B0~B3 备注） | ← 本审查新增，R-MAP-21~27 |
+| **图层 / 折线** | **无**（B4，需求刚补齐） | ← [map-b4-layers-polyline-prd.md](../prd/prd-map-render/map-b4-layers-polyline-prd.md) |
 | **持久化与多图管理** | **无**（v1 `R-MAP-01/14` 被 alignment 声明脱节） | ← 见 `map-db-spec.md` |
 
-> 文档治理：`docs/README.md` line 30 引用的 `region-editing-architecture.md` **在目录中不存在**（悬空路径），需补文件或改引用。
+> 文档治理：本文初稿指出的「`region-editing-architecture.md` 悬空路径」已消 ——
+> 该文件当时随后补齐，并已随 P0 闭环归档至
+> `docs/archive/prd-map/map-region-editing-architecture.md`（2026-11-05 文档整理）。
+> 现存文档与归档状态一律以 [`docs/README.md`](../README.md) 与
+> [`map-window-overview.md`](../prd/prd-map-render/map-window-overview.md) §4 为准。
 
 ---
 
@@ -325,7 +330,7 @@ POLYGON(面) → LINE(线) → POINT(点) → TEXT(文字)
 > （少 1 个帆船不带名计入），未到「每主类 ≥6 变体」的字面值，观感已够。
 >
 > **S1 前置已交付（2.25.0 内）**：地形语义层（`TerrainKind` 20 项 + 回退链 +
-> 地名池）、53 张素材 `terrains` 多标签标注、选材引擎 `pickTerrainSprites`
+> 地名池）、52 张素材 `terrains` 多标签标注、选材引擎 `pickTerrainSprites`
 > （素材池注入制——生成器禁直接摸 SPRITES）、热门地图预设骨架 3 个。
 > 架构全文见 `docs/prd/prd-map-render/map-asset-system-architecture.md`。
 >
@@ -339,6 +344,13 @@ POLYGON(面) → LINE(线) → POINT(点) → TEXT(文字)
 > 密度按碰撞自适应，丰度值是目标上限而非精确数。
 
 **顺序理由**：先能保存（否则一切体验都是试用）→ 再能改（对象属性）→ 再能摆（素材）→ 最后能一键出图（生成器是前三者的编排，不是独立能力）。
+
+> **B4 已补需求文档（2026-11-05，未开工）**：本节 B4 的一行缺口已展开为
+> [`prd-map-render/map-b4-layers-polyline-prd.md`](../prd/prd-map-render/map-b4-layers-polyline-prd.md)
+> —— 7 条拍板项（**类型即图层、不做自由排序**；面板放左栏；`layerState` 只存状态零写入；
+> `region` 可见性仍归 `showRegions`；单一 `MapPolyline`；填充面暂缓；渲染栈在
+> `regionLayer`/`elementLayer` 之间插 `polylineLayer`）+ B4-1/2/3 三批验收判据。
+> 本节的 R-MAP-24/26 描述与它冲突时，**以 PRD 为准**。
 
 > 注意：该顺序与"先做生成器"的直觉相反。原因是**生成器产出的是对象，对象没有属性面板就没法改，没有持久化就没法留**；先做生成器会得到一个"看起来很惊艳但一碰就碎"的演示。
 

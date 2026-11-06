@@ -3,20 +3,24 @@ import { Application, Container, Graphics, Sprite, Texture } from "pixi.js";
 import type { ColorMatrixFilter, RenderTexture } from "pixi.js";
 import { BASE_IMAGE, SPRITE_MAP } from "../../sprites";
 import {
-  REGION_BORDER_ALPHA,
   REGION_BORDER_COLOR,
   REGION_BORDER_PX,
-  REGION_FILL_ALPHA,
+  regionBorderAlphaOf,
+  regionFillAlphaOf,
   type Point,
 } from "../../regions";
 import { elementSizeFactor, elementWeight, resolveElementLevel } from "../../lod";
 import { buildParentIdSet } from "../../regionEdit";
 import { WORLD_LAYER_ORDER, type WorldLayerName } from "./layers";
 import type { MapDocument } from "../../types";
-import type { MapLabel, MapLand, MapStyle } from "../../types";
-import { elementOpacityOf, elementTintHueOf, tintColorOf } from "../../types";
+import type { MapLabel, MapLand, MapPolyline, MapStyle } from "../../types";
+import { elementFlipXOf, elementOpacityOf, elementTintHueOf, tintColorOf } from "../../types";
 import { BAKE_MARGIN, bakeCoast, bakeKeyOf } from "../../coastBake";
 import { filterFor } from "../../style";
+import { layerVisibleOf } from "../../layerState";
+import { effectiveWidthWorld, POLYLINE_PICK_PAD_PX, polylineStyleOf } from "../../polylineStyle";
+import { controlIndexFor, dashPath, nearestOnPath, smoothPolyline } from "../../polylineGeometry";
+import { drawPolyline } from "./polylineRender";
 import { getPaperGrainTexture } from "../../paperGrain";
 import {
   applyLabelWeights,
@@ -67,6 +71,22 @@ interface MapCanvasProps {
   selectedId: string | null;
   /** 待放置素材：非空时点击画布为"落位"而非"选择" */
   pendingSpriteId: string | null;
+  /**
+   * 素材层是否锁定（B4-1）。
+   *
+   * 【为什么要传到画布】"按下已选中素材 = 开始拖拽"这个判定在画布的
+   * `pointerdown` 里，页面看不见。锁定层若还允许从这里起拖，就等于"锁了还能动"——
+   * 用户会认为锁定坏了，而实际上只是少传了一个开关。
+   *
+   * 缺省 `false`（= 老用法不锁）。
+   */
+  elementLocked?: boolean;
+  /**
+   * 地名层是否锁定（B4-1）：锁定时双击标注不再进入编辑。
+   *
+   * 缺省 `false`。
+   */
+  labelLocked?: boolean;
   /**
    * 各层级当前的可见权重（见 `lod.ts`），长度即层级数。
    *
@@ -137,6 +157,42 @@ interface MapCanvasProps {
    * （见 `labelSync.ts` 的 `applyAvoidance`）。
    */
   labels?: readonly MapLabel[];
+  /**
+   * 折线（B4-2）；缺省 `[]` = 不画任何线（老用法照常渲染）。
+   *
+   * 与 `labels` 同一条纪律：画布只读，绝不写回 —— 增删改一律由页面调 store。
+   */
+  polylines?: readonly MapPolyline[];
+  /**
+   * 折线层是否锁定（B4-1 的图层锁在 B4-2 的消费点）。
+   *
+   * 语义与素材层完全一致：**命中跳过、拖不动**，渲染不变。缺省 `false`。
+   */
+  polylinesLocked?: boolean;
+  /** 当前选中的折线 id（画节点手柄与高亮）；`null` = 未选中 */
+  selectedPolylineId?: string | null;
+  /**
+   * 折线绘制态的已落控制点；`null` = 不在折线模式。
+   *
+   * 与 `draftPoints` 同构：用 `null` 而不是空数组区分"在模式里但还没落点"
+   * 与"不在模式里" —— 两者画面一样、指针语义不同。
+   */
+  polylineDraft?: readonly Point[] | null;
+  /**
+   * 绘制态用的样式档 id（预览按真实样式画：选「河流」时就该看到蓝绿线，
+   * 而不是一条通用的蓝草稿）。缺省走 `road-main`。
+   */
+  polylineDraftStyleId?: string;
+  /** 绘制态下"这一下算收尾"时回调（双击 / 点回起点），由页面负责落库 */
+  onPolylineDraftFinish?: () => void;
+  /** 开始拖动折线节点：页面据此把当前文档压一次撤销快照（全程只记一次） */
+  onPolylineNodeDragStart?: () => void;
+  /** 拖动节点中的世界坐标（高频，不入撤销栈） */
+  onPolylineNodeMove?: (index: number, world: Point) => void;
+  /** 双击线段：请求在第 `index` 个控制点之前插入一个点 */
+  onPolylinePointInsert?: (index: number, world: Point) => void;
+  /** 双击节点：请求删除第 `index` 个控制点 */
+  onPolylinePointDelete?: (index: number) => void;
   /**
    * 双击标注请求编辑，回调收到**画布本地屏幕坐标**。
    *
@@ -435,6 +491,91 @@ const NO_LEVELS: number[] = [];
 /** 缺省标注（同上：稳定引用，否则标注同步 effect 每次渲染都会重跑一遍） */
 const NO_LABELS: readonly MapLabel[] = [];
 
+/** 缺省折线（同上：稳定引用，否则折线重绘 effect 每帧都会重跑） */
+const NO_POLYLINES: readonly MapPolyline[] = [];
+
+/**
+ * 折线节点手柄的命中半径（**屏幕像素**）。
+ *
+ * 【为什么按屏幕而不是世界单位】世界单位会随缩放变大变小：缩小到整图时
+ * 8 世界单位只有 2 像素（根本点不中），放大到郡级时又变成 28 像素（旁边的线都
+ * 被吸过来）。屏幕恒定才是"手柄看起来多大就能点多大"。
+ */
+const POLYLINE_NODE_HIT_PX = 8;
+
+/** 折线节点手柄的绘制半径（屏幕像素，比命中圈略小：看得见的不该比点得中的大） */
+const POLYLINE_NODE_PX = 4;
+
+/** 选中折线时的高亮描边宽度（屏幕像素） */
+const POLYLINE_PICK_PX = 1.4;
+
+/**
+ * 绘制态预览的虚线节奏（屏幕像素，`[实, 虚]`）。
+ *
+ * 【为什么这里按屏幕像素、而线本身按世界单位】预览只是"从末点到光标"的一段
+ * 临时指示，它不是内容：缩得再远也应该是一眼可辨的虚线。真正的线用世界单位
+ * （见 `polylineStyle.ts`），因为它是地图内容、要随图缩放。
+ */
+const POLYLINE_PREVIEW_DASH_PX: readonly [number, number] = [7, 5];
+
+/**
+ * 折线绘制态的预览：已落的一段按**真实样式**画 + 顶点圆点 + 末点到光标的虚线。
+ *
+ * 【为什么按真实样式画】用户选的是"河流"，屏幕上却是一条通用的蓝线，收尾之后
+ * 突然变成蓝绿色 —— 预览与结果不一致会让人反复重画。样式档在绘制态就能改，
+ * 预览必须跟着改。
+ */
+function drawPolylinePreview(
+  g: Graphics,
+  points: readonly Point[],
+  styleId: string,
+  scale: number,
+  cursor: Point | null,
+): void {
+  const px = 1 / Math.max(1e-6, scale);
+
+  // ① 已确定的部分：用真样式画（半透明，表示"还没落库"）
+  if (points.length >= 2) {
+    // kind 只是回退依据：styleId 命中时以样式为准
+    const style = polylineStyleOf(styleId, "road");
+    drawPolyline(
+      g,
+      {
+        id: "__polyline_draft__",
+        kind: style.kind,
+        styleId: style.id,
+        points: [...points],
+        closed: false,
+        level: null,
+      },
+      { scale, alpha: 0.8 },
+    );
+  }
+
+  // ② 顶点：白心 + 强调边（与选中手柄同一套观感，用户不会以为是两种东西）
+  for (const p of points) {
+    g.circle(p.x, p.y, POLYLINE_NODE_PX * px);
+    g.fill({ color: 0xffffff, alpha: 0.95 });
+    g.circle(p.x, p.y, POLYLINE_NODE_PX * px);
+    g.stroke({ width: px, color: DRAFT_COLOR, alpha: 0.9 });
+  }
+
+  // ③ 末点 → 光标：虚线（表示"下一段会这样连"）
+  if (cursor && points.length > 0) {
+    const last = points[points.length - 1];
+    const pieces = dashPath(
+      [last, cursor],
+      POLYLINE_PREVIEW_DASH_PX[0] * px,
+      POLYLINE_PREVIEW_DASH_PX[1] * px,
+    );
+    for (const piece of pieces) {
+      g.moveTo(piece[0].x, piece[0].y);
+      for (let i = 1; i < piece.length; i += 1) g.lineTo(piece[i].x, piece[i].y);
+      g.stroke({ width: 1.2 * px, color: DRAFT_COLOR, alpha: 0.6, alignment: 0.5 });
+    }
+  }
+}
+
 /**
  * 地图画布（PixiJS / WebGL 渲染）。
  *
@@ -450,15 +591,19 @@ const NO_LABELS: readonly MapLabel[] = [];
  *      │   ├─ L0 容器     ├─ 填充 Graphics
  *      │   │              └─ 边界 Graphics  ← 屏幕恒定线宽
  *      │   └─ L1 / L2 / L3 …（同上）
- *      ├─ elementLayer   z4 素材层（容器，同样按层级分若干子容器）
+ *      ├─ polylineLayer  z4 折线层（容器，按层级分容器，与 elementLayer 同构）
+ *      │   ├─ L0 容器    ← 在"大陆"那一级画的河，alpha = α_0
+ *      │   ├─ L1 / L2 / L3 …（同上）
+ *      │   └─ LOOSE 容器 ← 层级无关的折线，alpha 恒为 1
+ *      ├─ elementLayer   z5 素材层（容器，同样按层级分若干子容器）
  *      │   ├─ L0 容器    ← 在"大陆"那一级放置的素材，alpha = α_0
  *      │   ├─ L1 / L2 / L3 …（同上）
  *      │   └─ LOOSE 容器 ← 层级无关的素材（生成区块之前放的），alpha 恒为 1
- *      ├─ labelLayer     z5 标注层（容器，按层级分容器，与 elementLayer 同构）
+ *      ├─ labelLayer     z6 标注层（容器，按层级分容器，与 elementLayer 同构）
  *      │   ├─ L0 容器    ← 在"大陆"那一级起的地名，alpha = α_0
  *      │   ├─ L1 / L2 / L3 …（同上）
  *      │   └─ LOOSE 容器 ← 层级无关的地名（生成区块之前起的），alpha 恒为 1
- *      └─ overlay        z6 选中框等交互指示（Graphics，不挂滤镜）
+ *      └─ overlay        z7 选中框等交互指示（Graphics，不挂滤镜）
  *
  *  z 序的**唯一定义处**是 `./layers.ts` 的 `WORLD_LAYER_ORDER`（初始化时按它建层，
  *  测试按它取索引）。`draftLayer`（手画草稿）排在最后，即压在所有交互指示之上。
@@ -500,6 +645,8 @@ export default function MapCanvas({
   texturesReady,
   selectedId,
   pendingSpriteId,
+  elementLocked = false,
+  labelLocked = false,
   levelAlphas = NO_LEVELS,
   land = null,
   style = "none",
@@ -508,6 +655,16 @@ export default function MapCanvas({
   draftPoints = null,
   onDraftClose,
   labels = NO_LABELS,
+  polylines = NO_POLYLINES,
+  polylinesLocked = false,
+  selectedPolylineId = null,
+  polylineDraft = null,
+  polylineDraftStyleId,
+  onPolylineDraftFinish,
+  onPolylineNodeDragStart,
+  onPolylineNodeMove,
+  onPolylinePointInsert,
+  onPolylinePointDelete,
   onLabelEditRequest,
   onSceneReady,
   enableCulling = true,
@@ -563,6 +720,18 @@ export default function MapCanvas({
   const regionLayerRef = useRef<Container | null>(null);
   /** 每个层级一份「容器 + 填充 + 边界」，索引即层级序号 */
   const levelLayersRef = useRef<LevelLayers[]>([]);
+  /**
+   * 折线层（B4-2）：容器 + 按层级分的子容器，与素材层同构。
+   *
+   * 【为什么也按层级分容器】折线的 `level` 语义与素材、地名完全一样
+   * （在郡那一级画的河属于郡）。把权重落在容器 alpha 上，滚轮每一格只改几个
+   * 浮点数；逐条线设 alpha 的话每格要遍历全部折线。
+   */
+  const polylineLayerRef = useRef<Container | null>(null);
+  /** 折线的层级容器（键同 `elementKeyOf`：`LOOSE_LEVEL_KEY` = 层级无关） */
+  const polylineLayersRef = useRef<Map<number, Container>>(new Map());
+  /** id → Graphics，增量重绘用（只 clear 内容，不重建显示对象） */
+  const polylineGraphicsRef = useRef<Map<string, Graphics>>(new Map());
   const elementLayerRef = useRef<Container | null>(null);
   /** 素材按层级分容器（键见 `LOOSE_LEVEL_KEY`），容器 alpha 跟该层级权重走 */
   const elementLayersRef = useRef<Map<number, Container>>(new Map());
@@ -688,6 +857,7 @@ export default function MapCanvas({
     regions: readonly unknown[];
     elements: readonly unknown[];
     labels: readonly unknown[];
+    polylines: readonly unknown[];
     levelCount: number;
   } | null>(null);
 
@@ -762,6 +932,8 @@ export default function MapCanvas({
     | { kind: "none" }
     | { kind: "pan"; lastX: number; lastY: number; travel: number }
     | { kind: "drag"; lastWorld: { x: number; y: number } }
+    /** 拖动折线节点：只记节点下标，位置由世界坐标直接给（绝对坐标，不用增量） */
+    | { kind: "polyline"; index: number }
   >({ kind: "none" });
   /** 超过该累计位移即视为拖拽而非单击（PRD §4.7） */
   const CLICK_SLOP = 4;
@@ -840,6 +1012,44 @@ export default function MapCanvas({
       }
     }
 
+    // ── 选中折线的高亮 + 节点手柄（B4-2）──
+    //
+    // 【为什么画在 overlay 而不是折线层】overlay 是交互指示层：导出时会被
+    // `clearOverlay()` 清掉（成品图里不该有手柄），而折线层是内容、必须进导出。
+    // 若把手柄画进折线层，导出的 PNG 上会挂着一串白点。
+    //
+    // 【为什么手柄半径按屏幕像素】世界单位会随缩放变大变小 —— 缩到整图时 4 世界
+    // 单位的手柄不到 1.5px（看不见也点不中），放大到郡级时又大成一块膏药。
+    if (selectedPolylineId) {
+      const line = polylines.find((p) => p.id === selectedPolylineId);
+      const weight = line ? elementWeight(line.level, levelAlphas) : 0;
+      if (line && weight > 0 && line.points.length >= 2) {
+        const px = 1 / Math.max(1e-6, viewport.scale);
+        // 与 drawPolyline / pickPolyline 同一条退化守卫：<3 点的闭环是零面积来回线
+        const closed = line.closed && line.points.length >= 3;
+        const path = smoothPolyline(line.points, closed);
+        overlay.moveTo(path[0].x, path[0].y);
+        for (let i = 1; i < path.length; i += 1) overlay.lineTo(path[i].x, path[i].y);
+        if (closed) overlay.lineTo(path[0].x, path[0].y);
+        overlay.stroke({
+          width: POLYLINE_PICK_PX * px,
+          color: REGION_PICK_COLOR,
+          alpha: 0.9 * weight,
+          alignment: 0.5,
+        });
+        for (const pt of line.points) {
+          overlay.circle(pt.x, pt.y, POLYLINE_NODE_PX * px);
+          overlay.fill({ color: 0xffffff, alpha: 0.95 * weight });
+          overlay.circle(pt.x, pt.y, POLYLINE_NODE_PX * px);
+          overlay.stroke({
+            width: px,
+            color: REGION_PICK_COLOR,
+            alpha: 0.9 * weight,
+          });
+        }
+      }
+    }
+
     if (!selectedId) return;
     const el = doc.elements.find((e) => e.id === selectedId);
     const def = el ? SPRITE_MAP[el.spriteId] : undefined;
@@ -860,7 +1070,17 @@ export default function MapCanvas({
     overlay
       .rect(el.x - w / 2, el.y - h, w, h)
       .stroke({ width: 2, color: 0x5b6cf9, alignment: 0.5, alpha: weight });
-  }, [selectedId, selectedRegionId, doc.elements, doc.regions, levelAlphas, viewport.scale, parentIdSet]);
+  }, [
+    selectedId,
+    selectedRegionId,
+    doc.elements,
+    doc.regions,
+    levelAlphas,
+    viewport.scale,
+    parentIdSet,
+    selectedPolylineId,
+    polylines,
+  ]);
 
   /** 上面那个函数的最新引用：给初始化 effect 里的 `redrawOverlay` 与选中态 effect 取用 */
   const drawOverlayRef = useRef(drawOverlay);
@@ -886,6 +1106,20 @@ export default function MapCanvas({
     const layer = draftLayerRef.current;
     if (!layer) return;
     layer.clear();
+
+    // 折线绘制态（B4-2）：与画区态**共用同一层**，因为两者互斥（工具只有一个）。
+    // 共用一层省掉一套"草稿压在哪"的 z 序推理，也保证导出前只需清这一层。
+    if (polylineDraft) {
+      drawPolylinePreview(
+        layer,
+        polylineDraft,
+        polylineDraftStyleId ?? "road-main",
+        viewport.scale,
+        draftCursorRef.current,
+      );
+      return;
+    }
+
     if (!draftPoints || draftPoints.length === 0) return;
 
     const px = 1 / Math.max(1e-6, viewport.scale);
@@ -932,7 +1166,7 @@ export default function MapCanvas({
       layer.circle(cursor.x, cursor.y, DRAFT_POINT_PX * 0.8 * px);
       layer.stroke({ width: px, color: DRAFT_COLOR, alpha: 0.7 });
     }
-  }, [draftPoints, viewport.scale]);
+  }, [draftPoints, polylineDraft, polylineDraftStyleId, viewport.scale]);
 
   /** 同上：事件回调里要用最新那份（不把它塞进每个 handler 的依赖） */
   const drawDraftRef = useRef(drawDraft);
@@ -1075,6 +1309,8 @@ export default function MapCanvas({
       // 区块层本身是个容器：真正的内容按层级分成若干子容器（见下方各 effect），
       // 这样"交叉淡化"只需要改子容器的 alpha，不必重建任何几何。
       const regionLayer = new Container();
+      // 折线层：与区块层同样是个空容器，真正的内容按层级分成子容器（见折线 effect）
+      const polylineLayer = new Container();
       const elementLayer = new Container();
       const submapLayer = new Container();
       const labelLayer = new Container();
@@ -1093,6 +1329,7 @@ export default function MapCanvas({
         staticLayer,
         coast,
         regionLayer,
+        polylineLayer,
         elementLayer,
         submapLayer,
         labelLayer,
@@ -1110,6 +1347,7 @@ export default function MapCanvas({
       coastRef.current = coast;
       coastSpriteRef.current = coastSprite;
       regionLayerRef.current = regionLayer;
+      polylineLayerRef.current = polylineLayer;
       elementLayerRef.current = elementLayer;
       submapLayerRef.current = submapLayer;
       labelLayerRef.current = labelLayer;
@@ -1150,6 +1388,9 @@ export default function MapCanvas({
       regionLayerRef.current = null;
       // 子容器随 world 一起被 destroy(true, {children:true}) 回收，这里只清引用
       levelLayersRef.current = [];
+      polylineLayerRef.current = null;
+      polylineLayersRef.current.clear();
+      polylineGraphicsRef.current.clear();
       elementLayerRef.current = null;
       elementLayersRef.current.clear();
       submapLayerRef.current = null;
@@ -1446,6 +1687,29 @@ export default function MapCanvas({
     layer.alpha = showRegions ? 1 : 0;
   }, [showRegions, app]);
 
+  // ── 逻辑图层显隐（B4-1）：只改容器 visible，不动几何 ──
+  //
+  // 【为什么区块不在这一组】区块走上一段的 `alpha`（它要在 0.16 填充里继续透出
+  // 陆地材质，且"显示分区"是成品图开关，历史上就是 alpha 语义）。这里只管
+  // 三个"有就画、没有就空"的纯内容层：关掉它们用 `visible=false` 最省 ——
+  // 整棵子树的绘制与批处理都被跳过，比 alpha=0 少一遍 draw call。
+  //
+  // 【为什么读 `layerVisibleOf` 而不是自己判 `!== false`】`region` 的分支在
+  // 那个函数里（事实源是 showRegions）；这里虽然不处理 region，但保持
+  // "读点只有一个"的纪律，将来把 region 挪进来时不会漏掉。
+  useEffect(() => {
+    const host = { showRegions, layerState: doc.layerState };
+    const pairs: Array<[Container | null, boolean]> = [
+      [polylineLayerRef.current, layerVisibleOf(host, "polyline")],
+      [elementLayerRef.current, layerVisibleOf(host, "element")],
+      [submapLayerRef.current, layerVisibleOf(host, "submap")],
+      [labelLayerRef.current, layerVisibleOf(host, "label")],
+    ];
+    for (const [layer, on] of pairs) {
+      if (layer && layer.visible !== on) layer.visible = on;
+    }
+  }, [doc.layerState, showRegions, app]);
+
   // ── 区块层 · 第一步：按层级建/拆子容器 ──
   //
   // 每个层级一个子容器，容器内部是「填充 + 边界」两份 Graphics，靠容器 alpha 做
@@ -1490,7 +1754,10 @@ export default function MapCanvas({
       const lv = levels[region.level];
       if (!lv || region.polygon.length < 3) continue;
       lv.fill.poly(toFlatPoints(region.polygon));
-      lv.fill.fill({ color: region.color, alpha: REGION_FILL_ALPHA });
+      // 静态层次衰减（P2-2）：填充 = 全局填充 × 层次系数（越深的层级越淡）。
+      // 【不要换成 levelAlphas】那是缩放驱动的 LOD 权重（已写进容器 alpha），
+      // 再乘一次就是双重衰减 —— 见 regions.ts 的 REGION_LEVEL_FILL_SCALE。
+      lv.fill.fill({ color: region.color, alpha: regionFillAlphaOf(region.level) });
     }
   }, [doc.regions, levelAlphas.length, app]);
 
@@ -1510,7 +1777,9 @@ export default function MapCanvas({
       lv.border.stroke({
         width,
         color: REGION_BORDER_COLOR,
-        alpha: REGION_BORDER_ALPHA,
+        // 边界与填充共用同一张静态系数表（P2-2）：两者必须同比例衰减，
+        // 否则"线比面还淡"。见 regions.ts 的 regionBorderAlphaOf。
+        alpha: regionBorderAlphaOf(region.level),
         alignment: 0.5,
       });
     }
@@ -1529,6 +1798,82 @@ export default function MapCanvas({
   useEffect(() => {
     levelLayersRef.current.forEach((lv, i) => {
       lv.container.alpha = levelAlphas[i] ?? 0;
+    });
+  }, [levelAlphas, app]);
+
+  // ── 折线层 · 第一步：按层级建/拆子容器（与素材层同构）──
+  //
+  // 与素材层同一套键（`elementKeyOf`）：`LOOSE_LEVEL_KEY` 排在最后且恒不透明，
+  // 其余每层一个容器、alpha 跟 `levelAlphas` 走。折线的 `level` 语义与素材完全一致，
+  // 复用同一个键函数而不是另写一份"层级 → 容器"的映射。
+  useEffect(() => {
+    const group = polylineLayerRef.current;
+    if (!group) return;
+    const keys = [...levelAlphas.keys(), LOOSE_LEVEL_KEY];
+    for (const key of keys) {
+      if (!polylineLayersRef.current.has(key)) {
+        polylineLayersRef.current.set(key, new Container());
+      }
+    }
+    // 已存在的容器不销毁（Graphics 还挂在里面），只重建挂载顺序
+    for (const container of polylineLayersRef.current.values()) group.removeChild(container);
+    for (const key of keys) group.addChild(polylineLayersRef.current.get(key) as Container);
+  }, [levelAlphas.length, app]);
+
+  // ── 折线层 · 第二步：重绘（只随折线 / 层级数 / 线宽档变化）──
+  //
+  // 【为什么 `borderScale` 必须进依赖】线宽是世界单位、但有屏幕下限：
+  // 缩放跨过量化档时，下限兜底会改变**实际**线宽。不重绘就会出现"缩到整图后
+  // 线细到看不见、再放大也不回来"—— 而 data 一点没变，没有任何报错。
+  //
+  // 【为什么要按层级选容器】与素材同理：所属层级淡出这条线就该淡出。
+  // 容器 alpha 由下一步的权重 effect 统一写，这里只管把线画进正确的容器。
+  //
+  // 【为什么用"复用 Graphics + clear"而不是每次删了重建】拖节点时本 effect 每帧
+  // 都会跑（`doc.polylines` 是新的引用）：每帧 new/ destroy 几十个 Graphics 会让
+  // GPU 侧反复分配缓冲。clear 后重描只复用同一批显示对象。
+  useEffect(() => {
+    const group = polylineLayerRef.current;
+    if (!group) return;
+    const levelCount = levelAlphas.length;
+    const seen = new Set<string>();
+
+    for (const line of polylines) {
+      if (line.points.length < 2) continue;
+      seen.add(line.id);
+      const key = elementKeyOf(line.level, levelCount);
+      const target = polylineLayersRef.current.get(key) ?? group;
+
+      let g = polylineGraphicsRef.current.get(line.id);
+      if (!g) {
+        g = new Graphics();
+        polylineGraphicsRef.current.set(line.id, g);
+      }
+      if (g.parent !== target) {
+        g.parent?.removeChild(g);
+        target.addChild(g);
+      }
+      g.clear();
+      // alpha 由层级容器统一给（这里只画内容），因此传 1
+      drawPolyline(g, line, { scale: borderScale, alpha: 1 });
+    }
+
+    // 删除已不存在的折线（含"删点删到整条消失"）
+    for (const [id, g] of polylineGraphicsRef.current) {
+      if (seen.has(id)) continue;
+      g.parent?.removeChild(g);
+      g.destroy();
+      polylineGraphicsRef.current.delete(id);
+    }
+  }, [polylines, levelAlphas.length, borderScale, app]);
+
+  // ── 折线层 · 第三步：权重（与区块、素材、地名同一份 levelAlphas）──
+  //
+  // 依赖里必须有 app，理由与其余权重 effect 完全一致：首次挂载时容器还没建好，
+  // 少了 app 就会永远停在默认 alpha 1 —— 表现为"所有层级的线同时可见"。
+  useEffect(() => {
+    polylineLayersRef.current.forEach((container, key) => {
+      container.alpha = key === LOOSE_LEVEL_KEY ? 1 : levelAlphas[key] ?? 0;
     });
   }, [levelAlphas, app]);
 
@@ -1614,6 +1959,12 @@ export default function MapCanvas({
       // 老文档没有这两个字段，读点回落"不透明 + 原色"，迁移函数不补值
       sprite.alpha = elementOpacityOf(el);
       sprite.tint = tintColorOf(elementTintHueOf(el));
+      // 镜像翻转（P1-4）：width 赋值会把 scale.x 的**幅值**归正（pixi 8 的
+      // `_setWidth` 保留符号），符号必须在这里显式按存档重设，不能增量取反
+      // —— 否则上一次的翻面会残留。锚点是 (0.5, 1)：水平居中，翻转绕竖直
+      // 中轴进行，脚底点与外接盒都不动 —— 命中区（coords.hitTestElement）与
+      // 选中框天然与原图一致，不需要按 baseWidth 反算锚点。
+      sprite.scale.x = Math.abs(sprite.scale.x) * (elementFlipXOf(el) ? -1 : 1);
     }
 
     // 移除已删除的元素精灵
@@ -1796,6 +2147,8 @@ export default function MapCanvas({
     // 层级容器由上面几个 effect 增删，另存一份就是第二处需要同步的状态。
     const levelContainers: Container[] = [
       ...levelLayersRef.current.map((lv) => lv.container),
+      // 折线的层级容器（B4-2）：与区块、素材同一档，整层剔除
+      ...polylineLayersRef.current.values(),
       ...elementLayersRef.current.values(),
       ...labelLayer.children,
       // 子图子树：整棵一票（视口外整棵剪掉，进视野才画）。
@@ -1820,12 +2173,14 @@ export default function MapCanvas({
       fingerprint.regions !== doc.regions ||
       fingerprint.elements !== doc.elements ||
       fingerprint.labels !== labels ||
+      fingerprint.polylines !== polylines ||
       fingerprint.levelCount !== levelAlphas.length;
     if (contentChanged) {
       cullContentRef.current = {
         regions: doc.regions,
         elements: doc.elements,
         labels,
+        polylines,
         levelCount: levelAlphas.length,
       };
       cullCacheRef.current.clear();
@@ -1842,6 +2197,7 @@ export default function MapCanvas({
     doc.regions,
     doc.elements,
     labels,
+    polylines,
     levelAlphas.length,
   ]);
 
@@ -1883,7 +2239,7 @@ export default function MapCanvas({
       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
       const local = getLocalPoint(e);
 
-      // ── 画区态：闭合判定全部落在 pointerdown ────────────────────────────
+      // ── 画区态 / 折线绘制态：闭合判定全部落在 pointerdown ────────────────
       //
       // 【为什么必须在这里而不是 dblclick】`dblclick` 是浏览器在**两次 down/up
       // 之后**才派发的事件 —— 那时顶点已经落下了。旧实现只能事后补救，症状是
@@ -1893,14 +2249,15 @@ export default function MapCanvas({
       //
       // 判定顺序（短路）：
       //   ① 双击 —— 与上一次 down 的时间差 < DRAFT_DOUBLE_CLICK_MS 且屏幕距离
-      //      在 DRAFT_CLOSE_PX 内 ⇒ 闭合，**不落点**；
+      //      在 DRAFT_CLOSE_PX 内 ⇒ 收尾，**不落点**；
       //   ② 命中首顶点 —— 已落 ≥3 点且本次 down 落在首顶点的命中圈内 ⇒ 闭合，
-      //      **不落点**；
+      //      **不落点**（只有画区态有这一条：折线 v1 只画开链）；
       //   ③ 都不是 ⇒ 走下面的原有逻辑，由 pointerup 落点（页面里的同点去重仍在）。
       //
-      // ⚠️ 为什么落点不在 down 里做：画区态仍然允许"拖空白平移"，落点放在 down
-      // 会让每次拖动都先撒一个顶点。down 只负责**判定**，up 才负责**提交**。
-      if (drafting) {
+      // ⚠️ 为什么落点不在 down 里做：两种绘制态都仍然允许"拖空白平移"，落点放在
+      // down 会让每次拖动都先撒一个顶点。down 只负责**判定**，up 才负责**提交**。
+      const polylineDrawing = polylineDraft !== null;
+      if (drafting || polylineDrawing) {
         const world = worldAt(local);
         const px = 1 / Math.max(1e-6, viewport.scale);
         const at = Number.isFinite(e.timeStamp) && e.timeStamp > 0 ? e.timeStamp : performance.now();
@@ -1919,6 +2276,7 @@ export default function MapCanvas({
           at - prev.at < DRAFT_DOUBLE_CLICK_MS &&
           Math.hypot(world.x - prev.world.x, world.y - prev.world.y) <= DRAFT_CLOSE_PX * px;
         const hitsFirst =
+          drafting &&
           draftPoints !== null &&
           draftPoints.length >= 3 &&
           Math.hypot(world.x - draftPoints[0].x, world.y - draftPoints[0].y) <=
@@ -1931,21 +2289,42 @@ export default function MapCanvas({
           //    ② 命中首顶点时则**必须保留** —— 紧接着的第二下要靠它判双击。
           if (isDouble) lastDownRef.current = null;
           gesture.current = { kind: "none" };
-          onDraftClose?.();
+          // 两种绘制态共用一个"收尾"判定，落库交给各自的页面分支
+          if (drafting) onDraftClose?.();
+          else onPolylineDraftFinish?.();
           return;
         }
       } else {
-        // 非画区态不留双击历史：切走再切回来时，"上一次 down"早已过期，
+        // 非绘制态不留双击历史：切走再切回来时，"上一次 down"早已过期，
         // 留着只会让进模式后的第一下被误判成双击。
         lastDownRef.current = null;
       }
 
+      // 折线节点拖动（B4-2）：比素材命中更优先 —— 节点是一个 8px 的小目标，
+      // 且只在自己被选中时存在；若排在素材之后，一个压在线上的素材会抢走手柄。
+      if (!drafting && !polylineDrawing && selectedPolylineId && !polylinesLocked) {
+        const line = polylines.find((p) => p.id === selectedPolylineId);
+        if (line) {
+          const world = worldAt(local);
+          const tol = POLYLINE_NODE_HIT_PX / Math.max(1e-6, viewport.scale);
+          // 从后往前找：后落的点压在前面的点之上，重叠时抓上面那个
+          for (let i = line.points.length - 1; i >= 0; i -= 1) {
+            const p = line.points[i];
+            if (Math.hypot(world.x - p.x, world.y - p.y) <= tol) {
+              gesture.current = { kind: "polyline", index: i };
+              onPolylineNodeDragStart?.();
+              return;
+            }
+          }
+        }
+      }
+
       // 左键按在已选中元素上 = 拖拽该元素，否则 = 平移画布
       //
-      // ⚠️ 画区模式下**不做**素材命中：左键在那时的语义只有"落一个顶点"。
+      // ⚠️ 绘制态下**不做**素材命中：左键在那时的语义只有"落一个顶点"。
       // 否则按在一个已选中的素材上会变成拖素材（还顺带进撤销栈），而用户以为
-      // 自己在画的第一个点根本没落下 —— 表现为"画区模式下点哪儿都没反应"。
-      if (!drafting && selectedId) {
+      // 自己在画的第一个点根本没落下 —— 表现为"绘制模式下点哪儿都没反应"。
+      if (!drafting && !polylineDrawing && selectedId && !elementLocked) {
         const world = worldAt(local);
         const el = doc.elements.find((x) => x.id === selectedId);
         const def = el ? SPRITE_MAP[el.spriteId] : undefined;
@@ -1973,23 +2352,31 @@ export default function MapCanvas({
     },
     [
       drafting,
+      polylineDraft,
       draftPoints,
       onDraftClose,
+      onPolylineDraftFinish,
       viewport.scale,
       selectedId,
+      elementLocked,
+      selectedPolylineId,
+      polylinesLocked,
+      polylines,
       doc.elements,
       levelAlphas,
       getLocalPoint,
       worldAt,
       onElementDragStart,
+      onPolylineNodeDragStart,
     ],
   );
 
   const handlePointerMove = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
-      // 画区态：光标预览点只进 ref 并直接重画草稿层 —— 不触发任何 React 提交。
-      // （这条在 `handlePointerUp` 之前，因为一次"拖动平移"里也会持续 mousemove。）
-      if (drafting) {
+      // 绘制态（画区 / 折线）：光标预览点只进 ref 并直接重画草稿层 ——
+      // 不触发任何 React 提交。（这条在 `handlePointerUp` 之前，因为一次
+      // "拖动平移"里也会持续 mousemove。）
+      if (drafting || polylineDraft !== null) {
         draftCursorRef.current = worldAt(getLocalPoint(e));
         drawDraftRef.current();
       }
@@ -2011,9 +2398,21 @@ export default function MapCanvas({
         if (dxWorld === 0 && dyWorld === 0) return;
         g.lastWorld = world;
         onElementDragDelta(dxWorld, dyWorld);
+      } else if (g.kind === "polyline") {
+        // 节点用**绝对坐标**而不是增量：控制点没有"锚点偏移"的语义
+        // （素材是底部锚点，必须保持抓取点相对位置；点就是点）。
+        onPolylineNodeMove?.(g.index, worldAt(getLocalPoint(e)));
       }
     },
-    [drafting, onPan, onElementDragDelta, worldAt, getLocalPoint],
+    [
+      drafting,
+      polylineDraft,
+      onPan,
+      onElementDragDelta,
+      onPolylineNodeMove,
+      worldAt,
+      getLocalPoint,
+    ],
   );
 
   const handlePointerUp = useCallback(
@@ -2046,22 +2445,69 @@ export default function MapCanvas({
    */
   const handleDoubleClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
-      if (drafting) return;
-      if (!onLabelEditRequest) return;
+      // 绘制态不响应：收尾判定已在 `pointerdown` 里做（见那里的注释），
+      // 这里再判一次会让"双击收尾"顺带弹出一个地名输入框。
+      if (drafting || polylineDraft !== null) return;
       const world = worldAt(getLocalPoint(e));
+      const px = 1 / Math.max(1e-6, viewport.scale);
+
+      // ── 选中折线的双击：节点上 = 删点，线上 = 插点（B4-2）──
+      //
+      // 【为什么节点优先】节点几乎总是落在线段附近（端点尤其如此）：先判线段的
+      // 话，双击端点会变成"在旁边插一个点"，而用户想删掉它。
+      if (selectedPolylineId && !polylinesLocked) {
+        const line = polylines.find((p) => p.id === selectedPolylineId);
+        if (line) {
+          let removed = false;
+          for (let i = line.points.length - 1; i >= 0; i -= 1) {
+            const p = line.points[i];
+            if (Math.hypot(world.x - p.x, world.y - p.y) <= POLYLINE_NODE_HIT_PX * px) {
+              onPolylinePointDelete?.(i);
+              removed = true;
+              break;
+            }
+          }
+          if (removed) return;
+
+          // 与 drawPolyline / pickPolyline 同一条退化守卫：<3 点的闭环按开链算
+          const closed = line.closed && line.points.length >= 3;
+          const near = nearestOnPath(smoothPolyline(line.points, closed), world, closed);
+          if (near) {
+            const style = polylineStyleOf(line.styleId, line.kind);
+            const width = effectiveWidthWorld(style, line.widthScale, viewport.scale);
+            if (near.distance <= width / 2 + POLYLINE_PICK_PAD_PX * px) {
+              // 插在"最近采样段所属的两个控制点之间"；位置用**线上最近点**，
+              // 而不是鼠标位置 —— 否则新点会把线拽出一个小尖角
+              onPolylinePointInsert?.(controlIndexFor(near.pathIndex), near.point);
+              return;
+            }
+          }
+        }
+      }
+
+      if (!onLabelEditRequest) return;
+      // 地名层锁定：双击不该进编辑（锁的语义就是"别动这一层"）
+      if (labelLocked) return;
       const hit = labelAt(labels, levelAlphas, world);
       if (!hit) return;
       onLabelEditRequest(hit.id, worldToScreen(hit, viewport, size));
     },
     [
       drafting,
+      polylineDraft,
       onLabelEditRequest,
+      labelLocked,
       labels,
       levelAlphas,
       worldAt,
       getLocalPoint,
       viewport,
       size,
+      selectedPolylineId,
+      polylinesLocked,
+      polylines,
+      onPolylinePointDelete,
+      onPolylinePointInsert,
     ],
   );
 

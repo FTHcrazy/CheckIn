@@ -104,6 +104,14 @@ vi.mock("pixi.js", () => {
     moveTo() {
       return this;
     }
+    /**
+     * 折线绘制（B4-2）会走 `moveTo` / `lineTo` + `stroke`。
+     * 替身**缺方法不是静默跳过，是 TypeError** —— 折线层一接进来，
+     * 所有挂载画布的文件都会在 effect 里炸，而报错指向折线而不是替身。
+     */
+    lineTo() {
+      return this;
+    }
     bezierCurveTo() {
       return this;
     }
@@ -122,6 +130,10 @@ vi.mock("pixi.js", () => {
     rect() {
       return this;
     }
+    /** 折线节点手柄 / 绘制态顶点用（B4-2）：缺方法同样是 TypeError */
+    circle() {
+      return this;
+    }
     clear() {
       return this;
     }
@@ -130,6 +142,23 @@ vi.mock("pixi.js", () => {
     constructor(texture?: unknown) {
       super();
       this.texture = texture ?? null;
+    }
+  }
+  /**
+   * 纸纹平铺精灵替身。
+   *
+   * 【必须补】`coastBake` 现在用 `TilingSprite` 铺纸纹（见 `LAND_TEXTURE_STEPS`），
+   * 而 `vi.mock` 的工厂**缺导出不是"取到 undefined"，是直接抛错** ——
+   * 少了这条，本文件所有烘焙用例都会在 effect 里抛
+   * "No 'TilingSprite' export is defined on the 'pixi.js' mock"。
+   */
+  class FakeTilingSprite extends FakeSprite {
+    tilePosition = { x: 0, y: 0, set: vi.fn() };
+    tileScale = { x: 1, y: 1, set: vi.fn() };
+    constructor(options?: { texture?: unknown; width?: number; height?: number }) {
+      super(options?.texture ?? null);
+      this.width = options?.width ?? 0;
+      this.height = options?.height ?? 0;
     }
   }
   /**
@@ -198,8 +227,13 @@ vi.mock("pixi.js", () => {
     Container: FakeContainer,
     Graphics: FakeGraphics,
     Sprite: FakeSprite,
+    TilingSprite: FakeTilingSprite,
     BlurFilter,
     ColorMatrixFilter,
+    /* 子图羽化的隔离滤镜替身（submapRender 给 content 挂它，让 erase 只擦子图纹理） */
+    AlphaFilter: class {
+      alpha = 1;
+    },
     RenderTexture,
     Texture,
     Text,
@@ -211,7 +245,7 @@ vi.mock("pixi.js", () => {
 import { Texture } from "pixi.js";
 import MapCanvas from "./index";
 import { generateLand } from "../../land";
-import type { MapLand, Rect } from "../../types";
+import type { MapDocument, MapLand, Rect } from "../../types";
 
 const BOUNDS: Rect = { x: -512, y: -512, width: 1024, height: 1024 };
 const LAND_A: MapLand = generateLand({ seed: 20261009, bounds: BOUNDS, islands: 1 });
@@ -226,6 +260,7 @@ function tree(options: {
   showRegions?: boolean;
   levelAlphas?: number[];
   enableCulling?: boolean;
+  layerState?: MapDocument["layerState"];
 }) {
   const showRegions = options.showRegions ?? true;
   return (
@@ -240,6 +275,7 @@ function tree(options: {
           showRegions,
           elements: [],
           regions: [],
+          ...(options.layerState ? { layerState: options.layerState } : {}),
         }}
         land={options.land ?? null}
         style={options.style ?? "none"}
@@ -572,5 +608,57 @@ describe("MapCanvas 海岸烘焙", () => {
     expect(regionLayer.children[0].visible).toBe(true);
     boundsOverride.value = null;
     restoreRect();
+  });
+});
+
+/**
+ * 逻辑图层显隐（B4-1）。
+ *
+ * 【为什么在画布层钉】面板把状态写进文档之后，"关掉素材层素材还在画面上"这种
+ * 断裂只可能发生在两处：文档没传到画布，或传到了但没人消费。前者由面板/store
+ * 的用例覆盖，后者只有真挂一次画布才看得见。
+ *
+ * 【为什么断言 `visible` 而不是 `alpha`】这三个层是"有就画、没有就空"的纯内容层，
+ * 关掉用 `visible=false` 整棵子树都不进渲染；`regionLayer` 仍走 `alpha`
+ * （它要在半透明填充下继续透出陆地材质，见上一组用例）。
+ */
+describe("MapCanvas 逻辑图层显隐", () => {
+  it("关掉素材层：elementLayer.visible 变 false，其余层不受影响", async () => {
+    const { rerender } = render(tree({ land: null, layerState: {} }));
+    await flush();
+
+    const world = apps[0].stage.children[0] as unknown as FakeNode;
+    expect(layerOf(world, "elementLayer").visible).toBe(true);
+
+    rerender(tree({ land: null, layerState: { element: { visible: false } } }));
+    await flush();
+
+    expect(layerOf(world, "elementLayer").visible).toBe(false);
+    expect(layerOf(world, "labelLayer").visible).toBe(true);
+    expect(layerOf(world, "submapLayer").visible).toBe(true);
+
+    // 再打开：回到可见（开关可逆，不销毁任何几何）
+    rerender(tree({ land: null, layerState: {} }));
+    await flush();
+    expect(layerOf(world, "elementLayer").visible).toBe(true);
+  });
+
+  it("地名 / 子图各关各的（三层的开关互不串台）", async () => {
+    render(tree({ land: null, layerState: { label: { visible: false }, submap: { visible: false } } }));
+    await flush();
+
+    const world = apps[0].stage.children[0] as unknown as FakeNode;
+    expect(layerOf(world, "labelLayer").visible).toBe(false);
+    expect(layerOf(world, "submapLayer").visible).toBe(false);
+    expect(layerOf(world, "elementLayer").visible).toBe(true);
+  });
+
+  it("锁定不影响渲染（锁 ≠ 隐藏）：locked 只由命中测试消费", async () => {
+    render(tree({ land: null, layerState: { element: { locked: true } } }));
+    await flush();
+
+    const world = apps[0].stage.children[0] as unknown as FakeNode;
+    expect(layerOf(world, "elementLayer").visible).toBe(true);
+    expect(layerOf(world, "elementLayer").alpha).toBe(1);
   });
 });

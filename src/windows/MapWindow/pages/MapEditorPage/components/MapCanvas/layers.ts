@@ -13,11 +13,18 @@
  *   · `staticLayer` 投影 + 海面（被 cacheAsTexture 烤成一张图）
  *   · `coast` 海岸烘焙层（一张 RenderTexture 精灵）
  *   · `regionLayer` 区块填充/边界（按层级分容器）
+ *   · `polylineLayer` 折线：道路 / 河流 / 山脊 / 势力边界（按层级分容器）
  *   · `elementLayer` 素材（按层级分容器）
  *   · `submapLayer` 区块内嵌子图（递归子树）
  *   · `labelLayer` 地名（按层级分容器）
  *   · `overlay` 选中框等交互指示
  *   · `draftLayer` 手画草稿（★ 最上层）
+ *
+ * 【折线为什么插在区块与素材之间（B4-2 的第一次"中间插层"）】
+ * 线是"地表的划分与路径"，必须压在区块之上（不被 0.16 的填充盖淡），
+ * 又必须在素材之下（路不能盖住山 —— 与逆向目标的 POLYGON→LINE→POINT 一致）。
+ * 追加到数组末尾会得到"路盖住山"，而这是本项目此前唯一用过的加层方式。
+ * 插层只改这一处，三处断言（本文件、`render-stack-guard`、`bake.test`）同步即可。
  *
  * 【草稿为什么压在最上面】画子区块时父块常处于选中态（正在被高亮），草稿线若
  * 压在高亮之下会被 0.16 的填充盖淡 —— 而草稿是用户此刻正在操作的线，优先级最高。
@@ -26,6 +33,7 @@ export const WORLD_LAYER_ORDER = [
   "staticLayer",
   "coast",
   "regionLayer",
+  "polylineLayer",
   "elementLayer",
   "submapLayer",
   "labelLayer",

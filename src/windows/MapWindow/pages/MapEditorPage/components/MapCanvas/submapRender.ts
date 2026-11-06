@@ -31,13 +31,21 @@
  * （防御数据里出现环）。
  */
 
-import { Container, Graphics, Sprite, Texture, type ColorMatrixFilter, type Renderer } from "pixi.js";
+import {
+  AlphaFilter,
+  Container,
+  Graphics,
+  Sprite,
+  Texture,
+  type ColorMatrixFilter,
+  type Renderer,
+} from "pixi.js";
 import { SPRITE_MAP } from "../../sprites";
 import {
-  REGION_BORDER_ALPHA,
   REGION_BORDER_COLOR,
   REGION_BORDER_PX,
-  REGION_FILL_ALPHA,
+  regionBorderAlphaOf,
+  regionFillAlphaOf,
   type MapRegion,
 } from "../../regions";
 import { fitSubmapTransform, type SubmapFit } from "../../coords";
@@ -55,6 +63,7 @@ import {
 import { BAKE_MARGIN, bakeCoast, bakeKeyOf } from "../../coastBake";
 import { filterFor } from "../../style";
 import { applyLabelWeights, setLabelScale, syncLabels } from "./labelSync";
+import { elementFlipXOf } from "../../types";
 import type { MapSubmap } from "../../types";
 
 /* ───────────────────────── 常量 ───────────────────────── */
@@ -246,8 +255,117 @@ export function submapBakeResolution(effectiveScale: number, baseResolution: num
   return Math.min(SUBMAP_BAKE_MAX_RES, Math.max(SUBMAP_BAKE_MIN_RES, tiered));
 }
 
-/** 区块多边形的轴对齐包围盒（世界坐标）。与 facade 的 regionBoundsOf 同义，独立一份避免循环依赖 */
-export function polygonBounds(polygon: readonly { x: number; y: number }[]): {
+/* ───────────────────────── 边界羽化带（boundary 篇 §2.2 方案 2） ───────────────────────── */
+
+/**
+ * 羽化带总宽（**子图本地**单位；纸 1024²，约占 2.3%）。
+ *
+ * 【为什么不是父图世界单位】羽化 Graphics 画在子图本地坐标里，随贴合变换一起缩放；
+ * 用本地单位让「羽化宽度 ≈ 纸宽的固定比例」，与区块大小无关 —— 郡图的羽化和
+ * 大陆图的羽化在各自的纸上看起来一样宽。
+ */
+export const SUBMAP_FEATHER_WIDTH = 24;
+
+/** 羽化带的分段数：每段 ≈ 4 本地单位（区块满屏时 ≈1.5px），分段渐变肉眼无台阶 */
+export const SUBMAP_FEATHER_STEPS = 6;
+
+/** 多边形有向面积（shoelace；屏幕坐标系 y 向下） */
+function signedArea(polygon: readonly { x: number; y: number }[]): number {
+  let sum = 0;
+  for (let i = 0; i < polygon.length; i += 1) {
+    const a = polygon[i];
+    const b = polygon[(i + 1) % polygon.length];
+    sum += a.x * b.y - b.x * a.y;
+  }
+  return sum / 2;
+}
+
+/** 一条边的**内向**单位法线（inward 由多边形绕向决定，见 `insetPolygon`） */
+function edgeInwardNormal(
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+  inward: number,
+): { x: number; y: number } {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const len = Math.hypot(dx, dy) || 1;
+  return { x: (dy / len) * inward, y: (-dx / len) * inward };
+}
+
+/**
+ * 多边形**向内**偏移 depth 的近似：每个顶点沿两条邻边内法线的角平分线移动。
+ *
+ * 【miter 限幅】锐角处角平分线偏移需放大 `1/cos(θ/2)` 才能保持带距恒定，
+ * 但接近简并的顶点（θ→180°的尖刺）会放大到无穷 —— 钳在 1/0.35 ≈ 2.9 倍，
+ * 尖角处带距略窄（羽化带上肉眼不可辨），换整条带不被一个坏点拉爆。
+ *
+ * 【绕向自适应】generator 产出的多边形绕向不保证一致，用有向面积现算内向方向。
+ */
+export function insetPolygon(
+  polygon: readonly { x: number; y: number }[],
+  depth: number,
+): Array<{ x: number; y: number }> {
+  const n = polygon.length;
+  if (n < 3 || !(depth > 0)) return [...polygon];
+  const inward = signedArea(polygon) < 0 ? 1 : -1;
+  const out: Array<{ x: number; y: number }> = [];
+  for (let i = 0; i < n; i += 1) {
+    const prev = polygon[(i - 1 + n) % n];
+    const cur = polygon[i];
+    const next = polygon[(i + 1) % n];
+    const n1 = edgeInwardNormal(prev, cur, inward);
+    const n2 = edgeInwardNormal(cur, next, inward);
+    let bx = n1.x + n2.x;
+    let by = n1.y + n2.y;
+    const blen = Math.hypot(bx, by);
+    if (blen < 1e-9) {
+      bx = n1.x;
+      by = n1.y;
+    } else {
+      bx /= blen;
+      by /= blen;
+    }
+    const cos = bx * n1.x + by * n1.y;
+    const gain = cos > 0.35 ? 1 / cos : 1 / 0.35;
+    out.push({ x: cur.x + bx * depth * gain, y: cur.y + by * depth * gain });
+  }
+  return out;
+}
+
+/** 一段羽化带：沿 `path`（内缩多边形）画一条 `width` 宽的描边，作为擦除强度 `alpha` 的斑 */
+export interface FeatherBand {
+  path: Array<{ x: number; y: number }>;
+  width: number;
+  alpha: number;
+}
+
+/**
+ * 羽化擦除计划：把「边界向内 width 单位线性渐隐」切成 steps 段同心带。
+ *
+ * 第 i 段覆盖「距边界 (i-1)·step ~ i·step」的环带 —— 用**中点内缩多边形的描边**
+ * 表达（alignment 0.5 居中描边，宽度 = step，恰好铺满环带），不需要打孔填充。
+ * 擦除强度取环带中点处的线性值 `1 - (i-0.5)/steps`：最外圈几乎全擦（透出父图地表），
+ * 最内圈几乎不擦（子图内容完整）。
+ */
+export function featherBands(
+  polygon: readonly { x: number; y: number }[],
+  width: number = SUBMAP_FEATHER_WIDTH,
+  steps: number = SUBMAP_FEATHER_STEPS,
+): FeatherBand[] {
+  if (polygon.length < 3 || !(width > 0) || !(steps >= 1)) return [];
+  const step = width / steps;
+  const bands: FeatherBand[] = [];
+  for (let i = 1; i <= steps; i += 1) {
+    bands.push({
+      path: insetPolygon(polygon, (i - 0.5) * step),
+      width: step,
+      alpha: 1 - (i - 0.5) / steps,
+    });
+  }
+  return bands;
+}
+
+/** 区块多边形的轴对齐包围盒（世界坐标）。与 facade 的 regionBoundsOf 同义，独立一份避免循环依赖 */export function polygonBounds(polygon: readonly { x: number; y: number }[]): {
   x: number;
   y: number;
   width: number;
@@ -426,7 +544,8 @@ export function buildSubmapNode(
     const fill = new Graphics();
     for (const subRegion of regions) {
       fill.poly(toFlatPoints(subRegion.polygon));
-      fill.fill({ color: subRegion.color, alpha: REGION_FILL_ALPHA });
+      // 静态层次衰减（P2-2）：与父图同一张系数表 —— 子图的层级语义与父图同构
+      fill.fill({ color: subRegion.color, alpha: regionFillAlphaOf(subRegion.level) });
     }
 
     // 边界：屏幕恒定线宽，线宽变了要重画（见 `drawBorders`）
@@ -455,7 +574,8 @@ export function buildSubmapNode(
         g.stroke({
           width,
           color: REGION_BORDER_COLOR,
-          alpha: REGION_BORDER_ALPHA,
+          // 边界与填充共用同一张静态系数表（P2-2），与父图同款
+          alpha: regionBorderAlphaOf(subRegion.level),
           alignment: 0.5,
         });
       }
@@ -488,6 +608,10 @@ export function buildSubmapNode(
     sprite.width = def.baseWidth * el.scale * factor;
     sprite.height = def.baseHeight * el.scale * factor;
     sprite.rotation = (el.rotation * Math.PI) / 180;
+    // 镜像翻转（P1-4）：与父图素材层同一条规则（见 MapCanvas/index.tsx 的同款
+    // 注释）—— pixi 8 的 `_setWidth` 保留 scale.x 符号，符号必须每次显式重设；
+    // 锚点 (0.5,1) 水平居中，翻转不位移，命中/选中框天然一致。
+    sprite.scale.x = Math.abs(sprite.scale.x) * (elementFlipXOf(el) ? -1 : 1);
     target.addChild(sprite);
   }
 
@@ -495,6 +619,36 @@ export function buildSubmapNode(
   const labelHandles = syncLabels(labelRoot, submap.labels, levelCount);
   applyLabelWeights(labelRoot, plan.levelAlphas);
   setLabelScale(labelHandles.values(), Math.max(1e-6, spec.effectiveScale));
+
+  // ── 边界羽化带：只有自带海面的子图（路径 A′ 绑定整图）才有色差缝要糊 ──
+  //
+  // 【为什么 content 必须挂 AlphaFilter】`erase` 是 destination-out，直接画的话
+  // 帧缓冲里已有的**父图像素也会被一起擦掉** —— 表现为「子图边缘一圈把父图
+  // 擦穿成窗口底色」。挂上 AlphaFilter（alpha=1，视觉恒等）后 content 先整体
+  // 渲染进独立纹理，erase 只擦纹理内的子图内容，合成时羽化处自然透出父图地表。
+  //
+  // 【为什么是描边带不是打孔填充】环带 = 内缩多边形的中点描边（alignment 0.5），
+  // 一条 stroke 就是一段环带，不依赖「poly+poly 即打孔」的填充语义，几何还能
+  // 脱离 Pixi 单测（featherBands 是纯函数）。
+  if (hasLand) {
+    const bands = featherBands(toLocalPolygon(region.polygon, spec.fit));
+    if (bands.length > 0) {
+      const feather = new Graphics();
+      for (const band of bands) {
+        feather.poly(toFlatPoints(band.path));
+        feather.stroke({
+          width: band.width,
+          color: 0xffffff,
+          alpha: band.alpha,
+          alignment: 0.5,
+          join: "round",
+        });
+      }
+      feather.blendMode = "erase";
+      content.addChild(feather);
+      content.filters = [new AlphaFilter()];
+    }
+  }
 
   // ── 海岸烘焙（子图自己的陆地 + 风格 + 纸纹）──
   let coastRt: ReturnType<typeof bakeCoast> | null = null;

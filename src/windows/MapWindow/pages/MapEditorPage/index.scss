@@ -188,11 +188,47 @@
   font-variant-numeric: tabular-nums;
 }
 
+/**
+ * 折线样式下拉（绘制态）。
+ *
+ * 定宽 96px：档名是 2~4 个汉字（官道 / 小径 / 河流 / 山脊 / 势力边界），
+ * 不定宽会让右侧的「已画 N 点」在换档时左右横跳。
+ */
+.map-editor__polyline-style {
+  width: 96px;
+}
+
 // ── 主体 ──
 .map-editor__body {
   flex: 1;
   min-height: 0;
   display: flex;
+}
+
+/**
+ * 左栏：素材库（上，吃满剩余高度）+ 图层面板（下，固定内容高）。
+ *
+ * 【为什么把 188px 宽度挪到这一层】两段必须等宽，宽度写在两处就一定会漂
+ * （素材面板 188、图层 200 这种）；宽度只有这一个出处，子面板一律 `width:auto`。
+ * 【为什么 `min-height: 0`】flex column 的子项默认 `min-height:auto`，
+ * 里面是 `overflow-y:auto` 的素材库时，父级会被内容顶高而不是滚起来。
+ */
+.map-editor__left {
+  width: 188px;
+  flex-shrink: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--app-border);
+  background: var(--app-surface);
+
+  // 素材库让出宽度与外框（边框归本层，否则两段之间会多一条竖线）
+  > .sprite-panel {
+    width: auto;
+    flex: 1 1 auto;
+    min-height: 0;
+    border-right: 0;
+  }
 }
 
 // ── 「更多」收纳面板 ──

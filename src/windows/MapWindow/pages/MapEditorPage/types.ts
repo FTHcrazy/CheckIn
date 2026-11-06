@@ -6,6 +6,8 @@
  */
 import { hslToRgb, normalizeRegionSchema } from "./regions";
 import type { MapRegion, Point, RegionLevelDef } from "./regions";
+import { normalizeLayerState } from "./layerState";
+import type { MapLayerStateMap } from "./layerState";
 
 /**
  * 世界坐标点。
@@ -89,6 +91,44 @@ export interface MapLabel {
 }
 
 /**
+ * 一条折线要素（河流 / 道路 / 山脊 / 边界）。
+ *
+ * 【为什么是一套类型 + `kind`，而不是每种线各建一个类型】见 B4 PRD D5：
+ * 它们的**几何与编辑方式完全相同**（拖节点、插点、删点），只有外观与语义不同。
+ * 按 `kind` 分类型会让"移动节点"这类代码写五遍，且新增一种线要改五处。
+ *
+ * 【`closed` 只描边、不填充】见 D6：`regions` 已占 polygon 语义（tiling 划分），
+ * 再加自由填充面就要处理与区块的重叠、填充混合、导出与子图裁剪四套规则。
+ * 湖泊 / 势力范围用闭合折线描边已够用；真要上色是独立需求。
+ */
+export interface MapPolyline {
+  /** 实例唯一 id（`pl_` 前缀） */
+  id: string;
+  /** 语义类型（决定默认样式与图标，不影响几何） */
+  kind: "road" | "river" | "ridge" | "border" | "route";
+  /** 样式档 id（见 B4 PRD §4.4 的样式表）；`kind` 只是默认样式的来源 */
+  styleId: string;
+  /** 世界坐标控制点；首尾是端点，中间是控制点（渲染时走 Catmull-Rom 平滑） */
+  points: Point[];
+  /** `true` = 首尾相连（湖泊 / 势力范围轮廓），v1 只描边 */
+  closed: boolean;
+  /** 归属层级，语义同 `MapElement.level`（`null` = 层级无关，任何缩放都可见） */
+  level: number | null;
+  /** 语义标签（「官道」「清河」），纯展示，不等于 `kind` */
+  label?: string;
+  /**
+   * 线宽倍数（属性面板的滑杆，`0.5 ~ 2.5`，缺省 1）。
+   *
+   * 【为什么是"倍数"而不是绝对线宽】样式档负责"这条线该多粗"的手感，
+   * 用户只需要在同一档内微调（"我这块地的官道略细一点"）。存倍数后，
+   * 换样式档不会把用户调过的粗细一起丢掉 —— 存绝对值就会。
+   *
+   * 可选 + 零写入：没拖过滑杆的线不写这个字段。
+   */
+  widthScale?: number;
+}
+
+/**
  * 一张嵌套子地图（区块内嵌的独立地图）。
  *
  * 【为什么是「独立坐标系 + 独立内容」而不是「把父图一部分切开复用」】
@@ -112,6 +152,13 @@ export interface MapSubmap {
   /** 子图自己的素材 / 标注（复用 MapElement / MapLabel，level 语义在子图局部） */
   elements: MapElement[];
   labels: MapLabel[];
+  /**
+   * 子图自己的折线（复用 `MapPolyline`，坐标在**子图本地**）。
+   *
+   * 可选 + 零写入：老子图不写值，读点走 `submapPolylines`。
+   * B4-1 只落数据模型（子图内画线的入口留到 B4-2 之后，见 PRD §9-3）。
+   */
+  polylines?: MapPolyline[];
   /** 子图可独立换风格 */
   style: MapStyle;
   /** 子图可独立换底图（默认继承父图） */
@@ -149,6 +196,21 @@ export interface MapDocument {
   elements: MapElement[];
   /** 随机生成的区块划分（空数组 = 未分区） */
   regions: MapRegion[];
+  /**
+   * 折线要素（河流 / 道路 / 山脊 / 边界）。**可选**：老文档不写值。
+   *
+   * 【与 `regions` / `elements` 的"可选性"不一致，是有意的】那两个是老字段
+   * （B4 之前就在），已经按 `[]` 落库；`polylines` 是新字段，按零写入原则
+   * 不补默认值 —— 读点统一走 `docPolylines(doc)`，禁止各处写 `?? []`。
+   */
+  polylines?: MapPolyline[];
+  /**
+   * 逻辑图层的显隐 / 锁定状态。**可选**：老文档不写值（零写入）。
+   *
+   * 读写一律走 `layerState.ts` 的 `layerVisibleOf` / `layerLockedOf`：
+   * `region.visible` 不在这里（事实源是 `showRegions`，见 B4 PRD D4）。
+   */
+  layerState?: MapLayerStateMap;
   /**
    * 层级定义（长度 = 层数，1~4）。**可选**：老文档不写值，读时回落默认 4 级。
    *
@@ -195,6 +257,18 @@ export interface MapElement {
    * 靠它做"同素材不同色"的抖动）。
    */
   tint?: number;
+  /**
+   * 是否左右镜像翻转（观感批次 C · P1-4「镜像翻转破重复」）。
+   *
+   * 【为什么可选而不是必填】与 `opacity` / `tint` 同款理由：落库的 `doc_json`
+   * 一定比"当前代码"老，旧存档没有这个字段，读点必须兜底 —— 在**读点**
+   * （`elementFlipXOf`）回落 `false`（原样渲染），而不是迁移时补值，
+   * "宁可多带一个字段、迁移不替用户重排数据"的原则延续。
+   *
+   * 【为什么是布尔而不是角度】一键成图只需要"这一张贴不翻"两种状态；
+   * 任意角度镜像属于旋转变换的范畴，等真有需求再加字段。
+   */
+  flipX?: boolean;
   /**
    * 放置时所处的层级序号（0 = 大陆 … 3 = 郡，见 lod.ts 的 `activeLevel`）。
    *
@@ -265,6 +339,22 @@ export function migrateDoc(raw: unknown): MapDocument {
   ) {
     delete out.regionSchema;
   }
+  // `layerState` 同理：只删不加。未知层 key、非布尔值、以及 `region.visible`
+  // （双源，见 B4 PRD D4）在这里被剔除；剔完为空则整个字段删掉，
+  // 保证"从没碰过图层面板"的文档迁移后形状逐字节不变。
+  if (Object.prototype.hasOwnProperty.call(out, "layerState")) {
+    const normalized = normalizeLayerState(out.layerState);
+    if (normalized === null) delete out.layerState;
+    else out.layerState = normalized;
+  }
+  // `polylines` 只有"存在且不是数组"这一种非法形态（元素结构由编辑动作保证）。
+  // 同样只删不加：没有该字段的老文档不受影响。
+  if (
+    Object.prototype.hasOwnProperty.call(out, "polylines") &&
+    !Array.isArray(out.polylines)
+  ) {
+    delete out.polylines;
+  }
   return out;
 }
 
@@ -281,6 +371,29 @@ export function createLabelId(): string {
 /** 生成子地图 id（`sm_` 前缀，与 `createElementId` 同款） */
 export function createSubmapId(): string {
   return `sm_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+}
+
+/** 生成折线 id（`pl_` 前缀，与其余 id 同款） */
+export function createPolylineId(): string {
+  return `pl_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+}
+
+/**
+ * 文档里的折线（读点唯一出口）。
+ *
+ * 与 `docPolylines` 一起收口，是为了让"新字段可选"这件事只在这一处兜底：
+ * 渲染、命中测试、面板计数、导出各自写一次 `doc.polylines ?? []`，将来
+ * 改成必填字段时就要满仓库找。返回只读数组，调用方不得就地修改。
+ */
+export function docPolylines(doc: Pick<MapDocument, "polylines">): readonly MapPolyline[] {
+  return doc.polylines ?? [];
+}
+
+/** 子图里的折线（读点唯一出口，理由同 `docPolylines`） */
+export function submapPolylines(
+  submap: Pick<MapSubmap, "polylines"> | null | undefined,
+): readonly MapPolyline[] {
+  return submap?.polylines ?? [];
 }
 
 /**
@@ -327,6 +440,18 @@ export function elementTintHueOf(el: Pick<MapElement, "tint">): number {
   const v = el.tint;
   if (typeof v !== "number" || !Number.isFinite(v)) return ELEMENT_TINT_NONE;
   return Math.min(360, Math.max(0, v));
+}
+
+/**
+ * 素材的**有效**镜像翻转（读点兜底的唯一出口）。
+ *
+ * 【为什么严格判 `=== true`】旧存档没有这个字段（读作 false），但用户也可能
+ * 从外部导入 / 手改 doc_json：任何非布尔真值（如字符串 `"true"`）都不该
+ * 触发翻转 —— 翻转是渲染变换，脏数据宁可不翻（和 `opacity` 兜底朝"可见"、
+ * 这里兜底朝"原样"同一方向：默认永远安全）。
+ */
+export function elementFlipXOf(el: Pick<MapElement, "flipX">): boolean {
+  return el.flipX === true;
 }
 
 /**

@@ -41,14 +41,29 @@ const STATIC_STACK = ["sheet", "sea", "seaShade"] as const;
 
 describe("MapCanvas 场景图 z 序", () => {
   it("图层顺序的唯一定义处是 layers.ts（不是测试里手抄的一份）", () => {
-    // 8 层：static / coast / region / element / submap / label / overlay / draft
-    expect(WORLD_LAYER_ORDER).toHaveLength(8);
+    // 9 层：static / coast / region / polyline / element / submap / label / overlay / draft
+    expect(WORLD_LAYER_ORDER).toHaveLength(9);
     // 无重复（重复会让 addChild 拿到同一个 Container 两次，z 序静默错位）
     expect(new Set(WORLD_LAYER_ORDER).size).toBe(WORLD_LAYER_ORDER.length);
     // 海岸必须在区块**之下**（区块是"地表的划分"，要透出陆地材质）
     expect(worldLayerIndexOf("coast")).toBeLessThan(worldLayerIndexOf("regionLayer"));
     // 素材必须在区块之上（山是"长在地表上的东西"，不能被分区线切断）
     expect(worldLayerIndexOf("elementLayer")).toBeGreaterThan(worldLayerIndexOf("regionLayer"));
+  });
+
+  /**
+   * B4-2 的第一次"中间插层"。
+   *
+   * 折线的位置是两头都有约束的：压在区块之上（否则被 0.16 的填充盖淡）、
+   * 垫在素材之下（否则"路盖住山"）。此前项目里所有加层都是往末尾追加
+   * （`draftLayer`），这次是插在中间 —— 顺序写反了不会报错，只会看起来"山被路穿了"。
+   */
+  it("折线层插在区块与素材之间（压区块、垫素材）", () => {
+    const region = worldLayerIndexOf("regionLayer");
+    const polyline = worldLayerIndexOf("polylineLayer");
+    const element = worldLayerIndexOf("elementLayer");
+    expect(polyline).toBeGreaterThan(region);
+    expect(polyline).toBeLessThan(element);
   });
 
   it("草稿层排在 overlay 之后（用户正在画的线必须压过选中高亮）", () => {

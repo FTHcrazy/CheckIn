@@ -135,6 +135,19 @@ export interface SpriteDef {
    * 高频于同类时才标注，避免无依据的噪声权重。
    */
   weight?: number;
+  /**
+   * 是否允许一键成图随机左右镜像（P1-4「镜像翻转破重复」），缺省 `true`。
+   *
+   * 【为什么只有一部分标注 `false`】翻转能让观感素材量翻倍，但两类素材
+   * 翻了会"说谎"：
+   *   · **有朝向的人造物** —— 船头、码头伸海侧、桥孔与水面、门洞朝向，
+   *     翻转后与"靠岸方向"这类相邻要素的语义冲突（码头翻过去，
+   *     泊船的一侧就朝陆地了）；
+   *   · **文字 / 铭文类** —— 翻转即"碑文写反"（当前 52 张里没有，
+   *     留作新增素材的登记口径，与 `MANIFEST.json` 的逐张记录同步）。
+   * 自然地貌（山 / 树 / 沙丘 / 雪丘）永远可翻 —— 它们没有"正面"。
+   */
+  flippable?: boolean;
 }
 
 /** 分类展示元信息 */
@@ -199,17 +212,18 @@ export const SPRITES: SpriteDef[] = [
   { id: "military-camp", label: "营地", category: "settlement", src: militaryCamp, baseWidth: 95, baseHeight: 52, names: ["驻马营", "南坪大营"], terrains: ["settlement", "grassland", "plain"], zones: ["core"] },
 
   // ── 港渡（5，点要素；帆船是纯物件不带名）────────────────────
-  { id: "port-dock", label: "码头", category: "harbor", src: portDock, baseWidth: 120, baseHeight: 98, names: ["望潮港", "白沙港"], terrains: ["coast", "river", "settlement"], zones: ["core"] },
-  { id: "port-harbor", label: "海港", category: "harbor", src: portHarbor, baseWidth: 140, baseHeight: 110, names: ["鱼盐港", "千帆港"], terrains: ["coast", "sea"], zones: ["core"] },
+  // 人造物有朝向（船头 / 码头伸海侧 / 桥孔 / 门洞），一键成图不镜像（P1-4）
+  { id: "port-dock", label: "码头", category: "harbor", src: portDock, baseWidth: 120, baseHeight: 98, names: ["望潮港", "白沙港"], terrains: ["coast", "river", "settlement"], zones: ["core"], flippable: false },
+  { id: "port-harbor", label: "海港", category: "harbor", src: portHarbor, baseWidth: 140, baseHeight: 110, names: ["鱼盐港", "千帆港"], terrains: ["coast", "sea"], zones: ["core"], flippable: false },
   { id: "lighthouse", label: "灯塔", category: "harbor", src: lighthouse, baseWidth: 45, baseHeight: 148, names: ["望灯塔", "孤灯崖"], terrains: ["coast", "sea"], zones: ["core"] },
-  { id: "bridge-arch", label: "石桥", category: "harbor", src: bridgeArch, baseWidth: 95, baseHeight: 65, names: ["长虹桥", "落雁桥"], terrains: ["river", "settlement"], zones: ["core"] },
-  { id: "sailing-ship", label: "帆船", category: "harbor", src: sailingShip, baseWidth: 95, baseHeight: 109, terrains: ["sea", "coast", "lake"], zones: ["core"] },
+  { id: "bridge-arch", label: "石桥", category: "harbor", src: bridgeArch, baseWidth: 95, baseHeight: 65, names: ["长虹桥", "落雁桥"], terrains: ["river", "settlement"], zones: ["core"], flippable: false },
+  { id: "sailing-ship", label: "帆船", category: "harbor", src: sailingShip, baseWidth: 95, baseHeight: 109, terrains: ["sea", "coast", "lake"], zones: ["core"], flippable: false },
 
   // ── 遗迹（7，点要素）───────────────────────────────────────
   { id: "ruins-wall", label: "断壁残垣", category: "ruin", src: ruinsWall, baseWidth: 95, baseHeight: 69, names: ["无名废墟", "故城遗址"], terrains: ["landmark"], zones: ["core"] },
-  { id: "ruins-arch", label: "荒废石门", category: "ruin", src: ruinsArch, baseWidth: 75, baseHeight: 72, names: ["荒废石门", "旧邦之门"], terrains: ["landmark"], zones: ["core"] },
-  { id: "mountain-pass", label: "关隘", category: "ruin", src: mountainPass, baseWidth: 115, baseHeight: 125, names: ["雁回关", "寒风关"], terrains: ["landmark", "mountain"], zones: ["core"] },
-  { id: "great-gate", label: "雄关", category: "ruin", src: greatGate, baseWidth: 135, baseHeight: 133, names: ["铁门关", "天险雄关"], terrains: ["landmark", "mountain"], zones: ["core"] },
+  { id: "ruins-arch", label: "荒废石门", category: "ruin", src: ruinsArch, baseWidth: 75, baseHeight: 72, names: ["荒废石门", "旧邦之门"], terrains: ["landmark"], zones: ["core"], flippable: false },
+  { id: "mountain-pass", label: "关隘", category: "ruin", src: mountainPass, baseWidth: 115, baseHeight: 125, names: ["雁回关", "寒风关"], terrains: ["landmark", "mountain"], zones: ["core"], flippable: false },
+  { id: "great-gate", label: "雄关", category: "ruin", src: greatGate, baseWidth: 135, baseHeight: 133, names: ["铁门关", "天险雄关"], terrains: ["landmark", "mountain"], zones: ["core"], flippable: false },
   { id: "watchtower", label: "哨塔", category: "ruin", src: watchtower, baseWidth: 50, baseHeight: 77, names: ["戍北哨塔", "望北台"], terrains: ["landmark", "settlement", "mountain"], zones: ["core"] },
   { id: "temple", label: "山神庙", category: "ruin", src: temple, baseWidth: 80, baseHeight: 75, names: ["山神庙", "古刹"], terrains: ["landmark", "mountain", "settlement"], zones: ["core"] },
 

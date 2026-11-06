@@ -25,8 +25,8 @@ import { Texture } from "pixi.js";
  */
 export const PAPER_GRAIN_SIZE = 512;
 
-/** 颗粒基准亮度：越小越暗（multiply 后陆地越深）。0.88 ≈ 平均压暗 12% */
-export const PAPER_GRAIN_LUMA = 0.88;
+/** 颗粒基准亮度：越小越暗（multiply 后陆地越深）。0.82 ≈ 平均压暗 18% */
+export const PAPER_GRAIN_LUMA = 0.82;
 
 /** 32 位整数散列（无符号），用于格点随机值 —— 同 seed 同图，便于复现 */
 function hash2(x: number, y: number, seed: number): number {
@@ -85,8 +85,9 @@ export function writePaperGrainPixels(
       const coarse = tileableNoise(x, y, coarseCell, size, seed);
       const fine = tileableNoise(x, y, fineCell, size, seed ^ 0x5f356495);
       const speck = hash2(x, y, seed ^ 0x1b873593);
-      // 权重：粗 0.5 / 细 0.32 / 网点 0.18 → 远看是纸的明暗，近看是纤维
-      const v = coarse * 0.5 + fine * 0.32 + speck * 0.18;
+      // 权重：粗 0.62 / 细 0.26 / 网点 0.12 → 加大粗粒占比让"纸的明暗"更抢眼，
+      // 否则 multiply 之后颗粒被 fill 米黄稀释成若有若无的均匀灰（底部"光秃秃"）。
+      const v = coarse * 0.62 + fine * 0.26 + speck * 0.12;
       // 只往"变暗"方向走：multiply 的纸纹超过 1 会提亮，那不是纸，是灯
       const g = Math.round(255 * (PAPER_GRAIN_LUMA + (1 - PAPER_GRAIN_LUMA) * v));
       const i = (y * size + x) * 4;

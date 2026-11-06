@@ -19,6 +19,7 @@ import {
   fitScaleFor,
   fitToRect,
   hitTestElement,
+  isCenterCovered,
   type CanvasSize,
 } from "../coords";
 import { SPRITES, SPRITE_CATEGORIES, SPRITE_MAP } from "../sprites";
@@ -66,16 +67,29 @@ import {
   type MapLabel,
   type MapLabelSize,
   type MapLand,
+  type MapPolyline,
   type MapStyle,
   type MapSubmap,
   type Rect,
   createLabelId,
   createElementId,
+  createPolylineId,
   createSubmapId,
+  docPolylines,
   LABEL_ABOVE_ELEMENT,
   LABEL_DEFAULT_SIZE,
 } from "../types";
 import { useTextureCache } from "./useTextureCache";
+import { layerLockedOf } from "../layerState";
+import type { MapLayerId } from "../layerState";
+import {
+  POLYLINE_PICK_PAD_PX,
+  defaultStyleIdOf,
+  effectiveWidthWorld,
+  polylineStyleOf,
+  type PolylineKind,
+} from "../polylineStyle";
+import { distanceToPath, smoothPolyline } from "../polylineGeometry";
 import { useMapDocStore } from "../store/useMapDocStore";
 import { useMapViewportStore, BASE_BOUNDS } from "../store/useMapViewportStore";
 import { useMapSelectionStore } from "../store/useMapSelectionStore";
@@ -95,6 +109,7 @@ export function useMapEditor(canvasSize: CanvasSize) {
   const viewport = useMapViewportStore((s) => s.viewport);
   const selectedId = useMapSelectionStore((s) => s.selectedId);
   const selectedRegionId = useMapSelectionStore((s) => s.selectedRegionId);
+  const selectedPolylineId = useMapSelectionStore((s) => s.selectedPolylineId);
   const pendingSpriteId = useMapSelectionStore((s) => s.pendingSpriteId);
   const undoStack = useMapDocStore((s) => s.undoStack);
   const redoStack = useMapDocStore((s) => s.redoStack);
@@ -192,6 +207,7 @@ export function useMapEditor(canvasSize: CanvasSize) {
   const setViewport = useMapViewportStore((s) => s.setViewport);
   const setSelectedId = useMapSelectionStore((s) => s.setSelectedId);
   const setSelectedRegionId = useMapSelectionStore((s) => s.setSelectedRegionId);
+  const setSelectedPolylineId = useMapSelectionStore((s) => s.setSelectedPolylineId);
   const setPendingSpriteId = useMapSelectionStore((s) => s.setPendingSpriteId);
 
   /** 层级变化后把当前缩放夹回合法区间 */
@@ -256,11 +272,43 @@ export function useMapEditor(canvasSize: CanvasSize) {
     useMapViewportStore.getState().handlePan(dx, dy);
   }, []);
 
-  /** 放置素材到世界坐标 */
+  /**
+   * 放置素材到世界坐标。
+   *
+   * @returns 是否真的落了位。`false` = 落位被避让拦截（P2-3：新素材的中心
+   * 落进已有素材命中盒的呼吸边内），调用方应保留"待落位素材"的选中态并
+   * 给出提示，让用户换个位置再点 —— 不是清掉重来。
+   *
+   * 【只拦新建，不拦移动】压住的素材要能被拖开解围，拦截若作用于
+   * `moveElementBy` 就是死锁 —— 见 coords.isCenterCovered 的注释。
+   */
   const placeSprite = useCallback(
-    (spriteId: string, world: { x: number; y: number }) => {
+    (spriteId: string, world: { x: number; y: number }): boolean => {
       const def = SPRITE_MAP[spriteId];
-      if (!def) return;
+      if (!def) return false;
+      // 避让（P2-3）：与命中测试同一条可见性门槛 + 同一套尺寸口径 ——
+      // "看得见的素材"才拦，且拦的就是"点得中的那个盒 + 呼吸边"。
+      if (
+        isCenterCovered(
+          world,
+          doc.elements.flatMap((el) => {
+            const d = SPRITE_MAP[el.spriteId];
+            if (!d) return [];
+            if (elementWeight(el.level, levelAlphas) < ELEMENT_PICK_MIN_WEIGHT) return [];
+            return [
+              {
+                x: el.x,
+                y: el.y,
+                width: d.baseWidth,
+                height: d.baseHeight,
+                scale: el.scale * elementSizeFactor(el.level, levelAlphas.length),
+              },
+            ];
+          }),
+        )
+      ) {
+        return false;
+      }
       const elementId = useMapDocStore.getState().placeSprite(spriteId, world, currentLevel);
       // 点要素带名（R-MAP-22「与地名联动」）：摆一个城市即出现默认名，
       // 双击可改。名池按「未占用优先」，全占用时数字后缀兜底。
@@ -274,13 +322,34 @@ export function useMapEditor(canvasSize: CanvasSize) {
         useMapDocStore.getState().setElementLabel(elementId, free ?? fallback);
       }
       setSelectedId(elementId);
+      return true;
     },
-    [currentLevel, setSelectedId],
+    [currentLevel, setSelectedId, doc.elements, levelAlphas],
   );
 
-  /** 命中测试：返回最上层（后放置 = 上层）被点中的元素 */
+  /**
+   * 素材层是否锁定。
+   *
+   * 【为什么单独算一个常量】`pickElement` 的 `useCallback` 依赖必须含它：
+   * 锁定只改 `doc.layerState`，`doc.elements` 的引用原样不动 —— 依赖写成
+   * `[doc.elements]` 就会让回调一直闭着**锁定之前**的文档，
+   * 表现为"锁了还能点中"（本功能写用例时就是这么被抓住的）。
+   */
+  const elementLayerLocked = layerLockedOf(doc, "element");
+
+  /**
+   * 命中测试：返回最上层（后放置 = 上层）被点中的元素。
+   *
+   * 【锁定语义（B4-1）】素材层锁定时**一律返回 `null`** —— 命中测试跳过该层是
+   * 锁的唯一定义（渲染不变、LOD 不变，只是"点不中、改不了"）。
+   *
+   * `ignoreLock` 只给**提示**用：页面在"没命中但层被锁"时再问一次，就能说出
+   * 「素材层已锁定」而不是让点击静默无反应（PRD §3.4 明写这是最差的结果）。
+   * 除提示外的任何编辑路径都不得传它。
+   */
   const pickElement = useCallback(
-    (world: { x: number; y: number }): MapElement | null => {
+    (world: { x: number; y: number }, options?: { ignoreLock?: boolean }): MapElement | null => {
+      if (!options?.ignoreLock && elementLayerLocked) return null;
       for (let i = doc.elements.length - 1; i >= 0; i -= 1) {
         const el = doc.elements[i];
         const def = SPRITE_MAP[el.spriteId];
@@ -300,7 +369,7 @@ export function useMapEditor(canvasSize: CanvasSize) {
       }
       return null;
     },
-    [doc.elements, levelAlphas],
+    [doc.elements, elementLayerLocked, levelAlphas],
   );
 
   /** 按世界坐标增量移动已选中元素（拖拽中高频调用，不入撤销栈） */
@@ -313,8 +382,9 @@ export function useMapEditor(canvasSize: CanvasSize) {
     useMapDocStore.getState().commitDragStart(doc);
   }, []);
 
-  /** 删除选中素材（连带删掉联动地名） */
+  /** 删除选中素材（连带删掉联动地名；素材层锁定时不删） */
   const removeSelected = useCallback(() => {
+    if (layerLockedOf(useMapDocStore.getState().doc, "element")) return;
     useMapDocStore.getState().removeSelected(selectedId);
     setSelectedId(null);
   }, [selectedId, setSelectedId]);
@@ -322,9 +392,155 @@ export function useMapEditor(canvasSize: CanvasSize) {
   /** 清空全部素材 */
   const clearAll = useCallback(() => {
     if (doc.elements.length === 0) return;
+    // 锁定层不能被"清空画布"整批端掉：面板上那把锁的含义就是"别动这一层"
+    if (layerLockedOf(useMapDocStore.getState().doc, "element")) return;
     useMapDocStore.getState().clearAll();
     setSelectedId(null);
   }, [doc.elements.length, setSelectedId]);
+
+  /* ───────────────── 逻辑图层（B4-1：图层面板的两个开关） ───────────────── */
+
+  /**
+   * 切某层的可见性。
+   *
+   * 【为什么页面不直接摸 store】沿用既有边界（架构 §6-2）：页面只做编排，
+   * 所有文档动作从本 hook 走。这里多一层转发几乎零成本，却让"图层可见性
+   * 是不是被某个动作顺带改了"只需要在一个文件里查。
+   */
+  const toggleLayerVisible = useCallback((id: MapLayerId) => {
+    useMapDocStore.getState().toggleLayerVisible(id);
+  }, []);
+
+  /** 切某层的锁定（只影响命中与编辑，不改渲染） */
+  const toggleLayerLock = useCallback((id: MapLayerId) => {
+    const store = useMapDocStore.getState();
+    store.setLayerLocked(id, !layerLockedOf(store.doc, id));
+  }, []);
+
+  /* ───────────────── 折线（B4-2 / R-MAP-26） ───────────────── */
+
+  /** 文档里的折线（读点唯一出口，见 `docPolylines`） */
+  const polylines = docPolylines(doc);
+  /** 折线层是否锁定（命中测试跳过的依据） */
+  const polylineLayerLocked = layerLockedOf(doc, "polyline");
+  /** 当前选中的折线；`null` = 未选中（或刚被删掉） */
+  const selectedPolyline = useMemo(
+    () => (selectedPolylineId ? polylines.find((p) => p.id === selectedPolylineId) ?? null : null),
+    [polylines, selectedPolylineId],
+  );
+
+  /**
+   * 折线命中测试（返回最上层 = 后画的那条）。
+   *
+   * 【为什么先平滑再算距离】画面上是一条曲线，用户是照着**看得见的曲线**去点的。
+   * 若只对控制点之间的直边算距离，弯出去的那一段就成了"看得见却点不中"。
+   * 采样数与渲染同一个常量，于是"看得见的线"与"点得中的线"必然是同一条。
+   *
+   * 【容差 = 线宽/2 + 6px】见 `POLYLINE_PICK_PAD_PX`：纯按线宽算的话，
+   * 一条 1px 的小径根本点不中。
+   */
+  const pickPolyline = useCallback(
+    (
+      world: { x: number; y: number },
+      options?: { ignoreLock?: boolean },
+    ): MapPolyline | null => {
+      if (!options?.ignoreLock && polylineLayerLocked) return null;
+      const px = 1 / Math.max(1e-6, viewport.scale);
+      for (let i = polylines.length - 1; i >= 0; i -= 1) {
+        const line = polylines[i];
+        // 层级权重为 0 的线在画面上不存在，点不中它（与素材同一条规则）
+        if (elementWeight(line.level, levelAlphas) < ELEMENT_PICK_MIN_WEIGHT) continue;
+        const style = polylineStyleOf(line.styleId, line.kind);
+        const width = effectiveWidthWorld(style, line.widthScale, viewport.scale);
+        // 与 drawPolyline 同一条退化守卫：<3 点的闭环按开链算（命中与画面一致）
+        const closed = line.closed && line.points.length >= 3;
+        const path = smoothPolyline(line.points, closed);
+        if (distanceToPath(path, world, closed) <= width / 2 + POLYLINE_PICK_PAD_PX * px) {
+          return line;
+        }
+      }
+      return null;
+    },
+    [polylines, polylineLayerLocked, levelAlphas, viewport.scale],
+  );
+
+  /**
+   * 落一条新折线并选中它（绘制态收尾的唯一出口）。
+   *
+   * `level` 取**落笔时**的主导层级（`currentLevel`），与素材同规则：在郡那一级画的
+   * 河属于郡，缩到洲去看时就该退场。少于 2 点直接丢弃 —— 一个点画不出线。
+   */
+  const addPolyline = useCallback(
+    (
+      points: readonly Point[],
+      options?: { kind?: PolylineKind; styleId?: string; label?: string; closed?: boolean },
+    ): string | null => {
+      if (points.length < 2) return null;
+      const kind = options?.kind ?? "road";
+      const line: MapPolyline = {
+        id: createPolylineId(),
+        kind,
+        styleId: options?.styleId ?? defaultStyleIdOf(kind),
+        points: points.map((p) => ({ x: p.x, y: p.y })),
+        closed: options?.closed === true,
+        level: currentLevel,
+      };
+      if (options?.label) line.label = options.label;
+      useMapDocStore.getState().addPolyline(line);
+      setSelectedPolylineId(line.id);
+      return line.id;
+    },
+    [currentLevel, setSelectedPolylineId],
+  );
+
+  /** 改折线属性（样式 / 层级 / 线宽 / 标签）；`coalesceKey` 让滑杆一次拖动只占一步撤销 */
+  const updatePolyline = useCallback(
+    (
+      id: string,
+      patch: Partial<
+        Pick<MapPolyline, "styleId" | "kind" | "level" | "label" | "closed" | "widthScale">
+      >,
+      coalesceKey?: string,
+    ) => {
+      useMapDocStore.getState().updatePolyline(id, patch, coalesceKey);
+    },
+    [],
+  );
+
+  /** 删除折线（并清掉选中，否则属性面板会挂在一个已不存在的对象上） */
+  const removePolyline = useCallback(
+    (id: string) => {
+      useMapDocStore.getState().removePolyline(id);
+      if (selectedPolylineId === id) setSelectedPolylineId(null);
+    },
+    [selectedPolylineId, setSelectedPolylineId],
+  );
+
+  /** 拖节点（高频、不入撤销栈；快照由拖拽开始时的 `commitDragStart` 记一次） */
+  const movePolylinePoint = useCallback(
+    (id: string, index: number, world: { x: number; y: number }) => {
+      useMapDocStore.getState().movePolylinePoint(id, index, world);
+    },
+    [],
+  );
+
+  /** 双击线段插点 / 双击节点删点（各记一步撤销） */
+  const insertPolylinePoint = useCallback(
+    (id: string, index: number, point: { x: number; y: number }) => {
+      useMapDocStore.getState().insertPolylinePoint(id, index, point);
+    },
+    [],
+  );
+
+  const deletePolylinePoint = useCallback(
+    (id: string, index: number) => {
+      useMapDocStore.getState().deletePolylinePoint(id, index);
+      // 删到只剩 1 点时 store 会整条删掉 —— 选中也要跟着清
+      const still = docPolylines(useMapDocStore.getState().doc).some((p) => p.id === id);
+      if (!still) setSelectedPolylineId(null);
+    },
+    [setSelectedPolylineId],
+  );
 
   /* ───────────────── 素材属性 / 剪贴板 / 微移（R-MAP-23 / R-MAP-25） ───────────────── */
 
@@ -355,40 +571,69 @@ export function useMapEditor(canvasSize: CanvasSize) {
   );
 
   /** 复制一份选中素材并选中新副本（Ctrl+D） */
+  /**
+   * 复制一份选中对象（素材或折线，B4-3 起折线同享）并选中新那份。
+   *
+   * 【为什么按选中类型分流而不是 store 内部猜】两类选中互斥但**并存于两个
+   * 字段**：id 落在哪个字段里，返回的新 id 就该回填到同一个字段 ——
+   * 否则"复制一条河"后面板浮出的是素材属性。
+   */
   const duplicateSelected = useCallback(() => {
+    if (selectedPolylineId) {
+      const nextId = useMapDocStore.getState().duplicateElement(selectedPolylineId);
+      if (nextId) setSelectedPolylineId(nextId);
+      return nextId;
+    }
     if (!selectedId) return null;
     const nextId = useMapDocStore.getState().duplicateElement(selectedId);
     if (nextId) setSelectedId(nextId);
     return nextId;
-  }, [selectedId, setSelectedId]);
+  }, [selectedId, selectedPolylineId, setSelectedId, setSelectedPolylineId]);
 
-  /** 复制选中素材进剪贴板（Ctrl+C；文档不变） */
+  /** 复制选中对象进剪贴板（Ctrl+C；文档不变）。折线与素材同一块剪贴板 */
   const copySelected = useCallback(() => {
+    if (selectedPolylineId) {
+      useMapDocStore.getState().copyElement(selectedPolylineId);
+      return;
+    }
     if (!selectedId) return;
     useMapDocStore.getState().copyElement(selectedId);
-  }, [selectedId]);
+  }, [selectedId, selectedPolylineId]);
 
-  /** 剪切选中素材（Ctrl+X = 复制 + 删除） */
+  /** 剪切选中对象（Ctrl+X = 复制 + 删除） */
   const cutSelected = useCallback(() => {
+    if (selectedPolylineId) {
+      useMapDocStore.getState().cutElement(selectedPolylineId);
+      setSelectedPolylineId(null);
+      return;
+    }
     if (!selectedId) return;
     useMapDocStore.getState().cutElement(selectedId);
     setSelectedId(null);
-  }, [selectedId, setSelectedId]);
+  }, [selectedId, selectedPolylineId, setSelectedId, setSelectedPolylineId]);
 
-  /** 粘贴剪贴板素材并选中（Ctrl+V；剪贴板不消耗，可连续粘贴） */
+  /**
+   * 粘贴剪贴板对象并选中（Ctrl+V；剪贴板不消耗，可连续粘贴）。
+   * 粘贴出来的类型跟随剪贴板内容：复制的是河，贴出来的也是河。
+   */
   const pasteClipboard = useCallback(() => {
     const nextId = useMapDocStore.getState().pasteElement();
-    if (nextId) setSelectedId(nextId);
+    if (!nextId) return null;
+    // 与 store 的形态判定同一把尺子：折线带 `points`，素材没有
+    const clip = useMapDocStore.getState().clipboard;
+    if (clip && "points" in clip) setSelectedPolylineId(nextId);
+    else setSelectedId(nextId);
     return nextId;
-  }, [setSelectedId]);
+  }, [setSelectedId, setSelectedPolylineId]);
 
-  /** 方向键 / WASD 微移选中素材（联动地名一起动，连按合并为一步撤销） */
+  /** 方向键 / WASD 微移选中对象（素材联动地名；折线整体平移。连按合并为一步撤销） */
   const nudgeSelected = useCallback(
     (dxWorld: number, dyWorld: number) => {
-      if (!selectedId) return;
-      useMapDocStore.getState().nudgeElement(selectedId, dxWorld, dyWorld);
+      const id = selectedPolylineId ?? selectedId;
+      if (!id) return;
+      useMapDocStore.getState().nudgeElement(id, dxWorld, dyWorld);
     },
-    [selectedId],
+    [selectedId, selectedPolylineId],
   );
 
   /**
@@ -887,6 +1132,9 @@ export function useMapEditor(canvasSize: CanvasSize) {
           y: p.y,
           scale: p.scale,
           rotation: p.rotation,
+          // 镜像翻转（P1-4）：生成器按素材 flippable 摇出的翻面随实例落档，
+          // 渲染侧按它做 scale.x 取反（见 MapCanvas / submapRender）
+          flipX: p.flipX,
           // 生成的是"成品图对象"：任何缩放下都可见（层级无关）
           level: null,
         }));
@@ -1069,10 +1317,26 @@ export function useMapEditor(canvasSize: CanvasSize) {
     applyViewport,
     placeSprite,
     pickElement,
+    /* ── 折线（B4-2）── */
+    polylines,
+    /** 当前选中的折线 id（选中态唯一来源） */
+    selectedPolylineId,
+    selectedPolyline,
+    polylineLayerLocked,
+    setSelectedPolylineId,
+    pickPolyline,
+    addPolyline,
+    updatePolyline,
+    removePolyline,
+    movePolylinePoint,
+    insertPolylinePoint,
+    deletePolylinePoint,
     moveElementBy,
     commitDragStart,
     removeSelected,
     clearAll,
+    toggleLayerVisible,
+    toggleLayerLock,
     updateElement,
     reorderSelected,
     duplicateSelected,

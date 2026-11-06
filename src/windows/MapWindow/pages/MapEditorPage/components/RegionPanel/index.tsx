@@ -16,7 +16,7 @@ import "./index.scss";
  * 区块操作面板 —— 选中一个区块后浮出的上下文操作条。
  *
  * 【职责】把「嵌套子地图」的两条生成路径与"进入/退出"闭环暴露给用户：
- *   · 未嵌子图 → 「圈定生成子图」（路径 B）+「绑定已有子图」（路径 A，预留）
+ *   · 未嵌子图 → 「圈定生成子图」（路径 B）+「绑定已有子图」（路径 A′ 跨图选择器）
  *   · 已嵌子图 → 子图摘要 + 「聚焦此区域」（进入）+「回到全景」（退出）+「移除子图」
  *   两者都追加「合并子区域」（R-REG-04）：把该区块的全部后代删掉，它自己成为叶子。
  *
@@ -58,7 +58,7 @@ interface RegionPanelProps {
   subtreeInfo?: { count: number; withSubmap: number };
   /** 圈定生成子图（路径 B） */
   onCarve: (regionId: string) => void;
-  /** 绑定已有子图（路径 A，预留） */
+  /** 绑定已有子图（路径 A′：先弹跨图选择器，拷贝一张库里的图到该区块） */
   onEmbed: (regionId: string) => void;
   /** 合并该区块的全部子区块（R-REG-04） */
   onMerge: (regionId: string) => void;
@@ -232,7 +232,7 @@ export default function RegionPanel({
                 圈定生成子图
               </Button>
             </Tooltip>
-            <Tooltip title="绑定一张已有子地图到该区块（路径 A，后续版本接入）">
+            <Tooltip title="从地图库选一张图，拷贝一份绑定到该区块（可撤销）">
               <Button
                 size="small"
                 icon={<FolderOpenOutlined />}

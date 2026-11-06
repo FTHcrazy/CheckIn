@@ -18,7 +18,7 @@
 import { App as AntApp } from "antd";
 import { useCallback, useEffect, useRef } from "react";
 import type { MapDocSummaryDTO } from "@/shared/types/electron";
-import { migrateDoc } from "../types";
+import { migrateDoc, type MapDocument } from "../types";
 import { resetMapDocStore, useMapDocStore } from "../store/useMapDocStore";
 import { resetMapSelectionStore } from "../store/useMapSelectionStore";
 import { useMapViewportStore } from "../store/useMapViewportStore";
@@ -479,5 +479,26 @@ export async function listMapWorkOptions(): Promise<Array<{ id: string; name: st
     return (await api.workOptions()) ?? [];
   } catch {
     return [];
+  }
+}
+
+/**
+ * 取一张图的**完整文档**（路径 A′「绑定已有子图」用）。
+ *
+ * 【为什么在这里而不是选择器组件里做】`migrateDoc` 归一是装载管线的职责
+ * （与 `openDoc` 同一条规则），选择器保持纯展示；打不开（已删 / 未就绪）返回 null，
+ * 由调用方决定提示文案。
+ */
+export async function loadMapDocById(
+  id: string,
+): Promise<{ doc: MapDocument; title: string } | null> {
+  const api = mapApi();
+  if (!api) return null;
+  try {
+    const payload = await api.get(id);
+    if (!payload) return null;
+    return { doc: migrateDoc(payload.doc), title: payload.title };
+  } catch {
+    return null;
   }
 }

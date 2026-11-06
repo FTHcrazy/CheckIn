@@ -11,9 +11,13 @@ vi.mock("pixi.js", () => ({
   Text: class {},
   TextStyle: class {},
   ColorMatrixFilter: class {},
+  /* 子图羽化的隔离滤镜替身（buildSubmapNode 给 content 挂它） */
+  AlphaFilter: class {},
 }));
 
 import {
+  featherBands,
+  insetPolygon,
   polygonBounds,
   submapBakeResolution,
   submapBorderWidth,
@@ -277,5 +281,57 @@ describe("submapBakeResolution：海岸烘焙倍率", () => {
     expect(submapBakeResolution(Number.NaN, Number.NaN)).toBe(SUBMAP_BAKE_MIN_RES);
     expect(submapBakeResolution(0, 2)).toBe(SUBMAP_BAKE_MIN_RES);
     expect(submapBakeResolution(-5, 2)).toBe(SUBMAP_BAKE_MIN_RES);
+  });
+});
+
+describe("边界羽化（insetPolygon / featherBands）", () => {
+  /** 顺时针正方形（屏幕坐标 y 向下，顶点序 = TL→TR→BR→BL） */
+  const square = [
+    { x: 0, y: 0 },
+    { x: 100, y: 0 },
+    { x: 100, y: 100 },
+    { x: 0, y: 100 },
+  ];
+
+  it("insetPolygon：正方形向内缩 depth，四边各收进 depth", () => {
+    const inset = insetPolygon(square, 8);
+    expect(inset[0]).toEqual({ x: 8, y: 8 });
+    expect(inset[1]).toEqual({ x: 92, y: 8 });
+    expect(inset[2]).toEqual({ x: 92, y: 92 });
+    expect(inset[3]).toEqual({ x: 8, y: 92 });
+  });
+
+  it("insetPolygon：绕向相反的多边形同样向内缩（不缩成向外扩）", () => {
+    const reversed = [...square].reverse();
+    const inset = insetPolygon(reversed, 8);
+    for (const p of inset) {
+      expect(p.x).toBeGreaterThanOrEqual(7.9);
+      expect(p.x).toBeLessThanOrEqual(92.1);
+      expect(p.y).toBeGreaterThanOrEqual(7.9);
+      expect(p.y).toBeLessThanOrEqual(92.1);
+    }
+    // 面积必须变小（向内），不能反向膨胀
+    const area = (poly: Array<{ x: number; y: number }>) =>
+      Math.abs(poly[1].x - poly[0].x) * Math.abs(poly[2].y - poly[1].y);
+    expect(area(inset)).toBeLessThan(100 * 100);
+  });
+
+  it("featherBands：steps 段同心带，宽度 = width/steps，alpha 线性递减", () => {
+    const bands = featherBands(square, 24, 6);
+    expect(bands).toHaveLength(6);
+    expect(bands[0].width).toBeCloseTo(4);
+    // 最外圈几乎全擦（透父图），最内圈几乎不擦
+    expect(bands[0].alpha).toBeCloseTo(1 - 0.5 / 6);
+    expect(bands[5].alpha).toBeCloseTo(1 - 5.5 / 6);
+    expect(bands[0].alpha).toBeGreaterThan(bands[5].alpha);
+    // 各带的路径深度单调内缩：第 i 带路径上离原边界的最近距离 = (i-0.5)*step
+    expect(bands[0].path[0].x).toBeCloseTo(2);
+    expect(bands[5].path[0].x).toBeCloseTo(22);
+  });
+
+  it("featherBands：退化入参返回空（不挂羽化层）", () => {
+    expect(featherBands([{ x: 0, y: 0 }])).toEqual([]);
+    expect(featherBands(square, 0)).toEqual([]);
+    expect(featherBands(square, 24, 0)).toEqual([]);
   });
 });

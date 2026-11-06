@@ -1,0 +1,87 @@
+/**
+ * LayerPanel 局部样式（左栏底部的图层组）
+ *
+ * 与 SpritePanel 同处左栏：上面是"用什么画"（素材库），下面是"画在哪一层"。
+ * 颜色一律走主题变量 var(--app-*)，禁止硬编码（AGENTS §6.1）。
+ */
+
+.layer-panel {
+  // 高度由内容决定、上限一半栏高：图层只有 6 行，撑满会把素材库挤瘦
+  flex: 0 0 auto;
+  max-height: 48%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--app-border);
+  background: var(--app-surface);
+}
+
+/**
+ * 折叠头：整行可点。
+ * 【为什么补 justify-content】antd 的 text 按钮默认居中，做标题栏时文字要贴左，
+ * 否则「图层」二字会飘在半空、与下面各行左缘对不齐。
+ */
+.layer-panel__head.ant-btn {
+  justify-content: flex-start;
+  height: 32px;
+  padding: 0 10px;
+  flex: 0 0 auto;
+  border-radius: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.layer-panel__rows {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 2px 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.layer-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 2px 0 8px;
+  border-radius: var(--app-radius-item, 8px);
+
+  &:hover {
+    background: var(--app-surface-alt);
+  }
+}
+
+.layer-row__name {
+  flex: 1 1 auto;
+  // 【必须有】flex 子项默认 min-width:auto，长层名会把右侧按钮挤出面板
+  min-width: 0;
+  font-size: 12px;
+  color: var(--app-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.layer-row__count {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--app-text-muted);
+  // 数字等宽：6 行的计数才能上下对齐（素材 42 / 区块 7 混排时尤其明显）
+  font-variant-numeric: tabular-nums;
+}
+
+// 隐藏态与只读态都用弱化文字：眼睛/锁的图标已经表达了状态，
+// 文字再上色会让左栏出现第三、第四种强调色（违反主题分层纪律）
+.layer-row--hidden .layer-row__name,
+.layer-row--readonly .layer-row__name {
+  color: var(--app-text-muted);
+}
+
+.layer-row__static-lock {
+  flex: 0 0 auto;
+  margin-right: 6px;
+  font-size: 12px;
+  color: var(--app-text-muted);
+}

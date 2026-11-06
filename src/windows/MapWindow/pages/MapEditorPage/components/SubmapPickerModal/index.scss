@@ -1,0 +1,103 @@
+/**
+ * SubmapPickerModal 局部样式
+ *
+ * 层级取舍与地图库同款：弹窗本体 elevated，列表行是内部凹槽
+ * （`--app-surface-alt`），hover 只动边框不叠底色。
+ */
+
+.submap-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.submap-picker__hint {
+  font-size: 12px;
+  color: var(--app-text-secondary);
+}
+
+.submap-picker__loading {
+  display: flex;
+  justify-content: center;
+  padding: 36px 0;
+}
+
+.submap-picker__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.submap-picker__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--app-radius-item);
+  background: var(--app-surface-alt);
+  border: 1px solid transparent;
+
+  &:hover {
+    border-color: var(--app-border-strong);
+  }
+}
+
+.submap-picker__thumb {
+  width: 64px;
+  height: 44px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--app-radius-item);
+  overflow: hidden;
+  background: var(--app-surface);
+}
+
+.submap-picker__thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.submap-picker__thumb-empty {
+  font-size: 18px;
+  opacity: 0.45;
+}
+
+.submap-picker__info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.submap-picker__title {
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.submap-picker__meta {
+  font-size: 12px;
+  color: var(--app-text-muted);
+}
+
+.submap-picker__note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--app-text-muted);
+}
+
+.submap-picker__note-icon {
+  flex: none;
+  margin-top: 2px;
+}

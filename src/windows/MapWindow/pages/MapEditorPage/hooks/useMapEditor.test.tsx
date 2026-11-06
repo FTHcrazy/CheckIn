@@ -637,3 +637,188 @@ describe("useMapEditor · addManualRegion（手画落库）", () => {
     expect(regions.length).toBeGreaterThan(1);
   });
 });
+
+/**
+ * 素材层锁定（B4-1）：锁 = 命中测试跳过该层。
+ *
+ * 【为什么在 hook 层测】`pickElement` 是页面与画布共用的唯一命中出口
+ * （画布用它判"按下要不要起拖"，页面用它判"点中了谁"）。锁定若只写在页面那个
+ * 调用点上，画布那条路仍然能拖动被锁定的素材 —— 表现为"锁了还能拖"，
+ * 而两个调用点看起来都"改过了"。
+ */
+describe("useMapEditor · 素材层锁定", () => {
+  const HIT = { x: 100, y: 60 }; // mountain-19 的锚点在 (100,100)，尺寸 160×93
+
+  function seedElement() {
+    useMapDocStore.setState({
+      doc: {
+        ...useMapDocStore.getState().doc,
+        elements: [
+          { id: "el_x", spriteId: "mountain-19", x: 100, y: 100, scale: 1, rotation: 0, level: null },
+        ],
+      },
+    });
+  }
+
+  it("未锁时点得中", () => {
+    seedElement();
+    const { result } = renderHook(() => useMapEditor(SIZE));
+    expect(result.current.pickElement(HIT)?.id).toBe("el_x");
+  });
+
+  it("锁定后 pickElement 返回 null，但 ignoreLock 仍能问到「其实是点中了」", () => {
+    seedElement();
+    const { result } = renderHook(() => useMapEditor(SIZE));
+    act(() => result.current.toggleLayerLock("element"));
+
+    expect(result.current.pickElement(HIT)).toBeNull();
+    // 页面靠这一条给出「素材层已锁定」提示，而不是让点击静默无反应
+    expect(result.current.pickElement(HIT, { ignoreLock: true })?.id).toBe("el_x");
+  });
+
+  it("锁定后 removeSelected 不删（键盘 Delete 走的是同一条路）", () => {
+    seedElement();
+    const { result } = renderHook(() => useMapEditor(SIZE));
+    act(() => result.current.setSelectedId("el_x"));
+    act(() => result.current.toggleLayerLock("element"));
+
+    act(() => result.current.removeSelected());
+    expect(result.current.doc.elements.map((e) => e.id)).toEqual(["el_x"]);
+  });
+
+  it("解锁后立刻恢复可命中（锁不是单向门）", () => {
+    seedElement();
+    const { result } = renderHook(() => useMapEditor(SIZE));
+    act(() => result.current.toggleLayerLock("element"));
+    act(() => result.current.toggleLayerLock("element"));
+    expect(result.current.pickElement(HIT)?.id).toBe("el_x");
+  });
+});
+
+/* ─────────────── 手工落位避让（观感批次 D · P2-3） ─────────────── */
+
+describe("useMapEditor · placeSprite 手工落位避让", () => {
+  /** 预置一个聚落：city-mid 105×66，脚底锚点在 (0,0)，命中盒 y∈[-66,0] */
+  function seedSettlement() {
+    useMapDocStore.setState({
+      doc: {
+        ...useMapDocStore.getState().doc,
+        elements: [
+          { id: "el_city", spriteId: "city-mid", x: 0, y: 0, scale: 1, rotation: 0, level: null },
+        ],
+      },
+    });
+  }
+
+  it("验收：山拖到聚落正中心 → 落位被拦（返回 false、文档不动）", () => {
+    seedSettlement();
+    const { result } = renderHook(() => useMapEditor(SIZE));
+
+    let placed = true;
+    act(() => {
+      placed = result.current.placeSprite("mountain-19", { x: 0, y: -30 });
+    });
+    expect(placed).toBe(false);
+    // 文档零变化：没有新素材、没有新地名（点要素的默认名也不许生成）
+    expect(result.current.doc.elements.map((e) => e.id)).toEqual(["el_city"]);
+    expect(result.current.doc.labels).toHaveLength(0);
+  });
+
+  it("呼吸边外放行：同一座山落在空地 → 正常落位且素材选中", () => {
+    seedSettlement();
+    const { result } = renderHook(() => useMapEditor(SIZE));
+
+    let placed = false;
+    act(() => {
+      placed = result.current.placeSprite("mountain-19", { x: 500, y: 0 });
+    });
+    expect(placed).toBe(true);
+    expect(result.current.doc.elements).toHaveLength(2);
+    expect(result.current.selectedId).toBe(result.current.doc.elements[1].id);
+  });
+
+  it("验收：移动既有素材不被拦截（拖开解围的路必须是通的）", () => {
+    seedSettlement();
+    const { result } = renderHook(() => useMapEditor(SIZE));
+    // 先在空地放一座山
+    act(() => {
+      result.current.placeSprite("mountain-19", { x: 500, y: 0 });
+    });
+    // 把聚落**拖进**山的正中心：移动路径不设防 —— 否则压住的素材永远无法移开
+    act(() => {
+      result.current.moveElementBy("el_city", 500, -30);
+    });
+    const city = result.current.doc.elements.find((e) => e.id === "el_city");
+    expect(city?.x).toBe(500);
+    expect(city?.y).toBe(-30);
+    // 两个素材都在（拦截只存在于"新建落位"，移动路径完全自由）
+    expect(result.current.doc.elements).toHaveLength(2);
+  });
+
+  it("未登记的素材 id 不参与避让（渲染层都不认的东西不拦路）", () => {
+    // spriteId 查不到 SpriteDef：与 pickElement 同款跳过 —— 存档里的脏数据
+    // 不该让用户"看着空地却放不下东西"
+    useMapDocStore.setState({
+      doc: {
+        ...useMapDocStore.getState().doc,
+        elements: [
+          { id: "el_ghost", spriteId: "ghost-1", x: 0, y: 0, scale: 1, rotation: 0, level: null },
+        ],
+      },
+    });
+    const { result } = renderHook(() => useMapEditor(SIZE));
+    let placed = false;
+    act(() => {
+      placed = result.current.placeSprite("mountain-19", { x: 0, y: -30 });
+    });
+    expect(placed).toBe(true);
+    expect(result.current.doc.elements).toHaveLength(2);
+  });
+
+  /* ───── QA 边界补钉：完整交互链 / 新落位素材也设防 ───── */
+
+  it("第一次被拦（文档零变化）→ 同一 pending 换空地再点 → 成功落位", () => {
+    seedSettlement();
+    const { result } = renderHook(() => useMapEditor(SIZE));
+
+    let first = true;
+    act(() => {
+      first = result.current.placeSprite("mountain-19", { x: 0, y: -30 });
+    });
+    expect(first).toBe(false);
+    expect(result.current.doc.elements.map((e) => e.id)).toEqual(["el_city"]);
+
+    // 被拦之后状态不能脏：用户换个位置再点，走的仍是同一条成功路径
+    let second = false;
+    act(() => {
+      second = result.current.placeSprite("mountain-19", { x: 500, y: 0 });
+    });
+    expect(second).toBe(true);
+    expect(result.current.doc.elements).toHaveLength(2);
+    expect(result.current.selectedId).toBe(result.current.doc.elements[1].id);
+  });
+
+  it("先落位的素材对后续落位也设防（山落好后，城市压进它的盒+呼吸边内被拦）", () => {
+    // 空地放一座山（mountain-19：160×93，脚底 (500,0)，命中盒 y∈[-93,0]）
+    let placed = false;
+    const { result } = renderHook(() => useMapEditor(SIZE));
+    act(() => {
+      placed = result.current.placeSprite("mountain-19", { x: 500, y: 0 });
+    });
+    expect(placed).toBe(true);
+    // city-mid 想落在山的盒+呼吸边内 → 拦（障碍物集合随落位实时生长）
+    let blocked = true;
+    act(() => {
+      blocked = result.current.placeSprite("city-mid", { x: 500, y: -30 });
+    });
+    expect(blocked).toBe(false);
+    expect(result.current.doc.elements).toHaveLength(1);
+    // 换到盒+呼吸边外 → 放行
+    let ok = false;
+    act(() => {
+      ok = result.current.placeSprite("city-mid", { x: 500, y: -200 });
+    });
+    expect(ok).toBe(true);
+    expect(result.current.doc.elements).toHaveLength(2);
+  });
+});

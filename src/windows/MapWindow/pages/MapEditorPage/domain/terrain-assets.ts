@@ -33,6 +33,20 @@ export interface SpriteSource {
    * 缺省 = 纯地貌，批量起名时跳过。本地登记表与导入素材（S2 标注）都带。
    */
   names?: readonly string[];
+  /**
+   * 是否允许一键成图随机左右镜像（P1-4「镜像翻转破重复」），缺省 `true`。
+   *
+   * 【为什么放 SpriteSource 而不是生成器本地判】生成器禁止 import sprites.ts
+   * （取料纪律），素材的"能不能翻"和"叫什么名"一样，是素材自带的元数据：
+   * 本地登记表标注，导入素材（S2 标注）同样带。有朝向的人造物（船头 /
+   * 码头 / 门洞）与文字类登记 `false`，自然地貌缺省即可翻。
+   */
+  flippable?: boolean;
+}
+
+/** 素材是否可镜像翻转（缺省 true：自然地貌没有"正面"） */
+export function flippableOf(source: SpriteSource): boolean {
+  return source.flippable !== false;
 }
 
 /** 素材的带标签（缺省 core：未标注 = 全带通用） */

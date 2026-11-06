@@ -10,6 +10,8 @@ import {
   fitToRect,
   hitTestElement,
   hitTestPolygon,
+  isCenterCovered,
+  ELEMENT_PLACE_PAD,
   wheelZoomFactor,
   worldToScreen,
   zoomAt,
@@ -220,5 +222,78 @@ describe("fitSubmapTransform：子图贴合到父图区块包围盒", () => {
 
     const nan = fitSubmapTransform({ x: 0, y: 0, width: Number.NaN, height: 512 }, { x: 0, y: 0, width: 100, height: 100 });
     expect(nan.scale).toBe(1);
+  });
+});
+
+/* ─────────────── 手工落位避让（观感批次 D · P2-3） ─────────────── */
+
+/**
+ * `isCenterCovered` 与 `hitTestElement` 同构（底部锚点 + width×scale 外接盒），
+ * 外加一圈呼吸边（ELEMENT_PLACE_PAD，参考实现口径 +30px）。
+ * 语义只钉"落位瞬间中心被已有素材压住"这一件事 —— 移动既有素材不设防
+ * （否则压住的素材永远无法拖开解围）。
+ */
+describe("isCenterCovered：手工落位 AABB(+30) 避让", () => {
+  /** 一个 100×50、scale 1、脚底锚点在 (0, 0) 的素材：盒 = x∈[-50,50], y∈[-50,0] */
+  const box = { x: 0, y: 0, width: 100, height: 50, scale: 1 };
+
+  it("中心落在命中盒内 → 拦（聚落被压在山体正中间的形态）", () => {
+    expect(isCenterCovered({ x: 0, y: -25 }, [box])).toBe(true);
+    expect(isCenterCovered({ x: 0, y: -1 }, [box])).toBe(true);
+  });
+
+  it("呼吸边生效：盒外 30 以内也拦，超出 30 放行", () => {
+    // 水平：半宽 50 + 30 = 80
+    expect(isCenterCovered({ x: 79, y: -25 }, [box])).toBe(true);
+    expect(isCenterCovered({ x: 81, y: -25 }, [box])).toBe(false);
+    // 竖直：脚底下方 30 / 盒顶上方 30
+    expect(isCenterCovered({ x: 0, y: 29 }, [box])).toBe(true);
+    expect(isCenterCovered({ x: 0, y: 31 }, [box])).toBe(false);
+    expect(isCenterCovered({ x: 0, y: -79 }, [box])).toBe(true);
+    expect(isCenterCovered({ x: 0, y: -81 }, [box])).toBe(false);
+  });
+
+  it("缩放参与外接盒（命中盒 = width×scale，与 hitTestElement 同口径）", () => {
+    const small = { ...box, scale: 0.5 }; // 盒 = x∈[-25,25]
+    // x=70：大盒半宽 50+30=80 → 在呼吸边内拦；小盒 25+30=55 → 放行。
+    // 同一点对不同 scale 的素材结论不同 —— 钉"scale 真的参与外接盒"
+    expect(isCenterCovered({ x: 70, y: -10 }, [box])).toBe(true);
+    expect(isCenterCovered({ x: 70, y: -10 }, [small])).toBe(false);
+  });
+
+  it("空盒列表 / 多素材任一命中即拦（some 语义）", () => {
+    expect(isCenterCovered({ x: 0, y: -25 }, [])).toBe(false);
+    const far = { ...box, x: 500 };
+    expect(isCenterCovered({ x: 0, y: -25 }, [far, box])).toBe(true);
+  });
+
+  /* ───── QA 边界补钉：scale 极端值 + 呼吸边常量口径 ───── */
+
+  it("scale = 0.1（极小素材）：盒缩成 10.5×6.6，只拦贴身落点", () => {
+    const tiny = { x: 0, y: 0, width: 105, height: 66, scale: 0.1 };
+    // 盒半宽 = 5.25 + 30；中心被压住 → 拦
+    expect(isCenterCovered({ x: 0, y: -3 }, [tiny])).toBe(true);
+    // 呼吸边之外（水平距 > 35.25）→ 放行
+    expect(isCenterCovered({ x: 36, y: 0 }, [tiny])).toBe(false);
+    // 呼吸边内（水平距 < 35.25）→ 拦
+    expect(isCenterCovered({ x: 34, y: 0 }, [tiny])).toBe(true);
+  });
+
+  it("scale = 1.7（极大素材）：盒扩到 178.5×112.2，远距离落点也拦", () => {
+    const huge = { x: 0, y: 0, width: 105, height: 66, scale: 1.7 };
+    // 盒半宽 = 89.25 + 30 = 119.25
+    expect(isCenterCovered({ x: 0, y: -100 }, [huge])).toBe(true);
+    // 盒+呼吸边外（水平 125 > 119.25）→ 放行
+    expect(isCenterCovered({ x: 125, y: 0 }, [huge])).toBe(false);
+    // 呼吸边内 → 拦
+    expect(isCenterCovered({ x: 118, y: 0 }, [huge])).toBe(true);
+  });
+
+  it("呼吸边是常量 30（世界单位），不随素材 scale 缩放", () => {
+    // scale 1.7 时放行边界 = 89.25 + 30；若呼吸边也被 ×1.7（51），
+    // 放行边界会变成 140.25 —— 用 125 这个点区分两种语义
+    const huge = { x: 0, y: 0, width: 105, height: 66, scale: 1.7 };
+    expect(isCenterCovered({ x: 125, y: 0 }, [huge])).toBe(false);
+    expect(125).toBeLessThan(89.25 + ELEMENT_PLACE_PAD + ELEMENT_PLACE_PAD);
   });
 });

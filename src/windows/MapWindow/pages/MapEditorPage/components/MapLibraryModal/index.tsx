@@ -124,6 +124,31 @@ export default function MapLibraryModal({
     return (workId: string | null) => (workId ? map.get(workId) ?? null : null);
   }, [works]);
 
+  /**
+   * 写操作的统一收尾。
+   *
+   * 【为什么必须 try / finally，而不是 `await 动作(); await load();`】
+   * 二次确认框（antd `Popconfirm`）只在 `onConfirm` 返回的 promise **resolve**
+   * 时才关闭自己 —— 走到 `antd/es/_util/ActionButton.js` 的 reject 分支会
+   * `setLoading(false)` 然后原样留在屏幕上。而写操作是会 reject 的（IPC 失败、
+   * `message.success` 抛错……），一旦它抛，"刷新列表"和"收起确认框"两件事一起没了，
+   * 用户看到的就是「点了没反应」。所以：动作失败只记日志（面向用户的错误文案
+   * 归 `useMapPersistence`，它才知道失败原因），promise 一律收成 resolve，
+   * 列表每次都重拉。
+   */
+  const runWrite = useCallback(
+    async (action: () => void | Promise<void>) => {
+      try {
+        await action();
+      } catch (error) {
+        console.error("[map-library] 写操作失败", error);
+      } finally {
+        await load();
+      }
+    },
+    [load],
+  );
+
   const handleCreate = useCallback(async () => {
     // 名字带序号：一堆「未命名地图」在列表里完全分不清谁是谁
     await actions.create({ title: `未命名地图 ${docs.length + 1}` });
@@ -136,10 +161,9 @@ export default function MapLibraryModal({
       const next = editingText.trim();
       setEditingId(null);
       if (!next) return;
-      await actions.rename(id, next);
-      await load();
+      await runWrite(() => actions.rename(id, next));
     },
-    [actions, editingText, load],
+    [actions, editingText, runWrite],
   );
 
   const renderRow = (doc: MapDocSummaryDTO) => {
@@ -195,10 +219,7 @@ export default function MapLibraryModal({
             <>
               <Button
                 size="small"
-                onClick={async () => {
-                  await actions.restore(doc.id);
-                  await load();
-                }}
+                onClick={() => void runWrite(() => actions.restore(doc.id))}
               >
                 恢复
               </Button>
@@ -208,10 +229,7 @@ export default function MapLibraryModal({
                 okText="彻底删除"
                 cancelText="取消"
                 okButtonProps={{ danger: true }}
-                onConfirm={async () => {
-                  await actions.purge(doc.id);
-                  await load();
-                }}
+                onConfirm={() => runWrite(() => actions.purge(doc.id))}
               >
                 <Button size="small" danger icon={<DeleteOutlined />} aria-label="彻底删除" />
               </Popconfirm>
@@ -244,10 +262,8 @@ export default function MapLibraryModal({
                     ...(works.length > 0 ? [{ type: "divider" as const, key: "__divider__" }] : []),
                     ...works.map((work) => ({ key: work.id, label: work.name })),
                   ],
-                  onClick: async ({ key }) => {
-                    await actions.bind(doc.id, key === "__none__" ? null : key);
-                    await load();
-                  },
+                  onClick: ({ key }) =>
+                    void runWrite(() => actions.bind(doc.id, key === "__none__" ? null : key)),
                 }}
               >
                 <Tooltip title="绑定到作品（地图可以先独立存在，之后再挂到书里）">
@@ -272,11 +288,11 @@ export default function MapLibraryModal({
                 description="随时可以在「回收站」里恢复。"
                 okText="移入回收站"
                 cancelText="取消"
-                onConfirm={async () => {
-                  await actions.remove(doc.id);
-                  if (doc.id === currentId) onClose();
-                  await load();
-                }}
+                // 【删当前图也不关弹窗】deleteDoc 会先断开 file、再自动切到下一张图
+                // （docId 随之变化）；弹窗保持打开 + 刷新列表，用户才能看到
+                // 「被删图消失、新当前图带上『当前』标记」。返回值必须 resolve，
+                // 否则 antd 的二次确认框不会自己收起（见 runWrite 注释）。
+                onConfirm={() => runWrite(() => actions.remove(doc.id))}
               >
                 <Tooltip title="移入回收站">
                   <Button size="small" icon={<DeleteOutlined />} aria-label="移入回收站" />

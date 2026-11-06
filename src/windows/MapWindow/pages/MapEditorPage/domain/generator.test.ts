@@ -5,7 +5,7 @@
  * 区间 —— 具体值一旦变了，说明有人动了算法或参数，必须是有意的。
  */
 import { describe, expect, it } from "vitest";
-import { generateLand, landAreaRatio, pointInLand } from "../land";
+import { generateLand, insetLand, landAreaRatio, pointInLand } from "../land";
 import {
   RICHNESS_TOTALS,
   assignPlacementNames,
@@ -21,6 +21,7 @@ import {
 import { mulberry32, type SpriteSource } from "./terrain-assets";
 import { MAP_PRESETS } from "./mapPresets";
 import { TERRAIN_KINDS, type TerrainKind } from "./terrain";
+import { SPRITES, SPRITE_MAP } from "../sprites";
 
 /** 测试用小池：形状与 sprites.ts 的 SpriteDef 同构（id/src/terrains/weight） */
 function makePool(): SpriteSource[] {
@@ -124,6 +125,27 @@ describe("generateMap 布点合法性", () => {
     }
   });
 
+  it("最大素材渲染宽度 ≤ 陆地包围盒宽度的 35%（陆地不该像小岛）", () => {
+    // 问题 1 验收：同 seed 下，最大的山（baseWidth × scale）不得超过陆地实测宽度的
+    // 约三成；修复前最坏可达 63%~90%（一座山占陆宽近半）。
+    let minX = Infinity;
+    let maxX = -Infinity;
+    for (const ring of land.polygons) {
+      for (const p of ring) {
+        if (p.x < minX) minX = p.x;
+        if (p.x > maxX) maxX = p.x;
+      }
+    }
+    const landWidth = Math.max(1, maxX - minX);
+    const maxRenderWidth = Math.max(
+      ...gen.placements.map((p) => sizeOf(p.spriteId).width * p.scale),
+    );
+    expect(
+      maxRenderWidth,
+      `最大渲染宽 ${maxRenderWidth.toFixed(1)} / 陆地宽 ${landWidth.toFixed(1)}`,
+    ).toBeLessThanOrEqual(landWidth * 0.35);
+  });
+
   it("丰度档单调：dense ≥ standard ≥ sparse", () => {
     const sparse = generateMap(makeOpts(31337, "sparse")).placements.length;
     const standard = generateMap(makeOpts(31337, "standard")).placements.length;
@@ -134,12 +156,13 @@ describe("generateMap 布点合法性", () => {
 
   it("scale = 格边长补偿 × 地形体量 × 簇抖动；rotation 按素材体量分级", () => {
     for (const p of gen.placements) {
-      // 下界：dense 档格子最小（~0.72）× 点符号体量（0.48）× 簇 0.88 × 微调 0.94
-      // 上界：sparse 档格子最大（~1.32）× 山地 1.0 × 簇 1.14 × 微调 1.06
-      expect(p.scale).toBeGreaterThan(0.2);
+      // 下界：dense 档格子最小（~0.72）× 点符号体量（0.48×0.42 体量总闸）× 簇 0.88 × 微调 0.9
+      //   ≈ 0.115；总闸从 0.6 降到 0.42 后点符号进一步缩小，下界同步下移到 0.08（非内容违规）。
+      // 上界：sparse 档格子最大（~1.32）× 山地（1.0×0.42）× 簇 1.14 × 微调 1.06 ≈ 0.67，1.7 仍是宽松上限
+      expect(p.scale).toBeGreaterThan(0.08);
       expect(p.scale).toBeLessThanOrEqual(1.7);
-      // 参考实现：丘陵一类小体量 ±15°、主池大体量 ±5~7°。这里按基准宽度分级
-      const amp = sizeOf(p.spriteId).width >= 120 ? 7 : 15;
+      // 大体量更稳（±5°）、小体量略活（±9°），与 generator 的 ROT_LARGE/ROT_SMALL 同值
+      const amp = sizeOf(p.spriteId).width >= 120 ? 5 : 9;
       expect(Math.abs(p.rotation), `${p.spriteId} 转得太多`).toBeLessThanOrEqual(amp);
     }
   });
@@ -251,6 +274,71 @@ describe("generateMap 布点合法性", () => {
 });
 
 /**
+ * 批次 A 守卫：海岸内缩 + z 分层（对应「地图渲染对齐」序 1 / 序 2）。
+ *
+ * 【为什么钉这两条】内缩与分层都是"看起来改了、其实没生效"的高发点：
+ * 内缩若只加了常量、没接到落海判定上，素材照样压岸；分层若表建了、排序没接，
+ * 森林照样盖住山。守卫直接对产出（placements 的坐标与顺序）断言，绕过内部实现。
+ */
+describe("批次A 守卫：海岸内缩与 z 分层", () => {
+  const gen = generateMap(makeOpts(20260411));
+  const inset = insetLand(gen.land);
+
+  it("每个素材锚点都落在内缩轮廓内（素材不压海岸）", () => {
+    expect(gen.placements.length).toBeGreaterThan(0);
+    for (const p of gen.placements) {
+      expect(pointInLand({ x: p.x, y: p.y }, inset), `${p.spriteId} 压到海岸`).toBe(true);
+    }
+  });
+
+  it("z 分层档位优先：层小的更靠前，同层内仍按 y 升序", () => {
+    // 与 generator 内部 TERRAIN_LAYER 同源的一份档位表（测试不 import 私有常量，
+    // 用完整 Record<TerrainKind, number> 内联 —— 编译期同样保证 20 项写全）。
+    const LAYER: Record<TerrainKind, number> = {
+      forest: 0,
+      jungle: 0,
+      swamp: 0,
+      river: 1,
+      lake: 1,
+      coast: 1,
+      sea: 1,
+      desert: 1,
+      plain: 1,
+      grassland: 1,
+      snowfield: 1,
+      tundra: 1,
+      hill: 1.5,
+      valley: 1.5,
+      mountain: 2,
+      highland: 2,
+      volcano: 2,
+      settlement: 3,
+      landmark: 3,
+      oasis: 3,
+    };
+    const ps = gen.placements;
+    // 档位优先：整个数组的层数单调不减（层小的下标必小于层大的下标）
+    for (let i = 0; i < ps.length; i += 1) {
+      for (let j = i + 1; j < ps.length; j += 1) {
+        expect(LAYER[ps[i].terrain]).toBeLessThanOrEqual(LAYER[ps[j].terrain]);
+      }
+    }
+    // 同层内仍按脚底 y 升序
+    for (let i = 0; i + 1 < ps.length; i += 1) {
+      if (LAYER[ps[i].terrain] === LAYER[ps[i + 1].terrain]) {
+        expect(ps[i].y).toBeLessThanOrEqual(ps[i + 1].y);
+      }
+    }
+    // 钉「森林压底、山地置顶」的字面意图：两者同图时，森林必在全部山地之前
+    const forestIdx = ps.findIndex((p) => p.terrain === "forest");
+    const mountainIdx = ps.findIndex((p) => p.terrain === "mountain");
+    if (forestIdx >= 0 && mountainIdx >= 0) {
+      expect(forestIdx).toBeLessThan(mountainIdx);
+    }
+  });
+});
+
+/**
  * 地貌带（第三轴，review §6 P0-1）。
  *
  * 分带最容易"看起来改了、其实没生效"：带标签加了但选材没传 zone，
@@ -322,7 +410,7 @@ describe("assignPlacementNames", () => {
     x: number,
     y: number,
     terrain: TerrainKind,
-  ): SpritePlacement => ({ spriteId, x, y, scale: 1, rotation: 0, terrain, zone: "core" });
+  ): SpritePlacement => ({ spriteId, x, y, scale: 1, rotation: 0, flipX: false, terrain, zone: "core" });
 
   const synthetic = (): SpritePlacement[] => [
     at("m1", 0, 0, "mountain"),
@@ -377,6 +465,7 @@ describe("summarizeGeneration", () => {
     y,
     scale: 1,
     rotation: 0,
+    flipX: false,
     terrain,
     zone: "core",
   });
@@ -435,4 +524,95 @@ describe("生成器 × 真实守卫约定", () => {
     }
     expect(a).not.toEqual(b);
   });
+});
+
+/* ─────────────────── 镜像翻转（观感批次 C · P1-4） ─────────────────── */
+
+/**
+ * 独立小池：一半可翻（缺省）、一半不可翻（显式 false）。
+ *
+ * 【为什么不动上面的 makePool】生成器是确定性的：池里增删任何一条都会改变
+ * rng 消耗序列，既有用例钉住的"具体值"会集体漂移 —— 翻转的用例自带池，
+ * 互不惊扰。
+ */
+function makeFlipPool(): SpriteSource[] {
+  return [
+    { id: "m1", src: "m1.png", terrains: ["mountain"] },
+    { id: "m2", src: "m2.png", terrains: ["mountain"], flippable: false },
+  ];
+}
+
+describe("generateMap 镜像翻转（P1-4）", () => {
+  const flipOpts = (seed: number) => ({
+    seed,
+    bounds: BOUNDS,
+    preset: PRESET,
+    richness: "standard" as const,
+    mode: "full" as const,
+    pool: makeFlipPool(),
+    sizeOf: () => ({ width: 120, height: 70 }),
+  });
+
+  it("flipX 随布点产出且同 seed 可复现：可翻素材有翻有正，换 seed 序列不同", () => {
+    const a = generateMap(flipOpts(97531));
+    const b = generateMap(flipOpts(97531));
+    expect(b.placements).toEqual(a.placements);
+    expect(a.placements.length).toBeGreaterThan(0);
+
+    // 上百实例各掷 50%，全正 / 全反的概率 ~2^-N：有翻有正才算"随机生效"
+    const m1 = a.placements.filter((p) => p.spriteId === "m1");
+    expect(m1.length).toBeGreaterThan(0);
+    expect(m1.some((p) => p.flipX)).toBe(true);
+    expect(m1.some((p) => !p.flipX)).toBe(true);
+
+    // 换 seed：翻面序列不该逐实例全同（「换一张」对翻转同样成立）
+    const c = generateMap(flipOpts(97532));
+    expect(c.placements.map((p) => p.flipX)).not.toEqual(a.placements.map((p) => p.flipX));
+  });
+
+  it("flippable: false 的素材恒不翻面（有朝向的人造物翻了会说谎）", () => {
+    const gen = generateMap(flipOpts(4242));
+    const noFlip = gen.placements.filter((p) => p.spriteId === "m2");
+    expect(noFlip.length).toBeGreaterThan(0);
+    expect(noFlip.every((p) => p.flipX === false)).toBe(true);
+  });
+
+  /**
+   * 验收①（review §9.2.2 序 4，主理人裁决后抬升为**结构性保证**）：任意 seed
+   * 一键成图后，同屏「像素完全一致」的素材对数恒 = 0。
+   *
+   * 【"像素完全一致"的判据】spriteId 相同 + 翻面相同 + scale 相同（生成器把
+   * 实例缩放钉到 0.01）+ rotation 相同（钉到 0.1°）—— 四者全等时两张贴图
+   * 在任何视口下逐像素重合。
+   *
+   * 【为什么必须多 seed】QA 用真实池 + 全预设 + dense 做 60 seeds 独立扫描，
+   * 证明"翻转砍半期望"只是统计性的：稀池档（沼泽/十万大山）下量化抖动自身
+   * 会碰撞，59/180 张图仍有 ≥1 对一致素材。生成器已补**确定性去重**（同一
+   * spriteId 的 (flip, 量化scale, 量化rotation) 组合全图至多登记一次，撞车
+   * 先翻反 flip、仍撞重掷 rotation），本守卫按 ≥20 seeds × 全预设 × dense
+   * 钉死"任意 seed 恒 0"。
+   */
+  it("验收①（结构性）：20 seeds × 全预设 × dense，像素完全一致的素材对数恒 = 0", () => {
+    const pixelKeyOf = (p: SpritePlacement) =>
+      `${p.spriteId}|${p.flipX ? "F" : "N"}|${p.scale.toFixed(2)}|${p.rotation.toFixed(1)}`;
+    for (const preset of MAP_PRESETS) {
+      for (let seed = 1; seed <= 20; seed++) {
+        const gen = generateMap({
+          seed,
+          bounds: BOUNDS,
+          preset,
+          richness: "dense",
+          mode: "full",
+          pool: SPRITES,
+          sizeOf: (id) => {
+            const d = SPRITE_MAP[id];
+            return d ? { width: d.baseWidth, height: d.baseHeight } : { width: 90, height: 70 };
+          },
+        });
+        const keys = gen.placements.map(pixelKeyOf);
+        const dup = keys.length - new Set(keys).size;
+        expect(dup, `${preset.id} seed=${seed} 有 ${dup} 对像素完全一致的素材`).toBe(0);
+      }
+    }
+  }, 120_000);
 });

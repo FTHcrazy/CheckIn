@@ -23,11 +23,11 @@
  * ./terrain ./terrain-assets ./mapPresets ../types ../land ../regions（后两者纯几何）。
  */
 
-import { generateLand as buildLand, landAreaRatio, pointInLand } from "../land";
+import { generateLand as buildLand, insetLand, landAreaRatio, pointInLand } from "../land";
 import type { MapLand, Rect } from "../types";
 import { expandTerrainMix, type MapPresetDef } from "./mapPresets";
 import { TERRAIN_META, type TerrainKind } from "./terrain";
-import { mulberry32, pickTerrainSprites, type SpriteSource } from "./terrain-assets";
+import { flippableOf, mulberry32, pickTerrainSprites, type SpriteSource } from "./terrain-assets";
 import { zoneAtY, type SpriteZone } from "./zones";
 
 /* ─────────────────── 子流盐值 ─────────────────── */
@@ -99,6 +99,13 @@ export interface SpritePlacement {
   scale: number;
   /** 角度（度）。小幅抖动破"复制粘贴感"（review §5.4 变换） */
   rotation: number;
+  /**
+   * 是否左右镜像（P1-4「镜像翻转破重复」）。按素材 `flippable` 以 50% 概率
+   * 摇出：同一张贴图一正一反，观感素材量翻倍且不用新图。走素材子流
+   * `rng`，同 seed 逐实例可复现（与坐标 / 缩放同一铁律）。不可翻的素材
+   * 恒为 `false`（有朝向的人造物翻了会说谎，见 sprites.ts 的 `flippable`）。
+   */
+  flipX: boolean;
   terrain: TerrainKind;
   /** 取用的地貌带（见 zones.ts） */
   zone: SpriteZone;
@@ -187,9 +194,15 @@ const ZONE_BLEND = 0.08;
 /** 单个实例的落位尝试次数；耗尽就少一个（拥挤时密度自适应回落） */
 const PLACE_ATTEMPTS = 12;
 
-/** 旋转幅度：大体量素材稳、小体量素材活（参考实现 丘陵 ±15° / 主池 ±5~7°） */
-const ROT_LARGE = 7;
-const ROT_SMALL = 15;
+/**
+ * 旋转幅度：大体量素材更稳（±5°）、小体量素材略活（±9°）。
+ *
+ * 【为什么反过来】参考实现是丘陵 ±15° / 主池 ±5~7°，而旧值恰相反（大 ±7 / 小 ±15）：
+ * 大体量的山/城转 7° 已看得出歪，小树小丘转 15° 又显得东倒西歪。改成「大更稳、
+ * 小略活」后，旋转只用来破复制粘贴感，不该抢戏（问题 3「旋转不和谐」修复）。
+ */
+const ROT_LARGE = 5;
+const ROT_SMALL = 9;
 
 /** 「大体量」分界（基准宽度，世界单位） */
 const LARGE_SPRITE_WIDTH = 120;
@@ -227,6 +240,60 @@ const TERRAIN_SCALE: Record<TerrainKind, number> = {
   tundra: 0.55,
   settlement: 0.52,
   landmark: 0.48,
+};
+
+/**
+ * `TERRAIN_SCALE` 的**整体体量总闸**（问题 1「素材过大」修复）。
+ *
+ * 【为什么单独压一个系数而不是重写整张表】素材最终渲染尺寸 = `baseWidth × scale`，
+ * 而 `scale = clusterScale × sizeScale × TERRAIN_SCALE[terrain] × 微调`。山（baseWidth
+ * 200）在最坏情况下 ≈ 200×1.14×1.32×1.1 ≈ 331 世界单位，而单岛实测只占纸面 36%~51%，
+ * 一座山占陆地宽 63%~90% —— 陆地像小岛、素材像巨人。这里把整张表等比 ×0.42（在
+ * 上一轮 0.6 的基础上再砍 30%），山体落到 ~140，占陆宽约 25%~35%，接近逆向目标
+ * 「山体基准 w=0.18~0.50 相对格子」的观感；**相对关系（点符号 < 地表 < 山地）一字不动**。
+ *
+ * 【为什么不动 `sprites.ts` 的 baseWidth】那是素材固有画幅，是碰撞/命中测试/面板
+ * 预览的基准，改它会让手动落位、命中与预览一起漂移。一键成图只走这套系数，改这里
+ * 才是最小、最安全的切口。
+ */
+const TERRAIN_SCALE_OVERALL = 0.42;
+
+/**
+ * 地形 → z 层档位（数字越大越靠上、越晚绘制）。
+ *
+ * 【为什么需要一张独立的层表，而不是继续只按 y 排】脚底 y 升序只能表达"前后遮挡"，
+ * 表达不了"内容层级"：一座山脚底 y 比一片树林大（更靠下），却可能被树林压住 ——
+ * 参考实现里山体永远是主景，森林、沼泽这类地表铺底，聚落/遗迹点符号在最上。
+ * 于是排序改成**先按层、同层再按 y**：层小的先画（被压底），层大的后画（压别人）。
+ *
+ * 档位是**手绘的"先浅后深"直觉**，不是渲染栈：
+ *   0   森林/丛林/沼泽 —— 成片的地表植被，最该被山与水压住；
+ *   1   河流/湖泊/海岸/海洋 + 地表纹理（沙漠/平原/草原/雪原/冻原）—— 底图层；
+ *   1.5 丘陵/山谷 —— 过渡地貌，压地表但让山地；
+ *   2   山地/高原/火山 —— 主景山体；
+ *   3   聚落/遗迹/绿洲 —— 点符号，永远在最上（下面盖不住一个村子）。
+ */
+const TERRAIN_LAYER: Record<TerrainKind, number> = {
+  forest: 0,
+  jungle: 0,
+  swamp: 0,
+  river: 1,
+  lake: 1,
+  coast: 1,
+  sea: 1,
+  desert: 1,
+  plain: 1,
+  grassland: 1,
+  snowfield: 1,
+  tundra: 1,
+  hill: 1.5,
+  valley: 1.5,
+  mountain: 2,
+  highland: 2,
+  volcano: 2,
+  settlement: 3,
+  landmark: 3,
+  oasis: 3,
 };
 
 /**
@@ -539,6 +606,31 @@ function growPatch(
   return grown;
 }
 
+/**
+ * 素材贴图的轴对齐包围盒是否整体落在 `land` 内（问题 3「素材超出陆地」修复）。
+ *
+ * 【为什么不能只判锚点】`insetLand` 只保证脚底中心离岸 14 单位，而贴图自己有宽度：
+ * 宽素材（如森林稀疏贴图半宽 95）的左右脚仍会越过海岸线。这里连锚点带四角一起判，
+ * 贴图的轴对齐盒整体离岸 ≥14 单位，宽素材不再压岸。旋转 ≤9°、且碰撞层（`colliderHitsFree`）
+ * 本就按轴对齐盒算，此处与之一致，不额外算旋转后的外扩角。
+ */
+function footprintInLand(
+  anchor: { x: number; y: number },
+  size: { width: number; height: number },
+  scale: number,
+  land: MapLand,
+): boolean {
+  const hw = (size.width * scale) / 2;
+  const hh = size.height * scale;
+  return (
+    pointInLand(anchor, land) &&
+    pointInLand({ x: anchor.x - hw, y: anchor.y }, land) &&
+    pointInLand({ x: anchor.x + hw, y: anchor.y }, land) &&
+    pointInLand({ x: anchor.x - hw, y: anchor.y - hh }, land) &&
+    pointInLand({ x: anchor.x + hw, y: anchor.y - hh }, land)
+  );
+}
+
 /* ─────────────────── 主入口 ─────────────────── */
 
 /**
@@ -561,6 +653,10 @@ export function generateMap(options: GenerateMapOptions): GeneratedMap {
   if (options.mode === "skeleton" || land.polygons.length === 0) {
     return { land, placements: [] };
   }
+
+  // 素材锚点按**内缩后的岸线**判落海：素材不压海岸 14 单位（见 land.ts 的 COAST_INSET）。
+  // 格网 cellHasLand / buildGrid 仍用原 land —— 沿海格还要被认领，只把"锚点"往内陆收。
+  const inset = insetLand(land);
 
   const rng = mulberry32(options.elementSeed ?? elementSeedOf(options.seed));
   const total = RICHNESS_TOTALS[options.richness];
@@ -598,6 +694,16 @@ export function generateMap(options: GenerateMapOptions): GeneratedMap {
   const collider = createCollider();
   const placements: SpritePlacement[] = [];
   let cluster = 0;
+
+  /**
+   * 已用外观组合登记表（spriteId → { flip|量化scale|量化rotation }）。
+   *
+   * 口径与守卫测试一致（`scale.toFixed(2) + rotation.toFixed(1) + flip`）：
+   * 四元组（spriteId + flip + 量化 scale + 量化 rotation）全等的两张贴图
+   * 在任何视口下逐像素重合 —— 生成器在此登记，撞车实例翻面或重掷角度
+   * （见布点循环内的"确定性去重"）。
+   */
+  const seenPixels = new Map<string, Set<string>>();
 
   /**
    * 各配方的剩余配额（地形 → 还能铺几个实例）。
@@ -646,7 +752,8 @@ export function generateMap(options: GenerateMapOptions): GeneratedMap {
     // 区间刻意收窄（0.88~1.14）：素材池小的时候，"同一张图缩放不同"
     // 是唯一能把重复品读成"另一处同类地形"的手段，但跨簇差异过大就会
     // 变成"贴纸大小没统一"。
-    const clusterScale = (0.88 + rng() * 0.26) * sizeScale * TERRAIN_SCALE[terrain];
+    const clusterScale =
+      (0.88 + rng() * 0.26) * sizeScale * TERRAIN_SCALE[terrain] * TERRAIN_SCALE_OVERALL;
     const jitter = cellSize * JITTER_RATIO;
     /** 本簇已落位的锚点（同簇不参与碰撞，但要防"同一张贴图叠画"） */
     const anchors: { x: number; y: number; sep: number }[] = [];
@@ -655,6 +762,11 @@ export function generateMap(options: GenerateMapOptions): GeneratedMap {
       const src =
         i < palette.length ? palette[i] : palette[Math.floor(rng() * palette.length)];
       const size = sizeOf(src.id);
+      // 镜像翻转（P1-4）：按素材 `flippable` 以 50% 概率翻面。掷骰放在尝试循环
+      // 之前 —— 每个实例固定消耗一次 rng，不随"落位重试了几次"漂移，同 seed
+      // 的翻转序列与坐标 / 缩放一样逐实例可复现。不可翻的素材不掷骰
+      // （不消耗子流），且恒为 false。
+      const flipX = flippableOf(src) ? rng() < 0.5 : false;
       // 实例微调 0.9~1.1：一簇里"同一张贴图摆两次"是最刺眼的重复，尺寸错开
       // 一成以上，人眼就不再把它读成复制粘贴（旋转只有几度，扛不住这个任务）。
       const scale = Math.round(clusterScale * (0.9 + rng() * 0.2) * 100) / 100;
@@ -676,15 +788,46 @@ export function generateMap(options: GenerateMapOptions): GeneratedMap {
         const spread = attempt < 3 ? jitter * 0.18 : jitter;
         const x = cell.x + Math.cos(angle) * radius + (rng() - 0.5) * 2 * spread;
         const y = cell.y + Math.sin(angle) * radius * 0.75 + (rng() - 0.5) * 2 * spread;
-        // 锚点是"脚底"，必须在陆地上（素材漂在海面上比稀疏更扎眼）
-        if (!pointInLand({ x, y }, land)) continue;
+        // 贴图轴对齐盒（脚底中心 + 四角）必须整体落在内缩轮廓内：只判锚点会让
+        // 宽素材的左右脚越过海岸线（见 footprintInLand 的注释）
+        if (!footprintInLand({ x, y }, size, scale, inset)) continue;
         if (anchors.some((a) => Math.hypot(a.x - x, a.y - y) < Math.max(sep, a.sep))) continue;
+        // ── 确定性去重（P1-4 验收抬升：任意 seed 恒 0）──
+        //
+        // 翻转只是把同屏"像素完全一致"对的期望砍半；素材池最稀的档位
+        // （沼泽/雪原 7 种）里，(scale 0.01 / rotation 0.1°) 的量化抖动自身
+        // 会碰撞 —— 实测 60 seeds 扫描仍有 33% 的图含 ≥1 对完全一致素材。
+        // 这里把"统计性"抬成"结构性"：同一 spriteId 的 (flip, 量化scale,
+        // 量化rotation) 组合全图至多出现一次。撞了先翻反 flip（零成本，
+        // 翻转本来就该随机）；仍撞才重掷 rotation（**条件性消耗 rng**——
+        // 只有真撞了才掷，同 seed 确定性不变，只是消耗序列不再逐实例固定）。
+        let rotation = Math.round((rng() - 0.5) * 2 * rotAmp * 10) / 10;
+        let flip = flipX;
+        const pixelKeyOf = (f: boolean, r: number) =>
+          `${f ? "F" : "N"}|${scale.toFixed(2)}|${r.toFixed(1)}`;
+        const seen = seenPixels.get(src.id) ?? new Set<string>();
+        let pixelKey = pixelKeyOf(flip, rotation);
+        if (seen.has(pixelKey) && flippableOf(src)) {
+          flip = !flip;
+          pixelKey = pixelKeyOf(flip, rotation);
+        }
+        let rerolls = 0;
+        while (seen.has(pixelKey) && rerolls < 500) {
+          // 500 是纯保险丝：单 (spriteId, scale) 的可用组合 ≥ 2×100 个，
+          // 实际撞不到；耗尽也必须退出（结构性不可能但别挂死测试）
+          rotation = Math.round((rng() - 0.5) * 2 * rotAmp * 10) / 10;
+          pixelKey = pixelKeyOf(flip, rotation);
+          rerolls += 1;
+        }
+        seen.add(pixelKey);
+        seenPixels.set(src.id, seen);
         const p: SpritePlacement = {
           spriteId: src.id,
           x,
           y,
           scale,
-          rotation: Math.round((rng() - 0.5) * 2 * rotAmp * 10) / 10,
+          rotation,
+          flipX: flip,
           terrain,
           zone,
         };
@@ -699,8 +842,14 @@ export function generateMap(options: GenerateMapOptions): GeneratedMap {
     }
   }
 
-  // 脚底 y 升序：Pixi 按加入顺序绘制，排序即 z 序 —— 后排的山被前排压住
-  placements.sort((a, b) => a.y - b.y);
+  // 先按地形层、同层再按脚底 y 升序：Pixi 按加入顺序绘制，排序即 z 序 ——
+  // 层小的（森林/沼泽）先画被压底，层大的（山地/聚落）后画压住别人
+  placements.sort((a, b) => {
+    const la = TERRAIN_LAYER[a.terrain];
+    const lb = TERRAIN_LAYER[b.terrain];
+    if (la !== lb) return la - lb;
+    return a.y - b.y;
+  });
 
   return { land, placements };
 }

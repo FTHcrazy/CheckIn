@@ -53,6 +53,10 @@ interface FakeSpriteRef {
   width: number;
   height: number;
   parent: FakeContainerRef | null;
+  /** 缩放（P1-4 镜像翻转写的就是 scale.x 的符号，断言读回方向用） */
+  scale: { x: number; y: number };
+  /** 每次 position.set 的落点（翻转不位移 / 移动同步探针） */
+  positionCalls: Array<[number, number]>;
 }
 interface FakeContainerRef {
   alpha: number;
@@ -97,6 +101,8 @@ interface FakeGraphicsRef {
 
 let apps: FakeApp[] = [];
 let sprites: FakeSpriteRef[] = [];
+/** 本次渲染/构建期间创建的假 Graphics —— 区块填充/描边 alpha 的行为级断言读它 */
+let graphics: FakeGraphicsRef[] = [];
 /** init 调用是否已完成；未完成时 destroy 复刻真实插件的抛错行为 */
 let initSettled = false;
 
@@ -150,6 +156,18 @@ vi.mock("pixi.js", () => {
     height = 0;
     rotation = 0;
     texture: unknown = null;
+    /**
+     * 缩放带可读写的 x/y：P1-4 镜像翻转写的就是 `scale.x` 的符号
+     * （父类只有 noop 的 `set`，读不回方向）。
+     */
+    scale = { x: 1, y: 1, set: vi.fn() };
+    /** 每次 `position.set` 的参数落点：钉"翻转不位移 / 移动后落位正确"用 */
+    positionCalls: Array<[number, number]> = [];
+    position = {
+      set: vi.fn((x: number, y: number) => {
+        this.positionCalls.push([x, y]);
+      }),
+    };
     constructor() {
       super();
       sprites.push(this as unknown as FakeSpriteRef);
@@ -234,6 +252,11 @@ vi.mock("pixi.js", () => {
     lineTo() {
       this.lineCount += 1;
       return this;
+    }
+    /** 收集实例：子图区块的 fill/stroke 参数只能从建出来的 Graphics 上读回 */
+    constructor() {
+      super();
+      graphics.push(this as unknown as FakeGraphicsRef);
     }
   }
 
@@ -334,6 +357,10 @@ vi.mock("pixi.js", () => {
     RenderTexture,
     BlurFilter,
     ColorMatrixFilter,
+    /* 子图羽化的隔离滤镜替身（submapRender 给 content 挂它，让 erase 只擦子图纹理） */
+    AlphaFilter: class {
+      alpha = 1;
+    },
     TextStyle,
     Text,
   };
@@ -341,8 +368,16 @@ vi.mock("pixi.js", () => {
 
 // 依赖 mock 之后再导入被测组件
 import MapCanvas from "./index";
-import type { MapDocument } from "../../types";
-import type { Point } from "../../regions";
+import { Container } from "pixi.js";
+import type { MapDocument, MapSubmap } from "../../types";
+import type { MapRegion, Point } from "../../regions";
+import {
+  REGION_FILL_ALPHA,
+  REGION_BORDER_ALPHA,
+  regionFillAlphaOf,
+  regionBorderAlphaOf,
+} from "../../regions";
+import { buildSubmapNode, type SubmapEnvRef } from "./submapRender";
 import { elementSizeFactor } from "../../lod";
 
 // jsdom 未实现 PointerEvent / 指针捕获：用 MouseEvent 顶替并补空实现，
@@ -442,13 +477,19 @@ async function flushInit() {
 }
 
 /** 放开一个假的元素实例（世界上只用得到 spriteId/坐标/层级） */
-function elem(id: string, spriteId: string, level: number | null): MapDocument["elements"][number] {
-  return { id, spriteId, x: 0, y: 0, scale: 1, rotation: 0, level };
+function elem(
+  id: string,
+  spriteId: string,
+  level: number | null,
+  overrides: Partial<MapDocument["elements"][number]> = {},
+): MapDocument["elements"][number] {
+  return { id, spriteId, x: 0, y: 0, scale: 1, rotation: 0, level, ...overrides };
 }
 
 beforeEach(() => {
   apps = [];
   sprites = [];
+  graphics = [];
   initSettled = false;
   // 文档 store 是模块级单例：本文件只有合并判决用例用到它，其余用例也不该被污染
   resetMapDocStore(makeDoc());
@@ -1159,5 +1200,285 @@ describe("MapCanvas 手画草稿层", () => {
     // 只发 dblclick、不发 down/up：若还有人挂在 dblclick 上，这里会命中
     fireEvent.doubleClick(container.querySelector(".map-canvas") as HTMLElement);
     expect(onDraftClose).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * 素材镜像翻转（观感批次 C · P1-4）—— 渲染层的行为契约。
+ *
+ * 【钉什么】翻转的唯一语义是 `scale.x` 取反；其余一切（位置 / 宽高 / 层级容器）
+ * 必须与未翻转时完全一致：锚点 (0.5, 1) 水平居中，翻转绕竖直中轴进行，
+ * 脚底点与外接盒都不动 —— 命中测试（coords.hitTestElement）与选中框因此
+ * 天然与原图一致，"点哪选哪"不需要任何反算。
+ * 同时钉旧档兼容：老文档没有 flipX 字段，读点（elementFlipXOf）回落 false。
+ */
+describe("MapCanvas 素材镜像翻转（P1-4）", () => {
+  const BASE = SPRITE_MAP["mountain-20"].baseWidth; // 120
+
+  const findSprite = (width: number) => {
+    const hit = sprites.find((s) => s.width === width);
+    expect(hit, `未找到宽度为 ${width} 的素材精灵`).toBeDefined();
+    return hit as FakeSpriteRef;
+  };
+
+  it("flipX = true：scale.x 为负且幅值不变，同屏一正一反互不干扰", async () => {
+    const doc = makeDoc([
+      elem("a", "mountain-20", null),
+      { ...elem("b", "mountain-20", null), flipX: true, x: 300, y: 500 },
+    ]);
+    renderCanvas(false, { doc, levelAlphas: [] });
+    await flushInit();
+
+    const mountainSprites = sprites.filter((s) => s.width === BASE);
+    expect(mountainSprites, "两个素材各建一个精灵").toHaveLength(2);
+    const flipped = mountainSprites.filter((s) => s.scale.x < 0);
+    const plain = mountainSprites.filter((s) => s.scale.x > 0);
+    expect(flipped, "恰好一个翻面").toHaveLength(1);
+    expect(plain, "恰好一个原样").toHaveLength(1);
+    // 幅值不被翻转改写：|scale.x| 恒等于幅值（mock 下 width 赋值不改 scale，
+    // 生产代码显式 abs 归正 —— 这条钉住"翻转只改符号、不改大小"）
+    expect(Math.abs(flipped[0].scale.x)).toBe(1);
+    expect(plain[0].scale.x).toBe(1);
+  });
+
+  it("旧存档素材没有 flipX 字段：按 false 渲染（scale.x 为正），不报错", async () => {
+    // elem() 造的元素不带 flipX —— 2.34.0 及之前的存档都是这个形状
+    const doc = makeDoc([elem("a", "mountain-20", null)]);
+    renderCanvas(false, { doc, levelAlphas: [] });
+    await flushInit();
+    expect(findSprite(BASE).scale.x).toBeGreaterThan(0);
+  });
+
+  it("翻转状态切换（撤销 / 重做）：同一精灵只改符号，不重建", async () => {
+    const docFlipped = makeDoc([{ ...elem("a", "mountain-20", null), flipX: true }]);
+    const { rerender } = renderCanvas(false, { doc: docFlipped, levelAlphas: [] });
+    await flushInit();
+    expect(findSprite(BASE).scale.x).toBeLessThan(0);
+
+    // 撤销回到未翻转：不能销毁重建（重建 = 纹理重绑 + 容器重挂，白付一次）
+    rerender(canvasTree({ doc: makeDoc([elem("a", "mountain-20", null)]), levelAlphas: [] }));
+    await act(async () => {});
+    expect(sprites.filter((s) => s.width === BASE)).toHaveLength(1);
+    expect(findSprite(BASE).scale.x).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * 镜像翻转的边界补钉（原 QA 独立文件 `qa-flipx-boundary.test.tsx` 并入，
+ * 2026-11-06 收编）—— 覆盖守卫用例没碰到的三个角落：
+ *   1. 脏档 flipX 非布尔真值：读点严格 `=== true`，渲染不得翻转、不得报错；
+ *   2. 素材被手工移动（x/y 变化）：翻转符号保持，不被位置同步冲掉
+ *      （pixi 8 的 `_setWidth` 保留符号，生产代码必须每次显式重设 ——
+ *      这条钉住"符号重设与位置同步互不干扰"）；
+ *   3. 子图内素材的翻转渲染（submapRender.ts 的翻面行此前没有测试钉过）。
+ */
+describe("MapCanvas 素材镜像翻转 · 边界补钉", () => {
+  const BASE = SPRITE_MAP["mountain-20"].baseWidth; // 120
+
+  it("脏档 flipX = 'true'（字符串）：渲染不翻转（scale.x 为正）且不报错", async () => {
+    const doc = makeDoc([
+      elem("a", "mountain-20", null, { flipX: "true" as unknown as boolean }),
+    ]);
+    render(canvasTree({ doc, levelAlphas: [] }));
+    await flushInit();
+    const found = sprites.filter((s) => s.width === BASE);
+    expect(found).toHaveLength(1);
+    expect(found[0].scale.x).toBeGreaterThan(0);
+  });
+
+  it("脏档 flipX = 1（数字真值）：同样不翻转", async () => {
+    const doc = makeDoc([elem("a", "mountain-20", null, { flipX: 1 as unknown as boolean })]);
+    render(canvasTree({ doc, levelAlphas: [] }));
+    await flushInit();
+    expect(sprites.filter((s) => s.width === BASE)[0].scale.x).toBeGreaterThan(0);
+  });
+
+  it("翻转素材被移动：符号保持负值，位置同步到新坐标", async () => {
+    const doc1 = makeDoc([{ ...elem("a", "mountain-20", null), flipX: true }]);
+    const { rerender } = render(canvasTree({ doc: doc1, levelAlphas: [] }));
+    await flushInit();
+    const sprite = sprites.find((s) => s.width === BASE) as FakeSpriteRef;
+    expect(sprite.scale.x).toBeLessThan(0);
+
+    // 模拟拖拽落档：只改 x/y，flipX 原样保留
+    const doc2 = makeDoc([
+      { ...elem("a", "mountain-20", null), flipX: true, x: 500, y: 700 },
+    ]);
+    rerender(canvasTree({ doc: doc2, levelAlphas: [] }));
+    await act(async () => {});
+    expect(sprite.scale.x).toBeLessThan(0);
+    expect(sprite.positionCalls.at(-1)).toEqual([500, 700]);
+  });
+});
+
+describe("子图素材镜像翻转（buildSubmapNode，与父图同一条规则）", () => {
+  const BASE = SPRITE_MAP["mountain-20"].baseWidth; // 120
+  const env: SubmapEnvRef = {
+    current: { renderer: null, textures: {}, baseResolution: 1 },
+  };
+
+  function makeSubmapWith(elements: MapDocument["elements"]): MapSubmap {
+    return {
+      id: "sm_1",
+      bounds: { x: -50, y: -50, width: 100, height: 100 },
+      land: null,
+      regions: [],
+      elements,
+      labels: [],
+      style: "none",
+      baseImageId: "base-1",
+    };
+  }
+
+  function regionWithSubmap(submap: MapSubmap): MapRegion {
+    return {
+      id: "r1",
+      parentId: null,
+      level: 0,
+      name: "区块",
+      seed: { x: 0, y: 0 },
+      polygon: [
+        { x: 0, y: 0 },
+        { x: 100, y: 0 },
+        { x: 100, y: 100 },
+        { x: 0, y: 100 },
+      ],
+      color: 0xffffff,
+      submap,
+    };
+  }
+
+  it("子图元素 flipX = true：精灵 scale.x 为负、位置不位移；缺省：为正", () => {
+    const submap = makeSubmapWith([
+      { ...elem("s1", "mountain-20", null), flipX: true },
+      elem("s2", "mountain-20", null),
+    ]);
+    // buildSubmapNode(parent, region, parentScale, env)：jsdom 无 WebGL，
+    // 替身容器只当挂载点用
+    const container = new Container();
+    const node = buildSubmapNode(
+      container as never,
+      regionWithSubmap(submap),
+      2.2,
+      env,
+    );
+    expect(node).not.toBeNull();
+    const subSprites = sprites.filter((s) => s.width === BASE);
+    expect(subSprites, "两个素材各建一个精灵").toHaveLength(2);
+    const flipped = subSprites.filter((s) => s.scale.x < 0);
+    const plain = subSprites.filter((s) => s.scale.x > 0);
+    expect(flipped, "恰好一个翻面").toHaveLength(1);
+    expect(plain, "恰好一个原样").toHaveLength(1);
+    // 翻转精灵的位置 = 元素自己的子图本地坐标（不被翻转位移）
+    expect(flipped[0].positionCalls.at(-1)).toEqual([0, 0]);
+    expect(plain[0].positionCalls.at(-1)).toEqual([0, 0]);
+  });
+
+  it("子图元素 flipX = 'true' 脏档：不翻转", () => {
+    const submap = makeSubmapWith([
+      { ...elem("s1", "mountain-20", null), flipX: "true" as unknown as boolean },
+    ]);
+    const container = new Container();
+    const node = buildSubmapNode(
+      container as never,
+      regionWithSubmap(submap),
+      2.2,
+      env,
+    );
+    expect(node).not.toBeNull();
+    const subSprites = sprites.filter((s) => s.width === BASE);
+    expect(subSprites).toHaveLength(1);
+    expect(subSprites[0].scale.x).toBeGreaterThan(0);
+  });
+});
+
+/* ───── QA 边界补钉：子图区块静态衰减（行为级，守卫只钉了源码形态） ───── */
+
+describe("子图内区块静态衰减（buildSubmapNode 行为级）", () => {
+  const env: SubmapEnvRef = {
+    current: { renderer: null, textures: {}, baseResolution: 1 },
+  };
+
+  function submapRegion(level: number): MapRegion {
+    return {
+      id: `r_${level}`,
+      parentId: null,
+      level,
+      name: `区块${level}`,
+      seed: { x: 0, y: 0 },
+      polygon: [
+        { x: 0, y: 0 },
+        { x: 50, y: 0 },
+        { x: 50, y: 50 },
+        { x: 0, y: 50 },
+      ],
+      color: 0xffffff,
+    };
+  }
+
+  /** 只建子图节点（不渲染父 MapCanvas）⇒ graphics 里全是子图的绘制调用 */
+  function buildWith(regions: MapRegion[]): FakeGraphicsRef[] {
+    const submap: MapSubmap = {
+      id: "sm_1",
+      bounds: { x: -50, y: -50, width: 100, height: 100 },
+      land: null,
+      regions,
+      elements: [],
+      labels: [],
+      style: "none",
+      baseImageId: "base-1",
+    };
+    const node = buildSubmapNode(
+      new Container() as never,
+      {
+        id: "r1",
+        parentId: null,
+        level: 0,
+        name: "区块",
+        seed: { x: 0, y: 0 },
+        polygon: [
+          { x: 0, y: 0 },
+          { x: 100, y: 0 },
+          { x: 100, y: 100 },
+          { x: 0, y: 100 },
+        ],
+        color: 0xffffff,
+        submap,
+      },
+      2.2,
+      env,
+    );
+    expect(node).not.toBeNull();
+    return graphics;
+  }
+
+  const alphaOf = (options: unknown): number | undefined =>
+    (options as { alpha?: number } | undefined)?.alpha;
+
+  it("子图 level=2 的区块：实际填充 alpha = regionFillAlphaOf(2)（同一张表）", () => {
+    const gs = buildWith([submapRegion(2)]);
+    const fillAlphas = gs.flatMap((g) => g.fills.map(alphaOf));
+    expect(fillAlphas).toContain(regionFillAlphaOf(2));
+    // 没有漏乘静态系数的旧路径
+    expect(fillAlphas).not.toContain(REGION_FILL_ALPHA);
+  });
+
+  it("子图 level=99 越界区块：系数回落 1，alpha = 全局填充（朝不衰减兜底）", () => {
+    const gs = buildWith([submapRegion(99)]);
+    const fillAlphas = gs.flatMap((g) => g.fills.map(alphaOf));
+    expect(fillAlphas).toContain(regionFillAlphaOf(99));
+    expect(regionFillAlphaOf(99)).toBe(REGION_FILL_ALPHA);
+  });
+
+  it("子图边界与填充同表：level=2 的 stroke alpha = regionBorderAlphaOf(2)", () => {
+    const gs = buildWith([submapRegion(2)]);
+    const strokeAlphas = gs.flatMap((g) => g.strokes.map(alphaOf));
+    expect(strokeAlphas).toContain(regionBorderAlphaOf(2));
+    expect(strokeAlphas).not.toContain(REGION_BORDER_ALPHA);
+    // 边界 : 填充的浓度比与全局比恒等（同一张表的直接推论）
+    expect(regionBorderAlphaOf(2) / regionFillAlphaOf(2)).toBeCloseTo(
+      REGION_BORDER_ALPHA / REGION_FILL_ALPHA,
+      10,
+    );
   });
 });

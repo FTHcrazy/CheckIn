@@ -1,4 +1,10 @@
 /**
+ * 已归档 · 2026-11-05
+ *
+ * 本文是「两层渲染（WebGL 底图 + SVG 交互）」时期的坐标参考实现，该路线未被采用。
+ * 现行实现：`src/windows/MapWindow/pages/MapEditorPage/coords.ts`（含 `coords.test.ts`）。
+ * 本文件已不被任何代码 import，只作当时口径留档，请勿据此实现。
+ *
  * 地图画布 · 坐标系统一（纯函数，必须有单测）
  *
  * 【设计原则】两层渲染（WebGL 底图 + SVG 交互）必须共享同一套坐标变换。

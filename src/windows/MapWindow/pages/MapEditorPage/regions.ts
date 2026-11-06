@@ -256,6 +256,52 @@ export const REGION_BORDER_ALPHA = 0.32;
 export const REGION_BORDER_COLOR = 0x27352e;
 
 /**
+ * 区块填充/边界的**静态层次系数**（按 level 索引，0 = 大陆 … 3 = 郡）。
+ *
+ * 【与 `levelAlphas` 正交，绝不混用】`lod.ts` 的 `levelAlphas` 是**缩放驱动的
+ * LOD 权重**（帽函数保证逐级 Σα ≡ 1，已写进第 i 级容器的 alpha 做过渡）——
+ * 若再把它乘到填充上就是双重衰减：视口停在某一层时该层权重 ≈1、相邻层也 ≈1，
+ * 当前活跃层级反而被压淡，「线比面还淡」换个方向复发。这里要的是"越深的
+ * 层级（郡比洲碎、洲比大陆碎），底色越淡"这种**与视口无关**的静态层次感：
+ * 大陆块又大又少，需要颜色才读得出分界；郡块又小又多，颜色重了整张纸就成
+ * 行政区划拼图。系数不参与帽函数归一，独立成表。
+ *
+ * 【单调递减是硬约束】守卫测试钉住（`regions.test.ts`），且边界面共用同一张表
+ * —— 两者必须同比例衰减，否则出现"线比面还淡"或"面比线还重"。
+ * 级数可调（1~4 级）：只开 1 级时全部落在 level 0 = 系数 1，观感与 2.35.0 前一致。
+ */
+export const REGION_LEVEL_FILL_SCALE: readonly number[] = [1, 0.75, 0.58, 0.45];
+
+/**
+ * 层级的静态层次系数（读点兜底的唯一出口）。
+ *
+ * 越界（负数 / 非有限 / 超过表长）回落 1：系数缺失朝"不衰减"兜底——
+ * 区块偶尔出现比预期重的底色，远比"整层区块悄悄消失"可恢复。
+ */
+export function regionLevelScaleOf(level: number): number {
+  const i = Math.trunc(level);
+  if (!Number.isFinite(level) || i < 0 || i >= REGION_LEVEL_FILL_SCALE.length) return 1;
+  return REGION_LEVEL_FILL_SCALE[i] ?? 1;
+}
+
+/** 该层级区块填充的实际不透明度（全局填充 × 静态层次系数） */
+export function regionFillAlphaOf(level: number): number {
+  return REGION_FILL_ALPHA * regionLevelScaleOf(level);
+}
+
+/**
+ * 该层级区块边界的实际不透明度。
+ *
+ * 与填充**共用同一张静态系数表**（不是第二张表）—— "边界面一起调"在结构上
+ * 成立：想单独调边界比例，改 `REGION_BORDER_ALPHA`；想整体改层次落差，
+ * 改 `REGION_LEVEL_FILL_SCALE`。任何一处都不允许出现"只乘一边"的写法
+ * （守卫测试钉住两个渲染落点都走这对函数）。
+ */
+export function regionBorderAlphaOf(level: number): number {
+  return REGION_BORDER_ALPHA * regionLevelScaleOf(level);
+}
+
+/**
  * 边界"崎岖度"参数（凡是以 R 表示的比例，R = `sqrt(该区块面积 / 子区块数)`，
  * 即"这一级一块有多大"的尺度基准 —— 用相对量而非绝对像素，换地图尺寸不用重调）。
  */
@@ -859,6 +905,56 @@ function settleInside(p: Point, poly: Point[], target: Point): Point {
   return { x: target.x, y: target.y };
 }
 
+/**
+ * 星形环的**径向钳制**：环外的点沿「环顶点均值中心 → 该点」射线投影回环上。
+ *
+ * 【为什么需要它】`voronoiCellIn` 的半平面裁剪只对**凸**裁剪框成立，而陆地环是
+ * 星形（r(θ) 单值）而非凸 —— v4 调参后湾变深，单元里"两个岸上顶点之间的直弦边"
+ * 及其抖动弧会直接**穿过湾口**落到海面（实测最远越岸 26 世界单位，2.33.0 前的
+ * `settleInside` 只拉得回顶点、拉不回两点之间的弧线）。
+ *
+ * 【为什么径向投影是精确的】对星形环，从中心出发的每条射线与边界恰好交一次
+ * （r(θ) 单值的定义），所以环外的点沿射线向内找到的第一个交点就是它的岸上投影；
+ * 弧线被逐点钳制后**贴着海岸走**，而不是像凸包逃生开关那样把湾整个填掉。
+ * 投影点落在环的**弦多边形**上，与渲染期 Catmull-Rom 曲线最多差一个矢高
+ * （≈2~3 单位），被海岸白边与既有 3 单位容差盖住。
+ *
+ * 【为什么不破坏严丝合缝】兄弟单元共享同一条内部边 —— host 与弧点由同一对
+ * 端点算出，逐点钳制对两个兄弟施加的是同一个映射，公共边界仍然重合。
+ *
+ * @returns 钳制函数；`ring` 退化（<3 点）时返回 null（调用方跳过钳制）
+ */
+function makeRadialClamp(ring: Point[]): ((p: Point) => Point) | null {
+  if (ring.length < 3) return null;
+  let sx = 0;
+  let sy = 0;
+  for (const p of ring) {
+    sx += p.x;
+    sy += p.y;
+  }
+  const c = { x: sx / ring.length, y: sy / ring.length };
+  return (p: Point): Point => {
+    if (pointInPolygon(p, ring)) return p;
+    const dx = p.x - c.x;
+    const dy = p.y - c.y;
+    let bestT = Infinity;
+    for (let i = 0; i < ring.length; i += 1) {
+      const a = ring[i];
+      const b = ring[(i + 1) % ring.length];
+      const ex = b.x - a.x;
+      const ey = b.y - a.y;
+      // 解 c + t·d = a + s·e（t > 0 为射线方向，0 ≤ s < 1 为段内参数）
+      const den = dx * ey - dy * ex;
+      if (Math.abs(den) < 1e-12) continue;
+      const t = ((a.x - c.x) * ey - (a.y - c.y) * ex) / den;
+      const s = ((a.x - c.x) * dy - (a.y - c.y) * dx) / den;
+      if (t > 1e-9 && s >= -1e-9 && s < 1 && t < bestT) bestT = t;
+    }
+    if (!Number.isFinite(bestT)) return p;
+    return { x: c.x + dx * bestT, y: c.y + dy * bestT };
+  };
+}
+
 /* ────────────────────────── 种子点采样 ────────────────────────── */
 
 /** 点是否在多边形内、且距边界至少 inset */
@@ -1067,6 +1163,8 @@ function buildChildren(
   ctx: WobbleCtx,
   nextId: () => string,
   schema: readonly RegionLevelDef[],
+  /** 根容器为陆地环时的径向钳制（见 makeRadialClamp）；矩形根为 null */
+  clampPoint: ((p: Point) => Point) | null,
 ): LocalNode[] {
   const parentAmp = maxBoundaryAmp(parent);
   const area = polygonArea(parent.base);
@@ -1152,10 +1250,14 @@ function buildChildren(
     }
 
     // ── 3) 拼显示多边形 ──
+    // 陆地根容器时逐点径向钳制：单元的直弦边及其抖动弧会穿过深湾落到海面
+    // （半平面裁剪对星形环不保证 ⊆ 环），钳制后贴着海岸走（见 makeRadialClamp）。
     const display: Point[] = [];
     for (const e of edges) {
-      display.push(e.from);
-      display.push(...arcBetween(e.host, e.from, e.to, ctx));
+      display.push(clampPoint ? clampPoint(e.from) : e.from);
+      for (const p of arcBetween(e.host, e.from, e.to, ctx)) {
+        display.push(clampPoint ? clampPoint(p) : p);
+      }
     }
     if (display.length < 3) continue;
 
@@ -1256,6 +1358,9 @@ export function generateHierarchy(options: GenerateHierarchyOptions): MapRegion[
     { x: bounds.x, y: bounds.y + bounds.height },
   ];
   const rootPoly: Point[] = options.container ?? rect;
+  // 陆地根容器是星形而非凸：半平面裁剪会让单元穿过深湾落到海面，
+  // 显示多边形要逐点径向钳制回岸线（矩形根恒凸，无需钳制）。
+  const clampPoint = options.container ? makeRadialClamp(rootPoly) : null;
   let frontier: LocalNode[] = [
     {
       id: "root",
@@ -1286,7 +1391,7 @@ export function generateHierarchy(options: GenerateHierarchyOptions): MapRegion[
       const parent = frontier[i];
       const n = per[i];
       if (n <= 0) continue;
-      next.push(...buildChildren(parent, level, n, regions, seed, rng, ctx, nextId, schema));
+      next.push(...buildChildren(parent, level, n, regions, seed, rng, ctx, nextId, schema, clampPoint));
     }
     frontier = next;
   }

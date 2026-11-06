@@ -1,9 +1,10 @@
 # 地图素材「和谐分布」机制逆向分析与差距归因
 
 > 状态：**分析定稿 + 执行中**（静态分析结论，未做运行时捕获）。落地进度以
-> [§9 执行总表](#9-执行总表交接用) 为准：已完成 11 项、待办 6 条（执行序 1~6）、阻塞 2 条。
-> 输入：`prd-map-render/architecture.md`、`prd-map-render/map-asset-system-architecture.md`、
-> `prd-map-render/prd-map-render-alignment.md`；目标站点公开前端产物 `all_model_base.js`（模块版本 1.122）
+> [§9 执行总表](#9-执行总表交接用) 为准：已完成 17 项、执行序 1~6 全部闭环；剩余 2 条均为并行轨（阻塞中）。
+> 输入：`docs/archive/prd-map/map-render-alignment-architecture.md`、
+> `prd-map-render/map-asset-system-architecture.md`、`docs/archive/prd-map/map-render-alignment-prd.md`；
+> 目标站点公开前端产物 `all_model_base.js`（模块版本 1.122）
 > 分析基线：CheckIn `2.25.0`（`src/windows/MapWindow/pages/MapEditorPage/`，S1 + B3 已落地）
 > 当前基线：CheckIn `2.27.0`（2026-11-05 校核：`tsc -b` 通过，MapWindow 28 文件 / 524 用例全绿）
 
@@ -279,9 +280,17 @@ d_final = d_sdf + noise · detAmp · exp(-d² / (2·detRadius²))
 
 **离海岸越近（d≈0），细节噪声越强；深入内陆则迅速衰减到 0。**
 于是「边缘毛糙、内部干净」——海岸有手绘的碎边，而内陆保持平整，
-**素材落上去不会与底图纹理互相干扰**。这是本项目 `land.ts` 的 `r(θ)=R(0.72+0.28·fbm)`
-（单环星形 + 全程同强度噪声）做不到的：后者的噪声是**全域均匀**的，
+**素材落上去不会与底图纹理互相干扰**。本项目 `land.ts` 的 `r(θ)=R(0.72+0.28·fbm)`
+（单环星形 + 全程同强度噪声）给不出这个层次：后者的噪声是**全域均匀**的，
 海岸与内陆一样粗糙，元素与底图在两处都要打架。
+
+> **✅ 已落地（2.34.0）**：`land.ts` 改为 SDF 侵蚀管线，本节算法与参数**逐字照抄**
+> （`warpAmp 115 / noiseScale 0.012 / octaves 5 / detScale 0.085 / detAmp 26 /
+> detRadius 28 / smooth 2`，其画布 1px ≈ 1 世界单位，可直接 1:1）。
+> 工程差异两处：母形用轻微起伏的极坐标环代替 GeoJSON 输入；侵蚀在**每岛局部
+> 栅格**上独立进行 + `fitRingToSpan` 按实测半幅贴回格子（结构上保住海峡宽度）。
+> 域扭曲按 stride 4 预采样、零线带外像素沿用 φ₀（性能 ≈ 0.1s/岛）。
+> 落地明细见 CHANGELOG 2.34.0。
 
 **(b) 地表纹理：`createPattern` 平铺 + 边缘羽化**（`decoded.js@544440`、`@718772`）
 
@@ -699,7 +708,7 @@ zone?: ("core" | "grass" | "desert" | "snow")[];
 
 > **本节是状态与优先级的唯一事实源。** §6 保留原始建议作历史记录；
 > §6.4 / §6.5 里各自的「仍未做」已指回本节，不再重复维护。
-> 校核基准：`2.27.0` / 2026-11-05（`tsc -b` 通过，MapWindow 28 文件 / 524 用例全绿）。
+> 校核基准：`2.36.0` / 2026-11-06（tsc 通过，MapWindow 44 文件 / 750 用例全绿）。
 
 ### 9.0 图例
 
@@ -725,34 +734,42 @@ zone?: ("core" | "grass" | "desert" | "snow")[];
 | — | **海面暗角** `SEA_VIGNETTE`（14 环，0.004→0.026） | 2.27.0 | `MapCanvas/index.tsx` | `render-stack-guard.test.ts`：`STATIC_STACK = ["sheet","sea","seaShade"]` |
 | — | **程序纸纹** `paperGrain.ts`（中性灰，哑光 0.88，只压暗） | 2.27.0 | 新增文件 | `paperGrain.test.ts` 6 条（灰度 / 只压暗 / 同 seed 复现 / 接缝无断裂 / jsdom 返回 null） |
 | — | **`P2-2` 的一半**：`REGION_FILL_ALPHA` 0.32 → **0.10** | 2.27.0 | `regions.ts:228` | 全局值已到位；「按层级衰减」仍未做，见 9.2 序 5 |
+| **P1-1** | 海岸内缩带：`insetLand`（每环各自中心等比内缩 14）+ 素材**锚点与四角**都判在内缩轮廓内 | 2.28.0 | `land.ts`、`domain/generator.ts`（`footprintInLand`） | `land.test.ts` 6 条（顶点在内 / 面积变小 / 包围盒收缩 / 退化输入）；`generator.test.ts` 素材锚点全落在内缩轮廓内 |
+| **P1-3** | z 分层基线：`TERRAIN_LAYER` 覆盖 20 地形的档位表 + 「先按层、同层再按 y」二级排序 | 2.28.0 | `generator.ts`（`TERRAIN_LAYER` / `placements.sort`） | `generator.test.ts`：任一森林实例下标 < 任一山地实例下标；同档内 y 单调不减 |
+| **P2-1** | 陆地纹理**平铺 + 边缘羽化**：`TilingSprite` 按 512² 原尺寸重复（不再拉伸 2.25 倍），5 层内缩遮罩逐层降 alpha 形成 40 单位淡出 | 2.28.0 | `coastBake.ts`（`LAND_TEXTURE_FEATHER` / `LAND_TEXTURE_STEPS` / `textureMaskPolygons`）、`__pixi-mock.ts`、`bake.test.tsx` | `coastBake.test.ts` 26 条：装配 17 节点、平铺相位对齐世界坐标、逐层内缩顶点全在陆地内、包围盒逐层递减、最内层收缩跨度 ∈ (FEATHER, 3×FEATHER)、各层 alpha×STEPS ≈ `LAND_TEXTURE_ALPHA`、退化岛退回原轮廓 |
+| **P1-4** | 镜像翻转破重复：`MapElement.flipX`（可选 + 读点兜底）+ `flippable` 登记表（7 张有朝向人造物不可翻）+ 生成器按素材子流随机翻面 + 渲染 `scale.x` 取反 | 2.35.0 | `types.ts`（`elementFlipXOf`）、`sprites.ts`、`domain/terrain-assets.ts`（`flippableOf`）、`domain/generator.ts`、`MapCanvas/index.tsx`、`submapRender.ts` | `generator.test.ts`（同 seed 复现 / 不可翻恒正 / **验收① 像素完全一致对数 = 0**）、`types.test.ts`（旧档回落 false / 脏数据不翻 / migrate 保留）、`index.test.tsx`（翻面符号 / 不位移 / 撤销不重建）、`terrain-assets.test.ts`（不可翻白名单） |
+| — | **确定性去重**（验收①抬升为结构性）：QA 60 seeds 扫描证伪统计性成立后，生成器布点登记 `spriteId → { flip|量化scale|量化rotation }`，撞车翻反 flip / 重掷 rotation（条件性消耗 rng） | 2.35.0 | `domain/generator.ts`（布点循环内 `seenPixels`） | `generator.test.ts`：20 seeds × 全预设 × dense 恒 0 |
+| **P2-2** | 区块按层级**静态衰减**（勘误口径）：`REGION_LEVEL_FILL_SCALE`（按 level 索引、单调递减、与视口无关），填充/边界共用同一张表 | 2.36.0 | `regions.ts`（`regionLevelScaleOf` / `regionFillAlphaOf` / `regionBorderAlphaOf`）、`MapCanvas/index.tsx`、`submapRender.ts` | `regions.test.ts` 4 条：系数表单调递减 + 越界回落 1 + 填充/边界浓度比逐级恒等 + 源码守卫（两落点都走助手、裸常量回退即红） |
+| **P2-3** | 手工落位 AABB 避让：新素材中心落进已有素材命中盒 +30 呼吸边 → 拒绝落位并提示；**移动既有素材不设防**（解围路通） | 2.36.0 | `coords.ts`（`ELEMENT_PLACE_PAD` / `isCenterCovered`）、`hooks/useMapEditor.ts`（`placeSprite` 返回布尔）、`index.tsx`（保持待放态 + 提示） | `coords.test.ts` 4 条（盒内拦 / 呼吸边 / scale 参与外接盒 / some 语义）、`useMapEditor.test.tsx` 4 条（中心被压拦 / 边外放行 / 移动不拦 / 未登记 id 不参与） |
 
 ### 9.2 待办（按执行序排列）
 
 #### 9.2.1 一览
 
+> **序 1 / 2 / 3 已于 2.28.0 落地**（P1-1 海岸内缩、P1-3 z 分层、P2-1 纹理平铺+羽化），
+> **序 4 已于 2.35.0 落地**（P1-4 镜像翻转 + 确定性去重），
+> **序 5 / 6 已于 2.36.0 落地**（P2-2 静态层次衰减、P2-3 落位避让）——执行序 1~6 全部闭环。
+> 明细见 §9.1，条目详情保留在下面供追溯。下表只剩并行轨 2 条。
+
 | 序 | 编号 | 事项 | 优先级 | 成本 | 依赖 |
 |---|---|---|---|---|---|
-| **1** | **P1-1** | 海岸内缩带（素材不得压进陆岸 14 单位） | **P0** | 约 60 行 | 无 |
-| **2** | **P1-3** | z 分层基线：森林压底、山地置顶（新识别） | **P0** | 约 15 行 | 无 |
-| **3** | **P2-1** | 陆地纹理平铺 + 边缘羽化 | **P1** | 约 80 行 | 无 |
-| **4** | **P1-4** | 镜像翻转破重复（新识别，需动数据层） | **P1** | 约 100 行 + `map.db` 迁移 | 无 |
-| **5** | **P2-2** | 区块按层级衰减（用 `levelAlphas`，弃全局常量） | **P2** | 约 40 行 | 无 |
-| **6** | **P2-3** | 手工落位的 AABB 避让（新识别） | **P2** | 约 50 行 | 无 |
 | 并 | **P1-5** | 素材池扩充：沼泽档 / 雪原档各 ≥12 种 | **P1** | 纯美术 | 〔阻塞〕需美术输入 |
 | 并 | **P2-4** | 「自动生成山脉 / 森林」分组 folder | **P2** | 约 120 行 | 〔阻塞〕依赖 `B4` 图层面板 |
 
 > **关于编号与优先级不一致**：`P1-1` / `P2-1` 这些是 §6 的**历史编号**，不改名（改了会断
 > 掉已有引用）。真正的执行依据是**「序」列**与**「优先级」列** —— 例如 `P1-1` 编号带 P1，
-> 但它是当前第一优先（优先级列写 P0）。看序，不要看编号前缀。
+> 但它在排期时是第一优先（优先级列写 P0）。看序，不要看编号前缀。
 >
 > 「序」列写「并」的两条是**并行轨**：与主线无依赖，阻塞解除后随时插入。
 >
-> 排序依据：**对「贴纸感」的贡献 ÷ 改动风险**。序 1、2 都不碰数据层、都不需要新素材，
-> 做完这两条，画面会从「素材压在海岸线上、森林被山压住」变成「留白干净、遮挡符合直觉」。
+> 排序依据：**对「贴纸感」的贡献 ÷ 改动风险**。批次 A（序 1、2）正是因为都不碰数据层、
+> 不需要新素材、一个 PR 就能出同 seed 对照图，才被排在最前；它们落地后画面已从
+> 「素材压在海岸线上、森林被山压住」变成「留白干净、遮挡符合直觉」。批次 B（序 3）
+> 同理只碰 `coastBake.ts`，烘焙链路风险独立好回滚。
 
 #### 9.2.2 条目详情
 
-**序 1 · `P1-1` 海岸内缩带**〔待办〕
+**序 1 · `P1-1` 海岸内缩带**〔已完成 2.28.0〕
 
 - **做什么**：`land.ts` 新增 `insetLand(land, inset = 14)`，`generator` 用**内缩后的轮廓**
   判候选点。素材仍可视觉压线，但压不进陆岸 14 单位。
@@ -767,7 +784,7 @@ zone?: ("core" | "grass" | "desert" | "snow")[];
 - **坑**：内缩会让可放置区域变小 → 实例总数下降。若跌破下限，先降低 `COAST_INSET`
   或让"贴岸格"降级为低密度带，**不要**靠加大 `INSTANCES_PER_CELL` 硬凑。
 
-**序 2 · `P1-3` z 分层基线**〔待办 · 本次整理新识别〕
+**序 2 · `P1-3` z 分层基线**〔已完成 2.28.0 · 本次整理新识别〕
 
 - **依据**：§3.5「分组基线」——参考实现森林走 `GetMinZ`（压到最底）、山脉走 `GetMaxZ` 之上
   （证据 `@559810`）。本项目现在只有脚底 y 排序，**没有这一层**，所以森林会被山压住。
@@ -783,7 +800,7 @@ zone?: ("core" | "grass" | "desert" | "snow")[];
   守卫写在 `generator.test.ts`（钉"档位优先"，不要钉具体下标）。
 - **成本**：约 15 行。**这是本表里性价比最高的一条。**
 
-**序 3 · `P2-1` 陆地纹理平铺 + 边缘羽化**〔部分完成〕
+**序 3 · `P2-1` 陆地纹理平铺 + 边缘羽化**〔已完成 2.28.0〕
 
 - **已完成一半**：纸纹已从"底图当纹理"换成程序生成的中性灰（`paperGrain.ts`，2.27.0）。
 - **剩下的一半**：`texSprite`（单张 1024² `multiply`）→ `TilingSprite` 重复平铺；
@@ -794,28 +811,108 @@ zone?: ("core" | "grass" | "desert" | "snow")[];
 - **退路**（若 `TilingSprite` 与现有 `RenderTexture` 烘焙打架）：`LAND_TEXTURE_ALPHA` 0.55 → 0.42，
   并在 `COAST_FILL` 与纹理之间加一层 30 单位内发光，视觉上模拟"向边缘淡出"。
 
-**序 4 · `P1-4` 镜像翻转破重复**〔待办 · 本次整理新识别〕
+> **实现期修正（2.28.0，比原方案更严重的一条）**
+>
+> 原文的验收 ③ 与"α 渐变羽化"预设了「给遮罩 Graphics 挂 `BlurFilter` → 得到软边」。
+> 这在 pixi 8.22 **不成立**，而且是**整块遮罩失效**，不是退化成硬边：
+>
+> 1. `MaskEffectManager` 按类型分发：`StencilMask.test = mask instanceof Container`、
+>    `AlphaMask.test = mask instanceof Sprite` ⇒ **Graphics 遮罩只能走 stencil（0/1，没有 alpha）**；
+> 2. `Container._updateIsSimple()`：`isSimple = !renderGroup && effects.length === 0`
+>    ⇒ 遮罩节点一挂 `filters`，`effects` 非空、`isSimple = false`；
+> 3. `collectRenderables` 于是走 `collectRenderablesWithEffects`，而
+>    `StencilMaskPipe.push` 里正是直接调 `maskContainer.collectRenderables(...)`
+>    ⇒ 遮罩几何被 `FilterEffect` 渲进**临时纹理**（此时 `colorMask` 仍为 0），
+>    **主目标 stencil 恒空 → `MASK_ACTIVE` 区域为空 → 纸纹整块消失**，且不报错。
+>
+> **实际落地方案**：`LAND_TEXTURE_STEPS = 5` 层 `TilingSprite`，第 i 层遮罩 = 内缩
+> `i × FEATHER/STEPS` 的陆地填充，各自 `alpha = LAND_TEXTURE_ALPHA / STEPS`。
+> 全部走"普通 stencil 遮罩 + multiply 精灵"这条已验证路径，无 filters、无 RT、无对齐风险。
+> 台阶落差 ≈ 全强度 20% ≈ **2.5% 明度**，而纸纹自身噪声 ±13%，台阶被噪声盖住。
+>
+> 连带修正：**验收 ③ 的节点数不是 9，是 17**（4 内容层 + 5×(精灵+遮罩) + 内阴影 + 陆地掩膜 + 白边）；
+> `coastBake.test.ts` 的装配断言已改为按 `LAND_TEXTURE_STEPS` 程序化生成，不再硬编码下标。
+> 另有第三个 `vi.mock("pixi.js")` 工厂在 `components/MapCanvas/bake.test.tsx`（原文漏了），
+> 缺 `TilingSprite` 会让 12 条烘焙用例在 effect 里直接抛错。
+
+**序 4 · `P1-4` 镜像翻转破重复**〔已完成 2.35.0〕
 
 - **为什么**：沼泽档 / 雪原档只有 7 种可用素材（§7 L-7），同屏重复肉眼可见。
   左右翻转能让观感素材量**翻倍**，且不需要一张新图。
-- **做什么**：`MapElement` 加 `flipX?: boolean`；渲染侧 `scale.x *= -1` 并按 `baseWidth`
-  反算锚点（否则会整体位移）；命中测试同步反算 `x`；`sprites.ts` 加 `flippable?: boolean`
-  （默认 `true`，**文字类/有方向性的符号设 `false`**，避免碑文被写反）。
-- **落点**：`src/shared/types/electron.ts`（DTO）、`map.db`（迁移 + 默认 false 向后兼容）、
-  `MapCanvas` 渲染与命中、`sprites.ts`。
-- **验收**：① 同屏"像素完全一致"的素材对数 = 0；② 翻转后的命中热区与原图一致（点哪选哪）；
-  ③ 旧存档无 `flipX` 字段时按 `false` 渲染，不报错。
-- **坑**：要动数据层，**必须单独一批**，不要和序 1/2 混在一起。
+- **做了什么**：`MapElement` 加 `flipX?: boolean`（可选 + 读点兜底 `elementFlipXOf`，
+  旧档回落 false）；`sprites.ts` 加 `flippable?: boolean`（缺省可翻，7 张有朝向
+  人造物——船 / 码头 / 桥 / 门洞类——登记 `false`）；生成器按素材子流以 50%
+  概率随机翻面（同 seed 逐实例可复现）+ **确定性去重**（布点时按
+  `spriteId → { flip|量化scale|量化rotation }` 登记，撞车先翻反 flip、仍撞重掷
+  rotation，条件性消耗 rng）；渲染侧 `scale.x = |scale.x| × ±1`
+  （pixi 8 的 `_setWidth` 保留符号，必须每次显式重设）。
+- **实现期修正（与原方案的差异）**：「按 `baseWidth` 反算锚点 / 命中测试反算 x」
+  在本项目的锚点模型下**是空操作**——素材锚点是 `(0.5, 1)`（水平居中 + 脚底），
+  翻转绕竖直中轴进行，外接盒与脚底点都不动，命中区与选中框天然与原图一致
+  （`coords.hitTestElement` 一行未改，有渲染层守卫钉住"翻面只改符号"）。
+  另：`map.db` **无需表结构迁移**——`doc_json` 整存，元素 JSON 是整份文档的
+  内部结构，加可选字段即向后兼容（与 2.23 的 `opacity` / `tint` 同款路径）。
+- **落点**：`types.ts`、`sprites.ts`、`domain/terrain-assets.ts`（`SpriteSource.flippable`
+  + `flippableOf`）、`domain/generator.ts`、`hooks/useMapEditor.ts`（布点 → 实例）、
+  `MapCanvas/index.tsx`、`MapCanvas/submapRender.ts`。
+- **验收**（全部达成）：① 同 seed 成图同屏「像素完全一致」的素材对数恒 = 0 ——
+  **结构性保证**（QA 60 seeds 扫描证明翻转只是统计性砍半：稀池档量化抖动自身
+  碰撞，59/180 张图仍有 ≥1 对；补生成器确定性去重后守卫抬升为 20 seeds ×
+  全预设 × dense 恒 0）；② 翻转后的命中热区与原图一致
+  （锚点水平居中 ⇒ 翻转不位移，守卫钉住翻面只改 `scale.x` 符号）；③ 旧存档
+  无 `flipX` 字段按 `false` 渲染，不报错（读点兜底 + migrate 保留字段，守卫钉住）。
 
-**序 5 · `P2-2` 区块按层级衰减**〔待办〕
+**序 5 · `P2-2` 区块按层级衰减**〔已完成 2.36.0 · 按 §9.5 勘误口径实现〕
 
-- **现状**：`levelAlphas` 已存在，但**只喂给素材**（`elementWeight` / `elementSizeFactor`，
-  `MapCanvas/index.tsx:807` / `:850`）；区块填充仍用全局 `REGION_FILL_ALPHA = 0.10`（`:1492`、`submapRender.ts:429`）。
-- **做什么**：区块填充改成 `REGION_FILL_ALPHA × (levelAlphas[level] ?? 1)`，
-  边界 `REGION_BORDER_ALPHA` 同步衰减（两者必须一起调，否则出现"线比面还淡"）。
-- **落点**：`MapCanvas/index.tsx:1492`、`submapRender.ts:429`。
-- **验收**：`levelAlphas = [1, 0.6, 0.3]` 时三级区块填充 alpha 依次为 `0.10 / 0.06 / 0.03`，
-  且边界 alpha 同步；守卫 `regions.test.ts`。
+- **现状（实现前）**：`levelAlphas` 已存在，但**只喂给素材**（`elementWeight` / `elementSizeFactor`）；区块填充仍用全局 `REGION_FILL_ALPHA = 0.10`，所有层级同一浓度。
+- **做了什么**：新静态系数表 `REGION_LEVEL_FILL_SCALE = [1, 0.75, 0.58, 0.45]`
+  （按 level 索引、单调递减、**不参与帽函数归一**），填充 = `REGION_FILL_ALPHA × scale`、
+  边界 = `REGION_BORDER_ALPHA × scale`（共用同一张表），主图与子图四处渲染落点
+  全部改走 `regionFillAlphaOf` / `regionBorderAlphaOf`。只开 1 级时 level 恒 0、
+  系数 1，观感与旧版一致；越界/非有限 level 回落 1（朝"不衰减"兜底）。
+- **与原方案（已否决）的差异**：原文把 `levelAlphas` 乘到填充上 —— 那是**双重衰减**
+  （LOD 权重已写进容器 alpha，当前活跃层级反而被压淡），§9.5 勘误已否决；
+  实现走的是勘误给的"新常量表，与 levelAlphas 正交"路线。
+- **验收**（达成，勘误改写口径）：系数表按 level 单调递减（守卫钉住）、同一视口下
+  各级填充 alpha 单调递减、边界与填充浓度比逐级恒等（"线比面还淡"结构性不可能复发）；
+  源码守卫钉住两个渲染落点都走助手函数，裸常量回退即红。
+
+**序 6 · `P2-3` 手工落位的 AABB 避让**〔已完成 2.36.0〕
+
+- **依据**：§3.5「手工落位避让」（证据 `@142908` 附近）——参考实现手拖新元素时用
+  AABB(+30px) 拦住"中心被压住"的落点。
+- **做了什么**：`coords.ts` 新增 `ELEMENT_PLACE_PAD = 30`（世界单位，参考口径）
+  与 `isCenterCovered(center, boxes)`（盒形状与 `hitTestElement` 完全同构）；
+  `useMapEditor.placeSprite` 在落位前检查，被拦返回 `false`；页面保持"待放素材"
+  选中态（不清 `pendingSpriteId`）并提示「落点与已有素材重叠：换个位置，或先把
+  压住的素材拖开」。
+- **路径区分（实现期钉死）**：拦截**只作用于新建落位**；`moveElementBy`（拖既有
+  素材）不设防 —— 拦截若作用于拖拽，压住的素材永远无法拖开解围。守卫用例
+  同时钉"中心被压拦 / 移动进别人的中心不拦"。可见性门槛与命中测试同源
+  （`ELEMENT_PICK_MIN_WEIGHT`），看不见的素材不拦路。
+- **验收**（达成）：手拖一个山到已有聚落正中心 → 落位被拦、聚落仍可被点中
+  （文档零变化）；呼吸边外正常落位；拖动既有元素不受拦截。
+- **有意不拦的路径**：粘贴 / 复制（落位贴近源素材是既有交互语义）、一键成图
+  （有自己的碰撞体系）。
+
+> **⚠️ 口径勘误（2026-11-05 实现前核对，勿照抄上面的"做什么"）**
+> **→ 已按本勘误实现（2.36.0），勘误保留作决策依据追溯。**
+>
+> 上面把 `levelAlphas` 当成了**静态的"层级深度衰减系数"**，实际它是**缩放驱动的 LOD 权重**：
+> `lod.ts` 的帽函数（partition of unity）保证**逐级 Σα ≡ 1**，且它**已经生效**——
+> `MapCanvas/index.tsx:1531` 把 `levelAlphas[i]` 直接写进第 i 级容器的 `alpha`。
+> 也就是说相邻两级本来就在"此消彼长"地过渡。
+>
+> 若再乘一次到填充上：视口停在某一级时该级权重≈1、相邻级≈1，而更深层≈0 —— 填充 alpha 会变成
+> **双重衰减**，当前活跃层级反而被压淡，"线比面还淡"照样出现，只是换了个方向。
+>
+> **正确做法**：这里要的是"越深的层级，区块底色越淡"这种**与视口无关的静态层次感**，
+> 必须引入一个**新的常量表**（例如 `REGION_LEVEL_FILL_SCALE`，按 `level` 索引，
+> 不参与帽函数归一），与 `levelAlphas` 正交：`填充alpha = REGION_FILL_ALPHA × 静态层次系数`，
+> 再交给容器 alpha 去做 LOD 过渡。验收标准也要改写成"同一视口下、各级静态系数按 level 单调递减"，
+> 而不是"某组 `levelAlphas` 下的绝对值"。
+>
+> 在这一点写清楚之前，本条目**不应开工**——否则实现出来的东西会因为两次乘法而"看起来更淡但更脏"。
 
 **序 6 · `P2-3` 手工落位的 AABB 避让**〔待办 · 本次整理新识别〕
 
@@ -849,10 +946,10 @@ zone?: ("core" | "grass" | "desert" | "snow")[];
 
 | 批次 | 内容 | 为什么这样切 |
 |---|---|---|
-| **A** | 序 1（P1-1 海岸内缩）+ 序 2（P1-3 z 分层） | 都只碰 `domain/`，**不碰数据层、不需要新素材**，一个 PR 能出同 seed 对照图；两条合起来解决「素材压海岸线 + 森林被山压住」 |
-| **B** | 序 3（P2-1 纹理平铺 + 羽化） | 只碰 `coastBake.ts`；烘焙链路风险独立，与 A 分开好回滚 |
-| **C** | 序 4（P1-4 镜像翻转） | 要动 `MapElement` / DTO / `map.db` 迁移，**必须独立**；建议放在 A、B 之后，此时画面已干净，才看得出翻转带来的收益 |
-| **D** | 序 5（P2-2）+ 序 6（P2-3） | 都是「局部体验修补」，可合并到一个收尾 PR |
+| **A** | 序 1（P1-1 海岸内缩）+ 序 2（P1-3 z 分层） | 都只碰 `domain/`，**不碰数据层、不需要新素材**，一个 PR 能出同 seed 对照图；两条合起来解决「素材压海岸线 + 森林被山压住」。**✅ 已完成 2.28.0** |
+| **B** | 序 3（P2-1 纹理平铺 + 羽化） | 只碰 `coastBake.ts`；烘焙链路风险独立，与 A 分开好回滚。**✅ 已完成 2.28.0**（羽化改为 5 层内缩，见序 3 的实现期修正） |
+| **C** | 序 4（P1-4 镜像翻转） | 要动 `MapElement` / DTO / `map.db` 迁移，**必须独立**；建议放在 A、B 之后，此时画面已干净，才看得出翻转带来的收益。**✅ 已完成 2.35.0**（`map.db` 实际无需表结构迁移：`doc_json` 整存，可选字段即向后兼容） |
+| **D** | 序 5（P2-2）+ 序 6（P2-3） | 都是「局部体验修补」，可合并到一个收尾 PR。**✅ 已完成 2.36.0**（序 5 按勘误口径走新静态系数表，未乘 levelAlphas；序 6 拦截只作用于新建落位、移动不设防） |
 | — | `P1-5` 素材池 / `P2-4` folder | 与批次解耦，各自阻塞解除后并行插入 |
 
 ### 9.4 不要做的事（负向约束，比待办更重要）
@@ -865,7 +962,9 @@ zone?: ("core" | "grass" | "desert" | "snow")[];
 4. **不要把 `PLAIN_CELL_RATIO` 当"随机留白"用**。它是**反解格边长的目标值**；
    真正的留白来自"配额之外没认领的格"。按旧语义随机丢弃格，会重现"北密南秃"。
 5. **不要用全局 `REGION_FILL_ALPHA` 调区块观感**。那条路 2.27.0 已走到 0.10 的尽头，
-   再往下压会让边界线孤零零浮在纸上；观感调节的下一步是 `levelAlphas`（序 5）。
+   再往下压会让边界线孤零零浮在纸上；层次感的正确入口是**静态系数表**
+   `REGION_LEVEL_FILL_SCALE`（2.36.0 已落地，按 level 索引、与视口无关）——
+   **不是 `levelAlphas`**（LOD 权重，乘上去双重衰减，见 §9.5 勘误）。
 6. **不要为"重复率"再调生成算法**。算法已到边界，剩下的是素材数量（`P1-5`）与翻转（序 4）。
 7. **改公共原语前先数使用点**（`AGENTS.md`）：`MapCanvas` 的节点装配被
    `render-stack-guard.test.ts` / `bake.test.tsx` / `coastBake.test.ts` 三处钉着，
@@ -876,6 +975,15 @@ zone?: ("core" | "grass" | "desert" | "snow")[];
    第二轮拿同一张已销毁的纹理去烘焙，batcher 读 `_source.alphaMode` 抛 null，
    **整个画布白屏**，而报错看起来与纹理毫无关系。守卫在
    `render-stack-guard.test.ts` 的「纹理归属」组。
+9. **不要给 `Graphics` 遮罩挂 `filters`（想加软边也不行）**。pixi 8.22 里
+   `StencilMask.test = mask instanceof Container`、`AlphaMask.test = mask instanceof Sprite`
+   —— Graphics 遮罩只能走 stencil（0/1，无 alpha）；而 `Container._updateIsSimple()` 是
+   `isSimple = !renderGroup && effects.length === 0`，挂上 `BlurFilter` 就让 `isSimple = false`，
+   `StencilMaskPipe.push` 里的 `maskContainer.collectRenderables(...)` 转而走
+   `collectRenderablesWithEffects`，遮罩几何被渲进**临时纹理**、主目标 stencil 恒空
+   ⇒ **被遮罩的内容整块消失，且不报错**。要软边只有两条路：换 `Sprite` 作遮罩（AlphaMask，
+   需自己烘遮罩 RT 并对齐世界变换），或者**用多层内缩 + 逐层降 alpha 模拟**（`LAND_TEXTURE_STEPS` 的做法）。
+   守卫：`coastBake.test.ts` 断言 `layerMask.filters` 长度为 0。
 
 ### 9.5 勘误（2026-11-05 校核）
 
@@ -885,6 +993,8 @@ zone?: ("core" | "grass" | "desert" | "snow")[];
 | 「池只有 4 张沼泽素材」 | §6.5 表格 | **口径偏窄**：沼泽档应含 `jungle` 3 张，实际 7 种 | 已改为「沼泽档 7 种（`swamp` 4 + `jungle` 3）」 |
 | 「（见 §7 L-6）」 | §6.5 表格 | 指错了 —— L-6 是"未评估性能代价" | 新增 §7 **L-7** 记素材池不均衡，表格改为指向 L-7 |
 | §9 初稿写「雪原按 `snowfield 6 + tundra 4` 去重后 7」 | 本节初稿 | **口径混了**：`terrains` 数出 10 张、`zones` 才是 7 张，两个数不是同一个字段 | 已统一为「按 `zones` 计 7 张」，并在 §6.5 加口径说明 |
+| 「序 3 用遮罩 + `BlurFilter` 做 α 渐变羽化，不生效也只是退化硬边」 | §9.2.2 序 3 | **错了且更严重**：pixi 8.22 里 Graphics 遮罩走 stencil（无 alpha），挂 `filters` 会让 `isSimple=false`、遮罩几何被渲进临时纹理 ⇒ **遮罩整块失效、内容消失**，不是硬边 | 已改为「5 层内缩 + 逐层降 alpha」（`LAND_TEXTURE_STEPS`），并在 §9.2.2 序 3 补「实现期修正」、§9.4 补负向约束第 9 条 |
+| 「序 5 用 `levelAlphas` 做区块层级衰减」 | §9.2.2 序 5 | **口径错了**：`levelAlphas` 是缩放驱动的 LOD 权重（帽函数 Σα≡1，且已写进层级容器 alpha），不是层级深度的静态系数；再乘一次填充会双重衰减 | 已在序 5 加「⚠️ 口径勘误」：另立 `REGION_LEVEL_FILL_SCALE` 这类与视口无关的静态系数，条目暂不开工 |
 
 > 教训：**素材数量这类"一条命令就能数出来"的事实，不要凭印象写进文档；而且必须写明数的是哪个字段。**
 > 口径由脚本固定，别再手算：
@@ -904,7 +1014,7 @@ node scripts/count-map-sprites.mjs          # 动过素材表（P1-5）才需要
 - **不要用 `npx vitest`**：会解析到错的 root，症状是"全仓 0 用例 + `Cannot read properties of undefined (reading 'config')`"。
 - **全仓跑必须带 `--maxWorkers=4`**：默认并发会 `Failed to start forks worker`，
   257 个文件只跑 255 个、汇总仍写 "255 passed"，属**静默漏跑**。目录级跑不受影响。
-- 当前基线：**28 文件 / 524 用例全绿**（约 480s）。
+- 当前基线：**44 文件 / 750 用例全绿**（约 357s；`index.test.tsx` 已按坐标/陆地/区块/生成拆成 4 个并行文件）。
 - `pnpm count:sprites` 是同一脚本的别名；PATH 里没有 pnpm 时（如 Git Bash 非交互）
   直接用上面的 `node scripts/...` 形式。
 
@@ -940,7 +1050,7 @@ node scripts/collect-makeamap-assets.mjs --styles 0 --images      # 只抓「魔
 
 | PRD 位置 | 原结论 | 本次分析的建议 |
 |---|---|---|
-| `prd-map-render-alignment.md` §4.3 | 区块 `REGION_FILL_ALPHA 0.32 → 0.10` | 方向对但落点错：应压「同视口可辨识区块数」（按 `levelAlphas` 衰减），不是压全局 alpha。参考实现 alpha 是 0.3 且不显色，靠的是「只有一级、≤20 个」。 |
+| `archive/prd-map/map-render-alignment-prd.md` §4.3 | 区块 `REGION_FILL_ALPHA 0.32 → 0.10` | 方向对但落点错：应压「同视口可辨识区块数」（按 `levelAlphas` 衰减），不是压全局 alpha。参考实现 alpha 是 0.3 且不显色，靠的是「只有一级、≤20 个」。 |
 | 同上 §2.4 | 「值得学的只有三件事」 | 应为四件：**素材布点（网格 + 丛簇 + 连通性）** 是第四件，且是观感差距的主要来源。 |
 | `map-asset-system-architecture.md` §二 | 展示分类 / 地形语义双轴 | 需要**第三轴**：地貌带 `zone`。地形语义回答「画什么」，地貌带回答「用哪一族画风」。 |
 | 同上 §五 | `pickTerrainSprites` 过滤 + 回退链 | 增加 `zone` 二次过滤；回退链改为 `同 terrain 同 zone → 同 terrain 相邻 zone → core`。 |
