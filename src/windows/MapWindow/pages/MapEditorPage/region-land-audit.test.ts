@@ -20,7 +20,6 @@ import {
   DEFAULT_REGION_SCHEMA,
   generateHierarchy,
   pointInPolygon,
-  polygonArea,
   type Point,
 } from "./regions";
 import { generateMap } from "./domain/generator";
@@ -34,9 +33,14 @@ const sizeOf = (id: string) => {
   return { width: def?.baseWidth ?? 90, height: def?.baseHeight ?? 70 };
 };
 
-/** 与 useMapEditor.buildRegions 同口径的每岛层级数量：level0 恒 1 */
+/**
+ * 与 `useMapEditor.buildRegions` 同口径的每岛层级数量。
+ *
+ * 2.40.0 起 level0 是**国家**、按面积分摊（不再"每岛 1 块大陆"），单岛时 share = 1
+ * ⇒ 与 schema 逐值相同。
+ */
 function islandLevelCounts(): number[] {
-  return [1, ...DEFAULT_REGION_SCHEMA.slice(1).map((l) => l.count)];
+  return DEFAULT_REGION_SCHEMA.map((l) => l.count);
 }
 
 /** 点到多边形边界的最短距离（审计容差用，不追求精度） */
@@ -108,14 +112,18 @@ function auditRegions(seed: number): IslandAudit[] {
 
 describe("守卫 1：区块线与陆地环的贴合度", () => {
   /**
-   * 基线（越湾修复 + 每陆 1 大陆口径下，12 seed × 20 岛实测）：
-   * 越岸采样点 2748 / 最大越出 14.1。
-   * 阈值给 ~15% 余量：算法改动让数字明显变好应该收紧阈值，变差就是回归。
-   * 【为什么不是 0】残余是拼接缝级弦（径向投影在非星形湾的对岸问题，见
-   * regions.ts repairPolygonSeams / repairBayCrossings 的注释），渲染期掩膜兜底。
+   * 【2.41.0 起基线 = 0 / 0】改用可切分的半平面裁剪（`regions.ts` 的
+   * `clipHalfPlanePieces`）之后，单元是**精确裁剪**出来的：贴岸段就是陆地环
+   * 本身的那一段，内部边被"离岸余量"封顶，因此几乎没有采样点落在环外
+   * （12 seed × 20 岛实测越岸点 **110**、最大越出 **2.9**；单 seed 多为 0）。
+   *
+   * 之前的两条数值（2748 / 14.1）是"单环 + 径向投影 + 越湾绕行"那套补丁的
+   * 基线 —— 补丁本身就是在替 S-H 的单环假设兜底，如今整套都删了。
+   * 阈值给 0 附近一点余量（浮点、退化交点），一旦算法回退到"沿裁剪线拉弦"
+   * 立刻成百上千地红。
    */
-  const MAX_OUTSIDE_DIST = 16;
-  const MAX_OUTSIDE_SAMPLES = 3200;
+  const MAX_OUTSIDE_DIST = 4;
+  const MAX_OUTSIDE_SAMPLES = 300;
 
   it("越岸采样点数与最大越出幅度都在基线内", () => {
     const rows: IslandAudit[] = [];
@@ -132,12 +140,11 @@ describe("守卫 1：区块线与陆地环的贴合度", () => {
     ).toBeLessThanOrEqual(MAX_OUTSIDE_DIST);
   });
 
-  it("变异探针：把修复关掉守卫必须变红（防假绿）", () => {
-    // 直接用"修复前必然超限"的口径反向验证阈值有意义：审计函数本身测的是
-    // 生成器输出，这里用「上限必须小于修复前的实测最坏值」钉住 —— 若有人把
-    // 阈值放宽到修复前水平，这条先红。
-    expect(MAX_OUTSIDE_DIST).toBeLessThan(24.6);
-    expect(MAX_OUTSIDE_SAMPLES).toBeLessThan(6831);
+  it("变异探针：阈值必须远小于「单环拉弦」时代的实测值（防假绿）", () => {
+    // 审计函数测的是生成器输出，本身不会红；这里用"上限必须远小于历史最坏值"
+    // 反向证明阈值有意义 —— 若有人嫌红把阈值放宽回 16 / 3200，这条先红。
+    expect(MAX_OUTSIDE_DIST).toBeLessThan(6);
+    expect(MAX_OUTSIDE_SAMPLES).toBeLessThan(600);
   });
 });
 
@@ -186,35 +193,67 @@ describe("守卫 2：素材渲染宽 / 陆地轴长（素材相对比例）", ()
   });
 });
 
-describe("守卫 3：每块陆地恰好 1 个 level0（大陆）区块", () => {
-  it("逐 seed 校验 level0 结构（一陆一大陆，国家挂它下面）", () => {
+describe("守卫 3：level0（国家）铺满陆地、顶层不再是「一陆一块」", () => {
+  /**
+   * 【口径变更（2.40.0）】旧守卫钉的是"每块陆地恰好 1 个 level0"——那时 level0 是
+   * 大陆，一块陆地切成 2~3 个"大陆"确实是缺陷。砍掉大陆/洲之后 level0 变成**国家**，
+   * "一块陆地上有十几个国家"才是目标，于是守卫改成两条**结构性**判据：
+   *   ① 数量对得上（不因为岛屿被切成碎片而多切或少切）；
+   *   ② 面积上**铺满**这块陆地（不是只覆盖一角、也不是叠着好几层）。
+   * 第 ② 条用网格采样算并集覆盖率，比"单块面积占比"更贴近"铺满"这件事。
+   */
+  it("逐 seed：每个岛的 level0 数量 = schema 的国家数", () => {
+    const want = islandLevelCounts()[0];
     for (const seed of SEEDS.slice(0, 6)) {
       const rows = auditRegions(seed);
       for (const r of rows) {
         expect(
           r.level0Count,
-          `seed ${seed} 岛 ${r.island} 的 level0 数量为 ${r.level0Count}，应为 1`,
-        ).toBe(1);
+          `seed ${seed} 岛 ${r.island} 的 level0 数量为 ${r.level0Count}，应为 ${want}`,
+        ).toBe(want);
       }
     }
   });
 
-  it("陆地区块面积占比：主陆的 level0 覆盖全岛（不是被切成碎片）", () => {
+  it("陆地覆盖：level0 的并集铺满全岛（网格采样覆盖率 > 0.97）", () => {
     const seed = 20260411; // 单岛 seed
     const land = generateLand({ seed, bounds: BASE_BOUNDS });
+    const ring = land.polygons[0];
     const regions = generateHierarchy({
       seed,
       bounds: BASE_BOUNDS,
       levelCounts: islandLevelCounts(),
-      container: land.polygons[0],
+      container: ring,
       idPrefix: "g3_",
     });
     const level0 = regions.filter((r) => r.level === 0);
-    expect(level0).toHaveLength(1);
-    const cover =
-      polygonArea(level0[0].polygon) / Math.max(1e-6, polygonArea(land.polygons[0]));
-    // level0 显示多边形贴岸（含湾岸绕行），覆盖应接近全岛；给平滑/残余留 5% 余量
-    expect(cover).toBeGreaterThan(0.95);
+    expect(level0).toHaveLength(islandLevelCounts()[0]);
+
+    let inside = 0;
+    let covered = 0;
+    const N = 60;
+    const bb = ring.reduce(
+      (acc, p) => ({
+        minX: Math.min(acc.minX, p.x),
+        maxX: Math.max(acc.maxX, p.x),
+        minY: Math.min(acc.minY, p.y),
+        maxY: Math.max(acc.maxY, p.y),
+      }),
+      { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity },
+    );
+    for (let i = 0; i < N; i += 1) {
+      for (let j = 0; j < N; j += 1) {
+        const p = {
+          x: bb.minX + ((i + 0.5) / N) * (bb.maxX - bb.minX),
+          y: bb.minY + ((j + 0.5) / N) * (bb.maxY - bb.minY),
+        };
+        if (!pointInPolygon(p, ring)) continue;
+        inside += 1;
+        if (level0.some((r) => pointInPolygon(p, r.polygon))) covered += 1;
+      }
+    }
+    // 岸线附近留 3% 余量（显示多边形贴岸有 ≤ 十几单位的残余，见守卫 1）
+    expect(covered / Math.max(1, inside), "level0 并集覆盖率").toBeGreaterThan(0.97);
   });
 });
 

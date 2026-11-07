@@ -207,9 +207,8 @@ describe("MapEditorPage 坐标链路", () => {
   /**
    * 生成 → 撤销 → 重做 → 清除。
    *
-   * 【只加超时，未改任何断言】本用例要跑两次 223 块的生成/重建（每次 160 个郡
-   * 多边形的填充与描边都要走过一遍 mock Graphics），实测单跑 3.5~3.7s；
-   * 超时由文件顶层的 `vi.setConfig({ testTimeout: 120000 })` 统一兜住。
+   * 【2.42.0】区域只有国家一级：生成 12 块。超时由文件顶层的
+   * `vi.setConfig({ testTimeout: 120000 })` 统一兜住。
    */
   it("区块：可生成、可撤销、可重做、可清除", async () => {
     await setup();
@@ -227,7 +226,7 @@ describe("MapEditorPage 坐标链路", () => {
 
     // ── 生成 ──
     fireEvent.click(generate);
-    await waitFor(() => expect(regionLabel()).toContain("223"));
+    await waitFor(() => expect(regionLabel()).toContain("12"));
     expect(clearRegionsBtn()).not.toBeDisabled();
 
     // ── 撤销：区块必须一起回退 ──
@@ -238,7 +237,7 @@ describe("MapEditorPage 坐标链路", () => {
 
     // ── 重做：区块恢复 ──
     fireEvent.click(screen.getByRole("button", { name: "redo" }));
-    await waitFor(() => expect(regionLabel()).toContain("223"));
+    await waitFor(() => expect(regionLabel()).toContain("12"));
 
     // ── 清除 ──
     fireEvent.click(clearRegionsBtn());
@@ -253,7 +252,7 @@ describe("MapEditorPage 坐标链路", () => {
     await waitFor(() => expect(countLabel()).toContain("1"));
 
     fireEvent.click(screen.getByRole("button", { name: /生成区块/ }));
-    await waitFor(() => expect(regionLabel()).toContain("223"));
+    await waitFor(() => expect(regionLabel()).toContain("12"));
 
     // 素材数量保持不变 —— 区块层与素材层是各自独立的文档字段
     expect(countLabel()).toContain("1");
@@ -264,134 +263,86 @@ describe("MapEditorPage 坐标链路", () => {
     expect(countLabel()).toContain("1");
   });
 
-  it("层级数可调：改成 2 级只切出大陆与洲", async () => {
+  /**
+   * 【2.42.0】层级配置随层级一并下线：主栏不再有「层级 N」浮层与
+   * 「应用并生成区块」入口，区域只有国家一级，「生成区块」一步出图。
+   */
+  it("区域只有国家一级：无层级配置入口，生成即 12 块", async () => {
     await setup();
-    // 默认 4 级共 223 块（3 + 12 + 48 + 160）；改成 2 级应只剩前两级 15 块。
-    //
-    // 【入口变了】层级配置从「更多」里的裸 InputNumber 升级成主栏的「层级 N」浮层
-    // （R-REG-01：层数 + 每级名称 + 每级数量）。浮层内容挂在 body，所以照常在
-    // 整个 document 里查；「层数」这个 aria-label 唯一指向浮层顶部那个数字框。
-    fireEvent.click(screen.getByRole("button", { name: /层级 \d/ }));
-    const depth = screen.getByRole("spinbutton", { name: "层数" });
-    fireEvent.change(depth, { target: { value: "2" } });
-    fireEvent.blur(depth);
+    // 层级配置浮层已整体移除（RegionSchemaPanel 随 2.42.0 删除）
+    expect(screen.queryByRole("button", { name: /层级 \d/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /应用并生成区块/ })).toBeNull();
 
-    // 【走「应用并生成区块」而不是关掉浮层再点「生成区块」】这正是用户路径：
-    // 改完配置就地生成。它同时钉住"生成读到的是刚写进文档的那份 schema"，
-    // 而不是上一次渲染闭包里的旧值（那会切成 4 级）。
-    fireEvent.click(screen.getByRole("button", { name: /应用并生成区块/ }));
-    await waitFor(() => expect(regionLabel()).toContain("15"));
-    expect(regionLabel()).not.toContain("223");
+    fireEvent.click(screen.getByRole("button", { name: /生成区块/ }));
+    await waitFor(() => expect(regionLabel()).toContain("12"));
   });
 
   /**
-   * 层级指示随缩放切换 —— 「无极衔接」在 UI 上唯一可见的证据。
-   *
-   * 数值前提（全部可复算）：画布 1024²、底图 1024 世界单位、适配留白 0.8 → 初始缩放 0.8。
-   * 四级默认数量 [3, 12, 48, 160] 配 LOD_BLOCK_PX = 360，得自然缩放
-   * [0.304, 0.609, 1.218, 2.223]，交界（相邻两级几何平均）[0.431, 0.861, 1.646]。
-   * 缩放按钮的倍率是 ×1.1 / ÷1.1（见 useMapEditor 的 handleWheel；工具栏按钮只传方向）。
-   *
-   * 某一级"独占"的条件是它的权重为 100%，即相邻两个交界都已被推过：
-   *   洲 独占 ⇒ 0.9668 ≤ z ≤ 1.4663；郡 独占 ⇒ z ≥ 1.8473；大陆 独占 ⇒ z ≤ 0.3836
-   * （阈值 = 交界 × 2^±(W/2)，W = 1/3 倍频程）
-   *
-   * 于是四个考察点：
-   *   0.8000 = 80%  = 起点        → 洲 91% + 国家 9% ⇒ "洲 ↔ 国家"
-   *                                 （刚冒头的国家不是误差，正是细级"提前透出"的效果）
-   *   2.2825 = 228% = 0.8×1.1¹¹   → 越过 1.646 且 ≥1.847 ⇒ "郡"
-   *   0.8000 = 80%  = 适应窗口     → 与起点逐位相同，验证缩放可逆
-   *   0.3393 = 34%  = 0.8÷1.1⁹    → 落到 0.431 以下且 ≤0.384 ⇒ "大陆"
-   *
-   * 全用精确相等而不是"包含"：这三档恰好是某一级的权重为 100%，字符串唯一确定。
-   * 一旦谁调了 LOD_BLOCK_PX 让"第一眼看到的层级"变了，这里必须红 —— 那是有意的
-   * 设计变更，不该悄悄溜过去。断言里连缩放百分比一起锁定，是为了让失败信息能直接
-   * 区分"缩放没走到位"与"权重函数不对劲"。
+   * 【2.42.0】无级缩放（LOD 交叉淡化）已随层级一并关闭：区域只有国家一级，
+   * 层级胶囊恒为「国家 100%」，缩放只改变视口倍率。
    */
-  it("层级指示随缩放连续切换：洲 ↔ 国家 → 郡 → 大陆", async () => {
+  it("缩放不改变层级显示：胶囊恒为「国家」，到缩放下限后不再变小", async () => {
     await setup();
     fireEvent.click(screen.getByRole("button", { name: /生成区块/ }));
-    await waitFor(() => expect(regionLabel()).toContain("223"));
+    await waitFor(() => expect(regionLabel()).toContain("12"));
 
     const zoomPct = () => document.querySelector(".map-editor__zoom-label")?.textContent ?? "?";
     const chip = () => document.querySelector(".map-editor__level-chip")?.textContent ?? "";
-    /**
-     * 把「缩放百分比 + 层级胶囊」当整体断言。失败时一眼能分辨是哪一层出了问题：
-     * 百分比不对 ⇒ 缩放链路（fit / 步长 / 上下限）；百分比对但层级不对 ⇒ 权重函数。
-     */
-    const state = () => `${zoomPct()} → ${chip()}`;
+    // 【为什么抠数值而不是钉字符串】多档缩放的累积浮点误差会把 208% 抖成 207%，
+    // 钉精确读数只会制造假红；这里关心的是"过了 200 且不再动"。
+    const zoomVal = () => Number((zoomPct().match(/(\d+)%/) ?? [])[1] ?? -1);
 
-    // 初始：洲主导，国家刚刚露头
-    expect(state()).toBe("80% → 洲 ↔ 国家");
+    // 起点：国家（唯一的层级），80%
+    expect(zoomVal()).toBe(80);
+    expect(chip()).toBe("国家");
 
-    // 查询只做一次：`getByRole` 是全树遍历（见文件顶部 zoomBy 的说明），
-    // 放进循环会让 20 次连点多花数秒，而按钮节点本身是复用的。
+    // 放大若干档：倍率在变，层级不变
     const zoomIn = screen.getByRole("button", { name: "zoom-in" });
     const zoomOut = screen.getByRole("button", { name: "zoom-out" });
+    for (let i = 0; i < 10; i += 1) fireEvent.click(zoomIn);
+    await waitFor(() => expect(zoomVal()).toBeGreaterThan(200), { timeout: 3000 });
+    expect(chip()).toBe("国家");
 
-    for (let i = 0; i < 11; i += 1) fireEvent.click(zoomIn);
-    await waitFor(() => expect(state()).toBe("228% → 郡"), { timeout: 3000 });
-
-    // 「适应窗口」应当精确回到起点（无极衔接可逆，不该有迟滞或漂移）
+    // 「适应窗口」精确回到起点
     fireEvent.click(screen.getByRole("button", { name: "expand" }));
-    await waitFor(() => expect(state()).toBe("80% → 洲 ↔ 国家"), { timeout: 3000 });
+    await waitFor(() => expect(zoomVal()).toBe(80), { timeout: 3000 });
 
-    // 继续缩出去：洲淡出、大陆淡入，最终只剩大陆
-    for (let i = 0; i < 9; i += 1) fireEvent.click(zoomOut);
-    await waitFor(() => expect(state()).toBe("34% → 大陆"), { timeout: 3000 });
+    // 缩到下限（最粗一级自然缩放 × coarseOut = 0.609×0.6 ≈ 37%），再点不动
+    for (let i = 0; i < 12; i += 1) fireEvent.click(zoomOut);
+    await waitFor(() => expect(zoomVal()).toBeLessThanOrEqual(40), { timeout: 3000 });
+    fireEvent.click(zoomOut);
+    fireEvent.click(zoomOut);
+    await act(async () => {});
+    expect(zoomVal()).toBeLessThanOrEqual(40);
+    expect(chip()).toBe("国家");
   });
 
   /**
-   * 素材的层级归属 —— 用户报障：「在放大到最小的一级（郡）添加的山，缩放到上一级
-   * 并没有同步」。
-   *
-   * 根因：素材此前是"浮在地图上的一层贴纸"，不参与任何层级、也不随层级显隐，
-   * 于是在郡那一级摆的山，缩到洲/国家去看时依旧原样显示，与当前尺度完全脱节。
-   *
-   * 现在素材会记住放置时所处的主导层级，并挂在那一级的容器下、随其权重淡入淡出 ——
-   * 即"每一等级的元素随该地图缩放而缩放，换到另一级时消失"。
+   * 【2.42.0】素材不再随层级淡出（层级已关闭）：任何缩放下都可见、可选中。
+   * 钉住这条防回归 —— 若有人把 `elementWeight` 重新接到衰减链上，这里会红。
    */
-  it("素材归属放置时的层级：缩到别级即淡出、也点不中", async () => {
+  it("素材不随缩放淡出：放大放置、缩回整图后仍选中、仍点得中", async () => {
     await setup();
     fireEvent.click(screen.getByRole("button", { name: /生成区块/ }));
-    await waitFor(() => expect(regionLabel()).toContain("223"));
+    await waitFor(() => expect(regionLabel()).toContain("12"));
+    expect(canvasHint()).toContain("新素材归入「国家」级");
 
-    // 放大到「郡」那一级（0.8 × 1.1¹¹ = 228%）
+    // 放大后摆一座山
     zoomBy("zoom-in", 11);
-    await waitFor(() => expect(levelChip()).toBe("郡"));
-    expect(canvasHint()).toContain("新素材归入「郡」级");
-
-    // 在郡级摆一座山 —— 它自此属于「郡」
     pickSprite("山（中）");
     const anchor = { x: 30, y: 20 };
     clickCanvas(localAt(anchor));
     await waitFor(() => expect(countLabel()).toContain("1"));
-    expect(deleteButton()).not.toBeDisabled(); // 落位即选中
+    expect(deleteButton()).not.toBeDisabled();
 
-    // ── 缩回整图：郡的权重归 0，山随之退场 ──
+    // 缩回整图：山还在，选中保持（权重恒 1）
     fireEvent.click(screen.getByRole("button", { name: "expand" }));
-    await waitFor(() => expect(levelChip()).toBe("洲 ↔ 国家"));
+    await waitFor(() => expect(zoomLabel()).toBe("80%"));
+    expect(deleteButton()).not.toBeDisabled();
 
-    // 看不见了就自动取消选中 —— 否则会出现"选中框不见了、删除按钮却亮着"，
-    // 用户按一下 Delete 就删掉了一个自己根本没看见的东西。
-    await waitFor(() => expect(deleteButton()).toBeDisabled());
-
-    // 在它原来的位置上点也点不中：看不见的东西不该能被选中
-    clickCanvas(localAt({ x: anchor.x, y: 0 }));
+    // 取消后再点它：仍点得中
+    clickCanvas({ x: 20, y: 1000 });
     expect(deleteButton()).toBeDisabled();
-
-    // ── 回到郡那一级：它又出现了，也重新点得中 ──
-    zoomBy("zoom-in", 11);
-    await waitFor(() => expect(levelChip()).toBe("郡"));
-    /**
-     * 点素材**竖直中部**而不是 `y: 0`。
-     *
-     * 【为什么改了这一下】素材现在按层级缩小（每级减半，见 `lod.elementSizeFactor`）：
-     * 郡级的「山（中）」只有 15×8.75 世界单位（原 120×70），锚点在脚底 y=20，
-     * 所以它的命中区是 y ∈ [11.25, 20]。原来点 `y: 0`（脚底下方 20 单位）能中，
-     * 靠的正是"素材没有被缩小"这件**已按用户要求改掉**的事实；
-     * `y: anchor.y - 4 = 16` 落在它的中部，语义仍是"点它就能选中"。
-     */
     clickCanvas(localAt({ x: anchor.x, y: anchor.y - 4 }));
     expect(deleteButton()).not.toBeDisabled();
   });
@@ -411,7 +362,7 @@ describe("MapEditorPage 坐标链路", () => {
     await waitFor(() => expect(countLabel()).toContain("1"));
 
     fireEvent.click(screen.getByRole("button", { name: /生成区块/ }));
-    await waitFor(() => expect(regionLabel()).toContain("223"));
+    await waitFor(() => expect(regionLabel()).toContain("12"));
     // 提示改为"新素材归入某级"，说明归属只对之后放置的素材生效
     expect(canvasHint()).not.toContain("不归属层级");
     // 层级无关 → 不该被层级切换清掉选中
@@ -421,9 +372,9 @@ describe("MapEditorPage 坐标链路", () => {
     clickCanvas({ x: 20, y: 1000 });
     expect(deleteButton()).toBeDisabled();
 
-    // 缩到最粗一级（大陆）：它依然在，且点得中
+    // 缩到最远：最粗一级就是国家，层级胶囊不再变
     zoomBy("zoom-out", 8);
-    await waitFor(() => expect(levelChip()).toBe("大陆"));
+    await waitFor(() => expect(levelChip()).toBe("国家"));
     clickCanvas(localAt({ x: 40, y: 0 }));
     expect(deleteButton()).not.toBeDisabled();
   });
@@ -438,16 +389,20 @@ describe("MapEditorPage 坐标链路", () => {
  *   2. 素材的基准宽（80~160）比它所属的郡（长边 70~90）还大。
  */
 describe("MapEditorPage 全屏缩放与素材尺寸", () => {
-  it("缩放上限抬到「郡能铺满画布」：能到 1400% 以上，且到顶后不再变大", async () => {
+  /**
+   * 【2.42.0】层级已关闭：缩放上限 = 「国家能铺满画布短边」（fill 反推）与
+   * 基础上限（最粗自然缩放 ×4）取大者。不再钉 1400% 这种与郡级挂钩的读数，
+   * 只钉"有上限且到顶后不再变大"。
+   */
+  it("缩放有上限：放大到顶后读数不再变大", async () => {
     await setup();
     fireEvent.click(screen.getByRole("button", { name: /生成区块/ }));
-    await waitFor(() => expect(regionLabel()).toContain("223"));
+    await waitFor(() => expect(regionLabel()).toContain("12"));
 
     zoomBy("zoom-in", 40);
-    await waitFor(
-      () => expect(Number(zoomLabel().replace("%", ""))).toBeGreaterThan(1400),
-      { timeout: 5000 },
-    );
+    await waitFor(() => expect(Number(zoomLabel().replace("%", ""))).toBeGreaterThan(200), {
+      timeout: 5000,
+    });
 
     // 再点 3 次：读数必须一动不动 ⇒ 是"夹在上限"，不是"还能继续放大"
     const atMax = zoomLabel();
@@ -456,16 +411,16 @@ describe("MapEditorPage 全屏缩放与素材尺寸", () => {
     expect(zoomLabel()).toBe(atMax);
   });
 
-  it("郡级素材：点中心选中、点外接矩形外 1px 不选中", async () => {
+  /**
+   * 【2.42.0】素材不再按层级缩小（单级因子恒 1）：山（大）160×93 世界单位
+   * 原尺寸参与命中。钉"点中心选中、点外接矩形外不选中"的几何口径。
+   */
+  it("素材命中区：点中心选中、点外接矩形外 1px 不选中", async () => {
     await setup();
     fireEvent.click(screen.getByRole("button", { name: /生成区块/ }));
-    await waitFor(() => expect(regionLabel()).toContain("223"));
+    await waitFor(() => expect(regionLabel()).toContain("12"));
 
-    // 放大到「郡」那一级（0.8 × 1.1¹¹ = 228%）
-    zoomBy("zoom-in", 11);
-    await waitFor(() => expect(levelChip()).toBe("郡"));
-
-    // 山（大）基准 160×93；郡级因子 1/8 ⇒ 20×11.6，半宽 10
+    // 山（大）基准 160×93，因子 1 ⇒ 半宽 80、高 93（锚点在脚底）
     pickSprite("山（大）");
     const anchor = { x: 0, y: 0 };
     clickCanvas(localAt(anchor));
@@ -476,13 +431,13 @@ describe("MapEditorPage 全屏缩放与素材尺寸", () => {
     expect(deleteButton()).toBeDisabled();
 
     // 竖直中部（锚点是脚底，素材在它上方）：能选中
-    clickCanvas(localAt({ x: 0, y: -5 }));
+    clickCanvas(localAt({ x: 0, y: -46 }));
     expect(deleteButton()).not.toBeDisabled();
 
-    // 再取消，点"外接矩形外 1px"：半宽 10，这里 10.6（≈1.4px）
+    // 再取消，点"外接矩形外"：半宽 80，这里 81
     clickCanvas({ x: 20, y: 1000 });
     expect(deleteButton()).toBeDisabled();
-    clickCanvas(localAt({ x: 10.6, y: -5 }));
+    clickCanvas(localAt({ x: 81, y: -46 }));
     expect(deleteButton()).toBeDisabled();
   });
 });

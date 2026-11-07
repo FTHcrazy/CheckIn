@@ -116,18 +116,18 @@ describe("MapEditorPage 陆地与海岸", () => {
   it("已有区块时点「生成陆地」会先确认，且文案按勾选态二分", async () => {
     await setup();
     fireEvent.click(screen.getByRole("button", { name: /生成区块/ }));
-    await waitFor(() => expect(regionLabel()).toContain("223"));
+    await waitFor(() => expect(regionLabel()).toContain("12"));
 
     // ── ① 默认（不勾）：文案说"清除自动块"，且不点确认就不动手 ──
     fireEvent.click(screen.getByRole("button", { name: /生成陆地/ }));
     await waitFor(() =>
-      expect(document.body.textContent).toContain("将清除 223 个自动生成的区块"),
+      expect(document.body.textContent).toContain("将清除 12 个自动生成的区块"),
     );
     expect(landLabel()).toBe("");
 
     // 取消掉，回到干净状态
     fireEvent.click(screen.getByRole("button", { name: /取\s*消/ }));
-    await waitFor(() => expect(regionLabel()).toContain("223"));
+    await waitFor(() => expect(regionLabel()).toContain("12"));
 
     // ── ② 勾上：保留旧文案（重新划分区块）──
     fireEvent.click(screen.getByRole("button", { name: "陆地选项" }));
@@ -138,7 +138,7 @@ describe("MapEditorPage 陆地与海岸", () => {
     fireEvent.click(screen.getByRole("button", { name: /生成陆地/ }));
     await waitFor(() =>
       expect(document.body.textContent).toContain(
-        "将重新划分区块（现有 223 个自动生成的区块会被替换）",
+        "将重新划分区块（现有 12 个自动生成的区块会被替换）",
       ),
     );
     expect(landLabel()).toBe("");
@@ -255,7 +255,7 @@ describe("MapEditorPage 文字标注", () => {
   it("「显示分区」开关：关掉只影响显示，撤销一步即恢复", async () => {
     await setup();
     fireEvent.click(screen.getByRole("button", { name: /生成区块/ }));
-    await waitFor(() => expect(regionLabel()).toContain("223"));
+    await waitFor(() => expect(regionLabel()).toContain("12"));
 
     // 显示分区 Switch 收在「更多」面板里，先展开再查
     openMore();
@@ -264,11 +264,11 @@ describe("MapEditorPage 文字标注", () => {
 
     fireEvent.click(sw);
     await waitFor(() => expect(sw).toHaveAttribute("aria-checked", "false"));
-    expect(regionLabel()).toContain("223");
+    expect(regionLabel()).toContain("12");
 
     fireEvent.click(screen.getByRole("button", { name: "undo" }));
     await waitFor(() => expect(sw).toHaveAttribute("aria-checked", "true"));
-    expect(regionLabel()).toContain("223");
+    expect(regionLabel()).toContain("12");
   });
 
   it("加标注：撤销一步回到 0 条（地名进撤销栈）", async () => {

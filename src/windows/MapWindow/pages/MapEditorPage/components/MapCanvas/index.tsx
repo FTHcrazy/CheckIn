@@ -3,10 +3,12 @@ import { Application, Container, Graphics, Sprite, Texture } from "pixi.js";
 import type { ColorMatrixFilter, RenderTexture } from "pixi.js";
 import { BASE_IMAGE, SPRITE_MAP } from "../../sprites";
 import {
+  isRegionJump,
   REGION_BORDER_COLOR,
   REGION_BORDER_PX,
   regionBorderAlphaOf,
   regionFillAlphaOf,
+  regionJumpLimit,
   type Point,
 } from "../../regions";
 import { elementSizeFactor, elementWeight, resolveElementLevel } from "../../lod";
@@ -22,6 +24,12 @@ import { effectiveWidthWorld, POLYLINE_PICK_PAD_PX, polylineStyleOf } from "../.
 import { controlIndexFor, dashPath, nearestOnPath, smoothPolyline } from "../../polylineGeometry";
 import { drawPolyline } from "./polylineRender";
 import { getPaperGrainTexture } from "../../paperGrain";
+import { drawLandPath } from "../../land";
+import {
+  REGION_NAME_ALPHA_EPS,
+  REGION_NAME_MAX_LEVEL,
+  syncRegionNameGroup,
+} from "./regionNameLayer";
 import {
   applyLabelWeights,
   labelAt,
@@ -390,9 +398,10 @@ const DRAFT_DASH_MAX = 400;
  * 容器 `alpha`（零成本），不参与量化，否则过渡会出现台阶。
  *
  * 【与缩放上限无关，已手算】线宽 = `REGION_BORDER_PX / quantize(scale)`，屏幕上
- * 恒为 `1.2 × (scale / quantize(scale))`。量化误差的相对上界是 `√1.06 = 1.0296`
- * （最坏落在档位的中点），因此**无论缩放上限抬到 21 还是 40**，屏显线宽都落在
- * 1.166~1.235 px —— 抬上限不会让边界线变粗/变细，这条常量不需要跟着调。
+ * 恒为 `REGION_BORDER_PX × (scale / quantize(scale))`。量化误差的相对上界是
+ * `√1.06 = 1.0296`（最坏落在档位的中点），因此**无论缩放上限抬到 21 还是 40**，
+ * 屏显线宽都落在 `REGION_BORDER_PX × [0.971, 1.030]`（当前 3 px ⇒ 2.91~3.09 px）
+ * —— 抬上限不会让边界线变粗/变细，这条常量不需要跟着调。
  */
 const BORDER_WIDTH_QUANTIZE = 1.06;
 
@@ -457,6 +466,16 @@ interface LevelLayers {
   container: Container;
   fill: Graphics;
   border: Graphics;
+  /**
+   * 国名容器（该层区块的名称文字，`regionNameLayer.ts`）。
+   *
+   * 【为什么挂在层级容器**内部**、排在填充与边界之后】三件事一次解决：
+   *   · z 序：名字必须压在边界之上（同一次 `addChild` 的顺序即保证）；
+   *   · 透明度：层级容器写着 LOD 权重，名字自然跟着淡入淡出，**不需要第二处赋值**
+   *     （写在节点上就是双重衰减，也会让滚轮每格多改几百个节点）；
+   *   · 显隐：`showRegions` 关掉整层时名字一起消失（国名是"分区"的一部分）。
+   */
+  names: Container;
 }
 
 /**
@@ -592,15 +611,15 @@ function drawPolylinePreview(
  *      │   │              └─ 边界 Graphics  ← 屏幕恒定线宽
  *      │   └─ L1 / L2 / L3 …（同上）
  *      ├─ polylineLayer  z4 折线层（容器，按层级分容器，与 elementLayer 同构）
- *      │   ├─ L0 容器    ← 在"大陆"那一级画的河，alpha = α_0
+ *      │   ├─ L0 容器    ← 在"国家"那一级画的河，alpha = α_0
  *      │   ├─ L1 / L2 / L3 …（同上）
  *      │   └─ LOOSE 容器 ← 层级无关的折线，alpha 恒为 1
  *      ├─ elementLayer   z5 素材层（容器，同样按层级分若干子容器）
- *      │   ├─ L0 容器    ← 在"大陆"那一级放置的素材，alpha = α_0
+ *      │   ├─ L0 容器    ← 在"国家"那一级放置的素材，alpha = α_0
  *      │   ├─ L1 / L2 / L3 …（同上）
  *      │   └─ LOOSE 容器 ← 层级无关的素材（生成区块之前放的），alpha 恒为 1
  *      ├─ labelLayer     z6 标注层（容器，按层级分容器，与 elementLayer 同构）
- *      │   ├─ L0 容器    ← 在"大陆"那一级起的地名，alpha = α_0
+ *      │   ├─ L0 容器    ← 在"国家"那一级起的地名，alpha = α_0
  *      │   ├─ L1 / L2 / L3 …（同上）
  *      │   └─ LOOSE 容器 ← 层级无关的地名（生成区块之前起的），alpha 恒为 1
  *      └─ overlay        z7 选中框等交互指示（Graphics，不挂滤镜）
@@ -729,6 +748,13 @@ export default function MapCanvas({
   const regionMaskRef = useRef<Graphics | null>(null);
   /** 每个层级一份「容器 + 填充 + 边界」，索引即层级序号 */
   const levelLayersRef = useRef<LevelLayers[]>([]);
+  /**
+   * 「这一层的国名是按哪一版 `doc.regions` 建的」。
+   *
+   * 用**引用比较**而不是版本号（与 fill/border 两个 effect 的判据同口径）：
+   * `doc.regions` 只在真正变更时换引用。清空 / 生成 / 撤销都会换，于是自然重建。
+   */
+  const regionNamesVersionRef = useRef<Map<number, readonly unknown[]>>(new Map());
   /**
    * 折线层（B4-2）：容器 + 按层级分的子容器，与素材层同构。
    *
@@ -1402,6 +1428,7 @@ export default function MapCanvas({
       regionMaskRef.current = null;
       // 子容器随 world 一起被 destroy(true, {children:true}) 回收，这里只清引用
       levelLayersRef.current = [];
+      regionNamesVersionRef.current.clear();
       polylineLayerRef.current = null;
       polylineLayersRef.current.clear();
       polylineGraphicsRef.current.clear();
@@ -1726,10 +1753,10 @@ export default function MapCanvas({
 
   // ── 区块层 · 第一步：按层级建/拆子容器 ──
   //
-  // 每个层级一个子容器，容器内部是「填充 + 边界」两份 Graphics，靠容器 alpha 做
+  // 每个层级一个子容器，容器内部是「填充 + 边界 + 国名」三个子节点，靠容器 alpha 做
   // 交叉淡化。这样把三件互相牵制的事解耦开：
   //   · 权重变化（滚轮每一格）→ 只改 alpha，几何零重建
-  //   · 区块变化（生成/清除/撤销）→ 只重建填充与边界
+  //   · 区块变化（生成/清除/撤销）→ 只重建填充、边界与国名
   //   · 缩放变化（跨量化档）→ 只重建边界（线宽是屏幕恒定的，见 BORDER_WIDTH_QUANTIZE）
   useEffect(() => {
     const layer = regionLayerRef.current;
@@ -1740,9 +1767,11 @@ export default function MapCanvas({
       const container = new Container();
       const fill = new Graphics();
       const border = new Graphics();
-      container.addChild(fill, border);
+      const names = new Container();
+      // 顺序即 z 序：先面、再线、最后名字（名字要压在边界之上）
+      container.addChild(fill, border, names);
       layer.addChild(container);
-      levelLayersRef.current.push({ container, fill, border });
+      levelLayersRef.current.push({ container, fill, border, names });
     }
     while (levelLayersRef.current.length > want) {
       const extra = levelLayersRef.current.pop();
@@ -1759,9 +1788,17 @@ export default function MapCanvas({
   // 是一次性的矢量裁剪：doc.land 变化才重建，运行期零成本，对未来任何来源的
   // 区块几何都成立。
   //
-  // 【为什么向外扩 3 单位】区块多边形贴的是海岸环的**弦多边形**，渲染期海岸是
-  // Chaikin/Catmull-Rom 平滑曲线，两者之间有 ±3 单位的矢高差；边界线还有一半
-  // 线宽压在环外。不外扩的话，贴岸的区块线会被掩膜削掉一条边。
+  // 【掩膜必须与陆地绘制共用同一条曲线】陆地是 `land.drawLandPath` 画的
+  // Catmull-Rom 曲线（穿过采样点，在凹角处会**切进**陆地、在凸角处会鼓出），而区块
+  // 多边形贴的是采样点直线相连的**弦多边形**。两者在湾口能差十几个世界单位：
+  // 用弦多边形做掩膜时，曲线切掉的那片湾口仍被判成"陆地"—— 区块填充与边界就画到
+  // 了海面上，表现为海岸外一片浅色楔形 + 一根横穿湾口的边界线。
+  // 改用同一条曲线之后，"哪里是陆地"只剩一个事实源。
+  //
+  // 【为什么只填充、不向外扩】`regionLayer` 在 `coast` **之上**（见 WORLD_LAYER_ORDER），
+  // 掩膜一旦比陆地宽，多出来的那一圈区块色就压在海岸白边甚至海面上 —— 那正是"海岸
+  // 外一圈浅色"的另一种成因。所以掩膜严格等于"画出来的陆地"。岸线内侧不留缝：
+  // 区块填充停在路径中心线，海岸白边（宽 1.8、居中）盖住 ±0.9，接缝被它吃掉了。
   useEffect(() => {
     const mask = regionMaskRef.current;
     const layer = regionLayerRef.current;
@@ -1773,13 +1810,8 @@ export default function MapCanvas({
       return;
     }
     mask.clear();
-    for (const ring of land.polygons) {
-      if (ring.length < 3) continue;
-      mask.poly(toFlatPoints(ring));
-      mask.fill({ color: 0xffffff });
-      // alignment 0 = 描边全部落在多边形外侧：width 6 → 向外扩 3 单位
-      mask.stroke({ width: 6, color: 0xffffff, alignment: 0 });
-    }
+    drawLandPath(mask, land.polygons);
+    mask.fill({ color: 0xffffff });
     if (layer.mask !== mask) layer.mask = mask;
   }, [doc.land, app]);
 
@@ -1798,11 +1830,16 @@ export default function MapCanvas({
     for (const region of doc.regions) {
       const lv = levels[region.level];
       if (!lv || region.polygon.length < 3) continue;
-      lv.fill.poly(toFlatPoints(region.polygon));
-      // 静态层次衰减（P2-2）：填充 = 全局填充 × 层次系数（越深的层级越淡）。
-      // 【不要换成 levelAlphas】那是缩放驱动的 LOD 权重（已写进容器 alpha），
-      // 再乘一次就是双重衰减 —— 见 regions.ts 的 REGION_LEVEL_FILL_SCALE。
-      lv.fill.fill({ color: region.color, alpha: regionFillAlphaOf(region.level) });
+      // 一个区块可能是**几块互不相连的多边形**（凹父块被切开时的飞地，见
+      // MapRegion.pieces）：主块 + 附加块各自成环、各自填充。
+      for (const ring of [region.polygon, ...(region.pieces ?? [])]) {
+        if (ring.length < 3) continue;
+        lv.fill.poly(toFlatPoints(ring));
+        // 静态层次衰减（P2-2）：填充 = 全局填充 × 层次系数（越深的层级越淡）。
+        // 【不要换成 levelAlphas】那是缩放驱动的 LOD 权重（已写进容器 alpha），
+        // 再乘一次就是双重衰减 —— 见 regions.ts 的 REGION_LEVEL_FILL_SCALE。
+        lv.fill.fill({ color: region.color, alpha: regionFillAlphaOf(region.level) });
+      }
     }
   }, [doc.regions, levelAlphas.length, app]);
 
@@ -1820,12 +1857,34 @@ export default function MapCanvas({
   // 【为什么不去重跨层级的边】父子边界本来就重合（子级外轮廓继承父级），且两级
   // 的可见性由 LOD 帽函数此消彼长 —— 那层叠加是"过渡带里边界保持可见"的设计
   // 的一部分，去重反而会让缩放时边界忽隐忽现。
+  //
+  // 【跳线不描（2.40.0）】多边形自交时会出现一次长达上百世界单位的跳接，描出来
+  // 就是一根横穿整块地、还能跨过海湾的飞线（用户截图里"一束呈扇形散开的细线"）。
+  // 判据与实测数据见 `regions.ts` 的 `REGION_JUMP_MEDIAN_RATIO`。
   useEffect(() => {
     const levels = levelLayersRef.current;
     if (levels.length === 0) return;
     const width = REGION_BORDER_PX / borderScale;
     for (const lv of levels) lv.border.clear();
     const drawnByLevel = levels.map(() => new Set<string>());
+    // 每一级的「跳线」长度上限：先扫一遍该级所有边取中位数，再乘倍数（见
+    // `regionJumpLimit` 的注释）。O(边数) 的一次预扫，换掉几百根横穿整块地的飞线。
+    const jumpLimitByLevel = levels.map((_, level) => {
+      const lens: number[] = [];
+      for (const region of doc.regions) {
+        if (region.level !== level || region.polygon.length < 3) continue;
+        for (const poly of [region.polygon, ...(region.pieces ?? [])]) {
+          for (let k = 0; k < poly.length; k += 1) {
+            const a = poly[k];
+            const b = poly[(k + 1) % poly.length];
+            lens.push(Math.hypot(b.x - a.x, b.y - a.y));
+          }
+        }
+      }
+      if (lens.length === 0) return regionJumpLimit(0);
+      lens.sort((p, q) => p - q);
+      return regionJumpLimit(lens[Math.floor(lens.length / 2)] ?? 0);
+    });
     const keyOf = (a: { x: number; y: number }, b: { x: number; y: number }): string => {
       const ax = Math.round(a.x * 100);
       const ay = Math.round(a.y * 100);
@@ -1840,36 +1899,46 @@ export default function MapCanvas({
       const lv = levels[region.level];
       if (!lv || region.polygon.length < 3) continue;
       const drawn = drawnByLevel[region.level];
-      const poly = region.polygon;
-      let chain: number[] = [];
-      const flushChain = () => {
-        if (chain.length >= 2) {
-          lv.border.moveTo(poly[chain[0]].x, poly[chain[0]].y);
-          for (let q = 1; q < chain.length; q += 1) {
-            lv.border.lineTo(poly[chain[q]].x, poly[chain[q]].y);
+      // 主块 + 飞地（MapRegion.pieces）各自成环；`drawn` 跨环共享，
+      // 所以接缝处（主块与飞地接触的那一小段）不会被描两遍。
+      for (const poly of [region.polygon, ...(region.pieces ?? [])]) {
+        if (poly.length < 3) continue;
+        let chain: number[] = [];
+        const flushChain = () => {
+          if (chain.length >= 2) {
+            lv.border.moveTo(poly[chain[0]].x, poly[chain[0]].y);
+            for (let q = 1; q < chain.length; q += 1) {
+              lv.border.lineTo(poly[chain[q]].x, poly[chain[q]].y);
+            }
+            lv.border.stroke({
+              width,
+              color: REGION_BORDER_COLOR,
+              // 边界与填充共用同一张静态系数表（P2-2）：两者必须同比例衰减，
+              // 否则"线比面还淡"。见 regions.ts 的 regionBorderAlphaOf。
+              alpha: regionBorderAlphaOf(region.level),
+              alignment: 0.5,
+            });
           }
-          lv.border.stroke({
-            width,
-            color: REGION_BORDER_COLOR,
-            // 边界与填充共用同一张静态系数表（P2-2）：两者必须同比例衰减，
-            // 否则"线比面还淡"。见 regions.ts 的 regionBorderAlphaOf。
-            alpha: regionBorderAlphaOf(region.level),
-            alignment: 0.5,
-          });
+          chain = [];
+        };
+        for (let k = 0; k < poly.length; k += 1) {
+          const key = keyOf(poly[k], poly[(k + 1) % poly.length]);
+          if (drawn.has(key)) {
+            flushChain();
+            continue;
+          }
+          drawn.add(key);
+          // 跳线（多边形自交时的长跳接）不描：它画出来就是一根横穿整块地的飞线，
+          // 而边界本该是"沿区块走的一小段"。判据见 regions.ts 的 REGION_JUMP_*。
+          if (isRegionJump(poly[k], poly[(k + 1) % poly.length], jumpLimitByLevel[region.level])) {
+            flushChain();
+            continue;
+          }
+          if (chain.length === 0) chain.push(k);
+          chain.push((k + 1) % poly.length);
         }
-        chain = [];
-      };
-      for (let k = 0; k < poly.length; k += 1) {
-        const key = keyOf(poly[k], poly[(k + 1) % poly.length]);
-        if (drawn.has(key)) {
-          flushChain();
-          continue;
-        }
-        drawn.add(key);
-        if (chain.length === 0) chain.push(k);
-        chain.push((k + 1) % poly.length);
+        flushChain();
       }
-      flushChain();
     }
   }, [doc.regions, borderScale, levelAlphas.length, app]);
 
@@ -1888,6 +1957,33 @@ export default function MapCanvas({
       lv.container.alpha = levelAlphas[i] ?? 0;
     });
   }, [levelAlphas, app]);
+
+  // ── 区块层 · 国名（懒创建）──
+  //
+  // 【为什么懒创建】221 个区块各一个 `Text` 会在"生成区块"那一下把所有文字纹理
+  // 一次性建出来（郡级 160 个，二十多 MB）；而任意缩放下真正看得见的只有一两个层级。
+  // 因此规则是：**该层权重 > ε 且还没为这一版区块建过**时才建。层级隐藏时节点留着
+  // （下一次可见直接复用），区块换了新版才整层重建。
+  //
+  // 【透明度 / 显隐都不在这里写】国名容器是层级容器的子节点，`levelAlphas` 写在层级
+  // 容器上（上一段 effect），名字自然跟着淡入淡出、跟着 `showRegions` 一起消失。
+  // 在节点上再乘一次权重就是双重衰减，且滚轮每格要多改几百个节点。
+  useEffect(() => {
+    const levels = levelLayersRef.current;
+    if (levels.length === 0) return;
+    const built = regionNamesVersionRef.current;
+    // 区块换了新版：先清掉过期标记，可见层级会在下面立刻重建，不可见的等下次可见
+    for (const level of [...built.keys()]) {
+      if (built.get(level) !== doc.regions) built.delete(level);
+    }
+    levels.forEach((lv, level) => {
+      if ((levelAlphas[level] ?? 0) <= REGION_NAME_ALPHA_EPS) return;
+      if (level > REGION_NAME_MAX_LEVEL) return;
+      if (built.get(level) === doc.regions) return;
+      syncRegionNameGroup(lv.names, doc.regions, level);
+      built.set(level, doc.regions);
+    });
+  }, [doc.regions, levelAlphas, app]);
 
   // ── 折线层 · 第一步：按层级建/拆子容器（与素材层同构）──
   //

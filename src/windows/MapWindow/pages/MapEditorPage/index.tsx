@@ -5,13 +5,11 @@ import {
   Divider,
   Dropdown,
   Input,
-  Popover,
   Select,
   Switch,
   Tooltip,
 } from "antd";
 import {
-  ApartmentOutlined,
   BorderOutlined,
   ClearOutlined,
   DatabaseOutlined,
@@ -33,7 +31,7 @@ import {
   ExpandOutlined,
 } from "@ant-design/icons";
 import { worldToScreen, hitTestPolygon, type CanvasSize } from "./coords";
-import { REGION_TOTAL_LIMIT, levelLabelOf, type Point, type RegionLevelDef } from "./regions";
+import { REGION_TOTAL_LIMIT, levelLabelOf, type Point } from "./regions";
 import { planMerge, type ManualRegionRejectCode } from "./regionEdit";
 import { resolveElementLevel } from "./lod";
 import { layerLockedOf } from "./layerState";
@@ -49,7 +47,6 @@ import PolylinePanel from "./components/PolylinePanel";
 import { DEFAULT_POLYLINE_STYLE_ID, POLYLINE_STYLES } from "./polylineStyle";
 import { BASE_IMAGES, SPRITE_MAP } from "./sprites";
 import RegionPanel from "./components/RegionPanel";
-import RegionSchemaPanel from "./components/RegionSchemaPanel";
 import MapLibraryModal from "./components/MapLibraryModal";
 import MapGeneratorModal from "./components/MapGeneratorModal";
 import SubmapPickerModal from "./components/SubmapPickerModal";
@@ -182,14 +179,6 @@ export default function MapEditorPage() {
   const { message, modal } = AntApp.useApp();
   const [canvasSize, setCanvasSize] = useState<CanvasSize>({ width: 0, height: 0 });
   /**
-   * 层级配置浮层是否展开。
-   *
-   * 【为什么要受控】「应用并生成区块」点完必须把它收起来 —— 浮层盖在画布上，
-   * 生成结果全在浮层底下，用户看不到就以为没生效。另外收起 = 一次连续调参结束，
-   * 正是断快照合并键的时机（架构 §2.4.1）。
-   */
-  const [schemaPanelOpen, setSchemaPanelOpen] = useState(false);
-  /**
    * 「生成陆地」是否**同时划出区块**（R-REG-02）。
    *
    * 【为什么默认 false】用户诉求是"生成大地图后地图上保持干净"，而旧版「生成陆地」
@@ -288,24 +277,6 @@ export default function MapEditorPage() {
     sceneRef.current = scene;
     setSceneReady(scene !== null);
   }, []);
-
-  /**
-   * 已经为**哪个目标层数**弹过「减少层级」确认框（`null` = 当前没有弹过）。
-   *
-   * 【为什么需要它】`rc-input-number` 在失焦时会把输入框里的文本再 flush 一次
-   * （`changeOnBlur`），于是 `handleSchemaChange` 被连调两遍，两遍都满足
-   * "新区块数 < 旧层数 ⇒ 先确认"，各弹一个**一模一样**的确认框。用户会看到
-   * 两层叠着的弹层，点掉一层还有一层 —— 与"一次动作一个确认"直接冲突。
-   *
-   * 【为什么记"目标层数"而不是一个布尔】布尔会在"弹着 4→2 的时候用户又改成
-   * 4→1"时把第二次也吞掉（虽然模态框本来就挡住了输入，但那是 antd 的实现细节，
-   * 不该成为正确性的前提）。记目标层数则只吞**同一个意图**的重复调用。
-   *
-   * 【为什么不 `Modal.destroyAll()`】那会把用户此前打开的其它确认框（清空画布 /
-   * 生成陆地 / 合并子区域）一起关掉 —— 用"消灭别人的弹层"来治自己的重复，
-   * 代价远大于问题。
-   */
-  const pendingPruneRef = useRef<number | null>(null);
 
   /**
    * 导出 PNG。
@@ -1025,80 +996,10 @@ export default function MapEditorPage() {
   }, [editor]);
 
   /**
-   * 层级配置面板：任一字段变化。
-   *
-   * 【减少层数要二次确认】把层数从 4 调到 2，意味着 `level >= 2` 的区块（国家、郡）
-   * 已经失去了层级归属。它们是**删除**，不是"看不见"，必须说清楚数量再动手，
-   * 且这个删除要和 schema 变更**同一次 commit**（撤销一步两样一起回来）。
-   * 其余编辑（改名 / 数量 / 加层）直接写，靠合并键压成一步。
-   *
-   * 【同一个目标层数只弹一次】见 `pendingPruneRef`：失焦会触发第二遍 `onChange`，
-   * 不去重就会叠出两个一模一样的确认框。
+   * 【层级配置回调已随面板下线（2.42.0）】区域只有国家一级，无层级可配；
+   * `setRegionSchema` / `regenerateHierarchy` 保留在 hook 层（老文档回落默认
+   * schema 时仍会用到）。
    */
-  const handleSchemaChange = useCallback(
-    (next: RegionLevelDef[]) => {
-      const nextLength = next.length;
-      if (nextLength < schema.length) {
-        // 已经为这个目标层数弹过窗 ⇒ 这次的调用是失焦重复，直接吞掉。
-        // （注意：这里必须在 `pruned.length > 0` 之前拦，否则第二遍会走到
-        //  `editor.setRegionSchema(next)` 把层数**静默改掉** —— 那比多弹一个窗更糟。）
-        if (pendingPruneRef.current === nextLength) return;
-
-        const pruned = doc.regions.filter((r) => r.level >= nextLength);
-        if (pruned.length > 0) {
-          pendingPruneRef.current = nextLength;
-          /**
-           * 释放标记。
-           *
-           * 【三处都挂上，可靠性靠 `afterClose` 兜底】`onOk` / `onCancel` 是按钮路径；
-           * 用户按 **Esc** 或点遮罩关闭时，antd 6 的 `Modal.method` 也会走 `onCancel`，
-           * 但那是实现细节 —— `afterClose` 才是"弹层无论怎么关，关完一定调一次"的
-           * 唯一承诺（按钮 / Esc / 遮罩 / 程序化 destroy 全覆盖）。三处都调同一个
-           * 幂等的 `release()`，多调一次没有副作用。
-           *
-           * 【不清空会怎样】取消之后用户再改一次层数，`pendingPruneRef` 还停在旧值 ⇒
-           * 第二次真改也被吞掉，表现为"确认框再也不弹，层数也不动"。
-           */
-          const release = () => {
-            if (pendingPruneRef.current === nextLength) pendingPruneRef.current = null;
-          };
-          modal.confirm({
-            title: "减少层级",
-            content: `将删除 ${pruned.length} 个超出层级的区块，此操作可撤销。`,
-            okText: "删除并应用",
-            okButtonProps: { danger: true },
-            cancelText: "取消",
-            onOk: () => {
-              release();
-              editor.setRegionSchema(next, nextLength);
-            },
-            onCancel: release,
-            afterClose: release,
-          });
-          return;
-        }
-      }
-      editor.setRegionSchema(next);
-    },
-    [editor, schema.length, doc.regions, modal],
-  );
-
-  /** 一次连续调参结束（失焦 / 重置 / 松开滑块）：断掉快照合并键 */
-  const handleSchemaEditEnd = useCallback(() => {
-    editor.breakCommitKey();
-  }, [editor]);
-
-  /**
-   * 「应用并生成区块」= 改 schema（已即时写入）+ 生成区块，**一次撤销快照**。
-   *
-   * 【为什么生成要读 store 现取的 schema】`doc` 订阅要等下一次渲染；
-   * 同一个事件里紧接着生成时，闭包里的 `schema` 可能还是旧的（见 hook 的 `liveDoc`）。
-   */
-  const handleApplySchemaAndGenerate = useCallback(() => {
-    editor.regenerateHierarchy();
-    setSchemaPanelOpen(false);
-    message.success(`已按当前 ${schema.length} 级配置重新生成区块（可撤销）`);
-  }, [editor, message, schema.length]);
 
   /**
    * 生成陆地。
@@ -1654,8 +1555,12 @@ export default function MapEditorPage() {
                   【层级文案为什么带 L 序号】只显示名称时，两个层级同名（用户可能把
                   两级都叫"区域"）就看不出自己在画第几层。`levelLabelOf` 对空名回落
                   成 `L{n}`，两者拼起来任何配置下都可读。
+                  【2.42.0】层级已下线（schema 仅 1 级）：选中区块后再画必然越界，
+                  此时不再拼"层级 L2 L2"这种双 L 回落串，直接给封顶提示。
                 */}
-                {`层级 L${targetLevel + 1} ${levelLabelOf(schema, targetLevel)}`}
+                {targetLevelOverflow
+                  ? `已达最深层级（共 ${schema.length} 级）`
+                  : `层级 L${targetLevel + 1} ${levelLabelOf(schema, targetLevel)}`}
               </span>
               <span className="map-editor__draw-count">
                 {`已画 ${draftPoints.length} 点 · 已用 ${doc.regions.length}/${REGION_TOTAL_LIMIT}`}
@@ -1809,33 +1714,9 @@ export default function MapEditorPage() {
             </Button>
           </Tooltip>
           {/*
-            层级配置（R-REG-01）：从「更多」搬到主栏。
-            【为什么不能放在 Dropdown 里】浮层内容挂 body portal ⇒ 点它等于点在
-            Dropdown 外面 ⇒ Dropdown 立刻收起 ⇒ 浮层随触发器一起卸载，输入框
-            刚聚焦就消失。这不是"体验差"，是根本没法编辑。
+            层级配置（2.42.0 起下线）：区域只有国家一级，无层级可配 ——
+            面板与入口一并移除（用户裁决：关闭层级功能）。
           */}
-          <Popover
-            trigger={["click"]}
-            placement="bottomLeft"
-            open={schemaPanelOpen}
-            onOpenChange={(open) => {
-              setSchemaPanelOpen(open);
-              // 收起 = 一次连续调参结束 ⇒ 断键（下次编辑独立成步，架构 §2.4.1）
-              if (!open) editor.breakCommitKey();
-            }}
-            content={
-              <RegionSchemaPanel
-                schema={schema}
-                onChange={handleSchemaChange}
-                onEditEnd={handleSchemaEditEnd}
-                onApplyAndGenerate={handleApplySchemaAndGenerate}
-              />
-            }
-          >
-            <Button size="small" icon={<ApartmentOutlined />}>
-              {`层级 ${schema.length}`}
-            </Button>
-          </Popover>
           {/*
             区块数（状态指示，保留在主栏）：这是「生成区块」后最重要的即时反馈，
             且多个端到端用例靠它确认生成完成，收进「更多」反而打断操作节奏。
@@ -2169,12 +2050,17 @@ export default function MapEditorPage() {
               }`
             ) : (
               <>
-                滚轮缩放（大陆 → 洲 → 国家 → 郡 连续衔接）· 拖动空白平移 · 点击素材选中后拖动可移动
+                {/*
+                  【层级链条从 schema 取，不写死】写死成「大陆 → 洲 → 国家 → 郡」时，
+                  2.40.0 砍成三级后这行提示会变成"教用户一个不存在的层级"。
+                  现在它跟着文档里的层级名走：改层数 / 改名不会留下过时文案。
+                */}
+                滚轮缩放（{schema.map((level) => level.name).join(" → ")} 连续衔接）· 拖动空白平移 · 点击素材选中后拖动可移动
                 {" · 方向键 / WASD 微移（Shift 加速）· Ctrl+C/V 复制粘贴 · Ctrl+D 复制一份"}
                 {" · 双击地名可改名 · 点击区块 → 圈定生成子图并自动进入（Esc 取消选中）"}
                 {currentLevel === null
                   ? " · 素材不归属层级（未生成区块）"
-                  : ` · 新素材归入「${levelLabelOf(schema, currentLevel)}」级，缩放到别级会淡出`}
+                  : ` · 新素材归入「${levelLabelOf(schema, currentLevel)}」级`}
               </>
             )}
           </div>

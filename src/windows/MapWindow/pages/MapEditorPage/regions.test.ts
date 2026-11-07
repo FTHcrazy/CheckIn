@@ -4,12 +4,16 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_REGION_SCHEMA,
   REGION_BORDER_ALPHA,
+  REGION_BORDER_COLOR,
+  REGION_BORDER_PX,
   REGION_FILL_ALPHA,
   REGION_LEVEL_FILL_SCALE,
   REGION_LEVELS,
   REGION_LEVEL_COUNT_LIMITS,
   REGION_MAX_LEVELS,
+  REGION_PALETTE_RGB,
   REGION_TOTAL_LIMIT,
+  assignRegionColors,
   createRng,
   fbm,
   generateHierarchy,
@@ -27,9 +31,10 @@ import {
   type Point,
   type RegionBounds,
 } from "./regions";
+import { activeLevel, levelAlphas, naturalScales } from "./lod";
 
 /**
- * 层级区块生成（大陆 → 洲 → 国家 → 郡）单元测试。
+ * 层级区块生成（国家 → 郡 → 城，2.40.0 起默认三级）单元测试。
  *
  * 这是纯函数模块，因此断言到**具体行为**而非"跑起来没报错"：
  *  - 确定性：同种子必须逐点一致（否则"重新生成"不可复现、测试也无法断言）
@@ -48,7 +53,7 @@ import {
 /** 与 BASE_IMAGE（1024×1024、原点居中）一致的世界范围 */
 const BOUNDS: RegionBounds = { x: -512, y: -512, width: 1024, height: 1024 };
 
-/** 默认四级：大陆 3 / 洲 12 / 国家 48 / 郡 160，共 223 */
+/** 默认三级：国家 12 / 郡 60 / 城 160，共 232 */
 const DEFAULT_TOTAL = REGION_LEVELS.reduce((sum, l) => sum + l.count, 0);
 
 /* ────────────────────────── 几何小工具 ────────────────────────── */
@@ -429,8 +434,11 @@ describe("generateHierarchy：父子共享边界逐点重合", () => {
   it("端点都在父块边界上的子边，整条边也必须落在父块边界上", () => {
     // 这是"子块外轮廓 = 父块折线的子折线"的可测形式。若父子各按自己的振幅算一遍，
     // 这条会立刻失败（子边会以弦的形式切进父块内部，或鼓到父块外面）。
+    // 【2.42.0】产品层面区域只有国家一级，但生成引擎的层级能力仍在（嵌套子图
+    // 与几何不变式都用它）—— 这里显式传多级 levelCounts 来钉住这条不变式。
+    const MULTI_LEVEL_COUNTS = [12, 60, 160];
     for (const seed of SEEDS) {
-      const all = generateHierarchy({ seed, bounds: BOUNDS });
+      const all = generateHierarchy({ seed, bounds: BOUNDS, levelCounts: MULTI_LEVEL_COUNTS });
       let inheritedEdges = 0;
       for (const r of all) {
         if (r.parentId === null) continue;
@@ -653,15 +661,11 @@ describe("polygonCentroid / polygonArea", () => {
  * 否则无法区分"回落正确"与"回落时悄悄改了默认值"。
  */
 describe("DEFAULT_REGION_SCHEMA：与 REGION_LEVELS 逐项等价", () => {
-  it("长度 4、[1].name === 洲、[3].count === 160（label ↔ name 适配点）", () => {
-    expect(DEFAULT_REGION_SCHEMA).toHaveLength(4);
+  it("长度 1（只有国家）、[0].name === 国家、[0].count === 12（2.42.0 关闭层级）", () => {
+    expect(DEFAULT_REGION_SCHEMA).toHaveLength(1);
     expect(DEFAULT_REGION_SCHEMA).toHaveLength(REGION_MAX_LEVELS);
-    expect(DEFAULT_REGION_SCHEMA[1].name).toBe("洲");
-    expect(DEFAULT_REGION_SCHEMA[3].count).toBe(160);
-    DEFAULT_REGION_SCHEMA.forEach((def, level) => {
-      expect(def.name).toBe(REGION_LEVELS[level].label);
-      expect(def.count).toBe(REGION_LEVELS[level].count);
-    });
+    expect(DEFAULT_REGION_SCHEMA[0].name).toBe("国家");
+    expect(DEFAULT_REGION_SCHEMA[0].count).toBe(REGION_LEVELS[0].count);
   });
 
   it("generateHierarchy：不传 schema 与显式传 DEFAULT_REGION_SCHEMA 产出完全相等", () => {
@@ -677,9 +681,8 @@ describe("DEFAULT_REGION_SCHEMA：与 REGION_LEVELS 逐项等价", () => {
 
   it("自定义 schema 只改名字，不改几何、id 与数量", () => {
     const schema = [
-      { name: "界", count: 3 },
-      { name: "域", count: 12 },
-      { name: "城", count: 48 },
+      { name: "界", count: 20 },
+      { name: "域", count: 60 },
       { name: "坊", count: 160 },
     ];
     const base = generateHierarchy({ seed: 42, bounds: BOUNDS });
@@ -716,17 +719,29 @@ describe("normalizeRegionSchema：脏 schema 必须被挡住", () => {
     expect(normalizeRegionSchema([{ count: 3 }])).toBeNull();
   });
 
-  it("合法 3 项返回等值新数组（空 name 合法，读时回落 L{n}）", () => {
-    const raw = [
-      { name: "界", count: 1 },
-      { name: "", count: 3 },
-      { name: "城", count: 9 },
-    ];
+  it("合法 1 项返回等值新数组（空 name 合法，读时回落 L{n}）", () => {
+    const raw = [{ name: "国", count: 9 }];
     const out = normalizeRegionSchema(raw);
     expect(out).toEqual(raw);
     // ⚠️ 必须是新数组 / 新对象：调用方持有它之后，外部再改入参不得影响文档
     expect(out).not.toBe(raw);
     expect(out?.[0]).not.toBe(raw[0]);
+  });
+
+  it("多项 schema（2.42.0 关闭层级前的老数据）判非法返回 null", () => {
+    expect(
+      normalizeRegionSchema([
+        { name: "国家", count: 12 },
+        { name: "郡", count: 60 },
+      ]),
+    ).toBeNull();
+    expect(
+      normalizeRegionSchema([
+        { name: "国家", count: 12 },
+        { name: "郡", count: 60 },
+        { name: "城", count: 160 },
+      ]),
+    ).toBeNull();
   });
 });
 
@@ -739,17 +754,16 @@ describe("regionSchemaOf / levelLabelOf：读时回落的唯一出口", () => {
     expect(regionSchemaOf({ regionSchema: [{ name: "a", count: 0 }] })).toBe(
       DEFAULT_REGION_SCHEMA,
     );
-    // 合法则用文档里那一份（子图继承同理）
-    const own = [
-      { name: "界", count: 1 },
-      { name: "域", count: 3 },
-    ];
+    // 合法则用文档里那一份（子图继承同理）；2.42.0 起只有 1 项合法
+    const own = [{ name: "国", count: 9 }];
     expect(regionSchemaOf({ regionSchema: own })).toEqual(own);
   });
 
   it("levelLabelOf：越界 / 空名回落 L{n+1}，不抛错也不留空段", () => {
-    expect(levelLabelOf(DEFAULT_REGION_SCHEMA, 0)).toBe("大陆");
-    expect(levelLabelOf(DEFAULT_REGION_SCHEMA, 3)).toBe("郡");
+    expect(levelLabelOf(DEFAULT_REGION_SCHEMA, 0)).toBe("国家");
+    // 层级已关闭（只有国家一级）：越界一律回落 L{n+1}
+    expect(levelLabelOf(DEFAULT_REGION_SCHEMA, 2)).toBe("L3");
+    expect(levelLabelOf(DEFAULT_REGION_SCHEMA, 3)).toBe("L4");
     expect(levelLabelOf(DEFAULT_REGION_SCHEMA, 9)).toBe("L10");
     expect(levelLabelOf(DEFAULT_REGION_SCHEMA, -1)).toBe("L1");
     expect(levelLabelOf([{ name: "   ", count: 1 }], 0)).toBe("L1");
@@ -767,34 +781,25 @@ describe("regionSchemaOf / levelLabelOf：读时回落的唯一出口", () => {
  * 边界面同步衰减」—— 钉静态系数表本身，不钉某组 levelAlphas 下的绝对值。
  */
 describe("REGION_LEVEL_FILL_SCALE · 静态层次衰减（P2-2）", () => {
-  it("系数表按 level 单调递减、首项 = 1、全部落在 (0,1]，覆盖全部层级", () => {
-    expect(REGION_LEVEL_FILL_SCALE).toHaveLength(REGION_MAX_LEVELS);
+  it("2.42.0 起只有国家一级：表退化为 [1]，无层次衰减", () => {
+    expect(REGION_LEVEL_FILL_SCALE).toEqual([1]);
+    expect(REGION_LEVEL_FILL_SCALE.length).toBe(REGION_MAX_LEVELS);
     expect(REGION_LEVEL_FILL_SCALE[0]).toBe(1);
-    for (let i = 0; i < REGION_LEVEL_FILL_SCALE.length; i++) {
-      const s = REGION_LEVEL_FILL_SCALE[i];
-      expect(s, `第 ${i} 级系数`).toBeGreaterThan(0);
-      expect(s, `第 ${i} 级系数`).toBeLessThanOrEqual(1);
-      if (i > 0) {
-        expect(s, "必须严格单调递减（越深的层级越淡）").toBeLessThan(
-          REGION_LEVEL_FILL_SCALE[i - 1],
-        );
-      }
-    }
   });
 
   it("regionLevelScaleOf：表内取值，越界 / 非有限回落 1（朝『不衰减』兜底）", () => {
     expect(regionLevelScaleOf(0)).toBe(REGION_LEVEL_FILL_SCALE[0]);
-    expect(regionLevelScaleOf(3)).toBe(REGION_LEVEL_FILL_SCALE[3]);
+    // 越界（老文档的 level>0 区块）一律回落 1 —— 与国家同浓
+    expect(regionLevelScaleOf(1)).toBe(1);
+    expect(regionLevelScaleOf(3)).toBe(1);
     expect(regionLevelScaleOf(-1)).toBe(1);
-    expect(regionLevelScaleOf(REGION_MAX_LEVELS)).toBe(1);
+    expect(regionLevelScaleOf(REGION_LEVEL_FILL_SCALE.length)).toBe(1);
     expect(regionLevelScaleOf(Number.NaN)).toBe(1);
   });
 
-  it("regionLevelScaleOf：小数 level 取 Math.trunc（1.9 → 落 1 档，不是四舍五入）", () => {
-    // QA 备忘的边缘口径：层级是整数索引，脏档若塞小数应「向下取整」而非进到更淡的一档
-    expect(regionLevelScaleOf(1.9)).toBe(REGION_LEVEL_FILL_SCALE[1]);
-    expect(regionLevelScaleOf(1.9)).not.toBe(REGION_LEVEL_FILL_SCALE[2]);
+  it("regionLevelScaleOf：小数 level 取 Math.trunc（0.99 → 落 0 档）", () => {
     expect(regionLevelScaleOf(0.99)).toBe(REGION_LEVEL_FILL_SCALE[0]);
+    expect(regionLevelScaleOf(1.9)).toBe(1);
   });
 
   it("填充与边界共用同一张表：任一层级的『边界 : 填充』浓度比恒等", () => {
@@ -826,6 +831,185 @@ describe("REGION_LEVEL_FILL_SCALE · 静态层次衰减（P2-2）", () => {
       // 裸常量直填 alpha = "只乘一边或都不乘"的回退形态，一律不许回来
       expect(src).not.toMatch(/alpha:\s*REGION_FILL_ALPHA/);
       expect(src).not.toMatch(/alpha:\s*REGION_BORDER_ALPHA/);
+    }
+  });
+});
+
+/* ─────── 区块样式与密度：对齐逆向源码 §3.7（α 0.30 / 3px / #73562d） ─────── */
+
+/**
+ * 逆向源码的区块样式是 `{ alpha: 0.3, border_size: 3, border_color: "#73562d",
+ * border_alpha: 1 }`（`decoded.js@131642`）。本项目 2.27.0 走的是**反方向**
+ * （把 alpha 压到 0.10），代价正是"读不出分块、陆地一片单色"。
+ *
+ * 下面这组守卫刻意分成两层：
+ *   · 数字层 —— 三个值就是源值，改回去要显式承认；
+ *   · 效果层 —— "陆地不再是单色""同一时刻只有一级可辨识""全图视角 ≤20 块"。
+ *     只钉数字的话，有人为了调观感去动 `LOD_BLOCK_PX` 或色表时，测试全绿而
+ *     画面已经退回原样；效果断言先红，才能拦住那条路。
+ */
+describe("区块样式与密度（对齐逆向 §3.7 口径）", () => {
+  const MAP: RegionBounds = { x: 0, y: 0, width: 1024, height: 1024 };
+  const COUNTS = REGION_LEVELS.map((l) => l.count);
+
+  /** `color` 以 `alpha` 合成到纸色 `base` 上（与 Pixi 的普通 alpha 混合同式） */
+  const composite = (color: number, alpha: number, base = 0xc8bd9d): [number, number, number] => {
+    const br = (base >> 16) & 255;
+    const bg = (base >> 8) & 255;
+    const bb = base & 255;
+    return [
+      ((color >> 16) & 255) * alpha + br * (1 - alpha),
+      ((color >> 8) & 255) * alpha + bg * (1 - alpha),
+      (color & 255) * alpha + bb * (1 - alpha),
+    ];
+  };
+  const rgbDist = (a: readonly number[], b: readonly number[]) =>
+    Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+
+  /**
+   * 同级区块的相邻对（共享一条边即相邻）—— **独立实现**。
+   *
+   * 【为什么不 import 生成器里的邻接表】那会变成"用被测实现验证被测实现"：邻接
+   * 判据写错时两边一起错，测试照绿。这里用最短的方式重算一遍（端点归一到 1/100，
+   * 与渲染层的共享边去重同口径）。
+   */
+  const adjacentPairs = (pool: readonly MapRegion[]): Array<[number, number]> => {
+    const key = (a: Point, b: Point): string => {
+      const ax = Math.round(a.x * 100);
+      const ay = Math.round(a.y * 100);
+      const bx = Math.round(b.x * 100);
+      const by = Math.round(b.y * 100);
+      return ax < bx || (ax === bx && ay <= by)
+        ? `${ax},${ay}|${bx},${by}`
+        : `${bx},${by}|${ax},${ay}`;
+    };
+    const byEdge = new Map<string, number[]>();
+    pool.forEach((region, i) => {
+      const poly = region.polygon;
+      for (let k = 0; k < poly.length; k += 1) {
+        const edge = key(poly[k], poly[(k + 1) % poly.length]);
+        const list = byEdge.get(edge);
+        if (list) list.push(i);
+        else byEdge.set(edge, [i]);
+      }
+    });
+    const out: Array<[number, number]> = [];
+    const seen = new Set<string>();
+    for (const list of byEdge.values()) {
+      for (let a = 0; a < list.length; a += 1) {
+        for (let b = a + 1; b < list.length; b += 1) {
+          const id = `${list[a]}|${list[b]}`;
+          if (seen.has(id)) continue;
+          seen.add(id);
+          out.push([list[a], list[b]]);
+        }
+      }
+    }
+    return out;
+  };
+
+  it("样式三件 = 逆向源值（α 0.30 / 3px / #73562d / border_alpha 1）", () => {
+    expect(REGION_FILL_ALPHA).toBeCloseTo(0.3, 12);
+    expect(REGION_BORDER_PX).toBe(3);
+    expect(REGION_BORDER_COLOR).toBe(0x73562d);
+    expect(REGION_BORDER_ALPHA).toBe(1);
+    // 线与面的浓度比 = 源值的 1 : 0.3。改任一方都要同步另一方，否则"线比面还淡"
+    expect(REGION_BORDER_ALPHA / REGION_FILL_ALPHA).toBeCloseTo(10 / 3, 10);
+  });
+
+  it("同一时刻至多一个层级「可辨识」（权重 > 0.5 的层级 ≤ 1 个）", () => {
+    // 结构性质：α_i = t_{i-1} - t_i 且 t 单调，相邻两级同时 > 0.5 需要
+    // t_{i-1} - t_{i+1} > 1，而 t ∈ [0,1] —— 数学上排除了"两级都清晰"
+    const scales = naturalScales(COUNTS, MAP);
+    for (let z = 0.05; z <= 20; z *= 1.08) {
+      const alphas = levelAlphas(z, scales);
+      expect(alphas, `scale=${z.toFixed(3)}`).toHaveLength(COUNTS.length);
+      expect(alphas.filter((a) => a > 0.5).length, `scale=${z.toFixed(3)}`).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("全图视角（fit 缩放 0.62~0.80）主导层级 = 国家，同屏可辨识 12 块 ≤ 20", () => {
+    // 「同屏可辨识区块数 ≤ 20」是参考实现的 `countries` 上限（§3.7）。2.40.0 砍掉
+    // 大陆/洲之后，全图视角的主导层级正好是**国家**（默认 12 块，2.41.0 从 20
+    // 降下来对齐参考成图的密度观感）—— 参考的 `20<J&&(J=20)` 只是上限。
+    // 郡（60 块）要等缩到画布只覆盖地图一部分时才是主导，那时视口内的块数自然回落。
+    const scales = naturalScales(COUNTS, MAP);
+    for (const z of [0.62, 0.7, 0.8]) {
+      const level = activeLevel(z, scales);
+      expect(level, `scale=${z}`).toBe(0);
+      expect(COUNTS[level], "参考的 countries 上限 20").toBeLessThanOrEqual(20);
+      // 主导层级必须"真的清晰"：否则同屏块数只是靠权重薄摊出来的假象
+      expect(levelAlphas(z, scales)[level], `scale=${z} 主导权重`).toBeGreaterThan(0.85);
+    }
+  });
+
+  it("色板 9 格、互不相同、两两合成色差 ≥ 10（最接近的一对仍可辨）", () => {
+    expect(REGION_PALETTE_RGB).toHaveLength(9);
+    expect(new Set(REGION_PALETTE_RGB).size).toBe(9);
+    const composed = REGION_PALETTE_RGB.map((c) => composite(c, REGION_FILL_ALPHA));
+    let min = Infinity;
+    for (let i = 0; i < composed.length; i += 1) {
+      for (let j = i + 1; j < composed.length; j += 1) {
+        min = Math.min(min, rgbDist(composed[i], composed[j]));
+      }
+    }
+    // 合成后最小两两距离 ≈ 10.4（墨褐 / 深橄榄）。低于 10 就说明色板里出现了
+    // "纸色上分不出来的两格"—— 那两格会在图上被读成同一块。
+    expect(min).toBeGreaterThanOrEqual(10);
+  });
+
+  /**
+   * 相邻区块的色差（合成到纸色后）—— 这组断言是"国家的色块颜色差距很小"
+   * 的直接探针。
+   *
+   * 【相邻而不是两两】政治地图本来就会复用颜色（四色定理）：不相邻的两块同色
+   * 是正常的、也是参考目标的样子；只有**相邻**同色/近色才是缺陷。
+   *
+   * 【基线】2.38.0（连续 HSL + 8° hueSpread）实测相邻均值只有 3.6、最差 0.1 ——
+   * 肉眼就是一片单色。改成色板 + 邻接校正后：均值 26~32、最差 ≥ 14。
+   * 阈值取下限的一半左右，给"色板微调"留余量，但仍高于"读不出"的门槛。
+   */
+  it("相邻区块色差：均值 ≥ 22、最差 ≥ 12（2.38.0 的均值只有 3.6）", () => {
+    const regions = generateHierarchy({ seed: 42, bounds: MAP, levelCounts: [...COUNTS] });
+    for (let level = 0; level < COUNTS.length; level += 1) {
+      const pool = regions.filter((r) => r.level === level);
+      const pairs = adjacentPairs(pool);
+      expect(pairs.length, `level=${level} 相邻对`).toBeGreaterThan(0);
+      const composed = pool.map((r) => composite(r.color, regionFillAlphaOf(level)));
+      let min = Infinity;
+      let sum = 0;
+      for (const [a, b] of pairs) {
+        const d = rgbDist(composed[a], composed[b]);
+        min = Math.min(min, d);
+        sum += d;
+      }
+      expect(sum / pairs.length, `level=${level} 相邻均值`).toBeGreaterThanOrEqual(22);
+      expect(min, `level=${level} 相邻最差`).toBeGreaterThanOrEqual(12);
+    }
+  });
+
+  it("同层尽量不重色：国家一级 12 块用到 ≥ 7 种颜色（参考目标里每国一色）", () => {
+    const regions = generateHierarchy({ seed: 42, bounds: MAP, levelCounts: [...COUNTS] });
+    const colors = new Set(regions.filter((r) => r.level === 0).map((r) => r.color));
+    // 色板有 9 格，12 块可能复用；7 是"看起来每块都不一样"的下限
+    expect(colors.size).toBeGreaterThanOrEqual(7);
+  });
+
+  it("assignRegionColors：确定性、只动该动的块", () => {
+    const build = () => generateHierarchy({ seed: 7, bounds: MAP, levelCounts: [...COUNTS] });
+    const a = build();
+    const b = build();
+    expect(a.map((r) => r.color)).toEqual(b.map((r) => r.color));
+
+    // 全部换成同一格再校正：相邻块必须被拆开（不能保留"整层同色"）
+    const poisoned = build().map((r) => ({ ...r, color: REGION_PALETTE_RGB[0] }));
+    assignRegionColors(poisoned);
+    for (let level = 0; level < COUNTS.length; level += 1) {
+      const pool = poisoned.filter((r) => r.level === level);
+      const composed = pool.map((r) => composite(r.color, regionFillAlphaOf(level)));
+      for (const [i, j] of adjacentPairs(pool)) {
+        expect(rgbDist(composed[i], composed[j]), `level=${level}`).toBeGreaterThan(0);
+      }
     }
   });
 });

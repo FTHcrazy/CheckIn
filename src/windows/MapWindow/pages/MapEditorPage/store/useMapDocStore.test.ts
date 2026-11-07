@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { useMapDocStore } from "./useMapDocStore";
 import { resetMapStores } from "./reset";
-import { DEFAULT_REGION_SCHEMA, type MapRegion, type RegionLevelDef } from "../regions";
+import { type MapRegion, type RegionLevelDef } from "../regions";
 import { createEmptyDocument } from "../types";
 
 /**
@@ -63,9 +63,19 @@ function seedRegions(regions: MapRegion[]): void {
   useMapDocStore.setState({ doc: { ...createEmptyDocument(), regions } });
 }
 
-/** 两级 schema（大陆 / 洲） */
+/**
+ * 两级 schema（合键测试的载体）。
+ *
+ * 【2.42.0】产品层区域只有国家一级、层级配置面板已下线；store 的
+ * `setRegionSchema` 作为数据层能力保留（嵌套子图 / 潜在复用），合键行为
+ * 与 schema 项数无关 —— 这里用**显式构造**的两级 schema 驱动用例，
+ * 不再从默认 schema 切片。
+ */
 function twoLevels(): RegionLevelDef[] {
-  return DEFAULT_REGION_SCHEMA.slice(0, 2).map((def) => ({ ...def }));
+  return [
+    { name: "大陆甲", count: 12 },
+    { name: "洲乙", count: 60 },
+  ];
 }
 
 const state = () => useMapDocStore.getState();

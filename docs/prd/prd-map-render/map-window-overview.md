@@ -1,8 +1,8 @@
 # 地图窗口 · 模块总览（唯一入口）
 
 > 状态：**维护中**（每次地图功能落地、闭环或改期后更新本文件）
-> 基线：CheckIn **2.37.0**（工作区）｜`src/windows/MapWindow/`｜**全仓 293 文件 / 4047 用例全绿**（2026-11-06 校核，`pnpm test --maxWorkers=4`）
-> 输入：本模块现存 12 篇 + 已归档 6 个文件（5 篇 md + 1 个 `.ts` 参考实现，逐项见 §4.3）、`CHANGELOG.md` 2.18.0~2.37.0、代码实测
+> 基线：CheckIn **2.42.0**（工作区）｜`src/windows/MapWindow/`｜**全仓 293 文件 / 4076 用例全绿**（2026-11-07 校核，vitest 全量）
+> 输入：本模块现存 12 篇 + 已归档 6 个文件（5 篇 md + 1 个 `.ts` 参考实现，逐项见 §4.3）、`CHANGELOG.md` 2.18.0~2.42.0、代码实测
 > 职责：**只此一份呈现全貌** —— 整体进度、已完成、未完成、文档去向、仍缺什么。
 > 冲突时的优先级：**状态与去向看本文**；观感执行序看
 > [`review/map-vs-reference-render-analysis.md` §9](../../review/map-vs-reference-render-analysis.md#9-执行总表交接用)；
@@ -16,14 +16,32 @@
    2026-11 之后的所有工作都是在补**对象、素材、图层、折线**，而不是再调海岸颜色。
 2. **14 个能力域：13 个已闭环、1 个部分落地**（素材体系 #9）；另有 **2 类能力尚未动工**
    （文字排版增强、搜索/要素绑定），见 §3.1。
-3. **最近一批（2.37.0 对齐交互三件）**：**区块线贴岸**（regions.ts 越湾修复：径向投影 +
-   跨湾绕行，实测最大越岸 24.6 → 14.1；渲染期陆地掩膜 + 共享边去重兜底）+ **每块陆地
-   恒 1 个大陆区块**（旧口径按面积分摊把主岛切成 2~3 块"大陆"）+ **素材总闸 0.42 → 0.32**
-   （最大素材 ≈ 陆轴 12%，落入参考目标 8~12%）。守卫 `region-land-audit.test.ts`。
-   上一批（2.36.0 观感批次 D 收口）：**区块按层级静态衰减**（`REGION_LEVEL_FILL_SCALE
-   = [1, 0.75, 0.58, 0.45]`，填充/边界共用同一张表，主图 + 子图四处落点）+ **手工落位 AABB
-   避让**（`isCenterCovered`：中心落进已有素材命中盒 +30 呼吸边则拒绝落位）。
-   更早是 2.35.0 镜像翻转破重复、2.33.0 海岸观感修复（等深线逐环外扩 + 陆地轮廓 v4 调参）。
+3. **最近一批（2.42.0 层级下线 + 布点引擎对齐逆向源值）**：用户裁决「先将无级缩放，
+   层级，区域生成功能关闭，区域只有国家一级；完全将逆向目标的功能参数以及渲染效果
+   对齐，再进行创新优化，无需支持老数据」——**区域层级整体下线**（`REGION_LEVELS` 只留
+   国家一级，RegionSchemaPanel 与入口删除，LOD 随之自动退化；引擎仍支持显式多级供测试）；
+   **布点引擎对齐 decoded.js 源值**（格网三档 72/54/36 取代实例总数闸、草带弃格 ≈50% 留白、
+   地貌格 3 层堆叠、森林丛簇布点：连通先验 + 每丛 3 基础 + 四邻追加）；**国名白色化**
+   （`#ffffff` / α 0.6）。守卫：`generator.test.ts`、页面级回归（层级入口不存在 / 12 块 /
+   胶囊恒国家 / 素材不淡出）。
+   上一批（2.41.0 裁剪重写 + 形状/底色落地）：区块裁剪从 Sutherland–Hodgman
+   换成**可切分的半平面裁剪**（`clipHalfPlanePieces`）—— 色块盖湾与"飞线越海"的
+   共同根因（S-H 把多连通裁剪结果硬连成单环）被根治，径向钳制 / 越湾修复 / 接缝修复
+   三套事后补丁整套删除；区块支持**飞地**（`MapRegion.pieces`）；内部边加**离岸余量**
+   封顶（`coastClearanceRatio 0.6`）；国家默认数 **20 → 12**；**大陆形状 12 种 +
+   大陆底色 6 档**落地（`land.ts` 的 `LAND_SHAPES` / `LAND_BASE_COLORS`，弹层新增一行）。
+   守卫 `regions.test.ts`、`region-land-audit.test.ts`（阈值收到 4 / 300）、
+   `land.test.ts`（形状档 12 条 + 缺省兼容）、`generator.test.ts`（透传）。
+   上一批（2.40.0 区块三级化 + 飞线退场 + 一键成图对齐）：层级四级砍到三级
+   （国家/郡/城；⚠️ 2.42.0 起进一步收成一级）+ 描边丢弃跳线 + 一键成图补齐**要素大小 /
+   生成内容 / 山体 / 河流**。
+   更早是 2.37.0 对齐交互三件：**区块线贴岸**（regions.ts 越湾修复：径向投影 +
+   跨湾绕行，实测最大越岸 24.6 → 14.1；渲染期陆地掩膜 + 共享边去重兜底）+ 素材总闸
+   0.42 → 0.32（最大素材 ≈ 陆轴 12%，落入参考目标 8~12%）；
+   2.36.0 观感批次 D 收口（层级静态衰减 + AABB 避让）、2.35.0 镜像翻转破重复。
+   ⚠️ 2.37.0 的「每块陆地恒 1 个大陆区块」**随层级语义变更作废**：`level0` 现在是
+   **国家**，"每岛 1 个国家"恰恰是错的，已改回按面积分摊（详见 CHANGELOG 2.40.0
+   「兼容与代价」）。
 4. **文档已收口**：闭环的 6 个文件已进 `docs/archive/prd-map/`，未闭环的 12 篇留在
    `docs/prd/prd-map-render/`（含本批新写的 3 篇过程稿 + 1 篇批次排期；闭环后整组归档），散落在 `docs/` 根目录的三份旧稿已全部归档（§4）。
 
@@ -39,13 +57,13 @@
 | 1 | **窗口与主题**：独立 `map` 窗口、入口登记（full 8 个入口含 map、novel 7 个含 map、**lite 不含**）、主题变量复用 | ✅ | 2.18.0 前 | `MapWindow/{App,main}.tsx`、`index.scss`、`electron/edition.ts` | 无专文（受 `AGENTS.md` §6 与主题 token 约束，**不算缺口**） |
 | 2 | **数据持久化 `map.db`**：独立库、`doc_json` 整存、`rev` 乐观锁、800ms 防抖保存、关窗 flush、回收站 | ✅ | 2.20.0 | `electron/map-db.ts`、`map-handlers.ts`、`persistence/` | [`spec/map-db-spec.md`](../../spec/map-db-spec.md) |
 | 3 | **多图库与作品绑定**：缩略图列表、改名、回收站、绑定/解绑作品 | ✅ | 2.20.0 | `components/MapLibraryModal/`、`store/useMapFileStore.ts` | 同上（§8 记录了「首屏不做列表态」两处形态偏差） |
-| 4 | **画布内核**：坐标单一事实源、无级缩放（0.1~8）、帽函数 LOD、视口剔除、滚轮步长自适应 | ✅ | 2.17.x | `coords.ts`、`lod.ts`、`cull.ts` | `archive/prd-map/map-render-alignment-architecture.md` §1.2/§4 |
+| 4 | **画布内核**：坐标单一事实源、无级缩放（0.1~8；⚠️ 2.42.0 起 LOD 交叉淡化随层级下线自动退化为恒 1，缩放本身保留）、视口剔除、滚轮步长自适应 | ✅ | 2.17.x | `coords.ts`、`lod.ts`、`cull.ts` | `archive/prd-map/map-render-alignment-architecture.md` §1.2/§4 |
 | 5 | **陆地与海岸质感**：四层 fbm 有机轮廓、烘焙三件套（浅滩/等深线/内阴影）、海面暗角、程序纸纹、纹理平铺+羽化、海岸内缩 | ✅ | 2.18.0 / 2.27.0 / 2.28.0 | `land.ts`、`coastBake.ts`、`paperGrain.ts`、`style.ts` | [`review/map-vs-reference-render-analysis.md`](../../review/map-vs-reference-render-analysis.md) §6/§9 |
-| 6 | **区块生成与层级**：陆地内切分（非叠放）、层级数组、区块降级、缩放反推层级上限 | ✅ | 2.18.0 | `regions.ts`、`domain/generator.ts`、`lod.ts` | `archive/prd-map/map-render-alignment-prd.md` §6.1~6.2 |
-| 7 | **区域编辑**：层级定义 `regionSchema`、手画多边形、子区域合并、叶子/容器双态高亮、面包屑 | ✅（P0） | 2.19.0 | `regionEdit.ts`、`RegionPanel`、`RegionSchemaPanel`、`useMapDocStore` | [`region-editing.md`](region-editing.md)；架构已归档 |
+| 6 | **区块生成与层级**：陆地内切分（非叠放）；⚠️ 2.42.0 起**层级下线，只留国家一级**（引擎 `generateHierarchy` 仍支持显式 `levelCounts` 供测试与嵌套子图） | ✅ | 2.18.0 / 2.42.0 | `regions.ts`、`domain/generator.ts` | `archive/prd-map/map-render-alignment-prd.md` §6.1~6.2 |
+| 7 | **区域编辑**：层级定义 `regionSchema`（⚠️ 2.42.0 起单级、配置面板已删除）、手画多边形、子区域合并、叶子/容器双态高亮、面包屑 | ✅（P0） | 2.19.0 / 2.42.0 | `regionEdit.ts`、`RegionPanel`、`useMapDocStore` | [`region-editing.md`](region-editing.md)；架构已归档 |
 | 8 | **嵌套子图**：`MapSubmap` 递归数据模型、递归场景图 + 裁剪、路径 A（贴合）/ A′（跨图拷贝绑定）/ B（圈定生成）、子图渐入与内部 LOD、子图海岸/素材/地名、边界羽化带 | ✅（子图内编辑除外，归 R-REG-10） | 2.18.0 / 2.32.0 | `types.ts`、`submapRender.ts`、`submapBind.ts`、`SubmapPickerModal/`、`MapCanvas/index.tsx` | [`nested-submap-main.md`](nested-submap-main.md) |
 | 9 | **素材体系**：52 张 AI 素材 / 9 展示分类 / 20 地形枚举 / 地貌带（`core` + 雪·草原·荒漠三带）、选材引擎（三级回退）、属性面板、地名联动 | ◐ | 2.22.0 / 2.25.0~2.26.0 | `sprites.ts`、`domain/{terrain,terrain-assets,zones}.ts`、`SpritePanel`、`ElementPanel` | [`map-asset-system-architecture.md`](map-asset-system-architecture.md) |
-| 10 | **一键成图生成器**：热门地图配方、丰度三档、成图/骨架、五档重掷、结果摘要、底图选择、配额表 + 网格丛簇布点 | ✅ | 2.25.0 | `domain/{generator,mapPresets}.ts`、`MapGeneratorModal` | [`review/map-vs-reference-interaction-review.md`](../../review/map-vs-reference-interaction-review.md) §5.3 |
+| 10 | **一键成图生成器**：热门地图配方、丰度三档（⚠️ 2.42.0 起语义 = **格网边长** 72/54/36，对齐参考 `grid_size`）、成图/骨架、五档重掷、结果摘要、底图选择、配额表 + 格网/丛簇布点（2.42.0 对齐逆向源值：弃格、3 层、森林丛簇）；**面板对齐参考目标**（要素大小 / 生成内容 / 山体 / 河流，2.40.0） | ✅ | 2.25.0（面板 2.40.0 / 引擎 2.42.0） | `domain/{generator,mapPresets}.ts`、`MapGeneratorModal` | [`review/map-vs-reference-interaction-review.md`](../../review/map-vs-reference-interaction-review.md) §5.3 |
 | 11 | **对象编辑**：选中态、拖拽/缩放/旋转/透明度/色相、层级与置顶置底、剪贴板（C/X/V/D）、方向键与 WASD 微移、撤销重做 | ✅ | 2.21.0 | `hooks/useMapEditor.ts`、`store/useMapDocStore.ts`、`ElementPanel` | 同上（B1） |
 | 12 | **文字标注**：屏幕恒定字号、层级权重联动、三档字号、宋体字族、白描边 | ✅（基础） | 2.18.0 | `labelSync.ts` | `archive/prd-map/map-render-alignment-prd.md` §6.3 |
 | 13 | **导出**：PNG 分块导出（`tilePlan` → `exportMapPng` → `savePng`），可选尺寸 | ✅ | 2.18.0 | `export.ts` | 同上 §6.6（**规格不足**，见 §5.1 第 2 条） |
@@ -79,6 +97,8 @@
 | **2.35.0** | **观感批次 C · 镜像翻转破重复（P1-4）**：`MapElement.flipX`（可选 + 读点兜底 `elementFlipXOf`，旧档回落 false）、`flippable` 登记表（缺省可翻，7 张有朝向人造物不可翻）、一键成图按素材子流 50% 随机翻面 + **确定性去重**（同 spriteId 的 flip/量化scale/量化rotation 组合全图至多一次，撞车翻反 flip 或重掷角度）、渲染 `scale.x = |scale.x| × ±1`（主图素材层 + 子图素材同款） | ① **锚点 (0.5,1) 水平居中 ⇒ 翻转不位移**：设计预案里"按 baseWidth 反算锚点 / 命中反算 x"是空操作，命中区与选中框天然一致。② **pixi 8 的 `_setWidth` 保留 scale.x 符号**：翻面符号必须每次同步显式重设，不能增量取反（否则撤销后翻不回去）。③ **`map.db` 无需表结构迁移**：`doc_json` 整存，可选字段即向后兼容。④ **验收是结构性不是统计性**：QA 60 seeds 扫描证明翻转只砍半期望（稀池档量化抖动自身碰撞），确定性去重补上后 20 seeds × 全预设 × dense 恒 0 |
 | **2.36.0** | **观感批次 D 收口**：序 5 区块按层级**静态衰减**（新 `REGION_LEVEL_FILL_SCALE = [1, 0.75, 0.58, 0.45]`，填充/边界共用同一张表，主图 + 子图四处落点全走 `regionFillAlphaOf` / `regionBorderAlphaOf`）；序 6 **手工落位 AABB 避让**（`isCenterCovered`：新素材中心落进已有素材命中盒 +30 呼吸边 → 拒绝落位并提示，待放态保持） | ① **静态系数表与 `levelAlphas` 正交**：那是缩放驱动的 LOD 权重（已写进容器 alpha），乘上去双重衰减 —— 设计文档原方案被勘误否决，实现走"新常量表"路线。② **拦截只作用于新建落位**：`moveElementBy` 不设防 —— 拦拖拽 = 压住的素材永远无法拖开解围；守卫用例同时钉"中心被压拦 / 移动不拦"。③ 只开 1 级时系数恒 1，观感与旧版一致；越界 level 朝"不衰减"兜底。至此执行序 1~6 全部闭环，观感修补三件完成 |
 
+| **2.42.0** | **层级下线 + 布点引擎对齐逆向源值**（用户裁决：区域只留国家一级、完全对齐逆向目标、无需支持老数据）：`REGION_LEVELS` 只留国家一级（RegionSchemaPanel 与入口删除、LOD 自动退化、越界画区落点前拦截）；生成器 `RICHNESS_TOTALS` → `GRID_SIZES`（72/54/36 格网边长）、草带弃格 ≈50% 留白、地貌格 3 层堆叠、森林丛簇布点（连通先验 + 3 基础 + 四邻追加）；国名白色化 `#ffffff` / α 0.6 | ① **体量归一不照抄参考的 `w`**（.11~.5 是其素材池专属归一）：本项目走 `TERRAIN_SCALE`，对齐的是参数结构，双份归一会把草带丘陵放大 4.5 倍。② **随机数调用序全变**：老 seed 对不上老图（裁决内）。③ 12 块国家的单级退化让整条 LOD 链自动恒 1，`MapCanvas` 2233 行一行没改。④ 页面级回归的精确读数（208%/37%/命中 1px）被实测抖动教育过：多档缩放累积浮点误差钉死会假红，改区间断言 |
+
 > 累计取舍与勘误的价值不在"当时怎么想"，而在**别再犯**：完整负向约束见 §6，
 > 六条口径勘误见 render-analysis §9.5。
 ---
@@ -101,6 +121,7 @@
 |------|------|--------|----------------|------|
 | **子图静态层缓存** | nested-submap-main | P2 | 只有海岸烘焙按指纹短路，整棵子图静态层未缓存 | 同上 |
 | **一键成图的河流** | R-MAP-21 已知取舍② | P1 | 折线能力已就绪（2.30.0，含变宽），生成器侧的"沿地势画河"仍未设计 | review §9 的 B3 说明 |
+| **大陆底色的参考确切色值** | R-MAP-21 面板对齐（2.41.0 部分） | P2 | 6 档底色（羊皮纸/暖沙/黄褐/灰绿/青灰/粉灰）是按参考成图观感给的近似；参考实现底色走贴图/滤镜链，确切色值未能从 `decoded.js` 核出。拿到确切值只需改 `LAND_BASE_COLORS` 一张表 | CHANGELOG 2.41.0 |
 | **素材导入（S2）/ 热门地图扩容（S3）/ AI 接口（S4）** | R-MAP-22 | P1/P2 | 设计已写（三通道 + 标注弹层 +「我的素材」分组），实现为零 | [`map-asset-system-architecture.md`](map-asset-system-architecture.md) §六~§八 |
 | **区域编辑 P1/P2** | R-REG-06~14 | P1/P2 | 顶点微调 / 删单块 / 改名改色 / 裁剪 / 子图内编辑；P2 还有合并接管子图、边界重贴合、层级数上限放宽 | [`region-editing.md`](region-editing.md) §3.2/§3.3 |
 | ~~**观感修补三件**~~（P1-4 / P2-2 / P2-3） | ~~P1-4 / P2-2 / P2-3~~ | P1/P2 | **三条全部完成**：镜像翻转（2.35.0，含确定性去重）、区块层级静态衰减（2.36.0，勘误口径）、手工落位 AABB 避让（2.36.0，移动不设防） | render-analysis §9.1 |
@@ -267,7 +288,9 @@
 5. **不改 `lod.ts` / `coords.ts` / 场景图 7 层结构**：这是本项目优于参考实现的三处，已认领。
 6. **`levelAlphas` 是缩放驱动的 LOD 权重（Σα≡1），不是层级静态系数**：把它再乘到填充上会双重衰减，
    层级衰减必须另立静态系数表。
-7. **不要用全局 `REGION_FILL_ALPHA` 继续压区块**：已到 0.10 的尽头，再压会让边界线孤零零浮在纸上。
+7. **区块观感不要靠压 `REGION_FILL_ALPHA`**：逆向源值是 α **0.30** / 边界 **3px** / `#73562d`
+   （`decoded.js@131642`），2.38.0 已对齐。要收密度请压「同屏可辨识区块数」（LOD 帽函数 +
+   `LOD_BLOCK_PX`），压 alpha 只会让边界线一起淡掉 —— 2.27.0 的 0.10 就是这条弯路的终点。
 8. **`PLAIN_CELL_RATIO` 不是"随机留白"**：它是反解格边长的目标值；按旧语义丢格会重现"北密南秃"。
 9. **地形只贴 PNG，禁程序化填色**（map1 的教训）；同一要素的数据与渲染必须单一事实源。
 10. **改公共原语前先数使用点**：`MapCanvas` 的节点装配被 `render-stack-guard.test.ts` /

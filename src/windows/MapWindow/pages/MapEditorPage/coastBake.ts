@@ -234,6 +234,8 @@ export function bakeKeyOf(land: MapLand | null, style: MapStyle, resolution: num
     sizes,
     p0.x.toFixed(2),
     p0.y.toFixed(2),
+    // 底色进 key：换了底色必须重烘（不然旧色一直挂到下一次陆地变更）
+    (land.baseColor ?? 0).toString(16),
     style,
     resolution,
   ].join("|");
@@ -401,9 +403,11 @@ export function bakeCoast(input: BakeInput): RenderTexture {
   glow.filters = [new BlurFilter({ strength: COAST_GLOW.blur, quality: COAST_GLOW.quality })];
 
   // ── 4) 陆地底色：米黄 + 极轻模糊（复刻参考实现的柔边）──
+  //    底色可由文档指定（MapLand.baseColor，来自面板「大陆底色」档）；
+  //    未指定（老文档）回落羊皮纸 —— 与 2.40.0 渲染一致。
   const fill = new Graphics();
   drawLandPath(fill, land.polygons);
-  fill.fill({ color: COAST_FILL.color });
+  fill.fill({ color: land.baseColor ?? COAST_FILL.color });
   fill.filters = [new BlurFilter({ strength: COAST_FILL.blur, quality: COAST_FILL.quality })];
 
   // ── 5) 纸纹：平铺 + 分台阶内缩遮罩（羽化），multiply 叠一层 ──

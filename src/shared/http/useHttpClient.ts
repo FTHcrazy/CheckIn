@@ -14,7 +14,6 @@ import {
 
 export function useHttpClient(config?: HttpClientConfig): HttpClient {
   // client 只创建一次：config 每次渲染都是新对象，不应触发重建
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const client = useMemo(() => createHttpClient(config), []);
 
   useEffect(() => () => client.abortAll("unmount"), [client]);

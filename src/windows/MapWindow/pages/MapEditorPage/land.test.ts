@@ -448,3 +448,93 @@ describe("insetLand：海岸内缩", () => {
     expect(insetLand(empty).bounds).toEqual(BOUNDS);
   });
 });
+
+/**
+ * 大陆形状档（2.41.0 对齐参考面板的 12 种）。
+ *
+ * 三条铁律：
+ *   ① 「正常」不传 shape 与显式传 "normal" 逐字节一致（缺省值只有一处语义）；
+ *   ② 任何形状档的产出都必须是**合法陆地**：非空、环自洽（面积为正）、
+ *      全部落在纸内（含 LAND_PAPER_MARGIN 的海面留白）；
+ *   ③ 同形状同种子 ⇒ 逐位一致（撤销 / 截图比对依赖它）。
+ * 形状档只改"长什么样"，不放宽任何一条。
+ */
+describe("generateLand 大陆形状档", () => {
+  const SHAPES = [
+    "normal",
+    "moreLand",
+    "moreOcean",
+    "northSouth",
+    "eastWest",
+    "starMoon",
+    "slender",
+    "pangaea",
+    "cookie",
+    "threeContinents",
+    "earthlike",
+    "scattered",
+  ] as const;
+
+  /** 环合法性：闭合（首尾不同存由调用方保证）、面积显著大于 0 */
+  const ringOk = (ring: readonly Point[]): boolean =>
+    ring.length >= 8 && polygonArea([...ring]) > 1000;
+
+  for (const shape of SHAPES) {
+    it(`「${shape}」：产出合法陆地、同种子逐位一致`, () => {
+      const a = generateLand({ seed: 424242, bounds: BOUNDS, shape });
+      expect(a.polygons.length).toBeGreaterThan(0);
+      for (const ring of a.polygons) expect(ringOk(ring), `${shape} 环合法`).toBe(true);
+      // 落在纸内：顶点不越出「纸 − 留白」太深（侵蚀甩出的岸线允许 ±141 的游移，
+      // 这里只挡"整块跑出纸"级别的错误，游移由 fitRingToSpan 的格子约束兜住）
+      for (const ring of a.polygons) {
+        for (const p of ring) {
+          expect(p.x).toBeGreaterThan(BOUNDS.x - 160);
+          expect(p.x).toBeLessThan(BOUNDS.x + BOUNDS.width + 160);
+          expect(p.y).toBeGreaterThan(BOUNDS.y - 160);
+          expect(p.y).toBeLessThan(BOUNDS.y + BOUNDS.height + 160);
+        }
+      }
+      const b = generateLand({ seed: 424242, bounds: BOUNDS, shape });
+      expect(b.polygons).toEqual(a.polygons);
+    });
+  }
+
+  it("「正常」：不传 shape 与显式传 normal 逐字节一致（缺省兼容承诺）", () => {
+    const plain = generateLand({ seed: 20261107, bounds: BOUNDS });
+    const explicit = generateLand({ seed: 20261107, bounds: BOUNDS, shape: "normal" });
+    expect(explicit.polygons).toEqual(plain.polygons);
+  });
+
+  it("形状档真的改变形状：多海洋（1 岛低占纸）与三大洲（3 岛）岛数不同", () => {
+    // 各取 3 个种子降低偶然性：形状档的岛数语义必须稳定成立
+    for (const seed of [11, 9176, 20261009]) {
+      const ocean = generateLand({ seed, bounds: BOUNDS, shape: "moreOcean" });
+      const three = generateLand({ seed, bounds: BOUNDS, shape: "threeContinents" });
+      expect(ocean.polygons.length).toBe(1);
+      expect(three.polygons.length).toBe(3);
+    }
+  });
+
+  it("南北 / 东西：最大岛的长宽比被压到主导方向（squash 的直接效果）", () => {
+    // 【为什么量最大岛而不是联合包围盒】南北/东西档不锁岛数（沿用 1~3 的随机
+    // 分布），多岛结果的联合包围盒被"两岛的相对位置"主导，量不出形状语义。
+    const biggest = (rings: readonly Point[][]) =>
+      rings.reduce((best, r) => (polygonArea([...r]) > polygonArea([...best]) ? r : best));
+    const boxOf = (ring: readonly Point[]) => {
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      for (const p of ring) {
+        minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+        minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+      }
+      return { w: maxX - minX, h: maxY - minY };
+    };
+    for (const seed of [11, 9176, 20261009]) {
+      const ns = boxOf(biggest(generateLand({ seed, bounds: BOUNDS, shape: "northSouth" }).polygons));
+      const ew = boxOf(biggest(generateLand({ seed, bounds: BOUNDS, shape: "eastWest" }).polygons));
+      // 主导方向至少长 1.25 倍（squash 0.62 / 0.6 → 各向异性回拉后 ≈1.6，
+      // 留海岸性格的余量；0.9 的旧实测是"量了联合包围盒"的假象）
+      expect(ns.h / ns.w).toBeGreaterThan(1.25);
+      expect(ew.w / ew.h).toBeGreaterThan(1.25);
+    }
+  });
+});

@@ -4,10 +4,15 @@ import { fitSubmapTransform, type CanvasSize } from "../coords";
 
 import { useMapEditor } from "./useMapEditor";
 import { elementSizeFactor, resolveElementLevel } from "../lod";
+import { generateLand } from "../land";
 import { useMapDocStore } from "../store/useMapDocStore";
+import { BASE_BOUNDS } from "../store/useMapViewportStore";
 import { useMapSelectionStore } from "../store/useMapSelectionStore";
 import { resetMapStores } from "../store/reset";
 import type { MapRegion, Point } from "../regions";
+
+/** 子图用例的固定陆地 seed（让区块形状可复现，见 `carveSubmap` 用例里的注释） */
+const SUBMAP_LAND_SEED = 1;
 
 /**
  * `useMapEditor` 的状态机单测（目前只覆盖 `setStyle` 的同值守卫）。
@@ -153,7 +158,7 @@ describe("useMapEditor · 嵌套子地图（embedSubmap / carveSubmap / removeSu
   it("carveSubmap：圈定区块后，该区块挂上现场生成的子图，且可撤销", () => {
     const { result } = renderHook(() => useMapEditor(SIZE));
 
-    // 先生成一棵区块树（level 2：大陆/洲），拿到一个可圈定的区块
+    // 先生成一棵区块树（level 2：国家/郡），拿到一个可圈定的区块
     act(() => result.current.regenerateHierarchy(2));
     const target = result.current.doc.regions[0];
     expect(target).toBeTruthy();
@@ -207,10 +212,25 @@ describe("useMapEditor · 嵌套子地图（embedSubmap / carveSubmap / removeSu
     // 实测有 0.09% 的顶点微越出父容器（最大 3 世界单位），逐顶点断言会假红。
     // 但整体包围盒的中心是刚性的：一旦坐标域搞错，它就会整体偏移一个区块半径。
     const { result } = renderHook(() => useMapEditor(SIZE));
-    act(() => result.current.regenerateHierarchy(2));
-    // 必须挑一个**明显偏离原点**的区块：level-0 的大陆铺满整张纸、包围盒中心
-    // 恰好接近 (0,0)，坐标域搞错时也能蒙混通过（那个缺陷正是靠这个巧合藏住的）。
-    const found = result.current.doc.regions.find((r) => r.level === 1);
+    /**
+     * 【先钉一块 land：这条用例以前是**随机**的】`buildRegions(null, …)` 走
+     * `land.seed ?? Math.random()`，于是每次跑出来的区块形状都不同。层级从四级
+     * 砍成三级后，子图首级的数量由 3 变 20（`carveSubmap` 沿用父 schema 的
+     * `count`），退化格被丢掉的概率随之变大 —— 实测偶发出现 21 单位的偏移
+     * （某个角落的小格被判定退化后剔除，并集包围盒缩了一角），与本条要守的
+     * "坐标域"无关。固定 land 之后形状可复现，探针实测 5 个 seed 的偏移都 ≤ 2.3。
+     */
+    act(() => {
+      useMapDocStore.setState((s) => ({
+        doc: { ...s.doc, land: generateLand({ seed: SUBMAP_LAND_SEED, bounds: BASE_BOUNDS }) },
+      }));
+    });
+    act(() => result.current.regenerateHierarchy());
+    // 【2.42.0】区域只有国家一级：在 level-0 国家上圈子图。坐标域不变式不变 ——
+    // 子图分区必须在「子图本地坐标」里生成。
+    const found = result.current.doc.regions.find(
+      (r) => Math.abs(r.seed.x) + Math.abs(r.seed.y) > 50,
+    );
     expect(found).toBeTruthy();
     // 上面已断言非空，这里收窄类型（避免整段用 `!`）
     const target = found!;
@@ -247,9 +267,10 @@ describe("useMapEditor · 嵌套子地图（embedSubmap / carveSubmap / removeSu
 
     // 中心必须与区块包围盒中心重合（坐标域搞错时这里会差半个区块 —— 几十单位）。
     // 贴岸口径（越湾修复）下区块多边形沿海岸绕行，分区裁剪质心与包围盒中心
-    // 允许 ≤ 2 单位的偏移；0.05 的旧容差是直弦多边形时代的口径。
-    expect(Math.abs(mappedCx - (worldRect.x + worldRect.width / 2))).toBeLessThan(2);
-    expect(Math.abs(mappedCy - (worldRect.y + worldRect.height / 2))).toBeLessThan(2);
+    // 允许 ≤ 8 单位的偏移：① 崎岖化会让边缘格略缩进；② 子图首级 20 格时偶尔有一个
+    // 退化角落格被剔除。两者都远小于"半个区块"（本用例的块约 150~200 宽）。
+    expect(Math.abs(mappedCx - (worldRect.x + worldRect.width / 2))).toBeLessThan(8);
+    expect(Math.abs(mappedCy - (worldRect.y + worldRect.height / 2))).toBeLessThan(8);
     // 尺寸同量级（分区被裁在多边形内，允许略小于包围盒）
     expect(localW * fit.scale).toBeGreaterThan(worldRect.width * 0.6);
     expect(localH * fit.scale).toBeGreaterThan(worldRect.height * 0.6);
@@ -309,27 +330,64 @@ describe("useMapEditor · 嵌套子地图（embedSubmap / carveSubmap / removeSu
  * store 自己会再算一遍计划，所以这条是"两层算出来的数没有打架"的证明。
  */
 describe("useMapEditor · mergeSubtree（合并子树）", () => {
-  /** 生成一棵 2 级树（3 大陆 + 12 洲 = 15 块），返回一个大陆 */
+  /** 生成一棵 2 级树（12 国家 + 60 郡 = 72 块），返回一个国家 */
+  /**
+   * 手工合成的两级树（1 父 + 2 子）。
+   *
+   * 【2.42.0】生成器只出国家一级，「合并子区域」在产品层已无自然入口；
+   * 它是**数据层能力**（老文档 / 存量树仍要能合并），这里直接灌一份
+   * 合成的两级 regions 驱动用例，不经过生成器。
+   */
   function withTwoLevels() {
     const { result } = renderHook(() => useMapEditor(SIZE));
-    act(() => result.current.regenerateHierarchy(2));
-    const root = result.current.doc.regions.find((r) => r.level === 0);
-    expect(root).toBeTruthy();
-    return { result, root: root! };
+    const root: MapRegion = {
+      id: "root1",
+      parentId: null,
+      level: 0,
+      name: "国家 1",
+      seed: { x: 0, y: 0 },
+      polygon: [
+        { x: -100, y: -100 },
+        { x: 100, y: -100 },
+        { x: 100, y: 100 },
+        { x: -100, y: 100 },
+      ],
+      color: 0x334455,
+    };
+    const child = (id: string, cx: number): MapRegion => ({
+      id,
+      parentId: "root1",
+      level: 1,
+      name: `子块 ${id}`,
+      seed: { x: cx, y: 0 },
+      polygon: [
+        { x: cx - 50, y: -100 },
+        { x: cx + 50, y: -100 },
+        { x: cx + 50, y: 100 },
+        { x: cx - 50, y: 100 },
+      ],
+      color: 0x445566,
+    });
+    act(() =>
+      useMapDocStore.getState().regenerateHierarchy([root, child("c1", -50), child("c2", 50)]),
+    );
+    const seeded = result.current.doc.regions.find((r) => r.id === "root1");
+    expect(seeded).toBeTruthy();
+    return { result, root: seeded! };
   }
 
   it("删掉全部后代（含孙），root 自身字段与 polygon 逐点不变，一次撤销回全树", () => {
     const { result, root } = withTwoLevels();
     const treeBefore = result.current.doc.regions;
-    expect(treeBefore.length).toBe(15);
+    expect(treeBefore.length).toBe(3);
 
     let merged: { removed: number; withSubmap: number } = { removed: -1, withSubmap: -1 };
     act(() => {
       merged = result.current.mergeSubtree(root.id);
     });
 
-    // 一个大陆下的洲（含它们的孩子）全部消失
-    expect(merged.removed).toBeGreaterThan(0);
+    // 两个子块全部消失
+    expect(merged.removed).toBe(2);
     expect(merged.withSubmap).toBe(0);
     expect(result.current.doc.regions).toHaveLength(treeBefore.length - merged.removed);
     expect(result.current.doc.regions.some((r) => r.parentId === root.id)).toBe(false);
@@ -350,6 +408,8 @@ describe("useMapEditor · mergeSubtree（合并子树）", () => {
     const { result, root } = withTwoLevels();
     const leaf = result.current.doc.regions.find((r) => r.parentId === root.id);
     expect(leaf).toBeTruthy();
+    // 【层级关闭后的口径】单级生成图里不再有叶子以外的层级；本用例钉的是
+    // 「对没有后代的块合并 = 空操作」这条数据层契约。
 
     const depthBefore = useMapDocStore.getState().undoStack.length;
     let merged: { removed: number; withSubmap: number } = { removed: -1, withSubmap: -1 };
@@ -385,11 +445,12 @@ describe("useMapEditor · mergeSubtree（合并子树）", () => {
 
   it("§6-4：合并让最深层级消失 ⇒ levelAlphas 变短，该级素材被 clamp 跳一档（既有行为）", () => {
     const { result } = withTwoLevels();
+    // 合成的两级树（1 父 + 2 子）⇒ levelCountsOf = [1, 2] ⇒ 两级权重
     expect(result.current.levelAlphas).toHaveLength(2);
 
-    // 三层全合并掉：只剩 level 0 的 3 块大陆
+    // 全合并掉：只剩 level 0
     const roots = result.current.doc.regions.filter((r) => r.level === 0);
-    expect(roots).toHaveLength(3);
+    expect(roots).toHaveLength(1);
     act(() => {
       for (const r of roots) result.current.mergeSubtree(r.id);
     });
@@ -434,7 +495,7 @@ describe("useMapEditor · addManualRegion（手画落库）", () => {
       id: "p1",
       parentId: null,
       level: 0,
-      name: "大陆 1",
+      name: "国家 1",
       seed: { x: 0, y: 0 },
       polygon: square(0, 0, 100),
       color: 0x334455,
@@ -471,32 +532,19 @@ describe("useMapEditor · addManualRegion（手画落库）", () => {
     expect(created.parentId).toBeNull();
     expect(created.polygon).toHaveLength(5);
     expect(created.polygon).toEqual(drawn);
-    // 名字来自 schema（默认第一级是"大陆"）+ 同层序号
-    expect(created.name).toBe("大陆 2");
+    // 名字来自 schema（默认第一级是"国家"）+ 同层序号
+    expect(created.name).toBe("国家 2");
     // 种子是质心（"这块地的代表点"），不是随便一个顶点
     expect(created.seed.x).toBeGreaterThan(-420);
     expect(created.seed.x).toBeLessThan(-280);
   });
 
-  it("选中区块后手画：parentId = 父.id、level = 父.level + 1，且在父块内部合法", () => {
-    const { result } = renderHook(() => useMapEditor(SIZE));
-    const parent = parentRegion();
-    seed([parent]);
-    act(() => useMapSelectionStore.getState().setSelectedRegionId("p1"));
-
-    act(() => {
-      const r = result.current.addManualRegion(square(0, 0, 20));
-      expect(r.ok).toBe(true);
-    });
-
-    const created = result.current.doc.regions.find((r) => r.id !== "p1");
-    expect(created).toBeTruthy();
-    expect(created!.parentId).toBe("p1");
-    expect(created!.level).toBe(1);
-    expect(created!.origin).toBe("manual");
-  });
-
-  it("跨出父边界：返回 outside-parent 且**不产生快照**、不新增记录", () => {
+  /**
+   * 【2.42.0】区域只有国家一级（层级功能关闭）：选中区块后手画不再产生子区域，
+   * 落点前就被 `level-out-of-range` 拦下。原来的「选中后画子块」「跨出父边界」
+   * 两条用例随之合并成这一条 —— 拦截必须**不压快照、不新增记录**。
+   */
+  it("层级已关闭：选中区块后手画 ⇒ level-out-of-range，不压快照、不新增记录", () => {
     const { result } = renderHook(() => useMapEditor(SIZE));
     seed([parentRegion()]);
     act(() => useMapSelectionStore.getState().setSelectedRegionId("p1"));
@@ -506,33 +554,14 @@ describe("useMapEditor · addManualRegion（手画落库）", () => {
 
     let code: string | null = null;
     act(() => {
-      const r = result.current.addManualRegion(square(95, 0, 20)); // 一半在父块外
-      if (!r.ok) code = r.code;
-    });
-
-    expect(code).toBe("outside-parent");
-    expect(useMapDocStore.getState().doc.regions).toBe(regionsBefore);
-    // 【变异检查的靶心】失败若也走 commit，用户按一次 Ctrl+Z 会"什么都没变"
-    expect(useMapDocStore.getState().undoStack.length).toBe(depthBefore);
-  });
-
-  it("层级封顶：只有 1 级时选中 level 0 再画 ⇒ level-out-of-range，同样不压快照", () => {
-    const { result } = renderHook(() => useMapEditor(SIZE));
-    seed([parentRegion()]);
-    act(() => useMapDocStore.getState().setRegionSchema([{ name: "大陆", count: 1 }]));
-    expect(result.current.schema).toHaveLength(1);
-    act(() => useMapSelectionStore.getState().setSelectedRegionId("p1"));
-
-    const depthBefore = useMapDocStore.getState().undoStack.length;
-    let code: string | null = null;
-    act(() => {
       const r = result.current.addManualRegion(square(0, 0, 20));
       if (!r.ok) code = r.code;
     });
 
     expect(code).toBe("level-out-of-range");
+    expect(useMapDocStore.getState().doc.regions).toBe(regionsBefore);
+    // 【变异检查的靶心】失败若也走 commit，用户按一次 Ctrl+Z 会"什么都没变"
     expect(useMapDocStore.getState().undoStack.length).toBe(depthBefore);
-    expect(result.current.doc.regions).toHaveLength(1);
   });
 
   it("撤销一步整条消失；重做后 id 与 polygon 逐点不变", () => {
@@ -587,9 +616,9 @@ describe("useMapEditor · addManualRegion（手画落库）", () => {
     const manual = result.current.doc.regions.find((r) => r.origin === "manual");
     expect(manual).toBeTruthy();
 
-    // 二级自动树（3 大陆 + 12 洲 = 15 块）⇒ 加上手画的那块应共 16
-    act(() => result.current.regenerateHierarchy(2));
-    expect(result.current.doc.regions).toHaveLength(16);
+    // 单级自动树（12 国家）⇒ 加上手画的那块应共 13
+    act(() => result.current.regenerateHierarchy());
+    expect(result.current.doc.regions).toHaveLength(13);
     expect(result.current.doc.regions.some((r) => r.id === manual!.id)).toBe(true);
   });
 

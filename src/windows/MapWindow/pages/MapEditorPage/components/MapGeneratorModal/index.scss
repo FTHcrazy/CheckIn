@@ -4,12 +4,35 @@
   flex-direction: column;
   gap: 10px;
   padding-top: 2px;
+  /**
+   * 面板对齐逆向目标后行数变多（要素大小 / 生成内容 / 山体 / 河流）。
+   * 小窗口下让**表单本体**滚动、弹层不超出视口：`max-height` + `auto` 只加在
+   * 这一层，弹层的头部与底部按钮仍固定可见。
+   */
+  max-height: 62vh;
+  overflow-y: auto;
 }
 
 .map-generator__row {
   display: flex;
   align-items: center;
   gap: 8px;
+
+  /** 生成内容那一行：标签在上、勾选组占满剩余宽度并换行 */
+  &--wrap {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+}
+
+/** 生成内容的勾选组：占满剩余宽度，窄窗口下一个词一个词换行 */
+.map-generator__contents {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  flex: 1 1 auto;
+  min-width: 0;
+  line-height: 22px;
 }
 
 .map-generator__label {
@@ -28,6 +51,21 @@
   &--narrow {
     width: 88px;
   }
+}
+
+/** 底色选项：色点 + 名称（Select 下拉与选中态共用） */
+.map-generator__color-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.map-generator__color-dot {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(0 0 0 / 0.18);
 }
 
 .map-generator__result {

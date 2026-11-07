@@ -6,7 +6,7 @@
  * 合缝"；本文件的不变量是"手画多边形合法、子树删除、叶子判定"。两者毫不相干，混在
  * 一处会让 `regions.test.ts` 变成杂物间，也让"改合并逻辑"与"改崎岖化参数"产生同一
  * 文件的并发冲突。本文件只**复用** `regions.ts` 已导出的
- * `pointInPolygon` / `hslToRgb` / `levelLabelOf` / 常量，不复制实现。
+ * `pointInPolygon` / `REGION_PALETTE_RGB` / `levelLabelOf` / 常量，不复制实现。
  *
  * 【边界】纯函数模块：无副作用、无 React / Pixi / DOM，**禁读** `Date.now()` /
  * `Math.random()` / 全局随机流。同输入必同输出，因此可以被 QA 当作主测试面。
@@ -27,9 +27,8 @@
  */
 
 import {
+  REGION_PALETTE_RGB,
   REGION_TOTAL_LIMIT,
-  REGION_WOBBLE,
-  hslToRgb,
   levelLabelOf,
   pointInPolygon,
   type MapRegion,
@@ -522,7 +521,14 @@ export function createRegionId(): string {
   return `rgm_${regionIdCounter}`;
 }
 
-/** 0xRRGGBB → HSL（h 度为 0~360，s/l 为 0~1）。手画的"继承父色相"必须能反解 */
+/**
+ * 0xRRGGBB → HSL（h 度 0~360，s/l 为 0~1）。
+ *
+ * 【为什么还留着】`REGION_PALETTE` 是 HSL 三元组、`REGION_PALETTE_RGB` 由
+ * `hslToRgb` 算出；本函数是那条换算的**反解**，`regionEdit.test.ts` 用往返一致性
+ * 守住"色板算出来的 RGB 真的是那个颜色"（色相/饱和/明度任一环写错都会红）。
+ * 手画取色已改成直接取色板，不再依赖它。
+ */
 export function rgbToHsl(rgb: number): { h: number; s: number; l: number } {
   const r = ((rgb >> 16) & 0xff) / 255;
   const g = ((rgb >> 8) & 0xff) / 255;
@@ -544,30 +550,34 @@ export function rgbToHsl(rgb: number): { h: number; s: number; l: number } {
 }
 
 /**
- * 手画取色的固定饱和/明度。
+ * 手画取色用的黄金比步长：在色板里按序号跳格取色。
  *
- * 与生成器同一档（`hslToRgb(hue, 0.1 + rng()*0.06, 0.62 ± 0.04)` 的中值）：
- * 手画的块与生成的块必须读起来是**同一张图上的同一种色系**，只有色相不同。
+ * 【0.618 而不是"序号 % 色板长度"】`ordinal % len` 会让相邻序号拿到颜色表里**相邻**
+ * 的两格（赭红 → 土黄），而这两格正是最难分辨的一对；黄金比步长把相邻序号送到色板
+ * 对角位置，手画连点几块也不会出现"两块几乎同色"。
  */
-const MANUAL_SATURATION = 0.13;
-const MANUAL_LIGHTNESS = 0.62;
-/** 黄金角（度）：无父色时按序号分散色相，相邻序号不会撞色（与生成器 level 0 同式） */
-const GOLDEN_ANGLE = 137.508;
+const GOLDEN_STEP = 0.6180339887;
 
 /**
- * 手画取色（确定性，**不用 rng**）：
- *   · 有父色 → 父色相 ±(ordinal%5-2)×`REGION_WOBBLE.hueSpread`（±6°），s=0.13, l=0.62；
- *   · 无父色 → 黄金角分散 `ordinal × 137.508`，s=0.13, l=0.62（与生成器 level 0 同式）。
+ * 手画取色（确定性，**不用 rng**）：从 `REGION_PALETTE_RGB` 里按序号跳格取一格。
+ *
+ * 【为什么与生成器共用同一张色板】手画的块和生成的块必须读起来是**同一张图上的
+ * 同一种配色**。2.39.0 把生成器从"连续 HSL"改成离散色板之后，手画若还按色相偏移
+ * 取色，同一张图上会出现两套色系（生成的块是色板色、手画的是中间色）。
+ *
+ * 【与父块同色时顺延一格】手画的父子只有"紧邻"这一层关系（父块是用户点中的那一块），
+ * 撞色会直接读成"父块没被切开"，所以这里显式避开父块那一格。
  *
  * 【为什么不用 rng】生成器的 rng 是**串行流**：多取一个数会把整张图重排
- * （`regions.ts` 的 color 注释有专项说明）。手画的取色必须与生成流完全无关。
+ * （`regions.ts` 里 `buildChildren` 的取色注释有专项说明）。手画取色必须与生成流无关。
  */
 export function manualRegionColor(input: { parentColor: number | null; ordinal: number }): number {
   const ordinal = Number.isFinite(input.ordinal) ? Math.max(1, Math.round(input.ordinal)) : 1;
-  if (input.parentColor !== null) {
-    const { h } = rgbToHsl(input.parentColor);
-    const offset = ((ordinal % 5) - 2) * REGION_WOBBLE.hueSpread;
-    return hslToRgb(h + offset, MANUAL_SATURATION, MANUAL_LIGHTNESS);
+  const len = REGION_PALETTE_RGB.length;
+  let index = Math.round(((ordinal * GOLDEN_STEP) % 1) * (len - 1));
+  index = Math.max(0, Math.min(len - 1, index));
+  if (input.parentColor !== null && REGION_PALETTE_RGB[index] === input.parentColor) {
+    index = (index + 1) % len;
   }
-  return hslToRgb(ordinal * GOLDEN_ANGLE, MANUAL_SATURATION, MANUAL_LIGHTNESS);
+  return REGION_PALETTE_RGB[index];
 }

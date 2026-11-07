@@ -25,6 +25,7 @@ import {
 } from "./__test-utils";
 import { resetMapStores } from "./store/reset";
 import { useMapDocStore } from "./store/useMapDocStore";
+import { CONTENT_LABELS } from "./domain/generator";
 
 const { spritePositions, labelNodes } = vi.hoisted(() => ({
   spritePositions: [] as { x: number; y: number }[],
@@ -274,6 +275,26 @@ describe("MapEditorPage 一键成图（B3）", () => {
     });
     for (const l of useMapDocStore.getState().doc.labels) {
       expect(l.elementId).toBeTruthy();
+    }
+  });
+
+  it("面板按逆向目标补齐三组控制：要素大小 / 生成内容 / 山体 / 河流", async () => {
+    await setup();
+    fireEvent.click(screen.getByRole("button", { name: /一键成图/ }));
+
+    // 弹层本体（只看这个节点，避免与画布上的素材名/提示文案撞词）
+    const panel = await waitFor(() => {
+      const node = document.querySelector(".map-generator");
+      expect(node).toBeTruthy();
+      return node as HTMLElement;
+    });
+    const text = panel.textContent ?? "";
+    for (const label of ["要素大小", "生成内容", "山体", "河流", "含地名", "划分区块"]) {
+      expect(text, `面板缺「${label}」`).toContain(label);
+    }
+    // 「生成内容」七项与生成器的 CONTENT_KEYS 一一对应
+    for (const label of Object.values(CONTENT_LABELS)) {
+      expect(text, `生成内容缺「${label}」`).toContain(label);
     }
   });
 

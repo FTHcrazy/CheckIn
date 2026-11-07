@@ -6,6 +6,7 @@ import {
   installSpriteNamesResolver,
   landSeedOf,
   nameSeedOf,
+  resolveGeneratorTuning,
   summarizeGeneration,
   type GeneratorGear,
   type GeneratorParams,
@@ -47,7 +48,7 @@ import {
   type ManualRegionRejectCode,
 } from "../regionEdit";
 // 别名：本 hook 要暴露一个同名动作 `generateLand`，避免与纯函数撞名
-import { generateLand as buildLand } from "../land";
+import { generateLand as buildLand, landColorOf } from "../land";
 import {
   activeLevel,
   elementSizeFactor,
@@ -682,15 +683,21 @@ export function useMapEditor(canvasSize: CanvasSize) {
       const out: MapRegion[] = [];
       for (let i = 0; i < land.polygons.length; i += 1) {
         const share = areas[i] / Math.max(1e-9, total);
-        // level0（大陆）**每块陆地恰好 1 个**，不再按面积分摊全局数量 ——
-        // "一块大陆"就该是一块完整的大陆区块，国家（洲/郡）挂它下面按面积分摊。
-        // 旧口径 round(count0 × share) 会把一座主岛切成 2~3 个"大陆"，读起来
-        // 就成了"一个大陆是一个国家"的碎片（用户实测反馈）。
+        /**
+         * 【level0 也按面积分摊（2.40.0 起）】旧口径把 level0（大陆）**强制为每岛
+         * 1 块**，理由是"一块大陆就该是一块完整的大陆区块"。砍掉大陆/洲之后
+         * level0 变成**国家**，"每岛 1 个国家"恰恰是错的 —— 一块陆地上本来就有
+         * 十几二十个国家。因此每一级统一用 `count × share`（多岛时按面积分配，
+         * 单岛时 share = 1 ⇒ 与 schema 设定逐值相同）。
+         *
+         * 【代价与兜底】`Math.max(1, …)` 保证小岛也不会分到 0 块；总数仍受
+         * `REGION_TOTAL_LIMIT` 在 `generateHierarchy` 内截断。
+         */
         out.push(
           ...generateHierarchy({
             seed,
             bounds: BASE_BOUNDS,
-            levelCounts: [1, ...counts.slice(1).map((c) => Math.max(1, Math.round(c * share)))],
+            levelCounts: counts.map((c) => Math.max(1, Math.round(c * share))),
             schema: active,
             container: land.polygons[i],
             idPrefix: `i${i}_`,
@@ -1177,6 +1184,11 @@ export function useMapEditor(canvasSize: CanvasSize) {
           mode: params.mode,
           pool: SPRITES,
           sizeOf,
+          // 内容开关 / 山体·河流密度 / 要素大小：缺省全开+正常，与 2.39.0 逐实例一致
+          tuning: resolveGeneratorTuning(params),
+          // 大陆形状 / 底色：缺省「正常」/羊皮纸 = 与 2.40.0 逐字节一致
+          shape: params.shapeId,
+          landColorId: params.landColorId,
         });
         const named =
           params.mode === "full" && params.withLabels
@@ -1213,7 +1225,13 @@ export function useMapEditor(canvasSize: CanvasSize) {
         gearCounterRef.current.land += 1;
         const landSeed =
           ((landSeedOf(last.seed) ^ Math.imul(gearCounterRef.current.land, 0x27d4eb2d)) >>> 0) || 1;
-        const land = buildLand({ seed: landSeed, bounds: BASE_BOUNDS });
+        const land = buildLand({
+          seed: landSeed,
+          bounds: BASE_BOUNDS,
+          // 「只换陆地」也跟随弹层里选的形状与底色（与 all 档同一套参数）
+          shape: last.params.shapeId,
+        });
+        land.baseColor = landColorOf(last.params.landColorId).color;
         const kept = current.regions.filter((r) => r.origin === "manual");
         const regions = [...buildRegions(land, undefined, regionSchemaOf(current)), ...kept];
         store.applyGenerated({ land, regions });
@@ -1234,6 +1252,8 @@ export function useMapEditor(canvasSize: CanvasSize) {
           pool: SPRITES,
           sizeOf,
           elementSeed,
+          // 只换素材 = 同一套配方（含勾选态 / 密度档 / 要素大小）重摇布点
+          tuning: resolveGeneratorTuning(last.params),
         });
         const named = last.params.withLabels
           ? assignPlacementNames(gen.placements, lastPreset, last.seed)

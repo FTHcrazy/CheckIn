@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 // 顺序的**唯一定义处**在实现里，测试只消费它 —— 早期这里手抄了一份 7 项数组，
 // 结果 T5 加 `draftLayer` 时两份清单同时要改，忘一处就变成"测试说 7 层、代码有 8 层"。
 import { WORLD_LAYER_ORDER, worldLayerIndexOf } from "./layers";
+import { REGION_NAME_MAX_LEVEL } from "./regionNameLayer";
 
 /**
  * MapCanvas 场景图 z 序守卫（源码级）。
@@ -237,5 +238,40 @@ describe("MapCanvas 纹理归属", () => {
     expect(fn).not.toBeNull();
     // 读到 `destroyed` 才会重建；去掉这一句 = 死纹理一路传到 batcher
     expect(fn?.[0]).toMatch(/destroyed/);
+  });
+});
+
+/**
+ * 区块层：掩膜几何与国名挂载的纪律。
+ *
+ * 【为什么是源码级】掩膜错位既不抛异常也没有 DOM 可读（jsdom 里 Graphics 全是空
+ * 函数），要真跑一次 WebGL 才看得见；而症状**只在特定缩放、特定海湾**出现 ——
+ * 用户截图红框里那片浅色楔形就是它。这两条约束一旦被改回去，肉眼很难在回归时发现，
+ * 钉在源码上最早失败。
+ */
+describe("区块层：掩膜几何与国名挂载", () => {
+  /** 只截掩膜这一个 effect（从掩膜注释到填充 effect 之间） */
+  const maskEffect = SRC.slice(SRC.indexOf("区块层 · 陆地掩膜"), SRC.indexOf("区块层 · 填充"));
+
+  it("掩膜走与陆地同一条曲线（drawLandPath），不再用弦多边形", () => {
+    expect(maskEffect).not.toBe("");
+    expect(maskEffect).toMatch(/drawLandPath\(mask,\s*land\.polygons\)/);
+    // `mask.poly(...)` 是"采样点直线相连"的弦多边形，与渲染期 Catmull-Rom 曲线在
+    // 湾口处能差十几个世界单位 —— 曲线切掉的湾口会被判成陆地，区块色糊到海面上
+    expect(maskEffect).not.toMatch(/mask\.poly\(/);
+  });
+
+  it("掩膜不向外扩（regionLayer 在 coast 之上，扩出去就是区块色压海面）", () => {
+    expect(maskEffect).not.toMatch(/mask\.stroke\(/);
+    // 掩膜的填充色必须是纯白（stencil 只看形状，不看颜色；填成别的值等于给自己埋坑）
+    expect(maskEffect).toMatch(/mask\.fill\(\{\s*color:\s*0xffffff\s*\}\)/);
+  });
+
+  it("国名挂在层级容器内部、排在填充与边界之后，且只为 0~2 层建", () => {
+    // 顺序即 z 序：先面、再线、最后名字
+    expect(SRC).toMatch(/container\.addChild\(fill, border, names\)/);
+    // 透明度由层级容器的 LOD 权重统一给，节点上不许再乘一次
+    expect(SRC).toMatch(/syncRegionNameGroup\(lv\.names,\s*doc\.regions,\s*level\)/);
+    expect(REGION_NAME_MAX_LEVEL).toBe(2);
   });
 });

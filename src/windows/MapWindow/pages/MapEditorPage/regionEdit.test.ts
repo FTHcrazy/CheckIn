@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_REGION_SCHEMA,
-  hslToRgb,
+  REGION_PALETTE_RGB,
   REGION_TOTAL_LIMIT,
+  hslToRgb,
   type MapRegion,
   type Point,
 } from "./regions";
@@ -32,7 +33,7 @@ import {
  * `regionEdit.ts` 纯函数单测 —— QA 的主战场。
  *
  * 【为什么这一层的用例最密】纯函数便宜、变异可验证（删一行守卫必红），
- * 而页面级一条"生成 223 块"≈3.5s。能在这一层钉住的判据，绝不放到上层去代偿
+ * 而页面级一条"生成 232 块"≈3.5s。能在这一层钉住的判据，绝不放到上层去代偿
  * （架构 §4.6 测试策略矩阵）。
  *
  * 【两个必须存在的反例（架构 §6-3 点名）】
@@ -535,14 +536,15 @@ describe("regionEdit：落库字段（纯、确定性）", () => {
   });
 
   it("manualRegionName：与生成区同一口径；空名回落 L{n}", () => {
-    expect(manualRegionName(DEFAULT_REGION_SCHEMA, 2, 12)).toBe("国家 12");
-    expect(manualRegionName(DEFAULT_REGION_SCHEMA, 0, 1)).toBe("大陆 1");
+    // 2.42.0 起只有国家一级：level 0 走 schema 名，越界回落 L{n+1}
+    expect(manualRegionName(DEFAULT_REGION_SCHEMA, 0, 1)).toBe("国家 1");
+    expect(manualRegionName(DEFAULT_REGION_SCHEMA, 2, 12)).toBe("L3 12");
     // 空名 / 缺 schema 一律回落，不留空段
     expect(manualRegionName([{ name: "", count: 3 }], 0, 5)).toBe("L1 5");
     expect(manualRegionName(undefined, 3, 7)).toBe("L4 7");
   });
 
-  it("rgbToHsl ↔ hslToRgb：能反解（手画「继承父色相」的前提）", () => {
+  it("rgbToHsl ↔ hslToRgb：能反解（色板的 HSL → RGB 换算必须可信）", () => {
     const rgb = hslToRgb(200, 0.5, 0.5);
     const hsl = rgbToHsl(rgb);
     expect(hsl.h).toBeCloseTo(200, 0);
@@ -553,28 +555,32 @@ describe("regionEdit：落库字段（纯、确定性）", () => {
     expect(rgbToHsl(0x000000)).toEqual({ h: 0, s: 0, l: 0 });
   });
 
-  it("manualRegionColor：确定性、无父色按黄金角分散、有父色只偏 ±6°", () => {
+  it("manualRegionColor：确定性、取色板、序号分散、不撞父块", () => {
     // 同输入必同输出（禁 rng / Math.random）
     expect(manualRegionColor({ parentColor: null, ordinal: 3 })).toBe(
       manualRegionColor({ parentColor: null, ordinal: 3 }),
     );
-    // 无父色：不同序号必须拿到不同色（否则整层区块同色）
+    // 取色必须来自生成器同一张色板 —— 否则同一张图上会出现两套色系
+    const palette = new Set(REGION_PALETTE_RGB);
+    for (const ordinal of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) {
+      expect(palette.has(manualRegionColor({ parentColor: null, ordinal })), `ordinal=${ordinal}`).toBe(
+        true,
+      );
+    }
+    // 相邻序号必须拿到不同色（否则连点几块 = 一整块）
     const c1 = manualRegionColor({ parentColor: null, ordinal: 1 });
     const c2 = manualRegionColor({ parentColor: null, ordinal: 2 });
     expect(c1).not.toBe(c2);
-    // 饱和度 / 明度与生成器同档
-    expect(rgbToHsl(c1).l).toBeCloseTo(0.62, 1);
 
-    // 有父色：色相偏差不超过 2×hueSpread（= 6°）
-    const parentColor = hslToRgb(120, 0.13, 0.62);
-    const parentHue = rgbToHsl(parentColor).h;
-    // ordinal % 5 - 2 = 0 ⇒ 完全不偏色：与父色**逐位相同**（父色本身就是这条规则的产物）
-    expect(manualRegionColor({ parentColor, ordinal: 2 })).toBe(parentColor);
-    for (const ordinal of [1, 3, 4, 5]) {
-      const hue = rgbToHsl(manualRegionColor({ parentColor, ordinal })).h;
-      const diff = Math.min(Math.abs(hue - parentHue), 360 - Math.abs(hue - parentHue));
-      // 6° 规则 + 8 位量化误差（低饱和时一个通道 ≈ 25 级，最大约 1.3°）⇒ 留到 8°
-      expect(diff).toBeLessThanOrEqual(8);
+    // 有父色：撞到父块那一格就顺延 —— **绝不与父块同色**（同色会被读成"父块没被切开"）
+    for (const parentColor of REGION_PALETTE_RGB) {
+      for (const ordinal of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) {
+        const color = manualRegionColor({ parentColor, ordinal });
+        expect(palette.has(color), `parent=${parentColor.toString(16)} ordinal=${ordinal}`).toBe(
+          true,
+        );
+        expect(color, `parent=${parentColor.toString(16)} ordinal=${ordinal}`).not.toBe(parentColor);
+      }
     }
   });
 });

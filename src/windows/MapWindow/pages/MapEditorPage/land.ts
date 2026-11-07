@@ -176,13 +176,166 @@ export const LAND_SHRINK = 0.92;
 /** 相交兜底时的重试次数 */
 export const LAND_OVERLAP_RETRIES = 5;
 
+/* ────────────────────── 大陆形状（对齐参考面板的 12 种） ────────────────────── */
+
+export type LandShapeId =
+  | "normal"
+  | "moreLand"
+  | "moreOcean"
+  | "northSouth"
+  | "eastWest"
+  | "starMoon"
+  | "slender"
+  | "pangaea"
+  | "cookie"
+  | "threeContinents"
+  | "earthlike"
+  | "scattered";
+
+/**
+ * 母形整形参数（喂给 `makeRadius`）。**每个字段缺省 = 现状**，因此「正常」档
+ * 不传任何字段时，随机数序列与 2.40.0 逐位一致（land 基线测试钉住）。
+ */
+export interface LandRadiusProfile {
+  /** 海岸特征（岬/湾）个数，缺省 `LAND_RADIUS.features` */
+  capCount?: number;
+  /** 特征振幅倍率（>1 = 更夸张的咬口 / 尖齿） */
+  capAmp?: number;
+  /** 特征宽度倍率（>1 = 又宽又圆的"咬一口"，饼干档用） */
+  capWidth?: number;
+  /** -1 全是湾 ~ +1 全是岬（缺省 0 = 五五开） */
+  capBias?: number;
+  /** k=1 谐波权重：主导"整个形状朝一边倒"（月牙 / 豆形） */
+  lobe1?: number;
+  /** 域扭曲幅度倍率（<1 = 母形更圆润，侵蚀仍会给碎边） */
+  roughMul?: number;
+}
+
+/** 一种大陆形状的全部布局参数（字段缺省 = 「正常」的现状行为） */
+export interface LandShapeDef {
+  id: LandShapeId;
+  label: string;
+  /** 岛数：固定值，或 [min, max] 闭区间随机（缺省 = 现状 1~3 加权分布） */
+  islands?: number | [number, number];
+  /** 占纸比覆盖（缺省 `LAND_AREA_RATIO`） */
+  areaRatio?: { min: number; max: number };
+  /** 可用半幅压缩：< 1 = 该方向让出海 → 大陆朝另一方向拉长 */
+  squashX?: number;
+  squashY?: number;
+  /** 主轴锁定角（弧度，0 = 东西向、π/2 = 南北向）；缺省保持 ±22° 随机 */
+  axis?: number;
+  /** 配合 `axis` 的主轴抖动半幅（弧度），缺省 0.12 */
+  axisJitter?: number;
+  /** 母形整形（缺省 = 现状母形） */
+  profile?: LandRadiusProfile;
+  /** 伴随小岛用星形母形（星月档的第二块岛） */
+  companionStar?: boolean;
+  /** 小岛权重下限（缺省 0.22）：调高 = 各岛更均衡（三大洲），调低 = 主陆独大 */
+  minIslandWeight?: number;
+}
+
+/**
+ * 参考面板「架空大陆自动生成器」的大陆形状 12 种（名称转写自面板截图，
+ * 见 `docs/prd/prd-map-render/map-window-overview.md` §3.2）。
+ *
+ * 【实现层】全部落在 `land.ts` 已有的三个自由度上 —— 岛数/占纸比（布局）、
+ * 可用半幅与主轴（朝向）、母形谐波与特征（形状性格）。侵蚀管线一个字没动：
+ * 海岸性格仍由 `LAND_ERODE` 负责，形状档只决定"母形长什么样"。
+ */
+export const LAND_SHAPES: readonly LandShapeDef[] = [
+  { id: "normal", label: "正常" },
+  { id: "moreLand", label: "多陆地", islands: [2, 3], areaRatio: { min: 0.66, max: 0.78 } },
+  { id: "moreOcean", label: "多海洋", islands: 1, areaRatio: { min: 0.34, max: 0.44 } },
+  // 【为什么不用 axis 锁定】π/2 的旋转会把"压扁的方向"转成横向 —— 压缩与旋转
+  // 互相抵消（实测 h/w 只有 0.84）。只靠半幅压缩（格子在该方向让出海）就足以
+  // 拉出长宽比，±22° 的随机主轴保留，观感更自然。
+  { id: "northSouth", label: "南北", squashX: 0.62 },
+  { id: "eastWest", label: "东西", squashY: 0.6 },
+  {
+    id: "starMoon",
+    label: "星月",
+    islands: 2,
+    areaRatio: { min: 0.45, max: 0.55 },
+    // k=1 主导 ⇒ 主岛是"豆形月"；伴生小岛换星形母形（窄宽大振幅正特征）
+    profile: { lobe1: 2.4, capAmp: 1.3 },
+    companionStar: true,
+    minIslandWeight: 0.07,
+  },
+  { id: "slender", label: "狭长", squashY: 0.42, axis: 0 },
+  {
+    id: "pangaea",
+    label: "盘古",
+    islands: 1,
+    areaRatio: { min: 0.7, max: 0.8 },
+    // 一整块：特征收敛、扭曲略压 → 母形更"团圆"
+    profile: { capAmp: 0.6, roughMul: 0.85 },
+  },
+  {
+    id: "cookie",
+    label: "饼干",
+    islands: 1,
+    areaRatio: { min: 0.55, max: 0.65 },
+    // 宽而圆的负特征 = 沿边"咬"几口；扭曲压低保住圆底
+    profile: { capCount: 5, capAmp: 1.7, capWidth: 2.4, capBias: -0.85, roughMul: 0.6 },
+  },
+  {
+    id: "threeContinents",
+    label: "三大洲",
+    islands: 3,
+    areaRatio: { min: 0.58, max: 0.68 },
+    minIslandWeight: 0.65,
+  },
+  { id: "earthlike", label: "类地球", islands: [3, 5], areaRatio: { min: 0.5, max: 0.6 }, minIslandWeight: 0.3 },
+  { id: "scattered", label: "零散", islands: [5, 8], areaRatio: { min: 0.34, max: 0.44 }, minIslandWeight: 0.55 },
+];
+
+export const DEFAULT_LAND_SHAPE: LandShapeId = "normal";
+
+export function landShapeOf(id: LandShapeId | undefined): LandShapeDef {
+  return LAND_SHAPES.find((s) => s.id === id) ?? LAND_SHAPES[0];
+}
+
+/* ────────────────────── 大陆底色（对齐参考面板的底色选择） ────────────────────── */
+
+/** 一种大陆底色。首项 = 2.40.0 及以前的固定值（羊皮纸米黄）。 */
+export interface LandColorDef {
+  id: string;
+  label: string;
+  color: number;
+}
+
+/**
+ * 底色色板。
+ *
+ * 【口径】参考面板的底色清单没能从逆向源码里逐值核出（`decoded.js` 里底色走
+ * 的是贴图/滤镜链，不是裸色值），这里按参考成图的观感给 6 档近似：
+ * 首项就是现状色 —— **不选 = 与 2.40.0 渲染逐字节一致**（bakeKey 不含它时
+ * 根本不会重烘）。后续拿到确切色值只需改这张表。
+ */
+export const LAND_BASE_COLORS: readonly LandColorDef[] = [
+  { id: "parchment", label: "羊皮纸", color: 0xc8bd9d },
+  { id: "sand", label: "暖沙", color: 0xd8c69c },
+  { id: "loess", label: "黄褐", color: 0xc4a878 },
+  { id: "sage", label: "灰绿", color: 0xb7bfa0 },
+  { id: "mist", label: "青灰", color: 0xaab5ae },
+  { id: "rose", label: "粉灰", color: 0xd0bcae },
+];
+
+export const DEFAULT_LAND_COLOR_ID = LAND_BASE_COLORS[0].id;
+
+export function landColorOf(id: string | undefined): LandColorDef {
+  return LAND_BASE_COLORS.find((c) => c.id === id) ?? LAND_BASE_COLORS[0];
+}
+
 export interface LandOptions {
   /** 随机种子 */
   seed: number;
   /** 世界范围（整张纸） */
   bounds: Rect;
-  /** 岛数；缺省由 rng 取 1~3 */
+  /** 岛数；缺省由形状档与 rng 决定（「正常」= 1~3 加权） */
   islands?: number;
+  /** 大陆形状档；缺省「正常」= 2.40.0 的行为 */
+  shape?: LandShapeId;
   /** 母形方向角采样数；缺省 `LAND_SAMPLES` */
   samples?: number;
 }
@@ -227,11 +380,11 @@ function ringHalfSpan(ring: Point[], center: Point): { hx: number; hy: number } 
 }
 
 /** 按 center 缩放一个环（返回新数组，不改动入参） */
-function scaleRing(ring: Point[], center: Point, k: number): Point[] {
-  if (k === 1) return ring;
+function scaleRing(ring: Point[], center: Point, k: number, ky = k): Point[] {
+  if (k === 1 && ky === 1) return ring;
   return ring.map((p) => ({
     x: center.x + (p.x - center.x) * k,
-    y: center.y + (p.y - center.y) * k,
+    y: center.y + (p.y - center.y) * ky,
   }));
 }
 
@@ -352,25 +505,30 @@ function planIslands(areas: number[], bounds: Rect, rng: () => number): IslandPl
  * 【为什么返回闭包而不是每次现算随机数】谐波相位、特征位置必须整岛一致。
  * 【无自交】结果恒为正 ⇒ r(θ) 单值 ⇒ θ 单调采样出的环不自交。
  */
-function makeRadius(seed: number): (t: number) => number {
+function makeRadius(seed: number, p?: LandRadiusProfile): (t: number) => number {
   const { base, lobe, rough, freq, warp, detail, features } = LAND_RADIUS;
 
   // ① 海岸特征：位置随机分布在整圈，宽度 0.12~0.38 弧度，约一半是湾一半是岬。
   //    母形上只留"大尺度走向"的雏形（幅度 0.08~0.2），深湾长岬交给扭曲。
+  //    【rng 调用序】theta → width → 幅度 → 正负号，4 次/个；形状档只改
+  //    "个数/幅度/宽度/偏置"，不改顺序 —— 不传 profile 时与旧版逐位一致。
+  const capBias = p?.capBias ?? 0;
   const featRng = createRng(seed ^ 0x27d4eb2d);
   const caps: { theta: number; width: number; amp: number }[] = [];
-  for (let i = 0; i < features; i += 1) {
-    caps.push({
-      theta: featRng() * Math.PI * 2,
-      width: 0.12 + featRng() * 0.26,
-      amp: (0.08 + featRng() * 0.12) * (featRng() < 0.5 ? -1 : 1),
-    });
+  for (let i = 0; i < (p?.capCount ?? features); i += 1) {
+    const theta = featRng() * Math.PI * 2;
+    const width = (0.12 + featRng() * 0.26) * (p?.capWidth ?? 1);
+    const mag = (0.08 + featRng() * 0.12) * (p?.capAmp ?? 1);
+    const sign = featRng() < (1 - capBias) / 2 ? -1 : 1;
+    caps.push({ theta, width, amp: mag * sign });
   }
 
-  // ② 低频谐波：k 越大振幅越小（1/k 加权），总振幅归一到 lobe
+  // ② 低频谐波：k 越大振幅越小（1/k 加权），总振幅归一到 lobe。
+  //    k=1（lobe1 > 0 时加入）让整个形状"朝一边倒"—— 月牙 / 豆形的来源。
   const rng = createRng(seed ^ 0x85ebca6b);
-  const ks = [2, 3, 5, 7];
-  const raw = ks.map((k) => (0.45 + rng() * 0.85) / k);
+  const lobe1 = p?.lobe1 ?? 0;
+  const ks = lobe1 > 0 ? [1, 2, 3, 5, 7] : [2, 3, 5, 7];
+  const raw = ks.map((k) => (k === 1 ? lobe1 : (0.45 + rng() * 0.85) / k));
   const rawSum = raw.reduce((s, v) => s + v, 0);
   const amps = raw.map((v) => (v / rawSum) * lobe);
   const phases = ks.map(() => rng() * Math.PI * 2);
@@ -397,7 +555,7 @@ function makeRadius(seed: number): (t: number) => number {
     const ly = sin * freq;
     const wx = lx + warp * (fbm(lx * 0.45 + 13.1, ly * 0.45 + 4.7, seed + 911, 2) - 0.5) * 2;
     const wy = ly + warp * (fbm(lx * 0.45 - 7.3, ly * 0.45 + 9.2, seed + 577, 2) - 0.5) * 2;
-    const mid = (fbm(wx, wy, seed, 4, 2.05, 0.5) - 0.5) * 2;
+    const mid = (fbm(wx, wy, seed, 4, 2.05, 0.5) - 0.5) * 2 * (p?.roughMul ?? 1);
 
     // ④ 碎齿：当前 detail = 0（侵蚀管线的 detAmp/detRadius 负责碎边）
     const mask = 0.2 + 0.8 * fbm(lx * 0.8 + 3.3, ly * 0.8 - 2.1, seed + 733, 2);
@@ -407,12 +565,12 @@ function makeRadius(seed: number): (t: number) => number {
   };
 }
 
-/** 生成母形闭合环（各向异性拉伸 + 主轴旋转） */
-function makeRing(plan: IslandPlan, seed: number, samples: number): Point[] {
+/** 生成母形闭合环（各向异性拉伸 + 主轴旋转）；`profile` 见 `LandRadiusProfile` */
+function makeRing(plan: IslandPlan, seed: number, samples: number, profile?: LandRadiusProfile): Point[] {
   const n = Math.max(8, Math.round(samples));
   const cosA = Math.cos(plan.angle);
   const sinA = Math.sin(plan.angle);
-  const radius = makeRadius(seed);
+  const radius = makeRadius(seed, profile);
   const ring: Point[] = [];
   for (let k = 0; k < n; k += 1) {
     const t = (k / n) * Math.PI * 2;
@@ -1116,37 +1274,94 @@ export function generateLand(options: LandOptions): MapLand {
   const paperArea = Math.max(0, bounds.width) * Math.max(0, bounds.height);
   if (paperArea <= 0) return { seed, polygons: [], bounds };
 
-  // 单陆 55% / 双陆 30% / 三陆 15%。
+  // ── 大陆形状档（「正常」不传 = 与 2.40.0 逐位一致）──
+  const shape = landShapeOf(options.shape);
+
+  // 单陆 55% / 双陆 30% / 三陆 15%（「正常」档的历史分布）。
   // 【为什么不均匀取 1~3】一块完整大陆是奇幻地图的主力构图；均匀撒 1~3 会让
   // "两块挤在一起的小岛"成为三分之一的默认结果 —— 用户点一次生成就得到一张
-  // 零碎的图。想多岛就多点几次，或显式传 `islands`。
+  // 零碎的图。想多岛就多点几次，或显式传 `islands` / 形状档。
   const islandRoll = rng();
   const autoIslands = islandRoll < 0.55 ? 1 : islandRoll < 0.85 ? 2 : 3;
-  const count = clamp(Math.round(options.islands ?? autoIslands), 1, 8);
+  const count = clamp(
+    Math.round(
+      options.islands ??
+        (shape.islands === undefined
+          ? autoIslands
+          : Array.isArray(shape.islands)
+            ? shape.islands[0] + Math.floor(rng() * (shape.islands[1] - shape.islands[0] + 1))
+            : shape.islands),
+    ),
+    1,
+    8,
+  );
 
-  // 目标总面积与逐岛面积权重：首块固定 1，其余 0.22~0.5 ——
-  // 主陆撑住画面，小岛做点缀与航线节点。
-  const targetRatio = LAND_AREA_RATIO.min + rng() * (LAND_AREA_RATIO.max - LAND_AREA_RATIO.min);
+  // 目标总面积与逐岛面积权重：首块固定 1，其余按形状档的权重下限（缺省
+  // 0.22~0.5）—— 主陆撑住画面，小岛做点缀与航线节点。
+  const areaMin = shape.areaRatio?.min ?? LAND_AREA_RATIO.min;
+  const areaMax = shape.areaRatio?.max ?? LAND_AREA_RATIO.max;
+  const targetRatio = areaMin + rng() * (areaMax - areaMin);
   const targetArea = paperArea * targetRatio;
+  const minW = shape.minIslandWeight ?? 0.22;
   const weights: number[] = [];
   let weightSum = 0;
   for (let i = 0; i < count; i += 1) {
-    const w = i === 0 ? 1 : 0.22 + rng() * 0.28;
+    const w = i === 0 ? 1 : minW + rng() * (0.5 - minW);
     weights.push(w);
     weightSum += w;
   }
   const areas = weights.map((w) => (targetArea * w) / Math.max(1e-9, weightSum));
 
   const plans = planIslands(areas, bounds, rng);
+
+  // 形状档的朝向约束：压缩某方向的可用半幅（大陆在该方向"让出海"）、锁定主轴。
+  // 【为什么改 plan 而不是改格子】planIslands 的格子排布保证海峡宽度；
+  // 在它的产物上收缩半幅/转轴，海峡结构原样保留。
+  const squashX = shape.squashX ?? 1;
+  const squashY = shape.squashY ?? 1;
+  if (squashX !== 1 || squashY !== 1) {
+    for (const plan of plans) {
+      plan.ax *= squashX;
+      plan.ay *= squashY;
+      plan.spanX *= squashX;
+      plan.spanY *= squashY;
+    }
+  }
+  if (shape.axis !== undefined) {
+    const jitter = shape.axisJitter ?? 0.12;
+    for (const plan of plans) plan.angle = shape.axis + (rng() - 0.5) * 2 * jitter;
+  }
+
+  /** 星月档：主岛是月（lobe1 主导），第二块岛换星形母形 */
+  const profileFor = (i: number): LandRadiusProfile | undefined => {
+    if (!shape.companionStar || i === 0) return shape.profile;
+    return { capCount: 7, capAmp: 2.4, capWidth: 0.34, capBias: 1, roughMul: 0.5 };
+  };
+
   const polygons: Point[][] = [];
 
   for (let i = 0; i < plans.length; i += 1) {
     const plan = plans[i];
-    const base = makeRing(plan, seed + i * 7919, samples);
+    const profile = profileFor(i);
+    const base = makeRing(plan, seed + i * 7919, samples, profile);
 
     // 侵蚀：海岸性格（半岛 / 深湾 / 碎边）全部来自这里。失败回退母形。
     const coast = erodeIslandCoast(base, seed + i * 7919 + 31);
     let ring = fitRingToSpan(coast ?? base, plan);
+
+    // 形状档的**各向异性**贴合：侵蚀的域扭曲是各向同性的，会把半幅压缩拉出的
+    // 朝向洗掉（实测 squashX 0.62 的"南北"档在个别 seed 下 h/w 只剩 0.9）。
+    // 这里按两个方向的实测半幅分别回拉到格子的可用半幅 —— 普通档 kx≈ky≈min(k)，
+    // 不走这段，保持与 2.40.0 逐字节一致。
+    if (squashX !== 1 || squashY !== 1) {
+      const { hx, hy } = ringHalfSpan(ring, plan.center);
+      ring = scaleRing(
+        ring,
+        plan.center,
+        clamp(plan.spanX / hx, 0.5, 1.25),
+        clamp(plan.spanY / hy, 0.5, 1.25),
+      );
+    }
 
     // 相交兜底（格子排布 + 半幅贴合在结构上已保证海峡；这里只兜 fbm 极端值）。
     for (let retry = 0; retry < LAND_OVERLAP_RETRIES; retry += 1) {

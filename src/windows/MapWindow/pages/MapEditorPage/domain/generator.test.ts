@@ -7,13 +7,20 @@
 import { describe, expect, it } from "vitest";
 import { generateLand, insetLand, landAreaRatio, pointInLand } from "../land";
 import {
-  RICHNESS_TOTALS,
+  CONTENT_KEYS,
+  ELEMENT_SIZE_FACTOR,
+  GRID_SIZES,
+  MOUNTAIN_TERRAINS,
+  RIVER_TERRAINS,
   assignPlacementNames,
+  defaultContents,
   elementSeedOf,
   generateMap,
   installSpriteNamesResolver,
   landSeedOf,
   nameSeedOf,
+  resolveGeneratorTuning,
+  resolveTerrainMix,
   summarizeGeneration,
   type GeneratorRichness,
   type SpritePlacement,
@@ -156,15 +163,13 @@ describe("generateMap 布点合法性", () => {
     expect(standard).toBeGreaterThan(sparse);
   });
 
-  it("scale = 格边长补偿 × 地形体量 × 簇抖动；rotation 按素材体量分级", () => {
+  it("scale 落在归一链的值域内；rotation 按地貌带分级（2.42.0 对齐逆向源值）", () => {
     for (const p of gen.placements) {
-      // 下界：dense 档格子最小（~0.72）× 点符号体量（0.48×0.42 体量总闸）× 簇 0.88 × 微调 0.9
-      //   ≈ 0.115；总闸从 0.6 降到 0.42 后点符号进一步缩小，下界同步下移到 0.08（非内容违规）。
-      // 上界：sparse 档格子最大（~1.32）× 山地（1.0×0.42）× 簇 1.14 × 微调 1.06 ≈ 0.67，1.7 仍是宽松上限
-      expect(p.scale).toBeGreaterThan(0.08);
+      // 体量 = 格网补偿(1|1.1) × 地形体量 × 总闸 × (1+D)，D 按带 ≤12%
+      expect(p.scale).toBeGreaterThan(0.05);
       expect(p.scale).toBeLessThanOrEqual(1.7);
-      // 大体量更稳（±5°）、小体量略活（±9°），与 generator 的 ROT_LARGE/ROT_SMALL 同值
-      const amp = sizeOf(p.spriteId).width >= 120 ? 5 : 9;
+      // 旋转幅度按**带**取逆向源值：草带（丘陵）±15°、其余 ±5°（BAND_PARAMS）
+      const amp = p.zone === "grass" ? 15 : 5;
       expect(Math.abs(p.rotation), `${p.spriteId} 转得太多`).toBeLessThanOrEqual(amp);
     }
   });
@@ -192,22 +197,23 @@ describe("generateMap 布点合法性", () => {
     expect(medianWidthOf("forest")).toBeLessThan(mountain * 0.95);
   });
 
-  it("不重合、不超发（总数是上限；同簇内允许层叠）", () => {
-    // 【为什么不再断言「两两相离」】手绘山脉就是叠着画的：同一丛簇里几座山
-    // 互相压边才出厚度。旧断言把「均匀撒点」这个实现固化了，反而挡住了 P0-2。
-    // 现在要钉的是**渲染级的糊**：两个实例不许落在同一点。
-    const anchors = new Set(gen.placements.map((p) => `${p.x.toFixed(3)},${p.y.toFixed(3)}`));
-    expect(anchors.size).toBe(gen.placements.length);
-    let minDist = Infinity;
-    for (let i = 0; i < gen.placements.length; i++) {
-      for (let j = i + 1; j < gen.placements.length; j++) {
-        const a = gen.placements[i];
-        const b = gen.placements[j];
-        minDist = Math.min(minDist, Math.hypot(a.x - b.x, a.y - b.y));
-      }
+  it("确定性去重 + 总量受格网容量封顶（同簇允许层叠 —— 逆向即如此）", () => {
+    // 【2.42.0】对齐逆向源码后**刻意允许层叠**（每格 3 层错位 +10、丛簇内互相
+    // 压边）：旧的「两两相离 / 最小间距 >4」断言把均匀撒点固化了，与参考的
+    // 手绘层叠直接冲突，删除。要钉的契约换成两条：
+    // ① 结构性去重：同 spriteId 的 (flip, 量化scale, 量化rotation) 全图至多一次；
+    const seen = new Set<string>();
+    for (const p of gen.placements) {
+      const key = `${p.spriteId}|${p.flipX ? "F" : "N"}|${p.scale.toFixed(2)}|${p.rotation.toFixed(1)}`;
+      expect(seen.has(key), `外观组合撞车：${key}`).toBe(false);
+      seen.add(key);
     }
-    expect(minDist).toBeGreaterThan(4);
-    expect(gen.placements.length).toBeLessThanOrEqual(RICHNESS_TOTALS.standard);
+    // ② 总量封顶：总量 = 陆地格 × 每格层（≤3）或森林丛（≤7），不再有"目标总数"。
+    //    用宽松上界（陆地包围盒面积 / 最疏格网 × 3 × 2）兜住"循环失控"这种回归。
+    const grid = GRID_SIZES.standard;
+    const cap = ((1024 * 1024) / (grid * grid)) * 3 * 2;
+    expect(gen.placements.length).toBeLessThanOrEqual(cap);
+    expect(gen.placements.length).toBeGreaterThan(0);
   });
 
   it("成团：多数实例在格内半径内挨着同类（不是均匀撒点）", () => {
@@ -617,4 +623,138 @@ describe("generateMap 镜像翻转（P1-4）", () => {
       }
     }
   }, 120_000);
+});
+
+/**
+ * 面板控制（对齐逆向目标的「生成内容 / 山体 / 河流 / 要素大小」）。
+ *
+ * 四组控制都只落在**配方层**：内容开关与分族密度改 `terrainMix`，要素大小改
+ * 全局体量倍率。因此断言也分两类 —— "某族还有没有"看 `byTerrain` 计数，
+ * "该多该少"看中位数比值；都不必逐实例比对坐标。
+ */
+describe("generateMap 面板控制（内容开关 / 分族密度 / 要素大小）", () => {
+  /** 按地形统计实例数（`terrain` 是布点上记录的取用配方） */
+  const countByTerrain = (ps: readonly SpritePlacement[]): Record<string, number> => {
+    const out: Record<string, number> = {};
+    for (const p of ps) out[p.terrain] = (out[p.terrain] ?? 0) + 1;
+    return out;
+  };
+
+  const withTuning = (
+    seed: number,
+    tuning: Parameters<typeof resolveGeneratorTuning>[0],
+  ) =>
+    generateMap({
+      ...makeOpts(seed),
+      tuning: resolveGeneratorTuning(tuning),
+    });
+
+  it("缺省 tuning ⇒ 与 2.39.0（不传 tuning）逐实例完全相同", () => {
+    const plain = generateMap(makeOpts(20260411));
+    const explicit = generateMap({
+      ...makeOpts(20260411),
+      tuning: resolveGeneratorTuning({}),
+    });
+    expect(explicit.placements).toEqual(plain.placements);
+  });
+
+  it("关掉「森林」⇒ 一个森林实例都不铺，总量基本不缩水", () => {
+    const base = generateMap(makeOpts(20260411));
+    const noForest = withTuning(20260411, {
+      contents: { ...defaultContents(), forest: false },
+    });
+    expect(countByTerrain(noForest.placements).forest ?? 0).toBe(0);
+    expect((countByTerrain(base.placements).forest ?? 0)).toBeGreaterThan(0);
+    /**
+     * 腾出来的份额分给其它族 ⇒ 总量**大致**不缩水。
+     *
+     * 【为什么不是"完全相等"】`total` 是硬上限而不是承诺值：落位要过"贴图整体在
+     * 内缩岸线内 + 簇内最小间距 + 跨格碰撞"，换一批地形后能落下的个数会差一截 ——
+     * 关掉森林后主族变成大体量的山（160×93），跨格碰撞更早拦人，实测 71 → 61。
+     * "份额重新归一"这件事由 `resolveTerrainMix` 的合计数用例单独钉住；这里只钉
+     * "不是整片消失"。
+     */
+    expect(noForest.placements.length).toBeGreaterThan(base.placements.length * 0.6);
+  });
+
+  it("「山体：无」⇒ 山地族一条不剩；「河流：无」⇒ 河流族一条不剩", () => {
+    const noMountain = withTuning(20260411, { mountainDensity: "none" });
+    const byTerrain = countByTerrain(noMountain.placements);
+    for (const t of MOUNTAIN_TERRAINS) expect(byTerrain[t] ?? 0).toBe(0);
+
+    const noRiver = withTuning(20260411, { riverDensity: "none" });
+    const byRiver = countByTerrain(noRiver.placements);
+    for (const t of RIVER_TERRAINS) expect(byRiver[t] ?? 0).toBe(0);
+    // 其它族被归一化放大 ⇒ 图不会被削薄
+    expect(noRiver.placements.length).toBeGreaterThan(0);
+  });
+
+  it("「山体：多 / 少」真的改变该族占比（同 seed 对照）", () => {
+    const more = countByTerrain(withTuning(20260411, { mountainDensity: "more" }).placements);
+    const less = countByTerrain(withTuning(20260411, { mountainDensity: "less" }).placements);
+    const mountainOf = (m: Record<string, number>) =>
+      MOUNTAIN_TERRAINS.reduce((acc, t) => acc + (m[t] ?? 0), 0);
+    expect(mountainOf(more)).toBeGreaterThan(mountainOf(less));
+  });
+
+  it("生成内容全不勾 + 山体/河流「无」⇒ 只出陆地（与骨架档同一出口），不抛错", () => {
+    const all = defaultContents();
+    for (const key of CONTENT_KEYS) all[key] = false;
+    /**
+     * 【为什么还要把「山体」调到无】山体族（mountain / highland / volcano）**不属于
+     * 任何内容类目** —— 参考面板里山也不是勾选项，它只受「山体」那一档控制。
+     * 所以"内容全不勾"仍会铺山；要让配方彻底空掉，必须连山体档一起关。
+     */
+    const gen = withTuning(20260411, {
+      contents: all,
+      mountainDensity: "none",
+      riverDensity: "none",
+    });
+    expect(gen.placements).toHaveLength(0);
+    expect(gen.land.polygons.length).toBeGreaterThan(0);
+  });
+
+  it("要素大小「最小」⇒ 全图中位缩放约为正常档的 0.66 倍", () => {
+    const median = (ps: readonly SpritePlacement[]) => {
+      const xs = ps.map((p) => p.scale).sort((a, b) => a - b);
+      return xs[Math.floor(xs.length / 2)] ?? 0;
+    };
+    const normal = median(generateMap(makeOpts(20260411)).placements);
+    const tiny = median(withTuning(20260411, { elementSize: "tiny" }).placements);
+    expect(tiny / normal).toBeCloseTo(ELEMENT_SIZE_FACTOR.tiny, 1);
+    expect(tiny).toBeLessThan(normal);
+  });
+
+  it("resolveTerrainMix：份额按内容开关与密度档重算后仍归一（合计 = 总数）", () => {
+    const tuning = resolveGeneratorTuning({ mountainDensity: "less" });
+    const slots = resolveTerrainMix(PRESET, tuning, 120);
+    expect(slots.reduce((acc, s) => acc + s.count, 0)).toBe(120);
+    // 山体份额 0.55 × 0.45 = 0.2475，重归一后仍应是最大族之一
+    expect(slots.find((s) => s.terrain === "mountain")).toBeTruthy();
+  });
+});
+
+/**
+ * 大陆形状 / 底色透传（2.41.0）。
+ *
+ * `generateMap` 只是中转：shape 原样进 `buildLand`、底色按 id 查表后落到
+ * `land.baseColor`（bakeCoast 读它上色）。这里钉住两端 —— 中转丢了就是
+ * 「面板上选了没反应」。
+ */
+describe("generateMap 大陆形状 / 底色透传", () => {
+  it("shape 进陆地：盘古档恒 1 块岛、三大洲恒 3 块", () => {
+    for (const seed of [7, 9176]) {
+      expect(generateMap({ ...makeOpts(seed), shape: "pangaea" }).land.polygons).toHaveLength(1);
+      expect(
+        generateMap({ ...makeOpts(seed), shape: "threeContinents" }).land.polygons,
+      ).toHaveLength(3);
+    }
+  });
+
+  it("landColorId 落到 land.baseColor；不传 = 无该字段（渲染回落羊皮纸）", () => {
+    const colored = generateMap({ ...makeOpts(7), landColorId: "sage" });
+    expect(colored.land.baseColor).toBe(0xb7bfa0);
+    const plain = generateMap(makeOpts(7));
+    expect(plain.land.baseColor).toBeUndefined();
+  });
 });

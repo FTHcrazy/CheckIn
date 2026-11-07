@@ -13,7 +13,6 @@ import {
   countLabel,
   host,
   installPointerShims,
-  levelChip,
   localOf,
   pickSprite,
   rect,
@@ -63,100 +62,18 @@ afterEach(() => {
 vi.setConfig({ testTimeout: 120000 });
 
 /**
- * 层级配置浮层（R-REG-01）与合并子区域（R-REG-04）。
+ * 【2.42.0】层级配置浮层（R-REG-01）已随「关闭层级」下线，对应 5 条页面用例删除；
+ * schema 回落 / 多级老数据语义由 `regions.test.ts` 与 `types.test.ts` 钉住。
  *
- * 【为什么这两条必须走页面】它们是"文档 ←→ UI"的双向链路：
- *   · 层级配置：面板改 → `doc.regionSchema` → 工具栏按钮文案 / 层级胶囊 / 生成数量；
- *   · 合并：面板按钮 → 弹窗文案 → store 删子树 → 区块计数与提示语。
- * 单测能钉住每一段，但"按钮文案读的是组件状态还是文档"这种事只有页面能证伪
- * （`levelDepth` 那个第二事实源就是这么藏了一整轮）。
+ * 「合并子区域」（R-REG-04）是数据层能力、按钮仍在：单级生成图里所有区块都是
+ * 叶子 ⇒ 按钮灰化。留一条页面级用例钉住这个口径。
  */
-describe("MapEditorPage 层级配置与合并子区域", () => {
-  /** 「层级 N」按钮（文案跟着 `regionSchemaOf(doc).length` 走） */
-  const schemaBtn = () => screen.getByRole("button", { name: /层级 \d/ });
-
-  /** 展开层级配置浮层（内容挂 body，照常在 document 里查） */
-  function openSchemaPanel(): HTMLElement {
-    fireEvent.click(schemaBtn());
-    return screen.getByRole("spinbutton", { name: "层数" });
-  }
-
-  /**
-   * `modal.confirm` 弹层（挂在 body 上）。
-   *
-   * 【为什么按"最后一个"取，而不是 `screen.getByText`】弹层可以有多个并存
-   * （不同动作各弹一个，例如"生成陆地"与"减少层级"），`getByText` 会直接
-   * `Found multiple elements` 报错。取 DOM 顺序最上层那一个，是"用户点得到的那个"。
-   */
-  function confirmDialogs(): HTMLElement[] {
-    return Array.from(document.querySelectorAll<HTMLElement>(".ant-modal-confirm"));
-  }
-
-  /** 所有确认弹层的可见文案（用来断言"报了多少个区块要删"） */
-  function confirmTexts(): string[] {
-    return confirmDialogs().map((dialog) => dialog.textContent ?? "");
-  }
-
-  /** 点最上层确认弹层里文案匹配的按钮 */
-  function clickConfirm(text: string): void {
-    const dialog = confirmDialogs().at(-1);
-    if (!dialog) throw new Error(`没有确认弹层，点不到「${text}」`);
-    const btn = Array.from(dialog.querySelectorAll<HTMLElement>(".ant-modal-confirm-btns button")).find(
-      (node) => (node.textContent ?? "").replace(/\s+/g, "").includes(text.replace(/\s+/g, "")),
-    );
-    if (!btn) throw new Error(`确认弹层里找不到「${text}」`);
-    fireEvent.click(btn);
-  }
-
-  /** 把叠着的同名弹层逐层点掉（每层点同一个按钮），直到一个不剩 */
-  function drainConfirm(text: RegExp): void {
-    for (let guard = 0; guard < 5 && confirmDialogs().length > 0; guard += 1) {
-      const dialog = confirmDialogs().at(-1) as HTMLElement;
-      const btn = Array.from(
-        dialog.querySelectorAll<HTMLElement>(".ant-modal-confirm-btns button"),
-      ).find((node) => text.test(node.textContent ?? ""));
-      if (!btn) throw new Error(`确认弹层里没有匹配 ${String(text)} 的按钮`);
-      fireEvent.click(btn);
-    }
-  }
-
-  it("层级配置：改层数写进文档并进撤销栈（撤销一步回到默认 4 级）", async () => {
-    await setup();
-    expect(schemaBtn().textContent ?? "").toContain("4");
-
-    const depth = openSchemaPanel();
-    fireEvent.change(depth, { target: { value: "2" } });
-    fireEvent.blur(depth);
-
-    // 按钮文案 = 文档里的层数（证明它不是另一份组件状态）
-    await waitFor(() => expect(schemaBtn().textContent ?? "").toContain("2"));
-
-    // 撤销一步：schema 回到"从没配置过"⇒ 读时回落默认 4 级
-    fireEvent.click(screen.getByRole("button", { name: "undo" }));
-    await waitFor(() => expect(schemaBtn().textContent ?? "").toContain("4"));
-  });
-
-  it("层级名改了之后，工具栏层级胶囊跟着变（名称只从 schema 来）", async () => {
+describe("MapEditorPage 合并子区域（层级关闭后的口径）", () => {
+  it("单级生成图里所有区块都是叶子：合并按钮灰化，点击无弹层", async () => {
     await setup();
     fireEvent.click(screen.getByRole("button", { name: /生成区块/ }));
-    await waitFor(() => expect(regionLabel()).toContain("223"));
-    await waitFor(() => expect(levelChip()).toBe("洲 ↔ 国家"));
+    await waitFor(() => expect(regionLabel()).toContain("12"));
 
-    openSchemaPanel();
-    const nameInput = screen.getByRole("textbox", { name: "第 2 级名称" });
-    fireEvent.change(nameInput, { target: { value: "州" } });
-    fireEvent.blur(nameInput);
-
-    await waitFor(() => expect(levelChip()).toBe("州 ↔ 国家"));
-  });
-
-  it("合并子区域：弹窗报数量与名字，确认后区块被删并提示「已合并 N 个」", async () => {
-    await setup();
-    fireEvent.click(screen.getByRole("button", { name: /生成区块/ }));
-    await waitFor(() => expect(regionLabel()).toContain("223"));
-
-    // 选中一个「大陆」（非叶子，后代最多）。通过 store 设选区而不是点画布：
-    // 后者依赖某个种子下多边形的屏幕位置，改一个 wobble 参数就会假红。
     const root = useMapDocStore.getState().doc.regions.find((r) => r.level === 0);
     expect(root).toBeTruthy();
     await act(async () => {
@@ -164,134 +81,13 @@ describe("MapEditorPage 层级配置与合并子区域", () => {
     });
 
     const mergeBtn = screen.getByRole("button", { name: /合并子区域/ });
-    expect(mergeBtn).not.toBeDisabled();
-    // 按钮自己就报了后代数量（叶子时没有这段括号）
-    expect(mergeBtn.textContent ?? "").toMatch(/（\d+）/);
+    expect(mergeBtn).toBeDisabled();
     fireEvent.click(mergeBtn);
-
-    // ── 弹窗四段文案（PRD §4.3 线框）──
-    await waitFor(() =>
-      expect(document.body.textContent ?? "").toMatch(
-        /将「[^」]*」下的 \d+ 个子区块合并为一个：/,
-      ),
-    );
-    const dialogText = document.body.textContent ?? "";
-    expect(dialogText).toMatch(/成为最小单位，其边界保持原样/);
-    expect(dialogText).toMatch(/此操作可撤销（Ctrl\+Z 一步恢复）/);
-
-    const before = Number((regionLabel().match(/(\d+)/) ?? [])[1] ?? 0);
-    expect(before).toBe(223);
-
-    fireEvent.click(screen.getByText("仍要合并").closest("button") as HTMLElement);
-
-    await waitFor(() =>
-      expect(document.body.textContent ?? "").toMatch(/已合并 \d+ 个子区块（可撤销）/),
-    );
-    // 区块数真的少了（提示语里的 N 与文档变化的块数同源）
-    await waitFor(() => {
-      const after = Number((regionLabel().match(/(\d+)/) ?? [])[1] ?? 0);
-      expect(after).toBeLessThan(before);
-    });
-
-    // 一次撤销：整棵子树回来
-    fireEvent.click(screen.getByRole("button", { name: "undo" }));
-    await waitFor(() => expect(regionLabel()).toContain("223"));
-  });
-
-  /**
-   * 减少层数时删除「超出层级的区块」必须先二次确认（PRD §4.1 边界④）。
-   *
-   * 【为什么单独立一条】工程师明确承认这条**没有页面级用例**：`handleSchemaChange`
-   * 里那段 `modal.confirm` 是"删除 208 个区块"的唯一守卫，删掉它整段、或把 `onOk`
-   * 的 `pruneLevelsAbove` 参数漏掉，都不会有任何既有用例变红 —— 而用户会**静默**丢掉
-   * 大半张图的区块。这里同时钉住三件事：① 弹窗出现且报出正确的数量；② 取消不删；
-   * ③ 确认后 schema 与区块删除是**同一步撤销**（一次 Ctrl+Z 两样一起回来）。
-   */
-  it("减少层数且存在超层区块 ⇒ 二次确认；取消保留、确认才删且可一步撤销", async () => {
-    await setup();
-    fireEvent.click(screen.getByRole("button", { name: /生成区块/ }));
-    await waitFor(() => expect(regionLabel()).toContain("223"));
-
-    const depth = openSchemaPanel();
-    fireEvent.change(depth, { target: { value: "2" } });
-    fireEvent.blur(depth);
-
-    // 4→2 层：level≥2 的区块（48 国家 + 160 郡 = 208）会被删除，必须先确认
-    await waitFor(() =>
-      expect(confirmTexts().join(" | ")).toContain("将删除 208 个超出层级的区块"),
-    );
-
-    // ── 取消：一块都不删，层数也不变 ──
-    drainConfirm(/^取\s*消$/);
-    expect(regionLabel()).toContain("223");
-    expect(useMapDocStore.getState().doc.regionSchema?.length ?? 4).toBe(4);
-
-    // ── 再来一次，这回确认删除（取消后浮层多半已被关掉 ⇒ 按需重开）──
-    if (!screen.queryByRole("spinbutton", { name: "层数" })) openSchemaPanel();
-    const depth2 = screen.getByRole("spinbutton", { name: "层数" });
-    fireEvent.change(depth2, { target: { value: "2" } });
-    fireEvent.blur(depth2);
-    await waitFor(() =>
-      expect(confirmTexts().join(" | ")).toContain("将删除 208 个超出层级的区块"),
-    );
-    // 只点一次「删除并应用」，再点一次（叠出来的那层）**不能**多压撤销步
-    clickConfirm("删除并应用");
-    await waitFor(() => expect(regionLabel()).toContain("15"));
-    // 叠出来的那一层还在：再点一次也必须是无操作（源码 `setRegionSchema` 对
-    // "schema 没变且没有可删区块"直接返回，所以不会多压一步）
-    if (confirmDialogs().length > 0) {
-      clickConfirm("删除并应用");
-      await act(async () => {});
-      expect(useMapDocStore.getState().undoStack).toHaveLength(2);
-    }
-    drainConfirm(/^取\s*消$/);
-
-    // 删完只剩两级：大陆 3 + 洲 12 = 15 块
-    await waitFor(() => expect(regionLabel()).toContain("15"));
-    expect(regionLabel()).not.toContain("223");
-
-    // schema 变更与区块删除在同一个 commit：撤销一步两样一起回来
-    fireEvent.click(screen.getByRole("button", { name: "undo" }));
-    await waitFor(() => expect(regionLabel()).toContain("223"));
-    expect(useMapDocStore.getState().doc.regionSchema?.length ?? 4).toBe(4);
-  });
-
-  it("改层数并失焦：确认弹层恰好 1 个（失焦重复 onChange 不得叠层）", async () => {
-    await setup();
-    fireEvent.click(screen.getByRole("button", { name: /生成区块/ }));
-    await waitFor(() => expect(regionLabel()).toContain("223"));
-
-    const depth = openSchemaPanel();
-    fireEvent.change(depth, { target: { value: "2" } });
-    fireEvent.blur(depth);
-
-    // 等弹层挂上来
-    await waitFor(() => expect(confirmDialogs()).toHaveLength(1));
-    // 再冲两拍：若有第二层，它也是在这一刻挂载的（同一轮 onChange 里的第二次调用）
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await new Promise((resolve) => setTimeout(resolve, 30));
     });
-
-    expect(confirmDialogs(), "改层数并失焦后叠出了多个确认弹层").toHaveLength(1);
-    expect(confirmTexts()[0]).toContain("减少层级");
-    expect(confirmTexts()[0]).toContain("将删除 208 个超出层级的区块");
-
-    // ── 取消之后必须能**重新**弹出来 ──
-    // （`pendingPruneRef` 没有在关闭时释放的话，第二次真改会被静默吞掉：
-    //   表现为"确认框再也不弹、层数也不动"，比叠层更难排查。）
-    drainConfirm(/^取\s*消$/);
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    });
-    expect(confirmDialogs()).toHaveLength(0);
-
-    if (!screen.queryByRole("spinbutton", { name: "层数" })) openSchemaPanel();
-    const depth2 = screen.getByRole("spinbutton", { name: "层数" });
-    fireEvent.change(depth2, { target: { value: "2" } });
-    fireEvent.blur(depth2);
-
-    await waitFor(() => expect(confirmDialogs()).toHaveLength(1));
-    expect(confirmTexts()[0]).toContain("将删除 208 个超出层级的区块");
+    // 没有确认弹层（叶子直接被 disabled 拦住，而不是点了才报"没有子区域"）
+    expect(document.querySelectorAll(".ant-modal-confirm")).toHaveLength(0);
   });
 });
 
@@ -311,7 +107,7 @@ describe("MapEditorPage 画区模式（R-REG-03）", () => {
   function drawCount(): string {
     return document.querySelector(".map-editor__draw-count")?.textContent ?? "";
   }
-  /** 「层级 L2 洲」 */
+  /** 「层级 L1 国家」；越界时是「已达最深层级（共 N 级）」 */
   function drawLevel(): string {
     return document.querySelector(".map-editor__draw-level")?.textContent ?? "";
   }
@@ -341,8 +137,8 @@ describe("MapEditorPage 画区模式（R-REG-03）", () => {
 
     fireEvent.click(drawTool());
     expect(drawActions()).not.toBeNull();
-    // 未选中任何区块 ⇒ 画在顶层：L1 大陆（默认 schema 第一级）
-    expect(drawLevel()).toBe("层级 L1 大陆");
+    // 未选中任何区块 ⇒ 画在顶层：L1 国家（默认 schema 第一级）
+    expect(drawLevel()).toBe("层级 L1 国家");
     expect(drawCount()).toContain("已画 0 点");
     expect(drawCount()).toContain("已用 0/600");
     // 点数不足：两个按钮都必须 disabled（点了没反应比不给更糟）
@@ -411,7 +207,7 @@ describe("MapEditorPage 画区模式（R-REG-03）", () => {
   it("模式隔离：画区态在已有区块内点一下 ⇒ 选区不变、不新增区块、只多一个顶点", async () => {
     await setup();
 
-    // ── 先用手画造出一块（比"生成 223 块"快得多，且几何完全可控）──
+    // ── 先用手画造出一块（几何完全可控，也不用先跑一遍生成）──
     fireEvent.click(drawTool());
     clickWorld({ x: -300, y: -300 });
     clickWorld({ x: 0, y: -300 });
@@ -434,8 +230,9 @@ describe("MapEditorPage 画区模式（R-REG-03）", () => {
 
     // ── 进画区，在同一块地内部点一下 ──
     fireEvent.click(drawTool());
-    // 选中 level 0 的区块 ⇒ 新块是它的子级（裁决 5：层级与父块只有这一处判定）
-    expect(drawLevel()).toBe("层级 L2 洲");
+    // 选中 level 0 的区块 ⇒ 目标层级 = 1，但层级已下线（schema 仅 1 级，2.42.0）⇒
+    // 必然越界：胶囊标红、落点**前**拦截（裁决 5 的层级判定仍在，只是永远溢出）
+    expect(drawLevel()).toBe("已达最深层级（共 1 级）");
 
     clickWorld({ x: -150, y: -150 });
 
@@ -444,8 +241,8 @@ describe("MapEditorPage 画区模式（R-REG-03）", () => {
     // ② 文档一个字段都没变（尤其 regions 的**引用**不变 ⇒ 没有任何 commit）
     expect(useMapDocStore.getState().doc.regions).toBe(regionsBefore);
     expect(useMapDocStore.getState().undoStack).toHaveLength(1); // 只有"画第一块"那一步
-    // ③ 而顶点确实落下了 —— 否则上两条会退化成"点了没反应"也绿
-    await waitFor(() => expect(drawnPoints()).toBe(1));
+    // ③ 落点被层级封顶拦下：顶点不落（旧口径"多一个顶点"随层级下线不再成立）
+    expect(drawnPoints()).toBe(0);
   });
 
   /* ────────── 双击收尾（R-REG-03 的回归主战场） ────────── */

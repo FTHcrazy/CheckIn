@@ -1016,14 +1016,22 @@ describe("MapCanvas 手画草稿层", () => {
   const overlayAt = (index = 0) =>
     layerOf(apps[index].stage.children[0] as FakeContainerRef, "overlay") as FakeGraphicsRef;
 
-  /** 区块层的可见几何笔数 = 所有层级容器的「填充 + 边界」的 `poly()` 次数之和 */
+  /**
+   * 区块层的可见几何笔数 = 所有层级容器的「填充 + 边界」的 `poly()` 次数之和。
+   *
+   * 【为什么逐个子节点累加，而不是 `const [fill, border] = level.children`】
+   * 区块层里除"层级容器"外还有**国名分组**（`regionNameLayer`，子节点是 `Text`，
+   * 没有 `polys`）。按下标解构会在遇到名字分组时读到 `undefined.length` 而抛错 ——
+   * 数的是"画了几笔几何"，凡是没画几何的节点自然该记 0。
+   */
   const regionPolyCount = (index = 0) => {
     const world = apps[index].stage.children[0] as FakeContainerRef;
     const regionLayer = layerOf(world, "regionLayer") as FakeContainerRef;
     let total = 0;
     for (const level of regionLayer.children as FakeContainerRef[]) {
-      const [fill, border] = level.children as FakeGraphicsRef[];
-      total += (fill?.polys.length ?? 0) + (border?.polys.length ?? 0);
+      for (const child of level.children as FakeGraphicsRef[]) {
+        total += child?.polys?.length ?? 0;
+      }
     }
     return total;
   };
@@ -1460,8 +1468,9 @@ describe("子图内区块静态衰减（buildSubmapNode 行为级）", () => {
     const gs = buildWith([submapRegion(2)]);
     const fillAlphas = gs.flatMap((g) => g.fills.map(alphaOf));
     expect(fillAlphas).toContain(regionFillAlphaOf(2));
-    // 没有漏乘静态系数的旧路径
-    expect(fillAlphas).not.toContain(REGION_FILL_ALPHA);
+    // 【2.42.0】静态表已退化为 [1]：老文档 level>0 的区块与国家同浓
+    //（"没有漏乘静态系数的旧路径"这条随层次衰减一并失去意义）
+    expect(regionFillAlphaOf(2)).toBe(REGION_FILL_ALPHA);
   });
 
   it("子图 level=99 越界区块：系数回落 1，alpha = 全局填充（朝不衰减兜底）", () => {
@@ -1475,7 +1484,8 @@ describe("子图内区块静态衰减（buildSubmapNode 行为级）", () => {
     const gs = buildWith([submapRegion(2)]);
     const strokeAlphas = gs.flatMap((g) => g.strokes.map(alphaOf));
     expect(strokeAlphas).toContain(regionBorderAlphaOf(2));
-    expect(strokeAlphas).not.toContain(REGION_BORDER_ALPHA);
+    // 【2.42.0】静态表 [1] ⇒ 边界同样与国家同浓
+    expect(regionBorderAlphaOf(2)).toBe(REGION_BORDER_ALPHA);
     // 边界 : 填充的浓度比与全局比恒等（同一张表的直接推论）
     expect(regionBorderAlphaOf(2) / regionFillAlphaOf(2)).toBeCloseTo(
       REGION_BORDER_ALPHA / REGION_FILL_ALPHA,

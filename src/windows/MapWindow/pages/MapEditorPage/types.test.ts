@@ -25,7 +25,7 @@ import { DEFAULT_REGION_SCHEMA, normalizeRegionSchema, regionSchemaOf } from "./
  */
 
 describe("migrateDoc · regionSchema 老文档兼容", () => {
-  it("没有 regionSchema 的老 v2 文档：迁移后不含该字段，读时回落默认 4 级", () => {
+  it("没有 regionSchema 的老 v2 文档：迁移后不含该字段，读时回落默认（2.42.0 起 1 级）", () => {
     const raw = {
       version: 2,
       baseImageId: "base-1",
@@ -43,15 +43,20 @@ describe("migrateDoc · regionSchema 老文档兼容", () => {
     expect(out.regionSchema).toBeUndefined();
     // 其余字段与空文档逐字节相同（老文档打开后观感不变）
     expect(out).toEqual(createEmptyDocument());
-    // 读时回落默认 4 级，且是同一份引用（不每次新数组）
+    // 读时回落默认（2.42.0 起只有国家一级），且是同一份引用（不每次新数组）
     expect(regionSchemaOf(out)).toBe(DEFAULT_REGION_SCHEMA);
-    expect(regionSchemaOf(out)).toHaveLength(4);
+    expect(regionSchemaOf(out)).toHaveLength(1);
   });
 
-  it("非法 regionSchema 的各种形态：不抛错，迁移时即剔除，读时一律回落默认 4 级", () => {
+  it("非法 regionSchema 的各种形态：不抛错，迁移时即剔除，读时一律回落默认（1 级）", () => {
     const illegal: unknown[] = [
       [], // 长度 0
-      DEFAULT_REGION_SCHEMA.concat([{ name: "多出来的第五级", count: 1 }]), // 长度 5
+      // 多级 schema：2.42.0 关闭层级后的"老数据"，与非法值同一出口
+      DEFAULT_REGION_SCHEMA.concat([{ name: "郡", count: 60 }]),
+      DEFAULT_REGION_SCHEMA.concat([
+        { name: "郡", count: 60 },
+        { name: "城", count: 160 },
+      ]),
       [{ name: 123, count: 3 }], // name 不是字符串
       [{ name: "a", count: 0 }], // count = 0
       [{ name: "a", count: -1 }], // count 为负
@@ -74,23 +79,20 @@ describe("migrateDoc · regionSchema 老文档兼容", () => {
         Object.prototype.hasOwnProperty.call(out, "regionSchema"),
         `非法值应被剔除：${label}`,
       ).toBe(false);
-      // ② 读时回落默认 4 级（不是空数组、不是抛错）
+      // ② 读时回落默认（1 级；不是空数组、不是抛错）
       expect(regionSchemaOf(out), label).toBe(DEFAULT_REGION_SCHEMA);
     }
   });
 
-  it("合法 regionSchema：迁移后原样保留，读时返回等值（而不是默认那份）", () => {
-    const good = [
-      { name: "界", count: 1 },
-      { name: "域", count: 3 },
-    ];
+  it("合法 regionSchema（1 项）：迁移后原样保留，读时返回等值（而不是默认那份）", () => {
+    const good = [{ name: "国", count: 9 }];
     const out = migrateDoc({ version: 2, regionSchema: good });
 
     expect(out.regionSchema).toEqual(good);
     expect(regionSchemaOf(out)).toEqual(good);
-    // 是这份自定义 schema，不是默认 4 级
+    // 是这份自定义 schema，不是默认那份
     expect(regionSchemaOf(out)).not.toBe(DEFAULT_REGION_SCHEMA);
-    expect(regionSchemaOf(out)).toHaveLength(2);
+    expect(regionSchemaOf(out)).toHaveLength(1);
   });
 
   it("合法但带额外键的 regionSchema：**原样保留**，不被替换成规范化副本", () => {
@@ -98,10 +100,7 @@ describe("migrateDoc · regionSchema 老文档兼容", () => {
     // 如果迁移时顺手写成 `regionSchema: normalizeRegionSchema(raw)`，形状上看着没问题，
     // 但用户存档里的额外字段（将来版本新增的、或第三方工具写的）会被静默抹掉 ——
     // 那正是 `migrateDoc` 开头"未知字段原样保留"那条纪律要防的事。
-    const withExtra = [
-      { name: "界", count: 1, note: "未来字段" },
-      { name: "域", count: 3 },
-    ];
+    const withExtra = [{ name: "国", count: 9, note: "未来字段" }];
     const out = migrateDoc({ version: 2, regionSchema: withExtra });
 
     expect(Object.prototype.hasOwnProperty.call(out, "regionSchema")).toBe(true);
@@ -109,10 +108,7 @@ describe("migrateDoc · regionSchema 老文档兼容", () => {
     expect(out.regionSchema).toEqual(withExtra);
     expect(out.regionSchema?.[0]).toHaveProperty("note", "未来字段");
     // 读路径仍按 schema 语义正常工作（额外键被规范化层忽略）
-    expect(regionSchemaOf(out)).toEqual([
-      { name: "界", count: 1 },
-      { name: "域", count: 3 },
-    ]);
+    expect(regionSchemaOf(out)).toEqual([{ name: "国", count: 9 }]);
   });
 });
 

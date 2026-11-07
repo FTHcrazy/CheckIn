@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { REGION_LEVELS, generateHierarchy, polygonArea, type Point } from "./regions";
+import { generateHierarchy, polygonArea, type Point } from "./regions";
 import { generateLand, pointInLand } from "./land";
 import type { MapLand, Rect } from "./types";
 
@@ -174,7 +174,8 @@ describe("generateHierarchy.container：陆地内切分", () => {
       seed: 606,
       bounds: BOUNDS,
       container: land.polygons[0],
-      levelCounts: REGION_LEVELS.slice(0, 2).map((l) => l.count),
+      // 2.42.0 产品层只有国家一级；引擎层级能力用显式 levelCounts 钉住
+      levelCounts: [12, 60],
       idPrefix: "i0_",
     });
     expect(new Set(all.map((r) => r.level))).toEqual(new Set([0, 1]));

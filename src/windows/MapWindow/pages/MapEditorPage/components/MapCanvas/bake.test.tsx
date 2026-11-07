@@ -472,17 +472,19 @@ describe("MapCanvas 海岸烘焙", () => {
     const world = apps[0].stage.children[0] as unknown as FakeNode;
     const regionLayer = layerOf(world, "regionLayer");
     expect(regionLayer.alpha).toBe(1);
-    expect(regionLayer.children).toHaveLength(1);
-    const childCount = regionLayer.children[0].children.length;
-    expect(childCount).toBe(2); // 填充 + 边界
+    // 区块层 = 每层一个容器，容器内是「填充 + 边界 + 国名」（2.39.0 加了国名）
+    const levelContainer = regionLayer.children[0];
+    const childCount = levelContainer.children.length;
+    expect(childCount).toBe(3); // 填充 + 边界 + 国名
+    const layerChildCount = regionLayer.children.length;
 
     rerender(tree({ land: null, showRegions: false, levelAlphas: [1] }));
     await flush();
 
     expect(regionLayer.alpha).toBe(0);
     // 容器与子节点一个都没少：关掉只是"不显示"，不是"不渲染"
-    expect(regionLayer.children).toHaveLength(1);
-    expect(regionLayer.children[0].children).toHaveLength(childCount);
+    expect(regionLayer.children).toHaveLength(layerChildCount);
+    expect(levelContainer.children).toHaveLength(childCount);
 
     // 再打开：回到 1（开关是可逆的，不销毁任何东西）
     rerender(tree({ land: null, showRegions: true, levelAlphas: [1] }));

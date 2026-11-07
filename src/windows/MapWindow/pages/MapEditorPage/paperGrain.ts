@@ -116,14 +116,18 @@ export function createPaperGrainTexture(size = PAPER_GRAIN_SIZE): Texture | null
   const canvas = document.createElement("canvas");
   canvas.width = size;
   canvas.height = size;
-  let ctx: CanvasRenderingContext2D | null = null;
-  try {
-    ctx = canvas.getContext("2d");
-  } catch {
-    // jsdom 的 canvas 没有实现 getContext（会抛 "not implemented"）——
-    // 测试环境要能静默降级，不能因为一张纸纹把整个画布测试打红
-    return null;
-  }
+  // jsdom 的 canvas 没有实现 getContext（会抛 "not implemented"）——
+  // 测试环境要能静默降级，不能因为一张纸纹把整个画布测试打红。
+  // 【为什么包一层小函数】try/catch 外声明再赋值会被 no-useless-assignment
+  // 记作"初始值从未被读取"；把兜底收进函数体，两条规则都干净。
+  const getCtx = (): CanvasRenderingContext2D | null => {
+    try {
+      return canvas.getContext("2d");
+    } catch {
+      return null;
+    }
+  };
+  const ctx = getCtx();
   if (!ctx) return null;
   const image = ctx.createImageData(size, size);
   writePaperGrainPixels(image.data, size);

@@ -39,6 +39,13 @@ export interface MapLand {
   polygons: Point[][];
   /** 生成时用的世界矩形（整张纸）；烘焙时据此算纹理原点与尺寸 */
   bounds: Rect;
+  /**
+   * 大陆底色（`0xRRGGBB`，来自 `land.ts` 的 `LAND_BASE_COLORS`）。
+   *
+   * 【缺省 = 羊皮纸】老文档没有这个字段，烘焙回落 `COAST_FILL.color` ——
+   * 与 2.40.0 及以前的渲染逐字节一致。
+   */
+  baseColor?: number;
 }
 
 /**
@@ -138,7 +145,7 @@ export interface MapPolyline {
  * 贴到多个区块）。
  *
  * 【递归定义】`regions` 里的每个区块又可以有 `submap`，于是「无级嵌套」——
- * 大陆里嵌洲图、洲图里嵌国家图、国家图里嵌郡图…… 理论上无限深。
+ * 国家图里嵌郡图、郡图里嵌城图…… 理论上无限深。
  */
 export interface MapSubmap {
   /** 实例唯一 id（`sm_` 前缀） */
@@ -270,7 +277,8 @@ export interface MapElement {
    */
   flipX?: boolean;
   /**
-   * 放置时所处的层级序号（0 = 大陆 … 3 = 郡，见 lod.ts 的 `activeLevel`）。
+   * 放置时所处的层级序号（2.40.0 起默认三级：0 = 国家 / 1 = 郡 / 2 = 城；
+   * 老四级文档仍是 0 = 大陆 … 3 = 郡。见 lod.ts 的 `activeLevel`）。
    *
    * 【为什么素材要记层级】素材不是"浮在地图上的一层贴纸"，而是某个尺度下的地形：
    * 在郡那一级摆的山，属于郡的世界；缩到洲/国家去看时它就该退场，否则会看到

@@ -1,5 +1,5 @@
 /**
- * 随机区块生成（层级版：大陆 → 洲 → 国家 → 郡）
+ * 随机区块生成（层级版：国家 → 郡 → 城，2.40.0 起默认三级）
  *
  * 【用途】把地图切成若干层级的行政区划：最粗一级把整张地图切开，下一级在
  * **父区块内部**再切，如此递归。渲染时按缩放做交叉淡入淡出（见 `lod.ts`），
@@ -56,14 +56,32 @@ export interface MapRegion {
   id: string;
   /** 父区块 id；最顶层为 null */
   parentId: string | null;
-  /** 层级序号：0 = 大陆，1 = 洲，2 = 国家，3 = 郡 */
+  /**
+   * 层级序号：0 = 国家，1 = 郡，2 = 城（2.40.0 起的默认三级方案）。
+   *
+   * 【为什么不再是 0 = 大陆 / 1 = 洲】用户反馈"洲跟大陆重合"——两者在整图视角
+   * 都是"一大片色块"，谁也读不出区别，而参考实现里第一眼看到的就是**国家**。
+   * 于是砍掉"大陆/洲"两个层级，让国家直接铺满陆地。老文档里的 4 级区块仍然
+   * 按 level 原值渲染（`levelCountsOf` 从实际数据统计层级数，不假定 3 级）。
+   */
   level: number;
   /** 展示名（阶段三会开放重命名） */
   name: string;
   /** 生成该区块的种子点（世界坐标） */
   seed: Point;
-  /** 区块多边形顶点（世界坐标，已含崎岖化） */
+  /** 区块多边形顶点（世界坐标，已含崎岖化）；**主块**，承担命中与国名落点 */
   polygon: Point[];
+  /**
+   * 同一区块的**附加块**（飞地）多边形，不含 `polygon` 那块。
+   *
+   * 【为什么需要】区块是"父块被 Voronoi 半平面切下来的那一片"，而父块一凹
+   * （陆地环有深湾、上层切出的块也常是凹的），一片就会被切成几块互不相连的
+   * 部分。丢掉它们会留下没有区块色的空地；硬把几块连成一条环又会造出横穿湾口
+   * 的飞线（2.40.0 及以前反复出现的那两种缺陷）。
+   *
+   * 【缺省 = 只有主块】单块是常态；老文档没有这个字段，读作 `undefined`。
+   */
+  pieces?: Point[][];
   /** 填充色（0xRRGGBB，供 Pixi 直接使用） */
   color: number;
   /**
@@ -101,20 +119,26 @@ export interface RegionBounds {
 }
 
 /**
- * 层级定义与默认数量：每级把上一级再切约 4 份。
+ * 层级定义与默认数量：**只有国家一级**（2.42.0，用户裁决）。
  *
- * 【字段叫 `label` 是历史包袱】面向用户的读写一律走 `RegionLevelDef.name` /
- * `levelLabelOf(schema, level)`；本常量只作为**默认值的单一出处**继续存在
- * （`DEFAULT_REGION_SCHEMA` 由它派生，那条注释里有完整说明）。
+ * 【为什么从三级砍到一级】逆向目标（makeamap）的区划就只有 `countries ≤ 20` 一级
+ * （`decoded.js`：`20<J&&(J=20)`），没有郡/城的逐级细分；此前为对齐它的观感做的
+ * 三级 + 无级缩放（LOD 帽函数交叉淡化）在单级下**没有任何对应物**。用户裁决：
+ * 关闭「无级缩放 / 层级 / 区域逐级生成」，区域只保留国家一级 —— 与参考实现
+ * 完全同构，也更贴近截图里"一块大陆十来个国家、每国一色"的政治地图读法。
+ *
+ * 【老数据不再支持（2.42.0）】多级文档的 `regionSchema`（长度 > 1）在
+ * `normalizeRegionSchema` 里直接判非法、回落本默认值；`doc.regions` 里
+ * level > 0 的旧区块由渲染层按"并入国家层"兜底显示，不再逐级维护。
+ *
+ * 【数量 12】延续 2.41.0 的口径：参考的 20 只是上限，观感密度是"一块大陆
+ * 十来个国家"；12 配 9 格色板满足"每国一色"（`regions.test.ts` 相邻色差守卫）。
  */
 export const REGION_LEVELS = [
-  { label: "大陆", count: 3 },
-  { label: "洲", count: 12 },
-  { label: "国家", count: 48 },
-  { label: "郡", count: 160 },
+  { label: "国家", count: 12 },
 ] as const;
 
-/** 最多支持的层级数 */
+/** 最多支持的层级数（= 1：层级功能已关闭，只剩国家一级） */
 export const REGION_MAX_LEVELS = REGION_LEVELS.length;
 
 /**
@@ -217,15 +241,31 @@ export const REGION_LEVEL_COUNT_LIMITS = {
 /**
  * 区块填充不透明度。
  *
- * 【0.10 而不是 0.32】区块的唯一职责是让人**读得出"这里有一条分界"**，不是把
- * 地图切成一块块彩色拼图。0.32 时整张纸被色块铺满，底图的山川、海岸的层层
- * 晕染、地名的白描边全被压掉 —— 远处看是一张行政区划图，不是古地图。
+ * 【0.30 —— 逆向源码原值，不是重新拍的数字】参考实现的区块样式是
+ * `{ alpha: 0.3, border_size: 3, border_color: "#73562d", border_alpha: 1 }`
+ * （`decoded.js@131642`，见 `docs/review/map-vs-reference-render-analysis.md` §3.7）。
+ * 本项目 2.27.0 曾把它降到 0.10，理由是"填充重了整张纸会变成行政区划拼图"。
+ * **方向错了**：参考实现的 alpha 比我们**更高**，画面却不显色 —— 它靠的不是压
+ * 透明度，而是「区块层级只有一级、`countries` 上限 20 个」。同一份文档的 §3.7
+ * 结论原话是"真正该压的是「同一视口内可辨识的区块数」，而不是透明度"。
  *
- * 降下来之后信息层级才对：海岸/地形（主体）> 地名（点名）> 区块（参考线）。
- * 与 `REGION_BORDER_ALPHA` 是同一件事的两面，要一起调，否则会出现
- * "线比面还淡"的怪画面（边界读不出来、色块却糊在图上）。
+ * 【为什么压 alpha 是错的杠杆】alpha 同时作用于填充和边界：为了不让"160 个郡级
+ * 色块铺满画面"而降 alpha，结果是边界也一起淡掉（`REGION_BORDER_ALPHA` 当时被
+ * 连带压到 0.32）。症状正是本批要修的那件事 —— **读不出分界、陆地一片单一**。
+ *
+ * 【真正压数量的是层级与数量，不是这里】渲染层已把 `lod.ts` 的 `levelAlphas`
+ * 写进每一级容器的 alpha（帽函数 Σα ≡ 1：同一时刻只有一级接近 1、相邻一级刚冒头）。
+ * 2.40.0 砍到三级、国家默认 20 块之后，**全图视角（fit 缩放 0.8）主导层级 = 国家、
+ * 同屏 20 块**，与参考的 `countries ≤ 20` 同量级 —— 这条由 `regions.test.ts` 的
+ * 「区块样式与密度」守卫钉住。
+ *
+ * ⚠️ 不要再拿 `LOD_BLOCK_PX` 去压同屏块数（2.39.0 的待办已作废）：同屏块数峰值
+ * 由**最细一级的数量**封顶，常量只决定"在哪个缩放碰到峰值"。实测（1024² 画布、
+ * 四级 [1,12,48,160]）：`LOD_BLOCK_PX` 360 → 峰值 84.6 块，430 → 60，500 → 46，
+ * 650 → 26 —— 抬到 500 根本到不了 ≤20，却会把整图视角变成"纯大陆"。**不要**回到
+ * "降 alpha"这条老路，也不要只调 LOD 常量。
  */
-export const REGION_FILL_ALPHA = 0.1;
+export const REGION_FILL_ALPHA = 0.3;
 
 /**
  * 区块边界线宽 —— 单位是**屏幕像素**。
@@ -234,43 +274,87 @@ export const REGION_FILL_ALPHA = 0.1;
  * （最远一级到最近一级），用世界单位做线宽会导致缩远了线细到看不见、
  * 放到最大线比山脉还宽。
  *
- * 1.2 px 比最初的 1.6 px 更细：填充淡到 0.10 之后，边界成了区块唯一的载体，
- * 此时再画 1.6 px 会显得"线与面不成比例"（面上几乎看不见颜色、线却很重）。
- * 1.2 px 是高 DPI 下仍不断线的最细值，也是 100% 缩放下肉眼刚好连续的宽度。
+ * 3 px —— 逆向源码 `border_size: 3` 的原值。此前是 1.2 px，那是配合 0.10 的低
+ * 填充才"线与面成比例"的临时值。填充回到 0.30 后线宽必须同步回到源值：否则面有了
+ * 层次、线还是一根发丝，分块反而比改前更糊。**1.2 → 3 与 0.10 → 0.30 是一对，
+ * 拆开单独调只会在"面糊"和"线抢戏"之间来回摆。**
  */
-export const REGION_BORDER_PX = 1.2;
+export const REGION_BORDER_PX = 3;
 
 /**
  * 区块边界的不透明度。
  *
- * 0.32 —— 边界要能"读出来"，但不能抢戏。0.6 时每个区块都镶着一圈深墨绿的实线，
- * 缩远看密密麻麻像蛛网；降到 0.32 后，远看只是若隐若现的肌理，凑近才看得清分界，
- * 这正是古地图上"手绘界线"的分量。
+ * 1 —— 逆向源码 `border_alpha: 1` 的原值。屏幕上的实际浓度还要再乘两层：
+ *   · `REGION_LEVEL_FILL_SCALE` 的层级系数（0.80 ~ 1.00）；
+ *   · 渲染层写进容器 alpha 的 LOD 权重 `levelAlphas[i]`（活跃层级 ≈ 0.91 ~ 1）。
+ * 因此活跃层级上的有效浓度落在 **0.73 ~ 1.00**；跨层级交叉淡化时两级各自再减半，
+ * 合起来仍是一根连续的线，不会出现"两倍黑"的接缝（`MapCanvas` 的共享边去重
+ * 也在同一侧收掉了相邻区块重复描边的问题）。
  *
- * 交叉淡化时渲染层会再乘上该层级的权重，因此过渡带里两条边界各自只有一半浓度，
- * 合起来仍是一根连续的线，不会出现"两倍黑"的接缝。
+ * 【为什么以前是 0.32】低填充（0.10）时代为了免"蛛网感"顺手压过线。现填充回到
+ * 0.30，线与面的浓度比回到源值的 3.33 : 1，边界才是"手绘界线"而不是
+ * "若隐若现的肌理"。
  */
-export const REGION_BORDER_ALPHA = 0.32;
+export const REGION_BORDER_ALPHA = 1;
 
-/** 区块边界颜色（深墨绿，压在底图上清晰但不刺眼） */
-export const REGION_BORDER_COLOR = 0x27352e;
+/** 区块边界颜色 —— 逆向源码 `border_color: "#73562d"`（暖褐，压在纸色上像手绘界线） */
+export const REGION_BORDER_COLOR = 0x73562d;
 
 /**
- * 区块填充/边界的**静态层次系数**（按 level 索引，0 = 大陆 … 3 = 郡）。
+ * 「跳线」判定：单段长度超过该级**中位边长**的这个倍数，就认为它不是边界，
+ * 而是多边形拼装时的一次跳接。
  *
- * 【与 `levelAlphas` 正交，绝不混用】`lod.ts` 的 `levelAlphas` 是**缩放驱动的
- * LOD 权重**（帽函数保证逐级 Σα ≡ 1，已写进第 i 级容器的 alpha 做过渡）——
- * 若再把它乘到填充上就是双重衰减：视口停在某一层时该层权重 ≈1、相邻层也 ≈1，
- * 当前活跃层级反而被压淡，「线比面还淡」换个方向复发。这里要的是"越深的
- * 层级（郡比洲碎、洲比大陆碎），底色越淡"这种**与视口无关**的静态层次感：
- * 大陆块又大又少，需要颜色才读得出分界；郡块又小又多，颜色重了整张纸就成
- * 行政区划拼图。系数不参与帽函数归一，独立成表。
+ * 【为什么需要这条判据（3.40 之前的实测）】区块的 display 多边形由"每条边切一段
+ * 宿主折线"拼成。Voronoi 单元退化（种子点几乎共线 / 落在父块内凹湾里）时，
+ * `arcBetween` 的参数窗口会外推出边界，拼出来的多边形**自交**。实测（用户实际
+ * 文档、223 块、四级）：**57/223 个多边形自交**，最长边 106 世界单位，而该级边的
+ * 中位数只有 3.4、p99 只有 16 —— 也就是说几十条 100 单位级的直线横穿整块地。
+ * 用户截图里"一束近乎平行、呈扇形散开的细线"就是它们：描边把每一次跳接画成了
+ * 一根长直笔划，看起来像飞线。
  *
- * 【单调递减是硬约束】守卫测试钉住（`regions.test.ts`），且边界面共用同一张表
- * —— 两者必须同比例衰减，否则出现"线比面还淡"或"面比线还重"。
- * 级数可调（1~4 级）：只开 1 级时全部落在 level 0 = 系数 1，观感与 2.35.0 前一致。
+ * 【为什么在渲染层判、不去修几何】修几何要重排顶点顺序（或重建 Voronoi 单元），
+ * 那会动到"父子/兄弟逐点重合"这条铁律 —— 风险远大于收益，且自交的多边形**填充**
+ * 在 non-zero 环绕规则下基本互相抵消，画面看不出问题（只有描边会暴露）。
+ * 因此在描边时把跳接段整段丢掉：线的连续性由掩膜与相邻段兜住，视觉上就是
+ * "边界在那一处断开"，比横穿整块地的飞线可接受得多。
  */
-export const REGION_LEVEL_FILL_SCALE: readonly number[] = [1, 0.75, 0.58, 0.45];
+export const REGION_JUMP_MEDIAN_RATIO = 10;
+
+/** 「跳线」判定的绝对下限（世界单位）：小岛上中位数极小，别把正常长边也砍了 */
+export const REGION_JUMP_MIN_WORLD = 30;
+
+/**
+ * 某一级边界的单段长度上限（世界单位）。
+ *
+ * @param medianEdge 该级所有边的长度中位数（渲染层先扫一遍得到）
+ */
+export function regionJumpLimit(medianEdge: number): number {
+  const base = Number.isFinite(medianEdge) && medianEdge > 0 ? medianEdge : 0;
+  return Math.max(REGION_JUMP_MIN_WORLD, base * REGION_JUMP_MEDIAN_RATIO);
+}
+
+/** 该段是否是"跳线"（长到不可能是边界本身） */
+export function isRegionJump(
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+  limit: number,
+): boolean {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len2 = dx * dx + dy * dy;
+  if (!Number.isFinite(len2)) return true;
+  return len2 > limit * limit;
+}
+
+/**
+ * 区块填充/边界的**静态层次系数**（按 level 索引，0 = 国家）。
+ *
+ * 【2.42.0 起只剩一项】层级功能已关闭（区域只有国家一级），静态层次差随郡/城
+ * 一并移除 —— 单级下所有区块同级同浓，系数表退化为 `[1]`（老文档 level > 0
+ * 的区块越界回落 1，与国家同浓）。表保留为常量而不是删掉函数：渲染落点
+ * （`regionFillAlphaOf` / `regionBorderAlphaOf`）与其守卫测试仍走这条链路。
+ */
+export const REGION_LEVEL_FILL_SCALE: readonly number[] = [1];
 
 /**
  * 层级的静态层次系数（读点兜底的唯一出口）。
@@ -299,6 +383,210 @@ export function regionFillAlphaOf(level: number): number {
  */
 export function regionBorderAlphaOf(level: number): number {
   return REGION_BORDER_ALPHA * regionLevelScaleOf(level);
+}
+
+/* ────────────────────────────── 区块配色 ────────────────────────────── */
+
+/**
+ * 区块色板 —— 9 格"旧地图政治区划"用色（`[色相, 饱和, 明度]`，HSL）。
+ *
+ * 【为什么从"连续 HSL 取色"换成固定色板】2.38.0 之前每块自己算一个色相
+ * （父色相 ±`hueSpread`、饱和 0.13~0.21、明度 0.62），本意是"同色系的深浅"。
+ * 但 α 0.30 的填充会把这点差异压进纸色里：同级区块的合成色差只有个位数，
+ * 实测最接近的一对只有 0.1/255 —— 用户看到的就是"每个国家的色块颜色差距很小，
+ * 像是国内的大区域"。
+ *
+ * 参考目标（`decoded.js@131642`，见 `docs/review/map-vs-reference-render-analysis.md`
+ * §3.7）的国家色是**互相独立的强对比色**（赭红 / 土黄 / 秋香 / 苔绿 / 灰青 …），
+ * 不是同一色系的深浅 —— 这才是"读得出这是两个国家"的来源。它的 `color` 是逐国
+ * 指定的单色，不是一个连续函数，所以对齐它就该是**离散色板**而不是调 `hueSpread`。
+ *
+ * 【为什么是这 9 格】全部落在旧地图政治区划的色域里（暖褐 → 黄绿 → 青灰，
+ * 另加两格深色），刻意不含蓝紫高饱和这类"现代数据可视化"的颜色；明度分三档
+ * （0.31 / 0.44 / 0.50~0.56），于是相邻块除了色相还可能差明度 —— 纸纹较重的位置
+ * 也读得出来。
+ *
+ * 【为什么不是"随机取 HSL"】随机必然出现两个相邻块恰好接近的情况，而 α 0.30 会把
+ * "接近"压成"同一块"。色板 + 邻接校正（`assignRegionColors`）才能给出**可断言**的
+ * 相邻色差下限（见 `REGION_NEIGHBOR_MIN_DIST`）。
+ */
+export const REGION_PALETTE = [
+  [18, 0.56, 0.47], // 赭红
+  [46, 0.5, 0.52], // 土黄
+  [66, 0.42, 0.56], // 秋香
+  [95, 0.24, 0.34], // 深橄榄
+  [120, 0.3, 0.44], // 苔绿
+  [158, 0.26, 0.5], // 竹青
+  [200, 0.2, 0.44], // 石青
+  [300, 0.15, 0.5], // 藕灰
+  [24, 0.22, 0.31], // 墨褐
+] as const;
+
+/**
+ * 色板对应的 `0xRRGGBB`（模块级算一次）。
+ *
+ * 色板是常量，转换结果也是常量：放在模块作用域既省掉每次生成时的 9 次换算，
+ * 也让"色板里到底有哪几个真实颜色"在调试时一眼可见。
+ */
+export const REGION_PALETTE_RGB: readonly number[] = REGION_PALETTE.map(([h, s, l]) =>
+  hslToRgb(h, s, l),
+);
+
+/**
+ * 相邻区块填充色的最小 RGB 距离（≈ 合成到纸色后的 18/255）。
+ *
+ * 【为什么用 RGB 距离而不是色相差】区块色之间有明暗差，"深橄榄 vs 墨褐"这类组合
+ * 几乎只差明度，纯色相差看不出来。RGB 欧氏距离同时覆盖色相与明度，且与 Pixi 的
+ * alpha 合成在同一个空间里 —— 合成是线性的，距离按 α 等比缩放，所以这个阈值可以
+ * 直接换算成观感口径：60 × 0.30 ≈ 18。
+ *
+ * 【60 是怎么定的】色板任意两格的距离最小 33（墨褐 / 深橄榄）、平均 74；按网格
+ * 邻接模拟，贪心选色可达 42（合成后）。60 是"贪心一定找得到"的保守下限，又远高于
+ * "读不出分块"的门槛（合成后 ≈ 8，`regions.test.ts` 里有回退探针）。
+ */
+export const REGION_NEIGHBOR_MIN_DIST = 60;
+
+/** 两个 `0xRRGGBB` 的 RGB 欧氏距离 */
+export function rgbDistance(a: number, b: number): number {
+  return Math.hypot(
+    ((a >> 16) & 255) - ((b >> 16) & 255),
+    ((a >> 8) & 255) - ((b >> 8) & 255),
+    (a & 255) - (b & 255),
+  );
+}
+
+/**
+ * 共享边的归一化键（1/100 世界单位）。
+ *
+ * 与渲染层的共享边去重（`MapCanvas` 的 `keyOf`）同一个口径：兄弟区块的公共边是
+ * **逐位相同**的两个端点（见文件头"第 4 步为什么必须沿用"），归一化后必然同键。
+ */
+function edgeKeyOf(a: Point, b: Point): string {
+  const ax = Math.round(a.x * 100);
+  const ay = Math.round(a.y * 100);
+  const bx = Math.round(b.x * 100);
+  const by = Math.round(b.y * 100);
+  return ax < bx || (ax === bx && ay <= by)
+    ? `${ax},${ay}|${bx},${by}`
+    : `${bx},${by}|${ax},${ay}`;
+}
+
+/**
+ * 同层邻接表（共享至少一条边即相邻）。
+ *
+ * 【为什么逐层算】跨层级的多边形是父子关系（子块外轮廓**就是**父块的一段），
+ * 一律算邻居的话每一块都会和自己所有的父/子相邻，等于没有约束。而 LOD 帽函数
+ * 保证同一时刻只有一个层级清晰可见，跨层撞色本来就看不出。
+ */
+function buildAdjacency(regions: MapRegion[], idxs: readonly number[]): Map<number, Set<number>> {
+  const byEdge = new Map<string, number[]>();
+  for (const i of idxs) {
+    const poly = regions[i].polygon;
+    for (let k = 0; k < poly.length; k += 1) {
+      const key = edgeKeyOf(poly[k], poly[(k + 1) % poly.length]);
+      const list = byEdge.get(key);
+      if (list) list.push(i);
+      else byEdge.set(key, [i]);
+    }
+  }
+  const out = new Map<number, Set<number>>();
+  const link = (a: number, b: number): void => {
+    const set = out.get(a);
+    if (set) set.add(b);
+    else out.set(a, new Set([b]));
+  };
+  for (const list of byEdge.values()) {
+    if (list.length < 2) continue;
+    for (let a = 0; a < list.length; a += 1) {
+      for (let b = a + 1; b < list.length; b += 1) {
+        link(list[a], list[b]);
+        link(list[b], list[a]);
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * 邻接校正：把**与已着色邻居太近**的区块换到色板里更远的一格，并尽量让同层不重色。
+ *
+ * 【两个目标，主次分明】
+ *   · 硬约束（主）：与**相邻**块的色差 ≥ `REGION_NEIGHBOR_MIN_DIST`；
+ *   · 软约束（次）：同层尽量不重复用同一格 —— 12 块用 5 种颜色，整体仍会读成
+ *     "几块拼图"而不是"十来个国家"。物理上色板只有 9 格，超过 9 块必然复用，
+ *     复用的位置由邻接约束保证不会出现在相邻处（四种颜色画地图的老结论）。
+ * 只在软约束也不满足时才动 `regions[i].color`，于是随机流给出的"色彩分布随机"
+ * 这一层观感被保留，校正只做局部纠错。
+ *
+ * 【顺序】按 `regions` 的生成顺序（父 → 子、同层按落点），相邻关系天然是"先来的
+ * 已经定了色"。每块只需和已着色的邻居比：一条共享边恰好被后画的那一侧检查一次，
+ * 约束对每条边都成立一次，不需要再回扫。
+ *
+ * 【纯函数、确定性】同输入必同输出（无 rng、无时间）；相邻色差由
+ * `REGION_NEIGHBOR_MIN_DIST` 钉住，`regions.test.ts` 有守卫。
+ */
+export function assignRegionColors(regions: MapRegion[]): void {
+  const byLevel = new Map<number, number[]>();
+  for (let i = 0; i < regions.length; i += 1) {
+    const list = byLevel.get(regions[i].level);
+    if (list) list.push(i);
+    else byLevel.set(regions[i].level, [i]);
+  }
+
+  for (const idxs of byLevel.values()) {
+    const neighbors = buildAdjacency(regions, idxs);
+    const placed = new Map<number, number>();
+    /** 本层已用过的色板格（软约束：优先不重色） */
+    const used = new Set<number>();
+    for (const i of idxs) {
+      const own = regions[i].color;
+      const nb = neighbors.get(i);
+      // 到"已着色的邻居"的最小色差；邻居还没着色时返回 Infinity
+      const scoreOf = (c: number): number => {
+        let min = Infinity;
+        if (!nb) return min;
+        for (const j of nb) {
+          const done = placed.get(j);
+          if (done === undefined) continue;
+          const d = rgbDistance(c, done);
+          if (d < min) min = d;
+        }
+        return min;
+      };
+      const ownScore = scoreOf(own);
+      const ownStrict = ownScore >= REGION_NEIGHBOR_MIN_DIST;
+      if (ownStrict && !used.has(own)) {
+        used.add(own);
+        placed.set(i, own);
+        continue;
+      }
+
+      // 候选打分：先看"是否满足相邻硬约束"，再看"是否本层没用过"，最后看色差
+      let best = own;
+      let bestStrict = ownStrict;
+      let bestFresh = !used.has(own);
+      let bestScore = ownScore;
+      for (const candidate of REGION_PALETTE_RGB) {
+        if (candidate === own) continue;
+        const score = scoreOf(candidate);
+        const strict = score >= REGION_NEIGHBOR_MIN_DIST;
+        const fresh = !used.has(candidate);
+        const better = strict !== bestStrict
+          ? strict
+          : fresh !== bestFresh
+            ? fresh
+            : score > bestScore + 1e-9;
+        if (!better) continue;
+        best = candidate;
+        bestStrict = strict;
+        bestFresh = fresh;
+        bestScore = score;
+      }
+      if (best !== own) regions[i].color = best;
+      used.add(best);
+      placed.set(i, best);
+    }
+  }
 }
 
 /**
@@ -341,6 +629,16 @@ export const REGION_WOBBLE = {
   maxAmplitudeRatio: 0.35,
   /** 振幅封顶二：不超过边长的 20%（短边跟着大振幅走必然自交） */
   maxEdgeRatio: 0.2,
+  /**
+   * 振幅封顶四：不超过"边中点到父块边界距离"的 60%。
+   *
+   * 【为什么必须有】单元是精确裁剪出来的（顶点与贴岸段恒在父块内），但内部边
+   * 的曲折位移是沿法线**双向**的：一条大致平行于海岸、距岸只有几单位的内部边，
+   * 起伏会直接拱到海面上（实测最远越岸 6.2 单位，就是本封顶缺失造成的）。
+   * 老实现靠"径向把每个点投影回岸线"兜底，那是**事后**修补；按离岸余量封顶
+   * 是**事前**约束 —— 边界自然收直、不需要任何投影，也就不可能把点投到对岸。
+   */
+  coastClearanceRatio: 0.6,
   /**
    * 振幅封顶三：不超过 `fineAmpCap × 最细一级的 R`。
    *
@@ -388,18 +686,6 @@ export const REGION_WOBBLE = {
    * 乃至多边形自交。1.25 倍是留出的安全余量。
    */
   seedInsetAmpRatio: 1.25,
-  /**
-   * 子级相对父级的色相偏移（度）：让"父块裂开成子块"读起来像同一个色系的深浅。
-   *
-   * 【3 而不是 15】15° 时同一父级下的兄弟块会跨过肉眼可辨的色相界线
-   * （绿 → 黄绿 → 青），看起来是**不相干的几块**，而不是"一块被分成了几份"；
-   * 配合 0.10 的低填充，还会出现"某块偏黄、旁边那块偏蓝"的错觉，
-   * 因为透明度低时人眼对色相的判断更依赖相邻对比。
-   *
-   * 3° 时整棵子树只是同一色系的极缓渐变，区块之间的差异改由**边界线**承担 ——
-   * 这也正是本批 B2 降级的核心思路：面负责氛围，线负责信息。
-   */
-  hueSpread: 3,
   /**
    * 同父块内两个种子点的最小间距 = 这一比例 × 子块尺度 R。
    *
@@ -566,39 +852,167 @@ export function hslToRgb(h: number, s: number, l: number): number {
   return (to(rgb[0]) << 16) | (to(rgb[1]) << 8) | to(rgb[2]);
 }
 
-/**
- * 用一个半平面裁剪多边形（Sutherland–Hodgman）。
- *
- * `keep` 返回该点在保留侧的距离（<= 0 表示保留）。
- * 遍历每条边，两端点一内一外时补上交点，得到裁剪后的新多边形。
- */
-function clipPolygon(polygon: Point[], keep: (p: Point) => number): Point[] {
-  if (polygon.length === 0) return polygon;
+/** 半平面裁剪的容差：判定"在保留侧"时允许的浮点误差 */
+const CLIP_EPS = 1e-9;
+
+/** 去掉环里挨得太近的相邻点（半平面裁剪的退化交点会造出零长边） */
+function dedupeRing(ring: Point[]): Point[] {
   const out: Point[] = [];
-  for (let i = 0; i < polygon.length; i += 1) {
-    const a = polygon[i];
-    const b = polygon[(i + 1) % polygon.length];
-    const fa = keep(a);
-    const fb = keep(b);
-    if (fa <= 0) out.push(a);
-    if (fa <= 0 !== fb <= 0) {
-      const t = fa / (fa - fb);
-      out.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
-    }
+  for (const p of ring) {
+    const last = out[out.length - 1];
+    if (last && Math.abs(last.x - p.x) < 1e-9 && Math.abs(last.y - p.y) < 1e-9) continue;
+    out.push(p);
+  }
+  while (out.length >= 2) {
+    const first = out[0];
+    const last = out[out.length - 1];
+    if (Math.abs(last.x - first.x) < 1e-9 && Math.abs(last.y - first.y) < 1e-9) out.pop();
+    else break;
   }
   return out;
 }
 
 /**
- * 求第 index 个种子点在 `region` 内的 Voronoi 单元。
+ * 用一个半平面裁剪多边形，**允许切成多块**（返回若干条简单环）。
  *
- * 【`region` 必须是凸的】本函数靠 Sutherland–Hodgman 做半平面裁剪，
- * 而该算法只对**凸**裁剪框成立。层级生成时传入的是父块的**基线多边形**
- * （由半平面相交而来，恒为凸），而不是它崎岖化之后的显示多边形 ——
- * 后者可能变成凹的，直接用会做出跑到父块外面的子块。
+ * 【为什么不能用 Sutherland–Hodgman —— 这是"色块盖湾 / 飞线越海"的真因】
+ * S-H 逐边连一条链，隐含假设"裁剪结果仍是一条环"。可凹多边形被直线切开时，
+ * 结果经常是**两块甚至更多**；S-H 只能用一条沿裁剪线的弦把它们硬连成一条环。
+ * 那条弦就是用户截图里"横穿整块地、甚至跨过海湾"的细线；而 non-zero 填充
+ * 又会把弦围出来的湾口一起涂上区块色。**两种缺陷是同一个根因**：把多连通
+ * 的结果硬塞进单环。
+ *
+ * 【算法】沿裁剪线求出全部交点 →
+ *   ① 按**环上顺序**配对（进→出）得到若干条"保留链"；
+ *   ② 再按**线上顺序**配对（出→进）用线段把链连起来。
+ * 两个配对都是一一映射，顺着走就得到若干条互不相交、各自闭合的简单环。
+ * 这正是逆向目标里 `country.shape` 恒为**单个简单多边形**的实现前提
+ * （他们连 `removeNearPoint(shape, 8)` 的简化都省不掉，因为形状本来就不自交）。
+ *
+ * @param keep 线性函数：<= 0 的一侧保留（与 `voronoiCellPiecesIn` 的约定一致）
  */
-function voronoiCellIn(index: number, seeds: Point[], region: Point[]): Point[] {
-  let polygon = region;
+function clipHalfPlanePieces(polygon: Point[], keep: (p: Point) => number): Point[][] {
+  const n = polygon.length;
+  if (n < 3) return [];
+  const f = new Array<number>(n);
+  let hasIn = false;
+  let hasOut = false;
+  for (let i = 0; i < n; i += 1) {
+    const v = keep(polygon[i]);
+    f[i] = v;
+    if (v <= CLIP_EPS) hasIn = true;
+    else hasOut = true;
+  }
+  // 整块都在保留侧 / 都在丢弃侧：不必求交，直接返回（保留原对象，省一次拷贝）
+  if (!hasOut) return [polygon];
+  if (!hasIn) return [];
+
+  // 裁剪线的方向：`keep` 是线性函数，数值求一次梯度即可（垂直方向就是线方向）
+  const gx = keep({ x: polygon[0].x + 1, y: polygon[0].y }) - f[0];
+  const gy = keep({ x: polygon[0].x, y: polygon[0].y + 1 }) - f[0];
+  const ux = -gy;
+  const uy = gx;
+
+  interface Cut {
+    /** 交点所在边的起点序号 */
+    edge: number;
+    /** 边内参数（0~1） */
+    t: number;
+    p: Point;
+    /** 该交点是"出去"（保留 → 丢弃）还是"进来" */
+    out: boolean;
+    /** 沿裁剪线的位置（配对用） */
+    along: number;
+  }
+  const cuts: Cut[] = [];
+  for (let i = 0; i < n; i += 1) {
+    const j = (i + 1) % n;
+    const aIn = f[i] <= CLIP_EPS;
+    const bIn = f[j] <= CLIP_EPS;
+    if (aIn === bIn) continue;
+    const t = f[i] / (f[i] - f[j]);
+    const p = {
+      x: polygon[i].x + (polygon[j].x - polygon[i].x) * t,
+      y: polygon[i].y + (polygon[j].y - polygon[i].y) * t,
+    };
+    cuts.push({ edge: i, t, p, out: aIn, along: p.x * ux + p.y * uy });
+  }
+  if (cuts.length < 2) return hasIn ? [polygon] : [];
+
+  // ① 环上顺序：每个"进来"后面紧跟的那个"出去"，是同一条保留链的另一端
+  const byRing = cuts.map((_, i) => i);
+  byRing.sort((a, b) => cuts[a].edge + cuts[a].t - (cuts[b].edge + cuts[b].t));
+  const exitAfterEnter = new Map<number, number>();
+  for (let k = 0; k < byRing.length; k += 1) {
+    const cur = byRing[k];
+    const nxt = byRing[(k + 1) % byRing.length];
+    if (!cuts[cur].out && cuts[nxt].out) exitAfterEnter.set(cur, nxt);
+  }
+  // ② 线上顺序：交点沿裁剪线**成对**出现，每一对之间那一段落在多边形内部，
+  //    就是裁剪结果的边界段。所以"出去"的那个交点必须回到**同一对**里的
+  //    "进来"那一个 —— 这才是边界（[E,X] 这一段在环内）。
+  //
+  //    ⚠️ 这里曾写成"接到线上**下一个**进来的点"，那是错的：它把两对之间的
+  //    水域（多边形外部）当成了边界，于是相邻两块各拉一条弦跨过湾口 —— 正是
+  //    用户截图里"线横穿海面、湾里没有区块色"的最后一处来源。判据是
+  //    "这一对之间的中点在环内"，几何上不可能错。
+  const byLine = cuts.map((_, i) => i);
+  byLine.sort((a, b) => cuts[a].along - cuts[b].along);
+  const enterAfterExit = new Map<number, number>();
+  for (let k = 0; k + 1 < byLine.length; k += 2) {
+    const i0 = byLine[k];
+    const i1 = byLine[k + 1];
+    if (!cuts[i0].out && cuts[i1].out) {
+      exitAfterEnter.set(i0, i1);
+      enterAfterExit.set(i1, i0);
+    } else if (cuts[i0].out && !cuts[i1].out) {
+      exitAfterEnter.set(i1, i0);
+      enterAfterExit.set(i0, i1);
+    }
+  }
+
+  const out: Point[][] = [];
+  const used = new Set<number>();
+  for (const start of byRing) {
+    if (cuts[start].out || used.has(start)) continue;
+    const ring: Point[] = [];
+    let cur = start;
+    let guard = 0;
+    while (guard <= cuts.length && !used.has(cur)) {
+      used.add(cur);
+      const exitIdx = exitAfterEnter.get(cur);
+      if (exitIdx === undefined) break;
+      const enter = cuts[cur];
+      const exit = cuts[exitIdx];
+      ring.push(enter.p);
+      // 链上的实顶点：enter 所在边之后一路到 exit 所在边的起点
+      const steps = (exit.edge - enter.edge + n) % n;
+      for (let k = 1; k <= steps; k += 1) ring.push(polygon[(enter.edge + k) % n]);
+      ring.push(exit.p);
+      const next = enterAfterExit.get(exitIdx);
+      if (next === undefined) break;
+      cur = next;
+      guard += 1;
+    }
+    const cleaned = dedupeRing(ring);
+    if (cleaned.length >= 3 && polygonArea(cleaned) > 1e-6) out.push(cleaned);
+  }
+  return out;
+}
+
+/**
+ * 求第 index 个种子点在 `region` 内的 Voronoi 单元，**按连通块返回**。
+ *
+ * 【为什么不再要求 `region` 是凸的】旧实现靠 Sutherland–Hodgman，只对凸裁剪框
+ * 成立，于是只能给陆地环（星形、有深湾）打补丁：径向钳制 + 越湾绕行 + 接缝修复
+ * 三套兜底。改用可切分的半平面裁剪后，**凹容器也能被精确切开**，那三套补丁
+ * 全部不再需要 —— 单元天然 ⊆ 容器，边界天然贴岸。
+ *
+ * 层级生成时传入的仍是父块的**基线多边形**（而非崎岖化后的显示多边形）：
+ * 子块是父块基线的一部分，曲线由子级继承父级的 host 重画，两侧才能逐点重合。
+ */
+function voronoiCellPiecesIn(index: number, seeds: Point[], region: Point[]): Point[][] {
+  let pieces: Point[][] = [region];
   const me = seeds[index];
   for (let j = 0; j < seeds.length; j += 1) {
     if (j === index) continue;
@@ -609,10 +1023,13 @@ function voronoiCellIn(index: number, seeds: Point[], region: Point[]): Point[] 
     const dy = other.y - me.y;
     const mx = (me.x + other.x) / 2;
     const my = (me.y + other.y) / 2;
-    polygon = clipPolygon(polygon, (p) => (p.x - mx) * dx + (p.y - my) * dy);
-    if (polygon.length === 0) return [];
+    const keep = (p: Point) => (p.x - mx) * dx + (p.y - my) * dy;
+    const next: Point[][] = [];
+    for (const piece of pieces) next.push(...clipHalfPlanePieces(piece, keep));
+    pieces = next;
+    if (pieces.length === 0) return [];
   }
-  return polygon;
+  return pieces;
 }
 
 /** 点是否落在多边形内（射线法）。用于命中测试与单元测试。 */
@@ -671,16 +1088,6 @@ interface WobbleCtx {
   step: number;
   /** 最细一级的尺度基准 R（振幅封顶用） */
   finestR: number;
-  /**
-   * 陆地基线环（根容器为陆地多边形时非空，矩形根为 null）。
-   *
-   * 非空时 `hostLine` 会对折线做**越湾修复**（见 `repairBayCrossings`）：
-   * 两个岸上点之间的直弦会横穿深湾落到海面，修复让这段折线贴着海岸绕行 ——
-   * 这就是"区块线贴合区块边界"的生成期保证。
-   */
-  ring: Point[] | null;
-  /** 环的粗格网「深内」场（越湾修复的 O(1) 预筛）；ring 为 null 时恒 null */
-  field: RingField | null;
 }
 
 /**
@@ -728,7 +1135,6 @@ interface LocalNode {
   id: string;
   level: number;
   seed: Point;
-  hue: number;
   /** 基线多边形（**凸**，用于给子块做裁剪范围） */
   base: Point[];
   /** 基线每条边对应的基线边引用 */
@@ -770,177 +1176,6 @@ function makeFrameHost(a: Point, b: Point): HostEdge {
   return { a, b, amp: 0, freq: 1, frameTaper: 1, n: 1, line: [a, b], us: [0, 1] };
 }
 
-/* ── 越湾修复（对齐逆向目标：区块边界要贴着海岸绕过海湾，而不是直线横穿）── */
-
-/** 段采样点在环外、且距环边界超过该值（世界单位）→ 判为穿湾弦 */
-const BAY_CROSS_EPS = 1.5;
-/** 单次穿湾的环上绕行点数上限；超过视为病态环，放弃补点、交给径向钳制兜底 */
-const BAY_WALK_MAX = 256;
-/** 段内检测点（中点易漏对角切凹岸的弦，四分点三点连检） */
-const BAY_PROBE_TS = [0.25, 0.5, 0.75] as const;
-
-/** 环上离 p 最近的顶点序号（用于把穿湾弦的两个端点锚到环上） */
-function nearestRingVertexIndex(ring: Point[], p: Point): number {
-  let best = 0;
-  let bestD = Infinity;
-  for (let i = 0; i < ring.length; i += 1) {
-    const dx = ring[i].x - p.x;
-    const dy = ring[i].y - p.y;
-    const d = dx * dx + dy * dy;
-    if (d < bestD) {
-      bestD = d;
-      best = i;
-    }
-  }
-  return best;
-}
-
-/** 段 a→b 是否以超过 `BAY_CROSS_EPS` 的幅度离开陆地基线环（三点连检） */
-function segmentLeavesRing(a: Point, b: Point, ring: Point[]): boolean {
-  for (const t of BAY_PROBE_TS) {
-    const p = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
-    if (!pointInPolygon(p, ring) && distToPolygonBoundary(p, ring) > BAY_CROSS_EPS) {
-      return true;
-    }
-  }
-  return false;
-}
-
-/**
- * 就地修复折线里的「穿湾弦」。
- *
- * 【为什么会有穿湾弦】折线的相邻两点各自都在陆地环内/环上，但两点之间的
- * **直弦**会横穿深湾落到海面（v4 调参后湾变深，修复前实测最远越岸 24.6 单位 ——
- * 审计测试 `region-land-audit.test.ts` 的数字）。逐点钳制（`makeRadialClamp`）
- * 只能修点、修不了"两点之间"，径向投影还会把湾两侧的弧点塌到对岸岬角上，
- * 留下一根横跨湾口的跳线。
- *
- * 【怎么修】三点连检（四分点）发现段离开环超过 `BAY_CROSS_EPS`，就把两端各自
- * 锚到环上最近顶点，沿**较短方向**把环上中间顶点整段插进来 —— 折线改为
- * 贴着海岸绕过湾口。这与逆向目标的表现一致：区块线沿湾岸走，跟海岸白边贴合。
- *
- * 【为什么在 hostLine 里做而不是在 display 里做】host 折线是**共享缓存**：
- * 相邻两块对同一条边取同一条折线、子块从父块折线上切片。在这里修一次，
- * 所有消费方（父/子/兄弟）看到的是同一条贴岸路径 —— 严丝合缝不破。
- * 在 display 里逐块修，兄弟两侧会各自插入不同锚点的绕行点，边界必然裂开。
- *
- * 【性能】粗格网预筛：只有"非深内"格子里的段才做逐环检测（见 `buildRingField`），
- * 深入内陆的绝大多数段是 O(1) 跳过。
- */
-function repairBayCrossings(
-  pts: Point[],
-  us: number[],
-  ring: Point[],
-  field: RingField | null,
-): void {
-  for (let i = 0; i < pts.length - 1; ) {
-    const a = pts[i];
-    const b = pts[i + 1];
-    const mx = (a.x + b.x) / 2;
-    const my = (a.y + b.y) / 2;
-    if (field) {
-      const col = Math.floor((mx - field.x0) / field.cell);
-      const row = Math.floor((my - field.y0) / field.cell);
-      if (col >= 0 && row >= 0 && col < field.cols && row < field.rows) {
-        const at = row * field.cols + col;
-        if (field.deepInside[at] === 1) {
-          i += 1;
-          continue;
-        }
-      }
-    }
-    if (!segmentLeavesRing(a, b, ring)) {
-      i += 1;
-      continue;
-    }
-    const L = ring.length;
-    const i1 = nearestRingVertexIndex(ring, a);
-    const i2 = nearestRingVertexIndex(ring, b);
-    const forward = (i2 - i1 + L) % L;
-    const backward = (i1 - i2 + L) % L;
-    // 沿较短方向绕行：穿湾弦的两端是同一处海岸的两个岬角，湾岸是它们之间
-    // 较短的那段环；较长的一侧会绕整座岛一圈，绝不能选。
-    const walk = Math.min(forward, backward);
-    if (walk >= 2 && walk <= BAY_WALK_MAX) {
-      const step = forward <= backward ? 1 : -1;
-      const inserted: Point[] = [];
-      for (let k = 1; k < walk; k += 1) inserted.push(ring[(i1 + step * k + L) % L]);
-      // 补点的基线参数：在穿湾段两端点的参数之间线性铺开（参数表保持严格递增，
-      // pointAtU / arcBetween 的窗口语义不变 —— 见 HostEdge.us 的注释）。
-      const u0 = us[i];
-      const u1 = us[i + 1];
-      const du = (u1 - u0) / (inserted.length + 1);
-      const insertedUs = inserted.map((_, k) => u0 + du * (k + 1));
-      pts.splice(i + 1, 0, ...inserted);
-      us.splice(i + 1, 0, ...insertedUs);
-      // 只前进 1：新补进来的 (a,w1)、(w1,w2)… 各对还要复检 —— 环上绕行点之间的
-      // 弦是岸线本身不会再触发，但 (a,w1)（原点 → 第一个岸点）仍可能擦到凹岸。
-      i += 1;
-      continue;
-    }
-    // 绕行不可用（两端最近顶点相邻 / 绕行超长）：放弃补点。
-    // 【为什么不退化为"弦中点投影细分"】径向投影在非星形湾里会落到**对岸**
-    // （星形假设被破坏），细分不但收不敛，还会把对岸的点插进边界里，越修越糟
-    // （实测最大越岸从 9.7 恶化到 36.4）。这里的残余弦交给渲染期的陆地掩膜裁剪。
-    i += 1;
-  }
-}
-
-/**
- * 陆地基线环的粗格网「深内」场：格中心深入环内（距边界 > `FIELD_MARGIN`）的格子
- * 标 1 —— 落在这种格子里的段中点，其所在段不可能越出环 `BAY_CROSS_EPS` 以上
- * （段长 ≤ 采样步长，够不到边界），可以 O(1) 跳过逐环检测。
- */
-interface RingField {
-  cell: number;
-  x0: number;
-  y0: number;
-  cols: number;
-  rows: number;
-  deepInside: Uint8Array;
-}
-
-const FIELD_CELL = 16;
-/** ≥ 半格对角 11.3 + BAY_CROSS_EPS 2，取 16：格中心深内 ⇒ 格内任意点至多贴边，免检安全 */
-const FIELD_MARGIN = 16;
-
-function buildRingField(ring: Point[], bounds: RegionBounds): RingField | null {
-  if (ring.length < 3) return null;
-  const cols = Math.max(1, Math.ceil(bounds.width / FIELD_CELL));
-  const rows = Math.max(1, Math.ceil(bounds.height / FIELD_CELL));
-  const deepInside = new Uint8Array(cols * rows);
-  for (let row = 0; row < rows; row += 1) {
-    for (let col = 0; col < cols; col += 1) {
-      const x = bounds.x + (col + 0.5) * FIELD_CELL;
-      const y = bounds.y + (row + 0.5) * FIELD_CELL;
-      if (!pointInPolygon({ x, y }, ring)) continue;
-      if (distToPolygonBoundary({ x, y }, ring) <= FIELD_MARGIN) continue;
-      deepInside[row * cols + col] = 1;
-    }
-  }
-  return { cell: FIELD_CELL, x0: bounds.x, y0: bounds.y, cols, rows, deepInside };
-}
-
-/**
- * display 多边形的**接缝兜底**：与 hostLine 同一套越湾修复，但作用于拼装完成的
- * 显示多边形。
- *
- * 【为什么还需要它】hostLine 修复保证的是"每条边内部的折线贴岸"，但 display 里
- * 还有一类弦不属于任何一条边：相邻两条边的**拼接缝**（edge k 的弧尾 →
- * edge k+1 的钳制角点，实测能拉出 67 单位的跨湾裸弦）。缝是区块本地的几何，
- * 不影响兄弟一致性 —— 共享边上的点在两侧逐位相同，两侧各自对同一段做绕行，
- * 插入的岸点也逐位相同。
- */
-function repairPolygonSeams(poly: Point[], ring: Point[], field: RingField | null): void {
-  if (poly.length < 3) return;
-  const us: number[] = [];
-  for (let k = 0; k < poly.length; k += 1) us.push(k / (poly.length - 1));
-  // 【已知残余】收口边（末点 → 首点）不在修复范围内：给收口对做环上绕行时，
-  // "较短方向"可能绕出一段与区块无关的远岸路径（实测最大越岸反而从 9.7 恶化到
-  // 29.9）。收口弦与普通拼接缝同级别（≤ ~10 单位），交给渲染期陆地掩膜裁剪。
-  repairBayCrossings(poly, us, ring, field);
-}
-
 /**
  * 建一条基线边。
  *
@@ -958,6 +1193,8 @@ function makeHost(
   capSeed: Point,
   R: number,
   ctx: WobbleCtx,
+  /** 边中点到父块边界的距离（缺省 Infinity = 不限；见 coastClearanceRatio） */
+  capClearance = Infinity,
 ): HostEdge {
   // 规范方向：按 (x, y) 字典序，保证两侧区块得到同一个 a→b
   const flip = from.x > to.x || (from.x === to.x && from.y > to.y);
@@ -984,6 +1221,8 @@ function makeHost(
       len * REGION_WOBBLE.maxEdgeRatio,
       // 封顶三：这条曲线会被最深处的子块原样继承，起伏不能超过它们的承受能力
       ctx.finestR * REGION_WOBBLE.fineAmpCap,
+      // 封顶四：留出"到父块边界"的余量，别把曲折拱到块外
+      capClearance * REGION_WOBBLE.coastClearanceRatio,
     ),
   );
 
@@ -1035,39 +1274,6 @@ function hostLine(h: HostEdge, ctx: WobbleCtx): Point[] {
   // 采样点的基线参数本来是均匀的 k/n；越湾修复插点后由参数表接管（见 HostEdge.us）
   const us: number[] = [];
   for (let k = 0; k <= h.n; k += 1) us.push(k / h.n);
-  // 陆地根容器的两步贴岸修复（必须在**缓存之前**做：父/子/兄弟共享同一条
-  // 缓存折线，这里修一次，所有消费方看到的就是同一条贴岸路径）：
-  //
-  // ① 径向投影：抖动位移会把贴岸的弧整段推到**海面里**（与岸平行地跑在外海，
-  //    实测越岸 24.6 单位）。把折线上每个越环的点投影回岸线 —— 平行外海的弧
-  //    投影后沿岸单调排列，天然贴合；只有"跨湾弦"会投影出跳线，交给 ② 修。
-  // ② 越湾绕行：投影后仍存在的跨湾弦（中点在环外 >2），沿较短方向把环上
-  //    岸点插进来，让折线贴着湾岸绕过去（见 repairBayCrossings）。
-  //
-  // 补点后 n 同步成"折线段数"，保证 line/us/n 三者长度口径一致。
-  if (ctx.ring && ctx.field) {
-    const ring = ctx.ring;
-    const project = makeRadialClamp(ring);
-    if (project) {
-      for (let k = 0; k < pts.length; k += 1) {
-        const p = pts[k];
-        const col = Math.floor((p.x - ctx.field.x0) / ctx.field.cell);
-        const row = Math.floor((p.y - ctx.field.y0) / ctx.field.cell);
-        if (
-          col >= 0 &&
-          row >= 0 &&
-          col < ctx.field.cols &&
-          row < ctx.field.rows &&
-          ctx.field.deepInside[row * ctx.field.cols + col] === 1
-        ) {
-          continue; // 深入内陆：不可能越环，免检
-        }
-        pts[k] = project(p);
-      }
-    }
-    repairBayCrossings(pts, us, ring, ctx.field);
-    if (pts.length - 1 !== h.n) h.n = pts.length - 1;
-  }
   h.line = pts;
   h.us = us;
   return pts;
@@ -1154,56 +1360,6 @@ function settleInside(p: Point, poly: Point[], target: Point): Point {
     if (!outside(q)) return q;
   }
   return { x: target.x, y: target.y };
-}
-
-/**
- * 星形环的**径向钳制**：环外的点沿「环顶点均值中心 → 该点」射线投影回环上。
- *
- * 【为什么需要它】`voronoiCellIn` 的半平面裁剪只对**凸**裁剪框成立，而陆地环是
- * 星形（r(θ) 单值）而非凸 —— v4 调参后湾变深，单元里"两个岸上顶点之间的直弦边"
- * 及其抖动弧会直接**穿过湾口**落到海面（实测最远越岸 26 世界单位，2.33.0 前的
- * `settleInside` 只拉得回顶点、拉不回两点之间的弧线）。
- *
- * 【为什么径向投影是精确的】对星形环，从中心出发的每条射线与边界恰好交一次
- * （r(θ) 单值的定义），所以环外的点沿射线向内找到的第一个交点就是它的岸上投影；
- * 弧线被逐点钳制后**贴着海岸走**，而不是像凸包逃生开关那样把湾整个填掉。
- * 投影点落在环的**弦多边形**上，与渲染期 Catmull-Rom 曲线最多差一个矢高
- * （≈2~3 单位），被海岸白边与既有 3 单位容差盖住。
- *
- * 【为什么不破坏严丝合缝】兄弟单元共享同一条内部边 —— host 与弧点由同一对
- * 端点算出，逐点钳制对两个兄弟施加的是同一个映射，公共边界仍然重合。
- *
- * @returns 钳制函数；`ring` 退化（<3 点）时返回 null（调用方跳过钳制）
- */
-function makeRadialClamp(ring: Point[]): ((p: Point) => Point) | null {
-  if (ring.length < 3) return null;
-  let sx = 0;
-  let sy = 0;
-  for (const p of ring) {
-    sx += p.x;
-    sy += p.y;
-  }
-  const c = { x: sx / ring.length, y: sy / ring.length };
-  return (p: Point): Point => {
-    if (pointInPolygon(p, ring)) return p;
-    const dx = p.x - c.x;
-    const dy = p.y - c.y;
-    let bestT = Infinity;
-    for (let i = 0; i < ring.length; i += 1) {
-      const a = ring[i];
-      const b = ring[(i + 1) % ring.length];
-      const ex = b.x - a.x;
-      const ey = b.y - a.y;
-      // 解 c + t·d = a + s·e（t > 0 为射线方向，0 ≤ s < 1 为段内参数）
-      const den = dx * ey - dy * ex;
-      if (Math.abs(den) < 1e-12) continue;
-      const t = ((a.x - c.x) * ey - (a.y - c.y) * ex) / den;
-      const s = ((a.x - c.x) * dy - (a.y - c.y) * dx) / den;
-      if (t > 1e-9 && s >= -1e-9 && s < 1 && t < bestT) bestT = t;
-    }
-    if (!Number.isFinite(bestT)) return p;
-    return { x: c.x + dx * bestT, y: c.y + dy * bestT };
-  };
 }
 
 /* ────────────────────────── 种子点采样 ────────────────────────── */
@@ -1397,6 +1553,108 @@ function maxBoundaryAmp(node: LocalNode): number {
 }
 
 /**
+ * 算一块 Voronoi 单元在**本层**的显示多边形（崎岖化之后的）与它的基线边。
+ *
+ * 显示多边形的构成（顺序即多边形绕向）：
+ *   · 落在父级边界上的边 → **原样切下父级折线的一段**（这就保证了严丝合缝）
+ *   · 内部边（与兄弟共享）→ 按本级规则崎岖化；振幅上限取未位移的基线中点，
+ *     因此两侧算出的折线完全相同，只是点序相反
+ *
+ * 单元可以是父块被半平面切下来的**任意一块**（凹父块会切出多块），所以这里
+ * 不假设它是凸的 —— 只要求它是一条简单环（`clipHalfPlanePieces` 的保证）。
+ */
+function buildCellDisplay(
+  cell: Point[],
+  parent: LocalNode,
+  seedPoint: Point,
+  R: number,
+  ctx: WobbleCtx,
+): { display: Point[]; edges: EdgeRef[] } | null {
+  if (cell.length < 3) return null;
+  // 父块显示多边形的质心：把"落进父块内凹湾里"的内部顶点拉回来的目标点
+  const parentInner = polygonCentroid(parent.display);
+
+  // ── 1) 每个顶点：判定它落在父级基线的**哪几条**边上 ──
+  //
+  // 【为什么是"哪几条"而不是"哪一条"】父级的一个顶点同时是它相邻两条边的端点。
+  // 若每个顶点只记一条边，那么"从父级顶点出发、沿下一条边继续走"的那条子边
+  // 就会因为两端记到了不同的边号而被误判成内部边 —— 于是它不再继承父级曲线，
+  // 而是按自己的振幅重算一遍，父级边界上就出现一大段对不上的缺口（实测能到
+  // 父级边界的四成）。记下全部候选边、再在**每条子边**上求交集，才是正确的判据。
+  const verts = cell.map((v) => {
+    const ons: number[] = [];
+    for (let j = 0; j < parent.base.length; j += 1) {
+      if (distToSegment(v, parent.base[j], parent.base[(j + 1) % parent.base.length]) < 1e-6) {
+        ons.push(j);
+      }
+    }
+    if (ons.length === 0) {
+      // 内部顶点（两条中垂线的交点）：可能落在父块显示多边形的内凹湾里，拉回来
+      return { raw: v, point: settleInside(v, parent.display, parentInner), ons };
+    }
+
+    // 锚点 = 父级折线上对应位置的点。父级顶点处两条边的折线端点都精确等于该
+    // 顶点本身（见 hostLine 的端点对齐），因此取哪条边得到的是同一个点。
+    const j = ons[0];
+    const ref = parent.edges[j];
+    const t = paramOnSegment(parent.base[j], parent.base[(j + 1) % parent.base.length], v);
+    const uFrom = paramOnSegment(ref.host.a, ref.host.b, ref.from);
+    const uTo = paramOnSegment(ref.host.a, ref.host.b, ref.to);
+    return { raw: v, point: pointAtU(ref.host, uFrom + (uTo - uFrom) * t, ctx), ons };
+  });
+
+  // ── 2) 每条边：继承父级曲线，或新建一条内部基线边 ──
+  const edges: EdgeRef[] = [];
+  for (let k = 0; k < cell.length; k += 1) {
+    const va = verts[k];
+    const vb = verts[(k + 1) % cell.length];
+    // 两端共处父级同一条边 → 该子边整段都在父级边界上，原样继承
+    const shared = va.ons.find((j) => vb.ons.includes(j));
+    if (shared !== undefined) {
+      const host = parent.edges[shared].host;
+      // 两端在父级**基线**上的位置 → 换算成基线边自身的参数区间
+      const ref = parent.edges[shared];
+      const uFrom = paramOnSegment(ref.host.a, ref.host.b, ref.from);
+      const uTo = paramOnSegment(ref.host.a, ref.host.b, ref.to);
+      const segA = parent.base[shared];
+      const segB = parent.base[(shared + 1) % parent.base.length];
+      const map = (p: Point) =>
+        pointAtU(ref.host, uFrom + (uTo - uFrom) * paramOnSegment(segA, segB, p), ctx);
+      edges.push({ host, from: map(va.raw), to: map(vb.raw) });
+    } else {
+      const capMid = { x: (va.raw.x + vb.raw.x) / 2, y: (va.raw.y + vb.raw.y) / 2 };
+      edges.push({
+        // 离父块边界多远决定这条边最多能扭多少（见 REGION_WOBBLE.coastClearanceRatio）
+        host: makeHost(
+          va.point,
+          vb.point,
+          capMid,
+          seedPoint,
+          R,
+          ctx,
+          distToPolygonBoundary(capMid, parent.display),
+        ),
+        from: va.point,
+        to: vb.point,
+      });
+    }
+  }
+
+  // ── 3) 拼显示多边形 ──
+  //
+  // 【不需要任何"拉回岸线"的事后修补】单元是**精确裁剪**出来的（见
+  // `clipHalfPlanePieces`），顶点与弧点天然落在父块之内；父块的边界那一段
+  // 本来就是陆地环本身，所以区块边界天然贴岸。
+  const display: Point[] = [];
+  for (const e of edges) {
+    display.push(e.from);
+    for (const p of arcBetween(e.host, e.from, e.to, ctx)) display.push(p);
+  }
+  if (display.length < 3) return null;
+  return { display, edges };
+}
+
+/**
  * 由父级的基线多边形长出子块，并算出子块的**显示多边形**。
  *
  * 显示多边形的构成（顺序即多边形绕向）：
@@ -1414,8 +1672,6 @@ function buildChildren(
   ctx: WobbleCtx,
   nextId: () => string,
   schema: readonly RegionLevelDef[],
-  /** 根容器为陆地环时的径向钳制（见 makeRadialClamp）；矩形根为 null */
-  clampPoint: ((p: Point) => Point) | null,
 ): LocalNode[] {
   const parentAmp = maxBoundaryAmp(parent);
   const area = polygonArea(parent.base);
@@ -1435,103 +1691,76 @@ function buildChildren(
   // 名字只来自 schema（缺省 = DEFAULT_REGION_SCHEMA ⇒ 与改前逐字相同）。
   // ⚠️ 这里**不碰 rng**：多取/少取一个随机数会把整张图重排（见下方 color 的注释）。
   const label = levelLabelOf(schema, level);
-  // 父块显示多边形的质心：把"落进父块内凹湾里"的内部顶点拉回来的目标点
-  const parentInner = polygonCentroid(parent.display);
   const out: LocalNode[] = [];
 
   for (let i = 0; i < seeds.length; i += 1) {
-    const cell = voronoiCellIn(i, seeds, parent.base);
-    if (cell.length < 3) continue;
-
-    // ── 1) 每个顶点：判定它落在父级基线的**哪几条**边上 ──
+    // ── 0) 单元可能被切成**多块** ──
     //
-    // 【为什么是"哪几条"而不是"哪一条"】父级的一个顶点同时是它相邻两条边的端点。
-    // 若每个顶点只记一条边，那么"从父级顶点出发、沿下一条边继续走"的那条子边
-    // 就会因为两端记到了不同的边号而被误判成内部边 —— 于是它不再继承父级曲线，
-    // 而是按自己的振幅重算一遍，父级边界上就出现一大段对不上的缺口（实测能到
-    // 父级边界的四成）。记下全部候选边、再在**每条子边**上求交集，才是正确的判据。
-    const verts = cell.map((v) => {
-      const ons: number[] = [];
-      for (let j = 0; j < parent.base.length; j += 1) {
-        if (distToSegment(v, parent.base[j], parent.base[(j + 1) % parent.base.length]) < 1e-6) {
-          ons.push(j);
+    // 父块一凹（陆地环天然是星形、有深湾；上一级切出来的块也常是凹的），
+    // 半平面就会把它切成几块互不相连的部分。全部收下、主块 + 附加块分别画：
+    // 主块承担"区块身份"（种子、名字、命中），附加块只是同一区块伸出去的飞地。
+    // 丢掉附加块会在地图上留下没有区块色的空地，硬塞进一条环则会造出横穿湾口的
+    // 飞线 —— 两种老缺陷都从这里来。
+    const pieces = voronoiCellPiecesIn(i, seeds, parent.base);
+    if (pieces.length === 0) continue;
+    let mainIdx = pieces.findIndex((p) => pointInPolygon(seeds[i], p));
+    if (mainIdx < 0) {
+      // 种子正好落在裁剪线上（或采样被推进了缝里）：退回面积最大的那块
+      let bestA = -1;
+      for (let k = 0; k < pieces.length; k += 1) {
+        const a = polygonArea(pieces[k]);
+        if (a > bestA) {
+          bestA = a;
+          mainIdx = k;
         }
       }
-      if (ons.length === 0) {
-        // 内部顶点（两条中垂线的交点）：可能落在父块显示多边形的内凹湾里，拉回来
-        return { raw: v, point: settleInside(v, parent.display, parentInner), ons };
-      }
+    }
+    const main = buildCellDisplay(pieces[mainIdx], parent, seeds[i], R, ctx);
+    if (!main) continue;
+    const display = main.display;
+    const edges = main.edges;
 
-      // 锚点 = 父级折线上对应位置的点。父级顶点处两条边的折线端点都精确等于该
-      // 顶点本身（见 hostLine 的端点对齐），因此取哪条边得到的是同一个点。
-      const j = ons[0];
-      const ref = parent.edges[j];
-      const t = paramOnSegment(parent.base[j], parent.base[(j + 1) % parent.base.length], v);
-      const uFrom = paramOnSegment(ref.host.a, ref.host.b, ref.from);
-      const uTo = paramOnSegment(ref.host.a, ref.host.b, ref.to);
-      return { raw: v, point: pointAtU(ref.host, uFrom + (uTo - uFrom) * t, ctx), ons };
-    });
-
-    // ── 2) 每条边：继承父级曲线，或新建一条内部基线边 ──
-    const edges: EdgeRef[] = [];
-    for (let k = 0; k < cell.length; k += 1) {
-      const va = verts[k];
-      const vb = verts[(k + 1) % cell.length];
-      // 两端共处父级同一条边 → 该子边整段都在父级边界上，原样继承
-      const shared = va.ons.find((j) => vb.ons.includes(j));
-      if (shared !== undefined) {
-        const host = parent.edges[shared].host;
-        // 两端在父级**基线**上的位置 → 换算成基线边自身的参数区间
-        const ref = parent.edges[shared];
-        const uFrom = paramOnSegment(ref.host.a, ref.host.b, ref.from);
-        const uTo = paramOnSegment(ref.host.a, ref.host.b, ref.to);
-        const segA = parent.base[shared];
-        const segB = parent.base[(shared + 1) % parent.base.length];
-        const map = (p: Point) =>
-          pointAtU(ref.host, uFrom + (uTo - uFrom) * paramOnSegment(segA, segB, p), ctx);
-        edges.push({ host, from: map(va.raw), to: map(vb.raw) });
-      } else {
-        const capMid = { x: (va.raw.x + vb.raw.x) / 2, y: (va.raw.y + vb.raw.y) / 2 };
-        edges.push({
-          host: makeHost(va.point, vb.point, capMid, seeds[i], R, ctx),
-          from: va.point,
-          to: vb.point,
-        });
+    // 附加块（飞地）：面积不到主块 4% 的当成裁剪毛刺丢掉
+    let extra: Point[][] | undefined;
+    if (pieces.length > 1) {
+      const mainArea = polygonArea(pieces[mainIdx]);
+      for (let k = 0; k < pieces.length; k += 1) {
+        if (k === mainIdx) continue;
+        if (polygonArea(pieces[k]) < mainArea * 0.04) continue;
+        const built = buildCellDisplay(pieces[k], parent, seeds[i], R, ctx);
+        if (built) (extra ??= []).push(built.display);
       }
     }
-
-    // ── 3) 拼显示多边形 ──
-    // 陆地根容器时逐点径向钳制：单元的直弦边及其抖动弧会穿过深湾落到海面
-    // （半平面裁剪对星形环不保证 ⊆ 环），钳制后贴着海岸走（见 makeRadialClamp）。
-    const display: Point[] = [];
-    for (const e of edges) {
-      display.push(clampPoint ? clampPoint(e.from) : e.from);
-      for (const p of arcBetween(e.host, e.from, e.to, ctx)) {
-        display.push(clampPoint ? clampPoint(p) : p);
-      }
-    }
-    if (display.length < 3) continue;
-    // 接缝兜底：把 hostLine 修不到的拼接缝 / 收口弦也修到贴岸（见函数注释）
-    if (clampPoint && ctx.ring) repairPolygonSeams(display, ctx.ring, ctx.field);
 
     // 种子自己的显示多边形也可能内凹（它同样继承了父级的曲线）：种子若正好落在
     // 这个内凹湾里，标签就会飘到自块外。朝自块质心拉一点即可。父块用的是自己的
     // 质心、子块用的是子块质心，两者互不影响，兄弟之间也不会裂开。
     const seedPoint = settleInside(seeds[i], display, polygonCentroid(display));
 
-    // ── 4) 取色：子级在父级色相附近偏移，让"父块裂开成子块"读起来是同色系深浅 ──
-    const jitter = (rng() - 0.5) * 12;
-    const hue =
-      level === 0
-        ? i * 137.508 + (rng() - 0.5) * 26
-        : parent.hue + (i - (count - 1) / 2) * REGION_WOBBLE.hueSpread + jitter;
+    // ── 4) 取色：从固定色板里取一格（随机流只决定"从哪一格起步"）──
+    //
+    // 【随机数的**数量**必须与 2.38.0 逐位一致（3 个，level 0 另有 1 个）】
+    // rng 是**串行**伪随机流：少取/多取一个数，后面所有区块的种子点与几何都会
+    // 整体错位，同 seed 出图就变了 —— 而 2.38.0 的几何已被
+    // `region-land-audit.test.ts` 的实测基线（越岸点数 / 最大越出）钉住。
+    // 旧代码在这里消耗的是「色相抖动的 jitter(1) + level 0 的色相初值(1) + 取色的
+    // 两个数(2)」，即 level > 0 三个、level 0 四个；下面用三个**有语义**的数
+    // （主选格 / 格内抖动 / 微抖）对齐前两个，再给 level 0 补回那一个。
+    const pick = rng();
+    const wobble = rng();
+    const drift = rng();
+    if (level === 0) rng();
+    const len = REGION_PALETTE_RGB.length;
+    const slot = Math.round(
+      pick * (len - 1) + (wobble - 0.5) * 1.6 + (drift - 0.5) * 0.8,
+    );
+    const color = REGION_PALETTE_RGB[Math.max(0, Math.min(len - 1, slot))];
     const id = nextId();
     const node: LocalNode = {
       id,
       level,
       seed: seedPoint,
-      hue,
-      base: cell,
+      base: pieces[mainIdx],
       edges,
       display,
     };
@@ -1543,20 +1772,16 @@ function buildChildren(
       name: `${label} ${id.slice(id.lastIndexOf("_") + 1)}`,
       seed: seedPoint,
       polygon: display,
+      pieces: extra,
       /**
-       * 取色：低饱和 + 高明度 + 小抖动。
+       * 填充色：**色板的一格**（不是连续 HSL）。
        *
-       * 三个数一起决定"区块有多抢戏"：
-       *   · 饱和 0.10~0.16（原 0.30~0.50）：0.3 以上就带"塑料色卡"的味道了；
-       *   · 明度 0.58~0.66（原 0.56~0.70）：收到一个窄带里，兄弟块之间只差一点点；
-       *   · 明度抖动用 `(rng()-0.5)*0.08`，围绕 0.62 双向摆 —— 原来 `0.56+rng()*0.14`
-       *     只会往亮里偏，整片图会逐渐发白。
-       *
-       * 【`rng()` 的调用次数必须与改前一致（这里恰好两次）】rng 是**串行**的伪随机流：
-       * 中途多取或少取一个数，后面所有区块的种子点、色相、抖动会全部错位。
-       * 改值可以，改"取几个随机数"等于把整张图重排一遍。
+       * 这里给出的只是**起始格**（随机流决定，整张图因此色彩分布随机、不成规律）；
+       * 真正的"相邻块必须读得出不同"由 `assignRegionColors` 在整棵树建完之后做
+       * 邻接校正。分工的理由见 `REGION_PALETTE` 的注释：α 0.30 会把"接近的两色"
+       * 压成同一块，所以颜色必须来自**离散且互不相邻的几格**，而不是一个连续函数。
        */
-      color: hslToRgb(hue, 0.1 + rng() * 0.06, 0.62 + (rng() - 0.5) * 0.08),
+      color,
     });
     out.push(node);
   }
@@ -1587,15 +1812,11 @@ export function generateHierarchy(options: GenerateHierarchyOptions): MapRegion[
   // 若按父级自己的尺度采样，缩到最深处那段折线会是一根根显眼的直线段。
   const finest = Math.max(1, counts[counts.length - 1]);
   const finestR = Math.sqrt((bounds.width * bounds.height) / finest);
-  // 陆地根容器：hostLine 的越湾修复以此为贴岸依据（矩形根无湾可穿，恒 null）
-  const rootRing = options.container ?? null;
   const ctx: WobbleCtx = {
     bounds,
     noiseSeed: seed,
     step: finestR / REGION_WOBBLE.segmentsPerRadius,
     finestR,
-    ring: rootRing,
-    field: rootRing ? buildRingField(rootRing, bounds) : null,
   };
 
   const rng = createRng(seed);
@@ -1615,15 +1836,11 @@ export function generateHierarchy(options: GenerateHierarchyOptions): MapRegion[
     { x: bounds.x, y: bounds.y + bounds.height },
   ];
   const rootPoly: Point[] = options.container ?? rect;
-  // 陆地根容器是星形而非凸：半平面裁剪会让单元穿过深湾落到海面，
-  // 显示多边形要逐点径向钳制回岸线（矩形根恒凸，无需钳制）。
-  const clampPoint = options.container ? makeRadialClamp(rootPoly) : null;
   let frontier: LocalNode[] = [
     {
       id: "root",
       level: -1,
       seed: { x: 0, y: 0 },
-      hue: 0,
       base: rootPoly,
       edges: rootPoly.map((p, i) => {
         const q = rootPoly[(i + 1) % rootPoly.length];
@@ -1648,10 +1865,14 @@ export function generateHierarchy(options: GenerateHierarchyOptions): MapRegion[
       const parent = frontier[i];
       const n = per[i];
       if (n <= 0) continue;
-      next.push(...buildChildren(parent, level, n, regions, seed, rng, ctx, nextId, schema, clampPoint));
+      next.push(...buildChildren(parent, level, n, regions, seed, rng, ctx, nextId, schema));
     }
     frontier = next;
   }
+
+  // 整棵树建完再做邻接校正：邻居可能来自不同的父块（跨父块相邻是常态），
+  // 边生成边校正就只能看到"已生成的那一半"，跨父块的撞色会漏掉。
+  assignRegionColors(regions);
 
   return regions;
 }
