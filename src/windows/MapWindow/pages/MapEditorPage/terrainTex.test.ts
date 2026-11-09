@@ -19,7 +19,7 @@ import {
 } from "./terrainTex";
 import { SPRITE_ZONES, type SpriteZone } from "./domain/zones";
 import { generateMap } from "./domain/generator";
-import { MAP_PRESETS } from "./domain/mapPresets";
+import { randomRecipe } from "./domain/mapRecipe";
 import { SPRITES, SPRITE_MAP } from "./sprites";
 import { BASE_BOUNDS } from "./store/useMapViewportStore";
 import type { TerrainBandGrid } from "./types";
@@ -116,10 +116,12 @@ describe("generateMap 的 bands 产出（纹理带与布点同源）", () => {
     const def = SPRITE_MAP[id];
     return { width: def?.baseWidth ?? 90, height: def?.baseHeight ?? 70 };
   };
+  /** 固定 seed 的随机配方（2.45.0 起产品侧只有随机配方） */
+  const RECIPE = randomRecipe(20261109);
   const opts = {
     seed: 20261109,
     bounds: BASE_BOUNDS,
-    preset: MAP_PRESETS[0],
+    recipe: RECIPE,
     richness: "standard" as const,
     mode: "full" as const,
     pool: SPRITES,
@@ -147,7 +149,7 @@ describe("generateMap 的 bands 产出（纹理带与布点同源）", () => {
     const gen = generateMap(opts);
     const recomputed = computeTerrainZones(
       gen.land,
-      MAP_PRESETS[0].climate,
+      RECIPE.climate,
       gen.bands!.cellSize,
     );
     expect(recomputed).toEqual(gen.bands);

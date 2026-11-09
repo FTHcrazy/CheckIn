@@ -12,7 +12,7 @@ import {
 } from "./polylineStyle";
 
 /**
- * 折线样式表（B4-2 §4.4 五档）。
+ * 折线样式表（B4-2 §4.4 五档 + 2.44.0 湖面两档 + 2.45.0 道路点线）。
  *
  * 【为什么值得单测】样式是**常量数据**，改错一个字的表现是"线变细了 / 变透明了 /
  * 虚线密得像毛边"，而没有任何报错。这里钉住的是三条容易被顺手改坏的性质：
@@ -22,14 +22,14 @@ import {
  */
 
 describe("样式表", () => {
-  it("七档、id 唯一、覆盖五类语义（含 2.44.0 的湖面两档）", () => {
-    expect(POLYLINE_STYLES).toHaveLength(7);
-    expect(new Set(POLYLINE_STYLES.map((s) => s.id)).size).toBe(7);
+  it("八档、id 唯一、覆盖五类语义（含 2.44.0 湖面两档与 2.45.0 道路点线）", () => {
+    expect(POLYLINE_STYLES).toHaveLength(8);
+    expect(new Set(POLYLINE_STYLES.map((s) => s.id)).size).toBe(8);
     expect(new Set(POLYLINE_STYLES.map((s) => s.kind))).toEqual(
       new Set(["road", "river", "ridge", "border", "lake"]),
     );
-    // 两种 road（官道 / 小径）、两种 lake（湖面 / 等深线）
-    expect(POLYLINE_STYLES.filter((s) => s.kind === "road")).toHaveLength(2);
+    // 三种 road（官道 / 小径 / 点线）、两种 lake（湖面 / 等深线）
+    expect(POLYLINE_STYLES.filter((s) => s.kind === "road")).toHaveLength(3);
     expect(POLYLINE_STYLES.filter((s) => s.kind === "lake")).toHaveLength(2);
   });
 

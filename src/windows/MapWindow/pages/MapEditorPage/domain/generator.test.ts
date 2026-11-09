@@ -25,7 +25,7 @@ import {
   type SpritePlacement,
 } from "./generator";
 import { mulberry32, type SpriteSource } from "./terrain-assets";
-import { MAP_PRESETS } from "./mapPresets";
+import { randomRecipe, type MapRecipe } from "./mapRecipe";
 import { TERRAIN_KINDS, type TerrainKind } from "./terrain";
 import { SPRITES, SPRITE_MAP } from "../sprites";
 
@@ -45,7 +45,24 @@ function makePool(): SpriteSource[] {
 }
 
 const BOUNDS = { x: -512, y: -512, width: 1024, height: 1024 };
-const PRESET = MAP_PRESETS[0];
+/**
+ * 测试配方（固定配比）：山多林密 + 一点河与遗迹。
+ *
+ * 【为什么不再引用产品配方】2.45.0 删掉了三个固定预设，产品侧只剩「按 seed 随机」；
+ * 用例需要**稳定**的配比来钉布点行为，所以在这里写死一份 —— 它属于测试夹具，
+ * 不随产品调参漂移。`settlement` 刻意不在配比里：聚落自 2.45.0 起走
+ * `planSettlements` 的选址算法，不再由区域生长产生。
+ */
+const RECIPE: MapRecipe = {
+  id: "test-recipe",
+  label: "测试配方",
+  terrainMix: [
+    { terrain: "mountain", share: 0.55 },
+    { terrain: "forest", share: 0.3 },
+    { terrain: "river", share: 0.1 },
+    { terrain: "landmark", share: 0.05 },
+  ],
+};
 
 const SIZE_TABLE: Record<string, { width: number; height: number }> = {
   m1: { width: 160, height: 93 },
@@ -72,7 +89,7 @@ function makeOpts(seed: number, richness: GeneratorRichness = "standard") {
   return {
     seed,
     bounds: BOUNDS,
-    preset: PRESET,
+    recipe: RECIPE,
     richness,
     mode: "full" as const,
     pool: makePool(),
@@ -249,7 +266,7 @@ describe("generateMap 布点合法性", () => {
     }
     let mainShare = 0;
     for (const [terrain, pts] of byTerrain) {
-      const share = PRESET.terrainMix.find((m) => m.terrain === terrain)?.share ?? 0;
+      const share = RECIPE.terrainMix.find((m) => m.terrain === terrain)?.share ?? 0;
       // 主地形是画面的骨架：它应当铺得最广（不是成团，是"底色"）
       if (share >= 0.5) {
         mainShare = pts.length / gen.placements.length;
@@ -368,7 +385,7 @@ describe("generateMap 地貌带", () => {
   const gen = generateMap({
     seed: 20261104,
     bounds: BOUNDS,
-    preset: MOUNTAIN_ONLY,
+    recipe: MOUNTAIN_ONLY,
     richness: "standard",
     mode: "full",
     pool: ZONE_POOL,
@@ -394,7 +411,7 @@ describe("generateMap 地貌带", () => {
     const locked = generateMap({
       seed: 20261104,
       bounds: BOUNDS,
-      preset: { ...MOUNTAIN_ONLY, climate: "snow" },
+      recipe: { ...MOUNTAIN_ONLY, climate: "snow" },
       richness: "sparse",
       mode: "full",
       pool: ZONE_POOL,
@@ -410,7 +427,7 @@ describe("assignPlacementNames", () => {
   /**
    * 合成布点（不依赖 generateMap 的产出构成）：
    * 6 座山（无 names，纯地貌）+ 4 个聚落（s1/s2 自带 names）。
-   * PRESET = 十万大山（mountain 有预设池，但山不带名 → 不吃池点名）。
+   * RECIPE = 十万大山（mountain 有预设池，但山不带名 → 不吃池点名）。
    */
   const at = (
     spriteId: string,
@@ -433,33 +450,33 @@ describe("assignPlacementNames", () => {
   ];
 
   it("同 seed 同名；只换名档（nameSeed 覆盖）能摇出不同组合", () => {
-    const a = assignPlacementNames(synthetic(), PRESET, 555);
-    const b = assignPlacementNames(synthetic(), PRESET, 555);
+    const a = assignPlacementNames(synthetic(), RECIPE, 555);
+    const b = assignPlacementNames(synthetic(), RECIPE, 555);
     expect(a).toEqual(b);
-    const rerolled = assignPlacementNames(synthetic(), PRESET, 555, { nameSeed: 0xabcdef });
+    const rerolled = assignPlacementNames(synthetic(), RECIPE, 555, { nameSeed: 0xabcdef });
     const aTexts = a.map((n) => n.text).join("|");
     const bTexts = rerolled.map((n) => n.text).join("|");
     expect(aTexts).not.toBe(bTexts);
   });
 
   it("全局查重：地名不重复", () => {
-    const named = assignPlacementNames(synthetic(), PRESET, 888);
+    const named = assignPlacementNames(synthetic(), RECIPE, 888);
     const texts = named.map((n) => n.text);
     expect(new Set(texts).size).toBe(texts.length);
   });
 
   it("taken 集合里的名字被避开（手动地名不被生成器抢走）", () => {
-    const baseline = assignPlacementNames(synthetic(), PRESET, 555);
+    const baseline = assignPlacementNames(synthetic(), RECIPE, 555);
     // 把 baseline 的第一名占掉再摇：结果里不应再出现它（池足够大时）
     const first = baseline[0];
-    const withTaken = assignPlacementNames(synthetic(), PRESET, 555, {
+    const withTaken = assignPlacementNames(synthetic(), RECIPE, 555, {
       taken: new Set([first.text]),
     });
     expect(withTaken.map((n) => n.text)).not.toContain(first.text);
   });
 
   it("只有带名素材产生地名（纯地貌不命名，防山名刷屏）", () => {
-    const named = assignPlacementNames(synthetic(), PRESET, 555);
+    const named = assignPlacementNames(synthetic(), RECIPE, 555);
     // 山不吃预设池点名：mountain 预设池只在素材自带 names 时才被消费
     expect(named.map((n) => n.index).sort()).toEqual([6, 7, 8, 9]);
   });
@@ -553,7 +570,7 @@ describe("generateMap 镜像翻转（P1-4）", () => {
   const flipOpts = (seed: number) => ({
     seed,
     bounds: BOUNDS,
-    preset: PRESET,
+    recipe: RECIPE,
     richness: "standard" as const,
     mode: "full" as const,
     pool: makeFlipPool(),
@@ -602,12 +619,13 @@ describe("generateMap 镜像翻转（P1-4）", () => {
   it("验收①（结构性）：20 seeds × 全预设 × dense，像素完全一致的素材对数恒 = 0", () => {
     const pixelKeyOf = (p: SpritePlacement) =>
       `${p.spriteId}|${p.flipX ? "F" : "N"}|${p.scale.toFixed(2)}|${p.rotation.toFixed(1)}`;
-    for (const preset of MAP_PRESETS) {
+    // 随机配方 × 20 seeds：产品侧已经没有固定预设了，这里覆盖三种随机抽法
+    for (const recipe of [randomRecipe(1), randomRecipe(7), randomRecipe(99)]) {
       for (let seed = 1; seed <= 20; seed++) {
         const gen = generateMap({
           seed,
           bounds: BOUNDS,
-          preset,
+          recipe,
           richness: "dense",
           mode: "full",
           pool: SPRITES,
@@ -618,7 +636,7 @@ describe("generateMap 镜像翻转（P1-4）", () => {
         });
         const keys = gen.placements.map(pixelKeyOf);
         const dup = keys.length - new Set(keys).size;
-        expect(dup, `${preset.id} seed=${seed} 有 ${dup} 对像素完全一致的素材`).toBe(0);
+        expect(dup, `${recipe.id} seed=${seed} 有 ${dup} 对像素完全一致的素材`).toBe(0);
       }
     }
   }, 120_000);
@@ -730,7 +748,7 @@ describe("generateMap 面板控制（内容开关 / 分族密度 / 要素大小�
 
   it("resolveTerrainMix：份额按内容开关与密度档重算后仍归一（合计 = 总数）", () => {
     const tuning = resolveGeneratorTuning({ mountainDensity: "less" });
-    const slots = resolveTerrainMix(PRESET, tuning, 120);
+    const slots = resolveTerrainMix(RECIPE, tuning, 120);
     expect(slots.reduce((acc, s) => acc + s.count, 0)).toBe(120);
     // 山体份额 0.55 × 0.45 = 0.2475，重归一后仍应是最大族之一
     expect(slots.find((s) => s.terrain === "mountain")).toBeTruthy();

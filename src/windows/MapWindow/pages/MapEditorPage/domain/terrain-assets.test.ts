@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAP_PRESETS, expandTerrainMix } from "./mapPresets";
+import { expandTerrainMix, randomRecipe } from "./mapRecipe";
 import { flippableOf, mulberry32, pickTerrainSprites, type SpriteSource } from "./terrain-assets";
 import { isTerrainKind, TERRAIN_KINDS, TERRAIN_META, type TerrainKind } from "./terrain";
 import { isSpriteZone } from "./zones";
@@ -14,7 +14,7 @@ import { SPRITES } from "../sprites";
  * 守卫三条（§十二.3，防止「静默失效」）：
  *  - SPRITES 每条 terrains 非空且枚举合法（漏标注 = 进不了任何配方）；
  *  - 每个地形要么有素材、要么回退链可达有素材的地形（防空转枚举）；
- *  - 预设 share 合计 = 1、地形键合法。
+ *  - 随机配方 share 合计 = 1、地形键合法、山体与开阔地必出。
  */
 
 const src = (id: string, terrains: SpriteSource["terrains"], weight?: number): SpriteSource => ({
@@ -246,28 +246,48 @@ describe("守卫：素材标注完整性", () => {
   });
 });
 
-describe("守卫：热门地图预设", () => {
-  it("每个预设 share 合计 = 1（浮点容差内），地形键合法，id 唯一", () => {
-    const ids = MAP_PRESETS.map((p) => p.id);
-    expect(new Set(ids).size).toBe(ids.length);
-    for (const preset of MAP_PRESETS) {
-      const sum = preset.terrainMix.reduce((s, m) => s + m.share, 0);
-      expect(sum, `${preset.id} share 合计 ${sum} ≠ 1`).toBeCloseTo(1, 9);
-      for (const m of preset.terrainMix) {
-        expect(isTerrainKind(m.terrain), `${preset.id} 含非法地形`).toBe(true);
-        expect(m.share).toBeGreaterThan(0);
-      }
+describe("守卫：随机配方（2.45.0 取代「热门地图」预设）", () => {
+  /** 山体族：这三档不进任何内容类目，由「山体」密度档单独控制 */
+  const MOUNTAIN_FAMILY: TerrainKind[] = ["mountain", "highland", "volcano"];
+
+  it("同 seed 同配方；share 合计 = 1；地形键合法且份额为正", () => {
+    const a = randomRecipe(20261109);
+    expect(randomRecipe(20261109)).toEqual(a);
+    const sum = a.terrainMix.reduce((acc, m) => acc + m.share, 0);
+    expect(sum).toBeCloseTo(1, 9);
+    for (const m of a.terrainMix) {
+      expect(isTerrainKind(m.terrain), `含非法地形 ${m.terrain}`).toBe(true);
+      expect(m.share).toBeGreaterThan(0);
+    }
+  });
+
+  it("真的在随机：不同 seed 抽出不同配比（不是一个换了名字的固定表）", () => {
+    const signatures = new Set(
+      Array.from({ length: 16 }, (_, i) => JSON.stringify(randomRecipe(i + 1).terrainMix)),
+    );
+    expect(signatures.size).toBeGreaterThan(8);
+  });
+
+  it("每张图都有骨架：山体族 + 开阔地 + 水系必出（否则图没有构图也没有水）", () => {
+    for (let seed = 1; seed <= 40; seed += 1) {
+      const kinds = randomRecipe(seed).terrainMix.map((m) => m.terrain);
+      expect(kinds.some((t) => MOUNTAIN_FAMILY.includes(t)), `seed=${seed} 无山体`).toBe(true);
+      expect(
+        kinds.some((t) => t === "plain" || t === "grassland"),
+        `seed=${seed} 无开阔地`,
+      ).toBe(true);
+      expect(kinds.some((t) => t === "river" || t === "lake"), `seed=${seed} 无水系`).toBe(true);
     }
   });
 
   it("expandTerrainMix：合计恰为 total，配比方向正确", () => {
-    const preset = MAP_PRESETS[0];
+    const recipe = randomRecipe(2026);
     for (const total of [1, 7, 20, 100]) {
-      const expanded = expandTerrainMix(preset, total);
+      const expanded = expandTerrainMix(recipe, total);
       const sum = expanded.reduce((s, m) => s + m.count, 0);
       expect(sum).toBe(total);
       // 最大份额地形拿到的数量不少于最小份额地形
-      const byShare = [...preset.terrainMix].sort((a, b) => b.share - a.share);
+      const byShare = [...recipe.terrainMix].sort((a, b) => b.share - a.share);
       const countOf = (t: string) => expanded.find((m) => m.terrain === t)?.count ?? 0;
       expect(countOf(byShare[0].terrain)).toBeGreaterThanOrEqual(
         countOf(byShare[byShare.length - 1].terrain),
@@ -275,14 +295,14 @@ describe("守卫：热门地图预设", () => {
     }
   });
 
-  it("真实素材池冒烟：3 个预设都能在 SPRITES 上抽满自己的地形请求", () => {
-    for (const preset of MAP_PRESETS) {
-      const requests = expandTerrainMix(preset, 20);
+  it("真实素材池冒烟：三种随机配方都能在 SPRITES 上抽满自己的地形请求", () => {
+    for (const recipe of [randomRecipe(1), randomRecipe(2), randomRecipe(3)]) {
+      const requests = expandTerrainMix(recipe, 20);
       for (const { terrain, count } of requests) {
         const picked = pickTerrainSprites(SPRITES, terrain, { count, seed: 2026 });
         expect(
           picked.length,
-          `${preset.id} / ${terrain}：${count} 张请求只拿到 ${picked.length}`,
+          `${recipe.id} / ${terrain}：${count} 张请求只拿到 ${picked.length}`,
         ).toBe(count);
       }
     }

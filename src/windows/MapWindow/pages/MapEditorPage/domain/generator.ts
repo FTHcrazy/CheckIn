@@ -1,17 +1,18 @@
 /**
  * 一键成图生成器（R-MAP-21，B3）—— 纯函数引擎
  *
- * **生成的是"对象"，不是"画面"**（review §5.3）：输入预设配方 + seed，
+ * **生成的是"对象"，不是"画面"**（review §5.3）：输入地形配方 + seed，
  * 输出陆地几何 + 素材实例布点（可编辑的 MapElement 前身）， 地名分配
  * 独立成档（`assignPlacementNames`），区块树仍由既有 `generateHierarchy`
  * 在 hook 层补齐（复用同一套几何，生成器不重复实现）。
  *
  * ── 确定性 ──
- * 同 seed + 同参数 ⇒ 逐实例坐标相同（review §5.3 铁律 1）。三条 mulberry32
+ * 同 seed + 同参数 ⇒ 逐实例坐标相同（review §5.3 铁律 1）。四条 mulberry32
  * 子流各自加盐，互不干扰：
  *   · 陆地   `landSeedOf`   —— 复用 land.ts 的形状算法
- *   · 素材   `elementSeedOf`—— 分区选材 + 布点 + 抖动
+ *   · 素材   `elementSeedOf`—— 分区选材 + 布点 + 抖动（聚落选址也走这条）
  *   · 地名   `nameSeedOf`   —— 只换地名时不惊动前两者
+ *   · 水系   `waterSeedOf`  —— 河湖独立成层（2.44.0）
  * 「换一张」= 全新 base seed；五档局部重掷 = 子流盐值再混一个自增计数
  * （交互动作，不承诺跨会话复现——复现看工具栏的 seed 指示 + 同参数重生成）。
  *
@@ -20,18 +21,28 @@
  * 否则用户导入素材（S2）进不了配方。尺寸与类别同理经 `sizeOf` 注入。
  *
  * 本文件无 IO、无 React、无 PIXI；import 白名单：
- * ./terrain ./terrain-assets ./mapPresets ../types ../land ../regions（后两者纯几何）。
+ * ./terrain ./terrain-assets ./mapRecipe ./settlements ./roads ./water
+ * ../types ../land ../regions（后两者纯几何）。
  */
 
 import {
   generateLand as buildLand,
   insetLand,
+  landBBoxOf,
   landColorOf,
   pointInLand,
   type LandShapeId,
 } from "../land";
 import type { MapLand, MapPolyline, Rect, TerrainBandGrid } from "../types";
-import { expandTerrainMix, type MapPresetDef } from "./mapPresets";
+import { expandTerrainMix, RANDOM_CHOICE, type MapRecipe } from "./mapRecipe";
+import { buildRoadNet, roadCostOfCells } from "./roads";
+import {
+  planSettlements,
+  settlementCountsOf,
+  SETTLEMENT_SPRITES,
+  type SettlementSite,
+  type SettlementTier,
+} from "./settlements";
 import { TERRAIN_META, type TerrainKind } from "./terrain";
 import { flippableOf, mulberry32, pickTerrainSprites, type SpriteSource } from "./terrain-assets";
 import { buildWaterNet } from "./water";
@@ -111,7 +122,7 @@ export type GeneratorMode = "full" | "skeleton";
  * 生成内容的类目键。
  *
  * 【为什么是"地形组"而不是"素材类目"】配方本来就是按 `TerrainKind` 写的
- * （`preset.terrainMix`），拿素材类目做开关会与配方对不上（雪原素材跨越
+ * （`recipe.terrainMix`），拿素材类目做开关会与配方对不上（雪原素材跨越
  * `snow` 与 `mountain` 两个类目）。按地形组关，语义是"这张图上不要雪"，
  * 比"不要 snow 类素材"更贴用户心智，也保证 `expandTerrainMix` 的输入形状不变。
  *
@@ -216,7 +227,6 @@ export type GeneratorGear = "all" | "land" | "sprites" | "names" | "regions";
 
 /** 生成器参数（UI 弹层与五档重掷共用的形状） */
 export interface GeneratorParams {
-  presetId: string;
   richness: GeneratorRichness;
   mode: GeneratorMode;
   /**
@@ -230,9 +240,14 @@ export interface GeneratorParams {
   riverDensity?: DensityLevel;
   /** 要素大小档，缺省 `normal`（= 2.39.0 的体量） */
   elementSize?: GeneratorElementSize;
-  /** 大陆形状档（12 种），缺省「正常」 */
-  shapeId?: LandShapeId;
-  /** 大陆底色档（`LAND_BASE_COLORS` 的 id），缺省羊皮纸 */
+  /**
+   * 大陆形状档（12 种，或 `RANDOM_CHOICE` = 随机）。
+   *
+   * 2.45.0 起缺省不再是「正常」：热门地图删掉后，一键成图的默认语义是
+   * **每点一次都是一张没见过的图**，形状与底色也跟着 seed 抽（见 `mapRecipe`）。
+   */
+  shapeId?: LandShapeId | typeof RANDOM_CHOICE;
+  /** 大陆底色档（`LAND_BASE_COLORS` 的 id，或 `RANDOM_CHOICE` = 随机） */
   landColorId?: string;
   /** 是否同时划分区块（默认关，承接 R-REG-02） */
   withRegions: boolean;
@@ -272,7 +287,7 @@ export function resolveGeneratorTuning(
  * 于是只出陆地（与骨架档同一条出口），不抛错、不产生空配方的幽灵环。
  */
 export function resolveTerrainMix(
-  preset: MapPresetDef,
+  recipe: MapRecipe,
   tuning: ResolvedGeneratorTuning,
   total: number,
 ): { terrain: TerrainKind; count: number }[] {
@@ -291,7 +306,7 @@ export function resolveTerrainMix(
   const mountainFactor = DENSITY_FACTOR[tuning.mountainDensity] ?? 1;
   const riverFactor = DENSITY_FACTOR[tuning.riverDensity] ?? 1;
 
-  const adjusted = preset.terrainMix
+  const adjusted = recipe.terrainMix
     .filter((m) => !disabled.has(m.terrain))
     .map((m) => {
       const factor = MOUNTAIN_TERRAINS.includes(m.terrain)
@@ -306,7 +321,7 @@ export function resolveTerrainMix(
   const sum = adjusted.reduce((acc, m) => acc + m.share, 0);
   if (adjusted.length === 0 || !(sum > 0)) return [];
   return expandTerrainMix(
-    { ...preset, terrainMix: adjusted.map((m) => ({ ...m, share: m.share / sum })) },
+    { ...recipe, terrainMix: adjusted.map((m) => ({ ...m, share: m.share / sum })) },
     total,
   );
 }
@@ -340,7 +355,7 @@ export interface GenerateMapOptions {
   seed: number;
   /** 整张纸的世界矩形（hook 传 BASE_BOUNDS，本文件不 import store） */
   bounds: Rect;
-  preset: MapPresetDef;
+  recipe: MapRecipe;
   richness: GeneratorRichness;
   mode: GeneratorMode;
   /** 素材池（本地打包 + 将来的导入池归一后注入；禁直接 import SPRITES） */
@@ -676,26 +691,9 @@ const CELL_PROBE = 0.3;
  * 拿纸张当分带基准会把雪带整个压在海上，南北两头永远用不到 ——
  * 分带与格网都必须跟着陆地走。
  */
+/** 陆地包围盒（几何口径的唯一出处见 `land.ts` 的 `landBBoxOf`） */
 function landBBox(land: MapLand): Rect {
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-  for (const ring of land.polygons) {
-    for (const p of ring) {
-      if (p.x < minX) minX = p.x;
-      if (p.y < minY) minY = p.y;
-      if (p.x > maxX) maxX = p.x;
-      if (p.y > maxY) maxY = p.y;
-    }
-  }
-  if (!Number.isFinite(minX)) return land.bounds;
-  return {
-    x: minX,
-    y: minY,
-    width: Math.max(1, maxX - minX),
-    height: Math.max(1, maxY - minY),
-  };
+  return landBBoxOf(land);
 }
 
 function cellHasLand(land: MapLand, x: number, y: number, size: number): boolean {
@@ -1013,29 +1011,34 @@ export function generateMap(options: GenerateMapOptions): GeneratedMap {
   const tuning = options.tuning ?? resolveGeneratorTuning({});
   const landCells = cells.filter((c) => c.land).length;
   const total = Math.max(1, Math.round(landCells * (1 - PLAIN_CELL_RATIO)));
-  const slots = resolveTerrainMix(options.preset, tuning, total);
+  const slots = resolveTerrainMix(options.recipe, tuning, total);
 
   // ── 地貌纹理带（2.43.0）：布点格网 → 每格气候带，随文档持久化 ──
   // 不依赖 slots / 不消耗骰子；骨架档与空配方也要带（纹理跟着陆地走）。
-  const bands = terrainBandsOf(cells, cols, rows, box, cellSize, options.preset.climate);
+  const bands = terrainBandsOf(cells, cols, rows, box, cellSize, options.recipe.climate);
   if (slots.length === 0) return { land, placements: [], bands, polylines: [] };
 
   /**
-   * 水系与陆地素材**分开铺**（2.44.0）。
+   * 水系与**点要素**（聚落）都不再参与区域生长（2.44.0 水系 / 2.45.0 聚落）。
    *
-   * `river` / `lake` 不再作为素材配方参与区域生长：它们的份额换算成"几条河 /
-   * 几个湖"，交给 `buildWaterNet` 画成折线（参考实现里水系本来就是 `Line` 要素）。
-   * 剩下的份额仍按原样成片分配 —— 关掉「河流」腾出来的格会自然被山地/森林认领，
+   * `river` / `lake` 的份额换算成"几条河 / 几个湖"，交给 `buildWaterNet` 画成
+   * 折线（参考实现里水系本来就是 `Line` 要素）；`settlement` 的份额换算成
+   * "几座城 / 几个村"，交给 `planSettlements` 选址再由 `buildRoadNet` 连成网
+   * （参考实现里聚落是点符号 + 道路点线，不是一个地表配方）。
+   * 剩下的份额仍按原样成片分配 —— 关掉「城镇」腾出来的格会被山地/森林认领，
    * 而不是留下一片没有视觉内容的空地。
    */
   const isWater = (t: TerrainKind) => t === "river" || t === "lake";
   const waterSlots = slots.filter((s) => isWater(s.terrain));
-  const groundSlots = slots.filter((s) => !isWater(s.terrain));
+  const settlementCells = slots
+    .filter((s) => s.terrain === "settlement")
+    .reduce((acc, s) => acc + s.count, 0);
+  const groundSlots = slots.filter((s) => !isWater(s.terrain) && s.terrain !== "settlement");
 
   /** 份额（格）→ 河流条数：一条河平均吃掉 3 格，夹在 2~16 条之间 */
   const { rivers: riverTarget, lakes: lakeTarget } = waterTargetsOf(waterSlots);
 
-  // ── 地形分布（区域生长，多片；水系除外）──
+  // ── 地形分布（区域生长，多片；水系与聚落除外）──
   assignTerrainByGrowth(cells, cols, rows, groundSlots, rng);
 
   // ── 水系（独立子流：加这一层不惊动任何素材坐标）──
@@ -1052,13 +1055,13 @@ export function generateMap(options: GenerateMapOptions): GeneratedMap {
         })
       : { polylines: [], cells: new Set<number>() };
 
-  // 只有水系（配方被"河流：多"挤掉其它族时）：不铺素材，但河湖照画
-  if (groundSlots.length === 0) {
+  // 只有水系/聚落（配方被"河流：多"挤掉其它族时）：不铺地貌素材，但河湖照画
+  if (groundSlots.length === 0 && settlementCells === 0) {
     return { land, placements: [], bands, polylines: water.polylines };
   }
 
   /** 纬度取带；预设锁定气候时不看纬度（「万里雪原」南缘不该冒沙丘） */
-  const climate = options.preset.climate;
+  const climate = options.recipe.climate;
   const zoneOfY = (y: number): SpriteZone => {
     if (climate) return climate;
     // 接缝抖动：把纬度硬切成的那条水平线摊成 ~8% 高度的过渡带（见 ZONE_BLEND）
@@ -1110,7 +1113,7 @@ export function generateMap(options: GenerateMapOptions): GeneratedMap {
     rotAmp: number,
     zone: SpriteZone,
     terrain: TerrainKind,
-  ): boolean => {
+  ): SpritePlacement | null => {
     const size = sizeOf(src.id);
     for (let attempt = 0; attempt < PLACE_ATTEMPTS; attempt++) {
       // 首选位被拒（贴图压岸 / 跨格深叠）才扩散重试：先微扰、再整格
@@ -1153,10 +1156,10 @@ export function generateMap(options: GenerateMapOptions): GeneratedMap {
       };
       if (colliderHitsFree(collider, p, cluster, sizeOf)) {
         placements.push(p);
-        return true;
+        return p;
       }
     }
-    return false;
+    return null;
   };
 
   /**
@@ -1276,6 +1279,70 @@ export function generateMap(options: GenerateMapOptions): GeneratedMap {
     if (placed > 0) budget.set(terrain, (budget.get(terrain) ?? 1) - 1);
   }
 
+  /**
+   * ── 聚落成网 + 道路点线（2.45.0，ALGN-7）──
+   *
+   * 放在地貌铺完之后：选址要用**已经分好**的地形（宜居度：平原/河谷 > 山林 >
+   * 雪线），连边要用落定后的聚落坐标。走 `elementSeedOf` 那条骰子流 ——
+   * 「只换素材」时城与村跟着一起重掷，位置、层级、道路网是一体的。
+   */
+  const settlementPolylines: MapPolyline[] = [];
+  if (settlementCells > 0) {
+    const counts = settlementCountsOf(settlementCells);
+    const sites = planSettlements(cells, {
+      cols,
+      rows,
+      cities: counts.cities,
+      towns: counts.towns,
+      villages: counts.villages,
+      rng,
+      waterCells: water.cells,
+      // 落点抖出格心（否则所有聚落精确坐在格网上，路网读起来像几何多边形边框）；
+      // 抖完必须还在岸内 —— 判定用与道路代价同一套 `pointInLand`。
+      inside: (p) => pointInLand(p, land),
+    });
+
+    /** 层级 → 体量微调：大城压得住周边一圈村落，茅屋只占半格 */
+    const TIER_SCALE: Record<SettlementTier, number> = { city: 1.35, town: 1.05, village: 0.85 };
+    const placedSites: SettlementSite[] = [];
+    for (const site of sites) {
+      const src = settlementSpriteOf(site.tier, options.pool, rng);
+      if (!src) continue;
+      const zone = zoneOfY(site.y);
+      const scale =
+        Math.round(
+          sizeComp * TERRAIN_SCALE.settlement * overallScale * TIER_SCALE[site.tier] * 100,
+        ) / 100;
+      const placed = placeOne(src, site.x, site.y, scale, BAND_PARAMS[zone].rot, zone, "settlement");
+      // ⚠️ 用**落位后的真实坐标**（`placeOne` 会在被拒时向外扩散重试，最多偏半格）：
+      // 拿选址的理论坐标当端点，路会停在房子旁边半格处，接不上。
+      if (placed) placedSites.push({ ...site, x: placed.x, y: placed.y });
+    }
+
+    // 道路只在**落位成功**的聚落之间连（没落上的点连着一条空路 = 断头路）
+    settlementPolylines.push(
+      ...buildRoadNet(
+        placedSites.map((s) => ({ col: s.col, row: s.row, x: s.x, y: s.y, tier: s.tier })),
+        {
+          // 寻路格网与布点格网同一口径：地形代价让路自己绕到隘口与河谷。
+          // ⚠️ 这里比布点严格一档：布点的 `cell.land` 带海岸探针（中心在海上也算陆地格），
+          // 拿它当通行判据会让窄海峡"连成一片陆地"，路直接横渡过去（实测图右下角）。
+          grid: {
+            cols,
+            rows,
+            cellSize,
+            x: box.x,
+            y: box.y,
+            cost: roadCostOfCells(cells.map((c) => c.terrain)).map((c, i) =>
+              pointInLand(cells[i], land) ? c : Number.POSITIVE_INFINITY,
+            ),
+          },
+          seed: options.elementSeed ?? elementSeedOf(options.seed),
+        },
+      ),
+    );
+  }
+
   // 先按地形层、同层再按脚底 y 升序：Pixi 按加入顺序绘制，排序即 z 序 ——
   // 层小的（森林/沼泽）先画被压底，层大的（山地/聚落）后画压住别人
   placements.sort((a, b) => {
@@ -1285,7 +1352,30 @@ export function generateMap(options: GenerateMapOptions): GeneratedMap {
     return a.y - b.y;
   });
 
-  return { land, placements, bands, polylines: water.polylines };
+  return {
+    land,
+    placements,
+    bands,
+    polylines: [...water.polylines, ...settlementPolylines],
+  };
+}
+
+/**
+ * 层级 → 素材（在真实池子里的**优先级链**里挑存在的那几档，再随机取一张）。
+ *
+ * 【为什么不是"按 terrain 抽"】聚落层级是语义：大城不能因为池子里茅屋排在
+ * 前面就画成茅屋。优先级链由 `SETTLEMENT_SPRITES` 给出，这里只负责落地。
+ */
+function settlementSpriteOf(
+  tier: SettlementTier,
+  pool: readonly SpriteSource[],
+  rng: () => number,
+): SpriteSource | null {
+  const candidates = SETTLEMENT_SPRITES[tier]
+    .map((id) => pool.find((s) => s.id === id))
+    .filter((s): s is SpriteSource => Boolean(s));
+  if (candidates.length === 0) return null;
+  return candidates[Math.floor(rng() * candidates.length)];
 }
 
 /**
@@ -1325,7 +1415,7 @@ function waterTargetsOf(
 export function generateWater(options: {
   land: MapLand;
   seed: number;
-  preset: MapPresetDef;
+  recipe: MapRecipe;
   richness: GeneratorRichness;
   tuning?: ResolvedGeneratorTuning;
 }): MapPolyline[] {
@@ -1339,7 +1429,7 @@ export function generateWater(options: {
 
   const total = Math.max(1, Math.round(landCells * (1 - PLAIN_CELL_RATIO)));
   const tuning = options.tuning ?? resolveGeneratorTuning({});
-  const slots = resolveTerrainMix(options.preset, tuning, total);
+  const slots = resolveTerrainMix(options.recipe, tuning, total);
   const { rivers, lakes } = waterTargetsOf(slots.filter((s) => s.terrain === "river" || s.terrain === "lake"));
   if (rivers === 0) return [];
 
@@ -1408,7 +1498,7 @@ export const NAMED_LABEL_QUOTA = 12;
  */
 export function assignPlacementNames(
   placements: readonly SpritePlacement[],
-  preset: MapPresetDef,
+  recipe: MapRecipe,
   seed: number,
   opts?: AssignNamesOptions,
 ): PlacementName[] {
@@ -1426,7 +1516,7 @@ export function assignPlacementNames(
     // 名池候选按优先级拼接（terrain.ts 约定：预设 > 素材自带 > 默认池）；
     // 起点随机 → 换地名档能摇出不同组合
     const pool: string[] = [];
-    const presetPool = preset.namePools?.[p.terrain];
+    const presetPool = recipe.namePools?.[p.terrain];
     if (presetPool) pool.push(...presetPool);
     pool.push(...spriteNames);
     pool.push(...TERRAIN_META[p.terrain].namePool);

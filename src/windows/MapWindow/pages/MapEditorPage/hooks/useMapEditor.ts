@@ -15,7 +15,14 @@ import {
   type GeneratorParams,
   type SpritePlacement,
 } from "../domain/generator";
-import { MAP_PRESETS } from "../domain/mapPresets";
+import {
+  randomRecipe,
+  resolveLandColorId,
+  resolveShapeId,
+  type MapRecipe,
+} from "../domain/mapRecipe";
+import { buildRoadNet, roadGridOfLand, type RoadNode } from "../domain/roads";
+import { settlementTierOf } from "../domain/settlements";
 import { SPRITE_ZONES, ZONE_LABELS } from "../domain/zones";
 import {
   FIT_PADDING,
@@ -780,12 +787,12 @@ export function useMapEditor(canvasSize: CanvasSize) {
       const regions = splitRegions
         ? [...buildRegions(land, undefined, regionSchemaOf(current)), ...kept]
         : kept;
-      // 新陆地 → 新水系（与「只换陆地」同一算法；默认预设 + 标准格网）。
+      // 新陆地 → 新水系（与「只换陆地」同一算法；随机配方 + 标准格网）。
       // 少了这一步，旧河会在海面上留下来 —— 比没有河更像 bug。
       const water = generateWater({
         land,
         seed: nextSeed,
-        preset: MAP_PRESETS[0],
+        recipe: randomRecipe(nextSeed),
         richness: "standard",
       });
       useMapDocStore.getState().generateLand(land, regions, water);
@@ -1110,6 +1117,8 @@ export function useMapEditor(canvasSize: CanvasSize) {
   const lastGenRef = useRef<{
     params: GeneratorParams;
     seed: number;
+    /** 这一次生成用的地形配方（随机抽出来的，局部重掷必须沿用它） */
+    recipe: MapRecipe;
     placements: SpritePlacement[];
     elementIds: string[];
   } | null>(null);
@@ -1141,7 +1150,6 @@ export function useMapEditor(canvasSize: CanvasSize) {
   const generateFullMap = useCallback(
     (params: GeneratorParams, gear: GeneratorGear): string => {
       const store = useMapDocStore.getState();
-      const preset = MAP_PRESETS.find((p) => p.id === params.presetId) ?? MAP_PRESETS[0];
       const current = store.doc;
       const sizeOf = spriteSizeOf;
 
@@ -1187,23 +1195,29 @@ export function useMapEditor(canvasSize: CanvasSize) {
       // ── all（或从未生成过，等价 all）──────────────────────────
       if (gear === "all" || !lastGenRef.current) {
         const seed = (Math.floor(Math.random() * 0x7fffffff) >>> 0) || 1;
+        /**
+         * 配方 / 形状 / 底色都从 seed 抽（2.45.0「完全随机」）：
+         * 三个固定热门地图删掉之后，"换一张"就是字面意思 —— 换一张没见过的图。
+         * 三者同源（同一个 seed），所以这张图仍然可复现。
+         */
+        const recipe = randomRecipe(seed);
         const gen = generateMap({
           seed,
           bounds: BASE_BOUNDS,
-          preset,
+          recipe,
           richness: params.richness,
           mode: params.mode,
           pool: SPRITES,
           sizeOf,
           // 内容开关 / 山体·河流密度 / 要素大小：缺省全开+正常，与 2.39.0 逐实例一致
           tuning: resolveGeneratorTuning(params),
-          // 大陆形状 / 底色：缺省「正常」/羊皮纸 = 与 2.40.0 逐字节一致
-          shape: params.shapeId,
-          landColorId: params.landColorId,
+          // 大陆形状 / 底色：选「随机」时同样由 seed 决定（见 mapRecipe）
+          shape: resolveShapeId(params.shapeId, seed),
+          landColorId: resolveLandColorId(params.landColorId, seed),
         });
         const named =
           params.mode === "full" && params.withLabels
-            ? assignPlacementNames(gen.placements, preset, seed)
+            ? assignPlacementNames(gen.placements, recipe, seed)
             : [];
         const elements = toElements(gen.placements);
         const labels = toLabels(named, elements, gen.placements);
@@ -1224,6 +1238,7 @@ export function useMapEditor(canvasSize: CanvasSize) {
         lastGenRef.current = {
           params,
           seed,
+          recipe,
           placements: gen.placements,
           elementIds: elements.map((e) => e.id),
         };
@@ -1235,9 +1250,9 @@ export function useMapEditor(canvasSize: CanvasSize) {
       }
 
       const last = lastGenRef.current;
-      // 局部重掷的 preset 只认**上一次生成**的参数：弹层里改了预设再点重掷，
-      // 换名的池子也不能跟着变 —— 那等于偷偷换了配方
-      const lastPreset = MAP_PRESETS.find((p) => p.id === last.params.presetId) ?? MAP_PRESETS[0];
+      // 局部重掷只认**上一次生成**留下的配方：弹层里再换参数也不能偷偷换掉
+      // 这张图的地形配比（换名字池 / 换河数都算换配方）
+      const lastRecipe = last.recipe;
 
       // ── land：只换陆地（素材/地名原位保留）────────────────────
       if (gear === "land") {
@@ -1248,26 +1263,36 @@ export function useMapEditor(canvasSize: CanvasSize) {
           seed: landSeed,
           bounds: BASE_BOUNDS,
           // 「只换陆地」也跟随弹层里选的形状与底色（与 all 档同一套参数）
-          shape: last.params.shapeId,
+          shape: resolveShapeId(last.params.shapeId, last.seed),
         });
-        land.baseColor = landColorOf(last.params.landColorId).color;
+        land.baseColor = landColorOf(resolveLandColorId(last.params.landColorId, last.seed)).color;
         const kept = current.regions.filter((r) => r.origin === "manual");
         const regions = [...buildRegions(land, undefined, regionSchemaOf(current)), ...kept];
         // 纹理带跟新陆地重算（同配方同档位；纯几何，不消耗任何子流骰子）
         const bands = computeTerrainZones(
           land,
-          lastPreset.climate,
+          lastRecipe.climate,
           Math.max(8, GRID_SIZES[last.params.richness]),
         );
         // 陆地换了 → 旧河湖必然不在岸上，用水系子流重算（不动素材与地名）
         const water = generateWater({
           land,
           seed: last.seed,
-          preset: lastPreset,
+          recipe: lastRecipe,
           richness: last.params.richness,
           tuning: resolveGeneratorTuning(last.params),
         });
-        store.applyGenerated({ land, regions, bands, polylines: water });
+        // 聚落原位不动 → 道路按现有素材坐标在新陆地上重新寻路（穿海的那几条自动消失）
+        const roadGrid = roadGridOfLand(land, Math.max(8, GRID_SIZES[last.params.richness]));
+        const roadNodes: RoadNode[] = current.elements.flatMap((el) => {
+          const tier = settlementTierOf(el.spriteId);
+          if (!tier) return [];
+          const col = Math.floor((el.x - roadGrid.x) / roadGrid.cellSize);
+          const row = Math.floor((el.y - roadGrid.y) / roadGrid.cellSize);
+          return [{ col, row, x: el.x, y: el.y, tier }];
+        });
+        const roads = buildRoadNet(roadNodes, { grid: roadGrid, seed: last.seed });
+        store.applyGenerated({ land, regions, bands, polylines: [...water, ...roads] });
         return `已重掷陆地（${land.polygons.length} 块）：素材与地名保持原位，落在海面上的可手动挪回陆地（可撤销）`;
       }
 
@@ -1279,7 +1304,7 @@ export function useMapEditor(canvasSize: CanvasSize) {
         const gen = generateMap({
           seed: last.seed,
           bounds: BASE_BOUNDS,
-          preset: lastPreset,
+          recipe: lastRecipe,
           richness: last.params.richness,
           mode: "full",
           pool: SPRITES,
@@ -1289,7 +1314,7 @@ export function useMapEditor(canvasSize: CanvasSize) {
           tuning: resolveGeneratorTuning(last.params),
         });
         const named = last.params.withLabels
-          ? assignPlacementNames(gen.placements, lastPreset, last.seed)
+          ? assignPlacementNames(gen.placements, lastRecipe, last.seed)
           : [];
         const elements = toElements(gen.placements);
         const labels = toLabels(named, elements, gen.placements);
@@ -1322,7 +1347,7 @@ export function useMapEditor(canvasSize: CanvasSize) {
             .filter((l) => !l.elementId || !lastIds.has(l.elementId))
             .map((l) => l.text),
         );
-        const named = assignPlacementNames(last.placements, lastPreset, last.seed, {
+        const named = assignPlacementNames(last.placements, lastRecipe, last.seed, {
           taken,
           nameSeed,
         });

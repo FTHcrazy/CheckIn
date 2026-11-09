@@ -2,11 +2,11 @@
 
 > 模块全貌与进度见 [map-window-overview.md](map-window-overview.md)（地图模块唯一入口）。
 
-> 状态：**S1 已落地 / S2~S4 预留**（S1 素材体系 2.22.0 / 2.25.0~2.26.0 闭环；S2 素材导入、S3 热门地图扩容、S4 AI 接口未动工）
+> 状态：**S1 已落地 / S2~S4 预留**（S1 素材体系 2.22.0 / 2.25.0~2.26.0 闭环；S2 素材导入、S3 预设扩容、S4 AI 接口未动工。⚠️ **2.45.0 已删除三档固定预设**，改按 seed 随机配方 —— 见 §七 顶部注记）
 > 输入：`review/map-vs-reference-interaction-review.md` §R-MAP-22（上游需求）、`assets/sprites/MANIFEST.json`（素材登记）、[`map-window-overview.md`](map-window-overview.md)（模块总览）
-> 基线：CheckIn **2.36.0**（工作区）｜素材 **52** 张符号 + 4 张底图（`pnpm count:sprites`）；S1 落地时点为 2.22.x
-> 版本：v1.2（S1 已落地） · 日期：2026-11-04
-> 服务对象：B3 一键成图生成器（R-MAP-21）、后续热门地图生成与 AI 接线
+> 基线：CheckIn **2.45.0**（工作区）｜素材 **52** 张符号 + 4 张底图（`pnpm count:sprites`）；S1 落地时点为 2.22.x
+> 版本：v1.3（S1 已落地；§七 预设改为随机配方） · 日期：2026-11-09
+> 服务对象：B3 一键成图生成器（R-MAP-21）、后续地形配方调优与 AI 接线
 
 ---
 
@@ -20,13 +20,13 @@ B2 之后素材已达 45 张（6 分类）+ 4 张底图，全部 AI 生成；2.2
 
 1. 素材只有**面板展示分类**（mountain/forest/…），没有**地形语义标签**，机器无法按地形选材；
 2. 没有用户导入通道（`map_assets` 表已建、未启用）；
-3. 「十万大山」「南疆沼泽」这类热门地图没有数据结构承载。
+3. 「十万大山」「南疆沼泽」这类**具名地形配方**没有数据结构承载（2.45.0 起改为 `MapRecipe` 随机配方，具名配方退为「未来的手调覆盖」）。
 
 **目标**：建立「地形枚举 → 素材标注 → 选材引擎 → 供给层」四层体系，
-导入 / 热门地图 / AI 三个预留能力都挂在这四层上，不另起炉灶。
+导入 / 地形配方 / AI 三个预留能力都挂在这四层上，不另起炉灶。
 
 **不包含**（本期不做，只留接口位）：导入 UI 的具体交互稿、AI prompt 的具体
-措辞、热门地图预设的数值调优。
+措辞、随机配方家族区间的数值调优。
 
 ---
 
@@ -125,7 +125,9 @@ src/windows/MapWindow/
 │  ├─ domain/                         # ★ 新增：地图域纯逻辑层（无 IO、无 React、vitest 直测）
 │  │  ├─ terrain.ts                   #   TerrainKind 枚举 + TERRAIN_META
 │  │  ├─ terrain-assets.ts            #   选材引擎 pickTerrainSprites()（见 §五）
-│  │  └─ mapPresets.ts                #   热门地图预设登记表 MapPresetDef（见 §七）
+│  │  ├─ mapRecipe.ts                 #   地形配方 + 按 seed 随机抽样（见 §七，2.45.0）
+│  │  ├─ settlements.ts               #   聚落三层选址（2.45.0）
+│  │  └─ roads.ts                     #   道路选边 + A* 寻路（2.45.0）
 │  ├─ sprites.ts                      # 登记表（唯一事实源）：SpriteDef 扩 terrains/weight
 │  └─ …
 └─ …
@@ -210,9 +212,20 @@ export function pickTerrainSprites(
 
 ---
 
-## 七、热门地图生成（预留设计）
+## 七、地形配方与随机生成（原「热门地图生成（预留设计）」）
 
-新增 `domain/mapPresets.ts` 登记表，一个预设 = 一张「地形配方」：
+> ⚠️ **2.45.0 起本节已被取代**：三档固定预设（十万大山 / 南疆沼泽 / 万里雪原）
+> **已删除**（`domain/mapPresets.ts` 移除）。用户裁决「去除一键成图中三个热门
+> 地图，先完全随机」——预设等于锁死"这张图长什么样"，连点三次「换一张」得到的
+> 还是同一类地貌。现行实现：`domain/mapRecipe.ts` 的 `randomRecipe(seed)`，
+> 接口形态与下表同名（`MapRecipe` 取代 `MapPresetDef`，`id` = `rnd-<seed>`、
+> `label` = 「随机」），随机发生在**家族层**（各家族有占比区间与出现概率，
+> 山体与开阔地必出），家族内再挑 1~2 个具体地形。下表保留作历史设计记录，
+> **不要再按它新增预设**；将来若要做"具名地图"，正确的入口是给 `MapRecipe`
+> 加一个**手调覆盖**（用户把随机结果微调后存成自己的配方），而不是回到写死表。
+
+原设计（2.25.0 落地，2.45.0 删除预设部分）——`domain/mapPresets.ts` 登记表，
+一个预设 = 一张「地形配方」：
 
 ```ts
 export interface MapPresetDef {
@@ -225,8 +238,8 @@ export interface MapPresetDef {
 }
 ```
 
-首版占位 3 个：十万大山（mountain 0.55 / forest 0.30 / river 0.10 / landmark 0.05）、
-南疆沼泽（swamp 0.50 / jungle 0.30 / river 0.15 / settlement 0.05）、
+首版曾占位 3 个（**均已删除**）：十万大山（mountain 0.55 / forest 0.30 / river 0.10 /
+landmark 0.05）、南疆沼泽（swamp 0.50 / jungle 0.30 / river 0.15 / settlement 0.05）、
 万里雪原（snowfield 0.60 / mountain 0.25 / tundra 0.15，**`climate: "snow"`**）。
 
 - 生成器（B3）的职责边界：**预设只回答「铺什么地形、占多少」，怎么摊到画布上
@@ -285,7 +298,7 @@ sprites.ts（本地池）   map-assets IPC（导入池）   mapPresets.ts / MapA
 | S1（**已落地 2.25.0**） | `domain/terrain.ts`（TerrainKind 20 项 + TERRAIN_META + isTerrainKind 收敛口）+ 52 张 terrains/weight 标注 + `domain/terrain-assets.ts` 引擎（pickTerrainSprites：seed 确定性 / 加权不放回 / exclude / 回退链补位——语义为主地形优先、不足按链补满）+ `domain/mapPresets.ts`（3 预设 + expandTerrainMix 最大余数法）+ 守卫测试（terrains 非空 / id 唯一 / 回退链无环可达 / 预设 share=1 / 真实池冒烟） | R-MAP-21 前置 |
 | B3（**已落地 2.25.0**） | `domain/generator.ts`（三子流确定性引擎：分区配方成片布点 / 核心盒碰撞允许层叠 / 地名三档名池）+ `MapGeneratorModal`（预设/丰度/成图-骨架/含地名/划分区块）+ 五档重掷 + 结果摘要 + 底图选择器（`doc.baseImageId` 进撤销栈） | R-MAP-21 |
 | S2 | 导入三通道（import/list/delete）+ 标注弹层 + 「我的素材」分组 | 独立批次，S1 后任意时点 |
-| S3 | 热门地图预设扩容 + 预设选择 UI | B3 之后的迭代 |
+| S3 | ~~预设扩容 + 预设选择 UI~~ → **2.45.0 改为随机配方**（预设删除）；余下空间是「随机结果手调后存成自己的配方」 | B3 之后的迭代 |
 | S4 | AiMapAdvisor 接线（suggestTerrainMix / suggestNames） | AI 排期，对齐 R-AI 批次纪律 |
 
 **风险与对策**：

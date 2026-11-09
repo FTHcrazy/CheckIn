@@ -22,6 +22,7 @@
  */
 
 import { pointInLand } from "../land";
+import { pointInPolygon } from "../regions";
 import type { MapLand, MapPolyline, Point } from "../types";
 import type { TerrainKind } from "./terrain";
 
@@ -109,7 +110,7 @@ function cellHeight(
  * 【为什么用 BFS 而不是真实距离】河要的是"哪边靠海"这个单调梯度；欧氏距离在
  * 海湾/半岛处会把河引回湾里，BFS 的等距线更贴海岸走向。
  */
-function seaDistance(cells: readonly WaterCell[], cols: number, rows: number): number[] {
+export function seaDistance(cells: readonly WaterCell[], cols: number, rows: number): number[] {
   const dist = new Array<number>(cells.length).fill(Number.POSITIVE_INFINITY);
   const queue: number[] = [];
   for (let i = 0; i < cells.length; i += 1) {
@@ -642,7 +643,16 @@ export function buildWaterNet(
     }
     if (rings.length === 0) continue;
 
+    /**
+     * 占格：**顶点所在格 + 格心落在湖面内的格**（2.45.0 补）。
+     *
+     * 【为什么不能只标顶点格】小湖的半径不到一格，顶点格可能只有湖心那一格；
+     * 于是紧邻湖岸的格仍然是"陆地"，道路与素材都会压在画出来的水面上
+     * （成图上表现为"一条路横穿湖面"）。按格心做一次点在多边形内判定，
+     * 才能真正把"画出来的水面"从可通行区域里挖掉。
+     */
     for (const p of rings[0]) out.cells.add(rowColIndex(p, cols, rows, cellSize, c));
+    markCellsInside(rings[0], cells, out.cells);
     rings.forEach((points, k) => {
       out.polylines.push({
         id: `pl_gen_lake_${idx}_${k}`,
@@ -678,4 +688,34 @@ function rowColIndex(
   const col = Math.min(cols - 1, Math.max(0, Math.round((p.x - originX) / cellSize)));
   const row = Math.min(rows - 1, Math.max(0, Math.round((p.y - originY) / cellSize)));
   return row * cols + col;
+}
+
+/**
+ * 把**格心落在湖面内**的格全部登记为水面（2.45.0）。
+ *
+ * 只用顶点格会漏掉"岸边一圈"：湖半径可能只有 0.6 格，顶点格之外的邻格仍然
+ * 被当成陆地 —— 道路顺着它穿过去，成图上就是"一条点线横穿湖面"。
+ * 这里按湖的包围盒遍历格心，用同一个射线法判定，代价是几十次多边形测试。
+ */
+function markCellsInside(
+  ring: Point[],
+  cells: readonly WaterCell[],
+  out: Set<number>,
+): void {
+  if (ring.length < 3) return;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const p of ring) {
+    if (p.x < minX) minX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y > maxY) maxY = p.y;
+  }
+  for (let i = 0; i < cells.length; i += 1) {
+    const c = cells[i];
+    if (c.x < minX || c.x > maxX || c.y < minY || c.y > maxY) continue;
+    if (pointInPolygon({ x: c.x, y: c.y }, ring)) out.add(i);
+  }
 }

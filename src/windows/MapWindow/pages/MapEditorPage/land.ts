@@ -1403,6 +1403,35 @@ export function pointInLand(p: Point, land: MapLand | null): boolean {
 }
 
 /**
+ * 陆地实际包围盒（所有环的顶点极值）；没有环时回落到纸张矩形。
+ *
+ * 【为什么不是 `land.bounds`】`bounds` 是**整张纸**，陆地只占其中 55%~70%。
+ * 格网（布点 / 水系 / 道路）必须贴着陆地铺，否则一半格子永远是海，
+ * 密度与"离岸距离"都会被纸张边距污染。
+ */
+export function landBBoxOf(land: MapLand): Rect {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const ring of land.polygons) {
+    for (const p of ring) {
+      if (p.x < minX) minX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y > maxY) maxY = p.y;
+    }
+  }
+  if (!Number.isFinite(minX)) return land.bounds;
+  return {
+    x: minX,
+    y: minY,
+    width: Math.max(1, maxX - minX),
+    height: Math.max(1, maxY - minY),
+  };
+}
+
+/**
  * 素材落位的最小离岸距离（世界单位）：锚点不得压进陆岸 14 单位。
  *
  * 【为什么是 14 而不是更小/更大】海岸四层里的「陆岸内阴影」宽 22

@@ -1,7 +1,7 @@
 /**
  * 一键成图弹层（B3 / R-MAP-21）。
  *
- * 纯展示 + 参数收集：预设 / 丰度 / 档位 / 大陆形状 / 大陆底色 / 要素大小 /
+ * 纯展示 + 参数收集：丰度 / 档位 / 大陆形状 / 大陆底色 / 要素大小 /
  * 生成内容 / 山体 / 河流 / 两个开关，加一段结果摘要与五档重掷按钮。全部写操作
  * 转给 `onGenerate`（`useMapEditor.generateFullMap`），组件不碰 store ——
  * 与 MapLibraryModal 同一条边界。
@@ -14,7 +14,9 @@
  *   · 要素大小：正常 / 较小 / 最小（全局素材倍率）
  *   · 生成内容：草地 / 森林 / 沙漠 / 浅海 / 两极冰雪 / 城镇 / 遗迹（按地形组勾选）
  *   · 山体、河流：正常 / 多 / 少 / 无（分族密度）
- * 预设（热门地图）与丰度档是本项目原有的两个维度，参考面板没有对应项，保留。
+ * 2.45.0 删掉了「热门地图」三档固定配方：配方由 seed 随机抽（`domain/mapRecipe`），
+ * 弹层里只留「这张图要多密 / 多大 / 什么形状 / 什么底色」。形状与底色的默认值
+ * 也改成「随机」—— 一键成图的意思就是"每次都不一样"，想要定向才手动选。
  *
  * 【为什么不用 Drawer】生成是"弹出来试一下"的低频动作，试完就回画布；
  * 抽屉会把画布挤变形，弹窗盖在上面更贴"试吃"心智。
@@ -22,7 +24,7 @@
 import { useState } from "react";
 import { Button, Checkbox, Modal, Select, Switch, Tooltip } from "antd";
 import { PictureOutlined, ReloadOutlined } from "@ant-design/icons";
-import { MAP_PRESETS } from "../../domain/mapPresets";
+import { RANDOM_CHOICE } from "../../domain/mapRecipe";
 import {
   LAND_BASE_COLORS,
   LAND_SHAPES,
@@ -82,22 +84,29 @@ const CONTENT_OPTIONS = CONTENT_KEYS.map((key) => ({
   label: CONTENT_LABELS[key],
 }));
 
-const SHAPE_OPTIONS = LAND_SHAPES.map((s) => ({ value: s.id, label: s.label }));
+/** 形状选项：第一项是「随机」（缺省），后面才是 12 种固定形状 */
+const SHAPE_OPTIONS = [
+  { value: RANDOM_CHOICE, label: "随机" },
+  ...LAND_SHAPES.map((s) => ({ value: s.id, label: s.label })),
+];
 
 /** 底色选项：色点 + 名称（Select 的 label 是 ReactNode，直接渲染小圆点） */
-const COLOR_OPTIONS = LAND_BASE_COLORS.map((c) => ({
-  value: c.id,
-  label: (
-    <span className="map-generator__color-option">
-      <span
-        aria-hidden
-        className="map-generator__color-dot"
-        style={{ backgroundColor: `#${c.color.toString(16).padStart(6, "0")}` }}
-      />
-      {c.label}
-    </span>
-  ),
-}));
+const COLOR_OPTIONS = [
+  { value: RANDOM_CHOICE, label: "随机" },
+  ...LAND_BASE_COLORS.map((c) => ({
+    value: c.id,
+    label: (
+      <span className="map-generator__color-option">
+        <span
+          aria-hidden
+          className="map-generator__color-dot"
+          style={{ backgroundColor: `#${c.color.toString(16).padStart(6, "0")}` }}
+        />
+        {c.label}
+      </span>
+    ),
+  })),
+];
 
 export default function MapGeneratorModal({
   open,
@@ -107,7 +116,6 @@ export default function MapGeneratorModal({
   hasGenerated,
   lastParams,
 }: MapGeneratorModalProps) {
-  const [presetId, setPresetId] = useState(MAP_PRESETS[0]?.id ?? "");
   const [richness, setRichness] = useState<GeneratorRichness>("standard");
   // 默认档 = 成图（用户拍板）：一键出去的就是"有山有水有城有名"的图
   const [mode, setMode] = useState<GeneratorMode>("full");
@@ -119,11 +127,10 @@ export default function MapGeneratorModal({
   const [riverDensity, setRiverDensity] = useState<DensityLevel>("normal");
   const [elementSize, setElementSize] = useState<GeneratorElementSize>("normal");
   // 大陆形状 / 底色（2.41.0 对齐参考面板）：缺省 = 现状行为
-  const [shapeId, setShapeId] = useState<LandShapeId>("normal");
-  const [landColorId, setLandColorId] = useState<string>("parchment");
+  const [shapeId, setShapeId] = useState<LandShapeId | typeof RANDOM_CHOICE>(RANDOM_CHOICE);
+  const [landColorId, setLandColorId] = useState<string>(RANDOM_CHOICE);
 
   const currentParams = (): GeneratorParams => ({
-    presetId,
     richness,
     mode,
     contents,
@@ -165,16 +172,6 @@ export default function MapGeneratorModal({
       ]}
     >
       <div className="map-generator">
-        <div className="map-generator__row">
-          <span className="map-generator__label">热门地图</span>
-          <Select
-            className="map-generator__control"
-            size="small"
-            value={presetId}
-            options={MAP_PRESETS.map((p) => ({ value: p.id, label: p.label }))}
-            onChange={setPresetId}
-          />
-        </div>
         <div className="map-generator__row">
           <span className="map-generator__label">丰度</span>
           <Select

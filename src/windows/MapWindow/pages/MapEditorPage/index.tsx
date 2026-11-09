@@ -1646,7 +1646,7 @@ export default function MapEditorPage() {
           该点的按钮），「生成陆地」等手动动作降为进阶路径。
         */}
         <div className="map-editor__toolbar-group">
-          <Tooltip title="按热门地图配方一键生成整张图（陆地 + 素材 + 地名，可撤销）">
+          <Tooltip title="随机生成整张图（陆地 + 素材 + 聚落与道路 + 地名，可撤销）">
             <Button
               size="small"
               icon={<PictureOutlined />}

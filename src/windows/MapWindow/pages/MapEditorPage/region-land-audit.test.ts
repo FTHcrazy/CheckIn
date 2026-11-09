@@ -23,7 +23,7 @@ import {
   type Point,
 } from "./regions";
 import { generateMap } from "./domain/generator";
-import { MAP_PRESETS } from "./domain/mapPresets";
+import { randomRecipe } from "./domain/mapRecipe";
 import { SPRITES, SPRITE_MAP } from "./sprites";
 
 const SEEDS = [42, 20260411, 1, 2, 3, 7, 13, 99, 777, 31337, 555, 8888];
@@ -156,7 +156,7 @@ describe("守卫 2：素材渲染宽 / 陆地轴长（素材相对比例）", ()
     const gen = generateMap({
       seed,
       bounds: BASE_BOUNDS,
-      preset: MAP_PRESETS[0],
+      recipe: randomRecipe(seed),
       richness: "standard",
       mode: "full",
       pool: SPRITES,
