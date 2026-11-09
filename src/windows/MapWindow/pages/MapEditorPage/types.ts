@@ -112,8 +112,13 @@ export interface MapLabel {
 export interface MapPolyline {
   /** 实例唯一 id（`pl_` 前缀） */
   id: string;
-  /** 语义类型（决定默认样式与图标，不影响几何） */
-  kind: "road" | "river" | "ridge" | "border" | "route";
+  /**
+   * 语义类型（决定默认样式与图标，不影响几何）。
+   *
+   * `lake` = 闭合的湖面轮廓（2.44.0 起由一键成图产出）：渲染时外环**填充**浅水色、
+   * 内环只描边（等深线）。它和其余线共用同一套节点编辑与命中，只是外观档不同。
+   */
+  kind: "road" | "river" | "ridge" | "border" | "route" | "lake";
   /** 样式档 id（见 B4 PRD §4.4 的样式表）；`kind` 只是默认样式的来源 */
   styleId: string;
   /** 世界坐标控制点；首尾是端点，中间是控制点（渲染时走 Catmull-Rom 平滑） */
@@ -134,6 +139,14 @@ export interface MapPolyline {
    * 可选 + 零写入：没拖过滑杆的线不写这个字段。
    */
   widthScale?: number;
+  /**
+   * 来源：`"generated"` = 一键成图产出的水系（河流 / 湖面）。
+   *
+   * 【为什么需要它】重新生成时要**只换掉上一批自动水系**，用户手画的线必须留下
+   * （与 `MapRegion.origin` 同一裁决）。可选 + 零写入：手画的线不写值，
+   * 读点一律按"不是 generated 就是用户的"处理。
+   */
+  origin?: "generated";
 }
 
 /**

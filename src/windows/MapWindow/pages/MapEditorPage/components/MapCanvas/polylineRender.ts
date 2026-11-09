@@ -226,6 +226,19 @@ export function drawPolyline(
   // 落回等宽描边，而不是走进 taper 分支后什么都没画就 return（线直接消失）。
   const canFill =
     typeof target.beginFill === "function" && typeof target.endFill === "function";
+
+  // 湖面（2.44.0）：闭合轮廓先铺一层浅水色，再描岸线。填充用 `style.fill.alpha`
+  // 而不是 `style.alpha` —— 后者是**描边**的浓度，两者在样式表里各自独立
+  // （岸线要读得清、水面要透得出底纹），用其中一个顶替另一个会得到"要么湖看不见、
+  // 要么岸线糊成一片"。开链不吃填充（见 `PolylineStyle.fill` 的说明）。
+  if (closed && style.fill && canFill) {
+    target.beginFill!(style.fill.color, style.fill.alpha * options.alpha);
+    target.moveTo(path[0].x, path[0].y);
+    for (let i = 1; i < path.length; i += 1) target.lineTo(path[i].x, path[i].y);
+    target.lineTo(path[0].x, path[0].y);
+    target.endFill!();
+  }
+
   if (style.taper && !closed && canFill) {
     drawTaperedFill(target, path, style.taper, width, style.color, baseAlpha);
     if (style.casing) {

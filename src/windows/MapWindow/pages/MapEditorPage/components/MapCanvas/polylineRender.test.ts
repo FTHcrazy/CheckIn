@@ -320,3 +320,60 @@ describe("drawPolyline · B4-3 变宽与笔刷", () => {
     );
   });
 });
+
+/**
+ * 湖面（2.44.0）：闭合轮廓 → 一次填充 + 一笔岸线。
+ *
+ * 【为什么这条必须单测】填充与描边的**先后**决定观感：先描后填会把岸线整圈
+ * 盖掉（湖变成一个没有边界的色斑）。这里断言 op 顺序，而不是只看"调用过 fill"。
+ */
+describe("drawPolyline · 湖面填充", () => {
+  const lake = (overrides: Partial<MapPolyline> = {}): MapPolyline =>
+    line({
+      kind: "lake",
+      styleId: "lake",
+      closed: true,
+      points: [
+        { x: 0, y: 0 },
+        { x: 100, y: 0 },
+        { x: 100, y: 80 },
+        { x: 0, y: 80 },
+      ],
+      ...overrides,
+    });
+
+  it("先填充浅水色、再描岸线（顺序反了岸线会消失）", () => {
+    const { target, ops } = fillRecorder();
+    drawPolyline(target, lake(), { scale: 1, alpha: 1 });
+    const style = polylineStyleOf("lake", "lake");
+    expect(fills(ops)).toHaveLength(1);
+    expect(fills(ops)[0].color).toBe(style.fill!.color);
+    expect(fills(ops)[0].alpha).toBeCloseTo(style.fill!.alpha);
+    const fillEnd = ops.findIndex((o) => o.op === "fillEnd");
+    const firstStroke = ops.findIndex((o) => o.op === "stroke");
+    expect(fillEnd).toBeGreaterThan(-1);
+    expect(firstStroke).toBeGreaterThan(fillEnd);
+    expect(strokes(ops)[0].color).toBe(style.color);
+  });
+
+  it("填充浓度跟层级权重相乘（淡出时湖面一起淡）", () => {
+    const { target, ops } = fillRecorder();
+    drawPolyline(target, lake(), { scale: 1, alpha: 0.5 });
+    const style = polylineStyleOf("lake", "lake");
+    expect(fills(ops)[0].alpha).toBeCloseTo(style.fill!.alpha * 0.5);
+  });
+
+  it("开链不吃填充（一条路不该被涂成一块面）", () => {
+    const { target, ops } = fillRecorder();
+    drawPolyline(target, lake({ closed: false }), { scale: 1, alpha: 1 });
+    expect(fills(ops)).toHaveLength(0);
+    expect(strokes(ops)).toHaveLength(1);
+  });
+
+  it("等深线只描边、不填充", () => {
+    const { target, ops } = fillRecorder();
+    drawPolyline(target, lake({ styleId: "lake-ring" }), { scale: 1, alpha: 1 });
+    expect(fills(ops)).toHaveLength(0);
+    expect(strokes(ops)).toHaveLength(1);
+  });
+});

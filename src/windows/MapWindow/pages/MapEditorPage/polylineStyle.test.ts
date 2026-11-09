@@ -22,14 +22,25 @@ import {
  */
 
 describe("样式表", () => {
-  it("五档、id 唯一、覆盖五类语义", () => {
-    expect(POLYLINE_STYLES).toHaveLength(5);
-    expect(new Set(POLYLINE_STYLES.map((s) => s.id)).size).toBe(5);
+  it("七档、id 唯一、覆盖五类语义（含 2.44.0 的湖面两档）", () => {
+    expect(POLYLINE_STYLES).toHaveLength(7);
+    expect(new Set(POLYLINE_STYLES.map((s) => s.id)).size).toBe(7);
     expect(new Set(POLYLINE_STYLES.map((s) => s.kind))).toEqual(
-      new Set(["road", "river", "ridge", "border"]),
+      new Set(["road", "river", "ridge", "border", "lake"]),
     );
-    // 两种 road（官道 / 小径）
+    // 两种 road（官道 / 小径）、两种 lake（湖面 / 等深线）
     expect(POLYLINE_STYLES.filter((s) => s.kind === "road")).toHaveLength(2);
+    expect(POLYLINE_STYLES.filter((s) => s.kind === "lake")).toHaveLength(2);
+  });
+
+  it("只有湖面档带填充，且填充必须比岸线淡（否则湖会糊成一坨实心色）", () => {
+    const filled = POLYLINE_STYLES.filter((s) => s.fill);
+    expect(filled.map((s) => s.id)).toEqual(["lake"]);
+    const lake = POLYLINE_STYLES.find((s) => s.id === "lake");
+    expect(lake?.fill?.alpha).toBeGreaterThan(0);
+    expect(lake?.fill?.alpha).toBeLessThanOrEqual(1);
+    // 等深线不填充：它的作用是"读深浅"，填了就成了第二个湖
+    expect(POLYLINE_STYLES.find((s) => s.id === "lake-ring")?.fill).toBeUndefined();
   });
 
   it("每档的线宽与颜色都在有效范围（0 宽画不出来、负数会让 stroke 直接吞掉）", () => {

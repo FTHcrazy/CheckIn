@@ -4,6 +4,7 @@ import {
   computeTerrainZones,
   elementSeedOf,
   generateMap,
+  generateWater,
   GRID_SIZES,
   installSpriteNamesResolver,
   landSeedOf,
@@ -779,7 +780,15 @@ export function useMapEditor(canvasSize: CanvasSize) {
       const regions = splitRegions
         ? [...buildRegions(land, undefined, regionSchemaOf(current)), ...kept]
         : kept;
-      useMapDocStore.getState().generateLand(land, regions);
+      // 新陆地 → 新水系（与「只换陆地」同一算法；默认预设 + 标准格网）。
+      // 少了这一步，旧河会在海面上留下来 —— 比没有河更像 bug。
+      const water = generateWater({
+        land,
+        seed: nextSeed,
+        preset: MAP_PRESETS[0],
+        richness: "standard",
+      });
+      useMapDocStore.getState().generateLand(land, regions, water);
     },
     [buildRegions, liveDoc],
   );
@@ -1204,7 +1213,14 @@ export function useMapEditor(canvasSize: CanvasSize) {
           ? [...buildRegions(gen.land, undefined, regionSchemaOf(current)), ...kept]
           : kept;
         // 纹理带随全量生成走；骨架档不带（gen.bands = undefined → 显式清掉旧带）
-        store.applyGenerated({ land: gen.land, elements, labels, regions, bands: gen.bands ?? null });
+        store.applyGenerated({
+          land: gen.land,
+          elements,
+          labels,
+          regions,
+          bands: gen.bands ?? null,
+          polylines: gen.polylines,
+        });
         lastGenRef.current = {
           params,
           seed,
@@ -1243,7 +1259,15 @@ export function useMapEditor(canvasSize: CanvasSize) {
           lastPreset.climate,
           Math.max(8, GRID_SIZES[last.params.richness]),
         );
-        store.applyGenerated({ land, regions, bands });
+        // 陆地换了 → 旧河湖必然不在岸上，用水系子流重算（不动素材与地名）
+        const water = generateWater({
+          land,
+          seed: last.seed,
+          preset: lastPreset,
+          richness: last.params.richness,
+          tuning: resolveGeneratorTuning(last.params),
+        });
+        store.applyGenerated({ land, regions, bands, polylines: water });
         return `已重掷陆地（${land.polygons.length} 块）：素材与地名保持原位，落在海面上的可手动挪回陆地（可撤销）`;
       }
 
@@ -1269,7 +1293,13 @@ export function useMapEditor(canvasSize: CanvasSize) {
           : [];
         const elements = toElements(gen.placements);
         const labels = toLabels(named, elements, gen.placements);
-        store.applyGenerated({ land: gen.land, elements, labels, bands: gen.bands });
+        store.applyGenerated({
+          land: gen.land,
+          elements,
+          labels,
+          bands: gen.bands,
+          polylines: gen.polylines,
+        });
         lastGenRef.current = {
           ...last,
           placements: gen.placements,

@@ -11,7 +11,6 @@ import {
   ELEMENT_SIZE_FACTOR,
   GRID_SIZES,
   MOUNTAIN_TERRAINS,
-  RIVER_TERRAINS,
   assignPlacementNames,
   defaultContents,
   elementSeedOf,
@@ -677,14 +676,18 @@ describe("generateMap 面板控制（内容开关 / 分族密度 / 要素大小�
     expect(noForest.placements.length).toBeGreaterThan(base.placements.length * 0.6);
   });
 
-  it("「山体：无」⇒ 山地族一条不剩；「河流：无」⇒ 河流族一条不剩", () => {
+  it("「山体：无」⇒ 山地族一条不剩；「河流：无」⇒ 一条河都不画", () => {
     const noMountain = withTuning(20260411, { mountainDensity: "none" });
     const byTerrain = countByTerrain(noMountain.placements);
     for (const t of MOUNTAIN_TERRAINS) expect(byTerrain[t] ?? 0).toBe(0);
 
+    // 2.44.0 起水系是**折线**（河 + 湖），不再是素材：判据改成 polylines
+    const base = generateMap(makeOpts(20260411));
+    expect(base.polylines.filter((l) => l.kind === "river").length).toBeGreaterThan(0);
+    expect(base.polylines.filter((l) => l.kind === "lake").length).toBeGreaterThan(0);
+
     const noRiver = withTuning(20260411, { riverDensity: "none" });
-    const byRiver = countByTerrain(noRiver.placements);
-    for (const t of RIVER_TERRAINS) expect(byRiver[t] ?? 0).toBe(0);
+    expect(noRiver.polylines).toEqual([]);
     // 其它族被归一化放大 ⇒ 图不会被削薄
     expect(noRiver.placements.length).toBeGreaterThan(0);
   });

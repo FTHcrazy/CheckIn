@@ -1,7 +1,7 @@
 # 地图素材「和谐分布」机制逆向分析与差距归因
 
 > 状态：**分析定稿 + 执行中**（静态分析结论，未做运行时捕获）。落地进度以
-> [§9 执行总表](#9-执行总表交接用) 为准：已完成 21 项、执行序 1~9 及序 11~12 全部闭环；剩余 2 条均为并行轨（阻塞中）。
+> [§9 执行总表](#9-执行总表交接用) 为准：已完成 22 项、执行序 1~9 及序 11~13 全部闭环；剩余 2 条均为并行轨（阻塞中）。
 > 输入：`docs/archive/prd-map/map-render-alignment-architecture.md`、
 > `prd-map-render/map-asset-system-architecture.md`、`docs/archive/prd-map/map-render-alignment-prd.md`；
 > 目标站点公开前端产物 `all_model_base.js`（模块版本 1.122）
@@ -857,6 +857,7 @@ zone?: ("core" | "grass" | "desert" | "snow")[];
 | **P2-3** | 手工落位 AABB 避让：新素材中心落进已有素材命中盒 +30 呼吸边 → 拒绝落位并提示；**移动既有素材不设防**（解围路通） | 2.36.0 | `coords.ts`（`ELEMENT_PLACE_PAD` / `isCenterCovered`）、`hooks/useMapEditor.ts`（`placeSprite` 返回布尔）、`index.tsx`（保持待放态 + 提示） | `coords.test.ts` 4 条（盒内拦 / 呼吸边 / scale 参与外接盒 / some 语义）、`useMapEditor.test.tsx` 4 条（中心被压拦 / 边外放行 / 移动不拦 / 未登记 id 不参与） |
 | **ALGN-2** | 区块**样式三件**对齐逆向源值（§3.7 / `decoded.js@131642`）：填充 α 0.10 → **0.30**、边界 1.2 → **3 px**、颜色 `#27352e` → **`#73562d`**、`border_alpha` 0.32 → **1**；`REGION_LEVEL_FILL_SCALE` 抬到 `[1, .92, .86, .80]`（LOD 已接管压数量）；兄弟色相跨度 3° → **8°**、饱和 0.10~0.16 → **0.13~0.21**（0.30 下要读得出分块） | 2.38.0 | `regions.ts`（`REGION_FILL_ALPHA` / `REGION_BORDER_PX` / `REGION_BORDER_COLOR` / `REGION_BORDER_ALPHA` / `REGION_LEVEL_FILL_SCALE` / `REGION_WOBBLE.hueSpread` / `buildChildren` 取色） | `regions.test.ts`「区块样式与密度」4 条：数值 = 源值 + 线面浓度比 10:3、至多一级权重 > 0.5、全图视角主导层级 = 洲且 12 块 ≤ 20、0.30 下同级合成色两两平均差 ≥ 8/255（alpha 回退 0.10 时只剩 3.6 → 变红）。**注**：末条 2.39.0 起被 `ALGN-3` 的「相邻」色差守卫取代 —— "两两平均差"是错的度量（政治地图本来会复用颜色，不相邻同色是正常的），见 `ALGN-3`。 |
 | **ALGN-3** | 区块**配色与国名**：连续 HSL 取色 → **9 格固定色板 + 同层邻接校正**（相邻合成色差均值 3.6 → **26~32/255**）；区块名称上图层（`regionNameLayer`：√面积定字号、宋体疏排、只为 0~2 层建、懒创建 + 跟 `levelAlphas` 淡出）；海岸掩膜改用 `drawLandPath` 的**同一条曲线**（不再用弦多边形 + 外扩 3 单位） | 2.39.0 | `regions.ts`（`REGION_PALETTE` / `REGION_PALETTE_RGB` / `assignRegionColors` / `rgbDistance`）、`components/MapCanvas/regionNameLayer.ts`（新增）、`MapCanvas/index.tsx`（掩膜 + 国名分组）、`regionEdit.ts`（`manualRegionColor`） | `regions.test.ts` 4 条（色板两两合成色差 ≥ 10 / **相邻**均值 ≥ 22、最差 ≥ 12 / 洲一级 12 块 ≥ 8 色 / 确定性与整层同色可拆开）、`regionNameLayer.test.ts` 6 条、`render-stack-guard.test.ts` 3 条（掩膜走 `drawLandPath`、不向外扩、国名分组在边界之上且层级上限 2） |
+| **ALGN-6** | **水系折线化**：河流从「素材配方」改为格网路径折线（入海/汇流收尾、断头河必须有湖接住、端点沿岸二分裁切）+ 湖泊「外环填充 + 2 条等深线环」+ `river`/`lake` 退出素材区域生长（份额换算成条数）+ 自动水系独立子流与 `origin: "generated"` 只换自己那批 | 2.44.0 | 新增 `domain/water.ts`；`domain/generator.ts`（`waterSeedOf` / `waterTargetsOf` / `generateWater` / `GeneratedMap.polylines`）；`polylineStyle.ts`（`fill` + `lake` / `lake-ring` 两档）；`MapCanvas/polylineRender.ts`（闭合填充）；`types.ts`（`kind: "lake"` / `origin`）；`store/useMapDocStore.ts` + `hooks/useMapEditor.ts`（替换口径） | `water.test.ts` 8 条（河必须先入海/汇流、源头在高处、同 seed 逐点复现、0 条时干净；湖 = 3 环、内环严格嵌套、顶点全在岸内、源不够时少放）；`polylineRender.test.ts` 4 条（先填后描、填充乘层级权重、开链不填、等深线不填）；`polylineStyle.test.ts` 2 条（七档 / 只有湖面带填充）；`generator.test.ts`「河流：无 ⇒ 一条河都不画」 |
 
 ### 9.2 待办（按执行序排列）
 
@@ -869,10 +870,12 @@ zone?: ("core" | "grass" | "desert" | "snow")[];
 > 「区域只有国家一级、完全对齐逆向目标」）。
 > **序 12 已于 2.43.0 落地**（渲染管线按逆向目标逐步复刻：地貌纹理层 + paint_shadow
 > 三件 + 粉彩色板 + 仙侠体量档 + 地名限流）。
+> **序 13 已于 2.44.0 落地**（水系折线化：河流 + 湖泊水面/等深线）。
 > 明细见 §9.1，条目详情保留在下面供追溯。下表只剩并行轨 2 条。
 
 | 序 | 编号 | 事项 | 优先级 | 成本 | 依赖 |
 |---|---|---|---|---|---|
+| 13 | **ALGN-6** | 水系折线化（河流入海/汇流 + 湖泊外环填充 + 等深线环 + 独立子流） | **P0** | 已完成 2.44.0 | — |
 | 12 | **ALGN-5** | 地貌纹理层（草/沙/雪 tile 按带平铺）+ 白外影/内阴影 + 粉彩色板 + 体量仙侠档 + 地名限流 | **P0** | 已完成 2.43.0 | — |
 | 11 | **ALGN-4** | 层级功能整体下线（只留国家一级）+ 布点引擎对齐逆向源值（格网三档 / 弃格 / 3 层 / 森林丛簇）+ 国名白色化 | **P0** | 已完成 2.42.0 | — |
 | 9 | **ALGN-3** | 区块配色改色板 + 邻接校正、国名上图层、海岸掩膜改用陆地同一条曲线 | **P0** | 已完成 2.39.0 | — |

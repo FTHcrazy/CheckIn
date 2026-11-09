@@ -82,6 +82,14 @@ export interface PolylineStyle {
   };
   /** 该样式的透明度上限（河流略微透出河床；缺省 1） */
   alpha?: number;
+  /**
+   * 闭合线的填充（湖面用，2.44.0）：`beginFill` 一片浅水色。
+   *
+   * 【为什么只有闭合线吃它】开链"填充"= 把首尾虚拟连起来涂色，画出来是一块
+   * 与线段走向无关的色块；只有 `closed` 的轮廓才谈得上"面"。
+   * 缺省 = 不填充（河、路、界线都不填）。
+   */
+  fill?: { color: number; alpha: number };
   /** 面板 tooltip：一句话说清"什么时候用它" */
   hint: string;
 }
@@ -114,10 +122,10 @@ export const POLYLINE_STYLES: readonly PolylineStyle[] = [
     label: "河流",
     kind: "river",
     color: 0x2f6f7d,
-    width: 3.6,
+    width: 4.4,
     alpha: 0.92,
-    // 源头约 1/3 宽，入海口足宽：落笔的顺序就是水流的方向
-    taper: { from: 0.35, to: 1 },
+    // 源头约 0.3 宽，入海口足宽：落笔的顺序就是水流的方向
+    taper: { from: 0.3, to: 1 },
     hint: "蓝绿实线、源头细入海粗：从源头往入海口画（笔顺即流向）",
   },
   {
@@ -145,6 +153,39 @@ export const POLYLINE_STYLES: readonly PolylineStyle[] = [
     dash: [4, 2.6],
     fadeEnds: true,
     hint: "红褐长虚线、两端渐隐：国界 / 势力范围",
+  },
+  {
+    /**
+     * 湖面（2.44.0）：外环 = 浅水填充 + 一圈岸线。
+     *
+     * 【配色与邻近关系】参考成图的湖是**冷调浅水**，整张图其余部分偏暖土色 ——
+     * 这个冷暖对比正是"一眼看到水"的来源，不能跟着色板的土色走。填充取
+     * 灰蓝 `#bdd7dd`（高亮低饱和），岸线取深两档的 `#5f8794`：在 0.8 的区块
+     * 填充之上盖 0.82 的水色，湖面仍是"干净的一汪水"，不会与国色混成脏绿。
+     */
+    id: "lake",
+    label: "湖泊",
+    kind: "lake",
+    color: 0x5f8794,
+    width: 1.9,
+    alpha: 0.9,
+    fill: { color: 0xbdd7dd, alpha: 0.72 },
+    hint: "闭合轮廓 = 一汪湖水：外圈岸线 + 浅水填充",
+  },
+  {
+    /**
+     * 等深线（2.44.0）：湖面内的同心细环。
+     *
+     * 只描边、不填充，且比岸线更细更淡 —— 它的作用是"读得出深浅"，
+     * 一旦和岸线一样重，湖面会变成两三个套在一起的圈。
+     */
+    id: "lake-ring",
+    label: "等深线",
+    kind: "lake",
+    color: 0x6f97a6,
+    width: 1.3,
+    alpha: 0.55,
+    hint: "湖面内的同心细环：读作浅滩 / 深水线",
   },
 ];
 

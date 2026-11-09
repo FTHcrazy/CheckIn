@@ -30,10 +30,11 @@ import {
   pointInLand,
   type LandShapeId,
 } from "../land";
-import type { MapLand, Rect, TerrainBandGrid } from "../types";
+import type { MapLand, MapPolyline, Rect, TerrainBandGrid } from "../types";
 import { expandTerrainMix, type MapPresetDef } from "./mapPresets";
 import { TERRAIN_META, type TerrainKind } from "./terrain";
 import { flippableOf, mulberry32, pickTerrainSprites, type SpriteSource } from "./terrain-assets";
+import { buildWaterNet } from "./water";
 import { zoneAtY, type SpriteZone } from "./zones";
 
 /* ─────────────────── 子流盐值 ─────────────────── */
@@ -49,6 +50,16 @@ export function elementSeedOf(seed: number): number {
 /** 地名子流盐 */
 export function nameSeedOf(seed: number): number {
   return (seed ^ 0xc2b2ae35) >>> 0;
+}
+/**
+ * 水系子流盐（2.44.0）。
+ *
+ * 【为什么必须独立】河湖是**后加的**一层：若与素材共用 `elementSeedOf`，
+ * 加进来那一刻所有素材的坐标会整体位移（同一 seed 的老图对不上，回归测试也
+ * 会连片变红）。独立子流让"布点"与"水系"各自可复现、互不惊动。
+ */
+export function waterSeedOf(seed: number): number {
+  return (seed ^ 0x7f4a7c15) >>> 0;
 }
 
 /* ─────────────────── 参数与产物 ─────────────────── */
@@ -367,6 +378,14 @@ export interface GeneratedMap {
    * createPattern 面纹理层）。骨架档不带。
    */
   bands?: TerrainBandGrid;
+  /**
+   * 水系折线（2.44.0）：河流 + 湖泊（外环填充 + 内环等深线）。
+   *
+   * 【为什么是产物而不是渲染期派生】河湖是**可编辑要素**（拖节点、改样式、
+   * 删掉），必须进文档、进撤销栈；渲染期临时画的河一改陆地就消失，
+   * 用户没法修。骨架档为空数组（没有陆地就谈不上水系）。
+   */
+  polylines: MapPolyline[];
 }
 
 /* ─────────────────── 布点骨架：格网 + 层叠 + 丛簇（2.42.0 对齐逆向源码） ───────────────────
@@ -961,7 +980,7 @@ export function generateMap(options: GenerateMapOptions): GeneratedMap {
   // 底色随文档走（MapLand.baseColor → bakeCoast）；缺省 = 羊皮纸
   if (options.landColorId) land.baseColor = landColorOf(options.landColorId).color;
   if (options.mode === "skeleton" || land.polygons.length === 0) {
-    return { land, placements: [] };
+    return { land, placements: [], polylines: [] };
   }
 
   // 素材锚点按**内缩后的岸线**判落海：素材不压海岸 14 单位（见 land.ts 的 COAST_INSET）。
@@ -999,10 +1018,44 @@ export function generateMap(options: GenerateMapOptions): GeneratedMap {
   // ── 地貌纹理带（2.43.0）：布点格网 → 每格气候带，随文档持久化 ──
   // 不依赖 slots / 不消耗骰子；骨架档与空配方也要带（纹理跟着陆地走）。
   const bands = terrainBandsOf(cells, cols, rows, box, cellSize, options.preset.climate);
-  if (slots.length === 0) return { land, placements: [], bands };
+  if (slots.length === 0) return { land, placements: [], bands, polylines: [] };
 
-  // ── 地形分布（区域生长，多片）──
-  assignTerrainByGrowth(cells, cols, rows, slots, rng);
+  /**
+   * 水系与陆地素材**分开铺**（2.44.0）。
+   *
+   * `river` / `lake` 不再作为素材配方参与区域生长：它们的份额换算成"几条河 /
+   * 几个湖"，交给 `buildWaterNet` 画成折线（参考实现里水系本来就是 `Line` 要素）。
+   * 剩下的份额仍按原样成片分配 —— 关掉「河流」腾出来的格会自然被山地/森林认领，
+   * 而不是留下一片没有视觉内容的空地。
+   */
+  const isWater = (t: TerrainKind) => t === "river" || t === "lake";
+  const waterSlots = slots.filter((s) => isWater(s.terrain));
+  const groundSlots = slots.filter((s) => !isWater(s.terrain));
+
+  /** 份额（格）→ 河流条数：一条河平均吃掉 3 格，夹在 2~16 条之间 */
+  const { rivers: riverTarget, lakes: lakeTarget } = waterTargetsOf(waterSlots);
+
+  // ── 地形分布（区域生长，多片；水系除外）──
+  assignTerrainByGrowth(cells, cols, rows, groundSlots, rng);
+
+  // ── 水系（独立子流：加这一层不惊动任何素材坐标）──
+  const water =
+    riverTarget > 0
+      ? buildWaterNet(cells, {
+          cols,
+          rows,
+          cellSize,
+          rivers: riverTarget,
+          lakes: lakeTarget,
+          rng: mulberry32(waterSeedOf(options.seed)),
+          land,
+        })
+      : { polylines: [], cells: new Set<number>() };
+
+  // 只有水系（配方被"河流：多"挤掉其它族时）：不铺素材，但河湖照画
+  if (groundSlots.length === 0) {
+    return { land, placements: [], bands, polylines: water.polylines };
+  }
 
   /** 纬度取带；预设锁定气候时不看纬度（「万里雪原」南缘不该冒沙丘） */
   const climate = options.preset.climate;
@@ -1122,6 +1175,8 @@ export function generateMap(options: GenerateMapOptions): GeneratedMap {
   for (const cell of order) {
     const terrain = cell.terrain;
     if (!cell.land || terrain === null) continue;
+    // 河湖占住的格不再落素材（否则河里会长出一座山）
+    if (water.cells.has(cell.row * cols + cell.col)) continue;
     // 配额用尽（该配方已经认领满自己的格数）→ 这一格就是平原
     if ((budget.get(terrain) ?? 0) <= 0) continue;
 
@@ -1230,7 +1285,73 @@ export function generateMap(options: GenerateMapOptions): GeneratedMap {
     return a.y - b.y;
   });
 
-  return { land, placements, bands };
+  return { land, placements, bands, polylines: water.polylines };
+}
+
+/**
+ * 水系份额 → 河条数 / 湖个数。
+ *
+ * 【为什么是"条数"而不是"格数"】参考实现的河是格网路径，`size` 随帧数变；
+ * 它的面板里根本没有"河流面积"这一项。把配方的面积份额换算成条数，才让
+ * 「河流：多 / 少 / 无」这档滑杆的语义与逆向目标一致。
+ *
+ * @param waterSlots 配方里 `river` / `lake` 的份额（格）
+ */
+function waterTargetsOf(
+  waterSlots: readonly { terrain: TerrainKind; count: number }[],
+): { rivers: number; lakes: number } {
+  const riverCells = waterSlots
+    .filter((s) => s.terrain === "river")
+    .reduce((acc, s) => acc + s.count, 0);
+  const lakeCells = waterSlots
+    .filter((s) => s.terrain === "lake")
+    .reduce((acc, s) => acc + s.count, 0);
+  const rivers = riverCells > 0 ? Math.min(16, Math.max(2, Math.round(riverCells / 3))) : 0;
+  const lakes =
+    rivers > 0
+      ? Math.min(4, Math.max(1, Math.round((lakeCells > 0 ? lakeCells : rivers) / 3)))
+      : 0;
+  return { rivers, lakes };
+}
+
+/**
+ * 只算水系（「只换陆地」档用）：陆地换了，旧河湖必须跟着重算。
+ *
+ * 【为什么不复用 `generateMap`】那会把整张图重铺一遍素材，用户"只换陆地"时
+ * 摆好的山和城会全部重摇。这里只建格网 + 走地势场，地形一律按平原处理
+ * （没有区域生长，就没有山体抬升），河仍然从内陆往海岸流 —— 对"一块新陆地"
+ * 来说，这个地势模型恰好是对的。
+ */
+export function generateWater(options: {
+  land: MapLand;
+  seed: number;
+  preset: MapPresetDef;
+  richness: GeneratorRichness;
+  tuning?: ResolvedGeneratorTuning;
+}): MapPolyline[] {
+  const land = options.land;
+  if (land.polygons.length === 0) return [];
+  const box = landBBox(land);
+  const cellSize = Math.max(8, GRID_SIZES[options.richness]);
+  const { cells, cols, rows } = buildGrid(land, box, cellSize);
+  const landCells = cells.filter((c) => c.land).length;
+  if (landCells === 0) return [];
+
+  const total = Math.max(1, Math.round(landCells * (1 - PLAIN_CELL_RATIO)));
+  const tuning = options.tuning ?? resolveGeneratorTuning({});
+  const slots = resolveTerrainMix(options.preset, tuning, total);
+  const { rivers, lakes } = waterTargetsOf(slots.filter((s) => s.terrain === "river" || s.terrain === "lake"));
+  if (rivers === 0) return [];
+
+  return buildWaterNet(cells, {
+    cols,
+    rows,
+    cellSize,
+    rivers,
+    lakes,
+    rng: mulberry32(waterSeedOf(options.seed)),
+    land,
+  }).polylines;
 }
 
 /** 登记 + 判定合一：命中别的簇就返回 false，否则占位并返回 true */

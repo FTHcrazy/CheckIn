@@ -289,6 +289,11 @@ interface MapDocState {
      * `null` = **显式清除**（骨架档 / 陆地未生成时，纹理不能留着旧陆地的带）。
      */
     bands?: TerrainBandGrid | null;
+    /**
+     * 自动水系折线（2.44.0）。`undefined` = 保持原样；数组 = **替换上一批自动线**，
+     * 用户手画的线（`origin !== "generated"`）原样保留。
+     */
+    polylines?: MapPolyline[];
   }) => void;
   /**
    * 批量改写「生成素材」的联动地名（「只换地名」档）。
@@ -309,7 +314,7 @@ interface MapDocState {
    */
   addRegion: (region: MapRegion) => void;
   clearRegions: () => void;
-  generateLand: (land: MapLand, regions: MapDocument["regions"]) => void;
+  generateLand: (land: MapLand, regions: MapDocument["regions"], polylines?: MapPolyline[]) => void;
   clearLand: () => void;
   toggleRegions: () => void;
   /**
@@ -721,8 +726,18 @@ export const useMapDocStore = create<MapDocState>()((set, get) => ({
     get().commit((d) => ({ ...d, regions: [...d.regions, region] }));
   },
 
-  generateLand: (land, regions) => {
-    get().commit((d) => ({ ...d, land, regions }));
+  generateLand: (land, regions, polylines) => {
+    get().commit((d) => ({
+      ...d,
+      land,
+      regions,
+      // 陆地换了，旧自动水系必须同步换（否则河留在海面上）；手画的线保留
+      ...(polylines === undefined
+        ? {}
+        : {
+            polylines: [...docPolylines(d).filter((l) => l.origin !== "generated"), ...polylines],
+          }),
+    }));
   },
 
   applyGenerated: (parts) => {
@@ -733,6 +748,15 @@ export const useMapDocStore = create<MapDocState>()((set, get) => ({
       ...(parts.labels === undefined ? {} : { labels: parts.labels }),
       ...(parts.regions === undefined ? {} : { regions: parts.regions }),
       ...(parts.bands === undefined ? {} : { terrainBands: parts.bands ?? undefined }),
+      // 只换自动水系：手画的线（没写 origin）与用户改过的线一律留下
+      ...(parts.polylines === undefined
+        ? {}
+        : {
+            polylines: [
+              ...docPolylines(d).filter((l) => l.origin !== "generated"),
+              ...parts.polylines,
+            ],
+          }),
     }));
   },
 
@@ -770,8 +794,14 @@ export const useMapDocStore = create<MapDocState>()((set, get) => ({
 
   clearLand: () => {
     if (!get().doc.land) return;
-    // 纹理带跟着陆地走：陆地没了，旧陆地的带栅格一并清掉（都进同一步撤销快照）
-    get().commit((d) => ({ ...d, land: null, terrainBands: undefined }));
+    // 纹理带与水系都跟着陆地走：陆地没了，旧陆地的带栅格与自动河湖一并清掉
+    // （同一步撤销快照）。手画的线保留 —— 那是用户的，不是陆地的派生物。
+    get().commit((d) => ({
+      ...d,
+      land: null,
+      terrainBands: undefined,
+      polylines: docPolylines(d).filter((l) => l.origin !== "generated"),
+    }));
   },
 
   toggleRegions: () => {
