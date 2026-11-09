@@ -1372,18 +1372,44 @@ ipcMain.handle('memo-read', async (_event, filename: string) => { ... });
 **强制要求**：
 
 1. **修改前先跑基线**：修复 bug 或重构前，先运行对应模块的单测确认当前为绿色基线；若没有测试，先为该行为补充测试再动手修改（红 → 绿流程）。
-2. **修改后必须重跑**：每次修改完成后，运行被改模块的单测验证行为未回归，再提交。全量回归在交付前执行 `pnpm test`。
+2. **按改动范围跑测试（默认口径）**：每次修改完成后，先跑**被改模块**的单测验证行为未回归，
+   再提交；全量回归只在「交付前」或命中下表条件时执行 `pnpm test`。
+   不要因为「多跑点更保险」就每轮全量 —— 全量是 300 文件 / 4000+ 用例、数分钟的量级，
+   而它对封闭模块的改动**不提供额外信号**（同一份源码，跑一遍和跑十遍结论一样），
+   代价却是每轮都要等。
 3. **测试文件就近存放**：与被测代码同目录，统一命名 `*.test.ts` / `*.test.tsx`（如 `todo-utils.test.ts` 与 `todo-utils.ts` 同级）。禁止集中放到独立的 `tests/` 目录。
 4. **纯函数必须有单测**：页面内的 `xxx-utils.ts`、`shared/services/` 中的工具函数（时间换算、解析、格式化、转义等）是单测的最低覆盖对象；新增或修改这些函数时必须同步新增/更新测试。
 5. **可测性优先**：新增逻辑优先设计为不依赖 `window.electronAPI` / DOM 的纯函数（参数进、结果出），IPC 与文件访问留在 hooks/handlers 层，便于测试。
 6. **测试只断言行为**：断言函数的输入输出与副作用语义，不断言实现细节（如内部调用了哪个私有函数），避免重构时大面积误伤。
 
+**测试范围怎么选**（判据：**这次改动能不能越过模块边界**）：
+
+| 改了什么 | 跑什么 | 为什么 |
+|---|---|---|
+| 某窗口内部的纯函数 / 组件 / 样式 / 生成器 | 该窗口目录，如 `vitest run src/windows/MapWindow` | 依赖只往内收，外部看不到 |
+| 单个文件的实现细节 | 单文件，如 `vitest run src/…/domain/roads.test.ts` | 最快的红→绿回路 |
+| `src/shared/**` | shared 用例 + **引用方**目录（`grep` 找 import） | 一处改动会被多个窗口读到 |
+| `electron/` 主进程 / `preload` / `handlers` / `electron.d.ts` / IPC 契约 | **全量** | 通道白名单、handler 注册、窗口挂载测试都绑在这条链上 |
+| `vite.config.ts` / 打包配置 / `package.json` 依赖 / `external` 名单 | **全量** + `pnpm analyze:asar` | 见 §6.8，破坏是运行期的 |
+| 主题变量、扫描型守卫的规则本身、`CHANGELOG` 分流 | 对应守卫（`themes.test.ts` / `changelog-archive-guard.test.ts` / `docs-index-guard.test.ts`） | 守卫就是被改的东西 |
+| 发布 / 版本号变更 / 交付 | **全量** `pnpm test` | 最终闸门，不能省 |
+
+> **判据一句话**：只看**改动的可见面**。地图窗的聚落与道路改造全部落在
+> `src/windows/MapWindow/pages/MapEditorPage/**`（外加它只读引用的 shared 纯函数），
+> 不碰 IPC / preload / 主进程 —— 跑 `MapWindow` 目录就覆盖了全部改动面，
+> 全量的其余用例在这批改动里不可能变红。**但交付前那一轮全量照跑**。
+
 **常用命令**：
 
 ```bash
-pnpm test        # 全量运行一次（CI / 交付前）
-pnpm test:watch  # watch 模式，开发时增量运行
+pnpm exec vitest run src/windows/MapWindow   # 按目录（日常默认）
+pnpm exec vitest run <path/to/x.test.ts>     # 单文件（改一个纯函数时）
+pnpm test                                    # 全量（CI / 交付前 / 动 IPC 或 shared）
+pnpm test:watch                              # watch 模式，开发时增量运行
 ```
+
+> ⚠️ 用 `pnpm exec vitest` 而不是 `npx vitest`：后者可能解析到另一份 vitest 实例，
+> 表现为「收集到 0 个用例」或 `initSuite` 报 `reading 'config'`（见 `vitest.config.ts` 注释）。
 
 ### 6.5 数据库迁移规范
 
@@ -1635,6 +1661,10 @@ function initializeDataDb(db: Database) {
 - **内容要求**：每条记录必须简洁、可追溯，说明“修复了什么”“新增了什么”“影响范围”，禁止空泛描述，如“优化”“调整”而不写具体内容。
 - **发布同步**：功能上线前后，确保 `CHANGELOG.md` 与 `package.json` 的版本信息保持一致，避免版本号与修订记录不一致。
 - **审查门槛**：代码提交前，检查是否已补充更新日志；如未更新，视为未完成交付的一部分。
+- **体积上限（强制）**：`CHANGELOG.md` **不得超过 800 行**。写完当次条目就查行数，
+  超了立刻按下文「体积分流」拆到 `changeLogHistory/`，**不许攒到下次**。
+  这条不是建议：2.45.0 实测踩过 —— 规则在 1.46.2 就立了，主文件仍一路长到 **2308 行**，
+  因为只有「分流怎么做」的说明，没有「谁来检查」的关口（见下文「检查点」）。
 
 #### CHANGELOG 体积分流（强制，1.46.2 起）
 
@@ -1658,12 +1688,35 @@ function initializeDataDb(db: Database) {
    「文件 ↔ 覆盖版本区间」，新增归档时在**表格顶部**补一行。
 5. **主文件留指针**：`CHANGELOG.md` 顶部保留一段引用块，写明「哪个版本之前已归档、
    当前归档到哪、索引在哪」，保证从主文件能一步找到历史。
-6. **工具**：`node scripts/split-changelog.mjs` 会自动完成 1–5（幂等：只搬主文件里
-   仍在的旧版本）。手工拆分也可以，但要满足上面 5 条。
+6. **工具**：`node scripts/split-changelog.mjs` 自动完成第 2/3/5 条（切文件、纯搬运、
+   重写顶部指针；幂等 —— 只搬主文件里**还在**的旧版本，行数没超时只打印「无需分流」）。
+   ⚠️ **它不写索引**：第 4 条的 `changeLogHistory/README.md` 表格仍要手工补行
+   （覆盖区间 = 该文件第一条与最后一条版本号）。手工拆分也可以，但同样要满足这 5 条。
 7. **AI 查历史的正确姿势**：先读 `changeLogHistory/README.md` 定位文件，
    再 `grep "^## \[1.38.0\]"` 直达条目；**不得**为了查一条旧记录通读全部归档。
 8. `changeLogHistory/CHANGELOG-1.0-to-1.30.md` 是规则建立前的一次性合并归档
    （1722 行），不要求再按次版本细分。
+
+**检查点（强制）**：改完 `CHANGELOG.md` 就跑，两条都过才算这一批交付完成：
+
+```bash
+node scripts/split-changelog.mjs                                              # 幂等：超限自动分流 + 重写顶部指针
+node node_modules/vitest/vitest.mjs run electron/changelog-archive-guard.test.ts
+```
+
+守卫 `electron/changelog-archive-guard.test.ts` 钉的是**能被违反**的事实，不是文档复述：
+
+| 断言 | 防的是什么 |
+|---|---|
+| 主文件 ≤ 800 行 | 2.45.0 那种「规则写了没人查」再次发生 |
+| 每份归档 ≤ 800 行 | 把整本主文件平移到单个归档文件里冒充分流 |
+| 脚本 `MAX_LINES` / 主文件指针文案 / 守卫常量三处一致 | 改上限只改一处，下次分流把错数字静默写进主文件 |
+| 同一版本不重复出现 | 手工搬运或脚本重跑造成主文件与归档双份 |
+| 归档文件名必须是 `CHANGELOG-<major>.<minor>.md` | 按补丁号单独成文件（`CHANGELOG-2.36.1.md`） |
+
+> 分流脚本只搬主文件里**还在**的旧版本，因此它是幂等的：行数没超时跑它只打印
+> 「无需分流」，不会改动任何文件。索引表 `changeLogHistory/README.md` 仍需人工补行
+> （脚本不写索引）。
 
 ```md
 # Changelog

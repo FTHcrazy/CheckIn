@@ -134,3 +134,92 @@ describe("CHANGELOG 分流产物（守卫）", () => {
     }
   });
 });
+
+/**
+ * 体积上限（AGENTS.md §8.6「触发条件：超过 **800 行** 必须分流」）。
+ *
+ * 【为什么单列一组】上面那组只校验**产物关系**（边界 / 指针 / 索引 / 混装），
+ * 不校验**体积**。这两件事是独立的：只要没人主动跑 `scripts/split-changelog.mjs`，
+ * 边界依然自洽 —— 主文件从 2.9 一路长到 2308 行，上面 5 条测试全程是绿的。
+ * 实测代价：一份 2308 行的 CHANGELOG 读完就吃掉半个上下文窗口，而绝大多数会话
+ * 只想查一条旧记录。也就是说「规则写了」和「规则被检查」之间缺的就是这一组。
+ *
+ * 这里的 4 条都是**会真的失败**的断言，不是文档性描述：
+ * ① 主文件 ≤ 800 行（超了就强制跑分流脚本）；
+ * ② 每份归档文件也 ≤ 800 行 —— 否则「整本主文件搬进一个归档文件」也算"分流"，
+ *    本质只是换了个文件名；
+ * ③ 上限只有一个出处：脚本常量 / 主文件指针 / 本测试常量三者一致，
+ *    改数字必须三处同改（只改一处会在下次分流时静默改写指针文案）；
+ * ④ 分流幂等：同一个版本不能既在主文件又在归档里（脚本重跑、手工搬运都会踩）。
+ */
+describe("CHANGELOG 体积上限（守卫）", () => {
+  /** 与 `scripts/split-changelog.mjs` 的 `MAX_LINES` 必须相同，见第 ③ 条 */
+  const MAX_LINES = 800;
+
+  /**
+   * 按 `wc -l` 的口径数行：末尾那个换行符不算一行。
+   * 脚本里用的是 `split("\n").length`（末尾空串也计入，恒多 1），所以阈值留在这
+   * 两种口径都不会误伤 —— 800 是上限而不是目标值。
+   */
+  function lineCount(text: string): number {
+    const body = text.endsWith("\n") ? text.slice(0, -1) : text;
+    return body.split("\n").length;
+  }
+
+  it(`主文件不超过 ${MAX_LINES} 行`, () => {
+    const lines = lineCount(MAIN);
+    expect(
+      lines,
+      `CHANGELOG.md 已经 ${lines} 行（上限 ${MAX_LINES}）：先跑 \`node scripts/split-changelog.mjs\` ` +
+        `分流，再补 changeLogHistory/README.md 的索引。不要把它留到下一次改动`,
+    ).toBeLessThanOrEqual(MAX_LINES);
+  });
+
+  it(`每份归档文件不超过 ${MAX_LINES} 行（整本搬进一个文件不算分流）`, () => {
+    for (const archive of ARCHIVES) {
+      const lines = lineCount(read(path.join("changeLogHistory", archive.name)));
+      expect(
+        lines,
+        `${archive.name} 有 ${lines} 行，超过 ${MAX_LINES}：归档要按次版本切，不能一次性平移`,
+      ).toBeLessThanOrEqual(MAX_LINES);
+    }
+  });
+
+  it("上限只有一处出处：脚本常量 / 主文件指针 / 本测试常量一致", () => {
+    const script = read("scripts/split-changelog.mjs");
+    const declared = /const MAX_LINES = (\d+);/.exec(script);
+    expect(declared, "scripts/split-changelog.mjs 里找不到 `const MAX_LINES = <数字>;`").not.toBeNull();
+    expect(
+      Number(declared?.[1]),
+      "脚本的 MAX_LINES 与本守卫的常量不一致：改上限要同时改 AGENTS.md §8.6、脚本、本测试",
+    ).toBe(MAX_LINES);
+    // 主文件顶部指针由脚本生成，文案里硬编码了这个数字；改常量却忘了改文案，
+    // 下次分流会静默把一个错的上限写进主文件
+    expect(MAIN, "主文件顶部指针没有写明行数上限").toContain(`超过 ${MAX_LINES} 行`);
+  });
+
+  it("分流幂等：同一个版本不会同时出现在主文件与归档里", () => {
+    const owner = new Map<string, string>();
+    const duplicates: string[] = [];
+    const claim = (raw: string, where: string) => {
+      const previous = owner.get(raw);
+      if (previous) duplicates.push(`${raw}：${previous} 与 ${where}`);
+      else owner.set(raw, where);
+    };
+    for (const version of MAIN_VERSIONS) claim(version.raw, "CHANGELOG.md");
+    for (const archive of ARCHIVES) {
+      for (const version of archive.versions) claim(version.raw, archive.name);
+    }
+    expect(duplicates, `同一个版本被登记了两次：\n${duplicates.join("\n")}`).toEqual([]);
+  });
+
+  it("归档目录里没有按补丁号单独成文件的违规命名", () => {
+    // §8.6 第 2 条：补丁号不单独成文件，跟着次版本走。
+    // `CHANGELOG-1.0-to-1.30.md` 是规则建立前的一次性合并归档（§8.6 第 8 条），白名单。
+    const allowed = new Set(["CHANGELOG-1.0-to-1.30.md", "README.md"]);
+    const unexpected = readdirSync(ARCHIVE_DIR).filter(
+      (name) => name.endsWith(".md") && !allowed.has(name) && !/^CHANGELOG-\d+\.\d+\.md$/.test(name),
+    );
+    expect(unexpected, `归档文件名必须是 CHANGELOG-<major>.<minor>.md：${unexpected.join("、")}`).toEqual([]);
+  });
+});

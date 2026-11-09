@@ -33,12 +33,13 @@ import {
   pointInLand,
   type LandShapeId,
 } from "../land";
-import type { MapLand, MapPolyline, Rect, TerrainBandGrid } from "../types";
+import type { MapLabelSize, MapLand, MapPolyline, Rect, TerrainBandGrid } from "../types";
 import { expandTerrainMix, RANDOM_CHOICE, type MapRecipe } from "./mapRecipe";
 import { buildRoadNet, roadCostOfCells } from "./roads";
 import {
   planSettlements,
   settlementCountsOf,
+  settlementTierOf,
   SETTLEMENT_SPRITES,
   type SettlementSite,
   type SettlementTier,
@@ -349,6 +350,16 @@ export interface SpritePlacement {
   terrain: TerrainKind;
   /** 取用的地貌带（见 zones.ts） */
   zone: SpriteZone;
+  /**
+   * 聚落层级（2.46.0）。只有 `terrain === "settlement"` 的布点带。
+   *
+   * 【为什么要有这个字段】元素类型里只有 `spriteId`，而层级→素材是**多对一**：
+   * `city-mid` 同时是大城的第三顺位和城镇的第一顺位，`village-a` 同时是城镇与
+   * 村落的候选。靠 `settlementTierOf(spriteId)` 反查必然把"城镇"读成"大城"
+   * （`city-mid` 先命中 city 链），于是点名时给镇套了大城的字号。
+   * 选址阶段本来就知道它是哪一档，直接带过来，反查只作为老文档的兜底。
+   */
+  tier?: SettlementTier;
 }
 
 export interface GenerateMapOptions {
@@ -1013,6 +1024,21 @@ export function generateMap(options: GenerateMapOptions): GeneratedMap {
   const total = Math.max(1, Math.round(landCells * (1 - PLAIN_CELL_RATIO)));
   const slots = resolveTerrainMix(options.recipe, tuning, total);
 
+  /**
+   * 地貌取料池 = 注入池 − 聚落素材（2.46.0）。
+   *
+   * 【为什么必须在这里剔】素材的 `terrains` 是给**手动落位**用的筛选标签：
+   * `city-major` 标着 `["settlement", "plain"]`，`village-*` 标着 `plain/grassland`。
+   * 配方不再把 `settlement` 当地形之后，这些城照样会从 **plain / grassland /
+   * mountain 通道**被挑走 —— 实测四个 seed 有 19~42 个聚落素材漏进地貌层，铺在
+   * 平原与山坡上，既破坏"聚落成网"，又因为不带层级而在点名时被当成大城
+   * （`settlementTierOf` 反查命中 city 链），把 16px 的城名名额全吃掉。
+   *
+   * 聚落素材只能由选址阶段（`settlementSpriteOf`）铺，所以这里按
+   * `settlementTierOf` 剔除，而不是去改 `sprites.ts` 的筛选标签（那是另一套语义）。
+   */
+  const groundPool = options.pool.filter((s) => settlementTierOf(s.id) === null);
+
   // ── 地貌纹理带（2.43.0）：布点格网 → 每格气候带，随文档持久化 ──
   // 不依赖 slots / 不消耗骰子；骨架档与空配方也要带（纹理跟着陆地走）。
   const bands = terrainBandsOf(cells, cols, rows, box, cellSize, options.recipe.climate);
@@ -1113,6 +1139,7 @@ export function generateMap(options: GenerateMapOptions): GeneratedMap {
     rotAmp: number,
     zone: SpriteZone,
     terrain: TerrainKind,
+    tier?: SettlementTier,
   ): SpritePlacement | null => {
     const size = sizeOf(src.id);
     for (let attempt = 0; attempt < PLACE_ATTEMPTS; attempt++) {
@@ -1153,6 +1180,8 @@ export function generateMap(options: GenerateMapOptions): GeneratedMap {
         flipX: flip,
         terrain,
         zone,
+        // 只有聚落带层级：其余素材留 `undefined`，点名表按"其它点要素"处理
+        ...(tier ? { tier } : {}),
       };
       if (colliderHitsFree(collider, p, cluster, sizeOf)) {
         placements.push(p);
@@ -1186,7 +1215,7 @@ export function generateMap(options: GenerateMapOptions): GeneratedMap {
     const zone = zoneOfY(cell.y);
     const band = BAND_PARAMS[zone];
 
-    const palette = pickTerrainSprites(options.pool, terrain, {
+    const palette = pickTerrainSprites(groundPool, terrain, {
       count: PALETTE_SIZE,
       seed: Math.floor(rng() * 0x7fffffff),
       zone,
@@ -1313,7 +1342,16 @@ export function generateMap(options: GenerateMapOptions): GeneratedMap {
         Math.round(
           sizeComp * TERRAIN_SCALE.settlement * overallScale * TIER_SCALE[site.tier] * 100,
         ) / 100;
-      const placed = placeOne(src, site.x, site.y, scale, BAND_PARAMS[zone].rot, zone, "settlement");
+      const placed = placeOne(
+        src,
+        site.x,
+        site.y,
+        scale,
+        BAND_PARAMS[zone].rot,
+        zone,
+        "settlement",
+        site.tier,
+      );
       // ⚠️ 用**落位后的真实坐标**（`placeOne` 会在被拒时向外扩散重试，最多偏半格）：
       // 拿选址的理论坐标当端点，路会停在房子旁边半格处，接不上。
       if (placed) placedSites.push({ ...site, x: placed.x, y: placed.y });
@@ -1469,6 +1507,13 @@ function colliderHitsFree(
 export interface PlacementName {
   index: number;
   text: string;
+  /**
+   * 字号档（2.46.0）：层级越高字越大。
+   *
+   * 参考成图上城名明显压得住周边村名，全靠一个字号会让"临江城"和"杏花村"
+   * 一样大 —— 读者得逐字读才知道哪个是主城。这里按层级给档，渲染层只认档。
+   */
+  size: MapLabelSize;
 }
 
 export interface AssignNamesOptions {
@@ -1484,8 +1529,61 @@ export interface AssignNamesOptions {
  * 参考成图只显国名 + 少量关隘/山名（命名表按要素类型限量取用）；点名逢素材必给
  * 会把下半屏糊成文字团（用户对比截图的直接差评点）。12 ≈ 参考一张图上点名的
  * 密度量级；超出配额的素材照常布点，只是不落名字（与"没进名池"同一路径）。
+ *
+ * 2.46.0 起这个数只当**总量**用，名额按层级分（见 `NAME_TIER_BUDGET`）。
  */
 export const NAMED_LABEL_QUOTA = 12;
+
+/**
+ * 点名档（2.46.0）：聚落按层级分档，港/关隘/遗迹/塔这类点要素统一归 `other`。
+ *
+ * 【为什么不直接用 `settlementTierOf(spriteId)`】层级→素材是多对一，`city-mid`
+ * 既是城镇的首选、又挂在大城链尾部，反查必然把镇读成城。布点阶段本来就知道
+ * 层级（`SpritePlacement.tier`），反查只作老文档与合成数据的兜底。
+ */
+type NameTier = "city" | "town" | "other" | "village";
+
+/**
+ * 档位顺序与预算（2.46.0）。
+ *
+ * 【为什么不能"按布点顺序取前 12 个"】布点顺序 = 选址顺序（城→镇→村），而村落
+ * 数量是城/镇的 5~10 倍，先到先得的结果是**名额被村名吃光**：实测 seed 26 的
+ * 12 个点名叫了 7 个村，4 座大城里只有 1 座有名字 —— 成图上是一片村名、没有城名。
+ * 参考成图正相反：城名是主体，村名只在空隙里点缀。
+ *
+ * 分配顺序 = 城 → 镇 → 其它点要素 → 村；每档另有上限，总配额仍是
+ * `NAMED_LABEL_QUOTA`。城/镇多到超过配额时，村名一个都不点 —— 这是刻意的。
+ */
+const NAME_TIERS: readonly NameTier[] = ["city", "town", "other", "village"];
+
+/**
+ * 每档上限。村的预算 = 总配额，因为它是**最后一档**：前面的档装不满时由村把
+ * `NAMED_LABEL_QUOTA` 填满（不给村设硬上限，否则「4 城 + 4 镇」只出 11 个名 ——
+ * 分档预算的额度不会结转，少一个档就白少一个名额）。
+ */
+const NAME_TIER_BUDGET: Record<NameTier, number> = {
+  city: 6,
+  town: 4,
+  other: 6,
+  village: NAMED_LABEL_QUOTA,
+};
+
+/**
+ * 档位 → 字号。城 16 / 镇·地标 12 / 村 10（全是 `LABEL_SIZES` 已有的档，
+ * 不新增取值域）。差值只有两三号，但在一屏几十个名字的密度下足够区分主次。
+ */
+const NAME_TIER_SIZE: Record<NameTier, MapLabelSize> = {
+  city: 16,
+  town: 12,
+  other: 12,
+  village: 10,
+};
+
+/** 布点 → 点名档：优先用布点自带的层级，缺失（老文档 / 合成数据）才反查素材 */
+function nameTierOf(placement: SpritePlacement): NameTier {
+  if (placement.tier) return placement.tier;
+  return settlementTierOf(placement.spriteId) ?? "other";
+}
 
 /**
  * 给布点批量起名。
@@ -1506,12 +1604,15 @@ export function assignPlacementNames(
   const used = new Set(opts?.taken ?? []);
   const out: PlacementName[] = [];
 
-  placements.forEach((p, index) => {
-    if (out.length >= NAMED_LABEL_QUOTA) return;
+  /**
+   * 给一个布点摇名字；素材没有名池时返回 `null` 且**不消耗骰子**
+   * （纯地貌不参与点名，rng 序列也就不会被它们扰动 —— 同 seed 的名额分配稳定）。
+   */
+  const pickName = (p: SpritePlacement): string | null => {
     // 【谁有名字】只有素材自带 names 的点要素（城郭/港渡/遗迹——与手动落位
     // 同一套规则）。纯地貌不吃预设池点名，否则一张图会冒出几十个山名。
     const spriteNames = SPRITE_NAMES_OF(p.spriteId);
-    if (!spriteNames || spriteNames.length === 0) return;
+    if (!spriteNames || spriteNames.length === 0) return null;
 
     // 名池候选按优先级拼接（terrain.ts 约定：预设 > 素材自带 > 默认池）；
     // 起点随机 → 换地名档能摇出不同组合
@@ -1520,27 +1621,33 @@ export function assignPlacementNames(
     if (presetPool) pool.push(...presetPool);
     pool.push(...spriteNames);
     pool.push(...TERRAIN_META[p.terrain].namePool);
-    if (pool.length === 0) return;
+    if (pool.length === 0) return null;
 
     const start = Math.floor(rng() * pool.length);
-    let text: string | null = null;
     for (let i = 0; i < pool.length; i++) {
       const cand = pool[(start + i) % pool.length];
-      if (!used.has(cand)) {
-        text = cand;
-        break;
-      }
+      if (!used.has(cand)) return cand;
     }
-    if (!text) {
-      // 全占用：首个候选 + 序号兜底
-      const base = pool[start % pool.length];
-      let n = 2;
-      while (used.has(`${base}·${n}`)) n++;
-      text = `${base}·${n}`;
+    // 全占用：首个候选 + 序号兜底
+    const base = pool[start % pool.length];
+    let n = 2;
+    while (used.has(`${base}·${n}`)) n++;
+    return `${base}·${n}`;
+  };
+
+  for (const tier of NAME_TIERS) {
+    let namedInTier = 0;
+    for (let index = 0; index < placements.length; index += 1) {
+      if (out.length >= NAMED_LABEL_QUOTA || namedInTier >= NAME_TIER_BUDGET[tier]) break;
+      const p = placements[index];
+      if (nameTierOf(p) !== tier) continue;
+      const text = pickName(p);
+      if (!text) continue;
+      used.add(text);
+      out.push({ index, text, size: NAME_TIER_SIZE[tier] });
+      namedInTier += 1;
     }
-    used.add(text);
-    out.push({ index, text });
-  });
+  }
   return out;
 }
 

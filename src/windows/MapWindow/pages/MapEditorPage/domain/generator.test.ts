@@ -11,6 +11,7 @@ import {
   ELEMENT_SIZE_FACTOR,
   GRID_SIZES,
   MOUNTAIN_TERRAINS,
+  NAMED_LABEL_QUOTA,
   assignPlacementNames,
   defaultContents,
   elementSeedOf,
@@ -82,6 +83,11 @@ const sizeOf = (id: string) => SIZE_TABLE[id] ?? { width: 90, height: 70 };
 const SPRITE_NAMES: Record<string, string[]> = {
   s1: ["青石镇", "杏花村"],
   s2: ["临江城"],
+  // 真实 id（2.46.0）：验"没有 tier 字段时间按 spriteId 反查层级"这条兜底路径
+  "city-major": ["临江城", "云中城"],
+  "city-mid": ["青石镇", "柳荫镇"],
+  "village-b": ["石桥村", "上河村"],
+  "port-dock": ["望潮港", "白沙港"],
 };
 installSpriteNamesResolver((id) => SPRITE_NAMES[id]);
 
@@ -479,6 +485,67 @@ describe("assignPlacementNames", () => {
     const named = assignPlacementNames(synthetic(), RECIPE, 555);
     // 山不吃预设池点名：mountain 预设池只在素材自带 names 时才被消费
     expect(named.map((n) => n.index).sort()).toEqual([6, 7, 8, 9]);
+  });
+
+  /** 带层级的布点（2.46.0）：`tier` 由选址阶段写入，点名按它分档 */
+  const withTier = (
+    spriteId: string,
+    x: number,
+    y: number,
+    tier: "city" | "town" | "village",
+  ): SpritePlacement => ({ ...at(spriteId, x, y, "settlement"), tier });
+
+  it("大城优先：名额不会被村名挤光（2.46.0 之前就是被挤光的）", () => {
+    // 4 城 + 8 镇 + 24 村。旧实现按布点顺序取前 12 个 —— 聚落顺序是城→镇→村，
+    // 看似城在前，但真实池里"村落"数量是城/镇的 5~10 倍，且城的素材常因落位
+    // 失败被跳过，实测 seed 26 的 12 个名里 7 个是村名、4 座大城只有 1 座有名。
+    const mixed: SpritePlacement[] = [
+      ...Array.from({ length: 4 }, (_, i) => withTier("city-major", i * 10, 0, "city")),
+      ...Array.from({ length: 8 }, (_, i) => withTier("city-mid", i * 10, 10, "town")),
+      ...Array.from({ length: 24 }, (_, i) => withTier("village-b", i * 10, 20, "village")),
+    ];
+    const named = assignPlacementNames(mixed, RECIPE, 4242);
+    const tierOfNamed = named.map((n) => mixed[n.index].tier);
+    expect(tierOfNamed.filter((t) => t === "city")).toHaveLength(4); // 城全点名
+    expect(named).toHaveLength(NAMED_LABEL_QUOTA); // 总配额不变（村负责填满）
+    // 镇最多 4 个：剩下的名额给村，村不抢城/镇的预算
+    expect(tierOfNamed.filter((t) => t === "town").length).toBeLessThanOrEqual(4);
+    expect(tierOfNamed.filter((t) => t === "village").length).toBe(12 - 4 - 4);
+  });
+
+  it("字号分层：城 16 / 镇与地标 12 / 村 10", () => {
+    const mixed: SpritePlacement[] = [
+      withTier("city-major", 0, 0, "city"),
+      withTier("city-mid", 10, 0, "town"),
+      withTier("village-b", 20, 0, "village"),
+      // 港/关隘/遗迹这类点要素归 "其它"：与镇同档
+      at("port-dock", 30, 0, "settlement"),
+    ];
+    const named = assignPlacementNames(mixed, RECIPE, 7);
+    const sizeAt = (index: number) => named.find((n) => n.index === index)?.size;
+    expect(sizeAt(0)).toBe(16);
+    expect(sizeAt(1)).toBe(12);
+    expect(sizeAt(2)).toBe(10);
+    expect(sizeAt(3)).toBe(12);
+  });
+
+  it("没有 tier 字段（老文档 / 合成数据）时按 spriteId 反查层级", () => {
+    const legacy: SpritePlacement[] = [
+      at("city-major", 0, 0, "settlement"),
+      at("village-b", 10, 0, "settlement"),
+    ];
+    const named = assignPlacementNames(legacy, RECIPE, 9);
+    const sizeAt = (index: number) => named.find((n) => n.index === index)?.size;
+    expect(sizeAt(0)).toBe(16);
+    expect(sizeAt(1)).toBe(10);
+  });
+
+  it("city-mid 靠反查会被读成 city —— 这正是布点必须带 tier 的原因", () => {
+    // 同一个素材 id，两种语义：城镇用 `city-mid` 当首选，大城把它当第三顺位
+    const asTown = assignPlacementNames([withTier("city-mid", 0, 0, "town")], RECIPE, 11);
+    expect(asTown[0].size).toBe(12);
+    const legacy = assignPlacementNames([at("city-mid", 0, 0, "settlement")], RECIPE, 11);
+    expect(legacy[0].size).toBe(16); // 反查先命中 city 链 → 当成大城
   });
 });
 

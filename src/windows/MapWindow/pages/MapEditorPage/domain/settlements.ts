@@ -379,11 +379,16 @@ function pickSpreadSites(
  * 聚落份额（格）→ 各层个数。
  *
  * 【换算口径】参考实现的城镇是"按格网邻接打分挑城 + 每格一村"的密度量级；
- * 本项目的 `settlement` 份额只有 3%~7%（约 3~8 格）。一格换一座城太挤，
- * 于是按 1 城 ≈ 4 城镇 ≈ 14 村落 的金字塔比例铺开：一张标准图约
- * 1~2 座大城、3~6 座城镇、15~30 个村落 —— 一条能读出层级、也撑得起路网的网。
+ * 本项目的 `settlement` 份额只有 3%~7%（标准档约 4~8 格 —— 格网 54，纸 1024，
+ * 陆地 ~150 格，乘 `1 - PLAIN_CELL_RATIO` 后 `share` 落到 4~8）。
  *
- * 【为什么村落给到 5 倍份额】村落是**体量最小的点符号**（渲染宽 ≈ 6 世界单位），
+ * 【2.46.0 调系数】旧系数（城 0.28 / 镇 1.4 / 村 8）在 `share = 4` 时算出
+ * **1 座大城** —— 成图上只有一座主城，其余全是镇和村，读不出参考那种
+ * "几座主城 + 一圈卫星镇"的结构，大字号的城名也没地方落。改为城 ≈ 0.9/格
+ * （share 4 → 4 座、share 8 → 5 座封顶），镇 ≈ 1.8/格，村 ≈ 7/格：
+ * 一张标准图约 4 座大城 / 7~14 座城镇 / 28~56 个村落。
+ *
+ * 【为什么村落给到 7 倍份额】村落是**体量最小的点符号**（渲染宽 ≈ 6 世界单位），
  * 稀疏了根本看不出"网"：城与城之间一条长线，中间什么都没有。
  */
 export function settlementCountsOf(share: number): {
@@ -392,8 +397,8 @@ export function settlementCountsOf(share: number): {
   villages: number;
 } {
   if (share <= 0) return { cities: 0, towns: 0, villages: 0 };
-  const cities = Math.min(5, Math.max(1, Math.round(share * 0.28)));
-  const towns = Math.min(14, Math.max(2, Math.round(share * 1.4)));
-  const villages = Math.min(120, Math.max(12, Math.round(share * 8)));
+  const cities = Math.min(5, Math.max(2, Math.round(share * 0.9)));
+  const towns = Math.min(14, Math.max(4, Math.round(share * 1.8)));
+  const villages = Math.min(100, Math.max(12, Math.round(share * 7)));
   return { cities, towns, villages };
 }

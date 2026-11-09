@@ -88,7 +88,6 @@ import {
   createSubmapId,
   docPolylines,
   LABEL_ABOVE_ELEMENT,
-  LABEL_DEFAULT_SIZE,
 } from "../types";
 import { useTextureCache } from "./useTextureCache";
 import { layerLockedOf } from "../layerState";
@@ -1171,7 +1170,8 @@ export function useMapEditor(canvasSize: CanvasSize) {
 
       /** 布点名 → 联动地名标注（挂在素材头顶，与手动落位同款） */
       const toLabels = (
-        named: readonly { index: number; text: string }[],
+        // `size` 由点名阶段按层级给（城 16 / 镇·地标 12 / 村 10，见 generator）
+        named: readonly { index: number; text: string; size: MapLabelSize }[],
         elements: readonly MapElement[],
         ps: readonly SpritePlacement[],
       ): MapLabel[] =>
@@ -1185,7 +1185,7 @@ export function useMapEditor(canvasSize: CanvasSize) {
               text: n.text,
               x: el.x,
               y: el.y - LABEL_ABOVE_ELEMENT,
-              size: LABEL_DEFAULT_SIZE,
+              size: n.size,
               level: el.level,
               elementId: el.id,
             } satisfies MapLabel,
