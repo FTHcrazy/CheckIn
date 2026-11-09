@@ -17,6 +17,7 @@
  */
 
 import baseSeaTeal from "../../assets/sprites/base-sea-teal.webp";
+import landPaper from "../../assets/textures/land-paper.png";
 import baseSeaBlue from "../../assets/sprites/base-sea-blue.webp";
 import baseParchment from "../../assets/sprites/base-parchment.webp";
 import baseNight from "../../assets/sprites/base-night.webp";
@@ -274,3 +275,15 @@ export const BASE_IMAGE = {
 export const SPRITE_MAP: Record<string, SpriteDef> = Object.fromEntries(
   SPRITES.map((s) => [s.id, s]),
 );
+
+/**
+ * 陆地纸面纹理（2.43.0 第二轮，AI 生成）。
+ *
+ * 一张均匀的旧画布/手工纸扫描质感（中性灰、无暗角、无内容），在渲染层以
+ * **multiply 混合**整片罩在陆地之上 —— 这是"质感"的主来源：斑驳与纤维由
+ * 真实材质携带，程序只负责配色与晕染。与 52 张符号素材同一纪律：AI 生成、
+ * 不碰逆向目标的原始 PNG（review §5.4）。原始 1024² 已裁掉平台水印并降采样
+ * 到 440²（体积 365KB；单张铺满陆地包围盒、不重复平铺，故无需无缝）。
+ */
+export const LAND_PAPER_ID = "land-paper";
+export const LAND_PAPER_SRC = landPaper;

@@ -7,11 +7,17 @@ import {
   REGION_BORDER_COLOR,
   REGION_BORDER_PX,
   REGION_FILL_ALPHA,
+  REGION_INNER_SHADOW_ALPHA,
+  REGION_INNER_SHADOW_COLOR,
+  REGION_INNER_SHADOW_PASSES,
+  REGION_INNER_SHADOW_PX,
   REGION_LEVEL_FILL_SCALE,
   REGION_LEVELS,
   REGION_LEVEL_COUNT_LIMITS,
   REGION_MAX_LEVELS,
   REGION_PALETTE_RGB,
+  REGION_RIM_COLOR,
+  REGION_RIM_PX,
   REGION_TOTAL_LIMIT,
   assignRegionColors,
   createRng,
@@ -908,13 +914,30 @@ describe("区块样式与密度（对齐逆向 §3.7 口径）", () => {
     return out;
   };
 
-  it("样式三件 = 逆向源值（α 0.30 / 3px / #73562d / border_alpha 1）", () => {
-    expect(REGION_FILL_ALPHA).toBeCloseTo(0.3, 12);
-    expect(REGION_BORDER_PX).toBe(3);
-    expect(REGION_BORDER_COLOR).toBe(0x73562d);
+  it("样式五件 = 逆向源值（α 0.80 / 1px / #4d3200 / 白外影 / 内阴影 9px #4d4134）", () => {
+    // 2.43.0 对齐分风格 paint_shadow 表（review 序 11 / E2）：
+    // stroke:1 #4d3200 + shadow:2~5 #ffffff + inner_shadow。
+    // 填充 0.80 配西幻土色板（0.55 配粉彩"发白发平"，0.30 配强对比色板均已作废）。
+    expect(REGION_FILL_ALPHA).toBeCloseTo(0.8, 12);
+    expect(REGION_BORDER_PX).toBe(1);
+    expect(REGION_BORDER_COLOR).toBe(0x4d3200);
     expect(REGION_BORDER_ALPHA).toBe(1);
-    // 线与面的浓度比 = 源值的 1 : 0.3。改任一方都要同步另一方，否则"线比面还淡"
-    expect(REGION_BORDER_ALPHA / REGION_FILL_ALPHA).toBeCloseTo(10 / 3, 10);
+    // 白外影 + 内阴影（paint_shadow 的另外两件）
+    expect(REGION_RIM_PX).toBe(4);
+    expect(REGION_RIM_COLOR).toBe(0xffffff);
+    // 15 → 9：单层均匀带实测读作"贴边公路"（硬外沿 + 接缝两侧 2×宽度叠加），
+    // 收窄深度并改多层渐隐；第二轮再收一档 —— 退晕是辅光，只到"边界比块心
+    // 深一点"为止
+    expect(REGION_INNER_SHADOW_PX).toBe(9);
+    // #414040 → #4d4134：中性灰压在粉彩上读作"脏灰雾"，暖化为描边同族的
+    // 深褐 —— 源表色值属于它自己的合成语境，我们随自己的底色取色
+    expect(REGION_INNER_SHADOW_COLOR).toBe(0x4d4134);
+    // 渐隐层数：≥3 才看不出同心阶梯，≤5 再多与真模糊肉眼无差
+    expect(REGION_INNER_SHADOW_PASSES).toBeGreaterThanOrEqual(3);
+    expect(REGION_INNER_SHADOW_PASSES).toBeLessThanOrEqual(5);
+    // 内阴影浓度 = 贴边处多层累计的目标值：高于它变成描边、低于它看不见
+    expect(REGION_INNER_SHADOW_ALPHA).toBeGreaterThan(0.05);
+    expect(REGION_INNER_SHADOW_ALPHA).toBeLessThan(0.3);
   });
 
   it("同一时刻至多一个层级「可辨识」（权重 > 0.5 的层级 ≤ 1 个）", () => {
@@ -943,7 +966,7 @@ describe("区块样式与密度（对齐逆向 §3.7 口径）", () => {
     }
   });
 
-  it("色板 9 格、互不相同、两两合成色差 ≥ 10（最接近的一对仍可辨）", () => {
+  it("色板 9 格、互不相同、两两合成色差 ≥ 8（粉彩族的紧凑下限）", () => {
     expect(REGION_PALETTE_RGB).toHaveLength(9);
     expect(new Set(REGION_PALETTE_RGB).size).toBe(9);
     const composed = REGION_PALETTE_RGB.map((c) => composite(c, REGION_FILL_ALPHA));
@@ -953,9 +976,10 @@ describe("区块样式与密度（对齐逆向 §3.7 口径）", () => {
         min = Math.min(min, rgbDist(composed[i], composed[j]));
       }
     }
-    // 合成后最小两两距离 ≈ 10.4（墨褐 / 深橄榄）。低于 10 就说明色板里出现了
-    // "纸色上分不出来的两格"—— 那两格会在图上被读成同一块。
-    expect(min).toBeGreaterThanOrEqual(10);
+    // 2.43.0 粉彩色板（E3）：合成后最小两两距离 ≈ 9.0（灰紫/灰青族内最紧的一对）。
+    // 粉彩族天然紧凑 —— 参考实现也不靠色差分块，靠内阴影/白外影/细描边三层光影；
+    // 这条只防"两格完全分不出来"的回归。邻接校正的可行性下限见 REGION_NEIGHBOR_MIN_DIST。
+    expect(min).toBeGreaterThanOrEqual(8);
   });
 
   /**
@@ -967,9 +991,11 @@ describe("区块样式与密度（对齐逆向 §3.7 口径）", () => {
    *
    * 【基线】2.38.0（连续 HSL + 8° hueSpread）实测相邻均值只有 3.6、最差 0.1 ——
    * 肉眼就是一片单色。改成色板 + 邻接校正后：均值 26~32、最差 ≥ 14。
-   * 阈值取下限的一半左右，给"色板微调"留余量，但仍高于"读不出"的门槛。
+   * 【2.43.0 粉彩重校】色差整体收窄（合成后均值 ≈ 22+、最差 ≈ 9）—— 这是
+   * **有意的**：参考成图就是低对比粉彩 + 光影分块（内阴影/白外影/细描边），
+   * 色差下限只防"相邻同色"，不再承担"强对比"的职责。
    */
-  it("相邻区块色差：均值 ≥ 22、最差 ≥ 12（2.38.0 的均值只有 3.6）", () => {
+  it("相邻区块色差：均值 ≥ 18、最差 ≥ 8（粉彩口径；分块可读性由光影三层兜底）", () => {
     const regions = generateHierarchy({ seed: 42, bounds: MAP, levelCounts: [...COUNTS] });
     for (let level = 0; level < COUNTS.length; level += 1) {
       const pool = regions.filter((r) => r.level === level);
@@ -983,8 +1009,8 @@ describe("区块样式与密度（对齐逆向 §3.7 口径）", () => {
         min = Math.min(min, d);
         sum += d;
       }
-      expect(sum / pairs.length, `level=${level} 相邻均值`).toBeGreaterThanOrEqual(22);
-      expect(min, `level=${level} 相邻最差`).toBeGreaterThanOrEqual(12);
+      expect(sum / pairs.length, `level=${level} 相邻均值`).toBeGreaterThanOrEqual(18);
+      expect(min, `level=${level} 相邻最差`).toBeGreaterThanOrEqual(8);
     }
   });
 

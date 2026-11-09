@@ -35,6 +35,7 @@ import {
   type MapPolyline,
   type MapStyle,
   type MapSubmap,
+  type TerrainBandGrid,
 } from "../types";
 import type { MapRegion, RegionLevelDef } from "../regions";
 import { applyMerge, planMerge } from "../regionEdit";
@@ -283,6 +284,11 @@ interface MapDocState {
     elements?: MapElement[];
     labels?: MapLabel[];
     regions?: MapDocument["regions"];
+    /**
+     * 地貌纹理带（2.43.0）。`undefined` = 保持原样（局部重掷没重算它）；
+     * `null` = **显式清除**（骨架档 / 陆地未生成时，纹理不能留着旧陆地的带）。
+     */
+    bands?: TerrainBandGrid | null;
   }) => void;
   /**
    * 批量改写「生成素材」的联动地名（「只换地名」档）。
@@ -726,6 +732,7 @@ export const useMapDocStore = create<MapDocState>()((set, get) => ({
       ...(parts.elements === undefined ? {} : { elements: parts.elements }),
       ...(parts.labels === undefined ? {} : { labels: parts.labels }),
       ...(parts.regions === undefined ? {} : { regions: parts.regions }),
+      ...(parts.bands === undefined ? {} : { terrainBands: parts.bands ?? undefined }),
     }));
   },
 
@@ -763,7 +770,8 @@ export const useMapDocStore = create<MapDocState>()((set, get) => ({
 
   clearLand: () => {
     if (!get().doc.land) return;
-    get().commit((d) => ({ ...d, land: null }));
+    // 纹理带跟着陆地走：陆地没了，旧陆地的带栅格一并清掉（都进同一步撤销快照）
+    get().commit((d) => ({ ...d, land: null, terrainBands: undefined }));
   },
 
   toggleRegions: () => {

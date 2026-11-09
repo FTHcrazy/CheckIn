@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   assignPlacementNames,
+  computeTerrainZones,
   elementSeedOf,
   generateMap,
+  GRID_SIZES,
   installSpriteNamesResolver,
   landSeedOf,
   nameSeedOf,
@@ -1201,7 +1203,8 @@ export function useMapEditor(canvasSize: CanvasSize) {
         const regions = params.withRegions
           ? [...buildRegions(gen.land, undefined, regionSchemaOf(current)), ...kept]
           : kept;
-        store.applyGenerated({ land: gen.land, elements, labels, regions });
+        // 纹理带随全量生成走；骨架档不带（gen.bands = undefined → 显式清掉旧带）
+        store.applyGenerated({ land: gen.land, elements, labels, regions, bands: gen.bands ?? null });
         lastGenRef.current = {
           params,
           seed,
@@ -1234,7 +1237,13 @@ export function useMapEditor(canvasSize: CanvasSize) {
         land.baseColor = landColorOf(last.params.landColorId).color;
         const kept = current.regions.filter((r) => r.origin === "manual");
         const regions = [...buildRegions(land, undefined, regionSchemaOf(current)), ...kept];
-        store.applyGenerated({ land, regions });
+        // 纹理带跟新陆地重算（同配方同档位；纯几何，不消耗任何子流骰子）
+        const bands = computeTerrainZones(
+          land,
+          lastPreset.climate,
+          Math.max(8, GRID_SIZES[last.params.richness]),
+        );
+        store.applyGenerated({ land, regions, bands });
         return `已重掷陆地（${land.polygons.length} 块）：素材与地名保持原位，落在海面上的可手动挪回陆地（可撤销）`;
       }
 
@@ -1260,7 +1269,7 @@ export function useMapEditor(canvasSize: CanvasSize) {
           : [];
         const elements = toElements(gen.placements);
         const labels = toLabels(named, elements, gen.placements);
-        store.applyGenerated({ land: gen.land, elements, labels });
+        store.applyGenerated({ land: gen.land, elements, labels, bands: gen.bands });
         lastGenRef.current = {
           ...last,
           placements: gen.placements,

@@ -460,9 +460,9 @@ describe("标注层 · 删除与字号", () => {
 
     expect(texts).toHaveLength(3);
     expect(asNodes().map((n) => n.style?.fontSize)).toEqual([10, 12, 16]);
-    // 字体与白描边也照 PRD §6.3.2 的定值走
+    // 字体与白描边也照 PRD §6.3.2 的定值走（2.43.0 描边 3 → 2：参考的低频低调地名）
     expect(styles[0].fontFamily).toContain("Songti SC");
-    expect(styles[0].stroke).toEqual({ color: 0xf6f0e0, width: 3 });
+    expect(styles[0].stroke).toEqual({ color: 0xf6f0e0, width: 2 });
     expect(styles[0].fill).toBe(0x1b1f1c);
   });
 });

@@ -30,7 +30,7 @@ import {
   pointInLand,
   type LandShapeId,
 } from "../land";
-import type { MapLand, Rect } from "../types";
+import type { MapLand, Rect, TerrainBandGrid } from "../types";
 import { expandTerrainMix, type MapPresetDef } from "./mapPresets";
 import { TERRAIN_META, type TerrainKind } from "./terrain";
 import { flippableOf, mulberry32, pickTerrainSprites, type SpriteSource } from "./terrain-assets";
@@ -361,6 +361,12 @@ export interface GenerateMapOptions {
 export interface GeneratedMap {
   land: MapLand;
   placements: SpritePlacement[];
+  /**
+   * 地貌纹理带栅格（2.43.0）：布点用的同一份格网，每格的气候带。
+   * 渲染层据此平铺草地 / 沙漠 / 冰原纹理（参考实现 `grid_size:64` 的
+   * createPattern 面纹理层）。骨架档不带。
+   */
+  bands?: TerrainBandGrid;
 }
 
 /* ─────────────────── 布点骨架：格网 + 层叠 + 丛簇（2.42.0 对齐逆向源码） ───────────────────
@@ -497,15 +503,21 @@ const TERRAIN_SCALE: Record<TerrainKind, number> = {
  * 一座山占陆地宽 63%~90% —— 陆地像小岛、素材像巨人。
  *
  * 【两轮收敛的实测口径】最大素材渲染宽 / 最长陆轴：0.6 时 ≈16%，0.42 时 p50≈12.0% /
- * max≈15.6%（审计测试逐 seed 实测）。逆向目标（makeamap 参考图）目测 ≈8~12%。
- * 本轮 ×0.32（再砍 24%），预期 p50≈9.1% / max≈11.9%，落入参考区间；
+ * max≈15.6%（审计测试逐 seed 实测）。0.32 时 p50≈9.1% / max≈11.9%。
+ *
+ * 【2.43.0 再降一档 —— 对齐参考成图的**仙侠体量档**】新取证（review 序 11 / E1）：
+ * 参考的符号体量是**分风格档位**，草带/沙丘 `w=.5`（默认魔幻）/ 仙侠 `w=.15` /
+ * 羊皮纸 `w=.2`。此前 0.32 校准用的"参考成图 8~12%"量到的是**默认风格**的档；
+ * 用户指认的对齐对象（图 2）是仙侠档 —— 山只占陆轴 3~5%，小而密、彼此不挤。
+ * 本轮 ×0.18（= 0.32 × 0.56，对齐 0.15/0.5 与观感下限的折中），预期 p50 ≈ 5% /
+ * max ≈ 6.7% —— 同样的格网数量下**有效密度**立刻起来，不再被大单体挤出避让空地。
  * **相对关系（点符号 < 地表 < 山地）一字不动**。
  *
  * 【为什么不动 `sprites.ts` 的 baseWidth】那是素材固有画幅，是碰撞/命中测试/面板
  * 预览的基准，改它会让手动落位、命中与预览一起漂移。一键成图只走这套系数，改这里
  * 才是最小、最安全的切口。
  */
-const TERRAIN_SCALE_OVERALL = 0.32;
+const TERRAIN_SCALE_OVERALL = 0.18;
 
 /**
  * 地形 → z 层档位（数字越大越靠上、越晚绘制）。
@@ -859,6 +871,70 @@ function footprintInLand(
   );
 }
 
+/* ─────────────────── 地貌纹理带（2.43.0） ─────────────────── */
+
+/**
+ * 布点格网 → 纹理带栅格。
+ *
+ * 【对齐什么】参考实现的地貌纹理是**面要素**：`createPattern(img,"repeat")`
+ * 以 64 世界单位一格平铺（草地 / 沙漠 / 两极冰原三张面纹理，`grid_size:64`），
+ * 与布点符号互相独立。本项目布点已经有同一份格网（`GRID_SIZES`），把「哪格
+ * 属于哪条气候带」随 `GeneratedMap.bands` 交给文档（`doc.terrainBands`），
+ * 渲染层就能用同一份事实源平铺 —— 纹理带与符号带天然对齐，不需要第二套判定。
+ *
+ * 【为什么抖动用确定性哈希而不是 rng】布点带的接缝抖动（`ZONE_BLEND`）每格
+ * 消耗一个骰子；纹理带如果也走 rng，就要么插在布点流前面（同 seed 全图几何
+ * 重排）、要么再开子流（跨档重掷时序对不齐）。哈希抖动给出**同款过渡观感**
+ * 且零骰子消耗 —— 同 seed 的布点序列逐字节不变（2.42.0 引擎复跑验证口径）。
+ */
+function terrainBandsOf(
+  cells: readonly Cell[],
+  cols: number,
+  rows: number,
+  box: Rect,
+  cellSize: number,
+  climate: SpriteZone | null | undefined,
+): TerrainBandGrid {
+  return {
+    cellSize,
+    cols,
+    rows,
+    x: box.x,
+    y: box.y,
+    zones: cells.map((c) => {
+      if (!c.land) return null;
+      if (climate) return climate;
+      const jitter = (cellHash(c.col, c.row) - 0.5) * ZONE_BLEND * box.height;
+      return zoneAtY(c.y + jitter, box.y, box.height);
+    }),
+  };
+}
+
+/** 格坐标 → [0,1) 确定性伪随机（纹理带接缝抖动专用，无状态、无骰子） */
+function cellHash(col: number, row: number): number {
+  let h = (Math.imul(col + 0x9e37, 0x85eb) ^ Math.imul(row + 0x27d4, 0xc2b2)) >>> 0;
+  h ^= h >>> 13;
+  h = Math.imul(h, 0x7feb) >>> 0;
+  h ^= h >>> 16;
+  return h / 0x100000000;
+}
+
+/**
+ * 给一块**已有**陆地算纹理带（「只换陆地」档用）。
+ *
+ * 全量生成（`generateMap`）内部直接用布点格网拼 `bands`；这条导出是给
+ * 不跑布点的路径复用同一套判定的 —— 参数语义一致（气候带 / 格边长）。
+ */
+export function computeTerrainZones(
+  land: MapLand,
+  climate: SpriteZone | null | undefined,
+  cellSize: number,
+): TerrainBandGrid {
+  const box = landBBox(land);
+  const { cells, cols, rows } = buildGrid(land, box, cellSize);
+  return terrainBandsOf(cells, cols, rows, box, cellSize, climate);
+}
+
 /* ─────────────────── 主入口 ─────────────────── */
 
 /**
@@ -919,7 +995,11 @@ export function generateMap(options: GenerateMapOptions): GeneratedMap {
   const landCells = cells.filter((c) => c.land).length;
   const total = Math.max(1, Math.round(landCells * (1 - PLAIN_CELL_RATIO)));
   const slots = resolveTerrainMix(options.preset, tuning, total);
-  if (slots.length === 0) return { land, placements: [] };
+
+  // ── 地貌纹理带（2.43.0）：布点格网 → 每格气候带，随文档持久化 ──
+  // 不依赖 slots / 不消耗骰子；骨架档与空配方也要带（纹理跟着陆地走）。
+  const bands = terrainBandsOf(cells, cols, rows, box, cellSize, options.preset.climate);
+  if (slots.length === 0) return { land, placements: [], bands };
 
   // ── 地形分布（区域生长，多片）──
   assignTerrainByGrowth(cells, cols, rows, slots, rng);
@@ -1150,7 +1230,7 @@ export function generateMap(options: GenerateMapOptions): GeneratedMap {
     return a.y - b.y;
   });
 
-  return { land, placements };
+  return { land, placements, bands };
 }
 
 /** 登记 + 判定合一：命中别的簇就返回 false，否则占位并返回 true */
@@ -1188,12 +1268,22 @@ export interface AssignNamesOptions {
 }
 
 /**
+ * 一键成图的**点名配额**（2.43.0，对齐参考实现的"低频地名"）。
+ *
+ * 参考成图只显国名 + 少量关隘/山名（命名表按要素类型限量取用）；点名逢素材必给
+ * 会把下半屏糊成文字团（用户对比截图的直接差评点）。12 ≈ 参考一张图上点名的
+ * 密度量级；超出配额的素材照常布点，只是不落名字（与"没进名池"同一路径）。
+ */
+export const NAMED_LABEL_QUOTA = 12;
+
+/**
  * 给布点批量起名。
  *
  * 谁有名字：素材自带 `names` 的点要素（城郭/港渡/遗迹——与手动落位
  * 同一套规则）。名池优先级（terrain.ts 约定）：
  *   预设 namePools > 素材自带 names > TERRAIN_META 默认池 > 不命名。
  * 同 seed 同名；占用查重全局唯一，全占用时 `名字·序号` 兜底。
+ * **总量配额 `NAMED_LABEL_QUOTA`**：按布点顺序取前 12 个（确定性）。
  */
 export function assignPlacementNames(
   placements: readonly SpritePlacement[],
@@ -1206,6 +1296,7 @@ export function assignPlacementNames(
   const out: PlacementName[] = [];
 
   placements.forEach((p, index) => {
+    if (out.length >= NAMED_LABEL_QUOTA) return;
     // 【谁有名字】只有素材自带 names 的点要素（城郭/港渡/遗迹——与手动落位
     // 同一套规则）。纯地貌不吃预设池点名，否则一张图会冒出几十个山名。
     const spriteNames = SPRITE_NAMES_OF(p.spriteId);

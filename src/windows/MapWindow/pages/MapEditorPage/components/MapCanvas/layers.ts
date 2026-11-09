@@ -13,6 +13,8 @@
  *   · `staticLayer` 投影 + 海面（被 cacheAsTexture 烤成一张图）
  *   · `coast` 海岸烘焙层（一张 RenderTexture 精灵）
  *   · `regionLayer` 区块填充/边界（按层级分容器）
+ *   · `terrainTexLayer` 地貌纹理（2.43.0：全陆地底纹 + 草/沙/雪带纹理，一张世界尺寸精灵，
+ *     陆地曲线掩膜；压在区块色之上——参考实现 source-atop 叠进色块的同款语义）
  *   · `polylineLayer` 折线：道路 / 河流 / 山脊 / 势力边界（按层级分容器）
  *   · `elementLayer` 素材（按层级分容器）
  *   · `submapLayer` 区块内嵌子图（递归子树）
@@ -33,6 +35,7 @@ export const WORLD_LAYER_ORDER = [
   "staticLayer",
   "coast",
   "regionLayer",
+  "terrainTexLayer",
   "polylineLayer",
   "elementLayer",
   "submapLayer",

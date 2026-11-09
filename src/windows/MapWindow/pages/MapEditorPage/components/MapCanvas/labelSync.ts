@@ -44,7 +44,7 @@ export const LABEL_FILL = 0x1b1f1c;
  * 3 px 描边是"无底框还能读"的唯一手段：地图底色深浅不一（海面、陆地、山体），
  * 只靠字色总有一段读不清；加底框又会把下面的地形整块遮掉。
  */
-export const LABEL_STROKE = { color: 0xf6f0e0, width: 3 } as const;
+export const LABEL_STROKE = { color: 0xf6f0e0, width: 2 } as const;
 
 /**
  * 标注数量上限。

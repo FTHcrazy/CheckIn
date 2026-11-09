@@ -662,8 +662,9 @@ describe("MapCanvas 素材层级显隐", () => {
 
     const world = apps[0].stage.children[0] as FakeContainerRef;
     // 图层数与清单一致；这条顺带证明 overlay 确实被挂上了
-    // +1：regionMask（区块层陆地掩膜）挂在 world 末尾，不占 WORLD_LAYER_ORDER 槽位
-    expect(world.children).toHaveLength(WORLD_LAYER_ORDER.length + 1);
+    // +2：regionMask + terrainTexMask（区块层与地貌纹理层的陆地掩膜）挂在
+    // world 末尾，不占 WORLD_LAYER_ORDER 槽位
+    expect(world.children).toHaveLength(WORLD_LAYER_ORDER.length + 2);
     const overlay = layerOf(world, "overlay") as FakeGraphicsRef;
 
     const rect = overlay.rects.at(-1);

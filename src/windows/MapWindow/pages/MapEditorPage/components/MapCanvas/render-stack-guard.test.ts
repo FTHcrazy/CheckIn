@@ -42,8 +42,9 @@ const STATIC_STACK = ["sheet", "sea", "seaShade"] as const;
 
 describe("MapCanvas 场景图 z 序", () => {
   it("图层顺序的唯一定义处是 layers.ts（不是测试里手抄的一份）", () => {
-    // 9 层：static / coast / region / polyline / element / submap / label / overlay / draft
-    expect(WORLD_LAYER_ORDER).toHaveLength(9);
+    // 10 层：static / coast / region / terrainTex(2.43.0) / polyline / element /
+    // submap / label / overlay / draft
+    expect(WORLD_LAYER_ORDER).toHaveLength(10);
     // 无重复（重复会让 addChild 拿到同一个 Container 两次，z 序静默错位）
     expect(new Set(WORLD_LAYER_ORDER).size).toBe(WORLD_LAYER_ORDER.length);
     // 海岸必须在区块**之下**（区块是"地表的划分"，要透出陆地材质）
@@ -136,7 +137,9 @@ describe("MapCanvas 场景图 z 序", () => {
     // 只有风格 effect 里那一处赋值
     expect(assigns).toHaveLength(1);
     // 赋值的对象是 targets 数组，逐个点名在那三个 ref 上
-    expect(SRC).toMatch(/regionLayerRef\.current,\s*\n\s*elementLayerRef\.current,/);
+    expect(SRC).toMatch(
+      /regionLayerRef\.current,\s*\n\s*terrainTexLayerRef\.current,\s*\n\s*elementLayerRef\.current,/,
+    );
     expect(SRC).toMatch(/elementLayerRef\.current,\s*\n\s*labelLayerRef\.current,/);
   });
 
@@ -269,7 +272,8 @@ describe("区块层：掩膜几何与国名挂载", () => {
 
   it("国名挂在层级容器内部、排在填充与边界之后，且只为 0~2 层建", () => {
     // 顺序即 z 序：先面、再线、最后名字
-    expect(SRC).toMatch(/container\.addChild\(fill, border, names\)/);
+    // 2.43.0 起容器内是「白外影 + 填充 + 内阴影 + 边界 + 国名」五件
+    expect(SRC).toMatch(/container\.addChild\(rim, fill, innerShadow, border, names\)/);
     // 透明度由层级容器的 LOD 权重统一给，节点上不许再乘一次
     expect(SRC).toMatch(/syncRegionNameGroup\(lv\.names,\s*doc\.regions,\s*level\)/);
     expect(REGION_NAME_MAX_LEVEL).toBe(2);

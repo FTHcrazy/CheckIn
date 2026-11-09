@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Assets, Texture } from "pixi.js";
-import { BASE_IMAGES, SPRITES } from "../sprites";
+import { BASE_IMAGES, LAND_PAPER_ID, LAND_PAPER_SRC, SPRITES } from "../sprites";
 
 /** 已加载纹理表：key = 素材 id / 底图 id（BASE_IMAGES[].id） */
 export type TextureMap = Record<string, Texture>;
@@ -34,9 +34,11 @@ export function useTextureCache() {
     let alive = true;
 
     // 底图家族整批预载（B3）：换底图只是切换 texture 引用，零等待
+    // 陆地纸面纹理（2.43.0）随批加载：它是陆地质感的主层，缺了就退化
     const targets: { id: string; src: string }[] = [
       ...BASE_IMAGES.map((b) => ({ id: b.id, src: b.src })),
       ...SPRITES.map((s) => ({ id: s.id, src: s.src })),
+      { id: LAND_PAPER_ID, src: LAND_PAPER_SRC },
     ];
 
     (async () => {

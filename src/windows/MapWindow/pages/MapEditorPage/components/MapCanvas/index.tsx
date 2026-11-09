@@ -1,11 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Application, Container, Graphics, Sprite, Texture } from "pixi.js";
 import type { ColorMatrixFilter, RenderTexture } from "pixi.js";
-import { BASE_IMAGE, SPRITE_MAP } from "../../sprites";
+import { BASE_IMAGE, LAND_PAPER_ID, SPRITE_MAP } from "../../sprites";
 import {
   isRegionJump,
   REGION_BORDER_COLOR,
   REGION_BORDER_PX,
+  REGION_INNER_SHADOW_ALPHA,
+  REGION_INNER_SHADOW_COLOR,
+  REGION_INNER_SHADOW_PASSES,
+  REGION_INNER_SHADOW_PX,
+  REGION_RIM_ALPHA,
+  REGION_RIM_COLOR,
+  REGION_RIM_PX,
   regionBorderAlphaOf,
   regionFillAlphaOf,
   regionJumpLimit,
@@ -24,6 +31,7 @@ import { effectiveWidthWorld, POLYLINE_PICK_PAD_PX, polylineStyleOf } from "../.
 import { controlIndexFor, dashPath, nearestOnPath, smoothPolyline } from "../../polylineGeometry";
 import { drawPolyline } from "./polylineRender";
 import { getPaperGrainTexture } from "../../paperGrain";
+import { LAND_PAPER_ALPHA, renderTerrainBandsCanvas } from "../../terrainTex";
 import { drawLandPath } from "../../land";
 import {
   REGION_NAME_ALPHA_EPS,
@@ -461,10 +469,14 @@ function appendDashedLine(g: Graphics, a: Point, b: Point, px: number): void {
   }
 }
 
-/** 一个层级的渲染容器：填充与边界分两份 Graphics，边界按需重建、填充只建一次 */
+/** 一个层级的渲染容器：白外影 / 填充 / 内阴影 / 边界分四份 Graphics（重建时机各不同） */
 interface LevelLayers {
   container: Container;
+  /** 白外影（2.43.0，`paint_shadow.shadow`）：画在填充**之下**，见 regions.ts 常量注释 */
+  rim: Graphics;
   fill: Graphics;
+  /** 内阴影（2.43.0，`paint_shadow.inner_shadow`）：画在填充之上、边界之下 */
+  innerShadow: Graphics;
   border: Graphics;
   /**
    * 国名容器（该层区块的名称文字，`regionNameLayer.ts`）。
@@ -746,6 +758,25 @@ export default function MapCanvas({
    * 海岸白边贴合，与逆向目标的观感一致（掩膜外扩见 effect 里的注释）。
    */
   const regionMaskRef = useRef<Graphics | null>(null);
+  /**
+   * 地貌纹理层（2.43.0）：草 / 沙 / 雪面纹理，压在区块色之上、折线与素材之下。
+   *
+   * 【对齐什么】参考实现 `createPattern(img,"repeat")` 以 64 世界单位一格平铺
+   * 面纹理、`source-atop` 裁进色块（证据 `decoded.js` 一键成图资源表 +
+   * pattern 加载链，见 review 序 11）。本层把 `doc.terrainBands`（生成器随布点
+   * 格网产出的气候带栅格）画成**一张**世界尺寸纹理精灵 —— 平铺在 2D 画布里
+   * 一次算完，运行期只是普通 Sprite，不引入逐帧成本。
+   *
+   * 【掩膜】与区块层共用同一条 `drawLandPath` 陆地曲线（"哪里是陆地"只有
+   * 一个事实源）；掩膜对象同样挂在 world 顶部的遮罩通道里。
+   */
+  const terrainTexLayerRef = useRef<Container | null>(null);
+  const terrainTexSpriteRef = useRef<Sprite | null>(null);
+  /** 纸面纹理精灵（multiply 叠加；纹理来自 useTextureCache 的 `land-paper`） */
+  const terrainPaperSpriteRef = useRef<Sprite | null>(null);
+  const terrainTexMaskRef = useRef<Graphics | null>(null);
+  /** 当前精灵持有的纹理（重建时必须 destroy 旧的，RenderTexture 不随场景回收） */
+  const terrainTexTextureRef = useRef<Texture | null>(null);
   /** 每个层级一份「容器 + 填充 + 边界」，索引即层级序号 */
   const levelLayersRef = useRef<LevelLayers[]>([]);
   /**
@@ -1347,6 +1378,16 @@ export default function MapCanvas({
       // 区块层的陆地掩膜（见 regionMaskRef 的注释）。掩膜对象只在遮罩通道里
       // 被渲染，不占正常绘制；挂在 world 最上层不影响 z 序语义。
       const regionMask = new Graphics();
+      // 地貌纹理层（2.43.0）：一张世界尺寸精灵 + 自己的陆地掩膜（见 terrainTexLayerRef）
+      const terrainTexLayer = new Container();
+      const terrainTexSprite = new Sprite();
+      terrainTexSprite.visible = false;
+      // 纸面纹理（AI 生成，multiply 罩在陆地之上）：质感的"材质层"
+      const terrainPaperSprite = new Sprite();
+      terrainPaperSprite.visible = false;
+      terrainPaperSprite.blendMode = "multiply";
+      terrainTexLayer.addChild(terrainTexSprite, terrainPaperSprite);
+      const terrainTexMask = new Graphics();
       // 折线层：与区块层同样是个空容器，真正的内容按层级分成子容器（见折线 effect）
       const polylineLayer = new Container();
       const elementLayer = new Container();
@@ -1367,6 +1408,7 @@ export default function MapCanvas({
         staticLayer,
         coast,
         regionLayer,
+        terrainTexLayer,
         polylineLayer,
         elementLayer,
         submapLayer,
@@ -1374,7 +1416,7 @@ export default function MapCanvas({
         overlay,
         draftLayer,
       };
-      world.addChild(...WORLD_LAYER_ORDER.map((name) => layersByName[name]), regionMask);
+      world.addChild(...WORLD_LAYER_ORDER.map((name) => layersByName[name]), regionMask, terrainTexMask);
       instance.stage.addChild(world);
 
       worldRef.current = world;
@@ -1386,6 +1428,10 @@ export default function MapCanvas({
       coastSpriteRef.current = coastSprite;
       regionLayerRef.current = regionLayer;
       regionMaskRef.current = regionMask;
+      terrainTexLayerRef.current = terrainTexLayer;
+      terrainTexSpriteRef.current = terrainTexSprite;
+      terrainPaperSpriteRef.current = terrainPaperSprite;
+      terrainTexMaskRef.current = terrainTexMask;
       polylineLayerRef.current = polylineLayer;
       elementLayerRef.current = elementLayer;
       submapLayerRef.current = submapLayer;
@@ -1426,6 +1472,13 @@ export default function MapCanvas({
       coastSpriteRef.current = null;
       regionLayerRef.current = null;
       regionMaskRef.current = null;
+      terrainTexLayerRef.current = null;
+      terrainTexSpriteRef.current = null;
+      terrainPaperSpriteRef.current = null;
+      terrainTexMaskRef.current = null;
+      // 纹理不是显示对象，不会随 world.destroy 回收，必须显式销毁
+      terrainTexTextureRef.current?.destroy(true);
+      terrainTexTextureRef.current = null;
       // 子容器随 world 一起被 destroy(true, {children:true}) 回收，这里只清引用
       levelLayersRef.current = [];
       regionNamesVersionRef.current.clear();
@@ -1691,6 +1744,7 @@ export default function MapCanvas({
 
     const targets = [
       regionLayerRef.current,
+      terrainTexLayerRef.current,
       elementLayerRef.current,
       labelLayerRef.current,
     ];
@@ -1765,13 +1819,17 @@ export default function MapCanvas({
 
     while (levelLayersRef.current.length < want) {
       const container = new Container();
+      const rim = new Graphics();
       const fill = new Graphics();
+      const innerShadow = new Graphics();
       const border = new Graphics();
       const names = new Container();
-      // 顺序即 z 序：先面、再线、最后名字（名字要压在边界之上）
-      container.addChild(fill, border, names);
+      // 顺序即 z 序：白外影（填充之下）→ 面 → 内阴影（边界之下）→ 线 → 名字。
+      // 白外影压在填充下面：外半晕铺白底、内半晕被半透明填充罩住，接缝两侧
+      // 的白互相透出来 —— "块与块之间一道浅光边"不需要任何去重就自然均匀。
+      container.addChild(rim, fill, innerShadow, border, names);
       layer.addChild(container);
-      levelLayersRef.current.push({ container, fill, border, names });
+      levelLayersRef.current.push({ container, rim, fill, innerShadow, border, names });
     }
     while (levelLayersRef.current.length > want) {
       const extra = levelLayersRef.current.pop();
@@ -1802,17 +1860,31 @@ export default function MapCanvas({
   useEffect(() => {
     const mask = regionMaskRef.current;
     const layer = regionLayerRef.current;
+    const texMask = terrainTexMaskRef.current;
+    const texLayer = terrainTexLayerRef.current;
     if (!mask || !layer || !app) return;
     const land = doc.land;
     if (!land || land.polygons.length === 0) {
       if (layer.mask) layer.mask = null;
       mask.clear();
+      if (texMask) {
+        if (texLayer && texLayer.mask) texLayer.mask = null;
+        texMask.clear();
+      }
       return;
     }
+    // 掩膜是只读的遮罩通道，同一份几何画进两份 Graphics 的成本可忽略
+    //（换来的好处是两个层可以独立挂/摘掩膜，互不牵制）。
     mask.clear();
     drawLandPath(mask, land.polygons);
     mask.fill({ color: 0xffffff });
     if (layer.mask !== mask) layer.mask = mask;
+    if (texMask && texLayer) {
+      texMask.clear();
+      drawLandPath(texMask, land.polygons);
+      texMask.fill({ color: 0xffffff });
+      if (texLayer.mask !== texMask) texLayer.mask = texMask;
+    }
   }, [doc.land, app]);
 
   // ── 区块层 · 填充（只随区块变化重建）──
@@ -1843,7 +1915,79 @@ export default function MapCanvas({
     }
   }, [doc.regions, levelAlphas.length, app]);
 
-  // ── 区块层 · 边界（屏幕恒定线宽；只在缩放跨量化档时重建）──
+  // ── 地貌纹理层 · 平铺（只随 terrainBands 变化重建）──
+  //
+  // `doc.terrainBands`（生成器产出的气候带栅格）→ 2D 画布里一次平铺成整张
+  // 世界尺寸纹理 → 一个 Sprite。纹理按带选择性叠加（草/沙/雪三档，主带不铺），
+  // 带外就是干净色块 —— 对齐参考实现"有的地方干净、有的地方灰扑扑一团"的机制。
+  //
+  // 【为什么不在生成期烘焙】生成器是纯逻辑层（无 DOM / 无 PIXI）；这张画布只在
+  // 换带栅格时重建一次（生成 / 撤销 / 换陆地），运行期零成本，与海岸烘焙的分工
+  // 一致 —— 那边烤"陆地材质"，这边烤"地貌质感"。
+  //
+  // 【旧纹理必须 destroy(true)】与子图的 RenderTexture 同款纪律：纹理不是
+  // 显示对象，不会随场景树回收；不销毁就是每次生成漏一张世界尺寸的显存。
+  useEffect(() => {
+    const layer = terrainTexLayerRef.current;
+    const sprite = terrainTexSpriteRef.current;
+    if (!layer || !sprite || !app) return;
+    const bands = doc.terrainBands;
+    const canvas =
+      bands && doc.land && bands.zones.some((z) => z !== null)
+        ? renderTerrainBandsCanvas(bands)
+        : null;
+    const prev = terrainTexTextureRef.current;
+    terrainTexTextureRef.current = null;
+    if (!canvas) {
+      sprite.texture = Texture.EMPTY;
+      sprite.visible = false;
+      prev?.destroy(true);
+      return;
+    }
+    const texture = Texture.from(canvas);
+    terrainTexTextureRef.current = texture;
+    sprite.texture = texture;
+    sprite.position.set(bands!.x, bands!.y);
+    sprite.visible = true;
+    prev?.destroy(true);
+  }, [doc.terrainBands, doc.land, app]);
+
+  // ── 纸面纹理（AI 质感层）：整片陆地 multiply 罩一层 ──
+  //
+  // 与上一条（程序化晕染）分工：那条负责"哪里是草地/沙漠/雪原"的色相晕染，
+  // 这条负责"纸面/画布"的材质 —— 纤维、颗粒、陈年斑驳全部由真实纹理携带，
+  // 程序只做配色。平铺会露周期，所以**一张图铺满整个陆地包围盒**（纹理本身
+  // 均匀无内容，拉伸后仍成立）。
+  useEffect(() => {
+    const sprite = terrainPaperSpriteRef.current;
+    if (!sprite) return;
+    const tex = textures[LAND_PAPER_ID];
+    const bands = doc.terrainBands;
+    if (!tex || !bands || !doc.land) {
+      sprite.visible = false;
+      return;
+    }
+    sprite.texture = tex;
+    sprite.position.set(bands.x, bands.y);
+    sprite.width = bands.cols * bands.cellSize;
+    sprite.height = bands.rows * bands.cellSize;
+    sprite.alpha = LAND_PAPER_ALPHA;
+    sprite.visible = true;
+  }, [textures, doc.terrainBands, doc.land]);
+
+  // ── 区块层 · 白外影 + 内阴影 + 边界（屏幕恒定线宽；只在缩放跨量化档时重建）──
+  //
+  // 三者都是"沿块缘的笔划"、都要求屏幕像素恒定（世界宽度 = px / 缩放），
+  // 因此与边界共用同一个重建时机（`borderScale` 量化档）与同一遍多边形遍历。
+  //
+  // 【白外影为什么不做共享边去重】它**画在填充之下**（rim 排在 fill 前面）：
+  // 相邻块的同一条边各描一次也只是把白底铺厚（不透明度 0.85 的两遍 ≈ 0.98），
+  // 外半晕上再罩两侧的半透明填充，接缝均匀发亮 —— 参考实现 `shadow: 2~5, #fff`
+ // 的"块间浅光边"就是这么来的。去重反而会让块缘外侧只亮一半。
+  //
+  // 【内阴影也不去重】`inner_shadow` 是**逐块**的：相邻块的退晕在接缝两侧
+  // 各画各的 —— 参考实现同样如此，分块感来自光影而不是粗线。退晕本身用
+  // 多层同心 stroke 画成渐隐（单层均匀带实测读作"贴边公路"，见常量注释）。
   //
   // 线宽换算成世界单位 = 像素 / 缩放。早期版本用固定世界单位，结果缩远了细到
   // 看不见、放到最大比山脉还宽 —— 区块的可见缩放跨了 40 倍，这个换算不能省。
@@ -1865,7 +2009,43 @@ export default function MapCanvas({
     const levels = levelLayersRef.current;
     if (levels.length === 0) return;
     const width = REGION_BORDER_PX / borderScale;
-    for (const lv of levels) lv.border.clear();
+    for (const lv of levels) {
+      lv.border.clear();
+      lv.rim.clear();
+      lv.innerShadow.clear();
+    }
+    // 白外影：块缘一圈居中的白（外半晕露出、内半晕被填充罩住）
+    const rimWidth = REGION_RIM_PX / borderScale;
+    // 内阴影：alignment 1 → 全部画在多边形内侧，宽度即退晕深度。
+    // 【多层同心 = 渐隐】单层均匀带实测读作"贴边公路"（硬外沿 + 接缝两侧叠加），
+    // 改成 4 层宽度递减的同心 stroke：贴边处四层叠加到目标 alpha，向内逐层
+    // 脱落，近似线性渐隐 —— 参考的 inner_shadow 是模糊退晕，观感必须同种。
+    const shadowWidth = REGION_INNER_SHADOW_PX / borderScale;
+    const shadowAlphaPerPass =
+      1 - Math.pow(1 - REGION_INNER_SHADOW_ALPHA, 1 / REGION_INNER_SHADOW_PASSES);
+    for (const region of doc.regions) {
+      const lv = levels[region.level];
+      if (!lv || region.polygon.length < 3) continue;
+      for (const poly of [region.polygon, ...(region.pieces ?? [])]) {
+        if (poly.length < 3) continue;
+        lv.rim.poly(toFlatPoints(poly));
+        lv.rim.stroke({
+          width: rimWidth,
+          color: REGION_RIM_COLOR,
+          alpha: REGION_RIM_ALPHA,
+          alignment: 0.5,
+        });
+        for (let pass = 0; pass < REGION_INNER_SHADOW_PASSES; pass += 1) {
+          lv.innerShadow.poly(toFlatPoints(poly));
+          lv.innerShadow.stroke({
+            width: shadowWidth * (1 - pass / REGION_INNER_SHADOW_PASSES),
+            color: REGION_INNER_SHADOW_COLOR,
+            alpha: shadowAlphaPerPass,
+            alignment: 1,
+          });
+        }
+      }
+    }
     const drawnByLevel = levels.map(() => new Set<string>());
     // 每一级的「跳线」长度上限：先扫一遍该级所有边取中位数，再乘倍数（见
     // `regionJumpLimit` 的注释）。O(边数) 的一次预扫，换掉几百根横穿整块地的飞线。

@@ -149,8 +149,8 @@ describe("守卫 1：区块线与陆地环的贴合度", () => {
 });
 
 describe("守卫 2：素材渲染宽 / 陆地轴长（素材相对比例）", () => {
-  /** 实测 p50≈9.1% p90≈11% max≈12%（总闸 0.32）；阈值取 max + 3pp 余量 */
-  const MAX_RATIO = 0.15;
+  /** 实测 p50≈5% max≈6.7%（总闸 0.18，2.43.0 仙侠体量档）；阈值取 max + 3pp 余量 */
+  const MAX_RATIO = 0.1;
 
   function maxSpriteRatio(seed: number): { ratio: number; landAxis: number; maxW: number } {
     const gen = generateMap({
@@ -182,7 +182,7 @@ describe("守卫 2：素材渲染宽 / 陆地轴长（素材相对比例）", ()
     return { ratio: maxW / landAxis, landAxis, maxW };
   }
 
-  it("最大素材渲染宽不超过陆地轴长的 15%（参考目标 ≈8~12%）", () => {
+  it("最大素材渲染宽不超过陆地轴长的 10%（2.43.0 仙侠体量档：小而密，参考 w=.15 档）", () => {
     for (const seed of SEEDS) {
       const { ratio, landAxis, maxW } = maxSpriteRatio(seed);
       expect(

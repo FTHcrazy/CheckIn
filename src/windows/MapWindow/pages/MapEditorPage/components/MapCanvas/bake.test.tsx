@@ -357,8 +357,9 @@ describe("MapCanvas 海岸烘焙", () => {
 
     expect(created).toHaveLength(1);
     const { world, coast, sprite } = nodes();
-    // +1：regionMask（区块层陆地掩膜）挂在 world 末尾，不占 WORLD_LAYER_ORDER 槽位
-    expect(world.children).toHaveLength(WORLD_LAYER_ORDER.length + 1);
+    // +2：regionMask + terrainTexMask（区块层与地貌纹理层的陆地掩膜）挂在
+    // world 末尾，不占 WORLD_LAYER_ORDER 槽位
+    expect(world.children).toHaveLength(WORLD_LAYER_ORDER.length + 2);
     expect(coast.visible).toBe(true);
     expect(sprite.texture).toBe(textures[0]);
     expect((apps[0].renderer.render as unknown as { mock: { calls: unknown[] } }).mock.calls)
@@ -472,10 +473,11 @@ describe("MapCanvas 海岸烘焙", () => {
     const world = apps[0].stage.children[0] as unknown as FakeNode;
     const regionLayer = layerOf(world, "regionLayer");
     expect(regionLayer.alpha).toBe(1);
-    // 区块层 = 每层一个容器，容器内是「填充 + 边界 + 国名」（2.39.0 加了国名）
+    // 区块层 = 每层一个容器，容器内是「白外影 + 填充 + 内阴影 + 边界 + 国名」
+    // （2.39.0 加了国名，2.43.0 加了白外影与内阴影 —— paint_shadow 对齐）
     const levelContainer = regionLayer.children[0];
     const childCount = levelContainer.children.length;
-    expect(childCount).toBe(3); // 填充 + 边界 + 国名
+    expect(childCount).toBe(5); // rim + fill + innerShadow + border + names
     const layerChildCount = regionLayer.children.length;
 
     rerender(tree({ land: null, showRegions: false, levelAlphas: [1] }));

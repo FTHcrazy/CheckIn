@@ -8,6 +8,7 @@ import { hslToRgb, normalizeRegionSchema } from "./regions";
 import type { MapRegion, Point, RegionLevelDef } from "./regions";
 import { normalizeLayerState } from "./layerState";
 import type { MapLayerStateMap } from "./layerState";
+import type { SpriteZone } from "./domain/zones";
 
 /**
  * 世界坐标点。
@@ -231,6 +232,42 @@ export interface MapDocument {
    * （只做"非法则剔除"），老文档形状因此逐字节不变；写值只发生在用户真的改了配置之后。
    */
   regionSchema?: RegionLevelDef[];
+  /**
+   * 地貌纹理带栅格（2.43.0）。**可选**：老文档不写值（零写入），读点按
+   * "无纹理带"处理 —— 渲染层不画纹理层，其余一切照旧。
+   */
+  terrainBands?: TerrainBandGrid;
+}
+
+/**
+ * 地貌纹理带栅格（2.43.0，对齐参考实现 `grid_size:64` 的 createPattern 纹理层）。
+ *
+ * 【为什么是一份栅格而不是每个素材一份纹理】参考实现的地貌纹理是**面要素**：
+ * 按格网平铺贴图（`createPattern(img,"repeat")` + `source-atop` 裁进色块），
+ * 与布点符号互相独立 —— 纹理铺满整条带，符号只是带上稀疏的点。本项目生成器
+ * 在布点时已经算好了同一份格网（`GRID_SIZES` 三档），把「哪格属于哪条气候带」
+ * 随文档持久化，渲染层就能用同一份事实源平铺，纹理与符号天然对齐。
+ *
+ * 【为什么可选而不是必填】老文档（2.42.0 及以前）没有这个字段：读点按
+ * "无纹理带"处理（不画纹理层），零写入原则与 `polylines` / `layerState` 同款。
+ */
+export interface TerrainBandGrid {
+  /** 格边长（世界单位）＝ 生成时的丰度档（72 / 54 / 36） */
+  cellSize: number;
+  /** 栅格列数 / 行数 */
+  cols: number;
+  rows: number;
+  /** 栅格左上角的世界坐标（陆地包围盒原点） */
+  x: number;
+  y: number;
+  /**
+   * 行优先的格带表（长度 = cols × rows）：格心属于哪条气候带。
+   * `null` = 海格或平原（不铺**带纹理**）。`"core"` 主带也不铺 —— 参考实现的
+   * 带纹理只有草地 / 沙漠 / 两极冰原三张（主带靠符号密度）；但渲染层会给
+   * **整张陆地**铺一层极淡的中性底纹（对齐参考的块级 pattern，见
+   * `terrainTex.ts` 的 `TEX_BASE_ALPHA`），所以平原/主带不是平涂。
+   */
+  zones: Array<SpriteZone | null>;
 }
 
 /** 已放置的素材实例 */

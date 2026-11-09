@@ -1,0 +1,16 @@
+{
+  "$comment": "陆地纸面纹理来源记录（review §5.4：不得使用逆向目标 PNG，走 AI 生成）。这层是 2.43.0『西幻质感』的材质主层：一张中性灰阶的旧画布扫描质感，渲染时以 multiply 整片罩在陆地之上。",
+  "generated": "2026-11-09",
+  "generator": "ImageGen (AI), quality=high, 1024x1024",
+  "prompt": "Seamless tileable texture of aged handmade paper and fine canvas fabric, top-down flat scan, monochrome neutral gray beige, no color cast, dense fine fiber grain, subtle soft mottled blotches and faint water stains, even illumination, uniform without vignette, no borders, no text, no objects, photographic macro texture, high detail",
+  "postprocess": [
+    "右下裁剪：取左上 880×880 去掉平台水印带（原图水印位于 (900,930) 附近）",
+    "降采样到 440×440（4 像素均值，体积 1.5MB → 365KB）",
+    "灰度化 + 以原均值 0.695 为轴对比拉伸 ×2.0，目标均值 0.86，钳制 [0.55, 1.0]（214KB）",
+    "渲染侧：Sprite.multiply，alpha 0.9，铺满陆地包围盒（单张拉伸、不平铺 —— 纹理均匀无内容，无需无缝）"
+  ],
+  "why": "程序化笔画类 tile（草茎/波纹/雪粒）会被读成重复几何图案；参考的质感是有机斑驳的真实纸面，只能由材质图承载。multiply 而非 overlay：overlay 在浅色底上往白里推，实测逐版发白。",
+  "items": [
+    { "file": "land-paper.png", "subject": "aged handmade paper / canvas texture, grayscale, mean 0.86, contrast ×2" }
+  ]
+}
