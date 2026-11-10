@@ -20,6 +20,7 @@ import {
   REGION_RIM_PX,
   REGION_TOTAL_LIMIT,
   assignRegionColors,
+  clipHalfPlanePieces,
   createRng,
   fbm,
   generateHierarchy,
@@ -1037,5 +1038,141 @@ describe("区块样式与密度（对齐逆向 §3.7 口径）", () => {
         expect(rgbDist(composed[i], composed[j]), `level=${level}`).toBeGreaterThan(0);
       }
     }
+  });
+});
+
+/* ───────────────── 半平面裁剪：凹多边形必须被切成互不重叠的多块 ───────────────── */
+
+describe("clipHalfPlanePieces：多块切分（2.48.0 重写）", () => {
+  /** 网格采样估算 `多边形 ∩ 半平面` 的面积（真值，不依赖被测实现） */
+  function areaBySampling(poly: Point[], keep: (p: Point) => number, N = 160): number {
+    const xs = poly.map((p) => p.x);
+    const ys = poly.map((p) => p.y);
+    const x0 = Math.min(...xs);
+    const x1 = Math.max(...xs);
+    const y0 = Math.min(...ys);
+    const y1 = Math.max(...ys);
+    let count = 0;
+    for (let iy = 0; iy < N; iy += 1) {
+      for (let ix = 0; ix < N; ix += 1) {
+        const p = { x: x0 + ((ix + 0.5) / N) * (x1 - x0), y: y0 + ((iy + 0.5) / N) * (y1 - y0) };
+        if (pointInPolygon(p, poly) && keep(p) <= 0) count += 1;
+      }
+    }
+    return (count / (N * N)) * (x1 - x0) * (y1 - y0);
+  }
+
+  /** 两块之间的重叠采样数（把 a 的包围盒铺一层网格，落在两者内部即算重叠） */
+  function overlapSamples(a: Point[], b: Point[], N = 32): number {
+    const xs = a.map((p) => p.x);
+    const ys = a.map((p) => p.y);
+    const x0 = Math.min(...xs);
+    const x1 = Math.max(...xs);
+    const y0 = Math.min(...ys);
+    const y1 = Math.max(...ys);
+    let hits = 0;
+    for (let iy = 0; iy < N; iy += 1) {
+      for (let ix = 0; ix < N; ix += 1) {
+        const q = { x: x0 + ((ix + 0.5) / N) * (x1 - x0), y: y0 + ((iy + 0.5) / N) * (y1 - y0) };
+        if (pointInPolygon(q, a) && pointInPolygon(q, b)) hits += 1;
+      }
+    }
+    return hits;
+  }
+
+  it("凸多边形：切成一块，面积等于采样真值", () => {
+    const rect: Point[] = [
+      { x: -100, y: -60 },
+      { x: 100, y: -60 },
+      { x: 100, y: 60 },
+      { x: -100, y: 60 },
+    ];
+    const keep = (p: Point) => p.x; // 保留 x <= 0
+    const pieces = clipHalfPlanePieces(rect, keep);
+    expect(pieces).toHaveLength(1);
+    expect(polygonArea(pieces[0])).toBeCloseTo(100 * 120, 3);
+    for (const p of pieces[0]) expect(keep(p)).toBeLessThanOrEqual(1e-9);
+  });
+
+  it("哑铃形凹多边形：切掉中间的梁之后必须是**两块**，各自贴着保留侧", () => {
+    // 左右两个方块靠一条 y∈[0,4] 的细梁相连；保留 y >= 6 一侧 → 梁被切掉，两块
+    const dumbbell: Point[] = [
+      { x: -80, y: 0 },
+      { x: -80, y: 80 },
+      { x: -20, y: 80 },
+      { x: -20, y: 4 },
+      { x: 20, y: 4 },
+      { x: 20, y: 80 },
+      { x: 80, y: 80 },
+      { x: 80, y: 0 },
+    ];
+    const keep = (p: Point) => 6 - p.y;
+    const pieces = clipHalfPlanePieces(dumbbell, keep);
+    expect(pieces).toHaveLength(2);
+    for (const piece of pieces) {
+      for (const p of piece) expect(keep(p)).toBeLessThanOrEqual(1e-9);
+      expect(polygonArea(piece)).toBeCloseTo(60 * 74, 3);
+    }
+    expect(overlapSamples(pieces[0], pieces[1])).toBe(0);
+  });
+
+  it("回归：2.47.0 实测爆掉的那组输入（星形 × 斜线）不再吞掉另一半", () => {
+    // 这组输入在旧实现（沿裁剪线"奇偶成对"配对）下会返回两块 —— 一块正确、
+    // 另一块把**被裁掉的那半边**也包了进去（面积 2.4 倍、6 个顶点在保留侧之外）。
+    const star: Point[] = [
+      [152.13, 0], [117.49, 48.67], [131.01, 131.01], [51.11, 123.39],
+      [0, 116.34], [-45.61, 110.1], [-105.93, 105.93], [-118.73, 49.18],
+      [-162.97, 0], [-157.47, -65.23], [-123.44, -123.44], [-39.28, -94.84],
+      [0, -41.9], [61.1, -147.5], [139.51, -139.51], [86.11, -35.67],
+    ].map(([x, y]) => ({ x, y }));
+    const ang = 4.175625725857764;
+    const ox = -27.08266030997038;
+    const oy = -39.46258753538132;
+    const keep = (p: Point) => (p.x - ox) * Math.cos(ang) + (p.y - oy) * Math.sin(ang);
+
+    const pieces = clipHalfPlanePieces(star, keep);
+    expect(pieces.length).toBeGreaterThan(0);
+    for (const piece of pieces) {
+      // ① 一个顶点都不许落在丢弃侧
+      for (const p of piece) expect(keep(p)).toBeLessThanOrEqual(1e-6);
+    }
+    // ② 面积和 ≈ 采样真值（旧实现这里是 2.4 倍）
+    const got = pieces.reduce((s, p) => s + polygonArea(p), 0);
+    expect(got / areaBySampling(star, keep)).toBeCloseTo(1, 1);
+  });
+
+  it("模糊测试：60 组随机凹多边形 × 随机半平面 —— 多块互不重叠、面积守恒", () => {
+    const rng = createRng(0x5eed);
+    let cases = 0;
+    for (let t = 0; t < 60; t += 1) {
+      const n = 5 + Math.floor(rng() * 18);
+      const poly: Point[] = [];
+      for (let i = 0; i < n; i += 1) {
+        const a = (i / n) * Math.PI * 2;
+        const r = 40 + rng() * 160;
+        poly.push({ x: Math.cos(a) * r, y: Math.sin(a) * r });
+      }
+      const ang = rng() * Math.PI * 2;
+      const ox = (rng() - 0.5) * 80;
+      const oy = (rng() - 0.5) * 80;
+      const keep = (p: Point) => (p.x - ox) * Math.cos(ang) + (p.y - oy) * Math.sin(ang);
+      const pieces = clipHalfPlanePieces(poly, keep);
+      cases += 1;
+      for (const piece of pieces) {
+        for (const p of piece) {
+          expect(keep(p), `case ${t}：顶点越到丢弃侧`).toBeLessThanOrEqual(1e-6);
+        }
+      }
+      for (let i = 0; i < pieces.length; i += 1) {
+        for (let j = i + 1; j < pieces.length; j += 1) {
+          expect(overlapSamples(pieces[i], pieces[j]), `case ${t}：两块重叠`).toBe(0);
+        }
+      }
+      const got = pieces.reduce((s, p) => s + polygonArea(p), 0);
+      const want = areaBySampling(poly, keep, 120);
+      expect(got / want, `case ${t}：面积不守恒`).toBeGreaterThan(0.94);
+      expect(got / want, `case ${t}：面积不守恒`).toBeLessThan(1.06);
+    }
+    expect(cases).toBe(60);
   });
 });

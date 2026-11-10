@@ -22,6 +22,14 @@
  * 不保留中间点），再 Chaikin 切角，最后给每一段叠一个**低频鼓包**（段内半波
  * 正弦、两端为 0）。端点是精确的聚落坐标：路必须接在点上，不能停在旁边一格。
  *
+ * ── 主次分级（2.47.0 起，2.48.0 改口径）──
+ * 同一条网里的路不该一样重。按**两端层级**分三档（`roadGradeOf`）：城↔城是
+ * 官道、城↔镇与镇↔镇是支线、任一端为村落是村道。2.48.0 起三档**共用点线样式**，
+ * 只靠 `widthScale` 拉开粗细（2.4 / 2.0 / 1.6 世界单位）—— 逆向目标的路网本就
+ * 只有一种 `size:2` 的点线，双线是手绘笔刷的事（见 `GRADE_STYLE`）。
+ * 判据只看层级不看长度 —— 长度是"这条路有多远"，等级是"这条路有多重要"，
+ * 混在一起会让一条绕远的官道被降级。
+ *
  * 纯函数：无 IO、无 React、无 PIXI。import 白名单：`../land`（岸内判定 +
  * 陆地包围盒）、`../types`、`./terrain`（地形代价）、`./settlements`（层级）。
  */
@@ -142,6 +150,61 @@ function hash01(a: number, b: number): number {
 /** 层级优先级（数字小的先连：主干先占走廊） */
 const TIER_RANK: Record<SettlementTier, number> = { city: 0, town: 1, village: 2 };
 
+/**
+ * 道路等级（2.47.0）：同一条网里"哪条是主路"。
+ *
+ * 【为什么要分级】2.45.0 只有"官道 / 点线"两档 —— 城到镇和村到村画出来一样重，
+ * 成图上读不出主次。手绘地图与同类工具（Azgaar 的 routes、Wonderdraft 的路刷）
+ * 都是**分级笔刷**：主路最重、支线中等、村道最轻。参考实现里每条线只有一个
+ * 绝对 `size`（`size_diff` 是"同一条多重并行绘制时逐段加宽"，不是等级），
+ * 分级在那边是留给用户的事 —— 这里把它自动化，用户仍可在属性面板接着微调。
+ */
+export type RoadGrade = "trunk" | "branch" | "local";
+
+/**
+ * 两端层级 → 道路等级。
+ *
+ * - `trunk`（官道）：城 ↔ 城 —— 最粗的一档；
+ * - `branch`（支线）：城 ↔ 镇、镇 ↔ 镇 —— 物资向上汇聚的主干；
+ * - `local`（村道）：任一端是村落。
+ */
+export function roadGradeOf(a: SettlementTier, b: SettlementTier): RoadGrade {
+  const hi = Math.min(TIER_RANK[a], TIER_RANK[b]);
+  const lo = Math.max(TIER_RANK[a], TIER_RANK[b]);
+  if (hi === 0 && lo === 0) return "trunk";
+  if (lo <= 1) return "branch";
+  return "local";
+}
+
+/**
+ * 等级 → 样式档 + 宽度倍数。
+ *
+ * 【2.48.0：三档统一走点线，只留粗细差 —— 对齐逆向目标】
+ * 逆向目标的路网只有**一种**样式：`{size:2, color:"#000000", alpha:.4, line_type:2}`
+ * （`decoded.js` 的 `ca()`，"自动生成道路"）。它不区分官道/支线/村道，也不画双线
+ * —— 双线是**手绘笔刷**的事（本项目的 `road-main` 仍给手画用）。
+ * 2.47.0 让城↔城走 `road-main`（5 × 1.2 = **6 世界单位** + 2.4 的米白芯），
+ * 成图上是一条比山脉还惹眼的缎带（用户："放大看也是很粗"）—— 6 单位是参考
+ * `size:2` 的三倍。所以这里改成：
+ *   · 三档全是 `road-dotted`（`line_type:2` 的对应物，`dash:[1,4]`）；
+ *   · 只用宽度倍数分主次：`2.4 / 2.0 / 1.6` 世界单位 —— 最宽的官道也只比参考
+ *     的 2 粗 20%，缩到整图时读者看到的是一条路网，而不是一片色带。
+ *
+ * 【为什么用 `widthScale` 而不是新增样式档】渲染层已经把它乘进线宽
+ * （`effectiveWidthWorld`），属性面板的滑杆读写的是同一个字段 —— 分级只是给
+ * 新生成的路一个**初值**，用户拖滑杆改的就是它。倍数都落在滑杆区间
+ * `[0.5, 2.5]` 内，拖回 `1` 就是"所有路一样粗"。
+ */
+const GRADE_STYLE: Record<RoadGrade, { styleId: string; widthScale: number }> = {
+  /** 城 ↔ 城：2.4 世界单位（参考 `size:2` 的 1.2 倍，只多一点分量） */
+  trunk: { styleId: "road-dotted", widthScale: 1.2 },
+  /** 城 ↔ 镇、镇 ↔ 镇：2.0 —— 与参考同宽 */
+  branch: { styleId: "road-dotted", widthScale: 1 },
+  /** 任一端是村落：1.6 —— 细一档，读作"走的人少" */
+  local: { styleId: "road-dotted", widthScale: 0.8 },
+};
+
+
 /** 一条边（无向，`a < b` 归一） */
 interface Edge {
   a: number;
@@ -170,8 +233,21 @@ const MAX_ROAD_CELLS = 4;
  */
 const NEAREST_LINK_CELLS = 14;
 
-/** 一个点最多主动连几条（度数是"汇聚"的观感：一进两出） */
-const EDGES_PER_NODE = 2;
+/**
+ * 一个点**主动**连几条（缺省 1：只连最近的邻居）。
+ *
+ * 【2.48.0 从 2 收到 1 —— 对齐逆向目标的选边逻辑】参考的 `ca()` 第一轮就是
+ * "每个聚落连它最近的另一个聚落"（`for k … 找最近的 l`），第二轮才给还没连上
+ * 的点补一条（带 `1.3 × min_dis` 的门槛）。这条"一人只发一条"的规则决定了
+ * 路网的形状：**树**，而不是互相交叉的网。旧值 2 让每个点再连一个次近邻，
+ * 40 个聚落 × 2 条 → 60 多条路在一张图里互相穿越，缩到整图就是一片"全是线"
+ * 的网（用户截图）。
+ *
+ * 【为什么度数是 1 而不是"整张图总共 N 条"】主动发边少，但**被动接收**不受限：
+ * 一座城若是一圈村落的最近邻，它的度数会自己长到 5~6 —— 这正是参考里"城市是
+ * 路网枢纽"的观感，不需要额外的枢纽规则。
+ */
+const EDGES_PER_NODE = 1;
 
 /** 两段方向的夹角小于它就算"同一条走廊"，只留短的（度） */
 const MIN_ANGLE_DEG = 28;
@@ -271,23 +347,40 @@ function localEdges(
 }
 
 /**
- * 城与城之间的主干（它们之间必然有官道，哪怕距离超过局部的上限）。
+ * 每座城主动连几座城。
  *
- * 只在城市数量很少（1~5 座）时用**完全图** —— 城与城两两相连，读作"官道网"；
- * 超过 5 座就退化成局部连边（否则边的数量是平方级）。
+ * 【为什么不是完全图】2.45.0 在城 ≤5 座时用完全图（K5 = 10 条边）。四张图看下来
+ * 是一个**三角形网格**：城的位置由海滨/沿河打分选出，彼此并不等距，但两两相连就
+ * 把它们连成了凸多边形的边框 —— 观感是"画了几何图形"而不是"这里有官道网"。
+ * 真实官道网是稀疏的：一座城通两三座城，其余靠中转。
+ */
+const CITIES_LINKED = 2;
+
+/**
+ * 城与城之间的主干（官道）。
+ *
+ * 每座城连**最近的 2 座城**（距离上限 `MAX_ROAD_CELLS × 2`）：3 座城互近时仍是
+ * 一个三角（3 个点本来就只有 3 条边，不算冗余），5 座城最多 5 条而不是 10 条。
+ * 远处的城（跨海、隔山）不连，各自成网 —— 与"路是局部的"同一口径。
  */
 function cityTrunk(nodes: readonly RoadNode[], cellSize: number): Edge[] {
   const cities = nodes.map((n, i) => ({ n, i })).filter(({ n }) => n.tier === "city");
-  if (cities.length < 2 || cities.length > 5) return [];
+  if (cities.length < 2) return [];
+  const maxLen = cellSize * MAX_ROAD_CELLS * 2;
+  const linked = new Set<string>();
   const out: Edge[] = [];
-  for (let p = 0; p < cities.length; p += 1) {
-    for (let q = p + 1; q < cities.length; q += 1) {
-      const a = nodes[cities[p].i];
-      const b = nodes[cities[q].i];
-      const length = Math.hypot(a.x - b.x, a.y - b.y);
-      // 官道也有上限：两座隔着半张图的城不画路（中间没有补给的直线不是官道）
-      if (length > cellSize * MAX_ROAD_CELLS * 2) continue;
-      out.push({ a: cities[p].i, b: cities[q].i, length });
+  for (const { n, i } of cities) {
+    const nearest = cities
+      .filter(({ i: j }) => j !== i)
+      .map(({ n: m, i: j }) => ({ j, length: Math.hypot(m.x - n.x, m.y - n.y) }))
+      .filter(({ length }) => length > 0 && length <= maxLen)
+      .sort((p, q) => p.length - q.length)
+      .slice(0, CITIES_LINKED);
+    for (const { j, length } of nearest) {
+      const key = `${Math.min(i, j)}-${Math.max(i, j)}`;
+      if (linked.has(key)) continue;
+      linked.add(key);
+      out.push({ a: Math.min(i, j), b: Math.max(i, j), length });
     }
   }
   return out;
@@ -581,7 +674,9 @@ function passableCellNear(grid: RoadGrid, index: number): number {
 /**
  * 由聚落坐标生成整张图的道路网。
  *
- * @returns 折线要素（`origin: "generated"`）：城与城之间是官道，其余是点线。
+ * @returns 折线要素（`origin: "generated"`）：官道（城↔城，2.4 世界单位）、
+ * 支线（城↔镇 / 镇↔镇，2.0）、村道（含村落，1.6）三档，全部是点线
+ * （参考 `line_type:2`），见 `roadGradeOf` / `GRADE_STYLE`。
  */
 export function buildRoadNet(
   nodes: readonly RoadNode[],
@@ -615,11 +710,13 @@ export function buildRoadNet(
     const points = toPoints(simplifyPath(path, grid), grid, a, b, phase);
     if (points.length < 2) continue;
 
-    const isTrunk = a.tier === "city" && b.tier === "city";
+    const grade = roadGradeOf(a.tier, b.tier);
+    const look = GRADE_STYLE[grade];
     out.push({
       id: `pl_gen_road_${edge.a}_${edge.b}`,
       kind: "road",
-      styleId: isTrunk ? "road-main" : "road-dotted",
+      styleId: look.styleId,
+      widthScale: look.widthScale,
       points,
       closed: false,
       level: null,

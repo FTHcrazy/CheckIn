@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  POLYLINE_WIDTH_SCALE_MAX,
+  POLYLINE_WIDTH_SCALE_MIN,
+  effectiveWidthWorld,
+  polylineStyleOf,
+} from "../polylineStyle";
+import type { MapPolyline } from "../types";
+import {
   buildRoadNet,
   roadCostOfCells,
+  roadGradeOf,
   roadGridOfLand,
   type RoadGrid,
   type RoadNode,
@@ -96,15 +104,17 @@ describe("buildRoadNet · 拓扑", () => {
     expect(roads).toEqual([]);
   });
 
-  it("城与城 = 官道，其余 = 点线", () => {
+  it("城与城 = 官道（最粗一档），其余 = 更细的点线", () => {
     const grid = openGrid(10, 10);
     const roads = buildRoadNet(
       [node(grid, 2, 2, "city"), node(grid, 6, 2, "city"), node(grid, 5, 5, "village")],
       { grid, seed: 3 },
     );
-    const trunk = roads.filter((r) => r.styleId === "road-main");
+    // 2.48.0 起等级只剩 `widthScale`：官道 1.2、含村落 0.8
+    const trunk = roads.filter((r) => (r.widthScale ?? 1) >= 1.1);
     expect(trunk.length).toBe(1);
-    expect(roads.filter((r) => r.styleId === "road-dotted").length).toBeGreaterThan(0);
+    expect(trunk[0].styleId).toBe("road-dotted");
+    expect(roads.filter((r) => (r.widthScale ?? 1) < 1).length).toBeGreaterThan(0);
   });
 
   it("少于两个聚落 = 没有路（一条没有去处的线不该存在）", () => {
@@ -194,6 +204,114 @@ describe("buildRoadNet · 几何", () => {
       { grid: split, seed: 1 },
     );
     expect(roads).toEqual([]);
+  });
+});
+
+describe("道路主次分级（2.47.0；2.48.0 改为三档同一点线）", () => {
+  /** 一条路在 100% 缩放下的**实际世界线宽**（含样式档宽度 × 倍数） */
+  const worldWidthOf = (line: MapPolyline): number =>
+    effectiveWidthWorld(polylineStyleOf(line.styleId, line.kind), line.widthScale, 1);
+
+  /** 造一条只连两个点的路（距离 3 格，必连） */
+  const roadOf = (a: RoadNode["tier"], b: RoadNode["tier"]): MapPolyline => {
+    const grid = openGrid(10, 10);
+    const roads = buildRoadNet([node(grid, 2, 2, a), node(grid, 5, 2, b)], { grid, seed: 7 });
+    expect(roads, `${a} → ${b} 应该连出一条路`).toHaveLength(1);
+    return roads[0];
+  };
+
+  it("两端层级 → 等级：城-城官道 / 城-镇·镇-镇支线 / 含村为村道", () => {
+    expect(roadGradeOf("city", "city")).toBe("trunk");
+    expect(roadGradeOf("city", "town")).toBe("branch");
+    expect(roadGradeOf("town", "city")).toBe("branch"); // 顺序无关
+    expect(roadGradeOf("town", "town")).toBe("branch");
+    expect(roadGradeOf("city", "village")).toBe("local");
+    expect(roadGradeOf("town", "village")).toBe("local");
+    expect(roadGradeOf("village", "village")).toBe("local");
+  });
+
+  it("三档全部是点线（参考 line_type:2），只靠宽度倍数分主次", () => {
+    // 【2.48.0 改口径】逆向目标的路网只有一种样式 `{size:2, line_type:2}`；
+    // 官道双线是手绘笔刷的事（`road-main` 仍留在样式表里给手画用）。
+    // 三档若有一档走别的样式档，缩到整图就会出现"比山脉还粗的缎带"（用户截图）。
+    for (const [a, b] of [
+      ["city", "city"],
+      ["city", "town"],
+      ["town", "town"],
+      ["village", "village"],
+    ] as const) {
+      expect(roadOf(a, b).styleId, `${a} → ${b}`).toBe("road-dotted");
+    }
+    // 倍数本身即等级：1.2 / 1.0 / 0.8
+    expect(roadOf("city", "city").widthScale).toBe(1.2);
+    expect(roadOf("city", "town").widthScale).toBe(1);
+    expect(roadOf("village", "village").widthScale).toBe(0.8);
+  });
+
+  it("实际世界线宽：官道 > 支线 > 村道，且都不超过参考量级的 1.25 倍", () => {
+    // 【为什么量实际宽度而不是倍数字面量】观感目标是"读得出主次"，
+    // 而实际宽度 = 样式档 width × 倍数 —— 改了样式档 width 却没改倍数时，
+    // 倍数关系可能还"看着对"但主次已经颠倒。
+    const trunk = worldWidthOf(roadOf("city", "city"));
+    const branch = worldWidthOf(roadOf("city", "town"));
+    const local = worldWidthOf(roadOf("village", "village"));
+    expect(trunk).toBeGreaterThan(branch);
+    expect(branch).toBeGreaterThan(local);
+    // 支线至少比村道粗 20%，否则整图上读不出差别
+    expect(branch / local).toBeGreaterThan(1.2);
+    // 【上限】参考的点线是 `size: 2`（页面单位 ≈ 本项目世界单位）。
+    // 2.45~2.47 的官道是 6 世界单位 —— 三倍，成图上就是一条缎带。
+    expect(trunk).toBeLessThanOrEqual(2.5);
+    expect(local).toBeGreaterThanOrEqual(1.5);
+  });
+
+  it("倍数都落在属性面板滑杆区间内（用户拖得回去）", () => {
+    for (const road of [
+      roadOf("city", "city"),
+      roadOf("city", "town"),
+      roadOf("village", "village"),
+    ]) {
+      expect(road.widthScale).toBeGreaterThanOrEqual(POLYLINE_WIDTH_SCALE_MIN);
+      expect(road.widthScale).toBeLessThanOrEqual(POLYLINE_WIDTH_SCALE_MAX);
+    }
+  });
+
+  it("城与城不连成完全图：5 座城的平均度数显著低于 4", () => {
+    // 【为什么钉这条】2.45.0 用完全图（K5 = 10 条边），四张图看下来城与城之间
+    // 是一个凸多边形边框 —— 观感是"画了几何图形"而不是"这里有官道网"。
+    // 2.47.0 改成"每城连最近 2 城"、2.48.0 再把主动发边收到 1 条。
+    const grid = openGrid(20, 12);
+    const roads = buildRoadNet(
+      [
+        node(grid, 2, 2, "city"),
+        node(grid, 8, 2, "city"),
+        node(grid, 14, 2, "city"),
+        node(grid, 5, 8, "city"),
+        node(grid, 11, 8, "city"),
+      ],
+      { grid, seed: 3 },
+    );
+    // 【怎么认出官道】三档共用点线样式，等级只剩 `widthScale` 这一个可观测差异
+    const trunk = roads.filter((r) => (r.widthScale ?? 1) >= 1.1);
+    expect(trunk.length).toBeLessThan(10); // 完全图会是 C(5,2) = 10 条
+    expect(trunk.length).toBeGreaterThanOrEqual(2); // 仍要成网，不能退化成孤立点
+    // 【为什么量平均度数而不是边数】每座城主动连最近 1~2 城，去重后边数的上界是
+    // 2n 而不是 n（距离打平时两座城会各连一条出去），拿具体条数当断言很脆。
+    // 而"完全图"的定义性质就是**平均度数 = n-1 = 4**：稀疏网必须显著低于它。
+    const avgDegree = (2 * trunk.length) / 5;
+    expect(avgDegree).toBeLessThan(4);
+  });
+
+  it("等级只看层级、不看长度：绕远的城-镇仍是支线", () => {
+    const grid = openGrid(12, 12);
+    // 城到镇 6 格（接近局部上限），比上面那条 3 格的官道还长
+    const roads = buildRoadNet(
+      [node(grid, 1, 1, "city"), node(grid, 7, 1, "town")],
+      { grid, seed: 7 },
+    );
+    expect(roads).toHaveLength(1);
+    expect(roads[0].styleId).toBe("road-dotted");
+    expect(roads[0].widthScale).toBe(roadOf("city", "town").widthScale);
   });
 });
 

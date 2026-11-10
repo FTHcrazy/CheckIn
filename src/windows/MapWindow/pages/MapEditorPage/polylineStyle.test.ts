@@ -124,4 +124,38 @@ describe("dashLengthsOf", () => {
     expect(dashLengthsOf(polylineStyleOf("road-main", "road"), 5)).toBeNull();
     expect(dashLengthsOf(polylineStyleOf("river", "river"), 4)).toBeNull();
   });
+
+  /**
+   * 【"缩小看全是线条"的根因守卫（2.48.0）】
+   *
+   * 虚线段是**圆头**描边画的（`strokeStyled` 固定 `cap: "round"`）：每个实段向两端
+   * 各鼓出 `width/2`，可见实段 = `实段 + width`，可见间隔 = `间隔 - width`。
+   * 旧值 `[1, 1.6]`：可见间隔只剩 `0.6 × 线宽` —— 整条路读作一根被咬了几口的粗实线。
+   * 这里按"可见"口径直接钉住比例（参考 `line_type:2` 是 4 : 6）。
+   */
+  it("点线的可见虚实比：间隔至少 1.5 倍线宽，实段/间隔落在 0.4~1.0", () => {
+    const dotted = polylineStyleOf("road-dotted", "road");
+    for (const scale of [0.8, 1, 1.2]) {
+      const width = effectiveWidthWorld(dotted, scale, 1);
+      const dash = dashLengthsOf(dotted, width);
+      expect(dash, `widthScale=${scale} 应为虚线`).not.toBeNull();
+      const visibleDash = dash![0] + width;
+      const visibleGap = dash![1] - width;
+      expect(visibleGap, `widthScale=${scale} 的可见间隔`).toBeGreaterThan(width * 1.5);
+      const ratio = visibleDash / visibleGap;
+      expect(ratio).toBeGreaterThan(0.4);
+      expect(ratio).toBeLessThan(1);
+    }
+  });
+
+  it("点线的世界线宽与参考同量级（size:2）：在 1.6~2.5 之间", () => {
+    const dotted = polylineStyleOf("road-dotted", "road");
+    for (const [scale, want] of [
+      [0.8, 1.6],
+      [1, 2],
+      [1.2, 2.4],
+    ] as const) {
+      expect(effectiveWidthWorld(dotted, scale, 1)).toBeCloseTo(want, 6);
+    }
+  });
 });

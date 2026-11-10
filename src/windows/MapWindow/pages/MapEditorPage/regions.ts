@@ -933,16 +933,37 @@ function dedupeRing(ring: Point[]): Point[] {
  * 又会把弦围出来的湾口一起涂上区块色。**两种缺陷是同一个根因**：把多连通
  * 的结果硬塞进单环。
  *
- * 【算法】沿裁剪线求出全部交点 →
- *   ① 按**环上顺序**配对（进→出）得到若干条"保留链"；
- *   ② 再按**线上顺序**配对（出→进）用线段把链连起来。
- * 两个配对都是一一映射，顺着走就得到若干条互不相交、各自闭合的简单环。
+ * 【算法】沿裁剪线求出全部交点，然后走"两条配对"：
+ *   ① **环上链**：每个"进入"交点沿多边形环向前走，遇到的第一个交点必是"离开"
+ *      —— 这一对之间的顶点整段在保留侧，是结果里的一段真实边界；
+ *   ② **线上区间**：把交点按沿裁剪线的位置排序，相邻两个交点之间那段**若在多边形
+ *      内部**（取中点做 `pointInPolygon`），它就是 `线 ∩ 多边形` 的一段内部区间，
+ *      两个端点（一进一出）在结果环里必须直接相连；
+ *   ③ 顺着走：进入 → 环上链 → 离开 → 线上区间 → 下一个进入 → … 直到回到起点。
+ * 两个配对都是一一映射，得到的若干条环互不相交、各自闭合。
  * 这正是逆向目标里 `country.shape` 恒为**单个简单多边形**的实现前提
  * （他们连 `removeNearPoint(shape, 8)` 的简化都省不掉，因为形状本来就不自交）。
  *
+ * 【2.48.0 修的是什么 —— 旧版第 ② 步按"奇偶交替"配对】
+ * 旧实现不判定"两交点之间是否在内部"，而是直接把排序后的交点**成对切分**
+ * （第 0-1、2-3、4-5 …）当作内部区间，并**覆盖**掉第 ① 步算出的环上配对。
+ * 这条假设只在"多边形被线切成的每一段都在环上相邻"时成立；一旦多边形是
+ * 深凹的（陆地环有湾、Voronoi 单元是刀片状），同一段内部区间与环上链的端点
+ * 并不一致，配对就被写坏：
+ *   · 环可能一路走过"离开"点继续沿外圈绕行 —— 于是这块多边形**吞掉了邻块的
+ *     一片地**（实测 12 国里有 3 国的飞地与邻国大面积重合，全图 7% 的陆地
+ *     同时落在两个区块里，颜色叠成深色块，也就是用户截图里的"交接处重叠"）；
+ *   · 也可能把主块自己再登记一遍（`pieces` 与主块面积完全相同），同一块地被
+ *     同一个国家画两遍。
+ * 现在第 ② 步改成"中点确在环内才算内部区间"，并且**只**用它连接"离开 → 进入"，
+ * 不再回头覆盖环上链 —— 两种配对各自只负责自己那一段。
+ *
  * @param keep 线性函数：<= 0 的一侧保留（与 `voronoiCellPiecesIn` 的约定一致）
+ *
+ * 【导出给测试】纯函数、无副作用；`regions.test.ts` 用模糊测试钉住"多块互不重叠
+ * 且每块都在保留侧"这条不变式（旧实现在随机凹多边形上有 ~0.3% 的爆掉率）。
  */
-function clipHalfPlanePieces(polygon: Point[], keep: (p: Point) => number): Point[][] {
+export function clipHalfPlanePieces(polygon: Point[], keep: (p: Point) => number): Point[][] {
   const n = polygon.length;
   if (n < 3) return [];
   const f = new Array<number>(n);
@@ -963,19 +984,22 @@ function clipHalfPlanePieces(polygon: Point[], keep: (p: Point) => number): Poin
   const gy = keep({ x: polygon[0].x, y: polygon[0].y + 1 }) - f[0];
   const ux = -gy;
   const uy = gx;
+  const uLen = Math.hypot(ux, uy) || 1;
 
   interface Cut {
     /** 交点所在边的起点序号 */
     edge: number;
-    /** 边内参数（0~1） */
+    /** 边内参数（0~1），仅用于确定同一条边内的先后 */
     t: number;
     p: Point;
     /** 该交点是"出去"（保留 → 丢弃）还是"进来" */
     out: boolean;
-    /** 沿裁剪线的位置（配对用） */
+    /** 沿裁剪线的位置（归一化后的弧长参数，配对与排序用） */
     along: number;
   }
   const cuts: Cut[] = [];
+  /** 边序号 → 交点下标（线性函数沿一条边最多一个零点，所以是单值映射） */
+  const cutOfEdge = new Map<number, number>();
   for (let i = 0; i < n; i += 1) {
     const j = (i + 1) % n;
     const aIn = f[i] <= CLIP_EPS;
@@ -986,53 +1010,62 @@ function clipHalfPlanePieces(polygon: Point[], keep: (p: Point) => number): Poin
       x: polygon[i].x + (polygon[j].x - polygon[i].x) * t,
       y: polygon[i].y + (polygon[j].y - polygon[i].y) * t,
     };
-    cuts.push({ edge: i, t, p, out: aIn, along: p.x * ux + p.y * uy });
+    cutOfEdge.set(i, cuts.length);
+    cuts.push({ edge: i, t, p, out: aIn, along: (p.x * ux + p.y * uy) / uLen });
   }
+  // 只有一个交点（数值退化 / 多边形退化）：按"整体在保留侧"兜底，不做拼接
   if (cuts.length < 2) return hasIn ? [polygon] : [];
 
-  // ① 环上顺序：每个"进来"后面紧跟的那个"出去"，是同一条保留链的另一端
-  const byRing = cuts.map((_, i) => i);
-  byRing.sort((a, b) => cuts[a].edge + cuts[a].t - (cuts[b].edge + cuts[b].t));
-  const exitAfterEnter = new Map<number, number>();
-  for (let k = 0; k < byRing.length; k += 1) {
-    const cur = byRing[k];
-    const nxt = byRing[(k + 1) % byRing.length];
-    if (!cuts[cur].out && cuts[nxt].out) exitAfterEnter.set(cur, nxt);
-  }
-  // ② 线上顺序：交点沿裁剪线**成对**出现，每一对之间那一段落在多边形内部，
-  //    就是裁剪结果的边界段。所以"出去"的那个交点必须回到**同一对**里的
-  //    "进来"那一个 —— 这才是边界（[E,X] 这一段在环内）。
-  //
-  //    ⚠️ 这里曾写成"接到线上**下一个**进来的点"，那是错的：它把两对之间的
-  //    水域（多边形外部）当成了边界，于是相邻两块各拉一条弦跨过湾口 —— 正是
-  //    用户截图里"线横穿海面、湾里没有区块色"的最后一处来源。判据是
-  //    "这一对之间的中点在环内"，几何上不可能错。
-  const byLine = cuts.map((_, i) => i);
-  byLine.sort((a, b) => cuts[a].along - cuts[b].along);
-  const enterAfterExit = new Map<number, number>();
-  for (let k = 0; k + 1 < byLine.length; k += 2) {
-    const i0 = byLine[k];
-    const i1 = byLine[k + 1];
-    if (!cuts[i0].out && cuts[i1].out) {
-      exitAfterEnter.set(i0, i1);
-      enterAfterExit.set(i1, i0);
-    } else if (cuts[i0].out && !cuts[i1].out) {
-      exitAfterEnter.set(i1, i0);
-      enterAfterExit.set(i0, i1);
+  // ── ① 环上链：进入点 → 沿环向前遇到的第一个交点（必是离开点） ──
+  const chainExit = new Map<number, number>();
+  for (let c = 0; c < cuts.length; c += 1) {
+    if (cuts[c].out) continue;
+    let edge = (cuts[c].edge + 1) % n;
+    for (let step = 0; step < n; step += 1) {
+      const hit = cutOfEdge.get(edge);
+      if (hit !== undefined && hit !== c) {
+        // 只认"离开"点：链上若先碰到另一个"进入"点，说明这一步的配对不成立
+        // （退化几何），这条链整个跳过 —— 宁可少一块，也不要拼出错块。
+        if (cuts[hit].out) chainExit.set(c, hit);
+        break;
+      }
+      edge = (edge + 1) % n;
     }
   }
 
+  // ── ② 线上区间：相邻交点之间若在多边形内部，两端直接相连 ──
+  //
+  // 【为什么用中点判定而不是"奇偶交替"】奇偶只在"交点数偶数、且沿线的内外交替
+  // 从外部开始"时成立；多边形一旦有点正好压在裁剪线上（崎岖化后极常见），
+  // 两个交点会挤在同一个位置，奇偶就整体错位 —— 那正是"吞掉邻块"的源头。
+  // 取中点做一次点在多边形内的判定与几何定义等价，代价是 O(交点数) 次射线法。
+  const partner = new Map<number, number>();
+  const byLine = cuts.map((_, i) => i).sort((a, b) => cuts[a].along - cuts[b].along);
+  for (let k = 0; k + 1 < byLine.length; k += 1) {
+    const a = byLine[k];
+    const b = byLine[k + 1];
+    // 两个交点重合（切线式接触）：没有区间可连
+    if (Math.abs(cuts[b].along - cuts[a].along) < 1e-9) continue;
+    const mid = { x: (cuts[a].p.x + cuts[b].p.x) / 2, y: (cuts[a].p.y + cuts[b].p.y) / 2 };
+    if (!pointInPolygon(mid, polygon)) continue;
+    partner.set(a, b);
+    partner.set(b, a);
+  }
+
+  // ── ③ 串环 ──
+  const byRing = cuts.map((_, i) => i).sort((a, b) => cuts[a].edge + cuts[a].t - (cuts[b].edge + cuts[b].t));
   const out: Point[][] = [];
   const used = new Set<number>();
   for (const start of byRing) {
     if (cuts[start].out || used.has(start)) continue;
     const ring: Point[] = [];
     let cur = start;
-    let guard = 0;
-    while (guard <= cuts.length && !used.has(cur)) {
+    let closed = false;
+    while (true) {
+      const exitIdx = chainExit.get(cur);
+      if (exitIdx === undefined || used.has(exitIdx)) break;
       used.add(cur);
-      const exitIdx = exitAfterEnter.get(cur);
-      if (exitIdx === undefined) break;
+      used.add(exitIdx);
       const enter = cuts[cur];
       const exit = cuts[exitIdx];
       ring.push(enter.p);
@@ -1040,11 +1073,19 @@ function clipHalfPlanePieces(polygon: Point[], keep: (p: Point) => number): Poin
       const steps = (exit.edge - enter.edge + n) % n;
       for (let k = 1; k <= steps; k += 1) ring.push(polygon[(enter.edge + k) % n]);
       ring.push(exit.p);
-      const next = enterAfterExit.get(exitIdx);
+      const next = partner.get(exitIdx);
       if (next === undefined) break;
+      if (next === start) {
+        closed = true;
+        break;
+      }
+      // 下一个进入点必须未被使用；被用过说明这条环在中途接上了别的环（退化），
+      // 直接丢弃 —— 输出里混进一条半截的环就会变成压住邻块的色块。
+      if (used.has(next)) break;
       cur = next;
-      guard += 1;
     }
+    // 只有回到起点的环才是完整的一块；没闭合的（退化几何）整条丢掉
+    if (!closed) continue;
     const cleaned = dedupeRing(ring);
     if (cleaned.length >= 3 && polygonArea(cleaned) > 1e-6) out.push(cleaned);
   }

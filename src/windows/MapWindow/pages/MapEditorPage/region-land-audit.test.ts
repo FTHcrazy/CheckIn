@@ -257,5 +257,98 @@ describe("守卫 3：level0（国家）铺满陆地、顶层不再是「一陆�
   });
 });
 
+/* ─────────────────── 守卫 4：区块之间不得重叠 ─────────────────── */
+
+/**
+ * 「交接处重叠」的量化探针（2.48.0）。
+ *
+ * 【症状】用户截图里相邻国家的交界处出现**深色叠块**：同一片地同时落在两个区块
+ * 多边形里，α 0.8 的填充叠两遍 → 明显更深的一条带，边界也各自画一遍。
+ *
+ * 【根因】`clipHalfPlanePieces` 旧版沿裁剪线按"奇偶成对"配对内部区间，配对写坏时
+ * 拼出的环会**吞掉邻块的一片地**（也会把主块自己再登记一遍）。这是几何层面的错，
+ * 渲染层无法补救。
+ *
+ * 【基线】12 国 × 6 seed 网格采样：修复前 **4.7% ~ 7.2%** 的陆地落在 ≥2 个区块里；
+ * 修复后 0.00%（只剩共享边界上零星的判定噪声）。阈值 0.5% 是"肉眼绝对看不出"的量级。
+ */
+function overlapRate(seed: number): { overlap: number; checked: number } {
+  const land = generateLand({ seed, bounds: BASE_BOUNDS });
+  const areas = land.polygons.map((ring) => {
+    let sum = 0;
+    for (let i = 0; i < ring.length; i += 1) {
+      const a = ring[i];
+      const b = ring[(i + 1) % ring.length];
+      sum += a.x * b.y - b.x * a.y;
+    }
+    return Math.max(1e-6, Math.abs(sum) / 2);
+  });
+  const total = areas.reduce((s, a) => s + a, 0);
+  let checked = 0;
+  let overlap = 0;
+
+  land.polygons.forEach((ring, island) => {
+    const share = areas[island] / Math.max(1e-9, total);
+    const regions = generateHierarchy({
+      seed,
+      bounds: BASE_BOUNDS,
+      levelCounts: islandLevelCounts().map((c) => Math.max(1, Math.round(c * share))),
+      container: ring,
+      idPrefix: `o${island}_`,
+    });
+    const N = 90;
+    const xs = ring.map((p) => p.x);
+    const ys = ring.map((p) => p.y);
+    const x0 = Math.min(...xs);
+    const x1 = Math.max(...xs);
+    const y0 = Math.min(...ys);
+    const y1 = Math.max(...ys);
+    for (let iy = 0; iy < N; iy += 1) {
+      for (let ix = 0; ix < N; ix += 1) {
+        const p = { x: x0 + ((ix + 0.5) / N) * (x1 - x0), y: y0 + ((iy + 0.5) / N) * (y1 - y0) };
+        if (!pointInPolygon(p, ring)) continue;
+        checked += 1;
+        let hits = 0;
+        for (const r of regions) {
+          if (
+            pointInPolygon(p, r.polygon) ||
+            (r.pieces?.some((piece) => pointInPolygon(p, piece)) ?? false)
+          ) {
+            hits += 1;
+          }
+        }
+        if (hits > 1) overlap += 1;
+      }
+    }
+  });
+  return { overlap, checked };
+}
+
+describe("守卫 4：区块互不重叠（交接处不叠色）", () => {
+  const MAX_OVERLAP_RATE = 0.005;
+
+  it("level0 采样重叠率 < 0.5%（2.47.0 实测 4.7%~7.2%）", () => {
+    let overlap = 0;
+    let checked = 0;
+    for (const seed of [42, 20260411, 7777]) {
+      const r = overlapRate(seed);
+      overlap += r.overlap;
+      checked += r.checked;
+      expect(
+        r.overlap / Math.max(1, r.checked),
+        `seed ${seed}: ${r.overlap}/${r.checked} 个采样点同时属于 ≥2 个区块`,
+      ).toBeLessThan(MAX_OVERLAP_RATE);
+    }
+    expect(checked).toBeGreaterThan(5000);
+    // 汇总口径也要过（防止某个 seed 恰好卡在阈值边缘）
+    expect(overlap / checked).toBeLessThan(MAX_OVERLAP_RATE);
+  });
+
+  it("变异探针：阈值必须远小于旧实现的实测值（防假绿）", () => {
+    // 旧实现最差 7.2% —— 若有人把阈值放宽到 8%，这条先红
+    expect(MAX_OVERLAP_RATE).toBeLessThan(0.02);
+  });
+});
+
 export type { IslandAudit };
 export { auditRegions };
