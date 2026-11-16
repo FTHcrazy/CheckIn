@@ -163,26 +163,32 @@ describe("buildWaterNet 湖泊", () => {
     });
   };
 
-  it("一个湖 = 3 条闭合折线（外环填充 + 2 条等深线）", () => {
+  it("一个湖 = 1 条闭合岸线 + 2 道不闭合的波浪弧（2.51.0 口径）", () => {
     const { polylines } = build(1);
     expect(polylines).toHaveLength(3);
-    expect(polylines.map((p) => p.styleId)).toEqual(["lake", "lake-ring", "lake-ring"]);
-    for (const p of polylines) {
+    expect(polylines.map((p) => p.styleId)).toEqual(["lake", "lake-wave", "lake-wave"]);
+    const [shore, ...waves] = polylines;
+    expect(shore.closed).toBe(true);
+    expect(shore.points.length).toBeGreaterThan(8);
+    for (const p of waves) {
       expect(p.kind).toBe("lake");
-      expect(p.closed).toBe(true);
-      expect(p.points.length).toBeGreaterThan(8);
+      // 开口弧 = 不贯穿：首尾不重合，湖面不被切成套娃圈
+      expect(p.closed).toBe(false);
+      const first = p.points[0];
+      const last = p.points[p.points.length - 1];
+      expect(Math.hypot(first.x - last.x, first.y - last.y)).toBeGreaterThan(1);
     }
   });
 
-  it("内环严格套在外环里（不会画成三个套错方向的圈）", () => {
+  it("波浪弧缩在岸线里（弧的最大离心距 < 岸线的）", () => {
     const { polylines } = build(1);
-    const [outer, mid, inner] = polylines;
+    const [outer, arc1, arc2] = polylines;
     const cx = outer.points.reduce((s, p) => s + p.x, 0) / outer.points.length;
     const cy = outer.points.reduce((s, p) => s + p.y, 0) / outer.points.length;
     const spread = (pts: { x: number; y: number }[]) =>
       Math.max(...pts.map((p) => Math.hypot(p.x - cx, p.y - cy)));
-    expect(spread(mid.points)).toBeLessThan(spread(outer.points));
-    expect(spread(inner.points)).toBeLessThan(spread(mid.points));
+    expect(spread(arc1.points)).toBeLessThan(spread(outer.points));
+    expect(spread(arc2.points)).toBeLessThan(spread(arc1.points));
   });
 
   it("湖顶点全部落在岸内（不越出陆地）", () => {

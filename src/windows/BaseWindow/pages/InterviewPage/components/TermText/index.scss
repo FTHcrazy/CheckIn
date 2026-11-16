@@ -1,0 +1,132 @@
+@use "../../../../../../shared/styles/motion" as motion;
+@use "../../../../../../shared/styles/widget" as widget;
+
+// 名词按钮 + 名词弹层
+// 「成规模的正文里混着十几个可点名词」是最容易被做成噪点的场景，所以：
+// 常态只用一层淡蓝虚线下划线标出可点，配色沿用 accent-blue（与行内代码同族）。
+//
+// ⚠️ 行内按钮最容易踩的坑是「hover 改变盒模型」：antd 的 hover 规则写的是
+//    `border: var(--ant-line-width) solid var(--ant-btn-border-color-hover)`（特异性 0,4,0），
+//    自写的 `border: 0`（0,2,0）在 hover 态压不过它 —— 行内盒子突然多出 1px 四边框，
+//    行盒高度跟着变，整张卡片就抖一下。
+//    这里三重保险：
+//    ① 清零 mixin 把 `--ant-line-width` 归零，那条 shorthand 变成 0px，量不到边；
+//    ② 下划线改用 text-decoration 画 —— 装饰线不参与盒模型，hover / 换行都不改行盒；
+//    ③ transition 只留 color，尺寸类属性永远进不了动画。
+.interview-term.ant-btn {
+  @include widget.ant-button-reset;
+
+  // text 变体的取色全靠这三个组件变量（写 color 会被 antd 的状态规则压回去）
+  --ant-button-text-text-color: var(--app-accent-blue);
+  --ant-button-text-text-hover-color: var(--app-primary-strong);
+  --ant-button-text-hover-bg: transparent;
+
+  @include motion.transition-fast(color);
+
+  display: inline;
+  height: auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  white-space: normal;
+  vertical-align: baseline;
+  text-align: left;
+
+  // 可点提示：虚线装饰线，颜色跟随文字（hover 变深时一起变）
+  text-decoration-line: underline;
+  text-decoration-style: dashed;
+  text-decoration-thickness: 1px;
+  text-decoration-color: currentColor;
+  text-underline-offset: 2px;
+
+  // 行内代码里的名词：保留代码的底色，但下划线仍提示「可点」
+  &.is-code {
+    padding: 0 4px;
+    border-radius: var(--app-radius-chip);
+    background: var(--app-surface-alt);
+    font-family: monospace;
+    font-size: 12px;
+    font-weight: 400;
+    // 字号变小、盒子带底纹，装饰线要再压低 1px 才不贴边
+    text-underline-offset: 3px;
+  }
+}
+
+.interview-term__mark {
+  padding: 0 2px;
+  border-radius: var(--app-radius-chip);
+  background: var(--app-warning-weak);
+  color: inherit;
+}
+
+// 弹层宽度写在自绘面板上，不碰 antd 的 popover 内部类名（换版本会静默失效）
+.interview-term__panel {
+  width: min(320px, 56vw);
+  color: var(--app-text);
+}
+
+.interview-term__panel-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.interview-term__panel-title {
+  color: var(--app-text-strong);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.interview-term__panel-en {
+  color: var(--app-text-muted);
+  font-size: 12px;
+}
+
+.interview-term__panel-domain {
+  margin-inline-end: 0;
+  border-radius: var(--app-radius-chip);
+  background: var(--app-primary-weak);
+  border-color: transparent;
+  color: var(--app-primary);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.interview-term__panel-short {
+  margin: 0 0 6px;
+  color: var(--app-text);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.interview-term__panel-points {
+  margin: 0;
+  padding-left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--app-text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+
+  li {
+    list-style: disc;
+  }
+}
+
+.interview-term__panel-related {
+  margin: 8px 0 0;
+  padding-top: 6px;
+  border-top: 1px dashed var(--app-border);
+  color: var(--app-text-muted);
+  font-size: 12px;
+}

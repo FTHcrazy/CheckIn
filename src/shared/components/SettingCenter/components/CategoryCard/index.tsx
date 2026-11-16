@@ -123,9 +123,12 @@ export default function CategoryCard({
           编辑
         </Button>
         <Popconfirm
-          title="删除这个分类？"
-          description="该分类下的等级项会一并删除，绑在它们上的「当前境界」也会被摘除。"
-          okText="删除"
+          title="永久删除这个分类？"
+          /* O-13a：同一颗「删除」，章节能去回收站找回，设定分类不能。
+             两处文案必须把这层差别说出口，否则作者会按章节的经验点下去 ——
+             然后发现没地方恢复。 */
+          description="删除后不可恢复：回收站不收设定分类。该分类下的等级项会一并删除，绑在它们上的「当前境界」也会被摘除。建议先导出设定留一份。"
+          okText="永久删除"
           okButtonProps={{ danger: true }}
           cancelText="取消"
           onConfirm={() => onDeleteCategory(active.id)}

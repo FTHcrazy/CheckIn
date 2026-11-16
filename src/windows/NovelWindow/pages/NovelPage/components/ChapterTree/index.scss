@@ -108,21 +108,26 @@
     visibility: hidden;
   }
 
-  /* 底部动作 ghost 化：描边按钮在左栏里存在感过强，降为浅底幽灵按钮。
-     幽灵外观全部写成组件级变量（含 hover/active），靠 antd 自己的状态规则生效 */
+  /* 底部两键对齐交互稿：左「新章节」主色实底（首日动作，一书里按得最多），
+     右「新卷」描边次要按钮（一书只建几次）。两键同高、同圆角，靠底色与边框
+     区分主次，不再两颗都是透明幽灵 —— 之前两颗灰字并排，哪个是第一步看不出来。
+     外观全部写成组件级变量（含 hover / active），靠 antd 自己的状态规则生效 */
   &__foot-btn.ant-btn {
     @include widget.ant-button-reset;
-    --ant-control-height: 26px;
+    --ant-control-height: 28px;
     --ant-button-padding-inline: 5px;
     --ant-button-content-font-size: 12px;
     --ant-button-icon-gap: 4px;
     --ant-border-radius: var(--app-radius-item);
-    --ant-button-default-bg: transparent;
-    --ant-button-default-color: var(--app-text-muted);
+    --ant-button-default-bg: var(--app-surface);
+    --ant-button-default-color: var(--app-text-secondary-strong);
+    --ant-button-default-border-color: var(--app-border);
     --ant-button-default-hover-bg: var(--app-surface-hover);
-    --ant-button-default-hover-color: var(--app-primary);
+    --ant-button-default-hover-color: var(--app-text-strong);
+    --ant-button-default-hover-border-color: var(--app-border-strong);
     --ant-button-default-active-bg: var(--app-surface-hover);
-    --ant-button-default-active-color: var(--app-primary);
+    --ant-button-default-active-color: var(--app-text-strong);
+    --ant-button-default-active-border-color: var(--app-border-strong);
     --ant-button-default-shadow: none;
 
     /* antd 不接管的属性 */
@@ -130,13 +135,35 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    font-weight: 500;
     cursor: pointer;
-    transition: color var(--app-t-fast) var(--app-ease-standard), background var(--app-t-fast) var(--app-ease-standard);
+    transition:
+      color var(--app-t-fast) var(--app-ease-standard),
+      background var(--app-t-fast) var(--app-ease-standard),
+      border-color var(--app-t-fast) var(--app-ease-standard);
 
     &:focus-visible {
       outline: 2px solid var(--app-primary);
       outline-offset: -1px;
     }
+  }
+
+  /* 主键：按内容宽度收，边框透明（实底自带边界），hover 加深一档主色 */
+  &__foot-btn--primary.ant-btn {
+    --ant-control-height: 28px;
+    --ant-button-padding-inline: 12px;
+    --ant-button-default-bg: var(--app-primary);
+    --ant-button-default-color: var(--app-primary-contrast);
+    --ant-button-default-border-color: transparent;
+    --ant-button-default-hover-bg: var(--app-primary-strong);
+    --ant-button-default-hover-color: var(--app-primary-contrast);
+    --ant-button-default-hover-border-color: transparent;
+    --ant-button-default-active-bg: var(--app-primary-active);
+    --ant-button-default-active-color: var(--app-primary-contrast);
+    --ant-button-default-active-border-color: transparent;
+
+    flex: none;
+    font-weight: 600;
   }
 }
 

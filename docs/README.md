@@ -40,6 +40,7 @@
 | **R-MAP-DOC 子图边界验收** | **子图边界羽化验收判据**：渐隐宽度区间 / ΔE 色差阈值 / 基线图（引 `spec/map-export-spec.md` §6.1，不自创）/ 递归深度 **4 层验收 + 5 层已知边界** | [prd-map-render/R-MAP-DOC-submap-boundary-acceptance.md](prd/prd-map-render/R-MAP-DOC-submap-boundary-acceptance.md) | **定稿**（基线 2.36.0）：四组判据全部可执行；ΔE **3 / 1.5 为行业经验值**，首测后由 T14 终检工程师回填（未回填记「未验证」，不记通过） |
 | **R-MAP-DOC 遗留处置** | **挂了三批没人认领的项一次结案**：§A v1 五条 **2 不立 + 3 立号**（06→不立·B4 折线覆盖、11→不立·挂 S2、12→**R-MAP-30**、13→**R-MAP-31**、15→**R-MAP-32**，三条新号均 P2 不排期且各带解锁条件与归属文档）/ §B **R-MAP-29 不立项**（52 张 · 9 类不构成规模问题，附可判定的重新开案条件）+ **S2 素材导入排入 R-MAP-22 首位（P1）**，附三个前置与唯一真空白 / §C **A′ 交互三问降级关闭**（2.32.0 拷贝语义已答完引用·删除·反向跳转） | [prd-map-render/R-MAP-DOC-legacy-disposition-scope.md](prd/prd-map-render/R-MAP-DOC-legacy-disposition-scope.md) | **定稿**（基线 2.36.0）：五条无主 + R-MAP-29 + S2 排期 + A′ 三问全部结案；总览 §3.3 / §3.4 / §5.2 已同步收口 |
 | **R-MAP-21 ~ 28** | **与逆向目标的交互/体验差距收口**（一键成图生成器 / 素材体系 / 对象属性面板 / 图层面板 / 剪贴板与微移 / 折线与面 / 文字排版 / **map.db 持久化**） | [review/map-vs-reference-interaction-review.md](review/map-vs-reference-interaction-review.md) · [spec/map-db-spec.md](spec/map-db-spec.md) · [prd-map-render/map-asset-system-architecture.md](prd/prd-map-render/map-asset-system-architecture.md)（素材体系架构：地形枚举/选材引擎/导入/地形配方/AI 接口） | **B0（2.20.0）** `map.db` + 多图库；**B1（2.21.0）** 属性面板 + 剪贴板/微移；**B2（2.22.0）** 素材 6→45；**S1 + B3（2.25.0）** 地形语义层 + **52 张**素材标注 + 选材引擎 + 一键成图（现 52 张 / 9 展示分类）；**B4（图层 + 折线/面）已全量闭环**（2.29.0 图层面板、2.30.0 折线、2.31.0 打磨）；R-MAP-27 文字排版仍开放。其中 B4 的文档见[map-b4-layers-polyline-prd.md](prd/prd-map-render/map-b4-layers-polyline-prd.md)，逐项见[总览](prd/prd-map-render/map-window-overview.md) §3 |
+| **R-NOVEL 体验优化** | **novel 域汇总待办与分批排期**（29 项待办 + 1 项待实测；B1 可见性与文案 / B2 单组件补强 / B3 信息架构 / B4 数据层 / B5 决策队列；含已核销清单防重做） | [prd-novel-experience/novel-experience-batch-plan.md](prd/prd-novel-experience/novel-experience-batch-plan.md) | **定稿**（基线 2.56.0）：P0 仅 O-05；B1 八项一天可验；B5 七项待产品拍板（Q1~Q6） |
 
 > R-AI-01 ~ R-AI-05 已于 **2.8.1** 全部闭环，整组移入
 > [`archive/prd-ai/`](archive/prd-ai/)（归档不改正文，详见下表）。
@@ -59,7 +60,7 @@
 | 文档 | 结论一句话 | 被谁引用 |
 |------|-----------|---------|
 | [graphic-theming-spec.md](spec/graphic-theming-spec.md) | 图形素材主题化只有两条正道：`currentColor` 或语义 token；禁止钉死色值、禁止一主题一份资源 | `AGENTS.md` §6.1.4 |
-| [map-db-spec.md](spec/map-db-spec.md) | 地图用独立 `map.db`（与 checkin/novel 平级）：`doc_json` 整存 + `rev` 乐观锁 + 防抖 800ms 自动保存 + 关窗 flush；`work_id` 可空、先建图后绑定、删作品不级联删图；**§9 四条已收口（结论 + 归属 + 触发条件）** | `electron/map-db.ts`、`map-handlers.ts`、`map-db-guard.test.ts`、MapWindow |
+| [map-db-spec.md](spec/map-db-spec.md) | 地图用独立 `map.db`（与 checkin/novel 平级）：`doc_json` 整存 + `rev` 乐观锁 + 防抖 800ms 自动保存 + 关窗 flush；`work_id` 可空、先建图后绑定、删作品不级联删图；**§9 四条已收口（结论 + 归属 + 触发条件）** | `electron/map/map-db.ts`、`map-handlers.ts`、`map-db-guard.test.ts`、MapWindow |
 | [map-interaction-spec.md](spec/map-interaction-spec.md) | 地图编辑器交互与快捷键的**权威口径**：放置态 / 选中态 / 右键 / `Ctrl+C·X·V·D` / 方向键与 WASD / `Esc` 分层 / 撤销粒度七类；每行带守卫落点，无守卫的 14 条登记在 §8。**`Ctrl+D` 是复制一份不是删除**（以本文为准，`review` §2.3 为历史分析） | `pages/MapEditorPage/index.tsx`、`hooks/useMapEditor.ts`、`store/useMapDocStore.ts`、`components/ElementPanel/` |
 | [map-export-spec.md](spec/map-export-spec.md) | 导出规格：`exportMapPng` 与 DPR 解耦（`resolution: 1`，倍率在 `world.scale`，`scale = longSide / 长边`）；三档 1024/2048/4096、默认 2048、单块上限 8192；只有 PNG（SVG / PDF 明确不做 + 解锁条件）；默认名 `地图-<档位>.png`；失败行为与视口复原时序 | `pages/MapEditorPage/export.ts`、`index.tsx`、`persistence/useMapPersistence.ts` |
 | [map-perf-spec.md](spec/map-perf-spec.md) | 地图三项性能基线的**口径**（本批只定口径、不实测；**通过线取 v1 原文：首屏 <1s、帧率 ≥55fps**，`60fps` 只作理想线——总览曾把这条复述成「60fps / <2s」，两个方向都漂了，已勘误）：**通过线分两层** —— 产品线（生成器 `dense` ≈190 元素，阻塞发布）与压力线（合成 2000+ 元素，只记趋势不阻塞，裁定见 §1.1）；2000+ 元素帧率取 `Ticker.deltaMS` 的 P50 判、P95 归因（**不用 rAF 均值**）、首屏可交互打点到**首个 `renderer.render()` 返回后**、4K 导出计时须同记 `plan.cols × plan.rows`；每个「待测」紧跟脚本名，产品线未达标则阻塞总览 §1 的 #4/#5/#13 标 ✅ | `docs/prd/prd-map-render/map-window-overview.md` §5.1-3（已改为指向本文）/ §5.3-2、`R-MAP-DOC-batch-plan.md` T08 |
@@ -68,12 +69,11 @@
 
 | 文档 | 结论一句话 | 待办状态 |
 |------|-----------|---------|
-| [novel-product-review.md](review/novel-product-review.md) | novel 域产品视角审查，11 项改进清单（P0 数据安全 → P2 导入/洞察） | 备份恢复、回收站、章节树虚拟化已落地（2.3.0 / 2.5.0 / 2.x）；每章位置记忆、EPUB 导出/导入、跨书全文搜索、产品级埋点仍开放 |
-| [novel-design-review.md](review/novel-design-review.md) | novel 域设计视角审查，10 项改进清单（阅读模式、底色解耦、字体选择…） | 底色解耦、字体选择、阅读模式（含滚动到章节边缘切上下章）已落地；每章位置记忆、编辑器加载失败态、保存失败重试、抽屉焦点管理仍开放 |
+| [novel-window-audit-review.md](review/novel-window-audit-review.md) | novel 窗口**现状**盘点（102 项功能 · 入口/路径/状态）+ 17 项体验调优清单（信息组织/交互/视觉/心智四维，按价值×成本排序） | **待办已整表并入 [novel-experience-batch-plan.md](prd/prd-novel-experience/novel-experience-batch-plan.md)**（O-01~O-17 全部开放，编号沿用）；本篇只负责「为什么」，排期与销项以 backlog 为准 |
 | [map-vs-reference-interaction-review.md](review/map-vs-reference-interaction-review.md) | 地图与逆向目标（易制地图）的交互/体验差距：**渲染已对齐九成，差的是「内容」**——生成器只产陆地+区块，素材 5 张、无属性面板/图层/持久化；给出 R-MAP-21~28 与 B0–B4 分批 | B0（`map.db` 持久化）已落地 2.20.0；B1（属性面板 + 剪贴板/微移）已落地 2.21.0；B2（素材 6→45 + 点要素地名联动）已落地 2.22.0；B3 一键成图已落地 2.25.0；**B4 已全量闭环**（2.29.0 图层面板、2.30.0 折线、2.31.0 打磨）；R-MAP-27 文字排版仍开放 |
 | [map-vs-reference-render-analysis.md](review/map-vs-reference-render-analysis.md) | 素材「和谐分布」机制逆向（`all_model_base.js` v1.122 静态分析）：「和谐」来自**网格布点 + 丛簇 + 连通性先验 + 地貌带分池 + 脚底 y 排序 + alpha 掩码留白**六件事，不是渲染技术；给出 P0/P1/P2 重建建议与对 PRD §4.3 的修订意见 | 分析定稿（静态推断，未做运行时捕获）；**已完成 14 项**：P0-1 地貌带 + P0-2 网格丛簇 + P1-2 z 序（2.26.0，§6.4）、素材比例（配额表/多片地形/`TERRAIN_SCALE`）+ 背景质感（浅滩/等深线/陆岸内阴影/海面暗角/程序纸纹）（2.27.0，§6.5）、**批次 A（P1-1 海岸内缩 + P1-3 z 分层）与批次 B（P2-1 纹理平铺 + 5 层内缩羽化）（2.28.0）**；**待办按执行序**：第 4~6 序＝P1-4 镜像翻转 → P2-2 区块层级衰减（⚠️ 原方案口径有误，见 §9.2.2 勘误）→ P2-3 落位避让；**阻塞**：素材池扩充（需美术，沼泽/雪原各仅 7 种）；自动生成分组 folder 的原阻塞点（依赖 B4 图层）已于 2.29.0 解除，现按 B4 PRD D9 另立需求号（预留 R-MAP-29），待产品决定。**状态与优先级唯一事实源＝[§9 执行总表](review/map-vs-reference-render-analysis.md#9-执行总表交接用)** |
 | [R-MAP-DOC-render-seed-review.md](review/R-MAP-DOC-render-seed-review.md) | **2.28.0 同 seed 前后对照记录**（批次 A = 序 1 海岸内缩 + 序 2 z 分层，同一 PR 的前后对照；上游 `render-analysis:749/772/949` 三处一致指向序 1）：把"已确认事实 / 缺的证据 / 补证据办法"分开记 —— 两组各是什么、`seed` **当场未记录**、逐条结论（批次 A 4 项：成立 3 / **未验证 1**；另附同版另一 PR 的序 3 四项备查） | **待补对照图**（路线已定 C：只核现状、不重建"前"图，不声称复现 2.28.0 当时画面）；**目录与命名见 `spec/map-export-spec.md` §6.1**（唯一来源，本篇不复述）；`seed` 未记录，替代口径 `20260411` 有出处；"前"组无 2.x tag 可回退，**不可原样重建**；补图前涉观感验收一律记「未验证」 |
-| [ai-implementation-review-2.10.0.md](review/ai-implementation-review-2.10.0.md) | AI 模块落地代码评审（基线 2.10.0）：**架构底盘扎实、度量与合规闭环断了**——已标 ✅ 的批次里 3 项判据实际未达成、5 项「代码写了没人调用」；最严重是 `adopt / edit / cancel` 从未上报 → 看板采纳率恒为 0 | G1（采纳上报）**已补齐**（`useNovelPage.ts:1151`、`useAiLevelGen.ts:288`），B5 已于 2.10.x 交付；G2~G8 未随 2.36.0 逐条复核 |
+
 
 ### docs/archive/prd-map/ — 地图模块归档组
 
@@ -96,6 +96,8 @@
 |------|-----------|---------|
 | [visual-polish/novel-visual-polish-plan.md](archive/visual-polish/novel-visual-polish-plan.md) | 立体感与动效改造方案：5 档阴影 + motion token + 按下即反馈 | 1.47.0（规范沉淀进 `AGENTS.md` §6.1.3） |
 | [visual-polish/novel-visual-polish-verification.md](archive/visual-polish/novel-visual-polish-verification.md) | 上述改造的改造前后对照与验收清单 | 1.47.0 |
+| [novel/novel-product-review.md](archive/novel/novel-product-review.md) | novel 域产品视角审查（基线 `6cdcde2`）：13 项改进清单，4 项已落地、8 项并入 backlog | 归档 2026-11-12（现行为准：`prd-novel-experience/novel-experience-batch-plan.md`） |
+| [novel/novel-design-review.md](archive/novel/novel-design-review.md) | novel 域设计视角审查（基线 `6cdcde2`）：10 项改进清单，4 项已落地、6 项并入 backlog（3 项与 O-07/08/17 合并） | 归档 2026-11-12（同上） |
 | [prd-r27/r27-relationship-network-scope.md](archive/prd-r27/r27-relationship-network-scope.md) | R27 需求收口 v1.6（要什么；被 delta-v2 部分取代） | 2.x |
 | [prd-r27/r27-relationship-network-preresearch.md](archive/prd-r27/r27-relationship-network-preresearch.md) | 技术预研 v1.4：框架选型、性能实测、落点 | 2.x |
 | [prd-r27/r27-relationship-network-acceptance.md](archive/prd-r27/r27-relationship-network-acceptance.md) | 验收方案 167 例（P0 102 / P1 61 / P2 4） | 2.x |
@@ -109,6 +111,7 @@
 | [prd-ai/ai-naming-enhancement-prd.md](archive/prd-ai/ai-naming-enhancement-prd.md) | **R-AI-02** 起名增强：AI 试点功能，带降级与来源标识 | 2.8.1 |
 | [prd-ai/ai-context-and-output-spec.md](archive/prd-ai/ai-context-and-output-spec.md) | **R-AI-05** 上下文加工层 & 输出模板契约（collector / 模板注册表 / JSON 三层保险） | 2.8.0 |
 | [prd-ai/ai-review-report.md](archive/prd-ai/ai-review-report.md) | AI 域产品/设计/技术三视角审查与处置结论 | 2.8.1 |
+| [prd-ai/ai-implementation-review-2.10.0.md](archive/prd-ai/ai-implementation-review-2.10.0.md) | AI 模块落地代码评审（基线 2.10.0）：架构合格、度量与合规闭环不合格（`adopt` 零上报、门控 hook 零消费者、L3 无开关…） | 归档 2026-11-12：**G1~G8 已全部在代码侧闭环**，逐条核销见文首表；能力清单归 AI 排期文档 |
 
 > R27 已交付：`src/windows/RelationWindow/`（见 `CHANGELOG.md` 2.x「人物关系网络独立窗口」）。
 > 已删除的 `r27-relationship-network-batch-plan.md`（v1）基于**已作废的页内浮层方案**，

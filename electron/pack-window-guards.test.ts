@@ -16,7 +16,7 @@ import { describe, expect, it } from "vitest";
 
 const MAIN = readFileSync(path.resolve(process.cwd(), "electron/main.ts"), "utf8");
 const PACK_HANDLERS = readFileSync(
-  path.resolve(process.cwd(), "electron/handlers/novel-pack-handlers.ts"),
+  path.resolve(process.cwd(), "electron/handlers/novel/novel-pack-handlers.ts"),
   "utf8",
 );
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BookOutlined, PlusOutlined, SearchOutlined } from "@ant-design/icons";
+import { PlusOutlined, SearchOutlined } from "@ant-design/icons";
 import { Button, Input, Popconfirm } from "antd";
 import {
   DndContext,
@@ -345,7 +345,7 @@ export default function ChapterTree({
           variant="borderless"
           value={keyword}
           onChange={(event) => setKeyword(event.target.value)}
-          placeholder="搜索章节"
+          placeholder="按标题找章节"
           aria-label="搜索章节"
         />
       </label>
@@ -411,8 +411,10 @@ export default function ChapterTree({
       )}
 
       <div className="nv-tree__foot">
+        {/* 两键形态对齐交互稿：新章节是主色实底（首日动作，最常按），新卷是描边
+            次要按钮（一书只建几次）。主键按内容宽度收，次键吃满剩余宽度。 */}
         <Button
-          className="nv-tree__foot-btn"
+          className="nv-tree__foot-btn nv-tree__foot-btn--primary"
           onClick={onCreate}
           data-tour-target="tree-new-chapter"
         >
@@ -424,7 +426,7 @@ export default function ChapterTree({
           title="在当前作品末尾新建一卷"
           data-tour-target="tree-new-volume"
         >
-          <BookOutlined />新卷
+          <PlusOutlined />新卷
         </Button>
       </div>
 

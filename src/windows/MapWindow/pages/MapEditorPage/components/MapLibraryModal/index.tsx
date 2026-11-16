@@ -28,6 +28,7 @@ import {
   PlusOutlined,
   ReloadOutlined,
 } from "@ant-design/icons";
+import { rendererLog } from "@/shared/log/renderer-logger";
 import type { MapDocSummaryDTO } from "@/shared/types/electron";
 import { listMapDocs, listMapWorkOptions } from "../../persistence/useMapPersistence";
 import "./index.scss";
@@ -141,7 +142,7 @@ export default function MapLibraryModal({
       try {
         await action();
       } catch (error) {
-        console.error("[map-library] 写操作失败", error);
+        rendererLog.error("map", "地图库写操作失败", { error: String(error) });
       } finally {
         await load();
       }

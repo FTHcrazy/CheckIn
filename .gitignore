@@ -34,3 +34,5 @@ release-*
 *.sw?
 .cache-mam-dump
 
+
+design/*

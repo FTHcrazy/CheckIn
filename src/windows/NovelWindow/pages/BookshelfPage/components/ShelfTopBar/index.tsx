@@ -1,20 +1,14 @@
-import { Badge, Button, Input, Tooltip } from "antd";
+import { Button, Input, Tooltip } from "antd";
 import {
   ClusterOutlined,
   ImportOutlined,
   LoadingOutlined,
   PlusOutlined,
-  SafetyCertificateOutlined,
   SearchOutlined,
 } from "@ant-design/icons";
-import SvgIcon from "@/shared/components/SvgIcon";
-import recycleBinSvg from "@/assets/novel/recycle-bin.svg?raw";
 import "./index.scss";
 
 interface ShelfTopBarProps {
-  workCount: number;
-  /** 紧凑字数文案（64.6 万），由页面用 formatWordsCompact 派生 */
-  totalWordsText: string;
   keyword: string;
   onKeywordChange: (value: string) => void;
   onCreateClick: () => void;
@@ -34,37 +28,28 @@ interface ShelfTopBarProps {
    * 恰是窗口落到后面时的退路），只换内容、把点击留着。
    */
   globalSettingOpening?: boolean;
-  /** 打开「数据安全」面板（一键全量备份 / 从备份恢复） */
-  onSafetyClick: () => void;
-  /** 打开回收站页面（2.5.0 起是独立页面，不再挤在数据安全弹窗里） */
-  onTrashClick: () => void;
-  /** 回收站里还有几项（>0 时按钮上挂角标，提示「有东西可以捞回来」） */
-  trashCount?: number;
 }
 
 /**
- * 书架顶栏（R32）：书架标题 + 规模摘要 + 搜索 + 工具条 + 新建作品。
- *
- * 布局收敛过一次（2.5.1）：原先右侧是「搜索 + 四颗带文字的描边胶囊 + 主按钮」，
- * 六件东西平铺在同一行，视觉上像一排并列的按钮，主次全糊在一起。现在收成三段：
+ * 书架顶栏（R32）：书架标题 + 一句状态 + 搜索 + 三个首日动作。
  *
  * ```
- * 书架 · 规模摘要          [ 搜索框 ]  ┊ ( 全局设定 | 备份 | 回收站 | 导入 )  [+ 新建作品]
+ * 书架 · 本地优先                    [ 搜索框 ]  ( 全局设定中心 | 导入书籍 )  [+ 新建作品]
  * ```
  *
- * - 四颗描边胶囊并进 `.bs-topbar__tools` —— 一个 surface 底的胶囊容器，读作
- *   「一排工具」而不是「四个按钮」；其中只有「全局设定中心」保留文字（跨书共享库
- *   是本页最需要被发现的次级入口，也是新手引导第 6 步的锚点），其余降为纯图标，
- *   语义交给 Tooltip 与 aria-label。
- * - 规模摘要从紫色 pill 降为静音小字：下面四张统计卡已经把这个数字讲了一遍，
- *   顶栏再放一颗同色色块只会跟主按钮抢焦点。
- * - 主按钮（新建作品）留在工具条外侧，靠间距与实底拉开层级。
+ * **入口从 5 收 3（O-10）**：数据安全与回收站都是「出事才会用」的元操作，
+ * 却和「导入 / 新建」这两个首日动作并列同一排，等于把低频动作提到与主流程
+ * 同权。它们现在在页脚（`bs-page__status`），离「作品列表」更远、离「元信息」
+ * 更近。导入则从纯图标升为带文字按钮 —— 「怎么把已有的稿子搬进来」是新用户
+ * 第一件要做的事，图标猜不出来。
+ *
+ * **规模摘要去重（O-11）**：原来这里的「N 部作品 · X 万字」与下方四张统计卡
+ * 同源同义，且格式化函数不同（`64.6 万` / `64.6万`）—— 同一屏两个数字两种写法。
+ * 顶栏现在只说一句状态（数据在哪），数字交给统计卡一个地方说。
  *
  * 搜索词同时驱动书卡与灵感库过滤（一处输入，两处生效）。
  */
 export default function ShelfTopBar({
-  workCount,
-  totalWordsText,
   keyword,
   onKeywordChange,
   onCreateClick,
@@ -73,19 +58,13 @@ export default function ShelfTopBar({
   importPhase,
   onGlobalSettingClick,
   globalSettingOpening = false,
-  onSafetyClick,
-  onTrashClick,
-  trashCount = 0,
 }: ShelfTopBarProps) {
   return (
     <div className="bs-topbar">
       <div className="bs-topbar__lead">
         <h1 className="bs-topbar__title">书架</h1>
-        {/* 规模摘要：与下方统计卡同源，这里只做「静音提示」，
-            不再用 primary-weak 胶囊（它会与主按钮抢焦点，见文件头）。 */}
-        <span className="bs-topbar__meta" title={`${workCount} 部作品 · ${totalWordsText}字`}>
-          {workCount} 部作品 · {totalWordsText}字
-        </span>
+        {/* 状态语而不是数字：数字已经由下方统计卡讲过一遍（O-11） */}
+        <span className="bs-topbar__meta">本地优先 · 全部数据存本机</span>
       </div>
       <div className="bs-topbar__actions">
         <Input
@@ -97,12 +76,12 @@ export default function ShelfTopBar({
           allowClear
           prefix={<SearchOutlined />}
         />
-        {/* 工具条：一个容器装四颗入口。
+        {/* 工具条：一个容器装两颗入口。
             容器自身给底色与圆角，按钮不再各自描边 —— 这是「一排按钮」变成
-            「一条工具条」的关键；四颗都还在这条 `.bs-topbar__actions` 里，
+            「一条工具条」的关键；两颗都还在这条 `.bs-topbar__actions` 里，
             引导锚点与「新建作品左侧」的位置关系不变。 */}
         <div className="bs-topbar__tools">
-          {/* 「全局设定中心」独立窗口入口：工具条内唯一保留文字的一颗。
+          {/* 「全局设定中心」独立窗口入口：工具条内保留文字的一颗。
               图标 + 文字保证可发现性；锚点供新手引导第 6 步高亮（M14）。 */}
           <Tooltip
             title={
@@ -122,39 +101,8 @@ export default function ShelfTopBar({
               {globalSettingOpening ? "正在打开…" : "全局设定中心"}
             </Button>
           </Tooltip>
-          {/* 数据安全（P0）：一键全量备份 / 从备份恢复。
-              属「这本书会不会丢」的元操作，不该藏进设置抽屉或右键菜单里；
-              但在顶栏只需占一个图标位，语义由 Tooltip 交代。 */}
-          <Tooltip title="数据安全 · 一键全量备份与从备份恢复">
-            <Button
-              className="bs-topbar__safety"
-              icon={<SafetyCertificateOutlined />}
-              onClick={onSafetyClick}
-              aria-label="数据安全"
-            />
-          </Tooltip>
-          {/* 回收站：独立页面入口（图标是设计给的 recycle-bin.svg，跟着文字色走）。
-              角标只数条数 —— 是「有东西可以捞回来」的提示，不是错误。 */}
-          <Tooltip
-            title={
-              trashCount > 0
-                ? `回收站里还有 ${trashCount} 项，30 天内可原样恢复`
-                : "删除的作品 / 卷 / 章节会先进回收站，可随时找回"
-            }
-          >
-            <Button
-              className="bs-topbar__recycle"
-              icon={
-                <Badge count={trashCount} size="small" offset={[2, -2]}>
-                  <SvgIcon svg={recycleBinSvg} />
-                </Badge>
-              }
-              onClick={onTrashClick}
-              aria-label="回收站"
-            />
-          </Tooltip>
-          {/* 导入书籍（TXT / DOCX）：导入中换成 loading 图标，进度文案退到
-              aria-label 与 Tooltip —— 图标位放不下一行字，而这一格又必须稳定不撑宽。 */}
+          {/* 导入书籍（TXT / DOCX）：升为带文字按钮（O-10）。
+              导入中换成 loading 图标 + 进度文案，宽度保持稳定不跳。 */}
           <Tooltip title={importing ? importPhase || "正在导入" : "导入 TXT / DOCX 书籍"}>
             <Button
               className="bs-topbar__import"
@@ -164,7 +112,9 @@ export default function ShelfTopBar({
               disabled={importing}
               aria-label={importing ? importPhase || "正在导入" : "导入书籍"}
               aria-busy={importing || undefined}
-            />
+            >
+              {importing ? "正在导入…" : "导入书籍"}
+            </Button>
           </Tooltip>
         </div>
         <Button

@@ -1,4 +1,4 @@
-import { Empty, Tooltip } from "antd";
+import { Button, Empty, Tooltip } from "antd";
 import { SPRITES, SPRITE_CATEGORIES, type SpriteDef } from "../../sprites";
 import "./index.scss";
 
@@ -70,15 +70,14 @@ function SpriteCard({
 }) {
   return (
     <Tooltip title={sprite.label} mouseEnterDelay={0.4}>
-      <button
-        type="button"
+      <Button
         className={`sprite-card${active ? " sprite-card--active" : ""}`}
         onClick={onClick}
         aria-pressed={active}
       >
         <img className="sprite-card__img" src={sprite.src} alt={sprite.label} draggable={false} />
         <span className="sprite-card__label">{sprite.label}</span>
-      </button>
+      </Button>
     </Tooltip>
   );
 }

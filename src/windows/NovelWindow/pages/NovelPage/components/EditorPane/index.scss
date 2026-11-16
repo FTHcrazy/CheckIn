@@ -152,6 +152,9 @@
     padding: 0 var(--nv-paper-gutter, 24px) 120px;
     box-sizing: border-box;
     color: var(--app-text);
+    /* 不加描边、不加投影：纸面靠自身色温与两侧栏区分。曾经加过 1px 内描边
+       （设计稿的 paper-edge），实机看是一圈硬边把正文「框」住，尤其左右两条
+       竖线与文字末尾贴得很近，读起来像表格单元格 —— 按反馈移除。 */
   }
 
   /**
@@ -573,6 +576,84 @@
     align-items: center;
     justify-content: center;
     background: var(--app-surface);
+  }
+
+  /* ── 装载失败常驻态（O-07）──────────────────────────────────
+     与空态同骨架、不同语气：图标走 error 色（空态是中性灰，空不是错），
+     动作只留一颗主按钮。整块铺在正文区而不是一闪而过的 toast ——
+     2.4s 后消失的失败信息等于没说过。 */
+  &__fail {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 0 24px;
+    text-align: center;
+    max-width: 420px;
+  }
+
+  &__fail-ico {
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    margin-bottom: 2px;
+    border-radius: 50%;
+    font-size: 20px;
+    color: var(--app-error);
+    background: var(--app-error-weak);
+  }
+
+  &__fail-title {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--app-text);
+  }
+
+  &__fail-desc {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--app-text-secondary);
+  }
+
+  /* 原始错误一行：给自助排查留证据，但不占主视觉（不折行、截断省略） */
+  &__fail-code {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11px;
+    color: var(--app-text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__fail-acts {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+  }
+
+  &__retry.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 32px;
+    --ant-button-padding-inline: 16px;
+    --ant-button-content-font-size: 13px;
+    --ant-button-icon-gap: 5px;
+    --ant-border-radius: var(--app-radius-chip);
+    --ant-button-default-bg: var(--app-primary);
+    --ant-button-default-color: var(--app-primary-contrast);
+    --ant-button-default-hover-bg: var(--app-primary-strong);
+    --ant-button-default-hover-color: var(--app-primary-contrast);
+    --ant-button-default-active-bg: var(--app-primary-active);
+    --ant-button-default-active-color: var(--app-primary-contrast);
+    --ant-button-default-shadow: none;
+
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
   }
 
   /* 空态 CTA：主色实底，hover / active 走组件级变量 */

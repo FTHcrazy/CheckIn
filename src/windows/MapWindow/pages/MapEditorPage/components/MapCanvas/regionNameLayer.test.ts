@@ -80,11 +80,14 @@ vi.mock("pixi.js", () => {
 // `vi.hoisted`，动态 import 能保证"先装 mock、再加载被测模块"的时序一眼可见。
 const {
   REGION_NAME_ALPHA,
+  REGION_NAME_BIG_WIDTH_RATIO,
   REGION_NAME_FONT_FAMILY,
   REGION_NAME_LETTER_SPACING,
-  REGION_NAME_SIZE_MAX_SCALE,
-  REGION_NAME_SIZE_MIN_SCALE,
-  REGION_NAME_SIZE_RATIO,
+  REGION_NAME_SHADOW_BLUR,
+  REGION_NAME_SIZE_BASE,
+  REGION_NAME_SIZE_BIG,
+  REGION_NAME_SIZE_TINY,
+  REGION_NAME_TINY_WIDTH_RATIO,
   regionNameFontSize,
   syncRegionNameGroup,
 } = await import("./regionNameLayer");
@@ -111,18 +114,45 @@ function square(input: { id: string; level: number; side: number; name?: string 
 
 const newContainer = () => new Container() as unknown as { children: unknown[] };
 
-describe("regionNameFontSize：随面积走但有上下限", () => {
-  it("均值面积 = 1 倍系数，大块封顶、小块封底", () => {
-    const mean = 10_000; // 边长 100
-    const base = Math.sqrt(mean) * REGION_NAME_SIZE_RATIO;
-    expect(regionNameFontSize(mean, mean)).toBeCloseTo(base, 6);
-    // 超大块（面积 100 倍 ⇒ 边长 10 倍）被压到上限
-    expect(regionNameFontSize(mean * 100, mean)).toBeCloseTo(base * REGION_NAME_SIZE_MAX_SCALE, 6);
-    // 极小碎片被抬到下限（否则字小到看不见，等于没名字）
-    expect(regionNameFontSize(mean / 100, mean)).toBeCloseTo(base * REGION_NAME_SIZE_MIN_SCALE, 6);
-    // 面积退化（0 / 负数）不能返回 0 或 NaN —— 那会让 Text 抛错
-    expect(regionNameFontSize(0, 0)).toBeGreaterThan(0);
-    expect(Number.isFinite(regionNameFontSize(0, 0))).toBe(true);
+/** 本仓底图宽（世界单位），也就是参考判据里的"纸宽" */
+const PAGE = 1447;
+
+describe("regionNameFontSize：照抄参考的三档判据（块宽 vs 纸宽）", () => {
+  it("窄块给 30、常规给 56、宽块给 100", () => {
+    expect(regionNameFontSize(PAGE * REGION_NAME_TINY_WIDTH_RATIO - 10, PAGE)).toBe(
+      REGION_NAME_SIZE_TINY,
+    );
+    expect(regionNameFontSize(PAGE * 0.45, PAGE)).toBe(REGION_NAME_SIZE_BASE);
+    expect(regionNameFontSize(PAGE * REGION_NAME_BIG_WIDTH_RATIO + 10, PAGE)).toBe(
+      REGION_NAME_SIZE_BIG,
+    );
+  });
+
+  it("阈值本身落在常规档（参考用的是严格大于 / 小于）", () => {
+    // 恰好等于阈值不算越界 —— 写成 >= 会把一半的常规块推进极端档
+    expect(regionNameFontSize(PAGE * REGION_NAME_TINY_WIDTH_RATIO, PAGE)).toBe(
+      REGION_NAME_SIZE_BASE,
+    );
+    expect(regionNameFontSize(PAGE * REGION_NAME_BIG_WIDTH_RATIO, PAGE)).toBe(
+      REGION_NAME_SIZE_BASE,
+    );
+  });
+
+  it("宽高比决定档位：面积相同，横贯的窄条反而比方正块字号大", () => {
+    // 参考判的是"这行字放不放得下"，横排国名的约束是宽度，不是面积
+    const wide = PAGE * 0.7; // 宽而扁 → 大国档（1012 > 919）
+    const square = Math.sqrt(wide * 200); // 边长 ≈450，落在常规档
+    expect(regionNameFontSize(wide, PAGE)).toBe(REGION_NAME_SIZE_BIG);
+    expect(regionNameFontSize(square, PAGE)).toBe(REGION_NAME_SIZE_BASE);
+  });
+
+  it("退化输入不返回 0 / NaN（Text 会抛错）", () => {
+    expect(regionNameFontSize(0, PAGE)).toBeGreaterThan(0);
+    expect(regionNameFontSize(Number.NaN, PAGE)).toBe(REGION_NAME_SIZE_TINY);
+    expect(regionNameFontSize(-100, PAGE)).toBe(REGION_NAME_SIZE_TINY);
+    // 纸宽非法时退回参考页宽，不能变成 NaN
+    expect(Number.isFinite(regionNameFontSize(500, Number.NaN))).toBe(true);
+    expect(Number.isFinite(regionNameFontSize(500, 0))).toBe(true);
   });
 });
 
@@ -144,9 +174,46 @@ describe("syncRegionNameGroup：建名规则", () => {
     expect(node.anchorValue).toEqual({ x: 0.5, y: 0.5 });
     expect(node.alpha).toBe(REGION_NAME_ALPHA);
     expect(node.style.fontFamily).toBe(REGION_NAME_FONT_FAMILY);
-    // 字号 × 字距系数：疏排是古地图国名的特征，紧排会读成现代排版
-    const fontSize = node.style.fontSize as number;
-    expect(node.style.letterSpacing).toBeCloseTo(fontSize * REGION_NAME_LETTER_SPACING, 6);
+    // 字距恒 0：参考的国名是紧排（`word_spacing: 0`），疏排会溢到邻国边界上
+    expect(node.style.letterSpacing).toBe(0);
+    expect(REGION_NAME_LETTER_SPACING).toBe(0);
+    // 深色模糊投影：粉彩色板下白字 α0.6 不靠投影根本读不出来
+    expect(node.style.dropShadow).toMatchObject({ blur: REGION_NAME_SHADOW_BLUR });
+  });
+
+  it("同一次同步里按块宽分三档字号（30 / 56 / 100）", () => {
+    texts.length = 0;
+    const container = newContainer();
+    // 300 宽 → 30；700 宽 → 56；1000 宽 → 100。
+    // 面积门槛（均值×7.8%）不能让小的那块被剔掉，所以最小一块也取 300。
+    const regions = [
+      square({ id: "small", level: 0, side: 300 }),
+      square({ id: "mid", level: 0, side: 700 }),
+      square({ id: "big", level: 0, side: 1000 }),
+    ];
+    syncRegionNameGroup(container as never, regions, 0);
+    expect(texts.map((t) => t.style.fontSize)).toEqual([
+      REGION_NAME_SIZE_TINY,
+      REGION_NAME_SIZE_BASE,
+      REGION_NAME_SIZE_BIG,
+    ]);
+  });
+
+  it("飞地计入块宽：主体窄、带远方飞地的国不该被判成小国", () => {
+    texts.length = 0;
+    const container = newContainer();
+    const base = square({ id: "split", level: 0, side: 300 });
+    const island = [
+      { x: 800, y: 0 },
+      { x: 900, y: 0 },
+      { x: 900, y: 60 },
+      { x: 800, y: 60 },
+    ];
+    // 只量主体是 300 宽 → 30；算上飞地是 900 宽 → 56
+    syncRegionNameGroup(container as never, [base], 0);
+    expect(texts.at(-1)?.style.fontSize).toBe(REGION_NAME_SIZE_TINY);
+    syncRegionNameGroup(container as never, [{ ...base, pieces: [island] }], 0);
+    expect(texts.at(-1)?.style.fontSize).toBe(REGION_NAME_SIZE_BASE);
   });
 
   it("面积过小的碎片不出名字（字会糊在边界上）", () => {

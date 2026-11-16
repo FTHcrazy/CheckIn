@@ -2496,6 +2496,13 @@ export function useNovelPage() {
     onJump: () => (view.jumpOpen ? view.closeJump() : view.openJump()),
     onNewChapter: handleNewChapter,
     onToggleFocus: view.toggleFocus,
+    /* 阅读模式（O-05）：状态在 store 里，走模块级 action 取值即可 ——
+       快捷键回调在 session 内只绑一次，不能依赖会随渲染变化的闭包 */
+    onToggleReadMode: () =>
+      editorActions.updateSetting(
+        "readMode",
+        !useNovelEditorStore.getState().settings.readMode,
+      ),
     onTogglePack: openPackWindow,
     onOpenSettings: () => view.openSettingCenter(null),
     onEscape: handleEscape,

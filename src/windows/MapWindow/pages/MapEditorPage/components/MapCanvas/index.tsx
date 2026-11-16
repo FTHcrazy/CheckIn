@@ -2,25 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Application, Container, Graphics, Sprite, Texture } from "pixi.js";
 import type { ColorMatrixFilter, RenderTexture } from "pixi.js";
 import { BASE_IMAGE, LAND_PAPER_ID, SPRITE_MAP } from "../../sprites";
-import {
-  isRegionJump,
-  REGION_BORDER_COLOR,
-  REGION_BORDER_PX,
-  REGION_INNER_SHADOW_ALPHA,
-  REGION_INNER_SHADOW_COLOR,
-  REGION_INNER_SHADOW_PASSES,
-  REGION_INNER_SHADOW_PX,
-  REGION_RIM_ALPHA,
-  REGION_RIM_COLOR,
-  REGION_RIM_PX,
-  regionBorderAlphaOf,
-  regionFillAlphaOf,
-  regionJumpLimit,
-  type Point,
-} from "../../regions";
-import { elementSizeFactor, elementWeight, resolveElementLevel } from "../../lod";
+import { REGION_BORDER_LINE_COLOR, REGION_BORDER_WIDTH_WORLD, REGION_INNER_SHADOW_ALPHA, REGION_INNER_SHADOW_COLOR, REGION_INNER_SHADOW_PASSES, REGION_INNER_SHADOW_PX, REGION_RIM_ALPHA, REGION_RIM_COLOR, REGION_RIM_PX, regionBorderAlphaOf, regionFillAlphaOf } from "../../regions";
+import type { Point } from "../../regions";
+import { smoothBorderRing } from "../../domain/countries";
+import { elementSizeFactor, elementWeight } from "../../lod";
 import { buildParentIdSet } from "../../regionEdit";
-import { WORLD_LAYER_ORDER, type WorldLayerName } from "./layers";
+import { WORLD_LAYER_ORDER } from "./layers";
+import type { WorldLayerName } from "./layers";
 import type { MapDocument } from "../../types";
 import type { MapLabel, MapLand, MapPolyline, MapStyle } from "../../types";
 import { elementFlipXOf, elementOpacityOf, elementTintHueOf, tintColorOf } from "../../types";
@@ -28,34 +16,52 @@ import { BAKE_MARGIN, bakeCoast, bakeKeyOf } from "../../coastBake";
 import { filterFor } from "../../style";
 import { layerVisibleOf } from "../../layerState";
 import { effectiveWidthWorld, POLYLINE_PICK_PAD_PX, polylineStyleOf } from "../../polylineStyle";
-import { controlIndexFor, dashPath, nearestOnPath, smoothPolyline } from "../../polylineGeometry";
+import { controlIndexFor, nearestOnPath, smoothPolyline } from "../../polylineGeometry";
 import { drawPolyline } from "./polylineRender";
 import { getPaperGrainTexture } from "../../paperGrain";
 import { LAND_PAPER_ALPHA, renderTerrainBandsCanvas } from "../../terrainTex";
 import { drawLandPath } from "../../land";
-import {
-  REGION_NAME_ALPHA_EPS,
-  REGION_NAME_MAX_LEVEL,
-  syncRegionNameGroup,
-} from "./regionNameLayer";
-import {
-  applyLabelWeights,
-  labelAt,
-  setLabelScale,
-  syncLabels,
-  type LabelHandle,
-} from "./labelSync";
+import { REGION_NAME_ALPHA_EPS, REGION_NAME_MAX_LEVEL, syncRegionNameGroup } from "./regionNameLayer";
+import { applyLabelWeights, labelAt, setLabelScale, syncLabels } from "./labelSync";
+import type { LabelHandle } from "./labelSync";
 import { cullLayers, createCullCache, screenCullRect } from "./cull";
-import { buildSubmapNode, type SubmapNode, type SubmapRenderEnv } from "./submapRender";
-import {
-  hitTestElement,
-  screenToWorld,
-  worldToScreen,
-  type CanvasSize,
-  type Viewport,
-} from "../../coords";
+import { buildSubmapNode } from "./submapRender";
+import type { SubmapNode, SubmapRenderEnv } from "./submapRender";
+import { hitTestElement, screenToWorld, worldToScreen } from "../../coords";
+import type { CanvasSize, Viewport } from "../../coords";
 import type { TextureMap } from "../../hooks/useTextureCache";
+import {
+  BASE_RECT,
+  SHEET_SHADOW,
+  SEA_VIGNETTE,
+  REGION_PICK_COLOR,
+  REGION_PICK_PX,
+  REGION_PICK_GLOW_PX,
+  REGION_CONTAINER_PX,
+  DRAFT_CLOSE_PX,
+  DRAFT_DOUBLE_CLICK_MS,
+  DRAFT_LINE_PX,
+  DRAFT_POINT_PX,
+  DRAFT_SNAP_PX,
+  DRAFT_COLOR,
+  STATIC_CACHE_MAX_RES,
+  quantizeScale,
+  toFlatPoints,
+  appendDashedLine,
+  LOOSE_LEVEL_KEY,
+  elementKeyOf,
+  NO_LEVELS,
+  NO_LABELS,
+  NO_POLYLINES,
+  POLYLINE_NODE_HIT_PX,
+  POLYLINE_NODE_PX,
+  POLYLINE_PICK_PX,
+  drawPolylinePreview,
+} from "./sceneConstants";
+import type { LevelLayers, ElementSprite } from "./sceneConstants";
+export { DRAFT_CLOSE_PX } from "./sceneConstants";
 import "./index.scss";
+
 
 /**
  * 场景句柄 —— 渲染层交出去的**最小**能力集（只给导出用）。
@@ -260,352 +266,6 @@ interface MapCanvasProps {
  * 底图在世界坐标中的矩形（世界原点在底图中心）。
  * 与 useMapEditor 的 BASE_BOUNDS、区块生成的 bounds 必须一致。
  */
-const BASE_RECT = {
-  x: -BASE_IMAGE.width / 2,
-  y: -BASE_IMAGE.height / 2,
-  width: BASE_IMAGE.width,
-  height: BASE_IMAGE.height,
-} as const;
-
-/**
- * 图纸投影参数（世界单位 —— 与"纸张"同尺度，缩放时一起变化才自然）。
- *
- * 【为什么需要】底图之外留了一圈空白，若没有投影，深色底图在深色主题下会与
- * 背景糊成一片、边界消失。淡淡一圈投影让底图读作"铺在桌面上的一张图纸"，
- * 留白才成为有意义的留白，而不是"图没画满"。
- *
- * 用多圈半透明矩形叠加来近似柔和的衰减：每圈只是一次 fill，
- * 10 圈的成本可以忽略，也不需要额外的滤镜/贴图资源。
- */
-const SHEET_SHADOW = {
-  /** 叠加圈数：越多衰减越柔 */
-  rings: 10,
-  /** 单圈外扩距离 = 底图宽度 × 0.28%（约 29 世界单位） */
-  step: BASE_IMAGE.width * 0.0028,
-  /** 单圈不透明度：10 圈累加后最内侧约 0.36 */
-  alpha: 0.045,
-  color: 0x0a1410,
-  /** 整体下移，模拟顶光，纸面才有"浮起来"的立体感 */
-  offsetY: BASE_IMAGE.width * 0.0035,
-} as const;
-
-/**
- * 海面暗角：纸缘向内一圈圈加深。
- *
- * 【为什么需要】海面只有一张平铺纹理时，画面是"一块均匀的布"—— 没有光、
- * 没有纵深。参考实现的海面四角明显比中心沉，读起来才像"一张被拍下来的纸"。
- *
- * 【为什么用一组窄环而不是一次径向渐变】Pixi 的径向渐变要 `FillGradient`
- * （8.x 各小版本签名不一致），而这组环只是 14 次 `stroke`，烘一次就进缓存；
- * 每环不透明度只差 0.002，肉眼看不出分层。
- */
-const SEA_VIGNETTE = {
-  /** 环数（= 渐变的分段数） */
-  bands: 14,
-  /** 单环宽度（世界单位）：14 × 14 ≈ 196，占纸宽的 19%，只压四周不碰中心 */
-  step: 14,
-  /** 最内环不透明度 */
-  alphaFrom: 0.004,
-  /** 最外环不透明度 */
-  alphaTo: 0.026,
-  color: 0x06171c,
-} as const;
-
-/**
- * 选中区块的高亮参数。
- *
- * 【为什么和素材选中框不同色】素材框是 `0x5b6cf9`（偏紫蓝），区块高亮用
- * `0x5b8def`（偏天蓝）—— 同色系但能区分"我选中的是一个点"还是"一片地"。
- *
- * 【为什么描边分两笔】区块面积大、底色从米黄陆地到深绿海面都有，一条细线在
- * 米黄上几乎消失。宽而淡的外发光负责"远处也看得见"，细白线负责"近处边界清楚"。
- * 两者都是**屏幕恒定**宽度（`px / scale`），与区块边界同一口径。
- */
-const REGION_PICK_COLOR = 0x5b8def;
-const REGION_PICK_PX = 2.2;
-const REGION_PICK_GLOW_PX = 8;
-
-/**
- * **非叶子**选中时的容器描边宽度（屏幕像素，PRD §4.4 的 1.6px）。
- *
- * 【为什么非叶子只有一笔】面高亮（填充 + 外发光）只对**叶子**（最小可操作单位）
- * 生效。大区域铺满整屏会"糊成一片"，把内部所有子区块的边界线压掉 —— 用户看不出
- * 自己在操作哪一块。容器态只沿 `P.polygon` 描一笔强调边：信息量足够（"范围在这里"），
- * 且不遮内部子边界（PRD §6-A 的第 2 条论据）。
- */
-const REGION_CONTAINER_PX = 1.6;
-
-/* ───────────────────── 手画草稿（R-REG-03）的常量 ───────────────────── */
-
-/**
- * 「两个屏幕点算不算同一个点」的容差（**屏幕像素**）。
- *
- * 【一个语义，三个消费者】这个数回答的永远只有一个问题：**这两个屏幕位置
- * 算同一个位置吗**。三处用它，各自问的是同一句话：
- *   ① 首顶点命中 —— "我按下的这一点，算按在首顶点上了吗"（瞄准误差）；
- *   ② 双击判定 —— "这两下 down 算同一个位置吗"（手抖 / 触控板抖动）；
- *   ③ 同点去重 —— "这个新顶点和上一个算同一个位置吗"（手抖，见页面 `index.tsx`）。
- *
- * 【为什么可以共用，而且是**必须**共用】①② 若用两个不同的半径，就会出现
- * "这一下既在双击窗口内、又在首顶点命中圈外"这类**判定打架**：同一个物理动作
- * 在两种走法下给出不同结论（一次闭合、一次只落点），用户看到的是"有时候要点两下
- * 才收尾、有时候点一下就收尾"。共用一个数之后，两条分支在同一处必然给出同一个
- * 结论 —— 都通向 `closeDraft()`。
- *
- * 【③ 为什么也用它，而不另立一个更小的数】小于 10px 的两个顶点在屏幕上本来就
- * 点不准（顶点视觉半径 3.5px、首顶点命中圈 10px），用户无法有意画出那样的边；
- * 而"手抖在同一位置点两下（间隔 > 350ms，所以没被双击吃掉）"是真实场景。
- * 换句话说：这个距离以下，**用户自己也分不清**那是不是同一个点。
- *
- * 【为什么导出】页面要在 `onCanvasClickWorld` 里做同点去重（③），画布要在
- * `drawDraft` 里把首顶点画成"可闭合"的样子（①）。三处必须是**同一个数**。
- *
- * 【为什么按屏幕像素而不是世界单位】世界单位的阈值会随缩放变化：放大到郡级时
- * 10 世界单位只有几像素（几乎点不中），缩到全景时又大得能误吃掉相邻的顶点。
- */
-export const DRAFT_CLOSE_PX = 10;
-
-/**
- * 双击判定窗口（毫秒）。
- *
- * 【为什么是 350 而不是系统的 500】这里判的不是"打开文件"那种双击，而是
- * "我要结束这个多边形"—— 用户在收尾时是**有意识**地快点两下的，窗口越宽越容易
- * 把"两个相邻的顶点"误判成收尾。350ms 比 Windows 默认 500 更严，且仍远宽于
- * 正常人的 double-click（150~250ms）。
- *
- * 【为什么必须落在 `pointerdown` 而不是 `dblclick`】`dblclick` 是浏览器在**两次
- * down/up 之后**才派发的事件 —— 那时顶点已经落下了，只能补救（多一个顶点或残留
- * 一个孤立点）。在 `pointerdown` 里判，第二次 down 根本不会进入落点分支。
- */
-const DRAFT_DOUBLE_CLICK_MS = 350;
-/** 草稿连线宽度（屏幕像素） */
-const DRAFT_LINE_PX = 1.5;
-/** 已落顶点的半径（屏幕像素） */
-const DRAFT_POINT_PX = 3.5;
-/** 首顶点在"可以闭合"时的半径（屏幕像素）—— 变大即"这里能点" */
-const DRAFT_SNAP_PX = 6;
-/** 草稿色（与区块选中同色系，但草稿全程更亮/更细） */
-const DRAFT_COLOR = 0x5b8def;
-/** 预览虚线的实/虚长度（屏幕像素） */
-const DRAFT_DASH_ON_PX = 6;
-const DRAFT_DASH_OFF_PX = 4;
-/** 虚线段数上限（防御：极端缩放下长度/步长会很大，不能让 for 循环无限跑） */
-const DRAFT_DASH_MAX = 400;
-
-
-/**
- * 边界线宽的"量化档"倍率。
- *
- * 【为什么需要】区块边界是**屏幕恒定线宽**（`REGION_BORDER_PX` 个像素），换算成
- * 世界单位就是 `px / 缩放` —— 缩放一变，线宽就变，而 Pixi 的 Graphics 一旦描边
- * 就固化了线宽，只能整层重建。滚轮每滚一格都重建 200 多个多边形（约 1.5 万顶点）
- * 会明显掉帧。
- *
- * 这里把缩放量化到 1.06 的幂次档位上，只有跨档才重建：线宽最多差 3%（肉眼不可辨），
- * 重建频率却降到原来的十几分之一。**注意只量化线宽** —— 交叉淡化的权重走的是
- * 容器 `alpha`（零成本），不参与量化，否则过渡会出现台阶。
- *
- * 【与缩放上限无关，已手算】线宽 = `REGION_BORDER_PX / quantize(scale)`，屏幕上
- * 恒为 `REGION_BORDER_PX × (scale / quantize(scale))`。量化误差的相对上界是
- * `√1.06 = 1.0296`（最坏落在档位的中点），因此**无论缩放上限抬到 21 还是 40**，
- * 屏显线宽都落在 `REGION_BORDER_PX × [0.971, 1.030]`（当前 3 px ⇒ 2.91~3.09 px）
- * —— 抬上限不会让边界线变粗/变细，这条常量不需要跟着调。
- */
-const BORDER_WIDTH_QUANTIZE = 1.06;
-
-/**
- * 静态层缓存的倍率上限。
- *
- * 【为什么跟着缩放走】`cacheAsTexture` 会把整组内容烤成一张**固定分辨率**的纹理，
- * 之后由世界变换放大。若只用 1 倍，放到郡级（≈350%）时底图与海岸就是一张被拉大
- * 3.5 倍的图 —— 变软是必然的。所以缓存倍率取 `ceil(缩放)` 并封顶 3：
- * 1024² 的纸最大烤成 3072²（约 36MB），既能覆盖最深的缩放档，也不会无上限地涨。
- */
-const STATIC_CACHE_MAX_RES = 3;
-
-/** 把缩放吸附到最近的量化档（用于线宽，见上） */
-function quantizeScale(scale: number): number {
-  const s = Math.max(1e-6, scale);
-  return BORDER_WIDTH_QUANTIZE ** Math.round(Math.log(s) / Math.log(BORDER_WIDTH_QUANTIZE));
-}
-
-/**
- * 多边形顶点数组 → Pixi Graphics.poly() 需要的扁平坐标数组 [x0,y0,x1,y1,...]
- *
- * 每帧重建数组（而非缓存）是划算的：区块只在生成/清除时变化，
- * 平时这个 effect 根本不会跑。
- */
-function toFlatPoints(polygon: Array<{ x: number; y: number }>): number[] {
-  const out: number[] = [];
-  for (const p of polygon) out.push(p.x, p.y);
-  return out;
-}
-
-/**
- * 在 Graphics 上追加一条**虚线**（多段子路径，调用方统一 `stroke()` 一次）。
- *
- * 【为什么自己切段】Pixi v8 的 Graphics 没有原生 dash 样式（`stroke` 只认实线）。
- * 用 `moveTo/lineTo` 画若干独立子路径、最后一次 stroke，等价于"一条虚线"，
- * 且**只产生一次描边调用**（不是 20 次 stroke）—— 后者在每帧重画时是白付的。
- *
- * @param px 世界单位 / 屏幕像素（= 1 / scale）；所有"屏幕像素"常量都要乘它
- */
-function appendDashedLine(g: Graphics, a: Point, b: Point, px: number): void {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const len = Math.hypot(dx, dy);
-  if (!(len > 1e-9)) return;
-  const ux = dx / len;
-  const uy = dy / len;
-  const on = DRAFT_DASH_ON_PX * px;
-  const off = DRAFT_DASH_OFF_PX * px;
-  const step = on + off;
-  for (let i = 0; i < DRAFT_DASH_MAX; i += 1) {
-    const start = i * step;
-    if (start >= len) break;
-    const end = Math.min(len, start + on);
-    g.moveTo(a.x + ux * start, a.y + uy * start);
-    g.lineTo(a.x + ux * end, a.y + uy * end);
-  }
-}
-
-/** 一个层级的渲染容器：白外影 / 填充 / 内阴影 / 边界分四份 Graphics（重建时机各不同） */
-interface LevelLayers {
-  container: Container;
-  /** 白外影（2.43.0，`paint_shadow.shadow`）：画在填充**之下**，见 regions.ts 常量注释 */
-  rim: Graphics;
-  fill: Graphics;
-  /** 内阴影（2.43.0，`paint_shadow.inner_shadow`）：画在填充之上、边界之下 */
-  innerShadow: Graphics;
-  border: Graphics;
-  /**
-   * 国名容器（该层区块的名称文字，`regionNameLayer.ts`）。
-   *
-   * 【为什么挂在层级容器**内部**、排在填充与边界之后】三件事一次解决：
-   *   · z 序：名字必须压在边界之上（同一次 `addChild` 的顺序即保证）；
-   *   · 透明度：层级容器写着 LOD 权重，名字自然跟着淡入淡出，**不需要第二处赋值**
-   *     （写在节点上就是双重衰减，也会让滚轮每格多改几百个节点）；
-   *   · 显隐：`showRegions` 关掉整层时名字一起消失（国名是"分区"的一部分）。
-   */
-  names: Container;
-}
-
-/**
- * 素材层级容器的哨兵键：**层级无关**。
- *
- * 生成区块之前放置的素材没有层级可言（那时还没有任何分区），放在这个容器里、
- * alpha 恒为 1，任何缩放下都可见。它排在所有层级容器之后，因此永远画在最上层。
- */
-const LOOSE_LEVEL_KEY = -1;
-
-/** 一个已放置素材的渲染句柄：精灵本体 + 它当前挂在哪个层级容器下 */
-interface ElementSprite {
-  sprite: Sprite;
-  /** 层级容器的键（见 `LOOSE_LEVEL_KEY`）。与 `elementLayersRef` 的键同域 */
-  key: number;
-}
-
-/**
- * 素材所属的层级容器键。
- *
- * 与 `lod.ts` 的 `resolveElementLevel` 同一条规则（越界并入最细一级、无层级归 LOOSE），
- * 只差在把 `null` 映射成哨兵键 —— 渲染层要的是一个可索引的容器编号。
- */
-function elementKeyOf(level: number | null | undefined, levelCount: number): number {
-  const resolved = resolveElementLevel(level, levelCount);
-  return resolved === null ? LOOSE_LEVEL_KEY : resolved;
-}
-
-/** 缺省权重（不画任何区块）。用模块级常量避免每次渲染都造一个新数组引用。 */
-const NO_LEVELS: number[] = [];
-
-/** 缺省标注（同上：稳定引用，否则标注同步 effect 每次渲染都会重跑一遍） */
-const NO_LABELS: readonly MapLabel[] = [];
-
-/** 缺省折线（同上：稳定引用，否则折线重绘 effect 每帧都会重跑） */
-const NO_POLYLINES: readonly MapPolyline[] = [];
-
-/**
- * 折线节点手柄的命中半径（**屏幕像素**）。
- *
- * 【为什么按屏幕而不是世界单位】世界单位会随缩放变大变小：缩小到整图时
- * 8 世界单位只有 2 像素（根本点不中），放大到郡级时又变成 28 像素（旁边的线都
- * 被吸过来）。屏幕恒定才是"手柄看起来多大就能点多大"。
- */
-const POLYLINE_NODE_HIT_PX = 8;
-
-/** 折线节点手柄的绘制半径（屏幕像素，比命中圈略小：看得见的不该比点得中的大） */
-const POLYLINE_NODE_PX = 4;
-
-/** 选中折线时的高亮描边宽度（屏幕像素） */
-const POLYLINE_PICK_PX = 1.4;
-
-/**
- * 绘制态预览的虚线节奏（屏幕像素，`[实, 虚]`）。
- *
- * 【为什么这里按屏幕像素、而线本身按世界单位】预览只是"从末点到光标"的一段
- * 临时指示，它不是内容：缩得再远也应该是一眼可辨的虚线。真正的线用世界单位
- * （见 `polylineStyle.ts`），因为它是地图内容、要随图缩放。
- */
-const POLYLINE_PREVIEW_DASH_PX: readonly [number, number] = [7, 5];
-
-/**
- * 折线绘制态的预览：已落的一段按**真实样式**画 + 顶点圆点 + 末点到光标的虚线。
- *
- * 【为什么按真实样式画】用户选的是"河流"，屏幕上却是一条通用的蓝线，收尾之后
- * 突然变成蓝绿色 —— 预览与结果不一致会让人反复重画。样式档在绘制态就能改，
- * 预览必须跟着改。
- */
-function drawPolylinePreview(
-  g: Graphics,
-  points: readonly Point[],
-  styleId: string,
-  scale: number,
-  cursor: Point | null,
-): void {
-  const px = 1 / Math.max(1e-6, scale);
-
-  // ① 已确定的部分：用真样式画（半透明，表示"还没落库"）
-  if (points.length >= 2) {
-    // kind 只是回退依据：styleId 命中时以样式为准
-    const style = polylineStyleOf(styleId, "road");
-    drawPolyline(
-      g,
-      {
-        id: "__polyline_draft__",
-        kind: style.kind,
-        styleId: style.id,
-        points: [...points],
-        closed: false,
-        level: null,
-      },
-      { scale, alpha: 0.8 },
-    );
-  }
-
-  // ② 顶点：白心 + 强调边（与选中手柄同一套观感，用户不会以为是两种东西）
-  for (const p of points) {
-    g.circle(p.x, p.y, POLYLINE_NODE_PX * px);
-    g.fill({ color: 0xffffff, alpha: 0.95 });
-    g.circle(p.x, p.y, POLYLINE_NODE_PX * px);
-    g.stroke({ width: px, color: DRAFT_COLOR, alpha: 0.9 });
-  }
-
-  // ③ 末点 → 光标：虚线（表示"下一段会这样连"）
-  if (cursor && points.length > 0) {
-    const last = points[points.length - 1];
-    const pieces = dashPath(
-      [last, cursor],
-      POLYLINE_PREVIEW_DASH_PX[0] * px,
-      POLYLINE_PREVIEW_DASH_PX[1] * px,
-    );
-    for (const piece of pieces) {
-      g.moveTo(piece[0].x, piece[0].y);
-      for (let i = 1; i < piece.length; i += 1) g.lineTo(piece[i].x, piece[i].y);
-      g.stroke({ width: 1.2 * px, color: DRAFT_COLOR, alpha: 0.6, alignment: 0.5 });
-    }
-  }
-}
 
 /**
  * 地图画布（PixiJS / WebGL 渲染）。
@@ -1975,10 +1635,11 @@ export default function MapCanvas({
     sprite.visible = true;
   }, [textures, doc.terrainBands, doc.land]);
 
-  // ── 区块层 · 白外影 + 内阴影 + 边界（屏幕恒定线宽；只在缩放跨量化档时重建）──
+  // ── 区块层 · 白外影 + 内阴影 + 边界（只在缩放跨量化档时重建）──
   //
-  // 三者都是"沿块缘的笔划"、都要求屏幕像素恒定（世界宽度 = px / 缩放），
-  // 因此与边界共用同一个重建时机（`borderScale` 量化档）与同一遍多边形遍历。
+  // 白外影 / 内阴影是"沿块缘的笔划"、屏幕像素恒定（世界宽度 = px / 缩放），
+  // 与 `borderScale` 量化档绑定；**边界不是**（见下），只是共用同一遍多边形
+  // 遍历与重建时机。
   //
   // 【白外影为什么不做共享边去重】它**画在填充之下**（rim 排在 fill 前面）：
   // 相邻块的同一条边各描一次也只是把白底铺厚（不透明度 0.85 的两遍 ≈ 0.98），
@@ -1989,26 +1650,36 @@ export default function MapCanvas({
   // 各画各的 —— 参考实现同样如此，分块感来自光影而不是粗线。退晕本身用
   // 多层同心 stroke 画成渐隐（单层均匀带实测读作"贴边公路"，见常量注释）。
   //
-  // 线宽换算成世界单位 = 像素 / 缩放。早期版本用固定世界单位，结果缩远了细到
-  // 看不见、放到最大比山脉还宽 —— 区块的可见缩放跨了 40 倍，这个换算不能省。
+  // 影/晕线宽换算成世界单位 = 像素 / 缩放。这个换算只对屏幕恒定的影/晕必要；
+  // 边界线宽已改回世界恒定（2.52.0），不再除缩放。
   //
-  // 【共享边去重】相邻区块的公共边在两侧多边形里**逐位相同**，整圈各描一遍时
-  // alpha 叠成 1-(1-α)² ≈ 0.54 —— 内部边比岸线深一倍，读起来像蛛网（逆向目标
-  // 的区块线内外深浅一致）。这里把边按端点归一化建索引，每条边只由首次遇到它的
-  // 区块描一次：深浅统一，路径量还省近一半。共享边以"连续链"为单位描
-  // （moveTo/lineTo 累积一段再 stroke），draw call 数量保持在几百的量级。
+  // 【边界描边（2.52.0 对齐参考渲染链）】参考国家图章的完整链是
+  // `ra(shapeToBezierCurve(g))` → `GetCanvasOutlines`（`La`）追像素轮廓 →
+  // `Ma(p, 1.2)` RDP → `CreatePolygon(..., polygon_type: 6)` 用 `lineTo` 折线
+  // 渲染（`border_size: 3 / #73562d / α1`）。本项目 2.50.1 补了栅格化收尾、
+  // 2.51.0 补了过点插值，本轮把 `Ma/oa` 也逐字移植成 `simplifyClosedRing`
+  // （保留作可回归基线）。
   //
-  // 【为什么不去重跨层级的边】父子边界本来就重合（子级外轮廓继承父级），且两级
-  // 的可见性由 LOD 帽函数此消彼长 —— 那层叠加是"过渡带里边界保持可见"的设计
-  // 的一部分，去重反而会让缩放时边界忽隐忽现。
+  // 【为什么上屏不直接用那份 RDP】参考 RDP 的输入是**曲线栅格化**后的像素轮廓，
+  // 曲率变化处留点密集；我们的输入是**六边形格生长追出的纯轴向台阶**，容差
+  // 1.2 会把整段台阶塌成一根长对角线（12 国 20,628 点 → 1,389 点），高倍目检
+  // 是生硬多边形折角 —— 正是用户 2.50.0 点名的"多边形边界感"；调到 0.6 留
+  // 7,010 点但轴向锯齿还剩 5,063 段，等于没修。因此上屏走 `smoothBorderRing`
+  // 的**有界环形低通**：点数不变、轴向台阶 12,162 → 88、描边离填充边缘
+  // ≤0.87 < 3 单位线宽的 1.5 半径。这是「参考同款观感」在我们几何上的等价
+  // 实现，也是 2.51.0 只插值不抹台阶（用户复测仍锯齿）缺的那一环。
   //
-  // 【跳线不描（2.40.0）】多边形自交时会出现一次长达上百世界单位的跳接，描出来
-  // 就是一根横穿整块地、还能跨过海湾的飞线（用户截图里"一束呈扇形散开的细线"）。
-  // 判据与实测数据见 `regions.ts` 的 `REGION_JUMP_MEDIAN_RATIO`。
+  // 【为什么不再共享边去重】参考本来就是每国整圈各描一遍；描边不透明
+  // （`border_alpha: 1`），内部边叠描不会加深。填充零缝隙由**精确填充几何**
+  // 保证（`region.polygon` 不抽稀、两侧逐位重合），与描边无关。
+  //
+  // 【跳线判据为什么删了】它防的是自交多边形的长跳接；现在描边环只做低通
+  // （不抽稀），且环本身在 2.48.0 后是简单环（`clipHalfPlanePieces` 保证），
+  // 病根已不存在，再按"超中位数倍数"拦截反而会误杀长直岸线。
   useEffect(() => {
     const levels = levelLayersRef.current;
     if (levels.length === 0) return;
-    const width = REGION_BORDER_PX / borderScale;
+    const width = REGION_BORDER_WIDTH_WORLD;
     for (const lv of levels) {
       lv.border.clear();
       lv.rim.clear();
@@ -2046,78 +1717,23 @@ export default function MapCanvas({
         }
       }
     }
-    const drawnByLevel = levels.map(() => new Set<string>());
-    // 每一级的「跳线」长度上限：先扫一遍该级所有边取中位数，再乘倍数（见
-    // `regionJumpLimit` 的注释）。O(边数) 的一次预扫，换掉几百根横穿整块地的飞线。
-    const jumpLimitByLevel = levels.map((_, level) => {
-      const lens: number[] = [];
-      for (const region of doc.regions) {
-        if (region.level !== level || region.polygon.length < 3) continue;
-        for (const poly of [region.polygon, ...(region.pieces ?? [])]) {
-          for (let k = 0; k < poly.length; k += 1) {
-            const a = poly[k];
-            const b = poly[(k + 1) % poly.length];
-            lens.push(Math.hypot(b.x - a.x, b.y - a.y));
-          }
-        }
-      }
-      if (lens.length === 0) return regionJumpLimit(0);
-      lens.sort((p, q) => p - q);
-      return regionJumpLimit(lens[Math.floor(lens.length / 2)] ?? 0);
-    });
-    const keyOf = (a: { x: number; y: number }, b: { x: number; y: number }): string => {
-      const ax = Math.round(a.x * 100);
-      const ay = Math.round(a.y * 100);
-      const bx = Math.round(b.x * 100);
-      const by = Math.round(b.y * 100);
-      // 端点按字典序归一化：同一条边在两个区块里方向相反，键必须一致
-      return ax < bx || (ax === bx && ay <= by)
-        ? `${ax},${ay}|${bx},${by}`
-        : `${bx},${by}|${ax},${ay}`;
-    };
+    // 边界：每国整圈各描一遍（参考图章语义）。描边几何 = 有界环形低通的平滑环
+    // （点数不变、偏离 ≤0.87）；填充几何不动（零缝隙由逐位重合保证），
+    // 3 世界单位的笔划带把两者的出入整个罩住。
     for (const region of doc.regions) {
       const lv = levels[region.level];
       if (!lv || region.polygon.length < 3) continue;
-      const drawn = drawnByLevel[region.level];
-      // 主块 + 飞地（MapRegion.pieces）各自成环；`drawn` 跨环共享，
-      // 所以接缝处（主块与飞地接触的那一小段）不会被描两遍。
       for (const poly of [region.polygon, ...(region.pieces ?? [])]) {
         if (poly.length < 3) continue;
-        let chain: number[] = [];
-        const flushChain = () => {
-          if (chain.length >= 2) {
-            lv.border.moveTo(poly[chain[0]].x, poly[chain[0]].y);
-            for (let q = 1; q < chain.length; q += 1) {
-              lv.border.lineTo(poly[chain[q]].x, poly[chain[q]].y);
-            }
-            lv.border.stroke({
-              width,
-              color: REGION_BORDER_COLOR,
-              // 边界与填充共用同一张静态系数表（P2-2）：两者必须同比例衰减，
-              // 否则"线比面还淡"。见 regions.ts 的 regionBorderAlphaOf。
-              alpha: regionBorderAlphaOf(region.level),
-              alignment: 0.5,
-            });
-          }
-          chain = [];
-        };
-        for (let k = 0; k < poly.length; k += 1) {
-          const key = keyOf(poly[k], poly[(k + 1) % poly.length]);
-          if (drawn.has(key)) {
-            flushChain();
-            continue;
-          }
-          drawn.add(key);
-          // 跳线（多边形自交时的长跳接）不描：它画出来就是一根横穿整块地的飞线，
-          // 而边界本该是"沿区块走的一小段"。判据见 regions.ts 的 REGION_JUMP_*。
-          if (isRegionJump(poly[k], poly[(k + 1) % poly.length], jumpLimitByLevel[region.level])) {
-            flushChain();
-            continue;
-          }
-          if (chain.length === 0) chain.push(k);
-          chain.push((k + 1) % poly.length);
-        }
-        flushChain();
+        lv.border.poly(toFlatPoints(smoothBorderRing(poly)));
+        lv.border.stroke({
+          width,
+          color: REGION_BORDER_LINE_COLOR,
+          // 边界与填充共用同一张静态系数表（P2-2）：两者必须同比例衰减，
+          // 否则"线比面还淡"。见 regions.ts 的 regionBorderAlphaOf。
+          alpha: regionBorderAlphaOf(region.level),
+          alignment: 0.5,
+        });
       }
     }
   }, [doc.regions, borderScale, levelAlphas.length, app]);

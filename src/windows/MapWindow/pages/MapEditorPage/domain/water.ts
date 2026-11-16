@@ -8,9 +8,10 @@
  * 芦苇这类"河岸物件"，地图上因此从来没有一条真正的河。本模块把这一层补上：
  * 输出的是可直接进折线层的 `MapPolyline`，与用户手画的河共用同一套渲染与编辑。
  *
- * **湖泊为什么是"外环 + 内环"**：参考成图里的湖是**水面**，不是贴纸 ——
- * 轮廓一圈岸线，内部 2 条同心细环读作浅滩/深水（等深线）。这里用嵌套的
- * 闭合折线表达：外环带填充（`styleId: "lake"`），内环只描边（`"lake-ring"`）。
+ * **湖泊为什么是"外环 + 开口弧"**：参考成图里的湖是**水面**，不是贴纸 ——
+ * 轮廓一圈岸线，内部两三道**不闭合**的同心弧读作涟漪（2.51.0 对齐：旧版的
+ * 贯穿等深线环把湖面切成套娃圈，用户指认与参考不符）。外环带填充
+ * （`styleId: "lake"`，与河流同色系），弧只描边（`"lake-wave"`）。
  * 不引入新的要素类型，因此持久化、命中、图层面板、子图全部自动复用。
  *
  * ── 确定性 ──
@@ -423,8 +424,45 @@ function riverWidthScale(cellCount: number): number {
 /** 湖面外环的顶点数（越多越顺；18 在 54 格网下已读不出多边形） */
 const LAKE_VERTICES = 18;
 
-/** 内环相对外环的半径比例（由外向内 = 浅滩 → 深水） */
-const LAKE_RING_SCALES = [1, 0.66, 0.38] as const;
+/**
+ * 波浪弧相对外环的半径比例（2.51.0 起：内环不再画整圈，改画**开口弧**）。
+ * 两道弧一大一小，起止角由湖的哈希决定 —— "微微几道不贯穿的波浪纹"。
+ */
+const LAKE_WAVE_SCALES = [0.62, 0.36] as const;
+
+/**
+ * 湖面椭圆上的一点（岸线与波浪弧共用）。
+ *
+ * 轮廓起伏用**两条低频正弦**，不是逐顶点哈希。
+ *
+ * 【为什么】逐顶点独立抖动（±18%）的 18 边形平滑之后仍是"花瓣/齿轮"——
+ * 相邻顶点的半径没有相关性，曲线只能在每个顶点处鼓一下。低频正弦让半径
+ * 沿圆周连续变化，出来的是一汪**不规则但圆润**的水面。波浪弧与岸线共用
+ * 同一组相位 ⇒ 弧的起伏跟岸线的起伏是"同一个水面"，不会出现弧贴着岸或
+ * 顶着岸的反常曲率。
+ */
+function lakePointAt(
+  angle: number,
+  cx: number,
+  cy: number,
+  baseR: number,
+  rot: number,
+  ex: number,
+  ey: number,
+  scale: number,
+  shrink: number,
+): Point {
+  const ph1 = cellHash(Math.round(baseR), 7, 41) * Math.PI * 2;
+  const ph2 = cellHash(Math.round(baseR), 13, 43) * Math.PI * 2;
+  const jitter = 1 + 0.1 * Math.sin(angle * 2 + ph1) + 0.06 * Math.sin(angle * 3 + ph2);
+  const rx = baseR * jitter * ex * scale * shrink;
+  const ry = baseR * jitter * ey * scale * shrink;
+  const x = Math.cos(angle) * rx;
+  const y = Math.sin(angle) * ry;
+  const cosR = Math.cos(rot);
+  const sinR = Math.sin(rot);
+  return { x: cx + x * cosR - y * sinR, y: cy + x * sinR + y * cosR };
+}
 
 /**
  * 生成一圈湖岸顶点（同一组抖动半径 × 比例 ⇒ 各环天然嵌套）。
@@ -442,25 +480,64 @@ function lakeRing(
   shrink: number,
 ): Point[] {
   const out: Point[] = [];
-  const cosR = Math.cos(rot);
-  const sinR = Math.sin(rot);
-  /**
-   * 轮廓起伏用**两条低频正弦**，不是逐顶点哈希。
-   *
-   * 【为什么】逐顶点独立抖动（±18%）的 18 边形平滑之后仍是"花瓣/齿轮"——
-   * 相邻顶点的半径没有相关性，曲线只能在每个顶点处鼓一下。低频正弦让半径
-   * 沿圆周连续变化，出来的是一汪**不规则但圆润**的水面。
-   */
-  const ph1 = cellHash(Math.round(baseR), 7, 41) * Math.PI * 2;
-  const ph2 = cellHash(Math.round(baseR), 13, 43) * Math.PI * 2;
   for (let i = 0; i < LAKE_VERTICES; i += 1) {
-    const a = (i / LAKE_VERTICES) * Math.PI * 2;
-    const jitter = 1 + 0.1 * Math.sin(a * 2 + ph1) + 0.06 * Math.sin(a * 3 + ph2);
-    const rx = baseR * jitter * ex * scale * shrink;
-    const ry = baseR * jitter * ey * scale * shrink;
-    const x = Math.cos(a) * rx;
-    const y = Math.sin(a) * ry;
-    out.push({ x: cx + x * cosR - y * sinR, y: cy + x * sinR + y * cosR });
+    out.push(
+      lakePointAt(
+        (i / LAKE_VERTICES) * Math.PI * 2,
+        cx,
+        cy,
+        baseR,
+        rot,
+        ex,
+        ey,
+        scale,
+        shrink,
+      ),
+    );
+  }
+  return out;
+}
+
+/**
+ * 一道**不闭合**的湖面波浪弧（2.51.0，对齐参考成图湖内的开口弧纹）。
+ *
+ * 弧段只扫 `sweep`（约 200°~260°），起止角由湖半径的哈希决定 —— 与岸线
+ * 共用同一组起伏相位（见 `lakePointAt`），弧自然嵌在岸线里。
+ *
+ * 【为什么是开口弧而不是整圈】整圈等深线把湖面切成套娃圈，读作"三个湖
+ * 叠在一起"（2.51.0 用户反馈）；开口弧只暗示水面起伏，湖仍是一汪整水。
+ *
+ * @param salt 每道弧一个盐：同湖两道弧的开口错开，不同湖的开口也不同
+ */
+function lakeWaveArc(
+  cx: number,
+  cy: number,
+  baseR: number,
+  rot: number,
+  ex: number,
+  ey: number,
+  scale: number,
+  shrink: number,
+  salt: number,
+): Point[] {
+  const start = cellHash(Math.round(baseR), salt, 47) * Math.PI * 2;
+  const sweep = 3.4 + cellHash(Math.round(baseR), salt + 8, 51) * 1.4;
+  const steps = Math.max(10, Math.round(sweep / 0.26));
+  const out: Point[] = [];
+  for (let i = 0; i <= steps; i += 1) {
+    out.push(
+      lakePointAt(
+        start + (sweep * i) / steps,
+        cx,
+        cy,
+        baseR,
+        rot,
+        ex,
+        ey,
+        scale,
+        shrink,
+      ),
+    );
   }
   return out;
 }
@@ -473,8 +550,22 @@ function ringInLand(points: readonly Point[], land: MapLand | undefined): boolea
 
 /* ─────────────────── 主入口 ─────────────────── */
 
-/** 湖泊候选的最小间距（格）：两个湖贴在一起会读成一个"8 字形" */
-const LAKE_SEPARATION_RATIO = 0.28;
+/**
+ * 湖面外环半径的取值域（与落湖循环里的 `cellSize * (0.6 + rng() * 0.35)` 保持
+ * 一致 —— 上限 = 0.95）。间距判据必须按**半径的量纲**算，见 `LAKE_CLEARANCE`。
+ */
+const LAKE_RADIUS_MAX_RATIO = 0.95;
+
+/**
+ * 两湖外环之间的净空（× 外环半径）。
+ *
+ * 【为什么 2.50.1 要换口径】旧版用"格距曼哈顿距离 ≥ 2"当湖间距，而湖半径
+ * （0.6~0.95 格）与格径同量级：对角摆放的两湖实际只相距 √2 格、曼哈顿距离
+ * 却是 2，照样通过筛 ⇒ 三个湖挤成一簇互相叠着的花瓣（实测缺陷，用户点名）。
+ * 换成**欧氏世界距离 ≥ 两湖最大外环半径之和 × (1 + 净空)**——按最坏半径
+ * 预筛，落湖时无论骰出多大都不会相交。
+ */
+const LAKE_CLEARANCE = 0.35;
 
 /**
  * 从格网生成整张图的水系。
@@ -497,11 +588,10 @@ export function buildWaterNet(
     return cellHeight(c.terrain, seaDist[i], (cellHash(c.col, c.row, 53) - 0.5) * 0.5);
   });
 
-  const minSep = Math.max(2, Math.round(Math.min(cols, rows) / 5));
   /**
    * 河源之间的最小间距（格）。
    *
-   * 【为什么要比 `minSep` 大】源头是按地势排序挑的，高处往往连成一条山脉 ——
+   * 【为什么要拉到短边的 30%】源头是按地势排序挑的，高处往往连成一条山脉 ——
    * 只筛 3 格的间距，8 条河会全挤在同一片山区。间距拉到格网短边的 30%，
    * 河才会分到岛的四周（参考成图上没有"所有河都从北边下来"的图）。
    */
@@ -537,11 +627,11 @@ export function buildWaterNet(
    * 要么把 80% 的河都丢掉。
    */
   const lakeCenters: number[] = [];
-  const lakeGap = Math.max(2, Math.round(minSep * LAKE_SEPARATION_RATIO * 2));
+  // 中心最小间距（世界单位）：两个最大外环 + 35% 净空
+  const lakeMinCenterDist = cellSize * LAKE_RADIUS_MAX_RATIO * 2 * (1 + LAKE_CLEARANCE);
   const tooCloseToLake = (idx: number) =>
     lakeCenters.some(
-      (p) =>
-        Math.abs(cells[p].col - cells[idx].col) + Math.abs(cells[p].row - cells[idx].row) < lakeGap,
+      (p) => Math.hypot(cells[p].x - cells[idx].x, cells[p].y - cells[idx].y) < lakeMinCenterDist,
     );
 
   if (options.lakes > 0) {
@@ -634,14 +724,16 @@ export function buildWaterNet(
     const ey = 1 / ex;
 
     let shrink = 1;
-    let rings: Point[][] = [];
+    let shore: Point[] | null = null;
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      rings = LAKE_RING_SCALES.map((s) => lakeRing(c.x, c.y, baseR, rot, ex, ey, s, shrink));
-      if (ringInLand(rings[0], land)) break;
+      const ring = lakeRing(c.x, c.y, baseR, rot, ex, ey, 1, shrink);
+      if (ringInLand(ring, land)) {
+        shore = ring;
+        break;
+      }
       shrink *= 0.72;
-      rings = [];
     }
-    if (rings.length === 0) continue;
+    if (!shore) continue;
 
     /**
      * 占格：**顶点所在格 + 格心落在湖面内的格**（2.45.0 补）。
@@ -651,15 +743,27 @@ export function buildWaterNet(
      * （成图上表现为"一条路横穿湖面"）。按格心做一次点在多边形内判定，
      * 才能真正把"画出来的水面"从可通行区域里挖掉。
      */
-    for (const p of rings[0]) out.cells.add(rowColIndex(p, cols, rows, cellSize, c));
-    markCellsInside(rings[0], cells, out.cells);
-    rings.forEach((points, k) => {
+    for (const p of shore) out.cells.add(rowColIndex(p, cols, rows, cellSize, c));
+    markCellsInside(shore, cells, out.cells);
+    out.polylines.push({
+      id: `pl_gen_lake_${idx}_0`,
+      kind: "lake",
+      styleId: "lake",
+      points: shore,
+      closed: true,
+      level: null,
+      origin: "generated",
+    });
+    // 波浪弧（2.51.0）：两道不闭合的同心弧，开口错开 —— 湖面读作"一汪水
+    // 带几道涟漪"，而不是"三个套在一起的圈"。弧缩在岸线内（scale ≤ 0.62），
+    // 不会被岸线盖住，也不用参与占格（占格只关心"哪块地不能踩"）。
+    LAKE_WAVE_SCALES.forEach((scale, k) => {
       out.polylines.push({
-        id: `pl_gen_lake_${idx}_${k}`,
+        id: `pl_gen_lake_${idx}_w${k}`,
         kind: "lake",
-        styleId: k === 0 ? "lake" : "lake-ring",
-        points,
-        closed: true,
+        styleId: "lake-wave",
+        points: lakeWaveArc(c.x, c.y, baseR, rot, ex, ey, scale, shrink, 3 + k * 8),
+        closed: false,
         level: null,
         origin: "generated",
       });

@@ -28,15 +28,20 @@ export const LAYOUT = {
   drawerWidth: 300,
 } as const;
 
-/** 新建卷的默认存储名：展示时视为「未命名」不追加显示（左栏卷头与大纲板共用） */
-export const UNNAMED_VOLUME = "未命名卷";
+/**
+ * 新建卷的默认存储名：展示时视为「未命名」不追加显示（左栏卷头与大纲板共用）。
+ *
+ * 实现已下沉到 `@/shared/novel/plain-text`（导出拼装也要判它），这里 re-export
+ * 保持既有 import 路径不变。
+ */
+export { UNNAMED_VOLUME } from "@/shared/novel/plain-text";
 
 // ── 小说设定的默认值（定义已提升到 shared，见文件头 re-export） ──
 //
 // 设定中心组件被提升到 `src/shared/components/SettingCenter` 后跨窗口复用，
 // 这三个默认值 + 色板随之下沉到 `@/shared/novel/setting-defaults`
 // （shared 不允许 import windows）。这里 re-export 保持既有 import 路径不变。
-// 与主进程常量的一致性守卫见 `electron/novel-setting-defaults-guard.test.ts`。
+// 与主进程常量的一致性守卫见 `electron/handlers/novel/novel-setting-defaults-guard.test.ts`。
 
 export {
   CATEGORY_PALETTE,
@@ -118,7 +123,14 @@ export const VOLUME_SUFFIX_OPTIONS = ["卷", "部", "篇", "集"] as const;
 
 /** 设置抽屉可调范围 */
 export const SETTINGS_RANGE = {
-  fontSize: { min: 14, max: 24, step: 1 },
+  /**
+   * 正文字号 14–32（D-15）。
+   *
+   * 上限原本是 24：1080p 下够用，但在 4K / 缩放 150% 的屏上，24px 的正文
+   * 仍偏小 —— 而这恰恰是长篇作者最常见的显示器。上限放宽到 32（约等于
+   * A4 上的小三），滑杆步进保持 1，不影响既有档位的取值。
+   */
+  fontSize: { min: 14, max: 32, step: 1 },
   lineHeight: { min: 1.4, max: 2.4, step: 0.1 },
   paragraphSpacing: { min: 0, max: 1.6, step: 0.1 },
   dailyGoal: { min: 500, max: 20000, step: 500 },

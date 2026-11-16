@@ -1,6 +1,8 @@
 // 书架主页面（R32）页面级布局：顶栏 / 统计条 / 继续写作 Hero / 书架网格 /
 // 灵感库右栏 / 底部状态条。组件内部样式在各组件目录的 index.scss，此处只管骨架。
 // 根节点渲染于 .window-shell__body 内（上方有 34px WindowHeader，禁用 100vh）。
+@use "../../../../shared/styles/widget" as widget;
+
 .bs-page {
   display: flex;
   flex-direction: column;
@@ -161,6 +163,93 @@
       overflow: hidden;
       white-space: nowrap;
       text-overflow: ellipsis;
+    }
+  }
+
+  /* 页脚的两个低频入口（O-10）：从顶栏搬下来之后走「描边小按钮」而不是
+     纯文字链 —— 文字链在页脚的静音环境里等于消失（实测要点中两三次才反应过来
+     那儿可以点）。现在给 1px 描边 + 白底 + 图标，仍低于顶栏动作的权重，
+     但看得出是「能按的东西」。hover 时描边转主色，形成第三档。 */
+  &__status-links {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex: none;
+  }
+
+  &__status-link.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 24px;
+    --ant-button-padding-inline: 9px;
+    --ant-button-content-font-size: 12px;
+    --ant-button-icon-gap: 5px;
+    --ant-border-radius: var(--app-radius-item);
+    --ant-button-default-bg: var(--app-surface);
+    --ant-button-default-color: var(--app-text-secondary);
+    --ant-button-default-border-color: var(--app-border);
+    --ant-button-default-hover-bg: var(--app-surface-hover);
+    --ant-button-default-hover-color: var(--app-primary-strong);
+    --ant-button-default-hover-border-color: var(--app-primary);
+    --ant-button-default-active-bg: var(--app-surface-hover);
+    --ant-button-default-active-color: var(--app-primary-strong);
+    --ant-button-default-active-border-color: var(--app-primary);
+    --ant-button-default-shadow: none;
+
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    cursor: pointer;
+
+    /* 图标：14px 写在这两层 —— `icon` prop 会被 antd 包成 `.ant-btn-icon`，
+       `SvgIcon`（回收站）本身就是 `.svgicon`。只写 `& > svg` 是不生效的。
+       下沉 1px 让图标墨迹与中文墨迹中线重合（中文行盒比几何中心低约 1px），
+       否则一排版下来图标总像「浮」在文字上方半格。 */
+    & > .ant-btn-icon,
+    & > .svgicon {
+      width: 14px;
+      height: 14px;
+      font-size: 14px;
+      transform: translateY(1px);
+    }
+
+    transition:
+      color var(--app-t-fast) var(--app-ease-standard),
+      background var(--app-t-fast) var(--app-ease-standard),
+      border-color var(--app-t-fast) var(--app-ease-standard);
+
+    &:focus-visible {
+      outline: 2px solid var(--app-primary);
+      outline-offset: 2px;
+    }
+  }
+
+  /* 回收站计数（antd Badge）：跟着按钮一起显眼，但只用弱底小胶囊，不做红点
+     （不是告警）。Badge 的计数底是 `colorError` 合并出来的别名、不落成语义
+     变量，只能改它上游的 `--ant-color-error`；外圈那层「描边」是
+     `colorBorderBg` 画出来的 box-shadow 环，这里一并透明掉。 */
+  &__trash-badge.ant-badge {
+    --ant-badge-indicator-height: 16px;
+    --ant-badge-indicator-height-sm: 16px;
+    --ant-badge-text-font-size: 11px;
+    --ant-badge-text-font-size-sm: 11px;
+    --ant-badge-text-font-weight: 600;
+    --ant-badge-padding-inline: 5px;
+    --ant-color-error: var(--app-primary-weak);
+    --ant-color-text-light-solid: var(--app-primary-strong);
+    --ant-color-border-bg: transparent;
+
+    /* 不包裹任何内容的 Badge，计数器默认是**绝对定位**到 0×0 容器的右上角 ——
+       塞进按钮里会浮在文字右上方、并向外溢出。这里把它拉回正常流：外层
+       span 当行内 flex 项，计数器 static，于是它就是一颗粒子排在「回收站」
+       后面，高度由上面的 indicator-height 决定。 */
+    position: static;
+    display: inline-flex;
+    align-items: center;
+    line-height: 1;
+
+    .ant-badge-count {
+      position: static;
+      transform: none;
     }
   }
 

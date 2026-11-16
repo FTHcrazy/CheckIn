@@ -280,8 +280,27 @@ export const REGION_FILL_ALPHA = 0.8;
  * 1 px（2.43.0）—— 分风格 `paint_shadow` 表的 `stroke: 1`（decoded.js
  * `MapStyleEnum.*` 段，见 review 序 11 / E2）。参考的国家块靠**内阴影 + 白外影**
  * 分块，界线本身是一根细笔划；3px 深线叠加在粉彩上就是"拼图格"的另一半根因。
+ *
+ * 【2.52.0 起本常量只服务子图】主图国家边界改走 `REGION_BORDER_WIDTH_WORLD`
+ * （世界恒定 3 单位，参考国家图章原值）：`paint_shadow.stroke` 是**地形陆稿**
+ * （DrawOutline worker）的描边参数，不是国家边界 —— 2.43.0 取错了源。子图的
+ * 屏幕恒定口径不变。
  */
 export const REGION_BORDER_PX = 1;
+
+/**
+ * 主图国家边界线宽 —— **世界单位**（参考国家图章 `border_size: 3`）。
+ *
+ * 【出处】国家区域图章的真实样式是 `border_size:3 / border_color:"#73562d" /
+ * border_alpha:1`（decoded.js 国家图章创建段；仙侠档才覆盖为 `1 / α0.25`），
+ * 且渲染层 `border_size *= 缩放`（`decoded.js@239836`）—— 即线宽随缩放同步
+ * 放大，**世界恒定**。屏幕恒定 1px 的旧口径在放大后细若发丝，参考同倍率下
+ * 是 3×缩放 的粗线（用户裁决：「线条的样式也跟逆向保持一致，我们的太细了」）。
+ *
+ * 【随缩放无需重建】世界恒定线宽不随缩放变化，`BORDER_WIDTH_QUANTIZE` 的
+ * 重建职责只剩白外影 / 内阴影两件（它们仍是屏幕恒定）。
+ */
+export const REGION_BORDER_WIDTH_WORLD = 3;
 
 /**
  * 区块边界的不透明度。
@@ -299,8 +318,12 @@ export const REGION_BORDER_PX = 1;
  */
 export const REGION_BORDER_ALPHA = 1;
 
-/** 区块边界颜色 —— 分风格 `paint_shadow` 表的 `stroke_color: "#4d3200"`（深褐细线，见 E2） */
+/** 区块边界颜色 —— 分风格 `paint_shadow` 表的 `stroke_color: "#4d3200"`（深褐细线，见 E2）。
+ * 2.52.0 起只服务子图；主图国家边界改用 `REGION_BORDER_LINE_COLOR`（图章原值）。 */
 export const REGION_BORDER_COLOR = 0x4d3200;
+
+/** 主图国家边界颜色 —— 参考国家图章 `border_color: "#73562d"`（暖褐手绘线，α1）。 */
+export const REGION_BORDER_LINE_COLOR = 0x73562d;
 
 /**
  * 区块「白外影」（2.43.0，对齐 `paint_shadow.shadow: 2~5, #ffffff`，见 E2）。
@@ -349,52 +372,6 @@ export const REGION_INNER_SHADOW_ALPHA = 0.11;
  * 成本不成比例。
  */
 export const REGION_INNER_SHADOW_PASSES = 4;
-
-/**
- * 「跳线」判定：单段长度超过该级**中位边长**的这个倍数，就认为它不是边界，
- * 而是多边形拼装时的一次跳接。
- *
- * 【为什么需要这条判据（3.40 之前的实测）】区块的 display 多边形由"每条边切一段
- * 宿主折线"拼成。Voronoi 单元退化（种子点几乎共线 / 落在父块内凹湾里）时，
- * `arcBetween` 的参数窗口会外推出边界，拼出来的多边形**自交**。实测（用户实际
- * 文档、223 块、四级）：**57/223 个多边形自交**，最长边 106 世界单位，而该级边的
- * 中位数只有 3.4、p99 只有 16 —— 也就是说几十条 100 单位级的直线横穿整块地。
- * 用户截图里"一束近乎平行、呈扇形散开的细线"就是它们：描边把每一次跳接画成了
- * 一根长直笔划，看起来像飞线。
- *
- * 【为什么在渲染层判、不去修几何】修几何要重排顶点顺序（或重建 Voronoi 单元），
- * 那会动到"父子/兄弟逐点重合"这条铁律 —— 风险远大于收益，且自交的多边形**填充**
- * 在 non-zero 环绕规则下基本互相抵消，画面看不出问题（只有描边会暴露）。
- * 因此在描边时把跳接段整段丢掉：线的连续性由掩膜与相邻段兜住，视觉上就是
- * "边界在那一处断开"，比横穿整块地的飞线可接受得多。
- */
-export const REGION_JUMP_MEDIAN_RATIO = 10;
-
-/** 「跳线」判定的绝对下限（世界单位）：小岛上中位数极小，别把正常长边也砍了 */
-export const REGION_JUMP_MIN_WORLD = 30;
-
-/**
- * 某一级边界的单段长度上限（世界单位）。
- *
- * @param medianEdge 该级所有边的长度中位数（渲染层先扫一遍得到）
- */
-export function regionJumpLimit(medianEdge: number): number {
-  const base = Number.isFinite(medianEdge) && medianEdge > 0 ? medianEdge : 0;
-  return Math.max(REGION_JUMP_MIN_WORLD, base * REGION_JUMP_MEDIAN_RATIO);
-}
-
-/** 该段是否是"跳线"（长到不可能是边界本身） */
-export function isRegionJump(
-  a: { x: number; y: number },
-  b: { x: number; y: number },
-  limit: number,
-): boolean {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const len2 = dx * dx + dy * dy;
-  if (!Number.isFinite(len2)) return true;
-  return len2 > limit * limit;
-}
 
 /**
  * 区块填充/边界的**静态层次系数**（按 level 索引，0 = 国家）。

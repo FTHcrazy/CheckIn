@@ -5,6 +5,7 @@ import { ClockCircleOutlined } from "@ant-design/icons";
 import { ThemeProvider } from "@/shared/theme";
 import type { ActivityNotifyData } from "@/shared/ipc/activityNotifyBridge";
 import WindowHeader from "@/shared/components/WindowHeader";
+import { IS_NO_MAP } from "@/shared/edition";
 import HeaderNav from "./components/HeaderNav";
 import SettingsEntry from "./components/SettingsEntry";
 import MapEntry from "./components/MapEntry";
@@ -23,6 +24,9 @@ const ImageCompressPage = lazy(
 );
 const ChromaKeyPage = lazy(() => import("./pages/ChromaKeyPage/ChromaKeyPage"));
 const IdPhotoPage = lazy(() => import("./pages/IdPhotoPage/IdPhotoPage"));
+const InterviewPage = lazy(
+  () => import("./pages/InterviewPage/InterviewPage"),
+);
 
 /** 懒加载路由的占位，保持与页面一致的高度避免布局跳动 */
 function RouteFallback() {
@@ -83,6 +87,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/compress": "图片压缩",
   "/cutout": "色键抠图",
   "/idphoto": "证件照换底色",
+  "/interview": "前端面试题",
 };
 
 /**
@@ -91,6 +96,7 @@ const PAGE_TITLES: Record<string, string> = {
  * 左侧 `leading`：返回入口 + 当前页面名称，回首页时不给——首页既没有上一页，
  * 也不需要「我在哪」的提示，摆上去只会制造无效点击；右侧 `actions`：地图与
  * 全局设置入口（分别唤起 MapWindow / SettingsWindow，均单实例）。
+ * 地图入口随构建形态开关：lite 版与 nomap 变体没有 map 窗口，隐藏按钮避免死点击。
  * 路由判定留在窗口层——WindowHeader 被多个窗口共用，其中有些并不挂 Router。
  */
 function BaseWindowHeader() {
@@ -102,7 +108,7 @@ function BaseWindowHeader() {
       leading={title ? <HeaderNav title={title} /> : null}
       actions={
         <>
-          <MapEntry />
+          {!IS_NO_MAP && <MapEntry />}
           <SettingsEntry />
         </>
       }
@@ -133,6 +139,7 @@ export default function App() {
                 <Route path="/compress" element={<ImageCompressPage />} />
                 <Route path="/cutout" element={<ChromaKeyPage />} />
                 <Route path="/idphoto" element={<IdPhotoPage />} />
+                <Route path="/interview" element={<InterviewPage />} />
               </Routes>
             </Suspense>
           </div>

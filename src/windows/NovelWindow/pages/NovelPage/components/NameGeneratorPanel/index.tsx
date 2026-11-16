@@ -9,6 +9,8 @@ import {
   StarOutlined,
   ThunderboltOutlined,
 } from "@ant-design/icons";
+import SvgIcon from "@/shared/components/SvgIcon";
+import aiSvg from "@/assets/novel/ai.svg?raw";
 import {
   NAMING_DICTIONARY,
   NAMING_KINDS,
@@ -518,7 +520,7 @@ export default function NameGeneratorPanel({
               disabled={aiLoading || !aiAvailable}
               title={aiAvailable ? undefined : aiUnavailableText}
             >
-              <ThunderboltOutlined />
+              <SvgIcon svg={aiSvg} />
               AI 起名
             </Button>
           ) : null}

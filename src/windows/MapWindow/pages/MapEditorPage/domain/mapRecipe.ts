@@ -145,13 +145,30 @@ export function randomRecipe(seed: number): MapRecipe {
  *
  * 【为什么抽签也要吃 seed】一键成图的每种产物都必须可复现（同 seed 同图）；
  * 用 `Math.random()` 抽形状会让"同一张图"在重绘时换形状。
+ *
+ * 【2.51.0 起随机档按岛数加权，不再均匀】用户指认"随机生成陆地还是以土豆形状
+ * 居多"：均匀 12 选 1 里有 7 种单岛，近六成的图是一整块大 Blob。参考成图
+ * （模板/服务端 AI 生成，取证 `decoded.js@980461`"AI 正在构思大陆…"——
+ * **本地没有可照抄的分布算法**）以群岛类居多，于是按"该档能出几个岛"给权重：
+ * 单岛 0.55、双岛 1.2、三岛 1.8、四岛以上 2.2。系数是观感校准值，不是逆向值。
  */
 export function resolveShapeId(choice: string | undefined, seed: number): LandShapeId {
   if (!choice || choice !== RANDOM_CHOICE) {
     return (choice as LandShapeId | undefined) ?? LAND_SHAPES[0].id;
   }
+  const weights = LAND_SHAPES.map((s) => {
+    // 缺省 islands 的档（正常/南北/东西/狭长）内部走"1~3 岛加权分布"，按中位 2 算
+    const c = typeof s.islands === "number" ? s.islands : (s.islands?.[1] ?? 2);
+    return c >= 4 ? 2.2 : c === 3 ? 1.8 : c === 2 ? 1.2 : 0.55;
+  });
+  const total = weights.reduce((s, w) => s + w, 0);
   const rng = mulberry32((seed ^ 0x9e3779b9) >>> 0);
-  return LAND_SHAPES[Math.floor(rng() * LAND_SHAPES.length)].id;
+  let roll = rng() * total;
+  for (let i = 0; i < LAND_SHAPES.length; i += 1) {
+    roll -= weights[i];
+    if (roll <= 0) return LAND_SHAPES[i].id;
+  }
+  return LAND_SHAPES[LAND_SHAPES.length - 1].id;
 }
 
 /** 底色档 → 实际底色 id（`RANDOM_CHOICE` 时按 seed 抽一种） */

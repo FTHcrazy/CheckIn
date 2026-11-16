@@ -14,189 +14,6 @@
   background: var(--app-bg);
 }
 
-// ── 工具栏 ──
-.map-editor__toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--app-border);
-  background: var(--app-surface);
-  flex-shrink: 0;
-}
-
-.map-editor__toolbar-group {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.map-editor__toolbar-spacer {
-  flex: 1;
-}
-
-.map-editor__zoom-label {
-  min-width: 48px;
-  text-align: center;
-  font-size: 12px;
-  color: var(--app-text-secondary);
-  font-variant-numeric: tabular-nums;
-}
-
-.map-editor__count {
-  font-size: 12px;
-  color: var(--app-text-secondary);
-}
-
-/**
- * 地图名（工具栏最左那颗按钮的文本）。
- *
- * 省略号交给这层 span：地图名上限 40 字，直接让按钮按内容撑开会把工具栏挤到换行。
- */
-.map-editor__library-title {
-  display: inline-block;
-  max-width: 148px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  vertical-align: bottom;
-}
-
-/**
- * 存档状态点（工具栏最左，紧挨地图名）。
- *
- * 【为什么是一个点而不是一行字】保存是 800ms 一次的高频后台动作，写成
- * 「正在保存…」会让工具栏每几秒抖一下；一个点 + Tooltip 说明既够用又不打扰。
- * 四档颜色只取主题 token：进行中 = 主色，成功 = 主色淡，冲突/失败 = 警示。
- */
-.map-editor__save-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  background: var(--app-text-secondary);
-  transition: background-color 0.2s ease;
-
-  &.map-editor__save-dot--dirty,
-  &.map-editor__save-dot--saving {
-    background: var(--app-primary);
-  }
-
-  &.map-editor__save-dot--saved {
-    background: var(--app-primary);
-    opacity: 0.45;
-  }
-
-  &.map-editor__save-dot--conflict,
-  &.map-editor__save-dot--error {
-    background: var(--app-error);
-  }
-}
-
-.map-editor__region-count {
-  font-size: 12px;
-  color: var(--app-text-secondary);
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-
-/**
- * 陆地种子显示。
- *
- * 用等宽数字并单独成块：评审要靠它复现同一块陆地（PRD §8.3），
- * 数字跳宽会让人抄错，也会让"改前 / 改后"两张截图看起来不是同一块地。
- */
-.map-editor__land-seed {
-  font-size: 12px;
-  color: var(--app-text-secondary);
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-
-/**
- * 地名计数。
- *
- * 与"素材 N"并列显示，但**放在工具栏中段**（紧跟加标注按钮）：标注是"这一层
- * 有没有内容"的即时反馈，放到最右边的统计区会离操作点太远，用户点完按钮要找一眼。
- */
-.map-editor__label-count {
-  font-size: 12px;
-  color: var(--app-text-secondary);
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-
-/**
- * 当前层级指示。
- *
- * 做成"胶囊"而不是普通文字：它是一个**状态**而不是统计数字，
- * 缩放到交界处时还会显示成「国家 ↔ 郡」，需要有别于两侧的计数文字的辨识度。
- */
-.map-editor__level-chip {
-  font-size: 12px;
-  white-space: nowrap;
-  padding: 1px 8px;
-  border-radius: 9px;
-  color: var(--app-primary);
-  background: color-mix(in srgb, var(--app-primary) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--app-primary) 28%, transparent);
-  cursor: default;
-}
-
-/**
- * 画区动作区（R-REG-03）。
- *
- * 整段用一条左侧竖线 + 淡底色圈起来：画区态是**临时进入的模态**，
- * 它与两侧的常驻按钮（撤销 / 缩放）不是同一类东西，靠背景区分比靠位置可靠
- * —— 工具栏在窄窗口下会换行，位置随时可能变。
- */
-.map-editor__draw-actions {
-  padding: 2px 8px;
-  border-radius: var(--app-radius-panel, 8px);
-  background: color-mix(in srgb, var(--app-primary) 8%, transparent);
-  border: 1px solid color-mix(in srgb, var(--app-primary) 22%, transparent);
-}
-
-/**
- * 画区目标层级（只读指示）。
- *
- * 用等宽数字：层号会从 L1 变到 L4，宽度跳变会让右侧「已画 N 点」跟着抖。
- */
-.map-editor__draw-level {
-  font-size: 12px;
-  white-space: nowrap;
-  color: var(--app-text-secondary);
-  font-variant-numeric: tabular-nums;
-}
-
-/**
- * 层级已封顶：标红。
- *
- * 此刻画布上的每一次点击都只会弹「已达最深层级」而不会落点，
- * 指示器必须先变红 —— 否则用户会以为画布卡了。
- */
-.map-editor__draw-level--overflow {
-  color: var(--app-error);
-  font-weight: 600;
-}
-
-/** 已画点数 / 已用区块数：等宽数字，避免逐点跳动时整行抖动 */
-.map-editor__draw-count {
-  font-size: 12px;
-  white-space: nowrap;
-  color: var(--app-text-secondary);
-  font-variant-numeric: tabular-nums;
-}
-
-/**
- * 折线样式下拉（绘制态）。
- *
- * 定宽 96px：档名是 2~4 个汉字（官道 / 小径 / 河流 / 山脊 / 势力边界），
- * 不定宽会让右侧的「已画 N 点」在换档时左右横跳。
- */
-.map-editor__polyline-style {
-  width: 96px;
-}
 
 // ── 主体 ──
 .map-editor__body {
@@ -231,68 +48,6 @@
   }
 }
 
-// ── 「更多」收纳面板 ──
-.map-editor__more-panel {
-  padding: 10px 12px;
-  background: var(--app-surface);
-  border: 1px solid var(--app-border);
-  border-radius: var(--app-radius-panel, 8px);
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 224px;
-}
-
-.map-editor__more-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.map-editor__more-label {
-  font-size: 12px;
-  color: var(--app-text-secondary);
-  white-space: nowrap;
-}
-
-.map-editor__more-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-
-  // 按钮在面板里拉满，点选更容易
-  .ant-btn {
-    width: 100%;
-    justify-content: flex-start;
-  }
-}
-
-// ── 「生成陆地」配套选项浮层 ──
-/**
- * 「同时划出区块」下拉面板。
- *
- * 与「更多」收纳面板同款外观，但**更窄**：它只放一个开关，宽度跟着内容走，
- * 不设 min-width —— 一个开关撑出 224px 的空白会显得像加载失败的浮层。
- */
-.map-editor__land-options {
-  width: 232px;
-  padding: 10px 12px;
-  background: var(--app-surface);
-  border: 1px solid var(--app-border);
-  border-radius: var(--app-radius-panel, 8px);
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.map-editor__land-options-hint {
-  font-size: 11px;
-  line-height: 1.5;
-  color: var(--app-text-secondary);
-}
 
 // ── 合并子区域的确认内容（PRD §4.3） ──
 /**
@@ -305,7 +60,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.6;
 
   p {
@@ -342,7 +97,7 @@
   left: 12px;
   bottom: 10px;
   padding: 3px 10px;
-  font-size: 11px;
+  font-size: 12px;
   border-radius: 6px;
   color: var(--app-text-secondary);
   background: var(--app-surface);

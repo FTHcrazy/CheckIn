@@ -5,7 +5,7 @@
  * 遵循窗口隔离规范 AGENTS §2.2.0）。经 Vite 静态导入后自动带 hash 落盘，
  * 开发与打包期路径一致。
  *
- * 素材来源（B2 / 2.22.1 重制批 / 2.22.2 补缺批，R-MAP-22）：**52 张符号 + 4 张底图全部为 AI 生成**
+ * 素材来源（B2 / 2.22.1 重制批 / 2.22.2 补缺批 / 2.49.0 P1-5 扩充批，R-MAP-22）：**62 张符号 + 4 张底图全部为 AI 生成**
  * （统一手绘水彩风格，详见同目录 `MANIFEST.json` 的逐张 prompt 与处理记录；
  * 原 6 张手绘素材已于 2.22.1 用 AI 重制替换，id 保持不变，老存档自动继承新图；
  * 2.22.2 补缺批新增沼泽/草原/雪原 8 张——地形 = 素材配方交叉渲染，
@@ -76,6 +76,18 @@ import snowMound from "../../assets/sprites/snow-mound.png";
 import snowPine from "../../assets/sprites/snow-pine.png";
 import waterWeeds from "../../assets/sprites/water-weeds.png";
 
+// 2.49.0 P1-5 素材池扩充批（湿地/丛林 5 + 雪原 5，同一 styleTemplate 同批次出图）
+import frozenMarsh from "../../assets/sprites/frozen-marsh.png";
+import jungleCanopy from "../../assets/sprites/jungle-canopy.png";
+import jungleVine from "../../assets/sprites/jungle-vine.png";
+import snowDrift from "../../assets/sprites/snow-drift.png";
+import snowForest from "../../assets/sprites/snow-forest.png";
+import snowGlacier from "../../assets/sprites/snow-glacier.png";
+import snowScree from "../../assets/sprites/snow-scree.png";
+import swampFen from "../../assets/sprites/swamp-fen.png";
+import swampMangrove from "../../assets/sprites/swamp-mangrove.png";
+import swampMire from "../../assets/sprites/swamp-mire.png";
+
 import type { TerrainKind } from "./domain/terrain";
 import type { SpriteZone } from "./domain/zones";
 
@@ -144,7 +156,7 @@ export interface SpriteDef {
    *   · **有朝向的人造物** —— 船头、码头伸海侧、桥孔与水面、门洞朝向，
    *     翻转后与"靠岸方向"这类相邻要素的语义冲突（码头翻过去，
    *     泊船的一侧就朝陆地了）；
-   *   · **文字 / 铭文类** —— 翻转即"碑文写反"（当前 52 张里没有，
+   *   · **文字 / 铭文类** —— 翻转即"碑文写反"（当前 62 张里没有，
    *     留作新增素材的登记口径，与 `MANIFEST.json` 的逐张记录同步）。
    * 自然地貌（山 / 树 / 沙丘 / 雪丘）永远可翻 —— 它们没有"正面"。
    */
@@ -165,7 +177,7 @@ export const SPRITE_CATEGORIES: { key: SpriteCategory; label: string }[] = [
 ];
 
 /**
- * 素材总表（52 个符号，全部 AI 生成）。
+ * 素材总表（62 个符号，全部 AI 生成）。
  *
  * baseWidth/baseHeight 做了统一缩放：原始 PNG 尺寸不一，直接按原尺寸摆会
  * 出现严重比例失衡。这里按"视觉重量"手工归一：山 > 建筑 > 树 > 人造小品。
@@ -238,6 +250,38 @@ export const SPRITES: SpriteDef[] = [
   { id: "lone-tree", label: "疏树", category: "grassland", src: loneTree, baseWidth: 135, baseHeight: 87, terrains: ["grassland", "plain"], zones: ["grass"] },
   { id: "snow-pine", label: "雪松", category: "snow", src: snowPine, baseWidth: 85, baseHeight: 125, terrains: ["snowfield", "tundra"], zones: ["snow"] },
   { id: "snow-mound", label: "雪丘", category: "snow", src: snowMound, baseWidth: 130, baseHeight: 69, terrains: ["snowfield", "tundra"], zones: ["snow"] },
+
+  // ── 2.49.0 P1-5 扩充批：湿地 / 丛林 5 + 雪原 5 ──
+  // 目标（review §9.2）：沼泽档 `swamp ∪ jungle` 7 → ≥12，雪原档 `zones ∋ snow` 7 → ≥12。
+  // 实测结果见 `terrain-assets.test.ts` 的「素材池下限」守卫（13 / 12，雪题材 10）。
+  //
+  // 【为什么湿地这批只标 `grass`、不标 `core`】南疆湿泽是"南方"的景。标 `core`
+  // 等于让它任何气候都冒出来（雪原边上长出一片泥沼）；标 `grass` 后草带的
+  // 沼泽池 = 3 张，刚够凑成一族（`MIN_ZONE_POOL`），于是"分带"真生效，
+  // 草带不再跨带借 core 里的芦苇滩。
+  //
+  // 【为什么丛林这批**不**挂 `forest`】它们在语义上确实是林，但一旦挂上，
+  // 草带的森林池就从 1 张（只有疏树）撑成 4 张、够成一族，于是整片温带阔叶林
+  // 换成热带雨林 —— 那是"草带森林口径"的变更，不属于本批（素材扩充）。
+  // 要改走单独一条：先改 `forest` 的分带策略，再动标签。
+  { id: "swamp-mire", label: "泥沼", category: "wetland", src: swampMire, baseWidth: 140, baseHeight: 84, terrains: ["swamp"], zones: ["grass"] },
+  { id: "swamp-fen", label: "泥炭泽", category: "wetland", src: swampFen, baseWidth: 130, baseHeight: 82, terrains: ["swamp"], zones: ["grass"] },
+  { id: "swamp-mangrove", label: "红树林", category: "wetland", src: swampMangrove, baseWidth: 150, baseHeight: 110, terrains: ["swamp", "jungle"], zones: ["grass"] },
+  { id: "jungle-canopy", label: "雨林树冠", category: "forest", src: jungleCanopy, baseWidth: 145, baseHeight: 134, terrains: ["jungle"], zones: ["grass"] },
+  { id: "jungle-vine", label: "藤蔓林", category: "forest", src: jungleVine, baseWidth: 135, baseHeight: 126, terrains: ["jungle"], zones: ["grass"] },
+
+  // 雪原这批全部落 `snow` 带 —— 雪题材从 5 张变 10 张，北端 1/4 不再靠跨带借用。
+  // `snow-forest` 额外挂 `forest`：雪带森林池由 1 张（松树）变 2 张、够成一族，
+  // 于是雪原上的森林**不再回退到 core 的绿林**（这是本批唯一一处"分带行为变更"，
+  // 属于修 bug：雪带长阔叶树）。
+  { id: "snow-drift", label: "雪垄", category: "snow", src: snowDrift, baseWidth: 150, baseHeight: 60, terrains: ["snowfield", "tundra"], zones: ["snow"] },
+  { id: "snow-glacier", label: "冰川", category: "snow", src: snowGlacier, baseWidth: 165, baseHeight: 134, terrains: ["snowfield"], zones: ["snow"] },
+  { id: "snow-forest", label: "雪林", category: "forest", src: snowForest, baseWidth: 140, baseHeight: 130, terrains: ["forest", "snowfield"], zones: ["snow"] },
+  { id: "snow-scree", label: "雪坡乱石", category: "mountain", src: snowScree, baseWidth: 150, baseHeight: 122, terrains: ["mountain", "snowfield"], zones: ["snow"] },
+  // 冻沼挂 `snowfield` 与 `lake` 是有意的：`swamp` 在雪带只有它 1 张，
+  // 凑不成一族（`MIN_ZONE_POOL = 2`）⇒ 走 `pickTerrainSprites` 时永远轮不到它。
+  // 挂到雪原族上，它才能随"北端湿地"出场。
+  { id: "frozen-marsh", label: "冻沼", category: "wetland", src: frozenMarsh, baseWidth: 145, baseHeight: 118, terrains: ["swamp", "snowfield", "lake"], zones: ["snow"] },
 ];
 
 /** 单条底图定义 */
@@ -261,13 +305,25 @@ export const BASE_IMAGES: BaseImageDef[] = [
   { id: "base-4", label: "玄夜墨海", src: baseNight },
 ];
 
-/** 底图（画布背景）：恒取家族默认档 */
+/**
+ * 底图（画布背景）：恒取家族默认档。
+ *
+ * 【2.50.0 改成偏长方形】参考实现的 `page_size` 是 **1587×1123**（≈1.413:1，
+ * `decoded.js@879980`；高清屏 3174×2246 同比例）。正方形画布下，同样的 12 个国家
+ * 会被压成"上下堆叠的饼图"，海岸线也没地方铺半岛 —— 用户对比两张图时最先指出的
+ * 就是这一条。
+ *
+ * 这里取 **1447×1024**：高度沿用原来的 1024（素材体量、格网边长、字号这些按
+ * 世界单位定的量都不用重标），宽度按参考比例算 `1024 × 1587 / 1123 ≈ 1446.9`。
+ * 底图 PNG 仍是 1024²，渲染时按 1447×1024 铺满 —— 海面是无缝抽象水纹，等比
+ * 拉伸 1.41 倍看不出形变；真实的地物都在矢量层，不受影响。
+ */
 export const BASE_IMAGE = {
   id: "base-1",
   label: "深海青绿",
   src: baseSeaTeal,
-  /** 底图在世界坐标下的尺寸（1024×1024 原图，作为画布基准） */
-  width: 1024,
+  /** 底图在世界坐标下的尺寸（世界单位，比例对齐参考 page_size） */
+  width: 1447,
   height: 1024,
 } as const;
 
@@ -281,7 +337,7 @@ export const SPRITE_MAP: Record<string, SpriteDef> = Object.fromEntries(
  *
  * 一张均匀的旧画布/手工纸扫描质感（中性灰、无暗角、无内容），在渲染层以
  * **multiply 混合**整片罩在陆地之上 —— 这是"质感"的主来源：斑驳与纤维由
- * 真实材质携带，程序只负责配色与晕染。与 52 张符号素材同一纪律：AI 生成、
+ * 真实材质携带，程序只负责配色与晕染。与 62 张符号素材同一纪律：AI 生成、
  * 不碰逆向目标的原始 PNG（review §5.4）。原始 1024² 已裁掉平台水印并降采样
  * 到 440²（体积 365KB；单张铺满陆地包围盒、不重复平铺，故无需无缝）。
  */

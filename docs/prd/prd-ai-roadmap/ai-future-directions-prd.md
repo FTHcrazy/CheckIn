@@ -37,8 +37,8 @@
 | 核实项 | 结果 |
 |---|---|
 | `ai_naming_trigger / success / fallback / adopt` 四个埋点事件 | ❌ **代码中零落地**（全库 grep 无匹配）。R-AI-02 §10.2 定义了事件，但从未实现 |
-| `novel_usage_log`（R14 埋点通道） | ✅ 已存在（`electron/novel-db.ts`），但**实际只落了 5 类事件**：`pack_open / pack_effect_add / pack_realm_bind / pack_open_setting_center / goal_reach`，**与 AI 无关** |
-| `ai_log` 表 | ✅ 已存在（`electron/ai-db.ts`），记 prompt / 输出 / 耗时 / 错误码，是**技术调试日志**，非产品指标 |
+| `novel_usage_log`（R14 埋点通道） | ✅ 已存在（`electron/novel/novel-db.ts`），但**实际只落了 5 类事件**：`pack_open / pack_effect_add / pack_realm_bind / pack_open_setting_center / goal_reach`，**与 AI 无关** |
+| `ai_log` 表 | ✅ 已存在（`electron/ai/ai-db.ts`），记 prompt / 输出 / 耗时 / 错误码，是**技术调试日志**，非产品指标 |
 | 埋点回收链路 | ❌ **不存在**。应用无后端，本地日志无法自动回传，也没有「导出统计」出口 |
 | 已落地的 AI 功能 | 【已核实】AI 配置层（R-AI-01）、AI 起名（R-AI-02）、**AI 润色**（`PolishPreview` + `buildPolishPrompt`，已落地但未单独编号） |
 
@@ -54,7 +54,7 @@
 
 | 结论 | 依据 | 性质 |
 |---|---|---|
-| 「无后端 + BYOK + 本地 Ollama 双轨」的纯客户端接入模型**工程可行** | `electron/ai-db.ts`（独立 ai.db）、`electron/handlers/ai-handlers.ts`、`SettingsWindow/hooks/useAiConfig.ts`、`AISection` 均已落地 | 【已核实】 |
+| 「无后端 + BYOK + 本地 Ollama 双轨」的纯客户端接入模型**工程可行** | `electron/ai/ai-db.ts`（独立 ai.db）、`electron/handlers/ai/ai-handlers.ts`、`SettingsWindow/hooks/useAiConfig.ts`、`AISection` 均已落地 | 【已核实】 |
 | 「凭据不出主进程」的安全模型**可执行** | Key 经 `safeStorage` 加密存 ai.db，解密只在主进程；渲染进程拿不到明文 | 【已核实】 |
 | 对 §8.7「主进程不代理 HTTP」的**刻意豁免**站得住 | 语义化单入口 `electronAPI.ai`，不是通用转发通道；复用 `net.fetch` | 【已核实】 |
 | 「设置窗口左导航 + 右内容」能容纳四段配置（总开关/连接方式/凭据/高级参数）而不拥挤 | 2.6.0 已改造完成 | 【已核实】 |
@@ -867,7 +867,7 @@ R-AI-08 / R-AI-09 / R-AI-10 / R-AI-15 / R-AI-17 都涉及「把正文发给模�
 
 | 本文结论 | 影响的既有文档 / 代码 |
 |---|---|
-| R-AI-05 事件 schema | 扩展 `electron/ai-db.ts`（新增事件表或扩 `ai_log` 语义）+ `shared/services/novel-shared.ts` 的 `logUsageEvent` |
+| R-AI-05 事件 schema | 扩展 `electron/ai/ai-db.ts`（新增事件表或扩 `ai_log` 语义）+ `shared/services/novel-shared.ts` 的 `logUsageEvent` |
 | R-AI-06 变换模板 | 新增 `shared/ai/ai-context.ts` 的 `buildXxxPrompt` 系列（**服务层不 import novel，上下文由调用方传**） |
 | §8.1 沉淀原则 / §8.2 入口可消失原则 | 建议追加进 `AGENTS.md` §2.2.2.1 AI 服务层铁律列表 |
 | §五 数据分级与授权 | 建议作为 `AGENTS.md` 的 AI 通用约束，或独立成「AI 数据合规规范」 |

@@ -1,0 +1,41 @@
+// 右侧题目列表：滚动区 + 常驻底部分页
+.interview-list {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+
+  &__scroll {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    flex: 1;
+    // 定高容器里的滚动区必须有下限，否则会把分页挤出视野
+    min-height: 0;
+    padding-right: 4px;
+    overflow-y: auto;
+  }
+
+  &__empty {
+    margin-top: 48px;
+  }
+
+  &__footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex: none;
+    flex-wrap: wrap;
+    padding-top: 10px;
+    margin-top: 8px;
+    border-top: 1px solid var(--app-border);
+    user-select: none;
+  }
+
+  &__hint {
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+}

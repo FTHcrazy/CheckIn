@@ -31,16 +31,18 @@
 }
 
 .submap-picker__row {
+  // 状态外观由变量驱动：hover 块只改变量、不写属性规则（AGENTS §6.1.2 第 1 条）
+  --submap-row-border: transparent;
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 8px 10px;
   border-radius: var(--app-radius-item);
   background: var(--app-surface-alt);
-  border: 1px solid transparent;
+  border: 1px solid var(--submap-row-border);
 
   &:hover {
-    border-color: var(--app-border-strong);
+    --submap-row-border: var(--app-border-strong);
   }
 }
 
@@ -76,7 +78,7 @@
 }
 
 .submap-picker__title {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   white-space: nowrap;
   overflow: hidden;

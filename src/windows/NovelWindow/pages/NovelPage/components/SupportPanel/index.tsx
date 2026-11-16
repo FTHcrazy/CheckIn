@@ -152,7 +152,6 @@ const TABS: TabMeta[] = [
   { key: "entity", label: "要素", icon: <AppstoreOutlined /> },
   { key: "note", label: "灵感", icon: <BulbOutlined /> },
   { key: "search", label: "检索", icon: <SearchOutlined /> },
-  { key: "tools", label: "工具", icon: <ToolOutlined /> },
 ];
 
 /** 脚注里的快捷键提示：常驻告知，点击成本高时才需要的设计 */
@@ -319,6 +318,17 @@ export default function SupportPanel({
   );
   const openExtract = useCallback(() => setToolSub("extract"), [setToolSub]);
   const backToTools = useCallback(() => setToolSub(null), [setToolSub]);
+  /**
+   * 面板头的「工具」图标（O-03）：切到工具箱首页并清掉二级面板。
+   *
+   * 为什么还要 `setToolSub(null)`：从「敏感词检测」再点工具图标时，只改
+   * `activeTab` 不会清掉 `toolSub`，面板会停在原来的二级页 —— 表现为
+   * 「点了没反应」。两处状态必须一起归位。
+   */
+  const openTools = useCallback(() => {
+    onTabChange("tools");
+    setToolSub(null);
+  }, [onTabChange, setToolSub]);
 
   /**
    * 抽取入口不可用的原因（未配置 AI / 当前版本不含 AI）。
@@ -333,18 +343,16 @@ export default function SupportPanel({
   }, [aiVisible, aiAvailable, aiUnavailableText]);
 
   /**
-   * 工具箱头部的「N 项可用 · M 项规划中」。
+   * 工具箱头部的可用项计数（O-15）。
    *
-   * 原先写死「2 项可用 · 2 项规划中」：关系网络上线后它仍说 2 项，属于
-   * 面板自己在说谎。改成按真实的入口开关算，新增工具不必再回来改文案。
+   * 原先写「N 项可用 · M 项规划中」——「规划中」是研发进度语言，出现在用户界面上
+   * 等于让作者替我们记 backlog；而且每上线一个工具都要回来改文案，改慢了面板
+   * 就自己在说谎。现在只说「几项可用」，未上线的工具不再占位（见 ToolLauncher）。
    */
   const toolStats = useMemo(() => {
-    const relationLive = Boolean(onOpenRelation);
-    const extractLive = !extractUnavailableText;
-    const live = 3 + (extractLive ? 1 : 0) + (relationLive ? 1 : 0);
-    const planned = 1 + (relationLive ? 0 : 1);
-    const parts = [`${live} 项可用`, `${planned} 项规划中`];
-    if (!extractLive) parts.push("抽取需配置 AI");
+    const live = 3 + (extractUnavailableText ? 0 : 1) + (onOpenRelation ? 1 : 0);
+    const parts = [`${live} 项可用`];
+    if (extractUnavailableText) parts.push("抽取需配置 AI");
     return parts.join(" · ");
   }, [onOpenRelation, extractUnavailableText]);
 
@@ -529,7 +537,19 @@ export default function SupportPanel({
 
         <header className="nv-panel__head">
           <div className="nv-panel__head-main">
-            <h2 className="nv-panel__title">{head.title}</h2>
+            {/* 二级面板（敏感词 / 一致性 / 起名 / 抽取）用「工具 / xxx」面包屑
+                标出上级 —— 只写子面板名时，「我在哪一层、返回键通向哪」全靠猜
+                （O-03）。上级不可点：返回由右侧箭头负责，两颗按钮做同一件事
+                会让键盘 Tab 序里出现一对同义项 */}
+            <h2 className="nv-panel__title">
+              {toolSub && (
+                <>
+                  <span className="nv-panel__title-parent">工具</span>
+                  <span className="nv-panel__title-sep">/</span>
+                </>
+              )}
+              {head.title}
+            </h2>
             <span className="nv-panel__meta">{head.meta}</span>
           </div>
           <div className="nv-panel__head-actions">
@@ -564,6 +584,18 @@ export default function SupportPanel({
                 <span>类型管理</span>
               </Button>
             )}
+            {/* 工具从「第 5 个 Tab」降级为面板头一颗图标（O-03）：它是低频入口，
+                占一个 Tab 位等于把四张常用面板各挤窄 1/5，还要多一层二级导航。
+                位置在「收起面板」左侧 —— 与其它面板头动作同一排，退出路径不变 */}
+            <Button
+              className={`nv-panel__icon${activeTab === "tools" ? " is-on" : ""}`}
+              aria-label="工具"
+              aria-pressed={activeTab === "tools"}
+              title="工具 · 敏感词 / 一致性 / 起名 / 关系图"
+              onClick={openTools}
+            >
+              <ToolOutlined />
+            </Button>
             <Button
               className="nv-panel__icon"
               title="收起面板"

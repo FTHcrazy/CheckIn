@@ -37,6 +37,21 @@ describe("resolveShapeId · 形状档", () => {
   it("缺省（undefined）= 第一种形状，不是随机（老调用方语义不变）", () => {
     expect(resolveShapeId(undefined, 999)).toBe(LAND_SHAPES[0].id);
   });
+
+  it("随机档按岛数加权：单岛档的命中率明显低于多岛档（2.51.0 去土豆化）", () => {
+    const single = new Set(["moreOcean", "pangaea", "cookie"]);
+    const multi = new Set(["earthlike", "scattered", "threeContinents"]);
+    let singleHits = 0;
+    let multiHits = 0;
+    for (let seed = 1; seed <= 400; seed += 1) {
+      const id = resolveShapeId(RANDOM_CHOICE, seed);
+      if (single.has(id)) singleHits += 1;
+      if (multi.has(id)) multiHits += 1;
+    }
+    // 三个单岛档的合计权重 1.65 / 15.65 ≈ 10.5%，三个多岛档 6.6 / 15.65 ≈ 42%
+    expect(singleHits / 400).toBeLessThan(0.2);
+    expect(multiHits / 400).toBeGreaterThan(0.25);
+  });
 });
 
 describe("resolveLandColorId · 底色档", () => {

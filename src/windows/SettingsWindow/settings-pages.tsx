@@ -37,7 +37,7 @@ import UsagePanel from "./components/UsagePanel";
  *
  * full / lite 正式版里小说窗口是主窗的一个子窗口，快捷键属专家配置，不该在
  * 通用设置里占主位；主进程侧的应用级快捷键注册用同一套判定
- * （`electron/handlers/shortcut-handlers.ts` 的 `SHORTCUTS_ENABLED`）。
+ * （`electron/handlers/system/shortcut-handlers.ts` 的 `SHORTCUTS_ENABLED`）。
  */
 const SHOW_SHORTCUTS = import.meta.env.DEV || IS_NOVEL_EDITION;
 

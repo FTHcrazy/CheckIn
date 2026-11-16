@@ -168,6 +168,21 @@
       background: radial-gradient(circle, rgba(255, 255, 255, 0.28), transparent 68%);
       pointer-events: none;
     }
+
+    /* 真封面压满整个封面框：光斑与首字水印都让位，避免糊在图上 */
+    &.is-image::after {
+      display: none;
+    }
+  }
+
+  &__cover-img {
+    position: absolute;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    user-select: none;
   }
 
   &__cover-char {

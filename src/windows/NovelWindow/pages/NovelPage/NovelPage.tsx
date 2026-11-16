@@ -52,6 +52,7 @@ import {
 } from "./services/novel-service";
 import { formatNumberedLabel } from "./novel-utils";
 import { toSettingCategory } from "@/shared/novel/setting-mappers";
+import { IS_NO_MAP } from "@/shared/edition";
 import {
   type EntityOpenPayload,
   type NovelEditorBridge,
@@ -236,6 +237,18 @@ export default function NovelPage({
    * 判据的推导在 `useAiAvailability` 的 `isAiHidden` 里（纯函数，有单测）。
    */
   const aiVisible = !aiAvailability.hidden;
+
+  /**
+   * 右栏首屏 Tab 按数据定一次（O-14）。
+   *
+   * 必须等 `data.loading` 转 false 再判：装载中要素恒为 0，早判一次会把所有
+   * 书都判成「大纲」，老书作者原本的默认位置就丢了。`seedPanelTab` 自带
+   * 「只生效一次」门闩，用户手动切过之后本 effect 即使再跑也不会改状态。
+   */
+  useEffect(() => {
+    if (data.loading) return;
+    view.seedPanelTab(data.entities.length > 0);
+  }, [data.loading, data.entities.length]);
 
   /**
    * 正文字体：下载 / 列表 / @font-face 挂载 / 预览，都由这个 hook 持有。
@@ -674,6 +687,7 @@ export default function NovelPage({
             rightOpen={view.rightOpen}
             settingsOpen={view.settingsOpen}
             settingCenterOpen={view.settingCenterOpen}
+            readMode={editor.settings.readMode}
             onSelectWork={(workId) => void handleSelectWork(workId)}
             onCreateWork={handleCreateWork}
             onRenameWork={handleRenameWork}
@@ -687,6 +701,9 @@ export default function NovelPage({
             onToggleLeft={view.toggleLeft}
             onToggleRight={view.toggleRight}
             onToggleSettings={view.toggleSettings}
+            onToggleReadMode={() =>
+              editor.updateSetting("readMode", !editor.settings.readMode)
+            }
             snapshotOpen={view.snapshotOpen}
             onOpenPack={openPackWindow}
             packOpening={packOpening}
@@ -742,6 +759,9 @@ export default function NovelPage({
               onTermClick={handleOpenEntity}
               onCreateChapter={handleNewChapter}
               emptyKind={works.length === 0 ? "no-work" : "no-chapter"}
+              /* O-07：装载失败常驻在正文区，重试直接重读本书数据 */
+              loadError={data.loadError}
+              onRetryLoad={() => void data.reload()}
               onCreateWork={() => workMenuRef.current?.openCreate()}
               onImportBook={onImportBook}
               onRenameChapter={data.renameChapter}
@@ -970,7 +990,7 @@ export default function NovelPage({
             toolSub={view.toolSub}
             onToolSubChange={view.setToolSub}
             onOpenRelation={openRelationWindow}
-            onOpenMap={openMapWindow}
+            onOpenMap={IS_NO_MAP ? undefined : openMapWindow}
             extractActions={{
               session: extract,
               onRun: runEntityExtract,

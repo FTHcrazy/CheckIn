@@ -118,6 +118,19 @@ describe("buildWorkCards", () => {
     expect(w2.status).toBe("finished");
   });
 
+  it("封面跟着作品 DTO 传到书卡；老库没封面时不带这个字段", () => {
+    const bundle = makeBundle({
+      works: [
+        { id: "w1", name: "有封面", createdAt: 100, cover: "data:image/jpeg;base64,AAA" },
+        { id: "w2", name: "无封面", createdAt: 200 },
+      ],
+    });
+
+    const cards = buildWorkCards(bundle);
+    expect(cards[0].cover).toBe("data:image/jpeg;base64,AAA");
+    expect(cards[1].cover).toBeUndefined();
+  });
+
   it("题材透传到书卡；未设置的作品不产出 genre 字段", () => {
     const cards = buildWorkCards(
       makeBundle({

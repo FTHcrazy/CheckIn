@@ -1,7 +1,7 @@
 /**
  * AI 服务层类型契约（渲染进程侧）
  *
- * 与主进程 `electron/handlers/ai-handlers.ts` 的 DTO 保持一对一：
+ * 与主进程 `electron/handlers/ai/ai-handlers.ts` 的 DTO 保持一对一：
  * 本文件定义「渲染进程通过 window.electronAPI.ai 能看到什么」，
  * 主进程定义「IPC 边界上实际传什么」。两边字段名必须一致。
  */

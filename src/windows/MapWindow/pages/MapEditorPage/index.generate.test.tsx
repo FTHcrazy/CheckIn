@@ -289,7 +289,8 @@ describe("MapEditorPage 一键成图（B3）", () => {
       return node as HTMLElement;
     });
     const text = panel.textContent ?? "";
-    for (const label of ["要素大小", "生成内容", "山体", "河流", "含地名", "划分区块"]) {
+    // 2.50.0：「划分区块」改名「生成国家」，并多一个「国家数量」（对齐参考的 ≤20，本项目 ≤12）
+    for (const label of ["要素大小", "生成内容", "山体", "河流", "含地名", "生成国家", "12 国"]) {
       expect(text, `面板缺「${label}」`).toContain(label);
     }
     // 「生成内容」七项与生成器的 CONTENT_KEYS 一一对应

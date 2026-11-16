@@ -122,6 +122,10 @@ import {
   NOVEL_NOTE_EVENT,
   type NovelNoteChangedDetail,
 } from "@/shared/novel/note-events";
+import {
+  NOVEL_WORK_META_EVENT,
+  type NovelWorkMetaDetail,
+} from "@/shared/novel/work-events";
 import { subscribeDualChannel } from "@/shared/novel/dual-channel";
 
 /** 选区标记的结果：新建要素 / 关联为别名 / 已存在 */
@@ -385,6 +389,47 @@ export function useNovelData() {
       });
     };
     return subscribeDualChannel(NOVEL_NOTE_EVENT, handler);
+  }, []);
+
+  /**
+   * 书架右键改书名 / 题材 / 封面 / 删除作品后，就地补这一行（2.56.0）。
+   *
+   * 不做整包重载：编辑器可能正有未落库的正文与草稿，重载会打断码字；
+   * 而作品元数据只影响顶栏与 AI 题材锚点，行级补丁足够。
+   */
+  useEffect(() => {
+    const handler = (...args: unknown[]) => {
+      if (loadInFlightRef.current) return;
+      const detail = readEventDetail<NovelWorkMetaDetail>(args);
+      if (!detail || typeof detail !== "object" || !detail.workId) return;
+      setBundle((current) => {
+        if (!current) return current;
+        if (detail.action === "remove") {
+          if (!current.works.some((work) => work.id === detail.workId)) return current;
+          return {
+            ...current,
+            works: current.works.filter((work) => work.id !== detail.workId),
+          };
+        }
+        if (!detail.patch) return current;
+        const target = current.works.find((work) => work.id === detail.workId);
+        if (!target) return current;
+        // 字段没真变就别换引用：作品列表 / 顶栏会跟着整包重算
+        const unchanged = Object.entries(detail.patch).every(
+          ([key, value]) =>
+            (target as unknown as Record<string, unknown>)[key] === value,
+        );
+        if (unchanged) return current;
+        const next = { ...target, ...detail.patch };
+        return {
+          ...current,
+          works: current.works.map((work) =>
+            work.id === detail.workId ? next : work,
+          ),
+        };
+      });
+    };
+    return subscribeDualChannel(NOVEL_WORK_META_EVENT, handler);
   }, []);
 
   /** 光标 / 滚动恢复完成后由编辑器回调清空，避免切章时误用旧位置 */

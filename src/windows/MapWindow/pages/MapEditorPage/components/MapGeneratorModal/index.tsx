@@ -25,6 +25,7 @@ import { useState } from "react";
 import { Button, Checkbox, Modal, Select, Switch, Tooltip } from "antd";
 import { PictureOutlined, ReloadOutlined } from "@ant-design/icons";
 import { RANDOM_CHOICE } from "../../domain/mapRecipe";
+import { COUNTRY_DEFAULT, COUNTRY_MAX, COUNTRY_MIN } from "../../domain/countries";
 import {
   LAND_BASE_COLORS,
   LAND_SHAPES,
@@ -84,6 +85,17 @@ const CONTENT_OPTIONS = CONTENT_KEYS.map((key) => ({
   label: CONTENT_LABELS[key],
 }));
 
+/**
+ * 国家数量选项（2.50.0）。
+ *
+ * 【为什么从 2 起】1 个国家 = 整块陆地一个色，等于没分区；参考源码允许 20，
+ * 但 20 国在 9 格色板上必然撞色，观感也超出"一块大陆十来个国家"的密度。
+ */
+const COUNTRY_COUNT_OPTIONS = Array.from(
+  { length: COUNTRY_MAX - COUNTRY_MIN + 1 },
+  (_, i) => ({ value: COUNTRY_MIN + i, label: `${COUNTRY_MIN + i} 国` }),
+);
+
 /** 形状选项：第一项是「随机」（缺省），后面才是 12 种固定形状 */
 const SHAPE_OPTIONS = [
   { value: RANDOM_CHOICE, label: "随机" },
@@ -119,7 +131,17 @@ export default function MapGeneratorModal({
   const [richness, setRichness] = useState<GeneratorRichness>("standard");
   // 默认档 = 成图（用户拍板）：一键出去的就是"有山有水有城有名"的图
   const [mode, setMode] = useState<GeneratorMode>("full");
-  const [withRegions, setWithRegions] = useState(false);
+  /**
+   * 「生成国家」：2.50.0 起默认**开**。
+   *
+   * 【为什么默认翻过来】参考实现的一键成图就是"带国家"的（`CreateLand` 内部直接
+   * 划分国家并把国名写成图层文字），用户点一次就该拿到一张有疆域有国名的政治地图；
+   * 2.49.0 之所以默认关，是因为那时的分块是 Voronoi 均匀切分，默认开会让人以为
+   * "这软件只会切蛋糕"。算法换掉之后，默认关反而成了缺省缺陷。
+   */
+  const [withRegions, setWithRegions] = useState(true);
+  /** 国家数量（2.50.0）：参考支持到 20，观感与色板都支持 12 */
+  const [countryCount, setCountryCount] = useState<number>(COUNTRY_DEFAULT);
   const [withLabels, setWithLabels] = useState(true);
   // 以下三组对齐逆向目标的面板默认值：内容全勾、山体/河流正常、要素大小正常
   const [contents, setContents] = useState<GeneratorContents>(defaultContents);
@@ -141,6 +163,7 @@ export default function MapGeneratorModal({
     landColorId,
     withRegions,
     withLabels,
+    countryCount,
   });
 
   /** 局部重掷按钮是否可用：有产物 + 该档位在上一次生成里是打开的 */
@@ -283,12 +306,25 @@ export default function MapGeneratorModal({
             disabled={mode === "skeleton"}
             onChange={setWithLabels}
           />
-          <span className="map-generator__label map-generator__label--gap">划分区块</span>
+          <span className="map-generator__label map-generator__label--gap">生成国家</span>
           <Switch
             size="small"
-            aria-label="划分区块"
+            aria-label="生成国家"
             checked={withRegions}
             onChange={setWithRegions}
+          />
+          {/*
+            国家数量：参考源码 `J` 参数（≤20），下拉上限取 `COUNTRY_MAX`。
+            关掉「生成国家」时禁用而不是隐藏 —— 隐藏会让整行在开关时跳动。
+          */}
+          <Select<number>
+            className="map-generator__control map-generator__control--narrow"
+            size="small"
+            aria-label="国家数量"
+            value={countryCount}
+            disabled={!withRegions}
+            options={COUNTRY_COUNT_OPTIONS}
+            onChange={setCountryCount}
           />
         </div>
 

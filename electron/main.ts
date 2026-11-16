@@ -10,68 +10,69 @@ import {
 import type { WebContents } from "electron";
 import path from "path";
 import fs from "fs";
-import { initDb, closeDb, switchUserDb } from "./db";
+import { initDb, closeDb, switchUserDb } from "./core/db";
 import {
   askCloseGuards,
   attachCloseGuard,
   hasArmedCloseGuard,
   registerCloseGuardHandlers,
   standDownCloseGuards,
-} from "./close-guard";
-import { startActivityPolling, stopActivityPolling } from "./activitiesTask";
-import { resolveAppProtocolCacheControl } from "./app-protocol-cache";
-import { windowManager } from "./windowManager";
+} from "./core/window/close-guard";
+import { startActivityPolling, stopActivityPolling } from "./checkin/activitiesTask";
+import { resolveAppProtocolCacheControl } from "./core/app-protocol-cache";
+import { windowManager } from "./core/window/windowManager";
 import {
   pushPendingMessage,
   takePendingMessages,
   type PendingWindowMessage,
-} from "./window-pending";
+} from "./core/window/window-pending";
 import {
   readWindowSendOptions,
   type WindowSendOptions,
-} from "./window-send-options";
-import { registerActivityHandlers } from "./handlers/activity-handlers";
-import { registerTodoHandlers } from "./handlers/todo-handlers";
+} from "./core/window/window-send-options";
+import { registerActivityHandlers } from "./handlers/checkin/activity-handlers";
+import { registerTodoHandlers } from "./handlers/checkin/todo-handlers";
 import {
   markNovelSessionClosed,
   registerNovelHandlers,
-} from "./handlers/novel-handlers";
-import { registerNovelPackHandlers } from "./handlers/novel-pack-handlers";
-import { registerNovelSettingHandlers } from "./handlers/novel-setting-handlers";
-import { registerNovelSafetyHandlers } from "./handlers/novel-safety-handlers";
-import { registerNovelGlobalSettingHandlers } from "./handlers/novel-global-setting-handlers";
-import { registerNovelGraphHandlers } from "./handlers/novel-graph-handlers";
-import { registerNovelExportHandlers } from "./handlers/novel-export-handlers";
-import { registerNovelDbBridge } from "./novel-db";
-import { registerMapDbBridge } from "./map-db";
-import { registerMapHandlers } from "./handlers/map-handlers";
-import { registerAiDbBridge } from "./ai-db";
-import { registerAiHandlers } from "./handlers/ai-handlers";
-import { registerAiStreamEndpoint } from "./handlers/ai-stream";
+} from "./handlers/novel/novel-handlers";
+import { registerNovelPackHandlers } from "./handlers/novel/novel-pack-handlers";
+import { registerNovelSettingHandlers } from "./handlers/novel/novel-setting-handlers";
+import { registerNovelSafetyHandlers } from "./handlers/novel/novel-safety-handlers";
+import { registerNovelGlobalSettingHandlers } from "./handlers/novel/novel-global-setting-handlers";
+import { registerNovelGraphHandlers } from "./handlers/novel/novel-graph-handlers";
+import { registerNovelExportHandlers } from "./handlers/novel/novel-export-handlers";
+import { registerNovelDbBridge } from "./novel/novel-db";
+import { registerMapDbBridge } from "./map/map-db";
+import { registerMapHandlers } from "./handlers/map/map-handlers";
+import { registerAiDbBridge } from "./ai/ai-db";
+import { registerAiHandlers } from "./handlers/ai/ai-handlers";
+import { registerAiStreamEndpoint } from "./handlers/ai/ai-stream";
 import {
   getCachedUser,
   logoutUser,
   registerUserHandlers,
-} from "./handlers/user-handlers";
-import { registerShortcutHandlers } from "./handlers/shortcut-handlers";
-import { registerMemoHandlers } from "./handlers/memo-handlers";
-import { registerCheckinHandlers } from "./handlers/checkin-handlers";
+} from "./handlers/checkin/user-handlers";
+import { registerShortcutHandlers } from "./handlers/system/shortcut-handlers";
+import { registerShellHandlers } from "./handlers/system/shell-handlers";
+import { registerMemoHandlers } from "./handlers/checkin/memo-handlers";
+import { registerCheckinHandlers } from "./handlers/checkin/checkin-handlers";
 import {
   registerHttpSessionHandlers,
   setupRendererHttpSession,
-} from "./httpSession";
+} from "./core/httpSession";
 import {
   registerNovelFontHandlers,
   registerNovelFontProtocol,
-} from "./handlers/novel-font-handlers";
-import { registerLogHandlers, loadLogSettings } from "./handlers/log-handlers";
+} from "./handlers/novel/novel-font-handlers";
+import { registerLogHandlers, loadLogSettings } from "./handlers/checkin/log-handlers";
 import {
   bootstrapLogger,
   closeLogger,
   log,
   resetLogRoot,
   windowLogger,
-} from "./logger";
+} from "./core/logger";
 import {
   EDITION_WINDOW_ENTRIES,
   PRIMARY_WINDOW_ENTRY,
@@ -83,6 +84,8 @@ import {
 // 编译期常量，由 vite.config.ts 按 CHECKIN_EDITION 环境变量注入三处 define。
 // 清单（入口路径 / 各版本窗口 / 主窗口归属）的唯一事实源在 electron/edition.ts。
 const EDITION = __CHECKIN_EDITION__;
+/** 本构建是否不含地图（lite 版 / nomap 变体）：map 窗口及其 handler / IPC 整组关闭 */
+const NO_MAP = __CHECKIN_NO_MAP__;
 /** 主窗口入口：full/lite → base，novel → novel */
 const PRIMARY_ENTRY = PRIMARY_WINDOW_ENTRY[EDITION];
 /** 主窗口在 windowManager 中的注册名（base 窗口沿用历史注册名 "main"） */
@@ -202,7 +205,7 @@ protocol.registerSchemesAsPrivileged([
     // `stream: true` 是流式响应体的前置；standard + supportFetchAPI 让渲染层
     // 能用标准 fetch 读流。corsEnabled 只为「非 app:// 来源（dev 的 vite）也能
     // 发请求」，**不作为身份凭证**：实测 protocol.handle 收到的请求根本不含
-    // Origin 头，端点身份一律由一次性令牌判定（见 electron/ai-stream-token.ts）。
+    // Origin 头，端点身份一律由一次性令牌判定（见 electron/ai/ai-stream-token.ts）。
     scheme: "ai-stream",
     privileges: {
       standard: true,
@@ -715,8 +718,8 @@ function registerMapFlushGuard(): void {
  * `did-finish-load` 手写 show —— 那条路径在装载失败时窗口永远不出现。
  */
 function createMapWindow(): BrowserWindow | undefined {
-  if (!EDITION_WINDOW_ENTRIES[EDITION].includes("map")) {
-    console.warn(`[main] 当前版本（${EDITION}）未打包 map 窗口，忽略打开请求`);
+  if (!EDITION_WINDOW_ENTRIES[EDITION].includes("map") || NO_MAP) {
+    console.warn(`[main] 当前版本（${EDITION}${NO_MAP ? "+nomap" : ""}）未打包 map 窗口，忽略打开请求`);
     return undefined;
   }
 
@@ -1263,10 +1266,11 @@ app.whenReady().then(() => {
   // switchUserDb → register 的顺序），它会立即补开一次
   registerNovelDbBridge();
   registerNovelHandlers();
-  // 地图域（map.db 独立库）：lite 版不打包 map 窗口，整组跳过（省连接与启动开销）。
+  // 地图域（map.db 独立库）：lite 版不打包 map 窗口，整组跳过（省连接与启动开销）；
+  // nomap 变体同理整组跳过（窗口、handler、flush 回执一并关闭）。
   // bridge 必须早于 handler 注册 —— 理由同 novel.db；flush 回执通道只注册一次，
   // 由 createMapWindow 里的 close 拦截配合使用。
-  if (EDITION !== "lite") {
+  if (EDITION !== "lite" && !NO_MAP) {
     registerMapDbBridge();
     registerMapHandlers();
     registerMapFlushGuard();
@@ -1325,6 +1329,7 @@ app.whenReady().then(() => {
   registerCloseGuardHandlers();
   setupRendererHttpSession();
   registerHttpSessionHandlers();
+  registerShellHandlers();
   if (EDITION !== "novel") {
     registerActivityHandlers();
     registerTodoHandlers();

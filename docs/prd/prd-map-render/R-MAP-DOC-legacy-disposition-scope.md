@@ -66,9 +66,9 @@
 
 ### B2 补充 · 三个前置（S2 开工前必须满足）
 
-1. **`map_assets` 表已建未用，S2 就是它的启用时机**。`map-db-spec.md` §9 序 3 已定「保留表不删、S2 批启用」（建表 `electron/map-db.ts:99`、索引 `:109`，全仓无 `INSERT INTO map_assets`）。**缺什么**：无 —— 数据层就绪，等 S2 写入索引行。
-2. **「我的素材」分组 + 导入通道要落成代码**。三通道与标注弹层的设计已在 `map-asset-system-architecture.md` §六（导入流程）与 §十（S2 行）写完，合并池口径见 §十二 12.2「同构汇合」，实现为零。**缺什么**：`map-asset-import` / `-list` / `-delete` 三个 IPC + preload 白名单 + `getMapAssetsLibraryDir()`（现只有按图分的 `getMapAssetsDir(docId)`，`electron/map-db.ts:47`）+ 素材面板分组。
-3. **用户素材目录约定没有设计 —— 这是唯一真空白**。现约定是「按图分目录」`user-data/{hash}/map-assets/{docId}/{assetId}.png`（`electron/map-db.ts:34`、`:47`），而用户导入是**跨图复用**的资源，必须另立一个不挂 `docId` 的库目录（设计稿写的是 `map-assets/library/`，文件名归一为 `<assetId>.<ext>`、不信任原始文件名）。**缺什么**：S2 开工前补一份 **`architecture-decision`**，回答三问 —— 放哪（库目录与按图目录的边界）、怎么命名（`assetId` 生成规则与扩展名归一）、要不要 MANIFEST（项目自建侧有 `MANIFEST.json` 记 batch / prompt，用户侧是否只依赖 `map_assets.meta_json` 而不落文件）。
+1. **`map_assets` 表已建未用，S2 就是它的启用时机**。`map-db-spec.md` §9 序 3 已定「保留表不删、S2 批启用」（建表 `electron/map/map-db.ts:99`、索引 `:109`，全仓无 `INSERT INTO map_assets`）。**缺什么**：无 —— 数据层就绪，等 S2 写入索引行。
+2. **「我的素材」分组 + 导入通道要落成代码**。三通道与标注弹层的设计已在 `map-asset-system-architecture.md` §六（导入流程）与 §十（S2 行）写完，合并池口径见 §十二 12.2「同构汇合」，实现为零。**缺什么**：`map-asset-import` / `-list` / `-delete` 三个 IPC + preload 白名单 + `getMapAssetsLibraryDir()`（现只有按图分的 `getMapAssetsDir(docId)`，`electron/map/map-db.ts:47`）+ 素材面板分组。
+3. **用户素材目录约定没有设计 —— 这是唯一真空白**。现约定是「按图分目录」`user-data/{hash}/map-assets/{docId}/{assetId}.png`（`electron/map/map-db.ts:34`、`:47`），而用户导入是**跨图复用**的资源，必须另立一个不挂 `docId` 的库目录（设计稿写的是 `map-assets/library/`，文件名归一为 `<assetId>.<ext>`、不信任原始文件名）。**缺什么**：S2 开工前补一份 **`architecture-decision`**，回答三问 —— 放哪（库目录与按图目录的边界）、怎么命名（`assetId` 生成规则与扩展名归一）、要不要 MANIFEST（项目自建侧有 `MANIFEST.json` 记 batch / prompt，用户侧是否只依赖 `map_assets.meta_json` 而不落文件）。
 
 ---
 

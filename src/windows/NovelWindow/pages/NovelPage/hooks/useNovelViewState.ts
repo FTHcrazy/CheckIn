@@ -46,6 +46,15 @@ export function useNovelViewState() {
   // 后续若需跨会话记忆，并入 EditorSettings.annotationOn 即可。
   const [annotationOn, setAnnotationOn] = useState(true);
   const [panelTab, setPanelTab] = useState<PanelTab>("entity");
+  /**
+   * 首屏 Tab 是否已按数据定过（O-14）。
+   *
+   * 初值只能给一个常量，但「该落在哪」要等数据装载完才知道：新书 0 个要素时
+   * 默认停在「要素」= 首屏一张空列表，等于告诉作者「这里没什么可看的」。
+   * 所以装载完成后由页面调一次 `seedPanelTab`（有要素 → 要素，否则 → 大纲），
+   * 之后用户自己切过就再也不干预 —— 否则每次增删要素都会把 Tab 拽回去。
+   */
+  const panelTabSeededRef = useRef(false);
   /** 工具箱二级面板（起名器 / 敏感词检测） */
   const [toolSub, setToolSub] = useState<ToolSub>(null);
   const [entityFilter, setEntityFilter] = useState<EntityFilter>("all");
@@ -282,6 +291,21 @@ export function useNovelViewState() {
     // 切 Tab 即退出工具箱二级面板，回到该 Tab 的首页
     setToolSub(null);
     setRightOpen(true);
+    // 用户自己选过就不再让首屏规则插手（见 panelTabSeededRef）
+    panelTabSeededRef.current = true;
+  }, []);
+
+  /**
+   * 首屏 Tab 按数据定一次（O-14）：有要素才落「要素」，否则落「大纲」。
+   *
+   * 为什么不在 useState 的初值里判：初值只能同步算，而要素是异步装载的 ——
+   * 开局恒为 0，任何「按要素数选」的初始化都只会得到「大纲」，老书作者
+   * 便再也回不到原本的默认。交给页面在 `loading` 转 false 后调一次最稳。
+   */
+  const seedPanelTab = useCallback((hasEntities: boolean) => {
+    if (panelTabSeededRef.current) return;
+    panelTabSeededRef.current = true;
+    if (!hasEntities) setPanelTab("outline");
   }, []);
 
   /**
@@ -335,6 +359,7 @@ export function useNovelViewState() {
     exitFocus,
     toggleAnnotation,
     selectPanelTab,
+    seedPanelTab,
     openToolSub,
     closeToolSub,
     setToolSub,

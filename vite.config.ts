@@ -4,21 +4,29 @@ import electron from 'vite-plugin-electron'
 import renderer from 'vite-plugin-electron-renderer'
 import path from 'path'
 import {
-  EDITION_WINDOW_ENTRIES,
   RENDERER_ENTRY_PATHS,
+  buildExcludesMap,
   resolveEditionFromEnv,
+  resolveWindowEntries,
+  resolveWindowVariantFromEnv,
 } from './electron/edition'
 
 // 构建版本：CHECKIN_EDITION=full | lite | novel（缺省 full，配套脚本见 package.json）
 // - lite ：精简构建，不打包 NovelWindow / SettingsWindow，主窗口隐藏小说入口
 // - novel：小说版，NovelWindow 为主窗口 + SettingsWindow，不打包 BaseWindow
+// 窗口变体后缀：CHECKIN_WINDOW_VARIANT="" | nomap（缺省空串，见 package.json 可选后缀）
+// - nomap：在选定版本内进一步剔除地图（map）窗口及其全部逻辑与接口
 // 清单唯一事实源：electron/edition.ts（主进程运行时与 vite 构建期共用），
-// 三处 define 必须注入同一个取值（下方 edition 变量单点计算，天然对齐）。
+// 三处 define 必须注入同一个取值（下方 edition / noMap 变量单点计算，天然对齐）。
 const edition = resolveEditionFromEnv()
+const variant = resolveWindowVariantFromEnv()
+// 本构建是否不含地图：lite 版不打包 map 窗口，nomap 变体亦剔除。
+// 渲染层 / 主进程 / preload 三处共用同一布尔（编译期注入）。
+const noMap = buildExcludesMap(edition, variant)
 
-// 各版本窗口入口即 rollupOptions.input，与主进程可加载窗口一一对应
+// 各版本（叠加变体）窗口入口即 rollupOptions.input，与主进程可加载窗口一一对应
 const rendererInputs = Object.fromEntries(
-  EDITION_WINDOW_ENTRIES[edition].map((key) => [
+  resolveWindowEntries(edition, variant).map((key) => [
     key,
     path.resolve(__dirname, RENDERER_ENTRY_PATHS[key]),
   ]),
@@ -27,7 +35,7 @@ const rendererInputs = Object.fromEntries(
 // https://vite.dev/config/
 export default defineConfig({
   // 渲染层编译期常量：版本号（src/shared/edition.ts 据此派生布尔）
-  define: { __CHECKIN_EDITION__: JSON.stringify(edition) },
+  define: { __CHECKIN_EDITION__: JSON.stringify(edition), __CHECKIN_NO_MAP__: JSON.stringify(noMap) },
   plugins: [
     react(),
     electron([
@@ -39,7 +47,7 @@ export default defineConfig({
         },
         vite: {
           // 主进程编译期常量：决定主窗口归属、close 语义与 IPC 注册范围
-          define: { __CHECKIN_EDITION__: JSON.stringify(edition) },
+          define: { __CHECKIN_EDITION__: JSON.stringify(edition), __CHECKIN_NO_MAP__: JSON.stringify(noMap) },
           build: {
             outDir: 'dist-electron',
             rollupOptions: {
@@ -62,7 +70,7 @@ export default defineConfig({
           // preload 变更后需手动重启 dev
         },
         vite: {
-          define: { __CHECKIN_EDITION__: JSON.stringify(edition) },
+          define: { __CHECKIN_EDITION__: JSON.stringify(edition), __CHECKIN_NO_MAP__: JSON.stringify(noMap) },
           build: {
             outDir: 'dist-electron',
           },

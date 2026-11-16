@@ -2,7 +2,7 @@
  * 行囊第二批修复的守卫（P1-4 / P1-5 / P1-8）+ REQ-043 关闭链路守卫
  *
  * ⚠️ 全部走源码断言：`pack-config.ts` / `pack-utils.ts` 可以正常 import，
- * 但 `usePackPanel` 依赖 React 与 IPC、`electron/close-guard.ts` 依赖 electron
+ * 但 `usePackPanel` 依赖 React 与 IPC、`electron/core/window/close-guard.ts` 依赖 electron
  * 模块（node 下 `require('electron')` 只会拿到可执行文件路径），这三条链路的
  * 约定更适合钉在源码上，防止某次重构把 key 的取值改回 ownerId、或把「先问再退」
  * 写回「先关库再问」却无人察觉。
@@ -112,7 +112,7 @@ describe("P1-8 行囊关闭链路（守卫）", () => {
 });
 
 describe("REQ-043 切章 / 切作品 / 退出应用拦截（守卫）", () => {
-  const GUARD = read("electron/close-guard.ts");
+  const GUARD = read("electron/core/window/close-guard.ts");
   const MAIN = read("electron/main.ts");
   const PRELOAD = read("electron/preload.ts");
   const DTS = read("src/shared/types/electron.d.ts");
@@ -299,10 +299,10 @@ describe("未保存计数口径（守卫）", () => {
 // ─────────────────────────────────────────────────────────────
 
 const SERVICE = read(`${PACK_DIR}/services/pack-service.ts`);
-const HANDLERS = read("electron/handlers/novel-pack-handlers.ts");
-// ⚠️ novel 域的表自 1.33.0 起全部住在 novel.db（electron/novel-db.ts），
-// checkin.db（electron/db.ts）里已经没有 novel_* 的表了 —— 断言要跟着搬家
-const DB = read("electron/novel-db.ts");
+const HANDLERS = read("electron/handlers/novel/novel-pack-handlers.ts");
+// ⚠️ novel 域的表自 1.33.0 起全部住在 novel.db（electron/novel/novel-db.ts），
+// checkin.db（electron/core/db.ts）里已经没有 novel_* 的表了 —— 断言要跟着搬家
+const DB = read("electron/novel/novel-db.ts");
 const CTXMENU = read(
   "src/windows/NovelWindow/pages/NovelPage/components/EntityContextMenu/index.tsx",
 );
@@ -433,9 +433,9 @@ describe("REQ-028 本章变动角标（守卫）", () => {
 
 describe("退出链路的时序（守卫）", () => {
   const MAIN = read("electron/main.ts");
-  const GUARD = read("electron/close-guard.ts");
-  const DB = read("electron/db.ts");
-  const PACK_HANDLERS = read("electron/handlers/novel-pack-handlers.ts");
+  const GUARD = read("electron/core/window/close-guard.ts");
+  const DB = read("electron/core/db.ts");
+  const PACK_HANDLERS = read("electron/handlers/novel/novel-pack-handlers.ts");
 
   it("托盘「退出」不得提前置 isQuitting —— 置了 before-quit 的询问分支就被整体跳过", () => {
     const tray = MAIN.slice(MAIN.indexOf('label: "退出"'));
@@ -476,6 +476,6 @@ describe("退出链路的时序（守卫）", () => {
     expect(PACK_HANDLERS).toContain("if (!isNovelDbReady())");
     const save = PACK_HANDLERS.slice(PACK_HANDLERS.indexOf('"novel-pack-save"'));
     expect(save.slice(0, 600)).toContain("isNovelDbReady()");
-    expect(read("electron/handlers/novel-handlers.ts")).toContain("if (!requireReady())");
+    expect(read("electron/handlers/novel/novel-handlers.ts")).toContain("if (!requireReady())");
   });
 });

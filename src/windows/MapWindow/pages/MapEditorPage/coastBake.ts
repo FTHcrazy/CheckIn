@@ -31,6 +31,7 @@
  * 现在矩阵只在这里乘一次、烤进纹理，运行期海岸就是一张图。
  */
 
+import { rendererLog } from "@/shared/log/renderer-logger";
 import { BlurFilter, Container, Graphics, RenderTexture, Texture, TilingSprite } from "pixi.js";
 import { createRingOffset, drawLandPath, type RingOffsetField } from "./land";
 import { filterFor } from "./style";
@@ -339,7 +340,8 @@ export function bakeCoast(input: BakeInput): RenderTexture {
 
   if (size.downsampled && !warnedDownsample) {
     warnedDownsample = true;
-    console.warn(
+    rendererLog.warn(
+      "map",
       `[coastBake] 烘焙尺寸 ${Math.round(size.width)}×${Math.round(size.height)} 超过 ${BAKE_MAX_SIDE}，已降采样（scale=${size.scale.toFixed(3)}）`,
     );
   }

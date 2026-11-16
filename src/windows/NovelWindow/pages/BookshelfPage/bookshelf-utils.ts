@@ -27,6 +27,8 @@ export interface WorkCardView {
   name: string;
   /** 题材（可空：建书第二步可跳过）；展示口径见 `formatGenreLabel` */
   genre?: string;
+  /** 封面（可空）：主进程压好的 data URL；空时书卡用程序化渐变封面 */
+  cover?: string;
   createdAt: number;
   /** 全部章节字数之和 */
   totalWords: number;
@@ -45,6 +47,8 @@ export interface ShelfNumberStyle {
   chapterSuffix: string;
   volumeSuffix: string;
   dailyGoal: number;
+  /** 段首缩进（导出 TXT 跟编辑器设置走）；旧测试 fixture 可不带，缺省 = 开启 */
+  paragraphIndent?: boolean;
 }
 
 /** 继续写作 Hero 的展示数据（G1 / R6：打开即回到上次位置） */
@@ -166,6 +170,7 @@ export function buildWorkCards(bundle: NovelBundleDTO): WorkCardView[] {
       id: work.id,
       name: work.name,
       ...(work.genre ? { genre: work.genre } : {}),
+      ...(work.cover ? { cover: work.cover } : {}),
       createdAt: work.createdAt,
       totalWords,
       chapterCount: chapters.length,

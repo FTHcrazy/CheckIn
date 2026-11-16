@@ -313,7 +313,7 @@ POLYGON(面) → LINE(线) → POINT(点) → TEXT(文字)
 | **B3** | 一键成图生成器（R-MAP-21） | 同一 seed 点一次 → 一张含山/林/城/名/河的图；五档重掷可用；摘要正确 | B0+B1+B2 |
 | **B4** | 图层 + 折线/面要素 | 可按层显隐锁定；河流可拖节点 | B1 |
 
-> **B0 已交付（2.20.0）**：`electron/map-db.ts` + `map-handlers.ts` + `map-utils.ts`、
+> **B0 已交付（2.20.0）**：`electron/map/map-db.ts` + `map-handlers.ts` + `map-utils.ts`、
 > 关窗 flush 拦截、地图库弹窗（缩略图 / 改名 / 回收站 / 绑定作品）。
 > 形态上有一处偏差：**首屏仍是编辑器**（直接打开最近一张），列表做在弹窗里 ——
 > 详见 `docs/spec/map-db-spec.md` §8。

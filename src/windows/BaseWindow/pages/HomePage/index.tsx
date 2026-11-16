@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { Empty, Input, Modal } from "antd";
 import {
   BgColorsOutlined,
+  BookOutlined,
   CalendarOutlined,
   CheckSquareOutlined,
   CodeOutlined,
@@ -90,6 +91,14 @@ const FEATURES: HomeFeature[] = [
     desc: "一键换白/红/蓝底，按寸输出带 DPI",
     path: "/idphoto",
     tone: "rose",
+  },
+  {
+    key: "interview",
+    icon: <BookOutlined />,
+    title: "前端面试题",
+    desc: "笔试题与基础知识库，分类检索与收藏复习",
+    path: "/interview",
+    tone: "purple",
   },
 ];
 

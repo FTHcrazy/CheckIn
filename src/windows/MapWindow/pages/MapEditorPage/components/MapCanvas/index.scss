@@ -31,7 +31,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--app-text-secondary);
   background: var(--app-bg);
   pointer-events: none;
@@ -58,6 +58,6 @@
   transform: translate(-50%, -100%);
   // 白底 + 深字：覆盖层是"正在编辑"的状态，必须一眼可辨于纸面
   background: var(--app-surface);
-  box-shadow: 0 2px 8px rgb(0 0 0 / 18%);
+  box-shadow: var(--app-shadow-card);
   text-align: center;
 }

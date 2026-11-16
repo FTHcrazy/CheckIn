@@ -13,6 +13,7 @@ import type {
   Ref,
 } from "react";
 import { Button, Empty, Input } from "antd";
+import { ReloadOutlined, WarningOutlined } from "@ant-design/icons";
 import {
   defaultKeymap,
   history,
@@ -81,6 +82,14 @@ interface EditorPaneProps {
    * 默认 `no-chapter`，保持既有调用方行为不变。
    */
   emptyKind?: "no-work" | "no-chapter";
+  /**
+   * 数据装载失败的原因（O-07）。非空时正文区渲染**常驻**失败态并接管整个
+   * 空态位 —— 此前失败只弹一条 2.4s 的 toast，正文仍是「还没有选中章节」，
+   * 作者分不清「这书没章节」和「没读出来」，也不知道能做什么。
+   */
+  loadError?: string | null;
+  /** 失败态的重试回调（重新读取本书数据） */
+  onRetryLoad?: () => void;
   /** 空态为 `no-work` 时点「新建作品」的回调 */
   onCreateWork?: () => void;
   /** 书架 → 编辑器：空书架时的「导入书籍」入口（可选） */
@@ -267,6 +276,8 @@ export default function EditorPane({
   onTermClick,
   onCreateChapter,
   emptyKind = "no-chapter",
+  loadError = null,
+  onRetryLoad,
   onCreateWork,
   onImportBook,
   onRenameChapter,
@@ -979,9 +990,14 @@ export default function EditorPane({
     const view = viewRef.current;
     if (!view || !chapter) return;
     const target = event.target;
+    /* 判定必须用 Element 而不是 HTMLElement：查找面板「上一个 / 下一个」按钮里
+       是 SVG 图标，点到箭头时 event.target 是 SVGPathElement —— 它属于 Element
+       但不属于 HTMLElement。旧判断因此整段落空，按钮点击冒泡到这里被当成「点了
+       正文空白区」，posAtCoords 把刚跳过去的选区又抢回原处（跳转看着像没反应、
+       计数与高亮跳着走）。.nv-find 显式列出，是给面板脱离 .cm-panels 挂载时兜底。 */
     if (
-      target instanceof HTMLElement &&
-      target.closest(".cm-content, .cm-panels")
+      target instanceof Element &&
+      target.closest(".cm-content, .cm-panels, .nv-find")
     ) {
       return;
     }
@@ -1132,8 +1148,31 @@ export default function EditorPane({
         </div>
       </div>
       {!chapter && (
-        <div className="nv-editor__veil">
-          {emptyKind === "no-work" ? (
+        <div className={`nv-editor__veil${loadError ? " is-error" : ""}`}>
+          {loadError ? (
+            /* 装载失败（O-07）：与「空态」共用同一副骨架，但语气不同 ——
+               空态是「新建第一章就能开始写」，失败是「你的稿子没丢，重试通常
+               就能恢复」。绝不把失败画成灰色的禁用正文：那会让作者以为稿子没了。
+               带 `role="alert"`：读屏用户不该靠视觉才发现读失败了。 */
+            <div className="nv-editor__fail" role="alert">
+              <span className="nv-editor__fail-ico">
+                <WarningOutlined />
+              </span>
+              <p className="nv-editor__fail-title">这一章没能读出来</p>
+              <p className="nv-editor__fail-desc">
+                你的稿子没有丢，重试通常就能恢复。
+              </p>
+              <span className="nv-editor__fail-code">{loadError}</span>
+              {onRetryLoad && (
+                <div className="nv-editor__fail-acts">
+                  <Button type="primary" className="nv-editor__retry" onClick={onRetryLoad}>
+                    <ReloadOutlined />
+                    重试
+                  </Button>
+                </div>
+              )}
+            </div>
+          ) : emptyKind === "no-work" ? (
             <Empty
               image={Empty.PRESENTED_IMAGE_SIMPLE}
               description={

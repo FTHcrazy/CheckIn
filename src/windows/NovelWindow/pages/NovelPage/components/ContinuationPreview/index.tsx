@@ -1,9 +1,7 @@
 import { Button } from "antd";
-import {
-  CloseOutlined,
-  ReloadOutlined,
-  ThunderboltOutlined,
-} from "@ant-design/icons";
+import { CloseOutlined, ReloadOutlined } from "@ant-design/icons";
+import SvgIcon from "@/shared/components/SvgIcon";
+import aiSvg from "@/assets/novel/ai.svg?raw";
 import { useTypewriter } from "./useTypewriter";
 import "./index.scss";
 
@@ -60,7 +58,7 @@ export default function ContinuationPreview({
       <div className="nv-cont" role="dialog" aria-label="AI 续写">
         <div className="nv-cont__head">
           <span className="nv-cont__title">
-            <ThunderboltOutlined /> AI 续写
+            <SvgIcon svg={aiSvg} /> AI 续写
           </span>
           <Button className="nv-cont__close" aria-label="关闭" onClick={onClose}>
             <CloseOutlined />

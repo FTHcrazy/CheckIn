@@ -142,6 +142,34 @@
     color: var(--app-error);
   }
 
+  /* 失败态整格是按钮（O-08）：淡红底 + 红字 + 手型，一眼看出「这里能点」。
+     常态仍是纯文字块 —— 保存正常时它不该抢注意力 */
+  &__save.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 24px;
+    --ant-button-padding-inline: 8px;
+    --ant-button-content-font-size: 12px;
+    --ant-border-radius: var(--app-radius-chip);
+    --ant-button-default-bg: var(--app-error-weak);
+    --ant-button-default-color: var(--app-error);
+    --ant-button-default-hover-bg: var(--app-error-weak);
+    --ant-button-default-hover-color: var(--app-error);
+    --ant-button-default-active-bg: var(--app-error-weak);
+    --ant-button-default-active-color: var(--app-error);
+    --ant-button-default-shadow: none;
+
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    transition: background var(--app-t-fast) var(--app-ease-standard);
+
+    &:focus-visible {
+      outline: 2px solid var(--app-error);
+      outline-offset: 2px;
+    }
+  }
+
   &__actions {
     display: flex;
     align-items: center;
@@ -158,16 +186,19 @@
     flex: none;
   }
 
-  /* 右上角动作图标：常驻浅色 chip 底（不再是纯透明）—— 六颗图标一排
-     不加边界时，「布局开关」与「功能入口」扫过去都是一团灰点，点下去
-     才知道是按钮。默认底用 --app-surface-hover，hover / active 加深一档，
-     .is-on 持久高亮仍走主色弱底，三档层次分明 */
+  /* 右上角动作图标：常驻浅色 chip 底 —— 不加边界时，「布局开关」与「功能入口」
+     扫过去都是一团灰点，点下去才知道是按钮。默认底用 --app-surface-hover，
+     hover / active 加深一档，.is-on 持久高亮仍走主色弱底，三档层次分明。
+
+     形状对齐交互稿：30px 见方 + 10px 圆角（方角料），不是正圆。此前用
+     `--app-radius-chip`(14px) 配 28px 见方，圆角正好吃满边长 = 圆形，
+     与稿子的方块差一个形状语言。 */
   &__icon.ant-btn {
     @include widget.ant-button-reset;
-    --ant-control-height: 28px;
+    --ant-control-height: 30px;
     --ant-button-padding-inline: 0px;
     --ant-button-content-font-size: 14px;
-    --ant-border-radius: var(--app-radius-chip);
+    --ant-border-radius: var(--app-radius-item);
     --ant-button-default-bg: var(--app-surface-hover);
     --ant-button-default-color: var(--app-text-secondary);
     --ant-button-default-hover-bg: var(--app-surface-active);
@@ -177,32 +208,93 @@
     --ant-button-default-shadow: none;
 
     /* antd 不接管的属性 */
-    width: 28px;
+    width: 30px;
     display: grid;
     place-items: center;
     cursor: pointer;
     transition: background var(--app-t-fast) var(--app-ease-standard), color var(--app-t-fast) var(--app-ease-standard);
 
     /* 持久高亮态（面板已展开 / 打字机已开 / 行囊已开 …）：
-       写默认变量即可，hover / active 同步保持高亮不掉色 */
+       写默认变量即可，hover / active 同步保持高亮不掉色。
+       稿子的开态就是「主色弱底 + 主色深字」两层，不加描边 —— 加了会多出一圈
+       几何信号，与稿子「同一颗方块、只换底与字色」的读法冲突。
+       字色取 -strong 而不是 primary：弱底上 primary 的对比偏浅，-strong 才够读。 */
     &.is-on {
       --ant-button-default-bg: var(--app-primary-weak);
-      --ant-button-default-color: var(--app-primary);
+      --ant-button-default-color: var(--app-primary-strong);
       --ant-button-default-hover-bg: var(--app-primary-weak);
-      --ant-button-default-hover-color: var(--app-primary);
+      --ant-button-default-hover-color: var(--app-primary-strong);
       --ant-button-default-active-bg: var(--app-primary-weak);
-      --ant-button-default-active-color: var(--app-primary);
-      /* 主色内描边。为什么光靠底色不够：默认底与主色弱底都是「极浅底」，
-         aurora 下两者亮度只差 ~1.2%（实测），激活与否只能靠图标换色分辨，
-         一眼扫过去仍然糊。1px 内描边走 `--ant-button-default-shadow`
-         （antd 只在 outlined/solid/dashed 变体上把它落成 box-shadow，
-         且**不分状态**，所以 hover / active 也不会掉），是确定的几何信号。 */
-      --ant-button-default-shadow: inset 0 0 0 1px var(--app-primary);
+      --ant-button-default-active-color: var(--app-primary-strong);
+      /* 明确不要描边（与稿子的两层一致），别让默认态的 shadow 继承下来 */
+      --ant-button-default-shadow: none;
     }
 
     &:focus-visible {
       outline: 2px solid var(--app-primary);
       outline-offset: 2px;
+    }
+  }
+
+  /* 阅读模式的开态：图标 + 「读」字标签，宽度改由内容决定。
+     关态仍按 30px 见方排 —— 两态都占满同一格，一开一关不会把右侧整排顶开 */
+  &__icon--read.is-on {
+    width: auto;
+    --ant-button-padding-inline: 7px;
+
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  &__icon-label {
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: 0;
+  }
+
+  /* 菜单图标盒：18px（antd 默认 12px 太小，见组件里 menuIcon 的注释）。
+     菜单项是 `display: flex; align-items: center`，图标盒会自己居中在两行
+     文字块的中线上 —— 这里不要再给 `align-self` 之类的偏移，否则会偏到标题行。
+
+     ⚠️ 两条约束，改的时候别退回去：
+     1. 类名写两遍抬到 (0,2,0)。antd 的 `.ant-dropdown-menu-item-icon` 同样是
+        (0,1,0)，而它的样式是运行时注入、顺序排在我们的 SCSS 之后 —— 单类名会输。
+     2. 不能写成带 `.nv-topbar` 前缀的后代选择器：浮层挂在 body 上，不在组件里。
+     antd 会把 className **合并到图标元素本身**（`cloneElement`），所以这里写的
+     就是那一层，不是再套一层。 */
+  &__menu-ico.nv-topbar__menu-ico {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    font-size: 18px;
+    color: inherit;
+  }
+
+  /* 溢出菜单项：两行（名称 + 一句说明）。菜单项不需要图标也能读，
+     但图标能把「图层 / 时钟 / 书包」在顶栏时的位置延续下来，减少重新学习 */
+  &__more-item {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+    line-height: 1.35;
+
+    b {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--app-text);
+    }
+
+    span {
+      font-size: 12px;
+      color: var(--app-text-muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
   }
 }

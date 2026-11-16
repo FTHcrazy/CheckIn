@@ -1,5 +1,7 @@
 import { Button } from "antd";
-import { CheckOutlined, CloseOutlined, ReloadOutlined, ThunderboltOutlined } from "@ant-design/icons";
+import { CheckOutlined, CloseOutlined, ReloadOutlined } from "@ant-design/icons";
+import SvgIcon from "@/shared/components/SvgIcon";
+import aiSvg from "@/assets/novel/ai.svg?raw";
 import "./index.scss";
 
 interface SummaryPreviewProps {
@@ -52,7 +54,7 @@ export default function SummaryPreview({
       <div className="nv-summary" role="dialog" aria-label="本章摘要">
         <div className="nv-summary__head">
           <span className="nv-summary__title">
-            <ThunderboltOutlined /> 本章摘要
+            <SvgIcon svg={aiSvg} /> 本章摘要
           </span>
           <Button className="nv-summary__close" aria-label="关闭" onClick={onClose}>
             <CloseOutlined />
@@ -68,7 +70,7 @@ export default function SummaryPreview({
             <div className="nv-summary__content">
               <p className="nv-summary__text">{result}</p>
               <p className="nv-summary__meta">
-                <ThunderboltOutlined /> AI 生成
+                <SvgIcon svg={aiSvg} /> AI 生成
                 {model ? ` · 模型 ${model}` : ""}
                 {scopeLabel ? ` · 范围 ${scopeLabel}` : ""}
               </p>

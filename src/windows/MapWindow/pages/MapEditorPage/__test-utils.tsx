@@ -2,6 +2,9 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { App as AntApp } from "antd";
 import { expect } from "vitest";
 import MapEditorPage from "./index";
+import { generateHierarchy } from "./regions";
+import { useMapDocStore } from "./store/useMapDocStore";
+import { BASE_BOUNDS } from "./store/useMapViewportStore";
 
 /**
  * MapEditorPage 页面级回归测试的**共享工具与常量**。
@@ -20,17 +23,49 @@ import MapEditorPage from "./index";
 /** 画布基准尺寸（由 getBoundingClientRect 桩决定） */
 export const CANVAS = 1024;
 /**
- * 初始适配后的缩放。fitToRect 对 1024×1024 的底图在 1024×1024 画布上：
- * min(1024/1024, 1024/1024) * FIT_PADDING(0.8) = 0.8。
+ * 初始适配后的缩放。fitToRect 对 **1447×1024** 的底图在 1024×1024 画布上：
+ * min(1024/1447, 1024/1024) × FIT_PADDING(0.8) = 0.5661 → 标签读 57%。
  *
- * 这里刻意写死 0.8 而**不**从源码 import FIT_PADDING：那是被测行为本身，
+ * 这里刻意写死数值而**不**从源码 import FIT_PADDING / BASE_IMAGE：那是被测行为本身，
  * 跟着源码走就失去断言价值（改成 1.0 铺满画布这种回归将无人发现）。
+ * 2.50.0 画布从正方形改成 1.413:1 之后，起手缩放从 0.8 掉到 0.566 —— 这是预期变化。
  */
-export const SCALE = 0.8;
+export const SCALE = (1024 / 1447) * 0.8;
 /** 初始视口中心恒为底图中心 = 世界原点 */
 export const VIEW = { x: 0, y: 0 };
-/** 四周留白宽度（画布像素）：底图占 819px，两侧各余 ≈102px */
-export const MARGIN = (CANVAS - CANVAS * SCALE) / 2;
+
+/**
+ * 底图的世界尺寸（世界单位，原点居中）。
+ *
+ * 与 `SCALE` 同理**刻意写死**而不 import `sprites.BASE_IMAGE`：底图比例是被测
+ * 行为本身（2.50.0 从 1024² 改成 1447×1024 ≈ 1.413:1，对齐逆向目标
+ * `page_size 1587×1123`），跟着源码 import 会让"改回正方形"这种回归无人发现。
+ */
+export const BASE = { width: 1447, height: 1024 };
+
+/**
+ * 起手适配后的四周留白（画布像素）—— 横纵**必须分开**。
+ *
+ * 【为什么不是一个 `MARGIN`】`fitScaleFor` 取 `min(宽比, 高比) × 0.8`，
+ * 长方形底图下**宽度是约束边**：横向留白正好一成（≈102px），高度方向按同一
+ * 倍率缩下来只占 ≈580px，上下各余 ≈222px（≈22%）。正方形时代两者相等，
+ * 单常量成立；改成 1.413:1 之后还算一个值，断言就会拿纵向的 222 去要求横向的
+ * 102（实测 tl.x 只有 99.6，报 `expected 220.16 to be greater than 222.14`）。
+ *
+ * 这里按 `SCALE`（精确适配倍率）算而不是按标签读数（57%）：两个数都合法，
+ * 前者用于"留白比例"的定量断言，需要精确值。
+ */
+export const MARGIN_X = (CANVAS - BASE.width * SCALE) / 2;
+export const MARGIN_Y = (CANVAS - BASE.height * SCALE) / 2;
+
+/**
+ * 屏幕上右移 16px 对应的世界增量（拖拽用例的期望值）。
+ *
+ * 16 ÷ 起手缩放：正方形时代是 20（÷0.8），2.50.0 改成 1.413:1 后起手缩放
+ * 掉到 0.5661 ⇒ ≈28.26。写成一个导出常量而不是散落三个 `toBeCloseTo(20)`，
+ * 免得下次调配图比例还要满文件找魔数。
+ */
+export const DRAG_WORLD_DELTA = 16 / SCALE;
 
 export const rect = {
   width: CANVAS,
@@ -167,6 +202,26 @@ export function zoomBy(button: "zoom-in" | "zoom-out", times: number) {
   for (let i = 0; i < times; i += 1) fireEvent.click(el);
 }
 
+/**
+ * 造 N 个国家区块（2.50.0）。
+ *
+ * 【为什么直接写 store 而不点按钮】2.50.0 移除了工具栏的「生成区块」按钮 ——
+ * 国家生成并入一键成图（`domain/countries.ts`，需要路网骨架）。但本组用例测的是
+ * **已有区块之后**的显示 / 命中 / 撤销行为，与"区块怎么来的"无关；走一键成图
+ * 还会顺带清空素材，而其中一条用例恰恰要先放素材再生成区块。
+ * `regenerateHierarchy` 是页面自己用的同一条 store 动作（同样进撤销栈）。
+ */
+export async function splitCountries(count = 12): Promise<void> {
+  const regions = generateHierarchy({
+    seed: 20261110,
+    bounds: BASE_BOUNDS,
+    levelCounts: [count],
+  });
+  await act(async () => {
+    useMapDocStore.getState().regenerateHierarchy(regions);
+  });
+}
+
 /** 工具栏"已生成 N 块"文本；无区块时该元素不渲染，返回空串 */
 export function regionLabel(): string {
   return document.querySelector(".map-editor__region-count")?.textContent ?? "";
@@ -258,7 +313,7 @@ export function openMore(): HTMLElement {
   return panel;
 }
 
-/** 渲染页面并等待初始适配完成（缩放标签变成 80%） */
+/** 渲染页面并等待初始适配完成（缩放标签变成 57%） */
 export async function setup() {
   const utils = render(
     <AntApp>
@@ -271,6 +326,6 @@ export async function setup() {
     await Promise.resolve();
     await Promise.resolve();
   });
-  await waitFor(() => expect(zoomLabel()).toBe("80%"));
+  await waitFor(() => expect(zoomLabel()).toBe("57%"));
   return utils;
 }

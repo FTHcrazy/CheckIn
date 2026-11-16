@@ -63,20 +63,20 @@ const GENRE_VOCAB = [
 ] as const;
 
 /**
- * 白名单 ②：非 archive 但缺头部三行的**历史欠债**（2026-11-06 实测 7 篇）。
+ * 白名单 ②：非 archive 但缺头部三行的**历史欠债**（2026-11-12 实测 4 篇）。
  *
- * 为什么不一并补：它们全在 novel / AI 域，不属本轮地图批次的边界；补头部需要逐篇
- * 核实「输入是哪篇、订立时基线是多少」，凭猜填进去比缺着更糟。
+ * 为什么不一并补：它们全在 AI 域，不属本轮边界；补头部需要逐篇核实「输入是哪篇、
+ * 订立时基线是多少」，凭猜填进去比缺着更糟。
  * 补完任意一篇 → 必须从此表删除（否则本测试会在「该删未删」上失效）。
+ *
+ * 2026-11-12 删 3 条：`novel-design-review` / `novel-product-review` /
+ * `ai-implementation-review-2.10.0` 已移入 `archive/`，归档不参与本断言。
  */
 const HEAD_MISSING_ALLOWED = new Set<string>([
   "docs/prd/prd-ai-roadmap/ai-future-directions-prd.md",
   "docs/prd/prd-ai-roadmap/ai-roadmap-architecture-review.md",
   "docs/prd/prd-ai-roadmap/ai-roadmap-batch-plan.md",
-  "docs/review/ai-implementation-review-2.10.0.md",
   "docs/review/map-vs-reference-render-analysis.md", // 只缺「基线」
-  "docs/review/novel-design-review.md",
-  "docs/review/novel-product-review.md",
 ]);
 
 /**

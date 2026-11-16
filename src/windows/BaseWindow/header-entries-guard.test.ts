@@ -5,9 +5,11 @@
  * `MapEntry` 的 import 保留下来了、`actions` 插槽里却只剩 `SettingsEntry`
  * —— 编译不报错（一个未使用的 import 而已），运行时表现为「地图入口凭空消失」。
  *
- * 所以这里钉两件事：
+ * 所以这里钉三件事：
  * 1. 标题栏动作插槽里**同时**挂着「地图」与「设置」两个入口；
- * 2. 地图那颗按钮发的 `map-window-open` 在 preload 白名单里 —— 白名单漏了
+ * 2. 地图入口受构建形态开关控制 —— lite 版 / nomap 变体没有 map 窗口，
+ *    入口必须随之隐藏，否则就是一个点了没反应的死按钮；
+ * 3. 地图那颗按钮发的 `map-window-open` 在 preload 白名单里 —— 白名单漏了
  *    同样静默：点击有反应（无异常）、主进程永远收不到。
  *
  * 纯源码断言：App 挂了 ThemeProvider + 路由，渲染整棵树只为点一次按钮不划算。
@@ -55,6 +57,12 @@ describe("BaseWindow 标题栏入口", () => {
   it("地图入口只此一处（不允许在页面里再挂一个浮动入口）", () => {
     const hits = app.match(/<MapEntry\s*\/>/g) ?? [];
     expect(hits).toHaveLength(1);
+  });
+
+  it("地图入口随构建形态开关（lite / nomap 隐藏，不留死按钮）", () => {
+    const actions = readActionsProp(app);
+    // 源码级断言用 \s 容忍格式化拆行，只钉「构建开关控制 MapEntry」这一层关系
+    expect(actions).toMatch(/IS_NO_MAP\s*&&\s*<MapEntry\s*\/>/);
   });
 
   it("map-window-open 在 preload 的 send 白名单内", () => {

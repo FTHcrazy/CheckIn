@@ -2,7 +2,11 @@ import { contextBridge, ipcRenderer } from 'electron'
 import {
   buildWindowSendOptions,
   type WindowSendOptions,
-} from './window-send-options'
+} from './core/window/window-send-options'
+
+// 本构建是否不含地图（lite 版 / nomap 变体）：编译期常量，
+// 为 true 时不暴露 map 命名空间与 map 相关 send / receive 通道（对应主进程整组关闭）。
+const NO_MAP = __CHECKIN_NO_MAP__
 
 /**
  * `ipcRenderer.on` 注册的是包了一层的 wrapper（剥掉 Electron 的 event 首参），
@@ -73,7 +77,7 @@ function trackedInvoke(
  * 待投递消息的本地收件箱。
  *
  * 主进程的 `window-send-to` 在目标窗口不存在时会把消息入队（见
- * `electron/window-pending.ts`）。窗口起来后本脚本主动 drain 一次；但
+ * `electron/core/window/window-pending.ts`）。窗口起来后本脚本主动 drain 一次；但
  * **拉到消息 ≠ 有人能接**：React 的 useEffect 往往还没注册监听。
  * 所以先放这儿，`windowAPI.on()` 注册时按事件名补投 —— 这样「消息先到、
  * 监听后挂」与「监听先挂、消息后到」两条时序都不会丢。
@@ -229,6 +233,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
       trackedInvoke('novel-work-rename', id, name) as Promise<boolean>,
     setWorkGenre: (id: string, genre: string | null) =>
       trackedInvoke('novel-work-set-genre', id, genre) as Promise<boolean>,
+    // 封面：主进程选图 + 压缩 + 落库，只把成品 data URL 交回渲染层
+    pickWorkCover: (id: string) =>
+      trackedInvoke('novel-work-cover', id) as Promise<string | null>,
+    // 单作品卷章正文（书架导出用）：只取导出需要的两张表，不拉整个数据包
+    workContent: (workId: string) =>
+      trackedInvoke('novel-work-content', workId) as Promise<{
+        volumes: unknown[]
+        chapters: unknown[]
+      }>,
     deleteWork: (id: string) =>
       trackedInvoke('novel-work-delete', id) as Promise<boolean>,
     // ── 数据安全（P0）：一键全量备份 / 恢复 + 删除兜底（回收站） ──
@@ -519,32 +532,37 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ── 地图（map.db 独立库：存档 / 列表 / 版本 / 作品绑定） ──
   // 与 novel 同一套约定：invoke 走 trackedInvoke（失败与慢调用会被观测），
   // 入参一律压成**一个对象**，主进程按字段读 —— 位置参数在加字段时最容易错位。
-  map: {
-    /** 列表：不含 doc_json，只给元信息 + 缩略图 data URL；includeDeleted 用于回收站 */
-    docsList: (workId?: string | null, includeDeleted?: boolean) =>
-      trackedInvoke('map-docs-list', { workId: workId ?? null, includeDeleted: includeDeleted === true }),
-    get: (id: string) => trackedInvoke('map-doc-get', { id }),
-    create: (payload: { title?: string; workId?: string | null; doc?: unknown }) =>
-      trackedInvoke('map-doc-create', payload),
-    save: (payload: { id: string; doc: unknown; baseRev: number; viewport?: unknown }) =>
-      trackedInvoke('map-doc-save', payload),
-    /** 关窗 flush：忽略乐观锁直接写（唯一的强写口，见 map-handlers） */
-    flush: (payload: { id: string; doc: unknown; baseRev: number; viewport?: unknown }) =>
-      trackedInvoke('map-doc-flush', payload),
-    rename: (id: string, title: string) => trackedInvoke('map-doc-rename', { id, title }),
-    /** 软删（进回收站，可 restore） */
-    remove: (id: string) => trackedInvoke('map-doc-delete', { id }),
-    restore: (id: string) => trackedInvoke('map-doc-restore', { id }),
-    /** 彻底删除（含历史版本与资源目录，不可恢复） */
-    purge: (id: string) => trackedInvoke('map-doc-purge', { id }),
-    /** 绑定 / 解绑作品（null = 解绑，不删图） */
-    bind: (id: string, workId: string | null) => trackedInvoke('map-doc-bind', { id, workId }),
-    thumb: (id: string, png: Uint8Array) => trackedInvoke('map-doc-thumb', { id, png }),
-    revisions: (id: string) => trackedInvoke('map-doc-revisions', { id }),
-    restoreRev: (id: string, rev: number) => trackedInvoke('map-doc-restore-rev', { id, rev }),
-    /** 可绑定的作品选项（只读 novel.db 的 id + name 两列） */
-    workOptions: () => trackedInvoke('map-work-options'),
-  },
+  // nomap 变体下整段不暴露（编译期 spread 剔除，渲染层无 map 入口自然不调用）。
+  ...(NO_MAP
+    ? {}
+    : {
+        map: {
+          /** 列表：不含 doc_json，只给元信息 + 缩略图 data URL；includeDeleted 用于回收站 */
+          docsList: (workId?: string | null, includeDeleted?: boolean) =>
+            trackedInvoke('map-docs-list', { workId: workId ?? null, includeDeleted: includeDeleted === true }),
+          get: (id: string) => trackedInvoke('map-doc-get', { id }),
+          create: (payload: { title?: string; workId?: string | null; doc?: unknown }) =>
+            trackedInvoke('map-doc-create', payload),
+          save: (payload: { id: string; doc: unknown; baseRev: number; viewport?: unknown }) =>
+            trackedInvoke('map-doc-save', payload),
+          /** 关窗 flush：忽略乐观锁直接写（唯一的强写口，见 map-handlers） */
+          flush: (payload: { id: string; doc: unknown; baseRev: number; viewport?: unknown }) =>
+            trackedInvoke('map-doc-flush', payload),
+          rename: (id: string, title: string) => trackedInvoke('map-doc-rename', { id, title }),
+          /** 软删（进回收站，可 restore） */
+          remove: (id: string) => trackedInvoke('map-doc-delete', { id }),
+          restore: (id: string) => trackedInvoke('map-doc-restore', { id }),
+          /** 彻底删除（含历史版本与资源目录，不可恢复） */
+          purge: (id: string) => trackedInvoke('map-doc-purge', { id }),
+          /** 绑定 / 解绑作品（null = 解绑，不删图） */
+          bind: (id: string, workId: string | null) => trackedInvoke('map-doc-bind', { id, workId }),
+          thumb: (id: string, png: Uint8Array) => trackedInvoke('map-doc-thumb', { id, png }),
+          revisions: (id: string) => trackedInvoke('map-doc-revisions', { id }),
+          restoreRev: (id: string, rev: number) => trackedInvoke('map-doc-restore-rev', { id, rev }),
+          /** 可绑定的作品选项（只读 novel.db 的 id + name 两列） */
+          workOptions: () => trackedInvoke('map-work-options'),
+        },
+      }),
 
   send: (channel: string, data: unknown) => {
     const validChannels = [
@@ -553,10 +571,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       // 设置窗口开关（novel 版主窗标题栏的设置入口）
       'settings-window-open',
       // 地图窗口开关（full 版 base 头 / novel 版工具箱的架空地图入口）
-      'map-window-open',
+      // nomap 变体下不暴露（渲染层无地图入口）
+      ...(NO_MAP ? [] : ['map-window-open']),
       // 地图关窗 flush 回执：渲染层写完存档后通知主进程可以真正关闭窗口
       // （主进程侧 close 拦截见 main.ts 的 registerMapFlushGuard）
-      'map-doc-flush-done',
+      ...(NO_MAP ? [] : ['map-doc-flush-done']),
       // 行囊独立窗口开关（小说窗口顶栏入口，full/novel 版）
       'pack-window-open',
       // 跨窗口导航：行囊窗口请求打开小说窗口的设定中心（UI-03）
@@ -587,7 +606,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       // 全局设定中心窗口「真的可见」的回执：书架那颗按钮据此退出「正在打开」
       'global-setting-window-shown',
       // 地图关窗前的取快照请求：渲染层收到后立刻 flush，再回 map-doc-flush-done
-      'map-doc-request-snapshot',
+      // nomap 变体下不暴露
+      ...(NO_MAP ? [] : ['map-doc-request-snapshot']),
     ]
     if (validChannels.includes(channel)) {
       const listener = (_event: Electron.IpcRendererEvent, ...args: unknown[]) => func(...args)
@@ -613,7 +633,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
      * 有「一个选项参数」这个概念。曾经这里把 `raise` 与 `options` 摆在两个位置，
      * 主进程按位读第 4 个，`{create:true}` 落在第 5 位被丢掉 —— 于是「窗口没开
      * 就拉起」从来没生效，用户看到的是「主窗口没能打开」。契约与互逆用例见
-     * `electron/window-send-options.ts`。
+     * `electron/core/window/window-send-options.ts`。
      *
      * 返回 `{ delivered, queued }`：`delivered=false` 表示既送不到也拉不起来
      * （如 lite 版没有该窗口），调用方必须给用户可见提示 —— 静默失败会让
@@ -675,7 +695,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       // 兜底：监听器不是由 windowAPI.on 注册的（其它模块 ipcRenderer.on 直通），按引用删
       ipcRenderer.removeListener(event, handler)
     },
-    // ── 关闭守卫（electron/close-guard.ts）──
+    // ── 关闭守卫（electron/core/window/close-guard.ts）──
     // 有未保存改动时武装本窗口；主进程在真要销毁前会发 `window-close-request`
     // （用上面的 `on` 订阅，它会先摘掉同名旧监听再登记），渲染层用 respondClose 答复。
     setCloseGuard: (enabled: boolean) =>
@@ -772,5 +792,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
         /** 注册失败（被系统或其他应用占用）的应用级快捷键 id */
         globalFailures: string[]
       }>,
+  },
+
+  // ── 外部链接（主进程校验协议后交系统浏览器打开；渲染层不做导航） ──
+  shell: {
+    openExternal: (url: string) =>
+      trackedInvoke('shell-open-external', url) as Promise<boolean>,
   },
 })

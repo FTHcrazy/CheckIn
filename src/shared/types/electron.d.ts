@@ -38,7 +38,7 @@ interface TodoRow {
   done_at: string | null
 }
 
-// ── 小说编辑器 DTO（与 electron/handlers/novel-handlers.ts 的 Dto 定义保持一致） ──
+// ── 小说编辑器 DTO（与 electron/handlers/novel/novel-handlers.ts 的 Dto 定义保持一致） ──
 // 本文件因 export interface ElectronAPI 已是模块环境：DTO 必须显式 export，
 // 渲染进程各页面（NovelPage / BookshelfPage 等）才能 import type 共用同一契约。
 
@@ -57,6 +57,8 @@ export interface NovelWorkDTO {
   createdAt: number
   /** 题材（可选）：空 = 未设置，AI 起名 / 润色按书名 + 要素弱兜底 */
   genre?: string
+  /** 封面（可选）：`data:image/jpeg;base64,...`；空 = 用程序化渐变封面 */
+  cover?: string
 }
 
 export interface NovelVolumeDTO {
@@ -325,7 +327,7 @@ export interface NovelSettingTemplateDTO {
   categories: NovelSettingSnapshot[]
 }
 
-// ── 全局设定中心 DTO（1.4x，与 electron/handlers/novel-global-setting-handlers.ts 一致） ──
+// ── 全局设定中心 DTO（1.4x，与 electron/handlers/novel/novel-global-setting-handlers.ts 一致） ──
 
 /** 全局设定等级项（结构对齐 NovelSettingLevelDTO） */
 export interface NovelGlobalSettingLevelDTO {
@@ -413,7 +415,7 @@ export interface NovelBundleDTO {
   recovery: { snapshotTime: number; deltaWords: number } | null
 }
 
-// ── 行囊 CharacterPack DTO（与 electron/handlers/novel-pack-handlers.ts 保持一致） ──
+// ── 行囊 CharacterPack DTO（与 electron/handlers/novel/novel-pack-handlers.ts 保持一致） ──
 
 export type PackNatureDTO = "passive" | "sustained" | "cast"
 export type PackOpDTO = "add" | "percent" | "mul" | "override"
@@ -756,7 +758,7 @@ export interface PackSavePayloadDTO {
   chapterId: string
 }
 
-// ── 备份包 DTO（todo/memo zip 备份导出导入，与 electron/backup-utils.ts 一致） ──
+// ── 备份包 DTO（todo/memo zip 备份导出导入，与 electron/checkin/backup-utils.ts 一致） ──
 
 export interface BackupExportResult {
   /** 用户在保存框点取消时为 true */
@@ -776,7 +778,7 @@ export interface BackupImportResult {
   skipped: string[];
 }
 
-// ── 小说数据安全 DTO（P0：一键全量备份 / 恢复 + 回收站，与 electron/novel-safety-utils.ts 一致） ──
+// ── 小说数据安全 DTO（P0：一键全量备份 / 恢复 + 回收站，与 electron/novel/novel-safety-utils.ts 一致） ──
 
 /** 备份包规模摘要（导出时统计，恢复前展示） */
 export interface NovelBackupCountsDTO {
@@ -854,7 +856,7 @@ export interface NovelTrashListResult {
   retentionDays: number
 }
 
-// ── 打卡 DTO（与 electron/handlers/checkin-handlers.ts 保持一致） ──
+// ── 打卡 DTO（与 electron/handlers/checkin/checkin-handlers.ts 保持一致） ──
 
 /** 当前业务日打卡状态；凌晨 0-5 点归属前一个业务日，跨过 5 点自动重置 */
 export interface CheckinStatusDTO {
@@ -873,7 +875,7 @@ export interface CheckinResultDTO {
   created: boolean;
 }
 
-// ── AI 助手 DTO（与 electron/handlers/ai-handlers.ts 保持一致） ──
+// ── AI 助手 DTO（与 electron/handlers/ai/ai-handlers.ts 保持一致） ──
 
 /** 模型服务类型：openai = 任意 OpenAI 兼容接口；ollama = 本地 Ollama */
 export type AiProvider = 'openai' | 'ollama'
@@ -991,6 +993,16 @@ export interface ElectronAPI {
     setCookie: (url: string, cookie: string) => Promise<boolean>
   }
 
+  /**
+   * 外部链接。
+   *
+   * 渲染层不自己做导航（会把当前窗口带走），统一交给主进程：
+   * 主进程只放行 http/https，其余协议返回 false。
+   */
+  shell: {
+    openExternal: (url: string) => Promise<boolean>
+  }
+
   // ── AI 助手（数据存独立 ai.db，仅 full/novel 版注册） ──
   ai: {
     /** 读当前 AI 配置（不含明文 Key） */
@@ -1080,6 +1092,16 @@ export interface ElectronAPI {
     renameWork: (id: string, name: string) => Promise<boolean>
     /** 设置作品题材（传 null / 空串即清空）；建书时可跳过，之后随时可补 */
     setWorkGenre: (id: string, genre: string | null) => Promise<boolean>
+    /**
+     * 导入作品封面：弹选图框 → 主进程压到 320px 宽 JPEG → 落库。
+     * 返回新封面的 data URL；用户取消选图返回 null（不是失败）。
+     */
+    pickWorkCover: (id: string) => Promise<string | null>
+    /** 单部作品的卷章正文（书架「导出当前作品」用，不拉与其无关的表） */
+    workContent: (workId: string) => Promise<{
+      volumes: NovelVolumeDTO[]
+      chapters: NovelChapterDTO[]
+    }>
     deleteWork: (id: string) => Promise<boolean>
     /** 删除兜底：作品移入回收站（软删除，子数据保留，可恢复） */
     trashWork: (id: string) => Promise<boolean>
@@ -1304,7 +1326,7 @@ export interface ElectronAPI {
     ) => Promise<{ delivered: boolean; queued: boolean }>
     on: (event: string, handler: (...args: unknown[]) => void) => void
     off: (event: string, handler: (...args: unknown[]) => void) => void
-    /** 关闭守卫：有未保存改动时武装本窗口（`electron/close-guard.ts`） */
+    /** 关闭守卫：有未保存改动时武装本窗口（`electron/core/window/close-guard.ts`） */
     setCloseGuard: (enabled: boolean) => void
     /** 答复主进程的关闭询问（true = 放行，可以关闭 / 退出） */
     respondClose: (allow: boolean) => void

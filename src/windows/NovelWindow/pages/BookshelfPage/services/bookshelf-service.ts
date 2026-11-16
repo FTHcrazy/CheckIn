@@ -12,7 +12,9 @@
 
 import type {
   NovelBundleDTO,
+  NovelChapterDTO,
   NovelNoteDTO,
+  NovelVolumeDTO,
   NovelWorkDTO,
 } from "@/shared/types/electron";
 
@@ -77,4 +79,45 @@ export async function removeShelfNote(noteId: string): Promise<boolean> {
 /** 灵感归属迁移：归档到作品；workId 传 '' 退回未归属池 */
 export async function moveShelfNote(noteId: string, workId: string): Promise<boolean> {
   return window.electronAPI!.novel.moveNote(noteId, workId);
+}
+
+// ── 书卡右键「作品操作」用的通道（2.56.0） ────────────────────────
+//
+// 与上面的读接口同一层：组件不直接碰 `window.electronAPI`，写操作由
+// `useBookshelfData` 乐观更新，动作编排由 `useShelfWorkActions` 负责。
+
+/** 重命名作品（空名由页面校验，这里只落库） */
+export async function renameShelfWork(id: string, name: string): Promise<boolean> {
+  return window.electronAPI!.novel.renameWork(id, name);
+}
+
+/** 修改题材：传空串即清空 */
+export async function setShelfWorkGenre(id: string, genre: string): Promise<boolean> {
+  return window.electronAPI!.novel.setWorkGenre(id, genre);
+}
+
+/** 导入封面：主进程选图 + 压缩 + 落库；取消返回 null */
+export async function pickShelfWorkCover(id: string): Promise<string | null> {
+  return window.electronAPI!.novel.pickWorkCover(id);
+}
+
+/** 删除作品：软删除进回收站（与编辑器「作品管理」同一口径，30 天内可恢复） */
+export async function trashShelfWork(id: string): Promise<boolean> {
+  return window.electronAPI!.novel.trashWork(id);
+}
+
+/** 单部作品的卷章正文：只取导出需要的两张表 */
+export async function fetchShelfWorkContent(workId: string): Promise<{
+  volumes: NovelVolumeDTO[];
+  chapters: NovelChapterDTO[];
+}> {
+  return window.electronAPI!.novel.workContent(workId);
+}
+
+/** TXT 落盘：主进程弹保存框 + 写盘；取消返回 null */
+export async function exportShelfTextFile(
+  defaultName: string,
+  content: string,
+): Promise<{ path: string } | null> {
+  return window.electronAPI!.novel.exportFile(defaultName, content);
 }

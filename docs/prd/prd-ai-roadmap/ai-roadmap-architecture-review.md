@@ -68,14 +68,14 @@
 | K-01 | 「`collector` / `assembler` / `output-spec`（json-array 输出契约）**已落地，直接复用**」（PRD §十一、R-AI-08） | ❌ **完全不存在**。`src/shared/ai/` 只有 4 个文件：`ai-client.ts` / `ai-context.ts` / `ai-context.test.ts` / `ai-errors.ts` / `ai-types.ts`；没有 `context/` 子目录 | `ls -R src/shared/ai/` | **R-AI-06/07/08/10/11/13/15 的成本全部要上调一档**。输出契约（json-array + 三层保险）是 07/08/10/11/15 的公共前置，必须先建 |
 | K-02 | 「润色已自动灌入书名 / 题材 / 命中人物卡」（PRD R-AI-06） | ❌ 未落地。`buildPolishPrompt(ctx: { text })` **只吃选中文本**；`useNovelPage.runPolish` 调用处也只传 `{ text }` | `src/shared/ai/ai-context.ts` L53–75；`useNovelPage.ts` L709 | R-AI-06 拆成 06a（模板）/ 06b（上下文灌入），见 §二 |
 | K-03 | `ai-context-and-output-spec.md` 的结论可当作既有能力 | ⚠️ 该文档状态是「已评审（**待动工**）」，Phase 1 的 7 项落地清单**一项都没做** | 文档文首「状态」行 + K-01 实测 | 该文档应视为**施工图**而非现状图 |
-| K-04 | 「`ai_log` 已有 intent / model / duration / error_code，可复用」 | ⚠️ **半真**。`ai_log` 表与 `ai-log-list`/`ai-log-clear` 通道在，但 `intent` 在 `ai-handlers.ts` 里是**硬编码**的 `"generate"` / `"test"`，**无法区分起名与润色** | `electron/handlers/ai-handlers.ts` L347/363/380/457/466/488/506 | R-AI-05 的「成本最低」不成立 —— 必须先改**请求契约**，这不是 UI 活 |
+| K-04 | 「`ai_log` 已有 intent / model / duration / error_code，可复用」 | ⚠️ **半真**。`ai_log` 表与 `ai-log-list`/`ai-log-clear` 通道在，但 `intent` 在 `ai-handlers.ts` 里是**硬编码**的 `"generate"` / `"test"`，**无法区分起名与润色** | `electron/handlers/ai/ai-handlers.ts` L347/363/380/457/466/488/506 | R-AI-05 的「成本最低」不成立 —— 必须先改**请求契约**，这不是 UI 活 |
 | K-05 | 「埋点回收链路不存在」 | ✅ 属实，且**根因比 PRD 说的更靠底层**：不止是没有写埋点的代码，是 `AiGenerateRequest` 契约里根本没有 `intent` 字段，写也没处写 | `src/shared/ai/ai-types.ts` L53–62 | 见 K-04 |
 | K-06 | 「已落地的 AI 日志有查看出口」 | ❌ `ai-log-list` / `ai-log-clear` **已注册、已类型化，但渲染层零消费者**，`ai-client.ts` 也没封装。目前是**只写不读** | `grep -rn "listLogs\|clearLogs" src/` 只命中 `electron.d.ts` | R-AI-05 唯一比 PRD 估计**更便宜**的地方：补一层 `ai-client` 封装 + 一个列表 UI 即可 |
-| K-07 | 「`work.genre` 题材字段（Phase 2 已拍板补）」 | ❌ **全库零命中**。`novel_works` 只有 `id / name / created_at / deleted_at` 四列 | `grep -rn "genre" electron/ src/` 无结果；`electron/novel-db.ts` L77–82 | `genre` 是 06/07/09/11/13 的**公共输入**，必须从 R-AI-13 里拆出来提前建（见 D8） |
+| K-07 | 「`work.genre` 题材字段（Phase 2 已拍板补）」 | ❌ **全库零命中**。`novel_works` 只有 `id / name / created_at / deleted_at` 四列 | `grep -rn "genre" electron/ src/` 无结果；`electron/novel/novel-db.ts` L77–82 | `genre` 是 06/07/09/11/13 的**公共输入**，必须从 R-AI-13 里拆出来提前建（见 D8） |
 | K-08 | 「一致性校对依赖本地全文检索，可先本地召回」 | ✅ **属实，且比 PRD 说的更好用**：`searchAcrossBook(keyword, chapters)` 是渲染进程内对**已加载全量章节正文**的 `indexOf` 扫描（带命中计数与摘要切片），**零 IPC、零依赖**；且 `novel_setting_levels.aliases` 的建表注释明写「**也是一致性检查的词表来源**」 | `novel-service.ts` L189–217；`novel-db.ts` L196–217 | 检索与词表都已备好 → **R-AI-10 成本应大幅下调**，本地版应成为首版本体（见 D6） |
 | K-09 | 「AI 润色已落地（PRD §〇）」 | ✅ 属实，但**只是最小版**（纯文本进出，无上下文、无流式、无输出契约） | `PolishPreview/index.tsx`、`useNovelPage.ts` L678–757 | 交互范式（选中→浮层预览→换一种→确认替换→失败不动原文）**确实是现成资产**，这条 PRD 判断成立 |
 | K-10 | 「`novel_usage_log` + `logUsageEvent` 已存在」 | ✅ 属实。`novel_usage_log(event, payload, created_at)` + 索引 `(event, created_at)`；`logUsageEvent` 失败静默。**但无保留上限、无清理逻辑** | `novel-db.ts` L61–67；`novel-shared.ts` L22–31；`novel-handlers.ts` L428–438 | R-AI-05 若走这条通道需补保留策略；但**不建议**走（见 §二 R-AI-05 红线 A） |
-| K-11 | 「关系图写入必须走 `novel-graph-commit` 单事务 + 唯一广播出口」 | ✅ 属实且**已有源码守卫**钉死（四条断言：写通道来自 novel-db / 四类写在单事务 / `ON CONFLICT DO NOTHING` / 端点归属校验先于 INSERT） | `electron/novel-graph-commit-guard.test.ts` | R-AI-15 必须复用 `useGraphCommit` → `commitGraph`，不得另起写入路径 |
+| K-11 | 「关系图写入必须走 `novel-graph-commit` 单事务 + 唯一广播出口」 | ✅ 属实且**已有源码守卫**钉死（四条断言：写通道来自 novel-db / 四类写在单事务 / `ON CONFLICT DO NOTHING` / 端点归属校验先于 INSERT） | `electron/handlers/novel/novel-graph-commit-guard.test.ts` | R-AI-15 必须复用 `useGraphCommit` → `commitGraph`，不得另起写入路径 |
 | K-12 | 「本章摘要存储落点需架构师定」 | 本文给出结论：**`novel_chapters` 加列**（理由见 §五.2） | `novel-chapter-purge` 实测是**物理 DELETE 行**（L736–744） | 加列方案可天然随章节删除/清库清理，无需额外维护 |
 
 ---
@@ -84,7 +84,7 @@
 
 ### R-AI-05 · AI 用量与效果回流看板（元能力）
 
-- **既有资产**：`electron/ai-db.ts`（`ai_log` 表 ✅、`ai_config` KV 表 ✅）；`ai-log-list` / `ai-log-clear` IPC ✅；`aiErrorMessage` 错误归一 ✅；`SettingsWindow/components/AISection` ✅（2.6.0 左导航右内容骨架，加一个子页成本低）。
+- **既有资产**：`electron/ai/ai-db.ts`（`ai_log` 表 ✅、`ai_config` KV 表 ✅）；`ai-log-list` / `ai-log-clear` IPC ✅；`aiErrorMessage` 错误归一 ✅；`SettingsWindow/components/AISection` ✅（2.6.0 左导航右内容骨架，加一个子页成本低）。
 - **需新增**：
   1. **契约改动**：`AiGenerateRequest` 加 `intent`（`ai-types.ts` → `electron.d.ts` → `ai-handlers.ts` → `ai-client.ts`，4 处）；`ai-handlers` 里三处硬编码 `"generate"` 改为取 `req.intent`。
   2. **新表 `ai_event`**（ai.db）：记产品维度步骤事件。理由：`adopt` / `edit` / `cancel` 是**用户事后动作**，发生在渲染进程、在请求返回之后数秒到数分钟，主进程出口处的 `ai_log` 结构上写不到。
@@ -99,7 +99,7 @@
 - **主要风险与验证抓手**：
   | 风险 | 验证抓手（可断言） |
   |---|---|
-  | `intent` 又被写死/漏传 | 新增 `electron/ai-domain-guard.test.ts`：断言 `ai-handlers.ts` 剥注释后**不出现** `intent: "generate"` 字面量；断言 `appendAiLog` 的 intent 来自入参 |
+  | `intent` 又被写死/漏传 | 新增 `electron/ai/ai-domain-guard.test.ts`：断言 `ai-handlers.ts` 剥注释后**不出现** `intent: "generate"` 字面量；断言 `appendAiLog` 的 intent 来自入参 |
   | 事件表撑爆磁盘 | 断言 `ai_event` 写入路径**必须**调用清理函数；单测「保留上限 5000 条 / 90 天」的边界 |
   | 日志里混进正文 / 作品名（合规） | 源码守卫：断言 `ai-domain` 相关文件不出现 `content` / `work.name` 等正文与 PII 字段的写入；导出包字段白名单单测 |
   | 埋点阻塞主链路 | 断言 `logAiEvent` 内部有 `try/catch` 静默（与 `logUsageEvent` 同范式） |
@@ -138,11 +138,11 @@
 - **架构红线**：
   - ⚠️ **红线 D（§8.7）**：流式是对 §8.7 豁免边界的**再次扩张**，必须在 `ai-architecture-decision.md` 五·A 追加一条说明：豁免范围从「主进程发 AI 请求」扩到「主进程托管 AI 流式端点」，且**仍然只服务 `electronAPI.ai` 这一个语义化入口**，不产生可被其它业务复用的通用流式代理。
   - ⚠️ **红线 C（凭据不出主进程）**：`protocol.handle` 端点的 URL 里**绝不能带 Key**；Key 仍只在主进程解密后注入 header。端到端：渲染层拿到的只能是一个一次性端点地址。
-  - ⚠️ **`protocol.handle` 必须在 app ready 前注册**，且需与既有 `electron/app-protocol-cache.ts` 的协议实践对齐（不要另起一套协议前缀）。
+  - ⚠️ **`protocol.handle` 必须在 app ready 前注册**，且需与既有 `electron/core/app-protocol-cache.ts` 的协议实践对齐（不要另起一套协议前缀）。
 - **主要风险与验证抓手**：
   | 风险 | 抓手 |
   |---|---|
-  | 端点 URL 泄漏 Key | 新增 `electron/ai-stream-guard.test.ts`：断言端点构造不出现 `apiKey` / `Authorization` 拼接；断言端点带一次性令牌且可失效 |
+  | 端点 URL 泄漏 Key | 新增 `electron/handlers/ai/ai-stream-guard.test.ts`：断言端点构造不出现 `apiKey` / `Authorization` 拼接；断言端点带一次性令牌且可失效 |
   | 流式中断后连接泄漏 | 断言 `aiGenerateStream` 的 `AbortSignal` 路径会关闭 `ReadableStream` 并撤销端点 |
   | 续写偏离剧情 | 断言 `assembleContinuationStreamSpec` 输出里**必须**含大纲节点与命中人物卡（纯函数单测，传入缺失字段时应产出降级 prompt 而非静默省略；B5 已实现） |
   | 协议注册时机错误（静默 404） | 守卫断言 `main.ts` 中 `protocol.handle` 调用位于 `app.whenReady` **之前** |
@@ -161,7 +161,7 @@
 - **成本量级**：**L**（PRD 判「中」）
 - **架构红线**：
   - ⚠️ **红线 B**：实体名集合由 `useNovelData` 取好以纯数组传入，`shared/ai` 不看 `NovelEntity` 类型。
-  - ⚠️ **红线 H（§6.5/§6.7）**：若将来需要给 `entities` 加 `source`（AI/手工）列，必须走 `electron/novel-db.ts` 的增量迁移（当前 `novelArch = compat`），**不得**用 `refactor` 口径。
+  - ⚠️ **红线 H（§6.5/§6.7）**：若将来需要给 `entities` 加 `source`（AI/手工）列，必须走 `electron/novel/novel-db.ts` 的增量迁移（当前 `novelArch = compat`），**不得**用 `refactor` 口径。
   - ⚠️ **红线 E（窗口隔离）**：候选面板属 NovelWindow 私有，放 `NovelWindow/.../components/`，不得进 `shared/components`（只有两个以上窗口用才允许进 shared，§2.2.1）。
   - ⚠️ **红线 G**：候选列表若达百条量级可用虚拟化，但必须满足「容器确定高度 + 共享 Portal 浮层」的例外条款（`novel-ui-kit.test.ts` 已守卫）。
 - **主要风险与验证抓手**：
@@ -180,7 +180,7 @@
 - **需新增**：`assembleSummarySpec`（text 型输出，**不需要 json-array**，这是它比 08 便宜的关键）；新 IPC `novel-chapter-summary-save`；`novel_chapters` 加三列；摘要展示入口。
 - **成本量级**：**M**
 - **架构红线**：
-  - ⚠️ **红线 H**：加列走 `PRAGMA table_info` 判列存在的增量迁移，落在 `electron/novel-db.ts`。
+  - ⚠️ **红线 H**：加列走 `PRAGMA table_info` 判列存在的增量迁移，落在 `electron/novel/novel-db.ts`。
   - ✅ 不触碰双库边界（novel 数据落 novel.db）、不触碰 §8.7（无新网络能力）。
 - **主要风险与验证抓手**：
   | 风险 | 抓手 |
@@ -270,7 +270,7 @@
 - **架构红线**：
   - ⚠️ **红线 E + 既有守卫（本条最关键）**：写入**必须**经 `useGraphCommit` 的 `commitGraph`，**不得**新增 `novel-link-add-batch` 之类的平行通道 —— 那会绕过 `novel-links-events.ts` 的唯一广播出口，造成「图与库不一致」。`novel-handlers` 里已有一个 `novel-link-add`（主窗口侧），**R-AI-15 不得复用它**（它不广播给 RelationWindow）。
   - ⚠️ 依赖 R-AI-08（先有要素卡才有节点）—— 但**不依赖** R-AI-10。
-- **主要风险与验证抓手**：误判关系 → 断言候选**默认不勾选**（低置信尤其），且必须展示证据句；写入一致性 → **在既有 `electron/novel-graph-commit-guard.test.ts` 追加断言**：批量建边仍在单事务内、仍调用 `broadcastLinksChanged`。
+- **主要风险与验证抓手**：误判关系 → 断言候选**默认不勾选**（低置信尤其），且必须展示证据句；写入一致性 → **在既有 `electron/handlers/novel/novel-graph-commit-guard.test.ts` 追加断言**：批量建边仍在单事务内、仍调用 `broadcastLinksChanged`。
 
 ---
 
@@ -379,7 +379,7 @@
 
 ## 五、数据模型增量
 
-### 5.1 ai.db 新增（`electron/ai-db.ts`）
+### 5.1 ai.db 新增（`electron/ai/ai-db.ts`）
 
 ```sql
 -- 产品维度事件表（与技术日志 ai_log 分工，见 5.3）
@@ -409,7 +409,7 @@ CREATE INDEX IF NOT EXISTS idx_ai_event_created     ON ai_event(created_at DESC)
 - 迁移方式：`CREATE TABLE IF NOT EXISTS` + 后续加列走 `PRAGMA table_info` 判列（§6.5）。
 - 导出包（`ai-export-diagnostics`）**只出 `ai_event` + 脱敏的 `ai_log` 元数据**（intent/model/duration_ms/error_code），正文截断字段一律不出。
 
-### 5.2 novel.db 增量（`electron/novel-db.ts`，全部走增量迁移）
+### 5.2 novel.db 增量（`electron/novel/novel-db.ts`，全部走增量迁移）
 
 ```sql
 -- R-AI-09：章节摘要（回应 PRD 待拍板 #4，架构结论 = 加列）
@@ -430,7 +430,7 @@ ALTER TABLE novel_works ADD COLUMN genre TEXT;
 3. 独立表要多一个 join，且删章/清库/模板重置都要补清理路径，是三处漏删风险。
 
 **迁移纪律（§6.5 / §6.7）**：
-- 当前 `novelArch = "compat"`，**必须**走增量迁移，写在 `electron/novel-db.ts` 自己的建表函数里，**不得**动 `electron/db.ts`；
+- 当前 `novelArch = "compat"`，**必须**走增量迁移，写在 `electron/novel/novel-db.ts` 自己的建表函数里，**不得**动 `electron/core/db.ts`；
 - 加列用 `PRAGMA table_info(novel_chapters)` 判列存在后再 `ALTER`，新列可空；
 - 所有 `novel_*` 全表 SQL 必须带 `deleted_at IS NULL`；任何删除/清理 SQL 必须带**时间下界**（既有 novel-safety 纪律）；
 - `novel-safety-handlers` 的回收站恢复逻辑**不需要改**（列随行走）。
@@ -485,9 +485,9 @@ ALTER TABLE novel_works ADD COLUMN genre TEXT;
 | `src/shared/ai/ai-estimate.ts` + `ai-estimate.test.ts` | 新增：token/费用估算纯函数 |
 | `src/shared/ai/hooks/useAiAvailability.ts` + `.test.ts` | 新增（M8） |
 | `src/shared/ai/ai-boundary-guard.test.ts` | 新增：`shared/ai/**` 不得 import novel / windows / services |
-| `electron/ai-domain-guard.test.ts` | 新增：ai-handlers 只 import `../ai-db`；不出现硬编码 intent；事件写入带清理 |
-| `electron/ai-db.ts` | 改：新增 `ai_event` 表 + 2 个索引 + 滚动清理；`ai_log` 补 30 天清理 |
-| `electron/handlers/ai-handlers.ts` | 改：intent 取自请求（3 处硬编码）；新增 `ai-event-log` / `ai-event-stats` / `ai-export-diagnostics` |
+| `electron/ai/ai-domain-guard.test.ts` | 新增：ai-handlers 只 import `../ai-db`；不出现硬编码 intent；事件写入带清理 |
+| `electron/ai/ai-db.ts` | 改：新增 `ai_event` 表 + 2 个索引 + 滚动清理；`ai_log` 补 30 天清理 |
+| `electron/handlers/ai/ai-handlers.ts` | 改：intent 取自请求（3 处硬编码）；新增 `ai-event-log` / `ai-event-stats` / `ai-export-diagnostics` |
 | `electron/preload.ts` | 改：3 个新通道白名单 |
 | `src/shared/types/electron.d.ts` | 改：4 个新 API 签名 |
 | `src/windows/SettingsWindow/components/AISection/components/UsagePanel/index.tsx` + `index.scss` | 新增：用量与效果子页（复用 2.6.0 的四段组织风格） |
@@ -518,8 +518,8 @@ ALTER TABLE novel_works ADD COLUMN genre TEXT;
 | `src/shared/ai/context/chunker.ts` + `.test.ts` | 新增：长文本分块 |
 | `src/shared/ai/context/output-spec.ts` + `.test.ts` | 新增：`OutputFormat` + JSON 指令模板 + 三层保险解析 |
 | `src/shared/ai/prompts/registry.ts` + `.test.ts` | 新增（M7）：意图 → 模板 + version |
-| `electron/novel-db.ts` | 改：`ALTER TABLE novel_works ADD COLUMN genre`（PRAGMA 判列） |
-| `electron/handlers/novel-handlers.ts` | 改：work 增改 DTO 带 `genre` |
+| `electron/novel/novel-db.ts` | 改：`ALTER TABLE novel_works ADD COLUMN genre`（PRAGMA 判列） |
+| `electron/handlers/novel/novel-handlers.ts` | 改：work 增改 DTO 带 `genre` |
 | `src/windows/NovelWindow/pages/BookshelfPage/**`（建书/编辑） | 改：题材选择（可跳过，弱兜底文案） |
 | `src/windows/NovelWindow/pages/NovelPage/components/ContinuationPreview/index.tsx` + `index.scss` + `index.test.tsx` | 新增：候选列表浮层 |
 | `src/windows/NovelWindow/pages/NovelPage/hooks/useNovelPage.ts` | 改：`runContinuation` 编排 + `insertText` 落地 |
@@ -541,8 +541,8 @@ ALTER TABLE novel_works ADD COLUMN genre TEXT;
 | `src/shared/components/AiConsentDialog/index.tsx` + `index.scss` | 新增（antd Modal；放 shared 是因为会被 ≥2 个面板复用） |
 | `src/shared/hooks/useAiConsent.ts` + `.test.ts` | 新增：总开关（复用 `ai_config` KV，**零新表零新 IPC**）+ 本次范围 |
 | `src/shared/ai/ai-provenance.ts` + `.test.ts` | 新增（M6）：来源标记构造器 + 可撤销记录 + 占比统计口径 |
-| `electron/novel-db.ts` | 改：`novel_chapters` 加 `ai_summary` / `ai_summary_at` / `ai_summary_model` 三列 + 可选索引 |
-| `electron/handlers/novel-handlers.ts` | 改：新增 `novel-chapter-summary-save` |
+| `electron/novel/novel-db.ts` | 改：`novel_chapters` 加 `ai_summary` / `ai_summary_at` / `ai_summary_model` 三列 + 可选索引 |
+| `electron/handlers/novel/novel-handlers.ts` | 改：新增 `novel-chapter-summary-save` |
 | `electron/preload.ts` / `src/shared/types/electron.d.ts` | 改：新通道 |
 | `src/windows/NovelWindow/pages/NovelPage/components/ChapterTree/**` | 改：右键「生成本章摘要」入口（受 M8 门控） |
 | `src/windows/NovelWindow/pages/NovelPage/components/SummaryDrawer/index.tsx` + `index.scss` | 新增（参照 `SnapshotDrawer` 范式） |
@@ -554,9 +554,9 @@ ALTER TABLE novel_works ADD COLUMN genre TEXT;
 | 文件 | 动作 |
 |---|---|
 | `electron/ai-stream.ts` | 新增：`protocol.handle` 流式端点（`net.fetch` SSE → `ReadableStream`），与 `app-protocol-cache.ts` 的协议实践对齐 |
-| `electron/ai-stream-guard.test.ts` | 新增：端点 URL 不含 Key；注册时机在 `app.whenReady` 之前；中断可撤销端点 |
+| `electron/handlers/ai/ai-stream-guard.test.ts` | 新增：端点 URL 不含 Key；注册时机在 `app.whenReady` 之前；中断可撤销端点 |
 | `electron/main.ts` | 改：注册 `protocol.handle`（**在 ready 之前**） |
-| `electron/handlers/ai-handlers.ts` | 改：`ai-generate-stream` 返回一次性端点地址；IPC 兜底分支 |
+| `electron/handlers/ai/ai-handlers.ts` | 改：`ai-generate-stream` 返回一次性端点地址；IPC 兜底分支 |
 | `src/shared/ai/ai-client.ts` | 改：`aiGenerateStream(request, onChunk, signal)` |
 | `electron/preload.ts` / `src/shared/types/electron.d.ts` | 改 |
 | `ContinuationPreview` | 改：流式渲染 + 中断按钮 |
@@ -576,13 +576,13 @@ ALTER TABLE novel_works ADD COLUMN genre TEXT;
 | `src/shared/ai/prompts/registry.ts` | 改：`assembleExtractSpec` |
 | `src/windows/NovelWindow/pages/NovelPage/components/EntityExtractPanel/index.tsx` + `index.scss` + `index.test.tsx` | 新增：候选列表（类型/置信度/出处句/重名标注）+ 勾选确认 |
 | `src/windows/NovelWindow/pages/NovelPage/utils/dedupe-entities.ts` + `.test.ts` | 新增：与已有卡去重（别名/同音/空白归一） |
-| `electron/handlers/novel-handlers.ts` | 改：新增 `novel-entities-save-batch`（**单事务**） |
+| `electron/handlers/novel/novel-handlers.ts` | 改：新增 `novel-entities-save-batch`（**单事务**） |
 | `electron/preload.ts` / `src/shared/types/electron.d.ts` | 改 |
 | `src/windows/NovelWindow/pages/NovelPage/utils/consistency-local.ts` + `.test.ts` | 新增（10a）：人名/别名近似匹配 + 境界别名归并，纯函数 |
 | `src/windows/NovelWindow/pages/NovelPage/components/ConsistencyPanel/index.tsx` + `index.scss` + `index.test.tsx` | 新增：问题列表 + 跳转定位 + 忽略记忆 |
 | `src/windows/NovelWindow/pages/NovelPage/workers/consistency.worker.ts` | 已新增（2.16.x）：start/chapters/finish 三段协议，50 章一批 |
 | `src/windows/NovelWindow/pages/NovelPage/store/consistency-runner.ts` + `.test.ts` | 已新增（2.16.x）：Worker 编排 + 主线程分片降级 |
-| `electron/novel-db.ts` | 改（若需 `source` 列）：`ALTER TABLE novel_entities ADD COLUMN source` |
+| `electron/novel/novel-db.ts` | 改（若需 `source` 列）：`ALTER TABLE novel_entities ADD COLUMN source` |
 | `CHANGELOG.md` / `package.json` | 改：2.11.0 |
 
 **2.12.0 功能集合**：**R-AI-10b**（AI 校对）+ **R-AI-11**（卡文救援）+ **R-AI-15**（关系建议）
@@ -596,7 +596,7 @@ ALTER TABLE novel_works ADD COLUMN genre TEXT;
 | `src/windows/NovelWindow/pages/NovelPage/components/InspirationPanel/index.tsx` | 改：「卡文急救」入口 + 存为灵感速记 |
 | `src/windows/RelationWindow/components/RelationSuggestDrawer/index.tsx` + `index.scss` + `.test.tsx` | 新增（15） |
 | `src/windows/RelationWindow/hooks/useGraphCommit.ts` | **不改逻辑**，仅被复用（禁止新增 `novel-link-add-batch`） |
-| `electron/novel-graph-commit-guard.test.ts` | 改：追加「批量建边仍在单事务 + 仍走 broadcastLinksChanged」断言 |
+| `electron/handlers/novel/novel-graph-commit-guard.test.ts` | 改：追加「批量建边仍在单事务 + 仍走 broadcastLinksChanged」断言 |
 | `CHANGELOG.md` / `package.json` | 改：2.12.0 |
 
 **可验证状态**：① 一章抽取出的候选需**人工勾选**才入库，重名项明确标注（源码守卫断言不存在自动入库分支）；② 10a 在**完全不配置 AI** 的情况下也能查出人名不一致（这是它作为首版本体的证明）；③ 关系建议写入后图与库一致、其它窗口收到 `novel-links-changed`；④ 一致性与关系建议的候选都走同一个 `AiCandidateList`。
@@ -609,13 +609,13 @@ ALTER TABLE novel_works ADD COLUMN genre TEXT;
 
 | 文件 | 动作 |
 |---|---|
-| `electron/handlers/novel-handlers.ts` | 改：新增 `novel-usage-range`（区间聚合） |
+| `electron/handlers/novel/novel-handlers.ts` | 改：新增 `novel-usage-range`（区间聚合） |
 | `src/windows/BaseWindow/pages/HomePage/components/WeeklyReportCard/**` | 新增（12）；**不得 import 任何 NovelWindow 内容** |
 | `src/windows/NovelWindow/pages/NovelPage/components/NameGeneratorPanel/index.tsx` | 改（13）：体系化模式 |
 | `src/shared/components/CharacterPack/components/**` | 改（14）：AI 补全按钮；**必须过 `pack-ui-kit.test.ts`** |
 | `electron/main.ts` | 改（16b）：放开 `EDITION !== "lite"` 门控（L1123–1125） |
 | `src/windows/SettingsWindow/App.tsx` | 改（16b）：`SHOW_AI` 放开（L57） |
-| `electron/ai-db.ts` 文件头注释 | 改（16b）：同步 edition 说明（否则留下会骗人的注释） |
+| `electron/ai/ai-db.ts` 文件头注释 | 改（16b）：同步 edition 说明（否则留下会骗人的注释） |
 | `electron/handlers/ledger-handlers.ts` + `LedgerPage` | 改（16a 先做）：本地关键词分类建议 |
 | `src/windows/NovelWindow/pages/NovelPage/components/SupportPanel/components/AiAskBar/**` | 新增（17，条件）：就地问答条 + 复用 `searchAcrossBook` 召回 |
 | `CHANGELOG.md` / `package.json` | 改：3.0.0 |

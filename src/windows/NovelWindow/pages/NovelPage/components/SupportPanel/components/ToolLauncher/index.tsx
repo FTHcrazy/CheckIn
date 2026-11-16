@@ -5,10 +5,12 @@ import {
   EnvironmentOutlined,
   SafetyOutlined,
   SnippetsOutlined,
-  ThunderboltOutlined,
 } from "@ant-design/icons";
 import type { ReactNode } from "react";
+import SvgIcon from "@/shared/components/SvgIcon";
+import aiSvg from "@/assets/novel/ai.svg?raw";
 import type { ToastTone } from "@/shared/novel/use-auto-toast";
+import { IS_NO_MAP } from "@/shared/edition";
 import "./index.scss";
 
 interface ToolLauncherProps {
@@ -90,7 +92,7 @@ export default function ToolLauncher({
   const tools: ToolItem[] = [
     {
       id: "naming",
-      icon: <ThunderboltOutlined />,
+      icon: <SvgIcon svg={aiSvg} />,
       color: "var(--app-primary)",
       weak: "var(--app-primary-weak)",
       name: "起名器",
@@ -149,10 +151,14 @@ export default function ToolLauncher({
     },
   ];
 
+  // nomap 变体：架空地图整组剔除，卡片不渲染（区别于「规划中」占位 —— 那是
+  // 能力尚未上线，而 nomap 是明确的产物裁剪，不该留一张暗示「会来」的灰卡）。
+  const visibleTools = IS_NO_MAP ? tools.filter((tool) => tool.id !== "map") : tools;
+
   return (
     <div className="nv-tools">
       <div className="nv-tools__grid">
-        {tools.map((tool) => {
+        {visibleTools.map((tool) => {
           const live = Boolean(tool.onOpen);
           return (
             <Button

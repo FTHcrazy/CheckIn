@@ -80,7 +80,7 @@
 | 任务 | 交付物 | 体裁 | 优先级 | 前置 | 完成判据 | 闭环去向 |
 |---|---|---|---|---|---|---|
 | **T05** | `spec/map-interaction-spec.md`（新建） | `spec` | **P0** | T03 | ①放置态 / 选中态 / 右键 / `Ctrl+C·X·V·D` / 方向键+WASD / `Esc` 七类各一行，**每行带「守卫落点＝用例文件+用例名」或标「无守卫」**；②文末「无守卫」计数与正文标注次数相等；③`map-vs-reference-interaction-review.md` §2.3 头部加一行指回本文；④`docs/README.md` spec 表新增行 | 长期维护（**不归档**） |
-| **T06** | `spec/map-db-spec.md` §9 四条（改） | `spec` | P1 | T01 | ①四条各补 **结论 / 归属 / 触发条件**，`grep -n "开放"` 命中处必须同行有触发条件；②保留策略常量核对 `electron/map-utils.ts:23`（`MAP_REVISION_KEEP = 10`）与 `:32`（`MAP_REVISION_EVERY = 10`），**不在 `map-db.ts`**（见 §7.1） | 长期维护（不归档） |
+| **T06** | `spec/map-db-spec.md` §9 四条（改） | `spec` | P1 | T01 | ①四条各补 **结论 / 归属 / 触发条件**，`grep -n "开放"` 命中处必须同行有触发条件；②保留策略常量核对 `electron/map/map-utils.ts:23`（`MAP_REVISION_KEEP = 10`）与 `:32`（`MAP_REVISION_EVERY = 10`），**不在 `map-db.ts`**（见 §7.1） | 长期维护（不归档） |
 | **T07** | `spec/map-export-spec.md`（新建） | `spec` | P1 | T05（软） | ①六项（DPR / 目标尺寸 / 分块上限 / 透明底 / 格式范围 SVG·PDF / 命名规则 / 超大图失败）各给「现行为 + `export.ts:行号` + 规格口径」；②`grep -c "export.ts:"` ≥ 6；③差异表每条有处置（改代码 / 按现行为定稿 / 归后续批）；④README spec 表新增行 | 长期维护（不归档） |
 | **T08** | `spec/map-perf-spec.md`（新建） | `spec` | P1 | T01 | ①v1 三项指标（2000+ 元素 / 60fps / 首屏 <2s）各给「样本 + 方法 + 通过线 + 当前值或待测 + 脚本名」；②每个「待测」同行出现脚本名，无裸「待测」；③明写「本批不实测，不阻塞功能批」 | 长期维护（不归档） |
 
@@ -165,7 +165,7 @@ graph TD
 |---|---|---|---|
 | **T07 导出规格 · 现行为核对** | `src/windows/MapWindow/pages/MapEditorPage/export.ts`（**216 行**；`tilePlan:59` / `exportMapPng:142` / `savePng:204`，已核）+ 导出触发入口 | 六项**每项**都有 `export.ts:行号` + 现行为 + 规格口径；不一致处全进差异表且每条有处置；无「按经验 / 约定俗成」表述 | 退回 T07 执行者补行号；若代码里**根本没有**对应常量（规格凭空造）→ 升 team-lead 定「改代码 or 降级为纯文档」，**代码改动不在本批** |
 | **T08 性能口径可落地性** | `archive/prd-map/map-v1-prd.md` + `map-v1-architecture-research.md`（指标出处）、`src/windows/MapWindow/` 现有测试与工具链 | 三项各给「样本 + 方法 + 通过线 + 当前值/待测 + 脚本名」；「待测」必带脚本名且不与既有 `scripts/*.mjs` 重名；明写「本批不实测」 | 退回 T08 执行者；若指标本身已因 `map2` 重构失效 → 标「作废 + 替代指标」，由 team-lead 裁决替换 |
-| **T06 map.db 四条一致性** | `electron/map-utils.ts`（`MAP_REVISION_KEEP:23` / `MAP_REVISION_EVERY:32` / `shouldSnapshotRevision:74` / `revisionsToDrop:139`）、`electron/map-db.ts`（`map_assets` DDL:99 / 索引:109）、`electron/handlers/map-handlers.ts:169-181`（快照追加与裁剪）、`electron/map-db-guard.test.ts` | 四条结论里的表名 / 常量名 / 函数名**逐个 grep 命中**；「已建未用」「钩子未接」有代码证据；每条触发条件可判定 | 退回 T06 执行者（事实核对失败，非产品问题）；若与 `map-db-guard.test.ts` 不变量冲突 → 退 team-lead，先改 spec 再谈测试 |
+| **T06 map.db 四条一致性** | `electron/map/map-utils.ts`（`MAP_REVISION_KEEP:23` / `MAP_REVISION_EVERY:32` / `shouldSnapshotRevision:74` / `revisionsToDrop:139`）、`electron/map/map-db.ts`（`map_assets` DDL:99 / 索引:109）、`electron/handlers/map/map-handlers.ts:169-181`（快照追加与裁剪）、`electron/map/map-db-guard.test.ts` | 四条结论里的表名 / 常量名 / 函数名**逐个 grep 命中**；「已建未用」「钩子未接」有代码证据；每条触发条件可判定 | 退回 T06 执行者（事实核对失败，非产品问题）；若与 `map-db-guard.test.ts` 不变量冲突 → 退 team-lead，先改 spec 再谈测试 |
 | **T12 验收阈值可测性** | `nested-submap-boundary.md` §2.2（`erase` 混合 + `AlphaFilter` 隔离）+ T07 命名规则 | 渐隐宽度给区间、色差给阈值；基线图命名引用 T07 行号而非自创 | 退回 T12 执行者 |
 | **T14 批次终检** | T14 五项判据 + §5.3.4 grep 输出 | 全绿且无「先绿后破」 | team-lead 会签；不过则整批不结 |
 
@@ -193,7 +193,7 @@ graph TD
 
 | # | 上游稿的写法 | 实测 | 处理 |
 |---|---|---|---|
-| 1 | 「核对 `MAP_REVISION_KEEP` / `MAP_REVISION_EVERY`，位置在 `electron/map-db.ts`」 | 常量在 **`electron/map-utils.ts:23/32`**（值均 10）；`map-db.ts` 只有建表与索引 | T06 判据改为指向 `map-utils.ts`，并补 `shouldSnapshotRevision:74` / `revisionsToDrop:139` 两个真实函数名 |
+| 1 | 「核对 `MAP_REVISION_KEEP` / `MAP_REVISION_EVERY`，位置在 `electron/map/map-db.ts`」 | 常量在 **`electron/map/map-utils.ts:23/32`**（值均 10）；`map-db.ts` 只有建表与索引 | T06 判据改为指向 `map-utils.ts`，并补 `shouldSnapshotRevision:74` / `revisionsToDrop:139` 两个真实函数名 |
 | 2 | 「仓库已有 **22 个** `electron/*-guard.test.ts`」 | 实际 **20 个**（`ls electron/ \| grep -c "guard.test.ts"`） | §0 X7 与本节改为 20 |
 | 3 | 「`prd-map-render/` 8 篇里 **3 篇**头部三行齐」 | 实际 **2 篇齐**（`map-window-overview.md`、`region-editing.md`）；上游把 `docs/spec/map-db-spec.md` 误算进该目录 | T03 判据按 8 篇全量补齐执行 |
 

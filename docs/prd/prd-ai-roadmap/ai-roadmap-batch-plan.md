@@ -77,16 +77,16 @@
 | — | 配置页「获取 Key」外链引导（2.8.1 补） | `shared/ai/ai-providers.ts` + `ai-open-key-page`（URL 只取受控常量表） |
 | — | Ollama 已下载模型自动列出（2.8.1 补） | `ai-ollama-models`（`/api/tags`）+ AISection `AutoComplete` |
 | — | 起名降级提示「去设置」直达（2.8.1 补） | `settings-section-jump` + `WINDOW_CREATORS` / `CROSS_EDITION_WINDOWS` |
-| **M1a** | `ai_event` 表（纯元数据白名单）+ `logAiEvent`（静默）+ 滚动清理（5000 条/90 天） | `electron/ai-db.ts` |
-| **M7** | `ai_log` 加 `prompt_version` 列 + `PROMPT_VERSIONS` / `promptVersionOf` | `electron/ai-db.ts` + `context/prompt/registry.ts` |
+| **M1a** | `ai_event` 表（纯元数据白名单）+ `logAiEvent`（静默）+ 滚动清理（5000 条/90 天） | `electron/ai/ai-db.ts` |
+| **M7** | `ai_log` 加 `prompt_version` 列 + `PROMPT_VERSIONS` / `promptVersionOf` | `electron/ai/ai-db.ts` + `context/prompt/registry.ts` |
 | **M8** | AI 可用性门控 hook（`useAiAvailability` + `deriveAvailability`；2.10.x 接进页面层六入口） | `src/shared/ai/hooks/useAiAvailability.ts` |
-| **M4** | 流式能力（`ai-stream` scheme 端点 + `aiGenerateStream` + 中断 + SSE 解析；2.10.x） | `electron/handlers/ai-stream.ts` + `src/shared/ai/ai-stream-parse.ts` |
+| **M4** | 流式能力（`ai-stream` scheme 端点 + `aiGenerateStream` + 中断 + SSE 解析；2.10.x） | `electron/handlers/ai/ai-stream.ts` + `src/shared/ai/ai-stream-parse.ts` |
 | **M1b** | 用量与效果看板 + 诊断包导出（`ai-event-log` / `ai-event-stats` / `ai-export-diagnostics`） | `SettingsWindow/components/UsagePanel/` + `ai-handlers.ts` |
 | **R-AI-06** | 文本变换工具箱（扩写/精简/改写/换语气/转视角，`runTransform` + `PolishPreview` 泛化） | `context/prompt/transform.ts` + `useNovelPage.ts` |
 | **R-AI-07** | 就地续写（2.9.2 非流式 2–3 候选；2.10.x 升级流式单段打字机 + 可中断） | `context/prompt/continuation.ts` + `useNovelPage.ts` |
 | **M5** | L3 授权（L1/L2/L3 分级 + `ai-estimate` token 估算 + `useAiConsent` + `AiConsentDialog`；`ai_config.l3_enabled`） | `src/shared/ai/ai-consent.ts` + `ai-estimate.ts` |
 | **M6** | AI 产出溯源（`source=ai` + 模型 + 时间戳 + 批次，`ai_summary_batch` 列） | `src/shared/ai/ai-provenance.ts` |
-| **R-AI-09** | 章节摘要（`novel_chapters` 四列 + `novel-chapter-summary-save` + `SummaryPreview`；2.10.2 补「一句话」回填大纲梗概，2.10.3 补续写复用上一章摘要） | `electron/novel-db.ts` + `context/prompt/summary.ts` + `context/prompt/continuation.ts` |
+| **R-AI-09** | 章节摘要（`novel_chapters` 四列 + `novel-chapter-summary-save` + `SummaryPreview`；2.10.2 补「一句话」回填大纲梗概，2.10.3 补续写复用上一章摘要） | `electron/novel/novel-db.ts` + `context/prompt/summary.ts` + `context/prompt/continuation.ts` |
 | **R-AI-10a** | 一致性校对·纯本地版（人名/别名近似 + 境界别名归并，分片扫描，点行跳正文；2.13.0） | `src/shared/novel/consistency.ts` + `useConsistencyStore` + `ConsistencyPanel` |
 | **R-AI-08** | 实体抽取 → 勾选建卡（`json-array` 契约 + 候选纯函数 + 批量单事务 IPC；2.13.0） | `context/prompt/extract.ts` + `utils/entity-extract.ts` + `ExtractPanel` + `novel-entity-batch-save` |
 | **R-AI-15** | 关系建议（从正文推断关系边 → 勾选 → 走既有 `novel-graph-commit` 单事务；2.14.0） | `context/prompt/relation.ts` + `shared/novel/relation-suggest.ts` + `useRelationSuggest` + `RelationSuggestDialog` |
@@ -229,7 +229,7 @@
 **完成判据**：续写逐字输出、可中断；中断后主进程连接释放（守卫断言）；端点 URL 不含 Key。✅
 
 **落地**：
-- 主进程新增 `electron/handlers/ai-stream.ts`：独立 `ai-stream://local/api/chat` scheme 流式端点，
+- 主进程新增 `electron/handlers/ai/ai-stream.ts`：独立 `ai-stream://local/api/chat` scheme 流式端点，
   `initiatorOrigin` 校验 + `net.fetch`（`stream: true`）原样桥接模型 SSE 流给渲染层；
 - 渲染层 `aiGenerateStream`（`ai-client.ts`）拿标准 `ReadableStream` 逐块读，`abort()` 经
   `AbortController` 联动释放主进程连接；

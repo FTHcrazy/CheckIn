@@ -10,7 +10,7 @@
  * 提供拆分入口。
  */
 
-import { HolderOutlined, PlusOutlined, ThunderboltOutlined } from "@ant-design/icons";
+import { HolderOutlined, PlusOutlined } from "@ant-design/icons";
 import { Button, Checkbox, Dropdown, Input, Tooltip } from "antd";
 import type { KeyboardEvent, ReactNode } from "react";
 import {
@@ -22,6 +22,8 @@ import { CSS } from "@dnd-kit/utilities";
 import type { SettingCategory, SettingLevel } from "@/shared/novel/setting-types";
 import { canSplitLevel, hasChildLevels, listSubLevels } from "@/shared/novel/setting-utils";
 import { lvlId, type LevelDraft } from "../../setting-center-shared";
+import SvgIcon from "@/shared/components/SvgIcon";
+import aiSvg from "@/assets/novel/ai.svg?raw";
 import "./index.scss";
 
 /**
@@ -151,7 +153,7 @@ export default function LevelSequence({
                 批量生成（逐行 / 模板）是它不可用时的本地兜底。 */}
             {onOpenAiGen && (
               <Button size="small" disabled={!active} onClick={onOpenAiGen}>
-                <ThunderboltOutlined />
+                <SvgIcon svg={aiSvg} />
                 AI 生成
               </Button>
             )}

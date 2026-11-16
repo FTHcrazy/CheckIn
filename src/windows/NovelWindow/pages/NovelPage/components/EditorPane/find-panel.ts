@@ -259,8 +259,7 @@ class FindPanel implements Panel {
     if (!this.selectionIsMatch()) {
       const { matches } = this.scan();
       if (!matches.length) return;
-      const current = this.currentIndex(matches);
-      this.jump(matches[current >= 0 ? current : this.nextIndex(matches)]);
+      this.jump(matches[this.activeIndex(matches)]);
     }
     replaceNext(this.view);
   }
@@ -307,8 +306,13 @@ class FindPanel implements Panel {
   /**
    * 光标所在的那一处命中；不在任何命中上返回 -1。
    *
-   * 三种都算「当前这一处」：选区正好选中它、光标落在它中间、选区头伸进它里面
-   * （从中间往回拖选）。判据用 head 而不是 from —— 反向选择时 from 在远端。
+   * 三种都算「当前这一处」：选区正好选中它、光标落在它中间、光标正好压在它的
+   * 头尾（敲完查询停在词首是最常见的一种）。判据用 head 而不是 from ——
+   * 反向选择时 from 在远端。
+   *
+   * 边界取闭区间：光标停在某处命中第一个字之前时，若判成「不在命中上」，
+   * 计数会把下一处报成「第 1 处」，而点「上一个」才回到这里 —— 用户看到的就是
+   * 「数字和跳转对不上」。
    */
   private currentIndex(matches: Match[]): number {
     const main = this.view.state.selection.main;
@@ -319,7 +323,7 @@ class FindPanel implements Panel {
       if (exact >= 0) return exact;
     }
     const head = main.head;
-    return matches.findIndex((match) => match.from < head && head < match.to);
+    return matches.findIndex((match) => match.from <= head && head <= match.to);
   }
 
   /** 光标之后的第一处（没有就回绕到第一处） */
@@ -329,13 +333,29 @@ class FindPanel implements Panel {
     return index >= 0 ? index : 0;
   }
 
-  /** 光标之前的最后一处（没有就回绕到最后一处） */
+  /** 光标之前的第一处（没有就回绕到最后一处） */
   private prevIndex(matches: Match[]): number {
-    const { from } = this.view.state.selection.main;
-    for (let index = matches.length - 1; index >= 0; index -= 1) {
-      if (matches[index].to <= from) return index;
+    const { head } = this.view.state.selection.main;
+    for (let i = matches.length - 1; i >= 0; i -= 1) {
+      if (matches[i].to <= head) return i;
     }
     return matches.length - 1;
+  }
+
+  /**
+   * 「当前这一处」的下标 —— 计数与跳转**必须共用这一个口径**。
+   *
+   * 光标压在命中上就是它本身；不在任何命中上（手点正文、刚打开面板、光标停在
+   * 两处之间）时报**会跳过去的那一处**（下一处）。
+   *
+   * ⚠️ 跳转不能各算一套：旧实现里计数按「光标不在命中上就算下一处」报位置，
+   * 跳转却按「光标在哪」取前后 —— 面板写着「1 / 95」时点下一条，目标正是
+   * 光标之后的第 1 处（屏幕上纹丝不动，数字也不变）；点上一条则退到光标前面
+   * 的那一处，而不是用户看到的「第 95 处」。
+   */
+  private activeIndex(matches: Match[]): number {
+    const current = this.currentIndex(matches);
+    return current >= 0 ? current : this.nextIndex(matches);
   }
 
   /**
@@ -345,23 +365,32 @@ class FindPanel implements Panel {
    * ① 它从**选区末尾**往后找，光标停在某处命中内部时找回来的就是这一处本身，
    *    点「下一个」屏幕完全不动（只能再点一次才走）；
    * ② 零长度命中（`^`、`a*`）下它算出的目标可能仍是当前光标，同样原地打转。
-   * 这里按命中表算下标，并保证目标与当前选区不同（见下方 same 循环）。
+   *
+   * 基准是 `activeIndex`（计数里报的那一处），不是「光标在哪」：
+   * 光标不在命中上时两者并不相同 —— 按光标算会让「1 / 95 → 下一条」回到第 1 处、
+   * 「1 / 95 → 上一条」退到光标前面那一处，用户看到的就是「点了没用 / 跳错了」。
    */
   private step(forward: boolean): void {
     if (!this.query.search || !this.query.valid) return;
     const { matches } = this.scan();
     if (!matches.length) return;
 
-    const current = this.currentIndex(matches);
     /** 环移一格（首尾相接：从最后一处再往后回到第一处） */
     const shift = (from: number): number =>
       (from + (forward ? 1 : -1) + matches.length) % matches.length;
-    let index: number;
-    if (current >= 0) index = shift(current);
-    else index = forward ? this.nextIndex(matches) : this.prevIndex(matches);
 
-    /* 目标正压在当前选区上 = 这一下按了等于没按（零长度命中、或选区恰好就是
-       目标时）。沿着同一方向再挪一格；命中只有一两处时挪到头也就停在那里。 */
+    /* 基准要分两种：光标压在某一处命中上 → 就它本身，再 ±1 走到相邻；
+       光标不在任何命中上（手点正文、停在两处之间）→ 直接落到「会跳过去的
+       那一处」，而不是再 ±1 —— 否则会把这一处整段跳过（跳着高亮、数字对不上）。
+       这里不能复用 `activeIndex`：它把「不在命中上」折算成了 nextIndex，
+       而 nextIndex 本身就是「下一个」该落的地方，再 ±1 就跳多了一格。 */
+    const current = this.currentIndex(matches);
+    let index = current >= 0
+      ? shift(current)
+      : (forward ? this.nextIndex(matches) : this.prevIndex(matches));
+
+    /* 目标正压在当前选区上 = 这一下按了等于没按（只有一处命中时会这样）。
+       沿着同一方向再挪一格；命中只有一两处时挪到头也就停在那里。 */
     const { main } = this.view.state.selection;
     const same = (match: Match): boolean =>
       match.from === main.from && match.to === main.to;
@@ -390,7 +419,36 @@ class FindPanel implements Panel {
       regexp: this.query.regexp,
     });
     // 值没变就别派发：每敲一个同值字符都重建查询会把整章高亮重算一遍
-    if (!next.eq(this.query)) this.dispatch(next);
+    if (!next.eq(this.query)) {
+      this.dispatch(next);
+      this.reveal();
+    }
+  }
+
+  /**
+   * 敲完查询就把「计数里报的那一处」选中（VS Code / Typora 同款）。
+   *
+   * ⚠️ 这条是「点下一个跳不动」的正面解：面板原本只报「1 / 32」却**什么都没选**，
+   * 于是第一下「下一个」只能从「预测的第一处」往后挪一格 —— 屏幕上没有可对照的
+   * 起点，跳了也像没跳；而「上一个」退回去的那一处又和数字对不上。
+   * 输入即选中之后，计数说第几就是真的第几，前后步进严格一条一条走。
+   *
+   * 落点用**选区起点**（不是终点）作为锚：继续打字时查询变长、原先那一处可能
+   * 不再命中，锚不动就能顺理成章落到新的第一处，而不是越打越往后飘。
+   */
+  private reveal(): void {
+    if (!this.query.search || !this.query.valid) return;
+    const { matches } = this.scan();
+    if (!matches.length) return;
+
+    const { from } = this.view.state.selection.main;
+    const index = matches.findIndex((match) => match.from >= from);
+    const target = matches[index >= 0 ? index : 0];
+
+    // 已经选中这一处就别再派发：反复 dispatch 会把整章高亮与滚动一起重算
+    const { main } = this.view.state.selection;
+    if (main.from === target.from && main.to === target.to) return;
+    this.jump(target);
   }
 
   private toggleOption(option: SearchOption): void {
@@ -463,9 +521,7 @@ class FindPanel implements Panel {
     }
 
     const totalText = truncated ? `${MAX_SCAN}+` : String(matches.length);
-    const current = this.currentIndex(matches);
-    const index = current >= 0 ? current : this.nextIndex(matches);
-    label.textContent = `${index + 1} / ${totalText}`;
+    label.textContent = `${this.activeIndex(matches) + 1} / ${totalText}`;
   }
 }
 
@@ -501,6 +557,9 @@ function panelCover(): number {
   return height > 0 ? height + 20 : 0;
 }
 
+/** 命中与可见带上下沿之间留的呼吸量（px） */
+const SCROLL_PAD = 24;
+
 /**
  * 跳转落点：把命中放进「卡片下沿 ~ 视口下沿」这条可见带里。
  *
@@ -508,33 +567,62 @@ function panelCover(): number {
  * ① 它是「最小滚动」，命中只要在视口矩形内就不动 —— 可视口顶上那一条被卡片
  *    盖着，命中正好落在卡片底下时**一像素都不滚**，用户看到的就是「点了没反应」；
  * ② 我们真正的滚动容器是祖先 `.nv-editor__scroll`，它靠 `scrollRectIntoView`
- *    逐级向上找可滚动祖先，落点还要再经一遍 `scrollMargins` 的放大rect换算，
+ *    逐级向上找可滚动祖先，落点还要再经一遍 `scrollMargins` 的放大 rect 换算，
  *    隔着两层推算，行为不好预测也不好守。
- * 这里直接量几何：命中已在可见带里就一像素不动（保留「最小滚动」的手感），
- * 否则把它顶到卡片下沿 / 视口下沿。返回 true 表示已处理，CodeMirror 不再插手。
+ * 这里直接量几何，命中已在可见带里就一像素不动（保留「最小滚动」的手感）。
+ *
+ * ⚠️ 量几何**必须放到 requestMeasure 的读相位**：scrollHandler 是在
+ * `EditorView.measure` 的写相位里被调的（updateState = Updating），此时
+ * `view.coordsAtPos` 直接抛「Reading the editor layout isn't allowed during an
+ * update」。异常被 CodeMirror 的 try/catch 吞掉（只在控制台留一句 `scroll
+ * handler:`），随后回落默认实现 —— 也就是说：**平写「就地量、就地滚」的版本
+ * 每次跳转都在抛、这段落点逻辑从未真正生效过**（2.55.x 实测：连点 30 次
+ * 下一个 = 30 条异常）。读相位量、写相位滚，才是 CodeMirror 允许的顺序。
  */
 export const findPanelScroll = EditorView.scrollHandler.of((view, range) => {
   if (!livePanel) return false;
   const scroller = view.scrollDOM.closest<HTMLElement>(".nv-editor__scroll");
   if (!scroller) return false;
 
-  // 没渲染出来的位置量不到坐标（长章虚拟滚动），交回默认实现
-  const head = view.coordsAtPos(range.from);
-  const tail = range.to > range.from ? view.coordsAtPos(range.to) : head;
-  if (!head || !tail) return false;
-
-  const box = scroller.getBoundingClientRect();
-  const visibleTop = box.top + panelCover();
-  const visibleBottom = box.top + scroller.clientHeight - 12;
-
-  // 已经在可见带里：不动（与成熟编辑器的「就近滚动」一致）
-  if (head.top >= visibleTop && tail.bottom <= visibleBottom) return true;
-
-  scroller.scrollTop += head.top < visibleTop
-    ? head.top - visibleTop
-    : tail.bottom - visibleBottom;
+  view.requestMeasure<ScrollGeometry | null>({
+    read() {
+      // 没渲染出来的位置量不到坐标（长章虚拟滚动），这次放弃、由下一帧重算
+      const head = view.coordsAtPos(range.from);
+      const tail = range.to > range.from ? view.coordsAtPos(range.to) : head;
+      if (!head || !tail) return null;
+      const box = scroller.getBoundingClientRect();
+      return {
+        headTop: head.top,
+        tailBottom: tail.bottom,
+        boxTop: box.top,
+        viewHeight: scroller.clientHeight,
+        cover: panelCover(),
+      };
+    },
+    write(geometry) {
+      if (!geometry) return;
+      const visibleTop = geometry.boxTop + geometry.cover + SCROLL_PAD;
+      const visibleBottom = geometry.boxTop + geometry.viewHeight - SCROLL_PAD;
+      // 已经在可见带里：不动（与成熟编辑器的「就近滚动」一致）
+      if (geometry.headTop >= visibleTop && geometry.tailBottom <= visibleBottom) return;
+      scroller.scrollTop +=
+        geometry.headTop < visibleTop
+          ? geometry.headTop - visibleTop
+          : geometry.tailBottom - visibleBottom;
+    },
+  });
   return true;
 });
+
+/** 读相位量到的几何（写相位据此算滚动量） */
+interface ScrollGeometry {
+  headTop: number;
+  tailBottom: number;
+  boxTop: number;
+  viewHeight: number;
+  /** 浮层盖住的顶部高度（卡片 + 留白） */
+  cover: number;
+}
 
 /**
  * 打开查找面板（`replace` 决定替换行是否展开）。

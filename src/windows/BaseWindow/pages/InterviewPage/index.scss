@@ -1,0 +1,28 @@
+// 前端面试题页：顶部搜索区 + 左侧分类栏 + 右侧筛选与列表，整页不滚动（内部各自滚）
+.interview-page {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+  // 与其它子页面统一的页边距（页内导航条已上移到窗口标题栏）
+  padding: 12px 16px 16px;
+  background: var(--app-bg);
+  overflow: hidden;
+
+  &__body {
+    display: flex;
+    gap: 12px;
+    flex: 1;
+    min-height: 0;
+  }
+
+  &__main {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+  }
+}

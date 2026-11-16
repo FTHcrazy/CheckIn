@@ -1,8 +1,8 @@
 # 地图窗口 · 模块总览（唯一入口）
 
 > 状态：**维护中**（每次地图功能落地、闭环或改期后更新本文件）
-> 基线：CheckIn **2.48.0**（工作区）｜`src/windows/MapWindow/`｜**地图窗 50 文件 / 862 用例**（2026-11-09 校核，vitest 目录级；1 条双击时序用例在并发下偶发，单跑全绿）
-> 输入：本模块现存 12 篇 + 已归档 7 个文件（6 篇 md + 1 个 `.ts` 参考实现，逐项见 §4.3）、`CHANGELOG.md` 2.18.0~2.48.0、代码实测
+> 基线：CheckIn **2.52.0**（工作区）｜`src/windows/MapWindow/`｜**地图窗 52 文件 / 904 用例**（2026-11-10 校核，vitest 目录级）
+> 输入：本模块现存 12 篇 + 已归档 7 个文件（6 篇 md + 1 个 `.ts` 参考实现，逐项见 §4.3）、`CHANGELOG.md` 2.18.0~2.52.0、代码实测
 > 职责：**只此一份呈现全貌** —— 整体进度、已完成、未完成、文档去向、仍缺什么。
 > 冲突时的优先级：**状态与去向看本文**；观感执行序看
 > [`review/map-vs-reference-render-analysis.md` §9](../../review/map-vs-reference-render-analysis.md#9-执行总表交接用)；
@@ -14,9 +14,28 @@
 
 1. **渲染与编辑内核已经成型**：与逆向目标（易制地图）的差距从「渲染参数」转到「内容的组织方式」——
    2026-11 之后的所有工作都是在补**对象、素材、图层、折线**，而不是再调海岸颜色。
-2. **14 个能力域：13 个已闭环、1 个部分落地**（素材体系 #9）；另有 **2 类能力尚未动工**
-   （文字排版增强、搜索/要素绑定），见 §3.1。
-3. **最近一批（2.48.0 区块重叠 + 道路比例）**：用户指令「优化国家区域分块逻辑，当前多个国家
+2. **14 个能力域已全部闭环**（素材体系 #9 于 2.49.0 补齐，见 §3.1）；另有 **2 类能力尚未动工**
+   （文字排版增强、搜索/要素绑定）。
+3. **最近一批（2.50.0 国家生成照抄逆向目标）**：用户指令「12 国的疆域像**区域块划分**，
+   逆向目标的国名与疆域都很和谐；篇幅应该偏长方形；去掉头部「生成区块」，并进一键成图
+   的「生成国家」（上限 12），另留一个"选中某国再细分"的入口；**直接参考逆向目标生成
+   国家区域与展示国名的算法**」——
+   **国家生成换算法**（新增 `domain/countries.ts`：道路簇 → 反复合并到目标数 → 每簇凸包
+   → 六边形格种子 → 陆地"先到先得"生长 → 沿格边追轮廓 → Chaikin；**边界不是"分界线画在
+   哪"而是"生长停在哪"**，面积由簇大小决定，实测最大/最小 4.4~6.4 倍；格集合互斥 ⇒ 国
+   与国结构上不可能重叠）；**国名照抄 `ctrls.rand_text`**（146 项古国名前缀池 + 后缀「国」、
+   同图去重、重抽 20 次；新增 `domain/countryNames.ts`）；**画布改 1.413:1**
+   （`BASE_IMAGE` 1024² → 1447×1024，对齐参考 `page_size 1587×1123`，起手缩放 80% → 57%）；
+   **国名字号改三档判据**（块宽 > 纸宽 63.5% → 100、< 28.2% → 30、其余 56；字距 0.22 → 0，
+   加 `dropShadow`）；「生成区块」按钮删除、「国家分区」占位禁用。
+   守卫：`countries.test.ts`（新增 18 条）、`countryNames.test.ts`（新增 8 条）、
+   `regionNameLayer.test.ts`（6 → 11 条）。
+   上一批（2.49.0 素材池扩充 P1-5）：用户指令「落地 P1-5 素材池扩充，注意风格需要对齐」——
+   新增 10 张 AI 素材（湿地/丛林 5 + 雪原 5，同一 `styleTemplate`），把两条验收线补齐：
+   沼泽档 `swamp ∪ jungle` **7 → 13**、雪原档 `zones ∋ snow` **7 → 12**、纯雪题材 **5 → 10**；
+   顺带修掉"雪带森林回退去借温带绿林"与"冻沼永远轮不到"两个真 bug；两档下限已固化成守卫
+   （`terrain-assets.test.ts` +5）。实测：雪锁图 `snowfield` 种数 **6 → 11**、单张最高重复 20~27 → 13~17。
+   上一批（2.48.0 区块重叠 + 道路比例）：用户指令「优化国家区域分块逻辑，当前多个国家
    区域分块交接的地方会重叠；道路比例跟素材不一致，缩小看全是线条，放大看也是很粗，
    麻烦对齐逆向目标的区域分块跟路线生成逻辑」——
    **区块交接重叠**（`regions.ts` 的 `clipHalfPlanePieces` 重写：内部区间改判"相邻交点中点
@@ -96,15 +115,15 @@
 | # | 能力域 | 状态 | 版本 | 代码落点（`MapEditorPage/` 内） | 需求/设计文档 |
 |---|--------|------|------|------------------------------|--------------|
 | 1 | **窗口与主题**：独立 `map` 窗口、入口登记（full 8 个入口含 map、novel 7 个含 map、**lite 不含**）、主题变量复用 | ✅ | 2.18.0 前 | `MapWindow/{App,main}.tsx`、`index.scss`、`electron/edition.ts` | 无专文（受 `AGENTS.md` §6 与主题 token 约束，**不算缺口**） |
-| 2 | **数据持久化 `map.db`**：独立库、`doc_json` 整存、`rev` 乐观锁、800ms 防抖保存、关窗 flush、回收站 | ✅ | 2.20.0 | `electron/map-db.ts`、`map-handlers.ts`、`persistence/` | [`spec/map-db-spec.md`](../../spec/map-db-spec.md) |
+| 2 | **数据持久化 `map.db`**：独立库、`doc_json` 整存、`rev` 乐观锁、800ms 防抖保存、关窗 flush、回收站 | ✅ | 2.20.0 | `electron/map/map-db.ts`、`map-handlers.ts`、`persistence/` | [`spec/map-db-spec.md`](../../spec/map-db-spec.md) |
 | 3 | **多图库与作品绑定**：缩略图列表、改名、回收站、绑定/解绑作品 | ✅ | 2.20.0 | `components/MapLibraryModal/`、`store/useMapFileStore.ts` | 同上（§8 记录了「首屏不做列表态」两处形态偏差） |
 | 4 | **画布内核**：坐标单一事实源、无级缩放（0.1~8；⚠️ 2.42.0 起 LOD 交叉淡化随层级下线自动退化为恒 1，缩放本身保留）、视口剔除、滚轮步长自适应 | ✅ | 2.17.x | `coords.ts`、`lod.ts`、`cull.ts` | `archive/prd-map/map-render-alignment-architecture.md` §1.2/§4 |
 | 5 | **陆地与海岸质感**：四层 fbm 有机轮廓、烘焙三件套（浅滩/等深线/内阴影）、海面暗角、程序纸纹、纹理平铺+羽化、海岸内缩 | ✅ | 2.18.0 / 2.27.0 / 2.28.0 | `land.ts`、`coastBake.ts`、`paperGrain.ts`、`style.ts` | [`review/map-vs-reference-render-analysis.md`](../../review/map-vs-reference-render-analysis.md) §6/§9 |
-| 6 | **区块生成与层级**：陆地内切分（非叠放）；⚠️ 2.42.0 起**层级下线，只留国家一级**（引擎 `generateHierarchy` 仍支持显式 `levelCounts` 供测试与嵌套子图） | ✅ | 2.18.0 / 2.42.0 | `regions.ts`、`domain/generator.ts` | `archive/prd-map/map-render-alignment-prd.md` §6.1~6.2 |
+| 6 | **国家生成**：⚠️ 2.42.0 起**层级下线，只留国家一级**；**2.50.0 换算法** —— 道路簇 → 合并到目标数 → 每簇凸包 → 六边形格种子 → 陆地「先到先得」生长 → 沿格边追轮廓 → Chaikin（照抄逆向目标；边界 = "生长停在哪"，面积天然悬殊 4.4~6.4 倍，格集合互斥 ⇒ 不重叠）；国名照抄 `ctrls.rand_text`（古国名前缀池 + 「国」、同图去重、重抽 20 次）；工具栏「生成区块」按钮移除，改由一键成图产出（引擎 `generateHierarchy` 仍支持显式 `levelCounts` 供测试与嵌套子图） | ✅ | 2.18.0 / 2.42.0 / **2.50.0** | `regions.ts`、`domain/countries.ts`、`domain/countryNames.ts`、`components/MapCanvas/regionNameLayer.ts` | [`review/map-vs-reference-render-analysis.md`](../../review/map-vs-reference-render-analysis.md) §9.1 ALGN-11 |
 | 7 | **区域编辑**：层级定义 `regionSchema`（⚠️ 2.42.0 起单级、配置面板已删除）、手画多边形、子区域合并、叶子/容器双态高亮、面包屑 | ✅（P0） | 2.19.0 / 2.42.0 | `regionEdit.ts`、`RegionPanel`、`useMapDocStore` | [`region-editing.md`](region-editing.md)；架构已归档 |
 | 8 | **嵌套子图**：`MapSubmap` 递归数据模型、递归场景图 + 裁剪、路径 A（贴合）/ A′（跨图拷贝绑定）/ B（圈定生成）、子图渐入与内部 LOD、子图海岸/素材/地名、边界羽化带 | ✅（子图内编辑除外，归 R-REG-10） | 2.18.0 / 2.32.0 | `types.ts`、`submapRender.ts`、`submapBind.ts`、`SubmapPickerModal/`、`MapCanvas/index.tsx` | [`nested-submap-main.md`](nested-submap-main.md) |
-| 9 | **素材体系**：52 张 AI 素材 / 9 展示分类 / 20 地形枚举 / 地貌带（`core` + 雪·草原·荒漠三带）、选材引擎（三级回退）、属性面板、地名联动 | ◐ | 2.22.0 / 2.25.0~2.26.0 | `sprites.ts`、`domain/{terrain,terrain-assets,zones}.ts`、`SpritePanel`、`ElementPanel` | [`map-asset-system-architecture.md`](map-asset-system-architecture.md) |
-| 10 | **一键成图生成器**：**随机地形配方**（2.45.0：按 seed 抽，家族层随机，三档固定预设已删）、丰度三档（⚠️ 2.42.0 起语义 = **格网边长** 72/54/36，对齐参考 `grid_size`）、成图/骨架、五档重掷、结果摘要、底图选择、配额表 + 格网/丛簇布点（2.42.0 对齐逆向源值：弃格、3 层、森林丛簇）；**面板对齐参考目标**（要素大小 / 生成内容 / 山体 / 河流，2.40.0）；**地名按层级分档**（2.46.0：城 16 / 镇·地标 12 / 村 10，名额按档分配）；**道路主次分级**（2.47.0 起按两端层级定档；**2.48.0 改口径**：三档统一点线，只靠 2.4 / 2.0 / 1.6 世界线宽分主次，对齐参考 `size:2`） | ✅ | 2.25.0（面板 2.40.0 / 引擎 2.42.0 / 配方 2.45.0 / 地名 2.46.0 / 道路分级 2.47.0 / 比例 2.48.0） | `domain/{generator,mapRecipe,settlements,roads}.ts`、`MapGeneratorModal` | [`review/map-vs-reference-interaction-review.md`](../../review/map-vs-reference-interaction-review.md) §5.3 |
+| 9 | **素材体系**：**62 张** AI 素材（2.49.0 扩容 10 张）/ 9 展示分类 / 20 地形枚举 / 地貌带（`core` + 雪·草原·荒漠三带）、选材引擎（三级回退）、属性面板、地名联动 | ✅ | 2.22.0 / 2.25.0~2.26.0 / 池子 2.49.0 | `sprites.ts`、`domain/{terrain,terrain-assets,zones}.ts`、`SpritePanel`、`ElementPanel` | [`map-asset-system-architecture.md`](map-asset-system-architecture.md) |
+| 10 | **一键成图生成器**：**随机地形配方**（2.45.0：按 seed 抽，家族层随机，三档固定预设已删）、丰度三档（⚠️ 2.42.0 起语义 = **格网边长** 72/54/36，对齐参考 `grid_size`）、成图/骨架、五档重掷、结果摘要、底图选择、配额表 + 格网/丛簇布点（2.42.0 对齐逆向源值：弃格、3 层、森林丛簇）；**面板对齐参考目标**（要素大小 / 生成内容 / 山体 / 河流，2.40.0）；**地名按层级分档**（2.46.0：城 16 / 镇·地标 12 / 村 10，名额按档分配）；**道路主次分级**（2.47.0 起按两端层级定档；**2.48.0 改口径**：三档统一点线，只靠 2.4 / 2.0 / 1.6 世界线宽分主次，对齐参考 `size:2`）；**「生成国家」+ 国家数量 2~12**（2.50.0：分区并入一键成图、默认开启，路网骨架即国家簇的输入） | ✅ | 2.25.0（面板 2.40.0 / 引擎 2.42.0 / 配方 2.45.0 / 地名 2.46.0 / 道路分级 2.47.0 / 比例 2.48.0 / 国家 2.50.0） | `domain/{generator,mapRecipe,settlements,roads,countries,countryNames}.ts`、`MapGeneratorModal` | [`review/map-vs-reference-interaction-review.md`](../../review/map-vs-reference-interaction-review.md) §5.3 |
 | 11 | **对象编辑**：选中态、拖拽/缩放/旋转/透明度/色相、层级与置顶置底、剪贴板（C/X/V/D）、方向键与 WASD 微移、撤销重做 | ✅ | 2.21.0 | `hooks/useMapEditor.ts`、`store/useMapDocStore.ts`、`ElementPanel` | 同上（B1） |
 | 12 | **文字标注**：屏幕恒定字号、层级权重联动、三档字号、宋体字族、白描边 | ✅（基础） | 2.18.0 | `labelSync.ts` | `archive/prd-map/map-render-alignment-prd.md` §6.3 |
 | 13 | **导出**：PNG 分块导出（`tilePlan` → `exportMapPng` → `savePng`），可选尺寸 | ✅ | 2.18.0 | `export.ts` | 同上 §6.6（**规格不足**，见 §5.1 第 2 条） |
@@ -138,6 +157,11 @@
 | **2.35.0** | **观感批次 C · 镜像翻转破重复（P1-4）**：`MapElement.flipX`（可选 + 读点兜底 `elementFlipXOf`，旧档回落 false）、`flippable` 登记表（缺省可翻，7 张有朝向人造物不可翻）、一键成图按素材子流 50% 随机翻面 + **确定性去重**（同 spriteId 的 flip/量化scale/量化rotation 组合全图至多一次，撞车翻反 flip 或重掷角度）、渲染 `scale.x = |scale.x| × ±1`（主图素材层 + 子图素材同款） | ① **锚点 (0.5,1) 水平居中 ⇒ 翻转不位移**：设计预案里"按 baseWidth 反算锚点 / 命中反算 x"是空操作，命中区与选中框天然一致。② **pixi 8 的 `_setWidth` 保留 scale.x 符号**：翻面符号必须每次同步显式重设，不能增量取反（否则撤销后翻不回去）。③ **`map.db` 无需表结构迁移**：`doc_json` 整存，可选字段即向后兼容。④ **验收是结构性不是统计性**：QA 60 seeds 扫描证明翻转只砍半期望（稀池档量化抖动自身碰撞），确定性去重补上后 20 seeds × 全预设 × dense 恒 0 |
 | **2.36.0** | **观感批次 D 收口**：序 5 区块按层级**静态衰减**（新 `REGION_LEVEL_FILL_SCALE = [1, 0.75, 0.58, 0.45]`，填充/边界共用同一张表，主图 + 子图四处落点全走 `regionFillAlphaOf` / `regionBorderAlphaOf`）；序 6 **手工落位 AABB 避让**（`isCenterCovered`：新素材中心落进已有素材命中盒 +30 呼吸边 → 拒绝落位并提示，待放态保持） | ① **静态系数表与 `levelAlphas` 正交**：那是缩放驱动的 LOD 权重（已写进容器 alpha），乘上去双重衰减 —— 设计文档原方案被勘误否决，实现走"新常量表"路线。② **拦截只作用于新建落位**：`moveElementBy` 不设防 —— 拦拖拽 = 压住的素材永远无法拖开解围；守卫用例同时钉"中心被压拦 / 移动不拦"。③ 只开 1 级时系数恒 1，观感与旧版一致；越界 level 朝"不衰减"兜底。至此执行序 1~6 全部闭环，观感修补三件完成 |
 
+| **2.52.0** | **边界线宽与描边几何对齐逆向（ALGN-14）**：主图国界由「屏幕恒定 1px `#4d3200`」改**世界恒定 3 单位 `#73562d` α1**（参考国家图章 `border_size:3`，2.43.0 误取了地形陆稿的 `paint_shadow.stroke:1`）；补抄参考 `Ma(p,1.2)` RDP 为 `simplifyClosedRing`，但上屏描边用**有界环形低通** `lowpassRing`（参考 RDP 输入是曲线栅格化、我们是格边台阶，直接抽稀会成生硬折角）——轴向直段 12,162→88、偏离 0.87<1.5 线宽半径、点数守恒；删共享边去重与跳线判据（参考每国整圈各描一遍、环已是简单环）。另完成**开源大陆生成调研**：FMG 动作序列 / mewo2 primitives / Land Anchor 的共同点是「用减法切出深湾海峡」；实测 12 档圆形度 0.21~0.32（碎齿达标）但凸包填充率 0.80~0.88（缺大尺度凹结构），本轮不改生成逻辑，结论与最小切口入评审文档 |
+| **2.51.0** | **湖面/国界/陆地/国名四项观感修正（ALGN-13）**：湖面改河流同色 `#2f6f7d` + 两道不闭合波浪弧（`lake-wave`，等深线环退役给老文档）；国界像素轮廓追加过点插值圆化（放大矩形台阶 → 有机微波动，共享段两侧逐点重合零缝隙）；随机陆地档按岛数加权去土豆化（单岛 0.55~多岛 2.2；参考大陆生成是服务端 AI、本地无算法可抄）；国名投影不透明黑 α1 + 字体栈首推隶书 |
+| **2.50.1** | **国界观感修正（ALGN-12）**：平滑层 Chaikin（切角，实测 18.2px 等长直段 + 三国交界三角缝隙）→ 照抄参考算法模块的**过点插值曲线**（`GetCurvePolygonCtrlPoint` + `bezierCurveLinearFun` + `gb=2` 采样，过顶点 ⇒ 共享顶点钉住）＋ 补抄参考最后一步**栅格化收尾**（平滑环 → ∩ 陆地掩膜 → 后画切齐先画 → 像素重追轮廓 → 孤儿洪泛，纯 TS 确定性，边界逐点共享像素边 ⇒ 缝隙/叠色结构上不存在，直段 p50=1px）；湖泊间距改欧氏世界距离 ≥ 最大半径和 ×1.35（旧曼哈顿格距 ≥2 放得下对角两湖 ⇒ 三湖挤成花瓣）；湖面配色对齐海面（`#a9c3c6/0.62`） |
+| **2.50.0** | **国家生成照抄逆向目标（ALGN-11）**：新增 `domain/countries.ts`（道路簇 → 合并到目标数 → 每簇凸包 → 六边形格种子 → 陆地「先到先得」生长 → 沿格边追轮廓 → Chaikin）与 `domain/countryNames.ts`（`ctrls.rand_text`：146 项古国名前缀池 + 「国」、同图去重、重抽 20 次）；「生成国家」并入一键成图并默认开启、数量 2~12；`BASE_IMAGE` 1024² → **1447×1024**（对齐 `page_size 1587×1123`）；国名改**三档宽度判据**（100 / 56 / 30）+ 字距 0 + `dropShadow`；工具栏「生成区块」删除、「国家分区」占位禁用 | ① **旧算法必然出"行政区划图"**：先切 Voronoi 再逐块崎岖化，国与国共享同一条分界线、面积必然相近。参考的做法是"先有路网簇，再让簇各自向外生长"——边界 = 生长停在哪，面积天然悬殊（实测 4.4~6.4 倍）。② **按"离簇中心更近"消解凸包重叠 = 对簇中心又做了一次 Voronoi**：12 国全成绕中心的圆团；正解是允许凸包重叠、冲突交给先到先得。③ **凸包重叠不在格集合层面**：先到先得占格 ⇒ 格互斥 ⇒ 国与国**结构上不可能重叠**，2.48.0 修的 7% 叠色带在这条路径里不存在。④ **字号判的从来是"这行字放不放得下"**：参考用块**宽**与 `字数×字号×4.5` 比，不是 √面积；宽而扁的沿海国按面积算会溢出。⑤ **长方形底图下"四周留白"不再是同一个数**：`fitScaleFor` 取 `min(宽比, 高比)`，横向一成、纵向两成，旧的单 `MARGIN` 常量断言会拿纵向的 222 去要求横向的 102 |
+| **2.49.0** | **素材池扩充（P1-5）**：新增 10 张 AI 素材 —— 湿地/丛林 `swamp-mire` / `swamp-fen` / `swamp-mangrove` / `jungle-canopy` / `jungle-vine`，雪原 `snow-drift` / `snow-glacier` / `snow-forest` / `snow-scree` / `frozen-marsh`（62 张符号）；沼泽档 7 → **13**、雪原档 7 → **12**、纯雪题材 5 → **10**；`terrain-assets.test.ts` 新增「素材池下限」守卫 5 条 | ① **素材数量是数字问题，别写进文档靠记**：§9.5 记过一次"雪原池只有 2 张"（实测 7 张），这次直接把两档下限写成守卫 + 变异探针。② **只标 `core` 的素材等于没有分带**：2.49.0 之前沼泽档 7 张里 6 张是 core，任何气候都在借用；新湿地 5 张全标 `grass` 后草带沼泽池刚够成一族，"分带"才对沼泽生效。③ **凑不成一族 = 永远轮不到**：`MIN_ZONE_POOL = 2`，冻沼若只挂 `swamp`，雪带只有它 1 张 ⇒ 三级顺序永远走不到它，必须挂到 `snowfield` 上。④ **别顺手把丛林挂成 `forest`**：一挂上草带森林池就从 1 张变 4 张，整片温带阔叶林被换成热带 —— 素材扩充要守住"只加素材、不改分带口径"。⑤ **「同屏同一素材 ≤2 次」不是池子能单独兑现的**：实例量 200~300、单格调色板固定 4 种，池子只决定单种重复次数的分母；真实收益是重复 20~27 → 13~17 |
 | **2.48.0** | **区块交接重叠修复 + 道路比例对齐**：`clipHalfPlanePieces` 重写（内部区间改判"交点中点是否在多边形内"、只连"离开 → 进入"、未闭合的环丢弃）→ level0 重叠率 4.70%~7.22% → **0.00%**；道路三档统一点线、线宽 6.0/3.4/1.8 → **2.4/2.0/1.6**、`dash [1,1.6]→[1,4]`（可见虚实比回到 4:6）、`EDGES_PER_NODE` 2→1（路数 61→47） | ① **重叠是几何错，不是渲染错**：旧实现把交点按沿线"奇偶位置"成对切分当作内部区间，深凹容器下配对写坏 → 环沿外圈绕过"离开"点、吞掉邻块一片地（还会把主块自己再登记一遍）。② **圆头虚线会吃掉一个线宽的间隔**：`[1,1.6]` 在 3.4 宽下可见间隔只剩 0.6 倍宽，"点线"读作粗实线 —— 缩到整图就是"全是线条"。③ **参考路网只有一种 `size:2` 点线**、每个聚落只连最近邻：分级只能落在"几个像素的粗细差"上，不能靠双线/粗点线拉开 |
 | **2.47.0** | **道路主次分级**（`ALGN-9`）：`roadGradeOf(a, b)` 按两端聚落层级定档 —— 城↔城 = `trunk`（`road-main` 双线 ×1.2）、城↔镇 / 镇↔镇 = `branch`（`road-dotted` ×1.7）、含村落 = `local`（`road-dotted` ×0.9）；等级写进已有的 `MapPolyline.widthScale`（不加样式档、不加字段，滑杆拖回 1 = 不分级） | ① **两档分不出主次**：2.45.0 只有"官道 / 点线"，城到镇与村到村一样重。② **判据不能带长度**：长度是"多远"、等级是"多重要"，混起来一条绕远的官道会被降成村道。③ **参考实现没有自动分级**（每条线一个绝对 `size`，`size_diff` 是多重并行绘制的逐段加宽）—— 这是产品化补充，取自 Azgaar routes / Wonderdraft 路刷的分级笔刷 |
 | **2.46.0** | **地名分级 + 聚落漏撒修复**：`assignPlacementNames` 改按层级分档（城 → 镇 → 其它点要素 → 村，各档独立名额；字号 16/12/10）；`SpritePlacement.tier` 带层级（`city-mid` 反查必然误判成城）；`settlementCountsOf` 改系数让大城 1~2 → 3~5 座；新增 `groundPool` 把 `SETTLEMENT_SPRITES` 剔除出地貌取料池（旧版每图漏撒 19~42 个城郭素材） | ① **"按布点顺序取前 12 个名字"= 村名吃光名额**：村落数量是城/镇的 5~10 倍，且城常因落位失败被跳过，实测 seed 26 只有 1 座大城有名。② **层级→素材是多对一**：`city-mid` 同时是城镇首选与大城链尾，靠 `spriteId` 反查会把镇读成城、套上 16px 字号。③ **`terrains` 是手动落位的筛选标签，不是生成器语义**：`city-major` 标着 `plain`，配方不再撒 `settlement` 之后它照样从 plain 通道漏进来，既破坏"聚落成网"又抢占点名名额 |
@@ -175,9 +199,11 @@
 
 ### 3.3 阻塞（缺外部输入，代码侧推不动）
 
+> `P1-5`（素材池扩充）原列在此表，**已于 2.49.0 解除**（改由 AI 出图 + 同一 `styleTemplate` 补齐，
+> 不再等美术排期），达成数字见 §3.1 能力表 #9 与 `review/map-vs-reference-render-analysis.md` §9.2。
+
 | 事项 | 阻塞点 | 现状数字 |
 |------|--------|----------|
-| **素材池扩充（P1-5）** | 需美术出图 | 沼泽档 7 种、雪原档 7 种，均低于验收线 ≥12；目标「同屏同一素材 ≤2 次」达不到（口径：沼泽档 = `terrains` 的 `swamp` + `jungle`；雪原档 = `zones` 含 `snow`；见 render-analysis §9.2 · P1-5） |
 | **自动生成分组 folder（P2-4）** | 原阻塞点「依赖图层面板」已于 2.29.0 解除；**产品已裁定不立项**（2026-11-06，见 [`R-MAP-DOC-legacy-disposition-scope.md`](R-MAP-DOC-legacy-disposition-scope.md) §B1；重新开案条件：素材 ≥120 张，或用户明确反馈「分类不够用」并能举出具体场景） | 一键成图产物与手绘元素仍混在同一层，但已可整层显隐（"把素材层关掉看地形"已能做到） |
 
 ### 3.4 无主遗留（v1 PRD 未实现，且没有任何现行文档承接）
@@ -226,7 +252,7 @@
 | [nested-submap-road.md](nested-submap-road.md) | 方案专篇 | 待评审（未实现） | ◐ 折线部分**已并入 B4 PRD**，本文只留道路算法依据 |
 | [nested-submap-elements.md](nested-submap-elements.md) | 方案专篇 | 待评审（未实现） | ◐ 折线部分已并入 B4 PRD；渲染铁律与「水系不自动生成」结论继续引用 |
 | [region-editing.md](region-editing.md) | 增量需求 | P0 已实现 / P1 待排 | ✅ 有效 |
-| [map-asset-system-architecture.md](map-asset-system-architecture.md) | 架构 | S1 落地 / S2~S4 预留 | ✅ 有效；素材数量口径已在本次整理中订正为 **52** |
+| [map-asset-system-architecture.md](map-asset-system-architecture.md) | 架构 | S1 落地 / S2~S4 预留 | ✅ 有效；素材数量口径以脚本为准（**2.49.0 起 62**） |
 | [R-MAP-DOC-batch-plan.md](R-MAP-DOC-batch-plan.md) | 批次排期（batch-plan） | **定稿** | ✅ 有效；本批 14 个执行单元的交付清单、依赖图、三批完成判定 |
 | [R-MAP-DOC-line-autogen-analysis.md](R-MAP-DOC-line-autogen-analysis.md) | 口径裁定（analysis） | **定稿** | ✅ 有效；四类线「自动 vs 手画」唯一裁定稿，road / elements 两篇冲突时以它为准 |
 | [R-MAP-DOC-submap-boundary-acceptance.md](R-MAP-DOC-submap-boundary-acceptance.md) | 验收判据（acceptance） | **定稿** | ✅ 有效；边界羽化四组判据 + 递归深度用例清单（§4） |
@@ -240,7 +266,7 @@
 |------|------|------|------|
 | [spec/map-db-spec.md](../../spec/map-db-spec.md) | 活规范 | 已实施（B0 / 2.20.0） | 改 `map.db` 前必读；§9 四条已收口 |
 | [review/map-vs-reference-interaction-review.md](../../review/map-vs-reference-interaction-review.md) | 审查 | 含未闭环待办 | B0~B3 已闭环；B4 与 R-MAP-27 开放 |
-| [review/map-vs-reference-render-analysis.md](../../review/map-vs-reference-render-analysis.md) | 逆向分析 | 执行中 | **观感的状态与执行序唯一事实源＝§9**；已完成 18 项 / 待办 0 条 / 并行轨阻塞 2 条（P1-5 / P2-4，**不计入待办**） |
+| [review/map-vs-reference-render-analysis.md](../../review/map-vs-reference-render-analysis.md) | 逆向分析 | 执行中 | **观感的状态与执行序唯一事实源＝§9**；已完成 22 项 / 待办 0 条 / 并行轨仅剩 1 条（`P2-4`，**不计入待办**；`P1-5` 已于 2.49.0 闭环，`ALGN-11` 于 2.50.0、`ALGN-12/13/14` 于 2.50.1~2.52.0 闭环） |
 
 ### 4.3 已归档（`docs/archive/prd-map/`，2026-11-05 整理）
 
@@ -277,16 +303,16 @@
    → **已补**：[`spec/map-export-spec.md`](../../spec/map-export-spec.md)（六项规格 + 差异逐条处置；基线图命名 §6.1）。
 3. **没有性能验收记录**：v1 PRD §6 的「2000+ 元素同屏 / ≥55fps / 首屏 <1s」基线在 `map2` 重写后**从未复测**（口径以
    [`spec/map-perf-spec.md`](../../spec/map-perf-spec.md) 为准），
-   当前只有"体感流畅"和 750 条用例（`pnpm exec vitest run src/windows/MapWindow`），没有数字。
+   当前只有"体感流畅"和 898 条用例（`pnpm exec vitest run src/windows/MapWindow`），没有数字。
    → **口径已补、数字仍缺**：`spec/map-perf-spec.md` 定了样本 / 方法 / 通过线 / 脚本名，但本批不实测（见 §5.3-2）。
 4. **B4 的需求文档已补（2026-11-05）**：[`map-b4-layers-polyline-prd.md`](map-b4-layers-polyline-prd.md)
    给出了 7 条拍板项（类型即图层、面板位置、`layerState` 零写入、`showRegions` 归属、单一 `MapPolyline`、
    面要素暂缓、插层位置）与三批验收判据；**原始缺口记录保留在此**：
    图层面板此前只有 review §7 的一行缺口，折线只有服务嵌套子图的两篇方案稿、未按 B4 口径收口。
-5. **素材数量口径曾漂移（已订正）**：**52** 是脚本与磁盘实测（`node scripts/count-map-sprites.mjs`，
-   `assets/sprites/*.png` 也是 52；MANIFEST 共 56 条 = 52 符号 + 4 底图）。
-   原先两处写 53，本次整理已改为 52；53 的具体来源未追溯（推测为把某张底图计入符号）。
-   后续凡涉及数量，**以脚本输出为准**。
+5. **素材数量口径曾漂移（已订正两次）**：2.48.0 时脚本与磁盘都是 **52**（`node scripts/count-map-sprites.mjs`，
+   `assets/sprites/*.png` 也是 52；MANIFEST 共 56 条 = 52 符号 + 4 底图），原先两处写 53 已订正；
+   **2.49.0 起为 62**（+10，湿地/丛林 5 + 雪原 5；MANIFEST 66 条 = 62 符号 + 4 底图）。
+   后续凡涉及数量，**以脚本输出为准**，不要从旧文档抄。
 6. **子图边界过渡缺验收判据**：boundary 篇给了选型与实现要点，但没有"什么算通过"（渐隐宽度、色差阈值、
    截图基线），无法验收。
    → **已补**：[`R-MAP-DOC-submap-boundary-acceptance.md`](R-MAP-DOC-submap-boundary-acceptance.md)（四组判据，各标自动 / 人眼）。

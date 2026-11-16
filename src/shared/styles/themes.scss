@@ -95,6 +95,11 @@
   --app-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);    /* 默认：hover / 状态切换 */
   --app-ease-emphasized: cubic-bezier(0.3, 1, 0.5, 1);  /* 强调入场：模态 / 弹层 */
   --app-ease-spring: cubic-bezier(0.32, 0.72, 0, 1);    /* 抽屉 / 面板、拖拽释放 */
+
+  /* 窗口级几何（不随主题变）
+   * 标题栏高度由 WindowHeader 与「需要避开拖动带的浮层」共用：
+   * 抽屉的根节点按它下移，遮罩与面板才不会盖住窗口控制按钮。 */
+  --app-window-header-height: 34px;
 }
 
 :root,

@@ -7,9 +7,9 @@
  * shared。原 `novel-config.ts` 保留同名 re-export，既有 import 路径零改动。
  *
  * ⚠️ 这三个默认值**必须与主进程一致**：主进程建表 / 插入时用自己的一份常量
- * （`electron/handlers/novel-handlers.ts`），渲染层乐观更新用这里的。两边不一致
+ * （`electron/handlers/novel/novel-handlers.ts`），渲染层乐观更新用这里的。两边不一致
  * 会出现「新建分类后本地显示九层、落库是一层」这类难查的错位，由
- * `electron/novel-setting-defaults-guard.test.ts` 做源码级比对。
+ * `electron/handlers/novel/novel-setting-defaults-guard.test.ts` 做源码级比对。
  *
  * 本文件不含 React（跨窗口共享位，见 work-numbering 守卫同款约束）。
  */

@@ -17,6 +17,7 @@ import {
   pickSprite,
   rect,
   regionLabel,
+  splitCountries,
   setup,
 } from "./__test-utils";
 import { resetMapStores } from "./store/reset";
@@ -71,7 +72,8 @@ vi.setConfig({ testTimeout: 120000 });
 describe("MapEditorPage 合并子区域（层级关闭后的口径）", () => {
   it("单级生成图里所有区块都是叶子：合并按钮灰化，点击无弹层", async () => {
     await setup();
-    fireEvent.click(screen.getByRole("button", { name: /生成区块/ }));
+    // 2.50.0：入口并入一键成图，这里直接写 store 造单级 12 国（见 helper 注释）
+    await splitCountries();
     await waitFor(() => expect(regionLabel()).toContain("12"));
 
     const root = useMapDocStore.getState().doc.regions.find((r) => r.level === 0);

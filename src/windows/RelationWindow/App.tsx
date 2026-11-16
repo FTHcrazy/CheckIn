@@ -15,9 +15,11 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Button, Modal } from "antd";
-import { ApartmentOutlined, ReloadOutlined, ThunderboltOutlined } from "@ant-design/icons";
+import { ApartmentOutlined, ReloadOutlined } from "@ant-design/icons";
 import WindowHeader from "@/shared/components/WindowHeader";
 import AiConsentDialog from "@/shared/components/AiConsentDialog";
+import SvgIcon from "@/shared/components/SvgIcon";
+import aiSvg from "@/assets/novel/ai.svg?raw";
 import type { NovelEntity, NovelLink } from "@/shared/novel/entity-model";
 import { createTypeMetaResolver } from "@/shared/novel/entity-type-meta";
 import type { RelationGraphNode } from "@/shared/novel/relation-graph";
@@ -506,7 +508,7 @@ export default function RelationWindowApp() {
           {!suggest.hidden && (
             <Button
               size="small"
-              icon={<ThunderboltOutlined />}
+              icon={<SvgIcon svg={aiSvg} />}
               onClick={suggest.openDialog}
               disabled={!workId || state.status !== "ready"}
               title={suggest.unavailableText || undefined}

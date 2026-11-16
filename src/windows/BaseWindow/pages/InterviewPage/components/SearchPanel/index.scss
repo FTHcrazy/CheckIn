@@ -1,0 +1,51 @@
+// 顶部搜索区：一行放输入框与轨道切换，第二行是结果概览
+.interview-search {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-panel);
+  background: var(--app-surface);
+  box-shadow: var(--app-shadow-card);
+  user-select: none;
+
+  &__main {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  &__input {
+    flex: 1 1 280px;
+    min-width: 0;
+  }
+
+  &__icon {
+    color: var(--app-text-muted);
+  }
+
+  &__track {
+    flex: none;
+  }
+
+  // 知识体系入口：与轨道切换同排，窄窗时一起换行
+  &__knowledge.ant-btn {
+    flex: none;
+  }
+
+  &__meta {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    font-size: 12px;
+  }
+
+  &__count {
+    color: var(--app-primary);
+    font-size: 14px;
+  }
+}

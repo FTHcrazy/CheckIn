@@ -27,7 +27,7 @@
   padding: 0 10px;
   flex: 0 0 auto;
   border-radius: 0;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
 }
 
@@ -41,15 +41,18 @@
 }
 
 .layer-row {
+  // 状态外观由变量驱动：hover 块只改变量、不写属性规则（AGENTS §6.1.2 第 1 条）
+  --layer-row-bg: transparent;
   display: flex;
   align-items: center;
   gap: 6px;
   height: 28px;
   padding: 0 2px 0 8px;
   border-radius: var(--app-radius-item, 8px);
+  background: var(--layer-row-bg);
 
   &:hover {
-    background: var(--app-surface-alt);
+    --layer-row-bg: var(--app-surface-alt);
   }
 }
 
@@ -66,7 +69,7 @@
 
 .layer-row__count {
   flex: 0 0 auto;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--app-text-muted);
   // 数字等宽：6 行的计数才能上下对齐（素材 42 / 区块 7 混排时尤其明显）
   font-variant-numeric: tabular-nums;

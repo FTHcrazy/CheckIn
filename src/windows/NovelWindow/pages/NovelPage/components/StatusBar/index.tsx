@@ -1,5 +1,5 @@
-import { Button } from "antd";
-import { SafetyOutlined } from "@ant-design/icons";
+import { Button, Popover } from "antd";
+import { MoreOutlined, SafetyOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
 import { TODAY_ADDED_LABEL, TODAY_GOAL_LABEL, WORD_UNIT } from "@/shared/novel/today-stats";
 import { calcGoalProgress, formatThousands } from "../../novel-utils";
@@ -19,7 +19,12 @@ interface StatusBarProps {
  * 底部状态条（设计方案 §05 ⑥：32px 常驻）
  *
  * 数字统一 tabular-nums，宽度不跳动；目标达成只靠进度条 + 轻提示表达，不弹窗。
- * 全局标注开关与时钟常驻此处，码字途中可一键关闭高亮/悬浮卡（PRD §2 风险对策）。
+ * 全局标注开关常驻此处，码字途中可一键关闭高亮/悬浮卡（PRD §2 风险对策）。
+ *
+ * **收敛到 4 项（O-09，v2.57）**：此前 7 项常驻，其中「码字速度」与「时钟」是
+ * 阅读型信息 —— 写作时看它们没有决策价值，却和「本章字数 / 目标进度」抢同一条
+ * 注意力。现在只留 **本章 / 今日 / 目标进度 / 标注**（敏感命中才亮），速度与
+ * 时钟收进右侧「⋯」弹层，需要时点开看。
  *
  * 写作统计由本组件直接订阅 store：字数每键都在变，若由页面根持有再透传，
  * 打字就会把整棵树推一遍。
@@ -38,15 +43,18 @@ export default function StatusBar({
   const sensitiveHits =
     sensitiveMode === "off" ? 0 : (chapterResult?.total ?? 0);
 
-  // 实时时钟：每秒更新一次，tabular-nums 保证宽度不跳动
+  // 时钟只在「⋯」弹层打开时走秒：关着的时候没人看，没必要每秒推一次渲染
+  const [moreOpen, setMoreOpen] = useState(false);
   const [clock, setClock] = useState(() => formatClock(new Date()));
   useEffect(() => {
+    if (!moreOpen) return;
+    setClock(formatClock(new Date()));
     const timer = window.setInterval(
       () => setClock(formatClock(new Date())),
       1000,
     );
     return () => window.clearInterval(timer);
-  }, []);
+  }, [moreOpen]);
 
   return (
     <div className="nv-status">
@@ -62,9 +70,27 @@ export default function StatusBar({
         {TODAY_ADDED_LABEL}{" "}
         <b className="nv-status__positive">{formatThousands(stats.todayTotal)}</b> {WORD_UNIT}
       </span>
-      <span className="nv-status__item">
-        <b>{stats.speed}</b> 字/分
-      </span>
+
+      <div className="nv-status__goal">
+        <span className="nv-status__goal-label">
+          {TODAY_GOAL_LABEL} {formatThousands(stats.dailyGoal)} {WORD_UNIT}
+        </span>
+        <div
+          className="nv-status__bar"
+          role="progressbar"
+          aria-valuenow={progress}
+          aria-valuemin={0}
+          aria-valuemax={100}
+        >
+          <span
+            className={`nv-status__fill${progress >= 100 ? " is-done" : ""}`}
+            style={{ transform: `scaleX(${progress / 100})` }}
+          />
+        </div>
+        <span className="nv-status__percent">{progress}%</span>
+      </div>
+
+      <span className="nv-status__spacer" aria-hidden />
 
       <Button
         className={`nv-status__anno${annotationOn ? " is-on" : ""}`}
@@ -94,28 +120,37 @@ export default function StatusBar({
         </Button>
       )}
 
-      <div className="nv-status__goal">
-        <span className="nv-status__goal-label">
-          {TODAY_GOAL_LABEL} {formatThousands(stats.dailyGoal)} {WORD_UNIT}
-        </span>
-        <div
-          className="nv-status__bar"
-          role="progressbar"
-          aria-valuenow={progress}
-          aria-valuemin={0}
-          aria-valuemax={100}
+      {/* 阅读型信息（速度 / 时钟）收进这里。仍用 Popover 而不是 Tooltip：
+          它承载的是可读数据，鼠标移开就消失等于没有 */}
+      <Popover
+        trigger="click"
+        placement="topRight"
+        open={moreOpen}
+        onOpenChange={setMoreOpen}
+        content={
+          <div className="nv-status__pop">
+            <div className="nv-status__pop-row">
+              <span>码字速度</span>
+              <b>
+                {formatThousands(stats.speed)} {WORD_UNIT}/分
+              </b>
+            </div>
+            <div className="nv-status__pop-row">
+              <span>当前时间</span>
+              <b>{clock}</b>
+            </div>
+          </div>
+        }
+      >
+        <Button
+          className="nv-status__more"
+          aria-label="状态条更多信息"
+          aria-expanded={moreOpen}
+          title="状态条更多信息"
         >
-          <span
-            className={`nv-status__fill${progress >= 100 ? " is-done" : ""}`}
-            style={{ transform: `scaleX(${progress / 100})` }}
-          />
-        </div>
-        <span className="nv-status__percent">{progress}%</span>
-      </div>
-
-      <span className="nv-status__clock" title="当前时间">
-        {clock}
-      </span>
+          <MoreOutlined />
+        </Button>
+      </Popover>
     </div>
   );
 }

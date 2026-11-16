@@ -103,7 +103,6 @@
   }
 
   &__goal {
-    margin-left: auto;
     display: flex;
     align-items: center;
     gap: 7px;
@@ -148,10 +147,66 @@
     color: var(--app-text-muted);
   }
 
-  // 实时时钟：常驻最右，tabular-nums 宽度不跳动
-  &__clock {
-    color: var(--app-text-muted);
-    letter-spacing: 0.02em;
+  /* 左侧「本章 / 今日 / 目标」是常驻读数，右侧「标注 / 敏感 / ⋯」是操作区。
+     中间用 spacer 顶开，不再让 goal 用 margin-left:auto —— 两个吸收者会
+     把剩余空间对半分，右侧操作区就被推到中间了 */
+  &__spacer {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  /* 「⋯」：阅读型信息（码字速度 / 时钟）的入口。与标注 / 敏感同高同触达，
+     但不带文字 —— 它承载的不是当前任务的读数 */
+  &__more.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 22px;
+    --ant-button-padding-inline: 0px;
+    --ant-button-content-font-size: 12px;
+    --ant-border-radius: 4px;
+    --ant-button-default-bg: transparent;
+    --ant-button-default-color: var(--app-text-muted);
+    --ant-button-default-hover-bg: transparent;
+    --ant-button-default-hover-color: var(--app-text-secondary);
+    --ant-button-default-active-bg: transparent;
+    --ant-button-default-active-color: var(--app-text);
+    --ant-button-default-shadow: none;
+
+    width: 22px;
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    transition: color var(--app-t-fast) var(--app-ease-standard);
+
+    &:focus-visible {
+      outline: 2px solid var(--app-primary);
+      outline-offset: 2px;
+    }
+  }
+
+  /* 弹层内容：两行 label + 值，值走 tabular-nums（与状态条本体同一口径） */
+  &__pop {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 132px;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__pop-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+
+    span {
+      color: var(--app-text-muted);
+    }
+
+    b {
+      color: var(--app-text);
+      font-weight: 600;
+    }
   }
 }
 

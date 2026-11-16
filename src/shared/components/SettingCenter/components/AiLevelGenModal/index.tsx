@@ -11,8 +11,10 @@
  *   同一纪律（PRD 判据②）。
  * - **勾选默认全开**：AI 给的是一套体系，逐条取消比逐条勾选顺手；重名的禁勾。
  */
-import { ReloadOutlined, ThunderboltOutlined } from "@ant-design/icons";
+import { ReloadOutlined } from "@ant-design/icons";
 import { Button, Input, Modal, Segmented } from "antd";
+import SvgIcon from "@/shared/components/SvgIcon";
+import aiSvg from "@/assets/novel/ai.svg?raw";
 import AiCandidateList, {
   type AiCandidateItem,
 } from "@/shared/components/AiCandidateList";
@@ -133,7 +135,7 @@ export default function AiLevelGenModal({
           <Button
             size="small"
             className="ai-lvl__run"
-            icon={loading ? <ReloadOutlined /> : <ThunderboltOutlined />}
+            icon={loading ? <ReloadOutlined /> : <SvgIcon svg={aiSvg} />}
             disabled={loading || unavailableText !== null}
             onClick={onRun}
           >

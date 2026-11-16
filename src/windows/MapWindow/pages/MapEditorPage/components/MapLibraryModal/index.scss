@@ -37,17 +37,19 @@
 }
 
 .map-library__row {
+  // 状态外观由变量驱动：hover 块只改变量、不写属性规则（AGENTS §6.1.2 第 1 条）
+  --map-library-row-border: var(--app-border);
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 8px 10px;
-  border: 1px solid var(--app-border);
+  border: 1px solid var(--map-library-row-border);
   border-radius: var(--app-radius-item, 8px);
   background: var(--app-surface-alt);
   transition: border-color 0.15s ease;
 
   &:hover {
-    border-color: var(--app-primary);
+    --map-library-row-border: var(--app-primary);
   }
 }
 
@@ -99,7 +101,7 @@
 }
 
 .map-library__title {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--app-text-strong);
   overflow: hidden;
@@ -109,7 +111,7 @@
 
 .map-library__badge {
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 16px;
   padding: 0 6px;
   border-radius: var(--app-radius-pill, 999px);

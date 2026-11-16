@@ -149,6 +149,7 @@ describe("Esc 逐层关闭链（REQ-050 回归面）", () => {
         onJump: vi.fn(),
         onNewChapter: vi.fn(),
         onToggleFocus: vi.fn(),
+        onToggleReadMode: vi.fn(),
         onTogglePack: vi.fn(),
         onOpenSettings: vi.fn(),
         onEscape,

@@ -250,8 +250,22 @@ export interface GeneratorParams {
   shapeId?: LandShapeId | typeof RANDOM_CHOICE;
   /** 大陆底色档（`LAND_BASE_COLORS` 的 id，或 `RANDOM_CHOICE` = 随机） */
   landColorId?: string;
-  /** 是否同时划分区块（默认关，承接 R-REG-02） */
+  /**
+   * 是否生成**国家区块**（2.50.0 起语义收窄）。
+   *
+   * 【为什么改名不换字段】2.49.0 及以前它叫「划分区块」，走的是 Voronoi 均匀切分；
+   * 2.50.0 对齐逆向目标后只产出**国家**一级（`domain/countries.ts`），所以 UI 文案
+   * 改成「生成国家」。字段名保留 —— 落库的老文档 / 既有调用点都还在用 `withRegions`，
+   * 改名只会制造一批无意义的迁移（`migrateDoc` 不做白名单校验，改了还会静默失效）。
+   */
   withRegions: boolean;
+  /**
+   * 国家数量（2.50.0，仅 `withRegions` 为 true 时生效）。
+   *
+   * 缺省 = `COUNTRY_DEFAULT`（12，与 2.49.0 的固定数量一致）；上限见 `COUNTRY_MAX`
+   * （参考源码允许 20，但观感是"一块大陆十来个国家"）。
+   */
+  countryCount?: number;
   /** 是否生成地名（成图档生效） */
   withLabels: boolean;
 }

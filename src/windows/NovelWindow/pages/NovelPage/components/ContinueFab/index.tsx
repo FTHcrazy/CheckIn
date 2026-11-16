@@ -1,5 +1,6 @@
 import { Button, Tooltip } from "antd";
-import { ThunderboltOutlined } from "@ant-design/icons";
+import SvgIcon from "@/shared/components/SvgIcon";
+import aiSvg from "@/assets/novel/ai.svg?raw";
 import "./index.scss";
 
 interface ContinueFabProps {
@@ -49,7 +50,11 @@ export default function ContinueFab({
         loading={busy}
         aria-label="AI 续写"
       >
-        {!busy && <ThunderboltOutlined />}
+        {!busy && (
+          <span className="nv-contfab__bolt">
+            <SvgIcon svg={aiSvg} />
+          </span>
+        )}
         <span className="nv-contfab__text">续写</span>
       </Button>
     </Tooltip>

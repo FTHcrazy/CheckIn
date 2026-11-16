@@ -1,7 +1,7 @@
 # 地图素材「和谐分布」机制逆向分析与差距归因
 
 > 状态：**分析定稿 + 执行中**（静态分析结论，未做运行时捕获）。落地进度以
-> [§9 执行总表](#9-执行总表交接用) 为准：已完成 22 项、执行序 1~9 及序 11~13 全部闭环；剩余 2 条均为并行轨（阻塞中）。
+> [§9 执行总表](#9-执行总表交接用) 为准：已完成 23 项、执行序 1~21 全部闭环；剩余 1 条并行轨（`P2-4`，阻塞中）。
 > 输入：`docs/archive/prd-map/map-render-alignment-architecture.md`、
 > `prd-map-render/map-asset-system-architecture.md`、`docs/archive/prd-map/map-render-alignment-prd.md`；
 > 目标站点公开前端产物 `all_model_base.js`（模块版本 1.122）
@@ -787,7 +787,7 @@ zone?: ("core" | "grass" | "desert" | "snow")[];
 | L-4 | **`erodeGeoJSON` 的 `detAmp/detRadius` 单位** | 参数在 1200×800 的中间坐标系里，换算到世界单位需要知道 `pad`/`fit` 的完整链路，本次未展开。 |
 | L-5 | **站点可能改版** | 素材清单与锚点（`MapStyleEnum.MOHUAN?(I.src=`）随时可能变化；脚本失败时的报错会指出是哪一步。 |
 | L-6 | **未评估其性能代价** | 位图架构在缩放到 2 倍以上会明显发糊（本项目 PRD §2.2 已认领这点优势）。抄机制可以，**不要抄位图架构**。 |
-| L-7 | **地貌带素材池不均衡**（实测） | 总计 52 张：`mountain 16 / grassland 9 / snowfield 6 / desert 6 / forest 6 / swamp 4 / tundra 4 / lake 4 / river 4 / jungle 3 / oasis 1`。按 `zones` 汇总 `core 33 / grass 7 / desert 7 / snow 7` —— 沼泽档与雪原档只有 7 种可用素材，同屏重复不可避免。**这属于素材规模问题，不是布点算法能解决的**，扩池前不建议再调生成参数。 |
+| L-7 | **地貌带素材池不均衡**（实测） | 总计 52 张：`mountain 16 / grassland 9 / snowfield 6 / desert 6 / forest 6 / swamp 4 / tundra 4 / lake 4 / river 4 / jungle 3 / oasis 1`。按 `zones` 汇总 `core 33 / grass 7 / desert 7 / snow 7` —— 沼泽档与雪原档只有 7 种可用素材，同屏重复不可避免。**这属于素材规模问题，不是布点算法能解决的**，扩池前不建议再调生成参数。**→ 已由 2.49.0 解决**（沼泽档 13 / 雪原档 12 / 纯雪题材 10；见 §9.2 · P1-5）；此行的"扩池前别调参数"结论随之作废。 |
 
 ---
 
@@ -857,6 +857,10 @@ zone?: ("core" | "grass" | "desert" | "snow")[];
 | **P2-3** | 手工落位 AABB 避让：新素材中心落进已有素材命中盒 +30 呼吸边 → 拒绝落位并提示；**移动既有素材不设防**（解围路通） | 2.36.0 | `coords.ts`（`ELEMENT_PLACE_PAD` / `isCenterCovered`）、`hooks/useMapEditor.ts`（`placeSprite` 返回布尔）、`index.tsx`（保持待放态 + 提示） | `coords.test.ts` 4 条（盒内拦 / 呼吸边 / scale 参与外接盒 / some 语义）、`useMapEditor.test.tsx` 4 条（中心被压拦 / 边外放行 / 移动不拦 / 未登记 id 不参与） |
 | **ALGN-2** | 区块**样式三件**对齐逆向源值（§3.7 / `decoded.js@131642`）：填充 α 0.10 → **0.30**、边界 1.2 → **3 px**、颜色 `#27352e` → **`#73562d`**、`border_alpha` 0.32 → **1**；`REGION_LEVEL_FILL_SCALE` 抬到 `[1, .92, .86, .80]`（LOD 已接管压数量）；兄弟色相跨度 3° → **8°**、饱和 0.10~0.16 → **0.13~0.21**（0.30 下要读得出分块） | 2.38.0 | `regions.ts`（`REGION_FILL_ALPHA` / `REGION_BORDER_PX` / `REGION_BORDER_COLOR` / `REGION_BORDER_ALPHA` / `REGION_LEVEL_FILL_SCALE` / `REGION_WOBBLE.hueSpread` / `buildChildren` 取色） | `regions.test.ts`「区块样式与密度」4 条：数值 = 源值 + 线面浓度比 10:3、至多一级权重 > 0.5、全图视角主导层级 = 洲且 12 块 ≤ 20、0.30 下同级合成色两两平均差 ≥ 8/255（alpha 回退 0.10 时只剩 3.6 → 变红）。**注**：末条 2.39.0 起被 `ALGN-3` 的「相邻」色差守卫取代 —— "两两平均差"是错的度量（政治地图本来会复用颜色，不相邻同色是正常的），见 `ALGN-3`。 |
 | **ALGN-3** | 区块**配色与国名**：连续 HSL 取色 → **9 格固定色板 + 同层邻接校正**（相邻合成色差均值 3.6 → **26~32/255**）；区块名称上图层（`regionNameLayer`：√面积定字号、宋体疏排、只为 0~2 层建、懒创建 + 跟 `levelAlphas` 淡出）；海岸掩膜改用 `drawLandPath` 的**同一条曲线**（不再用弦多边形 + 外扩 3 单位） | 2.39.0 | `regions.ts`（`REGION_PALETTE` / `REGION_PALETTE_RGB` / `assignRegionColors` / `rgbDistance`）、`components/MapCanvas/regionNameLayer.ts`（新增）、`MapCanvas/index.tsx`（掩膜 + 国名分组）、`regionEdit.ts`（`manualRegionColor`） | `regions.test.ts` 4 条（色板两两合成色差 ≥ 10 / **相邻**均值 ≥ 22、最差 ≥ 12 / 洲一级 12 块 ≥ 8 色 / 确定性与整层同色可拆开）、`regionNameLayer.test.ts` 6 条、`render-stack-guard.test.ts` 3 条（掩膜走 `drawLandPath`、不向外扩、国名分组在边界之上且层级上限 2） |
+| **ALGN-11** | **国家生成 + 国名照抄逆向目标**：① 新增 `domain/countries.ts` —— 道路网**端点连通性**洪水填充分簇（端点量化 1/4 单位做并查集）→ 反复合并最近两簇到目标数（2~12）→ 每簇**凸包**内缩 30 后采**六边形格种子**（flat-top，R = 纸宽×40/1587，参考 `drawGridPolygon(x,y,40)` 原值）→ 陆地「先到先得」邻域生长（2 环 18 偏移 / 6 轮 / 种子格数 ≤ 均值×2）→ 沿格边追轮廓 → Chaikin 2 轮。**边界不是"分界线画在哪"而是"生长停在哪"**，面积由簇大小决定（实测 4.4~6.4 倍；旧 Voronoi 共享同一条分界线 ⇒ 面积相近、读成行政区划图）；格集合互斥 ⇒ **结构上不可能重叠**。② 新增 `domain/countryNames.ts`（`ctrls.rand_text`：146 项前缀池 + 「国」、同图去重、重抽上限 20）。③ `BASE_IMAGE` 1024² → **1447×1024**（对齐 `page_size 1587×1123`，起手缩放 80% → 57%）。④ 国名改**三档宽度判据**（块宽 > 纸宽 63.5% → 100 / < 28.2% → 30 / 其余 56；参考 `k > 字数×字号×4.5`）、字距 0.22 → **0**、加 `dropShadow`（`shadow:"10"`） | 2.50.0 | 新增 `domain/{countries,countryNames}.ts`；`hooks/useMapEditor.ts`（`buildRegions` 第 5 参 `roads` / `withCountryCount` / 三档接线）、`domain/generator.ts`（`countryCount`）、`components/MapGeneratorModal/`（「生成国家」默认开 + 数量下拉）、`index.tsx`（删「生成区块」+ 预留「国家分区」）、`sprites.ts`（`BASE_IMAGE`）、`components/MapCanvas/regionNameLayer.ts`（三档字号 / 字距 / 投影） | `countries.test.ts` 新增 18（六边形格网 3 / 几何 4 / 簇收敛 2 / `generateCountries` 9：要 12 给 12、夹在 [2,12]、**不重叠**（面积和 ≤ 陆地 1.02 倍）、**面积不均匀**（最大 ≥ 最小 1.6 倍）、国名互不相同、同 seed 一致、无路网也能出图、陆地每格有归属）、`countryNames.test.ts` 新增 8、`regionNameLayer.test.ts` 6 → 11（三档 / 阈值严格性 / 宽高比决定档位 / 飞地计入块宽 / 退化输入）、`index.coords.test.tsx` 适配（`MARGIN` 拆横纵 + `DRAG_WORLD_DELTA` + 起点 57%） |
+| **ALGN-12** | **国界观感修正（多边形感 / 三角缝隙 / 湖泊重叠）**：① 平滑层换**过点插值曲线**——Chaikin 是切角算法（实测整条边界 18.2px 等长直段，p50=p99=18.2，三国交界各自的角独立被切 ⇒ 三角缝隙），参考捆的 turf.min.js 是样条插值版 `polygonSmooth`（npm 5.0.0 起才重写成 Chaikin）；照抄参考算法模块的 `GetCurvePolygonCtrlPoint`（cP1 = P[i]+(P[i+1]−P[i−1])×0.25 闭包取模）+ `bezierCurveLinearFun` + `R` 的 `gb=2` 采样，曲线**过每个原始顶点** ⇒ 共享顶点被钉住。② 补抄参考最后一步**栅格化收尾**（`ra` + `CutRangePolygon` + `GetCanvasOutlines`）：平滑环栅格化（飞地填、洞挖——环抱别国的环按环填充会把被包国家的领土抢光）→ ∩ 陆地掩膜 → 后画切齐先画 → 像素重追轮廓 → 孤儿像素洪泛；纯 TS 确定性实现，两国边界逐点共享同一批像素边 ⇒ 缝隙/叠色结构上不存在（实测直段 p50=1px/p90=3px）。③ 湖泊间距改**欧氏世界距离 ≥ 两湖最大半径和 ×1.35**（旧"曼哈顿格距 ≥2"放得下对角摆放的两湖，半径与格径同量级 ⇒ 三湖挤成花瓣）；湖面配色对齐海面（`#bdd7dd/0.72` → `#a9c3c6/0.62`） | 2.50.1 | `domain/countries.ts`（`flattenCurveRing` / 栅格收尾节）、`domain/water.ts`（`LAKE_CLEARANCE`）、`polylineStyle.ts`（湖面三色） | `countries.test.ts` 18 / `water.test.ts` 8 全绿；`__tmp-border-metrics` 实测三 seed 直段 p50=1px |
+| **ALGN-13** | **湖面样式 / 国界高倍观感 / 陆地布局 / 国名对比度四项修正**：① 湖面填充与岸线改**河流主色** `#2f6f7d`（`fill α0.45`）+ 湖内两道**不闭合**同心弧 `lake-wave`（开口由湖哈希决定、与岸线共用相位；贯穿的等深线环把湖读成套娃圈，`lake-ring` 保留给老文档）；② 像素重追轮廓后追加 `flattenCurveRing` 过点插值——1 单位台阶的 90° 直角圆化成 2~3 单位微波动，共享段曲线两侧逐点重合（贝塞尔端点交换 = 同一曲线反向参数化）⇒ 零缝隙不回退，直段 p50=1/p90=2.2；③ 随机陆地档按岛数加权（单岛 0.55/双岛 1.2/三岛 1.8/≥4 岛 2.2）——实测海岸碎齿已达标，土豆感源于均匀 12 选 1 中 7 种单岛；**参考的大陆生成是服务端 AI**（`decoded.js@980461`"AI 正在构思大陆…"），本地无分布算法可抄，权重是观感校准值；④ 国名投影 α 0.5→**1**（参考 `shadow_color` 不透明黑）+ 字体栈首推隶书 `LiSu`（参考 `font:"隶书"`，笔画粗白实心面积大） | 2.51.0 | `polylineStyle.ts`、`domain/water.ts`（`lakeWaveArc`）、`domain/countries.ts`（⑧ 段插值）、`domain/mapRecipe.ts`（`resolveShapeId` 加权）、`regionNameLayer.ts` | 各目录单测全绿；国名 pixi 实渲对照；边界 3 倍放大目检 |
+| **ALGN-14** | **边界线宽 / 描边几何对齐逆向 + 开源大陆生成调研**：① 取证 `decoded.js@607419` 国家图章 `border_size:3 / #73562d / α1` 与 `@239836` 的 `border_size *= 缩放`（**世界恒定**）；2.43.0 误取 `paint_shadow.stroke:1`（那是地形陆稿 DrawOutline worker 的参数）且换算成 `px/缩放` 屏幕恒定 ⇒ 放大细若发丝。主图改 `REGION_BORDER_WIDTH_WORLD=3` + `REGION_BORDER_LINE_COLOR=0x73562d` + α1，不再随缩放重建；子图保留旧口径。② 还原参考链 `ra(shapeToBezierCurve(g)) → GetCanvasOutlines(La) → Ma(p,1.2) RDP → CreatePolygon(polygon_type:6, lineTo)`，逐字移植 `Ma/oa` 为 `rdpSimplifyOpen`/`simplifyClosedRing`；**但上屏不直接用**：参考 RDP 的输入是曲线栅格化（曲率处留点密集），我们是六边形格边台阶，容差 1.2 把 20,628 点抽到 1,389 点 ⇒ 高倍是生硬多边形折角（0.6 留 7,010 点但轴向锯齿还剩 5,063 段）。改用 `lowpassRing`（3 点三角窗 ×2 轮，凸组合 ⇒ 偏离有界、点数守恒）：轴向直段 **12,162→88**、描边离填充 ≤**0.87** < 3 单位线宽的 1.5 半径、6× 目检由「台阶串」变连续曲线。③ ⚠️ 踩坑：「RDP → 再 `flattenCurveRing`」会让控制点 `P[i]+(P[i+1]−P[i−1])×0.25` 在稀疏点上把贝塞尔甩出填充 **3.36 / 3.55 单位**（参考 `shapeToBezierCurve` 在栅格化**前**、`Ma` 是**收尾**，抽稀后不再插值）。④ 删共享边去重（`border_alpha:1` 不透明，叠描不加深）与 2.40.0 跳线判据（2.48.0 后是简单环、低通不抽稀，长直岸线合法）。⑤ 开源大陆生成调研见**附录 C** | 2.52.0 | `regions.ts`、`domain/countries.ts`（`rdpSimplifyOpen`/`simplifyClosedRing`/`lowpassRing`/`smoothBorderRing`）、`MapCanvas/index.tsx` | `countries.test.ts` 22（RDP 3 + 低通守卫 1）、`regions.test.ts` 常量断言、tsc/eslint 0、12 国 seed 777 量化 + 6× SVG 目检 |
 | **ALGN-10** | **区块交接重叠修复 + 道路比例对齐**：① `clipHalfPlanePieces` 重写 —— 内部区间改判"相邻交点中点是否在多边形内"（不再按沿线奇偶成对），且只用来连"离开 → 进入"、不覆盖环上链；没闭合的环整条丢弃。12 国 × 6 seed 网格采样的 level0 **重叠率 4.70%~7.22% → 0.00%**，飞地不再出现"与主块同面积"的重复。② 道路比例对齐参考 `{size:2, line_type:2}`：三档全部点线、世界线宽 **2.4 / 2.0 / 1.6**（原 6.0 / 3.4 / 1.8）；`road-dotted` 的 `dash` `[1,1.6]`→`[1,4]`、α 0.85→0.72，**可见**虚实比由 3.3:1 变 **4:6**（圆头会吃掉一个线宽的间隔 —— 旧值可见间隔只剩 0.6 倍宽，整条路糊成粗实线）；`EDGES_PER_NODE` 2→1，路数 61→47（40 聚落），从"网"回到"树" | 2.48.0 | `regions.ts`（`clipHalfPlanePieces` 重写 + 导出给测试）、`polylineStyle.ts`（`road-dotted`）、`domain/roads.ts`（`GRADE_STYLE` / `EDGES_PER_NODE`） | `regions.test.ts` 58→62（凸/哑铃/回归/模糊 60 组）、`region-land-audit.test.ts` 5→7（守卫 4：重叠率 < 0.5% + 变异探针）、`roads.test.ts` 19（三档全点线 + 官道 ≤ 2.5 世界单位）、`polylineStyle.test.ts` 15→17（**可见**虚实比） |
 | **ALGN-9** | **道路主次分级**：`roadGradeOf(a, b)` 按两端聚落层级定档 —— 城↔城 = `trunk`（`road-main` 双线 ×1.2，实际 6.0 世界单位）、城↔镇 / 镇↔镇 = `branch`（`road-dotted` ×1.7 → 3.4）、含村落 = `local`（`road-dotted` ×0.9 → 1.8）；`cityTrunk` 由完全图改为「每城连最近 2 城」（K5 的凸多边形边框消失，平均度数 4 → 2.4）；等级写进已有的 `MapPolyline.widthScale`，不加样式档、不加字段，滑杆拖回 `1` 即"不分级"（**2.48.0 改口径**：三档统一 `road-dotted`，宽度 2.4/2.0/1.6，见 ALGN-10） | 2.47.0 / 改 2.48.0 | `domain/roads.ts`（`RoadGrade` / `roadGradeOf` / `GRADE_STYLE` / `buildRoadNet` 产出 `widthScale`）、`types.ts`（`widthScale` 注释补第二个写入方） | `roads.test.ts` 13 → 19 条（7 种层级组合的等级判定含顺序无关、三档样式档、**实际世界线宽严格递减**且支线 ≥ 村道 1.5 倍、倍数落在滑杆区间 `[0.5, 2.5]`、等级只看层级不看长度、官道不是完全图（5 城平均度数 < 4）） |
 | **ALGN-8** | **地名分级 + 聚落漏撒修复**：`assignPlacementNames` 改按层级分档（城 → 镇 → 其它点要素 → 村；各档独立名额 6/4/6/剩余，总配额仍 12），字号随档 16/12/10；`SpritePlacement.tier` 由选址阶段写入（`city-mid` 反查必然误判成城）；`settlementCountsOf` 改系数让大城 **1~2 → 3~5 座**（城 ≈ 0.9/格）；新增 `groundPool` 把 `SETTLEMENT_SPRITES` 剔除出地貌取料池 | 2.46.0 | `domain/generator.ts`（`PlacementName.size` / `NameTier` 分档 / `assignPlacementNames` 重写 / `SpritePlacement.tier` / `groundPool`）、`domain/settlements.ts`（`settlementCountsOf` 系数）、`hooks/useMapEditor.ts`（`toLabels` 用档位字号、移除 `LABEL_DEFAULT_SIZE` 依赖） | `generator.test.ts` +4 条（大城优先占名额：4 城 + 8 镇 + 24 村 → 城全点名且总量仍 12；字号分层 16/12/10；无 `tier` 时按 `spriteId` 反查；`city-mid` 反查歧义）；`electron/changelog-archive-guard.test.ts` +5 条（体积上限组，见 §8.6 检查点） |
@@ -879,10 +883,13 @@ zone?: ("core" | "grass" | "desert" | "snow")[];
 > **序 15 已于 2.46.0 落地**（ALGN-8：地名分级 + 聚落漏撒修复 + 大城数量）。
 > **序 16 已于 2.47.0 落地**（ALGN-9：道路主次分级）。
 > **序 17 已于 2.48.0 落地**（ALGN-10：区块交接重叠修复 + 道路比例对齐）。
-> 明细见 §9.1，条目详情保留在下面供追溯。执行序 1~17 已全部闭环，下表只剩并行轨 1 条（P1-5，阻塞在美术输入）。
+> **序 18 已于 2.50.0 落地**（ALGN-11：国家生成换逆向算法 + 国名照抄 + 画布 1.413:1）；**序 19（ALGN-12，国界观感修正 + 湖泊重叠）已于 2.50.1 落地**；**序 20（ALGN-13，湖面样式/国界高倍/陆地布局/国名对比度）已于 2.51.0 落地**；**序 21（ALGN-14，边界线宽/描边几何 + 开源大陆生成调研）已于 2.52.0 落地**。
+> **`P1-5`（素材池扩充）已于 2.49.0 落地**（两档 7 → 13 / 12，验收线 ≥12 达成）。
+> 明细见 §9.1，条目详情保留在下面供追溯。执行序 1~21 全部闭环，并行轨只剩 1 条（`P2-4`，仍阻塞在 `B4` 图层面板）。
 
 | 序 | 编号 | 事项 | 优先级 | 成本 | 依赖 |
 |---|---|---|---|---|---|
+| 18 | **ALGN-11** | 国家生成换逆向算法（道路簇 → 凸包 → 六边形格种子 → 先到先得生长 → 追轮廓）+ 国名照抄 `rand_text` + 画布 1.413:1 + 国名三档宽度判据 | **P0** | 已完成 2.50.0 | — |
 | 17 | **ALGN-10** | 区块交接重叠（裁剪配对重写，重叠率 7.2% → 0%）+ 道路比例对齐参考 `size:2`（三档同一点线 2.4/2.0/1.6、可见虚实比 4:6、每点只发一条边） | **P0** | 已完成 2.48.0 | — |
 | 16 | **ALGN-9** | 道路按两端层级分三档（官道双线 / 支线粗点线 / 村道细点线），等级写进 `widthScale` | **P0** | 已完成 2.47.0（口径后被 ALGN-10 覆盖） | — |
 | 15 | **ALGN-8** | 地名按层级分档（名额 + 字号 16/12/10）+ 大城 1~2 → 3~5 座 + 聚落素材不再从地貌通道漏撒 | **P0** | 已完成 2.46.0 | — |
@@ -893,7 +900,7 @@ zone?: ("core" | "grass" | "desert" | "snow")[];
 | 9 | **ALGN-3** | 区块配色改色板 + 邻接校正、国名上图层、海岸掩膜改用陆地同一条曲线 | **P0** | 已完成 2.39.0 | — |
 | 8 | **ALGN-2** | 区块样式三件对齐逆向源值（α 0.30 / 3px / `#73562d`）+ 静态层次表抬平 + 兄弟色相跨度放宽 | **P0** | 已完成 2.38.0 | — |
 | 7 | **ALGN-1** | 「对齐交互三件」：区块线贴岸（越湾修复 + 陆地掩膜 + 共享边去重）、每陆一大陆（level0 结构）、素材总闸 0.42→0.32 | **P0** | 已完成 2.37.0 | — |
-| 并 | **P1-5** | 素材池扩充：沼泽档 / 雪原档各 ≥12 种 | **P1** | 纯美术 | 〔阻塞〕需美术输入 |
+| 并 | **P1-5** | 素材池扩充：沼泽档 / 雪原档各 ≥12 种 | **P1** | 已完成 2.49.0（10 张 AI 素材：沼泽档 7→13、雪原档 7→12、纯雪题材 5→10） | — |
 | 并 | **P2-4** | 「自动生成山脉 / 森林」分组 folder | **P2** | 约 120 行 | 〔阻塞〕依赖 `B4` 图层面板 |
 
 > **关于编号与优先级不一致**：`P1-1` / `P2-1` 这些是 §6 的**历史编号**，不改名（改了会断
@@ -1233,18 +1240,32 @@ zone?: ("core" | "grass" | "desert" | "snow")[];
   不能出现"看得见但选不到"。
 - **优先级说明**：属于交互健壮性，不影响"和谐"，所以放 P2。
 
-**并 · `P1-5` 素材池扩充**〔阻塞：需美术输入〕
+**并 · `P1-5` 素材池扩充**〔✅ 已完成 2.49.0〕
 
-- **实测池**（52 张，2026-11-05 校核，`pnpm count:sprites`）：`mountain 16 / settlement 11 /
-  grassland 9 / plain 8 / desert 6 / forest 6 / landmark 6 / snowfield 6 / hill 5 / coast 4 /
-  lake 4 / river 4 / swamp 4 / tundra 4 / highland 3 / jungle 3 / sea 3 / valley 2 / oasis 1 / volcano 1`；
-  按 `zones` 汇总 `core 33 / grass 7 / desert 7 / snow 7`。
-- **目标**（两个口径分开写，别再混）：
-  - 沼泽档：按 `terrains` 计 `swamp + jungle` 从 **7 → ≥12**，其中 `core` 带之外的**本带专属**素材 ≥4；
-  - 雪原档：按 `zones` 含 `snow` 计从 **7 → ≥12**，其中"雪题材"（非跨带借用）从 5 → ≥8。
-- **验收**：`万里雪原` / `南疆沼泽` 预设的「用到的素材种数」从 7 → ≥12；同屏同一素材出现 ≤2 次。
-- **纪律**：新素材必须补 `MANIFEST.json` 记录 + `zones` 标注（漏标会在编译期炸），
-  并按 `AGENTS.md` 的素材登记流程走。
+- **扩充前实测池**（52 张，2026-11-05 校核，`node scripts/count-map-sprites.mjs`）：`mountain 16 /
+  settlement 11 / grassland 9 / plain 8 / desert 6 / forest 6 / landmark 6 / snowfield 6 / hill 5 /
+  coast 4 / lake 4 / river 4 / swamp 4 / tundra 4 / highland 3 / jungle 3 / sea 3 / valley 2 / oasis 1 /
+  volcano 1`；按 `zones` 汇总 `core 33 / grass 7 / desert 7 / snow 7`。
+- **目标与达成**（两个口径分开写，别再混）：
+
+  | 口径 | 目标 | 2.48.0 | 2.49.0 |
+  |---|---|---|---|
+  | 沼泽档（`terrains` 计 `swamp ∪ jungle`） | 7 → ≥12，其中 `core` 之外 ≥4 | 7（6 张是 core，分带对沼泽完全失效） | **13**（非 core 6 张） |
+  | 雪原档（`zones` 含 `snow`） | 7 → ≥12 | 7 | **12** |
+  | 雪题材（只标 `snow` 带，不含跨带借用） | 5 → ≥8 | 5 | **10** |
+  | 雪锁图 `snowfield` 地形实际用到的种数 | ≥12 | 6 | **11**（+ 借用 `tree-pine` = 12） |
+  | 沼泽图 `swamp` / `jungle` 地形种数 | — | 4 / 3~6 | **6~8 / 5~7** |
+
+- **落地内容**：10 张 AI 素材（湿地/丛林 5 + 雪原 5），同一 `styleTemplate`、同一去白/归一管线，
+  逐张登记进 `MANIFEST.json`；`zones` 标注见 `sprites.ts` 新增块的注释（为什么湿地带只标 `grass`、
+  为什么丛林不挂 `forest`、为什么冻沼要挂 `snowfield`）。
+- **顺带修掉的两个真 bug**：① 雪带森林此前借不到雪题材、回退去用温带绿林（`snow-forest` 挂 `forest`
+  后雪带森林池够成一族）；② 冻沼若只标 `swamp`，雪带凑不成一族 ⇒ 按三级顺序**永远轮不到**它。
+- **纪律**：新素材必须补 `MANIFEST.json` 记录 + `zones` 标注（漏标会在编译期炸）；
+  两档数量下限已固化成守卫（`terrain-assets.test.ts` 的「素材池下限」5 条），删素材会先在那里红。
+- **关于「同屏同一素材 ≤2 次」**：这条原始验收语在 62 张池下仍不成立，且不是池子大小能单独解决的 ——
+  一张图 200~300 个实例、单格调色板固定 4 种（`PALETTE_SIZE`），整图重复次数与实例总量成正比。
+  能兑现的是**单种重复次数的下降**（雪锁图 20~27 → 13~17），真实收益以这一行为准。
 
 **并 · `P2-4` 自动生成分组 folder**〔阻塞：依赖 `B4` 图层面板〕
 
@@ -1260,7 +1281,7 @@ zone?: ("core" | "grass" | "desert" | "snow")[];
 | **B** | 序 3（P2-1 纹理平铺 + 羽化） | 只碰 `coastBake.ts`；烘焙链路风险独立，与 A 分开好回滚。**✅ 已完成 2.28.0**（羽化改为 5 层内缩，见序 3 的实现期修正） |
 | **C** | 序 4（P1-4 镜像翻转） | 要动 `MapElement` / DTO / `map.db` 迁移，**必须独立**；建议放在 A、B 之后，此时画面已干净，才看得出翻转带来的收益。**✅ 已完成 2.35.0**（`map.db` 实际无需表结构迁移：`doc_json` 整存，可选字段即向后兼容） |
 | **D** | 序 5（P2-2）+ 序 6（P2-3） | 都是「局部体验修补」，可合并到一个收尾 PR。**✅ 已完成 2.36.0**（序 5 按勘误口径走新静态系数表，未乘 levelAlphas；序 6 拦截只作用于新建落位、移动不设防） |
-| — | `P1-5` 素材池 / `P2-4` folder | 与批次解耦，各自阻塞解除后并行插入 |
+| — | `P1-5` 素材池（✅ 2.49.0）/ `P2-4` folder | 与批次解耦，各自阻塞解除后并行插入 |
 
 ### 9.4 不要做的事（负向约束，比待办更重要）
 
@@ -1275,7 +1296,8 @@ zone?: ("core" | "grass" | "desert" | "snow")[];
    再往下压会让边界线孤零零浮在纸上；层次感的正确入口是**静态系数表**
    `REGION_LEVEL_FILL_SCALE`（2.36.0 已落地，按 level 索引、与视口无关）——
    **不是 `levelAlphas`**（LOD 权重，乘上去双重衰减，见 §9.5 勘误）。
-6. **不要为"重复率"再调生成算法**。算法已到边界，剩下的是素材数量（`P1-5`）与翻转（序 4）。
+6. **不要为"重复率"再调生成算法**。算法已到边界；素材数量已按 `P1-5`（2.49.0）补到两档 ≥12，
+   再嫌重复只能继续加素材，不要回头改布点参数。
 7. **改公共原语前先数使用点**（`AGENTS.md`）：`MapCanvas` 的节点装配被
    `render-stack-guard.test.ts` / `bake.test.tsx` / `coastBake.test.ts` 三处钉着，
    改装配顺序会同时炸三个文件 —— 这是设计如此，不是测试太严。
@@ -1324,7 +1346,7 @@ node scripts/count-map-sprites.mjs          # 动过素材表（P1-5）才需要
 - **不要用 `npx vitest`**：会解析到错的 root，症状是"全仓 0 用例 + `Cannot read properties of undefined (reading 'config')`"。
 - **全仓跑必须带 `--maxWorkers=4`**：默认并发会 `Failed to start forks worker`，
   257 个文件只跑 255 个、汇总仍写 "255 passed"，属**静默漏跑**。目录级跑不受影响。
-- 当前基线：**44 文件 / 750 用例全绿**（约 357s；`index.test.tsx` 已按坐标/陆地/区块/生成拆成 4 个并行文件）。
+- 当前基线：**52 文件 / 898 用例全绿**（约 243s；`index.test.tsx` 已按坐标/陆地/区块/生成拆成 4 个并行文件，2.50.0 又多了 `countries.test.ts` / `countryNames.test.ts`）。
 - `pnpm count:sprites` 是同一脚本的别名；PATH 里没有 pnpm 时（如 Git Bash 非交互）
   直接用上面的 `node scripts/...` 形式。
 
@@ -1364,3 +1386,68 @@ node scripts/collect-makeamap-assets.mjs --styles 0 --images      # 只抓「魔
 | 同上 §2.4 | 「值得学的只有三件事」 | 应为四件：**素材布点（网格 + 丛簇 + 连通性）** 是第四件，且是观感差距的主要来源。 |
 | `map-asset-system-architecture.md` §二 | 展示分类 / 地形语义双轴 | 需要**第三轴**：地貌带 `zone`。地形语义回答「画什么」，地貌带回答「用哪一族画风」。 |
 | 同上 §五 | `pickTerrainSprites` 过滤 + 回退链 | 增加 `zone` 二次过滤；回退链改为 `同 terrain 同 zone → 同 terrain 相邻 zone → core`。 |
+
+---
+
+## 附录 C · 开源大陆生成方案调研（2.52.0，ALGN-14 附带）
+
+> 触发：用户「既然生成大陆逆向目标参考不了，其他成熟的开源软件的大陆生成能不能参考」。
+> 参考站点的大陆生成在**服务端**（`decoded.js@980461`「AI 正在构思大陆…」→
+> `post_add("/s/…")`），前端只有 `erodeGeoJSON` 这套**侵蚀**参数（本项目 2.34.0 起
+> 已逐字对齐：`warpAmp 115 / noiseScale 0.012 / detAmp 26 / smooth 2`），**没有布局
+> 算法可抄**。本节评估可借鉴的开源实现，并给出本项目的量化定位。
+
+### C.1 四条主流路线
+
+| 项目 | 核心机制 | 对「土豆形」的作用 |
+|---|---|---|
+| **Azgaar Fantasy Map Generator**（MIT，20k★） | 高度图**模板 = 动作序列**：`Hill`（局部隆起）/ `Pit`（凹陷）/ `Range`（拉长隆起）/ `Trough`（拉长凹陷）/ `Add`（整图抬升）/ `Strait`（沿中心带挖海峡）/ `Multiply`（相对缩放），叠完后按海平面阈值取零交叉；内置 `continents` 模板靠 `Trough` 在地块间切出海道 | **最直接**：不是把椭圆磨毛，而是用「减法」从大块陆地上切走大块形状 |
+| **Martin O'Leary `mewo2/terrain`** | Lloyd 松弛的 Voronoi 网格 + 一组可组合 primitives（斜坡 / 锥体 / blob）+ 归一化 / 圆丘 / 局部平均 / 设海平面；海岸线 = 高度场零交叉；Planchon-Darboux 填洼后算水流通量 | 多 primitive **叠加**而非单一母形，天然出现半岛与内海 |
+| **SoCG 2026「From Chaos to Continents」** | 明确用 **Land Anchor 系统 + Perlin** 替代 *radial island mask*，产出非凸陆块与群岛；priority-flood 做水文 | 论文动机就是「径向岛掩码 → 圆形土豆」 |
+| **FMG 板块模拟 PR #1362** | icosphere 上撒板块 → 边界物理（碰撞 / 俯冲 / 裂谷）→ 大陆架、热点火山、水力侵蚀 → 投影回平面图；4 套预设含 Archipelago | 最像真实大陆，但 1390 行 TS + 编辑器，工程量远超收益 |
+
+另有 **Domain Warping**（Inigo Quilez / No Man's Sky）与 fBm 多倍频，属通用噪声手段；
+本项目 `land.ts` 已有 `warpAmp 115` 的域扭曲与碎齿细节，再加噪声不会改变大尺度凸性。
+
+### C.2 本项目的量化定位（12 档 × 3 seed：777 / 4242 / 3205016286）
+
+指标：最大岛的**圆形度** `4πA/P²`（1 = 正圆，越小越曲折）与**凸包填充率** `A/A_hull`
+（1 = 凸，越小凹口越多）。
+
+| 形状档 | 平均岛数 | 圆形度 | 凸包填充率 | 最大岛顶点 |
+|---|---|---|---|---|
+| `normal`（默认） | 1.3 | 0.275 | **0.868** | 558 |
+| `moreLand` | 2.0 | 0.290 | 0.863 | 532 |
+| `moreOcean` | 1.0 | 0.257 | 0.855 | 560 |
+| `northSouth` | 1.3 | 0.243 | 0.846 | 489 |
+| `eastWest` | 1.3 | 0.244 | 0.841 | 467 |
+| `starMoon` | 2.0 | 0.323 | 0.876 | 494 |
+| `slender` | 1.3 | **0.212** | **0.805** | 427 |
+| `pangaea` | 1.0 | 0.292 | 0.877 | 553 |
+| `cookie` | 1.0 | 0.250 | 0.846 | 480 |
+| `threeContinents` | 3.0 | 0.237 | 0.838 | 347 |
+| `earthlike` | 3.0 | 0.269 | 0.855 | 329 |
+| `scattered` | 5.3 | 0.302 | 0.846 | 245 |
+
+**结论：圆形度 0.21~0.32 说明海岸碎齿早已达标（再加噪声无效）；真正缺的是
+大尺度凹结构 —— 凸包填充率高达 0.80~0.88，也就是陆地几乎把凸包填满，没有
+深入内陆的海湾、半岛、内海或岛链。** 这正是「土豆感」的量化指纹，也正好对应
+FMG 的 `Trough/Strait`、Land Anchor 的多锚点、mewo2 的多 primitive 所解决的问题。
+`slender` 是现有 12 档里最不土豆的（0.805），但靠的是半幅压缩拉长，不是凹口。
+
+2.51.0 的「按岛数加权」只改变了**布局分布**（单岛 0.55 / 双岛 1.2 / 三岛 1.8 /
+≥4 岛 2.2），没有改变任何一档的凸性 —— 所以用户复测仍觉得土豆，是预期结果。
+
+### C.3 建议的最小切口（本轮**未**实施，待裁决）
+
+在 `land.ts` 的 SDF 高度场上，对母形叠加一组**低频带状负偏移**（随机方向的宽
+`Trough` / 1 条 `Strait` 等效），让 `pointInLand` 在带内判海 ⇒ 大陆被切出深湾、
+半岛甚至离岛链。要点：
+
+1. **做成新形状档增量加入 `LAND_SHAPES`，不动 `normal`** —— 否则会重排全图几何，
+   触发 `land.test.ts` 的逐字节守卫与所有成图快照类断言。
+2. 负偏移用**低频正弦 / 高斯带**，不用哈希噪声（齿轮化教训见 `domain/water.ts`）。
+3. 验收口径用本附录的两个指标：凸包填充率应显著下探（目标 ≤0.75），
+   圆形度保持 ≤0.35（别把碎齿磨平）。
+4. 板块模拟（PR #1362）**不建议**：收益不确定、代码量与本模块现状不匹配，
+   且参考站点本身用的是服务端 AI，不是物理模拟。

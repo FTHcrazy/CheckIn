@@ -93,6 +93,19 @@ const putCursor = (view: EditorView, pos: number): void => {
   view.dispatch({ selection: EditorSelection.cursor(pos) });
 };
 
+/**
+ * 等 CodeMirror 跑完一轮 measure（`requestMeasure` 的读 / 写相位）。
+ *
+ * 跳转落点**必须**分读写两段：写相位（scrollHandler 被调的时机）里读布局会抛
+ * 「Reading the editor layout isn't allowed during an update」。所以断言滚动量前
+ * 得先把这一帧等出来——三帧是给「measure 里再派发一次 dispatch」留余量。
+ */
+const flushMeasure = async (): Promise<void> => {
+  for (let i = 0; i < 3; i += 1) {
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+  }
+};
+
 afterEach(() => {
   document.body.innerHTML = "";
 });
@@ -102,21 +115,66 @@ describe("find-panel：命中计数", () => {
     const view = mount("陆行舟没动。陆行舟抬头。陆行舟离开。");
     openFindPanel(view, { replace: false });
 
-    // 光标在文首：报的是「下一处」，点一下就会跳到它（VS Code 同款口径）
+    // 光标在文首：报的是「下一处」，也就是已经站在第 1 处上 ——
+    // 点「下一条」必须走到第 2 处，再选回第 1 处等于这一下没按（用户报的症状）
     type(view, "search", "陆行舟");
-    expect(countOf(view)).toBe("1 / 3");
-
-    click(view, "[data-act=next]");
-    expect(selectionOf(view)).toEqual({ from: 0, to: 3 });
     expect(countOf(view)).toBe("1 / 3");
 
     click(view, "[data-act=next]");
     expect(selectionOf(view)).toEqual({ from: 6, to: 9 });
     expect(countOf(view)).toBe("2 / 3");
 
-    // 往回走要能退到上一个，而不是绕回最后一个
-    click(view, "[data-act=prev]");
+    click(view, "[data-act=next]");
+    expect(selectionOf(view)).toEqual({ from: 12, to: 15 });
+    expect(countOf(view)).toBe("3 / 3");
+
+    // 从最后一处再往后：首尾相接回到第 1 处
+    click(view, "[data-act=next]");
     expect(selectionOf(view)).toEqual({ from: 0, to: 3 });
+    expect(countOf(view)).toBe("1 / 3");
+
+    // 从第 1 处往上走：回绕到**最后一处**（不是「光标前面那一处」）
+    click(view, "[data-act=prev]");
+    expect(selectionOf(view)).toEqual({ from: 12, to: 15 });
+    expect(countOf(view)).toBe("3 / 3");
+
+    view.destroy();
+  });
+
+  it("新打开章节时（光标在文首、查询远在后面）也能一路走到底再回绕", () => {
+    const view = mount("开场白。陆行舟没动。陆行舟抬头。陆行舟离开。");
+    openFindPanel(view, { replace: false });
+
+    // 输入即选中第一处（计数报几就是第几处），不再「报 1 却一处没选」
+    type(view, "search", "陆行舟");
+    expect(countOf(view)).toBe("1 / 3");
+    expect(selectionOf(view)).toEqual({ from: 4, to: 7 });
+
+    // 三条命令走完 3 处，不出现「按了没反应」的空档
+    click(view, "[data-act=next]");
+    expect(countOf(view)).toBe("2 / 3");
+    click(view, "[data-act=next]");
+    expect(countOf(view)).toBe("3 / 3");
+    click(view, "[data-act=next]");
+    expect(countOf(view)).toBe("1 / 3");
+
+    // 从第 1 处往回：直接落到最后一处（用户期望的「上一条 = 最后一条」）
+    click(view, "[data-act=prev]");
+    expect(countOf(view)).toBe("3 / 3");
+
+    view.destroy();
+  });
+
+  it("打字过程中锚点不飘：查询变长后仍落在新的第一处", () => {
+    const view = mount("陈歌站在原地。陈歌抬头。陈歌离开。");
+    openFindPanel(view, { replace: false });
+
+    type(view, "search", "陈");
+    expect(selectionOf(view)).toEqual({ from: 0, to: 1 });
+
+    // 查询变长后原处已不命中：仍然从锚点（选区起点）往后找第一处
+    type(view, "search", "陈歌");
+    expect(selectionOf(view)).toEqual({ from: 0, to: 2 });
     expect(countOf(view)).toBe("1 / 3");
 
     view.destroy();
@@ -135,6 +193,38 @@ describe("find-panel：命中计数", () => {
     click(view, "[data-act=next]");
     expect(selectionOf(view)).toEqual({ from: 6, to: 9 });
     expect(countOf(view)).toBe("2 / 3");
+
+    view.destroy();
+  });
+
+  it("光标停在两处命中之间时，下一个落到下一处、上一个退到前一处（不整段跳过）", () => {
+    const view = mount("陈歌站在门口。他想起陈歌说过的话。陈歌笑了笑。");
+    openFindPanel(view, { replace: false });
+    type(view, "search", "陈歌");
+
+    // 手点正文，光标落在第 1 处 [0,2] 与第 2 处 [10,12] 之间：位置报 2 / 3
+    putCursor(view, 5);
+    expect(countOf(view)).toBe("2 / 3");
+
+    // 「下一个」必须落到第 2 处，不能把第 2 处整段跳过（旧实现跳到第 3 处）
+    click(view, "[data-act=next]");
+    expect(selectionOf(view)).toEqual({ from: 10, to: 12 });
+    expect(countOf(view)).toBe("2 / 3");
+
+    // 再按连续走：第 2 处 → 第 3 处
+    click(view, "[data-act=next]");
+    expect(selectionOf(view)).toEqual({ from: 17, to: 19 });
+    expect(countOf(view)).toBe("3 / 3");
+
+    // 「上一个」退到第 2 处
+    click(view, "[data-act=prev]");
+    expect(selectionOf(view)).toEqual({ from: 10, to: 12 });
+
+    // 光标仍在两处之间时按「上一个」：退到第 1 处（不是退过头或原地不动）
+    putCursor(view, 5);
+    click(view, "[data-act=prev]");
+    expect(selectionOf(view)).toEqual({ from: 0, to: 2 });
+    expect(countOf(view)).toBe("1 / 3");
 
     view.destroy();
   });
@@ -303,7 +393,7 @@ describe("find-panel：跳转落点", () => {
     return handler(view, EditorSelection.cursor(from));
   };
 
-  it("命中压在卡片底下要滚上来；已经在可见带里就不动", () => {
+  it("命中压在卡片底下要滚上来；已经在可见带里就不动", async () => {
     const view = mount("陆行舟没动。陆行舟抬头。");
     openFindPanel(view, { replace: false });
     // jsdom 量不到高度：手动给出卡片高度（64 + 20 留白 = 盖住 84px）
@@ -312,21 +402,46 @@ describe("find-panel：跳转落点", () => {
     Object.defineProperty(card, "offsetHeight", { configurable: true, value: 64 });
     const box = geometry(view, { top: 0, height: 400 });
 
-    // 命中在 200~220：卡片盖着 0~84，视口下沿让出 12 → 看得见，一像素不动
+    // 命中在 200~220：卡片 + 留白 + 呼吸量 = 108，视口下沿让出 24 → 376，看得见
     box.placeMatchAt(200);
     expect(runHandler(view, 0)).toBe(true);
+    await flushMeasure();
     expect(box.scrollTop()).toBe(0);
 
-    // 命中在 380~400：探出下沿 12px，只补这一截
+    // 命中在 380~400：探出下沿 24px，只补这一截
     box.placeMatchAt(380);
     expect(runHandler(view, 0)).toBe(true);
-    expect(box.scrollTop()).toBe(12);
+    await flushMeasure();
+    expect(box.scrollTop()).toBe(24);
 
-    // 命中回到卡片底下（20~40）：往上让开，正好顶到卡片下沿
+    // 命中回到卡片底下（20~40）：往上让开，让它正好顶到可见带上沿（84 + 24）
     box.scroller.scrollTop = 300;
     box.placeMatchAt(20);
     expect(runHandler(view, 0)).toBe(true);
-    expect(box.scrollTop()).toBe(300 - 64);
+    await flushMeasure();
+    expect(box.scrollTop()).toBe(300 - (84 + 24 - 20));
+
+    view.destroy();
+  });
+
+  it("跳转落点不在写相位读布局（否则异常被吞、落点逻辑从未生效）", async () => {
+    const view = mount("陆行舟没动。");
+    openFindPanel(view, { replace: false });
+
+    // 真实路径：dispatch(scrollIntoView) → EditorView.measure 的写相位 → scrollHandler。
+    // 这里直接跑一次，若处理器在读布局会抛「Reading the editor layout isn't allowed」
+    const errors: unknown[] = [];
+    const onError = (event: ErrorEvent): void => {
+      errors.push(event.error ?? event.message);
+    };
+    window.addEventListener("error", onError);
+    try {
+      view.dispatch({ effects: EditorView.scrollIntoView(0, { y: "nearest" }) });
+      await flushMeasure();
+    } finally {
+      window.removeEventListener("error", onError);
+    }
+    expect(errors).toEqual([]);
 
     view.destroy();
   });

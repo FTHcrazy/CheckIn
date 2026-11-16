@@ -1,5 +1,6 @@
 import { Modal, Radio } from "antd";
-import { ThunderboltOutlined } from "@ant-design/icons";
+import SvgIcon from "@/shared/components/SvgIcon";
+import aiSvg from "@/assets/novel/ai.svg?raw";
 import {
   COMPLIANCE_NOTICE,
   L3_SCOPE_LABELS,
@@ -70,7 +71,7 @@ export default function AiConsentDialog({
       open={open}
       title={
         <span className="aic__title">
-          <ThunderboltOutlined className="aic__icon" />
+          <SvgIcon svg={aiSvg} className="aic__icon" />
           {SCOPE_TITLES[scope]}
         </span>
       }

@@ -11,8 +11,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  */
 import { worldToScreen } from "./coords";
 import {
+  BASE,
   CANVAS,
-  MARGIN,
+  DRAG_WORLD_DELTA,
+  MARGIN_X,
+  MARGIN_Y,
   VIEW,
   canvasHint,
   clickCanvas,
@@ -30,6 +33,7 @@ import {
   rect,
   regionLabel,
   setup,
+  splitCountries,
   worldOf,
   zoomBy,
   zoomLabel,
@@ -75,7 +79,7 @@ afterEach(() => {
 vi.setConfig({ testTimeout: 120000 });
 
 describe("MapEditorPage 坐标链路", () => {
-  it("留白：底图不铺满画布，四周各留约一成空白", async () => {
+  it("留白：长方形底图按短边适配，横向留一成、纵向留两成", async () => {
     await setup();
 
     // 用**页面上真实显示的缩放**（而非测试自己的常量）推算底图四角位置，
@@ -83,20 +87,28 @@ describe("MapEditorPage 坐标链路", () => {
     // 四角随即贴边/出界，此处立刻失败。
     const scale = Number(zoomLabel().replace("%", "")) / 100;
     const size = { width: CANVAS, height: CANVAS };
-    const half = CANVAS / 2; // 底图世界尺寸 1024 → 半宽 512 = CANVAS / 2
-    const tl = worldToScreen({ x: -half, y: -half }, { ...VIEW, scale }, size);
-    const br = worldToScreen({ x: half, y: half }, { ...VIEW, scale }, size);
+    // 2.50.0：底图 1447×1024（≈1.413:1），半宽不再是 CANVAS/2
+    const half = { x: BASE.width / 2, y: BASE.height / 2 };
+    const tl = worldToScreen({ x: -half.x, y: -half.y }, { ...VIEW, scale }, size);
+    const br = worldToScreen({ x: half.x, y: half.y }, { ...VIEW, scale }, size);
 
-    // 四边都必须留出空白（底图不裁边）
-    expect(tl.x).toBeGreaterThanOrEqual(MARGIN - 1e-6);
-    expect(tl.y).toBeGreaterThanOrEqual(MARGIN - 1e-6);
-    expect(CANVAS - br.x).toBeGreaterThanOrEqual(MARGIN - 1e-6);
-    expect(CANVAS - br.y).toBeGreaterThanOrEqual(MARGIN - 1e-6);
+    // 四边都必须留出空白（底图不裁边）。读数只有 57%（被四舍五入过），
+    // 与精确倍率算出的留白差 2~3px，所以这里给 3px 容差而不是 1e-6。
+    const marginX = (CANVAS - BASE.width * scale) / 2;
+    const marginY = (CANVAS - BASE.height * scale) / 2;
+    expect(tl.x).toBeGreaterThanOrEqual(marginX - 3);
+    expect(tl.y).toBeGreaterThanOrEqual(marginY - 3);
+    expect(CANVAS - br.x).toBeGreaterThanOrEqual(marginX - 3);
+    expect(CANVAS - br.y).toBeGreaterThanOrEqual(marginY - 3);
 
-    // 留白比例落在合理区间：至少 9%（读出"这是一张完整的图纸"），
-    // 但也不能缩得只剩孤零零一小块（≤ 20%）。
-    expect(MARGIN / CANVAS).toBeGreaterThanOrEqual(0.09);
-    expect(MARGIN / CANVAS).toBeLessThanOrEqual(0.2);
+    // 留白比例落在合理区间：横向是约束边 ⇒ 正好约一成（读出"这是一张完整的
+    // 图纸"）；纵向由比例决定，≈22%，但不能大到只剩孤零零一小块。
+    expect(MARGIN_X / CANVAS).toBeGreaterThanOrEqual(0.09);
+    expect(MARGIN_X / CANVAS).toBeLessThanOrEqual(0.12);
+    expect(MARGIN_Y / CANVAS).toBeGreaterThanOrEqual(0.15);
+    expect(MARGIN_Y / CANVAS).toBeLessThanOrEqual(0.3);
+    // 反向保障：确实变成长方形了（横向留白明显小于纵向），正方形底图下两者相等
+    expect(MARGIN_Y).toBeGreaterThan(MARGIN_X * 1.5);
   });
 
   it("落位：素材落在光标对应的世界坐标，而非被二次换算", async () => {
@@ -131,8 +143,8 @@ describe("MapEditorPage 坐标链路", () => {
     dragCanvas(grab, { x: grab.x + 16, y: grab.y });
 
     const moved = spritePositions.at(-1) as { x: number; y: number };
-    // 屏幕右移 16px ÷ 缩放 0.8 = 世界 +20
-    expect(moved.x - placed.x).toBeCloseTo(20, 5);
+    // 屏幕右移 16px ÷ 起手缩放（0.5661，长方形底图）= 世界 +28.26
+    expect(moved.x - placed.x).toBeCloseTo(DRAG_WORLD_DELTA, 5);
     // 增量式：y 保持不动。若误把锚点吸附到光标，y 会变成光标的 -45
     expect(moved.y - placed.y).toBeCloseTo(0, 5);
     expect(Math.abs(moved.y - grabWorld.y)).toBeGreaterThan(1);
@@ -149,7 +161,7 @@ describe("MapEditorPage 坐标链路", () => {
     const grab = localOf({ x: placed.x, y: placed.y - 45 });
     dragCanvas(grab, { x: grab.x + 16, y: grab.y });
     const afterFirst = spritePositions.at(-1) as { x: number; y: number };
-    expect(afterFirst.x - placed.x).toBeCloseTo(20, 5);
+    expect(afterFirst.x - placed.x).toBeCloseTo(DRAG_WORLD_DELTA, 5);
 
     // ── 点画布空白处：取消选中（正常行为）──
     clickCanvas({ x: 60, y: 60 });
@@ -165,7 +177,7 @@ describe("MapEditorPage 坐标链路", () => {
     // ── 第二次拖动：必须再次生效 ──
     dragCanvas(reselect, { x: reselect.x + 16, y: reselect.y });
     const afterSecond = spritePositions.at(-1) as { x: number; y: number };
-    expect(afterSecond.x - afterFirst.x).toBeCloseTo(20, 5);
+    expect(afterSecond.x - afterFirst.x).toBeCloseTo(DRAG_WORLD_DELTA, 5);
   });
 
   it("缓慢拖动（每次仅移动 1px）应判为拖拽，不得触发落位", async () => {
@@ -213,7 +225,9 @@ describe("MapEditorPage 坐标链路", () => {
   it("区块：可生成、可撤销、可重做、可清除", async () => {
     await setup();
 
-    const generate = screen.getByRole("button", { name: /生成区块/ });
+    /** 2.50.0：工具栏不再有「生成区块」按钮，国家由一键成图产出；
+     *  本文件只关心"有了区块之后"的行为，所以直接写 store（见 helper 注释）。 */
+    const generate = () => splitCountries();
     /** 每次重新查询：按钮的 disabled 会随状态切换，避免持有过期节点 */
     const clearRegionsBtn = () => {
       openMore();
@@ -225,7 +239,7 @@ describe("MapEditorPage 坐标链路", () => {
     expect(clearRegionsBtn()).toBeDisabled();
 
     // ── 生成 ──
-    fireEvent.click(generate);
+    await generate();
     await waitFor(() => expect(regionLabel()).toContain("12"));
     expect(clearRegionsBtn()).not.toBeDisabled();
 
@@ -251,7 +265,7 @@ describe("MapEditorPage 坐标链路", () => {
     clickCanvas(localOf({ x: 0, y: 0 }));
     await waitFor(() => expect(countLabel()).toContain("1"));
 
-    fireEvent.click(screen.getByRole("button", { name: /生成区块/ }));
+    await splitCountries();
     await waitFor(() => expect(regionLabel()).toContain("12"));
 
     // 素材数量保持不变 —— 区块层与素材层是各自独立的文档字段
@@ -273,7 +287,7 @@ describe("MapEditorPage 坐标链路", () => {
     expect(screen.queryByRole("button", { name: /层级 \d/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /应用并生成区块/ })).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: /生成区块/ }));
+    await splitCountries();
     await waitFor(() => expect(regionLabel()).toContain("12"));
   });
 
@@ -283,7 +297,7 @@ describe("MapEditorPage 坐标链路", () => {
    */
   it("缩放不改变层级显示：胶囊恒为「国家」，到缩放下限后不再变小", async () => {
     await setup();
-    fireEvent.click(screen.getByRole("button", { name: /生成区块/ }));
+    await splitCountries();
     await waitFor(() => expect(regionLabel()).toContain("12"));
 
     const zoomPct = () => document.querySelector(".map-editor__zoom-label")?.textContent ?? "?";
@@ -292,20 +306,22 @@ describe("MapEditorPage 坐标链路", () => {
     // 钉精确读数只会制造假红；这里关心的是"过了 200 且不再动"。
     const zoomVal = () => Number((zoomPct().match(/(\d+)%/) ?? [])[1] ?? -1);
 
-    // 起点：国家（唯一的层级），80%
-    expect(zoomVal()).toBe(80);
+    // 起点：国家（唯一的层级），57%（2.50.0 画布改长方形后的起手适配）
+    expect(zoomVal()).toBe(57);
     expect(chip()).toBe("国家");
 
-    // 放大若干档：倍率在变，层级不变
+    // 放大若干档：倍率在变，层级不变。
+    // 每档 ×1.1，从 57% 起步要越过 200% 需要 14 档（0.566×1.1¹⁴ ≈ 215%）——
+    // 正方形时代起步就是 80%，10 档够用；画布改长方形后不够了。
     const zoomIn = screen.getByRole("button", { name: "zoom-in" });
     const zoomOut = screen.getByRole("button", { name: "zoom-out" });
-    for (let i = 0; i < 10; i += 1) fireEvent.click(zoomIn);
+    for (let i = 0; i < 14; i += 1) fireEvent.click(zoomIn);
     await waitFor(() => expect(zoomVal()).toBeGreaterThan(200), { timeout: 3000 });
     expect(chip()).toBe("国家");
 
     // 「适应窗口」精确回到起点
     fireEvent.click(screen.getByRole("button", { name: "expand" }));
-    await waitFor(() => expect(zoomVal()).toBe(80), { timeout: 3000 });
+    await waitFor(() => expect(zoomVal()).toBe(57), { timeout: 3000 });
 
     // 缩到下限（最粗一级自然缩放 × coarseOut = 0.609×0.6 ≈ 37%），再点不动
     for (let i = 0; i < 12; i += 1) fireEvent.click(zoomOut);
@@ -323,7 +339,7 @@ describe("MapEditorPage 坐标链路", () => {
    */
   it("素材不随缩放淡出：放大放置、缩回整图后仍选中、仍点得中", async () => {
     await setup();
-    fireEvent.click(screen.getByRole("button", { name: /生成区块/ }));
+    await splitCountries();
     await waitFor(() => expect(regionLabel()).toContain("12"));
     expect(canvasHint()).toContain("新素材归入「国家」级");
 
@@ -337,7 +353,7 @@ describe("MapEditorPage 坐标链路", () => {
 
     // 缩回整图：山还在，选中保持（权重恒 1）
     fireEvent.click(screen.getByRole("button", { name: "expand" }));
-    await waitFor(() => expect(zoomLabel()).toBe("80%"));
+    await waitFor(() => expect(zoomLabel()).toBe("57%"));
     expect(deleteButton()).not.toBeDisabled();
 
     // 取消后再点它：仍点得中
@@ -361,7 +377,7 @@ describe("MapEditorPage 坐标链路", () => {
     clickCanvas(localOf({ x: 40, y: 40 }));
     await waitFor(() => expect(countLabel()).toContain("1"));
 
-    fireEvent.click(screen.getByRole("button", { name: /生成区块/ }));
+    await splitCountries();
     await waitFor(() => expect(regionLabel()).toContain("12"));
     // 提示改为"新素材归入某级"，说明归属只对之后放置的素材生效
     expect(canvasHint()).not.toContain("不归属层级");
@@ -396,7 +412,7 @@ describe("MapEditorPage 全屏缩放与素材尺寸", () => {
    */
   it("缩放有上限：放大到顶后读数不再变大", async () => {
     await setup();
-    fireEvent.click(screen.getByRole("button", { name: /生成区块/ }));
+    await splitCountries();
     await waitFor(() => expect(regionLabel()).toContain("12"));
 
     zoomBy("zoom-in", 40);
@@ -417,7 +433,7 @@ describe("MapEditorPage 全屏缩放与素材尺寸", () => {
    */
   it("素材命中区：点中心选中、点外接矩形外 1px 不选中", async () => {
     await setup();
-    fireEvent.click(screen.getByRole("button", { name: /生成区块/ }));
+    await splitCountries();
     await waitFor(() => expect(regionLabel()).toContain("12"));
 
     // 山（大）基准 160×93，因子 1 ⇒ 半宽 80、高 93（锚点在脚底）

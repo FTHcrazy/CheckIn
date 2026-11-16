@@ -1,11 +1,11 @@
 # map.db 数据层规范（地图独立库 + 作品可绑定）
 
 > 状态：**已实施**（B0 / 2.20.0；§9 四条已于 2026-11-06 收口）
-> 落地实现在 `electron/map-db.ts`、`electron/handlers/map-handlers.ts`、
+> 落地实现在 `electron/map/map-db.ts`、`electron/handlers/map/map-handlers.ts`、
 > `src/windows/MapWindow/pages/MapEditorPage/persistence/useMapPersistence.ts`，
-> 架构不变量由 `electron/map-db-guard.test.ts` 钉住。
+> 架构不变量由 `electron/map/map-db-guard.test.ts` 钉住。
 > 输入：[`../review/map-vs-reference-interaction-review.md`](../review/map-vs-reference-interaction-review.md) §7 R-MAP-28、
-> `electron/novel-db.ts`（双库范式先例）、`AGENTS.md` §2.1（SQL 只出现在 db 与 handlers）
+> `electron/novel/novel-db.ts`（双库范式先例）、`AGENTS.md` §2.1（SQL 只出现在 db 与 handlers）
 > 基线：CheckIn **2.36.0**（工作区）｜`src/windows/MapWindow/` 44 文件 / 750 用例
 
 ---
@@ -28,7 +28,7 @@
 | **生命周期** | 地图窗口是**独立窗口、即关即销**，lite 版**根本不打包**（`EDITION_WINDOW_ENTRIES`）。独立库可以在 map 窗口未打开时完全不加载，内存与连接成本为零 |
 | **演进边界** | 地图 schema 仍在快速变化（`regionSchema` / `MapSubmap` / 要素 / 折线在路上）。独立库允许"清库换代、不做迁移"（与 novel.db 1.33.0 同一策略），不会牵连作品与正文 |
 
-**与 novel.db 的关系**：平级、并列、互不 import。**只有** `electron/db.ts` 的 `registerUserDbLifecycle` 是共用桥。
+**与 novel.db 的关系**：平级、并列、互不 import。**只有** `electron/core/db.ts` 的 `registerUserDbLifecycle` 是共用桥。
 
 ---
 
@@ -41,7 +41,7 @@ user-data/{email-hash}/
 └─ map.db       map_docs + map_revisions + map_assets + map_config   ← 新增
 ```
 
-- 文件：`electron/map-db.ts`（对标 `novel-db.ts`）
+- 文件：`electron/map/map-db.ts`（对标 `novel-db.ts`）
 - 开关：`switchMapDb(email)` / `getMapDb()` / `isMapDbReady()` / `closeMapDb()`
 - 桥接：`registerMapDbBridge()` → `registerUserDbLifecycle({ onSwitched: switchMapDb, onClosed: closeMapDb })`，
   注册时若已有 `getCurrentUserEmail()` 立即补开一次（与 `registerNovelDbBridge` 同范式）。
@@ -200,14 +200,14 @@ CREATE TABLE IF NOT EXISTS map_config (
 
 | # | 文件 | 改动 | 状态 |
 |---|---|---|---|
-| 1 | `electron/map-db.ts` | 建库、开关、`mapAll/mapGet/mapRun/mapExec/mapTransaction`、`registerMapDbBridge`、`getMapAssetsDir` | ✅ |
-| 2 | `electron/map-utils.ts` | 纯函数：标题归一 / rev 冲突 / 版本节奏 / 视口解析 / 缩略图 data URL（+ 单测 12 条） | ✅ |
-| 3 | `electron/handlers/map-handlers.ts` | §4 全部通道 + 绑定校验 + 软删/恢复/强删 + `map-work-options` | ✅ |
+| 1 | `electron/map/map-db.ts` | 建库、开关、`mapAll/mapGet/mapRun/mapExec/mapTransaction`、`registerMapDbBridge`、`getMapAssetsDir` | ✅ |
+| 2 | `electron/map/map-utils.ts` | 纯函数：标题归一 / rev 冲突 / 版本节奏 / 视口解析 / 缩略图 data URL（+ 单测 12 条） | ✅ |
+| 3 | `electron/handlers/map/map-handlers.ts` | §4 全部通道 + 绑定校验 + 软删/恢复/强删 + `map-work-options` | ✅ |
 | 4 | `electron/main.ts` | `registerMapDbBridge` → `registerMapHandlers` → `registerMapFlushGuard`（lite 版整组跳过）；`mapWin.on("close")` flush 拦截 + 1.5s 兜底 | ✅ |
 | 5 | `electron/preload.ts` + `src/shared/types/electron.d.ts` | `map` 命名空间白名单 + 关窗请求/回执通道 + 全量 DTO | ✅ |
 | 6 | `persistence/useMapPersistence.ts` + `store/useMapFileStore.ts` | 启动恢复最近一张（无则新建）/ 800ms 防抖保存 / 冲突三选一 / 关窗 flush / 切图前先存 | ✅ |
 | 7 | `components/MapLibraryModal/` | 地图库：缩略图 + 名称 + 更新时间 + 所属作品 + 新建 / 改名 / 删除 / 回收站 / 绑定 | ✅ |
-| 8 | `electron/map-db-guard.test.ts` | 源码守卫：三库互不越界、handler 不碰 checkin 写通道、列表不带 `doc_json`、关窗拦截与白名单存在 | ✅ |
+| 8 | `electron/map/map-db-guard.test.ts` | 源码守卫：三库互不越界、handler 不碰 checkin 写通道、列表不带 `doc_json`、关窗拦截与白名单存在 | ✅ |
 
 **两处与计划的形态偏差**：
 
@@ -230,8 +230,8 @@ CREATE TABLE IF NOT EXISTS map_config (
 | # | 开放项 | 结论 | 归属 | 触发条件（可判定，不是「以后再看」） | 代码证据 |
 |---|---|---|---|---|---|
 | **1** | 缩略图生成时机 | **维持「开库前抓一张」**（320px）；「关窗 flush 之后也抓一张」判为**不立** —— 关窗窗口只有 1.5s 兜底（§6 硬约束 3），在关窗路径里再插一次 `extract` 会把「关不掉窗口」的风险抬高，收益（少几张占位图）与风险不成比例 | **不立**（当前实现即终态）。若日后列表质量成为问题时，随素材/列表优化批重开 | 列表里**实际出现占位图**且用户对此反馈 **≥3 次**（同一条反馈重复计一次） | `pages/MapEditorPage/index.tsx:410-425`（开库前 320px 抓图 + `saveThumb`）；`persistence/useMapPersistence.ts:339-348`；无「关窗抓图」调用点（`grep saveThumb src/windows/MapWindow` 仅 2 处：`:425`、`:339`） |
-| **2** | 历史版本保留份数 / `map_revisions` 无 UI | **保留份数不变**：`MAP_REVISION_KEEP = 10`、`MAP_REVISION_EVERY = 10`（每 10 版留一档）。**通道已通、UI 不做** —— 渲染层对 `revisions` / `restoreRev` **零引用**，做一个「回到上一版」面板属功能开发，不是数据层欠账 | **B1 之后**（功能批），需另立需求号（本批不立） | 用户提出「回到上一版 / 上一稿」诉求 **≥1 次** | `electron/map-utils.ts:23`（`MAP_REVISION_KEEP = 10`）、`:32`（`MAP_REVISION_EVERY = 10`）、`:74`（`shouldSnapshotRevision`）、`:139`（`revisionsToDrop`）；调用点 `electron/handlers/map-handlers.ts:169`（判定）、`:172`（INSERT）、`:178`（裁剪）。⚠️ 常量**在 `map-utils.ts`，不在 `map-db.ts`**。渲染层零引用：`grep -rn "revisions" src/windows/MapWindow --include=*.ts --include=*.tsx` 无输出 |
-| **3** | `map_assets` 已建未用 | **保留表不删**。表已随首建库一次到位，删掉等于下次接素材导入时**再动一次 schema + 迁移**；空表的成本是零。这是「已建未用」的**刻意状态**，不是遗漏 | **S2 素材导入批**启用（届时写入 `file_path` 索引行） | S2 排期启动（素材导入需要跨图复用的资源索引） | 建表 `electron/map-db.ts:99`、索引 `:109`；SQL 使用面：**只有 purge 的 DELETE**（`map-handlers.ts:361`），全仓**没有** `INSERT INTO map_assets` / `FROM map_assets`（`grep -rn "INSERT INTO map_assets\|FROM map_assets" electron/` 仅命中 guard 测试的字符串断言） |
+| **2** | 历史版本保留份数 / `map_revisions` 无 UI | **保留份数不变**：`MAP_REVISION_KEEP = 10`、`MAP_REVISION_EVERY = 10`（每 10 版留一档）。**通道已通、UI 不做** —— 渲染层对 `revisions` / `restoreRev` **零引用**，做一个「回到上一版」面板属功能开发，不是数据层欠账 | **B1 之后**（功能批），需另立需求号（本批不立） | 用户提出「回到上一版 / 上一稿」诉求 **≥1 次** | `electron/map/map-utils.ts:23`（`MAP_REVISION_KEEP = 10`）、`:32`（`MAP_REVISION_EVERY = 10`）、`:74`（`shouldSnapshotRevision`）、`:139`（`revisionsToDrop`）；调用点 `electron/handlers/map/map-handlers.ts:169`（判定）、`:172`（INSERT）、`:178`（裁剪）。⚠️ 常量**在 `map-utils.ts`，不在 `map-db.ts`**。渲染层零引用：`grep -rn "revisions" src/windows/MapWindow --include=*.ts --include=*.tsx` 无输出 |
+| **3** | `map_assets` 已建未用 | **保留表不删**。表已随首建库一次到位，删掉等于下次接素材导入时**再动一次 schema + 迁移**；空表的成本是零。这是「已建未用」的**刻意状态**，不是遗漏 | **S2 素材导入批**启用（届时写入 `file_path` 索引行） | S2 排期启动（素材导入需要跨图复用的资源索引） | 建表 `electron/map/map-db.ts:99`、索引 `:109`；SQL 使用面：**只有 purge 的 DELETE**（`map-handlers.ts:361`），全仓**没有** `INSERT INTO map_assets` / `FROM map_assets`（`grep -rn "INSERT INTO map_assets\|FROM map_assets" electron/` 仅命中 guard 测试的字符串断言） |
 | **4** | 删作品后的降级钩子 | **钩子未接**是硬事实：novel 侧 purge 只删自己的表，**不调用 map 库**。**显示层已兜底**：列表按 `workId` 查不到作品时显示「独立地图」，**用户可见行为与「已置 NULL」等价**，差别只是库里留一个悬空 `work_id` | **novel 侧 purge 统一处理**（跨库事务那一批） | novel 侧把「删作品」改成统一事务 / 级联清理时一并接（届时在同一个事务里把 `map_docs.work_id` 置 NULL） | `grep -rn "purge" electron/` 的 map 侧只有 `map-handlers.ts:355`（`map-doc-purge`，删地图自己，与作品无关）；`novel-handlers.ts` 的 `novel-chapter-purge:771` / `novel-volume-purge:1524` 均不引用 map 库。行为等价的显示兜底见 §5「作品被彻底删除」行 |
 
 **收口后的总账**：4 条里 **1 条不立（序 1）**、**1 条待功能批立号（序 2）**、**2 条已挂到具体批次（序 3 → S2；序 4 → novel purge 统一事务）**。

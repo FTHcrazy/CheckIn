@@ -219,8 +219,7 @@ describe("守卫：素材标注完整性", () => {
     }
   });
 
-  it("每个地形要么有素材、要么回退链可达有素材的地形（防空转枚举）", () => {
-    const covered = new Set(TERRAIN_KINDS.filter((k) => SPRITES.some((s) => s.terrains.includes(k))));
+  it("每个地形要么有素材、要么回退链可达有素材的地形（防空转枚举）", () => {    const covered = new Set(TERRAIN_KINDS.filter((k) => SPRITES.some((s) => s.terrains.includes(k))));
     for (const kind of TERRAIN_KINDS) {
       if (covered.has(kind)) continue;
       // 沿回退链 BFS，必须到达 covered 集（visited 集同时保证无环时有限步终止）
@@ -340,5 +339,57 @@ describe("flippableOf · 镜像翻转元数据（P1-4）", () => {
     ]);
     const actual = new Set(SPRITES.filter((s) => s.flippable === false).map((s) => s.id));
     expect([...actual].sort()).toEqual([...NON_FLIPPABLE].sort());
+  });
+});
+
+// ── 守卫：素材池下限（P1-5 验收线，review §9.2）────────────────────
+
+/**
+ * 为什么要写成守卫而不是只写进文档：P1-5 的验收线是**数字**（两档各 ≥12 种），
+ * 而 2.49.0 记过的那次翻车正是"凭印象写文档"（§9.5：把雪原池写成 2 张，实测 7 张）。
+ * 数字由测试钉住，删素材/改标签都会先在这里红。
+ */
+describe("守卫：素材池下限（P1-5）", () => {
+  /** 两档的验收下限（review §9.2，2.49.0 达成） */
+  const POOL_MIN = 12;
+
+  /** 沼泽档口径：按 `terrains` 计 `swamp ∪ jungle`（一个素材可两边都算） */
+  const wetlandPool = () =>
+    SPRITES.filter((s) => s.terrains.includes("swamp") || s.terrains.includes("jungle"));
+
+  /** 雪原档口径：按 `zones` 计（含 snow 即可，含跨带借用） */
+  const snowPool = () => SPRITES.filter((s) => s.zones.includes("snow"));
+
+  it(`沼泽档 ≥${POOL_MIN} 种（2.49.0 实测 13）`, () => {
+    const pool = wetlandPool();
+    expect(pool.length, `沼泽档只有 ${pool.length} 种：${pool.map((s) => s.id).join(" ")}`)
+      .toBeGreaterThanOrEqual(POOL_MIN);
+  });
+
+  it("沼泽档里 ≥4 种不是 core 通用池（不然「本带专属」名不副实）", () => {
+    // 2.49.0 之前 swamp ∪ jungle 的 7 张里 6 张是 core —— 任何气候都在借用，
+    // 分带对沼泽完全不生效。现在草带自有 5 张 + 疏树 1 张。
+    const own = wetlandPool().filter((s) => !s.zones.includes("core"));
+    expect(own.length, `非 core 的沼泽档素材只有 ${own.length} 种：${own.map((s) => s.id).join(" ")}`)
+      .toBeGreaterThanOrEqual(4);
+  });
+
+  it(`雪原档 ≥${POOL_MIN} 种（2.49.0 实测 12）`, () => {
+    const pool = snowPool();
+    expect(pool.length, `雪原档只有 ${pool.length} 种：${pool.map((s) => s.id).join(" ")}`)
+      .toBeGreaterThanOrEqual(POOL_MIN);
+  });
+
+  it("雪原档里「纯雪题材」≥8 种（跨带借用的树/碎石不算）", () => {
+    // 纯雪 = 只标 snow 带。`tree-pine`（core+snow）与 `gravel-barren`（desert+snow）
+    // 是借用：它们在雪带能用，但画的是温带松与干裂碎石，数量够不代表"雪题材够"。
+    const pure = snowPool().filter((s) => s.zones.length === 1);
+    expect(pure.length, `纯雪题材只有 ${pure.length} 种：${pure.map((s) => s.id).join(" ")}`)
+      .toBeGreaterThanOrEqual(8);
+  });
+
+  it("变异探针：下限没被写松", () => {
+    // 有人嫌红把 POOL_MIN 改成 7（= 2.49.0 之前的口径）时，这条先红。
+    expect(POOL_MIN).toBeGreaterThanOrEqual(12);
   });
 });

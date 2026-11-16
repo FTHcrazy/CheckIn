@@ -1,7 +1,9 @@
 import { useState } from "react";
 import type { KeyboardEvent } from "react";
-import { DeleteOutlined, ThunderboltOutlined } from "@ant-design/icons";
+import { DeleteOutlined } from "@ant-design/icons";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
+import SvgIcon from "@/shared/components/SvgIcon";
+import aiSvg from "@/assets/novel/ai.svg?raw";
 import { CHAPTER_STATUS_META } from "../../novel-config";
 import { formatThousands, padIndex } from "../../novel-utils";
 import type { NovelChapter } from "../../types";
@@ -208,7 +210,7 @@ export default function ChapterTreeItem({
               onOpenSummary(chapter.id);
             }}
           >
-            <ThunderboltOutlined />
+            <SvgIcon svg={aiSvg} />
           </button>
         ) : null}
         {/* 删除按钮行内排在字数之前：悬浮时宽度展开，字数只平移不被遮盖。

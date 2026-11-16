@@ -3,8 +3,9 @@ import {
   CheckOutlined,
   CloseOutlined,
   ReloadOutlined,
-  ThunderboltOutlined,
 } from "@ant-design/icons";
+import SvgIcon from "@/shared/components/SvgIcon";
+import aiSvg from "@/assets/novel/ai.svg?raw";
 import { TRANSFORM_KIND_LABELS, type TransformKind } from "@/shared/ai/context";
 import "./index.scss";
 
@@ -58,7 +59,7 @@ export default function PolishPreview({
       <div className="nv-polish" role="dialog" aria-label={title}>
         <div className="nv-polish__head">
           <span className="nv-polish__title">
-            <ThunderboltOutlined /> {title}
+            <SvgIcon svg={aiSvg} /> {title}
           </span>
           <Button
             className="nv-polish__close"

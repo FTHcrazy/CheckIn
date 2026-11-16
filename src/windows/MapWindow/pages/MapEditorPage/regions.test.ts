@@ -5,7 +5,9 @@ import {
   DEFAULT_REGION_SCHEMA,
   REGION_BORDER_ALPHA,
   REGION_BORDER_COLOR,
+  REGION_BORDER_LINE_COLOR,
   REGION_BORDER_PX,
+  REGION_BORDER_WIDTH_WORLD,
   REGION_FILL_ALPHA,
   REGION_INNER_SHADOW_ALPHA,
   REGION_INNER_SHADOW_COLOR,
@@ -915,13 +917,17 @@ describe("区块样式与密度（对齐逆向 §3.7 口径）", () => {
     return out;
   };
 
-  it("样式五件 = 逆向源值（α 0.80 / 1px / #4d3200 / 白外影 / 内阴影 9px #4d4134）", () => {
+  it("样式五件 = 逆向源值（α 0.80 / 图章 3 单位 #73562d / 白外影 / 内阴影 9px #4d4134）", () => {
     // 2.43.0 对齐分风格 paint_shadow 表（review 序 11 / E2）：
-    // stroke:1 #4d3200 + shadow:2~5 #ffffff + inner_shadow。
+    // shadow:2~5 #ffffff + inner_shadow。
     // 填充 0.80 配西幻土色板（0.55 配粉彩"发白发平"，0.30 配强对比色板均已作废）。
+    // 2.52.0 边界改取国家图章原值（世界恒定 3 单位 / #73562d / α1）——
+    // paint_shadow.stroke:1 是地形陆稿描边，不是国家边界（2.43.0 取错了源）。
     expect(REGION_FILL_ALPHA).toBeCloseTo(0.8, 12);
-    expect(REGION_BORDER_PX).toBe(1);
-    expect(REGION_BORDER_COLOR).toBe(0x4d3200);
+    expect(REGION_BORDER_PX).toBe(1); // 子图仍走屏幕恒定口径
+    expect(REGION_BORDER_WIDTH_WORLD).toBe(3);
+    expect(REGION_BORDER_COLOR).toBe(0x4d3200); // 子图
+    expect(REGION_BORDER_LINE_COLOR).toBe(0x73562d);
     expect(REGION_BORDER_ALPHA).toBe(1);
     // 白外影 + 内阴影（paint_shadow 的另外两件）
     expect(REGION_RIM_PX).toBe(4);

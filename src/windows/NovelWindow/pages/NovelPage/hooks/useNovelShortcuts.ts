@@ -15,6 +15,8 @@ export interface NovelShortcutHandlers {
   onNewChapter: () => void;
   /** 专注模式开关（默认 F11） */
   onToggleFocus: () => void;
+  /** 阅读模式开关（默认 F12）：只读 + 隐藏光标，章首尾续滚翻章 */
+  onToggleReadMode: () => void;
   /** 行囊面板开关（默认 Ctrl+Shift+B） */
   onTogglePack: () => void;
   /** 设定中心（默认 Ctrl+Shift+S） */
@@ -29,6 +31,7 @@ const HANDLER_BY_ID: Record<string, keyof NovelShortcutHandlers> = {
   jump: "onJump",
   newChapter: "onNewChapter",
   toggleFocus: "onToggleFocus",
+  toggleReadMode: "onToggleReadMode",
   togglePack: "onTogglePack",
   openSettings: "onOpenSettings",
   escape: "onEscape",

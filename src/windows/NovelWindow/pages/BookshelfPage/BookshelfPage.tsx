@@ -3,11 +3,15 @@ import {
   BookOutlined,
   CalendarOutlined,
   EditOutlined,
+  SafetyOutlined,
   ThunderboltOutlined,
 } from "@ant-design/icons";
-import { AutoComplete, Input, Modal, Button, Steps, type InputRef } from "antd";
+import { AutoComplete, Badge, Input, Modal, Button, Steps, type InputRef } from "antd";
+import SvgIcon from "@/shared/components/SvgIcon";
+import recycleBinSvg from "@/assets/novel/recycle-bin.svg?raw";
 import ContinueHero from "./components/ContinueHero";
 import BookCard from "./components/BookCard";
+import BookWorkMenu from "./components/BookWorkMenu";
 import IdeaRail from "./components/IdeaRail";
 import NewWorkCard from "./components/NewWorkCard";
 import ShelfStats, { type ShelfStatItem } from "./components/ShelfStats";
@@ -15,6 +19,7 @@ import ShelfToolbar, { type ShelfViewMode } from "./components/ShelfToolbar";
 import ShelfTopBar from "./components/ShelfTopBar";
 import DataSafetyModal from "./components/DataSafetyModal";
 import { useBookshelfData } from "./hooks/useBookshelfData";
+import { useShelfWorkActions } from "./hooks/useShelfWorkActions";
 import { useBookImport } from "./hooks/useBookImport";
 import { listTrash } from "../NovelPage/services/novel-service";
 import NovelGuideTour from "../../components/NovelGuideTour";
@@ -83,9 +88,12 @@ export default function BookshelfPage({
     hero,
     usage,
     style,
+    numberingMap,
     loading,
     loadError,
     createWork,
+    patchWork,
+    removeWork,
     addNote,
     toggleNotePinned,
     moveNoteTo,
@@ -286,6 +294,26 @@ export default function BookshelfPage({
     [cards],
   );
 
+  /**
+   * 书卡右键「作品操作」（2.56.0）：重命名 / 改题材 / 导封面 / 导出 / 删除。
+   * 菜单本体、三个弹框和 IPC 编排都在各自的组件 / hook 里，页面只接回调。
+   *
+   * `onTrashed` 让「刚删掉一部作品」这件事当场反映到页脚角标上（见 hook 注释）。
+   */
+  const handleTrashed = useCallback((): void => {
+    void refreshTrashCount();
+  }, [refreshTrashCount]);
+
+  const workMenu = useShelfWorkActions({
+    cards,
+    style,
+    numberingMap,
+    patchWork,
+    removeWork,
+    refresh,
+    onTrashed: handleTrashed,
+  });
+
   /** 卡片点击：优先该作品的位置记忆，否则取最近更新章节（空作品交编辑器空态） */
   const openWorkCard = useCallback(
     (workId: string) => {
@@ -416,8 +444,6 @@ export default function BookshelfPage({
   return (
     <div className="bs-page" aria-hidden={!visible}>
       <ShelfTopBar
-        workCount={cards.length}
-        totalWordsText={formatWordsCompact(totalWords)}
         keyword={keyword}
         onKeywordChange={setKeyword}
         onCreateClick={openCreate}
@@ -426,9 +452,6 @@ export default function BookshelfPage({
         importPhase={importPhase}
         onGlobalSettingClick={openGlobalSetting}
         globalSettingOpening={globalSettingOpening}
-        onSafetyClick={() => setSafetyOpen(true)}
-        onTrashClick={onOpenTrash}
-        trashCount={trashCount}
       />
 
       <div className="bs-page__body">
@@ -485,6 +508,7 @@ export default function BookshelfPage({
                   card={card}
                   view={viewMode}
                   onOpen={openWorkCard}
+                  onContextMenu={(x, y) => workMenu.openMenu(card.id, x, y)}
                 />
               ))}
               <NewWorkCard
@@ -510,10 +534,34 @@ export default function BookshelfPage({
         />
       </div>
 
+      {/* 页脚（O-10）：两个「出事才会用」的元操作从顶栏搬到这儿。
+          位置变了语义也变了 —— 它们不再和「导入 / 新建」这两个首日动作
+          并列同权，而是和「数据在哪」这种元信息待在一起。
+          回收站带条数：有东西可捞回来时才值得注意。 */}
       <footer className="bs-page__status">
-        {/* 作品数 / 字数 / 今日新增 / 连续码字已分别由顶栏胶囊与统计条承载，
-            底栏不再复读 —— 一份信息只在一个地方说。 */}
-        <span>本地优先 · 数据存储于本机</span>
+        <span className="bs-page__status-note">本地优先 · 全部数据存本机</span>
+        <span className="bs-page__status-links">
+          <Button
+            className="bs-page__status-link"
+            onClick={() => setSafetyOpen(true)}
+          >
+            <SafetyOutlined />
+            <span>备份与恢复</span>
+          </Button>
+          <Button className="bs-page__status-link" onClick={onOpenTrash}>
+            <SvgIcon svg={recycleBinSvg} />
+            <span>回收站</span>
+            {/* 计数用 antd Badge（O-19）：此前是手写的胶囊 span，字号 / 圆角 /
+                底色全是另抄一份，改一处就与库里的角标对不上。showZero 默认关，
+                回收站空着时不占位。 */}
+            <Badge
+              className="bs-page__trash-badge"
+              count={trashCount}
+              size="small"
+              overflowCount={99}
+            />
+          </Button>
+        </span>
       </footer>
 
       {/* 新建作品（2.7.1 起两步）：① 书名必填 → ② 题材可选、可跳过。
@@ -602,6 +650,9 @@ export default function BookshelfPage({
           void refreshTrashCount();
         }}
       />
+
+      {/* 书卡右键菜单：五项作品操作 + 重命名 / 题材 / 删除确认弹框 */}
+      <BookWorkMenu actions={workMenu} />
 
       {/* L1 漫游引导：第 1 步属书架页（第 2-5 步属编辑器页，由 NovelPage 内的实例接管） */}
       <NovelGuideTour view="shelf" visible={visible} />

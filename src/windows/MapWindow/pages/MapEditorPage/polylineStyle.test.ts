@@ -22,15 +22,15 @@ import {
  */
 
 describe("样式表", () => {
-  it("八档、id 唯一、覆盖五类语义（含 2.44.0 湖面两档与 2.45.0 道路点线）", () => {
-    expect(POLYLINE_STYLES).toHaveLength(8);
-    expect(new Set(POLYLINE_STYLES.map((s) => s.id)).size).toBe(8);
+  it("九档、id 唯一、覆盖五类语义（含 2.44.0 湖面、2.45.0 道路点线与 2.51.0 波浪弧）", () => {
+    expect(POLYLINE_STYLES).toHaveLength(9);
+    expect(new Set(POLYLINE_STYLES.map((s) => s.id)).size).toBe(9);
     expect(new Set(POLYLINE_STYLES.map((s) => s.kind))).toEqual(
       new Set(["road", "river", "ridge", "border", "lake"]),
     );
-    // 三种 road（官道 / 小径 / 点线）、两种 lake（湖面 / 等深线）
+    // 三种 road（官道 / 小径 / 点线）、三种 lake（湖面 / 波浪弧 / 等深线）
     expect(POLYLINE_STYLES.filter((s) => s.kind === "road")).toHaveLength(3);
-    expect(POLYLINE_STYLES.filter((s) => s.kind === "lake")).toHaveLength(2);
+    expect(POLYLINE_STYLES.filter((s) => s.kind === "lake")).toHaveLength(3);
   });
 
   it("只有湖面档带填充，且填充必须比岸线淡（否则湖会糊成一坨实心色）", () => {
@@ -39,8 +39,21 @@ describe("样式表", () => {
     const lake = POLYLINE_STYLES.find((s) => s.id === "lake");
     expect(lake?.fill?.alpha).toBeGreaterThan(0);
     expect(lake?.fill?.alpha).toBeLessThanOrEqual(1);
-    // 等深线不填充：它的作用是"读深浅"，填了就成了第二个湖
+    // 等深线/波浪弧不填充：它们的作用是"读水面起伏"，填了就成了第二个湖
     expect(POLYLINE_STYLES.find((s) => s.id === "lake-ring")?.fill).toBeUndefined();
+    expect(POLYLINE_STYLES.find((s) => s.id === "lake-wave")?.fill).toBeUndefined();
+  });
+
+  it("湖面两档与河流同色相（2.51.0：湖与河是同一片水系，色相必须一致）", () => {
+    const river = POLYLINE_STYLES.find((s) => s.id === "river")!;
+    const lake = POLYLINE_STYLES.find((s) => s.id === "lake")!;
+    const wave = POLYLINE_STYLES.find((s) => s.id === "lake-wave")!;
+    expect(lake.color).toBe(river.color);
+    expect(lake.fill?.color).toBe(river.color);
+    // 波浪弧是水纹，比河线细淡
+    expect(wave.color).toBe(river.color);
+    expect(wave.width).toBeLessThan(river.width);
+    expect(wave.alpha!).toBeLessThan(river.alpha!);
   });
 
   it("每档的线宽与颜色都在有效范围（0 宽画不出来、负数会让 stroke 直接吞掉）", () => {

@@ -1,3 +1,4 @@
+import { rendererLog } from "@/shared/log/renderer-logger";
 import { useEffect, useState } from "react";
 import { Assets, Texture } from "pixi.js";
 import { BASE_IMAGES, LAND_PAPER_ID, LAND_PAPER_SRC, SPRITES } from "../sprites";
@@ -52,7 +53,7 @@ export function useTextureCache() {
             texture.source.scaleMode = "linear";
             map[id] = texture;
           } catch (err) {
-            console.warn(`[map] 素材加载失败: ${id} (${src})`, err);
+            rendererLog.warn("map", `素材加载失败: ${id} (${src})`, { id, src, error: String(err) });
           }
         }),
       );

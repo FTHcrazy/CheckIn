@@ -24,6 +24,19 @@
 
 export type CheckInEdition = "full" | "lite" | "novel";
 
+/**
+ * 窗口变体后缀（可选，缺省空串 = 不变）。
+ *
+ * 与 edition（full | lite | novel）正交：edition 决定「哪些窗口组」参与构建，
+ * variant 在同一 edition 内进一步**剔除**某些功能窗口。当前唯一取值 `nomap`
+ * 表示剔除地图（map）窗口及其全部逻辑与接口；日后新增其它功能窗口（如
+ * `norelation` / `nopack`）时，只需在下面两张映射表各加一行，不必再改
+ * 解析逻辑与派生函数。
+ *
+ * 环境变量：`CHECKIN_WINDOW_VARIANT`（对应 package.json 指令的可选后缀参数）。
+ */
+export type WindowVariant = "" | "nomap";
+
 /** 窗口入口 key，与 windowManager 注册名保持一致（base 例外：注册名为 "main"） */
 export type WindowEntryKey =
   | "base"
@@ -88,4 +101,73 @@ export function resolveEditionFromEnv(source?: NodeJS.ProcessEnv): CheckInEditio
     `[edition] 非法 CHECKIN_EDITION="${raw}"，回退为 "full"（合法值：full | lite | novel）`,
   );
   return "full";
+}
+
+/** 合法变体后缀集合（与 WindowVariant 联合类型同步维护） */
+const WINDOW_VARIANTS: readonly WindowVariant[] = ["", "nomap"];
+
+/**
+ * 变体 → 需从入口清单中剔除的窗口 key。
+ *
+ * 这是「后缀机制」的**唯一事实源**：新增变体后缀只需在此加一行（并在
+ * WINDOW_VARIANTS 登记合法值），派生逻辑与渲染/主进程侧开关全部随之生效，
+ * 无需触碰其它文件。
+ */
+export const WINDOW_VARIANT_ENTRY_EXCLUSIONS: Record<WindowVariant, WindowEntryKey[]> = {
+  "": [],
+  // nomap：剔除地图编辑器窗口，map 相关 IPC / 逻辑随之整组关闭（见 main.ts / preload.ts）
+  nomap: ["map"],
+};
+
+function isWindowVariant(value: string): value is WindowVariant {
+  return (WINDOW_VARIANTS as readonly string[]).includes(value);
+}
+
+/** 从环境变量解析窗口变体；缺省回落空串，非法值告警后回落空串 */
+export function resolveWindowVariantFromEnv(source?: NodeJS.ProcessEnv): WindowVariant {
+  const raw = (source ?? process.env).CHECKIN_WINDOW_VARIANT;
+  if (raw === undefined || raw === "") return "";
+  if (isWindowVariant(raw)) return raw;
+  console.warn(
+    `[edition] 非法 CHECKIN_WINDOW_VARIANT="${raw}"，回退为 ""（合法值：${WINDOW_VARIANTS.filter(Boolean).join(" | ")}）`,
+  );
+  return "";
+}
+
+/**
+ * 派生某个版本在指定变体下的最终窗口入口清单（vite input 与主进程可加载窗口的唯一依据）。
+ *
+ * = EDITION_WINDOW_ENTRIES[edition] 剔除 WINDOW_VARIANT_ENTRY_EXCLUSIONS[variant]。
+ * 变体只做减法（不新增窗口），保证「不传后缀」时行为与旧版完全一致。
+ */
+export function resolveWindowEntries(
+  edition: CheckInEdition,
+  variant: WindowVariant,
+): WindowEntryKey[] {
+  const excluded = new Set(WINDOW_VARIANT_ENTRY_EXCLUSIONS[variant]);
+  return EDITION_WINDOW_ENTRIES[edition].filter((key) => !excluded.has(key));
+}
+
+/**
+ * 便捷判定：该变体是否剔除了 map 窗口。
+ *
+ * 只反映 variant 这一个维度；构建期最终口径请用 `buildExcludesMap` —— 它同时
+ * 看 edition（lite 版本就不含 map），避免单看变体在 lite 版漏判。
+ */
+export function variantExcludesMap(variant: WindowVariant): boolean {
+  return WINDOW_VARIANT_ENTRY_EXCLUSIONS[variant].includes("map");
+}
+
+/**
+ * 本构建是否不含地图功能（编译期注入 `__CHECKIN_NO_MAP__`，三进程共用同一取值）。
+ *
+ * 以窗口入口清单为唯一依据：`resolveWindowEntries` 已把 edition（lite 不登记 map）
+ * 与 variant（nomap 剔除 map）叠加完毕，这里只判结果。这样 lite 版不会因只看
+ * variant 而在标题栏留下一个点了没反应的地图死按钮。
+ */
+export function buildExcludesMap(
+  edition: CheckInEdition,
+  variant: WindowVariant,
+): boolean {
+  return !resolveWindowEntries(edition, variant).includes("map");
 }

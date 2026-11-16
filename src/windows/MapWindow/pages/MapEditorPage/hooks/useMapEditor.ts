@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   assignPlacementNames,
   computeTerrainZones,
@@ -22,13 +22,10 @@ import {
   type MapRecipe,
 } from "../domain/mapRecipe";
 import { buildRoadNet, roadGridOfLand, type RoadNode } from "../domain/roads";
+import { COUNTRY_DEFAULT, COUNTRY_MAX, COUNTRY_MIN, generateCountries } from "../domain/countries";
 import { settlementTierOf } from "../domain/settlements";
 import { SPRITE_ZONES, ZONE_LABELS } from "../domain/zones";
 import {
-  FIT_PADDING,
-  ZOOM_LIMITS,
-  fitScaleFor,
-  fitToRect,
   hitTestElement,
   isCenterCovered,
   type CanvasSize,
@@ -60,16 +57,10 @@ import {
 // 别名：本 hook 要暴露一个同名动作 `generateLand`，避免与纯函数撞名
 import { generateLand as buildLand, landColorOf } from "../land";
 import {
-  activeLevel,
   elementSizeFactor,
   elementWeight,
   enterScaleForRegion,
-  finestBlockLongEdge,
-  levelAlphas as computeLevelAlphas,
-  levelCountsOf,
-  naturalScales,
   polygonLongEdge,
-  zoomLimitsForBlocks,
   ELEMENT_PICK_MIN_WEIGHT,
 } from "../lod";
 import {
@@ -103,7 +94,7 @@ import { distanceToPath, smoothPolyline } from "../polylineGeometry";
 import { useMapDocStore } from "../store/useMapDocStore";
 import { useMapViewportStore, BASE_BOUNDS } from "../store/useMapViewportStore";
 import { useMapSelectionStore } from "../store/useMapSelectionStore";
-
+import { useMapViewState } from "./useMapViewState";
 /**
  * 地图编辑器 facade hook。
  *
@@ -159,128 +150,21 @@ export function useMapEditor(canvasSize: CanvasSize) {
     useMapDocStore.getState().breakCommitKey();
   }, []);
 
-  /* ───────────────── 层级 LOD（无极缩放的衔接） ───────────────── */
+  const {
+    regionScales,
+    levelAlphas,
+    currentLevel,
+    zoomLimits,
+    setSelectedId,
+    setSelectedRegionId,
+    setSelectedPolylineId,
+    setPendingSpriteId,
+    fitView,
+    applyViewport,
+    handleWheel,
+    handlePan,
+  } = useMapViewState({ doc, viewport, selectedId, canvasSize });
 
-  /**
-   * 各级的"自然缩放"—— 在该缩放下，这一级的一块在屏幕上正好一个舒适大小。
-   *
-   * 用**实际生成结果**统计每级数量，而不是常量表 `REGION_LEVELS`：数量会被
-   * `REGION_TOTAL_LIMIT` 截断，拿常量算出来的自然缩放会和画面对不上。
-   */
-  const regionScales = useMemo(() => {
-    const counts = levelCountsOf(doc.regions);
-    return counts.length === 0 ? [] : naturalScales(counts, BASE_BOUNDS);
-  }, [doc.regions]);
-
-  /** 各层级当前的可见权重（Σα ≡ 1），画布与工具栏共用同一份 */
-  const levelAlphas = useMemo(
-    () => (regionScales.length === 0 ? [] : computeLevelAlphas(viewport.scale, regionScales)),
-    [regionScales, viewport.scale],
-  );
-
-  /**
-   * 当前主导层级 —— 新放下的素材就归到这一级（也是工具栏层级胶囊显示的那一级）。
-   *
-   * `null` = 还没生成区块，此时素材层级无关（任何缩放下都可见）。
-   */
-  const currentLevel = useMemo(
-    () => (regionScales.length === 0 ? null : activeLevel(viewport.scale, regionScales)),
-    [regionScales, viewport.scale],
-  );
-
-  /**
-   * 最细一级区块多边形的**长边**（世界单位）。
-   *
-   * 【只随区块变化重算】它要扫最细一级那 160 个多边形的全部顶点，绝不能进入
-   * 视口（滚轮每格 / 拖拽每帧）的依赖路径。
-   */
-  const finestBlockLong = useMemo(() => {
-    const levelCount = regionScales.length;
-    if (levelCount === 0) return 0;
-    return finestBlockLongEdge(doc.regions, levelCount - 1);
-  }, [doc.regions, regionScales.length]);
-
-  /**
-   * 缩放上下限：由「层级 + 最细一级的实际块长边 + 画布尺寸」反推。
-   */
-  const zoomLimits = useMemo(() => {
-    if (regionScales.length === 0) return ZOOM_LIMITS;
-    const fitScale = fitScaleFor(BASE_BOUNDS, canvasSize, FIT_PADDING);
-    return zoomLimitsForBlocks({
-      scales: regionScales,
-      fitScale,
-      finestBlockLong,
-      canvas: canvasSize,
-    });
-  }, [regionScales, finestBlockLong, canvasSize]);
-
-  const setViewport = useMapViewportStore((s) => s.setViewport);
-  const setSelectedId = useMapSelectionStore((s) => s.setSelectedId);
-  const setSelectedRegionId = useMapSelectionStore((s) => s.setSelectedRegionId);
-  const setSelectedPolylineId = useMapSelectionStore((s) => s.setSelectedPolylineId);
-  const setPendingSpriteId = useMapSelectionStore((s) => s.setPendingSpriteId);
-
-  /** 层级变化后把当前缩放夹回合法区间 */
-  useEffect(() => {
-    setViewport((vp) => {
-      const s = Math.min(zoomLimits.max, Math.max(zoomLimits.min, vp.scale));
-      return s === vp.scale ? vp : { ...vp, scale: s };
-    });
-  }, [zoomLimits, setViewport]);
-
-  /**
-   * 选中的素材若因层级切换而隐没，自动取消选中。
-   */
-  useEffect(() => {
-    if (!selectedId) return;
-    const el = doc.elements.find((e) => e.id === selectedId);
-    if (!el) return;
-    if (elementWeight(el.level, levelAlphas) < ELEMENT_PICK_MIN_WEIGHT) setSelectedId(null);
-  }, [selectedId, doc.elements, levelAlphas, setSelectedId]);
-
-  /** 首次拿到画布尺寸时，把底图适配进视口 */
-  const didInitialFit = useRef(false);
-  useEffect(() => {
-    if (didInitialFit.current) return;
-    if (canvasSize.width === 0 || canvasSize.height === 0) return;
-    didInitialFit.current = true;
-    setViewport(() => fitToRect(BASE_BOUNDS, canvasSize, FIT_PADDING, zoomLimits));
-  }, [canvasSize, zoomLimits, setViewport]);
-
-  /** 适应窗口 */
-  const fitView = useCallback(() => {
-    setViewport(() => fitToRect(BASE_BOUNDS, canvasSize, FIT_PADDING, zoomLimits));
-  }, [canvasSize, zoomLimits, setViewport]);
-
-  /**
-   * 直接落位一个具体视口（切图时恢复"上次看到哪"）。
-   *
-   * 【为什么页面不自己 import viewport store】"页面只做编排、所有视图/文档动作
-   * 都从本 hook 走"是这条边界唯一的可验证形式（架构 §6-2）。切图恢复视口属于
-   * 视图动作，理应从同一扇门进来。
-   */
-  const applyViewport = useCallback(
-    (next: { x: number; y: number; scale: number }) => {
-      setViewport(() => {
-        const scale = Math.min(zoomLimits.max, Math.max(zoomLimits.min, next.scale));
-        return { x: next.x, y: next.y, scale };
-      });
-    },
-    [setViewport, zoomLimits.max, zoomLimits.min],
-  );
-
-  /** 缩放（滚轮，以光标为锚点） */
-  const handleWheel = useCallback(
-    (deltaY: number, anchor: { x: number; y: number }) => {
-      useMapViewportStore.getState().handleWheel(deltaY, anchor, canvasSize, zoomLimits);
-    },
-    [canvasSize, zoomLimits],
-  );
-
-  /** 平移（拖动空白区域） */
-  const handlePan = useCallback((dx: number, dy: number) => {
-    useMapViewportStore.getState().handlePan(dx, dy);
-  }, []);
 
   /**
    * 放置素材到世界坐标。
@@ -668,6 +552,7 @@ export function useMapEditor(canvasSize: CanvasSize) {
       overrideDepth?: number,
       schemaOverride?: readonly RegionLevelDef[],
       seedOverride?: number,
+      roads?: readonly MapPolyline[],
     ): MapRegion[] => {
       const active = schemaOverride ?? schema;
       const depth = Math.max(
@@ -685,6 +570,25 @@ export function useMapEditor(canvasSize: CanvasSize) {
 
       if (!land || land.polygons.length === 0) {
         return generateHierarchy({ seed, bounds: BASE_BOUNDS, levelCounts: counts, schema: active });
+      }
+
+      /**
+       * 【2.50.0 分岔】有路网 ⇒ 走**对齐逆向目标**的国家生成（`generateCountries`：
+       * 路网连通分量 → 凸包 → 六边形格生长），一次铺满全部陆地；
+       * 没有路网（手动「生成陆地 + 同时划出区块」）⇒ 仍走既有的 Voronoi 逐级切分。
+       *
+       * 为什么要分岔而不是"统一换成新算法"：新算法的国家大小由**聚落分布**决定，
+       * 没有聚落就没有"哪里是一个国"的依据 —— 硬用最远点采样能出图，但那是把
+       * 12 个点均匀摊在陆地上，又退回"行政区划图"的观感，不如保留旧路径。
+       */
+      if (roads && roads.length > 0) {
+        const countries = generateCountries({
+          land,
+          roads,
+          count: counts[0],
+          seed,
+        });
+        if (countries.length > 0) return countries;
       }
 
       const areas = land.polygons.map((ring) => Math.max(1e-6, polygonArea(ring)));
@@ -729,6 +633,22 @@ export function useMapEditor(canvasSize: CanvasSize) {
   const liveDoc = useCallback(() => useMapDocStore.getState().doc, []);
 
   /**
+   * 把「国家数量」写进 schema 的第 0 级。
+   *
+   * 【为什么改 schema 而不是再加一个参数】`buildRegions` 的数量事实源就是 schema
+   * 的 `count`（见它的注释）。多加一个 `countOverride` 会让"数量到底看哪里"出现
+   * 第二个答案 —— 老路径按 schema、一键成图按参数，是最难查的那类不一致。
+   * 这里只改内存里的副本，不写回文档（文档 schema 仍由设置面板维护）。
+   */
+  const withCountryCount = useCallback(
+    (base: readonly RegionLevelDef[], count: number | undefined): readonly RegionLevelDef[] => {
+      const n = Math.max(COUNTRY_MIN, Math.min(COUNTRY_MAX, Math.round(count ?? COUNTRY_DEFAULT)));
+      return base.map((def, i) => (i === 0 ? { ...def, count: n } : def));
+    },
+    [],
+  );
+
+  /**
    * 重新生成区块树。
    *
    * 【手画块保留】只替换自动生成的区块（PRD §8-Q4）：`origin === "manual"` 的区块
@@ -745,7 +665,7 @@ export function useMapEditor(canvasSize: CanvasSize) {
         .getState()
         .regenerateHierarchy(kept.length > 0 ? [...generated, ...kept] : generated);
     },
-    [buildRegions, liveDoc],
+    [buildRegions, liveDoc, withCountryCount],
   );
 
   /** 清除全部区块（可撤销） */
@@ -796,7 +716,7 @@ export function useMapEditor(canvasSize: CanvasSize) {
       });
       useMapDocStore.getState().generateLand(land, regions, water);
     },
-    [buildRegions, liveDoc],
+    [buildRegions, liveDoc, withCountryCount],
   );
 
   /** 清除陆地 */
@@ -1223,8 +1143,20 @@ export function useMapEditor(canvasSize: CanvasSize) {
         const labels = toLabels(named, elements, gen.placements);
         // 手画块保留（与「生成陆地」同一裁决）：自动块按勾选态重建
         const kept = current.regions.filter((r) => r.origin === "manual");
+        // 国家生成要吃**路网**（参考算法的种子来自道路连通分量）。`gen.polylines`
+        // 里既有水系也有道路，按 `kind` 分出来 —— 河不是国家骨架。
+        const roadLines = gen.polylines.filter((p) => p.kind === "road");
         const regions = params.withRegions
-          ? [...buildRegions(gen.land, undefined, regionSchemaOf(current)), ...kept]
+          ? [
+              ...buildRegions(
+                gen.land,
+                undefined,
+                withCountryCount(regionSchemaOf(current), params.countryCount),
+                undefined,
+                roadLines,
+              ),
+              ...kept,
+            ]
           : kept;
         // 纹理带随全量生成走；骨架档不带（gen.bands = undefined → 显式清掉旧带）
         store.applyGenerated({
@@ -1267,7 +1199,6 @@ export function useMapEditor(canvasSize: CanvasSize) {
         });
         land.baseColor = landColorOf(resolveLandColorId(last.params.landColorId, last.seed)).color;
         const kept = current.regions.filter((r) => r.origin === "manual");
-        const regions = [...buildRegions(land, undefined, regionSchemaOf(current)), ...kept];
         // 纹理带跟新陆地重算（同配方同档位；纯几何，不消耗任何子流骰子）
         const bands = computeTerrainZones(
           land,
@@ -1292,6 +1223,17 @@ export function useMapEditor(canvasSize: CanvasSize) {
           return [{ col, row, x: el.x, y: el.y, tier }];
         });
         const roads = buildRoadNet(roadNodes, { grid: roadGrid, seed: last.seed });
+        // 国家跟着新陆地与新路网重切（放在 roads 之后：新算法的骨架就是路网）
+        const regions = [
+          ...buildRegions(
+            land,
+            undefined,
+            withCountryCount(regionSchemaOf(current), last.params.countryCount),
+            undefined,
+            roads.filter((p) => p.kind === "road"),
+          ),
+          ...kept,
+        ];
         store.applyGenerated({ land, regions, bands, polylines: [...water, ...roads] });
         return `已重掷陆地（${land.polygons.length} 块）：素材与地名保持原位，落在海面上的可手动挪回陆地（可撤销）`;
       }
@@ -1364,7 +1306,14 @@ export function useMapEditor(canvasSize: CanvasSize) {
       const regionsSeed =
         ((current.land?.seed ?? 1) ^ Math.imul(gearCounterRef.current.regions, 0x9e3779b9)) >>> 0 || 1;
       const kept = current.regions.filter((r) => r.origin === "manual");
-      const generated = buildRegions(current.land, undefined, regionSchemaOf(current), regionsSeed);
+      const generated = buildRegions(
+        current.land,
+        undefined,
+        withCountryCount(regionSchemaOf(current), last.params.countryCount),
+        regionsSeed,
+        // 「只换分区」也走新算法：路网不动 → 骨架不变，只换种子与生长竞争的顺序
+        (current.polylines ?? []).filter((p) => p.kind === "road"),
+      );
       store.applyGenerated({ regions: [...generated, ...kept] });
       return `已重掷区块：${generated.length} 块（手画块保留，可撤销）`;
     },
