@@ -1,0 +1,37 @@
+/**
+ * 标题栏「返回上一页」入口的视觉与几何。
+ *
+ * 插槽（.window-header__leading）本身已排除拖动区，这里只管造型。
+ * 造型语言与标题栏右侧的 SettingsEntry 对齐：无底色 + 次级文字色，
+ * hover 才浮出浅底并把文字提到主文本色——标题栏是「窗口外框」，
+ * 常驻实底会让它看起来像页面内的按钮。
+ *
+ * 高度压到 30px：标题栏只有 34px，再高就顶满整条，
+ * 右侧的最小化/关闭按钮会显得被这两颗挤住。
+ */
+.back-entry.ant-btn {
+  // 几何：pill 比直角更贴合这条 34px 的细栏，也和设置入口的圆角观感一致
+  --ant-border-radius: var(--app-radius-pill);
+  --ant-button-content-font-size: 14px;
+  --ant-button-icon-gap: 4px;
+  --ant-button-font-weight: 500;
+  --ant-button-padding-inline: 8px;
+
+  // ⚠️ text 变体的颜色入口是「双 text」这一组（antd v6 实测产物）：
+  // 单 text 的 --ant-button-text-color 在 text 变体下不被读取，写了静默无效；
+  // 背景只有 --ant-button-text-hover-bg 这一档（active 沿用 antd 的默认浅填充）。
+  --ant-button-text-text-color: var(--app-text-secondary);
+  --ant-button-text-text-hover-color: var(--app-text);
+  --ant-button-text-text-active-color: var(--app-text-strong);
+  --ant-button-text-hover-bg: var(--app-surface-hover);
+
+  height: 30px;
+  // antd 的 transition 是 200ms 的 all；标题栏内的微反馈按动效标尺收到 fast
+  transition:
+    color var(--app-t-fast) var(--app-ease-standard),
+    background-color var(--app-t-fast) var(--app-ease-standard);
+
+  .anticon {
+    font-size: 14px;
+  }
+}

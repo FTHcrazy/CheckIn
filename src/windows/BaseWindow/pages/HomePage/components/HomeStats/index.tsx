@@ -24,7 +24,7 @@ interface HomeStatsProps {
   items: HomeStatItem[];
 }
 
-/** 数据概览行：待办 / 代码 / 备忘 / 打卡 / 本月支出 */
+/** 数据概览行：待办 / 代码 / 备忘 / 打卡 */
 export default function HomeStats({ items }: HomeStatsProps) {
   return (
     <div className="home-stats">

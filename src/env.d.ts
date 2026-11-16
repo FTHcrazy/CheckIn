@@ -8,6 +8,13 @@
 declare const __CHECKIN_EDITION__: "full" | "lite" | "novel";
 
 /**
+ * 本构建是否不含地图：lite 版不打包 map 窗口，或 CHECKIN_WINDOW_VARIANT=nomap 剔除。
+ * 由 electron/edition.ts 的 buildExcludesMap 统一计算后注入。
+ * 业务代码经 src/shared/edition.ts 的派生布尔使用，不要直接引用本常量。
+ */
+declare const __CHECKIN_NO_MAP__: boolean;
+
+/**
  * Vite 的 `?raw` 导入（图标 SVG 内联用）：iconfont 导出的 SVG 带
  * `fill="currentColor"`，按 raw 字符串内联进 DOM 才能跟随文字色
  * （`<img>` 引用做不到）。资产清单见 `src/assets/novel/`。

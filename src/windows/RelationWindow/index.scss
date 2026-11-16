@@ -1,0 +1,120 @@
+@use "../../shared/styles/window-shell";
+@use "../../shared/styles/scrollbars";
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Microsoft YaHei", sans-serif;
+  background: transparent;
+  color: var(--app-text);
+  -webkit-font-smoothing: antialiased;
+}
+
+// 窗口级只留骨架（顶栏 / 三栏容器 / 状态提示）。
+// 池子、画布、节点、详情卡、横幅的样式各自就近放在组件目录里（AGENTS §6.1）。
+.rel-window {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--app-bg);
+}
+
+.rel-window__bar {
+  flex: none;
+  height: 46px;
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--app-border);
+  background: var(--app-surface);
+}
+
+.rel-window__work {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  // 占满左侧可用空间，窗口收窄时由它吸收收缩，把「刷新」按钮顶在最右、不挤扁
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.rel-window__work-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--app-text-strong);
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  // flex item 默认 min-width:auto 会按内容宽度拒绝收缩，ellipsis 就永远不触发
+  min-width: 0;
+}
+
+.rel-window__work-meta {
+  font-size: 12px;
+  color: var(--app-text-muted);
+  white-space: nowrap;
+  // 窄窗时元信息可截断：前面「画布/池中/全书」是主信息，后面「N 条境界绑定…」
+  // 是可省略的补充，截尾优先丢补充，不影响读图所需的数字
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.rel-window__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.rel-window__notice {
+  flex: none;
+  margin: 8px 12px 0;
+  border-radius: 9px;
+}
+
+.rel-window__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.rel-window__main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  position: relative;
+}
+
+.rel-window__hint {
+  margin: 0;
+  padding: 32px;
+  font-size: 14px;
+  color: var(--app-text-secondary);
+}
+
+.rel-window__hint--error {
+  color: var(--app-error);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+// 关窗确认（未确认的连线）里的说明文字
+.rel-window__dialog-text {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--app-text-secondary);
+}

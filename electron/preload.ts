@@ -1,4 +1,12 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import {
+  buildWindowSendOptions,
+  type WindowSendOptions,
+} from './core/window/window-send-options'
+
+// 本构建是否不含地图（lite 版 / nomap 变体）：编译期常量，
+// 为 true 时不暴露 map 命名空间与 map 相关 send / receive 通道（对应主进程整组关闭）。
+const NO_MAP = __CHECKIN_NO_MAP__
 
 /**
  * `ipcRenderer.on` 注册的是包了一层的 wrapper（剥掉 Electron 的 event 首参），
@@ -19,7 +27,7 @@ const listenerWrappers = new WeakMap<
  * 为什么不在主进程统一 hook：`ipcMain.handle` 没有全局拦截点，逐个包一层会
  * 散落 100+ 处；而 preload 是所有渲染层调用的唯一出口，在这里包一次就全覆盖。
  *
- * ⚠️ 只上报「失败」与「慢于阈值」——全量上报会让 ipc.log 一天几十万行，
+ * ⚠️ 只上报「失败」与「慢于阈值」——全量上报会在窗口日志里一天刷几十万行，
  * 真正要排查的异常反而被淹没。阈值 300ms 是按本项目的本地 SQLite 往返定的
  * （正常调用普遍 <20ms）。
  */
@@ -65,6 +73,82 @@ function trackedInvoke(
 }
 
 // 通过 contextBridge 暴露安全的 API 给渲染进程
+/**
+ * 待投递消息的本地收件箱。
+ *
+ * 主进程的 `window-send-to` 在目标窗口不存在时会把消息入队（见
+ * `electron/core/window/window-pending.ts`）。窗口起来后本脚本主动 drain 一次；但
+ * **拉到消息 ≠ 有人能接**：React 的 useEffect 往往还没注册监听。
+ * 所以先放这儿，`windowAPI.on()` 注册时按事件名补投 —— 这样「消息先到、
+ * 监听后挂」与「监听先挂、消息后到」两条时序都不会丢。
+ */
+interface PendingWindowMessage {
+  event: string
+  data?: unknown
+}
+
+const pendingInbox: PendingWindowMessage[] = []
+/** event → 已注册的 handler（`on` 的补投要按事件名找接收方） */
+const eventHandlers = new Map<string, Set<(...args: unknown[]) => void>>()
+
+function deliverPending(event: string, data: unknown): boolean {
+  const handlers = eventHandlers.get(event)
+  if (!handlers || handlers.size === 0) return false
+  for (const handler of handlers) {
+    try {
+      handler(data)
+    } catch (error) {
+      // 一个监听器抛错不该拖垮其它监听器 / 阻塞补投
+      console.error(`[preload] 处理待投递消息 ${event} 失败`, error)
+    }
+  }
+  return true
+}
+
+/** 把收件箱里「已经有人接」的消息按**到达顺序**投出去，没人接的继续留着 */
+function flushPendingInbox(): void {
+  if (pendingInbox.length === 0) return
+  const remaining: PendingWindowMessage[] = []
+  for (const message of pendingInbox) {
+    // 顺序必须保持「老的先投」：同一种跳转连点两次时，后一次才是用户最终意图
+    if (!deliverPending(message.event, message.data)) remaining.push(message)
+  }
+  pendingInbox.length = 0
+  pendingInbox.push(...remaining)
+}
+
+let drainedPending = false
+
+/** 向主进程取本窗口的待投递消息（装载完成后拉一次） */
+function requestPendingMessages(): void {
+  if (drainedPending) return
+  void trackedInvoke('window-pending-drain')
+    .then((raw) => {
+      // null = 主进程还不认识这个窗口（注册晚于 preload 执行）：等 load 再试，
+      // 不能把「没拉到」当成「没有待办」—— 那会把关系图那条跳转静默吞掉
+      if (raw === null) return
+      drainedPending = true
+      if (!Array.isArray(raw)) return
+      for (const item of raw) {
+        if (!item || typeof item !== 'object') continue
+        const { event, data } = item as { event?: unknown; data?: unknown }
+        if (typeof event !== 'string' || event.length === 0) continue
+        pendingInbox.push({ event, data })
+      }
+      flushPendingInbox()
+    })
+    .catch(() => {
+      // 拉不到当作没有待办：一次导航失败不该拖住整个窗口
+    })
+}
+
+requestPendingMessages()
+// preload 的 tsconfig 不含 DOM lib，`window` 没有声明：从 globalThis 取即可
+const host = globalThis as unknown as {
+  addEventListener?: (type: string, listener: () => void) => void
+}
+host.addEventListener?.('load', requestPendingMessages)
+
 contextBridge.exposeInMainWorld('electronAPI', {
   // 网络会话配置（一次性）：把认证 Cookie 写入 session jar，
   // 之后渲染进程 fetch 带 credentials:'include' 自动携带。
@@ -147,8 +231,32 @@ contextBridge.exposeInMainWorld('electronAPI', {
       trackedInvoke('novel-work-add', work) as Promise<boolean>,
     renameWork: (id: string, name: string) =>
       trackedInvoke('novel-work-rename', id, name) as Promise<boolean>,
+    setWorkGenre: (id: string, genre: string | null) =>
+      trackedInvoke('novel-work-set-genre', id, genre) as Promise<boolean>,
+    // 封面：主进程选图 + 压缩 + 落库，只把成品 data URL 交回渲染层
+    pickWorkCover: (id: string) =>
+      trackedInvoke('novel-work-cover', id) as Promise<string | null>,
+    // 单作品卷章正文（书架导出用）：只取导出需要的两张表，不拉整个数据包
+    workContent: (workId: string) =>
+      trackedInvoke('novel-work-content', workId) as Promise<{
+        volumes: unknown[]
+        chapters: unknown[]
+      }>,
     deleteWork: (id: string) =>
       trackedInvoke('novel-work-delete', id) as Promise<boolean>,
+    // ── 数据安全（P0）：一键全量备份 / 恢复 + 删除兜底（回收站） ──
+    // 注意以下三组「日常删除 vs 彻底删除」的差别：
+    //   trashWork / deleteChapter / deleteVolume  = 软删除（进回收站，可恢复）
+    //   deleteWork / purgeChapter / purgeVolume   = 物理级联（不可恢复）
+    trashWork: (id: string) =>
+      trackedInvoke('novel-work-trash', id) as Promise<boolean>,
+    listTrash: () => trackedInvoke('novel-trash-list'),
+    restoreTrash: (kind: string, id: string) =>
+      trackedInvoke('novel-trash-restore', kind, id) as Promise<boolean>,
+    exportBackup: () => trackedInvoke('novel-backup-export'),
+    pickBackup: () => trackedInvoke('novel-backup-pick'),
+    restoreBackup: (filePath: string) =>
+      trackedInvoke('novel-backup-restore', filePath),
     // 一键重置为模板书籍（调试）：清空全部 novel_* 表并重新播种模板数据
     resetTemplate: () =>
       trackedInvoke('novel-editor-reset-template') as Promise<{ volumes: number; chapters: number; words: number; entities: number }>,
@@ -162,10 +270,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
       trackedInvoke('novel-chapter-rename', id, title) as Promise<boolean>,
     deleteChapter: (id: string) =>
       trackedInvoke('novel-chapter-delete', id) as Promise<boolean>,
+    purgeChapter: (id: string) =>
+      trackedInvoke('novel-chapter-purge', id) as Promise<boolean>,
     setChapterStatus: (id: string, status: string) =>
       trackedInvoke('novel-chapter-status', id, status) as Promise<boolean>,
     saveChapterOutline: (id: string, note: string) =>
       trackedInvoke('novel-chapter-outline', id, note) as Promise<boolean>,
+    saveChapterSummary: (id: string, payload: { summary: string; model?: string }) =>
+      trackedInvoke('novel-chapter-summary-save', id, payload) as Promise<boolean>,
     saveChapterOrder: (updates: Array<{ id: string; sort: number; volumeId: string }>) =>
       trackedInvoke('novel-chapter-order', updates) as Promise<boolean>,
     addVolume: (volume: unknown) =>
@@ -176,10 +288,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
       trackedInvoke('novel-volume-order', updates) as Promise<boolean>,
     deleteVolume: (id: string) =>
       trackedInvoke('novel-volume-delete', id) as Promise<boolean>,
+    purgeVolume: (id: string) =>
+      trackedInvoke('novel-volume-purge', id) as Promise<boolean>,
     saveEntity: (entity: unknown) =>
       trackedInvoke('novel-entity-save', entity) as Promise<boolean>,
+    /** 批量建卡（R-AI-08）：主进程单事务写完整批，再广播 novel-entities-changed */
+    saveEntitiesBatch: (entities: unknown[]) =>
+      trackedInvoke('novel-entity-batch-save', entities) as Promise<boolean>,
     addLink: (link: unknown) => trackedInvoke('novel-link-add', link) as Promise<boolean>,
     removeLink: (id: string) => trackedInvoke('novel-link-remove', id) as Promise<boolean>,
+    /**
+     * 关系图提交（R27 / S3）：新建关系 + 改备注 + 画布文档，单事务。
+     * 与 addLink 的区别：addLink 是主窗口「单条新增」的老通道，没有事务与 rev；
+     * 图窗口一次确认要写多条，必须走这条。
+     */
+    graphCommit: (request: unknown) =>
+      trackedInvoke('novel-graph-commit', request),
     saveNote: (note: unknown) => trackedInvoke('novel-note-save', note) as Promise<boolean>,
     removeNote: (id: string) => trackedInvoke('novel-note-remove', id) as Promise<boolean>,
     // 灵感归属迁移（书架全局灵感库）：归档到作品；workId 传 '' 退回未归属池
@@ -277,6 +401,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
     /** 通用文本导出：主进程弹保存框 + 写盘；取消返回 null */
     exportFile: (defaultName: string, content: string, ext?: string, filterName?: string) =>
       trackedInvoke('novel-export-file', defaultName, content, ext, filterName) as Promise<{ path: string } | null>,
+    /**
+     * 取景：把当前窗口的某一块截成 PNG（R27 / S5）。
+     * rect 单位是 DIP（= CSS px）；失败时 `code` 区分「空帧」「窗口没了」「参数错」，
+     * `message` 已经是可以直接给用户看的一句话。
+     */
+    captureWindow: (rect: { x: number; y: number; width: number; height: number }) =>
+      trackedInvoke('relation-window-export', rect) as Promise<
+        | { ok: true; png: Uint8Array; width: number; height: number }
+        | { ok: false; code: 'empty' | 'unavailable' | 'db'; message: string }
+      >,
+    /**
+     * 二进制落盘：只收字节，取消返回 null。
+     * ⚠️ 不要换成 `exportFile` —— 那条是 utf8 写，写 PNG 会坏且不报错。
+     */
+    exportBinary: (defaultName: string, data: Uint8Array, ext?: string, filterName?: string) =>
+      trackedInvoke('novel-export-binary', defaultName, data, ext, filterName) as Promise<{ path: string } | null>,
     usageToday: () =>
       trackedInvoke('novel-usage-today') as Promise<{ todayWords: number; saveCount: number; streakDays: number }>,
     usageLog: (event: string, payload: Record<string, unknown>) =>
@@ -319,24 +459,110 @@ contextBridge.exposeInMainWorld('electronAPI', {
           { id: string; characterId: string } | null
         >,
     },
+    // ── 正文字体（应用级资源，跨用户共享；下载→@font-face 挂载） ──
+    font: {
+      download: (url: string, family: string) =>
+        trackedInvoke('novel-font-download', { url, family }) as Promise<
+          | { ok: true; entry: { family: string; fileName: string; size: number; fileUrl: string } }
+          | { ok: false; error: string }
+        >,
+      list: () =>
+        trackedInvoke('novel-font-list') as Promise<
+          Array<{ family: string; fileName: string; size: number; fileUrl: string }>
+        >,
+      delete: (fileName: string) =>
+        trackedInvoke('novel-font-delete', fileName) as Promise<boolean>,
+    },
   },
 
-  // ── 记账（语义化 IPC，数据存 userDb 的 ledger_* 表） ──
-  ledger: {
-    listTransactions: (range?: { start?: string; end?: string }) =>
-      trackedInvoke('ledger-transaction-list', range),
-    addTransaction: (tx: unknown) =>
-      trackedInvoke('ledger-transaction-add', tx),
-    updateTransaction: (id: string, updates: Record<string, unknown>) =>
-      trackedInvoke('ledger-transaction-update', id, updates) as Promise<boolean>,
-    deleteTransaction: (id: string) =>
-      trackedInvoke('ledger-transaction-delete', id) as Promise<boolean>,
-    listCategories: () => trackedInvoke('ledger-category-list'),
-    upsertCategory: (category: unknown) =>
-      trackedInvoke('ledger-category-upsert', category) as Promise<boolean>,
-    deleteCategory: (id: string, fallbackId: string) =>
-      trackedInvoke('ledger-category-delete', id, fallbackId) as Promise<boolean>,
+  // ── AI 助手（语义化 IPC，数据存独立 ai.db，仅 full/novel 版注册） ──
+  // 对 §8.7「主进程不代理 HTTP」契约的刻意豁免（凭据安全 + 端点无法枚举），
+  // 理由见 docs/archive/prd-ai/ai-architecture-decision.md 第五节·A。
+  // Key 经 safeStorage 加密存主进程，渲染层只拿 hasApiKey 布尔，绝无明文 Key。
+  ai: {
+    getConfig: () => trackedInvoke('ai-config-get'),
+    // 流式端点一次性令牌（PRD 红线 C）：每发起一次流式请求前领一张，
+    // 主进程 protocol.handle 核销即失效。
+    streamToken: () => trackedInvoke('ai-stream-token') as Promise<string>,
+    saveConfig: (payload: {
+      enabled?: boolean
+      provider?: 'openai' | 'ollama'
+      endpoint?: string
+      model?: string
+      apiKey?: string
+      contextLen?: number
+    }) => trackedInvoke('ai-config-save', payload) as Promise<{ ok: boolean; error?: string }>,
+    test: () => trackedInvoke('ai-config-test'),
+    generate: (payload: {
+      system?: string
+      prompt: string
+      count?: number
+      temperature?: number
+      intent?: string
+    }) => trackedInvoke('ai-generate', payload),
+    listLogs: (payload?: { limit?: number; offset?: number; intent?: string }) =>
+      trackedInvoke('ai-log-list', payload),
+    clearLogs: () => trackedInvoke('ai-log-clear'),
+    // 产品事件（M1a：采纳/编辑/放弃等事后动作，由渲染层回传）
+    logEvent: (payload: {
+      intent?: string
+      step?: string
+      provider?: string
+      model?: string
+      promptVer?: string
+      durationMs?: number
+      errorCode?: string
+      itemCount?: number
+      charCount?: number
+      scope?: string
+    }) => trackedInvoke('ai-event-log', payload) as Promise<{ ok: boolean; error?: string }>,
+    // 看板聚合（M1b）
+    stats: (payload?: { since?: string }) => trackedInvoke('ai-event-stats', payload),
+    // 诊断包导出（M1b：只出脱敏元数据）
+    exportDiagnostics: () =>
+      trackedInvoke('ai-export-diagnostics') as Promise<{ path: string } | null>,
+    // 本地 Ollama 已下载模型列表（R-AI-01 FR-06，只读探测，不写 ai_log）
+    listOllamaModels: (payload?: { endpoint?: string }) =>
+      trackedInvoke('ai-ollama-models', payload),
+    // 打开服务商 Key 申请页（FR-05）：URL 由主进程查表，渲染层传不了任意地址
+    openKeyPage: (payload?: { endpoint?: string }) =>
+      trackedInvoke('ai-open-key-page', payload),
   },
+
+  // ── 地图（map.db 独立库：存档 / 列表 / 版本 / 作品绑定） ──
+  // 与 novel 同一套约定：invoke 走 trackedInvoke（失败与慢调用会被观测），
+  // 入参一律压成**一个对象**，主进程按字段读 —— 位置参数在加字段时最容易错位。
+  // nomap 变体下整段不暴露（编译期 spread 剔除，渲染层无 map 入口自然不调用）。
+  ...(NO_MAP
+    ? {}
+    : {
+        map: {
+          /** 列表：不含 doc_json，只给元信息 + 缩略图 data URL；includeDeleted 用于回收站 */
+          docsList: (workId?: string | null, includeDeleted?: boolean) =>
+            trackedInvoke('map-docs-list', { workId: workId ?? null, includeDeleted: includeDeleted === true }),
+          get: (id: string) => trackedInvoke('map-doc-get', { id }),
+          create: (payload: { title?: string; workId?: string | null; doc?: unknown }) =>
+            trackedInvoke('map-doc-create', payload),
+          save: (payload: { id: string; doc: unknown; baseRev: number; viewport?: unknown }) =>
+            trackedInvoke('map-doc-save', payload),
+          /** 关窗 flush：忽略乐观锁直接写（唯一的强写口，见 map-handlers） */
+          flush: (payload: { id: string; doc: unknown; baseRev: number; viewport?: unknown }) =>
+            trackedInvoke('map-doc-flush', payload),
+          rename: (id: string, title: string) => trackedInvoke('map-doc-rename', { id, title }),
+          /** 软删（进回收站，可 restore） */
+          remove: (id: string) => trackedInvoke('map-doc-delete', { id }),
+          restore: (id: string) => trackedInvoke('map-doc-restore', { id }),
+          /** 彻底删除（含历史版本与资源目录，不可恢复） */
+          purge: (id: string) => trackedInvoke('map-doc-purge', { id }),
+          /** 绑定 / 解绑作品（null = 解绑，不删图） */
+          bind: (id: string, workId: string | null) => trackedInvoke('map-doc-bind', { id, workId }),
+          thumb: (id: string, png: Uint8Array) => trackedInvoke('map-doc-thumb', { id, png }),
+          revisions: (id: string) => trackedInvoke('map-doc-revisions', { id }),
+          restoreRev: (id: string, rev: number) => trackedInvoke('map-doc-restore-rev', { id, rev }),
+          /** 可绑定的作品选项（只读 novel.db 的 id + name 两列） */
+          workOptions: () => trackedInvoke('map-work-options'),
+        },
+      }),
 
   send: (channel: string, data: unknown) => {
     const validChannels = [
@@ -344,12 +570,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'novel-window-open',
       // 设置窗口开关（novel 版主窗标题栏的设置入口）
       'settings-window-open',
+      // 地图窗口开关（full 版 base 头 / novel 版工具箱的架空地图入口）
+      // nomap 变体下不暴露（渲染层无地图入口）
+      ...(NO_MAP ? [] : ['map-window-open']),
+      // 地图关窗 flush 回执：渲染层写完存档后通知主进程可以真正关闭窗口
+      // （主进程侧 close 拦截见 main.ts 的 registerMapFlushGuard）
+      ...(NO_MAP ? [] : ['map-doc-flush-done']),
       // 行囊独立窗口开关（小说窗口顶栏入口，full/novel 版）
       'pack-window-open',
       // 跨窗口导航：行囊窗口请求打开小说窗口的设定中心（UI-03）
       'novel-open-setting-center',
       // 全局设定中心独立窗口开关（书架入口，full/novel 版）
       'global-setting-window-open',
+      // 人物关系网络独立窗口开关（右栏工具箱入口，full/novel 版，R27）
+      'relation-window-open',
       // 退出登录（SettingsWindow 账号区发起，主进程编排回登录窗）
       'auth-logout',
       // WindowHeader 窗口控制（最小化/最大化/关闭）与最大化状态查询
@@ -369,6 +603,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'window-maximize-state',
       // 行囊窗口「真的可见」的回执：顶栏那颗按钮据此从「正在打开」恢复
       'pack-window-shown',
+      // 全局设定中心窗口「真的可见」的回执：书架那颗按钮据此退出「正在打开」
+      'global-setting-window-shown',
+      // 地图关窗前的取快照请求：渲染层收到后立刻 flush，再回 map-doc-flush-done
+      // nomap 变体下不暴露
+      ...(NO_MAP ? [] : ['map-doc-request-snapshot']),
     ]
     if (validChannels.includes(channel)) {
       const listener = (_event: Electron.IpcRendererEvent, ...args: unknown[]) => func(...args)
@@ -384,8 +623,39 @@ contextBridge.exposeInMainWorld('electronAPI', {
   windowAPI: {
     broadcast: (event: string, data?: unknown) =>
       trackedInvoke('window-broadcast', event, data),
-    sendTo: (target: string, event: string, data?: unknown) =>
-      trackedInvoke('window-send-to', target, event, data),
+    /**
+     * 向指定窗口投递消息。
+     *
+     * 第 4 参保持旧的布尔 `raise` 语义（兼容既有调用）；第 5 参可声明
+     * `create`（窗口没开就先拉起）与 `queue`（没开就入队，等它起来补投）。
+     *
+     * ⚠️ 进 IPC 前**压成一个选项参数**（`buildWindowSendOptions`）：主进程只该
+     * 有「一个选项参数」这个概念。曾经这里把 `raise` 与 `options` 摆在两个位置，
+     * 主进程按位读第 4 个，`{create:true}` 落在第 5 位被丢掉 —— 于是「窗口没开
+     * 就拉起」从来没生效，用户看到的是「主窗口没能打开」。契约与互逆用例见
+     * `electron/core/window/window-send-options.ts`。
+     *
+     * 返回 `{ delivered, queued }`：`delivered=false` 表示既送不到也拉不起来
+     * （如 lite 版没有该窗口），调用方必须给用户可见提示 —— 静默失败会让
+     * 用户以为按钮坏了。
+     */
+    sendTo: (
+      target: string,
+      event: string,
+      data?: unknown,
+      raise?: boolean,
+      options?: WindowSendOptions,
+    ) =>
+      trackedInvoke(
+        'window-send-to',
+        target,
+        event,
+        data,
+        buildWindowSendOptions(raise, options),
+      ) as Promise<{
+        delivered: boolean
+        queued: boolean
+      }>,
     on: (event: string, handler: (...args: unknown[]) => void) => {
       const wrapper = (_event: unknown, ...args: unknown[]) => handler(...args)
       let byChannel = listenerWrappers.get(handler)
@@ -398,8 +668,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
       if (previous) ipcRenderer.removeListener(event, previous)
       byChannel.set(event, wrapper)
       ipcRenderer.on(event, wrapper)
+
+      // 待投递消息可能早于本监听（窗口刚被拉起时）：登记完立刻补投一次
+      let handlers = eventHandlers.get(event)
+      if (!handlers) {
+        handlers = new Set()
+        eventHandlers.set(event, handlers)
+      }
+      handlers.add(handler)
+      flushPendingInbox()
     },
     off: (event: string, handler: (...args: unknown[]) => void) => {
+      const registered = eventHandlers.get(event)
+      if (registered) {
+        registered.delete(handler)
+        if (registered.size === 0) eventHandlers.delete(event)
+      }
       const byChannel = listenerWrappers.get(handler)
       const wrapper = byChannel?.get(event)
       if (wrapper) {
@@ -411,7 +695,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       // 兜底：监听器不是由 windowAPI.on 注册的（其它模块 ipcRenderer.on 直通），按引用删
       ipcRenderer.removeListener(event, handler)
     },
-    // ── 关闭守卫（electron/close-guard.ts）──
+    // ── 关闭守卫（electron/core/window/close-guard.ts）──
     // 有未保存改动时武装本窗口；主进程在真要销毁前会发 `window-close-request`
     // （用上面的 `on` 订阅，它会先摘掉同名旧监听再登记），渲染层用 respondClose 答复。
     setCloseGuard: (enabled: boolean) =>
@@ -508,5 +792,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
         /** 注册失败（被系统或其他应用占用）的应用级快捷键 id */
         globalFailures: string[]
       }>,
+  },
+
+  // ── 外部链接（主进程校验协议后交系统浏览器打开；渲染层不做导航） ──
+  shell: {
+    openExternal: (url: string) =>
+      trackedInvoke('shell-open-external', url) as Promise<boolean>,
   },
 })

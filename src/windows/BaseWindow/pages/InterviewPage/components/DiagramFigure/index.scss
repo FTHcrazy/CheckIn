@@ -1,0 +1,370 @@
+// 图解卡片：图体 + 一句话结论 + 编号步骤 + 易错提醒
+// 底色贴的是答题区（--app-surface-alt），所以卡片自身取 --app-surface，槽位再回 alt。
+.interview-dg {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-item);
+  background: var(--app-surface);
+
+  &.is-compact {
+    gap: 6px;
+    padding: 8px 10px 10px;
+  }
+
+  &__head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  &__kind {
+    flex: none;
+    padding: 0 6px;
+    border-radius: var(--app-radius-chip);
+    background: var(--app-accent-purple-weak);
+    color: var(--app-accent-purple);
+    font-size: 11px;
+    line-height: 18px;
+  }
+
+  &__title {
+    min-width: 0;
+    color: var(--app-text-strong);
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.5;
+  }
+
+  &__canvas {
+    min-width: 0;
+  }
+
+  &__caption {
+    margin: 0;
+    color: var(--app-text-secondary);
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  &__steps {
+    margin: 0;
+    padding-left: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    color: var(--app-text-secondary);
+    font-size: 12px;
+    line-height: 1.6;
+
+    li {
+      list-style: decimal;
+    }
+  }
+
+  &__note {
+    margin: 0;
+    padding: 6px 8px;
+    border-radius: var(--app-radius-chip);
+    background: var(--app-warning-weak);
+    color: var(--app-text-secondary);
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  /* ── 流程图 ─────────────────────────────────── */
+  &__flow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 2px;
+  }
+
+  &__flow-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  &__node {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 0 1 auto;
+    min-width: 88px;
+    max-width: 168px;
+    padding: 6px 8px;
+    border: 1px solid var(--app-border);
+    border-left-width: 3px;
+    border-radius: var(--app-radius-chip);
+    background: var(--app-surface-alt);
+
+    &.is-primary {
+      border-left-color: var(--app-primary);
+    }
+
+    &.is-success {
+      border-left-color: var(--app-success);
+    }
+
+    &.is-warning {
+      border-left-color: var(--app-warning);
+    }
+
+    &.is-danger {
+      border-left-color: var(--app-error);
+    }
+
+    &.is-muted {
+      border-left-color: var(--app-border-strong);
+    }
+  }
+
+  &__node-label {
+    color: var(--app-text-strong);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.4;
+  }
+
+  &__node-note {
+    color: var(--app-text-muted);
+    font-size: 11px;
+    line-height: 1.45;
+  }
+
+  // 箭头自己画：一条细线 + 一个旋转 45° 的折角，比字符箭头对齐更稳
+  &__arrow {
+    position: relative;
+    flex: none;
+    width: 16px;
+    height: 1px;
+    background: var(--app-border-strong);
+
+    &::after {
+      position: absolute;
+      top: -3px;
+      right: 0;
+      width: 6px;
+      height: 6px;
+      border-top: 1px solid var(--app-border-strong);
+      border-right: 1px solid var(--app-border-strong);
+      content: "";
+      transform: rotate(45deg);
+    }
+  }
+
+  /* ── 步骤图 / 时序 ──────────────────────────── */
+  &__timeline {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  &__event {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 0 0 10px 0;
+
+    &:last-child {
+      padding-bottom: 0;
+    }
+
+    // 竖轴：从圆点下方连到下一条
+    &:not(:last-child)::before {
+      position: absolute;
+      top: 20px;
+      bottom: 0;
+      left: 9px;
+      width: 1px;
+      background: var(--app-border-strong);
+      content: "";
+    }
+
+    &.is-success .interview-dg__dot {
+      border-color: var(--app-success);
+      background: var(--app-success-weak);
+      color: var(--app-success);
+    }
+
+    &.is-warning .interview-dg__dot {
+      border-color: var(--app-warning);
+      background: var(--app-warning-weak);
+      color: var(--app-warning);
+    }
+
+    &.is-danger .interview-dg__dot {
+      border-color: var(--app-error);
+      background: var(--app-error-weak);
+      color: var(--app-error);
+    }
+
+    &.is-muted .interview-dg__dot {
+      border-color: var(--app-border-strong);
+      background: var(--app-surface-alt);
+      color: var(--app-text-muted);
+    }
+  }
+
+  &__dot {
+    position: relative;
+    z-index: 1;
+    flex: none;
+    width: 19px;
+    height: 19px;
+    border: 1px solid var(--app-primary);
+    border-radius: var(--app-radius-pill);
+    background: var(--app-primary-weak);
+    color: var(--app-primary);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    line-height: 17px;
+    text-align: center;
+  }
+
+  &__event-body {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+    padding-top: 1px;
+  }
+
+  &__event-title {
+    color: var(--app-text-strong);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.5;
+  }
+
+  &__event-detail {
+    color: var(--app-text-secondary);
+    font-size: 12px;
+    line-height: 1.55;
+  }
+
+  /* ── 对照图 ─────────────────────────────────── */
+  &__compare {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+    gap: 8px;
+  }
+
+  &__column {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+    padding: 8px 10px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-chip);
+    background: var(--app-surface-alt);
+  }
+
+  &__column-head {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  &__column-title {
+    color: var(--app-text-strong);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.5;
+  }
+
+  &__column-note {
+    color: var(--app-text-muted);
+    font-size: 11px;
+    line-height: 1.45;
+  }
+
+  &__column-items {
+    margin: 0;
+    padding-left: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    color: var(--app-text-secondary);
+    font-size: 12px;
+    line-height: 1.55;
+
+    li {
+      list-style: disc;
+    }
+  }
+
+  /* ── 架构图 ─────────────────────────────────── */
+  &__layers {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  &__layer {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding: 7px 10px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-chip);
+    background: var(--app-surface-alt);
+  }
+
+  &__layer-index {
+    flex: none;
+    padding: 0 6px;
+    border-radius: var(--app-radius-chip);
+    background: var(--app-primary-weak);
+    color: var(--app-primary);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    line-height: 18px;
+  }
+
+  &__layer-body {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__layer-label {
+    color: var(--app-text-strong);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.5;
+  }
+
+  &__layer-note {
+    color: var(--app-text-secondary);
+    font-size: 11px;
+    line-height: 1.5;
+  }
+
+  &__layer-tags {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+
+  &__layer-tag {
+    padding: 0 6px;
+    border-radius: var(--app-radius-pill);
+    background: var(--app-surface);
+    color: var(--app-text-muted);
+    font-size: 11px;
+    line-height: 18px;
+  }
+}

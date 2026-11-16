@@ -1,0 +1,42 @@
+// 筛选条：一行内按「难度 → 标签 → 排序 → 收藏 → 重置」排列，窄屏自动换行
+.interview-filter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-panel);
+  background: var(--app-surface);
+  user-select: none;
+
+  &__difficulty {
+    flex: none;
+  }
+
+  &__tags {
+    flex: 1 1 220px;
+    min-width: 180px;
+  }
+
+  &__sort {
+    flex: none;
+    width: 128px;
+  }
+
+  &__favorite {
+    flex: none;
+    font-size: 12px;
+    color: var(--app-text-secondary);
+  }
+
+  &__reset.ant-btn {
+    --ant-button-default-bg: var(--app-surface-alt);
+    --ant-button-default-border-color: var(--app-border);
+    --ant-button-default-hover-bg: var(--app-surface-hover);
+    flex: none;
+    margin-left: auto;
+    font-size: 12px;
+  }
+}

@@ -2,7 +2,7 @@
  * 60s API 数据层（shared：HomePage 探活 + NewsPage 展示共用）。
  *
  * 请求在渲染进程内直接发出（统一走 shared/http 客户端），
- * CORS 由主进程 session 级响应头注入放行（见 electron/httpSession.ts）。
+ * CORS 由主进程 session 级响应头注入放行（见 electron/core/httpSession.ts）。
  * 数据源文档：https://docs.60s-api.viki.moe（开源免费聚合 API）
  *   - GET /v2/60s  每天 60 秒读懂世界（日更要闻，纯文本标题数组）
  *   - GET /v2/moyu 摸鱼日报（进度 / 假期 / 一言 / 农历）

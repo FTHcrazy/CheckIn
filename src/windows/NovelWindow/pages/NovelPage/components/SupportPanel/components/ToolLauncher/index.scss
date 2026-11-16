@@ -96,6 +96,11 @@
       height: 19px;
       font-size: 20px;
     }
+
+    /* 起名器入口用 AI 内联图标（O-06 统一视觉语言），尺寸随 font-size */
+    & > .svgicon {
+      font-size: 19px;
+    }
   }
 
   &__body {

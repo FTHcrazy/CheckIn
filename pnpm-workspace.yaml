@@ -8,6 +8,15 @@ packages:
 # 代价：允许幽灵依赖（未声明也能 import）——对 Electron 应用可接受。
 nodeLinker: hoisted
 
+# ⚠️ 构建脚本白名单在仓库里有**两份**，必须同步维护，不要以为重复：
+#   · 本文件这份：pnpm 10 / 11 读（设置迁到 pnpm-workspace.yaml 之后）
+#   · .npmrc 的 only-built-dependencies[]：**pnpm 9 只认这份**
+#     （实测 9.15.9 完全忽略 pnpm-workspace.yaml 里的 pnpm 设置，连
+#      nodeLinker: hoisted 也不读 —— 布局靠 .npmrc 的 node-linker 兜住；
+#      package.json 的 pnpm 字段 pnpm 11 也已完全不读，别写在那里）
+#   列表里**故意不含 better-sqlite3**：它 ≥13 是 Node-API + 包内预编译，
+#   本地编译必失败（无 binding.gyp 配套的 install 脚本，但 pnpm/npm 仍会
+#   按约定跑 node-gyp rebuild → gyp ERR! find VS）。
 onlyBuiltDependencies:
   - "@parcel/watcher"
   - electron-winstaller
@@ -17,9 +26,32 @@ onlyBuiltDependencies:
 minimumReleaseAgeExclude:
   - antd@6.4.5
 
+# pnpm 11 默认启用 minimumReleaseAge（拒绝安装发布不足一天的新包）作为供应链防护。
+# ajv（electron-builder 的传递依赖）依赖 fast-uri；安装当天上游刚发了 3.1.9
+# （2026-10-19T23:05Z），直接触发策略拦截，install 会以
+# ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION 失败。
+# 处置：钉到上一个补丁版 3.1.8（2026-09-15 发布），而不是把 3.1.9 加进上面的
+# minimumReleaseAgeExclude —— 那等于专门给一个"几小时前刚发"的包开口子，
+# 与策略初衷相反。
+overrides:
+  fast-uri: 3.1.8
+  # app-builder-lib 26 把 electron-builder-squirrel-windows 声明为精确 peer（26.17.0），
+  # 但旧 lockfile 里的 25.1.8 被原样复用了，导致 pnpm 每次安装都报 peer 不匹配，
+  # 且把整个 app-builder-lib@25 + builder-util@25 老树拖进来（本项目只用 nsis，
+  # 根本不用 squirrel）。显式对齐到 26.17.0。
+  electron-builder-squirrel-windows: 26.17.0
+
 allowBuilds:
   "@parcel/watcher": true
-  better-sqlite3: true
+  # better-sqlite3 ≥13 改为 Node-API，8 个平台/架构的预编译二进制已随 npm 包分发
+  # （包根 prebuilds/*.node），**不需要也不应该**在本地编译：
+  #   它的 package.json 没有 install 脚本，但包内留着 binding.gyp。
+  #   npm / pnpm 的既有约定是「有 binding.gyp 且无 install 脚本 → 默认执行
+  #   node-gyp rebuild」，于是每次安装都会因为本机没有 Visual Studio C++ 工作负载
+  #   而 gyp ERR! find VS 直接失败，把整个 pnpm install 带崩（exit 1）。
+  # 显式 false = 拒绝执行它的构建脚本，直接使用包内预编译产物。
+  # 副产物：升 Electron 不再需要按 ABI 重编译（原 electron:rebuild 已删除）。
+  better-sqlite3: false
   electron-winstaller: true
   # pnpm >=10.26 / 11 用 allowBuilds 替代 onlyBuiltDependencies；
   # 缺了 electron 会导致其 postinstall（下载运行时二进制）被拦截。

@@ -118,7 +118,7 @@ export default function SearchPanel({
           variant="borderless"
           value={keyword}
           onChange={(event) => setKeyword(event.target.value)}
-          placeholder="全书检索"
+          placeholder="按正文内容找"
           aria-label="全书检索"
         />
         {trimmed && !loading && (

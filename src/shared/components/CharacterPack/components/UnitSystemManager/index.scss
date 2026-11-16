@@ -17,7 +17,7 @@
 
   &__title {
     margin: 0;
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 600;
     color: var(--app-text-strong);
   }
@@ -27,13 +27,13 @@
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    font-size: 11px;
+    font-size: 12px;
     color: var(--app-text-secondary-strong);
   }
 
   &__sub {
     margin: 0;
-    font-size: 11px;
+    font-size: 12px;
     line-height: 1.6;
     color: var(--app-text-muted);
   }
@@ -60,7 +60,7 @@
 
     .ant-input-number-group-addon {
       padding: 0 5px;
-      font-size: 11px;
+      font-size: 12px;
     }
   }
 

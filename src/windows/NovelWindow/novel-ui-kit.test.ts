@@ -744,18 +744,18 @@ describe("Novel 窗口：顶栏图标三档层次（UI-07 收尾）", () => {
     // 默认态不描边（描边只属于激活态）
     expect(lastDecl(base, "ant-button-default-shadow")).toBe("none");
 
-    // 档 3：持久激活走主色弱底 + 主色字 + 主色内描边，
-    // 且必须把 hover / active 一起覆盖（只改默认态的话，鼠标一掠过就掉回灰底，
-    // 看着像「点了没生效」）
+    // 档 3：持久激活走主色弱底 + 主色深字，且必须把 hover / active 一起覆盖
+    //（只改默认态的话，鼠标一掠过就掉回灰底，看着像「点了没生效」）
     const on = ruleBlock(css, ".nv-topbar__icon.ant-btn.is-on");
     expect(lastDecl(on, "ant-button-default-bg")).toBe("var(--app-primary-weak)");
-    expect(lastDecl(on, "ant-button-default-color")).toBe("var(--app-primary)");
+    expect(lastDecl(on, "ant-button-default-color")).toBe("var(--app-primary-strong)");
     expect(lastDecl(on, "ant-button-default-hover-bg")).toBe("var(--app-primary-weak)");
     expect(lastDecl(on, "ant-button-default-active-bg")).toBe("var(--app-primary-weak)");
-    // 主色弱底与默认底亮度太近，激活与否必须另有一个不依赖亮度的信号
-    const onShadow = lastDecl(on, "ant-button-default-shadow");
-    expect(onShadow).toContain("inset");
-    expect(onShadow).toContain("var(--app-primary)");
+    // 2.57.0 返修：交互稿的激活态只有「弱底 + 深字」两层，不加描边。
+    // 首版曾用 1px 主色内描边补对比（当时字色取 primary，弱底上偏浅），
+    // 实机看那圈描边把图标框成「选中框」，与稿子的方块语言冲突 ——
+    // 改由字色提一档到 -strong 承担对比，这里反过来钉「不许再长出描边」。
+    expect(lastDecl(on, "ant-button-default-shadow")).toBe("none");
   });
 });
 

@@ -119,7 +119,7 @@
       }
 
       .nv-sc__col-name {
-        font-size: 13px;
+        font-size: 14px;
         font-weight: 400;
         color: var(--app-text-secondary);
       }
@@ -148,7 +148,7 @@
 
   // 引用项只读占位（等级行「操作」列）
   &__ro {
-    font-size: 11px;
+    font-size: 12px;
     color: var(--app-text-muted);
   }
 
@@ -196,7 +196,7 @@
     border-radius: 3px;
     background: var(--app-accent-purple-weak);
     color: var(--app-accent-purple);
-    font-size: 11px;
+    font-size: 12px;
   }
 
   // 小境界清单（1.38.0）：占满整行第二行，紧跟在等级行下方
@@ -219,7 +219,7 @@
     border-radius: var(--app-radius-pill);
     background: var(--app-primary-weak);
     color: var(--app-primary);
-    font-size: 11px;
+    font-size: 12px;
     white-space: nowrap;
   }
 
@@ -242,7 +242,7 @@
     height: 20px;
     padding: 0 6px;
     border-radius: var(--app-radius-pill);
-    font-size: 11px;
+    font-size: 12px;
   }
 
   // ── 行间插入条 ──
@@ -273,7 +273,7 @@
     @include widget.ant-button-reset;
     padding: 0;
     height: 20px;
-    font-size: 11px;
+    font-size: 12px;
     color: var(--app-accent-blue);
   }
 
@@ -281,7 +281,7 @@
     @include widget.ant-button-reset;
     padding: 0;
     height: 20px;
-    font-size: 11px;
+    font-size: 12px;
   }
 
   &__ins-input {
@@ -297,7 +297,7 @@
 
   &__status {
     padding-top: 6px;
-    font-size: 11px;
+    font-size: 12px;
     color: var(--app-text-muted);
   }
 }

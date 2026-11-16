@@ -10,49 +10,71 @@ import {
 import type { WebContents } from "electron";
 import path from "path";
 import fs from "fs";
-import { initDb, closeDb, switchUserDb } from "./db";
+import { initDb, closeDb, switchUserDb } from "./core/db";
 import {
   askCloseGuards,
   attachCloseGuard,
   hasArmedCloseGuard,
   registerCloseGuardHandlers,
   standDownCloseGuards,
-} from "./close-guard";
-import { startActivityPolling, stopActivityPolling } from "./activitiesTask";
-import { resolveAppProtocolCacheControl } from "./app-protocol-cache";
-import { windowManager } from "./windowManager";
-import { registerActivityHandlers } from "./handlers/activity-handlers";
-import { registerTodoHandlers } from "./handlers/todo-handlers";
+} from "./core/window/close-guard";
+import { startActivityPolling, stopActivityPolling } from "./checkin/activitiesTask";
+import { resolveAppProtocolCacheControl } from "./core/app-protocol-cache";
+import { windowManager } from "./core/window/windowManager";
+import {
+  pushPendingMessage,
+  takePendingMessages,
+  type PendingWindowMessage,
+} from "./core/window/window-pending";
+import {
+  readWindowSendOptions,
+  type WindowSendOptions,
+} from "./core/window/window-send-options";
+import { registerActivityHandlers } from "./handlers/checkin/activity-handlers";
+import { registerTodoHandlers } from "./handlers/checkin/todo-handlers";
 import {
   markNovelSessionClosed,
   registerNovelHandlers,
-} from "./handlers/novel-handlers";
-import { registerNovelPackHandlers } from "./handlers/novel-pack-handlers";
-import { registerNovelSettingHandlers } from "./handlers/novel-setting-handlers";
-import { registerNovelGlobalSettingHandlers } from "./handlers/novel-global-setting-handlers";
-import { registerNovelDbBridge } from "./novel-db";
+} from "./handlers/novel/novel-handlers";
+import { registerNovelPackHandlers } from "./handlers/novel/novel-pack-handlers";
+import { registerNovelSettingHandlers } from "./handlers/novel/novel-setting-handlers";
+import { registerNovelSafetyHandlers } from "./handlers/novel/novel-safety-handlers";
+import { registerNovelGlobalSettingHandlers } from "./handlers/novel/novel-global-setting-handlers";
+import { registerNovelGraphHandlers } from "./handlers/novel/novel-graph-handlers";
+import { registerNovelExportHandlers } from "./handlers/novel/novel-export-handlers";
+import { registerNovelDbBridge } from "./novel/novel-db";
+import { registerMapDbBridge } from "./map/map-db";
+import { registerMapHandlers } from "./handlers/map/map-handlers";
+import { registerAiDbBridge } from "./ai/ai-db";
+import { registerAiHandlers } from "./handlers/ai/ai-handlers";
+import { registerAiStreamEndpoint } from "./handlers/ai/ai-stream";
 import {
   getCachedUser,
   logoutUser,
   registerUserHandlers,
-} from "./handlers/user-handlers";
-import { registerShortcutHandlers } from "./handlers/shortcut-handlers";
-import { registerMemoHandlers } from "./handlers/memo-handlers";
-import { registerLedgerHandlers } from "./handlers/ledger-handlers";
-import { registerCheckinHandlers } from "./handlers/checkin-handlers";
-import { registerHttpSessionHandlers, setupRendererHttpSession } from "./httpSession";
+} from "./handlers/checkin/user-handlers";
+import { registerShortcutHandlers } from "./handlers/system/shortcut-handlers";
+import { registerShellHandlers } from "./handlers/system/shell-handlers";
+import { registerMemoHandlers } from "./handlers/checkin/memo-handlers";
+import { registerCheckinHandlers } from "./handlers/checkin/checkin-handlers";
 import {
-  registerLogHandlers,
-  loadLogSettings,
-} from "./handlers/log-handlers";
+  registerHttpSessionHandlers,
+  setupRendererHttpSession,
+} from "./core/httpSession";
+import {
+  registerNovelFontHandlers,
+  registerNovelFontProtocol,
+} from "./handlers/novel/novel-font-handlers";
+import { registerLogHandlers, loadLogSettings } from "./handlers/checkin/log-handlers";
 import {
   bootstrapLogger,
   closeLogger,
   log,
   resetLogRoot,
   windowLogger,
-} from "./logger";
+} from "./core/logger";
 import {
+  EDITION_WINDOW_ENTRIES,
   PRIMARY_WINDOW_ENTRY,
   RENDERER_ENTRY_PATHS,
   type WindowEntryKey,
@@ -62,6 +84,8 @@ import {
 // 编译期常量，由 vite.config.ts 按 CHECKIN_EDITION 环境变量注入三处 define。
 // 清单（入口路径 / 各版本窗口 / 主窗口归属）的唯一事实源在 electron/edition.ts。
 const EDITION = __CHECKIN_EDITION__;
+/** 本构建是否不含地图（lite 版 / nomap 变体）：map 窗口及其 handler / IPC 整组关闭 */
+const NO_MAP = __CHECKIN_NO_MAP__;
 /** 主窗口入口：full/lite → base，novel → novel */
 const PRIMARY_ENTRY = PRIMARY_WINDOW_ENTRY[EDITION];
 /** 主窗口在 windowManager 中的注册名（base 窗口沿用历史注册名 "main"） */
@@ -114,9 +138,15 @@ let tray: Tray | null = null;
  */
 process.on("uncaughtException", (error) => {
   console.error("[main] 未捕获异常：", error);
-  log("error", "main", "process", `未捕获异常：${error?.message ?? String(error)}`, {
-    stack: error?.stack,
-  });
+  log(
+    "error",
+    "main",
+    "process",
+    `未捕获异常：${error?.message ?? String(error)}`,
+    {
+      stack: error?.stack,
+    },
+  );
 });
 
 process.on("unhandledRejection", (reason) => {
@@ -153,6 +183,38 @@ protocol.registerSchemesAsPrivileged([
       codeCache: true,
     },
   },
+  {
+    // 正文字体：app:// 页面加载 file:// 字体会被 webSecurity 拦截
+    // （cross-origin local resource），字体一律经本协议出（见 novel-font-handlers）。
+    // ⚠️ standard + corsEnabled 必须与 app 对齐：缺 standard 时从 http（dev）
+    // 源跨协议加载会在 scheme 层直接被拒（"only supported for protocol
+    // schemes: app, chrome..."），CORS 响应头根本没有出场机会。
+    scheme: "novel-font",
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      stream: true,
+    },
+  },
+  {
+    // AI 流式端点（M4 / B5）：渲染层 fetch `ai-stream://local/api/chat` 拿标准
+    // ReadableStream 读 SSE，主进程 protocol.handle 把 net.fetch 的模型响应流
+    // 原样桥接（预研点 4「流派 3」）。独立 scheme 不污染 app:// 的文件读取热路径。
+    // `stream: true` 是流式响应体的前置；standard + supportFetchAPI 让渲染层
+    // 能用标准 fetch 读流。corsEnabled 只为「非 app:// 来源（dev 的 vite）也能
+    // 发请求」，**不作为身份凭证**：实测 protocol.handle 收到的请求根本不含
+    // Origin 头，端点身份一律由一次性令牌判定（见 electron/ai/ai-stream-token.ts）。
+    scheme: "ai-stream",
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      stream: true,
+    },
+  },
 ]);
 
 let isQuitting = false;
@@ -183,7 +245,8 @@ function registerDevToolsShortcuts(win: BrowserWindow): void {
     if (input.type !== "keyDown") return;
 
     const isToggleKey =
-      input.key === "F12" || (input.control && input.shift && input.key.toLowerCase() === "i");
+      input.key === "F12" ||
+      (input.control && input.shift && input.key.toLowerCase() === "i");
     if (!isToggleKey) return;
 
     event.preventDefault();
@@ -239,7 +302,11 @@ function forwardMaximizeState(win: BrowserWindow): void {
 }
 
 /** 按入口 key 加载渲染层页面（dev 走 vite server，生产走 app:// 协议） */
-function loadRendererEntry(win: BrowserWindow, entry: WindowEntryKey, query = ""): void {
+function loadRendererEntry(
+  win: BrowserWindow,
+  entry: WindowEntryKey,
+  query = "",
+): void {
   const relPath = RENDERER_ENTRY_PATHS[entry];
   if (VITE_DEV_SERVER_URL) {
     win.loadURL(`${VITE_DEV_SERVER_URL}/${relPath}${query}`);
@@ -418,7 +485,9 @@ function createBaseWindow(): BrowserWindow {
       if (reason === "did-finish-load") {
         console.log(`[main] 页面加载完成: ${Date.now() - t0}ms`);
       } else {
-        console.warn(`[main] Base 窗口未经 did-finish-load 就绪（${reason}），仍按就绪处理`);
+        console.warn(
+          `[main] Base 窗口未经 did-finish-load 就绪（${reason}），仍按就绪处理`,
+        );
       }
       isPrimaryReady = true;
       if (canShowMainWindow) {
@@ -486,7 +555,9 @@ function createNovelWindow(): BrowserWindow {
       windowName: "novel",
       reveal: (reason) => {
         if (reason !== "did-finish-load") {
-          console.warn(`[main] Novel 主窗口未经 did-finish-load 就绪（${reason}），仍按就绪处理`);
+          console.warn(
+            `[main] Novel 主窗口未经 did-finish-load 就绪（${reason}），仍按就绪处理`,
+          );
         }
         isPrimaryReady = true;
         if (canShowMainWindow) {
@@ -501,7 +572,8 @@ function createNovelWindow(): BrowserWindow {
 
   if (IS_DEV) {
     registerDevToolsShortcuts(novelWin);
-    if (OPEN_DEVTOOLS) novelWin.webContents.openDevTools({ mode: DEVTOOLS_MODE });
+    if (OPEN_DEVTOOLS)
+      novelWin.webContents.openDevTools({ mode: DEVTOOLS_MODE });
   }
 
   // 标题栏的最小化/最大化按钮需要最大化状态推送
@@ -545,10 +617,16 @@ function createNovelWindow(): BrowserWindow {
 // ── SettingsWindow（全局设置，全版本开放入口） ──
 
 /**
- * SettingsWindow —— 全局设置窗口（外观 / 账号 / 个人资料，后续扩展字体、快捷键等）。
+ * SettingsWindow —— 全局设置窗口（双栏：左分类导航 + 右内容页）。
  *
  * 即关即销、单实例唤起：设置项即时生效（主题经广播同步到各窗口，
  * 账号操作直接走 IPC），窗口本身不持有草稿状态。
+ *
+ * **固定尺寸**（1.48.0）：左侧导航 + 右侧内容页的双栏骨架需要确定的宽度预算
+ * （导航 184 + 间距 + 内容），窗口可自由拉伸时窄到 480 会把 AI 配置页的表单
+ * 挤成两行、宽到 1400 又让每行文案离控件太远。这里锁死 900×680 ——
+ * 与「光标 / Codex 一类工具」的设置窗同量级，页面内部各自滚动，不靠改窗口尺寸
+ * 去容纳内容（与 LoginWindow 的 `resizable: false` 同一思路）。
  */
 function createSettingsWindow(): BrowserWindow {
   const existing = windowManager.get("settings");
@@ -560,10 +638,11 @@ function createSettingsWindow(): BrowserWindow {
   }
 
   const settingsWin = new BrowserWindow({
-    width: 560,
-    height: 640,
-    minWidth: 480,
-    minHeight: 420,
+    width: 900,
+    height: 680,
+    // 固定宽高：最大化会把双栏骨架拉成大面积留白，且标题栏隐藏了最大化按钮
+    resizable: false,
+    maximizable: false,
     icon: ICON_PATH,
     show: false,
     ...ROUNDED_WINDOW_OPTIONS,
@@ -577,7 +656,8 @@ function createSettingsWindow(): BrowserWindow {
 
   if (IS_DEV) {
     registerDevToolsShortcuts(settingsWin);
-    if (OPEN_DEVTOOLS) settingsWin.webContents.openDevTools({ mode: DEVTOOLS_MODE });
+    if (OPEN_DEVTOOLS)
+      settingsWin.webContents.openDevTools({ mode: DEVTOOLS_MODE });
   }
 
   windowManager.register("settings", settingsWin);
@@ -589,6 +669,123 @@ function createSettingsWindow(): BrowserWindow {
   loadRendererEntry(settingsWin, "settings");
 
   return settingsWin;
+}
+
+// ── MapWindow（地图编辑器，full 版开放入口） ──
+
+/** 关窗 flush 的等待上限：超时强制关（宁可丢最后一次改动，也不能关不掉窗口） */
+const MAP_FLUSH_TIMEOUT_MS = 1500;
+
+/**
+ * 每个地图窗口的关窗 flush 状态。
+ *
+ * 【为什么按窗口 id 存而不是模块级一个布尔】窗口是即关即销的：一个布尔会在
+ * 「关掉 → 再开」之后永远停在 done=true，新窗口的 close 事件直接被放过 ——
+ * 表现是「第二次开地图窗口，改的东西全丢了」，且完全静默。
+ */
+interface MapFlushState {
+  requested: boolean;
+  done: boolean;
+}
+const mapFlushStates = new Map<number, MapFlushState>();
+
+/**
+ * 关窗 flush 的回执通道（只注册一次）。
+ *
+ * 时序：close → preventDefault → 通知渲染层取快照 → 渲染层 `map-doc-flush`
+ * 写完 → 回 `map-doc-flush-done` → 这里放行真正关闭。
+ * 渲染层崩了 / 没装监听 / 写库卡住，都由 createMapWindow 里的 1.5s 超时兜底。
+ */
+function registerMapFlushGuard(): void {
+  ipcMain.on("map-doc-flush-done", (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return;
+    const state = mapFlushStates.get(win.id);
+    if (!state || state.done) return;
+    state.done = true;
+    if (!win.isDestroyed()) win.close();
+  });
+}
+
+/**
+ * MapWindow —— 地图编辑器窗口（即关即销、单实例唤起）。
+ *
+ * 形态与 SettingsWindow 一致（无草稿状态跨窗口），但**关窗前要 flush 一次地图存档**：
+ * 自动保存是 800ms 防抖，直接销毁窗口会把最后那几笔吃掉。
+ * 仅在打包了 map 入口的版本（full / novel）可创建；其它版本调用直接返回。
+ * 装载守卫 / 最大化状态推送与 `createSettingsWindow` 同范式（同一套
+ * `attachWindowLoadGuard` + `forwardMaximizeState`），不要退回裸
+ * `did-finish-load` 手写 show —— 那条路径在装载失败时窗口永远不出现。
+ */
+function createMapWindow(): BrowserWindow | undefined {
+  if (!EDITION_WINDOW_ENTRIES[EDITION].includes("map") || NO_MAP) {
+    console.warn(`[main] 当前版本（${EDITION}${NO_MAP ? "+nomap" : ""}）未打包 map 窗口，忽略打开请求`);
+    return undefined;
+  }
+
+  const existing = windowManager.get("map");
+  if (existing) {
+    raiseWindow(existing);
+    return existing;
+  }
+
+  const mapWin = new BrowserWindow({
+    width: 1180,
+    height: 780,
+    minWidth: 760,
+    minHeight: 520,
+    icon: ICON_PATH,
+    show: false,
+    ...ROUNDED_WINDOW_OPTIONS,
+    titleBarStyle: "hidden",
+    webPreferences: createWebPreferences(),
+  });
+
+  mapWin.removeMenu();
+
+  attachWindowLoadGuard(mapWin, "Map", { windowName: "map" });
+
+  if (IS_DEV) {
+    registerDevToolsShortcuts(mapWin);
+    if (OPEN_DEVTOOLS) mapWin.webContents.openDevTools({ mode: DEVTOOLS_MODE });
+  }
+
+  // 标题栏的最小化/最大化按钮需要最大化状态推送
+  forwardMaximizeState(mapWin);
+
+  windowManager.register("map", mapWin);
+
+  const winId = mapWin.id;
+  const flushState: MapFlushState = { requested: false, done: false };
+  mapFlushStates.set(winId, flushState);
+
+  /*
+    【关窗为什么拦】自动保存是 800ms 防抖，用户改完最后一笔就点关闭是常态；
+    不拦这一下，那几笔改动会随窗口一起销毁，且用户完全无从知道。
+    渲染层写完（或 1.5s 超时）才真正 close。
+  */
+  mapWin.on("close", (event) => {
+    if (flushState.done || mapWin.webContents.isDestroyed()) return;
+    event.preventDefault();
+    if (flushState.requested) return;
+    flushState.requested = true;
+    mapWin.webContents.send("map-doc-request-snapshot");
+    setTimeout(() => {
+      if (mapWin.isDestroyed() || flushState.done) return;
+      flushState.done = true;
+      log("warn", "map", "main", "地图关窗 flush 超时，强制关闭（最后改动可能未落库）");
+      mapWin.close();
+    }, MAP_FLUSH_TIMEOUT_MS);
+  });
+
+  mapWin.on("closed", () => {
+    mapFlushStates.delete(winId);
+    console.log("[main] Map 窗口已关闭");
+  });
+
+  loadRendererEntry(mapWin, "map");
+
+  return mapWin;
 }
 
 // ── PackWindow（行囊独立窗口） ──
@@ -617,6 +814,18 @@ let packWindowContext: {
 function notifyPackShown(opener?: WebContents): void {
   if (!opener || opener.isDestroyed()) return;
   opener.send("pack-window-shown");
+}
+
+/**
+ * 回执「全局设定中心窗口真的可见了」给发起方（书架那颗按钮据此退出 loading）。
+ *
+ * 与 `notifyPackShown` 同口径：只在窗口可见时发 —— 首次创建要等整个 SPA
+ * 装载完成（dev 下 1–3s），提前发等于把「正在打开」提前收掉，作者又会以为
+ * 没反应、再点一次（正是 REQ-054 在全局设定中心入口上的残留路径）。
+ */
+function notifyGlobalSettingShown(opener?: WebContents): void {
+  if (!opener || opener.isDestroyed()) return;
+  opener.send("global-setting-window-shown");
 }
 
 /**
@@ -659,14 +868,14 @@ function createPackWindow(opener?: WebContents): BrowserWindow {
 
   packWin.removeMenu();
 
-  // 上下文必须在 did-finish-load 时下发（渲染层的 ipcRenderer 监听那时才挂好），
-  // 先注册的监听先执行 → 保证「先发上下文、再显示窗口」，与旧行为一致
-  packWin.webContents.once("did-finish-load", () => {
-    if (!packWin || packWin.isDestroyed()) return;
-    if (packWindowContext) {
-      windowManager.sendTo("pack", "pack-window-context", packWindowContext);
-    }
-  });
+  // 上下文走待投递队列：装载完成那一拍 React 常还没订阅，直发会丢
+  // （preload 在 load 后 drain，未订阅则暂存，监听注册时补投）
+  if (packWindowContext) {
+    pushPendingMessage("pack", {
+      event: "pack-window-context",
+      data: packWindowContext,
+    });
+  }
 
   // 「真的可见」的回执：钉在 `show` 事件上而不是 reveal 里 —— 正常装载、
   // 装载失败兜底、超时兜底三条路径都会走 show，只有正常路径走 reveal
@@ -676,7 +885,8 @@ function createPackWindow(opener?: WebContents): BrowserWindow {
 
   if (IS_DEV) {
     registerDevToolsShortcuts(packWin);
-    if (OPEN_DEVTOOLS) packWin.webContents.openDevTools({ mode: DEVTOOLS_MODE });
+    if (OPEN_DEVTOOLS)
+      packWin.webContents.openDevTools({ mode: DEVTOOLS_MODE });
   }
 
   // 标题栏的最小化/最大化按钮需要最大化状态推送
@@ -707,13 +917,18 @@ function createPackWindow(opener?: WebContents): BrowserWindow {
  * 无未保存改动，守卫在渲染层不武装即直接放行。
  *
  * lite 版不打包本窗口（novel 域整体缺席），`global-setting-window-open` 直接忽略。
+ *
+ * @param opener 发起本次打开的渲染进程（书架顶栏「全局设定中心」所属窗口）。
+ *   窗口**真正可见**时回一条 `global-setting-window-shown`，让那颗按钮从
+ *   「正在打开」恢复常态 —— 与 `createPackWindow` 的 REQ-054 修法对齐。
  */
-function createGlobalSettingWindow(): BrowserWindow {
+function createGlobalSettingWindow(opener?: WebContents): BrowserWindow {
   const existing = windowManager.get("globalSetting");
   if (existing) {
     // 已开：抬到最前而不是重复创建（同一类「透明无边框窗口 show 后不到前台」，
-    // 见 raiseWindow 的注释）
+    // 见 raiseWindow 的注释），并回执让按钮退出「正在打开」态
     raiseWindow(existing);
+    notifyGlobalSettingShown(opener);
     return existing;
   }
 
@@ -731,11 +946,19 @@ function createGlobalSettingWindow(): BrowserWindow {
 
   globalWin.removeMenu();
 
-  attachWindowLoadGuard(globalWin, "GlobalSetting", { windowName: "globalSetting" });
+  // 「真的可见」的回执：钉在 `show` 事件上而不是 reveal 里 —— 正常装载、
+  // 装载失败兜底、超时兜底三条路径都会走 show，只有正常路径走 reveal。
+  // 与 `createPackWindow` 的 `packWin.once("show", ...)` 同一范式。
+  globalWin.once("show", () => notifyGlobalSettingShown(opener));
+
+  attachWindowLoadGuard(globalWin, "GlobalSetting", {
+    windowName: "globalSetting",
+  });
 
   if (IS_DEV) {
     registerDevToolsShortcuts(globalWin);
-    if (OPEN_DEVTOOLS) globalWin.webContents.openDevTools({ mode: DEVTOOLS_MODE });
+    if (OPEN_DEVTOOLS)
+      globalWin.webContents.openDevTools({ mode: DEVTOOLS_MODE });
   }
 
   // 标题栏的最小化/最大化按钮需要最大化状态推送
@@ -752,6 +975,140 @@ function createGlobalSettingWindow(): BrowserWindow {
   loadRendererEntry(globalWin, "globalSetting");
 
   return globalWin;
+}
+
+// ── RelationWindow（人物关系网络独立窗口，R27） ──
+
+/**
+ * 关系图窗口上下文：最近一次打开时携带的作品 id。
+ * 新窗口装载后经 `relation-window-context` 下发（走 `window-pending` 队列，
+ * 见下方 `window-send-to`：窗口没起来时消息不会丢）；后续切换作品由
+ * NovelWindow 的 `novel-work-changed` 广播跟进（与行囊同款）。
+ */
+let relationWindowContext: { workId: string } | null = null;
+
+/**
+ * RelationWindow —— 人物关系网络（可拖拽建模，全 / 小说版）。
+ *
+ * 与 GlobalSettingWindow 同范式：即关即销、单实例唤起。数据面读 `novel_*`
+ * （要素 / 关联 / 设定），写回走 `novel-graph-commit` 单事务（新建关系 + 备注 +
+ * 画布坐标，带 rev 乐观锁），**不要**改成 `novel-link-add`（无事务、无去重、无 rev）；
+ * 窗口本身不持有需要跨会话迁移的状态（图状态落 `novel_config` 单键）。
+ *
+ * lite 版不打包本窗口，`relation-window-open` 直接忽略。
+ */
+function createRelationWindow(): BrowserWindow {
+  const existing = windowManager.get("relation");
+  if (existing) {
+    if (relationWindowContext) {
+      windowManager.sendTo(
+        "relation",
+        "relation-window-context",
+        relationWindowContext,
+      );
+    }
+    raiseWindow(existing);
+    return existing;
+  }
+
+  const relationWin = new BrowserWindow({
+    // 画布 + 左侧资料池 + 右侧详情卡：默认按 1320 宽给足横向空间
+    width: 1320,
+    height: 880,
+    // 窄窗可到 720：三栏在 720px 下收窄（池子 / 详情卡 / 工具栏见各自 index.scss）
+    minWidth: 720,
+    minHeight: 600,
+    icon: ICON_PATH,
+    show: false,
+    ...ROUNDED_WINDOW_OPTIONS,
+    titleBarStyle: "hidden",
+    webPreferences: createWebPreferences(),
+  });
+
+  relationWin.removeMenu();
+
+  // 上下文走待投递队列（不是 did-finish-load 直发）：窗口刚装载时 React 还没订阅，
+  // 直发会丢；preload 在 load 后 drain 一次，若监听仍未注册就先缓存，注册时补投。
+  if (relationWindowContext) {
+    pushPendingMessage("relation", {
+      event: "relation-window-context",
+      data: relationWindowContext,
+    });
+  }
+
+  attachWindowLoadGuard(relationWin, "Relation", { windowName: "relation" });
+
+  if (IS_DEV) {
+    registerDevToolsShortcuts(relationWin);
+    if (OPEN_DEVTOOLS)
+      relationWin.webContents.openDevTools({ mode: DEVTOOLS_MODE });
+  }
+
+  forwardMaximizeState(relationWin);
+
+  windowManager.register("relation", relationWin);
+
+  // 即关即销：图状态由渲染层的去抖写库 + 关窗兜底刷新落库，主进程侧不拦
+  // （有未确认连线时，渲染层会 setCloseGuard 武装守卫，见 useGraphDoc）
+  attachCloseGuard(relationWin);
+  relationWin.on("closed", () => {
+    console.log("[main] Relation 窗口已关闭");
+  });
+
+  loadRendererEntry(relationWin, "relation");
+
+  return relationWin;
+}
+
+/** 给渲染层的回执：送不到也拉不起来时 `delivered=false`，调用方必须说出来 */
+interface WindowSendResult {
+  delivered: boolean;
+  queued: boolean;
+}
+
+/**
+ * 能被「消息驱动拉起」的窗口白名单。
+ *
+ * 刻意不用 `Record<string, () => void>` 动态分发：窗口创建有副作用（单例、
+ * 上下文、装载守卫），只允许这里点过名的窗口被一条跨进程消息拉起来。
+ */
+const WINDOW_CREATORS: Record<string, () => BrowserWindow> = {
+  novel: createNovelWindow,
+  relation: createRelationWindow,
+  // settings 全版本都打包：起名面板的「去设置」（R-AI-02 FR-04）要能从其它窗口
+  // 直接唤起并跳到 AI 页，走的就是 sendTo 的「没开就先拉起 + 入队补投」这条路
+  settings: createSettingsWindow,
+};
+
+/**
+ * 全版本都可被拉起的窗口（lite 版也打包）。
+ * 其余窗口（novel / relation）在 lite 版不存在，假装拉起只会得到黑屏。
+ */
+const CROSS_EDITION_WINDOWS: ReadonlySet<string> = new Set(["settings"]);
+
+/** 这个版本是否打包了该窗口（能被一条跨进程消息拉起来） */
+function canCreateWindow(target: string): boolean {
+  if (!WINDOW_CREATORS[target]) return false;
+  if (CROSS_EDITION_WINDOWS.has(target)) return true;
+  return EDITION !== "lite";
+}
+
+/** 真正创建窗口；返回 false = 创建失败（已记日志） */
+function createWindowFor(target: string): boolean {
+  const create = WINDOW_CREATORS[target];
+  if (!create) return false;
+  try {
+    create();
+    return true;
+  } catch (error) {
+    log(
+      "error",
+      "main",
+      "window",
+      `拉起窗口 ${target} 失败：${error instanceof Error ? error.message : String(error)}`,
+    );
+    return false;
+  }
 }
 
 // ── 登录窗口 ──
@@ -801,7 +1158,8 @@ function createLoginWindow(user?: { email: string } | null) {
   // 登录窗口同样支持调试快捷键（frame:false 无菜单栏，更需要显式注册）
   if (IS_DEV) {
     registerDevToolsShortcuts(loginWin);
-    if (OPEN_DEVTOOLS) loginWin.webContents.openDevTools({ mode: DEVTOOLS_MODE });
+    if (OPEN_DEVTOOLS)
+      loginWin.webContents.openDevTools({ mode: DEVTOOLS_MODE });
   }
 
   // 注册到窗口管理池（自动处理 closed 事件清理）
@@ -901,15 +1259,49 @@ app.whenReady().then(() => {
 
   // 注册语义化 IPC handlers。
   // 全版本注册：小说（novel 版的唯一业务域）与用户登录；
-  // 仅 full/lite 注册：todo/memo/activity/checkin/ledger
+  // 仅 full/lite 注册：todo/memo/activity/checkin
   // （novel 版不打包对应窗口，省启动开销，也缩小可触达的 IPC 面）。
   // novel.db 挂在用户库的生命周期上：切用户 / 退出登录 / 退出应用时同步开关。
   // 必须早于 novel handler 注册 —— 注册时若已有当前用户（启动期走的是
   // switchUserDb → register 的顺序），它会立即补开一次
   registerNovelDbBridge();
   registerNovelHandlers();
+  // 地图域（map.db 独立库）：lite 版不打包 map 窗口，整组跳过（省连接与启动开销）；
+  // nomap 变体同理整组跳过（窗口、handler、flush 回执一并关闭）。
+  // bridge 必须早于 handler 注册 —— 理由同 novel.db；flush 回执通道只注册一次，
+  // 由 createMapWindow 里的 close 拦截配合使用。
+  if (EDITION !== "lite" && !NO_MAP) {
+    registerMapDbBridge();
+    registerMapHandlers();
+    registerMapFlushGuard();
+  }
+  // AI 助手（ai.db 独立库）：仅 full/novel 版初始化 —— lite 无 novel 域，
+  // AI 入口先落在 novel 侧（起名增强），故随 edition 开关；后续 checkin 接入
+  // AI 时删掉这个判断放开到全版本（R-AI-04 预研点 2）。bridge 必须在 handler
+  // 之前注册（同 novel-db 的启动顺序约束）。
+  if (EDITION !== "lite") {
+    registerAiDbBridge();
+    registerAiHandlers();
+    // AI 流式端点（M4 / B5）：在 registerAiHandlers 之后注册 —— 它依赖
+    // ai-handlers 注入的流式请求器（setAiStreamRequester）。必须在 app ready
+    // 后调用（protocol.handle 前置），本注册段在 whenReady 内。
+    registerAiStreamEndpoint();
+  }
+  // 关系图提交（R27 / S3）：单事务写「新建关系 + 备注 + 画布文档」，
+  // 成功后由本 handler 广播 novel-links-changed 回主窗口（W-15）。
+  registerNovelGraphHandlers();
+  // 导出 PNG（R27 / S5）：取景（capturePage + 判空重试）与二进制落盘分两条通道，
+  // 后者只收字节 —— 复用 novel-export-file 的 utf8 写会「不报错但图坏了」。
+  registerNovelExportHandlers();
   registerNovelPackHandlers();
   registerNovelSettingHandlers();
+  // 数据安全（P0）：novel 域一键全量备份 / 恢复 + 删除兜底（回收站）。
+  // 恢复会整库覆盖并重开连接，必须在 novel.db 生命周期桥接之后注册。
+  registerNovelSafetyHandlers();
+  // 正文字体（novel 域）：下载/列出/删除字体文件（应用级资源，不装系统）；
+  // 并注册 novel-font:// 协议供渲染层 @font-face 加载（file:// 会被拦）
+  registerNovelFontHandlers();
+  registerNovelFontProtocol();
   // 全局设定中心（1.4x）：全局库 CRUD + 引用/上架；每次全局写成功后由 handler
   // 广播 `global-setting-changed`（书窗口订阅后重载设定，REQ-041 ③）。
   registerNovelGlobalSettingHandlers();
@@ -937,25 +1329,97 @@ app.whenReady().then(() => {
   registerCloseGuardHandlers();
   setupRendererHttpSession();
   registerHttpSessionHandlers();
+  registerShellHandlers();
   if (EDITION !== "novel") {
     registerActivityHandlers();
     registerTodoHandlers();
     registerMemoHandlers();
     registerCheckinHandlers();
-    registerLedgerHandlers();
   }
 
   // 注册跨窗口通信 IPC handler
-  ipcMain.handle("window-broadcast", (_event, event: string, data?: unknown) => {
-    const sender = BrowserWindow.fromWebContents(_event.sender);
-    // 广播时排除发送者自己（按窗口实例反查注册名，覆盖全部窗口）
-    const senderName = sender ? windowManager.getNameOf(sender) : undefined;
-    windowManager.broadcast(event, data, senderName);
-  });
+  ipcMain.handle(
+    "window-broadcast",
+    (_event, event: string, data?: unknown) => {
+      const sender = BrowserWindow.fromWebContents(_event.sender);
+      // 广播时排除发送者自己（按窗口实例反查注册名，覆盖全部窗口）
+      const senderName = sender ? windowManager.getNameOf(sender) : undefined;
+      windowManager.broadcast(event, data, senderName);
+    },
+  );
 
-  ipcMain.handle("window-send-to", (_event, target: string, event: string, data?: unknown) => {
-    windowManager.sendTo(target, event, data);
-  });
+  // 跨窗口投递（R27 起唯一入口）
+  //
+  // 选项（第 5 参，向后兼容旧的布尔 `raise`）：
+  // - `raise`：目标窗口在时抬到最前（「从别的窗口跳回主窗口某个位置」若只发
+  //   消息不抬窗口，用户会觉得点了没反应）；
+  // - `create`：目标窗口不在时先创建（目前只认 novel / relation）；
+  // - `queue`：目标窗口不在时**入队**，等它起来后补投。
+  //
+  // 为什么把「入队 + 拉起」放进通用通道：以前每种跳转都要在主进程单独维护一对
+  // IPC（如 `relation-entity-open` / `relation-entity-take`）+ 一份 pending 变量，
+  // 只为回答「窗口没起来这条消息存哪」。现在这件事由 `window-pending` 统一承担，
+  // 主进程只需要认识窗口名，不再认识消息类型。
+  //
+  // 返回值给渲染层一个判断依据：`delivered=false` 表示既送不到也拉不起来
+  // （如 lite 版没有该窗口），调用方要据此给可见提示，不能假装成功。
+  //
+  // ⚠️ 第 4 / 第 5 个位置参数都接受：preload 现在把选项压成一个对象传在第 4 位，
+  // 但旧产物是「第 4 位布尔 raise + 第 5 位 options」。两份产物在热重启窗口里
+  // 可能错位共存，只认其中一个形状就等于让 `create` 静默失效（本次真机故障）。
+  ipcMain.handle(
+    "window-send-to",
+    (
+      _event,
+      target: string,
+      event: string,
+      data?: unknown,
+      optionsOrRaise?: boolean | WindowSendOptions,
+      extraOptions?: WindowSendOptions,
+    ): WindowSendResult => {
+      const opts = readWindowSendOptions(optionsOrRaise, extraOptions);
+      const existing = windowManager.get(target);
+      if (existing) {
+        if (opts.raise) raiseWindow(existing);
+        windowManager.sendTo(target, event, data);
+        return { delivered: true, queued: false };
+      }
+
+      // 这个版本根本没打包该窗口（lite）：别把一条永远送不到的消息塞进队列
+      if (opts.create && !canCreateWindow(target)) {
+        return { delivered: false, queued: false };
+      }
+      if (!opts.create && !opts.queue)
+        return { delivered: false, queued: false };
+
+      // 先入队、再创建：新窗口的 preload 会在装载后 drain，
+      // 「创建完才发现没消息」与「消息先到、窗口还没起来」两种时序都覆盖
+      pushPendingMessage(target, { event, data });
+      const created = opts.create === true ? createWindowFor(target) : false;
+      return { delivered: created, queued: true };
+    },
+  );
+
+  // 新窗口装载后自取待投递消息（preload 调用；取走即清，重开窗口不会又弹上次的卡）
+  // 返回 null = 主进程还不认识这个窗口（注册晚于 preload 执行），preload 会等 load 再试
+  ipcMain.handle(
+    "window-pending-drain",
+    (event): PendingWindowMessage[] | null => {
+      const sender = BrowserWindow.fromWebContents(event.sender);
+      const name = sender ? windowManager.getNameOf(sender) : undefined;
+      if (!name) return null;
+      const list = takePendingMessages(name);
+      if (list.length > 0) {
+        log(
+          "info",
+          "main",
+          "window",
+          `${name} 窗口补投 ${list.length} 条待处理消息`,
+        );
+      }
+      return list;
+    },
+  );
 
   // 注册协议处理器，将 app:// 请求映射到本地文件
   // 必须异步：每个 bundle / CSS / 字体都是一次 1~5MB 的读盘，同步读会把
@@ -1009,6 +1473,11 @@ app.whenReady().then(() => {
     createSettingsWindow();
   });
 
+  // ── MapWindow 开关 IPC（仅在打包了 map 入口的版本生效，函数内自行兜底） ──
+  ipcMain.on("map-window-open", () => {
+    createMapWindow();
+  });
+
   // ── PackWindow 开关 IPC（full / novel 版：入口在小说窗口顶栏） ──
   // payload 携带当前作品 / 章节，供新窗口装载与切书兜底；lite 版不打包
   // 行囊窗口（novel 域整体缺席），请求直接忽略。
@@ -1019,7 +1488,8 @@ app.whenReady().then(() => {
     console.log("[main] 收到 pack-window-open，开始唤起行囊窗口");
     if (payload && typeof payload === "object") {
       const workId =
-        "workId" in payload && typeof (payload as { workId: unknown }).workId === "string"
+        "workId" in payload &&
+        typeof (payload as { workId: unknown }).workId === "string"
           ? (payload as { workId: string }).workId
           : "";
       // 零作品拒绝开窗（P2-5 双保险，渲染层 openPackWindow 已有同款守卫）：
@@ -1033,7 +1503,8 @@ app.whenReady().then(() => {
           ? (payload as { chapterId: string }).chapterId
           : "";
       const nonce =
-        "nonce" in payload && typeof (payload as { nonce: unknown }).nonce === "number"
+        "nonce" in payload &&
+        typeof (payload as { nonce: unknown }).nonce === "number"
           ? (payload as { nonce: number }).nonce
           : undefined;
       packWindowContext = { workId, chapterId, nonce };
@@ -1070,13 +1541,43 @@ app.whenReady().then(() => {
   // 这条日志是排查「点了没反应」的第一分界线：终端里没有它 = 点击没到达主进程
   // （preload 白名单 / 运行中的主进程是旧代码）；有它但窗口没出现 = 窗口创建环节，
   // 后面的 did-fail-load / 超时兜底日志会接着说。
-  ipcMain.on("global-setting-window-open", () => {
+  ipcMain.on("global-setting-window-open", (event) => {
     if (EDITION === "lite") {
-      console.log("[main] 收到 global-setting-window-open，但当前为 lite 版（不含全局设定中心），已忽略");
+      console.log(
+        "[main] 收到 global-setting-window-open，但当前为 lite 版（不含全局设定中心），已忽略",
+      );
       return;
     }
-    console.log("[main] 收到 global-setting-window-open，开始创建全局设定中心窗口");
-    createGlobalSettingWindow();
+    console.log(
+      "[main] 收到 global-setting-window-open，开始创建全局设定中心窗口",
+    );
+    // 带上发起方：窗口真正可见时回执 global-setting-window-shown（REQ-054 修法）
+    createGlobalSettingWindow(event.sender);
+  });
+
+  // ── RelationWindow 开关 IPC（full / novel 版：入口在右栏工具箱） ──
+  // 与 global-setting-window-open 同口径：lite 版直接忽略；空 workId 拒绝开窗
+  // （图窗口没有作品上下文只能显示空壳，且后续写回会落进错误作品）。
+  ipcMain.on("relation-window-open", (_event, payload) => {
+    if (EDITION === "lite") {
+      console.log(
+        "[main] 收到 relation-window-open，但当前为 lite 版（不含小说域），已忽略",
+      );
+      return;
+    }
+    const workId =
+      payload &&
+      typeof payload === "object" &&
+      typeof (payload as { workId?: unknown }).workId === "string"
+        ? (payload as { workId: string }).workId
+        : "";
+    if (!workId) {
+      console.log("[main] 收到 relation-window-open 但缺少 workId，已忽略");
+      return;
+    }
+    console.log("[main] 收到 relation-window-open，开始唤起人物关系网络窗口");
+    relationWindowContext = { workId };
+    createRelationWindow();
   });
 
   // ── 退出登录（SettingsWindow 账号区发起） ──
@@ -1103,6 +1604,10 @@ app.whenReady().then(() => {
     // 全局设定中心同样属 novel 域（数据在用户级 novel.db）：登出后必须关掉，
     // 否则窗口会留着上一账号的全局库。同走 close()（守卫本窗口不武装，即放行）。
     windowManager.get("globalSetting")?.close();
+    // 关系图窗口属 novel 域（读同一份 novel.db）：登出后必须关掉，
+    // 否则窗口会留着上一账号的要素与关联。同走 close()（守卫未武装，即放行）。
+    windowManager.get("relation")?.close();
+    relationWindowContext = null;
     windowManager.get(PRIMARY_WINDOW_NAME)?.destroy();
 
     const loginWin = windowManager.get("login");
@@ -1159,7 +1664,8 @@ app.whenReady().then(() => {
       "type" in data &&
       data.type === "user-login-confirmed"
     ) {
-      const email = "email" in data && typeof data.email === "string" ? data.email : "";
+      const email =
+        "email" in data && typeof data.email === "string" ? data.email : "";
       if (email) {
         switchUserDb(email);
       }
@@ -1169,7 +1675,7 @@ app.whenReady().then(() => {
 
   createLoginWindow(cachedUser);
   // 有缓存用户才预创建主窗口：登出后的重启没有缓存用户（userDb 未初始化），
-  // 此时预创建 BaseWindow 会让页面挂载即请求 todo/checkin/ledger 等数据，
+  // 此时预创建 BaseWindow 会让页面挂载即请求 todo/checkin 等数据，
   // 全部命中「尚未初始化当前用户数据」。无缓存时等 login-confirm 切换完
   // userDb 后经 allowAndShowPrimaryWindow → ensurePrimaryWindow 再创建。
   if (cachedUser) {
@@ -1181,7 +1687,11 @@ app.whenReady().then(() => {
   if (IS_DEV) {
     const toggleFocused = () => {
       const focused = BrowserWindow.getFocusedWindow();
-      toggleDevTools(focused ?? windowManager.get(PRIMARY_WINDOW_NAME) ?? windowManager.get("login"));
+      toggleDevTools(
+        focused ??
+          windowManager.get(PRIMARY_WINDOW_NAME) ??
+          windowManager.get("login"),
+      );
     };
     globalShortcut.register("CommandOrControl+Shift+I", toggleFocused);
     globalShortcut.register("F12", toggleFocused);
@@ -1219,7 +1729,10 @@ app.whenReady().then(() => {
   });
 
   app.on("activate", () => {
-    if (!windowManager.has(PRIMARY_WINDOW_NAME) && !windowManager.has("login")) {
+    if (
+      !windowManager.has(PRIMARY_WINDOW_NAME) &&
+      !windowManager.has("login")
+    ) {
       createLoginWindow(getCachedUser());
     }
     showPrimaryWindow();

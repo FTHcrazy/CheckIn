@@ -30,27 +30,32 @@ afterEach(() => {
 const setup = () => {
   const onOpenNaming = vi.fn();
   const onOpenSensitive = vi.fn();
+  const onOpenConsistency = vi.fn();
+  const onOpenExtract = vi.fn();
   const onNotify = vi.fn();
   render(
     <ToolLauncher
       onOpenNaming={onOpenNaming}
       onOpenSensitive={onOpenSensitive}
+      onOpenConsistency={onOpenConsistency}
+      onOpenExtract={onOpenExtract}
       onNotify={onNotify}
     />,
   );
-  return { onOpenNaming, onOpenSensitive, onNotify };
+  return { onOpenNaming, onOpenSensitive, onOpenConsistency, onOpenExtract, onNotify };
 };
 
 describe("ToolLauncher：规划中的工具不是死链", () => {
-  it("四张卡都是真按钮（占位卡可看不可点是这次要修的病）", () => {
+  it("每张卡都是真按钮（占位卡可看不可点是这次要修的病）", () => {
     setup();
     const cards = document.querySelectorAll(".nv-tools__card");
-    expect(cards).toHaveLength(4);
+    // 起名 / 敏感词 / 一致性校对 / 抽取设定 / 关系网络 / 架空地图
+    expect(cards).toHaveLength(6);
     cards.forEach((card) => {
       expect(card.tagName).toBe("BUTTON");
     });
     // 「规划中」的卡也必须能被键盘聚焦到，否则读屏用户完全够不着
-    expect(screen.getAllByRole("button")).toHaveLength(4);
+    expect(screen.getAllByRole("button")).toHaveLength(6);
   });
 
   it("点「规划中」的卡给明确反馈，不再静默", () => {
@@ -60,7 +65,7 @@ describe("ToolLauncher：规划中的工具不是死链", () => {
     expect(onNotify).toHaveBeenCalledTimes(1);
     const [text, tone] = onNotify.mock.calls[0] as [string, string];
     expect(text).toContain("人物关系网络");
-    expect(text).toContain("规划中");
+    expect(text).toContain("还没上线");
     expect(tone).toBe("info");
 
     screen.getByText("架空地图", { selector: "span" }).click();
@@ -71,14 +76,30 @@ describe("ToolLauncher：规划中的工具不是死链", () => {
     expect(onOpenNaming).not.toHaveBeenCalled();
   });
 
+  it("卡面不出现研发视角的进度标注（已上线 / 需求编号）", () => {
+    setup();
+    const text = document.querySelector(".nv-tools")?.textContent ?? "";
+    expect(text).not.toContain("已上线");
+    expect(text).not.toMatch(/R\d{2}/);
+  });
+
   it("可用的工具正常进入二级面板，且不触发「规划中」提示", () => {
-    const { onOpenNaming, onOpenSensitive, onNotify } = setup();
+    const { onOpenNaming, onOpenSensitive, onOpenConsistency, onOpenExtract, onNotify } =
+      setup();
     screen.getByText("起名器", { selector: "span" }).click();
     expect(onOpenNaming).toHaveBeenCalledTimes(1);
     expect(onNotify).not.toHaveBeenCalled();
 
     screen.getByText("敏感词检测", { selector: "span" }).click();
     expect(onOpenSensitive).toHaveBeenCalledTimes(1);
+
+    // B6 两个新入口：一致性校对（纯本地）与抽取设定（AI）
+    screen.getByText("一致性校对", { selector: "span" }).click();
+    expect(onOpenConsistency).toHaveBeenCalledTimes(1);
+
+    screen.getByText("抽取设定", { selector: "span" }).click();
+    expect(onOpenExtract).toHaveBeenCalledTimes(1);
+
     expect(onNotify).not.toHaveBeenCalled();
   });
 
@@ -101,6 +122,60 @@ describe("ToolLauncher：规划中的工具不是死链", () => {
     expect(source).not.toMatch(/<div[^>]*nv-tools__card/);
     // 占位卡必须有 toast 兜底，否则又会退化成「点了没反应」
     expect(source).toContain("onNotify(tool.plannedHint");
+  });
+});
+
+describe("ToolLauncher：人物关系网络入口（R27）", () => {
+  it("传入 onOpenRelation 后卡片翻成可用态，点击开窗口且不再走「规划中」toast", () => {
+    const onOpenRelation = vi.fn();
+    const onNotify = vi.fn();
+    render(
+      <ToolLauncher
+        onOpenNaming={vi.fn()}
+        onOpenSensitive={vi.fn()}
+        onOpenConsistency={vi.fn()}
+        onOpenExtract={vi.fn()}
+        onNotify={onNotify}
+        onOpenRelation={onOpenRelation}
+      />,
+    );
+
+    const card = [...document.querySelectorAll(".nv-tools__card")].find((item) =>
+      item.textContent?.includes("人物关系网络"),
+    );
+    expect(card).toBeTruthy();
+    expect(card!.className).not.toContain("is-planned");
+
+    screen.getByText("人物关系网络", { selector: "span" }).click();
+    expect(onOpenRelation).toHaveBeenCalledTimes(1);
+    expect(onNotify).not.toHaveBeenCalled();
+  });
+});
+
+describe("ToolLauncher：架空地图入口（R28）", () => {
+  it("传入 onOpenMap 后卡片翻成可用态，点击开窗口且不再走「规划中」toast", () => {
+    const onOpenMap = vi.fn();
+    const onNotify = vi.fn();
+    render(
+      <ToolLauncher
+        onOpenNaming={vi.fn()}
+        onOpenSensitive={vi.fn()}
+        onOpenConsistency={vi.fn()}
+        onOpenExtract={vi.fn()}
+        onNotify={onNotify}
+        onOpenMap={onOpenMap}
+      />,
+    );
+
+    const card = [...document.querySelectorAll(".nv-tools__card")].find((item) =>
+      item.textContent?.includes("架空地图"),
+    );
+    expect(card).toBeTruthy();
+    expect(card!.className).not.toContain("is-planned");
+
+    screen.getByText("架空地图", { selector: "span" }).click();
+    expect(onOpenMap).toHaveBeenCalledTimes(1);
+    expect(onNotify).not.toHaveBeenCalled();
   });
 });
 
@@ -133,6 +208,8 @@ describe("ToolLauncher：描述换行契约（REQ-047）", () => {
       <ToolLauncher
         onOpenNaming={vi.fn()}
         onOpenSensitive={vi.fn()}
+        onOpenConsistency={vi.fn()}
+        onOpenExtract={vi.fn()}
         onNotify={vi.fn()}
       />,
     );

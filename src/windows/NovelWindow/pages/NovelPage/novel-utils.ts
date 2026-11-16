@@ -21,7 +21,15 @@ import type {
   TextSegment,
 } from "./types";
 import { formatRelativeTime as relativeTime } from "@/shared/utils/format";
-import { formatNumberedLabel, toChineseOrdinal } from "@/shared/novel/number-label";
+import {
+  formatNumberedLabel,
+  toChineseOrdinal,
+} from "@/shared/novel/number-label";
+// 分组 / 章序的实现在 shared（导出产线共用），这里取回本地绑定给 buildOutlineTree 用
+import {
+  buildChapterGroups,
+  buildChapterNumbersFromGroups,
+} from "@/shared/novel/plain-text";
 import { countWords, type WordCountMode } from "@/shared/novel/word-count";
 import {
   DEFAULT_SETTINGS,
@@ -440,7 +448,9 @@ export function buildOutlineTree(
     });
 
     // 章节 id → 章：伏笔的「埋在哪一章」标签要还原标题，不能每卷再 find 一遍
-    const chapterById = new Map(group.chapters.map((chapter) => [chapter.id, chapter]));
+    const chapterById = new Map(
+      group.chapters.map((chapter) => [chapter.id, chapter]),
+    );
 
     const foreshadowNodes: OutlineNode[] = [...owned]
       .sort(
@@ -449,7 +459,9 @@ export function buildOutlineTree(
           a.createdAt - b.createdAt,
       )
       .map((entry) => {
-        const bound = entry.chapterId ? chapterById.get(entry.chapterId) : undefined;
+        const bound = entry.chapterId
+          ? chapterById.get(entry.chapterId)
+          : undefined;
         return {
           kind: "foreshadow" as const,
           id: entry.id,
@@ -543,6 +555,34 @@ export function patchChapterOutlineNote(
   );
 }
 
+/**
+ * 章节 AI 摘要局部更新（R-AI-09）。
+ * `model` / `batch` 传空串 = 手工编辑清空来源标记；不修改入参。
+ */
+export function patchChapterSummary(
+  chapters: NovelChapter[],
+  chapterId: string,
+  summary: string,
+  model?: string,
+  at?: number,
+  batch?: string,
+): NovelChapter[] {
+  const trimmed = summary.trim();
+  const target = chapters.find((chapter) => chapter.id === chapterId);
+  if (!target || (target.aiSummary ?? "") === trimmed) return chapters;
+  return chapters.map((chapter) =>
+    chapter.id === chapterId
+      ? {
+          ...chapter,
+          aiSummary: trimmed,
+          aiSummaryAt: at,
+          aiSummaryModel: model?.trim() ? model.trim() : undefined,
+          aiSummaryBatch: batch?.trim() ? batch.trim() : undefined,
+        }
+      : chapter,
+  );
+}
+
 /** 伏笔条目局部更新；标题去空白后为空、或条目不存在时返回原引用 */
 export function patchOutlineEntry(
   entries: OutlineEntry[],
@@ -559,7 +599,8 @@ export function patchOutlineEntry(
   }
   if (patch.note !== undefined) next.note = patch.note.trim();
   // 埋设章节改绑：空串退回卷级（OutlineEntry.chapterId 缺省即卷级）
-  if (patch.chapterId !== undefined) next.chapterId = patch.chapterId || undefined;
+  if (patch.chapterId !== undefined)
+    next.chapterId = patch.chapterId || undefined;
   return entries.map((entry) => (entry.id === entryId ? next : entry));
 }
 
@@ -588,57 +629,20 @@ export interface ChapterGroup {
   chapters: NovelChapter[];
 }
 
-export function buildChapterGroups(
-  volumes: NovelVolume[],
-  chapters: NovelChapter[],
-): ChapterGroup[] {
-  // 先按 volumeId 分桶再排序：原实现是「每个卷各 filter 一遍全量章节」，
-  // 复杂度 O(卷 × 章)。3000 章 / 60 卷时是 18 万次比较，而它每次切章、
-  // 每次保存正文（chapters 换新数组）都会被调用，且 buildChapterNumbers 里
-  // 还会再调一次 —— 分桶后降为 O(章 + 卷)，排序只作用于卷内子集。
-  const byVolume = new Map<string, NovelChapter[]>();
-  for (const chapter of chapters) {
-    const bucket = byVolume.get(chapter.volumeId);
-    if (bucket) bucket.push(chapter);
-    else byVolume.set(chapter.volumeId, [chapter]);
-  }
-
-  return [...volumes]
-    .sort((a, b) => a.sort - b.sort)
-    .map((volume) => ({
-      volume,
-      chapters: (byVolume.get(volume.id) ?? []).sort((a, b) => a.sort - b.sort),
-    }));
-}
-
-/**
- * 全书章节序号：卷按 sort、卷内章按 sort 连续编号。
- * 序号是排序的派生属性（不写进标题字符串），拖拽重排后由调用方重新派生即自动跟随。
- */
-export function buildChapterNumbers(
-  volumes: NovelVolume[],
-  chapters: NovelChapter[],
-): Map<string, number> {
-  return buildChapterNumbersFromGroups(buildChapterGroups(volumes, chapters));
-}
-
-/**
- * 序号派生的内部入口：接受**已建好**的分组，避免调用方已经算过 groups 时
- * 再建一遍（buildOutlineTree 同时要 groups 与 numbers，原本建了两遍）。
- */
-export function buildChapterNumbersFromGroups(
-  groups: ChapterGroup[],
-): Map<string, number> {
-  const numbers = new Map<string, number>();
-  let seq = 0;
-  for (const group of groups) {
-    for (const chapter of group.chapters) {
-      seq += 1;
-      numbers.set(chapter.id, seq);
-    }
-  }
-  return numbers;
-}
+// 分组 / 章序 / TXT 拼装的单一实现已下沉到 `@/shared/novel/plain-text`
+// （书架右键「导出当前作品」与编辑器「导出整本」共用同一条产线）。
+// 这里 re-export 保持既有 import 路径不变。
+export {
+  buildChapterGroups,
+  buildChapterNumbers,
+  buildChapterNumbersFromGroups,
+  buildBookPlainText,
+  buildChapterPlainText,
+  buildVolumePlainText,
+  normalizeParagraphIndent,
+  type ExportNumberingOptions,
+  type VolumeGroup,
+} from "@/shared/novel/plain-text";
 
 // ── 中文序号（与书架 bookshelf-utils 共用同一实现） ──
 // 单一实现迁至 @/shared/novel/number-label（N11 / M31）。此处 re-export 保持
@@ -716,7 +720,8 @@ export function previewChapterReorder(
   return chapters.map((chapter) => {
     if (!order.has(chapter.id)) return chapter;
     const next = { ...chapter, sort: order.get(chapter.id) ?? chapter.sort };
-    if (chapter.id === fromId && movingCrossVolume) next.volumeId = movingCrossVolume;
+    if (chapter.id === fromId && movingCrossVolume)
+      next.volumeId = movingCrossVolume;
     return next;
   });
 }
@@ -810,7 +815,8 @@ function clampSetting(
   range: { min: number; max: number },
   fallback: number,
 ): number {
-  const n = typeof value === "number" && Number.isFinite(value) ? value : fallback;
+  const n =
+    typeof value === "number" && Number.isFinite(value) ? value : fallback;
   return Math.min(range.max, Math.max(range.min, n));
 }
 
@@ -841,7 +847,8 @@ export function mergeEditorSettings(raw: unknown): EditorSettings {
     : DEFAULT_SETTINGS.annotationTypes;
 
   const wordCountMode: WordCountMode =
-    source.wordCountMode === "hanOnly" || source.wordCountMode === "withPunctuation"
+    source.wordCountMode === "hanOnly" ||
+    source.wordCountMode === "withPunctuation"
       ? source.wordCountMode
       : DEFAULT_SETTINGS.wordCountMode;
   const numberStyle: LabelNumberStyle =
@@ -860,15 +867,30 @@ export function mergeEditorSettings(raw: unknown): EditorSettings {
       : DEFAULT_SETTINGS.volumeSuffix;
 
   return {
-    fontSize: clampSetting(source.fontSize, SETTINGS_RANGE.fontSize, DEFAULT_SETTINGS.fontSize),
-    lineHeight: clampSetting(source.lineHeight, SETTINGS_RANGE.lineHeight, DEFAULT_SETTINGS.lineHeight),
+    fontSize: clampSetting(
+      source.fontSize,
+      SETTINGS_RANGE.fontSize,
+      DEFAULT_SETTINGS.fontSize,
+    ),
+    lineHeight: clampSetting(
+      source.lineHeight,
+      SETTINGS_RANGE.lineHeight,
+      DEFAULT_SETTINGS.lineHeight,
+    ),
     paragraphSpacing: clampSetting(
       source.paragraphSpacing,
       SETTINGS_RANGE.paragraphSpacing,
       DEFAULT_SETTINGS.paragraphSpacing,
     ),
-    indent: typeof source.indent === "boolean" ? source.indent : DEFAULT_SETTINGS.indent,
-    dailyGoal: clampSetting(source.dailyGoal, SETTINGS_RANGE.dailyGoal, DEFAULT_SETTINGS.dailyGoal),
+    indent:
+      typeof source.indent === "boolean"
+        ? source.indent
+        : DEFAULT_SETTINGS.indent,
+    dailyGoal: clampSetting(
+      source.dailyGoal,
+      SETTINGS_RANGE.dailyGoal,
+      DEFAULT_SETTINGS.dailyGoal,
+    ),
     wordCountMode,
     annotationTypes,
     numberStyle,
@@ -878,6 +900,18 @@ export function mergeEditorSettings(raw: unknown): EditorSettings {
       typeof source.confirmReorder === "boolean"
         ? source.confirmReorder
         : DEFAULT_SETTINGS.confirmReorder,
+    paperTexture:
+      typeof source.paperTexture === "boolean"
+        ? source.paperTexture
+        : DEFAULT_SETTINGS.paperTexture,
+    paperFont:
+      typeof source.paperFont === "string"
+        ? source.paperFont
+        : DEFAULT_SETTINGS.paperFont,
+    readMode:
+      typeof source.readMode === "boolean"
+        ? source.readMode
+        : DEFAULT_SETTINGS.readMode,
   };
 }
 
@@ -909,11 +943,13 @@ export function sanitizeRestorePosition(
   works: ReadonlyArray<{ id: string }>,
   chapters: ReadonlyArray<NovelChapter>,
 ): RestorePosition | null {
-  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw))
+    return null;
   const source = raw as Record<string, unknown>;
 
   const workId = typeof source.workId === "string" ? source.workId : "";
-  const chapterId = typeof source.chapterId === "string" ? source.chapterId : "";
+  const chapterId =
+    typeof source.chapterId === "string" ? source.chapterId : "";
   if (!workId || !chapterId) return null;
   if (!works.some((work) => work.id === workId)) return null;
 
@@ -970,7 +1006,8 @@ export function sanitizeCustomTypes(raw: unknown): CustomEntityTypeDef[] {
   const seen = new Set<string>();
   const result: CustomEntityTypeDef[] = [];
   for (const item of raw) {
-    if (item === null || typeof item !== "object" || Array.isArray(item)) continue;
+    if (item === null || typeof item !== "object" || Array.isArray(item))
+      continue;
     const source = item as Record<string, unknown>;
     const id = typeof source.id === "string" ? source.id : "";
     const name = typeof source.name === "string" ? source.name.trim() : "";
@@ -984,118 +1021,8 @@ export function sanitizeCustomTypes(raw: unknown): CustomEntityTypeDef[] {
 }
 
 // ── TXT 导出（R13）：文本组装纯函数，主进程只负责弹保存框 + 写盘 ──
-
-/** 导出序号选项：章节 / 卷标题按 numberStyle + 后缀派生，与界面所见一致 */
-export interface ExportNumberingOptions {
-  numberStyle: LabelNumberStyle;
-  chapterSuffix: string;
-  volumeSuffix: string;
-  /**
-   * 段首缩进（1.40.0）：导出时把每段正文规范化为全角两格缩进（\u3000\u3000）。
-   * 编辑器里的缩进是 CSS `text-indent`（不落在文本上），而作者手工补的
-   * 空格往往只有第二段起才有 —— 首段因此「导出不缩进」。缺省开启
-   * （中文小说 txt 的通行排版）；作者在设置里关掉「首行缩进」视为
-   * 自己管排版，导出保持原文不动。
-   */
-  paragraphIndent?: boolean;
-}
-
-/**
- * 段落规范化缩进（1.40.0）：每个非空行剥掉既有行首空白后统一补全角两格（\u3000\u3000）。
- *
- * 为什么是「剥了再补」而不是「缺了才补」：作者手工补的缩进五花八门
- * （全角两格 / 四格 / 半角空格 / 制表符），只补缺的话同一章里会出现
- * 2 格与 4 格并存的行；剥了再补幂等，跑多少遍都是同一份文本。
- */
-export function normalizeParagraphIndent(content: string): string {
-  return content
-    .split("\n")
-    .map((line) => {
-      const stripped = line.replace(/^[\s\u3000]+/, "");
-      return stripped ? `\u3000\u3000${stripped}` : "";
-    })
-    .join("\n");
-}
-
-/** 章节标题行：「第一章 灵潮起」；章节名为空时退化为纯序号「第一章」 */
-function buildChapterHeading(
-  chapter: NovelChapter,
-  chapterNumber: number,
-  options: ExportNumberingOptions,
-): string {
-  const label = formatNumberedLabel(
-    options.numberStyle,
-    options.chapterSuffix,
-    Math.max(1, chapterNumber),
-  );
-  const title = chapter.title.trim();
-  return title ? `${label} ${title}` : label;
-}
-
-/** 单章文本：序号标题行 + 正文（正文原样，仅去除尾部空白） */
-export function buildChapterPlainText(
-  chapter: NovelChapter,
-  chapterNumber: number,
-  options: ExportNumberingOptions,
-): string {
-  // 缩进规范化（1.40.0）：修「每章第一段不缩进」。设置里关掉缩进的作者
-  // 被视为自己在管排版，导出保持原文不动（paragraphIndent 缺省开启）。
-  const body =
-    options.paragraphIndent === false
-      ? chapter.content
-      : normalizeParagraphIndent(chapter.content);
-  return [buildChapterHeading(chapter, chapterNumber, options), body.trimEnd()].join(
-    "\n\n",
-  );
-}
-
-/**
- * 单卷文本：卷标题行（第N卷 · 自定义名，口径同 volumeDisplayName）+ 卷内各章。
- * chapters 传全量（内部按卷筛选 + sort 排序），chapterNumbers 为全书章序表，
- * 保证单卷导出的章节序号与整本 / 界面完全一致。
- */
-export function buildVolumePlainText(
-  volume: NovelVolume,
-  chapters: NovelChapter[],
-  chapterNumbers: Map<string, number>,
-  options: ExportNumberingOptions,
-): string {
-  const label = formatNumberedLabel(
-    options.numberStyle,
-    options.volumeSuffix,
-    Math.max(1, volume.sort),
-  );
-  const custom = volume.name === UNNAMED_VOLUME ? "" : volume.name.trim();
-  const heading = custom ? `${label} · ${custom}` : label;
-  const body = chapters
-    .filter((chapter) => chapter.volumeId === volume.id)
-    .sort((a, b) => a.sort - b.sort)
-    .map((chapter) =>
-      buildChapterPlainText(
-        chapter,
-        chapterNumbers.get(chapter.id) ?? 1,
-        options,
-      ),
-    );
-  return [heading, ...body].join("\n\n");
-}
-
-/** 整本文本：书名行 + 按卷序逐卷拼装 */
-export function buildBookPlainText(
-  bookTitle: string,
-  volumes: NovelVolume[],
-  chapters: NovelChapter[],
-  options: ExportNumberingOptions,
-): string {
-  const chapterNumbers = buildChapterNumbers(volumes, chapters);
-  const blocks: string[] = [`《${bookTitle.trim() || "未命名作品"}》`];
-  for (const group of buildChapterGroups(volumes, chapters)) {
-    blocks.push(
-      buildVolumePlainText(group.volume, chapters, chapterNumbers, options),
-    );
-  }
-  return blocks.join("\n\n");
-}
+// 实现与上面的分组 / 章序一起下沉到 `@/shared/novel/plain-text`，
+// 这里只留一句说明（re-export 在文件上半部分，与分组函数放在一起）。
 
 /**
  * 设定卡导出文本（R13）：类型标签 + 基础字段 + 关联要素 + 当前境界。
@@ -1108,7 +1035,8 @@ export function buildEntityCardText(
   levelRungName?: string,
 ): string {
   const lines: string[] = [`【${entity.name}】`];
-  if (entity.aliases.length > 0) lines.push(`别名：${entity.aliases.join(" · ")}`);
+  if (entity.aliases.length > 0)
+    lines.push(`别名：${entity.aliases.join(" · ")}`);
   if (entity.summary) lines.push(`一句话：${entity.summary}`);
   for (const [key, value] of Object.entries(entity.fields)) {
     if (key === "性格" && !value.trim()) continue;
@@ -1162,22 +1090,31 @@ export function sanitizeNameFavorites(raw: unknown): NameFavorite[] {
   const seenIds = new Set<string>();
   const result: NameFavorite[] = [];
   for (const item of raw) {
-    if (item === null || typeof item !== "object" || Array.isArray(item)) continue;
+    if (item === null || typeof item !== "object" || Array.isArray(item))
+      continue;
     const source = item as Record<string, unknown>;
     const id = typeof source.id === "string" ? source.id : "";
     const workId = typeof source.workId === "string" ? source.workId : "";
     const name = typeof source.name === "string" ? source.name.trim() : "";
-    const kind = typeof source.kind === "string" ? (source.kind as NamingKind) : "person";
-    const style = typeof source.style === "string" ? (source.style as NameStyle) : "xianxia";
+    const kind =
+      typeof source.kind === "string" ? (source.kind as NamingKind) : "person";
+    const style =
+      typeof source.style === "string"
+        ? (source.style as NameStyle)
+        : "xianxia";
     const createdAt =
       typeof source.createdAt === "number" && Number.isFinite(source.createdAt)
         ? source.createdAt
         : Date.now();
     if (!id || !name || !workId) continue;
-    if (!VALID_NAMING_KINDS.has(kind) || !VALID_NAME_STYLES.has(style)) continue;
+    if (!VALID_NAMING_KINDS.has(kind) || !VALID_NAME_STYLES.has(style))
+      continue;
     if (seenIds.has(id)) continue;
     seenIds.add(id);
-    result.push({ id, workId, name, kind, style, createdAt });
+    // source 仅在确为 ai 时落字段；旧数据无该字段，缺省即 local（向后兼容）
+    const favorite: NameFavorite = { id, workId, name, kind, style, createdAt };
+    if (source.source === "ai") favorite.source = "ai";
+    result.push(favorite);
   }
   return result;
 }

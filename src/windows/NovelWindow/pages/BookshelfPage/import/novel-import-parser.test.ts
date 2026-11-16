@@ -285,6 +285,49 @@ describe("parseTxtBook", () => {
     expect(book.chapters.map((c) => c.title)).toEqual(["", ""]);
     expect(book.numberingRule).toEqual({ suffix: "章", numberStyle: "chinese" });
   });
+
+  describe("正文行首缩进（REQ-059）", () => {
+    it("全角空格缩进被剥掉：缩进统一交给编辑器 CSS，正文里不留空格", () => {
+      // 事故：盗版 TXT 每段用两个全角空格做缩进，导进来后叠在 CSS 的 2em 上，
+      // 手写段 2 字宽、导入段 4 字宽，字体缺字形时还渲染成空方块。
+      const book = parseTxtBook(
+        ["第一章 开端", "　　第一段。", "　　第二段。"].join("\n"),
+      );
+      expect(book.chapters[0].content).toBe("第一段。\n第二段。");
+    });
+
+    it("半角空格 / 制表符 / 不换行空格 / 零宽空格一并剥掉", () => {
+      const book = parseTxtBook(
+        [
+          "第一章 开端",
+          "   第一段。",
+          "\t第二段。",
+          "\u00a0\u3000第三段。",
+          "\u200b第四段。",
+        ].join("\n"),
+      );
+      expect(book.chapters[0].content).toBe(
+        "第一段。\n第二段。\n第三段。\n第四段。",
+      );
+    });
+
+    it("行尾空白也一并剥掉（粘贴时常带不可见的尾随空格）", () => {
+      const book = parseTxtBook("第一章 开端\n第一段。  \u3000");
+      expect(book.chapters[0].content).toBe("第一段。");
+    });
+
+    it("空行保留：分段习惯是作者的结构，不在导入时改动", () => {
+      const book = parseTxtBook(
+        ["第一章 开端", "　　第一段。", "", "　　第二段。"].join("\n"),
+      );
+      expect(book.chapters[0].content).toBe("第一段。\n\n第二段。");
+    });
+
+    it("无章结构的整本兜底同样剥缩进", () => {
+      const book = parseTxtBook("　　第一段。\n　　第二段。");
+      expect(book.chapters[0].content).toBe("第一段。\n第二段。");
+    });
+  });
 });
 
 describe("countWords", () => {

@@ -69,9 +69,10 @@ describe("Tour 挂载与编排", () => {
     const shelf = read("src/windows/NovelWindow/pages/BookshelfPage/BookshelfPage.tsx");
     const editor = read("src/windows/NovelWindow/pages/NovelPage/NovelPage.tsx");
     expect(shelf).toContain('<NovelGuideTour view="shelf" visible={visible} />');
-    // editor 侧多一个 onGoToView（P2-1：第 5→6 步跨视图回书架时切视图），
-    // 故断言挂载前缀 + 新回调，而不是写死整行自闭合
-    expect(editor).toContain('<NovelGuideTour view="editor" visible={visible}');
+    // 编辑器侧多一个 onGoToView（P2-1：第 5→6 步跨视图回书架时切视图），
+    // 故断言挂载前缀 + 新回调，而不是写死整行自闭合；
+    // 属性之间的换行由格式化决定，用 \s+ 而不是空格
+    expect(editor).toMatch(/<NovelGuideTour\s+view="editor"\s+visible=\{visible\}/);
     expect(editor).toContain("onGoToView={onGoToView}");
   });
 
@@ -287,7 +288,13 @@ describe("弱提示 T-03：选中文字 → 右键建资料卡", () => {
     expect(clears).toHaveLength(1);
     expect(source).toContain("clearGuideAnchor()");
     // 打字分支在初始化 effect 内（effect deps 为 []，只能用 setState 本身）
-    expect(source).toContain("onScrollChange(event.currentTarget.scrollTop)");
+    // 滚动回调里既上报 scrollTop 也撤气泡 —— 具体写法（先解构 el 再调）会变，
+    // 断「同一段 onScroll 里两者都在」比断死一行更贴近意图
+    const scrollFrom = source.indexOf("onScroll={");
+    expect(scrollFrom).toBeGreaterThan(-1);
+    const scrollBody = source.slice(scrollFrom, scrollFrom + 400);
+    expect(scrollBody).toContain("onScrollChange(");
+    expect(scrollBody).toContain("clearGuideAnchor()");
   });
 
   it("气泡文案讲清了右键能建什么（角色 / 地点 / 势力 / 物品）", () => {

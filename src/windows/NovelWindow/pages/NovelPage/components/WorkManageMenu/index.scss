@@ -11,4 +11,26 @@
     color: var(--app-error);
     font-size: 12px;
   }
+
+  /* 回收站提示：删除已可逆，这里用常规次要色而不是警告红 ——
+     红色留给「彻底删除 / 重置模板」这类真正不可逆的动作 */
+  &__delete-hint {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--app-text-muted);
+  }
+
+  /* 题材输入（2.7.1）：弹窗内占满整行，下拉浮层由 antd 贴到输入框上 */
+  &__genre {
+    width: 100%;
+    margin-top: 8px;
+  }
+
+  &__genre-hint {
+    margin: 8px 0 0;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--app-text-muted);
+  }
 }

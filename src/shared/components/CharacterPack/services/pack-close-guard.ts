@@ -1,5 +1,5 @@
 /**
- * 关闭守卫通道（渲染层 ↔ 主进程，见 `electron/close-guard.ts`）
+ * 关闭守卫通道（渲染层 ↔ 主进程，见 `electron/core/window/close-guard.ts`）
  *
  * 行囊的编辑只落内存 + 草稿，「写库」是显式动作。窗口被销毁 / 应用退出时，
  * 渲染层的 cleanup 不保证跑完 —— 所以退出前由主进程回问一句，把

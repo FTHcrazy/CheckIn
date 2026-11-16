@@ -22,6 +22,15 @@ export const TOUR_TARGETS = {
   topbarSetting: "topbar-setting",
   /** 顶栏行囊 */
   topbarPack: "topbar-pack",
+  /**
+   * 顶栏「更多入口」（溢出菜单触发器）。
+   *
+   * 2.57.0（O-02）起「设定中心」与「行囊」收进了溢出菜单，菜单项在展开前不存在
+   * 于布局树里。第 3、4 步是强制引导（`FORCED_MAX_STEP = 4`）且没有备选锚点时
+   * 会直接卡住 —— 一个不渲染的 Tour 比高亮得不够准更糟。这两步因此在主锚点之后
+   * 追加本锚点：菜单恰好展开时仍然指向真实菜单项，收起时退到「⋯」上。
+   */
+  topbarMore: "topbar-more",
   /** 编辑器正文滚动区（有正文时的目标） */
   editorBody: "editor-body",
   /** 编辑器空态「写下第一章」 */
@@ -148,7 +157,7 @@ export const TOUR_STEPS: readonly TourStepCopy[] = [
     step: 3,
     view: "editor",
     target: TOUR_TARGETS.topbarSetting,
-    fallbacks: [],
+    fallbacks: [TOUR_TARGETS.topbarMore],
     title: "先把全书的总设定立起来",
     description:
       "境界、等级、品阶这类全书通用的体系都在这里。第一次可以从「模板库」一键套用（如「修仙 · 经典九层」），灌完随便改。",
@@ -158,7 +167,7 @@ export const TOUR_STEPS: readonly TourStepCopy[] = [
     step: 4,
     view: "editor",
     target: TOUR_TARGETS.topbarPack,
-    fallbacks: [],
+    fallbacks: [TOUR_TARGETS.topbarMore],
     title: "行囊：主角的状态面板",
     description:
       "境界、属性、装备、物品、技能都在这里记。写正文时随时 Ctrl+Shift+B 呼出；关窗前有未保存改动会先问你一次。",

@@ -1,0 +1,57 @@
+// 压缩参数面板：可伸缩容器内的栅格，不写死列数（§6.1.2）
+.imgc-settings {
+  display: grid;
+  // auto-fill + 显式下限：窗口变窄时折行，而不是把 Select 压到文字截断
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px 16px;
+
+  &__field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  // 色板按内容宽度收着放：整格拉伸会变成一个横跨半屏的大色块
+  &__color {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    align-self: flex-start;
+  }
+
+  &__hex {
+    font-size: 12px;
+    color: var(--app-text-muted);
+    text-transform: uppercase;
+  }
+
+  &__label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--app-text-secondary);
+  }
+
+  &__help {
+    font-size: 12px;
+    color: var(--app-text-muted);
+    cursor: help;
+  }
+
+  &__slider {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  &__value {
+    flex: 0 0 auto;
+    min-width: 36px;
+    font-size: 12px;
+    text-align: right;
+    color: var(--app-text-muted);
+  }
+}

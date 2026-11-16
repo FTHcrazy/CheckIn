@@ -20,8 +20,10 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { SettingCategory, SettingLevel } from "@/shared/novel/setting-types";
-import { listSubLevels } from "@/shared/novel/setting-utils";
+import { canSplitLevel, hasChildLevels, listSubLevels } from "@/shared/novel/setting-utils";
 import { lvlId, type LevelDraft } from "../../setting-center-shared";
+import SvgIcon from "@/shared/components/SvgIcon";
+import aiSvg from "@/assets/novel/ai.svg?raw";
 import "./index.scss";
 
 /**
@@ -84,6 +86,14 @@ export interface LevelSequenceProps {
   dropIndex: number | null;
   subLevelTotal: number;
   onOpenBatch: () => void;
+  /**
+   * 打开 AI 生成 / 拓展弹窗（R-AI-18）。
+   *
+   * **不传 = 本形态不提供**（与模板能力的「不传而不是传空实现」同一纪律）：
+   * AI 不可用 / 用户关掉了 AI / 引用自全局的只读分类，调用方都不传，
+   * 卡头就不会出现一个点了没反应的按钮。
+   */
+  onOpenAiGen?: () => void;
   onStartSplit: (level: SettingLevel) => void;
   onMergeLevel: (levelId: string) => void;
   onDeleteLevel: (levelId: string) => void;
@@ -123,6 +133,7 @@ export default function LevelSequence({
   dropIndex,
   subLevelTotal,
   onOpenBatch,
+  onOpenAiGen,
   onStartSplit,
   onMergeLevel,
   onDeleteLevel,
@@ -137,10 +148,20 @@ export default function LevelSequence({
         <span className="nv-sc__sec-title">阶梯</span>
         <span className="nv-sc__spacer" />
         {!referenced && (
-          <Button size="small" disabled={!active} onClick={onOpenBatch}>
-            <PlusOutlined />
-            批量生成
-          </Button>
+          <>
+            {/* AI 生成排在批量生成前面：这是「建一整套体系」的主路径，
+                批量生成（逐行 / 模板）是它不可用时的本地兜底。 */}
+            {onOpenAiGen && (
+              <Button size="small" disabled={!active} onClick={onOpenAiGen}>
+                <SvgIcon svg={aiSvg} />
+                AI 生成
+              </Button>
+            )}
+            <Button size="small" disabled={!active} onClick={onOpenBatch}>
+              <PlusOutlined />
+              批量生成
+            </Button>
+          </>
         )}
         <span className="nv-sc__tip">
           {referenced
@@ -334,9 +355,16 @@ export default function LevelSequence({
                                 // 挂一层子层级，子层级不能再拆 —— 否则「初级·第1段·
                                 // 第1段」这种三层嵌套既没法在境界 chip 里表达，
                                 // 也没人读得懂。子层级（parentId 非空）不给拆分入口。
-                                ...(level.parentId
-                                  ? []
-                                  : [{ key: "split", label: "新增子层级…" }]),
+                                // 1.4x 收口：已拆出子行的根阶（parentId 为 null 但
+                                // 有子行挂在下面）同样不再给拆分入口。口径收敛到纯
+                                // 函数 canSplitLevel（主进程 / UI 同一判据），子行
+                                // 信息由 hasChildLevels 从整份序列里现算。
+                                ...(canSplitLevel(
+                                  level,
+                                  hasChildLevels(orderedLevels, level.id),
+                                )
+                                  ? [{ key: "split", label: "新增子层级…" }]
+                                  : []),
                                 ...(level.parentId
                                   ? []
                                   : [

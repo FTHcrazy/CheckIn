@@ -35,8 +35,8 @@
     /* 摘要是两行截断：antd 给按钮加了 white-space: nowrap，必须还原否则
        -webkit-line-clamp 失效（文字不换行就没有第二行可截） */
     white-space: normal;
-    transition: border-color 160ms ease, box-shadow 160ms ease,
-      transform 160ms ease;
+    transition: border-color var(--app-t-fast) var(--app-ease-standard), box-shadow var(--app-t-fast) var(--app-ease-standard),
+      transform var(--app-t-fast) var(--app-ease-standard);
 
     /* 悬停浮起：box-shadow 只有 --ant-button-default-shadow 一个入口（没有
        hover 版本），所以在 :hover 里改变量而不是写属性；transform antd 不接管 */
@@ -184,7 +184,7 @@
     box-shadow: var(--app-shadow-card);
     opacity: 0;
     transform: translateX(4px);
-    transition: opacity 160ms ease, transform 160ms ease;
+    transition: opacity var(--app-t-fast) var(--app-ease-standard), transform var(--app-t-fast) var(--app-ease-standard);
   }
 
   &:hover &__quick,

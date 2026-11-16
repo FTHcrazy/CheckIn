@@ -179,6 +179,51 @@ export default function InspirationPanel({
             </>
           ) : (
             <>
+              {/* hover 操作条：浮到卡片右上角（REQ-054 视觉优化）。不再塞进 footer
+                  与时间/来源/伏笔角标挤作一行 —— 那里按钮横向压成一条、和正文重叠。
+                  现在它是独立的浮层条（卡片底 + 发丝线边 + 阴影），只在悬停时出现。 */}
+              {!external && (
+                <span className="nv-note__acts">
+                  <Button
+                    className={`nv-mini${note.pinned ? " is-on" : ""}`}
+                    aria-pressed={note.pinned}
+                    aria-label={note.pinned ? "取消置顶" : "置顶"}
+                    title={note.pinned ? "取消置顶" : "置顶"}
+                    onClick={() => actions.onTogglePin(note.id, !note.pinned)}
+                  >
+                    {note.pinned ? <PushpinFilled /> : <PushpinOutlined />}
+                  </Button>
+                  <Button
+                    className="nv-mini"
+                    disabled={Boolean(note.foreshadowId)}
+                    aria-label="转为伏笔"
+                    title={
+                      note.foreshadowId
+                        ? "已转为伏笔"
+                        : "转为伏笔（写入大纲）"
+                    }
+                    onClick={() => actions.onPromoteNote(note.id)}
+                  >
+                    <FlagOutlined />
+                  </Button>
+                  <Button
+                    className="nv-mini"
+                    aria-label="编辑灵感"
+                    title="编辑灵感"
+                    onClick={() => startEdit(note)}
+                  >
+                    <EditOutlined />
+                  </Button>
+                  <Button
+                    className="nv-mini nv-mini--warn"
+                    aria-label="删除灵感"
+                    title="删除灵感"
+                    onClick={() => actions.onRemoveNote(note.id)}
+                  >
+                    <CloseOutlined />
+                  </Button>
+                </span>
+              )}
               <p className="nv-note__text">{note.content}</p>
               <footer className="nv-note__foot">
                 <span className="nv-note__time">
@@ -195,48 +240,6 @@ export default function InspirationPanel({
                 {note.foreshadowId && (
                   <span className="nv-note__flag" title="已写入大纲为伏笔">
                     <FlagOutlined /> 已转为伏笔
-                  </span>
-                )}
-                {!external && (
-                  <span className="nv-note__acts">
-                    <Button
-                      className={`nv-mini${note.pinned ? " is-on" : ""}`}
-                      aria-pressed={note.pinned}
-                      aria-label={note.pinned ? "取消置顶" : "置顶"}
-                      title={note.pinned ? "取消置顶" : "置顶"}
-                      onClick={() => actions.onTogglePin(note.id, !note.pinned)}
-                    >
-                      {note.pinned ? <PushpinFilled /> : <PushpinOutlined />}
-                    </Button>
-                    <Button
-                      className="nv-mini"
-                      disabled={Boolean(note.foreshadowId)}
-                      aria-label="转为伏笔"
-                      title={
-                        note.foreshadowId
-                          ? "已转为伏笔"
-                          : "转为伏笔（写入大纲）"
-                      }
-                      onClick={() => actions.onPromoteNote(note.id)}
-                    >
-                      <FlagOutlined />
-                    </Button>
-                    <Button
-                      className="nv-mini"
-                      aria-label="编辑灵感"
-                      title="编辑灵感"
-                      onClick={() => startEdit(note)}
-                    >
-                      <EditOutlined />
-                    </Button>
-                    <Button
-                      className="nv-mini nv-mini--warn"
-                      aria-label="删除灵感"
-                      title="删除灵感"
-                      onClick={() => actions.onRemoveNote(note.id)}
-                    >
-                      <CloseOutlined />
-                    </Button>
                   </span>
                 )}
               </footer>

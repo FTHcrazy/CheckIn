@@ -17,6 +17,13 @@
 // 圆角半径：与 antd 的 borderRadius 基准保持协调
 $window-radius: 12px;
 
+// 窗口圆角的「唯一口径」：导出成 CSS 变量，供**画在 .window-shell 之外**的层复用。
+// 目前只有一个消费者：antd 弹窗遮罩（见文件末尾）。值跟着最大化状态走，
+// 不能在这里硬写 12px —— 最大化时外壳是 0，遮罩仍按 12px 圆会露出四角缺口。
+html.has-window-shell {
+  --window-shell-radius: #{$window-radius};
+}
+
 html.has-window-shell,
 html.has-window-shell body,
 html.has-window-shell #root {
@@ -62,6 +69,10 @@ html.is-window-maximized .window-shell {
   box-shadow: none;
 }
 
+html.has-window-shell.is-window-maximized {
+  --window-shell-radius: 0;
+}
+
 // 窗口内容区：撑满外壳剩余高度
 .window-shell__body {
   flex: 1;
@@ -69,4 +80,22 @@ html.is-window-maximized .window-shell {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+// ── 弹窗遮罩不能吃掉窗口圆角 ─────────────────────────────────────
+//
+// antd 的 Modal / Drawer 挂 **body portal**，落在 `.window-shell` 之外，
+// 因此**不被**上面的 `border-radius` + `overflow:hidden` 裁剪。遮罩是
+// `position:fixed; inset:0` 的不透明矩形，会把窗口四角那几个「靠透明像素
+// 画出来的圆角」填成实色 —— 表现就是「一开弹窗，整个窗口变方」。
+//
+// 修法：给遮罩同一个半径。圆角外的像素保持透明，桌面照常透出来，
+// 窗口外观在有/无弹窗时一致。半径必须取 `--window-shell-radius`
+// （跟最大化状态走），不能写死 12px。
+//
+// 只处理**全窗铺满**的层；Dropdown / Select 下拉是小块且不贴窗口角，
+// 不需要也不该跟着圆（那会让它们的背景在尖角处缺一块）。
+.ant-modal-mask,
+.ant-drawer-mask {
+  border-radius: var(--window-shell-radius);
 }

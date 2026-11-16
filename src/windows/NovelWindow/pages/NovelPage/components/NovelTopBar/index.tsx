@@ -1,19 +1,24 @@
-import { Button, Select, Tooltip } from "antd";
-import type { MouseEvent as ReactMouseEvent, Ref } from "react";
+import { Button, Dropdown, Select, Tooltip } from "antd";
+import type { MenuProps } from "antd";
+import type { MouseEvent as ReactMouseEvent, ReactNode, Ref } from "react";
+import { useState } from "react";
 import {
   ArrowLeftOutlined,
   ControlOutlined,
-  HistoryOutlined,
   LayoutOutlined,
   LoadingOutlined,
   MenuOutlined,
+  MoreOutlined,
 } from "@ant-design/icons";
 import SvgIcon from "@/shared/components/SvgIcon";
+import { formatShortcut, useShortcutBindings } from "@/shared/shortcuts";
 import bookSettingSvg from "@/assets/novel/book-setting.svg?raw";
+import historySvg from "@/assets/novel/history.svg?raw";
 import packSvg from "@/assets/novel/pack.svg?raw";
+import readModeSvg from "@/assets/novel/read-mode.svg?raw";
 import { SAVE_STATE_TEXT } from "../../novel-config";
 import { formatClock, formatThousands, type WorkMeta } from "../../novel-utils";
-import { useSaveState } from "../../store/useNovelEditorStore";
+import { useSaveState, editorActions } from "../../store/useNovelEditorStore";
 import WorkManageMenu, { type WorkManageMenuHandle } from "../WorkManageMenu";
 import type { NovelWork } from "../../types";
 import "./index.scss";
@@ -30,13 +35,29 @@ interface NovelTopBarProps {
   leftOpen: boolean;
   rightOpen: boolean;
   settingsOpen: boolean;
-  /** 历史快照抽屉开合状态：按钮呈高亮开关态 */
+  /** 历史快照抽屉开合状态：菜单项呈勾选态 */
   snapshotOpen: boolean;
-  /** 设定中心（本书设定）开合状态：按钮呈高亮开关态 */
+  /** 设定中心（本书设定）开合状态：菜单项呈勾选态 */
   settingCenterOpen: boolean;
+  /**
+   * 阅读模式是否开启（O-05）。
+   *
+   * 状态本身住在 `EditorSettings`（store）：它是排版偏好的一个字段，抽屉里也
+   * 有同一个开关。顶栏这颗只是「可见入口」——两处必须读同一个源，否则会出现
+   * 「顶栏显示开了、正文还能改」这种自相矛盾。
+   */
+  readMode: boolean;
   onSelectWork: (workId: string) => void;
-  onCreateWork: (name: string) => boolean;
+  onCreateWork: (name: string, genre?: string) => boolean;
   onRenameWork: (name: string) => boolean;
+  /** 设置当前作品题材（2.7.1，空串 = 清空） */
+  onSetWorkGenre: (genre: string) => boolean;
+  /**
+   * AI 入口是否**存在**（REQ-063）。顶栏本身没有 AI 按钮（续写已搬到正文区
+   * 悬浮按钮），这里只是把口径透传给作品管理菜单 —— 它里面有两句「题材用于
+   * AI 起名与润色」的提示，总开关关掉后要换成不提 AI 的说法。
+   */
+  aiVisible?: boolean;
   onDeleteWork: () => void;
   onResetTemplate: () => void;
   onExportBook: () => void;
@@ -66,6 +87,8 @@ interface NovelTopBarProps {
    * 与「快照」「排版」一致的 toggle 语义，避免「第二次点击看起来没反应」。
    */
   onToggleSettingCenter: () => void;
+  /** 阅读模式开关（O-05）：F12 同效 */
+  onToggleReadMode: () => void;
   /** 返回书架（书架主页接入后传入）；未传则不渲染返回按钮 */
   onBackToShelf?: () => void;
   /**
@@ -87,6 +110,16 @@ interface NovelTopBarProps {
  *
  * 保存态由本组件直接订阅 store：打字时它每键都在变，若由页面根持有再透传，
  * 每敲一个字都要把整棵树推一遍。
+ *
+ * **入口收敛（O-02 / O-01，v2.57）**：原来六颗无文字图标同权平铺，其中两颗是
+ * 布局开关、四颗是入口，扫读时分不出主次。现在按语义分三组：
+ *
+ * ```
+ * 章节栏 · 支撑面板 ┃ 阅读模式 · 排版与偏好 ┃ ⋯
+ * ```
+ *
+ * 行囊 / 历史快照 / 设定中心三个低频入口进「⋯」，并补上文字说明 —— 图标本身
+ * （书本 / 时钟 / 图层）无法自解释，同一排里并列只会变成「点开才知道」。
  */
 export default function NovelTopBar({
   works,
@@ -100,9 +133,11 @@ export default function NovelTopBar({
   settingsOpen,
   snapshotOpen,
   settingCenterOpen,
+  readMode,
   onSelectWork,
   onCreateWork,
   onRenameWork,
+  onSetWorkGenre,
   onDeleteWork,
   onResetTemplate,
   onExportBook,
@@ -113,23 +148,53 @@ export default function NovelTopBar({
   onToggleSettings,
   onToggleSettingCenter,
   onToggleHistory,
+  onToggleReadMode,
   onOpenPack,
   onBackToShelf,
   onDismissOverlays,
   packOpening = false,
+  aiVisible = true,
 }: NovelTopBarProps) {
   const { saveState, lastSavedAt } = useSaveState();
+  const bindings = useShortcutBindings();
+  const [moreOpen, setMoreOpen] = useState(false);
+  /** 失败态的重试进行中：只用来挡住连点，不接管 saveState（那是 store 的事） */
+  const [retrying, setRetrying] = useState(false);
+
+  /**
+   * 保存失败 → 点击即重试（O-08）。
+   *
+   * 走 `flushSave()`（返回 Promise<boolean>）而不是再存一次当前章：它就是
+   * 自动保存那条链路的入口，重试成功会把 saveState 一起推回 saved，
+   * 顶栏不用自己猜结果。
+   */
+  const handleRetrySave = async (): Promise<void> => {
+    if (retrying) return;
+    setRetrying(true);
+    try {
+      await editorActions.flushSave();
+    } finally {
+      setRetrying(false);
+    }
+  };
   const activeWork = works.find((work) => work.id === activeWorkId) ?? null;
   const activeMeta = activeWorkId ? workMeta.get(activeWorkId) : undefined;
   const hasActiveChapter = (activeMeta?.chapters ?? 0) > 0 && Boolean(chapterName);
+
+  /** 菜单右侧的键位提示跟着用户改过的绑定走（不是写死文案） */
+  const keysOf = (id: string): string => formatShortcut(bindings[id] ?? "");
 
   /**
    * 顶栏任意一颗按钮被点到 → 先收掉页内浮层（REQ-053）。
    *
    * 用捕获阶段而不是逐颗包一层 onClick：顶栏里有下拉、菜单、四类开关与窗口级入口，
    * 逐颗包会把「离开浮层」这件横切的事复制十几遍，漏一颗就是下次的口子。
-   * 例外只有一处：「小说设定」自己就是那颗浮层的开关（`data-page-overlay-keep-open`），
+   * 例外只有一处：「设定中心」自己就是那颗浮层的开关（`data-page-overlay-keep-open`），
    * 若这里也关一次，就会「先关、再被 toggle 打开」，表现为点了没反应。
+   *
+   * O-02 之后「设定中心」搬进了溢出菜单（菜单渲染在 body 上的浮层里，不经过这条
+   * 捕获链），所以那颗菜单项自己带 `data-page-overlay-keep-open` 也不为过 ——
+   * 保留标记是为了让「它是开关本体」这件事在 DOM 上仍然可查。
    */
   const handleClickCapture = (
     event: ReactMouseEvent<HTMLDivElement>,
@@ -143,6 +208,82 @@ export default function NovelTopBar({
       return;
     }
     onDismissOverlays();
+  };
+
+  /**
+   * 菜单图标统一盒。
+   *
+   * antd 给 `.ant-dropdown-menu-item-icon` 的默认字号是 `fontSizeSM`（12px），
+   * 而这三行是「标题 + 说明」两级文字摞起来的（约 30px 高），12px 图标贴在左侧
+   * 只剩一个小点。18px 让图标高度接近两行文字块的视觉重心 —— 菜单项是两级结构，
+   * 需要一个比顶栏 16px 图标更重的锚点，否则三行扫下来仍然只有字。
+   */
+  const menuIcon = (node: ReactNode): ReactNode => (
+    <span className="nv-topbar__menu-ico">{node}</span>
+  );
+
+  /**
+   * 低频入口菜单（「本书内容」）。
+   *
+   * 分组标题 `本书内容` 是 O-01 的落点：三处「设置」类入口按「本书内容 / 本书外观 /
+   * 应用设置」分工，「排版与偏好」留在顶栏（本书外观），其余三个进这组。
+   */
+  const moreItems: MenuProps["items"] = [
+    {
+      type: "group",
+      label: "本书内容",
+      children: [
+        {
+          key: "setting",
+          icon: menuIcon(<SvgIcon svg={bookSettingSvg} />),
+          label: (
+            <span
+              className="nv-topbar__more-item"
+              data-tour-target="topbar-setting"
+              data-page-overlay-keep-open="settingCenter"
+            >
+              <b>设定中心</b>
+              <span>
+                {settingCenterOpen ? "已展开 · 世界观 / 境界 / 分类" : "世界观 · 境界阶梯 · 分类"}
+              </span>
+            </span>
+          ),
+          extra: keysOf("openSettings"),
+        },
+        {
+          key: "snapshot",
+          /* 三行必须都有图标：此前这一项 `icon: null`，标题比上下两行左移 9px+16px，
+             扫下来像漏了一格（对齐交互稿里「三行图标 + 两行键位」的形态） */
+          icon: menuIcon(<SvgIcon svg={historySvg} />),
+          label: (
+            <span className="nv-topbar__more-item">
+              <b>历史快照</b>
+              <span>{snapshotOpen ? "已展开 · 每章可回滚" : "每章多版 · 可回滚"}</span>
+            </span>
+          ),
+        },
+        {
+          key: "pack",
+          icon: menuIcon(
+            packOpening ? <LoadingOutlined spin /> : <SvgIcon svg={packSvg} />,
+          ),
+          label: (
+            <span className="nv-topbar__more-item" data-tour-target="topbar-pack">
+              <b>行囊</b>
+              <span>{packOpening ? "正在打开…" : "主角状态盘点"}</span>
+            </span>
+          ),
+          extra: keysOf("togglePack"),
+        },
+      ],
+    },
+  ];
+
+  const handleMoreClick: MenuProps["onClick"] = ({ key }) => {
+    setMoreOpen(false);
+    if (key === "setting") onToggleSettingCenter();
+    else if (key === "snapshot") onToggleHistory();
+    else if (key === "pack") onOpenPack();
   };
 
   return (
@@ -186,15 +327,18 @@ export default function NovelTopBar({
       <WorkManageMenu
         ref={menuRef}
         activeWorkName={activeWork?.name ?? ""}
+        activeGenre={activeWork?.genre}
         activeMeta={activeMeta}
         hasActiveChapter={hasActiveChapter}
         onCreate={onCreateWork}
         onRename={onRenameWork}
+        onSetGenre={onSetWorkGenre}
         onDelete={onDeleteWork}
         onResetTemplate={onResetTemplate}
         onExportBook={onExportBook}
         onExportVolume={onExportVolume}
         onExportChapter={onExportChapter}
+        aiVisible={aiVisible}
       />
 
       {/* 语义分组：左侧是「哪部作品」的切换与管理，右侧是「读到哪」的位置 */}
@@ -206,16 +350,35 @@ export default function NovelTopBar({
         <span className="nv-topbar__crumb-chapter">{chapterName}</span>
       </div>
 
-      <div className={`nv-topbar__save nv-topbar__save--${saveState}`}>
-        <span className="nv-topbar__save-dot" />
-        <span>
-          {saveState === "saved" && lastSavedAt
-            ? `${SAVE_STATE_TEXT.saved} · ${formatClock(lastSavedAt)}`
-            : SAVE_STATE_TEXT[saveState]}
-        </span>
-      </div>
-
+      {saveState === "failed" ? (
+        /* 保存失败（O-08）：整格变成按钮，点一下立刻重试。
+           此前只是一行变红的文字 —— 用户看见「保存失败」却无处可点，只能
+           反复 Ctrl+S 猜是不是生效了。原因走 Tooltip：主进程目前不区分
+           磁盘满 / 无权限（没有错误码透传），所以只能说清「查什么」，
+           不能说死是哪一种。 */
+        <Tooltip title="写入没有成功。请检查磁盘剩余空间与数据目录权限，点此重试。">
+          <Button
+            className="nv-topbar__save nv-topbar__save--failed"
+            onClick={() => void handleRetrySave()}
+            loading={retrying}
+            aria-label="保存失败，点击重试"
+          >
+            {!retrying && <span className="nv-topbar__save-dot" />}
+            <span>{retrying ? "正在重试…" : "保存失败 · 点击重试"}</span>
+          </Button>
+        </Tooltip>
+      ) : (
+        <div className={`nv-topbar__save nv-topbar__save--${saveState}`}>
+          <span className="nv-topbar__save-dot" />
+          <span>
+            {saveState === "saved" && lastSavedAt
+              ? `${SAVE_STATE_TEXT.saved} · ${formatClock(lastSavedAt)}`
+              : SAVE_STATE_TEXT[saveState]}
+          </span>
+        </div>
+      )}
       <div className="nv-topbar__actions">
+        {/* 组 1：本页布局开关（每章都要用） */}
         <Tooltip title={leftOpen ? "收起章节栏" : "展开章节栏"}>
           <Button
             className={`nv-topbar__icon${leftOpen ? " is-on" : ""}`}
@@ -236,42 +399,20 @@ export default function NovelTopBar({
             <LayoutOutlined />
           </Button>
         </Tooltip>
-        {/* 语义分组：左边是本页布局开关，右边是窗口级 / 抽屉级入口。
-            五颗 icon 一排不加边界时，布局开关与功能入口容易扫成一团 */}
         <span className="nv-topbar__divider" aria-hidden />
-        <Tooltip title={packOpening ? "正在打开行囊…" : "行囊（主角随身盘点 · Ctrl+Shift+B）"}>
+        {/* 组 2：读与写的外观。阅读模式原本埋在排版抽屉第二块里 —— 能力完整，
+            却没有任何人找得到（O-05，全表唯一 P0）。它和「专注模式」是同一层
+            级的视图切换，所以给一颗常驻按钮，开态补出「读」字标签。
+            不在开态时也保留 30px 见方，避免一开一关把整排图标顶来顶去。 */}
+        <Tooltip title={`阅读模式 · ${keysOf("toggleReadMode")}`}>
           <Button
-            className="nv-topbar__icon"
-            onClick={onOpenPack}
-            aria-label="行囊"
-            aria-busy={packOpening || undefined}
-            data-tour-target="topbar-pack"
+            className={`nv-topbar__icon nv-topbar__icon--read${readMode ? " is-on" : ""}`}
+            onClick={onToggleReadMode}
+            aria-label="阅读模式"
+            aria-pressed={readMode}
           >
-            {packOpening ? <LoadingOutlined spin /> : <SvgIcon svg={packSvg} />}
-          </Button>
-        </Tooltip>
-        <Tooltip title={snapshotOpen ? "收起历史快照" : "历史快照"}>
-          <Button
-            className={`nv-topbar__icon${snapshotOpen ? " is-on" : ""}`}
-            onClick={onToggleHistory}
-            aria-label="历史快照"
-            aria-pressed={snapshotOpen}
-          >
-            <HistoryOutlined />
-          </Button>
-        </Tooltip>
-        <Tooltip title={settingCenterOpen ? "收起小说设定" : "小说设定（Ctrl+Shift+S）"}>
-          <Button
-            className={`nv-topbar__icon${settingCenterOpen ? " is-on" : ""}`}
-            onClick={onToggleSettingCenter}
-            aria-label="小说设定"
-            aria-pressed={settingCenterOpen}
-            data-tour-target="topbar-setting"
-            /* 它是设定中心这颗浮层的开关本身：click 捕获阶段不要替它先关一次，
-               否则「先关、再被 toggle 打开」= 点了没反应（REQ-053） */
-            data-page-overlay-keep-open="settingCenter"
-          >
-            <SvgIcon svg={bookSettingSvg} />
+            <SvgIcon svg={readModeSvg} />
+            {readMode && <span className="nv-topbar__icon-label">读</span>}
           </Button>
         </Tooltip>
         {/* 与标题栏的「设置」（全局：外观/账号）区分：这里只管排版与码字偏好，
@@ -279,7 +420,7 @@ export default function NovelTopBar({
             `data-drawer-keep-open` 是给 SettingsDrawer 的「点外部关闭」看的：
             这颗按钮是它的开关，落在它上面的 mousedown 不算「点了抽屉外部」——
             否则会「先被文档级监听关掉、再被 toggle 打开」，表现为点了没反应。 */}
-        <Tooltip title="排版与偏好">
+        <Tooltip title="排版与偏好 · 本书外观">
           <Button
             className={`nv-topbar__icon${settingsOpen ? " is-on" : ""}`}
             onClick={onToggleSettings}
@@ -290,6 +431,25 @@ export default function NovelTopBar({
             <ControlOutlined />
           </Button>
         </Tooltip>
+        <span className="nv-topbar__divider" aria-hidden />
+        {/* 组 3：低频入口（行囊 / 历史快照 / 设定中心）收进「⋯」。 */}
+        <Dropdown
+          trigger={["click"]}
+          placement="bottomRight"
+          open={moreOpen}
+          onOpenChange={setMoreOpen}
+          menu={{ items: moreItems, onClick: handleMoreClick }}
+        >
+          <Button
+            className={`nv-topbar__icon nv-topbar__icon--more${moreOpen ? " is-on" : ""}`}
+            aria-label="更多入口"
+            aria-expanded={moreOpen}
+            title="更多"
+            data-tour-target="topbar-more"
+          >
+            <MoreOutlined />
+          </Button>
+        </Dropdown>
       </div>
     </div>
   );

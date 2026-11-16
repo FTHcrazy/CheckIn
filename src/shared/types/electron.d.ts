@@ -38,14 +38,27 @@ interface TodoRow {
   done_at: string | null
 }
 
-// ── 小说编辑器 DTO（与 electron/handlers/novel-handlers.ts 的 Dto 定义保持一致） ──
+// ── 小说编辑器 DTO（与 electron/handlers/novel/novel-handlers.ts 的 Dto 定义保持一致） ──
 // 本文件因 export interface ElectronAPI 已是模块环境：DTO 必须显式 export，
 // 渲染进程各页面（NovelPage / BookshelfPage 等）才能 import type 共用同一契约。
+
+/** 已下载正文字体条目（应用级资源，novel-font-list 返回） */
+export interface NovelFontEntry {
+  family: string
+  fileName: string
+  size: number
+  /** file:// URL，渲染层 @font-face 挂载用 */
+  fileUrl: string
+}
 
 export interface NovelWorkDTO {
   id: string
   name: string
   createdAt: number
+  /** 题材（可选）：空 = 未设置，AI 起名 / 润色按书名 + 要素弱兜底 */
+  genre?: string
+  /** 封面（可选）：`data:image/jpeg;base64,...`；空 = 用程序化渐变封面 */
+  cover?: string
 }
 
 export interface NovelVolumeDTO {
@@ -66,6 +79,14 @@ export interface NovelChapterDTO {
   sort: number
   updatedAt: number
   outlineNote?: string
+  /** AI 摘要正文（R-AI-09；无则未生成） */
+  aiSummary?: string
+  /** AI 摘要生成时间戳（无则未生成） */
+  aiSummaryAt?: number
+  /** AI 摘要来源模型（手工编辑后为空 → 区分来源） */
+  aiSummaryModel?: string
+  /** AI 摘要来源批次（M6 溯源；手工编辑后为空） */
+  aiSummaryBatch?: string
 }
 
 export interface NovelSnapshotDTO {
@@ -118,6 +139,95 @@ export interface NovelLinkDTO {
   relation: string
   note?: string
 }
+
+/**
+ * 关系图提交（R27 / S3）：一次连线、一次备注修改都走 `novel-graph-commit`
+ * 单事务。**不要**复用 `novel-link-add`（无事务、无 rev、无去重）或
+ * `novel-link-set`（按四元组先删后插，会误删平行边）。
+ */
+export interface NovelGraphCommitLink {
+  id: string
+  fromType: NovelEntityTypeDTO
+  fromId: string
+  toType: NovelEntityTypeDTO
+  toId: string
+  relation: string
+}
+
+export interface NovelGraphCommitNote {
+  id: string
+  /** null = 清空备注 */
+  note: string | null
+  /** 打开边详情时看到的备注；与库里不一致 → 归入 rejected（不覆盖主窗口刚改的值） */
+  expectedNote?: string | null
+}
+
+export interface NovelGraphCommitRequest {
+  workId: string
+  /** 客户端装载时的 rev；与库里不一致 → `stale`，整体回滚 */
+  expectedRev: number
+  /** 序列化后的画布文档（成员 + 坐标 + 视口）。null = 本次不改画布 */
+  doc?: string | null
+  addLinks?: NovelGraphCommitLink[]
+  noteUpdates?: NovelGraphCommitNote[]
+}
+
+export type NovelGraphCommitResult =
+  | {
+      ok: true
+      /** 提交后的新 rev（= expectedRev + 1） */
+      rev: number
+      created: NovelLinkDTO[]
+      /** 已存在同一四元组 / 同一 id 已存在（重试幂等）→ 未新增 */
+      merged: string[]
+      notes: Array<{ id: string; note: string | null }>
+      rejected: Array<{ id: string; reason: "missing" | "note-changed"; note?: string | null }>
+    }
+  | {
+      ok: false
+      code: "stale" | "invalid-target" | "invalid-link" | "db"
+      message?: string
+      /** code=invalid-target：不在本书 / 已被删除的端点 id */
+      invalid?: string[]
+      /** code=stale：库里的当前 rev */
+      rev?: number
+    }
+
+/**
+ * `novel-links-changed` 的载荷（R27：S3 写回 / S4 反向同步共用）。
+ *
+ * 三个数组都是**增量**：接收方按 id 幂等合并，不重载 bundle。
+ * `workId` 可能缺省（`novel_links` 没有 work_id，境界绑定的 from 端点反查不到
+ * 本书）——此时接收方按 id 合并即可，id 全局唯一。
+ */
+export interface NovelLinksDelta {
+  workId?: string
+  /** 画布文档 rev（只有 `novel-graph-commit` 会带） */
+  rev?: number
+  created?: NovelLinkDTO[]
+  /** 已存在同一四元组 / 同一 id（重试幂等）→ 未新增 */
+  merged?: string[]
+  notes?: Array<{ id: string; note: string | null }>
+  /** 被删掉的行 id（主窗口「解除关联」→ 图窗口那条边消失） */
+  removed?: string[]
+  /** 关系名被改的行（主窗口当前无改名入口，契约先留好） */
+  relations?: Array<{ id: string; relation: string }>
+}
+
+/**
+ * 导出 PNG 的取景矩形（R27 / S5）：`capturePage(rect)` 的单位是 DIP（= CSS px），
+ * 不是设备像素 —— 像素尺寸由主进程从 PNG 头回读（= CSS × DPR）。
+ */
+export interface RelationCaptureRect {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export type RelationCaptureResult =
+  | { ok: true; png: Uint8Array; width: number; height: number }
+  | { ok: false; code: "empty" | "invalid" | "unavailable" | "db"; message: string }
 
 /** 设定分类下的一条等级项 */
 export interface NovelSettingLevelDTO {
@@ -217,7 +327,7 @@ export interface NovelSettingTemplateDTO {
   categories: NovelSettingSnapshot[]
 }
 
-// ── 全局设定中心 DTO（1.4x，与 electron/handlers/novel-global-setting-handlers.ts 一致） ──
+// ── 全局设定中心 DTO（1.4x，与 electron/handlers/novel/novel-global-setting-handlers.ts 一致） ──
 
 /** 全局设定等级项（结构对齐 NovelSettingLevelDTO） */
 export interface NovelGlobalSettingLevelDTO {
@@ -305,7 +415,7 @@ export interface NovelBundleDTO {
   recovery: { snapshotTime: number; deltaWords: number } | null
 }
 
-// ── 行囊 CharacterPack DTO（与 electron/handlers/novel-pack-handlers.ts 保持一致） ──
+// ── 行囊 CharacterPack DTO（与 electron/handlers/novel/novel-pack-handlers.ts 保持一致） ──
 
 export type PackNatureDTO = "passive" | "sustained" | "cast"
 export type PackOpDTO = "add" | "percent" | "mul" | "override"
@@ -648,7 +758,7 @@ export interface PackSavePayloadDTO {
   chapterId: string
 }
 
-// ── 备份包 DTO（todo/memo zip 备份导出导入，与 electron/backup-utils.ts 一致） ──
+// ── 备份包 DTO（todo/memo zip 备份导出导入，与 electron/checkin/backup-utils.ts 一致） ──
 
 export interface BackupExportResult {
   /** 用户在保存框点取消时为 true */
@@ -668,7 +778,85 @@ export interface BackupImportResult {
   skipped: string[];
 }
 
-// ── 打卡 DTO（与 electron/handlers/checkin-handlers.ts 保持一致） ──
+// ── 小说数据安全 DTO（P0：一键全量备份 / 恢复 + 回收站，与 electron/novel/novel-safety-utils.ts 一致） ──
+
+/** 备份包规模摘要（导出时统计，恢复前展示） */
+export interface NovelBackupCountsDTO {
+  works: number
+  volumes: number
+  chapters: number
+  words: number
+  entities: number
+  settings: number
+  packCharacters: number
+}
+
+export interface NovelBackupManifestDTO {
+  app: "checkin"
+  kind: "novel-db"
+  format: number
+  exportedAt: string
+  email?: string
+  appVersion?: string
+  counts: NovelBackupCountsDTO
+}
+
+/** 一键备份结果：canceled=true 时 filePath 为 null */
+export interface NovelBackupExportResult {
+  canceled: boolean
+  filePath: string | null
+  counts: NovelBackupCountsDTO
+  /** 备份包字节数（仅成功时返回，用于提示） */
+  bytes?: number
+}
+
+/** 选包预览结果：只读清单，不动数据 */
+export interface NovelBackupPickResult {
+  canceled: boolean
+  filePath: string | null
+  manifest: NovelBackupManifestDTO | null
+  /** 包内 novel.db 的字节数 */
+  bytes?: number
+}
+
+export interface NovelBackupRestoreResult {
+  ok: boolean
+  /** 备份包内的规模摘要（恢复后的数据规模） */
+  counts: NovelBackupCountsDTO
+  exportedAt: string
+  /** 覆盖前自动留底的库文件路径（恢复错了可以从这里捞回） */
+  safetyCopy: string
+}
+
+/** 回收站条目类型 */
+export type NovelTrashKind = "work" | "volume" | "chapter"
+
+/** 回收站条目 */
+export interface NovelTrashItemDTO {
+  kind: NovelTrashKind
+  id: string
+  name: string
+  /** 移入回收站的时间戳（ms） */
+  deletedAt: number
+  /** 所属作品名（卷 / 章用；作品本身为空串） */
+  workName: string
+  /** 所属卷名（仅章用） */
+  volumeName: string
+  volumes: number
+  chapters: number
+  words: number
+  /** 剩余可恢复天数（0 = 今天内到期） */
+  daysLeft: number
+  /** 是否已过保留期（渲染层打开面板时自动彻底删除） */
+  expired: boolean
+}
+
+export interface NovelTrashListResult {
+  items: NovelTrashItemDTO[]
+  retentionDays: number
+}
+
+// ── 打卡 DTO（与 electron/handlers/checkin/checkin-handlers.ts 保持一致） ──
 
 /** 当前业务日打卡状态；凌晨 0-5 点归属前一个业务日，跨过 5 点自动重置 */
 export interface CheckinStatusDTO {
@@ -687,51 +875,172 @@ export interface CheckinResultDTO {
   created: boolean;
 }
 
-// ── 记账 DTO（与 electron/handlers/ledger-handlers.ts 保持一致） ──
+// ── AI 助手 DTO（与 electron/handlers/ai/ai-handlers.ts 保持一致） ──
 
-/** v1 仅暴露支出 / 收入；transfer 为数据模型预留，UI 不提供入口 */
-export type LedgerTxTypeDTO = "expense" | "income" | "transfer";
+/** 模型服务类型：openai = 任意 OpenAI 兼容接口；ollama = 本地 Ollama */
+export type AiProvider = 'openai' | 'ollama'
 
-export interface LedgerTransactionDTO {
-  id: string;
-  type: LedgerTxTypeDTO;
-  /** 金额恒为正数（元），方向由 type 决定 */
-  amount: number;
-  currency: string;
-  categoryId: string | null;
-  accountId: string | null;
-  toAccountId: string | null;
-  note: string;
-  /** 本地时间 `YYYY-MM-DD HH:mm:ss` */
-  happenedAt: string;
-  createdAt: string;
-  updatedAt: string;
+/** 归一化错误码（主进程错误归一后下发，渲染层按 code 走专属交互） */
+export type AiErrorCode =
+  | 'not_configured'
+  | 'missing_key'
+  | 'invalid_endpoint'
+  | 'auth_invalid'
+  | 'quota_exceeded'
+  | 'rate_limited'
+  | 'model_not_found'
+  | 'timeout'
+  | 'network'
+  | 'ollama_unavailable'
+  | 'internal'
+
+/** AI 配置（渲染层可见；不含明文 Key） */
+export interface AiConfigDTO {
+  enabled: boolean
+  provider: AiProvider
+  endpoint: string
+  model: string
+  /** 是否已填 API Key（不返回明文） */
+  hasApiKey: boolean
+  contextLen: number
+  /** L3 总开关（允许 AI 读取整章内容，M5） */
+  l3Enabled: boolean
 }
 
-export interface LedgerCategoryDTO {
-  id: string;
-  name: string;
-  /** antd 图标名，渲染进程映射为组件 */
-  icon: string;
-  /** `--app-*` 变量名，四主题自动跟随 */
-  color: string;
-  type: "expense" | "income" | "both";
-  /** 内置预设分类不可删除 */
-  builtin: boolean;
-  sort: number;
-  archived: boolean;
+/** 保存配置载荷；apiKey 传空串 = 清空，传非空 = 覆盖 */
+export interface AiConfigSavePayloadDTO {
+  enabled?: boolean
+  provider?: AiProvider
+  endpoint?: string
+  model?: string
+  apiKey?: string
+  contextLen?: number
+  /** L3 总开关（M5） */
+  l3Enabled?: boolean
 }
 
-/** 周期查询区间（YYYY-MM-DD，闭区间） */
-export interface LedgerRangeDTO {
-  start?: string;
-  end?: string;
+/** 统一结果：ok=true 带 data；ok=false 带归一化错误 */
+export type AiResultDTO<T> =
+  | { ok: true; data: T }
+  | { ok: false; code: AiErrorCode; message: string }
+
+/** 生成请求（首版非流式） */
+export interface AiGenerateRequestDTO {
+  system?: string
+  prompt: string
+  count?: number
+  temperature?: number
+  /** 功能意图（仅用于调用日志归类，服务层不解释） */
+  intent?: string
+}
+
+/** 生成结果 */
+export interface AiGenerateDataDTO {
+  text: string
+  items: string[]
+  /** 实际使用的模型名（随生成响应回带，供溯源/采纳上报，无需二次取配置） */
+  model: string
+}
+
+/** 测试连接结果 */
+export interface AiTestResultDTO {
+  message: string
+}
+
+/** 一条 AI 调用日志（与 ai-handlers.ts 的 AiLogRow 保持一致） */
+export interface AiLogRowDTO {
+  id: number
+  intent: string
+  provider: string
+  model: string
+  system_prompt: string | null
+  user_prompt: string | null
+  raw_output: string | null
+  parsed_output: string | null
+  error_code: string | null
+  error_message: string | null
+  duration_ms: number
+  prompt_version: string | null
+  created_at: string
+}
+
+/** AI 产品事件上报载荷（M1a） */
+export interface AiEventLogDTO {
+  intent?: string
+  step?: string
+  provider?: string
+  model?: string
+  promptVer?: string
+  durationMs?: number
+  errorCode?: string
+  itemCount?: number
+  charCount?: number
+  scope?: string
+}
+
+/** 看板聚合结果（M1b） */
+export interface AiEventStatsDTO {
+  totalCalls: number
+  adoptCount: number
+  adoptRate: number
+  avgDurationMs: number
+  byIntent: Array<{ intent: string; calls: number; adopts: number }>
 }
 
 export interface ElectronAPI {
   /** 网络会话配置（一次性）：写入认证 Cookie 到 session jar */
   httpSession: {
     setCookie: (url: string, cookie: string) => Promise<boolean>
+  }
+
+  /**
+   * 外部链接。
+   *
+   * 渲染层不自己做导航（会把当前窗口带走），统一交给主进程：
+   * 主进程只放行 http/https，其余协议返回 false。
+   */
+  shell: {
+    openExternal: (url: string) => Promise<boolean>
+  }
+
+  // ── AI 助手（数据存独立 ai.db，仅 full/novel 版注册） ──
+  ai: {
+    /** 读当前 AI 配置（不含明文 Key） */
+    getConfig: () => Promise<AiConfigDTO>
+    /**
+     * 领取一张 AI 流式端点的一次性令牌（PRD 红线 C）。
+     *
+     * 每次发起流式请求前调用一次；主进程端点核销即失效（重放无效）。
+     * 缺失令牌的请求一律 403，因此**不要**缓存复用同一个令牌。
+     */
+    streamToken: () => Promise<string>
+    /** 保存配置；apiKey 传空串 = 清空 */
+    saveConfig: (payload: AiConfigSavePayloadDTO) => Promise<{ ok: boolean; error?: string }>
+    /** 测试连接 */
+    test: () => Promise<AiResultDTO<AiTestResultDTO>>
+    /** 非流式生成（起名增强） */
+    generate: (payload: AiGenerateRequestDTO) => Promise<AiResultDTO<AiGenerateDataDTO>>
+    /** 分页查询调用日志（倒序） */
+    listLogs: (payload?: {
+      limit?: number
+      offset?: number
+      /** 按意图过滤（naming / polish / test …）；为空表示全部 */
+      intent?: string
+    }) => Promise<{ items: AiLogRowDTO[]; total: number }>
+    /** 清空调用日志 */
+    clearLogs: () => Promise<{ ok: boolean }>
+    /** 写一条 AI 产品事件（M1a：采纳/编辑/放弃等事后动作） */
+    logEvent: (payload: AiEventLogDTO) => Promise<{ ok: boolean; error?: string }>
+    /** 看板聚合查询（M1b） */
+    stats: (payload?: { since?: string }) => Promise<AiEventStatsDTO>
+    /** 导出 AI 诊断包（M1b：只出脱敏元数据，不含正文/作品名/Key） */
+    exportDiagnostics: () => Promise<{ path: string } | null>
+    /** 列出本地 Ollama 已下载的模型（FR-06） */
+    listOllamaModels: (payload?: { endpoint?: string }) => Promise<
+      { ok: true; models: string[] } | { ok: false; error: string }
+    >
+    /** 打开服务商 Key 申请页（FR-05）；未收录的服务商返回 ok:false，界面据此不显示入口 */
+    openKeyPage: (payload?: { endpoint?: string }) => Promise<{ ok: boolean }>
   }
 
   // ── 活动管理 ──
@@ -781,24 +1090,80 @@ export interface ElectronAPI {
     configSet: (key: string, value: string) => Promise<boolean>
     addWork: (work: NovelWorkDTO) => Promise<boolean>
     renameWork: (id: string, name: string) => Promise<boolean>
+    /** 设置作品题材（传 null / 空串即清空）；建书时可跳过，之后随时可补 */
+    setWorkGenre: (id: string, genre: string | null) => Promise<boolean>
+    /**
+     * 导入作品封面：弹选图框 → 主进程压到 320px 宽 JPEG → 落库。
+     * 返回新封面的 data URL；用户取消选图返回 null（不是失败）。
+     */
+    pickWorkCover: (id: string) => Promise<string | null>
+    /** 单部作品的卷章正文（书架「导出当前作品」用，不拉与其无关的表） */
+    workContent: (workId: string) => Promise<{
+      volumes: NovelVolumeDTO[]
+      chapters: NovelChapterDTO[]
+    }>
     deleteWork: (id: string) => Promise<boolean>
+    /** 删除兜底：作品移入回收站（软删除，子数据保留，可恢复） */
+    trashWork: (id: string) => Promise<boolean>
+    /** 回收站列表（作品 / 卷 / 章三类，含规模与剩余可恢复天数） */
+    listTrash: () => Promise<NovelTrashListResult>
+    /** 从回收站恢复（清掉删除标记；卷 / 章会处理原位置被占的情况） */
+    restoreTrash: (kind: NovelTrashKind, id: string) => Promise<boolean>
+    /** 一键全量备份：打包 novel.db + manifest，弹保存框 */
+    exportBackup: () => Promise<NovelBackupExportResult>
+    /** 选备份包并校验清单，返回规模摘要（不落盘） */
+    pickBackup: () => Promise<NovelBackupPickResult>
+    /** 用备份包覆盖整库（先自动留底，失败回滚） */
+    restoreBackup: (filePath: string) => Promise<NovelBackupRestoreResult>
     /** 一键重置为模板书籍（调试）：清空全部 novel_* 表并重新播种，返回摘要 */
     resetTemplate: () => Promise<{ volumes: number; chapters: number; words: number; entities: number }>
     saveChapter: (id: string, content: string, wordCount: number) => Promise<boolean>
     listSnapshots: (chapterId: string) => Promise<NovelSnapshotDTO[]>
     addChapter: (chapter: NovelChapterDTO) => Promise<boolean>
     renameChapter: (id: string, title: string) => Promise<boolean>
+    /** 删除章节 = 移入回收站（软删除，正文与快照都保留，可恢复） */
     deleteChapter: (id: string) => Promise<boolean>
+    /** 彻底删除章节（级联清理历史快照，不可恢复） */
+    purgeChapter: (id: string) => Promise<boolean>
     setChapterStatus: (id: string, status: "draft" | "done") => Promise<boolean>
     saveChapterOutline: (id: string, note: string) => Promise<boolean>
+    saveChapterSummary: (id: string, payload: { summary: string; model?: string; batch?: string }) => Promise<boolean>
     saveChapterOrder: (updates: Array<{ id: string; sort: number; volumeId: string }>) => Promise<boolean>
     addVolume: (volume: NovelVolumeDTO) => Promise<boolean>
     renameVolume: (id: string, name: string) => Promise<boolean>
     saveVolumeOrder: (updates: Array<{ id: string; sort: number }>) => Promise<boolean>
+    /** 删除卷 = 移入回收站（卷与卷内章节同批打标，可恢复） */
     deleteVolume: (id: string) => Promise<boolean>
+    /** 彻底删除卷（级联清理章节 / 快照 / 大纲条目，不可恢复） */
+    purgeVolume: (id: string) => Promise<boolean>
     saveEntity: (entity: NovelEntityDTO) => Promise<boolean>
+    /**
+     * 批量建卡（R-AI-08）：整批**单事务**写入，写完广播 `novel-entities-changed`。
+     * 返回 false = 事务失败，此时一张都没写入（不存在「建了一半」）。
+     */
+    saveEntitiesBatch: (entities: NovelEntityDTO[]) => Promise<boolean>
     addLink: (link: NovelLinkDTO) => Promise<boolean>
     removeLink: (id: string) => Promise<boolean>
+    /**
+     * 关系图提交（R27 / S3）：新建关系 + 改备注 + 画布文档，**单事务**。
+     * 任一步失败整体回滚，返回 `ok:false` 与失败码（stale / invalid-target / db）。
+     */
+    graphCommit: (request: NovelGraphCommitRequest) => Promise<NovelGraphCommitResult>
+    /**
+     * 取景：把当前窗口的某一块截成 PNG（R27 / S5）。
+     * rect 单位是 DIP（= CSS px），像素尺寸由主进程从 PNG 头回读（= CSS × DPR）。
+     */
+    captureWindow: (rect: RelationCaptureRect) => Promise<RelationCaptureResult>
+    /**
+     * 二进制落盘：只收字节（PNG 等），取消返回 null。
+     * ⚠️ 不要换成 `exportFile` —— 那条按 utf8 写，写 PNG 会损坏且不报错。
+     */
+    exportBinary: (
+      defaultName: string,
+      data: Uint8Array,
+      ext?: string,
+      filterName?: string,
+    ) => Promise<{ path: string } | null>
     saveNote: (note: NovelNoteDTO) => Promise<boolean>
     removeNote: (id: string) => Promise<boolean>
     /** 灵感归属迁移（书架全局灵感库）：归档到作品；workId 传 '' 退回未归属池 */
@@ -816,7 +1181,7 @@ export interface ElectronAPI {
     settingLevelAdd: (categoryId: string, id: string, name: string, index: number) =>
       Promise<{ id: string; rank: number } | null>
     /** 批量新增等级项：全部追加到末尾，返回实际插入条数（1.37.0） */
-    settingLevelBatchAdd: (categoryId: string, items: Array<{ id: string; name: string; subLevels?: number; subPattern?: string }>) =>
+    settingLevelBatchAdd: (categoryId: string, items: Array<{ id: string; name: string; note?: string; subLevels?: number; subPattern?: string }>) =>
       Promise<number>
     settingLevelUpdate: (id: string, patch: NovelSettingLevelPatch) => Promise<boolean>
     settingLevelDelete: (id: string) => Promise<boolean>
@@ -842,7 +1207,7 @@ export interface ElectronAPI {
     globalCategoryOrder: (updates: Array<{ id: string; sortOrder: number }>) => Promise<boolean>
     globalLevelAdd: (categoryId: string, id: string, name: string, index: number) =>
       Promise<{ id: string; rank: number } | null>
-    globalLevelBatchAdd: (categoryId: string, items: Array<{ id: string; name: string; subLevels?: number; subPattern?: string }>) =>
+    globalLevelBatchAdd: (categoryId: string, items: Array<{ id: string; name: string; note?: string; subLevels?: number; subPattern?: string }>) =>
       Promise<number>
     globalLevelUpdate: (id: string, patch: NovelGlobalSettingLevelPatch) => Promise<boolean>
     globalLevelDelete: (id: string) => Promise<boolean>
@@ -927,6 +1292,18 @@ export interface ElectronAPI {
         category: string,
       ) => Promise<{ id: string; characterId: string } | null>
     }
+    /** 正文字体（应用级资源；下载 → @font-face 挂载，不装系统字体） */
+    font: {
+      download: (
+        url: string,
+        family: string,
+      ) => Promise<
+        | { ok: true; entry: NovelFontEntry }
+        | { ok: false; error: string }
+      >
+      list: () => Promise<NovelFontEntry[]>
+      delete: (fileName: string) => Promise<boolean>
+    }
   }
 
   send: (channel: string, data: unknown) => void
@@ -936,10 +1313,20 @@ export interface ElectronAPI {
   // ── 跨窗口通信 ──
   windowAPI: {
     broadcast: (event: string, data?: unknown) => Promise<void>
-    sendTo: (target: string, event: string, data?: unknown) => Promise<void>
+    /**
+     * 向指定窗口投递消息。目标窗口不存在时可 `create`（先拉起）或 `queue`
+     * （入队，窗口起来后由 preload 补投）。`delivered=false` = 既送不到也拉不起来。
+     */
+    sendTo: (
+      target: string,
+      event: string,
+      data?: unknown,
+      raise?: boolean,
+      options?: { create?: boolean; queue?: boolean },
+    ) => Promise<{ delivered: boolean; queued: boolean }>
     on: (event: string, handler: (...args: unknown[]) => void) => void
     off: (event: string, handler: (...args: unknown[]) => void) => void
-    /** 关闭守卫：有未保存改动时武装本窗口（`electron/close-guard.ts`） */
+    /** 关闭守卫：有未保存改动时武装本窗口（`electron/core/window/close-guard.ts`） */
     setCloseGuard: (enabled: boolean) => void
     /** 答复主进程的关闭询问（true = 放行，可以关闭 / 退出） */
     respondClose: (allow: boolean) => void
@@ -960,21 +1347,6 @@ export interface ElectronAPI {
   }
 
   findInPage: (value?: string) => Promise<boolean>
-
-  // ── 记账 ──
-  ledger: {
-    /** 列出流水；传区间时按发生日期过滤，倒序返回 */
-    listTransactions: (range?: LedgerRangeDTO) => Promise<LedgerTransactionDTO[]>
-    /** 记一笔，返回写库后的完整记录 */
-    addTransaction: (tx: LedgerTransactionDTO) => Promise<LedgerTransactionDTO | null>
-    /** 局部更新，键见 handler 白名单（type/amount/categoryId/note/happenedAt…） */
-    updateTransaction: (id: string, updates: Record<string, unknown>) => Promise<boolean>
-    deleteTransaction: (id: string) => Promise<boolean>
-    listCategories: () => Promise<LedgerCategoryDTO[]>
-    upsertCategory: (category: LedgerCategoryDTO) => Promise<boolean>
-    /** 删除分类，历史流水重指派到 fallbackId（「其他」） */
-    deleteCategory: (id: string, fallbackId: string) => Promise<boolean>
-  }
 
   // ── 打卡 ──
   checkin: {
@@ -1012,6 +1384,89 @@ export interface ElectronAPI {
       globalFailures: string[]
     }>
   }
+
+  // ── 地图（map.db 独立库：存档 / 列表 / 版本 / 作品绑定） ──
+  map: {
+    /** 列表：不含 doc_json，只给元信息 + 缩略图 data URL（null = 尚无缩略图） */
+    docsList: (workId?: string | null, includeDeleted?: boolean) => Promise<MapDocSummaryDTO[]>
+    /** 打开一张图：返回完整文档（未知结构，由渲染层 migrateDoc 归一） */
+    get: (id: string) => Promise<MapDocPayloadDTO | null>
+    /** 新建：失败只会是作品绑定被拒（工作副本在回收站 / 不存在） */
+    create: (payload: {
+      title?: string
+      workId?: string | null
+      doc?: unknown
+    }) => Promise<{ id: string; rev: number } | MapBindFailDTO | null>
+    save: (payload: {
+      id: string
+      doc: unknown
+      baseRev: number
+      viewport?: unknown
+    }) => Promise<MapSaveResultDTO>
+    /** 关窗 flush：忽略乐观锁强写（唯一的强写口） */
+    flush: (payload: {
+      id: string
+      doc: unknown
+      baseRev: number
+      viewport?: unknown
+    }) => Promise<MapSaveResultDTO>
+    rename: (id: string, title: string) => Promise<{ ok: boolean; title: string }>
+    /** 软删（进回收站，可 restore） */
+    remove: (id: string) => Promise<{ ok: boolean }>
+    restore: (id: string) => Promise<{ ok: boolean }>
+    /** 彻底删除（含历史版本与资源目录，不可恢复） */
+    purge: (id: string) => Promise<{ ok: boolean }>
+    /** 绑定 / 解绑作品（null = 解绑，不删图） */
+    bind: (id: string, workId: string | null) => Promise<{ ok: true } | MapBindFailDTO>
+    thumb: (id: string, png: Uint8Array) => Promise<{ ok: boolean }>
+    revisions: (id: string) => Promise<Array<{ rev: number; createdAt: number }>>
+    restoreRev: (id: string, rev: number) => Promise<{ ok: boolean; rev?: number }>
+    /** 可绑定作品（只读 novel.db 的 id + name） */
+    workOptions: () => Promise<Array<{ id: string; name: string }>>
+  }
+}
+
+/** 地图列表项（不含文档正文） */
+export interface MapDocSummaryDTO {
+  id: string
+  title: string
+  /** NULL = 独立地图（未绑定作品） */
+  workId: string | null
+  rev: number
+  /** PNG data URL；null = 还没有缩略图，列表用占位图 */
+  thumb: string | null
+  createdAt: number
+  updatedAt: number
+  openedAt: number | null
+  /** 非空 = 在回收站（只有 includeDeleted 查询才会带出这种行） */
+  deletedAt: number | null
+}
+
+/** 打开地图返回的完整载荷 */
+export interface MapDocPayloadDTO {
+  id: string
+  title: string
+  workId: string | null
+  /** 文档结构（旧版/坏档都可能是残缺的，一律过 migrateDoc） */
+  doc: unknown
+  rev: number
+  schemaVersion: number
+  /** 上次视口；null = 从未保存或数据非法（回落「适应窗口」） */
+  viewport: { x: number; y: number; scale: number } | null
+  /** doc_json 解析失败（按空文档打开，界面应提示） */
+  corrupt: boolean
+}
+
+/** 保存结果：冲突时回传最新 rev，由界面在「载入最新 / 覆盖保存」之间选 */
+export type MapSaveResultDTO =
+  | { ok: true; rev: number }
+  | { ok: false; conflict: true; rev: number }
+  | { ok: false; conflict: false; reason: 'not_found' | 'unserializable' }
+
+/** 作品绑定失败原因（枚举；文案归渲染层） */
+export interface MapBindFailDTO {
+  ok: false
+  reason: 'work_not_found' | 'work_deleted' | 'doc_not_found'
 }
 
 /** 快捷键持久化载荷（键 novel_shortcuts） */
@@ -1024,9 +1479,9 @@ export interface ShortcutConfigDTO {
 
 /** 日志配置（存 userDb 的 config 表，键 log_settings） */
 export interface LogSettingsDTO {
-  /** 主日志文件的最低级别；ipc.log 不受它限制 */
+  /** 主日志文件的最低级别；IPC / AI 调用记录按 DEBUG 级写入，不受它限制 */
   level: "debug" | "info" | "warn" | "error"
-  /** 是否记录 IPC 失败 / 慢调用 */
+  /** 是否记录 IPC 失败 / 慢调用（并入所属窗口当天日志） */
   ipc: boolean
   /** 日志保留天数（1–90） */
   retentionDays: number

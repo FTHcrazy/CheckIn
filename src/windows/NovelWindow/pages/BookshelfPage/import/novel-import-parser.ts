@@ -143,6 +143,32 @@ function normalizeTitle(line: string): string {
   return line.trim().replace(/[\s\u3000]+/g, " ").slice(0, 120);
 }
 
+/**
+ * 去掉正文行的首尾空白（导入正文专用，REQ-059）
+ *
+ * 盗版 TXT / DOCX 转出的正文普遍用两个全角空格（U+3000）、`&emsp;` 之类的
+ * 字符做首行缩进。而本项目的首行缩进**由编辑器 CSS 统一负责**
+ * （`.cm-line { text-indent: var(--nv-indent, 2em) }`）——文本里再带一份就是
+ * 双重缩进：手写段 2 字宽，导入段 4 字宽；正文字体缺该空白字形时还会渲染成
+ * 一排空方块（豆腐块）。
+ *
+ * 所以入库前逐行归一：行首（含行尾）的 Unicode 空白一律剥掉，缩进交给展示层。
+ * `\s` 在 JS 里已覆盖 U+3000 / U+00A0 / U+2000–200A / U+202F / U+205F / U+FEFF，
+ * 另补零宽的 U+200B（它不算 `\s`，却同样不可见地占位）。
+ */
+function normalizeBodyLine(line: string): string {
+  return line.replace(/^[\s\u200b]+/, "").replace(/\s+$/, "");
+}
+
+/** 整段正文逐行归一（无章结构时的兜底路径复用同一口径） */
+function normalizeBodyText(text: string): string {
+  return text
+    .split(/\r\n|\r|\n/)
+    .map(normalizeBodyLine)
+    .join("\n")
+    .trim();
+}
+
 /** 判断是否为卷标题行 */
 export function isVolumeTitle(line: string): boolean {
   if (META_LINE_RE.test(line)) return false;
@@ -282,7 +308,9 @@ export function parseTxtBook(text: string): ParsedBook {
 
     const bucket = buffers[currentChapter];
     if (bucket.length < MAX_CHAPTER_CHARS) {
-      buffers[currentChapter] = bucket.length === 0 ? raw : `${bucket}\n${raw}`;
+      // 行首缩进在入库前剥掉：缩进由编辑器 CSS 统一给，见 normalizeBodyLine
+      const line = normalizeBodyLine(raw);
+      buffers[currentChapter] = bucket.length === 0 ? line : `${bucket}\n${line}`;
     }
   }
 
@@ -315,7 +343,7 @@ export function parseTxtBook(text: string): ParsedBook {
 
   if (!sawExplicitChapter || resultChapters.length === 0) {
     // 没识别出章结构：整本兜底成一章，仍保留默认卷
-    const whole = text.trim();
+    const whole = normalizeBodyText(text);
     return {
       volumes: [{ name: DEFAULT_VOLUME_NAME }],
       chapters: [

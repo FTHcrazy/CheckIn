@@ -44,9 +44,10 @@ CheckIn 采用 Electron 双进程架构，渲染进程（React）与主进程（
 ├─────────────────────────────────────────────────────────────┤
 │  IPC Handlers (electron/main.ts + electron/handlers/)       │
 ├─────────────────────────────────────────────────────────────┤
-│  Database Layer (electron/db.ts + novel-db.ts)              │
+│  Database Layer (electron/core/db.ts + novel-db.ts + map-db.ts)  │
 │  └─ authDb (应用级) + userDb (用户级)                       │
 │     novel.db：novel_* / novel_pack_*（1.33.0 拆库）         │
+│     map.db：map_docs / map_revisions（2.20.0 拆库）         │
 ├─────────────────────────────────────────────────────────────┤
 │  System Services                                            │
 │  └─ File System / Tray / Notifications / Background Tasks   │
@@ -67,22 +68,42 @@ CheckIn 采用 Electron 双进程架构，渲染进程（React）与主进程（
 
 ### 2.1 主进程模块 (`electron/`)
 
+**按业务域分目录，禁止把源码平铺在 `electron/` 根下**（2.61.0 起）：
+
+| 目录 | 放什么 | 约束 |
+|---|---|---|
+| 根（`main.ts` / `preload.ts` / `edition.ts` / `globals.d.ts`） | 进程入口、预加载入口、构建形态清单、编译期常量声明 | **只留这四个**：vite 的 `entry` 与 `package.json` 的 `main`（`dist-electron/main.js`）绑死在这里，移动即断启动 |
+| `core/` | 跨业务基础设施：`db.ts`（库连接宿主）、`logger.ts` / `log-format.ts`、`user-paths.ts`、`app-protocol-cache.ts`、`httpSession.ts` | 不含任何单一业务域的表与规则 |
+| `core/window/` | 窗口生命周期：`windowManager.ts` / `window-pending.ts` / `window-send-options.ts` / `close-guard.ts` | 不含业务 IPC |
+| `checkin/` | 打卡 / 待办 / 备忘域纯函数：`checkin-utils.ts` / `activitiesTask.ts` / `memo-doc-utils.ts` / `backup-utils.ts` | 库连接走 `core/db.ts` |
+| `novel/` | 小说域：`novel-db.ts` / `novel-template.ts` / `novel-safety-utils.ts` / `novel-links-events.ts` | 不 import 其它域的库 |
+| `map/` | 地图域：`map-db.ts` / `map-utils.ts` | 不 import 其它域的库 |
+| `ai/` | AI 域：`ai-db.ts` / `ai-stream-token.ts` | 模型调用实现放 `handlers/ai/` |
+| `handlers/<域>/` | IPC handler，再按域分 `checkin/` `novel/` `map/` `ai/` `system/` 五组 | 业务纯函数提到对应域目录，便于单测 |
+| 测试文件 | **与被断言的源码同级**（`*-guard.test.ts` 也是）：断言某个 handler 就放进该 handler 所在目录，断言 `main.ts` / `preload.ts` / 仓库配置就放 `electron/` 根 | 禁止建 `guards/` / `tests/` 这类平行目录把测试抽走（2.61.0 起） |
+
+**模块职责**：
+
 | 模块 | 职责 | 边界 |
 |------|------|------|
 | **main.ts** | 窗口生命周期管理、IPC 通道注册、托盘图标、应用启动流程 | 仅处理窗口和系统级操作，不包含业务逻辑 |
-| **handlers/** | 语义化 IPC handler 按模块注册（`activity` / `todo` / `memo` / `ledger` / `checkin` / `user` / `novel` / `novel-pack` / `novel-setting` / `novel-global-setting` 的 `*-handlers.ts`；另有 `novel-setting-shared.ts` 供 novel 设定类 handler 复用，非注册入口），持有预定义 SQL | 每个 handler 文件只负责一个业务模块；SQL 只出现在 handlers 与 db.ts，禁止出现在渲染进程 |
+| **handlers/** | 语义化 IPC handler 按模块注册（`checkin/` 6 个、`novel/` 9 个、`map/` 1 个、`ai/` 2 个、`system/` 2 个；`handlers/novel/novel-setting-shared.ts` 供 novel 设定类 handler 复用，非注册入口），持有预定义 SQL | 每个 handler 文件只负责一个业务模块；SQL 只出现在 handlers 与三本域库，禁止出现在渲染进程 |
 | **preload.ts** | 通过 `contextBridge` 暴露安全的 API 给渲染进程 | 仅做 API 转发，不实现业务逻辑 |
-| **db.ts** | SQLite 数据库初始化、双库管理（authDb/userDb）、通用 CRUD 封装 | 提供底层数据库操作，不感知上层业务；**只承载 checkin 域**，不建任何 `novel_*` 表 |
-| **novel-db.ts** | 小说域独立库 `novel.db` 的初始化与 CRUD 封装（`novel_*` / `novel_pack_*` / `novel_config` / `novel_usage_log`），通过 `registerUserDbLifecycle()` 跟随 checkin 库开关 | 单向依赖 `db.ts`（ lifecycle 回调桥接），`db.ts` 不反向依赖它；novel handler 一律从这里取写通道 |
-| **activitiesTask.ts** | 后台活动提醒轮询、系统事件监听（睡眠/锁屏） | 独立后台任务，通过 IPC 通知渲染进程 |
-| **windowManager.ts** | 窗口管理池：注册/注销/广播/定点发送 | 只管理 BrowserWindow 实例，不感知业务 |
+| **core/db.ts** | SQLite 数据库初始化、双库管理（authDb/userDb）、通用 CRUD 封装 | 提供底层数据库操作，不感知上层业务；**只承载 checkin 域**，不建任何 `novel_*` 表 |
+| **novel/novel-db.ts** | 小说域独立库 `novel.db` 的初始化与 CRUD 封装（`novel_*` / `novel_pack_*` / `novel_config` / `novel_usage_log`），通过 `registerUserDbLifecycle()` 跟随 checkin 库开关 | 单向依赖 `core/db.ts`（lifecycle 回调桥接），`core/db.ts` 不反向依赖它；novel handler 一律从这里取写通道 |
+| **map/map-db.ts** | 地图域独立库 `map.db` 的初始化与 CRUD 封装（`map_docs` / `map_revisions` / `map_assets` / `map_config`），同样挂 `registerUserDbLifecycle()`；另提供 `getMapAssetsDir()`（资源本体走文件系统） | 与 novel.db **平级、互不 import**；`handlers/map/map-handlers.ts` 只从这里取写通道（`electron/map/map-db-guard.test.ts` 守卫）。三本库互不越界：checkin/novel 不建 `map_*`，map 不建 `novel_*` |
+| **map/map-utils.ts** | 地图存档的纯函数（标题归一 / rev 冲突 / 版本快照节奏 / 视口解析 / 缩略图 data URL） | 主进程与 handler 共用一份规则；无 IO、可在 vitest 直接跑 |
+| **checkin/activitiesTask.ts** | 后台活动提醒轮询、系统事件监听（睡眠/锁屏） | 独立后台任务，通过 IPC 通知渲染进程 |
+| **core/window/windowManager.ts** | 窗口管理池：注册/注销/广播/定点发送 | 只管理 BrowserWindow 实例，不感知业务 |
+| **novel/novel-links-events.ts** | `novel_links` 变更的**唯一广播出口**（`broadcastLinksChanged` + `workIdOfEntity`）：图窗口单事务提交与主窗口增删关系共用一条 `novel-links-changed` | 只填 delta、不写库；排除发送者与事件名只在这里出现一次（两处各写一份必然漂移） |
+| **handlers/novel/novel-export-handlers.ts** | 导出 PNG 的两条主进程通道：`relation-window-export`（`capturePage` 取景）+ `novel-export-binary`（弹框按字节落盘） | 二进制落盘**绝不复用** `novel-export-file`（那是 `writeFile(...,"utf8")`，写 PNG 会图坏且零报错）；`writeFile` 不带 encoding |
 
 **模块边界规则**：
 - `main.ts` 仅承担窗口生命周期、托盘、协议、窗口级 IPC（broadcast/window-control/find-in-page 等），**一切业务 IPC（user / memo / todo / activity / novel 等）一律抽到 `handlers/` 下独立模块**，禁止在 `main.ts` 内联业务逻辑或 SQL
-- `db.ts` 不导入 `main.ts` 的任何内容；`db.ts` 维护当前用户邮箱（`getCurrentUserEmail()`），业务 handler 通过它定位用户数据目录，不依赖 `main.ts` 闭包
-- **两个数据域两本库**：checkin 域（`db.ts` → `checkin.db`）与 novel 域（`novel-db.ts` → `novel.db`，与 `checkin.db` 同目录）。novel handler 只能从 `novel-db.ts` 取写通道，**禁止** import `../db` 的 `dbRun` 写 `novel_*` 表；`db.ts` 只通过 lifecycle 回调通知 novel 库切换/关闭，不 import `novel-db.ts`（否则循环依赖）。由 `electron/novel-db-split.test.ts` 源码守卫
-- `activitiesTask.ts` 通过 `ipcMain` 注册通道，不直接调用 `main.ts` 函数
-- `preload.ts` 仅读取 `db.ts` 和 `main.ts` 暴露的 IPC 通道
+- `core/db.ts` 不导入 `main.ts` 的任何内容；它维护当前用户邮箱（`getCurrentUserEmail()`），业务 handler 通过它定位用户数据目录，不依赖 `main.ts` 闭包
+- **三个数据域三本库**：checkin 域（`core/db.ts` → `checkin.db`）、novel 域（`novel/novel-db.ts` → `novel.db`）、map 域（`map/map-db.ts` → `map.db`），三本同目录、平级。novel / map handler 只能从各自的 db 模块取写通道，**禁止** import `core/db.ts` 的 `dbRun` 写业务表；`core/db.ts` 只通过 lifecycle 回调通知另外两本库切换/关闭，不反向 import 它们（否则循环依赖）。由 `electron/novel/novel-db-split.test.ts` 与 `electron/map/map-db-guard.test.ts` 源码守卫
+- `checkin/activitiesTask.ts` 通过 `ipcMain` 注册通道，不直接调用 `main.ts` 函数
+- `preload.ts` 仅读取 `core/db.ts` 和 `main.ts` 暴露的 IPC 通道
 
 ### 2.2 渲染进程模块 (`src/`)
 
@@ -103,9 +124,11 @@ src/windows/XxxWindow/
 | **BaseWindow** | `windows/BaseWindow/` | `src/windows/BaseWindow/index.html` | 主窗口（full/lite 版），承载全部业务页面（路由在 `App.tsx`） |
 | **LoginWindow** | `windows/LoginWindow/` | `src/windows/LoginWindow/index.html` | 登录/欢迎窗口 |
 | **NovelWindow** | `windows/NovelWindow/` | `src/windows/NovelWindow/index.html` | 小说窗口（书架 + 编辑器）。形态随构建版本分叉：full 版即关即销、重新打开即全新实例；novel 版为主窗口，登录后唤起、关闭进托盘。数据由 `novel_*` 表持久化，崩溃恢复由会话标记驱动 |
-| **SettingsWindow** | `windows/SettingsWindow/` | `src/windows/SettingsWindow/index.html` | 全局设置窗口（外观 / 个人资料 / 账号，后续扩展字体、快捷键），即关即销、单实例唤起；全版本构建，入口在各自主窗标题栏（base/novel 均经 WindowHeader 的 `actions` 插槽） |
+| **SettingsWindow** | `windows/SettingsWindow/` | `src/windows/SettingsWindow/index.html` | 全局设置窗口（**左分类导航 + 右内容页**，固定 900×680，分区：外观 / AI 配置 / 快捷键 / 个人资料 / 账号 / 诊断），即关即销、单实例唤起；全版本构建，入口在各自主窗标题栏（base/novel 均经 WindowHeader 的 `actions` 插槽）。页面清单与页头文案的唯一事实源是 `App.tsx` 的 `PAGES` |
 | **PackWindow** | `windows/PackWindow/` | `src/windows/PackWindow/index.html` | 行囊独立窗口（novel 域：full / novel 打包，lite 不打包）。承载 `shared/components/CharacterPack` 宿主，单实例、即关即销；上下文经 `pack-window-context` / `novel-work-changed` 投递 |
 | **GlobalSettingWindow** | `windows/GlobalSettingWindow/` | `src/windows/GlobalSettingWindow/index.html` | 全局设定中心独立窗口（novel 域：full / novel 打包，lite 不打包）。复用 `shared/components/SettingCenter`（`source="global"`）呈现跨书共享库，单实例、即关即销、数据全在主进程 |
+| **RelationWindow** | `windows/RelationWindow/` | `src/windows/RelationWindow/index.html` | 人物关系网络独立窗口（novel 域：full / novel 打包，lite 不打包）。池子 + 力导向画布 + 详情卡三栏，单实例、即关即销；上下文经 `relation-window-context` 投递，画布记忆存 `novel_config` 单键，写关系走 `novel-graph-commit` 单事务并广播 `novel-links-changed` |
+| **MapWindow** | `windows/MapWindow/` | `src/windows/MapWindow/index.html` | 地图编辑器窗口（novel 域：full / novel 打包，lite 不打包）。单实例、**关窗前先 flush 存档**（主进程拦 `close` → 取快照 → `map-doc-flush` → 回执 → 1.5s 超时兜底）；数据在独立库 `map.db`，`work_id` 可空（先建图、后绑定作品） |
 
 **构建版本（edition）**：环境变量 `CHECKIN_EDITION=full | lite | novel` 决定打包哪些窗口与业务模块，清单唯一事实源为 `electron/edition.ts`（`RENDERER_ENTRY_PATHS` / `EDITION_WINDOW_ENTRIES` / `PRIMARY_WINDOW_ENTRY`），vite.config.ts 的 `rollupOptions.input` 与 electron/main.ts 的窗口加载共用；主窗口归属（full/lite → BaseWindow，novel → NovelWindow）也由它驱动。新增窗口时必须同步该清单并跑 `electron/edition.test.ts` 护栏。
 
@@ -120,7 +143,7 @@ src/windows/XxxWindow/
 
 | 模块 | 路径 | 职责 |
 |------|------|------|
-| **components** | `shared/components/` | 跨窗口共享 UI：Page（页面容器）、NavHeader（导航栏）、WindowHeader（窗口标题栏）、ThemeSwitcher、SettingCenter、CharacterPack 等（完整清单以目录为准） |
+| **components** | `shared/components/` | 跨窗口共享 UI：Page（页面容器）、WindowHeader（窗口标题栏，含左侧 `leading` 导航插槽）、ThemeSwitcher、SettingCenter、CharacterPack 等（完整清单以目录为准） |
 | **services** | `shared/services/` | 数据访问：daily.ts、code.ts、checkin.ts、ledger.ts、news.ts、novel-shared.ts（完整清单以目录为准） |
 | **ipc** | `shared/ipc/` | 窗口级 IPC 桥接注册（显式调用，带防重复守卫） |
 | **types** | `shared/types/` | 全局类型：electron.d.ts（window.electronAPI） |
@@ -132,7 +155,7 @@ src/windows/XxxWindow/
 
 #### 2.2.1.1 组件分层规范：全局组件 vs 当前模块组件
 
-- **全局组件**：放置于 `src/shared/components/`，用于跨窗口/跨页面复用的通用 UI，如 `Page`、`NavHeader`、`WindowHeader` 等。
+- **全局组件**：放置于 `src/shared/components/`，用于跨窗口/跨页面复用的通用 UI，如 `Page`、`WindowHeader` 等。
 - **当前模块组件**：放置于各页面目录内的 `components/`，仅供该页面或该模块内部使用，如 `TodoPage/components/NoteModal/`。
 - **组件必须以文件夹形式存在**：每个组件都应为独立目录，目录内统一管理其逻辑、样式和入口，禁止出现“单文件组件 + 兄弟样式文件”的散乱结构。
 - **样式统一命名**：组件目录中的样式文件必须统一命名为 `index.scss`，并在组件入口文件中统一引入。
@@ -155,6 +178,75 @@ src/windows/XxxWindow/
 - Service 层不包含 UI 逻辑，不导入 React
 - Pages 通过 Service 层访问数据，不直接调用 `window.electronAPI.db`
 
+#### 2.2.2.1 AI 服务层 (`shared/ai/`)
+
+横向复用的 AI 能力层（R-AI 系列落地，详见 `docs/archive/prd-ai/ai-architecture-decision.md`）。
+
+| 文件 | 职责 |
+|------|------|
+| `ai-client.ts` | 唯一调用入口：`getAiConfig` / `saveAiConfig` / `testAiConnection` / `aiGenerate` / `aiGenerateStructured`，转交 `window.electronAPI.ai`；结构化解析在本层完成（主进程不感知业务结构） |
+| `context/collector.ts` | 纯函数采集：`BookSnapshot → AiBookContext`，按 intent 裁剪与截断；`matchEntitiesInText` 反向匹配命中人物卡；`buildChapterScopePayload` 按 L3 授权范围（仅本章 / 选中段落 / 最近 3 章）决定**实际发送哪段正文** |
+| `context/prompt/` | **提示词唯一产地**：`sections.ts` 公共段落（角色 / 作品背景 / 要素 / 境界 / 人物 / 章节片段 / 约束 / 输出契约）+ `naming.ts` / `polish.ts` 各功能模板 + `registry.ts` 注册表（`PROMPT_BUILDERS` / `buildPromptSpec`） |
+| `context/output-spec.ts` | 输出契约：`OutputFormat`（text / json-array）+ 格式指令生成 + 三层解析兜底 |
+| `ai-types.ts` | 渲染层可见的 IPC 类型契约（与主进程 `ai-handlers.ts` DTO 一对一） |
+| `ai-errors.ts` | 错误码 → 文案映射 + 是否「配置类错误」归类 |
+
+**扩展方式（强烈约束）**：新增 AI 功能 = 新增一个 `context/prompt/xxx.ts` 模板，并同步
+**以下几处登记**。2.10.1 起**意图联合类型只有一个产地**（`PromptIntentMap` 的键），
+其余登记点都由 `Record<PromptIntent, …>` 兜住——漏改一律是**编译错误**，不再靠记性：
+
+1. `prompt/registry.ts` 的 `PromptIntentMap` + `PROMPT_BUILDERS`（漏了 → 类型报错）；
+2. `prompt/registry.ts` 的 `PROMPT_VERSIONS`（`Record<PromptIntent, string>`，漏了 → 类型报错；
+   不填则归因时新旧 prompt 混在一起）；
+3. `prompt/registry.ts` 的 `AI_INTENT_LABELS`（同上，漏了 → 看板显示英文 key）；
+4. `collector.ts` 的 `LIMITS`（`Record<PromptIntent, CollectLimits>`，漏了 → 类型报错；
+   ⚠️ 不要再写成 `as const` 字面量——那样漏了要到运行期才炸）。
+
+`collector.ts` **不再有 `AiIntent`**：它直接 `import type { PromptIntent }`（type-only，
+运行期无循环依赖）。**不要新开第二个意图联合类型**——两个联合类型必然漂移，
+而漂移的表现是「某个意图的采集上限静默取到 undefined」。
+
+**服务层、`ai-client`、主进程 `ai-handlers` 一行不改**；若发现要改它们，说明抽象漏了，
+先修抽象再写功能。
+
+**⚠️ L3 授权范围必须真的约束发送内容（2.10.1 起）**：`scope` 不是埋点字段。
+历史上弹窗给了「仅本章 / 选中段落 / 最近 3 章」三档，发送端却恒发整章
+（review G4：控件点了没效果）。现在的固定口径：
+
+1. `collector.buildChapterScopePayload` 是**唯一**的「范围 → 发送正文」构造点；
+   弹窗字数估算、实际请求、`ai_event.scope` 三处同源，各算一遍必然漂移；
+2. 「选中段落」没有选区时**拒绝发送**并明说，绝不退回整章——退回即超发；
+3. 范围要进 prompt（`SummaryIntent.scope` / `contextText`），否则拿到片段的模型
+   会照常写「本章」，把没看到的情节补出来；
+4. 新增 L3 功能照抄这条链路，守卫 `useNovelPage-consent-scope-guard.test.ts`。
+
+**⚠️ 提示词只许有一个产地（2.8.0）**：早期 `ai-context.ts` 的
+`buildNamingPrompt` / `buildPolishPrompt` 已并入 `context/prompt/`，文件本身删除
+（原 `assembler.ts` 也一并拆入该目录）。**禁止在业务组件里手拼 system prompt，
+也禁止再开第二套模板文件**——两套 prompt 必然漂移（改了一处忘另一处，线上表现是
+「同一个功能换个入口就换个说话方式」）。调 prompt 时改 `prompt/sections.ts`（公共段落）
+或对应模板文件；调用方统一经 `buildPromptSpec(intent, context, payload)` 取 spec，
+新增意图只需在 `prompt/registry.ts` 登记一行（守卫 `prompt/prompt.test.ts`）。
+
+**⚠️ 模型返回的自由文本必须先过一遍后处理再用（2.8.1）**：`output-spec.ts` 的
+`alignParagraphBreaks(text, original)` 按**原文**的分段习惯归一空行——润色结果是按选区
+整段回填的，模型爱在段间插空行，多出来的空行只能由作者一行行手删。**禁止把
+`result.data.text.trim()` 直接回填正文**；同理禁止在业务层自己写一套正则收敛空行
+（口径会分叉：有的一行行删、有的干脆并段）。`text` 类输出契约另有
+`parseOutput` 负责结构化，两者互不替代。
+
+**铁律（后续每个 AI 功能都必须遵守）**：
+- **功能面板只 import `shared/ai/`，不直接触碰 `window.electronAPI.ai`**。
+- **AI 服务层不 import novel 任何模块**：上下文（选中文本 / 人物设定 / 风格等）
+  由**调用方（最懂业务处）以纯字符串传入**，服务层只做「拼 prompt + 调模型 + 错误归一」。
+- **AI 服务层不碰 Key、不发 HTTP、不读 ai.db**：网络请求永远在主进程
+  `ai-handlers`（对 §8.7「主进程不代理 HTTP」的**刻意豁免**，理由见
+  `ai-architecture-decision.md` 五·A：凭据安全 + 端点无法枚举 + 长时流式）。
+- **编辑器不感知 AI**：`EditorPane` 只暴露通用、中性的命令式 API
+  （`insertText` / `appendText` / `replaceAll` / `replaceRange`），AI 逻辑
+  全部放在编辑器之外的入口组件与 `useNovelPage` 编排里，通过 `editorPaneRef`
+  调用这些通用命令。编辑器内核里不得出现「润色 / 起名」等 AI 业务字样。
+
 #### 2.2.3 页面模块 (`windows/BaseWindow/pages/`)
 
 页面模块只属于 BaseWindow 主窗口，路径为 `src/windows/BaseWindow/pages/`：
@@ -175,7 +267,7 @@ src/windows/XxxWindow/
 **页面模块边界**：
 - 页面之间**无直接依赖**，通过路由跳转
 - 页面私有子组件**禁止**被其他页面导入
-- 共享组件（Page, NavHeader）放在 `shared/components/`，所有页面可用
+- 共享组件（Page, WindowHeader）放在 `shared/components/`，所有页面可用
 
 ---
 
@@ -297,22 +389,45 @@ File System
 
 ```text
 CheckIn/
-├── electron/                              # 主进程代码
-│   ├── main.ts                            # 入口 + 窗口加载（经 electron/edition.ts 清单）+ 系统级 IPC
-│   ├── handlers/                          # 语义化 IPC handler（按模块拆分；完整清单以目录为准）
-│   │   ├── activity-handlers.ts           # 日程活动 CRUD
-│   │   ├── todo-handlers.ts               # Todo CRUD + 父子级联
-│   │   ├── novel-handlers.ts              # 小说编辑器（novel_* 表 + 快照 + 崩溃恢复）
-│   │   ├── user-handlers.ts               # 用户登录 / 缓存读写
-│   │   ├── memo-handlers.ts               # 备忘文件 CRUD + 导入导出
-│   │   └── …（checkin / ledger / novel-pack / novel-setting / novel-global-setting 等）
-│   ├── preload.ts                         # API 暴露
-│   ├── db.ts                              # checkin 域数据库管理（authDb / userDb）
-│   ├── novel-db.ts                        # novel 域独立库 novel.db（初始化 + CRUD）
+├── electron/                              # 主进程代码（按业务域分目录，见 §2.1）
+│   ├── main.ts                            # 进程入口（vite input / package.json main 锁定，必须留根）
+│   ├── preload.ts                         # contextBridge 入口（vite input 锁定，必须留根）
 │   ├── edition.ts                         # 构建版本与窗口入口清单（唯一事实源）
-│   ├── httpSession.ts                     # 主进程 session 级 CORS / Cookie 注入
-│   ├── windowManager.ts                   # 窗口管理池
-│   └── activitiesTask.ts                  # 后台任务
+│   ├── globals.d.ts                       # 编译期常量声明（__CHECKIN_EDITION__ / __CHECKIN_NO_MAP__）
+│   ├── core/                              # 跨业务基础设施
+│   │   ├── db.ts                          # 库连接宿主（authDb / userDb）+ checkin 域表
+│   │   ├── logger.ts / log-format.ts      # 本地日志（写盘 + 格式）
+│   │   ├── user-paths.ts                  # 用户数据目录定位
+│   │   ├── app-protocol-cache.ts          # app:// 缓存策略（纯函数）
+│   │   ├── httpSession.ts                 # session 级 CORS / Cookie 注入
+│   │   └── window/                        # 窗口生命周期
+│   │       ├── windowManager.ts           # 窗口管理池
+│   │       ├── window-pending.ts          # 跨窗口待投递队列
+│   │       ├── window-send-options.ts     # window-send-to 选项契约
+│   │       └── close-guard.ts             # 关闭前「未保存」守卫
+│   ├── checkin/                           # checkin 域（打卡 / 待办 / 备忘）
+│   │   ├── checkin-utils.ts               # 业务日切分
+│   │   ├── activitiesTask.ts              # 后台活动提醒轮询
+│   │   ├── memo-doc-utils.ts              # 备忘文档转换纯函数
+│   │   └── backup-utils.ts                # 备份包纯函数
+│   ├── novel/                             # novel 域
+│   │   ├── novel-db.ts                    # 独立库 novel.db
+│   │   ├── novel-template.ts              # 确定性模板生成器
+│   │   ├── novel-safety-utils.ts          # 备份 / 回收站纯函数
+│   │   └── novel-links-events.ts          # novel_links 变更唯一广播出口
+│   ├── map/                               # map 域
+│   │   ├── map-db.ts                      # 独立库 map.db
+│   │   └── map-utils.ts                   # 存档纯函数
+│   ├── ai/                                # ai 域
+│   │   ├── ai-db.ts                       # 独立库 ai.db
+│   │   └── ai-stream-token.ts             # 流式端点一次性令牌
+│   ├── handlers/                          # 语义化 IPC handler，按域再分一层
+│   │   ├── checkin/                       # activity / checkin / todo / memo / user / log
+│   │   ├── novel/                         # novel / pack / setting / safety / global-setting / graph / export / font
+│   │   ├── map/                           # map
+│   │   ├── ai/                            # ai / ai-stream
+│   │   └── system/                        # shell / shortcut
+│   └── …（测试文件与被测源码同级：断言哪个 handler 就放在那个 handler 旁）
 ├── src/
 │   ├── windows/                           # 窗口层：一个子目录 = 一个独立窗口
 │   │   ├── BaseWindow/                    # 主窗口
@@ -378,21 +493,32 @@ CheckIn/
 │   │                        完整清单以 NovelPage/components/ 目录为准）
 │   │   ├── PackWindow/                    # 行囊独立窗口（novel 域；index.html + main.tsx + App.tsx + index.scss）
 │   │   ├── GlobalSettingWindow/           # 全局设定中心独立窗口（novel 域；结构同 LoginWindow）
-│   │   ├── SettingsWindow/                # 全局设置窗口（外观/个人资料/账号；全版本开放入口）
+│   │   ├── RelationWindow/                # 人物关系网络（novel 域；池子 + 画布 + 详情卡三栏）
+│   │   ├── SettingsWindow/                # 全局设置窗口（双栏：左侧导航 + 外观/AI 配置/账号等页；固定 900×680）
 │   │   │   ├── index.html
 │   │   │   ├── main.tsx
 │   │   │   ├── App.tsx
-│   │   │   └── index.scss
+│   │   │   ├── index.scss
+│   │   │   ├── components/                # 各页分区 + 两条公共原语（SettingsNav 导航 / SettingsActionBar 底部操作条）
+│   │   │   └── styles/settings-controls.scss  # 窗口级按钮原语（次级 / 危险 / 主色三态，分区只挂类名）
 │   └── shared/                            # 跨窗口共享层
-│       ├── components/                    # 共享 UI（Page、NavHeader、WindowHeader、ThemeSwitcher…）
+│       ├── components/                    # 共享 UI（Page、WindowHeader、ThemeSwitcher…）
 │       ├── services/                      # 数据服务（daily.ts、code.ts、checkin.ts、ledger.ts、news.ts、novel-shared.ts）
 │       ├── ipc/                           # 窗口级 IPC 桥接（activityNotifyBridge.ts）
 │       ├── types/                         # 全局类型（electron.d.ts）
 │       └── styles/                        # themes.scss、variables.scss、window-shell.scss、widget.scss、scrollbars.scss
+├── docs/                                  # 文档（三级：spec 活规范 / review 审查 / archive 归档）
+│   ├── README.md                          # 文档索引（唯一导航入口）
+│   ├── spec/                              # 活规范（graphic-theming-spec.md）
+│   ├── review/                            # 审查报告（含未闭环待办）
+│   └── archive/                           # 已闭环过程稿（visual-polish/、prd-r27/）
+├── changeLogHistory/                      # CHANGELOG 历史归档（按次版本拆分，索引见 README.md）
 ├── vite.config.ts                         # rollupOptions.input 由 electron/edition.ts 清单按版本生成；主进程 external 列 Node 运行时模块（electron/better-sqlite3/mammoth/docx/jszip）
 ├── tsconfig.json
 └── package.json
 ```
+
+> `docs/` 的存储、命名、归档与死链自查规则见 §5.3。
 
 ### 5.2 页面模块内部结构规范
 
@@ -423,6 +549,107 @@ windows/BaseWindow/pages/XxxPage/
 - 每个组件目录内统一放置 `index.tsx` 与 `index.scss`，禁止使用 `Component.tsx + Component.scss` 这类命名方式。
 - 组件目录仅管理该组件自身的样式、逻辑和导出；不允许把多个无关组件的样式堆积到同一父级 `index.scss` 中。
 - 只有全局共享的 UI 才允许放在 `src/shared/components/`，页面私有组件必须保持在对应页面的 `components/` 中。
+
+### 5.3 文档存储规范（强制）
+
+**核心原则：文档按「是否还有约束力」分三级存放，一个主题一组文档，路径变了引用必须同时改。**
+
+#### 5.3.1 三级目录与生命周期
+
+| 目录 | 放什么 | 约束力 | 生命周期 |
+|------|--------|--------|----------|
+| `docs/spec/` | **活规范**：长期有效、被代码或本文档直接引用的技术规则 | 有，违反即缺陷 | 只改版，不删除 |
+| `docs/review/` | **审查报告**：设计 / 产品 / 代码的一次性审查结论 | **部分有**：清单里未闭环的待办项仍可执行 | 待办清空后整篇移入 `archive/` |
+| `docs/archive/` | **已闭环或已作废的过程稿**：需求收口、技术预研、验收方案、分批计划、改造方案 | 无，仅作历史依据 | 只读留档；内容被代码/规范完全吸收后可整篇删除 |
+
+- 还没开工的需求稿放 `docs/prd/<需求编号>-<主题>.md`，交付完成后**整组**移入
+  `docs/archive/prd-<需求编号>/`。没有进行中的需求时不保留空目录。
+- 仓库根只允许三份文档：`AGENTS.md`（本规范）、`README.md`（安装与排障）、
+  `CHANGELOG.md`（版本变更）。**禁止在根目录新增零散说明文件**——一律进 `docs/`。
+
+#### 5.3.2 命名规则
+
+1. **一个主题一组文档，组内统一前缀**：`<需求编号>-<主题>-<体裁>.md`。
+   体裁词表固定为：`scope`（需求收口）/ `preresearch`（技术预研）/ `acceptance`（验收）/
+   `analysis`（解读）/ `architecture-decision`（架构决策）/ `delta`（增量需求）/
+   `batch-plan`（分批排期）/ `review`（审查）/ `spec`（规范）。
+   ⚠️ 同一组内**不许**出现缺前缀的文件（如 `r27-architecture-decision-v2.md` 缺 `relationship-network`）。
+2. **版本用文件名后缀 `-v2`，不靠文内改版**。新方案推翻旧方案时：新建 `-v2`，
+   旧稿移入 `archive/`；**被完全取代的旧稿直接删除**，不留「两份都像有效」的状态。
+3. **每篇文档头部三行必填**，缺任何一项都无法判断它是否过时：
+
+```md
+> 状态：草案 / 定稿 / 已归档（闭环版本 X.Y.Z）
+> 输入：上游文档路径 + 版本（无则写「无」）
+> 基线：对应代码版本或提交哈希
+```
+
+#### 5.3.3 归档与删除的判定
+
+| 情形 | 动作 |
+|------|------|
+| 功能已交付、方案已沉淀成本文规范 | 移入 `docs/archive/<主题>/`，顶部补「已归档 · 闭环版本 · 现行为准的去处」 |
+| 方案被新方案整体推翻（如页内浮层 → 独立窗口） | **删除旧稿**，在索引里留一行「v1 因何作废」 |
+| 一次性审查报告仍有未闭环待办 | 留在 `docs/review/`，索引标注「待办状态」 |
+| 临时产物（截图、尖刺脚本、导出原型、`.cache-shots/`） | 不入库、不归档，用完即删；确需留证放 `docs/archive/reference/` |
+| 与代码/规范重复的说明（同一事实两处维护） | 删除文档，把结论并入本文对应章节或 CHANGELOG |
+
+#### 5.3.4 移动 / 删除文档的强制配套动作
+
+1. **同一次改动内改完所有引用**：全仓搜 `docs/` 引用，逐条确认目标存在——
+   `AGENTS.md`、`README.md`、`docs/**`、`src/**` 的注释、`*.yaml` 注释都算引用面，
+   **不许留悬空路径**：
+
+```bash
+# --exclude-dir 必须用（别用 | grep -v node_modules：那是按行过滤，扫不干净）
+grep -rn "docs/[A-Za-z0-9._/-]*\.md" \
+  --include="*.md" --include="*.ts" --include="*.tsx" --include="*.yaml" \
+  --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist \
+  --exclude-dir=dist-electron --exclude-dir=release --exclude-dir=changeLogHistory \
+  --exclude-dir=archive . | grep "docs/"
+```
+
+> 出现 MISS 时的判定：`CHANGELOG.md` / `changeLogHistory/` 里的历史路径**故意不改**；
+> `docs/archive/**` 正文保留旧路径（头部已交代迁移）；其余 MISS 一律视为未完成的引用修复。
+
+2. **同步 `docs/README.md` 索引**：新增/移动/删除文档必须改索引表，
+   索引是文档唯一导航入口，**不允许文档存在但索引里查不到**。
+3. **`CHANGELOG.md` / `changeLogHistory/` 里的历史路径不改**：那是当时的事实记录。
+   查历史时以「当时确实存在」理解，不要据此判定文档缺失。
+4. **归档不改正文**：整篇移动时只在标题下补一段归档说明，不重写结论、不合并章节、
+   不调整日期——归档的价值就是能追溯当时的判断依据。正文里失效的相对路径在归档说明里
+   一句「文内 `docs/prd/...` 已迁至 `docs/archive/prd-xxx/`」交代即可。
+
+#### 5.3.5 当前落地形态
+
+> **本文与实物的一致性由 `electron/docs-index-guard.test.ts` 断言**（索引双向 / 头部三行 / 体裁词表 / 无新增悬空）。
+> `spec/` 逐篇列出（篇数少且需被直接检索）；`review/`、`prd/`、`archive/` 只给篇数——逐个列名会变成第二份要维护的索引。
+
+```text
+docs/                                  # 合计 50 篇 md（2026-11-12 实测，`docs-index-guard.test.ts` 断言此数）
+├── README.md                          # 索引（唯一导航入口，必须与实际文件一致）
+├── spec/                              # 活规范 5 篇（违反即缺陷；只改版，不删除）
+│   ├── map-db-spec.md                 # 地图数据层（改 map.db 前必读）
+│   ├── map-interaction-spec.md        # 地图交互与快捷键（键位 / 选中态唯一口径）
+│   ├── map-export-spec.md             # 地图导出（§6.1 是基线图命名的唯一来源）
+│   ├── map-perf-spec.md               # 地图性能口径（产品线 / 压力线两层判据）
+│   └── graphic-theming-spec.md        # 图形素材主题化
+├── review/                            # 审查报告 4 篇（待办清空后整篇归档）
+├── prd/                               # 未闭环需求稿（交付后整组移入 archive/prd-<编号>/）
+│   ├── prd-map-render/                # 地图模块 13 篇
+│   ├── prd-ai-roadmap/                # AI 方向 3 篇
+│   └── prd-novel-experience/          # novel 域待办排期 1 篇（backlog 唯一事实源）
+└── archive/                           # 已闭环 / 已作废过程稿（只读）
+    ├── prd-map/                       # 地图 2.18.0~2.31.0 闭环（6 个文件：5 篇 md + 1 个 .ts）
+    ├── prd-ai/                        # AI 7 篇（含 2.10.0 落地评审，G1~G8 已闭环）
+    ├── prd-r27/                       # R27 关系网络 7 篇
+    ├── novel/                         # novel 产品/设计审查 2 篇（基线 6cdcde2，待办已并入 backlog）
+    └── visual-polish/                 # 1.47.0 立体感 / 动效改造 2 篇
+```
+
+> **已知例外**：地图模块长期迭代，未闭环稿按模块归集在 `prd/prd-map-render/` 而非 §5.3.1 的
+> `prd/<需求编号>-<主题>.md`（见 `docs/README.md` 的「长期模块例外」）。新增地图文档沿用该目录，
+> 文件名仍遵守 §5.3.2 的体裁词表。
 
 ---
 
@@ -515,6 +742,38 @@ function normalizeTodo(item: Partial<TodoItem> | null): TodoItem | null {
 页面级滚动容器（`.settings-page` 这类）务必给每张卡补 `flex: none`。
 jsdom 不做布局计算，单测量不出来，守卫见
 `src/windows/SettingsWindow/settings-layout-guard.test.ts`。
+
+**同一窗口内跨分区复用的控件造型放窗口级 `styles/`（2.6.0）**：窗口私有但多页共用的
+控件（按钮造型、页脚条）不要在每个分区各写一份 —— 20 行组件变量的拷贝，第四次改
+圆角时必定漏一处。参考 `SettingsWindow/styles/settings-controls.scss`（次级 / 危险 /
+主色三态）与 `SettingsActionBar`，分区只挂类名；清零点 mixin 与控件变量仍须写在同一个
+`.xxx.ant-btn` 选择器里（见 §6.1.2）。
+
+**字体规范（强制）**：所有 `font-size` 必须满足三条硬约束，适用于 `.scss` / `.css`
+与 TSX 内联样式（`style={{ fontSize: ... }}`）：
+
+1. **最小值 12px**：`font-size` 不得小于 `12px`（含 CSS 变量如
+   `--ant-button-content-font-size` / `--ant-select-font-size` / `--ant-badge-text-font-size` 的取值）。
+   需要更小字号的场景（标签角标、次要说明、超密面板）**改为 12px 起步**，用颜色/字重/间距表达层级，而不是缩字号。
+2. **禁止小数像素**：不允许出现 `12.5px`、`10.5px`、`13.5px` 这类带小数点的值，一律取整。
+3. **尽量双数**：`≥12px` 的字体尽量取**偶数**（12 / 14 / 16 / 18 …）；奇数（13 / 15 / 17 / 19）仅在
+   **确有明确视觉诉求**时允许，且要在注释里说明理由，不得作为默认随手值。
+
+```scss
+// ❌ 违规：小于 12 / 带小数 / 奇数
+.label { font-size: 11px; }
+.tip   { font-size: 12.5px; }
+.title { font-size: 13px; }
+
+// ✅ 合规
+.label { font-size: 12px; }
+.tip   { font-size: 12px; }
+.title { font-size: 14px; }
+```
+
+> 说明：本规范由「字体最小值 12px、禁止小数、尽量双数」三条约束构成；
+> 存量代码中存在大量 11px / 10px / 9px 与 `*.5px` 的写法（详见 §6.1.2 后的走查记录），
+> 改造时按第 1 条优先级逐个归位到 12px 起步，无需一次性全量清理，但同一模块内不得保留违规值。
 
 ### 6.1.1 主题与换肤规范
 
@@ -784,6 +1043,126 @@ SettingsWindow 的「外观」分区是全版本共用的设置面板（full/nov
 | `CharacterPack/styles/pack-widget.scss` | 「清零点」mixin（自带造型控件复用） |
 | `CharacterPack/pack-ui-kit.test.ts` | 守卫测试：源码里不得出现原生表单控件、自带造型控件必须以 `.ant-btn` 承载 |
 
+#### 可伸缩容器内的栅格：禁止写死列数（2.8.1 新增）
+
+右栏支撑面板的宽度是用户可拖的（`SupportPanel` 280–460px），**任何放在里面的栅格都不能写
+`repeat(2, 1fr)`**。死写列数在窄宽度下会把每格压到内容最小宽度以下，而外层滚动区是
+`overflow-x: hidden` —— 溢出部分被**静默裁掉**，不报错、不出滚动条，只是「按钮少了一半」。
+
+统一写法：
+
+```scss
+&__grid {
+  display: grid;
+  /* 显式下限挡住内容反向撑列；1fr 等价 minmax(auto, 1fr)，auto 会取内容最小尺寸 */
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: 6px;
+}
+```
+
+判定口径：列宽的**下限要 ≥ 卡片内最刚性那一行**（一排 5 颗 24px 图标按钮 + `gap` ≈ 124px，
+加上卡片左右内边距 19px 与边框 2px → 145px）。再给该行补 `flex-wrap: wrap` + 子项
+`flex: none` 作第二道兜底：宁可折行，也不要横向溢出。
+
+⚠️ jsdom 量不出布局，这类问题只能靠「源码守卫 + 真实宽度实测」兜住
+（`NameGeneratorPanel/index.test.tsx`「窄面板不得截断结果卡」两例钉死写法）。
+
+### 6.1.3 动效与立体感规范（motion / elevation）
+
+> 完整背景见 `docs/archive/visual-polish/novel-visual-polish-plan.md`（已归档过程稿，本节为准）。定位锚点：柔和 · 轻量 · 卡片式 · 桌面 · 写作工具。
+> 一句话原则：**立体感走「明度分层 + 细边框 + 轻阴影」三件套的「轻盈抬升」，动效走「≤260ms 克制 + 按下即反馈」，坚决避免厚重浮雕、炫技动效。**
+
+**两条不可破的红线（贯穿所有动效/立体感工作）：**
+
+1. **暗色（midnight）靠「明度 + 描边」不靠阴影**——黑底阴影打不出来，立体感由更亮的
+   `--app-surface-elevated` 面 + 描边兜底；hover 不用微弱透明度变化（人眼难察觉），
+   改用「浅灰背景 + 柔和高亮」。
+2. **动效只为确认交互、不为娱乐**——每一帧都要回答「刚才发生了什么」；**编辑正文区是「零动效区」**
+   （不做 hover 位移/阴影跳动，只保留焦点态 + 光标），立体感全交给周围面板。
+
+**（一）阴影分级（5 档，`themes.scss` 每套主题各写色值，按主题色相 tint，禁用单一纯黑）：**
+
+| Token | 用途 |
+|-------|------|
+| `--app-shadow-ambient` | 静止卡片环境阴影（最轻，解决「静止态全平」） |
+| `--app-shadow-card` | 内容面卡片基准 |
+| `--app-shadow-raised` | hover 抬升（与 `translateY(-2px)` 配套） |
+| `--app-shadow-pop` | 浮层 / 抽屉 / 右键菜单 |
+| `--app-shadow-window` | 窗口外壳（inset） |
+
+- 静止态就要有「内容面浮起」的层次，**不要把阴影只留给 `:hover`**（那是「隐藏反馈」，
+  静止时 `bg→surface` 只剩 1px 描边，Z 轴会塌）。
+- **窗口内部组件的普通外阴影是安全的**；只有窗口外壳 `.window-shell` 这一层受限
+  （透明窗口方形边界裁掉外阴影，故用 inset）。贴住窗口四角/外壳边缘的全屏面板慎用外阴影（转描边或 inset）。
+
+**（二）动效标尺（motion token，已定义在 `themes.scss` 的 `:root` 块，不随主题变）：**
+
+| Token | 值 | 用途 |
+|-------|-----|------|
+| `--app-t-instant` | 80ms | 按下（press）/ 焦点环 |
+| `--app-t-fast` | 120ms | 颜色 / 描边 / 背景微反馈、按钮 hover、图标态 |
+| `--app-t-normal` | 180ms | hover 抬升、卡片、选中态、侧栏项 |
+| `--app-t-slow` | 260ms | 抽屉 / 面板滑动、入场（上限，不用 300ms+） |
+| `--app-ease-standard` | `cubic-bezier(0.4, 0, 0.2, 1)` | 默认：hover / 状态切换 |
+| `--app-ease-emphasized` | `cubic-bezier(0.3, 1, 0.5, 1)` | 强调入场：模态 / 弹层 |
+| `--app-ease-spring` | `cubic-bezier(0.32, 0.72, 0, 1)` | 抽屉 / 面板、拖拽释放（仅拖拽允许轻微回弹） |
+
+- **散落时长必须收敛**：代码里残留的 100/140/150/160/200/220/240/320ms 一律归入上表三档
+  （`fast`/`normal`/`slow`），`ease` / 裸 `cubic-bezier` 归入 `--app-ease-*`。
+- **组合动效走 `shared/styles/motion.scss` 的 mixin**（见下），不要在每个组件里手拼
+  `transition: ... var(--app-t-*) var(--app-ease-*)`。
+- **按下即反馈（pointer-down，Apple 原则）**：`transform: scale(0.97)` 用 `--app-t-instant`，
+  反馈在按下而非释放。
+- **enter/exit 非对称**：进场用 emphasized 稍长（260ms），退场用更短更快——「来得从容、走得利落」。
+
+**（三）性能与可访问性硬约束：**
+
+- **只动 `transform / opacity`**（合成属性，不触 layout/paint）；**禁止 transition
+  `width / height / margin` 等布局属性**（历史反例：StatusBar 进度条 `width 320ms` 已修为 `transform: scaleX`）。
+- 阴影动画是重绘大户：hover 时「预置阴影层 + 只切透明度」，避免每帧重算多层阴影。
+- `will-change` 只给抽屉滑入、卡片抬升这类高频元素，**不要**给每张 hover 卡都加（内存膨胀）。
+- 窗口 resize / 内容重渲染避免 `@keyframes` 入场（会被钉在 0 帧），优先 CSS transition（可中断、可重定目标）。
+- 全局支持 `prefers-reduced-motion: reduce`：位移/缩放降级为「即时状态 + 轻微 opacity」，
+  保留内容可见性。收口在 `motion.scss`，各组件引入即可。
+
+**（四）可复用动画 mixin（`src/shared/styles/motion.scss`）**：
+
+引入方式：`@use "../../../shared/styles/motion" as motion;`（层级按目录深度算，见 §6.1）。
+提供：
+
+| Mixin | 作用 |
+|-------|------|
+| `motion.transition-fast` / `transition-normal` / `transition-slow` | 声明指定属性的 transition（用对应 token） |
+| `motion.transition-token` | 声明 transition 但只吃已 token 化的时长/缓动 |
+| `motion.hover-lift` | 卡片 hover 抬升（`translateY(-2px)` + `--app-shadow-raised`） |
+| `motion.press-feedback` | 按下回弹（`scale(0.97)`，`--app-t-instant`） |
+| `motion.rise-in` | 内容进场（`fadeRise`，配合 stagger 用） |
+| `motion.reduced-motion` | `prefers-reduced-motion` 统一降级 |
+
+### 6.1.4 图形素材主题化规范（含 Lottie）
+
+> 完整规则见 `docs/spec/graphic-theming-spec.md`。核心一句话：
+> **图形主题化只有两条正道——要么「跟着文字色走」（`currentColor`），要么「引用语义 token」（`var(--app-*)`）。禁止把色值钉死在资源里，禁止一主题复制一份资源。**
+
+**用色三档纪律（防破碎感的根本——不是「颜色不同」而是「同一类东西用了不同策略」）：**
+
+| 等级 | 适用 | 规则 |
+|------|------|------|
+| **L1** 纯文字色 | 单色线形图标、分割线、图标默认态 | `fill/stroke = currentColor`，零成本换肤 |
+| **L2** 语义 token | 多色图标/徽标里的主色/状态色 | 只引用 `--app-primary/--app-success/--app-accent-*` 等既有 token，**禁止自造「图形专用」色值 token** |
+| **L3** 插画级多色 | 空态插画、引导图、复杂 Lottie | **只分「浅/暗」两套**（浅色三主题共用浅套、midnight 用暗套），**不做四套** |
+
+**Lottie 专项：**
+
+- **首选**：JSON 里用「哨兵色占位」→ 运行时替换成 `--app-*` 值，监听 `data-theme` 重渲染；
+- **次选**：复杂多色插画动效才用「浅/暗两套」；
+- **明确禁止**：`filter: hue-rotate()` 换肤（污染背景/阴影/透明度）、四套复制、新引入无语义色值；
+- **收口**：未来所有 Lottie 从统一 wrapper（`ThemeLottie`/`ThemedGraphic`）走，禁止每处各写一套换肤逻辑；
+- **选型门槛**：图标微动效/加载动效优先用 CSS/SVG SMIL/framer-motion（项目已有），
+  **不为几个小动效引入 lottie-web（~300KB）**，只有设计侧交付复杂 AE 导出的插画级动效才上 Lottie 运行时；
+- **性能/可访问性**：隐藏/离屏即 `pause/destroy`，空态类动效播完即停；装饰性动效加 `aria-hidden`；
+  尊重 `prefers-reduced-motion` 时降级为静态首帧。
+
 ### 6.2 状态管理规范
 
 **逻辑抽取标准**：
@@ -825,6 +1204,31 @@ function TodoPage() {
    effect 反复重跑 → 加载态闪现 / 请求重复发出）；
 2. 父层任何一次重渲染都会清空子组件本应保留的结果（如跳章保存触发数据更新）；
 3. 面板按条件渲染卸载后，切回来希望保留上次的输入与结果（组件卸载会丢状态）。
+
+**出现下列任一信号时，优先把业务状态收进 Zustand，而不是继续在组件里堆 ref / effect**：
+
+1. **有跨组件闭包风险**：多个 `useEffect` / `useCallback` / `useRef` 靠彼此的身份与依赖
+   数组互相驱动，回调里读到的 state 是「挂载那一刻」的旧值（过期闭包），需要靠
+   `ref` 手动镜像才能读到最新值；
+2. **判定依赖「当下」的全局 state**：动作的落点由 `view` / 当前选中项 / 句柄是否就绪等
+   **多个全局量**共同决定，且这些量会随时间变（切换视图、数据装载完成、窗口被拉起）；
+   组件闭包抓的是快照，而判定必须用 `store.getState()` 那一刻的真实值；
+3. **同一个业务被反复报 bug、多轮都没修干净**：症状往往不是逻辑错，而是
+   「散落的 ref + 多个 effect」之间的时序竞态（挂起的消息重判在错误时机、
+   视图切换间隙被误触发、监听摘挂之间丢事件……）。**别再打补丁**——把状态机
+   收进一个 store，判定读 `get()` 的当下状态，组件只剩「订阅 + 派发」。
+
+> **反例（真实踩坑记录）**：关系图「在主窗口打开资料卡」的跳转状态机，最初散在 App 组件的
+> `editorBridgeRef` + `pendingJump` + `deferredJumpRef` + `lastJumpRef` 里，靠三个
+> `useEffect` 互相触发，连续修了四轮仍复现「先切书再弹窗 / 只唤起不切书 / 返回书架却切书」。
+> 收口成 `store/useEntityJumpStore.ts` 后，判定统一走 `get()` 的当下状态、监听只注册一次、
+> `backToShelf` 同步作废挂起项，三症状一次性消失。**教训：跨窗口事件 + 视图切换 + 句柄生命周期
+> 三者交织的状态，不要用组件 ref/effect 拼——收进 store。**
+
+**收口原则**：状态机逻辑（判定 / 去重 / 作废 / 重试）全部纯函数化进 store，
+组件**只负责订阅 + 派发**，不要留「负责同一业务的两个 effect 各自维护一部分状态」。
+IPC / 事件监听**只注册一次**，handler 里只做 `handoff(payload)` 交给 store 判定，
+不要在监听里内联业务分支。
 
 store 只存状态与调度动作，通过模块级「runner 注册」拿到数据层函数
 （不在 store 里 import hooks / service），组件挂载时注册、卸载时注销，
@@ -885,6 +1289,22 @@ store 只存状态与调度动作，通过模块级「runner 注册」拿到数�
 - `TodoListItem` 负责 Todo 行项目、右键菜单和子任务递归；`TodoToolbar` 负责新增/搜索；`TodoSection` 负责待办和已完成分区。
 - 标题和备注的展示长度由 `TodoPage/todo-config.ts` 配置，使用字符级截断并通过 Tooltip 展示原文。
 
+#### MapWindow 落地示例（2.53.0）
+
+- Data：`store/docSnapshot.ts`（撤销栈快照纯函数）、`store/mapDocState.ts`（状态契约）、
+  `store/useMapDocStore.ts`（动作实现）。
+- EditorState：`hooks/useMapEditorState.ts` 持有草稿 / 临时选择 / 弹窗开关，
+  `editorConstants.ts` 集中页面级配置与文案。
+- ViewState：`hooks/useMapViewState.ts` 负责 LOD 派生与视口交互；
+  `hooks/useMapEditor.ts` 是组合层，页面只解构它的 API。
+- 渲染层：`components/MapCanvas/sceneConstants.ts` 外移常量与纯绘制辅助；
+  场景图 effect 区仍留在画布入口，由 `render-stack-guard.test.ts` 钉住 z 序实现。
+- 视图组件（2.54.0）：`components/MapToolbar/` 承载工具栏与两个浮层面板，只消费页面
+  经 props 传入的状态与动作，不自行订阅 hook；工具栏专属样式就近放同目录 `index.scss`。
+- `MapCanvas/index.tsx` 保持单体：41 个 effect 的场景图 ref 由初始化 effect 的清理段
+  跨组共享，且渲染栈守卫以该文件为唯一实现。拆分须先同步重构守卫与 ref 所有权。
+- 边界与四个原巨型文件的行数上限由 `src/windows/MapWindow/map-layer-guard.test.ts` 守卫。
+
 ### 6.3 IPC 通信规范
 
 **新增 IPC 通道流程**：
@@ -896,12 +1316,12 @@ store 只存状态与调度动作，通过模块级「runner 注册」拿到数�
 **命名规范**：`模块-操作`
 
 ```typescript
-// electron/handlers/todo-handlers.ts
+// electron/handlers/checkin/todo-handlers.ts
 export function registerTodoHandlers() {
   ipcMain.handle('todo-add', async (_event, content: string) => { ... });
   ipcMain.handle('todo-list', async () => { ... });
 }
-// electron/handlers/memo-handlers.ts
+// electron/handlers/checkin/memo-handlers.ts
 ipcMain.handle('memo-read', async (_event, filename: string) => { ... });
 ```
 
@@ -911,11 +1331,24 @@ ipcMain.handle('memo-read', async (_event, filename: string) => { ... });
 
 | 场景 | 用什么 |
 | --- | --- |
-| 主进程 / 任意 handler | `log(level, window, module, message, meta)`（`electron/logger.ts`） |
+| 主进程 / 任意 handler | `log(level, window, module, message, meta)`（`electron/core/logger.ts`） |
 | 窗口生命周期 | `windowLogger(窗口名)`（创建 / 关闭 / 装载失败已内置） |
 | 渲染层（组件、hook） | `rendererLog.info/warn/error(module, msg, meta)`（`src/shared/log/renderer-logger.ts`） |
 | 渲染期异常 | `ErrorBoundary`（已装在六个窗口入口） |
 | IPC | 不要手写 —— `preload` 的 `trackedInvoke` 已统一记失败与慢调用 |
+| AI 调用 | `ai-handlers` 已内置：`ai_log` 表 + 本地 `DEBUG` 级日志（模块名 `ai`） |
+
+**⚠️ 只有一个日志文件（2.7.0 起）**：早先 IPC 通信单独写 `ipc.log`，排查时要拿
+「业务流水」和「通信流水」两处对时序，反而更慢。现在**一律并入所属窗口当天的
+`YYYY-MM-DD.log`**，靠模块列区分来源：`[ipc]` / `[ai]` / 业务模块名。新增日志类型
+不要再开新文件，加模块名即可。
+
+**⚠️ 绕过 level 阈值只有一个出口：`logAlways`（2.8.0 起）**。IPC 与 AI 调用按 **DEBUG**
+级用 `logAlways` 写入，**不受 `settings.level` 过滤**（IPC 另受「记录 IPC」开关控制，AI 恒记）
+——否则默认 `info` 下它们会整批消失，而那正是排查「调不通 / 模型乱答」的唯一线索。
+这是**刻意让用户设的级别失效**的一处例外，只给这两类线索用：普通业务日志一律走 `log()`，
+把 `level` 调成 `debug` 不是「看到 AI 日志」的办法（那会顺手打开所有模块的流水）。
+详见守卫 `electron/ai/ai-log-guard.test.ts`。
 
 **硬性约束**：
 
@@ -932,7 +1365,8 @@ ipcMain.handle('memo-read', async (_event, filename: string) => { ... });
 5. ⚠️ **`registerLogHandlers()` 里不许读用户配置**：它注册在 `switchUserDb` **之前**，
    此时用户库还没打开。配置读取走导出的 `loadLogSettings()`，由 `main.ts` 在切库后调。
 6. **量控制**：默认 `level: info`，IPC 只记失败 + 耗时 > 300ms（`SLOW_IPC_MS`），
-   否则 `ipc.log` 会被正常流水刷爆。新增高频路径日志前先问「这条每天都打几万次吗」。
+   否则窗口日志会被正常流水刷爆。新增高频路径日志前先问「这条每天都打几万次吗」。
+   AI 调用日志同理：prompt / output 各只留 600 字预览，禁止整段落盘。
 7. 进程级 `uncaughtException` / `unhandledRejection` **只记录不退出** —— 直接退出会丢掉
    用户未保存的正文，比崩溃本身更严重。
 
@@ -947,7 +1381,7 @@ ipcMain.handle('memo-read', async (_event, filename: string) => { ... });
   `Ctrl+S` 先命中会吃掉 `Ctrl+Shift+S`（设定中心永远打不开，历史上真发生过）。
 - ⚠️ **主进程只能引 `keys-core.ts`**（无 DOM 的纯函数），禁止引 `keys.ts` / `store.ts` ——
   主进程 import 渲染层模块有把 DOM 依赖拖进主进程的风险。两侧一致性由
-  `electron/shortcut-guard.test.ts` 钉死。
+  `electron/handlers/system/shortcut-guard.test.ts` 钉死。
 - ⚠️ **应用级（global）白名单只放「唤起窗口」类动作**（`globalEligible: true`）。
   `Ctrl+S` 之类一旦设成系统级就是全局劫持，别的应用里按保存会跳到本应用。
 - ⚠️ **注册/注销走增量**（`globalShortcut.unregister(accelerator)`），
@@ -993,25 +1427,88 @@ ipcMain.handle('memo-read', async (_event, filename: string) => { ... });
 **强制要求**：
 
 1. **修改前先跑基线**：修复 bug 或重构前，先运行对应模块的单测确认当前为绿色基线；若没有测试，先为该行为补充测试再动手修改（红 → 绿流程）。
-2. **修改后必须重跑**：每次修改完成后，运行被改模块的单测验证行为未回归，再提交。全量回归在交付前执行 `pnpm test`。
-3. **测试文件就近存放**：与被测代码同目录，统一命名 `*.test.ts` / `*.test.tsx`（如 `todo-utils.test.ts` 与 `todo-utils.ts` 同级）。禁止集中放到独立的 `tests/` 目录。
+2. **默认只跑改动面，禁止顺手全量（强制）**：改完先跑**被改模块**的单测（单文件或单目录），
+   这是默认口径，也是唯一默认口径。**只有**命中下面「B 越界改动」或到了交付前那一轮，才跑
+   `pnpm test`。不涉及主进程入口、IPC 契约、全局状态与跨窗口 shared 的改动，**一律不跑全量**。
+   理由不是「省时间」而是「没有信号」：全量是 328 文件 / 4400+ 用例、十几分钟量级，
+   而封闭改动只影响它自己那份源码 —— 跑一遍和跑十遍结论一样，其余 300 个文件不可能变红。
+3. **测试文件与被测源码同级（强制）**：统一命名 `*.test.ts` / `*.test.tsx`，
+   `todo-utils.test.ts` 与 `todo-utils.ts` 同目录。**读源码断言的守卫同样遵守**：
+   断言某个 handler 就放进该 handler 所在目录（`electron/handlers/novel/novel-write-guard.test.ts`），
+   断言 `main.ts` / `preload.ts` / 打包配置 / 文档索引就放 `electron/` 根。
+   **禁止**建 `tests/` / `guards/` 这类平行目录把测试抽走 —— 改了源码却找不到配套测试，
+   是这类目录唯一的实际效果。
 4. **纯函数必须有单测**：页面内的 `xxx-utils.ts`、`shared/services/` 中的工具函数（时间换算、解析、格式化、转义等）是单测的最低覆盖对象；新增或修改这些函数时必须同步新增/更新测试。
 5. **可测性优先**：新增逻辑优先设计为不依赖 `window.electronAPI` / DOM 的纯函数（参数进、结果出），IPC 与文件访问留在 hooks/handlers 层，便于测试。
 6. **测试只断言行为**：断言函数的输入输出与副作用语义，不断言实现细节（如内部调用了哪个私有函数），避免重构时大面积误伤。
 
+**测试范围怎么选**：先判「越界了没有」，再决定跑什么。判据一句话 ——
+**这次改动能不能越过模块 / 进程 / 全局状态的边界？** 越不过，就是封闭改动。
+
+#### A. 封闭改动 → 只跑下表，**不跑全量**
+
+| 改了什么 | 跑什么 | 为什么够 |
+|---|---|---|
+| 某窗口内部的纯函数 / 组件 / 样式 / 生成器 | 该窗口目录，如 `vitest run src/windows/MapWindow` | 依赖只往内收，外部看不到 |
+| 单个文件的实现细节 | 单文件，如 `vitest run src/…/domain/roads.test.ts` | 最快的红→绿回路 |
+| `electron/handlers/<域>/*.ts` 的业务逻辑、SQL、参数校验（**通道名 / 入参形态 / 返回值形状都没变**） | 该 handler + 同目录守卫，如 `vitest run electron/handlers/novel` | 渲染层只认通道契约，契约没动就影响不到别处 |
+| `electron/{core,checkin,novel,map,ai}/*.ts` 的纯函数、db 模块内部逻辑（**不动连接生命周期、不动导出签名**） | 该目录，如 `vitest run electron/novel` | 同域的 handler 是唯一消费者 |
+| `src/shared/**` 中只被单一窗口引用的模块 | shared 用例 + **引用方**目录（`grep` 找 import） | 引用方就是全部可见面 |
+| 主题变量、CHANGELOG 分流、扫描型守卫的规则本身 | 对应守卫（`themes.test.ts` / `changelog-archive-guard.test.ts` / `docs-index-guard.test.ts`） | 守卫就是被改的东西 |
+
+#### B. 越界改动 → **必须全量** `pnpm test`
+
+| 越界类型 | 命中条件（任一条即是） |
+|---|---|
+| **IPC 契约** | 通道名增删改；入参 / 返回值形状变化；`preload.ts` 暴露面；`src/shared/types/electron.d.ts`；`main.ts` 里 `registerXxxHandlers` 的注册段 |
+| **主进程入口结构** | `main.ts` 的窗口创建 / 生命周期 / 协议 / 托盘段落；`preload.ts` 的 contextBridge 结构 |
+| **全局状态** | `core/logger.ts` 的日志单例与等级；`core/window/windowManager.ts`；三本库的连接生命周期（`registerUserDbLifecycle` / 切用户 / 退出）；`edition.ts` 的窗口清单与变体表；编译期 define（`__CHECKIN_EDITION__` / `__CHECKIN_NO_MAP__`） |
+| **跨窗口共享** | `src/shared/**` 被两个及以上窗口引用；`src/shared/components/` 下的通用组件；`src/shared/styles/**` 主题与 token |
+| **构建 / 打包** | `vite.config.ts`、`package.json` 依赖、`external` 名单、打包 `files` |
+| **交付闸门** | 发布、版本号变更、交付前那一轮 |
+
+> **判据落地方式**：`git diff --stat` 看改到的文件，逐个问「有没有别的东西读它」。
+> 只改 `handlers/novel/novel-pack-handlers.ts` 里一条 SQL 的排序 → 跑
+> `electron/handlers/novel` 就够；只改 `MapWindow` 的聚落算法 → 跑
+> `src/windows/MapWindow` 就够。这两种改动**不可能**让 `SettingsWindow` 的用例变红，
+> 跑全量只会在十几分钟后给回一个必然的绿。
+
 **常用命令**：
 
 ```bash
-pnpm test        # 全量运行一次（CI / 交付前）
-pnpm test:watch  # watch 模式，开发时增量运行
+pnpm exec vitest run src/windows/MapWindow          # 按窗口目录（日常默认）
+pnpm exec vitest run electron/handlers/novel        # 按主进程业务域目录
+pnpm exec vitest run <path/to/x.test.ts>            # 单文件（改一个纯函数时）
+pnpm exec vitest run electron                       # 主进程全目录（动了域内多个文件时）
+pnpm test                                           # 全量（仅命中 B 类越界 / 交付前）
+pnpm test:watch                                     # watch 模式，开发时增量运行
 ```
+
+> ⚠️ 用 `pnpm exec vitest` 而不是 `npx vitest`：后者可能解析到另一份 vitest 实例，
+> 表现为「收集到 0 个用例」或 `initSuite` 报 `reading 'config'`（见 `vitest.config.ts` 注释）。
+
+**全量为什么慢，以及动过哪些旋钮**（实测约 330 文件 / 4400+ 用例，配置见 `vitest.config.ts`）：
+
+| 旋钮 | 效果 | 结论 |
+|---|---|---|
+| `pool: 'threads'`（替代默认 `forks`） | 43 个 electron 用例 86s → 69s | **已采用**，省在「不起 316 次 OS 进程」 |
+| `maxWorkers` 取逻辑核一半 | NovelWindow 子集 356s → 322s | **已采用**，超线程下全给反而更慢 |
+| `testTimeout: 20000` | 干掉 `docs-index-guard` ④ 的假超时 | **已采用**，满负载扫描型守卫约 10s |
+| `isolate: false` | 21min → **4.5min** | **不采用**：同 worker 共享模块注册表，「模块级单例 + `vi.mock`」的用例会串味。
+两次跑分别红 2 / 7 个文件，且红的是谁取决于排到哪个 worker 后面 —— 不确定的绿不能当闸门 |
+| `pool: 'vmThreads'` | NovelWindow 子集 356s → 148s | **暂不采用**：vm 上下文里 `globalThis.window = …`、`defineProperty(window,'location')` 直接抛（`DataSafetyModal` / `import-service` 两组），要逐文件改写 |
+| `deps.optimizer`（预打包 antd） | NovelWindow 子集 356s → 438s | **反效果**，别开 |
+
+> 时间都花在哪：单个组件测试文件 import antd + React 约 **12.6s**（90 个 `.test.tsx` 就是
+> 1100s 量级）；`test 时间` 里 5 个 `MapEditorPage/index.*.test.tsx` 占 **995s / 1353s**。
+> 想再快一档，方向是「让那几个地图集成测试少渲染几次」，不是调池子。
 
 ### 6.5 数据库迁移规范
 
 **表结构变更必须使用增量迁移**：
 
 ```typescript
-// electron/db.ts
+// electron/core/db.ts
 function initializeDataDb(db: Database) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS todos (
@@ -1062,8 +1559,8 @@ function initializeDataDb(db: Database) {
 >
 > 变更记录：1.33.0 在 `refactor` 下完成了 novel 存储重设（`novel_*` / `novel_pack_*`
 > 从 `checkin.db` 拆出为独立的 `novel.db`），已按本节第 4 条改回 `compat`。
-> 此后 novel 域的表结构变更重新受 §6.5 约束——增量迁移写在 `electron/novel-db.ts`
-> 自己的建表函数里，不再动 `electron/db.ts`。
+> 此后 novel 域的表结构变更重新受 §6.5 约束——增量迁移写在 `electron/novel/novel-db.ts`
+> 自己的建表函数里，不再动 `electron/core/db.ts`。
 > 1.36.0 在 `refactor` 下完成了「小说设定」重构：删除 `novel_level_systems` /
 > `novel_levels` / `novel_level_conversions`，改由 `novel_setting_categories` +
 > `novel_setting_levels` 承载（旧等级数据不保留，见 CHANGELOG 1.36.0），
@@ -1087,9 +1584,9 @@ function initializeDataDb(db: Database) {
 
 只覆盖 **novel 窗口**（`CHECKIN_EDITION=novel` 对应的那套代码），具体是：
 
-- **存储**：`novel_*` 数据表 —— 独立库 `electron/novel-db.ts`（建表 / 迁移 / CRUD 封装），
+- **存储**：`novel_*` 数据表 —— 独立库 `electron/novel/novel-db.ts`（建表 / 迁移 / CRUD 封装），
   以及 `electron/handlers/novel-*.ts`（`novel-handlers` / `novel-pack-handlers` /
-  `novel-setting-handlers` / `novel-global-setting-handlers`）。**不含** `electron/db.ts`：
+  `novel-setting-handlers` / `novel-global-setting-handlers`）。**不含** `electron/core/db.ts`：
   后者只承载 checkin 域，不建任何 `novel_*` 表
 - **前端**：`src/windows/NovelWindow/**`，含行囊模块
   `src/windows/NovelWindow/pages/NovelPage/components/CharacterPack/**`
@@ -1130,6 +1627,43 @@ function initializeDataDb(db: Database) {
 
 只有在**明确知道要重设一套结构、且接受丢掉旧数据**时才打开它，重构做完立刻关掉。
 长期挂着 `refactor` 等于长期没有迁移规范。
+
+### 6.8 打包与依赖归位规范（2.0.0）
+
+**背景**：1.44.0 的 `app.asar` 是 117.34 MiB，其中 `node_modules` 占 121.89 MiB
+逻辑体积 —— 而运行期真正 `require` 的只有 4 个包。原因是 electron-builder 会把
+`package.json` 的 **production `dependencies` 整棵依赖树**塞进 asar，而 19 个纯渲染层
+依赖（antd / react / framer-motion …）早已被 Vite 打进 `dist`（2.20 MiB），asar 里那份
+是纯冗余。开发、调试、功能验证全都不受影响，只有安装包悄悄胖了 5 倍。
+
+**三条铁律**：
+
+1. **判断 `dependencies` / `devDependencies` 的唯一标准是「主进程运行时是否 `require` 它」。**
+   渲染层依赖即使被业务代码 `import`，也必须是 `devDependencies` —— Vite 会把它们打进
+   `dist`，写进 `dependencies` 只会让 electron-builder 把整棵树再塞进 asar 一遍。
+   当前 production `dependencies` 只允许是：`better-sqlite3` / `docx` / `jszip` / `mammoth`。
+2. **新的主进程 Node 依赖必须同时出现在两处**：`vite.config.ts` 的 electron `external`
+   与 `package.json` 的 `dependencies`。只加 external 不声明 → 打包后运行期
+   `Cannot find module`；只声明不加 external → 打包体积白白翻倍（甚至因 pnpm 非扁平结构
+   解析失败而构建红）。
+3. **原生模块的 `asarUnpack` 必须精确到 `.node`**，禁止 `node_modules/**/*.node` 这种
+   整包外置写法 —— 命中一条 `.node` 会触发 smartUnpack 把整个包（含 `deps/sqlite3.c`
+   9.8 MB、`src/*.cpp` 等编译期物料）外置到 `app.asar.unpacked`。
+   **改动任何打包配置后必须跑 `pnpm analyze:asar` 并把分区数据贴进 CHANGELOG / 文档留痕。**
+
+**配套工具与守卫**：
+
+| 项 | 位置 | 作用 |
+|---|---|---|
+| 体积审计 | `scripts/analyze-asar.mjs`（`pnpm analyze:asar`） | 读 asar header，输出顶层分区 / node_modules 按包排序 / 分区小计，`--json` 便于前后对比 |
+| 打包守卫 | `electron/packaging-guard.test.ts` | 断言 dependencies 只有 4 个、external ⊆ dependencies、`build.files` 排除项齐全、`asarUnpack` 精确到 `.node`、version major ≥ 2 |
+| 事后清理 | `scripts/after-pack.js` | 删 Chromium 物料（`LICENSES.chromium.html` / `dxcompiler.dll` / swiftshader / `d3dcompiler_47.dll`），**保留** `LICENSE`（Electron MIT 许可）与 `dxil.dll`（GPU 回退依赖，待 Electron 44 实机回归后评估） |
+
+**locale 裁减**走 `build.electronLanguages: ["zh-CN", "en-US"]` 前置完成，
+`after-pack.js` 里的 locale 清理只作兜底（配置被改回默认时仍能收口）。
+
+体积数据与前后对比见 `CHANGELOG.md` 的 2.0.0 / 2.1.2 条目（原 `docs/packaging/` 下的
+两份专项说明已删除，结论与数字均已并入本节与 CHANGELOG，避免同一事实两处维护）。
 
 ---
 
@@ -1194,7 +1728,7 @@ function initializeDataDb(db: Database) {
 ### 8.4 新增数据表
 
 - [ ] **若是 novel 窗口的表（`novel_*` 前缀），先看 §6.7 开关的当前值**：`refactor` 可直接重设结构、不写迁移；`compat` 必须走增量迁移
-- [ ] 在对应数据域的建表函数中创建表：checkin 域在 `electron/db.ts` 的 `initializeDataDb()`，novel 域在 `electron/novel-db.ts`（**不要**写进 `db.ts`）
+- [ ] 在对应数据域的建表函数中创建表：checkin 域在 `electron/core/db.ts` 的 `initializeDataDb()`，novel 域在 `electron/novel/novel-db.ts`，地图域在 `electron/map/map-db.ts`（**不要**写进 `db.ts`）
 - [ ] 编写增量迁移逻辑（检查列是否存在）
 - [ ] 在 `shared/services/` 或页面 `services/` 中封装 IPC 调用（渲染层不内联 SQL）
 - [ ] 定义 TypeScript 接口（如 `XxxItem`）
@@ -1206,25 +1740,30 @@ function initializeDataDb(db: Database) {
 - [ ] 在 `electron/preload.ts` 暴露到 `window.electronAPI`
 - [ ] 在 `src/shared/types/electron.d.ts` 更新 `ElectronAPI` 接口
 - [ ] 在 Service 层封装调用（如 `shared/services/xxx.ts` 或页面 `services/`）
-- [ ] 若 handler 引入新的主进程 Node 依赖，须将其加入 `vite.config.ts` 的 electron `external`（当前：`electron` / `better-sqlite3` / `mammoth` / `docx` / `jszip`），否则 rolldown 会尝试打包其传递依赖而失败
+- [ ] 若 handler 引入新的主进程 Node 依赖，须**同时**做两件事：加入 `vite.config.ts` 的 electron `external`（当前：`electron` / `better-sqlite3` / `mammoth` / `docx` / `jszip`），否则 rolldown 会尝试打包其传递依赖而失败；并加入 `package.json` 的 production `dependencies`，否则打包后运行期 `Cannot find module`。两处必须一致，由 `electron/packaging-guard.test.ts` 守卫（规则见 §6.8）
 
 ### 8.6 更新日志规范
 
 - **必须维护**：每次功能上线、修复、兼容调整或配置改动，必须同步更新 `CHANGELOG.md`。
-- **版本格式**：使用语义化版本，格式为 `[X.Y.Z]`，并写明发布日期，如 `## [1.0.2] - 2026-09-15`。
-- **版本递增策略**：有架构调整、新增页面/模块/数据层时升次版本号（`X.Y.Z → X.Y+1.0`）；
-  **无架构改动的小功能与修复只升修订号**（`X.Y.Z → X.Y.Z+1`），`CHANGELOG.md` 与
-  `package.json` 的 `version` 必须同步修改。
-- **章节规范**：优先使用 `Added` / `Changed` / `Fixed` / `Removed` / `Security` 等标准小节；项目主语言为中文时，也可写成对应中文标题。
-- **内容要求**：每条记录必须简洁、可追溯，说明“修复了什么”“新增了什么”“影响范围”，禁止空泛描述，如“优化”“调整”而不写具体内容。
-- **发布同步**：功能上线前后，确保 `CHANGELOG.md` 与 `package.json` 的版本信息保持一致，避免版本号与修订记录不一致。
-- **审查门槛**：代码提交前，检查是否已补充更新日志；如未更新，视为未完成交付的一部分。
+- **版本格式**：语义化版本，标题 `## [X.Y.Z] - YYYY-MM-DD`。
+- **版本递增**：有架构调整、新增页面/模块/数据层升次版本号；无架构改动的小功能与修复只升修订号。`CHANGELOG.md` 与 `package.json` 的 `version` 必须同步。
+- **发布同步 / 审查门槛**：版本号与修订记录一致；未更新日志视为未完成交付。
+- **体积上限（强制）**：主文件不得超过 800 行，超限立刻按「体积分流」拆到 `changeLogHistory/`，不许攒到下次。
+
+#### CHANGELOG 条目规范（强制）
+
+1. **只记三类**：每个版本块只允许 `### 新增` / `### 修改` / `### 删除` 三种小节。
+   修复、调优、行为变更归入「修改」；撤销功能、删除入口归入「删除」。
+   不写 `Fixed` / `Tests` / `Docs` / `验证` / `踩坑` / `实测` / `仍需对齐` 等其它小节。
+2. **条目只写「做了什么」**：每条一行，说明功能本身。不写「为什么」「怎么查」「查到什么」——
+   用户对话、需求背景、取证出处、根因分析、实测数据、测试条数、验证记录、踩坑复盘、
+   待办与下一步一律不进 CHANGELOG（这些属于源码注释与 `docs/`）。
+3. **条目形态**：`- ` 开头、单行、不超过 80 字；禁止引用块、表格、嵌套子项与续行。
+4. **历史豁免**：`changeLogHistory/` 是只读归档，分流时逐字搬运，不受本节约束。
+5. **守卫**：`electron/changelog-content-guard.test.ts` 校验主文件所有版本块的章节与条目形态；
+   `electron/changelog-archive-guard.test.ts` 校验体积、边界、指针与索引。改日志后两条都要跑。
 
 #### CHANGELOG 体积分流（强制，1.46.2 起）
-
-**为什么有这条**：`CHANGELOG.md` 曾长到 2000+ 行。AI 会话一读它就吃掉大半上下文，
-而真正的诉求往往只是「某个旧版本为什么这么改」——为了这一条把全部历史读一遍
-既贵又容易漏。
 
 **触发条件**：`CHANGELOG.md` 超过 **800 行** 时必须分流。**按行数判定，不按版本数**：
 单条版本记录动辄五六百行，「只留两个次版本」仍可能留下近千行。
@@ -1242,19 +1781,46 @@ function initializeDataDb(db: Database) {
    「文件 ↔ 覆盖版本区间」，新增归档时在**表格顶部**补一行。
 5. **主文件留指针**：`CHANGELOG.md` 顶部保留一段引用块，写明「哪个版本之前已归档、
    当前归档到哪、索引在哪」，保证从主文件能一步找到历史。
-6. **工具**：`node scripts/split-changelog.mjs` 会自动完成 1–5（幂等：只搬主文件里
-   仍在的旧版本）。手工拆分也可以，但要满足上面 5 条。
+6. **工具**：`node scripts/split-changelog.mjs` 自动完成第 2/3/5 条（切文件、纯搬运、
+   重写顶部指针；幂等 —— 只搬主文件里**还在**的旧版本，行数没超时只打印「无需分流」）。
+   ⚠️ **它不写索引**：第 4 条的 `changeLogHistory/README.md` 表格仍要手工补行
+   （覆盖区间 = 该文件第一条与最后一条版本号）。手工拆分也可以，但同样要满足这 5 条。
 7. **AI 查历史的正确姿势**：先读 `changeLogHistory/README.md` 定位文件，
    再 `grep "^## \[1.38.0\]"` 直达条目；**不得**为了查一条旧记录通读全部归档。
 8. `changeLogHistory/CHANGELOG-1.0-to-1.30.md` 是规则建立前的一次性合并归档
    （1722 行），不要求再按次版本细分。
+
+**检查点（强制）**：改完 `CHANGELOG.md` 就跑，全部通过才算这一批交付完成：
+
+```bash
+node scripts/split-changelog.mjs                                              # 幂等：超限自动分流 + 重写顶部指针
+node node_modules/vitest/vitest.mjs run electron/changelog-archive-guard.test.ts
+node node_modules/vitest/vitest.mjs run electron/changelog-content-guard.test.ts
+```
+
+守卫 `electron/changelog-archive-guard.test.ts` 钉的是**能被违反**的事实，不是文档复述：
+
+| 断言 | 防的是什么 |
+|---|---|
+| 主文件 ≤ 800 行 | 2.45.0 那种「规则写了没人查」再次发生 |
+| 每份归档 ≤ 800 行 | 把整本主文件平移到单个归档文件里冒充分流 |
+| 脚本 `MAX_LINES` / 主文件指针文案 / 守卫常量三处一致 | 改上限只改一处，下次分流把错数字静默写进主文件 |
+| 同一版本不重复出现 | 手工搬运或脚本重跑造成主文件与归档双份 |
+| 归档文件名必须是 `CHANGELOG-<major>.<minor>.md` | 按补丁号单独成文件（`CHANGELOG-2.36.1.md`） |
+
+`electron/changelog-content-guard.test.ts` 的 9 条断言钉的是主文件版本块的章节白名单、
+单行条目、字数上限与过程性词表，防的是再次写回对话记录与过程说明。
+
+> 分流脚本只搬主文件里**还在**的旧版本，因此它是幂等的：行数没超时跑它只打印
+> 「无需分流」，不会改动任何文件。索引表 `changeLogHistory/README.md` 仍需人工补行
+> （脚本不写索引）。
 
 ```md
 # Changelog
 
 ## [1.0.2] - 2026-09-15
 
-### Fixed
+### 修改
 - 修复 Todo 子任务输入法输入被提前提交的问题。
 - 修复中文拼音输入在 Enter / Blur 时被打断的问题。
 ```
@@ -1263,37 +1829,53 @@ function initializeDataDb(db: Database) {
 
 ### 8.7 新机器环境搭建与依赖管理
 
-- **包管理器**：项目基于 pnpm（lockfile `9.0`），本机基准 pnpm 9.x；pnpm ≥10 默认
-  **拦截所有依赖的构建脚本**，必须在 `pnpm-workspace.yaml` 的白名单中显式放行
-  （当前 `onlyBuiltDependencies`：`@parcel/watcher` / `electron-winstaller` /
-  `electron` / `esbuild`）——新增带 postinstall 的依赖时同步补这里，否则 electron
-  二进制等永远装不上。
-  > 位置校正：`package.json` **没有** `pnpm` 字段（该字段已被 pnpm ≥10.26 / 11 忽略，
-  > 见下一条）。白名单的唯一事实源是仓库根的 `pnpm-workspace.yaml`。
-- **pnpm ≥10.26 / 11 的字段迁移（已踩坑）**：pnpm 11 **不再读取** `package.json` 的
-  `pnpm` 字段（安装时会警告 `pnpm.onlyBuiltDependencies ignored`），且
-  `pnpm-workspace.yaml` 的 `onlyBuiltDependencies` 也被移除，统一改为 `allowBuilds`
-  映射。因此 `pnpm-workspace.yaml` 中必须**同时维护两套白名单**：`onlyBuiltDependencies`
-  供 pnpm 9/10 使用，`allowBuilds` 供 pnpm ≥10.26/11 使用。
-  当前 `allowBuilds`：`@parcel/watcher` / `better-sqlite3` / `electron-winstaller` /
-  `electron` / `esbuild`（注意 `better-sqlite3` 只在 `allowBuilds` 中放行，
-  `onlyBuiltDependencies` 未列它）。
+- **包管理器**：仓库通过 `packageManager` 声明 pnpm@11.25.0（lockfile `9.0`），
+  但**必须同时兼容 pnpm 9**（有开发机在用 9.15.9）。两者读配置的位置完全不同，
+  这是本仓最容易反复踩的坑（2026-10-20 实测）：
+  | 配置 | pnpm 9 | pnpm ≥10.26 / 11 |
+  |---|---|---|
+  | 构建脚本白名单 | **只认 `.npmrc`** 的 `only-built-dependencies[]=包名` | 认 `pnpm-workspace.yaml` 的 `allowBuilds` |
+  | `nodeLinker` | **只认 `.npmrc`** 的 `node-linker=hoisted` | `pnpm-workspace.yaml` 的 `nodeLinker` |
+  | `package.json` 的 `pnpm` 字段 | 读过（但已废弃） | **完全不读**，会打印 WARN |
+  | `pnpm-workspace.yaml` 的 pnpm 设置 | **完全忽略**（无任何报错） | 正常 |
+
+  → 当前落地：`.npmrc` 里 `only-built-dependencies[]`（4 项）供 pnpm 9；
+  `pnpm-workspace.yaml` 里 `allowBuilds` + `onlyBuiltDependencies` 供 pnpm 10/11。
+  **新增带 postinstall 的依赖时，这两处都要补**，否则 pnpm 9 的机器装不上。
+- ⚠️ **`better-sqlite3` 必须显式「禁止」构建，不是「放行」**：它 ≥13 虽然没有任何
+  install 脚本，但包内保留了 `binding.gyp`——npm/pnpm 的既有约定是
+  「有 `binding.gyp` 且无 `install` 脚本 → 默认执行 `node-gyp rebuild`」。
+  于是无 VS C++ 工作负载的机器会 `gyp ERR! find VS` 并让整个 `pnpm install` 失败
+  （2026-10-20 另一台机器实测）。正确写法：`allowBuilds` 里
+  **`better-sqlite3: false`**，且**不要**出现在 `.npmrc` 的 `only-built-dependencies[]` 里。
+  它需要的只是包内 `prebuilds/win32-x64.node`（Node-API，与 Electron ABI 无关）。
   > **更正（2026-09-19）**：上面「`allowBuilds` 漏掉 electron → postinstall 被拦 →
   > `dist/electron.exe` 永远缺失」的归因对 **Electron 42 已不成立**——该版本根本
   > 没有 postinstall 脚本，白名单加不加都不影响它。真正的卡点是无镜像 + 无超时的
   > 懒加载下载，详见本节开头的「`pnpm dev` 卡住不动的真正原因」。白名单仍需维护，
-  > 但它保护的是 `better-sqlite3` / `esbuild` 这类**真的有构建脚本**的包。
+  > 但它保护的是 `esbuild` 这类**真的有构建脚本**的包。
+  > **更正（2026-10-20）**：原文「`better-sqlite3` 13 起已无任何 install 脚本，白名单
+  > 对它不再起作用」是**错的**。没有 `install` 脚本 ≠ 不构建：包内存在 `binding.gyp`
+  > 时，npm/pnpm 仍会默认执行 `node-gyp rebuild`。实测 pnpm 9.15.9 对照：
+  > 白名单不含它 → 打印 `build scripts that were ignored: better-sqlite3`、安装成功；
+  > 白名单缺位或不生效 → `node-gyp rebuild` → `gyp ERR! find VS` → `exit 1`。
 - **镜像配置**：`.npmrc` 已随仓库提交（registry / `electron_mirror` /
   `electron_builder_binaries_mirror` 均指向 npmmirror），新机器 clone 后无需重复配置；
   若仍从 GitHub 下载超时，可临时导出环境变量 `ELECTRON_MIRROR` 强制覆盖。
 - **标准安装流程**：
   1. `pnpm install`（确认安装日志中 electron 无 "Ignored build scripts" 警告）
-  2. `pnpm electron:rebuild`（better-sqlite3 重编译到 Electron ABI，或直接
-     `pnpm electron:setup` 一步到位）
-  3. `pnpm dev`
+  2. `pnpm dev`
+  > **2026-10-20（2.1.0）起，原来的第 2 步 `pnpm electron:rebuild` 已删除。**
+  > `better-sqlite3` ≥13.0 改用 **Node-API**，`prebuilds/win32-x64.node` 随 npm 包分发、
+  > 与 Electron ABI 解耦，升 Electron 不再需要重编译；`scripts/rebuild-native.mjs`
+  > 与 `@electron/rebuild` 依赖一并移除。原生模块加载失败时只需 `pnpm install`。
+  > **必须用 pnpm 11 执行安装**（`pnpm -v` 确认，或 `npx pnpm@11.25.0 install`）。
+  > pnpm 9.x 不认识 `pnpm-workspace.yaml` 里的 `allowBuilds`，会把
+  > `better-sqlite3: false` 当空气，转而执行「有 binding.gyp 就 node-gyp rebuild」
+  > 的默认动作 → 无 VS C++ 工作负载的机器上 `gyp ERR! find VS` 把整个 install 带崩。
 - **`pnpm dev` 卡住不动的真正原因（2026-09-19 定位并根治，务必先读这条）**：
-  Electron ≥41（本项目 **42.4.1**）的 `package.json` **已经没有 postinstall 脚本**
-  （实测 `pkg.scripts === undefined`，只剩 `bin.electron` / `bin.install-electron`）。
+  Electron ≥41（本项目现为 **44.9.0**，42 起即如此）的 `package.json` **已经没有 postinstall 脚本**
+  （实测 `pkg.scripts === null`，只剩 `bin.electron` / `bin.install-electron`）。
   二进制的安装被推迟到了**首次 `require('electron')`**：
   ```js
   // node_modules/electron/index.js
@@ -1370,7 +1952,7 @@ function initializeDataDb(db: Database) {
        只存在于主变体 `electron@<ver>`，指到 `electron@<ver>_<peer>` 会
        出现「能 import 但没有二进制」的假象）
     3. 若仍报「找不到可用实体」——说明已处于半损坏状态，补丁不可靠，
-       彻底重建：删除 `node_modules` → `pnpm install` → `pnpm electron:rebuild`
+       彻底重建：删除 `node_modules` → `pnpm install` → `pnpm ensure:electron`
   - **预防**：
     - `package.json` 已锁定 `"packageManager": "pnpm@11.25.0"`；**升级 pnpm
       大版本后必须删除 `node_modules` 重装**，不要复用旧目录
@@ -1383,7 +1965,7 @@ function initializeDataDb(db: Database) {
   - 按业务划分作用域取实例：`getScopedHttpClient("news" | "git", config)`，
     每个渲染进程（= 每个窗口）持有独立实例，请求彼此隔离，
     页面卸载时用 `useHttpClient()` 或 `abortScope()` 中断在途请求；
-  - 主进程只做**一次性**会话配置（见 `electron/httpSession.ts`）：
+  - 主进程只做**一次性**会话配置（见 `electron/core/httpSession.ts`）：
     ① `onHeadersReceived` 注入 CORS 响应头；② `http-session-set-cookie`
     把凭据写入 session jar。**不要**新增任何逐请求转发用的 IPC 通道；
   - `Cookie` 是 forbidden header，渲染进程无法手动设置：走
@@ -1392,6 +1974,42 @@ function initializeDataDb(db: Database) {
     禁止在业务里裸调 `fetch`，以免各窗口标准不一；
   - 编码问题已成为历史：响应由 Chromium 网络栈按 UTF-8 解码，
     不再有主进程 `Buffer.concat` 截段乱码（原 1.4.8 契约已随架构废弃）。
+
+  > **AI 业务的刻意豁免（R-AI 系列，2026-10 落地）**：AI 请求（`ai-handlers`）
+  > **仍在主进程发起**，不适用上面的「渲染进程发起」契约。豁免的是「谁发 HTTP」
+  > 这一条，理由（详见 `docs/archive/prd-ai/ai-architecture-decision.md` 五·A）：
+  > ① API Key 永不下放渲染进程（`safeStorage` 加密存 ai.db，解密只发生在主进程），
+  > ② AI 端点由用户自填、无法像已知 API 那样在会话层统一放行 CORS，
+  > ③ 长时流式（`protocol.handle` 内部端点）需要主进程统一管理连接生命周期。
+  > **不豁免**的部分：AI 请求仍走 `net.fetch`（复用既有先例）、仍做错误归一、
+  > 仍不新增逐请求转发的普通 IPC 通道（流式兜底除外）。除 AI 外的所有业务
+  > HTTP 请求继续严格遵守上面的渲染进程契约。
+
+### 8.8 新增 / 移动 / 删除文档
+
+- [ ] 判定归属：活规范 → `docs/spec/`；审查报告 → `docs/review/`；已完成/已作废 → `docs/archive/<主题>/`
+- [ ] 命名符合 §5.3.2：`<需求编号>-<主题>-<体裁>.md`，组内前缀统一，版本用 `-v2` 后缀
+- [ ] 头部补齐「状态 / 输入 / 基线」三行
+- [ ] 同步 `docs/README.md` 索引（新增一行、移动改路径、删除删行）
+- [ ] 全仓搜 `docs/` 引用并逐条改到新路径（命令见 §5.3.4）
+- [ ] 归档时在标题下补一段「已归档 · 闭环版本 · 现行为准的去处」，正文不动
+- [ ] 被完全取代的旧稿**删除**，不留在原目录
+- [ ] **不要**在根目录新增长篇说明文件；`README.md` 只留安装与排障
+
+### 8.9 新增用户可见功能（帮助手册同步，强制）
+
+> 帮助中心（F1）是**功能的唯一用户侧索引**。功能做了但手册里查不到 = 用户不知道它存在。
+> 这条不靠自觉：`guide-doc.test.ts` 会遍历 `AI_INTENT_LABELS`（AI 能力的单一产地），
+> 要求每个意图在「AI 创作助手」分区里都有一条命中词条，缺一条就红。
+
+- [ ] 在 `src/shared/novel/guide-doc.ts` 的对应 `sections` 分区补一条词条：
+      `term` 用**用户会搜的说法**（不是内部命名），`desc` 写清「点哪里 + 会发生什么」
+- [ ] 新增的是 AI 功能时：确认 `AI_INTENT_LABELS` 里有该意图（没有就先在 prompt 注册表登记），
+      词条需包含该标签原文，否则守卫直接红
+- [ ] 有高频困惑（为什么灰的 / 会不会上传 / 会不会重复扣费）再补一条 `faq`
+- [ ] 词条 `term` 全局唯一（重复会同时污染检索结果与列表 key）
+- [ ] 新增窗口/页面的常驻入口同理：先看该窗口是否已挂 `HelpCenter`，没挂就先挂上
+- [ ] 改了已有功能的入口位置或文案，**同步改词条**——手册写错比不写更糟
 
 ## 9. 附录
 
@@ -1402,9 +2020,11 @@ function initializeDataDb(db: Database) {
 | React | ^19.2.6 |
 | TypeScript | ~6.0.2 |
 | Vite | ^8.0.12 |
-| Electron | ^42.4.1 |
+| Electron | ^44.9.0 |
 | Ant Design | ^6.6.2 |
-| better-sqlite3 | ^12.11.1 |
+| better-sqlite3 | ^13.0.3（Node-API，无需按 ABI 重编译） |
+| electron-builder | ^26.17.0 |
+| pnpm | 11.25.0（`packageManager` 锁定；`allowBuilds` 是 11.x 字段，9.x 会忽略） |
 | react-virtuoso | ^4.18.13 |
 | framer-motion | ^12.23.12 |
 
@@ -1413,9 +2033,10 @@ function initializeDataDb(db: Database) {
 | 文件 | 路径 | 作用 |
 |------|------|------|
 | 主进程入口 | `electron/main.ts` | 窗口管理、IPC 注册 |
-| 数据库初始化 | `electron/db.ts` | 双库管理、表结构迁移（checkin 域） |
-| 小说库初始化 | `electron/novel-db.ts` | `novel.db`：小说与行囊全部表，跟随用户切换开关 |
-| 会话配置 | `electron/httpSession.ts` | 主进程 session 级 CORS / Cookie 注入（一次性） |
+| 数据库初始化 | `electron/core/db.ts` | 双库管理、表结构迁移（checkin 域） |
+| 小说库初始化 | `electron/novel/novel-db.ts` | `novel.db`：小说与行囊全部表，跟随用户切换开关 |
+| 地图库初始化 | `electron/map/map-db.ts` | `map.db`：地图存档 / 历史版本 / 资源索引 / 配置，跟随用户切换开关 |
+| 会话配置 | `electron/core/httpSession.ts` | 主进程 session 级 CORS / Cookie 注入（一次性） |
 | API 暴露 | `electron/preload.ts` | contextBridge 白名单 |
 | 路由配置 | `src/windows/BaseWindow/App.tsx` | HashRouter + Routes |
 | 全局类型 | `src/shared/types/electron.d.ts` | window.electronAPI 接口 |
@@ -1427,6 +2048,6 @@ function initializeDataDb(db: Database) {
 
 ---
 
-**文档版本**: 2.3  
-**最后更新**: 2026-10-11  
+**文档版本**: 2.5  
+**最后更新**: 2026-10-23  
 **维护者**: CheckIn 开发团队

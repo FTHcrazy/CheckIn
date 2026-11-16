@@ -32,6 +32,7 @@ import {
   type WorkNumberingEntry,
 } from "@/shared/novel/work-numbering";
 import { notifyNoteChanged } from "@/shared/novel/note-events";
+import { notifyWorkMetaChanged } from "@/shared/novel/work-events";
 
 /**
  * 书架数据层 Hook（R32）
@@ -46,6 +47,7 @@ const DEFAULT_STYLE: ShelfNumberStyle = {
   chapterSuffix: "章",
   volumeSuffix: "卷",
   dailyGoal: 3000,
+  paragraphIndent: true,
 };
 
 const textOr = (value: unknown, fallback: string): string =>
@@ -63,6 +65,9 @@ function parseNumberStyle(raw: string | null): ShelfNumberStyle {
       numberStyle: source.numberStyle === "arabic" ? "arabic" : "chinese",
       chapterSuffix: textOr(source.chapterSuffix, "章"),
       volumeSuffix: textOr(source.volumeSuffix, "卷"),
+      // 「导出当前作品」要与编辑器「导出整本」用同一份段首缩进设置；
+      // 旧配置里没这个键（或损坏）按缺省 true 处理，不把稿子改回不缩进
+      paragraphIndent: source.indent !== false,
       dailyGoal:
         typeof source.dailyGoal === "number" && Number.isFinite(source.dailyGoal) && source.dailyGoal > 0
           ? Math.round(source.dailyGoal)
@@ -168,15 +173,21 @@ export function useBookshelfData() {
 
   // ── 作品 ────────────────────────────────────────────────────────
 
-  /** 新建作品：本地先建并返回 id（书架随后跳编辑器开写），异步落库 */
+  /**
+   * 新建作品：本地先建并返回 id（书架随后跳编辑器开写），异步落库。
+   *
+   * `genre` 为可选：建书第二步可以「跳过」（不传 = 未设置题材）。
+   */
   const createWork = useCallback(
-    (name: string): string | null => {
+    (name: string, genre?: string): string | null => {
       const trimmed = name.trim();
       if (!trimmed || !bundle) return null;
+      const genreDraft = genre?.replace(/\s+/g, " ").trim();
       const work: NovelWorkDTO = {
         id: createShelfId("w"),
         name: trimmed,
         createdAt: Date.now(),
+        ...(genreDraft ? { genre: genreDraft } : {}),
       };
       setBundle((current) =>
         current ? { ...current, works: [...current.works, work] } : current,
@@ -186,6 +197,40 @@ export function useBookshelfData() {
     },
     [bundle],
   );
+
+  /**
+   * 作品元数据就地补丁（2.56.0 书架右键菜单）。
+   *
+   * IPC 落库由 `useShelfWorkActions` 负责，这里只管内存快照与跨页广播：
+   * 编辑器也常驻挂载，不广播的话它顶栏的作品名 / 题材锚点会一直停在旧值。
+   * 补丁只带变化字段（不整行覆盖），编辑器侧将来加字段也不会被抹掉。
+   */
+  const patchWork = useCallback(
+    (id: string, patch: Partial<NovelWorkDTO>): void => {
+      setBundle((current) =>
+        current
+          ? {
+              ...current,
+              works: current.works.map((work) =>
+                work.id === id ? { ...work, ...patch } : work,
+              ),
+            }
+          : current,
+      );
+      notifyWorkMetaChanged({ action: "upsert", workId: id, patch });
+    },
+    [],
+  );
+
+  /** 移入回收站：先把书卡从书架摘掉，随后由调用方触发一次静默重载对齐全包 */
+  const removeWork = useCallback((id: string): void => {
+    setBundle((current) =>
+      current
+        ? { ...current, works: current.works.filter((work) => work.id !== id) }
+        : current,
+    );
+    notifyWorkMetaChanged({ action: "remove", workId: id });
+  }, []);
 
   // ── 全局灵感库 ──────────────────────────────────────────────────
 
@@ -303,9 +348,12 @@ export function useBookshelfData() {
     hero,
     usage,
     style,
+    numberingMap,
     loading,
     loadError,
     createWork,
+    patchWork,
+    removeWork,
     addNote,
     toggleNotePinned,
     moveNoteTo,

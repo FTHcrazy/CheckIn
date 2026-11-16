@@ -66,7 +66,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 19px;
+    font-size: 20px;
     /* 首字是文本（不是图标），压一档字号 + 加粗才不至于在圆里显得飘 */
     font-weight: 600;
     line-height: 1;
@@ -105,11 +105,11 @@
   &__name-input.ant-input {
     --ant-input-padding-block-sm: 0px;
     --ant-input-padding-inline-sm: 6px;
-    --ant-input-input-font-size-sm: 15px;
+    --ant-input-input-font-size-sm: 14px;
     --ant-border-radius-sm: var(--app-radius-item);
     --ant-input-padding-block: 0px;
     --ant-input-padding-inline: 6px;
-    --ant-input-input-font-size: 15px;
+    --ant-input-input-font-size: 16px;
     --ant-border-radius: var(--app-radius-item);
     --ant-color-text: var(--app-text);
     --ant-color-border: var(--app-border-strong);
@@ -137,7 +137,7 @@
     border-radius: var(--app-radius-chip);
     background: var(--app-accent-blue-weak);
     color: var(--app-accent-blue);
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 600;
     white-space: nowrap;
   }
@@ -151,14 +151,14 @@
     border-radius: var(--app-radius-chip);
     background: var(--app-accent-purple-weak);
     color: var(--app-accent-purple);
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 600;
     white-space: nowrap;
   }
 
   &__bound {
     min-width: 0;
-    font-size: 11px;
+    font-size: 12px;
     color: var(--app-text-muted);
     white-space: nowrap;
     overflow: hidden;
@@ -190,22 +190,25 @@
 
     实测对照设计稿：头部图标是**饱满有分量**的（字形大 + 笔画不细 + 颜色不淡），
     初版的 13px 字形 + 弱灰配色在小窗里看着就是「一排认不出的小点」。
-    这里给 16px 字形 + `--app-text` 一档的描边色 —— 两条一起给才够显眼。
+    这里给 18px 字形 + `--app-text` 一档的描边色 —— 两条一起给才够显眼。
+
+    2026-10 第二轮：基础档盒 24→26 / 字形 14→16，头部同步 28→30 / 16→18，
+    维持「头部比面板其它地方大一号」的既有意图（守卫 pack-ui-kit 同步钉）。
 
     `&__tools` 里是宽档的平铺四枚；`&__ops > .cpk-iconbtn` 兜住窄档那枚
     「更多」入口（它不在 `__tools` 里，是 `__ops` 的直接子元素）。
   */
   &__tools .cpk-iconbtn.ant-btn,
   &__ops > .cpk-iconbtn.ant-btn {
-    --ant-control-height: 28px;
-    --ant-button-content-font-size: 16px;
+    --ant-control-height: 30px;
+    --ant-button-content-font-size: 18px;
     --ant-button-default-color: var(--app-text);
-    width: 28px;
+    width: 30px;
   }
 
   /*
     工具组：图标按钮之间有淡分隔线，右边是关闭。
-    间距按设计稿给 —— 图标盒 28px，中心距约 32px → gap 4px。
+    间距按设计稿给 —— 图标盒 30px，中心距约 34px → gap 4px。
     比 gap 更大反而会让四枚图标散开成「四个独立按钮」而不是「一组工具」。
   */
   &__tools {
@@ -234,7 +237,7 @@
     那里保持原样不动；只有头部这条带子上，它们与实心主按钮同排，
     无框会显得比设计稿弱一级、也让「可点」这件事看不出来。
 
-    高度 26px 与旁边的图标盒（28px）视觉齐平：矮一截会让这一排看着断成两层。
+    高度 28px 与旁边的图标盒（30px）视觉齐平：矮一截会让这一排看着断成两层。
 
     ⚠️ 选择器必须写成 `.cpk-head .cpk-head__ops > .cpk-btn.ghost`（**4 个类**）：
     公共层的 `.cpk-btn.ant-btn.ghost` 是 3 个类，与 `&__ops > .cpk-btn.ghost`
@@ -244,7 +247,7 @@
     多挂一个 `.cpk-head` 即可稳压，且语义上也更准（只在这个头部里生效）。
   */
   .cpk-head &__ops > .cpk-btn.ghost {
-    --ant-control-height: 26px;
+    --ant-control-height: 28px;
     --ant-button-padding-inline: 10px;
     --ant-button-default-bg: var(--app-surface);
     --ant-button-default-border-color: var(--app-border-strong);
@@ -267,13 +270,13 @@
 }
 
 /* ── 保存态（三态必须两两可分，暗色同样成立）──
- * 字号 13px 与放大后的图标（16px 字形）同一档观感：设计稿里这颗 pill
+ * 字号 14px 与放大后的图标（16px 字形）同一档观感：设计稿里这颗 pill
  * 与图标是同等醒目的，12px 配 16px 图标会明显偏轻。 */
 .cpk-savebar__state {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  font-size: 14px;
   white-space: nowrap;
   /* 窄档下先省略这段叙述文字（「已保存 · 3 分钟前」→「已保存…」），
      保全「保存」主按钮与工具入口 */

@@ -7,6 +7,10 @@
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NOVEL_NOTE_EVENT, type NovelNoteChangedDetail } from "@/shared/novel/note-events";
+import {
+  NOVEL_WORK_META_EVENT,
+  type NovelWorkMetaDetail,
+} from "@/shared/novel/work-events";
 import type { NovelBundleDTO, NovelNoteDTO } from "@/shared/types/electron";
 
 const serviceMocks = vi.hoisted(() => ({
@@ -191,5 +195,51 @@ describe("灵感写操作广播 novel-note-changed（P2-4）", () => {
     await waitFor(() => expect(received.length).toBe(1));
     expect(received[0]).toEqual({ action: "remove", noteId: note.id });
     expect(serviceMocks.removeShelfNote).toHaveBeenCalledWith(note.id);
+  });
+});
+
+/** 收集书架发出的作品元数据事件（编辑器侧据此就地修正顶栏与题材锚点） */
+function useWorkMetaEventCollector(): NovelWorkMetaDetail[] {
+  const received: NovelWorkMetaDetail[] = [];
+  window.addEventListener(NOVEL_WORK_META_EVENT, (event) => {
+    received.push((event as CustomEvent<NovelWorkMetaDetail>).detail);
+  });
+  return received;
+}
+
+describe("作品元数据补丁（2.56.0 书架右键）", () => {
+  it("patchWork 就地改 bundle.works 并广播变化字段", async () => {
+    serviceMocks.fetchShelfBundle.mockResolvedValue(makeBundle());
+    const received = useWorkMetaEventCollector();
+    const { result } = renderHook(() => useBookshelfData());
+    await waitFor(() => expect(result.current.bundle).not.toBeNull());
+
+    act(() => {
+      result.current.patchWork("w1", { name: "新书名", cover: "data:image/jpeg;base64,AAA" });
+    });
+
+    expect(result.current.bundle?.works[0].name).toBe("新书名");
+    expect(result.current.bundle?.works[0].cover).toBe("data:image/jpeg;base64,AAA");
+    expect(received).toEqual([
+      {
+        action: "upsert",
+        workId: "w1",
+        patch: { name: "新书名", cover: "data:image/jpeg;base64,AAA" },
+      },
+    ]);
+  });
+
+  it("removeWork 从书架摘掉作品并广播 remove", async () => {
+    serviceMocks.fetchShelfBundle.mockResolvedValue(makeBundle());
+    const received = useWorkMetaEventCollector();
+    const { result } = renderHook(() => useBookshelfData());
+    await waitFor(() => expect(result.current.bundle).not.toBeNull());
+
+    act(() => {
+      result.current.removeWork("w1");
+    });
+
+    expect(result.current.bundle?.works).toEqual([]);
+    expect(received).toEqual([{ action: "remove", workId: "w1" }]);
   });
 });

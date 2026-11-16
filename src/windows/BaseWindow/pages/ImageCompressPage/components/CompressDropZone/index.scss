@@ -1,0 +1,21 @@
+// 选图区：只负责入口与文案，拖拽样式交给 antd Dragger（跟随主题）
+.imgc-drop {
+  &__icon {
+    margin: 0;
+    font-size: 28px;
+    color: var(--app-primary);
+  }
+
+  &__title {
+    margin: 6px 0 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--app-text);
+  }
+
+  &__hint {
+    margin: 4px 0 0;
+    font-size: 12px;
+    color: var(--app-text-muted);
+  }
+}

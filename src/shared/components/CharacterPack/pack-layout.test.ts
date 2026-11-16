@@ -8,7 +8,6 @@ import {
   coreFirstOrder,
   dashboardActiveStatuses,
   dashboardAttrLimit,
-  dashboardSummaryModules,
   disabledModuleCount,
   isAutoCollapsed,
   missingZoneOf,
@@ -478,13 +477,6 @@ describe("UI-01 看板 L0 编排（纯函数）", () => {
     expect(dashboardAttrLimit("wide")).toBe(8);
     expect(dashboardAttrLimit("mid")).toBe(6);
     expect(dashboardAttrLimit("narrow")).toBe(4);
-  });
-
-  it("E 区摘要行 = 当前启用的全部模块（含核心几块，保编辑入口）", () => {
-    const modules = allModules();
-    // 原样透传、不重排 —— 作者拖拽顺序必须被尊重
-    expect(dashboardSummaryModules(modules)).toBe(modules);
-    expect(dashboardSummaryModules(modules).length).toBeGreaterThan(0);
   });
 
   it("D 区只列生效状态：ownerType=status 且 active", () => {

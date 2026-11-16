@@ -7,9 +7,10 @@
 .daily-page {
   display: flex;
   gap: 16px;
-  padding: 0 16px 16px;
+  // 顶部 12px 与其它子页面统一（页内导航条已上移到窗口标题栏）
+  padding: 12px 16px 16px;
   box-sizing: border-box;
-  // .page 是 flex 列（NavHeader 高度自适应），本页作为其子项用 flex:1 吃满剩余高度。
+  // .page 是 flex 列（正文从窗口标题栏下方开始），本页作为其子项用 flex:1 吃满剩余高度。
   // 不要写 calc(100% - 48px) 这类魔法数，也不要写 100vh（视口含窗口标题栏会溢出）。
   flex: 1;
   min-height: 0;

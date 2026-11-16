@@ -34,6 +34,7 @@ const inspirationActions: InspirationActions = {
 
 const namingActions: NamingActions = {
   onInsertToEditor: vi.fn(),
+  onInsertMeaning: vi.fn(),
   onCreateCharacter: vi.fn(),
   onAddFavorite: vi.fn(),
   onRemoveFavorite: vi.fn(),
@@ -53,6 +54,7 @@ const buildProps = (
   activeChapterId: null,
   outlineActions,
   entities: [],
+  linkCount: 0,
   filter: "all",
   onFilterChange: vi.fn(),
   detailEntityId: null,
@@ -82,6 +84,15 @@ const buildProps = (
   namingActions,
   namingExclude: [],
   namingFavorites: [],
+  // R-AI-08：动作组由页面持有，容器只透传
+  extractActions: {
+    session: null,
+    onRun: vi.fn(),
+    onToggle: vi.fn(),
+    onTypeChange: vi.fn(),
+    onConfirm: vi.fn(),
+    onClose: vi.fn(),
+  },
   // UI-09：面板内的弱提示统一走 onNotify（必填，缺了类型检查不过）
   onNotify: vi.fn(),
   ...over,

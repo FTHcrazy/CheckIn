@@ -75,7 +75,7 @@ export default function ChapterJumpPalette({
           variant="borderless"
           ref={inputRef}
           value={query}
-          placeholder="🔍 搜索章节"
+          placeholder="按章节号 / 标题跳转"
           aria-label="搜索章节"
           onChange={(event) => {
             setQuery(event.target.value);

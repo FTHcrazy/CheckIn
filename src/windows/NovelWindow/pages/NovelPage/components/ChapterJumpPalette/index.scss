@@ -18,7 +18,7 @@
   border-radius: var(--app-radius-chip);
   box-shadow: var(--app-shadow-pop);
   overflow: hidden;
-  animation: nv-palette-in 120ms ease;
+  animation: nv-palette-in var(--app-t-fast) var(--app-ease-standard);
 
   &__input {
     display: flex;

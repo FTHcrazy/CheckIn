@@ -1,0 +1,166 @@
+/* AI 调用记录页（窗口私有）
+   列表用 antd Collapse 承载（展开/收起自带无障碍语义，不必自己造按钮），
+   这里只做「行内五列对齐」与「长文本折行」两件事。 */
+
+.settings-ailog__tools {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-ailog__filter {
+  width: 132px;
+}
+
+.settings-ailog__loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 28px 16px;
+  font-size: 12px;
+  color: var(--app-text-secondary);
+}
+
+.settings-ailog__empty {
+  padding: 20px 0 8px;
+}
+
+/* 折行用的一行摘要：时间 / 意图 / 模型 / 耗时 / 结果
+   模型列吃剩余宽度并按需省略，其余列定宽 —— 否则长模型名会把「成功」挤没 */
+.settings-ailog__brief {
+  display: grid;
+  grid-template-columns: 92px 56px minmax(0, 1fr) 68px minmax(0, 132px);
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.settings-ailog__time {
+  color: var(--app-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.settings-ailog__intent.ant-tag {
+  margin: 0;
+  padding: 0 6px;
+  border: none;
+  background: var(--app-primary-weak);
+  color: var(--app-primary-strong);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.settings-ailog__model {
+  overflow: hidden;
+  color: var(--app-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-ailog__duration {
+  color: var(--app-text-secondary);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.settings-ailog__status {
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  &.is-ok {
+    color: var(--app-success);
+  }
+
+  &.is-fail {
+    color: var(--app-error);
+  }
+}
+
+/* 展开区：三段（系统提示词 / 用户输入 / 模型输出）等高对齐，
+   每段限高 + 自身滚动，避免一段两千字的输出把页面撑到天上去 */
+.settings-ailog__detail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-ailog__block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.settings-ailog__block-title {
+  margin: 0;
+  color: var(--app-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.settings-ailog__pre {
+  max-height: 160px;
+  margin: 0;
+  padding: 8px 10px;
+  overflow: auto;
+  border-radius: var(--app-radius-item);
+  background: var(--app-surface-alt);
+  color: var(--app-text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.settings-ailog__pager {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 10px;
+}
+
+.settings-ailog__page-text {
+  color: var(--app-text-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 列表本身不画边框：它是「卡片内的一张表」，再套一层描边会变成盒中盒 */
+.settings-ailog__list.ant-collapse {
+  background: transparent;
+
+  .ant-collapse-item {
+    border-bottom: 1px solid var(--app-border);
+  }
+
+  .ant-collapse-item:last-child {
+    border-bottom: none;
+  }
+
+  /* 清掉 antd 默认 headerPadding 后，箭头会**贴死在卡片左缘**（视觉上像溢出到卡外）。
+     这里把左内边距还给 header，并固定箭头与摘要列之间的距离；
+     body 的 padding-left 按「10 + icon 12 + 间距 10 = 32」对齐，展开后正文与摘要同列。 */
+  .ant-collapse-header {
+    padding: 8px 6px 8px 10px;
+    align-items: center;
+  }
+
+  .ant-collapse-expand-icon {
+    margin-inline-end: 10px;
+    color: var(--app-text-muted);
+  }
+
+  /* ⚠️ v6 的内容容器是 -body：-content-box 是 v5 的名字，在 v6 写了等于没写
+     （表现就是「内边距怎么调都不生效」）。 */
+  .ant-collapse-body {
+    padding: 0 6px 10px 32px;
+  }
+}

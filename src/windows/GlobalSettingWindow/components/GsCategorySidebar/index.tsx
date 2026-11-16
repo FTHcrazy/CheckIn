@@ -39,7 +39,6 @@ export interface GsCategorySidebarProps {
   onNewCategoryNameChange: (value: string) => void;
   onCreate: () => void;
   onSelect: (id: string) => void;
-  onRename: (id: string, name: string) => void;
   onDelete: (id: string) => void;
   onToggleKind: (id: string) => void;
   /** 「新建分类」输入框的 ref：工具头与空态引导靠它把焦点送进来 */
@@ -73,7 +72,6 @@ export default function GsCategorySidebar({
   onNewCategoryNameChange,
   onCreate,
   onSelect,
-  onRename,
   onDelete,
   onToggleKind,
   inputRef,
@@ -141,7 +139,7 @@ export default function GsCategorySidebar({
               renaming={renamingId === category.id}
               onSelect={() => onSelect(category.id)}
               onBeginRename={() => view.beginRename(category.id)}
-              onCommitRename={(value) => onRename(category.id, value)}
+              onCommitRename={view.commitRename}
               onCancelRename={view.cancelRename}
               onDelete={() => onDelete(category.id)}
               onToggleKind={() => onToggleKind(category.id)}

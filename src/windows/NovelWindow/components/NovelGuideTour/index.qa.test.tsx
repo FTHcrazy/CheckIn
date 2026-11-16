@@ -233,11 +233,10 @@ describe("P2-1 接线（App / NovelPage / BookshelfPage 源码级）", () => {
   const strip = (s: string): string =>
     s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
 
-  it("App 的 goToView 就是 setView，并作为 onGoToView 传给 NovelPage", () => {
+  it("App 的 goToView 来自跳转 store，并作为 onGoToView 传给 NovelPage", () => {
     const app = strip(read("src/windows/NovelWindow/App.tsx"));
-    expect(app).toMatch(
-      /const goToView = useCallback\(\(target: GuideView\) => setView\(target\)/,
-    );
+    // 视图状态已收口 useEntityJumpStore：App 只订阅并透传，不再自己持 setView
+    expect(app).toContain("const goToView = useEntityJumpStore((s) => s.goToView);");
     expect(app).toContain("onGoToView={goToView}");
   });
 
@@ -248,8 +247,10 @@ describe("P2-1 接线（App / NovelPage / BookshelfPage 源码级）", () => {
     const shelf = strip(
       read("src/windows/NovelWindow/pages/BookshelfPage/BookshelfPage.tsx"),
     );
-    expect(editor).toContain(
-      '<NovelGuideTour view="editor" visible={visible} onGoToView={onGoToView} />',
+    // 允许属性换行（格式化会把四个属性拆成多行）：
+    // 断的是「同一个实例上这三个 prop 都在」，不是某一行的字面写法
+    expect(editor).toMatch(
+      /<NovelGuideTour\s+view="editor"\s+visible=\{visible\}\s+onGoToView=\{onGoToView\}\s*\/>/,
     );
     expect(shelf).toContain('<NovelGuideTour view="shelf" visible={visible} />');
     // 书架实例不接该 prop：反方向（书架→编辑器）由「新建作品」动作挂载编辑器，

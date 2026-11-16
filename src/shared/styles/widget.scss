@@ -53,7 +53,10 @@
   --ant-button-default-bg-disabled: transparent;
   --ant-button-border-color-disabled: transparent;
 
-  /* 文本与对齐：随容器，不跟 antd 的居中排版 */
+  /* 文本与对齐：随容器，不跟 antd 的居中排版
+     ⚠️ 纯图标按钮（章节行尾、池子行尾、卡片关闭 × 等）被清零后**必须自己补**
+     `justify-content: center`：这里把 antd 的 `center` 改成了 `normal`（= flex-start），
+     不补的话图标会贴 24px 盒子的左沿、右侧空出半个图标宽，hover 背景看起来「偏右」。 */
   font-family: inherit;
   justify-content: normal;
   text-align: inherit;

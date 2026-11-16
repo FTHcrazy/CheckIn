@@ -1,0 +1,84 @@
+// 单条压缩记录：缩略图 / 信息 / 体积变化 / 状态 / 操作
+.imgc-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--app-border);
+  // 父级是可滚动列表：条目一律 flex: none，避免被压扁（§6.1 定高 flex 容器陷阱）
+  flex: none;
+
+  &:last-child {
+    border-bottom: none;
+  }
+
+  &__thumb {
+    flex: 0 0 auto;
+    width: 40px;
+    height: 40px;
+    border-radius: var(--app-radius-item);
+    border: 1px solid var(--app-border);
+    background: var(--app-surface-alt);
+    object-fit: cover;
+  }
+
+  &__main {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  &__name {
+    font-size: 14px;
+    color: var(--app-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__meta {
+    font-size: 12px;
+    color: var(--app-text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__sizes {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 0 0 auto;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__size {
+    font-size: 12px;
+    color: var(--app-text-secondary);
+
+    &--out {
+      color: var(--app-text);
+      font-weight: 600;
+    }
+  }
+
+  &__arrow {
+    font-size: 12px;
+    color: var(--app-text-disabled);
+  }
+
+  &__badge {
+    display: flex;
+    justify-content: flex-end;
+    flex: 0 0 84px;
+    // 状态列定宽：Spin 与 Tag 宽度不同，不定宽会让整列左右跳动
+  }
+
+  &__actions {
+    display: flex;
+    align-items: center;
+    flex: 0 0 auto;
+  }
+}

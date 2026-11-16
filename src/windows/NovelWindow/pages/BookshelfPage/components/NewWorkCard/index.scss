@@ -22,21 +22,27 @@
   --ant-button-default-active-bg: transparent;
   --ant-button-default-active-color: var(--app-primary);
   --ant-button-default-active-border-color: var(--app-primary);
-  --ant-button-default-shadow: none;
+  /* 静止态给一档 ambient 环境阴影（虚线卡虽轻，也让它从 bg 里浮出来一点） */
+  --ant-button-default-shadow: var(--app-shadow-ambient);
 
   /* antd 不接管的属性 */
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  /* 与书卡同高：行高由网格决定（书卡内容更高时本卡撑满整行）。
+     `min-height` 只在书架为空 / 行内只有本卡时兜住一个体面的高度，
+     不能拿它当「与书卡对齐」的手段 —— 书卡高度随列宽变化，写死必然错开。 */
+  height: 100%;
   min-height: 232px;
   padding: 20px;
-  transition: transform 0.18s ease;
+  transition: transform var(--app-t-normal) var(--app-ease-standard),
+    box-shadow var(--app-t-normal) var(--app-ease-standard);
 
   /* 悬浮投影：antd 只有恒定的 --ant-button-default-shadow，没有 hover 阴影变量。
      这里只在 :hover 上改**变量**（不写 box-shadow 属性）保住「悬浮才投影」 */
   &:hover {
-    --ant-button-default-shadow: var(--app-shadow-card);
+    --ant-button-default-shadow: var(--app-shadow-raised);
     transform: translateY(-2px);
   }
 
@@ -48,7 +54,10 @@
   /* ── 列表视图：细长虚线条，与书卡行同一套内边距节奏 ── */
   &.bs-newcard--list {
     flex-direction: row;
-    min-height: 0;
+    /* 行高唯一出处见 .bs-page__grid--list 的 `--bs-row-height`。
+       列表里这一条自成一行、没有同伴可拉伸，`height: 100%` 会退化成 content
+       高度（26px 的加号 + 单行标题），比书卡矮一截；必须显式认这个行高。 */
+    min-height: var(--bs-row-height, 68px);
     padding: 8px 12px 8px 8px;
     justify-content: flex-start;
 

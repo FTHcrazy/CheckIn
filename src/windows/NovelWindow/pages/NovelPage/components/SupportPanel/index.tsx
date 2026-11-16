@@ -16,13 +16,15 @@ import EntityPanel from "../EntityPanel";
 import type { EntitySavePatch } from "../EntityDetail";
 import InspirationPanel, { type InspirationActions } from "../InspirationPanel";
 import NameGeneratorPanel, { type NamingActions } from "../NameGeneratorPanel";
+import ConsistencyPanel from "../ConsistencyPanel";
+import ExtractPanel, { type ExtractActions } from "../ExtractPanel";
 import OutlinePanel, { type OutlineActions } from "../OutlinePanel";
 import SearchPanel from "../SearchPanel";
 import SensitivePanel from "../SensitivePanel";
 import NvSegmented from "../NvSegmented";
 import { LAYOUT } from "../../novel-config";
 import { useSearchStore } from "../../store/useSearchStore";
-import type { PanelTab, EntityFilter } from "../../hooks/useNovelViewState";
+import type { PanelTab, EntityFilter, ToolSub } from "../../hooks/useNovelViewState";
 import type {
   EntityAppearance,
   EntityRelationView,
@@ -50,6 +52,8 @@ interface SupportPanelProps {
   activeChapterId: string | null;
   outlineActions: OutlineActions;
   entities: NovelEntity[];
+  /** 本书「要素 ↔ 要素」关联条数（关系图写回后随之 +1，W-15 第三处） */
+  linkCount: number;
   filter: EntityFilter;
   onFilterChange: (filter: EntityFilter) => void;
   detailEntityId: string | null;
@@ -99,6 +103,14 @@ interface SupportPanelProps {
   namingExclude: string[];
   /** 起名工具收藏夹（当前作品）：按 createdAt 倒序 */
   namingFavorites: import("../../types").NameFavorite[];
+  /** AI 起名的本书上下文快照（书名 / 要素 / 境界）；缺省时退化为仅用已用名 */
+  namingBook?: import("@/shared/ai/context").BookSnapshot;
+  /** AI 入口是否**存在**（REQ-063）：透传给起名面板，false 时「AI 起名」按钮不渲染 */
+  aiVisible?: boolean;
+  /** AI 是否可用（M8 门控）：false 时「AI 起名」按钮禁用并说明原因（本地起名照常） */
+  aiAvailable?: boolean;
+  /** AI 不可用的一句话说明 */
+  aiUnavailableText?: string;
   /** 轻提示：规划中的工具点了也要有回应（UI-09），复用页面级 toast */
   onNotify: (text: string, tone?: import("@/shared/novel/use-auto-toast").ToastTone) => void;
   /**
@@ -114,8 +126,19 @@ interface SupportPanelProps {
    * 不传时退回组件内部 state —— 单测直接渲染本组件不必接这份状态；
    * 页面侧传入是为了让底部状态条的计数角标能一键直达敏感词面板。
    */
-  toolSub?: "naming" | "sensitive" | null;
-  onToolSubChange?: (value: "naming" | "sensitive" | null) => void;
+  toolSub?: ToolSub;
+  onToolSubChange?: (value: ToolSub) => void;
+  /** 打开人物关系网络独立窗口（R27）；不传时工具卡退回「不可进入」占位 */
+  onOpenRelation?: () => void;
+  /** 打开架空地图独立窗口（R28 / MapWindow）；不传时工具卡退回「规划中」占位 */
+  onOpenMap?: () => void;
+  /**
+   * 抽取设定动作组（R-AI-08）。
+   *
+   * 会话状态由页面持有：候选与「已建 N 张」在切 Tab 后仍要留在面板上，
+   * 放在面板内部 state 里一关就没。
+   */
+  extractActions: ExtractActions;
 }
 
 interface TabMeta {
@@ -129,7 +152,6 @@ const TABS: TabMeta[] = [
   { key: "entity", label: "要素", icon: <AppstoreOutlined /> },
   { key: "note", label: "灵感", icon: <BulbOutlined /> },
   { key: "search", label: "检索", icon: <SearchOutlined /> },
-  { key: "tools", label: "工具", icon: <ToolOutlined /> },
 ];
 
 /** 脚注里的快捷键提示：常驻告知，点击成本高时才需要的设计 */
@@ -156,6 +178,7 @@ export default function SupportPanel({
   activeChapterId,
   outlineActions,
   entities,
+  linkCount,
   filter,
   onFilterChange,
   detailEntityId,
@@ -185,15 +208,20 @@ export default function SupportPanel({
   namingActions,
   namingExclude,
   namingFavorites,
+  namingBook,
+  aiVisible = true,
+  aiAvailable = true,
+  aiUnavailableText = "",
   onNotify,
   chapters = [],
   toolSub: controlledToolSub,
   onToolSubChange,
+  onOpenRelation,
+  onOpenMap,
+  extractActions,
 }: SupportPanelProps) {
   /** 工具箱二级面板：null = 启动器首页；受控优先，否则组件内自持 */
-  const [internalSub, setInternalSub] = useState<"naming" | "sensitive" | null>(
-    null,
-  );
+  const [internalSub, setInternalSub] = useState<ToolSub>(null);
   const toolSub = controlledToolSub !== undefined ? controlledToolSub : internalSub;
   const setToolSub = onToolSubChange ?? setInternalSub;
   /** 面板头「＋ 伏笔」触发次数：OutlinePanel 据此打开首卷的新增表单 */
@@ -284,7 +312,49 @@ export default function SupportPanel({
 
   const openTool = useCallback(() => setToolSub("naming"), [setToolSub]);
   const openSensitive = useCallback(() => setToolSub("sensitive"), [setToolSub]);
+  const openConsistency = useCallback(
+    () => setToolSub("consistency"),
+    [setToolSub],
+  );
+  const openExtract = useCallback(() => setToolSub("extract"), [setToolSub]);
   const backToTools = useCallback(() => setToolSub(null), [setToolSub]);
+  /**
+   * 面板头的「工具」图标（O-03）：切到工具箱首页并清掉二级面板。
+   *
+   * 为什么还要 `setToolSub(null)`：从「敏感词检测」再点工具图标时，只改
+   * `activeTab` 不会清掉 `toolSub`，面板会停在原来的二级页 —— 表现为
+   * 「点了没反应」。两处状态必须一起归位。
+   */
+  const openTools = useCallback(() => {
+    onTabChange("tools");
+    setToolSub(null);
+  }, [onTabChange, setToolSub]);
+
+  /**
+   * 抽取入口不可用的原因（未配置 AI / 当前版本不含 AI）。
+   *
+   * 与起名同一个口径：**不隐藏**卡片，只在状态位与点击回应里说明原因——
+   * 「设定库怎么填满」是作者迟早要问的问题，藏起来等于告诉他这软件没有这个能力。
+   */
+  const extractUnavailableText = useMemo(() => {
+    if (!aiVisible) return "当前版本不含 AI 功能";
+    if (!aiAvailable) return aiUnavailableText || "AI 当前不可用，先在设置里配置模型";
+    return undefined;
+  }, [aiVisible, aiAvailable, aiUnavailableText]);
+
+  /**
+   * 工具箱头部的可用项计数（O-15）。
+   *
+   * 原先写「N 项可用 · M 项规划中」——「规划中」是研发进度语言，出现在用户界面上
+   * 等于让作者替我们记 backlog；而且每上线一个工具都要回来改文案，改慢了面板
+   * 就自己在说谎。现在只说「几项可用」，未上线的工具不再占位（见 ToolLauncher）。
+   */
+  const toolStats = useMemo(() => {
+    const live = 3 + (extractUnavailableText ? 0 : 1) + (onOpenRelation ? 1 : 0);
+    const parts = [`${live} 项可用`];
+    if (extractUnavailableText) parts.push("抽取需配置 AI");
+    return parts.join(" · ");
+  }, [onOpenRelation, extractUnavailableText]);
 
   // 工具箱二级面板直接顶替 Tab 名：head / foot / 滚动策略都按它分支
   const namedActive = toolSub ?? activeTab;
@@ -307,7 +377,7 @@ export default function SupportPanel({
       case "entity":
         return {
           title: "要素库",
-          meta: `${entities.length} 个要素`,
+          meta: `${entities.length} 个要素 · ${linkCount} 条关联`,
           action: null,
         };
       case "note":
@@ -334,8 +404,20 @@ export default function SupportPanel({
           meta: "涉黄涉暴等通用红线",
           action: null,
         };
+      case "consistency":
+        return {
+          title: "一致性校对",
+          meta: "纯本地 · 不耗 AI 额度",
+          action: null,
+        };
+      case "extract":
+        return {
+          title: "抽取设定",
+          meta: `已有 ${entities.length} 张卡 · 勾选后才入库`,
+          action: null,
+        };
       default:
-        return { title: "工具箱", meta: "2 项可用 · 2 项规划中", action: null };
+        return { title: "工具箱", meta: toolStats, action: null };
     }
   }, [
     namedActive,
@@ -345,6 +427,7 @@ export default function SupportPanel({
     namingExclude.length,
     wordText,
     onTabChange,
+    toolStats,
   ]);
 
   const foot = useMemo(() => {
@@ -398,6 +481,20 @@ export default function SupportPanel({
             <span>点命中结果跳到正文第一处</span>
           </>
         );
+      case "consistency":
+        return (
+          <>
+            <KeyOutlined />
+            <span>点问题跳到正文第一处 · 只提示不改正文</span>
+          </>
+        );
+      case "extract":
+        return (
+          <>
+            <KeyOutlined />
+            <span>勾选后批量建卡 · 重名会标「已存在」</span>
+          </>
+        );
       default:
         return (
           <>
@@ -421,8 +518,10 @@ export default function SupportPanel({
     namedActive === "note" ||
     namedActive === "search" ||
     namedActive === "outline" ||
-    // 敏感词面板：工具栏常驻、结果列表自持滚动
-    namedActive === "sensitive";
+    // 敏感词 / 一致性校对：工具栏常驻、结果列表自持滚动
+    namedActive === "sensitive" ||
+    namedActive === "consistency" ||
+    namedActive === "extract";
 
   return (
     <div className={`nv-panel-region${open ? "" : " is-collapsed"}`}>
@@ -438,7 +537,19 @@ export default function SupportPanel({
 
         <header className="nv-panel__head">
           <div className="nv-panel__head-main">
-            <h2 className="nv-panel__title">{head.title}</h2>
+            {/* 二级面板（敏感词 / 一致性 / 起名 / 抽取）用「工具 / xxx」面包屑
+                标出上级 —— 只写子面板名时，「我在哪一层、返回键通向哪」全靠猜
+                （O-03）。上级不可点：返回由右侧箭头负责，两颗按钮做同一件事
+                会让键盘 Tab 序里出现一对同义项 */}
+            <h2 className="nv-panel__title">
+              {toolSub && (
+                <>
+                  <span className="nv-panel__title-parent">工具</span>
+                  <span className="nv-panel__title-sep">/</span>
+                </>
+              )}
+              {head.title}
+            </h2>
             <span className="nv-panel__meta">{head.meta}</span>
           </div>
           <div className="nv-panel__head-actions">
@@ -473,6 +584,18 @@ export default function SupportPanel({
                 <span>类型管理</span>
               </Button>
             )}
+            {/* 工具从「第 5 个 Tab」降级为面板头一颗图标（O-03）：它是低频入口，
+                占一个 Tab 位等于把四张常用面板各挤窄 1/5，还要多一层二级导航。
+                位置在「收起面板」左侧 —— 与其它面板头动作同一排，退出路径不变 */}
+            <Button
+              className={`nv-panel__icon${activeTab === "tools" ? " is-on" : ""}`}
+              aria-label="工具"
+              aria-pressed={activeTab === "tools"}
+              title="工具 · 敏感词 / 一致性 / 起名 / 关系图"
+              onClick={openTools}
+            >
+              <ToolOutlined />
+            </Button>
             <Button
               className="nv-panel__icon"
               title="收起面板"
@@ -591,6 +714,10 @@ export default function SupportPanel({
                 exclude={namingExclude}
                 favorites={namingFavorites}
                 actions={namingActions}
+                book={namingBook}
+                aiVisible={aiVisible}
+                aiAvailable={aiAvailable}
+                aiUnavailableText={aiUnavailableText}
               />
             ) : toolSub === "sensitive" ? (
               <SensitivePanel
@@ -598,11 +725,39 @@ export default function SupportPanel({
                 chapters={chapters}
                 onNotify={onNotify}
               />
+            ) : toolSub === "consistency" ? (
+              <ConsistencyPanel
+                workId={activeWorkId}
+                chapters={chapters}
+                entities={entities}
+                realmCategory={
+                  settings.find((category) => category.kind === "realm") ?? null
+                }
+                onNotify={onNotify}
+              />
+            ) : toolSub === "extract" ? (
+              <ExtractPanel
+                chapterId={activeChapterId}
+                chapters={chapters}
+                session={extractActions.session}
+                onRun={extractActions.onRun}
+                onToggle={extractActions.onToggle}
+                onTypeChange={extractActions.onTypeChange}
+                onConfirm={extractActions.onConfirm}
+                onClose={extractActions.onClose}
+                onNotify={onNotify}
+                unavailableText={extractUnavailableText}
+              />
             ) : (
               <ToolLauncher
                 onOpenNaming={openTool}
                 onOpenSensitive={openSensitive}
+                onOpenConsistency={openConsistency}
+                onOpenExtract={openExtract}
+                extractUnavailableText={extractUnavailableText}
                 onNotify={onNotify}
+                onOpenRelation={onOpenRelation}
+                onOpenMap={onOpenMap}
               />
             ))}
         </div>

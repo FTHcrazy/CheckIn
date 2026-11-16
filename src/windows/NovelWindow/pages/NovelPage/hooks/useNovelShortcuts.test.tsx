@@ -9,6 +9,7 @@ function makeHandlers(): NovelShortcutHandlers {
     onJump: vi.fn(),
     onNewChapter: vi.fn(),
     onToggleFocus: vi.fn(),
+    onToggleReadMode: vi.fn(),
     onTogglePack: vi.fn(),
     onOpenSettings: vi.fn(),
     onEscape: vi.fn(),
@@ -98,5 +99,22 @@ describe("useNovelShortcuts", () => {
     renderHook(() => useNovelShortcuts(handlers));
     fireEvent.keyDown(window, { key: "Escape" });
     expect(handlers.onEscape).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * O-05：阅读模式提为可见开关时必须同时有键位。
+   * F12 与 F11（专注模式）同级但不冲突 —— 两条都是单功能键，靠 key 值区分。
+   */
+  it("F12 切阅读模式，不影响专注模式（F11）", () => {
+    const handlers = makeHandlers();
+    renderHook(() => useNovelShortcuts(handlers));
+
+    fireEvent.keyDown(window, { key: "F12" });
+    expect(handlers.onToggleReadMode).toHaveBeenCalledTimes(1);
+    expect(handlers.onToggleFocus).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(window, { key: "F11" });
+    expect(handlers.onToggleFocus).toHaveBeenCalledTimes(1);
+    expect(handlers.onToggleReadMode).toHaveBeenCalledTimes(1);
   });
 });

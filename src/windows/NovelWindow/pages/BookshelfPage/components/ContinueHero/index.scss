@@ -87,7 +87,7 @@
     border-radius: inherit;
     background: var(--app-primary-gradient);
     transform-origin: left center;
-    transition: transform 0.3s ease;
+    transition: transform var(--app-t-slow) var(--app-ease-emphasized);
   }
 
   &__goal {
@@ -113,7 +113,7 @@
     }
 
     &__title {
-      font-size: 15px;
+      font-size: 16px;
     }
   }
 }

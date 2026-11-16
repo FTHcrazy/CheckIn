@@ -1,0 +1,112 @@
+/* 「从正文推断关系」弹层（R-AI-15）
+ *
+ * 弹层内的排版：来源 → 动作 → 说明 → 候选列表（自己滚）→ 底部确认常驻。
+ * 列表必须有确定高度上限：候选最多 20 条，不限高会把弹层顶出屏幕，
+ * 作者既看不到底部按钮也滚不动整页。 */
+
+.rel-sg {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rel-sg__source {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.rel-sg__label {
+  flex: none;
+  font-size: 12px;
+  color: var(--app-text-secondary);
+}
+
+.rel-sg__select {
+  flex: 1;
+  min-width: 0;
+}
+
+.rel-sg__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rel-sg__hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--app-text-muted);
+
+  &--warn {
+    color: var(--app-warning);
+  }
+
+  &--ok {
+    color: var(--app-success);
+  }
+
+  &--muted {
+    color: var(--app-text-disabled);
+  }
+}
+
+/* 候选区：限高 + 自己滚（不用 flex:1，弹层高度由内容决定而不是由视口决定） */
+.rel-sg__list {
+  max-height: 46vh;
+  overflow-y: auto;
+  padding-right: 2px;
+
+  /* 滚动条只在悬停时显现（与其余面板一致） */
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    border-radius: 3px;
+    background: transparent;
+  }
+
+  &:hover::-webkit-scrollbar-thumb {
+    background: var(--app-border);
+  }
+}
+
+.rel-sg__empty {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 20px 12px;
+  border: 1px dashed var(--app-border);
+  border-radius: 9px;
+  text-align: center;
+
+  b {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--app-text);
+  }
+
+  span {
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--app-text-muted);
+  }
+}
+
+/* 底部「写入关系图」：常驻在列表之下，滚到哪都能点到 */
+.rel-sg__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--app-border);
+}
+
+.rel-sg__count {
+  font-size: 12px;
+  color: var(--app-text-secondary);
+}

@@ -1,0 +1,231 @@
+// 单题卡片：标题 / 元信息 / 题干 / 页脚 / 可展开答案
+.interview-card {
+  --ant-card-body-padding: 12px 14px;
+  // 父级是定高 flex 列（.interview-list__scroll）：卡片必须 flex: none，
+  // 否则内容超高时会被按比例压扁而不是让父级滚动（AGENTS §6.1）
+  flex: none;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-card);
+  background: var(--app-surface);
+  box-shadow: var(--app-shadow-card);
+
+  &__head {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  &__title {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    color: var(--app-text-strong);
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 1.4;
+  }
+
+  &__mark {
+    padding: 0 2px;
+    border-radius: var(--app-radius-chip);
+    background: var(--app-warning-weak);
+    color: var(--app-text-strong);
+  }
+
+  &__star.ant-btn {
+    flex: none;
+    color: var(--app-text-muted);
+
+    &.is-on {
+      color: var(--app-warning);
+    }
+  }
+
+  &__meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-top: 6px;
+  }
+
+  &__path {
+    color: var(--app-text-muted);
+    font-size: 12px;
+  }
+
+  &__difficulty {
+    margin-inline-end: 0;
+    border-radius: var(--app-radius-chip);
+    font-size: 12px;
+
+    &.is-basic {
+      background: var(--app-success-weak);
+      color: var(--app-success);
+      border-color: transparent;
+    }
+
+    &.is-medium {
+      background: var(--app-info-weak);
+      color: var(--app-info);
+      border-color: transparent;
+    }
+
+    &.is-hard {
+      background: var(--app-error-weak);
+      color: var(--app-error);
+      border-color: transparent;
+    }
+  }
+
+  &__tag {
+    margin-inline-end: 0;
+    border-radius: var(--app-radius-chip);
+    background: var(--app-surface-alt);
+    border-color: var(--app-border);
+    color: var(--app-text-secondary);
+    font-size: 12px;
+
+    // 「图解」标记：提示展开后有一张步骤图/架构图
+    &.is-diagram {
+      background: var(--app-accent-purple-weak);
+      border-color: transparent;
+      color: var(--app-accent-purple);
+    }
+  }
+
+  &__stem {
+    margin: 8px 0 0;
+    color: var(--app-text);
+    font-size: 14px;
+    line-height: 1.6;
+  }
+
+  // 题目代码：代码块复用 __code，这里只补语言标记与外层留白
+  &__stem-code {
+    position: relative;
+    margin-top: 8px;
+  }
+
+  &__stem-code-lang {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    padding: 0 6px;
+    border-radius: var(--app-radius-chip);
+    background: var(--app-surface);
+    color: var(--app-text-muted);
+    font-size: 12px;
+    line-height: 16px;
+    pointer-events: none;
+  }
+
+  &__footer {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px dashed var(--app-border);
+  }
+
+  &__topic {
+    padding: 0 8px;
+    border-radius: var(--app-radius-pill);
+    background: var(--app-accent-purple-weak);
+    color: var(--app-accent-purple);
+    font-size: 12px;
+    line-height: 20px;
+  }
+
+  &__reviewed {
+    color: var(--app-text-muted);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__toggle.ant-btn {
+    margin-left: auto;
+    color: var(--app-primary);
+    font-size: 12px;
+  }
+
+  // 折叠区：0fr → 1fr 的过渡不依赖条件渲染，展开收起都有动画
+  &__answer {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows var(--app-t-normal) var(--app-ease-standard);
+
+    &.is-open {
+      grid-template-rows: 1fr;
+    }
+  }
+
+  &__answer-inner {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  // 答案顶部的图解：先看图读流程，再看要点式答案
+  &__diagram {
+    margin-top: 10px;
+  }
+
+  &__answer-body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 10px;
+    padding: 10px 12px;
+    border-radius: var(--app-radius-item);
+    background: var(--app-surface-alt);
+  }
+
+  &__paragraph {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  &__line {
+    display: block;
+    color: var(--app-text);
+    font-size: 14px;
+    line-height: 1.7;
+
+    &.is-bullet {
+      position: relative;
+      padding-left: 14px;
+    }
+
+    &.is-bullet::before {
+      position: absolute;
+      left: 2px;
+      color: var(--app-primary);
+      content: "•";
+    }
+  }
+
+  &__inline-code {
+    padding: 0 4px;
+    border-radius: var(--app-radius-chip);
+    background: var(--app-surface-alt);
+    color: var(--app-accent-blue);
+    font-size: 12px;
+  }
+
+  &__code {
+    margin: 0;
+    padding: 10px 12px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-item);
+    background: var(--app-surface-alt);
+    color: var(--app-text);
+    font-size: 12px;
+    line-height: 1.6;
+    overflow-x: auto;
+    white-space: pre;
+  }
+}

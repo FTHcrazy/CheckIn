@@ -1,0 +1,174 @@
+@use "../../../../shared/styles/widget" as widget;
+
+/* AI 配置页（窗口私有）
+   卡片直接摊在 `.settings-page__stack` 上（组件根是 fragment），页间距与
+   「操作条贴底」都由那层栈负责；底部操作条已上收为 SettingsActionBar。 */
+
+.settings-ai__loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 28px 16px;
+  font-size: 12px;
+  color: var(--app-text-secondary);
+}
+
+/* ── 连接方式：两张大按钮当单选（比一行 Radio 更容易扫读）── */
+.settings-ai__tiles {
+  display: grid;
+  /* 窄窗自动落到一行一张；900 宽窗口下正好两张并排 */
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+}
+
+.settings-ai__tile.ant-btn {
+  @include widget.ant-button-reset;
+  --ant-button-padding-inline: 12px;
+  --ant-button-content-font-size: 14px;
+  --ant-button-font-weight: 400;
+  --ant-border-radius: var(--app-radius-item);
+  --ant-line-width: 1px;
+  --ant-button-default-bg: var(--app-surface);
+  --ant-button-default-color: var(--app-text);
+  --ant-button-default-border-color: var(--app-border);
+  --ant-button-default-hover-bg: var(--app-surface-hover);
+  --ant-button-default-hover-color: var(--app-text-strong);
+  --ant-button-default-hover-border-color: var(--app-border-strong);
+  --ant-button-default-active-bg: var(--app-surface-active);
+  --ant-button-default-active-color: var(--app-text-strong);
+  --ant-button-default-active-border-color: var(--app-border-strong);
+  --ant-button-default-shadow: none;
+  /* reset 把高度交给控件自己：这里补竖向内边距，否则两行文案会贴着边框 */
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  height: auto;
+  padding-block: 10px;
+  text-align: left;
+  white-space: normal;
+
+  /* 选中态：与左栏导航 / 首页侧栏同一口径（primary-weak 底 + primary 描边） */
+  &.is-active {
+    --ant-button-default-bg: var(--app-primary-weak);
+    --ant-button-default-color: var(--app-primary-strong);
+    --ant-button-default-border-color: var(--app-primary);
+    --ant-button-default-hover-bg: var(--app-primary-weak);
+    --ant-button-default-hover-color: var(--app-primary-strong);
+    --ant-button-default-hover-border-color: var(--app-primary);
+    --ant-button-default-active-bg: var(--app-primary-weak);
+    --ant-button-default-active-color: var(--app-primary-strong);
+    --ant-button-default-active-border-color: var(--app-primary);
+  }
+}
+
+.settings-ai__tile-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--app-text-secondary);
+}
+
+.settings-ai__tile.is-active .settings-ai__tile-icon {
+  color: var(--app-primary);
+}
+
+.settings-ai__tile-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.settings-ai__tile-title {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.settings-ai__tile-desc {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--app-text-secondary);
+}
+
+/* ── 字段内的窄控件 ── */
+.settings-ai__preset {
+  width: 280px;
+  max-width: 100%;
+}
+
+.settings-ai__number {
+  width: 132px;
+  flex: none;
+}
+
+/* L3 合规提示：挂在「高级」卡底部，与授权弹窗同一份文案（单一产地） */
+.settings-ai__compliance {
+  margin: 4px 0 0;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--app-text-secondary);
+}
+
+/* 「Key 已保存」小签：只标状态，不承担交互 */
+.settings-ai__chip {
+  padding: 0 6px;
+  border-radius: var(--app-radius-pill);
+  background: var(--app-success-weak);
+  color: var(--app-success);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+/* 「获取 Key」：与「已保存」小签同一行，做成文字链而不是按钮 ——
+   它的位置在 Key 输入框上方，抢视觉会让人以为它才是主操作。
+   用组件库 `Typography.Link`（语义就是「去另一个页面」），不自造按钮造型
+   （窗口内按钮只有 settings-controls.scss 一份实现，守卫会拦）。 */
+.settings-ai__key-link.ant-typography {
+  /* 靠右：左半是字段名与状态签，右侧留给动作 */
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+/* 刷新模型列表：造型全部交给 .settings-btn，这里只把它压成正方形图标钮 */
+.settings-ai__refresh.ant-btn {
+  --ant-button-padding-inline: 0;
+  width: 32px;
+  flex: none;
+}
+
+/* 模型名：可手填可下拉，宽度跟着字段走（与接口地址等长） */
+.settings-ai__model.ant-select {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ── 测试结果：内联状态条，不弹窗打断填写 ── */
+.settings-ai__result {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--app-radius-item);
+  font-size: 12px;
+  line-height: 1.6;
+
+  &.is-ok {
+    background: var(--app-success-weak);
+    color: var(--app-success);
+  }
+
+  &.is-fail {
+    background: var(--app-error-weak);
+    color: var(--app-error);
+  }
+}

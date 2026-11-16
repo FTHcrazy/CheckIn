@@ -38,6 +38,8 @@ const PORTAL_OVERLAYS = [
   ".ant-select-dropdown",
   ".ant-picker-dropdown",
   ".ant-popover",
+  // 抽屉面板顶部的 × 就在 34px 带里，漏了这条等于「关闭按钮点不动」
+  ".ant-drawer",
 ];
 
 describe("窗口拖动带（构建前提）", () => {
@@ -45,7 +47,9 @@ describe("窗口拖动带（构建前提）", () => {
     expect(source).toMatch(/\.window-header\s*\{[^}]*-webkit-app-region:\s*drag/);
   });
 
-  it("标题栏自带的两处 no-drag 仍在（别被顺手删掉）", () => {
+  it("标题栏自带的 no-drag 区域仍在（别被顺手删掉）", () => {
+    // leading 里放的是页间导航按钮，漏掉 no-drag 会变成「点了没反应」
+    expect(css).toMatch(/\.window-header__leading[^{]*\{[^}]*-webkit-app-region: no-drag/);
     expect(css).toMatch(/\.window-header__actions[^{]*\{[^}]*-webkit-app-region: no-drag/);
     expect(css).toMatch(
       /\.window-header__controls[^{]*\{[^}]*-webkit-app-region: no-drag/,
@@ -61,5 +65,23 @@ describe("浮层豁免拖动带（回归守卫）", () => {
         new RegExp(`${escaped}[^{]*\\{[^}]*-webkit-app-region: no-drag`),
       );
     }
+  });
+});
+
+describe("标题栏高度 token（浮层靠它避开拖动带）", () => {
+  const themes = readFileSync(
+    path.resolve(process.cwd(), "src/shared/styles/themes.scss"),
+    "utf8",
+  );
+
+  it("标题栏高度读 token，不再写死 34px", () => {
+    expect(css).toMatch(
+      /\.window-header[^{]*\{[^}]*height: var\(--app-window-header-height, 34px\)/,
+    );
+  });
+
+  it("token 在共享 :root 块里只定义一次（四套主题共用）", () => {
+    expect(themes).toContain("--app-window-header-height: 34px");
+    expect(themes.match(/--app-window-header-height:/g)?.length).toBe(1);
   });
 });

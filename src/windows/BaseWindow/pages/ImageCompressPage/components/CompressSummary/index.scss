@@ -1,0 +1,41 @@
+// 汇总条：左侧体积口径，右侧批量动作
+.imgc-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 8px 10px 8px 0;
+  border-bottom: 1px solid var(--app-border);
+
+  &__stats {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px 16px;
+  }
+
+  &__item {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--app-text-muted);
+
+    b {
+      font-size: 14px;
+      font-variant-numeric: tabular-nums;
+      color: var(--app-text);
+    }
+
+    &--accent b {
+      color: var(--app-success);
+    }
+  }
+
+  &__actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+}

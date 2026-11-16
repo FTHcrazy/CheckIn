@@ -223,7 +223,7 @@ export default function PackHeader({
           <Button
             className="cpk-btn ghost"
             onClick={onExportDraft}
-            title="把当前改动整份导出成 JSON 文件，避免写库连续失败时丢数据"
+            title="把当前改动整份导出成文件，保存一直失败时先留一份底稿"
           >
             导出草稿
           </Button>
@@ -232,7 +232,7 @@ export default function PackHeader({
           className="cpk-btn primary"
           onClick={onSave}
           disabled={saving || dirty === 0}
-          title={dirty === 0 ? "没有未保存的改动" : "先落回退点，再写入正式表"}
+          title={dirty === 0 ? "没有未保存的改动" : "保存前会自动留一份可回退的记录"}
         >
           {tone === "failed" ? "重试" : dirty > 0 ? `保存 (${dirty})` : "保存"}
         </Button>

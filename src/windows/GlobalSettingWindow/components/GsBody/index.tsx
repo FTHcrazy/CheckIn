@@ -25,10 +25,12 @@ import { useCallback, useRef, useState } from "react";
 import { closestCenter, DndContext } from "@dnd-kit/core";
 import type { InputRef } from "antd";
 import CategoryCard from "@/shared/components/SettingCenter/components/CategoryCard";
+import AiLevelGenModal from "@/shared/components/SettingCenter/components/AiLevelGenModal";
 import LevelSequence from "@/shared/components/SettingCenter/components/LevelSequence";
 import BatchGenerateModal from "@/shared/components/SettingCenter/components/BatchGenerateModal";
 import SplitLevelModal from "@/shared/components/SettingCenter/components/SplitLevelModal";
 import TemplateLibraryModal from "@/shared/components/SettingCenter/components/TemplateLibraryModal";
+import { useAiLevelGen } from "@/shared/components/SettingCenter/hooks/useAiLevelGen";
 import { useSettingCenter } from "@/shared/components/SettingCenter/hooks/useSettingCenter";
 import type { GlobalSettingController } from "../../hooks/useGlobalSetting";
 import { impactTierOf } from "../../hooks/gs-view-utils";
@@ -76,6 +78,19 @@ export default function GsBody({ data }: GsBodyProps) {
     onExport: data.onExport,
     onApplyPreset: data.onApplyPreset,
     // 模板能力 5 props 一律不传（全局域不提供，N-04）
+  });
+
+  /**
+   * AI 排阶梯（R-AI-18）：与本书设定中心共用同一个 hook 与弹窗，
+   * 写入走全局库自己的 `onBatchAddLevels`（不新增写通道）。
+   *
+   * 不传 `genre`：全局库是跨书共享的，没有「这一本书的题材」——硬猜会把
+   * 某本书的口径塞进公共库。
+   */
+  const aiGen = useAiLevelGen({
+    categories: data.settings,
+    workName: "跨书共享",
+    onBatchAddLevels: data.onBatchAddLevels,
   });
 
   const newCategoryInputRef = useRef<InputRef | null>(null);
@@ -224,7 +239,6 @@ export default function GsBody({ data }: GsBodyProps) {
             onNewCategoryNameChange={c.setNewCategoryName}
             onCreate={c.handleCreateCategory}
             onSelect={c.setActiveId}
-            onRename={renameCategory}
             onDelete={data.onDeleteCategory}
             onToggleKind={(id) => {
               const target = c.sorted.find((item) => item.id === id);
@@ -298,6 +312,13 @@ export default function GsBody({ data }: GsBodyProps) {
                   dropIndex={c.dropIndex}
                   subLevelTotal={c.subLevelTotal}
                   onOpenBatch={c.openBatch}
+                  onOpenAiGen={
+                    aiGen.hidden
+                      ? undefined
+                      : () => {
+                          if (c.active) aiGen.openDialog(c.active);
+                        }
+                  }
                   onStartSplit={c.startSplit}
                   onMergeLevel={data.onMergeLevel}
                   onDeleteLevel={data.onDeleteLevel}
@@ -338,6 +359,26 @@ export default function GsBody({ data }: GsBodyProps) {
         names={c.batchNames}
         onSubmit={c.submitBatch}
         onCancel={c.closeBatch}
+      />
+
+      {/* AI 排阶梯（R-AI-18）：与本书设定中心是同一份 hook 与弹窗，
+          写入走全局库自己的批量追加通道 */}
+      <AiLevelGenModal
+        open={aiGen.dialogOpen}
+        categoryName={aiGen.categoryName}
+        session={aiGen.session}
+        mode={aiGen.mode}
+        onModeChange={aiGen.setMode}
+        countText={aiGen.countText}
+        onCountChange={aiGen.setCountText}
+        count={aiGen.count}
+        pickedCount={aiGen.pickedCount}
+        generateBlockedReason={aiGen.generateBlockedReason}
+        unavailableText={aiGen.unavailableText}
+        onRun={aiGen.run}
+        onToggle={aiGen.toggle}
+        onApply={aiGen.apply}
+        onClose={aiGen.close}
       />
 
       <SplitLevelModal

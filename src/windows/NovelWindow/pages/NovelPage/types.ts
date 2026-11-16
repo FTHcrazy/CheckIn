@@ -8,29 +8,23 @@
  * 这一层只放类型，不放实现；渲染层与 hooks 通过它解耦。
  */
 
-/** 内置要素类型：预置五类 + custom 兜底（用户自建类型删除时的迁移落点） */
-export type BuiltinEntityType =
-  | "character"
-  | "location"
-  | "faction"
-  | "item"
-  | "level_system"
-  | "custom";
+// 要素 / 关联的类型定义已上提到 `@/shared/novel/entity-model`（R27 起关系图
+// 独立窗口也要读同一份模型，窗口之间禁止互相导入）。此处 re-export 保住既有
+// `../types` 导入路径不变。
+import type {
+  EntityType,
+  NovelEntity,
+  NovelLink,
+} from "@/shared/novel/entity-model";
 
-/**
- * 要素类型（R23 开放化）：内置六类 + 用户自建类型（id 固定 ct- 前缀）。
- * `(string & {})` 保住内置字面量的自动补全，同时放行任意自建 id；
- * 自建类型的展示 meta 由 EntityTypeContext 派生，不要直接查 ENTITY_TYPE_META。
- */
-export type EntityType = BuiltinEntityType | (string & {});
-
-/** 用户自建要素类型定义（R23）：整读整写存 config 键 novel_entity_types */
-export interface CustomEntityTypeDef {
-  id: string;
-  name: string;
-  /** 主色（具体色值，色板提供）；弱色由 color-mix 在使用处派生 */
-  color: string;
-}
+export type {
+  BuiltinEntityType,
+  CustomEntityTypeDef,
+  EntityFields,
+  EntityType,
+  NovelEntity,
+  NovelLink,
+} from "@/shared/novel/entity-model";
 
 /** 章节状态：草稿 / 完稿（PRD R1） */
 export type ChapterStatus = "draft" | "done";
@@ -69,6 +63,8 @@ export interface NovelWork {
   id: string;
   name: string;
   createdAt: number;
+  /** 题材（可选）：AI 起名 / 润色的风格锚点；未设置时 AI 层按书名 + 要素弱兜底 */
+  genre?: string;
 }
 
 /** 分卷（PRD R9） */
@@ -95,6 +91,14 @@ export interface NovelChapter {
    * 增量迁移列，历史数据缺失时按空串处理；空串表示尚未填写。
    */
   outlineNote?: string;
+  /** AI 摘要正文（R-AI-09；无则未生成） */
+  aiSummary?: string;
+  /** AI 摘要生成时间戳（无则未生成） */
+  aiSummaryAt?: number;
+  /** AI 摘要来源模型（手工编辑后为空 → 区分来源） */
+  aiSummaryModel?: string;
+  /** AI 摘要来源批次（M6 溯源，供「按批次撤销」；手工编辑后为空） */
+  aiSummaryBatch?: string;
 }
 
 /** 章节快照：每章环形保留 20 版（PRD R3） */
@@ -120,7 +124,9 @@ export interface NovelNote {
 }
 
 /** 灵感可编辑字段（内容 / 置顶 / 已转伏笔标记） */
-export type NotePatch = Partial<Pick<NovelNote, "content" | "pinned" | "foreshadowId">>;
+export type NotePatch = Partial<
+  Pick<NovelNote, "content" | "pinned" | "foreshadowId">
+>;
 
 /**
  * 大纲条目（PRD R7 大纲板）
@@ -144,37 +150,15 @@ export interface OutlineEntry {
 }
 
 /** 伏笔可编辑字段（增删由专用动作承载，不放这里）；chapterId 空串 = 退回卷级 */
-export type ForeshadowPatch = Partial<Pick<OutlineEntry, "title" | "note" | "chapterId">>;
+export type ForeshadowPatch = Partial<
+  Pick<OutlineEntry, "title" | "note" | "chapterId">
+>;
 
 /** 新建伏笔时由调用方补齐 id 与时间戳的草稿 */
 export type OutlineEntryDraft = Omit<OutlineEntry, "id" | "createdAt">;
 
-/** 要素自定义扩展字段 */
-export type EntityFields = Record<string, string>;
-
-/** 要素实体（原「设定卡」，PRD v0.4 R23） */
-export interface NovelEntity {
-  id: string;
-  workId: string;
-  type: EntityType;
-  name: string;
-  aliases: string[];
-  summary: string;
-  content: string;
-  fields: EntityFields;
-  sort: number;
-}
-
-/** 要素多态关联（PRD R24）：任意两个要素互相关联 */
-export interface NovelLink {
-  id: string;
-  fromType: EntityType;
-  fromId: string;
-  toType: EntityType;
-  toId: string;
-  relation: string;
-  note?: string;
-}
+// 要素 / 关联本体（EntityFields / NovelEntity / NovelLink）已在文件头从
+// `@/shared/novel/entity-model` re-export，这里不再重复声明。
 
 // ── 设定类型（1.4x：迁至 shared/novel 供两个设定窗口共用） ──
 // 定义集中在 `@/shared/novel/setting-types`（跨窗口共享位，不含 React）；
@@ -186,7 +170,12 @@ import type {
   SettingLevel,
 } from "@/shared/novel/setting-types";
 
-export type { CarryDirection, SettingCategory, SettingCategoryKind, SettingLevel };
+export type {
+  CarryDirection,
+  SettingCategory,
+  SettingCategoryKind,
+  SettingLevel,
+};
 
 /** 关联要素的展示视图（由 NovelLink + 要素表派生） */
 export interface EntityRelationView {
@@ -326,6 +315,15 @@ export interface EditorSettings {
   volumeSuffix: string;
   /** 防误触排序：拖拽后先弹确认框展示序号变更，确认才应用（默认开启） */
   confirmReorder: boolean;
+  /** 护眼纸质感：开启后正文叠低对比微颗粒（暗色主题无颗粒、只降文字对比） */
+  paperTexture: boolean;
+  /** 正文字体 family（空串 = 跟随系统默认）；字体下载后 @font-face 挂载生效 */
+  paperFont: string;
+  /**
+   * 阅读模式：只读正文（禁编辑）+ 隐藏光标，滚动到章节首/尾时自动加载
+   * 上一章 / 下一章（连续阅读，不打断）。默认关闭（写作态）。
+   */
+  readMode: boolean;
 }
 
 /**
@@ -349,6 +347,7 @@ export type {
   NameFavorite,
   NamingCustomPool,
   NamingKind,
+  NamingSource,
   NameStyle,
   NameStyleFamily,
   NameGender,

@@ -18,7 +18,7 @@
 
 .err-boundary__title {
   margin: 0;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
   color: var(--app-text-strong);
 }
@@ -26,7 +26,7 @@
 .err-boundary__hint {
   margin: 0;
   max-width: 420px;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.6;
   color: var(--app-text-secondary);
 }
@@ -50,7 +50,7 @@
   @include widget.ant-button-reset;
   --ant-control-height: 32px;
   --ant-button-padding-inline: 16px;
-  --ant-button-content-font-size: 13px;
+  --ant-button-content-font-size: 14px;
   --ant-button-font-weight: 500;
   --ant-border-radius: var(--app-radius-item);
   --ant-button-default-bg: var(--app-primary);

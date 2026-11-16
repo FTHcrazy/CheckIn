@@ -1,0 +1,121 @@
+@use "../../../../../../shared/styles/widget" as widget;
+
+/* 抽取设定面板（工具箱二级面板，R-AI-08）
+
+   控件一律由组件库承载（Button / Checkbox / Select）：外观只通过组件级 CSS
+   变量配置，不写 `:hover` / `:disabled` 属性规则（AGENTS §6.1.2）—— antd 的
+   状态选择器特异性更高，自写属性规则永远压不过它。
+   作用域收在 `.nv-panel` 之下，防止 `.nv-xp` 这类短类名泄漏到全局。 */
+
+.nv-panel .nv-xp {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: hidden;
+
+  /* 来源章节：标签 + 下拉一行。右栏可拖窄到 280，Select 必须能缩，
+     否则长章名会把整行撑出横向滚动 */
+  &__source {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  &__label {
+    flex: none;
+    font-size: 12px;
+    color: var(--app-text-secondary);
+  }
+
+  &__select {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  &__hint {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--app-text-muted);
+
+    &--warn {
+      color: var(--app-warning);
+    }
+
+    &--ok {
+      color: var(--app-success);
+    }
+  }
+
+  /* 候选列表：自己滚，不把面板撑长（面板高度由右栏决定） */
+  &__list {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    overflow-y: auto;
+    padding-right: 2px;
+
+    /* 滚动条只在悬停时显现（与其余面板一致） */
+    &::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    &::-webkit-scrollbar-thumb {
+      border-radius: 3px;
+      background: transparent;
+    }
+
+    &:hover::-webkit-scrollbar-thumb {
+      background: var(--app-border);
+    }
+  }
+
+  /* 底部「建卡并入库」：常驻在列表之下，滚到哪都能点到 */
+  &__foot {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding-top: 6px;
+    border-top: 1px solid var(--app-border);
+  }
+
+  &__count {
+    font-size: 12px;
+    color: var(--app-text-secondary);
+  }
+}
+
+/* 主按钮：先清零再声明尺寸（AGENTS §6.1.2 的清零点约定，`novel-ui-kit.test.ts`
+   会遍历所有 `.ant-btn` 复合选择器查 `--ant-control-height`）。
+   颜色不覆盖：实体色走 antd 的主题 token，`type="primary"` 自动跟随换肤。 */
+.nv-panel .nv-xp__confirm.ant-btn {
+  @include widget.ant-button-reset;
+  --ant-control-height: 30px;
+  --ant-border-radius: 8px;
+  --ant-button-padding-inline: 12px;
+  --ant-button-content-font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 12px;
+}
+
+/* 候选行里的类型下拉：行结构由共用组件 `AiCandidateList` 渲染（B7 起三处共用一个
+   候选列表），所以面板这边只剩「把下拉推到行尾」这一条。 */
+.nv-panel .nv-xp__type {
+  flex: none;
+  margin-left: auto;
+}

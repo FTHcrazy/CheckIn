@@ -31,7 +31,7 @@
   overflow: hidden;
   border-left: 1px solid var(--app-border);
   background: var(--app-surface-alt);
-  transition: width 220ms cubic-bezier(0.4, 0, 0.2, 1), opacity 160ms ease;
+  transition: width var(--app-t-slow) var(--app-ease-standard), opacity var(--app-t-fast) var(--app-ease-standard);
 
   &.is-collapsed {
     width: 0 !important;
@@ -57,7 +57,7 @@
       width: 1px;
       height: 100%;
       background: transparent;
-      transition: background 150ms ease;
+      transition: background var(--app-t-fast) var(--app-ease-standard);
     }
 
     &:hover::after,
@@ -89,6 +89,18 @@
     font-weight: 600;
     letter-spacing: 0.2px;
     white-space: nowrap;
+  }
+
+  /* 二级面板的面包屑上级（「工具 / 敏感词检测」）：灰一档、不抢子面板名 */
+  &__title-parent {
+    font-weight: 500;
+    color: var(--app-text-muted);
+  }
+
+  &__title-sep {
+    margin: 0 4px;
+    font-weight: 400;
+    color: var(--app-text-disabled);
   }
 
   &__meta {
@@ -149,6 +161,17 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
+
+    /* 按下的持久态（面板头的「工具」图标在工具箱展开时高亮）。
+       写成默认变量，让 hover / active 一起跟随，否则鼠标一掠过就掉回灰底 */
+    &.is-on {
+      --ant-button-default-bg: var(--app-primary-weak);
+      --ant-button-default-color: var(--app-primary);
+      --ant-button-default-hover-bg: var(--app-primary-weak);
+      --ant-button-default-hover-color: var(--app-primary);
+      --ant-button-default-active-bg: var(--app-primary-weak);
+      --ant-button-default-active-color: var(--app-primary);
+    }
   }
 
   /* REQ-049：「类型管理」入口 —— 图标 + 文字。沿 __icon 的配色口径，

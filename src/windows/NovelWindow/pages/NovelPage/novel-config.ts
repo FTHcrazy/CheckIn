@@ -28,15 +28,20 @@ export const LAYOUT = {
   drawerWidth: 300,
 } as const;
 
-/** 新建卷的默认存储名：展示时视为「未命名」不追加显示（左栏卷头与大纲板共用） */
-export const UNNAMED_VOLUME = "未命名卷";
+/**
+ * 新建卷的默认存储名：展示时视为「未命名」不追加显示（左栏卷头与大纲板共用）。
+ *
+ * 实现已下沉到 `@/shared/novel/plain-text`（导出拼装也要判它），这里 re-export
+ * 保持既有 import 路径不变。
+ */
+export { UNNAMED_VOLUME } from "@/shared/novel/plain-text";
 
 // ── 小说设定的默认值（定义已提升到 shared，见文件头 re-export） ──
 //
 // 设定中心组件被提升到 `src/shared/components/SettingCenter` 后跨窗口复用，
 // 这三个默认值 + 色板随之下沉到 `@/shared/novel/setting-defaults`
 // （shared 不允许 import windows）。这里 re-export 保持既有 import 路径不变。
-// 与主进程常量的一致性守卫见 `electron/novel-setting-defaults-guard.test.ts`。
+// 与主进程常量的一致性守卫见 `electron/handlers/novel/novel-setting-defaults-guard.test.ts`。
 
 export {
   CATEGORY_PALETTE,
@@ -102,6 +107,9 @@ export const DEFAULT_SETTINGS: EditorSettings = {
   chapterSuffix: "章",
   volumeSuffix: "卷",
   confirmReorder: true,
+  paperTexture: false,
+  paperFont: "",
+  readMode: false,
 };
 
 /**
@@ -115,69 +123,26 @@ export const VOLUME_SUFFIX_OPTIONS = ["卷", "部", "篇", "集"] as const;
 
 /** 设置抽屉可调范围 */
 export const SETTINGS_RANGE = {
-  fontSize: { min: 14, max: 24, step: 1 },
+  /**
+   * 正文字号 14–32（D-15）。
+   *
+   * 上限原本是 24：1080p 下够用，但在 4K / 缩放 150% 的屏上，24px 的正文
+   * 仍偏小 —— 而这恰恰是长篇作者最常见的显示器。上限放宽到 32（约等于
+   * A4 上的小三），滑杆步进保持 1，不影响既有档位的取值。
+   */
+  fontSize: { min: 14, max: 32, step: 1 },
   lineHeight: { min: 1.4, max: 2.4, step: 0.1 },
   paragraphSpacing: { min: 0, max: 1.6, step: 0.1 },
   dailyGoal: { min: 500, max: 20000, step: 500 },
 } as const;
 
-export interface EntityTypeMeta {
-  label: string;
-  /** 主色：头像底、名称、正文高亮描边 */
-  color: string;
-  /** 弱色：卡片底、筛选 chip 底、正文高亮底色 */
-  colorWeak: string;
-}
-
-/**
- * 内置要素类型语义色
- *
- * 设计方案 §02 要求「类型色在正文高亮、卡片头像、筛选 chips 三处严格一致」，
- * 这里统一映射到主窗口的四套主题变量上，换肤自动跟随。
- * 自定义类型（ct-*）的 meta 不在这里——由 EntityTypeContext 派生（R23）。
- */
-export const ENTITY_TYPE_META: Record<BuiltinEntityType, EntityTypeMeta> = {
-  character: {
-    label: "角色",
-    color: "var(--app-primary)",
-    colorWeak: "var(--app-primary-weak)",
-  },
-  location: {
-    label: "地点",
-    color: "var(--app-accent-green)",
-    colorWeak: "var(--app-accent-green-weak)",
-  },
-  faction: {
-    label: "势力",
-    color: "var(--app-accent-purple)",
-    colorWeak: "var(--app-accent-purple-weak)",
-  },
-  item: {
-    label: "物品",
-    color: "var(--app-accent-amber)",
-    colorWeak: "var(--app-accent-amber-weak)",
-  },
-  level_system: {
-    label: "等级体系",
-    color: "var(--app-accent-blue)",
-    colorWeak: "var(--app-accent-blue-weak)",
-  },
-  custom: {
-    label: "自定义",
-    color: "var(--app-text-secondary)",
-    colorWeak: "var(--app-surface-active)",
-  },
-};
-
-/** 要素库筛选顺序（内置部分）：全部在前，其余按语义分组；自定义类型追加在末尾 */
-export const ENTITY_FILTER_ORDER: BuiltinEntityType[] = [
-  "character",
-  "location",
-  "faction",
-  "item",
-  "level_system",
-  "custom",
-];
+// 要素类型语义色 / 筛选顺序已上提到 `@/shared/novel/entity-type-meta`
+// （R27 起关系图独立窗口共用同一份色表）。这里 re-export，既有导入路径不变。
+export {
+  ENTITY_TYPE_META,
+  ENTITY_FILTER_ORDER,
+} from "@/shared/novel/entity-type-meta";
+export type { EntityTypeMeta } from "@/shared/novel/entity-type-meta";
 
 /** 选区标记工具条的快捷类型（O3）：保持内置四类，自定义类型走资料卡编辑 */
 export const MARK_TYPE_OPTIONS: BuiltinEntityType[] = [

@@ -70,6 +70,14 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
     editable: true,
   },
   {
+    id: "toggleReadMode",
+    label: "阅读模式",
+    description: "正文只读并隐藏光标；滚到章首 / 章尾续滚即翻章",
+    group: "navigation",
+    defaultKeys: "F12",
+    editable: true,
+  },
+  {
     id: "escape",
     label: "关闭最上层浮层",
     description: "按优先级依次关闭设定中心 / 排版 / 快照 / 专注模式",

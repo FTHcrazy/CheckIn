@@ -1,17 +1,36 @@
 /**
  * electron-builder afterPack 钩子
  * 在打包后清理不需要的文件，减小安装包体积
+ *
+ * 2.0.0 起 locale 裁减已由 `build.electronLanguages: ["zh-CN","en-US"]` 前置到
+ * 打包阶段完成，本钩子的 locale 清理退化为兜底（配置被改回默认时仍能收口）。
+ * 每一次删除都打印文件名 + 体积，结尾汇总节省量与剩余 locale 数，便于核对。
+ *
+ * ⚠️ 不得删除的条目（写在这里防止下次「顺手清理」）：
+ * - `LICENSE.electron.txt`（Electron 的 MIT 许可证，1,096 B，与
+ *   `node_modules/electron/dist/LICENSE` 逐字节一致）：electron-builder 打包时会把
+ *   `electron/dist/LICENSE` 写成 `appOutDir/LICENSE.electron.txt`。删除即违反 MIT
+ *   「随分发附带版权声明」的要求，故已从删除清单移除，**禁止再加回去**。
+ * - `dxil.dll`（1.44 MB）：与已被删除的 `dxcompiler.dll` 配套，只服务 DXC 路径。
+ *   Electron 44（ANGLE 静态链入、且被载入每个进程）之后仍保留：ANGLE / Dawn 的
+ *   HLSL 编译有 **DXC（dxcompiler.dll + dxil.dll）与 FXC（d3dcompiler_47.dll）
+ *   双路径**，用 `UseDXC` 开关切换；本地删掉 DXC 后会回退到系统目录
+ *   （C:\Windows\System32）自带的 d3dcompiler_47.dll。留 1.44 MB 作为回滚缓冲，
+ *   收益不值得再压一层。真出 GPU 白屏时，优先把 `dxcompiler.dll` 从下方
+ *   DELETE_FILES 里移除，而不是删更多 DLL。
  */
 const fs = require('fs')
 const path = require('path')
 
-// 保留的 locale 文件
+// 保留的 locale 文件（zh-CN / en-US 之外的一律删除）
 const KEEP_LOCALES = new Set(['zh-CN.pak', 'en-US.pak'])
 
-// 要删除的大文件（对桌面应用无用）
+// 要删除的大文件（对桌面应用无用）。缺失时只记 debug，不抛错。
+// 2026-10-20 随 Electron 44.9.0 复核：清单内每个文件在 44 的 dist 中仍存在，
+// 且 44 **没有新增**可清理的大文件；`libEGL.dll` / `libGLESv2.dll` 已被官方移除
+// （ANGLE 静态链入 electron.exe），不再需要在这里列。
 const DELETE_FILES = [
   'LICENSES.chromium.html',        // 19 MB
-  'LICENSE.electron.txt',
   'version',
   'dxcompiler.dll',                // 24 MB - DirectX shader compiler (普通UI应用不需要)
   'vk_swiftshader.dll',            // 5 MB - Vulkan software renderer
@@ -21,41 +40,92 @@ const DELETE_FILES = [
 ]
 
 /**
+ * 统一的日志出口：info 打印到 stdout，debug 只在 CHECKIN_AFTERPACK_DEBUG=1 时输出。
+ * 缺失文件属于正常情况（Electron 版本间文件名会变），只记 debug。
+ * @param {'info'|'debug'} level
+ * @param {string} message
+ */
+function log(level, message) {
+  if (level === 'info') {
+    console.log(`[afterPack] ${message}`)
+    return
+  }
+  if (process.env.CHECKIN_AFTERPACK_DEBUG === '1') {
+    console.log(`[afterPack][debug] ${message}`)
+  }
+}
+
+/**
+ * 删除单个文件并累加节省量。
+ * @param {string} filePath 绝对路径
+ * @param {string} displayName 日志里展示的名字
+ * @param {{ bytes: number }} acc 累加器（可变）
+ * @returns {boolean} 是否真的删除了
+ */
+function removeFile(filePath, displayName, acc) {
+  if (!fs.existsSync(filePath)) {
+    log('debug', `跳过（不存在）: ${displayName}`)
+    return false
+  }
+  const stat = fs.statSync(filePath)
+  if (!stat.isFile()) {
+    log('debug', `跳过（不是文件）: ${displayName}`)
+    return false
+  }
+  fs.unlinkSync(filePath)
+  acc.bytes += stat.size
+  log('info', `删除: ${displayName} (${(stat.size / 1024 / 1024).toFixed(2)} MB)`)
+  return true
+}
+
+/**
  * @param {import('electron-builder').AfterPackContext} context
  */
 async function afterPack(context) {
   const appOutDir = context.appOutDir
   console.log(`[afterPack] 清理目录: ${appOutDir}`)
 
-  let savedBytes = 0
+  const acc = { bytes: 0 }
 
-  // 1. 清理 locale 文件
+  // 1. 清理 locale 文件（兜底：正常应由 electronLanguages 前置裁掉）
   const localesDir = path.join(appOutDir, 'locales')
+  let remainingLocales = 0
   if (fs.existsSync(localesDir)) {
     const files = fs.readdirSync(localesDir)
     for (const file of files) {
-      if (!KEEP_LOCALES.has(file)) {
-        const filePath = path.join(localesDir, file)
-        const stat = fs.statSync(filePath)
-        savedBytes += stat.size
-        fs.unlinkSync(filePath)
+      if (KEEP_LOCALES.has(file)) {
+        continue
       }
+      const filePath = path.join(localesDir, file)
+      const stat = fs.statSync(filePath)
+      if (!stat.isFile()) {
+        continue
+      }
+      acc.bytes += stat.size
+      fs.unlinkSync(filePath)
+      log('debug', `删除 locale: ${file} (${(stat.size / 1024).toFixed(1)} KB)`)
     }
-    console.log(`[afterPack] 清理了 ${files.length - KEEP_LOCALES.size} 个 locale 文件`)
+    remainingLocales = fs.readdirSync(localesDir).length
+    const removedLocales = files.length - remainingLocales
+    log(
+      'info',
+      removedLocales > 0
+        ? `清理了 ${removedLocales} 个 locale 文件（兜底生效，检查 electronLanguages 配置）`
+        : 'locale 已由 electronLanguages 前置裁减，无需兜底清理',
+    )
+  } else {
+    log('debug', '未找到 locales 目录（已由 electronLanguages 裁掉或本版本无 locales）')
   }
 
   // 2. 删除不需要的大文件
   for (const file of DELETE_FILES) {
-    const filePath = path.join(appOutDir, file)
-    if (fs.existsSync(filePath)) {
-      const stat = fs.statSync(filePath)
-      savedBytes += stat.size
-      fs.unlinkSync(filePath)
-      console.log(`[afterPack] 删除: ${file} (${(stat.size / 1024 / 1024).toFixed(1)} MB)`)
-    }
+    removeFile(path.join(appOutDir, file), file, acc)
   }
 
-  console.log(`[afterPack] 共节省: ${(savedBytes / 1024 / 1024).toFixed(1)} MB`)
+  log(
+    'info',
+    `本次 afterPack 共节省: ${(acc.bytes / 1024 / 1024).toFixed(2)} MB / 剩余 locales 数量: ${remainingLocales}`,
+  )
 
   // 3. 写入 exe 图标（唯一图标来源）。
   //    signAndEditExecutable 必须保持 false：开启会走 winCodeSign 工具链，
@@ -78,4 +148,3 @@ async function afterPack(context) {
 }
 
 module.exports = afterPack
-

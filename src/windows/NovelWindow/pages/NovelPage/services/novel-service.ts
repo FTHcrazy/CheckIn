@@ -1,11 +1,16 @@
 import { buildSearchSnippet, type LastPosition } from "../novel-utils";
 import { STORAGE_KEYS } from "../novel-config";
 import type {
+  NovelBackupExportResult,
+  NovelBackupPickResult,
+  NovelBackupRestoreResult,
   NovelGlobalSettingCategoryDTO,
   NovelSettingCategoryPatch,
   NovelSettingExportPayload,
   NovelSettingLevelPatch,
   NovelSettingTemplateDTO,
+  NovelTrashKind,
+  NovelTrashListResult,
   PublishToGlobalResult,
 } from "@/shared/types/electron";
 import type {
@@ -99,9 +104,57 @@ export async function renameWork(workId: string, name: string): Promise<boolean>
   return window.electronAPI!.novel.renameWork(workId, name);
 }
 
+/** 设置作品题材（novel-work-set-genre；传 null 即清空） */
+export async function setWorkGenre(workId: string, genre: string | null): Promise<boolean> {
+  return window.electronAPI!.novel.setWorkGenre(workId, genre);
+}
+
 /** 删除作品（novel-work-delete，主进程级联清理全部关联数据） */
 export async function removeWork(workId: string): Promise<boolean> {
   return window.electronAPI!.novel.deleteWork(workId);
+}
+
+// ── 数据安全（P0：一键全量备份 / 恢复 + 删除兜底） ──
+
+/**
+ * 删除作品 → 移入回收站（novel-work-trash，软删除）。
+ *
+ * ⚠️ 与 `removeWork` 的分工：日常删除一律走这里（只打 deleted_at，卷章正文 /
+ * 要素 / 行囊全都留着，30 天内可恢复）；`removeWork` 是**彻底删除**，只由
+ * 回收站的「彻底删除 / 清空」与过期清理调用。
+ */
+export async function trashWork(workId: string): Promise<boolean> {
+  return window.electronAPI!.novel.trashWork(workId);
+}
+
+/** 回收站列表（作品 / 卷 / 章三类，含规模与剩余可恢复天数） */
+export async function listTrash(): Promise<NovelTrashListResult> {
+  return window.electronAPI!.novel.listTrash();
+}
+
+/** 从回收站恢复条目（作品只清标记；卷 / 章会处理原位置被占的情况） */
+export async function restoreTrash(
+  kind: NovelTrashKind,
+  id: string,
+): Promise<boolean> {
+  return window.electronAPI!.novel.restoreTrash(kind, id);
+}
+
+/** 一键全量备份（打包 novel.db + manifest，主进程弹保存框） */
+export async function exportNovelBackup(): Promise<NovelBackupExportResult> {
+  return window.electronAPI!.novel.exportBackup();
+}
+
+/** 选备份包并校验（只读清单，返回规模摘要供确认） */
+export async function pickNovelBackup(): Promise<NovelBackupPickResult> {
+  return window.electronAPI!.novel.pickBackup();
+}
+
+/** 用备份包覆盖整库（主进程先留底，失败自动回滚） */
+export async function restoreNovelBackup(
+  filePath: string,
+): Promise<NovelBackupRestoreResult> {
+  return window.electronAPI!.novel.restoreBackup(filePath);
 }
 
 /** 重置摘要（novel-editor-reset-template 返回，toast 汇报用） */
@@ -176,6 +229,16 @@ function countOccurrences(haystack: string, needle: string): number {
   return count;
 }
 
+/**
+ * 批量建卡（R-AI-08）：主进程单事务写完再广播 `novel-entities-changed`。
+ *
+ * 与逐张 `saveEntity` 的区别只在原子性：AI 抽取一次给十几张，逐张写会留下
+ * 「建了一半」的设定库，作者无法判断该重做哪些。
+ */
+export async function saveEntitiesBatch(entities: NovelEntity[]): Promise<boolean> {
+  return window.electronAPI!.novel.saveEntitiesBatch(entities);
+}
+
 /** 新建章节落库（novel-chapter-add；id 已由渲染层生成） */
 export async function addChapter(chapter: NovelChapter): Promise<boolean> {
   return window.electronAPI!.novel.addChapter(chapter);
@@ -186,9 +249,14 @@ export async function renameChapter(chapterId: string, title: string): Promise<b
   return window.electronAPI!.novel.renameChapter(chapterId, title);
 }
 
-/** 删除章节（novel-chapter-delete，主进程同事务清理历史快照） */
+/** 删除章节 = 移入回收站（novel-chapter-delete，软删除；正文与快照都保留） */
 export async function removeChapter(chapterId: string): Promise<boolean> {
   return window.electronAPI!.novel.deleteChapter(chapterId);
+}
+
+/** 彻底删除章节（novel-chapter-purge，级联清理历史快照，不可恢复） */
+export async function purgeChapter(chapterId: string): Promise<boolean> {
+  return window.electronAPI!.novel.purgeChapter(chapterId);
 }
 
 /** 章节状态切换（novel-chapter-status） */
@@ -205,6 +273,16 @@ export async function saveChapterOutline(
   note: string,
 ): Promise<boolean> {
   return window.electronAPI!.novel.saveChapterOutline(chapterId, note);
+}
+
+/** 章节 AI 摘要保存（novel-chapter-summary-save；model/batch 空串 = 手工编辑清空来源标记） */
+export async function saveChapterSummary(
+  chapterId: string,
+  summary: string,
+  model?: string,
+  batch?: string,
+): Promise<boolean> {
+  return window.electronAPI!.novel.saveChapterSummary(chapterId, { summary, model, batch });
 }
 
 /** 章节批量重排 / 跨卷移动落库（novel-chapter-order） */
@@ -231,9 +309,14 @@ export async function saveVolumeOrder(
   return window.electronAPI!.novel.saveVolumeOrder(updates);
 }
 
-/** 删除卷落库（novel-volume-delete，主进程同事务清理章节 / 快照 / 大纲条目） */
+/** 删除卷 = 移入回收站（novel-volume-delete，卷与卷内章节同批打标，可恢复） */
 export async function removeVolume(volumeId: string): Promise<boolean> {
   return window.electronAPI!.novel.deleteVolume(volumeId);
+}
+
+/** 彻底删除卷（novel-volume-purge，级联清理章节 / 快照 / 大纲条目） */
+export async function purgeVolume(volumeId: string): Promise<boolean> {
+  return window.electronAPI!.novel.purgeVolume(volumeId);
 }
 
 /** 要素保存（novel-entity-save，upsert：新建 / 编辑 / 别名关联共用） */
@@ -360,7 +443,7 @@ export async function addSettingLevel(
 /** 批量新增等级项：全部追加到末尾，返回实际插入条数（1.37.0） */
 export async function batchAddSettingLevels(
   categoryId: string,
-  items: Array<{ id: string; name: string; subLevels?: number; subPattern?: string }>,
+  items: Array<{ id: string; name: string; note?: string; subLevels?: number; subPattern?: string }>,
 ): Promise<number> {
   return window.electronAPI!.novel.settingLevelBatchAdd(categoryId, items);
 }

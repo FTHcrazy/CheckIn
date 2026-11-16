@@ -17,14 +17,14 @@ import { resolve } from "node:path";
  *
  * 为什么只能钉源码：这些是**跨进程**的连线（渲染层 / 主进程 / preload），
  * better-sqlite3 按 Electron ABI 编译，vitest 的 node 进程加载不了，
- * 端到端跑不起来。同 `electron/novel-db-split.test.ts` 的做法。
+ * 端到端跑不起来。同 `electron/novel/novel-db-split.test.ts` 的做法。
  */
 
 const root = resolve(__dirname, "../../../..");
 const read = (relative: string): string =>
   readFileSync(resolve(root, relative), "utf8").replace(/\r\n/g, "\n");
 
-const HANDLERS = read("electron/handlers/novel-pack-handlers.ts");
+const HANDLERS = read("electron/handlers/novel/novel-pack-handlers.ts");
 const HOST = read("src/shared/components/CharacterPack/index.tsx");
 const PANEL = read("src/shared/components/CharacterPack/hooks/usePackPanel.ts");
 const PRELOAD = read("electron/preload.ts");

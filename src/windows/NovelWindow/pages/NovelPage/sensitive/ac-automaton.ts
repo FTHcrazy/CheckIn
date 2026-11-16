@@ -51,11 +51,16 @@ export class AcAutomaton {
   }
 
   /**
-   * 扫描文本，返回**互不重叠**的命中区间。
+   * 扫描文本，返回命中区间（已按起点升序、同起点长词优先）。
    *
-   * 重叠处理：同一起点上长词优先，被前一条覆盖的短命中直接丢弃
-   * （「色情小说」与「色情」命中同一处时只留前者），
-   * 这样调用方可以直接拿去建 CodeMirror 的 RangeSet，不必再排序去重。
+   * 重叠只做「冗余去重」，不做「独立词裁剪」：
+   *   - 同一起点：长词优先，被长词吞掉的短词不再单独产出
+   *     （「色情小说」与「色情」命中同一处时只留前者）；
+   *   - 一条区间完全被另一条覆盖：被覆盖的那条是冗余，丢弃
+   *     （「she」覆盖「he」时只留「she」）。
+   *   - **部分重叠但不同起点**：两者是不同词，**都保留**
+   *     （词库含「ABCD」「CDEF」、正文「ABCDEF」时两条都要报）。
+   * 调用方直接拿去建 CodeMirror 的 RangeSet 即可（RangeSet 支持重叠区间）。
    */
   match(text: string): AcMatch[] {
     if (!text || this.patterns.length === 0) return [];
@@ -142,16 +147,31 @@ export class AcAutomaton {
   }
 }
 
-/** 按起点升序、同起点长词优先，丢弃与前一条重叠的命中 */
+/**
+ * 按起点升序、同起点长词优先，做**冗余去重**。
+ *
+ * 只丢弃两类冗余命中：
+ *   - 同起点：长词已排前（sort 的 `b.to - a.to` 保证），短词是长词的子串冗余；
+ *   - 完全被前一条覆盖：区间整个落在前一条内部。
+ *
+ * **不**丢弃「部分重叠但不同起点」的命中——那可能是两个独立的词
+ * （「ABCD」与「CDEF」），丢一条就是漏报一个真实敏感词。
+ * 判断基准取 `result` 的最后一条（而非全局 lastEnd）：from 严格递增，
+ * 若某条被更早的区间覆盖，它也必然被最后一条覆盖，看最后一条即可。
+ */
 function dedupe(hits: AcMatch[]): AcMatch[] {
   if (hits.length <= 1) return hits;
   hits.sort((a, b) => a.from - b.from || b.to - a.to);
   const result: AcMatch[] = [];
-  let lastEnd = -1;
   for (const hit of hits) {
-    if (hit.from < lastEnd) continue;
+    const prev = result[result.length - 1];
+    if (prev) {
+      // 同起点：长词在前，这条短词是冗余
+      if (hit.from === prev.from) continue;
+      // 完全被前一条覆盖：区间落在内部，冗余
+      if (hit.to <= prev.to) continue;
+    }
     result.push(hit);
-    lastEnd = hit.to;
   }
   return result;
 }

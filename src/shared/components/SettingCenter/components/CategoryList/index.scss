@@ -23,7 +23,7 @@
      直接摊在入口处，新手不必猜「设定分类」里有什么 */
   &__side-desc {
     margin: 0;
-    font-size: 11px;
+    font-size: 12px;
     line-height: 1.5;
     color: var(--app-text-muted);
   }
@@ -67,7 +67,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 13px;
+    font-size: 14px;
     color: var(--app-text);
 
     .nv-sc__cat.is-on & {
@@ -78,7 +78,7 @@
 
   &__cat-count {
     flex-shrink: 0;
-    font-size: 11px;
+    font-size: 12px;
     color: var(--app-text-muted);
   }
 

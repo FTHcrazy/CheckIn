@@ -17,7 +17,11 @@ import type {
   NovelGlobalSettingCategoryPatch,
   NovelGlobalSettingLevelPatch,
 } from "@/shared/types/electron";
-import type { SettingCategory, SettingCategoryKind } from "@/shared/novel/setting-types";
+import type {
+  LevelBatchItem,
+  SettingCategory,
+  SettingCategoryKind,
+} from "@/shared/novel/setting-types";
 import { toSettingCategory } from "@/shared/novel/setting-mappers";
 import { DEFAULT_CATEGORY_COLOR } from "@/shared/novel/setting-defaults";
 import { moveLevel, previewSplit } from "@/shared/novel/setting-utils";
@@ -63,7 +67,7 @@ export interface GlobalSettingController {
   onDeleteCategory: (categoryId: string) => void;
   onReorderCategories: (orderedIds: string[]) => void;
   onAddLevel: (categoryId: string, name: string, index: number) => void;
-  onBatchAddLevels: (categoryId: string, names: string[]) => void;
+  onBatchAddLevels: (categoryId: string, items: LevelBatchItem[]) => void;
   onPatchLevel: (levelId: string, patch: NovelGlobalSettingLevelPatch) => void;
   onDeleteLevel: (levelId: string) => void;
   onReorderLevels: (categoryId: string, fromId: string, toIndex: number) => void;
@@ -258,15 +262,22 @@ export function useGlobalSetting(): GlobalSettingController {
   );
 
   const onBatchAddLevels = useCallback(
-    (categoryId: string, names: string[]): void => {
-      const cleaned = names.map((name) => name.trim()).filter(Boolean).slice(0, 99);
+    (categoryId: string, items: LevelBatchItem[]): void => {
+      const cleaned = items
+        .map((item) => ({ name: item.name.trim(), note: item.note?.trim() ?? "" }))
+        .filter((item) => item.name)
+        .slice(0, 99);
       if (cleaned.length === 0) return;
       const api = window.electronAPI?.novel;
       if (!api) return;
       void api
         .globalLevelBatchAdd(
           categoryId,
-          cleaned.map((name) => ({ id: createNovelId("gsl"), name })),
+          cleaned.map((item) => ({
+            id: createNovelId("gsl"),
+            name: item.name,
+            ...(item.note ? { note: item.note } : {}),
+          })),
         )
         .then(() => reload());
     },

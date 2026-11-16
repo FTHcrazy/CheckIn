@@ -120,14 +120,14 @@
     gap: 8px;
     padding-block: 6px;
     text-align: left;
-    transition: background 140ms ease;
+    transition: background var(--app-t-fast) var(--app-ease-standard);
   }
 
   &__vol-chev {
     flex: none;
     font-size: 12px;
     color: var(--app-text-disabled);
-    transition: transform 200ms ease;
+    transition: transform var(--app-t-slow) var(--app-ease-standard);
   }
 
   &__vol.is-fold &__vol-chev {
@@ -186,7 +186,7 @@
     align-items: center;
     justify-content: center;
     width: 24px;
-    transition: background 140ms ease, color 140ms ease;
+    transition: background var(--app-t-fast) var(--app-ease-standard), color var(--app-t-fast) var(--app-ease-standard);
   }
 
   &__vol-list {
@@ -257,7 +257,7 @@
     padding-inline-end: 34px;
     border: 1px solid transparent;
     border-radius: 9px;
-    transition: background 140ms ease, border-color 140ms ease;
+    transition: background var(--app-t-fast) var(--app-ease-standard), border-color var(--app-t-fast) var(--app-ease-standard);
 
     &:hover {
       background: var(--app-surface-hover);
@@ -294,7 +294,7 @@
     justify-content: center;
     width: 20px;
     opacity: 0;
-    transition: opacity 140ms ease, background 140ms ease, color 140ms ease;
+    transition: opacity var(--app-t-fast) var(--app-ease-standard), background var(--app-t-fast) var(--app-ease-standard), color var(--app-t-fast) var(--app-ease-standard);
 
     & > svg,
     & > .anticon {
@@ -398,12 +398,19 @@
     color: var(--app-primary);
   }
 
+  /* 章标题：降为**次级**信息（O-04）。
+     设计意图：右栏大纲是「结构编辑」而不是「导航」——导航交给左树。所以
+     作者在右栏真正要读的是「这章写了什么」（梗概），章名只用来定位。
+     12px 是字号下限，层级靠字号 + 色阶表达，不再往下缩。 */
   &__title {
     flex: 1;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--app-text-secondary);
   }
 
   &__words {
@@ -480,8 +487,8 @@
   &__ch-fs-chev {
     width: 9px;
     height: 9px;
-    font-size: 10px;
-    transition: transform 180ms ease;
+    font-size: 12px;
+    transition: transform var(--app-t-normal) var(--app-ease-standard);
   }
 
   &__ch-fs.is-expanded &__ch-fs-chev {
@@ -509,7 +516,7 @@
   }
 
   &__fs-item.is-compact &__fs-title {
-    font-size: 13px;
+    font-size: 14px;
   }
 
   /* 标识的悬浮预览（走组件库 Tooltip）：不点开也能先看清是哪几条 */
@@ -553,13 +560,15 @@
     @include widget.ant-button-reset;
     --ant-control-height: auto;
     --ant-button-padding-inline: 8px;
-    --ant-button-content-font-size: 12px;
+    /* 梗概升为行内主体（O-04）：14px + 正文色。它是「这章写了什么」的答案，
+       与章标题的主次关系整个交换过来 */
+    --ant-button-content-font-size: 14px;
     --ant-border-radius: 6px;
-    --ant-button-default-color: var(--app-text-secondary-strong);
+    --ant-button-default-color: var(--app-text);
     --ant-button-default-hover-bg: var(--app-surface-hover);
-    --ant-button-default-hover-color: var(--app-text);
+    --ant-button-default-hover-color: var(--app-text-strong);
     --ant-button-default-active-bg: var(--app-surface-hover);
-    --ant-button-default-active-color: var(--app-text);
+    --ant-button-default-active-color: var(--app-text-strong);
     --ant-button-default-shadow: none;
 
     /* 梗概最长 60 字，窄面板下放不下一行：限 2 行 + 省略号（antd 的 .ant-btn 带
@@ -577,7 +586,7 @@
     padding-inline-start: 30px;
     text-align: left;
     cursor: text;
-    transition: background 140ms ease, color 140ms ease;
+    transition: background var(--app-t-fast) var(--app-ease-standard), color var(--app-t-fast) var(--app-ease-standard);
 
     &.is-empty {
       --ant-button-default-color: var(--app-text-disabled);
@@ -598,7 +607,7 @@
     background: var(--app-input-bg);
     color: var(--app-text);
     font-family: inherit;
-    font-size: 12px;
+    font-size: 14px;
     outline: none;
   }
 
@@ -649,7 +658,7 @@
     border: 1px solid var(--app-border);
     border-radius: var(--app-radius-item);
     background: var(--app-surface);
-    transition: opacity 200ms ease, border-color 200ms ease;
+    transition: opacity var(--app-t-slow) var(--app-ease-standard), border-color var(--app-t-slow) var(--app-ease-standard);
   }
 
   /* 回收勾选圈：未回收时不露勾（字色透明），hover 描边转成功色走变量 */
@@ -673,7 +682,7 @@
     width: 17px;
     margin-top: 2px;
     flex: none;
-    transition: background 180ms ease, border-color 180ms ease, color 180ms ease;
+    transition: background var(--app-t-normal) var(--app-ease-standard), border-color var(--app-t-normal) var(--app-ease-standard), color var(--app-t-normal) var(--app-ease-standard);
   }
 
   &__check-mark {
@@ -715,7 +724,7 @@
     display: flex;
     gap: 1px;
     opacity: 0;
-    transition: opacity 150ms ease;
+    transition: opacity var(--app-t-fast) var(--app-ease-standard);
   }
 
   &__fs-item:hover &__fs-tools,
@@ -871,7 +880,7 @@
     --ant-button-default-shadow: none;
 
     justify-content: center;
-    transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+    transition: background var(--app-t-fast) var(--app-ease-standard), color var(--app-t-fast) var(--app-ease-standard), border-color var(--app-t-fast) var(--app-ease-standard);
   }
 
   &__cancel.ant-btn {
@@ -890,7 +899,7 @@
     --ant-button-default-shadow: none;
 
     justify-content: center;
-    transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+    transition: background var(--app-t-fast) var(--app-ease-standard), color var(--app-t-fast) var(--app-ease-standard), border-color var(--app-t-fast) var(--app-ease-standard);
   }
 }
 

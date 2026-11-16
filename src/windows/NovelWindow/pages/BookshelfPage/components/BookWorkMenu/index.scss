@@ -1,0 +1,99 @@
+// 书卡右键菜单：mask 铺满视口抓取点外部 / 右键空白，菜单按光标 fixed 落位。
+//
+// 菜单项是 antd Button：清零点 mixin 与组件变量必须写在**同一个**
+// `.类名.ant-btn` 选择器里（§6.1.2），hover / disabled 不写属性规则——
+// antd 的状态选择器权重更高，只能改它读取的 --ant-button-* 变量。
+@use "../../../../../../shared/styles/widget" as widget;
+
+.bs-workmenu__mask {
+  position: fixed;
+  inset: 0;
+  z-index: 58;
+  background: transparent;
+}
+
+.bs-workmenu {
+  position: fixed;
+  z-index: 59;
+  box-sizing: border-box;
+  width: 224px;
+  /* 小窗口里菜单比视口还高时内部滚动，而不是被切掉一截 */
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-chip);
+  background: var(--app-surface-elevated);
+  box-shadow: var(--app-shadow-pop);
+
+  &__title {
+    margin: 0;
+    padding: 5px 8px 8px;
+    border-bottom: 1px dashed var(--app-border);
+    color: var(--app-text-secondary);
+    font-size: 12px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  &__items {
+    display: grid;
+    gap: 2px;
+    padding-top: 4px;
+  }
+
+  &__divider {
+    height: 1px;
+    margin: 5px 4px;
+    background: var(--app-border);
+  }
+
+  &__item.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: auto;
+    --ant-border-radius: 6px;
+    --ant-button-content-font-size: 13px;
+    --ant-button-default-color: var(--app-text);
+    --ant-button-default-hover-bg: var(--app-surface-hover);
+    --ant-button-default-active-bg: var(--app-surface-hover);
+    --ant-button-default-shadow: none;
+
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    padding: 7px 9px;
+    text-align: left;
+
+    &:focus-visible {
+      outline: 2px solid var(--app-primary);
+      outline-offset: -2px;
+    }
+
+    /* 危险项只换文字色：底色仍走 antd 的 hover 变量，不另写 hover 规则 */
+    &.is-danger {
+      --ant-button-default-color: var(--app-error);
+    }
+  }
+
+  &__form-error {
+    margin: 8px 0 0;
+    color: var(--app-error);
+    font-size: 12px;
+  }
+
+  &__form-hint {
+    margin: 10px 0 0;
+    color: var(--app-text-muted);
+    font-size: 12px;
+  }
+
+  &__delete-name {
+    margin: 0 0 8px;
+    color: var(--app-text);
+    font-size: 15px;
+    font-weight: 700;
+  }
+}

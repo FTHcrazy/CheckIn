@@ -1,0 +1,28 @@
+/**
+ * 标题栏左侧导航区的「分隔线 + 当前位置」。
+ *
+ * 返回按钮的造型在 BackEntry 自己的样式里，这里只承担两件事：
+ * - 用一条 1px 竖线把「动作」和「位置」分开，避免两个文本挤成一句话
+ * - 让页面名称成为左侧的视觉重心（back 用次级色、标题用主文本色）
+ *
+ * 间距由 .window-header__leading 的 gap 统一给，这里不重复写 margin。
+ */
+.header-nav__divider {
+  width: 1px;
+  height: 14px;
+  // 比常规分隔线重一档：标题栏底色与页面同色，用 --app-border 会几乎看不见
+  background: var(--app-border-strong);
+  flex: none;
+}
+
+.header-nav__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--app-text);
+  letter-spacing: 0.2px;
+  // 长页面名先截断，别把右侧的控制按钮挤走
+  max-width: 40vw;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

@@ -7,7 +7,11 @@
  * - 子组件各自重复定义 props / 草稿类型，改一处漏两处。
  */
 
-import type { CarryDirection, SettingCategory } from "@/shared/novel/setting-types";
+import type {
+  CarryDirection,
+  LevelBatchItem,
+  SettingCategory,
+} from "@/shared/novel/setting-types";
 
 /**
  * 设定中心的数据来源：
@@ -54,8 +58,8 @@ export interface SettingCenterProps {
   onDeleteCategory: (categoryId: string) => void;
   onReorderCategories: (orderedIds: string[]) => void;
   onAddLevel: (categoryId: string, name: string, index: number) => void;
-  /** 批量生成：names 顺序即阶梯序，全部追加到末尾（1.37.0） */
-  onBatchAddLevels: (categoryId: string, names: string[]) => void;
+  /** 批量生成：items 顺序即阶梯序，全部追加到末尾（1.37.0；2.17.1 起带 note） */
+  onBatchAddLevels: (categoryId: string, items: LevelBatchItem[]) => void;
   onPatchLevel: (
     levelId: string,
     patch: {
@@ -116,6 +120,17 @@ export interface SettingCenterProps {
   ) => Promise<{ ok: boolean; conflict?: boolean }>;
   /** 轻提示（上架成功 / 失败 / 引用提示）；不传则静默 */
   onNotify?: (text: string, tone?: "success" | "info" | "warning" | "error") => void;
+
+  // ── AI 等级体系生成 / 拓展（R-AI-18） ──
+
+  /**
+   * 作品题材（如「仙侠」）。只用于 AI 排阶梯时让体系贴合世界观；
+   * 不传 = 题材未设置，prompt 走中性东方玄幻口径。
+   *
+   * 全局设定中心（跨书共享）不传：库里没有「这一本书的题材」这回事，
+   * 硬猜反而会把某本书的口径塞进公共库。
+   */
+  workGenre?: string | null;
 }
 
 /** 分类卡的可编辑草稿 */

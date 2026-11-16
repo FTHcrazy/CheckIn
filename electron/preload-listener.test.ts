@@ -24,7 +24,9 @@ const PRELOAD = readFileSync(
 function windowApiBody(): string {
   const start = PRELOAD.indexOf("windowAPI: {");
   expect(start).toBeGreaterThan(-1);
-  return PRELOAD.slice(start, start + 1600);
+  // 截到下一个顶层分组（`memo:`）为止：窗口 API 增删方法时不会把 off 挤出切片
+  const end = PRELOAD.indexOf("\n  memo: {", start);
+  return PRELOAD.slice(start, end > start ? end : start + 4000);
 }
 
 describe("windowAPI 监听注销", () => {

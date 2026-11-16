@@ -25,6 +25,10 @@ import type {
 export interface WorkCardView {
   id: string;
   name: string;
+  /** 题材（可空：建书第二步可跳过）；展示口径见 `formatGenreLabel` */
+  genre?: string;
+  /** 封面（可空）：主进程压好的 data URL；空时书卡用程序化渐变封面 */
+  cover?: string;
   createdAt: number;
   /** 全部章节字数之和 */
   totalWords: number;
@@ -43,6 +47,8 @@ export interface ShelfNumberStyle {
   chapterSuffix: string;
   volumeSuffix: string;
   dailyGoal: number;
+  /** 段首缩进（导出 TXT 跟编辑器设置走）；旧测试 fixture 可不带，缺省 = 开启 */
+  paragraphIndent?: boolean;
 }
 
 /** 继续写作 Hero 的展示数据（G1 / R6：打开即回到上次位置） */
@@ -74,6 +80,17 @@ export function formatWordsCompact(words: number): string {
   const wan = safe / 10_000;
   const text = wan >= 100 ? String(Math.round(wan)) : wan.toFixed(1).replace(/\.0$/, "");
   return `${text} 万`;
+}
+
+/**
+ * 题材展示文案：空 = 未归属。
+ *
+ * 建书第二步允许跳过题材，跳过不等于「没有这一栏」——书卡上把话说明白
+ * （`题材：未归属`）作者才知道这里还能补，留空只会让人以为没做这个字段。
+ */
+export function formatGenreLabel(genre?: string): string {
+  const trimmed = genre?.trim();
+  return `题材：${trimmed ? trimmed : "未归属"}`;
 }
 
 /** 相对时间（Hero「上次写到 · 12 分钟前」） */
@@ -152,6 +169,8 @@ export function buildWorkCards(bundle: NovelBundleDTO): WorkCardView[] {
     return {
       id: work.id,
       name: work.name,
+      ...(work.genre ? { genre: work.genre } : {}),
+      ...(work.cover ? { cover: work.cover } : {}),
       createdAt: work.createdAt,
       totalWords,
       chapterCount: chapters.length,

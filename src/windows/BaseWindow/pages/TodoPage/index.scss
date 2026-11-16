@@ -4,10 +4,13 @@
   grid-template-columns: minmax(0, auto) minmax(0, 1fr);
   gap: 12px;
   width: calc(100% - 24px);
-  // 相对 .page（.page 已扣除 WindowHeader 高度），不用 100vh
-  height: calc(100% - 80px);
+  // .page 是 flex 列（正文从窗口标题栏下方开始），本页作为其子项用 flex:1 吃满剩余高度。
+  // 不要写 calc(100% - Npx) 这类魔法数（原先是减导航条高度），也不要写 100vh。
+  flex: 1;
+  min-height: 0;
   margin: 0 12px;
-  padding: 0;
+  // 顶部 12px 与其它子页面统一：原先这段留白由页内导航条提供
+  padding: 12px 0;
   overflow: hidden;
   box-sizing: border-box;
 }

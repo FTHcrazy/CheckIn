@@ -13,6 +13,48 @@
 
 | 文件 | 覆盖版本 |
 |------|---------|
+| `CHANGELOG-2.41.md` | 2.41.0 |\n| `CHANGELOG-2.40.md` | 2.40.0 |
+| `CHANGELOG-2.39.md` | 2.39.0 |
+| `CHANGELOG-2.38.md` | 2.38.0 |
+| `CHANGELOG-2.37.md` | 2.37.0 |
+| `CHANGELOG-2.36.md` | 2.36.0 – 2.36.4 |
+| `CHANGELOG-2.35.md` | 2.35.0 |
+| `CHANGELOG-2.34.md` | 2.34.0 |
+| `CHANGELOG-2.33.md` | 2.33.0 |
+| `CHANGELOG-2.32.md` | 2.32.0 |
+| `CHANGELOG-2.31.md` | 2.31.0 |
+| `CHANGELOG-2.30.md` | 2.30.0 |
+| `CHANGELOG-2.29.md` | 2.29.0 |
+| `CHANGELOG-2.28.md` | 2.28.0 |
+| `CHANGELOG-2.27.md` | 2.27.0 |
+| `CHANGELOG-2.26.md` | 2.26.0 |
+| `CHANGELOG-2.25.md` | 2.25.0 |
+| `CHANGELOG-2.24.md` | 2.24.0 |
+| `CHANGELOG-2.23.md` | 2.23.0 |
+| `CHANGELOG-2.22.md` | 2.22.0 |
+| `CHANGELOG-2.21.md` | 2.21.0 |
+| `CHANGELOG-2.20.md` | 2.20.0 |
+| `CHANGELOG-2.19.md` | 2.19.0 |
+| `CHANGELOG-2.18.md` | 2.18.0 |
+| `CHANGELOG-2.17.md` | 2.17.0 – 2.17.2 |
+| `CHANGELOG-2.16.md` | 2.16.0 |
+| `CHANGELOG-2.15.md` | 2.15.0 – 2.15.1 |
+| `CHANGELOG-2.14.md` | 2.14.0 |
+| `CHANGELOG-2.13.md` | 2.13.0 |
+| `CHANGELOG-2.12.md` | 2.12.0 |
+| `CHANGELOG-2.11.md` | 2.11.0 |
+| `CHANGELOG-2.10.md` | 2.10.0 – 2.10.6 |
+| `CHANGELOG-2.9.md` | 2.9.0 – 2.9.2 |
+| `CHANGELOG-2.8.md` | 2.8.0 |
+| `CHANGELOG-2.7.md` | 2.7.0 |
+| `CHANGELOG-2.6.md` | 2.6.0 – 2.6.3 |
+| `CHANGELOG-2.5.md` | 2.5.0 – 2.5.1 |
+| `CHANGELOG-2.4.md` | 2.4.0 |
+| `CHANGELOG-2.3.md` | 2.3.0 |
+| `CHANGELOG-2.2.md` | 2.2.0 – 2.2.2 |
+| `CHANGELOG-2.1.md` | 2.1.0 – 2.1.2 |
+| `CHANGELOG-2.0.md` | 2.0.0 |
+| `CHANGELOG-1.46.md` | 1.46.1 – 1.46.2 |
 | `CHANGELOG-1.45.md` | 1.45.0 – 1.45.1 |
 | `CHANGELOG-1.44.md` | 1.44.0 – 1.44.1 |
 | `CHANGELOG-1.43.md` | 1.43.0 – 1.43.1 |
@@ -35,4 +77,8 @@
 - 新增归档：跑 `node scripts/split-changelog.mjs`（自动按次版本切分并重写主文件的归档说明），
   再在**本表顶部**补一行；
 - 归档是**纯搬运**：不改写条目、不合并版本、不调整日期，条目与该版本在主文件里时逐字一致；
-- 主文件当前只剩最新次版本（1.46.x），一旦它超过 800 行就再次分流。
+- 分组键是 **`major.minor`**（不是单独的数字 minor）：只认 minor 会把 `1.46` 排到 `2.0` 前面，
+  1.46 被当「最新版」留在主文件、2.0 反被归档，归档指针就出现「归档到 2.0.0，却只保留 1.46.1 之后」这种自相矛盾；
+- 主文件当前保留 `2.42.0 – 2.52.0`（**795 行**，2026-11-10 校核），下次超过 800 行时再从 2.42 往前分流；
+- 守卫：`electron/changelog-archive-guard.test.ts` 断言主文件 ≤ 800 行、归档不超限、索引无断链 ——
+  改完 CHANGELOG 必须跑一次，不要等「下次一起拆」。

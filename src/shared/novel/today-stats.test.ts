@@ -77,7 +77,9 @@ describe("today-stats —— 消费方不许各写各的（源码守卫）", () 
     expect(stripComments(bar)).not.toContain("todayAdded");
   });
 
-  it("整仓只有 today-stats.ts 允许出现「今日新增」字面量", () => {
+  // 整仓扫描：单跑 ~200ms，但全量并行时 CPU 争抢能到 5s+，会假红成超时
+  // （默认 5000ms）。这里给足余量，断言本身不变。
+  it("整仓只有 today-stats.ts 允许出现「今日新增」字面量", { timeout: 30_000 }, () => {
     const offenders = collectSources(join(root, "src"))
       .filter((file) => stripComments(readFileSync(file, "utf8")).includes("今日新增"))
       .map((file) => file.slice(root.length + 1).replace(/\\/g, "/"))

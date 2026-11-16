@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BookOutlined, PlusOutlined, SearchOutlined } from "@ant-design/icons";
+import { PlusOutlined, SearchOutlined } from "@ant-design/icons";
 import { Button, Input, Popconfirm } from "antd";
 import {
   DndContext,
@@ -49,6 +49,13 @@ interface ChapterTreeProps {
   onRenameVolume: (volumeId: string, name: string) => void;
   /** 删除卷（共享 Popconfirm 确认后触发） */
   onDeleteVolume: (volumeId: string) => void;
+  /** 生成 / 查看本章 AI 摘要（R-AI-09） */
+  onOpenSummary: (chapterId: string) => void;
+  /**
+   * 是否在行内渲染 AI 摘要入口（REQ-063）：由页面层按「AI 是否该出现」透传，
+   * 默认 true 保持既有行为。见 `ChapterTreeItem` 的同名 prop。
+   */
+  showSummary?: boolean;
 }
 
 /** 扁平行模型：卷头行 + 已展开的章行（Virtuoso 只接受一维列表） */
@@ -88,6 +95,8 @@ export default function ChapterTree({
   onReorderVolume,
   onRenameVolume,
   onDeleteVolume,
+  onOpenSummary,
+  showSummary = true,
 }: ChapterTreeProps) {
   const [keyword, setKeyword] = useState("");
   /** 折叠的卷 id 集合（默认全部展开） */
@@ -142,20 +151,15 @@ export default function ChapterTree({
     if (!group) return null;
     if (pendingDelete.kind === "volume") {
       const count = group.chapters.length;
+      const name = volumeDisplayName(group.volume, numberStyle, volumeSuffix);
+      // ⚠️ 文案不能再说「不可恢复」：卷与章节的删除现在是软删除（进回收站），
+      // 正文 / 历史快照 / 大纲条目全都保留，恢复后原样回来。
       return {
         title: "删除这个卷？",
         description:
           count > 0
-            ? `将删除「${volumeDisplayName(
-                group.volume,
-                numberStyle,
-                volumeSuffix,
-              )}」及其下 ${count} 章、全部历史快照与大纲条目，不可恢复。`
-            : `将删除「${volumeDisplayName(
-                group.volume,
-                numberStyle,
-                volumeSuffix,
-              )}」（空卷），不可恢复。`,
+            ? `「${name}」及其下 ${count} 章将移入回收站，可在书架「回收站」里恢复。`
+            : `「${name}」（空卷）将移入回收站，可在书架「回收站」里恢复。`,
         onConfirm: () => onDeleteVolume(pendingDelete.id),
       };
     }
@@ -165,7 +169,7 @@ export default function ChapterTree({
     if (!chapter) return null;
     return {
       title: "删除章节",
-      description: `删除「${chapter.title}」及其全部历史快照，不可恢复。`,
+      description: `「${chapter.title}」将移入回收站，可在书架「回收站」里恢复。`,
       onConfirm: () => onDeleteChapter(pendingDelete.id),
     };
   }, [
@@ -341,7 +345,7 @@ export default function ChapterTree({
           variant="borderless"
           value={keyword}
           onChange={(event) => setKeyword(event.target.value)}
-          placeholder="搜索章节"
+          placeholder="按标题找章节"
           aria-label="搜索章节"
         />
       </label>
@@ -390,6 +394,8 @@ export default function ChapterTree({
                   onToggleStatus={onToggleStatus}
                   onRename={onRenameChapter}
                   onRequestDelete={handleRequestDelete}
+                  onOpenSummary={onOpenSummary}
+                  showSummary={showSummary}
                 />
               )
             }
@@ -405,8 +411,10 @@ export default function ChapterTree({
       )}
 
       <div className="nv-tree__foot">
+        {/* 两键形态对齐交互稿：新章节是主色实底（首日动作，最常按），新卷是描边
+            次要按钮（一书只建几次）。主键按内容宽度收，次键吃满剩余宽度。 */}
         <Button
-          className="nv-tree__foot-btn"
+          className="nv-tree__foot-btn nv-tree__foot-btn--primary"
           onClick={onCreate}
           data-tour-target="tree-new-chapter"
         >
@@ -418,7 +426,7 @@ export default function ChapterTree({
           title="在当前作品末尾新建一卷"
           data-tour-target="tree-new-volume"
         >
-          <BookOutlined />新卷
+          <PlusOutlined />新卷
         </Button>
       </div>
 
@@ -433,7 +441,7 @@ export default function ChapterTree({
           open
           title={pendingDeleteAction.title}
           description={pendingDeleteAction.description}
-          okText="删除"
+          okText="移入回收站"
           cancelText="取消"
           okButtonProps={{ danger: true }}
           onConfirm={() => {

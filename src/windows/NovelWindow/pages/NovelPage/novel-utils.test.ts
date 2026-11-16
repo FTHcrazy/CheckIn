@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_SETTINGS, LAYOUT, UNNAMED_VOLUME } from "./novel-config";
+import { DEFAULT_SETTINGS, LAYOUT, SETTINGS_RANGE, UNNAMED_VOLUME } from "./novel-config";
 import {
   applyCustomTypeColors,
   buildBreadcrumb,
@@ -927,7 +927,7 @@ describe("mergeEditorSettings", () => {
       dailyGoal: "很多",
       indent: "yes",
     });
-    expect(merged.fontSize).toBe(24);
+    expect(merged.fontSize).toBe(SETTINGS_RANGE.fontSize.max);
     expect(merged.lineHeight).toBe(1.4);
     expect(merged.dailyGoal).toBe(DEFAULT_SETTINGS.dailyGoal);
     expect(merged.indent).toBe(DEFAULT_SETTINGS.indent);

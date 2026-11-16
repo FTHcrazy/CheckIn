@@ -42,7 +42,7 @@
     border-radius: var(--app-radius-pill);
     background: var(--app-accent-green-weak);
     color: var(--app-accent-green);
-    font-size: 10px;
+    font-size: 12px;
     font-style: normal;
     line-height: 15px;
   }
@@ -54,13 +54,13 @@
     border-radius: var(--app-radius-pill);
     background: var(--app-accent-blue-weak);
     color: var(--app-accent-blue);
-    font-size: 10px;
+    font-size: 12px;
     font-style: normal;
     line-height: 15px;
   }
 
   &__time {
-    font-size: 11px;
+    font-size: 12px;
     color: var(--app-text-muted);
   }
 }
@@ -94,7 +94,7 @@
 
   &__meta {
     min-width: 0;
-    font-size: 11px;
+    font-size: 12px;
     line-height: 16px;
     color: var(--app-text-muted);
     text-align: right;
@@ -133,7 +133,7 @@
 
   &__glabel {
     padding-top: 1px;
-    font-size: 11px;
+    font-size: 12px;
     line-height: 18px;
     color: var(--app-text-muted);
   }

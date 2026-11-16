@@ -65,7 +65,8 @@ describe("ShortcutSection", () => {
     for (const title of ["写作", "导航与视图", "面板", "窗口"]) {
       expect(screen.getByText(title)).toBeTruthy();
     }
-    expect(container.querySelectorAll(".settings-shortcut__row")).toHaveLength(9);
+    // 2.57.0 起多一行「阅读模式」（F12），10 = SHORTCUTS 里可展示的全部动作
+    expect(container.querySelectorAll(".settings-shortcut__row")).toHaveLength(10);
   });
 
   it("Esc 不可修改（协议键），按钮为禁用态", () => {

@@ -1,0 +1,107 @@
+/**
+ * MapEditorPage 局部样式（工具栏 + 布局骨架）
+ *
+ * 素材面板与画布的样式各自就近到对应组件目录（AGENTS §2.2.1.1）。
+ * 颜色一律走主题变量 var(--app-*)，禁止硬编码（AGENTS §6.1）。
+ */
+
+.map-editor {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--app-bg);
+}
+
+
+// ── 主体 ──
+.map-editor__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+/**
+ * 左栏：素材库（上，吃满剩余高度）+ 图层面板（下，固定内容高）。
+ *
+ * 【为什么把 188px 宽度挪到这一层】两段必须等宽，宽度写在两处就一定会漂
+ * （素材面板 188、图层 200 这种）；宽度只有这一个出处，子面板一律 `width:auto`。
+ * 【为什么 `min-height: 0`】flex column 的子项默认 `min-height:auto`，
+ * 里面是 `overflow-y:auto` 的素材库时，父级会被内容顶高而不是滚起来。
+ */
+.map-editor__left {
+  width: 188px;
+  flex-shrink: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--app-border);
+  background: var(--app-surface);
+
+  // 素材库让出宽度与外框（边框归本层，否则两段之间会多一条竖线）
+  > .sprite-panel {
+    width: auto;
+    flex: 1 1 auto;
+    min-height: 0;
+    border-right: 0;
+  }
+}
+
+
+// ── 合并子区域的确认内容（PRD §4.3） ──
+/**
+ * 弹窗正文按"四段"排：数量与名字 / ⚠ 子图警告 / P 自身有子图 / 结尾两句。
+ *
+ * 【为什么行距比页面正文大一点】这段文字是**一次不可逆删除的最后一道关**，
+ * 挤成一团会让人略过 ⚠ 段直接点确认。段落之间留白就是"请读一下"的视觉提示。
+ */
+.map-editor__merge-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+  line-height: 1.6;
+
+  p {
+    margin: 0;
+  }
+}
+
+/**
+ * ⚠ 段：被删子树里带子图的区块。
+ *
+ * 用警示色而不是纯加粗：这是本次操作唯一"删了就没"的副作用，
+ * 必须比"删了 N 个区块"（可撤销的普通删除）更抓眼。
+ */
+.map-editor__merge-warn {
+  color: var(--app-error);
+}
+
+/** 结尾两句：边界不变 + 可一步撤销 —— 弱化，读起来像"保证"而不是命令 */
+.map-editor__merge-note {
+  color: var(--app-text-secondary);
+}
+
+.map-editor__canvas-area {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.map-editor__canvas-hint {
+  position: absolute;
+  left: 12px;
+  bottom: 10px;
+  padding: 3px 10px;
+  font-size: 12px;
+  border-radius: 6px;
+  color: var(--app-text-secondary);
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  opacity: 0.9;
+  pointer-events: none;
+}

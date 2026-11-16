@@ -1,0 +1,50 @@
+// 图片压缩页：选图区 + 参数面板 + 结果列表三段纵向排布
+.imgc-page {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+  // 与其它子页面统一的页边距（页内导航条已上移到窗口标题栏）
+  padding: 12px 24px 20px;
+  background: var(--app-bg);
+  // 列表自己滚，页面不再出第二条滚动条
+  overflow: hidden;
+}
+
+.imgc-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: none;
+  padding: 12px 14px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-panel);
+  background: var(--app-surface);
+  box-shadow: var(--app-shadow-card);
+
+  // 结果列表吃满剩余高度；min-height: 0 才能让内层滚动生效
+  &--fill {
+    flex: 1;
+    min-height: 0;
+  }
+
+  &__head {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+  }
+
+  &__title {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--app-text);
+  }
+
+  &__hint {
+    font-size: 12px;
+    color: var(--app-text-muted);
+  }
+}

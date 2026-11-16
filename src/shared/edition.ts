@@ -12,3 +12,9 @@ export const IS_FULL_EDITION = CHECKIN_EDITION === "full";
 export const IS_LITE_EDITION = CHECKIN_EDITION === "lite";
 /** 小说版：NovelWindow 为主窗口，附 SettingsWindow，不含 base/map */
 export const IS_NOVEL_EDITION = CHECKIN_EDITION === "novel";
+
+/**
+ * 本构建是否不含地图（lite 版不打包 map 窗口，或 CHECKIN_WINDOW_VARIANT=nomap）：
+ * 地图入口与逻辑整组关闭。编译期由 buildExcludesMap 统一判定。
+ */
+export const IS_NO_MAP = __CHECKIN_NO_MAP__;

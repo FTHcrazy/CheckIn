@@ -1,0 +1,112 @@
+/* 数据安全面板（书架顶栏「数据安全」入口的弹窗内容）。
+ *
+ * 2.5.0 起只承载「全量备份 / 从备份恢复」两块 —— 回收站已拆成独立页面
+ * （`pages/RecycleBinPage`），弹窗里不再有列表。
+ *
+ * 颜色：弹窗本体是浮层（`--app-surface-elevated`），内部卡片 / 凹槽回退一档
+ * 用 `--app-surface`（见 themes.scss「常驻色块阶梯」第 3 条）。这里**不覆盖**
+ * antd Button 的外观 —— 按钮一律走组件库默认，本文件只声明布局。
+ */
+
+/* antd v6 的卡片节点是 `.ant-modal-container`（v5 的 `.ant-modal-content` 已不存在，
+ * 写错会静默无效）。限高 + 内部滚动：标题固定、正文滚动。 */
+.bs-safety-modal {
+  .ant-modal-container {
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100vh - 96px);
+  }
+
+  .ant-modal-header {
+    flex: none;
+  }
+
+  .ant-modal-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    /* 滚动条只在 hover 时出现是全局约定，这里只留稳定占位避免内容横向抖动 */
+    scrollbar-gutter: stable;
+  }
+}
+
+.bs-safety {
+  display: flex;
+  flex-direction: column;
+
+  &__section {
+    & + & {
+      margin-top: 14px;
+      padding-top: 14px;
+      border-top: 1px solid var(--app-border);
+    }
+  }
+
+  &__title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 0 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--app-text-secondary);
+  }
+
+  &__hint {
+    margin: 0 0 10px;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--app-text-muted);
+
+    strong {
+      color: var(--app-error);
+      font-weight: 600;
+    }
+  }
+
+  &__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+
+    & + & {
+      margin-top: 10px;
+    }
+  }
+
+  /* 恢复预览：凹槽回退一档（浮层里唯一的内嵌面板） */
+  &__preview {
+    padding: 10px 12px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-card);
+    background: var(--app-surface);
+  }
+
+  &__preview-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 8px;
+    font-size: 12px;
+    color: var(--app-text-secondary);
+  }
+
+  &__preview-grid {
+    display: grid;
+    grid-template-columns: 64px minmax(0, 1fr);
+    gap: 4px 10px;
+    margin-bottom: 10px;
+    font-size: 12px;
+
+    span {
+      color: var(--app-text-muted);
+    }
+
+    b {
+      font-weight: 600;
+      color: var(--app-text);
+      font-variant-numeric: tabular-nums;
+    }
+  }
+}

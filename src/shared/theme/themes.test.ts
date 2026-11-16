@@ -203,6 +203,24 @@ describe("面板分层（浅色也不能与浮层同色）", () => {
     });
   });
 
+  it("正文纸面色 theme.paper 与 themes.scss 的 --app-paper 逐值同步", () => {
+    THEME_LIST.forEach((theme) => {
+      const block = themeBlocks.get(theme.id)!;
+      const paper = readVar(block, "app-paper");
+      expect(paper).toMatch(/^#[0-9a-f]{6}$/);
+      expect(theme.paper.toLowerCase()).toBe(paper);
+    });
+  });
+
+  it("纸面色与内容面分得开（纸面是内容区 elevated 一档，不能与 surface 同色）", () => {
+    THEME_LIST.forEach((theme) => {
+      const block = themeBlocks.get(theme.id)!;
+      const surface = readVar(block, "app-surface");
+      const paper = readVar(block, "app-paper");
+      expect(paper).not.toBe(surface);
+    });
+  });
+
   /**
    * 顶栏 chip 的层次（UI-07）同样靠 token 值撑起来：
    * 默认底要从顶栏底色里「浮」出来，hover 再沉一档，持久激活换主色弱底。
@@ -431,15 +449,28 @@ describe("色块阶梯：页面根铺 bg、浮层底只给浮层用", () => {
     "src/shared/components/CharacterPack/components/PackToast/index.scss", // 提示条
     "src/shared/components/CharacterPack/styles/pack-common.scss", // .cpk-dropdown
     "src/shared/components/ThemeSwitcher/index.scss", // 主题下拉
-    "src/windows/BaseWindow/pages/LedgerPage/components/LedgerTrendChart/index.scss", // 图表气泡
-    "src/windows/BaseWindow/pages/LedgerPage/components/QuickAddBar/index.scss", // 快捷记账浮层
+    "src/windows/BaseWindow/pages/HomePage/components/PosterWidget/index.scss", // 海报
     "src/windows/NovelWindow/pages/NovelPage/components/ChapterJumpPalette/index.scss", // 跳章面板
+    "src/windows/NovelWindow/pages/NovelPage/components/EditorPane/index.scss", // 章节内查找面板（浮在正文之上）
     "src/windows/NovelWindow/pages/NovelPage/components/ChapterTree/index.scss", // 拖拽随动 chip（portal）
     "src/windows/NovelWindow/pages/NovelPage/components/EntityContextMenu/index.scss", // 右键菜单
+    "src/windows/NovelWindow/pages/BookshelfPage/components/BookWorkMenu/index.scss", // 书卡右键菜单
     "src/windows/NovelWindow/pages/NovelPage/components/HoverEntityCard/index.scss", // 悬浮卡
+    "src/windows/NovelWindow/pages/NovelPage/components/PolishPreview/index.scss", // AI 润色预览浮层
+    "src/windows/NovelWindow/pages/NovelPage/components/ContinuationPreview/index.scss", // AI 续写候选浮层
+    "src/windows/NovelWindow/pages/NovelPage/components/ContinueFab/index.scss", // AI 续写悬浮按钮（浮在正文之上）
+    "src/windows/NovelWindow/pages/NovelPage/components/SummaryPreview/index.scss", // AI 摘要浮层
+    "src/windows/NovelWindow/pages/NovelPage/components/InspirationPanel/index.scss", // 灵感卡片 hover 操作条（浮在 surface 卡之上）
     "src/windows/NovelWindow/pages/NovelPage/components/SettingsDrawer/index.scss", // 排版抽屉
     "src/windows/NovelWindow/pages/NovelPage/components/SnapshotDrawer/index.scss", // 快照抽屉
     "src/windows/GlobalSettingWindow/components/GsRefsDrawer/index.scss", // 引用方名单抽屉
+    // 关系图窗口：画布浮层工具条 / 节点卡 / 右侧详情卡都是「浮在画布之上」的一层
+    "src/windows/RelationWindow/index.scss",
+    "src/windows/RelationWindow/components/EntityNode/index.scss", // 画布节点卡
+    "src/windows/RelationWindow/components/NodeDetailCard/index.scss", // 右侧详情卡
+    "src/windows/RelationWindow/components/RelationCanvas/index.scss", // 画布工具条 / 缩放按钮
+    "src/windows/RelationWindow/components/RelationCreateDialog/index.scss", // 新建关系确认弹层
+    "src/windows/RelationWindow/components/EdgeDetailCard/index.scss", // 边详情卡
   ]);
 
   it("窗口 / 页面根一律铺 --app-bg（铺 surface 会把页面底抬高一档）", () => {

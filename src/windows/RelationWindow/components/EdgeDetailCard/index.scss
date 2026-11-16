@@ -1,0 +1,318 @@
+@use "../../../../shared/styles/widget" as widget;
+
+// 边详情卡：与节点详情卡同一位置、同一层级（两者互斥显示）。
+// 颜色全部走 --app-*，不出现具体色值。
+//
+// 四段分区（标题 / 关系列表 / 备注编辑 / 删除）靠「发丝线 + 统一留白」切开：
+// 分区之间用 1px 实线分隔（不再是虚线，虚线在窄卡里会显得碎），分区内用
+// 槽底色（surface）标出「两端」与「每一条关系」，备注编辑再退一档到 surface-alt。
+.rel-edge {
+  position: absolute;
+  top: 52px;
+  right: 14px;
+  bottom: 14px;
+  width: 320px;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  border: 1px solid var(--app-border);
+  background: var(--app-surface-elevated);
+  box-shadow: var(--app-shadow-pop);
+  overflow: hidden;
+}
+
+.rel-edge__head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 12px 12px 14px;
+  border-bottom: 1px solid var(--app-border);
+}
+
+.rel-edge__badge {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--app-surface-alt);
+  color: var(--app-text-secondary);
+  font-size: 12px;
+  line-height: 17px;
+}
+
+.rel-edge__title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--app-text-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rel-edge__close.ant-btn {
+  @include widget.ant-button-reset;
+
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  // 同 PoolRow 的行尾图标按钮：纯图标必须自己居中，否则 hover 背景相对图标右偏
+  justify-content: center;
+  color: var(--app-text-muted);
+  --ant-btn-bg-color-hover: var(--app-surface-hover);
+  --ant-btn-text-color-hover: var(--app-text);
+}
+
+.rel-edge__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+}
+
+// 分区基线：内部统一 10px 节奏；相邻分区之间加发丝线，不再靠虚线猜测。
+.rel-edge__section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rel-edge__section + .rel-edge__section {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--app-border);
+}
+
+.rel-edge__section-title {
+  font-size: 12px;
+  color: var(--app-text-muted);
+
+  b {
+    color: var(--app-text-strong);
+    font-weight: 600;
+  }
+}
+
+// 「两端是谁」读成一个单位：槽底色 + 发丝描边，与下面的关系行分开。
+.rel-edge__pair {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-item);
+  background: var(--app-surface);
+}
+
+.rel-edge__endpoint.ant-btn {
+  @include widget.ant-button-reset;
+
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--app-text);
+  --ant-btn-bg-color-hover: var(--app-surface-hover);
+  --ant-btn-text-color-hover: var(--app-text);
+}
+
+.rel-edge__dir {
+  flex: none;
+  font-size: 12px;
+  color: var(--app-text-muted);
+}
+
+.rel-edge__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.rel-edge__type {
+  flex: none;
+  font-size: 12px;
+  color: var(--app-text-muted);
+}
+
+.rel-edge__between {
+  padding-left: 8px;
+  font-size: 12px;
+  letter-spacing: -1px;
+  color: var(--app-border-strong);
+}
+
+.rel-edge__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+// 每一条关系一张槽卡；编辑态用主色描边把它点亮，避免和相邻行糊在一起。
+.rel-edge__row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-item);
+  background: var(--app-surface);
+}
+
+.rel-edge__row--editing {
+  border-color: var(--app-primary);
+}
+
+.rel-edge__row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.rel-edge__relation {
+  flex: 1;
+  min-width: 0;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--app-primary-weak);
+  color: var(--app-primary);
+  font-size: 12px;
+  line-height: 18px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rel-edge__action.ant-btn {
+  @include widget.ant-button-reset;
+
+  flex: none;
+  height: 20px;
+  padding: 0 5px;
+  gap: 3px;
+  border-radius: 5px;
+  font-size: 12px;
+  color: var(--app-text-secondary);
+  --ant-btn-bg-color-hover: var(--app-surface-hover);
+  --ant-btn-text-color-hover: var(--app-text);
+}
+
+.rel-edge__note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--app-text-secondary);
+  word-break: break-word;
+
+  &--empty {
+    color: var(--app-text-disabled);
+  }
+}
+
+// 备注编辑区：槽内再退一档（surface → surface-alt），把「正在写」与「已写好的
+// 备注」在视觉上分开，同时与下方的关系行形成清晰的层级。
+.rel-edge__editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-item);
+  background: var(--app-surface-alt);
+}
+
+.rel-edge__editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+// antd TextArea 的 showCount 计数不占文档流：它被绝对定位在输入框下方
+// （bottom ≈ -(字号×行高) ≈ -22px），右对齐。这里把输入框下方留出一行给计数，
+// 避免它与紧邻的「取消 / 保存备注」按钮叠在一起；按钮仍靠编辑器自身的 gap 拉开，
+// 计数与按钮之间正好回到卡内 10px 的视觉节奏。
+.rel-edge__editor-area {
+  margin-bottom: 24px;
+}
+
+.rel-edge__editor-area .rel-edge__count.ant-input-data-count {
+  color: var(--app-text-muted);
+  font-size: 12px;
+}
+
+.rel-edge__hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--app-text-muted);
+}
+
+.rel-edge__goto.ant-btn {
+  @include widget.ant-button-reset;
+
+  align-self: flex-start;
+  height: 24px;
+  padding: 0 9px;
+  gap: 5px;
+  border-radius: 6px;
+  border: 1px solid var(--app-border);
+  font-size: 12px;
+  color: var(--app-text-secondary);
+  --ant-button-default-bg: var(--app-surface);
+  --ant-button-default-border-color: var(--app-border);
+  --ant-button-default-color: var(--app-text-secondary);
+  --ant-button-default-hover-bg: var(--app-surface-hover);
+  --ant-button-default-hover-border-color: var(--app-border-strong);
+  --ant-button-default-hover-color: var(--app-text);
+}
+
+.rel-edge__foot {
+  flex: none;
+  padding: 9px 14px;
+  border-top: 1px solid var(--app-border);
+  background: var(--app-surface-alt);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--app-text-muted);
+}
+
+// ── 窄窗适配（窗口可缩窄到 ~720px）──
+// 与节点详情卡同一位面、同一收窄口径：窄窗下收窄宽度、贴边更近，给画布留出可视区。
+@media (max-width: 960px) {
+  .rel-edge {
+    width: 264px;
+    right: 10px;
+  }
+}
+
+@media (max-width: 800px) {
+  .rel-edge {
+    width: 236px;
+    right: 8px;
+    top: 48px;
+    bottom: 8px;
+  }
+
+  // 236px 卡里把正文内边距收一档：给「两端名称 / 备注编辑区」多留 4px 宽度。
+  .rel-edge__body {
+    padding: 12px;
+  }
+
+  .rel-edge__section + .rel-edge__section {
+    margin-top: 14px;
+    padding-top: 14px;
+  }
+}

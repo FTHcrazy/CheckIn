@@ -1,0 +1,142 @@
+// 知识体系抽屉：范围选择 + 主题卡片（要点 / 上下游 / 官方文档链接）
+.interview-kc {
+  &__bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+  }
+
+  &__hint {
+    flex: 1;
+    min-width: 220px;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  &__select {
+    flex: none;
+    width: 220px;
+  }
+
+  &__group + &__group {
+    margin-top: 16px;
+  }
+
+  &__group-title {
+    margin: 0 0 8px;
+    padding-left: 8px;
+    border-left: 3px solid var(--app-primary);
+    color: var(--app-text-strong);
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  &__topic {
+    padding: 12px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-item);
+    background: var(--app-surface);
+  }
+
+  &__topic + &__topic {
+    margin-top: 10px;
+  }
+
+  &__topic-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  &__stage {
+    margin-inline-end: 0;
+    border-radius: var(--app-radius-chip);
+    font-size: 12px;
+
+    &.is-basic {
+      background: var(--app-success-weak);
+      border-color: transparent;
+      color: var(--app-success);
+    }
+
+    &.is-medium {
+      background: var(--app-info-weak);
+      border-color: transparent;
+      color: var(--app-info);
+    }
+
+    &.is-hard {
+      background: var(--app-error-weak);
+      border-color: transparent;
+      color: var(--app-error);
+    }
+  }
+
+  &__topic-title {
+    margin: 0;
+    color: var(--app-text-strong);
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.5;
+  }
+
+  &__summary {
+    margin: 6px 0 0;
+    color: var(--app-text);
+    font-size: 14px;
+    line-height: 1.7;
+  }
+
+  &__points {
+    margin: 6px 0 0;
+    padding-left: 18px;
+    color: var(--app-text-secondary);
+    font-size: 14px;
+    line-height: 1.7;
+  }
+
+  // 主题卡已经是 surface 面，配图不再叠一层同色底，改用 alt 做出「凹槽」
+  &__diagram {
+    margin-top: 8px;
+
+    .interview-dg {
+      background: var(--app-surface-alt);
+    }
+  }
+
+  &__flow {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: 8px;
+    color: var(--app-text-muted);
+    font-size: 12px;
+  }
+
+  &__links {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 6px;
+  }
+
+  &__link-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+  }
+
+  &__link.ant-btn {
+    height: auto;
+    padding: 0;
+    font-size: 12px;
+  }
+
+  &__copy.ant-btn {
+    color: var(--app-text-muted);
+  }
+}
