@@ -16,10 +16,11 @@
  * ⚠️ 本意图**不发送章节正文**（只有作品名 / 题材 / 分类信息 / 已有阶梯名），
  * 属 L1/L2 —— 调用方**不得**为它弹 L3 授权（PRD §五 数据分级）。
  */
-import type { AiBookContext } from "../collector";
-import type { OutputFormat } from "../output-spec";
-import type { PromptSpec } from "./types";
-import { composePrompt, constraintBlock, roleBlock, workBlock } from "./sections";
+import type { AiBookContext } from "../types";
+import type { OutputFormat } from "../../../../output-spec";
+import type { PromptSpec } from "../../../types";
+import { composePrompt, constraintBlock, roleBlock } from "../../../kit";
+import { workBlock } from "../sections";
 
 /** 两档模式：整理整套 / 在现有顶点之后拓展 */
 export type LevelGenMode = "generate" | "extend";

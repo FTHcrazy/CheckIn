@@ -17,10 +17,27 @@
 
   &__title {
     flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
     padding: 2px 8px 8px;
     color: var(--app-text-muted);
     font-size: 12px;
     letter-spacing: 1px;
+  }
+
+  // 「分类」入口：标题行里的图标按钮，不占行高
+  &__manage.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-button-text-text-color: var(--app-text-muted);
+    --ant-button-text-text-hover-color: var(--app-primary);
+    --ant-control-height: 20px;
+    --ant-button-padding-inline: 4px;
+    flex: none;
+    height: 20px;
+    font-size: 12px;
+    letter-spacing: 0;
   }
 
   &__list {
@@ -62,6 +79,12 @@
       --ant-button-default-color: var(--app-primary);
       --ant-button-default-hover-color: var(--app-primary);
       font-weight: 600;
+    }
+
+    // 空分类标灰（自定义分类刚建好、还没落题时）：仍然可点，只是提示「这里还没东西」
+    &.is-empty:not(.is-active) {
+      --ant-button-default-color: var(--app-text-muted);
+      --ant-button-default-hover-color: var(--app-text);
     }
   }
 

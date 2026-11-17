@@ -12,18 +12,11 @@
  * 目标的改写」。两者约束不可互相吞并，否则润色会被当成「泛化改写」而失去其
  * 「无损微调」的承诺（润色的降级价值正在于此）。
  */
-import type { AiBookContext } from "../collector";
-import { TEXT_OUTPUT_FORMAT } from "../output-spec";
-import {
-  chapterBlock,
-  characterBlock,
-  composePrompt,
-  constraintBlock,
-  outputBlock,
-  roleBlock,
-  workBlock,
-} from "./sections";
-import type { CharacterRef, PromptSpec } from "./types";
+import type { AiBookContext } from "../types";
+import { TEXT_OUTPUT_FORMAT } from "../../../../output-spec";
+import { chapterBlock, composePrompt, constraintBlock, outputBlock, roleBlock } from "../../../kit";
+import { characterBlock, workBlock } from "../sections";
+import type { CharacterRef, PromptSpec } from "../../../types";
 
 /** 五种变换类型（对外身份用，与 `TransformKind` 一致） */
 export type TransformKind = "expand" | "condense" | "rewrite" | "tone" | "pov";

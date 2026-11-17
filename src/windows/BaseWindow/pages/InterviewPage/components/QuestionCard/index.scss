@@ -1,4 +1,7 @@
 // 单题卡片：标题 / 元信息 / 题干 / 页脚 / 可展开答案
+@use "../../../../../../shared/styles/motion" as motion;
+@use "../../../../../../shared/styles/widget" as widget;
+
 .interview-card {
   --ant-card-body-padding: 12px 14px;
   // 父级是定高 flex 列（.interview-list__scroll）：卡片必须 flex: none，
@@ -13,6 +16,16 @@
     display: flex;
     align-items: flex-start;
     gap: 8px;
+  }
+
+  // 标题 + 「基线已更新」标记：标记贴着标题排（不是飘到操作区里），
+  // 标题多行时按第一行的基线对齐，标记不会掉到第二行下面
+  &__heading {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    flex: 1;
+    min-width: 0;
   }
 
   &__title {
@@ -39,6 +52,91 @@
     &.is-on {
       color: var(--app-warning);
     }
+  }
+
+  // 维护动作区：三个图标按钮并排，窄窗时也不许把标题挤成两行
+  &__ops {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex: none;
+  }
+
+  // 图标动作按钮 = `type="text"` + 清零 mixin。
+  //
+  // 为什么必须清零：antd 的 hover 规则用整条 `border` shorthand 重写边框
+  // （`.ant-btn-color-default.ant-btn-variant-text:not(:disabled):hover`，特异性 0,4,0），
+  // 自写的 `border: 0`（0,2,0）压不过 —— hover 时按钮突然多出 1px 四边框，
+  // 三个并排的图标按钮会互相挤开，卡片头跟着抖一下。
+  &__op.ant-btn {
+    @include widget.ant-button-reset;
+
+    --ant-button-text-text-color: var(--app-text-muted);
+    --ant-button-text-text-hover-color: var(--app-primary);
+    --ant-button-text-text-active-color: var(--app-primary-strong);
+    --ant-button-text-hover-bg: var(--app-surface-hover);
+
+    @include motion.transition-fast(color);
+
+    // 清零 mixin 把 antd 的 `justify-content: center` 改成了 `normal`，
+    // 纯图标按钮不补回来会贴左沿、右侧空出半个图标宽
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    font-size: 13px;
+    line-height: 1;
+  }
+
+  // 「基线已更新」标记：挂在标题旁，点开是一个小浮层（不是抽屉）
+  &__stale.ant-tag {
+    flex: none;
+    margin-inline-end: 0;
+    border-radius: var(--app-radius-chip);
+    background: var(--app-warning-weak);
+    border-color: transparent;
+    color: var(--app-warning);
+    font-size: 12px;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  &__stale-panel {
+    width: min(360px, 62vw);
+  }
+
+  &__stale-hint {
+    margin: 0 0 8px;
+    color: var(--app-text-secondary);
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  &__stale-ops {
+    display: flex;
+    gap: 8px;
+  }
+
+  &__stale-title {
+    margin: 0 0 4px;
+    color: var(--app-text-strong);
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.5;
+  }
+
+  // 新版原文：只读展示，长答案内部滚动，不把浮层顶出屏幕
+  &__stale-answer {
+    max-height: 200px;
+    margin: 0 0 4px;
+    padding: 8px 10px;
+    border-radius: var(--app-radius-item);
+    background: var(--app-surface-alt);
+    color: var(--app-text);
+    font-size: 12px;
+    line-height: 1.6;
+    overflow: auto;
+    white-space: pre-wrap;
   }
 
   &__meta {

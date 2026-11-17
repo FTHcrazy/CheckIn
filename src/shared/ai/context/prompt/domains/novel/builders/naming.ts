@@ -8,19 +8,17 @@
  *
  * 不 import novel、不碰 IPC。
  */
-import type { AiBookContext } from "../collector";
-import { NAMING_OUTPUT_FORMAT } from "../output-spec";
+import type { AiBookContext } from "../types";
+import { NAMING_OUTPUT_FORMAT } from "../../../../output-spec";
 import {
   composePrompt,
   constraintBlock,
-  entityBlock,
   outputBlock,
-  realmBlock,
   requirementBlock,
   roleBlock,
-  workBlock,
-} from "./sections";
-import type { PromptSpec } from "./types";
+} from "../../../kit";
+import { entityBlock, realmBlock, workBlock } from "../sections";
+import type { PromptSpec } from "../../../types";
 
 /** 起名意图参数（由 NameGeneratorPanel 传入；本层不解释业务语义） */
 export interface NamingIntent {

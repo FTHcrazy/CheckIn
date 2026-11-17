@@ -14,10 +14,13 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { AI_INTENT_LABELS } from "./context/prompt/registry";
-import { TRANSFORM_INTENT_SUB, TRANSFORM_KIND_LABELS } from "./context/prompt/transform";
+import { AI_INTENT_LABELS } from "./context/prompt";
+import {
+  TRANSFORM_INTENT_SUB,
+  TRANSFORM_KIND_LABELS,
+} from "./context/prompt/domains/novel/builders/transform";
 import { AI_EVENT_INTENT_LABELS, intentLabel } from "./intent-labels";
-import type { TransformKind } from "./context/prompt/transform";
+import type { TransformKind } from "./context/prompt/domains/novel/builders/transform";
 
 const transformKinds = Object.keys(TRANSFORM_INTENT_SUB) as TransformKind[];
 

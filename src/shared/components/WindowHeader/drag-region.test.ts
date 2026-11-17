@@ -40,6 +40,8 @@ const PORTAL_OVERLAYS = [
   ".ant-popover",
   // 抽屉面板顶部的 × 就在 34px 带里，漏了这条等于「关闭按钮点不动」
   ".ant-drawer",
+  // 面试题页的划词浮层：选区靠上时会被翻到窗口顶部
+  ".interview-selection",
 ];
 
 describe("窗口拖动带（构建前提）", () => {

@@ -22,7 +22,8 @@ const pageSrc = read("src/windows/NovelWindow/pages/NovelPage/NovelPage.tsx");
 const previewSrc = read(
   "src/windows/NovelWindow/pages/NovelPage/components/SummaryPreview/index.tsx",
 );
-const promptSrc = read("src/shared/ai/context/prompt/summary.ts");
+// T02：摘要模板已迁进小说域（`prompt/domains/novel/builders/summary.ts`），路径随之更新
+const promptSrc = read("src/shared/ai/context/prompt/domains/novel/builders/summary.ts");
 
 describe("useNovelPage · 摘要 → 大纲回流", () => {
   it("生成成功后拆分回复，落库用长摘要（不带【摘要】标记）", () => {

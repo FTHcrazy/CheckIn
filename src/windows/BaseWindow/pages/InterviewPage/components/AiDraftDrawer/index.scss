@@ -1,0 +1,136 @@
+@use "../../../../../../shared/styles/widget" as widget;
+
+// AI 拓展抽屉：参数表单 + 候选列表（逐条采纳）
+.interview-aidraft {
+  &__hint {
+    display: block;
+    margin-bottom: 12px;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  &__offline.ant-alert,
+  &__error.ant-alert,
+  &__fallback.ant-alert {
+    margin-bottom: 12px;
+  }
+
+  &__row {
+    display: flex;
+    gap: 12px;
+  }
+
+  &__row-main {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__row-side {
+    flex: 0 0 132px;
+  }
+
+  &__option {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 2px 0;
+  }
+
+  &__option-note {
+    color: var(--app-text-muted);
+    font-size: 11px;
+  }
+
+  &__loading {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 16px 4px;
+    color: var(--app-text-muted);
+    font-size: 13px;
+  }
+
+  &__empty {
+    margin-top: 16px;
+  }
+
+  &__list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 8px 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  &__item {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px 12px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-item);
+    background: var(--app-surface-alt);
+
+    &.is-invalid {
+      border-color: var(--app-error);
+    }
+  }
+
+  &__item-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  &__kind.ant-tag {
+    flex: none;
+    margin: 0;
+  }
+
+  &__item-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--app-text-strong);
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  &__item-errors {
+    margin: 0;
+    padding-left: 18px;
+    color: var(--app-error);
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  &__item-ops {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  &__adopt.ant-btn,
+  &__keep.ant-btn {
+    --ant-control-height: 26px;
+    flex: none;
+  }
+
+  &__drop.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-button-text-text-color: var(--app-text-muted);
+    --ant-button-text-text-hover-color: var(--app-error);
+    --ant-control-height: 26px;
+    --ant-button-padding-inline: 4px;
+    flex: none;
+    font-size: 12px;
+  }
+
+  &__footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+}

@@ -1,0 +1,48 @@
+// 题目编辑抽屉：表单竖排铺满，两处「主字段 + 副字段」并排
+.interview-qedit {
+  &__hint {
+    display: block;
+    margin-bottom: 12px;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  &__failures {
+    margin-bottom: 12px;
+  }
+
+  &__failure-list {
+    margin: 0;
+    padding-left: 16px;
+    font-size: 12px;
+    line-height: 1.7;
+  }
+
+  // 表单底部不留空白：抽屉自己的 footer 承载动作按钮
+  &__form.ant-form {
+    padding-bottom: 8px;
+  }
+
+  // 并排两栏：窄窗时靠 flex-wrap 折成上下两段，不写死的 grid
+  &__row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  &__row-main {
+    flex: 1 1 260px;
+    min-width: 0;
+  }
+
+  &__row-side {
+    flex: 0 1 140px;
+  }
+
+  &__footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+}

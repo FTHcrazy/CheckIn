@@ -6,7 +6,12 @@
  * 顺序由 `order` 字段**全局唯一**地给出（1-22 连续），不依赖对象键顺序，
  * 也不做任何类型断言 —— 这样侧栏顺序与分类表完全一致。
  */
-import type { CategoryId, Difficulty, QuestionTrack } from "./interview-types";
+import type {
+  BaselineCategoryId,
+  Difficulty,
+  InterviewCategoryId,
+  QuestionTrack,
+} from "./interview-types";
 
 interface TrackNode {
   id: QuestionTrack;
@@ -15,10 +20,14 @@ interface TrackNode {
 
 /** 一个分类节点 */
 export interface CategoryNode {
-  id: CategoryId;
+  /**
+   * 基线 22 个是字面量 id；`u-c-*` 来自 `interview_taxonomy`（用户在侧栏
+   * 「分类管理」里新增的）。两者共用同一个字段，靠前缀区分。
+   */
+  id: InterviewCategoryId;
   label: string;
   track: QuestionTrack;
-  /** 全局展示顺序，1-22 连续且唯一 */
+  /** 全局展示顺序：基线 1-22 连续，自定义分类从 100 起续排 */
   order: number;
 }
 
@@ -39,7 +48,7 @@ export const DIFFICULTY_LABEL: Record<Difficulty, string> = {
 };
 
 /** 分类 id → 分类节点。`Record` 字面量保证 22 个分类一个不漏 */
-export const CATEGORY_BY_ID: Record<CategoryId, CategoryNode> = {
+export const CATEGORY_BY_ID: Record<BaselineCategoryId, CategoryNode> = {
   "written-coding": {
     id: "written-coding",
     label: "手写代码题",
@@ -184,3 +193,23 @@ export const CATEGORIES_BY_TRACK: Record<QuestionTrack, readonly CategoryNode[]>
     written: CATEGORIES.filter((node) => node.track === "written"),
     foundation: CATEGORIES.filter((node) => node.track === "foundation"),
   };
+
+/** 基线分类查表（`id` 来自任意来源时用它，不要直接索引 `CATEGORY_BY_ID`） */
+const BASELINE_LOOKUP = CATEGORY_BY_ID as Readonly<Record<string, CategoryNode | undefined>>;
+
+/**
+ * 按 id 取分类节点，查不到返回 `undefined`。
+ *
+ * 存在的理由：合并视图里的 `categoryId` 可能是 `u-c-*`（自定义分类），
+ * 直接 `CATEGORY_BY_ID[id]` 会拿到 `undefined` 再读 `.label` 就是运行期崩溃。
+ * 自定义分类不在这个函数的知识范围内 —— 调用方要把合并后的分类表一起传进来
+ * （见 `categoryPath` / `categoryLabel`）。
+ */
+export function categoryNodeOf(
+  id: string,
+  extra?: readonly CategoryNode[],
+): CategoryNode | undefined {
+  const baseline = BASELINE_LOOKUP[id];
+  if (baseline) return baseline;
+  return extra?.find((node) => node.id === id);
+}

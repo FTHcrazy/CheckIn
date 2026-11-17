@@ -18,17 +18,11 @@
  * 是上一章 AI 摘要（前文够短时才注入，见 `CONTINUATION_SUMMARY_MIN_BEFORE_CHARS`）。
  * 本层不 import novel、不感知「编辑器」「光标」等业务概念。
  */
-import type { AiBookContext } from "../collector";
-import type { CharacterRef, PromptSpec } from "./types";
-import {
-  characterBlock,
-  composePrompt,
-  constraintBlock,
-  outputBlock,
-  roleBlock,
-  workBlock,
-} from "./sections";
-import type { OutputFormat } from "../output-spec";
+import type { AiBookContext } from "../types";
+import type { CharacterRef, PromptSpec } from "../../../types";
+import { composePrompt, constraintBlock, outputBlock, roleBlock } from "../../../kit";
+import { characterBlock, workBlock } from "../sections";
+import type { OutputFormat } from "../../../../output-spec";
 
 /**
  * 续写流式输出契约（B5）：单段正文，纯 text 输出。

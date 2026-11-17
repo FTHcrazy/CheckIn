@@ -7,18 +7,11 @@
  *
  * ⚠️ 素材全部由调用方给（纯数据），本层不知道「编辑器」「划词」这些业务概念。
  */
-import type { AiBookContext } from "../collector";
-import { TEXT_OUTPUT_FORMAT } from "../output-spec";
-import {
-  chapterBlock,
-  characterBlock,
-  composePrompt,
-  constraintBlock,
-  outputBlock,
-  roleBlock,
-  workBlock,
-} from "./sections";
-import type { CharacterRef, PromptSpec } from "./types";
+import type { AiBookContext } from "../types";
+import { TEXT_OUTPUT_FORMAT } from "../../../../output-spec";
+import { chapterBlock, composePrompt, constraintBlock, outputBlock, roleBlock } from "../../../kit";
+import { characterBlock, workBlock } from "../sections";
+import type { CharacterRef, PromptSpec } from "../../../types";
 
 /** 润色意图参数 */
 export interface PolishIntent {

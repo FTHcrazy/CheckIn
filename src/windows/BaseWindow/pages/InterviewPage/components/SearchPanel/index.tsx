@@ -1,5 +1,10 @@
 import { Button, Input, Segmented, Typography } from "antd";
-import { ReadOutlined, SearchOutlined } from "@ant-design/icons";
+import {
+  EyeInvisibleOutlined,
+  ReadOutlined,
+  RobotOutlined,
+  SearchOutlined,
+} from "@ant-design/icons";
 import { TRACKS } from "../../data/interview-taxonomy";
 import type { QuestionTrack } from "../../data/interview-types";
 import "./index.scss";
@@ -12,11 +17,21 @@ interface SearchPanelProps {
   keyword: string;
   total: number;
   favoriteCount: number;
+  /** 被隐藏的默认题条数（入口按钮上的角标） */
+  hiddenCount: number;
   onTrackChange: (track: QuestionTrack) => void;
   onKeywordChange: (value: string) => void;
   onSearch: () => void;
   /** 打开「知识体系」抽屉 */
   onOpenKnowledge: () => void;
+  /** 打开「已隐藏的默认题」抽屉 */
+  onOpenHidden: () => void;
+  /** 打开 AI 拓展抽屉；不传则不显示入口 */
+  onOpenAi?: () => void;
+  /** AI 总开关关着 / 通道不在：整块不渲染（REQ-063） */
+  aiHidden?: boolean;
+  /** AI 开关开着但没配全：禁用并说明原因 */
+  aiDisabledText?: string;
 }
 
 /** 轨道选项：模块级常量，避免每次渲染重建数组 */
@@ -36,10 +51,15 @@ export default function SearchPanel({
   keyword,
   total,
   favoriteCount,
+  hiddenCount,
   onTrackChange,
   onKeywordChange,
   onSearch,
   onOpenKnowledge,
+  onOpenHidden,
+  onOpenAi,
+  aiHidden = false,
+  aiDisabledText = "",
 }: SearchPanelProps) {
   return (
     <section className="interview-search">
@@ -70,6 +90,28 @@ export default function SearchPanel({
           onClick={onOpenKnowledge}
         >
           知识体系
+        </Button>
+        {/* AI 拓展入口：总开关关着 / 通道不在时整块不渲染；
+            开关开着只是没配全时禁用并说明原因（M8：入口要留下才知道去补什么） */}
+        {onOpenAi && !aiHidden ? (
+          <Button
+            className="interview-search__ai"
+            icon={<RobotOutlined />}
+            disabled={Boolean(aiDisabledText)}
+            title={aiDisabledText || "用 AI 出题、出词条、出图解"}
+            onClick={onOpenAi}
+          >
+            AI 拓展
+          </Button>
+        ) : null}
+        {/* 「隐藏」= 删除内置题的唯一形态，必须留一个能反悔的入口；
+            没有隐藏过任何题时按钮仍可见，抽屉里有空态说明 */}
+        <Button
+          className="interview-search__hidden"
+          icon={<EyeInvisibleOutlined />}
+          onClick={onOpenHidden}
+        >
+          {hiddenCount > 0 ? `已隐藏 ${hiddenCount} 题` : "已隐藏的默认题"}
         </Button>
       </div>
       <div className="interview-search__meta">

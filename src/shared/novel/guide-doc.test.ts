@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AI_INTENT_LABELS } from "../ai/context/prompt/registry";
+import { AI_INTENT_LABELS, NOVEL_INTENT_LABELS } from "../ai/context/prompt";
 import { NOVEL_HELP_DOC, searchHelpDoc } from "./guide-doc";
 
 /**
@@ -121,10 +121,32 @@ describe("AI 功能覆盖（新增功能必须同步本手册）", () => {
     expect(aiTerms.length).toBeGreaterThan(0);
   });
 
-  it("每个 AI 意图都有可检索词条（漏写 = 新功能等于不存在）", () => {
-    for (const [intent, label] of Object.entries(AI_INTENT_LABELS)) {
+  it("每个小说域 AI 意图都有可检索词条（漏写 = 新功能等于不存在）", () => {
+    // 遍历源 = novelPromptDomain.labels（由 DOMAINS 派生），不是硬编码名单：
+    // 小说域每加一个意图，`Record<NovelPromptIntent, string>` 就逼着补 label，
+    // 于是这条守卫自动多一条要求 —— 豁免面永远不会误伤小说域。
+    for (const [intent, label] of Object.entries(NOVEL_INTENT_LABELS)) {
       expect(aiText, `AI 意图「${intent}」(${label}) 在帮助手册里没有词条`).toContain(label);
     }
+  });
+
+  it("豁免面必须来自域归属（不是「反正没人管」）", () => {
+    // ① 别名不许漂移：NOVEL_INTENT_LABELS 必须是 AI_INTENT_LABELS 的子集且值相同
+    // `Object.entries` 把键放宽成 string，而全量表是精确的 11 键字面量联合，
+    // TS 无法证明这个 string 属于那 11 个键。这里只扩**索引类型**：键不存在时
+    // 取到 undefined，仍会与 label 比不过而红，断言强度一点没降。
+    const fullLabels = AI_INTENT_LABELS as Record<string, string | undefined>;
+    for (const [intent, label] of Object.entries(NOVEL_INTENT_LABELS)) {
+      expect(
+        fullLabels[intent],
+        `NOVEL_INTENT_LABELS 里多出了非全量表的键 ${intent}`,
+      ).toBe(label);
+    }
+    // ② 豁免必须真的豁免到了东西：若哪天有人把 NOVEL_INTENT_LABELS 改成全量表
+    //    来图省事，这条会红（全量表 = 又回到"一本小说手册要写面试题词条"的荒谬状态）
+    expect(Object.keys(NOVEL_INTENT_LABELS).length).toBeLessThan(
+      Object.keys(AI_INTENT_LABELS).length,
+    );
   });
 
   it("配置 / 授权 / 记录这类基础设施也各有词条", () => {

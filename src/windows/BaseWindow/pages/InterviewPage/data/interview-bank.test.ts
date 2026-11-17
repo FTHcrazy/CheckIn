@@ -48,7 +48,8 @@ describe("题库规模", () => {
     const short: string[] = [];
     for (const node of CATEGORIES) {
       const actual = counts[node.id] ?? 0;
-      const expected = MIN_PER_CATEGORY[node.id];
+      // 基线分类（`CATEGORIES` 只含 22 个），索引安全收窄回字面量联合
+      const expected = MIN_PER_CATEGORY[node.id as CategoryId];
       if (actual < expected) short.push(`${node.id}: ${actual} < ${expected}`);
     }
     expect(short).toEqual([]);
@@ -89,7 +90,8 @@ describe("题库字段完整性", () => {
 
   it("分类 id 都能在分类表里查到，且轨道与分类表一致", () => {
     const offenders = QUESTION_BANK.filter((question) => {
-      const node = CATEGORY_BY_ID[question.categoryId];
+      // 基线题库里不可能出现 `u-c-*`，收窄回字面量联合后查表
+      const node = CATEGORY_BY_ID[question.categoryId as CategoryId];
       return !node || node.track !== question.track;
     }).map((question) => question.id);
     expect(offenders).toEqual([]);

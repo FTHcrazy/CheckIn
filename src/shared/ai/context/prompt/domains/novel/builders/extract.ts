@@ -11,11 +11,12 @@
  * ⚠️ 已有要素不是「上下文背景」而是**硬约束**：模型必须跳过已建卡的名字，
  * 否则作者每次抽取都会看到一半是老面孔，勾选成本立刻翻倍。
  */
-import type { AiBookContext } from "../collector";
-import type { L3Scope } from "../../ai-consent";
-import type { OutputFormat } from "../output-spec";
-import type { PromptSpec } from "./types";
-import { composePrompt, constraintBlock, roleBlock, workBlock } from "./sections";
+import type { AiBookContext } from "../types";
+import type { L3Scope } from "../../../../../ai-consent";
+import type { OutputFormat } from "../../../../output-spec";
+import type { PromptSpec } from "../../../types";
+import { composePrompt, constraintBlock, roleBlock } from "../../../kit";
+import { workBlock } from "../sections";
 
 /** 抽取意图参数 */
 export interface ExtractIntent {

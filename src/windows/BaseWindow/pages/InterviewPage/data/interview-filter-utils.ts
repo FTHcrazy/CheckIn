@@ -4,13 +4,13 @@
  * 页面里没有任何一段筛选逻辑写在组件中：组件只把动作交给 reducer，
  * 派生数据全部由这里的函数算出，因此这些行为可以脱离 React 直接单测。
  */
-import { CATEGORIES, CATEGORY_BY_ID, TRACK_LABEL } from "./interview-taxonomy";
+import { CATEGORIES, TRACK_LABEL, categoryNodeOf, type CategoryNode } from "./interview-taxonomy";
 import type {
-  CategoryId,
   CategoryKey,
   Difficulty,
   DifficultyKey,
   HighlightSegment,
+  InterviewCategoryId,
   InterviewFilterState,
   InterviewQuestion,
   QuestionTrack,
@@ -279,9 +279,19 @@ export function highlightSegments(
   return segments;
 }
 
-/** 分类 → 面包屑路径（轨道 / 分类），卡片与侧栏共用 */
-export function categoryPath(categoryId: CategoryId): string[] {
-  const node = CATEGORY_BY_ID[categoryId];
+/**
+ * 分类 → 面包屑路径（轨道 / 分类），卡片与侧栏共用。
+ *
+ * `extra` 传**合并后的分类表**：`u-c-*` 自定义分类不在 `CATEGORY_BY_ID` 里，
+ * 不传就会把路径渲染成 `undefined`。查不到任何节点时退化成
+ * `["未分类", id]` —— 分类被删、题目悬空（规范 §13-3）时列表仍可读。
+ */
+export function categoryPath(
+  categoryId: InterviewCategoryId,
+  extra?: readonly CategoryNode[],
+): string[] {
+  const node = categoryNodeOf(categoryId, extra);
+  if (!node) return ["未分类", categoryId];
   return [TRACK_LABEL[node.track], node.label];
 }
 
@@ -319,13 +329,16 @@ export function countByCategoryId(
 }
 
 /** 分类节点的展示名（id 缺失时回落到 id 本身，避免渲染出 undefined） */
-export function categoryLabel(categoryId: CategoryId): string {
-  return CATEGORY_BY_ID[categoryId]?.label ?? categoryId;
+export function categoryLabel(
+  categoryId: InterviewCategoryId,
+  extra?: readonly CategoryNode[],
+): string {
+  return categoryNodeOf(categoryId, extra)?.label ?? categoryId;
 }
 
-/** 当前轨道下的全部分类（侧栏直接消费） */
+/** 当前轨道下的全部分类（侧栏直接消费；只含基线，自定义分类由页面合并） */
 export function categoriesOfTrack(
   track: QuestionTrack,
-): readonly { id: CategoryId; label: string }[] {
+): readonly { id: InterviewCategoryId; label: string }[] {
   return CATEGORIES.filter((node) => node.track === track);
 }

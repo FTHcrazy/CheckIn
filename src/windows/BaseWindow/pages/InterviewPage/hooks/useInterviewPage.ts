@@ -19,6 +19,7 @@ import type {
   QuestionTrack,
   SortBy,
 } from "../data/interview-types";
+import { useInterviewBankContext } from "../components/InterviewBankProvider/context";
 import { useInterviewFavorites } from "./useInterviewFavorites";
 
 /** 输入防抖窗口：300ms 是「打字不卡」与「停下就出结果」的折中 */
@@ -71,6 +72,16 @@ export function useInterviewPage(): InterviewPageApi {
   const { favorites, favoriteCount, isFavorite, toggle } =
     useInterviewFavorites();
 
+  /**
+   * 题库数据源：优先用合并视图（基线 ∪ 库内增量），没有 Provider 时回落源码基线。
+   *
+   * 回落分支不是「以防万一」而是**必须保留**：`useInterviewPage` 也会在
+   * 未包 Provider 的场景（部分组件测试、将来的抽屉/弹窗内嵌）被调用，
+   * 那时没有合并结果可用。Provider 已经保证首帧就是基线，所以两条分支在
+   * 「没有增量」时内容完全一致，不会出现「有时 243 题、有时 0 题」。
+   */
+  const QUESTIONS = useInterviewBankContext()?.questions ?? QUESTION_BANK;
+
   // 防抖提交：输入停顿 300ms 才真正参与筛选，回车走 submitKeyword 立即提交
   useEffect(() => {
     const trimmed = keywordInput.trim();
@@ -86,12 +97,12 @@ export function useInterviewPage(): InterviewPageApi {
   }, [keywordInput]);
 
   const filtered = useMemo(
-    () => filterQuestions(QUESTION_BANK, filter, favorites),
-    [filter, favorites],
+    () => filterQuestions(QUESTIONS, filter, favorites),
+    [QUESTIONS, filter, favorites],
   );
   const counts = useMemo(
-    () => countByCategory(QUESTION_BANK, filter, favorites),
-    [filter, favorites],
+    () => countByCategory(QUESTIONS, filter, favorites),
+    [QUESTIONS, filter, favorites],
   );
   const sorted = useMemo(
     () => sortQuestions(filtered, filter.sortBy),
@@ -102,8 +113,8 @@ export function useInterviewPage(): InterviewPageApi {
     [sorted, filter.page],
   );
   const tagOptions = useMemo(
-    () => collectTags(QUESTION_BANK, filter.track, 10),
-    [filter.track],
+    () => collectTags(QUESTIONS, filter.track, 10),
+    [QUESTIONS, filter.track],
   );
 
   const setTrack = useCallback((track: QuestionTrack) => {

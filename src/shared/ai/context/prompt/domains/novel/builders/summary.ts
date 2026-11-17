@@ -14,16 +14,12 @@
  * 授权范围（`scope`）会改变「模型实际看到的内容」：仅本章 / 选中段落 / 最近 3 章，
  * 因此范围必须进 prompt（见 `SummaryIntent.scope` 的说明），不能只当埋点字段。
  */
-import type { AiBookContext } from "../collector";
-import type { L3Scope } from "../../ai-consent";
-import type { PromptSpec } from "./types";
-import {
-  composePrompt,
-  constraintBlock,
-  roleBlock,
-  workBlock,
-} from "./sections";
-import { TEXT_OUTPUT_FORMAT } from "../output-spec";
+import type { AiBookContext } from "../types";
+import type { L3Scope } from "../../../../../ai-consent";
+import type { PromptSpec } from "../../../types";
+import { composePrompt, constraintBlock, roleBlock } from "../../../kit";
+import { workBlock } from "../sections";
+import { TEXT_OUTPUT_FORMAT } from "../../../../output-spec";
 
 /** 摘要意图参数 */
 export interface SummaryIntent {

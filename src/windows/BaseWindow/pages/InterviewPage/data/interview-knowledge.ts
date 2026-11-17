@@ -1549,7 +1549,7 @@ export const KNOWLEDGE_STAGE_WEIGHT: Record<KnowledgeStage, number> = {
  * 界面上永远是先入门后深入（同阶段保持书写顺序）。
  */
 export function knowledgeOfCategory(
-  categoryId: CategoryId,
+  categoryId: string,
 ): readonly KnowledgeTopic[] {
   return KNOWLEDGE_TOPICS.filter(
     (topic) => topic.categoryId === categoryId,

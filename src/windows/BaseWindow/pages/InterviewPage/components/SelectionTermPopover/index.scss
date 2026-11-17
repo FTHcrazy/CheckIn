@@ -1,0 +1,97 @@
+@use "../../../../../../shared/styles/widget" as widget;
+@use "../../../../../../shared/styles/motion" as motion;
+
+// 划词浮层：portal 到 body、fixed 定位（列表容器 overflow: auto，不 portal 会被裁）
+.interview-selection {
+  position: fixed;
+  z-index: 1200;
+  width: 268px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px 8px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-panel);
+  background: var(--app-surface);
+  box-shadow: var(--app-shadow-pop);
+  // 浮层自己不许被拖选：否则「在浮层上划一下」会触发新一轮划词
+  user-select: none;
+
+  &__head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  &__term {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--app-text-strong);
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  &__badge {
+    flex: none;
+    padding: 0 6px;
+    border-radius: var(--app-radius-chip);
+    background: var(--app-surface-alt);
+    color: var(--app-text-muted);
+    font-size: 11px;
+    line-height: 18px;
+  }
+
+  &__answer {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 220px;
+    overflow-y: auto;
+  }
+
+  &__text {
+    margin: 0;
+    color: var(--app-text);
+    font-size: 13px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    user-select: text;
+  }
+
+  &__loading,
+  &__error {
+    font-size: 12px;
+    color: var(--app-text-muted);
+  }
+
+  &__error {
+    color: var(--app-error);
+  }
+
+  &__ops {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  &__add.ant-btn,
+  &__ask.ant-btn {
+    --ant-control-height: 26px;
+    --ant-font-size: 13px;
+    flex: none;
+  }
+
+  &__close.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-button-text-text-color: var(--app-text-muted);
+    --ant-button-text-text-hover-color: var(--app-text);
+    --ant-control-height: 26px;
+    --ant-button-padding-inline: 4px;
+    flex: none;
+    margin-left: auto;
+    font-size: 12px;
+    @include motion.transition-fast(color);
+  }
+}

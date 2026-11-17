@@ -36,6 +36,16 @@
     flex: none;
   }
 
+  // 「已隐藏的默认题」入口：与知识体系同排，是维护入口不是筛选，故不加选中态
+  &__hidden.ant-btn {
+    flex: none;
+  }
+
+  // AI 拓展入口：同上，禁用态由组件库管（用 title 说明缺哪项配置）
+  &__ai.ant-btn {
+    flex: none;
+  }
+
   &__meta {
     display: flex;
     align-items: center;

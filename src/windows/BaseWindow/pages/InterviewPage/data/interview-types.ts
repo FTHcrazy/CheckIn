@@ -47,8 +47,32 @@ export type CategoryId =
   | "foundation-database"
   | "foundation-ai";
 
+/**
+ * 基线分类 id（22 个，源码常量里的字面量联合）。
+ *
+ * 静态文件（`interview-taxonomy.ts` / `interview-knowledge.ts` /
+ * `MIN_PER_CATEGORY` 这类穷尽性表）**只能**用它：`Record<BaselineCategoryId, …>`
+ * 的穷尽性守卫是「新增分类漏了哪一处」的唯一保障，一旦把动态分类混进来就全废。
+ */
+export type BaselineCategoryId = CategoryId;
+
+/**
+ * 用户 / AI 新建的分类 id（只存在于 `interview_taxonomy`）。
+ *
+ * 前缀 `u-c-` 与 22 个基线字面量不可能重合，所以两种 id 可以安全并存于同一字段。
+ */
+export type CustomCategoryId = `u-c-${string}`;
+
+/**
+ * 合并视图里的分类 id：基线 22 个 ∪ 库里的自定义分类。
+ *
+ * 只有「合并视图 / 渲染 / 筛选」这条链用它；`CATEGORY_BY_ID[id]` 查不到自定义
+ * 分类，必须走 `categoryNodeOf()` / 传入合并后的分类表（见 `categoryPath`）。
+ */
+export type InterviewCategoryId = BaselineCategoryId | CustomCategoryId;
+
 /** 「不限分类」的哨兵值，与具体分类同放一处便于类型收窄 */
-export type CategoryKey = CategoryId | "all";
+export type CategoryKey = InterviewCategoryId | "all";
 
 /** 「不限难度」的哨兵值 */
 export type DifficultyKey = Difficulty | "all";
@@ -87,7 +111,12 @@ export interface InterviewQuestion {
    */
   diagramId?: string;
   track: QuestionTrack;
-  categoryId: CategoryId;
+  /**
+   * 所属分类。基线题是 22 个字面量之一；用户 / AI 新增的题可能挂在
+   * `u-c-*` 自定义分类下 —— 所以这里是放宽后的 `InterviewCategoryId`，
+   * 静态表的穷尽性仍由 `BaselineCategoryId` 守住。
+   */
+  categoryId: InterviewCategoryId;
   difficulty: Difficulty;
   tags: string[];
   /** 来源主题（如「React 渲染原理」），用于标注与后续维护 */

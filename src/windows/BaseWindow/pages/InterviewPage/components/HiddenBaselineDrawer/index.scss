@@ -1,0 +1,58 @@
+// 「已隐藏的默认题」抽屉：一行一题，行尾是恢复入口
+.interview-hidden {
+  &__hint {
+    display: block;
+    margin-bottom: 12px;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  &__empty {
+    margin-top: 32px;
+  }
+
+  &__list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  &__item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    // 行是定高内容：不许被父级 flex / overflow 压扁（与卡片同一条约定）
+    flex: none;
+    padding: 8px 10px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-item);
+    background: var(--app-surface);
+  }
+
+  &__text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__title {
+    color: var(--app-text-strong);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  &__meta {
+    color: var(--app-text-muted);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  &__restore.ant-btn {
+    flex: none;
+  }
+}

@@ -11,11 +11,12 @@
  * 与 R-AI-10a 的边界（PRD 明确要求划分）：10a **报问题**，本条**建资产**。
  * 所以这里只产出「新增边」，绝不产出删除 / 改写已有关系的指令。
  */
-import type { AiBookContext } from "../collector";
-import type { L3Scope } from "../../ai-consent";
-import type { OutputFormat } from "../output-spec";
-import type { PromptSpec } from "./types";
-import { composePrompt, constraintBlock, entityBlock, roleBlock, workBlock } from "./sections";
+import type { AiBookContext } from "../types";
+import type { L3Scope } from "../../../../../ai-consent";
+import type { OutputFormat } from "../../../../output-spec";
+import type { PromptSpec } from "../../../types";
+import { composePrompt, constraintBlock, roleBlock } from "../../../kit";
+import { entityBlock, workBlock } from "../sections";
 
 /** 关系推断意图参数 */
 export interface RelationIntent {
