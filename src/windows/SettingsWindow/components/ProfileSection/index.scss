@@ -3,6 +3,7 @@
   /* 上下都取 12px：与 .settings-item / .settings-field 的行内边距同一节奏。
      原先底部多留 4px 是为了给卡内的保存按钮留白，按钮已移到页面底部操作条。 */
   padding: 12px 16px;
+  user-select: none;
 
   .ant-alert {
     margin-bottom: 12px;

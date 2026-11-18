@@ -95,6 +95,8 @@ export default function GlossaryEditDrawer({
 }: GlossaryEditDrawerProps) {
   const [form] = Form.useForm<GlossaryFormValues>();
   const [failures, setFailures] = useState<string[]>([]);
+  /** 保存中：只让「保存」转圈（删除是另一个动作，共用 `pendingId` 会出现两个按钮一起转） */
+  const [saving, setSaving] = useState(false);
 
   // 每次打开都用当前词条重填：抽屉不销毁（`forceRender`），
   // 残留上一条的值会让用户改错词条
@@ -146,7 +148,9 @@ export default function GlossaryEditDrawer({
       return;
     }
     setFailures([]);
+    setSaving(true);
     const outcome = await save(next);
+    setSaving(false);
     if (outcome.ok) {
       onSaved();
       return;
@@ -162,6 +166,8 @@ export default function GlossaryEditDrawer({
       size="large"
       open={open}
       onClose={onClose}
+      // 与题目编辑同一口径：点遮罩不关，避免误点丢掉刚改的词条内容
+      maskClosable={false}
       // 抽屉根节点默认 inset:0 会盖住 34px 的窗口标题栏（顶部 × 落进拖动带，
       // 系统命中测试判成 HTCAPTION，与 z-index 无关）。与其余抽屉逐字一致。
       styles={{ root: { top: "var(--app-window-header-height, 34px)" } }}
@@ -189,7 +195,7 @@ export default function GlossaryEditDrawer({
           <Button
             className="interview-gedit__save"
             type="primary"
-            loading={pendingId === term?.id}
+            loading={saving}
             onClick={() => form.submit()}
           >
             保存

@@ -1,4 +1,4 @@
-import { Alert, Button, Drawer, Empty, Tag, Typography } from "antd";
+import { Alert, Button, Drawer, Empty, Spin, Tag, Typography } from "antd";
 import { SafetyCertificateOutlined } from "@ant-design/icons";
 import { INTERVIEW_LIMITS, type AuditSeverity } from "@/shared/ai/context/prompt";
 import type { InterviewQuestion } from "../../data/interview-types";
@@ -78,7 +78,7 @@ export default function AuditDrawer({
     >
       <Text type="secondary" className="interview-audit__hint">
         把当前筛选下的题目送上去逐条核对：答案对不对、关键点有没有漏、分类与难度是否匹配、
-        是否与已有题目重复。质检**不会改动题库**，每条结论点「去改」才会打开该题的编辑。
+        是否与已有题目重复。质检<b>不会改动题库</b>，每条结论点「去改」才会打开该题的编辑。
       </Text>
 
       <div className="interview-audit__bar">
@@ -91,8 +91,7 @@ export default function AuditDrawer({
           type="primary"
           icon={<SafetyCertificateOutlined />}
           loading={running}
-          disabled={!available || batchSize === 0}
-          title={unavailableText || (batchSize === 0 ? "当前筛选下没有题目" : "开始质检")}
+          disabled={!available || batchSize === 0 || running}
           onClick={onRun}
         >
           {issues.length > 0 || auditedCount > 0 ? "重新质检" : "开始质检"}
@@ -121,7 +120,13 @@ export default function AuditDrawer({
         />
       ) : null}
 
-      {issues.length === 0 ? (
+      {running && issues.length === 0 ? (
+        // 正在跑：不能落回「还没有质检过」的空态，那会让用户以为点了没反应
+        <div className="interview-audit__running" role="status">
+          <Spin size="small" />
+          正在核对这 {batchSize} 道题，通常十几秒…
+        </div>
+      ) : issues.length === 0 ? (
         <Empty
           className="interview-audit__empty"
           image={Empty.PRESENTED_IMAGE_SIMPLE}

@@ -424,11 +424,15 @@ function InterviewPageBody() {
    * 用 `App.useApp()` 拿 `modal`（**不要** import `Modal` 静态方法：静态方法没有
    * 主题上下文，弹出来的是另一套配色）。组件测试里没有 `<App>` 包裹，
    * 那时 `modal` 是空对象 —— 直接执行动作，而不是静默把这次点击吞掉。
+   *
+   * `onOk` 原样返回写入的 Promise：antd 会据此让「确定」按钮一直转圈到写库
+   * 结束，用户拿得到「这一下确实在写」的反馈；写失败不影响弹窗关闭，
+   * 原因由页面上方的失败提示条接住。
    */
   const confirmThen = useCallback(
-    (copy: ConfirmCopy, action: () => void): void => {
+    (copy: ConfirmCopy, action: () => Promise<unknown> | void): void => {
       if (typeof modal?.confirm !== "function") {
-        action();
+        void action();
         return;
       }
       modal.confirm({
@@ -437,9 +441,7 @@ function InterviewPageBody() {
         okText: copy.okText,
         cancelText: "取消",
         okButtonProps: { danger: true },
-        onOk: () => {
-          action();
-        },
+        onOk: () => action(),
       });
     },
     [modal],
@@ -468,9 +470,7 @@ function InterviewPageBody() {
           content: `「${question.title}」将不再出现在题库里，内置内容不会丢，随时可以在「已隐藏的默认题」里恢复。`,
           okText: "隐藏",
         },
-        () => {
-          void hideBaseline(question);
-        },
+        () => hideBaseline(question),
       );
     },
     [confirmThen, hideBaseline],
@@ -484,9 +484,7 @@ function InterviewPageBody() {
           content: `你对「${question.title}」的修改会被丢弃，恢复成内置版本的原文。`,
           okText: "还原",
         },
-        () => {
-          void revertToDefault(question.id);
-        },
+        () => revertToDefault(question.id),
       );
     },
     [confirmThen, revertToDefault],
@@ -500,9 +498,7 @@ function InterviewPageBody() {
           content: `「${question.title}」是你自己新建的题，删除后进回收站，可以在回收站里找回。`,
           okText: "删除",
         },
-        () => {
-          void deleteNew(question.id);
-        },
+        () => deleteNew(question.id),
       );
     },
     [confirmThen, deleteNew],
@@ -530,11 +526,10 @@ function InterviewPageBody() {
           content: `「${term.term}」删除后正文里不再点亮，也不会再出现在搜索里。`,
           okText: "删除",
         },
-        () => {
-          void removeGlossary(term).then((outcome) => {
+        () =>
+          removeGlossary(term).then((outcome) => {
             if (outcome.ok) setEditingTerm(null);
-          });
-        },
+          }),
       );
     },
     [confirmThen, removeGlossary],
@@ -557,9 +552,7 @@ function InterviewPageBody() {
           content: "你在这道题上的修改会被丢弃，恢复成新版默认答案。",
           okText: "覆盖",
         },
-        () => {
-          void revertToDefault(id);
-        },
+        () => revertToDefault(id),
       );
     },
     [confirmThen, revertToDefault],
@@ -574,9 +567,7 @@ function InterviewPageBody() {
           content: "这条内容不会被保留，删除后无法恢复。",
           okText: "丢弃",
         },
-        () => {
-          void revertToDefault(id);
-        },
+        () => revertToDefault(id),
       );
     },
     [confirmThen, revertToDefault],
@@ -680,9 +671,7 @@ function InterviewPageBody() {
           content: `「${item.title || item.id}」会被彻底删除（不进回收站，无法恢复）。`,
           okText: "丢弃",
         },
-        () => {
-          void draftApi.discard(item);
-        },
+        () => draftApi.discard(item),
       );
     },
     [confirmThen, draftApi],
@@ -712,276 +701,294 @@ function InterviewPageBody() {
           用户不必每次去弹层里手动切领域 */}
       <GlossaryMatchIndexContext.Provider value={matchIndex ?? null}>
         <Page>
-        <div className="interview-page" ref={pageRef}>
-          <SearchPanel
-            track={filter.track}
-            keyword={keywordInput}
-            total={total}
-            favoriteCount={favoriteCount}
-            hiddenCount={bank?.hiddenIds.length ?? 0}
-            draftCount={drafts.length}
-            hintCount={hints.length}
-            onTrackChange={setTrack}
-            onKeywordChange={setKeywordInput}
-            onSearch={submitKeyword}
-            onOpenKnowledge={() => setKnowledgeOpen(true)}
-            onOpenHidden={() => setHiddenOpen(true)}
-            onOpenDrafts={() => setDraftOpen(true)}
-            onOpenHints={() => setMuteOpen(true)}
-            onOpenAi={openAiDrawer}
-            onOpenAudit={() => setAuditOpen(true)}
-            aiHidden={ai.hidden}
-            aiDisabledText={ai.available ? "" : ai.unavailableText}
-          />
+          <div className="interview-page" ref={pageRef}>
+            <SearchPanel
+              track={filter.track}
+              keyword={keywordInput}
+              total={total}
+              favoriteCount={favoriteCount}
+              hiddenCount={bank?.hiddenIds.length ?? 0}
+              draftCount={drafts.length}
+              hintCount={hints.length}
+              onTrackChange={setTrack}
+              onKeywordChange={setKeywordInput}
+              onSearch={submitKeyword}
+              onOpenKnowledge={() => setKnowledgeOpen(true)}
+              onOpenHidden={() => setHiddenOpen(true)}
+              onOpenDrafts={() => setDraftOpen(true)}
+              onOpenHints={() => setMuteOpen(true)}
+              onOpenAi={openAiDrawer}
+              onOpenAudit={() => setAuditOpen(true)}
+              aiHidden={ai.hidden}
+              aiDisabledText={ai.available ? "" : ai.unavailableText}
+              loading={bank?.loading ?? false}
+            />
 
-        {/* 升级后的两件待办：基线被官方修订过 / 我的修改在新版失效。
-            一次只报条数，点进去才逐条处理 —— 顶部条不该抢走整页注意力 */}
-        {staleCount > 0 || orphanCount > 0 ? (
-          <Alert
-            className="interview-page__notice"
-            type="warning"
-            showIcon
-            message={`${staleCount > 0 ? `${staleCount} 道你改过的题在新版有更新` : ""}${
-              staleCount > 0 && orphanCount > 0 ? "；" : ""
-            }${orphanCount > 0 ? `${orphanCount} 条修改因默认题被移除而失效` : ""}`}
-            action={
-              <Space size={8}>
-                {staleCount > 0 ? (
-                  <Button
-                    className="interview-page__notice-stale"
-                    size="small"
-                    onClick={() => setStaleOpen(true)}
-                  >
-                    处理更新
+            {/* 读库失败：题库已经回落内置基线，页面照常可读 —— 但必须说清「你现在
+                看到的不是自己的改动」，否则用户只会觉得「我改过的题全没了」。
+                给一个重试入口：多数失败是库被锁 / 升级中，重试一次就好。 */}
+            {bank?.error ? (
+              <Alert
+                className="interview-page__failure"
+                type="warning"
+                showIcon
+                message={bank.error}
+                action={
+                  <Button className="interview-page__retry" size="small" onClick={reload}>
+                    重新读取
                   </Button>
-                ) : null}
-                {orphanCount > 0 ? (
-                  <Button
-                    className="interview-page__notice-orphan"
-                    size="small"
-                    onClick={() => setOrphanOpen(true)}
-                  >
-                    处理失效
-                  </Button>
-                ) : null}
-              </Space>
-            }
-          />
-        ) : null}
+                }
+              />
+            ) : null}
 
-        {/* 写失败的原因：主进程返回的中文原话，原样摆出来（吞掉就只剩「没反应」） */}
-        {overrideError ? (
-          <Alert
-            className="interview-page__failure"
-            type="error"
-            showIcon
-            closable
-            message={overrideError}
-            onClose={clearError}
-          />
-        ) : null}
+          {/* 升级后的两件待办：基线被官方修订过 / 我的修改在新版失效。
+              一次只报条数，点进去才逐条处理 —— 顶部条不该抢走整页注意力 */}
+          {staleCount > 0 || orphanCount > 0 ? (
+            <Alert
+              className="interview-page__notice"
+              type="warning"
+              showIcon
+              message={`${staleCount > 0 ? `${staleCount} 道你改过的题在新版有更新` : ""}${
+                staleCount > 0 && orphanCount > 0 ? "；" : ""
+              }${orphanCount > 0 ? `${orphanCount} 条修改因默认题被移除而失效` : ""}`}
+              action={
+                <Space size={8}>
+                  {staleCount > 0 ? (
+                    <Button
+                      className="interview-page__notice-stale"
+                      size="small"
+                      onClick={() => setStaleOpen(true)}
+                    >
+                      处理更新
+                    </Button>
+                  ) : null}
+                  {orphanCount > 0 ? (
+                    <Button
+                      className="interview-page__notice-orphan"
+                      size="small"
+                      onClick={() => setOrphanOpen(true)}
+                    >
+                      处理失效
+                    </Button>
+                  ) : null}
+                </Space>
+              }
+            />
+          ) : null}
 
-        {/* 名词维护失败（右键解除 / 删别名）：与题目维护共用一个位置，
-            用户不需要知道是哪套通道失败的 */}
-        {hintApi.error || aliasApi.error ? (
-          <Alert
-            className="interview-page__failure"
-            type="error"
-            showIcon
-            closable
-            message={hintApi.error ?? aliasApi.error ?? ""}
-            onClose={() => {
-              clearHintError();
-              clearAliasError();
-            }}
-          />
-        ) : null}
+          {/* 写失败的原因：主进程返回的中文原话，原样摆出来（吞掉就只剩「没反应」） */}
+          {overrideError ? (
+            <Alert
+              className="interview-page__failure"
+              type="error"
+              showIcon
+              closable
+              message={overrideError}
+              onClose={clearError}
+            />
+          ) : null}
 
-        <div className="interview-page__body">
-          <CategorySidebar
+          {/* 名词维护失败（右键解除 / 删别名）：与题目维护共用一个位置，
+              用户不需要知道是哪套通道失败的 */}
+          {hintApi.error || aliasApi.error ? (
+            <Alert
+              className="interview-page__failure"
+              type="error"
+              showIcon
+              closable
+              message={hintApi.error ?? aliasApi.error ?? ""}
+              onClose={() => {
+                clearHintError();
+                clearAliasError();
+              }}
+            />
+          ) : null}
+
+          <div className="interview-page__body">
+            <CategorySidebar
+              track={filter.track}
+              categoryId={filter.categoryId}
+              counts={counts}
+              categories={categories}
+              onSelect={setCategory}
+              onManage={() => setTaxonomyOpen(true)}
+            />
+
+            <div className="interview-page__main">
+              <FilterBar
+                difficulty={filter.difficulty}
+                sortBy={filter.sortBy}
+                tags={filter.tags}
+                tagOptions={tagOptions}
+                favoritesOnly={filter.favoritesOnly}
+                onDifficultyChange={setDifficulty}
+                onSortChange={setSortBy}
+                onTagsChange={setTags}
+                onFavoritesOnlyChange={setFavoritesOnly}
+                onReset={reset}
+              />
+
+              <QuestionList
+                questions={questions}
+                total={total}
+                page={page}
+                pageCount={pageCount}
+                pageSize={pageSize}
+                keyword={filter.keyword}
+                favorites={favorites}
+                originById={originById}
+                staleIds={staleIds}
+                pendingId={pendingId}
+                onToggleFavorite={toggleFavorite}
+                onPageChange={setPage}
+                onReset={reset}
+                onEdit={handleEdit}
+                onHide={handleHide}
+                onRevert={handleRevert}
+                onDeleteNew={handleDeleteNew}
+                onAckBase={handleAckBase}
+              />
+            </div>
+          </div>
+
+          <KnowledgeDrawer
+            open={knowledgeOpen}
             track={filter.track}
             categoryId={filter.categoryId}
-            counts={counts}
-            categories={categories}
-            onSelect={setCategory}
-            onManage={() => setTaxonomyOpen(true)}
+            onClose={() => setKnowledgeOpen(false)}
           />
 
-          <div className="interview-page__main">
-            <FilterBar
-              difficulty={filter.difficulty}
-              sortBy={filter.sortBy}
-              tags={filter.tags}
-              tagOptions={tagOptions}
-              favoritesOnly={filter.favoritesOnly}
-              onDifficultyChange={setDifficulty}
-              onSortChange={setSortBy}
-              onTagsChange={setTags}
-              onFavoritesOnlyChange={setFavoritesOnly}
-              onReset={reset}
-            />
+          <HiddenBaselineDrawer
+            open={hiddenOpen}
+            hiddenIds={bank?.hiddenIds ?? []}
+            pendingId={pendingId}
+            onRestore={handleRestore}
+            onClose={() => setHiddenOpen(false)}
+          />
 
-            <QuestionList
-              questions={questions}
-              total={total}
-              page={page}
-              pageCount={pageCount}
-              pageSize={pageSize}
-              keyword={filter.keyword}
-              favorites={favorites}
-              originById={originById}
-              staleIds={staleIds}
-              pendingId={pendingId}
-              onToggleFavorite={toggleFavorite}
-              onPageChange={setPage}
-              onReset={reset}
-              onEdit={handleEdit}
-              onHide={handleHide}
-              onRevert={handleRevert}
-              onDeleteNew={handleDeleteNew}
-              onAckBase={handleAckBase}
-            />
+          <StaleBaseDrawer
+            open={staleOpen}
+            items={bank?.staleBase ?? []}
+            pendingId={pendingId}
+            titleOf={titleOf}
+            onAck={(id) => void ackBaseline(id)}
+            onUseBaseline={handleReplaceWithBaseline}
+            onClose={() => setStaleOpen(false)}
+          />
+
+          <OrphanPanel
+            open={orphanOpen}
+            items={bank?.orphaned ?? []}
+            pendingId={pendingId}
+            onAdopt={(id) => void adoptOrphan(id)}
+            onDiscard={handleDiscardOrphan}
+            onClose={() => setOrphanOpen(false)}
+          />
+
+          <TaxonomyPanel
+            open={taxonomyOpen}
+            taxonomy={taxonomyRows}
+            track={filter.track}
+            api={taxonomyApi}
+            ai={taxonomyAi}
+            onAdoptedSuggest={handleTaxonomyAdopted}
+            onClose={() => setTaxonomyOpen(false)}
+          />
+
+          <DraftBoxDrawer
+            open={draftOpen}
+            items={drafts}
+            categories={categories}
+            pendingId={draftApi.pendingId}
+            error={draftApi.error}
+            onClearError={draftApi.clearError}
+            onAdopt={handleAdoptDraft}
+            onDiscard={handleDiscardDraft}
+            onClose={() => setDraftOpen(false)}
+          />
+
+          <AiDraftDrawer
+            open={aiOpen}
+            prefill={aiPrefill}
+            categories={categories}
+            ai={ai}
+            onClose={() => setAiOpen(false)}
+          />
+
+          <AuditDrawer
+            open={auditOpen}
+            pool={filteredQuestions}
+            questionOf={questionOf}
+            available={audit.available}
+            unavailableText={audit.available ? "" : audit.unavailableText}
+            running={audit.running}
+            error={audit.error}
+            issues={audit.issues}
+            usedFallback={audit.usedFallback}
+            auditedCount={audit.auditedCount}
+            onRun={() => void audit.run(filteredQuestions)}
+            onDiscard={audit.discard}
+            onEdit={handleAuditEdit}
+            onClose={() => setAuditOpen(false)}
+          />
+
+          <MutePanel
+            open={muteOpen}
+            items={hints}
+            termOf={glossaryOfId}
+            pendingId={hintApi.pendingId}
+            onRestore={(id) => void hintRestore(id)}
+            onClose={() => setMuteOpen(false)}
+          />
+
+          <GlossaryEditDrawer
+            open={editingTerm !== null}
+            term={editingTerm}
+            categories={categories}
+            holders={glossaryHolders}
+            pendingId={glossaryEdit.pendingId}
+            error={glossaryEdit.error}
+            onClearError={glossaryEdit.clearError}
+            onClose={() => setEditingTerm(null)}
+            onSaved={() => setEditingTerm(null)}
+            save={saveGlossary}
+            onDelete={handleDeleteTerm}
+          />
+
+          <QuestionEditDrawer
+            open={editing !== null}
+            question={editing}
+            origin={editingOrigin}
+            categories={categories}
+            onClose={closeEditor}
+            onSaved={closeEditor}
+            saveOverride={saveOverride}
+          />
+
+          {/* 划词浮层：portal 到 body，位置由选区矩形算 */}
+          <SelectionTermPopover
+            selection={selection}
+            existing={existingTerm}
+            answer={ai.explain}
+            onAddTerm={handleAddTerm}
+            onSupplement={handleSupplementTerm}
+            aliasOwner={aliasOwner}
+            aliasPending={aliasApi.pendingId !== null}
+            aliasError={aliasApi.error}
+            onAddAlias={(owner, text) => {
+              void aliasApi.append(owner, text).then((ok) => {
+                if (ok) clearSelection();
+              });
+            }}
+            onAskAi={(picked) => void ai.askExplain(picked.text, picked.sentence)}
+            onClearAnswer={ai.clearExplain}
+            onClose={() => {
+              clearSelection();
+              aliasApi.clearError();
+              ai.clearExplain();
+            }}
+          />
           </div>
-        </div>
-
-        <KnowledgeDrawer
-          open={knowledgeOpen}
-          track={filter.track}
-          categoryId={filter.categoryId}
-          onClose={() => setKnowledgeOpen(false)}
-        />
-
-        <HiddenBaselineDrawer
-          open={hiddenOpen}
-          hiddenIds={bank?.hiddenIds ?? []}
-          pendingId={pendingId}
-          onRestore={handleRestore}
-          onClose={() => setHiddenOpen(false)}
-        />
-
-        <StaleBaseDrawer
-          open={staleOpen}
-          items={bank?.staleBase ?? []}
-          pendingId={pendingId}
-          titleOf={titleOf}
-          onAck={(id) => void ackBaseline(id)}
-          onUseBaseline={handleReplaceWithBaseline}
-          onClose={() => setStaleOpen(false)}
-        />
-
-        <OrphanPanel
-          open={orphanOpen}
-          items={bank?.orphaned ?? []}
-          pendingId={pendingId}
-          onAdopt={(id) => void adoptOrphan(id)}
-          onDiscard={handleDiscardOrphan}
-          onClose={() => setOrphanOpen(false)}
-        />
-
-        <TaxonomyPanel
-          open={taxonomyOpen}
-          taxonomy={taxonomyRows}
-          track={filter.track}
-          api={taxonomyApi}
-          ai={taxonomyAi}
-          onAdoptedSuggest={handleTaxonomyAdopted}
-          onClose={() => setTaxonomyOpen(false)}
-        />
-
-        <DraftBoxDrawer
-          open={draftOpen}
-          items={drafts}
-          categories={categories}
-          pendingId={draftApi.pendingId}
-          error={draftApi.error}
-          onClearError={draftApi.clearError}
-          onAdopt={handleAdoptDraft}
-          onDiscard={handleDiscardDraft}
-          onClose={() => setDraftOpen(false)}
-        />
-
-        <AiDraftDrawer
-          open={aiOpen}
-          prefill={aiPrefill}
-          categories={categories}
-          ai={ai}
-          onClose={() => setAiOpen(false)}
-        />
-
-        <AuditDrawer
-          open={auditOpen}
-          pool={filteredQuestions}
-          questionOf={questionOf}
-          available={audit.available}
-          unavailableText={audit.available ? "" : audit.unavailableText}
-          running={audit.running}
-          error={audit.error}
-          issues={audit.issues}
-          usedFallback={audit.usedFallback}
-          auditedCount={audit.auditedCount}
-          onRun={() => void audit.run(filteredQuestions)}
-          onDiscard={audit.discard}
-          onEdit={handleAuditEdit}
-          onClose={() => setAuditOpen(false)}
-        />
-
-        <MutePanel
-          open={muteOpen}
-          items={hints}
-          termOf={glossaryOfId}
-          pendingId={hintApi.pendingId}
-          onRestore={(id) => void hintRestore(id)}
-          onClose={() => setMuteOpen(false)}
-        />
-
-        <GlossaryEditDrawer
-          open={editingTerm !== null}
-          term={editingTerm}
-          categories={categories}
-          holders={glossaryHolders}
-          pendingId={glossaryEdit.pendingId}
-          error={glossaryEdit.error}
-          onClearError={glossaryEdit.clearError}
-          onClose={() => setEditingTerm(null)}
-          onSaved={() => setEditingTerm(null)}
-          save={saveGlossary}
-          onDelete={handleDeleteTerm}
-        />
-
-        <QuestionEditDrawer
-          open={editing !== null}
-          question={editing}
-          origin={editingOrigin}
-          categories={categories}
-          onClose={closeEditor}
-          onSaved={closeEditor}
-          saveOverride={saveOverride}
-        />
-
-        {/* 划词浮层：portal 到 body，位置由选区矩形算 */}
-        <SelectionTermPopover
-          selection={selection}
-          existing={existingTerm}
-          answer={ai.explain}
-          onAddTerm={handleAddTerm}
-          onSupplement={handleSupplementTerm}
-          aliasOwner={aliasOwner}
-          aliasPending={aliasApi.pendingId !== null}
-          aliasError={aliasApi.error}
-          onAddAlias={(owner, text) => {
-            void aliasApi.append(owner, text).then((ok) => {
-              if (ok) clearSelection();
-            });
-          }}
-          onAskAi={(picked) => void ai.askExplain(picked.text, picked.sentence)}
-          onClearAnswer={ai.clearExplain}
-          onClose={() => {
-            clearSelection();
-            aliasApi.clearError();
-            ai.clearExplain();
-          }}
-        />
-        </div>
         </Page>
       </GlossaryMatchIndexContext.Provider>
     </TermActionContext.Provider>

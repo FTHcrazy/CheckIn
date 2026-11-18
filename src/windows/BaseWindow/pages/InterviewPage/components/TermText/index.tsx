@@ -147,9 +147,10 @@ function TermChip({
     .filter((item): item is GlossaryTerm => Boolean(item));
 
   /** 右键菜单：没有 Provider（组件测试 / 无通道）或没有位置信息时不挂 */
-  const menuNodes = action && offset
-    ? buildTermMenu({ term, hitText: text, hitKey, canEdit: Boolean(action.editTerm) })
-    : [];
+  const menuNodes =
+    action && offset
+      ? buildTermMenu({ term, hitText: text, hitKey, canEdit: Boolean(action.editTerm) })
+      : [];
   const menuItems: MenuProps["items"] = menuNodes.map((node) =>
     isTermMenuGroup(node)
       ? {

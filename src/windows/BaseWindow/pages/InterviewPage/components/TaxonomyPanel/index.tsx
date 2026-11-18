@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Alert, Button, Drawer, Empty, Form, Input, Select, Tag, Typography } from "antd";
 import { CheckOutlined, DownOutlined, PlusOutlined, RobotOutlined } from "@ant-design/icons";
 import type { InterviewTaxonomyDTO } from "@/shared/types/electron";
@@ -70,6 +70,17 @@ export default function TaxonomyPanel({
 
   const drafted = useMemo(() => taxonomy.filter((row) => row.status === "draft"), [taxonomy]);
   const adopted = useMemo(() => taxonomy.filter((row) => row.status === "adopted"), [taxonomy]);
+
+  /**
+   * 轨道要跟着侧栏走。
+   *
+   * `initialValues` 只在**首次挂载**生效，而抽屉是 `forceRender`（不卸载）：
+   * 用户切到「基础知识库」再打开分类管理时，下拉还停在第一次打开时的「笔试」——
+   * 于是新分类落进另一条轨道，侧栏里怎么找都找不到。
+   */
+  useEffect(() => {
+    if (open) form.setFieldsValue({ track });
+  }, [open, track, form]);
 
   const submit = async (values: TaxonomyFormValues): Promise<void> => {
     setCreating(true);
@@ -207,6 +218,8 @@ export default function TaxonomyPanel({
 
           {ai.error ? (
             <Alert
+              // 同 AiDraftDrawer：Alert 的关闭态是内部状态，换新的错误要给新实例
+              key={ai.error}
               className="interview-taxonomy__ai-error"
               type="error"
               showIcon

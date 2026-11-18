@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Button } from "antd";
+import { Button, Tooltip } from "antd";
 import { BulbOutlined, FileAddOutlined, PlusCircleOutlined, TagsOutlined } from "@ant-design/icons";
 import type { GlossaryTerm } from "../../data/interview-glossary";
 import type { SelectionTerm } from "../../hooks/useSelectionTerms";
@@ -49,8 +49,9 @@ const POPOVER_ESTIMATED_HEIGHT = 96;
 const GAP = 8;
 const EDGE = 8;
 
-/** 解释正文的估算行高（翻转到上方的判定要把答案高度算进去，否则会盖住选区） */
-const ANSWER_LINE_HEIGHT = 20;
+/** 解释正文的估算行高（翻转到上方的判定要把答案高度算进去，否则会盖住选区）
+ *  14px × 1.6 ≈ 22.4，向上取整：宁可提前判成「下方放不下」，也别盖住选区 */
+const ANSWER_LINE_HEIGHT = 23;
 const ANSWER_CHARS_PER_LINE = 18;
 
 /** 估算答案区高度：按字数折算行数，最多算 8 行（超出由浮层内部滚动） */
@@ -130,6 +131,37 @@ export default function SelectionTermPopover({
     return () => window.cancelAnimationFrame(frame);
     // `onClearAnswer` 是 useCallback 稳定的，selection 换对象才需要重跑
   }, [selection, onClearAnswer]);
+
+  /**
+   * 收起浮层的两个自然手势：Esc、以及「选区不再原位」。
+   *
+   * 浮层是 `position: fixed` + 一次性算好的坐标：列表一滚它就悬在原地，
+   * 既能挡住别的段落，点的又是「已经不在这儿的那个词」。滚动即收起是
+   * 系统划词菜单的通行做法。
+   *
+   * 两个细节：
+   * 1. `scroll` 必须 capture —— 列表容器的滚动不冒泡到 window；
+   * 2. 浮层**自己内部**的滚动（AI 解释区）不能算，否则读答案时浮层自己没了。
+   */
+  useEffect(() => {
+    if (!selection) return;
+    const dismiss = (event: Event): void => {
+      const target = event.target;
+      if (target instanceof Node && ref.current?.contains(target)) return;
+      onClose();
+    };
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("scroll", dismiss, true);
+    window.addEventListener("resize", dismiss);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("scroll", dismiss, true);
+      window.removeEventListener("resize", dismiss);
+    };
+  }, [selection, onClose]);
 
   const position = useMemo(() => {
     if (!selection) return null;
@@ -219,16 +251,19 @@ export default function SelectionTermPopover({
         {/* 库里那条词条的名字比划中的词长（模型换了叫法）：直接记成它的别名，
             比再生成一条同义词条更快，也不会在词表里留下两条几乎一样的词 */}
         {!isExisting && aliasOwner ? (
-          <Button
-            className="interview-selection__alias"
-            size="small"
-            icon={<TagsOutlined />}
-            loading={aliasPending}
+          <Tooltip
             title={`把「${selection.text}」记为词条「${aliasOwner.term}」的别名，正文里立刻能点开`}
-            onClick={() => onAddAlias?.(aliasOwner, selection.text)}
           >
-            记为「{aliasOwner.term}」的别名
-          </Button>
+            <Button
+              className="interview-selection__alias"
+              size="small"
+              icon={<TagsOutlined />}
+              loading={aliasPending}
+              onClick={() => onAddAlias?.(aliasOwner, selection.text)}
+            >
+              记为「{aliasOwner.term}」的别名
+            </Button>
+          </Tooltip>
         ) : null}
         <Button
           className="interview-selection__ask"

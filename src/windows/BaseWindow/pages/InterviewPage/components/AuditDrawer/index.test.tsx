@@ -119,11 +119,21 @@ describe("AuditDrawer", () => {
     );
   });
 
-  it("AI 不可用时按钮禁用并说明原因", () => {
+  it("AI 不可用时按钮禁用并把原因摆在面板上", () => {
     renderDrawer({ available: false, unavailableText: "还没配置模型服务" });
     const button = document.querySelector(".interview-audit__run") as HTMLButtonElement;
     expect(button.disabled).toBe(true);
-    expect(button.getAttribute("title")).toBe("还没配置模型服务");
+    // 原因写在可见的提示里，不是塞进禁用按钮的 title（禁用元素根本不派发鼠标事件，
+    // 浏览器浮层不会出现 —— 那是「看起来有说明，其实看不到」）
+    expect(document.querySelector(".interview-audit__notice")?.textContent).toContain(
+      "还没配置模型服务",
+    );
+  });
+
+  it("正在质检时给出进度，而不是落回「还没有质检过」", () => {
+    renderDrawer({ running: true, issues: [], auditedCount: 0 });
+    expect(document.querySelector(".interview-audit__running")?.textContent).toContain("正在核对");
+    expect(document.querySelector(".interview-audit__empty")).toBeNull();
   });
 
   it("点「开始质检」触发一次送检", () => {

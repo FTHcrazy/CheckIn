@@ -51,7 +51,7 @@
     flex: none;
   }
 
-  // AI 拓展入口：同上，禁用态由组件库管（用 title 说明缺哪项配置）
+  // AI 拓展入口：同上，禁用态由组件库管（用 Tooltip 说明缺哪项配置）
   &__ai.ant-btn {
     flex: none;
   }
@@ -61,12 +61,26 @@
     flex: none;
   }
 
+  // Tooltip 的载体：禁用按钮自己不收鼠标事件，靠这层 span 接住 hover
+  &__tip {
+    display: inline-flex;
+    flex: none;
+  }
+
   &__meta {
     display: flex;
     align-items: center;
     gap: 16px;
     flex-wrap: wrap;
     font-size: 12px;
+  }
+
+  // 读取中的细指示：与概览同排，字号跟随父级，不抢视觉重心
+  &__syncing {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--app-text-muted);
   }
 
   &__count {

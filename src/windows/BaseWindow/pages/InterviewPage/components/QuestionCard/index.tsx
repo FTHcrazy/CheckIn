@@ -175,6 +175,7 @@ function CardOps({
           type="text"
           size="small"
           icon={<EditOutlined />}
+          disabled={pending}
           aria-label="编辑这道题"
           onClick={() => onEdit(question)}
         />
@@ -370,9 +371,11 @@ export default function QuestionCard({
                 />
               }
             >
-              <Tag className="interview-card__stale" role="button" tabIndex={0}>
+              {/* 用 Button 承载而不是 `<Tag role="button" tabIndex={0}>`：
+                  后者只有标签语义，Enter / Space 不会触发点击，键盘用户进不去这个面板 */}
+              <Button className="interview-card__stale" size="small">
                 基线已更新
-              </Tag>
+              </Button>
             </Popover>
           ) : null}
         </div>
@@ -430,9 +433,9 @@ export default function QuestionCard({
       ) : null}
 
       <div className="interview-card__footer">
-        <span className="interview-card__topic" title="来源主题">
-          {question.topic}
-        </span>
+        <Tooltip title="这道题出自哪个主题">
+          <span className="interview-card__topic">{question.topic}</span>
+        </Tooltip>
         <span className="interview-card__reviewed">
           校对 {question.reviewedAt} · 热度 {question.heat}
         </span>

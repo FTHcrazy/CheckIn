@@ -84,20 +84,30 @@
     width: 24px;
     height: 24px;
     padding: 0;
-    font-size: 13px;
+    font-size: 14px;
     line-height: 1;
   }
 
   // 「基线已更新」标记：挂在标题旁，点开是一个小浮层（不是抽屉）
-  &__stale.ant-tag {
+  // 「基线已更新」标记：一个真按钮（能 Tab 到、Enter 能开面板），外观是标签造型。
+  // 清零与变量必须写在同一个 `.ant-btn` 选择器里，靠源码顺序压过 mixin 的默认值。
+  &__stale.ant-btn {
+    @include widget.ant-button-reset;
+
+    --ant-control-height: 20px;
+    --ant-button-padding-inline: 6px;
+    --ant-button-content-font-size: 12px;
+    --ant-button-default-bg: var(--app-warning-weak);
+    --ant-button-default-hover-bg: var(--app-warning-weak);
+    --ant-button-default-active-bg: var(--app-warning-weak);
+    --ant-button-default-color: var(--app-warning);
+    --ant-button-default-hover-color: var(--app-warning);
+    --ant-button-default-active-color: var(--app-warning);
+
     flex: none;
-    margin-inline-end: 0;
+    height: 20px;
     border-radius: var(--app-radius-chip);
-    background: var(--app-warning-weak);
-    border-color: transparent;
-    color: var(--app-warning);
-    font-size: 12px;
-    cursor: pointer;
+    line-height: 18px;
     user-select: none;
   }
 
@@ -120,7 +130,7 @@
   &__stale-title {
     margin: 0 0 4px;
     color: var(--app-text-strong);
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 600;
     line-height: 1.5;
   }

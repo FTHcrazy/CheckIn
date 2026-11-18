@@ -73,7 +73,13 @@ export default function QuestionList({
           <Empty
             className="interview-list__empty"
             image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description="没有匹配的题目，试试换个关键词或放宽筛选条件"
+            // 空态要分清「搜不到」和「筛空了」：前者用户会去改关键词，
+            // 后者改关键词没用，得放宽难度 / 标签 / 收藏那几个条件
+            description={
+              keyword
+                ? `没有匹配「${keyword}」的题目，换个说法或清空关键词再试`
+                : "当前筛选条件下没有题目，放宽条件后再试"
+            }
           >
             <Button className="interview-list__reset" type="primary" onClick={onReset}>
               重置筛选条件

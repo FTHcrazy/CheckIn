@@ -8,6 +8,7 @@
   font-size: 12px;
   line-height: 1.7;
   color: var(--app-text-secondary);
+  user-select: none;
 
   kbd {
     display: inline-block;
@@ -25,6 +26,7 @@
 
 .settings-shortcut__group {
   border-top: 1px solid var(--app-border);
+  user-select: none;
 }
 
 .settings-shortcut__group-title {
@@ -35,6 +37,7 @@
   letter-spacing: 0.06em;
   color: var(--app-text-muted);
   background: var(--app-surface-alt);
+  user-select: none;
 }
 
 .settings-shortcut__row {

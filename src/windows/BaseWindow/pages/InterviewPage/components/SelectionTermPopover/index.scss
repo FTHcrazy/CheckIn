@@ -39,7 +39,7 @@
     border-radius: var(--app-radius-chip);
     background: var(--app-surface-alt);
     color: var(--app-text-muted);
-    font-size: 11px;
+    font-size: 12px;
     line-height: 18px;
   }
 
@@ -54,7 +54,7 @@
   &__text {
     margin: 0;
     color: var(--app-text);
-    font-size: 13px;
+    font-size: 14px;
     line-height: 1.6;
     white-space: pre-wrap;
     user-select: text;
@@ -64,7 +64,7 @@
   &__one-liner {
     display: block;
     color: var(--app-text-strong);
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 600;
     line-height: 1.6;
     user-select: text;
@@ -93,8 +93,9 @@
   &__ask.ant-btn,
   &__alias.ant-btn,
   &__supplement.ant-btn {
+    // 真正的按钮字号变量是 `--ant-button-content-font-size`（写 `--ant-font-size` 不生效）
     --ant-control-height: 26px;
-    --ant-font-size: 13px;
+    --ant-button-content-font-size: 12px;
     flex: none;
   }
 

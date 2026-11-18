@@ -196,6 +196,9 @@ export default function QuestionEditDrawer({
       size="large"
       open={open}
       onClose={onClose}
+      // 点遮罩不关闭：答案动辄几百字，一次误点就把刚改的内容全丢了。
+      // 要走就走 × / 取消（或 Esc），那是明确动作。
+      maskClosable={false}
       // 抽屉根节点默认 inset:0，会把 34px 的窗口标题栏一起盖住：面板顶部的 ×
       // 正好落进拖动带（系统命中测试判成 HTCAPTION，与 z-index 无关），点了没反应。
       // 与 KnowledgeDrawer 的处理保持逐字一致。
@@ -245,7 +248,8 @@ export default function QuestionEditDrawer({
         layout="vertical"
         requiredMark
         onFinish={(values) => void submit(values)}
-      >        <Form.Item
+      >
+        <Form.Item
           name="title"
           label="标题"
           rules={[{ required: true, whitespace: true, message: "标题不能为空" }]}

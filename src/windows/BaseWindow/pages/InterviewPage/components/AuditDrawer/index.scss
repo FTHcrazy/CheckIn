@@ -37,6 +37,17 @@
     margin-top: 16px;
   }
 
+  // 正在质检：与空态同一块位置，用户一眼知道「在跑，不是没响应」
+  &__running {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 16px;
+    padding: 16px 4px;
+    color: var(--app-text-muted);
+    font-size: 14px;
+  }
+
   &__list {
     display: flex;
     flex-direction: column;

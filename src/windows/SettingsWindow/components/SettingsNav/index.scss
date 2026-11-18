@@ -17,6 +17,7 @@
   border: 1px solid var(--app-border);
   border-radius: var(--app-radius-panel);
   background: var(--app-surface);
+  user-select: none;
 }
 
 .settings-nav__group {

@@ -199,16 +199,17 @@ export default function KnowledgeDrawer({
                 <div className="interview-kc__links">
                   {topic.links.map((link) => (
                     <span className="interview-kc__link-row" key={link.url}>
-                      <Button
-                        className="interview-kc__link"
-                        type="link"
-                        size="small"
-                        icon={<LinkOutlined />}
-                        title={link.url}
-                        onClick={() => void openExternalUrl(link.url)}
-                      >
-                        {link.label}
-                      </Button>
+                      <Tooltip title={link.url}>
+                        <Button
+                          className="interview-kc__link"
+                          type="link"
+                          size="small"
+                          icon={<LinkOutlined />}
+                          onClick={() => void openExternalUrl(link.url)}
+                        >
+                          {link.label}
+                        </Button>
+                      </Tooltip>
                       <Tooltip title={copiedUrl === link.url ? "已复制" : "复制链接"}>
                         <Button
                           className="interview-kc__copy"

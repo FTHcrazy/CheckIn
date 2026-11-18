@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Alert, Button, Drawer, Empty, Form, Input, Select, Tag, Typography } from "antd";
-import { BulbOutlined, DownOutlined, ThunderboltOutlined, UpOutlined } from "@ant-design/icons";
+import { Alert, Button, Drawer, Empty, Form, Input, InputNumber, Select, Spin, Tag, Typography } from "antd";
+import { DownOutlined, ThunderboltOutlined, UpOutlined } from "@ant-design/icons";
 import { DRAFT_DIFFICULTY_LABELS } from "@/shared/ai/context/prompt";
 import type {
   DiagramShape,
@@ -271,8 +271,10 @@ export default function AiDraftDrawer({
                   <Form.Item name="diagramKind" label="图型" className="interview-aidraft__row-main">
                     <Select options={[...DIAGRAM_KIND_OPTIONS]} />
                   </Form.Item>
-                  <Form.Item name="count" label="条数" className="interview-aidraft__row-side">
-                    <Input disabled value="1" />
+                  {/* 图解永远只出一张（`generate` 里 count 被强制成 1）：
+                      这里不挂 `name`，免得表单里那个「3」被当成真的条数显示出来 */}
+                  <Form.Item label="条数" className="interview-aidraft__row-side">
+                    <InputNumber disabled value={1} controls={false} />
                   </Form.Item>
                 </div>
               );
@@ -294,7 +296,7 @@ export default function AiDraftDrawer({
                   />
                 </Form.Item>
                 <Form.Item name="count" label="条数" className="interview-aidraft__row-side">
-                  <Input type="number" min={1} max={10} />
+                  <InputNumber min={1} max={10} precision={0} />
                 </Form.Item>
               </div>
             );
@@ -308,6 +310,9 @@ export default function AiDraftDrawer({
 
       {ai.error ? (
         <Alert
+          // key 跟着文案换：Alert 的「已关闭」是组件内部状态，同一个实例不会重新打开，
+          // 换一条新错误时就再也弹不出来了
+          key={ai.error}
           className="interview-aidraft__error"
           type="error"
           showIcon
@@ -343,8 +348,8 @@ export default function AiDraftDrawer({
       ) : null}
 
       {ai.generating ? (
-        <div className="interview-aidraft__loading">
-          <BulbOutlined /> 正在生成，稍等几秒…
+        <div className="interview-aidraft__loading" role="status">
+          <Spin size="small" /> 正在生成，稍等几秒…
         </div>
       ) : ai.candidates.length === 0 ? (
         <Empty

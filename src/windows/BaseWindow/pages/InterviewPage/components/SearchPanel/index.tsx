@@ -1,4 +1,4 @@
-import { Button, Input, Segmented, Typography } from "antd";
+import { Button, Input, Segmented, Spin, Tooltip, Typography } from "antd";
 import {
   DisconnectOutlined,
   EyeInvisibleOutlined,
@@ -26,6 +26,13 @@ interface SearchPanelProps {
   draftCount: number;
   /** 已解除的名词绑定条数（0 时不显示入口，别给顶栏加常驻噪音） */
   hintCount: number;
+  /**
+   * 本地题库正在读取。
+   *
+   * 首帧就有基线内容可看，所以**不做骨架屏**（那会把已经能读的题藏起来），
+   * 只在结果概览里挂一个细指示：用户知道「我的增量还没算进来」。
+   */
+  loading?: boolean;
   onTrackChange: (track: QuestionTrack) => void;
   onKeywordChange: (value: string) => void;
   onSearch: () => void;
@@ -67,6 +74,7 @@ export default function SearchPanel({
   hiddenCount,
   draftCount,
   hintCount,
+  loading = false,
   onTrackChange,
   onKeywordChange,
   onSearch,
@@ -110,29 +118,37 @@ export default function SearchPanel({
           知识体系
         </Button>
         {/* AI 拓展入口：总开关关着 / 通道不在时整块不渲染；
-            开关开着只是没配全时禁用并说明原因（M8：入口要留下才知道去补什么） */}
+            开关开着只是没配全时禁用并说明原因（M8：入口要留下才知道去补什么）。
+            ⚠️ 禁用态的 `Button` 不派发鼠标事件，原生 title / 直接套 Tooltip 都弹不出来
+            —— 必须垫一层可接收指针的 span（否则用户只看到一个永远灰着的按钮）。 */}
         {onOpenAi && !aiHidden ? (
-          <Button
-            className="interview-search__ai"
-            icon={<RobotOutlined />}
-            disabled={Boolean(aiDisabledText)}
-            title={aiDisabledText || "用 AI 出题、出词条、出图解"}
-            onClick={onOpenAi}
-          >
-            AI 拓展
-          </Button>
+          <Tooltip title={aiDisabledText || "用 AI 出题、出词条、出图解"}>
+            <span className="interview-search__tip">
+              <Button
+                className="interview-search__ai"
+                icon={<RobotOutlined />}
+                disabled={Boolean(aiDisabledText)}
+                onClick={onOpenAi}
+              >
+                AI 拓展
+              </Button>
+            </span>
+          </Tooltip>
         ) : null}
         {/* 题目质检：AI 也参与，所以与 AI 拓展同一套可用性口径（总开关关着就不渲染） */}
         {onOpenAudit && !aiHidden ? (
-          <Button
-            className="interview-search__audit"
-            icon={<SafetyCertificateOutlined />}
-            disabled={Boolean(aiDisabledText)}
-            title={aiDisabledText || "把当前筛选下的题目送上去核对答案与分类"}
-            onClick={onOpenAudit}
-          >
-            题目质检
-          </Button>
+          <Tooltip title={aiDisabledText || "把当前筛选下的题目送上去核对答案与分类"}>
+            <span className="interview-search__tip">
+              <Button
+                className="interview-search__audit"
+                icon={<SafetyCertificateOutlined />}
+                disabled={Boolean(aiDisabledText)}
+                onClick={onOpenAudit}
+              >
+                题目质检
+              </Button>
+            </span>
+          </Tooltip>
         ) : null}
         {/* 草稿箱：草稿不进合并视图，不在这里给入口就等于把内容丢进黑洞 */}
         <Button className="interview-search__drafts" icon={<InboxOutlined />} onClick={onOpenDrafts}>
@@ -164,6 +180,13 @@ export default function SearchPanel({
           当前条件命中 <b className="interview-search__count">{total}</b> 题
         </Text>
         <Text type="secondary">已收藏 {favoriteCount} 题</Text>
+        {/* 读取期间只多一个细指示：内容仍是基线，遮起来反而像掉数据 */}
+        {loading ? (
+          <span className="interview-search__syncing" role="status">
+            <Spin size="small" />
+            正在同步本地题库
+          </span>
+        ) : null}
       </div>
     </section>
   );

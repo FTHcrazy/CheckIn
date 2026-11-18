@@ -22,6 +22,7 @@
   background: var(--app-bg);
   /* 内容不足一屏时压到页面底部，与内容超屏时的 sticky 位置保持一致 */
   margin-top: auto;
+  user-select: none;
 }
 
 .settings-actionbar__state {

@@ -54,6 +54,7 @@ body {
 .settings-page__head {
   flex: none;
   padding: 2px 2px 12px;
+  user-select: none;
 }
 
 .settings-page__title {
@@ -142,6 +143,7 @@ body {
   color: var(--app-text-strong);
   border-bottom: 1px solid var(--app-border);
   background: var(--app-surface-alt);
+  user-select: none;
 }
 
 /**
@@ -166,6 +168,7 @@ body {
   padding: 12px 16px;
   min-height: 48px;
   box-sizing: border-box;
+  user-select: none;
 }
 
 .settings-item__text {
