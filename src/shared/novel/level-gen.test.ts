@@ -8,7 +8,7 @@ import {
   pickedLevelNames,
   type LevelCandidate,
 } from "./level-gen";
-import { clampLevelCount } from "@/shared/ai/context/prompt/level-gen";
+import { clampLevelCount } from "@/shared/ai/context/prompt/domains/novel/builders/level-gen";
 
 /**
  * 等级体系候选构造的契约（R-AI-18）

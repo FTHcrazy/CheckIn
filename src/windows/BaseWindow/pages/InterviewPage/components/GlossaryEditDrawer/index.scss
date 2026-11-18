@@ -1,0 +1,71 @@
+// 词条编辑抽屉：表单竖排，两处「主字段 + 副字段」并排，底部左删右存
+.interview-gedit {
+  &__hint {
+    display: block;
+    margin-bottom: 12px;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  &__failures,
+  &__error {
+    margin-bottom: 12px;
+  }
+
+  &__failure-list {
+    margin: 0;
+    padding-left: 16px;
+    font-size: 12px;
+    line-height: 1.7;
+  }
+
+  &__form.ant-form {
+    padding-bottom: 8px;
+  }
+
+  // 并排两栏：窄窗时折成上下两段，不写死列数
+  &__row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  &__row-main {
+    flex: 1 1 260px;
+    min-width: 0;
+  }
+
+  &__row-side {
+    flex: 0 1 160px;
+  }
+
+  &__footer {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  // 删除在左、保存与取消在右：破坏性动作不挨着主按钮
+  &__spacer {
+    flex: 1;
+  }
+
+  &__meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 4px;
+  }
+
+  &__id.ant-tag {
+    margin: 0;
+    font-family: monospace;
+    font-size: 11px;
+  }
+
+  &__note {
+    color: var(--app-text-muted);
+    font-size: 12px;
+  }
+}

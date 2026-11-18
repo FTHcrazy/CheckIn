@@ -158,6 +158,8 @@
 .ant-select-dropdown,
 .ant-picker-dropdown,
 .ant-popover,
-.ant-drawer {
+.ant-drawer,
+// 面试题页的划词浮层：portal 到 body，可能被翻到窗口顶部而落进这 34px 带
+.interview-selection {
   -webkit-app-region: no-drag;
 }

@@ -1424,6 +1424,107 @@ export interface ElectronAPI {
     /** 可绑定作品（只读 novel.db 的 id + name） */
     workOptions: () => Promise<Array<{ id: string; name: string }>>
   }
+
+  /**
+   * 面试题库（interview.db 独立库）。
+   *
+   * 库内只有**用户增量**：用户新建 / 覆盖基线 / 隐藏基线的那些行。题库本体是
+   * 源码常量，「基线 ∪ 增量」的合并在渲染层做（见 merge-interview-bank.ts）。
+   * 所以这里任何读通道都**可能返回空数组**，不代表题库空了。
+   */
+  interview: {
+    /**
+     * 列表。默认只回**摘要**（不含 payload）；`withPayload: true` 时回详情。
+     *
+     * 为什么两副面孔：一屏几十道题的答案加起来是几百 KB，而列表只需要标题 /
+     * 分类 / 状态几列。只有**合并视图**需要全量 payload（它要把「基线 ∪ 增量」
+     * 合成一份，逐条 `itemGet` 会打几十次 IPC），所以开关只给它用。
+     * 现有调用方不传这个字段，行为与之前完全一致。
+     */
+    itemsList: {
+      (query: InterviewItemsListQueryDTO & { withPayload: true }): Promise<InterviewItemDetailDTO[]>
+      (query?: InterviewItemsListQueryDTO): Promise<InterviewItemSummaryDTO[]>
+    }
+    /** 单条详情：payload 只从这里出（解析后是对象，不是字符串） */
+    itemGet: (id: string) => Promise<InterviewItemDetailDTO | null>
+    /** 保存（新建 / 覆盖 / 墓碑都由 action + status 决定） */
+    itemSave: (payload: {
+      id: string
+      kind: string
+      action: 'new' | 'override'
+      baseId?: string | null
+      payload?: unknown
+      status: string
+      categoryId?: string | null
+      track?: string | null
+      title?: string
+      errors?: string[]
+      sourceIntent?: string | null
+      aiLogId?: number | null
+      baseStamp?: string | null
+      baseHash?: string | null
+    }) => Promise<InterviewWriteResultDTO>
+    /** 改状态（草稿 / 采纳 / 驳回）；采纳前主进程会再验一次结构 */
+    itemSetStatus: (id: string, status: string) => Promise<InterviewWriteResultDTO>
+    /** 软删：只收用户自建；基线题请走 itemRevertDefault */
+    itemDelete: (id: string) => Promise<InterviewWriteResultDTO>
+    itemRestore: (id: string) => Promise<InterviewWriteResultDTO>
+    /** 彻底删除（不可恢复）；打到 override 行会回 code: 'use_restore' */
+    itemPurge: (id: string) => Promise<InterviewWriteResultDTO>
+    /** 还原默认：删掉覆盖行，合并时自然回落基线 */
+    itemRevertDefault: (id: string) => Promise<InterviewWriteResultDTO>
+    /** 确认「基线已更新，沿用我的」：只记指纹，内容不动 */
+    itemAckBase: (id: string, baseHash: string) => Promise<InterviewWriteResultDTO>
+    /** 自定义分类（只存新增，不镜像 22 个基线分类） */
+    taxonomyList: (query?: { track?: string; status?: string }) => Promise<InterviewTaxonomyDTO[]>
+    taxonomySave: (payload: {
+      id: string
+      label: string
+      track: string
+      orderNo?: number
+      status: string
+      note?: string | null
+    }) => Promise<InterviewWriteResultDTO>
+    /**
+     * 词条匹配负例（「这里不是这个词」）。
+     *
+     * 一条记录 = 一个位置指纹：`termId + key + left + right`。渲染层建匹配器时
+     * 用它跳过误命中，而**不动词条本身** —— 同一段文字在别处仍可点。
+     */
+    hintList: () => Promise<InterviewMuteHintDTO[]>
+    hintAdd: (payload: {
+      termId: string
+      key: string
+      left: string
+      right: string
+    }) => Promise<InterviewWriteResultDTO>
+    /** 撤销一条负例（解除错了要能反悔） */
+    hintRemove: (id: string) => Promise<InterviewWriteResultDTO>
+    /** 导出备份（内部弹保存框）；`full` 模式的基线快照由渲染层序列化后传入 */
+    exportBank: (payload: {
+      mode: 'delta' | 'full'
+      kinds?: string[]
+      categoryIds?: string[]
+      baseline?: {
+        version: string
+        questions: number
+        glossary: number
+        diagrams: number
+        categories: number
+      }
+      baselineItems?: { questions?: unknown[]; glossary?: unknown[]; diagrams?: unknown[] }
+    }) => Promise<InterviewExportResultDTO | null>
+    /** 导入备份（内部弹选文件框）；`baselineIds` 判孤儿、`knownCategoryIds` 判分类悬空 */
+    importBank: (payload: {
+      path?: string
+      mode: 'merge' | 'replace'
+      conflict: 'skip' | 'overwrite'
+      baselineIds: string[]
+      knownCategoryIds: string[]
+    }) => Promise<InterviewImportResultDTO | null>
+    /** 库级元信息：schema / 基线版本 / 词条版本号 / 上次导入导出时间 */
+    metaGet: () => Promise<InterviewMetaDTO | null>
+  }
 }
 
 /** 地图列表项（不含文档正文） */
@@ -1467,6 +1568,147 @@ export type MapSaveResultDTO =
 export interface MapBindFailDTO {
   ok: false
   reason: 'work_not_found' | 'work_deleted' | 'doc_not_found'
+}
+
+/**
+ * 列表通道的查询条件。
+ *
+ * `withPayload` 为真时通道返回 `InterviewItemDetailDTO[]`（含 payload），
+ * 否则返回 `InterviewItemSummaryDTO[]` —— 合并视图是唯一需要 payload 的调用方。
+ */
+export interface InterviewItemsListQueryDTO {
+  /** question | glossary | diagram | all（不传 = 全部类型） */
+  kind?: string
+  /** draft | adopted | rejected | hidden | all（不传 = 除回收站外全部） */
+  status?: string
+  categoryId?: string
+  /** 回收站的行只在为真时出（列表页不看回收站） */
+  includeDeleted?: boolean
+  /** 只有合并视图会开，别在一屏列表上开 */
+  withPayload?: boolean
+}
+
+/** 题库列表项（**不含 payload**，一屏几十道题的正文能到几百 KB） */
+export interface InterviewItemSummaryDTO {
+  id: string
+  /** question | glossary | diagram */
+  kind: string
+  /** new = 用户自建；override = 覆盖 / 隐藏了基线某条 */
+  action: string
+  /** override 时等于 id；new 时为 null */
+  baseId: string | null
+  /** draft | adopted | rejected | hidden | deleted */
+  status: string
+  /** ai | manual | seed-import */
+  origin: string
+  categoryId: string | null
+  /** written | foundation；词条与图解为 null */
+  track: string | null
+  title: string
+  /** 领域层校验错误（渲染层算好带进来），用于草稿箱红字 */
+  errors: string[]
+  updatedAt: number
+}
+
+/** 题库单条详情：payload 已解析为对象 */
+export interface InterviewItemDetailDTO extends InterviewItemSummaryDTO {
+  payload: unknown
+  /** 产生这条内容的 intent（如 interviewDraft:question） */
+  sourceIntent: string | null
+  /** ai.db 的 ai_log.id（按值引用，跨库不建外键） */
+  aiLogId: number | null
+  /** 覆盖时基线题的 updatedAt 文本（「你基于 2026-01 版修改」） */
+  baseStamp: string | null
+  /** 覆盖时基线 payload 指纹，用于判「基线已更新」 */
+  baseHash: string | null
+  /** 用户点过「沿用我的」时记下的指纹，抑制重复提示 */
+  ackBaseHash: string | null
+  reviewedAt: number | null
+  createdAt: number
+  /** 非空 = 在回收站 */
+  deletedAt: number | null
+}
+
+/** 题库自定义分类 */
+export interface InterviewTaxonomyDTO {
+  /** u-c-<slug>，与 22 个基线分类的字面量不可能重合 */
+  id: string
+  label: string
+  /** written | foundation */
+  track: string
+  /** 基线之后续排（>= 100） */
+  orderNo: number
+  /** draft | adopted（只有 adopted 进侧栏） */
+  status: string
+  origin: string
+  /** 一句话「这块考什么」 */
+  note: string | null
+  updatedAt: number
+}
+
+/**
+ * 词条匹配负例（用户右键「这里不是这个词」）。
+ *
+ * 记录的是**位置指纹**而不是「删词条 / 删别名」：
+ * `left` / `right` 是命中位置左右各最多 6 个字符。同一段文字在别处出现时
+ * 指纹不同，那条词条照常可点 —— 误命中通常只发生在某个具体搭配里
+ * （「字节流」被「节流」命中），删词条会把全库的「节流」一起摘掉。
+ */
+export interface InterviewMuteHintDTO {
+  id: string
+  /** 被解除的词条 id（基线 id 或 `u-` 开头的自建 id） */
+  termId: string
+  /** 当时命中的键（小写归一：term / en / alias 之一） */
+  key: string
+  left: string
+  right: string
+  createdAt: number
+}
+
+/** 题库写通道的统一返回：失败时 `errors` 是给用户看的人话 */
+export type InterviewWriteResultDTO =
+  | { ok: true; id?: string; glossaryVersion?: number }
+  | {
+      ok: false
+      errors: string[]
+      /** not_ready（未登录）| use_restore（该走还原默认）| use_revert | not_found | not_deleted | not_overridden */
+      code?: string
+    }
+
+/** 导出结果：`null` = 用户取消了保存框 */
+export interface InterviewExportResultDTO {
+  ok: true
+  path: string
+  counts: { questions: number; glossary: number; diagrams: number; taxonomy: number }
+}
+
+/** 导入结果：`null` = 用户取消了选文件框 */
+export type InterviewImportResultDTO =
+  | {
+      ok: true
+      /** 新增（含 replace 模式下复活的） */
+      added: number
+      updated: number
+      /** 跳过的条数（基线快照 / 已存在且策略为 skip / 回收站里的行） */
+      skipped: number
+      /**
+       * 孤儿：覆盖关系指向的基线题在这台机器上不存在。**已入库但不参与渲染**，
+       * 界面必须弹一次让用户选「转存为我的新建题」或「丢弃」。
+       */
+      orphaned: Array<{ id: string; title: string; baseStamp: string | null }>
+      /** 逐条错误（缺 id、结构不合法、分类悬空、来源类型冲突…） */
+      errors: string[]
+    }
+  | { ok: false; errors: string[] }
+
+/** 题库库级元信息 */
+export interface InterviewMetaDTO {  schemaVersion: number | null
+  /** 导出标注用：这份增量基于哪个应用版本产生 */
+  baselineVersion: string | null
+  /** 词条改动计数，供渲染层判断行内高亮词表要不要重建 */
+  glossaryVersion: number
+  lastImportAt: number | null
+  lastExportAt: number | null
 }
 
 /** 快捷键持久化载荷（键 novel_shortcuts） */

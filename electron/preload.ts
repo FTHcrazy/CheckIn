@@ -564,6 +564,113 @@ contextBridge.exposeInMainWorld('electronAPI', {
         },
       }),
 
+  // ── 面试题库（interview.db 独立库：产物 / 分类 / 元信息）──
+  // 与 map 同一套约定：入参压成一个对象，主进程按字段读。
+  // 这里**不做 edition 门控**：preload 只认 `__CHECKIN_NO_MAP__`，题库属 base
+  // 窗口（full / lite），novel 版根本不打包该窗口，也就没有调用方。
+  interview: {
+    /**
+     * 列表：默认**不含 payload**，只给列表要用的元信息 + 领域错误。
+     * `withPayload: true` 时才返回详情（含 payload）—— 只有合并视图该开：
+     * 它要拿「基线 ∪ 增量」的全量内容，逐条 itemGet 会打几十次 IPC。
+     */
+    itemsList: (query?: {
+      kind?: string
+      status?: string
+      categoryId?: string
+      includeDeleted?: boolean
+      withPayload?: boolean
+    }) => trackedInvoke('interview-items-list', query),
+    /** 单条详情：payload 只从这里出 */
+    itemGet: (id: string) => trackedInvoke('interview-item-get', { id }),
+    /** 保存（新建 / 覆盖 / 墓碑都由 status + action 决定） */
+    itemSave: (payload: {
+      id: string
+      kind: string
+      action: 'new' | 'override'
+      baseId?: string | null
+      payload?: unknown
+      status: string
+      categoryId?: string | null
+      track?: string | null
+      title?: string
+      errors?: string[]
+      sourceIntent?: string | null
+      aiLogId?: number | null
+      baseStamp?: string | null
+      baseHash?: string | null
+    }) => trackedInvoke('interview-item-save', payload),
+    /** 改状态（草稿 / 采纳 / 驳回）；采纳前主进程会再验一次结构 */
+    itemSetStatus: (id: string, status: string) =>
+      trackedInvoke('interview-item-set-status', { id, status }),
+    /** 软删：只收用户自建；基线题请走 revertDefault */
+    itemDelete: (id: string) => trackedInvoke('interview-item-delete', { id }),
+    itemRestore: (id: string) => trackedInvoke('interview-item-restore', { id }),
+    /** 彻底删除（不可恢复）；打到 override 行会回 code: 'use_restore' */
+    itemPurge: (id: string) => trackedInvoke('interview-item-purge', { id }),
+    /** 还原默认：删掉覆盖行，合并时自然回落基线 */
+    itemRevertDefault: (id: string) => trackedInvoke('interview-item-revert-default', { id }),
+    /** 确认「基线已更新，沿用我的」：只记指纹，内容不动 */
+    itemAckBase: (id: string, baseHash: string) =>
+      trackedInvoke('interview-item-ack-base', { id, baseHash }),
+    /** 自定义分类（只存新增，不镜像 22 个基线分类） */
+    taxonomyList: (query?: { track?: string; status?: string }) =>
+      trackedInvoke('interview-taxonomy-list', query),
+    taxonomySave: (payload: {
+      id: string
+      label: string
+      track: string
+      orderNo?: number
+      status: string
+      note?: string | null
+    }) => trackedInvoke('interview-taxonomy-save', payload),
+    /**
+     * 词条匹配负例：「这里不是这个词」。
+     *
+     * 存的是**位置指纹**（词条 id + 匹配键 + 左右各 6 字），不是「删这个词条」：
+     * 误命中只发生在某处，同一段文字在别处出现时该词条照常可点。
+     */
+    hintList: () => trackedInvoke('interview-hint-list'),
+    hintAdd: (payload: {
+      termId: string
+      key: string
+      left: string
+      right: string
+    }) => trackedInvoke('interview-hint-add', payload),
+    /** 撤销一条负例（解除错了要能反悔） */
+    hintRemove: (id: string) => trackedInvoke('interview-hint-remove', { id }),
+    /**
+     * 导出备份（内部弹保存框）。`baseline` / `baselineItems` 由渲染层传 ——
+     * 题库本体是渲染层常量，主进程读不到，`full` 模式的基线快照只能这样过来。
+     */
+    exportBank: (payload: {
+      mode: 'delta' | 'full'
+      kinds?: string[]
+      categoryIds?: string[]
+      baseline?: {
+        version: string
+        questions: number
+        glossary: number
+        diagrams: number
+        categories: number
+      }
+      baselineItems?: { questions?: unknown[]; glossary?: unknown[]; diagrams?: unknown[] }
+    }) => trackedInvoke('interview-export', payload),
+    /**
+     * 导入备份（内部弹选文件框）。`baselineIds` / `knownCategoryIds` 同理由渲染层传：
+     * 前者判孤儿，后者判分类悬空。
+     */
+    importBank: (payload: {
+      path?: string
+      mode: 'merge' | 'replace'
+      conflict: 'skip' | 'overwrite'
+      baselineIds: string[]
+      knownCategoryIds: string[]
+    }) => trackedInvoke('interview-import', payload),
+    /** 库级元信息：schema / 基线 / 词条版本号 / 上次导入导出时间 */
+    metaGet: () => trackedInvoke('interview-meta-get'),
+  },
+
   send: (channel: string, data: unknown) => {
     const validChannels = [
       'login-confirm',

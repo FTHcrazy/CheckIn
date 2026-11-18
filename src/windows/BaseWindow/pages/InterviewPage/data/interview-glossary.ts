@@ -11,7 +11,7 @@
  * 2. `term` / `aliases` 是**字面匹配键**，中英文各算一个键，键之间大小写不敏感且必须全局唯一；
  * 3. `related` 只能指向本文件的 id，由 `interview-glossary.test.ts` 守卫。
  */
-import type { CategoryId } from "./interview-types";
+import type { InterviewCategoryId } from "./interview-types";
 
 /** 词条领域：决定弹层上的标签文字，也用于按域排查缺口 */
 export type GlossaryDomain =
@@ -60,8 +60,8 @@ export interface GlossaryTerm {
   detail: readonly string[];
   /** 相关词条 id，弹层尾部展示 */
   related?: readonly string[];
-  /** 该词主要出现在哪个分类下，便于后续按分类补词（可空） */
-  categoryId?: CategoryId;
+  /** 该词主要出现在哪个分类下，便于后续按分类补词（可空；自定义分类为 `u-c-*`） */
+  categoryId?: InterviewCategoryId;
 }
 
 /**
@@ -2113,6 +2113,32 @@ function collectTermMatches(text: string): RawTermMatch[] {
 export interface GlossarySegment {
   text: string;
   term?: GlossaryTerm;
+  /**
+   * 命中区间在**原文**里的起点（含）。
+   *
+   * 只有 `persistence/glossary-matcher.ts` 建出的匹配器会填这两个字段；
+   * 本文件的 `splitByGlossary` 不填（现有 30+ 调用点按「无偏移」工作，保持向后兼容）。
+   * 用途是划词：`TermText` 把文本切成多个节点，光靠 `getSelection().toString()`
+   * 在跨高亮词的选区上会错位，必须用「节点偏移 + range 偏移」反算原文区间。
+   */
+  start?: number;
+  /** 命中区间在原文里的终点（不含） */
+  end?: number;
+  /**
+   * 本次命中用的是哪个匹配键（小写归一）。
+   *
+   * 「右键解除」要知道用户点的是词名、英文名还是某条别名 —— 三者的处理
+   * 不同：别名可以整条删掉，词名只能「此处不绑定」。`splitByGlossary` 不填。
+   */
+  key?: string;
+  /**
+   * 同一个键的**其它**词条（同名词条在不同领域各有一条时）。
+   *
+   * 词名相同、解释不同的情况真实存在（「节流」在浏览器性能与 RxJS 里不是
+   * 一回事）。主匹配只取一条，其余放这里由弹层并列展示 —— 否则后建的那条
+   * 在正文里永远看不到。
+   */
+  variants?: GlossaryTerm[];
 }
 
 /**

@@ -1,0 +1,254 @@
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { Button } from "antd";
+import { BulbOutlined, FileAddOutlined, PlusCircleOutlined, TagsOutlined } from "@ant-design/icons";
+import type { GlossaryTerm } from "../../data/interview-glossary";
+import type { SelectionTerm } from "../../hooks/useSelectionTerms";
+import "./index.scss";
+
+interface SelectionTermPopoverProps {
+  selection: SelectionTerm | null;
+  /**
+   * 划中的词是否已在词表里（基线 ∪ 增量）。命中时「加为词条」变成
+   * 「已是词条」并只展示定义 —— 重复入库会让 matcher 的两个键抢同一段文本。
+   */
+  existing: GlossaryTerm | null;
+  /** 加为词条：页面打开 AI 拓展抽屉（预填 glossary + 种子） */
+  onAddTerm: (selection: SelectionTerm) => void;
+  /** 补充释义：给已有词条再写一条更深的（仅命中已有词条时可用） */
+  onSupplement: (selection: SelectionTerm) => void;
+  /**
+   * 划中的词被某个已有词条"包着"（`loader` ⊂ `Webpack Loader`）。
+   *
+   * 这是「库里明明有、正文里却点不开」的补救入口：模型出词条时换了叫法，
+   * 那个词就匹配不到。点一下把原文记成它的别名，正文里立刻能点。
+   */
+  aliasOwner?: GlossaryTerm | null;
+  /** 正在写别名（按钮 loading） */
+  aliasPending?: boolean;
+  /** 补别名失败的原因（红字；成功不会有这条） */
+  aliasError?: string | null;
+  onAddAlias?: (owner: GlossaryTerm, text: string) => void;
+  /** 问 AI：弹层里就地给一段解释 */
+  onAskAi: (selection: SelectionTerm) => void;
+  onClose: () => void;
+  /** AI 解释的正文（`null` = 还没问 / 已清） */
+  answer: { loading: boolean; text: string | null; error: string | null };
+  /** 关闭时顺手清掉 AI 解释 */
+  onClearAnswer: () => void;
+}
+
+/**
+ * 浮层尺寸（与 scss 里的 `width` / `min-height` 必须一致）。
+ *
+ * 用常量而不是 `getBoundingClientRect()` 量：浮层刚挂载那一帧还没布局完，
+ * 量出来是 0×0，翻转判断必然误判成「下方放得下」。
+ */
+const POPOVER_WIDTH = 268;
+const POPOVER_ESTIMATED_HEIGHT = 96;
+const GAP = 8;
+const EDGE = 8;
+
+/** 解释正文的估算行高（翻转到上方的判定要把答案高度算进去，否则会盖住选区） */
+const ANSWER_LINE_HEIGHT = 20;
+const ANSWER_CHARS_PER_LINE = 18;
+
+/** 估算答案区高度：按字数折算行数，最多算 8 行（超出由浮层内部滚动） */
+function estimateAnswerHeight(text: string): number {
+  const lines = Math.min(8, Math.ceil(text.length / ANSWER_CHARS_PER_LINE));
+  return lines * ANSWER_LINE_HEIGHT + 16;
+}
+
+/** prompt 里约定的两段标记（`builders/explain.ts` 的 `EXPLAIN_*_HEAD`） */
+const ONE_LINER_HEAD = "【一句话】";
+const BODY_HEAD = "【解释】";
+
+/**
+ * 解释正文渲染。
+ *
+ * 模型按 prompt 的要求输出「【一句话】…／【解释】…」两段，直接原样铺开会把
+ * 标记行一起显示出来，读起来像调试信息。这里把标记摘掉、把一句话做成首行加粗。
+ */
+function ExplainText({ text }: { text: string }): ReactNode {
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  return (
+    <>
+      {lines.map((line) => {
+        if (line.startsWith(ONE_LINER_HEAD)) {
+          return (
+            <strong className="interview-selection__one-liner" key={line.slice(0, 16)}>
+              {line.slice(ONE_LINER_HEAD.length).trim()}
+            </strong>
+          );
+        }
+        const body = line.startsWith(BODY_HEAD) ? line.slice(BODY_HEAD.length).trim() : line;
+        return (
+          <p className="interview-selection__text" key={body.slice(0, 16)}>
+            {body}
+          </p>
+        );
+      })}
+    </>
+  );
+}
+
+/**
+ * 划词浮层（portal 到 body，`position: fixed`）。
+ *
+ * 【为什么必须 portal】题干与答案在 `overflow: auto` 的列表容器里，
+ * 不 portal 会被裁掉一半；`fixed` 定位则免掉滚动补偿。
+ *
+ * 【为什么不用 Popover / Dropdown】它们的定位锚点是元素，而这里锚点是
+ * 「选区矩形」—— 选区不是元素，只能自己算坐标。
+ */
+export default function SelectionTermPopover({
+  selection,
+  existing,
+  onAddTerm,
+  onSupplement,
+  onAskAi,
+  onClose,
+  answer,
+  onClearAnswer,
+  aliasOwner = null,
+  aliasPending = false,
+  aliasError = null,
+  onAddAlias,
+}: SelectionTermPopoverProps): ReactNode {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [ready, setReady] = useState(false);
+
+  // 换了一个选区就复位：否则上一次的解释会挂在新的词下面
+  useEffect(() => {
+    setReady(false);
+    onClearAnswer();
+    if (!selection) return;
+    const frame = window.requestAnimationFrame(() => setReady(true));
+    return () => window.cancelAnimationFrame(frame);
+    // `onClearAnswer` 是 useCallback 稳定的，selection 换对象才需要重跑
+  }, [selection, onClearAnswer]);
+
+  const position = useMemo(() => {
+    if (!selection) return null;
+    const { anchor } = selection;
+    const extra = answer.text
+      ? estimateAnswerHeight(answer.text)
+      : answer.loading
+        ? ANSWER_LINE_HEIGHT + 8
+        : 0;
+    const height = POPOVER_ESTIMATED_HEIGHT + extra;
+    const below = anchor.bottom + GAP;
+    const flip = below + height > window.innerHeight - EDGE;
+    const top = flip ? Math.max(EDGE, anchor.top - GAP - height) : below;
+    const left = Math.min(
+      Math.max(EDGE, anchor.left),
+      Math.max(EDGE, window.innerWidth - POPOVER_WIDTH - EDGE),
+    );
+    return { top, left };
+  }, [selection, answer.text, answer.loading]);
+
+  if (!selection || !position || !ready) return null;
+
+  const isExisting = Boolean(existing);
+
+  return createPortal(
+    <div
+      className="interview-selection"
+      ref={ref}
+      role="dialog"
+      aria-label={`划词操作：${selection.text}`}
+      style={{ top: `${position.top}px`, left: `${position.left}px` }}
+    >
+      <div className="interview-selection__head">
+        <span className="interview-selection__term">{selection.text}</span>
+        {isExisting ? (
+          <span className="interview-selection__badge">已是词条</span>
+        ) : null}
+      </div>
+
+      {answer.loading || answer.text || answer.error ? (
+        <div className="interview-selection__answer">
+          {answer.loading ? (
+            <span className="interview-selection__loading">AI 正在解释…</span>
+          ) : null}
+          {answer.error ? (
+            <span className="interview-selection__error">{answer.error}</span>
+          ) : null}
+          {answer.text ? <ExplainText text={answer.text} /> : null}
+        </div>
+      ) : isExisting ? (
+        <p className="interview-selection__text">{existing?.short}</p>
+      ) : null}
+
+      {aliasError ? (
+        <span className="interview-selection__error">{aliasError}</span>
+      ) : null}
+
+      <div className="interview-selection__ops">
+        <Button
+          className="interview-selection__add"
+          type="primary"
+          size="small"
+          icon={<PlusCircleOutlined />}
+          disabled={isExisting}
+          onClick={() => {
+            onAddTerm(selection);
+            onClose();
+          }}
+        >
+          {isExisting ? "已是词条" : "加为词条"}
+        </Button>
+        {/* 命中已有词条时，「加为词条」没有意义（会撞键），但「写得比它更深」
+            是有意义的动作 —— 入口就在这里，走 AI 再生成一条 related 指回来 */}
+        {isExisting ? (
+          <Button
+            className="interview-selection__supplement"
+            size="small"
+            icon={<FileAddOutlined />}
+            onClick={() => {
+              onSupplement(selection);
+              onClose();
+            }}
+          >
+            补充释义
+          </Button>
+        ) : null}
+        {/* 库里那条词条的名字比划中的词长（模型换了叫法）：直接记成它的别名，
+            比再生成一条同义词条更快，也不会在词表里留下两条几乎一样的词 */}
+        {!isExisting && aliasOwner ? (
+          <Button
+            className="interview-selection__alias"
+            size="small"
+            icon={<TagsOutlined />}
+            loading={aliasPending}
+            title={`把「${selection.text}」记为词条「${aliasOwner.term}」的别名，正文里立刻能点开`}
+            onClick={() => onAddAlias?.(aliasOwner, selection.text)}
+          >
+            记为「{aliasOwner.term}」的别名
+          </Button>
+        ) : null}
+        <Button
+          className="interview-selection__ask"
+          size="small"
+          icon={<BulbOutlined />}
+          loading={answer.loading}
+          onClick={() => onAskAi(selection)}
+        >
+          问 AI
+        </Button>
+        <Button
+          className="interview-selection__close"
+          type="text"
+          size="small"
+          onClick={onClose}
+        >
+          关闭
+        </Button>
+      </div>
+    </div>,
+    document.body,
+  );
+}

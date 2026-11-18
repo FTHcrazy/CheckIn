@@ -113,7 +113,11 @@ export function useAiAvailability(): AiAvailability {
   const load = useCallback(() => {
     let cancelled = false;
     setLoading(true);
-    void getAiConfig()
+    // `Promise.resolve().then(...)` 而不是直接 `getAiConfig()`：没有 preload
+    // （jsdom 单测 / 浏览器直接开 dev server）时它会**同步**抛 TypeError，
+    // 那时 `.catch` 根本挂不上 —— 整页渲染直接崩，而不是「AI 不可用」。
+    void Promise.resolve()
+      .then(() => getAiConfig())
       .then((value) => {
         if (!cancelled) setConfig(value);
       })

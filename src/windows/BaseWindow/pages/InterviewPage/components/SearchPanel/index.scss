@@ -36,6 +36,31 @@
     flex: none;
   }
 
+  // 「已隐藏的默认题」入口：与知识体系同排，是维护入口不是筛选，故不加选中态
+  &__hidden.ant-btn {
+    flex: none;
+  }
+
+  // 草稿箱入口：同上
+  &__drafts.ant-btn {
+    flex: none;
+  }
+
+  // 「已解除的名词绑定」入口：只在有记录时出现，风格与其它维护入口一致
+  &__hints.ant-btn {
+    flex: none;
+  }
+
+  // AI 拓展入口：同上，禁用态由组件库管（用 title 说明缺哪项配置）
+  &__ai.ant-btn {
+    flex: none;
+  }
+
+  // 题目质检入口：与 AI 拓展同一套可用性口径，同样不许被输入框挤扁
+  &__audit.ant-btn {
+    flex: none;
+  }
+
   &__meta {
     display: flex;
     align-items: center;

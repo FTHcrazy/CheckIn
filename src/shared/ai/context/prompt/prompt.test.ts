@@ -1,39 +1,39 @@
 import { describe, expect, it } from "vitest";
-import { collectBookContext, type BookSnapshot } from "../collector";
+import { collectBookContext, type BookSnapshot } from "./domains/novel/collector";
 import { NAMING_OUTPUT_FORMAT, TEXT_OUTPUT_FORMAT } from "../output-spec";
-import { assembleNamingSpec } from "./naming";
-import { assemblePolishSpec } from "./polish";
+import { assembleNamingSpec } from "./domains/novel/builders/naming";
+import { assemblePolishSpec } from "./domains/novel/builders/polish";
 import {
   assembleTransformSpec,
   TRANSFORM_KIND_LABELS,
   type TransformKind,
-} from "./transform";
+} from "./domains/novel/builders/transform";
 import {
   assembleContinuationStreamSpec,
   CONTINUATION_STREAM_OUTPUT_FORMAT,
   CONTINUATION_SUMMARY_MIN_BEFORE_CHARS,
-} from "./continuation";
+} from "./domains/novel/builders/continuation";
 import {
   assembleSummarySpec,
   parseSummaryReply,
   SUMMARY_BODY_HEAD,
   SUMMARY_ONE_LINER_HEAD,
-} from "./summary";
+} from "./domains/novel/builders/summary";
 import {
   assembleExtractSpec,
   EXTRACT_OUTPUT_FORMAT,
   EXTRACT_TYPE_LABELS,
-} from "./extract";
+} from "./domains/novel/builders/extract";
 import {
   assembleRelationSpec,
   RELATION_CONFIDENCE_VALUES,
   RELATION_OUTPUT_FORMAT,
-} from "./relation";
+} from "./domains/novel/builders/relation";
 import {
   assembleLevelGenSpec,
   clampLevelCount,
   LEVEL_OUTPUT_FORMAT,
-} from "./level-gen";
+} from "./domains/novel/builders/level-gen";
 import {
   AI_INTENT_LABELS,
   buildPromptSpec,
@@ -41,7 +41,7 @@ import {
   PROMPT_INTENTS,
   PROMPT_VERSIONS,
   promptVersionOf,
-} from "./registry";
+} from "./index";
 
 const snapshot: BookSnapshot = {
   workName: "青云志",

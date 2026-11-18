@@ -10,20 +10,20 @@
  * `UsagePanel` 只展开了基础表，于是看板上赤裸裸地显示 `transform:tone`。
  *
  * 分工（不要在这里重抄一遍）：
- * - 基础意图的中文仍然只有 `prompt/registry.ts` 的 `AI_INTENT_LABELS` 一份
- *   （新增意图时它由 `Record<PromptIntent, string>` 强制登记，漏了是编译错误）；
- * - 变换子类型的中文仍然只有 `prompt/transform.ts` 的 `TRANSFORM_KIND_LABELS` 一份
- *   （子类型串本身来自 `TRANSFORM_INTENT_SUB`）。
+ * - 基础意图的中文仍然只有 `prompt/index.ts` 折叠出来的 `AI_INTENT_LABELS` 一份
+ *   （新增意图时它由各域 `labels: Record<…, string>` 强制登记，漏了是编译错误）；
+ * - 变换子类型的中文仍然只有 `prompt/domains/novel/builders/transform.ts` 的
+ *   `TRANSFORM_KIND_LABELS` 一份（子类型串本身来自 `TRANSFORM_INTENT_SUB`）。
  * 本文件只做「把这两份摊平成一张查表 + 补历史值」，**不另外维护文案**。
  *
  * ⚠️ 边界：本文件属于 AI 能力层，不 import novel、不含 React。
  */
-import { AI_INTENT_LABELS } from "./context/prompt/registry";
+import { AI_INTENT_LABELS } from "./context/prompt";
 import {
   TRANSFORM_INTENT_SUB,
   TRANSFORM_KIND_LABELS,
   type TransformKind,
-} from "./context/prompt/transform";
+} from "./context/prompt/domains/novel/builders/transform";
 
 /** 历史意图值的中文（当前代码已不再产生，但老日志 / 老事件要能读） */
 const LEGACY_INTENT_LABELS: Record<string, string> = {

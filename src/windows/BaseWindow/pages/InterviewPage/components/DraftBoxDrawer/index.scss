@@ -1,0 +1,88 @@
+// 草稿箱：一行一条未采纳的产物（标题 + 分类路径 + 校验红字 + 两个动作）
+.interview-drafts {
+  &__hint {
+    display: block;
+    margin-bottom: 12px;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  &__empty {
+    margin-top: 16px;
+  }
+
+  &__error.ant-alert {
+    margin-bottom: 12px;
+  }
+
+  &__list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  &__item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-item);
+    background: var(--app-surface-alt);
+  }
+
+  &__text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  &__head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  &__kind.ant-tag {
+    flex: none;
+    margin: 0;
+  }
+
+  &__title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--app-text-strong);
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  &__meta {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--app-text-muted);
+    font-size: 12px;
+  }
+
+  &__errors {
+    margin: 0;
+    padding-left: 18px;
+    color: var(--app-error);
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  &__ops {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+}

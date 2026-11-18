@@ -3,8 +3,9 @@ import { Button, Drawer, Select, Tag, Tooltip, Typography } from "antd";
 import { CheckOutlined, CopyOutlined, LinkOutlined } from "@ant-design/icons";
 import {
   CATEGORIES_BY_TRACK,
-  CATEGORY_BY_ID,
   TRACK_LABEL,
+  categoryNodeOf,
+  type CategoryNode,
 } from "../../data/interview-taxonomy";
 import {
   knowledgeOfCategory,
@@ -14,6 +15,7 @@ import {
 import { diagramById } from "../../data/interview-diagrams";
 import { openExternalUrl } from "@/shared/services/shell";
 import type { CategoryKey, QuestionTrack } from "../../data/interview-types";
+import { useInterviewBankContext } from "../InterviewBankProvider/context";
 import TermText from "../TermText";
 import DiagramFigure from "../DiagramFigure";
 import "./index.scss";
@@ -46,9 +48,15 @@ interface KnowledgeGroup {
   topics: readonly KnowledgeTopic[];
 }
 
-/** 主题配图：id 找不到时静默不渲染，避免一条错数据把整个抽屉搞白 */
+/**
+ * 主题配图：id 找不到时静默不渲染，避免一条错数据把整个抽屉搞白。
+ *
+ * 查找同样走合并视图（有 Provider 时）：抽屉里的配图和卡片的图解必须
+ * 是同一份真值，否则「卡片能看、抽屉空白」这种不一致没人能解释。
+ */
 function KnowledgeDiagram({ id }: { id: string }) {
-  const diagram = diagramById(id);
+  const diagramsById = useInterviewBankContext()?.diagramsById;
+  const diagram = diagramsById ? diagramsById[id] : diagramById(id);
   if (!diagram) return null;
   return (
     <div className="interview-kc__diagram">
@@ -73,6 +81,8 @@ export default function KnowledgeDrawer({
   const [scope, setScope] = useState<CategoryKey>(categoryId);
   /** 刚复制成功的链接，用于把复制按钮临时变成对勾 */
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
+  /** 合并后的分类表（含自定义分类）：选项与标题都要认 `u-c-*` */
+  const mergedCategories = useInterviewBankContext()?.categories;
 
   // 每次打开都跟随侧栏当前分类，避免上次选的范围残留
   useEffect(() => {
@@ -82,20 +92,29 @@ export default function KnowledgeDrawer({
     }
   }, [open, categoryId, track]);
 
+  /** 当前轨道的分类清单：有合并视图用合并的，没 Provider 时回落基线常量 */
+  const trackNodes = useMemo<readonly CategoryNode[]>(
+    () =>
+      mergedCategories && mergedCategories.length > 0
+        ? mergedCategories.filter((node) => node.track === track)
+        : CATEGORIES_BY_TRACK[track],
+    [mergedCategories, track],
+  );
+
   const options = useMemo<ScopeOption[]>(
     () => [
       { value: "all", label: `${TRACK_LABEL[track]} · 全部分类` },
-      ...CATEGORIES_BY_TRACK[track].map((node) => ({
+      ...trackNodes.map((node) => ({
         value: node.id,
         label: node.label,
       })),
     ],
-    [track],
+    [track, trackNodes],
   );
 
   const groups = useMemo<KnowledgeGroup[]>(() => {
     if (scope === "all") {
-      return CATEGORIES_BY_TRACK[track]
+      return trackNodes
         .map((node) => ({
           key: node.id,
           label: node.label,
@@ -106,11 +125,11 @@ export default function KnowledgeDrawer({
     return [
       {
         key: scope,
-        label: CATEGORY_BY_ID[scope].label,
+        label: categoryNodeOf(scope, mergedCategories)?.label ?? scope,
         topics: knowledgeOfCategory(scope),
       },
     ];
-  }, [scope, track]);
+  }, [scope, trackNodes, mergedCategories]);
 
   const copyLink = async (url: string): Promise<void> => {
     try {

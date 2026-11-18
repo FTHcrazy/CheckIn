@@ -45,6 +45,8 @@ import { registerNovelExportHandlers } from "./handlers/novel/novel-export-handl
 import { registerNovelDbBridge } from "./novel/novel-db";
 import { registerMapDbBridge } from "./map/map-db";
 import { registerMapHandlers } from "./handlers/map/map-handlers";
+import { registerInterviewDbBridge } from "./interview/interview-db";
+import { registerInterviewHandlers } from "./handlers/interview/interview-handlers";
 import { registerAiDbBridge } from "./ai/ai-db";
 import { registerAiHandlers } from "./handlers/ai/ai-handlers";
 import { registerAiStreamEndpoint } from "./handlers/ai/ai-stream";
@@ -1274,6 +1276,14 @@ app.whenReady().then(() => {
     registerMapDbBridge();
     registerMapHandlers();
     registerMapFlushGuard();
+  }
+  // 面试题库（interview.db 独立库）：题库页属 base 窗口（full / lite 打包，
+  // novel 版不打包 BaseWindow），故 lite 要开、novel 版整组跳过。
+  // bridge 必须早于 handler 注册 —— 理由同 novel.db：注册时若已有当前用户
+  // （启动期走的是 switchUserDb → register 的顺序），它会立即补开一次。
+  if (EDITION !== "novel") {
+    registerInterviewDbBridge();
+    registerInterviewHandlers();
   }
   // AI 助手（ai.db 独立库）：仅 full/novel 版初始化 —— lite 无 novel 域，
   // AI 入口先落在 novel 侧（起名增强），故随 edition 开关；后续 checkin 接入

@@ -17,6 +17,13 @@
     min-height: 0;
   }
 
+  // 写操作失败的提示条：只占自己那点高度，不许被下方的主体挤扁
+  // （父级是 flex 列 + gap，多一个孩子会让主体少一截，这里是唯一允许它撑住的地方）
+  &__failure.ant-alert,
+  &__notice.ant-alert {
+    flex: none;
+  }
+
   &__main {
     display: flex;
     flex-direction: column;

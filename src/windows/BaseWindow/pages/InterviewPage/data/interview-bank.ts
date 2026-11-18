@@ -42,3 +42,19 @@ export const QUESTION_BANK: readonly InterviewQuestion[] = [
   ...SEED_AI,
   ...SEED_VIBE_CODING,
 ];
+
+/**
+ * 基线题按 id 索引（`id` 在基线里唯一，由 `interview-bank.test.ts` 守着）。
+ *
+ * 【为什么必须有这张表】
+ * 「改基线题」要带 `baseHash` = **基线原题**的指纹，合并函数据此判断「新版有没有
+ * 动过这题」。合并后的题目对象是**用户版本**，拿它算指纹永远对不上当前基线，
+ * 结果是每次合并都误报「基线已更新」并且再也消不掉。所以写入路径必须能
+ * 一步取到基线原对象；线性 `find` 在每次保存时扫 243 条也没问题，但
+ * 「已隐藏的默认题」列表要按 id 取标题，索引表更直白。
+ *
+ * 只读：`QUESTION_BANK` 的成员是共享引用，改它等于改基线，任何写入都必须走
+ * `interview.db` 的增量行。
+ */
+export const QUESTION_BY_ID: Readonly<Record<string, InterviewQuestion>> =
+  Object.fromEntries(QUESTION_BANK.map((question) => [question.id, question]));

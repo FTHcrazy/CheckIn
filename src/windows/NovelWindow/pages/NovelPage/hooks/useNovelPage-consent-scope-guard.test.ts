@@ -35,8 +35,12 @@ const DIALOG = readFileSync(
   path.resolve(process.cwd(), "src/shared/components/AiConsentDialog/index.tsx"),
   "utf8",
 );
+// T02：摘要模板已迁进小说域（`prompt/domains/novel/builders/summary.ts`），路径随之更新
 const SUMMARY_PROMPT = readFileSync(
-  path.resolve(process.cwd(), "src/shared/ai/context/prompt/summary.ts"),
+  path.resolve(
+    process.cwd(),
+    "src/shared/ai/context/prompt/domains/novel/builders/summary.ts",
+  ),
   "utf8",
 );
 

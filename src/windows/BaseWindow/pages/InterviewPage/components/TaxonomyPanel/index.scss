@@ -1,0 +1,183 @@
+// 分类管理抽屉：新建表单 + 草稿 / 已采纳两张列表
+.interview-taxonomy {
+  &__hint {
+    display: block;
+    margin-bottom: 12px;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  &__error.ant-alert {
+    margin-bottom: 12px;
+  }
+
+  &__form {
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--app-border);
+  }
+
+  &__row {
+    display: flex;
+    gap: 12px;
+  }
+
+  &__row-main {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__row-side {
+    flex: 0 0 140px;
+  }
+
+  &__create.ant-btn {
+    --ant-control-height: 30px;
+  }
+
+  &__section {
+    margin-top: 16px;
+  }
+
+  &__section-title {
+    margin: 0 0 8px;
+    color: var(--app-text-secondary-strong);
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  &__empty {
+    margin: 8px 0;
+  }
+
+  &__list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  &__item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-item);
+    background: var(--app-surface-alt);
+  }
+
+  &__item-text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  &__item-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  &__item-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--app-text-strong);
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  &__track.ant-tag {
+    flex: none;
+    margin: 0;
+  }
+
+  &__note {
+    margin: 0;
+    color: var(--app-text-secondary);
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  &__id {
+    color: var(--app-text-muted);
+    font-size: 11px;
+    font-family: monospace;
+  }
+
+  &__item-ops {
+    flex: none;
+  }
+
+  // ── AI 推荐 ────────────────────────────────────────────────
+  &__ai {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  &__ai-seed {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__ai-run.ant-btn {
+    --ant-control-height: 30px;
+    flex: none;
+  }
+
+  &__ai-error.ant-alert {
+    margin-bottom: 8px;
+  }
+
+  &__ai-hint {
+    display: block;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  &__ai-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  &__ai-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 10px 12px;
+    border: 1px dashed var(--app-border);
+    border-radius: var(--app-radius-item);
+    background: var(--app-surface-alt);
+  }
+
+  &__samples {
+    margin: 0;
+    color: var(--app-text-muted);
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  &__ai-item-errors {
+    margin: 0;
+    padding-left: 18px;
+    color: var(--app-error);
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  &__ai-adopt.ant-btn,
+  &__ai-drop.ant-btn {
+    --ant-control-height: 26px;
+    flex: none;
+  }
+}

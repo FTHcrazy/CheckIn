@@ -44,10 +44,12 @@ CheckIn 采用 Electron 双进程架构，渲染进程（React）与主进程（
 ├─────────────────────────────────────────────────────────────┤
 │  IPC Handlers (electron/main.ts + electron/handlers/)       │
 ├─────────────────────────────────────────────────────────────┤
-│  Database Layer (electron/core/db.ts + novel-db.ts + map-db.ts)  │
+│  Database Layer (core/db.ts + 各域 *-db.ts)                │
 │  └─ authDb (应用级) + userDb (用户级)                       │
 │     novel.db：novel_* / novel_pack_*（1.33.0 拆库）         │
 │     map.db：map_docs / map_revisions（2.20.0 拆库）         │
+│     ai.db：ai_*（会话 / 埋点）                              │
+│     interview.db：interview_item（COW 增量，2.61 拆库）     │
 ├─────────────────────────────────────────────────────────────┤
 │  System Services                                            │
 │  └─ File System / Tray / Notifications / Background Tasks   │
@@ -78,8 +80,9 @@ CheckIn 采用 Electron 双进程架构，渲染进程（React）与主进程（
 | `checkin/` | 打卡 / 待办 / 备忘域纯函数：`checkin-utils.ts` / `activitiesTask.ts` / `memo-doc-utils.ts` / `backup-utils.ts` | 库连接走 `core/db.ts` |
 | `novel/` | 小说域：`novel-db.ts` / `novel-template.ts` / `novel-safety-utils.ts` / `novel-links-events.ts` | 不 import 其它域的库 |
 | `map/` | 地图域：`map-db.ts` / `map-utils.ts` | 不 import 其它域的库 |
+| `interview/` | 面试题库域：`interview-db.ts`（增量库） / `interview-transfer.ts`（导出导入纯逻辑） | 不 import 其它域的库，也不 import 渲染层题库常量（基线在 `src/windows/.../InterviewPage/data/`） |
 | `ai/` | AI 域：`ai-db.ts` / `ai-stream-token.ts` | 模型调用实现放 `handlers/ai/` |
-| `handlers/<域>/` | IPC handler，再按域分 `checkin/` `novel/` `map/` `ai/` `system/` 五组 | 业务纯函数提到对应域目录，便于单测 |
+| `handlers/<域>/` | IPC handler，再按域分 `checkin/` `novel/` `map/` `ai/` `interview/` `system/` 六组 | 业务纯函数提到对应域目录，便于单测 |
 | 测试文件 | **与被断言的源码同级**（`*-guard.test.ts` 也是）：断言某个 handler 就放进该 handler 所在目录，断言 `main.ts` / `preload.ts` / 仓库配置就放 `electron/` 根 | 禁止建 `guards/` / `tests/` 这类平行目录把测试抽走（2.61.0 起） |
 
 **模块职责**：
@@ -87,11 +90,14 @@ CheckIn 采用 Electron 双进程架构，渲染进程（React）与主进程（
 | 模块 | 职责 | 边界 |
 |------|------|------|
 | **main.ts** | 窗口生命周期管理、IPC 通道注册、托盘图标、应用启动流程 | 仅处理窗口和系统级操作，不包含业务逻辑 |
-| **handlers/** | 语义化 IPC handler 按模块注册（`checkin/` 6 个、`novel/` 9 个、`map/` 1 个、`ai/` 2 个、`system/` 2 个；`handlers/novel/novel-setting-shared.ts` 供 novel 设定类 handler 复用，非注册入口），持有预定义 SQL | 每个 handler 文件只负责一个业务模块；SQL 只出现在 handlers 与三本域库，禁止出现在渲染进程 |
+| **handlers/** | 语义化 IPC handler 按模块注册（`checkin/` 6 个、`novel/` 9 个、`map/` 1 个、`ai/` 2 个、`interview/` 1 个、`system/` 2 个；`handlers/novel/novel-setting-shared.ts` 供 novel 设定类 handler 复用，非注册入口），持有预定义 SQL | 每个 handler 文件只负责一个业务模块；SQL 只出现在 handlers 与各域独立库，禁止出现在渲染进程 |
 | **preload.ts** | 通过 `contextBridge` 暴露安全的 API 给渲染进程 | 仅做 API 转发，不实现业务逻辑 |
 | **core/db.ts** | SQLite 数据库初始化、双库管理（authDb/userDb）、通用 CRUD 封装 | 提供底层数据库操作，不感知上层业务；**只承载 checkin 域**，不建任何 `novel_*` 表 |
 | **novel/novel-db.ts** | 小说域独立库 `novel.db` 的初始化与 CRUD 封装（`novel_*` / `novel_pack_*` / `novel_config` / `novel_usage_log`），通过 `registerUserDbLifecycle()` 跟随 checkin 库开关 | 单向依赖 `core/db.ts`（lifecycle 回调桥接），`core/db.ts` 不反向依赖它；novel handler 一律从这里取写通道 |
-| **map/map-db.ts** | 地图域独立库 `map.db` 的初始化与 CRUD 封装（`map_docs` / `map_revisions` / `map_assets` / `map_config`），同样挂 `registerUserDbLifecycle()`；另提供 `getMapAssetsDir()`（资源本体走文件系统） | 与 novel.db **平级、互不 import**；`handlers/map/map-handlers.ts` 只从这里取写通道（`electron/map/map-db-guard.test.ts` 守卫）。三本库互不越界：checkin/novel 不建 `map_*`，map 不建 `novel_*` |
+| **map/map-db.ts** | 地图域独立库 `map.db` 的初始化与 CRUD 封装（`map_docs` / `map_revisions` / `map_assets` / `map_config`），同样挂 `registerUserDbLifecycle()`；另提供 `getMapAssetsDir()`（资源本体走文件系统） | 与 novel.db **平级、互不 import**；`handlers/map/map-handlers.ts` 只从这里取写通道（`electron/map/map-db-guard.test.ts` 守卫）。各库互不越界：别的库不建 `map_*`，map 不建 `novel_*` |
+| **interview/interview-db.ts** | 面试题库独立库 `interview.db` 的初始化与 CRUD 封装（`interview_item` / `interview_taxonomy` / `interview_meta`），同样挂 `registerUserDbLifecycle()`；`readInterviewMeta` / `setInterviewMeta` 封装 meta 读写 | **只装用户增量，不装题库本体**：243 题 / 词条 / 图解 / 22 分类仍是源码只读基线，本库靠逐行 `action='new'|'override'` 做写时复制（`electron/interview/interview-db-guard.test.ts` 守卫）；状态机由 SQL `CHECK` 强制，本模块不做 payload 语义校验 |
+| **handlers/interview/interview-handlers.ts** | 题库 14 条 IPC：产物列表 / 详情 / 保存 / 改状态 / 软删 / 恢复 / 彻底删 / 还原默认 / 确认基线 / 分类读写 / 导出 / 导入 / 元信息 | 只跑**结构层**校验（`src/shared/interview/payload-shape.ts`，主进程 import 不到渲染层）；领域校验留在页面。`purge` 必带 `action='new'`、列表不返回 payload、已存在的行不许改 `action`（`interview-handlers.test.ts` 守卫） |
+| **interview/interview-transfer.ts** | 导出 / 导入的纯逻辑：`buildExportDocument`（delta / full）、`validateExportDocument`（整包闸门）、`planImport`（三分流 + 冲突 + 孤儿） | **按 `action` 分流不看 id 前缀**（override 行 id 与基线同形，用前缀判会误杀用户编辑）；`action:"baseline"` 是文件专有值，无条件 skip；id 永不因导入而改（孤儿只上报） |
 | **map/map-utils.ts** | 地图存档的纯函数（标题归一 / rev 冲突 / 版本快照节奏 / 视口解析 / 缩略图 data URL） | 主进程与 handler 共用一份规则；无 IO、可在 vitest 直接跑 |
 | **checkin/activitiesTask.ts** | 后台活动提醒轮询、系统事件监听（睡眠/锁屏） | 独立后台任务，通过 IPC 通知渲染进程 |
 | **core/window/windowManager.ts** | 窗口管理池：注册/注销/广播/定点发送 | 只管理 BrowserWindow 实例，不感知业务 |
@@ -101,7 +107,7 @@ CheckIn 采用 Electron 双进程架构，渲染进程（React）与主进程（
 **模块边界规则**：
 - `main.ts` 仅承担窗口生命周期、托盘、协议、窗口级 IPC（broadcast/window-control/find-in-page 等），**一切业务 IPC（user / memo / todo / activity / novel 等）一律抽到 `handlers/` 下独立模块**，禁止在 `main.ts` 内联业务逻辑或 SQL
 - `core/db.ts` 不导入 `main.ts` 的任何内容；它维护当前用户邮箱（`getCurrentUserEmail()`），业务 handler 通过它定位用户数据目录，不依赖 `main.ts` 闭包
-- **三个数据域三本库**：checkin 域（`core/db.ts` → `checkin.db`）、novel 域（`novel/novel-db.ts` → `novel.db`）、map 域（`map/map-db.ts` → `map.db`），三本同目录、平级。novel / map handler 只能从各自的 db 模块取写通道，**禁止** import `core/db.ts` 的 `dbRun` 写业务表；`core/db.ts` 只通过 lifecycle 回调通知另外两本库切换/关闭，不反向 import 它们（否则循环依赖）。由 `electron/novel/novel-db-split.test.ts` 与 `electron/map/map-db-guard.test.ts` 源码守卫
+- **五个数据域五本库**：checkin 域（`core/db.ts` → `checkin.db`）、novel 域（`novel/novel-db.ts` → `novel.db`）、map 域（`map/map-db.ts` → `map.db`）、ai 域（`ai/ai-db.ts` → `ai.db`）、interview 域（`interview/interview-db.ts` → `interview.db`），五本同目录、平级。各域 handler 只能从各自的 db 模块取写通道，**禁止** import `core/db.ts` 的 `dbRun` 写业务表；`core/db.ts` 只通过 lifecycle 回调通知另外几本库切换/关闭，不反向 import 它们（否则循环依赖）。由 `electron/novel/novel-db-split.test.ts`、`electron/map/map-db-guard.test.ts` 与 `electron/interview/interview-db-guard.test.ts` 源码守卫
 - `checkin/activitiesTask.ts` 通过 `ipcMain` 注册通道，不直接调用 `main.ts` 函数
 - `preload.ts` 仅读取 `core/db.ts` 和 `main.ts` 暴露的 IPC 通道
 
@@ -147,6 +153,7 @@ src/windows/XxxWindow/
 | **services** | `shared/services/` | 数据访问：daily.ts、code.ts、checkin.ts、ledger.ts、news.ts、novel-shared.ts（完整清单以目录为准） |
 | **ipc** | `shared/ipc/` | 窗口级 IPC 桥接注册（显式调用，带防重复守卫） |
 | **types** | `shared/types/` | 全局类型：electron.d.ts（window.electronAPI） |
+| **interview** | `shared/interview/` | 题库**结构层**校验 `payload-shape.ts`：字段存在 / 类型 / 长度 / `[object Object]` / JSON 残片。主进程 import 不到渲染层，这一层是「两处都验」的唯一共用点；**不查分类白名单等依赖基线常量的规则**（那些留在页面） |
 | **styles** | `shared/styles/` | themes.scss（四套主题 `--app-*` 变量）、variables.scss（SCSS 变量与 mixins，颜色变量已废弃）、window-shell.scss（圆角窗口外壳）、widget.scss（控件基座 mixin）、scrollbars.scss（滚动条样式） |
 
 **边界规则**：
@@ -421,11 +428,15 @@ CheckIn/
 │   ├── ai/                                # ai 域
 │   │   ├── ai-db.ts                       # 独立库 ai.db
 │   │   └── ai-stream-token.ts             # 流式端点一次性令牌
+│   ├── interview/                         # interview 域（面试题库）
+│   │   ├── interview-db.ts                # 独立库 interview.db（只装 COW 增量）
+│   │   └── interview-transfer.ts          # 导出 / 导入纯逻辑（三分流 + 冲突 + 孤儿）
 │   ├── handlers/                          # 语义化 IPC handler，按域再分一层
 │   │   ├── checkin/                       # activity / checkin / todo / memo / user / log
 │   │   ├── novel/                         # novel / pack / setting / safety / global-setting / graph / export / font
 │   │   ├── map/                           # map
 │   │   ├── ai/                            # ai / ai-stream
+│   │   ├── interview/                     # interview（产物 / 分类 / 元信息）
 │   │   └── system/                        # shell / shortcut
 │   └── …（测试文件与被测源码同级：断言哪个 handler 就放在那个 handler 旁）
 ├── src/
@@ -626,14 +637,16 @@ grep -rn "docs/[A-Za-z0-9._/-]*\.md" \
 > `spec/` 逐篇列出（篇数少且需被直接检索）；`review/`、`prd/`、`archive/` 只给篇数——逐个列名会变成第二份要维护的索引。
 
 ```text
-docs/                                  # 合计 50 篇 md（2026-11-12 实测，`docs-index-guard.test.ts` 断言此数）
+docs/                                  # 合计 52 篇 md（2026-11-17 实测，`docs-index-guard.test.ts` 断言此数）
 ├── README.md                          # 索引（唯一导航入口，必须与实际文件一致）
-├── spec/                              # 活规范 5 篇（违反即缺陷；只改版，不删除）
+├── spec/                              # 活规范 7 篇（违反即缺陷；只改版，不删除）
 │   ├── map-db-spec.md                 # 地图数据层（改 map.db 前必读）
 │   ├── map-interaction-spec.md        # 地图交互与快捷键（键位 / 选中态唯一口径）
 │   ├── map-export-spec.md             # 地图导出（§6.1 是基线图命名的唯一来源）
 │   ├── map-perf-spec.md               # 地图性能口径（产品线 / 压力线两层判据）
-│   └── graphic-theming-spec.md        # 图形素材主题化
+│   ├── graphic-theming-spec.md        # 图形素材主题化
+│   ├── interview-db-ai-spec.md        # 面试题库独立库 + AI 拓展（改 interview.db / prompt 域前必读）
+│   └── t02-prompt-domain-plan.md      # Prompt 域泛化落地方案（类型折叠 / kit 准入 / 加域零侵入判据）
 ├── review/                            # 审查报告 4 篇（待办清空后整篇归档）
 ├── prd/                               # 未闭环需求稿（交付后整组移入 archive/prd-<编号>/）
 │   ├── prd-map-render/                # 地图模块 13 篇
@@ -1462,7 +1475,7 @@ ipcMain.handle('memo-read', async (_event, filename: string) => { ... });
 |---|---|
 | **IPC 契约** | 通道名增删改；入参 / 返回值形状变化；`preload.ts` 暴露面；`src/shared/types/electron.d.ts`；`main.ts` 里 `registerXxxHandlers` 的注册段 |
 | **主进程入口结构** | `main.ts` 的窗口创建 / 生命周期 / 协议 / 托盘段落；`preload.ts` 的 contextBridge 结构 |
-| **全局状态** | `core/logger.ts` 的日志单例与等级；`core/window/windowManager.ts`；三本库的连接生命周期（`registerUserDbLifecycle` / 切用户 / 退出）；`edition.ts` 的窗口清单与变体表；编译期 define（`__CHECKIN_EDITION__` / `__CHECKIN_NO_MAP__`） |
+| **全局状态** | `core/logger.ts` 的日志单例与等级；`core/window/windowManager.ts`；各域库的连接生命周期（`registerUserDbLifecycle` / 切用户 / 退出）；`edition.ts` 的窗口清单与变体表；编译期 define（`__CHECKIN_EDITION__` / `__CHECKIN_NO_MAP__`） |
 | **跨窗口共享** | `src/shared/**` 被两个及以上窗口引用；`src/shared/components/` 下的通用组件；`src/shared/styles/**` 主题与 token |
 | **构建 / 打包** | `vite.config.ts`、`package.json` 依赖、`external` 名单、打包 `files` |
 | **交付闸门** | 发布、版本号变更、交付前那一轮 |
@@ -1728,7 +1741,7 @@ function initializeDataDb(db: Database) {
 ### 8.4 新增数据表
 
 - [ ] **若是 novel 窗口的表（`novel_*` 前缀），先看 §6.7 开关的当前值**：`refactor` 可直接重设结构、不写迁移；`compat` 必须走增量迁移
-- [ ] 在对应数据域的建表函数中创建表：checkin 域在 `electron/core/db.ts` 的 `initializeDataDb()`，novel 域在 `electron/novel/novel-db.ts`，地图域在 `electron/map/map-db.ts`（**不要**写进 `db.ts`）
+- [ ] 在对应数据域的建表函数中创建表：checkin 域在 `electron/core/db.ts` 的 `initializeDataDb()`，novel 域在 `electron/novel/novel-db.ts`，地图域在 `electron/map/map-db.ts`，题库域在 `electron/interview/interview-db.ts`（**不要**写进 `db.ts`）
 - [ ] 编写增量迁移逻辑（检查列是否存在）
 - [ ] 在 `shared/services/` 或页面 `services/` 中封装 IPC 调用（渲染层不内联 SQL）
 - [ ] 定义 TypeScript 接口（如 `XxxItem`）
@@ -2036,6 +2049,7 @@ node node_modules/vitest/vitest.mjs run electron/changelog-content-guard.test.ts
 | 数据库初始化 | `electron/core/db.ts` | 双库管理、表结构迁移（checkin 域） |
 | 小说库初始化 | `electron/novel/novel-db.ts` | `novel.db`：小说与行囊全部表，跟随用户切换开关 |
 | 地图库初始化 | `electron/map/map-db.ts` | `map.db`：地图存档 / 历史版本 / 资源索引 / 配置，跟随用户切换开关 |
+| 题库库初始化 | `electron/interview/interview-db.ts` | `interview.db`：只存用户增量（`action='new'\|'override'`），题库本体是源码只读基线 |
 | 会话配置 | `electron/core/httpSession.ts` | 主进程 session 级 CORS / Cookie 注入（一次性） |
 | API 暴露 | `electron/preload.ts` | contextBridge 白名单 |
 | 路由配置 | `src/windows/BaseWindow/App.tsx` | HashRouter + Routes |

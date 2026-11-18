@@ -23,6 +23,7 @@ const PRELOAD = read("electron/preload.ts");
 const DTS = read("src/shared/types/electron.d.ts");
 const CHECKIN_DB = read("electron/core/db.ts");
 const NOVEL_DB = read("electron/novel/novel-db.ts");
+const INTERVIEW_DB = read("electron/interview/interview-db.ts");
 
 /** map.db 必须建齐的表（少一张 = 某个能力没有落点） */
 const MAP_TABLES = ["map_docs", "map_revisions", "map_assets", "map_config"] as const;
@@ -45,8 +46,8 @@ describe("map.db 独立库（守卫）", () => {
     expect(MAP_DB).toContain("onClosed");
   });
 
-  it("checkin.db 与 novel.db 都不建 map 域的表（三本库互不越界）", () => {
-    for (const source of [CHECKIN_DB, NOVEL_DB]) {
+  it("checkin.db / novel.db / interview.db 都不建 map 域的表（各库互不越界）", () => {
+    for (const source of [CHECKIN_DB, NOVEL_DB, INTERVIEW_DB]) {
       for (const table of MAP_TABLES) {
         expect(source, `别的库里出现了 ${table}`).not.toContain(
           `CREATE TABLE IF NOT EXISTS ${table}`,
