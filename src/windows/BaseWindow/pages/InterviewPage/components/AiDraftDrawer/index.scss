@@ -11,7 +11,9 @@
 
   &__offline.ant-alert,
   &__error.ant-alert,
-  &__fallback.ant-alert {
+  &__fallback.ant-alert,
+  &__adopted.ant-alert,
+  &__supplement.ant-alert {
     margin-bottom: 12px;
   }
 
@@ -106,14 +108,111 @@
     line-height: 1.6;
   }
 
+  // ── 候选详情预览 ────────────────────────────────────────────
+  // 只给标题的预览等于让用户凭标题判断答案对不对，所以三类产物都要摊开内容。
+  // 长答案不展开时高度有限，展开后由抽屉整体滚动（不在预览里再套一层滚动条，
+  // 那会变成「框里框」，鼠标滚轮落点很难猜）。
+  &__preview {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  &__preview-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+  }
+
+  &__difficulty.ant-tag,
+  &__tag.ant-tag {
+    margin: 0;
+    font-size: 11px;
+  }
+
+  &__difficulty.ant-tag.is-hard {
+    color: var(--app-error);
+  }
+
+  &__difficulty.ant-tag.is-basic {
+    color: var(--app-success);
+  }
+
+  &__en {
+    color: var(--app-text-muted);
+    font-size: 12px;
+  }
+
+  &__stem {
+    margin: 0;
+    color: var(--app-text);
+    font-size: 13px;
+    line-height: 1.7;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  &__code,
+  &__answer {
+    margin: 0;
+    padding: 8px 10px;
+    overflow-x: auto;
+    border-radius: var(--app-radius-item);
+    background: var(--app-surface);
+    color: var(--app-text);
+    font-size: 12px;
+    line-height: 1.65;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  &__code {
+    font-family: monospace;
+  }
+
+  &__points {
+    margin: 0;
+    padding-left: 18px;
+    color: var(--app-text);
+    font-size: 12px;
+    line-height: 1.7;
+
+    li {
+      margin-bottom: 2px;
+    }
+  }
+
+  &__aliases {
+    margin: 0;
+    color: var(--app-text-muted);
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  // 「查看参考答案」是行内触发的文字按钮：字号比正文小一档，且不能撑高行盒
+  &__toggle.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-button-text-text-color: var(--app-primary);
+    --ant-button-padding-inline: 0;
+    --ant-control-height: 22px;
+    align-self: flex-start;
+    flex: none;
+    font-size: 12px;
+  }
+
+  &__preview.is-diagram {
+    padding: 4px 0;
+  }
+
   &__item-ops {
     display: flex;
     align-items: center;
     gap: 8px;
   }
 
-  &__adopt.ant-btn,
-  &__keep.ant-btn {
+  &__adopt.ant-btn {
     --ant-control-height: 26px;
     flex: none;
   }

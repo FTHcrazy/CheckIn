@@ -14,7 +14,9 @@
  * 规范：docs/spec/interview-db-ai-spec.md §9（三层闸门）
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { TAXONOMY_LABEL_MAX } from "@/shared/ai/context/prompt";
 import type { InterviewTaxonomyDTO } from "@/shared/types/electron";
+import { CATEGORIES } from "../data/interview-taxonomy";
 import type { QuestionTrack } from "../data/interview-types";
 
 /** 新建分类的输入 */
@@ -30,8 +32,13 @@ export interface UseInterviewTaxonomyResult {
   /** 最近一次失败的原因（给用户看的中文原话） */
   error: string | null;
   clearError: () => void;
-  /** 新建（默认 `draft`，用户点「采纳」后才进侧栏） */
-  create: (draft: TaxonomyDraft, status?: "draft" | "adopted") => Promise<boolean>;
+  /**
+   * 新建（默认 `draft`，用户点「采纳」后才进侧栏）。
+   *
+   * 成功返回**新分类的 id**（失败 `null`）：AI 建议采纳之后要立刻拿这个 id 去
+   * 出示例题，只回一个 boolean 的话调用方还得回来把 id 再猜一遍。
+   */
+  create: (draft: TaxonomyDraft, status?: "draft" | "adopted") => Promise<string | null>;
   /** 改状态（采纳 / 退回草稿） */
   setStatus: (row: InterviewTaxonomyDTO, status: "draft" | "adopted") => Promise<boolean>;
 }
@@ -108,23 +115,29 @@ export function useInterviewTaxonomy(
   );
 
   const create = useCallback(
-    async (draft: TaxonomyDraft, status: "draft" | "adopted" = "draft"): Promise<boolean> => {
+    async (draft: TaxonomyDraft, status: "draft" | "adopted" = "draft"): Promise<string | null> => {
       const label = draft.label.trim();
       if (!label) {
         setError("分类名称不能为空");
-        return false;
+        return null;
       }
-      if (label.length > 12) {
-        setError("分类名称最多 12 字（侧栏一行放不下）");
-        return false;
+      if (label.length > TAXONOMY_LABEL_MAX) {
+        setError(`分类名称最多 ${TAXONOMY_LABEL_MAX} 字（侧栏一行放不下）`);
+        return null;
       }
-      // 同名分类会让侧栏出现两行一样的字，用户点哪个都像点错
-      const duplicated = taxonomy.some(
-        (row) => row.label.trim().toLowerCase() === label.toLowerCase(),
+      // 同名分类会让侧栏出现两行一样的字，用户点哪个都像点错。
+      // 22 个基线分类也要一起比：`CATEGORIES` 是源码常量、不在这张表里，
+      // 只比 `taxonomy` 的话「React」这种名字能被新建出第二遍。
+      const takenLabels = [
+        ...CATEGORIES.map((node) => node.label),
+        ...taxonomy.map((row) => row.label),
+      ];
+      const duplicated = takenLabels.some(
+        (taken) => taken.trim().toLowerCase() === label.toLowerCase(),
       );
       if (duplicated) {
         setError(`已经有叫「${label}」的分类了`);
-        return false;
+        return null;
       }
 
       // 续排在已有自定义分类之后（基线占 1-22，这里恒 >= 100）
@@ -141,7 +154,7 @@ export function useInterviewTaxonomy(
       if (done && status === "adopted") {
         setError(null);
       }
-      return done;
+      return done ? id : null;
     },
     [taxonomy, write],
   );

@@ -5,7 +5,8 @@
  *   ├─ checkin.db     todo / memo / ledger / checkin / activities / config
  *   ├─ novel.db       novel_* + novel_pack_* + novel_config
  *   ├─ map.db         map_*
- *   └─ interview.db   interview_item + interview_taxonomy + interview_meta   ← 本文件
+ *   └─ interview.db   interview_item + interview_taxonomy + interview_match_hint
+ *                     + interview_meta   ← 本文件
  *
  * 【本库只装「用户增量」，不装题库本体】
  * 243 题 / 约 100 词条 / 24 图解 / 22 个分类继续以**源码常量**形式存在，
@@ -51,7 +52,7 @@ let interviewDb: Database.Database | null = null;
 export const INTERVIEW_DB_FILE = "interview.db";
 
 /** schema 版本（改表结构时 +1，供将来写迁移时判分支；当前只写入不判读） */
-export const INTERVIEW_SCHEMA_VERSION = 1;
+export const INTERVIEW_SCHEMA_VERSION = 2;
 
 /** `interview_meta` 的键名（唯一产地，handler 与渲染层都从这里取） */
 export const INTERVIEW_META_KEYS = {
@@ -147,6 +148,27 @@ function initializeInterviewDb(database: Database.Database): void {
       CHECK (order_no >= 100)
     );
     CREATE INDEX IF NOT EXISTS idx_taxonomy_track ON interview_taxonomy(track, status, order_no);
+
+    -- ── 词条匹配负例：用户右键「这里不是这个词」的位置指纹 ──
+    --
+    -- 纯文本匹配无法避免误命中：「字节流」里的「节流」会命中词条「节流」，
+    -- 把句子切成「字 / 节流」。中文没有分词器就判不出对错，所以让用户一次性
+    -- 标注「这个位置不绑定」，之后同一位置的同一键永久跳过。
+    --
+    -- 存**位置**而不是「删掉别名」：同一段文字在别处出现时该词条照常可点，
+    -- 删别名则会把它从全库摘掉（那是另一个动作，走 interview_item 的 override）。
+    -- 也不存整句：整句做指纹会让「同一句话在题干与答案各出现一次」只解锁一处。
+    CREATE TABLE IF NOT EXISTS interview_match_hint (
+      id         TEXT PRIMARY KEY,
+      term_id    TEXT NOT NULL,               -- 被解除的词条 id（基线 id 或 u-）
+      key        TEXT NOT NULL,               -- 当时命中的键（小写归一）
+      left_text  TEXT NOT NULL,               -- 命中左侧最多 6 字
+      right_text TEXT NOT NULL,               -- 命中右侧最多 6 字
+      created_at INTEGER NOT NULL,
+      -- 同一处解除两次不该产生两行（否则撤销要点两次）
+      UNIQUE (term_id, key, left_text, right_text)
+    );
+    CREATE INDEX IF NOT EXISTS idx_hint_term ON interview_match_hint(term_id);
 
     -- ── 库级元信息 ──
     -- 只装「导出 / 导入要标注的口径」，不参与合并逻辑。

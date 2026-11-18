@@ -27,6 +27,7 @@ import {
   isValidDiagramShape,
   isValidGlossaryShape,
   isValidQuestionShape,
+  SHAPE_LIMITS,
   type DiagramShape,
   type GlossaryShape,
   type InterviewKind,
@@ -62,6 +63,22 @@ export interface DraftRequest {
   count?: number;
   /** 种子：题干片段 / 原词 */
   seed?: string;
+  /**
+   * 划词原文（仅 glossary）：模型起的词名与原文不一致时，原文补成别名。
+   *
+   * 与 `seed` 分开是因为两者用途不同：`seed` 进 prompt 当"围绕它展开"，
+   * `anchor` 落进词条让**正文里划中的那一段**能被匹配到。用户改 seed 想换主题时，
+   * 两者会分叉，这时候仍然该保证"点进来的那个词"可点。
+   */
+  anchor?: string;
+  /**
+   * 「补充释义」（仅 glossary）：锚到已有的那条词条。
+   *
+   * 三个字段各有用途：`id` 写进新词条的 `related`（点开能互相跳）、`term` / `short`
+   * 进 prompt（模型才知道「已经讲到哪，别复述」）；同时 `id` 会从键冲突判定里豁免 ——
+   * 给同一条词条补充释义，本来就要用同一个词名。
+   */
+  supplementOf?: { id: string; term: string; short: string };
 }
 
 export interface UseInterviewAiOptions {
@@ -71,10 +88,36 @@ export interface UseInterviewAiOptions {
   questionTitles: readonly string[];
   /** 已有词条键（避重） */
   glossaryTerms: readonly string[];
+  /**
+   * 合并后的**完整**词表（不是上面那个给 prompt 的截断列表）。
+   *
+   * 两处用途：① 判词条键冲突（规范 §10.3）；② 「补充释义」要拿到原词条的定义。
+   * 用完整表是因为「model 看不到第 61 个词」和「库里有没有这个词」是两件事。
+   */
+  glossary: readonly GlossaryTerm[];
+  /** `status='draft'` 的词条键：与草稿撞键要报错，见 §10.3 第三行 */
+  draftGlossary?: readonly GlossaryKeyOwner[];
   /** 题库规模 */
   stats: { questions: number; glossaries: number; diagrams: number };
   /** 写完之后重算合并视图（页面那一份 `useInterviewBank().reload`） */
   reload: () => void;
+}
+
+/** 一个已经占用词条键的条目（合并词表项或草稿词条，判冲突时只看这几个字段） */
+export interface GlossaryKeyOwner {
+  id: string;
+  term: string;
+  aliases?: readonly string[];
+  /** 草稿条目没有 en 字段（AI 产物里 en 不参与键），保留可选以对齐两种来源 */
+  en?: string;
+  /**
+   * 词条领域（`GlossaryDomain`）。
+   *
+   * 用来区分「真重复」与「同名不同义」：同一个词在浏览器性能与 RxJS 里不是
+   * 一回事，两条都该留下（正文弹层里并列展示）。只有**同领域**再撞键才算重复。
+   * 草稿条目取不到领域，留空按「一律算冲突」处理（宁可挡住也不要进一条隐形词条）。
+   */
+  domain?: string;
 }
 
 export interface UseInterviewAiResult {
@@ -239,20 +282,94 @@ function titleOfPayload(payload: DraftCandidate["payload"]): string {
   return payload.title;
 }
 
+/** 词条参与「键冲突」判定的全部键（大小写 / 首尾空白归一），规范 §10.3 */
+export function glossaryKeysOf(source: {
+  term?: string;
+  en?: string;
+  aliases?: readonly string[];
+}): string[] {
+  const raw = [source.term, source.en, ...(source.aliases ?? [])];
+  const keys: string[] = [];
+  for (const item of raw) {
+    const key = item?.trim().toLowerCase();
+    if (key && !keys.includes(key)) keys.push(key);
+  }
+  return keys;
+}
+
+/** 建「已占用键 → 占用者」表：合并词表 + 草稿词条，同键先到先得 */
+export function buildTakenKeys(
+  owners: readonly GlossaryKeyOwner[],
+): Map<string, GlossaryKeyOwner> {
+  const map = new Map<string, GlossaryKeyOwner>();
+  for (const owner of owners) {
+    for (const key of glossaryKeysOf(owner)) {
+      if (!map.has(key)) map.set(key, owner);
+    }
+  }
+  return map;
+}
+
 /**
- * 把模型的一条 entry 归一成可入库的产物。
+ * 把划词原文补进别名列表（`anchor` 的唯一落地方式）。
  *
- * `structuralErrors` 只收结构层的失败原因：字段缺失 / 超长 / 混入 JSON 残片。
- * 领域层（分类白名单）不在这里查 —— 落点分类是调用方给的，不来自模型。
+ * 不动的三种情况：
+ * - 空串；
+ * - 与已有的名字（词名 / 英文名 / 别名）归一后相同 —— 加了也是白加；
+ * - 超过词名长度上限：`isValidGlossaryShape` 会因此判整条不合法，为了一个
+ *   别名让整条词条变成「不可采纳」，代价太大。
+ *
+ * 别名已满 8 条时挤掉最后一条：**能让划中的词点亮**比多留一个同义词重要。
  */
-export function buildDraftCandidate(params: {
+export function withAnchorAlias(
+  aliases: readonly string[],
+  anchor: string | undefined,
+  known: readonly string[],
+): string[] {
+  const text = (anchor ?? "").trim();
+  if (!text || text.length > SHAPE_LIMITS.glossary.term) return [...aliases];
+  const key = text.toLowerCase();
+  const seen = [...known, ...aliases];
+  if (seen.some((item) => item.trim().toLowerCase() === key)) return [...aliases];
+  const limit = SHAPE_LIMITS.glossary.aliases;
+  if (aliases.length >= limit) return [...aliases.slice(0, limit - 1), text];
+  return [...aliases, text];
+}
+
+export interface BuildDraftCandidateParams {
   kind: InterviewKind;
   entry: Record<string, unknown>;
   categoryId: string;
   track: QuestionTrack;
   difficulty: Difficulty;
-}): DraftCandidate | null {
-  const { kind, entry, categoryId, track, difficulty } = params;
+  /** 已占用的词条键（`buildTakenKeys` 的产物）；只对 glossary 生效 */
+  takenKeys?: ReadonlyMap<string, GlossaryKeyOwner>;
+  /** 「补充释义」的目标词条 id：它自己的键不算冲突 */
+  supplementId?: string;
+  /**
+   * 划词时用户选中的**原文**（只有 glossary 用）。
+   *
+   * 【为什么必须收成别名】
+   * 模型起的词名与原文经常不一致：划中 `loader`，它交上来 `Webpack Loader` /
+   * `模块 loader`。词表匹配是按整词命中的，于是「采纳成功」但正文里那个词
+   * 依然点不动 —— 用户看到的就是「加进去了却没生效」。把原文补成别名之后，
+   * 无论模型怎么命名，划中的那一段一定能点亮（别名本来就该承担这个职责）。
+   */
+  anchor?: string;
+}
+
+/**
+ * 把模型的一条 entry 归一成可入库的产物。
+ *
+ * `structuralErrors` 只收结构层的失败原因：字段缺失 / 超长 / 混入 JSON 残片。
+ * 领域层（分类白名单）不在这里查 —— 落点分类是调用方给的，不来自模型。
+ *
+ * 词条键冲突（§10.3）算领域校验，但放这里是因为它必须在**候选列表**阶段就可见：
+ * 等到点「采纳」才报错，用户已经白点一次。冲突只写 `errors`（红字 + 禁用采纳），
+ * 不丢候选 —— 改个词名还能用。
+ */
+export function buildDraftCandidate(params: BuildDraftCandidateParams): DraftCandidate | null {
+  const { kind, entry, categoryId, track, difficulty, takenKeys, supplementId, anchor } = params;
 
   if (kind === "question") {
     const title = String(entry.title ?? "").trim();
@@ -290,8 +407,12 @@ export function buildDraftCandidate(params: {
     const term = String(entry.term ?? "").trim();
     if (!term) return null;
     const detail = splitDetail(String(entry.detail ?? ""));
-    const aliases = splitTags(String(entry.aliases ?? ""));
     const en = String(entry.en ?? "").trim();
+    // 词名与原文不一致时（模型爱把 `loader` 写成 `Webpack Loader`），
+    // 把原文补成别名，否则采纳后正文里划中的那个词依然点不动
+    const aliases = withAnchorAlias(splitTags(String(entry.aliases ?? "")), anchor, [term, en]);
+    // 补充释义：新词条的 related 指回原词条，词条弹层里能互相跳
+    const related = supplementId ? [supplementId] : [];
     const glossary: GlossaryTerm = {
       id: newId("u-g", term),
       term,
@@ -301,8 +422,41 @@ export function buildDraftCandidate(params: {
       categoryId: categoryId as InterviewCategoryId,
       ...(en ? { en } : {}),
       ...(aliases.length > 0 ? { aliases } : {}),
+      ...(related.length > 0 ? { related } : {}),
     };
     const checked = isValidGlossaryShape(glossary);
+    const conflicts: string[] = [];
+    if (takenKeys) {
+      for (const key of glossaryKeysOf(glossary)) {
+        const owner = takenKeys.get(key);
+        if (!owner) continue;
+        if (owner.id === supplementId) {
+          /**
+           * 补充释义时**不能**沿用原词条的名字。
+           *
+           * 不是洁癖：matcher 里同键只认先出现的词条（基线优先），新词条会被
+           * 完全遮蔽 —— 既点不开也搜不到，等于一份看不见的内容。所以这里挡住，
+           * 并直接给出可照做的命名方式。
+           */
+          conflicts.push(
+            `「${key}」就是原词条的名字：补充释义要换一个能独立检索的词名（如「${owner.term}的内存与 GC」）`,
+          );
+          continue;
+        }
+        /**
+         * 同名但领域不同 = **允许共存**。
+         *
+         * 「节流」在浏览器性能里是「单位时间只跑一次」，在 RxJS 里是「丢弃窗口内
+         * 后续的值」—— 两条都该留下，正文弹层里并列展示、按领域区分。只有同领域
+         * 还撞键才是真重复（多半是重复出词条）。
+         *
+         * 领域取不到（草稿条目）时按冲突处理：宁可挡住，也不要进一条永远被
+         * 先出现者遮蔽的隐形词条。
+         */
+        if (owner.domain && owner.domain !== glossary.domain) continue;
+        conflicts.push(`「${key}」与${owner.id.startsWith("u-") ? "草稿" : "已有"}词条「${owner.term}」的键重复`);
+      }
+    }
     const fallback: GlossaryShape = {
       id: glossary.id,
       term: glossary.term,
@@ -312,13 +466,14 @@ export function buildDraftCandidate(params: {
       categoryId: glossary.categoryId,
       ...(glossary.en ? { en: glossary.en } : {}),
       ...(glossary.aliases ? { aliases: [...glossary.aliases] } : {}),
+      ...(glossary.related ? { related: [...glossary.related] } : {}),
     };
     return {
       key: glossary.id,
       kind,
       title: glossary.term,
       payload: checked.ok ? checked.value : fallback,
-      errors: checked.ok ? [] : checked.errors,
+      errors: checked.ok ? conflicts : [...checked.errors, ...conflicts],
     };
   }
 
@@ -350,7 +505,7 @@ export function buildDraftCandidate(params: {
  * 否则新词条不会立刻变成正文里的可点划线，用户会以为没生效。
  */
 export function useInterviewAi(options: UseInterviewAiOptions): UseInterviewAiResult {
-  const { categories, questionTitles, glossaryTerms, stats, reload } = options;
+  const { categories, questionTitles, glossaryTerms, glossary, draftGlossary, stats, reload } = options;
   const availability = useAiAvailability();
 
   const [generating, setGenerating] = useState(false);
@@ -385,6 +540,18 @@ export function useInterviewAi(options: UseInterviewAiOptions): UseInterviewAiRe
     [categories, stats, questionTitles, glossaryTerms],
   );
 
+  /**
+   * 已占用的词条键（合并词表 + 草稿词条）。
+   *
+   * 依赖 `glossary` 的引用而不是长度：合并结果是不可变的，换一批词条才需要重建。
+   * 每次 `generate` 都从这里**复制**一份当批次表 —— 同一轮里出现两个同名词条时，
+   * 第二条也该报冲突（模型经常把「事件循环」写两遍）。
+   */
+  const takenKeys = useMemo(
+    () => buildTakenKeys([...glossary, ...(draftGlossary ?? [])]),
+    [glossary, draftGlossary],
+  );
+
   const generate = useCallback(
     async (request: DraftRequest): Promise<void> => {
       if (!availability.available) {
@@ -403,6 +570,12 @@ export function useInterviewAi(options: UseInterviewAiOptions): UseInterviewAiRe
         ...(request.difficulty ? { difficulty: request.difficulty } : {}),
         ...(request.diagramKind ? { diagramKind: request.diagramKind } : {}),
         ...(request.seed?.trim() ? { seed: request.seed.trim() } : {}),
+        ...(request.supplementOf
+          ? {
+              existingTerm: request.supplementOf.term,
+              existingShort: request.supplementOf.short,
+            }
+          : {}),
       });
 
       const result = await aiGenerateStructured({
@@ -437,6 +610,8 @@ export function useInterviewAi(options: UseInterviewAiOptions): UseInterviewAiRe
 
       const built: DraftCandidate[] = [];
       const failed: string[] = [];
+      // 本轮内也做键去重：把已归一的新词条键并进这张表，后一条同名词条立刻报冲突
+      const batchKeys = new Map(takenKeys);
       for (const entry of rawEntries) {
         const candidate = buildDraftCandidate({
           kind: request.kind,
@@ -444,9 +619,28 @@ export function useInterviewAi(options: UseInterviewAiOptions): UseInterviewAiRe
           categoryId: request.categoryId,
           track,
           difficulty,
+          takenKeys: batchKeys,
+          ...(request.supplementOf ? { supplementId: request.supplementOf.id } : {}),
+          // 「补充释义」不补原文别名：它本来就要换个能独立检索的词名，
+          // 沿用原文会被原词条按同键遮蔽（点不开也搜不到）
+          ...(request.anchor && !request.supplementOf ? { anchor: request.anchor } : {}),
         });
-        if (candidate) built.push(candidate);
-        else failed.push(String(entry.title ?? entry.term ?? "未命名的产物"));
+        if (!candidate) {
+          failed.push(String(entry.title ?? entry.term ?? "未命名的产物"));
+          continue;
+        }
+        built.push(candidate);
+        if (candidate.kind === "glossary" && "term" in candidate.payload) {
+          const owner: GlossaryKeyOwner = {
+            id: candidate.payload.id,
+            term: candidate.payload.term,
+            ...(candidate.payload.en ? { en: candidate.payload.en } : {}),
+            ...(candidate.payload.aliases ? { aliases: candidate.payload.aliases } : {}),
+          };
+          for (const key of glossaryKeysOf(owner)) {
+            if (!batchKeys.has(key)) batchKeys.set(key, owner);
+          }
+        }
       }
 
       setGenerating(false);
@@ -465,7 +659,7 @@ export function useInterviewAi(options: UseInterviewAiOptions): UseInterviewAiRe
         setError(`${failed.length} 条内容缺少必填字段（${failed.slice(0, 3).join(" / ")}），已跳过`);
       }
     },
-    [availability.available, availability.reasonText, context],
+    [availability.available, availability.reasonText, context, takenKeys],
   );
 
   const adopt = useCallback(

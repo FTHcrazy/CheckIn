@@ -40,6 +40,10 @@ const CHANNELS = [
   "interview-item-ack-base",
   "interview-taxonomy-list",
   "interview-taxonomy-save",
+  // 名词匹配负例（右键「这里不是这个词」）：位置级的误命中兜底
+  "interview-hint-list",
+  "interview-hint-add",
+  "interview-hint-remove",
   "interview-export",
   "interview-import",
   "interview-meta-get",
@@ -55,7 +59,7 @@ function handlerBlock(channel: string): string {
 }
 
 describe("通道契约（守卫）", () => {
-  it("14 条通道全部注册", () => {
+  it("17 条通道全部注册", () => {
     for (const channel of CHANNELS) {
       expect(HANDLERS, `缺少通道 ${channel}`).toContain(`"${channel}"`);
     }

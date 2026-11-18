@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "antd";
-import { BulbOutlined, PlusCircleOutlined } from "@ant-design/icons";
+import { BulbOutlined, FileAddOutlined, PlusCircleOutlined, TagsOutlined } from "@ant-design/icons";
 import type { GlossaryTerm } from "../../data/interview-glossary";
 import type { SelectionTerm } from "../../hooks/useSelectionTerms";
 import "./index.scss";
@@ -15,6 +15,20 @@ interface SelectionTermPopoverProps {
   existing: GlossaryTerm | null;
   /** 加为词条：页面打开 AI 拓展抽屉（预填 glossary + 种子） */
   onAddTerm: (selection: SelectionTerm) => void;
+  /** 补充释义：给已有词条再写一条更深的（仅命中已有词条时可用） */
+  onSupplement: (selection: SelectionTerm) => void;
+  /**
+   * 划中的词被某个已有词条"包着"（`loader` ⊂ `Webpack Loader`）。
+   *
+   * 这是「库里明明有、正文里却点不开」的补救入口：模型出词条时换了叫法，
+   * 那个词就匹配不到。点一下把原文记成它的别名，正文里立刻能点。
+   */
+  aliasOwner?: GlossaryTerm | null;
+  /** 正在写别名（按钮 loading） */
+  aliasPending?: boolean;
+  /** 补别名失败的原因（红字；成功不会有这条） */
+  aliasError?: string | null;
+  onAddAlias?: (owner: GlossaryTerm, text: string) => void;
   /** 问 AI：弹层里就地给一段解释 */
   onAskAi: (selection: SelectionTerm) => void;
   onClose: () => void;
@@ -35,6 +49,52 @@ const POPOVER_ESTIMATED_HEIGHT = 96;
 const GAP = 8;
 const EDGE = 8;
 
+/** 解释正文的估算行高（翻转到上方的判定要把答案高度算进去，否则会盖住选区） */
+const ANSWER_LINE_HEIGHT = 20;
+const ANSWER_CHARS_PER_LINE = 18;
+
+/** 估算答案区高度：按字数折算行数，最多算 8 行（超出由浮层内部滚动） */
+function estimateAnswerHeight(text: string): number {
+  const lines = Math.min(8, Math.ceil(text.length / ANSWER_CHARS_PER_LINE));
+  return lines * ANSWER_LINE_HEIGHT + 16;
+}
+
+/** prompt 里约定的两段标记（`builders/explain.ts` 的 `EXPLAIN_*_HEAD`） */
+const ONE_LINER_HEAD = "【一句话】";
+const BODY_HEAD = "【解释】";
+
+/**
+ * 解释正文渲染。
+ *
+ * 模型按 prompt 的要求输出「【一句话】…／【解释】…」两段，直接原样铺开会把
+ * 标记行一起显示出来，读起来像调试信息。这里把标记摘掉、把一句话做成首行加粗。
+ */
+function ExplainText({ text }: { text: string }): ReactNode {
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  return (
+    <>
+      {lines.map((line) => {
+        if (line.startsWith(ONE_LINER_HEAD)) {
+          return (
+            <strong className="interview-selection__one-liner" key={line.slice(0, 16)}>
+              {line.slice(ONE_LINER_HEAD.length).trim()}
+            </strong>
+          );
+        }
+        const body = line.startsWith(BODY_HEAD) ? line.slice(BODY_HEAD.length).trim() : line;
+        return (
+          <p className="interview-selection__text" key={body.slice(0, 16)}>
+            {body}
+          </p>
+        );
+      })}
+    </>
+  );
+}
+
 /**
  * 划词浮层（portal 到 body，`position: fixed`）。
  *
@@ -48,10 +108,15 @@ export default function SelectionTermPopover({
   selection,
   existing,
   onAddTerm,
+  onSupplement,
   onAskAi,
   onClose,
   answer,
   onClearAnswer,
+  aliasOwner = null,
+  aliasPending = false,
+  aliasError = null,
+  onAddAlias,
 }: SelectionTermPopoverProps): ReactNode {
   const ref = useRef<HTMLDivElement | null>(null);
   const [ready, setReady] = useState(false);
@@ -69,7 +134,12 @@ export default function SelectionTermPopover({
   const position = useMemo(() => {
     if (!selection) return null;
     const { anchor } = selection;
-    const height = answer.text ? POPOVER_ESTIMATED_HEIGHT + 120 : POPOVER_ESTIMATED_HEIGHT;
+    const extra = answer.text
+      ? estimateAnswerHeight(answer.text)
+      : answer.loading
+        ? ANSWER_LINE_HEIGHT + 8
+        : 0;
+    const height = POPOVER_ESTIMATED_HEIGHT + extra;
     const below = anchor.bottom + GAP;
     const flip = below + height > window.innerHeight - EDGE;
     const top = flip ? Math.max(EDGE, anchor.top - GAP - height) : below;
@@ -78,7 +148,7 @@ export default function SelectionTermPopover({
       Math.max(EDGE, window.innerWidth - POPOVER_WIDTH - EDGE),
     );
     return { top, left };
-  }, [selection, answer.text]);
+  }, [selection, answer.text, answer.loading]);
 
   if (!selection || !position || !ready) return null;
 
@@ -101,14 +171,20 @@ export default function SelectionTermPopover({
 
       {answer.loading || answer.text || answer.error ? (
         <div className="interview-selection__answer">
-          {answer.loading ? <span className="interview-selection__loading">AI 正在解释…</span> : null}
+          {answer.loading ? (
+            <span className="interview-selection__loading">AI 正在解释…</span>
+          ) : null}
           {answer.error ? (
             <span className="interview-selection__error">{answer.error}</span>
           ) : null}
-          {answer.text ? <p className="interview-selection__text">{answer.text}</p> : null}
+          {answer.text ? <ExplainText text={answer.text} /> : null}
         </div>
       ) : isExisting ? (
         <p className="interview-selection__text">{existing?.short}</p>
+      ) : null}
+
+      {aliasError ? (
+        <span className="interview-selection__error">{aliasError}</span>
       ) : null}
 
       <div className="interview-selection__ops">
@@ -125,6 +201,35 @@ export default function SelectionTermPopover({
         >
           {isExisting ? "已是词条" : "加为词条"}
         </Button>
+        {/* 命中已有词条时，「加为词条」没有意义（会撞键），但「写得比它更深」
+            是有意义的动作 —— 入口就在这里，走 AI 再生成一条 related 指回来 */}
+        {isExisting ? (
+          <Button
+            className="interview-selection__supplement"
+            size="small"
+            icon={<FileAddOutlined />}
+            onClick={() => {
+              onSupplement(selection);
+              onClose();
+            }}
+          >
+            补充释义
+          </Button>
+        ) : null}
+        {/* 库里那条词条的名字比划中的词长（模型换了叫法）：直接记成它的别名，
+            比再生成一条同义词条更快，也不会在词表里留下两条几乎一样的词 */}
+        {!isExisting && aliasOwner ? (
+          <Button
+            className="interview-selection__alias"
+            size="small"
+            icon={<TagsOutlined />}
+            loading={aliasPending}
+            title={`把「${selection.text}」记为词条「${aliasOwner.term}」的别名，正文里立刻能点开`}
+            onClick={() => onAddAlias?.(aliasOwner, selection.text)}
+          >
+            记为「{aliasOwner.term}」的别名
+          </Button>
+        ) : null}
         <Button
           className="interview-selection__ask"
           size="small"

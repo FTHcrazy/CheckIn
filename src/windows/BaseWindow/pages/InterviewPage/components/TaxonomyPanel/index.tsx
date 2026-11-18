@@ -1,10 +1,11 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { Alert, Button, Drawer, Empty, Form, Input, Select, Tag, Typography } from "antd";
-import { CheckOutlined, DownOutlined, PlusOutlined } from "@ant-design/icons";
+import { CheckOutlined, DownOutlined, PlusOutlined, RobotOutlined } from "@ant-design/icons";
 import type { InterviewTaxonomyDTO } from "@/shared/types/electron";
 import { TRACKS, TRACK_LABEL } from "../../data/interview-taxonomy";
 import type { QuestionTrack } from "../../data/interview-types";
 import { trackText, type UseInterviewTaxonomyResult } from "../../hooks/useInterviewTaxonomy";
+import type { UseTaxonomySuggestResult } from "../../hooks/useTaxonomySuggest";
 import "./index.scss";
 
 const { Text } = Typography;
@@ -22,6 +23,20 @@ interface TaxonomyPanelProps {
   /** 侧栏当前轨道：新建分类默认落在这一侧 */
   track: QuestionTrack;
   api: UseInterviewTaxonomyResult;
+  /** AI 建议（`interviewTaxonomySuggest`） */
+  ai: UseTaxonomySuggestResult;
+  /**
+   * 建议被采纳、分类已落库。
+   *
+   * 页面接住这个回调去**立刻出示例题**：只建分类不落题，侧栏会多出一行
+   * 「点进去 0 道题」的空分类（规范 §9 闸门 ②）。`track` 一并带过去 ——
+   * 新建的分类这一帧还不在合并视图里，页面拿不到它属于哪条轨道。
+   */
+  onAdoptedSuggest: (
+    categoryId: string,
+    samples: readonly string[],
+    track: QuestionTrack,
+  ) => void;
   onClose: () => void;
 }
 
@@ -42,23 +57,51 @@ export default function TaxonomyPanel({
   taxonomy,
   track,
   api,
+  ai,
+  onAdoptedSuggest,
   onClose,
 }: TaxonomyPanelProps): ReactNode {
   const [form] = Form.useForm<TaxonomyFormValues>();
   const [creating, setCreating] = useState(false);
+  /** AI 推荐的方向（一句话，可空 = 让模型自己找空缺） */
+  const [seed, setSeed] = useState("");
+  /** 正在采纳的建议 key */
+  const [adoptingKey, setAdoptingKey] = useState<string | null>(null);
 
   const drafted = useMemo(() => taxonomy.filter((row) => row.status === "draft"), [taxonomy]);
   const adopted = useMemo(() => taxonomy.filter((row) => row.status === "adopted"), [taxonomy]);
 
   const submit = async (values: TaxonomyFormValues): Promise<void> => {
     setCreating(true);
-    const done = await api.create({
+    const id = await api.create({
       label: values.label,
       track: values.track,
       note: values.note,
     });
     setCreating(false);
-    if (done) form.resetFields(["label", "note"]);
+    if (id) form.resetFields(["label", "note"]);
+  };
+
+  /**
+   * 采纳一条 AI 建议：先落分类（直接 `adopted` —— 用户点「采纳」就是采纳），
+   * 再让页面去出示例题。顺序不能反：示例题要挂在分类 id 上。
+   */
+  const adoptSuggestion = async (suggestion: {
+    key: string;
+    label: string;
+    track: QuestionTrack;
+    note: string;
+    samples: readonly string[];
+  }): Promise<void> => {
+    setAdoptingKey(suggestion.key);
+    const id = await api.create(
+      { label: suggestion.label, track: suggestion.track, note: suggestion.note },
+      "adopted",
+    );
+    setAdoptingKey(null);
+    if (!id) return;
+    ai.discard(suggestion.key);
+    onAdoptedSuggest(id, suggestion.samples, suggestion.track);
   };
 
   /** 一行分类：标题 + 轨道 + 说明 + 两个动作 */
@@ -137,6 +180,99 @@ export default function TaxonomyPanel({
           新建分类草稿
         </Button>
       </Form>
+
+      {/* AI 推荐：产物是「建议」而不是分类本身 —— 采纳才落库（规范 §9 闸门 ①/②）。
+          AI 总开关关着时整块不渲染：留一个灰按钮只会让人反复点。 */}
+      {!ai.hidden ? (
+        <section className="interview-taxonomy__section">
+          <h4 className="interview-taxonomy__section-title">AI 推荐</h4>
+          <div className="interview-taxonomy__ai">
+            <Input
+              className="interview-taxonomy__ai-seed"
+              value={seed}
+              allowClear
+              maxLength={40}
+              placeholder="想补的方向（可空），如「RSC 与服务端组件」"
+              onChange={(event) => setSeed(event.target.value)}
+            />
+            <Button
+              className="interview-taxonomy__ai-run"
+              icon={<RobotOutlined />}
+              loading={ai.suggesting}
+              onClick={() => void ai.suggest(seed)}
+            >
+              让 AI 推荐
+            </Button>
+          </div>
+
+          {ai.error ? (
+            <Alert
+              className="interview-taxonomy__ai-error"
+              type="error"
+              showIcon
+              closable
+              message={ai.error}
+            />
+          ) : null}
+
+          {ai.suggestions.length === 0 ? (
+            <Text type="secondary" className="interview-taxonomy__ai-hint">
+              推荐会带 3 条示例题名：采纳后直接拿它们去出题，避免新建出一块 0 道题的空分类。
+            </Text>
+          ) : (
+            <ul className="interview-taxonomy__ai-list">
+              {ai.suggestions.map((suggestion) => (
+                <li className="interview-taxonomy__ai-item" key={suggestion.key}>
+                  <div className="interview-taxonomy__item-text">
+                    <div className="interview-taxonomy__item-head">
+                      <span className="interview-taxonomy__item-label">{suggestion.label}</span>
+                      <Tag className="interview-taxonomy__track">
+                        {TRACK_LABEL[suggestion.track]}
+                      </Tag>
+                    </div>
+                    {suggestion.note ? (
+                      <p className="interview-taxonomy__note">{suggestion.note}</p>
+                    ) : null}
+                    {suggestion.samples.length > 0 ? (
+                      <p className="interview-taxonomy__samples">
+                        示例题：{suggestion.samples.join(" / ")}
+                      </p>
+                    ) : null}
+                    {suggestion.errors.length > 0 ? (
+                      <ul className="interview-taxonomy__ai-item-errors">
+                        {suggestion.errors.map((error) => (
+                          <li key={error}>{error}</li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
+                  <div className="interview-taxonomy__item-ops">
+                    <Button
+                      className="interview-taxonomy__ai-adopt"
+                      type="link"
+                      size="small"
+                      icon={<CheckOutlined />}
+                      disabled={suggestion.errors.length > 0}
+                      loading={adoptingKey === suggestion.key}
+                      onClick={() => void adoptSuggestion(suggestion)}
+                    >
+                      采纳并出题
+                    </Button>
+                    <Button
+                      className="interview-taxonomy__ai-drop"
+                      type="text"
+                      size="small"
+                      onClick={() => ai.discard(suggestion.key)}
+                    >
+                      忽略
+                    </Button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      ) : null}
 
       <section className="interview-taxonomy__section">
         <h4 className="interview-taxonomy__section-title">草稿（不进侧栏）</h4>

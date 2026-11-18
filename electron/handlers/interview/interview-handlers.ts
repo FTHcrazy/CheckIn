@@ -611,6 +611,103 @@ export function registerInterviewHandlers(): void {
     },
   );
 
+  // ── 词条匹配负例（用户右键「这里不是这个词」）──
+  /**
+   * 读全部负例。
+   *
+   * 量级极小（用户手动解除一条 = 1 行，几百条顶天），所以一次性全读：
+   * 渲染层要拿它建匹配器索引，分页/过滤只会让「这处到底解没解除」多一层
+   * 状态同步。
+   */
+  ipcMain.handle(
+    "interview-hint-list",
+    (): Array<{
+      id: string;
+      termId: string;
+      key: string;
+      left: string;
+      right: string;
+      createdAt: number;
+    }> => {
+      if (!isInterviewDbReady()) return [];
+      const rows = interviewAll(
+        `SELECT id, term_id, key, left_text, right_text, created_at
+           FROM interview_match_hint ORDER BY created_at ASC`,
+      ) as Array<{
+        id: string;
+        term_id: string;
+        key: string;
+        left_text: string;
+        right_text: string;
+        created_at: number;
+      }>;
+      return rows.map((row) => ({
+        id: row.id,
+        termId: row.term_id,
+        key: row.key,
+        left: row.left_text,
+        right: row.right_text,
+        createdAt: row.created_at,
+      }));
+    },
+  );
+
+  /**
+   * 记一条负例。
+   *
+   * 幂等：同一 (term_id, key, left, right) 重复提交只留一行（UNIQUE 冲突就忽略），
+   * 这样「右键两次」不会产生两条需要点两次才能撤销的记录。
+   */
+  ipcMain.handle(
+    "interview-hint-add",
+    (
+      _event,
+      payload?: { termId?: string; key?: string; left?: string; right?: string },
+    ) => {
+      if (!isInterviewDbReady()) return NOT_READY;
+      const termId = payload?.termId?.trim();
+      const key = payload?.key?.trim().toLowerCase();
+      if (!termId) return { ok: false, errors: ["缺少要解除的词条 id"] };
+      if (!key) return { ok: false, errors: ["缺少匹配键"] };
+      const left = payload?.left ?? "";
+      const right = payload?.right ?? "";
+      // 两侧都空 = 整段文字就是这个词，解除它等于让这个词条在全库失效 ——
+      // 那是「删词条」不是「这里不绑定」，不做
+      if (!left && !right) {
+        return { ok: false, errors: ["这个词条出现了整段文字上，请改词条而不是解除绑定"] };
+      }
+      const now = Date.now();
+      const id = `u-n-${now.toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+      try {
+        interviewRun(
+          `INSERT INTO interview_match_hint (id, term_id, key, left_text, right_text, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(term_id, key, left_text, right_text) DO NOTHING`,
+          [id, termId, key, left, right, now],
+        );
+      } catch (error) {
+        log("warn", "interview", "interview-handlers", "负例写入被数据库拒绝", {
+          termId,
+          key,
+          error: String(error),
+        });
+        return { ok: false, errors: [`保存被拒绝：${String(error)}`] };
+      }
+      return { ok: true, id };
+    },
+  );
+
+  /** 撤销一条负例（解除错了要能反悔） */
+  ipcMain.handle("interview-hint-remove", (_event, payload?: { id?: string }) => {
+    if (!isInterviewDbReady()) return NOT_READY;
+    const id = payload?.id?.trim();
+    if (!id) return { ok: false, errors: ["缺少要撤销的记录 id"] };
+    const result = interviewRun("DELETE FROM interview_match_hint WHERE id = ?", [id]);
+    return result.changes > 0
+      ? { ok: true, id }
+      : { ok: false, errors: ["这条记录已经不在了"] };
+  });
+
   // ── 导出（内部弹保存框；文件读写走 fs，不新增依赖）──
   ipcMain.handle(
     "interview-export",

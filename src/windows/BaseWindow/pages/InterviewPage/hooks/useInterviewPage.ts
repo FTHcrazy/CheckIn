@@ -32,6 +32,14 @@ export interface InterviewPageApi {
   setKeywordInput: (value: string) => void;
   submitKeyword: () => void;
   questions: InterviewQuestion[];
+  /**
+   * 当前筛选 / 排序下的**全部**命中（不分页）。
+   *
+   * 质检要「一次送一批题」，只拿当前页会漏掉大半；但也不能拿整个题库
+   * （用户明明筛了「浏览器性能」，送检的却是 243 道）。所以导出这一份，
+   * 由调用方自己按上限截断。
+   */
+  filteredQuestions: InterviewQuestion[];
   total: number;
   page: number;
   pageCount: number;
@@ -155,6 +163,9 @@ export function useInterviewPage(): InterviewPageApi {
     setKeywordInput,
     submitKeyword,
     questions: paged.items,
+    // 与分页同一份派生结果：再包一层 useMemo 只会多一条题库依赖，
+    // 而页面的数据源守卫正好钉死了那三处的依赖数组
+    filteredQuestions: sorted,
     total: paged.total,
     page: paged.page,
     pageCount: paged.pageCount,

@@ -201,6 +201,20 @@ export {
   DRAFT_OUTPUT_FORMATS,
   DIAGRAM_KIND_SHAPE_HINT,
 } from "./domains/interview/builders/draft";
+export {
+  TAXONOMY_LABEL_MAX,
+  TAXONOMY_OUTPUT_FORMAT,
+  TAXONOMY_SUGGEST_MAX,
+  assembleTaxonomySpec,
+  clampTaxonomyCount,
+} from "./domains/interview/builders/taxonomy";
+export {
+  AUDIT_OUTPUT_FORMAT,
+  AUDIT_SEVERITIES,
+  AUDIT_SEVERITY_LABELS,
+  assembleAuditSpec,
+} from "./domains/interview/builders/audit";
+export type { AuditSeverity } from "./domains/interview/builders/audit";
 export { draftSubIntent } from "./domains/interview/types";
 export type {
   InterviewAuditPayload,
@@ -211,6 +225,7 @@ export type {
   InterviewPromptContext,
   InterviewPromptIntent,
   InterviewPromptPayloadMap,
+  InterviewTaxonomySuggestPayload,
 } from "./domains/interview/types";
 
 // 段落：kit（跨域通用）+ 小说域段落

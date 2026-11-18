@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { InterviewTaxonomyDTO } from "@/shared/types/electron";
+import type {
+  InterviewItemDetailDTO,
+  InterviewMuteHintDTO,
+  InterviewTaxonomyDTO,
+} from "@/shared/types/electron";
 import type { InterviewDiagram } from "../data/interview-diagrams";
 import type { GlossaryTerm } from "../data/interview-glossary";
 import type { CategoryNode } from "../data/interview-taxonomy";
@@ -52,8 +56,23 @@ export interface InterviewBankState {
   categories: CategoryNode[];
   /** 自定义分类的**原始**行（含 `draft`，分类管理面板要展示草稿并允许采纳） */
   taxonomy: InterviewTaxonomyDTO[];
+  /**
+   * `status='draft'` 的条目（**合并视图里没有它们**）。
+   *
+   * 合并只收 `adopted`：草稿是「AI 产出了但还没确认」的东西，混进题库列表会让
+   * 「这道题算不算我背过」变成一笔糊涂账。但草稿必须能找到 —— 采纳过一条之后
+   * 就再也没地方点「采纳」，等于把内容丢进黑洞。草稿箱抽屉消费这份数据。
+   */
+  drafts: InterviewItemDetailDTO[];
   /** 按合并后词表重建的匹配器（基线单例 matcher 不认用户新增的词条） */
   glossaryIndex: GlossaryMatchIndex;
+  /**
+   * 词条匹配负例（用户右键「这里不是这个词」）。
+   *
+   * 与 `glossaryIndex` 一起变：`reload()` 后重新拉一遍，索引跟着重建。
+   * 页面用它渲染「已解除 N 处」的撤销入口。
+   */
+  hints: InterviewMuteHintDTO[];
   /** 图解 id → 图解；找不到就是 `undefined`，调用方判空即可 */
   diagramsById: Readonly<Record<string, InterviewDiagram>>;
   /** 被用户隐藏的基线题 id（后续「已隐藏的默认题」分区用） */
@@ -123,6 +142,8 @@ function describeSkipped(skipped: number): string {
 export function useInterviewBank(): InterviewBankState {
   const [merged, setMerged] = useState<MergeResult>(BASELINE_MERGED);
   const [taxonomy, setTaxonomy] = useState<InterviewTaxonomyDTO[]>([]);
+  const [items, setItems] = useState<InterviewItemDetailDTO[]>([]);
+  const [hints, setHints] = useState<InterviewMuteHintDTO[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState<number>(0);
@@ -135,6 +156,8 @@ export function useInterviewBank(): InterviewBankState {
     if (!api) {
       setMerged(BASELINE_MERGED);
       setTaxonomy([]);
+      setItems([]);
+      setHints([]);
       setError(MESSAGE_NO_CHANNEL);
       setLoading(false);
       return;
@@ -148,19 +171,24 @@ export function useInterviewBank(): InterviewBankState {
         // `withPayload: true` 不能省：摘要通道没有 payload，合并会一条都用不上。
         // 分类与条目一起拉：分两次 await 会让「分类先到、条目后到」的中间态
         // 渲染出一批指向不存在分类的题（卡片路径显示「未分类」再跳回来）。
-        const [items, customCategories] = await Promise.all([
+        // 负例也并进来：少一次往返，且索引重建时三者必须同一批（否则会有一帧
+        // 用旧负例渲染出新词表）。
+        const [list, customCategories, mutedHints] = await Promise.all([
           api.itemsList({ withPayload: true }),
           typeof api.taxonomyList === "function" ? api.taxonomyList() : Promise.resolve([]),
+          typeof api.hintList === "function" ? api.hintList() : Promise.resolve([]),
         ]);
         if (cancelled) return;
 
         setTaxonomy(customCategories);
+        setItems(list);
+        setHints(mutedHints);
         const extraCategories = toCategoryNodes(customCategories);
         const baseline = buildMergeBaseline(
           extraCategories.length > 0 ? [...BASE_CATEGORIES, ...extraCategories] : undefined,
         );
 
-        const { rows, skipped } = toMergeRows(items);
+        const { rows, skipped } = toMergeRows(list);
         if (rows.length === 0) {
           // 情况二：库里没有增量（未登录 / 空库）；情况三：有行但全是脏数据。
           // 两者渲染结果相同（基线），只有「要不要提示」不同。
@@ -178,6 +206,8 @@ export function useInterviewBank(): InterviewBankState {
         if (cancelled) return;
         setMerged(BASELINE_MERGED);
         setTaxonomy([]);
+        setItems([]);
+        setHints([]);
         setError(describeFailure(failure));
         setLoading(false);
       }
@@ -194,10 +224,12 @@ export function useInterviewBank(): InterviewBankState {
   /**
    * 依赖 `merged.glossary` 的**引用**而不是长度：合并结果是不可变的，
    * 同一份词表永远同一个数组；换一批词条就整棵重建（几百节点，微秒级）。
+   *
+   * 负例也参与依赖：解除某处绑定后必须重建，否则那一处照旧点亮。
    */
   const glossaryIndex = useMemo<GlossaryMatchIndex>(
-    () => buildGlossaryIndex(merged.glossary),
-    [merged.glossary],
+    () => buildGlossaryIndex(merged.glossary, { muted: hints }),
+    [merged.glossary, hints],
   );
 
   const diagramsById = useMemo<Readonly<Record<string, InterviewDiagram>>>(
@@ -209,13 +241,21 @@ export function useInterviewBank(): InterviewBankState {
     setReloadToken((token) => token + 1);
   }, []);
 
+  /** 草稿箱的数据源：回收站里的草稿不出现（那时它已经不算「待确认」了） */
+  const drafts = useMemo(
+    () => items.filter((item) => item.status === "draft" && !item.deletedAt),
+    [items],
+  );
+
   return {
     questions: merged.questions,
     glossary: merged.glossary,
     diagrams: merged.diagrams,
     categories: merged.categories,
     taxonomy,
+    drafts,
     glossaryIndex,
+    hints,
     diagramsById,
     hiddenIds: merged.hiddenIds,
     originById: merged.originById,

@@ -18,9 +18,56 @@
  * `getSelection().toString()` 在跨高亮词的选区上会错位（划 `weak map` 会把相邻词算进来）。
  * 基线那套 `splitByGlossary` 不填这两个字段，保持向后兼容。
  *
+ * 【纯文本匹配必然有误命中 —— 这一层怎么兜】
+ * 中文没有空格，2 字词条被更长的词夹住时无法从字符层面判定（「字节流」里的
+ * 「节流」= 真命中吗？只有分词器知道）。所以不做「猜」，而是给三个确定性的阀门：
+ *   1. **单字 CJK 键不进索引** —— 单字词条几乎必然是误命中，且没有任何信息量；
+ *   2. **位置级负例**（`muted`）—— 用户右键「这里不是这个词」后，这个位置
+ *      永久不再点亮（同一个词在别处照常可点）；
+ *   3. **同键多词条并列**（`variants`）—— 词同名但领域不同时，弹层里全部列出，
+ *      并优先选与当前分类 / 轨道一致的那条。
+ * 三个阀门都不改变「词表本身」：不动词条、不动别名，随时可撤销。
+ *
  * 规范：docs/spec/interview-db-ai-spec.md §10.2 / §10.4
  */
 import type { GlossarySegment, GlossaryTerm } from "../data/interview-glossary";
+import { categoryNodeOf } from "../data/interview-taxonomy";
+
+/**
+ * 负例窗口：命中位置左右各取多少个字符作为「位置指纹」。
+ *
+ * 取 6 而不是整句：整句做指纹会让「同一句话在题干与答案里各出现一次」只解锁
+ * 一处；取 6 个字既能区分相邻出现的同一个词（上下文几乎一定不同），又不会
+ * 因为段落拼接方式不同就失效。
+ */
+export const MUTE_CONTEXT = 6;
+
+/** 用户「解除绑定」记下的一条负例（存 interview_match_hint 表） */
+export interface GlossaryMuteRule {
+  /** 被解除的词条 id（基线 id 或 `u-` 开头的自建 id） */
+  termId: string;
+  /** 当时命中的键（小写归一：term / en / alias 之一） */
+  key: string;
+  /** 命中位置左侧最多 {@link MUTE_CONTEXT} 个字符 */
+  left: string;
+  /** 命中位置右侧最多 {@link MUTE_CONTEXT} 个字符 */
+  right: string;
+}
+
+/** 同键多词条时的偏好（当前侧栏分类 / 轨道） */
+export interface GlossaryPrefer {
+  /** 当前分类 id（22 基线或 `u-c-*`） */
+  categoryId?: string;
+  /** 当前轨道；分类查不到时按它兜底 */
+  track?: string;
+}
+
+export interface GlossaryIndexOptions {
+  /** 位置级负例：命中这几个字符窗口时跳过（用户右键解除的） */
+  muted?: readonly GlossaryMuteRule[];
+  /** 同键多词条的选优偏好 */
+  prefer?: GlossaryPrefer;
+}
 
 /** 一个匹配器：同一份词表只建一次，之后反复用于渲染 */
 export interface GlossaryMatchIndex {
@@ -32,10 +79,59 @@ export interface GlossaryMatchIndex {
   exact(text: string): GlossaryTerm | undefined;
   /** 文本里命中的**去重**词条，用于统计与自检 */
   termsIn(text: string): GlossaryTerm[];
+  /** 某个键对应的全部词条（同名词条的领域区分用；第一条即主匹配） */
+  variantsOf(key: string): GlossaryTerm[];
+  /**
+   * 同一份词表换一套选优偏好（**不重建 trie**）。
+   *
+   * 侧栏切分类时同名词条的主匹配要跟着换（「节流」在浏览器性能题里指向
+   * 性能那条、在 RxJS 题里指向 RxJS 那条），但词表一个字都没变 —— 重建
+   * 索引等于每秒重扫几百个键。这里只换 `pickTerm` 的入参，词表与负例共用。
+   *
+   * 传 `undefined` = 恢复默认顺序（基线在前）。
+   */
+  withPrefer(prefer?: GlossaryPrefer): GlossaryMatchIndex;
 }
 
 /** ASCII 字母/数字/下划线：这类键两侧必须断开，否则 Fiber 会命中 FiberNode */
 const ASCII_EDGE = /[A-Za-z0-9_$]/;
+
+/** 单个汉字：这类键不进索引（见文件头「三个阀门」） */
+const SINGLE_CJK = /^[\u3400-\u9fff]$/;
+
+/**
+ * 算一段命中的位置指纹（左右各 {@link MUTE_CONTEXT} 字）。
+ *
+ * 导出给 UI 用：`TermChip` 右键时算出的窗口必须与匹配时**逐字相同**，
+ * 否则写进去的负例永远不生效。
+ */
+export function muteContextOf(
+  text: string,
+  start: number,
+  end: number,
+): { left: string; right: string } {
+  return {
+    left: text.slice(Math.max(0, start - MUTE_CONTEXT), start),
+    right: text.slice(end, end + MUTE_CONTEXT),
+  };
+}
+
+/** 这条命中是否被用户解除过（同词条、同键、同左右窗口） */
+function isMuted(
+  rules: readonly GlossaryMuteRule[] | undefined,
+  termId: string,
+  key: string,
+  text: string,
+  start: number,
+  end: number,
+): boolean {
+  if (!rules || rules.length === 0) return false;
+  const { left, right } = muteContextOf(text, start, end);
+  return rules.some(
+    (rule) =>
+      rule.termId === termId && rule.key === key && rule.left === left && rule.right === right,
+  );
+}
 
 /**
  * Aho–Corasick 节点。
@@ -51,8 +147,8 @@ interface TermTrieNode {
   keys: string[];
 }
 
-/** 匹配键 → 词条。键统一小写；同键只留**先出现**的词条（数组顺序即优先级） */
-type KeyLookup = Map<string, GlossaryTerm>;
+/** 匹配键 → 词条列表。键统一小写；同键按数组顺序（基线在前）即默认优先级 */
+type KeyLookup = Map<string, GlossaryTerm[]>;
 
 function buildTrie(keys: Iterable<string>): TermTrieNode[] {
   const nodes: TermTrieNode[] = [{ next: new Map(), fail: 0, keys: [] }];
@@ -134,12 +230,38 @@ function collectTermMatches(trie: TermTrieNode[], text: string): RawTermMatch[] 
 }
 
 /**
+ * 同键多词条时选一条主匹配。
+ *
+ * 顺序：① 与当前分类完全相同 → ② 同一条轨道（分类表反查）→ ③ 数组第一条。
+ * 只在**同键有多个词条**时才走到这里：绝大多数键只有一条，选优不产生任何开销。
+ */
+function pickTerm(list: readonly GlossaryTerm[], prefer?: GlossaryPrefer): GlossaryTerm {
+  const first = list[0];
+  if (list.length === 1 || !prefer) return first;
+  if (prefer.categoryId) {
+    const exact = list.find((term) => term.categoryId === prefer.categoryId);
+    if (exact) return exact;
+  }
+  if (prefer.track) {
+    const sameTrack = list.find((term) => {
+      const node = term.categoryId ? categoryNodeOf(term.categoryId) : undefined;
+      return node?.track === prefer.track;
+    });
+    if (sameTrack) return sameTrack;
+  }
+  return first;
+}
+
+/**
  * 建一个匹配器。
  *
- * 词表顺序即优先级（同长度、同起点的候选只可能来自同名键，实际不会发生）；
- * 空词表返回一个「永远不命中」的实例，调用方不用判空。
+ * 词表顺序即优先级（同键、同长度时取先出现的词条）；空词表返回一个
+ * 「永远不命中」的实例，调用方不用判空。
  */
-export function buildGlossaryIndex(terms: readonly GlossaryTerm[]): GlossaryMatchIndex {
+export function buildGlossaryIndex(
+  terms: readonly GlossaryTerm[],
+  options: GlossaryIndexOptions = {},
+): GlossaryMatchIndex {
   const keyToTerm: KeyLookup = new Map();
   const termById = new Map<string, GlossaryTerm>();
 
@@ -150,49 +272,81 @@ export function buildGlossaryIndex(terms: readonly GlossaryTerm[]): GlossaryMatc
       if (!raw) continue;
       const key = raw.trim().toLowerCase();
       if (!key) continue;
-      // 同键取先出现的词条：后出现的往往是同一概念的别名重复录入，
-      // 让它悄悄顶掉前面的会让「点开看到谁」取决于数组顺序
-      if (!keyToTerm.has(key)) keyToTerm.set(key, term);
+      // 单字汉字词条只会在正文里到处误命中（「流」命中「字节流」），且解释不了
+      // 任何东西 —— 直接不进索引，比事后让用户一个个右键解除更省事
+      if (SINGLE_CJK.test(key)) continue;
+      const bucket = keyToTerm.get(key);
+      // 同键按数组顺序排列：基线在前、用户自建在后，默认选第一条（与旧行为一致）
+      if (bucket) bucket.push(term);
+      else keyToTerm.set(key, [term]);
     }
   }
 
+  const { muted } = options;
   const trie = buildTrie(keyToTerm.keys());
 
-  const split = (text: string): GlossarySegment[] => {
-    if (text.length === 0) return [];
-    const matches = collectTermMatches(trie, text).sort(
-      (left, right) => left.start - right.start || right.key.length - left.key.length,
-    );
+  /**
+   * 用给定的偏好造一组视图。
+   *
+   * `withPrefer` 只换这一层：词表（`keyToTerm`）、负例（`muted`）、trie 全部复用，
+   * 所以侧栏来回切分类不会重扫词表 —— 只是换掉「同键选哪一条」这一个判断。
+   */
+  const views = (active?: GlossaryPrefer): GlossaryMatchIndex => {
+    const split = (text: string): GlossarySegment[] => {
+      if (text.length === 0) return [];
+      const matches = collectTermMatches(trie, text).sort(
+        (left, right) => left.start - right.start || right.key.length - left.key.length,
+      );
 
-    const segments: GlossarySegment[] = [];
-    let cursor = 0;
-    for (const match of matches) {
-      // 最长优先 + 贪心跳过重叠：长键吃掉区间后，它内部的短键不再重复命中
-      if (match.start < cursor) continue;
-      const term = keyToTerm.get(match.key);
-      if (!term) continue;
-      if (match.start > cursor) segments.push({ text: text.slice(cursor, match.start) });
-      segments.push({ text: text.slice(match.start, match.end), term, start: match.start, end: match.end });
-      cursor = match.end;
-    }
-
-    if (cursor < text.length) segments.push({ text: text.slice(cursor) });
-    return segments;
-  };
-
-  return {
-    split,
-    byId: (id: string) => termById.get(id),
-    exact: (text: string) => keyToTerm.get(text.trim().toLowerCase()),
-    termsIn: (text: string) => {
-      const seen = new Set<string>();
-      const hits: GlossaryTerm[] = [];
-      for (const segment of split(text)) {
-        if (!segment.term || seen.has(segment.term.id)) continue;
-        seen.add(segment.term.id);
-        hits.push(segment.term);
+      const segments: GlossarySegment[] = [];
+      let cursor = 0;
+      for (const match of matches) {
+        // 最长优先 + 贪心跳过重叠：长键吃掉区间后，它内部的短键不再重复命中
+        if (match.start < cursor) continue;
+        const bucket = keyToTerm.get(match.key);
+        if (!bucket || bucket.length === 0) continue;
+        const term = pickTerm(bucket, active);
+        // 被解除过的位置：这段文字当普通文本处理，不推进 cursor
+        // （后续更短的命中仍有机会，只是通常没有）
+        if (isMuted(muted, term.id, match.key, text, match.start, match.end)) continue;
+        if (match.start > cursor) segments.push({ text: text.slice(cursor, match.start) });
+        const variants = bucket.filter((item) => item.id !== term.id);
+        segments.push({
+          text: text.slice(match.start, match.end),
+          term,
+          start: match.start,
+          end: match.end,
+          key: match.key,
+          ...(variants.length > 0 ? { variants } : {}),
+        });
+        cursor = match.end;
       }
-      return hits;
-    },
+
+      if (cursor < text.length) segments.push({ text: text.slice(cursor) });
+      return segments;
+    };
+
+    return {
+      split,
+      withPrefer: (next) => views(next),
+      byId: (id: string) => termById.get(id),
+      exact: (text: string) => {
+        const bucket = keyToTerm.get(text.trim().toLowerCase());
+        return bucket && bucket.length > 0 ? pickTerm(bucket, active) : undefined;
+      },
+      termsIn: (text: string) => {
+        const seen = new Set<string>();
+        const hits: GlossaryTerm[] = [];
+        for (const segment of split(text)) {
+          if (!segment.term || seen.has(segment.term.id)) continue;
+          seen.add(segment.term.id);
+          hits.push(segment.term);
+        }
+        return hits;
+      },
+      variantsOf: (key: string) => keyToTerm.get(key.trim().toLowerCase()) ?? [],
+    };
   };
+
+  return views(options.prefer);
 }

@@ -29,6 +29,13 @@ import {
   EXPLAIN_ONE_LINER_HEAD,
   assembleExplainSpec,
 } from "./builders/explain";
+import {
+  TAXONOMY_LABEL_MAX,
+  TAXONOMY_OUTPUT_FORMAT,
+  TAXONOMY_SUGGEST_MAX,
+  assembleTaxonomySpec,
+  clampTaxonomyCount,
+} from "./builders/taxonomy";
 import { INTERVIEW_LIMITS, collectInterviewContext } from "./collector";
 import { INTERVIEW_INTENT_LABELS, INTERVIEW_PROMPT_VERSIONS, interviewPromptDomain } from "./index";
 import type { InterviewAuditTarget, InterviewPromptContext } from "./types";
@@ -224,10 +231,48 @@ describe("interviewAudit（题目质检）", () => {
   });
 });
 
+describe("interviewTaxonomySuggest（分类建议）", () => {
+  it("⑬ 输出契约四字段齐全，条数夹取到 1~3", () => {
+    expect(TAXONOMY_OUTPUT_FORMAT.kind).toBe("json-array");
+    const keys =
+      TAXONOMY_OUTPUT_FORMAT.kind === "json-array"
+        ? TAXONOMY_OUTPUT_FORMAT.fields.map((field) => field.key)
+        : [];
+    expect(keys).toEqual(["label", "track", "note", "sampleTitles"]);
+
+    expect(clampTaxonomyCount(undefined)).toBe(2);
+    expect(clampTaxonomyCount(0)).toBe(2);
+    expect(clampTaxonomyCount(9)).toBe(TAXONOMY_SUGGEST_MAX);
+    expect(clampTaxonomyCount(1.6)).toBe(1);
+  });
+
+  it("⑭ 现有分类作为封闭词表进 prompt，且要求给 3 条示例题名", () => {
+    const spec = assembleTaxonomySpec(makeContext(), { count: 2, seed: "服务端渲染" });
+    expect(spec.system).toContain("【可选分类");
+    expect(spec.system).toContain("React");
+    expect(spec.system).toContain(`不超过 ${TAXONOMY_LABEL_MAX} 字`);
+    expect(spec.system).toContain("sampleTitles 必须给 3 条");
+    expect(spec.system).toContain("围绕这个方向展开：服务端渲染");
+    expect(spec.count).toBe(2);
+    expect(spec.prompt).toContain("服务端渲染");
+  });
+
+  it("⑮ 没有种子时让模型自己找空缺", () => {
+    const spec = assembleTaxonomySpec(makeContext(), { count: 2 });
+    expect(spec.prompt).toContain("最缺的");
+    expect(spec.system).not.toContain("围绕这个方向展开");
+  });
+});
+
 describe("interviewPromptDomain（域模块自述 + 泛化层没走样）", () => {
   it("⑪ 三张域内表覆盖全部意图，且分级不含 L3", () => {
     const intents = [...interviewPromptDomain.intents];
-    expect(intents).toEqual(["interviewExplain", "interviewDraft", "interviewAudit"]);
+    expect(intents).toEqual([
+      "interviewExplain",
+      "interviewDraft",
+      "interviewAudit",
+      "interviewTaxonomySuggest",
+    ]);
     expect(Object.keys(interviewPromptDomain.labels).sort()).toEqual([...intents].sort());
     expect(Object.keys(interviewPromptDomain.versions).sort()).toEqual([...intents].sort());
     for (const intent of intents) {
@@ -246,6 +291,7 @@ describe("interviewPromptDomain（域模块自述 + 泛化层没走样）", () =
     const explainPayload = { term: "闭包", sentence: "闭包会捕获变量。" };
     const draftPayload = { kind: "question" as const, categoryId: "js", count: 3 };
     const auditPayload = { targets: auditTargets };
+    const taxonomyPayload = { count: 2, seed: "服务端渲染" };
 
     expect(interviewPromptDomain.build("interviewExplain", context, explainPayload)).toEqual(
       assembleExplainSpec(context, explainPayload),
@@ -256,5 +302,8 @@ describe("interviewPromptDomain（域模块自述 + 泛化层没走样）", () =
     expect(interviewPromptDomain.build("interviewAudit", context, auditPayload)).toEqual(
       assembleAuditSpec(context, auditPayload),
     );
+    expect(
+      interviewPromptDomain.build("interviewTaxonomySuggest", context, taxonomyPayload),
+    ).toEqual(assembleTaxonomySpec(context, taxonomyPayload));
   });
 });

@@ -1,8 +1,11 @@
 import { Button, Input, Segmented, Typography } from "antd";
 import {
+  DisconnectOutlined,
   EyeInvisibleOutlined,
+  InboxOutlined,
   ReadOutlined,
   RobotOutlined,
+  SafetyCertificateOutlined,
   SearchOutlined,
 } from "@ant-design/icons";
 import { TRACKS } from "../../data/interview-taxonomy";
@@ -19,6 +22,10 @@ interface SearchPanelProps {
   favoriteCount: number;
   /** 被隐藏的默认题条数（入口按钮上的角标） */
   hiddenCount: number;
+  /** 待处理草稿条数（草稿不进题库，所以必须单独有个入口） */
+  draftCount: number;
+  /** 已解除的名词绑定条数（0 时不显示入口，别给顶栏加常驻噪音） */
+  hintCount: number;
   onTrackChange: (track: QuestionTrack) => void;
   onKeywordChange: (value: string) => void;
   onSearch: () => void;
@@ -26,8 +33,14 @@ interface SearchPanelProps {
   onOpenKnowledge: () => void;
   /** 打开「已隐藏的默认题」抽屉 */
   onOpenHidden: () => void;
+  /** 打开草稿箱抽屉 */
+  onOpenDrafts: () => void;
+  /** 打开「已解除的名词绑定」抽屉 */
+  onOpenHints: () => void;
   /** 打开 AI 拓展抽屉；不传则不显示入口 */
   onOpenAi?: () => void;
+  /** 打开题目质检面板；不传则不显示入口 */
+  onOpenAudit?: () => void;
   /** AI 总开关关着 / 通道不在：整块不渲染（REQ-063） */
   aiHidden?: boolean;
   /** AI 开关开着但没配全：禁用并说明原因 */
@@ -52,12 +65,17 @@ export default function SearchPanel({
   total,
   favoriteCount,
   hiddenCount,
+  draftCount,
+  hintCount,
   onTrackChange,
   onKeywordChange,
   onSearch,
   onOpenKnowledge,
   onOpenHidden,
+  onOpenDrafts,
+  onOpenHints,
   onOpenAi,
+  onOpenAudit,
   aiHidden = false,
   aiDisabledText = "",
 }: SearchPanelProps) {
@@ -102,6 +120,33 @@ export default function SearchPanel({
             onClick={onOpenAi}
           >
             AI 拓展
+          </Button>
+        ) : null}
+        {/* 题目质检：AI 也参与，所以与 AI 拓展同一套可用性口径（总开关关着就不渲染） */}
+        {onOpenAudit && !aiHidden ? (
+          <Button
+            className="interview-search__audit"
+            icon={<SafetyCertificateOutlined />}
+            disabled={Boolean(aiDisabledText)}
+            title={aiDisabledText || "把当前筛选下的题目送上去核对答案与分类"}
+            onClick={onOpenAudit}
+          >
+            题目质检
+          </Button>
+        ) : null}
+        {/* 草稿箱：草稿不进合并视图，不在这里给入口就等于把内容丢进黑洞 */}
+        <Button className="interview-search__drafts" icon={<InboxOutlined />} onClick={onOpenDrafts}>
+          {draftCount > 0 ? `草稿箱 ${draftCount}` : "草稿箱"}
+        </Button>
+        {/* 解除名词绑定是破坏性的（那段文字不再可点，也就没法再右键它）：
+            有记录时必须留一个能反悔的入口；一条都没有就不占顶栏位置 */}
+        {hintCount > 0 ? (
+          <Button
+            className="interview-search__hints"
+            icon={<DisconnectOutlined />}
+            onClick={onOpenHints}
+          >
+            已解除 {hintCount} 处
           </Button>
         ) : null}
         {/* 「隐藏」= 删除内置题的唯一形态，必须留一个能反悔的入口；

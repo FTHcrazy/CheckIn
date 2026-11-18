@@ -10,6 +10,7 @@ import type { PromptDomainModule, PromptSpec } from "../../types";
 import { assembleAuditSpec } from "./builders/audit";
 import { assembleDraftSpec } from "./builders/draft";
 import { assembleExplainSpec } from "./builders/explain";
+import { assembleTaxonomySpec } from "./builders/taxonomy";
 import type {
   InterviewPromptContext,
   InterviewPromptIntent,
@@ -26,6 +27,7 @@ const INTERVIEW_BUILDERS: {
   interviewExplain: assembleExplainSpec,
   interviewDraft: assembleDraftSpec,
   interviewAudit: assembleAuditSpec,
+  interviewTaxonomySuggest: assembleTaxonomySpec,
 };
 
 /**
@@ -53,6 +55,7 @@ export const INTERVIEW_INTENT_LABELS: Record<InterviewPromptIntent, string> = {
   interviewExplain: "划词解释",
   interviewDraft: "AI 拓展",
   interviewAudit: "题目质检",
+  interviewTaxonomySuggest: "AI 建议分类",
 };
 
 /** 各意图的 prompt 模板版本（落 `ai_log.prompt_version`；改模板必须 bump） */
@@ -60,9 +63,12 @@ export const INTERVIEW_PROMPT_VERSIONS: Record<InterviewPromptIntent, string> = 
   // v1：划词解释首版（text 契约 + 两段标记行）
   interviewExplain: "v1",
   // v1：出题 / 出词 / 出图三合一（question·glossary 走 json-array，diagram 走 text）
-  interviewDraft: "v1",
+  // v2：出词条时要求 term 与种子原文逐字一致（否则正文里划中的词点不动）
+  interviewDraft: "v2",
   // v1：题目质检首版（json-array，首字段 id 作去重键）
   interviewAudit: "v1",
+  // v1：分类建议首版（json-array，label/track/note/sampleTitles）
+  interviewTaxonomySuggest: "v1",
 };
 
 /** 本域允许的数据分级：题库内容不是作品正文，任何面试意图都不该触发 L3 整章授权 */

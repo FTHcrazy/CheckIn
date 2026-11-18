@@ -85,6 +85,13 @@ export interface InterviewDraftPayload {
   diagramKind?: DiagramKindShape;
   /** 期望条数（`clampDraftCount` 夹取；diagram 恒为 1） */
   count: number;
+  /**
+   * 词条库里已有同名 / 近义词条（「补充释义」场景）。给了就必须写得比它深，
+   * 且 payload 的 `related` 会指回那条词条 —— 否则新词条只是旧词条的复读。
+   */
+  existingTerm?: string;
+  /** 上一条已有词条的一句话定义（模型用来判断「哪里还没讲」） */
+  existingShort?: string;
 }
 
 /* ───────────────────────── 意图 3：题目质检 ───────────────────────── */
@@ -108,11 +115,22 @@ export interface InterviewAuditPayload {
 
 /* ───────────────────────── 意图表（唯一产地） ───────────────────────── */
 
+/** 分类建议的参数（规范 §9 三层闸门 ①：只产建议，不直接建分类） */
+export interface InterviewTaxonomySuggestPayload {
+  /** 想要的方向（一句话）；空则由模型按题库现状找空缺 */
+  seed?: string;
+  /** 期望条数（`clampTaxonomyCount` 夹取到 1~3） */
+  count: number;
+  /** 目标轨道（给了就只推荐这一侧的） */
+  track?: QuestionTrackShape;
+}
+
 /** 面试域的意图 → 参数类型。加意图 = 在这里加一个键，其余四张表会被编译器逼着补齐 */
 export interface InterviewPromptPayloadMap {
   interviewExplain: InterviewExplainPayload;
   interviewDraft: InterviewDraftPayload;
   interviewAudit: InterviewAuditPayload;
+  interviewTaxonomySuggest: InterviewTaxonomySuggestPayload;
 }
 
 /** 面试域的意图名 */

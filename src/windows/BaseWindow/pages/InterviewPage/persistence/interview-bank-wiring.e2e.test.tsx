@@ -38,7 +38,7 @@ import {
   sortQuestions,
 } from "../data/interview-filter-utils";
 import type { InterviewQuestion } from "../data/interview-types";
-import { buildGlossaryIndex } from "../persistence/glossary-matcher";
+import { buildGlossaryIndex, muteContextOf } from "../persistence/glossary-matcher";
 import { buildMergeBaseline, toMergeRows } from "../persistence/interview-bank-source";
 
 // ──────────────────────────── 桩与夹具 ────────────────────────────
@@ -815,6 +815,94 @@ describe("T06-A 接线验收（合并数据 → 用户眼前）", () => {
       expect(container.querySelector(".interview-dg__caption")).toBeNull();
     });
   });
+
+  // ────────────────── ⑨ 右键解除误命中 ──────────────────
+
+  /**
+   * 整页渲染 + 右键菜单开口本身要 13s 上下（12 张卡片的正文全部过一遍词表），
+   * 全量跑时机器更紧张，默认 20s 会把「慢」判成「超时」—— 这一组给到 60s。
+   */
+  describe("⑨ 右键解除（纯文本匹配的判定权交给用户）", () => {
+    it("右键「这里不是它」写下的窗口与匹配器同源（等价于「点在哪一处」）", async () => {
+      /** 页面写进通道的那一条负例（断言它等于匹配器算出的窗口） */
+      const added: Array<{ termId: string; key: string; left: string; right: string }> = [];
+      const hintAdd = vi.fn(
+        async (payload: { termId: string; key: string; left: string; right: string }) => {
+          added.push(payload);
+          return { ok: true, id: "u-n-1" };
+        },
+      );
+      mountInterviewApi({
+        itemsList: vi.fn(async () => []) as never,
+        taxonomyList: vi.fn(async () => []) as never,
+        hintList: vi.fn(async () => []) as never,
+        hintAdd: hintAdd as never,
+      });
+
+      render(<InterviewPage />);
+
+      /** 正文里带位置锚点的名词按钮（行内代码那种没有 `data-text-start`） */
+      const chips = (): HTMLElement[] =>
+        screen
+          .getAllByRole("button", { name: /名词解释：/ })
+          .filter((element) => element.hasAttribute("data-text-start"));
+
+      const [chip] = chips();
+      expect(chip).toBeTruthy();
+      const full = chip.closest("[data-text-full]")?.getAttribute("data-text-full") ?? "";
+      const start = Number(chip.getAttribute("data-text-start"));
+      const end = Number(chip.getAttribute("data-text-end"));
+      const hitText = (chip.textContent ?? "").trim();
+
+      fireEvent.contextMenu(chip);
+      fireEvent.click(await screen.findByText(`这里不是「${hitText}」`));
+
+      await waitFor(() => expect(hintAdd).toHaveBeenCalledTimes(1));
+      const payload = added[0];
+      // 窗口必须与匹配器同一份实现（`muteContextOf`）：自己再算一遍迟早会漂，
+      // 漂了的表现是「写入成功但那一处照旧点亮」—— 最难查的一类 bug
+      expect({ left: payload.left, right: payload.right }).toEqual(
+        muteContextOf(full, start, end),
+      );
+      expect(payload.key).toBe(hitText.toLowerCase());
+      expect(payload.termId.length).toBeGreaterThan(0);
+    });
+
+    it("库里那条负例让那一处退回普通文字，同一个词在别处照常可点", async () => {
+      // 典型误命中：「字节流」里的「节流」。第 1..3 字那一处记了负例
+      const text = "字节流与节流都要看";
+      const throttle = GLOSSARY_TERMS.find((term) => term.term === "节流");
+      expect(throttle).toBeTruthy();
+      mountInterviewApi({
+        itemsList: vi.fn(async () => []) as never,
+        taxonomyList: vi.fn(async () => []) as never,
+        hintList: vi.fn(async () => [
+          {
+            id: "u-n-1",
+            termId: String(throttle?.id),
+            key: "节流",
+            left: "字",
+            right: "与节流都要看",
+            createdAt: 1,
+          },
+        ]) as never,
+      });
+
+      const { container } = render(
+        <InterviewBankProvider>
+          <TermText text={text} />
+        </InterviewBankProvider>,
+      );
+
+      await waitFor(() =>
+        expect(container.querySelectorAll(`button[aria-label="名词解释：节流"]`)).toHaveLength(1),
+      );
+      // 整段文字一个字不少，只有「字节流」里那处退回普通文字（解除的是位置而非词条）
+      expect(container.querySelector("[data-text-full]")?.textContent).toBe(text);
+      expect(container.querySelector("button")?.textContent).toBe("节流");
+      expect(container.textContent?.startsWith("字节流与")).toBe(true);
+    });
+  }, 60_000);
 
   // ────────────────── ⑧ 约定守卫（react-refresh / 禁 disable） ──────────────────
 

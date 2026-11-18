@@ -123,10 +123,69 @@
   }
 }
 
+// 右键菜单的锚点：只负责承载 `onContextMenu`，不参与任何视觉与布局
+// （`display: inline` 让行盒与直接放 Button 时完全一致，不会多出一个盒子）
+.interview-term__hit {
+  display: inline;
+}
+
 .interview-term__panel-related {
   margin: 8px 0 0;
   padding-top: 6px;
   border-top: 1px dashed var(--app-border);
   color: var(--app-text-muted);
   font-size: 12px;
+}
+
+// 同名词条切换：词名一样、领域不同，弹层里并列给一排小按钮（按领域分）
+.interview-term__panel-variants {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--app-border);
+}
+
+.interview-term__panel-variants-label {
+  color: var(--app-text-muted);
+  font-size: 12px;
+}
+
+.interview-term__variant.ant-btn {
+  --ant-control-height: 22px;
+  --ant-font-size: 12px;
+  --ant-button-text-text-color: var(--app-text-secondary);
+  --ant-button-text-text-hover-color: var(--app-primary);
+  --ant-button-text-hover-bg: transparent;
+
+  flex: none;
+  padding: 0 6px;
+  border-radius: var(--app-radius-chip);
+
+  &.is-active {
+    background: var(--app-primary-weak);
+    color: var(--app-primary);
+  }
+}
+
+// 弹层底部：编辑词条的入口（词条本身写错了才走这里，不是「这里不是这个词」）
+.interview-term__panel-ops {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--app-border);
+}
+
+.interview-term__edit.ant-btn {
+  --ant-control-height: 22px;
+  --ant-font-size: 12px;
+  --ant-button-text-text-color: var(--app-text-secondary);
+  --ant-button-text-text-hover-color: var(--app-primary);
+  --ant-button-text-hover-bg: transparent;
+
+  flex: none;
+  padding: 0 2px;
 }

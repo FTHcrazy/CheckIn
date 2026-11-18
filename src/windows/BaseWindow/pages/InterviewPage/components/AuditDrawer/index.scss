@@ -1,0 +1,122 @@
+// 题目质检面板：一条结论一个卡片，严重程度从左边的徽标一眼看出
+.interview-audit {
+  &__hint {
+    display: block;
+    margin-bottom: 12px;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  &__bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+    padding: 8px 12px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-item);
+    background: var(--app-surface-alt);
+  }
+
+  &__scope {
+    flex: 1 1 240px;
+    min-width: 0;
+    color: var(--app-text-secondary);
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  &__notice.ant-alert,
+  &__error.ant-alert {
+    margin-bottom: 12px;
+  }
+
+  &__empty {
+    margin-top: 16px;
+  }
+
+  &__list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  &__item {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px 12px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-item);
+    background: var(--app-surface-alt);
+  }
+
+  &__head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  // 三档配色沿用语义色：必改偏红、该改偏黄、可选中性
+  &__severity.ant-tag {
+    flex: none;
+    margin: 0;
+
+    &.is-high {
+      border-color: var(--app-error);
+      color: var(--app-error);
+    }
+
+    &.is-medium {
+      border-color: var(--app-warning);
+      color: var(--app-warning);
+    }
+
+    &.is-low {
+      color: var(--app-text-muted);
+    }
+  }
+
+  &__title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--app-text-strong);
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  &__points {
+    margin: 0;
+    padding-left: 18px;
+    color: var(--app-text-secondary);
+    font-size: 12px;
+    line-height: 1.7;
+
+    li {
+      list-style: disc;
+    }
+  }
+
+  &__suggestion {
+    margin: 0;
+    padding: 6px 8px;
+    border-radius: var(--app-radius-chip);
+    background: var(--app-primary-weak);
+    color: var(--app-text);
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  &__ops {
+    display: flex;
+    justify-content: flex-end;
+    gap: 4px;
+  }
+}

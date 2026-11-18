@@ -184,6 +184,20 @@ export function assembleDraftSpec(
     requirements.push(`难度：${DRAFT_DIFFICULTY_LABELS[payload.difficulty]}`);
   }
   if (payload.seed?.trim()) requirements.push(`围绕这个种子展开：${payload.seed.trim()}`);
+  if (kind === "glossary" && payload.seed?.trim() && !payload.existingTerm?.trim()) {
+    // 词条的 term 直接决定「正文里的哪几个字会变蓝」：改成自己习惯的叫法虽然更通顺，
+    // 却会让用户点不动刚划的那个词（词表是整词命中，不做语义归一）
+    requirements.push(
+      `词条的 term 必须与上面的种子原文逐字一致（就是用户在正文里划中的那一段），不要改写成别的叫法；全称 / 别称写进 en 或 aliases。`,
+    );
+  }
+  if (kind === "glossary" && payload.existingTerm?.trim()) {
+    requirements.push(
+      `词条库里已经有「${payload.existingTerm.trim()}」${
+        payload.existingShort?.trim() ? `（现有一句话定义：${payload.existingShort.trim()}）` : ""
+      }：本次是**补充释义**，必须写出它没讲到的原理 / 边界 / 常见误解，不许复述现有定义，也不要把同名字再录一遍；`,
+    );
+  }
 
   return {
     system: composePrompt(

@@ -19,6 +19,12 @@
  * 程序清掉选区后就误判成单击了。这里用「位移 < 4px 且选区折叠」判单击，
  * 否则置一个 300ms 的抑制窗口，由 `TermChip` 的 `onOpenChange` 读它。
  *
+ * 【点击浮层按钮 ≠ 放弃划词】
+ * 浮层是 portal 到 body 的另一个节点，点它的按钮会让浏览器折叠正文选区并派发
+ * `selectionchange`。若照常按「选区折叠就关浮层」处理，「问 AI」刚点下去浮层就
+ * 被卸载，模型返回的解释无处显示。所以浮层内按下 / 按键期间置一个 hold 标记，
+ * 期间忽略 `selectionchange`。
+ *
  * 规范：docs/spec/interview-db-ai-spec.md §10.2
  */
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
@@ -51,6 +57,9 @@ const CLICK_SLOP = 4;
 /** 拖选后抑制名词按钮弹出的时长（够一次 click 派发完即可） */
 const CHIP_SUPPRESS_MS = 300;
 
+/** 划词浮层的根类名（portal 到 body，与 `SelectionTermPopover` 的 className 同一字符串） */
+const POPOVER_SELECTOR = ".interview-selection";
+
 /** 模块级抑制时间戳：TermChip 与 hook 都在同一窗口内，不需要跨进程或 context */
 let chipSuppressUntil = 0;
 
@@ -76,6 +85,58 @@ export function isTermCandidate(text: string): boolean {
   const length = text.length;
   if (hasCjk) return length >= CJK_MIN && length <= CJK_MAX;
   return length >= ASCII_MIN && length <= ASCII_MAX;
+}
+
+/**
+ * 按 `data-text-*` 锚点反算选区原文（规范 §10.2 的「偏移定位」）。
+ *
+ * 单纯用 `getSelection().toString()` 在跨高亮词的选区上会多带字：`TermText` 把一句话
+ * 切成多个 `<span>` / `<button>`，浏览器在这种结构上给出的字符串边界偶尔会扩散到
+ * 整个节点（划 `weak map` 时把相邻的 `map` 一起带上）。
+ *
+ * 反算需要的两个前提都由 `TermText` 保证：
+ * - 每个片段挂 `data-text-start` / `data-text-end`（本片段在原文里的 `[start, end)`）；
+ * - 根节点挂 `data-text-full`（原文本身，`slice` 的来源）。
+ *
+ * 任何一步对不上（跨段落、多文本节点、锚点缺失、与浏览器结果不一致）都返回 `null`，
+ * 由调用方回落 `toString()` —— 精确化只做增强，绝不因为反算失败就丢掉这次划词。
+ */
+export function preciseSelectionText(range: Range, raw: string): string | null {
+  const { startContainer, endContainer } = range;
+  // `startOffset` 在文本节点上是字符下标，在元素节点上是子节点下标 —— 后者无法反算
+  if (startContainer.nodeType !== Node.TEXT_NODE) return null;
+  if (endContainer.nodeType !== Node.TEXT_NODE) return null;
+
+  const startElement = anchorElementOf(startContainer);
+  const endElement = anchorElementOf(endContainer);
+  if (!startElement || !endElement) return null;
+
+  // 两个端点必须共享同一份原文（跨段落的选区没有可比对的单一 full）
+  const host = startElement.closest<HTMLElement>("[data-text-full]");
+  if (!host || !host.contains(endElement)) return null;
+  const full = host.dataset.textFull ?? "";
+  if (!full) return null;
+
+  const startBase = Number(startElement.dataset.textStart);
+  const endBase = Number(endElement.dataset.textEnd);
+  if (!Number.isFinite(startBase) || !Number.isFinite(endBase)) return null;
+
+  // 锚点元素里若不止一个文本节点，offset 就不再等价于「片段内第几个字符」
+  if (!isSoleTextChild(startElement, startContainer)) return null;
+  if (!isSoleTextChild(endElement, endContainer)) return null;
+
+  const start = startBase + range.startOffset;
+  const end = endBase - (endElement.textContent?.length ?? 0) + range.endOffset;
+  if (start < 0 || end <= start || end > full.length) return null;
+
+  const slice = full.slice(start, end);
+  // 与浏览器给的选区不一致 ⇒ 锚点与 DOM 已经不同步，不采信
+  return normalizeSelection(slice) === normalizeSelection(raw) ? slice : null;
+}
+
+/** 锚点元素的内容是否为「唯一文本节点」，且选区端点正好落在它身上 */
+function isSoleTextChild(element: HTMLElement, node: Node): boolean {
+  return element.childNodes.length === 1 && element.firstChild === node;
 }
 
 /** 选区是否落在代码块里（`pre` / `code` 里的片段不能变词条） */
@@ -148,8 +209,20 @@ export function useSelectionTerms(
   const [selection, setSelection] = useState<SelectionTerm | null>(null);
   /** 按下位置：用来判「单击 vs 拖选」 */
   const originRef = useRef<{ x: number; y: number } | null>(null);
+  /**
+   * 「用户正在浮层里操作」——期间**不许**因为选区折叠而关闭浮层。
+   *
+   * 为什么必须单独记：点浮层里的按钮时，浏览器会把正文选区折叠掉并派发一次
+   * `selectionchange`，而浮层是 `position: fixed` 的 portal 节点，它本身不在
+   * 选区里。只看 `isCollapsed` 的话，「问 AI」刚转圈浮层就被卸载了 ——
+   * 模型随后返回的解释再也没地方显示（实机复现过）。
+   *
+   * 复位时机只有两个：在浮层外按下（那时选区本来也该清），或显式 `clear()`。
+   */
+  const holdRef = useRef(false);
 
   const clear = useCallback((): void => {
+    holdRef.current = false;
     setSelection(null);
     const active = window.getSelection();
     // 动作执行后必须把选区清掉，否则浮层会跟着旧选区重复触发
@@ -176,7 +249,9 @@ export function useSelectionTerms(
         setSelection(null);
         return;
       }
-      const text = normalizeSelection(active.toString());
+      const raw = active.toString();
+      const precise = preciseSelectionText(range, raw);
+      const text = normalizeSelection(precise ?? raw);
       if (!isTermCandidate(text)) {
         setSelection(null);
         return;
@@ -197,7 +272,11 @@ export function useSelectionTerms(
       originRef.current = { x: event.clientX, y: event.clientY };
       // 点在浮层自己身上时不要清：否则按钮的 click 还没派发就被卸载了
       const target = event.target as HTMLElement | null;
-      if (target?.closest(".interview-selection")) return;
+      if (target?.closest(POPOVER_SELECTOR)) {
+        holdRef.current = true;
+        return;
+      }
+      holdRef.current = false;
       setSelection(null);
     };
 
@@ -226,19 +305,33 @@ export function useSelectionTerms(
     };
 
     const onSelectionChange = (): void => {
+      // 浮层内的按钮被点击 / Tab 聚焦都会让正文选区折叠，但那不代表用户
+      // 放弃了这次划词 —— 见 `holdRef` 的注释
+      if (holdRef.current) return;
       const active = window.getSelection();
       if (!active || active.isCollapsed) setSelection(null);
+    };
+
+    /**
+     * 键盘走到浮层里（Tab 到按钮、回车触发）时同样要 hold：
+     * `keyup` 的读取逻辑只在 Shift 扩选时触发，这里只管「别把浮层关掉」。
+     */
+    const onKeyDown = (event: KeyboardEvent): void => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest(POPOVER_SELECTOR)) holdRef.current = true;
     };
 
     document.addEventListener("pointerdown", onPointerDown, true);
     document.addEventListener("pointerup", onPointerUp, true);
     document.addEventListener("keyup", onKeyUp);
+    document.addEventListener("keydown", onKeyDown, true);
     document.addEventListener("selectionchange", onSelectionChange);
 
     return () => {
       document.removeEventListener("pointerdown", onPointerDown, true);
       document.removeEventListener("pointerup", onPointerUp, true);
       document.removeEventListener("keyup", onKeyUp);
+      document.removeEventListener("keydown", onKeyDown, true);
       document.removeEventListener("selectionchange", onSelectionChange);
     };
   }, [containerRef]);

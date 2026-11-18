@@ -60,6 +60,16 @@
     user-select: text;
   }
 
+  // 解释的首行（prompt 的【一句话】段）：比正文重一档，读到第一行就知道结论
+  &__one-liner {
+    display: block;
+    color: var(--app-text-strong);
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.6;
+    user-select: text;
+  }
+
   &__loading,
   &__error {
     font-size: 12px;
@@ -70,14 +80,19 @@
     color: var(--app-error);
   }
 
+  // 按钮最多五个（加为词条 / 记为别名 / 补充释义 / 问 AI / 关闭）：268px 一行放不下，
+  // 允许换行而不是压缩内边距 —— 压缩后中文按钮会挤成两行
   &__ops {
     display: flex;
     align-items: center;
     gap: 6px;
+    flex-wrap: wrap;
   }
 
   &__add.ant-btn,
-  &__ask.ant-btn {
+  &__ask.ant-btn,
+  &__alias.ant-btn,
+  &__supplement.ant-btn {
     --ant-control-height: 26px;
     --ant-font-size: 13px;
     flex: none;

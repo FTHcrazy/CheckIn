@@ -1485,6 +1485,21 @@ export interface ElectronAPI {
       status: string
       note?: string | null
     }) => Promise<InterviewWriteResultDTO>
+    /**
+     * 词条匹配负例（「这里不是这个词」）。
+     *
+     * 一条记录 = 一个位置指纹：`termId + key + left + right`。渲染层建匹配器时
+     * 用它跳过误命中，而**不动词条本身** —— 同一段文字在别处仍可点。
+     */
+    hintList: () => Promise<InterviewMuteHintDTO[]>
+    hintAdd: (payload: {
+      termId: string
+      key: string
+      left: string
+      right: string
+    }) => Promise<InterviewWriteResultDTO>
+    /** 撤销一条负例（解除错了要能反悔） */
+    hintRemove: (id: string) => Promise<InterviewWriteResultDTO>
     /** 导出备份（内部弹保存框）；`full` 模式的基线快照由渲染层序列化后传入 */
     exportBank: (payload: {
       mode: 'delta' | 'full'
@@ -1629,6 +1644,25 @@ export interface InterviewTaxonomyDTO {
   /** 一句话「这块考什么」 */
   note: string | null
   updatedAt: number
+}
+
+/**
+ * 词条匹配负例（用户右键「这里不是这个词」）。
+ *
+ * 记录的是**位置指纹**而不是「删词条 / 删别名」：
+ * `left` / `right` 是命中位置左右各最多 6 个字符。同一段文字在别处出现时
+ * 指纹不同，那条词条照常可点 —— 误命中通常只发生在某个具体搭配里
+ * （「字节流」被「节流」命中），删词条会把全库的「节流」一起摘掉。
+ */
+export interface InterviewMuteHintDTO {
+  id: string
+  /** 被解除的词条 id（基线 id 或 `u-` 开头的自建 id） */
+  termId: string
+  /** 当时命中的键（小写归一：term / en / alias 之一） */
+  key: string
+  left: string
+  right: string
+  createdAt: number
 }
 
 /** 题库写通道的统一返回：失败时 `errors` 是给用户看的人话 */

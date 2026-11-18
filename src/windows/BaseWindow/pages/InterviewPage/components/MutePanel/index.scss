@@ -1,0 +1,78 @@
+// 已解除的名词绑定：一行一条负例
+.interview-mute {
+  &__hint {
+    display: block;
+    margin-bottom: 12px;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  &__empty {
+    margin-top: 16px;
+  }
+
+  &__list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  &__item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-item);
+    background: var(--app-surface-alt);
+  }
+
+  &__text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  &__term {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--app-text-strong);
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  // 上下文原样回放：前后各 6 字 + 加粗的命中词，用户认得出是哪一句
+  &__context {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--app-text-secondary);
+    font-size: 13px;
+  }
+
+  &__hit {
+    padding: 0 2px;
+    border-radius: var(--app-radius-chip);
+    background: var(--app-warning-weak);
+    color: var(--app-text);
+    font-weight: 600;
+  }
+
+  &__meta {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--app-text-muted);
+    font-size: 12px;
+  }
+
+  &__restore.ant-btn {
+    flex: none;
+  }
+}

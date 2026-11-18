@@ -106,6 +106,21 @@ CREATE TABLE IF NOT EXISTS interview_taxonomy (
 );
 CREATE INDEX IF NOT EXISTS idx_taxonomy_track ON interview_taxonomy(track, status, order_no);
 
+-- ── 名词匹配负例：用户右键「这里不是这个词」的位置级判定 ──
+-- 词表匹配是纯文本的（「字节流」里的「节流」会命中），中文没有分词器判不出对错，
+-- 所以把判定权交给用户：存**位置**而不是删词条/删别名 ——
+-- 同一段文字在别处出现时该词条照常可点。
+CREATE TABLE IF NOT EXISTS interview_match_hint (
+  id         TEXT PRIMARY KEY,   -- u-n-*
+  term_id    TEXT NOT NULL,      -- 被解除的词条 id（基线 id 或 u-）
+  key        TEXT NOT NULL,      -- 当时命中的键（小写归一）
+  left_text  TEXT NOT NULL,      -- 命中左侧最多 6 字
+  right_text TEXT NOT NULL,      -- 命中右侧最多 6 字
+  created_at INTEGER NOT NULL,
+  UNIQUE (term_id, key, left_text, right_text)  -- 同一处解除两次不留两行
+);
+CREATE INDEX IF NOT EXISTS idx_hint_term ON interview_match_hint(term_id);
+
 -- ── 库级元信息 ──
 CREATE TABLE IF NOT EXISTS interview_meta (
   key        TEXT PRIMARY KEY,  -- schema_version | baseline_version | last_import_at | last_export_at
@@ -132,12 +147,13 @@ CREATE TABLE IF NOT EXISTS interview_meta (
 | 删除我自己的题 | `action='new'`, `status='deleted'`, `deleted_at` | 进回收站，可 purge |
 | AI 草稿 | `action='new'`, `status='draft'` | 只在草稿箱 / 工作台 |
 
-**为什么 3 张表而不是 4 张**：切分依据是**读法**不是类型。题 / 词条 / 图的访问模式同构（按 `kind+status` 翻列表、按 `id` 取一条、按 `status='adopted'` 全量导出），合成 `interview_item` 可避免 40+ 列大宽表。taxonomy 单独建是因为它**被引用且不可删**（删分类会让题悬空），且要参与合并视图的分类白名单计算。
+**为什么 3 张内容表 + 1 张匹配负例表**：切分依据是**读法**不是类型。题 / 词条 / 图的访问模式同构（按 `kind+status` 翻列表、按 `id` 取一条、按 `status='adopted'` 全量导出），合成 `interview_item` 可避免 40+ 列大宽表。taxonomy 单独建是因为它**被引用且不可删**（删分类会让题悬空），且要参与合并视图的分类白名单计算。`interview_match_hint` 也不进 `interview_item`：它描述的是「用户对**匹配结果**的判定」，与词条内容无关，也不参与导出 / 合并（换机后误命中可以重新标）。
 
 | 表 | 写 | 读 | 时机 |
 |---|---|---|---|
 | `interview_item` | 仅 `handlers/interview/*` | 经 IPC → 渲染层 | AI 草稿落地（`draft`）、用户采纳（`adopted` + `reviewed_at`）、划词转词条、导入 |
 | `interview_taxonomy` | 同上 | 同上 + 分类白名单计算 | AI 建议分类 → 用户确认 → `adopted`；导入 |
+| `interview_match_hint` | 同上 | 同上（建匹配器时作为 `muted` 规则） | 正文里右键「这里不是这个词」；撤销时删行 |
 | `interview_meta` | 同上 | 同上（启动读 `schema_version` / `baseline_version`） | 建库、每次导入/导出成功后 |
 
 **`baseline_version` 的写入时机**：主进程在 `interview-db.ts` 的 `initializeInterviewDb()` 里用 `app.getVersion()` 写入（`INSERT OR REPLACE`）。app 升级后首次建连即更新，用于导出时标注「这份增量是基于哪个基线导出的」，**不参与合并逻辑**。
@@ -159,6 +175,9 @@ CREATE TABLE IF NOT EXISTS interview_meta (
 | `interview-item-ack-base` | 新增 | `{ id, baseHash }` | `{ ok: true }`（写 `ack_base_hash`，抑制「基线已更新」提示，内容不动） |
 | `interview-taxonomy-list` | 新增 | `{ track?, status? }` | `{ id, label, track, orderNo, status, note }[]` |
 | `interview-taxonomy-save` | 新增 | `{ id, label, track, orderNo?, status, note? }` | `{ ok: true; id } \| { ok: false; errors: string[] }` |
+| `interview-hint-list` | 新增 | — | `{ id, termId, key, left, right, createdAt }[]`（一次全读：渲染层要拿它建匹配器） |
+| `interview-hint-add` | 新增 | `{ termId, key, left, right }` | `{ ok: true; id } \| { ok: false; errors }`（同 `(term_id, key, left, right)` 幂等；**左右都空**直接拒：那是「改词条」不是「这里不绑定」） |
+| `interview-hint-remove` | 新增 | `{ id }` | `{ ok: boolean }`（撤销一次解除） |
 | `interview-export` | 新增 | `{ mode: "delta"\|"full"; kinds?: (...)*[]; categoryIds?: string[] }` | `{ ok: true; path: string; counts: Record<string, number> } \| null`（内部 `dialog.showSaveDialog`） |
 | `interview-import` | 新增 | `{ path?: string; mode: "merge"\|"replace"; conflict: "skip"\|"overwrite" }` | `{ ok: true; added, updated, skipped: number; orphaned: { id, title, baseStamp }[]; errors: string[] } \| null`（内部 `dialog.showOpenDialog`；`replace` 需渲染层二次确认；`orphaned` 非空时必须显式弹一次） |
 | `interview-meta-get` | 新增 | — | `{ schemaVersion, baselineVersion, lastImportAt, lastExportAt }` |
@@ -578,6 +597,7 @@ export type CategoryKey = InterviewCategoryId | "all";
 | 命中基线 100 词条任意键（含 `aliases`、大小写/全半角归一） | **不新建**：提示「已是词条」，滚动定位；给「补充释义」入口（新建 `u-g-…` 并在 payload 的 `related` 指向基线词条 id） |
 | 命中已采纳的增量词条键 | 同上（并入同一条 `aliases`，需用户确认） |
 | 与**草稿**词条键冲突 | 允许并存，但两条采纳前校验都报 error「键与草稿 X 重复」，先处理一条 |
+| 同名但**领域不同**（「节流」在浏览器性能 / RxJS） | **允许新建**：两条都留下，正文弹层里并列展示、按领域区分（§10.6）。只挡同领域的重复 |
 | 归一后不冲突但语义近义（「事件循环」vs「Event Loop」） | 不自动合并：`mergeGlossary` 把归一键集交给 AI 判近义仅作**提示**（一次点击的「可能是同一个词，合并？」） |
 
 **覆盖基线词条**走同一套 COW 规则（§5.1）：`action='override'`、`id` **保持基线词条 id**（否则 `related` 引用会断），`term/en/aliases` 照常参与行内高亮，但**不参与「键冲突」判定** —— 同一 id 的替换不是两条词条抢同一个键。`hidden` 的词条从 matcher 键表里剔除，正文里不再变蓝。
@@ -603,6 +623,59 @@ getSelection → 文本归一（trim / 去首尾标点 / 全半角）
   → InterviewVocabProvider.setVersion(glossaryVersion)   // 唯一触发点
   → useMemo 重建 matcher → TermText 全页重渲染 → 新词变可点
 ```
+
+---
+
+### 10.6 误命中的三个兜底阀门
+
+纯文本匹配必然有误命中（「字节流」里的「节流」）。这一层**不猜**，只给三个确定性阀门：
+
+| 阀门 | 判据 | 作用范围 | 落地 |
+|---|---|---|---|
+| 单字汉字键不进索引 | `/^[\u3400-\u9fff]$/` | 全库 | `buildGlossaryIndex` 建索引时跳过 |
+| 位置级负例 | 词条 id + 匹配键 + 左右各 6 字 | **一处** | 右键「这里不是「X」」→ `interview-hint-add` |
+| 同键多词条并列 | 同键即 `variants` | 一条命中的弹层 | 弹层按领域列出并允许切换 |
+
+**为什么不按领域自动消歧**：正文里没有「这句话属于哪个领域」的信息，靠猜只会把错误从「点开是另一个意思」变成「点开什么都没有」。同名不同义的正确做法是**并列展示**（用户看到领域标签就知道是不是自己要的），默认取词表顺序（基线优先）。
+
+**为什么负例存位置而不是「删掉这条别名」**：删别名是全库生效（那是「改词条」，用于别名本来就记错）；「字节流里的节流」这条命中是文本层面的偶然，词条与别名都没问题 —— 只该解除这一处。反之，如果命中键是别名且用户确认「这个词条本来就不该有这种叫法」，右键菜单也提供「删掉别名」。
+
+**同名不同领域允许共存**（与 §10.3 的关系）：键冲突校验只挡**同领域**的重复；同名不同领域的候选可以采纳，两条词条在弹层里并列。领域取不到（草稿条目）时仍按冲突处理，避免造出一条被先出现者遮蔽的隐形词条。
+
+```
+右键可点名词
+  → buildTermMenu（纯函数）：「这里不是「X」」/「编辑词条」/「删掉别名」
+  → useTermHints.unbind → muteContextOf(text, start, end)   // 与匹配器同一份实现
+  → interview-hint-add → reload → buildGlossaryIndex(terms, { muted })
+  → 该处退回普通文字；「已解除 N 处」面板可一键恢复
+```
+
+### 10.7 词条维护：编辑、删除、选优偏好
+
+**编辑**（`GlossaryEditDrawer` + `useGlossaryEdit`）改的是词条本身：词名 / 英文名 / 领域 / 分类 / 一句话定义 / 展开细节 / 别名。落库仍是整条 payload 的 `itemSave`：
+
+| 词条来源 | action | 判据 |
+|---|---|---|
+| 基线词条 | `override`（`baseId === id`） | 编译期常量 `glossaryById(id)` 命中 |
+| 自建词条（`u-`） | `new` | 前缀 + `glossaryById` 未命中 |
+
+- **可选字段必须能被清空**：payload 由 `toGlossaryShape` 逐字段判定后拼装，不用 `{...term}` —— 否则用户删掉的 `en` / `aliases` 会在保存后「失而复得」。
+- **改词名不会自动补别名**：词表按整词命中，改名后正文里原来的说法不再点亮。界面提示用户自行决定是否把旧说法加进别名，而不是替他改全库匹配结果。
+- **删除只收自建词条**：走 `interview-item-delete`（软删，`status='deleted'`），合并视图只收 `adopted`，正文立刻不再点亮。内置词条删了会被下次升级重新合回来，属假象，故不提供入口。
+
+**选优偏好**（同名不同义的主匹配）：
+
+- `buildGlossaryIndex(terms, { prefer })` 与 `index.withPrefer(prefer)` 共用同一份词表 / trie / 负例，只换 `pickTerm` 的入参 —— 切分类不重扫词表。
+- 页面按 `filter.categoryId`（`all` 时省略）与 `filter.track` 派生偏好，通过 `GlossaryMatchIndexContext` 覆盖合并视图的默认实例，`TermText` 优先读它。
+- 命中顺序：① 分类精确命中 → ② 同轨道（`categoryNodeOf` 反查）→ ③ 词表顺序（基线在前）。形态变化（谁点亮）不影响 `variants`：弹层里始终列出全部同名词条。
+
+### 10.8 题目质检（`interviewAudit` 的 UI 出口）
+
+- 入口：顶栏「题目质检」，与 AI 拓展同一套可用性口径（总开关关着整块不渲染、没配全则禁用并说明原因）。
+- 范围：`useInterviewPage().filteredQuestions`（当前筛选 + 排序后的全量，不分页），由 `INTERVIEW_LIMITS.auditTargets`（20）截断 —— 只拿当前页会漏题，拿整库会跑偏筛选。
+- 写库为零：结论只进内存。每条结论两个动作 ——「去改」关面板并打开该题的 `QuestionEditDrawer`（与手动改题同一条写入路径），「忽略」只从报告里移除。
+- id 校验：模型抄错 / 发明 id 的条目一律丢弃（落到别的题上比丢掉更糟）；同一题多条结论合并 `issues`。
+- 严重程度只认 `AUDIT_SEVERITIES`（`high / medium / low`），中文档位归一，认不出按 `medium`。
 
 ---
 

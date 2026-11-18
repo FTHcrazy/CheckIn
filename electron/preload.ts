@@ -625,6 +625,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
       note?: string | null
     }) => trackedInvoke('interview-taxonomy-save', payload),
     /**
+     * 词条匹配负例：「这里不是这个词」。
+     *
+     * 存的是**位置指纹**（词条 id + 匹配键 + 左右各 6 字），不是「删这个词条」：
+     * 误命中只发生在某处，同一段文字在别处出现时该词条照常可点。
+     */
+    hintList: () => trackedInvoke('interview-hint-list'),
+    hintAdd: (payload: {
+      termId: string
+      key: string
+      left: string
+      right: string
+    }) => trackedInvoke('interview-hint-add', payload),
+    /** 撤销一条负例（解除错了要能反悔） */
+    hintRemove: (id: string) => trackedInvoke('interview-hint-remove', { id }),
+    /**
      * 导出备份（内部弹保存框）。`baseline` / `baselineItems` 由渲染层传 ——
      * 题库本体是渲染层常量，主进程读不到，`full` 模式的基线快照只能这样过来。
      */
