@@ -122,15 +122,29 @@ export default function SelectionTermPopover({
   const ref = useRef<HTMLDivElement | null>(null);
   const [ready, setReady] = useState(false);
 
-  // 换了一个选区就复位：否则上一次的解释会挂在新的词下面
+  /**
+   * 选区身份（词 + 锚点），不是对象引用。
+   *
+   * 划词 hook 在每次 `pointerup` 后都会重新读一次选区，即使内容一模一样也可能
+   * 造出新对象；拿对象当依赖会让「点问 AI → 复位 → 清解释」在点击瞬间空跑一遍，
+   * 用户看到的是解释区一闪就没了、等模型回来才出现。
+   */
+  const identity = selection
+    ? `${selection.text}|${selection.anchor.top}|${selection.anchor.left}`
+    : null;
+  const lastIdentity = useRef<string | null>(null);
+
+  // 换了选区才复位：否则上一次的解释会挂在新的词下面
   useEffect(() => {
+    if (lastIdentity.current === identity) return;
+    lastIdentity.current = identity;
     setReady(false);
     onClearAnswer();
-    if (!selection) return;
+    if (identity === null) return;
     const frame = window.requestAnimationFrame(() => setReady(true));
     return () => window.cancelAnimationFrame(frame);
-    // `onClearAnswer` 是 useCallback 稳定的，selection 换对象才需要重跑
-  }, [selection, onClearAnswer]);
+    // `onClearAnswer` 是 useCallback 稳定的；只在选区身份变化时重跑
+  }, [identity, onClearAnswer]);
 
   /**
    * 收起浮层的两个自然手势：Esc、以及「选区不再原位」。

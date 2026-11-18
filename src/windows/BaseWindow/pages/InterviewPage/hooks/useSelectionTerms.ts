@@ -229,39 +229,64 @@ export function useSelectionTerms(
     active?.removeAllRanges();
   }, []);
 
+  /**
+   * 只在**真的换了选区**时才写 state。
+   *
+   * 代价必须讲清楚：`pointerup` 对同一个选区再读一次会造出一个内容相同的新对象，
+   * 而浮层用 `selection` 的对象引用判断「换词了没」——新引用会让它在点击浮层
+   * 按钮后立刻复位并清掉刚发起的 AI 解释，表现为「点问 AI，解释区一闪就没了，
+   * 等模型回来才出现」。内容相同就不写，这条链路根本不会启动。
+   */
+  const commitSelection = useCallback((next: SelectionTerm | null): void => {
+    setSelection((previous) => {
+      if (previous === null || next === null) return previous === next ? previous : next;
+      const sameAnchor =
+        Math.abs(previous.anchor.top - next.anchor.top) < 0.5 &&
+        Math.abs(previous.anchor.bottom - next.anchor.bottom) < 0.5 &&
+        Math.abs(previous.anchor.left - next.anchor.left) < 0.5;
+      if (sameAnchor && previous.text === next.text && previous.sentence === next.sentence) {
+        return previous;
+      }
+      return next;
+    });
+  }, []);
+
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
     /** 读一次选区并决定要不要弹浮层 */
     const read = (): void => {
+      // 正在浮层里操作（按下 / 键盘焦点在浮层）时，选区抖动不代表换词：
+      // 照常读会把「问 AI」刚设好的 loading 与随后的解释一起冲掉
+      if (holdRef.current) return;
       const active = window.getSelection();
       if (!active || active.isCollapsed || active.rangeCount === 0) {
-        setSelection(null);
+        commitSelection(null);
         return;
       }
       const range = active.getRangeAt(0);
       if (!container.contains(range.commonAncestorContainer)) {
-        setSelection(null);
+        commitSelection(null);
         return;
       }
       if (insideCode(range.startContainer) || insideCode(range.endContainer)) {
-        setSelection(null);
+        commitSelection(null);
         return;
       }
       const raw = active.toString();
       const precise = preciseSelectionText(range, raw);
       const text = normalizeSelection(precise ?? raw);
       if (!isTermCandidate(text)) {
-        setSelection(null);
+        commitSelection(null);
         return;
       }
       const anchor = anchorOf(range);
       if (!anchor) {
-        setSelection(null);
+        commitSelection(null);
         return;
       }
-      setSelection({
+      commitSelection({
         text,
         sentence: sentenceAround(anchorElementOf(range.startContainer), text),
         anchor,
@@ -277,7 +302,7 @@ export function useSelectionTerms(
         return;
       }
       holdRef.current = false;
-      setSelection(null);
+      commitSelection(null);
     };
 
     const onPointerUp = (event: PointerEvent): void => {
@@ -309,7 +334,7 @@ export function useSelectionTerms(
       // 放弃了这次划词 —— 见 `holdRef` 的注释
       if (holdRef.current) return;
       const active = window.getSelection();
-      if (!active || active.isCollapsed) setSelection(null);
+      if (!active || active.isCollapsed) commitSelection(null);
     };
 
     /**
@@ -334,7 +359,7 @@ export function useSelectionTerms(
       document.removeEventListener("keydown", onKeyDown, true);
       document.removeEventListener("selectionchange", onSelectionChange);
     };
-  }, [containerRef]);
+  }, [containerRef, commitSelection]);
 
   return { selection, clear };
 }
