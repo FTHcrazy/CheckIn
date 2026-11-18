@@ -36,7 +36,7 @@ export default function ProfileSection() {
       <section className="settings-section">
         <div className="settings-section__body">
           <div className="settings-profile">
-            {error ? <Alert type="error" showIcon message={error} /> : null}
+            {error ? <Alert type="error" showIcon title={error} /> : null}
 
             <Form
               form={form}

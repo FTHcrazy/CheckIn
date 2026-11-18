@@ -33,7 +33,7 @@ export default function WorkSwitchBanner({
       className="rel-switch"
       type="warning"
       showIcon
-      message={`当前查看《${currentName}》，主窗口已切到《${pendingName}》`}
+      title={`当前查看《${currentName}》，主窗口已切到《${pendingName}》`}
       description={dirty ? "当前这本的节点位置还有改动未保存，切换前会先保存。" : undefined}
       action={
         <Space size={6}>

@@ -87,7 +87,7 @@ export default function LoginWindowApp() {
                       确认
                     </Button>
                   </Form.Item>
-                  {error ? <Alert type="error" showIcon message={error} /> : null}
+                  {error ? <Alert type="error" showIcon title={error} /> : null}
                 </Form>
               )}
             </Space>

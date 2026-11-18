@@ -151,7 +151,7 @@ export default function TaxonomyPanel({
           type="error"
           showIcon
           closable
-          message={api.error}
+          title={api.error}
           onClose={api.clearError}
         />
       ) : null}
@@ -224,7 +224,7 @@ export default function TaxonomyPanel({
               type="error"
               showIcon
               closable
-              message={ai.error}
+              title={ai.error}
             />
           ) : null}
 

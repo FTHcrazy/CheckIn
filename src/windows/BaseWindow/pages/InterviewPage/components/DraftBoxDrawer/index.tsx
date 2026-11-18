@@ -86,7 +86,7 @@ export default function DraftBoxDrawer({
           type="error"
           showIcon
           closable
-          message={error}
+          title={error}
           onClose={onClearError}
         />
       ) : null}

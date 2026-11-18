@@ -732,7 +732,7 @@ function InterviewPageBody() {
                 className="interview-page__failure"
                 type="warning"
                 showIcon
-                message={bank.error}
+                title={bank.error}
                 action={
                   <Button className="interview-page__retry" size="small" onClick={reload}>
                     重新读取
@@ -748,7 +748,7 @@ function InterviewPageBody() {
               className="interview-page__notice"
               type="warning"
               showIcon
-              message={`${staleCount > 0 ? `${staleCount} 道你改过的题在新版有更新` : ""}${
+              title={`${staleCount > 0 ? `${staleCount} 道你改过的题在新版有更新` : ""}${
                 staleCount > 0 && orphanCount > 0 ? "；" : ""
               }${orphanCount > 0 ? `${orphanCount} 条修改因默认题被移除而失效` : ""}`}
               action={
@@ -783,7 +783,7 @@ function InterviewPageBody() {
               type="error"
               showIcon
               closable
-              message={overrideError}
+              title={overrideError}
               onClose={clearError}
             />
           ) : null}
@@ -796,7 +796,7 @@ function InterviewPageBody() {
               type="error"
               showIcon
               closable
-              message={hintApi.error ?? aliasApi.error ?? ""}
+              title={hintApi.error ?? aliasApi.error ?? ""}
               onClose={() => {
                 clearHintError();
                 clearAliasError();

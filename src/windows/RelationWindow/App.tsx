@@ -543,7 +543,7 @@ export default function RelationWindowApp() {
           type="warning"
           showIcon
           closable
-          message={graph.notice}
+          title={graph.notice}
           onClose={graph.dismissNotice}
         />
       )}
@@ -553,7 +553,7 @@ export default function RelationWindowApp() {
           className="rel-window__notice"
           type={feedback.type}
           showIcon
-          message={feedback.text}
+          title={feedback.text}
           onClose={() => setFeedback(null)}
         />
       )}

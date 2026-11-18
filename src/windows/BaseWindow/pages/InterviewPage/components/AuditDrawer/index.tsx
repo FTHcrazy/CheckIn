@@ -103,12 +103,12 @@ export default function AuditDrawer({
           className="interview-audit__notice"
           type="info"
           showIcon
-          message={unavailableText}
+          title={unavailableText}
         />
       ) : null}
 
       {error ? (
-        <Alert className="interview-audit__error" type="error" showIcon message={error} />
+        <Alert className="interview-audit__error" type="error" showIcon title={error} />
       ) : null}
 
       {usedFallback ? (
@@ -116,7 +116,7 @@ export default function AuditDrawer({
           className="interview-audit__notice"
           type="warning"
           showIcon
-          message="模型这次输出的 JSON 不完整，已按文本尽力解析，条目可能不全"
+          title="模型这次输出的 JSON 不完整，已按文本尽力解析，条目可能不全"
         />
       ) : null}
 

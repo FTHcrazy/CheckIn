@@ -49,7 +49,7 @@ export default function GsRefsDrawer({
         <Alert
           type="error"
           showIcon
-          message="引用方名单读取失败"
+          title="引用方名单读取失败"
           description={error}
           action={
             <Button size="small" onClick={onRetry}>
@@ -91,7 +91,7 @@ export default function GsRefsDrawer({
         <Alert
           type="warning"
           showIcon
-          message="没能读到引用方名单"
+          title="没能读到引用方名单"
           description={`计数显示 ${refCount} 部书引用，但名单是空的。`}
           action={
             <Button size="small" onClick={onRetry}>

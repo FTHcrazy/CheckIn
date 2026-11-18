@@ -221,7 +221,7 @@ export default function AiDraftDrawer({
           className="interview-aidraft__supplement"
           type="info"
           showIcon
-          message={`正在为词条「${prefill.supplementOf.term}」补充释义`}
+          title={`正在为词条「${prefill.supplementOf.term}」补充释义`}
           description="新词条会关联到原词条（点开能互相跳），原词条本身不会被覆盖。"
         />
       ) : null}
@@ -231,7 +231,7 @@ export default function AiDraftDrawer({
           className="interview-aidraft__offline"
           type="warning"
           showIcon
-          message="AI 当前不可用"
+          title="AI 当前不可用"
           description={ai.unavailableText || "请先在设置里开启并补齐模型配置"}
         />
       ) : null}
@@ -316,7 +316,7 @@ export default function AiDraftDrawer({
           className="interview-aidraft__error"
           type="error"
           showIcon
-          message={ai.error}
+          title={ai.error}
           closable
         />
       ) : null}
@@ -327,7 +327,7 @@ export default function AiDraftDrawer({
           className="interview-aidraft__adopted"
           type="success"
           showIcon
-          message={`已采纳「${adoptedNote}」，题库里可以搜到了`}
+          title={`已采纳「${adoptedNote}」，题库里可以搜到了`}
           description={
             adoptedAlias
               ? `正文里的「${adoptedAlias}」现在也能点开（已记为它的别名）。`
@@ -343,7 +343,7 @@ export default function AiDraftDrawer({
           className="interview-aidraft__fallback"
           type="warning"
           showIcon
-          message="模型返回的 JSON 不规整，已按兜底规则解析，请重点核对内容"
+          title="模型返回的 JSON 不规整，已按兜底规则解析，请重点核对内容"
         />
       ) : null}
 

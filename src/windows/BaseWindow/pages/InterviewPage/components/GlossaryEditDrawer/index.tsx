@@ -215,7 +215,7 @@ export default function GlossaryEditDrawer({
           className="interview-gedit__failures"
           type="error"
           showIcon
-          message="没有保存成功"
+          title="没有保存成功"
           description={
             <ul className="interview-gedit__failure-list">
               {failures.map((item) => (
@@ -232,7 +232,7 @@ export default function GlossaryEditDrawer({
           type="warning"
           showIcon
           closable
-          message={error}
+          title={error}
           onClose={onClearError}
         />
       ) : null}

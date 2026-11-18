@@ -214,7 +214,7 @@ export default function RelationCreateDialog({
             className="rel-create__error"
             type="error"
             showIcon
-            message={error}
+            title={error}
             action={
               stale ? (
                 <Button size="small" onClick={onReload}>

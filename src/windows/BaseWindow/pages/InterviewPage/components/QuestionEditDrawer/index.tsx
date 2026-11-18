@@ -231,7 +231,7 @@ export default function QuestionEditDrawer({
           className="interview-qedit__failures"
           type="error"
           showIcon
-          message="没有保存成功"
+          title="没有保存成功"
           description={
             <ul className="interview-qedit__failure-list">
               {failures.map((item) => (
