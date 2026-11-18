@@ -1485,6 +1485,8 @@ export interface ElectronAPI {
       status: string
       note?: string | null
     }) => Promise<InterviewWriteResultDTO>
+    /** 删除用户新增的分类（软删；基线分类不在库中，删不到） */
+    taxonomyDelete: (id: string) => Promise<InterviewWriteResultDTO>
     /**
      * 词条匹配负例（「这里不是这个词」）。
      *

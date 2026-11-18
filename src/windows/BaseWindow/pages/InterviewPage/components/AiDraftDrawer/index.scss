@@ -65,6 +65,56 @@
     list-style: none;
   }
 
+  // 批量采纳栏：与候选列表同一张卡片的视觉重量，不做成悬浮工具条 ——
+  // 它是「这一批候选」的操作，位置必须紧贴列表上方
+  &__batch {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 12px;
+    padding: 8px 12px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-item);
+    background: var(--app-surface-alt);
+  }
+
+  &__batch-all {
+    flex: none;
+    color: var(--app-text-secondary);
+    font-size: 12px;
+  }
+
+  &__batch-note {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--app-text-muted);
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__batch-adopt.ant-btn {
+    --ant-control-height: 26px;
+    flex: none;
+  }
+
+  &__pick {
+    flex: none;
+  }
+
+  // 回执里的补充说明（别名 / 失败明细）：Alert 的 description 不分段，
+  // 两行挨在一起会读成一串
+  &__adopted-line {
+    margin-top: 4px;
+    font-size: 12px;
+    line-height: 1.6;
+
+    &:first-child {
+      margin-top: 0;
+    }
+  }
+
   &__item {
     display: flex;
     flex-direction: column;

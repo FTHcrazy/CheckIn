@@ -574,7 +574,11 @@ export function registerInterviewHandlers(): void {
         return { ok: false, errors: ["新增分类的 id 必须以 u-c- 开头"] };
       }
       if (!label) return { ok: false, errors: ["分类名称不能为空"] };
-      if (label.length > 12) return { ok: false, errors: ["分类名称最多 12 字（侧栏一行放不下）"] };
+      // 上限与渲染层 `TAXONOMY_LABEL_MAX`（src/shared/ai/context/prompt）同口径，
+      // 改这里必须同步那边 —— 2.70.0 起放宽到 20 字
+      if (label.length > 20) {
+        return { ok: false, errors: ["分类名称最多 20 字（侧栏一行放不下）"] };
+      }
       const track = payload?.track;
       if (!track || !(QUESTION_TRACKS as readonly string[]).includes(track)) {
         return { ok: false, errors: [`轨道只能是 ${QUESTION_TRACKS.join(" / ")}`] };
@@ -597,7 +601,8 @@ export function registerInterviewHandlers(): void {
              order_no = excluded.order_no,
              status = excluded.status,
              note = excluded.note,
-             updated_at = excluded.updated_at`,
+             updated_at = excluded.updated_at,
+             deleted_at = NULL`,
           [id, label, track, orderNo, status, payload?.note ?? null, now, now],
         );
       } catch (error) {
@@ -610,6 +615,33 @@ export function registerInterviewHandlers(): void {
       return { ok: true, id };
     },
   );
+
+  // 分类删除：软删（deleted_at 打点），只收 u- 前缀的用户新增 —— 基线分类不在
+  // 这张表里，天然删不到；草稿（AI 建议落库未采纳）与已采纳的都允许删，
+  // 删掉的同名分类可以重新建（taxonomy-save 的 UPSERT 会清 deleted_at）。
+  ipcMain.handle("interview-taxonomy-delete", (_event, id?: string) => {
+    if (!isInterviewDbReady()) return NOT_READY;
+    const trimmed = id?.trim();
+    if (!trimmed || !trimmed.startsWith("u-")) {
+      return { ok: false, errors: ["只能删除用户新增的分类"] };
+    }
+    try {
+      const info = interviewRun(
+        "UPDATE interview_taxonomy SET deleted_at = ?, updated_at = ? WHERE id = ?",
+        [Date.now(), Date.now(), trimmed],
+      );
+      if (info.changes === 0) {
+        return { ok: false, errors: ["没有找到这个分类（可能已经删过了）"] };
+      }
+    } catch (error) {
+      log("warn", "interview", "interview-handlers", "分类删除被数据库拒绝", {
+        id: trimmed,
+        error: String(error),
+      });
+      return { ok: false, errors: [`删除被拒绝：${String(error)}`] };
+    }
+    return { ok: true, id: trimmed };
+  });
 
   // ── 词条匹配负例（用户右键「这里不是这个词」）──
   /**

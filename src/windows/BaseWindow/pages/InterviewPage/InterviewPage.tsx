@@ -839,6 +839,7 @@ function InterviewPageBody() {
                 originById={originById}
                 staleIds={staleIds}
                 pendingId={pendingId}
+                scrollResetKey={`${filter.track}:${filter.categoryId}`}
                 onToggleFavorite={toggleFavorite}
                 onPageChange={setPage}
                 onReset={reset}

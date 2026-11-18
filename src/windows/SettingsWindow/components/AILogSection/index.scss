@@ -96,12 +96,37 @@
   min-width: 0;
 }
 
+/* 标题行：标题靠左、复制按钮贴右。高度写死 22px —— 按钮是 size=small 的
+   text 按钮，不锁高度的话加进这一行会让三段的标题行各自差 1-2px，
+   三段就对不齐了 */
+.settings-ailog__block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 22px;
+}
+
 .settings-ailog__block-title {
   margin: 0;
   color: var(--app-text-secondary);
   font-size: 12px;
   font-weight: 500;
   line-height: 1.5;
+}
+
+/* 复制按钮：只在 hover / focus 时提亮，常驻不高亮（一屏三条记录就是九个按钮，
+   全都高亮会把「这是日志」变成「这是一排操作」）。
+
+   取色走 antd 的按钮变量，不写 `:hover { color }`：自写属性规则压不过
+   variant 的选择器（0,4,0），写了也是白写。text 变体是**两层** text
+   （`--ant-button-text-text-color`），少一层会静默失效。 */
+.settings-ailog__copy.ant-btn {
+  flex: none;
+  padding: 0 6px;
+  font-size: 12px;
+  --ant-button-text-text-color: var(--app-text-muted);
+  --ant-button-text-text-hover-color: var(--app-primary-strong);
 }
 
 .settings-ailog__pre {

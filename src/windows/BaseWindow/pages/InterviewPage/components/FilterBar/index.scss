@@ -11,7 +11,12 @@
   background: var(--app-surface);
   user-select: none;
 
-  &__difficulty {
+  // 难度分段器（size="small"）：antd 在 small 档把轨道取 borderRadiusSM(4px)、
+  // 选中格与滑块取 borderRadiusXS(2px)，比同一行里的输入框 / 按钮（6px）尖一截。
+  // 两个 token 都提到 6px —— 轨道与滑块不同角，滑到边上会露出一道月牙。
+  &__difficulty.ant-segmented {
+    --ant-border-radius-sm: 6px;
+    --ant-border-radius-xs: 6px;
     flex: none;
   }
 

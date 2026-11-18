@@ -37,7 +37,9 @@ export const DRAFT_OUTPUT_FORMATS: Record<InterviewKind, OutputFormat> = {
   question: jsonArrayFormat([
     { key: "title", type: "string", label: "题目标题（不超过 40 字，不带「请简述」这类前缀）" },
     { key: "stem", type: "string", label: "题干（含设问；代码另放 stemCode）" },
-    { key: "stemCode", type: "string", label: "题干代码（没有就填空字符串）" },
+    // 大部分题没有代码，契约要求「没有就填空字符串」——解析层必须放行空串，
+    // 否则一条不带代码的合法题目会被整条丢掉（见 OutputField.allowEmpty）
+    { key: "stemCode", type: "string", label: "题干代码（没有就填空字符串）", allowEmpty: true },
     { key: "answer", type: "string", label: "参考答案（分点讲清，去掉寒暄）" },
     { key: "difficulty", type: "string", label: "难度，只能取 basic / medium / hard" },
     { key: "topic", type: "string", label: "来源主题（如 React / JS 基础）" },
@@ -45,10 +47,10 @@ export const DRAFT_OUTPUT_FORMATS: Record<InterviewKind, OutputFormat> = {
   ]),
   glossary: jsonArrayFormat([
     { key: "term", type: "string", label: "词条名（不超过 24 字）" },
-    { key: "en", type: "string", label: "英文全称 / 原名（没有就填空字符串）" },
+    { key: "en", type: "string", label: "英文全称 / 原名（没有就填空字符串）", allowEmpty: true },
     { key: "short", type: "string", label: "一句话定义（不超过 80 字）" },
     { key: "detail", type: "string", label: "展开细节 2–4 条，每条一行，换行写成 \\n" },
-    { key: "aliases", type: "string", label: "别名，用顿号分隔，最多 4 个（没有就填空字符串）" },
+    { key: "aliases", type: "string", label: "别名，用顿号分隔，最多 4 个（没有就填空字符串）", allowEmpty: true },
     { key: "domain", type: "string", label: "所属领域（如 React / 浏览器）" },
   ]),
   // diagram 走 text：嵌套结构无法用扁平 OutputField 表达。

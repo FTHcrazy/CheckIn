@@ -27,16 +27,23 @@
     letter-spacing: 1px;
   }
 
-  // 「分类」入口：标题行里的图标按钮，不占行高
+  // 「分类」入口：标题行里的图标按钮，不占行高。
+  // 内容（+ 与「分类」）必须自己居中：mixin 把 antd 的 `justify-content: center`
+  // 改成了 `normal`，不补的话图标和文字会贴左、图标与文字之间也没有间距。
   &__manage.ant-btn {
     @include widget.ant-button-reset;
     --ant-button-text-text-color: var(--app-text-muted);
     --ant-button-text-text-hover-color: var(--app-primary);
+    --ant-button-icon-gap: 3px;
     --ant-control-height: 20px;
     --ant-button-padding-inline: 4px;
+    display: inline-flex;
     flex: none;
+    align-items: center;
+    justify-content: center;
     height: 20px;
     font-size: 12px;
+    line-height: 24px;
     letter-spacing: 0;
   }
 

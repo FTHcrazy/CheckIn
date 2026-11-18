@@ -81,6 +81,12 @@ export interface DraftRequest {
   supplementOf?: { id: string; term: string; short: string };
 }
 
+/** 一批采纳的结果：成功项 key（界面据此把候选从列表里摘掉）+ 失败明细 */
+export interface AdoptBatchResult {
+  ok: string[];
+  failed: { key: string; title: string; reason: string }[];
+}
+
 export interface UseInterviewAiOptions {
   /** 合并视图的分类（含自定义）：既是 prompt 的封闭词表，也是候选的落点 */
   categories: readonly { id: string; label: string }[];
@@ -138,7 +144,18 @@ export interface UseInterviewAiResult {
   generate: (request: DraftRequest) => Promise<void>;
   /** 采纳一条（`draft` = 只存草稿箱；`adopted` = 直接进题库） */
   adopt: (candidate: DraftCandidate, status: "draft" | "adopted") => Promise<boolean>;
-  /** 正在写入的那条候选 key */
+  /**
+   * 一次采纳多条。
+   *
+   * 逐条**串行**写入：一条坏候选不该让整批回滚，前一条失败也不该丢掉后面的内容；
+   * 并发落库还会撞同一本库的写锁与词表版本号刷新。失败的条目留在候选列表里，
+   * 由调用方把原因摊给用户。
+   */
+  adoptMany: (
+    candidates: readonly DraftCandidate[],
+    status: "draft" | "adopted",
+  ) => Promise<AdoptBatchResult>;
+  /** 正在写入的那条候选 key（批量时逐条切换，行内 loading 靠它） */
   adoptingKey: string | null;
   /** 丢弃一条候选（只从本轮列表移除，不写库） */
   discard: (key: string) => void;
@@ -662,20 +679,24 @@ export function useInterviewAi(options: UseInterviewAiOptions): UseInterviewAiRe
     [availability.available, availability.reasonText, context, takenKeys],
   );
 
-  const adopt = useCallback(
-    async (candidate: DraftCandidate, status: "draft" | "adopted"): Promise<boolean> => {
+  /**
+   * 写入一条候选。
+   *
+   * 抽出来是为了让批量采纳能**逐条**拿到成败 —— 一条结构坏掉的候选不该拖垮整批，
+   * 也不该因为它在前面就丢掉后面本来能用的内容。
+   *
+   * `persisted` 与 `reason` 分开：`itemSave` 成功但 `itemSetStatus` 失败时，内容
+   * 其实已经以草稿形态进库了。这种条目要报错（不算采纳），但也得留在视图刷新
+   * 的范围里 —— 否则用户会在草稿箱里凭空看到一条「不存在」的题。
+   */
+  const saveCandidate = useCallback(
+    async (
+      candidate: DraftCandidate,
+      status: "draft" | "adopted",
+    ): Promise<{ reason: string | null; persisted: boolean }> => {
       const api = bridge();
-      if (!api) {
-        setError("当前环境没有本地题库通道");
-        return false;
-      }
-      if (candidate.errors.length > 0) {
-        setError(candidate.errors[0]);
-        return false;
-      }
-
-      setAdoptingKey(candidate.key);
-      setError(null);
+      if (!api) return { reason: "当前环境没有本地题库通道", persisted: false };
+      if (candidate.errors.length > 0) return { reason: candidate.errors[0], persisted: false };
       try {
         const payload = candidate.payload;
         const saved = await api.itemSave({
@@ -691,40 +712,81 @@ export function useInterviewAi(options: UseInterviewAiOptions): UseInterviewAiRe
           errors: [],
           sourceIntent: draftSubIntent(candidate.kind),
         });
-        if (cancelledRef.current) return false;
         if (!saved.ok) {
-          setError(saved.errors.join("；") || "写入失败");
-          return false;
+          return { reason: saved.errors.join("；") || "写入失败", persisted: false };
         }
         // 先存草稿再转采纳：`itemSetStatus` 是唯一会 bump 词表版本号的通道
         if (status === "adopted") {
           const promoted = await api.itemSetStatus(payload.id, "adopted");
           if (!promoted.ok) {
-            setError(promoted.errors.join("；") || "采纳失败，内容已存为草稿");
-            reload();
-            return false;
+            return {
+              reason: promoted.errors.join("；") || "采纳失败，内容已存为草稿",
+              persisted: true,
+            };
           }
         }
-        setCandidates((previous) => previous.filter((item) => item.key !== candidate.key));
-        reload();
+        return { reason: null, persisted: true };
+      } catch (failure) {
+        return {
+          reason: `写入失败（${failure instanceof Error ? failure.message : String(failure)}）`,
+          persisted: false,
+        };
+      }
+    },
+    [],
+  );
+
+  const adoptMany = useCallback(
+    async (
+      list: readonly DraftCandidate[],
+      status: "draft" | "adopted",
+    ): Promise<AdoptBatchResult> => {
+      const ok: string[] = [];
+      const failed: AdoptBatchResult["failed"] = [];
+      if (list.length === 0) return { ok, failed };
+
+      setError(null);
+      /** 有任何一条进了库（哪怕只落成草稿）就要重算合并视图 */
+      let persistedAny = false;
+      for (const candidate of list) {
+        if (cancelledRef.current) break;
+        setAdoptingKey(candidate.key);
+        const outcome = await saveCandidate(candidate, status);
+        if (outcome.persisted) persistedAny = true;
+        if (outcome.reason === null) ok.push(candidate.key);
+        else failed.push({ key: candidate.key, title: candidate.title, reason: outcome.reason });
+      }
+      if (cancelledRef.current) return { ok, failed };
+
+      setAdoptingKey(null);
+      // 只重算一次合并视图：逐条 reload 会让整页正文反复重渲染
+      if (ok.length > 0) {
+        const adopted = new Set(ok);
+        setCandidates((previous) => previous.filter((item) => !adopted.has(item.key)));
+      }
+      if (persistedAny) reload();
+      if (ok.length > 0) {
         void logAiEvent({
           intent: "interviewDraft",
           step: "adopt",
-          itemCount: 1,
+          itemCount: ok.length,
           scope: "L1",
         }).catch(() => undefined);
-        return true;
-      } catch (failure) {
-        if (cancelledRef.current) return false;
-        setError(
-          `写入失败（${failure instanceof Error ? failure.message : String(failure)}）`,
-        );
-        return false;
-      } finally {
-        if (!cancelledRef.current) setAdoptingKey(null);
       }
+      return { ok, failed };
     },
-    [reload],
+    [reload, saveCandidate],
+  );
+
+  const adopt = useCallback(
+    async (candidate: DraftCandidate, status: "draft" | "adopted"): Promise<boolean> => {
+      const result = await adoptMany([candidate], status);
+      if (result.ok.length === 1) return true;
+      // 单条采纳没有「汇总回执」这一层，失败原因直接落到页面上的错误条
+      setError(result.failed[0]?.reason ?? "写入失败");
+      return false;
+    },
+    [adoptMany],
   );
 
   const discard = useCallback((key: string): void => {
@@ -785,6 +847,7 @@ export function useInterviewAi(options: UseInterviewAiOptions): UseInterviewAiRe
     usedFallback,
     generate,
     adopt,
+    adoptMany,
     adoptingKey,
     discard,
     reset,

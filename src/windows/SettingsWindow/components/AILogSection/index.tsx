@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { App, Button, Collapse, Empty, Popconfirm, Select, Spin, Tag } from "antd";
-import { DeleteOutlined, ReloadOutlined } from "@ant-design/icons";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { App, Button, Collapse, Empty, Popconfirm, Select, Spin, Tag, Tooltip } from "antd";
+import { CheckOutlined, CopyOutlined, DeleteOutlined, ReloadOutlined } from "@ant-design/icons";
 import type { AiLogRowDTO } from "@/shared/types/electron";
 import { TRANSFORM_INTENT_SUB } from "@/shared/ai/context";
 import { AI_EVENT_INTENT_LABELS, intentLabel } from "@/shared/ai/intent-labels";
@@ -62,6 +62,83 @@ const INTENT_OPTIONS = [
 /** 时间列只显示到分钟（同一分钟内的两次调用靠 id 排序区分），hover 看全量 */
 function shortTime(value: string): string {
   return value?.slice(0, 16) || "-";
+}
+
+/** 三个文本块的名字（标题与复制提示共用，避免两处文案各写一份） */
+const BLOCK_LABEL = {
+  system: "系统提示词",
+  user: "用户输入",
+  output: "模型输出",
+} as const;
+
+type BlockKind = keyof typeof BLOCK_LABEL;
+
+/** 空内容时的占位：复制按钮同时禁用（复制一段「（空）」出去没有意义） */
+const BLOCK_PLACEHOLDER: Record<BlockKind, string> = {
+  system: "（空）",
+  user: "（空）",
+  output: "（无输出）",
+};
+
+/** 复制成功后的图标回退时长（够看清，又不至于一直显示「已复制」） */
+const COPIED_MS = 1600;
+
+/**
+ * 一个可复制的文本块（系统提示词 / 用户输入 / 模型输出）。
+ *
+ * 为什么值得单独给按钮：这三段是「调 prompt 时被反复搬进编辑器」的内容，
+ * 手选一屏 pre 里的两千字既容易漏首尾，也会把滚动条外的部分漏掉。
+ *
+ * 复制的是**原始文本**而不是 `<pre>` 里显示的占位符：空内容时按钮直接禁用，
+ * 免得把「（空）」这三个字粘到别处。
+ *
+ * 剪贴板用 `navigator.clipboard`（窗口经 `app://` 加载，scheme 已声明
+ * `secure: true`，安全上下文成立）；失败时退回「请手动选中复制」，
+ * 不静默吞掉 —— 复制没反应比报错更让人困惑。
+ */
+function LogBlock({ kind, text }: { kind: BlockKind; text: string }): ReactNode {
+  const { message } = App.useApp();
+  const [copied, setCopied] = useState(false);
+  const label = BLOCK_LABEL[kind];
+
+  useEffect(() => {
+    if (!copied) return;
+    const timer = window.setTimeout(() => setCopied(false), COPIED_MS);
+    return () => window.clearTimeout(timer);
+  }, [copied]);
+
+  const copy = async (): Promise<void> => {
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      message.success(`已复制${label}`);
+    } catch {
+      message.error("复制失败，请手动选中文本复制");
+    }
+  };
+
+  return (
+    <section className="settings-ailog__block">
+      <div className="settings-ailog__block-head">
+        <h4 className="settings-ailog__block-title">{label}</h4>
+        <Tooltip title={text ? `复制${label}` : `没有${label}可复制`}>
+          <Button
+            className="settings-ailog__copy"
+            type="text"
+            size="small"
+            disabled={!text}
+            icon={copied ? <CheckOutlined /> : <CopyOutlined />}
+            aria-label={copied ? `已复制${label}` : `复制${label}`}
+            onClick={() => void copy()}
+          >
+            {copied ? "已复制" : "复制"}
+          </Button>
+        </Tooltip>
+      </div>
+      <pre className="settings-ailog__pre">{text || BLOCK_PLACEHOLDER[kind]}</pre>
+    </section>
+  );
 }
 
 export default function AILogSection() {
@@ -153,18 +230,9 @@ export default function AILogSection() {
           ),
           children: (
             <div className="settings-ailog__detail">
-              <section className="settings-ailog__block">
-                <h4 className="settings-ailog__block-title">系统提示词</h4>
-                <pre className="settings-ailog__pre">{row.system_prompt || "（空）"}</pre>
-              </section>
-              <section className="settings-ailog__block">
-                <h4 className="settings-ailog__block-title">用户输入</h4>
-                <pre className="settings-ailog__pre">{row.user_prompt || "（空）"}</pre>
-              </section>
-              <section className="settings-ailog__block">
-                <h4 className="settings-ailog__block-title">模型输出</h4>
-                <pre className="settings-ailog__pre">{row.raw_output || "（无输出）"}</pre>
-              </section>
+              <LogBlock kind="system" text={row.system_prompt ?? ""} />
+              <LogBlock kind="user" text={row.user_prompt ?? ""} />
+              <LogBlock kind="output" text={row.raw_output ?? ""} />
             </div>
           ),
         };

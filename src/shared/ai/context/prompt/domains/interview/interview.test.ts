@@ -10,7 +10,7 @@
  * `DOMAINS` 遍历守卫负责，这里是纯域内契约。
  */
 import { describe, expect, it } from "vitest";
-import { TEXT_OUTPUT_FORMAT } from "../../../output-spec";
+import { TEXT_OUTPUT_FORMAT, parseOutput } from "../../../output-spec";
 import {
   AUDIT_OUTPUT_FORMAT,
   AUDIT_SEVERITIES,
@@ -129,6 +129,49 @@ describe("interviewDraft（AI 拓展）", () => {
     expect(clampDraftCount("question", 7)).toBe(7);
     // diagram 恒 1 张（一屏放不下第二张）
     expect(clampDraftCount("diagram", 5)).toBe(1);
+  });
+
+  /**
+   * 真实事故（2026-11）：模型完全照契约交上 `stemCode: ""`（大多数题没有代码），
+   * 而解析层当时把空串当成「字段缺失」→ 整条丢弃 → 抽屉报「没有可用的内容」。
+   * 契约说「没有就填空字符串」，解析就必须照着读。
+   */
+  it("④-b question：stemCode 填空字符串的合法条目不会被丢掉", () => {
+    const raw = JSON.stringify([
+      {
+        title: "WebGL 渲染管线的主要阶段与着色器作用",
+        stem: "请说明 WebGL 渲染管线从顶点输入到屏幕输出的主要阶段。",
+        stemCode: "",
+        answer: "1. 顶点数据输入：顶点属性由 Buffer 提供。\n2. 顶点着色器：逐顶点做坐标变换。",
+        difficulty: "basic",
+        topic: "threeJS&webGL",
+        tags: "WebGL、渲染管线、顶点着色器、片元着色器",
+      },
+    ]);
+    const parsed = parseOutput(raw, DRAFT_OUTPUT_FORMATS.question);
+    expect(parsed.usedFallback).toBe(false);
+    expect(parsed.entries).toHaveLength(1);
+    expect(parsed.entries[0].stemCode).toBe("");
+    expect(parsed.entries[0].title).toBe("WebGL 渲染管线的主要阶段与着色器作用");
+    // 标签串仍按顿号拆（空 stemCode 不能连带影响别的字段归一）
+    expect(parsed.entries[0].tags).toContain("渲染管线");
+  });
+
+  it("④-c glossary：en / aliases 填空字符串的条目同样保留", () => {
+    const raw = JSON.stringify([
+      {
+        term: "事件循环",
+        en: "",
+        short: "浏览器把任务排队后逐个执行并持续检查微任务的机制。",
+        detail: "宏任务先入队。\n微任务在每个宏任务后清空。",
+        aliases: "",
+        domain: "浏览器",
+      },
+    ]);
+    const parsed = parseOutput(raw, DRAFT_OUTPUT_FORMATS.glossary);
+    expect(parsed.entries).toHaveLength(1);
+    expect(parsed.entries[0].en).toBe("");
+    expect(parsed.entries[0].term).toBe("事件循环");
   });
 
   it("⑤ question：注入目标分类（label + id）、已有标题，并要求顿号分隔标签", () => {

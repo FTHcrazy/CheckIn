@@ -175,6 +175,7 @@ CREATE TABLE IF NOT EXISTS interview_meta (
 | `interview-item-ack-base` | 新增 | `{ id, baseHash }` | `{ ok: true }`（写 `ack_base_hash`，抑制「基线已更新」提示，内容不动） |
 | `interview-taxonomy-list` | 新增 | `{ track?, status? }` | `{ id, label, track, orderNo, status, note }[]` |
 | `interview-taxonomy-save` | 新增 | `{ id, label, track, orderNo?, status, note? }` | `{ ok: true; id } \| { ok: false; errors: string[] }` |
+| `interview-taxonomy-delete` | 新增 | `{ id }` | `{ ok: true; id } \| { ok: false; errors }`（软删 `deleted_at`；只收 `u-` 前缀；同名重建由 save 的 UPSERT 清 `deleted_at` 复活） |
 | `interview-hint-list` | 新增 | — | `{ id, termId, key, left, right, createdAt }[]`（一次全读：渲染层要拿它建匹配器） |
 | `interview-hint-add` | 新增 | `{ termId, key, left, right }` | `{ ok: true; id } \| { ok: false; errors }`（同 `(term_id, key, left, right)` 幂等；**左右都空**直接拒：那是「改词条」不是「这里不绑定」） |
 | `interview-hint-remove` | 新增 | `{ id }` | `{ ok: boolean }`（撤销一次解除） |

@@ -1,5 +1,5 @@
-import { useMemo } from "react";
-import { Button } from "antd";
+import { useMemo, useRef, useState, type ReactNode } from "react";
+import { Button, Tooltip } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import { CATEGORIES_BY_TRACK, type CategoryNode } from "../../data/interview-taxonomy";
 import type { CategoryCounts } from "../../data/interview-filter-utils";
@@ -25,6 +25,39 @@ const SECTION_TITLE: Record<QuestionTrack, string> = {
   written: "题型",
   foundation: "知识域",
 };
+
+/**
+ * 分类名：**被截断时** hover 才给 tooltip。
+ *
+ * 没截断还弹一个和眼前文字一模一样的提示，等于鼠标每路过一行都被打断一次；
+ * 所以这里做成受控 —— 溢出判定在 mouseenter 里现测（不在挂载时算一次），
+ * 侧栏宽度会随窗口变，提前量出来的值过一会儿就不准了。
+ *
+ * 用 `ref` 而不是 state 存判定结果：rc-tooltip 会在同一次事件里紧接着
+ * 调用 `onOpenChange(true)`，那时 state 还没刷进闭包，只有 ref 读得到新值。
+ */
+function CategoryLabel({ text }: { text: string }): ReactNode {
+  const labelRef = useRef<HTMLSpanElement | null>(null);
+  const overflowing = useRef(false);
+  const [open, setOpen] = useState(false);
+
+  return (
+    <Tooltip title={text} open={open} onOpenChange={(next) => setOpen(next && overflowing.current)}>
+      <span
+        ref={labelRef}
+        className="interview-cats__label"
+        onMouseEnter={() => {
+          const el = labelRef.current;
+          if (!el) return;
+          // +1 是亚像素误差：scrollWidth 会取整，差 1px 不算截断
+          overflowing.current = el.scrollWidth > el.clientWidth + 1;
+        }}
+      >
+        {text}
+      </span>
+    </Tooltip>
+  );
+}
 
 /**
  * 左侧分类栏。
@@ -93,7 +126,7 @@ export default function CategorySidebar({
               aria-current={active ? "true" : undefined}
               onClick={() => onSelect(node.id)}
             >
-              <span className="interview-cats__label">{node.label}</span>
+              <CategoryLabel text={node.label} />
               <span className="interview-cats__count">{count}</span>
             </Button>
           );

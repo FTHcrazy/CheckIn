@@ -1,5 +1,18 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Alert, Button, Drawer, Empty, Form, Input, InputNumber, Select, Spin, Tag, Typography } from "antd";
+import {
+  Alert,
+  Button,
+  Checkbox,
+  Drawer,
+  Empty,
+  Form,
+  Input,
+  InputNumber,
+  Select,
+  Spin,
+  Tag,
+  Typography,
+} from "antd";
 import { DownOutlined, ThunderboltOutlined, UpOutlined } from "@ant-design/icons";
 import { DRAFT_DIFFICULTY_LABELS } from "@/shared/ai/context/prompt";
 import type {
@@ -12,7 +25,11 @@ import { DIFFICULTY_LABEL, TRACKS, TRACK_LABEL, type CategoryNode } from "../../
 import { GLOSSARY_DOMAIN_LABEL, type GlossaryDomain } from "../../data/interview-glossary";
 import type { InterviewDiagram } from "../../data/interview-diagrams";
 import type { Difficulty, QuestionTrack } from "../../data/interview-types";
-import type { DraftCandidate, UseInterviewAiResult } from "../../hooks/useInterviewAi";
+import type {
+  AdoptBatchResult,
+  DraftCandidate,
+  UseInterviewAiResult,
+} from "../../hooks/useInterviewAi";
 import DiagramFigure from "../DiagramFigure";
 import "./index.scss";
 
@@ -76,12 +93,46 @@ interface AiDraftDrawerProps {
   onClose: () => void;
 }
 
+/** 一次采纳的结果摘要（候选会立刻从列表消失，没有回执等于「少了几条」） */
+interface AdoptReceipt {
+  /** 成功写进题库的条数 */
+  count: number;
+  /** 第一条成功的标题（回执里点名用） */
+  title: string;
+  /** 划词原文被记成别名时的那段原文 */
+  alias: string | null;
+  /** 没写进去的条目：标题 + 原因 */
+  failed: { title: string; reason: string }[];
+}
+
+/** 把采纳结果折成回执（单条与批量共用一套文案口径） */
+function buildReceipt(
+  requested: readonly DraftCandidate[],
+  result: AdoptBatchResult,
+  seed: string,
+): AdoptReceipt {
+  const adopted = new Set(result.ok);
+  const ok = requested.filter((item) => adopted.has(item.key));
+  const first = ok[0];
+  const aliases = first && "aliases" in first.payload ? first.payload.aliases ?? [] : [];
+  return {
+    count: ok.length,
+    title: first?.title ?? "",
+    alias: first && seed && seed !== first.title && aliases.includes(seed) ? seed : null,
+    failed: result.failed.map((item) => ({ title: item.title, reason: item.reason })),
+  };
+}
+
 /**
  * AI 拓展抽屉：出题 / 出词条 / 出图解。
  *
- * 三步走：选参数 → 生成候选 → 逐条采纳。**没有「一键全采」**：
- * 模型偶尔会出「听起来对但答案是错的」内容，题库是复习资料，
- * 批量采纳等于把审核成本整体推给未来的自己。
+ * 三步走：选参数 → 生成候选 → 逐条或批量采纳。
+ *
+ * 【批量采纳的边界】
+ * 勾选后一次写进去，但**默认不勾**、也不给「生成完自动全采」：模型偶尔会出
+ * 「听起来对但答案是错的」内容，题库是复习资料，全采等于把审核成本整体推给
+ * 未来的自己。批量是给「一眼扫过去都对」的那批题用的提速，不是免审核通道；
+ * 校验不过的候选连勾选框都是禁用的，冲不掉。
  *
  * 候选**必须能看全内容**：只给标题的预览等于让用户凭标题判断答案对不对，
  * 那还不如不给预览。三类产物各有一套详情（题干 + 答案 / 定义 + 细节 /
@@ -100,10 +151,14 @@ export default function AiDraftDrawer({
 }: AiDraftDrawerProps): ReactNode {
   const [form] = Form.useForm<DraftFormValues>();
   const [running, setRunning] = useState(false);
-  /** 最近一条采纳的回执（候选会立刻从列表消失，没有回执等于「少了一条」） */
-  const [adoptedNote, setAdoptedNote] = useState<string | null>(null);
-  /** 回执里点名的那段原文（词名与原文不同时，告诉用户正文里哪个词亮了） */
-  const [adoptedAlias, setAdoptedAlias] = useState<string | null>(null);
+  /** 最近一次采纳的回执（候选会立刻从列表消失，没有回执等于「少了一条」） */
+  const [receipt, setReceipt] = useState<AdoptReceipt | null>(null);
+  /** 勾选待采纳的候选 key（批量写库用；只在可采纳的条目上生效） */
+  const [selected, setSelected] = useState<string[]>([]);
+  /** 批量写入中（行内按钮逐个 loading 由 `ai.adoptingKey` 体现） */
+  const [batching, setBatching] = useState(false);
+
+  const seedText = prefill.seed?.trim() ?? "";
 
   const categoryOptions = useMemo(
     () =>
@@ -125,12 +180,30 @@ export default function AiDraftDrawer({
     [],
   );
 
+  /** 能勾的候选：结构校验没过的条目一律不给勾（红字已经说明为什么不能采纳） */
+  const adoptableKeys = useMemo(
+    () => ai.candidates.filter((item) => item.errors.length === 0).map((item) => item.key),
+    [ai.candidates],
+  );
+
+  /**
+   * 勾选集合同候选列表求交：采纳/丢弃后候选会消失，状态里残留的 key 不该再算数。
+   * 用派生而不是在 effect 里清理，省一次额外渲染，也不会出现「先渲染一帧多选」。
+   */
+  const selectedKeys = useMemo(
+    () => selected.filter((key) => adoptableKeys.includes(key)),
+    [selected, adoptableKeys],
+  );
+
+  const allSelected =
+    adoptableKeys.length > 0 && selectedKeys.length === adoptableKeys.length;
+
   // 每次打开按 prefill 重填：抽屉不销毁，残留上一次的参数会让人以为选错了分类
   useEffect(() => {
     if (!open) return;
     ai.reset();
-    setAdoptedNote(null);
-    setAdoptedAlias(null);
+    setReceipt(null);
+    setSelected([]);
     form.setFieldsValue({
       kind: prefill.kind,
       categoryId: prefill.categoryId ?? categories[0]?.id ?? "",
@@ -165,6 +238,44 @@ export default function AiDraftDrawer({
 
   const submit = (): void => {
     void form.validateFields().then((values) => run(values));
+  };
+
+  /**
+   * 采纳一批候选（单条也只是「一批里的一条」）。
+   *
+   * 单条与批量共用一条路径：两套写入代码迟早会分叉（一边 reload 一边忘）。
+   * 单条也走 `batching` 锁：写入期间再点另一条的「采纳」会让两次落库并发，
+   * `adoptingKey` 互相覆盖，看不出到底哪条在写。
+   * 失败项**不从列表摘掉**，用户看清原因后还能单独重试或丢弃。
+   */
+  const runAdopt = async (targets: readonly DraftCandidate[]): Promise<void> => {
+    if (targets.length === 0) return;
+    setBatching(true);
+    setReceipt(null);
+    try {
+      const result = await ai.adoptMany(targets, "adopted");
+      // 成功的不该再留着勾；失败项保留勾选，用户可以重试
+      setSelected((previous) => previous.filter((key) => !result.ok.includes(key)));
+      if (result.ok.length === 0 && result.failed.length === 0) return;
+      setReceipt(buildReceipt(targets, result, seedText));
+    } finally {
+      setBatching(false);
+    }
+  };
+
+  const toggleOne = (key: string): void => {
+    setSelected((previous) =>
+      previous.includes(key) ? previous.filter((item) => item !== key) : [...previous, key],
+    );
+  };
+
+  const toggleAll = (): void => {
+    setSelected(allSelected ? [] : [...adoptableKeys]);
+  };
+
+  const adoptSelected = (): void => {
+    // 按列表顺序取，回执里的「第一条」才是屏幕上第一条，而不是勾选顺序的第一条
+    void runAdopt(ai.candidates.filter((item) => selectedKeys.includes(item.key)));
   };
 
   /**
@@ -211,7 +322,7 @@ export default function AiDraftDrawer({
       }
     >
       <Text type="secondary" className="interview-aidraft__hint">
-        AI 只产出候选，逐条采纳后才进题库。生成的题落在你选的分类下，之后照常可以编辑、隐藏、导出。
+        AI 只产出候选，采纳后才进题库：可以逐条点，也可以勾选多条一次写进去。生成的题落在你选的分类下，之后照常可以编辑、隐藏、导出。
       </Text>
 
       {/* 补充释义的上下文必须说清楚：用户点了「补充释义」，但他可能没意识到
@@ -321,20 +432,40 @@ export default function AiDraftDrawer({
         />
       ) : null}
 
-      {/* 采纳后候选就从列表里消失了：不给一句回执，用户只知道「少了一条」 */}
-      {adoptedNote ? (
+      {/* 采纳后候选就从列表里消失了：不给一句回执，用户只知道「少了几条」 */}
+      {receipt ? (
         <Alert
           className="interview-aidraft__adopted"
-          type="success"
+          type={receipt.count > 0 ? "success" : "error"}
           showIcon
-          title={`已采纳「${adoptedNote}」，题库里可以搜到了`}
+          title={
+            receipt.count === 0
+              ? "这次没有内容写进题库"
+              : receipt.count === 1
+                ? `已采纳「${receipt.title}」，题库里可以搜到了`
+                : `已采纳 ${receipt.count} 条（「${receipt.title}」等），题库里可以搜到了`
+          }
           description={
-            adoptedAlias
-              ? `正文里的「${adoptedAlias}」现在也能点开（已记为它的别名）。`
-              : "正文里同名的词现在可以点开。"
+            receipt.alias || receipt.failed.length > 0 ? (
+              <>
+                {receipt.alias ? (
+                  <div className="interview-aidraft__adopted-line">
+                    正文里的「{receipt.alias}」现在也能点开（已记为它的别名）。
+                  </div>
+                ) : null}
+                {receipt.failed.length > 0 ? (
+                  <div className="interview-aidraft__adopted-line">
+                    {receipt.failed.length} 条没写进去：
+                    {receipt.failed
+                      .map((item) => `${item.title}（${item.reason}）`)
+                      .join("；")}
+                  </div>
+                ) : null}
+              </>
+            ) : undefined
           }
           closable
-          onClose={() => setAdoptedNote(null)}
+          onClose={() => setReceipt(null)}
         />
       ) : null}
 
@@ -358,42 +489,72 @@ export default function AiDraftDrawer({
           description="还没有候选：选好参数后点「生成候选」"
         />
       ) : (
-        <ul className="interview-aidraft__list">
-          {ai.candidates.map((candidate) => (
-            <CandidateRow
-              key={candidate.key}
-              candidate={candidate}
-              pending={ai.adoptingKey === candidate.key}
-              onAdopt={() => {
-                void ai.adopt(candidate, "adopted").then((ok) => {
-                  if (!ok) return;
-                  const aliases =
-                    "aliases" in candidate.payload ? candidate.payload.aliases ?? [] : [];
-                  const seed = prefill.seed?.trim() ?? "";
-                  setAdoptedNote(candidate.title);
-                  setAdoptedAlias(
-                    seed && seed !== candidate.title && aliases.includes(seed) ? seed : null,
-                  );
-                });
-              }}
-              onDiscard={() => ai.discard(candidate.key)}
-            />
-          ))}
-        </ul>
+        <>
+          {/* 只有两条以上「可采纳」时才需要批量：一条时下面那行按钮就够 */}
+          {adoptableKeys.length > 1 ? (
+            <div className="interview-aidraft__batch">
+              <Checkbox
+                className="interview-aidraft__batch-all"
+                checked={allSelected}
+                indeterminate={selectedKeys.length > 0 && !allSelected}
+                onChange={toggleAll}
+              >
+                全选可采纳（{adoptableKeys.length}）
+              </Checkbox>
+              <span className="interview-aidraft__batch-note">
+                {selectedKeys.length > 0
+                  ? `已选 ${selectedKeys.length} 条，一次写进题库`
+                  : "勾选后可一次采纳多条"}
+              </span>
+              <Button
+                className="interview-aidraft__batch-adopt"
+                type="primary"
+                size="small"
+                disabled={selectedKeys.length === 0}
+                loading={batching}
+                onClick={adoptSelected}
+              >
+                {selectedKeys.length > 1 ? `采纳所选 ${selectedKeys.length} 条` : "采纳所选"}
+              </Button>
+            </div>
+          ) : null}
+
+          <ul className="interview-aidraft__list">
+            {ai.candidates.map((candidate) => (
+              <CandidateRow
+                key={candidate.key}
+                candidate={candidate}
+                checked={selectedKeys.includes(candidate.key)}
+                busy={batching}
+                pending={ai.adoptingKey === candidate.key}
+                onToggleSelect={() => toggleOne(candidate.key)}
+                onAdopt={() => void runAdopt([candidate])}
+                onDiscard={() => ai.discard(candidate.key)}
+              />
+            ))}
+          </ul>
+        </>
       )}
     </Drawer>
   );
 }
 
-/** 一条候选：预览（三类各一套）+ 校验红字 + 两个动作（采纳 / 丢弃） */
+/** 一条候选：勾选框 + 预览（三类各一套）+ 校验红字 + 两个动作（采纳 / 丢弃） */
 function CandidateRow({
   candidate,
+  checked,
+  busy,
   pending,
+  onToggleSelect,
   onAdopt,
   onDiscard,
 }: {
   candidate: DraftCandidate;
+  checked: boolean;
+  /** 批量写入进行中：所有行动作先锁住，避免写到一半又插一条单采 */
+  busy: boolean;
   pending: boolean;
+  onToggleSelect: () => void;
   onAdopt: () => void;
   onDiscard: () => void;
 }): ReactNode {
@@ -401,6 +562,13 @@ function CandidateRow({
   return (
     <li className={`interview-aidraft__item${invalid ? " is-invalid" : ""}`}>
       <div className="interview-aidraft__item-head">
+        <Checkbox
+          className="interview-aidraft__pick"
+          checked={checked}
+          disabled={invalid || busy}
+          aria-label={`选择「${candidate.title}」`}
+          onChange={onToggleSelect}
+        />
         <Tag className="interview-aidraft__kind">{KIND_LABEL[candidate.kind]}</Tag>
         <span className="interview-aidraft__item-title">{candidate.title}</span>
       </div>
@@ -420,13 +588,19 @@ function CandidateRow({
           className="interview-aidraft__adopt"
           type="primary"
           size="small"
-          disabled={invalid}
+          disabled={invalid || busy}
           loading={pending}
           onClick={onAdopt}
         >
           采纳进题库
         </Button>
-        <Button className="interview-aidraft__drop" type="text" size="small" onClick={onDiscard}>
+        <Button
+          className="interview-aidraft__drop"
+          type="text"
+          size="small"
+          disabled={busy}
+          onClick={onDiscard}
+        >
           丢弃
         </Button>
       </div>

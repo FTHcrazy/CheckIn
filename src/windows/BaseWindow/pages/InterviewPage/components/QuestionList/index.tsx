@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button, Empty, Pagination, Typography } from "antd";
 import QuestionCard from "../QuestionCard";
 import type { InterviewQuestion } from "../../data/interview-types";
@@ -21,6 +21,13 @@ interface QuestionListProps {
   staleIds: ReadonlySet<string>;
   /** 正在写的那条（按钮 loading） */
   pendingId: string | null;
+  /**
+   * 换一批题目就回到顶部（左栏分类 / 轨道切换时变化）。
+   *
+   * 滚动位置属于「上一批内容」：换了分类还停在列表中间，第一屏看到的是半截
+   * 列表，很容易以为这个分类只有这么几道题。
+   */
+  scrollResetKey: string;
   onToggleFavorite: (id: string) => void;
   onPageChange: (page: number) => void;
   onReset: () => void;
@@ -51,6 +58,7 @@ export default function QuestionList({
   originById,
   staleIds,
   pendingId,
+  scrollResetKey,
   onToggleFavorite,
   onPageChange,
   onReset,
@@ -61,14 +69,24 @@ export default function QuestionList({
   onAckBase,
 }: QuestionListProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
 
   const toggleExpand = (id: string): void => {
     setExpandedId((previous) => (previous === id ? null : id));
   };
 
+  // 换分类 / 换页后内容整批换掉，滚动位置没有意义：直接回顶。
+  // 翻页按钮在列表底部，不重置的话翻完还停在上一页的末尾位置，
+  // 看到的是这一页的最后几条 —— 等于「翻页没反应」。
+  // 用 `scrollTop = 0` 而不是 `scrollTo`：jsdom 没有实现后者（单测会直接抛）
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = 0;
+  }, [scrollResetKey, page]);
+
   return (
     <div className="interview-list">
-      <div className="interview-list__scroll">
+      <div className="interview-list__scroll" ref={scrollRef}>
         {questions.length === 0 ? (
           <Empty
             className="interview-list__empty"

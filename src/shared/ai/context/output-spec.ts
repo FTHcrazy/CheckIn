@@ -22,6 +22,18 @@ export interface OutputField {
   type: "string" | "number";
   /** 提示词里给人的字段说明（如「名字」「寓意」） */
   label: string;
+  /**
+   * 允许空字符串（默认不允许）。
+   *
+   * 【为什么必须有这个开关】
+   * 契约里有一类字段是「没有内容就填空字符串」（面试题的 `stemCode`、词条的
+   * `en` / `aliases`）。早先归一函数把空串一律当成「字段缺失」→ 整条丢弃，
+   * 于是**完全合法**的模型输出（题干不带代码、词条没有英文名）全批被扔，
+   * 界面报「模型没给出可用内容」——用户看着结构没毛病，却一条都出不来。
+   *
+   * 标了它的字段只保留空串，不参与「必填」判定；其余字段的判定不变。
+   */
+  allowEmpty?: boolean;
 }
 
 /** 输出格式契约：调用方声明，本层注入指令 + 解析 */
@@ -186,17 +198,155 @@ function hasStructureNoise(entry: AiEntry, fields: OutputField[]): boolean {
   return Boolean(primary && /[{}[\]]|"\s*[:：]/.test(primary));
 }
 
+/** 键名字符集：ASCII 标识符 + 中文（模型偶尔把键写成中文，键本身不该带空格） */
+const KEY_CHAR = /[A-Za-z0-9_$.\-\u4e00-\u9fa5]/;
+
 /**
- * 对象切片 `JSON.parse` 失败时，按字段名逐个抠值（如多余的尾逗号、键名漏引号、
- * 值里混入裸换行）。字段不全返回 null —— 与正常路径同一条验收标准。
+ * 这个引号是不是**值的结束**：后面紧跟分隔符 / 对象收尾 / 文本结尾才算。
+ *
+ * 判据只看引号后面那个非空白字符，是「值里还有引号」与「值到此为止」的
+ * 唯一区分办法 —— 见 `scanLooseObject` 的注释。
+ */
+function isValueClose(text: string, index: number): boolean {
+  let i = index + 1;
+  while (i < text.length && /\s/.test(text[i])) i += 1;
+  return i >= text.length || text[i] === "," || text[i] === "}" || text[i] === "]";
+}
+
+/** 反转义 JSON 常见写法（切片本身不合法，只能自己还原 `\n` / `\"` / `\uXXXX`） */
+function unescapeLoose(raw: string): string {
+  return raw.replace(/\\(u[0-9a-fA-F]{4}|[\s\S])/g, (_match, code: string) => {
+    if (code.length === 5 && code[0] === "u") {
+      return String.fromCharCode(Number.parseInt(code.slice(1), 16));
+    }
+    switch (code) {
+      case "n":
+        return "\n";
+      case "r":
+        return "\r";
+      case "t":
+        return "\t";
+      case "b":
+        return "\b";
+      case "f":
+        return "\f";
+      default:
+        return code;
+    }
+  });
+}
+
+/**
+ * 从「不合法 JSON 的对象切片」里按**顶层键**取值。
+ *
+ * 【为什么不用正则】
+ * 早先用 `["']?key["']?\s*[:：]\s*["']([^"']*)["']` 抠值，两个死穴：
+ * 1. 值里出现英文双引号（`打印 "use strict" 的效果`）会在第一个引号处截断，
+ *    半句话被当成字段值，后半句顺带被误读成别的键；
+ * 2. `[^"']` 不认转义，`\"` 之后的引号照样算结束。
+ *
+ * 这里改成逐字符扫描：只在**顶层**（不在字符串里）认键；字符串值的结束引号
+ * 必须紧跟 `,` / `}` / `]` 或文本结尾，值内部的引号、裸换行都原样保留。
+ * 值里带裸换行正是「模型把多行答案直接写进字符串」的形态 —— 它让 JSON.parse
+ * 必败，但内容本身是好的，不能被当成坏数据丢掉。
+ */
+function scanLooseObject(slice: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  let i = 0;
+
+  const skipBlank = (): void => {
+    while (i < slice.length && /\s/.test(slice[i])) i += 1;
+  };
+
+  while (i < slice.length) {
+    skipBlank();
+    if (i >= slice.length) break;
+
+    // ── 键：引号包裹，或裸标识符（`{` `,` 这类结构字符在这里被跳过）──
+    let key: string;
+    const keyQuote = slice[i];
+    if (keyQuote === '"' || keyQuote === "'" || keyQuote === "`") {
+      const start = i + 1;
+      let j = start;
+      while (j < slice.length && slice[j] !== keyQuote) j += 1;
+      if (j >= slice.length) break; // 键都没闭合：后面的内容不可信
+      key = slice.slice(start, j);
+      i = j + 1;
+    } else {
+      const start = i;
+      while (i < slice.length && KEY_CHAR.test(slice[i])) i += 1;
+      if (i === start) {
+        i += 1; // 结构字符 / 杂字符：跳过，别原地打转
+        continue;
+      }
+      key = slice.slice(start, i);
+    }
+
+    skipBlank();
+    if (slice[i] !== ":" && slice[i] !== "：") continue; // 不是键值对，继续扫
+    i += 1;
+    skipBlank();
+
+    // ── 值：引号串（容错裸换行与内部引号）或裸量（吃到 , } ] 为止）──
+    let value: string;
+    const valueQuote = slice[i];
+    if (valueQuote === '"' || valueQuote === "'" || valueQuote === "`") {
+      const start = i + 1;
+      let j = start;
+      let end = -1;
+      while (j < slice.length) {
+        if (slice[j] === "\\") {
+          j += 2; // 转义对整体跳过，`\"` 不算结束
+          continue;
+        }
+        if (slice[j] === valueQuote && isValueClose(slice, j)) {
+          end = j;
+          break;
+        }
+        j += 1;
+      }
+      if (end < 0) break; // 值被截断：已读到的键值仍然可用
+      value = unescapeLoose(slice.slice(start, end));
+      i = end + 1;
+    } else {
+      const start = i;
+      let depth = 0;
+      while (i < slice.length) {
+        const ch = slice[i];
+        if (ch === "{" || ch === "[") depth += 1;
+        else if (ch === "}" || ch === "]") {
+          if (depth === 0) break;
+          depth -= 1;
+        } else if (ch === "," && depth === 0) break;
+        i += 1;
+      }
+      value = slice.slice(start, i);
+    }
+
+    const name = key.trim();
+    if (name) out[name] = value;
+  }
+
+  return out;
+}
+
+/**
+ * 对象切片 `JSON.parse` 失败时，按顶层键取值（如多余的尾逗号、键名漏引号、
+ * 值里混入裸换行或英文引号）。字段不全返回 null —— 与正常路径同一条验收标准。
  */
 function readFieldsByPattern(slice: string, fields: OutputField[]): AiEntry | null {
+  const values = scanLooseObject(slice);
   const entry: AiEntry = {};
   for (const field of fields) {
-    const key = field.key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const re = new RegExp(`["'\`]?${key}["'\`]?\\s*[:：]\\s*["'\`]([^"'\`]*)["'\`]`);
-    const value = re.exec(slice)?.[1]?.trim();
-    if (!value) return null;
+    const value = (values[field.key] ?? "").trim();
+    if (!value) {
+      // 可选字段本来就该允许「没内容」：契约要求填空字符串
+      if (field.allowEmpty) {
+        entry[field.key] = "";
+        continue;
+      }
+      return null;
+    }
     entry[field.key] = value;
   }
   return hasStructureNoise(entry, fields) ? null : entry;
@@ -219,7 +369,15 @@ function normalizeEntry(raw: unknown, fields: OutputField[]): AiEntry | null {
       continue;
     }
     const str = String(value).trim();
-    if (!str) return null;
+    if (!str) {
+      // 空值只对 allowEmpty 字段放行（如「题干代码没有就填空字符串」），
+      // 其余字段仍然是「必填」——缺字段的条目整条丢掉，不污染整批
+      if (field.allowEmpty) {
+        entry[field.key] = "";
+        continue;
+      }
+      return null;
+    }
     entry[field.key] = str;
   }
 

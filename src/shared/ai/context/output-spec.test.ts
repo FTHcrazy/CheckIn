@@ -8,6 +8,7 @@ import {
   normalizeContinuationText,
   parseOutput,
   stripCodeFence,
+  type OutputFormat,
 } from "./output-spec";
 
 describe("buildOutputInstruction", () => {
@@ -156,6 +157,67 @@ describe("parseOutput", () => {
       expect(entry.name).not.toContain("{");
       expect(entry.name).not.toContain('"');
     }
+  });
+
+  /**
+   * 契约里有一类字段写着「没有就填空字符串」（面试题的 stemCode、词条的 en）。
+   * 早先归一函数把空串一律当「字段缺失」→ 整条丢弃，于是**完全合法**的输出
+   * （不带代码的题目）全批消失，界面只会说「模型没给出可用内容」。
+   */
+  it("allowEmpty 字段填空字符串 → 该条保留；未标记的字段空值仍丢整条", () => {
+    const format: OutputFormat = {
+      kind: "json-array",
+      fields: [
+        { key: "title", type: "string", label: "标题" },
+        { key: "code", type: "string", label: "代码", allowEmpty: true },
+      ],
+    };
+    const parsed = parseOutput(
+      JSON.stringify([
+        { title: "有题无码", code: "" },
+        { title: "", code: "const a = 1;" },
+      ]),
+      format,
+    );
+    expect(parsed.usedFallback).toBe(false);
+    expect(parsed.entries).toEqual([{ title: "有题无码", code: "" }]);
+  });
+
+  it("抢救路径（键名漏引号）同样放行 allowEmpty 字段的空串", () => {
+    const format: OutputFormat = {
+      kind: "json-array",
+      fields: [
+        { key: "title", type: "string", label: "标题" },
+        { key: "code", type: "string", label: "代码", allowEmpty: true },
+      ],
+    };
+    const parsed = parseOutput('[{title:"有题无码",code:""}]', format);
+    expect(parsed.usedFallback).toBe(false);
+    expect(parsed.entries).toEqual([{ title: "有题无码", code: "" }]);
+  });
+
+  /**
+   * 值里带**未转义的英文双引号**：模型写技术内容时极常见（`打印 "use strict" 的效果`）。
+   * 旧实现用的 `[^"']*` 会在这个引号处截断，半句话当值、后半句当成别的键。
+   */
+  it("抢救路径：值里的英文双引号不再截断", () => {
+    const raw = '[{name:"严格模式",meaning:打印 "use strict" 之后的效果}]';
+    const parsed = parseOutput(raw, NAMING_OUTPUT_FORMAT);
+    expect(parsed.usedFallback).toBe(false);
+    expect(parsed.entries).toEqual([
+      { name: "严格模式", meaning: '打印 "use strict" 之后的效果' },
+    ]);
+  });
+
+  /**
+   * 值里带**裸换行**（不是 `\n` 转义）：JSON.parse 必败，但内容本身是好的。
+   * 抢救路径必须把它当成多行文本收下，而不是只留第一行或整条丢弃。
+   */
+  it("抢救路径：值里的裸换行原样保留为多行", () => {
+    const raw = '[{name:"多行答案",meaning:"第一行\n第二行\n第三行"}]';
+    const parsed = parseOutput(raw, NAMING_OUTPUT_FORMAT);
+    expect(parsed.usedFallback).toBe(false);
+    expect(parsed.entries).toEqual([{ name: "多行答案", meaning: "第一行\n第二行\n第三行" }]);
   });
 });
 

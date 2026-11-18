@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Alert, Button, Drawer, Empty, Form, Input, Select, Tag, Typography } from "antd";
+import { Alert, Button, Drawer, Empty, Form, Input, Popconfirm, Select, Tag, Typography } from "antd";
 import { CheckOutlined, DownOutlined, PlusOutlined, RobotOutlined } from "@ant-design/icons";
 import type { InterviewTaxonomyDTO } from "@/shared/types/electron";
 import { TAXONOMY_LABEL_MAX } from "@/shared/ai/context/prompt";
@@ -116,8 +116,8 @@ export default function TaxonomyPanel({
     onAdoptedSuggest(id, suggestion.samples, suggestion.track);
   };
 
-  /** 一行分类：标题 + 轨道 + 说明 + 两个动作 */
-  const rowOf = (row: InterviewTaxonomyDTO, primary: ReactNode): ReactNode => (
+  /** 一行分类：标题 + 轨道 + 说明 + 动作（secondary 只在草稿行出现：删除） */
+  const rowOf = (row: InterviewTaxonomyDTO, primary: ReactNode, secondary?: ReactNode): ReactNode => (
     <li className="interview-taxonomy__item" key={row.id}>
       <div className="interview-taxonomy__item-text">
         <div className="interview-taxonomy__item-head">
@@ -127,7 +127,10 @@ export default function TaxonomyPanel({
         {row.note ? <p className="interview-taxonomy__note">{row.note}</p> : null}
         <span className="interview-taxonomy__id">{row.id}</span>
       </div>
-      <div className="interview-taxonomy__item-ops">{primary}</div>
+      <div className="interview-taxonomy__item-ops">
+        {primary}
+        {secondary}
+      </div>
     </li>
   );
 
@@ -314,6 +317,19 @@ export default function TaxonomyPanel({
                 >
                   采纳进侧栏
                 </Button>,
+                // 草稿没有回收站，确认框把后果说清再让删
+                <Popconfirm
+                  key="remove"
+                  title="删除这个草稿？"
+                  description="还没进侧栏，删掉后 AI 推荐里也不会再出现。"
+                  okText="删除"
+                  cancelText="留着"
+                  onConfirm={() => void api.remove(row)}
+                >
+                  <Button className="interview-taxonomy__remove" type="link" size="small" danger>
+                    删除
+                  </Button>
+                </Popconfirm>,
               ),
             )}
           </ul>

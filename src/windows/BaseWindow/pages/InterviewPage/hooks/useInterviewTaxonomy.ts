@@ -41,6 +41,8 @@ export interface UseInterviewTaxonomyResult {
   create: (draft: TaxonomyDraft, status?: "draft" | "adopted") => Promise<string | null>;
   /** 改状态（采纳 / 退回草稿） */
   setStatus: (row: InterviewTaxonomyDTO, status: "draft" | "adopted") => Promise<boolean>;
+  /** 删除（软删；基线分类不在库里，只有用户新增的会出现在面板上） */
+  remove: (row: InterviewTaxonomyDTO) => Promise<boolean>;
 }
 
 /** 分类名 → id 片段：中文名拿不到 ASCII 就回落 `u-c-<时间戳>`，仍保证唯一前缀 */
@@ -172,7 +174,31 @@ export function useInterviewTaxonomy(
     [write],
   );
 
-  return { pendingId, error, clearError, create, setStatus };
+  const remove = useCallback(
+    async (row: InterviewTaxonomyDTO): Promise<boolean> => {
+      // 只收用户新增（u- 前缀）：基线分类根本不在库表里，这里是双保险
+      if (!row.id.startsWith("u-")) {
+        setError("基线分类不能删除");
+        return false;
+      }
+      const api = window.electronAPI?.interview;
+      if (!api) {
+        setError("当前环境没有本地题库通道");
+        return false;
+      }
+      const result = await api.taxonomyDelete(row.id);
+      if (!result.ok) {
+        setError(result.errors[0] ?? "没有删除成功");
+        return false;
+      }
+      setError(null);
+      await reload();
+      return true;
+    },
+    [reload],
+  );
+
+  return { pendingId, error, clearError, create, setStatus, remove };
 }
 
 /** 轨道中文（面板与提示共用） */

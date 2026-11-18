@@ -35,32 +35,35 @@ function makeStore() {
   const api = {
     itemsList: vi.fn(async () => [...rows.values()]),
     taxonomyList: vi.fn(async () => [] as InterviewTaxonomyDTO[]),
-    itemSave: vi.fn(async (payload: Record<string, unknown>) => {
-      const id = String(payload.id);
-      rows.set(id, {
-        id,
-        kind: payload.kind as InterviewItemDetailDTO["kind"],
-        action: payload.action as "new" | "override",
-        baseId: null,
-        status: payload.status as string,
-        origin: "ai",
-        categoryId: (payload.categoryId as string | null) ?? null,
-        track: (payload.track as string | null) ?? null,
-        title: String(payload.title ?? ""),
-        errors: [],
-        payload: payload.payload,
-        sourceIntent: null,
-        aiLogId: null,
-        baseStamp: null,
-        baseHash: null,
-        ackBaseHash: null,
-        reviewedAt: null,
-        createdAt: 1,
-        updatedAt: 1,
-        deletedAt: null,
-      } as InterviewItemDetailDTO);
-      return { ok: true, errors: [] };
-    }),
+    // 返回值标注成宽类型：批量采纳的用例要能让其中一条失败（errors 非空）
+    itemSave: vi.fn(
+      async (payload: Record<string, unknown>): Promise<{ ok: boolean; errors: string[] }> => {
+        const id = String(payload.id);
+        rows.set(id, {
+          id,
+          kind: payload.kind as InterviewItemDetailDTO["kind"],
+          action: payload.action as "new" | "override",
+          baseId: null,
+          status: payload.status as string,
+          origin: "ai",
+          categoryId: (payload.categoryId as string | null) ?? null,
+          track: (payload.track as string | null) ?? null,
+          title: String(payload.title ?? ""),
+          errors: [],
+          payload: payload.payload,
+          sourceIntent: null,
+          aiLogId: null,
+          baseStamp: null,
+          baseHash: null,
+          ackBaseHash: null,
+          reviewedAt: null,
+          createdAt: 1,
+          updatedAt: 1,
+          deletedAt: null,
+        } as InterviewItemDetailDTO);
+        return { ok: true, errors: [] };
+      },
+    ),
     itemSetStatus: vi.fn(async (id: string, status: string) => {
       const row = rows.get(id);
       if (row) rows.set(id, { ...row, status });
@@ -234,5 +237,47 @@ describe("采纳词条后正文立刻可点（端到端）", () => {
       expect(chips).toHaveLength(2);
       expect(chips[0].textContent).toBe("loader");
     });
+  });
+});
+
+describe("批量采纳多条", () => {
+  afterEach(() => {
+    cleanup();
+    window.electronAPI = undefined;
+  });
+
+  it("逐条写入：中间一条失败不打断后面的，失败项带原因回给调用方", async () => {
+    const store = makeStore();
+    const ai = renderBank(store);
+    await waitFor(() => expect(ai.current()).not.toBeNull());
+
+    const make = (term: string) =>
+      buildDraftCandidate({
+        kind: "glossary",
+        entry: { term, short: `${term} 的一句话定义。`, detail: "细节一条", domain: "engineering" },
+        categoryId: "foundation-js",
+        track: "foundation",
+        difficulty: "medium",
+      })!;
+    const list = [make("loader"), make("plugin"), make("preset")];
+
+    // 第二条写库失败：批量不能因此把第一、三条也放弃掉
+    const realSave = store.api.itemSave.getMockImplementation()!;
+    store.api.itemSave.mockImplementation(async (payload: Record<string, unknown>) =>
+      String(payload.title) === "plugin"
+        ? { ok: false, errors: ["词条键已被占用"] }
+        : realSave(payload),
+    );
+
+    const result = await act(async () => ai.current()!.ai.adoptMany(list, "adopted"));
+
+    expect(result.ok).toEqual([list[0].key, list[2].key]);
+    expect(result.failed).toEqual([
+      { key: list[1].key, title: "plugin", reason: "词条键已被占用" },
+    ]);
+    // 三条都尝试过（失败那条没有短路后面的）
+    expect(store.api.itemSave).toHaveBeenCalledTimes(3);
+    expect(store.rows.size).toBe(2);
+    expect([...store.rows.values()].every((row) => row.status === "adopted")).toBe(true);
   });
 });

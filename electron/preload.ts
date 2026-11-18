@@ -624,6 +624,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
       status: string
       note?: string | null
     }) => trackedInvoke('interview-taxonomy-save', payload),
+    /** 删除用户新增的分类（软删，进库的回收列，可由同名重建复活） */
+    taxonomyDelete: (id: string) =>
+      trackedInvoke('interview-taxonomy-delete', id),
     /**
      * 词条匹配负例：「这里不是这个词」。
      *
