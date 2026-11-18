@@ -33,9 +33,9 @@ import {
  * **AI 配置页不在此列**，它永远保留（开关就在那页上，收掉它用户就再也开不回来），
  * 因此绝不能被开关卸载。
  *
- * AI 分区的 edition 门控（R-AI-01）：只有 **full / novel 版** 才展示 —— 与主进程
- * `ai.db` 的 edition 开关（`EDITION !== "lite"`）对齐，lite 版既无 ai.db 存储、
- * 也无 novel 侧的 AI 入口，展示空分区会让用户「看得见但用不了」。
+ * AI 分区全版本展示（2.70.0 放开，R-AI-01）：base 窗口（面试题库）已接入 AI，
+ * lite 版也注册 ai.db 与 AI 通道，设置窗口必须给用户配置模型服务的入口；
+ * 此前「lite 无 novel 域故整块缺席」的前提不再成立。
  */
 export default function SettingsWindowApp() {
   /**

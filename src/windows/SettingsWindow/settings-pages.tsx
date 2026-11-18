@@ -21,7 +21,7 @@ import {
   RobotOutlined,
   SafetyOutlined,
 } from "@ant-design/icons";
-import { IS_LITE_EDITION, IS_NOVEL_EDITION } from "@/shared/edition";
+import { IS_NOVEL_EDITION } from "@/shared/edition";
 import type { SettingsNavGroup } from "./components/SettingsNav";
 import AppearanceSection from "./components/AppearanceSection";
 import ProfileSection from "./components/ProfileSection";
@@ -41,8 +41,13 @@ import UsagePanel from "./components/UsagePanel";
  */
 const SHOW_SHORTCUTS = import.meta.env.DEV || IS_NOVEL_EDITION;
 
-/** AI 分区：仅 full/novel 版（与 ai.db 的 `EDITION !== "lite"` 开关对齐） */
-const SHOW_AI = !IS_LITE_EDITION;
+/**
+ * AI 分区：全版本展示（2.70.0 放开）—— base 窗口（面试题库）已接入 AI，
+ * lite 版也要能配置模型服务（R-AI-01 此前的「lite 无 AI 入口」前提失效）。
+ * 保留 `SHOW_AI` 常量形态：AI 记录 / 用量两页的门控字面量被
+ * `settings-ai-nav-guard.test.ts` 钉着，未来若再按版本收口只需改这里。
+ */
+const SHOW_AI = true;
 
 /** 导航分组顺序：通用 → 账户 → 高级（3 / 2 / 1，避免出现只有一个条目的孤组） */
 const GROUP_ORDER = ["通用", "账户", "高级"] as const;
@@ -72,7 +77,7 @@ const APPEARANCE_PAGE: SettingsPageDef = {
 };
 
 /**
- * AI 配置页（lite 版整组缺席，与 ai.db 的 edition 开关对齐）。
+ * AI 配置页（全版本展示，2.70.0 起 lite 版也有 —— base 窗口已接入 AI）。
  *
  * ⚠️ 这一页**永远不因 AI 总开关关闭而消失**（REQ-063）：开关就在这页上，
  * 收掉它等于把「开回去」的唯一入口也一起收了 —— 用户关掉 AI 之后再也开不回来。

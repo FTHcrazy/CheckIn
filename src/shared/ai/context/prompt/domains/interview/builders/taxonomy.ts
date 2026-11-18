@@ -29,7 +29,7 @@ import { categoryBlock, siblingTitlesBlock } from "../sections";
 import type { InterviewPromptContext, InterviewTaxonomySuggestPayload } from "../types";
 
 /** 分类名长度上限（与 `useInterviewTaxonomy.create` 的校验同一口径） */
-export const TAXONOMY_LABEL_MAX = 12;
+export const TAXONOMY_LABEL_MAX = 20;
 
 /** 一轮最多几条建议：再多用户审不动，而且侧栏也放不下 */
 export const TAXONOMY_SUGGEST_MAX = 3;

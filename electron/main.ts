@@ -1285,18 +1285,16 @@ app.whenReady().then(() => {
     registerInterviewDbBridge();
     registerInterviewHandlers();
   }
-  // AI 助手（ai.db 独立库）：仅 full/novel 版初始化 —— lite 无 novel 域，
-  // AI 入口先落在 novel 侧（起名增强），故随 edition 开关；后续 checkin 接入
-  // AI 时删掉这个判断放开到全版本（R-AI-04 预研点 2）。bridge 必须在 handler
-  // 之前注册（同 novel-db 的启动顺序约束）。
-  if (EDITION !== "lite") {
-    registerAiDbBridge();
-    registerAiHandlers();
-    // AI 流式端点（M4 / B5）：在 registerAiHandlers 之后注册 —— 它依赖
-    // ai-handlers 注入的流式请求器（setAiStreamRequester）。必须在 app ready
-    // 后调用（protocol.handle 前置），本注册段在 whenReady 内。
-    registerAiStreamEndpoint();
-  }
+  // AI 助手（ai.db 独立库）：全版本注册（2.70.0 放开）—— base 窗口（面试题库）
+  // 已接入 AI，lite 版也需要 ai.db 存储；此前「lite 无 novel 域故不建库」的
+  // 前提不再成立（R-AI-04 预研点 2 兑现）。bridge 必须在 handler 之前注册
+  // （同 novel-db 的启动顺序约束）。
+  registerAiDbBridge();
+  registerAiHandlers();
+  // AI 流式端点（M4 / B5）：在 registerAiHandlers 之后注册 —— 它依赖
+  // ai-handlers 注入的流式请求器（setAiStreamRequester）。必须在 app ready
+  // 后调用（protocol.handle 前置），本注册段在 whenReady 内。
+  registerAiStreamEndpoint();
   // 关系图提交（R27 / S3）：单事务写「新建关系 + 备注 + 画布文档」，
   // 成功后由本 handler 广播 novel-links-changed 回主窗口（W-15）。
   registerNovelGraphHandlers();

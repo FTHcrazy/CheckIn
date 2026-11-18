@@ -30,12 +30,13 @@ describe("buildTaxonomySuggestion", () => {
     expect(buildTaxonomySuggestion({ ...base, entry: { note: "只有说明" } })).toBeNull();
   });
 
-  it("超过 12 字与重名都记 errors（但不丢建议）", () => {
+  it("超过上限与重名都记 errors（但不丢建议）", () => {
     const tooLong = buildTaxonomySuggestion({
       ...base,
-      entry: { label: "一个特别特别长的分类名称啊" },
+      entry: { label: "一个特别特别特别特别特别特别长的分类名称啊" },
     });
     expect(tooLong?.errors.length).toBeGreaterThan(0);
+    expect(tooLong?.errors.join("；")).toContain("超过");
 
     const duplicated = buildTaxonomySuggestion({ ...base, entry: { label: "react" } });
     expect(duplicated?.errors.join("；")).toContain("已经有");

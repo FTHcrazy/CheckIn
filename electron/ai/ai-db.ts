@@ -14,10 +14,8 @@
  * 2. **隔离**：AI 是横切多域的通用能力，不隶属任一业务域；
  * 3. **安全**：Key 加密字段单独成库，备份 / 清理时可独立处理。
  *
- * ⚠️ 随 edition 开关（R-AI-04 预研点 2 已定）：本库只在 `EDITION !== "lite"`
- * 时初始化（full / novel 含 novel 域，AI 入口先落在 novel 侧的起名增强上），
- * lite 版不建库、设置窗口也不展示 AI 分区。后续 checkin 窗口接入 AI 时，
- * 删掉 main.ts 里的 edition 判断即可放开到全版本。
+ * ⚠️ 全版本初始化（2.70.0 放开，R-AI-04 预研点 2 兑现）：base 窗口（面试题库）
+ * 接入 AI 后，lite 版也需要本库 —— main.ts 里的 edition 判断已删除。
  *
  * 边界：SQL 只出现在本文件与 handlers/ai-handlers.ts；不导入 main.ts。
  */
@@ -131,7 +129,7 @@ export function isAiDbReady(): boolean {
  * 与 `registerNovelDbBridge` 同范式：注册时若已有当前用户，立即补一次打开
  * （启动流程是 `switchUserDb` 在前、`registerAiHandlers` 在后）。
  *
- * ⚠️ 调用方（main.ts）必须用 `EDITION !== "lite"` 包起来 —— lite 版不建库。
+ * ⚠️ 2.70.0 起全版本调用（base 窗口接入 AI，lite 版也建库）。
  */
 export function registerAiDbBridge(): void {
   registerUserDbLifecycle({

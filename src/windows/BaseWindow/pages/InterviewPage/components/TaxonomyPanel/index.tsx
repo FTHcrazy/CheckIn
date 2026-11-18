@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Alert, Button, Drawer, Empty, Form, Input, Select, Tag, Typography } from "antd";
 import { CheckOutlined, DownOutlined, PlusOutlined, RobotOutlined } from "@ant-design/icons";
 import type { InterviewTaxonomyDTO } from "@/shared/types/electron";
+import { TAXONOMY_LABEL_MAX } from "@/shared/ai/context/prompt";
 import { TRACKS, TRACK_LABEL } from "../../data/interview-taxonomy";
 import type { QuestionTrack } from "../../data/interview-types";
 import { trackText, type UseInterviewTaxonomyResult } from "../../hooks/useInterviewTaxonomy";
@@ -170,7 +171,10 @@ export default function TaxonomyPanel({
             className="interview-taxonomy__row-main"
             rules={[{ required: true, whitespace: true, message: "分类名称不能为空" }]}
           >
-            <Input maxLength={12} placeholder="最多 12 字，如「RSC 与服务端组件」" />
+            <Input
+              maxLength={TAXONOMY_LABEL_MAX}
+              placeholder={`最多 ${TAXONOMY_LABEL_MAX} 字，如「RSC 与服务端组件」`}
+            />
           </Form.Item>
           <Form.Item name="track" label="所属轨道" className="interview-taxonomy__row-side">
             <Select

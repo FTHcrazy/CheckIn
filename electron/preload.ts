@@ -475,7 +475,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
   },
 
-  // ── AI 助手（语义化 IPC，数据存独立 ai.db，仅 full/novel 版注册） ──
+  // ── AI 助手（语义化 IPC，数据存独立 ai.db，全版本注册） ──
   // 对 §8.7「主进程不代理 HTTP」契约的刻意豁免（凭据安全 + 端点无法枚举），
   // 理由见 docs/archive/prd-ai/ai-architecture-decision.md 第五节·A。
   // Key 经 safeStorage 加密存主进程，渲染层只拿 hasApiKey 布尔，绝无明文 Key。
