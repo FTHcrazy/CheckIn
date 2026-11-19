@@ -166,7 +166,10 @@ function initializeNovelDb(database: Database.Database): void {
       fields TEXT NOT NULL DEFAULT '{}',
       sort INTEGER NOT NULL DEFAULT 1,
       created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
+      updated_at INTEGER NOT NULL,
+      -- deleted_at：要素删除兜底（O-13b）。NULL = 在架；有值 = 已进回收站。
+      -- 与卷 / 章同一口径：只打标记，别名 / 关联 / 出场信息全留在原处。
+      deleted_at INTEGER
     );
     CREATE INDEX IF NOT EXISTS idx_novel_entities_work ON novel_entities(work_id, sort);
     -- 多态关联：from/to 各自带 type，可指向要素 / 等级项 / 章节
@@ -533,6 +536,21 @@ function initializeNovelDb(database: Database.Database): void {
     }
     database.exec(
       `CREATE INDEX IF NOT EXISTS idx_${table}_deleted ON ${table}(deleted_at)`,
+    );
+  }
+
+  // O-13b（2.71.0）：要素删除纳入回收站。同样是可空时间戳列，老库补列后
+  // 「全部要素都在架」，语义天然正确、无需回填。索引供回收站按删除时间扫。
+  {
+    const entityColumns = database.pragma("table_info(novel_entities)") as Array<{
+      name: string;
+    }>;
+    if (!entityColumns.some((column) => column.name === "deleted_at")) {
+      database.exec("ALTER TABLE novel_entities ADD COLUMN deleted_at INTEGER");
+    }
+    database.exec(
+      `CREATE INDEX IF NOT EXISTS idx_novel_entities_deleted
+        ON novel_entities(deleted_at)`,
     );
   }
 

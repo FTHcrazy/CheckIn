@@ -53,6 +53,9 @@
 > - **G6** `item_count` 按 intent 分流：主进程只在 `naming` 意图切名单，text 输出不再污染条数。
 > - **G7** 意图标签提单一产地：`AI_INTENT_LABELS`（`registry.ts`）覆盖 `PROMPT_INTENTS` 全量含 `summary`，`AILogSection` / `UsagePanel` 共用。
 > - **G8** 三处小口径已清理（见下「已闭环」清单 N/A）：① 删除 `estimateCost` 死代码 + `AiConsentDialog` 的 `cost` 分支/prop/用例；② `char_count` 口径修正为「送模型总输入字数（用户提示词 + system 上下文）」；③ 生成响应回带 `model`，`doGenerateSummary` 改读 `result.data.model`，省去二次 `getAiConfig` IPC。
+>
+> **2.71.0 收尾**：M6 的最后一处交互缺口「按批次一键撤销」交付（IPC + 浮层入口 + 内存镜像同步），
+> M6 整条闭环。
 
 ---
 
@@ -90,7 +93,7 @@
 | **R-AI-06** | 文本变换工具箱（扩写/精简/改写/换语气/转视角，`runTransform` + `PolishPreview` 泛化） | `context/prompt/transform.ts` + `useNovelPage.ts` |
 | **R-AI-07** | 就地续写（2.9.2 非流式 2–3 候选；2.10.x 升级流式单段打字机 + 可中断） | `context/prompt/continuation.ts` + `useNovelPage.ts` |
 | **M5** | L3 授权（L1/L2/L3 分级 + `ai-estimate` token 估算 + `useAiConsent` + `AiConsentDialog`；`ai_config.l3_enabled`） | `src/shared/ai/ai-consent.ts` + `ai-estimate.ts` |
-| **M6** | AI 产出溯源（`source=ai` + 模型 + 时间戳 + 批次，`ai_summary_batch` 列） | `src/shared/ai/ai-provenance.ts` |
+| **M6** | AI 产出溯源（`source=ai` + 模型 + 时间戳 + 批次，`ai_summary_batch` 列；2.71.0 补按批次撤销） | `src/shared/ai/ai-provenance.ts` + `novel-ai-summary-guard.test.ts` |
 | **R-AI-09** | 章节摘要（`novel_chapters` 四列 + `novel-chapter-summary-save` + `SummaryPreview`；2.10.2 补「一句话」回填大纲梗概，2.10.3 补续写复用上一章摘要） | `electron/novel/novel-db.ts` + `context/prompt/summary.ts` + `context/prompt/continuation.ts` |
 | **R-AI-10a** | 一致性校对·纯本地版（人名/别名近似 + 境界别名归并，分片扫描，点行跳正文；2.13.0） | `src/shared/novel/consistency.ts` + `useConsistencyStore` + `ConsistencyPanel` |
 | **R-AI-08** | 实体抽取 → 勾选建卡（`json-array` 契约 + 候选纯函数 + 批量单事务 IPC；2.13.0） | `context/prompt/extract.ts` + `utils/entity-extract.ts` + `ExtractPanel` + `novel-entity-batch-save` |
@@ -115,7 +118,9 @@
 | 类型 | 编号 |
 |------|------|
 | 功能 | **R-AI-10b** 一致性校对 AI 档、**R-AI-11** 卡文救援、**R-AI-12** 创作日报、**R-AI-13** 起名 v2、**R-AI-14** 卡片补全、**R-AI-17** 就地问答（~~R-AI-16b~~ 不立项，但其「base 域不接 AI」的依据已于 2.64.0~2.70.0 被推翻，见 §四 B8 边界） |
-| 交互 | **M6 的「按批次一键撤销」**：`ai_summary_batch` 列已落库并可查，但缺「按 batchId 批量清空」的 IPC 与入口（Q3 的粒度裁决已定：按批次删，不做通用 undo） |
+
+> M6 的「按批次一键撤销」已于 **2.71.0** 交付：`novel-ai-summary-batch-undo` 按 `ai_summary_batch`
+> 一次清空四列（空批次拒绝），浮层给「撤销本批次」入口，Q3 的粒度裁决「按批次删、不做通用 undo」闭合。
 
 > R-AI-09 已于 **2.10.3 整条闭合**：摘要本体（2.10.0）→ 一句话回填大纲梗概（2.10.2）→
 > 续写复用为「上一章摘要」上下文（2.10.3，前文短于 300 字才注入）。仅一处形态与 PRD 不同：
@@ -137,7 +142,7 @@
 | 6 | **R-AI-07** | 就地续写（非流式） | 7.5 | **P0** | ✅ 已交付（2.9.2，非流式版） |
 | 7 | **R-AI-09** | 章节摘要与大纲回流 | 6.0 | **P1** | ✅ 已交付（2.10.0；收尾 2.10.3） |
 | 8 | **M5** | L3 授权与范围选择器 | — | **P1** | ✅ 已交付（2.10.0；2.10.x 补 L3 总开关 Switch，缺口闭合） |
-| 9 | **M6** | AI 产出溯源与撤销 | — | **P1** | ✅ 已交付（2.10.0 来源标记落地 + 2.10.x 接上 batchId；「按批次撤销」交互待结构化功能首用） |
+| 9 | **M6** | AI 产出溯源与撤销 | — | **P1** | ✅ 已交付（2.10.0 来源标记 + 2.10.x batchId；2.71.0 补齐按批次撤销交互） |
 | 10 | **R-AI-10a** | 一致性校对·纯本地版 | 6.0 | **P1** | ✅ 已交付（2.13.0） |
 | 11 | **R-AI-11** | 卡文救援 · 剧情分支 | 4.0 | **P1** | 情绪价值高，依赖 09 的摘要上下文 |
 | 12 | **M4** | 流式能力 | — | **P1** | ✅ 已交付（2.10.x，续写升级流式版，B5） |

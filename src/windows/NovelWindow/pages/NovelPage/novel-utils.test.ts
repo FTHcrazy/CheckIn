@@ -12,7 +12,10 @@ import {
   buildSortOrder,
   buildWorkMeta,
   calcGoalProgress,
+  chapterRestorePosition,
   clampPanelWidth,
+  clearChapterSummariesByBatch,
+  countTextOccurrences,
   countWords,
   filterNotes,
   findTermMatches,
@@ -25,6 +28,7 @@ import {
   mergeEditorSettings,
   moveItemBefore,
   padIndex,
+  parseChapterPositions,
   parseJsonOrNull,
   patchChapterOutlineNote,
   patchNote,
@@ -32,6 +36,8 @@ import {
   previewChapterReorder,
   previewChapterToVolume,
   previewVolumeReorder,
+  putChapterPosition,
+  replaceTextOccurrences,
   sanitizeNameFavorites,
   sanitizeRestorePosition,
   sortNotes,
@@ -948,6 +954,122 @@ describe("mergeEditorSettings", () => {
     const merged = mergeEditorSettings({ chapterSuffix: "", volumeSuffix: "" });
     expect(merged.chapterSuffix).toBe("");
     expect(merged.volumeSuffix).toBe("");
+  });
+});
+
+describe("每章位置记忆（D-04）", () => {
+  it("parse：坏一条不影响其它条（整表校验失败会让记忆一次性清零）", () => {
+    const map = parseChapterPositions({
+      c1: { cursor: 12, scrollTop: 340, savedAt: 1000 },
+      c2: { cursor: -5, scrollTop: -1, savedAt: 2000 },
+      c3: "broken",
+      c4: null,
+    });
+    expect(Object.keys(map).sort()).toEqual(["c1", "c2"]);
+    expect(map.c2).toEqual({ cursor: 0, scrollTop: 0, savedAt: 2000 });
+  });
+
+  it("parse：非对象 / 数组 / 空值一律给空表，不抛", () => {
+    expect(parseChapterPositions(null)).toEqual({});
+    expect(parseChapterPositions([])).toEqual({});
+    expect(parseChapterPositions("x")).toEqual({});
+  });
+
+  it("put：同一章反复写只更新那一条，不会把表撑大", () => {
+    let map = putChapterPosition({}, "c1", 10, 20, 1);
+    map = putChapterPosition(map, "c1", 30, 40, 2);
+    expect(map).toEqual({ c1: { cursor: 30, scrollTop: 40, savedAt: 2 } });
+  });
+
+  it("put：超过上限按 savedAt 淘汰最久没碰过的那章（正在读的不会被裁）", () => {
+    let map = putChapterPosition({}, "old", 0, 0, 1, 2);
+    map = putChapterPosition(map, "mid", 0, 0, 2, 2);
+    map = putChapterPosition(map, "new", 0, 0, 3, 2);
+    expect(Object.keys(map).sort()).toEqual(["mid", "new"]);
+  });
+
+  it("put：空 chapterId 不写入（没有章节时不该留一条空键）", () => {
+    expect(putChapterPosition({}, "", 1, 2, 3)).toEqual({});
+  });
+
+  it("chapterRestorePosition：命中给四元组，缺记录给 null", () => {
+    const map = parseChapterPositions({ c1: { cursor: 8, scrollTop: 90, savedAt: 1 } });
+    expect(chapterRestorePosition(map, "w1", "c1")).toEqual({
+      workId: "w1",
+      chapterId: "c1",
+      cursor: 8,
+      scrollTop: 90,
+    });
+    expect(chapterRestorePosition(map, "w1", "c2")).toBeNull();
+  });
+});
+
+describe("改名同步正文（P-11）", () => {
+  it("countTextOccurrences：统计不重叠出现，空关键词给 0", () => {
+    expect(countTextOccurrences("陆长安来了，陆长安走了", "陆长安")).toBe(2);
+    expect(countTextOccurrences("aaa", "aa")).toBe(1);
+    expect(countTextOccurrences("任何文本", "")).toBe(0);
+  });
+
+  it("replaceTextOccurrences：全量替换并回处数", () => {
+    expect(replaceTextOccurrences("陆长安来了，陆长安走了", "陆长安", "陆长宁")).toEqual({
+      text: "陆长宁来了，陆长宁走了",
+      count: 2,
+    });
+  });
+
+  it("名字带正则元字符时按字面替换（不用正则的理由）", () => {
+    expect(replaceTextOccurrences("A.B 与 AXB", "A.B", "C")).toEqual({
+      text: "C 与 AXB",
+      count: 1,
+    });
+  });
+
+  it("没有命中时原样返回，count 为 0", () => {
+    const text = "无关正文";
+    expect(replaceTextOccurrences(text, "陆长安", "陆长宁")).toEqual({ text, count: 0 });
+  });
+
+  it("空旧名不做替换（否则会在每个字符间插一遍新名）", () => {
+    expect(replaceTextOccurrences("ab", "", "X")).toEqual({ text: "ab", count: 0 });
+  });
+});
+
+describe("按批次撤销摘要（M6）", () => {
+  const chapters = [
+    mkChapter({ id: "c1", aiSummary: "AI 一", aiSummaryBatch: "b1" }),
+    mkChapter({ id: "c2", aiSummary: "AI 二", aiSummaryBatch: "b1" }),
+    mkChapter({ id: "c3", aiSummary: "AI 三", aiSummaryBatch: "b2" }),
+    mkChapter({ id: "c4", aiSummary: "手写的", outlineNote: "自己写的梗概" }),
+  ];
+
+  it("只清本批次，其它批次与手写摘要原样保留", () => {
+    const next = clearChapterSummariesByBatch(chapters, "b1");
+    expect(next[0].aiSummary).toBeUndefined();
+    expect(next[1].aiSummary).toBeUndefined();
+    expect(next[2].aiSummary).toBe("AI 三");
+    expect(next[3].aiSummary).toBe("手写的");
+  });
+
+  it("清掉摘要时同时清来源标记（否则留一条指向空正文的模型名）", () => {
+    const next = clearChapterSummariesByBatch(
+      [mkChapter({ id: "c9", aiSummary: "x", aiSummaryBatch: "b9", aiSummaryAt: 1 })],
+      "b9",
+    );
+    expect(next[0]).toMatchObject({
+      aiSummary: undefined,
+      aiSummaryAt: undefined,
+      aiSummaryBatch: undefined,
+    });
+  });
+
+  it("空批次一律不动：手写摘要 batch 为空，照单全收会抹掉整本书的手写笔记", () => {
+    expect(clearChapterSummariesByBatch(chapters, "")).toBe(chapters);
+    expect(clearChapterSummariesByBatch(chapters, "   ")).toBe(chapters);
+  });
+
+  it("没有命中时返回原引用，避免无意义重渲染", () => {
+    expect(clearChapterSummariesByBatch(chapters, "b404")).toBe(chapters);
   });
 });
 

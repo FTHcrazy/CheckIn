@@ -18,6 +18,12 @@ export const STORAGE_KEYS = {
   settings: "novel_editor_settings",
   /** 上次续写位置：作品 / 章节 / 光标 / 滚动（R6） */
   position: "novel_editor_position",
+  /**
+   * 每章独立的位置记忆（D-04）：`Record<chapterId, {cursor, scrollTop, savedAt}>`。
+   * 与 position 并存而不是替代它 —— `position` 还承担「上次写到哪一章、启动时
+   * 打开哪一章」，这里只解决「回到某一章时落在哪一行」。
+   */
+  chapterPositions: "novel_editor_positions",
   /** 自定义要素类型（R23）：CustomEntityTypeDef[] 整读整写 */
   entityTypes: "novel_entity_types",
   /** 起名工具收藏夹（R18 ④）：NameFavorite[] 整读整写，按作品持久化 */

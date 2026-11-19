@@ -37,6 +37,8 @@ interface EntityPanelProps {
   onToggleHighlight: () => void;
   onExportCard: () => void;
   onSaveEntity: (entityId: string, patch: EntitySavePatch) => void;
+  /** 删除资料卡（移入回收站，可恢复） */
+  onDeleteEntity: (entityId: string) => void;
   onSelectChapter: (chapterId: string) => void;
   onAddRelation: (
     entityId: string,
@@ -88,6 +90,7 @@ export default function EntityPanel({
   onToggleHighlight,
   onExportCard,
   onSaveEntity,
+  onDeleteEntity,
   onSelectChapter,
   onAddRelation,
   onRemoveRelation,
@@ -205,6 +208,7 @@ export default function EntityPanel({
         onToggleHighlight={onToggleHighlight}
         onExportCard={onExportCard}
         onSaveEntity={onSaveEntity}
+        onDeleteEntity={onDeleteEntity}
         onSelectChapter={onSelectChapter}
         onAddRelation={onAddRelation}
         onRemoveRelation={onRemoveRelation}

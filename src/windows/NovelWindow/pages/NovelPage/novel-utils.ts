@@ -205,9 +205,52 @@ export function calcGoalProgress(todayTotal: number, goal: number): number {
   return Math.min(100, Math.round((todayTotal / goal) * 100));
 }
 
+/**
+ * 子串出现次数（P-11 改名同步的统计口）。
+ *
+ * 用 indexOf 循环而不是 `split(needle).length - 1`：后者会为每章分配一个
+ * 全章大小的数组，长篇改名一次就是几百 MB 的临时分配。
+ */
+export function countTextOccurrences(text: string, needle: string): number {
+  if (!needle) return 0;
+  let count = 0;
+  let at = text.indexOf(needle);
+  while (at !== -1) {
+    count += 1;
+    at = text.indexOf(needle, at + needle.length);
+  }
+  return count;
+}
+
+/**
+ * 全量替换子串，返回新文本与替换处数（P-11）。
+ *
+ * 不用正则：名字里带 `.` / `(` / `*` 时会当成元字符，替换结果错得毫无提示。
+ * `from` 为空串直接原样返回 —— 空串替换会在每个字符间插一遍 `to`。
+ */
+export function replaceTextOccurrences(
+  text: string,
+  from: string,
+  to: string,
+): { text: string; count: number } {
+  if (!from) return { text, count: 0 };
+  const pieces: string[] = [];
+  let count = 0;
+  let cursor = 0;
+  let at = text.indexOf(from);
+  while (at !== -1) {
+    pieces.push(text.slice(cursor, at), to);
+    count += 1;
+    cursor = at + from.length;
+    at = text.indexOf(from, cursor);
+  }
+  if (count === 0) return { text, count: 0 };
+  pieces.push(text.slice(cursor));
+  return { text: pieces.join(""), count };
+}
+
 /** 按关键词切分文本，供检索 / 快照 diff 高亮渲染 */
-export function splitByKeyword(text: string, keyword: string): TextSegment[] {
-  if (!keyword) return [{ text, hit: false }];
+export function splitByKeyword(text: string, keyword: string): TextSegment[] {  if (!keyword) return [{ text, hit: false }];
 
   const lowerText = text.toLowerCase();
   const lowerKeyword = keyword.toLowerCase();
@@ -583,6 +626,34 @@ export function patchChapterSummary(
   );
 }
 
+/**
+ * 按批次清空 AI 摘要（M6「按批次一键撤销」）。
+ *
+ * 只动 `aiSummaryBatch` 完全等于该批次的行：手写摘要的 batch 为空，
+ * 空批次若照单全收就会把整本书的手写摘要一起抹掉（撤销一次生成，
+ * 赔上三万字笔记）。批次不符时返回原引用，避免无意义重渲染。
+ */
+export function clearChapterSummariesByBatch(
+  chapters: NovelChapter[],
+  batch: string,
+): NovelChapter[] {
+  const key = batch.trim();
+  if (!key) return chapters;
+  let touched = false;
+  const next = chapters.map((chapter) => {
+    if ((chapter.aiSummaryBatch ?? "") !== key) return chapter;
+    touched = true;
+    return {
+      ...chapter,
+      aiSummary: undefined,
+      aiSummaryAt: undefined,
+      aiSummaryModel: undefined,
+      aiSummaryBatch: undefined,
+    };
+  });
+  return touched ? next : chapters;
+}
+
 /** 伏笔条目局部更新；标题去空白后为空、或条目不存在时返回原引用 */
 export function patchOutlineEntry(
   entries: OutlineEntry[],
@@ -925,13 +996,111 @@ export interface RestorePosition {
   scrollTop: number;
 }
 
-/** 落库形态：四元组 + 写入时间戳 */
-export type LastPosition = RestorePosition & { savedAt: number };
-
 const nonNegativeInt = (value: unknown): number =>
   typeof value === "number" && Number.isFinite(value)
     ? Math.max(0, Math.floor(value))
     : 0;
+
+/** 落库形态：四元组 + 写入时间戳 */
+export type LastPosition = RestorePosition & { savedAt: number };
+
+/**
+ * 每章独立的续写位置（D-04）。
+ *
+ * R6 的位置记忆是**整本书一个**续写点：跳章再回来只能落在章顶，长篇里每章
+ * 都在切，这是最高频的摩擦。这里是同一条恢复链的存储粒度升级：
+ * `chapterId → {cursor, scrollTop, savedAt}`，切章即存、回章即恢复。
+ */
+export interface ChapterPosition {
+  cursor: number;
+  scrollTop: number;
+  /** 最后一次记录时间：裁剪超量条目时按它淘汰最旧的那批 */
+  savedAt: number;
+}
+
+/** `chapterId → 位置`（整读整写，落 userDb config） */
+export type ChapterPositionMap = Record<string, ChapterPosition>;
+
+/**
+ * 最多记住多少章。
+ *
+ * 位置只是「下次点进来落在哪」的提示，不是数据 —— 三千章的长篇没必要为
+ * 每一章留一条。超出后按 `savedAt` 淘汰最久没碰过的那批（正在读的书永远在
+ * 最近使用的一侧，不会被裁掉）。
+ */
+export const CHAPTER_POSITION_LIMIT = 300;
+
+/**
+ * 校验持久化的每章位置表：非对象 / 数组 / 空键一律丢弃。
+ *
+ * 与 `sanitizeRestorePosition` 同一套宽容策略：坏一条不影响其它条 ——
+ * 整表校验失败会让「记住的位置」一次性清零，用户的观感是「这功能时灵时不灵」。
+ */
+export function parseChapterPositions(raw: unknown): ChapterPositionMap {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const map: ChapterPositionMap = {};
+  for (const [chapterId, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!chapterId || value === null || typeof value !== "object" || Array.isArray(value)) {
+      continue;
+    }
+    const source = value as Record<string, unknown>;
+    map[chapterId] = {
+      cursor: nonNegativeInt(source.cursor),
+      scrollTop: nonNegativeInt(source.scrollTop),
+      savedAt: nonNegativeInt(source.savedAt),
+    };
+  }
+  return map;
+}
+
+/**
+ * 写入一条位置并裁剪到上限（纯函数：返回新对象，不改入参）。
+ *
+ * 按 `savedAt` 倒序保留前 `limit` 条 —— 同一章反复写只会更新那条，
+ * 不会把表撑大。
+ */
+export function putChapterPosition(
+  map: ChapterPositionMap,
+  chapterId: string,
+  cursor: number,
+  scrollTop: number,
+  savedAt: number,
+  limit: number = CHAPTER_POSITION_LIMIT,
+): ChapterPositionMap {
+  if (!chapterId) return map;
+  const next: ChapterPositionMap = {
+    ...map,
+    [chapterId]: {
+      cursor: nonNegativeInt(cursor),
+      scrollTop: nonNegativeInt(scrollTop),
+      savedAt: nonNegativeInt(savedAt),
+    },
+  };
+  const keys = Object.keys(next);
+  if (keys.length <= limit) return next;
+  const kept = keys
+    .sort((a, b) => next[b].savedAt - next[a].savedAt)
+    .slice(0, Math.max(0, limit));
+  const trimmed: ChapterPositionMap = {};
+  for (const key of kept) trimmed[key] = next[key];
+  return trimmed;
+}
+
+/** 取某章的记忆并组装成恢复点（没有记录 / 归属不符 → null，由调用方回落到章顶） */
+export function chapterRestorePosition(
+  map: ChapterPositionMap,
+  workId: string,
+  chapterId: string,
+): RestorePosition | null {
+  const saved = map[chapterId];
+  if (!saved || !workId || !chapterId) return null;
+  return {
+    workId,
+    chapterId,
+    cursor: saved.cursor,
+    scrollTop: saved.scrollTop,
+  };
+}
 
 /**
  * 校验持久化的续写位置（R6）：作品 / 章节必须真实存在且归属一致，

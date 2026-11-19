@@ -7,14 +7,15 @@
 import { formatThousands } from "@/shared/utils/format";
 import type { NovelTrashItemDTO, NovelTrashKind } from "@/shared/types/electron";
 
-/** 类型筛选：`all` + 三种真实类型（与 `NovelTrashKind` 一一对应） */
+/** 类型筛选：`all` + 四种真实类型（与 `NovelTrashKind` 一一对应） */
 export type TrashKindFilter = "all" | NovelTrashKind;
 
-/** 类型标签：同一个列表里混着作品 / 卷 / 章节，必须一眼能分辨 */
+/** 类型标签：同一个列表里混着作品 / 卷 / 章节 / 要素，必须一眼能分辨 */
 export const TRASH_KIND_LABEL: Record<NovelTrashKind, string> = {
   work: "作品",
   volume: "卷",
   chapter: "章节",
+  entity: "要素",
 };
 
 /** 剩余天数的语义档：正常 / 3 天内（警示）/ 今天到期（危险） */
@@ -53,6 +54,11 @@ export function trashMetaText(item: NovelTrashItemDTO): string {
   if (item.kind === "volume") {
     return `《${item.workName}》· ${item.chapters} 章 · ${words} · ${at}`;
   }
+  // 要素没有卷 / 字数两栏（它是一张卡，不是正文）：只报「属于哪本书」+ 删除时间。
+  // 照抄章节那一路会显示「0 字」，看起来像内容被清空了。
+  if (item.kind === "entity") {
+    return `《${item.workName}》· ${at}`;
+  }
   // 书名号后直接接第一个分隔符（`《书名》· 第二卷`），比「《书名》 · 第二卷」紧；
   // 缺卷名时不留一个孤零零的空槽
   if (item.volumeName) {
@@ -70,6 +76,7 @@ export function countTrashKinds(
     work: 0,
     volume: 0,
     chapter: 0,
+    entity: 0,
   };
   for (const item of items) counts[item.kind] += 1;
   return counts;

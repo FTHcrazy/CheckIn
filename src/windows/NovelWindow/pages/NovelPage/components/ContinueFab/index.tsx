@@ -1,6 +1,11 @@
 import { Button, Tooltip } from "antd";
 import SvgIcon from "@/shared/components/SvgIcon";
 import aiSvg from "@/assets/novel/ai.svg?raw";
+import {
+  AI_ENTRY_CONSENT_HINT,
+  aiEntryStateClass,
+  deriveAiEntryState,
+} from "@/shared/ai/ai-entry-state";
 import "./index.scss";
 
 interface ContinueFabProps {
@@ -10,6 +15,11 @@ interface ContinueFabProps {
   aiAvailable?: boolean;
   /** 不可用的一句话说明 */
   aiUnavailableText?: string;
+  /**
+   * 是否为「待授权」态（O-06）：AI 配置齐全，但 L3 总开关没开 ——
+   * 点一下会先弹授权。**不能禁用**：禁用了用户会以为入口坏了。
+   */
+  aiNeedsConsent?: boolean;
   /** 已经在续写中：按钮显示进度态且不可重复点 */
   busy?: boolean;
 }
@@ -30,8 +40,14 @@ export default function ContinueFab({
   onContinue,
   aiAvailable = true,
   aiUnavailableText = "",
+  aiNeedsConsent = false,
   busy = false,
 }: ContinueFabProps) {
+  const state = deriveAiEntryState({
+    available: aiAvailable,
+    l3Enabled: !aiNeedsConsent,
+    requiresConsent: true,
+  });
   return (
     <Tooltip
       title={
@@ -39,12 +55,14 @@ export default function ContinueFab({
           ? aiUnavailableText
           : busy
             ? "正在续写…"
-            : "AI 续写（光标处顺着前文接着写）"
+            : aiNeedsConsent
+              ? AI_ENTRY_CONSENT_HINT
+              : "AI 续写（光标处顺着前文接着写）"
       }
       placement="left"
     >
       <Button
-        className="nv-contfab"
+        className={`nv-contfab ${aiEntryStateClass(state)}`.trim()}
         onClick={onContinue}
         disabled={!aiAvailable}
         loading={busy}

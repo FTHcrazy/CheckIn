@@ -64,3 +64,52 @@ describe("SummaryPreview · 大纲回流", () => {
     expect(screen.queryByText("一句话梗概")).toBeNull();
   });
 });
+
+describe("SummaryPreview · 按批次撤销（M6）", () => {
+  it("有批次时给出撤销入口，点击回调一次", () => {
+    const onUndoBatch = vi.fn();
+    render(
+      <SummaryPreview
+        {...baseProps}
+        result="一段摘要。"
+        batch="b1"
+        onUndoBatch={onUndoBatch}
+      />,
+    );
+    fireEvent.click(screen.getByText("撤销本批次"));
+    expect(onUndoBatch).toHaveBeenCalledTimes(1);
+  });
+
+  it("没有批次（手写摘要 / 老数据）不显示撤销入口", () => {
+    render(
+      <SummaryPreview {...baseProps} result="一段摘要。" onUndoBatch={() => {}} />,
+    );
+    expect(screen.queryByText("撤销本批次")).toBeNull();
+  });
+
+  it("加载中不给撤销入口：此刻还没写库，撤的是一场空", () => {
+    render(
+      <SummaryPreview
+        {...baseProps}
+        loading
+        result={null}
+        batch="b1"
+        onUndoBatch={() => {}}
+      />,
+    );
+    expect(screen.queryByText("撤销本批次")).toBeNull();
+  });
+
+  it("生成失败时不显示撤销入口（失败路径没写任何摘要）", () => {
+    render(
+      <SummaryPreview
+        {...baseProps}
+        result={null}
+        error="调用失败"
+        batch="b1"
+        onUndoBatch={() => {}}
+      />,
+    );
+    expect(screen.queryByText("撤销本批次")).toBeNull();
+  });
+});

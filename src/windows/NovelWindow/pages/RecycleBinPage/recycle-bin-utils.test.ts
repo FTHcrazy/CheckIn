@@ -78,6 +78,12 @@ describe("trashMetaText：作品看规模，卷 / 章看归属", () => {
     ).toBe("《山海拾遗》· 第二卷 · 2,100 字 · 删除于 10-22 21:14");
   });
 
+  it("要素：只报书名与删除时间（它没有字数，不能显示「0 字」）", () => {
+    expect(
+      trashMetaText(item({ kind: "entity", id: "e1", workName: "山海拾遗", words: 0 })),
+    ).toBe("《山海拾遗》· 删除于 10-22 21:14");
+  });
+
   it("章节缺卷名（父卷已被彻底删除）时不留一个空的「· 」", () => {
     expect(
       trashMetaText(item({ kind: "chapter", workName: "山海拾遗", volumeName: "", words: 2100 })),
@@ -86,18 +92,25 @@ describe("trashMetaText：作品看规模，卷 / 章看归属", () => {
 });
 
 describe("countTrashKinds", () => {
-  it("all 是总数，三种类型各算各的", () => {
+  it("all 是总数，四种类型各算各的", () => {
     const counts = countTrashKinds([
       item({ kind: "work", id: "w1" }),
       item({ kind: "work", id: "w2" }),
       item({ kind: "volume", id: "v1" }),
       item({ kind: "chapter", id: "c1" }),
+      item({ kind: "entity", id: "e1", workName: "山海拾遗" }),
     ]);
-    expect(counts).toEqual({ all: 4, work: 2, volume: 1, chapter: 1 });
+    expect(counts).toEqual({ all: 5, work: 2, volume: 1, chapter: 1, entity: 1 });
   });
 
   it("空列表全为 0（分段标签要显示「全部 0」而不是空白）", () => {
-    expect(countTrashKinds([])).toEqual({ all: 0, work: 0, volume: 0, chapter: 0 });
+    expect(countTrashKinds([])).toEqual({
+      all: 0,
+      work: 0,
+      volume: 0,
+      chapter: 0,
+      entity: 0,
+    });
   });
 });
 
@@ -203,7 +216,12 @@ describe("选中集合", () => {
 });
 
 describe("类型标签", () => {
-  it("三类都有中文标签（缺一个就会在列表里露出英文 kind）", () => {
-    expect(TRASH_KIND_LABEL).toEqual({ work: "作品", volume: "卷", chapter: "章节" });
+  it("每类都有中文标签（缺一个就会在列表里露出英文 kind）", () => {
+    expect(TRASH_KIND_LABEL).toEqual({
+      work: "作品",
+      volume: "卷",
+      chapter: "章节",
+      entity: "要素",
+    });
   });
 });

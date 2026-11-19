@@ -276,8 +276,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       trackedInvoke('novel-chapter-status', id, status) as Promise<boolean>,
     saveChapterOutline: (id: string, note: string) =>
       trackedInvoke('novel-chapter-outline', id, note) as Promise<boolean>,
-    saveChapterSummary: (id: string, payload: { summary: string; model?: string }) =>
+    saveChapterSummary: (id: string, payload: { summary: string; model?: string; batch?: string }) =>
       trackedInvoke('novel-chapter-summary-save', id, payload) as Promise<boolean>,
+    // AI 摘要按批次撤销（M6）：清该批次的 ai_summary* 四列，返回受影响章数
+    undoSummaryBatch: (batch: string) =>
+      trackedInvoke('novel-ai-summary-batch-undo', batch) as Promise<number>,
     saveChapterOrder: (updates: Array<{ id: string; sort: number; volumeId: string }>) =>
       trackedInvoke('novel-chapter-order', updates) as Promise<boolean>,
     addVolume: (volume: unknown) =>
@@ -292,6 +295,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
       trackedInvoke('novel-volume-purge', id) as Promise<boolean>,
     saveEntity: (entity: unknown) =>
       trackedInvoke('novel-entity-save', entity) as Promise<boolean>,
+    // 删除要素 = 移入回收站（软删除，可恢复）；purge 才是物理级联
+    deleteEntity: (id: string) =>
+      trackedInvoke('novel-entity-delete', id) as Promise<boolean>,
+    purgeEntity: (id: string) =>
+      trackedInvoke('novel-entity-purge', id) as Promise<boolean>,
+    restoreEntity: (id: string) =>
+      trackedInvoke('novel-entity-restore', id) as Promise<boolean>,
     /** 批量建卡（R-AI-08）：主进程单事务写完整批，再广播 novel-entities-changed */
     saveEntitiesBatch: (entities: unknown[]) =>
       trackedInvoke('novel-entity-batch-save', entities) as Promise<boolean>,

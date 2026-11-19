@@ -53,6 +53,7 @@ const buildProps = (over: Partial<Parameters<typeof EntityDetail>[0]> = {}) => (
   onToggleHighlight: vi.fn(),
   onExportCard: vi.fn(),
   onSaveEntity: vi.fn(),
+  onDeleteEntity: vi.fn(),
   onAddRelation: vi.fn(),
   onRemoveRelation: vi.fn(),
   onSetEntityLevel: vi.fn(),

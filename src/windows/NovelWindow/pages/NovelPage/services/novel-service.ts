@@ -1,4 +1,8 @@
-import { buildSearchSnippet, type LastPosition } from "../novel-utils";
+import {
+  buildSearchSnippet,
+  type ChapterPositionMap,
+  type LastPosition,
+} from "../novel-utils";
 import { STORAGE_KEYS } from "../novel-config";
 import type {
   NovelBackupExportResult,
@@ -79,6 +83,26 @@ export async function saveLastPosition(position: LastPosition): Promise<boolean>
   return window.electronAPI!.novel.configSet(STORAGE_KEYS.position, JSON.stringify(position));
 }
 
+/**
+ * 读取每章位置表（D-04）：键不存在返回 null，由上层解析成空表。
+ *
+ * 与 position 分开存：position 是「整本书一个续写点」，这张表是「每章落在哪」，
+ * 两者生命周期不同（重置模板时一起清，但语义不能混）。
+ */
+export async function fetchChapterPositions(): Promise<string | null> {
+  return window.electronAPI!.novel.configGet(STORAGE_KEYS.chapterPositions);
+}
+
+/** 保存每章位置表（切章 / 卸载时落库，数据量小、频率低） */
+export async function saveChapterPositions(
+  positions: ChapterPositionMap,
+): Promise<boolean> {
+  return window.electronAPI!.novel.configSet(
+    STORAGE_KEYS.chapterPositions,
+    JSON.stringify(positions),
+  );
+}
+
 /** 读取右栏宽度 JSON（键不存在返回 null，由上层夹取到合法区间） */
 export async function fetchPanelWidth(): Promise<string | null> {
   return window.electronAPI!.novel.configGet(STORAGE_KEYS.panelWidth);
@@ -132,11 +156,14 @@ export async function listTrash(): Promise<NovelTrashListResult> {
   return window.electronAPI!.novel.listTrash();
 }
 
-/** 从回收站恢复条目（作品只清标记；卷 / 章会处理原位置被占的情况） */
+/**
+ * 从回收站恢复条目（作品 / 卷 / 章只清标记；要素要走 `restoreEntity` 回传本体）
+ */
 export async function restoreTrash(
   kind: NovelTrashKind,
   id: string,
 ): Promise<boolean> {
+  if (kind === "entity") return restoreEntity(id);
   return window.electronAPI!.novel.restoreTrash(kind, id);
 }
 
@@ -322,6 +349,36 @@ export async function purgeVolume(volumeId: string): Promise<boolean> {
 /** 要素保存（novel-entity-save，upsert：新建 / 编辑 / 别名关联共用） */
 export async function saveEntity(entity: NovelEntity): Promise<boolean> {
   return window.electronAPI!.novel.saveEntity(entity);
+}
+
+/**
+ * 删除要素 = 移入回收站（novel-entity-delete，软删除）。
+ *
+ * ⚠️ 与 `purgeEntity` 的分工同卷 / 章：日常删除一律走这里（只打 deleted_at，
+ * 别名 / 关联 / 境界绑定全都留着，30 天内可恢复）；彻底删除只由回收站调用。
+ */
+export async function removeEntity(entityId: string): Promise<boolean> {
+  return window.electronAPI!.novel.deleteEntity(entityId);
+}
+
+/** 彻底删除要素（novel-entity-purge，连带两端关联，不可恢复） */
+export async function purgeEntity(entityId: string): Promise<boolean> {
+  return window.electronAPI!.novel.purgeEntity(entityId);
+}
+
+/**
+ * 从回收站恢复要素（novel-entity-restore）。
+ *
+ * 不复用 `restoreTrash`：恢复要素要把本体与关联回传给主窗口（它内存里已经
+ * 没有这张卡），而 `novel-trash-restore` 只返回布尔。
+ */
+export async function restoreEntity(entityId: string): Promise<boolean> {
+  return window.electronAPI!.novel.restoreEntity(entityId);
+}
+
+/** AI 摘要按批次撤销（M6）：清该批次的 ai_summary* 四列，返回受影响章数 */
+export async function undoSummaryBatch(batch: string): Promise<number> {
+  return window.electronAPI!.novel.undoSummaryBatch(batch);
 }
 
 /** 新增要素关联（novel-link-add） */

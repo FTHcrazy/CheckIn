@@ -365,5 +365,22 @@
       --ant-button-default-active-color: var(--app-primary);
       --ant-button-default-active-border-color: var(--app-primary);
     }
+
+    /* 危险动作（删除资料卡）：文字与描边走 error 语义色，hover 才铺底色。
+       与 `.is-on` 同一层嵌套的理由一样 —— 控件变量必须跟 reset 同一选择器。 */
+    &.nv-ghost--danger {
+      --ant-button-default-color: var(--app-error);
+      --ant-button-default-border-color: color-mix(
+        in srgb,
+        var(--app-error) 34%,
+        var(--app-border)
+      );
+      --ant-button-default-hover-bg: var(--app-error-weak);
+      --ant-button-default-hover-color: var(--app-error);
+      --ant-button-default-hover-border-color: var(--app-error);
+      --ant-button-default-active-bg: var(--app-error-weak);
+      --ant-button-default-active-color: var(--app-error);
+      --ant-button-default-active-border-color: var(--app-error);
+    }
   }
 }

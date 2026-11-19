@@ -29,6 +29,7 @@ const SUMMARY_PREVIEW = readFileSync(
   ),
   "utf8",
 );
+const PRELOAD = readFileSync(path.resolve(process.cwd(), "electron/preload.ts"), "utf8");
 
 /** 剥注释后的源码（断言不变量时避免注释里的字面量误命中/漏命中） */
 function stripComments(source: string): string {
@@ -75,6 +76,22 @@ describe("novel-chapter-summary-save（M6 溯源 + 生命周期）", () => {
     const h = stripComments(NOVEL_HANDLERS);
     // novel-handlers 的 dbRun 来自 ../novel-db（文件头已声明，这里钉通道名）
     expect(h).toContain('UPDATE novel_chapters SET ai_summary');
+  });
+});
+
+describe("novel-ai-summary-batch-undo（M6 按批次撤销）", () => {
+  it("handler 按批次清空四列，且拒绝空批次（否则会抹掉全书手写摘要）", () => {
+    const h = stripComments(NOVEL_HANDLERS);
+    expect(h).toContain("novel-ai-summary-batch-undo");
+    expect(h).toContain("WHERE ai_summary_batch = ?");
+    expect(h).toMatch(/if \(!key\) return 0/);
+  });
+
+  it("preload 暴露撤销通道，渲染层入口接上回调", () => {
+    expect(stripComments(PRELOAD)).toContain("undoSummaryBatch");
+    const ui = stripComments(SUMMARY_PREVIEW);
+    expect(ui).toContain("撤销本批次");
+    expect(ui).toContain("onUndoBatch");
   });
 });
 

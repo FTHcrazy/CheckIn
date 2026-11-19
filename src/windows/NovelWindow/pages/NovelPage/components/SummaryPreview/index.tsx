@@ -21,6 +21,13 @@ interface SummaryPreviewProps {
   noteApplied?: boolean;
   /** 确认用 AI 一句话覆盖已有手写梗概 */
   onApplyNote?: () => void;
+  /**
+   * 本次摘要的来源批次（M6）。空 = 手写摘要 / 老数据，不显示撤销入口：
+   * 没有批次的摘要是作者自己写的字，给它一个「撤销」等于给他一个删稿按钮。
+   */
+  batch?: string;
+  /** 按批次撤销本次 AI 摘要（batch 非空时才有入口） */
+  onUndoBatch?: () => void;
   /** 重新生成 */
   onRegenerate: () => void;
   /** 关闭（结果已落库，关闭只是收起浮层） */
@@ -44,6 +51,8 @@ export default function SummaryPreview({
   noteConflict,
   noteApplied,
   onApplyNote,
+  batch,
+  onUndoBatch,
   onRegenerate,
   onClose,
 }: SummaryPreviewProps) {
@@ -119,6 +128,18 @@ export default function SummaryPreview({
             </Button>
           )}
           <span className="nv-summary__spacer" />
+          {/* 撤销本批次（M6）：放在「重新生成」与「知道了」之间、视觉权重更低，
+              因为它是回退动作，不该比「知道了」更抢眼，但也不能藏进二级菜单——
+              用户对 AI 产出最常见的诉求就是「这次不要了，全部退回去」。 */}
+          {batch && !loading && !error && onUndoBatch ? (
+            <Button
+              className="nv-summary__undo"
+              onClick={onUndoBatch}
+              title="清空本批次 AI 写入的全部摘要，手写摘要不受影响"
+            >
+              撤销本批次
+            </Button>
+          ) : null}
           <Button type="primary" className="nv-summary__confirm" onClick={onClose}>
             <CheckOutlined />
             知道了

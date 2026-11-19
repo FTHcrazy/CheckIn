@@ -18,6 +18,7 @@ import {
   patchSettingCategory as patchSettingCategoryRemote,
   patchSettingLevel as patchSettingLevelRemote,
   removeLink as removeLinkRemote,
+  removeEntity as removeEntityRemote,
   removeNote as removeNoteRemote,
   removeOutlineEntry as removeOutlineEntryRemote,
   removeSettingCategory as removeSettingCategoryRemote,
@@ -66,6 +67,7 @@ import {
   buildChapterGroups,
   buildChapterNumbersFromGroups,
   buildSortOrder,
+  clearChapterSummariesByBatch,
   patchChapterOutlineNote,
   patchChapterSummary,
   patchNote,
@@ -620,6 +622,60 @@ export function useNovelData() {
     };
     api.on("novel-links-changed", handler);
     return () => api.off("novel-links-changed", handler);
+  }, []);
+
+  /**
+   * 要素变更的反向同步（删除进回收站 / 从回收站恢复）。
+   *
+   * 与 links 同一套口径：按 id 幂等合并、不重载 bundle。恢复必须带**完整本体**：
+   * 删除时内存里已经把这张卡摘掉了，只给 id 无从重建（没有「按 id 取要素」的通道）。
+   * 恢复随本体带回它两端的关联，否则卡片回来但关系全丢 —— 库里有、屏上没有。
+   */
+  useEffect(() => {
+    const api = window.electronAPI?.windowAPI;
+    if (!api) return undefined;
+    const handler = (...args: unknown[]): void => {
+      const payload = args[0] as
+        | { workId?: unknown; deleted?: unknown; restored?: unknown; links?: unknown }
+        | undefined;
+      if (!payload || typeof payload !== "object") return;
+      const deltaWorkId = typeof payload.workId === "string" ? payload.workId : "";
+      if (deltaWorkId && activeWorkIdRef.current && deltaWorkId !== activeWorkIdRef.current) {
+        return;
+      }
+      const deleted = Array.isArray(payload.deleted) ? (payload.deleted as string[]) : [];
+      const restored = Array.isArray(payload.restored) ? (payload.restored as NovelEntity[]) : [];
+      const backLinks = Array.isArray(payload.links) ? (payload.links as NovelLink[]) : [];
+      if (deleted.length === 0 && restored.length === 0) return;
+      const gone = new Set(deleted);
+      setBundle((current) => {
+        if (!current) return current;
+        let entities = current.entities;
+        let links = current.links;
+        if (gone.size > 0) {
+          entities = entities.filter((entity) => !gone.has(entity.id));
+          links = links.filter(
+            (link) =>
+              !(link.fromType === "entity" && gone.has(link.fromId)) &&
+              !(link.toType === "entity" && gone.has(link.toId)),
+          );
+        }
+        if (restored.length > 0) {
+          const known = new Set(entities.map((entity) => entity.id));
+          const fresh = restored.filter((entity) => entity.id && !known.has(entity.id));
+          if (fresh.length > 0) entities = [...entities, ...fresh];
+        }
+        if (backLinks.length > 0) {
+          const knownLinks = new Set(links.map((link) => link.id));
+          const freshLinks = backLinks.filter((link) => link.id && !knownLinks.has(link.id));
+          if (freshLinks.length > 0) links = [...freshLinks, ...links];
+        }
+        if (entities === current.entities && links === current.links) return current;
+        return { ...current, entities, links };
+      });
+    };
+    api.on("novel-entities-changed", handler);
+    return () => api.off("novel-entities-changed", handler);
   }, []);
 
   useEffect(() => {
@@ -1364,6 +1420,30 @@ export function useNovelData() {
     },
     [entities],
   );
+
+  /**
+   * 删除要素 = 移入回收站（O-18 / O-13b）。
+   *
+   * 本地要同时摘掉这张卡**与它的关联**：关联是派生视图的唯一来源，留着就会出现
+   * 「别的卡上有一条指向已删除要素的关系」。库里的关联不动（恢复时随本体回来），
+   * 只摘内存镜像。
+   */
+  const removeEntity = useCallback((entityId: string): void => {
+    setBundle((current) => {
+      if (!current) return current;
+      const entities = current.entities.filter((entity) => entity.id !== entityId);
+      const links = current.links.filter(
+        (link) =>
+          !(link.fromType === "entity" && link.fromId === entityId) &&
+          !(link.toType === "entity" && link.toId === entityId),
+      );
+      if (entities.length === current.entities.length && links.length === current.links.length) {
+        return current;
+      }
+      return { ...current, entities, links };
+    });
+    void removeEntityRemote(entityId);
+  }, []);
 
   /**
    * 添加要素关联（R24）：人物关系等任意两要素互相关联。
@@ -2160,6 +2240,23 @@ export function useNovelData() {
   );
 
   /**
+   * 按批次清空 AI 摘要的本地镜像（M6「按批次一键撤销」）。
+   *
+   * **不落库**：撤销本身由 `undoSummaryBatch` 在主进程一次 UPDATE 完成，
+   * 这里只跟上内存，让章节行图标和右栏立即回到「无摘要」。
+   * 分两步而不是靠 `reload()`：重载会把编辑器正文、面板状态一起重置，
+   * 作者为撤销一次 AI 生成付出的代价不该是丢掉手上的光标位置。
+   */
+  const clearSummaryBatch = useCallback((batch: string): void => {
+    setBundle((current) => {
+      if (!current) return current;
+      const next = clearChapterSummariesByBatch(current.chapters, batch);
+      if (next === current.chapters) return current;
+      return { ...current, chapters: next };
+    });
+  }, []);
+
+  /**
    * 新建伏笔条目（R7 大纲板 / 灵感一键转化共用入口）。
    * 新条目插到列表头部，返回创建结果供调用方回填「已转为伏笔」标记。
    */
@@ -2308,6 +2405,7 @@ export function useNovelData() {
     updateChapterContent,
     updateChapterOutlineNote,
     updateChapterSummary,
+    clearSummaryBatch,
     createChapter,
     createVolume,
     renameChapter,
@@ -2320,6 +2418,7 @@ export function useNovelData() {
     toggleChapterStatus,
     markSelectionAsEntity,
     updateEntity,
+    removeEntity,
     addEntitiesBatch,
     addLink,
     removeLink,

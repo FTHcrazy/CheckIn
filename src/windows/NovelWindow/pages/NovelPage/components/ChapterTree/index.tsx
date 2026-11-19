@@ -56,6 +56,8 @@ interface ChapterTreeProps {
    * 默认 true 保持既有行为。见 `ChapterTreeItem` 的同名 prop。
    */
   showSummary?: boolean;
+  /** AI 摘要入口是否处于「待授权」态（O-06）：L3 总开关没开，点了先弹授权 */
+  aiNeedsConsent?: boolean;
 }
 
 /** 扁平行模型：卷头行 + 已展开的章行（Virtuoso 只接受一维列表） */
@@ -97,6 +99,7 @@ export default function ChapterTree({
   onDeleteVolume,
   onOpenSummary,
   showSummary = true,
+  aiNeedsConsent = false,
 }: ChapterTreeProps) {
   const [keyword, setKeyword] = useState("");
   /** 折叠的卷 id 集合（默认全部展开） */
@@ -396,6 +399,7 @@ export default function ChapterTree({
                   onRequestDelete={handleRequestDelete}
                   onOpenSummary={onOpenSummary}
                   showSummary={showSummary}
+                  aiNeedsConsent={aiNeedsConsent}
                 />
               )
             }

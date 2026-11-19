@@ -14,7 +14,7 @@
  * 本文件的 `dbAll / dbGet / dbRun / getDb` 都是 novel.db 的封装别名 ——
  * 改动时不要从 checkin 的 `../db` 导入写通道，那会把数据写回 checkin 库里去。
  */
-import { BrowserWindow, ipcMain, dialog, nativeImage } from "electron";
+import { ipcMain, dialog, nativeImage } from "electron";
 import { promises as fsp } from "node:fs";
 import path from "node:path";
 import mammoth from "mammoth";
@@ -27,8 +27,11 @@ import {
   NOVEL_SESSION_KEY,
 } from "../../novel/novel-db";
 import { buildNovelTemplateBook } from "../../novel/novel-template";
-import { broadcastLinksChanged, workIdOfEntity } from "../../novel/novel-links-events";
-import { windowManager } from "../../core/window/windowManager";
+import {
+  broadcastEntitiesChanged,
+  broadcastLinksChanged,
+  workIdOfEntity,
+} from "../../novel/novel-links-events";
 
 // ── 行类型（snake_case，对应表结构） ──
 
@@ -902,8 +905,9 @@ function seedTemplateBook(): {
     // 留着会让「今日新增字数 / 连续码字天数」在重置后仍算旧账
     dbRun("DELETE FROM novel_usage_log");
     dbRun("DELETE FROM novel_config WHERE key = ?", [SESSION_KEY]);
-    // 位置记忆指向的章节即将不存在，直接清除
+    // 位置记忆指向的章节即将不存在，直接清除（每章位置表同理）
     dbRun("DELETE FROM novel_config WHERE key = 'novel_editor_position'");
+    dbRun("DELETE FROM novel_config WHERE key = 'novel_editor_positions'");
 
     dbRun("INSERT INTO novel_works (id, name, created_at) VALUES (?, ?, ?)", [
       template.workId,
@@ -1261,10 +1265,25 @@ ipcMain.handle("novel-editor-reset-template", () => seedTemplateBook());
         ? "SELECT * FROM novel_chapters WHERE deleted_at IS NULL"
         : "SELECT id, work_id, volume_id, title, word_count, status, sort, updated_at, outline_note, ai_summary, ai_summary_at, ai_summary_model, ai_summary_batch FROM novel_chapters WHERE deleted_at IS NULL",
     ) as NovelChapterRow[]).map((row) => toChapterDto(row, includeContent));
-    const entities = (dbAll("SELECT * FROM novel_entities ORDER BY sort") as NovelEntityRow[]).map(
-      toEntityDto,
+    // 回收站里的要素（deleted_at 非空）不进在架数据包：它们只该出现在回收站，
+    // 否则正文标注、要素库、行囊会一起显示一张「已经删掉」的卡
+    const entities = (
+      dbAll("SELECT * FROM novel_entities WHERE deleted_at IS NULL ORDER BY sort") as NovelEntityRow[]
+    ).map(toEntityDto);
+    // 关联的两端都可能指向已进回收站的要素：这类悬空关联不能进数据包，
+    // 否则别的卡上会凭空多一条「指向空」的关系（恢复要素时它们随本体一起回来）
+    const trashedEntityIds = new Set(
+      (dbAll("SELECT id FROM novel_entities WHERE deleted_at IS NOT NULL") as Array<{
+        id: string;
+      }>).map((row) => row.id),
     );
-    const links = (dbAll("SELECT * FROM novel_links") as NovelLinkRow[]).map(toLinkDto);
+    const links = (dbAll("SELECT * FROM novel_links") as NovelLinkRow[])
+      .map(toLinkDto)
+      .filter(
+        (link) =>
+          !(link.fromType === "entity" && trashedEntityIds.has(link.fromId)) &&
+          !(link.toType === "entity" && trashedEntityIds.has(link.toId)),
+      );
 
     // 设定：等级项一次取回后在 JS 分组（每个分类一条 SQL 会变成 N+1）
     const settingLevelRows = dbAll(
@@ -1533,6 +1552,25 @@ ipcMain.handle("novel-editor-reset-template", () => seedTemplateBook());
     },
   );
 
+  /**
+   * AI 摘要按批次一键撤销（M6）。
+   *
+   * 粒度裁决（Q3）：**按批次删，不做通用 undo**。`ai_summary_batch` 是生成时
+   * 写下的来源批次，撤销就是把这批章节的 `ai_summary*` 四列一并置空 ——
+   * 正文一个字都不碰（摘要是独立列，不是正文的一部分）。
+   *
+   * 空批次直接返回 0：手工编辑摘要时 batch 为 NULL，若把「空串」当成一个批次，
+   * 一次撤销就会清掉全书所有手写摘要。返回受影响章数，由渲染层如实告知。
+   */
+  ipcMain.handle("novel-ai-summary-batch-undo", (_event, batch: string) => {
+    const key = typeof batch === "string" ? batch.trim() : "";
+    if (!key) return 0;
+    return dbRun(
+      "UPDATE novel_chapters SET ai_summary = NULL, ai_summary_at = NULL, ai_summary_model = NULL, ai_summary_batch = NULL WHERE ai_summary_batch = ?",
+      [key],
+    ).changes;
+  });
+
   // 章节批量重排 / 跨卷移动（单事务落库）
   ipcMain.handle("novel-chapter-order", (_event, updates: ChapterOrderUpdate[]) => {
     const db = getDb();
@@ -1689,23 +1727,97 @@ ipcMain.handle("novel-editor-reset-template", () => seedTemplateBook());
     apply();
 
     // 排除发送者：它已经乐观更新过，再收一次会重复插入（与 links 广播同口径）
-    let exclude: string | undefined;
-    if (!event.sender.isDestroyed()) {
-      const win = BrowserWindow.fromWebContents(event.sender);
-      if (win) exclude = windowManager.getNameOf(win);
+    broadcastEntitiesChanged(event.sender, {
+      workId: entities[0]?.workId,
+      created: entities.map((entity) => ({
+        id: entity.id,
+        name: entity.name,
+        type: entity.type,
+      })),
+    });
+    return true;
+  });
+
+  /**
+   * 要素删除 = 移入回收站（O-18 / O-13b，软删除）。
+   *
+   * 只打 `deleted_at` 标记：别名 / 简介 / 自定义字段 / 关联 / 境界绑定全都留在
+   * 原处，恢复就是把这一列清空，不需要任何重建 —— 与卷 / 章同一口径。
+   * 物理销毁走 `novel-entity-purge`（回收站的「彻底删除 / 清空」）。
+   *
+   * 删除后广播 `novel-entities-changed` 的 `deleted` 列表：关系图 / 行囊两个
+   * 独立窗口都可能正开着，它们必须当场把这张卡与它的关联摘掉。
+   */
+  ipcMain.handle("novel-entity-delete", (event, id: string) => {
+    if (typeof id !== "string" || !id) return false;
+    const row = dbGet("SELECT work_id FROM novel_entities WHERE id = ?", [id]) as
+      | { work_id: string }
+      | undefined;
+    const ok =
+      dbRun(
+        "UPDATE novel_entities SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL",
+        [Date.now(), id],
+      ).changes > 0;
+    if (ok) {
+      broadcastEntitiesChanged(event.sender, {
+        workId: row?.work_id ?? "",
+        deleted: [id],
+      });
     }
-    windowManager.broadcast(
-      "novel-entities-changed",
-      {
-        workId: entities[0]?.workId,
-        created: entities.map((entity) => ({
-          id: entity.id,
-          name: entity.name,
-          type: entity.type,
-        })),
-      },
-      exclude,
-    );
+    return ok;
+  });
+
+  /**
+   * 要素彻底删除（回收站专用）：关联先行，再删本体。
+   *
+   * 关联按两端一起删：它既可能是这张卡指向别人（from_id），也可能是别人指向
+   * 它（to_id）。留下任一侧就是一条指向已不存在要素的悬空关联。
+   */
+  ipcMain.handle("novel-entity-purge", (event, id: string) => {
+    if (typeof id !== "string" || !id) return false;
+    const row = dbGet("SELECT work_id FROM novel_entities WHERE id = ?", [id]) as
+      | { work_id: string }
+      | undefined;
+    const db = getDb();
+    const apply = db.transaction(() => {
+      dbRun("DELETE FROM novel_links WHERE from_id = ? OR to_id = ?", [id, id]);
+      dbRun("DELETE FROM novel_entities WHERE id = ?", [id]);
+    });
+    apply();
+    broadcastEntitiesChanged(event.sender, {
+      workId: row?.work_id ?? "",
+      deleted: [id],
+    });
+    return true;
+  });
+
+  /**
+   * 从回收站恢复要素（O-13b）：清标记后把完整要素与它的关联一起回传。
+   *
+   * 为什么要回传本体：主窗口的 bundle 在删除时已把这张卡和它的关联摘掉，
+   * 只广播一个 id 渲染层无从重建（没有「按 id 取要素」的通道）。渲染层按 id
+   * 幂等合并即可，不需要重载整包 —— 重载会把正在编辑的正文基线顶掉。
+   */
+  ipcMain.handle("novel-entity-restore", (event, id: string) => {
+    if (typeof id !== "string" || !id) return false;
+    const ok =
+      dbRun(
+        "UPDATE novel_entities SET deleted_at = NULL WHERE id = ? AND deleted_at IS NOT NULL",
+        [id],
+      ).changes > 0;
+    if (!ok) return false;
+    const row = dbGet("SELECT * FROM novel_entities WHERE id = ?", [id]) as
+      | NovelEntityRow
+      | undefined;
+    if (!row) return false;
+    const links = (
+      dbAll("SELECT * FROM novel_links WHERE from_id = ? OR to_id = ?", [id, id]) as NovelLinkRow[]
+    ).map(toLinkDto);
+    broadcastEntitiesChanged(event.sender, {
+      workId: row.work_id,
+      restored: [toEntityDto(row)],
+      links,
+    });
     return true;
   });
 

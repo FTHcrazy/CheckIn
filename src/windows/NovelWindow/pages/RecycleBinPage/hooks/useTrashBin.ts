@@ -4,6 +4,7 @@ import type { NovelTrashItemDTO } from "@/shared/types/electron";
 import {
   listTrash,
   purgeChapter,
+  purgeEntity,
   purgeVolume,
   removeWork,
   restoreTrash,
@@ -26,6 +27,10 @@ async function purgeByKind(item: NovelTrashItemDTO): Promise<void> {
   }
   if (item.kind === "chapter") {
     await purgeChapter(item.id);
+    return;
+  }
+  if (item.kind === "entity") {
+    await purgeEntity(item.id);
     return;
   }
   await removeWork(item.id);

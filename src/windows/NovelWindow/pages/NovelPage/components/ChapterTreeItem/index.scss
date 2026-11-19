@@ -242,6 +242,13 @@
       color: var(--app-primary);
     }
 
+    /* O-06 待授权态：AI 配置齐全、但 L3 总开关还没开 —— 点了先弹授权。
+       走 warning 而不是把入口灰掉：灰掉会被读成「坏了 / 没配好」，
+       而它其实是可点的。写在 .has-summary 之后，同特异性靠源码顺序生效 */
+    &.is-ai-needs-consent {
+      color: var(--app-warning);
+    }
+
     &:focus-visible {
       width: 18px;
       opacity: 1;

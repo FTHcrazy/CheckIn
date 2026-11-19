@@ -74,6 +74,7 @@ const buildProps = (
   onToggleHighlight: vi.fn(),
   onExportCard: vi.fn(),
   onSaveEntity: vi.fn(),
+  onDeleteEntity: vi.fn(),
   onAddRelation: vi.fn(),
   onRemoveRelation: vi.fn(),
   onSetEntityLevel: vi.fn(),

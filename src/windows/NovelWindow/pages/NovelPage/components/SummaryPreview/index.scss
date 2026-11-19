@@ -107,6 +107,7 @@
 
 .nv-summary__regen.ant-btn,
 .nv-summary__retry.ant-btn,
+.nv-summary__undo.ant-btn,
 .nv-summary__confirm.ant-btn {
   @include widget.ant-button-reset;
   --ant-control-height: 30px;
@@ -116,6 +117,17 @@
   align-items: center;
   gap: 5px;
   padding: 0 10px;
+}
+
+// 撤销是回退动作：常驻默认色（不抢「知道了」的视觉权重），hover 才透出警示语义
+.nv-summary__undo.ant-btn {
+  color: var(--app-text-secondary, #646a73);
+  --ant-button-default-color: var(--app-text-secondary, #646a73);
+  --ant-button-default-border-color: var(--app-border, #e5e6eb);
+  --ant-button-default-hover-color: var(--app-error, #d4380d);
+  --ant-button-default-hover-border-color: var(--app-error, #d4380d);
+  --ant-button-default-active-color: var(--app-error, #d4380d);
+  --ant-button-default-active-border-color: var(--app-error, #d4380d);
 }
 
 // ── 大纲回流：一句话梗概 ─────────────────────────────────────────────

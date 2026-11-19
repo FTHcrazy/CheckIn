@@ -72,3 +72,50 @@ export function broadcastLinksChanged(sender: WebContents | null, delta: LinksDe
   }
   windowManager.broadcast("novel-links-changed", delta, exclude);
 }
+
+/** 恢复回传的要素（camelCase，与渲染层 `NovelEntity` 同形） */
+export interface RestoredEntityRow {
+  id: string;
+  workId: string;
+  type: string;
+  name: string;
+  aliases: string[];
+  summary: string;
+  content: string;
+  fields: Record<string, string>;
+  sort: number;
+}
+
+/**
+ * `novel_entities` 变更广播（AI 批量建卡 / 删除进回收站 / 从回收站恢复共用）。
+ *
+ * 与 links 同一套约定：**只填增量、接收方按 id 幂等合并、一律排除发送者**。
+ * 三个生产者（批量建卡、删除、恢复）走同一条通道，避免「删除广播了、恢复没广播」
+ * 这种只在特定入口复现的半边失效。
+ *
+ * `restored` 必须带完整要素本体：恢复时主窗口的内存里已经没有这张卡，
+ * 只给 id 无从重建（没有「按 id 取要素」的通道）。
+ */
+export function broadcastEntitiesChanged(
+  sender: WebContents | null,
+  delta: EntitiesDelta,
+): void {
+  let exclude: string | undefined;
+  if (sender && !sender.isDestroyed()) {
+    const win = BrowserWindow.fromWebContents(sender);
+    if (win) exclude = windowManager.getNameOf(win);
+  }
+  windowManager.broadcast("novel-entities-changed", delta, exclude);
+}
+
+/** 要素变更载荷（与 `src/shared/types/electron.d.ts` 的 NovelEntitiesDelta 一致） */
+export interface EntitiesDelta {
+  workId?: string;
+  /** 新建的卡（只带 id / 名字 / 类型，接收方据此显示 chip） */
+  created?: Array<{ id: string; name: string; type: string }>;
+  /** 被删掉（进回收站或彻底删除）的要素 id */
+  deleted?: string[];
+  /** 从回收站恢复的要素本体与它的关联 */
+  restored?: RestoredEntityRow[];
+  links?: LinkDeltaRow[];
+}

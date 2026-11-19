@@ -47,4 +47,13 @@
   .nv-editor.is-readmode ~ & {
     display: none;
   }
+
+  /* O-06 待授权态：描边与文字走 warning，仍可点（点了先弹 L3 授权）。
+     与「不可用」的灰按钮必须能一眼分开 —— 那一种是真点不了 */
+  &.is-ai-needs-consent {
+    border-color: color-mix(in srgb, var(--app-warning) 60%, var(--app-border));
+    --ant-button-default-color: var(--app-warning);
+    --ant-button-default-hover-color: var(--app-warning);
+    --ant-button-default-hover-bg: var(--app-warning-weak);
+  }
 }

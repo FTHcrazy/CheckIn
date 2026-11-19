@@ -172,11 +172,13 @@ export default function NovelPage({
     summaryPendingScope,
     aiConsent,
     aiAvailability,
+    aiNeedsConsent,
     runChapterSummary,
     handleSummaryConsentConfirm,
     handleSummaryConsentCancel,
     handleSummaryClose,
     handleApplySummaryNote,
+    handleUndoSummaryBatch,
     // AI 实体抽取（R-AI-08）
     extract,
     extractPending,
@@ -190,11 +192,13 @@ export default function NovelPage({
     handleExtractClose,
     handleNewVolume,
     handleSaveEntity,
+    handleDeleteEntity,
     handleRenameVolume,
     handleDeleteVolume,
     handleAddRelation,
     handleRemoveRelation,
     handleCursorChange,
+    chapterSeed,
     handleScrollChange,
     handleCreateWork,
     handleRenameWork,
@@ -738,6 +742,7 @@ export default function NovelPage({
             onDeleteVolume={handleDeleteVolume}
             onOpenSummary={runChapterSummary}
             showSummary={aiVisible}
+            aiNeedsConsent={aiNeedsConsent}
           />
 
           <div className="nv-page__stage">
@@ -765,7 +770,7 @@ export default function NovelPage({
               onCreateWork={() => workMenuRef.current?.openCreate()}
               onImportBook={onImportBook}
               onRenameChapter={data.renameChapter}
-              restore={data.lastPosition}
+              restore={chapterSeed ?? data.lastPosition}
               onRestoreDone={data.consumeLastPosition}
               onCursorChange={handleCursorChange}
               onScrollChange={handleScrollChange}
@@ -805,6 +810,7 @@ export default function NovelPage({
                   onContinue={requestContinuation}
                   aiAvailable={aiAvailability.available}
                   aiUnavailableText={aiAvailability.reasonText}
+                  aiNeedsConsent={aiNeedsConsent}
                   busy={continuation?.streaming ?? false}
                 />
               )}
@@ -866,6 +872,8 @@ export default function NovelPage({
                 noteConflict={summary.noteConflict}
                 noteApplied={summary.noteApplied}
                 onApplyNote={handleApplySummaryNote}
+                batch={summary.batch}
+                onUndoBatch={handleUndoSummaryBatch}
                 onRegenerate={() => runChapterSummary(summary.chapterId, true)}
                 onClose={handleSummaryClose}
               />
@@ -967,6 +975,7 @@ export default function NovelPage({
             onToggleHighlight={handleToggleHighlight}
             onExportCard={triggerExportCard}
             onSaveEntity={handleSaveEntity}
+            onDeleteEntity={handleDeleteEntity}
             onAddRelation={handleAddRelation}
             onRemoveRelation={handleRemoveRelation}
             onSetEntityLevel={(entityId, levelId, sub) => {

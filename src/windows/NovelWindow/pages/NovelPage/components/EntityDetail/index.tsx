@@ -4,6 +4,7 @@ import {
   ArrowLeftOutlined,
   CrownFilled,
   CrownOutlined,
+  DeleteOutlined,
   EditOutlined,
   PlusOutlined,
   SettingOutlined,
@@ -43,6 +44,8 @@ interface EntityDetailProps {
   onToggleHighlight: () => void;
   onExportCard: () => void;
   onSaveEntity: (entityId: string, patch: EntitySavePatch) => void;
+  /** 删除这张卡（移入回收站，30 天内可恢复） */
+  onDeleteEntity: (entityId: string) => void;
   onAddRelation: (
     entityId: string,
     entityType: EntityType,
@@ -115,6 +118,7 @@ export default function EntityDetail({
   onToggleHighlight,
   onExportCard,
   onSaveEntity,
+  onDeleteEntity,
   onAddRelation,
   onRemoveRelation,
   onSetEntityLevel,
@@ -858,6 +862,16 @@ export default function EntityDetail({
           </Button>
           <Button className="nv-ghost" onClick={onExportCard}>
             导出为设定卡
+          </Button>
+          {/* 删除放在最后、与其它动作隔开：它不可逆（进回收站），不能紧挨着
+              「导出」这种纯读操作被误点 */}
+          <Button
+            className="nv-ghost nv-ghost--danger"
+            title="移入回收站，30 天内可恢复"
+            onClick={() => onDeleteEntity(entity.id)}
+          >
+            <DeleteOutlined />
+            删除资料卡
           </Button>
         </div>
       )}

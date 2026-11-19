@@ -80,6 +80,8 @@ interface SupportPanelProps {
   onToggleHighlight: () => void;
   onExportCard: () => void;
   onSaveEntity: (entityId: string, patch: EntitySavePatch) => void;
+  /** 删除资料卡（移入回收站，可恢复） */
+  onDeleteEntity: (entityId: string) => void;
   onAddRelation: (
     entityId: string,
     entityType: EntityType,
@@ -198,6 +200,7 @@ export default function SupportPanel({
   onToggleHighlight,
   onExportCard,
   onSaveEntity,
+  onDeleteEntity,
   onAddRelation,
   onRemoveRelation,
   onSetEntityLevel,
@@ -678,6 +681,7 @@ export default function SupportPanel({
               onToggleHighlight={onToggleHighlight}
               onExportCard={onExportCard}
               onSaveEntity={onSaveEntity}
+              onDeleteEntity={onDeleteEntity}
               onSelectChapter={onSelectChapter}
               onAddRelation={onAddRelation}
               onRemoveRelation={onRemoveRelation}

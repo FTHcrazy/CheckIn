@@ -16,20 +16,30 @@ import {
   formatClock,
   formatNumberedLabel,
   formatThousands,
+  chapterRestorePosition,
+  countTextOccurrences,
+  countWords,
+  parseChapterPositions,
   parseJsonOrNull,
+  putChapterPosition,
   previewChapterReorder,
   previewChapterToVolume,
   previewVolumeReorder,
+  replaceTextOccurrences,
   sanitizeCustomTypes,
   volumeDisplayName,
 } from "../novel-utils";
+import type { ChapterPositionMap } from "../novel-utils";
 import {
   createNovelId,
   exportTxtFile,
+  fetchChapterPositions,
   fetchCustomEntityTypes,
   logUsageEvent,
+  saveChapterPositions,
   saveCustomEntityTypes,
   saveLastPosition,
+  undoSummaryBatch,
 } from "../services/novel-service";
 import { quickAddPackItem } from "@/shared/components/CharacterPack/services/pack-service";
 import { notifyQuickAdded } from "@/shared/components/CharacterPack/pack-config";
@@ -375,9 +385,51 @@ export function useNovelPage() {
     [data],
   );
 
-  // ── 续写位置记忆（R6）：光标 / 滚动变化防抖落库，启动时由 useNovelData 恢复 ──
+  // ── 续写位置记忆（R6 / D-04）：光标 / 滚动变化防抖落库，启动时由 useNovelData 恢复 ──
   const positionRef = useRef({ cursor: 0, scrollTop: 0 });
   const positionTimerRef = useRef(0);
+  /**
+   * 每章位置表（D-04）：`chapterId → {cursor, scrollTop, savedAt}`。
+   *
+   * 放 ref 不放 state：它只在切章 / 卸载时读写，进渲染会白白多一轮重渲染；
+   * 「切到哪一章读哪一条」由 `chapterSeed` 这个 memo 在渲染期取值（见下）。
+   */
+  const chapterPositionsRef = useRef<ChapterPositionMap>({});
+  /** `positionRef` 当前记录的是哪一章：切章时据此把它写进表，否则会记到新章名下 */
+  const positionChapterRef = useRef<string>("");
+  /** 位置表只装载一次（lastPosition 消费后置空会触发依赖变化，不能跟着重读） */
+  const positionsLoadedRef = useRef(false);
+
+  // 装载位置表，并把 lastPosition 合并进来
+  useEffect(() => {
+    if (positionsLoadedRef.current) return undefined;
+    positionsLoadedRef.current = true;
+    let cancelled = false;
+    void fetchChapterPositions()
+      .then((raw) => {
+        if (cancelled) return;
+        const parsed = parseChapterPositions(parseJsonOrNull(raw));
+        // 关窗时来不及落表：最后那一章的位置只存在于 position 键里，
+        // 不合并的话「刚关掉重开」这一章会回到章顶 —— 恰好是最需要记住的那章
+        const last = data.lastPosition;
+        chapterPositionsRef.current = last
+          ? putChapterPosition(
+              parsed,
+              last.chapterId,
+              last.cursor,
+              last.scrollTop,
+              Date.now(),
+            )
+          : parsed;
+      })
+      .catch(() => {
+        // 读不到就当空表：位置只是「下次落哪」的提示，不是数据，不打断装载
+      });
+    return () => {
+      cancelled = true;
+    };
+    // 只看挂载那一刻的 lastPosition：它随后会被消费置空，跟着重读会丢掉刚合并的条目
+  }, []);
 
   const savePositionNow = useCallback((): void => {
     window.clearTimeout(positionTimerRef.current);
@@ -413,13 +465,71 @@ export function useNovelPage() {
     [schedulePositionSave],
   );
 
-  // 换章 / 换作品后位置归零并立即记录；卸载时清掉未触发的防抖定时器
-  useEffect(() => {
-    positionRef.current = { cursor: 0, scrollTop: 0 };
-    schedulePositionSave();
-  }, [data.activeChapterId, data.activeWorkId, schedulePositionSave]);
+  const { activeChapterId, activeWorkId } = data;
 
-  useEffect(() => () => window.clearTimeout(positionTimerRef.current), []);
+  /**
+   * 切章时的恢复点（D-04）。
+   *
+   * 在**渲染期**取而不是先 setState 再下发：EditorPane 的恢复 effect 以
+   * `restore` 的身份为信号，晚一拍就会先按「新章从第一行开始」滚到顶、
+   * 下一帧再跳到记录位置 —— 用户看到的是一次可见的闪跳。
+   *
+   * 依赖只放章节 id：自动保存会不断产生新的 chapter 对象，跟着它重算会让
+   * `restore` 每次都是新对象，EditorPane 的 effect 随之每渲染一次就重滚一遍。
+   */
+  const chapterSeed = useMemo(
+    () =>
+      activeChapterId && activeWorkId
+        ? chapterRestorePosition(
+            chapterPositionsRef.current,
+            activeWorkId,
+            activeChapterId,
+          )
+        : null,
+    [activeChapterId, activeWorkId],
+  );
+
+  // 换章 / 换作品：先把上一章的最终位置写进表，再把新章的记录装进 positionRef
+  useEffect(() => {
+    const previousId = positionChapterRef.current;
+    if (previousId && previousId !== activeChapterId) {
+      chapterPositionsRef.current = putChapterPosition(
+        chapterPositionsRef.current,
+        previousId,
+        positionRef.current.cursor,
+        positionRef.current.scrollTop,
+        Date.now(),
+      );
+      void saveChapterPositions(chapterPositionsRef.current);
+    }
+    positionChapterRef.current = activeChapterId ?? "";
+    const seed =
+      activeChapterId && activeWorkId
+        ? chapterPositionsRef.current[activeChapterId]
+        : undefined;
+    positionRef.current = seed
+      ? { cursor: seed.cursor, scrollTop: seed.scrollTop }
+      : { cursor: 0, scrollTop: 0 };
+    schedulePositionSave();
+  }, [activeChapterId, activeWorkId, schedulePositionSave]);
+
+  // 卸载：清定时器，并把当前章的位置落表（关窗时 lastPosition 已写过，这里补表）
+  useEffect(
+    () => () => {
+      window.clearTimeout(positionTimerRef.current);
+      const chapterId = positionChapterRef.current;
+      if (!chapterId) return;
+      const next = putChapterPosition(
+        chapterPositionsRef.current,
+        chapterId,
+        positionRef.current.cursor,
+        positionRef.current.scrollTop,
+        Date.now(),
+      );
+      void saveChapterPositions(next);
+    },
+    [],
+  );
 
   // ── 作品管理（R29）：组合层只做编排与提示，数据操作在 useNovelData ──
   const workMeta = useMemo(
@@ -1211,6 +1321,11 @@ export function useNovelPage() {
     noteConflict: string;
     /** 一句话已写进大纲梗概（自动填 / 确认覆盖 / 原本就一致） */
     noteApplied: boolean;
+    /**
+     * 本次摘要的来源批次（M6）。非空 = 可「撤销本批次」，撤的是这一批 AI 写下的摘要。
+     * 查看历史摘要时取库里那一行自己的批次；手工编辑过的章节此值为空（无批次可撤）。
+     */
+    batch: string;
   } | null>(null);
 
   /** 待授权确认的摘要请求：授权弹窗点「同意」后真正发起生成 */
@@ -1404,6 +1519,7 @@ export function useNovelPage() {
           oneLiner: reply.oneLiner,
           noteConflict,
           noteApplied,
+          batch: provenance?.batchId ?? "",
         });
         // 采纳上报（M1a）：摘要生成成功即「采纳」（text 输出无确认步骤，生成即落库）
         void logAiEvent({
@@ -1459,6 +1575,8 @@ export function useNovelPage() {
           oneLiner: "",
           noteConflict: "",
           noteApplied: false,
+          // 库里那一行自己的批次：查看历史摘要时同样能撤（手写过的为空 → 不给入口）
+          batch: chapter.aiSummaryBatch ?? "",
         });
         return;
       }
@@ -1490,6 +1608,7 @@ export function useNovelPage() {
           oneLiner: "",
           noteConflict: "",
           noteApplied: false,
+          batch: "",
         });
         void doGenerateSummary(chapterId, chapter.title, aiConsent.scope);
       };
@@ -1551,6 +1670,7 @@ export function useNovelPage() {
       oneLiner: "",
       noteConflict: "",
       noteApplied: false,
+      batch: "",
     });
 
     const ok = await aiConsent.enableL3();
@@ -1588,6 +1708,29 @@ export function useNovelPage() {
       prev ? { ...prev, noteConflict: "", noteApplied: true } : prev,
     );
     view.showToast("已用 AI 一句话替换大纲梗概", "info");
+  }, [summary, data, view]);
+
+  /**
+   * 浮层「撤销本批次」（M6）：把这一批 AI 写下的摘要整体清掉。
+   *
+   * 粒度按批次而不是按单章（Q3 裁决）：AI 摘要可能一次生成多章，逐章点
+   * 撤不干净；而手写摘要根本没有批次（batch 为空），自然不在撤销范围内。
+   * 主进程先落库、再跟内存，两步顺序不能反——反了会出现「界面已清空、
+   * 重启又冒出来」的假撤销。
+   */
+  const handleUndoSummaryBatch = useCallback((): void => {
+    const batch = summary?.batch ?? "";
+    if (!batch) return;
+    void (async () => {
+      const removed = await undoSummaryBatch(batch).catch(() => 0);
+      if (!removed) {
+        view.showToast("撤销失败，摘要未改动", "warning");
+        return;
+      }
+      data.clearSummaryBatch(batch);
+      setSummary(null);
+      view.showToast(`已撤销本批次 ${removed} 章 AI 摘要`, "info");
+    })();
   }, [summary, data, view]);
 
   /** 授权弹窗取消（= 拒绝本次 L3 授权）：拒绝本身是最需要被计数的信号 */
@@ -1923,13 +2066,132 @@ export function useNovelPage() {
     [data, view],
   );
 
+  /**
+   * 执行改名同步。
+   *
+   * 当前章走编辑器命令（`replaceAll` → dispatch → 防抖保存）：编辑器是非受控的
+   * CodeMirror 实例，直接改 prop 屏上不会变，还能 Ctrl+Z 撤销整次替换。
+   * 其余章改内存镜像 + `updateChapterContent` 落库 —— 不落库的话下次切进去
+   * 编辑器会把旧文本重新读上来，等于替换白做。
+   */
+  const applyRenameSync = useCallback(
+    (
+      chapters: ReadonlyArray<{ id: string; content: string }>,
+      oldName: string,
+      newName: string,
+    ): void => {
+      const activeId = data.activeChapterId;
+      const pane = editorPaneRef.current;
+      let changed = 0;
+      let chapterCount = 0;
+      for (const chapter of chapters) {
+        if (chapter.id === activeId && pane) {
+          const replaced = pane.replaceAll(oldName, newName);
+          if (replaced > 0) {
+            changed += replaced;
+            chapterCount += 1;
+          }
+          continue;
+        }
+        const { text, count } = replaceTextOccurrences(
+          chapter.content,
+          oldName,
+          newName,
+        );
+        if (count === 0) continue;
+        // 字数口径跟着用户的设置走（含标点 / 只算汉字），与编辑器保存同源
+        const wordCount = countWords(text, editor.settings.wordCountMode);
+        void data.updateChapterContent(chapter.id, text, wordCount);
+        changed += count;
+        chapterCount += 1;
+      }
+      view.showToast(
+        changed > 0
+          ? `已同步 ${formatThousands(changed)} 处（${formatThousands(chapterCount)} 章）`
+          : "正文里已经没有旧名了",
+        "info",
+      );
+    },
+    [data, editor.settings.wordCountMode, view],
+  );
+
+  /**
+   * 改名后把正文里的旧名一起换掉（P-11）。
+   *
+   * 只在**名字真的变了**时问：编辑摘要 / 别名 / 性格都走同一个保存口，
+   * 每次都弹一次确认会把「保存」变成两步操作，最后用户全点「否」。
+   *
+   * 先统计再问：处数与章数必须在确认框里说清。作者关心的是「要改多少处」，
+   * 一句「是否同步正文」他没法判断代价。
+   */
+  const offerRenameSync = useCallback(
+    (entity: { workId: string; name: string }, nextName: string): void => {
+      const oldName = entity.name;
+      const chapters = data.chapters.filter(
+        (chapter) => chapter.workId === entity.workId,
+      );
+      let total = 0;
+      let touched = 0;
+      for (const chapter of chapters) {
+        const count = countTextOccurrences(chapter.content, oldName);
+        if (count === 0) continue;
+        total += count;
+        touched += 1;
+      }
+      // 正文里一处都没有：改名就只是改名，不打扰
+      if (total === 0) return;
+      modal.confirm({
+        title: `正文里还有 ${formatThousands(total)} 处「${oldName}」`,
+        content: `分布在 ${formatThousands(touched)} 章。要把它们一并改成「${nextName}」吗？只改正文文字，标注与检索都会跟着新名走。`,
+        okText: "一并替换",
+        cancelText: "保持原文",
+        onOk: () => {
+          applyRenameSync(chapters, oldName, nextName);
+        },
+      });
+    },
+    [applyRenameSync, data.chapters, modal],
+  );
+
   /** 资料卡编辑保存（R23）：详情页编辑名称 / 类型 / 别名 / 一句话 / 性格 */
   const handleSaveEntity = useCallback(
     (entityId: string, patch: EntitySavePatch): void => {
+      const target = data.entities.find((entity) => entity.id === entityId);
       data.updateEntity(entityId, patch);
       view.showToast("资料卡已保存");
+      const nextName = typeof patch.name === "string" ? patch.name.trim() : "";
+      if (target && nextName && nextName !== target.name) {
+        offerRenameSync(target, nextName);
+      }
     },
-    [data, view],
+    [data, offerRenameSync, view],
+  );
+
+  /**
+   * 删除资料卡（O-18）：移入回收站，30 天内可恢复（O-13b）。
+   *
+   * 文案必须写清「可恢复」——回收站不收要素曾是这张卡的缺口，用户按下去
+   * 只能靠猜。删除后立即收起详情：继续停在已删除的卡上，下一次编辑会把它
+   * 当作在架数据重新写回（`saveEntity` 是 upsert，会把 deleted_at 留着但内容已改）。
+   */
+  const handleDeleteEntity = useCallback(
+    (entityId: string): void => {
+      const target = data.entities.find((entity) => entity.id === entityId);
+      if (!target) return;
+      modal.confirm({
+        title: `删除「${target.name}」？`,
+        content: "卡片会移入回收站，30 天内可恢复；别名、关联与境界绑定都会保留。",
+        okText: "删除",
+        okButtonProps: { danger: true },
+        cancelText: "取消",
+        onOk: () => {
+          data.removeEntity(entityId);
+          view.closeEntityDetail();
+          view.showToast("已移入回收站", "info");
+        },
+      });
+    },
+    [data, modal, view],
   );
 
   // ── 起名工具（R18 / 步骤三）：双出口 + 收藏夹编排 ──────────────────────────
@@ -2581,6 +2843,16 @@ export function useNovelPage() {
     return () => window.removeEventListener("beforeunload", flush);
   }, [savePositionNow]);
 
+  /**
+   * AI 入口「待授权」态（O-06）。
+   *
+   * 判据是「配置齐全、但 L3 总开关没开」：摘要 / 续写会发送整章正文，点下去
+   * 第一件事是弹授权，入口要先把这件事说出来（不能一上来就亮成「正常可用」，
+   * 也不能灰掉 —— 灰掉会被读成坏了）。缺配置时 `available` 已是 false，
+   * 此时走的是「不可用 + 说明」，不进这一态。
+   */
+  const aiNeedsConsent = aiAvailability.available && !aiConsent.l3Enabled;
+
   return {
     data,
     editor,
@@ -2641,6 +2913,8 @@ export function useNovelPage() {
     aiConsent,
     // AI 可用性门控（M8）：六个入口据此禁用并说明 / 走本地兜底
     aiAvailability,
+    // O-06：AI 入口三态里的「待授权」（摘要 / 续写会先弹授权）
+    aiNeedsConsent,
     runChapterSummary,
     handleSummaryConsentConfirm,
     handleSummaryConsentCancel,
@@ -2657,14 +2931,19 @@ export function useNovelPage() {
     handleExtractConfirm,
     handleExtractClose,
     handleApplySummaryNote,
+    // M6：按批次撤销本次 AI 摘要
+    handleUndoSummaryBatch,
     handleNewVolume,
     handleSaveEntity,
+    handleDeleteEntity,
     handleRenameVolume,
     handleDeleteVolume,
     handleAddRelation,
     handleRemoveRelation,
     handleCursorChange,
     handleScrollChange,
+    /** D-04：切章时的恢复点（渲染期取值，无闪跳）；null 时回落到 lastPosition */
+    chapterSeed,
     handleCreateWork,
     handleRenameWork,
     handleSetWorkGenre,

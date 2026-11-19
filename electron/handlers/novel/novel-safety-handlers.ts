@@ -448,6 +448,16 @@ export function registerNovelSafetyHandlers(): void {
                AND pv.deleted_at IS NOT NULL
                AND pv.deleted_at = c.deleted_at
           )
+       UNION ALL
+       -- O-13b（2.71.0）：要素单条进回收站。作品整本在回收站时不再单列它的
+       -- 要素 —— 那批东西已经由作品条目代表，再列一遍就是同一件事出现两次。
+       SELECT 'entity', e.id, e.name, e.deleted_at,
+              w.name, '',
+              0, 0, 0
+         FROM novel_entities e
+         JOIN novel_works w ON w.id = e.work_id
+        WHERE e.deleted_at IS NOT NULL
+          AND w.deleted_at IS NULL
         ORDER BY deleted_at DESC`,
     ) as Array<{
       kind: string;

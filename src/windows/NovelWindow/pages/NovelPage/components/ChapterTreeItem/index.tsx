@@ -4,6 +4,7 @@ import { DeleteOutlined } from "@ant-design/icons";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import SvgIcon from "@/shared/components/SvgIcon";
 import aiSvg from "@/assets/novel/ai.svg?raw";
+import { AI_ENTRY_CONSENT_HINT } from "@/shared/ai/ai-entry-state";
 import { CHAPTER_STATUS_META } from "../../novel-config";
 import { formatThousands, padIndex } from "../../novel-utils";
 import type { NovelChapter } from "../../types";
@@ -43,6 +44,8 @@ interface ChapterTreeItemProps {
    * 默认 true：独立使用本行组件时行为不变。
    */
   showSummary?: boolean;
+  /** 摘要入口是否处于「待授权」态（O-06）：视觉上区别于可用，但绝不禁用 */
+  aiNeedsConsent?: boolean;
 }
 
 /**
@@ -81,6 +84,7 @@ export default function ChapterTreeItem({
   onRequestDelete,
   onOpenSummary,
   showSummary = true,
+  aiNeedsConsent = false,
 }: ChapterTreeItemProps) {
   const status = CHAPTER_STATUS_META[chapter.status];
   const [titleEditing, setTitleEditing] = useState(false);
@@ -200,11 +204,17 @@ export default function ChapterTreeItem({
         {showSummary ? (
           <button
             type="button"
-            className={`nv-chapter__summary${chapter.aiSummary ? " has-summary" : ""}`}
+            className={`nv-chapter__summary${chapter.aiSummary ? " has-summary" : ""}${aiNeedsConsent ? " is-ai-needs-consent" : ""}`}
             aria-label={
               chapter.aiSummary ? `查看本章 AI 摘要` : `生成本章 AI 摘要`
             }
-            title={chapter.aiSummary ? "查看 AI 摘要" : "生成 AI 摘要"}
+            title={
+              chapter.aiSummary
+                ? "查看 AI 摘要"
+                : aiNeedsConsent
+                  ? AI_ENTRY_CONSENT_HINT
+                  : "生成 AI 摘要"
+            }
             onClick={(event) => {
               event.stopPropagation();
               onOpenSummary(chapter.id);

@@ -215,6 +215,23 @@ export interface NovelLinksDelta {
 }
 
 /**
+ * `novel-entities-changed` 广播载荷（批量建卡 / 要素进回收站 / 从回收站恢复共用）。
+ *
+ * 与 `NovelLinksDelta` 同一约定：只填增量，接收方按 id 幂等合并，不重载 bundle。
+ */
+export interface NovelEntitiesDelta {
+  workId?: string
+  /** 新建的卡（只带 id / 名字 / 类型，接收方用于显示 chip） */
+  created?: Array<{ id: string; name: string; type: string }>
+  /** 被删掉（进回收站或彻底删除）的要素 id */
+  deleted?: string[]
+  /** 从回收站恢复的要素本体（恢复时渲染层内存里已没有这张卡，必须带全量） */
+  restored?: NovelEntityDTO[]
+  /** 随恢复一起回来的关联（两端任一方是恢复的那张卡） */
+  links?: NovelLinkDTO[]
+}
+
+/**
  * 导出 PNG 的取景矩形（R27 / S5）：`capturePage(rect)` 的单位是 DIP（= CSS px），
  * 不是设备像素 —— 像素尺寸由主进程从 PNG 头回读（= CSS × DPR）。
  */
@@ -828,8 +845,8 @@ export interface NovelBackupRestoreResult {
   safetyCopy: string
 }
 
-/** 回收站条目类型 */
-export type NovelTrashKind = "work" | "volume" | "chapter"
+/** 回收站条目类型（2026-11 起含要素：O-13b） */
+export type NovelTrashKind = "work" | "volume" | "chapter" | "entity"
 
 /** 回收站条目 */
 export interface NovelTrashItemDTO {
@@ -1137,6 +1154,20 @@ export interface ElectronAPI {
     /** 彻底删除卷（级联清理章节 / 快照 / 大纲条目，不可恢复） */
     purgeVolume: (id: string) => Promise<boolean>
     saveEntity: (entity: NovelEntityDTO) => Promise<boolean>
+    /** 删除要素 = 移入回收站（软删除，别名 / 关联 / 境界绑定都保留，可恢复） */
+    deleteEntity: (id: string) => Promise<boolean>
+    /** 彻底删除要素（连带两端关联，不可恢复） */
+    purgeEntity: (id: string) => Promise<boolean>
+    /**
+     * 从回收站恢复要素（O-13b）：清标记后主进程广播 `novel-entities-changed`，
+     * 载荷带完整要素本体与它的关联，渲染层按 id 幂等合并。
+     */
+    restoreEntity: (id: string) => Promise<boolean>
+    /**
+     * AI 摘要按批次撤销（M6）：把该批次写入的 `ai_summary*` 四列一并清空。
+     * 返回受影响章数；batch 为空串直接返回 0（不做「清空全部摘要」这种通用 undo）。
+     */
+    undoSummaryBatch: (batch: string) => Promise<number>
     /**
      * 批量建卡（R-AI-08）：整批**单事务**写入，写完广播 `novel-entities-changed`。
      * 返回 false = 事务失败，此时一张都没写入（不存在「建了一半」）。

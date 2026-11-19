@@ -23,8 +23,11 @@ vi.mock("../services/novel-service", () => ({
   logUsageEvent: vi.fn(async () => true),
   saveCustomEntityTypes: vi.fn(async () => true),
   saveLastPosition: vi.fn(async () => true),
+  fetchChapterPositions: vi.fn(async () => null),
+  saveChapterPositions: vi.fn(async () => true),
   fetchPanelWidth: vi.fn(async () => null),
   savePanelWidth: vi.fn(async () => true),
+  undoSummaryBatch: vi.fn(async () => 0),
 }));
 
 vi.mock("@/shared/components/CharacterPack/services/pack-service", () => ({

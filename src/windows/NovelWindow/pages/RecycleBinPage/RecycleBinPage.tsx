@@ -65,6 +65,7 @@ export default function RecycleBinPage({ onBack }: RecycleBinPageProps) {
       { label: `作品 ${counts.work}`, value: "work" as TrashKindFilter },
       { label: `卷 ${counts.volume}`, value: "volume" as TrashKindFilter },
       { label: `章节 ${counts.chapter}`, value: "chapter" as TrashKindFilter },
+      { label: `要素 ${counts.entity}`, value: "entity" as TrashKindFilter },
     ],
     [counts],
   );
