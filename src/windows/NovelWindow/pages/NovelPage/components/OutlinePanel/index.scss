@@ -556,6 +556,22 @@
 
   /* 一句话梗概：整行可点进编辑，光标仍用 text 提示「这里能写字」；
      空态用「＋ 一句话梗概」提示可编辑（.is-empty 是持久态 → 写默认变量） */
+  /* R-AI-11「给我几个走向」：只出现在选中章、在梗概下方，与梗概左对齐。
+     刻意比重一档的文字色 + 箭头 —— 它是「想不出下一步时」的入口，
+     藏在灰色小字里等于没有。 */
+  &__rescue.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: auto;
+    --ant-button-padding-inline: 8px;
+    --ant-button-content-font-size: 12px;
+    --ant-border-radius: 6px;
+    --ant-color-text: var(--app-primary);
+    --ant-color-text-hover: var(--app-primary-strong);
+
+    align-self: flex-start;
+    margin-top: 2px;
+  }
+
   &__note.ant-btn {
     @include widget.ant-button-reset;
     --ant-control-height: auto;

@@ -92,6 +92,7 @@ const dataStub = {
   addNote: vi.fn(),
   updateNote: vi.fn(),
   removeNote: vi.fn(),
+  moveNote: vi.fn(),
   addOutlineEntry: vi.fn(() => null),
   updateOutlineEntry: vi.fn(),
   toggleOutlineEntryStatus: vi.fn(),
@@ -101,7 +102,11 @@ const dataStub = {
   migrateEntityType: vi.fn(() => 0),
   setEntityLevel: vi.fn(),
 };
-vi.mock("./useNovelData", () => ({ useNovelData: () => dataStub }));
+vi.mock("./useNovelData", () => ({
+  useNovelData: () => ({ ...dataStub, ...dataOverride }),
+}));
+/** D-13：导出分支需要「有章节」的数据，测试内临时覆盖（用后清空） */
+let dataOverride: Record<string, unknown> = {};
 
 vi.mock("./useNovelEditorState", async () => {
   const real = await vi.importActual<typeof import("../novel-config")>(
@@ -125,6 +130,16 @@ vi.mock("./useNovelEditorState", async () => {
 // ⚠️ 不 mock useNovelShortcuts：要让真实的 window keydown → handleEscape 通路生效
 const { useNovelPage } = await import("./useNovelPage");
 const { useNovelShortcuts } = await import("./useNovelShortcuts");
+const { exportTxtFile } = await import("../services/novel-service");
+
+/** D-13 用例：有章节的数据桩 */
+const exportDataOverride = {
+  works: [{ id: "w-stub", name: "测试书" }],
+  volumes: [{ id: "v1", name: "第一卷", sort: 1 }],
+  chapters: [
+    { id: "c1", volumeId: "v1", title: "第一章", content: "正文内容", sort: 1 },
+  ],
+};
 
 /** 用一次真实 keydown 事件驱动整条链 */
 function pressEscape(): void {
@@ -267,5 +282,64 @@ describe("Esc 逐层关闭链（REQ-050 回归面）", () => {
     });
     // 组合期不处理：排版抽屉保持打开
     expect(result.current.view.settingsOpen).toBe(true);
+  });
+});
+
+/**
+ * D-13：导出编排的进行中态。
+ *
+ * 只验证状态机与防连点：文案映射由 progress-phase 的用例钉住，
+ * 落盘走既有 novel-export-file 通道（通道契约不变，本测试不碰 IPC）。
+ */
+describe("导出进行中态（D-13）", () => {
+  afterEach(() => {
+    dataOverride = {};
+    vi.mocked(exportTxtFile).mockClear();
+  });
+
+  it("初始为空闲态：exporting=false / phase=idle / ratio=-1", () => {
+    const { result } = renderHook(() => useNovelPage());
+    expect(result.current.exportProgress).toEqual({
+      exporting: false,
+      phase: "idle",
+      ratio: -1,
+      label: "",
+    });
+  });
+
+  it("导出整本：阶段推进后复位，走既有 novel-export-file 通道", async () => {
+    dataOverride = exportDataOverride;
+    const { result } = renderHook(() => useNovelPage());
+
+    await act(async () => {
+      await result.current.handleExportBook();
+    });
+    // 用户取消保存（桩返回 null）时仍走完链路，状态不残留在「导出中」
+    expect(vi.mocked(exportTxtFile)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(exportTxtFile).mock.calls[0][0]).toBe("测试书.txt");
+    expect(result.current.exportProgress.exporting).toBe(false);
+    expect(result.current.exportProgress.phase).toBe("idle");
+    expect(result.current.exportProgress.ratio).toBe(-1);
+  });
+
+  it("导出中重复点击不再发起第二次写盘（防连点）", async () => {
+    dataOverride = exportDataOverride;
+    const { result } = renderHook(() => useNovelPage());
+
+    await act(async () => {
+      await Promise.all([
+        result.current.handleExportBook(),
+        result.current.handleExportBook(),
+      ]);
+    });
+    expect(vi.mocked(exportTxtFile)).toHaveBeenCalledTimes(1);
+  });
+
+  it("无章节时不进入导出态，给一条 warning", () => {
+    const { result } = renderHook(() => useNovelPage());
+    act(() => {
+      void result.current.handleExportBook();
+    });
+    expect(result.current.exportProgress.exporting).toBe(false);
   });
 });

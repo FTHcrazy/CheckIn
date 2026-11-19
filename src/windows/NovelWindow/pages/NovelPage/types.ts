@@ -125,7 +125,7 @@ export interface NovelNote {
 
 /** 灵感可编辑字段（内容 / 置顶 / 已转伏笔标记） */
 export type NotePatch = Partial<
-  Pick<NovelNote, "content" | "pinned" | "foreshadowId">
+  Pick<NovelNote, "content" | "pinned" | "foreshadowId" | "workId">
 >;
 
 /**

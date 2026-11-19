@@ -42,6 +42,11 @@ import {
   undoSummaryBatch,
 } from "../services/novel-service";
 import { quickAddPackItem } from "@/shared/components/CharacterPack/services/pack-service";
+import {
+  exportPhaseText,
+  IDLE_EXPORT_PROGRESS,
+  type ExportProgress,
+} from "../../../services/progress-phase";
 import { notifyQuickAdded } from "@/shared/components/CharacterPack/pack-config";
 import { subscribeDualChannel } from "@/shared/novel/dual-channel";
 import {
@@ -54,6 +59,7 @@ import type {
   EntitySavePatch,
   EntityType,
   ForeshadowPatch,
+  NovelNote,
 } from "../types";
 import {
   buildExtractCandidates,
@@ -64,6 +70,10 @@ import type { InspirationActions } from "../components/InspirationPanel";
 import type { NamingActions } from "../components/NameGeneratorPanel";
 import type { EditorPaneHandle } from "../components/EditorPane";
 import type { OutlineActions } from "../components/OutlinePanel";
+import type { AiRescueContext } from "../components/AiRescueDrawer";
+import { composeSegmentsText } from "../utils/rescue";
+import type { RescueEdit, RescueLanding, RescueSegment } from "../utils/rescue";
+import { useRescueBranch } from "./useRescueBranch";
 import {
   aiGenerate,
   aiGenerateStream,
@@ -92,7 +102,9 @@ import {
   TRANSFORM_INTENT_SUB,
   TRANSFORM_KIND_LABELS,
   type BookSnapshot,
+  type BranchOutlineNode,
   type ChapterScopePayload,
+  type RescueStyle,
   type TransformKind,
 } from "@/shared/ai/context";
 import { estimateText } from "@/shared/ai/ai-estimate";
@@ -617,15 +629,84 @@ export function useNovelPage() {
     [settings.numberStyle, settings.chapterSuffix, settings.volumeSuffix, settings.indent],
   );
 
+  /**
+   * D-13：导出进行中态。
+   *
+   * 三个字段一次订阅即可驱动入口按钮的 loading / 阶段文案 / 百分比，
+   * 不需要页面根再包一层 state。与 `setMode` 那类纯显示开关不同，导出是
+   * 真异步（弹保存框 + 写盘），所以额外用 ref 做防连点。
+   */
+  const [exportProgress, setExportProgress] = useState<ExportProgress>(
+    IDLE_EXPORT_PROGRESS,
+  );
+  const exportingRef = useRef(false);
+
+  /** 让出一帧，让 React 先把「loading + 阶段文案」画出来再干重活 */
+  const yieldForPaint = useCallback(
+    () => new Promise<void>((resolve) => window.setTimeout(resolve, 0)),
+    [],
+  );
+
   const finishExport = useCallback(
     (result: { path: string } | null, label: string): void => {
       if (result) {
         view.showToast(`${label}已导出：${result.path}`);
       } else {
+        // 用户取消保存对话框：沿用既有「已取消导出」分支，状态在 finally 复位
         view.showToast("已取消导出", "info");
       }
     },
     [view],
+  );
+
+  /**
+   * 四个导出维度的共用编排壳（D-13）。
+   *
+   * 顺序固定：收集 → 排版 → 写入 → 完成 / 取消，任一阶段异常都在 finally 复位。
+   * 文案只从 `PHASE_TEXT` 取，不在这里内联；防连点走 ref（state 更新是异步的，
+   * 两次快速点击可能在 React 重渲染前都通过 `exporting` 检查）。
+   */
+  const runExport = useCallback(
+    async (label: string, fileName: string, build: () => string): Promise<void> => {
+      if (exportingRef.current) return;
+      exportingRef.current = true;
+      setExportProgress({
+        exporting: true,
+        phase: "collecting",
+        ratio: 0,
+        label: exportPhaseText("collecting"),
+      });
+      try {
+        await yieldForPaint();
+        setExportProgress({
+          exporting: true,
+          phase: "formatting",
+          ratio: 0.3,
+          label: exportPhaseText("formatting"),
+        });
+        await yieldForPaint();
+        const content = build();
+        setExportProgress({
+          exporting: true,
+          phase: "writing",
+          ratio: 0.7,
+          label: exportPhaseText("writing"),
+        });
+        await yieldForPaint();
+        const result = await exportTxtFile(fileName, content);
+        setExportProgress({
+          exporting: true,
+          phase: result ? "done" : "cancelled",
+          ratio: 1,
+          label: exportPhaseText(result ? "done" : "cancelled"),
+        });
+        finishExport(result, label);
+      } finally {
+        exportingRef.current = false;
+        setExportProgress(IDLE_EXPORT_PROGRESS);
+      }
+    },
+    [yieldForPaint, finishExport],
   );
 
   /** 导出整本：书名 + 逐卷逐章，章节标题带「第一章 xxx」样式序号 */
@@ -635,18 +716,18 @@ export function useNovelPage() {
       view.showToast("当前作品还没有章节", "warning");
       return;
     }
-    const content = buildBookPlainText(
-      work?.name ?? "",
-      data.volumes,
-      data.chapters,
-      numberingOptions,
-    );
-    const result = await exportTxtFile(
+    await runExport(
+      "整本",
       `${work?.name ?? "未命名作品"}.txt`,
-      content,
+      () =>
+        buildBookPlainText(
+          work?.name ?? "",
+          data.volumes,
+          data.chapters,
+          numberingOptions,
+        ),
     );
-    finishExport(result, "整本");
-  }, [data.works, data.activeWorkId, data.volumes, data.chapters, numberingOptions, view, finishExport]);
+  }, [data.works, data.activeWorkId, data.volumes, data.chapters, numberingOptions, view, runExport]);
 
   /** 导出当前章所在卷（卷序号 / 章序号与整本一致） */
   const handleExportVolume = useCallback(async (): Promise<void> => {
@@ -660,18 +741,18 @@ export function useNovelPage() {
       view.showToast("章节未归属任何卷，请先导出整本", "warning");
       return;
     }
-    const content = buildVolumePlainText(
-      volume,
-      data.chapters,
-      data.chapterNumbers,
-      numberingOptions,
-    );
-    const result = await exportTxtFile(
+    await runExport(
+      "当前卷",
       `${volumeDisplayName(volume, settings.numberStyle, settings.volumeSuffix).replace(/[\\/:*?"<>|]/g, "_")}.txt`,
-      content,
+      () =>
+        buildVolumePlainText(
+          volume,
+          data.chapters,
+          data.chapterNumbers,
+          numberingOptions,
+        ),
     );
-    finishExport(result, "当前卷");
-  }, [data.activeChapter, data.volumes, data.chapters, data.chapterNumbers, numberingOptions, settings.numberStyle, settings.volumeSuffix, view, finishExport]);
+  }, [data.activeChapter, data.volumes, data.chapters, data.chapterNumbers, numberingOptions, settings.numberStyle, settings.volumeSuffix, view, runExport]);
 
   /** 导出当前章（含「第N章 标题」标题行） */
   const handleExportChapter = useCallback(async (): Promise<void> => {
@@ -681,13 +762,12 @@ export function useNovelPage() {
       return;
     }
     const number = data.chapterNumbers.get(chapter.id) ?? 1;
-    const content = buildChapterPlainText(chapter, number, numberingOptions);
-    const result = await exportTxtFile(
+    await runExport(
+      "当前章",
       `${chapter.title || formatNumberedLabel(settings.numberStyle, settings.chapterSuffix, number)}.txt`,
-      content,
+      () => buildChapterPlainText(chapter, number, numberingOptions),
     );
-    finishExport(result, "当前章");
-  }, [data.activeChapter, data.chapterNumbers, numberingOptions, settings.numberStyle, settings.chapterSuffix, view, finishExport]);
+  }, [data.activeChapter, data.chapterNumbers, numberingOptions, settings.numberStyle, settings.chapterSuffix, view, runExport]);
 
   /** 导出设定卡（R13 顺手项）：基础字段 + 关联 + 当前境界 */
   const handleExportCard = useCallback(async (): Promise<void> => {
@@ -699,14 +779,17 @@ export function useNovelPage() {
     const binding = relations.find(
       (relation) => relation.targetType === "level",
     );
-    const content = buildEntityCardText(
-      entity,
-      relations,
-      binding?.targetName,
+    await runExport(
+      `「${entity.name}」设定卡`,
+      `${entity.name} 设定卡.txt`,
+      () =>
+        buildEntityCardText(
+          entity,
+          relations,
+          binding?.targetName,
+        ),
     );
-    const result = await exportTxtFile(`${entity.name} 设定卡.txt`, content);
-    finishExport(result, `「${entity.name}」设定卡`);
-  }, [view.detailEntityId, data, view, finishExport]);
+  }, [view.detailEntityId, data, view, runExport]);
 
   /** 设定 / 替换 / 取消当前境界（R25）：数据层先摘旧绑定再落新绑定 */
   const handleSetEntityLevel = useCallback(
@@ -1997,6 +2080,374 @@ export function useNovelPage() {
     setExtractPending(null);
   }, [extract, aiConsent.scope]);
 
+  // ── R-AI-11 卡文救援（三入口共用同一浮层）─────────────────────────
+  /** 浮层锚点：谁打开的 / 对哪一章 / 光标还是大纲节点 */
+  const [rescueAnchor, setRescueAnchor] = useState<{
+    chapterId: string;
+    source: "editor" | "outline" | "inspiration";
+    cursorOrNodeId: string;
+    outlineNode?: BranchOutlineNode;
+  } | null>(null);
+  /** 待授权的救援请求：授权弹窗点「同意」后浮层自己发起生成（取消 = 一个请求都不发） */
+  const [rescuePending, setRescuePending] = useState<{ chapterId: string } | null>(null);
+  /** 救援的 L3 范围：打开时按「有选区 → selection」定，弹窗里可改 */
+  const [rescueScope, setRescueScope] = useState<L3Scope>("chapter");
+
+  /**
+   * 组装一次救援的 prompt。
+   *
+   * 正文**只能**从 `buildL3Payload` 取（§3.1）：它同时决定弹窗估算、实发内容、
+   * `ai_event.scope` 三处口径。这里绝不再拼一份「整章正文」——
+   * 那正是 G4 指控的超发。
+   */
+  const buildRescueSpec = useCallback(
+    (params: {
+      style: RescueStyle;
+      count: number;
+      outlineNode?: BranchOutlineNode;
+    }): { system: string; prompt: string } | null => {
+      const anchor = rescueAnchor;
+      if (!anchor) return null;
+      const payload = buildL3Payload(anchor.chapterId, rescueScope);
+      if (!payload || !payload.ok) return null;
+
+      // 上一章摘要（R-AI-09 的第二消费方）：只负责「取」，
+      // 是否真注入由模板按前文长度决定（阈值只能有一个产地）
+      const ordered = data.groups.flatMap((group) => group.chapters);
+      const index = ordered.findIndex((item) => item.id === anchor.chapterId);
+      const previousSummary =
+        index > 0 ? ordered[index - 1]?.aiSummary?.trim() : undefined;
+
+      const outlineNode = params.outlineNode ?? anchor.outlineNode;
+      const spec = buildPromptSpec("branch", collectBookContext(bookSnapshot, "branch"), {
+        // 选区档只发那一段：把整章塞上去等于绕过用户选的隐私范围
+        ...(rescueScope === "selection"
+          ? { chapter: "", selection: payload.chapterText }
+          : {
+              chapter: payload.chapterText,
+              ...(payload.contextText ? { contextText: payload.contextText } : {}),
+            }),
+        ...(outlineNode ? { outlineNode } : {}),
+        ...(previousSummary ? { summary: previousSummary } : {}),
+        style: params.style,
+        count: params.count,
+      });
+      return { system: spec.system, prompt: spec.prompt };
+    },
+    [rescueAnchor, rescueScope, buildL3Payload, data.groups, bookSnapshot],
+  );
+
+  /**
+   * 落点执行者（正文 / 新章 / 灵感）。
+   *
+   * 只在**渲染层**动手：不新增 IPC、不新增表（团队裁定⑦），编辑器也不感知 AI
+   * ——这里走的是 `EditorPaneHandle.replaceRange`（与正常打字同一条 dispatch 链路，
+   * 可 Ctrl+Z）。返回可撤销记录，供「撤销本批次」逆序回滚（§3.2）。
+   */
+  const applyRescueAdopt = useCallback(
+    async (params: {
+      batchId: string;
+      segments: RescueSegment[];
+      landing: RescueLanding;
+    }): Promise<RescueEdit[]> => {
+      const text = composeSegmentsText(params.segments);
+      if (!text) return [];
+      const chapterId = rescueAnchor?.chapterId ?? data.activeChapterId ?? "";
+      if (!chapterId) return [];
+
+      // 沉淀类落点：写灵感速记。「存为大纲候选」按裁定**退化**到这里
+      // （OutlinePanel 没有候选态数据模型，本期不为它加字段）
+      if (params.landing === "inspiration" || params.landing === "outlineCandidate") {
+        const asCandidate = params.landing === "outlineCandidate";
+        const noteId = data.addNote(
+          asCandidate ? `${text}\n\n（卡文救援候选，可在大纲手动建节点）` : text,
+        );
+        if (!noteId) return [];
+        view.showToast(
+          asCandidate ? "已存为灵感，可在大纲手动建节点" : "已存为灵感速记",
+          "success",
+        );
+        return [
+          {
+            batchId: params.batchId,
+            chapterId,
+            kind: "note",
+            from: 0,
+            to: 0,
+            originalText: text,
+            noteId,
+          },
+        ];
+      }
+
+      // 新章：先建章再写内容 —— 绝不往「生成时那一章」的末尾追写
+      if (params.landing === "newChapter") {
+        const newChapterId = data.createChapter();
+        if (!newChapterId) {
+          view.showToast("新建章节失败，暂时无法插入", "warning");
+          return [];
+        }
+        void data.updateChapterContent(
+          newChapterId,
+          text,
+          countWords(text, editor.settings.wordCountMode),
+        );
+        data.selectChapter(newChapterId);
+        view.showToast("已新建一章并写入走向，可从这一章接着写", "success");
+        return [
+          {
+            batchId: params.batchId,
+            chapterId: newChapterId,
+            kind: "text",
+            from: 0,
+            to: text.length,
+            originalText: text,
+          },
+        ];
+      }
+
+      // 正文落点：必须还停在生成时那一章（§6.6 禁止跨章插入 ——
+      // 记录的偏移是上一章的坐标，插错章比不插更糟）
+      if (chapterId !== data.activeChapterId) {
+        view.showToast("已经切到别的章了，这次救援作废，请重新发起", "warning");
+        return [];
+      }
+      const pane = editorPaneRef.current;
+      if (!pane) {
+        view.showToast("编辑器还没就绪，暂时无法插入", "warning");
+        return [];
+      }
+
+      if (params.landing === "replaceSelection") {
+        const selection = editor.selection;
+        if (!selection) {
+          view.showToast("先选中要替换的段落", "warning");
+          return [];
+        }
+        pane.replaceRange(selection.from, selection.to, text);
+        void editorActions.flushSave();
+        view.showToast("已用走向替换选中段落", "success");
+        return [
+          {
+            batchId: params.batchId,
+            chapterId,
+            kind: "text",
+            from: selection.from,
+            to: selection.from + text.length,
+            originalText: text,
+          },
+        ];
+      }
+
+      const { cursor } = pane.getTextBeforeCursor(0);
+      pane.replaceRange(cursor, cursor, text);
+      void editorActions.flushSave();
+      view.showToast("已插入走向，可直接改写", "success");
+      return [
+        {
+          batchId: params.batchId,
+          chapterId,
+          kind: "text",
+          from: cursor,
+          to: cursor + text.length,
+          originalText: text,
+        },
+      ];
+    },
+    [rescueAnchor, data, editor.selection, editor.settings.wordCountMode, view],
+  );
+
+  /**
+   * 撤销执行者：**逆序**回滚（§3.2）。
+   *
+   * 顺序撤会让后面的区间整体错位（先撤前面那段，后面记录的偏移就都对不上了）。
+   * 灵感落点没有偏移，只能按 noteId 删。
+   */
+  const applyRescueUndo = useCallback(
+    async (edits: RescueEdit[]): Promise<void> => {
+      for (const edit of [...edits].reverse()) {
+        if (edit.kind === "note") {
+          if (edit.noteId) data.removeNote(edit.noteId);
+          continue;
+        }
+        const chapter = data.chapters.find((item) => item.id === edit.chapterId);
+        if (!chapter) continue;
+        if (edit.chapterId === data.activeChapterId && editorPaneRef.current) {
+          editorPaneRef.current.replaceRange(edit.from, edit.to, "");
+          continue;
+        }
+        // 不在当前章（新章落点切走过 / 作者切了章）：直接改章节内容，
+        // 走 updateChapterContent 保证落库与内存一致
+        const next = `${chapter.content.slice(0, edit.from)}${chapter.content.slice(edit.to)}`;
+        void data.updateChapterContent(
+          edit.chapterId,
+          next,
+          countWords(next, editor.settings.wordCountMode),
+        );
+      }
+      void editorActions.flushSave();
+    },
+    [data, editor.settings.wordCountMode],
+  );
+
+  /** 找出「采纳后又被作者改过」的区间：整批撤销会连他的修改一起抹掉，得先问 */
+  const findRescueStaleEdits = useCallback(
+    (edits: RescueEdit[]): RescueEdit[] =>
+      edits.filter((edit) => {
+        if (edit.kind === "note") return false;
+        const chapter = data.chapters.find((item) => item.id === edit.chapterId);
+        if (!chapter) return false;
+        return chapter.content.slice(edit.from, edit.to) !== edit.originalText;
+      }),
+    [data.chapters],
+  );
+
+  /**
+   * 二次编辑确认。
+   *
+   * 用 `modal.confirm` 而不是 `Popconfirm`：**这段改过没有**要拿点击那一刻的
+   * 正文才算得准（弹窗开着时作者可能还在打删），Popconfirm 必须在点击前渲染，
+   * 那时算出来的是旧结论。同一份文案与语义，只是换成「点了才算」。
+   */
+  const confirmRescueStale = useCallback(
+    (count: number): Promise<boolean> =>
+      new Promise<boolean>((resolve) => {
+        modal.confirm({
+          title: "这几段已经改过了",
+          content: `撤销会一并回滚你后来改动的 ${count} 处内容，仍要撤销整批吗？`,
+          okText: "仍要撤销",
+          cancelText: "保留",
+          onOk: () => resolve(true),
+          onCancel: () => resolve(false),
+        });
+      }),
+    [modal],
+  );
+
+  const rescueBranch = useRescueBranch({
+    buildSpec: buildRescueSpec,
+    applyAdopt: applyRescueAdopt,
+    applyUndo: applyRescueUndo,
+    findStaleEdits: findRescueStaleEdits,
+    confirmStale: confirmRescueStale,
+    notify: (text, tone) => view.showToast(text, tone ?? "info"),
+  });
+  const resetRescue = rescueBranch.reset;
+
+  /** 打开救援浮层（三入口共用）：范围默认「有选区就只发选区」 */
+  const requestRescue = useCallback(
+    (source: "editor" | "outline" | "inspiration", chapterId?: string): void => {
+      const targetId = chapterId ?? data.activeChapterId;
+      if (!targetId) {
+        view.showToast("先建一章再救援", "warning");
+        return;
+      }
+      const target = data.chapters.find((item) => item.id === targetId);
+      if (!target) return;
+      const sameChapter = targetId === data.activeChapterId;
+      const hasSelection = sameChapter && Boolean(editor.selection?.text.trim());
+      setRescueScope(hasSelection ? "selection" : "chapter");
+
+      const nodeTitle = outline.find(
+        (node) => node.kind === "chapter" && node.chapterId === targetId,
+      )?.title;
+      setRescueAnchor({
+        chapterId: targetId,
+        source,
+        cursorOrNodeId:
+          source === "outline"
+            ? `node:${targetId}`
+            : `cursor:${editorPaneRef.current?.getTextBeforeCursor(0).cursor ?? 0}`,
+        ...(source === "outline" && nodeTitle
+          ? { outlineNode: { title: nodeTitle, gist: target.outlineNote?.trim() ?? "" } }
+          : {}),
+      });
+    },
+    [data.activeChapterId, data.chapters, editor.selection, outline, view],
+  );
+
+  /** 关闭浮层：结果一起清掉（§6.7 一次救援一个批次，不跨次复用） */
+  const closeRescue = useCallback((): void => {
+    setRescueAnchor(null);
+    setRescuePending(null);
+    resetRescue();
+  }, [resetRescue]);
+
+  // 切章 / 切作品：清空结果并折叠（§6.6）。留着上一章的结果等于给作者一个
+  // 「插进去会串章」的按钮，宁可让他重来一次
+  useEffect(() => {
+    if (!rescueAnchor) return;
+    if (rescueAnchor.chapterId !== data.activeChapterId) closeRescue();
+  }, [data.activeChapterId, rescueAnchor, closeRescue]);
+
+  /** 浮层上下文（页面层组装，浮层不直接读 store） */
+  const rescueContext = useMemo<AiRescueContext | null>(() => {
+    if (!rescueAnchor) return null;
+    const sameChapter = rescueAnchor.chapterId === data.activeChapterId;
+    const selection = sameChapter ? (editor.selection?.text ?? "") : "";
+    const estimate = estimateScopePayload(
+      buildL3Payload(rescueAnchor.chapterId, rescueScope),
+    );
+    return {
+      anchor: {
+        workId: data.activeWorkId,
+        chapterId: rescueAnchor.chapterId,
+        cursorOrNodeId: rescueAnchor.cursorOrNodeId,
+      },
+      ...(selection.trim() ? { selection } : {}),
+      ...(rescueAnchor.outlineNode ? { outlineNode: rescueAnchor.outlineNode } : {}),
+      scope: rescueScope,
+      estimatedChars: estimate.chars,
+      availability: !aiAvailability.available
+        ? "unavailable"
+        : aiConsent.l3Enabled
+          ? "ready"
+          : "needsConsent",
+    };
+  }, [
+    rescueAnchor,
+    rescueScope,
+    data.activeChapterId,
+    data.activeWorkId,
+    editor.selection,
+    buildL3Payload,
+    estimateScopePayload,
+    aiAvailability.available,
+    aiConsent.l3Enabled,
+  ]);
+
+  /** 授权弹窗里的「本次将发送约 N 字」：与实发同源，随范围实时重算 */
+  const rescuePendingScope = useMemo(
+    () =>
+      estimateScopePayload(
+        rescuePending ? buildL3Payload(rescuePending.chapterId, rescueScope) : null,
+      ),
+    [rescuePending, rescueScope, buildL3Payload, estimateScopePayload],
+  );
+
+  const handleRescueRequestConsent = useCallback((): void => {
+    if (!rescueAnchor) return;
+    setRescuePending({ chapterId: rescueAnchor.chapterId });
+  }, [rescueAnchor]);
+
+  /** 授权弹窗「同意并继续」：开总开关；浮层随后自己发起生成 */
+  const handleRescueConsentConfirm = useCallback(async (): Promise<void> => {
+    if (!rescuePending) return;
+    setRescuePending(null);
+    const ok = await aiConsent.enableL3();
+    if (!ok) {
+      view.showToast("授权开启失败，请稍后重试", "warning");
+      return;
+    }
+    // 授权到位 → `rescueContext.availability` 变 ready → 浮层 effect 发起生成。
+    // 这里再发一次就会双发（一次扣两次额度）
+  }, [rescuePending, aiConsent, view]);
+
+  const handleRescueConsentCancel = useCallback((): void => {
+    void logAiEvent({ intent: "branch", step: "cancel", scope: rescueScope });
+    setRescuePending(null);
+  }, [rescueScope]);
+
   const handleNewVolume = useCallback((): void => {
     const id = data.createVolume();
     if (id) view.showToast("已新建一卷，可把章节拖到卷头归入");
@@ -2521,19 +2972,57 @@ export function useNovelPage() {
   );
 
   /**
-   * 灵感 → 伏笔一键转化（R7 联动）
+   * 灵感归属迁移（O-12 单向流）：workId 传 '' 退回未归属池。
+   *
+   * 落库走 `moveNote` 专用通道（saveNote 的 upsert 不更新 work_id）；
+   * 归属到本书后，该条立即进入 data.notes（未归属本就在列表里，归属后仍是）。
+   */
+  const handleMoveNote = useCallback(
+    (noteId: string, workId: string): void => {
+      const note = data.notes.find((item) => item.id === noteId);
+      if (!note || note.workId === workId) return;
+      data.moveNote(noteId, workId);
+      if (!workId) {
+        view.showToast("已退回灵感池（未归属）", "info");
+      } else {
+        const work = data.works.find((item) => item.id === workId);
+        view.showToast(`已归属到《${work?.name ?? "作品"}》`, "info");
+      }
+    },
+    [data, view],
+  );
+
+  /**
+   * 灵感 → 伏笔一键转化（R7 联动 / O-12 归属前置）
    *
    * 落到当前章节所在的卷（没有章节则落最后一卷，一卷都没有就顺手建一卷），
    * 埋设章取当前章；转完把右栏切到大纲，让用户立刻看到落点。
+   *
+   * `workId` 由调用方决定：未归属灵感在 InspirationPanel 里先弹归属选择，
+   * 选中后传入；已归属灵感传自身 workId（省略则用 note 上的值）。转伏笔前
+   * 若归属目标与当前不同，先走 moveNote 单向迁移，再用**归属后的 note**建
+   * 伏笔，保证 entry.workId 与灵感本体一致（buildForeshadowDraft 取 note.workId）。
    */
   const handlePromoteNote = useCallback(
-    (noteId: string): void => {
-      const note = data.notes.find((item) => item.id === noteId);
-      if (!note) return;
-      if (note.foreshadowId) {
+    (noteId: string, workId?: string): void => {
+      const source = data.notes.find((item) => item.id === noteId);
+      if (!source) return;
+      if (source.foreshadowId) {
         view.showToast("这条灵感已经转成伏笔了", "info");
         return;
       }
+      // 归属前置：目标作品 id 必须非空（未归属灵感由 UI 先选作品再进来）
+      const targetWorkId = workId ?? source.workId;
+      if (!targetWorkId) {
+        view.showToast("请先选择归属作品，再转为伏笔", "warning");
+        return;
+      }
+      const note: NovelNote =
+        targetWorkId === source.workId
+          ? source
+          : { ...source, workId: targetWorkId };
+      if (targetWorkId !== source.workId) data.moveNote(noteId, targetWorkId);
+
       const activeVolumeId = data.activeChapter?.volumeId ?? null;
       const volumeId =
         activeVolumeId ?? data.groups.at(-1)?.volume.id ?? data.createVolume();
@@ -2558,6 +3047,11 @@ export function useNovelPage() {
     },
     [data, view],
   );
+
+  /** O-12：「查看全部」打开全局灵感抽屉（与书架共享同一份 allNotes） */
+  const [globalIdeaOpen, setGlobalIdeaOpen] = useState(false);
+  const openGlobalIdea = useCallback((): void => setGlobalIdeaOpen(true), []);
+  const closeGlobalIdea = useCallback((): void => setGlobalIdeaOpen(false), []);
 
   // ── 防误触排序（R9 增强）：拖拽 → 确认弹框 → 应用 ──────────────────
   // 关闭开关时直接应用；开启时先记下请求，用预览纯函数算出序号变更清单
@@ -2721,6 +3215,10 @@ export function useNovelPage() {
       onTogglePin: handleTogglePinNote,
       onRemoveNote: handleRemoveNote,
       onPromoteNote: handlePromoteNote,
+      onMoveNote: handleMoveNote,
+      onOpenAll: openGlobalIdea,
+      // R-AI-11 第三入口：翻灵感时顺手要几个走向
+      onRescue: () => requestRescue("inspiration"),
     }),
     [
       data.addNote,
@@ -2728,7 +3226,36 @@ export function useNovelPage() {
       handleTogglePinNote,
       handleRemoveNote,
       handlePromoteNote,
+      handleMoveNote,
+      openGlobalIdea,
+      requestRescue,
     ],
+  );
+
+  /**
+   * O-12 全局灵感抽屉的数据与动作。
+   *
+   * 数据源用 allNotes（全部作品 + 未归属），与书架同一份库行；归属/置顶/
+   * 编辑/删除都走页面层同一组回调，保证编辑器和书架动作集完全一致。
+   * 抽屉里 showCapture=false，onAdd 不会被调用，但仍透传一份以贴合契约。
+   */
+  const workOptions = useMemo(
+    () => data.works.map((work) => ({ id: work.id, name: work.name })),
+    [data.works],
+  );
+  const workNameOfNullable = useCallback(
+    (workId: string): string | null => data.works.find((w) => w.id === workId)?.name ?? null,
+    [data.works],
+  );
+  // 抽屉 showCapture=false，捕捉框不渲染、onAdd 不会被调用；给一个贴合契约的
+  // 最小实现（新增到当前作品），避免脆弱的「取 allNotes[0] 再迁移」写法。
+  const globalIdeaOnAdd = useCallback(
+    (content: string): boolean => {
+      if (!content.trim()) return false;
+      data.addNote(content);
+      return true;
+    },
+    [data],
   );
 
   // Esc 关闭链：设置 → 快照 → 专注模式（逐层退出，章节跳转面板自己处理 Esc；
@@ -2863,6 +3390,16 @@ export function useNovelPage() {
     outline,
     outlineActions,
     inspirationActions,
+    /** O-12：全局灵感抽屉 */
+    globalIdeaOpen,
+    closeGlobalIdea,
+    workOptions,
+    workNameOfNullable,
+    globalIdeaOnAdd,
+    handleMoveNote,
+    handleUpdateNote,
+    handleTogglePinNote,
+    handleRemoveNote,
     workMeta,
     reorderPreview,
     handleReorderChapter,
@@ -2930,6 +3467,25 @@ export function useNovelPage() {
     handleExtractTypeChange,
     handleExtractConfirm,
     handleExtractClose,
+    // R-AI-11 卡文救援（三入口共用同一浮层）
+    rescueOpen: rescueAnchor !== null,
+    rescueContext,
+    rescueSegments: rescueBranch.segments,
+    rescuePhase: rescueBranch.phase,
+    rescueError: rescueBranch.error,
+    rescueUndoCount: rescueBranch.undoCount,
+    rescuePending,
+    rescuePendingScope,
+    rescueScope,
+    setRescueScope,
+    requestRescue,
+    closeRescue,
+    handleRescueRequestConsent,
+    handleRescueConsentConfirm,
+    handleRescueConsentCancel,
+    generateRescue: rescueBranch.generate,
+    adoptRescue: rescueBranch.adopt,
+    undoRescue: rescueBranch.undo,
     handleApplySummaryNote,
     // M6：按批次撤销本次 AI 摘要
     handleUndoSummaryBatch,
@@ -2954,6 +3510,8 @@ export function useNovelPage() {
     handleExportVolume,
     handleExportChapter,
     handleExportCard,
+    /** D-13：导出进行中态（loading / 阶段文案 / 进度），给工具启动器消费 */
+    exportProgress,
     handleSetEntityLevel,
     handleAddCustomType,
     handleRenameCustomType,

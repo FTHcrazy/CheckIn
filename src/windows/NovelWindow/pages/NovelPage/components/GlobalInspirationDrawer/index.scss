@@ -1,0 +1,22 @@
+/* 全局灵感抽屉（O-12）：antd Drawer 承载浮层与焦点陷阱，
+   里面复用窗口级 IdeaLibraryContent 的 .bs-rail 造型；这里只补抽屉内的排布。 */
+
+.nv-idea-drawer {
+  .ant-drawer-body {
+    padding: 12px 16px 16px;
+  }
+}
+
+.nv-idea-drawer__body.bs-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  height: 100%;
+
+  .bs-rail__list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+  }
+}

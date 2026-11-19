@@ -98,6 +98,11 @@ export interface SensitiveState {
   /** 读盘（幂等，页面挂载时调一次） */
   load: () => void;
   setMode: (mode: SensitiveScanMode) => void;
+  /**
+   * 独立切换「正文标注显示」（D-08）。
+   * 与 `setMode` 解耦：只改 config.markVisible，不重扫、不清结果、不动计数。
+   */
+  toggleMark: (visible: boolean) => void;
   /** 批量加词，返回实际新增 / 跳过的条数 */
   addWords: (terms: readonly string[]) => { added: number; skipped: number };
   /** 删除用户词 / 屏蔽内置词 */
@@ -270,6 +275,16 @@ export const useSensitiveStore = create<SensitiveState>()((set, get) => ({
      * 停笔才对齐。防抖仍然走 500ms，只是把触发点从「敲字」挪到「切模式」。
      */
     if (mode === "auto" && latestDraft) get().noteDraft(latestDraft);
+  },
+
+  toggleMark: (visible) => {
+    const { config } = get();
+    if ((config.markVisible ?? true) === visible) return;
+    /*
+     * 只切「显不显示」，绝不 invalidate：结果 / 计数 / 词库都保持原样。
+     * applyConfig 的第三个参数默认 false，正是为这种「显示层」变更准备的。
+     */
+    applyConfig(set, { ...config, markVisible: visible });
   },
 
   addWords: (terms) => {

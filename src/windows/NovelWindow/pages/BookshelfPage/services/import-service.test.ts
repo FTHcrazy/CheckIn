@@ -38,7 +38,8 @@ const configSetMock = vi.fn(async (_key: string, value: string) => {
   },
 };
 
-const { commitImport } = await import("./import-service");
+const { commitImport, PHASE_TEXT, exportPhaseText, IDLE_EXPORT_PROGRESS } =
+  await import("./import-service");
 
 import type { ImportParseResult } from "../import/import.worker";
 
@@ -193,5 +194,42 @@ describe("commitImport · 按书落库序号规则（1.34.0）", () => {
     );
     expect(result.chapterCount).toBe(3);
     expect(importBookMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * D-13：导入 / 导出共用的 phase 契约（从本 service 再导出）。
+ *
+ * 曾经导入叫「整理目录」、导出另写「排版」，用户以为是两个功能。这里钉住
+ * 两边都从同一份 PHASE_TEXT 取文案，且导出各阶段都有非空 label。
+ */
+describe("phase 契约：导入导出同源（D-13）", () => {
+  it("导入三阶段文案保持原值（useBookImport 行为无回归）", () => {
+    expect(PHASE_TEXT.decode).toBe("正在识别编码…");
+    expect(PHASE_TEXT.parse).toBe("正在拆分章节…");
+    expect(PHASE_TEXT.finalize).toBe("正在整理目录…");
+  });
+
+  it("导出阶段文案由 exportPhaseText 唯一映射，均有非空文案", () => {
+    for (const phase of [
+      "collecting",
+      "formatting",
+      "writing",
+      "done",
+      "cancelled",
+    ] as const) {
+      expect(exportPhaseText(phase).length).toBeGreaterThan(0);
+    }
+    expect(exportPhaseText("writing")).toBe("正在写入文件…");
+    expect(exportPhaseText("cancelled")).toBe("已取消导出");
+  });
+
+  it("导出空闲态 ratio=-1，与导入口径一致", () => {
+    expect(IDLE_EXPORT_PROGRESS).toEqual({
+      exporting: false,
+      phase: "idle",
+      ratio: -1,
+      label: "",
+    });
   });
 });

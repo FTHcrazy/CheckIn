@@ -15,6 +15,8 @@ import type { SummaryIntent } from "./builders/summary";
 import type { ExtractIntent } from "./builders/extract";
 import type { RelationIntent } from "./builders/relation";
 import type { LevelGenIntent } from "./builders/level-gen";
+import type { BranchIntent } from "./builders/branch";
+import type { ConsistencyIntent } from "./builders/consistency";
 
 /** 归一后的上下文（assembler 的输入） */
 export interface AiBookContext {
@@ -54,6 +56,10 @@ export interface NovelPromptPayloadMap {
   extract: ExtractIntent;
   relation: RelationIntent;
   levelGen: LevelGenIntent;
+  /** R-AI-11 卡文救援：给几条互不相同的后续走向 */
+  branch: BranchIntent;
+  /** R-AI-10b 一致性 AI 档：只判 10a 标「疑似」的残余 */
+  consistency: ConsistencyIntent;
 }
 
 /** 小说域的意图名（唯一产地；采集器与注册表都从这里取） */

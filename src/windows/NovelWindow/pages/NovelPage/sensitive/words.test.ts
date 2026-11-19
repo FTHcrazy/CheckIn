@@ -59,6 +59,17 @@ describe("sanitizeSensitiveConfig", () => {
       DEFAULT_SENSITIVE_CONFIG.mode,
     );
   });
+
+  it("compat：旧档无 markVisible 按 true 读回，显式 false 保留", () => {
+    // 旧档：没有 markVisible 这个键
+    const old = sanitizeSensitiveConfig({ words: [], muted: [], mode: "manual" });
+    expect(old.markVisible).toBe(true);
+    // 用户显式关过标注：false 必须被持久化后仍能读回
+    const off = sanitizeSensitiveConfig({ mode: "auto", markVisible: false });
+    expect(off.markVisible).toBe(false);
+    // 非法类型也回退默认（显示）
+    expect(sanitizeSensitiveConfig({ markVisible: "no" }).markVisible).toBe(true);
+  });
 });
 
 describe("parseSensitiveConfig", () => {

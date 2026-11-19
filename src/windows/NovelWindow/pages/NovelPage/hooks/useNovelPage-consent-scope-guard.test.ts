@@ -75,13 +75,14 @@ describe("L3 授权范围真正约束发送内容（守卫）", () => {
     expect(DIALOG).not.toContain("hideScope");
     expect(DIALOG).toContain("confirmDisabled");
     // 估算来自 hook 的派生值（随范围重算），不是 pending 一次算死的数字
-    expect(NOVEL_PAGE).toMatch(/estimate=\{[^}]*PendingScope\}/);
-    expect(NOVEL_PAGE).toMatch(/confirmDisabled=\{[\s\S]{0,160}\.chars === 0\s*\}/);
+    expect(NOVEL_PAGE).toMatch(/estimate=\{[\s\S]{0,300}PendingScope\s*\}/);
+    expect(NOVEL_PAGE).toMatch(/confirmDisabled=\{[\s\S]{0,400}\.chars === 0\s*\}/);
   });
 
   it("摘要与实体抽取共用同一个弹窗与同一套估算（2.13.0：两个 L3 入口不能各算一套）", () => {
-    // 弹窗对两个 pending 都开（抽取没入口时它就永远不弹）
-    expect(NOVEL_PAGE).toMatch(/open=\{summaryPending !== null \|\| extractPending !== null\}/);
+    // 弹窗对两个 pending 都开（抽取没入口时它就永远不弹）。
+    // 2.72.0 起多了第三个 L3 入口（卡文救援），同一份弹窗继续复用
+    expect(NOVEL_PAGE).toMatch(/open=\{[\s\S]{0,140}summaryPending !== null[\s\S]{0,140}extractPending !== null[\s\S]{0,80}\}/);
     // 确认 / 取消按「谁在等」分派，不能恒调摘要那一个
     expect(NOVEL_PAGE).toContain("handleExtractConsentConfirm");
     expect(NOVEL_PAGE).toContain("handleExtractConsentCancel");
@@ -96,5 +97,53 @@ describe("L3 授权范围真正约束发送内容（守卫）", () => {
     expect(SUMMARY_PROMPT).toContain("intent.scope");
     expect(SUMMARY_PROMPT).toContain("【选中段落】");
     expect(SUMMARY_PROMPT).toContain("【前情");
+  });
+});
+
+/**
+ * R-AI-11 卡文救援的 L3 链路（2.72.0）
+ *
+ * 救援是本项目第三个 L3 入口，所以它必须和摘要在**同一条**链路里：
+ * 范围决定发送内容、弹窗估算与实发同源、取消授权不发任何请求。
+ * 这里只钉「口径有没有接上」，行为细节在 `useRescueBranch.test.ts` 与
+ * `AiRescueDrawer/index.test.tsx`。
+ */
+describe("卡文救援的 L3 范围同样约束发送内容（守卫）", () => {
+  it("正文只从 buildL3Payload 取，并按档位拼 prompt（不自己捞整章）", () => {
+    expect(USE_NOVEL_PAGE).toMatch(/buildL3Payload\(anchor\.chapterId, rescueScope\)/);
+    // 选区档只发那一段：chapter 必须为空，正文进 selection
+    expect(USE_NOVEL_PAGE).toMatch(/rescueScope === "selection"/);
+    expect(USE_NOVEL_PAGE).toMatch(/chapter: "", selection: payload\.chapterText/);
+    // 最近 3 章档把前情原样带上（只作背景）
+    expect(USE_NOVEL_PAGE).toMatch(/contextText: payload\.contextText/);
+    // 旧写法（直接发整章 / 前向截断）不许回来
+    expect(USE_NOVEL_PAGE).not.toMatch(/buildPromptSpec\("branch"[\s\S]{0,200}chapter\.content/);
+  });
+
+  it("估算与实发同源：弹窗字节数由 estimateScopePayload 算，不另写一份", () => {
+    expect(USE_NOVEL_PAGE).toMatch(/rescuePendingScope = useMemo/);
+    expect(USE_NOVEL_PAGE).toMatch(
+      /estimateScopePayload\(\s*\n?\s*rescuePending \? buildL3Payload\(rescuePending\.chapterId, rescueScope\)/,
+    );
+    expect(NOVEL_PAGE).toContain("rescuePendingScope");
+    expect(NOVEL_PAGE).toContain("setRescueScope");
+  });
+
+  it("授权取消 / 生成时序：确认只开总开关，取消要记一次 cancel", () => {
+    // 确认分支里不许再调一次 generate（浮层会在 availability 变 ready 时自己发）
+    const confirmAt = USE_NOVEL_PAGE.indexOf("handleRescueConsentConfirm");
+    expect(confirmAt).toBeGreaterThan(-1);
+    const block = USE_NOVEL_PAGE.slice(confirmAt, confirmAt + 700);
+    expect(block).toContain("enableL3()");
+    expect(block).not.toContain("generateRescue");
+    expect(USE_NOVEL_PAGE).toMatch(
+      /handleRescueConsentCancel[\s\S]{0,200}intent: "branch",\s*step: "cancel"/,
+    );
+  });
+
+  it("切章清空结果并折叠（§6.6）：不留下跨章可插的按钮", () => {
+    expect(USE_NOVEL_PAGE).toMatch(
+      /if \(rescueAnchor\.chapterId !== data\.activeChapterId\) closeRescue\(\)/,
+    );
   });
 });

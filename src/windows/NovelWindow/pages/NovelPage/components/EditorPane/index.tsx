@@ -12,7 +12,7 @@ import type {
   MouseEvent as ReactMouseEvent,
   Ref,
 } from "react";
-import { Button, Empty, Input } from "antd";
+import { Button, Dropdown, Empty, Input } from "antd";
 import { ReloadOutlined, WarningOutlined } from "@ant-design/icons";
 import {
   defaultKeymap,
@@ -56,6 +56,7 @@ import {
 } from "../../sensitive-editor";
 import type { SensitiveRange } from "../../sensitive";
 import type { EditorSelection } from "../../hooks/useNovelEditorState";
+import { matchSelectionForCard } from "../../hooks/matchSelectionForCard";
 import "./index.scss";
 
 /** 缺省词库：模块级常量，避免每次渲染都换一个新数组（会白跑一次 reconfigure） */
@@ -335,6 +336,17 @@ export default function EditorPane({
   }, [content]);
   /** IME 组合期标记：拼音候选期间的文档变化不上报，避免字数按拼音递增（R2） */
   const composingRef = useRef(false);
+  /** O-17：选区 Enter 开卡要在稳定的 keydown 监听里读到最新词条表 */
+  const termsRef = useRef(terms);
+  useEffect(() => {
+    termsRef.current = terms;
+  }, [terms]);
+  /** O-17：同名/别名多命中时的候选弹层锚点（坐标相对 stage） */
+  const [cardCandidates, setCardCandidates] = useState<{
+    x: number;
+    y: number;
+    entityIds: string[];
+  } | null>(null);
   /**
    * 程序化灌入标记（切章 / 回滚 / 崩溃恢复）。
    *
@@ -489,6 +501,8 @@ export default function EditorPane({
     onSelectionChange,
     onContextMenu,
     onCursorChange,
+    // O-17 选区裸 Enter 开卡：走与标注点击同一条 onTermClick 路径
+    onTermClick,
     // 敏感词脉搏：未接检测时是空操作（保持 ref 形状稳定，避免每处都判空）
     onDraftPulse: onDraftPulse ?? ((): void => {}),
   });
@@ -498,6 +512,7 @@ export default function EditorPane({
       onSelectionChange,
       onContextMenu,
       onCursorChange,
+      onTermClick,
       onDraftPulse: onDraftPulse ?? ((): void => {}),
     };
   }, [
@@ -505,6 +520,7 @@ export default function EditorPane({
     onSelectionChange,
     onContextMenu,
     onCursorChange,
+    onTermClick,
     onDraftPulse,
   ]);
 
@@ -696,7 +712,47 @@ export default function EditorPane({
     };
     view.contentDOM.addEventListener("contextmenu", handleContextMenu);
 
+    /**
+     * O-17：选区裸 Enter 开卡（R1~R5 由纯函数裁决）。
+     *
+     * 只挂在 contentDOM 上天然满足 R5「焦点在正文」；命中唯一要素直接走
+     * 既有 onTermClick（开详情卡的路径完全一致），多命中落一个 antd Dropdown。
+     * 任何不命中都 return，EditorPane 不 preventDefault —— 换行零干扰。
+     */
+    const handleEnterForCard = (event: globalThis.KeyboardEvent): void => {
+      if (event.key !== "Enter") return;
+      const main = view.state.selection.main;
+      if (main.empty) return;
+      const selection = view.state.doc.sliceString(main.from, main.to);
+      const result = matchSelectionForCard({
+        selection,
+        isComposing: composingRef.current || event.isComposing,
+        focusOrigin: "body",
+        shiftKey: event.shiftKey,
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey,
+        altKey: event.altKey,
+        terms: termsRef.current,
+      });
+      if (result.kind === "none") return;
+      event.preventDefault();
+      if (result.kind === "entity") {
+        handlersRef.current.onTermClick(result.entityId);
+        return;
+      }
+      const coords = view.coordsAtPos(main.from);
+      const stage = hostRef.current?.closest(".nv-page__stage");
+      const stageRect = stage?.getBoundingClientRect();
+      setCardCandidates({
+        x: coords && stageRect ? coords.left - stageRect.left : 0,
+        y: coords && stageRect ? coords.bottom - stageRect.top : 0,
+        entityIds: result.entityIds,
+      });
+    };
+    view.contentDOM.addEventListener("keydown", handleEnterForCard);
+
     return () => {
+      view.contentDOM.removeEventListener("keydown", handleEnterForCard);
       view.contentDOM.removeEventListener(
         "compositionstart",
         handleCompositionStart,
@@ -1219,6 +1275,37 @@ export default function EditorPane({
       )}
       {/* T-03：选中文字 → 选区下方提示右键建资料卡（只出现一次） */}
       <SelectionGuide anchor={guideAnchor} onHide={clearGuideAnchor} />
+      {/*
+        O-17：同名 / 别名撞车时，裸 Enter 不猜一个，弹 antd Dropdown 让用户选。
+        锚点是选区处的零尺寸节点（非 self 造浮层），菜单项键盘可达、Enter 确认。
+      */}
+      {cardCandidates ? (
+        <Dropdown
+          open
+          trigger={[]}
+          placement="bottomLeft"
+          menu={{
+            items: cardCandidates.entityIds.map((entityId) => ({
+              key: entityId,
+              label:
+                termsRef.current.find((term) => term.entityId === entityId)?.term ??
+                entityId,
+            })),
+            onClick: ({ key }) => {
+              onTermClick(key);
+              setCardCandidates(null);
+            },
+          }}
+          onOpenChange={(nextOpen) => {
+            if (!nextOpen) setCardCandidates(null);
+          }}
+        >
+          <span
+            className="nv-editor__card-anchor"
+            style={{ left: cardCandidates.x, top: cardCandidates.y }}
+          />
+        </Dropdown>
+      ) : null}
     </div>
   );
 }

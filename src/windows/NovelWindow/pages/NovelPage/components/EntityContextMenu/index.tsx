@@ -209,11 +209,16 @@ export default function EntityContextMenu({
                   className="nv-ctxmenu__dot"
                   style={{ background: meta.color }}
                 />
-                {meta.label}
+                {meta.glyph} · {meta.label}
               </Button>
             );
           })}
         </div>
+
+        {/* O-17：快捷键可发现性——键盘用户也能知道选区 Enter 能开卡 */}
+        <p className="nv-ctxmenu__shortcut">
+          <span className="nv-ctxmenu__kbd">Enter</span> 选中要素名查看卡片
+        </p>
       </div>
     </>
   );

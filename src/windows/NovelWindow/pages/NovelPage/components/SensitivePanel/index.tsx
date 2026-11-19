@@ -261,6 +261,11 @@ export default function SensitivePanel({
         options={VIEW_OPTIONS}
       />
 
+      {/* D-08：面板头定位——避免把自查提示误当成「违禁词判定」 */}
+      <p className="nv-sm__hint nv-sm__positioning">
+        敏感词是自查工具，命中结果仅作提示，请自行核对正文。
+      </p>
+
       {view === "result" ? (
         <>
           <div className="nv-sechead">检测机制</div>

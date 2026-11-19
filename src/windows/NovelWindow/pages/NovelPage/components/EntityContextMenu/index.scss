@@ -56,6 +56,26 @@
     gap: 2px;
   }
 
+  /* O-17：右键菜单底部的键帽提示（非交互行，纯说明） */
+  &__shortcut {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 8px 6px 2px;
+    font-size: 12px;
+    color: var(--app-text-muted);
+  }
+
+  &__kbd {
+    padding: 1px 5px;
+    border: 1px solid var(--app-border-strong);
+    border-radius: 4px;
+    background: var(--app-surface-alt);
+    color: var(--app-text-secondary);
+    font-size: 12px;
+    line-height: 1.4;
+  }
+
   &__item.ant-btn {
     @include widget.ant-button-reset;
     --ant-control-height: auto;

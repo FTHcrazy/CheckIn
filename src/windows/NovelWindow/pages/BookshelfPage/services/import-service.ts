@@ -15,6 +15,20 @@ import { createShelfId } from "./bookshelf-service";
 import { formatNumberedLabel } from "../bookshelf-utils";
 import type { ImportParseResult } from "../import/import.worker";
 
+/**
+ * 进度阶段契约的再导出（D-13）
+ *
+ * 契约本体在窗口级 `services/progress-phase.ts`，两个 page 都向下依赖，
+ * 不互相导入（AGENTS §2.2.3）。这里保留导出口径，让书架侧只认自己的 service。
+ */
+export {
+  exportPhaseText,
+  IDLE_EXPORT_PROGRESS,
+  PHASE_TEXT,
+  type ExportPhase,
+  type ExportProgress,
+} from "../../../services/progress-phase";
+
 /** 导入进度回调：phase 文案 + 0~1 比例 */
 export type ImportProgressHandler = (phase: string, ratio: number) => void;
 

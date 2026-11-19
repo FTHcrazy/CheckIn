@@ -177,3 +177,52 @@
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+/* ── R-AI-10b：AI 判定行 ──────────────────────────────────────────
+   判定挂在整行按钮外面（Button 里不能嵌 Checkbox），所以每行多一层
+   `.nv-cc-item` 竖排容器；这里只负责它的间距与判定行的排版。 */
+.nv-panel .nv-cc__hint--ai {
+  color: var(--app-text-muted);
+  font-style: normal;
+}
+
+.nv-panel .nv-cc-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.nv-panel .nv-cc-ai {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px 2px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--app-text-muted);
+
+  &__verdict {
+    flex: none;
+    padding: 0 6px;
+    border-radius: 6px;
+    background: var(--app-surface-alt);
+    font-size: 11px;
+    line-height: 18px;
+  }
+
+  /* 「错字」= 建议改：警示色；另两态 = 别动：保持中性 */
+  &--typo &__verdict {
+    background: color-mix(in srgb, var(--app-warning) 18%, transparent);
+    color: var(--app-warning);
+  }
+
+  &__reason {
+    flex: 1 1 160px;
+    min-width: 0;
+  }
+
+  &__keep {
+    color: var(--app-text-disabled);
+  }
+}

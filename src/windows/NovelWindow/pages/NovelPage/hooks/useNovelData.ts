@@ -14,6 +14,7 @@ import {
   fetchNovelBundle,
   fetchSettingMirror,
   mergeSettingLevel as mergeSettingLevelRemote,
+  moveNote as moveNoteRemote,
   openEditorSession,
   patchSettingCategory as patchSettingCategoryRemote,
   patchSettingLevel as patchSettingLevelRemote,
@@ -2156,9 +2157,9 @@ export function useNovelData() {
   );
 
   const addNote = useCallback(
-    (content: string): void => {
+    (content: string): string | null => {
       const trimmed = content.trim();
-      if (!trimmed) return;
+      if (!trimmed) return null;
       const note: NovelNote = {
         id: createNovelId("n"),
         workId: activeWorkId,
@@ -2170,6 +2171,9 @@ export function useNovelData() {
         current ? { ...current, notes: [note, ...current.notes] } : current,
       );
       void saveNoteRemote(note);
+      // 返回新 id 供调用方记录（R-AI-11 的「存为灵感」撤销要能精确删掉这一条；
+      // 只回 void 的话调用方只能「猜哪条是刚写的」，撤销会删错笔记）
+      return note.id;
     },
     [activeWorkId],
   );
@@ -2199,6 +2203,23 @@ export function useNovelData() {
         : current,
     );
     void removeNoteRemote(noteId);
+  }, []);
+
+  /**
+   * 灵感归属迁移（O-12 单向流）：workId 传 '' 退回未归属池。
+   *
+   * 落库必须走 `novel-note-move` 专用通道 —— `saveNote` 的 upsert 只更新
+   * content/pinned/foreshadow_id，刻意不碰 work_id（DB 层防误改归属）。
+   * 内存 bundle 用 patchNote 就地反映，切回书架读到的是同一份库行。
+   */
+  const moveNote = useCallback((noteId: string, workId: string): void => {
+    setBundle((current) => {
+      if (!current) return current;
+      const next = patchNote(current.notes, noteId, { workId });
+      if (next === current.notes) return current;
+      return { ...current, notes: next };
+    });
+    void moveNoteRemote(noteId, workId);
   }, []);
 
   /** 章节一句话梗概（大纲板行内编辑，空串即清除） */
@@ -2444,6 +2465,7 @@ export function useNovelData() {
     addNote,
     updateNote,
     removeNote,
+    moveNote,
     addOutlineEntry,
     updateOutlineEntry,
     toggleOutlineEntryStatus,

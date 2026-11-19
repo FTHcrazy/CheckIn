@@ -86,7 +86,7 @@ export default function EntityCard({
               className="nv-ecard__badge"
               style={{ color: meta.color, background: meta.colorWeak }}
             >
-              {meta.label}
+              {meta.glyph} · {meta.label}
             </span>
             {entity.aliases.length > 0 && (
               <span className="nv-ecard__alias">

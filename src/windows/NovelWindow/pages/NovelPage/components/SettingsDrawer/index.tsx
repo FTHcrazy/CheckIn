@@ -1,5 +1,7 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { Button, Input, Segmented, Slider, Switch } from "antd";
+import { useDrawerFocusReturn } from "@/shared/hooks/useDrawerFocusReturn";
+import EntityTypeChip from "../../../../components/EntityTypeChip";
 import {
   CHAPTER_SUFFIX_OPTIONS,
   SETTINGS_RANGE,
@@ -47,6 +49,28 @@ export default function SettingsDrawer({
 }: SettingsDrawerProps) {
   const { metaOf, filterOrder } = useEntityTypeMeta();
   const rootRef = useRef<HTMLElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+
+  /**
+   * O-17：焦点管理。打开时记下触发按钮（通常就是顶栏「排版与偏好」），
+   * 关闭统一走 `handleClose` 回焦；触发按钮因切章卸载时由 hook 静默跳过。
+   */
+  const { captureTrigger, restoreFocus } = useDrawerFocusReturn({
+    active: open,
+    containerRef: rootRef,
+    initialFocusRef: closeButtonRef,
+  });
+
+  // 打开瞬间捕获触发点：此刻 activeElement 仍是那颗触发按钮
+  useEffect(() => {
+    if (open) captureTrigger();
+  }, [open, captureTrigger]);
+
+  /** 关闭的单一出口：任何关闭方式都先回焦，再通知页面改状态 */
+  const handleClose = useCallback((): void => {
+    restoreFocus();
+    onClose();
+  }, [restoreFocus, onClose]);
 
   /**
    * 「点抽屉外部关闭」——文档级 `mousedown` 分流（REQ-050 修法 ③）。
@@ -77,17 +101,17 @@ export default function SettingsDrawer({
       ) {
         return;
       }
-      onClose();
+      handleClose();
     };
     document.addEventListener("mousedown", handleMouseDown);
     return () => document.removeEventListener("mousedown", handleMouseDown);
-  }, [open, onClose]);
+  }, [open, handleClose]);
 
   return (
     <aside ref={rootRef} className={`nv-setting${open ? " is-open" : ""}`}>
       <header className="nv-setting__head">
         <b>排版与偏好</b>
-        <Button aria-label="关闭" onClick={onClose}>
+        <Button ref={closeButtonRef} aria-label="关闭" onClick={handleClose}>
           ✕
         </Button>
       </header>
@@ -316,14 +340,15 @@ export default function SettingsDrawer({
               const meta = metaOf(type);
               const on = settings.annotationTypes.includes(type);
               return (
-                <Button
+                <EntityTypeChip
                   key={type}
-                  className={`nv-setting__chip${on ? " is-on" : ""}`}
-                  style={on ? undefined : { color: meta.color }}
+                  meta={meta}
+                  pressed={on}
                   onClick={() => onToggleAnnotationType(type)}
+                  className="nv-setting__chip"
                 >
                   {meta.label}
-                </Button>
+                </EntityTypeChip>
               );
             })}
           </div>

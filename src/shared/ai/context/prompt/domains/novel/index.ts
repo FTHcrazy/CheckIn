@@ -9,6 +9,8 @@
  * 于是加域永远要回来改小说文件（破坏 §8.3 判据 2「加域零侵入」）。
  */
 import type { PromptDomainModule, PromptSpec } from "../../types";
+import { assembleBranchSpec } from "./builders/branch";
+import { assembleConsistencySpec } from "./builders/consistency";
 import { assembleContinuationStreamSpec } from "./builders/continuation";
 import { assembleExtractSpec } from "./builders/extract";
 import { assembleLevelGenSpec } from "./builders/level-gen";
@@ -34,6 +36,8 @@ const NOVEL_BUILDERS: {
   extract: assembleExtractSpec,
   relation: assembleRelationSpec,
   levelGen: assembleLevelGenSpec,
+  branch: assembleBranchSpec,
+  consistency: assembleConsistencySpec,
 };
 
 /** 运行期遍历用（顺序 = 清单顺序，便于日志 / 调试图标） */
@@ -59,6 +63,8 @@ export const NOVEL_INTENT_LABELS: Record<NovelPromptIntent, string> = {
   extract: "实体抽取",
   relation: "关系推断",
   levelGen: "等级生成",
+  branch: "卡文救援",
+  consistency: "一致性 AI 档",
 };
 
 /** 各意图的 prompt 模板版本（M7）。
@@ -85,6 +91,10 @@ export const NOVEL_PROMPT_VERSIONS: Record<NovelPromptIntent, string> = {
   relation: "v1",
   // v1（2.15.0）：R-AI-18 等级体系生成 / 拓展首版（json-array，两字段 + 双模式）
   levelGen: "v1",
+  // v1（2.72.0）：R-AI-11 卡文救援首版（json-array，三字段 + 四档风格旋钮）
+  branch: "v1",
+  // v1（2.72.0）：R-AI-10b 一致性 AI 档首版（json-array，四字段 + 三态判定 + 名字白名单）
+  consistency: "v1",
 };
 
 /** 小说域模块（`domains/index.ts` 的登记单元） */

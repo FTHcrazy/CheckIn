@@ -13,7 +13,8 @@
 
 | 文件 | 覆盖版本 |
 |------|---------|
-| `CHANGELOG-2.41.md` | 2.41.0 |\n| `CHANGELOG-2.40.md` | 2.40.0 |
+| `CHANGELOG-2.41.md` | 2.41.0 |
+| `CHANGELOG-2.40.md` | 2.40.0 |
 | `CHANGELOG-2.39.md` | 2.39.0 |
 | `CHANGELOG-2.38.md` | 2.38.0 |
 | `CHANGELOG-2.37.md` | 2.37.0 |

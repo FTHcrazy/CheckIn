@@ -66,6 +66,7 @@ const buildProps = (
   globalNotes: [],
   activeWorkId: "w1",
   workNameOf: () => "",
+  workOptions: [],
   inspirationActions,
   onSearch: async () => [],
   onSelectChapter: vi.fn(),

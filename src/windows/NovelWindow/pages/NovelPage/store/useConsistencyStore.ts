@@ -18,6 +18,7 @@ import type {
   ConsistencyIssue,
   ConsistencyLevelInput,
 } from "@/shared/novel/consistency";
+import type { ConsistencyVerdict } from "@/shared/ai/context";
 import { startConsistencyScan } from "./consistency-runner";
 
 /** 面板点结果时的跳转意图，由页面侧消费后清空 */
@@ -25,6 +26,24 @@ export interface ConsistencyJumpTarget {
   chapterId: string;
   from: number;
 }
+
+/**
+ * 一条 AI 判定（R-AI-10b）。
+ *
+ * 只对 10a 标 `suspect` 的条目产生：`sure` 级已由本地判据定罪，AI 不参与。
+ * 保留 `expected` / `candidate` 是为了「AI 判的那一条」能与列表行对上——
+ * 模型只会回文字，不会回我们的 issue id。
+ */
+export interface ConsistencyAiVerdict {
+  issueId: string;
+  expected: string;
+  candidate: string;
+  verdict: ConsistencyVerdict;
+  reason: string;
+}
+
+/** AI 复核状态 */
+export type ConsistencyAiStatus = "idle" | "running" | "done" | "error";
 
 export interface ConsistencyState {
   /** 扫描状态 */
@@ -63,6 +82,26 @@ export interface ConsistencyState {
   requestJump: (target: ConsistencyJumpTarget) => void;
   consumeJump: () => void;
   jumpTarget: ConsistencyJumpTarget | null;
+
+  // ── AI 复核（R-AI-10b）：只补一列**建议**，不改 10a 的任何判据 ──────────
+  /** 复核进度态 */
+  aiStatus: ConsistencyAiStatus;
+  /** 判定结果（issue id → 判定） */
+  aiVerdicts: Record<string, ConsistencyAiVerdict>;
+  /** 被丢弃的「编造名字」条数（如实计数，给作者一个交代） */
+  aiDropped: number;
+  aiError: string | null;
+  /** 作者勾选采纳的 issue id（采纳 = 认可判定，不自动改正文） */
+  aiAdopted: string[];
+  setAiRunning: () => void;
+  setAiDone: (payload: {
+    verdicts: ConsistencyAiVerdict[];
+    dropped: number;
+  }) => void;
+  setAiError: (message: string) => void;
+  /** 勾选 / 取消采纳（只有判定为「错字」的条目可勾） */
+  toggleAiAdopt: (issueId: string) => void;
+  clearAi: () => void;
 }
 
 // ── 模块级调度句柄（不进 state：它们不该触发重渲染）────────────────────
@@ -75,6 +114,20 @@ function clearScan(): void {
 }
 
 const EMPTY_COUNTS = { sure: 0, suspect: 0, name: 0, realm: 0 };
+
+/**
+ * AI 复核的空态。
+ *
+ * 每次重扫都要一起清：旧判定绑在旧 issue id 上，留着只会把「上一轮的建议」
+ * 挂到「这一轮的条目」上 —— 作者会照着一条对不上的理由去改正文。
+ */
+const EMPTY_AI = {
+  aiStatus: "idle" as ConsistencyAiStatus,
+  aiVerdicts: {} as Record<string, ConsistencyAiVerdict>,
+  aiDropped: 0,
+  aiError: null,
+  aiAdopted: [] as string[],
+};
 
 /** 统计各维度条数（面板的筛选角标与摘要文案共用） */
 function summarize(issues: ConsistencyIssue[]): ConsistencyState["counts"] {
@@ -98,6 +151,13 @@ export const useConsistencyStore = create<ConsistencyState>((set, get) => ({
   counts: { ...EMPTY_COUNTS },
   jumpTarget: null,
 
+  // AI 复核初值：没有任何判定，也没有采纳
+  aiStatus: "idle",
+  aiVerdicts: {},
+  aiDropped: 0,
+  aiError: null,
+  aiAdopted: [],
+
   scan: ({ workId, chapters, entities, realmLevels }) => {
     if (get().status === "scanning") return;
     clearScan();
@@ -112,11 +172,19 @@ export const useConsistencyStore = create<ConsistencyState>((set, get) => ({
         workId,
         scannedAt: Date.now(),
         chapterCount: 0,
+        ...EMPTY_AI,
       });
       return;
     }
 
-    set({ status: "scanning", progress: 0, issues: [], chapterCount: total, workId });
+    set({
+      status: "scanning",
+      progress: 0,
+      issues: [],
+      chapterCount: total,
+      workId,
+      ...EMPTY_AI,
+    });
 
     const handle = startConsistencyScan({
       chapters,
@@ -135,13 +203,20 @@ export const useConsistencyStore = create<ConsistencyState>((set, get) => ({
           counts: summarize(issues),
           scannedAt: Date.now(),
           chapterCount: total,
+          ...EMPTY_AI,
         });
       },
       onError: (error) => {
         cancelScan = null;
         // 校对失败不该留下「扫了一半」的假结论，直接回到未扫描态
         console.warn("[consistency] 校对中止", error);
-        set({ status: "idle", progress: 0, issues: [], counts: { ...EMPTY_COUNTS } });
+        set({
+          status: "idle",
+          progress: 0,
+          issues: [],
+          counts: { ...EMPTY_COUNTS },
+          ...EMPTY_AI,
+        });
       },
     });
     cancelScan = handle.cancel;
@@ -150,7 +225,13 @@ export const useConsistencyStore = create<ConsistencyState>((set, get) => ({
   cancel: () => {
     clearScan();
     // 半本结果比没结果更误导（作者会以为「别处都没问题」），直接回到未扫描态
-    set({ status: "idle", progress: 0, issues: [], counts: { ...EMPTY_COUNTS } });
+    set({
+      status: "idle",
+      progress: 0,
+      issues: [],
+      counts: { ...EMPTY_COUNTS },
+      ...EMPTY_AI,
+    });
   },
 
   reset: () => {
@@ -164,9 +245,35 @@ export const useConsistencyStore = create<ConsistencyState>((set, get) => ({
       scannedAt: null,
       chapterCount: 0,
       jumpTarget: null,
+      ...EMPTY_AI,
     });
   },
 
   requestJump: (target) => set({ jumpTarget: target }),
   consumeJump: () => set({ jumpTarget: null }),
+
+  // ── AI 复核 ────────────────────────────────────────────────
+  setAiRunning: () => set({ aiStatus: "running", aiError: null }),
+
+  setAiDone: ({ verdicts, dropped }) =>
+    set({
+      aiStatus: "done",
+      aiDropped: dropped,
+      aiError: null,
+      // 覆盖式写入：重跑一次复核就该整批换新，不做「新旧混排」
+      aiVerdicts: Object.fromEntries(verdicts.map((item) => [item.issueId, item])),
+      // 新判定落地后旧采纳作废（可能这一轮判的不是同一批条目）
+      aiAdopted: [],
+    }),
+
+  setAiError: (message) => set({ aiStatus: "error", aiError: message }),
+
+  toggleAiAdopt: (issueId) =>
+    set((state) => ({
+      aiAdopted: state.aiAdopted.includes(issueId)
+        ? state.aiAdopted.filter((item) => item !== issueId)
+        : [...state.aiAdopted, issueId],
+    })),
+
+  clearAi: () => set({ ...EMPTY_AI }),
 }));

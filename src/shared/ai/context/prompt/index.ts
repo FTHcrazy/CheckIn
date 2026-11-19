@@ -178,6 +178,30 @@ export {
   type LevelGenIntent,
   type LevelGenMode,
 } from "./domains/novel/builders/level-gen";
+export {
+  assembleBranchSpec,
+  BRANCH_COUNT_RANGE,
+  BRANCH_DEFAULT_COUNT,
+  BRANCH_OUTPUT_FORMAT,
+  clampBranchCount,
+  isRescueStyle,
+  RESCUE_STYLE_LABELS,
+  RESCUE_STYLES,
+  type BranchIntent,
+  type BranchOutlineNode,
+  type RescueStyle,
+} from "./domains/novel/builders/branch";
+export {
+  assembleConsistencySpec,
+  CONSISTENCY_MAX_SUSPECTS,
+  CONSISTENCY_OUTPUT_FORMAT,
+  CONSISTENCY_TYPO_VERDICT,
+  CONSISTENCY_VERDICTS,
+  isTypoVerdict,
+  type ConsistencyIntent,
+  type ConsistencySuspect,
+  type ConsistencyVerdict,
+} from "./domains/novel/builders/consistency";
 
 // 小说域出口（域模块 + 三张域内表 + 语境类型）
 export { novelPromptDomain, NOVEL_INTENTS, NOVEL_PROMPT_VERSIONS } from "./domains/novel";

@@ -1,0 +1,146 @@
+/* 卡文救援浮层（R-AI-11）：Drawer 承载浮层与焦点陷阱，
+   内部三段式排布 = 处境摘要 / 风格与列表（可滚动）/ 底部落点与动作。 */
+@use "../../../../../../shared/styles/widget" as widget;
+
+.nv-rescue {
+  .ant-drawer-body {
+    padding: 12px 16px 16px;
+  }
+}
+
+.nv-rescue__body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  height: 100%;
+}
+
+.nv-rescue__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--app-text-muted);
+  font-size: 12px;
+}
+
+.nv-rescue__badge {
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--app-surface-alt);
+  color: var(--app-text-secondary);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.nv-rescue__chars {
+  color: var(--app-text-secondary);
+}
+
+.nv-rescue__node {
+  flex: 1 1 100%;
+  color: var(--app-text-secondary);
+  font-size: 12px;
+}
+
+.nv-rescue__consent {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--app-border);
+  border-radius: 10px;
+  background: var(--app-surface-alt);
+}
+
+.nv-rescue__consent-text {
+  margin: 0;
+  color: var(--app-text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.nv-rescue__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.nv-rescue__pending {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 0;
+}
+
+.nv-rescue__pending-text {
+  color: var(--app-text-muted);
+  font-size: 12px;
+}
+
+.nv-rescue__footer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--app-border);
+}
+
+.nv-rescue__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.nv-rescue__count {
+  color: var(--app-text-muted);
+  font-size: 12px;
+}
+
+/* 第一入口「救援」悬浮键：与续写键同一列、叠在它上方 8px ——
+   两颗都是「对着正文、贴着右下角」的动作，排成一列比左右并排更好点。 */
+.nv-rescue-fab.ant-btn {
+  @include widget.ant-button-reset;
+  --ant-control-height: 34px;
+  --ant-border-radius: 17px;
+  --ant-button-content-font-size: 12px;
+  --ant-button-default-color: var(--app-text-secondary);
+  --ant-button-default-hover-bg: var(--app-surface-hover);
+  --ant-button-default-active-bg: var(--app-surface-hover);
+  --ant-button-default-bg-disabled: var(--app-surface);
+  --ant-button-default-shadow: none;
+
+  position: absolute;
+  right: 20px;
+  /* 续写键 38 高 + bottom 56 → 这里再上抬 8px 呼吸位 */
+  bottom: 102px;
+  z-index: 20;
+
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 13px 0 11px;
+  border: 1px solid var(--app-border);
+  background: var(--app-surface-elevated);
+  box-shadow: var(--app-shadow-pop);
+
+  &:focus-visible {
+    outline: 2px solid var(--app-primary);
+    outline-offset: 2px;
+  }
+
+  /* O-06 待授权态：仍可点（点了先弹 L3 授权），视觉上必须与「不可用」分开 */
+  &.is-ai-needs-consent {
+    border-color: color-mix(in srgb, var(--app-warning) 60%, var(--app-border));
+    --ant-button-default-color: var(--app-warning);
+    --ant-button-default-hover-color: var(--app-warning);
+    --ant-button-default-hover-bg: var(--app-warning-weak);
+  }
+}

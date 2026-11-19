@@ -16,6 +16,8 @@ const metaOf = (type: string) => ({
   label: type === "character" ? "角色" : "地点",
   color: "var(--app-primary)",
   colorWeak: "var(--app-primary-weak)",
+  // O-17：EntityTypeMeta 加 glyph，RelationWindow 仅保持结构兼容，不展示前缀
+  glyph: type === "character" ? "人" : "地",
 });
 
 function node(overrides: Partial<RelationGraphNode> & { id: string }): RelationGraphNode {

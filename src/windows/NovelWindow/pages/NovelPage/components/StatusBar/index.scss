@@ -72,6 +72,21 @@
     }
   }
 
+  /* D-08：敏感词标注显示的独立开关，与「标注」（要素层）和「敏感 N」（结果）
+     三者并列——外观本身交给 antd Switch，这里只做状态条内的对齐与文字层级。 */
+  &__mark {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--app-text-muted);
+    font-size: 12px;
+  }
+
+  &__mark-label {
+    color: var(--app-text-muted);
+    user-select: none;
+  }
+
   /* 敏感词角标：常态与标注开关同款弱化，命中 > 0 时转警示色 */
   &__sm.ant-btn {
     @include widget.ant-button-reset;

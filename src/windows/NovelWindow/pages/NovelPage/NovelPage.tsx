@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Modal } from "antd";
+import { Button, Modal, Tooltip } from "antd";
 import ChapterJumpPalette from "./components/ChapterJumpPalette";
 import ChapterTree from "./components/ChapterTree";
 import EditorPane from "./components/EditorPane";
@@ -18,6 +18,10 @@ import type { GuideView } from "@/shared/novel/guide-copy";
 import SettingCenter from "@/shared/components/SettingCenter";
 import { SETTING_PRESETS } from "./utils/setting-presets";
 import ContinueFab from "./components/ContinueFab";
+import AiRescueDrawer from "./components/AiRescueDrawer";
+import SvgIcon from "@/shared/components/SvgIcon";
+import aiSvg from "@/assets/novel/ai.svg?raw";
+import { AI_ENTRY_CONSENT_HINT, aiEntryStateClass, deriveAiEntryState } from "@/shared/ai/ai-entry-state";
 import NovelToast from "./components/NovelToast";
 import NovelTopBar from "./components/NovelTopBar";
 import type { WorkManageMenuHandle } from "./components/WorkManageMenu";
@@ -25,6 +29,7 @@ import ReorderConfirmModal from "./components/ReorderConfirmModal";
 import RestoreBanner from "./components/RestoreBanner";
 import SettingsDrawer from "./components/SettingsDrawer";
 import SnapshotDrawer from "./components/SnapshotDrawer";
+import GlobalInspirationDrawer from "./components/GlobalInspirationDrawer";
 import StatusBar from "./components/StatusBar";
 import SupportPanel from "./components/SupportPanel";
 import { EntityTypesProvider } from "./hooks/useEntityTypes";
@@ -134,6 +139,16 @@ export default function NovelPage({
     outline,
     outlineActions,
     inspirationActions,
+    // O-12 全局灵感抽屉
+    globalIdeaOpen,
+    closeGlobalIdea,
+    workOptions,
+    workNameOfNullable,
+    globalIdeaOnAdd,
+    handleMoveNote,
+    handleUpdateNote,
+    handleTogglePinNote,
+    handleRemoveNote,
     workMeta,
     reorderPreview,
     handleReorderChapter,
@@ -190,6 +205,25 @@ export default function NovelPage({
     handleExtractTypeChange,
     handleExtractConfirm,
     handleExtractClose,
+    // R-AI-11 卡文救援（三入口共用同一浮层）
+    rescueOpen,
+    rescueContext,
+    rescueSegments,
+    rescuePhase,
+    rescueError,
+    rescueUndoCount,
+    rescuePending,
+    rescuePendingScope,
+    rescueScope,
+    setRescueScope,
+    requestRescue,
+    closeRescue,
+    handleRescueRequestConsent,
+    handleRescueConsentConfirm,
+    handleRescueConsentCancel,
+    generateRescue,
+    adoptRescue,
+    undoRescue,
     handleNewVolume,
     handleSaveEntity,
     handleDeleteEntity,
@@ -210,6 +244,7 @@ export default function NovelPage({
     handleExportVolume,
     handleExportChapter,
     handleExportCard,
+    exportProgress,
     handleSetEntityLevel,
     handleAddCustomType,
     handleRenameCustomType,
@@ -241,6 +276,23 @@ export default function NovelPage({
    * 判据的推导在 `useAiAvailability` 的 `isAiHidden` 里（纯函数，有单测）。
    */
   const aiVisible = !aiAvailability.hidden;
+
+  /**
+   * 卡文救援入口的三态（O-06）。
+   *
+   * `requiresConsent: true`：救援会发送当前正文（哪怕只是一段选区也算 L3），
+   * 所以未授权时必须是「待授权」而不是「可直接点」——入口要先把这件事说出来。
+   */
+  const rescueEntryState = deriveAiEntryState({
+    available: aiAvailability.available,
+    l3Enabled: !aiNeedsConsent,
+    requiresConsent: true,
+  });
+  const rescueEntryHint = !aiAvailability.available
+    ? aiAvailability.reasonText
+    : aiNeedsConsent
+      ? AI_ENTRY_CONSENT_HINT
+      : "卡文救援（给几个互不相同的后续走向）";
 
   /**
    * 右栏首屏 Tab 按数据定一次（O-14）。
@@ -815,6 +867,26 @@ export default function NovelPage({
                 />
               )}
 
+            {/* R-AI-11 卡文救援入口（第一入口：正文区）。
+                刻意不塞进 EditorPane 内部：编辑器不该知道 AI 的存在
+                （AGENTS §2.2.2.1），入口贴在正文区即可，语义与续写悬浮键同层。
+                与续写一样，AI 总开关关掉时整颗不渲染 */}
+            {aiVisible && !editor.settings.readMode && data.activeChapter && (
+              <Tooltip title={rescueEntryHint} placement="left">
+                <Button
+                  className={`nv-rescue-fab ${aiEntryStateClass(rescueEntryState)}`.trim()}
+                  disabled={!aiAvailability.available}
+                  aria-label="卡文救援"
+                  onClick={() => requestRescue("editor")}
+                >
+                  <span className="nv-rescue-fab__icon">
+                    <SvgIcon svg={aiSvg} />
+                  </span>
+                  <span className="nv-rescue-fab__text">救援</span>
+                </Button>
+              </Tooltip>
+            )}
+
             {/* 选区右键菜单：文本变换 / 记入行囊 / 新建资料卡（REQ-062 已下线「绑定到现有资料卡」） */}
             {editor.selection && ctxMenu && (
               <EntityContextMenu
@@ -879,27 +951,53 @@ export default function NovelPage({
               />
             )}
 
-            {/* L3 授权弹窗（M5）：摘要 / 实体抽取共用同一份授权状态与范围选择
-                （G4：范围与发送量必须同源，两个入口各写一套必然漂移）。
-                `open` 看两个 pending，确认 / 取消按「谁在等」分派。 */}
+            {/* L3 授权弹窗（M5）：摘要 / 实体抽取 / 卡文救援共用同一份授权状态与
+                范围选择（G4：范围与发送量必须同源，各入口各写一套必然漂移）。
+                `open` 看三个 pending，确认 / 取消按「谁在等」分派。
+                R-AI-11 的范围走它自己的 `rescueScope`（默认「有选区就只发选区」），
+                不与摘要那一路互相覆盖。 */}
             <AiConsentDialog
-              open={summaryPending !== null || extractPending !== null}
-              estimate={extractPending ? extractPendingScope : summaryPendingScope}
-              scope={aiConsent.scope}
-              onScopeChange={aiConsent.setScope}
+              open={
+                summaryPending !== null ||
+                extractPending !== null ||
+                rescuePending !== null
+              }
+              estimate={
+                extractPending
+                  ? extractPendingScope
+                  : rescuePending
+                    ? rescuePendingScope
+                    : summaryPendingScope
+              }
+              scope={rescuePending !== null ? rescueScope : aiConsent.scope}
+              onScopeChange={rescuePending !== null ? setRescueScope : aiConsent.setScope}
               notice={
-                (extractPending ? extractPendingScope : summaryPendingScope).notice
+                (
+                  extractPending
+                    ? extractPendingScope
+                    : rescuePending
+                      ? rescuePendingScope
+                      : summaryPendingScope
+                ).notice
               }
               confirmDisabled={
-                (extractPending ? extractPendingScope : summaryPendingScope).chars === 0
+                (
+                  extractPending
+                    ? extractPendingScope
+                    : rescuePending
+                      ? rescuePendingScope
+                      : summaryPendingScope
+                ).chars === 0
               }
               provider={aiConsent.provider}
               onConfirm={() => {
                 if (extractPending) void handleExtractConsentConfirm();
+                else if (rescuePending) void handleRescueConsentConfirm();
                 else void handleSummaryConsentConfirm();
               }}
               onCancel={() => {
                 if (extractPending) handleExtractConsentCancel();
+                else if (rescuePending) handleRescueConsentCancel();
                 else handleSummaryConsentCancel();
               }}
             />
@@ -933,7 +1031,42 @@ export default function NovelPage({
               paperFonts={paperFonts}
             />
 
+            {/*
+              全局灵感抽屉（O-12）：「查看全部 →」的落点。复用窗口级
+              IdeaLibraryContent 与书架共用一套筛选/动作词，焦点走 O-17 共享 hook。
+            */}
+            <GlobalInspirationDrawer
+              open={globalIdeaOpen}
+              onClose={closeGlobalIdea}
+              notes={data.allNotes}
+              workOptions={workOptions}
+              workNameOf={workNameOfNullable}
+              onAdd={globalIdeaOnAdd}
+              onMove={handleMoveNote}
+              onTogglePin={handleTogglePinNote}
+              onUpdate={handleUpdateNote}
+              onRemove={handleRemoveNote}
+            />
+
             <NovelToast toast={view.toast} />
+
+            {/* R-AI-11 卡文救援浮层：**全页唯一挂载点**（三入口共用同一个
+                Drawer，入口只决定 context）。源码守卫可查本文件只有一处
+                <AiRescueDrawer />，防「三套浮层」回潮 */}
+            <AiRescueDrawer
+              open={rescueOpen}
+              context={rescueContext}
+              segments={rescueSegments}
+              phase={rescuePhase}
+              error={rescueError}
+              undoCount={rescueUndoCount}
+              unavailableText={aiAvailability.reasonText}
+              onRequestConsent={handleRescueRequestConsent}
+              onGenerate={({ style, count }) => generateRescue({ style, count })}
+              onAdopt={({ segments, landing }) => void adoptRescue({ segments, landing })}
+              onUndo={() => void undoRescue()}
+              onClose={closeRescue}
+            />
 
             <ReorderConfirmModal
               open={reorderPreview !== null}
@@ -968,6 +1101,7 @@ export default function NovelPage({
             globalNotes={data.allNotes}
             activeWorkId={data.activeWorkId}
             workNameOf={workNameOf}
+            workOptions={workOptions}
             inspirationActions={inspirationActions}
             onSearch={handleSearch}
             onSelectChapter={handleSelectChapter}
@@ -994,12 +1128,16 @@ export default function NovelPage({
             aiVisible={aiVisible}
             aiAvailable={aiAvailability.available}
             aiUnavailableText={aiAvailability.reasonText}
+            aiNeedsConsent={aiNeedsConsent}
             onNotify={view.showToast}
             chapters={data.chapters}
             toolSub={view.toolSub}
             onToolSubChange={view.setToolSub}
             onOpenRelation={openRelationWindow}
             onOpenMap={IS_NO_MAP ? undefined : openMapWindow}
+            onRescueChapter={(chapterId) => requestRescue("outline", chapterId)}
+            onExportBook={() => void handleExportBook()}
+            exportProgress={exportProgress}
             extractActions={{
               session: extract,
               onRun: runEntityExtract,

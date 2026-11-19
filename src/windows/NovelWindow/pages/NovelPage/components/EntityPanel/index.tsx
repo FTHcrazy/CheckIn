@@ -5,6 +5,7 @@ import EntityCard from "../EntityCard";
 import EntityDetail from "../EntityDetail";
 import type { EntitySavePatch } from "../EntityDetail";
 import { useEntityTypeMeta } from "../../hooks/entity-types-context";
+import EntityTypeChip from "../../../../components/EntityTypeChip";
 import { useEdgeFade } from "../SupportPanel/useEdgeFade";
 import { useAppearanceStore } from "../../store/useAppearanceStore";
 import type { EntityFilter } from "../../hooks/useNovelViewState";
@@ -293,15 +294,18 @@ export default function EntityPanel({
           const meta = metaOf(type);
           const on = filter === type;
           return (
-            <Button
+            <EntityTypeChip
               key={type}
-              className={`nv-chip${on ? " is-on" : ""}`}
-              style={on ? { color: meta.color } : undefined}
+              meta={meta}
+              pressed={on}
               onClick={() => onFilterChange(type)}
+              className="nv-chip"
             >
-              {meta.label}
-              <em>{count}</em>
-            </Button>
+              <span>
+                {meta.label}
+                <em>{count}</em>
+              </span>
+            </EntityTypeChip>
           );
         })}
       </div>

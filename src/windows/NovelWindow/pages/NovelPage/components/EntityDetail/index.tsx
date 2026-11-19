@@ -378,7 +378,7 @@ export default function EntityDetail({
                       )
                     }
                   >
-                    {typeMeta.label}
+                    {typeMeta.glyph} · {typeMeta.label}
                   </Button>
                 );
               })}

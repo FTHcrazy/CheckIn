@@ -72,6 +72,8 @@ interface SupportPanelProps {
   activeWorkId: string;
   /** 作品 id → 书名（外部灵感的来源标签） */
   workNameOf: (workId: string) => string;
+  /** O-12：可归属的作品列表（灵感归属 / 未归属转伏笔前置选择） */
+  workOptions: Array<{ id: string; name: string }>;
   inspirationActions: InspirationActions;
   onSearch: (keyword: string) => Promise<SearchHit[]>;
   onSelectChapter: (chapterId: string) => void;
@@ -134,6 +136,10 @@ interface SupportPanelProps {
   onOpenRelation?: () => void;
   /** 打开架空地图独立窗口（R28 / MapWindow）；不传时工具卡退回「规划中」占位 */
   onOpenMap?: () => void;
+  /** 导出整本 TXT（D-13）：工具启动器的导出按钮点击回调 */
+  onExportBook?: () => void;
+  /** 导出进行中态（D-13）：驱动导出按钮 loading + 阶段文案 */
+  exportProgress?: import("../../../../services/progress-phase").ExportProgress;
   /**
    * 抽取设定动作组（R-AI-08）。
    *
@@ -141,6 +147,20 @@ interface SupportPanelProps {
    * 放在面板内部 state 里一关就没。
    */
   extractActions: ExtractActions;
+  /**
+   * R-AI-11：大纲 Tab 里「选中章 → 给我几个走向」的入口。
+   *
+   * 只传 chapterId：标题与梗概在大纲行里才有（页面层按 id 取即可），
+   * 面板不重复拼一份上下文——否则两处各写一遍口径迟早不一致。
+   */
+  onRescueChapter?: (chapterId: string) => void;
+  /**
+   * R-AI-10b：L3 总开关是否还没授权（配置齐全但没勾过「允许发正文」）。
+   *
+   * 与 `aiAvailable` 是两个问题：可用但未授权时「AI 复核」仍旧显示为可点，
+   * 点下去先弹授权确认——直接置灰会让作者以为功能坏了。
+   */
+  aiNeedsConsent?: boolean;
 }
 
 interface TabMeta {
@@ -192,6 +212,7 @@ export default function SupportPanel({
   globalNotes,
   activeWorkId,
   workNameOf,
+  workOptions,
   inspirationActions,
   onSearch,
   onSelectChapter,
@@ -221,7 +242,11 @@ export default function SupportPanel({
   onToolSubChange,
   onOpenRelation,
   onOpenMap,
+  onExportBook,
+  exportProgress,
   extractActions,
+  onRescueChapter,
+  aiNeedsConsent = false,
 }: SupportPanelProps) {
   /** 工具箱二级面板：null = 启动器首页；受控优先，否则组件内自持 */
   const [internalSub, setInternalSub] = useState<ToolSub>(null);
@@ -664,6 +689,11 @@ export default function SupportPanel({
               onSelectChapter={onSelectChapter}
               actions={outlineActions}
               addForeshadowSignal={addForeshadowTick}
+              onRescue={
+                onRescueChapter
+                  ? (chapterId) => onRescueChapter(chapterId)
+                  : undefined
+              }
             />
           )}
           {activeTab === "entity" && (
@@ -699,6 +729,7 @@ export default function SupportPanel({
               globalNotes={globalNotes}
               activeWorkId={activeWorkId}
               workNameOf={workNameOf}
+              workOptions={workOptions}
               actions={inspirationActions}
             />
           )}
@@ -732,11 +763,15 @@ export default function SupportPanel({
             ) : toolSub === "consistency" ? (
               <ConsistencyPanel
                 workId={activeWorkId}
+                workName={workNameOf(activeWorkId)}
                 chapters={chapters}
                 entities={entities}
                 realmCategory={
                   settings.find((category) => category.kind === "realm") ?? null
                 }
+                aiAvailable={aiAvailable}
+                aiUnavailableText={aiUnavailableText}
+                aiNeedsConsent={aiNeedsConsent}
                 onNotify={onNotify}
               />
             ) : toolSub === "extract" ? (
@@ -762,6 +797,8 @@ export default function SupportPanel({
                 onNotify={onNotify}
                 onOpenRelation={onOpenRelation}
                 onOpenMap={onOpenMap}
+                onExportBook={onExportBook}
+                exportProgress={exportProgress}
               />
             ))}
         </div>

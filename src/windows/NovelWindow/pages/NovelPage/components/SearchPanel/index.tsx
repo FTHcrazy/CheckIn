@@ -241,7 +241,7 @@ export default function SearchPanel({
                           className="nv-search__kind"
                           style={{ color: meta.color, background: meta.colorWeak }}
                         >
-                          {meta.label}
+                          {meta.glyph} · {meta.label}
                         </span>
                       )}
                       {!isEntityScope && (

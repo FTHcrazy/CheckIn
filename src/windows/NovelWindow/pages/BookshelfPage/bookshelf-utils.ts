@@ -12,6 +12,7 @@ import {
   formatThousands,
 } from "@/shared/utils/format";
 import { formatNumberedLabel, toChineseOrdinal } from "@/shared/novel/number-label";
+import { formatDayLabel } from "../../utils/day-label";
 import type {
   NovelBundleDTO,
   NovelChapterDTO,
@@ -102,31 +103,9 @@ export function formatRelativeTime(timestamp: number, now: number = Date.now()):
   });
 }
 
-const clockOf = (timestamp: number): string => {
-  const date = new Date(timestamp);
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
-};
-
-const dayKey = (timestamp: number): string => {
-  const date = new Date(timestamp);
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-};
-
-/** 天级相对时间（卡片「昨天 23:41 更新」、灵感时间戳） */
-export function formatDayLabel(timestamp: number, now: number = Date.now()): string {
-  if (!timestamp) return "—";
-  const diffDays = Math.floor(
-    (new Date(dayKey(now)).getTime() - new Date(dayKey(timestamp)).getTime()) / 86_400_000,
-  );
-  if (diffDays <= 0) return `今天 ${clockOf(timestamp)}`;
-  if (diffDays === 1) return `昨天 ${clockOf(timestamp)}`;
-  if (diffDays < 7) return `${diffDays} 天前`;
-  if (diffDays < 14) return "上周";
-  const date = new Date(timestamp);
-  return `${date.getMonth() + 1}月${date.getDate()}日`;
-}
+/* 天级相对时间（O-12）：单一实现上提到窗口级 utils，书架与编辑器全局抽屉
+   共用；这里 re-export 保持既有 import 路径不变（测试与书卡都不用改）。 */
+export { formatDayLabel } from "../../utils/day-label";
 
 // ── 中文序号（卷/章标签派生，与编辑器 formatNumberedLabel 同口径） ──
 // 单一实现迁至 @/shared/novel/number-label（N11 / M30）：书架 / 编辑器 / 全局
@@ -275,35 +254,14 @@ export function resolveHero(
 
 // ── 全局灵感库（R32） ───────────────────────────────────────────────
 
-export type IdeaFilter = "all" | "unassigned" | "pinned" | "archived";
-
-/** 未归属灵感：workId 为空串（跨作品收集池），其余视为已归档到作品 */
-export const isUnassignedNote = (note: NovelNoteDTO): boolean => !note.workId;
-
-export function countIdeaNotes(notes: NovelNoteDTO[]): Record<IdeaFilter, number> {
-  const unassigned = notes.filter(isUnassignedNote).length;
-  return {
-    all: notes.length,
-    unassigned,
-    pinned: notes.filter((note) => note.pinned).length,
-    archived: notes.length - unassigned,
-  };
-}
-
-export function filterIdeaNotes(
-  notes: NovelNoteDTO[],
-  filter: IdeaFilter,
-  keyword: string,
-): NovelNoteDTO[] {
-  const trimmed = keyword.trim().toLowerCase();
-  return notes.filter((note) => {
-    if (filter === "unassigned" && !isUnassignedNote(note)) return false;
-    if (filter === "archived" && isUnassignedNote(note)) return false;
-    if (filter === "pinned" && !note.pinned) return false;
-    if (trimmed && !note.content.toLowerCase().includes(trimmed)) return false;
-    return true;
-  });
-}
+/* 全局灵感库筛选（O-12）：单一实现上提到窗口级 utils；这里 re-export
+   保持既有 import 路径不变（书架页面、守卫测试都不用改）。 */
+export {
+  countIdeaNotes,
+  filterIdeaNotes,
+  isUnassignedNote,
+  type IdeaFilter,
+} from "../../utils/idea-filter";
 
 /** 置顶优先，其余按记录时间倒序（与编辑器灵感速记同口径） */
 export function sortIdeaNotes(notes: NovelNoteDTO[]): NovelNoteDTO[] {

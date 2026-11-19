@@ -864,6 +864,17 @@ describe("梗概 / 伏笔 / 灵感的局部更新", () => {
     expect(patchNote(notes, "n1", { content: "  " })).toBe(notes);
     expect(patchNote(notes, "nope", { pinned: true })).toBe(notes);
   });
+
+  it("patchNote 支持 workId 归属迁移（O-12 单向流）", () => {
+    const notes: NovelNote[] = [note({ id: "n1", workId: "" })];
+    const toWork = patchNote(notes, "n1", { workId: "w2" });
+    expect(toWork[0].workId).toBe("w2");
+    // 退回未归属池
+    const back = patchNote(toWork, "n1", { workId: "" });
+    expect(back[0].workId).toBe("");
+    // 原数组不变
+    expect(notes[0].workId).toBe("");
+  });
 });
 
 describe("parseJsonOrNull", () => {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   isHighlightEnabled,
+  isSensitiveMarkVisible,
   resolveHighlightSource,
   SENSITIVE_MODE_META,
 } from "./types";
@@ -27,6 +28,27 @@ describe("resolveHighlightSource：标什么由模式唯一决定", () => {
 
   it("关闭模式不标", () => {
     expect(resolveHighlightSource("off")).toBe("none");
+  });
+});
+
+describe("isSensitiveMarkVisible：标注显示 = 用户没关 && 检测开着", () => {
+  it("关标注不关检测：mode=auto + markVisible=false → 不显示", () => {
+    expect(isSensitiveMarkVisible("auto", false)).toBe(false);
+    expect(isSensitiveMarkVisible("manual", false)).toBe(false);
+  });
+
+  it("开标注但检测关闭：不显示", () => {
+    expect(isSensitiveMarkVisible("off", true)).toBe(false);
+  });
+
+  it("两者都开：显示", () => {
+    expect(isSensitiveMarkVisible("auto", true)).toBe(true);
+    expect(isSensitiveMarkVisible("manual", true)).toBe(true);
+  });
+
+  it("compat：旧档 markVisible 缺失按 true", () => {
+    expect(isSensitiveMarkVisible("auto", undefined)).toBe(true);
+    expect(isSensitiveMarkVisible("off", undefined)).toBe(false);
   });
 });
 

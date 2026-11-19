@@ -96,6 +96,13 @@ const LIMITS: Record<NovelPromptIntent, CollectLimits> = {
   // 等级体系生成：只需作品名 + 题材（workBlock），已有阶梯由 intent 传入。
   // 要素卡对「排一条阶梯」是纯噪音，一个都不送 —— 这是全表最省的意图之一。
   levelGen: { entities: 0, realmLevels: 0, exclude: 0, summaryChars: 0 },
+  // 卡文救援：走向要「基于已有设定与未收伏笔」，所以要素带 summary（理解人设）；
+  // 正文按 L3 scope 走 intent 参数（chapter/selection），**不进 SNIPPET_INTENTS**
+  // —— 与 continuation 同口径，避免同一段正文在 prompt 里出现两遍。
+  branch: { entities: 40, realmLevels: 0, exclude: 0, summaryChars: 80 },
+  // 一致性 AI 档：要素清单是**名字白名单**（AI 只能判清单内的名字，防编造），
+  // 只要名字，不要简介；疑似写法自带的 snippet 才是它需要的正文语境。
+  consistency: { entities: 80, realmLevels: 0, exclude: 0, summaryChars: 0 },
 };
 
 /** 章节片段的安全上限（字）。**位置由调用方决定**，本层只防呆截断。 */

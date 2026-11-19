@@ -48,6 +48,14 @@ interface OutlinePanelProps {
    * 而伏笔必须挂在某一卷下，所以这里落到首卷并把视图切回章节。
    */
   addForeshadowSignal?: number;
+  /**
+   * R-AI-11「给我几个走向」：出当前**选中章**的后续走向候选。
+   *
+   * 只在选中章上出现一颗按钮，不做成每行都有 —— 三千章的大纲里逐行挂 AI 入口，
+   * 列表会变成按钮墙，反而找不到「我现在在写哪章」。
+   * 参数带 `gist`（本章一句话梗概）：它是这条走向最省事的锚点。
+   */
+  onRescue?: (chapterId: string, title: string, gist: string) => void;
 }
 
 type VolumeNode = Extract<OutlineNode, { kind: "volume" }>;
@@ -125,6 +133,7 @@ export default function OutlinePanel({
   onSelectChapter,
   actions,
   addForeshadowSignal = 0,
+  onRescue,
 }: OutlinePanelProps) {
   const [view, setView] = useState<OutlineView>("chapter");
   const [folded, setFolded] = useState<Record<string, boolean>>({});
@@ -562,6 +571,20 @@ export default function OutlinePanel({
           </GuideTooltip>
         ) : (
           noteButton()
+        )}
+
+        {/* R-AI-11「给我几个走向」：只挂在**选中章**上（选中节点操作区）。
+            每行都挂会把三千章的列表变成按钮墙，作者反而看不出自己在写哪章 */}
+        {active && onRescue && (
+          <Button
+            className="nv-outline__rescue"
+            type="link"
+            size="small"
+            aria-label={`给「${node.title}」几个后续走向`}
+            onClick={() => onRescue(node.chapterId, node.title, node.note ?? "")}
+          >
+            给我几个走向 →
+          </Button>
         )}
 
         {/* 本章的伏笔清单：就挂在章节下面，回收 / 编辑 / 删除都在原地完成，

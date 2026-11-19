@@ -53,7 +53,9 @@ export default function HoverEntityCard({
             {Array.from(entity.name)[0] ?? "?"}
           </span>
           <span className="nv-pop__names">
-            <span className="nv-pop__name">{entity.name}</span>
+            <span className="nv-pop__name">
+              <span className="nv-pop__glyph">{meta.glyph} ·</span> {entity.name}
+            </span>
             {entity.aliases.length > 0 && (
               <span className="nv-pop__alias">
                 别名：{entity.aliases.join(" · ")}
@@ -76,6 +78,7 @@ export default function HoverEntityCard({
 
         <div className="nv-pop__foot">
           <Button onClick={() => onOpenDetail(entity.id)}>查看完整设定</Button>
+          <span className="nv-pop__hint">选中要素名按 Enter 查看卡片</span>
         </div>
       </div>
     </GuideTooltip>

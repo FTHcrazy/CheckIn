@@ -15,7 +15,7 @@ import {
   saveSensitiveConfig,
 } from "../services/novel-service";
 import {
-  isHighlightEnabled,
+  isSensitiveMarkVisible,
   resolveHighlightSource,
   type SensitiveRange,
 } from "../sensitive";
@@ -60,6 +60,7 @@ export function useSensitiveDetection({
 }: Options): SensitiveDetection {
   const words = useSensitiveStore((state) => state.activeWords);
   const mode = useSensitiveStore((state) => state.config.mode);
+  const markVisible = useSensitiveStore((state) => state.config.markVisible);
   const chapterMatches = useSensitiveStore((state) => state.chapterMatches);
   const chapterResultId = useSensitiveStore((state) => state.chapterResultId);
   const jumpTarget = useSensitiveStore((state) => state.jumpTarget);
@@ -146,7 +147,8 @@ export function useSensitiveDetection({
 
   return {
     words,
-    enabled: isHighlightEnabled(mode),
+    // D-08：标注「显示」= 用户没关标注 && 检测机制开着（两者解耦）
+    enabled: isSensitiveMarkVisible(mode, markVisible),
     ranges,
     focusPos,
     clearFocusPos,

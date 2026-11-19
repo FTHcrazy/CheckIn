@@ -1,0 +1,96 @@
+/* 单条走向卡（R-AI-11）：一段候选 = 编号 + 勾选 + 三段结构。
+   色值一律走 --app-* 语义变量（暗色 / 亮色由主题层统一切换），
+   不做 :hover 属性选择器（antd 特异性压不过，见 §3.5 UI 铁律）。 */
+
+@use "../../../../../../../shared/styles/widget" as widget;
+
+.nv-rescue-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--app-border);
+  border-radius: 10px;
+  background: var(--app-surface);
+  transition:
+    border-color 0.16s ease,
+    background-color 0.16s ease;
+
+  &.is-checked {
+    border-color: var(--app-primary);
+    background: var(--app-primary-weak);
+  }
+}
+
+.nv-rescue-card__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nv-rescue-card__no {
+  flex: none;
+  min-width: 26px;
+  padding: 0 4px;
+  border-radius: 6px;
+  background: var(--app-surface-alt);
+  color: var(--app-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+  letter-spacing: 0.02em;
+}
+
+.nv-rescue-card__title {
+  flex: 1;
+  min-width: 0;
+  color: var(--app-text);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.nv-rescue-card__body {
+  margin: 0;
+  padding-left: 34px;
+
+  dt {
+    margin: 0;
+    color: var(--app-text-muted);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+  }
+
+  dd {
+    margin: 0 0 4px;
+    color: var(--app-text-secondary);
+    font-size: 12px;
+    line-height: 1.6;
+
+    &:last-child {
+      margin-bottom: 0;
+    }
+  }
+}
+
+/* 默认折叠到 3 行：五条走向一屏放不下，全展开等于逼作者滚动 */
+.nv-rescue-card.is-clamped {
+  .nv-rescue-card__conflict,
+  .nv-rescue-card__consequence {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    overflow: hidden;
+  }
+}
+
+/* 展开 / 收起：文字按钮，清零后只留文字（尺寸随文字，不跟 antd 的 32px 盒） */
+.nv-rescue-card__more.ant-btn {
+  @include widget.ant-button-reset;
+  align-self: flex-start;
+  margin-left: 34px;
+  color: var(--app-primary);
+  font-size: 12px;
+}

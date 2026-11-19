@@ -78,6 +78,19 @@
     }
   }
 
+  /* 「卡文急救」（R-AI-11 第三入口）：贴右侧、比「记录」轻一档 ——
+     它是「翻灵感时顺手要几个走向」，不该抢主操作的视觉重量 */
+  &__rescue.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 27px;
+    --ant-button-padding-inline: 8px;
+    --ant-button-content-font-size: 12px;
+    --ant-color-text: var(--app-text-secondary);
+    --ant-border-radius: 8px;
+
+    margin-left: auto;
+  }
+
   /* 「记录」主操作：hover / active / disabled 全部走变量（disabled 的底色用
      --ant-button-default-bg-disabled，字色由 antd 的 --ant-color-text-disabled 接管） */
   &__send.ant-btn {
@@ -110,9 +123,38 @@
     }
   }
 
-  &__search {
+  &__search-row {
     flex: none;
+    display: flex;
+    align-items: center;
+    gap: 4px;
     margin-top: 10px;
+  }
+
+  &__search {
+    flex: 1;
+    min-width: 0;
+    margin-top: 0;
+  }
+
+  /* 「查看全部 →」：antd link 按钮，外观交给组件库；只收紧字号与不换行 */
+  &__viewall.ant-btn-link {
+    flex: none;
+    padding-inline: 4px;
+    --ant-button-link-font-size: 12px;
+    white-space: nowrap;
+  }
+
+  /* 归属选择弹窗：说明 + 作品下拉，间距只用 --app-* */
+  &__pick-tip {
+    margin: 0 0 10px;
+    color: var(--app-text-muted);
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  &__pick-select {
+    width: 100%;
   }
 
   /* ── 列表 ─────────────────────────────────────────────────────── */

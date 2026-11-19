@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import * as sass from "sass";
 import ToolLauncher from ".";
+import { IDLE_EXPORT_PROGRESS, type ExportProgress } from "../../../../../../services/progress-phase";
 
 /**
  * 工具箱启动器的两条契约：
@@ -224,5 +225,67 @@ describe("ToolLauncher：描述换行契约（REQ-047）", () => {
     expect([...long].length).toBeGreaterThanOrEqual(60);
     desc!.textContent = long;
     expect(desc!.textContent).toBe(long);
+  });
+});
+
+describe("ToolLauncher：导出进行中态（D-13）", () => {
+  const renderWithExport = (
+    onExportBook = vi.fn(),
+    exportProgress: ExportProgress = IDLE_EXPORT_PROGRESS,
+  ) => {
+    render(
+      <ToolLauncher
+        onOpenNaming={vi.fn()}
+        onOpenSensitive={vi.fn()}
+        onOpenConsistency={vi.fn()}
+        onOpenExtract={vi.fn()}
+        onNotify={vi.fn()}
+        onExportBook={onExportBook}
+        exportProgress={exportProgress}
+      />,
+    );
+    return {
+      button: screen.getByRole("button", { name: /导出整本 TXT/ }),
+      onExportBook,
+    };
+  };
+
+  it("空闲态：导出按钮可点，不显示阶段文案，且不影响 6 张工具卡", () => {
+    const { button, onExportBook } = renderWithExport();
+    expect(button.className).not.toContain("ant-btn-loading");
+    expect(button.hasAttribute("disabled")).toBe(false);
+    expect(document.querySelector(".nv-tools__export-phase")).toBeNull();
+    expect(document.querySelectorAll(".nv-tools__card")).toHaveLength(6);
+
+    button.click();
+    expect(onExportBook).toHaveBeenCalledTimes(1);
+  });
+
+  it("导出中：Button loading + 阶段文案，重复点击不再触发（防连点）", () => {
+    const { button, onExportBook } = renderWithExport(vi.fn(), {
+      exporting: true,
+      phase: "writing",
+      ratio: 0.7,
+      label: "正在写入文件…",
+    });
+    expect(button.className).toContain("ant-btn-loading");
+    expect(button.hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("status").textContent).toContain("正在写入文件…");
+
+    button.click();
+    expect(onExportBook).not.toHaveBeenCalled();
+  });
+
+  it("不传 onExportBook 时（精简形态）不渲染导出条", () => {
+    render(
+      <ToolLauncher
+        onOpenNaming={vi.fn()}
+        onOpenSensitive={vi.fn()}
+        onOpenConsistency={vi.fn()}
+        onOpenExtract={vi.fn()}
+        onNotify={vi.fn()}
+      />,
+    );
+    expect(document.querySelector(".nv-tools__export")).toBeNull();
   });
 });

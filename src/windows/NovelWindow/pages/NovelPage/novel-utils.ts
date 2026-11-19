@@ -691,6 +691,9 @@ export function patchNote(
   }
   if (patch.pinned !== undefined) next.pinned = patch.pinned;
   if (patch.foreshadowId !== undefined) next.foreshadowId = patch.foreshadowId;
+  // O-12 归属迁移：workId 变化就地反映到内存 bundle，落库另走 moveNote 专用通道
+  // （saveNote 的 upsert 不改 work_id，仅 patch 内存不足以持久化）
+  if (patch.workId !== undefined) next.workId = patch.workId;
   return notes.map((note) => (note.id === noteId ? next : note));
 }
 

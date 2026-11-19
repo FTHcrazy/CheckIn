@@ -83,6 +83,50 @@ describe("敏感词 store：手动模式只标扫描结果", () => {
 });
 
 /**
+ * D-08：标注显示开关与检测机制解耦。
+ *
+ * `toggleMark` 只改「画不画」，不得触碰扫描结果 / 计数 / 模式；反过来
+ * `setMode` 也只改「检不检测」，不得改写用户选过的标注显示偏好。
+ */
+describe("敏感词 store：标注显示独立开关（D-08）", () => {
+  beforeEach(() => {
+    resetSensitiveStoreForTest();
+  });
+
+  it("关标注不关检测：mode 不变，扫描结果与计数仍在", () => {
+    const store = useSensitiveStore.getState();
+    store.setMode("manual");
+    store.toggleMark(false);
+    useSensitiveStore.getState().addWords(["敏感测试词"]);
+    useSensitiveStore.getState().scanCurrentChapter({
+      id: "c1",
+      title: "第一章",
+      content: "敏感测试词",
+    });
+
+    const state = useSensitiveStore.getState();
+    expect(state.config.markVisible).toBe(false);
+    expect(state.config.mode).toBe("manual");
+    expect(state.chapterMatches).toHaveLength(1);
+    expect(state.chapterResult?.total).toBe(1);
+  });
+
+  it("切检测模式不改写标注显示偏好（互不串扰）", () => {
+    useSensitiveStore.getState().toggleMark(false);
+    useSensitiveStore.getState().setMode("auto");
+    expect(useSensitiveStore.getState().config.mode).toBe("auto");
+    expect(useSensitiveStore.getState().config.markVisible).toBe(false);
+  });
+
+  it("旧档兼容：默认 markVisible 为 true，重复切同值无副作用", () => {
+    expect(useSensitiveStore.getState().config.markVisible).toBe(true);
+    const before = useSensitiveStore.getState().config;
+    useSensitiveStore.getState().toggleMark(true);
+    expect(useSensitiveStore.getState().config).toBe(before);
+  });
+});
+
+/**
  * 坐标平移的上报通道。
  *
  * 真实事故：手动扫描完改了几个字，高亮停在旧位置、后面全偏。编辑器已经把

@@ -17,7 +17,17 @@ export interface EntityTypeMeta {
   color: string;
   /** 弱色：卡片底、筛选 chip 底、正文高亮底色 */
   colorWeak: string;
+  /**
+   * 单字前缀（O-17，颜色语义冗余）：人 / 地 / 势 / 物 / 阶 / 其。
+   *
+   * 颜色对色觉障碍用户不是可靠通道，前缀字是**真实文本节点**（非 `::before`），
+   * 灰度下也能分辨。自建类型固定「其」，本期不开用户自定义编辑。
+   */
+  glyph: string;
 }
+
+/** 自建类型的默认前缀字（本期不开自定义编辑，单一常量） */
+export const CUSTOM_TYPE_GLYPH = "其";
 
 /**
  * 内置要素类型语义色
@@ -30,31 +40,37 @@ export const ENTITY_TYPE_META: Record<BuiltinEntityType, EntityTypeMeta> = {
     label: "角色",
     color: "var(--app-primary)",
     colorWeak: "var(--app-primary-weak)",
+    glyph: "人",
   },
   location: {
     label: "地点",
     color: "var(--app-accent-green)",
     colorWeak: "var(--app-accent-green-weak)",
+    glyph: "地",
   },
   faction: {
     label: "势力",
     color: "var(--app-accent-purple)",
     colorWeak: "var(--app-accent-purple-weak)",
+    glyph: "势",
   },
   item: {
     label: "物品",
     color: "var(--app-accent-amber)",
     colorWeak: "var(--app-accent-amber-weak)",
+    glyph: "物",
   },
   level_system: {
     label: "等级体系",
     color: "var(--app-accent-blue)",
     colorWeak: "var(--app-accent-blue-weak)",
+    glyph: "阶",
   },
   custom: {
     label: "自定义",
     color: "var(--app-text-secondary)",
     colorWeak: "var(--app-surface-active)",
+    glyph: CUSTOM_TYPE_GLYPH,
   },
 };
 
@@ -74,6 +90,8 @@ export function customTypeMeta(def: CustomEntityTypeDef): EntityTypeMeta {
     label: def.name,
     color: def.color,
     colorWeak: `color-mix(in srgb, ${def.color} 15%, transparent)`,
+    // 自建类型统一「其」；用户自定义前缀本期不做，避免第二份类型表
+    glyph: CUSTOM_TYPE_GLYPH,
   };
 }
 

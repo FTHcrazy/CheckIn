@@ -31,6 +31,7 @@ export {
 export {
   DEFAULT_SENSITIVE_CONFIG,
   isHighlightEnabled,
+  isSensitiveMarkVisible,
   resolveHighlightSource,
   SENSITIVE_MODE_META,
   SENSITIVE_TERM_MAX_LENGTH,

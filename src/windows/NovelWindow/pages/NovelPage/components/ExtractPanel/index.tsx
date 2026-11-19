@@ -89,7 +89,7 @@ export default function ExtractPanel({
   );
 
   const typeOptions = useMemo(
-    () => filterOrder.map((type) => ({ label: metaOf(type).label, value: type })),
+    () => filterOrder.map((type) => ({ label: `${metaOf(type).glyph} · ${metaOf(type).label}`, value: type })),
     [filterOrder, metaOf],
   );
 

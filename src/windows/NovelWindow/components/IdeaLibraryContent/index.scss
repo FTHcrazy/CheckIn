@@ -1,7 +1,7 @@
 // 右栏的「记一条灵感」图标按钮与筛选 chips 都由 antd `Button` 承载（AGENTS §6.1.2）：
 // 先清零组件级变量再声明自己的外观；hover / 选中态一律写成变量 ——
 // 自写 `:hover` 属性规则压不过 `.ant-btn:not(:disabled):not(.ant-btn-disabled):hover`（0,4,0）
-@use "../../../../../../shared/styles/widget" as widget;
+@use "../../../../shared/styles/widget" as widget;
 
 .bs-rail {
   flex: none;

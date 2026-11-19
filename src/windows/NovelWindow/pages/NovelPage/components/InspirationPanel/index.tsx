@@ -4,11 +4,13 @@ import {
   CloseOutlined,
   EditOutlined,
   FlagOutlined,
+  FolderAddOutlined,
   PushpinFilled,
   PushpinOutlined,
+  RollbackOutlined,
   SearchOutlined,
 } from "@ant-design/icons";
-import { Button, Input } from "antd";
+import { Button, Dropdown, Input, Modal, Popconfirm, Select } from "antd";
 import { Virtuoso } from "react-virtuoso";
 import { filterNotes, formatRelativeTime } from "../../novel-utils";
 import type { NovelNote } from "../../types";
@@ -23,8 +25,24 @@ export interface InspirationActions {
   /** 置顶切换：pinned 是切换后的目标状态 */
   onTogglePin: (noteId: string, pinned: boolean) => void;
   onRemoveNote: (noteId: string) => void;
-  /** 一键把灵感转成大纲伏笔（跨面板联动，在页面层编排） */
-  onPromoteNote: (noteId: string) => void;
+  /**
+   * 一键把灵感转成大纲伏笔（跨面板联动，在页面层编排）。
+   * O-12：未归属灵感先由本面板弹归属选择，选中作品 id 作为第二参传入；
+   * 已归属灵感省略第二参（用 note 自身的 workId）。
+   */
+  onPromoteNote: (noteId: string, workId?: string) => void;
+  /** O-12 归属迁移：workId 传 '' 退回未归属池 */
+  onMoveNote?: (noteId: string, workId: string) => void;
+  /** O-12「查看全部」：打开全局灵感抽屉 */
+  onOpenAll?: () => void;
+  /**
+   * R-AI-11「卡文急救」：第三个入口。
+   *
+   * 为什么灵感面板也要有这个入口：卡文的时刻八成正在翻灵感——想不起接下来
+   * 该写什么时才来翻旧点子。入口开在同一处，等于把「翻灵感」与「要几个走向」
+   * 合成一个动作，而不是让作者关面板、去正文找按钮。
+   */
+  onRescue?: () => void;
 }
 
 interface InspirationPanelProps {
@@ -36,6 +54,8 @@ interface InspirationPanelProps {
   activeWorkId?: string;
   /** 作品 id → 书名（外部灵感的来源标签） */
   workNameOf?: (workId: string) => string;
+  /** O-12：可归属的作品列表（未归属灵感的「归属到」下拉 / 转伏笔前置选择） */
+  workOptions?: Array<{ id: string; name: string }>;
   actions: InspirationActions;
 }
 
@@ -54,6 +74,7 @@ export default function InspirationPanel({
   globalNotes,
   activeWorkId = "",
   workNameOf,
+  workOptions = [],
   actions,
 }: InspirationPanelProps) {
   // 新增草稿
@@ -66,6 +87,15 @@ export default function InspirationPanel({
   // 编辑草稿
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
+
+  /**
+   * O-12 未归属灵感转伏笔的归属选择弹窗：null = 关闭，否则是被转的 noteId。
+   * 默认归属当前作品；确认后先迁移归属再转伏笔（单向流 ①→②→③）。
+   */
+  const [promotePick, setPromotePick] = useState<{
+    noteId: string;
+    workId: string;
+  } | null>(null);
 
   // 全局搜索池：有关键词时跨全部书籍检索；无关键词展示当前作品列表
   const searchPool = globalNotes ?? notes;
@@ -90,6 +120,27 @@ export default function InspirationPanel({
    */
   const isExternal = (note: NovelNote): boolean =>
     Boolean(activeWorkId) && Boolean(note.workId) && note.workId !== activeWorkId;
+
+  /**
+   * 转伏笔入口：已归属直接转；未归属先弹归属选择（默认当前作品）。
+   * 走 Modal + Select 而非 Modal.confirm：需要「选作品」这一步，确认框里
+   * 放一个受控 Select 才能把归属选择交给用户（O-12 §2.3）。
+   */
+  const requestPromote = (note: NovelNote): void => {
+    if (note.workId) {
+      actions.onPromoteNote(note.id);
+      return;
+    }
+    setPromotePick({ noteId: note.id, workId: activeWorkId });
+  };
+
+  const confirmPromote = (): void => {
+    if (!promotePick) return;
+    const { noteId, workId } = promotePick;
+    setPromotePick(null);
+    if (!workId) return;
+    actions.onPromoteNote(noteId, workId);
+  };
 
   const submit = (): void => {
     const value = draft.trim();
@@ -193,6 +244,44 @@ export default function InspirationPanel({
                   >
                     {note.pinned ? <PushpinFilled /> : <PushpinOutlined />}
                   </Button>
+                  {/*
+                    O-12 归属动作（单向流）：未归属 →「归属到」下拉；已归属 →
+                    「退回灵感池」。已转伏笔的灵感不允许再改归属（会断开反链）。
+                  */}
+                  {actions.onMoveNote && !note.foreshadowId && (
+                    note.workId ? (
+                      <Button
+                        className="nv-mini"
+                        aria-label="退回灵感池"
+                        title="退回灵感池"
+                        onClick={() => actions.onMoveNote?.(note.id, "")}
+                      >
+                        <RollbackOutlined />
+                      </Button>
+                    ) : (
+                      <Dropdown
+                        trigger={["click"]}
+                        disabled={workOptions.length === 0}
+                        menu={{
+                          items: workOptions.map((work) => ({
+                            key: work.id,
+                            label: `归属到《${work.name}》`,
+                          })),
+                          onClick: ({ key }) =>
+                            actions.onMoveNote?.(note.id, String(key)),
+                        }}
+                      >
+                        <Button
+                          className="nv-mini"
+                          aria-label="归属到"
+                          title={workOptions.length ? "归属到" : "先创建作品再归属"}
+                          disabled={workOptions.length === 0}
+                        >
+                          <FolderAddOutlined />
+                        </Button>
+                      </Dropdown>
+                    )
+                  )}
                   <Button
                     className="nv-mini"
                     disabled={Boolean(note.foreshadowId)}
@@ -202,7 +291,7 @@ export default function InspirationPanel({
                         ? "已转为伏笔"
                         : "转为伏笔（写入大纲）"
                     }
-                    onClick={() => actions.onPromoteNote(note.id)}
+                    onClick={() => requestPromote(note)}
                   >
                     <FlagOutlined />
                   </Button>
@@ -214,14 +303,31 @@ export default function InspirationPanel({
                   >
                     <EditOutlined />
                   </Button>
-                  <Button
-                    className="nv-mini nv-mini--warn"
-                    aria-label="删除灵感"
-                    title="删除灵感"
-                    onClick={() => actions.onRemoveNote(note.id)}
-                  >
-                    <CloseOutlined />
-                  </Button>
+                  {note.foreshadowId ? (
+                    <Popconfirm
+                      title="这条灵感已转为伏笔，删除后大纲伏笔仍保留。继续删除？"
+                      okText="删除"
+                      cancelText="取消"
+                      onConfirm={() => actions.onRemoveNote(note.id)}
+                    >
+                      <Button
+                        className="nv-mini nv-mini--warn"
+                        aria-label="删除灵感"
+                        title="删除灵感"
+                      >
+                        <CloseOutlined />
+                      </Button>
+                    </Popconfirm>
+                  ) : (
+                    <Button
+                      className="nv-mini nv-mini--warn"
+                      aria-label="删除灵感"
+                      title="删除灵感"
+                      onClick={() => actions.onRemoveNote(note.id)}
+                    >
+                      <CloseOutlined />
+                    </Button>
+                  )}
                 </span>
               )}
               <p className="nv-note__text">{note.content}</p>
@@ -277,6 +383,16 @@ export default function InspirationPanel({
           <span className="nv-note__tip">
             <kbd>Enter</kbd> 记录 · <kbd>Shift</kbd>+<kbd>Enter</kbd> 换行
           </span>
+          {actions.onRescue && (
+            <Button
+              className="nv-note__rescue"
+              type="text"
+              aria-label="卡文急救：要几个后续走向"
+              onClick={actions.onRescue}
+            >
+              卡文急救
+            </Button>
+          )}
           <Button
             className="nv-note__send"
             onClick={submit}
@@ -287,22 +403,33 @@ export default function InspirationPanel({
         </div>
       </div>
 
-      <div className="nv-field nv-note__search">
-        <SearchOutlined />
-        <Input
-          variant="borderless"
-          value={keyword}
-          placeholder="搜索灵感（全书口径）"
-          aria-label="搜索灵感"
-          onChange={(event) => setKeyword(event.target.value)}
-        />
-        {filtering && (
+      <div className="nv-note__search-row">
+        <div className="nv-field nv-note__search">
+          <SearchOutlined />
+          <Input
+            variant="borderless"
+            value={keyword}
+            placeholder="搜索灵感（全书口径）"
+            aria-label="搜索灵感"
+            onChange={(event) => setKeyword(event.target.value)}
+          />
+          {filtering && (
+            <Button
+              className="nv-field__clear"
+              aria-label="清空搜索"
+              onClick={() => setKeyword("")}
+            >
+              <CloseOutlined />
+            </Button>
+          )}
+        </div>
+        {actions.onOpenAll && (
           <Button
-            className="nv-field__clear"
-            aria-label="清空搜索"
-            onClick={() => setKeyword("")}
+            type="link"
+            aria-label="查看全部灵感"
+            onClick={actions.onOpenAll}
           >
-            <CloseOutlined />
+            查看全部 →
           </Button>
         )}
       </div>
@@ -332,6 +459,38 @@ export default function InspirationPanel({
           />
         </>
       )}
+
+      {/*
+        O-12 未归属灵感转伏笔的归属选择：默认当前作品，确认后由页面层
+        先迁移归属再写 foreshadowId（单向流 ①→②→③，不跳过中间态）。
+      */}
+      <Modal
+        className="nv-note__pick"
+        title="先归属，再转为伏笔"
+        open={promotePick !== null}
+        okText="归属并转伏笔"
+        cancelText="取消"
+        onOk={confirmPromote}
+        onCancel={() => setPromotePick(null)}
+        okButtonProps={{ disabled: !promotePick?.workId }}
+      >
+        <p className="nv-note__pick-tip">
+          伏笔属于具体作品的大纲。请先选一条灵感要归属的作品，确认后再写入该书大纲。
+        </p>
+        <Select
+          className="nv-note__pick-select"
+          aria-label="选择归属作品"
+          value={promotePick?.workId ?? undefined}
+          placeholder="选择归属作品"
+          onChange={(workId) =>
+            setPromotePick((prev) => (prev ? { ...prev, workId } : prev))
+          }
+          options={workOptions.map((work) => ({
+            value: work.id,
+            label: `《${work.name}》`,
+          }))}
+        />
+      </Modal>
     </div>
   );
 }

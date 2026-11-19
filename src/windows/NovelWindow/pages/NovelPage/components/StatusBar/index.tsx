@@ -1,4 +1,4 @@
-import { Button, Popover } from "antd";
+import { Button, Popover, Switch } from "antd";
 import { MoreOutlined, SafetyOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
 import { TODAY_ADDED_LABEL, TODAY_GOAL_LABEL, WORD_UNIT } from "@/shared/novel/today-stats";
@@ -39,6 +39,8 @@ export default function StatusBar({
 
   // 敏感词角标：直接订阅 store，计数变化只重渲染本组件（不推页面根）
   const sensitiveMode = useSensitiveStore((state) => state.config.mode);
+  const markVisible = useSensitiveStore((state) => state.config.markVisible ?? true);
+  const toggleMark = useSensitiveStore((state) => state.toggleMark);
   const chapterResult = useSensitiveStore((state) => state.chapterResult);
   const sensitiveHits =
     sensitiveMode === "off" ? 0 : (chapterResult?.total ?? 0);
@@ -102,6 +104,27 @@ export default function StatusBar({
         <span className="nv-status__anno-dot" />
         标注 {annotationOn ? "开" : "关"}
       </Button>
+
+      {/*
+        D-08：敏感词「标注显示」独立开关。与左邻的「标注」（要素层）和右邻的
+        「敏感 N」（检测结果）都不同——它只管正文红字画不画，不关检测、不改计数。
+        检测 mode=off 时没有标注可显示，禁用以免给出「点了没反应」的错觉。
+      */}
+      <span className="nv-status__mark">
+        <Switch
+          size="small"
+          checked={markVisible}
+          disabled={sensitiveMode === "off"}
+          onChange={toggleMark}
+          aria-label="敏感词标注显示"
+          title={
+            markVisible
+              ? "关闭正文敏感词标注（检测与计数不受影响）"
+              : "开启正文敏感词标注"
+          }
+        />
+        <span className="nv-status__mark-label">敏感标注</span>
+      </span>
 
       {/* 敏感词角标：命中 > 0 才转警示色。它是「结果」不是「开关」，
           点击直接展开右栏面板，省掉「先切工具 Tab 再点卡片」两步 */}

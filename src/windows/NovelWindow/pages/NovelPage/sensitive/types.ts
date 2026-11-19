@@ -56,6 +56,21 @@ export function isHighlightEnabled(mode: SensitiveScanMode): boolean {
   return resolveHighlightSource(mode) !== "none";
 }
 
+/**
+ * 正文标注「显示」最终判据（D-08）。
+ *
+ * 检测（`mode`）与显示（`markVisible`）是两件事：
+ *   - `mode=off`  → 根本不检测，自然也没有标注；
+ *   - `markVisible=false` → 检测照跑、计数照出，只是正文不画标注。
+ * 旧档没有 `markVisible` 字段时按 `true` 处理（novelArch=compat）。
+ */
+export function isSensitiveMarkVisible(
+  mode: SensitiveScanMode,
+  markVisible: boolean | undefined,
+): boolean {
+  return (markVisible ?? true) && isHighlightEnabled(mode);
+}
+
 /** 词条来源：内置库只读（可屏蔽），用户库可增删改 */
 export type SensitiveWordOrigin = "builtin" | "user";
 
@@ -112,12 +127,19 @@ export interface SensitiveConfig {
   muted: string[];
   /** 扫描模式 */
   mode: SensitiveScanMode;
+  /**
+   * 是否显示正文标注（D-08，compat 可选字段）。
+   * 与 `mode` 解耦：`mode` 管「是否检测」，`markVisible` 只管「是否画标注」。
+   * 旧档缺失按 `true`；用户显式关闭后写 `false` 持久化。
+   */
+  markVisible?: boolean;
 }
 
 export const DEFAULT_SENSITIVE_CONFIG: SensitiveConfig = {
   words: [],
   muted: [],
   mode: "manual",
+  markVisible: true,
 };
 
 /** 单条词条最大长度：再长就不像词条了，多半是误粘贴整段文本 */

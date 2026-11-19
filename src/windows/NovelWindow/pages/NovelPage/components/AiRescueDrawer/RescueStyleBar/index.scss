@@ -1,0 +1,17 @@
+/* 风格旋钮条（R-AI-11）：四档风格 + 条数 + 换一批，一行排布、窄屏换行。 */
+
+.nv-rescue-style {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.nv-rescue-style__tabs {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.nv-rescue-style__count {
+  flex: none;
+}

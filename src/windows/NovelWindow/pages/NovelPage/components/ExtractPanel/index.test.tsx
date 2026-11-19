@@ -139,10 +139,12 @@ describe("ExtractPanel", () => {
     const types = [...container.querySelectorAll(".nv-xp__type")].map(
       (node) => node.getAttribute("title") ?? node.textContent?.trim(),
     );
-    // 类型 id 是 character / faction，下拉里必须是中文展示名
-    expect(types).toContain("角色");
-    expect(types).toContain("势力");
-    expect(types).not.toContain("character");
+    // 类型 id 是 character / faction，下拉里必须是中文展示名。
+    // O-17 起展示名走 `EntityTypeChip`（前缀字 + 「·」+ 名称，如「人 · 角色」），
+    // 所以比对「含有中文名」而不是整串相等。
+    expect(types.some((text) => text?.includes("角色"))).toBe(true);
+    expect(types.some((text) => text?.includes("势力"))).toBe(true);
+    expect(types.some((text) => text?.includes("character"))).toBe(false);
   });
 
   it("点勾选框回传 key（面板不自己改状态，由页面持有会话）", () => {

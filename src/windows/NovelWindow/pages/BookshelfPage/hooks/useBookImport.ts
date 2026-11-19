@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from "react";
 import { App } from "antd";
 import {
   commitImport,
+  PHASE_TEXT,
   parseInWorker,
   pickImportFile,
 } from "../services/import-service";
@@ -15,13 +16,6 @@ import {
  * 完成/失败都用 antd message 轻提示（不切走用户当前操作），
  * 落库成功后回调 `onDone` 让书架静默刷新出新书。
  */
-
-/** 进度阶段 → 中文文案 */
-const PHASE_TEXT: Record<string, string> = {
-  decode: "正在识别编码…",
-  parse: "正在拆分章节…",
-  finalize: "正在整理目录…",
-};
 
 /** 导入态 */
 export interface ImportState {

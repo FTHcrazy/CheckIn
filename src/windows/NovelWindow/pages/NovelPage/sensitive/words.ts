@@ -58,6 +58,11 @@ export function sanitizeSensitiveConfig(raw: unknown): SensitiveConfig {
     // 屏蔽列表只保留「确实是内置词」的项，避免用户库删词后残留脏数据
     muted: sanitizeTerms(source.muted).filter((term) => BUILTIN_SENSITIVE_SET.has(term)),
     mode: sanitizeMode(source.mode),
+    // compat：旧档没有 markVisible 时按「显示」处理（默认 true）
+    markVisible:
+      typeof source.markVisible === "boolean"
+        ? source.markVisible
+        : (DEFAULT_SENSITIVE_CONFIG.markVisible ?? true),
   };
 }
 

@@ -21,6 +21,8 @@ const buildActions = (
   onTogglePin: vi.fn(),
   onRemoveNote: vi.fn(),
   onPromoteNote: vi.fn(),
+  onMoveNote: vi.fn(),
+  onOpenAll: vi.fn(),
   ...over,
 });
 
@@ -226,5 +228,88 @@ describe("InspirationPanel 组件", () => {
     });
     fireEvent.keyDown(screen.getByLabelText("编辑灵感内容"), { key: "Enter" });
     expect(onUpdateNote).toHaveBeenCalledWith("n8", "北境雪崩伏笔（改）");
+  });
+
+  // ── O-12：单向流动作集 ──────────────────────────────────────────
+  it("查看全部入口：点击回调 onOpenAll", () => {
+    const onOpenAll = vi.fn();
+    render(
+      <InspirationPanel
+        notes={notes}
+        actions={buildActions({ onOpenAll })}
+      />,
+    );
+    fireEvent.click(screen.getByLabelText("查看全部灵感"));
+    expect(onOpenAll).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: /查看全部/ })).toBeInTheDocument();
+  });
+
+  it("已归属灵感显示退回灵感池，未归属显示归属到", () => {
+    const onMoveNote = vi.fn();
+    const unassigned: NovelNote = {
+      id: "n8", workId: "", content: "未归属的一条", createdAt: now, pinned: false,
+    };
+    const { unmount } = render(
+      <InspirationPanel
+        notes={notes}
+        activeWorkId="w1"
+        workOptions={[{ id: "w1", name: "当前书" }]}
+        actions={buildActions({ onMoveNote })}
+      />,
+    );
+    // 已归属（n1/n2）显示「退回灵感池」
+    expect(screen.getAllByLabelText("退回灵感池").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getAllByLabelText("退回灵感池")[0]);
+    expect(onMoveNote).toHaveBeenCalledWith("n1", "");
+    unmount();
+
+    render(
+      <InspirationPanel
+        notes={[unassigned]}
+        activeWorkId="w1"
+        workOptions={[{ id: "w1", name: "当前书" }]}
+        actions={buildActions({ onMoveNote })}
+      />,
+    );
+    expect(screen.getByLabelText("归属到")).toBeInTheDocument();
+  });
+
+  it("未归属灵感点转伏笔：先弹归属选择，确认后才带 workId 回调", () => {
+    const onPromoteNote = vi.fn();
+    const unassigned: NovelNote = {
+      id: "n8", workId: "", content: "未归属转伏笔", createdAt: now, pinned: false,
+    };
+    render(
+      <InspirationPanel
+        notes={[unassigned]}
+        activeWorkId="w1"
+        workOptions={[{ id: "w1", name: "当前书" }]}
+        actions={buildActions({ onPromoteNote })}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText("转为伏笔"));
+    // 弹窗出现，未确认前不写 foreshadowId
+    expect(screen.getByText("先归属，再转为伏笔")).toBeInTheDocument();
+    expect(onPromoteNote).not.toHaveBeenCalled();
+
+    // 确认（默认当前作品 w1）
+    const ok = screen.getByRole("button", { name: /归属并转伏笔/ });
+    fireEvent.click(ok);
+    expect(onPromoteNote).toHaveBeenCalledWith("n8", "w1");
+  });
+
+  it("已转伏笔灵感删除需二次确认", () => {
+    const onRemoveNote = vi.fn();
+    render(
+      <InspirationPanel
+        notes={[notes[1]]}
+        actions={buildActions({ onRemoveNote })}
+      />,
+    );
+    // 点删除先弹确认，未确认不落库
+    fireEvent.click(screen.getByLabelText("删除灵感"));
+    expect(screen.getByText(/删除后大纲伏笔仍保留/)).toBeInTheDocument();
+    expect(onRemoveNote).not.toHaveBeenCalled();
   });
 });

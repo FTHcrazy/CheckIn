@@ -771,3 +771,12 @@
     }
   }
 }
+
+/* O-17：选区 Enter 多命中时 antd Dropdown 的零尺寸锚点（贴在选区左下角）。
+   浮层本身由组件库 portal 承载，这里只定位，不画任何自制遮罩。 */
+.nv-editor__card-anchor {
+  position: absolute;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}

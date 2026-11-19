@@ -35,6 +35,19 @@ import {
   LEVEL_OUTPUT_FORMAT,
 } from "./domains/novel/builders/level-gen";
 import {
+  assembleBranchSpec,
+  BRANCH_OUTPUT_FORMAT,
+  clampBranchCount,
+  RESCUE_STYLE_LABELS,
+} from "./domains/novel/builders/branch";
+import {
+  assembleConsistencySpec,
+  CONSISTENCY_MAX_SUSPECTS,
+  CONSISTENCY_OUTPUT_FORMAT,
+  CONSISTENCY_VERDICTS,
+  isTypoVerdict,
+} from "./domains/novel/builders/consistency";
+import {
   AI_INTENT_LABELS,
   buildPromptSpec,
   PROMPT_BUILDERS,
@@ -543,7 +556,7 @@ describe("assembleRelationSpec", () => {
 });
 
 describe("Prompt 模板注册表", () => {
-  it("清单与注册表一致，且起名 / 润色 / 变换 / 续写 / 摘要 / 抽取 / 关系都在册", () => {
+  it("清单与注册表一致，且起名 / 润色 / 变换 / 续写 / 摘要 / 抽取 / 关系 / 卡文救援 / 一致性都在册", () => {
     expect([...PROMPT_INTENTS].sort()).toEqual(Object.keys(PROMPT_BUILDERS).sort());
     expect(PROMPT_INTENTS).toContain("naming");
     expect(PROMPT_INTENTS).toContain("polish");
@@ -552,6 +565,8 @@ describe("Prompt 模板注册表", () => {
     expect(PROMPT_INTENTS).toContain("summary");
     expect(PROMPT_INTENTS).toContain("extract");
     expect(PROMPT_INTENTS).toContain("relation");
+    expect(PROMPT_INTENTS).toContain("branch");
+    expect(PROMPT_INTENTS).toContain("consistency");
   });
 
   it("每个模板都产出完整 PromptSpec：角色句在首句、system 非空、声明了输出契约", () => {
@@ -563,8 +578,27 @@ describe("Prompt 模板注册表", () => {
     const summary = PROMPT_BUILDERS.summary(context, { chapter: "正文。" });
     const extract = PROMPT_BUILDERS.extract(context, { chapter: "正文。" });
     const relation = PROMPT_BUILDERS.relation(context, { chapter: "正文。" });
+    const branch = PROMPT_BUILDERS.branch(collectBookContext(snapshot, "branch"), {
+      chapter: "正文。",
+      style: "default",
+      count: 4,
+    });
+    const consistency = PROMPT_BUILDERS.consistency(
+      collectBookContext(snapshot, "consistency"),
+      { suspects: [{ expected: "林晚照", candidate: "林晚昭", occurrences: 2, snippet: "林晚昭提剑。" }], knownNames: ["林晚照"] },
+    );
 
-    for (const spec of [naming, polish, transform, continuation, summary, extract, relation]) {
+    for (const spec of [
+      naming,
+      polish,
+      transform,
+      continuation,
+      summary,
+      extract,
+      relation,
+      branch,
+      consistency,
+    ]) {
       expect(spec.system.startsWith("你是")).toBe(true);
       expect(spec.system.length).toBeGreaterThan(20);
       expect(spec.prompt.trim().length).toBeGreaterThan(0);
@@ -608,6 +642,20 @@ describe("Prompt 模板注册表", () => {
     const viaLevelGen = buildPromptSpec("levelGen", context, levelIntent);
     const directLevelGen = assembleLevelGenSpec(context, levelIntent);
     expect(viaLevelGen).toEqual(directLevelGen);
+
+    // 卡文救援 / 一致性 AI 档：新增意图的**参数不错位**（ctx 用错域的、payload 少字段都会红）
+    const branchIntent = { chapter: "正文。", style: "darker" as const, count: 4 };
+    const viaBranch = buildPromptSpec("branch", context, branchIntent);
+    const directBranch = assembleBranchSpec(context, branchIntent);
+    expect(viaBranch).toEqual(directBranch);
+
+    const consistencyIntent = {
+      suspects: [{ expected: "林晚照", candidate: "林晚昭", occurrences: 2, snippet: "林晚昭提剑。" }],
+      knownNames: ["林晚照"],
+    };
+    const viaConsistency = buildPromptSpec("consistency", context, consistencyIntent);
+    const directConsistency = assembleConsistencySpec(context, consistencyIntent);
+    expect(viaConsistency).toEqual(directConsistency);
   });
 
   it("每个已登记意图都有 prompt 版本（M7：效果归因的对照基准）", () => {
@@ -628,6 +676,9 @@ describe("Prompt 模板注册表", () => {
     }
     // summary 是 2.10.0 新增，历史上被 UsagePanel 漏掉（review G7）
     expect(AI_INTENT_LABELS.summary).toBe("摘要");
+    // 2.72.0 新增的两个意图：标签必须与域内表同字面（否则看板上是英文键名）
+    expect(AI_INTENT_LABELS.branch).toBe("卡文救援");
+    expect(AI_INTENT_LABELS.consistency).toBe("一致性 AI 档");
   });
 });
 
@@ -767,5 +818,220 @@ describe("assembleLevelGenSpec", () => {
       count: 5,
     });
     expect(spec.system).toContain("【体系】等级体系（境界体系）");
+  });
+});
+
+describe("assembleBranchSpec（R-AI-11 卡文救援）", () => {
+  const branchContext = () => collectBookContext(snapshot, "branch");
+
+  it("json-array 契约：走向标题 / 核心冲突 / 走向后果三列", () => {
+    const spec = assembleBranchSpec(branchContext(), {
+      chapter: "林晚照立于青云山巅。",
+      style: "default",
+      count: 4,
+    });
+    expect(spec.outputFormat).toEqual(BRANCH_OUTPUT_FORMAT);
+    const format = spec.outputFormat;
+    const keys = format.kind === "json-array" ? format.fields.map((field) => field.key) : [];
+    expect(keys).toEqual(["title", "conflict", "consequence"]);
+  });
+
+  it("注入作品背景 / 要素白名单 / 正文", () => {
+    const spec = assembleBranchSpec(branchContext(), {
+      chapter: "林晚照立于青云山巅，剑已在手。",
+      style: "default",
+      count: 4,
+    });
+    expect(spec.system).toContain("《青云志》");
+    expect(spec.system).toContain("仙侠");
+    // 要素表是人物白名单：走向可以让现有角色做新选择，但不能凭空多出有名有姓的人
+    expect(spec.system).toContain("人物：林晚照");
+    expect(spec.system).toContain("必须**是上面这些名字之一");
+    expect(spec.system).toContain("【正文（作者写到这里卡住了）】");
+    expect(spec.system).toContain("剑已在手");
+    expect(spec.prompt).toContain("4 条");
+  });
+
+  it("大纲入口：节点标题与梗概进 prompt，且要求每条走向都推进该节点", () => {
+    const spec = assembleBranchSpec(branchContext(), {
+      chapter: "林晚照立于青云山巅。",
+      outlineNode: { title: "山巅对峙", gist: "逼师门表态" },
+      style: "default",
+      count: 3,
+    });
+    expect(spec.system).toContain("【当前剧情节点】山巅对峙");
+    expect(spec.system).toContain("这一节点要推进的是：逼师门表态");
+    expect(spec.system).toContain("不要绕开它另起炉灶");
+  });
+
+  it("选中段落档：卡住段落与本章正文分两段给出，且不要求改写正文", () => {
+    const spec = assembleBranchSpec(branchContext(), {
+      chapter: "整章正文在此。",
+      selection: "林晚照握住剑柄。",
+      style: "default",
+      count: 4,
+    });
+    expect(spec.system).toContain("【卡住的段落】\n林晚照握住剑柄。");
+    expect(spec.system).toContain("【本章正文（只作背景，不要求改写它）】");
+  });
+
+  it("条数夹取到 [3,5]：未填回落默认、越界夹紧", () => {
+    expect(clampBranchCount(undefined)).toBe(4);
+    expect(clampBranchCount(0)).toBe(4);
+    expect(clampBranchCount(1)).toBe(3);
+    expect(clampBranchCount(9)).toBe(5);
+    expect(clampBranchCount(4.7)).toBe(4);
+
+    // 面板传 9 也要真的只发 5 条（口径同源，不能 UI 显示 9、实发 5）
+    const spec = assembleBranchSpec(branchContext(), {
+      chapter: "正文。",
+      style: "default",
+      count: 9,
+    });
+    expect(spec.system).toContain("必须输出 5 条");
+    expect(spec.prompt).toContain("5 条");
+  });
+
+  it("四档风格旋钮各有硬约束，且都写明「不要做什么」", () => {
+    for (const style of ["default", "darker", "restrained", "twist"] as const) {
+      const spec = assembleBranchSpec(branchContext(), { chapter: "正文。", style, count: 4 });
+      // 风格档位是「用户可见的旋钮名」→ 进 user prompt；硬约束 → 进 system
+      expect(spec.prompt).toContain(`风格：${RESCUE_STYLE_LABELS[style]}`);
+    }
+    const darker = assembleBranchSpec(branchContext(), { chapter: "正文。", style: "darker", count: 4 });
+    expect(darker.system).toContain("不要为黑而黑");
+    const twist = assembleBranchSpec(branchContext(), { chapter: "正文。", style: "twist", count: 4 });
+    expect(twist.system).toContain("不要凭空掉下一个新势力");
+  });
+
+  it("摘要只在正文短于 300 字时注入（与续写同一阈值）", () => {
+    const short = assembleBranchSpec(branchContext(), {
+      chapter: "林晚照立于山巅。",
+      summary: "上一章：她拜入青云宗。",
+      style: "default",
+      count: 4,
+    });
+    expect(short.system).toContain("【上一章摘要】上一章：她拜入青云宗。");
+
+    const long = assembleBranchSpec(branchContext(), {
+      chapter: "正".repeat(CONTINUATION_SUMMARY_MIN_BEFORE_CHARS),
+      summary: "上一章：她拜入青云宗。",
+      style: "default",
+      count: 4,
+    });
+    expect(long.system).not.toContain("【上一章摘要】");
+  });
+
+  it("空正文也有兜底，不拼出空的【正文】残段", () => {
+    const spec = assembleBranchSpec(branchContext(), { chapter: "   ", style: "default", count: 4 });
+    expect(spec.system).toContain("（本章暂无正文，请基于已有设定给开局走向）");
+    expect(spec.system).not.toContain("【上一章摘要】");
+  });
+});
+
+describe("assembleConsistencySpec（R-AI-10b 一致性 AI 档）", () => {
+  const consistencyContext = () => collectBookContext(snapshot, "consistency");
+
+  it("json-array 契约：正确写法 / 疑似写法 / 判定 / 依据四列", () => {
+    const spec = assembleConsistencySpec(consistencyContext(), {
+      suspects: [
+        { expected: "林晚照", candidate: "林晚昭", occurrences: 2, snippet: "林晚昭提剑。" },
+      ],
+      knownNames: ["林晚照"],
+    });
+    expect(spec.outputFormat).toEqual(CONSISTENCY_OUTPUT_FORMAT);
+    const format = spec.outputFormat;
+    const keys = format.kind === "json-array" ? format.fields.map((field) => field.key) : [];
+    expect(keys).toEqual(["expected", "candidate", "verdict", "reason"]);
+  });
+
+  it("逐条渲染疑似写法（含出现次数与出处），并给出总条数", () => {
+    const spec = assembleConsistencySpec(consistencyContext(), {
+      suspects: [
+        { expected: "林晚照", candidate: "林晚昭", occurrences: 3, snippet: "林晚昭提剑。" },
+        { expected: "青云山", candidate: "青云山颠", occurrences: 1, snippet: "回到青云山颠。" },
+      ],
+      knownNames: ["林晚照", "青云山"],
+    });
+    expect(spec.system).toContain("【待判定的疑似写法（共 2 条）】");
+    expect(spec.system).toContain("1. 疑似「林晚照」被写成了「林晚昭」（出现 3 次）｜出处：林晚昭提剑。");
+    expect(spec.system).toContain("2. 疑似「青云山」被写成了「青云山颠」");
+    expect(spec.system).toContain("送进来 2 条，就回 2 条");
+    expect(spec.prompt).toContain("2 条");
+  });
+
+  it("名字白名单：优先用本批次 knownNames，不再重复罗列整张要素表", () => {
+    const spec = assembleConsistencySpec(consistencyContext(), {
+      suspects: [
+        { expected: "林晚照", candidate: "林晚昭", occurrences: 2, snippet: "林晚昭提剑。" },
+      ],
+      knownNames: ["林晚照", "林晚照"], // 重复项应被去重
+    });
+    expect(spec.system).toContain("【可以判定的名字（白名单）】林晚照");
+    expect(spec.system).toContain('只有出现在这份清单里的名字才允许作为 "expected"');
+    // 白名单已在场，不再叠一遍【已有要素】
+    expect(spec.system).not.toContain("【已有要素】");
+  });
+
+  it("没有 knownNames 时退回要素段作白名单（旧调用方不必改）", () => {
+    const spec = assembleConsistencySpec(consistencyContext(), {
+      suspects: [
+        { expected: "林晚照", candidate: "林晚昭", occurrences: 2, snippet: "林晚昭提剑。" },
+      ],
+      knownNames: [],
+    });
+    expect(spec.system).toContain("【已有要素】");
+    expect(spec.system).toContain("林晚照");
+    expect(spec.system).not.toContain("【可以判定的名字（白名单）】");
+  });
+
+  it("判定三态写进约束；只有「错字」算建议改（isTypoVerdict）", () => {
+    const spec = assembleConsistencySpec(consistencyContext(), {
+      suspects: [
+        { expected: "林晚照", candidate: "林晚昭", occurrences: 2, snippet: "林晚昭提剑。" },
+      ],
+      knownNames: ["林晚照"],
+    });
+    for (const verdict of CONSISTENCY_VERDICTS) {
+      expect(spec.system).toContain(verdict);
+    }
+    expect(spec.system).toContain("拿不准时判「同形异名」");
+    expect(isTypoVerdict("错字")).toBe(true);
+    expect(isTypoVerdict(" 错字 ")).toBe(true);
+    expect(isTypoVerdict("同形异名")).toBe(false);
+    expect(isTypoVerdict("同姓角色")).toBe(false);
+    expect(isTypoVerdict("模型自造的新词")).toBe(false);
+    expect(isTypoVerdict(undefined)).toBe(false);
+  });
+
+  it("空疑似集：输出空数组口径，不出现「共 0 条」的残句", () => {
+    const spec = assembleConsistencySpec(consistencyContext(), { suspects: [], knownNames: [] });
+    expect(spec.system).toContain("（本次没有需要判定的条目）");
+    expect(spec.system).toContain("输出空数组 []");
+    expect(spec.system).not.toContain("共 0 条");
+    expect(spec.prompt).toContain("空数组");
+  });
+
+  it("超过单批上限时截断（与 useConsistencyAi 的分批口径同源）", () => {
+    const suspects = Array.from({ length: CONSISTENCY_MAX_SUSPECTS + 5 }, (_, index) => ({
+      expected: "林晚照",
+      candidate: `林晚昭${index}`,
+      occurrences: 1,
+      snippet: "出处。",
+    }));
+    const spec = assembleConsistencySpec(consistencyContext(), { suspects, knownNames: ["林晚照"] });
+    expect(spec.system).toContain(`【待判定的疑似写法（共 ${CONSISTENCY_MAX_SUSPECTS} 条）】`);
+    expect(spec.system).not.toContain(`林晚昭${CONSISTENCY_MAX_SUSPECTS}`);
+  });
+
+  it("两端都空的疑似行被丢弃（不浪费一次判定额度）", () => {
+    const spec = assembleConsistencySpec(consistencyContext(), {
+      suspects: [
+        { expected: "  ", candidate: "", occurrences: 1, snippet: "" },
+        { expected: "林晚照", candidate: "林晚昭", occurrences: 2, snippet: "林晚昭提剑。" },
+      ],
+      knownNames: ["林晚照"],
+    });
+    expect(spec.system).toContain("（共 1 条）");
   });
 });

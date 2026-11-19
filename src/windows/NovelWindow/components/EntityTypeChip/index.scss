@@ -1,0 +1,62 @@
+/* 要素类型 chip（O-17）：前缀字是真实文本节点，颜色只是左侧色带。
+   antd 控件外观一律通过 --ant-* 组件变量覆盖，不写 :hover 属性规则。 */
+
+@use "../../../../shared/styles/widget" as widget;
+
+.nv-type-chip {
+  --ant-button-content-font-size: 12px;
+  --ant-button-icon-gap: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-left: 2px solid transparent;
+  font-size: 12px;
+  color: var(--app-text);
+  line-height: 1.5;
+
+  &__glyph {
+    color: var(--app-text-strong);
+    font-weight: 700;
+  }
+
+  &__sep {
+    color: var(--app-text-muted);
+  }
+
+  &__label {
+    color: var(--app-text);
+    min-width: 0;
+  }
+
+  /* 可点变体（`Button`）：先清零 antd 的尺寸与描边，再按 chip 重新声明。
+     `.nv-type-chip.ant-btn` 这条必须独立存在（守卫查编译产物的清零点签名
+     `--ant-control-height`）——静态变体是 `Tag`，不受它影响。 */
+  &.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-button-content-font-size: 12px;
+    --ant-button-icon-gap: 4px;
+    --ant-border-radius: 4px;
+    --ant-button-default-bg: transparent;
+    --ant-button-default-color: var(--app-text-secondary);
+    --ant-button-default-border-color: var(--app-border);
+    --ant-line-width: 1px;
+    height: auto;
+    padding: 1px 6px;
+
+    /* 常驻选中态：底色只能取「差一档的静态中性底」——
+       `--app-surface-active` 是**按下态** token，只留给 `:hover / :active`，
+       写在这里会让选中后的 chip 一直像被按住（themes.test.ts 有守卫）。 */
+    &.is-on {
+      --ant-button-default-bg: var(--app-surface-alt);
+      --ant-button-default-color: var(--app-text);
+      --ant-button-default-border-color: var(--app-border-strong);
+    }
+  }
+
+  &--static.ant-tag {
+    margin: 0;
+    border-radius: 4px;
+    background: var(--app-surface-alt);
+    border-color: var(--app-border);
+  }
+}
