@@ -4,6 +4,14 @@
 > 输入：[`nested-submap-road.md`](nested-submap-road.md)（方案稿）、[`nested-submap-elements.md`](nested-submap-elements.md)（方案稿）、[`map-b4-layers-polyline-prd.md`](map-b4-layers-polyline-prd.md)（2.29.0~2.31.0 已实施）、[`map-window-overview.md`](map-window-overview.md)（总览 §3.2 / §5.3-5）
 > 基线：CheckIn **2.36.0**（工作区）｜`src/windows/MapWindow/` 44 文件 / 750 用例
 
+> ⚠️ **勘误（2026-11-19 补，正文按 2.36.0 时点保留不改）**
+> 本文「四类线一律手画、生成器对折线零产出」是 **2.36.0 时点的事实**，此后已被两次交付推翻：
+> - **2.44.0**：`domain/water.ts` 落地「沿地势画河 + 湖泊」，`river` / 湖面由一键成图产出（`origin: "generated"`）；
+> - **2.45.0**：`domain/roads.ts` 落地「聚落间 A\* 寻路 + 点线」，`road` 由一键成图产出（原文判「road D2 与 river R-MAP-21 两件事都未实现」，现均已实现）。
+>
+> 因此本文现只对 **`ridge` / `border` 仍一律手画**、以及「折线的编辑/渲染口径」两件事成立。
+> 与总览冲突时：**状态看 [`map-window-overview.md`](map-window-overview.md) §3.2 / §1 #14**，本条只保留判断依据的追溯价值。
+
 > 适用：本文是三篇文档的**冲突裁定稿**。`map-window-overview.md` §5.3-5 已登记「道路篇说自动连路、
 > elements 篇说水系只预留，两篇各自成立但没有一张表说清哪条自动、哪条手画」——本文就是那张表。
 > **冲突时以本文为准**；三篇原文的结论不删，只在头部加指向本文的一行。

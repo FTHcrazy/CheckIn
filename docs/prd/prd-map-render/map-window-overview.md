@@ -191,9 +191,9 @@
 | 事项 | 编号 | 优先级 | 缺口的具体形态 | 来源 |
 |------|------|--------|----------------|------|
 | **子图静态层缓存** | nested-submap-main | P2 | 只有海岸烘焙按指纹短路，整棵子图静态层未缓存 | 同上 |
-| **一键成图的河流** | R-MAP-21 已知取舍② | P1 | 折线能力已就绪（2.30.0，含变宽），生成器侧的"沿地势画河"仍未设计 | review §9 的 B3 说明 |
+| ~~**一键成图的河流**~~ | ~~R-MAP-21 已知取舍②~~ | — | **已落地（2.44.0）**：`domain/water.ts` 沿地势画河 + 湖泊，`origin: "generated"` 只换自己那批（本行 2026-11-19 勘误：原记「生成器侧仍未设计」，与 §2 的 2.44.0 记录及 §1 能力 #14 矛盾） | review §9 的 B3 说明 |
 | **大陆底色的参考确切色值** | R-MAP-21 面板对齐（2.41.0 部分） | P2 | 6 档底色（羊皮纸/暖沙/黄褐/灰绿/青灰/粉灰）是按参考成图观感给的近似；参考实现底色走贴图/滤镜链，确切色值未能从 `decoded.js` 核出。拿到确切值只需改 `LAND_BASE_COLORS` 一张表 | CHANGELOG 2.41.0 |
-| **素材导入（S2）/ 热门地图扩容（S3）/ AI 接口（S4）** | R-MAP-22 | P1/P2 | 设计已写（三通道 + 标注弹层 +「我的素材」分组），实现为零 | [`map-asset-system-architecture.md`](map-asset-system-architecture.md) §六~§八 |
+| **素材导入（S2）/ AI 接口（S4）** | R-MAP-22 | P1/P2 | 设计已写（三通道 + 标注弹层 +「我的素材」分组），实现为零（preload 仅有 `map-doc-*` 通道，无素材通道）。**S3「三档固定预设扩容」已废止**：2.45.0 改为按 seed 抽的随机配方，不再扩固定预设 | [`map-asset-system-architecture.md`](map-asset-system-architecture.md) §六~§八 |
 | **区域编辑 P1/P2** | R-REG-06~14 | P1/P2 | 顶点微调 / 删单块 / 改名改色 / 裁剪 / 子图内编辑；P2 还有合并接管子图、边界重贴合、层级数上限放宽 | [`region-editing.md`](region-editing.md) §3.2/§3.3 |
 | ~~**观感修补三件**~~（P1-4 / P2-2 / P2-3） | ~~P1-4 / P2-2 / P2-3~~ | P1/P2 | **三条全部完成**：镜像翻转（2.35.0，含确定性去重）、区块层级静态衰减（2.36.0，勘误口径）、手工落位 AABB 避让（2.36.0，移动不设防） | render-analysis §9.1 |
 
@@ -249,7 +249,7 @@
 | [map-b4-layers-polyline-prd.md](map-b4-layers-polyline-prd.md) | 需求 + 设计决策（B4） | **B4-1 / B4-2 / B4-3 已全部实施**（2.29.0 / 2.30.0 / 2.31.0，B4 闭环） | ✅ 有效；**图层面板与折线的执行口径以它为准**，两篇 `nested-submap-*` 降为素材/算法依据 |
 | [nested-submap-main.md](nested-submap-main.md) | 主方案 | 已实施（Phase 2/2.4 已落地） | ✅ 有效；A′ 已于 2.32.0 闭环（拷贝绑定）；**静态层缓存未做**（P2） |
 | [nested-submap-boundary.md](nested-submap-boundary.md) | 方案专篇 | 待评审 | ✅ 有效；羽化带已于 2.32.0 落地（`erase` 混合 + `AlphaFilter` 隔离）；**缺验收判据**（见 §5.1-6） |
-| [nested-submap-road.md](nested-submap-road.md) | 方案专篇 | 待评审（未实现） | ◐ 折线部分**已并入 B4 PRD**，本文只留道路算法依据 |
+| [nested-submap-road.md](nested-submap-road.md) | 方案专篇 | **部分已实施**（折线 2.30.0 / 道路自动生成 2.45.0） | ◐ 折线执行口径**已并入 B4 PRD**；「地点自动连路」于 2.45.0 由 `domain/roads.ts` 落地（A\* 寻路 + 点线），本文只留道路算法依据 |
 | [nested-submap-elements.md](nested-submap-elements.md) | 方案专篇 | 待评审（未实现） | ◐ 折线部分已并入 B4 PRD；渲染铁律与「水系不自动生成」结论继续引用 |
 | [region-editing.md](region-editing.md) | 增量需求 | P0 已实现 / P1 待排 | ✅ 有效 |
 | [map-asset-system-architecture.md](map-asset-system-architecture.md) | 架构 | S1 落地 / S2~S4 预留 | ✅ 有效；素材数量口径以脚本为准（**2.49.0 起 62**） |
@@ -327,7 +327,7 @@
    `map_assets` 表已建未用、删作品后的「降级为独立地图」钩子未接（现留悬空 `work_id`）。 → **已收口**：四条均有「结论 / 归属 / 可判定触发条件」，见 [`spec/map-db-spec.md`](../../spec/map-db-spec.md) §9。
 4. **A′ 的交互未设计**：跨图选择器要回答「引用还是拷贝」「子图能否反向跳转」「绑定的图被删除怎么办」。 → **已闭环（降级）**：2.32.0 的拷贝语义把三问答完（拷贝 / 源图被删零影响 / 反向跳转不适用），见[处置稿](R-MAP-DOC-legacy-disposition-scope.md) §C。
 5. **道路 vs 水系边界未合并**：road 篇说"地点自动连路"，elements 篇说"水系只预留不自动生成"，
-   两篇各自成立，但没有一张表说清"哪些线自动、哪些手画"。 → **已归并**：四类线一律手画、生成器对折线零产出，见 [`R-MAP-DOC-line-autogen-analysis.md`](R-MAP-DOC-line-autogen-analysis.md)。
+   两篇各自成立，但没有一张表说清"哪些线自动、哪些手画"。 → **已归并，且结论已随时间推进**：2.36.0 时点四类线一律手画（生成器对折线零产出）；**2.44.0 河流/湖泊、2.45.0 聚落间道路网已自动生成**，`ridge` / `border` 仍手画。时点口径见 [`R-MAP-DOC-line-autogen-analysis.md`](R-MAP-DOC-line-autogen-analysis.md) 头部勘误。
 6. ~~**图层与现有 7 层静态栈的关系未定**~~ —— **已定**（B4 PRD D7）：`doc.layers` 是「类型容器状态」，
    物理栈仍在 `layers.ts` 里固定；本批只在 `regionLayer` 与 `elementLayer` 之间**插一层** `polylineLayer`（8 → 9），
    其余不映射、不前移。

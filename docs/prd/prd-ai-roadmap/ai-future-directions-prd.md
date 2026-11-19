@@ -6,6 +6,10 @@
   L3 授权均已落地）；
   **现行为准的优先级与批次见 [`ai-roadmap-batch-plan.md`](ai-roadmap-batch-plan.md)**，
   本文只作方向与推演依据留档，不要照着它排期。
+  **⚠️ 2026-11-19 勘误**：文中「checkin 域用户完全接触不到 AI」「需放开 `ai.db` 的 edition 限制」
+  等 R-AI-16 相关判断**均已失效** —— base 窗口 2.64.0~2.70.0 已接 AI 全链路，2.70.0 起精简版
+  同样注册 AI 与 `ai.db`（`registerAiHandlers()` 无条件注册，`SHOW_AI` 门控已不存在）；
+  16b 仍不立项，但理由只剩「checkin 业务侧无硬需求」。正文保留不改，以排期文档 §四 B8 为准。
 - **输入**：
   - `docs/archive/prd-ai/ai-model-config-scope.md`（R-AI-01 配置层）
   - `docs/archive/prd-ai/ai-naming-enhancement-prd.md`（R-AI-02 起名增强）
