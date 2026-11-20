@@ -12,6 +12,7 @@ import {
 } from "@ant-design/icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
+import { tracePerf } from "../../../../perf-trace";
 import EntityPanel from "../EntityPanel";
 import type { EntitySavePatch } from "../EntityDetail";
 import InspirationPanel, { type InspirationActions } from "../InspirationPanel";
@@ -257,6 +258,24 @@ export default function SupportPanel({
   useEffect(() => {
     clearSearch();
   }, [activeWorkId, clearSearch]);
+
+  // 组件挂载计时：右栏面板（大纲/要素/灵感等）首帧渲染耗时
+  useEffect(() => {
+    const mountStart = Date.now();
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        tracePerf("editor", "support-panel-mount", {
+          durationMs: Date.now() - mountStart,
+          extra: { entities: entities.length, outline: outline.length },
+        });
+      });
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+    };
+  }, []);
 
   // ── 派生计数（面板头的语境信息）─────────────────────────────────
   const counts = useMemo(() => {

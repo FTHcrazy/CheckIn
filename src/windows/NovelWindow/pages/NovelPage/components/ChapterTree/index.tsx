@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
+import { tracePerf } from "../../../../perf-trace";
 import { PlusOutlined, SearchOutlined } from "@ant-design/icons";
 import { Button, Input, Popconfirm, Tooltip } from "antd";
 import {
@@ -106,6 +107,26 @@ export default function ChapterTree({
   /** 折叠的卷 id 集合（默认全部展开） */
   const [folded, setFolded] = useState<ReadonlySet<string>>(new Set());
   const listRef = useRef<VirtuosoHandle | null>(null);
+
+  // 组件挂载计时：以「挂载 → 首帧真正绘制」为准（双 rAF 兜过合成器）
+  useEffect(() => {
+    const mountStart = Date.now();
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        tracePerf("editor", "chapter-tree-mount", {
+          durationMs: Date.now() - mountStart,
+          extra: {
+            chapterCount: groups.reduce((n, g) => n + g.chapters.length, 0),
+          },
+        });
+      });
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+    };
+  }, []);
 
   /**
    * 删除确认浮层（§6.1.2「超长虚拟化列表行」例外）。

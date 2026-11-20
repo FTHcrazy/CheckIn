@@ -16,6 +16,7 @@
  */
 
 import { create } from "zustand";
+import { tracePerf } from "../../../perf-trace";
 import { DEFAULT_SETTINGS, SAVE } from "../novel-config";
 import { countWords } from "../novel-utils";
 import type {
@@ -201,6 +202,7 @@ export const useNovelEditorStore = create<EditorState>()((set, get) => {
     if (content === undefined) return true;
 
     set({ saveState: "saving" });
+    const saveStart = Date.now();
     let ok: boolean;
     try {
       ok = runner
@@ -216,6 +218,11 @@ export const useNovelEditorStore = create<EditorState>()((set, get) => {
       // saveState 永久停在 "saving"，此后所有兜底通道都不再重试
       ok = false;
     }
+    tracePerf("editor", "autosave", {
+      durationMs: Date.now() - saveStart,
+      status: ok ? "ok" : "error",
+      extra: { chapterId, bytes: content.length },
+    });
     set({
       saveState: ok ? "saved" : "failed",
       lastSavedAt: ok ? Date.now() : state.lastSavedAt,

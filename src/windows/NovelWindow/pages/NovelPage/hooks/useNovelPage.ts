@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { App } from "antd";
+import { tracePerf } from "../../../perf-trace";
 import { POSITION } from "../novel-config";
 import {
   applyCustomTypeColors,
@@ -383,7 +384,12 @@ export function useNovelPage() {
         dismiss();
         return;
       }
+      const swStart = Date.now();
       data.selectChapter(chapterId);
+      tracePerf("editor", "chapter-select", {
+        durationMs: Date.now() - swStart,
+        extra: { chapterId },
+      });
       dismiss();
     },
     [data, dismiss],
@@ -392,7 +398,12 @@ export function useNovelPage() {
   const handleSelectWork = useCallback(
     (workId: string): void => {
       if (workId === data.activeWorkId) return;
+      const swStart = Date.now();
       data.setActiveWorkId(workId);
+      tracePerf("editor", "work-select", {
+        durationMs: Date.now() - swStart,
+        extra: { workId },
+      });
     },
     [data],
   );
@@ -670,6 +681,7 @@ export function useNovelPage() {
     async (label: string, fileName: string, build: () => string): Promise<void> => {
       if (exportingRef.current) return;
       exportingRef.current = true;
+      const exportStart = Date.now();
       setExportProgress({
         exporting: true,
         phase: "collecting",
@@ -699,6 +711,11 @@ export function useNovelPage() {
           phase: result ? "done" : "cancelled",
           ratio: 1,
           label: exportPhaseText(result ? "done" : "cancelled"),
+        });
+        tracePerf("editor", "export", {
+          durationMs: Date.now() - exportStart,
+          status: result ? "ok" : "cancel",
+          extra: { label, bytes: content.length },
         });
         finishExport(result, label);
       } finally {
@@ -1035,6 +1052,7 @@ export function useNovelPage() {
         setPolish((prev) => (prev && prev.mode === mode ? { ...prev, ...next } : prev));
 
       try {
+        const aiStart = Date.now();
         // 上下文：书名 / 题材 / 命中的人物卡 / 选区所在章节片段
         const characters = matchEntitiesInText(text, bookSnapshot.entities);
         const snippet = chapterSnippetAround(
@@ -1056,6 +1074,11 @@ export function useNovelPage() {
           system: spec.system,
           prompt: spec.prompt,
           intent: mode === "polish" ? "polish" : `transform:${TRANSFORM_INTENT_SUB[mode]}`,
+        });
+        tracePerf("ai", mode === "polish" ? "polish" : "transform", {
+          durationMs: Date.now() - aiStart,
+          status: result.ok ? "ok" : "error",
+          extra: { chars: text.length },
         });
 
         if (!result.ok) {
@@ -1252,6 +1275,7 @@ export function useNovelPage() {
       ...(previousSummary ? { previousSummary } : {}),
     });
 
+    const contStart = Date.now();
     try {
       // ⚠️ provider 必须在建立流**之前**取到：放在流建立之后会让首块在
       // 等待这次 IPC 的时间里攒起来，第一个 delta 一次吐出好几句，
@@ -1302,6 +1326,11 @@ export function useNovelPage() {
       continuationStreamRef.current = null;
 
       const finalText = normalizeContinuationText(accText, before.text);
+      tracePerf("ai", "continuation", {
+        durationMs: Date.now() - contStart,
+        status: "ok",
+        extra: { chars: finalText.length },
+      });
       if (!finalText.trim() || finalText.trim() === before.text.trim()) {
         patch({
           text: finalText,
@@ -1316,6 +1345,10 @@ export function useNovelPage() {
       // 被新一次续写 / 关闭取代：本次结果整体作废，不要碰当前浮层
       if (continuationSeqRef.current !== seq) return;
       continuationStreamRef.current = null;
+      tracePerf("ai", "continuation", {
+        durationMs: Date.now() - contStart,
+        status: streamed?.done ? "cancel" : "error",
+      });
       // 主动中断（abort）不算错误：已生成部分保留，浮层进入「可确认」态
       if (streamed?.done) {
         patch({ streaming: false, loading: false });
@@ -1537,6 +1570,7 @@ export function useNovelPage() {
         ...(payload.contextText ? { contextText: payload.contextText } : {}),
       });
 
+      const summaryStart = Date.now();
       const result = await aiGenerate({
         system: spec.system,
         prompt: spec.prompt,
@@ -1546,11 +1580,21 @@ export function useNovelPage() {
       }).catch((error: unknown) => {
         // IPC 侧异常（主进程 ai.db 未就绪等）不能让面板永久 loading
         const message = error instanceof Error ? error.message : String(error);
+        tracePerf("ai", "summary", {
+          durationMs: Date.now() - summaryStart,
+          status: "error",
+          extra: { chapterId, reason: message },
+        });
         return {
           ok: false as const,
           code: "internal" as const,
           message: message || "AI 调用失败，请重试",
         };
+      });
+      tracePerf("ai", "summary", {
+        durationMs: Date.now() - summaryStart,
+        status: result.ok ? "ok" : "error",
+        extra: { chapterId, scope },
       });
 
       if (result.ok) {
@@ -1871,6 +1915,7 @@ export function useNovelPage() {
         ...(payload.contextText ? { contextText: payload.contextText } : {}),
       });
 
+      const extractStart = Date.now();
       const result = await aiGenerateStructured({
         system: spec.system,
         prompt: spec.prompt,
@@ -1881,7 +1926,17 @@ export function useNovelPage() {
       }).catch((error: unknown) => {
         // 与其余 AI 入口同一条纪律：IPC 侧异常不能留下永远转圈的面板
         const message = error instanceof Error ? error.message : String(error);
+        tracePerf("ai", "extract", {
+          durationMs: Date.now() - extractStart,
+          status: "error",
+          extra: { chapterId, reason: message },
+        });
         return { ok: false as const, code: "internal" as const, message: message || "AI 调用失败，请重试" };
+      });
+      tracePerf("ai", "extract", {
+        durationMs: Date.now() - extractStart,
+        status: result.ok ? "ok" : "error",
+        extra: { chapterId, scope },
       });
 
       if (!result.ok) {

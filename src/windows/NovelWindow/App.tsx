@@ -1,4 +1,5 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
+import { tracePerf } from "./perf-trace";
 import {
   BookOutlined,
   QuestionCircleOutlined,
@@ -129,6 +130,40 @@ export default function NovelWindowApp() {
     const timer = window.setInterval(() => retryDeferred(), 300);
     return () => window.clearInterval(timer);
   }, [view, deferredJump, retryDeferred]);
+
+  // ── 视图切换打点：书架 ⇄ 编辑器 / 回收站，记录切换时机（供时序分析）──
+  const prevViewRef = useRef(view);
+  useEffect(() => {
+    const prev = prevViewRef.current;
+    prevViewRef.current = view;
+    if (prev === view) return;
+    tracePerf("window", "view-switch", {
+      extra: { from: prev, to: view, shelfScreen },
+    });
+  }, [view, shelfScreen]);
+
+  // ── 编辑器首次挂载打点：懒挂载，首次进编辑器是冷启动最重的一次 ──
+  const mountedOnceRef = useRef(false);
+  useEffect(() => {
+    if (editorMounted && !mountedOnceRef.current) {
+      mountedOnceRef.current = true;
+      // 挂载是本次提交的渲染，首帧实际绘制交给双 rAF 计量
+      const mountStart = Date.now();
+      let raf2 = 0;
+      const raf1 = requestAnimationFrame(() => {
+        raf2 = requestAnimationFrame(() => {
+          tracePerf("window", "editor-first-mount", {
+            durationMs: Date.now() - mountStart,
+          });
+        });
+      });
+      return () => {
+        cancelAnimationFrame(raf1);
+        cancelAnimationFrame(raf2);
+      };
+    }
+    return undefined;
+  }, [editorMounted]);
 
   // ── 新手引导与帮助中心（L1/L3 编排在这一层：它要同时看见两个视图）──
   const hydrateGuide = useGuideStore((state) => state.hydrate);

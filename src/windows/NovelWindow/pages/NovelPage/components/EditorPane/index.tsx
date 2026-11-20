@@ -24,6 +24,7 @@ import { search, searchKeymap } from "@codemirror/search";
 import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { createFindPanel, findPanelMargins, findPanelScroll, openFindPanel } from "./find-panel";
+import { tracePerf } from "../../../../perf-trace";
 import {
   editorActions,
   useChapterDraft,
@@ -570,6 +571,7 @@ export default function EditorPane({
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return undefined;
+    const initStart = Date.now();
 
     /**
      * T-03：产生非空选区时，在选区下方提示「右键可以建资料卡」。
@@ -692,6 +694,10 @@ export default function EditorPane({
     });
 
     viewRef.current = view;
+    tracePerf("editor", "editor-init", {
+      durationMs: Date.now() - initStart,
+      extra: { docLength: content.length },
+    });
 
     // IME 组合期监听：候选期间冻结上报；确认（compositionend）后一次性
     // 上报最终文档——此时草稿从组合前文本直接跳到确认文本，字数增量准确

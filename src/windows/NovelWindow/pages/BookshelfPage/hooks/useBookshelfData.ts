@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { tracePerf } from "../../../perf-trace";
 import {
   addShelfWork,
   createShelfId,
@@ -129,6 +130,7 @@ export function useBookshelfData() {
   /** silent = 静默刷新（从编辑器返回书架时重算统计，不闪 loading） */
   const load = useCallback(async (silent = false): Promise<void> => {
     if (!silent) setLoading(true);
+    const loadStart = Date.now();
     try {
       const [nextBundle, nextUsage, settingsRaw, positionRaw, numbering] =
         await Promise.all([
@@ -145,9 +147,18 @@ export function useBookshelfData() {
       setPosition(parsePosition(positionRaw));
       setNow(Date.now());
       setLoadError("");
+      tracePerf("shelf", "data-load", {
+        durationMs: Date.now() - loadStart,
+        status: "ok",
+        extra: { works: nextBundle.works.length, silent },
+      });
     } catch {
       // P2-6：不收 reject 的话异常一路冒到 `void load()` 成为未捕获错误，
       // 且失败会被渲染成空书架。置错误态交给页面出重试入口。
+      tracePerf("shelf", "data-load", {
+        durationMs: Date.now() - loadStart,
+        status: "error",
+      });
       setLoadError("书架数据装载失败，请重试");
     } finally {
       if (!silent) setLoading(false);

@@ -13,6 +13,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ToastTone } from "@/shared/novel/use-auto-toast";
+import { tracePerf } from "../../../perf-trace";
 import {
   aiGenerateStream,
   aiGenerateStructured,
@@ -240,6 +241,7 @@ export function useRescueBranch(options: UseRescueBranchOptions): UseRescueBranc
       };
 
       const run = async (): Promise<void> => {
+        const rescueStart = Date.now();
         /**
          * 看门狗命中记录：文案 + 是否要保住已落卡的走向。
          * 定义在 try 外，catch 里 abort 打断挂起 read 抛过来时还能读到。
@@ -342,6 +344,11 @@ export function useRescueBranch(options: UseRescueBranchOptions): UseRescueBranc
           if (watchdogHit.message) {
             setError(watchdogHit.message);
             setPhase(watchdogHit.keepCards ? "streaming" : "error");
+            tracePerf("ai", "rescue", {
+              durationMs: Date.now() - rescueStart,
+              status: watchdogHit.keepCards ? "ok" : "error",
+              extra: { segments: collected.length, reason: "watchdog" },
+            });
             return;
           }
           if (collected.length === 0) {
@@ -350,6 +357,11 @@ export function useRescueBranch(options: UseRescueBranchOptions): UseRescueBranc
             return;
           }
           setPhase("done");
+          tracePerf("ai", "rescue", {
+            durationMs: Date.now() - rescueStart,
+            status: "ok",
+            extra: { segments: collected.length },
+          });
         } catch (thrown) {
           if (!accepted()) return;
           streamRef.current = null;
@@ -358,14 +370,28 @@ export function useRescueBranch(options: UseRescueBranchOptions): UseRescueBranc
           if (watchdogHit.message) {
             setError(watchdogHit.message);
             setPhase(watchdogHit.keepCards ? "streaming" : "error");
+            tracePerf("ai", "rescue", {
+              durationMs: Date.now() - rescueStart,
+              status: watchdogHit.keepCards ? "ok" : "error",
+              extra: { reason: "watchdog" },
+            });
             return;
           }
           // 主动中断不算错误：已落卡的走向保留，回到「可采纳」态
           if (streamed?.done) {
             setPhase((prev) => (prev === "loading" ? "idle" : "streaming"));
+            tracePerf("ai", "rescue", {
+              durationMs: Date.now() - rescueStart,
+              status: "cancel",
+            });
             return;
           }
           const message = thrown instanceof Error ? thrown.message : String(thrown);
+          tracePerf("ai", "rescue", {
+            durationMs: Date.now() - rescueStart,
+            status: "error",
+            extra: { reason: message },
+          });
           await fallback(message);
         }
       };

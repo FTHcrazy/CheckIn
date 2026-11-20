@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { tracePerf } from "../../../perf-trace";
 import {
   addChapter as addChapterRemote,
   addLink as addLinkRemote,
@@ -194,6 +195,7 @@ export function useNovelData() {
     const seq = (loadSeqRef.current += 1);
     loadInFlightRef.current = true;
     setLoading(true);
+    const loadStart = Date.now();
     try {
       // 三个请求互不依赖，串行会把首屏拖成三倍往返（且 bundle 要等位置记忆
       // 那一次 IPC 才落地，注释里写的「并行加载」才名副其实）
@@ -233,10 +235,19 @@ export function useNovelData() {
       // 崩溃恢复标记与 editor_open 埋点都在这里开启：本 Hook 只有编辑器在用，
       // 书架 / 行囊走的是各自的装载通道，不该被算成「编辑器会话进行中」
       void openEditorSession();
+      tracePerf("editor", "data-load", {
+        durationMs: Date.now() - loadStart,
+        status: "ok",
+        extra: { works: next.works.length, chapters: next.chapters.length },
+      });
     } catch {
       // 没有 catch 的话 rejection 会一路冒到 `void load()` 成为未捕获错误，
       // bundle 保持 null → 编辑器永远空态、也没有任何重试入口
       if (seq !== loadSeqRef.current) return;
+      tracePerf("editor", "data-load", {
+        durationMs: Date.now() - loadStart,
+        status: "error",
+      });
       setLoadError("小说数据装载失败，请重试");
     } finally {
       if (seq === loadSeqRef.current) {
