@@ -225,6 +225,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     sessionOpen: () => trackedInvoke('novel-session-open') as Promise<boolean>,
     configGet: (key: string) =>
       trackedInvoke('novel-config-get', key) as Promise<string | null>,
+    // 批量读取 config（挂载期多个键合并为一次 IPC，缺键 = 未写过）
+    configGetMany: (keys: string[]) =>
+      trackedInvoke('novel-config-get-many', keys) as Promise<Record<string, string>>,
     configSet: (key: string, value: string) =>
       trackedInvoke('novel-config-set', key, value) as Promise<boolean>,
     addWork: (work: unknown) =>
@@ -242,6 +245,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
         volumes: unknown[]
         chapters: unknown[]
       }>,
+    // 单章正文（正文懒加载：当前章 / 相邻章预取）
+    chapterContent: (chapterId: string) =>
+      trackedInvoke('novel-chapter-content', chapterId) as Promise<string | null>,
+    // 批量章节正文（正文懒加载：搜索 / 导出 / 全书扫描等触发时回填）
+    chaptersContent: (chapterIds: string[]) =>
+      trackedInvoke('novel-chapters-content', chapterIds) as Promise<Record<string, string>>,
     deleteWork: (id: string) =>
       trackedInvoke('novel-work-delete', id) as Promise<boolean>,
     // ── 数据安全（P0）：一键全量备份 / 恢复 + 删除兜底（回收站） ──

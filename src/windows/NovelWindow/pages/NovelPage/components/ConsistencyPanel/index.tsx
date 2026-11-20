@@ -11,6 +11,7 @@ import { isTypoVerdict, type BookSnapshot } from "@/shared/ai/context";
 import { AI_ENTRY_CONSENT_HINT, aiEntryStateClass, deriveAiEntryState } from "@/shared/ai/ai-entry-state";
 import AiConsentDialog from "@/shared/components/AiConsentDialog";
 import { useConsistencyStore } from "../../store/useConsistencyStore";
+import { useNovelContentStore } from "../../store/useNovelContentStore";
 import { useConsistencyAi } from "../../hooks/useConsistencyAi";
 import NvSegmented from "../NvSegmented";
 import { formatClock } from "../../novel-utils";
@@ -151,24 +152,32 @@ export default function ConsistencyPanel({
       onNotify("先建几张要素卡或一套境界体系，校对才有比对基准", "info");
       return;
     }
-    scan({
-      workId,
-      chapters: chapters.map((item) => ({
-        id: item.id,
-        title: item.title,
-        content: item.content,
-      })),
-      entities: entities.map((item) => ({
-        id: item.id,
-        name: item.name,
-        type: item.type,
-        aliases: item.aliases,
-      })),
-      realmLevels: (realmCategory?.levels ?? []).map((level) => ({
-        name: level.name,
-        aliases: level.aliases,
-      })),
-    });
+    // 正文懒加载：全书校对遍历全量 content，先把缺失正文回填再扫
+    void useNovelContentStore
+      .getState()
+      .ensureAll(chapters.map((item) => item.id))
+      .then(() => {
+        const store = useNovelContentStore.getState();
+        scan({
+          workId,
+          chapters: chapters.map((item) => ({
+            id: item.id,
+            title: item.title,
+            // store 里已加载的用缓存值；未加载（如测试直传 content）保留原值
+            content: store.isLoaded(item.id) ? store.contentOf(item.id) : item.content,
+          })),
+          entities: entities.map((item) => ({
+            id: item.id,
+            name: item.name,
+            type: item.type,
+            aliases: item.aliases,
+          })),
+          realmLevels: (realmCategory?.levels ?? []).map((level) => ({
+            name: level.name,
+            aliases: level.aliases,
+          })),
+        });
+      });
   }, [chapters, entities, realmCategory, scan, workId, onNotify]);
 
   return (

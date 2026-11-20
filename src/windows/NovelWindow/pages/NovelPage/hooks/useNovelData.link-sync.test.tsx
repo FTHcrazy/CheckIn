@@ -22,9 +22,11 @@ const serviceMocks = vi.hoisted(() => ({
   addWork: vi.fn(),
   createNovelId: vi.fn((prefix: string) => `${prefix}-test-${Math.random().toString(36).slice(2, 8)}`),
   fetchChapterSnapshots: vi.fn(),
-  fetchLastPosition: vi.fn(),
-  fetchNameFavorites: vi.fn(),
+  fetchChapterContent: vi.fn(),
+  fetchChaptersContent: vi.fn(),
+  fetchConfigMany: vi.fn(),
   fetchNovelBundle: vi.fn(),
+  fetchNovelBundleMeta: vi.fn(),
   mergeSettingLevel: vi.fn(),
   openEditorSession: vi.fn(),
   patchSettingCategory: vi.fn(),
@@ -96,9 +98,10 @@ function emitLinks(payload: unknown): void {
 }
 
 async function renderLoadedBundle(bundle: NovelBundleDTO = makeBundle()) {
-  serviceMocks.fetchNovelBundle.mockResolvedValue(bundle);
-  serviceMocks.fetchLastPosition.mockResolvedValue(null);
-  serviceMocks.fetchNameFavorites.mockResolvedValue("[]");
+  serviceMocks.fetchNovelBundleMeta.mockResolvedValue(bundle);
+  serviceMocks.fetchConfigMany.mockResolvedValue({});
+  serviceMocks.fetchChapterContent.mockResolvedValue(null);
+  serviceMocks.fetchChaptersContent.mockResolvedValue({});
   const { result } = renderHook(() => useNovelData());
   await waitFor(() => expect(result.current.loading).toBe(false));
   return result;

@@ -1104,6 +1104,8 @@ export interface ElectronAPI {
     sessionOpen: () => Promise<boolean>
     /** 读取 userDb config（R5 设置持久化 / R6 位置记忆共用；键不存在返回 null） */
     configGet: (key: string) => Promise<string | null>
+    /** 批量读取 config（挂载期多个键合并为一次 IPC；缺键 = 未写过） */
+    configGetMany: (keys: string[]) => Promise<Record<string, string>>
     configSet: (key: string, value: string) => Promise<boolean>
     addWork: (work: NovelWorkDTO) => Promise<boolean>
     renameWork: (id: string, name: string) => Promise<boolean>
@@ -1119,6 +1121,10 @@ export interface ElectronAPI {
       volumes: NovelVolumeDTO[]
       chapters: NovelChapterDTO[]
     }>
+    /** 单章正文（正文懒加载：当前章 / 相邻章预取；章节不存在或已删除返回 null） */
+    chapterContent: (chapterId: string) => Promise<string | null>
+    /** 批量章节正文（正文懒加载：搜索 / 导出 / 全书扫描等触发时回填，缺键 = 章节已删除） */
+    chaptersContent: (chapterIds: string[]) => Promise<Record<string, string>>
     deleteWork: (id: string) => Promise<boolean>
     /** 删除兜底：作品移入回收站（软删除，子数据保留，可恢复） */
     trashWork: (id: string) => Promise<boolean>

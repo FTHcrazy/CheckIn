@@ -60,6 +60,8 @@ export interface AiStreamRequestBody {
   temperature?: number;
   /** 功能意图（continuation / …），仅用于日志与度量归类；缺省由注入方兜底 */
   intent?: string;
+  /** L3 授权范围（extract / summary 等整章授权场景；原样落 ai_event.scope） */
+  scope?: string;
 }
 
 /** 流结束的终态：正常读完 / 渲染层主动中断 */

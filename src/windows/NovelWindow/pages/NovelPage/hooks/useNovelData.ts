@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { tracePerf } from "../../../perf-trace";
 import {
+  useNovelContentStore,
+} from "../store/useNovelContentStore";
+import {
   addChapter as addChapterRemote,
   addLink as addLinkRemote,
   addSettingCategory as addSettingCategoryRemote,
@@ -9,10 +12,11 @@ import {
   addVolume as addVolumeRemote,
   addWork as addWorkRemote,
   createNovelId,
+  fetchChapterContent,
+  fetchChaptersContent,
   fetchChapterSnapshots,
-  fetchLastPosition,
-  fetchNameFavorites,
-  fetchNovelBundle,
+  fetchConfigMany,
+  fetchNovelBundleMeta,
   fetchSettingMirror,
   mergeSettingLevel as mergeSettingLevelRemote,
   moveNote as moveNoteRemote,
@@ -63,6 +67,7 @@ import {
   DEFAULT_SUB_LEVELS,
   DEFAULT_SUB_PATTERN,
   LEVEL_RELATION,
+  STORAGE_KEYS,
   UNNAMED_VOLUME,
 } from "../novel-config";
 import {
@@ -199,17 +204,24 @@ export function useNovelData() {
     try {
       // 三个请求互不依赖，串行会把首屏拖成三倍往返（且 bundle 要等位置记忆
       // 那一次 IPC 才落地，注释里写的「并行加载」才名副其实）
-      const [next, positionJson, favoritesJson] = await Promise.all([
-        fetchNovelBundle(),
-        fetchLastPosition(),
-        fetchNameFavorites(),
+      // 正文懒加载（2.73.0）：editor-load 只取元数据（includeContent=false），
+      // 正文经 useNovelContentStore 按需回填 —— 首屏不再把全书正文拉过 IPC
+      // config 批读（2.73.0）：position + namingFavorites 两个键合并为一次 IPC
+      const [next, configValues] = await Promise.all([
+        fetchNovelBundleMeta(),
+        fetchConfigMany([STORAGE_KEYS.position, STORAGE_KEYS.namingFavorites]),
       ]);
+      const positionJson = configValues[STORAGE_KEYS.position] ?? null;
+      const favoritesJson = configValues[STORAGE_KEYS.namingFavorites] ?? null;
       if (seq !== loadSeqRef.current) return;
       const saved = sanitizeRestorePosition(
         parseJsonOrNull(positionJson),
         next.works,
         next.chapters,
       );
+      // 全量重载 = 章节集合可能变化（删书 / 重置模板），正文缓存一并清空，
+      // 由下方的当前章预取 effect 重新按需回填
+      useNovelContentStore.getState().reset();
       setBundle(next);
       setActiveWorkId(
         (current) => current || saved?.workId || next.works[0]?.id || "",
@@ -260,6 +272,20 @@ export function useNovelData() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // 正文懒加载 runner 注册：store 不认识 service，拉取能力由数据层注入。
+  // 卸载时反注册，避免 store 残留指向已卸载窗口的 fetcher。
+  useEffect(() => {
+    useNovelContentStore.getState().registerFetcher({
+      fetchOne: fetchChapterContent,
+      fetchMany: fetchChaptersContent,
+    });
+    return () => useNovelContentStore.getState().registerFetcher(null);
+  }, []);
+
+  // 订阅正文缓存：正文回填后这里触发重渲染，让派生 chapters 带上最新 content。
+  // 只订阅 contents 引用（回填时整块换引用），loaded 集合变化必然伴随 contents 变化。
+  const contentMap = useNovelContentStore((state) => state.contents);
 
   /**
    * 行囊改了主角境界 → 这里跟着改同一行。
@@ -732,13 +758,19 @@ export function useNovelData() {
       ),
     [bundle?.volumes, activeWorkId],
   );
-  const chapters = useMemo(
-    () =>
-      (bundle?.chapters ?? []).filter(
-        (chapter) => chapter.workId === activeWorkId,
-      ),
-    [bundle?.chapters, activeWorkId],
-  );
+  const chapters = useMemo(() => {
+    const scoped = (bundle?.chapters ?? []).filter(
+      (chapter) => chapter.workId === activeWorkId,
+    );
+    // 正文懒加载：bundle 里的 content 是空串（元数据），已加载的正文从缓存合并。
+    // 未加载章保持空串，消费方在需要全量正文前先 ensureAll（见 store 注释）。
+    if (Object.keys(contentMap).length === 0) return scoped;
+    return scoped.map((chapter) =>
+      contentMap[chapter.id] !== undefined
+        ? { ...chapter, content: contentMap[chapter.id] }
+        : chapter,
+    );
+  }, [bundle?.chapters, activeWorkId, contentMap]);
   /**
    * 当前作品的灵感（1.41.0 起并入「未分组」）：workId 为空串的灵感是
    * 跨作品收集池（书架灵感库的「未归属」），此前被 workId 过滤排掉 ——
@@ -791,6 +823,21 @@ export function useNovelData() {
     [chapters, activeChapterId],
   );
 
+  // 正文预取：当前章 + 前后各一章。编辑器「点哪章切哪章」的高频路径，
+  // 预取相邻章让翻章几乎零等待；其余章节留到搜索 / 导出等触发时再回填。
+  useEffect(() => {
+    if (!activeChapterId || chapters.length === 0) return;
+    const flat = groups.flatMap((group) => group.chapters);
+    const index = flat.findIndex((chapter) => chapter.id === activeChapterId);
+    if (index < 0) return;
+    const prefetch = [
+      flat[index]?.id,
+      flat[index - 1]?.id,
+      flat[index + 1]?.id,
+    ].filter((id): id is string => Boolean(id));
+    void useNovelContentStore.getState().ensureMany(prefetch);
+  }, [activeChapterId, chapters.length, groups]);
+
   // 切换作品后旧的章节 id 不属于当前作品：重置到该作品的第一章，
   // 否则编辑器停在空态、且 handleNewChapter 拿不到 volumeId 兜底
   useEffect(() => {
@@ -806,6 +853,38 @@ export function useNovelData() {
   const selectChapter = useCallback((chapterId: string) => {
     setActiveChapterId(chapterId);
   }, []);
+
+  /**
+   * 确保给定章节的正文已加载（搜索 / 导出 / 全书扫描等低频功能触发前调用）。
+   *
+   * 未加载章节在 chapters 里 content 为空串，直接遍历会静默漏命中 / 缺正文；
+   * 这里先把缺失正文一次性回填进缓存，再让调用方读 `chapter.content`。
+   */
+  const ensureAllContents = useCallback(
+    async (chapterIds: string[]): Promise<void> => {
+      await useNovelContentStore.getState().ensureAll(chapterIds);
+    },
+    [],
+  );
+
+  /**
+   * 同步读取「带最新正文」的当前作品章节列表。
+   *
+   * 与 `chapters` 派生值的区别：后者是 useMemo，闭包捕获的是渲染时的快照；
+   * 而「ensure 回填 → 重建」这种先 await 再读的场景，旧闭包里的 content 仍是
+   * 空串。这里从 store 的**当前**缓存实时合并，专供 ensure 之后的消费方使用。
+   */
+  const readChaptersWithContent = useCallback((): NovelChapter[] => {
+    const scoped = (bundle?.chapters ?? []).filter(
+      (chapter) => chapter.workId === activeWorkId,
+    );
+    const store = useNovelContentStore.getState();
+    return scoped.map((chapter) =>
+      store.isLoaded(chapter.id)
+        ? { ...chapter, content: store.contentOf(chapter.id) }
+        : chapter,
+    );
+  }, [bundle?.chapters, activeWorkId]);
 
   /** 保存正文并同步本地字数 / 更新时间（novel-chapter-save，主进程同事务写快照） */
   const updateChapterContent = useCallback(
@@ -826,6 +905,8 @@ export function useNovelData() {
             }
           : current,
       );
+      // 正文缓存同步：保存后缓存里是旧值，派生 chapters 会拿旧正文覆盖新草稿
+      useNovelContentStore.getState().setContent(chapterId, content);
       return saveChapterContent(chapterId, content, wordCount);
     },
     [],
@@ -2395,9 +2476,13 @@ export function useNovelData() {
   );
 
   const searchBook = useCallback(
-    async (keyword: string): Promise<SearchHit[]> =>
-      searchAcrossBook(keyword, chapters),
-    [chapters],
+    async (keyword: string): Promise<SearchHit[]> => {
+      // 正文懒加载：搜索遍历全量 chapter.content，未加载章 content 为空会漏命中。
+      // 检索前先把全书正文回填进缓存，再用缓存里的最新正文构建搜索输入。
+      await ensureAllContents(chapters.map((chapter) => chapter.id));
+      return searchAcrossBook(keyword, readChaptersWithContent());
+    },
+    [chapters, ensureAllContents, readChaptersWithContent],
   );
 
   return {
@@ -2484,6 +2569,8 @@ export function useNovelData() {
     loadSnapshots,
     rollbackSnapshot,
     searchBook,
+    ensureAllContents,
+    readChaptersWithContent,
     reload: load,
   };
 }

@@ -101,6 +101,8 @@ const dataStub = {
   updateChapterOutlineNote: vi.fn(),
   migrateEntityType: vi.fn(() => 0),
   setEntityLevel: vi.fn(),
+  ensureAllContents: vi.fn(async () => {}),
+  readChaptersWithContent: vi.fn(() => []),
 };
 vi.mock("./useNovelData", () => ({
   useNovelData: () => ({ ...dataStub, ...dataOverride }),

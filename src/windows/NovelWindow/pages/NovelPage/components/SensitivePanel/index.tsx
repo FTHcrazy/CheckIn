@@ -22,6 +22,7 @@ import {
   type SensitiveWord,
 } from "../../sensitive";
 import { useSensitiveStore } from "../../store/useSensitiveStore";
+import { useNovelContentStore } from "../../store/useNovelContentStore";
 import NvSegmented from "../NvSegmented";
 import ImportTemplateModal from "./components/ImportTemplateModal";
 import type { NovelChapter } from "../../types";
@@ -154,7 +155,22 @@ export default function SensitivePanel({
       onNotify("这本书还没有章节", "info");
       return;
     }
-    scanBook(chapters);
+    // 正文懒加载：全书扫描遍历全量 content，先把缺失正文回填，再基于最新正文扫
+    const ids = chapters.map((chapter) => chapter.id);
+    void useNovelContentStore
+      .getState()
+      .ensureAll(ids)
+      .then(() => {
+        const store = useNovelContentStore.getState();
+        const hydrated = chapters.map((chapter) => ({
+          ...chapter,
+          // store 里已加载的用缓存值；未加载（如测试直传 content）保留原值
+          content: store.isLoaded(chapter.id)
+            ? store.contentOf(chapter.id)
+            : chapter.content,
+        }));
+        scanBook(hydrated);
+      });
     setScope("book");
   };
 
