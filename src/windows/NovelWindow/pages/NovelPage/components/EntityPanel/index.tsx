@@ -122,12 +122,11 @@ export default function EntityPanel({
     return map;
   }, [entities]);
 
-  // 选中 chip 的可见性校正：chips 行是隐藏滚动条的横向容器，类型较多时
-  // 选中的可能落在两侧渐隐区里，用户不知道还能滚。
-  //
-  // ⚠️ **不能居中**：居中会把左邻的 chip 推到容器外、只剩半颗（「全部」被切成
-  // 半个字，用户会以为分类 tab 显示不全）。这里只在选中项**真的被遮住**时
-  // 挪动，且只挪到「刚好整颗可见 + 8px 留白」，不制造新的半颗 chip。
+  // 选中 chip 居中：类型一多，chips 行就变成隐藏滚动条的横向长条，
+  // 选中的那颗可能停在右边缘的渐隐区里（看着像被切了一半）。
+  // 每次筛选变化都把选中的 chip 滚到可视区正中：左右各露半颗邻项，
+  // 「两边还有更多分类」这件事一眼可见，鼠标也在最容易够到的位置。
+  // 首尾两端由下面的 clamp 兜住，滚不动时贴边即可。
   const chipsMountedRef = useRef(false);
   useEffect(() => {
     const row = chipsRef.current;
@@ -137,7 +136,8 @@ export default function EntityPanel({
     // offsetLeft 会相对更外层的定位祖先解析，这里不能用它
     const rowRect = row.getBoundingClientRect();
     const onRect = on.getBoundingClientRect();
-    const delta = resolveChipsScrollDelta(rowRect, onRect);
+    // 取整：小数 scrollLeft 在部分 Windows 缩放下会停在 0.5px 上抖动
+    const delta = Math.round(resolveChipsScrollDelta(rowRect, onRect));
     if (Math.abs(delta) < 1) return;
     const target = Math.max(
       0,

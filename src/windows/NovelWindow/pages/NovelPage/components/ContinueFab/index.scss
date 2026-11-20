@@ -1,21 +1,12 @@
-// AI 续写悬浮按钮（REQ-061）：贴在正文区右下角，压在状态栏上方。
-//
-// 它是 antd Button：先用清零点 mixin 归零组件级变量，再声明自己的值。
-// hover / disabled 不写属性规则 —— antd 的状态选择器是 (0,4,0)，自写规则压不过，
-// 只能改它读取的 --ant-button-* 变量（与 EntityContextMenu 的菜单项同款手法）。
 @use "../../../../../../shared/styles/widget" as widget;
 
-.nv-contfab.ant-btn {
-  @include widget.ant-button-reset;
-  --ant-control-height: 38px;
-  --ant-border-radius: 19px;
-  --ant-button-content-font-size: 13px;
-  --ant-button-default-color: var(--app-primary);
-  --ant-button-default-hover-bg: var(--app-surface-hover);
-  --ant-button-default-active-bg: var(--app-surface-hover);
-  --ant-button-default-bg-disabled: var(--app-surface);
-  --ant-button-default-shadow: none;
-
+// AI 动作组容器（续写 + 卡文救援）：正文区右下角的**唯一**定位点。
+//
+// 为什么必须有这层：两颗按钮改前各写一套 `position:absolute; right:20px`，
+// 宽度又各自按内容撑开（续写 88 / 救援 74），于是右边缘对齐、左边缘参差，
+// 纵向上还得手工算 `bottom` 才不会互相压住 —— 面板一改高度就得重算一次。
+// 现在容器定位 + `align-items: stretch`，两枚胶囊自然等宽、间距只在这儿声明。
+.nv-ai-fab {
   position: absolute;
   right: 20px;
   /* 让开底部状态栏（实高 32px）+ 24px 呼吸位，不压住「今日目标 / 字数」 */
@@ -24,8 +15,102 @@
      高于正文与状态栏（20）：预览开着时按钮被 mask 挡住，不会重复触发 */
   z-index: 20;
 
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+
+  /* 收纳态（默认）：一颗 38 见方的圆形按钮，右缘与展开后的胶囊对齐。
+     两颗胶囊常驻会把正文右下角长期占掉一块、压住字行（真机反馈），
+     所以常态只露这一颗，点开才展开。 */
+  &__toggle.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 38px;
+    --ant-border-radius: 19px;
+    /* 清零 mixin 把 line-width 设成 0，而这里靠 `border: 1px` 画描边：
+       antd 的 hover 态会用整条 border shorthand 重新读这个变量，不补回 1px
+       的话鼠标一移上去描边就消失、盒子窄 2px（同 §3 的抖动铁律）。 */
+    --ant-line-width: 1px;
+    --ant-button-content-font-size: 16px;
+    --ant-button-default-color: var(--app-primary);
+    --ant-button-default-hover-bg: var(--app-surface-hover);
+    --ant-button-default-active-bg: var(--app-surface-hover);
+    --ant-button-default-bg-disabled: var(--app-surface);
+    --ant-button-default-shadow: none;
+
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    padding: 0;
+    border: 1px solid var(--app-border);
+    background: var(--app-surface-elevated);
+    box-shadow: var(--app-shadow-pop);
+  }
+
+  /* 展开态的收起键：小号圆形，居中排（不跟胶囊一起被 stretch 拉成长条） */
+  &__collapse.ant-btn {
+    @include widget.ant-button-reset;
+    --ant-control-height: 24px;
+    --ant-border-radius: 12px;
+    --ant-button-padding-inline: 0px;
+    --ant-button-content-font-size: 11px;
+    --ant-line-width: 1px;
+    --ant-button-default-color: var(--app-text-muted);
+    --ant-button-default-hover-color: var(--app-text);
+    --ant-button-default-hover-bg: var(--app-surface-hover);
+    --ant-button-default-active-bg: var(--app-surface-hover);
+    --ant-button-default-bg-disabled: var(--app-surface);
+    --ant-button-default-shadow: none;
+
+    align-self: center;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 1px solid var(--app-border);
+    background: var(--app-surface-elevated);
+    box-shadow: var(--app-shadow-ambient);
+  }
+
+  &__toggle.ant-btn:focus-visible,
+  &__collapse.ant-btn:focus-visible {
+    outline: 2px solid var(--app-primary);
+    outline-offset: 2px;
+  }
+
+  /* 只读模式（阅读）不提供这两个入口：没有光标位置可续，也不该引导发正文。
+     挂在容器上而不是单颗按钮上 —— 成组出现就要成组消失 */
+  .nv-editor.is-readmode ~ & {
+    display: none;
+  }
+}
+
+// AI 续写悬浮按钮（REQ-061）：贴在正文区右下角，压在状态栏上方。
+//
+// 它是 antd Button：先用清零点 mixin 归零组件级变量，再声明自己的值。
+// hover / disabled 不写属性规则 —— antd 的状态选择器是 (0,4,0)，自写规则压不过，
+// 只能改它读取的 --ant-button-* 变量（与 EntityContextMenu 的菜单项同款手法）。
+.nv-contfab.ant-btn {
+  @include widget.ant-button-reset;
+  --ant-control-height: 38px;
+  --ant-border-radius: 19px;
+  --ant-button-content-font-size: 13px;
+  /* 与 toggle 同理：描边用 `border: 1px` 属性画，antd hover 读的是这个变量 */
+  --ant-line-width: 1px;
+  --ant-button-default-color: var(--app-primary);
+  --ant-button-default-hover-bg: var(--app-surface-hover);
+  --ant-button-default-active-bg: var(--app-surface-hover);
+  --ant-button-default-bg-disabled: var(--app-surface);
+  --ant-button-default-shadow: none;
+
+  /* 宽度由 .nv-ai-fab 的 stretch 给出（与救援键等宽），这里只负责内部对齐 */
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   height: 38px;
   padding: 0 15px 0 13px;
@@ -41,11 +126,6 @@
   &:focus-visible {
     outline: 2px solid var(--app-primary);
     outline-offset: 2px;
-  }
-
-  /* 只读模式（阅读）不提供续写入口：没有光标位置可续 */
-  .nv-editor.is-readmode ~ & {
-    display: none;
   }
 
   /* O-06 待授权态：描边与文字走 warning，仍可点（点了先弹 L3 授权）。

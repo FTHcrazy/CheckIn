@@ -95,9 +95,18 @@
      变量声明。这里保留说明，**不要再往回加 `.nv-sub` 手搓按钮组** ——
      两份实现必然漂移，且键盘语义只有组件库那份是完整的。 */
 
-  /* ── 横向滚动 chips（类型筛选 / 最近搜索）──────────────────────── */
+  /* ── 类型筛选 chips（右侧面板 / 最近搜索）────────────────────────
+     2.71.1：回到「单行横向滚动」，并让选中项自动滚到行中间。
+
+     2.71.0 曾改成按需换行（怕最右那颗停在裁切线上点不到），但换行把分类
+     劈成两行、面板上部整体变高，视觉上比横滚更乱。改为单行 + 选中即居中：
+     切到哪一类，那一类就停在可视区正中，左右各露出半颗邻项作为「还能滚」
+     的提示；两端渐隐遮罩（useEdgeFade）继续标出溢出方向。 */
   .nv-chips {
     display: flex;
+    /* 单行不换行：多行会让面板顶部高度随分类数跳动 */
+    flex-wrap: nowrap;
+    align-items: center;
     gap: 6px;
     overflow-x: auto;
     padding-bottom: 2px;
@@ -147,23 +156,38 @@
     --ant-button-default-active-border-color: transparent;
     display: inline-flex;
     align-items: center;
+    /* EntityTypeChip 自带 `padding: 1px 6px`（0,2,0），会压过 antd 的
+       padding 变量；这里用同级更高的选择器统一收紧/放开的节奏，
+       免得「全部」与「人·角色」两种 chip 的左右留白不一致 */
+    padding: 3px 10px;
+    /* 左侧色带必须与其余三边同宽：EntityTypeChip 的 `border-left: 2px`
+       会在 hover 时被 antd 的 `border: 1px solid …` shorthand（特异性 0,4,0）
+       覆盖回来，chip 瞬间窄 1px、文字左移 —— 就是用户说的「hover 时宽度在变」。
+       钉成 1px 后两种状态一致，色带改由内联的 border-left-color 上色。 */
+    border-left-width: 1px;
     white-space: nowrap;
     /* ⚠️ 必须不收缩：chips 行是 flex + 横向滚动容器，缺省 flex-shrink: 1 会让
        宽度不够时「先压扁第一个 chip」而不是让整行滚动 —— 面板 280 宽时
        第一颗「全部 6」被挤成只剩计数，分类名展示不全（真机反馈）。 */
     flex: none;
 
-    /* 选中：描边取当前字色 + 加粗（永久态 → 写默认变量） */
+    /* 选中：描边取当前字色 + 字色提亮（永久态 → 写默认变量）。
+       ⚠️ 不要用 font-weight 加粗：12px 下粗体会让 chip 宽 1~2px，
+       点一下整行就重排（与 hover 抖动同源）。加粗换成「描边 + 字色」表达。 */
     &.is-on {
+      --ant-button-default-color: var(--app-text);
+      --ant-button-default-hover-color: var(--app-text);
+      --ant-button-default-active-color: var(--app-text);
       --ant-button-default-border-color: currentColor;
       --ant-button-default-hover-border-color: currentColor;
       --ant-button-default-active-border-color: currentColor;
-      --ant-button-font-weight: 600;
     }
 
     em {
       font-style: normal;
       font-size: 12px;
+      /* 计数与分类名之间必须有间距：「人·角色3」挤在一起是密集感的主因 */
+      margin-left: 4px;
       color: var(--app-text-disabled);
     }
 
@@ -173,10 +197,9 @@
     }
   }
 
-  /* 按下的缩放反馈：transform 是 antd 不接管的属性（§6.1.2 允许保留） */
-  .nv-chip:active {
-    transform: scale(0.96);
-  }
+  /* 按压反馈只走 antd 的 active 底色（`--ant-button-default-active-bg`）。
+     ⚠️ 不要加 `transform: scale()`：缩放在横向 chips 行里就是「宽度在变」，
+     相邻 chip 会跟着视觉位移，点一次像整行抖了一下。 */
 
   /* ── 分区标题 ─────────────────────────────────────────────────── */
   .nv-sechead {

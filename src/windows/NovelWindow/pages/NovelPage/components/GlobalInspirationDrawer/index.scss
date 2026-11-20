@@ -1,13 +1,39 @@
 /* 全局灵感抽屉（O-12）：antd Drawer 承载浮层与焦点陷阱，
-   里面复用窗口级 IdeaLibraryContent 的 .bs-rail 造型；这里只补抽屉内的排布。 */
+   里面复用窗口级 IdeaLibraryContent 的 .bs-rail 造型；这里只补抽屉内的排布。
+
+   ⚠️ `.bs-rail` 是书架右栏的造型，自带 `width: 320px` / `padding: 16px 14px` /
+   `border-left` / `flex: none` —— 直接搬到抽屉里，卡片会被钉在 320 宽、右边
+   留出一大片空白（抽屉 420 - body 左右 padding 32 - rail 内边距，卡片只剩 ~280）。
+   抽屉里必须把这些「右栏专属」的量全部清零，宽度交还给 100%。 */
 
 .nv-idea-drawer {
+  /* 浮层底色跟随主题内容面：antd 给 Drawer 的是 colorBgElevated（浅色主题恒纯白），
+     同屏与奶油/薄荷这类带色相的内容面放一起会发冷、像另一套 UI。
+     抽屉已有 mask 与阴影表明层级，底色不必再靠「纯白」表达。
+
+     ⚠️ 只能走 token 变量：`.ant-drawer-section` 的底色是 antd 运行时注入的
+     `background: var(--ant-color-bg-elevated)`，自写同特异性属性规则会被它压掉
+     （CSS-in-JS 的 <style> 后插入）。改变量则无特异性之争。 */
+  --ant-color-bg-elevated: var(--app-surface);
+
   .ant-drawer-body {
     padding: 12px 16px 16px;
+  }
+
+  /* 抽屉里的灵感卡回到纯白：底已经退到内容面，卡片必须亮一档，
+     否则「暖白底 + 暖白卡」只剩描边，卡片的边界感会消失。 */
+  .bs-idea {
+    background: var(--app-surface-elevated);
   }
 }
 
 .nv-idea-drawer__body.bs-rail {
+  /* 覆盖右栏造型（0,2,0 > .bs-rail 的 0,1,0）：宽度吃满抽屉，内边距交给 body */
+  width: 100%;
+  flex: 1 1 auto;
+  padding: 0;
+  border-left: 0;
+
   display: flex;
   flex-direction: column;
   gap: 8px;

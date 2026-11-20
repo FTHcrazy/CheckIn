@@ -184,20 +184,9 @@ export default function SettingsDrawer({
               onChange={(checked) => onUpdate("paperTexture", checked)}
             />
           </section>
-
-          <section className="nv-setting__row is-toggle">
-            <div className="nv-setting__text">
-              <label>阅读模式</label>
-              <p className="nv-setting__hint">
-                只读并隐藏光标；章节首尾继续同向滚动即翻章，一次滚动只翻一章。
-              </p>
-            </div>
-            <Switch
-              size="small"
-              checked={settings.readMode}
-              onChange={(checked) => onUpdate("readMode", checked)}
-            />
-          </section>
+          {/* 阅读模式的开关不在这里：O-05 已把它提成顶栏的常驻可见开关
+              （带「读」字标签，F12 同效）。抽屉里再放一个同名开关，同一切换
+              会有两个入口、两套发现路径，用户还会怀疑「哪个才是真的」。 */}
         </section>
 
         <section className="nv-setting__block">

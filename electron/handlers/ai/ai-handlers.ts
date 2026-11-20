@@ -813,13 +813,26 @@ export function registerAiHandlers(): void {
       provider: spec.provider,
       onStreamEnd: (outcome, output) => {
         const durationMs = Date.now() - startedAt;
-        if (outcome === "cancelled") {
-          // 用户主动中断不算失败：只记事件，不进 ai_log（输出不完整，没有排障价值）
-          writeEvent("cancel", { durationMs });
+        if (outcome === "ok") {
+          writeLog({ rawOutput: output });
+          writeEvent("success", { durationMs });
           return;
         }
-        writeLog({ rawOutput: output });
-        writeEvent("success", { durationMs });
+        // 中断（用户关浮层 / 渲染层 abort / 30s 超时）**同样落 ai_log**：
+        // 此前这一支只写 ai_event，于是「AI 记录」页里一次救援都看不到 ——
+        // 卡文救援的 prompt 大、生成慢，用户提前关掉浮层是常态（真机反馈：
+        // 「失败和成功都找不到记录」）。有输出的按正常调用留档，空输出记一条
+        // cancelled，让作者至少能确认「这次请求确实发出去了」。
+        const produced = output.trim().length > 0;
+        writeLog(
+          produced
+            ? { rawOutput: output }
+            : { errorCode: "cancelled", errorMessage: "已中断，未收到模型输出" },
+        );
+        writeEvent(produced ? "success" : "cancel", {
+          durationMs,
+          ...(produced ? { charCount: output.length } : {}),
+        });
       },
     };
   });

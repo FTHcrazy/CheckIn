@@ -5,6 +5,8 @@
 
 .bs-idea {
   position: relative;
+  /* 卡片宽度一律由列表决定：内部出现超长不可断行内容时压缩自己，不撑宽父级 */
+  min-width: 0;
   padding: 10px 12px;
   background: var(--app-surface);
   border: 1px solid var(--app-border);
@@ -12,6 +14,9 @@
   /* 静止态给一档 ambient，hover 抬升换 card 档（与书卡一致的层次语言） */
   box-shadow: var(--app-shadow-ambient);
   transition: box-shadow var(--app-t-normal) var(--app-ease-standard);
+  /* 横向绝不出现滚动条：溢出只会来自 footer 的标签行（见下方换行处理），
+     裁掉比让整栏跟着横滚更不容易误解成「列表能左右拖」 */
+  overflow-x: hidden;
 
   &:hover {
     box-shadow: var(--app-shadow-raised);
@@ -45,23 +50,29 @@
     color: var(--app-text-muted);
   }
 
+  /* 元信息行：来源标签可以很长（作品名 + 模板后缀），所以**允许换行**。
+     此前标签 nowrap + 省略号、时间和角标又都是 flex:none，三者宽度一旦超过
+     行宽就整体溢出，把卡片撑得比列表宽 —— 列表底部因此出现横向滚动条。 */
   &__footer {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 8px;
+    flex-wrap: wrap;
+    gap: 4px 8px;
     margin-top: 8px;
   }
 
   &__source {
-    flex: none;
-    max-width: 70%;
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 100%;
     padding: 1px 8px;
     border-radius: var(--app-radius-pill);
     font-size: 12px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    line-height: 1.6;
+    /* 超长标签换行展示（不再 nowrap + 省略号）：anywhere 才能在窄栏里断行，
+       否则中文长串仍会把这一格顶出卡片 */
+    white-space: normal;
+    overflow-wrap: anywhere;
 
     &--work {
       background: var(--app-primary-weak);

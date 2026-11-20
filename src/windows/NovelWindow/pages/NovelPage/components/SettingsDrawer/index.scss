@@ -20,7 +20,17 @@
   border-left: 1px solid var(--app-border);
   box-shadow: var(--app-shadow-pop);
   transform: translateX(100%);
-  transition: transform var(--app-t-slow) var(--app-ease-standard);
+  /* 收起态必须彻底不上屏。
+     `translateX(100%)` 只是按自身宽度推到**定位容器**右缘之外，而这个容器的
+     右边还有支撑面板 —— 推出去之后抽屉正好停在右栏上方，仍然可见、看起来
+     「排版与偏好关不掉」，还会和历史快照抽屉并排（真机反馈的那两张图）。
+     visibility 不参与布局、不可点、不可聚焦，滑出动画走完即隐藏。 */
+  visibility: hidden;
+  transition:
+    transform var(--app-t-slow) var(--app-ease-standard),
+    visibility 0s linear var(--app-t-slow);
+  /* 收起态不参与命中测试（同 .nv-snap）：位移只是视觉，元素本身仍在 stage 右缘 */
+  pointer-events: none;
 
   /* ── 组件槽位：滑块轨道 / 分段底 ──
    * 这一层是浮层（底 = `--app-surface-elevated` 纯白），里面的「槽」只回退一档
@@ -43,6 +53,12 @@
 
   &.is-open {
     transform: none;
+    visibility: visible;
+    pointer-events: auto;
+    /* 展开时立刻可见，不能等动画 */
+    transition:
+      transform var(--app-t-slow) var(--app-ease-standard),
+      visibility 0s linear 0s;
   }
 
   &__head {
@@ -289,5 +305,7 @@
 @media (prefers-reduced-motion: reduce) {
   .nv-setting {
     transition-duration: 0ms;
+    /* 无动画时不必再等滑出，立刻隐藏 */
+    transition-delay: 0ms;
   }
 }

@@ -136,10 +136,6 @@ interface SupportPanelProps {
   onOpenRelation?: () => void;
   /** 打开架空地图独立窗口（R28 / MapWindow）；不传时工具卡退回「规划中」占位 */
   onOpenMap?: () => void;
-  /** 导出整本 TXT（D-13）：工具启动器的导出按钮点击回调 */
-  onExportBook?: () => void;
-  /** 导出进行中态（D-13）：驱动导出按钮 loading + 阶段文案 */
-  exportProgress?: import("../../../../services/progress-phase").ExportProgress;
   /**
    * 抽取设定动作组（R-AI-08）。
    *
@@ -242,8 +238,6 @@ export default function SupportPanel({
   onToolSubChange,
   onOpenRelation,
   onOpenMap,
-  onExportBook,
-  exportProgress,
   extractActions,
   onRescueChapter,
   aiNeedsConsent = false,
@@ -797,8 +791,6 @@ export default function SupportPanel({
                 onNotify={onNotify}
                 onOpenRelation={onOpenRelation}
                 onOpenMap={onOpenMap}
-                onExportBook={onExportBook}
-                exportProgress={exportProgress}
               />
             ))}
         </div>

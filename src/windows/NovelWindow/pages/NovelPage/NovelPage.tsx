@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Modal, Tooltip } from "antd";
+import { CloseOutlined } from "@ant-design/icons";
 import ChapterJumpPalette from "./components/ChapterJumpPalette";
 import ChapterTree from "./components/ChapterTree";
 import EditorPane from "./components/EditorPane";
@@ -244,7 +245,6 @@ export default function NovelPage({
     handleExportVolume,
     handleExportChapter,
     handleExportCard,
-    exportProgress,
     handleSetEntityLevel,
     handleAddCustomType,
     handleRenameCustomType,
@@ -330,6 +330,14 @@ export default function NovelPage({
     [data.groups],
   );
   const [openAnchor, setOpenAnchor] = useState<"top" | "bottom">("top");
+  /**
+   * 正文区右下角 AI 动作组的收纳态（2.72.1）。
+   *
+   * 两颗胶囊常驻时，正文右下角长期被「续写 / 救援」占掉一块，写长段落时
+   * 挡字（真机反馈）。改为默认只露一颗圆形 AI 按钮，点开才展开两颗胶囊 +
+   * 一枚收起键；续写进行中强制保持展开 —— 否则收起来就看不到进度与「正在续写」。
+   */
+  const [aiFabOpen, setAiFabOpen] = useState(false);
   /**
    * 回收换章锚点的一次性信号。必须是稳定引用：EditorPane 的「换章滚动定位」
    * effect 把它放在依赖数组里，若像之前那样传内联箭头函数，每次重渲染都会换
@@ -717,6 +725,9 @@ export default function NovelPage({
     [data.entities],
   );
 
+  /** AI 动作组是否展开：用户点开过，或正在续写（进度态不能收起来） */
+  const aiFabExpanded = aiFabOpen || Boolean(continuation?.streaming);
+
   return (
     <EntityTypesProvider value={entityTypesValue}>
       <div
@@ -741,7 +752,7 @@ export default function NovelPage({
             chapterName={breadcrumb.chapterName}
             leftOpen={view.leftOpen}
             rightOpen={view.rightOpen}
-            settingsOpen={view.settingsOpen}
+            settingsOpen={view.rightDrawer === "settings"}
             settingCenterOpen={view.settingCenterOpen}
             readMode={editor.settings.readMode}
             onSelectWork={(workId) => void handleSelectWork(workId)}
@@ -760,7 +771,7 @@ export default function NovelPage({
             onToggleReadMode={() =>
               editor.updateSetting("readMode", !editor.settings.readMode)
             }
-            snapshotOpen={view.snapshotOpen}
+            snapshotOpen={view.rightDrawer === "snapshot"}
             onOpenPack={openPackWindow}
             packOpening={packOpening}
             onToggleSettingCenter={view.toggleSettingCenter}
@@ -848,44 +859,71 @@ export default function NovelPage({
               onOpenSensitive={() => view.openToolSub("sensitive")}
             />
 
-            {/* AI 续写悬浮按钮（REQ-061）：贴着正文区右下角，比顶栏那一排图标
-                更贴近「在光标处接着写」的语义，也给顶栏腾出空间。
+            {/* AI 动作组（REQ-061 续写 + R-AI-11 卡文救援）：贴着正文区右下角，
+                默认**收成一枚圆形按钮**，点开才展开两颗胶囊 + 收起键
+                （2.72.1：常态两颗胶囊常驻会长期占住正文右下角、压住字行）。
+                展开时三颗仍共用一个定位容器（等宽、同一列、固定间距）：
+                改前各自 `position:absolute` 按自己的内容宽度右对齐，两个胶囊
+                左边缘参差不齐，看起来像两枚互不相干的碎片。
                 点击只是入口，真正发起前还有一次确认（useNovelPage.requestContinuation）。
-                阅读模式 / 还没有章节时不出现：这两种情况下没有「光标前的前文」，
+                阅读模式 / 还没有章节时整组不出现：这两种情况下没有「光标前的前文」，
                 浮一颗点了只会提示「先到正文里点一下」的按钮，属于噪音。
-                REQ-063：AI 总开关关掉时整颗不渲染（`aiAvailability.hidden`）——
-                留一颗灰按钮等于告诉用户「这里本来有 AI」。 */}
+                REQ-063：AI 总开关关掉时整组不渲染（`aiAvailability.hidden`）——
+                留一颗灰按钮等于告诉用户「这里本来有 AI」。
+                救援刻意不塞进 EditorPane 内部：编辑器不该知道 AI 的存在
+                （AGENTS §2.2.2.1），入口贴在正文区即可。 */}
             {!aiAvailability.hidden &&
               !editor.settings.readMode &&
               data.activeChapter && (
-                <ContinueFab
-                  onContinue={requestContinuation}
-                  aiAvailable={aiAvailability.available}
-                  aiUnavailableText={aiAvailability.reasonText}
-                  aiNeedsConsent={aiNeedsConsent}
-                  busy={continuation?.streaming ?? false}
-                />
+                <div className={`nv-ai-fab${aiFabExpanded ? " is-open" : ""}`}>
+                  {aiFabExpanded ? (
+                    <>
+                      <ContinueFab
+                        onContinue={requestContinuation}
+                        aiAvailable={aiAvailability.available}
+                        aiUnavailableText={aiAvailability.reasonText}
+                        aiNeedsConsent={aiNeedsConsent}
+                        busy={continuation?.streaming ?? false}
+                      />
+                      <Tooltip title={rescueEntryHint} placement="left">
+                        <Button
+                          className={`nv-rescue-fab ${aiEntryStateClass(rescueEntryState)}`.trim()}
+                          disabled={!aiAvailability.available}
+                          aria-label="卡文救援"
+                          onClick={() => requestRescue("editor")}
+                        >
+                          <span className="nv-rescue-fab__icon">
+                            <SvgIcon svg={aiSvg} />
+                          </span>
+                          <span className="nv-rescue-fab__text">救援</span>
+                        </Button>
+                      </Tooltip>
+                      <Tooltip title="收起 AI 动作" placement="left">
+                        <Button
+                          className="nv-ai-fab__collapse"
+                          aria-label="收起 AI 动作"
+                          /* 续写进行中不许收：收起来就看不到进度与「正在续写」 */
+                          disabled={continuation?.streaming ?? false}
+                          onClick={() => setAiFabOpen(false)}
+                        >
+                          <CloseOutlined />
+                        </Button>
+                      </Tooltip>
+                    </>
+                  ) : (
+                    <Tooltip title="AI 写作助手 · 续写 / 卡文救援" placement="left">
+                      <Button
+                        className="nv-ai-fab__toggle"
+                        aria-label="展开 AI 写作助手"
+                        aria-expanded={false}
+                        onClick={() => setAiFabOpen(true)}
+                      >
+                        <SvgIcon svg={aiSvg} />
+                      </Button>
+                    </Tooltip>
+                  )}
+                </div>
               )}
-
-            {/* R-AI-11 卡文救援入口（第一入口：正文区）。
-                刻意不塞进 EditorPane 内部：编辑器不该知道 AI 的存在
-                （AGENTS §2.2.2.1），入口贴在正文区即可，语义与续写悬浮键同层。
-                与续写一样，AI 总开关关掉时整颗不渲染 */}
-            {aiVisible && !editor.settings.readMode && data.activeChapter && (
-              <Tooltip title={rescueEntryHint} placement="left">
-                <Button
-                  className={`nv-rescue-fab ${aiEntryStateClass(rescueEntryState)}`.trim()}
-                  disabled={!aiAvailability.available}
-                  aria-label="卡文救援"
-                  onClick={() => requestRescue("editor")}
-                >
-                  <span className="nv-rescue-fab__icon">
-                    <SvgIcon svg={aiSvg} />
-                  </span>
-                  <span className="nv-rescue-fab__text">救援</span>
-                </Button>
-              </Tooltip>
-            )}
 
             {/* 选区右键菜单：文本变换 / 记入行囊 / 新建资料卡（REQ-062 已下线「绑定到现有资料卡」） */}
             {editor.selection && ctxMenu && (
@@ -1012,22 +1050,25 @@ export default function NovelPage({
               onClose={view.closeJump}
             />
 
+            {/* 右侧只有一格抽屉位：两个浮层读同一个派生值 `rightDrawer`，
+                渲染与顶栏高亮同源（见 useNovelViewState 的注释）。
+                关闭统一走 closeRightDrawer —— 一次关干净，不会「关掉排版露出快照」。 */}
             <SnapshotDrawer
-              open={view.snapshotOpen}
+              open={view.rightDrawer === "snapshot"}
               snapshots={data.snapshots}
               activeChapterId={data.activeChapterId}
-              onClose={view.closeSnapshot}
+              onClose={view.closeRightDrawer}
               onRollback={(snapshotId, snapshotTime) =>
                 void handleRollback(snapshotId, snapshotTime)
               }
             />
 
             <SettingsDrawer
-              open={view.settingsOpen}
+              open={view.rightDrawer === "settings"}
               settings={editor.settings}
               onUpdate={editor.updateSetting}
               onToggleAnnotationType={editor.toggleAnnotationType}
-              onClose={view.closeSettings}
+              onClose={view.closeRightDrawer}
               paperFonts={paperFonts}
             />
 
@@ -1136,8 +1177,6 @@ export default function NovelPage({
             onOpenRelation={openRelationWindow}
             onOpenMap={IS_NO_MAP ? undefined : openMapWindow}
             onRescueChapter={(chapterId) => requestRescue("outline", chapterId)}
-            onExportBook={() => void handleExportBook()}
-            exportProgress={exportProgress}
             extractActions={{
               session: extract,
               onRun: runEntityExtract,

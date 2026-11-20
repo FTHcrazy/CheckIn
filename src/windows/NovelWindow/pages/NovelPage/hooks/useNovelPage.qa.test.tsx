@@ -177,45 +177,41 @@ describe("Esc 逐层关闭链（REQ-050 回归面）", () => {
     expect(onEscape).toHaveBeenCalledTimes(1);
   });
 
-  it("四层全开：Esc 依次关 设定中心 → 排版 → 快照 → 专注，各一次到位", () => {
+  /**
+   * 2.72.1 起「排版」与「快照」互斥（同一格位置的自绘浮层，同开就完全重叠），
+   * 所以 Esc 链最多三层：设定中心 → 右侧抽屉 → 专注。
+   * 两个抽屉各自与专注的层序分别验证，顺序不变：抽屉永远排在专注之前。
+   */
+  it("三层全开：Esc 依次关 设定中心 → 排版 → 专注，各一次到位", () => {
     const { result, unmount } = renderHook(() => useNovelPage());
     const view = result.current.view;
 
     act(() => {
       view.openSettingCenter(null);
       view.openSettings();
-      view.openSnapshot();
       view.toggleFocus();
     });
     expect(result.current.view.settingCenterOpen).toBe(true);
     expect(result.current.view.settingsOpen).toBe(true);
-    expect(result.current.view.snapshotOpen).toBe(true);
     expect(result.current.view.focusMode).toBe(true);
 
-    // 第 1 击：最上层「设定中心」关闭，其余三层纹丝不动
+    // 第 1 击：最上层「设定中心」关闭，其余两层纹丝不动
     pressEscape();
     expect(result.current.view.settingCenterOpen).toBe(false);
     expect(result.current.view.settingsOpen).toBe(true);
-    expect(result.current.view.snapshotOpen).toBe(true);
     expect(result.current.view.focusMode).toBe(true);
 
     // 第 2 击：排版抽屉
     pressEscape();
     expect(result.current.view.settingCenterOpen).toBe(false);
     expect(result.current.view.settingsOpen).toBe(false);
-    expect(result.current.view.snapshotOpen).toBe(true);
     expect(result.current.view.focusMode).toBe(true);
 
-    // 第 3 击：快照
-    pressEscape();
-    expect(result.current.view.snapshotOpen).toBe(false);
-    expect(result.current.view.focusMode).toBe(true);
-
-    // 第 4 击：专注模式
+    // 第 3 击：专注模式
     pressEscape();
     expect(result.current.view.focusMode).toBe(false);
 
-    // 第 5 击：全空 → 空转，不抛、不改任何状态
+    // 第 4 击：全空 → 空转，不抛、不改任何状态
     expect(() => pressEscape()).not.toThrow();
     expect(result.current.view.settingCenterOpen).toBe(false);
     expect(result.current.view.settingsOpen).toBe(false);
@@ -223,6 +219,21 @@ describe("Esc 逐层关闭链（REQ-050 回归面）", () => {
     expect(result.current.view.focusMode).toBe(false);
 
     unmount();
+  });
+
+  it("互斥：排版开着时开快照，排版自动收起（不会两层叠在同一格）", () => {
+    const { result } = renderHook(() => useNovelPage());
+
+    act(() => {
+      result.current.view.openSettings();
+    });
+    expect(result.current.view.settingsOpen).toBe(true);
+
+    act(() => {
+      result.current.view.openSnapshot();
+    });
+    expect(result.current.view.snapshotOpen).toBe(true);
+    expect(result.current.view.settingsOpen).toBe(false);
   });
 
   it("优先级正确：只开「快照 + 专注」时，Esc 先关快照而不是先退专注", () => {

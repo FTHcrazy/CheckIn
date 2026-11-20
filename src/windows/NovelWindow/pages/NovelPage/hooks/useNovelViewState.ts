@@ -219,20 +219,55 @@ export function useNovelViewState() {
 
   const closeEntityDetail = useCallback(() => setDetailEntityId(null), []);
 
-  const openSnapshot = useCallback(() => setSnapshotOpen(true), []);
+  /**
+   * 右侧 300px 抽屉只有**一格位置**：`历史快照` 与 `排版与偏好` 都是
+   * `position:absolute; right:0; z-index:46` 的自绘浮层，两者同时 open 会完全重叠
+   * （后渲染的盖住前者）。表现就是真机反馈那一串怪象：点 ✕ 只关掉上面那个、
+   * 底下那个还在 → 「关不掉」；再点顶栏又叠一层 → 「怎么冒出历史快照」。
+   *
+   * 所以四个开关（open / toggle ×2）统一互斥：开 A 必关 B。
+   */
+  const openSnapshot = useCallback(() => {
+    setSettingsOpen(false);
+    setSnapshotOpen(true);
+  }, []);
   const closeSnapshot = useCallback(() => setSnapshotOpen(false), []);
   /** 顶栏历史按钮即开关：再点一次收起快照抽屉 */
-  const toggleSnapshot = useCallback(
-    () => setSnapshotOpen((open) => !open),
-    [],
-  );
-  const openSettings = useCallback(() => setSettingsOpen(true), []);
+  const toggleSnapshot = useCallback(() => {
+    setSettingsOpen(false);
+    setSnapshotOpen((open) => !open);
+  }, []);
+  const openSettings = useCallback(() => {
+    setSnapshotOpen(false);
+    setSettingsOpen(true);
+  }, []);
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
   /** 顶栏齿轮即开关：再点一次关闭（抽屉无遮罩时这是主要关闭途径之一） */
-  const toggleSettings = useCallback(
-    () => setSettingsOpen((open) => !open),
-    [],
-  );
+  const toggleSettings = useCallback(() => {
+    setSnapshotOpen(false);
+    setSettingsOpen((open) => !open);
+  }, []);
+
+  /**
+   * 右侧那格抽屉的**唯一真相**：`settings` / `snapshot` 共用同一个位置
+   * （都是 `position:absolute; right:0; width:300px` 的自绘浮层），
+   * 只能有一个存在。
+   *
+   * 四个开关已经互斥，这里再按「settings 优先」收一次：渲染层读的是这个派生值
+   * 而不是两个布尔 —— 顶栏高亮与面板可见性因此**永远同源**，不会出现
+   * 「按钮不亮但面板还在」。万一将来又有人绕过开关直接 set，最多也只是
+   * 显示优先级变化，不会两个叠一屏。
+   */
+  const rightDrawer: "settings" | "snapshot" | null = settingsOpen
+    ? "settings"
+    : snapshotOpen
+      ? "snapshot"
+      : null;
+  /** 关闭右侧抽屉：一次关干净（关掉排版不该露出底下那个快照） */
+  const closeRightDrawer = useCallback(() => {
+    setSettingsOpen(false);
+    setSnapshotOpen(false);
+  }, []);
   const openJump = useCallback(() => setJumpOpen(true), []);
   const closeJump = useCallback(() => setJumpOpen(false), []);
 
@@ -346,6 +381,8 @@ export function useNovelViewState() {
     jumpOpen,
     snapshotOpen,
     settingsOpen,
+    rightDrawer,
+    closeRightDrawer,
     settingCenterOpen,
     settingFocusId,
     typeManagerOpen,

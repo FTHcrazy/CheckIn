@@ -186,3 +186,30 @@ describe("书架「新建作品」的题材提示（同一类提示，同样要�
     expect(SHELF).toContain("题材只作 AI 起名、润色的风格参考");
   });
 });
+
+/**
+ * 正文区 AI 动作组默认**收纳**成一颗圆按钮（2.72.1 真机反馈）。
+ *
+ * 两颗胶囊常驻时，正文右下角长期被「续写 / 救援」占掉一块、压住字行。
+ * 现在常态只渲染 `.nv-ai-fab__toggle`，点开才渲染两颗胶囊 + `.nv-ai-fab__collapse`。
+ * 钉三件事，缺一件就会退回「常驻两胶囊」或「收起来看不见进度」：
+ *  1. 展开判据是 `aiFabOpen || 续写中`（进度态不能被收起吞掉）；
+ *  2. 展开分支里必须真有那两个入口（`ContinueFab` + `nv-rescue-fab`）；
+ *  3. 收纳键与收起键的类名各只有一处。
+ */
+describe("正文区 AI 动作组：默认收纳成一颗圆按钮", () => {
+  it("展开判据包含「续写进行中」，不是单纯的 aiFabOpen", () => {
+    expect(NOVEL_PAGE).toMatch(
+      /const aiFabExpanded = aiFabOpen \|\| Boolean\(continuation\?\.streaming\);/,
+    );
+  });
+
+  it("两种形态各渲染一次：收纳键 / 收起键，且展开态里两颗入口都在", () => {
+    expect(NOVEL_PAGE).toContain("nv-ai-fab__toggle");
+    expect(NOVEL_PAGE).toContain("nv-ai-fab__collapse");
+    expect(NOVEL_PAGE).toContain("<ContinueFab");
+    expect(NOVEL_PAGE).toContain("nv-rescue-fab");
+    // 收纳态不渲染胶囊：条件分支而不是 CSS 隐藏（隐藏仍会占位、仍能被 Tab 到）
+    expect(NOVEL_PAGE).toMatch(/aiFabExpanded \? \(\s*<>/);
+  });
+});

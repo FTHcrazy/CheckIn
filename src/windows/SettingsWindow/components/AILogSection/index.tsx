@@ -46,7 +46,10 @@ const INTENT_FILTER_ORDER = [
   "naming",
   "polish",
   "continuation",
+  "branch",
   "summary",
+  "extract",
+  "consistency",
   ...TRANSFORM_INTENTS,
   "test",
 ];

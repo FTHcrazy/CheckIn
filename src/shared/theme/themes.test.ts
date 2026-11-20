@@ -463,6 +463,7 @@ describe("色块阶梯：页面根铺 bg、浮层底只给浮层用", () => {
     "src/windows/NovelWindow/pages/NovelPage/components/SummaryPreview/index.scss", // AI 摘要浮层
     "src/windows/NovelWindow/pages/NovelPage/components/InspirationPanel/index.scss", // 灵感卡片 hover 操作条（浮在 surface 卡之上）
     "src/windows/NovelWindow/pages/NovelPage/components/SettingsDrawer/index.scss", // 排版抽屉
+    "src/windows/NovelWindow/pages/NovelPage/components/GlobalInspirationDrawer/index.scss", // 全部灵感抽屉里的卡片（底已退到 surface，卡片需亮一档）
     "src/windows/NovelWindow/pages/NovelPage/components/SnapshotDrawer/index.scss", // 快照抽屉
     "src/windows/GlobalSettingWindow/components/GsRefsDrawer/index.scss", // 引用方名单抽屉
     // 关系图窗口：画布浮层工具条 / 节点卡 / 右侧详情卡都是「浮在画布之上」的一层

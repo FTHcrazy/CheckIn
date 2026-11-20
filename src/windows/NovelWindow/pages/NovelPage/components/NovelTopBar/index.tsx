@@ -256,7 +256,7 @@ export default function NovelTopBar({
              扫下来像漏了一格（对齐交互稿里「三行图标 + 两行键位」的形态） */
           icon: menuIcon(<SvgIcon svg={historySvg} />),
           label: (
-            <span className="nv-topbar__more-item">
+            <span className="nv-topbar__more-item" data-drawer-keep-open="snapshot">
               <b>历史快照</b>
               <span>{snapshotOpen ? "已展开 · 每章可回滚" : "每章多版 · 可回滚"}</span>
             </span>
@@ -446,6 +446,9 @@ export default function NovelTopBar({
             aria-expanded={moreOpen}
             title="更多"
             data-tour-target="topbar-more"
+            /* 快照抽屉的「点外部关闭」要放过它自己的入口：⋯ 与菜单项都算开关本体，
+               否则 mousedown 先关、同一次 click 又 toggle 回来，表现为点了没反应 */
+            data-drawer-keep-open="snapshot"
           >
             <MoreOutlined />
           </Button>

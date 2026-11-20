@@ -128,30 +128,6 @@
      --ant-button-default-bg 是 --app-surface-alt（:64）——基面是 alt，槽按阶梯取
      高一档的 --app-surface（alt 上约 1.027~1.052，一档可感知）；不能取 alt（与基面
      同色会消失），也不能借 --app-surface-hover（静态铺开等于把整屏压重一档）。*/
-  /* D-13：导出条——整本导出是低频高耗时动作，给一枚常驻 Button 承载 loading
-     与阶段文案。外观只声明组件级 --ant-* 变量，不写 :hover 属性规则。 */
-  &__export {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-top: 10px;
-    padding-top: 10px;
-    border-top: 1px solid var(--app-border);
-  }
-
-  &__export-btn.ant-btn {
-    --ant-border-radius: var(--app-radius-panel);
-    --ant-button-content-font-size: 12px;
-    flex: none;
-  }
-
-  &__export-phase {
-    min-width: 0;
-    font-size: 12px;
-    line-height: 1.5;
-    color: var(--app-text-muted);
-  }
-
   &__state {
     padding: 0 7px;
     border-radius: var(--app-radius-pill);

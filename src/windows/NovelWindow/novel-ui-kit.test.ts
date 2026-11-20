@@ -634,6 +634,29 @@ describe("Novel 窗口：要素类型 chips 不被挤扁", () => {
     const row = ruleBlock(css, ".nv-panel .nv-chips");
     expect(row).toContain("overflow-x: auto");
   });
+
+  it("chips 恒为单行：换行会让面板顶部高度随分类数跳动", () => {
+    const row = ruleBlock(css, ".nv-panel .nv-chips");
+    expect(row).toContain("flex-wrap: nowrap");
+  });
+
+  /**
+   * hover / 选中都不得改变盒子宽度（真机反馈：鼠标移上去 chip 会窄一下）。
+   *
+   * 两个来源：
+   *  (a) EntityTypeChip 的 `border-left: 2px` 被 antd hover 态那条
+   *      `border: 1px solid …` shorthand（特异性 0,4,0）覆盖回来 → 少 1px；
+   *  (b) 选中态写 `font-weight: 600` → 12px 粗体比常规宽 1~2px。
+   * 两条都在这里钉死：左色带恒 1px，选中态只允许改颜色变量。
+   */
+  it("左色带恒 1px、选中态不加粗（消除 hover/选中的宽度抖动）", () => {
+    const block = ruleBlock(css, ".nv-panel .nv-chip.ant-btn");
+    expect(block).toContain("border-left-width: 1px");
+    expect(block).not.toContain("border-left: 2px");
+
+    const isOn = ruleBlock(css, ".nv-panel .nv-chip.ant-btn.is-on");
+    expect(isOn).not.toContain("font-weight");
+  });
 });
 
 describe("Novel 窗口：虚拟化行内 width:100% 的普通元素必须显式 border-box", () => {

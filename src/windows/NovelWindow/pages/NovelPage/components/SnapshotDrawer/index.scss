@@ -16,10 +16,23 @@
   border-left: 1px solid var(--app-border);
   box-shadow: var(--app-shadow-pop);
   transform: translateX(100%);
-  transition: transform var(--app-t-slow) var(--app-ease-standard);
+  /* 收起态彻底不上屏（同 .nv-setting）：`translateX(100%)` 只推到定位容器右缘外，
+     容器比窗口窄时抽屉会停在支撑面板上方、看起来一直开着。 */
+  visibility: hidden;
+  transition:
+    transform var(--app-t-slow) var(--app-ease-standard),
+    visibility 0s linear var(--app-t-slow);
+  /* 收起态不参与命中测试：aside 常驻 DOM、只靠位移移出，若宿主容器恰好没裁切
+     （或用户把窗拖得极窄），滑出边缘那一条仍会挡在正文上，表现是「点正文没反应」 */
+  pointer-events: none;
 
   &.is-open {
     transform: none;
+    visibility: visible;
+    pointer-events: auto;
+    transition:
+      transform var(--app-t-slow) var(--app-ease-standard),
+      visibility 0s linear 0s;
   }
 
   &__head {
@@ -144,5 +157,7 @@
 @media (prefers-reduced-motion: reduce) {
   .nv-snap {
     transition-duration: 0ms;
+    /* 无动画时不必再等滑出，立刻隐藏 */
+    transition-delay: 0ms;
   }
 }

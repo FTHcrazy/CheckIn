@@ -3,7 +3,6 @@ import {
   ApartmentOutlined,
   AuditOutlined,
   EnvironmentOutlined,
-  ExportOutlined,
   SafetyOutlined,
   SnippetsOutlined,
 } from "@ant-design/icons";
@@ -11,7 +10,6 @@ import type { ReactNode } from "react";
 import SvgIcon from "@/shared/components/SvgIcon";
 import aiSvg from "@/assets/novel/ai.svg?raw";
 import type { ToastTone } from "@/shared/novel/use-auto-toast";
-import type { ExportProgress } from "../../../../../../services/progress-phase";
 import { IS_NO_MAP } from "@/shared/edition";
 import "./index.scss";
 
@@ -48,13 +46,6 @@ interface ToolLauncherProps {
    * 点击后经主进程唤起 MapWindow（单实例，已开则聚焦）。
    */
   onOpenMap?: () => void;
-  /**
-   * 导出整本 TXT（D-13）。不传 = 精简形态（单测）不渲染导出条。
-   * 传了即渲染一枚 Button loading 入口：阶段文案旁显、导出中禁止再次触发。
-   */
-  onExportBook?: () => void;
-  /** 导出进行中态（与 onExportBook 配套；缺省按空闲处理） */
-  exportProgress?: ExportProgress;
 }
 
 interface ToolItem {
@@ -97,8 +88,6 @@ export default function ToolLauncher({
   onNotify,
   onOpenRelation,
   onOpenMap,
-  onExportBook,
-  exportProgress,
 }: ToolLauncherProps) {
   const tools: ToolItem[] = [
     {
@@ -202,29 +191,6 @@ export default function ToolLauncher({
           );
         })}
       </div>
-
-      {onExportBook ? (
-        <div className="nv-tools__export">
-          <Button
-            type="primary"
-            icon={<ExportOutlined />}
-            loading={exportProgress?.exporting ?? false}
-            disabled={exportProgress?.exporting ?? false}
-            onClick={onExportBook}
-          >
-            导出整本 TXT
-          </Button>
-          {exportProgress?.exporting ? (
-            <span
-              className="nv-tools__export-phase"
-              role="status"
-              aria-live="polite"
-            >
-              {exportProgress.label}
-            </span>
-          ) : null}
-        </div>
-      ) : null}
     </div>
   );
 }

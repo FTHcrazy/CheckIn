@@ -151,3 +151,77 @@ describe("useNovelViewState · 页内浮层收口（REQ-053）", () => {
     expect(result.current.pageOverlayOpen).toBe(false);
   });
 });
+
+/**
+ * 右侧 300px 抽屉只有一格位置：`历史快照` 与 `排版与偏好` 都是
+ * `position:absolute; right:0; z-index:46` 的自绘浮层，同时 open 会完全重叠
+ * （后渲染的盖住前者）。真机反馈的「点 ✕ 关不掉、再点又冒出历史快照」
+ * 就是两层叠在一起造成的，所以四个开关统一互斥。
+ */
+describe("useNovelViewState · 右侧抽屉互斥", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("open 互斥：开排版收快照，开快照收排版", () => {
+    const { result } = renderHook(() => useNovelViewState());
+
+    act(() => result.current.openSnapshot());
+    expect(result.current.snapshotOpen).toBe(true);
+
+    act(() => result.current.openSettings());
+    expect(result.current.settingsOpen).toBe(true);
+    expect(result.current.snapshotOpen, "同一格位置不能再叠一个抽屉").toBe(false);
+
+    act(() => result.current.openSnapshot());
+    expect(result.current.snapshotOpen).toBe(true);
+    expect(result.current.settingsOpen).toBe(false);
+  });
+
+  it("toggle 互斥：快照开着时点顶栏排版键，切到排版而不是两层同开", () => {
+    const { result } = renderHook(() => useNovelViewState());
+
+    act(() => result.current.toggleSnapshot());
+    expect(result.current.snapshotOpen).toBe(true);
+
+    act(() => result.current.toggleSettings());
+    expect(result.current.settingsOpen).toBe(true);
+    expect(result.current.snapshotOpen).toBe(false);
+
+    // 第二击 = 收起（toggle 语义不能被互斥改坏）
+    act(() => result.current.toggleSettings());
+    expect(result.current.settingsOpen).toBe(false);
+  });
+});
+
+/**
+ * `rightDrawer` 是右侧那格抽屉的唯一真相：顶栏高亮与面板可见性都读它。
+ * 之前两者各读一个布尔，一旦状态被别的路径改乱，就会出现「按钮不亮但面板还在」
+ * —— 真机反馈的「排版与偏好关不掉」正是这一类。
+ */
+describe("useNovelViewState · rightDrawer 单一真相", () => {
+  it("每次最多只有一个抽屉：开谁就认谁，全关时是 null", () => {
+    const { result } = renderHook(() => useNovelViewState());
+    expect(result.current.rightDrawer).toBeNull();
+
+    act(() => result.current.openSnapshot());
+    expect(result.current.rightDrawer).toBe("snapshot");
+
+    act(() => result.current.openSettings());
+    expect(result.current.rightDrawer).toBe("settings");
+
+    act(() => result.current.toggleSnapshot());
+    expect(result.current.rightDrawer, "切过去之后只有快照").toBe("snapshot");
+  });
+
+  it("closeRightDrawer 一次关干净：不留下任何一层", () => {
+    const { result } = renderHook(() => useNovelViewState());
+
+    act(() => result.current.openSettings());
+    act(() => result.current.closeRightDrawer());
+
+    expect(result.current.rightDrawer).toBeNull();
+    expect(result.current.settingsOpen).toBe(false);
+    expect(result.current.snapshotOpen).toBe(false);
+  });
+});
