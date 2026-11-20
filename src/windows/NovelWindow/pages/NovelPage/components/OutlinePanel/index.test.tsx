@@ -525,6 +525,34 @@ describe("OutlinePanel 组件", () => {
     expect(screen.getByLabelText("伏笔标题")).toBeInTheDocument();
   });
 
+  /**
+   * 真机反馈：第一章点「＋ 伏笔」，输入框长在第五章下面。
+   *
+   * 改前面板头入口一律落到首卷卷尾（卷级表单）。长卷里作者点完要往下翻好几屏
+   * 才能看见输入框，第一反应是「没反应」。现在优先锚到当前章：视线在哪一行，
+   * 表单就长在哪一行；没有当前章时才退回卷尾。
+   */
+  it("有当前章时，面板头「＋ 伏笔」内联在当前章下方（不是卷尾）", () => {
+    const props = {
+      outline,
+      activeChapterId: "c2",
+      onSelectChapter: vi.fn(),
+      actions: buildActions(),
+    };
+    const { rerender } = render(
+      <OutlinePanel {...props} addForeshadowSignal={0} />,
+    );
+
+    rerender(<OutlinePanel {...props} addForeshadowSignal={1} />);
+
+    const input = screen.getByLabelText("伏笔标题");
+    const row = input.closest(".nv-outline__item");
+    expect(row).not.toBeNull();
+    // 表单所在行 = 当前章（第二章 旧剑），不是卷尾也不是别的章
+    expect(row!.textContent).toContain("旧剑");
+    expect(row!.textContent).not.toContain("雨夜叩门");
+  });
+
   it("没有卷时给出启用引导", () => {
     render(
       <OutlinePanel

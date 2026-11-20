@@ -87,4 +87,21 @@ describe("AI 流式端点（B5 判据）", () => {
     expect(MAIN).toContain('scheme: "ai-stream"');
     expect(MAIN).toContain("registerAiStreamEndpoint");
   });
+
+  /**
+   * 「AI 记录」页的模型输出必须是**模型说了什么**，不是传输帧。
+   *
+   * 此前 tapStream 把原始字节直接累加落库：一次救援的日志是几万字
+   * `data: {"choices":…}`，里面全是模型的 reasoning_content（真机反馈
+   * 「日志里全是流式结构」）。现在按 provider 用与渲染层同源的 accumulator
+   * 解析出正文，解析不出时才退回原文前 4000 字。
+   */
+  it("流结束回传解析后的正文，而不是原始 SSE 帧", () => {
+    expect(STREAM_EP).toContain("createOpenAiSseAccumulator");
+    expect(STREAM_EP).toContain("createOllamaAccumulator");
+    // provider 必须传进 tapStream：两种服务商的帧格式不同，缺它就只能猜
+    expect(STREAM_EP).toMatch(/tapStream\(response\.body,\s*provider/);
+    // 反向断言：不能再把原始字节直接当正文攒起来
+    expect(STREAM_EP).not.toMatch(/acc \+= decoder\.decode\(chunk/);
+  });
 });

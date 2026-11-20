@@ -125,6 +125,14 @@ export interface EditorState {
   applyExternalContent: (chapterId: string, next: string) => void;
   /** 返回是否全部落库成功（调用方据此决定提示文案，不要无条件说「已保存」） */
   flushSave: () => Promise<boolean>;
+  /**
+   * 外部直写动作的「已保存」回执（如章节状态切换 草稿⇄完稿）。
+   *
+   * 这类动作不走草稿防抖链路，直接经自己的 IPC 落库 —— 落库后顶栏若还停在
+   * 「待输入」，作者会以为刚才那一下没生效。动作成功发起后调这里，把保存态
+   * 推到 saved 并刷新 lastSavedAt，与正文保存共用同一根指示器。
+   */
+  markSaved: () => void;
   updateSetting: <K extends keyof EditorSettings>(
     key: K,
     value: EditorSettings[K],
@@ -387,6 +395,8 @@ export const useNovelEditorStore = create<EditorState>()((set, get) => {
 
     dismissRecovery: () => set({ recoveryDismissed: true }),
 
+    markSaved: () => set({ saveState: "saved", lastSavedAt: Date.now() }),
+
     dropChapterDraft: (chapterId) => {
       const state = get();
       // 在途防抖若正是这一章，连定时器一起撤掉：章节都没了，没得可存
@@ -511,6 +521,9 @@ export const editorActions = {
     useNovelEditorStore.getState().applyExternalContent(chapterId, next);
   },
   flushSave: (): Promise<boolean> => useNovelEditorStore.getState().flushSave(),
+  markSaved: (): void => {
+    useNovelEditorStore.getState().markSaved();
+  },
   updateSetting: <K extends keyof EditorSettings>(
     key: K,
     value: EditorSettings[K],

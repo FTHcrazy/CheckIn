@@ -34,12 +34,30 @@ import { createBranchStreamParser } from "../utils/parseBranchStream";
 import type { RescueEdit, RescueLanding, RescueSegment } from "../utils/rescue";
 
 /**
- * 单次救援的固定超时（team-lead 裁定④）。
+ * 无数据卡死看门狗：45 秒。
  *
- * 30s 一刀切、不做服务商差异化：维护三套阈值换不来可感知的体验提升，
- * 而「超时后仍保留已落卡的走向」这条兜底对两种服务商同样有效。
+ * 口径是「连续 45 秒**任何一帧**都没到达才算死」，不是「45 秒没出正文」——
+ * spark-x2.6 这类 reasoning 模型会先吐几百字 `reasoning_content` 思考流，
+ * 思考帧也是活着的连接（真机日志：帧源源不断、正文排在思考后面），把思考
+ * 阶段当无进展等于每次必失败。思考帧到达即续期，只有连接彻底哑掉才中断。
  */
-export const RESCUE_TIMEOUT_MS = 30_000;
+export const RESCUE_STALL_TIMEOUT_MS = 45_000;
+
+/**
+ * 首段硬上限：180 秒。
+ *
+ * 连接活着但思考迟迟不出正文时，也不能无限等下去——180 秒还没写出第一条
+ * 走向，就中断并提示换个风格或稍后重试（正常思考几十秒内会结束）。
+ */
+export const RESCUE_FIRST_SEGMENT_TIMEOUT_MS = 180_000;
+
+/**
+ * 正文开始后的总时长上限：120 秒。
+ *
+ * 从**首段落卡**起算（不是从发起请求起算）：否则思考占了 60 秒，写正文只剩
+ * 60 秒预算，长走向写到一半被砍，前功尽弃。有正文就让它收完这一批。
+ */
+export const RESCUE_TOTAL_TIMEOUT_MS = 120_000;
 
 /** 生成阶段 */
 export type RescuePhase = "idle" | "loading" | "streaming" | "done" | "error";
@@ -222,6 +240,11 @@ export function useRescueBranch(options: UseRescueBranchOptions): UseRescueBranc
       };
 
       const run = async (): Promise<void> => {
+        /**
+         * 看门狗命中记录：文案 + 是否要保住已落卡的走向。
+         * 定义在 try 外，catch 里 abort 打断挂起 read 抛过来时还能读到。
+         */
+        const watchdogHit = { message: "", keepCards: false };
         try {
           // provider 必须在建立流**之前**取到：放在之后会让首块在等待这次
           // IPC 的时间里攒起来，第一个 delta 一次吐出好几条卡片
@@ -242,7 +265,13 @@ export function useRescueBranch(options: UseRescueBranchOptions): UseRescueBranc
           const accumulator =
             provider === "ollama" ? createOllamaAccumulator() : createOpenAiSseAccumulator();
           const parser = createBranchStreamParser();
-          const deadline = Date.now() + RESCUE_TIMEOUT_MS;
+          const startedAt = Date.now();
+          /** 首段硬上限：思考流再热闹，超过它还没写正文就放弃 */
+          const firstDeadline = startedAt + RESCUE_FIRST_SEGMENT_TIMEOUT_MS;
+          /** 无数据看门狗：任何一帧到达都续期；思考慢不算死，彻底没数据才算死 */
+          let stallDeadline = startedAt + RESCUE_STALL_TIMEOUT_MS;
+          /** 正文开始后才有意义：从首段落卡起算的总时长（首段前不参与判定） */
+          let totalDeadline = Number.POSITIVE_INFINITY;
           /** 本地镜像：避免为了「读当前已有几条」去 setState 里偷值 */
           const collected: RescueSegment[] = [];
 
@@ -251,32 +280,70 @@ export function useRescueBranch(options: UseRescueBranchOptions): UseRescueBranc
             // 超过请求条数的丢弃：模型偶尔多给，多出来的会让界面编号越过 B5
             const room = params.count - collected.length;
             if (room <= 0) return;
+            // 首段落卡：总时长预算从这一刻起算（思考耗时不再挤占写正文时间）
+            if (collected.length === 0) totalDeadline = Date.now() + RESCUE_TOTAL_TIMEOUT_MS;
             const accepted_ = fresh.slice(0, room);
             collected.push(...accepted_);
             setSegments((prev) => [...prev, ...accepted_].slice(0, params.count));
             setPhase("streaming");
           };
 
-          for (;;) {
-            if (!accepted()) return;
-            if (Date.now() > deadline) {
-              handle.abort();
-              streamRef.current = null;
-              setError("生成超时，已保留已生成的走向");
-              setPhase(collected.length > 0 ? "streaming" : "error");
-              return;
+          /**
+           * 看门狗：真实计时器每秒巡检一次截止线，命中直接 abort。
+           *
+           * 为什么不写在读取循环里：截止判定夹在 `await readChunk()` 之间，
+           * 连接彻底哑掉（readChunk 永不返回）时循环永远醒不来，判定形同虚设；
+           * abort 会立刻打断挂起的 read（返回 null / 抛 AbortError），
+           * 循环经 break / catch 退出，兜底文案在退出路径统一收场。
+           */
+          const watchdog = window.setInterval(() => {
+            const now = Date.now();
+            let message = "";
+            if (now > stallDeadline) {
+              // 连接哑掉（连续 45 秒一帧都没有）：流式协议层面已经卡死
+              message = "模型连接长时间没有数据，已中断；可换一批或稍后重试";
+            } else if (collected.length === 0 && now > firstDeadline) {
+              // 连接活着但迟迟不出正文：思考流持续到达会续期 stallDeadline，
+              // 走不到上一条分支，只能靠这个硬上限兜底
+              message = "模型思考太久，还没开始写正文；已中断，可换个风格或稍后重试";
+            } else if (now > totalDeadline) {
+              // 正文开始后：总时长口径，保住已落卡的走向
+              message = "生成超时，已保留已生成的走向";
             }
-            const chunk = await handle.readChunk();
-            if (chunk === null) break;
-            const delta = accumulator.push(chunk);
-            if (delta) append(parser.push(delta));
+            if (message) {
+              watchdogHit.message = message;
+              watchdogHit.keepCards = collected.length > 0;
+              handle.abort();
+            }
+          }, 1_000);
+
+          try {
+            for (;;) {
+              if (!accepted()) return;
+              const chunk = await handle.readChunk();
+              if (chunk === null) break;
+              // 思考帧 / 正文帧都算活着：到达即续期
+              stallDeadline = Date.now() + RESCUE_STALL_TIMEOUT_MS;
+              const delta = accumulator.push(chunk);
+              if (delta) append(parser.push(delta));
+            }
+            const tail = accumulator.flush();
+            if (tail) append(parser.push(tail));
+            append(parser.flush());
+          } finally {
+            window.clearInterval(watchdog);
           }
-          const tail = accumulator.flush();
-          if (tail) append(parser.push(tail));
-          append(parser.flush());
+
           if (!accepted()) return;
           streamRef.current = null;
 
+          // 看门狗命中但流是「正常结束」收场（abort 让 read 返回 null）：
+          // 按命中的截止线文案收，别把 abort 误当成生成完成
+          if (watchdogHit.message) {
+            setError(watchdogHit.message);
+            setPhase(watchdogHit.keepCards ? "streaming" : "error");
+            return;
+          }
           if (collected.length === 0) {
             // 一段都没解开：要么模型没按 JSON 输出，要么流是空的 —— 交给结构化通道
             await fallback();
@@ -286,6 +353,13 @@ export function useRescueBranch(options: UseRescueBranchOptions): UseRescueBranc
         } catch (thrown) {
           if (!accepted()) return;
           streamRef.current = null;
+          // 看门狗命中：abort 打断挂起的 read 抛到这里（AbortError），
+          // 按截止线文案收场，别让 abort 被吞成「主动中断不算错误」
+          if (watchdogHit.message) {
+            setError(watchdogHit.message);
+            setPhase(watchdogHit.keepCards ? "streaming" : "error");
+            return;
+          }
           // 主动中断不算错误：已落卡的走向保留，回到「可采纳」态
           if (streamed?.done) {
             setPhase((prev) => (prev === "loading" ? "idle" : "streaming"));

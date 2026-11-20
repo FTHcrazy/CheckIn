@@ -16,6 +16,8 @@ const CONTEXT: AiRescueContext = {
   anchor: { workId: "w1", chapterId: "c1", cursorOrNodeId: "cursor:12" },
   scope: "chapter",
   estimatedChars: 1200,
+  // 正文里有明确光标：「插入光标处」可选且是默认落点
+  cursorKnown: true,
   availability: "ready",
 };
 

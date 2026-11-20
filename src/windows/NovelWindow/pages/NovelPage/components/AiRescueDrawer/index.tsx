@@ -47,6 +47,8 @@ export interface AiRescueContext {
   scope: L3Scope;
   /** 将发送的正文字数（与 buildL3Payload 同源） */
   estimatedChars: number;
+  /** 作者是否在正文里放下过光标：决定「插入光标处」是否可选、是否为默认落点 */
+  cursorKnown: boolean;
   /** O-06 三态 */
   availability: "unavailable" | "needsConsent" | "ready";
 }
@@ -103,6 +105,8 @@ export default function AiRescueDrawer({
   const streaming = phase === "loading" || phase === "streaming";
   const loading = phase === "loading";
   const hasSelection = Boolean(context?.selection?.trim());
+  /** 「插入光标处」需要正文里有真实的光标（见 AiRescueContext.cursorKnown） */
+  const cursorKnown = Boolean(context?.cursorKnown);
   const availability = context?.availability ?? "unavailable";
   const canGenerate = availability === "ready";
 
@@ -116,15 +120,23 @@ export default function AiRescueDrawer({
     if (open) captureTrigger();
   }, [open, captureTrigger]);
 
-  // 打开时按入口重置局部状态：上一次的勾选不该带进新一次救援
+  // 打开时按入口重置局部状态：上一次的勾选不该带进新一次救援。
+  // 默认落点跟着「正文里有没有明确的光标」走——没光标（从大纲 / 灵感入口
+  // 打开、或从没点过正文）时默认沉淀到灵感，别让作者顺手把提纲插进正文
   useEffect(() => {
     if (!open) {
       startedRef.current = "";
       return;
     }
     setCheckedKeys([]);
-    setLanding(context?.selection?.trim() ? "replaceSelection" : "cursor");
-  }, [open, context?.anchor.chapterId, context?.anchor.cursorOrNodeId, context?.selection]);
+    setLanding(
+      context?.selection?.trim()
+        ? "replaceSelection"
+        : cursorKnown
+          ? "cursor"
+          : "inspiration",
+    );
+  }, [open, context?.anchor.chapterId, context?.anchor.cursorOrNodeId, context?.selection, cursorKnown]);
 
   /**
    * 首次自动生成。
@@ -231,7 +243,11 @@ export default function AiRescueDrawer({
             // 而流式解析失败降级成结构化通道时一条都不会逐张出现。
             <div className="nv-rescue__pending">
               <Skeleton active paragraph={{ rows: 3 }} title={false} />
-              <span className="nv-rescue__pending-text">正在想几个走向…</span>
+              {/* 带思考过程的模型（如 spark-x2.6）会先推理几十秒才出正文：
+                  说明「可能要等一会儿」，作者才不会以为卡死、中途关掉浮层 */}
+              <span className="nv-rescue__pending-text">
+                正在想几个走向…模型带思考过程时，可能要等 30 秒左右
+              </span>
             </div>
           ) : (
             <div className="nv-empty">
@@ -252,6 +268,7 @@ export default function AiRescueDrawer({
             value={landing}
             onChange={setLanding}
             hasSelection={hasSelection}
+            cursorKnown={cursorKnown}
             disabled={streaming}
           />
           <div className="nv-rescue__actions">

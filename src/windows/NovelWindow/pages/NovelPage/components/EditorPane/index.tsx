@@ -191,6 +191,8 @@ export interface EditorPaneHandle {
    * 之间作者又动了光标）。
    */
   getTextBeforeCursor: (maxChars: number) => { text: string; cursor: number };
+  /** 本章是否放下过光标（点击 / 打字 / 跳转定位都算；切章后复位） */
+  hasCursor: () => boolean;
 }
 
 /** 排版相关的动态样式走独立 compartment，改字号不必重建编辑器 */
@@ -326,6 +328,19 @@ export default function EditorPane({
     chapterIdRef.current = chapter?.id ?? null;
   }, [chapter?.id]);
   /**
+   * 作者在**本章**里放下过光标（点击 / 打字 / 跳转定位都会置位，切章复位）。
+   *
+   * CodeMirror 的 selection 永远有值（默认 0）：作者从没点过正文时，head=0
+   * 与「光标停在文档开头」无法区分。外部命令式插入（卡文救援「插入光标处」）
+   * 需要这个判据 —— 没放过光标就往 head 插，内容会被埋在文档开头，作者根本
+   * 找不到插到哪了。
+   */
+  const cursorEverSetRef = useRef(false);
+  useEffect(() => {
+    // 切章即复位：上一章的光标位置对新章没有意义
+    cursorEverSetRef.current = false;
+  }, [chapter?.id]);
+  /**
    * 当前已知的正文放 ref：IME 组合结束后以此为字数基线上报最终文档——
    * 组合期间的中间态从未上报过，store 的基线上仍停在「组合前的已知正文」。
    * （程序化灌入的基线不由它负责，见 hydratingRef）
@@ -433,6 +448,9 @@ export default function EditorPane({
         view.dispatch({
           changes: { from: safeFrom, to: safeTo, insert: text },
           selection: { anchor: safeFrom + text.length },
+          // 插入点滚进视野：面板类调用（卡文救援 / 名字插入）发起时焦点
+          // 都在浮层上，作者看不到编辑器——不滚动就等于「插到不知道哪里去了」
+          effects: EditorView.scrollIntoView(safeFrom + text.length, { y: "center" }),
           userEvent: "input.replace",
         });
         view.focus();
@@ -443,6 +461,17 @@ export default function EditorPane({
         if (!view || maxChars <= 0) return { text: "", cursor };
         const start = Math.max(0, cursor - maxChars);
         return { text: view.state.sliceDoc(start, cursor), cursor };
+      },
+      /**
+       * 本章是否放下过光标（当前聚焦也算）。
+       *
+       * 灌入正文与切章都会让 head 变成一个「没人放过」的坐标——只看 head
+       * 无法区分「光标停在文档开头」和「作者从没点过正文」，必须由
+       * selectionSet 的上报链来记。
+       */
+      hasCursor: (): boolean => {
+        const view = viewRef.current;
+        return Boolean(view && (cursorEverSetRef.current || view.hasFocus));
       },
     }),
     [],
@@ -639,6 +668,9 @@ export default function EditorPane({
               }
             }
             if (update.selectionSet) {
+              // 非灌入的选区变化 = 作者亲手放下过光标（含跳转定位）：
+              // 「插入光标处」类命令据此判断这次插入有没有明确的落点
+              if (!hydratingRef.current) cursorEverSetRef.current = true;
               const { main } = update.state.selection;
               // 光标位置上报（R6）：折叠与非折叠选区都要记 head
               handlersRef.current.onCursorChange(main.head);

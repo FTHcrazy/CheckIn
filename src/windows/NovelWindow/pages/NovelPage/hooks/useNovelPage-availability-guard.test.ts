@@ -33,7 +33,7 @@ const TOP_BAR = readFileSync(
 const CONTINUE_FAB = readFileSync(
   path.resolve(
     process.cwd(),
-    "src/windows/NovelWindow/pages/NovelPage/components/ContinueFab/index.tsx",
+    "src/windows/NovelWindow/pages/NovelPage/components/AiFabGroup/index.tsx",
   ),
   "utf8",
 );
@@ -66,13 +66,14 @@ describe("AI 可用性门控接线（G2 守卫）", () => {
   it("续写入口（正文右下角悬浮按钮，REQ-061）接收 aiAvailable 并据其禁用", () => {
     // 入口从顶栏搬到悬浮按钮，但「不可用即禁用 + 说明原因」的判据不变
     expect(CONTINUE_FAB).toContain("aiAvailable");
-    expect(CONTINUE_FAB).toMatch(/disabled=\{!aiAvailable\}/);
+    // 不可用即禁用；续写进行中一并禁用（串行动作，重复触发只会叠确认弹窗）
+    expect(CONTINUE_FAB).toMatch(/disabled=\{!aiAvailable \|\| busy\}/);
     expect(CONTINUE_FAB).toContain("aiUnavailableText");
     // 顶栏不再放这颗闪电（否则等于两个入口、两份门控）
     expect(TOP_BAR).not.toContain("onContinue");
     expect(TOP_BAR).not.toContain("ThunderboltOutlined");
     // 页面层真的把它挂上了，而且走的是「先确认再发起」的入口
-    expect(NOVEL_PAGE).toContain("<ContinueFab");
+    expect(NOVEL_PAGE).toContain("<AiFabGroup");
     expect(NOVEL_PAGE).toContain("requestContinuation");
     // 阅读模式 / 无章节时不挂载：这两种情况下没有「光标前的前文」，
     // 留一颗点了只会提示「先到正文里点一下」的按钮是噪音。

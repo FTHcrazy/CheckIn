@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import { PlusOutlined, SearchOutlined } from "@ant-design/icons";
-import { Button, Input, Popconfirm } from "antd";
+import { Button, Input, Popconfirm, Tooltip } from "antd";
 import {
   DndContext,
   DragOverlay,
@@ -121,6 +122,40 @@ export default function ChapterTree({
     id: string;
     anchor: HTMLElement | null;
   } | null>(null);
+
+  /**
+   * 章节完整标题的悬浮说明（唯一浮层，与上面 Popconfirm 同范式）。
+   *
+   * 标题过长被省略号截断后，作者无从知道完整章节名。行自己不挂 Tooltip：
+   * 数千行各带一个浮层组件正是虚拟化列表卡顿的老路；行只上报「标题 + 锚点
+   * 矩形」，全列表共享这一个 Tooltip。锚点用坐标而非 DOM 引用——
+   * 虚拟化下行随时可能滚出视口被卸载，引用会变 null。
+   *
+   * 浮层挂在行的**右侧**（列表边缘外）：盖在章节栏内部会挡住状态点 /
+   * 删除按钮这些行内操作。
+   */
+  const [titleTip, setTitleTip] = useState<{ title: string; style: CSSProperties } | null>(
+    null,
+  );
+
+  const showTitleTip = useCallback((title: string, el: HTMLElement | null): void => {
+    if (!el) return;
+    // 未被截断的短标题不值得浮层：完整名已经完整可见了
+    if (el.scrollWidth <= el.clientWidth) return;
+    const rect = el.getBoundingClientRect();
+    setTitleTip({
+      title,
+      style: {
+        position: "fixed",
+        left: rect.right,
+        top: rect.top + rect.height / 2,
+        width: 0,
+        height: 0,
+      },
+    });
+  }, []);
+
+  const hideTitleTip = useCallback((): void => setTitleTip(null), []);
 
   const requestDelete = useCallback(
     (kind: "chapter" | "volume", id: string, anchor: HTMLElement | null) => {
@@ -370,6 +405,7 @@ export default function ChapterTree({
             className="nv-tree__list"
             data={rows}
             overscan={12}
+            onScroll={hideTitleTip}
             computeItemKey={(_, row) =>
               row.kind === "volume" ? row.volume.id : row.chapter.id
             }
@@ -400,6 +436,8 @@ export default function ChapterTree({
                   onOpenSummary={onOpenSummary}
                   showSummary={showSummary}
                   aiNeedsConsent={aiNeedsConsent}
+                  onTitleHover={showTitleTip}
+                  onTitleHoverEnd={hideTitleTip}
                 />
               )
             }
@@ -413,6 +451,14 @@ export default function ChapterTree({
           </DragOverlay>
         </DndContext>
       )}
+
+      {/* 章节完整标题的共享 Tooltip：锚点钉在标题行右缘中点（fixed 定位），
+          placement=right 让气泡落在列表外的正文区，不遮行内状态点 / 删除按钮 */}
+      {titleTip ? (
+        <Tooltip title={titleTip.title} placement="right" open>
+          <span style={titleTip.style} aria-hidden />
+        </Tooltip>
+      ) : null}
 
       <div className="nv-tree__foot">
         {/* 两键形态对齐交互稿：新章节是主色实底（首日动作，最常按），新卷是描边

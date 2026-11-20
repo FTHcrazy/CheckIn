@@ -39,6 +39,10 @@ import {
   AI_STREAM_SCHEME,
   AI_STREAM_TOKEN_HEADER,
 } from "../../../src/shared/ai/ai-stream-protocol";
+import {
+  createOllamaAccumulator,
+  createOpenAiSseAccumulator,
+} from "../../../src/shared/ai/ai-stream-parse";
 
 /**
  * 由 ai-handlers.ts 注入配置读取函数：本文件不 import ai-handlers（避免
@@ -125,33 +129,44 @@ function resolveStreamWindowName(): string {
 const STREAM_LOG_CHARS = 4000;
 
 /**
- * 包装模型响应流：**边透传边攒一份**给 `onStreamEnd` 用。
+ * 包装模型响应流：**边透传边解析一份正文**给 `onStreamEnd` 用。
  *
  * 不能先读完再返回（那就不是流式了），所以用 `TransformStream` 透传；
  * `flush` = 源流正常结束，`cancel` = 渲染层主动中断。两条路径都恰好命中一次。
+ *
+ * 记的是**解析后的正文**，不是原始 SSE：`rawOutput` 在「AI 记录」页直接给人看，
+ * 此前落的是 `data: {"choices":…}` 一整墙传输帧（含模型的 reasoning_content），
+ * 既看不出模型说了什么，也把一次普通调用记成几万字（真机反馈）。
+ * 解析不出正文时（非标准 SSE / 半帧截断）退回原文前 4000 字，不丢排障线索。
  */
 function tapStream(
   body: ReadableStream<Uint8Array>,
+  provider: "openai" | "ollama",
   onEnd: (outcome: AiStreamOutcome, output: string) => void,
 ): ReadableStream<Uint8Array> {
-  let acc = "";
+  const accumulator =
+    provider === "ollama" ? createOllamaAccumulator() : createOpenAiSseAccumulator();
+  let text = "";
+  /** 解析失败时的兜底原文（限长，只用于说明「收到了什么」） */
+  let raw = "";
   const decoder = new TextDecoder();
   let settled = false;
   const settle = (outcome: AiStreamOutcome): void => {
     if (settled) return;
     settled = true;
-    onEnd(outcome, acc);
+    onEnd(outcome, text.trim() || raw.trim());
   };
 
   const transformer = {
     transform(chunk: Uint8Array, controller: TransformStreamDefaultController<Uint8Array>) {
       controller.enqueue(chunk);
-      if (acc.length < STREAM_LOG_CHARS) {
-        // stream: true 让跨块的多字节字符不被切坏（只影响日志文本，不影响透传）
-        acc += decoder.decode(chunk, { stream: true });
-      }
+      // stream: true 让跨块的多字节字符不被切坏（只影响日志文本，不影响透传）
+      const piece = decoder.decode(chunk, { stream: true });
+      text += accumulator.push(piece);
+      if (raw.length < STREAM_LOG_CHARS) raw += piece;
     },
     flush() {
+      text += accumulator.flush();
       settle("ok");
     },
     cancel() {
@@ -215,7 +230,7 @@ export function registerAiStreamEndpoint(): void {
     }
 
     try {
-      const { response, onStreamEnd } = await streamRequester({
+      const { response, onStreamEnd, provider } = await streamRequester({
         system: typeof body.system === "string" ? body.system : undefined,
         prompt: body.prompt,
         temperature: typeof body.temperature === "number" ? body.temperature : undefined,
@@ -228,7 +243,9 @@ export function registerAiStreamEndpoint(): void {
       // 关键：Content-Type 透传 text/event-stream，让渲染层按 SSE 解析。
       // 顺带挂一个旁路 tap：流读完 / 被中断时回传终态，供注入方落 ai_log + ai_event。
       const stream = response.body
-        ? tapStream(response.body, (outcome, output) => onStreamEnd?.(outcome, output))
+        ? tapStream(response.body, provider, (outcome, output) =>
+            onStreamEnd?.(outcome, output),
+          )
         : null;
       return new Response(stream, {
         status: response.status,

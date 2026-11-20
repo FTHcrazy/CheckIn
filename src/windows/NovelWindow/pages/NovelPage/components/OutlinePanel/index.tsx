@@ -9,6 +9,7 @@ import {
 } from "@ant-design/icons";
 import { Button, Input, Select, Tooltip } from "antd";
 import { Virtuoso } from "react-virtuoso";
+import type { VirtuosoHandle } from "react-virtuoso";
 import GuideTooltip from "@/shared/components/GuideTooltip";
 import NvSegmented from "../NvSegmented";
 import { CHAPTER_STATUS_META } from "../../novel-config";
@@ -249,19 +250,117 @@ export default function OutlinePanel({
     return row?.key ?? null;
   }, [rows]);
 
-  // 面板头「＋ 伏笔」：切回章节视图并在首卷展开新增表单
+  // 面板头「＋ 伏笔」：切回章节视图，并**挂到当前正在写的这一章**下方。
+  //
+  // 改前一律落到首卷卷尾（`anchor` 缺省 = 卷级表单）。长卷里第一章点「＋伏笔」，
+  // 输入框却在第五章后面 —— 作者以为没反应（真机反馈）。现在优先锚到当前章：
+  // 视线在哪一行，表单就长在哪一行；只有「没有当前章」时才退回卷尾的卷级表单。
   // 只在 signal 自增时响应一次，避免依赖变化时重复抢占正在编辑的表单
   const lastSignalRef = useRef(addForeshadowSignal);
   useEffect(() => {
     if (addForeshadowSignal === lastSignalRef.current) return;
     lastSignalRef.current = addForeshadowSignal;
+    const hit = activeChapterId
+      ? volumeNodes
+          .map((volume) => ({
+            volume,
+            chapter: volume.children.find(
+              (node) => isChapter(node) && node.chapterId === activeChapterId,
+            ),
+          }))
+          .find((item) => item.chapter)
+      : undefined;
+    setView("chapter");
+    if (hit?.chapter && isChapter(hit.chapter)) {
+      const chapterId = hit.chapter.chapterId;
+      setFolded((current) => ({ ...current, [hit.volume.id]: false }));
+      setFsDraft({ ...EMPTY_DRAFT, chapterId });
+      setFsTarget({ mode: "add", volumeId: hit.volume.id, anchor: chapterId });
+      return;
+    }
     const first = volumeNodes[0];
     if (!first) return;
-    setView("chapter");
     setFolded((current) => ({ ...current, [first.id]: false }));
     setFsDraft(EMPTY_DRAFT);
     setFsTarget({ mode: "add", volumeId: first.id });
-  }, [addForeshadowSignal, volumeNodes]);
+  }, [addForeshadowSignal, volumeNodes, activeChapterId]);
+
+  /**
+   * 把刚打开的新增表单滚进视野。
+   *
+   * 章节视图是虚拟列表，「当前章」完全可能在可视区外（长卷里尤其常见）。
+   * 表单挂上去了但看不见，和「点了没反应」是一样的观感。
+   */
+  const virtuosoRef = useRef<VirtuosoHandle>(null);
+  const scrolledAnchorRef = useRef("");
+  useEffect(() => {
+    if (fsTarget?.mode !== "add" || !fsTarget.anchor) {
+      scrolledAnchorRef.current = "";
+      return undefined;
+    }
+    // 同一锚点只滚一次：行高实测会让 rows 重建，重复滚会一直把视口拽回去
+    if (scrolledAnchorRef.current === fsTarget.anchor) return undefined;
+    const index = rows.findIndex(
+      (row) => row.kind === "chapter" && row.chapter.id === fsTarget.anchor,
+    );
+    if (index < 0) return undefined;
+    scrolledAnchorRef.current = fsTarget.anchor;
+    // 让内联表单先挂上再滚：量到的是含表单的新行高，不会停在旧位置
+    const timer = window.setTimeout(() => {
+      virtuosoRef.current?.scrollIntoView({
+        index,
+        behavior: "smooth",
+        align: "center",
+      });
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [fsTarget, rows]);
+
+  // ── 与左侧章节列表联动 ─────────────────────────────────────────────
+  // 左侧正在写哪一章，大纲就滚到哪一章：切到大纲 tab（面板重新挂载）同步
+  // 一次；写作中切章，大纲跟着滚 —— 两个列表永远指向同一章，就地「＋伏笔」。
+  const [syncChapterId, setSyncChapterId] = useState<string | null>(null);
+  const syncConsumedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!activeChapterId) return;
+    const hit = volumeNodes.find((volume) =>
+      volume.children.some(
+        (node) => isChapter(node) && node.chapterId === activeChapterId,
+      ),
+    );
+    if (!hit) return;
+    // 折叠的卷没有章行，先展开再滚（已是展开态时这次 setState 是 no-op）
+    if (folded[hit.id]) {
+      setFolded((current) => ({ ...current, [hit.id]: false }));
+    }
+    setSyncChapterId(activeChapterId);
+  }, [activeChapterId, volumeNodes, folded]);
+
+  useEffect(() => {
+    if (view !== "chapter") {
+      // 伏笔子视图里不抢滚动；记号清掉，切回章节视图时允许再同步一次
+      syncConsumedRef.current = null;
+      return;
+    }
+    // 同一章只滚一次：行高实测会重建 rows，没这层守卫视口会被一直拽回去，
+    // 用户手动翻大纲也会被强行拉回当前章
+    if (!syncChapterId || syncConsumedRef.current === syncChapterId) return;
+    const index = rows.findIndex(
+      (row) =>
+        row.kind === "chapter" && row.chapter.chapterId === syncChapterId,
+    );
+    if (index < 0) return;
+    syncConsumedRef.current = syncChapterId;
+    // 与表单锚点同款：等行高实测稳定再滚，量到的是最终布局
+    const timer = window.setTimeout(() => {
+      virtuosoRef.current?.scrollToIndex({
+        index,
+        behavior: "smooth",
+        align: "center",
+      });
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [syncChapterId, rows, view]);
 
   // ── 章节梗概 ────────────────────────────────────────────────────────
   const startNoteEdit = (node: ChapterNode): void => {
@@ -824,6 +923,7 @@ export default function OutlinePanel({
           自动校正，`fixedItemHeight` 不能开。
         */
         <Virtuoso
+          ref={virtuosoRef}
           className="nv-outline__vlist"
           data={rows}
           // 卷折叠 / 展开会改行数与行内容，用行模型的 key 让 React 稳定复用

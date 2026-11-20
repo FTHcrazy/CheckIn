@@ -46,6 +46,14 @@ interface ChapterTreeItemProps {
   showSummary?: boolean;
   /** 摘要入口是否处于「待授权」态（O-06）：视觉上区别于可用，但绝不禁用 */
   aiNeedsConsent?: boolean;
+  /**
+   * 标题被悬停时上报（完整名 + 标题元素），由列表容器渲染**唯一**的完整标题
+   * Tooltip（§6.1.2「超长虚拟化列表行」例外：行内不挂浮层组件）。
+   * 标题未被截断时容器自己会放弃显示，行只管如实上报。
+   */
+  onTitleHover?: (title: string, el: HTMLElement | null) => void;
+  /** 悬停结束（离开行）：容器据此收起完整标题 Tooltip */
+  onTitleHoverEnd?: () => void;
 }
 
 /**
@@ -85,6 +93,8 @@ export default function ChapterTreeItem({
   onOpenSummary,
   showSummary = true,
   aiNeedsConsent = false,
+  onTitleHover,
+  onTitleHoverEnd,
 }: ChapterTreeItemProps) {
   const status = CHAPTER_STATUS_META[chapter.status];
   const [titleEditing, setTitleEditing] = useState(false);
@@ -172,6 +182,7 @@ export default function ChapterTreeItem({
           setDropRef(node);
         }}
         {...listeners}
+        onMouseLeave={onTitleHoverEnd}
       >
         <button
           type="button"
@@ -196,7 +207,12 @@ export default function ChapterTreeItem({
           }}
         >
           <span className="nv-chapter__index">{padIndex(chapterNumber)}</span>
-          <span className="nv-chapter__title">{chapter.title}</span>
+          <span
+            className="nv-chapter__title"
+            onMouseEnter={(event) => onTitleHover?.(chapter.title, event.currentTarget)}
+          >
+            {chapter.title}
+          </span>
         </button>
         {/* AI 摘要入口：有摘要时实心（点击查看），无摘要时空心（点击生成）。
             悬浮展开与删除按钮同范式。REQ-063：`showSummary=false` 时整颗不渲染

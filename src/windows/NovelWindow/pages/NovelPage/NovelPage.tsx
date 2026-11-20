@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button, Modal, Tooltip } from "antd";
-import { CloseOutlined } from "@ant-design/icons";
+import { Modal } from "antd";
 import ChapterJumpPalette from "./components/ChapterJumpPalette";
 import ChapterTree from "./components/ChapterTree";
 import EditorPane from "./components/EditorPane";
@@ -18,11 +17,9 @@ import type { GuideView } from "@/shared/novel/guide-copy";
 // 这里直接引 shared，不再经 NovelPage 本地垫片。
 import SettingCenter from "@/shared/components/SettingCenter";
 import { SETTING_PRESETS } from "./utils/setting-presets";
-import ContinueFab from "./components/ContinueFab";
 import AiRescueDrawer from "./components/AiRescueDrawer";
-import SvgIcon from "@/shared/components/SvgIcon";
-import aiSvg from "@/assets/novel/ai.svg?raw";
-import { AI_ENTRY_CONSENT_HINT, aiEntryStateClass, deriveAiEntryState } from "@/shared/ai/ai-entry-state";
+import AiFabGroup from "./components/AiFabGroup";
+import { AI_ENTRY_CONSENT_HINT } from "@/shared/ai/ai-entry-state";
 import NovelToast from "./components/NovelToast";
 import NovelTopBar from "./components/NovelTopBar";
 import type { WorkManageMenuHandle } from "./components/WorkManageMenu";
@@ -267,6 +264,22 @@ export default function NovelPage({
   const { loadSnapshots, activeChapterId, searchBook } = data;
 
   /**
+   * 章节状态切换（草稿 ⇄ 完稿）后把顶栏保存指示器推到「已保存」。
+   *
+   * 状态切换是**即时落库**的直写动作（不走草稿防抖），落库后 saveState
+   * 还停在 idle「待输入」，作者会以为刚才那一下没生效。切换成功发起即
+   * 刷 saved + lastSavedAt，与正文保存共用同一根指示器。
+   */
+  const handleToggleChapterStatus = useCallback(
+    (chapterId: string) => {
+      data.toggleChapterStatus(chapterId);
+      editor.markSaved();
+    },
+    [data.toggleChapterStatus, editor],
+  );
+
+
+  /**
    * AI 入口是否该**出现**（REQ-063）。
    *
    * 与 `aiAvailability.available` 是两个问题：`available=false` 但原因是
@@ -278,16 +291,11 @@ export default function NovelPage({
   const aiVisible = !aiAvailability.hidden;
 
   /**
-   * 卡文救援入口的三态（O-06）。
+   * 卡文救援入口的三态文案（O-06）。
    *
-   * `requiresConsent: true`：救援会发送当前正文（哪怕只是一段选区也算 L3），
+   * `aiNeedsConsent`：救援会发送当前正文（哪怕只是一段选区也算 L3），
    * 所以未授权时必须是「待授权」而不是「可直接点」——入口要先把这件事说出来。
    */
-  const rescueEntryState = deriveAiEntryState({
-    available: aiAvailability.available,
-    l3Enabled: !aiNeedsConsent,
-    requiresConsent: true,
-  });
   const rescueEntryHint = !aiAvailability.available
     ? aiAvailability.reasonText
     : aiNeedsConsent
@@ -792,7 +800,7 @@ export default function NovelPage({
             volumeSuffix={editor.settings.volumeSuffix}
             activeChapterId={data.activeChapterId}
             onSelect={handleSelectChapter}
-            onToggleStatus={data.toggleChapterStatus}
+            onToggleStatus={handleToggleChapterStatus}
             onCreate={handleNewChapter}
             onCreateChapterInVolume={handleCreateChapterInVolume}
             onCreateVolume={handleNewVolume}
@@ -859,12 +867,10 @@ export default function NovelPage({
               onOpenSensitive={() => view.openToolSub("sensitive")}
             />
 
-            {/* AI 动作组（REQ-061 续写 + R-AI-11 卡文救援）：贴着正文区右下角，
-                默认**收成一枚圆形按钮**，点开才展开两颗胶囊 + 收起键
-                （2.72.1：常态两颗胶囊常驻会长期占住正文右下角、压住字行）。
-                展开时三颗仍共用一个定位容器（等宽、同一列、固定间距）：
-                改前各自 `position:absolute` 按自己的内容宽度右对齐，两个胶囊
-                左边缘参差不齐，看起来像两枚互不相干的碎片。
+            {/* AI 动作组（REQ-061 续写 + R-AI-11 卡文救援）：正文区右下角的
+                收纳入口。2.72.2 起用组件库 FloatButton.Group 承载——
+                收纳 / 展开的显隐与入场动效全在组件库里，触发键即开关
+                （点开变关闭图标、点外部也能收），不再自绘条件渲染。
                 点击只是入口，真正发起前还有一次确认（useNovelPage.requestContinuation）。
                 阅读模式 / 还没有章节时整组不出现：这两种情况下没有「光标前的前文」，
                 浮一颗点了只会提示「先到正文里点一下」的按钮，属于噪音。
@@ -875,54 +881,21 @@ export default function NovelPage({
             {!aiAvailability.hidden &&
               !editor.settings.readMode &&
               data.activeChapter && (
-                <div className={`nv-ai-fab${aiFabExpanded ? " is-open" : ""}`}>
-                  {aiFabExpanded ? (
-                    <>
-                      <ContinueFab
-                        onContinue={requestContinuation}
-                        aiAvailable={aiAvailability.available}
-                        aiUnavailableText={aiAvailability.reasonText}
-                        aiNeedsConsent={aiNeedsConsent}
-                        busy={continuation?.streaming ?? false}
-                      />
-                      <Tooltip title={rescueEntryHint} placement="left">
-                        <Button
-                          className={`nv-rescue-fab ${aiEntryStateClass(rescueEntryState)}`.trim()}
-                          disabled={!aiAvailability.available}
-                          aria-label="卡文救援"
-                          onClick={() => requestRescue("editor")}
-                        >
-                          <span className="nv-rescue-fab__icon">
-                            <SvgIcon svg={aiSvg} />
-                          </span>
-                          <span className="nv-rescue-fab__text">救援</span>
-                        </Button>
-                      </Tooltip>
-                      <Tooltip title="收起 AI 动作" placement="left">
-                        <Button
-                          className="nv-ai-fab__collapse"
-                          aria-label="收起 AI 动作"
-                          /* 续写进行中不许收：收起来就看不到进度与「正在续写」 */
-                          disabled={continuation?.streaming ?? false}
-                          onClick={() => setAiFabOpen(false)}
-                        >
-                          <CloseOutlined />
-                        </Button>
-                      </Tooltip>
-                    </>
-                  ) : (
-                    <Tooltip title="AI 写作助手 · 续写 / 卡文救援" placement="left">
-                      <Button
-                        className="nv-ai-fab__toggle"
-                        aria-label="展开 AI 写作助手"
-                        aria-expanded={false}
-                        onClick={() => setAiFabOpen(true)}
-                      >
-                        <SvgIcon svg={aiSvg} />
-                      </Button>
-                    </Tooltip>
-                  )}
-                </div>
+                <AiFabGroup
+                  open={aiFabExpanded}
+                  onOpenChange={(next) => {
+                    /* 续写进行中不许收：收起来就看不到进度与「正在续写」 */
+                    if (!next && continuation?.streaming) return;
+                    setAiFabOpen(next);
+                  }}
+                  onContinue={requestContinuation}
+                  aiAvailable={aiAvailability.available}
+                  aiUnavailableText={aiAvailability.reasonText}
+                  aiNeedsConsent={aiNeedsConsent}
+                  busy={continuation?.streaming ?? false}
+                  rescueHint={rescueEntryHint}
+                  onRescue={() => requestRescue("editor")}
+                />
               )}
 
             {/* 选区右键菜单：文本变换 / 记入行囊 / 新建资料卡（REQ-062 已下线「绑定到现有资料卡」） */}

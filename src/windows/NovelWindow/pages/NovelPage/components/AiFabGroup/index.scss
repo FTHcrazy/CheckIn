@@ -1,0 +1,29 @@
+// 正文区右下角 AI 动作组（antd FloatButton.Group）。
+//
+// antd 的 FloatButton.Group 根节点默认 `position: fixed`（浮在视口右下角），
+// 而这里的语义是「贴着正文区、让开底部状态栏」——窗口还有顶栏与右侧支撑面板，
+// 视口定位会把它钉到面板上。所以外层锚点负责定位与层级，组内 fixed 全部收编：
+// 菜单态列表是 absolute（挂在组根上），锚点定位后列表自然从触发键上方展开。
+.nv-ai-fab {
+  position: absolute;
+  right: 20px;
+  /* 让开底部状态栏（实高 32px）+ 24px 呼吸位，不压住「今日目标 / 字数」 */
+  bottom: 56px;
+  /* 低于 stage 内的各个浮层（续写预览 mask 是 50/51、抽屉更高），
+     高于正文与状态栏（20）：预览开着时按钮被 mask 挡住，不会重复触发。
+     antd 给组根的 zIndex 是内联样式（useZIndex 弹层档），但被锚点的
+     z-index: 20 圈进同一个层叠上下文，实际生效的就是这 20 */
+  z-index: 20;
+
+  > .ant-float-btn-group {
+    position: relative;
+    inset-inline-end: auto;
+    bottom: auto;
+  }
+
+  /* O-06 待授权态：主色换成主题警示色（变量层覆盖，无 :hover 属性规则）。
+     FloatButton 图标读 --ant-color-primary，一处覆盖，触发键与两颗入口一起变色 */
+  &.is-ai-needs-consent {
+    --ant-color-primary: var(--app-warning);
+  }
+}

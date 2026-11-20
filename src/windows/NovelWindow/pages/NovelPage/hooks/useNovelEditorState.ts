@@ -208,6 +208,7 @@ export function useNovelEditorState(data: NovelData) {
     setContent: editorActions.setContent,
     applyExternalContent: editorActions.applyExternalContent,
     flushSave: editorActions.flushSave,
+    markSaved: editorActions.markSaved,
     updateSetting: editorActions.updateSetting,
     toggleAnnotationType: editorActions.toggleAnnotationType,
     setSelection: editorActions.setSelection,

@@ -62,9 +62,9 @@ describe("调用口径：hidden 由 hook 推导，页面层只消费", () => {
   it("续写悬浮按钮受 hidden 门控（不是 available）", () => {
     // 三种「没有前文」的情形并列：AI 关掉 / 阅读模式 / 还没有章节
     expect(NOVEL_PAGE).toMatch(/\{!aiAvailability\.hidden &&/);
-    expect(NOVEL_PAGE).toContain("<ContinueFab");
+    expect(NOVEL_PAGE).toContain("<AiFabGroup");
     // 反向：不能用 available 决定「出不出现」——它挡不住「开着但没配全」
-    expect(NOVEL_PAGE).not.toMatch(/\{aiAvailability\.available &&[\s\S]{0,80}<ContinueFab/);
+    expect(NOVEL_PAGE).not.toMatch(/\{aiAvailability\.available &&[\s\S]{0,80}<AiFabGroup/);
   });
 
   it("摘要入口的『AI 不可用』toast 保留（入口已不可达，属纵深防御）", () => {
@@ -188,28 +188,43 @@ describe("书架「新建作品」的题材提示（同一类提示，同样要�
 });
 
 /**
- * 正文区 AI 动作组默认**收纳**成一颗圆按钮（2.72.1 真机反馈）。
+ * 正文区 AI 动作组用组件库 `FloatButton.Group` 承载收纳 / 展开（2.72.2）。
  *
- * 两颗胶囊常驻时，正文右下角长期被「续写 / 救援」占掉一块、压住字行。
- * 现在常态只渲染 `.nv-ai-fab__toggle`，点开才渲染两颗胶囊 + `.nv-ai-fab__collapse`。
- * 钉三件事，缺一件就会退回「常驻两胶囊」或「收起来看不见进度」：
- *  1. 展开判据是 `aiFabOpen || 续写中`（进度态不能被收起吞掉）；
- *  2. 展开分支里必须真有那两个入口（`ContinueFab` + `nv-rescue-fab`）；
- *  3. 收纳键与收起键的类名各只有一处。
+ * 自绘条件渲染在展开瞬间改写布局，宽度一变整组「抖一下」（真机反馈）；
+ * antd 的 motion 是列表浮层淡入，不参与触发键布局，天然没有这个问题。
+ * 钉四件事，缺一件就会退回自绘或丢掉某个入口：
+ *  1. 展开判据仍是 `aiFabOpen || 续写中`（进度态不能被收起吞掉）；
+ *  2. 开合是受控的（`open={aiFabExpanded}`），且续写中禁止收起；
+ *  3. 组本体来自 FloatButton.Group（trigger 即开关，不再自绘 toggle / collapse）；
+ *  4. 组内两个入口齐全（续写 + 救援）。
  */
-describe("正文区 AI 动作组：默认收纳成一颗圆按钮", () => {
+const AIFAB = stripComments(
+  read("src/windows/NovelWindow/pages/NovelPage/components/AiFabGroup/index.tsx"),
+);
+describe("正文区 AI 动作组：FloatButton.Group 收纳", () => {
   it("展开判据包含「续写进行中」，不是单纯的 aiFabOpen", () => {
     expect(NOVEL_PAGE).toMatch(
       /const aiFabExpanded = aiFabOpen \|\| Boolean\(continuation\?\.streaming\);/,
     );
   });
 
-  it("两种形态各渲染一次：收纳键 / 收起键，且展开态里两颗入口都在", () => {
-    expect(NOVEL_PAGE).toContain("nv-ai-fab__toggle");
-    expect(NOVEL_PAGE).toContain("nv-ai-fab__collapse");
-    expect(NOVEL_PAGE).toContain("<ContinueFab");
-    expect(NOVEL_PAGE).toContain("nv-rescue-fab");
-    // 收纳态不渲染胶囊：条件分支而不是 CSS 隐藏（隐藏仍会占位、仍能被 Tab 到）
-    expect(NOVEL_PAGE).toMatch(/aiFabExpanded \? \(\s*<>/);
+  it("受控开合 + 续写进行中禁止收起", () => {
+    expect(NOVEL_PAGE).toContain("open={aiFabExpanded}");
+    expect(NOVEL_PAGE).toMatch(
+      /if \(!next && continuation\?\.streaming\) return;/,
+    );
+  });
+
+  it("组本体来自组件库 FloatButton.Group，不再自绘 toggle / collapse", () => {
+    expect(AIFAB).toContain("<FloatButton.Group");
+    expect(AIFAB).toContain('trigger="click"');
+    // 老的自绘形态不能回来
+    expect(NOVEL_PAGE).not.toContain("nv-ai-fab__toggle");
+    expect(NOVEL_PAGE).not.toContain("nv-ai-fab__collapse");
+  });
+
+  it("组内两个入口齐全：续写 + 卡文救援", () => {
+    expect(AIFAB).toContain('aria-label="AI 续写"');
+    expect(AIFAB).toContain('aria-label="卡文救援"');
   });
 });

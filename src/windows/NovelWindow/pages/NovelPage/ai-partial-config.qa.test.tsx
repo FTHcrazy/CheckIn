@@ -26,7 +26,7 @@ import EntityContextMenu from "./components/EntityContextMenu";
 import NameGeneratorPanel, {
   type NamingActions,
 } from "./components/NameGeneratorPanel";
-import ContinueFab from "./components/ContinueFab";
+import AiFabGroup from "./components/AiFabGroup";
 
 /**
  * 把 antd `Tooltip` 换成「把 title 落到 data 属性上」的替身。
@@ -35,27 +35,104 @@ import ContinueFab from "./components/ContinueFab";
  * 监听、又依赖 layout 测量，禁用态下更测不出来（实测 `fireEvent.mouseEnter`
  * 对 disabled 子节点不触发）。这里要钉的是**组件有没有把「原因」交给说明层**，
  * 而不是「antd 的浮层会不会弹」——后者留给真机核对。
+ *
+ * FloatButton 也一并换桩：它的 tooltip 是内部 `import Tooltip from "../tooltip"`
+ * （antd 包内深路径），外置依赖下 mock 不到那层；替桩把 tooltip 直接落到
+ * data 属性上，同一套断言语义。禁用态仍走真实 DOM 的 disabled 属性。
+ *
+ * tooltip 支持 string 与 `{ title, placement }` 两种形态（antd 会把对象
+ * 展开成 Tooltip 的 props），替桩统一只取 title。
  */
+const tooltipTextOf = (tooltip: unknown): string => {
+  if (typeof tooltip === "string") return tooltip;
+  if (tooltip && typeof tooltip === "object" && "title" in tooltip) {
+    const title = (tooltip as { title?: unknown }).title;
+    return typeof title === "string" ? title : "";
+  }
+  return "";
+};
+
 vi.mock("antd", async (importOriginal) => {
   const actual = await importOriginal<typeof import("antd")>();
+  const TooltipStub = ({
+    title,
+    children,
+  }: {
+    title?: unknown;
+    children?: React.ReactNode;
+  }) => (
+    <span data-qa-tooltip={tooltipTextOf(title)}>
+      {children}
+    </span>
+  );
+  const FloatButtonStub = ({
+    tooltip,
+    disabled,
+    onClick,
+    icon,
+    "aria-label": label,
+  }: {
+    tooltip?: unknown;
+    disabled?: boolean;
+    onClick?: () => void;
+    icon?: React.ReactNode;
+    "aria-label"?: string;
+  }) => (
+    <button
+      type="button"
+      aria-label={label}
+      disabled={disabled}
+      onClick={onClick}
+      data-qa-tooltip={tooltipTextOf(tooltip)}
+    >
+      {icon}
+    </button>
+  );
+  const FloatButtonGroupStub = ({
+    open,
+    onOpenChange,
+    icon,
+    tooltip,
+    "aria-label": label,
+    children,
+  }: {
+    open?: boolean;
+    onOpenChange?: (open: boolean) => void;
+    icon?: React.ReactNode;
+    tooltip?: unknown;
+    "aria-label"?: string;
+    children?: React.ReactNode;
+  }) => (
+    <div className="ant-float-btn-group" data-open={open ? "true" : "false"}>
+      {children}
+      <TooltipStub title={tooltip}>
+        <button
+          type="button"
+          aria-label={label}
+          onClick={() => onOpenChange?.(!open)}
+        >
+          {icon}
+        </button>
+      </TooltipStub>
+    </div>
+  );
   return {
     ...actual,
-    Tooltip: ({
-      title,
-      children,
-    }: {
-      title?: unknown;
-      children?: React.ReactNode;
-    }) => (
-      <span data-qa-tooltip={typeof title === "string" ? title : ""}>
-        {children}
-      </span>
-    ),
+    Tooltip: TooltipStub,
+    FloatButton: Object.assign(FloatButtonStub, {
+      Group: FloatButtonGroupStub,
+    }),
   };
 });
 
 /** 复用 useAiAvailability 的真实文案，避免测试自己编一套说法 */
 const REASON = "尚未配置模型名，请先在设置里填写";
+
+/** 读「某个入口按钮」身上的 tooltip 文案（替桩直接落在 data 属性上） */
+const tipOf = (container: HTMLElement, label: string): string | null =>
+  container
+    .querySelector(`[aria-label="${label}"]`)
+    ?.getAttribute("data-qa-tooltip") ?? null;
 
 afterEach(() => {
   // antd 的 Tooltip / Modal / Select 弹层都往 body 挂节点，RTL 收不干净
@@ -63,43 +140,53 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-// ── 1. ContinueFab：只有 aiAvailable 决定禁用，不决定存亡 ────────────────
-describe("ContinueFab：开着但没配全 → 按钮在、禁用、带原因", () => {
+// ── 1. AiFabGroup：只有 aiAvailable 决定禁用，不决定存亡 ────────────────
+const renderFab = (aiAvailable: boolean) =>
+  render(
+    <AiFabGroup
+      open
+      onOpenChange={() => {}}
+      onContinue={() => {}}
+      aiAvailable={aiAvailable}
+      aiUnavailableText={REASON}
+      rescueHint="卡文救援（给几个互不相同的后续走向）"
+      onRescue={() => {}}
+    />,
+  );
+
+describe("AiFabGroup：开着但没配全 → 入口在、禁用、带原因", () => {
   it("渲染出来且置灰（不是被收掉）", () => {
-    render(
-      <ContinueFab onContinue={() => {}} aiAvailable={false} aiUnavailableText={REASON} />,
-    );
-    const button = screen.getByRole("button", { name: "AI 续写" }) as HTMLButtonElement;
-    expect(button).toBeTruthy();
+    const { container, unmount } = renderFab(false);
+    const button = screen.getByRole("button", {
+      name: "AI 续写",
+    }) as HTMLButtonElement;
+    expect(container.querySelector(".ant-float-btn-group")).toBeTruthy();
     expect(button.disabled).toBe(true);
+    unmount();
   });
 
   it("禁用时交给说明层的是「原因」，可用时才是「功能说明」", () => {
-    const { container, unmount } = render(
-      <ContinueFab onContinue={() => {}} aiAvailable={false} aiUnavailableText={REASON} />,
-    );
-    const disabledTip = container
-      .querySelector("[data-qa-tooltip]")
-      ?.getAttribute("data-qa-tooltip");
+    const { container, unmount } = renderFab(false);
+    const disabledTip = tipOf(container, "AI 续写");
     expect(disabledTip, "禁用时没有把原因交给说明层 → 用户只会看到一颗死按钮").toBe(
       REASON,
     );
     unmount();
 
-    const { container: available } = render(
-      <ContinueFab onContinue={() => {}} aiAvailable aiUnavailableText={REASON} />,
-    );
-    const enabledTip = available
-      .querySelector("[data-qa-tooltip]")
-      ?.getAttribute("data-qa-tooltip");
+    const { container: available, unmount: unmount2 } = renderFab(true);
+    const enabledTip = tipOf(available, "AI 续写");
     expect(enabledTip).not.toBe(REASON);
     expect(enabledTip).toContain("续写");
+    unmount2();
   });
 
   it("可用时不禁用（确认禁用真的来自 aiAvailable，而不是恒为 true）", () => {
-    render(<ContinueFab onContinue={() => {}} aiAvailable />);
-    const button = screen.getByRole("button", { name: "AI 续写" }) as HTMLButtonElement;
+    const { unmount } = renderFab(true);
+    const button = screen.getByRole("button", {
+      name: "AI 续写",
+    }) as HTMLButtonElement;
     expect(button.disabled).toBe(false);
+    unmount();
   });
 });
 

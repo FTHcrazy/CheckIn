@@ -8,7 +8,7 @@
  * 形态严格按 §6.1.2：纯展示用 antd `Tag`；可点筛选用 antd `Button` +
  * `aria-pressed`（一个按钮承载，不嵌按钮）。
  */
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { Button, Tag } from "antd";
 import type { EntityTypeMeta } from "@/shared/novel/entity-type-meta";
 import "./index.scss";
@@ -46,8 +46,13 @@ export default function EntityTypeChip({
       <span className="nv-type-chip__label">{children ?? meta.label}</span>
     </>
   );
-  // 颜色只落在左边框色带上：正文走主题变量，去色后仍靠前缀字辨识
-  const bandStyle = { borderLeftColor: meta.color };
+  // 颜色只落在左边框色带上：正文走主题变量，去色后仍靠前缀字辨识。
+  // 同时以自定义属性把类型色交给外层：右栏筛选 chip 的选中态要用同一个色相上色
+  // （浅底 + 同色描边），否则得让调用方再写一遍内联样式、两份颜色必然漂移。
+  const bandStyle = {
+    borderLeftColor: meta.color,
+    "--nv-chip-color": meta.color,
+  } as CSSProperties;
 
   if (onClick) {
     return (

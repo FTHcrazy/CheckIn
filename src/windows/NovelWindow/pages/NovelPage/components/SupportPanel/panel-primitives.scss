@@ -171,16 +171,58 @@
        第一颗「全部 6」被挤成只剩计数，分类名展示不全（真机反馈）。 */
     flex: none;
 
-    /* 选中：描边取当前字色 + 字色提亮（永久态 → 写默认变量）。
-       ⚠️ 不要用 font-weight 加粗：12px 下粗体会让 chip 宽 1~2px，
-       点一下整行就重排（与 hover 抖动同源）。加粗换成「描边 + 字色」表达。 */
+    /* 选中 = 类型色浅底 + 同色描边 + 同色字（永久态 → 写默认变量）。
+       改前是 `currentColor` 描边 + 正文色字：一屏彩色 chip 里只有选中那颗变成
+       黑白药丸，和主题色阶脱节（真机反馈「格格不入」）。色相由 EntityTypeChip
+       以内联 `--nv-chip-color` 给出；「全部」没有类型色，回退主色。
+       ⚠️ 只改颜色，不改字号 / 字重 / 边框宽度：12px 下加粗或换线宽会让 chip
+       宽 1~2px，点一下整行重排（与 hover 抖动同源）。 */
     &.is-on {
-      --ant-button-default-color: var(--app-text);
-      --ant-button-default-hover-color: var(--app-text);
-      --ant-button-default-active-color: var(--app-text);
-      --ant-button-default-border-color: currentColor;
-      --ant-button-default-hover-border-color: currentColor;
-      --ant-button-default-active-border-color: currentColor;
+      --ant-button-default-bg: color-mix(
+        in srgb,
+        var(--nv-chip-color, var(--app-primary)) 10%,
+        var(--app-surface)
+      );
+      --ant-button-default-hover-bg: color-mix(
+        in srgb,
+        var(--nv-chip-color, var(--app-primary)) 16%,
+        var(--app-surface)
+      );
+      --ant-button-default-active-bg: color-mix(
+        in srgb,
+        var(--nv-chip-color, var(--app-primary)) 20%,
+        var(--app-surface)
+      );
+      --ant-button-default-color: var(--nv-chip-color, var(--app-primary));
+      --ant-button-default-hover-color: var(--nv-chip-color, var(--app-primary));
+      --ant-button-default-active-color: var(--nv-chip-color, var(--app-primary));
+      --ant-button-default-border-color: color-mix(
+        in srgb,
+        var(--nv-chip-color, var(--app-primary)) 40%,
+        var(--app-border)
+      );
+      --ant-button-default-hover-border-color: color-mix(
+        in srgb,
+        var(--nv-chip-color, var(--app-primary)) 58%,
+        var(--app-border)
+      );
+      --ant-button-default-active-border-color: color-mix(
+        in srgb,
+        var(--nv-chip-color, var(--app-primary)) 58%,
+        var(--app-border)
+      );
+
+      /* 前缀字与分隔符跟着一起走类型色：`EntityTypeChip` 默认把前缀写成
+         text-strong、分隔符写成 muted，选中后只剩「名字」变色，一颗 chip
+         里出现两种色相，反而更乱。分隔符降透明度保持层次。 */
+      .nv-type-chip__glyph,
+      .nv-type-chip__sep {
+        color: inherit;
+      }
+
+      .nv-type-chip__sep {
+        opacity: 0.55;
+      }
     }
 
     em {

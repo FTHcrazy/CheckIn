@@ -2239,17 +2239,33 @@ export function useNovelPage() {
         ];
       }
 
+      // 「插入光标处」必须有明确的落点：作者没在正文里放下过光标时，
+      // CodeMirror 的 head 是一个没人放过的坐标（多半是 0），插进去内容
+      // 就埋在文档开头——宁可拒插让作者点一下光标，也不要「找不到插哪了」
+      if (!pane.hasCursor()) {
+        view.showToast("先把正文里的光标点到要续写的位置，再插入", "warning");
+        return [];
+      }
+      // 优先用发起救援那一刻快照的光标（cursorOrNodeId = `cursor:偏移`）：
+      // 浮层期间编辑器失焦、head 不动，两者本就一致；快照还能表达
+      // 「插到发起时正对着的那句话后面」这个作者预期。快照缺省回退实时光标。
+      const anchorCursor = Number.parseInt(
+        (rescueAnchor?.cursorOrNodeId ?? "").slice("cursor:".length),
+        10,
+      );
       const { cursor } = pane.getTextBeforeCursor(0);
-      pane.replaceRange(cursor, cursor, text);
+      const insertAt =
+        Number.isFinite(anchorCursor) && anchorCursor >= 0 ? anchorCursor : cursor;
+      pane.replaceRange(insertAt, insertAt, text);
       void editorActions.flushSave();
-      view.showToast("已插入走向，可直接改写", "success");
+      view.showToast("已插入走向提纲，可直接改写", "success");
       return [
         {
           batchId: params.batchId,
           chapterId,
           kind: "text",
-          from: cursor,
-          to: cursor + text.length,
+          from: insertAt,
+          to: insertAt + text.length,
           originalText: text,
         },
       ];
@@ -2388,6 +2404,12 @@ export function useNovelPage() {
     const estimate = estimateScopePayload(
       buildL3Payload(rescueAnchor.chapterId, rescueScope),
     );
+    // 「插入光标处」只在作者真的在正文里放下过光标时可选：
+    // 从大纲 / 灵感入口打开、或从没点过正文时，「光标」无从谈起
+    const cursorKnown =
+      rescueAnchor.source !== "outline" &&
+      sameChapter &&
+      Boolean(editorPaneRef.current?.hasCursor());
     return {
       anchor: {
         workId: data.activeWorkId,
@@ -2398,6 +2420,7 @@ export function useNovelPage() {
       ...(rescueAnchor.outlineNode ? { outlineNode: rescueAnchor.outlineNode } : {}),
       scope: rescueScope,
       estimatedChars: estimate.chars,
+      cursorKnown,
       availability: !aiAvailability.available
         ? "unavailable"
         : aiConsent.l3Enabled

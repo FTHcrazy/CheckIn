@@ -1,12 +1,25 @@
 /* 卡文救援浮层（R-AI-11）：Drawer 承载浮层与焦点陷阱，
    内部三段式排布 = 处境摘要 / 风格与列表（可滚动）/ 底部落点与动作。 */
-@use "../../../../../../shared/styles/widget" as widget;
-
 .nv-rescue {
   /* 浮层底色跟随主题内容面（与 GlobalInspirationDrawer 同一口径）。
      ⚠️ 只改变量：`.ant-drawer-section` 的底色是 antd 运行时注入的
      `background: var(--ant-color-bg-elevated)`，自写同特异性属性规则会被压掉。 */
   --ant-color-bg-elevated: var(--app-surface);
+
+  /* 浮层卡片化：四角圆角，上下（及右缘）从窗口边缘让出 12px。
+     antd v6 的 Drawer 默认四角直角、贴满窗口边缘，右缘上下两角顶死在
+     窗口角上。`.ant-drawer-right > .ant-drawer-content-wrapper` 是 (0,2,0)
+     的运行时注入样式，同特异性会被压掉 —— 用 `.nv-rescue.ant-drawer-right`
+     提高一级特异性。 */
+  &.ant-drawer-right > .ant-drawer-content-wrapper {
+    top: 12px;
+    bottom: 12px;
+    right: 12px;
+  }
+
+  .ant-drawer-section {
+    border-radius: 14px;
+  }
 
   .ant-drawer-body {
     padding: 12px 16px 16px;
@@ -123,44 +136,4 @@
 .nv-rescue__count {
   color: var(--app-text-muted);
   font-size: 12px;
-}
-
-/* 第一入口「救援」悬浮键：与续写键同在 `.nv-ai-fab` 这一列里（容器负责定位、
-   等宽与间距）。这里只声明内部排布 —— 不要再给它写 position/right/bottom，
-   否则它会从文档流里脱出来，两个胶囊又回到各自算坐标的老样子。 */
-.nv-rescue-fab.ant-btn {
-  @include widget.ant-button-reset;
-  --ant-control-height: 34px;
-  --ant-border-radius: 17px;
-  --ant-button-content-font-size: 12px;
-  /* 描边用 `border: 1px` 属性画，antd hover 态读的是这个变量（清零后不补回会窄 2px） */
-  --ant-line-width: 1px;
-  --ant-button-default-color: var(--app-text-secondary);
-  --ant-button-default-hover-bg: var(--app-surface-hover);
-  --ant-button-default-active-bg: var(--app-surface-hover);
-  --ant-button-default-bg-disabled: var(--app-surface);
-  --ant-button-default-shadow: none;
-
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  height: 34px;
-  padding: 0 13px 0 11px;
-  border: 1px solid var(--app-border);
-  background: var(--app-surface-elevated);
-  box-shadow: var(--app-shadow-pop);
-
-  &:focus-visible {
-    outline: 2px solid var(--app-primary);
-    outline-offset: 2px;
-  }
-
-  /* O-06 待授权态：仍可点（点了先弹 L3 授权），视觉上必须与「不可用」分开 */
-  &.is-ai-needs-consent {
-    border-color: color-mix(in srgb, var(--app-warning) 60%, var(--app-border));
-    --ant-button-default-color: var(--app-warning);
-    --ant-button-default-hover-color: var(--app-warning);
-    --ant-button-default-hover-bg: var(--app-warning-weak);
-  }
 }

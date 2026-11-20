@@ -55,9 +55,9 @@ export const RESCUE_LANDING_LABELS: Record<RescueLanding, string> = {
 
 /** 落点的一句话说明（选到之后在下方提示，避免作者误以为落库了正文） */
 export const RESCUE_LANDING_HINTS: Record<RescueLanding, string> = {
-  cursor: "按勾选顺序拼进正文，光标落到最后一段末尾",
-  replaceSelection: "用勾选的走向替换当前选中的正文（原文会被覆盖）",
-  newChapter: "新建一章，把勾选的走向写进去，再从这一章接着写",
+  cursor: "插入的是走向提纲（标题/冲突/后果），供你在正文里接着改写，不是成稿",
+  replaceSelection: "用勾选的走向提纲替换当前选中的正文（原文会被覆盖）",
+  newChapter: "新建一章，把勾选的走向提纲写进去，再从这一章接着写",
   inspiration: "只写进灵感速记，不动正文",
   outlineCandidate: "写入灵感速记，可在大纲手动建节点（不新增候选节点数据）",
 };

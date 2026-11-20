@@ -643,13 +643,16 @@ export default function SupportPanel({
             setToolSub(null);
           }}
           options={TABS.map((tab) => {
-            // tab 角标计数：0 时 antd Badge 自己就不渲染角标（不是我们的分支）
+            // tab 角标计数：0 时 antd Badge 自己就不渲染角标（不是我们的分支）。
+            // 「要素」与大纲 / 灵感同一口径 —— 四个 tab 里只有检索没有数量语义。
             const badgeCount =
               tab.key === "outline"
                 ? counts.openForeshadows
-                : tab.key === "note"
-                  ? notes.length
-                  : 0;
+                : tab.key === "entity"
+                  ? entities.length
+                  : tab.key === "note"
+                    ? notes.length
+                    : 0;
             return {
               value: tab.key,
               label: (
@@ -662,7 +665,9 @@ export default function SupportPanel({
                     }`}
                     count={badgeCount}
                     size="small"
-                    overflowCount={99}
+                    /* 长篇要素能到几百上千：超过 999 折成「999+」，不让角标
+                       被四位数字撑宽、挤出图标中心 */
+                    overflowCount={999}
                   >
                     {tab.icon}
                   </Badge>

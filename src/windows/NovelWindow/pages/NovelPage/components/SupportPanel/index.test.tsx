@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { OutlineActions } from "../OutlinePanel";
@@ -140,5 +142,49 @@ describe("SupportPanel：要素 tab 类型管理入口（REQ-049）", () => {
 
     fireEvent.click(cta!);
     expect(onOpenTypeManager).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * 四个 tab 的数量口径要一致（真机反馈：要素 tab 没有角标，其余三个都有）。
+ *
+ * 角标一律走 antd Badge；长篇要素能到几百上千，超过 999 折成「999+」，
+ * 不让四位数字把角标撑宽、挤出图标中心。
+ */
+describe("SupportPanel：tab 数量徽标", () => {
+  afterEach(() => {
+    cleanup();
+    document.body.innerHTML = "";
+  });
+
+  const entity = {
+    id: "e1",
+    type: "character",
+    name: "沈青梧",
+    aliases: [],
+    summary: "",
+  } as unknown as Parameters<typeof SupportPanel>[0]["entities"][number];
+
+  it("要素 tab 带徽标数量，与大纲 / 灵感同口径", () => {
+    const { container } = render(
+      <SupportPanel {...buildProps({ entities: [entity] })} />,
+    );
+
+    const tab = [...container.querySelectorAll(".ant-segmented-item")].find(
+      (item) => item.textContent?.includes("要素"),
+    );
+    expect(tab).toBeTruthy();
+    expect(tab!.querySelector(".ant-badge-count")?.textContent).toBe("1");
+  });
+
+  it("角标上限按 999 折叠（999+），不是默认 99+", () => {
+    const source = readFileSync(
+      path.join(
+        process.cwd(),
+        "src/windows/NovelWindow/pages/NovelPage/components/SupportPanel/index.tsx",
+      ),
+      "utf8",
+    );
+    expect(source).toContain("overflowCount={999}");
   });
 });
