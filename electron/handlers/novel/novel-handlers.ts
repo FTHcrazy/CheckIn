@@ -32,6 +32,7 @@ import {
   broadcastLinksChanged,
   workIdOfEntity,
 } from "../../novel/novel-links-events";
+import { log } from "../../core/logger";
 
 // ── 行类型（snake_case，对应表结构） ──
 
@@ -600,7 +601,7 @@ export function registerNovelHandlers(): void {
   // 过程中渲染层仍可能发来一次 config 写入，抛穿只会刷「尚未初始化 novel 数据」
   const requireReady = (): boolean => {
     if (isNovelDbReady()) return true;
-    console.error("[novel-config] novel.db 未就绪（未登录或正在退出），本次读写跳过");
+    log("warn", "novel", "novel-config", "novel.db 未就绪（未登录或正在退出），本次读写跳过");
     return false;
   };
 

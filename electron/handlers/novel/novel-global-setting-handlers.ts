@@ -47,6 +47,7 @@ import {
 } from "./novel-setting-shared";
 // 与渲染层共用同一套「显示行序 ↔ rank」换算：两端各算一套必然错位
 import { toRankIndex } from "../../../src/shared/novel/setting-utils";
+import { log } from "../../core/logger";
 
 // ── DTO（camelCase，IPC 线格式；库表列 snake_case 见 novel-db） ────────
 
@@ -207,7 +208,9 @@ export function registerNovelGlobalSettingHandlers(): void {
       try {
         return { categories: readGlobalCategories() };
       } catch (error) {
-        console.warn("[novel-global-setting] 加载全局设定失败：", error);
+        log("warn", "novel", "novel-global-setting", "加载全局设定失败", {
+          reason: error instanceof Error ? error.message : String(error),
+        });
         return { categories: [] };
       }
     },
@@ -720,7 +723,9 @@ export function registerNovelGlobalSettingHandlers(): void {
       try {
         return listGlobalRefs(categoryId);
       } catch (error) {
-        console.warn("[novel-global-setting] 读取引用方名单失败：", error);
+        log("warn", "novel", "novel-global-setting", "读取引用方名单失败", {
+          reason: error instanceof Error ? error.message : String(error),
+        });
         return [];
       }
     },

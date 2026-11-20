@@ -28,6 +28,7 @@ import {
   getNovelDb as getDb,
   isNovelDbReady,
 } from "../../novel/novel-db";
+import { log } from "../../core/logger";
 
 // ── 行类型（snake_case） ──
 
@@ -1522,7 +1523,9 @@ export function registerNovelPackHandlers(): void {
         }
         return { id: item.id, characterId: character.id };
       } catch (error) {
-        console.error("[novel-pack-quick-add] 记账失败：", error);
+        log("error", "novel", "novel-pack-quick-add", "记账失败", {
+          reason: error instanceof Error ? error.message : String(error),
+        });
         return null;
       }
     },
@@ -1537,7 +1540,7 @@ export function registerNovelPackHandlers(): void {
     // 异常（退出瞬间曾因此刷屏）。返回 false 让渲染层走它自己的失败分支
     // —— 草稿还在主进程表里，数据不会丢。
     if (!isNovelDbReady()) {
-      console.error("[novel-pack-save] novel.db 未就绪（未登录或正在退出），拒绝保存");
+      log("warn", "novel", "novel-pack-save", "novel.db 未就绪（未登录或正在退出），拒绝保存");
       return false;
     }
     const db = getDb();
@@ -1905,7 +1908,9 @@ export function registerNovelPackHandlers(): void {
       apply();
       return true;
     } catch (error) {
-      console.error("[novel-pack-save] 事务失败，已整体回滚：", error);
+      log("error", "novel", "novel-pack-save", "事务失败，已整体回滚", {
+        reason: error instanceof Error ? error.message : String(error),
+      });
       return false;
     }
   });
@@ -1977,7 +1982,9 @@ export function registerNovelPackHandlers(): void {
         apply();
         return true;
       } catch (error) {
-        console.error("[novel-link-set] 失败：", error);
+        log("error", "novel", "novel-link-set", "失败", {
+          reason: error instanceof Error ? error.message : String(error),
+        });
         return false;
       }
     },

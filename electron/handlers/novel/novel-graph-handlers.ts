@@ -29,6 +29,7 @@ import {
   isNovelDbReady,
 } from "../../novel/novel-db";
 import { broadcastLinksChanged } from "../../novel/novel-links-events";
+import { log } from "../../core/logger";
 
 /** 画布文档键前缀：与渲染层 `utils/graph-doc.ts` 的 REL_GRAPH_KEY_PREFIX 同值 */
 const REL_GRAPH_KEY_PREFIX = "novel_rel_graph_v1";
@@ -289,7 +290,9 @@ export function registerNovelGraphHandlers(): void {
       result = applyCommit(request);
     } catch (error) {
       if (error instanceof CommitAbort) return error.failure;
-      console.error("[novel-graph-commit] 提交失败：", error);
+      log("error", "novel", "novel-graph-commit", "提交失败", {
+        reason: error instanceof Error ? error.message : String(error),
+      });
       return {
         ok: false,
         code: "db",

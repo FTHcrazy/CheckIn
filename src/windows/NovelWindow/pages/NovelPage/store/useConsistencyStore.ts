@@ -20,6 +20,7 @@ import type {
 } from "@/shared/novel/consistency";
 import type { ConsistencyVerdict } from "@/shared/ai/context";
 import { startConsistencyScan } from "./consistency-runner";
+import { rendererLog } from "@/shared/log/renderer-logger";
 
 /** 面板点结果时的跳转意图，由页面侧消费后清空 */
 export interface ConsistencyJumpTarget {
@@ -209,7 +210,9 @@ export const useConsistencyStore = create<ConsistencyState>((set, get) => ({
       onError: (error) => {
         cancelScan = null;
         // 校对失败不该留下「扫了一半」的假结论，直接回到未扫描态
-        console.warn("[consistency] 校对中止", error);
+        rendererLog.warn("consistency", "校对中止", {
+          reason: error instanceof Error ? error.message : String(error),
+        });
         set({
           status: "idle",
           progress: 0,

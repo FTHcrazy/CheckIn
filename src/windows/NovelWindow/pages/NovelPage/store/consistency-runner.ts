@@ -18,6 +18,7 @@ import {
   type ConsistencyIssue,
   type ConsistencyLevelInput,
 } from "@/shared/novel/consistency";
+import { rendererLog } from "@/shared/log/renderer-logger";
 import type {
   ConsistencyWorkerRequest,
   ConsistencyWorkerResponse,
@@ -96,7 +97,9 @@ export function startConsistencyScan(params: ConsistencyScanParams): Consistency
     worker = null;
     if (cancelled) return;
     if (reason) {
-      console.warn("[consistency] 校对线程不可用，退回主线程分片扫描", reason);
+      rendererLog.warn("consistency", "校对线程不可用，退回主线程分片扫描", {
+        reason: reason instanceof Error ? reason.message : String(reason),
+      });
     }
     stopInline = startInlineScan(params, () => cancelled);
   };

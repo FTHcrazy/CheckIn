@@ -96,6 +96,23 @@ export function isAiHidden(reason: AiUnavailableReason | null): boolean {
 }
 
 /**
+ * 模块级 in-flight 去重：同一窗口内多个组件（编辑器页 + 书架页 + 各面板）同时
+ * 挂载 `useAiAvailability` 时，各自 load 会各发一次 `ai-config-get` IPC。配置在
+ * 窗口生命周期内是稳定的（跨窗口变更走 `ai-config-changed` 广播触发重读），
+ * 并发首读共享同一个 Promise 即可 —— 广播重读走的是下一次 `load()`，不受影响。
+ */
+let aiConfigInFlight: Promise<AiConfig> | null = null;
+
+function loadAiConfig(): Promise<AiConfig> {
+  if (!aiConfigInFlight) {
+    aiConfigInFlight = getAiConfig().finally(() => {
+      aiConfigInFlight = null;
+    });
+  }
+  return aiConfigInFlight;
+}
+
+/**
  * 订阅 AI 可用性状态。
  *
  * 数据来源是主进程 ai.db；这里除了挂载时读一次、以及对外暴露的 `refresh`
@@ -117,7 +134,7 @@ export function useAiAvailability(): AiAvailability {
     // （jsdom 单测 / 浏览器直接开 dev server）时它会**同步**抛 TypeError，
     // 那时 `.catch` 根本挂不上 —— 整页渲染直接崩，而不是「AI 不可用」。
     void Promise.resolve()
-      .then(() => getAiConfig())
+      .then(() => loadAiConfig())
       .then((value) => {
         if (!cancelled) setConfig(value);
       })

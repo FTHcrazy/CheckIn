@@ -24,6 +24,7 @@ import Database from "better-sqlite3";
 import fs from "fs";
 import path from "path";
 import { getCurrentUserEmail, getUserDataDir, registerUserDbLifecycle } from "../core/db";
+import { log } from "../core/logger";
 
 let novelDb: Database.Database | null = null;
 
@@ -664,10 +665,9 @@ function dropColumnIfExists(
   try {
     database.exec(`ALTER TABLE ${table} DROP COLUMN ${column}`);
   } catch (error) {
-    console.warn(
-      `[novel-db] 删除历史列 ${table}.${column} 失败（该字段已下线，可忽略）：`,
-      error,
-    );
+    log("warn", "main", "novel-db", `删除历史列 ${table}.${column} 失败（该字段已下线，可忽略）`, {
+      reason: error instanceof Error ? error.message : String(error),
+    });
   }
 }
 
@@ -681,7 +681,7 @@ export function switchNovelDb(email: string): void {
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
   novelDb = new Database(dbPath);
   initializeNovelDb(novelDb);
-  console.log(`[novel-db] 已就绪: ${dbPath}`);
+  log("info", "main", "novel-db", `novel.db 已就绪: ${dbPath}`);
 }
 
 /** 获取 novel.db 实例（用户库未初始化时抛错） */
@@ -715,7 +715,7 @@ export function closeNovelDb(): void {
   if (!novelDb) return;
   novelDb.close();
   novelDb = null;
-  console.log("[novel-db] 已关闭");
+  log("info", "main", "novel-db", "novel.db 已关闭");
 }
 
 // ── CRUD 封装（与 db.ts 同签名，便于 handlers 平移）──

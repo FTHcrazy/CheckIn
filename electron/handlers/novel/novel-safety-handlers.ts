@@ -56,6 +56,7 @@ import {
   type NovelBackupCounts,
   type NovelBackupManifest,
 } from "../../novel/novel-safety-utils";
+import { log } from "../../core/logger";
 
 /** 恢复成功后广播：各 novel 域窗口据此丢弃内存态（正文 / 行囊 / 关系图） */
 export const NOVEL_DATA_REPLACED_EVENT = "novel-data-replaced";
@@ -375,7 +376,9 @@ export function registerNovelSafetyHandlers(): void {
       try {
         if (fs.existsSync(safetyCopy)) fs.copyFileSync(safetyCopy, dbPath);
       } catch (rollbackError) {
-        console.error("[novel-backup] 回滚留底失败:", rollbackError);
+        log("error", "novel", "novel-backup", "回滚留底失败", {
+          reason: rollbackError instanceof Error ? rollbackError.message : String(rollbackError),
+        });
       }
       throw error;
     } finally {

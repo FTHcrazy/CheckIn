@@ -14,7 +14,9 @@
  * - `ai-config-get`  ：读当前用户 AI 配置（Key 解密后随内存返回，只供主进程用）
  * - `ai-config-save` ：保存 AI 配置（Key 加密落库）
  * - `ai-config-test` ：测试连接（Key 是否有效 / 地址是否可达 / 模型是否存在）
- * - `ai-generate`    ：非流式生成（起名增强用；流式留到润色/续写立项时再开）
+ * - `ai-generate`    ：非流式生成（实体抽取 / 章节摘要 / 起名等「一次性返回
+ *                      结构化结果」的意图走这里，超时按 intent 分级；
+ *                      续写 / 润色 / 救援走 `aiGenerateStream` 流式通道）
  *
  * 边界：SQL 只出现在本文件与 ai-db.ts；不导入 novel 任何模块。
  */
@@ -428,6 +430,27 @@ function appendAiLog(entry: {
 
 // ── 内部：核心调用（非流式）──
 
+/**
+ * 非流式生成按 intent 分级的超时预算（毫秒）。
+ *
+ * 为什么不能一刀切 60s：`extract`（实体抽取）/ `summary`（章节摘要）要读整章
+ * 正文 + 输出结构化 JSON，慢模型（如 spark-x2.6）在弱网下 60s 内出不来；而
+ * 流式路径（rescue/branch/continuation）无总时长硬顶、只看门狗续期，同一模型
+ * 实测能跑到 57s / 99s 正常出结果。非流式却因 60s 硬顶被反复掐断，是「同一模型
+ * 同一网络，流式能出、非流式被误杀」的不一致。按耗时画像给长上下文 + 结构化
+ * 输出的意图更宽裕的预算，其余保持 60s。
+ */
+const GENERATE_TIMEOUT_MS: Readonly<Record<string, number>> = {
+  extract: 120_000,
+  summary: 120_000,
+  naming: 90_000,
+};
+const GENERATE_TIMEOUT_DEFAULT_MS = 60_000;
+
+function timeoutForIntent(intent: string): number {
+  return GENERATE_TIMEOUT_MS[intent] ?? GENERATE_TIMEOUT_DEFAULT_MS;
+}
+
 async function generateInternal(
   req: AiGenerateRequest,
   windowName: string,
@@ -522,7 +545,7 @@ async function generateInternal(
       headers: reqSpec.headers,
       body: reqSpec.body,
       redirect: "follow",
-      signal: AbortSignal.timeout(60_000),
+      signal: AbortSignal.timeout(timeoutForIntent(intent)),
     });
 
     if (!response.ok) {
