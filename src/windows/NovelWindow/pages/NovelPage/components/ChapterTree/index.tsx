@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties } from "react";
+import { createPortal } from "react-dom";
 import { tracePerf } from "../../../../perf-trace";
 import { PlusOutlined, SearchOutlined } from "@ant-design/icons";
-import { Button, Input, Popconfirm, Tooltip } from "antd";
+import { Button, Input, Popconfirm } from "antd";
 import {
   DndContext,
   DragOverlay,
@@ -145,38 +145,76 @@ export default function ChapterTree({
   } | null>(null);
 
   /**
-   * 章节完整标题的悬浮说明（唯一浮层，与上面 Popconfirm 同范式）。
+   * 章节标题的悬浮说明（唯一浮层，与上面 Popconfirm 同范式）。
    *
-   * 标题过长被省略号截断后，作者无从知道完整章节名。行自己不挂 Tooltip：
-   * 数千行各带一个浮层组件正是虚拟化列表卡顿的老路；行只上报「标题 + 锚点
-   * 矩形」，全列表共享这一个 Tooltip。锚点用坐标而非 DOM 引用——
-   * 虚拟化下行随时可能滚出视口被卸载，引用会变 null。
+   * 所有章节标题 hover 都在列表右侧展示完整章节名（产品裁定，不区分是否
+   * 被省略号截断）。行自己不挂浮层：数千行各带一个浮层组件正是虚拟化列表
+   * 卡顿的老路；行只上报「标题 + 锚点坐标」，全列表共享这一个气泡。
+   * 锚点用坐标而非 DOM 引用——虚拟化下行随时可能滚出视口被卸载，引用会变 null。
+   *
+   * 气泡自绘 + portal 到 body（antd Tooltip 两轮都翻车：默认容器被树根
+   * overflow:hidden 裁掉；显式 body 后真机仍不出现，rc-trigger 受控 open
+   * 的浮层不可观测）。纯 div 没有这些坑，且 rc 给浮层统一 pointer-events:none
+   * 的行为我们自己带上。
    *
    * 浮层挂在行的**右侧**（列表边缘外）：盖在章节栏内部会挡住状态点 /
    * 删除按钮这些行内操作。
    */
-  const [titleTip, setTitleTip] = useState<{ title: string; style: CSSProperties } | null>(
+  const [titleTip, setTitleTip] = useState<{ title: string; x: number; y: number } | null>(
     null,
   );
 
   const showTitleTip = useCallback((title: string, el: HTMLElement | null): void => {
     if (!el) return;
-    // 未被截断的短标题不值得浮层：完整名已经完整可见了
-    if (el.scrollWidth <= el.clientWidth) return;
-    const rect = el.getBoundingClientRect();
+    // 横向锚定章节栏的**右边界**（不是标题右缘）：标题右边还有字数列，
+    // 钉标题缘会让气泡压住列表内文字；钉栏缘让它整体落在列表外的正文区
+    const treeRect = el.closest(".nv-tree")?.getBoundingClientRect();
+    const titleRect = el.getBoundingClientRect();
+    if (!treeRect) return;
     setTitleTip({
       title,
-      style: {
-        position: "fixed",
-        left: rect.right,
-        top: rect.top + rect.height / 2,
-        width: 0,
-        height: 0,
-      },
+      x: treeRect.right + 8,
+      y: titleRect.top + titleRect.height / 2,
     });
   }, []);
 
   const hideTitleTip = useCallback((): void => setTitleTip(null), []);
+
+  /**
+   * 滚动收起后的「落点重判」：滚轮滚动不产生 mousemove，滚停后即使鼠标
+   * 停在一行截断标题上也不会再触发 mouseenter —— 气泡就此消失，直到用户
+   * 晃一下鼠标才回来。所以滚动期间先收起（锚点留在旧坐标会悬空），停稳
+   * 后用最后已知鼠标位置 + elementFromPoint 重判一次落点，能续上就续上。
+   */
+  const lastMouseRef = useRef<{ x: number; y: number } | null>(null);
+  const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleListMouseMove = useCallback((event: React.MouseEvent): void => {
+    lastMouseRef.current = { x: event.clientX, y: event.clientY };
+  }, []);
+
+  const handleListScroll = useCallback((): void => {
+    hideTitleTip();
+    if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
+    settleTimerRef.current = setTimeout(() => {
+      settleTimerRef.current = null;
+      const pos = lastMouseRef.current;
+      if (!pos) return;
+      const under = document.elementFromPoint(pos.x, pos.y);
+      // 热区是整行：elementFromPoint 可能落在字数列 / 序号上，向上找行根
+      const row =
+        under instanceof HTMLElement ? under.closest<HTMLElement>(".nv-chapter__row") : null;
+      const titleEl = row?.querySelector<HTMLElement>(".nv-chapter__title");
+      if (row && titleEl) showTitleTip(titleEl.textContent ?? "", row);
+    }, 180);
+  }, [hideTitleTip, showTitleTip]);
+
+  useEffect(
+    () => () => {
+      if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
+    },
+    [],
+  );
 
   const requestDelete = useCallback(
     (kind: "chapter" | "volume", id: string, anchor: HTMLElement | null) => {
@@ -426,7 +464,8 @@ export default function ChapterTree({
             className="nv-tree__list"
             data={rows}
             overscan={12}
-            onScroll={hideTitleTip}
+            onScroll={handleListScroll}
+            onMouseMove={handleListMouseMove}
             computeItemKey={(_, row) =>
               row.kind === "volume" ? row.volume.id : row.chapter.id
             }
@@ -473,13 +512,20 @@ export default function ChapterTree({
         </DndContext>
       )}
 
-      {/* 章节完整标题的共享 Tooltip：锚点钉在标题行右缘中点（fixed 定位），
-          placement=right 让气泡落在列表外的正文区，不遮行内状态点 / 删除按钮 */}
-      {titleTip ? (
-        <Tooltip title={titleTip.title} placement="right" open>
-          <span style={titleTip.style} aria-hidden />
-        </Tooltip>
-      ) : null}
+      {/* 章节完整标题的共享气泡：钉在标题行右缘中点（fixed 定位，body portal），
+          落在列表外的正文区，不遮行内状态点 / 删除按钮。样式见 .nv-tree__title-tip */}
+      {titleTip
+        ? createPortal(
+            <div
+              className="nv-tree__title-tip"
+              role="tooltip"
+              style={{ left: titleTip.x, top: titleTip.y }}
+            >
+              {titleTip.title}
+            </div>,
+            document.body,
+          )
+        : null}
 
       <div className="nv-tree__foot">
         {/* 两键形态对齐交互稿：新章节是主色实底（首日动作，最常按），新卷是描边

@@ -182,6 +182,10 @@ export default function ChapterTreeItem({
           setDropRef(node);
         }}
         {...listeners}
+        onMouseEnter={(event) => {
+          // 热区是整行（高亮行）：钉标题 span 会漏掉行内空白与字数列
+          onTitleHover?.(chapter.title, event.currentTarget);
+        }}
         onMouseLeave={onTitleHoverEnd}
       >
         <button
@@ -207,12 +211,7 @@ export default function ChapterTreeItem({
           }}
         >
           <span className="nv-chapter__index">{padIndex(chapterNumber)}</span>
-          <span
-            className="nv-chapter__title"
-            onMouseEnter={(event) => onTitleHover?.(chapter.title, event.currentTarget)}
-          >
-            {chapter.title}
-          </span>
+          <span className="nv-chapter__title">{chapter.title}</span>
         </button>
         {/* AI 摘要入口：有摘要时实心（点击查看），无摘要时空心（点击生成）。
             悬浮展开与删除按钮同范式。REQ-063：`showSummary=false` 时整颗不渲染

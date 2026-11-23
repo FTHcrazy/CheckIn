@@ -12,6 +12,28 @@
   overflow: hidden;
   transition: width var(--app-t-slow) var(--app-ease-standard), opacity var(--app-t-fast) var(--app-ease-standard);
 
+  /* 章节完整标题气泡（.nv-tree__title-tip）：portal 到 body 的自绘浮层，
+     必须写在 .nv-tree 之外 —— 树根 overflow:hidden 会裁掉树内的浮层。
+     锚点坐标由组件按标题行右缘中点算好，这里只负责垂直居中与外观。
+     纯展示层：pointer-events 穿透，不拦正文区点击，也不碰拖动带命中。 */
+  &__title-tip {
+    position: fixed;
+    z-index: 60;
+    transform: translateY(-50%);
+    max-width: 320px;
+    padding: 6px 10px;
+    background: var(--app-surface-elevated);
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius-item);
+    box-shadow: var(--app-shadow-pop);
+    color: var(--app-text);
+    font-size: 12px;
+    line-height: 1.5;
+    word-break: break-word;
+    pointer-events: none;
+    animation: nv-tree-tip-in var(--app-t-fast) var(--app-ease-standard);
+  }
+
   &--collapsed {
     width: 0;
     opacity: 0;
@@ -184,4 +206,14 @@
   overflow: hidden;
   text-overflow: ellipsis;
   pointer-events: none;
+}
+
+@keyframes nv-tree-tip-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }

@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChapterGroup } from "../../novel-utils";
 import type { NovelChapter, NovelVolume } from "../../types";
@@ -13,11 +13,18 @@ vi.mock("react-virtuoso", () => ({
   Virtuoso: <T,>(props: {
     data: T[];
     itemContent: (index: number, item: T) => React.ReactNode;
+    className?: string;
+    onScroll?: React.UIEventHandler<HTMLDivElement>;
+    onMouseMove?: React.MouseEventHandler<HTMLDivElement>;
   }) => {
     // 把 handle 挂到 ref 上，模拟真组件的 useImperativeHandle
     const ref = props as unknown as { ref?: { current: unknown } };
     if (ref.ref) ref.ref.current = { scrollToIndex };
-    return <>{props.data.map((item, index) => props.itemContent(index, item))}</>;
+    return (
+      <div className={props.className} onScroll={props.onScroll} onMouseMove={props.onMouseMove}>
+        {props.data.map((item, index) => props.itemContent(index, item))}
+      </div>
+    );
   },
 }));
 
@@ -249,5 +256,103 @@ describe("ChapterTree 删除二次确认（共享 Popconfirm）", () => {
     expect(onDeleteChapter).toHaveBeenCalledTimes(1);
     expect(onDeleteChapter).toHaveBeenCalledWith("c1");
     expect(onDeleteVolume).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * 章节标题悬浮气泡（全列表唯一共享自绘气泡，portal 到 body）。
+ *
+ * 行组件只上报「标题 + 锚点坐标」，ChapterTree 渲染唯一气泡。
+ * 契约两条：
+ * 1. 所有章节标题 hover 都弹（产品裁定，不判断是否被省略号截断）；
+ * 2. 气泡必须挂在 document.body —— 树根 overflow:hidden 会把往右弹出的
+ *    气泡整个裁掉（真机表现就是「hover 了但什么都没出现」），这条断言防回归。
+ * 历史：antd Tooltip 两轮都翻车（默认容器裁剪；显式 body 后真机仍不出现），
+ * 已换成纯 div portal，测试只认 `.nv-tree__title-tip`。
+ */
+describe("ChapterTree 章节标题悬浮气泡", () => {
+  afterEach(() => {
+    cleanup();
+    document.body.innerHTML = "";
+  });
+
+  it("hover 行（热区为整行）：气泡出现且挂在树容器之外（body）", async () => {
+    const { container } = render(<ChapterTree {...baseProps} activeChapterId="c1" />);
+
+    // 触发点钉在行容器：热区是整行，不只是标题 span
+    const row = screen.getByText("出生").closest(".nv-chapter__row")!;
+    fireEvent.mouseEnter(row);
+
+    const tip = await screen.findByText("出生", { selector: ".nv-tree__title-tip" });
+    expect(tip.getAttribute("role")).toBe("tooltip");
+    // 防回归的关键断言：气泡不在树容器内，否则被 overflow:hidden 裁掉
+    expect(container.querySelector(".nv-tree__title-tip")).toBeNull();
+  });
+
+  it("移出行 / 滚动列表都收起气泡", async () => {
+    const { container } = render(<ChapterTree {...baseProps} activeChapterId="c1" />);
+
+    const row = screen.getByText("出生").closest(".nv-chapter__row")!;
+    fireEvent.mouseEnter(row);
+    await screen.findByText("出生", { selector: ".nv-tree__title-tip" });
+
+    // 行根容器挂着 onMouseLeave（收起）
+    fireEvent.mouseLeave(row);
+    await waitFor(() => {
+      expect(document.querySelector(".nv-tree__title-tip")).toBeNull();
+    });
+
+    // 再弹出后滚动列表也要收（滚动时锚点留在旧坐标，气泡会悬空）
+    fireEvent.mouseEnter(row);
+    await screen.findByText("出生", { selector: ".nv-tree__title-tip" });
+    // 滚动事件同步收起；落点重判 180ms 后才跑，先断「立即收」
+    fireEvent.scroll(container.querySelector(".nv-tree__list")!);
+    expect(document.querySelector(".nv-tree__title-tip")).toBeNull();
+  });
+
+  it("滚停落点重判：鼠标停在章节行上，气泡重新出现", async () => {
+    const { container } = render(<ChapterTree {...baseProps} activeChapterId="c1" />);
+    const list = container.querySelector(".nv-tree__list")!;
+    const row = screen.getByText("出生").closest(".nv-chapter__row")!;
+
+    // 记录鼠标位置（滚轮滚动不产生 mousemove，组件靠最后已知位置重判）
+    fireEvent.mouseMove(list, { clientX: 100, clientY: 200 });
+
+    // jsdom 没有 elementFromPoint：滚停后桩回「鼠标下正是那行字数列」（行内子元素也命中）
+    const elementFromPoint = vi.fn(() => row.querySelector(".nv-chapter__index"));
+    Object.defineProperty(document, "elementFromPoint", {
+      configurable: true,
+      value: elementFromPoint,
+    });
+
+    fireEvent.scroll(list);
+
+    await waitFor(
+      () => {
+        expect(document.querySelector(".nv-tree__title-tip")).not.toBeNull();
+      },
+      { timeout: 600 },
+    );
+    Object.defineProperty(document, "elementFromPoint", { configurable: true, value: undefined });
+  });
+
+  it("滚停落点重判：鼠标下不是标题则保持收起", async () => {
+    const { container } = render(<ChapterTree {...baseProps} activeChapterId="c1" />);
+    const list = container.querySelector(".nv-tree__list")!;
+
+    fireEvent.mouseMove(list, { clientX: 100, clientY: 200 });
+    const elementFromPoint = vi.fn(() => null);
+    Object.defineProperty(document, "elementFromPoint", {
+      configurable: true,
+      value: elementFromPoint,
+    });
+
+    fireEvent.mouseMove(list, { clientX: 100, clientY: 200 });
+    fireEvent.scroll(list);
+
+    // 等过重判窗口（180ms + 余量），气泡仍不应出现
+    await new Promise((resolve) => setTimeout(resolve, 260));
+    expect(document.querySelector(".nv-tree__title-tip")).toBeNull();
+    Object.defineProperty(document, "elementFromPoint", { configurable: true, value: undefined });
   });
 });
