@@ -613,6 +613,24 @@ export function registerNovelHandlers(): void {
     return row?.value ?? null;
   });
 
+  // 批量读取 config（挂载期 8 个 config 键合并为一次 IPC）。用 IN 集合查询而非
+  // 逐条 dbGet：每个键一次 prepare 往返，批量后只 prepare 一次。
+  // 返回 Record<key, value>，缺键 = 未写过（渲染层按 null/默认值兜底）。
+  ipcMain.handle("novel-config-get-many", (_event, keys: string[]) => {
+    if (!requireReady()) return {};
+    if (!Array.isArray(keys) || keys.length === 0) return {};
+    const uniqueKeys = Array.from(new Set(keys.filter((key) => typeof key === "string" && key)));
+    if (uniqueKeys.length === 0) return {};
+    const placeholders = uniqueKeys.map(() => "?").join(", ");
+    const rows = dbAll(
+      `SELECT key, value FROM novel_config WHERE key IN (${placeholders})`,
+      uniqueKeys,
+    ) as Array<{ key: string; value: string }>;
+    const result: Record<string, string> = {};
+    for (const row of rows) result[row.key] = row.value;
+    return result;
+  });
+
   ipcMain.handle("novel-config-set", (_event, key: string, value: string) => {
     if (!requireReady()) return false;
     setConfig(key, value);
@@ -725,6 +743,35 @@ export function registerNovelHandlers(): void {
       ) as NovelChapterRow[]
     ).map((row) => toChapterDto(row, true));
     return { volumes, chapters };
+  });
+
+  // 单章正文（正文懒加载：当前章 / 相邻章预取用）。只取 content 一列，避免
+  // SELECT * 白读元数据。章节不存在或已进回收站返回 null（渲染层按「无正文」处理）。
+  ipcMain.handle("novel-chapter-content", (_event, chapterId: string) => {
+    if (!requireReady()) return null;
+    const row = dbGet(
+      "SELECT content FROM novel_chapters WHERE id = ? AND deleted_at IS NULL",
+      [chapterId],
+    ) as { content?: string } | undefined;
+    return row?.content ?? null;
+  });
+
+  // 批量章节正文（正文懒加载：搜索 / 导出 / 全书扫描等低频功能触发时一次性回填）。
+  // 用 IN 集合查询而非逐条 prepare：长篇上千章时逐条查询要 prepare 上千次。
+  // 返回 Record<chapterId, content>，缺的键 = 章节不存在或已删除（渲染层跳过即可）。
+  ipcMain.handle("novel-chapters-content", (_event, chapterIds: string[]) => {
+    if (!requireReady()) return {};
+    if (!Array.isArray(chapterIds) || chapterIds.length === 0) return {};
+    const ids = chapterIds.filter((id) => typeof id === "string" && id);
+    if (ids.length === 0) return {};
+    const placeholders = ids.map(() => "?").join(", ");
+    const rows = dbAll(
+      `SELECT id, content FROM novel_chapters WHERE id IN (${placeholders}) AND deleted_at IS NULL`,
+      ids,
+    ) as Array<{ id: string; content: string }>;
+    const result: Record<string, string> = {};
+    for (const row of rows) result[row.id] = row.content;
+    return result;
   });
 
 

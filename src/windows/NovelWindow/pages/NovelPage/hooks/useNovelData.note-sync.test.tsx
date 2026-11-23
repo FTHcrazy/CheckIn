@@ -22,9 +22,11 @@ const serviceMocks = vi.hoisted(() => ({
   addWork: vi.fn(),
   createNovelId: vi.fn((prefix: string) => `${prefix}-test-${Math.random().toString(36).slice(2, 8)}`),
   fetchChapterSnapshots: vi.fn(),
-  fetchLastPosition: vi.fn(),
-  fetchNameFavorites: vi.fn(),
+  fetchChapterContent: vi.fn(),
+  fetchChaptersContent: vi.fn(),
+  fetchConfigMany: vi.fn(),
   fetchNovelBundle: vi.fn(),
+  fetchNovelBundleMeta: vi.fn(),
   mergeSettingLevel: vi.fn(),
   openEditorSession: vi.fn(),
   patchSettingCategory: vi.fn(),
@@ -92,9 +94,10 @@ function dispatchNote(detail: NovelNoteChangedDetail): void {
 // ⚠️ 返回 result 引用而非 result.current 快照：dispatch 触发重渲染后
 // result.current 会换成新对象，快照里留着的 allNotes 永远是旧值
 async function renderLoadedBundle(bundle: NovelBundleDTO = makeBundle()) {
-  serviceMocks.fetchNovelBundle.mockResolvedValue(bundle);
-  serviceMocks.fetchLastPosition.mockResolvedValue(null);
-  serviceMocks.fetchNameFavorites.mockResolvedValue("[]");
+  serviceMocks.fetchNovelBundleMeta.mockResolvedValue(bundle);
+  serviceMocks.fetchConfigMany.mockResolvedValue({});
+  serviceMocks.fetchChapterContent.mockResolvedValue(null);
+  serviceMocks.fetchChaptersContent.mockResolvedValue({});
   const { result } = renderHook(() => useNovelData());
   await waitFor(() => expect(result.current.loading).toBe(false));
   return result;
@@ -165,14 +168,15 @@ describe("灵感就地补丁（P2-4）", () => {
 
   it("装载在途 → 补丁被跳过，库内真值随装载响应回来", async () => {
     let resolveBundle!: (bundle: NovelBundleDTO) => void;
-    serviceMocks.fetchNovelBundle.mockImplementation(
+    serviceMocks.fetchNovelBundleMeta.mockImplementation(
       () =>
         new Promise<NovelBundleDTO>((resolve) => {
           resolveBundle = resolve;
         }),
     );
-    serviceMocks.fetchLastPosition.mockResolvedValue(null);
-    serviceMocks.fetchNameFavorites.mockResolvedValue("[]");
+    serviceMocks.fetchConfigMany.mockResolvedValue({});
+    serviceMocks.fetchChapterContent.mockResolvedValue(null);
+    serviceMocks.fetchChaptersContent.mockResolvedValue({});
     const { result } = renderHook(() => useNovelData());
 
     // 装载未完成期间书架发来的事件：bundle 即将被整体替换，补丁跳过

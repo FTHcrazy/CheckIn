@@ -51,6 +51,23 @@ export async function fetchNovelBundle(): Promise<NovelBundle> {
   return window.electronAPI!.novel.editorLoad();
 }
 
+/** 拉取编辑器元数据（不含章节正文，novel-editor-load includeContent=false） */
+export async function fetchNovelBundleMeta(): Promise<NovelBundle> {
+  return window.electronAPI!.novel.editorLoad(false);
+}
+
+/** 单章正文（正文懒加载：当前章 / 相邻章预取；章节不存在或已删除返回 null） */
+export async function fetchChapterContent(chapterId: string): Promise<string | null> {
+  return window.electronAPI!.novel.chapterContent(chapterId);
+}
+
+/** 批量章节正文（正文懒加载：搜索 / 导出 / 全书扫描等触发时回填） */
+export async function fetchChaptersContent(
+  chapterIds: string[],
+): Promise<Record<string, string>> {
+  return window.electronAPI!.novel.chaptersContent(chapterIds);
+}
+
 /**
  * 开启编辑器会话（novel-session-open）：置崩溃恢复标记 + 上报 editor_open。
  *
@@ -66,6 +83,16 @@ export async function openEditorSession(): Promise<boolean> {
 /** 读取编辑器设置 JSON（键不存在返回 null，由上层合并默认值） */
 export async function fetchEditorSettings(): Promise<string | null> {
   return window.electronAPI!.novel.configGet(STORAGE_KEYS.settings);
+}
+
+/** 批量读取多个 config 键（挂载期合并为一次 IPC；缺键 = 未写过） */
+export async function fetchConfigMany(
+  keys: readonly string[],
+): Promise<Record<string, string | null>> {
+  const values = await window.electronAPI!.novel.configGetMany([...keys]);
+  const result: Record<string, string | null> = {};
+  for (const key of keys) result[key] = values[key] ?? null;
+  return result;
 }
 
 /** 保存编辑器设置（整读整写，低频小数据） */

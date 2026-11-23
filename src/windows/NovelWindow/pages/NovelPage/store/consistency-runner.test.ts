@@ -189,18 +189,22 @@ describe("startConsistencyScan · 降级路径", () => {
       throw new Error("worker 脚本加载失败");
     };
     vi.stubGlobal("Worker", FakeWorker);
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const write = vi.fn(async () => true);
+    (window as unknown as { electronAPI: { log: { write: typeof write } } }).electronAPI = {
+      log: { write },
+    };
 
     const harness = start(nearMissChapters(12));
     const issues = await harness.done;
 
     expect(issues.map((item) => item.found)).toContain("李元");
-    expect(warn).toHaveBeenCalled();
+    expect(write).toHaveBeenCalledWith(
+      expect.objectContaining({ level: "warn", module: "consistency" }),
+    );
   });
 
   it("线程中途崩溃也退回主线程从头扫完，而不是静默停在半本", async () => {
     vi.stubGlobal("Worker", FakeWorker);
-    vi.spyOn(console, "warn").mockImplementation(() => {});
 
     const harness = start(nearMissChapters(120));
     // 第一批投出去后线程崩掉

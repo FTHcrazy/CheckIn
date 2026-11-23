@@ -78,6 +78,7 @@ import { useRescueBranch } from "./useRescueBranch";
 import {
   aiGenerate,
   aiGenerateStream,
+  aiGenerateStreamToText,
   aiGenerateStructured,
   getAiConfig,
   logAiEvent,
@@ -733,6 +734,9 @@ export function useNovelPage() {
       view.showToast("当前作品还没有章节", "warning");
       return;
     }
+    // 正文懒加载：导出整本遍历全量 content，先把缺失正文回填再拼
+    await data.ensureAllContents(data.chapters.map((chapter) => chapter.id));
+    const hydrated = data.readChaptersWithContent();
     await runExport(
       "整本",
       `${work?.name ?? "未命名作品"}.txt`,
@@ -740,11 +744,11 @@ export function useNovelPage() {
         buildBookPlainText(
           work?.name ?? "",
           data.volumes,
-          data.chapters,
+          hydrated,
           numberingOptions,
         ),
     );
-  }, [data.works, data.activeWorkId, data.volumes, data.chapters, numberingOptions, view, runExport]);
+  }, [data, numberingOptions, view, runExport]);
 
   /** 导出当前章所在卷（卷序号 / 章序号与整本一致） */
   const handleExportVolume = useCallback(async (): Promise<void> => {
@@ -758,18 +762,24 @@ export function useNovelPage() {
       view.showToast("章节未归属任何卷，请先导出整本", "warning");
       return;
     }
+    // 正文懒加载：导出当前卷遍历卷内全量 content，先回填再拼
+    const volumeChapterIds = data.chapters
+      .filter((item) => item.volumeId === volume.id)
+      .map((item) => item.id);
+    await data.ensureAllContents(volumeChapterIds);
+    const hydrated = data.readChaptersWithContent();
     await runExport(
       "当前卷",
       `${volumeDisplayName(volume, settings.numberStyle, settings.volumeSuffix).replace(/[\\/:*?"<>|]/g, "_")}.txt`,
       () =>
         buildVolumePlainText(
           volume,
-          data.chapters,
+          hydrated,
           data.chapterNumbers,
           numberingOptions,
         ),
     );
-  }, [data.activeChapter, data.volumes, data.chapters, data.chapterNumbers, numberingOptions, settings.numberStyle, settings.volumeSuffix, view, runExport]);
+  }, [data, settings.numberStyle, settings.volumeSuffix, numberingOptions, view, runExport]);
 
   /** 导出当前章（含「第N章 标题」标题行） */
   const handleExportChapter = useCallback(async (): Promise<void> => {
@@ -1571,7 +1581,9 @@ export function useNovelPage() {
       });
 
       const summaryStart = Date.now();
-      const result = await aiGenerate({
+      // 流式（2.73.0）：summary 读整章正文、慢模型弱网下会撞非流式 60s 硬超时，
+      // 改走流式通道无总时长硬顶。返回 {text, model}，解析逻辑与原来一致。
+      const result = await aiGenerateStreamToText({
         system: spec.system,
         prompt: spec.prompt,
         intent: "summary",
@@ -1585,20 +1597,16 @@ export function useNovelPage() {
           status: "error",
           extra: { chapterId, reason: message },
         });
-        return {
-          ok: false as const,
-          code: "internal" as const,
-          message: message || "AI 调用失败，请重试",
-        };
+        return null;
       });
       tracePerf("ai", "summary", {
         durationMs: Date.now() - summaryStart,
-        status: result.ok ? "ok" : "error",
+        status: result ? "ok" : "error",
         extra: { chapterId, scope },
       });
 
-      if (result.ok) {
-        const text = result.data.text.trim();
+      if (result) {
+        const text = result.text.trim();
         if (!text) {
           setSummary((prev) =>
             prev && prev.chapterId === chapterId
@@ -1613,7 +1621,7 @@ export function useNovelPage() {
         const bodyText = reply.summary || text;
         // 落库 + 本地乐观更新，带来源标记（M6 溯源：模型名 + 时间戳 + 批次）。
         // 模型名随生成响应回带（G8-③），省去一次 getAiConfig 的二次 IPC 往返。
-        const model = result.data.model;
+        const model = result.model;
         const provenance = makeAiProvenance(model, Date.now(), newBatchId());
         data.updateChapterSummary(
           chapterId,
@@ -1662,7 +1670,7 @@ export function useNovelPage() {
       // AI 失败：浮层报错，不写任何摘要
       setSummary((prev) =>
         prev && prev.chapterId === chapterId
-          ? { ...prev, loading: false, error: result.message }
+          ? { ...prev, loading: false, error: "AI 调用失败，请重试" }
           : prev,
       );
     },
@@ -2604,11 +2612,11 @@ export function useNovelPage() {
    * 编辑器会把旧文本重新读上来，等于替换白做。
    */
   const applyRenameSync = useCallback(
-    (
+    async (
       chapters: ReadonlyArray<{ id: string; content: string }>,
       oldName: string,
       newName: string,
-    ): void => {
+    ): Promise<void> => {
       const activeId = data.activeChapterId;
       const pane = editorPaneRef.current;
       let changed = 0;
@@ -2654,14 +2662,19 @@ export function useNovelPage() {
    * 一句「是否同步正文」他没法判断代价。
    */
   const offerRenameSync = useCallback(
-    (entity: { workId: string; name: string }, nextName: string): void => {
+    async (entity: { workId: string; name: string }, nextName: string): Promise<void> => {
       const oldName = entity.name;
-      const chapters = data.chapters.filter(
+      const scoped = data.chapters.filter(
         (chapter) => chapter.workId === entity.workId,
       );
+      // 正文懒加载：统计与替换遍历全量 content，先把本书正文回填再算
+      await data.ensureAllContents(scoped.map((chapter) => chapter.id));
+      const hydrated = data
+        .readChaptersWithContent()
+        .filter((chapter) => chapter.workId === entity.workId);
       let total = 0;
       let touched = 0;
-      for (const chapter of chapters) {
+      for (const chapter of hydrated) {
         const count = countTextOccurrences(chapter.content, oldName);
         if (count === 0) continue;
         total += count;
@@ -2675,11 +2688,11 @@ export function useNovelPage() {
         okText: "一并替换",
         cancelText: "保持原文",
         onOk: () => {
-          applyRenameSync(chapters, oldName, nextName);
+          void applyRenameSync(hydrated, oldName, nextName);
         },
       });
     },
-    [applyRenameSync, data.chapters, modal],
+    [applyRenameSync, data, modal],
   );
 
   /** 资料卡编辑保存（R23）：详情页编辑名称 / 类型 / 别名 / 一句话 / 性格 */
@@ -2690,7 +2703,7 @@ export function useNovelPage() {
       view.showToast("资料卡已保存");
       const nextName = typeof patch.name === "string" ? patch.name.trim() : "";
       if (target && nextName && nextName !== target.name) {
-        offerRenameSync(target, nextName);
+        void offerRenameSync(target, nextName);
       }
     },
     [data, offerRenameSync, view],

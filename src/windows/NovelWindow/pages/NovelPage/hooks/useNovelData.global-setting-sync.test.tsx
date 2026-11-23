@@ -39,9 +39,11 @@ const serviceMocks = vi.hoisted(() => ({
   addWork: vi.fn(),
   createNovelId: vi.fn((prefix: string) => `${prefix}-test-${Math.random().toString(36).slice(2, 8)}`),
   fetchChapterSnapshots: vi.fn(),
-  fetchLastPosition: vi.fn(),
-  fetchNameFavorites: vi.fn(),
+  fetchChapterContent: vi.fn(),
+  fetchChaptersContent: vi.fn(),
+  fetchConfigMany: vi.fn(),
   fetchNovelBundle: vi.fn(),
+  fetchNovelBundleMeta: vi.fn(),
   fetchSettingMirror: vi.fn(),
   mergeSettingLevel: vi.fn(),
   openEditorSession: vi.fn(),
@@ -152,9 +154,10 @@ function makeBundle(
 
 /** ⚠️ 返回 renderHook 的完整结果：`result.current` 会被换引用，需按需取用 */
 async function renderLoadedBundle(bundle: NovelBundleDTO) {
-  serviceMocks.fetchNovelBundle.mockResolvedValue(bundle);
-  serviceMocks.fetchLastPosition.mockResolvedValue(null);
-  serviceMocks.fetchNameFavorites.mockResolvedValue("[]");
+  serviceMocks.fetchNovelBundleMeta.mockResolvedValue(bundle);
+  serviceMocks.fetchConfigMany.mockResolvedValue({});
+  serviceMocks.fetchChapterContent.mockResolvedValue(null);
+  serviceMocks.fetchChaptersContent.mockResolvedValue({});
   const rendered = renderHook(() => useNovelData());
   await waitFor(() => expect(rendered.result.current.loading).toBe(false));
   return rendered;
@@ -258,14 +261,15 @@ describe("全局库变更 → 本书引用镜像（1.45.1 P0-1）", () => {
 
   it("装载在途 → 广播被跳过；装载完成后再来的照常刷新", async () => {
     let resolveBundle!: (bundle: NovelBundleDTO) => void;
-    serviceMocks.fetchNovelBundle.mockImplementation(
+    serviceMocks.fetchNovelBundleMeta.mockImplementation(
       () =>
         new Promise<NovelBundleDTO>((resolve) => {
           resolveBundle = resolve;
         }),
     );
-    serviceMocks.fetchLastPosition.mockResolvedValue(null);
-    serviceMocks.fetchNameFavorites.mockResolvedValue("[]");
+    serviceMocks.fetchConfigMany.mockResolvedValue({});
+    serviceMocks.fetchChapterContent.mockResolvedValue(null);
+    serviceMocks.fetchChaptersContent.mockResolvedValue({});
     const rendered = renderHook(() => useNovelData());
 
     expect(rendered.result.current.loading).toBe(true);

@@ -14,6 +14,7 @@
 import type {
   AiConfig,
   AiConfigSavePayload,
+  AiErrorCode,
   AiEventLogDTO,
   AiEventStatsDTO,
   AiGenerateData,
@@ -27,6 +28,10 @@ import {
   AI_STREAM_PATH,
   AI_STREAM_TOKEN_HEADER,
 } from "./ai-stream-protocol";
+import {
+  createOllamaAccumulator,
+  createOpenAiSseAccumulator,
+} from "./ai-stream-parse";
 
 /** 读当前 AI 配置（不含明文 Key） */
 export async function getAiConfig(): Promise<AiConfig> {
@@ -137,6 +142,7 @@ export async function aiGenerateStream(request: {
   prompt: string;
   temperature?: number;
   intent?: string;
+  scope?: string;
 }): Promise<AiStreamHandle> {
   const controller = new AbortController();
   // 一次性令牌：**每次**现领（核销即失效，缓存复用会让第二次续写 403）
@@ -152,6 +158,7 @@ export async function aiGenerateStream(request: {
       prompt: request.prompt,
       temperature: request.temperature,
       intent: request.intent,
+      scope: request.scope,
     }),
     signal: controller.signal,
   });
@@ -206,29 +213,102 @@ export interface StructuredGenerateResult {
   usedFallback: boolean;
 }
 
+/** 流式读全量文本的结果 */
+export interface StreamTextResult {
+  /** 模型原始返回的完整文本 */
+  text: string;
+  /** 来源模型名（供摘要溯源等使用） */
+  model: string;
+}
+
+/**
+ * 流式生成并读回完整文本（extract / summary / naming 的流式通道）。
+ *
+ * 与非流式 `aiGenerate` 的差异：走 `aiGenerateStream`（`ai-stream://` 协议 +
+ * SSE），**无 60s 硬超时** —— 慢模型（如 spark-x2.6）在弱网下 60s 内出不来，
+ * 非流式会被 `AbortSignal.timeout` 硬掐断；流式无总时长硬顶、只看门狗续期，
+ * 同一模型能跑到 57s / 99s 正常出结果。这里是「先流式读全量文本，再交给
+ * 上层按原契约解析」的收敛点：解析逻辑（parseOutput / parseSummaryReply /
+ * splitNameItems）与原来完全一致，只是原文的获取方式换成流式。
+ */
+export async function aiGenerateStreamToText(request: {
+  system?: string;
+  prompt: string;
+  temperature?: number;
+  intent?: string;
+  scope?: string;
+}): Promise<StreamTextResult> {
+  // provider 在建立流之前取到（同续写路径的约定）：决定用哪套解析器
+  const cfg = await getAiConfig();
+  const handle = await aiGenerateStream(request);
+  const accumulator =
+    cfg.provider === "ollama"
+      ? createOllamaAccumulator()
+      : createOpenAiSseAccumulator();
+
+  let text = "";
+  for (;;) {
+    const chunk = await handle.readChunk();
+    if (chunk === null) break;
+    text += accumulator.push(chunk);
+  }
+  text += accumulator.flush();
+  return { text, model: cfg.model ?? "" };
+}
+
 /**
  * 按输出契约生成：主进程只负责拿回原文，**解析在本层完成**
  * （AGENTS.md §2.2.2.1：主进程不感知业务结构）。
  *
  * 解析失败不会整体失败——`parseOutput` 内建三层保险，仍会返回兜底条目；
  * 只有模型调用本身失败（网络 / 鉴权 / 超时）才返回 ok:false。
+ *
+ * 原文获取走**流式**（`aiGenerateStreamToText`）：extract / naming 是 json-array
+ * 输出、要读大段正文，慢模型在弱网下会撞非流式的 60s 硬超时，流式无硬顶。
  */
 export async function aiGenerateStructured(
   request: AiGenerateRequest & { outputFormat: OutputFormat },
 ): Promise<AiResult<StructuredGenerateResult>> {
   const { outputFormat, ...rest } = request;
-  const result = await aiGenerate(rest);
-  if (!result.ok) return result;
+  // 流式读全量文本；失败（AiStreamRequestError）转成 AiResult 的 ok:false 形态，
+  // 错误码透传（missing_key / invalid_endpoint 等，调用方据此引导去设置页）
+  let streamed: StreamTextResult;
+  try {
+    streamed = await aiGenerateStreamToText(rest);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const rawCode =
+      error instanceof AiStreamRequestError ? error.code : undefined;
+    const code = (isAiErrorCode(rawCode) ? rawCode : "internal") as AiErrorCode;
+    return { ok: false, code, message: message || "AI 调用失败，请重试" };
+  }
 
-  const parsed = parseOutput(result.data.text, outputFormat, { limit: request.count });
+  const parsed = parseOutput(streamed.text, outputFormat, { limit: request.count });
   return {
     ok: true,
     data: {
-      text: result.data.text,
+      text: streamed.text,
       entries: parsed.entries,
       usedFallback: parsed.usedFallback,
     },
   };
+}
+
+/** 收窄字符串到 AiErrorCode；非法值回落 internal */
+function isAiErrorCode(value: string | undefined): value is AiErrorCode {
+  return (
+    value === "not_configured" ||
+    value === "missing_key" ||
+    value === "invalid_endpoint" ||
+    value === "auth_invalid" ||
+    value === "quota_exceeded" ||
+    value === "rate_limited" ||
+    value === "model_not_found" ||
+    value === "timeout" ||
+    value === "network" ||
+    value === "ollama_unavailable" ||
+    value === "internal"
+  );
 }
 
 /**

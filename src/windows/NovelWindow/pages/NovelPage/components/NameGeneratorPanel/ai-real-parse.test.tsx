@@ -1,7 +1,6 @@
 import { fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import NameGeneratorPanel, { type NamingActions } from "./index";
-import type { AiGenerateData, AiResult } from "@/shared/ai/ai-types";
 
 /**
  * 端到端回归：**真实 AI 原文** → 真实 `aiGenerateStructured` → 面板。
@@ -22,16 +21,31 @@ const REAL_BAD_RAW =
   '{"name":"楚无涯","meaning":"寿元无涯，没有尽头，暗合书名中万古长青的永恒意境。"},' +
   '{"name":"苏朝云","meaning":"朝云暮雨，岁月流转，寓意角色在万古时光中见证无数时代变迁。"}]';
 
-/** 只装 AI 调用的最小 electronAPI 桩（ai-client 只摸这一个口子） */
+/** 只装 AI 调用链的最小 electronAPI 桩：流式通道（streamToken + fetch SSE） */
 const stubAiGenerate = (text: string) => {
-  const generate = vi.fn(
-    async (): Promise<AiResult<AiGenerateData>> => ({
-      ok: true,
-      data: { text, items: [], model: "gpt-4o-mini" },
-    }),
-  );
-  (window as unknown as { electronAPI: unknown }).electronAPI = { ai: { generate } };
-  return generate;
+  const streamToken = vi.fn(async () => "token-stub");
+  const getConfig = vi.fn(async () => ({ provider: "openai" }));
+  // 流式 fetch 桩：返回一段 OpenAI 兼容 SSE，把整段文本作为单个 delta 吐出
+  const fetchStub = vi.fn(async (): Promise<Response> => {
+    const sse =
+      `data: ${JSON.stringify({ choices: [{ delta: { content: text } }] })}\n\n` +
+      "data: [DONE]\n\n";
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(sse));
+        controller.close();
+      },
+    });
+    return new Response(stream, {
+      status: 200,
+      headers: { "Content-Type": "text/event-stream" },
+    });
+  });
+  (window as unknown as { electronAPI: unknown }).electronAPI = {
+    ai: { streamToken, getConfig },
+  };
+  vi.stubGlobal("fetch", fetchStub);
+  return { streamToken, fetchStub };
 };
 
 const buildActions = (): NamingActions => ({

@@ -747,6 +747,8 @@ export function registerAiHandlers(): void {
   setAiStreamRequester(async (body) => {
     const intent = body.intent?.trim() || "continuation";
     const startedAt = Date.now();
+    // L3 授权范围（extract / summary 等整章授权场景），原样落 ai_event.scope
+    const scope = body.scope?.trim() || undefined;
 
     let cfg: ReturnType<typeof readConfigInternal>;
     try {
@@ -787,6 +789,7 @@ export function registerAiHandlers(): void {
         durationMs: fields?.durationMs,
         errorCode: fields?.errorCode,
         charCount: fields?.charCount,
+        scope,
       });
 
     /** 归一失败：记日志 + 记 fallback，再把「带 code 的中文错误」抛给 ai-stream */
